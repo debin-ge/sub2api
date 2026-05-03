@@ -50,6 +50,7 @@ type Handlers struct {
 	Admin            *AdminHandlers
 	Gateway          *GatewayHandler
 	OpenAIGateway    *OpenAIGatewayHandler
+	MiniMaxGateway   *MiniMaxGatewayHandler
 	Setting          *SettingHandler
 	Totp             *TotpHandler
 	Payment          *PaymentHandler

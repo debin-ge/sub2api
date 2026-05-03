@@ -44,6 +44,16 @@ func ProvideOAuthRefreshAPI(accountRepo AccountRepository, tokenCache GeminiToke
 	return NewOAuthRefreshAPI(accountRepo, tokenCache)
 }
 
+// ProvideMiniMaxTokenPlanClient creates the MiniMax Token Plan remains client with defaults.
+func ProvideMiniMaxTokenPlanClient() *MiniMaxTokenPlanClient {
+	return NewMiniMaxTokenPlanClient("", nil)
+}
+
+// ProvideMiniMaxGatewayService creates the MiniMax Anthropic-compatible gateway service.
+func ProvideMiniMaxGatewayService(quotaService *MiniMaxQuotaService, cfg *config.Config) *MiniMaxGatewayService {
+	return NewMiniMaxGatewayService(nil, quotaService, compileResponseHeaderFilter(cfg))
+}
+
 // ProvideTokenRefreshService creates and starts TokenRefreshService
 func ProvideTokenRefreshService(
 	accountRepo AccountRepository,
@@ -441,6 +451,9 @@ var ProviderSet = wire.NewSet(
 	NewAdminService,
 	NewGatewayService,
 	NewOpenAIGatewayService,
+	ProvideMiniMaxTokenPlanClient,
+	NewMiniMaxQuotaService,
+	ProvideMiniMaxGatewayService,
 	NewOAuthService,
 	NewOpenAIOAuthService,
 	NewGeminiOAuthService,
