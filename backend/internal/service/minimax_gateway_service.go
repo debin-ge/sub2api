@@ -17,7 +17,10 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-const miniMaxNonStreamResponseMaxBytes = 2 << 20
+const (
+	miniMaxAnthropicHost             = "api.minimax.io"
+	miniMaxNonStreamResponseMaxBytes = 2 << 20
+)
 
 type MiniMaxGatewayService struct {
 	httpClient           *http.Client
@@ -221,7 +224,10 @@ func buildMiniMaxMessagesURL(account *Account) (string, error) {
 }
 
 func validateMiniMaxUpstreamBaseURL(raw string) (string, error) {
-	return urlvalidator.ValidateHTTPURL(raw, false, urlvalidator.ValidationOptions{AllowPrivate: false})
+	return urlvalidator.ValidateHTTPURL(raw, false, urlvalidator.ValidationOptions{
+		AllowedHosts: []string{miniMaxAnthropicHost},
+		AllowPrivate: false,
+	})
 }
 
 func parseMiniMaxClaudeUsage(body []byte) *ClaudeUsage {

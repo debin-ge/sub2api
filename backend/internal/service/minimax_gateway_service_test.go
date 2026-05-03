@@ -235,6 +235,24 @@ func TestMiniMaxGatewayServiceRejectsUnsafeBaseURLBeforeSendingKey(t *testing.T)
 	}
 }
 
+func TestMiniMaxGatewayServiceRejectsUntrustedBaseURLHostBeforeSendingKey(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		t.Fatalf("unexpected upstream request")
+		return nil, nil
+	})}
+	cache := &minimaxQuotaCacheStub{allowed: true, used: 1}
+	svc := NewMiniMaxGatewayService(client, NewMiniMaxQuotaService(cache, nil), nil)
+	c, _ := newMiniMaxGatewayTestContext()
+
+	_, err := svc.ForwardMessages(context.Background(), c, miniMaxGatewayTestAccount("https://rebind.example/anthropic"), miniMaxMessagesBody(false), "req-1")
+	if err == nil {
+		t.Fatalf("expected untrusted base url host error")
+	}
+	if cache.reserveCalls != 0 {
+		t.Fatalf("untrusted base url should not reserve quota, got %d", cache.reserveCalls)
+	}
+}
+
 func TestMiniMaxGatewayServiceRollsBackQuotaOnUpstreamRequestError(t *testing.T) {
 	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		return nil, errors.New("dial failed")
@@ -314,6 +332,27 @@ func TestMiniMaxGatewayServiceRejectsOversizedNonStreamResponseAndRollsBack(t *t
 		t.Fatalf("expected oversized response error")
 	}
 	if cache.rollbackCalls != 1 || cache.rollbackRequestID != "req-large" {
+		t.Fatalf("rollback call = calls %d requestID %q", cache.rollbackCalls, cache.rollbackRequestID)
+	}
+}
+
+func TestMiniMaxGatewayServiceRollsBackQuotaOnNonStreamReadError(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": {"application/json"}},
+			Body:       &errorAfterReader{data: []byte(`{"id":"partial"}`)},
+		}, nil
+	})}
+	cache := &minimaxQuotaCacheStub{allowed: true, used: 1}
+	svc := NewMiniMaxGatewayService(client, NewMiniMaxQuotaService(cache, nil), nil)
+	c, _ := newMiniMaxGatewayTestContext()
+
+	_, err := svc.ForwardMessages(context.Background(), c, miniMaxGatewayTestAccount(""), miniMaxMessagesBody(false), "req-read-error")
+	if err == nil {
+		t.Fatalf("expected non-stream read error")
+	}
+	if cache.rollbackCalls != 1 || cache.rollbackRequestID != "req-read-error" {
 		t.Fatalf("rollback call = calls %d requestID %q", cache.rollbackCalls, cache.rollbackRequestID)
 	}
 }
@@ -408,6 +447,18 @@ func (r *errorAfterReader) Close() error {
 	return nil
 }
 
+type failingGinResponseWriter struct {
+	gin.ResponseWriter
+}
+
+func (w *failingGinResponseWriter) Write(data []byte) (int, error) {
+	return 0, errors.New("write failed")
+}
+
+func (w *failingGinResponseWriter) WriteString(s string) (int, error) {
+	return 0, errors.New("write failed")
+}
+
 func TestMiniMaxGatewayServiceRollsBackQuotaOnStreamReadError(t *testing.T) {
 	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		return &http.Response{
@@ -425,6 +476,28 @@ func TestMiniMaxGatewayServiceRollsBackQuotaOnStreamReadError(t *testing.T) {
 		t.Fatalf("expected stream read error")
 	}
 	if cache.rollbackCalls != 1 || cache.rollbackRequestID != "req-stream-error" {
+		t.Fatalf("rollback call = calls %d requestID %q", cache.rollbackCalls, cache.rollbackRequestID)
+	}
+}
+
+func TestMiniMaxGatewayServiceRollsBackQuotaOnStreamWriteError(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": {"text/event-stream"}},
+			Body:       io.NopCloser(strings.NewReader("data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":1}}}\n\n")),
+		}, nil
+	})}
+	cache := &minimaxQuotaCacheStub{allowed: true, used: 1}
+	svc := NewMiniMaxGatewayService(client, NewMiniMaxQuotaService(cache, nil), nil)
+	c, _ := newMiniMaxGatewayTestContext()
+	c.Writer = &failingGinResponseWriter{ResponseWriter: c.Writer}
+
+	_, err := svc.ForwardMessages(context.Background(), c, miniMaxGatewayTestAccount(""), miniMaxMessagesBody(true), "req-stream-write-error")
+	if err == nil {
+		t.Fatalf("expected stream write error")
+	}
+	if cache.rollbackCalls != 1 || cache.rollbackRequestID != "req-stream-write-error" {
 		t.Fatalf("rollback call = calls %d requestID %q", cache.rollbackCalls, cache.rollbackRequestID)
 	}
 }
