@@ -246,7 +246,13 @@ func (s *MiniMaxGatewayService) handleNonStreamingMessagesResponse(resp *http.Re
 	}
 	if c != nil {
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
-		c.Data(resp.StatusCode, contentType, body)
+		c.Writer.Header().Set("Content-Type", contentType)
+		c.Status(resp.StatusCode)
+		if len(body) == 0 {
+			c.Writer.WriteHeaderNow()
+		} else if _, err := c.Writer.Write(body); err != nil {
+			return nil, err
+		}
 	}
 	return &ForwardResult{
 		RequestID:     resp.Header.Get("x-request-id"),

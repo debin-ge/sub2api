@@ -357,6 +357,28 @@ func TestMiniMaxGatewayServiceRollsBackQuotaOnNonStreamReadError(t *testing.T) {
 	}
 }
 
+func TestMiniMaxGatewayServiceRollsBackQuotaOnNonStreamWriteError(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": {"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"id":"msg_1","usage":{"input_tokens":1}}`)),
+		}, nil
+	})}
+	cache := &minimaxQuotaCacheStub{allowed: true, used: 1}
+	svc := NewMiniMaxGatewayService(client, NewMiniMaxQuotaService(cache, nil), nil)
+	c, _ := newMiniMaxGatewayTestContext()
+	c.Writer = &failingGinResponseWriter{ResponseWriter: c.Writer}
+
+	_, err := svc.ForwardMessages(context.Background(), c, miniMaxGatewayTestAccount(""), miniMaxMessagesBody(false), "req-write-error")
+	if err == nil {
+		t.Fatalf("expected non-stream write error")
+	}
+	if cache.rollbackCalls != 1 || cache.rollbackRequestID != "req-write-error" {
+		t.Fatalf("rollback call = calls %d requestID %q", cache.rollbackCalls, cache.rollbackRequestID)
+	}
+}
+
 func TestMiniMaxGatewayServiceForwardsStreamingResponseAndParsesUsage(t *testing.T) {
 	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		if got := gjson.GetBytes(mustReadBody(t, req.Body), "stream").Bool(); !got {
