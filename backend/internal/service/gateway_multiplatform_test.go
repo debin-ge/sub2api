@@ -362,6 +362,33 @@ func TestGatewayService_SelectAccountForModelWithPlatform_Antigravity(t *testing
 	require.Equal(t, PlatformAntigravity, acc.Platform, "应只返回 antigravity 平台账户")
 }
 
+func TestGatewayService_SelectAccountForModelWithPlatform_MiniMaxScheduling(t *testing.T) {
+	ctx := context.Background()
+
+	repo := &mockAccountRepoForPlatform{
+		accounts: []Account{
+			{ID: 1, Platform: PlatformMiniMax, Type: AccountTypeAPIKey, Priority: 1, Status: StatusActive, Schedulable: true, Credentials: map[string]any{"api_key": "sk-minimax"}},
+			{ID: 2, Platform: PlatformAnthropic, Priority: 1, Status: StatusActive, Schedulable: true},
+		},
+		accountsByID: map[int64]*Account{},
+	}
+	for i := range repo.accounts {
+		repo.accountsByID[repo.accounts[i].ID] = &repo.accounts[i]
+	}
+
+	svc := &GatewayService{
+		accountRepo: repo,
+		cache:       &mockGatewayCacheForPlatform{},
+		cfg:         testConfig(),
+	}
+
+	acc, err := svc.selectAccountForModelWithPlatform(ctx, nil, "", "claude-sonnet-4-5", nil, PlatformMiniMax)
+	require.NoError(t, err)
+	require.NotNil(t, acc)
+	require.Equal(t, int64(1), acc.ID, "应选择 MiniMax 账户")
+	require.Equal(t, PlatformMiniMax, acc.Platform, "应只返回 minimax 平台账户")
+}
+
 // TestGatewayService_SelectAccountForModelWithPlatform_PriorityAndLastUsed 测试优先级和最后使用时间
 func TestGatewayService_SelectAccountForModelWithPlatform_PriorityAndLastUsed(t *testing.T) {
 	ctx := context.Background()
