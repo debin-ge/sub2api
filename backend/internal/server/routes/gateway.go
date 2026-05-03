@@ -74,6 +74,10 @@ func RegisterGatewayRoutes(
 				})
 				return
 			}
+			if getGroupPlatform(c) == service.PlatformMiniMax {
+				writeMiniMaxUnsupported(c, h)
+				return
+			}
 			h.Gateway.CountTokens(c)
 		})
 		gateway.GET("/models", h.Gateway.Models)

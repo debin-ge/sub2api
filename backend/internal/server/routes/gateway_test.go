@@ -103,6 +103,7 @@ func TestGatewayRoutesMiniMaxUnsupportedEndpointsReturnNotFound(t *testing.T) {
 	for _, path := range []string{
 		"/v1/responses",
 		"/v1/responses/compact",
+		"/v1/messages/count_tokens",
 		"/responses",
 		"/responses/compact",
 		"/backend-api/codex/responses",

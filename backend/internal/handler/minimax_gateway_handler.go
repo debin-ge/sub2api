@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,18 +30,31 @@ type miniMaxGatewayService interface {
 	RecordUsage(ctx context.Context, input *service.RecordUsageInput) error
 }
 
+type miniMaxBillingEligibilityChecker interface {
+	CheckBillingEligibility(ctx context.Context, user *service.User, apiKey *service.APIKey, group *service.Group, subscription *service.UserSubscription) error
+}
+
+type miniMaxConcurrencyController interface {
+	IncrementWaitCount(ctx context.Context, userID int64, maxWait int) (bool, error)
+	DecrementWaitCount(ctx context.Context, userID int64)
+	AcquireUserSlotWithWait(c *gin.Context, userID int64, maxConcurrency int, isStream bool, streamStarted *bool) (func(), error)
+	AcquireAccountSlotWithWaitTimeout(c *gin.Context, accountID int64, maxConcurrency int, timeout time.Duration, isStream bool, streamStarted *bool) (func(), error)
+}
+
 // MiniMaxGatewayHandler handles MiniMax token-plan gateway requests.
 type MiniMaxGatewayHandler struct {
 	minimaxService        miniMaxMessagesForwarder
 	gatewayService        miniMaxGatewayService
+	billingCacheService   miniMaxBillingEligibilityChecker
 	apiKeyService         *service.APIKeyService
 	usageRecordWorkerPool *service.UsageRecordWorkerPool
-	concurrencyHelper     *ConcurrencyHelper
+	concurrencyHelper     miniMaxConcurrencyController
 }
 
 func NewMiniMaxGatewayHandler(
 	minimaxService *service.MiniMaxGatewayService,
 	gatewayService *service.GatewayService,
+	billingCacheService *service.BillingCacheService,
 	apiKeyService *service.APIKeyService,
 	usageRecordWorkerPool *service.UsageRecordWorkerPool,
 	concurrencyService *service.ConcurrencyService,
@@ -53,6 +67,7 @@ func NewMiniMaxGatewayHandler(
 	return &MiniMaxGatewayHandler{
 		minimaxService:        minimaxService,
 		gatewayService:        gatewayService,
+		billingCacheService:   billingCacheService,
 		apiKeyService:         apiKeyService,
 		usageRecordWorkerPool: usageRecordWorkerPool,
 		concurrencyHelper:     NewConcurrencyHelper(concurrencyService, SSEPingFormatClaude, pingInterval),
@@ -116,6 +131,54 @@ func (h *MiniMaxGatewayHandler) Messages(c *gin.Context) {
 		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "minimax gateway service unavailable")
 		return
 	}
+	if h.concurrencyHelper == nil || h.billingCacheService == nil {
+		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "minimax gateway service unavailable")
+		return
+	}
+
+	subscription, _ := middleware2.GetSubscriptionFromContext(c)
+	streamStarted := false
+	maxWait := service.CalculateMaxWait(subject.Concurrency)
+	canWait, err := h.concurrencyHelper.IncrementWaitCount(c.Request.Context(), subject.UserID, maxWait)
+	waitCounted := false
+	if err == nil && !canWait {
+		h.errorResponse(c, http.StatusTooManyRequests, "rate_limit_error", "Too many pending requests, please retry later")
+		return
+	}
+	if err == nil && canWait {
+		waitCounted = true
+	}
+	defer func() {
+		if waitCounted {
+			h.concurrencyHelper.DecrementWaitCount(c.Request.Context(), subject.UserID)
+		}
+	}()
+
+	userRelease, err := h.concurrencyHelper.AcquireUserSlotWithWait(c, subject.UserID, subject.Concurrency, parsedReq.Stream, &streamStarted)
+	if err != nil {
+		if !streamStarted {
+			h.errorResponse(c, http.StatusTooManyRequests, "rate_limit_error", "Too many pending requests, please retry later")
+		}
+		return
+	}
+	if waitCounted {
+		h.concurrencyHelper.DecrementWaitCount(c.Request.Context(), subject.UserID)
+		waitCounted = false
+	}
+	if userRelease != nil {
+		defer userRelease()
+	}
+
+	if err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription); err != nil {
+		status, code, message, retryAfter := billingErrorDetails(err)
+		if retryAfter > 0 {
+			c.Header("Retry-After", strconv.Itoa(retryAfter))
+		}
+		if !streamStarted {
+			h.errorResponse(c, status, code, message)
+		}
+		return
+	}
 
 	sessionHash := h.gatewayService.GenerateSessionHash(parsedReq)
 	selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), apiKey.GroupID, sessionHash, reqModel, nil, parsedReq.MetadataUserID, subject.UserID)
@@ -131,7 +194,6 @@ func (h *MiniMaxGatewayHandler) Messages(c *gin.Context) {
 	setOpsSelectedAccount(c, account.ID, account.Platform)
 
 	release := selection.ReleaseFunc
-	streamStarted := false
 	if !selection.Acquired {
 		if selection.WaitPlan == nil || h.concurrencyHelper == nil {
 			h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "No available MiniMax token-plan accounts")
@@ -146,7 +208,9 @@ func (h *MiniMaxGatewayHandler) Messages(c *gin.Context) {
 			&streamStarted,
 		)
 		if err != nil {
-			h.errorResponse(c, http.StatusTooManyRequests, "rate_limit_error", "Too many pending requests, please retry later")
+			if !streamStarted {
+				h.errorResponse(c, http.StatusTooManyRequests, "rate_limit_error", "Too many pending requests, please retry later")
+			}
 			return
 		}
 	}
@@ -163,7 +227,6 @@ func (h *MiniMaxGatewayHandler) Messages(c *gin.Context) {
 		return
 	}
 
-	subscription, _ := middleware2.GetSubscriptionFromContext(c)
 	userAgent := c.GetHeader("User-Agent")
 	clientIP := ip.GetClientIP(c)
 	requestPayloadHash := service.HashUsageRequestPayload(body)
