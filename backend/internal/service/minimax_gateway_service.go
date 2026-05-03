@@ -12,9 +12,12 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
+	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 )
+
+const miniMaxNonStreamResponseMaxBytes = 2 << 20
 
 type MiniMaxGatewayService struct {
 	httpClient           *http.Client
@@ -57,6 +60,9 @@ func (s *MiniMaxGatewayService) ForwardMessages(ctx context.Context, c *gin.Cont
 	}
 
 	requestID = strings.TrimSpace(requestID)
+	if s.quotaService == nil {
+		return nil, fmt.Errorf("minimax quota service unavailable")
+	}
 	decision, err := s.quotaService.ReserveTextRequest(ctx, account, requestID)
 	if err != nil {
 		return nil, err
@@ -73,10 +79,20 @@ func (s *MiniMaxGatewayService) ForwardMessages(ctx context.Context, c *gin.Cont
 	defer func() { _ = resp.Body.Close() }()
 
 	stream := gjson.GetBytes(body, "stream").Bool()
+	var result *ForwardResult
 	if stream {
-		return s.handleStreamingMessagesResponse(resp, c, originalModel, upstreamModel, start)
+		result, err = s.handleStreamingMessagesResponse(resp, c, originalModel, upstreamModel, start)
+	} else {
+		result, err = s.handleNonStreamingMessagesResponse(resp, c, originalModel, upstreamModel, start)
 	}
-	return s.handleNonStreamingMessagesResponse(resp, c, originalModel, upstreamModel, start)
+	if err != nil {
+		_ = s.quotaService.RollbackTextRequest(ctx, account.ID, requestID)
+		return nil, err
+	}
+	if resp.StatusCode >= http.StatusInternalServerError {
+		_ = s.quotaService.RollbackTextRequest(ctx, account.ID, requestID)
+	}
+	return result, nil
 }
 
 func (s *MiniMaxGatewayService) buildMessagesRequest(ctx context.Context, c *gin.Context, account *Account, body []byte) (*http.Request, string, string, error) {
@@ -93,7 +109,11 @@ func (s *MiniMaxGatewayService) buildMessagesRequest(ctx context.Context, c *gin
 		return nil, "", "", err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, buildMiniMaxMessagesURL(account), bytes.NewReader(upstreamBody))
+	upstreamURL, err := buildMiniMaxMessagesURL(account)
+	if err != nil {
+		return nil, "", "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, upstreamURL, bytes.NewReader(upstreamBody))
 	if err != nil {
 		return nil, "", "", err
 	}
@@ -115,10 +135,8 @@ func (s *MiniMaxGatewayService) buildMessagesRequest(ctx context.Context, c *gin
 }
 
 func rewriteMiniMaxModel(body []byte, account *Account) ([]byte, string, string, error) {
-	var payload map[string]any
-	decoder := json.NewDecoder(bytes.NewReader(body))
-	decoder.UseNumber()
-	if err := decoder.Decode(&payload); err != nil {
+	payload, err := decodeMiniMaxMessagesPayload(body)
+	if err != nil {
 		return nil, "", "", fmt.Errorf("parse minimax messages request: %w", err)
 	}
 	model, _ := payload["model"].(string)
@@ -137,54 +155,73 @@ func rewriteMiniMaxModel(body []byte, account *Account) ([]byte, string, string,
 }
 
 func rejectMiniMaxUnsupportedContent(body []byte) error {
-	var payload map[string]any
-	decoder := json.NewDecoder(bytes.NewReader(body))
-	decoder.UseNumber()
-	if err := decoder.Decode(&payload); err != nil {
+	payload, err := decodeMiniMaxMessagesPayload(body)
+	if err != nil {
 		return fmt.Errorf("parse minimax messages request: %w", err)
 	}
-	messages, _ := payload["messages"].([]any)
+	messages, ok := payload["messages"].([]any)
+	if !ok || len(messages) == 0 {
+		return &MiniMaxUnsupportedContentError{Message: "minimax token plan gateway requires messages array"}
+	}
 	for _, message := range messages {
 		msg, _ := message.(map[string]any)
-		if containsMiniMaxUnsupportedContent(msg["content"]) {
+		if !miniMaxContentIsTextOnly(msg["content"]) {
 			return &MiniMaxUnsupportedContentError{Message: "minimax token plan gateway supports text messages only"}
 		}
 	}
 	return nil
 }
 
-func containsMiniMaxUnsupportedContent(value any) bool {
-	switch v := value.(type) {
-	case []any:
-		for _, item := range v {
-			if containsMiniMaxUnsupportedContent(item) {
-				return true
-			}
+func decodeMiniMaxMessagesPayload(body []byte) (map[string]any, error) {
+	var payload map[string]any
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.UseNumber()
+	if err := decoder.Decode(&payload); err != nil {
+		return nil, err
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return nil, fmt.Errorf("unexpected trailing json")
 		}
-	case map[string]any:
-		if typ, _ := v["type"].(string); isMiniMaxUnsupportedContentType(typ) {
+		return nil, err
+	}
+	return payload, nil
+}
+
+func miniMaxContentIsTextOnly(value any) bool {
+	switch v := value.(type) {
+	case string:
+		return true
+	case []any:
+		if len(v) == 0 {
 			return true
 		}
 		for _, item := range v {
-			if containsMiniMaxUnsupportedContent(item) {
-				return true
+			block, ok := item.(map[string]any)
+			if !ok {
+				return false
+			}
+			if typ, _ := block["type"].(string); strings.ToLower(strings.TrimSpace(typ)) != "text" {
+				return false
 			}
 		}
-	}
-	return false
-}
-
-func isMiniMaxUnsupportedContentType(typ string) bool {
-	switch strings.ToLower(strings.TrimSpace(typ)) {
-	case "image", "document", "audio", "video":
 		return true
 	default:
 		return false
 	}
 }
 
-func buildMiniMaxMessagesURL(account *Account) string {
-	return strings.TrimRight(account.GetMiniMaxAnthropicBaseURL(), "/") + "/v1/messages"
+func buildMiniMaxMessagesURL(account *Account) (string, error) {
+	baseURL, err := validateMiniMaxUpstreamBaseURL(account.GetMiniMaxAnthropicBaseURL())
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimRight(baseURL, "/") + "/v1/messages", nil
+}
+
+func validateMiniMaxUpstreamBaseURL(raw string) (string, error) {
+	return urlvalidator.ValidateHTTPURL(raw, false, urlvalidator.ValidationOptions{AllowPrivate: false})
 }
 
 func parseMiniMaxClaudeUsage(body []byte) *ClaudeUsage {
@@ -192,7 +229,7 @@ func parseMiniMaxClaudeUsage(body []byte) *ClaudeUsage {
 }
 
 func (s *MiniMaxGatewayService) handleNonStreamingMessagesResponse(resp *http.Response, c *gin.Context, originalModel string, upstreamModel string, start time.Time) (*ForwardResult, error) {
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+	body, err := readMiniMaxNonStreamResponseBody(resp.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -215,6 +252,17 @@ func (s *MiniMaxGatewayService) handleNonStreamingMessagesResponse(resp *http.Re
 	}, nil
 }
 
+func readMiniMaxNonStreamResponseBody(body io.Reader) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(body, miniMaxNonStreamResponseMaxBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > miniMaxNonStreamResponseMaxBytes {
+		return nil, fmt.Errorf("minimax upstream response too large")
+	}
+	return data, nil
+}
+
 func (s *MiniMaxGatewayService) handleStreamingMessagesResponse(resp *http.Response, c *gin.Context, originalModel string, upstreamModel string, start time.Time) (*ForwardResult, error) {
 	usage := &ClaudeUsage{}
 	if c != nil {
@@ -223,30 +271,38 @@ func (s *MiniMaxGatewayService) handleStreamingMessagesResponse(resp *http.Respo
 		c.Status(resp.StatusCode)
 	}
 
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 0, 64*1024), defaultMaxLineSize)
+	reader := bufio.NewReaderSize(resp.Body, 64*1024)
 	gatewayUsageParser := &GatewayService{}
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(strings.TrimSpace(line), "data:") {
-			data := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "data:"))
-			if data != "" && data != "[DONE]" {
-				gatewayUsageParser.parseSSEUsage(data, usage)
+	for {
+		line, readErr := reader.ReadString('\n')
+		if line != "" {
+			if len(line) > defaultMaxLineSize {
+				return nil, fmt.Errorf("minimax upstream stream line too large")
 			}
-		}
-		if c != nil {
-			if _, err := io.WriteString(c.Writer, line+"\n"); err != nil {
-				return nil, err
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, "data:") {
+				data := strings.TrimSpace(strings.TrimPrefix(trimmed, "data:"))
+				if data != "" && data != "[DONE]" {
+					gatewayUsageParser.parseSSEUsage(data, usage)
+				}
 			}
-			if line == "" {
-				if flusher, ok := c.Writer.(http.Flusher); ok {
-					flusher.Flush()
+			if c != nil {
+				if _, err := io.WriteString(c.Writer, line); err != nil {
+					return nil, err
+				}
+				if strings.TrimRight(line, "\r\n") == "" {
+					if flusher, ok := c.Writer.(http.Flusher); ok {
+						flusher.Flush()
+					}
 				}
 			}
 		}
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, err
+		if readErr != nil {
+			if readErr == io.EOF {
+				break
+			}
+			return nil, readErr
+		}
 	}
 
 	return &ForwardResult{

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -166,6 +167,74 @@ func TestMiniMaxGatewayServiceRejectsUnsupportedImageBeforeForwarding(t *testing
 	}
 }
 
+func TestMiniMaxGatewayServiceRejectsUnsupportedNonTextBlocksBeforeForwarding(t *testing.T) {
+	tests := []string{
+		`{"model":"claude-sonnet-4-5","max_tokens":64,"messages":[{"role":"user","content":[{"type":"tool_use","id":"toolu_1","name":"x","input":{}}]}]}`,
+		`{"model":"claude-sonnet-4-5","max_tokens":64,"messages":[{"role":"user","content":[{"type":"thinking","thinking":"secret"}]}]}`,
+		`{"model":"claude-sonnet-4-5","max_tokens":64,"messages":{"role":"user","content":"hello"}}`,
+	}
+	for _, raw := range tests {
+		t.Run(raw, func(t *testing.T) {
+			client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				t.Fatalf("unexpected upstream request")
+				return nil, nil
+			})}
+			cache := &minimaxQuotaCacheStub{allowed: true, used: 1}
+			svc := NewMiniMaxGatewayService(client, NewMiniMaxQuotaService(cache, nil), nil)
+			c, _ := newMiniMaxGatewayTestContext()
+
+			_, err := svc.ForwardMessages(context.Background(), c, miniMaxGatewayTestAccount(""), []byte(raw), "req-1")
+			if err == nil {
+				t.Fatalf("expected unsupported content error")
+			}
+			var unsupported *MiniMaxUnsupportedContentError
+			if !errors.As(err, &unsupported) {
+				t.Fatalf("error type = %T %v", err, err)
+			}
+			if cache.reserveCalls != 0 {
+				t.Fatalf("unsupported request should not reserve quota, got %d", cache.reserveCalls)
+			}
+		})
+	}
+}
+
+func TestMiniMaxGatewayServiceRejectsTrailingJSONBeforeForwarding(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		t.Fatalf("unexpected upstream request")
+		return nil, nil
+	})}
+	cache := &minimaxQuotaCacheStub{allowed: true, used: 1}
+	svc := NewMiniMaxGatewayService(client, NewMiniMaxQuotaService(cache, nil), nil)
+	c, _ := newMiniMaxGatewayTestContext()
+	body := append(miniMaxMessagesBody(false), []byte(` {"extra":true}`)...)
+
+	_, err := svc.ForwardMessages(context.Background(), c, miniMaxGatewayTestAccount(""), body, "req-1")
+	if err == nil {
+		t.Fatalf("expected parse error")
+	}
+	if cache.reserveCalls != 0 {
+		t.Fatalf("parse error should not reserve quota, got %d", cache.reserveCalls)
+	}
+}
+
+func TestMiniMaxGatewayServiceRejectsUnsafeBaseURLBeforeSendingKey(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		t.Fatalf("unexpected upstream request")
+		return nil, nil
+	})}
+	cache := &minimaxQuotaCacheStub{allowed: true, used: 1}
+	svc := NewMiniMaxGatewayService(client, NewMiniMaxQuotaService(cache, nil), nil)
+	c, _ := newMiniMaxGatewayTestContext()
+
+	_, err := svc.ForwardMessages(context.Background(), c, miniMaxGatewayTestAccount("http://127.0.0.1:8080/anthropic"), miniMaxMessagesBody(false), "req-1")
+	if err == nil {
+		t.Fatalf("expected unsafe base url error")
+	}
+	if cache.reserveCalls != 0 {
+		t.Fatalf("unsafe base url should not reserve quota, got %d", cache.reserveCalls)
+	}
+}
+
 func TestMiniMaxGatewayServiceRollsBackQuotaOnUpstreamRequestError(t *testing.T) {
 	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		return nil, errors.New("dial failed")
@@ -183,6 +252,69 @@ func TestMiniMaxGatewayServiceRollsBackQuotaOnUpstreamRequestError(t *testing.T)
 	}
 	if cache.rollbackCalls != 1 || cache.rollbackAccountID != 101 || cache.rollbackRequestID != "req-rollback" {
 		t.Fatalf("rollback call = calls %d accountID %d requestID %q", cache.rollbackCalls, cache.rollbackAccountID, cache.rollbackRequestID)
+	}
+}
+
+func TestMiniMaxGatewayServiceRollsBackQuotaOnUpstream5xx(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusServiceUnavailable,
+			Header:     http.Header{"Content-Type": {"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"unavailable"}}`)),
+		}, nil
+	})}
+	cache := &minimaxQuotaCacheStub{allowed: true, used: 1}
+	svc := NewMiniMaxGatewayService(client, NewMiniMaxQuotaService(cache, nil), nil)
+	c, _ := newMiniMaxGatewayTestContext()
+
+	_, err := svc.ForwardMessages(context.Background(), c, miniMaxGatewayTestAccount(""), miniMaxMessagesBody(false), "req-5xx")
+	if err != nil {
+		t.Fatalf("ForwardMessages error = %v", err)
+	}
+	if cache.rollbackCalls != 1 || cache.rollbackRequestID != "req-5xx" {
+		t.Fatalf("rollback call = calls %d requestID %q", cache.rollbackCalls, cache.rollbackRequestID)
+	}
+}
+
+func TestMiniMaxGatewayServiceDoesNotRollbackQuotaOnUpstream4xx(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusBadRequest,
+			Header:     http.Header{"Content-Type": {"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"bad request"}}`)),
+		}, nil
+	})}
+	cache := &minimaxQuotaCacheStub{allowed: true, used: 1}
+	svc := NewMiniMaxGatewayService(client, NewMiniMaxQuotaService(cache, nil), nil)
+	c, _ := newMiniMaxGatewayTestContext()
+
+	_, err := svc.ForwardMessages(context.Background(), c, miniMaxGatewayTestAccount(""), miniMaxMessagesBody(false), "req-4xx")
+	if err != nil {
+		t.Fatalf("ForwardMessages error = %v", err)
+	}
+	if cache.rollbackCalls != 0 {
+		t.Fatalf("unexpected rollback calls=%d", cache.rollbackCalls)
+	}
+}
+
+func TestMiniMaxGatewayServiceRejectsOversizedNonStreamResponseAndRollsBack(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": {"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(strings.Repeat("x", miniMaxNonStreamResponseMaxBytes+1))),
+		}, nil
+	})}
+	cache := &minimaxQuotaCacheStub{allowed: true, used: 1}
+	svc := NewMiniMaxGatewayService(client, NewMiniMaxQuotaService(cache, nil), nil)
+	c, _ := newMiniMaxGatewayTestContext()
+
+	_, err := svc.ForwardMessages(context.Background(), c, miniMaxGatewayTestAccount(""), miniMaxMessagesBody(false), "req-large")
+	if err == nil {
+		t.Fatalf("expected oversized response error")
+	}
+	if cache.rollbackCalls != 1 || cache.rollbackRequestID != "req-large" {
+		t.Fatalf("rollback call = calls %d requestID %q", cache.rollbackCalls, cache.rollbackRequestID)
 	}
 }
 
@@ -228,6 +360,72 @@ func TestMiniMaxGatewayServiceForwardsStreamingResponseAndParsesUsage(t *testing
 	}
 	if result.Usage.InputTokens != 5 || result.Usage.OutputTokens != 9 || result.Usage.CacheCreationInputTokens != 2 {
 		t.Fatalf("usage = %+v", result.Usage)
+	}
+}
+
+func TestMiniMaxGatewayServiceStreamingRelaysOriginalLineEndings(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": {"text/event-stream"}},
+			Body: io.NopCloser(bytes.NewBufferString(
+				"event: message_start\r\n" +
+					"data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":1}}}\r\n" +
+					"\r\n",
+			)),
+		}, nil
+	})}
+	cache := &minimaxQuotaCacheStub{allowed: true, used: 1}
+	svc := NewMiniMaxGatewayService(client, NewMiniMaxQuotaService(cache, nil), nil)
+	c, rec := newMiniMaxGatewayTestContext()
+
+	result, err := svc.ForwardMessages(context.Background(), c, miniMaxGatewayTestAccount(""), miniMaxMessagesBody(true), "req-crlf")
+	if err != nil {
+		t.Fatalf("ForwardMessages stream error = %v", err)
+	}
+	if got := rec.Body.String(); !strings.Contains(got, "\r\n\r\n") {
+		t.Fatalf("expected CRLF framing, got %q", got)
+	}
+	if result.Usage.InputTokens != 1 {
+		t.Fatalf("usage = %+v", result.Usage)
+	}
+}
+
+type errorAfterReader struct {
+	data []byte
+	done bool
+}
+
+func (r *errorAfterReader) Read(p []byte) (int, error) {
+	if !r.done {
+		r.done = true
+		return copy(p, r.data), nil
+	}
+	return 0, fmt.Errorf("read failed")
+}
+
+func (r *errorAfterReader) Close() error {
+	return nil
+}
+
+func TestMiniMaxGatewayServiceRollsBackQuotaOnStreamReadError(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": {"text/event-stream"}},
+			Body:       &errorAfterReader{data: []byte("data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":1}}}\n")},
+		}, nil
+	})}
+	cache := &minimaxQuotaCacheStub{allowed: true, used: 1}
+	svc := NewMiniMaxGatewayService(client, NewMiniMaxQuotaService(cache, nil), nil)
+	c, _ := newMiniMaxGatewayTestContext()
+
+	_, err := svc.ForwardMessages(context.Background(), c, miniMaxGatewayTestAccount(""), miniMaxMessagesBody(true), "req-stream-error")
+	if err == nil {
+		t.Fatalf("expected stream read error")
+	}
+	if cache.rollbackCalls != 1 || cache.rollbackRequestID != "req-stream-error" {
+		t.Fatalf("rollback call = calls %d requestID %q", cache.rollbackCalls, cache.rollbackRequestID)
 	}
 }
 
