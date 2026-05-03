@@ -65,6 +65,7 @@ func (s *MiniMaxQuotaCacheSuite) TestReserveRejectsInvalidInputsWithoutWritingRe
 		{name: "negative_limit", accountID: 1101, requestID: "req-1", limit: -1, windowSeconds: 60},
 		{name: "zero_window", accountID: 1101, requestID: "req-1", limit: 1, windowSeconds: 0},
 		{name: "negative_window", accountID: 1101, requestID: "req-1", limit: 1, windowSeconds: -60},
+		{name: "too_large_window", accountID: 1101, requestID: "req-1", limit: 1, windowSeconds: minimaxQuotaMaxWindowSeconds + 1},
 	}
 
 	for _, tt := range tests {
@@ -252,6 +253,7 @@ func (s *MiniMaxQuotaCacheSuite) TestCountRejectsInvalidInputsWithoutMutatingRed
 		{name: "negative_account_id", accountID: -1, windowSeconds: 60},
 		{name: "zero_window", accountID: accountID, windowSeconds: 0},
 		{name: "negative_window", accountID: accountID, windowSeconds: -60},
+		{name: "too_large_window", accountID: accountID, windowSeconds: minimaxQuotaMaxWindowSeconds + 1},
 	}
 
 	for _, tt := range tests {

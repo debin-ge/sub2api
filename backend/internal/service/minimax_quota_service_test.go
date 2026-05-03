@@ -117,22 +117,46 @@ func TestMiniMaxQuotaServiceReserveFailsClosedOnCacheError(t *testing.T) {
 }
 
 func TestMiniMaxQuotaServiceReserveRejectsInvalidAccount(t *testing.T) {
-	cache := &minimaxQuotaCacheStub{allowed: true}
-	svc := NewMiniMaxQuotaService(cache, nil)
-
-	decision, err := svc.ReserveTextRequest(context.Background(), &Account{
-		ID:       101,
-		Platform: PlatformOpenAI,
-	}, "req-1")
-
-	if err == nil {
-		t.Fatalf("expected invalid account error")
+	tests := []struct {
+		name    string
+		account *Account
+	}{
+		{
+			name: "wrong_platform",
+			account: &Account{
+				ID:       101,
+				Platform: PlatformOpenAI,
+			},
+		},
+		{
+			name: "zero_account_id",
+			account: &Account{
+				ID:       0,
+				Platform: PlatformMiniMax,
+			},
+		},
+		{
+			name:    "nil_account",
+			account: nil,
+		},
 	}
-	if decision.Allowed || decision.Reason != "invalid_minimax_account" {
-		t.Fatalf("decision = %+v", decision)
-	}
-	if cache.reserveCalls != 0 {
-		t.Fatalf("expected no cache call, got %d", cache.reserveCalls)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cache := &minimaxQuotaCacheStub{allowed: true}
+			svc := NewMiniMaxQuotaService(cache, nil)
+
+			decision, err := svc.ReserveTextRequest(context.Background(), tt.account, "req-1")
+			if err == nil {
+				t.Fatalf("expected invalid account error")
+			}
+			if decision.Allowed || decision.Reason != "invalid_minimax_account" {
+				t.Fatalf("decision = %+v", decision)
+			}
+			if cache.reserveCalls != 0 {
+				t.Fatalf("expected no cache call, got %d", cache.reserveCalls)
+			}
+		})
 	}
 }
 
@@ -192,6 +216,46 @@ func TestMiniMaxQuotaServiceReserveUsesDefaultTextLimit(t *testing.T) {
 	}
 }
 
+func TestMiniMaxQuotaServiceReserveRejectsInvalidTextLimit(t *testing.T) {
+	tests := []struct {
+		name  string
+		value any
+	}{
+		{name: "nil_value", value: nil},
+		{name: "bad_string", value: "bad"},
+		{name: "zero_string", value: "0"},
+		{name: "negative_string", value: "-1"},
+		{name: "zero_int", value: 0},
+		{name: "negative_int", value: -1},
+		{name: "fractional_float", value: 1.5},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cache := &minimaxQuotaCacheStub{allowed: true, used: 1}
+			svc := NewMiniMaxQuotaService(cache, nil)
+
+			decision, err := svc.ReserveTextRequest(context.Background(), &Account{
+				ID:       101,
+				Platform: PlatformMiniMax,
+				Extra: map[string]any{
+					"text_5h_limit": tt.value,
+				},
+			}, "req-1")
+
+			if err == nil {
+				t.Fatalf("expected invalid limit error")
+			}
+			if decision.Allowed || decision.Reason != "invalid_quota_limit" {
+				t.Fatalf("decision = %+v", decision)
+			}
+			if cache.reserveCalls != 0 {
+				t.Fatalf("expected no cache call, got %d", cache.reserveCalls)
+			}
+		})
+	}
+}
+
 func TestMiniMaxQuotaServiceReserveReadsTextLimitFromAccountExtra(t *testing.T) {
 	cache := &minimaxQuotaCacheStub{allowed: true, used: 1}
 	svc := NewMiniMaxQuotaService(cache, nil)
@@ -224,5 +288,32 @@ func TestMiniMaxQuotaServiceRollbackCallsCache(t *testing.T) {
 	}
 	if cache.rollbackCalls != 1 || cache.rollbackAccountID != 101 || cache.rollbackRequestID != "req-1" {
 		t.Fatalf("rollback call = calls %d accountID %d requestID %q", cache.rollbackCalls, cache.rollbackAccountID, cache.rollbackRequestID)
+	}
+}
+
+func TestMiniMaxQuotaServiceRollbackNoopsWithoutCacheOrRequestID(t *testing.T) {
+	if err := (*MiniMaxQuotaService)(nil).RollbackTextRequest(context.Background(), 101, "req-1"); err != nil {
+		t.Fatalf("nil service rollback error = %v", err)
+	}
+	if err := NewMiniMaxQuotaService(nil, nil).RollbackTextRequest(context.Background(), 101, "req-1"); err != nil {
+		t.Fatalf("nil cache rollback error = %v", err)
+	}
+
+	cache := &minimaxQuotaCacheStub{}
+	svc := NewMiniMaxQuotaService(cache, nil)
+	if err := svc.RollbackTextRequest(context.Background(), 101, " \t\n "); err != nil {
+		t.Fatalf("blank request id rollback error = %v", err)
+	}
+	if cache.rollbackCalls != 0 {
+		t.Fatalf("expected no rollback call, got %d", cache.rollbackCalls)
+	}
+}
+
+func TestMiniMaxQuotaServiceRollbackPropagatesCacheError(t *testing.T) {
+	cache := &minimaxQuotaCacheStub{rollbackErr: errors.New("redis down")}
+	svc := NewMiniMaxQuotaService(cache, nil)
+
+	if err := svc.RollbackTextRequest(context.Background(), 101, "req-1"); err == nil {
+		t.Fatalf("expected rollback cache error")
 	}
 }

@@ -2,7 +2,10 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"math"
+	"strconv"
 	"strings"
 )
 
@@ -26,7 +29,7 @@ func NewMiniMaxQuotaService(cache MiniMaxQuotaCache, client *MiniMaxTokenPlanCli
 }
 
 func (s *MiniMaxQuotaService) ReserveTextRequest(ctx context.Context, account *Account, requestID string) (*MiniMaxQuotaDecision, error) {
-	if account == nil || account.Platform != PlatformMiniMax {
+	if account == nil || account.Platform != PlatformMiniMax || account.ID <= 0 {
 		return &MiniMaxQuotaDecision{Allowed: false, Reason: "invalid_minimax_account"}, fmt.Errorf("invalid minimax account")
 	}
 	if s == nil || s.cache == nil {
@@ -38,9 +41,9 @@ func (s *MiniMaxQuotaService) ReserveTextRequest(ctx context.Context, account *A
 		return &MiniMaxQuotaDecision{Allowed: false, Reason: "request_id_required"}, fmt.Errorf("request id required")
 	}
 
-	limit := int64FromAny(account.Extra["text_5h_limit"])
-	if limit <= 0 {
-		limit = MiniMaxTokenPlanDefaultText5hLimit
+	limit, err := resolveMiniMaxText5hLimit(account)
+	if err != nil {
+		return &MiniMaxQuotaDecision{Allowed: false, Reason: "invalid_quota_limit"}, err
 	}
 
 	allowed, used, err := s.cache.ReserveTextRequest(ctx, account.ID, requestID, limit, MiniMaxTokenPlanTextWindowSeconds)
@@ -65,4 +68,43 @@ func (s *MiniMaxQuotaService) RollbackTextRequest(ctx context.Context, accountID
 	}
 
 	return s.cache.RollbackTextRequest(ctx, accountID, requestID)
+}
+
+func resolveMiniMaxText5hLimit(account *Account) (int64, error) {
+	if account == nil || account.Extra == nil {
+		return MiniMaxTokenPlanDefaultText5hLimit, nil
+	}
+	value, ok := account.Extra["text_5h_limit"]
+	if !ok {
+		return MiniMaxTokenPlanDefaultText5hLimit, nil
+	}
+	limit, ok := miniMaxQuotaLimitFromAny(value)
+	if !ok || limit <= 0 {
+		return 0, fmt.Errorf("invalid minimax text_5h_limit")
+	}
+	return limit, nil
+}
+
+func miniMaxQuotaLimitFromAny(value any) (int64, bool) {
+	switch v := value.(type) {
+	case int:
+		return int64(v), true
+	case int64:
+		return v, true
+	case int32:
+		return int64(v), true
+	case float64:
+		if v > float64(math.MaxInt64) || v < float64(math.MinInt64) || math.Trunc(v) != v {
+			return 0, false
+		}
+		return int64(v), true
+	case json.Number:
+		i, err := v.Int64()
+		return i, err == nil
+	case string:
+		i, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+		return i, err == nil
+	default:
+		return 0, false
+	}
 }
