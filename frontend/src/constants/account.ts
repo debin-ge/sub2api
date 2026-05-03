@@ -14,6 +14,9 @@ export const QUOTA_RESET_MODE_ROLLING = 'rolling' as const
 export const QUOTA_RESET_MODE_FIXED = 'fixed' as const
 export type QuotaResetMode = typeof QUOTA_RESET_MODE_ROLLING | typeof QUOTA_RESET_MODE_FIXED
 
+export const MINIMAX_ANTHROPIC_BASE_URL = 'https://api.minimax.io/anthropic'
+export const MINIMAX_OPENAI_BASE_URL = 'https://api.minimax.io/v1'
+
 /** Vertex AI location options for Service Account accounts */
 export const VERTEX_LOCATION_OPTIONS = [
   {
