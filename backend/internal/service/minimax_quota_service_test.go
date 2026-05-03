@@ -136,6 +136,13 @@ func TestMiniMaxQuotaServiceReserveRejectsInvalidAccount(t *testing.T) {
 			},
 		},
 		{
+			name: "negative_account_id",
+			account: &Account{
+				ID:       -1,
+				Platform: PlatformMiniMax,
+			},
+		},
+		{
 			name:    "nil_account",
 			account: nil,
 		},
@@ -228,6 +235,7 @@ func TestMiniMaxQuotaServiceReserveRejectsInvalidTextLimit(t *testing.T) {
 		{name: "zero_int", value: 0},
 		{name: "negative_int", value: -1},
 		{name: "fractional_float", value: 1.5},
+		{name: "over_int64_float", value: miniMaxQuotaMaxInt64ExclusiveFloat},
 	}
 
 	for _, tt := range tests {

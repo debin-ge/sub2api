@@ -11,6 +11,7 @@ import (
 
 const MiniMaxTokenPlanTextWindowSeconds int64 = 5 * 60 * 60
 const MiniMaxTokenPlanDefaultText5hLimit int64 = 4500
+const miniMaxQuotaMaxInt64ExclusiveFloat = 9223372036854775808.0
 
 type MiniMaxQuotaDecision struct {
 	Allowed bool
@@ -94,7 +95,7 @@ func miniMaxQuotaLimitFromAny(value any) (int64, bool) {
 	case int32:
 		return int64(v), true
 	case float64:
-		if v > float64(math.MaxInt64) || v < float64(math.MinInt64) || math.Trunc(v) != v {
+		if v < 1 || v >= miniMaxQuotaMaxInt64ExclusiveFloat || math.Trunc(v) != v {
 			return 0, false
 		}
 		return int64(v), true
