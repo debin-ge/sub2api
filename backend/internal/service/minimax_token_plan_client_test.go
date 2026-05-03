@@ -13,6 +13,9 @@ func TestMiniMaxTokenPlanClientFetchRemainsUsesBearerAuth(t *testing.T) {
 		if got := r.Header.Get("Authorization"); got != "Bearer sk-cp-test" {
 			t.Fatalf("Authorization = %q", got)
 		}
+		if got := r.Header.Get("Accept"); got != "application/json" {
+			t.Fatalf("Accept = %q", got)
+		}
 		if r.URL.Path != "/v1/token_plan/remains" {
 			t.Fatalf("path = %q", r.URL.Path)
 		}
@@ -87,6 +90,29 @@ func TestMiniMaxTokenPlanClientFetchRemainsSanitizesNon2xxErrorBody(t *testing.T
 	}
 }
 
+func TestMiniMaxTokenPlanClientFetchRemainsRedactsAPIKeyFromNon2xxErrorBody(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "proxy echoed Authorization: Bearer sk-cp-test for key sk-cp-test", http.StatusBadGateway)
+	}))
+	defer srv.Close()
+
+	client := NewMiniMaxTokenPlanClient(srv.URL, srv.Client())
+	_, err := client.FetchRemains(context.Background(), "sk-cp-test")
+	if err == nil {
+		t.Fatalf("expected status error")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "minimax remains status 502") {
+		t.Fatalf("error = %q", msg)
+	}
+	if strings.Contains(msg, "sk-cp-test") || strings.Contains(msg, "Bearer sk-cp-test") {
+		t.Fatalf("expected redacted api key in error: %q", msg)
+	}
+	if !strings.Contains(msg, "[REDACTED_API_KEY]") {
+		t.Fatalf("expected redaction marker in error: %q", msg)
+	}
+}
+
 func TestMiniMaxTokenPlanClientFetchRemainsRejectsNonZeroBodyCode(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -108,6 +134,33 @@ func TestMiniMaxTokenPlanClientFetchRemainsRejectsNonZeroBodyCode(t *testing.T) 
 	}
 	if !strings.Contains(msg, "quota exhausted") {
 		t.Fatalf("error = %q", msg)
+	}
+}
+
+func TestMiniMaxTokenPlanClientFetchRemainsRedactsAPIKeyFromBodyCodeError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":1001,"msg":"invalid Bearer sk-cp-test for key sk-cp-test"}`))
+	}))
+	defer srv.Close()
+
+	client := NewMiniMaxTokenPlanClient(srv.URL, srv.Client())
+	remains, err := client.FetchRemains(context.Background(), "sk-cp-test")
+	if err == nil {
+		t.Fatalf("expected body code error")
+	}
+	if remains != nil {
+		t.Fatalf("expected no remains on error")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "minimax remains code 1001") {
+		t.Fatalf("error = %q", msg)
+	}
+	if strings.Contains(msg, "sk-cp-test") || strings.Contains(msg, "Bearer sk-cp-test") {
+		t.Fatalf("expected redacted api key in error: %q", msg)
+	}
+	if !strings.Contains(msg, "[REDACTED_API_KEY]") {
+		t.Fatalf("expected redaction marker in error: %q", msg)
 	}
 }
 

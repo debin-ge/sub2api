@@ -12,6 +12,7 @@ import (
 )
 
 const miniMaxRemainsErrorBodyMaxBytes = 512
+const miniMaxAPIKeyRedaction = "[REDACTED_API_KEY]"
 
 type MiniMaxTokenPlanRemains struct {
 	Text5hLimit     int64
@@ -59,7 +60,7 @@ func (c *MiniMaxTokenPlanClient) FetchRemains(ctx context.Context, apiKey string
 		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("minimax remains status %d: %s", resp.StatusCode, sanitizeMiniMaxErrorBody(body))
+		return nil, fmt.Errorf("minimax remains status %d: %s", resp.StatusCode, sanitizeMiniMaxErrorBody(body, apiKey))
 	}
 
 	var raw map[string]any
@@ -69,11 +70,11 @@ func (c *MiniMaxTokenPlanClient) FetchRemains(ctx context.Context, apiKey string
 	if codeValue, ok := raw["code"]; ok {
 		code := int64FromAny(codeValue)
 		if code != 0 {
-			message := sanitizeMiniMaxErrorBody(body)
+			message := sanitizeMiniMaxErrorBody(body, apiKey)
 			if msg, ok := raw["msg"]; ok {
-				message = sanitizeMiniMaxErrorBody([]byte(fmt.Sprint(msg)))
+				message = sanitizeMiniMaxErrorBody([]byte(fmt.Sprint(msg)), apiKey)
 			} else if msg, ok := raw["message"]; ok {
-				message = sanitizeMiniMaxErrorBody([]byte(fmt.Sprint(msg)))
+				message = sanitizeMiniMaxErrorBody([]byte(fmt.Sprint(msg)), apiKey)
 			}
 			return nil, fmt.Errorf("minimax remains code %d: %s", code, message)
 		}
@@ -87,10 +88,14 @@ func (c *MiniMaxTokenPlanClient) FetchRemains(ctx context.Context, apiKey string
 	return remains, nil
 }
 
-func sanitizeMiniMaxErrorBody(body []byte) string {
+func sanitizeMiniMaxErrorBody(body []byte, apiKey string) string {
 	sanitized := strings.Join(strings.Fields(string(body)), " ")
 	if sanitized == "" {
 		return "empty upstream error body"
+	}
+	if apiKey != "" {
+		sanitized = strings.ReplaceAll(sanitized, "Bearer "+apiKey, "Bearer "+miniMaxAPIKeyRedaction)
+		sanitized = strings.ReplaceAll(sanitized, apiKey, miniMaxAPIKeyRedaction)
 	}
 	if len(sanitized) > miniMaxRemainsErrorBodyMaxBytes {
 		return sanitized[:miniMaxRemainsErrorBodyMaxBytes] + "..."
