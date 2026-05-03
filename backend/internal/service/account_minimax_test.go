@@ -7,9 +7,9 @@ func TestAccountMiniMaxHelpers(t *testing.T) {
 		Platform: PlatformMiniMax,
 		Type:     AccountTypeAPIKey,
 		Credentials: map[string]any{
-			"api_key":            "sk-cp-test",
-			"base_url_anthropic": "https://api.minimax.io/anthropic",
-			"base_url_openai":    "https://api.minimax.io/v1",
+			"api_key":            "  sk-cp-test \n",
+			"base_url_anthropic": " https://proxy.example/minimax/anthropic/ ",
+			"base_url_openai":    " https://proxy.example/minimax/openai/ ",
 			"model_mapping": map[string]any{
 				"claude-sonnet-4-5": "MiniMax-M2.7",
 			},
@@ -25,10 +25,10 @@ func TestAccountMiniMaxHelpers(t *testing.T) {
 	if got := acc.GetMiniMaxAPIKey(); got != "sk-cp-test" {
 		t.Fatalf("api key = %q", got)
 	}
-	if got := acc.GetMiniMaxAnthropicBaseURL(); got != "https://api.minimax.io/anthropic" {
+	if got := acc.GetMiniMaxAnthropicBaseURL(); got != "https://proxy.example/minimax/anthropic" {
 		t.Fatalf("anthropic base url = %q", got)
 	}
-	if got := acc.GetMiniMaxOpenAIBaseURL(); got != "https://api.minimax.io/v1" {
+	if got := acc.GetMiniMaxOpenAIBaseURL(); got != "https://proxy.example/minimax/openai" {
 		t.Fatalf("openai base url = %q", got)
 	}
 	if got := acc.GetMiniMaxMappedModel("claude-sonnet-4-5"); got != "MiniMax-M2.7" {
