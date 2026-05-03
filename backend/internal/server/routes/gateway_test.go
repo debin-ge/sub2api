@@ -110,6 +110,10 @@ func TestGatewayRoutesMiniMaxUnsupportedEndpointsReturnNotFound(t *testing.T) {
 		"/backend-api/codex/responses/compact",
 		"/v1/chat/completions",
 		"/chat/completions",
+		"/v1/images/generations",
+		"/v1/images/edits",
+		"/images/generations",
+		"/images/edits",
 	} {
 		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"model":"claude-sonnet-4-5"}`))
 		req.Header.Set("Content-Type", "application/json")
@@ -118,6 +122,7 @@ func TestGatewayRoutesMiniMaxUnsupportedEndpointsReturnNotFound(t *testing.T) {
 		router.ServeHTTP(w, req)
 		require.Equal(t, http.StatusNotFound, w.Code, "path=%s should be MiniMax unsupported", path)
 		require.Contains(t, w.Body.String(), "not_found_error", "path=%s", path)
+		require.Contains(t, w.Body.String(), "MiniMax gateway supports /v1/messages only", "path=%s", path)
 	}
 }
 
@@ -137,5 +142,6 @@ func TestGatewayRoutesMiniMaxUnsupportedGetEndpointsReturnNotFound(t *testing.T)
 		router.ServeHTTP(w, req)
 		require.Equal(t, http.StatusNotFound, w.Code, "path=%s should be MiniMax unsupported", path)
 		require.Contains(t, w.Body.String(), "not_found_error", "path=%s", path)
+		require.Contains(t, w.Body.String(), "MiniMax gateway supports /v1/messages only", "path=%s", path)
 	}
 }
