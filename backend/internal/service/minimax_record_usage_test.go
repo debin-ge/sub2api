@@ -85,6 +85,41 @@ func TestMiniMaxRecordUsageMissingPricingReturnsBillingError(t *testing.T) {
 	require.Equal(t, 0, subRepo.incrementCalls)
 }
 
+func TestMiniMaxRecordUsageMissingPricingWithNilAPIKeyDoesNotPanic(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	userRepo := &openAIRecordUsageUserRepoStub{}
+	subRepo := &openAIRecordUsageSubRepoStub{}
+	svc := newMiniMaxGatewayRecordUsageServiceForTest(usageRepo, userRepo, subRepo)
+	svc.resolver = NewModelPricingResolver(nil, svc.billingService)
+
+	require.NotPanics(t, func() {
+		err := svc.RecordUsage(context.Background(), &RecordUsageInput{
+			Result: &ForwardResult{
+				RequestID:     "minimax-missing-pricing-nil-api-key",
+				Model:         "claude-sonnet-4-5",
+				UpstreamModel: "MiniMax-M2.7",
+				Usage: ClaudeUsage{
+					InputTokens:  11,
+					OutputTokens: 7,
+				},
+				Duration: time.Second,
+			},
+			APIKey: nil,
+			User:   &User{ID: 99},
+			Account: &Account{
+				ID:       101,
+				Platform: PlatformMiniMax,
+				Type:     AccountTypeAPIKey,
+			},
+		})
+		require.Error(t, err)
+		require.Contains(t, strings.ToLower(err.Error()), "pricing")
+	})
+	require.Nil(t, usageRepo.lastLog)
+	require.Equal(t, 0, userRepo.deductCalls)
+	require.Equal(t, 0, subRepo.incrementCalls)
+}
+
 func TestMiniMaxRecordUsageUsesUpstreamModelWhenPricingIsConfigured(t *testing.T) {
 	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
 	userRepo := &openAIRecordUsageUserRepoStub{}
