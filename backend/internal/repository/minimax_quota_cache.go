@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/redis/go-redis/v9"
@@ -17,6 +18,20 @@ var (
 		local requestID = ARGV[1]
 		local limit = tonumber(ARGV[2])
 		local windowSeconds = tonumber(ARGV[3])
+		local accountID = tonumber(ARGV[4])
+
+		if accountID == nil or accountID <= 0 then
+			return redis.error_reply('invalid minimax quota account id')
+		end
+		if requestID == nil or string.match(requestID, '^%s*$') then
+			return redis.error_reply('invalid minimax quota request id')
+		end
+		if limit == nil or limit <= 0 then
+			return redis.error_reply('invalid minimax quota limit')
+		end
+		if windowSeconds == nil or windowSeconds <= 0 then
+			return redis.error_reply('invalid minimax quota window seconds')
+		end
 
 		local timeResult = redis.call('TIME')
 		local now = tonumber(timeResult[1])
@@ -42,6 +57,14 @@ var (
 	minimaxQuotaCountScript = redis.NewScript(`
 		local key = KEYS[1]
 		local windowSeconds = tonumber(ARGV[1])
+		local accountID = tonumber(ARGV[2])
+
+		if accountID == nil or accountID <= 0 then
+			return redis.error_reply('invalid minimax quota account id')
+		end
+		if windowSeconds == nil or windowSeconds <= 0 then
+			return redis.error_reply('invalid minimax quota window seconds')
+		end
 
 		local timeResult = redis.call('TIME')
 		local now = tonumber(timeResult[1])
@@ -67,7 +90,20 @@ func NewMiniMaxQuotaCache(rdb *redis.Client) service.MiniMaxQuotaCache {
 }
 
 func (c *minimaxQuotaCache) ReserveTextRequest(ctx context.Context, accountID int64, requestID string, limit int64, windowSeconds int64) (bool, int64, error) {
-	result, err := minimaxQuotaReserveScript.Run(ctx, c.rdb, []string{minimaxQuotaTextRequestsKey(accountID)}, requestID, limit, windowSeconds).Result()
+	if err := validateMiniMaxQuotaAccountID(accountID); err != nil {
+		return false, 0, err
+	}
+	if err := validateMiniMaxQuotaRequestID(requestID); err != nil {
+		return false, 0, err
+	}
+	if limit <= 0 {
+		return false, 0, fmt.Errorf("invalid minimax quota limit: %d", limit)
+	}
+	if windowSeconds <= 0 {
+		return false, 0, fmt.Errorf("invalid minimax quota window seconds: %d", windowSeconds)
+	}
+
+	result, err := minimaxQuotaReserveScript.Run(ctx, c.rdb, []string{minimaxQuotaTextRequestsKey(accountID)}, requestID, limit, windowSeconds, accountID).Result()
 	if err != nil {
 		return false, 0, err
 	}
@@ -90,15 +126,43 @@ func (c *minimaxQuotaCache) ReserveTextRequest(ctx context.Context, accountID in
 }
 
 func (c *minimaxQuotaCache) RollbackTextRequest(ctx context.Context, accountID int64, requestID string) error {
+	if err := validateMiniMaxQuotaAccountID(accountID); err != nil {
+		return err
+	}
+	if err := validateMiniMaxQuotaRequestID(requestID); err != nil {
+		return err
+	}
+
 	return c.rdb.ZRem(ctx, minimaxQuotaTextRequestsKey(accountID), requestID).Err()
 }
 
 func (c *minimaxQuotaCache) CountTextRequests(ctx context.Context, accountID int64, windowSeconds int64) (int64, error) {
-	return minimaxQuotaCountScript.Run(ctx, c.rdb, []string{minimaxQuotaTextRequestsKey(accountID)}, windowSeconds).Int64()
+	if err := validateMiniMaxQuotaAccountID(accountID); err != nil {
+		return 0, err
+	}
+	if windowSeconds <= 0 {
+		return 0, fmt.Errorf("invalid minimax quota window seconds: %d", windowSeconds)
+	}
+
+	return minimaxQuotaCountScript.Run(ctx, c.rdb, []string{minimaxQuotaTextRequestsKey(accountID)}, windowSeconds, accountID).Int64()
 }
 
 func minimaxQuotaTextRequestsKey(accountID int64) string {
 	return minimaxQuotaTextRequestsKeyPrefix + strconv.FormatInt(accountID, 10) + ":text:reqs"
+}
+
+func validateMiniMaxQuotaAccountID(accountID int64) error {
+	if accountID <= 0 {
+		return fmt.Errorf("invalid minimax quota account id: %d", accountID)
+	}
+	return nil
+}
+
+func validateMiniMaxQuotaRequestID(requestID string) error {
+	if strings.TrimSpace(requestID) == "" {
+		return fmt.Errorf("invalid minimax quota request id")
+	}
+	return nil
 }
 
 func redisInt64(value interface{}) (int64, error) {
