@@ -17,6 +17,11 @@ type dataResponse struct {
 	Data dataPayload `json:"data"`
 }
 
+type importDataResponse struct {
+	Code int              `json:"code"`
+	Data DataImportResult `json:"data"`
+}
+
 type dataPayload struct {
 	Type     string        `json:"type"`
 	Version  int           `json:"version"`
@@ -274,4 +279,85 @@ func TestImportDataReusesProxyAndSkipsDefaultGroup(t *testing.T) {
 	require.Len(t, adminSvc.createdProxies, 0)
 	require.Len(t, adminSvc.createdAccounts, 1)
 	require.True(t, adminSvc.createdAccounts[0].SkipDefaultGroupBind)
+}
+
+func TestAccountDataImportAcceptsMiniMaxAPIKey(t *testing.T) {
+	router, adminSvc := setupAccountDataRouter()
+
+	dataPayload := map[string]any{
+		"data": map[string]any{
+			"type":    dataType,
+			"version": dataVersion,
+			"proxies": []map[string]any{},
+			"accounts": []map[string]any{
+				{
+					"name":     "minimax-token-plan",
+					"platform": "minimax",
+					"type":     "apikey",
+					"credentials": map[string]any{
+						"api_key":            "sk-cp-test",
+						"base_url_anthropic": "https://api.minimax.io/anthropic",
+						"base_url_openai":    "https://api.minimax.io/v1",
+					},
+				},
+			},
+		},
+	}
+
+	body, err := json.Marshal(dataPayload)
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/data", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	var resp importDataResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Equal(t, 0, resp.Code)
+	require.Equal(t, 1, resp.Data.AccountCreated)
+	require.Equal(t, 0, resp.Data.AccountFailed)
+	require.Len(t, adminSvc.createdAccounts, 1)
+	require.Equal(t, service.PlatformMiniMax, adminSvc.createdAccounts[0].Platform)
+	require.Equal(t, service.AccountTypeAPIKey, adminSvc.createdAccounts[0].Type)
+}
+
+func TestAccountDataImportRejectsMiniMaxWithoutAPIKey(t *testing.T) {
+	router, adminSvc := setupAccountDataRouter()
+
+	dataPayload := map[string]any{
+		"data": map[string]any{
+			"type":    dataType,
+			"version": dataVersion,
+			"proxies": []map[string]any{},
+			"accounts": []map[string]any{
+				{
+					"name":     "minimax-token-plan",
+					"platform": "minimax",
+					"type":     "apikey",
+					"credentials": map[string]any{
+						"api_key": " ",
+					},
+				},
+			},
+		},
+	}
+
+	body, err := json.Marshal(dataPayload)
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/data", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	var resp importDataResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Equal(t, 0, resp.Code)
+	require.Equal(t, 0, resp.Data.AccountCreated)
+	require.Equal(t, 1, resp.Data.AccountFailed)
+	require.Empty(t, adminSvc.createdAccounts)
+	require.Contains(t, resp.Data.Errors[0].Message, "api_key")
 }
