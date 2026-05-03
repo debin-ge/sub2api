@@ -11,6 +11,8 @@ import (
 	"time"
 )
 
+const miniMaxRemainsErrorBodyMaxBytes = 512
+
 type MiniMaxTokenPlanRemains struct {
 	Text5hLimit     int64
 	Text5hRemaining int64
@@ -57,12 +59,24 @@ func (c *MiniMaxTokenPlanClient) FetchRemains(ctx context.Context, apiKey string
 		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("minimax remains status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return nil, fmt.Errorf("minimax remains status %d: %s", resp.StatusCode, sanitizeMiniMaxErrorBody(body))
 	}
 
 	var raw map[string]any
 	if err := json.Unmarshal(body, &raw); err != nil {
 		return nil, fmt.Errorf("decode minimax remains: %w", err)
+	}
+	if codeValue, ok := raw["code"]; ok {
+		code := int64FromAny(codeValue)
+		if code != 0 {
+			message := sanitizeMiniMaxErrorBody(body)
+			if msg, ok := raw["msg"]; ok {
+				message = sanitizeMiniMaxErrorBody([]byte(fmt.Sprint(msg)))
+			} else if msg, ok := raw["message"]; ok {
+				message = sanitizeMiniMaxErrorBody([]byte(fmt.Sprint(msg)))
+			}
+			return nil, fmt.Errorf("minimax remains code %d: %s", code, message)
+		}
 	}
 
 	remains := &MiniMaxTokenPlanRemains{Raw: raw}
@@ -71,6 +85,17 @@ func (c *MiniMaxTokenPlanClient) FetchRemains(ctx context.Context, apiKey string
 		remains.Text5hRemaining = int64FromAny(data["text_5h_remaining"])
 	}
 	return remains, nil
+}
+
+func sanitizeMiniMaxErrorBody(body []byte) string {
+	sanitized := strings.Join(strings.Fields(string(body)), " ")
+	if sanitized == "" {
+		return "empty upstream error body"
+	}
+	if len(sanitized) > miniMaxRemainsErrorBodyMaxBytes {
+		return sanitized[:miniMaxRemainsErrorBodyMaxBytes] + "..."
+	}
+	return sanitized
 }
 
 func int64FromAny(v any) int64 {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -53,6 +54,60 @@ func TestMiniMaxTokenPlanClientFetchRemainsParsesStringNumericFields(t *testing.
 	}
 	if remains.Text5hRemaining != 3200 {
 		t.Fatalf("Text5hRemaining = %d", remains.Text5hRemaining)
+	}
+}
+
+func TestMiniMaxTokenPlanClientFetchRemainsSanitizesNon2xxErrorBody(t *testing.T) {
+	longBody := "upstream failed\n" + strings.Repeat("x", 600)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, longBody, http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	client := NewMiniMaxTokenPlanClient(srv.URL, srv.Client())
+	remains, err := client.FetchRemains(context.Background(), "sk-cp-test")
+	if err == nil {
+		t.Fatalf("expected status error")
+	}
+	if remains != nil {
+		t.Fatalf("expected no remains on error")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "minimax remains status 500") {
+		t.Fatalf("error = %q", msg)
+	}
+	if strings.Contains(msg, "\n") {
+		t.Fatalf("expected sanitized error without newlines: %q", msg)
+	}
+	if strings.Contains(msg, longBody) {
+		t.Fatalf("expected truncated error body")
+	}
+	if !strings.Contains(msg, "...") {
+		t.Fatalf("expected truncation marker in error: %q", msg)
+	}
+}
+
+func TestMiniMaxTokenPlanClientFetchRemainsRejectsNonZeroBodyCode(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":1001,"message":"quota exhausted","data":{"text_5h_limit":4500,"text_5h_remaining":3200}}`))
+	}))
+	defer srv.Close()
+
+	client := NewMiniMaxTokenPlanClient(srv.URL, srv.Client())
+	remains, err := client.FetchRemains(context.Background(), "sk-cp-test")
+	if err == nil {
+		t.Fatalf("expected body code error")
+	}
+	if remains != nil {
+		t.Fatalf("expected no remains on error")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "minimax remains code 1001") {
+		t.Fatalf("error = %q", msg)
+	}
+	if !strings.Contains(msg, "quota exhausted") {
+		t.Fatalf("error = %q", msg)
 	}
 }
 
