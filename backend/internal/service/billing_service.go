@@ -253,6 +253,9 @@ func (s *BillingService) initFallbackPricing() {
 // getFallbackPricing 根据模型系列获取回退价格
 func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 	modelLower := strings.ToLower(model)
+	if pricing := s.fallbackPrices[modelLower]; pricing != nil {
+		return pricing
+	}
 
 	// 按模型系列匹配
 	if strings.Contains(modelLower, "opus") {

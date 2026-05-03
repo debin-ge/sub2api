@@ -8361,13 +8361,28 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 		multiplier = s.getUserGroupRateMultiplier(ctx, user.ID, *apiKey.GroupID, groupDefault)
 	}
 
+	accountRateMultiplier := account.BillingRateMultiplier()
+
 	// 确定计费模型
-	billingModel := forwardResultBillingModel(result.Model, result.UpstreamModel)
-	if input.BillingModelSource == BillingModelSourceChannelMapped && input.ChannelMappedModel != "" {
-		billingModel = input.ChannelMappedModel
+	billingModel := recordUsageBillingModel(result, account)
+	if !account.IsMiniMax() {
+		if input.BillingModelSource == BillingModelSourceChannelMapped && input.ChannelMappedModel != "" {
+			billingModel = input.ChannelMappedModel
+		}
+		if input.BillingModelSource == BillingModelSourceRequested && input.OriginalModel != "" {
+			billingModel = input.OriginalModel
+		}
 	}
-	if input.BillingModelSource == BillingModelSourceRequested && input.OriginalModel != "" {
-		billingModel = input.OriginalModel
+
+	// 判断计费方式：订阅模式 vs 余额模式
+	isSubscriptionBilling := subscription != nil && apiKey.Group != nil && apiKey.Group.IsSubscriptionType()
+	billingType := BillingTypeBalance
+	if isSubscriptionBilling {
+		billingType = BillingTypeSubscription
+	}
+
+	if err := s.validateMiniMaxUsagePricing(ctx, billingModel, apiKey, account, multiplier); err != nil {
+		return err
 	}
 
 	// 确定 RequestedModel（渠道映射前的原始模型）
@@ -8379,15 +8394,7 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 	// 计算费用
 	cost := s.calculateRecordUsageCost(ctx, result, apiKey, billingModel, multiplier, opts)
 
-	// 判断计费方式：订阅模式 vs 余额模式
-	isSubscriptionBilling := subscription != nil && apiKey.Group != nil && apiKey.Group.IsSubscriptionType()
-	billingType := BillingTypeBalance
-	if isSubscriptionBilling {
-		billingType = BillingTypeSubscription
-	}
-
 	// 创建使用日志
-	accountRateMultiplier := account.BillingRateMultiplier()
 	usageLog := s.buildRecordUsageLog(ctx, input, result, apiKey, user, account, subscription,
 		requestedModel, multiplier, accountRateMultiplier, billingType, cacheTTLOverridden, cost, opts)
 
@@ -8434,6 +8441,45 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 	writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.gateway")
 
 	return nil
+}
+
+func recordUsageBillingModel(result *ForwardResult, account *Account) string {
+	if result == nil {
+		return ""
+	}
+	if account.IsMiniMax() {
+		if upstreamModel := strings.TrimSpace(result.UpstreamModel); upstreamModel != "" {
+			return upstreamModel
+		}
+	}
+	return forwardResultBillingModel(result.Model, result.UpstreamModel)
+}
+
+func (s *GatewayService) validateMiniMaxUsagePricing(ctx context.Context, billingModel string, apiKey *APIKey, account *Account, multiplier float64) error {
+	if !account.IsMiniMax() || miniMaxUsagePricingMayBeZero(multiplier, account) {
+		return nil
+	}
+	billingModel = strings.TrimSpace(billingModel)
+	if billingModel == "" {
+		return fmt.Errorf("minimax usage billing model is required")
+	}
+	if s == nil || s.billingService == nil {
+		return fmt.Errorf("minimax usage billing service unavailable")
+	}
+	if s.resolveChannelPricing(ctx, billingModel, apiKey) != nil {
+		return nil
+	}
+	if _, err := s.billingService.GetModelPricing(billingModel); err != nil {
+		return fmt.Errorf("minimax model pricing missing for %q: %w", billingModel, err)
+	}
+	return nil
+}
+
+func miniMaxUsagePricingMayBeZero(multiplier float64, account *Account) bool {
+	if multiplier == 0 {
+		return true
+	}
+	return account != nil && account.RateMultiplier != nil && *account.RateMultiplier == 0
 }
 
 // calculateRecordUsageCost 根据请求类型和选项计算费用。
@@ -8581,12 +8627,18 @@ func (s *GatewayService) buildRecordUsageLog(
 ) *UsageLog {
 	durationMs := int(result.Duration.Milliseconds())
 	requestID := resolveUsageBillingRequestID(ctx, result.RequestID)
+	modelName := result.Model
+	if account.IsMiniMax() {
+		if upstreamModel := strings.TrimSpace(result.UpstreamModel); upstreamModel != "" {
+			modelName = upstreamModel
+		}
+	}
 	usageLog := &UsageLog{
 		UserID:                user.ID,
 		APIKeyID:              apiKey.ID,
 		AccountID:             account.ID,
 		RequestID:             requestID,
-		Model:                 result.Model,
+		Model:                 modelName,
 		RequestedModel:        requestedModel,
 		UpstreamModel:         optionalNonEqualStringPtr(result.UpstreamModel, result.Model),
 		ReasoningEffort:       result.ReasoningEffort,
