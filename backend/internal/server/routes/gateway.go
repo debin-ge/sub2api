@@ -80,8 +80,20 @@ func RegisterGatewayRoutes(
 			}
 			h.Gateway.CountTokens(c)
 		})
-		gateway.GET("/models", h.Gateway.Models)
-		gateway.GET("/usage", h.Gateway.Usage)
+		gateway.GET("/models", func(c *gin.Context) {
+			if getGroupPlatform(c) == service.PlatformMiniMax {
+				writeMiniMaxUnsupported(c, h)
+				return
+			}
+			h.Gateway.Models(c)
+		})
+		gateway.GET("/usage", func(c *gin.Context) {
+			if getGroupPlatform(c) == service.PlatformMiniMax {
+				writeMiniMaxUnsupported(c, h)
+				return
+			}
+			h.Gateway.Usage(c)
+		})
 		// OpenAI Responses API: auto-route based on group platform
 		gateway.POST("/responses", func(c *gin.Context) {
 			switch getGroupPlatform(c) {
@@ -105,7 +117,13 @@ func RegisterGatewayRoutes(
 			}
 			h.Gateway.Responses(c)
 		})
-		gateway.GET("/responses", h.OpenAIGateway.ResponsesWebSocket)
+		gateway.GET("/responses", func(c *gin.Context) {
+			if getGroupPlatform(c) == service.PlatformMiniMax {
+				writeMiniMaxUnsupported(c, h)
+				return
+			}
+			h.OpenAIGateway.ResponsesWebSocket(c)
+		})
 		// OpenAI Chat Completions API: auto-route based on group platform
 		gateway.POST("/chat/completions", func(c *gin.Context) {
 			switch getGroupPlatform(c) {
@@ -173,13 +191,25 @@ func RegisterGatewayRoutes(
 	}
 	r.POST("/responses", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, responsesHandler)
 	r.POST("/responses/*subpath", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, responsesHandler)
-	r.GET("/responses", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, h.OpenAIGateway.ResponsesWebSocket)
+	r.GET("/responses", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, func(c *gin.Context) {
+		if getGroupPlatform(c) == service.PlatformMiniMax {
+			writeMiniMaxUnsupported(c, h)
+			return
+		}
+		h.OpenAIGateway.ResponsesWebSocket(c)
+	})
 	codexDirect := r.Group("/backend-api/codex")
 	codexDirect.Use(bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic)
 	{
 		codexDirect.POST("/responses", responsesHandler)
 		codexDirect.POST("/responses/*subpath", responsesHandler)
-		codexDirect.GET("/responses", h.OpenAIGateway.ResponsesWebSocket)
+		codexDirect.GET("/responses", func(c *gin.Context) {
+			if getGroupPlatform(c) == service.PlatformMiniMax {
+				writeMiniMaxUnsupported(c, h)
+				return
+			}
+			h.OpenAIGateway.ResponsesWebSocket(c)
+		})
 	}
 	// OpenAI Chat Completions API（不带v1前缀的别名）— auto-route based on group platform
 	r.POST("/chat/completions", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, func(c *gin.Context) {

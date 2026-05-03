@@ -37,6 +37,8 @@ type miniMaxBillingEligibilityChecker interface {
 type miniMaxConcurrencyController interface {
 	IncrementWaitCount(ctx context.Context, userID int64, maxWait int) (bool, error)
 	DecrementWaitCount(ctx context.Context, userID int64)
+	IncrementAccountWaitCount(ctx context.Context, accountID int64, maxWait int) (bool, error)
+	DecrementAccountWaitCount(ctx context.Context, accountID int64)
 	AcquireUserSlotWithWait(c *gin.Context, userID int64, maxConcurrency int, isStream bool, streamStarted *bool) (func(), error)
 	AcquireAccountSlotWithWaitTimeout(c *gin.Context, accountID int64, maxConcurrency int, timeout time.Duration, isStream bool, streamStarted *bool) (func(), error)
 }
@@ -183,12 +185,12 @@ func (h *MiniMaxGatewayHandler) Messages(c *gin.Context) {
 	sessionHash := h.gatewayService.GenerateSessionHash(parsedReq)
 	selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), apiKey.GroupID, sessionHash, reqModel, nil, parsedReq.MetadataUserID, subject.UserID)
 	if err != nil || selection == nil || selection.Account == nil {
-		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Service temporarily unavailable")
+		h.streamingAwareError(c, http.StatusServiceUnavailable, "api_error", "Service temporarily unavailable", streamStarted)
 		return
 	}
 	account := selection.Account
 	if !account.IsMiniMaxTokenPlan() {
-		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "No available MiniMax token-plan accounts")
+		h.streamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available MiniMax token-plan accounts", streamStarted)
 		return
 	}
 	setOpsSelectedAccount(c, account.ID, account.Platform)
@@ -196,9 +198,28 @@ func (h *MiniMaxGatewayHandler) Messages(c *gin.Context) {
 	release := selection.ReleaseFunc
 	if !selection.Acquired {
 		if selection.WaitPlan == nil || h.concurrencyHelper == nil {
-			h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "No available MiniMax token-plan accounts")
+			h.streamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available MiniMax token-plan accounts", streamStarted)
 			return
 		}
+		accountWaitCounted := false
+		canWait, err := h.concurrencyHelper.IncrementAccountWaitCount(c.Request.Context(), account.ID, selection.WaitPlan.MaxWaiting)
+		if err != nil {
+			logger.L().Warn("minimax_gateway.account_wait_counter_increment_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+		} else if !canWait {
+			h.streamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error", "Too many pending requests, please retry later", streamStarted)
+			return
+		}
+		if err == nil && canWait {
+			accountWaitCounted = true
+		}
+		releaseAccountWait := func() {
+			if accountWaitCounted {
+				h.concurrencyHelper.DecrementAccountWaitCount(c.Request.Context(), account.ID)
+				accountWaitCounted = false
+			}
+		}
+		defer releaseAccountWait()
+
 		release, err = h.concurrencyHelper.AcquireAccountSlotWithWaitTimeout(
 			c,
 			account.ID,
@@ -208,11 +229,10 @@ func (h *MiniMaxGatewayHandler) Messages(c *gin.Context) {
 			&streamStarted,
 		)
 		if err != nil {
-			if !streamStarted {
-				h.errorResponse(c, http.StatusTooManyRequests, "rate_limit_error", "Too many pending requests, please retry later")
-			}
+			h.streamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error", "Too many pending requests, please retry later", streamStarted)
 			return
 		}
+		releaseAccountWait()
 	}
 	if release != nil {
 		defer release()
@@ -262,6 +282,13 @@ func (h *MiniMaxGatewayHandler) Messages(c *gin.Context) {
 
 func (h *MiniMaxGatewayHandler) Unsupported(c *gin.Context) {
 	h.errorResponse(c, http.StatusNotFound, "not_found_error", "MiniMax gateway supports /v1/messages only")
+}
+
+func (h *MiniMaxGatewayHandler) streamingAwareError(c *gin.Context, status int, errType, message string, streamStarted bool) {
+	if streamStarted {
+		return
+	}
+	h.errorResponse(c, status, errType, message)
 }
 
 func (h *MiniMaxGatewayHandler) errorResponse(c *gin.Context, status int, errType, message string) {

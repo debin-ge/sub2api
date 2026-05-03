@@ -85,12 +85,19 @@ func (f *fakeMiniMaxBillingChecker) CheckBillingEligibility(ctx context.Context,
 }
 
 type fakeMiniMaxConcurrencyController struct {
-	incrementWaitCalls int
-	decrementWaitCalls int
-	acquireUserCalls   int
-	releaseUserCalls   int
-	allowWait          bool
-	acquireUserErr     error
+	incrementWaitCalls        int
+	decrementWaitCalls        int
+	acquireUserCalls          int
+	releaseUserCalls          int
+	incrementAccountWaitCalls int
+	decrementAccountWaitCalls int
+	acquireAccountCalls       int
+	releaseAccountCalls       int
+	accountWaitMax            int
+	allowWait                 bool
+	allowAccountWait          bool
+	startStreamOnUserAcquire  bool
+	acquireUserErr            error
 }
 
 func (f *fakeMiniMaxConcurrencyController) IncrementWaitCount(ctx context.Context, userID int64, maxWait int) (bool, error) {
@@ -107,11 +114,27 @@ func (f *fakeMiniMaxConcurrencyController) AcquireUserSlotWithWait(c *gin.Contex
 	if f.acquireUserErr != nil {
 		return nil, f.acquireUserErr
 	}
+	if f.startStreamOnUserAcquire {
+		*streamStarted = true
+		c.Writer.WriteHeader(http.StatusOK)
+		_, _ = c.Writer.Write([]byte(": ping\n\n"))
+	}
 	return func() { f.releaseUserCalls++ }, nil
 }
 
+func (f *fakeMiniMaxConcurrencyController) IncrementAccountWaitCount(ctx context.Context, accountID int64, maxWait int) (bool, error) {
+	f.incrementAccountWaitCalls++
+	f.accountWaitMax = maxWait
+	return f.allowAccountWait, nil
+}
+
+func (f *fakeMiniMaxConcurrencyController) DecrementAccountWaitCount(ctx context.Context, accountID int64) {
+	f.decrementAccountWaitCalls++
+}
+
 func (f *fakeMiniMaxConcurrencyController) AcquireAccountSlotWithWaitTimeout(c *gin.Context, accountID int64, maxConcurrency int, timeout time.Duration, isStream bool, streamStarted *bool) (func(), error) {
-	return nil, nil
+	f.acquireAccountCalls++
+	return func() { f.releaseAccountCalls++ }, nil
 }
 
 func newMiniMaxHandlerTestContext(t *testing.T, platform string, body string) (*gin.Context, *httptest.ResponseRecorder, *service.APIKey) {
@@ -238,6 +261,26 @@ func TestMiniMaxGatewayHandlerMessagesSelectionFailureReturnsServiceUnavailable(
 	require.Contains(t, rec.Body.String(), "Service temporarily unavailable")
 }
 
+func TestMiniMaxGatewayHandlerMessagesDoesNotWriteJSONAfterStreamStarts(t *testing.T) {
+	concurrency := &fakeMiniMaxConcurrencyController{
+		allowWait:                true,
+		startStreamOnUserAcquire: true,
+	}
+	h := &MiniMaxGatewayHandler{
+		minimaxService:      &fakeMiniMaxForwarder{},
+		gatewayService:      &fakeMiniMaxGatewayService{selectErr: errors.New("no minimax account")},
+		concurrencyHelper:   concurrency,
+		billingCacheService: &fakeMiniMaxBillingChecker{},
+	}
+	c, rec, _ := newMiniMaxHandlerTestContext(t, service.PlatformMiniMax, `{"model":"claude-sonnet-4-5","stream":true,"messages":[{"role":"user","content":"hello"}]}`)
+
+	h.Messages(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, ": ping\n\n", rec.Body.String())
+	require.Equal(t, 1, concurrency.releaseUserCalls)
+}
+
 func TestMiniMaxGatewayHandlerMessagesDoesNotForwardWithoutAccountSlotOrWaitPlan(t *testing.T) {
 	account := &service.Account{
 		ID:          101,
@@ -263,6 +306,85 @@ func TestMiniMaxGatewayHandlerMessagesDoesNotForwardWithoutAccountSlotOrWaitPlan
 
 	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
 	require.Nil(t, forwarder.account)
+}
+
+func TestMiniMaxGatewayHandlerMessagesStopsWhenAccountWaitQueueFull(t *testing.T) {
+	account := &service.Account{
+		ID:          101,
+		Platform:    service.PlatformMiniMax,
+		Type:        service.AccountTypeAPIKey,
+		Credentials: map[string]any{"api_key": "sk-minimax"},
+	}
+	forwarder := &fakeMiniMaxForwarder{}
+	concurrency := &fakeMiniMaxConcurrencyController{
+		allowWait:        true,
+		allowAccountWait: false,
+	}
+	h := &MiniMaxGatewayHandler{
+		minimaxService:      forwarder,
+		concurrencyHelper:   concurrency,
+		billingCacheService: &fakeMiniMaxBillingChecker{},
+		gatewayService: &fakeMiniMaxGatewayService{
+			selection: &service.AccountSelectionResult{
+				Account:  account,
+				Acquired: false,
+				WaitPlan: &service.AccountWaitPlan{
+					MaxConcurrency: 1,
+					MaxWaiting:     3,
+					Timeout:        time.Second,
+				},
+			},
+		},
+	}
+	c, rec, _ := newMiniMaxHandlerTestContext(t, service.PlatformMiniMax, `{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"hello"}]}`)
+
+	h.Messages(c)
+
+	require.Equal(t, http.StatusTooManyRequests, rec.Code)
+	require.Nil(t, forwarder.account)
+	require.Equal(t, 1, concurrency.incrementAccountWaitCalls)
+	require.Equal(t, 3, concurrency.accountWaitMax)
+	require.Equal(t, 0, concurrency.acquireAccountCalls)
+}
+
+func TestMiniMaxGatewayHandlerMessagesReleasesAccountWaitCounterAfterSlotAcquire(t *testing.T) {
+	account := &service.Account{
+		ID:          101,
+		Platform:    service.PlatformMiniMax,
+		Type:        service.AccountTypeAPIKey,
+		Credentials: map[string]any{"api_key": "sk-minimax"},
+	}
+	forwarder := &fakeMiniMaxForwarder{}
+	concurrency := &fakeMiniMaxConcurrencyController{
+		allowWait:        true,
+		allowAccountWait: true,
+	}
+	h := &MiniMaxGatewayHandler{
+		minimaxService:      forwarder,
+		concurrencyHelper:   concurrency,
+		billingCacheService: &fakeMiniMaxBillingChecker{},
+		gatewayService: &fakeMiniMaxGatewayService{
+			selection: &service.AccountSelectionResult{
+				Account:  account,
+				Acquired: false,
+				WaitPlan: &service.AccountWaitPlan{
+					MaxConcurrency: 1,
+					MaxWaiting:     4,
+					Timeout:        time.Second,
+				},
+			},
+		},
+	}
+	c, rec, _ := newMiniMaxHandlerTestContext(t, service.PlatformMiniMax, `{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"hello"}]}`)
+
+	h.Messages(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, account, forwarder.account)
+	require.Equal(t, 1, concurrency.incrementAccountWaitCalls)
+	require.Equal(t, 1, concurrency.decrementAccountWaitCalls)
+	require.Equal(t, 1, concurrency.acquireAccountCalls)
+	require.Equal(t, 1, concurrency.releaseAccountCalls)
 }
 
 func TestMiniMaxGatewayHandlerMessagesStopsWhenUserWaitQueueFull(t *testing.T) {
