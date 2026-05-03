@@ -36,6 +36,48 @@ func (e *MiniMaxUnsupportedContentError) Error() string {
 	return e.Message
 }
 
+type MiniMaxUpstreamStatusMapping struct {
+	ClientStatus int
+	ErrorType    string
+	Retryable    bool
+}
+
+func MapMiniMaxUpstreamStatus(status int) MiniMaxUpstreamStatusMapping {
+	switch status {
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return MiniMaxUpstreamStatusMapping{
+			ClientStatus: http.StatusBadGateway,
+			ErrorType:    "upstream_auth_error",
+			Retryable:    false,
+		}
+	case http.StatusTooManyRequests:
+		return MiniMaxUpstreamStatusMapping{
+			ClientStatus: http.StatusTooManyRequests,
+			ErrorType:    "rate_limit_error",
+			Retryable:    true,
+		}
+	case 529:
+		return MiniMaxUpstreamStatusMapping{
+			ClientStatus: http.StatusBadGateway,
+			ErrorType:    "overloaded_error",
+			Retryable:    true,
+		}
+	default:
+		if status >= http.StatusInternalServerError {
+			return MiniMaxUpstreamStatusMapping{
+				ClientStatus: http.StatusBadGateway,
+				ErrorType:    "server_error",
+				Retryable:    true,
+			}
+		}
+		return MiniMaxUpstreamStatusMapping{
+			ClientStatus: status,
+			ErrorType:    "invalid_request_error",
+			Retryable:    false,
+		}
+	}
+}
+
 func NewMiniMaxGatewayService(httpClient *http.Client, quotaService *MiniMaxQuotaService, responseHeaderFilter *responseheaders.CompiledHeaderFilter) *MiniMaxGatewayService {
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: 15 * time.Second}
@@ -81,6 +123,19 @@ func (s *MiniMaxGatewayService) ForwardMessages(ctx context.Context, c *gin.Cont
 	}
 	defer func() { _ = resp.Body.Close() }()
 
+	if shouldReturnMiniMaxUpstreamError(resp.StatusCode) {
+		body, readErr := readMiniMaxNonStreamResponseBody(resp.Body)
+		_ = s.quotaService.RollbackTextRequest(ctx, account.ID, requestID)
+		if readErr != nil {
+			return nil, readErr
+		}
+		return nil, &UpstreamFailoverError{
+			StatusCode:      resp.StatusCode,
+			ResponseBody:    body,
+			ResponseHeaders: resp.Header.Clone(),
+		}
+	}
+
 	stream := gjson.GetBytes(body, "stream").Bool()
 	var result *ForwardResult
 	if stream {
@@ -96,6 +151,13 @@ func (s *MiniMaxGatewayService) ForwardMessages(ctx context.Context, c *gin.Cont
 		_ = s.quotaService.RollbackTextRequest(ctx, account.ID, requestID)
 	}
 	return result, nil
+}
+
+func shouldReturnMiniMaxUpstreamError(status int) bool {
+	if status == http.StatusUnauthorized || status == http.StatusForbidden {
+		return true
+	}
+	return MapMiniMaxUpstreamStatus(status).Retryable
 }
 
 func (s *MiniMaxGatewayService) buildMessagesRequest(ctx context.Context, c *gin.Context, account *Account, body []byte) (*http.Request, string, string, error) {

@@ -286,8 +286,15 @@ func TestMiniMaxGatewayServiceRollsBackQuotaOnUpstream5xx(t *testing.T) {
 	c, _ := newMiniMaxGatewayTestContext()
 
 	_, err := svc.ForwardMessages(context.Background(), c, miniMaxGatewayTestAccount(""), miniMaxMessagesBody(false), "req-5xx")
-	if err != nil {
-		t.Fatalf("ForwardMessages error = %v", err)
+	if err == nil {
+		t.Fatalf("expected failover error")
+	}
+	var failoverErr *UpstreamFailoverError
+	if !errors.As(err, &failoverErr) {
+		t.Fatalf("error type = %T %v", err, err)
+	}
+	if failoverErr.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("failover status = %d", failoverErr.StatusCode)
 	}
 	if cache.rollbackCalls != 1 || cache.rollbackRequestID != "req-5xx" {
 		t.Fatalf("rollback call = calls %d requestID %q", cache.rollbackCalls, cache.rollbackRequestID)

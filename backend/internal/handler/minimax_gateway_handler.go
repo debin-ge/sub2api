@@ -30,6 +30,15 @@ type miniMaxGatewayService interface {
 	RecordUsage(ctx context.Context, input *service.RecordUsageInput) error
 }
 
+type miniMaxUpstreamErrorHandler interface {
+	HandleMiniMaxUpstreamError(ctx context.Context, account *service.Account, failoverErr *service.UpstreamFailoverError)
+}
+
+type noopMiniMaxTempUnscheduler struct{}
+
+func (noopMiniMaxTempUnscheduler) TempUnscheduleRetryableError(context.Context, int64, *service.UpstreamFailoverError) {
+}
+
 type miniMaxBillingEligibilityChecker interface {
 	CheckBillingEligibility(ctx context.Context, user *service.User, apiKey *service.APIKey, group *service.Group, subscription *service.UserSubscription) error
 }
@@ -51,6 +60,7 @@ type MiniMaxGatewayHandler struct {
 	apiKeyService         *service.APIKeyService
 	usageRecordWorkerPool *service.UsageRecordWorkerPool
 	concurrencyHelper     miniMaxConcurrencyController
+	maxAccountSwitches    int
 }
 
 func NewMiniMaxGatewayHandler(
@@ -63,8 +73,12 @@ func NewMiniMaxGatewayHandler(
 	cfg *config.Config,
 ) *MiniMaxGatewayHandler {
 	pingInterval := time.Duration(0)
+	maxAccountSwitches := 3
 	if cfg != nil {
 		pingInterval = time.Duration(cfg.Concurrency.PingInterval) * time.Second
+		if cfg.Gateway.MaxAccountSwitches > 0 {
+			maxAccountSwitches = cfg.Gateway.MaxAccountSwitches
+		}
 	}
 	return &MiniMaxGatewayHandler{
 		minimaxService:        minimaxService,
@@ -73,6 +87,7 @@ func NewMiniMaxGatewayHandler(
 		apiKeyService:         apiKeyService,
 		usageRecordWorkerPool: usageRecordWorkerPool,
 		concurrencyHelper:     NewConcurrencyHelper(concurrencyService, SSEPingFormatClaude, pingInterval),
+		maxAccountSwitches:    maxAccountSwitches,
 	}
 }
 
@@ -183,101 +198,98 @@ func (h *MiniMaxGatewayHandler) Messages(c *gin.Context) {
 	}
 
 	sessionHash := h.gatewayService.GenerateSessionHash(parsedReq)
-	selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), apiKey.GroupID, sessionHash, reqModel, nil, parsedReq.MetadataUserID, subject.UserID)
-	if err != nil || selection == nil || selection.Account == nil {
-		h.streamingAwareError(c, http.StatusServiceUnavailable, "api_error", "Service temporarily unavailable", streamStarted)
-		return
-	}
-	account := selection.Account
-	if !account.IsMiniMaxTokenPlan() {
-		h.streamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available MiniMax token-plan accounts", streamStarted)
-		return
-	}
-	setOpsSelectedAccount(c, account.ID, account.Platform)
+	fs := NewFailoverState(h.maxAccountSwitches, false)
 
-	release := selection.ReleaseFunc
-	if !selection.Acquired {
-		if selection.WaitPlan == nil || h.concurrencyHelper == nil {
+	for {
+		selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), apiKey.GroupID, sessionHash, reqModel, fs.FailedAccountIDs, parsedReq.MetadataUserID, subject.UserID)
+		if err != nil || selection == nil || selection.Account == nil {
+			if fs.LastFailoverErr != nil && !streamStarted {
+				status, errType, message := miniMaxForwardErrorDetails(fs.LastFailoverErr)
+				h.errorResponse(c, status, errType, message)
+				return
+			}
+			h.streamingAwareError(c, http.StatusServiceUnavailable, "api_error", "Service temporarily unavailable", streamStarted)
+			return
+		}
+		account := selection.Account
+		if !account.IsMiniMaxTokenPlan() {
 			h.streamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available MiniMax token-plan accounts", streamStarted)
 			return
 		}
-		accountWaitCounted := false
-		canWait, err := h.concurrencyHelper.IncrementAccountWaitCount(c.Request.Context(), account.ID, selection.WaitPlan.MaxWaiting)
-		if err != nil {
-			logger.L().Warn("minimax_gateway.account_wait_counter_increment_failed", zap.Int64("account_id", account.ID), zap.Error(err))
-		} else if !canWait {
-			h.streamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error", "Too many pending requests, please retry later", streamStarted)
+		setOpsSelectedAccount(c, account.ID, account.Platform)
+
+		release, acquired := h.acquireMiniMaxAccountSlot(c, selection, parsedReq.Stream, &streamStarted)
+		if !acquired {
 			return
 		}
-		if err == nil && canWait {
-			accountWaitCounted = true
+
+		result, err := h.minimaxService.ForwardMessages(c.Request.Context(), c, account, body, miniMaxRequestID(c))
+		if release != nil {
+			release()
 		}
-		releaseAccountWait := func() {
-			if accountWaitCounted {
-				h.concurrencyHelper.DecrementAccountWaitCount(c.Request.Context(), account.ID)
-				accountWaitCounted = false
+		if err != nil {
+			if c.Writer.Written() || streamStarted {
+				return
 			}
-		}
-		defer releaseAccountWait()
-
-		release, err = h.concurrencyHelper.AcquireAccountSlotWithWaitTimeout(
-			c,
-			account.ID,
-			selection.WaitPlan.MaxConcurrency,
-			selection.WaitPlan.Timeout,
-			parsedReq.Stream,
-			&streamStarted,
-		)
-		if err != nil {
-			h.streamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error", "Too many pending requests, please retry later", streamStarted)
-			return
-		}
-		releaseAccountWait()
-	}
-	if release != nil {
-		defer release()
-	}
-
-	result, err := h.minimaxService.ForwardMessages(c.Request.Context(), c, account, body, miniMaxRequestID(c))
-	if err != nil {
-		if !c.Writer.Written() && !streamStarted {
+			var failoverErr *service.UpstreamFailoverError
+			if errors.As(err, &failoverErr) {
+				mapping := service.MapMiniMaxUpstreamStatus(failoverErr.StatusCode)
+				if mapping.Retryable {
+					h.handleMiniMaxUpstreamDegradation(c.Request.Context(), account, failoverErr)
+					failoverAction := fs.HandleFailoverError(c.Request.Context(), h.miniMaxTempUnscheduler(), account.ID, account.Platform, failoverErr)
+					switch failoverAction {
+					case FailoverContinue:
+						continue
+					case FailoverCanceled:
+						return
+					case FailoverExhausted:
+						status, errType, message := miniMaxForwardErrorDetails(failoverErr)
+						h.errorResponse(c, status, errType, message)
+						return
+					}
+				}
+				status, errType, message := miniMaxForwardErrorDetails(failoverErr)
+				h.errorResponse(c, status, errType, message)
+				return
+			}
 			status, errType, message := miniMaxForwardErrorDetails(err)
 			h.errorResponse(c, status, errType, message)
+			return
 		}
+
+		userAgent := c.GetHeader("User-Agent")
+		clientIP := ip.GetClientIP(c)
+		requestPayloadHash := service.HashUsageRequestPayload(body)
+		inboundEndpoint := GetInboundEndpoint(c)
+		upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
+
+		h.submitUsageRecordTask(func(ctx context.Context) {
+			if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
+				Result:             result,
+				ParsedRequest:      parsedReq,
+				APIKey:             apiKey,
+				User:               apiKey.User,
+				Account:            account,
+				Subscription:       subscription,
+				InboundEndpoint:    inboundEndpoint,
+				UpstreamEndpoint:   upstreamEndpoint,
+				UserAgent:          userAgent,
+				IPAddress:          clientIP,
+				RequestPayloadHash: requestPayloadHash,
+				APIKeyService:      h.apiKeyService,
+			}); err != nil {
+				logger.L().With(
+					zap.String("component", "handler.minimax_gateway.messages"),
+					zap.Int64("user_id", subject.UserID),
+					zap.Int64("api_key_id", apiKey.ID),
+					zap.Any("group_id", apiKey.GroupID),
+					zap.String("model", reqModel),
+					zap.Int64("account_id", account.ID),
+				).Error("minimax_gateway.record_usage_failed", zap.Error(err))
+			}
+		})
 		return
 	}
-
-	userAgent := c.GetHeader("User-Agent")
-	clientIP := ip.GetClientIP(c)
-	requestPayloadHash := service.HashUsageRequestPayload(body)
-	inboundEndpoint := GetInboundEndpoint(c)
-	upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
-
-	h.submitUsageRecordTask(func(ctx context.Context) {
-		if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
-			Result:             result,
-			ParsedRequest:      parsedReq,
-			APIKey:             apiKey,
-			User:               apiKey.User,
-			Account:            account,
-			Subscription:       subscription,
-			InboundEndpoint:    inboundEndpoint,
-			UpstreamEndpoint:   upstreamEndpoint,
-			UserAgent:          userAgent,
-			IPAddress:          clientIP,
-			RequestPayloadHash: requestPayloadHash,
-			APIKeyService:      h.apiKeyService,
-		}); err != nil {
-			logger.L().With(
-				zap.String("component", "handler.minimax_gateway.messages"),
-				zap.Int64("user_id", subject.UserID),
-				zap.Int64("api_key_id", apiKey.ID),
-				zap.Any("group_id", apiKey.GroupID),
-				zap.String("model", reqModel),
-				zap.Int64("account_id", account.ID),
-			).Error("minimax_gateway.record_usage_failed", zap.Error(err))
-		}
-	})
 }
 
 func (h *MiniMaxGatewayHandler) Unsupported(c *gin.Context) {
@@ -289,6 +301,80 @@ func (h *MiniMaxGatewayHandler) streamingAwareError(c *gin.Context, status int, 
 		return
 	}
 	h.errorResponse(c, status, errType, message)
+}
+
+func (h *MiniMaxGatewayHandler) acquireMiniMaxAccountSlot(c *gin.Context, selection *service.AccountSelectionResult, isStream bool, streamStarted *bool) (func(), bool) {
+	if selection == nil || selection.Account == nil {
+		h.streamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available MiniMax token-plan accounts", derefBool(streamStarted))
+		return nil, false
+	}
+	account := selection.Account
+	if selection.Acquired {
+		return selection.ReleaseFunc, true
+	}
+	if selection.WaitPlan == nil || h.concurrencyHelper == nil {
+		h.streamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available MiniMax token-plan accounts", derefBool(streamStarted))
+		return nil, false
+	}
+
+	accountWaitCounted := false
+	canWait, err := h.concurrencyHelper.IncrementAccountWaitCount(c.Request.Context(), account.ID, selection.WaitPlan.MaxWaiting)
+	if err != nil {
+		logger.L().Warn("minimax_gateway.account_wait_counter_increment_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+	} else if !canWait {
+		h.streamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error", "Too many pending requests, please retry later", derefBool(streamStarted))
+		return nil, false
+	}
+	if err == nil && canWait {
+		accountWaitCounted = true
+	}
+	releaseAccountWait := func() {
+		if accountWaitCounted {
+			h.concurrencyHelper.DecrementAccountWaitCount(c.Request.Context(), account.ID)
+			accountWaitCounted = false
+		}
+	}
+
+	release, err := h.concurrencyHelper.AcquireAccountSlotWithWaitTimeout(
+		c,
+		account.ID,
+		selection.WaitPlan.MaxConcurrency,
+		selection.WaitPlan.Timeout,
+		isStream,
+		streamStarted,
+	)
+	if err != nil {
+		releaseAccountWait()
+		h.streamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error", "Too many pending requests, please retry later", derefBool(streamStarted))
+		return nil, false
+	}
+	releaseAccountWait()
+	return release, true
+}
+
+func derefBool(value *bool) bool {
+	return value != nil && *value
+}
+
+func (h *MiniMaxGatewayHandler) handleMiniMaxUpstreamDegradation(ctx context.Context, account *service.Account, failoverErr *service.UpstreamFailoverError) {
+	if h == nil || h.gatewayService == nil || account == nil || failoverErr == nil {
+		return
+	}
+	degrader, ok := h.gatewayService.(miniMaxUpstreamErrorHandler)
+	if !ok {
+		return
+	}
+	degrader.HandleMiniMaxUpstreamError(ctx, account, failoverErr)
+}
+
+func (h *MiniMaxGatewayHandler) miniMaxTempUnscheduler() TempUnscheduler {
+	if h == nil || h.gatewayService == nil {
+		return noopMiniMaxTempUnscheduler{}
+	}
+	if unscheduler, ok := h.gatewayService.(TempUnscheduler); ok {
+		return unscheduler
+	}
+	return noopMiniMaxTempUnscheduler{}
 }
 
 func (h *MiniMaxGatewayHandler) errorResponse(c *gin.Context, status int, errType, message string) {
@@ -336,6 +422,11 @@ func miniMaxRequestID(c *gin.Context) string {
 }
 
 func miniMaxForwardErrorDetails(err error) (int, string, string) {
+	var failoverErr *service.UpstreamFailoverError
+	if errors.As(err, &failoverErr) {
+		mapping := service.MapMiniMaxUpstreamStatus(failoverErr.StatusCode)
+		return mapping.ClientStatus, mapping.ErrorType, miniMaxMappedUpstreamErrorMessage(mapping)
+	}
 	var unsupported *service.MiniMaxUnsupportedContentError
 	if errors.As(err, &unsupported) {
 		return http.StatusBadRequest, "invalid_request_error", unsupported.Error()
@@ -352,5 +443,20 @@ func miniMaxForwardErrorDetails(err error) (int, string, string) {
 			message = "Upstream request failed"
 		}
 		return http.StatusBadGateway, "api_error", fmt.Sprintf("MiniMax upstream request failed: %s", message)
+	}
+}
+
+func miniMaxMappedUpstreamErrorMessage(mapping service.MiniMaxUpstreamStatusMapping) string {
+	switch mapping.ErrorType {
+	case "upstream_auth_error":
+		return "MiniMax upstream authentication failed, please contact administrator"
+	case "rate_limit_error":
+		return "MiniMax upstream rate limit exceeded, please retry later"
+	case "overloaded_error":
+		return "MiniMax upstream service overloaded, please retry later"
+	case "server_error":
+		return "MiniMax upstream service temporarily unavailable"
+	default:
+		return "MiniMax upstream rejected request"
 	}
 }
