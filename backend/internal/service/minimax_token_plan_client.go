@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -82,6 +83,9 @@ func int64FromAny(v any) int64 {
 		return int64(n)
 	case json.Number:
 		i, _ := n.Int64()
+		return i
+	case string:
+		i, _ := strconv.ParseInt(strings.TrimSpace(n), 10, 64)
 		return i
 	default:
 		return 0

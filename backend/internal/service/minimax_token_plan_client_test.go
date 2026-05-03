@@ -36,6 +36,26 @@ func TestMiniMaxTokenPlanClientFetchRemainsUsesBearerAuth(t *testing.T) {
 	}
 }
 
+func TestMiniMaxTokenPlanClientFetchRemainsParsesStringNumericFields(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":0,"data":{"text_5h_limit":"4500","text_5h_remaining":"3200"}}`))
+	}))
+	defer srv.Close()
+
+	client := NewMiniMaxTokenPlanClient(srv.URL, srv.Client())
+	remains, err := client.FetchRemains(context.Background(), "sk-cp-test")
+	if err != nil {
+		t.Fatalf("FetchRemains error = %v", err)
+	}
+	if remains.Text5hLimit != 4500 {
+		t.Fatalf("Text5hLimit = %d", remains.Text5hLimit)
+	}
+	if remains.Text5hRemaining != 3200 {
+		t.Fatalf("Text5hRemaining = %d", remains.Text5hRemaining)
+	}
+}
+
 func TestMiniMaxTokenPlanClientRejectsMissingAPIKey(t *testing.T) {
 	client := NewMiniMaxTokenPlanClient("https://www.minimax.io", http.DefaultClient)
 	if _, err := client.FetchRemains(context.Background(), " "); err == nil {
