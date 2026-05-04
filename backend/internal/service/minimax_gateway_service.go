@@ -153,6 +153,66 @@ func (s *MiniMaxGatewayService) ForwardMessages(ctx context.Context, c *gin.Cont
 	return result, nil
 }
 
+func (s *MiniMaxGatewayService) ForwardChatCompletions(ctx context.Context, c *gin.Context, account *Account, body []byte, requestID string) (*ForwardResult, error) {
+	if s == nil {
+		return nil, fmt.Errorf("minimax gateway service unavailable")
+	}
+	start := time.Now()
+
+	upstreamReq, originalModel, upstreamModel, err := s.buildChatCompletionsRequest(ctx, c, account, body)
+	if err != nil {
+		return nil, err
+	}
+
+	requestID = strings.TrimSpace(requestID)
+	if s.quotaService == nil {
+		return nil, fmt.Errorf("minimax quota service unavailable")
+	}
+	decision, err := s.quotaService.ReserveTextRequest(ctx, account, requestID)
+	if err != nil {
+		return nil, err
+	}
+	if decision == nil || !decision.Allowed {
+		return nil, fmt.Errorf("minimax quota exhausted")
+	}
+
+	resp, err := s.httpClient.Do(upstreamReq)
+	if err != nil {
+		_ = s.quotaService.RollbackTextRequest(ctx, account.ID, requestID)
+		return nil, fmt.Errorf("minimax upstream request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if shouldReturnMiniMaxUpstreamError(resp.StatusCode) {
+		body, readErr := readMiniMaxNonStreamResponseBody(resp.Body)
+		_ = s.quotaService.RollbackTextRequest(ctx, account.ID, requestID)
+		if readErr != nil {
+			return nil, readErr
+		}
+		return nil, &UpstreamFailoverError{
+			StatusCode:      resp.StatusCode,
+			ResponseBody:    body,
+			ResponseHeaders: resp.Header.Clone(),
+		}
+	}
+
+	stream := gjson.GetBytes(body, "stream").Bool()
+	var result *ForwardResult
+	if stream {
+		result, err = s.handleStreamingChatCompletionsResponse(resp, c, originalModel, upstreamModel, start)
+	} else {
+		result, err = s.handleNonStreamingChatCompletionsResponse(resp, c, originalModel, upstreamModel, start)
+	}
+	if err != nil {
+		_ = s.quotaService.RollbackTextRequest(ctx, account.ID, requestID)
+		return nil, err
+	}
+	if resp.StatusCode >= http.StatusInternalServerError {
+		_ = s.quotaService.RollbackTextRequest(ctx, account.ID, requestID)
+	}
+	return result, nil
+}
+
 func shouldReturnMiniMaxUpstreamError(status int) bool {
 	if status == http.StatusUnauthorized || status == http.StatusForbidden {
 		return true
@@ -175,6 +235,45 @@ func (s *MiniMaxGatewayService) buildMessagesRequest(ctx context.Context, c *gin
 	}
 
 	upstreamURL, err := buildMiniMaxMessagesURL(account)
+	if err != nil {
+		return nil, "", "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, upstreamURL, bytes.NewReader(upstreamBody))
+	if err != nil {
+		return nil, "", "", err
+	}
+	req.Header.Del("authorization")
+	req.Header.Del("x-api-key")
+	req.Header.Del("x-goog-api-key")
+	req.Header.Del("cookie")
+	req.Header.Del("proxy-authorization")
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	if c != nil {
+		req.Header.Set("User-Agent", strings.TrimSpace(c.GetHeader("User-Agent")))
+		if req.Header.Get("User-Agent") == "" {
+			req.Header.Del("User-Agent")
+		}
+	}
+	return req, originalModel, upstreamModel, nil
+}
+
+func (s *MiniMaxGatewayService) buildChatCompletionsRequest(ctx context.Context, c *gin.Context, account *Account, body []byte) (*http.Request, string, string, error) {
+	if account == nil || !account.IsMiniMaxTokenPlan() {
+		return nil, "", "", fmt.Errorf("invalid minimax account")
+	}
+	apiKey := account.GetMiniMaxAPIKey()
+	if apiKey == "" {
+		return nil, "", "", fmt.Errorf("minimax api key is required")
+	}
+
+	upstreamBody, originalModel, upstreamModel, err := rewriteMiniMaxModel(body, account)
+	if err != nil {
+		return nil, "", "", err
+	}
+
+	upstreamURL, err := buildMiniMaxChatCompletionsURL(account)
 	if err != nil {
 		return nil, "", "", err
 	}
@@ -285,6 +384,14 @@ func buildMiniMaxMessagesURL(account *Account) (string, error) {
 	return strings.TrimRight(baseURL, "/") + "/v1/messages", nil
 }
 
+func buildMiniMaxChatCompletionsURL(account *Account) (string, error) {
+	baseURL, err := validateMiniMaxUpstreamBaseURL(account.GetMiniMaxOpenAIBaseURL())
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimRight(baseURL, "/") + "/chat/completions", nil
+}
+
 func validateMiniMaxUpstreamBaseURL(raw string) (string, error) {
 	return urlvalidator.ValidateHTTPURL(raw, false, urlvalidator.ValidationOptions{
 		AllowedHosts: []string{miniMaxAnthropicHost},
@@ -296,12 +403,79 @@ func parseMiniMaxClaudeUsage(body []byte) *ClaudeUsage {
 	return parseClaudeUsageFromResponseBody(body)
 }
 
+func parseMiniMaxOpenAIUsage(body []byte) *ClaudeUsage {
+	usage := &ClaudeUsage{}
+	if len(body) == 0 {
+		return usage
+	}
+	mergeMiniMaxOpenAIUsage(usage, gjson.ParseBytes(body).Get("usage"))
+	return usage
+}
+
+func parseMiniMaxOpenAIStreamingUsage(data string, usage *ClaudeUsage) {
+	if usage == nil || strings.TrimSpace(data) == "" {
+		return
+	}
+	mergeMiniMaxOpenAIUsage(usage, gjson.Parse(data).Get("usage"))
+}
+
+func mergeMiniMaxOpenAIUsage(usage *ClaudeUsage, usageNode gjson.Result) {
+	if usage == nil || !usageNode.Exists() {
+		return
+	}
+	if input := usageNode.Get("prompt_tokens"); input.Exists() {
+		usage.InputTokens = int(input.Int())
+	} else if input := usageNode.Get("input_tokens"); input.Exists() {
+		usage.InputTokens = int(input.Int())
+	}
+	if output := usageNode.Get("completion_tokens"); output.Exists() {
+		usage.OutputTokens = int(output.Int())
+	} else if output := usageNode.Get("output_tokens"); output.Exists() {
+		usage.OutputTokens = int(output.Int())
+	}
+	if cached := usageNode.Get("prompt_tokens_details.cached_tokens"); cached.Exists() {
+		usage.CacheReadInputTokens = int(cached.Int())
+	} else if cached := usageNode.Get("cached_tokens"); cached.Exists() {
+		usage.CacheReadInputTokens = int(cached.Int())
+	}
+}
+
 func (s *MiniMaxGatewayService) handleNonStreamingMessagesResponse(resp *http.Response, c *gin.Context, originalModel string, upstreamModel string, start time.Time) (*ForwardResult, error) {
 	body, err := readMiniMaxNonStreamResponseBody(resp.Body)
 	if err != nil {
 		return nil, err
 	}
 	usage := parseMiniMaxClaudeUsage(body)
+	contentType := strings.TrimSpace(resp.Header.Get("Content-Type"))
+	if contentType == "" {
+		contentType = "application/json"
+	}
+	if c != nil {
+		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+		c.Writer.Header().Set("Content-Type", contentType)
+		c.Status(resp.StatusCode)
+		if len(body) == 0 {
+			c.Writer.WriteHeaderNow()
+		} else if _, err := c.Writer.Write(body); err != nil {
+			return nil, err
+		}
+	}
+	return &ForwardResult{
+		RequestID:     resp.Header.Get("x-request-id"),
+		Usage:         *usage,
+		Model:         originalModel,
+		UpstreamModel: upstreamModel,
+		Stream:        false,
+		Duration:      time.Since(start),
+	}, nil
+}
+
+func (s *MiniMaxGatewayService) handleNonStreamingChatCompletionsResponse(resp *http.Response, c *gin.Context, originalModel string, upstreamModel string, start time.Time) (*ForwardResult, error) {
+	body, err := readMiniMaxNonStreamResponseBody(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	usage := parseMiniMaxOpenAIUsage(body)
 	contentType := strings.TrimSpace(resp.Header.Get("Content-Type"))
 	if contentType == "" {
 		contentType = "application/json"
@@ -358,6 +532,57 @@ func (s *MiniMaxGatewayService) handleStreamingMessagesResponse(resp *http.Respo
 				data := strings.TrimSpace(strings.TrimPrefix(trimmed, "data:"))
 				if data != "" && data != "[DONE]" {
 					gatewayUsageParser.parseSSEUsage(data, usage)
+				}
+			}
+			if c != nil {
+				if _, err := io.WriteString(c.Writer, line); err != nil {
+					return nil, err
+				}
+				if strings.TrimRight(line, "\r\n") == "" {
+					if flusher, ok := c.Writer.(http.Flusher); ok {
+						flusher.Flush()
+					}
+				}
+			}
+		}
+		if readErr != nil {
+			if readErr == io.EOF {
+				break
+			}
+			return nil, readErr
+		}
+	}
+
+	return &ForwardResult{
+		RequestID:     resp.Header.Get("x-request-id"),
+		Usage:         *usage,
+		Model:         originalModel,
+		UpstreamModel: upstreamModel,
+		Stream:        true,
+		Duration:      time.Since(start),
+	}, nil
+}
+
+func (s *MiniMaxGatewayService) handleStreamingChatCompletionsResponse(resp *http.Response, c *gin.Context, originalModel string, upstreamModel string, start time.Time) (*ForwardResult, error) {
+	usage := &ClaudeUsage{}
+	if c != nil {
+		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+		c.Writer.Header().Set("Content-Type", "text/event-stream")
+		c.Status(resp.StatusCode)
+	}
+
+	reader := bufio.NewReaderSize(resp.Body, 64*1024)
+	for {
+		line, readErr := reader.ReadString('\n')
+		if line != "" {
+			if len(line) > defaultMaxLineSize {
+				return nil, fmt.Errorf("minimax upstream stream line too large")
+			}
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, "data:") {
+				data := strings.TrimSpace(strings.TrimPrefix(trimmed, "data:"))
+				if data != "" && data != "[DONE]" {
+					parseMiniMaxOpenAIStreamingUsage(data, usage)
 				}
 			}
 			if c != nil {

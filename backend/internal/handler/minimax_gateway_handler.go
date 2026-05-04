@@ -22,6 +22,7 @@ import (
 
 type miniMaxMessagesForwarder interface {
 	ForwardMessages(ctx context.Context, c *gin.Context, account *service.Account, body []byte, requestID string) (*service.ForwardResult, error)
+	ForwardChatCompletions(ctx context.Context, c *gin.Context, account *service.Account, body []byte, requestID string) (*service.ForwardResult, error)
 }
 
 type miniMaxGatewayService interface {
@@ -292,8 +293,209 @@ func (h *MiniMaxGatewayHandler) Messages(c *gin.Context) {
 	}
 }
 
+// ChatCompletions handles MiniMax OpenAI-compatible POST /v1/chat/completions requests.
+func (h *MiniMaxGatewayHandler) ChatCompletions(c *gin.Context) {
+	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
+	if !ok {
+		h.errorResponse(c, http.StatusUnauthorized, "authentication_error", "Invalid API key")
+		return
+	}
+	if apiKey.Group == nil || apiKey.Group.Platform != service.PlatformMiniMax {
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "MiniMax gateway requires a MiniMax group")
+		return
+	}
+
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		h.errorResponse(c, http.StatusInternalServerError, "api_error", "User context not found")
+		return
+	}
+
+	body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
+	if err != nil {
+		if maxErr, ok := extractMaxBytesError(err); ok {
+			h.errorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
+			return
+		}
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
+		return
+	}
+	if len(body) == 0 {
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Request body is empty")
+		return
+	}
+	setOpsRequestContext(c, "", false, body)
+
+	parsedReq, err := service.ParseGatewayRequest(body, "chat_completions")
+	if err != nil {
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
+		return
+	}
+	reqModel := strings.TrimSpace(parsedReq.Model)
+	if reqModel == "" {
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "model is required")
+		return
+	}
+	parsedReq.Model = reqModel
+	parsedReq.GroupID = apiKey.GroupID
+	parsedReq.SessionContext = &service.SessionContext{
+		ClientIP:  ip.GetClientIP(c),
+		UserAgent: c.GetHeader("User-Agent"),
+		APIKeyID:  apiKey.ID,
+	}
+	setOpsRequestContext(c, reqModel, parsedReq.Stream, body)
+	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(parsedReq.Stream, false)))
+
+	if h.gatewayService == nil || h.minimaxService == nil {
+		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "minimax gateway service unavailable")
+		return
+	}
+	if h.concurrencyHelper == nil || h.billingCacheService == nil {
+		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "minimax gateway service unavailable")
+		return
+	}
+
+	subscription, _ := middleware2.GetSubscriptionFromContext(c)
+	streamStarted := false
+	maxWait := service.CalculateMaxWait(subject.Concurrency)
+	canWait, err := h.concurrencyHelper.IncrementWaitCount(c.Request.Context(), subject.UserID, maxWait)
+	waitCounted := false
+	if err == nil && !canWait {
+		h.errorResponse(c, http.StatusTooManyRequests, "rate_limit_error", "Too many pending requests, please retry later")
+		return
+	}
+	if err == nil && canWait {
+		waitCounted = true
+	}
+	defer func() {
+		if waitCounted {
+			h.concurrencyHelper.DecrementWaitCount(c.Request.Context(), subject.UserID)
+		}
+	}()
+
+	userRelease, err := h.concurrencyHelper.AcquireUserSlotWithWait(c, subject.UserID, subject.Concurrency, parsedReq.Stream, &streamStarted)
+	if err != nil {
+		if !streamStarted {
+			h.errorResponse(c, http.StatusTooManyRequests, "rate_limit_error", "Too many pending requests, please retry later")
+		}
+		return
+	}
+	if waitCounted {
+		h.concurrencyHelper.DecrementWaitCount(c.Request.Context(), subject.UserID)
+		waitCounted = false
+	}
+	if userRelease != nil {
+		defer userRelease()
+	}
+
+	if err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription); err != nil {
+		status, code, message, retryAfter := billingErrorDetails(err)
+		if retryAfter > 0 {
+			c.Header("Retry-After", strconv.Itoa(retryAfter))
+		}
+		if !streamStarted {
+			h.errorResponse(c, status, code, message)
+		}
+		return
+	}
+
+	sessionHash := h.gatewayService.GenerateSessionHash(parsedReq)
+	fs := NewFailoverState(h.maxAccountSwitches, false)
+
+	for {
+		selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), apiKey.GroupID, sessionHash, reqModel, fs.FailedAccountIDs, parsedReq.MetadataUserID, subject.UserID)
+		if err != nil || selection == nil || selection.Account == nil {
+			if fs.LastFailoverErr != nil && !streamStarted {
+				status, errType, message := miniMaxForwardErrorDetails(fs.LastFailoverErr)
+				h.errorResponse(c, status, errType, message)
+				return
+			}
+			h.streamingAwareError(c, http.StatusServiceUnavailable, "api_error", "Service temporarily unavailable", streamStarted)
+			return
+		}
+		account := selection.Account
+		if !account.IsMiniMaxTokenPlan() {
+			h.streamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available MiniMax token-plan accounts", streamStarted)
+			return
+		}
+		setOpsSelectedAccount(c, account.ID, account.Platform)
+
+		release, acquired := h.acquireMiniMaxAccountSlot(c, selection, parsedReq.Stream, &streamStarted)
+		if !acquired {
+			return
+		}
+
+		result, err := h.minimaxService.ForwardChatCompletions(c.Request.Context(), c, account, body, miniMaxRequestID(c))
+		if release != nil {
+			release()
+		}
+		if err != nil {
+			if c.Writer.Written() || streamStarted {
+				return
+			}
+			var failoverErr *service.UpstreamFailoverError
+			if errors.As(err, &failoverErr) {
+				mapping := service.MapMiniMaxUpstreamStatus(failoverErr.StatusCode)
+				if mapping.Retryable {
+					h.handleMiniMaxUpstreamDegradation(c.Request.Context(), account, failoverErr)
+					failoverAction := fs.HandleFailoverError(c.Request.Context(), h.miniMaxTempUnscheduler(), account.ID, account.Platform, failoverErr)
+					switch failoverAction {
+					case FailoverContinue:
+						continue
+					case FailoverCanceled:
+						return
+					case FailoverExhausted:
+						status, errType, message := miniMaxForwardErrorDetails(failoverErr)
+						h.errorResponse(c, status, errType, message)
+						return
+					}
+				}
+				status, errType, message := miniMaxForwardErrorDetails(failoverErr)
+				h.errorResponse(c, status, errType, message)
+				return
+			}
+			status, errType, message := miniMaxForwardErrorDetails(err)
+			h.errorResponse(c, status, errType, message)
+			return
+		}
+
+		userAgent := c.GetHeader("User-Agent")
+		clientIP := ip.GetClientIP(c)
+		requestPayloadHash := service.HashUsageRequestPayload(body)
+		inboundEndpoint := GetInboundEndpoint(c)
+		upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
+
+		h.submitUsageRecordTask(func(ctx context.Context) {
+			if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
+				Result:             result,
+				ParsedRequest:      parsedReq,
+				APIKey:             apiKey,
+				User:               apiKey.User,
+				Account:            account,
+				Subscription:       subscription,
+				InboundEndpoint:    inboundEndpoint,
+				UpstreamEndpoint:   upstreamEndpoint,
+				UserAgent:          userAgent,
+				IPAddress:          clientIP,
+				RequestPayloadHash: requestPayloadHash,
+				APIKeyService:      h.apiKeyService,
+			}); err != nil {
+				logger.L().With(
+					zap.String("component", "handler.minimax_gateway.chat_completions"),
+					zap.Int64("user_id", subject.UserID),
+					zap.Int64("api_key_id", apiKey.ID),
+					zap.Any("group_id", apiKey.GroupID),
+					zap.String("model", reqModel),
+					zap.Int64("account_id", account.ID),
+				).Error("minimax_gateway.record_usage_failed", zap.Error(err))
+			}
+		})
+		return
+	}
+}
+
 func (h *MiniMaxGatewayHandler) Unsupported(c *gin.Context) {
-	h.errorResponse(c, http.StatusNotFound, "not_found_error", "MiniMax gateway supports /v1/messages only")
+	h.errorResponse(c, http.StatusNotFound, "not_found_error", "MiniMax gateway supports /v1/messages and /v1/chat/completions only")
 }
 
 func (h *MiniMaxGatewayHandler) streamingAwareError(c *gin.Context, status int, errType, message string, streamStarted bool) {

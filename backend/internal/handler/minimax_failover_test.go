@@ -44,6 +44,10 @@ func (f *miniMaxFailoverForwarder) ForwardMessages(ctx context.Context, c *gin.C
 	}, nil
 }
 
+func (f *miniMaxFailoverForwarder) ForwardChatCompletions(ctx context.Context, c *gin.Context, account *service.Account, body []byte, requestID string) (*service.ForwardResult, error) {
+	return f.ForwardMessages(ctx, c, account, body, requestID)
+}
+
 type miniMaxFailoverGatewayService struct {
 	selections []*service.AccountSelectionResult
 

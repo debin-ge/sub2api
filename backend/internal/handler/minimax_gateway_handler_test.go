@@ -17,13 +17,16 @@ import (
 )
 
 type fakeMiniMaxForwarder struct {
-	account   *service.Account
-	body      []byte
-	requestID string
-	err       error
+	account        *service.Account
+	body           []byte
+	requestID      string
+	messagesCalled bool
+	chatCalled     bool
+	err            error
 }
 
 func (f *fakeMiniMaxForwarder) ForwardMessages(ctx context.Context, c *gin.Context, account *service.Account, body []byte, requestID string) (*service.ForwardResult, error) {
+	f.messagesCalled = true
 	f.account = account
 	f.body = append([]byte(nil), body...)
 	f.requestID = requestID
@@ -37,6 +40,26 @@ func (f *fakeMiniMaxForwarder) ForwardMessages(ctx context.Context, c *gin.Conte
 		Usage: service.ClaudeUsage{
 			InputTokens:  11,
 			OutputTokens: 7,
+		},
+		Duration: time.Millisecond,
+	}, nil
+}
+
+func (f *fakeMiniMaxForwarder) ForwardChatCompletions(ctx context.Context, c *gin.Context, account *service.Account, body []byte, requestID string) (*service.ForwardResult, error) {
+	f.chatCalled = true
+	f.account = account
+	f.body = append([]byte(nil), body...)
+	f.requestID = requestID
+	if f.err != nil {
+		return nil, f.err
+	}
+	c.JSON(http.StatusOK, gin.H{"id": "chatcmpl_1", "model": "claude-sonnet-4-5"})
+	return &service.ForwardResult{
+		RequestID: "upstream-chat-req-1",
+		Model:     "claude-sonnet-4-5",
+		Usage: service.ClaudeUsage{
+			InputTokens:  13,
+			OutputTokens: 5,
 		},
 		Duration: time.Millisecond,
 	}, nil
@@ -138,11 +161,15 @@ func (f *fakeMiniMaxConcurrencyController) AcquireAccountSlotWithWaitTimeout(c *
 }
 
 func newMiniMaxHandlerTestContext(t *testing.T, platform string, body string) (*gin.Context, *httptest.ResponseRecorder, *service.APIKey) {
+	return newMiniMaxHandlerTestContextForPath(t, "/v1/messages", platform, body)
+}
+
+func newMiniMaxHandlerTestContextForPath(t *testing.T, path string, platform string, body string) (*gin.Context, *httptest.ResponseRecorder, *service.APIKey) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
-	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "minimax-test-client")
 	req = req.WithContext(context.WithValue(req.Context(), ctxkey.ClientRequestID, "client-req-1"))
@@ -207,6 +234,53 @@ func TestMiniMaxGatewayHandlerMessagesSuccessForwardsAndRecordsUsage(t *testing.
 	require.Equal(t, apiKey, gateway.recorded.APIKey)
 	require.Equal(t, account, gateway.recorded.Account)
 	require.Equal(t, "/v1/messages", gateway.recorded.InboundEndpoint)
+	require.NotEmpty(t, gateway.recorded.RequestPayloadHash)
+	require.Equal(t, 1, concurrency.incrementWaitCalls)
+	require.Equal(t, 1, concurrency.acquireUserCalls)
+	require.Equal(t, 1, concurrency.decrementWaitCalls)
+	require.Equal(t, 1, concurrency.releaseUserCalls)
+	require.Equal(t, 1, billing.calls)
+}
+
+func TestMiniMaxGatewayHandlerChatCompletionsSuccessForwardsAndRecordsUsage(t *testing.T) {
+	account := &service.Account{
+		ID:          101,
+		Platform:    service.PlatformMiniMax,
+		Type:        service.AccountTypeAPIKey,
+		Credentials: map[string]any{"api_key": "sk-minimax"},
+		Concurrency: 1,
+	}
+	forwarder := &fakeMiniMaxForwarder{}
+	concurrency := &fakeMiniMaxConcurrencyController{allowWait: true}
+	billing := &fakeMiniMaxBillingChecker{}
+	gateway := &fakeMiniMaxGatewayService{
+		selection: &service.AccountSelectionResult{
+			Account:  account,
+			Acquired: true,
+		},
+	}
+	h := &MiniMaxGatewayHandler{
+		minimaxService:      forwarder,
+		gatewayService:      gateway,
+		concurrencyHelper:   concurrency,
+		billingCacheService: billing,
+	}
+	c, rec, apiKey := newMiniMaxHandlerTestContextForPath(t, "/v1/chat/completions", service.PlatformMiniMax, `{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"hello"}]}`)
+
+	h.ChatCompletions(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.True(t, forwarder.chatCalled)
+	require.False(t, forwarder.messagesCalled)
+	require.Equal(t, account, forwarder.account)
+	require.JSONEq(t, `{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"hello"}]}`, string(forwarder.body))
+	require.Equal(t, "client-req-1", forwarder.requestID)
+	require.Equal(t, "claude-sonnet-4-5", gateway.selectedModel)
+	require.Equal(t, int64(99), gateway.selectedUserID)
+	require.NotNil(t, gateway.recorded)
+	require.Equal(t, apiKey, gateway.recorded.APIKey)
+	require.Equal(t, account, gateway.recorded.Account)
+	require.Equal(t, "/v1/chat/completions", gateway.recorded.InboundEndpoint)
 	require.NotEmpty(t, gateway.recorded.RequestPayloadHash)
 	require.Equal(t, 1, concurrency.incrementWaitCalls)
 	require.Equal(t, 1, concurrency.acquireUserCalls)

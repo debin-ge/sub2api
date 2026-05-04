@@ -131,7 +131,7 @@ func RegisterGatewayRoutes(
 				h.OpenAIGateway.ChatCompletions(c)
 				return
 			case service.PlatformMiniMax:
-				writeMiniMaxUnsupported(c, h)
+				writeMiniMaxChatCompletions(c, h)
 				return
 			}
 			h.Gateway.ChatCompletions(c)
@@ -226,7 +226,7 @@ func RegisterGatewayRoutes(
 			h.OpenAIGateway.ChatCompletions(c)
 			return
 		case service.PlatformMiniMax:
-			writeMiniMaxUnsupported(c, h)
+			writeMiniMaxChatCompletions(c, h)
 			return
 		}
 		h.Gateway.ChatCompletions(c)
@@ -317,7 +317,21 @@ func writeMiniMaxUnsupported(c *gin.Context, h *handler.Handlers) {
 		"type": "error",
 		"error": gin.H{
 			"type":    "not_found_error",
-			"message": "MiniMax gateway supports /v1/messages only",
+			"message": "MiniMax gateway supports /v1/messages and /v1/chat/completions only",
+		},
+	})
+}
+
+func writeMiniMaxChatCompletions(c *gin.Context, h *handler.Handlers) {
+	if h != nil && h.MiniMaxGateway != nil {
+		h.MiniMaxGateway.ChatCompletions(c)
+		return
+	}
+	c.JSON(http.StatusServiceUnavailable, gin.H{
+		"type": "error",
+		"error": gin.H{
+			"type":    "api_error",
+			"message": "minimax gateway service unavailable",
 		},
 	})
 }
