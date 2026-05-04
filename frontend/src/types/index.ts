@@ -776,6 +776,10 @@ export interface Account {
   extra?: (CodexUsageSnapshot & OpenAICompactState & {
     model_rate_limits?: Record<string, { rate_limited_at: string; rate_limit_reset_at: string }>
     antigravity_credits_overages?: Record<string, { activated_at: string; active_until: string }>
+    minimax_text_5h_limit?: number | string
+    minimax_text_5h_remaining?: number | string
+    minimax_remains_synced_at?: string
+    minimax_remains_raw?: Record<string, unknown>
   } & Record<string, unknown>)
   proxy_id: number | null
   concurrency: number

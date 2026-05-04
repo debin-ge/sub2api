@@ -272,6 +272,16 @@ export async function resetAccountQuota(id: number): Promise<Account> {
 }
 
 /**
+ * Sync MiniMax official Token Plan remains.
+ * @param id - Account ID
+ * @returns Updated account
+ */
+export async function syncMiniMaxRemains(id: number): Promise<Account> {
+  const { data } = await apiClient.post<Account>(`/admin/accounts/${id}/minimax/remains-sync`)
+  return data
+}
+
+/**
  * Get temporary unschedulable status
  * @param id - Account ID
  * @returns Status with detail state if active
@@ -649,6 +659,7 @@ export const accountsAPI = {
   clearRateLimit,
   recoverState,
   resetAccountQuota,
+  syncMiniMaxRemains,
   getTempUnschedulableStatus,
   resetTempUnschedulable,
   setSchedulable,

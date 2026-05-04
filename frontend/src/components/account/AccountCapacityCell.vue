@@ -7,6 +7,13 @@
       </svg>
     </CapacityBadge>
 
+    <!-- MiniMax 官方 5h 请求余量 -->
+    <CapacityBadge v-if="showMiniMaxRemains" :color-class="miniMaxRemainsClass" :tooltip="miniMaxRemainsTooltip" :current="formatCount(miniMaxRemaining)" :max="formatCount(miniMaxLimit)" suffix="5h">
+      <svg class="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    </CapacityBadge>
+
     <!-- 5h窗口费用限制 -->
     <CapacityBadge v-if="showWindowCost" :color-class="windowCostClass" :tooltip="windowCostTooltip" :current="'$' + formatCost(currentWindowCost)" :max="'$' + formatCost(account.window_cost_limit)">
       <svg class="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -58,6 +65,49 @@ const concurrencyClass = computed(() => {
   if (current > 0) return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
   return 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
 })
+
+// ====== MiniMax 官方 5h 请求余量 ======
+const isMiniMaxTokenPlan = computed(() => props.account.platform === 'minimax' && props.account.type === 'apikey')
+
+const toFiniteNumber = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return null
+}
+
+const miniMaxLimit = computed(() => toFiniteNumber(props.account.extra?.minimax_text_5h_limit))
+const miniMaxRemaining = computed(() => toFiniteNumber(props.account.extra?.minimax_text_5h_remaining))
+
+const showMiniMaxRemains = computed(() =>
+  isMiniMaxTokenPlan.value &&
+  miniMaxLimit.value != null &&
+  miniMaxLimit.value > 0 &&
+  miniMaxRemaining.value != null
+)
+
+const miniMaxRemainsClass = computed(() => {
+  if (!showMiniMaxRemains.value || miniMaxLimit.value == null || miniMaxRemaining.value == null) return ''
+  const ratio = miniMaxRemaining.value / miniMaxLimit.value
+  if (miniMaxRemaining.value <= 0) return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+  if (ratio <= 0.2) return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
+  return 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300'
+})
+
+const miniMaxRemainsTooltip = computed(() => {
+  if (!showMiniMaxRemains.value || miniMaxLimit.value == null || miniMaxRemaining.value == null) return ''
+  const ratio = miniMaxRemaining.value / miniMaxLimit.value
+  if (miniMaxRemaining.value <= 0) return t('admin.accounts.capacity.minimax.exhausted')
+  if (ratio <= 0.2) return t('admin.accounts.capacity.minimax.warning')
+  return t('admin.accounts.capacity.minimax.normal')
+})
+
+const formatCount = (value: number | null) => {
+  if (value == null || !Number.isFinite(value)) return '0'
+  return String(Math.max(0, Math.trunc(value)))
+}
 
 // ====== 窗口费用 ======
 const isAnthropicOAuthOrSetupToken = computed(() =>

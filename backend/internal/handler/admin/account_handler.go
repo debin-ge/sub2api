@@ -58,6 +58,7 @@ type AccountHandler struct {
 	sessionLimitCache       service.SessionLimitCache
 	rpmCache                service.RPMCache
 	tokenCacheInvalidator   service.TokenCacheInvalidator
+	minimaxTokenPlanClient  *service.MiniMaxTokenPlanClient
 }
 
 // NewAccountHandler creates a new admin account handler
@@ -75,6 +76,7 @@ func NewAccountHandler(
 	sessionLimitCache service.SessionLimitCache,
 	rpmCache service.RPMCache,
 	tokenCacheInvalidator service.TokenCacheInvalidator,
+	minimaxTokenPlanClient *service.MiniMaxTokenPlanClient,
 ) *AccountHandler {
 	return &AccountHandler{
 		adminService:            adminService,
@@ -90,6 +92,7 @@ func NewAccountHandler(
 		sessionLimitCache:       sessionLimitCache,
 		rpmCache:                rpmCache,
 		tokenCacheInvalidator:   tokenCacheInvalidator,
+		minimaxTokenPlanClient:  minimaxTokenPlanClient,
 	}
 }
 
@@ -733,6 +736,61 @@ func (h *AccountHandler) RecoverState(c *gin.Context) {
 	}
 
 	response.Success(c, h.buildAccountResponseWithRuntime(c.Request.Context(), account))
+}
+
+// SyncMiniMaxRemains refreshes official MiniMax Token Plan remains into account extra.
+// POST /api/v1/admin/accounts/:id/minimax/remains-sync
+func (h *AccountHandler) SyncMiniMaxRemains(c *gin.Context) {
+	accountID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid account ID")
+		return
+	}
+	if h.minimaxTokenPlanClient == nil {
+		response.Error(c, http.StatusServiceUnavailable, "MiniMax token plan client unavailable")
+		return
+	}
+
+	ctx := c.Request.Context()
+	account, err := h.adminService.GetAccount(ctx, accountID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	if account == nil || !account.IsMiniMaxTokenPlan() {
+		response.BadRequest(c, "Only MiniMax token-plan API key accounts support remains sync")
+		return
+	}
+
+	remains, err := h.minimaxTokenPlanClient.FetchRemains(ctx, account.GetMiniMaxAPIKey())
+	if err != nil {
+		response.Error(c, http.StatusBadGateway, "Failed to sync MiniMax remains: "+err.Error())
+		return
+	}
+
+	extra := copyAccountExtra(account.Extra)
+	extra["minimax_text_5h_limit"] = remains.Text5hLimit
+	extra["minimax_text_5h_remaining"] = remains.Text5hRemaining
+	extra["minimax_remains_synced_at"] = time.Now().UTC().Format(time.RFC3339)
+	extra["minimax_remains_raw"] = remains.Raw
+	if _, ok := extra["text_5h_limit"]; !ok && remains.Text5hLimit > 0 {
+		extra["text_5h_limit"] = remains.Text5hLimit
+	}
+
+	updated, err := h.adminService.UpdateAccount(ctx, accountID, &service.UpdateAccountInput{Extra: extra})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, h.buildAccountResponseWithRuntime(ctx, updated))
+}
+
+func copyAccountExtra(extra map[string]any) map[string]any {
+	copied := make(map[string]any, len(extra)+4)
+	for key, value := range extra {
+		copied[key] = value
+	}
+	return copied
 }
 
 // SyncFromCRS handles syncing accounts from claude-relay-service (CRS)
