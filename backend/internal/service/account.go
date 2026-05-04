@@ -1072,6 +1072,15 @@ func NormalizeGLMModel(model string) string {
 	}
 }
 
+func isOfficialGLMModel(model string) bool {
+	switch model {
+	case "GLM-5.1", "GLM-4.7", "GLM-4.5-air":
+		return true
+	default:
+		return false
+	}
+}
+
 func (a *Account) GetGLMMappedModel(model string) string {
 	trimmed := strings.TrimSpace(model)
 	if a == nil || a.Platform != PlatformGLM {
@@ -1089,7 +1098,7 @@ func (a *Account) GetGLMMappedModel(model string) string {
 	}
 
 	normalized := NormalizeGLMModel(trimmed)
-	if normalized != trimmed {
+	if isOfficialGLMModel(normalized) {
 		return normalized
 	}
 
