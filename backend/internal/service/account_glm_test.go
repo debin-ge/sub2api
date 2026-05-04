@@ -126,7 +126,20 @@ func TestGatewayService_SelectAccountForModelWithPlatform_GLMScheduling(t *testi
 	ctx := context.Background()
 	repo := glmSchedulingAccountRepoStub{
 		accounts: []Account{
-			{ID: 1, Platform: PlatformGLM, Type: AccountTypeAPIKey, Priority: 1, Status: StatusActive, Schedulable: true, Credentials: map[string]any{"api_key": "sk-glm"}},
+			{
+				ID:          1,
+				Platform:    PlatformGLM,
+				Type:        AccountTypeAPIKey,
+				Priority:    1,
+				Status:      StatusActive,
+				Schedulable: true,
+				Credentials: map[string]any{
+					"api_key": "sk-glm",
+					"model_mapping": map[string]any{
+						"custom-model": "GLM-custom",
+					},
+				},
+			},
 			{ID: 2, Platform: PlatformAnthropic, Priority: 1, Status: StatusActive, Schedulable: true},
 		},
 	}
@@ -136,17 +149,21 @@ func TestGatewayService_SelectAccountForModelWithPlatform_GLMScheduling(t *testi
 		cfg:         &config.Config{RunMode: config.RunModeSimple},
 	}
 
-	acc, err := svc.selectAccountForModelWithPlatform(ctx, nil, "", "claude-sonnet-4-5", nil, PlatformGLM)
-	if err != nil {
-		t.Fatalf("selectAccountForModelWithPlatform error = %v", err)
-	}
-	if acc == nil {
-		t.Fatalf("expected account")
-	}
-	if acc.ID != 1 {
-		t.Fatalf("account ID = %d, want 1", acc.ID)
-	}
-	if acc.Platform != PlatformGLM {
-		t.Fatalf("platform = %q, want %q", acc.Platform, PlatformGLM)
+	for _, requestedModel := range []string{"claude-sonnet-4-5", "GLM-5.1", "glm-5.1"} {
+		t.Run(requestedModel, func(t *testing.T) {
+			acc, err := svc.selectAccountForModelWithPlatform(ctx, nil, "", requestedModel, nil, PlatformGLM)
+			if err != nil {
+				t.Fatalf("selectAccountForModelWithPlatform error = %v", err)
+			}
+			if acc == nil {
+				t.Fatalf("expected account")
+			}
+			if acc.ID != 1 {
+				t.Fatalf("account ID = %d, want 1", acc.ID)
+			}
+			if acc.Platform != PlatformGLM {
+				t.Fatalf("platform = %q, want %q", acc.Platform, PlatformGLM)
+			}
+		})
 	}
 }

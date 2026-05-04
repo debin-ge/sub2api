@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -291,6 +292,56 @@ func TestAccountHandlerCreateRejectsGLMWithoutAPIKey(t *testing.T) {
 
 	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
 	require.Empty(t, adminSvc.createdAccounts)
+	require.Contains(t, rec.Body.String(), "api_key")
+}
+
+func TestAccountHandlerUpdateRejectsGLMInvalidType(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	adminSvc := newStubAdminService()
+	adminSvc.accounts = []service.Account{
+		{ID: 3, Name: "glm", Platform: service.PlatformGLM, Type: service.AccountTypeAPIKey, Credentials: map[string]any{"api_key": "sk-glm"}, Status: service.StatusActive},
+	}
+	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router.PUT("/api/v1/admin/accounts/:id", accountHandler.Update)
+
+	body, err := json.Marshal(map[string]any{
+		"type": "oauth",
+	})
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/accounts/3", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+	require.Contains(t, rec.Body.String(), "apikey")
+}
+
+func TestAccountHandlerUpdateRejectsGLMMissingAPIKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	adminSvc := newStubAdminService()
+	adminSvc.accounts = []service.Account{
+		{ID: 3, Name: "glm", Platform: service.PlatformGLM, Type: service.AccountTypeAPIKey, Credentials: map[string]any{"api_key": "sk-glm"}, Status: service.StatusActive},
+	}
+	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router.PUT("/api/v1/admin/accounts/:id", accountHandler.Update)
+
+	body, err := json.Marshal(map[string]any{
+		"credentials": map[string]any{
+			"model_mapping": map[string]any{"custom-model": "GLM-custom"},
+		},
+	})
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/accounts/3", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
 	require.Contains(t, rec.Body.String(), "api_key")
 }
 

@@ -615,6 +615,10 @@ func (h *AccountHandler) Update(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
+	if err := h.validateUpdateAccountRequest(c.Request.Context(), accountID, req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
 	if req.RateMultiplier != nil && *req.RateMultiplier < 0 {
 		response.BadRequest(c, "rate_multiplier must be >= 0")
 		return
@@ -659,6 +663,37 @@ func (h *AccountHandler) Update(c *gin.Context) {
 	}
 
 	response.Success(c, h.buildAccountResponseWithRuntime(c.Request.Context(), account))
+}
+
+func (h *AccountHandler) validateUpdateAccountRequest(ctx context.Context, accountID int64, req UpdateAccountRequest) error {
+	if req.Type == "" && len(req.Credentials) == 0 {
+		return nil
+	}
+	account, err := h.adminService.GetAccount(ctx, accountID)
+	if err != nil {
+		return err
+	}
+	if account == nil || account.Platform != service.PlatformGLM {
+		return nil
+	}
+
+	accountType := account.Type
+	if req.Type != "" {
+		accountType = req.Type
+	}
+	if accountType != service.AccountTypeAPIKey {
+		return errors.New("glm account type must be apikey")
+	}
+
+	credentials := account.Credentials
+	if len(req.Credentials) > 0 {
+		credentials = req.Credentials
+	}
+	apiKey, _ := credentials["api_key"].(string)
+	if strings.TrimSpace(apiKey) == "" {
+		return errors.New("glm account api_key is required")
+	}
+	return nil
 }
 
 // Delete handles deleting an account

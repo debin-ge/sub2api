@@ -1081,25 +1081,35 @@ func isOfficialGLMModel(model string) bool {
 	}
 }
 
+func mapDefaultGLMModel(model string) (string, bool) {
+	trimmed := strings.TrimSpace(model)
+	if trimmed == "" {
+		return "", false
+	}
+	lower := strings.ToLower(trimmed)
+	switch {
+	case strings.HasPrefix(lower, "claude-sonnet-"):
+		return "GLM-5.1", true
+	case strings.HasPrefix(lower, "claude-opus-"):
+		return "GLM-5.1", true
+	case strings.HasPrefix(lower, "claude-haiku-"):
+		return "GLM-4.5-air", true
+	}
+	normalized := NormalizeGLMModel(trimmed)
+	if isOfficialGLMModel(normalized) {
+		return normalized, true
+	}
+	return "", false
+}
+
 func (a *Account) GetGLMMappedModel(model string) string {
 	trimmed := strings.TrimSpace(model)
 	if a == nil || a.Platform != PlatformGLM {
 		return trimmed
 	}
 
-	lower := strings.ToLower(trimmed)
-	switch {
-	case strings.HasPrefix(lower, "claude-sonnet-"):
-		return "GLM-5.1"
-	case strings.HasPrefix(lower, "claude-opus-"):
-		return "GLM-5.1"
-	case strings.HasPrefix(lower, "claude-haiku-"):
-		return "GLM-4.5-air"
-	}
-
-	normalized := NormalizeGLMModel(trimmed)
-	if isOfficialGLMModel(normalized) {
-		return normalized
+	if mapped, ok := mapDefaultGLMModel(trimmed); ok {
+		return mapped
 	}
 
 	mapped, matched := a.ResolveMappedModel(trimmed)
@@ -1107,6 +1117,24 @@ func (a *Account) GetGLMMappedModel(model string) string {
 		return mapped
 	}
 	return trimmed
+}
+
+func (a *Account) IsGLMModelSupported(model string) bool {
+	trimmed := strings.TrimSpace(model)
+	if trimmed == "" {
+		return true
+	}
+	if a == nil || a.Platform != PlatformGLM {
+		return false
+	}
+	if _, ok := mapDefaultGLMModel(trimmed); ok {
+		return true
+	}
+	if len(a.GetModelMapping()) == 0 {
+		return true
+	}
+	_, matched := a.ResolveMappedModel(trimmed)
+	return matched
 }
 
 func (a *Account) IsOpenAIOAuth() bool {
