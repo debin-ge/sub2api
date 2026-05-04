@@ -615,7 +615,12 @@ func (h *AccountHandler) Update(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
-	if err := h.validateUpdateAccountRequest(c.Request.Context(), accountID, req); err != nil {
+	existingAccount, err := h.adminService.GetAccount(c.Request.Context(), accountID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	if err := validateUpdateAccountRequest(existingAccount, req); err != nil {
 		response.BadRequest(c, err.Error())
 		return
 	}
@@ -665,11 +670,7 @@ func (h *AccountHandler) Update(c *gin.Context) {
 	response.Success(c, h.buildAccountResponseWithRuntime(c.Request.Context(), account))
 }
 
-func (h *AccountHandler) validateUpdateAccountRequest(ctx context.Context, accountID int64, req UpdateAccountRequest) error {
-	account, err := h.adminService.GetAccount(ctx, accountID)
-	if err != nil {
-		return err
-	}
+func validateUpdateAccountRequest(account *service.Account, req UpdateAccountRequest) error {
 	if account == nil || account.Platform != service.PlatformGLM {
 		return nil
 	}

@@ -1130,9 +1130,6 @@ func (a *Account) IsGLMModelSupported(model string) bool {
 	if _, ok := mapDefaultGLMModel(trimmed); ok {
 		return true
 	}
-	if len(a.GetModelMapping()) == 0 {
-		return true
-	}
 	_, matched := a.ResolveMappedModel(trimmed)
 	return matched
 }

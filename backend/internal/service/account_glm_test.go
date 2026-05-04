@@ -122,6 +122,46 @@ func TestAccountGLMInvalidAccountHelpers(t *testing.T) {
 	}
 }
 
+func TestAccountGLMModelSupport(t *testing.T) {
+	withoutMapping := &Account{
+		Platform:    PlatformGLM,
+		Type:        AccountTypeAPIKey,
+		Credentials: map[string]any{"api_key": "sk-glm"},
+	}
+	withMapping := &Account{
+		Platform: PlatformGLM,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key": "sk-glm",
+			"model_mapping": map[string]any{
+				"custom-model": "GLM-custom",
+			},
+		},
+	}
+
+	cases := []struct {
+		name    string
+		account *Account
+		model   string
+		want    bool
+	}{
+		{name: "claude alias without mapping", account: withoutMapping, model: "claude-sonnet-4-5", want: true},
+		{name: "official canonical without mapping", account: withoutMapping, model: "GLM-5.1", want: true},
+		{name: "official lowercase without mapping", account: withoutMapping, model: "glm-5.1", want: true},
+		{name: "unknown without mapping", account: withoutMapping, model: "gpt-4o", want: false},
+		{name: "random without mapping", account: withoutMapping, model: "random-model", want: false},
+		{name: "custom with explicit mapping", account: withMapping, model: "custom-model", want: true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.account.IsGLMModelSupported(tc.model); got != tc.want {
+				t.Fatalf("IsGLMModelSupported(%q) = %v, want %v", tc.model, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestGatewayService_SelectAccountForModelWithPlatform_GLMScheduling(t *testing.T) {
 	ctx := context.Background()
 	repo := glmSchedulingAccountRepoStub{

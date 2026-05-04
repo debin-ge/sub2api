@@ -462,6 +462,27 @@ func TestAccountHandlerUpdateAllowsValidExistingGLMOnOrdinaryField(t *testing.T)
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 }
 
+func TestAccountHandlerUpdatePreservesGetAccountErrorMapping(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	adminSvc := newStubAdminService()
+	adminSvc.getAccountErr = service.ErrAccountNotFound
+	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router.PUT("/api/v1/admin/accounts/:id", accountHandler.Update)
+
+	body, err := json.Marshal(map[string]any{
+		"name": "renamed-account",
+	})
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/accounts/404", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusNotFound, rec.Code, rec.Body.String())
+}
+
 func TestProxyHandlerEndpoints(t *testing.T) {
 	router, _ := setupAdminRouter()
 
