@@ -244,6 +244,22 @@ func TestGroupHandlerCreateAcceptsGLM(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 }
 
+func TestGroupHandlerUpdateAcceptsGLM(t *testing.T) {
+	router, _ := setupAdminRouter()
+
+	body, err := json.Marshal(map[string]any{
+		"platform": "glm",
+	})
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/groups/2", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+}
+
 func TestAccountHandlerCreateAcceptsGLMAPIKey(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
@@ -293,6 +309,60 @@ func TestAccountHandlerCreateRejectsGLMWithoutAPIKey(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
 	require.Empty(t, adminSvc.createdAccounts)
 	require.Contains(t, rec.Body.String(), "api_key")
+}
+
+func TestAccountHandlerBatchCreateValidatesGLMAccounts(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	adminSvc := newStubAdminService()
+	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router.POST("/api/v1/admin/accounts/batch", accountHandler.BatchCreate)
+
+	body, err := json.Marshal(map[string]any{
+		"accounts": []map[string]any{
+			{
+				"name":        "glm-valid",
+				"platform":    "glm",
+				"type":        "apikey",
+				"credentials": map[string]any{"api_key": "sk-glm-test"},
+			},
+			{
+				"name":        "glm-missing-key",
+				"platform":    "glm",
+				"type":        "apikey",
+				"credentials": map[string]any{"api_key": " "},
+			},
+			{
+				"name":        "glm-invalid-type",
+				"platform":    "glm",
+				"type":        "oauth",
+				"credentials": map[string]any{"api_key": "sk-glm-test"},
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/batch", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.Len(t, adminSvc.createdAccounts, 1)
+	require.Equal(t, service.PlatformGLM, adminSvc.createdAccounts[0].Platform)
+	require.Equal(t, service.AccountTypeAPIKey, adminSvc.createdAccounts[0].Type)
+
+	var resp struct {
+		Code int `json:"code"`
+		Data struct {
+			Success int `json:"success"`
+			Failed  int `json:"failed"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Equal(t, 0, resp.Code)
+	require.Equal(t, 1, resp.Data.Success)
+	require.Equal(t, 2, resp.Data.Failed)
 }
 
 func TestAccountHandlerUpdateRejectsGLMInvalidType(t *testing.T) {
