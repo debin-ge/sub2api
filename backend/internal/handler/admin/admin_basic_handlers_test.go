@@ -345,6 +345,53 @@ func TestAccountHandlerUpdateRejectsGLMMissingAPIKey(t *testing.T) {
 	require.Contains(t, rec.Body.String(), "api_key")
 }
 
+func TestAccountHandlerUpdateRejectsInvalidExistingGLMOnOrdinaryField(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	adminSvc := newStubAdminService()
+	adminSvc.accounts = []service.Account{
+		{ID: 3, Name: "glm", Platform: service.PlatformGLM, Type: service.AccountTypeAPIKey, Credentials: map[string]any{"api_key": " "}, Status: service.StatusActive},
+	}
+	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router.PUT("/api/v1/admin/accounts/:id", accountHandler.Update)
+
+	body, err := json.Marshal(map[string]any{
+		"name": "renamed-glm",
+	})
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/accounts/3", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+	require.Contains(t, rec.Body.String(), "api_key")
+}
+
+func TestAccountHandlerUpdateAllowsValidExistingGLMOnOrdinaryField(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	adminSvc := newStubAdminService()
+	adminSvc.accounts = []service.Account{
+		{ID: 3, Name: "glm", Platform: service.PlatformGLM, Type: service.AccountTypeAPIKey, Credentials: map[string]any{"api_key": "sk-glm"}, Status: service.StatusActive},
+	}
+	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router.PUT("/api/v1/admin/accounts/:id", accountHandler.Update)
+
+	body, err := json.Marshal(map[string]any{
+		"name": "renamed-glm",
+	})
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/accounts/3", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+}
+
 func TestProxyHandlerEndpoints(t *testing.T) {
 	router, _ := setupAdminRouter()
 

@@ -666,9 +666,6 @@ func (h *AccountHandler) Update(c *gin.Context) {
 }
 
 func (h *AccountHandler) validateUpdateAccountRequest(ctx context.Context, accountID int64, req UpdateAccountRequest) error {
-	if req.Type == "" && len(req.Credentials) == 0 {
-		return nil
-	}
 	account, err := h.adminService.GetAccount(ctx, accountID)
 	if err != nil {
 		return err
@@ -686,7 +683,7 @@ func (h *AccountHandler) validateUpdateAccountRequest(ctx context.Context, accou
 	}
 
 	credentials := account.Credentials
-	if len(req.Credentials) > 0 {
+	if req.Credentials != nil {
 		credentials = req.Credentials
 	}
 	apiKey, _ := credentials["api_key"].(string)
