@@ -762,7 +762,7 @@ func (h *AccountHandler) SyncMiniMaxRemains(c *gin.Context) {
 		return
 	}
 
-	remains, err := h.minimaxTokenPlanClient.FetchRemains(ctx, account.GetMiniMaxAPIKey())
+	remains, err := h.minimaxTokenPlanClient.FetchRemainsForAccount(ctx, account)
 	if err != nil {
 		response.Error(c, http.StatusBadGateway, "Failed to sync MiniMax remains: "+err.Error())
 		return

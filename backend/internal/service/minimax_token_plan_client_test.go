@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -60,6 +61,70 @@ func TestMiniMaxTokenPlanClientFetchRemainsParsesStringNumericFields(t *testing.
 	}
 }
 
+func TestMiniMaxTokenPlanClientFetchRemainsParsesChinaModelRemains(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"model_remains":[
+				{
+					"model_name":"MiniMax-M*",
+					"current_interval_total_count":4500,
+					"current_interval_usage_count":4
+				}
+			],
+			"base_resp":{"status_code":0,"status_msg":"success"}
+		}`))
+	}))
+	defer srv.Close()
+
+	client := NewMiniMaxTokenPlanClient(srv.URL, srv.Client())
+	remains, err := client.FetchRemains(context.Background(), "sk-cp-test")
+	if err != nil {
+		t.Fatalf("FetchRemains error = %v", err)
+	}
+	if remains.Text5hLimit != 4500 {
+		t.Fatalf("Text5hLimit = %d", remains.Text5hLimit)
+	}
+	if remains.Text5hRemaining != 4496 {
+		t.Fatalf("Text5hRemaining = %d", remains.Text5hRemaining)
+	}
+}
+
+func TestMiniMaxTokenPlanClientFetchRemainsForAccountDerivesChinaRegionBaseURL(t *testing.T) {
+	var capturedURL string
+	client := NewMiniMaxTokenPlanClient("", &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		capturedURL = req.URL.String()
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": {"application/json"}},
+			Body: io.NopCloser(strings.NewReader(`{
+				"model_remains":[{"model_name":"MiniMax-M*","current_interval_total_count":4500,"current_interval_usage_count":4}],
+				"base_resp":{"status_code":0,"status_msg":"success"}
+			}`)),
+		}, nil
+	})})
+	account := &Account{
+		Platform: PlatformMiniMax,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key":            "sk-cp-test",
+			"base_url_anthropic": "https://api.minimaxi.com/anthropic",
+			"base_url_openai":    "https://api.minimaxi.com/v1",
+		},
+	}
+
+	remains, err := client.FetchRemainsForAccount(context.Background(), account)
+	if err != nil {
+		t.Fatalf("FetchRemainsForAccount error = %v", err)
+	}
+	if capturedURL != "https://api.minimaxi.com/v1/token_plan/remains" {
+		t.Fatalf("captured url = %q", capturedURL)
+	}
+	if remains.Text5hLimit != 4500 || remains.Text5hRemaining != 4496 {
+		t.Fatalf("remains = %+v", remains)
+	}
+}
+
 func TestMiniMaxTokenPlanClientFetchRemainsSanitizesNon2xxErrorBody(t *testing.T) {
 	longBody := "upstream failed\n" + strings.Repeat("x", 600)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -110,6 +175,30 @@ func TestMiniMaxTokenPlanClientFetchRemainsRedactsAPIKeyFromNon2xxErrorBody(t *t
 	}
 	if !strings.Contains(msg, "[REDACTED_API_KEY]") {
 		t.Fatalf("expected redaction marker in error: %q", msg)
+	}
+}
+
+func TestMiniMaxTokenPlanClientFetchRemainsRejectsNonZeroBaseRespStatus(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"base_resp":{"status_code":2049,"status_msg":"invalid api key"}}`))
+	}))
+	defer srv.Close()
+
+	client := NewMiniMaxTokenPlanClient(srv.URL, srv.Client())
+	remains, err := client.FetchRemains(context.Background(), "sk-cp-test")
+	if err == nil {
+		t.Fatalf("expected base_resp status error")
+	}
+	if remains != nil {
+		t.Fatalf("expected no remains on error")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "minimax remains base_resp 2049") {
+		t.Fatalf("error = %q", msg)
+	}
+	if !strings.Contains(msg, "invalid api key") {
+		t.Fatalf("error = %q", msg)
 	}
 }
 

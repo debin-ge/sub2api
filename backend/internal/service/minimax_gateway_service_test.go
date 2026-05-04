@@ -144,6 +144,18 @@ func TestMiniMaxGatewayServiceForwardMessagesBuildsSafeUpstreamRequest(t *testin
 	}
 }
 
+func TestMiniMaxMessagesURLAllowsChinaRegionHost(t *testing.T) {
+	account := miniMaxGatewayTestAccount("https://api.minimaxi.com/anthropic/")
+
+	got, err := buildMiniMaxMessagesURL(account)
+	if err != nil {
+		t.Fatalf("buildMiniMaxMessagesURL error = %v", err)
+	}
+	if got != "https://api.minimaxi.com/anthropic/v1/messages" {
+		t.Fatalf("messages url = %q", got)
+	}
+}
+
 func TestMiniMaxGatewayServiceRejectsUnsupportedImageBeforeForwarding(t *testing.T) {
 	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		t.Fatalf("unexpected upstream request")

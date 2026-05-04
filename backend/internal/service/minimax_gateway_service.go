@@ -18,7 +18,8 @@ import (
 )
 
 const (
-	miniMaxAnthropicHost             = "api.minimax.io"
+	miniMaxInternationalHost         = "api.minimax.io"
+	miniMaxChinaHost                 = "api.minimaxi.com"
 	miniMaxNonStreamResponseMaxBytes = 2 << 20
 )
 
@@ -394,7 +395,7 @@ func buildMiniMaxChatCompletionsURL(account *Account) (string, error) {
 
 func validateMiniMaxUpstreamBaseURL(raw string) (string, error) {
 	return urlvalidator.ValidateHTTPURL(raw, false, urlvalidator.ValidationOptions{
-		AllowedHosts: []string{miniMaxAnthropicHost},
+		AllowedHosts: []string{miniMaxInternationalHost, miniMaxChinaHost},
 		AllowPrivate: false,
 	})
 }

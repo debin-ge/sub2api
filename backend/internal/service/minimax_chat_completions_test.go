@@ -50,6 +50,18 @@ func TestMiniMaxChatCompletionsURL(t *testing.T) {
 	}
 }
 
+func TestMiniMaxChatCompletionsURLAllowsChinaRegionHost(t *testing.T) {
+	account := miniMaxChatCompletionsTestAccount("https://api.minimaxi.com/v1/")
+
+	got, err := buildMiniMaxChatCompletionsURL(account)
+	if err != nil {
+		t.Fatalf("buildMiniMaxChatCompletionsURL error = %v", err)
+	}
+	if got != "https://api.minimaxi.com/v1/chat/completions" {
+		t.Fatalf("chat completions url = %q", got)
+	}
+}
+
 func TestMiniMaxGatewayServiceForwardChatCompletionsBuildsSafeUpstreamRequest(t *testing.T) {
 	var captured *http.Request
 	var capturedBody []byte

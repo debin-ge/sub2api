@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -13,6 +14,8 @@ import (
 
 const miniMaxRemainsErrorBodyMaxBytes = 512
 const miniMaxAPIKeyRedaction = "[REDACTED_API_KEY]"
+const miniMaxDefaultRemainsBaseURL = "https://www.minimax.io"
+const miniMaxChinaRemainsBaseURL = "https://api.minimaxi.com"
 
 type MiniMaxTokenPlanRemains struct {
 	Text5hLimit     int64
@@ -21,28 +24,49 @@ type MiniMaxTokenPlanRemains struct {
 }
 
 type MiniMaxTokenPlanClient struct {
-	baseURL    string
-	httpClient *http.Client
+	baseURL         string
+	baseURLExplicit bool
+	httpClient      *http.Client
 }
 
 func NewMiniMaxTokenPlanClient(baseURL string, httpClient *http.Client) *MiniMaxTokenPlanClient {
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	baseURLExplicit := baseURL != ""
 	if baseURL == "" {
-		baseURL = "https://www.minimax.io"
+		baseURL = miniMaxDefaultRemainsBaseURL
 	}
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: 15 * time.Second}
 	}
-	return &MiniMaxTokenPlanClient{baseURL: baseURL, httpClient: httpClient}
+	return &MiniMaxTokenPlanClient{baseURL: baseURL, baseURLExplicit: baseURLExplicit, httpClient: httpClient}
 }
 
 func (c *MiniMaxTokenPlanClient) FetchRemains(ctx context.Context, apiKey string) (*MiniMaxTokenPlanRemains, error) {
+	return c.fetchRemains(ctx, apiKey, c.baseURL)
+}
+
+func (c *MiniMaxTokenPlanClient) FetchRemainsForAccount(ctx context.Context, account *Account) (*MiniMaxTokenPlanRemains, error) {
+	if account == nil || !account.IsMiniMaxTokenPlan() {
+		return nil, fmt.Errorf("minimax token plan account is required")
+	}
+	baseURL := c.baseURL
+	if !c.baseURLExplicit {
+		baseURL = miniMaxRemainsBaseURLForAccount(account)
+	}
+	return c.fetchRemains(ctx, account.GetMiniMaxAPIKey(), baseURL)
+}
+
+func (c *MiniMaxTokenPlanClient) fetchRemains(ctx context.Context, apiKey string, baseURL string) (*MiniMaxTokenPlanRemains, error) {
 	apiKey = strings.TrimSpace(apiKey)
 	if apiKey == "" {
 		return nil, fmt.Errorf("minimax token plan api key is required")
 	}
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if baseURL == "" {
+		baseURL = miniMaxDefaultRemainsBaseURL
+	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/v1/token_plan/remains", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/v1/token_plan/remains", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -79,13 +103,87 @@ func (c *MiniMaxTokenPlanClient) FetchRemains(ctx context.Context, apiKey string
 			return nil, fmt.Errorf("minimax remains code %d: %s", code, message)
 		}
 	}
+	if baseResp, ok := raw["base_resp"].(map[string]any); ok {
+		statusCode := int64FromAny(baseResp["status_code"])
+		if statusCode != 0 {
+			message := sanitizeMiniMaxErrorBody(body, apiKey)
+			if msg, ok := baseResp["status_msg"]; ok {
+				message = sanitizeMiniMaxErrorBody([]byte(fmt.Sprint(msg)), apiKey)
+			} else if msg, ok := baseResp["message"]; ok {
+				message = sanitizeMiniMaxErrorBody([]byte(fmt.Sprint(msg)), apiKey)
+			}
+			return nil, fmt.Errorf("minimax remains base_resp %d: %s", statusCode, message)
+		}
+	}
 
 	remains := &MiniMaxTokenPlanRemains{Raw: raw}
 	if data, ok := raw["data"].(map[string]any); ok {
 		remains.Text5hLimit = int64FromAny(data["text_5h_limit"])
 		remains.Text5hRemaining = int64FromAny(data["text_5h_remaining"])
 	}
+	if remains.Text5hLimit == 0 {
+		applyMiniMaxModelRemains(remains, raw["model_remains"])
+	}
 	return remains, nil
+}
+
+func miniMaxRemainsBaseURLForAccount(account *Account) string {
+	for _, raw := range []string{account.GetMiniMaxAnthropicBaseURL(), account.GetMiniMaxOpenAIBaseURL()} {
+		parsed, err := url.Parse(strings.TrimSpace(raw))
+		if err != nil {
+			continue
+		}
+		switch strings.ToLower(parsed.Hostname()) {
+		case miniMaxChinaHost:
+			return miniMaxChinaRemainsBaseURL
+		case miniMaxInternationalHost:
+			return miniMaxDefaultRemainsBaseURL
+		}
+	}
+	return miniMaxDefaultRemainsBaseURL
+}
+
+func applyMiniMaxModelRemains(remains *MiniMaxTokenPlanRemains, value any) {
+	if remains == nil {
+		return
+	}
+	items, ok := value.([]any)
+	if !ok {
+		return
+	}
+	var fallback map[string]any
+	for _, item := range items {
+		entry, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		limit := int64FromAny(entry["current_interval_total_count"])
+		if limit <= 0 {
+			continue
+		}
+		if fallback == nil {
+			fallback = entry
+		}
+		modelName := strings.ToLower(strings.TrimSpace(fmt.Sprint(entry["model_name"])))
+		if strings.HasPrefix(modelName, "minimax-m") {
+			setMiniMaxModelRemainValues(remains, entry)
+			return
+		}
+	}
+	if fallback != nil {
+		setMiniMaxModelRemainValues(remains, fallback)
+	}
+}
+
+func setMiniMaxModelRemainValues(remains *MiniMaxTokenPlanRemains, entry map[string]any) {
+	limit := int64FromAny(entry["current_interval_total_count"])
+	used := int64FromAny(entry["current_interval_usage_count"])
+	remaining := limit - used
+	if remaining < 0 {
+		remaining = 0
+	}
+	remains.Text5hLimit = limit
+	remains.Text5hRemaining = remaining
 }
 
 func sanitizeMiniMaxErrorBody(body []byte, apiKey string) string {
