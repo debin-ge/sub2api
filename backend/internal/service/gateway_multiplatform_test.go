@@ -389,6 +389,33 @@ func TestGatewayService_SelectAccountForModelWithPlatform_MiniMaxScheduling(t *t
 	require.Equal(t, PlatformMiniMax, acc.Platform, "应只返回 minimax 平台账户")
 }
 
+func TestGatewayService_SelectAccountForModelWithPlatform_GLMScheduling(t *testing.T) {
+	ctx := context.Background()
+
+	repo := &mockAccountRepoForPlatform{
+		accounts: []Account{
+			{ID: 1, Platform: PlatformGLM, Type: AccountTypeAPIKey, Priority: 1, Status: StatusActive, Schedulable: true, Credentials: map[string]any{"api_key": "sk-glm"}},
+			{ID: 2, Platform: PlatformAnthropic, Priority: 1, Status: StatusActive, Schedulable: true},
+		},
+		accountsByID: map[int64]*Account{},
+	}
+	for i := range repo.accounts {
+		repo.accountsByID[repo.accounts[i].ID] = &repo.accounts[i]
+	}
+
+	svc := &GatewayService{
+		accountRepo: repo,
+		cache:       &mockGatewayCacheForPlatform{},
+		cfg:         testConfig(),
+	}
+
+	acc, err := svc.selectAccountForModelWithPlatform(ctx, nil, "", "claude-sonnet-4-5", nil, PlatformGLM)
+	require.NoError(t, err)
+	require.NotNil(t, acc)
+	require.Equal(t, int64(1), acc.ID, "应选择 GLM 账户")
+	require.Equal(t, PlatformGLM, acc.Platform, "应只返回 glm 平台账户")
+}
+
 // TestGatewayService_SelectAccountForModelWithPlatform_PriorityAndLastUsed 测试优先级和最后使用时间
 func TestGatewayService_SelectAccountForModelWithPlatform_PriorityAndLastUsed(t *testing.T) {
 	ctx := context.Background()

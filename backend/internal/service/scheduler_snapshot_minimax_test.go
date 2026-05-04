@@ -28,6 +28,27 @@ func TestMiniMaxSchedulingDefaultBucketsIncludePlatform(t *testing.T) {
 	}
 }
 
+func TestGLMSchedulingDefaultBucketsIncludePlatform(t *testing.T) {
+	svc := &SchedulerSnapshotService{
+		cfg: &config.Config{RunMode: config.RunModeSimple},
+	}
+
+	buckets, err := svc.defaultBuckets(context.Background())
+	if err != nil {
+		t.Fatalf("defaultBuckets error = %v", err)
+	}
+
+	if !schedulerBucketExists(buckets, SchedulerBucket{GroupID: 0, Platform: PlatformGLM, Mode: SchedulerModeSingle}) {
+		t.Fatalf("expected GLM single scheduler bucket, got %+v", buckets)
+	}
+	if !schedulerBucketExists(buckets, SchedulerBucket{GroupID: 0, Platform: PlatformGLM, Mode: SchedulerModeForced}) {
+		t.Fatalf("expected GLM forced scheduler bucket, got %+v", buckets)
+	}
+	if schedulerBucketExists(buckets, SchedulerBucket{GroupID: 0, Platform: PlatformGLM, Mode: SchedulerModeMixed}) {
+		t.Fatalf("GLM must not use mixed scheduler bucket")
+	}
+}
+
 func schedulerBucketExists(buckets []SchedulerBucket, want SchedulerBucket) bool {
 	for _, bucket := range buckets {
 		if bucket == want {

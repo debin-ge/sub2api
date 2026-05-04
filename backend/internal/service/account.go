@@ -1023,6 +1023,83 @@ func (a *Account) GetMiniMaxMappedModel(model string) string {
 	return mapped
 }
 
+func (a *Account) IsGLM() bool {
+	return a != nil && a.Platform == PlatformGLM
+}
+
+func (a *Account) IsGLMCodingPlan() bool {
+	if a == nil || a.Platform != PlatformGLM {
+		return false
+	}
+	if a.Type != AccountTypeAPIKey {
+		return false
+	}
+	return strings.TrimSpace(a.GetCredential("api_key")) != ""
+}
+
+func (a *Account) GetGLMAPIKey() string {
+	if a == nil || a.Platform != PlatformGLM {
+		return ""
+	}
+	return strings.TrimSpace(a.GetCredential("api_key"))
+}
+
+func (a *Account) GetGLMAnthropicBaseURL() string {
+	if a == nil || a.Platform != PlatformGLM {
+		return ""
+	}
+	return "https://open.bigmodel.cn/api/anthropic"
+}
+
+func (a *Account) GetGLMOpenAIBaseURL() string {
+	if a == nil || a.Platform != PlatformGLM {
+		return ""
+	}
+	return "https://open.bigmodel.cn/api/coding/paas/v4"
+}
+
+func NormalizeGLMModel(model string) string {
+	trimmed := strings.TrimSpace(model)
+	switch strings.ToLower(trimmed) {
+	case "glm-5.1":
+		return "GLM-5.1"
+	case "glm-4.7":
+		return "GLM-4.7"
+	case "glm-4.5-air":
+		return "GLM-4.5-air"
+	default:
+		return trimmed
+	}
+}
+
+func (a *Account) GetGLMMappedModel(model string) string {
+	trimmed := strings.TrimSpace(model)
+	if a == nil || a.Platform != PlatformGLM {
+		return trimmed
+	}
+
+	lower := strings.ToLower(trimmed)
+	switch {
+	case strings.HasPrefix(lower, "claude-sonnet-"):
+		return "GLM-5.1"
+	case strings.HasPrefix(lower, "claude-opus-"):
+		return "GLM-5.1"
+	case strings.HasPrefix(lower, "claude-haiku-"):
+		return "GLM-4.5-air"
+	}
+
+	normalized := NormalizeGLMModel(trimmed)
+	if normalized != trimmed {
+		return normalized
+	}
+
+	mapped, matched := a.ResolveMappedModel(trimmed)
+	if matched && strings.TrimSpace(mapped) != "" {
+		return mapped
+	}
+	return trimmed
+}
+
 func (a *Account) IsOpenAIOAuth() bool {
 	return a.IsOpenAI() && a.Type == AccountTypeOAuth
 }

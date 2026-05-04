@@ -225,6 +225,75 @@ func TestGroupHandlerCreateAcceptsMiniMax(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 }
 
+func TestGroupHandlerCreateAcceptsGLM(t *testing.T) {
+	router, _ := setupAdminRouter()
+
+	body, err := json.Marshal(map[string]any{
+		"name":              "glm-coding-plan",
+		"platform":          "glm",
+		"subscription_type": "subscription",
+	})
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/groups", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+}
+
+func TestAccountHandlerCreateAcceptsGLMAPIKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	adminSvc := newStubAdminService()
+	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router.POST("/api/v1/admin/accounts", accountHandler.Create)
+
+	body, err := json.Marshal(map[string]any{
+		"name":        "glm-coding-plan",
+		"platform":    "glm",
+		"type":        "apikey",
+		"credentials": map[string]any{"api_key": "sk-glm-test"},
+	})
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.Len(t, adminSvc.createdAccounts, 1)
+	require.Equal(t, "glm", adminSvc.createdAccounts[0].Platform)
+	require.Equal(t, "apikey", adminSvc.createdAccounts[0].Type)
+}
+
+func TestAccountHandlerCreateRejectsGLMWithoutAPIKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	adminSvc := newStubAdminService()
+	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router.POST("/api/v1/admin/accounts", accountHandler.Create)
+
+	body, err := json.Marshal(map[string]any{
+		"name":        "glm-coding-plan",
+		"platform":    "glm",
+		"type":        "apikey",
+		"credentials": map[string]any{"api_key": " "},
+	})
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+	require.Empty(t, adminSvc.createdAccounts)
+	require.Contains(t, rec.Body.String(), "api_key")
+}
+
 func TestProxyHandlerEndpoints(t *testing.T) {
 	router, _ := setupAdminRouter()
 

@@ -23,6 +23,7 @@ const (
 	PlatformGemini      = "gemini"
 	PlatformAntigravity = "antigravity"
 	PlatformMiniMax     = "minimax"
+	PlatformGLM         = "glm"
 )
 
 // Account type constants

@@ -521,6 +521,10 @@ func (h *AccountHandler) Create(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
+	if err := validateCreateAccountRequest(req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
 	if req.RateMultiplier != nil && *req.RateMultiplier < 0 {
 		response.BadRequest(c, "rate_multiplier must be >= 0")
 		return
@@ -581,6 +585,20 @@ func (h *AccountHandler) Create(c *gin.Context) {
 		c.Header("X-Idempotency-Replayed", "true")
 	}
 	response.Success(c, result.Data)
+}
+
+func validateCreateAccountRequest(req CreateAccountRequest) error {
+	if req.Platform != service.PlatformGLM {
+		return nil
+	}
+	if req.Type != service.AccountTypeAPIKey {
+		return errors.New("glm account type must be apikey")
+	}
+	apiKey, _ := req.Credentials["api_key"].(string)
+	if strings.TrimSpace(apiKey) == "" {
+		return errors.New("glm account api_key is required")
+	}
+	return nil
 }
 
 // Update handles updating an account
@@ -1240,6 +1258,15 @@ func (h *AccountHandler) BatchCreate(c *gin.Context) {
 		var openaiPrivacyAccounts []*service.Account
 
 		for _, item := range req.Accounts {
+			if err := validateCreateAccountRequest(item); err != nil {
+				failed++
+				results = append(results, gin.H{
+					"name":    item.Name,
+					"success": false,
+					"error":   err.Error(),
+				})
+				continue
+			}
 			if item.RateMultiplier != nil && *item.RateMultiplier < 0 {
 				failed++
 				results = append(results, gin.H{
