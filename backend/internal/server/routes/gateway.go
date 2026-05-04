@@ -59,6 +59,19 @@ func RegisterGatewayRoutes(
 				}
 				h.MiniMaxGateway.Messages(c)
 				return
+			case service.PlatformGLM:
+				if h.GLMGateway == nil {
+					c.JSON(http.StatusServiceUnavailable, gin.H{
+						"type": "error",
+						"error": gin.H{
+							"type":    "api_error",
+							"message": "glm gateway service unavailable",
+						},
+					})
+					return
+				}
+				h.GLMGateway.Messages(c)
+				return
 			}
 			h.Gateway.Messages(c)
 		})
@@ -78,6 +91,10 @@ func RegisterGatewayRoutes(
 				writeMiniMaxUnsupported(c, h)
 				return
 			}
+			if getGroupPlatform(c) == service.PlatformGLM {
+				writeGLMUnsupported(c, h)
+				return
+			}
 			h.Gateway.CountTokens(c)
 		})
 		gateway.GET("/models", func(c *gin.Context) {
@@ -92,6 +109,10 @@ func RegisterGatewayRoutes(
 				writeMiniMaxUnsupported(c, h)
 				return
 			}
+			if getGroupPlatform(c) == service.PlatformGLM {
+				writeGLMUnsupported(c, h)
+				return
+			}
 			h.Gateway.Usage(c)
 		})
 		// OpenAI Responses API: auto-route based on group platform
@@ -102,6 +123,9 @@ func RegisterGatewayRoutes(
 				return
 			case service.PlatformMiniMax:
 				writeMiniMaxUnsupported(c, h)
+				return
+			case service.PlatformGLM:
+				writeGLMUnsupported(c, h)
 				return
 			}
 			h.Gateway.Responses(c)
@@ -114,12 +138,19 @@ func RegisterGatewayRoutes(
 			case service.PlatformMiniMax:
 				writeMiniMaxUnsupported(c, h)
 				return
+			case service.PlatformGLM:
+				writeGLMUnsupported(c, h)
+				return
 			}
 			h.Gateway.Responses(c)
 		})
 		gateway.GET("/responses", func(c *gin.Context) {
 			if getGroupPlatform(c) == service.PlatformMiniMax {
 				writeMiniMaxUnsupported(c, h)
+				return
+			}
+			if getGroupPlatform(c) == service.PlatformGLM {
+				writeGLMUnsupported(c, h)
 				return
 			}
 			h.OpenAIGateway.ResponsesWebSocket(c)
@@ -133,12 +164,19 @@ func RegisterGatewayRoutes(
 			case service.PlatformMiniMax:
 				writeMiniMaxChatCompletions(c, h)
 				return
+			case service.PlatformGLM:
+				writeGLMChatCompletions(c, h)
+				return
 			}
 			h.Gateway.ChatCompletions(c)
 		})
 		gateway.POST("/images/generations", func(c *gin.Context) {
 			if getGroupPlatform(c) == service.PlatformMiniMax {
 				writeMiniMaxUnsupported(c, h)
+				return
+			}
+			if getGroupPlatform(c) == service.PlatformGLM {
+				writeGLMUnsupported(c, h)
 				return
 			}
 			if getGroupPlatform(c) != service.PlatformOpenAI {
@@ -155,6 +193,10 @@ func RegisterGatewayRoutes(
 		gateway.POST("/images/edits", func(c *gin.Context) {
 			if getGroupPlatform(c) == service.PlatformMiniMax {
 				writeMiniMaxUnsupported(c, h)
+				return
+			}
+			if getGroupPlatform(c) == service.PlatformGLM {
+				writeGLMUnsupported(c, h)
 				return
 			}
 			if getGroupPlatform(c) != service.PlatformOpenAI {
@@ -194,6 +236,9 @@ func RegisterGatewayRoutes(
 		case service.PlatformMiniMax:
 			writeMiniMaxUnsupported(c, h)
 			return
+		case service.PlatformGLM:
+			writeGLMUnsupported(c, h)
+			return
 		}
 		h.Gateway.Responses(c)
 	}
@@ -202,6 +247,10 @@ func RegisterGatewayRoutes(
 	r.GET("/responses", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, func(c *gin.Context) {
 		if getGroupPlatform(c) == service.PlatformMiniMax {
 			writeMiniMaxUnsupported(c, h)
+			return
+		}
+		if getGroupPlatform(c) == service.PlatformGLM {
+			writeGLMUnsupported(c, h)
 			return
 		}
 		h.OpenAIGateway.ResponsesWebSocket(c)
@@ -216,6 +265,10 @@ func RegisterGatewayRoutes(
 				writeMiniMaxUnsupported(c, h)
 				return
 			}
+			if getGroupPlatform(c) == service.PlatformGLM {
+				writeGLMUnsupported(c, h)
+				return
+			}
 			h.OpenAIGateway.ResponsesWebSocket(c)
 		})
 	}
@@ -228,12 +281,19 @@ func RegisterGatewayRoutes(
 		case service.PlatformMiniMax:
 			writeMiniMaxChatCompletions(c, h)
 			return
+		case service.PlatformGLM:
+			writeGLMChatCompletions(c, h)
+			return
 		}
 		h.Gateway.ChatCompletions(c)
 	})
 	r.POST("/images/generations", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, func(c *gin.Context) {
 		if getGroupPlatform(c) == service.PlatformMiniMax {
 			writeMiniMaxUnsupported(c, h)
+			return
+		}
+		if getGroupPlatform(c) == service.PlatformGLM {
+			writeGLMUnsupported(c, h)
 			return
 		}
 		if getGroupPlatform(c) != service.PlatformOpenAI {
@@ -250,6 +310,10 @@ func RegisterGatewayRoutes(
 	r.POST("/images/edits", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, func(c *gin.Context) {
 		if getGroupPlatform(c) == service.PlatformMiniMax {
 			writeMiniMaxUnsupported(c, h)
+			return
+		}
+		if getGroupPlatform(c) == service.PlatformGLM {
+			writeGLMUnsupported(c, h)
 			return
 		}
 		if getGroupPlatform(c) != service.PlatformOpenAI {
@@ -332,6 +396,34 @@ func writeMiniMaxChatCompletions(c *gin.Context, h *handler.Handlers) {
 		"error": gin.H{
 			"type":    "api_error",
 			"message": "minimax gateway service unavailable",
+		},
+	})
+}
+
+func writeGLMUnsupported(c *gin.Context, h *handler.Handlers) {
+	if h != nil && h.GLMGateway != nil {
+		h.GLMGateway.Unsupported(c)
+		return
+	}
+	c.JSON(http.StatusNotFound, gin.H{
+		"type": "error",
+		"error": gin.H{
+			"type":    "not_found_error",
+			"message": "GLM gateway supports /v1/messages and /v1/chat/completions only",
+		},
+	})
+}
+
+func writeGLMChatCompletions(c *gin.Context, h *handler.Handlers) {
+	if h != nil && h.GLMGateway != nil {
+		h.GLMGateway.ChatCompletions(c)
+		return
+	}
+	c.JSON(http.StatusServiceUnavailable, gin.H{
+		"type": "error",
+		"error": gin.H{
+			"type":    "api_error",
+			"message": "glm gateway service unavailable",
 		},
 	})
 }

@@ -54,6 +54,11 @@ func ProvideMiniMaxGatewayService(quotaService *MiniMaxQuotaService, cfg *config
 	return NewMiniMaxGatewayService(nil, quotaService, compileResponseHeaderFilter(cfg))
 }
 
+// ProvideGLMGatewayService creates the GLM Coding Plan gateway service.
+func ProvideGLMGatewayService(cfg *config.Config) *GLMGatewayService {
+	return NewGLMGatewayService(nil, compileResponseHeaderFilter(cfg))
+}
+
 // ProvideTokenRefreshService creates and starts TokenRefreshService
 func ProvideTokenRefreshService(
 	accountRepo AccountRepository,
@@ -454,6 +459,7 @@ var ProviderSet = wire.NewSet(
 	ProvideMiniMaxTokenPlanClient,
 	NewMiniMaxQuotaService,
 	ProvideMiniMaxGatewayService,
+	ProvideGLMGatewayService,
 	NewOAuthService,
 	NewOpenAIOAuthService,
 	NewGeminiOAuthService,

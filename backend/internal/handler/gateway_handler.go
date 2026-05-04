@@ -938,24 +938,26 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 		platform = forcedPlatform
 	}
 
+	if platform == service.PlatformGLM {
+		if h.gatewayService != nil {
+			availableModels := h.gatewayService.GetAvailableModels(c.Request.Context(), groupID, "")
+			if len(availableModels) > 0 {
+				writeClaudeModelList(c, availableModels)
+				return
+			}
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"object": "list",
+			"data":   defaultGLMModels(),
+		})
+		return
+	}
+
 	// Get available models from account configurations (without platform filter)
 	availableModels := h.gatewayService.GetAvailableModels(c.Request.Context(), groupID, "")
 
 	if len(availableModels) > 0 {
-		// Build model list from whitelist
-		models := make([]claude.Model, 0, len(availableModels))
-		for _, modelID := range availableModels {
-			models = append(models, claude.Model{
-				ID:          modelID,
-				Type:        "model",
-				DisplayName: modelID,
-				CreatedAt:   "2024-01-01T00:00:00Z",
-			})
-		}
-		c.JSON(http.StatusOK, gin.H{
-			"object": "list",
-			"data":   models,
-		})
+		writeClaudeModelList(c, availableModels)
 		return
 	}
 
@@ -972,6 +974,30 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 		"object": "list",
 		"data":   claude.DefaultModels,
 	})
+}
+
+func writeClaudeModelList(c *gin.Context, modelIDs []string) {
+	models := make([]claude.Model, 0, len(modelIDs))
+	for _, modelID := range modelIDs {
+		models = append(models, claude.Model{
+			ID:          modelID,
+			Type:        "model",
+			DisplayName: modelID,
+			CreatedAt:   "2024-01-01T00:00:00Z",
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"object": "list",
+		"data":   models,
+	})
+}
+
+func defaultGLMModels() []claude.Model {
+	return []claude.Model{
+		{ID: "GLM-5.1", Type: "model", DisplayName: "GLM-5.1", CreatedAt: "2024-01-01T00:00:00Z"},
+		{ID: "GLM-4.7", Type: "model", DisplayName: "GLM-4.7", CreatedAt: "2024-01-01T00:00:00Z"},
+		{ID: "GLM-4.5-air", Type: "model", DisplayName: "GLM-4.5-air", CreatedAt: "2024-01-01T00:00:00Z"},
+	}
 }
 
 // AntigravityModels 返回 Antigravity 支持的全部模型
