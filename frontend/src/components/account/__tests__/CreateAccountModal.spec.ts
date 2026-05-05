@@ -179,7 +179,11 @@ describe('CreateAccountModal', () => {
     await wrapper.get('[data-testid="create-platform-glm"]').trigger('click')
     expect(wrapper.find('[data-testid="glm-anthropic-base-url"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="glm-openai-base-url"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="model-whitelist-selector"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="quota-limit-card"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('admin.accounts.poolMode')
+    expect(wrapper.text()).not.toContain('admin.accounts.customErrorCodes')
+    expect(wrapper.text()).not.toContain('admin.accounts.tempUnschedulable.title')
 
     await wrapper.get('[data-testid="glm-api-key"]').setValue('sk-glm-test')
     await wrapper.get('form#create-account-form').trigger('submit.prevent')

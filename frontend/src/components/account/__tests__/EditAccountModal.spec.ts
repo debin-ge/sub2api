@@ -310,7 +310,11 @@ describe('EditAccountModal', () => {
     expect(wrapper.find('[data-testid="glm-base-url"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="glm-anthropic-base-url"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="glm-openai-base-url"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="model-whitelist-value"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="quota-limit-card"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('admin.accounts.poolMode')
+    expect(wrapper.text()).not.toContain('admin.accounts.customErrorCodes')
+    expect(wrapper.text()).not.toContain('admin.accounts.tempUnschedulable.title')
 
     await wrapper.get('[data-testid="glm-api-key"]').setValue('sk-glm-updated')
     await wrapper.get('form#edit-account-form').trigger('submit.prevent')
