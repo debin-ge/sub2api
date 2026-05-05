@@ -70,7 +70,7 @@
       <!-- Platform Selection - Segmented Control Style -->
       <div>
         <label class="input-label">{{ t('admin.accounts.platform') }}</label>
-        <div class="mt-2 grid grid-cols-2 gap-1 rounded-lg bg-gray-100 p-1 dark:bg-dark-700 sm:grid-cols-5" data-tour="account-form-platform">
+        <div class="mt-2 grid grid-cols-2 gap-1 rounded-lg bg-gray-100 p-1 dark:bg-dark-700 sm:grid-cols-6" data-tour="account-form-platform">
           <button
             type="button"
             @click="form.platform = 'anthropic'"
@@ -160,6 +160,20 @@
           >
             <Icon name="key" size="sm" />
             MiniMax
+          </button>
+          <button
+            type="button"
+            data-testid="create-platform-glm"
+            @click="form.platform = 'glm'"
+            :class="[
+              'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2.5 text-sm font-medium transition-all',
+              form.platform === 'glm'
+                ? 'bg-white text-rose-600 shadow-sm dark:bg-dark-600 dark:text-rose-400'
+                : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
+            ]"
+          >
+            <Icon name="key" size="sm" />
+            GLM
           </button>
         </div>
       </div>
@@ -1057,6 +1071,30 @@
                 class="input font-mono"
                 :placeholder="MINIMAX_OPENAI_BASE_URL"
               />
+            </div>
+          </div>
+        </template>
+        <template v-else-if="form.platform === 'glm'">
+          <div>
+            <label class="input-label">GLM API Key</label>
+            <input
+              v-model="apiKeyValue"
+              data-testid="glm-api-key"
+              type="password"
+              required
+              class="input font-mono"
+              placeholder="sk-..."
+            />
+            <p class="input-hint">{{ apiKeyHint }}</p>
+          </div>
+          <div class="grid grid-cols-1 gap-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800 dark:border-rose-800/40 dark:bg-rose-900/20 dark:text-rose-200 sm:grid-cols-2">
+            <div>
+              <div class="font-medium">Anthropic-compatible</div>
+              <div class="mt-1 break-all font-mono">{{ GLM_ANTHROPIC_BASE_URL }}</div>
+            </div>
+            <div>
+              <div class="font-medium">OpenAI-compatible</div>
+              <div class="mt-1 break-all font-mono">{{ GLM_OPENAI_BASE_URL }}</div>
             </div>
           </div>
         </template>
@@ -3187,6 +3225,8 @@ import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
 import {
   MINIMAX_ANTHROPIC_BASE_URL,
   MINIMAX_OPENAI_BASE_URL,
+  GLM_ANTHROPIC_BASE_URL,
+  GLM_OPENAI_BASE_URL,
   VERTEX_LOCATION_OPTIONS
 } from '@/constants/account'
 import {
@@ -3629,6 +3669,10 @@ watch(
       form.type = 'apikey'
       return
     }
+    if (form.platform === 'glm') {
+      form.type = 'apikey'
+      return
+    }
     // Antigravity upstream 类型（实际创建为 apikey）
     if (form.platform === 'antigravity' && agType === 'upstream') {
       form.type = 'apikey'
@@ -3662,6 +3706,8 @@ watch(
           ? 'https://generativelanguage.googleapis.com'
           : newPlatform === 'minimax'
             ? MINIMAX_ANTHROPIC_BASE_URL
+            : newPlatform === 'glm'
+              ? GLM_ANTHROPIC_BASE_URL
             : 'https://api.anthropic.com'
     minimaxAnthropicBaseUrl.value = MINIMAX_ANTHROPIC_BASE_URL
     minimaxOpenAIBaseUrl.value = MINIMAX_OPENAI_BASE_URL
@@ -3684,6 +3730,9 @@ watch(
       antigravityModelRestrictionMode.value = 'mapping'
     }
     if (newPlatform === 'minimax') {
+      accountCategory.value = 'apikey'
+    }
+    if (newPlatform === 'glm') {
       accountCategory.value = 'apikey'
     }
     if (newPlatform !== 'gemini' && newPlatform !== 'anthropic' && accountCategory.value === 'service_account') {
@@ -3770,6 +3819,10 @@ watch(
   [modelRestrictionMode, () => form.platform],
   ([newMode]) => {
     if (newMode === 'whitelist') {
+      if (form.platform === 'glm') {
+        allowedModels.value = []
+        return
+      }
       allowedModels.value = [...getModelsByPlatform(form.platform)]
     }
   }
@@ -4468,6 +4521,10 @@ const handleSubmit = async () => {
         base_url_anthropic: minimaxAnthropicBaseUrl.value.trim() || MINIMAX_ANTHROPIC_BASE_URL,
         base_url_openai: minimaxOpenAIBaseUrl.value.trim() || MINIMAX_OPENAI_BASE_URL
       }
+    : form.platform === 'glm'
+      ? {
+          api_key: apiKeyValue.value.trim()
+        }
     : {
         base_url: apiKeyBaseUrl.value.trim() || defaultBaseUrl,
         api_key: apiKeyValue.value.trim()

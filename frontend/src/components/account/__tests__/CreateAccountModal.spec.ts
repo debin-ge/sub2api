@@ -160,4 +160,38 @@ describe('CreateAccountModal', () => {
     expect(payload.credentials.base_url).toBeUndefined()
     expect(checkMixedChannelRiskMock).not.toHaveBeenCalled()
   })
+
+  it('submits GLM API key credentials without editable base URLs', async () => {
+    createAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    createAccountMock.mockResolvedValue({ id: 2 })
+
+    const wrapper = mountModal()
+
+    expect(wrapper.find('[data-testid="create-platform-glm"]').exists()).toBe(true)
+
+    await wrapper.get('[data-tour="account-form-name"]').setValue('GLM Coding')
+    await wrapper.get('[data-testid="create-platform-glm"]').trigger('click')
+    expect(wrapper.find('[data-testid="glm-anthropic-base-url"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="glm-openai-base-url"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="glm-api-key"]').setValue('sk-glm-test')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createAccountMock).toHaveBeenCalledTimes(1)
+    const payload = createAccountMock.mock.calls[0]?.[0]
+    expect(payload).toEqual(expect.objectContaining({
+      name: 'GLM Coding',
+      platform: 'glm',
+      type: 'apikey',
+      credentials: {
+        api_key: 'sk-glm-test'
+      }
+    }))
+    expect(payload.credentials.base_url).toBeUndefined()
+    expect(payload.credentials.base_url_anthropic).toBeUndefined()
+    expect(payload.credentials.base_url_openai).toBeUndefined()
+    expect(checkMixedChannelRiskMock).not.toHaveBeenCalled()
+  })
 })

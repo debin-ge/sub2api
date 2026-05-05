@@ -68,4 +68,27 @@ describe('AccountActionMenu', () => {
     expect(wrapper.emitted('sync-minimax-remains')?.[0]).toEqual([account])
     expect(wrapper.emitted('close')).toBeTruthy()
   })
+
+  it('does not show MiniMax official remains sync for GLM API key accounts', () => {
+    const account = makeAccount({
+      name: 'GLM account',
+      platform: 'glm',
+      type: 'apikey'
+    } as Partial<Account>)
+    const wrapper = mount(AccountActionMenu, {
+      props: {
+        show: true,
+        account,
+        position: { top: 10, left: 20 }
+      },
+      global: {
+        stubs: {
+          Teleport: { template: '<div><slot /></div>' },
+          Icon: { template: '<span />' }
+        }
+      }
+    })
+
+    expect(wrapper.text()).not.toContain('admin.accounts.syncMiniMaxRemains')
+  })
 })

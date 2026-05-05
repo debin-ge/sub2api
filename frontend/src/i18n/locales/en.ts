@@ -97,6 +97,7 @@ export default {
       claude: 'Claude',
       gemini: 'Gemini',
       antigravity: 'Antigravity',
+      glm: 'GLM',
       more: 'More'
     },
     // CTA section
@@ -872,7 +873,8 @@ export default {
     providers: {
       openai: 'OpenAI',
       anthropic: 'Anthropic',
-      gemini: 'Gemini'
+      gemini: 'Gemini',
+      glm: 'GLM'
     },
     extraModelsHeader: 'Extra Models',
     extraModelsEmpty: 'No extra models',
@@ -1980,6 +1982,7 @@ export default {
         gemini: 'Gemini',
         antigravity: 'Antigravity',
         minimax: 'MiniMax',
+        glm: 'GLM',
       },
       deleteConfirm:
         "Are you sure you want to delete '{name}'? All associated API keys will no longer belong to any group.",
@@ -2578,6 +2581,7 @@ export default {
         gemini: 'Gemini',
         antigravity: 'Antigravity',
         minimax: 'MiniMax',
+        glm: 'GLM',
       },
       types: {
         oauth: 'OAuth',
@@ -3427,6 +3431,7 @@ export default {
       openaiAccount: 'OpenAI Account',
       geminiAccount: 'Gemini Account',
       antigravityAccount: 'Antigravity Account',
+      glmAccount: 'GLM Account',
       inputMethod: 'Input Method',
       reAuthorizedSuccess: 'Account re-authorized successfully',
       // Test Modal

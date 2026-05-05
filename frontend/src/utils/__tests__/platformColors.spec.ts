@@ -11,4 +11,15 @@ describe('platformColors', () => {
     expect(platformBadgeClass('minimax')).not.toBe(platformBadgeClass('gemini'))
     expect(platformBadgeClass('minimax')).not.toBe(platformBadgeClass('antigravity'))
   })
+
+  it('returns GLM labels and a distinct rose visual style', () => {
+    expect(platformLabel('glm')).toBe('GLM')
+    expect(platformBadgeClass('glm')).toContain('rose')
+    expect(platformButtonClass('glm')).toContain('rose')
+    expect(platformBadgeClass('glm')).not.toBe(platformBadgeClass('openai'))
+    expect(platformBadgeClass('glm')).not.toBe(platformBadgeClass('anthropic'))
+    expect(platformBadgeClass('glm')).not.toBe(platformBadgeClass('gemini'))
+    expect(platformBadgeClass('glm')).not.toBe(platformBadgeClass('antigravity'))
+    expect(platformBadgeClass('glm')).not.toBe(platformBadgeClass('minimax'))
+  })
 })

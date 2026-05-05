@@ -97,6 +97,7 @@ export default {
       claude: 'Claude',
       gemini: 'Gemini',
       antigravity: 'Antigravity',
+      glm: 'GLM',
       more: '更多'
     },
     // CTA 区块
@@ -876,7 +877,8 @@ export default {
     providers: {
       openai: 'OpenAI',
       anthropic: 'Anthropic',
-      gemini: 'Gemini'
+      gemini: 'Gemini',
+      glm: 'GLM'
     },
     extraModelsHeader: '附加模型',
     extraModelsEmpty: '无附加模型',
@@ -2008,6 +2010,7 @@ export default {
         gemini: 'Gemini',
         antigravity: 'Antigravity',
         minimax: 'MiniMax',
+        glm: 'GLM',
       },
       saving: '保存中...',
       noGroups: '暂无分组',
@@ -2768,6 +2771,7 @@ export default {
         gemini: 'Gemini',
         antigravity: 'Antigravity',
         minimax: 'MiniMax',
+        glm: 'GLM',
       },
       types: {
         oauth: 'OAuth',
@@ -3557,6 +3561,7 @@ export default {
       openaiAccount: 'OpenAI 账号',
       geminiAccount: 'Gemini 账号',
       antigravityAccount: 'Antigravity 账号',
+      glmAccount: 'GLM 账号',
       inputMethod: '输入方式',
       reAuthorizedSuccess: '账号重新授权成功',
       // Test Modal

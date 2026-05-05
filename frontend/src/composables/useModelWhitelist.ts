@@ -172,6 +172,11 @@ const minimaxModels = [
   'abab5.5-chat', 'abab5.5s-chat'
 ]
 
+// GLM Coding Plan Gateway
+const glmModels = [
+  'GLM-5.1', 'GLM-4.7', 'GLM-4.5-air'
+]
+
 // 百度 文心
 const baiduModels = [
   'ernie-4.0-8k-latest', 'ernie-4.0-8k', 'ernie-4.0-turbo-8k',
@@ -218,6 +223,7 @@ const allModelsList: string[] = [
   ...moonshotModels,
   ...doubaoModels,
   ...minimaxModels,
+  ...glmModels,
   ...baiduModels,
   ...sparkModels,
   ...hunyuanModels,
@@ -270,6 +276,18 @@ const minimaxPresetMappings = [
   { label: 'Sonnet→M2.7', from: 'claude-sonnet-4-5', to: 'MiniMax-M2.7', color: 'bg-cyan-100 text-cyan-700 hover:bg-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-300' },
   { label: 'Haiku→M2.7 highspeed', from: 'claude-haiku-4-5', to: 'MiniMax-M2.7-highspeed', color: 'bg-sky-100 text-sky-700 hover:bg-sky-200 dark:bg-sky-900/30 dark:text-sky-300' },
   { label: 'M2.7 passthrough', from: 'MiniMax-M2.7', to: 'MiniMax-M2.7', color: 'bg-teal-100 text-teal-700 hover:bg-teal-200 dark:bg-teal-900/30 dark:text-teal-300' }
+]
+
+const glmPresetMappings = [
+  { label: 'Sonnet→GLM-5.1', from: 'claude-sonnet-*', to: 'GLM-5.1', color: 'bg-rose-100 text-rose-700 hover:bg-rose-200 dark:bg-rose-900/30 dark:text-rose-300' },
+  { label: 'Sonnet 4.5→GLM-5.1', from: 'claude-sonnet-4-5', to: 'GLM-5.1', color: 'bg-pink-100 text-pink-700 hover:bg-pink-200 dark:bg-pink-900/30 dark:text-pink-300' },
+  { label: 'Opus→GLM-5.1', from: 'claude-opus-*', to: 'GLM-5.1', color: 'bg-fuchsia-100 text-fuchsia-700 hover:bg-fuchsia-200 dark:bg-fuchsia-900/30 dark:text-fuchsia-300' },
+  { label: 'Opus 4.5→GLM-5.1', from: 'claude-opus-4-5', to: 'GLM-5.1', color: 'bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300' },
+  { label: 'Haiku→GLM-4.5-air', from: 'claude-haiku-*', to: 'GLM-4.5-air', color: 'bg-sky-100 text-sky-700 hover:bg-sky-200 dark:bg-sky-900/30 dark:text-sky-300' },
+  { label: 'Haiku 4.5→GLM-4.5-air', from: 'claude-haiku-4-5', to: 'GLM-4.5-air', color: 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-300' },
+  { label: 'GLM-5.1 passthrough', from: 'GLM-5.1', to: 'GLM-5.1', color: 'bg-rose-100 text-rose-700 hover:bg-rose-200 dark:bg-rose-900/30 dark:text-rose-300' },
+  { label: 'GLM-4.7 passthrough', from: 'GLM-4.7', to: 'GLM-4.7', color: 'bg-pink-100 text-pink-700 hover:bg-pink-200 dark:bg-pink-900/30 dark:text-pink-300' },
+  { label: 'GLM-4.5-air passthrough', from: 'GLM-4.5-air', to: 'GLM-4.5-air', color: 'bg-sky-100 text-sky-700 hover:bg-sky-200 dark:bg-sky-900/30 dark:text-sky-300' }
 ]
 
 // Antigravity 预设映射（支持通配符）
@@ -372,6 +390,7 @@ export function getModelsByPlatform(platform: string): string[] {
     case 'moonshot': return moonshotModels
     case 'doubao': return doubaoModels
     case 'minimax': return minimaxModels
+    case 'glm': return glmModels
     case 'baidu': return baiduModels
     case 'spark': return sparkModels
     case 'hunyuan': return hunyuanModels
@@ -385,6 +404,7 @@ export function getPresetMappingsByPlatform(platform: string) {
   if (platform === 'openai') return openaiPresetMappings
   if (platform === 'gemini') return geminiPresetMappings
   if (platform === 'minimax') return minimaxPresetMappings
+  if (platform === 'glm') return glmPresetMappings
   if (platform === 'antigravity') return antigravityPresetMappings
   if (platform === 'bedrock') return bedrockPresetMappings
   return anthropicPresetMappings
