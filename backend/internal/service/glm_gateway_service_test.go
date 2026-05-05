@@ -38,6 +38,26 @@ func glmGatewayTestAccount() *Account {
 	}
 }
 
+func TestNewGLMGatewayServiceDefaultClientIsStreamingSafe(t *testing.T) {
+	svc := NewGLMGatewayService(nil, nil)
+	if svc.httpClient == nil {
+		t.Fatalf("expected default http client")
+	}
+	if svc.httpClient.Timeout != 0 {
+		t.Fatalf("default http client Timeout = %v, want 0 so streaming body reads are not capped", svc.httpClient.Timeout)
+	}
+	transport, ok := svc.httpClient.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("transport type = %T, want *http.Transport", svc.httpClient.Transport)
+	}
+	if transport.ResponseHeaderTimeout != glmUpstreamHeaderTimeout {
+		t.Fatalf("ResponseHeaderTimeout = %v, want %v", transport.ResponseHeaderTimeout, glmUpstreamHeaderTimeout)
+	}
+	if transport.TLSHandshakeTimeout != glmUpstreamTLSHandshake {
+		t.Fatalf("TLSHandshakeTimeout = %v, want %v", transport.TLSHandshakeTimeout, glmUpstreamTLSHandshake)
+	}
+}
+
 func TestGLMGatewayServiceForwardMessagesBuildsSafeUpstreamRequest(t *testing.T) {
 	var captured *http.Request
 	var capturedBody []byte

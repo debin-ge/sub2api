@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -16,7 +17,13 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-const glmNonStreamResponseMaxBytes = 2 << 20
+const (
+	glmNonStreamResponseMaxBytes = 2 << 20
+	glmUpstreamDialTimeout       = 15 * time.Second
+	glmUpstreamTLSHandshake      = 10 * time.Second
+	glmUpstreamHeaderTimeout     = 30 * time.Second
+	glmUpstreamIdleConnTimeout   = 90 * time.Second
+)
 
 type GLMGatewayService struct {
 	httpClient           *http.Client
@@ -75,11 +82,29 @@ func MapGLMUpstreamStatus(status int) GLMUpstreamStatusMapping {
 
 func NewGLMGatewayService(httpClient *http.Client, responseHeaderFilter *responseheaders.CompiledHeaderFilter) *GLMGatewayService {
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: 15 * time.Second}
+		httpClient = newDefaultGLMHTTPClient()
 	}
 	return &GLMGatewayService{
 		httpClient:           httpClient,
 		responseHeaderFilter: responseHeaderFilter,
+	}
+}
+
+func newDefaultGLMHTTPClient() *http.Client {
+	return &http.Client{
+		Transport: &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+			DialContext: (&net.Dialer{
+				Timeout:   glmUpstreamDialTimeout,
+				KeepAlive: 30 * time.Second,
+			}).DialContext,
+			ForceAttemptHTTP2:     true,
+			MaxIdleConns:          100,
+			IdleConnTimeout:       glmUpstreamIdleConnTimeout,
+			TLSHandshakeTimeout:   glmUpstreamTLSHandshake,
+			ExpectContinueTimeout: 1 * time.Second,
+			ResponseHeaderTimeout: glmUpstreamHeaderTimeout,
+		},
 	}
 }
 

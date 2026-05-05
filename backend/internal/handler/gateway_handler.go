@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -939,17 +940,11 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 	}
 
 	if platform == service.PlatformGLM {
+		var availableModels []string
 		if h.gatewayService != nil {
-			availableModels := h.gatewayService.GetAvailableModels(c.Request.Context(), groupID, "")
-			if len(availableModels) > 0 {
-				writeClaudeModelList(c, availableModels)
-				return
-			}
+			availableModels = h.gatewayService.GetAvailableModels(c.Request.Context(), groupID, service.PlatformGLM)
 		}
-		c.JSON(http.StatusOK, gin.H{
-			"object": "list",
-			"data":   defaultGLMModels(),
-		})
+		writeClaudeModelList(c, mergeGLMModelIDs(availableModels))
 		return
 	}
 
@@ -998,6 +993,34 @@ func defaultGLMModels() []claude.Model {
 		{ID: "GLM-4.7", Type: "model", DisplayName: "GLM-4.7", CreatedAt: "2024-01-01T00:00:00Z"},
 		{ID: "GLM-4.5-air", Type: "model", DisplayName: "GLM-4.5-air", CreatedAt: "2024-01-01T00:00:00Z"},
 	}
+}
+
+func mergeGLMModelIDs(availableModels []string) []string {
+	seen := make(map[string]struct{}, len(availableModels)+3)
+	models := make([]string, 0, len(availableModels)+3)
+	for _, model := range defaultGLMModels() {
+		modelID := strings.TrimSpace(model.ID)
+		if modelID == "" {
+			continue
+		}
+		seen[modelID] = struct{}{}
+		models = append(models, modelID)
+	}
+
+	extras := make([]string, 0, len(availableModels))
+	for _, modelID := range availableModels {
+		modelID = strings.TrimSpace(modelID)
+		if modelID == "" {
+			continue
+		}
+		if _, ok := seen[modelID]; ok {
+			continue
+		}
+		seen[modelID] = struct{}{}
+		extras = append(extras, modelID)
+	}
+	sort.Strings(extras)
+	return append(models, extras...)
 }
 
 // AntigravityModels 返回 Antigravity 支持的全部模型
