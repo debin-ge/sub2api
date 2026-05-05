@@ -1782,7 +1782,7 @@
 
       <!-- 配额控制 (非 Anthropic apikey/bedrock) -->
       <div
-        v-else-if="form.type === 'apikey' || form.type === 'bedrock'"
+        v-else-if="form.platform !== 'glm' && (form.type === 'apikey' || form.type === 'bedrock')"
         class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4"
       >
         <div class="mb-3">
@@ -4534,7 +4534,7 @@ const handleSubmit = async () => {
   }
 
   // Add model mapping if configured（OpenAI 开启自动透传时不应用）
-  if (!isOpenAIModelRestrictionDisabled.value) {
+  if (form.platform !== 'glm' && !isOpenAIModelRestrictionDisabled.value) {
     const modelMapping = buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
     if (modelMapping) {
       credentials.model_mapping = modelMapping
@@ -4548,20 +4548,22 @@ const handleSubmit = async () => {
   }
 
   // Add pool mode if enabled
-  if (poolModeEnabled.value) {
+  if (form.platform !== 'glm' && poolModeEnabled.value) {
     credentials.pool_mode = true
     credentials.pool_mode_retry_count = normalizePoolModeRetryCount(poolModeRetryCount.value)
   }
 
   // Add custom error codes if enabled
-  if (customErrorCodesEnabled.value) {
+  if (form.platform !== 'glm' && customErrorCodesEnabled.value) {
     credentials.custom_error_codes_enabled = true
     credentials.custom_error_codes = [...selectedErrorCodes.value]
   }
 
-  applyInterceptWarmup(credentials, interceptWarmupRequests.value, 'create')
-  if (!applyTempUnschedConfig(credentials)) {
-    return
+  if (form.platform !== 'glm') {
+    applyInterceptWarmup(credentials, interceptWarmupRequests.value, 'create')
+    if (!applyTempUnschedConfig(credentials)) {
+      return
+    }
   }
 
   form.credentials = credentials
@@ -4623,12 +4625,12 @@ const createAccountAndFinish = async (
   credentials: Record<string, unknown>,
   extra?: Record<string, unknown>
 ) => {
-  if (!applyTempUnschedConfig(credentials)) {
+  if (platform !== 'glm' && !applyTempUnschedConfig(credentials)) {
     return
   }
   // Inject quota limits for apikey/bedrock accounts
   let finalExtra = extra
-  if (type === 'apikey' || type === 'bedrock') {
+  if (platform !== 'glm' && (type === 'apikey' || type === 'bedrock')) {
     const quotaExtra: Record<string, unknown> = { ...(extra || {}) }
     if (editQuotaLimit.value != null && editQuotaLimit.value > 0) {
       quotaExtra.quota_limit = editQuotaLimit.value

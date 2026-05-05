@@ -1509,7 +1509,7 @@
       </div>
       <!-- 配额控制 (非 Anthropic apikey/bedrock) -->
       <div
-        v-else-if="account?.type === 'apikey' || account?.type === 'bedrock'"
+        v-else-if="account?.platform !== 'glm' && (account?.type === 'apikey' || account?.type === 'bedrock')"
         class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4"
       >
         <div class="mb-3">
@@ -3331,6 +3331,15 @@ const handleSubmit = async () => {
         delete newCredentials.base_url
         delete newCredentials.base_url_anthropic
         delete newCredentials.base_url_openai
+        delete newCredentials.model_mapping
+        delete newCredentials.compact_model_mapping
+        delete newCredentials.pool_mode
+        delete newCredentials.pool_mode_retry_count
+        delete newCredentials.custom_error_codes_enabled
+        delete newCredentials.custom_error_codes
+        delete newCredentials.intercept_warmup_requests
+        delete newCredentials.temp_unschedulable_enabled
+        delete newCredentials.temp_unschedulable_rules
       } else {
         newCredentials.base_url = editBaseUrl.value.trim() || defaultBaseUrl.value
       }
@@ -3348,14 +3357,14 @@ const handleSubmit = async () => {
       }
 
       // Add model mapping if configured（OpenAI 开启自动透传时保留现有映射，不再编辑）
-      if (shouldApplyModelMapping) {
+      if (props.account.platform !== 'glm' && shouldApplyModelMapping) {
         const modelMapping = buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
         if (modelMapping) {
           newCredentials.model_mapping = modelMapping
         } else {
           delete newCredentials.model_mapping
         }
-      } else if (currentCredentials.model_mapping) {
+      } else if (props.account.platform !== 'glm' && currentCredentials.model_mapping) {
         newCredentials.model_mapping = currentCredentials.model_mapping
       }
       if (props.account.platform === 'openai') {
@@ -3368,27 +3377,29 @@ const handleSubmit = async () => {
       }
 
       // Add pool mode if enabled
-      if (poolModeEnabled.value) {
+      if (props.account.platform !== 'glm' && poolModeEnabled.value) {
         newCredentials.pool_mode = true
         newCredentials.pool_mode_retry_count = normalizePoolModeRetryCount(poolModeRetryCount.value)
-      } else {
+      } else if (props.account.platform !== 'glm') {
         delete newCredentials.pool_mode
         delete newCredentials.pool_mode_retry_count
       }
 
       // Add custom error codes if enabled
-      if (customErrorCodesEnabled.value) {
+      if (props.account.platform !== 'glm' && customErrorCodesEnabled.value) {
         newCredentials.custom_error_codes_enabled = true
         newCredentials.custom_error_codes = [...selectedErrorCodes.value]
-      } else {
+      } else if (props.account.platform !== 'glm') {
         delete newCredentials.custom_error_codes_enabled
         delete newCredentials.custom_error_codes
       }
 
       // Add intercept warmup requests setting
-      applyInterceptWarmup(newCredentials, interceptWarmupRequests.value, 'edit')
-      if (!applyTempUnschedConfig(newCredentials)) {
-        return
+      if (props.account.platform !== 'glm') {
+        applyInterceptWarmup(newCredentials, interceptWarmupRequests.value, 'edit')
+        if (!applyTempUnschedConfig(newCredentials)) {
+          return
+        }
       }
 
       updatePayload.credentials = newCredentials
@@ -3730,7 +3741,7 @@ const handleSubmit = async () => {
     }
 
     // For apikey/bedrock accounts, handle quota_limit in extra
-    if (props.account.type === 'apikey' || props.account.type === 'bedrock') {
+    if (props.account.platform !== 'glm' && (props.account.type === 'apikey' || props.account.type === 'bedrock')) {
       const currentExtra = (updatePayload.extra as Record<string, unknown>) ||
         (props.account.extra as Record<string, unknown>) || {}
       const newExtra: Record<string, unknown> = { ...currentExtra }

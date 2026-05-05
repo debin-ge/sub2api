@@ -88,7 +88,7 @@ const isOpenAIOAuth = computed(() => props.account?.platform === 'openai' && pro
 const isMiniMaxTokenPlan = computed(() => props.account?.platform === 'minimax' && props.account?.type === 'apikey')
 const supportsPrivacy = computed(() => isAntigravityOAuth.value || isOpenAIOAuth.value)
 const hasQuotaLimit = computed(() => {
-  return (props.account?.type === 'apikey' || props.account?.type === 'bedrock') && (
+  return props.account?.platform !== 'glm' && (props.account?.type === 'apikey' || props.account?.type === 'bedrock') && (
     (props.account?.quota_limit ?? 0) > 0 ||
     (props.account?.quota_daily_limit ?? 0) > 0 ||
     (props.account?.quota_weekly_limit ?? 0) > 0

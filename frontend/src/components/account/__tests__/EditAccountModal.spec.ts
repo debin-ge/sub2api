@@ -115,6 +115,11 @@ const SelectStub = defineComponent({
   `
 })
 
+const QuotaLimitCardStub = defineComponent({
+  name: 'QuotaLimitCard',
+  template: '<div data-testid="quota-limit-card" />'
+})
+
 function buildAccount() {
   return {
     id: 1,
@@ -171,7 +176,21 @@ function buildGLMAccount() {
       base_url: 'https://should-not-be-submitted.example',
       base_url_anthropic: 'https://should-not-be-submitted.example/anthropic',
       base_url_openai: 'https://should-not-be-submitted.example/v1',
+      model_mapping: { 'glm-4.6': 'glm-4.6' },
+      compact_model_mapping: { 'glm-4.6': 'glm-4.6-compact' },
+      pool_mode: true,
+      pool_mode_retry_count: 3,
+      custom_error_codes_enabled: true,
+      custom_error_codes: [429],
+      intercept_warmup_requests: true,
+      temp_unschedulable_enabled: true,
+      temp_unschedulable_rules: [{ error_code: 429, keywords: ['quota'], duration_minutes: 30 }],
       future_unknown_key: 'keep-me'
+    },
+    extra: {
+      quota_limit: 50,
+      quota_daily_limit: 10,
+      quota_weekly_limit: 20
     }
   } as any
 }
@@ -191,7 +210,8 @@ function mountModal(account = buildAccount()) {
         Icon: true,
         ProxySelector: true,
         GroupSelector: true,
-        ModelWhitelistSelector: ModelWhitelistSelectorStub
+        ModelWhitelistSelector: ModelWhitelistSelectorStub,
+        QuotaLimitCard: QuotaLimitCardStub
       }
     }
   })
@@ -290,6 +310,7 @@ describe('EditAccountModal', () => {
     expect(wrapper.find('[data-testid="glm-base-url"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="glm-anthropic-base-url"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="glm-openai-base-url"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="quota-limit-card"]').exists()).toBe(false)
 
     await wrapper.get('[data-testid="glm-api-key"]').setValue('sk-glm-updated')
     await wrapper.get('form#edit-account-form').trigger('submit.prevent')
@@ -303,5 +324,18 @@ describe('EditAccountModal', () => {
     expect(credentials.base_url).toBeUndefined()
     expect(credentials.base_url_anthropic).toBeUndefined()
     expect(credentials.base_url_openai).toBeUndefined()
+    expect(credentials.model_mapping).toBeUndefined()
+    expect(credentials.compact_model_mapping).toBeUndefined()
+    expect(credentials.pool_mode).toBeUndefined()
+    expect(credentials.pool_mode_retry_count).toBeUndefined()
+    expect(credentials.custom_error_codes_enabled).toBeUndefined()
+    expect(credentials.custom_error_codes).toBeUndefined()
+    expect(credentials.intercept_warmup_requests).toBeUndefined()
+    expect(credentials.temp_unschedulable_enabled).toBeUndefined()
+    expect(credentials.temp_unschedulable_rules).toBeUndefined()
+    const extra = updateAccountMock.mock.calls[0]?.[1]?.extra
+    expect(extra?.quota_limit).toBeUndefined()
+    expect(extra?.quota_daily_limit).toBeUndefined()
+    expect(extra?.quota_weekly_limit).toBeUndefined()
   })
 })

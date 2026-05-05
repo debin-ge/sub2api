@@ -73,7 +73,10 @@ describe('AccountActionMenu', () => {
     const account = makeAccount({
       name: 'GLM account',
       platform: 'glm',
-      type: 'apikey'
+      type: 'apikey',
+      quota_limit: 100,
+      quota_daily_limit: 10,
+      quota_weekly_limit: 20
     } as Partial<Account>)
     const wrapper = mount(AccountActionMenu, {
       props: {
@@ -90,5 +93,6 @@ describe('AccountActionMenu', () => {
     })
 
     expect(wrapper.text()).not.toContain('admin.accounts.syncMiniMaxRemains')
+    expect(wrapper.text()).not.toContain('admin.accounts.resetQuota')
   })
 })

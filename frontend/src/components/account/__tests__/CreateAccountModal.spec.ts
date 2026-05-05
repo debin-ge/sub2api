@@ -107,6 +107,11 @@ const SelectStub = defineComponent({
   `
 })
 
+const QuotaLimitCardStub = defineComponent({
+  name: 'QuotaLimitCard',
+  template: '<div data-testid="quota-limit-card" />'
+})
+
 function mountModal() {
   return mount(CreateAccountModal, {
     props: {
@@ -123,7 +128,7 @@ function mountModal() {
         ProxySelector: true,
         GroupSelector: true,
         ModelWhitelistSelector: ModelWhitelistSelectorStub,
-        QuotaLimitCard: true,
+        QuotaLimitCard: QuotaLimitCardStub,
         OAuthAuthorizationFlow: true
       }
     }
@@ -174,6 +179,7 @@ describe('CreateAccountModal', () => {
     await wrapper.get('[data-testid="create-platform-glm"]').trigger('click')
     expect(wrapper.find('[data-testid="glm-anthropic-base-url"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="glm-openai-base-url"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="quota-limit-card"]').exists()).toBe(false)
 
     await wrapper.get('[data-testid="glm-api-key"]').setValue('sk-glm-test')
     await wrapper.get('form#create-account-form').trigger('submit.prevent')
@@ -189,9 +195,13 @@ describe('CreateAccountModal', () => {
         api_key: 'sk-glm-test'
       }
     }))
+    expect(Object.keys(payload.credentials).sort()).toEqual(['api_key'])
     expect(payload.credentials.base_url).toBeUndefined()
     expect(payload.credentials.base_url_anthropic).toBeUndefined()
     expect(payload.credentials.base_url_openai).toBeUndefined()
+    expect(payload.extra?.quota_limit).toBeUndefined()
+    expect(payload.extra?.quota_daily_limit).toBeUndefined()
+    expect(payload.extra?.quota_weekly_limit).toBeUndefined()
     expect(checkMixedChannelRiskMock).not.toHaveBeenCalled()
   })
 })
