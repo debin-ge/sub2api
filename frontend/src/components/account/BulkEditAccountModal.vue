@@ -84,7 +84,7 @@
 
       <!-- Base URL (API Key only) -->
       <div
-        v-if="!targetIncludesGLM"
+        v-if="!targetMayIncludeGLM"
         class="border-t border-gray-200 pt-4 dark:border-dark-600"
       >
         <div class="mb-3 flex items-center justify-between">
@@ -120,7 +120,7 @@
 
       <!-- Model restriction -->
       <div
-        v-if="!targetIncludesGLM"
+        v-if="!targetMayIncludeGLM"
         class="border-t border-gray-200 pt-4 dark:border-dark-600"
       >
         <div class="mb-3 flex items-center justify-between">
@@ -354,7 +354,7 @@
 
       <!-- Custom error codes -->
       <div
-        v-if="!targetIncludesGLM"
+        v-if="!targetMayIncludeGLM"
         class="border-t border-gray-200 pt-4 dark:border-dark-600"
       >
         <div class="mb-3 flex items-center justify-between">
@@ -455,7 +455,7 @@
 
       <!-- Intercept warmup requests (Anthropic only) -->
       <div
-        v-if="!targetIncludesGLM"
+        v-if="!targetMayIncludeGLM"
         class="border-t border-gray-200 pt-4 dark:border-dark-600"
       >
         <div class="flex items-center justify-between">
@@ -1052,7 +1052,16 @@ const targetPreviewCount = computed(() => props.target?.previewCount ?? props.ac
 const targetSelectedPlatforms = computed(() => props.target?.selectedPlatforms ?? props.selectedPlatforms)
 const targetSelectedTypes = computed(() => props.target?.selectedTypes ?? props.selectedTypes)
 const isMixedPlatform = computed(() => targetSelectedPlatforms.value.length > 1)
-const targetIncludesGLM = computed(() => targetSelectedPlatforms.value.includes('glm'))
+const targetMayIncludeGLM = computed(() => {
+  if (targetSelectedPlatforms.value.includes('glm')) {
+    return true
+  }
+  if (targetMode.value !== 'filtered') {
+    return false
+  }
+  const platformFilter = props.target?.filters?.platform
+  return platformFilter === undefined || platformFilter === '' || platformFilter === 'glm'
+})
 
 const allOpenAIPassthroughCapable = computed(() => {
   return (
@@ -1317,7 +1326,7 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
     updates.group_ids = groupIds.value
   }
 
-  if (!targetIncludesGLM.value && enableBaseUrl.value) {
+  if (!targetMayIncludeGLM.value && enableBaseUrl.value) {
     const baseUrlValue = baseUrl.value.trim()
     if (baseUrlValue) {
       credentials.base_url = baseUrlValue
@@ -1334,7 +1343,7 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
   }
 
   if (
-    !targetIncludesGLM.value &&
+    !targetMayIncludeGLM.value &&
     enableModelRestriction.value &&
     !isOpenAIModelRestrictionDisabled.value
   ) {
@@ -1356,13 +1365,13 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
     }
   }
 
-  if (!targetIncludesGLM.value && enableCustomErrorCodes.value) {
+  if (!targetMayIncludeGLM.value && enableCustomErrorCodes.value) {
     credentials.custom_error_codes_enabled = true
     credentials.custom_error_codes = [...selectedErrorCodes.value]
     credentialsChanged = true
   }
 
-  if (!targetIncludesGLM.value && enableInterceptWarmup.value) {
+  if (!targetMayIncludeGLM.value && enableInterceptWarmup.value) {
     credentials.intercept_warmup_requests = interceptWarmupRequests.value
     credentialsChanged = true
   }
