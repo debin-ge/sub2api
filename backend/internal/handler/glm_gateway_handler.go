@@ -61,6 +61,7 @@ type GLMGatewayHandler struct {
 	apiKeyService         *service.APIKeyService
 	usageRecordWorkerPool *service.UsageRecordWorkerPool
 	concurrencyHelper     glmConcurrencyController
+	chatConcurrencyHelper glmConcurrencyController
 	maxAccountSwitches    int
 }
 
@@ -88,6 +89,7 @@ func NewGLMGatewayHandler(
 		apiKeyService:         apiKeyService,
 		usageRecordWorkerPool: usageRecordWorkerPool,
 		concurrencyHelper:     NewConcurrencyHelper(concurrencyService, SSEPingFormatClaude, pingInterval),
+		chatConcurrencyHelper: NewConcurrencyHelper(concurrencyService, SSEPingFormatComment, pingInterval),
 		maxAccountSwitches:    maxAccountSwitches,
 	}
 }
@@ -212,6 +214,13 @@ func (h *GLMGatewayHandler) Messages(c *gin.Context) {
 			h.streamingAwareError(c, http.StatusServiceUnavailable, "api_error", "Service temporarily unavailable", streamStarted)
 			return
 		}
+		release, acquired := h.acquireGLMAccountSlot(c, selection, parsedReq.Stream, &streamStarted, h.concurrencyHelper)
+		if !acquired {
+			return
+		}
+		releaseOnce := onceRelease(release)
+		defer releaseOnce()
+
 		account := selection.Account
 		if !account.IsGLMCodingPlan() {
 			h.streamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available GLM coding-plan accounts", streamStarted)
@@ -219,15 +228,8 @@ func (h *GLMGatewayHandler) Messages(c *gin.Context) {
 		}
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
-		release, acquired := h.acquireGLMAccountSlot(c, selection, parsedReq.Stream, &streamStarted)
-		if !acquired {
-			return
-		}
-
 		result, err := h.glmService.ForwardMessages(c.Request.Context(), c, account, body, glmRequestID(c))
-		if release != nil {
-			release()
-		}
+		releaseOnce()
 		if err != nil {
 			if c.Writer.Written() || streamStarted {
 				return
@@ -350,7 +352,8 @@ func (h *GLMGatewayHandler) ChatCompletions(c *gin.Context) {
 		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "glm gateway service unavailable")
 		return
 	}
-	if h.concurrencyHelper == nil || h.billingCacheService == nil {
+	concurrencyHelper := h.chatConcurrencyController()
+	if concurrencyHelper == nil || h.billingCacheService == nil {
 		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "glm gateway service unavailable")
 		return
 	}
@@ -358,7 +361,7 @@ func (h *GLMGatewayHandler) ChatCompletions(c *gin.Context) {
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
 	streamStarted := false
 	maxWait := service.CalculateMaxWait(subject.Concurrency)
-	canWait, err := h.concurrencyHelper.IncrementWaitCount(c.Request.Context(), subject.UserID, maxWait)
+	canWait, err := concurrencyHelper.IncrementWaitCount(c.Request.Context(), subject.UserID, maxWait)
 	waitCounted := false
 	if err == nil && !canWait {
 		h.errorResponse(c, http.StatusTooManyRequests, "rate_limit_error", "Too many pending requests, please retry later")
@@ -369,11 +372,11 @@ func (h *GLMGatewayHandler) ChatCompletions(c *gin.Context) {
 	}
 	defer func() {
 		if waitCounted {
-			h.concurrencyHelper.DecrementWaitCount(c.Request.Context(), subject.UserID)
+			concurrencyHelper.DecrementWaitCount(c.Request.Context(), subject.UserID)
 		}
 	}()
 
-	userRelease, err := h.concurrencyHelper.AcquireUserSlotWithWait(c, subject.UserID, subject.Concurrency, parsedReq.Stream, &streamStarted)
+	userRelease, err := concurrencyHelper.AcquireUserSlotWithWait(c, subject.UserID, subject.Concurrency, parsedReq.Stream, &streamStarted)
 	if err != nil {
 		if !streamStarted {
 			h.errorResponse(c, http.StatusTooManyRequests, "rate_limit_error", "Too many pending requests, please retry later")
@@ -381,7 +384,7 @@ func (h *GLMGatewayHandler) ChatCompletions(c *gin.Context) {
 		return
 	}
 	if waitCounted {
-		h.concurrencyHelper.DecrementWaitCount(c.Request.Context(), subject.UserID)
+		concurrencyHelper.DecrementWaitCount(c.Request.Context(), subject.UserID)
 		waitCounted = false
 	}
 	if userRelease != nil {
@@ -413,6 +416,13 @@ func (h *GLMGatewayHandler) ChatCompletions(c *gin.Context) {
 			h.streamingAwareError(c, http.StatusServiceUnavailable, "api_error", "Service temporarily unavailable", streamStarted)
 			return
 		}
+		release, acquired := h.acquireGLMAccountSlot(c, selection, parsedReq.Stream, &streamStarted, concurrencyHelper)
+		if !acquired {
+			return
+		}
+		releaseOnce := onceRelease(release)
+		defer releaseOnce()
+
 		account := selection.Account
 		if !account.IsGLMCodingPlan() {
 			h.streamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available GLM coding-plan accounts", streamStarted)
@@ -420,15 +430,8 @@ func (h *GLMGatewayHandler) ChatCompletions(c *gin.Context) {
 		}
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
-		release, acquired := h.acquireGLMAccountSlot(c, selection, parsedReq.Stream, &streamStarted)
-		if !acquired {
-			return
-		}
-
 		result, err := h.glmService.ForwardChatCompletions(c.Request.Context(), c, account, body, glmRequestID(c))
-		if release != nil {
-			release()
-		}
+		releaseOnce()
 		if err != nil {
 			if c.Writer.Written() || streamStarted {
 				return
@@ -505,7 +508,7 @@ func (h *GLMGatewayHandler) streamingAwareError(c *gin.Context, status int, errT
 	h.errorResponse(c, status, errType, message)
 }
 
-func (h *GLMGatewayHandler) acquireGLMAccountSlot(c *gin.Context, selection *service.AccountSelectionResult, isStream bool, streamStarted *bool) (func(), bool) {
+func (h *GLMGatewayHandler) acquireGLMAccountSlot(c *gin.Context, selection *service.AccountSelectionResult, isStream bool, streamStarted *bool, concurrencyHelper glmConcurrencyController) (func(), bool) {
 	if selection == nil || selection.Account == nil {
 		h.streamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available GLM coding-plan accounts", derefBool(streamStarted))
 		return nil, false
@@ -514,13 +517,13 @@ func (h *GLMGatewayHandler) acquireGLMAccountSlot(c *gin.Context, selection *ser
 	if selection.Acquired {
 		return selection.ReleaseFunc, true
 	}
-	if selection.WaitPlan == nil || h.concurrencyHelper == nil {
+	if selection.WaitPlan == nil || concurrencyHelper == nil {
 		h.streamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available GLM coding-plan accounts", derefBool(streamStarted))
 		return nil, false
 	}
 
 	accountWaitCounted := false
-	canWait, err := h.concurrencyHelper.IncrementAccountWaitCount(c.Request.Context(), account.ID, selection.WaitPlan.MaxWaiting)
+	canWait, err := concurrencyHelper.IncrementAccountWaitCount(c.Request.Context(), account.ID, selection.WaitPlan.MaxWaiting)
 	if err != nil {
 		logger.L().Warn("glm_gateway.account_wait_counter_increment_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 	} else if !canWait {
@@ -532,12 +535,12 @@ func (h *GLMGatewayHandler) acquireGLMAccountSlot(c *gin.Context, selection *ser
 	}
 	releaseAccountWait := func() {
 		if accountWaitCounted {
-			h.concurrencyHelper.DecrementAccountWaitCount(c.Request.Context(), account.ID)
+			concurrencyHelper.DecrementAccountWaitCount(c.Request.Context(), account.ID)
 			accountWaitCounted = false
 		}
 	}
 
-	release, err := h.concurrencyHelper.AcquireAccountSlotWithWaitTimeout(
+	release, err := concurrencyHelper.AcquireAccountSlotWithWaitTimeout(
 		c,
 		account.ID,
 		selection.WaitPlan.MaxConcurrency,
@@ -552,6 +555,30 @@ func (h *GLMGatewayHandler) acquireGLMAccountSlot(c *gin.Context, selection *ser
 	}
 	releaseAccountWait()
 	return release, true
+}
+
+func (h *GLMGatewayHandler) chatConcurrencyController() glmConcurrencyController {
+	if h != nil && h.chatConcurrencyHelper != nil {
+		return h.chatConcurrencyHelper
+	}
+	if h == nil {
+		return nil
+	}
+	return h.concurrencyHelper
+}
+
+func onceRelease(release func()) func() {
+	if release == nil {
+		return func() {}
+	}
+	released := false
+	return func() {
+		if released {
+			return
+		}
+		released = true
+		release()
+	}
 }
 
 func (h *GLMGatewayHandler) handleGLMUpstreamDegradation(ctx context.Context, account *service.Account, failoverErr *service.UpstreamFailoverError) {

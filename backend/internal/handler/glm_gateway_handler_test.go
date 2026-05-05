@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -23,6 +24,7 @@ type fakeGLMForwarder struct {
 	messagesCalled int
 	chatCalled     int
 	errs           []error
+	panicMessages  bool
 }
 
 func (f *fakeGLMForwarder) ForwardMessages(ctx context.Context, c *gin.Context, account *service.Account, body []byte, requestID string) (*service.ForwardResult, error) {
@@ -30,6 +32,9 @@ func (f *fakeGLMForwarder) ForwardMessages(ctx context.Context, c *gin.Context, 
 	f.account = account
 	f.body = append([]byte(nil), body...)
 	f.requestID = requestID
+	if f.panicMessages {
+		panic("glm forward panic")
+	}
 	if len(f.errs) > 0 {
 		err := f.errs[0]
 		f.errs = f.errs[1:]
@@ -84,6 +89,8 @@ type fakeGLMGatewayService struct {
 	selectedGroup   *int64
 	selectedUserID  int64
 	excludedHistory []map[int64]struct{}
+	degradedAccount *service.Account
+	degradedErr     *service.UpstreamFailoverError
 }
 
 func (f *fakeGLMGatewayService) GenerateSessionHash(parsed *service.ParsedRequest) string {
@@ -116,6 +123,11 @@ func (f *fakeGLMGatewayService) SelectAccountWithLoadAwareness(ctx context.Conte
 func (f *fakeGLMGatewayService) RecordUsage(ctx context.Context, input *service.RecordUsageInput) error {
 	f.recorded = input
 	return nil
+}
+
+func (f *fakeGLMGatewayService) HandleGLMUpstreamError(ctx context.Context, account *service.Account, failoverErr *service.UpstreamFailoverError) {
+	f.degradedAccount = account
+	f.degradedErr = failoverErr
 }
 
 type fakeGLMBillingChecker struct {
@@ -325,9 +337,10 @@ func TestGLMGatewayHandlerMessagesSelectionFailureReturnsServiceUnavailable(t *t
 }
 
 func TestGLMGatewayHandlerMessagesRejectsNonGLMCodingPlanAccount(t *testing.T) {
+	released := 0
 	h := &GLMGatewayHandler{
 		glmService:          &fakeGLMForwarder{},
-		gatewayService:      &fakeGLMGatewayService{selections: []*service.AccountSelectionResult{{Account: &service.Account{ID: 101, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey}, Acquired: true}}},
+		gatewayService:      &fakeGLMGatewayService{selections: []*service.AccountSelectionResult{{Account: &service.Account{ID: 101, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey}, Acquired: true, ReleaseFunc: func() { released++ }}}},
 		concurrencyHelper:   &fakeGLMConcurrencyController{allowWait: true},
 		billingCacheService: &fakeGLMBillingChecker{},
 	}
@@ -337,6 +350,28 @@ func TestGLMGatewayHandlerMessagesRejectsNonGLMCodingPlanAccount(t *testing.T) {
 
 	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
 	require.Contains(t, rec.Body.String(), "No available GLM coding-plan accounts")
+	require.Equal(t, 1, released)
+}
+
+func TestGLMGatewayHandlerMessagesReleasesAcquiredAccountOnForwardPanic(t *testing.T) {
+	released := 0
+	account := glmTestAccount(101)
+	h := &GLMGatewayHandler{
+		glmService: &fakeGLMForwarder{panicMessages: true},
+		gatewayService: &fakeGLMGatewayService{selections: []*service.AccountSelectionResult{{
+			Account:     account,
+			Acquired:    true,
+			ReleaseFunc: func() { released++ },
+		}}},
+		concurrencyHelper:   &fakeGLMConcurrencyController{allowWait: true},
+		billingCacheService: &fakeGLMBillingChecker{},
+	}
+	c, _, _ := newGLMHandlerTestContext(t, service.PlatformGLM, `{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"hello"}]}`)
+
+	require.Panics(t, func() {
+		h.Messages(c)
+	})
+	require.Equal(t, 1, released)
 }
 
 func TestGLMGatewayHandlerMessagesStopsWhenBillingEligibilityFails(t *testing.T) {
@@ -396,4 +431,15 @@ func TestGLMGatewayHandlerRetryableUpstreamErrorFailsOverToNextAccount(t *testin
 	require.Contains(t, gateway.excludedHistory[1], first.ID)
 	require.NotNil(t, gateway.recorded)
 	require.Equal(t, second, gateway.recorded.Account)
+	require.Equal(t, first, gateway.degradedAccount)
+	require.NotNil(t, gateway.degradedErr)
+}
+
+func TestGLMGatewayHandlerChatCompletionsUsesOpenAICompatiblePingFormat(t *testing.T) {
+	h := NewGLMGatewayHandler(nil, nil, nil, nil, nil, service.NewConcurrencyService(nil), &config.Config{})
+
+	helper, ok := h.chatConcurrencyHelper.(*ConcurrencyHelper)
+	require.True(t, ok)
+	require.NotEqual(t, SSEPingFormatClaude, helper.pingFormat)
+	require.Equal(t, SSEPingFormatComment, helper.pingFormat)
 }

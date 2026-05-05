@@ -19,17 +19,21 @@ func newGatewayRoutesTestRouter() *gin.Engine {
 }
 
 func newGatewayRoutesTestRouterForPlatform(platform string) *gin.Engine {
+	return newGatewayRoutesTestRouterForPlatformWithHandlers(platform, &handler.Handlers{
+		Gateway:        &handler.GatewayHandler{},
+		OpenAIGateway:  &handler.OpenAIGatewayHandler{},
+		MiniMaxGateway: &handler.MiniMaxGatewayHandler{},
+		GLMGateway:     &handler.GLMGatewayHandler{},
+	})
+}
+
+func newGatewayRoutesTestRouterForPlatformWithHandlers(platform string, handlers *handler.Handlers) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 
 	RegisterGatewayRoutes(
 		router,
-		&handler.Handlers{
-			Gateway:        &handler.GatewayHandler{},
-			OpenAIGateway:  &handler.OpenAIGatewayHandler{},
-			MiniMaxGateway: &handler.MiniMaxGatewayHandler{},
-			GLMGateway:     &handler.GLMGatewayHandler{},
-		},
+		handlers,
 		servermiddleware.APIKeyAuthMiddleware(func(c *gin.Context) {
 			groupID := int64(1)
 			c.Set(string(servermiddleware.ContextKeyAPIKey), &service.APIKey{
@@ -244,4 +248,31 @@ func TestGatewayRoutesGLMModelsReturnsDefaultList(t *testing.T) {
 	require.Contains(t, w.Body.String(), "GLM-5.1")
 	require.Contains(t, w.Body.String(), "GLM-4.7")
 	require.Contains(t, w.Body.String(), "GLM-4.5-air")
+}
+
+func TestGatewayRoutesGLMDispatchDiffersWhenHandlerIsPresent(t *testing.T) {
+	for _, path := range []string{"/v1/messages", "/v1/chat/completions"} {
+		nilRouter := newGatewayRoutesTestRouterForPlatformWithHandlers(service.PlatformGLM, &handler.Handlers{
+			Gateway:       &handler.GatewayHandler{},
+			OpenAIGateway: &handler.OpenAIGatewayHandler{},
+		})
+		presentRouter := newGatewayRoutesTestRouterForPlatformWithHandlers(service.PlatformGLM, &handler.Handlers{
+			Gateway:       &handler.GatewayHandler{},
+			OpenAIGateway: &handler.OpenAIGatewayHandler{},
+			GLMGateway:    &handler.GLMGatewayHandler{},
+		})
+
+		nilReq := httptest.NewRequest(http.MethodPost, path, nil)
+		nilW := httptest.NewRecorder()
+		nilRouter.ServeHTTP(nilW, nilReq)
+
+		presentReq := httptest.NewRequest(http.MethodPost, path, nil)
+		presentW := httptest.NewRecorder()
+		presentRouter.ServeHTTP(presentW, presentReq)
+
+		require.Equal(t, http.StatusServiceUnavailable, nilW.Code, "path=%s nil handler", path)
+		require.Contains(t, nilW.Body.String(), "glm gateway service unavailable", "path=%s nil handler", path)
+		require.Equal(t, http.StatusBadRequest, presentW.Code, "path=%s present handler", path)
+		require.Contains(t, presentW.Body.String(), "Request body is empty", "path=%s present handler", path)
+	}
 }

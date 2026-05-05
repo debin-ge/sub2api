@@ -555,6 +555,32 @@ func (s *GatewayService) HandleMiniMaxUpstreamError(ctx context.Context, account
 	}
 }
 
+func (s *GatewayService) HandleGLMUpstreamError(ctx context.Context, account *Account, failoverErr *UpstreamFailoverError) {
+	if s == nil || account == nil || failoverErr == nil {
+		return
+	}
+	mapping := MapGLMUpstreamStatus(failoverErr.StatusCode)
+	if !mapping.Retryable {
+		return
+	}
+	headers := failoverErr.ResponseHeaders
+	if headers == nil {
+		headers = http.Header{}
+	}
+	switch {
+	case failoverErr.StatusCode == http.StatusTooManyRequests:
+		if s.rateLimitService != nil && s.rateLimitService.accountRepo != nil {
+			s.rateLimitService.HandleUpstreamError(ctx, account, failoverErr.StatusCode, headers, failoverErr.ResponseBody)
+			return
+		}
+		s.setGLMRateLimited(ctx, account.ID, time.Now().Add(5*time.Minute))
+	case failoverErr.StatusCode == 529:
+		s.setGLMOverloaded(ctx, account.ID, s.glmOverloadUntil())
+	case failoverErr.StatusCode >= http.StatusInternalServerError:
+		s.setGLMOverloaded(ctx, account.ID, s.glmOverloadUntil())
+	}
+}
+
 func (s *GatewayService) setMiniMaxRateLimited(ctx context.Context, accountID int64, resetAt time.Time) {
 	if s == nil || s.accountRepo == nil {
 		return
@@ -571,6 +597,32 @@ func (s *GatewayService) setMiniMaxOverloaded(ctx context.Context, accountID int
 	if err := s.accountRepo.SetOverloaded(ctx, accountID, until); err != nil {
 		slog.Warn("minimax_overload_set_failed", "account_id", accountID, "error", err)
 	}
+}
+
+func (s *GatewayService) setGLMRateLimited(ctx context.Context, accountID int64, resetAt time.Time) {
+	if s == nil || s.accountRepo == nil {
+		return
+	}
+	if err := s.accountRepo.SetRateLimited(ctx, accountID, resetAt); err != nil {
+		slog.Warn("glm_rate_limit_set_failed", "account_id", accountID, "error", err)
+	}
+}
+
+func (s *GatewayService) setGLMOverloaded(ctx context.Context, accountID int64, until time.Time) {
+	if s == nil || s.accountRepo == nil {
+		return
+	}
+	if err := s.accountRepo.SetOverloaded(ctx, accountID, until); err != nil {
+		slog.Warn("glm_overload_set_failed", "account_id", accountID, "error", err)
+	}
+}
+
+func (s *GatewayService) glmOverloadUntil() time.Time {
+	minutes := 10
+	if s != nil && s.cfg != nil && s.cfg.RateLimit.OverloadCooldownMinutes > 0 {
+		minutes = s.cfg.RateLimit.OverloadCooldownMinutes
+	}
+	return time.Now().Add(time.Duration(minutes) * time.Minute)
 }
 
 func (s *GatewayService) miniMaxOverloadUntil() time.Time {
