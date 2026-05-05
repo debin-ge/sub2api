@@ -83,7 +83,10 @@
       </div>
 
       <!-- Base URL (API Key only) -->
-      <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
+      <div
+        v-if="!targetIncludesGLM"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
         <div class="mb-3 flex items-center justify-between">
           <label
             id="bulk-edit-base-url-label"
@@ -116,7 +119,10 @@
       </div>
 
       <!-- Model restriction -->
-      <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
+      <div
+        v-if="!targetIncludesGLM"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
         <div class="mb-3 flex items-center justify-between">
           <label
             id="bulk-edit-model-restriction-label"
@@ -347,7 +353,10 @@
       </div>
 
       <!-- Custom error codes -->
-      <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
+      <div
+        v-if="!targetIncludesGLM"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
         <div class="mb-3 flex items-center justify-between">
           <div>
             <label
@@ -445,7 +454,10 @@
       </div>
 
       <!-- Intercept warmup requests (Anthropic only) -->
-      <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
+      <div
+        v-if="!targetIncludesGLM"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
         <div class="flex items-center justify-between">
           <div class="flex-1 pr-4">
             <label
@@ -1040,6 +1052,7 @@ const targetPreviewCount = computed(() => props.target?.previewCount ?? props.ac
 const targetSelectedPlatforms = computed(() => props.target?.selectedPlatforms ?? props.selectedPlatforms)
 const targetSelectedTypes = computed(() => props.target?.selectedTypes ?? props.selectedTypes)
 const isMixedPlatform = computed(() => targetSelectedPlatforms.value.length > 1)
+const targetIncludesGLM = computed(() => targetSelectedPlatforms.value.includes('glm'))
 
 const allOpenAIPassthroughCapable = computed(() => {
   return (
@@ -1304,7 +1317,7 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
     updates.group_ids = groupIds.value
   }
 
-  if (enableBaseUrl.value) {
+  if (!targetIncludesGLM.value && enableBaseUrl.value) {
     const baseUrlValue = baseUrl.value.trim()
     if (baseUrlValue) {
       credentials.base_url = baseUrlValue
@@ -1320,7 +1333,11 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
     }
   }
 
-  if (enableModelRestriction.value && !isOpenAIModelRestrictionDisabled.value) {
+  if (
+    !targetIncludesGLM.value &&
+    enableModelRestriction.value &&
+    !isOpenAIModelRestrictionDisabled.value
+  ) {
     // 统一使用 model_mapping 字段
     if (modelRestrictionMode.value === 'whitelist') {
       // 白名单模式：将模型转换为 model_mapping 格式（key=value）
@@ -1339,13 +1356,13 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
     }
   }
 
-  if (enableCustomErrorCodes.value) {
+  if (!targetIncludesGLM.value && enableCustomErrorCodes.value) {
     credentials.custom_error_codes_enabled = true
     credentials.custom_error_codes = [...selectedErrorCodes.value]
     credentialsChanged = true
   }
 
-  if (enableInterceptWarmup.value) {
+  if (!targetIncludesGLM.value && enableInterceptWarmup.value) {
     credentials.intercept_warmup_requests = interceptWarmupRequests.value
     credentialsChanged = true
   }

@@ -217,6 +217,51 @@ describe('BulkEditAccountModal', () => {
     })
   })
 
+  it('包含 GLM 的批量编辑目标不显示通用凭据控件', () => {
+    const wrapper = mountModal({
+      selectedPlatforms: ['openai'],
+      selectedTypes: ['apikey'],
+      target: {
+        mode: 'selected',
+        selectedPlatforms: ['openai', 'glm'],
+        selectedTypes: ['apikey']
+      }
+    })
+
+    expect(wrapper.find('#bulk-edit-base-url-enabled').exists()).toBe(false)
+    expect(wrapper.find('#bulk-edit-model-restriction-enabled').exists()).toBe(false)
+    expect(wrapper.find('#bulk-edit-custom-error-codes-enabled').exists()).toBe(false)
+    expect(wrapper.find('#bulk-edit-intercept-warmup-enabled').exists()).toBe(false)
+  })
+
+  it('GLM 批量编辑即使存在陈旧通用凭据开关也不提交 credentials', async () => {
+    const wrapper = mountModal({
+      selectedPlatforms: ['glm'],
+      selectedTypes: ['apikey']
+    })
+
+    Object.assign(wrapper.vm as any, {
+      enableBaseUrl: true,
+      baseUrl: 'https://example.invalid',
+      enableModelRestriction: true,
+      allowedModels: ['GLM-5.1'],
+      enableCustomErrorCodes: true,
+      selectedErrorCodes: [429],
+      enableInterceptWarmup: true,
+      interceptWarmupRequests: true,
+      enableStatus: true,
+      status: 'inactive'
+    })
+
+    await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledTimes(1)
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith([1, 2], {
+      status: 'inactive'
+    })
+  })
+
   it('OpenAI 账号批量编辑可关闭自动透传', async () => {
     const wrapper = mountModal({
       selectedPlatforms: ['openai'],
