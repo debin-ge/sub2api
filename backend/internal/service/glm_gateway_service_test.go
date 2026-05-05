@@ -297,6 +297,74 @@ func TestGLMGatewayServiceUpstreamRetryableStatusesReturnFailoverError(t *testin
 	}
 }
 
+func TestGLMGatewayServiceUpstreamClientErrorsReturnFailoverError(t *testing.T) {
+	tests := []struct {
+		name     string
+		status   int
+		path     string
+		body     []byte
+		forward  func(context.Context, *GLMGatewayService, *gin.Context, []byte) (*ForwardResult, error)
+		wantBody string
+	}{
+		{
+			name:   "messages 400",
+			status: http.StatusBadRequest,
+			path:   "/v1/messages",
+			body:   []byte(`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"hello"}]}`),
+			forward: func(ctx context.Context, svc *GLMGatewayService, c *gin.Context, body []byte) (*ForwardResult, error) {
+				return svc.ForwardMessages(ctx, c, glmGatewayTestAccount(), body, "req-client-error")
+			},
+			wantBody: "bad request",
+		},
+		{
+			name:   "chat completions 422",
+			status: http.StatusUnprocessableEntity,
+			path:   "/v1/chat/completions",
+			body:   []byte(`{"model":"glm-4.5-air","messages":[{"role":"user","content":"hello"}]}`),
+			forward: func(ctx context.Context, svc *GLMGatewayService, c *gin.Context, body []byte) (*ForwardResult, error) {
+				return svc.ForwardChatCompletions(ctx, c, glmGatewayTestAccount(), body, "req-client-error")
+			},
+			wantBody: "unprocessable",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: tc.status,
+					Header:     http.Header{"Content-Type": {"application/json"}, "X-Request-Id": {"client-error-req"}},
+					Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"` + tc.wantBody + `"}}`)),
+				}, nil
+			})}
+			svc := NewGLMGatewayService(client, nil)
+			c, rec := newGLMGatewayTestContext(tc.path)
+
+			result, err := tc.forward(context.Background(), svc, c, tc.body)
+
+			if result != nil {
+				t.Fatalf("expected nil result, got %+v", result)
+			}
+			var failoverErr *UpstreamFailoverError
+			if !errors.As(err, &failoverErr) {
+				t.Fatalf("error type = %T %v", err, err)
+			}
+			if failoverErr.StatusCode != tc.status {
+				t.Fatalf("status = %d, want %d", failoverErr.StatusCode, tc.status)
+			}
+			if !bytes.Contains(failoverErr.ResponseBody, []byte(tc.wantBody)) {
+				t.Fatalf("body = %s", string(failoverErr.ResponseBody))
+			}
+			if got := failoverErr.ResponseHeaders.Get("X-Request-Id"); got != "client-error-req" {
+				t.Fatalf("response headers = %v", failoverErr.ResponseHeaders)
+			}
+			if rec.Code != http.StatusOK || rec.Body.Len() != 0 {
+				t.Fatalf("client response should not be written, code=%d body=%q", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
 func TestGLMGatewayServiceForwardsStreamingMessagesAndParsesUsage(t *testing.T) {
 	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		if got := gjson.GetBytes(mustReadBody(t, req.Body), "stream").Bool(); !got {

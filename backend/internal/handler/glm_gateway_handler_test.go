@@ -435,6 +435,38 @@ func TestGLMGatewayHandlerRetryableUpstreamErrorFailsOverToNextAccount(t *testin
 	require.NotNil(t, gateway.degradedErr)
 }
 
+func TestGLMGatewayHandlerNonRetryableUpstreamErrorDoesNotRecordOrFailover(t *testing.T) {
+	first := glmTestAccount(101)
+	second := glmTestAccount(102)
+	forwarder := &fakeGLMForwarder{
+		errs: []error{&service.UpstreamFailoverError{StatusCode: http.StatusBadRequest}},
+	}
+	gateway := &fakeGLMGatewayService{
+		selections: []*service.AccountSelectionResult{
+			{Account: first, Acquired: true},
+			{Account: second, Acquired: true},
+		},
+	}
+	h := &GLMGatewayHandler{
+		glmService:          forwarder,
+		gatewayService:      gateway,
+		concurrencyHelper:   &fakeGLMConcurrencyController{allowWait: true},
+		billingCacheService: &fakeGLMBillingChecker{},
+		maxAccountSwitches:  3,
+	}
+	c, rec, _ := newGLMHandlerTestContext(t, service.PlatformGLM, `{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"hello"}]}`)
+
+	h.Messages(c)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Equal(t, 1, forwarder.messagesCalled)
+	require.Equal(t, first, forwarder.account)
+	require.Len(t, gateway.excludedHistory, 1)
+	require.Nil(t, gateway.recorded)
+	require.Nil(t, gateway.degradedAccount)
+	require.Nil(t, gateway.degradedErr)
+}
+
 func TestGLMGatewayHandlerChatCompletionsUsesOpenAICompatiblePingFormat(t *testing.T) {
 	h := NewGLMGatewayHandler(nil, nil, nil, nil, nil, service.NewConcurrencyService(nil), &config.Config{})
 

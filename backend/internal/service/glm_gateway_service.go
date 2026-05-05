@@ -168,10 +168,7 @@ func (s *GLMGatewayService) ForwardChatCompletions(ctx context.Context, c *gin.C
 }
 
 func shouldReturnGLMUpstreamError(status int) bool {
-	if status == http.StatusUnauthorized || status == http.StatusForbidden {
-		return true
-	}
-	return MapGLMUpstreamStatus(status).Retryable
+	return status >= http.StatusBadRequest
 }
 
 func validateGLMAccount(account *Account) (string, error) {
