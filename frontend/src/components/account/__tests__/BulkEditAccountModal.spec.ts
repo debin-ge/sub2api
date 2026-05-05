@@ -293,6 +293,16 @@ describe('BulkEditAccountModal', () => {
       selectedErrorCodes: [429],
       enableInterceptWarmup: true,
       interceptWarmupRequests: true,
+      enableOpenAIPassthrough: true,
+      openaiPassthroughEnabled: true,
+      enableOpenAIWSMode: true,
+      enableOpenAIAPIKeyWSMode: true,
+      enableCodexCLIOnly: true,
+      codexCLIOnlyEnabled: true,
+      enableRpmLimit: true,
+      rpmLimitEnabled: true,
+      bulkBaseRpm: 30,
+      userMsgQueueMode: 'throttle',
       enableStatus: true,
       status: 'inactive'
     })
