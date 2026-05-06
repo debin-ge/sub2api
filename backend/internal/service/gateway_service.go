@@ -560,6 +560,18 @@ func (s *GatewayService) HandleGLMUpstreamError(ctx context.Context, account *Ac
 		return
 	}
 	mapping := MapGLMUpstreamStatus(failoverErr.StatusCode)
+	if failoverErr.StatusCode == http.StatusUnauthorized || failoverErr.StatusCode == http.StatusForbidden {
+		headers := failoverErr.ResponseHeaders
+		if headers == nil {
+			headers = http.Header{}
+		}
+		if s.rateLimitService != nil && s.rateLimitService.accountRepo != nil {
+			s.rateLimitService.HandleUpstreamError(ctx, account, failoverErr.StatusCode, headers, failoverErr.ResponseBody)
+			return
+		}
+		s.setGLMAuthError(ctx, account.ID, failoverErr)
+		return
+	}
 	if !mapping.Retryable {
 		return
 	}
@@ -577,7 +589,27 @@ func (s *GatewayService) HandleGLMUpstreamError(ctx context.Context, account *Ac
 	case failoverErr.StatusCode == 529:
 		s.setGLMOverloaded(ctx, account.ID, s.glmOverloadUntil())
 	case failoverErr.StatusCode >= http.StatusInternalServerError:
-		s.setGLMOverloaded(ctx, account.ID, s.glmOverloadUntil())
+		return
+	}
+}
+
+func (s *GatewayService) setGLMAuthError(ctx context.Context, accountID int64, failoverErr *UpstreamFailoverError) {
+	if s == nil || s.accountRepo == nil || failoverErr == nil {
+		return
+	}
+	message := "Authentication failed"
+	if failoverErr.StatusCode == http.StatusForbidden {
+		message = "Authorization failed"
+	}
+	upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(failoverErr.ResponseBody))
+	upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
+	if upstreamMsg != "" {
+		message = fmt.Sprintf("%s (%d): %s", message, failoverErr.StatusCode, upstreamMsg)
+	} else {
+		message = fmt.Sprintf("%s (%d): invalid GLM credentials", message, failoverErr.StatusCode)
+	}
+	if err := s.accountRepo.SetError(ctx, accountID, message); err != nil {
+		slog.Warn("glm_auth_error_set_failed", "account_id", accountID, "status_code", failoverErr.StatusCode, "error", err)
 	}
 }
 

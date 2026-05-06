@@ -138,7 +138,7 @@
         </template>
 
         <!-- Model Restriction Section (不适用于 Antigravity) -->
-        <div v-if="account.platform !== 'antigravity' && account.platform !== 'glm'" class="border-t border-gray-200 pt-4 dark:border-dark-600">
+        <div v-if="account.platform !== 'antigravity'" class="border-t border-gray-200 pt-4 dark:border-dark-600">
           <label class="input-label">{{ t('admin.accounts.modelRestriction') }}</label>
 
           <div
@@ -3331,7 +3331,6 @@ const handleSubmit = async () => {
         delete newCredentials.base_url
         delete newCredentials.base_url_anthropic
         delete newCredentials.base_url_openai
-        delete newCredentials.model_mapping
         delete newCredentials.compact_model_mapping
         delete newCredentials.pool_mode
         delete newCredentials.pool_mode_retry_count
@@ -3357,14 +3356,14 @@ const handleSubmit = async () => {
       }
 
       // Add model mapping if configured（OpenAI 开启自动透传时保留现有映射，不再编辑）
-      if (props.account.platform !== 'glm' && shouldApplyModelMapping) {
+      if (shouldApplyModelMapping) {
         const modelMapping = buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
         if (modelMapping) {
           newCredentials.model_mapping = modelMapping
         } else {
           delete newCredentials.model_mapping
         }
-      } else if (props.account.platform !== 'glm' && currentCredentials.model_mapping) {
+      } else if (currentCredentials.model_mapping) {
         newCredentials.model_mapping = currentCredentials.model_mapping
       }
       if (props.account.platform === 'openai') {

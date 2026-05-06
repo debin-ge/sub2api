@@ -23,6 +23,7 @@ const (
 	glmUpstreamTLSHandshake      = 10 * time.Second
 	glmUpstreamHeaderTimeout     = 30 * time.Second
 	glmUpstreamIdleConnTimeout   = 90 * time.Second
+	glmDefaultAnthropicMaxTokens = int64(4096)
 )
 
 type GLMGatewayService struct {
@@ -213,7 +214,7 @@ func (s *GLMGatewayService) buildMessagesRequest(ctx context.Context, c *gin.Con
 		return nil, "", "", err
 	}
 
-	upstreamBody, originalModel, upstreamModel, err := rewriteGLMModel(body, account)
+	upstreamBody, originalModel, upstreamModel, err := rewriteGLMAnthropicMessagesBody(body, account)
 	if err != nil {
 		return nil, "", "", err
 	}
@@ -265,6 +266,35 @@ func setGLMUpstreamHeaders(req *http.Request, c *gin.Context, apiKey string) {
 }
 
 func rewriteGLMModel(body []byte, account *Account) ([]byte, string, string, error) {
+	payload, model, upstreamModel, err := rewriteGLMModelPayload(body, account)
+	if err != nil {
+		return nil, "", "", err
+	}
+
+	rewritten, err := json.Marshal(payload)
+	if err != nil {
+		return nil, "", "", fmt.Errorf("rewrite glm request model: %w", err)
+	}
+	return rewritten, model, upstreamModel, nil
+}
+
+func rewriteGLMAnthropicMessagesBody(body []byte, account *Account) ([]byte, string, string, error) {
+	payload, model, upstreamModel, err := rewriteGLMModelPayload(body, account)
+	if err != nil {
+		return nil, "", "", err
+	}
+	if value, ok := payload["max_tokens"]; !ok || value == nil {
+		payload["max_tokens"] = glmDefaultAnthropicMaxTokens
+	}
+
+	rewritten, err := json.Marshal(payload)
+	if err != nil {
+		return nil, "", "", fmt.Errorf("rewrite glm messages request: %w", err)
+	}
+	return rewritten, model, upstreamModel, nil
+}
+
+func rewriteGLMModelPayload(body []byte, account *Account) (map[string]any, string, string, error) {
 	payload, err := decodeGLMPayload(body)
 	if err != nil {
 		return nil, "", "", fmt.Errorf("parse glm request: %w", err)
@@ -274,14 +304,12 @@ func rewriteGLMModel(body []byte, account *Account) ([]byte, string, string, err
 	if model == "" {
 		return nil, "", "", fmt.Errorf("glm request model is required")
 	}
+	if !account.IsGLMModelSupported(model) {
+		return nil, "", "", &GLMUnsupportedContentError{Message: fmt.Sprintf("glm model %s is not supported by this account", model)}
+	}
 	upstreamModel := account.GetGLMMappedModel(model)
 	payload["model"] = upstreamModel
-
-	rewritten, err := json.Marshal(payload)
-	if err != nil {
-		return nil, "", "", fmt.Errorf("rewrite glm request model: %w", err)
-	}
-	return rewritten, model, upstreamModel, nil
+	return payload, model, upstreamModel, nil
 }
 
 func decodeGLMPayload(body []byte) (map[string]any, error) {

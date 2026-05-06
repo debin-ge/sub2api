@@ -2903,10 +2903,13 @@ export default {
         compactLastChecked: 'Last compact probe',
         testMode: 'Test mode',
         testModeDefault: 'Default request',
-        testModeCompact: 'Compact probe',
-        modelRestrictionDisabledByPassthrough: 'Automatic passthrough is enabled: model whitelist/mapping will not take effect.',
-      },
-      anthropic: {
+	        testModeCompact: 'Compact probe',
+	        modelRestrictionDisabledByPassthrough: 'Automatic passthrough is enabled: model whitelist/mapping will not take effect.',
+	      },
+	      glm: {
+	        apiKeyHint: 'Your GLM Coding Plan API Key',
+	      },
+	      anthropic: {
         apiKeyPassthrough: 'Auto passthrough (auth only)',
         apiKeyPassthroughDesc:
           'Only applies to Anthropic API Key accounts. When enabled, messages/count_tokens are forwarded in passthrough mode with auth replacement only, while billing/concurrency/audit and safety filtering are preserved. Disable to roll back immediately.',

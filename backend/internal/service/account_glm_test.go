@@ -72,7 +72,7 @@ func TestAccountGLMModelMappingAndNormalization(t *testing.T) {
 		Credentials: map[string]any{
 			"api_key": "sk-glm-test",
 			"model_mapping": map[string]any{
-				"custom-model": "GLM-custom",
+				"custom-model": "GLM-5.1",
 				"GLM-5.1":      "GLM-overridden",
 				"GLM-4.7":      "GLM-overridden",
 				"GLM-4.5-air":  "GLM-overridden",
@@ -94,7 +94,7 @@ func TestAccountGLMModelMappingAndNormalization(t *testing.T) {
 		{name: "glm 5.1 canonical ignores explicit mapping", model: "GLM-5.1", want: "GLM-5.1"},
 		{name: "glm 4.7 canonical ignores explicit mapping", model: "GLM-4.7", want: "GLM-4.7"},
 		{name: "glm 4.5 air canonical ignores explicit mapping", model: "GLM-4.5-air", want: "GLM-4.5-air"},
-		{name: "explicit mapping", model: "custom-model", want: "GLM-custom"},
+		{name: "explicit mapping", model: "custom-model", want: "GLM-5.1"},
 		{name: "unknown passthrough trimmed", model: "  other-model  ", want: "other-model"},
 	}
 
@@ -134,7 +134,38 @@ func TestAccountGLMModelSupport(t *testing.T) {
 		Credentials: map[string]any{
 			"api_key": "sk-glm",
 			"model_mapping": map[string]any{
-				"custom-model": "GLM-custom",
+				"custom-model": "GLM-5.1",
+			},
+		},
+	}
+	withUnofficialMapping := &Account{
+		Platform: PlatformGLM,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key": "sk-glm",
+			"model_mapping": map[string]any{
+				"custom-model":     "GLM-custom",
+				"custom-whitelist": "custom-whitelist",
+			},
+		},
+	}
+	withOfficialWhitelist := &Account{
+		Platform: PlatformGLM,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key": "sk-glm",
+			"model_mapping": map[string]any{
+				"GLM-4.7": "GLM-4.7",
+			},
+		},
+	}
+	withClaudeAliasMapping := &Account{
+		Platform: PlatformGLM,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key": "sk-glm",
+			"model_mapping": map[string]any{
+				"claude-sonnet-*": "GLM-5.1",
 			},
 		},
 	}
@@ -151,6 +182,13 @@ func TestAccountGLMModelSupport(t *testing.T) {
 		{name: "unknown without mapping", account: withoutMapping, model: "gpt-4o", want: false},
 		{name: "random without mapping", account: withoutMapping, model: "random-model", want: false},
 		{name: "custom with explicit mapping", account: withMapping, model: "custom-model", want: true},
+		{name: "official whitelist allows selected canonical", account: withOfficialWhitelist, model: "GLM-4.7", want: true},
+		{name: "official whitelist allows selected lowercase", account: withOfficialWhitelist, model: "glm-4.7", want: true},
+		{name: "official whitelist rejects unselected official", account: withOfficialWhitelist, model: "GLM-5.1", want: false},
+		{name: "official whitelist rejects unselected claude default alias", account: withOfficialWhitelist, model: "claude-sonnet-4-5", want: false},
+		{name: "claude alias mapping allows matching claude model", account: withClaudeAliasMapping, model: "claude-sonnet-4-5", want: true},
+		{name: "custom alias rejects unofficial mapped target", account: withUnofficialMapping, model: "custom-model", want: false},
+		{name: "custom whitelist rejects unofficial passthrough target", account: withUnofficialMapping, model: "custom-whitelist", want: false},
 	}
 
 	for _, tc := range cases {
@@ -176,7 +214,7 @@ func TestGatewayService_SelectAccountForModelWithPlatform_GLMScheduling(t *testi
 				Credentials: map[string]any{
 					"api_key": "sk-glm",
 					"model_mapping": map[string]any{
-						"custom-model": "GLM-custom",
+						"custom-model": "GLM-5.1",
 					},
 				},
 			},
@@ -189,7 +227,7 @@ func TestGatewayService_SelectAccountForModelWithPlatform_GLMScheduling(t *testi
 		cfg:         &config.Config{RunMode: config.RunModeSimple},
 	}
 
-	for _, requestedModel := range []string{"claude-sonnet-4-5", "GLM-5.1", "glm-5.1"} {
+	for _, requestedModel := range []string{"custom-model"} {
 		t.Run(requestedModel, func(t *testing.T) {
 			acc, err := svc.selectAccountForModelWithPlatform(ctx, nil, "", requestedModel, nil, PlatformGLM)
 			if err != nil {
@@ -205,5 +243,26 @@ func TestGatewayService_SelectAccountForModelWithPlatform_GLMScheduling(t *testi
 				t.Fatalf("platform = %q, want %q", acc.Platform, PlatformGLM)
 			}
 		})
+	}
+}
+
+func TestAccountGLMGetMappedModelRejectsUnofficialTargets(t *testing.T) {
+	acc := &Account{
+		Platform: PlatformGLM,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key": "sk-glm",
+			"model_mapping": map[string]any{
+				"custom-model":     "GLM-custom",
+				"custom-whitelist": "custom-whitelist",
+			},
+		},
+	}
+
+	if got := acc.GetGLMMappedModel("custom-model"); got != "custom-model" {
+		t.Fatalf("GetGLMMappedModel(custom-model) = %q, want original model", got)
+	}
+	if got := acc.GetGLMMappedModel("custom-whitelist"); got != "custom-whitelist" {
+		t.Fatalf("GetGLMMappedModel(custom-whitelist) = %q, want original model", got)
 	}
 }

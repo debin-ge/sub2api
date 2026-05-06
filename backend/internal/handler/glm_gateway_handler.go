@@ -237,8 +237,10 @@ func (h *GLMGatewayHandler) Messages(c *gin.Context) {
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
 				mapping := service.MapGLMUpstreamStatus(failoverErr.StatusCode)
-				if mapping.Retryable {
+				if shouldHandleGLMUpstreamDegradation(failoverErr, mapping) {
 					h.handleGLMUpstreamDegradation(c.Request.Context(), account, failoverErr)
+				}
+				if mapping.Retryable {
 					failoverAction := fs.HandleFailoverError(c.Request.Context(), h.glmTempUnscheduler(), account.ID, account.Platform, failoverErr)
 					switch failoverAction {
 					case FailoverContinue:
@@ -439,8 +441,10 @@ func (h *GLMGatewayHandler) ChatCompletions(c *gin.Context) {
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
 				mapping := service.MapGLMUpstreamStatus(failoverErr.StatusCode)
-				if mapping.Retryable {
+				if shouldHandleGLMUpstreamDegradation(failoverErr, mapping) {
 					h.handleGLMUpstreamDegradation(c.Request.Context(), account, failoverErr)
+				}
+				if mapping.Retryable {
 					failoverAction := fs.HandleFailoverError(c.Request.Context(), h.glmTempUnscheduler(), account.ID, account.Platform, failoverErr)
 					switch failoverAction {
 					case FailoverContinue:
@@ -590,6 +594,15 @@ func (h *GLMGatewayHandler) handleGLMUpstreamDegradation(ctx context.Context, ac
 		return
 	}
 	degrader.HandleGLMUpstreamError(ctx, account, failoverErr)
+}
+
+func shouldHandleGLMUpstreamDegradation(failoverErr *service.UpstreamFailoverError, mapping service.GLMUpstreamStatusMapping) bool {
+	if failoverErr == nil {
+		return false
+	}
+	return mapping.Retryable ||
+		failoverErr.StatusCode == http.StatusUnauthorized ||
+		failoverErr.StatusCode == http.StatusForbidden
 }
 
 func (h *GLMGatewayHandler) glmTempUnscheduler() TempUnscheduler {

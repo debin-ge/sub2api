@@ -112,11 +112,11 @@ describe('BulkEditAccountModal', () => {
     expect(wrapper.text()).not.toContain('GPT-5.3 Codex Spark')
   })
 
-  it('仅勾选模型限制且白名单留空时，应提交空 model_mapping 以支持所有模型', async () => {
-    const wrapper = mountModal({
-      selectedPlatforms: ['anthropic'],
-      selectedTypes: ['apikey']
-    })
+	  it('仅勾选模型限制且白名单留空时，应提交空 model_mapping 以支持所有模型', async () => {
+	    const wrapper = mountModal({
+	      selectedPlatforms: ['anthropic'],
+	      selectedTypes: ['apikey']
+	    })
 
     await wrapper.get('#bulk-edit-model-restriction-enabled').setValue(true)
     await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
@@ -127,10 +127,39 @@ describe('BulkEditAccountModal', () => {
       credentials: {
         model_mapping: {}
       }
-    })
-  })
+	    })
+	  })
 
-  it('OpenAI 账号批量编辑可开启自动透传', async () => {
+	  it('GLM API Key 账号批量编辑应支持模型白名单且不显示自定义模型输入', async () => {
+	    const wrapper = mountModal({
+	      selectedPlatforms: ['glm'],
+	      selectedTypes: ['apikey']
+	    })
+
+	    expect(wrapper.find('#bulk-edit-model-restriction-enabled').exists()).toBe(true)
+	    await wrapper.get('#bulk-edit-model-restriction-enabled').setValue(true)
+	    expect(wrapper.text()).not.toContain('admin.accounts.customModelName')
+
+	    const selector = wrapper.findComponent(ModelWhitelistSelector)
+	    await selector.find('div.cursor-pointer').trigger('click')
+	    const glm47 = wrapper.findAll('button').find((btn) => btn.text().includes('GLM-4.7'))
+	    expect(glm47).toBeTruthy()
+	    await glm47!.trigger('click')
+
+	    await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
+	    await flushPromises()
+
+	    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledTimes(1)
+	    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith([1, 2], {
+	      credentials: {
+	        model_mapping: {
+	          'GLM-4.7': 'GLM-4.7'
+	        }
+	      }
+	    })
+	  })
+
+	  it('OpenAI 账号批量编辑可开启自动透传', async () => {
     const wrapper = mountModal({
       selectedPlatforms: ['openai'],
       selectedTypes: ['oauth']
@@ -234,7 +263,7 @@ describe('BulkEditAccountModal', () => {
     expect(wrapper.find('#bulk-edit-intercept-warmup-enabled').exists()).toBe(false)
   })
 
-  it('GLM 批量编辑即使存在陈旧通用凭据开关也不提交 credentials', async () => {
+  it('GLM 批量编辑只提交模型限制，不提交其他陈旧通用凭据开关', async () => {
     const wrapper = mountModal({
       selectedPlatforms: ['glm'],
       selectedTypes: ['apikey']
@@ -258,6 +287,11 @@ describe('BulkEditAccountModal', () => {
 
     expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledTimes(1)
     expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith([1, 2], {
+      credentials: {
+        model_mapping: {
+          'GLM-5.1': 'GLM-5.1'
+        }
+      },
       status: 'inactive'
     })
   })

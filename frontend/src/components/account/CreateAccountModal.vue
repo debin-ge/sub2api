@@ -1145,7 +1145,7 @@
         </div>
 
         <!-- Model Restriction Section (Antigravity 已在上层条件排除) -->
-        <div v-if="form.platform !== 'glm'" class="border-t border-gray-200 pt-4 dark:border-dark-600">
+        <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
           <label class="input-label">{{ t('admin.accounts.modelRestriction') }}</label>
 
           <div
@@ -3272,6 +3272,7 @@ const baseUrlHint = computed(() => {
 const apiKeyHint = computed(() => {
   if (form.platform === 'openai') return t('admin.accounts.openai.apiKeyHint')
   if (form.platform === 'gemini') return t('admin.accounts.gemini.apiKeyHint')
+  if (form.platform === 'glm') return t('admin.accounts.glm.apiKeyHint')
   return t('admin.accounts.apiKeyHint')
 })
 
@@ -4534,7 +4535,7 @@ const handleSubmit = async () => {
   }
 
   // Add model mapping if configured（OpenAI 开启自动透传时不应用）
-  if (form.platform !== 'glm' && !isOpenAIModelRestrictionDisabled.value) {
+  if (!isOpenAIModelRestrictionDisabled.value) {
     const modelMapping = buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
     if (modelMapping) {
       credentials.model_mapping = modelMapping

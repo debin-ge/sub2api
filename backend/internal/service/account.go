@@ -1072,13 +1072,22 @@ func NormalizeGLMModel(model string) string {
 	}
 }
 
+func DefaultGLMModelIDs() []string {
+	return []string{"GLM-5.1", "GLM-4.7", "GLM-4.5-air"}
+}
+
 func isOfficialGLMModel(model string) bool {
-	switch model {
-	case "GLM-5.1", "GLM-4.7", "GLM-4.5-air":
-		return true
-	default:
-		return false
+	for _, official := range DefaultGLMModelIDs() {
+		if model == official {
+			return true
+		}
 	}
+	return false
+}
+
+func normalizeOfficialGLMModel(model string) (string, bool) {
+	normalized := NormalizeGLMModel(model)
+	return normalized, isOfficialGLMModel(normalized)
 }
 
 func mapDefaultGLMModel(model string) (string, bool) {
@@ -1108,12 +1117,29 @@ func (a *Account) GetGLMMappedModel(model string) string {
 		return trimmed
 	}
 
-	if mapped, ok := mapDefaultGLMModel(trimmed); ok {
-		return mapped
+	mapping := a.GetModelMapping()
+	if len(mapping) == 0 {
+		if mapped, ok := mapDefaultGLMModel(trimmed); ok {
+			return mapped
+		}
+		return trimmed
 	}
 
-	mapped, matched := a.ResolveMappedModel(trimmed)
-	if matched && strings.TrimSpace(mapped) != "" {
+	normalized := NormalizeGLMModel(trimmed)
+	if isOfficialGLMModel(normalized) {
+		if mappingSupportsRequestedModel(mapping, normalized) {
+			return normalized
+		}
+		return normalized
+	}
+
+	if mapped, matched := a.ResolveMappedModel(trimmed); matched && strings.TrimSpace(mapped) != "" {
+		if official, ok := normalizeOfficialGLMModel(mapped); ok {
+			return official
+		}
+		return trimmed
+	}
+	if mapped, ok := mapDefaultGLMModel(trimmed); ok && mappingSupportsRequestedModel(mapping, mapped) {
 		return mapped
 	}
 	return trimmed
@@ -1127,11 +1153,25 @@ func (a *Account) IsGLMModelSupported(model string) bool {
 	if a == nil || a.Platform != PlatformGLM {
 		return false
 	}
-	if _, ok := mapDefaultGLMModel(trimmed); ok {
-		return true
+
+	mapping := a.GetModelMapping()
+	if len(mapping) == 0 {
+		_, ok := mapDefaultGLMModel(trimmed)
+		return ok
 	}
-	_, matched := a.ResolveMappedModel(trimmed)
-	return matched
+
+	normalized := NormalizeGLMModel(trimmed)
+	if isOfficialGLMModel(normalized) {
+		return mappingSupportsRequestedModel(mapping, normalized)
+	}
+	if mapped, matched := a.ResolveMappedModel(trimmed); matched && strings.TrimSpace(mapped) != "" {
+		_, ok := normalizeOfficialGLMModel(mapped)
+		return ok
+	}
+	if mapped, ok := mapDefaultGLMModel(trimmed); ok {
+		return mappingSupportsRequestedModel(mapping, mapped)
+	}
+	return false
 }
 
 func (a *Account) IsOpenAIOAuth() bool {

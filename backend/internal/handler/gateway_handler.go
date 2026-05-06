@@ -987,40 +987,31 @@ func writeClaudeModelList(c *gin.Context, modelIDs []string) {
 	})
 }
 
-func defaultGLMModels() []claude.Model {
-	return []claude.Model{
-		{ID: "GLM-5.1", Type: "model", DisplayName: "GLM-5.1", CreatedAt: "2024-01-01T00:00:00Z"},
-		{ID: "GLM-4.7", Type: "model", DisplayName: "GLM-4.7", CreatedAt: "2024-01-01T00:00:00Z"},
-		{ID: "GLM-4.5-air", Type: "model", DisplayName: "GLM-4.5-air", CreatedAt: "2024-01-01T00:00:00Z"},
-	}
-}
-
 func mergeGLMModelIDs(availableModels []string) []string {
-	seen := make(map[string]struct{}, len(availableModels)+3)
-	models := make([]string, 0, len(availableModels)+3)
-	for _, model := range defaultGLMModels() {
-		modelID := strings.TrimSpace(model.ID)
-		if modelID == "" {
-			continue
-		}
-		seen[modelID] = struct{}{}
-		models = append(models, modelID)
+	if len(availableModels) == 0 {
+		defaults := service.DefaultGLMModelIDs()
+		return append([]string(nil), defaults...)
 	}
 
-	extras := make([]string, 0, len(availableModels))
+	seen := make(map[string]struct{}, len(availableModels))
+	models := make([]string, 0, len(availableModels))
 	for _, modelID := range availableModels {
 		modelID = strings.TrimSpace(modelID)
 		if modelID == "" {
 			continue
 		}
+		if strings.Contains(modelID, "*") {
+			continue
+		}
+		modelID = service.NormalizeGLMModel(modelID)
 		if _, ok := seen[modelID]; ok {
 			continue
 		}
 		seen[modelID] = struct{}{}
-		extras = append(extras, modelID)
+		models = append(models, modelID)
 	}
-	sort.Strings(extras)
-	return append(models, extras...)
+	sort.Strings(models)
+	return models
 }
 
 // AntigravityModels 返回 Antigravity 支持的全部模型

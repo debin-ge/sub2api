@@ -78,7 +78,21 @@ const ModelWhitelistSelectorStub = defineComponent({
     }
   },
   emits: ['update:modelValue'],
-  template: '<div data-testid="model-whitelist-selector">{{ platform }}</div>'
+  template: `
+    <div data-testid="model-whitelist-selector">
+      <span data-testid="model-whitelist-platform">{{ platform }}</span>
+      <button
+        type="button"
+        data-testid="select-models"
+        @click="$emit('update:modelValue', platform === 'glm' ? ['GLM-4.7'] : ['gpt-5.2'])"
+      >
+        select
+      </button>
+      <span data-testid="model-whitelist-value">
+        {{ Array.isArray(modelValue) ? modelValue.join(',') : '' }}
+      </span>
+    </div>
+  `
 })
 
 const SelectStub = defineComponent({
@@ -175,17 +189,22 @@ describe('CreateAccountModal', () => {
 
     expect(wrapper.find('[data-testid="create-platform-glm"]').exists()).toBe(true)
 
-    await wrapper.get('[data-tour="account-form-name"]').setValue('GLM Coding')
-    await wrapper.get('[data-testid="create-platform-glm"]').trigger('click')
-    expect(wrapper.find('[data-testid="glm-anthropic-base-url"]').exists()).toBe(false)
+	    await wrapper.get('[data-tour="account-form-name"]').setValue('GLM Coding')
+	    await wrapper.get('[data-testid="create-platform-glm"]').trigger('click')
+	    expect(wrapper.text()).toContain('admin.accounts.glm.apiKeyHint')
+	    expect(wrapper.text()).not.toContain('admin.accounts.apiKeyHint')
+	    expect(wrapper.find('[data-testid="glm-anthropic-base-url"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="glm-openai-base-url"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="model-whitelist-selector"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="model-whitelist-selector"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="model-whitelist-platform"]').text()).toBe('glm')
     expect(wrapper.find('[data-testid="quota-limit-card"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('admin.accounts.poolMode')
     expect(wrapper.text()).not.toContain('admin.accounts.customErrorCodes')
     expect(wrapper.text()).not.toContain('admin.accounts.tempUnschedulable.title')
 
     await wrapper.get('[data-testid="glm-api-key"]').setValue('sk-glm-test')
+    await wrapper.get('[data-testid="select-models"]').trigger('click')
+    expect(wrapper.get('[data-testid="model-whitelist-value"]').text()).toBe('GLM-4.7')
     await wrapper.get('form#create-account-form').trigger('submit.prevent')
     await flushPromises()
 
@@ -195,11 +214,14 @@ describe('CreateAccountModal', () => {
       name: 'GLM Coding',
       platform: 'glm',
       type: 'apikey',
-      credentials: {
-        api_key: 'sk-glm-test'
-      }
+      credentials: expect.objectContaining({
+        api_key: 'sk-glm-test',
+        model_mapping: {
+          'GLM-4.7': 'GLM-4.7'
+        }
+      })
     }))
-    expect(Object.keys(payload.credentials).sort()).toEqual(['api_key'])
+    expect(Object.keys(payload.credentials).sort()).toEqual(['api_key', 'model_mapping'])
     expect(payload.credentials.base_url).toBeUndefined()
     expect(payload.credentials.base_url_anthropic).toBeUndefined()
     expect(payload.credentials.base_url_openai).toBeUndefined()

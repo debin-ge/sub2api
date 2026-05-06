@@ -11,6 +11,7 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -2031,6 +2032,12 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 		return
 	}
 
+	// Handle GLM Coding Plan accounts.
+	if account.Platform == service.PlatformGLM {
+		response.Success(c, buildGLMAvailableModels(account.GetModelMapping()))
+		return
+	}
+
 	// Handle Claude/Anthropic accounts
 	// For OAuth and Setup-Token accounts: return default models
 	if account.IsOAuth() {
@@ -2070,6 +2077,37 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 	}
 
 	response.Success(c, models)
+}
+
+func buildGLMAvailableModels(mapping map[string]string) []claude.Model {
+	modelIDs := service.DefaultGLMModelIDs()
+	if len(mapping) > 0 {
+		modelIDs = make([]string, 0, len(mapping))
+		seen := make(map[string]struct{}, len(mapping))
+		for requestedModel := range mapping {
+			modelID := service.NormalizeGLMModel(strings.TrimSpace(requestedModel))
+			if modelID == "" {
+				continue
+			}
+			if _, exists := seen[modelID]; exists {
+				continue
+			}
+			seen[modelID] = struct{}{}
+			modelIDs = append(modelIDs, modelID)
+		}
+		sort.Strings(modelIDs)
+	}
+
+	models := make([]claude.Model, 0, len(modelIDs))
+	for _, modelID := range modelIDs {
+		models = append(models, claude.Model{
+			ID:          modelID,
+			Type:        "model",
+			DisplayName: modelID,
+			CreatedAt:   "2024-01-01T00:00:00Z",
+		})
+	}
+	return models
 }
 
 // SetPrivacy handles setting privacy for a single OpenAI/Antigravity OAuth account

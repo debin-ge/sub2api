@@ -3048,10 +3048,13 @@ export default {
         compactLastChecked: '最近探测',
         testMode: '测试模式',
         testModeDefault: '常规请求',
-        testModeCompact: 'Compact 探测',
-        modelRestrictionDisabledByPassthrough: '已开启自动透传：模型白名单/映射不会生效。',
-      },
-      anthropic: {
+	        testModeCompact: 'Compact 探测',
+	        modelRestrictionDisabledByPassthrough: '已开启自动透传：模型白名单/映射不会生效。',
+	      },
+	      glm: {
+	        apiKeyHint: '您的 GLM Coding Plan API Key',
+	      },
+	      anthropic: {
         apiKeyPassthrough: '自动透传（仅替换认证）',
         apiKeyPassthroughDesc:
           '仅对 Anthropic API Key 生效。开启后，messages/count_tokens 请求将透传上游并仅替换认证，保留计费/并发/审计及必要安全过滤；关闭即可回滚到现有兼容链路。',

@@ -467,6 +467,39 @@ func TestGLMGatewayHandlerNonRetryableUpstreamErrorDoesNotRecordOrFailover(t *te
 	require.Nil(t, gateway.degradedErr)
 }
 
+func TestGLMGatewayHandlerAuthUpstreamErrorMarksAccountWithoutFailover(t *testing.T) {
+	first := glmTestAccount(101)
+	second := glmTestAccount(102)
+	failoverErr := &service.UpstreamFailoverError{StatusCode: http.StatusUnauthorized}
+	forwarder := &fakeGLMForwarder{
+		errs: []error{failoverErr},
+	}
+	gateway := &fakeGLMGatewayService{
+		selections: []*service.AccountSelectionResult{
+			{Account: first, Acquired: true},
+			{Account: second, Acquired: true},
+		},
+	}
+	h := &GLMGatewayHandler{
+		glmService:          forwarder,
+		gatewayService:      gateway,
+		concurrencyHelper:   &fakeGLMConcurrencyController{allowWait: true},
+		billingCacheService: &fakeGLMBillingChecker{},
+		maxAccountSwitches:  3,
+	}
+	c, rec, _ := newGLMHandlerTestContext(t, service.PlatformGLM, `{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"hello"}]}`)
+
+	h.Messages(c)
+
+	require.Equal(t, http.StatusBadGateway, rec.Code)
+	require.Equal(t, 1, forwarder.messagesCalled)
+	require.Equal(t, first, forwarder.account)
+	require.Len(t, gateway.excludedHistory, 1)
+	require.Nil(t, gateway.recorded)
+	require.Equal(t, first, gateway.degradedAccount)
+	require.Equal(t, failoverErr, gateway.degradedErr)
+}
+
 func TestGLMGatewayHandlerChatCompletionsUsesOpenAICompatiblePingFormat(t *testing.T) {
 	h := NewGLMGatewayHandler(nil, nil, nil, nil, nil, service.NewConcurrencyService(nil), &config.Config{})
 

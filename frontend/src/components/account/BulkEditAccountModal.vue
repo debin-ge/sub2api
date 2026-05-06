@@ -118,11 +118,11 @@
         </p>
       </div>
 
-      <!-- Model restriction -->
-      <div
-        v-if="!targetMayIncludeGLM"
-        class="border-t border-gray-200 pt-4 dark:border-dark-600"
-      >
+	      <!-- Model restriction -->
+	      <div
+	        v-if="canEditModelRestriction"
+	        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+	      >
         <div class="mb-3 flex items-center justify-between">
           <label
             id="bulk-edit-model-restriction-label"
@@ -1082,6 +1082,15 @@ const targetMayIncludeGLM = computed(() => {
   return filteredPlatform.value === '' || filteredPlatform.value === 'glm'
 })
 
+const targetIsGLMAPIKeyOnly = computed(() => (
+  capabilityPlatforms.value.length === 1 &&
+  capabilityPlatforms.value[0] === 'glm' &&
+  capabilityTypes.value.length > 0 &&
+  capabilityTypes.value.every(t => t === 'apikey')
+))
+
+const canEditModelRestriction = computed(() => !targetMayIncludeGLM.value || targetIsGLMAPIKeyOnly.value)
+
 const allOpenAIPassthroughCapable = computed(() => {
   return (
     capabilityPlatforms.value.length === 1 &&
@@ -1363,7 +1372,7 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
   }
 
   if (
-    !targetMayIncludeGLM.value &&
+    canEditModelRestriction.value &&
     enableModelRestriction.value &&
     !isOpenAIModelRestrictionDisabled.value
   ) {

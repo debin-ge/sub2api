@@ -130,6 +130,32 @@ func TestGLMGatewayServiceForwardMessagesBuildsSafeUpstreamRequest(t *testing.T)
 	}
 }
 
+func TestGLMGatewayServiceForwardMessagesDefaultsMissingMaxTokens(t *testing.T) {
+	var capturedBody []byte
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		var err error
+		capturedBody, err = io.ReadAll(req.Body)
+		if err != nil {
+			t.Fatalf("read upstream body: %v", err)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": {"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"id":"msg_1","usage":{"input_tokens":1,"output_tokens":1}}`)),
+		}, nil
+	})}
+	svc := NewGLMGatewayService(client, nil)
+	c, _ := newGLMGatewayTestContext("/v1/messages")
+	body := []byte(`{"model":"GLM-5.1","messages":[{"role":"user","content":"hello"}]}`)
+
+	if _, err := svc.ForwardMessages(context.Background(), c, glmGatewayTestAccount(), body, "req-default-max"); err != nil {
+		t.Fatalf("ForwardMessages error = %v", err)
+	}
+	if got := gjson.GetBytes(capturedBody, "max_tokens").Int(); got != glmDefaultAnthropicMaxTokens {
+		t.Fatalf("default max_tokens = %d body=%s", got, string(capturedBody))
+	}
+}
+
 func TestGLMGatewayServiceForwardChatCompletionsBuildsRequestAndParsesUsage(t *testing.T) {
 	var captured *http.Request
 	var capturedBody []byte
@@ -199,6 +225,34 @@ func TestGLMGatewayServiceAllowsAnthropicToolAndThinkingContent(t *testing.T) {
 	}
 	if calls != 1 {
 		t.Fatalf("upstream calls = %d", calls)
+	}
+}
+
+func TestGLMGatewayServiceRejectsModelOutsideGLMWhitelistBeforeForwarding(t *testing.T) {
+	forwarded := false
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		forwarded = true
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": {"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"id":"msg_1","usage":{"input_tokens":1,"output_tokens":1}}`)),
+		}, nil
+	})}
+	account := glmGatewayTestAccount()
+	account.Credentials["model_mapping"] = map[string]any{
+		"GLM-4.7": "GLM-4.7",
+	}
+	svc := NewGLMGatewayService(client, nil)
+	c, _ := newGLMGatewayTestContext("/v1/messages")
+	body := []byte(`{"model":"GLM-5.1","messages":[{"role":"user","content":"hello"}]}`)
+
+	_, err := svc.ForwardMessages(context.Background(), c, account, body, "req-unsupported")
+
+	if err == nil {
+		t.Fatalf("expected unsupported model error")
+	}
+	if forwarded {
+		t.Fatalf("unsupported GLM model should not be forwarded upstream")
 	}
 }
 
