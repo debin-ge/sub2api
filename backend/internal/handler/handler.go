@@ -52,6 +52,7 @@ type Handlers struct {
 	OpenAIGateway    *OpenAIGatewayHandler
 	MiniMaxGateway   *MiniMaxGatewayHandler
 	GLMGateway       *GLMGatewayHandler
+	KimiGateway      *KimiGatewayHandler
 	Setting          *SettingHandler
 	Totp             *TotpHandler
 	Payment          *PaymentHandler

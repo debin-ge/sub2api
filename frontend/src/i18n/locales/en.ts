@@ -98,6 +98,7 @@ export default {
       gemini: 'Gemini',
       antigravity: 'Antigravity',
       glm: 'GLM',
+      kimi: 'Kimi',
       more: 'More'
     },
     // CTA section
@@ -1983,6 +1984,7 @@ export default {
         antigravity: 'Antigravity',
         minimax: 'MiniMax',
         glm: 'GLM',
+      kimi: 'Kimi',
       },
       deleteConfirm:
         "Are you sure you want to delete '{name}'? All associated API keys will no longer belong to any group.",
@@ -2582,6 +2584,7 @@ export default {
         antigravity: 'Antigravity',
         minimax: 'MiniMax',
         glm: 'GLM',
+      kimi: 'Kimi',
       },
       types: {
         oauth: 'OAuth',
@@ -2908,6 +2911,9 @@ export default {
 	      },
 	      glm: {
 	        apiKeyHint: 'Your GLM Coding Plan API Key',
+	      },
+	      kimi: {
+	        apiKeyHint: 'Your Kimi Coding Plan API Key',
 	      },
 	      anthropic: {
         apiKeyPassthrough: 'Auto passthrough (auth only)',

@@ -22,4 +22,16 @@ describe('platformColors', () => {
     expect(platformBadgeClass('glm')).not.toBe(platformBadgeClass('antigravity'))
     expect(platformBadgeClass('glm')).not.toBe(platformBadgeClass('minimax'))
   })
+
+  it('returns Kimi labels and a distinct lime visual style', () => {
+    expect(platformLabel('kimi')).toBe('Kimi')
+    expect(platformBadgeClass('kimi')).toContain('lime')
+    expect(platformButtonClass('kimi')).toContain('lime')
+    expect(platformBadgeClass('kimi')).not.toBe(platformBadgeClass('openai'))
+    expect(platformBadgeClass('kimi')).not.toBe(platformBadgeClass('anthropic'))
+    expect(platformBadgeClass('kimi')).not.toBe(platformBadgeClass('gemini'))
+    expect(platformBadgeClass('kimi')).not.toBe(platformBadgeClass('antigravity'))
+    expect(platformBadgeClass('kimi')).not.toBe(platformBadgeClass('minimax'))
+    expect(platformBadgeClass('kimi')).not.toBe(platformBadgeClass('glm'))
+  })
 })

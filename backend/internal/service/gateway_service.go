@@ -593,6 +593,44 @@ func (s *GatewayService) HandleGLMUpstreamError(ctx context.Context, account *Ac
 	}
 }
 
+func (s *GatewayService) HandleKimiUpstreamError(ctx context.Context, account *Account, failoverErr *UpstreamFailoverError) {
+	if s == nil || account == nil || failoverErr == nil {
+		return
+	}
+	mapping := MapKimiUpstreamStatus(failoverErr.StatusCode)
+	if failoverErr.StatusCode == http.StatusUnauthorized || failoverErr.StatusCode == http.StatusForbidden {
+		headers := failoverErr.ResponseHeaders
+		if headers == nil {
+			headers = http.Header{}
+		}
+		if s.rateLimitService != nil && s.rateLimitService.accountRepo != nil {
+			s.rateLimitService.HandleUpstreamError(ctx, account, failoverErr.StatusCode, headers, failoverErr.ResponseBody)
+			return
+		}
+		s.setKimiAuthError(ctx, account.ID, failoverErr)
+		return
+	}
+	if !mapping.Retryable {
+		return
+	}
+	headers := failoverErr.ResponseHeaders
+	if headers == nil {
+		headers = http.Header{}
+	}
+	switch {
+	case failoverErr.StatusCode == http.StatusTooManyRequests:
+		if s.rateLimitService != nil && s.rateLimitService.accountRepo != nil {
+			s.rateLimitService.HandleUpstreamError(ctx, account, failoverErr.StatusCode, headers, failoverErr.ResponseBody)
+			return
+		}
+		s.setKimiRateLimited(ctx, account.ID, time.Now().Add(5*time.Minute))
+	case failoverErr.StatusCode == 529:
+		s.setKimiOverloaded(ctx, account.ID, s.glmOverloadUntil())
+	case failoverErr.StatusCode >= http.StatusInternalServerError:
+		s.setKimiOverloaded(ctx, account.ID, s.glmOverloadUntil())
+	}
+}
+
 func (s *GatewayService) setGLMAuthError(ctx context.Context, accountID int64, failoverErr *UpstreamFailoverError) {
 	if s == nil || s.accountRepo == nil || failoverErr == nil {
 		return
@@ -610,6 +648,26 @@ func (s *GatewayService) setGLMAuthError(ctx context.Context, accountID int64, f
 	}
 	if err := s.accountRepo.SetError(ctx, accountID, message); err != nil {
 		slog.Warn("glm_auth_error_set_failed", "account_id", accountID, "status_code", failoverErr.StatusCode, "error", err)
+	}
+}
+
+func (s *GatewayService) setKimiAuthError(ctx context.Context, accountID int64, failoverErr *UpstreamFailoverError) {
+	if s == nil || s.accountRepo == nil || failoverErr == nil {
+		return
+	}
+	message := "Authentication failed"
+	if failoverErr.StatusCode == http.StatusForbidden {
+		message = "Authorization failed"
+	}
+	upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(failoverErr.ResponseBody))
+	upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
+	if upstreamMsg != "" {
+		message = fmt.Sprintf("%s (%d): %s", message, failoverErr.StatusCode, upstreamMsg)
+	} else {
+		message = fmt.Sprintf("%s (%d): invalid Kimi credentials", message, failoverErr.StatusCode)
+	}
+	if err := s.accountRepo.SetError(ctx, accountID, message); err != nil {
+		slog.Warn("kimi_auth_error_set_failed", "account_id", accountID, "status_code", failoverErr.StatusCode, "error", err)
 	}
 }
 
@@ -646,6 +704,24 @@ func (s *GatewayService) setGLMOverloaded(ctx context.Context, accountID int64, 
 	}
 	if err := s.accountRepo.SetOverloaded(ctx, accountID, until); err != nil {
 		slog.Warn("glm_overload_set_failed", "account_id", accountID, "error", err)
+	}
+}
+
+func (s *GatewayService) setKimiRateLimited(ctx context.Context, accountID int64, resetAt time.Time) {
+	if s == nil || s.accountRepo == nil {
+		return
+	}
+	if err := s.accountRepo.SetRateLimited(ctx, accountID, resetAt); err != nil {
+		slog.Warn("kimi_rate_limit_set_failed", "account_id", accountID, "error", err)
+	}
+}
+
+func (s *GatewayService) setKimiOverloaded(ctx context.Context, accountID int64, until time.Time) {
+	if s == nil || s.accountRepo == nil {
+		return
+	}
+	if err := s.accountRepo.SetOverloaded(ctx, accountID, until); err != nil {
+		slog.Warn("kimi_overload_set_failed", "account_id", accountID, "error", err)
 	}
 }
 
@@ -3854,6 +3930,12 @@ func (s *GatewayService) isModelSupportedByAccount(account *Account, requestedMo
 	}
 	if account.Platform == PlatformGLM {
 		return account.IsGLMModelSupported(requestedModel)
+	}
+	if account.Platform == PlatformKimi {
+		return account.IsKimiModelSupported(requestedModel)
+	}
+	if account.Platform == PlatformMiniMax {
+		return account.IsMiniMaxModelSupported(requestedModel)
 	}
 	// OpenAI 透传模式：仅替换认证，允许所有模型
 	if account.Platform == PlatformOpenAI && account.IsOpenAIPassthroughEnabled() {

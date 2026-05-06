@@ -969,7 +969,8 @@ const platformFilterOptions = computed(() => [
   { value: 'gemini', label: 'Gemini' },
   { value: 'antigravity', label: 'Antigravity' },
   { value: 'minimax', label: 'MiniMax' },
-  { value: 'glm', label: 'GLM' }
+  { value: 'glm', label: 'GLM' },
+  { value: 'kimi', label: 'Kimi' }
 ])
 
 // Group options for assign (only subscription type groups)

@@ -175,6 +175,20 @@
             <Icon name="key" size="sm" />
             GLM
           </button>
+          <button
+            type="button"
+            data-testid="create-platform-kimi"
+            @click="form.platform = 'kimi'"
+            :class="[
+              'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2.5 text-sm font-medium transition-all',
+              form.platform === 'kimi'
+                ? 'bg-white text-lime-700 shadow-sm dark:bg-dark-600 dark:text-lime-300'
+                : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
+            ]"
+          >
+            <Icon name="key" size="sm" />
+            Kimi
+          </button>
         </div>
       </div>
 
@@ -1098,6 +1112,30 @@
             </div>
           </div>
         </template>
+        <template v-else-if="form.platform === 'kimi'">
+          <div>
+            <label class="input-label">Kimi API Key</label>
+            <input
+              v-model="apiKeyValue"
+              data-testid="kimi-api-key"
+              type="password"
+              required
+              class="input font-mono"
+              placeholder="sk-..."
+            />
+            <p class="input-hint">{{ apiKeyHint }}</p>
+          </div>
+          <div class="grid grid-cols-1 gap-3 rounded-lg border border-lime-200 bg-lime-50 p-3 text-xs text-lime-800 dark:border-lime-800/40 dark:bg-lime-900/20 dark:text-lime-200 sm:grid-cols-2">
+            <div>
+              <div class="font-medium">Anthropic-compatible</div>
+              <div class="mt-1 break-all font-mono">{{ KIMI_ANTHROPIC_BASE_URL }}</div>
+            </div>
+            <div>
+              <div class="font-medium">OpenAI-compatible</div>
+              <div class="mt-1 break-all font-mono">{{ KIMI_OPENAI_BASE_URL }}</div>
+            </div>
+          </div>
+        </template>
         <template v-else>
           <div>
             <label class="input-label">{{ t('admin.accounts.baseUrl') }}</label>
@@ -1159,7 +1197,7 @@
 
           <template v-else>
             <!-- Mode Toggle -->
-            <div class="mb-4 flex gap-2">
+            <div v-if="form.platform !== 'kimi'" class="mb-4 flex gap-2">
               <button
                 type="button"
                 @click="modelRestrictionMode = 'whitelist'"
@@ -1224,7 +1262,7 @@
             </div>
 
             <!-- Mapping Mode -->
-            <div v-else>
+            <div v-else-if="form.platform !== 'kimi'">
               <div class="mb-3 rounded-lg bg-purple-50 p-3 dark:bg-purple-900/20">
                 <p class="text-xs text-purple-700 dark:text-purple-400">
                   <svg
@@ -1331,7 +1369,7 @@
         </div>
 
         <!-- Pool Mode Section -->
-        <div v-if="form.platform !== 'glm'" class="border-t border-gray-200 pt-4 dark:border-dark-600">
+        <div v-if="!isCodingPlanGatewayPlatform" class="border-t border-gray-200 pt-4 dark:border-dark-600">
           <div class="mb-3 flex items-center justify-between">
             <div>
               <label class="input-label mb-0">{{ t('admin.accounts.poolMode') }}</label>
@@ -1383,7 +1421,7 @@
         </div>
 
         <!-- Custom Error Codes Section -->
-        <div v-if="form.platform !== 'glm'" class="border-t border-gray-200 pt-4 dark:border-dark-600">
+        <div v-if="!isCodingPlanGatewayPlatform" class="border-t border-gray-200 pt-4 dark:border-dark-600">
           <div class="mb-3 flex items-center justify-between">
             <div>
               <label class="input-label mb-0">{{ t('admin.accounts.customErrorCodes') }}</label>
@@ -1782,7 +1820,7 @@
 
       <!-- 配额控制 (非 Anthropic apikey/bedrock) -->
       <div
-        v-else-if="form.platform !== 'glm' && (form.type === 'apikey' || form.type === 'bedrock')"
+        v-else-if="!isCodingPlanGatewayPlatform && (form.type === 'apikey' || form.type === 'bedrock')"
         class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4"
       >
         <div class="mb-3">
@@ -1969,7 +2007,7 @@
       </div>
 
       <!-- Temp Unschedulable Rules -->
-      <div v-if="form.platform !== 'glm'" class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4">
+      <div v-if="!isCodingPlanGatewayPlatform" class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4">
         <div class="mb-3 flex items-center justify-between">
           <div>
             <label class="input-label mb-0">{{ t('admin.accounts.tempUnschedulable.title') }}</label>
@@ -3227,6 +3265,8 @@ import {
   MINIMAX_OPENAI_BASE_URL,
   GLM_ANTHROPIC_BASE_URL,
   GLM_OPENAI_BASE_URL,
+  KIMI_ANTHROPIC_BASE_URL,
+  KIMI_OPENAI_BASE_URL,
   VERTEX_LOCATION_OPTIONS
 } from '@/constants/account'
 import {
@@ -3273,8 +3313,12 @@ const apiKeyHint = computed(() => {
   if (form.platform === 'openai') return t('admin.accounts.openai.apiKeyHint')
   if (form.platform === 'gemini') return t('admin.accounts.gemini.apiKeyHint')
   if (form.platform === 'glm') return t('admin.accounts.glm.apiKeyHint')
+  if (form.platform === 'kimi') return t('admin.accounts.kimi.apiKeyHint')
   return t('admin.accounts.apiKeyHint')
 })
+
+const isCodingPlanGatewayPlatformValue = (platform?: string) => platform === 'glm' || platform === 'kimi'
+const isCodingPlanGatewayPlatform = computed(() => isCodingPlanGatewayPlatformValue(form.platform))
 
 interface Props {
   show: boolean
@@ -3674,6 +3718,10 @@ watch(
       form.type = 'apikey'
       return
     }
+    if (form.platform === 'kimi') {
+      form.type = 'apikey'
+      return
+    }
     // Antigravity upstream 类型（实际创建为 apikey）
     if (form.platform === 'antigravity' && agType === 'upstream') {
       form.type = 'apikey'
@@ -3709,6 +3757,8 @@ watch(
             ? MINIMAX_ANTHROPIC_BASE_URL
             : newPlatform === 'glm'
               ? GLM_ANTHROPIC_BASE_URL
+              : newPlatform === 'kimi'
+                ? KIMI_ANTHROPIC_BASE_URL
             : 'https://api.anthropic.com'
     minimaxAnthropicBaseUrl.value = MINIMAX_ANTHROPIC_BASE_URL
     minimaxOpenAIBaseUrl.value = MINIMAX_OPENAI_BASE_URL
@@ -3735,6 +3785,10 @@ watch(
     }
     if (newPlatform === 'glm') {
       accountCategory.value = 'apikey'
+    }
+    if (newPlatform === 'kimi') {
+      accountCategory.value = 'apikey'
+      modelRestrictionMode.value = 'whitelist'
     }
     if (newPlatform !== 'gemini' && newPlatform !== 'anthropic' && accountCategory.value === 'service_account') {
       accountCategory.value = 'oauth-based'
@@ -3821,6 +3875,11 @@ watch(
   ([newMode]) => {
     if (newMode === 'whitelist') {
       if (form.platform === 'glm') {
+        allowedModels.value = []
+        return
+      }
+      if (form.platform === 'kimi') {
+        modelRestrictionMode.value = 'whitelist'
         allowedModels.value = []
         return
       }
@@ -4526,6 +4585,10 @@ const handleSubmit = async () => {
       ? {
           api_key: apiKeyValue.value.trim()
         }
+    : form.platform === 'kimi'
+      ? {
+          api_key: apiKeyValue.value.trim()
+        }
     : {
         base_url: apiKeyBaseUrl.value.trim() || defaultBaseUrl,
         api_key: apiKeyValue.value.trim()
@@ -4549,18 +4612,18 @@ const handleSubmit = async () => {
   }
 
   // Add pool mode if enabled
-  if (form.platform !== 'glm' && poolModeEnabled.value) {
+  if (!isCodingPlanGatewayPlatform.value && poolModeEnabled.value) {
     credentials.pool_mode = true
     credentials.pool_mode_retry_count = normalizePoolModeRetryCount(poolModeRetryCount.value)
   }
 
   // Add custom error codes if enabled
-  if (form.platform !== 'glm' && customErrorCodesEnabled.value) {
+  if (!isCodingPlanGatewayPlatform.value && customErrorCodesEnabled.value) {
     credentials.custom_error_codes_enabled = true
     credentials.custom_error_codes = [...selectedErrorCodes.value]
   }
 
-  if (form.platform !== 'glm') {
+  if (!isCodingPlanGatewayPlatform.value) {
     applyInterceptWarmup(credentials, interceptWarmupRequests.value, 'create')
     if (!applyTempUnschedConfig(credentials)) {
       return
@@ -4626,12 +4689,12 @@ const createAccountAndFinish = async (
   credentials: Record<string, unknown>,
   extra?: Record<string, unknown>
 ) => {
-  if (platform !== 'glm' && !applyTempUnschedConfig(credentials)) {
+  if (!isCodingPlanGatewayPlatformValue(platform) && !applyTempUnschedConfig(credentials)) {
     return
   }
   // Inject quota limits for apikey/bedrock accounts
   let finalExtra = extra
-  if (platform !== 'glm' && (type === 'apikey' || type === 'bedrock')) {
+  if (!isCodingPlanGatewayPlatformValue(platform) && (type === 'apikey' || type === 'bedrock')) {
     const quotaExtra: Record<string, unknown> = { ...(extra || {}) }
     if (editQuotaLimit.value != null && editQuotaLimit.value > 0) {
       quotaExtra.quota_limit = editQuotaLimit.value

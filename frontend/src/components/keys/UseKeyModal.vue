@@ -411,6 +411,8 @@ const currentFiles = computed((): FileConfig[] => {
         return [generateOpenCodeConfig('minimax', apiBase, apiKey, 'opencode.json (MiniMax)')]
       case 'glm':
         return [generateOpenCodeConfig('glm', apiBase, apiKey, 'opencode.json (GLM)')]
+      case 'kimi':
+        return [generateOpenCodeConfig('kimi', apiBase, apiKey, 'opencode.json (Kimi)')]
       default:
         return [generateOpenCodeConfig('openai', apiBase, apiKey)]
     }
@@ -1053,6 +1055,19 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
       }
     }
   }
+  const kimiModels = {
+    'kimi-for-coding': {
+      name: 'Kimi for Coding',
+      limit: {
+        context: 200000,
+        output: 64000
+      },
+      modalities: {
+        input: ['text'],
+        output: ['text']
+      }
+    }
+  }
 
   if (platform === 'gemini') {
     provider[platform].npm = '@ai-sdk/google'
@@ -1067,6 +1082,10 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     provider[platform].npm = '@ai-sdk/anthropic'
     provider[platform].name = 'GLM'
     provider[platform].models = glmModels
+  } else if (platform === 'kimi') {
+    provider[platform].npm = '@ai-sdk/anthropic'
+    provider[platform].name = 'Kimi'
+    provider[platform].models = kimiModels
   } else if (platform === 'antigravity-claude') {
     provider[platform].npm = '@ai-sdk/anthropic'
     provider[platform].name = 'Antigravity (Claude)'

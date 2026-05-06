@@ -718,7 +718,7 @@ const form = reactive({
 let abortController: AbortController | null = null
 
 // ── Platform config ──
-const platformOrder: GroupPlatform[] = ['anthropic', 'openai', 'gemini', 'antigravity', 'minimax', 'glm']
+const platformOrder: GroupPlatform[] = ['anthropic', 'openai', 'gemini', 'antigravity', 'minimax', 'glm', 'kimi']
 
 // ── Helpers ──
 function formatDate(value: string): string {

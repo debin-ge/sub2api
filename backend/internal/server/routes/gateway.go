@@ -72,6 +72,19 @@ func RegisterGatewayRoutes(
 				}
 				h.GLMGateway.Messages(c)
 				return
+			case service.PlatformKimi:
+				if h.KimiGateway == nil {
+					c.JSON(http.StatusServiceUnavailable, gin.H{
+						"type": "error",
+						"error": gin.H{
+							"type":    "api_error",
+							"message": "kimi gateway service unavailable",
+						},
+					})
+					return
+				}
+				h.KimiGateway.Messages(c)
+				return
 			}
 			h.Gateway.Messages(c)
 		})
@@ -95,6 +108,10 @@ func RegisterGatewayRoutes(
 				writeGLMUnsupported(c, h)
 				return
 			}
+			if getGroupPlatform(c) == service.PlatformKimi {
+				writeKimiUnsupported(c, h)
+				return
+			}
 			h.Gateway.CountTokens(c)
 		})
 		gateway.GET("/models", func(c *gin.Context) {
@@ -113,6 +130,10 @@ func RegisterGatewayRoutes(
 				writeGLMUnsupported(c, h)
 				return
 			}
+			if getGroupPlatform(c) == service.PlatformKimi {
+				writeKimiUnsupported(c, h)
+				return
+			}
 			h.Gateway.Usage(c)
 		})
 		// OpenAI Responses API: auto-route based on group platform
@@ -126,6 +147,9 @@ func RegisterGatewayRoutes(
 				return
 			case service.PlatformGLM:
 				writeGLMUnsupported(c, h)
+				return
+			case service.PlatformKimi:
+				writeKimiUnsupported(c, h)
 				return
 			}
 			h.Gateway.Responses(c)
@@ -141,6 +165,9 @@ func RegisterGatewayRoutes(
 			case service.PlatformGLM:
 				writeGLMUnsupported(c, h)
 				return
+			case service.PlatformKimi:
+				writeKimiUnsupported(c, h)
+				return
 			}
 			h.Gateway.Responses(c)
 		})
@@ -151,6 +178,10 @@ func RegisterGatewayRoutes(
 			}
 			if getGroupPlatform(c) == service.PlatformGLM {
 				writeGLMUnsupported(c, h)
+				return
+			}
+			if getGroupPlatform(c) == service.PlatformKimi {
+				writeKimiUnsupported(c, h)
 				return
 			}
 			h.OpenAIGateway.ResponsesWebSocket(c)
@@ -167,6 +198,9 @@ func RegisterGatewayRoutes(
 			case service.PlatformGLM:
 				writeGLMChatCompletions(c, h)
 				return
+			case service.PlatformKimi:
+				writeKimiChatCompletions(c, h)
+				return
 			}
 			h.Gateway.ChatCompletions(c)
 		})
@@ -177,6 +211,10 @@ func RegisterGatewayRoutes(
 			}
 			if getGroupPlatform(c) == service.PlatformGLM {
 				writeGLMUnsupported(c, h)
+				return
+			}
+			if getGroupPlatform(c) == service.PlatformKimi {
+				writeKimiUnsupported(c, h)
 				return
 			}
 			if getGroupPlatform(c) != service.PlatformOpenAI {
@@ -197,6 +235,10 @@ func RegisterGatewayRoutes(
 			}
 			if getGroupPlatform(c) == service.PlatformGLM {
 				writeGLMUnsupported(c, h)
+				return
+			}
+			if getGroupPlatform(c) == service.PlatformKimi {
+				writeKimiUnsupported(c, h)
 				return
 			}
 			if getGroupPlatform(c) != service.PlatformOpenAI {
@@ -239,6 +281,9 @@ func RegisterGatewayRoutes(
 		case service.PlatformGLM:
 			writeGLMUnsupported(c, h)
 			return
+		case service.PlatformKimi:
+			writeKimiUnsupported(c, h)
+			return
 		}
 		h.Gateway.Responses(c)
 	}
@@ -251,6 +296,10 @@ func RegisterGatewayRoutes(
 		}
 		if getGroupPlatform(c) == service.PlatformGLM {
 			writeGLMUnsupported(c, h)
+			return
+		}
+		if getGroupPlatform(c) == service.PlatformKimi {
+			writeKimiUnsupported(c, h)
 			return
 		}
 		h.OpenAIGateway.ResponsesWebSocket(c)
@@ -269,6 +318,10 @@ func RegisterGatewayRoutes(
 				writeGLMUnsupported(c, h)
 				return
 			}
+			if getGroupPlatform(c) == service.PlatformKimi {
+				writeKimiUnsupported(c, h)
+				return
+			}
 			h.OpenAIGateway.ResponsesWebSocket(c)
 		})
 	}
@@ -284,6 +337,9 @@ func RegisterGatewayRoutes(
 		case service.PlatformGLM:
 			writeGLMChatCompletions(c, h)
 			return
+		case service.PlatformKimi:
+			writeKimiChatCompletions(c, h)
+			return
 		}
 		h.Gateway.ChatCompletions(c)
 	})
@@ -294,6 +350,10 @@ func RegisterGatewayRoutes(
 		}
 		if getGroupPlatform(c) == service.PlatformGLM {
 			writeGLMUnsupported(c, h)
+			return
+		}
+		if getGroupPlatform(c) == service.PlatformKimi {
+			writeKimiUnsupported(c, h)
 			return
 		}
 		if getGroupPlatform(c) != service.PlatformOpenAI {
@@ -314,6 +374,10 @@ func RegisterGatewayRoutes(
 		}
 		if getGroupPlatform(c) == service.PlatformGLM {
 			writeGLMUnsupported(c, h)
+			return
+		}
+		if getGroupPlatform(c) == service.PlatformKimi {
+			writeKimiUnsupported(c, h)
 			return
 		}
 		if getGroupPlatform(c) != service.PlatformOpenAI {
@@ -424,6 +488,34 @@ func writeGLMChatCompletions(c *gin.Context, h *handler.Handlers) {
 		"error": gin.H{
 			"type":    "api_error",
 			"message": "glm gateway service unavailable",
+		},
+	})
+}
+
+func writeKimiUnsupported(c *gin.Context, h *handler.Handlers) {
+	if h != nil && h.KimiGateway != nil {
+		h.KimiGateway.Unsupported(c)
+		return
+	}
+	c.JSON(http.StatusNotFound, gin.H{
+		"type": "error",
+		"error": gin.H{
+			"type":    "not_found_error",
+			"message": "Kimi gateway supports /v1/messages and /v1/chat/completions only",
+		},
+	})
+}
+
+func writeKimiChatCompletions(c *gin.Context, h *handler.Handlers) {
+	if h != nil && h.KimiGateway != nil {
+		h.KimiGateway.ChatCompletions(c)
+		return
+	}
+	c.JSON(http.StatusServiceUnavailable, gin.H{
+		"type": "error",
+		"error": gin.H{
+			"type":    "api_error",
+			"message": "kimi gateway service unavailable",
 		},
 	})
 }

@@ -178,7 +178,10 @@ const availableOptions = computed(() => {
 })
 
 const allowCustomModelInput = computed(() => (
-  !(normalizedPlatforms.value.length === 1 && normalizedPlatforms.value[0] === 'glm')
+  !(
+    normalizedPlatforms.value.length === 1 &&
+    (normalizedPlatforms.value[0] === 'glm' || normalizedPlatforms.value[0] === 'kimi')
+  )
 ))
 
 const filteredModels = computed(() => {

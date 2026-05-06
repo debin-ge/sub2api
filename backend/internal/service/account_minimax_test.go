@@ -50,3 +50,28 @@ func TestAccountMiniMaxDefaultBaseURLs(t *testing.T) {
 		t.Fatalf("openai base url = %q", got)
 	}
 }
+
+func TestAccountMiniMaxOfficialModelsPassThroughWhenMappingConfigured(t *testing.T) {
+	acc := &Account{
+		Platform: PlatformMiniMax,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key": "sk-cp-test",
+			"model_mapping": map[string]any{
+				"claude-sonnet-4-5": "MiniMax-M2.7",
+			},
+		},
+	}
+
+	svc := &GatewayService{}
+
+	if !svc.isModelSupportedByAccount(acc, "MiniMax-M2.7-highspeed") {
+		t.Fatalf("expected MiniMax official model to be schedulable")
+	}
+	if got := acc.GetMiniMaxMappedModel("MiniMax-M2.7-highspeed"); got != "MiniMax-M2.7-highspeed" {
+		t.Fatalf("mapped official model = %q", got)
+	}
+	if svc.isModelSupportedByAccount(acc, "unknown-model") {
+		t.Fatalf("expected unknown model to remain unsupported when mapping is configured")
+	}
+}

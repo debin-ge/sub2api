@@ -983,6 +983,32 @@ func (a *Account) IsMiniMaxTokenPlan() bool {
 	return strings.TrimSpace(a.GetCredential("api_key")) != ""
 }
 
+var miniMaxOfficialTextModels = map[string]struct{}{
+	"MiniMax-M2.7":           {},
+	"MiniMax-M2.7-highspeed": {},
+	"abab6.5-chat":           {},
+	"abab6.5s-chat":          {},
+	"abab6.5s-chat-pro":      {},
+	"abab6-chat":             {},
+	"abab5.5-chat":           {},
+	"abab5.5s-chat":          {},
+}
+
+func isMiniMaxOfficialTextModel(model string) bool {
+	_, ok := miniMaxOfficialTextModels[strings.TrimSpace(model)]
+	return ok
+}
+
+func (a *Account) IsMiniMaxModelSupported(requestedModel string) bool {
+	if a == nil || a.Platform != PlatformMiniMax {
+		return false
+	}
+	if isMiniMaxOfficialTextModel(requestedModel) {
+		return true
+	}
+	return a.IsModelSupported(requestedModel)
+}
+
 func (a *Account) GetMiniMaxAPIKey() string {
 	if a == nil || a.Platform != PlatformMiniMax {
 		return ""
@@ -1172,6 +1198,49 @@ func (a *Account) IsGLMModelSupported(model string) bool {
 		return mappingSupportsRequestedModel(mapping, mapped)
 	}
 	return false
+}
+
+func (a *Account) IsKimi() bool {
+	return a != nil && a.Platform == PlatformKimi
+}
+
+func (a *Account) IsKimiCode() bool {
+	if a == nil || a.Platform != PlatformKimi {
+		return false
+	}
+	if a.Type != AccountTypeAPIKey {
+		return false
+	}
+	return strings.TrimSpace(a.GetCredential("api_key")) != ""
+}
+
+func (a *Account) GetKimiAPIKey() string {
+	if a == nil || a.Platform != PlatformKimi {
+		return ""
+	}
+	return strings.TrimSpace(a.GetCredential("api_key"))
+}
+
+func (a *Account) GetKimiAnthropicBaseURL() string {
+	if a == nil || a.Platform != PlatformKimi {
+		return ""
+	}
+	return "https://api.kimi.com/coding"
+}
+
+func (a *Account) GetKimiOpenAIBaseURL() string {
+	if a == nil || a.Platform != PlatformKimi {
+		return ""
+	}
+	return "https://api.kimi.com/coding/v1"
+}
+
+func DefaultKimiModelIDs() []string {
+	return []string{"kimi-for-coding"}
+}
+
+func (a *Account) IsKimiModelSupported(model string) bool {
+	return a != nil && a.Platform == PlatformKimi && model == "kimi-for-coding"
 }
 
 func (a *Account) IsOpenAIOAuth() bool {

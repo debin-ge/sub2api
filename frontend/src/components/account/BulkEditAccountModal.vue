@@ -1073,18 +1073,18 @@ const capabilityTypes = computed<AccountType[]>(() => (
     : targetSelectedTypes.value
 ))
 const targetMayIncludeGLM = computed(() => {
-  if (targetSelectedPlatforms.value.includes('glm')) {
+  if (targetSelectedPlatforms.value.includes('glm') || targetSelectedPlatforms.value.includes('kimi')) {
     return true
   }
   if (targetMode.value !== 'filtered') {
     return false
   }
-  return filteredPlatform.value === '' || filteredPlatform.value === 'glm'
+  return filteredPlatform.value === '' || filteredPlatform.value === 'glm' || filteredPlatform.value === 'kimi'
 })
 
 const targetIsGLMAPIKeyOnly = computed(() => (
   capabilityPlatforms.value.length === 1 &&
-  capabilityPlatforms.value[0] === 'glm' &&
+  (capabilityPlatforms.value[0] === 'glm' || capabilityPlatforms.value[0] === 'kimi') &&
   capabilityTypes.value.length > 0 &&
   capabilityTypes.value.every(t => t === 'apikey')
 ))

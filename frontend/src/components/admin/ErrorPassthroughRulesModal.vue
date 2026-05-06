@@ -491,7 +491,8 @@ const platformOptions = [
   { value: 'gemini', label: 'Gemini' },
   { value: 'antigravity', label: 'Antigravity' },
   { value: 'minimax', label: 'MiniMax' },
-  { value: 'glm', label: 'GLM' }
+  { value: 'glm', label: 'GLM' },
+  { value: 'kimi', label: 'Kimi' }
 ]
 
 // Load rules when dialog opens

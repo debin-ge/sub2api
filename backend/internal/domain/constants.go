@@ -24,6 +24,7 @@ const (
 	PlatformAntigravity = "antigravity"
 	PlatformMiniMax     = "minimax"
 	PlatformGLM         = "glm"
+	PlatformKimi        = "kimi"
 )
 
 // Account type constants

@@ -948,6 +948,11 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 		return
 	}
 
+	if platform == service.PlatformKimi {
+		writeClaudeModelList(c, service.DefaultKimiModelIDs())
+		return
+	}
+
 	// Get available models from account configurations (without platform filter)
 	availableModels := h.gatewayService.GetAvailableModels(c.Request.Context(), groupID, "")
 
