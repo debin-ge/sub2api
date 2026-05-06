@@ -216,6 +216,19 @@ func TestGetModelPricing_MiniMaxM27Fallback(t *testing.T) {
 	}
 }
 
+func TestGetModelPricing_KimiForCodingFallback(t *testing.T) {
+	svc := newTestBillingService()
+
+	pricing, err := svc.GetModelPricing("kimi-for-coding")
+	require.NoError(t, err)
+	require.NotNil(t, pricing)
+	require.InDelta(t, 0.95/1_000_000, pricing.InputPricePerToken, 1e-12)
+	require.InDelta(t, 4.0/1_000_000, pricing.OutputPricePerToken, 1e-12)
+	require.InDelta(t, 0.95/1_000_000, pricing.CacheCreationPricePerToken, 1e-12)
+	require.InDelta(t, 0.16/1_000_000, pricing.CacheReadPricePerToken, 1e-12)
+	require.False(t, pricing.SupportsCacheBreakdown)
+}
+
 func TestCalculateCost_GLMFallback(t *testing.T) {
 	svc := newTestBillingService()
 

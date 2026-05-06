@@ -252,6 +252,16 @@ func (s *BillingService) initFallbackPricing() {
 		SupportsCacheBreakdown:     false,
 	}
 
+	// Kimi Code stable model ID. Use public Kimi K2.6 API pricing as the
+	// internal fallback until the remote pricing repo carries kimi-for-coding.
+	s.fallbackPrices["kimi-for-coding"] = &ModelPricing{
+		InputPricePerToken:         0.95 / 1_000_000,
+		OutputPricePerToken:        4.0 / 1_000_000,
+		CacheCreationPricePerToken: 0.95 / 1_000_000,
+		CacheReadPricePerToken:     0.16 / 1_000_000,
+		SupportsCacheBreakdown:     false,
+	}
+
 	// OpenAI GPT-5.4（业务指定价格）
 	s.fallbackPrices["gpt-5.4"] = &ModelPricing{
 		InputPricePerToken:             2.5e-6,  // $2.5 per MTok

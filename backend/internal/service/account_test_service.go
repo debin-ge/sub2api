@@ -190,8 +190,86 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 	if account.Platform == PlatformAntigravity {
 		return s.routeAntigravityTest(c, account, modelID, prompt)
 	}
+	if account.IsMiniMax() || account.IsGLM() || account.IsKimi() {
+		return s.testCodingPlanAccountConnection(c, account, modelID)
+	}
 
 	return s.testClaudeAccountConnection(c, account, modelID)
+}
+
+func (s *AccountTestService) testCodingPlanAccountConnection(c *gin.Context, account *Account, modelID string) error {
+	ctx := c.Request.Context()
+
+	testModelID := defaultCodingPlanTestModel(account, modelID)
+	payload, err := createTestPayload(testModelID)
+	if err != nil {
+		return s.sendErrorAndEnd(c, "Failed to create test payload")
+	}
+	payloadBytes, _ := json.Marshal(payload)
+
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.Header().Set("Cache-Control", "no-cache")
+	c.Writer.Header().Set("Connection", "keep-alive")
+	c.Writer.Header().Set("X-Accel-Buffering", "no")
+	c.Writer.Flush()
+
+	req, _, upstreamModel, err := buildCodingPlanTestRequest(ctx, c, account, payloadBytes)
+	if err != nil {
+		return s.sendErrorAndEnd(c, err.Error())
+	}
+	s.sendEvent(c, TestEvent{Type: "test_start", Model: upstreamModel})
+
+	proxyURL := ""
+	if account.ProxyID != nil && account.Proxy != nil {
+		proxyURL = account.Proxy.URL()
+	}
+
+	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+	if err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		errMsg := fmt.Sprintf("API returned %d: %s", resp.StatusCode, string(body))
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			_ = s.accountRepo.SetError(ctx, account.ID, errMsg)
+		}
+		return s.sendErrorAndEnd(c, errMsg)
+	}
+
+	return s.processClaudeStream(c, resp.Body)
+}
+
+func defaultCodingPlanTestModel(account *Account, modelID string) string {
+	trimmed := strings.TrimSpace(modelID)
+	if trimmed != "" {
+		return trimmed
+	}
+	switch {
+	case account != nil && account.IsKimi():
+		return "kimi-for-coding"
+	case account != nil && account.IsGLM():
+		return "GLM-5.1"
+	case account != nil && account.IsMiniMax():
+		return "MiniMax-M2.7"
+	default:
+		return claude.DefaultTestModel
+	}
+}
+
+func buildCodingPlanTestRequest(ctx context.Context, c *gin.Context, account *Account, body []byte) (*http.Request, string, string, error) {
+	switch {
+	case account != nil && account.IsMiniMax():
+		return NewMiniMaxGatewayService(nil, nil, nil).buildMessagesRequest(ctx, c, account, body)
+	case account != nil && account.IsGLM():
+		return NewGLMGatewayService(nil, nil).buildMessagesRequest(ctx, c, account, body)
+	case account != nil && account.IsKimi():
+		return NewKimiGatewayService(nil, nil).buildMessagesRequest(ctx, c, account, body)
+	default:
+		return nil, "", "", fmt.Errorf("unsupported coding plan account platform")
+	}
 }
 
 // testClaudeAccountConnection tests an Anthropic Claude account's connection

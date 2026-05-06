@@ -130,34 +130,34 @@ describe('BulkEditAccountModal', () => {
 	    })
 	  })
 
-	  it('GLM API Key 账号批量编辑应支持模型白名单且不显示自定义模型输入', async () => {
-	    const wrapper = mountModal({
-	      selectedPlatforms: ['glm'],
-	      selectedTypes: ['apikey']
-	    })
+  it('GLM API Key 账号批量编辑应支持模型白名单和自定义模型输入', async () => {
+    const wrapper = mountModal({
+      selectedPlatforms: ['glm'],
+      selectedTypes: ['apikey']
+    })
 
-	    expect(wrapper.find('#bulk-edit-model-restriction-enabled').exists()).toBe(true)
-	    await wrapper.get('#bulk-edit-model-restriction-enabled').setValue(true)
-	    expect(wrapper.text()).not.toContain('admin.accounts.customModelName')
+    expect(wrapper.find('#bulk-edit-model-restriction-enabled').exists()).toBe(true)
+    await wrapper.get('#bulk-edit-model-restriction-enabled').setValue(true)
+    expect(wrapper.text()).toContain('admin.accounts.customModelName')
 
-	    const selector = wrapper.findComponent(ModelWhitelistSelector)
-	    await selector.find('div.cursor-pointer').trigger('click')
-	    const glm47 = wrapper.findAll('button').find((btn) => btn.text().includes('GLM-4.7'))
-	    expect(glm47).toBeTruthy()
-	    await glm47!.trigger('click')
+    const selector = wrapper.findComponent(ModelWhitelistSelector)
+    await selector.find('input[placeholder="admin.accounts.enterCustomModelName"]').setValue('custom-glm-model')
+    const addButton = wrapper.findAll('button').find((btn) => btn.text().includes('admin.accounts.addModel'))
+    expect(addButton).toBeTruthy()
+    await addButton!.trigger('click')
 
-	    await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
-	    await flushPromises()
+    await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
+    await flushPromises()
 
-	    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledTimes(1)
-	    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith([1, 2], {
-	      credentials: {
-	        model_mapping: {
-	          'GLM-4.7': 'GLM-4.7'
-	        }
-	      }
-	    })
-	  })
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledTimes(1)
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith([1, 2], {
+      credentials: {
+        model_mapping: {
+          'custom-glm-model': 'custom-glm-model'
+        }
+      }
+    })
+  })
 
 	  it('OpenAI 账号批量编辑可开启自动透传', async () => {
     const wrapper = mountModal({
