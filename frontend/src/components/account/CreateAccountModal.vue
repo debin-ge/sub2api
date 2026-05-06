@@ -70,7 +70,7 @@
       <!-- Platform Selection - Segmented Control Style -->
       <div>
         <label class="input-label">{{ t('admin.accounts.platform') }}</label>
-        <div class="mt-2 flex rounded-lg bg-gray-100 p-1 dark:bg-dark-700" data-tour="account-form-platform">
+        <div class="mt-2 grid grid-cols-2 gap-1 rounded-lg bg-gray-100 p-1 dark:bg-dark-700 sm:grid-cols-5" data-tour="account-form-platform">
           <button
             type="button"
             @click="form.platform = 'anthropic'"
@@ -146,6 +146,20 @@
           >
             <Icon name="cloud" size="sm" />
             Antigravity
+          </button>
+          <button
+            type="button"
+            data-testid="create-platform-minimax"
+            @click="form.platform = 'minimax'"
+            :class="[
+              'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2.5 text-sm font-medium transition-all',
+              form.platform === 'minimax'
+                ? 'bg-white text-cyan-700 shadow-sm dark:bg-dark-600 dark:text-cyan-300'
+                : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
+            ]"
+          >
+            <Icon name="key" size="sm" />
+            MiniMax
           </button>
         </div>
       </div>
@@ -1010,39 +1024,77 @@
 
       <!-- API Key input (only for apikey type, excluding Antigravity which has its own fields) -->
       <div v-if="form.type === 'apikey' && form.platform !== 'antigravity'" class="space-y-4">
-        <div>
-          <label class="input-label">{{ t('admin.accounts.baseUrl') }}</label>
-          <input
-            v-model="apiKeyBaseUrl"
-            type="text"
-            class="input"
-            :placeholder="
-              form.platform === 'openai'
-                ? 'https://api.openai.com'
-                : form.platform === 'gemini'
-                  ? 'https://generativelanguage.googleapis.com'
-                  : 'https://api.anthropic.com'
-            "
-          />
-          <p class="input-hint">{{ baseUrlHint }}</p>
-        </div>
-        <div>
-          <label class="input-label">{{ t('admin.accounts.apiKeyRequired') }}</label>
-          <input
-            v-model="apiKeyValue"
-            type="password"
-            required
-            class="input font-mono"
-            :placeholder="
-              form.platform === 'openai'
-                ? 'sk-proj-...'
-                : form.platform === 'gemini'
-                  ? 'AIza...'
-                  : 'sk-ant-...'
-            "
-          />
-          <p class="input-hint">{{ apiKeyHint }}</p>
-        </div>
+        <template v-if="form.platform === 'minimax'">
+          <div>
+            <label class="input-label">Token Plan API Key</label>
+            <input
+              v-model="apiKeyValue"
+              data-testid="minimax-api-key"
+              type="password"
+              required
+              class="input font-mono"
+              placeholder="sk-cp-..."
+            />
+            <p class="input-hint">MiniMax Token Plan bearer key.</p>
+          </div>
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label class="input-label">Anthropic base URL</label>
+              <input
+                v-model="minimaxAnthropicBaseUrl"
+                data-testid="minimax-anthropic-base-url"
+                type="text"
+                class="input font-mono"
+                :placeholder="MINIMAX_ANTHROPIC_BASE_URL"
+              />
+            </div>
+            <div>
+              <label class="input-label">OpenAI base URL</label>
+              <input
+                v-model="minimaxOpenAIBaseUrl"
+                data-testid="minimax-openai-base-url"
+                type="text"
+                class="input font-mono"
+                :placeholder="MINIMAX_OPENAI_BASE_URL"
+              />
+            </div>
+          </div>
+        </template>
+        <template v-else>
+          <div>
+            <label class="input-label">{{ t('admin.accounts.baseUrl') }}</label>
+            <input
+              v-model="apiKeyBaseUrl"
+              type="text"
+              class="input"
+              :placeholder="
+                form.platform === 'openai'
+                  ? 'https://api.openai.com'
+                  : form.platform === 'gemini'
+                    ? 'https://generativelanguage.googleapis.com'
+                    : 'https://api.anthropic.com'
+              "
+            />
+            <p class="input-hint">{{ baseUrlHint }}</p>
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.accounts.apiKeyRequired') }}</label>
+            <input
+              v-model="apiKeyValue"
+              type="password"
+              required
+              class="input font-mono"
+              :placeholder="
+                form.platform === 'openai'
+                  ? 'sk-proj-...'
+                  : form.platform === 'gemini'
+                    ? 'AIza...'
+                    : 'sk-ant-...'
+              "
+            />
+            <p class="input-hint">{{ apiKeyHint }}</p>
+          </div>
+        </template>
 
         <!-- Gemini API Key tier selection -->
         <div v-if="form.platform === 'gemini'">
@@ -3132,7 +3184,11 @@ import QuotaLimitCard from '@/components/account/QuotaLimitCard.vue'
 import { applyInterceptWarmup } from '@/components/account/credentialsBuilder'
 import { formatDateTimeLocalInput, parseDateTimeLocalInput } from '@/utils/format'
 import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
-import { VERTEX_LOCATION_OPTIONS } from '@/constants/account'
+import {
+  MINIMAX_ANTHROPIC_BASE_URL,
+  MINIMAX_OPENAI_BASE_URL,
+  VERTEX_LOCATION_OPTIONS
+} from '@/constants/account'
 import {
   OPENAI_WS_MODE_CTX_POOL,
   OPENAI_WS_MODE_OFF,
@@ -3251,6 +3307,8 @@ const accountCategory = ref<'oauth-based' | 'apikey' | 'bedrock' | 'service_acco
 const addMethod = ref<AddMethod>('oauth') // For oauth-based: 'oauth' or 'setup-token'
 const apiKeyBaseUrl = ref('https://api.anthropic.com')
 const apiKeyValue = ref('')
+const minimaxAnthropicBaseUrl = ref(MINIMAX_ANTHROPIC_BASE_URL)
+const minimaxOpenAIBaseUrl = ref(MINIMAX_OPENAI_BASE_URL)
 const editQuotaLimit = ref<number | null>(null)
 const editQuotaDailyLimit = ref<number | null>(null)
 const editQuotaWeeklyLimit = ref<number | null>(null)
@@ -3567,6 +3625,10 @@ watch(
 watch(
   [accountCategory, addMethod, antigravityAccountType, () => form.platform],
   ([category, method, agType]) => {
+    if (form.platform === 'minimax') {
+      form.type = 'apikey'
+      return
+    }
     // Antigravity upstream 类型（实际创建为 apikey）
     if (form.platform === 'antigravity' && agType === 'upstream') {
       form.type = 'apikey'
@@ -3598,7 +3660,11 @@ watch(
         ? 'https://api.openai.com'
         : newPlatform === 'gemini'
           ? 'https://generativelanguage.googleapis.com'
-          : 'https://api.anthropic.com'
+          : newPlatform === 'minimax'
+            ? MINIMAX_ANTHROPIC_BASE_URL
+            : 'https://api.anthropic.com'
+    minimaxAnthropicBaseUrl.value = MINIMAX_ANTHROPIC_BASE_URL
+    minimaxOpenAIBaseUrl.value = MINIMAX_OPENAI_BASE_URL
     // Clear model-related settings
     allowedModels.value = []
     modelMappings.value = []
@@ -3616,6 +3682,9 @@ watch(
       antigravityWhitelistModels.value = []
       antigravityModelMappings.value = []
       antigravityModelRestrictionMode.value = 'mapping'
+    }
+    if (newPlatform === 'minimax') {
+      accountCategory.value = 'apikey'
     }
     if (newPlatform !== 'gemini' && newPlatform !== 'anthropic' && accountCategory.value === 'service_account') {
       accountCategory.value = 'oauth-based'
@@ -4010,6 +4079,8 @@ const resetForm = () => {
   addMethod.value = 'oauth'
   apiKeyBaseUrl.value = 'https://api.anthropic.com'
   apiKeyValue.value = ''
+  minimaxAnthropicBaseUrl.value = MINIMAX_ANTHROPIC_BASE_URL
+  minimaxOpenAIBaseUrl.value = MINIMAX_OPENAI_BASE_URL
   editQuotaLimit.value = null
   editQuotaDailyLimit.value = null
   editQuotaWeeklyLimit.value = null
@@ -4390,10 +4461,17 @@ const handleSubmit = async () => {
         : 'https://api.anthropic.com'
 
   // Build credentials with optional model mapping
-  const credentials: Record<string, unknown> = {
-    base_url: apiKeyBaseUrl.value.trim() || defaultBaseUrl,
-    api_key: apiKeyValue.value.trim()
-  }
+  const credentials: Record<string, unknown> = form.platform === 'minimax'
+    ? {
+        api_key: apiKeyValue.value.trim(),
+        auth_scheme: 'bearer',
+        base_url_anthropic: minimaxAnthropicBaseUrl.value.trim() || MINIMAX_ANTHROPIC_BASE_URL,
+        base_url_openai: minimaxOpenAIBaseUrl.value.trim() || MINIMAX_OPENAI_BASE_URL
+      }
+    : {
+        base_url: apiKeyBaseUrl.value.trim() || defaultBaseUrl,
+        api_key: apiKeyValue.value.trim()
+      }
   if (form.platform === 'gemini') {
     credentials.tier_id = geminiTierAIStudio.value
   }

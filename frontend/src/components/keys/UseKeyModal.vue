@@ -407,6 +407,8 @@ const currentFiles = computed((): FileConfig[] => {
           generateOpenCodeConfig('antigravity-claude', antigravityBase, apiKey, 'opencode.json (Claude)'),
           generateOpenCodeConfig('antigravity-gemini', antigravityGeminiBase, apiKey, 'opencode.json (Gemini)')
         ]
+      case 'minimax':
+        return [generateOpenCodeConfig('minimax', apiBase, apiKey, 'opencode.json (MiniMax)')]
       default:
         return [generateOpenCodeConfig('openai', apiBase, apiKey)]
     }
@@ -990,12 +992,40 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
       }
     }
   }
+  const minimaxModels = {
+    'MiniMax-M2.7': {
+      name: 'MiniMax M2.7',
+      limit: {
+        context: 200000,
+        output: 64000
+      },
+      modalities: {
+        input: ['text'],
+        output: ['text']
+      }
+    },
+    'MiniMax-M2.7-highspeed': {
+      name: 'MiniMax M2.7 Highspeed',
+      limit: {
+        context: 200000,
+        output: 64000
+      },
+      modalities: {
+        input: ['text'],
+        output: ['text']
+      }
+    }
+  }
 
   if (platform === 'gemini') {
     provider[platform].npm = '@ai-sdk/google'
     provider[platform].models = geminiModels
   } else if (platform === 'anthropic') {
     provider[platform].npm = '@ai-sdk/anthropic'
+  } else if (platform === 'minimax') {
+    provider[platform].npm = '@ai-sdk/anthropic'
+    provider[platform].name = 'MiniMax'
+    provider[platform].models = minimaxModels
   } else if (platform === 'antigravity-claude') {
     provider[platform].npm = '@ai-sdk/anthropic'
     provider[platform].name = 'Antigravity (Claude)'

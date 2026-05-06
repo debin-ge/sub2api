@@ -19,6 +19,10 @@
   <svg v-else-if="platform === 'antigravity'" :class="sizeClass" viewBox="0 0 24 24" fill="currentColor">
     <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z" />
   </svg>
+  <!-- MiniMax logo mark -->
+  <svg v-else-if="platform === 'minimax'" :class="sizeClass" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h2.8c.5 0 .97.25 1.25.67L12 8.35l2.45-3.68A1.5 1.5 0 0 1 15.7 4h2.8A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5h-2A1.5 1.5 0 0 1 15 18.5v-7.06l-1.76 2.64a1.5 1.5 0 0 1-2.48 0L9 11.44v7.06A1.5 1.5 0 0 1 7.5 20h-2A1.5 1.5 0 0 1 4 18.5v-13z" />
+  </svg>
   <!-- Fallback: generic platform icon -->
   <svg v-else :class="sizeClass" fill="currentColor" viewBox="0 0 24 24">
     <path

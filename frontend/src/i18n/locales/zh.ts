@@ -2007,6 +2007,7 @@ export default {
         openai: 'OpenAI',
         gemini: 'Gemini',
         antigravity: 'Antigravity',
+        minimax: 'MiniMax',
       },
       saving: '保存中...',
       noGroups: '暂无分组',
@@ -2704,6 +2705,11 @@ export default {
           exceeded: '配额已用完，账号暂停调度',
           normal: '配额正常'
         },
+        minimax: {
+          exhausted: 'MiniMax 官方 5h 请求余量已用完',
+          warning: 'MiniMax 官方 5h 请求余量偏低',
+          normal: 'MiniMax 官方 5h 请求余量正常'
+        },
       },
       clearRateLimit: '清除速率限制',
       resetQuota: '重置配额',
@@ -2761,6 +2767,7 @@ export default {
         anthropic: 'Anthropic',
         gemini: 'Gemini',
         antigravity: 'Antigravity',
+        minimax: 'MiniMax',
       },
       types: {
         oauth: 'OAuth',
@@ -2944,6 +2951,9 @@ export default {
       recoverStateHint: '用于恢复错误、限流和临时不可调度等可恢复状态。',
       recoverStateSuccess: '账号状态已恢复',
       recoverStateFailed: '恢复账号状态失败',
+      syncMiniMaxRemains: '同步 MiniMax 余量',
+      syncMiniMaxRemainsSuccess: 'MiniMax 余量已同步',
+      syncMiniMaxRemainsFailed: '同步 MiniMax 余量失败',
       resetStatus: '重置状态',
       statusReset: '账号状态已重置',
       failedToResetStatus: '重置账号状态失败',

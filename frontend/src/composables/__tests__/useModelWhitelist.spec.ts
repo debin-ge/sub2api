@@ -43,6 +43,13 @@ describe('useModelWhitelist', () => {
     expect(models.indexOf('gemini-2.5-flash-image')).toBeLessThan(models.indexOf('gemini-2.5-flash'))
   })
 
+  it('minimax 模型列表包含 Token Plan M2.7 模型', () => {
+    const models = getModelsByPlatform('minimax')
+
+    expect(models).toContain('MiniMax-M2.7')
+    expect(models).toContain('MiniMax-M2.7-highspeed')
+  })
+
   it('antigravity 模型列表会把新的 Gemini 图片模型排在前面', () => {
     const models = getModelsByPlatform('antigravity')
 

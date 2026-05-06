@@ -969,6 +969,60 @@ func (a *Account) IsAnthropic() bool {
 	return a.Platform == PlatformAnthropic
 }
 
+func (a *Account) IsMiniMax() bool {
+	return a != nil && a.Platform == PlatformMiniMax
+}
+
+func (a *Account) IsMiniMaxTokenPlan() bool {
+	if a == nil || a.Platform != PlatformMiniMax {
+		return false
+	}
+	if a.Type != AccountTypeAPIKey {
+		return false
+	}
+	return strings.TrimSpace(a.GetCredential("api_key")) != ""
+}
+
+func (a *Account) GetMiniMaxAPIKey() string {
+	if a == nil || a.Platform != PlatformMiniMax {
+		return ""
+	}
+	return strings.TrimSpace(a.GetCredential("api_key"))
+}
+
+func (a *Account) GetMiniMaxAnthropicBaseURL() string {
+	if a == nil || a.Platform != PlatformMiniMax {
+		return ""
+	}
+	baseURL := strings.TrimRight(strings.TrimSpace(a.GetCredential("base_url_anthropic")), "/")
+	if baseURL == "" {
+		return "https://api.minimax.io/anthropic"
+	}
+	return baseURL
+}
+
+func (a *Account) GetMiniMaxOpenAIBaseURL() string {
+	if a == nil || a.Platform != PlatformMiniMax {
+		return ""
+	}
+	baseURL := strings.TrimRight(strings.TrimSpace(a.GetCredential("base_url_openai")), "/")
+	if baseURL == "" {
+		return "https://api.minimax.io/v1"
+	}
+	return baseURL
+}
+
+func (a *Account) GetMiniMaxMappedModel(model string) string {
+	if a == nil || a.Platform != PlatformMiniMax {
+		return model
+	}
+	mapped := a.GetMappedModel(model)
+	if strings.TrimSpace(mapped) == "" {
+		return model
+	}
+	return mapped
+}
+
 func (a *Account) IsOpenAIOAuth() bool {
 	return a.IsOpenAI() && a.Type == AccountTypeOAuth
 }

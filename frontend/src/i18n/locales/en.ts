@@ -1979,6 +1979,7 @@ export default {
         openai: 'OpenAI',
         gemini: 'Gemini',
         antigravity: 'Antigravity',
+        minimax: 'MiniMax',
       },
       deleteConfirm:
         "Are you sure you want to delete '{name}'? All associated API keys will no longer belong to any group.",
@@ -2576,6 +2577,7 @@ export default {
         openai: 'OpenAI',
         gemini: 'Gemini',
         antigravity: 'Antigravity',
+        minimax: 'MiniMax',
       },
       types: {
         oauth: 'OAuth',
@@ -2665,6 +2667,11 @@ export default {
         quota: {
           exceeded: 'Quota exceeded, account paused',
           normal: 'Quota normal'
+        },
+        minimax: {
+          exhausted: 'MiniMax official 5h request remains exhausted',
+          warning: 'MiniMax official 5h request remains low',
+          normal: 'MiniMax official 5h request remains normal'
         },
       },
       tempUnschedulable: {
@@ -2798,6 +2805,9 @@ export default {
       recoverStateHint: 'Used to recover error, rate-limit, and temporary unschedulable runtime state.',
       recoverStateSuccess: 'Account state recovered successfully',
       recoverStateFailed: 'Failed to recover account state',
+      syncMiniMaxRemains: 'Sync MiniMax Remains',
+      syncMiniMaxRemainsSuccess: 'MiniMax remains synced successfully',
+      syncMiniMaxRemainsFailed: 'Failed to sync MiniMax remains',
       resetStatus: 'Reset Status',
       statusReset: 'Account status reset successfully',
       failedToResetStatus: 'Failed to reset account status',

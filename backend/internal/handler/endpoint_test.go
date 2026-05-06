@@ -84,6 +84,29 @@ func TestDeriveUpstreamEndpoint(t *testing.T) {
 		{"antigravity claude", EndpointMessages, "/antigravity/v1/messages", service.PlatformAntigravity, EndpointMessages},
 		{"antigravity gemini", EndpointGeminiModels, "/antigravity/v1beta/models", service.PlatformAntigravity, EndpointGeminiModels},
 
+		// MiniMax.
+		{
+			name:     "minimax messages",
+			inbound:  EndpointMessages,
+			rawPath:  "/v1/messages",
+			platform: service.PlatformMiniMax,
+			want:     EndpointMessages,
+		},
+		{
+			name:     "minimax chat completions",
+			inbound:  EndpointChatCompletions,
+			rawPath:  "/v1/chat/completions",
+			platform: service.PlatformMiniMax,
+			want:     EndpointChatCompletions,
+		},
+		{
+			name:     "minimax responses remains inbound unsupported endpoint",
+			inbound:  EndpointResponses,
+			rawPath:  "/v1/responses",
+			platform: service.PlatformMiniMax,
+			want:     EndpointResponses,
+		},
+
 		// Unknown platform — passthrough.
 		{"unknown platform", "/v1/embeddings", "/v1/embeddings", "unknown", "/v1/embeddings"},
 	}

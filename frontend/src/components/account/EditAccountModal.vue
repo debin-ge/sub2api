@@ -28,46 +28,87 @@
 
       <!-- API Key fields (only for apikey type) -->
       <div v-if="account.type === 'apikey'" class="space-y-4">
-        <div>
-          <label class="input-label">{{ t('admin.accounts.baseUrl') }}</label>
-          <input
-            v-model="editBaseUrl"
-            type="text"
-            class="input"
-            :placeholder="
-              account.platform === 'openai'
-                ? 'https://api.openai.com'
-                : account.platform === 'gemini'
-                  ? 'https://generativelanguage.googleapis.com'
-                  : account.platform === 'antigravity'
-                    ? 'https://cloudcode-pa.googleapis.com'
-                    : 'https://api.anthropic.com'
-            "
-          />
-          <p class="input-hint">{{ baseUrlHint }}</p>
-        </div>
-        <div>
-          <label class="input-label">{{ t('admin.accounts.apiKey') }}</label>
-          <input
-            v-model="editApiKey"
-            type="password"
-            class="input font-mono"
-            autocomplete="new-password"
-            data-1p-ignore
-            data-lpignore="true"
-            data-bwignore="true"
-            :placeholder="
-              account.platform === 'openai'
-                ? 'sk-proj-...'
-                : account.platform === 'gemini'
-                  ? 'AIza...'
-                  : account.platform === 'antigravity'
-                    ? 'sk-...'
-                    : 'sk-ant-...'
-            "
-          />
-          <p class="input-hint">{{ t('admin.accounts.leaveEmptyToKeep') }}</p>
-        </div>
+        <template v-if="account.platform === 'minimax'">
+          <div>
+            <label class="input-label">Token Plan API Key</label>
+            <input
+              v-model="editApiKey"
+              data-testid="minimax-api-key"
+              type="password"
+              class="input font-mono"
+              autocomplete="new-password"
+              data-1p-ignore
+              data-lpignore="true"
+              data-bwignore="true"
+              placeholder="sk-cp-..."
+            />
+            <p class="input-hint">{{ t('admin.accounts.leaveEmptyToKeep') }}</p>
+          </div>
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label class="input-label">Anthropic base URL</label>
+              <input
+                v-model="editMiniMaxAnthropicBaseUrl"
+                data-testid="minimax-anthropic-base-url"
+                type="text"
+                class="input font-mono"
+                :placeholder="MINIMAX_ANTHROPIC_BASE_URL"
+              />
+            </div>
+            <div>
+              <label class="input-label">OpenAI base URL</label>
+              <input
+                v-model="editMiniMaxOpenAIBaseUrl"
+                data-testid="minimax-openai-base-url"
+                type="text"
+                class="input font-mono"
+                :placeholder="MINIMAX_OPENAI_BASE_URL"
+              />
+            </div>
+          </div>
+        </template>
+        <template v-else>
+          <div>
+            <label class="input-label">{{ t('admin.accounts.baseUrl') }}</label>
+            <input
+              v-model="editBaseUrl"
+              type="text"
+              class="input"
+              :placeholder="
+                account.platform === 'openai'
+                  ? 'https://api.openai.com'
+                  : account.platform === 'gemini'
+                    ? 'https://generativelanguage.googleapis.com'
+                    : account.platform === 'antigravity'
+                      ? 'https://cloudcode-pa.googleapis.com'
+                      : 'https://api.anthropic.com'
+              "
+            />
+            <p class="input-hint">{{ baseUrlHint }}</p>
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.accounts.apiKey') }}</label>
+            <input
+              v-model="editApiKey"
+              type="password"
+              class="input font-mono"
+              autocomplete="new-password"
+              data-1p-ignore
+              data-lpignore="true"
+              data-bwignore="true"
+              :placeholder="
+                account.platform === 'openai'
+                  ? 'sk-proj-...'
+                  : account.platform === 'gemini'
+                    ? 'AIza...'
+                    : account.platform === 'antigravity'
+                      ? 'sk-...'
+                      : 'sk-ant-...'
+              "
+            />
+            <p class="input-hint">{{ t('admin.accounts.leaveEmptyToKeep') }}</p>
+          </div>
+        </template>
 
         <!-- Model Restriction Section (不适用于 Antigravity) -->
         <div v-if="account.platform !== 'antigravity'" class="border-t border-gray-200 pt-4 dark:border-dark-600">
@@ -2134,7 +2175,11 @@ import QuotaLimitCard from '@/components/account/QuotaLimitCard.vue'
 import { applyInterceptWarmup } from '@/components/account/credentialsBuilder'
 import { formatDateTime, formatDateTimeLocalInput, parseDateTimeLocalInput } from '@/utils/format'
 import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
-import { VERTEX_LOCATION_OPTIONS } from '@/constants/account'
+import {
+  MINIMAX_ANTHROPIC_BASE_URL,
+  MINIMAX_OPENAI_BASE_URL,
+  VERTEX_LOCATION_OPTIONS
+} from '@/constants/account'
 import {
   OPENAI_WS_MODE_CTX_POOL,
   OPENAI_WS_MODE_OFF,
@@ -2196,6 +2241,8 @@ interface TempUnschedRuleForm {
 const submitting = ref(false)
 const editBaseUrl = ref('https://api.anthropic.com')
 const editApiKey = ref('')
+const editMiniMaxAnthropicBaseUrl = ref(MINIMAX_ANTHROPIC_BASE_URL)
+const editMiniMaxOpenAIBaseUrl = ref(MINIMAX_OPENAI_BASE_URL)
 // Bedrock credentials
 const editBedrockAccessKeyId = ref('')
 const editBedrockSecretAccessKey = ref('')
@@ -2383,6 +2430,7 @@ const tempUnschedPresets = computed(() => [
 const defaultBaseUrl = computed(() => {
   if (props.account?.platform === 'openai') return 'https://api.openai.com'
   if (props.account?.platform === 'gemini') return 'https://generativelanguage.googleapis.com'
+  if (props.account?.platform === 'minimax') return MINIMAX_ANTHROPIC_BASE_URL
   return 'https://api.anthropic.com'
 })
 
@@ -2468,6 +2516,8 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   editVertexProjectId.value = ''
   editVertexClientEmail.value = ''
   editVertexLocation.value = 'us-central1'
+  editMiniMaxAnthropicBaseUrl.value = MINIMAX_ANTHROPIC_BASE_URL
+  editMiniMaxOpenAIBaseUrl.value = MINIMAX_OPENAI_BASE_URL
 
   // Load mixed scheduling setting (only for antigravity accounts)
   mixedScheduling.value = false
@@ -2597,8 +2647,16 @@ const syncFormFromAccount = (newAccount: Account | null) => {
         ? 'https://api.openai.com'
         : newAccount.platform === 'gemini'
           ? 'https://generativelanguage.googleapis.com'
-          : 'https://api.anthropic.com'
+          : newAccount.platform === 'minimax'
+            ? MINIMAX_ANTHROPIC_BASE_URL
+            : 'https://api.anthropic.com'
     editBaseUrl.value = (credentials.base_url as string) || platformDefaultUrl
+    if (newAccount.platform === 'minimax') {
+      editMiniMaxAnthropicBaseUrl.value =
+        (credentials.base_url_anthropic as string) || MINIMAX_ANTHROPIC_BASE_URL
+      editMiniMaxOpenAIBaseUrl.value =
+        (credentials.base_url_openai as string) || MINIMAX_OPENAI_BASE_URL
+    }
 
     // Load model mappings and detect mode
     const existingMappings = credentials.model_mapping as Record<string, string> | undefined
@@ -2720,7 +2778,9 @@ const syncFormFromAccount = (newAccount: Account | null) => {
         ? 'https://api.openai.com'
         : newAccount.platform === 'gemini'
           ? 'https://generativelanguage.googleapis.com'
-          : 'https://api.anthropic.com'
+          : newAccount.platform === 'minimax'
+            ? MINIMAX_ANTHROPIC_BASE_URL
+            : 'https://api.anthropic.com'
     editBaseUrl.value = platformDefaultUrl
 
     // Load model mappings for OpenAI OAuth accounts
@@ -3221,13 +3281,19 @@ const handleSubmit = async () => {
     // For apikey type, handle credentials update
     if (props.account.type === 'apikey') {
       const currentCredentials = (props.account.credentials as Record<string, unknown>) || {}
-      const newBaseUrl = editBaseUrl.value.trim() || defaultBaseUrl.value
       const shouldApplyModelMapping = !(props.account.platform === 'openai' && openaiPassthroughEnabled.value)
 
       // Always update credentials for apikey type to handle model mapping changes
-      const newCredentials: Record<string, unknown> = {
-        ...currentCredentials,
-        base_url: newBaseUrl
+      const newCredentials: Record<string, unknown> = { ...currentCredentials }
+      if (props.account.platform === 'minimax') {
+        newCredentials.auth_scheme = 'bearer'
+        newCredentials.base_url_anthropic =
+          editMiniMaxAnthropicBaseUrl.value.trim() || MINIMAX_ANTHROPIC_BASE_URL
+        newCredentials.base_url_openai =
+          editMiniMaxOpenAIBaseUrl.value.trim() || MINIMAX_OPENAI_BASE_URL
+        delete newCredentials.base_url
+      } else {
+        newCredentials.base_url = editBaseUrl.value.trim() || defaultBaseUrl.value
       }
 
       // Handle API key

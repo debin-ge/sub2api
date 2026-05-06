@@ -141,6 +141,25 @@ function buildAccount() {
   } as any
 }
 
+function buildMiniMaxAccount() {
+  return {
+    ...buildAccount(),
+    name: 'MiniMax Token Plan',
+    platform: 'minimax',
+    type: 'apikey',
+    credentials: {
+      api_key: 'sk-cp-existing',
+      auth_scheme: 'bearer',
+      base_url_anthropic: 'https://old.example/anthropic',
+      base_url_openai: 'https://old.example/v1',
+      model_mapping: {
+        'MiniMax-M2.7': 'MiniMax-M2.7'
+      },
+      future_unknown_key: 'keep-me'
+    }
+  } as any
+}
+
 function mountModal(account = buildAccount()) {
   return mount(EditAccountModal, {
     props: {
@@ -215,5 +234,31 @@ describe('EditAccountModal', () => {
     expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.compact_model_mapping).toEqual({
       'gpt-5.4': 'gpt-5.4-openai-compact'
     })
+  })
+
+  it('submits MiniMax Token Plan base URLs while preserving unknown credential keys', async () => {
+    const account = buildMiniMaxAccount()
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+
+    await wrapper.get('[data-testid="minimax-anthropic-base-url"]').setValue('https://custom.example/anthropic')
+    await wrapper.get('[data-testid="minimax-openai-base-url"]').setValue('https://custom.example/v1')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).toEqual(expect.objectContaining({
+      api_key: 'sk-cp-existing',
+      auth_scheme: 'bearer',
+      base_url_anthropic: 'https://custom.example/anthropic',
+      base_url_openai: 'https://custom.example/v1',
+      future_unknown_key: 'keep-me',
+      model_mapping: {
+        'MiniMax-M2.7': 'MiniMax-M2.7'
+      }
+    }))
   })
 })
