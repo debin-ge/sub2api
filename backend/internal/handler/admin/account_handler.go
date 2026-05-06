@@ -589,7 +589,7 @@ func (h *AccountHandler) Create(c *gin.Context) {
 }
 
 func validateCreateAccountRequest(req CreateAccountRequest) error {
-	if req.Platform != service.PlatformGLM && req.Platform != service.PlatformKimi {
+	if req.Platform != service.PlatformGLM && req.Platform != service.PlatformKimi && req.Platform != service.PlatformDeepSeek {
 		return nil
 	}
 	if req.Type != service.AccountTypeAPIKey {
@@ -672,7 +672,7 @@ func (h *AccountHandler) Update(c *gin.Context) {
 }
 
 func validateUpdateAccountRequest(account *service.Account, req UpdateAccountRequest) error {
-	if account == nil || (account.Platform != service.PlatformGLM && account.Platform != service.PlatformKimi) {
+	if account == nil || (account.Platform != service.PlatformGLM && account.Platform != service.PlatformKimi && account.Platform != service.PlatformDeepSeek) {
 		return nil
 	}
 
@@ -2044,6 +2044,12 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 		return
 	}
 
+	// Handle DeepSeek API Key accounts.
+	if account.Platform == service.PlatformDeepSeek {
+		response.Success(c, buildDeepSeekAvailableModels())
+		return
+	}
+
 	// Handle Claude/Anthropic accounts
 	// For OAuth and Setup-Token accounts: return default models
 	if account.IsOAuth() {
@@ -2118,6 +2124,20 @@ func buildGLMAvailableModels(mapping map[string]string) []claude.Model {
 
 func buildKimiAvailableModels() []claude.Model {
 	modelIDs := service.DefaultKimiModelIDs()
+	models := make([]claude.Model, 0, len(modelIDs))
+	for _, modelID := range modelIDs {
+		models = append(models, claude.Model{
+			ID:          modelID,
+			Type:        "model",
+			DisplayName: modelID,
+			CreatedAt:   "2024-01-01T00:00:00Z",
+		})
+	}
+	return models
+}
+
+func buildDeepSeekAvailableModels() []claude.Model {
+	modelIDs := service.DefaultDeepSeekModelIDs()
 	models := make([]claude.Model, 0, len(modelIDs))
 	for _, modelID := range modelIDs {
 		models = append(models, claude.Model{

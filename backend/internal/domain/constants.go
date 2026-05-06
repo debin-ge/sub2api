@@ -25,6 +25,7 @@ const (
 	PlatformMiniMax     = "minimax"
 	PlatformGLM         = "glm"
 	PlatformKimi        = "kimi"
+	PlatformDeepSeek    = "deepseek"
 )
 
 // Account type constants

@@ -84,7 +84,7 @@
 
       <!-- Base URL (API Key only) -->
       <div
-        v-if="!targetMayIncludeGLM"
+        v-if="!targetMayIncludeFixedEndpointGateway"
         class="border-t border-gray-200 pt-4 dark:border-dark-600"
       >
         <div class="mb-3 flex items-center justify-between">
@@ -354,7 +354,7 @@
 
       <!-- Custom error codes -->
       <div
-        v-if="!targetMayIncludeGLM"
+        v-if="!targetMayIncludeFixedEndpointGateway"
         class="border-t border-gray-200 pt-4 dark:border-dark-600"
       >
         <div class="mb-3 flex items-center justify-between">
@@ -455,7 +455,7 @@
 
       <!-- Intercept warmup requests (Anthropic only) -->
       <div
-        v-if="!targetMayIncludeGLM"
+        v-if="!targetMayIncludeFixedEndpointGateway"
         class="border-t border-gray-200 pt-4 dark:border-dark-600"
       >
         <div class="flex items-center justify-between">
@@ -1072,24 +1072,24 @@ const capabilityTypes = computed<AccountType[]>(() => (
     ? filteredType.value ? [filteredType.value as AccountType] : []
     : targetSelectedTypes.value
 ))
-const targetMayIncludeGLM = computed(() => {
-  if (targetSelectedPlatforms.value.includes('glm') || targetSelectedPlatforms.value.includes('kimi')) {
+const targetMayIncludeFixedEndpointGateway = computed(() => {
+  if (targetSelectedPlatforms.value.includes('glm') || targetSelectedPlatforms.value.includes('kimi') || targetSelectedPlatforms.value.includes('deepseek')) {
     return true
   }
   if (targetMode.value !== 'filtered') {
     return false
   }
-  return filteredPlatform.value === '' || filteredPlatform.value === 'glm' || filteredPlatform.value === 'kimi'
+  return filteredPlatform.value === '' || filteredPlatform.value === 'glm' || filteredPlatform.value === 'kimi' || filteredPlatform.value === 'deepseek'
 })
 
-const targetIsGLMAPIKeyOnly = computed(() => (
+const targetIsFixedEndpointGatewayAPIKeyOnly = computed(() => (
   capabilityPlatforms.value.length === 1 &&
-  (capabilityPlatforms.value[0] === 'glm' || capabilityPlatforms.value[0] === 'kimi') &&
+  (capabilityPlatforms.value[0] === 'glm' || capabilityPlatforms.value[0] === 'kimi' || capabilityPlatforms.value[0] === 'deepseek') &&
   capabilityTypes.value.length > 0 &&
   capabilityTypes.value.every(t => t === 'apikey')
 ))
 
-const canEditModelRestriction = computed(() => !targetMayIncludeGLM.value || targetIsGLMAPIKeyOnly.value)
+const canEditModelRestriction = computed(() => !targetMayIncludeFixedEndpointGateway.value || targetIsFixedEndpointGatewayAPIKeyOnly.value)
 
 const allOpenAIPassthroughCapable = computed(() => {
   return (
@@ -1355,7 +1355,7 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
     updates.group_ids = groupIds.value
   }
 
-  if (!targetMayIncludeGLM.value && enableBaseUrl.value) {
+  if (!targetMayIncludeFixedEndpointGateway.value && enableBaseUrl.value) {
     const baseUrlValue = baseUrl.value.trim()
     if (baseUrlValue) {
       credentials.base_url = baseUrlValue
@@ -1394,13 +1394,13 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
     }
   }
 
-  if (!targetMayIncludeGLM.value && enableCustomErrorCodes.value) {
+  if (!targetMayIncludeFixedEndpointGateway.value && enableCustomErrorCodes.value) {
     credentials.custom_error_codes_enabled = true
     credentials.custom_error_codes = [...selectedErrorCodes.value]
     credentialsChanged = true
   }
 
-  if (!targetMayIncludeGLM.value && enableInterceptWarmup.value) {
+  if (!targetMayIncludeFixedEndpointGateway.value && enableInterceptWarmup.value) {
     credentials.intercept_warmup_requests = interceptWarmupRequests.value
     credentialsChanged = true
   }

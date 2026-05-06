@@ -53,6 +53,7 @@ type Handlers struct {
 	MiniMaxGateway   *MiniMaxGatewayHandler
 	GLMGateway       *GLMGatewayHandler
 	KimiGateway      *KimiGatewayHandler
+	DeepSeekGateway  *DeepSeekGatewayHandler
 	Setting          *SettingHandler
 	Totp             *TotpHandler
 	Payment          *PaymentHandler

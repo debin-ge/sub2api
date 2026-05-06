@@ -1068,6 +1068,30 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
       }
     }
   }
+  const deepseekModels = {
+    'deepseek-v4-flash': {
+      name: 'DeepSeek V4 Flash',
+      limit: {
+        context: 200000,
+        output: 64000
+      },
+      modalities: {
+        input: ['text'],
+        output: ['text']
+      }
+    },
+    'deepseek-v4-pro': {
+      name: 'DeepSeek V4 Pro',
+      limit: {
+        context: 200000,
+        output: 64000
+      },
+      modalities: {
+        input: ['text'],
+        output: ['text']
+      }
+    }
+  }
 
   if (platform === 'gemini') {
     provider[platform].npm = '@ai-sdk/google'
@@ -1086,6 +1110,10 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     provider[platform].npm = '@ai-sdk/anthropic'
     provider[platform].name = 'Kimi'
     provider[platform].models = kimiModels
+  } else if (platform === 'deepseek') {
+    provider[platform].npm = '@ai-sdk/anthropic'
+    provider[platform].name = 'DeepSeek'
+    provider[platform].models = deepseekModels
   } else if (platform === 'antigravity-claude') {
     provider[platform].npm = '@ai-sdk/anthropic'
     provider[platform].name = 'Antigravity (Claude)'

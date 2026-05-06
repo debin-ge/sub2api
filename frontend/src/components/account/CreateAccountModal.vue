@@ -70,7 +70,7 @@
       <!-- Platform Selection - Segmented Control Style -->
       <div>
         <label class="input-label">{{ t('admin.accounts.platform') }}</label>
-        <div class="mt-2 grid grid-cols-2 gap-1 rounded-lg bg-gray-100 p-1 dark:bg-dark-700 sm:grid-cols-6" data-tour="account-form-platform">
+        <div class="mt-2 grid grid-cols-2 gap-1 rounded-lg bg-gray-100 p-1 dark:bg-dark-700 sm:grid-cols-4 lg:grid-cols-8" data-tour="account-form-platform">
           <button
             type="button"
             @click="form.platform = 'anthropic'"
@@ -188,6 +188,20 @@
           >
             <Icon name="key" size="sm" />
             Kimi
+          </button>
+          <button
+            type="button"
+            data-testid="create-platform-deepseek"
+            @click="form.platform = 'deepseek'"
+            :class="[
+              'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2.5 text-sm font-medium transition-all',
+              form.platform === 'deepseek'
+                ? 'bg-white text-indigo-700 shadow-sm dark:bg-dark-600 dark:text-indigo-300'
+                : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
+            ]"
+          >
+            <Icon name="key" size="sm" />
+            DeepSeek
           </button>
         </div>
       </div>
@@ -1136,6 +1150,30 @@
             </div>
           </div>
         </template>
+        <template v-else-if="form.platform === 'deepseek'">
+          <div>
+            <label class="input-label">DeepSeek API Key</label>
+            <input
+              v-model="apiKeyValue"
+              data-testid="deepseek-api-key"
+              type="password"
+              required
+              class="input font-mono"
+              placeholder="sk-..."
+            />
+            <p class="input-hint">{{ apiKeyHint }}</p>
+          </div>
+          <div class="grid grid-cols-1 gap-3 rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-800 dark:border-indigo-800/40 dark:bg-indigo-900/20 dark:text-indigo-200 sm:grid-cols-2">
+            <div>
+              <div class="font-medium">Anthropic-compatible</div>
+              <div class="mt-1 break-all font-mono">{{ DEEPSEEK_ANTHROPIC_BASE_URL }}</div>
+            </div>
+            <div>
+              <div class="font-medium">OpenAI-compatible</div>
+              <div class="mt-1 break-all font-mono">{{ DEEPSEEK_OPENAI_BASE_URL }}</div>
+            </div>
+          </div>
+        </template>
         <template v-else>
           <div>
             <label class="input-label">{{ t('admin.accounts.baseUrl') }}</label>
@@ -1197,7 +1235,7 @@
 
           <template v-else>
             <!-- Mode Toggle -->
-            <div v-if="form.platform !== 'kimi'" class="mb-4 flex gap-2">
+            <div v-if="form.platform !== 'kimi' && form.platform !== 'deepseek'" class="mb-4 flex gap-2">
               <button
                 type="button"
                 @click="modelRestrictionMode = 'whitelist'"
@@ -1262,7 +1300,7 @@
             </div>
 
             <!-- Mapping Mode -->
-            <div v-else-if="form.platform !== 'kimi'">
+            <div v-else-if="form.platform !== 'kimi' && form.platform !== 'deepseek'">
               <div class="mb-3 rounded-lg bg-purple-50 p-3 dark:bg-purple-900/20">
                 <p class="text-xs text-purple-700 dark:text-purple-400">
                   <svg
@@ -1369,7 +1407,7 @@
         </div>
 
         <!-- Pool Mode Section -->
-        <div v-if="!isCodingPlanGatewayPlatform" class="border-t border-gray-200 pt-4 dark:border-dark-600">
+        <div v-if="!isFixedEndpointGatewayPlatform" class="border-t border-gray-200 pt-4 dark:border-dark-600">
           <div class="mb-3 flex items-center justify-between">
             <div>
               <label class="input-label mb-0">{{ t('admin.accounts.poolMode') }}</label>
@@ -1421,7 +1459,7 @@
         </div>
 
         <!-- Custom Error Codes Section -->
-        <div v-if="!isCodingPlanGatewayPlatform" class="border-t border-gray-200 pt-4 dark:border-dark-600">
+        <div v-if="!isFixedEndpointGatewayPlatform" class="border-t border-gray-200 pt-4 dark:border-dark-600">
           <div class="mb-3 flex items-center justify-between">
             <div>
               <label class="input-label mb-0">{{ t('admin.accounts.customErrorCodes') }}</label>
@@ -1820,7 +1858,7 @@
 
       <!-- 配额控制 (非 Anthropic apikey/bedrock) -->
       <div
-        v-else-if="!isCodingPlanGatewayPlatform && (form.type === 'apikey' || form.type === 'bedrock')"
+        v-else-if="!isFixedEndpointGatewayPlatform && (form.type === 'apikey' || form.type === 'bedrock')"
         class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4"
       >
         <div class="mb-3">
@@ -2007,7 +2045,7 @@
       </div>
 
       <!-- Temp Unschedulable Rules -->
-      <div v-if="!isCodingPlanGatewayPlatform" class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4">
+      <div v-if="!isFixedEndpointGatewayPlatform" class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4">
         <div class="mb-3 flex items-center justify-between">
           <div>
             <label class="input-label mb-0">{{ t('admin.accounts.tempUnschedulable.title') }}</label>
@@ -3267,6 +3305,8 @@ import {
   GLM_OPENAI_BASE_URL,
   KIMI_ANTHROPIC_BASE_URL,
   KIMI_OPENAI_BASE_URL,
+  DEEPSEEK_ANTHROPIC_BASE_URL,
+  DEEPSEEK_OPENAI_BASE_URL,
   VERTEX_LOCATION_OPTIONS
 } from '@/constants/account'
 import {
@@ -3314,11 +3354,12 @@ const apiKeyHint = computed(() => {
   if (form.platform === 'gemini') return t('admin.accounts.gemini.apiKeyHint')
   if (form.platform === 'glm') return t('admin.accounts.glm.apiKeyHint')
   if (form.platform === 'kimi') return t('admin.accounts.kimi.apiKeyHint')
+  if (form.platform === 'deepseek') return t('admin.accounts.deepseek.apiKeyHint')
   return t('admin.accounts.apiKeyHint')
 })
 
-const isCodingPlanGatewayPlatformValue = (platform?: string) => platform === 'glm' || platform === 'kimi'
-const isCodingPlanGatewayPlatform = computed(() => isCodingPlanGatewayPlatformValue(form.platform))
+const isFixedEndpointGatewayPlatformValue = (platform?: string) => platform === 'glm' || platform === 'kimi' || platform === 'deepseek'
+const isFixedEndpointGatewayPlatform = computed(() => isFixedEndpointGatewayPlatformValue(form.platform))
 
 interface Props {
   show: boolean
@@ -3722,6 +3763,10 @@ watch(
       form.type = 'apikey'
       return
     }
+    if (form.platform === 'deepseek') {
+      form.type = 'apikey'
+      return
+    }
     // Antigravity upstream 类型（实际创建为 apikey）
     if (form.platform === 'antigravity' && agType === 'upstream') {
       form.type = 'apikey'
@@ -3759,7 +3804,9 @@ watch(
               ? GLM_ANTHROPIC_BASE_URL
               : newPlatform === 'kimi'
                 ? KIMI_ANTHROPIC_BASE_URL
-            : 'https://api.anthropic.com'
+                : newPlatform === 'deepseek'
+                  ? DEEPSEEK_ANTHROPIC_BASE_URL
+                  : 'https://api.anthropic.com'
     minimaxAnthropicBaseUrl.value = MINIMAX_ANTHROPIC_BASE_URL
     minimaxOpenAIBaseUrl.value = MINIMAX_OPENAI_BASE_URL
     // Clear model-related settings
@@ -3787,6 +3834,10 @@ watch(
       accountCategory.value = 'apikey'
     }
     if (newPlatform === 'kimi') {
+      accountCategory.value = 'apikey'
+      modelRestrictionMode.value = 'whitelist'
+    }
+    if (newPlatform === 'deepseek') {
       accountCategory.value = 'apikey'
       modelRestrictionMode.value = 'whitelist'
     }
@@ -3879,6 +3930,11 @@ watch(
         return
       }
       if (form.platform === 'kimi') {
+        modelRestrictionMode.value = 'whitelist'
+        allowedModels.value = []
+        return
+      }
+      if (form.platform === 'deepseek') {
         modelRestrictionMode.value = 'whitelist'
         allowedModels.value = []
         return
@@ -4589,6 +4645,10 @@ const handleSubmit = async () => {
       ? {
           api_key: apiKeyValue.value.trim()
         }
+      : form.platform === 'deepseek'
+        ? {
+            api_key: apiKeyValue.value.trim()
+          }
     : {
         base_url: apiKeyBaseUrl.value.trim() || defaultBaseUrl,
         api_key: apiKeyValue.value.trim()
@@ -4612,18 +4672,18 @@ const handleSubmit = async () => {
   }
 
   // Add pool mode if enabled
-  if (!isCodingPlanGatewayPlatform.value && poolModeEnabled.value) {
+  if (!isFixedEndpointGatewayPlatform.value && poolModeEnabled.value) {
     credentials.pool_mode = true
     credentials.pool_mode_retry_count = normalizePoolModeRetryCount(poolModeRetryCount.value)
   }
 
   // Add custom error codes if enabled
-  if (!isCodingPlanGatewayPlatform.value && customErrorCodesEnabled.value) {
+  if (!isFixedEndpointGatewayPlatform.value && customErrorCodesEnabled.value) {
     credentials.custom_error_codes_enabled = true
     credentials.custom_error_codes = [...selectedErrorCodes.value]
   }
 
-  if (!isCodingPlanGatewayPlatform.value) {
+  if (!isFixedEndpointGatewayPlatform.value) {
     applyInterceptWarmup(credentials, interceptWarmupRequests.value, 'create')
     if (!applyTempUnschedConfig(credentials)) {
       return
@@ -4689,12 +4749,12 @@ const createAccountAndFinish = async (
   credentials: Record<string, unknown>,
   extra?: Record<string, unknown>
 ) => {
-  if (!isCodingPlanGatewayPlatformValue(platform) && !applyTempUnschedConfig(credentials)) {
+  if (!isFixedEndpointGatewayPlatformValue(platform) && !applyTempUnschedConfig(credentials)) {
     return
   }
   // Inject quota limits for apikey/bedrock accounts
   let finalExtra = extra
-  if (!isCodingPlanGatewayPlatformValue(platform) && (type === 'apikey' || type === 'bedrock')) {
+  if (!isFixedEndpointGatewayPlatformValue(platform) && (type === 'apikey' || type === 'bedrock')) {
     const quotaExtra: Record<string, unknown> = { ...(extra || {}) }
     if (editQuotaLimit.value != null && editQuotaLimit.value > 0) {
       quotaExtra.quota_limit = editQuotaLimit.value

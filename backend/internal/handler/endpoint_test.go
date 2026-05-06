@@ -148,6 +148,27 @@ func TestDeriveUpstreamEndpoint(t *testing.T) {
 			platform: service.PlatformKimi,
 			want:     EndpointResponses,
 		},
+		{
+			name:     "deepseek messages",
+			inbound:  EndpointMessages,
+			rawPath:  "/v1/messages",
+			platform: service.PlatformDeepSeek,
+			want:     EndpointMessages,
+		},
+		{
+			name:     "deepseek chat completions",
+			inbound:  EndpointChatCompletions,
+			rawPath:  "/v1/chat/completions",
+			platform: service.PlatformDeepSeek,
+			want:     EndpointChatCompletions,
+		},
+		{
+			name:     "deepseek responses remains inbound unsupported endpoint",
+			inbound:  EndpointResponses,
+			rawPath:  "/v1/responses",
+			platform: service.PlatformDeepSeek,
+			want:     EndpointResponses,
+		},
 
 		// Unknown platform — passthrough.
 		{"unknown platform", "/v1/embeddings", "/v1/embeddings", "unknown", "/v1/embeddings"},

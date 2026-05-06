@@ -206,3 +206,39 @@ func TestAccountHandlerGetAvailableModels_KimiAlwaysReturnsCodingModel(t *testin
 		ID string `json:"id"`
 	}{{ID: "kimi-for-coding"}}, resp.Data)
 }
+
+func TestAccountHandlerGetAvailableModels_DeepSeekReturnsOfficialModels(t *testing.T) {
+	svc := &availableModelsAdminService{
+		stubAdminService: newStubAdminService(),
+		account: service.Account{
+			ID:       47,
+			Name:     "deepseek-api",
+			Platform: service.PlatformDeepSeek,
+			Type:     service.AccountTypeAPIKey,
+			Status:   service.StatusActive,
+			Credentials: map[string]any{
+				"api_key": "sk-deepseek",
+				"model_mapping": map[string]any{
+					"claude-sonnet-4-5": "deepseek-v4-pro",
+				},
+			},
+		},
+	}
+	router := setupAvailableModelsRouter(svc)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/accounts/47/models", nil)
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var resp struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Equal(t, []struct {
+		ID string `json:"id"`
+	}{{ID: "deepseek-v4-flash"}, {ID: "deepseek-v4-pro"}}, resp.Data)
+}

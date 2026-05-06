@@ -64,6 +64,11 @@ func ProvideKimiGatewayService(cfg *config.Config) *KimiGatewayService {
 	return NewKimiGatewayService(nil, compileResponseHeaderFilter(cfg))
 }
 
+// ProvideDeepSeekGatewayService creates the DeepSeek API key gateway service.
+func ProvideDeepSeekGatewayService(cfg *config.Config) *DeepSeekGatewayService {
+	return NewDeepSeekGatewayService(nil, compileResponseHeaderFilter(cfg))
+}
+
 // ProvideTokenRefreshService creates and starts TokenRefreshService
 func ProvideTokenRefreshService(
 	accountRepo AccountRepository,
@@ -466,6 +471,7 @@ var ProviderSet = wire.NewSet(
 	ProvideMiniMaxGatewayService,
 	ProvideGLMGatewayService,
 	ProvideKimiGatewayService,
+	ProvideDeepSeekGatewayService,
 	NewOAuthService,
 	NewOpenAIOAuthService,
 	NewGeminiOAuthService,

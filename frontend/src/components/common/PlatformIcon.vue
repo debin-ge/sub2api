@@ -31,6 +31,10 @@
   <svg v-else-if="platform === 'kimi'" :class="sizeClass" viewBox="0 0 24 24" fill="currentColor">
     <path d="M5 4h3.2v6.1L13.7 4h4l-5.8 6.4L18.5 20h-4l-4.8-7.1-1.5 1.6V20H5V4z" />
   </svg>
+  <!-- DeepSeek logo mark -->
+  <svg v-else-if="platform === 'deepseek'" :class="sizeClass" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M5 4h7.4c4.4 0 7.6 3.2 7.6 8s-3.2 8-7.6 8H5V4Zm3.2 2.8v10.4h4.1c2.6 0 4.4-2 4.4-5.2s-1.8-5.2-4.4-5.2H8.2Zm2.1 2.5h2.2c1.4 0 2.3 1 2.3 2.7s-.9 2.7-2.3 2.7h-2.2V9.3Z" />
+  </svg>
   <!-- Fallback: generic platform icon -->
   <svg v-else :class="sizeClass" fill="currentColor" viewBox="0 0 24 24">
     <path

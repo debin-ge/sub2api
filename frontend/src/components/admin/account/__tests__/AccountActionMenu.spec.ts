@@ -95,4 +95,31 @@ describe('AccountActionMenu', () => {
     expect(wrapper.text()).not.toContain('admin.accounts.syncMiniMaxRemains')
     expect(wrapper.text()).not.toContain('admin.accounts.resetQuota')
   })
+
+  it('does not show MiniMax remains sync or quota reset for DeepSeek API key accounts', () => {
+    const account = makeAccount({
+      name: 'DeepSeek account',
+      platform: 'deepseek',
+      type: 'apikey',
+      quota_limit: 100,
+      quota_daily_limit: 10,
+      quota_weekly_limit: 20
+    } as Partial<Account>)
+    const wrapper = mount(AccountActionMenu, {
+      props: {
+        show: true,
+        account,
+        position: { top: 10, left: 20 }
+      },
+      global: {
+        stubs: {
+          Teleport: { template: '<div><slot /></div>' },
+          Icon: { template: '<span />' }
+        }
+      }
+    })
+
+    expect(wrapper.text()).not.toContain('admin.accounts.syncMiniMaxRemains')
+    expect(wrapper.text()).not.toContain('admin.accounts.resetQuota')
+  })
 })

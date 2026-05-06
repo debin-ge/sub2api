@@ -492,7 +492,8 @@ const platformOptions = [
   { value: 'antigravity', label: 'Antigravity' },
   { value: 'minimax', label: 'MiniMax' },
   { value: 'glm', label: 'GLM' },
-  { value: 'kimi', label: 'Kimi' }
+  { value: 'kimi', label: 'Kimi' },
+  { value: 'deepseek', label: 'DeepSeek' }
 ]
 
 // Load rules when dialog opens

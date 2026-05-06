@@ -1190,6 +1190,30 @@ func TestGatewayService_isModelSupportedByAccount(t *testing.T) {
 			model:    "gemini-2.5-pro",
 			expected: true,
 		},
+		{
+			name:     "DeepSeek平台-支持官方flash模型",
+			account:  &Account{Platform: PlatformDeepSeek, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "sk-deepseek"}},
+			model:    "deepseek-v4-flash",
+			expected: true,
+		},
+		{
+			name:     "DeepSeek平台-支持官方pro模型",
+			account:  &Account{Platform: PlatformDeepSeek, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "sk-deepseek"}},
+			model:    "deepseek-v4-pro",
+			expected: true,
+		},
+		{
+			name:     "DeepSeek平台-拒绝兼容旧模型名",
+			account:  &Account{Platform: PlatformDeepSeek, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "sk-deepseek"}},
+			model:    "deepseek-chat",
+			expected: false,
+		},
+		{
+			name:     "DeepSeek平台-拒绝Claude alias",
+			account:  &Account{Platform: PlatformDeepSeek, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "sk-deepseek"}},
+			model:    "claude-sonnet-4-5",
+			expected: false,
+		},
 	}
 
 	for _, tt := range tests {

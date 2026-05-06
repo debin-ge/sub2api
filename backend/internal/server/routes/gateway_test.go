@@ -20,11 +20,12 @@ func newGatewayRoutesTestRouter() *gin.Engine {
 
 func newGatewayRoutesTestRouterForPlatform(platform string) *gin.Engine {
 	return newGatewayRoutesTestRouterForPlatformWithHandlers(platform, &handler.Handlers{
-		Gateway:        &handler.GatewayHandler{},
-		OpenAIGateway:  &handler.OpenAIGatewayHandler{},
-		MiniMaxGateway: &handler.MiniMaxGatewayHandler{},
-		GLMGateway:     &handler.GLMGatewayHandler{},
-		KimiGateway:    &handler.KimiGatewayHandler{},
+		Gateway:         &handler.GatewayHandler{},
+		OpenAIGateway:   &handler.OpenAIGatewayHandler{},
+		MiniMaxGateway:  &handler.MiniMaxGatewayHandler{},
+		GLMGateway:      &handler.GLMGatewayHandler{},
+		KimiGateway:     &handler.KimiGatewayHandler{},
+		DeepSeekGateway: &handler.DeepSeekGatewayHandler{},
 	})
 }
 
@@ -362,5 +363,94 @@ func TestGatewayRoutesKimiModelsReturnsDefaultList(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Contains(t, w.Body.String(), "kimi-for-coding")
+	require.NotContains(t, w.Body.String(), "claude-sonnet")
+}
+
+func TestGatewayRoutesDeepSeekMessagesDispatchesToDeepSeekHandler(t *testing.T) {
+	router := newGatewayRoutesTestRouterForPlatform(service.PlatformDeepSeek)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"deepseek-v4-flash","messages":[{"role":"user","content":"hello"}]}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusServiceUnavailable, w.Code)
+	require.Contains(t, w.Body.String(), "deepseek gateway service unavailable")
+}
+
+func TestGatewayRoutesDeepSeekChatCompletionsDispatchesToDeepSeekHandler(t *testing.T) {
+	router := newGatewayRoutesTestRouterForPlatform(service.PlatformDeepSeek)
+
+	for _, path := range []string{"/v1/chat/completions", "/chat/completions"} {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"model":"deepseek-v4-pro","messages":[{"role":"user","content":"hello"}]}`))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusServiceUnavailable, w.Code, "path=%s", path)
+		require.Contains(t, w.Body.String(), "deepseek gateway service unavailable", "path=%s", path)
+	}
+}
+
+func TestGatewayRoutesDeepSeekUnsupportedEndpointsReturnNotFound(t *testing.T) {
+	router := newGatewayRoutesTestRouterForPlatform(service.PlatformDeepSeek)
+
+	for _, path := range []string{
+		"/v1/responses",
+		"/v1/responses/compact",
+		"/v1/messages/count_tokens",
+		"/responses",
+		"/responses/compact",
+		"/backend-api/codex/responses",
+		"/backend-api/codex/responses/compact",
+		"/v1/images/generations",
+		"/v1/images/edits",
+		"/images/generations",
+		"/images/edits",
+	} {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"model":"deepseek-v4-flash"}`))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusNotFound, w.Code, "path=%s should be DeepSeek unsupported", path)
+		require.Contains(t, w.Body.String(), "not_found_error", "path=%s", path)
+		require.Contains(t, w.Body.String(), "DeepSeek gateway supports /v1/messages and /v1/chat/completions only", "path=%s", path)
+	}
+}
+
+func TestGatewayRoutesDeepSeekUnsupportedGetEndpointsReturnNotFound(t *testing.T) {
+	router := newGatewayRoutesTestRouterForPlatform(service.PlatformDeepSeek)
+
+	for _, path := range []string{
+		"/v1/usage",
+		"/v1/responses",
+		"/responses",
+		"/backend-api/codex/responses",
+	} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		w := httptest.NewRecorder()
+
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusNotFound, w.Code, "path=%s should be DeepSeek unsupported", path)
+		require.Contains(t, w.Body.String(), "not_found_error", "path=%s", path)
+		require.Contains(t, w.Body.String(), "DeepSeek gateway supports /v1/messages and /v1/chat/completions only", "path=%s", path)
+	}
+}
+
+func TestGatewayRoutesDeepSeekModelsReturnsDefaultList(t *testing.T) {
+	router := newGatewayRoutesTestRouterForPlatform(service.PlatformDeepSeek)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Contains(t, w.Body.String(), "deepseek-v4-flash")
+	require.Contains(t, w.Body.String(), "deepseek-v4-pro")
+	require.NotContains(t, w.Body.String(), "deepseek-chat")
 	require.NotContains(t, w.Body.String(), "claude-sonnet")
 }

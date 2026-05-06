@@ -34,4 +34,17 @@ describe('platformColors', () => {
     expect(platformBadgeClass('kimi')).not.toBe(platformBadgeClass('minimax'))
     expect(platformBadgeClass('kimi')).not.toBe(platformBadgeClass('glm'))
   })
+
+  it('returns DeepSeek labels and a distinct indigo visual style', () => {
+    expect(platformLabel('deepseek')).toBe('DeepSeek')
+    expect(platformBadgeClass('deepseek')).toContain('indigo')
+    expect(platformButtonClass('deepseek')).toContain('indigo')
+    expect(platformBadgeClass('deepseek')).not.toBe(platformBadgeClass('openai'))
+    expect(platformBadgeClass('deepseek')).not.toBe(platformBadgeClass('anthropic'))
+    expect(platformBadgeClass('deepseek')).not.toBe(platformBadgeClass('gemini'))
+    expect(platformBadgeClass('deepseek')).not.toBe(platformBadgeClass('antigravity'))
+    expect(platformBadgeClass('deepseek')).not.toBe(platformBadgeClass('minimax'))
+    expect(platformBadgeClass('deepseek')).not.toBe(platformBadgeClass('glm'))
+    expect(platformBadgeClass('deepseek')).not.toBe(platformBadgeClass('kimi'))
+  })
 })

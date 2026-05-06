@@ -121,6 +121,33 @@
             </div>
           </div>
         </template>
+        <template v-else-if="account.platform === 'deepseek'">
+          <div>
+            <label class="input-label">DeepSeek API Key</label>
+            <input
+              v-model="editApiKey"
+              data-testid="deepseek-api-key"
+              type="password"
+              class="input font-mono"
+              autocomplete="new-password"
+              data-1p-ignore
+              data-lpignore="true"
+              data-bwignore="true"
+              placeholder="sk-..."
+            />
+            <p class="input-hint">{{ t('admin.accounts.leaveEmptyToKeep') }}</p>
+          </div>
+          <div class="grid grid-cols-1 gap-3 rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-800 dark:border-indigo-800/40 dark:bg-indigo-900/20 dark:text-indigo-200 sm:grid-cols-2">
+            <div>
+              <div class="font-medium">Anthropic-compatible</div>
+              <div class="mt-1 break-all font-mono">{{ DEEPSEEK_ANTHROPIC_BASE_URL }}</div>
+            </div>
+            <div>
+              <div class="font-medium">OpenAI-compatible</div>
+              <div class="mt-1 break-all font-mono">{{ DEEPSEEK_OPENAI_BASE_URL }}</div>
+            </div>
+          </div>
+        </template>
         <template v-else>
           <div>
             <label class="input-label">{{ t('admin.accounts.baseUrl') }}</label>
@@ -179,7 +206,7 @@
 
           <template v-else>
             <!-- Mode Toggle -->
-            <div v-if="account.platform !== 'kimi'" class="mb-4 flex gap-2">
+            <div v-if="account.platform !== 'kimi' && account.platform !== 'deepseek'" class="mb-4 flex gap-2">
               <button
                 type="button"
                 @click="modelRestrictionMode = 'whitelist'"
@@ -244,7 +271,7 @@
             </div>
 
             <!-- Mapping Mode -->
-            <div v-else-if="account.platform !== 'kimi'">
+            <div v-else-if="account.platform !== 'kimi' && account.platform !== 'deepseek'">
               <div class="mb-3 rounded-lg bg-purple-50 p-3 dark:bg-purple-900/20">
                 <p class="text-xs text-purple-700 dark:text-purple-400">
                   <svg
@@ -351,7 +378,7 @@
         </div>
 
         <!-- Pool Mode Section -->
-        <div v-if="!isCodingPlanGatewayPlatform" class="border-t border-gray-200 pt-4 dark:border-dark-600">
+        <div v-if="!isFixedEndpointGatewayPlatform" class="border-t border-gray-200 pt-4 dark:border-dark-600">
           <div class="mb-3 flex items-center justify-between">
             <div>
               <label class="input-label mb-0">{{ t('admin.accounts.poolMode') }}</label>
@@ -403,7 +430,7 @@
         </div>
 
         <!-- Custom Error Codes Section -->
-        <div v-if="!isCodingPlanGatewayPlatform" class="border-t border-gray-200 pt-4 dark:border-dark-600">
+        <div v-if="!isFixedEndpointGatewayPlatform" class="border-t border-gray-200 pt-4 dark:border-dark-600">
           <div class="mb-3 flex items-center justify-between">
             <div>
               <label class="input-label mb-0">{{ t('admin.accounts.customErrorCodes') }}</label>
@@ -1162,7 +1189,7 @@
       </div>
 
       <!-- Temp Unschedulable Rules -->
-      <div v-if="!isCodingPlanGatewayPlatform" class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4">
+      <div v-if="!isFixedEndpointGatewayPlatform" class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4">
         <div class="mb-3 flex items-center justify-between">
           <div>
             <label class="input-label mb-0">{{ t('admin.accounts.tempUnschedulable.title') }}</label>
@@ -1536,7 +1563,7 @@
       </div>
       <!-- 配额控制 (非 Anthropic apikey/bedrock) -->
       <div
-        v-else-if="!isCodingPlanGatewayPlatform && (account?.type === 'apikey' || account?.type === 'bedrock')"
+        v-else-if="!isFixedEndpointGatewayPlatform && (account?.type === 'apikey' || account?.type === 'bedrock')"
         class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4"
       >
         <div class="mb-3">
@@ -2236,6 +2263,8 @@ import {
   GLM_OPENAI_BASE_URL,
   KIMI_ANTHROPIC_BASE_URL,
   KIMI_OPENAI_BASE_URL,
+  DEEPSEEK_ANTHROPIC_BASE_URL,
+  DEEPSEEK_OPENAI_BASE_URL,
   VERTEX_LOCATION_OPTIONS
 } from '@/constants/account'
 import {
@@ -2249,6 +2278,7 @@ import {
 } from '@/utils/openaiWsMode'
 import {
   getPresetMappingsByPlatform,
+  getModelsByPlatform,
   commonErrorCodes,
   buildModelMappingObject,
   isValidWildcardPattern
@@ -2279,8 +2309,8 @@ const baseUrlHint = computed(() => {
   return t('admin.accounts.baseUrlHint')
 })
 
-const isCodingPlanGatewayPlatformValue = (platform?: string) => platform === 'glm' || platform === 'kimi'
-const isCodingPlanGatewayPlatform = computed(() => isCodingPlanGatewayPlatformValue(props.account?.platform))
+const isFixedEndpointGatewayPlatformValue = (platform?: string) => platform === 'glm' || platform === 'kimi' || platform === 'deepseek'
+const isFixedEndpointGatewayPlatform = computed(() => isFixedEndpointGatewayPlatformValue(props.account?.platform))
 
 const antigravityPresetMappings = computed(() => getPresetMappingsByPlatform('antigravity'))
 const bedrockPresets = computed(() => getPresetMappingsByPlatform('bedrock'))
@@ -2494,6 +2524,7 @@ const defaultBaseUrl = computed(() => {
   if (props.account?.platform === 'minimax') return MINIMAX_ANTHROPIC_BASE_URL
   if (props.account?.platform === 'glm') return GLM_ANTHROPIC_BASE_URL
   if (props.account?.platform === 'kimi') return KIMI_ANTHROPIC_BASE_URL
+  if (props.account?.platform === 'deepseek') return DEEPSEEK_ANTHROPIC_BASE_URL
   return 'https://api.anthropic.com'
 })
 
@@ -2716,7 +2747,9 @@ const syncFormFromAccount = (newAccount: Account | null) => {
               ? GLM_ANTHROPIC_BASE_URL
               : newAccount.platform === 'kimi'
                 ? KIMI_ANTHROPIC_BASE_URL
-            : 'https://api.anthropic.com'
+                : newAccount.platform === 'deepseek'
+                  ? DEEPSEEK_ANTHROPIC_BASE_URL
+                  : 'https://api.anthropic.com'
     editBaseUrl.value = (credentials.base_url as string) || platformDefaultUrl
     if (newAccount.platform === 'minimax') {
       editMiniMaxAnthropicBaseUrl.value =
@@ -2738,6 +2771,13 @@ const syncFormFromAccount = (newAccount: Account | null) => {
         allowedModels.value = entries
           .map(([from]) => from)
           .filter((model) => model === 'kimi-for-coding')
+        modelMappings.value = []
+      } else if (newAccount.platform === 'deepseek') {
+        const deepseekModels = new Set(getModelsByPlatform('deepseek'))
+        modelRestrictionMode.value = 'whitelist'
+        allowedModels.value = entries
+          .map(([from]) => from)
+          .filter((model) => deepseekModels.has(model))
         modelMappings.value = []
       } else if (isWhitelistMode) {
         // Whitelist mode: populate allowedModels
@@ -2857,7 +2897,9 @@ const syncFormFromAccount = (newAccount: Account | null) => {
               ? GLM_ANTHROPIC_BASE_URL
               : newAccount.platform === 'kimi'
                 ? KIMI_ANTHROPIC_BASE_URL
-            : 'https://api.anthropic.com'
+                : newAccount.platform === 'deepseek'
+                  ? DEEPSEEK_ANTHROPIC_BASE_URL
+                  : 'https://api.anthropic.com'
     editBaseUrl.value = platformDefaultUrl
 
     // Load model mappings for OpenAI OAuth accounts
@@ -3395,6 +3437,19 @@ const handleSubmit = async () => {
         delete newCredentials.intercept_warmup_requests
         delete newCredentials.temp_unschedulable_enabled
         delete newCredentials.temp_unschedulable_rules
+      } else if (props.account.platform === 'deepseek') {
+        delete newCredentials.auth_scheme
+        delete newCredentials.base_url
+        delete newCredentials.base_url_anthropic
+        delete newCredentials.base_url_openai
+        delete newCredentials.compact_model_mapping
+        delete newCredentials.pool_mode
+        delete newCredentials.pool_mode_retry_count
+        delete newCredentials.custom_error_codes_enabled
+        delete newCredentials.custom_error_codes
+        delete newCredentials.intercept_warmup_requests
+        delete newCredentials.temp_unschedulable_enabled
+        delete newCredentials.temp_unschedulable_rules
       } else {
         newCredentials.base_url = editBaseUrl.value.trim() || defaultBaseUrl.value
       }
@@ -3432,25 +3487,25 @@ const handleSubmit = async () => {
       }
 
       // Add pool mode if enabled
-      if (!isCodingPlanGatewayPlatform.value && poolModeEnabled.value) {
+      if (!isFixedEndpointGatewayPlatform.value && poolModeEnabled.value) {
         newCredentials.pool_mode = true
         newCredentials.pool_mode_retry_count = normalizePoolModeRetryCount(poolModeRetryCount.value)
-      } else if (!isCodingPlanGatewayPlatform.value) {
+      } else if (!isFixedEndpointGatewayPlatform.value) {
         delete newCredentials.pool_mode
         delete newCredentials.pool_mode_retry_count
       }
 
       // Add custom error codes if enabled
-      if (!isCodingPlanGatewayPlatform.value && customErrorCodesEnabled.value) {
+      if (!isFixedEndpointGatewayPlatform.value && customErrorCodesEnabled.value) {
         newCredentials.custom_error_codes_enabled = true
         newCredentials.custom_error_codes = [...selectedErrorCodes.value]
-      } else if (!isCodingPlanGatewayPlatform.value) {
+      } else if (!isFixedEndpointGatewayPlatform.value) {
         delete newCredentials.custom_error_codes_enabled
         delete newCredentials.custom_error_codes
       }
 
       // Add intercept warmup requests setting
-      if (!isCodingPlanGatewayPlatform.value) {
+      if (!isFixedEndpointGatewayPlatform.value) {
         applyInterceptWarmup(newCredentials, interceptWarmupRequests.value, 'edit')
         if (!applyTempUnschedConfig(newCredentials)) {
           return
@@ -3796,7 +3851,7 @@ const handleSubmit = async () => {
     }
 
     // For apikey/bedrock accounts, handle quota_limit in extra
-    if (!isCodingPlanGatewayPlatform.value && (props.account.type === 'apikey' || props.account.type === 'bedrock')) {
+    if (!isFixedEndpointGatewayPlatform.value && (props.account.type === 'apikey' || props.account.type === 'bedrock')) {
       const currentExtra = (updatePayload.extra as Record<string, unknown>) ||
         (props.account.extra as Record<string, unknown>) || {}
       const newExtra: Record<string, unknown> = { ...currentExtra }

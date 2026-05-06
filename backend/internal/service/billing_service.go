@@ -70,6 +70,10 @@ func glmCNYPerMillionTokens(cny float64) float64 {
 	return cny * glmCNYToUSDAccountingRate / 1_000_000
 }
 
+func deepSeekCNYPerMillionTokens(cny float64) float64 {
+	return cny * glmCNYToUSDAccountingRate / 1_000_000
+}
+
 func miniMaxUSDPerMillionTokens(usd float64) float64 {
 	return usd / 1_000_000
 }
@@ -259,6 +263,24 @@ func (s *BillingService) initFallbackPricing() {
 		OutputPricePerToken:        4.0 / 1_000_000,
 		CacheCreationPricePerToken: 0.95 / 1_000_000,
 		CacheReadPricePerToken:     0.16 / 1_000_000,
+		SupportsCacheBreakdown:     false,
+	}
+
+	// DeepSeek official API pricing. Official prices are CNY per million
+	// tokens; fallback accounting converts them to USD/token using the same
+	// fixed rate as other China-region provider fallbacks.
+	s.fallbackPrices["deepseek-v4-flash"] = &ModelPricing{
+		InputPricePerToken:         deepSeekCNYPerMillionTokens(1),
+		OutputPricePerToken:        deepSeekCNYPerMillionTokens(2),
+		CacheCreationPricePerToken: 0,
+		CacheReadPricePerToken:     deepSeekCNYPerMillionTokens(0.02),
+		SupportsCacheBreakdown:     false,
+	}
+	s.fallbackPrices["deepseek-v4-pro"] = &ModelPricing{
+		InputPricePerToken:         deepSeekCNYPerMillionTokens(3),
+		OutputPricePerToken:        deepSeekCNYPerMillionTokens(6),
+		CacheCreationPricePerToken: 0,
+		CacheReadPricePerToken:     deepSeekCNYPerMillionTokens(0.025),
 		SupportsCacheBreakdown:     false,
 	}
 

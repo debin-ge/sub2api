@@ -40,6 +40,7 @@ const (
 	PlatformMiniMax     = domain.PlatformMiniMax
 	PlatformGLM         = domain.PlatformGLM
 	PlatformKimi        = domain.PlatformKimi
+	PlatformDeepSeek    = domain.PlatformDeepSeek
 )
 
 // Account type constants

@@ -99,6 +99,7 @@ export default {
       antigravity: 'Antigravity',
       glm: 'GLM',
       kimi: 'Kimi',
+      deepseek: 'DeepSeek',
       more: '更多'
     },
     // CTA 区块
@@ -879,7 +880,8 @@ export default {
       openai: 'OpenAI',
       anthropic: 'Anthropic',
       gemini: 'Gemini',
-      glm: 'GLM'
+      glm: 'GLM',
+      deepseek: 'DeepSeek'
     },
     extraModelsHeader: '附加模型',
     extraModelsEmpty: '无附加模型',
@@ -2012,7 +2014,8 @@ export default {
         antigravity: 'Antigravity',
         minimax: 'MiniMax',
         glm: 'GLM',
-      kimi: 'Kimi',
+        kimi: 'Kimi',
+        deepseek: 'DeepSeek',
       },
       saving: '保存中...',
       noGroups: '暂无分组',
@@ -2774,7 +2777,8 @@ export default {
         antigravity: 'Antigravity',
         minimax: 'MiniMax',
         glm: 'GLM',
-      kimi: 'Kimi',
+        kimi: 'Kimi',
+        deepseek: 'DeepSeek',
       },
       types: {
         oauth: 'OAuth',
@@ -3059,6 +3063,9 @@ export default {
 	      },
 	      kimi: {
 	        apiKeyHint: '您的 Kimi Coding Plan API Key',
+	      },
+	      deepseek: {
+	        apiKeyHint: '您的 DeepSeek API Key',
 	      },
 	      anthropic: {
         apiKeyPassthrough: '自动透传（仅替换认证）',

@@ -97,8 +97,8 @@ const qwenModels = [
   'qwq-32b', 'qwq-32b-preview'
 ]
 
-// DeepSeek
-const deepseekModels = [
+// DeepSeek public model names kept for generic model suggestions.
+const deepseekProviderModels = [
   'deepseek-chat', 'deepseek-coder', 'deepseek-reasoner',
   'deepseek-v3', 'deepseek-v3-0324',
   'deepseek-r1', 'deepseek-r1-0528',
@@ -182,6 +182,11 @@ const kimiModels = [
   'kimi-for-coding'
 ]
 
+// DeepSeek Gateway
+const deepseekGatewayModels = [
+  'deepseek-v4-flash', 'deepseek-v4-pro'
+]
+
 // 百度 文心
 const baiduModels = [
   'ernie-4.0-8k-latest', 'ernie-4.0-8k', 'ernie-4.0-turbo-8k',
@@ -219,7 +224,7 @@ const allModelsList: string[] = [
   ...geminiModels,
   ...zhipuModels,
   ...qwenModels,
-  ...deepseekModels,
+  ...deepseekProviderModels,
   ...mistralModels,
   ...metaModels,
   ...xaiModels,
@@ -230,6 +235,7 @@ const allModelsList: string[] = [
   ...minimaxModels,
   ...glmModels,
   ...kimiModels,
+  ...deepseekGatewayModels,
   ...baiduModels,
   ...sparkModels,
   ...hunyuanModels,
@@ -298,6 +304,11 @@ const glmPresetMappings = [
 
 const kimiPresetMappings = [
   { label: 'kimi-for-coding passthrough', from: 'kimi-for-coding', to: 'kimi-for-coding', color: 'bg-lime-100 text-lime-700 hover:bg-lime-200 dark:bg-lime-900/30 dark:text-lime-300' }
+]
+
+const deepseekPresetMappings = [
+  { label: 'deepseek-v4-flash passthrough', from: 'deepseek-v4-flash', to: 'deepseek-v4-flash', color: 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-300' },
+  { label: 'deepseek-v4-pro passthrough', from: 'deepseek-v4-pro', to: 'deepseek-v4-pro', color: 'bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-900/30 dark:text-violet-300' }
 ]
 
 // Antigravity 预设映射（支持通配符）
@@ -391,7 +402,7 @@ export function getModelsByPlatform(platform: string): string[] {
     case 'antigravity': return antigravityModels
     case 'zhipu': return zhipuModels
     case 'qwen': return qwenModels
-    case 'deepseek': return deepseekModels
+    case 'deepseek': return deepseekGatewayModels
     case 'mistral': return mistralModels
     case 'meta': return metaModels
     case 'xai': return xaiModels
@@ -417,6 +428,7 @@ export function getPresetMappingsByPlatform(platform: string) {
   if (platform === 'minimax') return minimaxPresetMappings
   if (platform === 'glm') return glmPresetMappings
   if (platform === 'kimi') return kimiPresetMappings
+  if (platform === 'deepseek') return deepseekPresetMappings
   if (platform === 'antigravity') return antigravityPresetMappings
   if (platform === 'bedrock') return bedrockPresetMappings
   return anthropicPresetMappings

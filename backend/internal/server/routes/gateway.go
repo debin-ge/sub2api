@@ -85,6 +85,19 @@ func RegisterGatewayRoutes(
 				}
 				h.KimiGateway.Messages(c)
 				return
+			case service.PlatformDeepSeek:
+				if h.DeepSeekGateway == nil {
+					c.JSON(http.StatusServiceUnavailable, gin.H{
+						"type": "error",
+						"error": gin.H{
+							"type":    "api_error",
+							"message": "deepseek gateway service unavailable",
+						},
+					})
+					return
+				}
+				h.DeepSeekGateway.Messages(c)
+				return
 			}
 			h.Gateway.Messages(c)
 		})
@@ -112,6 +125,10 @@ func RegisterGatewayRoutes(
 				writeKimiUnsupported(c, h)
 				return
 			}
+			if getGroupPlatform(c) == service.PlatformDeepSeek {
+				writeDeepSeekUnsupported(c, h)
+				return
+			}
 			h.Gateway.CountTokens(c)
 		})
 		gateway.GET("/models", func(c *gin.Context) {
@@ -134,6 +151,10 @@ func RegisterGatewayRoutes(
 				writeKimiUnsupported(c, h)
 				return
 			}
+			if getGroupPlatform(c) == service.PlatformDeepSeek {
+				writeDeepSeekUnsupported(c, h)
+				return
+			}
 			h.Gateway.Usage(c)
 		})
 		// OpenAI Responses API: auto-route based on group platform
@@ -150,6 +171,9 @@ func RegisterGatewayRoutes(
 				return
 			case service.PlatformKimi:
 				writeKimiUnsupported(c, h)
+				return
+			case service.PlatformDeepSeek:
+				writeDeepSeekUnsupported(c, h)
 				return
 			}
 			h.Gateway.Responses(c)
@@ -168,6 +192,9 @@ func RegisterGatewayRoutes(
 			case service.PlatformKimi:
 				writeKimiUnsupported(c, h)
 				return
+			case service.PlatformDeepSeek:
+				writeDeepSeekUnsupported(c, h)
+				return
 			}
 			h.Gateway.Responses(c)
 		})
@@ -182,6 +209,10 @@ func RegisterGatewayRoutes(
 			}
 			if getGroupPlatform(c) == service.PlatformKimi {
 				writeKimiUnsupported(c, h)
+				return
+			}
+			if getGroupPlatform(c) == service.PlatformDeepSeek {
+				writeDeepSeekUnsupported(c, h)
 				return
 			}
 			h.OpenAIGateway.ResponsesWebSocket(c)
@@ -201,6 +232,9 @@ func RegisterGatewayRoutes(
 			case service.PlatformKimi:
 				writeKimiChatCompletions(c, h)
 				return
+			case service.PlatformDeepSeek:
+				writeDeepSeekChatCompletions(c, h)
+				return
 			}
 			h.Gateway.ChatCompletions(c)
 		})
@@ -215,6 +249,10 @@ func RegisterGatewayRoutes(
 			}
 			if getGroupPlatform(c) == service.PlatformKimi {
 				writeKimiUnsupported(c, h)
+				return
+			}
+			if getGroupPlatform(c) == service.PlatformDeepSeek {
+				writeDeepSeekUnsupported(c, h)
 				return
 			}
 			if getGroupPlatform(c) != service.PlatformOpenAI {
@@ -239,6 +277,10 @@ func RegisterGatewayRoutes(
 			}
 			if getGroupPlatform(c) == service.PlatformKimi {
 				writeKimiUnsupported(c, h)
+				return
+			}
+			if getGroupPlatform(c) == service.PlatformDeepSeek {
+				writeDeepSeekUnsupported(c, h)
 				return
 			}
 			if getGroupPlatform(c) != service.PlatformOpenAI {
@@ -284,6 +326,9 @@ func RegisterGatewayRoutes(
 		case service.PlatformKimi:
 			writeKimiUnsupported(c, h)
 			return
+		case service.PlatformDeepSeek:
+			writeDeepSeekUnsupported(c, h)
+			return
 		}
 		h.Gateway.Responses(c)
 	}
@@ -300,6 +345,10 @@ func RegisterGatewayRoutes(
 		}
 		if getGroupPlatform(c) == service.PlatformKimi {
 			writeKimiUnsupported(c, h)
+			return
+		}
+		if getGroupPlatform(c) == service.PlatformDeepSeek {
+			writeDeepSeekUnsupported(c, h)
 			return
 		}
 		h.OpenAIGateway.ResponsesWebSocket(c)
@@ -322,6 +371,10 @@ func RegisterGatewayRoutes(
 				writeKimiUnsupported(c, h)
 				return
 			}
+			if getGroupPlatform(c) == service.PlatformDeepSeek {
+				writeDeepSeekUnsupported(c, h)
+				return
+			}
 			h.OpenAIGateway.ResponsesWebSocket(c)
 		})
 	}
@@ -340,6 +393,9 @@ func RegisterGatewayRoutes(
 		case service.PlatformKimi:
 			writeKimiChatCompletions(c, h)
 			return
+		case service.PlatformDeepSeek:
+			writeDeepSeekChatCompletions(c, h)
+			return
 		}
 		h.Gateway.ChatCompletions(c)
 	})
@@ -354,6 +410,10 @@ func RegisterGatewayRoutes(
 		}
 		if getGroupPlatform(c) == service.PlatformKimi {
 			writeKimiUnsupported(c, h)
+			return
+		}
+		if getGroupPlatform(c) == service.PlatformDeepSeek {
+			writeDeepSeekUnsupported(c, h)
 			return
 		}
 		if getGroupPlatform(c) != service.PlatformOpenAI {
@@ -378,6 +438,10 @@ func RegisterGatewayRoutes(
 		}
 		if getGroupPlatform(c) == service.PlatformKimi {
 			writeKimiUnsupported(c, h)
+			return
+		}
+		if getGroupPlatform(c) == service.PlatformDeepSeek {
+			writeDeepSeekUnsupported(c, h)
 			return
 		}
 		if getGroupPlatform(c) != service.PlatformOpenAI {
@@ -516,6 +580,34 @@ func writeKimiChatCompletions(c *gin.Context, h *handler.Handlers) {
 		"error": gin.H{
 			"type":    "api_error",
 			"message": "kimi gateway service unavailable",
+		},
+	})
+}
+
+func writeDeepSeekUnsupported(c *gin.Context, h *handler.Handlers) {
+	if h != nil && h.DeepSeekGateway != nil {
+		h.DeepSeekGateway.Unsupported(c)
+		return
+	}
+	c.JSON(http.StatusNotFound, gin.H{
+		"type": "error",
+		"error": gin.H{
+			"type":    "not_found_error",
+			"message": "DeepSeek gateway supports /v1/messages and /v1/chat/completions only",
+		},
+	})
+}
+
+func writeDeepSeekChatCompletions(c *gin.Context, h *handler.Handlers) {
+	if h != nil && h.DeepSeekGateway != nil {
+		h.DeepSeekGateway.ChatCompletions(c)
+		return
+	}
+	c.JSON(http.StatusServiceUnavailable, gin.H{
+		"type": "error",
+		"error": gin.H{
+			"type":    "api_error",
+			"message": "deepseek gateway service unavailable",
 		},
 	})
 }

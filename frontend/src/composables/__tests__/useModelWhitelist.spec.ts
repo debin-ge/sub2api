@@ -64,6 +64,14 @@ describe('useModelWhitelist', () => {
     expect(models).not.toContain('claude-sonnet-4-5')
   })
 
+  it('deepseek 模型列表仅包含 Gateway 默认模型', () => {
+    const models = getModelsByPlatform('deepseek')
+
+    expect(models).toEqual(['deepseek-v4-flash', 'deepseek-v4-pro'])
+    expect(models).not.toContain('deepseek-chat')
+    expect(models).not.toContain('deepseek-reasoner')
+  })
+
   it('glm 预设映射 Claude family aliases to GLM models', () => {
     const mappings = getPresetMappingsByPlatform('glm')
 
@@ -82,6 +90,15 @@ describe('useModelWhitelist', () => {
 
     expect(mappings).toEqual([
       expect.objectContaining({ from: 'kimi-for-coding', to: 'kimi-for-coding' })
+    ])
+  })
+
+  it('deepseek 预设映射只提供默认模型透传', () => {
+    const mappings = getPresetMappingsByPlatform('deepseek')
+
+    expect(mappings).toEqual([
+      expect.objectContaining({ from: 'deepseek-v4-flash', to: 'deepseek-v4-flash' }),
+      expect.objectContaining({ from: 'deepseek-v4-pro', to: 'deepseek-v4-pro' })
     ])
   })
 

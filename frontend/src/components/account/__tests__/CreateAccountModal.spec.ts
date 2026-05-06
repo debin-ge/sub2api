@@ -84,7 +84,7 @@ const ModelWhitelistSelectorStub = defineComponent({
       <button
         type="button"
         data-testid="select-models"
-        @click="$emit('update:modelValue', platform === 'glm' ? ['GLM-4.7'] : platform === 'kimi' ? ['kimi-for-coding'] : ['gpt-5.2'])"
+        @click="$emit('update:modelValue', platform === 'glm' ? ['GLM-4.7'] : platform === 'kimi' ? ['kimi-for-coding'] : platform === 'deepseek' ? ['deepseek-v4-pro'] : ['gpt-5.2'])"
       >
         select
       </button>
@@ -277,6 +277,56 @@ describe('CreateAccountModal', () => {
     expect(payload.credentials.base_url_anthropic).toBeUndefined()
     expect(payload.credentials.base_url_openai).toBeUndefined()
     expect(payload.credentials.model_mapping['claude-sonnet-4-5']).toBeUndefined()
+    expect(checkMixedChannelRiskMock).not.toHaveBeenCalled()
+  })
+
+  it('submits DeepSeek API key credentials without editable base URLs or legacy aliases', async () => {
+    createAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    createAccountMock.mockResolvedValue({ id: 4 })
+
+    const wrapper = mountModal()
+
+    expect(wrapper.find('[data-testid="create-platform-deepseek"]').exists()).toBe(true)
+
+    await wrapper.get('[data-tour="account-form-name"]').setValue('DeepSeek Gateway')
+    await wrapper.get('[data-testid="create-platform-deepseek"]').trigger('click')
+    expect(wrapper.text()).toContain('admin.accounts.deepseek.apiKeyHint')
+    expect(wrapper.text()).not.toContain('admin.accounts.apiKeyHint')
+    expect(wrapper.find('[data-testid="deepseek-anthropic-base-url"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="deepseek-openai-base-url"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="model-whitelist-selector"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="model-whitelist-platform"]').text()).toBe('deepseek')
+    expect(wrapper.find('[data-testid="quota-limit-card"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('admin.accounts.poolMode')
+    expect(wrapper.text()).not.toContain('admin.accounts.customErrorCodes')
+    expect(wrapper.text()).not.toContain('admin.accounts.tempUnschedulable.title')
+
+    await wrapper.get('[data-testid="deepseek-api-key"]').setValue('sk-deepseek-test')
+    await wrapper.get('[data-testid="select-models"]').trigger('click')
+    expect(wrapper.get('[data-testid="model-whitelist-value"]').text()).toBe('deepseek-v4-pro')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createAccountMock).toHaveBeenCalledTimes(1)
+    const payload = createAccountMock.mock.calls[0]?.[0]
+    expect(payload).toEqual(expect.objectContaining({
+      name: 'DeepSeek Gateway',
+      platform: 'deepseek',
+      type: 'apikey',
+      credentials: expect.objectContaining({
+        api_key: 'sk-deepseek-test',
+        model_mapping: {
+          'deepseek-v4-pro': 'deepseek-v4-pro'
+        }
+      })
+    }))
+    expect(Object.keys(payload.credentials).sort()).toEqual(['api_key', 'model_mapping'])
+    expect(payload.credentials.base_url).toBeUndefined()
+    expect(payload.credentials.base_url_anthropic).toBeUndefined()
+    expect(payload.credentials.base_url_openai).toBeUndefined()
+    expect(payload.credentials.model_mapping['deepseek-chat']).toBeUndefined()
+    expect(payload.credentials.model_mapping['deepseek-reasoner']).toBeUndefined()
     expect(checkMixedChannelRiskMock).not.toHaveBeenCalled()
   })
 })

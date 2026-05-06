@@ -1243,6 +1243,57 @@ func (a *Account) IsKimiModelSupported(model string) bool {
 	return a != nil && a.Platform == PlatformKimi && model == "kimi-for-coding"
 }
 
+func (a *Account) IsDeepSeek() bool {
+	return a != nil && a.Platform == PlatformDeepSeek
+}
+
+func (a *Account) IsDeepSeekAPIKey() bool {
+	if a == nil || a.Platform != PlatformDeepSeek {
+		return false
+	}
+	if a.Type != AccountTypeAPIKey {
+		return false
+	}
+	return strings.TrimSpace(a.GetCredential("api_key")) != ""
+}
+
+func (a *Account) GetDeepSeekAPIKey() string {
+	if a == nil || a.Platform != PlatformDeepSeek {
+		return ""
+	}
+	return strings.TrimSpace(a.GetCredential("api_key"))
+}
+
+func (a *Account) GetDeepSeekOpenAIBaseURL() string {
+	if a == nil || a.Platform != PlatformDeepSeek {
+		return ""
+	}
+	return "https://api.deepseek.com"
+}
+
+func (a *Account) GetDeepSeekAnthropicBaseURL() string {
+	if a == nil || a.Platform != PlatformDeepSeek {
+		return ""
+	}
+	return "https://api.deepseek.com/anthropic"
+}
+
+func DefaultDeepSeekModelIDs() []string {
+	return []string{"deepseek-v4-flash", "deepseek-v4-pro"}
+}
+
+func (a *Account) IsDeepSeekModelSupported(model string) bool {
+	if a == nil || a.Platform != PlatformDeepSeek {
+		return false
+	}
+	for _, supported := range DefaultDeepSeekModelIDs() {
+		if model == supported {
+			return true
+		}
+	}
+	return false
+}
+
 func (a *Account) IsOpenAIOAuth() bool {
 	return a.IsOpenAI() && a.Type == AccountTypeOAuth
 }

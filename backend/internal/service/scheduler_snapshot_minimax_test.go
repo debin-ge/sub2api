@@ -49,6 +49,27 @@ func TestGLMSchedulingDefaultBucketsIncludePlatform(t *testing.T) {
 	}
 }
 
+func TestDeepSeekSchedulingDefaultBucketsIncludePlatform(t *testing.T) {
+	svc := &SchedulerSnapshotService{
+		cfg: &config.Config{RunMode: config.RunModeSimple},
+	}
+
+	buckets, err := svc.defaultBuckets(context.Background())
+	if err != nil {
+		t.Fatalf("defaultBuckets error = %v", err)
+	}
+
+	if !schedulerBucketExists(buckets, SchedulerBucket{GroupID: 0, Platform: PlatformDeepSeek, Mode: SchedulerModeSingle}) {
+		t.Fatalf("expected DeepSeek single scheduler bucket, got %+v", buckets)
+	}
+	if !schedulerBucketExists(buckets, SchedulerBucket{GroupID: 0, Platform: PlatformDeepSeek, Mode: SchedulerModeForced}) {
+		t.Fatalf("expected DeepSeek forced scheduler bucket, got %+v", buckets)
+	}
+	if schedulerBucketExists(buckets, SchedulerBucket{GroupID: 0, Platform: PlatformDeepSeek, Mode: SchedulerModeMixed}) {
+		t.Fatalf("DeepSeek must not use mixed scheduler bucket")
+	}
+}
+
 func schedulerBucketExists(buckets []SchedulerBucket, want SchedulerBucket) bool {
 	for _, bucket := range buckets {
 		if bucket == want {

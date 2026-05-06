@@ -20,6 +20,8 @@ export const GLM_ANTHROPIC_BASE_URL = 'https://open.bigmodel.cn/api/anthropic'
 export const GLM_OPENAI_BASE_URL = 'https://open.bigmodel.cn/api/coding/paas/v4'
 export const KIMI_ANTHROPIC_BASE_URL = 'https://api.kimi.com/coding'
 export const KIMI_OPENAI_BASE_URL = 'https://api.kimi.com/coding/v1'
+export const DEEPSEEK_ANTHROPIC_BASE_URL = 'https://api.deepseek.com/anthropic'
+export const DEEPSEEK_OPENAI_BASE_URL = 'https://api.deepseek.com'
 
 /** Vertex AI location options for Service Account accounts */
 export const VERTEX_LOCATION_OPTIONS = [

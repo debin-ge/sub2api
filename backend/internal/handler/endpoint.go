@@ -121,6 +121,14 @@ func DeriveUpstreamEndpoint(inbound, rawRequestPath, platform string) string {
 		default:
 			return inbound
 		}
+
+	case service.PlatformDeepSeek:
+		switch inbound {
+		case EndpointMessages, EndpointChatCompletions:
+			return inbound
+		default:
+			return inbound
+		}
 	}
 
 	// Unknown platform — fall back to inbound.

@@ -482,6 +482,46 @@ func TestAccountDataImportAcceptsKimiAPIKey(t *testing.T) {
 	require.Equal(t, service.AccountTypeAPIKey, adminSvc.createdAccounts[0].Type)
 }
 
+func TestAccountDataImportAcceptsDeepSeekAPIKey(t *testing.T) {
+	router, adminSvc := setupAccountDataRouter()
+
+	dataPayload := map[string]any{
+		"data": map[string]any{
+			"type":    dataType,
+			"version": dataVersion,
+			"proxies": []map[string]any{},
+			"accounts": []map[string]any{
+				{
+					"name":     "deepseek-api",
+					"platform": "deepseek",
+					"type":     "apikey",
+					"credentials": map[string]any{
+						"api_key": "sk-deepseek-test",
+					},
+				},
+			},
+		},
+	}
+
+	body, err := json.Marshal(dataPayload)
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/data", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	var resp importDataResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Equal(t, 0, resp.Code)
+	require.Equal(t, 1, resp.Data.AccountCreated)
+	require.Equal(t, 0, resp.Data.AccountFailed)
+	require.Len(t, adminSvc.createdAccounts, 1)
+	require.Equal(t, service.PlatformDeepSeek, adminSvc.createdAccounts[0].Platform)
+	require.Equal(t, service.AccountTypeAPIKey, adminSvc.createdAccounts[0].Type)
+}
+
 func TestAccountDataImportRejectsKimiWithoutAPIKey(t *testing.T) {
 	router, adminSvc := setupAccountDataRouter()
 
@@ -494,6 +534,45 @@ func TestAccountDataImportRejectsKimiWithoutAPIKey(t *testing.T) {
 				{
 					"name":     "kimi-coding-plan",
 					"platform": "kimi",
+					"type":     "apikey",
+					"credentials": map[string]any{
+						"api_key": " ",
+					},
+				},
+			},
+		},
+	}
+
+	body, err := json.Marshal(dataPayload)
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/data", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	var resp importDataResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Equal(t, 0, resp.Code)
+	require.Equal(t, 0, resp.Data.AccountCreated)
+	require.Equal(t, 1, resp.Data.AccountFailed)
+	require.Empty(t, adminSvc.createdAccounts)
+	require.Contains(t, resp.Data.Errors[0].Message, "api_key")
+}
+
+func TestAccountDataImportRejectsDeepSeekWithoutAPIKey(t *testing.T) {
+	router, adminSvc := setupAccountDataRouter()
+
+	dataPayload := map[string]any{
+		"data": map[string]any{
+			"type":    dataType,
+			"version": dataVersion,
+			"proxies": []map[string]any{},
+			"accounts": []map[string]any{
+				{
+					"name":     "deepseek-api",
+					"platform": "deepseek",
 					"type":     "apikey",
 					"credentials": map[string]any{
 						"api_key": " ",

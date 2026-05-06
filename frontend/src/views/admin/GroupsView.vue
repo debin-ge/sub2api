@@ -2673,7 +2673,9 @@
                               ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400'
                               : group.platform === 'kimi'
                                 ? 'bg-lime-100 text-lime-700 dark:bg-lime-900/30 dark:text-lime-300'
-                            : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+                                : group.platform === 'deepseek'
+                                  ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300'
+                                  : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
                   ]"
                 >
                   {{ t("admin.groups.platforms." + group.platform) }}
@@ -2838,6 +2840,7 @@ const platformOptions = computed(() => [
   { value: "minimax", label: "MiniMax" },
   { value: "glm", label: "GLM" },
   { value: "kimi", label: "Kimi" },
+  { value: "deepseek", label: "DeepSeek" },
 ]);
 
 const platformFilterOptions = computed(() => [
@@ -2849,6 +2852,7 @@ const platformFilterOptions = computed(() => [
   { value: "minimax", label: "MiniMax" },
   { value: "glm", label: "GLM" },
   { value: "kimi", label: "Kimi" },
+  { value: "deepseek", label: "DeepSeek" },
 ]);
 
 const editStatusOptions = computed(() => [

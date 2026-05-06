@@ -631,6 +631,44 @@ func (s *GatewayService) HandleKimiUpstreamError(ctx context.Context, account *A
 	}
 }
 
+func (s *GatewayService) HandleDeepSeekUpstreamError(ctx context.Context, account *Account, failoverErr *UpstreamFailoverError) {
+	if s == nil || account == nil || failoverErr == nil {
+		return
+	}
+	mapping := MapDeepSeekUpstreamStatus(failoverErr.StatusCode)
+	if failoverErr.StatusCode == http.StatusUnauthorized || failoverErr.StatusCode == http.StatusForbidden || failoverErr.StatusCode == http.StatusPaymentRequired {
+		headers := failoverErr.ResponseHeaders
+		if headers == nil {
+			headers = http.Header{}
+		}
+		if s.rateLimitService != nil && s.rateLimitService.accountRepo != nil && failoverErr.StatusCode != http.StatusPaymentRequired {
+			s.rateLimitService.HandleUpstreamError(ctx, account, failoverErr.StatusCode, headers, failoverErr.ResponseBody)
+			return
+		}
+		s.setDeepSeekAuthError(ctx, account.ID, failoverErr)
+		return
+	}
+	if !mapping.Retryable {
+		return
+	}
+	headers := failoverErr.ResponseHeaders
+	if headers == nil {
+		headers = http.Header{}
+	}
+	switch {
+	case failoverErr.StatusCode == http.StatusTooManyRequests:
+		if s.rateLimitService != nil && s.rateLimitService.accountRepo != nil {
+			s.rateLimitService.HandleUpstreamError(ctx, account, failoverErr.StatusCode, headers, failoverErr.ResponseBody)
+			return
+		}
+		s.setDeepSeekRateLimited(ctx, account.ID, time.Now().Add(5*time.Minute))
+	case failoverErr.StatusCode == http.StatusServiceUnavailable || failoverErr.StatusCode == 529:
+		s.setDeepSeekOverloaded(ctx, account.ID, s.glmOverloadUntil())
+	case failoverErr.StatusCode >= http.StatusInternalServerError:
+		s.setDeepSeekOverloaded(ctx, account.ID, s.glmOverloadUntil())
+	}
+}
+
 func (s *GatewayService) setGLMAuthError(ctx context.Context, accountID int64, failoverErr *UpstreamFailoverError) {
 	if s == nil || s.accountRepo == nil || failoverErr == nil {
 		return
@@ -668,6 +706,31 @@ func (s *GatewayService) setKimiAuthError(ctx context.Context, accountID int64, 
 	}
 	if err := s.accountRepo.SetError(ctx, accountID, message); err != nil {
 		slog.Warn("kimi_auth_error_set_failed", "account_id", accountID, "status_code", failoverErr.StatusCode, "error", err)
+	}
+}
+
+func (s *GatewayService) setDeepSeekAuthError(ctx context.Context, accountID int64, failoverErr *UpstreamFailoverError) {
+	if s == nil || s.accountRepo == nil || failoverErr == nil {
+		return
+	}
+	message := "Authentication failed"
+	if failoverErr.StatusCode == http.StatusForbidden {
+		message = "Authorization failed"
+	}
+	if failoverErr.StatusCode == http.StatusPaymentRequired {
+		message = "Insufficient DeepSeek balance"
+	}
+	upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(failoverErr.ResponseBody))
+	upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
+	if upstreamMsg != "" {
+		message = fmt.Sprintf("%s (%d): %s", message, failoverErr.StatusCode, upstreamMsg)
+	} else if failoverErr.StatusCode == http.StatusPaymentRequired {
+		message = fmt.Sprintf("%s (%d)", message, failoverErr.StatusCode)
+	} else {
+		message = fmt.Sprintf("%s (%d): invalid DeepSeek credentials", message, failoverErr.StatusCode)
+	}
+	if err := s.accountRepo.SetError(ctx, accountID, message); err != nil {
+		slog.Warn("deepseek_auth_error_set_failed", "account_id", accountID, "status_code", failoverErr.StatusCode, "error", err)
 	}
 }
 
@@ -722,6 +785,24 @@ func (s *GatewayService) setKimiOverloaded(ctx context.Context, accountID int64,
 	}
 	if err := s.accountRepo.SetOverloaded(ctx, accountID, until); err != nil {
 		slog.Warn("kimi_overload_set_failed", "account_id", accountID, "error", err)
+	}
+}
+
+func (s *GatewayService) setDeepSeekRateLimited(ctx context.Context, accountID int64, resetAt time.Time) {
+	if s == nil || s.accountRepo == nil {
+		return
+	}
+	if err := s.accountRepo.SetRateLimited(ctx, accountID, resetAt); err != nil {
+		slog.Warn("deepseek_rate_limit_set_failed", "account_id", accountID, "error", err)
+	}
+}
+
+func (s *GatewayService) setDeepSeekOverloaded(ctx context.Context, accountID int64, until time.Time) {
+	if s == nil || s.accountRepo == nil {
+		return
+	}
+	if err := s.accountRepo.SetOverloaded(ctx, accountID, until); err != nil {
+		slog.Warn("deepseek_overload_set_failed", "account_id", accountID, "error", err)
 	}
 }
 
@@ -3933,6 +4014,9 @@ func (s *GatewayService) isModelSupportedByAccount(account *Account, requestedMo
 	}
 	if account.Platform == PlatformKimi {
 		return account.IsKimiModelSupported(requestedModel)
+	}
+	if account.Platform == PlatformDeepSeek {
+		return account.IsDeepSeekModelSupported(requestedModel)
 	}
 	if account.Platform == PlatformMiniMax {
 		return account.IsMiniMaxModelSupported(requestedModel)

@@ -229,6 +229,68 @@ func TestGetModelPricing_KimiForCodingFallback(t *testing.T) {
 	require.False(t, pricing.SupportsCacheBreakdown)
 }
 
+func TestGetModelPricing_DeepSeekFallback(t *testing.T) {
+	svc := newTestBillingService()
+
+	tests := []struct {
+		model             string
+		expectedInput     float64
+		expectedOutput    float64
+		expectedCacheRead float64
+	}{
+		{
+			model:             "deepseek-v4-flash",
+			expectedInput:     1.0 / 7.2 / 1_000_000,
+			expectedOutput:    2.0 / 7.2 / 1_000_000,
+			expectedCacheRead: 0.02 / 7.2 / 1_000_000,
+		},
+		{
+			model:             "DeepSeek-V4-Pro",
+			expectedInput:     3.0 / 7.2 / 1_000_000,
+			expectedOutput:    6.0 / 7.2 / 1_000_000,
+			expectedCacheRead: 0.025 / 7.2 / 1_000_000,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			pricing, err := svc.GetModelPricing(tt.model)
+			require.NoError(t, err)
+			require.NotNil(t, pricing)
+			require.InDelta(t, tt.expectedInput, pricing.InputPricePerToken, 1e-12)
+			require.InDelta(t, tt.expectedOutput, pricing.OutputPricePerToken, 1e-12)
+			require.InDelta(t, tt.expectedCacheRead, pricing.CacheReadPricePerToken, 1e-12)
+			require.Zero(t, pricing.CacheCreationPricePerToken)
+			require.False(t, pricing.SupportsCacheBreakdown)
+		})
+	}
+}
+
+func TestGetFallbackPricing_DeepSeekCompatNamesDoNotAlias(t *testing.T) {
+	svc := newTestBillingService()
+
+	require.Nil(t, svc.getFallbackPricing("deepseek-chat"))
+	require.Nil(t, svc.getFallbackPricing("deepseek-reasoner"))
+}
+
+func TestCalculateCost_DeepSeekFallbackUsesCacheMissAndHitPrices(t *testing.T) {
+	svc := newTestBillingService()
+
+	cost, err := svc.CalculateCost("deepseek-v4-flash", UsageTokens{
+		InputTokens:     1_000_000,
+		OutputTokens:    1_000_000,
+		CacheReadTokens: 1_000_000,
+	}, 1.0)
+	require.NoError(t, err)
+
+	expectedTotal := (1.0 + 2.0 + 0.02) / 7.2
+	require.InDelta(t, 1.0/7.2, cost.InputCost, 1e-10)
+	require.InDelta(t, 2.0/7.2, cost.OutputCost, 1e-10)
+	require.InDelta(t, 0.02/7.2, cost.CacheReadCost, 1e-10)
+	require.InDelta(t, expectedTotal, cost.TotalCost, 1e-10)
+	require.InDelta(t, expectedTotal, cost.ActualCost, 1e-10)
+}
+
 func TestCalculateCost_GLMFallback(t *testing.T) {
 	svc := newTestBillingService()
 

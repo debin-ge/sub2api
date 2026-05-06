@@ -99,6 +99,7 @@ export default {
       antigravity: 'Antigravity',
       glm: 'GLM',
       kimi: 'Kimi',
+      deepseek: 'DeepSeek',
       more: 'More'
     },
     // CTA section
@@ -875,7 +876,8 @@ export default {
       openai: 'OpenAI',
       anthropic: 'Anthropic',
       gemini: 'Gemini',
-      glm: 'GLM'
+      glm: 'GLM',
+      deepseek: 'DeepSeek'
     },
     extraModelsHeader: 'Extra Models',
     extraModelsEmpty: 'No extra models',
@@ -1984,7 +1986,8 @@ export default {
         antigravity: 'Antigravity',
         minimax: 'MiniMax',
         glm: 'GLM',
-      kimi: 'Kimi',
+        kimi: 'Kimi',
+        deepseek: 'DeepSeek',
       },
       deleteConfirm:
         "Are you sure you want to delete '{name}'? All associated API keys will no longer belong to any group.",
@@ -2584,7 +2587,8 @@ export default {
         antigravity: 'Antigravity',
         minimax: 'MiniMax',
         glm: 'GLM',
-      kimi: 'Kimi',
+        kimi: 'Kimi',
+        deepseek: 'DeepSeek',
       },
       types: {
         oauth: 'OAuth',
@@ -2914,6 +2918,9 @@ export default {
 	      },
 	      kimi: {
 	        apiKeyHint: 'Your Kimi Coding Plan API Key',
+	      },
+	      deepseek: {
+	        apiKeyHint: 'Your DeepSeek API Key',
 	      },
 	      anthropic: {
         apiKeyPassthrough: 'Auto passthrough (auth only)',
