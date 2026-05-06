@@ -127,6 +127,27 @@ func TestDeriveUpstreamEndpoint(t *testing.T) {
 			platform: service.PlatformGLM,
 			want:     EndpointResponses,
 		},
+		{
+			name:     "kimi messages",
+			inbound:  EndpointMessages,
+			rawPath:  "/v1/messages",
+			platform: service.PlatformKimi,
+			want:     EndpointMessages,
+		},
+		{
+			name:     "kimi chat completions",
+			inbound:  EndpointChatCompletions,
+			rawPath:  "/chat/completions",
+			platform: service.PlatformKimi,
+			want:     EndpointChatCompletions,
+		},
+		{
+			name:     "kimi responses remains inbound unsupported endpoint",
+			inbound:  EndpointResponses,
+			rawPath:  "/v1/responses",
+			platform: service.PlatformKimi,
+			want:     EndpointResponses,
+		},
 
 		// Unknown platform — passthrough.
 		{"unknown platform", "/v1/embeddings", "/v1/embeddings", "unknown", "/v1/embeddings"},

@@ -192,6 +192,30 @@ func TestGetModelPricing_GLMFallback(t *testing.T) {
 	}
 }
 
+func TestGetModelPricing_MiniMaxM27Fallback(t *testing.T) {
+	svc := newTestBillingService()
+
+	tests := []struct {
+		model          string
+		expectedOutput float64
+	}{
+		{model: "MiniMax-M2.7", expectedOutput: 1.2 / 1_000_000},
+		{model: "MiniMax-M2.7-highspeed", expectedOutput: 2.4 / 1_000_000},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			pricing, err := svc.GetModelPricing(tt.model)
+			require.NoError(t, err)
+			require.NotNil(t, pricing)
+			require.InDelta(t, 0.3/1_000_000, pricing.InputPricePerToken, 1e-12)
+			require.InDelta(t, tt.expectedOutput, pricing.OutputPricePerToken, 1e-12)
+			require.InDelta(t, 0.375/1_000_000, pricing.CacheCreationPricePerToken, 1e-12)
+			require.InDelta(t, 0.06/1_000_000, pricing.CacheReadPricePerToken, 1e-12)
+		})
+	}
+}
+
 func TestCalculateCost_GLMFallback(t *testing.T) {
 	svc := newTestBillingService()
 

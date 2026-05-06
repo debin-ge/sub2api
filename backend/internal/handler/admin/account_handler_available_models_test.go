@@ -170,3 +170,39 @@ func TestAccountHandlerGetAvailableModels_GLMFallsBackToOfficialModels(t *testin
 		ID string `json:"id"`
 	}{{ID: "GLM-5.1"}, {ID: "GLM-4.7"}, {ID: "GLM-4.5-air"}}, resp.Data)
 }
+
+func TestAccountHandlerGetAvailableModels_KimiAlwaysReturnsCodingModel(t *testing.T) {
+	svc := &availableModelsAdminService{
+		stubAdminService: newStubAdminService(),
+		account: service.Account{
+			ID:       46,
+			Name:     "kimi-coding",
+			Platform: service.PlatformKimi,
+			Type:     service.AccountTypeAPIKey,
+			Status:   service.StatusActive,
+			Credentials: map[string]any{
+				"api_key": "sk-kimi",
+				"model_mapping": map[string]any{
+					"claude-sonnet-4-5": "kimi-for-coding",
+				},
+			},
+		},
+	}
+	router := setupAvailableModelsRouter(svc)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/accounts/46/models", nil)
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var resp struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Equal(t, []struct {
+		ID string `json:"id"`
+	}{{ID: "kimi-for-coding"}}, resp.Data)
+}

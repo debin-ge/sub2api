@@ -177,6 +177,11 @@ const glmModels = [
   'GLM-5.1', 'GLM-4.7', 'GLM-4.5-air'
 ]
 
+// Kimi Coding Plan Gateway
+const kimiModels = [
+  'kimi-for-coding'
+]
+
 // 百度 文心
 const baiduModels = [
   'ernie-4.0-8k-latest', 'ernie-4.0-8k', 'ernie-4.0-turbo-8k',
@@ -224,6 +229,7 @@ const allModelsList: string[] = [
   ...doubaoModels,
   ...minimaxModels,
   ...glmModels,
+  ...kimiModels,
   ...baiduModels,
   ...sparkModels,
   ...hunyuanModels,
@@ -288,6 +294,10 @@ const glmPresetMappings = [
   { label: 'GLM-5.1 passthrough', from: 'GLM-5.1', to: 'GLM-5.1', color: 'bg-rose-100 text-rose-700 hover:bg-rose-200 dark:bg-rose-900/30 dark:text-rose-300' },
   { label: 'GLM-4.7 passthrough', from: 'GLM-4.7', to: 'GLM-4.7', color: 'bg-pink-100 text-pink-700 hover:bg-pink-200 dark:bg-pink-900/30 dark:text-pink-300' },
   { label: 'GLM-4.5-air passthrough', from: 'GLM-4.5-air', to: 'GLM-4.5-air', color: 'bg-sky-100 text-sky-700 hover:bg-sky-200 dark:bg-sky-900/30 dark:text-sky-300' }
+]
+
+const kimiPresetMappings = [
+  { label: 'kimi-for-coding passthrough', from: 'kimi-for-coding', to: 'kimi-for-coding', color: 'bg-lime-100 text-lime-700 hover:bg-lime-200 dark:bg-lime-900/30 dark:text-lime-300' }
 ]
 
 // Antigravity 预设映射（支持通配符）
@@ -391,6 +401,7 @@ export function getModelsByPlatform(platform: string): string[] {
     case 'doubao': return doubaoModels
     case 'minimax': return minimaxModels
     case 'glm': return glmModels
+    case 'kimi': return kimiModels
     case 'baidu': return baiduModels
     case 'spark': return sparkModels
     case 'hunyuan': return hunyuanModels
@@ -405,6 +416,7 @@ export function getPresetMappingsByPlatform(platform: string) {
   if (platform === 'gemini') return geminiPresetMappings
   if (platform === 'minimax') return minimaxPresetMappings
   if (platform === 'glm') return glmPresetMappings
+  if (platform === 'kimi') return kimiPresetMappings
   if (platform === 'antigravity') return antigravityPresetMappings
   if (platform === 'bedrock') return bedrockPresetMappings
   return anthropicPresetMappings

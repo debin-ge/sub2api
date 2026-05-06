@@ -78,6 +78,7 @@ const platformLabel = computed(() => {
   if (props.platform === 'antigravity') return 'Antigravity'
   if (props.platform === 'minimax') return 'MiniMax'
   if (props.platform === 'glm') return 'GLM'
+  if (props.platform === 'kimi') return 'Kimi'
   return 'Gemini'
 })
 
@@ -134,6 +135,9 @@ const platformClass = computed(() => {
   if (props.platform === 'glm') {
     return 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400'
   }
+  if (props.platform === 'kimi') {
+    return 'bg-lime-100 text-lime-700 dark:bg-lime-900/30 dark:text-lime-300'
+  }
   return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
 })
 
@@ -152,6 +156,9 @@ const typeClass = computed(() => {
   }
   if (props.platform === 'glm') {
     return 'bg-rose-100 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400'
+  }
+  if (props.platform === 'kimi') {
+    return 'bg-lime-100 text-lime-700 dark:bg-lime-900/30 dark:text-lime-300'
   }
   return 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400'
 })

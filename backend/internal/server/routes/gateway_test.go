@@ -24,6 +24,7 @@ func newGatewayRoutesTestRouterForPlatform(platform string) *gin.Engine {
 		OpenAIGateway:  &handler.OpenAIGatewayHandler{},
 		MiniMaxGateway: &handler.MiniMaxGatewayHandler{},
 		GLMGateway:     &handler.GLMGatewayHandler{},
+		KimiGateway:    &handler.KimiGatewayHandler{},
 	})
 }
 
@@ -275,4 +276,91 @@ func TestGatewayRoutesGLMDispatchDiffersWhenHandlerIsPresent(t *testing.T) {
 		require.Equal(t, http.StatusBadRequest, presentW.Code, "path=%s present handler", path)
 		require.Contains(t, presentW.Body.String(), "Request body is empty", "path=%s present handler", path)
 	}
+}
+
+func TestGatewayRoutesKimiMessagesDispatchesToKimiHandler(t *testing.T) {
+	router := newGatewayRoutesTestRouterForPlatform(service.PlatformKimi)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"kimi-for-coding","messages":[{"role":"user","content":"hello"}]}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusServiceUnavailable, w.Code)
+	require.Contains(t, w.Body.String(), "kimi gateway service unavailable")
+}
+
+func TestGatewayRoutesKimiChatCompletionsDispatchesToKimiHandler(t *testing.T) {
+	router := newGatewayRoutesTestRouterForPlatform(service.PlatformKimi)
+
+	for _, path := range []string{"/v1/chat/completions", "/chat/completions"} {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"model":"kimi-for-coding","messages":[{"role":"user","content":"hello"}]}`))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusServiceUnavailable, w.Code, "path=%s", path)
+		require.Contains(t, w.Body.String(), "kimi gateway service unavailable", "path=%s", path)
+	}
+}
+
+func TestGatewayRoutesKimiUnsupportedEndpointsReturnNotFound(t *testing.T) {
+	router := newGatewayRoutesTestRouterForPlatform(service.PlatformKimi)
+
+	for _, path := range []string{
+		"/v1/responses",
+		"/v1/responses/compact",
+		"/v1/messages/count_tokens",
+		"/responses",
+		"/responses/compact",
+		"/backend-api/codex/responses",
+		"/backend-api/codex/responses/compact",
+		"/v1/images/generations",
+		"/v1/images/edits",
+		"/images/generations",
+		"/images/edits",
+	} {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"model":"kimi-for-coding"}`))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusNotFound, w.Code, "path=%s should be Kimi unsupported", path)
+		require.Contains(t, w.Body.String(), "not_found_error", "path=%s", path)
+		require.Contains(t, w.Body.String(), "Kimi gateway supports /v1/messages and /v1/chat/completions only", "path=%s", path)
+	}
+}
+
+func TestGatewayRoutesKimiUnsupportedGetEndpointsReturnNotFound(t *testing.T) {
+	router := newGatewayRoutesTestRouterForPlatform(service.PlatformKimi)
+
+	for _, path := range []string{
+		"/v1/usage",
+		"/v1/responses",
+		"/responses",
+		"/backend-api/codex/responses",
+	} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		w := httptest.NewRecorder()
+
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusNotFound, w.Code, "path=%s should be Kimi unsupported", path)
+		require.Contains(t, w.Body.String(), "not_found_error", "path=%s", path)
+		require.Contains(t, w.Body.String(), "Kimi gateway supports /v1/messages and /v1/chat/completions only", "path=%s", path)
+	}
+}
+
+func TestGatewayRoutesKimiModelsReturnsDefaultList(t *testing.T) {
+	router := newGatewayRoutesTestRouterForPlatform(service.PlatformKimi)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Contains(t, w.Body.String(), "kimi-for-coding")
+	require.NotContains(t, w.Body.String(), "claude-sonnet")
 }

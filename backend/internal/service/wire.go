@@ -59,6 +59,11 @@ func ProvideGLMGatewayService(cfg *config.Config) *GLMGatewayService {
 	return NewGLMGatewayService(nil, compileResponseHeaderFilter(cfg))
 }
 
+// ProvideKimiGatewayService creates the Kimi Coding Plan gateway service.
+func ProvideKimiGatewayService(cfg *config.Config) *KimiGatewayService {
+	return NewKimiGatewayService(nil, compileResponseHeaderFilter(cfg))
+}
+
 // ProvideTokenRefreshService creates and starts TokenRefreshService
 func ProvideTokenRefreshService(
 	accountRepo AccountRepository,
@@ -460,6 +465,7 @@ var ProviderSet = wire.NewSet(
 	NewMiniMaxQuotaService,
 	ProvideMiniMaxGatewayService,
 	ProvideGLMGatewayService,
+	ProvideKimiGatewayService,
 	NewOAuthService,
 	NewOpenAIOAuthService,
 	NewGeminiOAuthService,

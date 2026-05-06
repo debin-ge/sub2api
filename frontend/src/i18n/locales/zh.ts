@@ -98,6 +98,7 @@ export default {
       gemini: 'Gemini',
       antigravity: 'Antigravity',
       glm: 'GLM',
+      kimi: 'Kimi',
       more: '更多'
     },
     // CTA 区块
@@ -2011,6 +2012,7 @@ export default {
         antigravity: 'Antigravity',
         minimax: 'MiniMax',
         glm: 'GLM',
+      kimi: 'Kimi',
       },
       saving: '保存中...',
       noGroups: '暂无分组',
@@ -2772,6 +2774,7 @@ export default {
         antigravity: 'Antigravity',
         minimax: 'MiniMax',
         glm: 'GLM',
+      kimi: 'Kimi',
       },
       types: {
         oauth: 'OAuth',
@@ -3053,6 +3056,9 @@ export default {
 	      },
 	      glm: {
 	        apiKeyHint: '您的 GLM Coding Plan API Key',
+	      },
+	      kimi: {
+	        apiKeyHint: '您的 Kimi Coding Plan API Key',
 	      },
 	      anthropic: {
         apiKeyPassthrough: '自动透传（仅替换认证）',

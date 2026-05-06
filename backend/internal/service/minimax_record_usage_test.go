@@ -54,7 +54,7 @@ func TestMiniMaxRecordUsageMissingPricingReturnsBillingError(t *testing.T) {
 		Result: &ForwardResult{
 			RequestID:     "minimax-missing-pricing",
 			Model:         "claude-sonnet-4-5",
-			UpstreamModel: "MiniMax-M2.7",
+			UpstreamModel: "MiniMax-Unknown-Model",
 			Usage: ClaudeUsage{
 				InputTokens:  11,
 				OutputTokens: 7,
@@ -97,7 +97,7 @@ func TestMiniMaxRecordUsageMissingPricingWithNilAPIKeyDoesNotPanic(t *testing.T)
 			Result: &ForwardResult{
 				RequestID:     "minimax-missing-pricing-nil-api-key",
 				Model:         "claude-sonnet-4-5",
-				UpstreamModel: "MiniMax-M2.7",
+				UpstreamModel: "MiniMax-Unknown-Model",
 				Usage: ClaudeUsage{
 					InputTokens:  11,
 					OutputTokens: 7,
@@ -118,6 +118,52 @@ func TestMiniMaxRecordUsageMissingPricingWithNilAPIKeyDoesNotPanic(t *testing.T)
 	require.Nil(t, usageRepo.lastLog)
 	require.Equal(t, 0, userRepo.deductCalls)
 	require.Equal(t, 0, subRepo.incrementCalls)
+}
+
+func TestMiniMaxRecordUsageUsesHighspeedFallbackPricing(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	userRepo := &openAIRecordUsageUserRepoStub{}
+	subRepo := &openAIRecordUsageSubRepoStub{}
+	svc := newMiniMaxGatewayRecordUsageServiceForTest(usageRepo, userRepo, subRepo)
+	groupID := int64(42)
+
+	err := svc.RecordUsage(context.Background(), &RecordUsageInput{
+		Result: &ForwardResult{
+			RequestID:     "minimax-highspeed-fallback-pricing",
+			Model:         "MiniMax-M2.7-highspeed",
+			UpstreamModel: "MiniMax-M2.7-highspeed",
+			Usage: ClaudeUsage{
+				InputTokens:              1_000_000,
+				OutputTokens:             1_000_000,
+				CacheCreationInputTokens: 1_000_000,
+				CacheReadInputTokens:     1_000_000,
+			},
+			Duration: time.Second,
+		},
+		APIKey: &APIKey{
+			ID:      7,
+			GroupID: &groupID,
+			Group: &Group{
+				ID:             groupID,
+				Platform:       PlatformMiniMax,
+				RateMultiplier: 1,
+			},
+		},
+		User: &User{ID: 99},
+		Account: &Account{
+			ID:       101,
+			Platform: PlatformMiniMax,
+			Type:     AccountTypeAPIKey,
+		},
+		InboundEndpoint:  "/v1/messages",
+		UpstreamEndpoint: "/v1/messages",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	require.Equal(t, "MiniMax-M2.7-highspeed", usageRepo.lastLog.Model)
+	require.InDelta(t, 3.135, usageRepo.lastLog.ActualCost, 1e-12)
+	require.InDelta(t, 3.135, userRepo.lastAmount, 1e-12)
 }
 
 func TestMiniMaxRecordUsageUsesUpstreamModelWhenPricingIsConfigured(t *testing.T) {

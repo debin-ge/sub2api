@@ -70,6 +70,10 @@ func glmCNYPerMillionTokens(cny float64) float64 {
 	return cny * glmCNYToUSDAccountingRate / 1_000_000
 }
 
+func miniMaxUSDPerMillionTokens(usd float64) float64 {
+	return usd / 1_000_000
+}
+
 func normalizeBillingServiceTier(serviceTier string) string {
 	return strings.ToLower(strings.TrimSpace(serviceTier))
 }
@@ -205,6 +209,22 @@ func (s *BillingService) initFallbackPricing() {
 		OutputPricePerToken:        12e-6,  // $12 per MTok
 		CacheCreationPricePerToken: 2e-6,   // $2 per MTok
 		CacheReadPricePerToken:     0.2e-6, // $0.20 per MTok
+		SupportsCacheBreakdown:     false,
+	}
+
+	// MiniMax M2.7 官方文本模型价格。
+	s.fallbackPrices["minimax-m2.7"] = &ModelPricing{
+		InputPricePerToken:         miniMaxUSDPerMillionTokens(0.3),
+		OutputPricePerToken:        miniMaxUSDPerMillionTokens(1.2),
+		CacheCreationPricePerToken: miniMaxUSDPerMillionTokens(0.375),
+		CacheReadPricePerToken:     miniMaxUSDPerMillionTokens(0.06),
+		SupportsCacheBreakdown:     false,
+	}
+	s.fallbackPrices["minimax-m2.7-highspeed"] = &ModelPricing{
+		InputPricePerToken:         miniMaxUSDPerMillionTokens(0.3),
+		OutputPricePerToken:        miniMaxUSDPerMillionTokens(2.4),
+		CacheCreationPricePerToken: miniMaxUSDPerMillionTokens(0.375),
+		CacheReadPricePerToken:     miniMaxUSDPerMillionTokens(0.06),
 		SupportsCacheBreakdown:     false,
 	}
 

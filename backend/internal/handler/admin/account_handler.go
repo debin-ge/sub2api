@@ -589,15 +589,15 @@ func (h *AccountHandler) Create(c *gin.Context) {
 }
 
 func validateCreateAccountRequest(req CreateAccountRequest) error {
-	if req.Platform != service.PlatformGLM {
+	if req.Platform != service.PlatformGLM && req.Platform != service.PlatformKimi {
 		return nil
 	}
 	if req.Type != service.AccountTypeAPIKey {
-		return errors.New("glm account type must be apikey")
+		return fmt.Errorf("%s account type must be apikey", req.Platform)
 	}
 	apiKey, _ := req.Credentials["api_key"].(string)
 	if strings.TrimSpace(apiKey) == "" {
-		return errors.New("glm account api_key is required")
+		return fmt.Errorf("%s account api_key is required", req.Platform)
 	}
 	return nil
 }
@@ -672,7 +672,7 @@ func (h *AccountHandler) Update(c *gin.Context) {
 }
 
 func validateUpdateAccountRequest(account *service.Account, req UpdateAccountRequest) error {
-	if account == nil || account.Platform != service.PlatformGLM {
+	if account == nil || (account.Platform != service.PlatformGLM && account.Platform != service.PlatformKimi) {
 		return nil
 	}
 
@@ -681,7 +681,7 @@ func validateUpdateAccountRequest(account *service.Account, req UpdateAccountReq
 		accountType = req.Type
 	}
 	if accountType != service.AccountTypeAPIKey {
-		return errors.New("glm account type must be apikey")
+		return fmt.Errorf("%s account type must be apikey", account.Platform)
 	}
 
 	credentials := account.Credentials
@@ -690,7 +690,7 @@ func validateUpdateAccountRequest(account *service.Account, req UpdateAccountReq
 	}
 	apiKey, _ := credentials["api_key"].(string)
 	if strings.TrimSpace(apiKey) == "" {
-		return errors.New("glm account api_key is required")
+		return fmt.Errorf("%s account api_key is required", account.Platform)
 	}
 	return nil
 }
@@ -2038,6 +2038,12 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 		return
 	}
 
+	// Handle Kimi Coding Plan accounts.
+	if account.Platform == service.PlatformKimi {
+		response.Success(c, buildKimiAvailableModels())
+		return
+	}
+
 	// Handle Claude/Anthropic accounts
 	// For OAuth and Setup-Token accounts: return default models
 	if account.IsOAuth() {
@@ -2098,6 +2104,20 @@ func buildGLMAvailableModels(mapping map[string]string) []claude.Model {
 		sort.Strings(modelIDs)
 	}
 
+	models := make([]claude.Model, 0, len(modelIDs))
+	for _, modelID := range modelIDs {
+		models = append(models, claude.Model{
+			ID:          modelID,
+			Type:        "model",
+			DisplayName: modelID,
+			CreatedAt:   "2024-01-01T00:00:00Z",
+		})
+	}
+	return models
+}
+
+func buildKimiAvailableModels() []claude.Model {
+	modelIDs := service.DefaultKimiModelIDs()
 	models := make([]claude.Model, 0, len(modelIDs))
 	for _, modelID := range modelIDs {
 		models = append(models, claude.Model{

@@ -56,6 +56,14 @@ describe('useModelWhitelist', () => {
     expect(models).toEqual(['GLM-5.1', 'GLM-4.7', 'GLM-4.5-air'])
   })
 
+  it('kimi 模型列表仅包含 Coding Plan 模型', () => {
+    const models = getModelsByPlatform('kimi')
+
+    expect(models).toEqual(['kimi-for-coding'])
+    expect(models).not.toContain('kimi-latest')
+    expect(models).not.toContain('claude-sonnet-4-5')
+  })
+
   it('glm 预设映射 Claude family aliases to GLM models', () => {
     const mappings = getPresetMappingsByPlatform('glm')
 
@@ -67,6 +75,14 @@ describe('useModelWhitelist', () => {
       expect.objectContaining({ from: 'claude-haiku-*', to: 'GLM-4.5-air' }),
       expect.objectContaining({ from: 'claude-haiku-4-5', to: 'GLM-4.5-air' })
     ]))
+  })
+
+  it('kimi 预设映射只提供 kimi-for-coding 透传', () => {
+    const mappings = getPresetMappingsByPlatform('kimi')
+
+    expect(mappings).toEqual([
+      expect.objectContaining({ from: 'kimi-for-coding', to: 'kimi-for-coding' })
+    ])
   })
 
   it('antigravity 模型列表会把新的 Gemini 图片模型排在前面', () => {
