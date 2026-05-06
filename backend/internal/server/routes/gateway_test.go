@@ -19,16 +19,21 @@ func newGatewayRoutesTestRouter() *gin.Engine {
 }
 
 func newGatewayRoutesTestRouterForPlatform(platform string) *gin.Engine {
+	return newGatewayRoutesTestRouterForPlatformWithHandlers(platform, &handler.Handlers{
+		Gateway:        &handler.GatewayHandler{},
+		OpenAIGateway:  &handler.OpenAIGatewayHandler{},
+		MiniMaxGateway: &handler.MiniMaxGatewayHandler{},
+		GLMGateway:     &handler.GLMGatewayHandler{},
+	})
+}
+
+func newGatewayRoutesTestRouterForPlatformWithHandlers(platform string, handlers *handler.Handlers) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 
 	RegisterGatewayRoutes(
 		router,
-		&handler.Handlers{
-			Gateway:        &handler.GatewayHandler{},
-			OpenAIGateway:  &handler.OpenAIGatewayHandler{},
-			MiniMaxGateway: &handler.MiniMaxGatewayHandler{},
-		},
+		handlers,
 		servermiddleware.APIKeyAuthMiddleware(func(c *gin.Context) {
 			groupID := int64(1)
 			c.Set(string(servermiddleware.ContextKeyAPIKey), &service.APIKey{
@@ -154,5 +159,120 @@ func TestGatewayRoutesMiniMaxUnsupportedGetEndpointsReturnNotFound(t *testing.T)
 		require.Equal(t, http.StatusNotFound, w.Code, "path=%s should be MiniMax unsupported", path)
 		require.Contains(t, w.Body.String(), "not_found_error", "path=%s", path)
 		require.Contains(t, w.Body.String(), "MiniMax gateway supports /v1/messages and /v1/chat/completions only", "path=%s", path)
+	}
+}
+
+func TestGatewayRoutesGLMMessagesDispatchesToGLMHandler(t *testing.T) {
+	router := newGatewayRoutesTestRouterForPlatform(service.PlatformGLM)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"hello"}]}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusServiceUnavailable, w.Code)
+	require.Contains(t, w.Body.String(), "glm gateway service unavailable")
+}
+
+func TestGatewayRoutesGLMChatCompletionsDispatchesToGLMHandler(t *testing.T) {
+	router := newGatewayRoutesTestRouterForPlatform(service.PlatformGLM)
+
+	for _, path := range []string{"/v1/chat/completions", "/chat/completions"} {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"model":"glm-4.5-air","messages":[{"role":"user","content":"hello"}]}`))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusServiceUnavailable, w.Code, "path=%s", path)
+		require.Contains(t, w.Body.String(), "glm gateway service unavailable", "path=%s", path)
+	}
+}
+
+func TestGatewayRoutesGLMUnsupportedEndpointsReturnNotFound(t *testing.T) {
+	router := newGatewayRoutesTestRouterForPlatform(service.PlatformGLM)
+
+	for _, path := range []string{
+		"/v1/responses",
+		"/v1/responses/compact",
+		"/v1/messages/count_tokens",
+		"/responses",
+		"/responses/compact",
+		"/backend-api/codex/responses",
+		"/backend-api/codex/responses/compact",
+		"/v1/images/generations",
+		"/v1/images/edits",
+		"/images/generations",
+		"/images/edits",
+	} {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"model":"glm-5.1"}`))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusNotFound, w.Code, "path=%s should be GLM unsupported", path)
+		require.Contains(t, w.Body.String(), "not_found_error", "path=%s", path)
+		require.Contains(t, w.Body.String(), "GLM gateway supports /v1/messages and /v1/chat/completions only", "path=%s", path)
+	}
+}
+
+func TestGatewayRoutesGLMUnsupportedGetEndpointsReturnNotFound(t *testing.T) {
+	router := newGatewayRoutesTestRouterForPlatform(service.PlatformGLM)
+
+	for _, path := range []string{
+		"/v1/usage",
+		"/v1/responses",
+		"/responses",
+		"/backend-api/codex/responses",
+	} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		w := httptest.NewRecorder()
+
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusNotFound, w.Code, "path=%s should be GLM unsupported", path)
+		require.Contains(t, w.Body.String(), "not_found_error", "path=%s", path)
+		require.Contains(t, w.Body.String(), "GLM gateway supports /v1/messages and /v1/chat/completions only", "path=%s", path)
+	}
+}
+
+func TestGatewayRoutesGLMModelsReturnsDefaultList(t *testing.T) {
+	router := newGatewayRoutesTestRouterForPlatform(service.PlatformGLM)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Contains(t, w.Body.String(), "GLM-5.1")
+	require.Contains(t, w.Body.String(), "GLM-4.7")
+	require.Contains(t, w.Body.String(), "GLM-4.5-air")
+}
+
+func TestGatewayRoutesGLMDispatchDiffersWhenHandlerIsPresent(t *testing.T) {
+	for _, path := range []string{"/v1/messages", "/v1/chat/completions"} {
+		nilRouter := newGatewayRoutesTestRouterForPlatformWithHandlers(service.PlatformGLM, &handler.Handlers{
+			Gateway:       &handler.GatewayHandler{},
+			OpenAIGateway: &handler.OpenAIGatewayHandler{},
+		})
+		presentRouter := newGatewayRoutesTestRouterForPlatformWithHandlers(service.PlatformGLM, &handler.Handlers{
+			Gateway:       &handler.GatewayHandler{},
+			OpenAIGateway: &handler.OpenAIGatewayHandler{},
+			GLMGateway:    &handler.GLMGatewayHandler{},
+		})
+
+		nilReq := httptest.NewRequest(http.MethodPost, path, nil)
+		nilW := httptest.NewRecorder()
+		nilRouter.ServeHTTP(nilW, nilReq)
+
+		presentReq := httptest.NewRequest(http.MethodPost, path, nil)
+		presentW := httptest.NewRecorder()
+		presentRouter.ServeHTTP(presentW, presentReq)
+
+		require.Equal(t, http.StatusServiceUnavailable, nilW.Code, "path=%s nil handler", path)
+		require.Contains(t, nilW.Body.String(), "glm gateway service unavailable", "path=%s nil handler", path)
+		require.Equal(t, http.StatusBadRequest, presentW.Code, "path=%s present handler", path)
+		require.Contains(t, presentW.Body.String(), "Request body is empty", "path=%s present handler", path)
 	}
 }

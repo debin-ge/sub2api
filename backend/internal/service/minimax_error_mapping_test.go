@@ -120,6 +120,9 @@ type miniMaxDegradeAccountRepo struct {
 
 	overloadedID  int64
 	overloadUntil time.Time
+
+	errorID  int64
+	errorMsg string
 }
 
 func (r *miniMaxDegradeAccountRepo) SetRateLimited(ctx context.Context, id int64, resetAt time.Time) error {
@@ -131,6 +134,12 @@ func (r *miniMaxDegradeAccountRepo) SetRateLimited(ctx context.Context, id int64
 func (r *miniMaxDegradeAccountRepo) SetOverloaded(ctx context.Context, id int64, until time.Time) error {
 	r.overloadedID = id
 	r.overloadUntil = until
+	return nil
+}
+
+func (r *miniMaxDegradeAccountRepo) SetError(ctx context.Context, id int64, errorMsg string) error {
+	r.errorID = id
+	r.errorMsg = errorMsg
 	return nil
 }
 

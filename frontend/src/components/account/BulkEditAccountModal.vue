@@ -83,7 +83,10 @@
       </div>
 
       <!-- Base URL (API Key only) -->
-      <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
+      <div
+        v-if="!targetMayIncludeGLM"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
         <div class="mb-3 flex items-center justify-between">
           <label
             id="bulk-edit-base-url-label"
@@ -115,8 +118,11 @@
         </p>
       </div>
 
-      <!-- Model restriction -->
-      <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
+	      <!-- Model restriction -->
+	      <div
+	        v-if="canEditModelRestriction"
+	        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+	      >
         <div class="mb-3 flex items-center justify-between">
           <label
             id="bulk-edit-model-restriction-label"
@@ -347,7 +353,10 @@
       </div>
 
       <!-- Custom error codes -->
-      <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
+      <div
+        v-if="!targetMayIncludeGLM"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
         <div class="mb-3 flex items-center justify-between">
           <div>
             <label
@@ -445,7 +454,10 @@
       </div>
 
       <!-- Intercept warmup requests (Anthropic only) -->
-      <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
+      <div
+        v-if="!targetMayIncludeGLM"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
         <div class="flex items-center justify-between">
           <div class="flex-1 pr-4">
             <label
@@ -1040,40 +1052,79 @@ const targetPreviewCount = computed(() => props.target?.previewCount ?? props.ac
 const targetSelectedPlatforms = computed(() => props.target?.selectedPlatforms ?? props.selectedPlatforms)
 const targetSelectedTypes = computed(() => props.target?.selectedTypes ?? props.selectedTypes)
 const isMixedPlatform = computed(() => targetSelectedPlatforms.value.length > 1)
+const filteredPlatform = computed(() => (
+  targetMode.value === 'filtered' && typeof props.target?.filters?.platform === 'string'
+    ? props.target.filters.platform
+    : ''
+))
+const filteredType = computed(() => (
+  targetMode.value === 'filtered' && typeof props.target?.filters?.type === 'string'
+    ? props.target.filters.type
+    : ''
+))
+const capabilityPlatforms = computed<AccountPlatform[]>(() => (
+  targetMode.value === 'filtered'
+    ? filteredPlatform.value ? [filteredPlatform.value as AccountPlatform] : []
+    : targetSelectedPlatforms.value
+))
+const capabilityTypes = computed<AccountType[]>(() => (
+  targetMode.value === 'filtered'
+    ? filteredType.value ? [filteredType.value as AccountType] : []
+    : targetSelectedTypes.value
+))
+const targetMayIncludeGLM = computed(() => {
+  if (targetSelectedPlatforms.value.includes('glm')) {
+    return true
+  }
+  if (targetMode.value !== 'filtered') {
+    return false
+  }
+  return filteredPlatform.value === '' || filteredPlatform.value === 'glm'
+})
+
+const targetIsGLMAPIKeyOnly = computed(() => (
+  capabilityPlatforms.value.length === 1 &&
+  capabilityPlatforms.value[0] === 'glm' &&
+  capabilityTypes.value.length > 0 &&
+  capabilityTypes.value.every(t => t === 'apikey')
+))
+
+const canEditModelRestriction = computed(() => !targetMayIncludeGLM.value || targetIsGLMAPIKeyOnly.value)
 
 const allOpenAIPassthroughCapable = computed(() => {
   return (
-    targetSelectedPlatforms.value.length === 1 &&
-    targetSelectedPlatforms.value[0] === 'openai' &&
-    targetSelectedTypes.value.length > 0 &&
-    targetSelectedTypes.value.every(t => t === 'oauth' || t === 'apikey')
+    capabilityPlatforms.value.length === 1 &&
+    capabilityPlatforms.value[0] === 'openai' &&
+    capabilityTypes.value.length > 0 &&
+    capabilityTypes.value.every(t => t === 'oauth' || t === 'apikey')
   )
 })
 
 const allOpenAIOAuth = computed(() => {
   return (
-    targetSelectedPlatforms.value.length === 1 &&
-    targetSelectedPlatforms.value[0] === 'openai' &&
-    targetSelectedTypes.value.length > 0 &&
-    targetSelectedTypes.value.every(t => t === 'oauth')
+    capabilityPlatforms.value.length === 1 &&
+    capabilityPlatforms.value[0] === 'openai' &&
+    capabilityTypes.value.length > 0 &&
+    capabilityTypes.value.every(t => t === 'oauth')
   )
 })
 
 const allOpenAIAPIKey = computed(() => {
   return (
-    targetSelectedPlatforms.value.length === 1 &&
-    targetSelectedPlatforms.value[0] === 'openai' &&
-    targetSelectedTypes.value.length > 0 &&
-    targetSelectedTypes.value.every(t => t === 'apikey')
+    capabilityPlatforms.value.length === 1 &&
+    capabilityPlatforms.value[0] === 'openai' &&
+    capabilityTypes.value.length > 0 &&
+    capabilityTypes.value.every(t => t === 'apikey')
   )
 })
 
 // 是否全部为 Anthropic OAuth/SetupToken（RPM 配置仅在此条件下显示）
 const allAnthropicOAuthOrSetupToken = computed(() => {
   return (
-    targetSelectedPlatforms.value.length === 1 &&
-    targetSelectedPlatforms.value[0] === 'anthropic' &&
-    targetSelectedTypes.value.every(t => t === 'oauth' || t === 'setup-token')
+    capabilityPlatforms.value.length === 1 &&
+    capabilityPlatforms.value[0] === 'anthropic' &&
+    capabilityTypes.value.length > 0 &&
+    capabilityTypes.value.every(t => t === 'oauth' || t === 'setup-token')
   )
 })
 
@@ -1304,7 +1355,7 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
     updates.group_ids = groupIds.value
   }
 
-  if (enableBaseUrl.value) {
+  if (!targetMayIncludeGLM.value && enableBaseUrl.value) {
     const baseUrlValue = baseUrl.value.trim()
     if (baseUrlValue) {
       credentials.base_url = baseUrlValue
@@ -1312,7 +1363,7 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
     }
   }
 
-  if (enableOpenAIPassthrough.value) {
+  if (allOpenAIPassthroughCapable.value && enableOpenAIPassthrough.value) {
     const extra = ensureExtra()
     extra.openai_passthrough = openaiPassthroughEnabled.value
     if (!openaiPassthroughEnabled.value) {
@@ -1320,7 +1371,11 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
     }
   }
 
-  if (enableModelRestriction.value && !isOpenAIModelRestrictionDisabled.value) {
+  if (
+    canEditModelRestriction.value &&
+    enableModelRestriction.value &&
+    !isOpenAIModelRestrictionDisabled.value
+  ) {
     // 统一使用 model_mapping 字段
     if (modelRestrictionMode.value === 'whitelist') {
       // 白名单模式：将模型转换为 model_mapping 格式（key=value）
@@ -1339,13 +1394,13 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
     }
   }
 
-  if (enableCustomErrorCodes.value) {
+  if (!targetMayIncludeGLM.value && enableCustomErrorCodes.value) {
     credentials.custom_error_codes_enabled = true
     credentials.custom_error_codes = [...selectedErrorCodes.value]
     credentialsChanged = true
   }
 
-  if (enableInterceptWarmup.value) {
+  if (!targetMayIncludeGLM.value && enableInterceptWarmup.value) {
     credentials.intercept_warmup_requests = interceptWarmupRequests.value
     credentialsChanged = true
   }
@@ -1354,7 +1409,7 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
     updates.credentials = credentials
   }
 
-  if (enableOpenAIWSMode.value) {
+  if (allOpenAIOAuth.value && enableOpenAIWSMode.value) {
     const extra = ensureExtra()
     extra.openai_oauth_responses_websockets_v2_mode = openaiOAuthResponsesWebSocketV2Mode.value
     extra.openai_oauth_responses_websockets_v2_enabled = isOpenAIWSModeEnabled(
@@ -1362,7 +1417,7 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
     )
   }
 
-  if (enableOpenAIAPIKeyWSMode.value) {
+  if (allOpenAIAPIKey.value && enableOpenAIAPIKeyWSMode.value) {
     const extra = ensureExtra()
     extra.openai_apikey_responses_websockets_v2_mode = openaiAPIKeyResponsesWebSocketV2Mode.value
     extra.openai_apikey_responses_websockets_v2_enabled = isOpenAIWSModeEnabled(
@@ -1370,13 +1425,13 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
     )
   }
 
-  if (enableCodexCLIOnly.value) {
+  if (allOpenAIOAuth.value && enableCodexCLIOnly.value) {
     const extra = ensureExtra()
     extra.codex_cli_only = codexCLIOnlyEnabled.value
   }
 
   // RPM limit settings (写入 extra 字段)
-  if (enableRpmLimit.value) {
+  if (allAnthropicOAuthOrSetupToken.value && enableRpmLimit.value) {
     const extra = ensureExtra()
     if (rpmLimitEnabled.value && bulkBaseRpm.value != null && bulkBaseRpm.value > 0) {
       extra.base_rpm = bulkBaseRpm.value
@@ -1396,7 +1451,7 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
   }
 
   // UMQ mode（独立于 RPM 保存）
-  if (userMsgQueueMode.value !== null) {
+  if (allAnthropicOAuthOrSetupToken.value && userMsgQueueMode.value !== null) {
     const umqExtra = ensureExtra()
     umqExtra.user_msg_queue_mode = userMsgQueueMode.value  // '' = 清除账号级覆盖
     umqExtra.user_msg_queue_enabled = false  // 清理旧字段（JSONB merge）

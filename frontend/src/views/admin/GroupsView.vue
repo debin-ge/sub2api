@@ -108,6 +108,8 @@
                       ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
                       : value === 'minimax'
                         ? 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300'
+                        : value === 'glm'
+                          ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400'
                         : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
               ]"
             >
@@ -2667,6 +2669,8 @@
                           ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
                           : group.platform === 'minimax'
                             ? 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300'
+                            : group.platform === 'glm'
+                              ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400'
                             : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
                   ]"
                 >
@@ -2830,6 +2834,7 @@ const platformOptions = computed(() => [
   { value: "gemini", label: "Gemini" },
   { value: "antigravity", label: "Antigravity" },
   { value: "minimax", label: "MiniMax" },
+  { value: "glm", label: "GLM" },
 ]);
 
 const platformFilterOptions = computed(() => [
@@ -2839,6 +2844,7 @@ const platformFilterOptions = computed(() => [
   { value: "gemini", label: "Gemini" },
   { value: "antigravity", label: "Antigravity" },
   { value: "minimax", label: "MiniMax" },
+  { value: "glm", label: "GLM" },
 ]);
 
 const editStatusOptions = computed(() => [

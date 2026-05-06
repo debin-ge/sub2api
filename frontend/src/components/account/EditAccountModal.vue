@@ -67,6 +67,33 @@
             </div>
           </div>
         </template>
+        <template v-else-if="account.platform === 'glm'">
+          <div>
+            <label class="input-label">GLM API Key</label>
+            <input
+              v-model="editApiKey"
+              data-testid="glm-api-key"
+              type="password"
+              class="input font-mono"
+              autocomplete="new-password"
+              data-1p-ignore
+              data-lpignore="true"
+              data-bwignore="true"
+              placeholder="sk-..."
+            />
+            <p class="input-hint">{{ t('admin.accounts.leaveEmptyToKeep') }}</p>
+          </div>
+          <div class="grid grid-cols-1 gap-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800 dark:border-rose-800/40 dark:bg-rose-900/20 dark:text-rose-200 sm:grid-cols-2">
+            <div>
+              <div class="font-medium">Anthropic-compatible</div>
+              <div class="mt-1 break-all font-mono">{{ GLM_ANTHROPIC_BASE_URL }}</div>
+            </div>
+            <div>
+              <div class="font-medium">OpenAI-compatible</div>
+              <div class="mt-1 break-all font-mono">{{ GLM_OPENAI_BASE_URL }}</div>
+            </div>
+          </div>
+        </template>
         <template v-else>
           <div>
             <label class="input-label">{{ t('admin.accounts.baseUrl') }}</label>
@@ -297,7 +324,7 @@
         </div>
 
         <!-- Pool Mode Section -->
-        <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
+        <div v-if="account.platform !== 'glm'" class="border-t border-gray-200 pt-4 dark:border-dark-600">
           <div class="mb-3 flex items-center justify-between">
             <div>
               <label class="input-label mb-0">{{ t('admin.accounts.poolMode') }}</label>
@@ -349,7 +376,7 @@
         </div>
 
         <!-- Custom Error Codes Section -->
-        <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
+        <div v-if="account.platform !== 'glm'" class="border-t border-gray-200 pt-4 dark:border-dark-600">
           <div class="mb-3 flex items-center justify-between">
             <div>
               <label class="input-label mb-0">{{ t('admin.accounts.customErrorCodes') }}</label>
@@ -1108,7 +1135,7 @@
       </div>
 
       <!-- Temp Unschedulable Rules -->
-      <div class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4">
+      <div v-if="account?.platform !== 'glm'" class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4">
         <div class="mb-3 flex items-center justify-between">
           <div>
             <label class="input-label mb-0">{{ t('admin.accounts.tempUnschedulable.title') }}</label>
@@ -1482,7 +1509,7 @@
       </div>
       <!-- 配额控制 (非 Anthropic apikey/bedrock) -->
       <div
-        v-else-if="account?.type === 'apikey' || account?.type === 'bedrock'"
+        v-else-if="account?.platform !== 'glm' && (account?.type === 'apikey' || account?.type === 'bedrock')"
         class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4"
       >
         <div class="mb-3">
@@ -2178,6 +2205,8 @@ import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
 import {
   MINIMAX_ANTHROPIC_BASE_URL,
   MINIMAX_OPENAI_BASE_URL,
+  GLM_ANTHROPIC_BASE_URL,
+  GLM_OPENAI_BASE_URL,
   VERTEX_LOCATION_OPTIONS
 } from '@/constants/account'
 import {
@@ -2431,6 +2460,7 @@ const defaultBaseUrl = computed(() => {
   if (props.account?.platform === 'openai') return 'https://api.openai.com'
   if (props.account?.platform === 'gemini') return 'https://generativelanguage.googleapis.com'
   if (props.account?.platform === 'minimax') return MINIMAX_ANTHROPIC_BASE_URL
+  if (props.account?.platform === 'glm') return GLM_ANTHROPIC_BASE_URL
   return 'https://api.anthropic.com'
 })
 
@@ -2649,6 +2679,8 @@ const syncFormFromAccount = (newAccount: Account | null) => {
           ? 'https://generativelanguage.googleapis.com'
           : newAccount.platform === 'minimax'
             ? MINIMAX_ANTHROPIC_BASE_URL
+            : newAccount.platform === 'glm'
+              ? GLM_ANTHROPIC_BASE_URL
             : 'https://api.anthropic.com'
     editBaseUrl.value = (credentials.base_url as string) || platformDefaultUrl
     if (newAccount.platform === 'minimax') {
@@ -2780,6 +2812,8 @@ const syncFormFromAccount = (newAccount: Account | null) => {
           ? 'https://generativelanguage.googleapis.com'
           : newAccount.platform === 'minimax'
             ? MINIMAX_ANTHROPIC_BASE_URL
+            : newAccount.platform === 'glm'
+              ? GLM_ANTHROPIC_BASE_URL
             : 'https://api.anthropic.com'
     editBaseUrl.value = platformDefaultUrl
 
@@ -3292,6 +3326,19 @@ const handleSubmit = async () => {
         newCredentials.base_url_openai =
           editMiniMaxOpenAIBaseUrl.value.trim() || MINIMAX_OPENAI_BASE_URL
         delete newCredentials.base_url
+      } else if (props.account.platform === 'glm') {
+        delete newCredentials.auth_scheme
+        delete newCredentials.base_url
+        delete newCredentials.base_url_anthropic
+        delete newCredentials.base_url_openai
+        delete newCredentials.compact_model_mapping
+        delete newCredentials.pool_mode
+        delete newCredentials.pool_mode_retry_count
+        delete newCredentials.custom_error_codes_enabled
+        delete newCredentials.custom_error_codes
+        delete newCredentials.intercept_warmup_requests
+        delete newCredentials.temp_unschedulable_enabled
+        delete newCredentials.temp_unschedulable_rules
       } else {
         newCredentials.base_url = editBaseUrl.value.trim() || defaultBaseUrl.value
       }
@@ -3329,27 +3376,29 @@ const handleSubmit = async () => {
       }
 
       // Add pool mode if enabled
-      if (poolModeEnabled.value) {
+      if (props.account.platform !== 'glm' && poolModeEnabled.value) {
         newCredentials.pool_mode = true
         newCredentials.pool_mode_retry_count = normalizePoolModeRetryCount(poolModeRetryCount.value)
-      } else {
+      } else if (props.account.platform !== 'glm') {
         delete newCredentials.pool_mode
         delete newCredentials.pool_mode_retry_count
       }
 
       // Add custom error codes if enabled
-      if (customErrorCodesEnabled.value) {
+      if (props.account.platform !== 'glm' && customErrorCodesEnabled.value) {
         newCredentials.custom_error_codes_enabled = true
         newCredentials.custom_error_codes = [...selectedErrorCodes.value]
-      } else {
+      } else if (props.account.platform !== 'glm') {
         delete newCredentials.custom_error_codes_enabled
         delete newCredentials.custom_error_codes
       }
 
       // Add intercept warmup requests setting
-      applyInterceptWarmup(newCredentials, interceptWarmupRequests.value, 'edit')
-      if (!applyTempUnschedConfig(newCredentials)) {
-        return
+      if (props.account.platform !== 'glm') {
+        applyInterceptWarmup(newCredentials, interceptWarmupRequests.value, 'edit')
+        if (!applyTempUnschedConfig(newCredentials)) {
+          return
+        }
       }
 
       updatePayload.credentials = newCredentials
@@ -3691,7 +3740,7 @@ const handleSubmit = async () => {
     }
 
     // For apikey/bedrock accounts, handle quota_limit in extra
-    if (props.account.type === 'apikey' || props.account.type === 'bedrock') {
+    if (props.account.platform !== 'glm' && (props.account.type === 'apikey' || props.account.type === 'bedrock')) {
       const currentExtra = (updatePayload.extra as Record<string, unknown>) ||
         (props.account.extra as Record<string, unknown>) || {}
       const newExtra: Record<string, unknown> = { ...currentExtra }

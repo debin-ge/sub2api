@@ -106,6 +106,27 @@ func TestDeriveUpstreamEndpoint(t *testing.T) {
 			platform: service.PlatformMiniMax,
 			want:     EndpointResponses,
 		},
+		{
+			name:     "glm messages",
+			inbound:  EndpointMessages,
+			rawPath:  "/v1/messages",
+			platform: service.PlatformGLM,
+			want:     EndpointMessages,
+		},
+		{
+			name:     "glm chat completions",
+			inbound:  EndpointChatCompletions,
+			rawPath:  "/chat/completions",
+			platform: service.PlatformGLM,
+			want:     EndpointChatCompletions,
+		},
+		{
+			name:     "glm responses remains inbound unsupported endpoint",
+			inbound:  EndpointResponses,
+			rawPath:  "/v1/responses",
+			platform: service.PlatformGLM,
+			want:     EndpointResponses,
+		},
 
 		// Unknown platform — passthrough.
 		{"unknown platform", "/v1/embeddings", "/v1/embeddings", "unknown", "/v1/embeddings"},

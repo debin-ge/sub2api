@@ -11,6 +11,7 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -521,6 +522,10 @@ func (h *AccountHandler) Create(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
+	if err := validateCreateAccountRequest(req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
 	if req.RateMultiplier != nil && *req.RateMultiplier < 0 {
 		response.BadRequest(c, "rate_multiplier must be >= 0")
 		return
@@ -583,6 +588,20 @@ func (h *AccountHandler) Create(c *gin.Context) {
 	response.Success(c, result.Data)
 }
 
+func validateCreateAccountRequest(req CreateAccountRequest) error {
+	if req.Platform != service.PlatformGLM {
+		return nil
+	}
+	if req.Type != service.AccountTypeAPIKey {
+		return errors.New("glm account type must be apikey")
+	}
+	apiKey, _ := req.Credentials["api_key"].(string)
+	if strings.TrimSpace(apiKey) == "" {
+		return errors.New("glm account api_key is required")
+	}
+	return nil
+}
+
 // Update handles updating an account
 // PUT /api/v1/admin/accounts/:id
 func (h *AccountHandler) Update(c *gin.Context) {
@@ -595,6 +614,15 @@ func (h *AccountHandler) Update(c *gin.Context) {
 	var req UpdateAccountRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	existingAccount, err := h.adminService.GetAccount(c.Request.Context(), accountID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	if err := validateUpdateAccountRequest(existingAccount, req); err != nil {
+		response.BadRequest(c, err.Error())
 		return
 	}
 	if req.RateMultiplier != nil && *req.RateMultiplier < 0 {
@@ -641,6 +669,30 @@ func (h *AccountHandler) Update(c *gin.Context) {
 	}
 
 	response.Success(c, h.buildAccountResponseWithRuntime(c.Request.Context(), account))
+}
+
+func validateUpdateAccountRequest(account *service.Account, req UpdateAccountRequest) error {
+	if account == nil || account.Platform != service.PlatformGLM {
+		return nil
+	}
+
+	accountType := account.Type
+	if req.Type != "" {
+		accountType = req.Type
+	}
+	if accountType != service.AccountTypeAPIKey {
+		return errors.New("glm account type must be apikey")
+	}
+
+	credentials := account.Credentials
+	if req.Credentials != nil {
+		credentials = req.Credentials
+	}
+	apiKey, _ := credentials["api_key"].(string)
+	if strings.TrimSpace(apiKey) == "" {
+		return errors.New("glm account api_key is required")
+	}
+	return nil
 }
 
 // Delete handles deleting an account
@@ -1240,6 +1292,15 @@ func (h *AccountHandler) BatchCreate(c *gin.Context) {
 		var openaiPrivacyAccounts []*service.Account
 
 		for _, item := range req.Accounts {
+			if err := validateCreateAccountRequest(item); err != nil {
+				failed++
+				results = append(results, gin.H{
+					"name":    item.Name,
+					"success": false,
+					"error":   err.Error(),
+				})
+				continue
+			}
 			if item.RateMultiplier != nil && *item.RateMultiplier < 0 {
 				failed++
 				results = append(results, gin.H{
@@ -1971,6 +2032,12 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 		return
 	}
 
+	// Handle GLM Coding Plan accounts.
+	if account.Platform == service.PlatformGLM {
+		response.Success(c, buildGLMAvailableModels(account.GetModelMapping()))
+		return
+	}
+
 	// Handle Claude/Anthropic accounts
 	// For OAuth and Setup-Token accounts: return default models
 	if account.IsOAuth() {
@@ -2010,6 +2077,37 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 	}
 
 	response.Success(c, models)
+}
+
+func buildGLMAvailableModels(mapping map[string]string) []claude.Model {
+	modelIDs := service.DefaultGLMModelIDs()
+	if len(mapping) > 0 {
+		modelIDs = make([]string, 0, len(mapping))
+		seen := make(map[string]struct{}, len(mapping))
+		for requestedModel := range mapping {
+			modelID := service.NormalizeGLMModel(strings.TrimSpace(requestedModel))
+			if modelID == "" {
+				continue
+			}
+			if _, exists := seen[modelID]; exists {
+				continue
+			}
+			seen[modelID] = struct{}{}
+			modelIDs = append(modelIDs, modelID)
+		}
+		sort.Strings(modelIDs)
+	}
+
+	models := make([]claude.Model, 0, len(modelIDs))
+	for _, modelID := range modelIDs {
+		models = append(models, claude.Model{
+			ID:          modelID,
+			Type:        "model",
+			DisplayName: modelID,
+			CreatedAt:   "2024-01-01T00:00:00Z",
+		})
+	}
+	return models
 }
 
 // SetPrivacy handles setting privacy for a single OpenAI/Antigravity OAuth account

@@ -63,7 +63,12 @@ const (
 	openAIGPT54LongContextInputThreshold   = 272000
 	openAIGPT54LongContextInputMultiplier  = 2.0
 	openAIGPT54LongContextOutputMultiplier = 1.5
+	glmCNYToUSDAccountingRate              = 1.0 / 7.2
 )
+
+func glmCNYPerMillionTokens(cny float64) float64 {
+	return cny * glmCNYToUSDAccountingRate / 1_000_000
+}
 
 func normalizeBillingServiceTier(serviceTier string) string {
 	return strings.ToLower(strings.TrimSpace(serviceTier))
@@ -203,6 +208,30 @@ func (s *BillingService) initFallbackPricing() {
 		SupportsCacheBreakdown:     false,
 	}
 
+	// GLM Coding Plan 中国区官方端点价格。官方价格为 CNY/百万 tokens；
+	// 当前系统内部余额/额度统一按 USD 口径记录，MVP 采用固定核算汇率换算。
+	s.fallbackPrices["glm-5.1"] = &ModelPricing{
+		InputPricePerToken:         glmCNYPerMillionTokens(6),
+		OutputPricePerToken:        glmCNYPerMillionTokens(24),
+		CacheCreationPricePerToken: 0,
+		CacheReadPricePerToken:     glmCNYPerMillionTokens(1.3),
+		SupportsCacheBreakdown:     false,
+	}
+	s.fallbackPrices["glm-4.7"] = &ModelPricing{
+		InputPricePerToken:         glmCNYPerMillionTokens(2),
+		OutputPricePerToken:        glmCNYPerMillionTokens(8),
+		CacheCreationPricePerToken: 0,
+		CacheReadPricePerToken:     glmCNYPerMillionTokens(0.4),
+		SupportsCacheBreakdown:     false,
+	}
+	s.fallbackPrices["glm-4.5-air"] = &ModelPricing{
+		InputPricePerToken:         glmCNYPerMillionTokens(0.8),
+		OutputPricePerToken:        glmCNYPerMillionTokens(2),
+		CacheCreationPricePerToken: 0,
+		CacheReadPricePerToken:     glmCNYPerMillionTokens(0.16),
+		SupportsCacheBreakdown:     false,
+	}
+
 	// OpenAI GPT-5.4（业务指定价格）
 	s.fallbackPrices["gpt-5.4"] = &ModelPricing{
 		InputPricePerToken:             2.5e-6,  // $2.5 per MTok
@@ -256,6 +285,9 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 	if pricing := s.fallbackPrices[modelLower]; pricing != nil {
 		return pricing
 	}
+	if normalized := normalizeGLMBillingModel(modelLower); normalized != "" {
+		return s.fallbackPrices[normalized]
+	}
 
 	// 按模型系列匹配
 	if strings.Contains(modelLower, "opus") {
@@ -308,6 +340,20 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 	}
 
 	return nil
+}
+
+func normalizeGLMBillingModel(model string) string {
+	normalized := strings.ToLower(NormalizeGLMModel(model))
+	switch {
+	case normalized == "glm-5.1" || strings.HasPrefix(normalized, "glm-5.1-"):
+		return "glm-5.1"
+	case normalized == "glm-4.7" || strings.HasPrefix(normalized, "glm-4.7-"):
+		return "glm-4.7"
+	case normalized == "glm-4.5-air" || strings.HasPrefix(normalized, "glm-4.5-air-"):
+		return "glm-4.5-air"
+	default:
+		return ""
+	}
 }
 
 // GetModelPricing 获取模型价格配置
@@ -749,7 +795,8 @@ func (s *BillingService) IsModelSupported(model string) bool {
 	return strings.Contains(modelLower, "claude") ||
 		strings.Contains(modelLower, "opus") ||
 		strings.Contains(modelLower, "sonnet") ||
-		strings.Contains(modelLower, "haiku")
+		strings.Contains(modelLower, "haiku") ||
+		normalizeGLMBillingModel(modelLower) != ""
 }
 
 // GetEstimatedCost 估算费用（用于前端展示）

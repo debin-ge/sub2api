@@ -112,11 +112,11 @@ describe('BulkEditAccountModal', () => {
     expect(wrapper.text()).not.toContain('GPT-5.3 Codex Spark')
   })
 
-  it('仅勾选模型限制且白名单留空时，应提交空 model_mapping 以支持所有模型', async () => {
-    const wrapper = mountModal({
-      selectedPlatforms: ['anthropic'],
-      selectedTypes: ['apikey']
-    })
+	  it('仅勾选模型限制且白名单留空时，应提交空 model_mapping 以支持所有模型', async () => {
+	    const wrapper = mountModal({
+	      selectedPlatforms: ['anthropic'],
+	      selectedTypes: ['apikey']
+	    })
 
     await wrapper.get('#bulk-edit-model-restriction-enabled').setValue(true)
     await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
@@ -127,10 +127,39 @@ describe('BulkEditAccountModal', () => {
       credentials: {
         model_mapping: {}
       }
-    })
-  })
+	    })
+	  })
 
-  it('OpenAI 账号批量编辑可开启自动透传', async () => {
+	  it('GLM API Key 账号批量编辑应支持模型白名单且不显示自定义模型输入', async () => {
+	    const wrapper = mountModal({
+	      selectedPlatforms: ['glm'],
+	      selectedTypes: ['apikey']
+	    })
+
+	    expect(wrapper.find('#bulk-edit-model-restriction-enabled').exists()).toBe(true)
+	    await wrapper.get('#bulk-edit-model-restriction-enabled').setValue(true)
+	    expect(wrapper.text()).not.toContain('admin.accounts.customModelName')
+
+	    const selector = wrapper.findComponent(ModelWhitelistSelector)
+	    await selector.find('div.cursor-pointer').trigger('click')
+	    const glm47 = wrapper.findAll('button').find((btn) => btn.text().includes('GLM-4.7'))
+	    expect(glm47).toBeTruthy()
+	    await glm47!.trigger('click')
+
+	    await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
+	    await flushPromises()
+
+	    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledTimes(1)
+	    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith([1, 2], {
+	      credentials: {
+	        model_mapping: {
+	          'GLM-4.7': 'GLM-4.7'
+	        }
+	      }
+	    })
+	  })
+
+	  it('OpenAI 账号批量编辑可开启自动透传', async () => {
     const wrapper = mountModal({
       selectedPlatforms: ['openai'],
       selectedTypes: ['oauth']
@@ -214,6 +243,114 @@ describe('BulkEditAccountModal', () => {
         openai_apikey_responses_websockets_v2_mode: 'ctx_pool',
         openai_apikey_responses_websockets_v2_enabled: true
       }
+    })
+  })
+
+  it('包含 GLM 的批量编辑目标不显示通用凭据控件', () => {
+    const wrapper = mountModal({
+      selectedPlatforms: ['openai'],
+      selectedTypes: ['apikey'],
+      target: {
+        mode: 'selected',
+        selectedPlatforms: ['openai', 'glm'],
+        selectedTypes: ['apikey']
+      }
+    })
+
+    expect(wrapper.find('#bulk-edit-base-url-enabled').exists()).toBe(false)
+    expect(wrapper.find('#bulk-edit-model-restriction-enabled').exists()).toBe(false)
+    expect(wrapper.find('#bulk-edit-custom-error-codes-enabled').exists()).toBe(false)
+    expect(wrapper.find('#bulk-edit-intercept-warmup-enabled').exists()).toBe(false)
+  })
+
+  it('GLM 批量编辑只提交模型限制，不提交其他陈旧通用凭据开关', async () => {
+    const wrapper = mountModal({
+      selectedPlatforms: ['glm'],
+      selectedTypes: ['apikey']
+    })
+
+    Object.assign(wrapper.vm as any, {
+      enableBaseUrl: true,
+      baseUrl: 'https://example.invalid',
+      enableModelRestriction: true,
+      allowedModels: ['GLM-5.1'],
+      enableCustomErrorCodes: true,
+      selectedErrorCodes: [429],
+      enableInterceptWarmup: true,
+      interceptWarmupRequests: true,
+      enableStatus: true,
+      status: 'inactive'
+    })
+
+    await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledTimes(1)
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith([1, 2], {
+      credentials: {
+        model_mapping: {
+          'GLM-5.1': 'GLM-5.1'
+        }
+      },
+      status: 'inactive'
+    })
+  })
+
+  it('filtered-results 未指定平台时按可能包含 GLM 处理', async () => {
+    const wrapper = mountModal({
+      accountIds: [],
+      selectedPlatforms: ['openai'],
+      selectedTypes: ['apikey'],
+      target: {
+        mode: 'filtered',
+        filters: {
+          platform: '',
+          type: 'apikey'
+        },
+        previewCount: 150,
+        selectedPlatforms: ['openai'],
+        selectedTypes: ['apikey']
+      }
+    })
+
+    expect(wrapper.find('#bulk-edit-base-url-enabled').exists()).toBe(false)
+    expect(wrapper.find('#bulk-edit-model-restriction-enabled').exists()).toBe(false)
+    expect(wrapper.find('#bulk-edit-custom-error-codes-enabled').exists()).toBe(false)
+    expect(wrapper.find('#bulk-edit-intercept-warmup-enabled').exists()).toBe(false)
+
+    Object.assign(wrapper.vm as any, {
+      enableBaseUrl: true,
+      baseUrl: 'https://example.invalid',
+      enableModelRestriction: true,
+      allowedModels: ['gpt-4'],
+      enableCustomErrorCodes: true,
+      selectedErrorCodes: [429],
+      enableInterceptWarmup: true,
+      interceptWarmupRequests: true,
+      enableOpenAIPassthrough: true,
+      openaiPassthroughEnabled: true,
+      enableOpenAIWSMode: true,
+      enableOpenAIAPIKeyWSMode: true,
+      enableCodexCLIOnly: true,
+      codexCLIOnlyEnabled: true,
+      enableRpmLimit: true,
+      rpmLimitEnabled: true,
+      bulkBaseRpm: 30,
+      userMsgQueueMode: 'throttle',
+      enableStatus: true,
+      status: 'inactive'
+    })
+
+    await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledTimes(1)
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith({
+      filters: {
+        platform: '',
+        type: 'apikey'
+      },
+      status: 'inactive'
     })
   })
 

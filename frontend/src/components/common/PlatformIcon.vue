@@ -23,6 +23,10 @@
   <svg v-else-if="platform === 'minimax'" :class="sizeClass" viewBox="0 0 24 24" fill="currentColor">
     <path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h2.8c.5 0 .97.25 1.25.67L12 8.35l2.45-3.68A1.5 1.5 0 0 1 15.7 4h2.8A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5h-2A1.5 1.5 0 0 1 15 18.5v-7.06l-1.76 2.64a1.5 1.5 0 0 1-2.48 0L9 11.44v7.06A1.5 1.5 0 0 1 7.5 20h-2A1.5 1.5 0 0 1 4 18.5v-13z" />
   </svg>
+  <!-- GLM logo mark -->
+  <svg v-else-if="platform === 'glm'" :class="sizeClass" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M12 3.25 4.5 7.58v8.84L12 20.75l7.5-4.33V7.58L12 3.25Zm0 2.31 5.5 3.17v6.34L12 18.25l-5.5-3.18V8.73L12 5.56Zm-2.7 4.08h5.96v1.78h-3.78v1.33h2.2v1.61h-2.2v.28c0 .86.48 1.18 1.25 1.18.64 0 1.21-.18 1.79-.48l.53 1.53a5.3 5.3 0 0 1-2.55.63c-1.87 0-2.96-.91-2.96-2.75v-4.3H9.3V9.64Z" />
+  </svg>
   <!-- Fallback: generic platform icon -->
   <svg v-else :class="sizeClass" fill="currentColor" viewBox="0 0 24 24">
     <path

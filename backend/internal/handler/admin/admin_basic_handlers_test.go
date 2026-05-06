@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -223,6 +224,263 @@ func TestGroupHandlerCreateAcceptsMiniMax(t *testing.T) {
 	router.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+}
+
+func TestGroupHandlerCreateAcceptsGLM(t *testing.T) {
+	router, _ := setupAdminRouter()
+
+	body, err := json.Marshal(map[string]any{
+		"name":              "glm-coding-plan",
+		"platform":          "glm",
+		"subscription_type": "subscription",
+	})
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/groups", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+}
+
+func TestGroupHandlerUpdateAcceptsGLM(t *testing.T) {
+	router, _ := setupAdminRouter()
+
+	body, err := json.Marshal(map[string]any{
+		"platform": "glm",
+	})
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/groups/2", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+}
+
+func TestAccountHandlerCreateAcceptsGLMAPIKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	adminSvc := newStubAdminService()
+	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router.POST("/api/v1/admin/accounts", accountHandler.Create)
+
+	body, err := json.Marshal(map[string]any{
+		"name":        "glm-coding-plan",
+		"platform":    "glm",
+		"type":        "apikey",
+		"credentials": map[string]any{"api_key": "sk-glm-test"},
+	})
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.Len(t, adminSvc.createdAccounts, 1)
+	require.Equal(t, "glm", adminSvc.createdAccounts[0].Platform)
+	require.Equal(t, "apikey", adminSvc.createdAccounts[0].Type)
+}
+
+func TestAccountHandlerCreateRejectsGLMWithoutAPIKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	adminSvc := newStubAdminService()
+	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router.POST("/api/v1/admin/accounts", accountHandler.Create)
+
+	body, err := json.Marshal(map[string]any{
+		"name":        "glm-coding-plan",
+		"platform":    "glm",
+		"type":        "apikey",
+		"credentials": map[string]any{"api_key": " "},
+	})
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+	require.Empty(t, adminSvc.createdAccounts)
+	require.Contains(t, rec.Body.String(), "api_key")
+}
+
+func TestAccountHandlerBatchCreateValidatesGLMAccounts(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	adminSvc := newStubAdminService()
+	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router.POST("/api/v1/admin/accounts/batch", accountHandler.BatchCreate)
+
+	body, err := json.Marshal(map[string]any{
+		"accounts": []map[string]any{
+			{
+				"name":        "glm-valid",
+				"platform":    "glm",
+				"type":        "apikey",
+				"credentials": map[string]any{"api_key": "sk-glm-test"},
+			},
+			{
+				"name":        "glm-missing-key",
+				"platform":    "glm",
+				"type":        "apikey",
+				"credentials": map[string]any{"api_key": " "},
+			},
+			{
+				"name":        "glm-invalid-type",
+				"platform":    "glm",
+				"type":        "oauth",
+				"credentials": map[string]any{"api_key": "sk-glm-test"},
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/batch", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.Len(t, adminSvc.createdAccounts, 1)
+	require.Equal(t, service.PlatformGLM, adminSvc.createdAccounts[0].Platform)
+	require.Equal(t, service.AccountTypeAPIKey, adminSvc.createdAccounts[0].Type)
+
+	var resp struct {
+		Code int `json:"code"`
+		Data struct {
+			Success int `json:"success"`
+			Failed  int `json:"failed"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Equal(t, 0, resp.Code)
+	require.Equal(t, 1, resp.Data.Success)
+	require.Equal(t, 2, resp.Data.Failed)
+}
+
+func TestAccountHandlerUpdateRejectsGLMInvalidType(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	adminSvc := newStubAdminService()
+	adminSvc.accounts = []service.Account{
+		{ID: 3, Name: "glm", Platform: service.PlatformGLM, Type: service.AccountTypeAPIKey, Credentials: map[string]any{"api_key": "sk-glm"}, Status: service.StatusActive},
+	}
+	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router.PUT("/api/v1/admin/accounts/:id", accountHandler.Update)
+
+	body, err := json.Marshal(map[string]any{
+		"type": "oauth",
+	})
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/accounts/3", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+	require.Contains(t, rec.Body.String(), "apikey")
+}
+
+func TestAccountHandlerUpdateRejectsGLMMissingAPIKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	adminSvc := newStubAdminService()
+	adminSvc.accounts = []service.Account{
+		{ID: 3, Name: "glm", Platform: service.PlatformGLM, Type: service.AccountTypeAPIKey, Credentials: map[string]any{"api_key": "sk-glm"}, Status: service.StatusActive},
+	}
+	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router.PUT("/api/v1/admin/accounts/:id", accountHandler.Update)
+
+	body, err := json.Marshal(map[string]any{
+		"credentials": map[string]any{
+			"model_mapping": map[string]any{"custom-model": "GLM-custom"},
+		},
+	})
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/accounts/3", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+	require.Contains(t, rec.Body.String(), "api_key")
+}
+
+func TestAccountHandlerUpdateRejectsInvalidExistingGLMOnOrdinaryField(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	adminSvc := newStubAdminService()
+	adminSvc.accounts = []service.Account{
+		{ID: 3, Name: "glm", Platform: service.PlatformGLM, Type: service.AccountTypeAPIKey, Credentials: map[string]any{"api_key": " "}, Status: service.StatusActive},
+	}
+	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router.PUT("/api/v1/admin/accounts/:id", accountHandler.Update)
+
+	body, err := json.Marshal(map[string]any{
+		"name": "renamed-glm",
+	})
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/accounts/3", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+	require.Contains(t, rec.Body.String(), "api_key")
+}
+
+func TestAccountHandlerUpdateAllowsValidExistingGLMOnOrdinaryField(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	adminSvc := newStubAdminService()
+	adminSvc.accounts = []service.Account{
+		{ID: 3, Name: "glm", Platform: service.PlatformGLM, Type: service.AccountTypeAPIKey, Credentials: map[string]any{"api_key": "sk-glm"}, Status: service.StatusActive},
+	}
+	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router.PUT("/api/v1/admin/accounts/:id", accountHandler.Update)
+
+	body, err := json.Marshal(map[string]any{
+		"name": "renamed-glm",
+	})
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/accounts/3", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+}
+
+func TestAccountHandlerUpdatePreservesGetAccountErrorMapping(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	adminSvc := newStubAdminService()
+	adminSvc.getAccountErr = service.ErrAccountNotFound
+	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router.PUT("/api/v1/admin/accounts/:id", accountHandler.Update)
+
+	body, err := json.Marshal(map[string]any{
+		"name": "renamed-account",
+	})
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/accounts/404", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusNotFound, rec.Code, rec.Body.String())
 }
 
 func TestProxyHandlerEndpoints(t *testing.T) {

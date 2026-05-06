@@ -24,6 +24,7 @@ type stubAdminService struct {
 	updatedProxyIDs      []int64
 	updatedProxies       []*service.UpdateProxyInput
 	testedProxyIDs       []int64
+	getAccountErr        error
 	createAccountErr     error
 	updateAccountErr     error
 	bulkUpdateAccountErr error
@@ -309,6 +310,14 @@ func (s *stubAdminService) ListAccounts(ctx context.Context, page, pageSize int,
 }
 
 func (s *stubAdminService) GetAccount(ctx context.Context, id int64) (*service.Account, error) {
+	if s.getAccountErr != nil {
+		return nil, s.getAccountErr
+	}
+	for i := range s.accounts {
+		if s.accounts[i].ID == id {
+			return &s.accounts[i], nil
+		}
+	}
 	account := service.Account{ID: id, Name: "account", Status: service.StatusActive}
 	return &account, nil
 }

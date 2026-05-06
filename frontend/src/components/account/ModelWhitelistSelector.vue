@@ -95,7 +95,7 @@
     </div>
 
     <!-- Custom Model Input -->
-    <div class="mb-3">
+    <div v-if="allowCustomModelInput" class="mb-3">
       <label class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('admin.accounts.customModelName') }}</label>
       <div class="flex gap-2">
         <input
@@ -177,6 +177,10 @@ const availableOptions = computed(() => {
   return allModels.filter(model => allowedModels.has(model.value))
 })
 
+const allowCustomModelInput = computed(() => (
+  !(normalizedPlatforms.value.length === 1 && normalizedPlatforms.value[0] === 'glm')
+))
+
 const filteredModels = computed(() => {
   const query = searchQuery.value.toLowerCase().trim()
   if (!query) return availableOptions.value
@@ -203,6 +207,7 @@ const toggleModel = (model: string) => {
 }
 
 const addCustom = () => {
+  if (!allowCustomModelInput.value) return
   const model = customModel.value.trim()
   if (!model) return
   if (props.modelValue.includes(model)) {

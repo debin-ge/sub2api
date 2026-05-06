@@ -149,6 +149,67 @@ func TestGetModelPricing_OpenAIGPT54MiniFallback(t *testing.T) {
 	require.Zero(t, pricing.LongContextInputThreshold)
 }
 
+func TestGetModelPricing_GLMFallback(t *testing.T) {
+	svc := newTestBillingService()
+
+	tests := []struct {
+		model             string
+		expectedInput     float64
+		expectedOutput    float64
+		expectedCacheRead float64
+	}{
+		{
+			model:             "glm-5.1",
+			expectedInput:     6.0 / 7.2 / 1_000_000,
+			expectedOutput:    24.0 / 7.2 / 1_000_000,
+			expectedCacheRead: 1.3 / 7.2 / 1_000_000,
+		},
+		{
+			model:             "GLM-4.7",
+			expectedInput:     2.0 / 7.2 / 1_000_000,
+			expectedOutput:    8.0 / 7.2 / 1_000_000,
+			expectedCacheRead: 0.4 / 7.2 / 1_000_000,
+		},
+		{
+			model:             "GLM-4.5-air",
+			expectedInput:     0.8 / 7.2 / 1_000_000,
+			expectedOutput:    2.0 / 7.2 / 1_000_000,
+			expectedCacheRead: 0.16 / 7.2 / 1_000_000,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			pricing, err := svc.GetModelPricing(tt.model)
+			require.NoError(t, err)
+			require.NotNil(t, pricing)
+			require.InDelta(t, tt.expectedInput, pricing.InputPricePerToken, 1e-12)
+			require.InDelta(t, tt.expectedOutput, pricing.OutputPricePerToken, 1e-12)
+			require.InDelta(t, tt.expectedCacheRead, pricing.CacheReadPricePerToken, 1e-12)
+			require.Zero(t, pricing.CacheCreationPricePerToken)
+			require.False(t, pricing.SupportsCacheBreakdown)
+		})
+	}
+}
+
+func TestCalculateCost_GLMFallback(t *testing.T) {
+	svc := newTestBillingService()
+
+	cost, err := svc.CalculateCost("glm-5.1", UsageTokens{
+		InputTokens:     1_000_000,
+		OutputTokens:    1_000_000,
+		CacheReadTokens: 1_000_000,
+	}, 1.0)
+	require.NoError(t, err)
+
+	expectedTotal := (6.0 + 24.0 + 1.3) / 7.2
+	require.InDelta(t, 6.0/7.2, cost.InputCost, 1e-10)
+	require.InDelta(t, 24.0/7.2, cost.OutputCost, 1e-10)
+	require.InDelta(t, 1.3/7.2, cost.CacheReadCost, 1e-10)
+	require.InDelta(t, expectedTotal, cost.TotalCost, 1e-10)
+	require.InDelta(t, expectedTotal, cost.ActualCost, 1e-10)
+}
+
 func TestCalculateCost_OpenAIGPT54LongContextAppliesWholeSessionMultipliers(t *testing.T) {
 	svc := newTestBillingService()
 
@@ -320,6 +381,7 @@ func TestIsModelSupported(t *testing.T) {
 	require.True(t, svc.IsModelSupported("claude-sonnet-4"))
 	require.True(t, svc.IsModelSupported("Claude-Opus-4.5"))
 	require.True(t, svc.IsModelSupported("claude-3-haiku"))
+	require.True(t, svc.IsModelSupported("GLM-5.1"))
 	require.False(t, svc.IsModelSupported("gpt-4o"))
 	require.False(t, svc.IsModelSupported("gemini-pro"))
 }

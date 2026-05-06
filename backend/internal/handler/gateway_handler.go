@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -938,24 +939,20 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 		platform = forcedPlatform
 	}
 
+	if platform == service.PlatformGLM {
+		var availableModels []string
+		if h.gatewayService != nil {
+			availableModels = h.gatewayService.GetAvailableModels(c.Request.Context(), groupID, service.PlatformGLM)
+		}
+		writeClaudeModelList(c, mergeGLMModelIDs(availableModels))
+		return
+	}
+
 	// Get available models from account configurations (without platform filter)
 	availableModels := h.gatewayService.GetAvailableModels(c.Request.Context(), groupID, "")
 
 	if len(availableModels) > 0 {
-		// Build model list from whitelist
-		models := make([]claude.Model, 0, len(availableModels))
-		for _, modelID := range availableModels {
-			models = append(models, claude.Model{
-				ID:          modelID,
-				Type:        "model",
-				DisplayName: modelID,
-				CreatedAt:   "2024-01-01T00:00:00Z",
-			})
-		}
-		c.JSON(http.StatusOK, gin.H{
-			"object": "list",
-			"data":   models,
-		})
+		writeClaudeModelList(c, availableModels)
 		return
 	}
 
@@ -972,6 +969,49 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 		"object": "list",
 		"data":   claude.DefaultModels,
 	})
+}
+
+func writeClaudeModelList(c *gin.Context, modelIDs []string) {
+	models := make([]claude.Model, 0, len(modelIDs))
+	for _, modelID := range modelIDs {
+		models = append(models, claude.Model{
+			ID:          modelID,
+			Type:        "model",
+			DisplayName: modelID,
+			CreatedAt:   "2024-01-01T00:00:00Z",
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"object": "list",
+		"data":   models,
+	})
+}
+
+func mergeGLMModelIDs(availableModels []string) []string {
+	if len(availableModels) == 0 {
+		defaults := service.DefaultGLMModelIDs()
+		return append([]string(nil), defaults...)
+	}
+
+	seen := make(map[string]struct{}, len(availableModels))
+	models := make([]string, 0, len(availableModels))
+	for _, modelID := range availableModels {
+		modelID = strings.TrimSpace(modelID)
+		if modelID == "" {
+			continue
+		}
+		if strings.Contains(modelID, "*") {
+			continue
+		}
+		modelID = service.NormalizeGLMModel(modelID)
+		if _, ok := seen[modelID]; ok {
+			continue
+		}
+		seen[modelID] = struct{}{}
+		models = append(models, modelID)
+	}
+	sort.Strings(models)
+	return models
 }
 
 // AntigravityModels 返回 Antigravity 支持的全部模型

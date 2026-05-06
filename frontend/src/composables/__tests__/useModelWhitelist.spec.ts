@@ -4,7 +4,7 @@ vi.mock('@/api/admin/accounts', () => ({
   getAntigravityDefaultModelMapping: vi.fn()
 }))
 
-import { buildModelMappingObject, getModelsByPlatform } from '../useModelWhitelist'
+import { buildModelMappingObject, getModelsByPlatform, getPresetMappingsByPlatform } from '../useModelWhitelist'
 
 describe('useModelWhitelist', () => {
   it('openai 模型列表包含 GPT-5.4 官方快照', () => {
@@ -48,6 +48,25 @@ describe('useModelWhitelist', () => {
 
     expect(models).toContain('MiniMax-M2.7')
     expect(models).toContain('MiniMax-M2.7-highspeed')
+  })
+
+  it('glm 模型列表仅包含 Coding Plan MVP 模型', () => {
+    const models = getModelsByPlatform('glm')
+
+    expect(models).toEqual(['GLM-5.1', 'GLM-4.7', 'GLM-4.5-air'])
+  })
+
+  it('glm 预设映射 Claude family aliases to GLM models', () => {
+    const mappings = getPresetMappingsByPlatform('glm')
+
+    expect(mappings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ from: 'claude-sonnet-*', to: 'GLM-5.1' }),
+      expect.objectContaining({ from: 'claude-sonnet-4-5', to: 'GLM-5.1' }),
+      expect.objectContaining({ from: 'claude-opus-*', to: 'GLM-5.1' }),
+      expect.objectContaining({ from: 'claude-opus-4-5', to: 'GLM-5.1' }),
+      expect.objectContaining({ from: 'claude-haiku-*', to: 'GLM-4.5-air' }),
+      expect.objectContaining({ from: 'claude-haiku-4-5', to: 'GLM-4.5-air' })
+    ]))
   })
 
   it('antigravity 模型列表会把新的 Gemini 图片模型排在前面', () => {

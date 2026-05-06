@@ -409,6 +409,8 @@ const currentFiles = computed((): FileConfig[] => {
         ]
       case 'minimax':
         return [generateOpenCodeConfig('minimax', apiBase, apiKey, 'opencode.json (MiniMax)')]
+      case 'glm':
+        return [generateOpenCodeConfig('glm', apiBase, apiKey, 'opencode.json (GLM)')]
       default:
         return [generateOpenCodeConfig('openai', apiBase, apiKey)]
     }
@@ -1016,6 +1018,41 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
       }
     }
   }
+  const glmModels = {
+    'GLM-5.1': {
+      name: 'GLM 5.1',
+      limit: {
+        context: 200000,
+        output: 64000
+      },
+      modalities: {
+        input: ['text'],
+        output: ['text']
+      }
+    },
+    'GLM-4.7': {
+      name: 'GLM 4.7',
+      limit: {
+        context: 200000,
+        output: 64000
+      },
+      modalities: {
+        input: ['text'],
+        output: ['text']
+      }
+    },
+    'GLM-4.5-air': {
+      name: 'GLM 4.5 Air',
+      limit: {
+        context: 200000,
+        output: 64000
+      },
+      modalities: {
+        input: ['text'],
+        output: ['text']
+      }
+    }
+  }
 
   if (platform === 'gemini') {
     provider[platform].npm = '@ai-sdk/google'
@@ -1026,6 +1063,10 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     provider[platform].npm = '@ai-sdk/anthropic'
     provider[platform].name = 'MiniMax'
     provider[platform].models = minimaxModels
+  } else if (platform === 'glm') {
+    provider[platform].npm = '@ai-sdk/anthropic'
+    provider[platform].name = 'GLM'
+    provider[platform].models = glmModels
   } else if (platform === 'antigravity-claude') {
     provider[platform].npm = '@ai-sdk/anthropic'
     provider[platform].name = 'Antigravity (Claude)'

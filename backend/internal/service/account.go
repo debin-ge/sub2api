@@ -1023,6 +1023,157 @@ func (a *Account) GetMiniMaxMappedModel(model string) string {
 	return mapped
 }
 
+func (a *Account) IsGLM() bool {
+	return a != nil && a.Platform == PlatformGLM
+}
+
+func (a *Account) IsGLMCodingPlan() bool {
+	if a == nil || a.Platform != PlatformGLM {
+		return false
+	}
+	if a.Type != AccountTypeAPIKey {
+		return false
+	}
+	return strings.TrimSpace(a.GetCredential("api_key")) != ""
+}
+
+func (a *Account) GetGLMAPIKey() string {
+	if a == nil || a.Platform != PlatformGLM {
+		return ""
+	}
+	return strings.TrimSpace(a.GetCredential("api_key"))
+}
+
+func (a *Account) GetGLMAnthropicBaseURL() string {
+	if a == nil || a.Platform != PlatformGLM {
+		return ""
+	}
+	return "https://open.bigmodel.cn/api/anthropic"
+}
+
+func (a *Account) GetGLMOpenAIBaseURL() string {
+	if a == nil || a.Platform != PlatformGLM {
+		return ""
+	}
+	return "https://open.bigmodel.cn/api/coding/paas/v4"
+}
+
+func NormalizeGLMModel(model string) string {
+	trimmed := strings.TrimSpace(model)
+	switch strings.ToLower(trimmed) {
+	case "glm-5.1":
+		return "GLM-5.1"
+	case "glm-4.7":
+		return "GLM-4.7"
+	case "glm-4.5-air":
+		return "GLM-4.5-air"
+	default:
+		return trimmed
+	}
+}
+
+func DefaultGLMModelIDs() []string {
+	return []string{"GLM-5.1", "GLM-4.7", "GLM-4.5-air"}
+}
+
+func isOfficialGLMModel(model string) bool {
+	for _, official := range DefaultGLMModelIDs() {
+		if model == official {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeOfficialGLMModel(model string) (string, bool) {
+	normalized := NormalizeGLMModel(model)
+	return normalized, isOfficialGLMModel(normalized)
+}
+
+func mapDefaultGLMModel(model string) (string, bool) {
+	trimmed := strings.TrimSpace(model)
+	if trimmed == "" {
+		return "", false
+	}
+	lower := strings.ToLower(trimmed)
+	switch {
+	case strings.HasPrefix(lower, "claude-sonnet-"):
+		return "GLM-5.1", true
+	case strings.HasPrefix(lower, "claude-opus-"):
+		return "GLM-5.1", true
+	case strings.HasPrefix(lower, "claude-haiku-"):
+		return "GLM-4.5-air", true
+	}
+	normalized := NormalizeGLMModel(trimmed)
+	if isOfficialGLMModel(normalized) {
+		return normalized, true
+	}
+	return "", false
+}
+
+func (a *Account) GetGLMMappedModel(model string) string {
+	trimmed := strings.TrimSpace(model)
+	if a == nil || a.Platform != PlatformGLM {
+		return trimmed
+	}
+
+	mapping := a.GetModelMapping()
+	if len(mapping) == 0 {
+		if mapped, ok := mapDefaultGLMModel(trimmed); ok {
+			return mapped
+		}
+		return trimmed
+	}
+
+	normalized := NormalizeGLMModel(trimmed)
+	if isOfficialGLMModel(normalized) {
+		if mappingSupportsRequestedModel(mapping, normalized) {
+			return normalized
+		}
+		return normalized
+	}
+
+	if mapped, matched := a.ResolveMappedModel(trimmed); matched && strings.TrimSpace(mapped) != "" {
+		if official, ok := normalizeOfficialGLMModel(mapped); ok {
+			return official
+		}
+		return trimmed
+	}
+	if mapped, ok := mapDefaultGLMModel(trimmed); ok && mappingSupportsRequestedModel(mapping, mapped) {
+		return mapped
+	}
+	return trimmed
+}
+
+func (a *Account) IsGLMModelSupported(model string) bool {
+	trimmed := strings.TrimSpace(model)
+	if trimmed == "" {
+		return true
+	}
+	if a == nil || a.Platform != PlatformGLM {
+		return false
+	}
+
+	mapping := a.GetModelMapping()
+	if len(mapping) == 0 {
+		_, ok := mapDefaultGLMModel(trimmed)
+		return ok
+	}
+
+	normalized := NormalizeGLMModel(trimmed)
+	if isOfficialGLMModel(normalized) {
+		return mappingSupportsRequestedModel(mapping, normalized)
+	}
+	if mapped, matched := a.ResolveMappedModel(trimmed); matched && strings.TrimSpace(mapped) != "" {
+		_, ok := normalizeOfficialGLMModel(mapped)
+		return ok
+	}
+	if mapped, ok := mapDefaultGLMModel(trimmed); ok {
+		return mappingSupportsRequestedModel(mapping, mapped)
+	}
+	return false
+}
+
 func (a *Account) IsOpenAIOAuth() bool {
 	return a.IsOpenAI() && a.Type == AccountTypeOAuth
 }
