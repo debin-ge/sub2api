@@ -2,15 +2,15 @@ package service
 
 import "testing"
 
-func TestAccountDeepSeekHelpersUseFixedEndpointsAndOfficialModels(t *testing.T) {
+func TestAccountDeepSeekHelpersUseEditableEndpointsAndOfficialModels(t *testing.T) {
 	acc := &Account{
 		Platform: PlatformDeepSeek,
 		Type:     AccountTypeAPIKey,
 		Credentials: map[string]any{
 			"api_key":            "  sk-deepseek-test \n",
 			"base_url":           "https://proxy.example",
-			"base_url_anthropic": "https://proxy.example/anthropic",
-			"base_url_openai":    "https://proxy.example/openai",
+			"base_url_anthropic": " https://proxy.example/anthropic/ ",
+			"base_url_openai":    " https://proxy.example/openai/ ",
 			"model_mapping": map[string]any{
 				"claude-sonnet-4-5": "deepseek-v4-pro",
 			},
@@ -26,10 +26,10 @@ func TestAccountDeepSeekHelpersUseFixedEndpointsAndOfficialModels(t *testing.T) 
 	if got := acc.GetDeepSeekAPIKey(); got != "sk-deepseek-test" {
 		t.Fatalf("api key = %q", got)
 	}
-	if got := acc.GetDeepSeekOpenAIBaseURL(); got != "https://api.deepseek.com" {
+	if got := acc.GetDeepSeekOpenAIBaseURL(); got != "https://proxy.example/openai" {
 		t.Fatalf("openai base url = %q", got)
 	}
-	if got := acc.GetDeepSeekAnthropicBaseURL(); got != "https://api.deepseek.com/anthropic" {
+	if got := acc.GetDeepSeekAnthropicBaseURL(); got != "https://proxy.example/anthropic" {
 		t.Fatalf("anthropic base url = %q", got)
 	}
 	if got := DefaultDeepSeekModelIDs(); len(got) != 2 || got[0] != "deepseek-v4-flash" || got[1] != "deepseek-v4-pro" {
@@ -45,6 +45,21 @@ func TestAccountDeepSeekHelpersUseFixedEndpointsAndOfficialModels(t *testing.T) 
 		if acc.IsDeepSeekModelSupported(model) {
 			t.Fatalf("model %q should not be supported", model)
 		}
+	}
+}
+
+func TestAccountDeepSeekHelpersDefaultEndpoints(t *testing.T) {
+	acc := &Account{
+		Platform:    PlatformDeepSeek,
+		Type:        AccountTypeAPIKey,
+		Credentials: map[string]any{"api_key": "sk-deepseek-test"},
+	}
+
+	if got := acc.GetDeepSeekOpenAIBaseURL(); got != "https://api.deepseek.com" {
+		t.Fatalf("openai base url = %q", got)
+	}
+	if got := acc.GetDeepSeekAnthropicBaseURL(); got != "https://api.deepseek.com/anthropic" {
+		t.Fatalf("anthropic base url = %q", got)
 	}
 }
 

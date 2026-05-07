@@ -32,14 +32,14 @@ func (r glmSchedulingAccountRepoStub) ListSchedulableByPlatform(ctx context.Cont
 	return result, nil
 }
 
-func TestAccountGLMHelpersUseFixedEndpoints(t *testing.T) {
+func TestAccountGLMHelpersUseEditableEndpoints(t *testing.T) {
 	acc := &Account{
 		Platform: PlatformGLM,
 		Type:     AccountTypeAPIKey,
 		Credentials: map[string]any{
 			"api_key":            "  sk-glm-test \n",
-			"base_url_anthropic": "https://proxy.example/anthropic",
-			"base_url_openai":    "https://proxy.example/openai",
+			"base_url_anthropic": " https://proxy.example/anthropic/ ",
+			"base_url_openai":    " https://proxy.example/openai/ ",
 			"base_url":           "https://proxy.example/base",
 		},
 		Extra: map[string]any{
@@ -57,6 +57,21 @@ func TestAccountGLMHelpersUseFixedEndpoints(t *testing.T) {
 	if got := acc.GetGLMAPIKey(); got != "sk-glm-test" {
 		t.Fatalf("api key = %q", got)
 	}
+	if got := acc.GetGLMAnthropicBaseURL(); got != "https://proxy.example/anthropic" {
+		t.Fatalf("anthropic base url = %q", got)
+	}
+	if got := acc.GetGLMOpenAIBaseURL(); got != "https://proxy.example/openai" {
+		t.Fatalf("openai base url = %q", got)
+	}
+}
+
+func TestAccountGLMHelpersDefaultEndpoints(t *testing.T) {
+	acc := &Account{
+		Platform:    PlatformGLM,
+		Type:        AccountTypeAPIKey,
+		Credentials: map[string]any{"api_key": "sk-glm-test"},
+	}
+
 	if got := acc.GetGLMAnthropicBaseURL(); got != "https://open.bigmodel.cn/api/anthropic" {
 		t.Fatalf("anthropic base url = %q", got)
 	}

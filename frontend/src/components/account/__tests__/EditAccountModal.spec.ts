@@ -362,7 +362,7 @@ describe('EditAccountModal', () => {
     }))
   })
 
-  it('submits GLM API key updates with model whitelist and without editable base URLs', async () => {
+  it('submits GLM API key updates with model whitelist and editable base URLs', async () => {
     const account = buildGLMAccount()
     updateAccountMock.mockReset()
     checkMixedChannelRiskMock.mockReset()
@@ -372,8 +372,8 @@ describe('EditAccountModal', () => {
     const wrapper = mountModal(account)
 
     expect(wrapper.find('[data-testid="glm-base-url"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="glm-anthropic-base-url"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="glm-openai-base-url"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="glm-anthropic-base-url"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="glm-openai-base-url"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="model-whitelist-value"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="model-whitelist-value"]').text()).toBe('GLM-4.7')
     expect(wrapper.find('[data-testid="quota-limit-card"]').exists()).toBe(false)
@@ -382,6 +382,8 @@ describe('EditAccountModal', () => {
     expect(wrapper.text()).not.toContain('admin.accounts.tempUnschedulable.title')
 
     await wrapper.get('[data-testid="glm-api-key"]').setValue('sk-glm-updated')
+    await wrapper.get('[data-testid="glm-anthropic-base-url"]').setValue('https://custom.example/glm/anthropic')
+    await wrapper.get('[data-testid="glm-openai-base-url"]').setValue('https://custom.example/glm/openai')
     await wrapper.get('[data-testid="rewrite-to-snapshot"]').trigger('click')
     expect(wrapper.get('[data-testid="model-whitelist-value"]').text()).toBe('GLM-4.5-air')
     await wrapper.get('form#edit-account-form').trigger('submit.prevent')
@@ -390,11 +392,11 @@ describe('EditAccountModal', () => {
     const credentials = updateAccountMock.mock.calls[0]?.[1]?.credentials
     expect(credentials).toEqual(expect.objectContaining({
       api_key: 'sk-glm-updated',
+      base_url_anthropic: 'https://custom.example/glm/anthropic',
+      base_url_openai: 'https://custom.example/glm/openai',
       future_unknown_key: 'keep-me'
     }))
     expect(credentials.base_url).toBeUndefined()
-    expect(credentials.base_url_anthropic).toBeUndefined()
-    expect(credentials.base_url_openai).toBeUndefined()
     expect(credentials.model_mapping).toEqual({
       'GLM-4.5-air': 'GLM-4.5-air'
     })
@@ -412,7 +414,7 @@ describe('EditAccountModal', () => {
     expect(extra?.quota_weekly_limit).toBeUndefined()
   })
 
-  it('submits Kimi API key updates with only kimi-for-coding mapping and no base URLs', async () => {
+  it('submits Kimi API key updates with only kimi-for-coding mapping and editable base URLs', async () => {
     const account = buildKimiAccount()
     updateAccountMock.mockReset()
     checkMixedChannelRiskMock.mockReset()
@@ -422,8 +424,8 @@ describe('EditAccountModal', () => {
     const wrapper = mountModal(account)
 
     expect(wrapper.find('[data-testid="kimi-base-url"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="kimi-anthropic-base-url"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="kimi-openai-base-url"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="kimi-anthropic-base-url"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="kimi-openai-base-url"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="model-whitelist-value"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="model-whitelist-value"]').text()).toBe('kimi-for-coding')
     expect(wrapper.find('[data-testid="quota-limit-card"]').exists()).toBe(false)
@@ -432,6 +434,8 @@ describe('EditAccountModal', () => {
     expect(wrapper.text()).not.toContain('admin.accounts.tempUnschedulable.title')
 
     await wrapper.get('[data-testid="kimi-api-key"]').setValue('sk-kimi-updated')
+    await wrapper.get('[data-testid="kimi-anthropic-base-url"]').setValue('https://custom.example/kimi/anthropic')
+    await wrapper.get('[data-testid="kimi-openai-base-url"]').setValue('https://custom.example/kimi/openai')
     await wrapper.get('[data-testid="rewrite-to-snapshot"]').trigger('click')
     expect(wrapper.get('[data-testid="model-whitelist-value"]').text()).toBe('kimi-for-coding')
     await wrapper.get('form#edit-account-form').trigger('submit.prevent')
@@ -440,11 +444,11 @@ describe('EditAccountModal', () => {
     const credentials = updateAccountMock.mock.calls[0]?.[1]?.credentials
     expect(credentials).toEqual(expect.objectContaining({
       api_key: 'sk-kimi-updated',
+      base_url_anthropic: 'https://custom.example/kimi/anthropic',
+      base_url_openai: 'https://custom.example/kimi/openai',
       future_unknown_key: 'keep-me'
     }))
     expect(credentials.base_url).toBeUndefined()
-    expect(credentials.base_url_anthropic).toBeUndefined()
-    expect(credentials.base_url_openai).toBeUndefined()
     expect(credentials.model_mapping).toEqual({
       'kimi-for-coding': 'kimi-for-coding'
     })
@@ -463,7 +467,7 @@ describe('EditAccountModal', () => {
     expect(extra?.quota_weekly_limit).toBeUndefined()
   })
 
-  it('submits DeepSeek API key updates with only gateway models and no base URLs', async () => {
+  it('submits DeepSeek API key updates with only gateway models and editable base URLs', async () => {
     const account = buildDeepSeekAccount()
     updateAccountMock.mockReset()
     checkMixedChannelRiskMock.mockReset()
@@ -473,8 +477,8 @@ describe('EditAccountModal', () => {
     const wrapper = mountModal(account)
 
     expect(wrapper.find('[data-testid="deepseek-base-url"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="deepseek-anthropic-base-url"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="deepseek-openai-base-url"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="deepseek-anthropic-base-url"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="deepseek-openai-base-url"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="model-whitelist-value"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="model-whitelist-value"]').text()).toBe('deepseek-v4-flash')
     expect(wrapper.find('[data-testid="quota-limit-card"]').exists()).toBe(false)
@@ -483,6 +487,8 @@ describe('EditAccountModal', () => {
     expect(wrapper.text()).not.toContain('admin.accounts.tempUnschedulable.title')
 
     await wrapper.get('[data-testid="deepseek-api-key"]').setValue('sk-deepseek-updated')
+    await wrapper.get('[data-testid="deepseek-anthropic-base-url"]').setValue('https://custom.example/deepseek/anthropic')
+    await wrapper.get('[data-testid="deepseek-openai-base-url"]').setValue('https://custom.example/deepseek/openai')
     await wrapper.get('[data-testid="rewrite-to-snapshot"]').trigger('click')
     expect(wrapper.get('[data-testid="model-whitelist-value"]').text()).toBe('deepseek-v4-pro')
     await wrapper.get('form#edit-account-form').trigger('submit.prevent')
@@ -491,11 +497,11 @@ describe('EditAccountModal', () => {
     const credentials = updateAccountMock.mock.calls[0]?.[1]?.credentials
     expect(credentials).toEqual(expect.objectContaining({
       api_key: 'sk-deepseek-updated',
+      base_url_anthropic: 'https://custom.example/deepseek/anthropic',
+      base_url_openai: 'https://custom.example/deepseek/openai',
       future_unknown_key: 'keep-me'
     }))
     expect(credentials.base_url).toBeUndefined()
-    expect(credentials.base_url_anthropic).toBeUndefined()
-    expect(credentials.base_url_openai).toBeUndefined()
     expect(credentials.model_mapping).toEqual({
       'deepseek-v4-pro': 'deepseek-v4-pro'
     })

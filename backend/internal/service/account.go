@@ -1074,12 +1074,20 @@ func (a *Account) GetGLMAnthropicBaseURL() string {
 	if a == nil || a.Platform != PlatformGLM {
 		return ""
 	}
+	baseURL := strings.TrimRight(strings.TrimSpace(a.GetCredential("base_url_anthropic")), "/")
+	if baseURL != "" {
+		return baseURL
+	}
 	return "https://open.bigmodel.cn/api/anthropic"
 }
 
 func (a *Account) GetGLMOpenAIBaseURL() string {
 	if a == nil || a.Platform != PlatformGLM {
 		return ""
+	}
+	baseURL := strings.TrimRight(strings.TrimSpace(a.GetCredential("base_url_openai")), "/")
+	if baseURL != "" {
+		return baseURL
 	}
 	return "https://open.bigmodel.cn/api/coding/paas/v4"
 }
@@ -1225,12 +1233,20 @@ func (a *Account) GetKimiAnthropicBaseURL() string {
 	if a == nil || a.Platform != PlatformKimi {
 		return ""
 	}
+	baseURL := strings.TrimRight(strings.TrimSpace(a.GetCredential("base_url_anthropic")), "/")
+	if baseURL != "" {
+		return baseURL
+	}
 	return "https://api.kimi.com/coding"
 }
 
 func (a *Account) GetKimiOpenAIBaseURL() string {
 	if a == nil || a.Platform != PlatformKimi {
 		return ""
+	}
+	baseURL := strings.TrimRight(strings.TrimSpace(a.GetCredential("base_url_openai")), "/")
+	if baseURL != "" {
+		return baseURL
 	}
 	return "https://api.kimi.com/coding/v1"
 }
@@ -1268,12 +1284,20 @@ func (a *Account) GetDeepSeekOpenAIBaseURL() string {
 	if a == nil || a.Platform != PlatformDeepSeek {
 		return ""
 	}
+	baseURL := strings.TrimRight(strings.TrimSpace(a.GetCredential("base_url_openai")), "/")
+	if baseURL != "" {
+		return baseURL
+	}
 	return "https://api.deepseek.com"
 }
 
 func (a *Account) GetDeepSeekAnthropicBaseURL() string {
 	if a == nil || a.Platform != PlatformDeepSeek {
 		return ""
+	}
+	baseURL := strings.TrimRight(strings.TrimSpace(a.GetCredential("base_url_anthropic")), "/")
+	if baseURL != "" {
+		return baseURL
 	}
 	return "https://api.deepseek.com/anthropic"
 }

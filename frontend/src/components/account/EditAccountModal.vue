@@ -83,14 +83,26 @@
             />
             <p class="input-hint">{{ t('admin.accounts.leaveEmptyToKeep') }}</p>
           </div>
-          <div class="grid grid-cols-1 gap-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800 dark:border-rose-800/40 dark:bg-rose-900/20 dark:text-rose-200 sm:grid-cols-2">
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <div class="font-medium">Anthropic-compatible</div>
-              <div class="mt-1 break-all font-mono">{{ GLM_ANTHROPIC_BASE_URL }}</div>
+              <label class="input-label">Anthropic base URL</label>
+              <input
+                v-model="editGLMAnthropicBaseUrl"
+                data-testid="glm-anthropic-base-url"
+                type="text"
+                class="input font-mono"
+                :placeholder="GLM_ANTHROPIC_BASE_URL"
+              />
             </div>
             <div>
-              <div class="font-medium">OpenAI-compatible</div>
-              <div class="mt-1 break-all font-mono">{{ GLM_OPENAI_BASE_URL }}</div>
+              <label class="input-label">OpenAI base URL</label>
+              <input
+                v-model="editGLMOpenAIBaseUrl"
+                data-testid="glm-openai-base-url"
+                type="text"
+                class="input font-mono"
+                :placeholder="GLM_OPENAI_BASE_URL"
+              />
             </div>
           </div>
         </template>
@@ -110,14 +122,26 @@
             />
             <p class="input-hint">{{ t('admin.accounts.leaveEmptyToKeep') }}</p>
           </div>
-          <div class="grid grid-cols-1 gap-3 rounded-lg border border-lime-200 bg-lime-50 p-3 text-xs text-lime-800 dark:border-lime-800/40 dark:bg-lime-900/20 dark:text-lime-200 sm:grid-cols-2">
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <div class="font-medium">Anthropic-compatible</div>
-              <div class="mt-1 break-all font-mono">{{ KIMI_ANTHROPIC_BASE_URL }}</div>
+              <label class="input-label">Anthropic base URL</label>
+              <input
+                v-model="editKimiAnthropicBaseUrl"
+                data-testid="kimi-anthropic-base-url"
+                type="text"
+                class="input font-mono"
+                :placeholder="KIMI_ANTHROPIC_BASE_URL"
+              />
             </div>
             <div>
-              <div class="font-medium">OpenAI-compatible</div>
-              <div class="mt-1 break-all font-mono">{{ KIMI_OPENAI_BASE_URL }}</div>
+              <label class="input-label">OpenAI base URL</label>
+              <input
+                v-model="editKimiOpenAIBaseUrl"
+                data-testid="kimi-openai-base-url"
+                type="text"
+                class="input font-mono"
+                :placeholder="KIMI_OPENAI_BASE_URL"
+              />
             </div>
           </div>
         </template>
@@ -137,14 +161,26 @@
             />
             <p class="input-hint">{{ t('admin.accounts.leaveEmptyToKeep') }}</p>
           </div>
-          <div class="grid grid-cols-1 gap-3 rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-800 dark:border-indigo-800/40 dark:bg-indigo-900/20 dark:text-indigo-200 sm:grid-cols-2">
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <div class="font-medium">Anthropic-compatible</div>
-              <div class="mt-1 break-all font-mono">{{ DEEPSEEK_ANTHROPIC_BASE_URL }}</div>
+              <label class="input-label">Anthropic base URL</label>
+              <input
+                v-model="editDeepSeekAnthropicBaseUrl"
+                data-testid="deepseek-anthropic-base-url"
+                type="text"
+                class="input font-mono"
+                :placeholder="DEEPSEEK_ANTHROPIC_BASE_URL"
+              />
             </div>
             <div>
-              <div class="font-medium">OpenAI-compatible</div>
-              <div class="mt-1 break-all font-mono">{{ DEEPSEEK_OPENAI_BASE_URL }}</div>
+              <label class="input-label">OpenAI base URL</label>
+              <input
+                v-model="editDeepSeekOpenAIBaseUrl"
+                data-testid="deepseek-openai-base-url"
+                type="text"
+                class="input font-mono"
+                :placeholder="DEEPSEEK_OPENAI_BASE_URL"
+              />
             </div>
           </div>
         </template>
@@ -2334,6 +2370,12 @@ const editBaseUrl = ref('https://api.anthropic.com')
 const editApiKey = ref('')
 const editMiniMaxAnthropicBaseUrl = ref(MINIMAX_ANTHROPIC_BASE_URL)
 const editMiniMaxOpenAIBaseUrl = ref(MINIMAX_OPENAI_BASE_URL)
+const editGLMAnthropicBaseUrl = ref(GLM_ANTHROPIC_BASE_URL)
+const editGLMOpenAIBaseUrl = ref(GLM_OPENAI_BASE_URL)
+const editKimiAnthropicBaseUrl = ref(KIMI_ANTHROPIC_BASE_URL)
+const editKimiOpenAIBaseUrl = ref(KIMI_OPENAI_BASE_URL)
+const editDeepSeekAnthropicBaseUrl = ref(DEEPSEEK_ANTHROPIC_BASE_URL)
+const editDeepSeekOpenAIBaseUrl = ref(DEEPSEEK_OPENAI_BASE_URL)
 // Bedrock credentials
 const editBedrockAccessKeyId = ref('')
 const editBedrockSecretAccessKey = ref('')
@@ -2612,6 +2654,12 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   editVertexLocation.value = 'us-central1'
   editMiniMaxAnthropicBaseUrl.value = MINIMAX_ANTHROPIC_BASE_URL
   editMiniMaxOpenAIBaseUrl.value = MINIMAX_OPENAI_BASE_URL
+  editGLMAnthropicBaseUrl.value = GLM_ANTHROPIC_BASE_URL
+  editGLMOpenAIBaseUrl.value = GLM_OPENAI_BASE_URL
+  editKimiAnthropicBaseUrl.value = KIMI_ANTHROPIC_BASE_URL
+  editKimiOpenAIBaseUrl.value = KIMI_OPENAI_BASE_URL
+  editDeepSeekAnthropicBaseUrl.value = DEEPSEEK_ANTHROPIC_BASE_URL
+  editDeepSeekOpenAIBaseUrl.value = DEEPSEEK_OPENAI_BASE_URL
 
   // Load mixed scheduling setting (only for antigravity accounts)
   mixedScheduling.value = false
@@ -2756,6 +2804,21 @@ const syncFormFromAccount = (newAccount: Account | null) => {
         (credentials.base_url_anthropic as string) || MINIMAX_ANTHROPIC_BASE_URL
       editMiniMaxOpenAIBaseUrl.value =
         (credentials.base_url_openai as string) || MINIMAX_OPENAI_BASE_URL
+    } else if (newAccount.platform === 'glm') {
+      editGLMAnthropicBaseUrl.value =
+        (credentials.base_url_anthropic as string) || GLM_ANTHROPIC_BASE_URL
+      editGLMOpenAIBaseUrl.value =
+        (credentials.base_url_openai as string) || GLM_OPENAI_BASE_URL
+    } else if (newAccount.platform === 'kimi') {
+      editKimiAnthropicBaseUrl.value =
+        (credentials.base_url_anthropic as string) || KIMI_ANTHROPIC_BASE_URL
+      editKimiOpenAIBaseUrl.value =
+        (credentials.base_url_openai as string) || KIMI_OPENAI_BASE_URL
+    } else if (newAccount.platform === 'deepseek') {
+      editDeepSeekAnthropicBaseUrl.value =
+        (credentials.base_url_anthropic as string) || DEEPSEEK_ANTHROPIC_BASE_URL
+      editDeepSeekOpenAIBaseUrl.value =
+        (credentials.base_url_openai as string) || DEEPSEEK_OPENAI_BASE_URL
     }
 
     // Load model mappings and detect mode
@@ -3414,8 +3477,10 @@ const handleSubmit = async () => {
       } else if (props.account.platform === 'glm') {
         delete newCredentials.auth_scheme
         delete newCredentials.base_url
-        delete newCredentials.base_url_anthropic
-        delete newCredentials.base_url_openai
+        newCredentials.base_url_anthropic =
+          editGLMAnthropicBaseUrl.value.trim() || GLM_ANTHROPIC_BASE_URL
+        newCredentials.base_url_openai =
+          editGLMOpenAIBaseUrl.value.trim() || GLM_OPENAI_BASE_URL
         delete newCredentials.compact_model_mapping
         delete newCredentials.pool_mode
         delete newCredentials.pool_mode_retry_count
@@ -3427,8 +3492,10 @@ const handleSubmit = async () => {
       } else if (props.account.platform === 'kimi') {
         delete newCredentials.auth_scheme
         delete newCredentials.base_url
-        delete newCredentials.base_url_anthropic
-        delete newCredentials.base_url_openai
+        newCredentials.base_url_anthropic =
+          editKimiAnthropicBaseUrl.value.trim() || KIMI_ANTHROPIC_BASE_URL
+        newCredentials.base_url_openai =
+          editKimiOpenAIBaseUrl.value.trim() || KIMI_OPENAI_BASE_URL
         delete newCredentials.compact_model_mapping
         delete newCredentials.pool_mode
         delete newCredentials.pool_mode_retry_count
@@ -3440,8 +3507,10 @@ const handleSubmit = async () => {
       } else if (props.account.platform === 'deepseek') {
         delete newCredentials.auth_scheme
         delete newCredentials.base_url
-        delete newCredentials.base_url_anthropic
-        delete newCredentials.base_url_openai
+        newCredentials.base_url_anthropic =
+          editDeepSeekAnthropicBaseUrl.value.trim() || DEEPSEEK_ANTHROPIC_BASE_URL
+        newCredentials.base_url_openai =
+          editDeepSeekOpenAIBaseUrl.value.trim() || DEEPSEEK_OPENAI_BASE_URL
         delete newCredentials.compact_model_mapping
         delete newCredentials.pool_mode
         delete newCredentials.pool_mode_retry_count

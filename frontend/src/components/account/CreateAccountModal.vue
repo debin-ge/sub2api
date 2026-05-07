@@ -1115,14 +1115,26 @@
             />
             <p class="input-hint">{{ apiKeyHint }}</p>
           </div>
-          <div class="grid grid-cols-1 gap-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800 dark:border-rose-800/40 dark:bg-rose-900/20 dark:text-rose-200 sm:grid-cols-2">
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <div class="font-medium">Anthropic-compatible</div>
-              <div class="mt-1 break-all font-mono">{{ GLM_ANTHROPIC_BASE_URL }}</div>
+              <label class="input-label">Anthropic base URL</label>
+              <input
+                v-model="glmAnthropicBaseUrl"
+                data-testid="glm-anthropic-base-url"
+                type="text"
+                class="input font-mono"
+                :placeholder="GLM_ANTHROPIC_BASE_URL"
+              />
             </div>
             <div>
-              <div class="font-medium">OpenAI-compatible</div>
-              <div class="mt-1 break-all font-mono">{{ GLM_OPENAI_BASE_URL }}</div>
+              <label class="input-label">OpenAI base URL</label>
+              <input
+                v-model="glmOpenAIBaseUrl"
+                data-testid="glm-openai-base-url"
+                type="text"
+                class="input font-mono"
+                :placeholder="GLM_OPENAI_BASE_URL"
+              />
             </div>
           </div>
         </template>
@@ -1139,14 +1151,26 @@
             />
             <p class="input-hint">{{ apiKeyHint }}</p>
           </div>
-          <div class="grid grid-cols-1 gap-3 rounded-lg border border-lime-200 bg-lime-50 p-3 text-xs text-lime-800 dark:border-lime-800/40 dark:bg-lime-900/20 dark:text-lime-200 sm:grid-cols-2">
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <div class="font-medium">Anthropic-compatible</div>
-              <div class="mt-1 break-all font-mono">{{ KIMI_ANTHROPIC_BASE_URL }}</div>
+              <label class="input-label">Anthropic base URL</label>
+              <input
+                v-model="kimiAnthropicBaseUrl"
+                data-testid="kimi-anthropic-base-url"
+                type="text"
+                class="input font-mono"
+                :placeholder="KIMI_ANTHROPIC_BASE_URL"
+              />
             </div>
             <div>
-              <div class="font-medium">OpenAI-compatible</div>
-              <div class="mt-1 break-all font-mono">{{ KIMI_OPENAI_BASE_URL }}</div>
+              <label class="input-label">OpenAI base URL</label>
+              <input
+                v-model="kimiOpenAIBaseUrl"
+                data-testid="kimi-openai-base-url"
+                type="text"
+                class="input font-mono"
+                :placeholder="KIMI_OPENAI_BASE_URL"
+              />
             </div>
           </div>
         </template>
@@ -1163,14 +1187,26 @@
             />
             <p class="input-hint">{{ apiKeyHint }}</p>
           </div>
-          <div class="grid grid-cols-1 gap-3 rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-800 dark:border-indigo-800/40 dark:bg-indigo-900/20 dark:text-indigo-200 sm:grid-cols-2">
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <div class="font-medium">Anthropic-compatible</div>
-              <div class="mt-1 break-all font-mono">{{ DEEPSEEK_ANTHROPIC_BASE_URL }}</div>
+              <label class="input-label">Anthropic base URL</label>
+              <input
+                v-model="deepseekAnthropicBaseUrl"
+                data-testid="deepseek-anthropic-base-url"
+                type="text"
+                class="input font-mono"
+                :placeholder="DEEPSEEK_ANTHROPIC_BASE_URL"
+              />
             </div>
             <div>
-              <div class="font-medium">OpenAI-compatible</div>
-              <div class="mt-1 break-all font-mono">{{ DEEPSEEK_OPENAI_BASE_URL }}</div>
+              <label class="input-label">OpenAI base URL</label>
+              <input
+                v-model="deepseekOpenAIBaseUrl"
+                data-testid="deepseek-openai-base-url"
+                type="text"
+                class="input font-mono"
+                :placeholder="DEEPSEEK_OPENAI_BASE_URL"
+              />
             </div>
           </div>
         </template>
@@ -3435,6 +3471,12 @@ const apiKeyBaseUrl = ref('https://api.anthropic.com')
 const apiKeyValue = ref('')
 const minimaxAnthropicBaseUrl = ref(MINIMAX_ANTHROPIC_BASE_URL)
 const minimaxOpenAIBaseUrl = ref(MINIMAX_OPENAI_BASE_URL)
+const glmAnthropicBaseUrl = ref(GLM_ANTHROPIC_BASE_URL)
+const glmOpenAIBaseUrl = ref(GLM_OPENAI_BASE_URL)
+const kimiAnthropicBaseUrl = ref(KIMI_ANTHROPIC_BASE_URL)
+const kimiOpenAIBaseUrl = ref(KIMI_OPENAI_BASE_URL)
+const deepseekAnthropicBaseUrl = ref(DEEPSEEK_ANTHROPIC_BASE_URL)
+const deepseekOpenAIBaseUrl = ref(DEEPSEEK_OPENAI_BASE_URL)
 const editQuotaLimit = ref<number | null>(null)
 const editQuotaDailyLimit = ref<number | null>(null)
 const editQuotaWeeklyLimit = ref<number | null>(null)
@@ -3809,6 +3851,12 @@ watch(
                   : 'https://api.anthropic.com'
     minimaxAnthropicBaseUrl.value = MINIMAX_ANTHROPIC_BASE_URL
     minimaxOpenAIBaseUrl.value = MINIMAX_OPENAI_BASE_URL
+    glmAnthropicBaseUrl.value = GLM_ANTHROPIC_BASE_URL
+    glmOpenAIBaseUrl.value = GLM_OPENAI_BASE_URL
+    kimiAnthropicBaseUrl.value = KIMI_ANTHROPIC_BASE_URL
+    kimiOpenAIBaseUrl.value = KIMI_OPENAI_BASE_URL
+    deepseekAnthropicBaseUrl.value = DEEPSEEK_ANTHROPIC_BASE_URL
+    deepseekOpenAIBaseUrl.value = DEEPSEEK_OPENAI_BASE_URL
     // Clear model-related settings
     allowedModels.value = []
     modelMappings.value = []
@@ -4250,6 +4298,12 @@ const resetForm = () => {
   apiKeyValue.value = ''
   minimaxAnthropicBaseUrl.value = MINIMAX_ANTHROPIC_BASE_URL
   minimaxOpenAIBaseUrl.value = MINIMAX_OPENAI_BASE_URL
+  glmAnthropicBaseUrl.value = GLM_ANTHROPIC_BASE_URL
+  glmOpenAIBaseUrl.value = GLM_OPENAI_BASE_URL
+  kimiAnthropicBaseUrl.value = KIMI_ANTHROPIC_BASE_URL
+  kimiOpenAIBaseUrl.value = KIMI_OPENAI_BASE_URL
+  deepseekAnthropicBaseUrl.value = DEEPSEEK_ANTHROPIC_BASE_URL
+  deepseekOpenAIBaseUrl.value = DEEPSEEK_OPENAI_BASE_URL
   editQuotaLimit.value = null
   editQuotaDailyLimit.value = null
   editQuotaWeeklyLimit.value = null
@@ -4639,15 +4693,21 @@ const handleSubmit = async () => {
       }
     : form.platform === 'glm'
       ? {
-          api_key: apiKeyValue.value.trim()
+          api_key: apiKeyValue.value.trim(),
+          base_url_anthropic: glmAnthropicBaseUrl.value.trim() || GLM_ANTHROPIC_BASE_URL,
+          base_url_openai: glmOpenAIBaseUrl.value.trim() || GLM_OPENAI_BASE_URL
         }
     : form.platform === 'kimi'
       ? {
-          api_key: apiKeyValue.value.trim()
+          api_key: apiKeyValue.value.trim(),
+          base_url_anthropic: kimiAnthropicBaseUrl.value.trim() || KIMI_ANTHROPIC_BASE_URL,
+          base_url_openai: kimiOpenAIBaseUrl.value.trim() || KIMI_OPENAI_BASE_URL
         }
       : form.platform === 'deepseek'
         ? {
-            api_key: apiKeyValue.value.trim()
+            api_key: apiKeyValue.value.trim(),
+            base_url_anthropic: deepseekAnthropicBaseUrl.value.trim() || DEEPSEEK_ANTHROPIC_BASE_URL,
+            base_url_openai: deepseekOpenAIBaseUrl.value.trim() || DEEPSEEK_OPENAI_BASE_URL
           }
     : {
         base_url: apiKeyBaseUrl.value.trim() || defaultBaseUrl,

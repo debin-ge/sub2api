@@ -2,14 +2,14 @@ package service
 
 import "testing"
 
-func TestAccountKimiHelpersUseFixedEndpointsAndSingleModel(t *testing.T) {
+func TestAccountKimiHelpersUseEditableEndpointsAndSingleModel(t *testing.T) {
 	acc := &Account{
 		Platform: PlatformKimi,
 		Type:     AccountTypeAPIKey,
 		Credentials: map[string]any{
 			"api_key":            "  sk-kimi-test \n",
-			"base_url_anthropic": "https://proxy.example/anthropic",
-			"base_url_openai":    "https://proxy.example/openai",
+			"base_url_anthropic": " https://proxy.example/anthropic/ ",
+			"base_url_openai":    " https://proxy.example/openai/ ",
 			"model_mapping": map[string]any{
 				"claude-sonnet-4-5": "kimi-for-coding",
 			},
@@ -25,10 +25,10 @@ func TestAccountKimiHelpersUseFixedEndpointsAndSingleModel(t *testing.T) {
 	if got := acc.GetKimiAPIKey(); got != "sk-kimi-test" {
 		t.Fatalf("api key = %q", got)
 	}
-	if got := acc.GetKimiAnthropicBaseURL(); got != "https://api.kimi.com/coding" {
+	if got := acc.GetKimiAnthropicBaseURL(); got != "https://proxy.example/anthropic" {
 		t.Fatalf("anthropic base url = %q", got)
 	}
-	if got := acc.GetKimiOpenAIBaseURL(); got != "https://api.kimi.com/coding/v1" {
+	if got := acc.GetKimiOpenAIBaseURL(); got != "https://proxy.example/openai" {
 		t.Fatalf("openai base url = %q", got)
 	}
 	if got := DefaultKimiModelIDs(); len(got) != 1 || got[0] != "kimi-for-coding" {
@@ -41,6 +41,21 @@ func TestAccountKimiHelpersUseFixedEndpointsAndSingleModel(t *testing.T) {
 		if acc.IsKimiModelSupported(model) {
 			t.Fatalf("model %q should not be supported", model)
 		}
+	}
+}
+
+func TestAccountKimiHelpersDefaultEndpoints(t *testing.T) {
+	acc := &Account{
+		Platform:    PlatformKimi,
+		Type:        AccountTypeAPIKey,
+		Credentials: map[string]any{"api_key": "sk-kimi-test"},
+	}
+
+	if got := acc.GetKimiAnthropicBaseURL(); got != "https://api.kimi.com/coding" {
+		t.Fatalf("anthropic base url = %q", got)
+	}
+	if got := acc.GetKimiOpenAIBaseURL(); got != "https://api.kimi.com/coding/v1" {
+		t.Fatalf("openai base url = %q", got)
 	}
 }
 
