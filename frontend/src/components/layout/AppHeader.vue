@@ -63,7 +63,7 @@
             />
           </svg>
           <span class="text-sm font-semibold text-primary-700 dark:text-primary-300">
-            ${{ user.balance?.toFixed(2) || '0.00' }}
+            ${{ formatBalanceAmount(user.balance) }}
           </span>
         </div>
 
@@ -111,7 +111,7 @@
                   {{ t('common.balance') }}
                 </div>
                 <div class="text-sm font-semibold text-primary-600 dark:text-primary-400">
-                  ${{ user.balance?.toFixed(2) || '0.00' }}
+                  ${{ formatBalanceAmount(user.balance) }}
                 </div>
               </div>
 
@@ -222,6 +222,7 @@ import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import SubscriptionProgressMini from '@/components/common/SubscriptionProgressMini.vue'
 import AnnouncementBell from '@/components/common/AnnouncementBell.vue'
 import Icon from '@/components/icons/Icon.vue'
+import { formatBalanceAmount } from '@/utils/formatters'
 
 const router = useRouter()
 const route = useRoute()
