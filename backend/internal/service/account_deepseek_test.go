@@ -36,15 +36,24 @@ func TestAccountDeepSeekHelpersUseEditableEndpointsAndOfficialModels(t *testing.
 		t.Fatalf("default deepseek models = %#v", got)
 	}
 
-	for _, model := range []string{"deepseek-v4-flash", "deepseek-v4-pro"} {
+	for _, model := range []string{"deepseek-v4-flash", " deepseek-v4-pro ", "deepseek-chat", "deepseek-v3", "deepseek-reasoner", "deepseek-r1", "claude-sonnet-4-5"} {
 		if !acc.IsDeepSeekModelSupported(model) {
 			t.Fatalf("model %q should be supported", model)
 		}
 	}
-	for _, model := range []string{"deepseek-chat", "deepseek-reasoner", "claude-sonnet-4-5", "gpt-5.4", "kimi-for-coding", " deepseek-v4-flash "} {
+	for _, model := range []string{"gpt-5.4", "kimi-for-coding"} {
 		if acc.IsDeepSeekModelSupported(model) {
 			t.Fatalf("model %q should not be supported", model)
 		}
+	}
+	if got := acc.GetDeepSeekMappedModel("claude-sonnet-4-5"); got != "deepseek-v4-pro" {
+		t.Fatalf("GetDeepSeekMappedModel(claude-sonnet-4-5) = %q", got)
+	}
+	if got := acc.GetDeepSeekMappedModel("deepseek-chat"); got != "deepseek-v4-flash" {
+		t.Fatalf("GetDeepSeekMappedModel(deepseek-chat) = %q", got)
+	}
+	if got := acc.GetDeepSeekMappedModel("deepseek-reasoner"); got != "deepseek-v4-pro" {
+		t.Fatalf("GetDeepSeekMappedModel(deepseek-reasoner) = %q", got)
 	}
 }
 

@@ -85,21 +85,28 @@ describe('useModelWhitelist', () => {
     ]))
   })
 
-  it('kimi 预设映射只提供 kimi-for-coding 透传', () => {
+  it('kimi 预设映射提供 Claude Sonnet aliases 到 kimi-for-coding', () => {
     const mappings = getPresetMappingsByPlatform('kimi')
 
-    expect(mappings).toEqual([
+    expect(mappings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ from: 'claude-sonnet-*', to: 'kimi-for-coding' }),
+      expect.objectContaining({ from: 'claude-sonnet-4-5', to: 'kimi-for-coding' }),
+      expect.objectContaining({ from: 'claude-3-5-sonnet-latest', to: 'kimi-for-coding' }),
       expect.objectContaining({ from: 'kimi-for-coding', to: 'kimi-for-coding' })
-    ])
+    ]))
   })
 
-  it('deepseek 预设映射只提供默认模型透传', () => {
+  it('deepseek 预设映射提供官方兼容 aliases 到 Gateway 默认模型', () => {
     const mappings = getPresetMappingsByPlatform('deepseek')
 
-    expect(mappings).toEqual([
+    expect(mappings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ from: 'deepseek-chat', to: 'deepseek-v4-flash' }),
+      expect.objectContaining({ from: 'deepseek-v3', to: 'deepseek-v4-flash' }),
+      expect.objectContaining({ from: 'deepseek-reasoner', to: 'deepseek-v4-pro' }),
+      expect.objectContaining({ from: 'deepseek-r1', to: 'deepseek-v4-pro' }),
       expect.objectContaining({ from: 'deepseek-v4-flash', to: 'deepseek-v4-flash' }),
       expect.objectContaining({ from: 'deepseek-v4-pro', to: 'deepseek-v4-pro' })
-    ])
+    ]))
   })
 
   it('antigravity 模型列表会把新的 Gemini 图片模型排在前面', () => {

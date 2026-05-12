@@ -939,22 +939,17 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 		platform = forcedPlatform
 	}
 
-	if platform == service.PlatformGLM {
-		var availableModels []string
+	if _, ok := service.GetProviderGatewayCapabilities(platform); ok {
+		availableModels := service.DefaultDomesticProviderModelIDs(platform)
 		if h.gatewayService != nil {
-			availableModels = h.gatewayService.GetAvailableModels(c.Request.Context(), groupID, service.PlatformGLM)
+			if models := h.gatewayService.GetAvailableModels(c.Request.Context(), groupID, platform); len(models) > 0 {
+				availableModels = models
+			}
 		}
-		writeClaudeModelList(c, mergeGLMModelIDs(availableModels))
-		return
-	}
-
-	if platform == service.PlatformKimi {
-		writeClaudeModelList(c, service.DefaultKimiModelIDs())
-		return
-	}
-
-	if platform == service.PlatformDeepSeek {
-		writeClaudeModelList(c, service.DefaultDeepSeekModelIDs())
+		if platform == service.PlatformGLM {
+			availableModels = mergeGLMModelIDs(availableModels)
+		}
+		writeClaudeModelList(c, availableModels)
 		return
 	}
 

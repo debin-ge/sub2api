@@ -12,11 +12,19 @@ import type { Provider, MonitorStatus } from '@/api/admin/channelMonitor'
 export const PROVIDER_OPENAI: Provider = 'openai'
 export const PROVIDER_ANTHROPIC: Provider = 'anthropic'
 export const PROVIDER_GEMINI: Provider = 'gemini'
+export const PROVIDER_MINIMAX: Provider = 'minimax'
+export const PROVIDER_GLM: Provider = 'glm'
+export const PROVIDER_KIMI: Provider = 'kimi'
+export const PROVIDER_DEEPSEEK: Provider = 'deepseek'
 
 export const PROVIDERS: readonly Provider[] = [
-  PROVIDER_OPENAI,
   PROVIDER_ANTHROPIC,
+  PROVIDER_OPENAI,
   PROVIDER_GEMINI,
+  PROVIDER_MINIMAX,
+  PROVIDER_GLM,
+  PROVIDER_KIMI,
+  PROVIDER_DEEPSEEK,
 ]
 
 export const STATUS_OPERATIONAL: MonitorStatus = 'operational'

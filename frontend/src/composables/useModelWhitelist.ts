@@ -303,10 +303,17 @@ const glmPresetMappings = [
 ]
 
 const kimiPresetMappings = [
+  { label: 'Sonnet→Kimi', from: 'claude-sonnet-*', to: 'kimi-for-coding', color: 'bg-lime-100 text-lime-700 hover:bg-lime-200 dark:bg-lime-900/30 dark:text-lime-300' },
+  { label: 'Sonnet 4.5→Kimi', from: 'claude-sonnet-4-5', to: 'kimi-for-coding', color: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300' },
+  { label: 'Sonnet latest→Kimi', from: 'claude-3-5-sonnet-latest', to: 'kimi-for-coding', color: 'bg-teal-100 text-teal-700 hover:bg-teal-200 dark:bg-teal-900/30 dark:text-teal-300' },
   { label: 'kimi-for-coding passthrough', from: 'kimi-for-coding', to: 'kimi-for-coding', color: 'bg-lime-100 text-lime-700 hover:bg-lime-200 dark:bg-lime-900/30 dark:text-lime-300' }
 ]
 
 const deepseekPresetMappings = [
+  { label: 'chat→v4 flash', from: 'deepseek-chat', to: 'deepseek-v4-flash', color: 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-300' },
+  { label: 'v3→v4 flash', from: 'deepseek-v3', to: 'deepseek-v4-flash', color: 'bg-sky-100 text-sky-700 hover:bg-sky-200 dark:bg-sky-900/30 dark:text-sky-300' },
+  { label: 'reasoner→v4 pro', from: 'deepseek-reasoner', to: 'deepseek-v4-pro', color: 'bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300' },
+  { label: 'r1→v4 pro', from: 'deepseek-r1', to: 'deepseek-v4-pro', color: 'bg-fuchsia-100 text-fuchsia-700 hover:bg-fuchsia-200 dark:bg-fuchsia-900/30 dark:text-fuchsia-300' },
   { label: 'deepseek-v4-flash passthrough', from: 'deepseek-v4-flash', to: 'deepseek-v4-flash', color: 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-300' },
   { label: 'deepseek-v4-pro passthrough', from: 'deepseek-v4-pro', to: 'deepseek-v4-pro', color: 'bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-900/30 dark:text-violet-300' }
 ]

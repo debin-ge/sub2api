@@ -62,6 +62,33 @@ func miniMaxMessagesBody(stream bool) []byte {
 	return []byte(`{"model":"claude-sonnet-4-5","max_tokens":64,"messages":[{"role":"user","content":"hello"}]}`)
 }
 
+func TestRewriteMiniMaxModelUsesDefaultAliasAndRejectsUnknown(t *testing.T) {
+	acc := &Account{
+		ID:          102,
+		Platform:    PlatformMiniMax,
+		Type:        AccountTypeAPIKey,
+		Credentials: map[string]any{"api_key": "sk-cp-test"},
+	}
+
+	rewritten, originalModel, upstreamModel, err := rewriteMiniMaxModel([]byte(`{"model":"claude-haiku-3-5","messages":[{"role":"user","content":"hello"}]}`), acc)
+	if err != nil {
+		t.Fatalf("rewriteMiniMaxModel alias error = %v", err)
+	}
+	if originalModel != "claude-haiku-3-5" {
+		t.Fatalf("originalModel = %q", originalModel)
+	}
+	if upstreamModel != "MiniMax-M2.7-highspeed" {
+		t.Fatalf("upstreamModel = %q", upstreamModel)
+	}
+	if got := gjson.GetBytes(rewritten, "model").String(); got != "MiniMax-M2.7-highspeed" {
+		t.Fatalf("rewritten model = %q body=%s", got, string(rewritten))
+	}
+
+	if _, _, _, err := rewriteMiniMaxModel([]byte(`{"model":"unknown-model","messages":[{"role":"user","content":"hello"}]}`), acc); err == nil {
+		t.Fatalf("expected unknown minimax model to fail")
+	}
+}
+
 func TestMiniMaxGatewayServiceForwardMessagesBuildsSafeUpstreamRequest(t *testing.T) {
 	var captured *http.Request
 	var capturedBody []byte

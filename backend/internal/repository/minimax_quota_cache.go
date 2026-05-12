@@ -105,6 +105,73 @@ var (
 		end
 		return count
 	`)
+
+	minimaxQuotaCalibrateScript = redis.NewScript(`
+		local key = KEYS[1]
+		local targetUsed = tonumber(ARGV[1])
+		local windowSeconds = tonumber(ARGV[2])
+		local accountID = tonumber(ARGV[3])
+		local maxWindowSeconds = tonumber(ARGV[4])
+		local expiryBufferSeconds = tonumber(ARGV[5])
+
+		if accountID == nil or accountID <= 0 then
+			return redis.error_reply('invalid minimax quota account id')
+		end
+		if targetUsed == nil or targetUsed < 0 then
+			return redis.error_reply('invalid minimax quota target used')
+		end
+		if maxWindowSeconds == nil or maxWindowSeconds <= 0 then
+			return redis.error_reply('invalid minimax quota max window seconds')
+		end
+		if expiryBufferSeconds == nil or expiryBufferSeconds < 0 then
+			return redis.error_reply('invalid minimax quota expiry buffer seconds')
+		end
+		if windowSeconds == nil or windowSeconds <= 0 or windowSeconds > maxWindowSeconds then
+			return redis.error_reply('invalid minimax quota window seconds')
+		end
+		local ttlSeconds = windowSeconds + expiryBufferSeconds
+		if ttlSeconds <= 0 then
+			return redis.error_reply('invalid minimax quota ttl seconds')
+		end
+
+		local timeResult = redis.call('TIME')
+		local now = tonumber(timeResult[1])
+		local micros = tostring(timeResult[2])
+		local cutoff = now - windowSeconds
+
+		redis.call('ZREMRANGEBYSCORE', key, '-inf', cutoff)
+		local count = redis.call('ZCARD', key)
+		local added = 0
+		local removed = 0
+
+		if targetUsed > count then
+			local diff = targetUsed - count
+			for i = 1, diff do
+				redis.call('ZADD', key, now, 'official:' .. tostring(now) .. ':' .. micros .. ':' .. tostring(i))
+			end
+			added = diff
+			count = targetUsed
+		elseif targetUsed < count then
+			local diff = count - targetUsed
+			local synthetic = redis.call('ZRANGEBYLEX', key, '[official:', '[official;')
+			local toRemove = diff
+			if #synthetic < toRemove then
+				toRemove = #synthetic
+			end
+			for i = 1, toRemove do
+				redis.call('ZREM', key, synthetic[i])
+			end
+			removed = toRemove
+			count = count - toRemove
+		end
+
+		if count == 0 then
+			redis.call('DEL', key)
+		else
+			redis.call('EXPIRE', key, ttlSeconds)
+		end
+		return {count, added, removed}
+	`)
 )
 
 type minimaxQuotaCache struct {
@@ -171,6 +238,40 @@ func (c *minimaxQuotaCache) CountTextRequests(ctx context.Context, accountID int
 	}
 
 	return minimaxQuotaCountScript.Run(ctx, c.rdb, []string{minimaxQuotaTextRequestsKey(accountID)}, windowSeconds, accountID, minimaxQuotaMaxWindowSeconds, minimaxQuotaExpiryBufferSeconds).Int64()
+}
+
+func (c *minimaxQuotaCache) CalibrateTextRequests(ctx context.Context, accountID int64, targetUsed int64, windowSeconds int64) (int64, int64, int64, error) {
+	if err := validateMiniMaxQuotaAccountID(accountID); err != nil {
+		return 0, 0, 0, err
+	}
+	if targetUsed < 0 {
+		return 0, 0, 0, fmt.Errorf("invalid minimax quota target used: %d", targetUsed)
+	}
+	if err := validateMiniMaxQuotaWindowSeconds(windowSeconds); err != nil {
+		return 0, 0, 0, err
+	}
+
+	result, err := minimaxQuotaCalibrateScript.Run(ctx, c.rdb, []string{minimaxQuotaTextRequestsKey(accountID)}, targetUsed, windowSeconds, accountID, minimaxQuotaMaxWindowSeconds, minimaxQuotaExpiryBufferSeconds).Result()
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	values, ok := result.([]interface{})
+	if !ok || len(values) != 3 {
+		return 0, 0, 0, fmt.Errorf("unexpected minimax quota calibrate result: %T", result)
+	}
+	localUsed, err := redisInt64(values[0])
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("parse minimax quota calibrate local used: %w", err)
+	}
+	added, err := redisInt64(values[1])
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("parse minimax quota calibrate synthetic added: %w", err)
+	}
+	removed, err := redisInt64(values[2])
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("parse minimax quota calibrate synthetic removed: %w", err)
+	}
+	return localUsed, added, removed, nil
 }
 
 func minimaxQuotaTextRequestsKey(accountID int64) string {

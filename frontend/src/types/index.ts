@@ -780,6 +780,13 @@ export interface Account {
     minimax_text_5h_remaining?: number | string
     minimax_remains_synced_at?: string
     minimax_remains_raw?: Record<string, unknown>
+    deepseek_balance_available?: boolean
+    deepseek_balance_amount?: number | string
+    deepseek_balance_currency?: string
+    deepseek_balance_checked_at?: string
+    deepseek_balance_status?: 'ok' | 'unavailable' | 'error' | string
+    deepseek_balance_error?: string
+    deepseek_balance_raw?: Record<string, unknown>
   } & Record<string, unknown>)
   proxy_id: number | null
   concurrency: number

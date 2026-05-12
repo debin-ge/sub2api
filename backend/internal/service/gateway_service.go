@@ -9079,8 +9079,21 @@ func (s *GatewayService) isUpstreamModelRestrictedByChannel(ctx context.Context,
 
 // resolveAccountUpstreamModel 确定账号将请求模型映射为什么上游模型。
 func resolveAccountUpstreamModel(account *Account, requestedModel string) string {
+	if account == nil {
+		return ""
+	}
 	if account.Platform == PlatformAntigravity {
 		return mapAntigravityModel(account, requestedModel)
+	}
+	switch account.Platform {
+	case PlatformMiniMax:
+		return account.GetMiniMaxMappedModel(requestedModel)
+	case PlatformGLM:
+		return account.GetGLMMappedModel(requestedModel)
+	case PlatformKimi:
+		return account.GetKimiMappedModel(requestedModel)
+	case PlatformDeepSeek:
+		return account.GetDeepSeekMappedModel(requestedModel)
 	}
 	return account.GetMappedModel(requestedModel)
 }
@@ -9675,6 +9688,10 @@ func (s *GatewayService) validateUpstreamBaseURL(raw string) (string, error) {
 // GetAvailableModels returns the list of models available for a group
 // It aggregates model_mapping keys from all schedulable accounts in the group
 func (s *GatewayService) GetAvailableModels(ctx context.Context, groupID *int64, platform string) []string {
+	if s == nil {
+		return nil
+	}
+	_, hasDomesticCapabilities := GetProviderGatewayCapabilities(platform)
 	cacheKey := modelsListCacheKey(groupID, platform)
 	if s.modelsListCache != nil {
 		if cached, found := s.modelsListCache.Get(cacheKey); found {
@@ -9689,13 +9706,31 @@ func (s *GatewayService) GetAvailableModels(ctx context.Context, groupID *int64,
 	var accounts []Account
 	var err error
 
+	if s.accountRepo == nil {
+		if hasDomesticCapabilities {
+			return s.cacheAvailableModels(cacheKey, NewGatewayModelListProvider(GatewayModelListOptions{
+				IncludeAliases: includeDomesticModelAliasesInModels(s.cfg),
+			}).ModelsForProvider(platform, nil))
+		}
+		return nil
+	}
+
 	if groupID != nil {
 		accounts, err = s.accountRepo.ListSchedulableByGroupID(ctx, *groupID)
 	} else {
 		accounts, err = s.accountRepo.ListSchedulable(ctx)
 	}
 
-	if err != nil || len(accounts) == 0 {
+	if err != nil {
+		if hasDomesticCapabilities {
+			return NewGatewayModelListProvider(GatewayModelListOptions{
+				IncludeAliases: includeDomesticModelAliasesInModels(s.cfg),
+			}).ModelsForProvider(platform, nil)
+		}
+		return nil
+	}
+
+	if len(accounts) == 0 && !hasDomesticCapabilities {
 		return nil
 	}
 
@@ -9708,6 +9743,12 @@ func (s *GatewayService) GetAvailableModels(ctx context.Context, groupID *int64,
 			}
 		}
 		accounts = filtered
+	}
+
+	if hasDomesticCapabilities {
+		return s.cacheAvailableModels(cacheKey, NewGatewayModelListProvider(GatewayModelListOptions{
+			IncludeAliases: includeDomesticModelAliasesInModels(s.cfg),
+		}).ModelsForProvider(platform, accounts))
 	}
 
 	// Collect unique models from all accounts
@@ -9745,6 +9786,18 @@ func (s *GatewayService) GetAvailableModels(ctx context.Context, groupID *int64,
 		modelsListCacheStoreTotal.Add(1)
 	}
 	return cloneStringSlice(models)
+}
+
+func (s *GatewayService) cacheAvailableModels(cacheKey string, models []string) []string {
+	if s != nil && s.modelsListCache != nil {
+		s.modelsListCache.Set(cacheKey, cloneStringSlice(models), s.modelsListCacheTTL)
+		modelsListCacheStoreTotal.Add(1)
+	}
+	return cloneStringSlice(models)
+}
+
+func includeDomesticModelAliasesInModels(cfg *config.Config) bool {
+	return cfg != nil && cfg.Gateway.ModelAliases.Enabled && cfg.Gateway.ModelAliases.IncludeInModels
 }
 
 func (s *GatewayService) InvalidateAvailableModelsCache(groupID *int64, platform string) {

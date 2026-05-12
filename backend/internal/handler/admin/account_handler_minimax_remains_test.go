@@ -87,3 +87,47 @@ func TestAccountHandlerSyncMiniMaxRemainsUpdatesExtra(t *testing.T) {
 	require.NotEmpty(t, adminSvc.updateInput.Extra["minimax_remains_synced_at"])
 	require.NotNil(t, adminSvc.updateInput.Extra["minimax_remains_raw"])
 }
+
+func TestAccountHandlerCheckDeepSeekBalanceUpdatesExtra(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	var gotAuthorization string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuthorization = r.Header.Get("Authorization")
+		require.Equal(t, "/user/balance", r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"is_available":true,"balance_infos":[{"currency":"CNY","total_balance":"10.50"}]}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	adminSvc := &minimaxRemainsAdminService{
+		stubAdminService: newStubAdminService(),
+		account: &service.Account{
+			ID:       89,
+			Platform: service.PlatformDeepSeek,
+			Type:     service.AccountTypeAPIKey,
+			Status:   service.StatusActive,
+			Credentials: map[string]any{
+				"api_key":         "sk-deepseek-test",
+				"base_url_openai": srv.URL,
+			},
+			Extra: map[string]any{"future_field": "keep"},
+		},
+	}
+	h := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := gin.New()
+	router.POST("/api/v1/admin/accounts/:id/deepseek/balance-check", h.CheckDeepSeekBalance)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/89/deepseek/balance-check", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	require.Equal(t, "Bearer sk-deepseek-test", gotAuthorization)
+	require.NotNil(t, adminSvc.updateInput)
+	require.Equal(t, "keep", adminSvc.updateInput.Extra["future_field"])
+	require.Equal(t, true, adminSvc.updateInput.Extra["deepseek_balance_available"])
+	require.Equal(t, "10.50", adminSvc.updateInput.Extra["deepseek_balance_amount"])
+	require.Equal(t, "CNY", adminSvc.updateInput.Extra["deepseek_balance_currency"])
+	require.Equal(t, "ok", adminSvc.updateInput.Extra["deepseek_balance_status"])
+	require.NotEmpty(t, adminSvc.updateInput.Extra["deepseek_balance_checked_at"])
+}

@@ -106,6 +106,35 @@ func TestDeepSeekGatewayServiceForwardMessagesUsesAnthropicAPIKeyHeader(t *testi
 	}
 }
 
+func TestRewriteDeepSeekModelAcceptsCompatibilityAliases(t *testing.T) {
+	cases := []struct {
+		model string
+		want  string
+	}{
+		{model: "deepseek-chat", want: "deepseek-v4-flash"},
+		{model: "deepseek-reasoner", want: "deepseek-v4-pro"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.model, func(t *testing.T) {
+			body := []byte(`{"model":"` + tc.model + `","messages":[{"role":"user","content":"hello"}]}`)
+			rewritten, originalModel, upstreamModel, err := rewriteDeepSeekModel(body, deepSeekGatewayTestAccount())
+			if err != nil {
+				t.Fatalf("rewriteDeepSeekModel error = %v", err)
+			}
+			if originalModel != tc.model {
+				t.Fatalf("originalModel = %q, want %q", originalModel, tc.model)
+			}
+			if upstreamModel != tc.want {
+				t.Fatalf("upstreamModel = %q, want %q", upstreamModel, tc.want)
+			}
+			if got := gjson.GetBytes(rewritten, "model").String(); got != tc.want {
+				t.Fatalf("rewritten model = %q body=%s", got, string(rewritten))
+			}
+		})
+	}
+}
+
 func TestDeepSeekGatewayServiceForwardMessagesPreservesAnthropicHeaders(t *testing.T) {
 	var captured *http.Request
 	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
@@ -203,7 +232,7 @@ func TestDeepSeekGatewayServiceForwardChatCompletionsFallsBackToPromptTokensWhen
 }
 
 func TestDeepSeekGatewayServiceRejectsUnsupportedModelsBeforeForwarding(t *testing.T) {
-	tests := []string{"deepseek-chat", "deepseek-reasoner", "claude-sonnet-4-5", "gpt-5.4", " deepseek-v4-flash "}
+	tests := []string{"claude-sonnet-4-5-haiku", "gpt-5.4", "deepseek-v4-flashy"}
 	for _, model := range tests {
 		t.Run(model, func(t *testing.T) {
 			forwarded := false

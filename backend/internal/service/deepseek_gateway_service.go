@@ -198,7 +198,7 @@ func (s *DeepSeekGatewayService) buildMessagesRequest(ctx context.Context, c *gi
 	if err != nil {
 		return nil, "", "", err
 	}
-	upstreamBody, originalModel, upstreamModel, err := rewriteDeepSeekAnthropicMessagesBody(body)
+	upstreamBody, originalModel, upstreamModel, err := rewriteDeepSeekAnthropicMessagesBody(body, account)
 	if err != nil {
 		return nil, "", "", err
 	}
@@ -216,7 +216,7 @@ func (s *DeepSeekGatewayService) buildChatCompletionsRequest(ctx context.Context
 	if err != nil {
 		return nil, "", "", err
 	}
-	upstreamBody, originalModel, upstreamModel, err := rewriteDeepSeekModel(body)
+	upstreamBody, originalModel, upstreamModel, err := rewriteDeepSeekModel(body, account)
 	if err != nil {
 		return nil, "", "", err
 	}
@@ -250,25 +250,25 @@ func setDeepSeekOpenAIHeaders(req *http.Request, c *gin.Context, apiKey string) 
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 }
 
-func rewriteDeepSeekModel(body []byte) ([]byte, string, string, error) {
-	payload, model, err := validateDeepSeekModelPayload(body)
+func rewriteDeepSeekModel(body []byte, account *Account) ([]byte, string, string, error) {
+	payload, model, upstreamModel, err := validateDeepSeekModelPayload(body, account)
 	if err != nil {
 		return nil, "", "", err
 	}
-	payload["model"] = model
+	payload["model"] = upstreamModel
 	upstreamBody, err := json.Marshal(payload)
 	if err != nil {
 		return nil, "", "", fmt.Errorf("rewrite deepseek request model: %w", err)
 	}
-	return upstreamBody, model, model, nil
+	return upstreamBody, model, upstreamModel, nil
 }
 
-func rewriteDeepSeekAnthropicMessagesBody(body []byte) ([]byte, string, string, error) {
-	payload, model, err := validateDeepSeekModelPayload(body)
+func rewriteDeepSeekAnthropicMessagesBody(body []byte, account *Account) ([]byte, string, string, error) {
+	payload, model, upstreamModel, err := validateDeepSeekModelPayload(body, account)
 	if err != nil {
 		return nil, "", "", err
 	}
-	payload["model"] = model
+	payload["model"] = upstreamModel
 	if value, ok := payload["max_tokens"]; !ok || value == nil {
 		payload["max_tokens"] = deepseekDefaultAnthropicMaxTokens
 	}
@@ -276,22 +276,23 @@ func rewriteDeepSeekAnthropicMessagesBody(body []byte) ([]byte, string, string, 
 	if err != nil {
 		return nil, "", "", fmt.Errorf("rewrite deepseek messages request: %w", err)
 	}
-	return upstreamBody, model, model, nil
+	return upstreamBody, model, upstreamModel, nil
 }
 
-func validateDeepSeekModelPayload(body []byte) (map[string]any, string, error) {
+func validateDeepSeekModelPayload(body []byte, account *Account) (map[string]any, string, string, error) {
 	payload, err := decodeGLMPayload(body)
 	if err != nil {
-		return nil, "", fmt.Errorf("parse deepseek request: %w", err)
+		return nil, "", "", fmt.Errorf("parse deepseek request: %w", err)
 	}
 	model, _ := payload["model"].(string)
-	if strings.TrimSpace(model) == "" {
-		return nil, "", fmt.Errorf("deepseek request model is required")
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return nil, "", "", fmt.Errorf("deepseek request model is required")
 	}
-	if !isOfficialDeepSeekModel(model) {
-		return nil, "", &DeepSeekUnsupportedContentError{Message: "DeepSeek gateway only supports deepseek-v4-flash and deepseek-v4-pro"}
+	if account == nil || !account.IsDeepSeekModelSupported(model) {
+		return nil, "", "", &DeepSeekUnsupportedContentError{Message: "DeepSeek gateway only supports deepseek-v4-flash and deepseek-v4-pro"}
 	}
-	return payload, model, nil
+	return payload, model, account.GetDeepSeekMappedModel(model), nil
 }
 
 func isOfficialDeepSeekModel(model string) bool {

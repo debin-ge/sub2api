@@ -213,6 +213,57 @@ var providerAdapters = map[string]providerAdapter{
 		},
 		textPath: "candidates.0.content.parts.0.text",
 	},
+	MonitorProviderMiniMax: {
+		buildPath: func(string) string { return providerMiniMaxAnthropicPath },
+		buildBody: buildMonitorAnthropicCompatibleBody,
+		buildHeaders: func(apiKey string) map[string]string {
+			return monitorBearerHeaders(apiKey)
+		},
+		textPath: "content.0.text",
+	},
+	MonitorProviderGLM: {
+		buildPath: func(string) string { return providerGLMAnthropicPath },
+		buildBody: buildMonitorAnthropicCompatibleBody,
+		buildHeaders: func(apiKey string) map[string]string {
+			return monitorBearerHeaders(apiKey)
+		},
+		textPath: "content.0.text",
+	},
+	MonitorProviderKimi: {
+		buildPath: func(string) string { return providerKimiAnthropicPath },
+		buildBody: buildMonitorAnthropicCompatibleBody,
+		buildHeaders: func(apiKey string) map[string]string {
+			return monitorBearerHeaders(apiKey)
+		},
+		textPath: "content.0.text",
+	},
+	MonitorProviderDeepSeek: {
+		buildPath: func(string) string { return providerDeepSeekChatPath },
+		buildBody: func(model, prompt string) ([]byte, error) {
+			return json.Marshal(map[string]any{
+				"model":      model,
+				"messages":   []map[string]string{{"role": "user", "content": prompt}},
+				"max_tokens": monitorChallengeMaxTokens,
+				"stream":     false,
+			})
+		},
+		buildHeaders: func(apiKey string) map[string]string {
+			return monitorBearerHeaders(apiKey)
+		},
+		textPath: "choices.0.message.content",
+	},
+}
+
+func buildMonitorAnthropicCompatibleBody(model, prompt string) ([]byte, error) {
+	return json.Marshal(map[string]any{
+		"model":      model,
+		"messages":   []map[string]string{{"role": "user", "content": prompt}},
+		"max_tokens": monitorChallengeMaxTokens,
+	})
+}
+
+func monitorBearerHeaders(apiKey string) map[string]string {
+	return map[string]string{"Authorization": "Bearer " + apiKey}
 }
 
 // isSupportedProvider 校验 provider 字符串是否在 adapter 表中。
@@ -324,6 +375,10 @@ var bodyMergeKeyDenyList = map[string]map[string]bool{
 	MonitorProviderOpenAI:    {"model": true, "messages": true, "stream": true},
 	MonitorProviderAnthropic: {"model": true, "messages": true},
 	MonitorProviderGemini:    {"contents": true},
+	MonitorProviderMiniMax:   {"model": true, "messages": true},
+	MonitorProviderGLM:       {"model": true, "messages": true},
+	MonitorProviderKimi:      {"model": true, "messages": true},
+	MonitorProviderDeepSeek:  {"model": true, "messages": true, "stream": true},
 }
 
 // postRawJSON 发送 POST + 已序列化好的 JSON 字节，限制响应体大小，返回响应字节、HTTP status、错误。

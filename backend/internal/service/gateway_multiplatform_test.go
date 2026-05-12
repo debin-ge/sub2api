@@ -1203,10 +1203,16 @@ func TestGatewayService_isModelSupportedByAccount(t *testing.T) {
 			expected: true,
 		},
 		{
-			name:     "DeepSeek平台-拒绝兼容旧模型名",
+			name:     "DeepSeek平台-支持兼容旧chat模型名",
 			account:  &Account{Platform: PlatformDeepSeek, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "sk-deepseek"}},
 			model:    "deepseek-chat",
-			expected: false,
+			expected: true,
+		},
+		{
+			name:     "DeepSeek平台-支持兼容reasoner模型名",
+			account:  &Account{Platform: PlatformDeepSeek, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "sk-deepseek"}},
+			model:    "deepseek-reasoner",
+			expected: true,
 		},
 		{
 			name:     "DeepSeek平台-拒绝Claude alias",

@@ -876,7 +876,9 @@ export default {
       openai: 'OpenAI',
       anthropic: 'Anthropic',
       gemini: 'Gemini',
+      minimax: 'MiniMax',
       glm: 'GLM',
+      kimi: 'Kimi',
       deepseek: 'DeepSeek'
     },
     extraModelsHeader: 'Extra Models',
@@ -2683,6 +2685,11 @@ export default {
           exhausted: 'MiniMax official 5h request remains exhausted',
           warning: 'MiniMax official 5h request remains low',
           normal: 'MiniMax official 5h request remains normal'
+        },
+        deepseek: {
+          normal: 'DeepSeek official balance available',
+          unavailable: 'DeepSeek official balance unavailable',
+          error: 'DeepSeek official balance check failed'
         },
       },
       tempUnschedulable: {
