@@ -103,6 +103,24 @@ func TestKimiGatewayServiceForwardMessagesBuildsSafeUpstreamRequest(t *testing.T
 	}
 }
 
+func TestRewriteKimiModelAcceptsClaudeAlias(t *testing.T) {
+	body := []byte(`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"hello"}]}`)
+
+	rewritten, originalModel, upstreamModel, err := rewriteKimiModel(body, kimiGatewayTestAccount())
+	if err != nil {
+		t.Fatalf("rewriteKimiModel error = %v", err)
+	}
+	if originalModel != "claude-sonnet-4-5" {
+		t.Fatalf("originalModel = %q", originalModel)
+	}
+	if upstreamModel != "kimi-for-coding" {
+		t.Fatalf("upstreamModel = %q", upstreamModel)
+	}
+	if got := gjson.GetBytes(rewritten, "model").String(); got != "kimi-for-coding" {
+		t.Fatalf("rewritten model = %q body=%s", got, string(rewritten))
+	}
+}
+
 func TestKimiGatewayServiceForwardMessagesDefaultsMissingAnthropicFields(t *testing.T) {
 	var captured *http.Request
 	var capturedBody []byte
@@ -167,7 +185,7 @@ func TestKimiGatewayServiceRejectsNonKimiModelBeforeForwarding(t *testing.T) {
 	})}
 	svc := NewKimiGatewayService(client, nil)
 	c, _ := newKimiGatewayTestContext("/v1/messages")
-	body := []byte(`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"hello"}]}`)
+	body := []byte(`{"model":"claude-haiku-4-5","messages":[{"role":"user","content":"hello"}]}`)
 
 	_, err := svc.ForwardMessages(context.Background(), c, kimiGatewayTestAccount(), body, "req-unsupported")
 

@@ -837,6 +837,57 @@ func (h *AccountHandler) SyncMiniMaxRemains(c *gin.Context) {
 	response.Success(c, h.buildAccountResponseWithRuntime(ctx, updated))
 }
 
+// CheckDeepSeekBalance refreshes official DeepSeek balance metadata into account extra.
+// POST /api/v1/admin/accounts/:id/deepseek/balance-check
+func (h *AccountHandler) CheckDeepSeekBalance(c *gin.Context) {
+	accountID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid account ID")
+		return
+	}
+	ctx := c.Request.Context()
+	account, err := h.adminService.GetAccount(ctx, accountID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	if account == nil || !account.IsDeepSeekAPIKey() {
+		response.BadRequest(c, "Only DeepSeek API key accounts support balance check")
+		return
+	}
+
+	balance, err := service.NewDeepSeekBalanceClient(nil).FetchBalanceForAccount(ctx, account)
+	now := time.Now().UTC().Format(time.RFC3339)
+	extra := copyAccountExtra(account.Extra)
+	if err != nil {
+		extra["deepseek_balance_available"] = false
+		extra["deepseek_balance_checked_at"] = now
+		extra["deepseek_balance_status"] = "error"
+		extra["deepseek_balance_error"] = err.Error()
+		_, _ = h.adminService.UpdateAccount(ctx, accountID, &service.UpdateAccountInput{Extra: extra})
+		response.Error(c, http.StatusBadGateway, "Failed to check DeepSeek balance: "+err.Error())
+		return
+	}
+	status := "ok"
+	if !balance.Available {
+		status = "unavailable"
+	}
+	extra["deepseek_balance_available"] = balance.Available
+	extra["deepseek_balance_amount"] = balance.Amount
+	extra["deepseek_balance_currency"] = balance.Currency
+	extra["deepseek_balance_checked_at"] = now
+	extra["deepseek_balance_status"] = status
+	extra["deepseek_balance_error"] = ""
+	extra["deepseek_balance_raw"] = balance.Raw
+
+	updated, err := h.adminService.UpdateAccount(ctx, accountID, &service.UpdateAccountInput{Extra: extra})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, h.buildAccountResponseWithRuntime(ctx, updated))
+}
+
 func copyAccountExtra(extra map[string]any) map[string]any {
 	copied := make(map[string]any, len(extra)+4)
 	for key, value := range extra {

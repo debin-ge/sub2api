@@ -64,4 +64,53 @@ describe('AccountCapacityCell', () => {
     expect(wrapper.text()).toContain('3200')
     expect(wrapper.text()).toContain('4500')
   })
+
+  it('renders DeepSeek official balance when present in account extra', () => {
+    const wrapper = mount(AccountCapacityCell, {
+      props: {
+        account: makeAccount({
+          name: 'DeepSeek account',
+          platform: 'deepseek',
+          extra: {
+            deepseek_balance_available: true,
+            deepseek_balance_amount: '10.00',
+            deepseek_balance_currency: 'CNY',
+            deepseek_balance_status: 'ok',
+            deepseek_balance_checked_at: '2026-05-12T00:00:00Z'
+          }
+        })
+      },
+      global: {
+        stubs: {
+          QuotaBadge: true
+        }
+      }
+    })
+
+    expect(wrapper.text()).toContain('10.00')
+    expect(wrapper.text()).toContain('CNY')
+  })
+
+  it.each(['glm', 'kimi'] as const)('does not render fake remains for %s accounts', (platform) => {
+    const wrapper = mount(AccountCapacityCell, {
+      props: {
+        account: makeAccount({
+          name: `${platform} account`,
+          platform,
+          extra: {
+            minimax_text_5h_limit: 4500,
+            minimax_text_5h_remaining: 3200
+          }
+        })
+      },
+      global: {
+        stubs: {
+          QuotaBadge: true
+        }
+      }
+    })
+
+    expect(wrapper.text()).not.toContain('3200')
+    expect(wrapper.text()).not.toContain('4500')
+  })
 })

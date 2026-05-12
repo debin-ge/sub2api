@@ -56,6 +56,8 @@ var schedulerNeutralExtraKeyPrefixes = []string{
 	"codex_secondary_",
 	"codex_5h_",
 	"codex_7d_",
+	"deepseek_balance_",
+	"minimax_",
 	"passive_usage_",
 }
 

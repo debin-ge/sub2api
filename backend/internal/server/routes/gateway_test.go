@@ -140,7 +140,7 @@ func TestGatewayRoutesMiniMaxUnsupportedEndpointsReturnNotFound(t *testing.T) {
 		router.ServeHTTP(w, req)
 		require.Equal(t, http.StatusNotFound, w.Code, "path=%s should be MiniMax unsupported", path)
 		require.Contains(t, w.Body.String(), "not_found_error", "path=%s", path)
-		require.Contains(t, w.Body.String(), "MiniMax gateway supports /v1/messages and /v1/chat/completions only", "path=%s", path)
+		require.Contains(t, w.Body.String(), "MiniMax gateway supports /v1/messages, /v1/chat/completions, and /v1/models only", "path=%s", path)
 	}
 }
 
@@ -148,7 +148,6 @@ func TestGatewayRoutesMiniMaxUnsupportedGetEndpointsReturnNotFound(t *testing.T)
 	router := newGatewayRoutesTestRouterForPlatform(service.PlatformMiniMax)
 
 	for _, path := range []string{
-		"/v1/models",
 		"/v1/usage",
 		"/v1/responses",
 		"/responses",
@@ -160,8 +159,22 @@ func TestGatewayRoutesMiniMaxUnsupportedGetEndpointsReturnNotFound(t *testing.T)
 		router.ServeHTTP(w, req)
 		require.Equal(t, http.StatusNotFound, w.Code, "path=%s should be MiniMax unsupported", path)
 		require.Contains(t, w.Body.String(), "not_found_error", "path=%s", path)
-		require.Contains(t, w.Body.String(), "MiniMax gateway supports /v1/messages and /v1/chat/completions only", "path=%s", path)
+		require.Contains(t, w.Body.String(), "MiniMax gateway supports /v1/messages, /v1/chat/completions, and /v1/models only", "path=%s", path)
 	}
+}
+
+func TestGatewayRoutesMiniMaxModelsReturnsDefaultList(t *testing.T) {
+	router := newGatewayRoutesTestRouterForPlatform(service.PlatformMiniMax)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Contains(t, w.Body.String(), "MiniMax-M2.7")
+	require.Contains(t, w.Body.String(), "MiniMax-M2.7-highspeed")
+	require.NotContains(t, w.Body.String(), "claude-sonnet")
 }
 
 func TestGatewayRoutesGLMMessagesDispatchesToGLMHandler(t *testing.T) {

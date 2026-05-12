@@ -191,7 +191,7 @@ func (s *KimiGatewayService) buildMessagesRequest(ctx context.Context, c *gin.Co
 	if err != nil {
 		return nil, "", "", err
 	}
-	upstreamBody, originalModel, upstreamModel, err := rewriteKimiAnthropicMessagesBody(body)
+	upstreamBody, originalModel, upstreamModel, err := rewriteKimiAnthropicMessagesBody(body, account)
 	if err != nil {
 		return nil, "", "", err
 	}
@@ -210,7 +210,7 @@ func (s *KimiGatewayService) buildChatCompletionsRequest(ctx context.Context, c 
 	if err != nil {
 		return nil, "", "", err
 	}
-	upstreamBody, originalModel, upstreamModel, err := rewriteKimiModel(body)
+	upstreamBody, originalModel, upstreamModel, err := rewriteKimiModel(body, account)
 	if err != nil {
 		return nil, "", "", err
 	}
@@ -240,25 +240,25 @@ func setKimiUpstreamHeaders(req *http.Request, c *gin.Context, apiKey string) {
 	}
 }
 
-func rewriteKimiModel(body []byte) ([]byte, string, string, error) {
-	payload, model, err := validateKimiModelPayload(body)
+func rewriteKimiModel(body []byte, account *Account) ([]byte, string, string, error) {
+	payload, model, upstreamModel, err := validateKimiModelPayload(body, account)
 	if err != nil {
 		return nil, "", "", err
 	}
-	payload["model"] = "kimi-for-coding"
+	payload["model"] = upstreamModel
 	upstreamBody, err := json.Marshal(payload)
 	if err != nil {
 		return nil, "", "", fmt.Errorf("rewrite kimi request model: %w", err)
 	}
-	return upstreamBody, model, "kimi-for-coding", nil
+	return upstreamBody, model, upstreamModel, nil
 }
 
-func rewriteKimiAnthropicMessagesBody(body []byte) ([]byte, string, string, error) {
-	payload, model, err := validateKimiModelPayload(body)
+func rewriteKimiAnthropicMessagesBody(body []byte, account *Account) ([]byte, string, string, error) {
+	payload, model, upstreamModel, err := validateKimiModelPayload(body, account)
 	if err != nil {
 		return nil, "", "", err
 	}
-	payload["model"] = "kimi-for-coding"
+	payload["model"] = upstreamModel
 	if value, ok := payload["max_tokens"]; !ok || value == nil {
 		payload["max_tokens"] = kimiDefaultAnthropicMaxTokens
 	}
@@ -266,22 +266,23 @@ func rewriteKimiAnthropicMessagesBody(body []byte) ([]byte, string, string, erro
 	if err != nil {
 		return nil, "", "", fmt.Errorf("rewrite kimi messages request: %w", err)
 	}
-	return upstreamBody, model, "kimi-for-coding", nil
+	return upstreamBody, model, upstreamModel, nil
 }
 
-func validateKimiModelPayload(body []byte) (map[string]any, string, error) {
+func validateKimiModelPayload(body []byte, account *Account) (map[string]any, string, string, error) {
 	payload, err := decodeGLMPayload(body)
 	if err != nil {
-		return nil, "", fmt.Errorf("parse kimi request: %w", err)
+		return nil, "", "", fmt.Errorf("parse kimi request: %w", err)
 	}
 	model, _ := payload["model"].(string)
-	if strings.TrimSpace(model) == "" {
-		return nil, "", fmt.Errorf("kimi request model is required")
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return nil, "", "", fmt.Errorf("kimi request model is required")
 	}
-	if model != "kimi-for-coding" {
-		return nil, "", &KimiUnsupportedContentError{Message: "Kimi gateway only supports model kimi-for-coding"}
+	if account == nil || !account.IsKimiModelSupported(model) {
+		return nil, "", "", &KimiUnsupportedContentError{Message: "Kimi gateway only supports model kimi-for-coding"}
 	}
-	return payload, model, nil
+	return payload, model, account.GetKimiMappedModel(model), nil
 }
 
 func rejectKimiAnthropicUnsupportedContent(body []byte) error {

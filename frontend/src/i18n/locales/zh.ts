@@ -880,7 +880,9 @@ export default {
       openai: 'OpenAI',
       anthropic: 'Anthropic',
       gemini: 'Gemini',
+      minimax: 'MiniMax',
       glm: 'GLM',
+      kimi: 'Kimi',
       deepseek: 'DeepSeek'
     },
     extraModelsHeader: '附加模型',
@@ -2717,6 +2719,11 @@ export default {
           exhausted: 'MiniMax 官方 5h 请求余量已用完',
           warning: 'MiniMax 官方 5h 请求余量偏低',
           normal: 'MiniMax 官方 5h 请求余量正常'
+        },
+        deepseek: {
+          normal: 'DeepSeek 官方余额可用',
+          unavailable: 'DeepSeek 官方余额不可用',
+          error: 'DeepSeek 官方余额检测失败'
         },
       },
       clearRateLimit: '清除速率限制',

@@ -175,6 +175,133 @@ func TestLoadOpenAIWSStickyTTLCompatibility(t *testing.T) {
 	}
 }
 
+func TestLoadDefaultDomesticProviderPhase2GatewayConfig(t *testing.T) {
+	resetViperWithJWTSecret(t)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	if !cfg.Gateway.ModelAliases.Enabled {
+		t.Fatalf("Gateway.ModelAliases.Enabled = false, want true")
+	}
+	if cfg.Gateway.ModelAliases.IncludeInModels {
+		t.Fatalf("Gateway.ModelAliases.IncludeInModels = true, want false")
+	}
+	if !cfg.Gateway.MiniMaxRemains.SyncEnabled {
+		t.Fatalf("Gateway.MiniMaxRemains.SyncEnabled = false, want true")
+	}
+	if cfg.Gateway.MiniMaxRemains.SyncIntervalSeconds != 300 {
+		t.Fatalf("Gateway.MiniMaxRemains.SyncIntervalSeconds = %d, want 300", cfg.Gateway.MiniMaxRemains.SyncIntervalSeconds)
+	}
+	if cfg.Gateway.MiniMaxRemains.SyncJitterSeconds != 30 {
+		t.Fatalf("Gateway.MiniMaxRemains.SyncJitterSeconds = %d, want 30", cfg.Gateway.MiniMaxRemains.SyncJitterSeconds)
+	}
+	if cfg.Gateway.MiniMaxRemains.BatchSize != 50 {
+		t.Fatalf("Gateway.MiniMaxRemains.BatchSize = %d, want 50", cfg.Gateway.MiniMaxRemains.BatchSize)
+	}
+	if cfg.Gateway.MiniMaxRemains.StaleAfterSeconds != 900 {
+		t.Fatalf("Gateway.MiniMaxRemains.StaleAfterSeconds = %d, want 900", cfg.Gateway.MiniMaxRemains.StaleAfterSeconds)
+	}
+	if !cfg.Gateway.DeepSeekBalance.CheckEnabled {
+		t.Fatalf("Gateway.DeepSeekBalance.CheckEnabled = false, want true")
+	}
+	if cfg.Gateway.DeepSeekBalance.CheckIntervalSeconds != 300 {
+		t.Fatalf("Gateway.DeepSeekBalance.CheckIntervalSeconds = %d, want 300", cfg.Gateway.DeepSeekBalance.CheckIntervalSeconds)
+	}
+	if cfg.Gateway.DeepSeekBalance.CheckJitterSeconds != 30 {
+		t.Fatalf("Gateway.DeepSeekBalance.CheckJitterSeconds = %d, want 30", cfg.Gateway.DeepSeekBalance.CheckJitterSeconds)
+	}
+	if cfg.Gateway.DeepSeekBalance.BatchSize != 50 {
+		t.Fatalf("Gateway.DeepSeekBalance.BatchSize = %d, want 50", cfg.Gateway.DeepSeekBalance.BatchSize)
+	}
+	if cfg.Gateway.DeepSeekBalance.StaleAfterSeconds != 900 {
+		t.Fatalf("Gateway.DeepSeekBalance.StaleAfterSeconds = %d, want 900", cfg.Gateway.DeepSeekBalance.StaleAfterSeconds)
+	}
+}
+
+func TestValidateDomesticProviderPhase2GatewayConfig(t *testing.T) {
+	buildValid := func(t *testing.T) *Config {
+		t.Helper()
+		resetViperWithJWTSecret(t)
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() error: %v", err)
+		}
+		return cfg
+	}
+
+	cases := []struct {
+		name    string
+		mutate  func(*Config)
+		wantErr string
+	}{
+		{
+			name:    "minimax remains interval too small",
+			mutate:  func(c *Config) { c.Gateway.MiniMaxRemains.SyncIntervalSeconds = 59 },
+			wantErr: "gateway.minimax_remains.sync_interval_seconds",
+		},
+		{
+			name: "minimax remains jitter must be less than interval",
+			mutate: func(c *Config) {
+				c.Gateway.MiniMaxRemains.SyncIntervalSeconds = 60
+				c.Gateway.MiniMaxRemains.SyncJitterSeconds = 60
+			},
+			wantErr: "gateway.minimax_remains.sync_jitter_seconds",
+		},
+		{
+			name:    "minimax remains batch size",
+			mutate:  func(c *Config) { c.Gateway.MiniMaxRemains.BatchSize = 0 },
+			wantErr: "gateway.minimax_remains.batch_size",
+		},
+		{
+			name: "minimax remains stale after must exceed interval",
+			mutate: func(c *Config) {
+				c.Gateway.MiniMaxRemains.SyncIntervalSeconds = 300
+				c.Gateway.MiniMaxRemains.StaleAfterSeconds = 300
+			},
+			wantErr: "gateway.minimax_remains.stale_after_seconds",
+		},
+		{
+			name:    "deepseek balance interval too large",
+			mutate:  func(c *Config) { c.Gateway.DeepSeekBalance.CheckIntervalSeconds = 3601 },
+			wantErr: "gateway.deepseek_balance.check_interval_seconds",
+		},
+		{
+			name: "deepseek balance jitter must be less than interval",
+			mutate: func(c *Config) {
+				c.Gateway.DeepSeekBalance.CheckIntervalSeconds = 60
+				c.Gateway.DeepSeekBalance.CheckJitterSeconds = 60
+			},
+			wantErr: "gateway.deepseek_balance.check_jitter_seconds",
+		},
+		{
+			name:    "deepseek balance batch size",
+			mutate:  func(c *Config) { c.Gateway.DeepSeekBalance.BatchSize = 201 },
+			wantErr: "gateway.deepseek_balance.batch_size",
+		},
+		{
+			name: "deepseek balance stale after max",
+			mutate: func(c *Config) {
+				c.Gateway.DeepSeekBalance.StaleAfterSeconds = 86401
+			},
+			wantErr: "gateway.deepseek_balance.stale_after_seconds",
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := buildValid(t)
+			tt.mutate(cfg)
+			err := cfg.Validate()
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("Validate() error = %v, want %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestLoadDefaultIdempotencyConfig(t *testing.T) {
 	resetViperWithJWTSecret(t)
 

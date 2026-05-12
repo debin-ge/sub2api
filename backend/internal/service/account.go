@@ -1003,10 +1003,14 @@ func (a *Account) IsMiniMaxModelSupported(requestedModel string) bool {
 	if a == nil || a.Platform != PlatformMiniMax {
 		return false
 	}
-	if isMiniMaxOfficialTextModel(requestedModel) {
+	trimmed := strings.TrimSpace(requestedModel)
+	if isMiniMaxOfficialTextModel(trimmed) {
 		return true
 	}
-	return a.IsModelSupported(requestedModel)
+	if _, ok := ResolveAccountProviderModel(a, trimmed); ok {
+		return true
+	}
+	return false
 }
 
 func (a *Account) GetMiniMaxAPIKey() string {
@@ -1039,14 +1043,14 @@ func (a *Account) GetMiniMaxOpenAIBaseURL() string {
 }
 
 func (a *Account) GetMiniMaxMappedModel(model string) string {
+	trimmed := strings.TrimSpace(model)
 	if a == nil || a.Platform != PlatformMiniMax {
-		return model
+		return trimmed
 	}
-	mapped := a.GetMappedModel(model)
-	if strings.TrimSpace(mapped) == "" {
-		return model
+	if mapped, ok := ResolveAccountProviderModel(a, trimmed); ok {
+		return mapped.UpstreamModel
 	}
-	return mapped
+	return trimmed
 }
 
 func (a *Account) IsGLM() bool {
@@ -1107,7 +1111,7 @@ func NormalizeGLMModel(model string) string {
 }
 
 func DefaultGLMModelIDs() []string {
-	return []string{"GLM-5.1", "GLM-4.7", "GLM-4.5-air"}
+	return DefaultDomesticProviderModelIDs(PlatformGLM)
 }
 
 func isOfficialGLMModel(model string) bool {
@@ -1130,13 +1134,8 @@ func mapDefaultGLMModel(model string) (string, bool) {
 		return "", false
 	}
 	lower := strings.ToLower(trimmed)
-	switch {
-	case strings.HasPrefix(lower, "claude-sonnet-"):
-		return "GLM-5.1", true
-	case strings.HasPrefix(lower, "claude-opus-"):
-		return "GLM-5.1", true
-	case strings.HasPrefix(lower, "claude-haiku-"):
-		return "GLM-4.5-air", true
+	if mapped, matched := ResolveProviderModelAlias(PlatformGLM, lower); matched {
+		return mapped.UpstreamModel, true
 	}
 	normalized := NormalizeGLMModel(trimmed)
 	if isOfficialGLMModel(normalized) {
@@ -1252,11 +1251,30 @@ func (a *Account) GetKimiOpenAIBaseURL() string {
 }
 
 func DefaultKimiModelIDs() []string {
-	return []string{"kimi-for-coding"}
+	return DefaultDomesticProviderModelIDs(PlatformKimi)
+}
+
+func (a *Account) GetKimiMappedModel(model string) string {
+	trimmed := strings.TrimSpace(model)
+	if a == nil || a.Platform != PlatformKimi {
+		return trimmed
+	}
+	if mapped, ok := ResolveAccountProviderModel(a, trimmed); ok {
+		return mapped.UpstreamModel
+	}
+	return trimmed
 }
 
 func (a *Account) IsKimiModelSupported(model string) bool {
-	return a != nil && a.Platform == PlatformKimi && model == "kimi-for-coding"
+	trimmed := strings.TrimSpace(model)
+	if a == nil || a.Platform != PlatformKimi || trimmed == "" {
+		return false
+	}
+	if providerSupportsUpstreamModel(PlatformKimi, trimmed) {
+		return true
+	}
+	_, ok := ResolveAccountProviderModel(a, trimmed)
+	return ok
 }
 
 func (a *Account) IsDeepSeek() bool {
@@ -1303,19 +1321,30 @@ func (a *Account) GetDeepSeekAnthropicBaseURL() string {
 }
 
 func DefaultDeepSeekModelIDs() []string {
-	return []string{"deepseek-v4-flash", "deepseek-v4-pro"}
+	return DefaultDomesticProviderModelIDs(PlatformDeepSeek)
+}
+
+func (a *Account) GetDeepSeekMappedModel(model string) string {
+	trimmed := strings.TrimSpace(model)
+	if a == nil || a.Platform != PlatformDeepSeek {
+		return trimmed
+	}
+	if mapped, ok := ResolveAccountProviderModel(a, trimmed); ok {
+		return mapped.UpstreamModel
+	}
+	return trimmed
 }
 
 func (a *Account) IsDeepSeekModelSupported(model string) bool {
-	if a == nil || a.Platform != PlatformDeepSeek {
+	trimmed := strings.TrimSpace(model)
+	if a == nil || a.Platform != PlatformDeepSeek || trimmed == "" {
 		return false
 	}
-	for _, supported := range DefaultDeepSeekModelIDs() {
-		if model == supported {
-			return true
-		}
+	if providerSupportsUpstreamModel(PlatformDeepSeek, trimmed) {
+		return true
 	}
-	return false
+	_, ok := ResolveAccountProviderModel(a, trimmed)
+	return ok
 }
 
 func (a *Account) IsOpenAIOAuth() bool {

@@ -145,6 +145,32 @@ func (s *MiniMaxQuotaCacheSuite) TestRollbackDecrementsCount() {
 	require.Equal(s.T(), int64(1), count)
 }
 
+func (s *MiniMaxQuotaCacheSuite) TestCalibrateTextRequestsUsesSyntheticMembersOnly() {
+	accountID := int64(1201)
+
+	allowed, used, err := s.cache.ReserveTextRequest(s.ctx, accountID, "real-1", 10, 5*60*60)
+	require.NoError(s.T(), err)
+	require.True(s.T(), allowed)
+	require.Equal(s.T(), int64(1), used)
+
+	localUsed, added, removed, err := s.cache.CalibrateTextRequests(s.ctx, accountID, 4, 5*60*60)
+	require.NoError(s.T(), err)
+	require.Equal(s.T(), int64(4), localUsed)
+	require.Equal(s.T(), int64(3), added)
+	require.Equal(s.T(), int64(0), removed)
+
+	localUsed, added, removed, err = s.cache.CalibrateTextRequests(s.ctx, accountID, 2, 5*60*60)
+	require.NoError(s.T(), err)
+	require.Equal(s.T(), int64(2), localUsed)
+	require.Equal(s.T(), int64(0), added)
+	require.Equal(s.T(), int64(2), removed)
+
+	members, err := s.rdb.ZRange(s.ctx, minimaxQuotaTextRequestsKey(accountID), 0, -1).Result()
+	require.NoError(s.T(), err)
+	require.Contains(s.T(), members, "real-1")
+	require.Len(s.T(), members, 2)
+}
+
 func (s *MiniMaxQuotaCacheSuite) TestReserveIsIdempotentForSameRequestID() {
 	allowed, used, err := s.cache.ReserveTextRequest(s.ctx, 1004, "req-1", 2, 5*60*60)
 	require.NoError(s.T(), err)

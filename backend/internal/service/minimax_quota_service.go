@@ -7,11 +7,13 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const MiniMaxTokenPlanTextWindowSeconds int64 = 5 * 60 * 60
 const MiniMaxTokenPlanDefaultText5hLimit int64 = 4500
 const miniMaxQuotaMaxInt64ExclusiveFloat = 9223372036854775808.0
+const miniMaxOfficialRemainsFreshSeconds int64 = 15 * 60
 
 type MiniMaxQuotaDecision struct {
 	Allowed bool
@@ -47,6 +49,10 @@ func (s *MiniMaxQuotaService) ReserveTextRequest(ctx context.Context, account *A
 		return &MiniMaxQuotaDecision{Allowed: false, Reason: "invalid_quota_limit"}, err
 	}
 
+	if shouldBlockByFreshMiniMaxOfficialRemains(account) {
+		return &MiniMaxQuotaDecision{Allowed: false, Used: limit, Limit: limit, Reason: "official_remains_exhausted"}, nil
+	}
+
 	allowed, used, err := s.cache.ReserveTextRequest(ctx, account.ID, requestID, limit, MiniMaxTokenPlanTextWindowSeconds)
 	if err != nil {
 		return &MiniMaxQuotaDecision{Allowed: false, Used: used, Limit: limit, Reason: "quota_cache_error"}, err
@@ -56,6 +62,16 @@ func (s *MiniMaxQuotaService) ReserveTextRequest(ctx context.Context, account *A
 	}
 
 	return &MiniMaxQuotaDecision{Allowed: true, Used: used, Limit: limit}, nil
+}
+
+func (s *MiniMaxQuotaService) CalibrateTextRequests(ctx context.Context, accountID int64, targetUsed int64) (localUsed int64, syntheticAdded int64, syntheticRemoved int64, err error) {
+	if s == nil || s.cache == nil {
+		return 0, 0, 0, fmt.Errorf("minimax quota cache unavailable")
+	}
+	if targetUsed < 0 {
+		targetUsed = 0
+	}
+	return s.cache.CalibrateTextRequests(ctx, accountID, targetUsed, MiniMaxTokenPlanTextWindowSeconds)
 }
 
 func (s *MiniMaxQuotaService) RollbackTextRequest(ctx context.Context, accountID int64, requestID string) error {
@@ -107,5 +123,56 @@ func miniMaxQuotaLimitFromAny(value any) (int64, bool) {
 		return i, err == nil
 	default:
 		return 0, false
+	}
+}
+
+func shouldBlockByFreshMiniMaxOfficialRemains(account *Account) bool {
+	if account == nil || account.Extra == nil {
+		return false
+	}
+	remaining, ok := miniMaxQuotaNonNegativeIntFromAny(account.Extra["minimax_text_5h_remaining"])
+	if !ok || remaining > 0 {
+		return false
+	}
+	syncedAt, ok := miniMaxExtraTime(account.Extra["minimax_remains_synced_at"])
+	if !ok {
+		return false
+	}
+	return time.Since(syncedAt) <= time.Duration(miniMaxOfficialRemainsFreshSeconds)*time.Second
+}
+
+func miniMaxQuotaNonNegativeIntFromAny(value any) (int64, bool) {
+	switch v := value.(type) {
+	case int:
+		return int64(v), v >= 0
+	case int64:
+		return v, v >= 0
+	case int32:
+		return int64(v), v >= 0
+	case float64:
+		if v < 0 || v >= miniMaxQuotaMaxInt64ExclusiveFloat || math.Trunc(v) != v {
+			return 0, false
+		}
+		return int64(v), true
+	case json.Number:
+		i, err := v.Int64()
+		return i, err == nil && i >= 0
+	case string:
+		i, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+		return i, err == nil && i >= 0
+	default:
+		return 0, false
+	}
+}
+
+func miniMaxExtraTime(value any) (time.Time, bool) {
+	switch v := value.(type) {
+	case time.Time:
+		return v, !v.IsZero()
+	case string:
+		t, err := time.Parse(time.RFC3339, strings.TrimSpace(v))
+		return t, err == nil
+	default:
+		return time.Time{}, false
 	}
 }

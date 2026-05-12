@@ -309,6 +309,9 @@ func rewriteMiniMaxModel(body []byte, account *Account) ([]byte, string, string,
 	if model == "" {
 		return nil, "", "", fmt.Errorf("minimax messages model is required")
 	}
+	if account == nil || !account.IsMiniMaxModelSupported(model) {
+		return nil, "", "", &MiniMaxUnsupportedContentError{Message: fmt.Sprintf("minimax model %s is not supported by this account", model)}
+	}
 	upstreamModel := account.GetMiniMaxMappedModel(model)
 	payload["model"] = upstreamModel
 

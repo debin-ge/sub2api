@@ -97,6 +97,8 @@ func provideCleanup(
 	scheduledTestRunner *service.ScheduledTestRunnerService,
 	backupSvc *service.BackupService,
 	paymentOrderExpiry *service.PaymentOrderExpiryService,
+	miniMaxRemainsSyncRunner *service.MiniMaxRemainsSyncRunner,
+	deepSeekBalanceHealthRunner *service.DeepSeekBalanceHealthRunner,
 	channelMonitorRunner *service.ChannelMonitorRunner,
 ) func() {
 	return func() {
@@ -237,6 +239,18 @@ func provideCleanup(
 			{"PaymentOrderExpiryService", func() error {
 				if paymentOrderExpiry != nil {
 					paymentOrderExpiry.Stop()
+				}
+				return nil
+			}},
+			{"MiniMaxRemainsSyncRunner", func() error {
+				if miniMaxRemainsSyncRunner != nil {
+					miniMaxRemainsSyncRunner.Stop()
+				}
+				return nil
+			}},
+			{"DeepSeekBalanceHealthRunner", func() error {
+				if deepSeekBalanceHealthRunner != nil {
+					deepSeekBalanceHealthRunner.Stop()
 				}
 				return nil
 			}},

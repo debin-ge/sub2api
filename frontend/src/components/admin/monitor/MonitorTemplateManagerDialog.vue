@@ -7,7 +7,7 @@
   >
     <!-- provider tabs -->
     <div class="mb-4 border-b border-gray-200 dark:border-dark-700">
-      <div role="tablist" class="flex gap-1">
+      <div role="tablist" class="flex flex-wrap gap-1">
         <button
           v-for="tab in providerTabs"
           :key="tab.value"
@@ -123,7 +123,7 @@
           {{ t('admin.channelMonitor.form.provider') }}
           <span class="text-red-500">*</span>
         </label>
-        <div class="grid grid-cols-3 gap-3">
+        <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <button
             v-for="opt in providerTabs"
             :key="opt.value"
@@ -219,8 +219,7 @@ import MonitorTemplateApplyPickerDialog from '@/components/admin/monitor/Monitor
 import { useChannelMonitorFormat } from '@/composables/useChannelMonitorFormat'
 import {
   PROVIDER_ANTHROPIC,
-  PROVIDER_OPENAI,
-  PROVIDER_GEMINI,
+  PROVIDERS,
 } from '@/constants/channelMonitor'
 
 const props = defineProps<{ show: boolean }>()
@@ -235,9 +234,10 @@ const appStore = useAppStore()
 const { providerPickerClass } = useChannelMonitorFormat()
 
 const providerTabs = computed<{ value: Provider; label: string }[]>(() => [
-  { value: PROVIDER_ANTHROPIC, label: t('monitorCommon.providers.anthropic') },
-  { value: PROVIDER_OPENAI, label: t('monitorCommon.providers.openai') },
-  { value: PROVIDER_GEMINI, label: t('monitorCommon.providers.gemini') },
+  ...PROVIDERS.map((provider) => ({
+    value: provider,
+    label: t(`monitorCommon.providers.${provider}`),
+  })),
 ])
 
 const activeProvider = ref<Provider>(PROVIDER_ANTHROPIC)
@@ -249,11 +249,7 @@ const templatesForActiveProvider = computed(() =>
 )
 
 const countByProvider = computed<Record<Provider, number>>(() => {
-  const out: Record<Provider, number> = {
-    anthropic: 0,
-    openai: 0,
-    gemini: 0,
-  }
+  const out = Object.fromEntries(PROVIDERS.map((provider) => [provider, 0])) as Record<Provider, number>
   for (const t of templates.value) out[t.provider]++
   return out
 })

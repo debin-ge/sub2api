@@ -34,13 +34,18 @@ func TestAccountKimiHelpersUseEditableEndpointsAndSingleModel(t *testing.T) {
 	if got := DefaultKimiModelIDs(); len(got) != 1 || got[0] != "kimi-for-coding" {
 		t.Fatalf("default kimi models = %#v", got)
 	}
-	if !acc.IsKimiModelSupported("kimi-for-coding") {
-		t.Fatalf("expected kimi-for-coding to be supported")
+	for _, model := range []string{"kimi-for-coding", " kimi-for-coding ", "claude-sonnet-4-5", "claude-3-5-sonnet-latest", "claude-sonnet-4-0"} {
+		if !acc.IsKimiModelSupported(model) {
+			t.Fatalf("expected model %q to be supported", model)
+		}
 	}
-	for _, model := range []string{"claude-sonnet-4-5", "claude-opus-4-5", "claude-haiku-4-5", "kimi-latest", "moonshot-v1-128k", " kimi-for-coding "} {
+	for _, model := range []string{"claude-opus-4-5", "claude-haiku-4-5", "kimi-latest", "moonshot-v1-128k"} {
 		if acc.IsKimiModelSupported(model) {
 			t.Fatalf("model %q should not be supported", model)
 		}
+	}
+	if got := acc.GetKimiMappedModel("claude-sonnet-4-5"); got != "kimi-for-coding" {
+		t.Fatalf("GetKimiMappedModel alias = %q", got)
 	}
 }
 

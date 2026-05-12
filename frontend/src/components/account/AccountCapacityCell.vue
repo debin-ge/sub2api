@@ -14,6 +14,13 @@
       </svg>
     </CapacityBadge>
 
+    <!-- DeepSeek 官方余额健康状态 -->
+    <CapacityBadge v-if="showDeepSeekBalance" :color-class="deepSeekBalanceClass" :tooltip="deepSeekBalanceTooltip" :current="deepSeekBalanceAmount" :max="deepSeekBalanceCurrency" suffix="bal">
+      <svg class="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33" />
+      </svg>
+    </CapacityBadge>
+
     <!-- 5h窗口费用限制 -->
     <CapacityBadge v-if="showWindowCost" :color-class="windowCostClass" :tooltip="windowCostTooltip" :current="'$' + formatCost(currentWindowCost)" :max="'$' + formatCost(account.window_cost_limit)">
       <svg class="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -108,6 +115,47 @@ const formatCount = (value: number | null) => {
   if (value == null || !Number.isFinite(value)) return '0'
   return String(Math.max(0, Math.trunc(value)))
 }
+
+// ====== DeepSeek 官方余额 ======
+const isDeepSeekAPIKey = computed(() => props.account.platform === 'deepseek' && props.account.type === 'apikey')
+
+const deepSeekBalanceAmount = computed(() => {
+  const value = props.account.extra?.deepseek_balance_amount
+  if (typeof value === 'number' && Number.isFinite(value)) return value.toFixed(2)
+  if (typeof value === 'string' && value.trim() !== '') return value.trim()
+  return ''
+})
+
+const deepSeekBalanceCurrency = computed(() => {
+  const value = props.account.extra?.deepseek_balance_currency
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : '-'
+})
+
+const deepSeekBalanceAvailable = computed(() => props.account.extra?.deepseek_balance_available === true)
+const deepSeekBalanceStatus = computed(() => {
+  const value = props.account.extra?.deepseek_balance_status
+  return typeof value === 'string' ? value : ''
+})
+
+const showDeepSeekBalance = computed(() =>
+  isDeepSeekAPIKey.value &&
+  deepSeekBalanceAmount.value !== ''
+)
+
+const deepSeekBalanceClass = computed(() => {
+  if (!showDeepSeekBalance.value) return ''
+  if (!deepSeekBalanceAvailable.value || deepSeekBalanceStatus.value === 'error') {
+    return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+  }
+  return 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300'
+})
+
+const deepSeekBalanceTooltip = computed(() => {
+  if (!showDeepSeekBalance.value) return ''
+  if (deepSeekBalanceStatus.value === 'error') return t('admin.accounts.capacity.deepseek.error')
+  if (!deepSeekBalanceAvailable.value) return t('admin.accounts.capacity.deepseek.unavailable')
+  return t('admin.accounts.capacity.deepseek.normal')
+})
 
 // ====== 窗口费用 ======
 const isAnthropicOAuthOrSetupToken = computed(() =>

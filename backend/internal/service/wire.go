@@ -49,9 +49,26 @@ func ProvideMiniMaxTokenPlanClient() *MiniMaxTokenPlanClient {
 	return NewMiniMaxTokenPlanClient("", nil)
 }
 
+// ProvideDeepSeekBalanceClient creates the DeepSeek balance API client with defaults.
+func ProvideDeepSeekBalanceClient() *DeepSeekBalanceClient {
+	return NewDeepSeekBalanceClient(nil)
+}
+
 // ProvideMiniMaxGatewayService creates the MiniMax Anthropic-compatible gateway service.
 func ProvideMiniMaxGatewayService(quotaService *MiniMaxQuotaService, cfg *config.Config) *MiniMaxGatewayService {
 	return NewMiniMaxGatewayService(nil, quotaService, compileResponseHeaderFilter(cfg))
+}
+
+func ProvideMiniMaxRemainsSyncRunner(svc *MiniMaxRemainsSyncService, cfg *config.Config) *MiniMaxRemainsSyncRunner {
+	r := NewMiniMaxRemainsSyncRunner(svc, cfg.Gateway.MiniMaxRemains)
+	r.Start()
+	return r
+}
+
+func ProvideDeepSeekBalanceHealthRunner(svc *DeepSeekBalanceHealthService, cfg *config.Config) *DeepSeekBalanceHealthRunner {
+	r := NewDeepSeekBalanceHealthRunner(svc, cfg.Gateway.DeepSeekBalance)
+	r.Start()
+	return r
 }
 
 // ProvideGLMGatewayService creates the GLM Coding Plan gateway service.
@@ -468,6 +485,13 @@ var ProviderSet = wire.NewSet(
 	NewOpenAIGatewayService,
 	ProvideMiniMaxTokenPlanClient,
 	NewMiniMaxQuotaService,
+	NewMiniMaxRemainsSyncService,
+	wire.Bind(new(MiniMaxRemainsFetcher), new(*MiniMaxTokenPlanClient)),
+	ProvideMiniMaxRemainsSyncRunner,
+	ProvideDeepSeekBalanceClient,
+	NewDeepSeekBalanceHealthService,
+	wire.Bind(new(DeepSeekBalanceFetcher), new(*DeepSeekBalanceClient)),
+	ProvideDeepSeekBalanceHealthRunner,
 	ProvideMiniMaxGatewayService,
 	ProvideGLMGatewayService,
 	ProvideKimiGatewayService,

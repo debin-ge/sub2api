@@ -282,6 +282,16 @@ export async function syncMiniMaxRemains(id: number): Promise<Account> {
 }
 
 /**
+ * Check DeepSeek official balance health.
+ * @param id - Account ID
+ * @returns Updated account
+ */
+export async function checkDeepSeekBalance(id: number): Promise<Account> {
+  const { data } = await apiClient.post<Account>(`/admin/accounts/${id}/deepseek/balance-check`)
+  return data
+}
+
+/**
  * Get temporary unschedulable status
  * @param id - Account ID
  * @returns Status with detail state if active
@@ -660,6 +670,7 @@ export const accountsAPI = {
   recoverState,
   resetAccountQuota,
   syncMiniMaxRemains,
+  checkDeepSeekBalance,
   getTempUnschedulableStatus,
   resetTempUnschedulable,
   setSchedulable,

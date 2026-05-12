@@ -132,10 +132,6 @@ func RegisterGatewayRoutes(
 			h.Gateway.CountTokens(c)
 		})
 		gateway.GET("/models", func(c *gin.Context) {
-			if getGroupPlatform(c) == service.PlatformMiniMax {
-				writeMiniMaxUnsupported(c, h)
-				return
-			}
 			h.Gateway.Models(c)
 		})
 		gateway.GET("/usage", func(c *gin.Context) {
@@ -509,7 +505,7 @@ func writeMiniMaxUnsupported(c *gin.Context, h *handler.Handlers) {
 		"type": "error",
 		"error": gin.H{
 			"type":    "not_found_error",
-			"message": "MiniMax gateway supports /v1/messages and /v1/chat/completions only",
+			"message": "MiniMax gateway supports /v1/messages, /v1/chat/completions, and /v1/models only",
 		},
 	})
 }

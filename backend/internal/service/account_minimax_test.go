@@ -75,3 +75,31 @@ func TestAccountMiniMaxOfficialModelsPassThroughWhenMappingConfigured(t *testing
 		t.Fatalf("expected unknown model to remain unsupported when mapping is configured")
 	}
 }
+
+func TestAccountMiniMaxDefaultAliases(t *testing.T) {
+	acc := &Account{
+		Platform:    PlatformMiniMax,
+		Type:        AccountTypeAPIKey,
+		Credentials: map[string]any{"api_key": "sk-cp-test"},
+	}
+
+	cases := []struct {
+		model string
+		want  string
+	}{
+		{model: "claude-sonnet-4-5", want: "MiniMax-M2.7"},
+		{model: "claude-3-5-sonnet-latest", want: "MiniMax-M2.7"},
+		{model: "claude-haiku-3-5", want: "MiniMax-M2.7-highspeed"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.model, func(t *testing.T) {
+			if !acc.IsMiniMaxModelSupported(tc.model) {
+				t.Fatalf("expected %q to be supported", tc.model)
+			}
+			if got := acc.GetMiniMaxMappedModel(tc.model); got != tc.want {
+				t.Fatalf("GetMiniMaxMappedModel(%q) = %q, want %q", tc.model, got, tc.want)
+			}
+		})
+	}
+}

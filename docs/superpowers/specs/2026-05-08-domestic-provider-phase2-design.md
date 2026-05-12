@@ -311,11 +311,11 @@ MiniMax 文本 token plan 是 5 小时窗口模型。现有 Redis 本地窗口�
 
 配置项：
 
-- `minimax.remains_sync_enabled`：默认开启。
-- `minimax.remains_sync_interval_seconds`：默认 300 秒。
-- `minimax.remains_sync_jitter_seconds`：默认 30 秒，避免多个实例同时请求。
-- `minimax.remains_sync_batch_size`：默认 50。
-- `minimax.remains_sync_stale_after_seconds`：默认 900 秒，用于标记同步结果过期。
+- `gateway.minimax_remains.sync_enabled`：默认开启。
+- `gateway.minimax_remains.sync_interval_seconds`：默认 300 秒。
+- `gateway.minimax_remains.sync_jitter_seconds`：默认 30 秒，避免多个实例同时请求。
+- `gateway.minimax_remains.batch_size`：默认 50。
+- `gateway.minimax_remains.stale_after_seconds`：默认 900 秒，用于标记同步结果过期。
 
 ### 10.3 同步流程
 
@@ -325,9 +325,14 @@ MiniMax 文本 token plan 是 5 小时窗口模型。现有 Redis 本地窗口�
 4. 更新账号 extra：
    - `minimax_text_5h_limit`
    - `minimax_text_5h_remaining`
-   - `minimax_text_5h_used`
    - `minimax_remains_synced_at`
+   - `minimax_remains_checked_at`
+   - `minimax_remains_calibrated_at`
    - `minimax_remains_sync_status`
+   - `minimax_remains_sync_error`
+   - `minimax_remains_local_used`
+   - `minimax_remains_synthetic_added`
+   - `minimax_remains_synthetic_removed`
    - `minimax_remains_raw`
 5. 调用 Redis 校准接口。
 6. 写入结构化日志和指标。
@@ -395,18 +400,27 @@ DeepSeek 的 `/user/balance` 用于判断账号是否仍有可用余额。它适
    - `deepseek_balance_currency`
    - `deepseek_balance_checked_at`
    - `deepseek_balance_status`
+   - `deepseek_balance_error`
    - `deepseek_balance_raw`
-5. Channel Monitor 展示余额健康状态。
+5. 账号管理页展示余额健康状态；Channel Monitor 仍用于通用上游探测。
 
-### 11.3 健康语义
+### 11.3 同步频率
+
+配置项：
+
+- `gateway.deepseek_balance.check_enabled`：默认开启。
+- `gateway.deepseek_balance.check_interval_seconds`：默认 300 秒。
+- `gateway.deepseek_balance.check_jitter_seconds`：默认 30 秒。
+- `gateway.deepseek_balance.batch_size`：默认 50。
+- `gateway.deepseek_balance.stale_after_seconds`：默认 900 秒。
+
+### 11.4 健康语义
 
 | 条件 | 状态 |
 | --- | --- |
-| 余额接口成功且可用余额大于 0 | healthy |
-| 余额接口成功但不可用或余额为 0 | unhealthy |
-| 余额接口返回鉴权失败 | unhealthy |
-| 余额接口超时或 5xx | degraded |
-| 余额接口返回结构不可解析 | degraded |
+| 余额接口成功且 `is_available=true` | `ok` |
+| 余额接口成功但 `is_available=false` | `unavailable` |
+| 余额接口返回鉴权失败、超时、5xx 或结构不可解析 | `error` |
 
 请求转发链路仍以真实上游请求结果为准。若请求期间收到余额不足错误，继续由现有 upstream error handler 归一化为余额不足。
 
@@ -493,9 +507,8 @@ Kimi 默认 alias 保持保守，只覆盖 Claude coding 客户端常用模型�
 
 - `gateway.model_aliases.enabled`：全局开关，默认开启。
 - `gateway.model_aliases.include_in_models`：是否在 `/v1/models` 返回默认 alias，默认关闭。
-- `gateway.model_aliases.provider_defaults.<provider>`：供应商默认 alias 开关，默认开启。
 
-账号显式 `model_mapping` 始终优先于默认 alias。若某账号不希望使用默认 alias，可在账号 extra 或 provider 配置中关闭。
+账号显式 `model_mapping` 始终优先于默认 alias。若需要关闭平台默认 alias，可关闭全局 alias 开关；更细粒度的 provider 级 alias 开关留作后续增强。
 
 ## 14. 数据结构与存储
 

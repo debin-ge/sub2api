@@ -575,6 +575,27 @@ type ConcurrencyConfig struct {
 	PingInterval int `mapstructure:"ping_interval"`
 }
 
+type GatewayModelAliasConfig struct {
+	Enabled         bool `mapstructure:"enabled"`
+	IncludeInModels bool `mapstructure:"include_in_models"`
+}
+
+type GatewayMiniMaxRemainsConfig struct {
+	SyncEnabled         bool `mapstructure:"sync_enabled"`
+	SyncIntervalSeconds int  `mapstructure:"sync_interval_seconds"`
+	SyncJitterSeconds   int  `mapstructure:"sync_jitter_seconds"`
+	BatchSize           int  `mapstructure:"batch_size"`
+	StaleAfterSeconds   int  `mapstructure:"stale_after_seconds"`
+}
+
+type GatewayDeepSeekBalanceConfig struct {
+	CheckEnabled         bool `mapstructure:"check_enabled"`
+	CheckIntervalSeconds int  `mapstructure:"check_interval_seconds"`
+	CheckJitterSeconds   int  `mapstructure:"check_jitter_seconds"`
+	BatchSize            int  `mapstructure:"batch_size"`
+	StaleAfterSeconds    int  `mapstructure:"stale_after_seconds"`
+}
+
 // GatewayConfig API网关相关配置
 type GatewayConfig struct {
 	// 等待上游响应头的超时时间（秒），0表示无超时
@@ -670,6 +691,12 @@ type GatewayConfig struct {
 	UserGroupRateCacheTTLSeconds int `mapstructure:"user_group_rate_cache_ttl_seconds"`
 	// ModelsListCacheTTLSeconds: /v1/models 模型列表短缓存 TTL（秒）
 	ModelsListCacheTTLSeconds int `mapstructure:"models_list_cache_ttl_seconds"`
+	// ModelAliases: 国产供应商默认模型 alias 配置
+	ModelAliases GatewayModelAliasConfig `mapstructure:"model_aliases"`
+	// MiniMaxRemains: MiniMax 官方 remains 同步和本地窗口校准配置
+	MiniMaxRemains GatewayMiniMaxRemainsConfig `mapstructure:"minimax_remains"`
+	// DeepSeekBalance: DeepSeek 官方余额健康检测配置
+	DeepSeekBalance GatewayDeepSeekBalanceConfig `mapstructure:"deepseek_balance"`
 
 	// UserMessageQueue: 用户消息串行队列配置
 	// 对 role:"user" 的真实用户消息实施账号级串行化 + RPM 自适应延迟
@@ -1724,6 +1751,18 @@ func setDefaults() {
 	viper.SetDefault("gateway.usage_record.auto_scale_cooldown_seconds", 10)
 	viper.SetDefault("gateway.user_group_rate_cache_ttl_seconds", 30)
 	viper.SetDefault("gateway.models_list_cache_ttl_seconds", 15)
+	viper.SetDefault("gateway.model_aliases.enabled", true)
+	viper.SetDefault("gateway.model_aliases.include_in_models", false)
+	viper.SetDefault("gateway.minimax_remains.sync_enabled", true)
+	viper.SetDefault("gateway.minimax_remains.sync_interval_seconds", 300)
+	viper.SetDefault("gateway.minimax_remains.sync_jitter_seconds", 30)
+	viper.SetDefault("gateway.minimax_remains.batch_size", 50)
+	viper.SetDefault("gateway.minimax_remains.stale_after_seconds", 900)
+	viper.SetDefault("gateway.deepseek_balance.check_enabled", true)
+	viper.SetDefault("gateway.deepseek_balance.check_interval_seconds", 300)
+	viper.SetDefault("gateway.deepseek_balance.check_jitter_seconds", 30)
+	viper.SetDefault("gateway.deepseek_balance.batch_size", 50)
+	viper.SetDefault("gateway.deepseek_balance.stale_after_seconds", 900)
 	// TLS指纹伪装配置（默认关闭，需要账号级别单独启用）
 	// 用户消息串行队列默认值
 	viper.SetDefault("gateway.user_message_queue.enabled", false)
@@ -2461,6 +2500,24 @@ func (c *Config) Validate() error {
 	if c.Gateway.ModelsListCacheTTLSeconds < 10 || c.Gateway.ModelsListCacheTTLSeconds > 30 {
 		return fmt.Errorf("gateway.models_list_cache_ttl_seconds must be between 10-30")
 	}
+	if err := validateIntervalJitterBatchStale(
+		"gateway.minimax_remains",
+		c.Gateway.MiniMaxRemains.SyncIntervalSeconds,
+		c.Gateway.MiniMaxRemains.SyncJitterSeconds,
+		c.Gateway.MiniMaxRemains.BatchSize,
+		c.Gateway.MiniMaxRemains.StaleAfterSeconds,
+	); err != nil {
+		return err
+	}
+	if err := validateIntervalJitterBatchStale(
+		"gateway.deepseek_balance",
+		c.Gateway.DeepSeekBalance.CheckIntervalSeconds,
+		c.Gateway.DeepSeekBalance.CheckJitterSeconds,
+		c.Gateway.DeepSeekBalance.BatchSize,
+		c.Gateway.DeepSeekBalance.StaleAfterSeconds,
+	); err != nil {
+		return err
+	}
 	if c.Gateway.Scheduling.StickySessionMaxWaiting <= 0 {
 		return fmt.Errorf("gateway.scheduling.sticky_session_max_waiting must be positive")
 	}
@@ -2601,6 +2658,39 @@ func GetServerAddress() string {
 	host := v.GetString("server.host")
 	port := v.GetInt("server.port")
 	return fmt.Sprintf("%s:%d", host, port)
+}
+
+func validateIntervalJitterBatchStale(prefix string, intervalSeconds, jitterSeconds, batchSize, staleAfterSeconds int) error {
+	if intervalSeconds < 60 || intervalSeconds > 3600 {
+		return fmt.Errorf("%s.%s must be between 60-3600", prefix, intervalFieldName(prefix))
+	}
+	if jitterSeconds < 0 || jitterSeconds > 300 {
+		return fmt.Errorf("%s.%s must be between 0-300", prefix, jitterFieldName(prefix))
+	}
+	if jitterSeconds >= intervalSeconds {
+		return fmt.Errorf("%s.%s must be less than interval", prefix, jitterFieldName(prefix))
+	}
+	if batchSize < 1 || batchSize > 200 {
+		return fmt.Errorf("%s.batch_size must be between 1-200", prefix)
+	}
+	if staleAfterSeconds <= intervalSeconds || staleAfterSeconds > 86400 {
+		return fmt.Errorf("%s.stale_after_seconds must be greater than interval and at most 86400", prefix)
+	}
+	return nil
+}
+
+func intervalFieldName(prefix string) string {
+	if strings.HasSuffix(prefix, "deepseek_balance") {
+		return "check_interval_seconds"
+	}
+	return "sync_interval_seconds"
+}
+
+func jitterFieldName(prefix string) string {
+	if strings.HasSuffix(prefix, "deepseek_balance") {
+		return "check_jitter_seconds"
+	}
+	return "sync_jitter_seconds"
 }
 
 // ValidateAbsoluteHTTPURL 验证是否为有效的绝对 HTTP(S) URL

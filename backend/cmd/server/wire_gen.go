@@ -272,8 +272,13 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	subscriptionExpiryService := service.ProvideSubscriptionExpiryService(userSubscriptionRepository)
 	scheduledTestRunnerService := service.ProvideScheduledTestRunnerService(scheduledTestPlanRepository, scheduledTestService, accountTestService, rateLimitService, configConfig)
 	paymentOrderExpiryService := service.ProvidePaymentOrderExpiryService(paymentService)
+	miniMaxRemainsSyncService := service.NewMiniMaxRemainsSyncService(accountRepository, miniMaxTokenPlanClient, miniMaxQuotaService)
+	miniMaxRemainsSyncRunner := service.ProvideMiniMaxRemainsSyncRunner(miniMaxRemainsSyncService, configConfig)
+	deepSeekBalanceClient := service.ProvideDeepSeekBalanceClient()
+	deepSeekBalanceHealthService := service.NewDeepSeekBalanceHealthService(accountRepository, deepSeekBalanceClient)
+	deepSeekBalanceHealthRunner := service.ProvideDeepSeekBalanceHealthRunner(deepSeekBalanceHealthService, configConfig)
 	channelMonitorRunner := service.ProvideChannelMonitorRunner(channelMonitorService, settingService)
-	v := provideCleanup(client, redisClient, opsMetricsCollector, opsAggregationService, opsAlertEvaluatorService, opsCleanupService, opsScheduledReportService, opsSystemLogSink, schedulerSnapshotService, tokenRefreshService, accountExpiryService, subscriptionExpiryService, usageCleanupService, idempotencyCleanupService, pricingService, emailQueueService, billingCacheService, usageRecordWorkerPool, subscriptionService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, openAIGatewayService, scheduledTestRunnerService, backupService, paymentOrderExpiryService, channelMonitorRunner)
+	v := provideCleanup(client, redisClient, opsMetricsCollector, opsAggregationService, opsAlertEvaluatorService, opsCleanupService, opsScheduledReportService, opsSystemLogSink, schedulerSnapshotService, tokenRefreshService, accountExpiryService, subscriptionExpiryService, usageCleanupService, idempotencyCleanupService, pricingService, emailQueueService, billingCacheService, usageRecordWorkerPool, subscriptionService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, openAIGatewayService, scheduledTestRunnerService, backupService, paymentOrderExpiryService, miniMaxRemainsSyncRunner, deepSeekBalanceHealthRunner, channelMonitorRunner)
 	application := &Application{
 		Server:  httpServer,
 		Cleanup: v,
@@ -327,6 +332,8 @@ func provideCleanup(
 	scheduledTestRunner *service.ScheduledTestRunnerService,
 	backupSvc *service.BackupService,
 	paymentOrderExpiry *service.PaymentOrderExpiryService,
+	miniMaxRemainsSyncRunner *service.MiniMaxRemainsSyncRunner,
+	deepSeekBalanceHealthRunner *service.DeepSeekBalanceHealthRunner,
 	channelMonitorRunner *service.ChannelMonitorRunner,
 ) func() {
 	return func() {
@@ -466,6 +473,18 @@ func provideCleanup(
 			{"PaymentOrderExpiryService", func() error {
 				if paymentOrderExpiry != nil {
 					paymentOrderExpiry.Stop()
+				}
+				return nil
+			}},
+			{"MiniMaxRemainsSyncRunner", func() error {
+				if miniMaxRemainsSyncRunner != nil {
+					miniMaxRemainsSyncRunner.Stop()
+				}
+				return nil
+			}},
+			{"DeepSeekBalanceHealthRunner", func() error {
+				if deepSeekBalanceHealthRunner != nil {
+					deepSeekBalanceHealthRunner.Stop()
 				}
 				return nil
 			}},
