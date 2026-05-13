@@ -56,7 +56,7 @@ func ProvideDeepSeekBalanceClient() *DeepSeekBalanceClient {
 
 // ProvideMiniMaxGatewayService creates the MiniMax Anthropic-compatible gateway service.
 func ProvideMiniMaxGatewayService(quotaService *MiniMaxQuotaService, cfg *config.Config) *MiniMaxGatewayService {
-	return NewMiniMaxGatewayService(nil, quotaService, compileResponseHeaderFilter(cfg))
+	return NewMiniMaxGatewayServiceWithTimeout(nil, quotaService, compileResponseHeaderFilter(cfg), compatibleGatewayUpstreamTimeoutFromConfig(cfg))
 }
 
 func ProvideMiniMaxRemainsSyncRunner(svc *MiniMaxRemainsSyncService, cfg *config.Config) *MiniMaxRemainsSyncRunner {
@@ -73,17 +73,17 @@ func ProvideDeepSeekBalanceHealthRunner(svc *DeepSeekBalanceHealthService, cfg *
 
 // ProvideGLMGatewayService creates the GLM Coding Plan gateway service.
 func ProvideGLMGatewayService(cfg *config.Config) *GLMGatewayService {
-	return NewGLMGatewayService(nil, compileResponseHeaderFilter(cfg))
+	return NewGLMGatewayServiceWithTimeout(nil, compileResponseHeaderFilter(cfg), compatibleGatewayUpstreamTimeoutFromConfig(cfg))
 }
 
 // ProvideKimiGatewayService creates the Kimi Coding Plan gateway service.
 func ProvideKimiGatewayService(cfg *config.Config) *KimiGatewayService {
-	return NewKimiGatewayService(nil, compileResponseHeaderFilter(cfg))
+	return NewKimiGatewayServiceWithTimeout(nil, compileResponseHeaderFilter(cfg), compatibleGatewayUpstreamTimeoutFromConfig(cfg))
 }
 
 // ProvideDeepSeekGatewayService creates the DeepSeek API key gateway service.
 func ProvideDeepSeekGatewayService(cfg *config.Config) *DeepSeekGatewayService {
-	return NewDeepSeekGatewayService(nil, compileResponseHeaderFilter(cfg))
+	return NewDeepSeekGatewayServiceWithTimeout(nil, compileResponseHeaderFilter(cfg), compatibleGatewayUpstreamTimeoutFromConfig(cfg))
 }
 
 // ProvideTokenRefreshService creates and starts TokenRefreshService

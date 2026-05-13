@@ -601,6 +601,8 @@ type GatewayConfig struct {
 	// 等待上游响应头的超时时间（秒），0表示无超时
 	// 注意：这不影响流式数据传输，只控制等待响应头的时间
 	ResponseHeaderTimeout int `mapstructure:"response_header_timeout"`
+	// MiniMax/GLM/Kimi/DeepSeek 兼容网关等待上游响应头的超时时间（秒）
+	CompatibleUpstreamTimeoutSeconds int `mapstructure:"compatible_upstream_timeout_seconds"`
 	// 请求体最大字节数，用于网关请求体大小限制
 	MaxBodySize int64 `mapstructure:"max_body_size"`
 	// 非流式上游响应体读取上限（字节），用于防止无界读取导致内存放大
@@ -1645,6 +1647,7 @@ func setDefaults() {
 
 	// Gateway
 	viper.SetDefault("gateway.response_header_timeout", 600) // 600秒(10分钟)等待上游响应头，LLM高负载时可能排队较久
+	viper.SetDefault("gateway.compatible_upstream_timeout_seconds", 60)
 	viper.SetDefault("gateway.log_upstream_error_body", true)
 	viper.SetDefault("gateway.log_upstream_error_body_max_bytes", 2048)
 	viper.SetDefault("gateway.inject_beta_for_apikey", false)
@@ -2286,6 +2289,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Gateway.MaxConnsPerHost < 0 {
 		return fmt.Errorf("gateway.max_conns_per_host must be non-negative")
+	}
+	if c.Gateway.CompatibleUpstreamTimeoutSeconds <= 0 {
+		return fmt.Errorf("gateway.compatible_upstream_timeout_seconds must be positive")
 	}
 	if c.Gateway.IdleConnTimeoutSeconds <= 0 {
 		return fmt.Errorf("gateway.idle_conn_timeout_seconds must be positive")

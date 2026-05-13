@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -19,10 +18,10 @@ import (
 
 const (
 	glmNonStreamResponseMaxBytes = 2 << 20
-	glmUpstreamDialTimeout       = 15 * time.Second
-	glmUpstreamTLSHandshake      = 10 * time.Second
-	glmUpstreamHeaderTimeout     = 30 * time.Second
-	glmUpstreamIdleConnTimeout   = 90 * time.Second
+	glmUpstreamDialTimeout       = compatibleGatewayDialTimeout
+	glmUpstreamTLSHandshake      = compatibleGatewayTLSHandshakeTimeout
+	glmUpstreamHeaderTimeout     = compatibleGatewayDefaultUpstreamTimeout
+	glmUpstreamIdleConnTimeout   = compatibleGatewayIdleConnTimeout
 	glmDefaultAnthropicMaxTokens = int64(4096)
 )
 
@@ -82,8 +81,12 @@ func MapGLMUpstreamStatus(status int) GLMUpstreamStatusMapping {
 }
 
 func NewGLMGatewayService(httpClient *http.Client, responseHeaderFilter *responseheaders.CompiledHeaderFilter) *GLMGatewayService {
+	return NewGLMGatewayServiceWithTimeout(httpClient, responseHeaderFilter, glmUpstreamHeaderTimeout)
+}
+
+func NewGLMGatewayServiceWithTimeout(httpClient *http.Client, responseHeaderFilter *responseheaders.CompiledHeaderFilter, upstreamTimeout time.Duration) *GLMGatewayService {
 	if httpClient == nil {
-		httpClient = newDefaultGLMHTTPClient()
+		httpClient = newDefaultGLMHTTPClientWithTimeout(upstreamTimeout)
 	}
 	return &GLMGatewayService{
 		httpClient:           httpClient,
@@ -92,21 +95,11 @@ func NewGLMGatewayService(httpClient *http.Client, responseHeaderFilter *respons
 }
 
 func newDefaultGLMHTTPClient() *http.Client {
-	return &http.Client{
-		Transport: &http.Transport{
-			Proxy: http.ProxyFromEnvironment,
-			DialContext: (&net.Dialer{
-				Timeout:   glmUpstreamDialTimeout,
-				KeepAlive: 30 * time.Second,
-			}).DialContext,
-			ForceAttemptHTTP2:     true,
-			MaxIdleConns:          100,
-			IdleConnTimeout:       glmUpstreamIdleConnTimeout,
-			TLSHandshakeTimeout:   glmUpstreamTLSHandshake,
-			ExpectContinueTimeout: 1 * time.Second,
-			ResponseHeaderTimeout: glmUpstreamHeaderTimeout,
-		},
-	}
+	return newDefaultGLMHTTPClientWithTimeout(glmUpstreamHeaderTimeout)
+}
+
+func newDefaultGLMHTTPClientWithTimeout(upstreamTimeout time.Duration) *http.Client {
+	return newDefaultCompatibleGatewayHTTPClient(upstreamTimeout)
 }
 
 func (s *GLMGatewayService) ForwardMessages(ctx context.Context, c *gin.Context, account *Account, body []byte, requestID string) (*ForwardResult, error) {

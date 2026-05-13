@@ -76,6 +76,9 @@ func TestLoadDefaultSchedulingConfig(t *testing.T) {
 	if cfg.Gateway.Scheduling.SlotCleanupInterval != 30*time.Second {
 		t.Fatalf("SlotCleanupInterval = %v, want 30s", cfg.Gateway.Scheduling.SlotCleanupInterval)
 	}
+	if cfg.Gateway.CompatibleUpstreamTimeoutSeconds != 60 {
+		t.Fatalf("CompatibleUpstreamTimeoutSeconds = %d, want 60", cfg.Gateway.CompatibleUpstreamTimeoutSeconds)
+	}
 }
 
 func TestLoadDefaultOpenAIWSConfig(t *testing.T) {
@@ -1378,6 +1381,11 @@ func TestValidateConfigErrors(t *testing.T) {
 			name:    "gateway max conns per host",
 			mutate:  func(c *Config) { c.Gateway.MaxConnsPerHost = -1 },
 			wantErr: "gateway.max_conns_per_host",
+		},
+		{
+			name:    "gateway compatible upstream timeout",
+			mutate:  func(c *Config) { c.Gateway.CompatibleUpstreamTimeoutSeconds = 0 },
+			wantErr: "gateway.compatible_upstream_timeout_seconds",
 		},
 		{
 			name:    "gateway connection isolation",

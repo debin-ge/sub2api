@@ -72,8 +72,12 @@ func MapKimiUpstreamStatus(status int) KimiUpstreamStatusMapping {
 }
 
 func NewKimiGatewayService(httpClient *http.Client, responseHeaderFilter *responseheaders.CompiledHeaderFilter) *KimiGatewayService {
+	return NewKimiGatewayServiceWithTimeout(httpClient, responseHeaderFilter, compatibleGatewayDefaultUpstreamTimeout)
+}
+
+func NewKimiGatewayServiceWithTimeout(httpClient *http.Client, responseHeaderFilter *responseheaders.CompiledHeaderFilter, upstreamTimeout time.Duration) *KimiGatewayService {
 	if httpClient == nil {
-		httpClient = newDefaultGLMHTTPClient()
+		httpClient = newDefaultCompatibleGatewayHTTPClient(upstreamTimeout)
 	}
 	return &KimiGatewayService{
 		httpClient:           httpClient,

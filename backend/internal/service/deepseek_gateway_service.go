@@ -80,8 +80,12 @@ func MapDeepSeekUpstreamStatus(status int) DeepSeekUpstreamStatusMapping {
 }
 
 func NewDeepSeekGatewayService(httpClient *http.Client, responseHeaderFilter *responseheaders.CompiledHeaderFilter) *DeepSeekGatewayService {
+	return NewDeepSeekGatewayServiceWithTimeout(httpClient, responseHeaderFilter, compatibleGatewayDefaultUpstreamTimeout)
+}
+
+func NewDeepSeekGatewayServiceWithTimeout(httpClient *http.Client, responseHeaderFilter *responseheaders.CompiledHeaderFilter, upstreamTimeout time.Duration) *DeepSeekGatewayService {
 	if httpClient == nil {
-		httpClient = newDefaultGLMHTTPClient()
+		httpClient = newDefaultCompatibleGatewayHTTPClient(upstreamTimeout)
 	}
 	return &DeepSeekGatewayService{
 		httpClient:           httpClient,

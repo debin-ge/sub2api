@@ -80,8 +80,12 @@ func MapMiniMaxUpstreamStatus(status int) MiniMaxUpstreamStatusMapping {
 }
 
 func NewMiniMaxGatewayService(httpClient *http.Client, quotaService *MiniMaxQuotaService, responseHeaderFilter *responseheaders.CompiledHeaderFilter) *MiniMaxGatewayService {
+	return NewMiniMaxGatewayServiceWithTimeout(httpClient, quotaService, responseHeaderFilter, compatibleGatewayDefaultUpstreamTimeout)
+}
+
+func NewMiniMaxGatewayServiceWithTimeout(httpClient *http.Client, quotaService *MiniMaxQuotaService, responseHeaderFilter *responseheaders.CompiledHeaderFilter, upstreamTimeout time.Duration) *MiniMaxGatewayService {
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: 15 * time.Second}
+		httpClient = newDefaultCompatibleGatewayHTTPClient(upstreamTimeout)
 	}
 	return &MiniMaxGatewayService{
 		httpClient:           httpClient,

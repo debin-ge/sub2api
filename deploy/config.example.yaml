@@ -149,6 +149,9 @@ gateway:
   # Timeout for waiting upstream response headers (seconds)
   # 等待上游响应头超时时间（秒）
   response_header_timeout: 600
+  # MiniMax/GLM/Kimi/DeepSeek compatible gateway upstream header timeout (seconds)
+  # MiniMax/GLM/Kimi/DeepSeek 兼容网关等待上游响应头超时时间（秒）
+  compatible_upstream_timeout_seconds: 60
   # Max request body size in bytes (default: 256MB)
   # 请求体最大字节数（默认 256MB）
   max_body_size: 268435456
