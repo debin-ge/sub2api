@@ -1,18 +1,37 @@
 import { DriveStep } from 'driver.js'
 
+type TranslateParams = Record<string, string | number>
+type Translate = (key: string, params?: TranslateParams) => string
+
+export interface GuideBranding {
+  siteName?: string
+}
+
+const DEFAULT_SITE_NAME = 'AI API Gateway'
+
+function resolveBranding(branding: GuideBranding = {}): Required<GuideBranding> {
+  const configuredSiteName = branding.siteName?.trim()
+  const siteName = !configuredSiteName || configuredSiteName === 'Sub2API'
+    ? DEFAULT_SITE_NAME
+    : configuredSiteName
+  return { siteName }
+}
+
 /**
  * 管理员完整引导流程
  * 交互式引导：指引用户实际操作
  * @param t 国际化函数
  * @param isSimpleMode 是否为简易模式（简易模式下会过滤分组相关步骤）
+ * @param branding 站点品牌信息
  */
-export const getAdminSteps = (t: (key: string) => string, isSimpleMode = false): DriveStep[] => {
+export const getAdminSteps = (t: Translate, isSimpleMode = false, branding: GuideBranding = {}): DriveStep[] => {
+  const brand = resolveBranding(branding)
   const allSteps: DriveStep[] = [
   // ========== 欢迎介绍 ==========
   {
     popover: {
-      title: t('onboarding.admin.welcome.title'),
-      description: t('onboarding.admin.welcome.description'),
+      title: t('onboarding.admin.welcome.title', brand),
+      description: t('onboarding.admin.welcome.description', brand),
       align: 'center',
       nextBtnText: t('onboarding.admin.welcome.nextBtn'),
       prevBtnText: t('onboarding.admin.welcome.prevBtn')
@@ -24,7 +43,7 @@ export const getAdminSteps = (t: (key: string) => string, isSimpleMode = false):
     element: '#sidebar-group-manage',
     popover: {
       title: t('onboarding.admin.groupManage.title'),
-      description: t('onboarding.admin.groupManage.description'),
+      description: t('onboarding.admin.groupManage.description', brand),
       side: 'right',
       align: 'center',
       showButtons: ['close'],
@@ -246,11 +265,13 @@ export const getAdminSteps = (t: (key: string) => string, isSimpleMode = false):
 /**
  * 普通用户引导流程
  */
-export const getUserSteps = (t: (key: string) => string): DriveStep[] => [
+export const getUserSteps = (t: Translate, branding: GuideBranding = {}): DriveStep[] => {
+  const brand = resolveBranding(branding)
+  return [
   {
     popover: {
-      title: t('onboarding.user.welcome.title'),
-      description: t('onboarding.user.welcome.description'),
+      title: t('onboarding.user.welcome.title', brand),
+      description: t('onboarding.user.welcome.description', brand),
       align: 'center',
       nextBtnText: t('onboarding.user.welcome.nextBtn'),
       prevBtnText: t('onboarding.user.welcome.prevBtn')
@@ -306,4 +327,5 @@ export const getUserSteps = (t: (key: string) => string): DriveStep[] => [
       showButtons: ['close']
     }
   }
-]
+  ]
+}

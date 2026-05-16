@@ -1656,7 +1656,11 @@
                 {{ t("admin.settings.linuxdo.title") }}
               </h2>
               <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                {{ t("admin.settings.linuxdo.description") }}
+                {{
+                  t("admin.settings.linuxdo.description", {
+                    siteName: siteDisplayName,
+                  })
+                }}
               </p>
             </div>
             <div class="space-y-5 p-6">
@@ -5253,7 +5257,7 @@
                       v-model="form.payment_product_name_prefix"
                       type="text"
                       class="input"
-                      placeholder="Sub2API"
+                      :placeholder="siteDisplayName"
                     />
                   </div>
                   <div>
@@ -5275,7 +5279,7 @@
                       class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-300"
                     >
                       {{
-                        (form.payment_product_name_prefix || "Sub2API") +
+                        (form.payment_product_name_prefix || siteDisplayName) +
                         " 100 " +
                         (form.payment_product_name_suffix || "CNY")
                       }}
@@ -6616,6 +6620,8 @@ const form = reactive<SettingsForm>({
   // Affiliate (邀请返利) feature switch
   affiliate_enabled: false,
 });
+
+const siteDisplayName = computed(() => form.site_name.trim() || "Sub2API");
 
 const authSourceDefaults = reactive<AuthSourceDefaultsState>(
   buildAuthSourceDefaultsState({}),
