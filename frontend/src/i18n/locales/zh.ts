@@ -1,7 +1,6 @@
 export default {
   // Home Page
   home: {
-    viewOnGithub: '在 GitHub 上查看',
     viewDocs: '查看文档',
     docs: '文档',
     switchToLight: '切换到浅色模式',
@@ -97,6 +96,7 @@ export default {
       claude: 'Claude',
       gemini: 'Gemini',
       antigravity: 'Antigravity',
+      minimax: 'MiniMax',
       glm: 'GLM',
       kimi: 'Kimi',
       deepseek: 'DeepSeek',

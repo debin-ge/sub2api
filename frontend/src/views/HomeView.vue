@@ -353,6 +353,51 @@
               >{{ t('home.providers.supported') }}</span
             >
           </div>
+          <!-- MiniMax - Supported -->
+          <div
+            class="flex items-center gap-2 rounded-xl border border-primary-200 bg-white/60 px-5 py-3 ring-1 ring-primary-500/20 backdrop-blur-sm dark:border-primary-800 dark:bg-dark-800/60"
+          >
+            <div
+              class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-500 to-sky-600"
+            >
+              <span class="text-xs font-bold text-white">M</span>
+            </div>
+            <span class="text-sm font-medium text-gray-700 dark:text-dark-200">{{ t('home.providers.minimax') }}</span>
+            <span
+              class="rounded bg-primary-100 px-1.5 py-0.5 text-[10px] font-medium text-primary-600 dark:bg-primary-900/30 dark:text-primary-400"
+              >{{ t('home.providers.supported') }}</span
+            >
+          </div>
+          <!-- GLM - Supported -->
+          <div
+            class="flex items-center gap-2 rounded-xl border border-primary-200 bg-white/60 px-5 py-3 ring-1 ring-primary-500/20 backdrop-blur-sm dark:border-primary-800 dark:bg-dark-800/60"
+          >
+            <div
+              class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600"
+            >
+              <span class="text-xs font-bold text-white">G</span>
+            </div>
+            <span class="text-sm font-medium text-gray-700 dark:text-dark-200">{{ t('home.providers.glm') }}</span>
+            <span
+              class="rounded bg-primary-100 px-1.5 py-0.5 text-[10px] font-medium text-primary-600 dark:bg-primary-900/30 dark:text-primary-400"
+              >{{ t('home.providers.supported') }}</span
+            >
+          </div>
+          <!-- Kimi - Supported -->
+          <div
+            class="flex items-center gap-2 rounded-xl border border-primary-200 bg-white/60 px-5 py-3 ring-1 ring-primary-500/20 backdrop-blur-sm dark:border-primary-800 dark:bg-dark-800/60"
+          >
+            <div
+              class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-amber-500 to-orange-600"
+            >
+              <span class="text-xs font-bold text-white">K</span>
+            </div>
+            <span class="text-sm font-medium text-gray-700 dark:text-dark-200">{{ t('home.providers.kimi') }}</span>
+            <span
+              class="rounded bg-primary-100 px-1.5 py-0.5 text-[10px] font-medium text-primary-600 dark:bg-primary-900/30 dark:text-primary-400"
+              >{{ t('home.providers.supported') }}</span
+            >
+          </div>
           <!-- More - Coming Soon -->
           <div
             class="flex items-center gap-2 rounded-xl border border-gray-200/50 bg-white/40 px-5 py-3 opacity-60 backdrop-blur-sm dark:border-dark-700/50 dark:bg-dark-800/40"
@@ -390,14 +435,6 @@
           >
             {{ t('home.docs') }}
           </a>
-          <a
-            :href="githubUrl"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="text-sm text-gray-500 transition-colors hover:text-gray-700 dark:text-dark-400 dark:hover:text-white"
-          >
-            GitHub
-          </a>
         </div>
       </div>
     </footer>
@@ -431,9 +468,6 @@ const isHomeContentUrl = computed(() => {
 
 // Theme
 const isDark = ref(document.documentElement.classList.contains('dark'))
-
-// GitHub URL
-const githubUrl = 'https://github.com/Wei-Shaw/sub2api'
 
 // Auth state
 const isAuthenticated = computed(() => authStore.isAuthenticated)

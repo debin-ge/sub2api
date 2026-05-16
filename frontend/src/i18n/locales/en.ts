@@ -1,7 +1,6 @@
 export default {
   // Home Page
   home: {
-    viewOnGithub: 'View on GitHub',
     viewDocs: 'View Documentation',
     docs: 'Docs',
     switchToLight: 'Switch to Light Mode',
@@ -97,6 +96,7 @@ export default {
       claude: 'Claude',
       gemini: 'Gemini',
       antigravity: 'Antigravity',
+      minimax: 'MiniMax',
       glm: 'GLM',
       kimi: 'Kimi',
       deepseek: 'DeepSeek',
