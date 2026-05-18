@@ -252,6 +252,21 @@ var providerAdapters = map[string]providerAdapter{
 		},
 		textPath: "choices.0.message.content",
 	},
+	MonitorProviderWindsurf: {
+		buildPath: func(string) string { return providerWindsurfChatPath },
+		buildBody: func(model, prompt string) ([]byte, error) {
+			return json.Marshal(map[string]any{
+				"model":      model,
+				"messages":   []map[string]string{{"role": "user", "content": prompt}},
+				"max_tokens": monitorChallengeMaxTokens,
+				"stream":     false,
+			})
+		},
+		buildHeaders: func(apiKey string) map[string]string {
+			return monitorBearerHeaders(apiKey)
+		},
+		textPath: "choices.0.message.content",
+	},
 }
 
 func buildMonitorAnthropicCompatibleBody(model, prompt string) ([]byte, error) {
@@ -379,6 +394,7 @@ var bodyMergeKeyDenyList = map[string]map[string]bool{
 	MonitorProviderGLM:       {"model": true, "messages": true},
 	MonitorProviderKimi:      {"model": true, "messages": true},
 	MonitorProviderDeepSeek:  {"model": true, "messages": true, "stream": true},
+	MonitorProviderWindsurf:  {"model": true, "messages": true, "stream": true},
 }
 
 // postRawJSON 发送 POST + 已序列化好的 JSON 字节，限制响应体大小，返回响应字节、HTTP status、错误。

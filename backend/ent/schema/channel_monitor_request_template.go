@@ -39,7 +39,7 @@ func (ChannelMonitorRequestTemplate) Fields() []ent.Field {
 			NotEmpty().
 			MaxLen(100),
 		field.Enum("provider").
-			Values("openai", "anthropic", "gemini", "minimax", "glm", "kimi", "deepseek"),
+			Values("openai", "anthropic", "gemini", "minimax", "glm", "kimi", "deepseek", "windsurf"),
 		field.String("description").
 			Optional().
 			Default("").

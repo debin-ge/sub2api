@@ -55,6 +55,7 @@ type Handlers struct {
 	GLMGateway       *GLMGatewayHandler
 	KimiGateway      *KimiGatewayHandler
 	DeepSeekGateway  *DeepSeekGatewayHandler
+	WindsurfGateway  *WindsurfGatewayHandler
 	Setting          *SettingHandler
 	Totp             *TotpHandler
 	Payment          *PaymentHandler

@@ -187,6 +187,27 @@ const deepseekGatewayModels = [
   'deepseek-v4-flash', 'deepseek-v4-pro'
 ]
 
+// Windsurf reverse proxy gateway
+const windsurfGatewayModels = [
+  'claude-sonnet-4.6',
+  'claude-sonnet-4.6-thinking',
+  'claude-opus-4.6',
+  'claude-opus-4.6-thinking',
+  'claude-opus-4.6-fast',
+  'claude-opus-4.6-fast-thinking',
+  'gpt-5.4',
+  'gpt-5.4-mini',
+  'gpt-5.3-codex-spark',
+  'gemini-3.1-pro',
+  'glm-5',
+  'minimax-m2.5',
+  'swe-1.6',
+  'swe-1.6-fast',
+  'swe-1.5',
+  'swe-1',
+  'phoenix-alpha'
+]
+
 // 百度 文心
 const baiduModels = [
   'ernie-4.0-8k-latest', 'ernie-4.0-8k', 'ernie-4.0-turbo-8k',
@@ -236,6 +257,7 @@ const allModelsList: string[] = [
   ...glmModels,
   ...kimiModels,
   ...deepseekGatewayModels,
+  ...windsurfGatewayModels,
   ...baiduModels,
   ...sparkModels,
   ...hunyuanModels,
@@ -316,6 +338,17 @@ const deepseekPresetMappings = [
   { label: 'r1→v4 pro', from: 'deepseek-r1', to: 'deepseek-v4-pro', color: 'bg-fuchsia-100 text-fuchsia-700 hover:bg-fuchsia-200 dark:bg-fuchsia-900/30 dark:text-fuchsia-300' },
   { label: 'deepseek-v4-flash passthrough', from: 'deepseek-v4-flash', to: 'deepseek-v4-flash', color: 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-300' },
   { label: 'deepseek-v4-pro passthrough', from: 'deepseek-v4-pro', to: 'deepseek-v4-pro', color: 'bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-900/30 dark:text-violet-300' }
+]
+
+const windsurfPresetMappings = [
+  { label: 'Sonnet→4.6', from: 'claude-sonnet-*', to: 'claude-sonnet-4.6', color: 'bg-teal-100 text-teal-700 hover:bg-teal-200 dark:bg-teal-900/30 dark:text-teal-300' },
+  { label: 'Sonnet thinking', from: 'claude-sonnet-*-thinking', to: 'claude-sonnet-4.6-thinking', color: 'bg-cyan-100 text-cyan-700 hover:bg-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-300' },
+  { label: 'Opus→4.6', from: 'claude-opus-*', to: 'claude-opus-4.6', color: 'bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-900/30 dark:text-violet-300' },
+  { label: 'Opus thinking', from: 'claude-opus-*-thinking', to: 'claude-opus-4.6-thinking', color: 'bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300' },
+  { label: 'GPT-5.4 passthrough', from: 'gpt-5.4', to: 'gpt-5.4', color: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300' },
+  { label: 'GPT-5.4 mini', from: 'gpt-5.4-mini', to: 'gpt-5.4-mini', color: 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-300' },
+  { label: 'Gemini 3.1 Pro', from: 'gemini-3.1-pro', to: 'gemini-3.1-pro', color: 'bg-sky-100 text-sky-700 hover:bg-sky-200 dark:bg-sky-900/30 dark:text-sky-300' },
+  { label: 'SWE-1.6', from: 'swe-1.6', to: 'swe-1.6', color: 'bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-300' }
 ]
 
 // Antigravity 预设映射（支持通配符）
@@ -410,6 +443,7 @@ export function getModelsByPlatform(platform: string): string[] {
     case 'zhipu': return zhipuModels
     case 'qwen': return qwenModels
     case 'deepseek': return deepseekGatewayModels
+    case 'windsurf': return windsurfGatewayModels
     case 'mistral': return mistralModels
     case 'meta': return metaModels
     case 'xai': return xaiModels
@@ -436,6 +470,7 @@ export function getPresetMappingsByPlatform(platform: string) {
   if (platform === 'glm') return glmPresetMappings
   if (platform === 'kimi') return kimiPresetMappings
   if (platform === 'deepseek') return deepseekPresetMappings
+  if (platform === 'windsurf') return windsurfPresetMappings
   if (platform === 'antigravity') return antigravityPresetMappings
   if (platform === 'bedrock') return bedrockPresetMappings
   return anthropicPresetMappings

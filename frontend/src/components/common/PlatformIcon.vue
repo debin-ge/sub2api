@@ -35,6 +35,10 @@
   <svg v-else-if="platform === 'deepseek'" :class="sizeClass" viewBox="0 0 24 24" fill="currentColor">
     <path d="M5 4h7.4c4.4 0 7.6 3.2 7.6 8s-3.2 8-7.6 8H5V4Zm3.2 2.8v10.4h4.1c2.6 0 4.4-2 4.4-5.2s-1.8-5.2-4.4-5.2H8.2Zm2.1 2.5h2.2c1.4 0 2.3 1 2.3 2.7s-.9 2.7-2.3 2.7h-2.2V9.3Z" />
   </svg>
+  <!-- Windsurf logo mark -->
+  <svg v-else-if="platform === 'windsurf'" :class="sizeClass" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M3.2 6.2h3.2l2.05 9.1 2.45-9.1h2.2l2.45 9.1 2.05-9.1h3.2L17.25 19h-3.1L12 11.1 9.85 19h-3.1L3.2 6.2Z" />
+  </svg>
   <!-- Fallback: generic platform icon -->
   <svg v-else :class="sizeClass" fill="currentColor" viewBox="0 0 24 24">
     <path

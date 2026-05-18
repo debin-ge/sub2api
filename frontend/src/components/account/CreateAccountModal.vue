@@ -70,7 +70,7 @@
       <!-- Platform Selection - Segmented Control Style -->
       <div>
         <label class="input-label">{{ t('admin.accounts.platform') }}</label>
-        <div class="mt-2 grid grid-cols-2 gap-1 rounded-lg bg-gray-100 p-1 dark:bg-dark-700 sm:grid-cols-4 lg:grid-cols-8" data-tour="account-form-platform">
+        <div class="mt-2 grid grid-cols-2 gap-1 rounded-lg bg-gray-100 p-1 dark:bg-dark-700 sm:grid-cols-4 lg:grid-cols-9" data-tour="account-form-platform">
           <button
             type="button"
             @click="form.platform = 'anthropic'"
@@ -202,6 +202,20 @@
           >
             <Icon name="key" size="sm" />
             DeepSeek
+          </button>
+          <button
+            type="button"
+            data-testid="create-platform-windsurf"
+            @click="form.platform = 'windsurf'"
+            :class="[
+              'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2.5 text-sm font-medium transition-all',
+              form.platform === 'windsurf'
+                ? 'bg-white text-teal-700 shadow-sm dark:bg-dark-600 dark:text-teal-300'
+                : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
+            ]"
+          >
+            <Icon name="key" size="sm" />
+            Windsurf
           </button>
         </div>
       </div>
@@ -1208,6 +1222,30 @@
                 :placeholder="DEEPSEEK_OPENAI_BASE_URL"
               />
             </div>
+          </div>
+        </template>
+        <template v-else-if="form.platform === 'windsurf'">
+          <div>
+            <label class="input-label">Windsurf API Key</label>
+            <input
+              v-model="apiKeyValue"
+              data-testid="windsurf-api-key"
+              type="password"
+              required
+              class="input font-mono"
+              placeholder="sk-..."
+            />
+            <p class="input-hint">{{ apiKeyHint }}</p>
+          </div>
+          <div>
+            <label class="input-label">Base URL</label>
+            <input
+              v-model="windsurfBaseUrl"
+              data-testid="windsurf-base-url"
+              type="text"
+              class="input font-mono"
+              :placeholder="WINDSURF_BASE_URL"
+            />
           </div>
         </template>
         <template v-else>
@@ -3346,6 +3384,7 @@ import {
   KIMI_OPENAI_BASE_URL,
   DEEPSEEK_ANTHROPIC_BASE_URL,
   DEEPSEEK_OPENAI_BASE_URL,
+  WINDSURF_BASE_URL,
   VERTEX_LOCATION_OPTIONS
 } from '@/constants/account'
 import {
@@ -3395,10 +3434,11 @@ const apiKeyHint = computed(() => {
   if (form.platform === 'glm') return t('admin.accounts.glm.apiKeyHint')
   if (form.platform === 'kimi') return t('admin.accounts.kimi.apiKeyHint')
   if (form.platform === 'deepseek') return t('admin.accounts.deepseek.apiKeyHint')
+  if (form.platform === 'windsurf') return t('admin.accounts.windsurf.apiKeyHint')
   return t('admin.accounts.apiKeyHint')
 })
 
-const isFixedEndpointGatewayPlatformValue = (platform?: string) => platform === 'glm' || platform === 'kimi' || platform === 'deepseek'
+const isFixedEndpointGatewayPlatformValue = (platform?: string) => platform === 'glm' || platform === 'kimi' || platform === 'deepseek' || platform === 'windsurf'
 const isFixedEndpointGatewayPlatform = computed(() => isFixedEndpointGatewayPlatformValue(form.platform))
 
 interface Props {
@@ -3481,6 +3521,7 @@ const kimiAnthropicBaseUrl = ref(KIMI_ANTHROPIC_BASE_URL)
 const kimiOpenAIBaseUrl = ref(KIMI_OPENAI_BASE_URL)
 const deepseekAnthropicBaseUrl = ref(DEEPSEEK_ANTHROPIC_BASE_URL)
 const deepseekOpenAIBaseUrl = ref(DEEPSEEK_OPENAI_BASE_URL)
+const windsurfBaseUrl = ref(WINDSURF_BASE_URL)
 const editQuotaLimit = ref<number | null>(null)
 const editQuotaDailyLimit = ref<number | null>(null)
 const editQuotaWeeklyLimit = ref<number | null>(null)
@@ -3813,6 +3854,10 @@ watch(
       form.type = 'apikey'
       return
     }
+    if (form.platform === 'windsurf') {
+      form.type = 'apikey'
+      return
+    }
     // Antigravity upstream 类型（实际创建为 apikey）
     if (form.platform === 'antigravity' && agType === 'upstream') {
       form.type = 'apikey'
@@ -3852,6 +3897,8 @@ watch(
                 ? KIMI_ANTHROPIC_BASE_URL
                 : newPlatform === 'deepseek'
                   ? DEEPSEEK_ANTHROPIC_BASE_URL
+                  : newPlatform === 'windsurf'
+                    ? WINDSURF_BASE_URL
                   : 'https://api.anthropic.com'
     minimaxAnthropicBaseUrl.value = MINIMAX_ANTHROPIC_BASE_URL
     minimaxOpenAIBaseUrl.value = MINIMAX_OPENAI_BASE_URL
@@ -3861,6 +3908,7 @@ watch(
     kimiOpenAIBaseUrl.value = KIMI_OPENAI_BASE_URL
     deepseekAnthropicBaseUrl.value = DEEPSEEK_ANTHROPIC_BASE_URL
     deepseekOpenAIBaseUrl.value = DEEPSEEK_OPENAI_BASE_URL
+    windsurfBaseUrl.value = WINDSURF_BASE_URL
     // Clear model-related settings
     allowedModels.value = []
     modelMappings.value = []
@@ -3892,6 +3940,9 @@ watch(
     if (newPlatform === 'deepseek') {
       accountCategory.value = 'apikey'
       modelRestrictionMode.value = 'whitelist'
+    }
+    if (newPlatform === 'windsurf') {
+      accountCategory.value = 'apikey'
     }
     if (newPlatform !== 'gemini' && newPlatform !== 'anthropic' && accountCategory.value === 'service_account') {
       accountCategory.value = 'oauth-based'
@@ -4308,6 +4359,7 @@ const resetForm = () => {
   kimiOpenAIBaseUrl.value = KIMI_OPENAI_BASE_URL
   deepseekAnthropicBaseUrl.value = DEEPSEEK_ANTHROPIC_BASE_URL
   deepseekOpenAIBaseUrl.value = DEEPSEEK_OPENAI_BASE_URL
+  windsurfBaseUrl.value = WINDSURF_BASE_URL
   editQuotaLimit.value = null
   editQuotaDailyLimit.value = null
   editQuotaWeeklyLimit.value = null
@@ -4713,6 +4765,11 @@ const handleSubmit = async () => {
             base_url_anthropic: deepseekAnthropicBaseUrl.value.trim() || DEEPSEEK_ANTHROPIC_BASE_URL,
             base_url_openai: deepseekOpenAIBaseUrl.value.trim() || DEEPSEEK_OPENAI_BASE_URL
           }
+        : form.platform === 'windsurf'
+          ? {
+              api_key: apiKeyValue.value.trim(),
+              base_url: windsurfBaseUrl.value.trim() || WINDSURF_BASE_URL
+            }
     : {
         base_url: apiKeyBaseUrl.value.trim() || defaultBaseUrl,
         api_key: apiKeyValue.value.trim()

@@ -1220,6 +1220,31 @@ func TestGatewayService_isModelSupportedByAccount(t *testing.T) {
 			model:    "claude-sonnet-4-5",
 			expected: false,
 		},
+		{
+			name:     "Windsurf平台-支持默认模型",
+			account:  &Account{Platform: PlatformWindsurf, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "sk-windsurf"}},
+			model:    "claude-sonnet-4.6",
+			expected: true,
+		},
+		{
+			name: "Windsurf平台-支持账号模型映射",
+			account: &Account{
+				Platform: PlatformWindsurf,
+				Type:     AccountTypeAPIKey,
+				Credentials: map[string]any{
+					"api_key":       "sk-windsurf",
+					"model_mapping": map[string]any{"claude-3-5-sonnet-latest": "claude-sonnet-4.6"},
+				},
+			},
+			model:    "claude-3-5-sonnet-latest",
+			expected: true,
+		},
+		{
+			name:     "Windsurf平台-拒绝未默认暴露检索模型",
+			account:  &Account{Platform: PlatformWindsurf, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "sk-windsurf"}},
+			model:    "swe-grep",
+			expected: false,
+		},
 	}
 
 	for _, tt := range tests {

@@ -1092,6 +1092,28 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
       }
     }
   }
+  const windsurfModels = {
+    'claude-sonnet-4.6': {
+      name: 'Claude Sonnet 4.6',
+      limit: { context: 200000, output: 64000 },
+      modalities: { input: ['text'], output: ['text'] }
+    },
+    'claude-opus-4.6': {
+      name: 'Claude Opus 4.6',
+      limit: { context: 200000, output: 64000 },
+      modalities: { input: ['text'], output: ['text'] }
+    },
+    'gpt-5.4': {
+      name: 'GPT-5.4',
+      limit: { context: 200000, output: 64000 },
+      modalities: { input: ['text'], output: ['text'] }
+    },
+    'swe-1.6': {
+      name: 'SWE-1.6',
+      limit: { context: 200000, output: 64000 },
+      modalities: { input: ['text'], output: ['text'] }
+    }
+  }
 
   if (platform === 'gemini') {
     provider[platform].npm = '@ai-sdk/google'
@@ -1114,6 +1136,10 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     provider[platform].npm = '@ai-sdk/anthropic'
     provider[platform].name = 'DeepSeek'
     provider[platform].models = deepseekModels
+  } else if (platform === 'windsurf') {
+    provider[platform].npm = '@ai-sdk/openai'
+    provider[platform].name = 'Windsurf'
+    provider[platform].models = windsurfModels
   } else if (platform === 'antigravity-claude') {
     provider[platform].npm = '@ai-sdk/anthropic'
     provider[platform].name = 'Antigravity (Claude)'

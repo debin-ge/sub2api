@@ -47,4 +47,13 @@ describe('platformColors', () => {
     expect(platformBadgeClass('deepseek')).not.toBe(platformBadgeClass('glm'))
     expect(platformBadgeClass('deepseek')).not.toBe(platformBadgeClass('kimi'))
   })
+
+  it('returns Windsurf labels and a distinct teal visual style', () => {
+    expect(platformLabel('windsurf')).toBe('Windsurf')
+    expect(platformBadgeClass('windsurf')).toContain('teal')
+    expect(platformButtonClass('windsurf')).toContain('teal')
+    expect(platformBadgeClass('windsurf')).not.toBe(platformBadgeClass('openai'))
+    expect(platformBadgeClass('windsurf')).not.toBe(platformBadgeClass('anthropic'))
+    expect(platformBadgeClass('windsurf')).not.toBe(platformBadgeClass('deepseek'))
+  })
 })

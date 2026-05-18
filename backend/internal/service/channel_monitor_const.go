@@ -59,6 +59,8 @@ const (
 	providerKimiAnthropicPath = "/coding/v1/messages"
 	// providerDeepSeekChatPath DeepSeek OpenAI-compatible Chat Completions 路径。
 	providerDeepSeekChatPath = "/chat/completions"
+	// providerWindsurfChatPath Windsurf reverse proxy OpenAI-compatible Chat Completions 路径。
+	providerWindsurfChatPath = "/v1/chat/completions"
 
 	// MonitorProviderOpenAI / Anthropic / Gemini / 国内供应商 provider 字符串常量（也是 ent enum 的实际值）。
 	MonitorProviderOpenAI    = "openai"
@@ -68,6 +70,7 @@ const (
 	MonitorProviderGLM       = "glm"
 	MonitorProviderKimi      = "kimi"
 	MonitorProviderDeepSeek  = "deepseek"
+	MonitorProviderWindsurf  = "windsurf"
 
 	// MonitorStatusOperational 等监控状态字符串常量（与 ent enum 一致）。
 	MonitorStatusOperational = "operational"
@@ -122,7 +125,7 @@ var (
 		"CHANNEL_MONITOR_NOT_FOUND", "channel monitor not found",
 	)
 	ErrChannelMonitorInvalidProvider = infraerrors.BadRequest(
-		"CHANNEL_MONITOR_INVALID_PROVIDER", "provider must be one of openai/anthropic/gemini/minimax/glm/kimi/deepseek",
+		"CHANNEL_MONITOR_INVALID_PROVIDER", "provider must be one of openai/anthropic/gemini/minimax/glm/kimi/deepseek/windsurf",
 	)
 	ErrChannelMonitorInvalidInterval = infraerrors.BadRequest(
 		"CHANNEL_MONITOR_INVALID_INTERVAL", "interval_seconds must be in [15, 3600]",

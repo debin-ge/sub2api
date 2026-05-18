@@ -84,7 +84,7 @@ const ModelWhitelistSelectorStub = defineComponent({
       <button
         type="button"
         data-testid="select-models"
-        @click="$emit('update:modelValue', platform === 'glm' ? ['GLM-4.7'] : platform === 'kimi' ? ['kimi-for-coding'] : platform === 'deepseek' ? ['deepseek-v4-pro'] : ['gpt-5.2'])"
+        @click="$emit('update:modelValue', platform === 'glm' ? ['GLM-4.7'] : platform === 'kimi' ? ['kimi-for-coding'] : platform === 'deepseek' ? ['deepseek-v4-pro'] : platform === 'windsurf' ? ['claude-sonnet-4.6'] : ['gpt-5.2'])"
       >
         select
       </button>
@@ -333,6 +333,50 @@ describe('CreateAccountModal', () => {
     expect(payload.credentials.base_url).toBeUndefined()
     expect(payload.credentials.model_mapping['deepseek-chat']).toBeUndefined()
     expect(payload.credentials.model_mapping['deepseek-reasoner']).toBeUndefined()
+    expect(checkMixedChannelRiskMock).not.toHaveBeenCalled()
+  })
+
+  it('submits Windsurf API key credentials with a single reverse-proxy base URL', async () => {
+    createAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    createAccountMock.mockResolvedValue({ id: 5 })
+
+    const wrapper = mountModal()
+
+    expect(wrapper.find('[data-testid="create-platform-windsurf"]').exists()).toBe(true)
+
+    await wrapper.get('[data-tour="account-form-name"]').setValue('Windsurf Gateway')
+    await wrapper.get('[data-testid="create-platform-windsurf"]').trigger('click')
+    expect(wrapper.text()).toContain('admin.accounts.windsurf.apiKeyHint')
+    expect(wrapper.find('[data-testid="windsurf-base-url"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="model-whitelist-selector"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="model-whitelist-platform"]').text()).toBe('windsurf')
+    expect(wrapper.find('[data-testid="quota-limit-card"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="windsurf-api-key"]').setValue('sk-windsurf-test')
+    await wrapper.get('[data-testid="windsurf-base-url"]').setValue('https://custom.example/windsurf')
+    await wrapper.get('[data-testid="select-models"]').trigger('click')
+    expect(wrapper.get('[data-testid="model-whitelist-value"]').text()).toBe('claude-sonnet-4.6')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createAccountMock).toHaveBeenCalledTimes(1)
+    const payload = createAccountMock.mock.calls[0]?.[0]
+    expect(payload).toEqual(expect.objectContaining({
+      name: 'Windsurf Gateway',
+      platform: 'windsurf',
+      type: 'apikey',
+      credentials: expect.objectContaining({
+        api_key: 'sk-windsurf-test',
+        base_url: 'https://custom.example/windsurf',
+        model_mapping: {
+          'claude-sonnet-4.6': 'claude-sonnet-4.6'
+        }
+      })
+    }))
+    expect(Object.keys(payload.credentials).sort()).toEqual(['api_key', 'base_url', 'model_mapping'])
+    expect(payload.credentials.base_url_anthropic).toBeUndefined()
+    expect(payload.credentials.base_url_openai).toBeUndefined()
     expect(checkMixedChannelRiskMock).not.toHaveBeenCalled()
   })
 })

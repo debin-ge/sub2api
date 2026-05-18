@@ -73,8 +73,9 @@ describe('MonitorFormDialog', () => {
       'monitorCommon.providers.minimax',
       'monitorCommon.providers.glm',
       'monitorCommon.providers.kimi',
-      'monitorCommon.providers.deepseek'
+      'monitorCommon.providers.deepseek',
+      'monitorCommon.providers.windsurf'
     ]))
-    expect(labels).toHaveLength(7)
+    expect(labels).toHaveLength(8)
   })
 })

@@ -98,6 +98,19 @@ func RegisterGatewayRoutes(
 				}
 				h.DeepSeekGateway.Messages(c)
 				return
+			case service.PlatformWindsurf:
+				if h.WindsurfGateway == nil {
+					c.JSON(http.StatusServiceUnavailable, gin.H{
+						"type": "error",
+						"error": gin.H{
+							"type":    "api_error",
+							"message": "windsurf gateway service unavailable",
+						},
+					})
+					return
+				}
+				h.WindsurfGateway.Messages(c)
+				return
 			}
 			h.Gateway.Messages(c)
 		})
@@ -129,6 +142,10 @@ func RegisterGatewayRoutes(
 				writeDeepSeekUnsupported(c, h)
 				return
 			}
+			if getGroupPlatform(c) == service.PlatformWindsurf {
+				writeWindsurfUnsupported(c, h)
+				return
+			}
 			h.Gateway.CountTokens(c)
 		})
 		gateway.GET("/models", func(c *gin.Context) {
@@ -151,6 +168,10 @@ func RegisterGatewayRoutes(
 				writeDeepSeekUnsupported(c, h)
 				return
 			}
+			if getGroupPlatform(c) == service.PlatformWindsurf {
+				writeWindsurfUnsupported(c, h)
+				return
+			}
 			h.Gateway.Usage(c)
 		})
 		// OpenAI Responses API: auto-route based on group platform
@@ -170,6 +191,9 @@ func RegisterGatewayRoutes(
 				return
 			case service.PlatformDeepSeek:
 				writeDeepSeekUnsupported(c, h)
+				return
+			case service.PlatformWindsurf:
+				writeWindsurfUnsupported(c, h)
 				return
 			}
 			h.Gateway.Responses(c)
@@ -191,6 +215,9 @@ func RegisterGatewayRoutes(
 			case service.PlatformDeepSeek:
 				writeDeepSeekUnsupported(c, h)
 				return
+			case service.PlatformWindsurf:
+				writeWindsurfUnsupported(c, h)
+				return
 			}
 			h.Gateway.Responses(c)
 		})
@@ -209,6 +236,10 @@ func RegisterGatewayRoutes(
 			}
 			if getGroupPlatform(c) == service.PlatformDeepSeek {
 				writeDeepSeekUnsupported(c, h)
+				return
+			}
+			if getGroupPlatform(c) == service.PlatformWindsurf {
+				writeWindsurfUnsupported(c, h)
 				return
 			}
 			h.OpenAIGateway.ResponsesWebSocket(c)
@@ -231,6 +262,9 @@ func RegisterGatewayRoutes(
 			case service.PlatformDeepSeek:
 				writeDeepSeekChatCompletions(c, h)
 				return
+			case service.PlatformWindsurf:
+				writeWindsurfChatCompletions(c, h)
+				return
 			}
 			h.Gateway.ChatCompletions(c)
 		})
@@ -249,6 +283,10 @@ func RegisterGatewayRoutes(
 			}
 			if getGroupPlatform(c) == service.PlatformDeepSeek {
 				writeDeepSeekUnsupported(c, h)
+				return
+			}
+			if getGroupPlatform(c) == service.PlatformWindsurf {
+				writeWindsurfUnsupported(c, h)
 				return
 			}
 			if getGroupPlatform(c) != service.PlatformOpenAI {
@@ -277,6 +315,10 @@ func RegisterGatewayRoutes(
 			}
 			if getGroupPlatform(c) == service.PlatformDeepSeek {
 				writeDeepSeekUnsupported(c, h)
+				return
+			}
+			if getGroupPlatform(c) == service.PlatformWindsurf {
+				writeWindsurfUnsupported(c, h)
 				return
 			}
 			if getGroupPlatform(c) != service.PlatformOpenAI {
@@ -325,6 +367,9 @@ func RegisterGatewayRoutes(
 		case service.PlatformDeepSeek:
 			writeDeepSeekUnsupported(c, h)
 			return
+		case service.PlatformWindsurf:
+			writeWindsurfUnsupported(c, h)
+			return
 		}
 		h.Gateway.Responses(c)
 	}
@@ -345,6 +390,10 @@ func RegisterGatewayRoutes(
 		}
 		if getGroupPlatform(c) == service.PlatformDeepSeek {
 			writeDeepSeekUnsupported(c, h)
+			return
+		}
+		if getGroupPlatform(c) == service.PlatformWindsurf {
+			writeWindsurfUnsupported(c, h)
 			return
 		}
 		h.OpenAIGateway.ResponsesWebSocket(c)
@@ -371,6 +420,10 @@ func RegisterGatewayRoutes(
 				writeDeepSeekUnsupported(c, h)
 				return
 			}
+			if getGroupPlatform(c) == service.PlatformWindsurf {
+				writeWindsurfUnsupported(c, h)
+				return
+			}
 			h.OpenAIGateway.ResponsesWebSocket(c)
 		})
 	}
@@ -392,6 +445,9 @@ func RegisterGatewayRoutes(
 		case service.PlatformDeepSeek:
 			writeDeepSeekChatCompletions(c, h)
 			return
+		case service.PlatformWindsurf:
+			writeWindsurfChatCompletions(c, h)
+			return
 		}
 		h.Gateway.ChatCompletions(c)
 	})
@@ -410,6 +466,10 @@ func RegisterGatewayRoutes(
 		}
 		if getGroupPlatform(c) == service.PlatformDeepSeek {
 			writeDeepSeekUnsupported(c, h)
+			return
+		}
+		if getGroupPlatform(c) == service.PlatformWindsurf {
+			writeWindsurfUnsupported(c, h)
 			return
 		}
 		if getGroupPlatform(c) != service.PlatformOpenAI {
@@ -438,6 +498,10 @@ func RegisterGatewayRoutes(
 		}
 		if getGroupPlatform(c) == service.PlatformDeepSeek {
 			writeDeepSeekUnsupported(c, h)
+			return
+		}
+		if getGroupPlatform(c) == service.PlatformWindsurf {
+			writeWindsurfUnsupported(c, h)
 			return
 		}
 		if getGroupPlatform(c) != service.PlatformOpenAI {
@@ -604,6 +668,34 @@ func writeDeepSeekChatCompletions(c *gin.Context, h *handler.Handlers) {
 		"error": gin.H{
 			"type":    "api_error",
 			"message": "deepseek gateway service unavailable",
+		},
+	})
+}
+
+func writeWindsurfUnsupported(c *gin.Context, h *handler.Handlers) {
+	if h != nil && h.WindsurfGateway != nil {
+		h.WindsurfGateway.Unsupported(c)
+		return
+	}
+	c.JSON(http.StatusNotFound, gin.H{
+		"type": "error",
+		"error": gin.H{
+			"type":    "not_found_error",
+			"message": "Windsurf gateway supports /v1/messages and /v1/chat/completions only",
+		},
+	})
+}
+
+func writeWindsurfChatCompletions(c *gin.Context, h *handler.Handlers) {
+	if h != nil && h.WindsurfGateway != nil {
+		h.WindsurfGateway.ChatCompletions(c)
+		return
+	}
+	c.JSON(http.StatusServiceUnavailable, gin.H{
+		"type": "error",
+		"error": gin.H{
+			"type":    "api_error",
+			"message": "windsurf gateway service unavailable",
 		},
 	})
 }

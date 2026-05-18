@@ -242,3 +242,41 @@ func TestAccountHandlerGetAvailableModels_DeepSeekReturnsOfficialModels(t *testi
 		ID string `json:"id"`
 	}{{ID: "deepseek-v4-flash"}, {ID: "deepseek-v4-pro"}}, resp.Data)
 }
+
+func TestAccountHandlerGetAvailableModels_WindsurfReturnsOfficialModels(t *testing.T) {
+	svc := &availableModelsAdminService{
+		stubAdminService: newStubAdminService(),
+		account: service.Account{
+			ID:       48,
+			Name:     "windsurf-api",
+			Platform: service.PlatformWindsurf,
+			Type:     service.AccountTypeAPIKey,
+			Status:   service.StatusActive,
+			Credentials: map[string]any{
+				"api_key": "sk-windsurf",
+				"model_mapping": map[string]any{
+					"claude-3-5-sonnet-latest": "claude-sonnet-4.6",
+				},
+			},
+		},
+	}
+	router := setupAvailableModelsRouter(svc)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/accounts/48/models", nil)
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var resp struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	expected := service.DefaultWindsurfModelIDs()
+	require.Len(t, resp.Data, len(expected))
+	for i, modelID := range expected {
+		require.Equal(t, modelID, resp.Data[i].ID)
+	}
+}

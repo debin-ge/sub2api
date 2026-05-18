@@ -87,6 +87,11 @@ func ProvideDeepSeekGatewayService(cfg *config.Config) *DeepSeekGatewayService {
 	return NewDeepSeekGatewayServiceWithTimeout(nil, compileResponseHeaderFilter(cfg), compatibleGatewayUpstreamTimeoutFromConfig(cfg))
 }
 
+// ProvideWindsurfGatewayService creates the Windsurf reverse-proxy gateway service.
+func ProvideWindsurfGatewayService(cfg *config.Config) *WindsurfGatewayService {
+	return NewWindsurfGatewayServiceWithTimeout(nil, compileResponseHeaderFilter(cfg), compatibleGatewayUpstreamTimeoutFromConfig(cfg))
+}
+
 // ProvideTokenRefreshService creates and starts TokenRefreshService
 func ProvideTokenRefreshService(
 	accountRepo AccountRepository,
@@ -505,6 +510,7 @@ var ProviderSet = wire.NewSet(
 	ProvideGLMGatewayService,
 	ProvideKimiGatewayService,
 	ProvideDeepSeekGatewayService,
+	ProvideWindsurfGatewayService,
 	NewOAuthService,
 	NewOpenAIOAuthService,
 	NewGeminiOAuthService,

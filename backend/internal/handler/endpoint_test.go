@@ -169,6 +169,27 @@ func TestDeriveUpstreamEndpoint(t *testing.T) {
 			platform: service.PlatformDeepSeek,
 			want:     EndpointResponses,
 		},
+		{
+			name:     "windsurf messages",
+			inbound:  EndpointMessages,
+			rawPath:  "/v1/messages",
+			platform: service.PlatformWindsurf,
+			want:     EndpointMessages,
+		},
+		{
+			name:     "windsurf chat completions",
+			inbound:  EndpointChatCompletions,
+			rawPath:  "/v1/chat/completions",
+			platform: service.PlatformWindsurf,
+			want:     EndpointChatCompletions,
+		},
+		{
+			name:     "windsurf responses remains inbound unsupported endpoint",
+			inbound:  EndpointResponses,
+			rawPath:  "/v1/responses",
+			platform: service.PlatformWindsurf,
+			want:     EndpointResponses,
+		},
 
 		// Unknown platform — passthrough.
 		{"unknown platform", "/v1/embeddings", "/v1/embeddings", "unknown", "/v1/embeddings"},

@@ -600,6 +600,15 @@ func validateDataAccount(item DataAccount) error {
 			return errors.New("deepseek account api_key is required")
 		}
 	}
+	if item.Platform == service.PlatformWindsurf {
+		if item.Type != service.AccountTypeAPIKey {
+			return errors.New("windsurf account type must be apikey")
+		}
+		apiKey, _ := item.Credentials["api_key"].(string)
+		if strings.TrimSpace(apiKey) == "" {
+			return errors.New("windsurf account api_key is required")
+		}
+	}
 	if item.RateMultiplier != nil && *item.RateMultiplier < 0 {
 		return errors.New("rate_multiplier must be >= 0")
 	}

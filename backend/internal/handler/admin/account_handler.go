@@ -597,7 +597,7 @@ func (h *AccountHandler) Create(c *gin.Context) {
 }
 
 func validateCreateAccountRequest(req CreateAccountRequest) error {
-	if req.Platform != service.PlatformGLM && req.Platform != service.PlatformKimi && req.Platform != service.PlatformDeepSeek {
+	if !requiresAPIKeyAccount(req.Platform) {
 		return nil
 	}
 	if req.Type != service.AccountTypeAPIKey {
@@ -686,7 +686,7 @@ func (h *AccountHandler) Update(c *gin.Context) {
 }
 
 func validateUpdateAccountRequest(account *service.Account, req UpdateAccountRequest) error {
-	if account == nil || (account.Platform != service.PlatformGLM && account.Platform != service.PlatformKimi && account.Platform != service.PlatformDeepSeek) {
+	if account == nil || !requiresAPIKeyAccount(account.Platform) {
 		return nil
 	}
 
@@ -707,6 +707,15 @@ func validateUpdateAccountRequest(account *service.Account, req UpdateAccountReq
 		return fmt.Errorf("%s account api_key is required", account.Platform)
 	}
 	return nil
+}
+
+func requiresAPIKeyAccount(platform string) bool {
+	switch platform {
+	case service.PlatformGLM, service.PlatformKimi, service.PlatformDeepSeek, service.PlatformWindsurf:
+		return true
+	default:
+		return false
+	}
 }
 
 // scheduleOpenAIResponsesProbe 异步触发 OpenAI APIKey 账号的 Responses API 能力探测。
@@ -2141,6 +2150,12 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 		return
 	}
 
+	// Handle Windsurf reverse proxy API Key accounts.
+	if account.Platform == service.PlatformWindsurf {
+		response.Success(c, buildWindsurfAvailableModels())
+		return
+	}
+
 	// Handle Claude/Anthropic accounts
 	// For OAuth and Setup-Token accounts: return default models
 	if account.IsOAuth() {
@@ -2229,6 +2244,20 @@ func buildKimiAvailableModels() []claude.Model {
 
 func buildDeepSeekAvailableModels() []claude.Model {
 	modelIDs := service.DefaultDeepSeekModelIDs()
+	models := make([]claude.Model, 0, len(modelIDs))
+	for _, modelID := range modelIDs {
+		models = append(models, claude.Model{
+			ID:          modelID,
+			Type:        "model",
+			DisplayName: modelID,
+			CreatedAt:   "2024-01-01T00:00:00Z",
+		})
+	}
+	return models
+}
+
+func buildWindsurfAvailableModels() []claude.Model {
+	modelIDs := service.DefaultWindsurfModelIDs()
 	models := make([]claude.Model, 0, len(modelIDs))
 	for _, modelID := range modelIDs {
 		models = append(models, claude.Model{

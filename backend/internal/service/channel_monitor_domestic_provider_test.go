@@ -14,6 +14,7 @@ func TestChannelMonitorDomesticProvidersAreSupported(t *testing.T) {
 		MonitorProviderGLM,
 		MonitorProviderKimi,
 		MonitorProviderDeepSeek,
+		MonitorProviderWindsurf,
 	} {
 		t.Run(provider, func(t *testing.T) {
 			if err := validateProvider(provider); err != nil {
@@ -35,6 +36,7 @@ func TestChannelMonitorDomesticProviderAdapters(t *testing.T) {
 		{provider: MonitorProviderGLM, model: "GLM-5.1", path: "/api/anthropic/v1/messages", textPath: "content.0.text", authKey: "Authorization"},
 		{provider: MonitorProviderKimi, model: "kimi-for-coding", path: "/coding/v1/messages", textPath: "content.0.text", authKey: "Authorization"},
 		{provider: MonitorProviderDeepSeek, model: "deepseek-v4-flash", path: "/chat/completions", textPath: "choices.0.message.content", authKey: "Authorization"},
+		{provider: MonitorProviderWindsurf, model: "claude-sonnet-4.6", path: "/v1/chat/completions", textPath: "choices.0.message.content", authKey: "Authorization"},
 	}
 
 	for _, tc := range cases {
@@ -73,7 +75,7 @@ func TestChannelMonitorDomesticProviderAdapters(t *testing.T) {
 }
 
 func TestChannelMonitorDomesticProviderMergeDenyList(t *testing.T) {
-	for _, provider := range []string{MonitorProviderMiniMax, MonitorProviderGLM, MonitorProviderKimi, MonitorProviderDeepSeek} {
+	for _, provider := range []string{MonitorProviderMiniMax, MonitorProviderGLM, MonitorProviderKimi, MonitorProviderDeepSeek, MonitorProviderWindsurf} {
 		t.Run(provider, func(t *testing.T) {
 			deny := bodyMergeKeyDenyList[provider]
 			if !deny["model"] || !deny["messages"] {
@@ -84,7 +86,7 @@ func TestChannelMonitorDomesticProviderMergeDenyList(t *testing.T) {
 }
 
 func TestChannelMonitorTemplateDomesticProvidersAreValid(t *testing.T) {
-	for _, provider := range []string{MonitorProviderMiniMax, MonitorProviderGLM, MonitorProviderKimi, MonitorProviderDeepSeek} {
+	for _, provider := range []string{MonitorProviderMiniMax, MonitorProviderGLM, MonitorProviderKimi, MonitorProviderDeepSeek, MonitorProviderWindsurf} {
 		t.Run(provider, func(t *testing.T) {
 			err := validateTemplateCreateParams(ChannelMonitorRequestTemplateCreateParams{
 				Name:             "domestic",
@@ -99,7 +101,7 @@ func TestChannelMonitorTemplateDomesticProvidersAreValid(t *testing.T) {
 }
 
 func TestChannelMonitorEntDomesticProviderValidators(t *testing.T) {
-	for _, provider := range []string{MonitorProviderMiniMax, MonitorProviderGLM, MonitorProviderKimi, MonitorProviderDeepSeek} {
+	for _, provider := range []string{MonitorProviderMiniMax, MonitorProviderGLM, MonitorProviderKimi, MonitorProviderDeepSeek, MonitorProviderWindsurf} {
 		t.Run(provider, func(t *testing.T) {
 			if err := channelmonitor.ProviderValidator(channelmonitor.Provider(provider)); err != nil {
 				t.Fatalf("channelmonitor provider validator error = %v", err)

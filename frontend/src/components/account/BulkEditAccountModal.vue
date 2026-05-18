@@ -1177,18 +1177,18 @@ const capabilityTypes = computed<AccountType[]>(() => (
     : targetSelectedTypes.value
 ))
 const targetMayIncludeFixedEndpointGateway = computed(() => {
-  if (targetSelectedPlatforms.value.includes('glm') || targetSelectedPlatforms.value.includes('kimi') || targetSelectedPlatforms.value.includes('deepseek')) {
+  if (targetSelectedPlatforms.value.includes('glm') || targetSelectedPlatforms.value.includes('kimi') || targetSelectedPlatforms.value.includes('deepseek') || targetSelectedPlatforms.value.includes('windsurf')) {
     return true
   }
   if (targetMode.value !== 'filtered') {
     return false
   }
-  return filteredPlatform.value === '' || filteredPlatform.value === 'glm' || filteredPlatform.value === 'kimi' || filteredPlatform.value === 'deepseek'
+  return filteredPlatform.value === '' || filteredPlatform.value === 'glm' || filteredPlatform.value === 'kimi' || filteredPlatform.value === 'deepseek' || filteredPlatform.value === 'windsurf'
 })
 
 const targetIsFixedEndpointGatewayAPIKeyOnly = computed(() => (
   capabilityPlatforms.value.length === 1 &&
-  (capabilityPlatforms.value[0] === 'glm' || capabilityPlatforms.value[0] === 'kimi' || capabilityPlatforms.value[0] === 'deepseek') &&
+  (capabilityPlatforms.value[0] === 'glm' || capabilityPlatforms.value[0] === 'kimi' || capabilityPlatforms.value[0] === 'deepseek' || capabilityPlatforms.value[0] === 'windsurf') &&
   capabilityTypes.value.length > 0 &&
   capabilityTypes.value.every(t => t === 'apikey')
 ))

@@ -17,6 +17,7 @@ func TestCompatibleGatewayDefaultClientsUseSixtySecondHeaderTimeout(t *testing.T
 		{name: "glm", client: NewGLMGatewayService(nil, nil).httpClient},
 		{name: "kimi", client: NewKimiGatewayService(nil, nil).httpClient},
 		{name: "deepseek", client: NewDeepSeekGatewayService(nil, nil).httpClient},
+		{name: "windsurf", client: NewWindsurfGatewayService(nil, nil).httpClient},
 	}
 
 	for _, tt := range tests {
@@ -53,6 +54,7 @@ func TestCompatibleGatewayProvidersUseConfiguredTimeout(t *testing.T) {
 		{name: "glm", client: ProvideGLMGatewayService(cfg).httpClient},
 		{name: "kimi", client: ProvideKimiGatewayService(cfg).httpClient},
 		{name: "deepseek", client: ProvideDeepSeekGatewayService(cfg).httpClient},
+		{name: "windsurf", client: ProvideWindsurfGatewayService(cfg).httpClient},
 	}
 
 	for _, tt := range tests {

@@ -100,6 +100,7 @@ export default {
       glm: 'GLM',
       kimi: 'Kimi',
       deepseek: 'DeepSeek',
+      windsurf: 'Windsurf',
       more: 'More'
     },
     // CTA section
@@ -894,7 +895,8 @@ export default {
       minimax: 'MiniMax',
       glm: 'GLM',
       kimi: 'Kimi',
-      deepseek: 'DeepSeek'
+      deepseek: 'DeepSeek',
+      windsurf: 'Windsurf'
     },
     extraModelsHeader: 'Extra Models',
     extraModelsEmpty: 'No extra models',
@@ -2050,6 +2052,7 @@ export default {
         glm: 'GLM',
         kimi: 'Kimi',
         deepseek: 'DeepSeek',
+        windsurf: 'Windsurf',
       },
       deleteConfirm:
         "Are you sure you want to delete '{name}'? All associated API keys will no longer belong to any group.",
@@ -2874,6 +2877,7 @@ export default {
         glm: 'GLM',
         kimi: 'Kimi',
         deepseek: 'DeepSeek',
+        windsurf: 'Windsurf',
       },
       types: {
         oauth: 'OAuth',
@@ -3224,6 +3228,9 @@ export default {
 	      },
 	      deepseek: {
 	        apiKeyHint: 'Your DeepSeek API Key',
+	      },
+	      windsurf: {
+	        apiKeyHint: 'Your Windsurf reverse proxy API Key',
 	      },
 	      anthropic: {
         apiKeyPassthrough: 'Auto passthrough (auth only)',

@@ -100,6 +100,7 @@ export default {
       glm: 'GLM',
       kimi: 'Kimi',
       deepseek: 'DeepSeek',
+      windsurf: 'Windsurf',
       more: '更多'
     },
     // CTA 区块
@@ -898,7 +899,8 @@ export default {
       minimax: 'MiniMax',
       glm: 'GLM',
       kimi: 'Kimi',
-      deepseek: 'DeepSeek'
+      deepseek: 'DeepSeek',
+      windsurf: 'Windsurf'
     },
     extraModelsHeader: '附加模型',
     extraModelsEmpty: '无附加模型',
@@ -2078,6 +2080,7 @@ export default {
         glm: 'GLM',
         kimi: 'Kimi',
         deepseek: 'DeepSeek',
+        windsurf: 'Windsurf',
       },
       saving: '保存中...',
       noGroups: '暂无分组',
@@ -3069,6 +3072,7 @@ export default {
         glm: 'GLM',
         kimi: 'Kimi',
         deepseek: 'DeepSeek',
+        windsurf: 'Windsurf',
       },
       types: {
         oauth: 'OAuth',
@@ -3369,6 +3373,9 @@ export default {
 	      },
 	      deepseek: {
 	        apiKeyHint: '您的 DeepSeek API Key',
+	      },
+	      windsurf: {
+	        apiKeyHint: '您的 Windsurf 反代 API Key',
 	      },
 	      anthropic: {
         apiKeyPassthrough: '自动透传（仅替换认证）',

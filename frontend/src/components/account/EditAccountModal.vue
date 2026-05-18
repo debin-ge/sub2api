@@ -184,6 +184,33 @@
             </div>
           </div>
         </template>
+        <template v-else-if="account.platform === 'windsurf'">
+          <div>
+            <label class="input-label">Windsurf API Key</label>
+            <input
+              v-model="editApiKey"
+              data-testid="windsurf-api-key"
+              type="password"
+              class="input font-mono"
+              autocomplete="new-password"
+              data-1p-ignore
+              data-lpignore="true"
+              data-bwignore="true"
+              placeholder="sk-..."
+            />
+            <p class="input-hint">{{ t('admin.accounts.leaveEmptyToKeep') }}</p>
+          </div>
+          <div>
+            <label class="input-label">Base URL</label>
+            <input
+              v-model="editWindsurfBaseUrl"
+              data-testid="windsurf-base-url"
+              type="text"
+              class="input font-mono"
+              :placeholder="WINDSURF_BASE_URL"
+            />
+          </div>
+        </template>
         <template v-else>
           <div>
             <label class="input-label">{{ t('admin.accounts.baseUrl') }}</label>
@@ -2361,6 +2388,7 @@ import {
   KIMI_OPENAI_BASE_URL,
   DEEPSEEK_ANTHROPIC_BASE_URL,
   DEEPSEEK_OPENAI_BASE_URL,
+  WINDSURF_BASE_URL,
   VERTEX_LOCATION_OPTIONS
 } from '@/constants/account'
 import {
@@ -2405,7 +2433,7 @@ const baseUrlHint = computed(() => {
   return t('admin.accounts.baseUrlHint')
 })
 
-const isFixedEndpointGatewayPlatformValue = (platform?: string) => platform === 'glm' || platform === 'kimi' || platform === 'deepseek'
+const isFixedEndpointGatewayPlatformValue = (platform?: string) => platform === 'glm' || platform === 'kimi' || platform === 'deepseek' || platform === 'windsurf'
 const isFixedEndpointGatewayPlatform = computed(() => isFixedEndpointGatewayPlatformValue(props.account?.platform))
 
 const antigravityPresetMappings = computed(() => getPresetMappingsByPlatform('antigravity'))
@@ -2436,6 +2464,7 @@ const editKimiAnthropicBaseUrl = ref(KIMI_ANTHROPIC_BASE_URL)
 const editKimiOpenAIBaseUrl = ref(KIMI_OPENAI_BASE_URL)
 const editDeepSeekAnthropicBaseUrl = ref(DEEPSEEK_ANTHROPIC_BASE_URL)
 const editDeepSeekOpenAIBaseUrl = ref(DEEPSEEK_OPENAI_BASE_URL)
+const editWindsurfBaseUrl = ref(WINDSURF_BASE_URL)
 // Bedrock credentials
 const editBedrockAccessKeyId = ref('')
 const editBedrockSecretAccessKey = ref('')
@@ -2670,6 +2699,7 @@ const defaultBaseUrl = computed(() => {
   if (props.account?.platform === 'glm') return GLM_ANTHROPIC_BASE_URL
   if (props.account?.platform === 'kimi') return KIMI_ANTHROPIC_BASE_URL
   if (props.account?.platform === 'deepseek') return DEEPSEEK_ANTHROPIC_BASE_URL
+  if (props.account?.platform === 'windsurf') return WINDSURF_BASE_URL
   return 'https://api.anthropic.com'
 })
 
@@ -2763,6 +2793,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   editKimiOpenAIBaseUrl.value = KIMI_OPENAI_BASE_URL
   editDeepSeekAnthropicBaseUrl.value = DEEPSEEK_ANTHROPIC_BASE_URL
   editDeepSeekOpenAIBaseUrl.value = DEEPSEEK_OPENAI_BASE_URL
+  editWindsurfBaseUrl.value = WINDSURF_BASE_URL
 
   // Load mixed scheduling setting (only for antigravity accounts)
   mixedScheduling.value = false
@@ -2909,6 +2940,8 @@ const syncFormFromAccount = (newAccount: Account | null) => {
                 ? KIMI_ANTHROPIC_BASE_URL
                 : newAccount.platform === 'deepseek'
                   ? DEEPSEEK_ANTHROPIC_BASE_URL
+                  : newAccount.platform === 'windsurf'
+                    ? WINDSURF_BASE_URL
                   : 'https://api.anthropic.com'
     editBaseUrl.value = (credentials.base_url as string) || platformDefaultUrl
     if (newAccount.platform === 'minimax') {
@@ -2931,6 +2964,8 @@ const syncFormFromAccount = (newAccount: Account | null) => {
         (credentials.base_url_anthropic as string) || DEEPSEEK_ANTHROPIC_BASE_URL
       editDeepSeekOpenAIBaseUrl.value =
         (credentials.base_url_openai as string) || DEEPSEEK_OPENAI_BASE_URL
+    } else if (newAccount.platform === 'windsurf') {
+      editWindsurfBaseUrl.value = (credentials.base_url as string) || WINDSURF_BASE_URL
     }
 
     // Load model mappings and detect mode
@@ -3074,6 +3109,8 @@ const syncFormFromAccount = (newAccount: Account | null) => {
                 ? KIMI_ANTHROPIC_BASE_URL
                 : newAccount.platform === 'deepseek'
                   ? DEEPSEEK_ANTHROPIC_BASE_URL
+                  : newAccount.platform === 'windsurf'
+                    ? WINDSURF_BASE_URL
                   : 'https://api.anthropic.com'
     editBaseUrl.value = platformDefaultUrl
 
@@ -3623,6 +3660,19 @@ const handleSubmit = async () => {
           editDeepSeekAnthropicBaseUrl.value.trim() || DEEPSEEK_ANTHROPIC_BASE_URL
         newCredentials.base_url_openai =
           editDeepSeekOpenAIBaseUrl.value.trim() || DEEPSEEK_OPENAI_BASE_URL
+        delete newCredentials.compact_model_mapping
+        delete newCredentials.pool_mode
+        delete newCredentials.pool_mode_retry_count
+        delete newCredentials.custom_error_codes_enabled
+        delete newCredentials.custom_error_codes
+        delete newCredentials.intercept_warmup_requests
+        delete newCredentials.temp_unschedulable_enabled
+        delete newCredentials.temp_unschedulable_rules
+      } else if (props.account.platform === 'windsurf') {
+        delete newCredentials.auth_scheme
+        delete newCredentials.base_url_anthropic
+        delete newCredentials.base_url_openai
+        newCredentials.base_url = editWindsurfBaseUrl.value.trim() || WINDSURF_BASE_URL
         delete newCredentials.compact_model_mapping
         delete newCredentials.pool_mode
         delete newCredentials.pool_mode_retry_count

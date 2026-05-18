@@ -5,7 +5,7 @@
 
 import { apiClient } from '../client'
 
-export type Provider = 'openai' | 'anthropic' | 'gemini' | 'minimax' | 'glm' | 'kimi' | 'deepseek'
+export type Provider = 'openai' | 'anthropic' | 'gemini' | 'minimax' | 'glm' | 'kimi' | 'deepseek' | 'windsurf'
 export type MonitorStatus = 'operational' | 'degraded' | 'failed' | 'error'
 export type BodyOverrideMode = 'off' | 'merge' | 'replace'
 

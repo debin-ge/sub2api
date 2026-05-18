@@ -197,6 +197,9 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 	if account.IsDeepSeek() {
 		return s.testDeepSeekAccountConnection(c, account, modelID)
 	}
+	if account.IsWindsurf() {
+		return s.testWindsurfAccountConnection(c, account, modelID)
+	}
 
 	return s.testClaudeAccountConnection(c, account, modelID)
 }
@@ -209,7 +212,7 @@ func (s *AccountTestService) testDeepSeekAccountConnection(c *gin.Context, accou
 		testModelID = DefaultDeepSeekModelIDs()[0]
 	}
 
-	payloadBytes, _ := json.Marshal(createDeepSeekChatCompletionsTestPayload(testModelID))
+	payloadBytes, _ := json.Marshal(createOpenAICompatibleChatCompletionsTestPayload(testModelID))
 
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
@@ -243,10 +246,10 @@ func (s *AccountTestService) testDeepSeekAccountConnection(c *gin.Context, accou
 		return s.sendErrorAndEnd(c, errMsg)
 	}
 
-	return s.processDeepSeekChatCompletionsResponse(c, body)
+	return s.processOpenAICompatibleChatCompletionsResponse(c, body)
 }
 
-func createDeepSeekChatCompletionsTestPayload(modelID string) map[string]any {
+func createOpenAICompatibleChatCompletionsTestPayload(modelID string) map[string]any {
 	return map[string]any{
 		"model": modelID,
 		"messages": []map[string]string{
@@ -261,7 +264,52 @@ func createDeepSeekChatCompletionsTestPayload(modelID string) map[string]any {
 	}
 }
 
-func (s *AccountTestService) processDeepSeekChatCompletionsResponse(c *gin.Context, body []byte) error {
+func (s *AccountTestService) testWindsurfAccountConnection(c *gin.Context, account *Account, modelID string) error {
+	ctx := c.Request.Context()
+
+	testModelID := strings.TrimSpace(modelID)
+	if testModelID == "" {
+		testModelID = DefaultWindsurfModelIDs()[0]
+	}
+
+	payloadBytes, _ := json.Marshal(createOpenAICompatibleChatCompletionsTestPayload(testModelID))
+
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.Header().Set("Cache-Control", "no-cache")
+	c.Writer.Header().Set("Connection", "keep-alive")
+	c.Writer.Header().Set("X-Accel-Buffering", "no")
+	c.Writer.Flush()
+
+	req, _, upstreamModel, err := NewWindsurfGatewayService(nil, nil).buildChatCompletionsRequest(ctx, c, account, payloadBytes)
+	if err != nil {
+		return s.sendErrorAndEnd(c, err.Error())
+	}
+	s.sendEvent(c, TestEvent{Type: "test_start", Model: upstreamModel})
+
+	proxyURL := ""
+	if account.ProxyID != nil && account.Proxy != nil {
+		proxyURL = account.Proxy.URL()
+	}
+
+	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+	if err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+	if resp.StatusCode != http.StatusOK {
+		errMsg := fmt.Sprintf("API returned %d: %s", resp.StatusCode, string(body))
+		if s.accountRepo != nil && (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusPaymentRequired) {
+			_ = s.accountRepo.SetError(ctx, account.ID, errMsg)
+		}
+		return s.sendErrorAndEnd(c, errMsg)
+	}
+
+	return s.processOpenAICompatibleChatCompletionsResponse(c, body)
+}
+
+func (s *AccountTestService) processOpenAICompatibleChatCompletionsResponse(c *gin.Context, body []byte) error {
 	var result struct {
 		Choices []struct {
 			Message struct {

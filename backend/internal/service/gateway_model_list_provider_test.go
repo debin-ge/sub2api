@@ -50,10 +50,64 @@ func TestGatewayModelListProviderIncludesAliasesWhenConfigured(t *testing.T) {
 	})
 }
 
+func TestGatewayModelListProviderWindsurfDefaultsAndAccountMappings(t *testing.T) {
+	provider := NewGatewayModelListProvider(GatewayModelListOptions{})
+	accounts := []Account{
+		{
+			Platform: PlatformWindsurf,
+			Credentials: map[string]any{
+				"model_mapping": map[string]any{
+					"claude-3-5-sonnet-latest": "claude-sonnet-4.6",
+					"opus":                     "claude-opus-4.6",
+					"wildcard-*":               "claude-sonnet-4.6",
+					"bad-target":               "swe-grep",
+				},
+			},
+		},
+	}
+
+	models := provider.ModelsForProvider(PlatformWindsurf, accounts)
+	mustContainStrings(t, models, []string{
+		"claude-sonnet-4.6",
+		"claude-opus-4.6",
+		"gpt-5.4",
+		"swe-1.6",
+		"claude-3-5-sonnet-latest",
+		"opus",
+	})
+	mustNotContainStrings(t, models, []string{"swe-grep", "swe-1-mini", "wildcard-*", "bad-target"})
+}
+
 func TestGatewayModelListProviderUnknownProvider(t *testing.T) {
 	provider := NewGatewayModelListProvider(GatewayModelListOptions{})
 
 	if models := provider.ModelsForProvider("unknown", nil); models != nil {
 		t.Fatalf("ModelsForProvider unknown = %#v, want nil", models)
+	}
+}
+
+func mustContainStrings(t *testing.T, got []string, want []string) {
+	t.Helper()
+	set := make(map[string]struct{}, len(got))
+	for _, item := range got {
+		set[item] = struct{}{}
+	}
+	for _, item := range want {
+		if _, ok := set[item]; !ok {
+			t.Fatalf("missing %q in %#v", item, got)
+		}
+	}
+}
+
+func mustNotContainStrings(t *testing.T, got []string, blocked []string) {
+	t.Helper()
+	set := make(map[string]struct{}, len(got))
+	for _, item := range got {
+		set[item] = struct{}{}
+	}
+	for _, item := range blocked {
+		if _, ok := set[item]; ok {
+			t.Fatalf("unexpected %q in %#v", item, got)
+		}
 	}
 }

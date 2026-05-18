@@ -20,6 +20,7 @@ import {
   PROVIDER_GLM,
   PROVIDER_KIMI,
   PROVIDER_DEEPSEEK,
+  PROVIDER_WINDSURF,
   PROVIDERS,
   STATUS_OPERATIONAL,
   STATUS_DEGRADED,
@@ -84,6 +85,8 @@ export function useChannelMonitorFormat() {
         return 'bg-lime-100 text-lime-700 dark:bg-lime-500/15 dark:text-lime-300'
       case PROVIDER_DEEPSEEK:
         return 'bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300'
+      case PROVIDER_WINDSURF:
+        return 'bg-teal-100 text-teal-700 dark:bg-teal-500/15 dark:text-teal-300'
       default:
         return NEUTRAL_BADGE
     }
@@ -124,6 +127,10 @@ export function useChannelMonitorFormat() {
         return active
           ? 'border-violet-500 bg-violet-50 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300 dark:border-violet-400'
           : 'border-gray-200 bg-white text-gray-600 hover:border-violet-300 hover:text-violet-700 dark:border-dark-700 dark:bg-dark-800 dark:text-gray-400 dark:hover:border-violet-500/50'
+      case PROVIDER_WINDSURF:
+        return active
+          ? 'border-teal-500 bg-teal-50 text-teal-700 dark:bg-teal-500/15 dark:text-teal-300 dark:border-teal-400'
+          : 'border-gray-200 bg-white text-gray-600 hover:border-teal-300 hover:text-teal-700 dark:border-dark-700 dark:bg-dark-800 dark:text-gray-400 dark:hover:border-teal-500/50'
       default:
         return active
           ? 'border-gray-400 bg-gray-50 text-gray-700 dark:border-dark-500 dark:bg-dark-700 dark:text-gray-200'
@@ -203,6 +210,8 @@ export function providerGradient(provider: string): string {
       return 'bg-gradient-to-br from-lime-50 to-emerald-100 dark:from-lime-500/10 dark:to-emerald-500/20'
     case PROVIDER_DEEPSEEK:
       return 'bg-gradient-to-br from-violet-50 to-indigo-100 dark:from-violet-500/10 dark:to-indigo-500/20'
+    case PROVIDER_WINDSURF:
+      return 'bg-gradient-to-br from-teal-50 to-cyan-100 dark:from-teal-500/10 dark:to-cyan-500/20'
     default:
       return 'bg-gradient-to-br from-gray-100 to-gray-200 dark:from-dark-700 dark:to-dark-600'
   }

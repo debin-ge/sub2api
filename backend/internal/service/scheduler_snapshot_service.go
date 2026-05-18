@@ -29,7 +29,7 @@ type batchSeenKey struct {
 }
 
 func schedulerSnapshotPlatforms() []string {
-	return []string{PlatformAnthropic, PlatformGemini, PlatformOpenAI, PlatformAntigravity, PlatformMiniMax, PlatformGLM, PlatformKimi, PlatformDeepSeek}
+	return []string{PlatformAnthropic, PlatformGemini, PlatformOpenAI, PlatformAntigravity, PlatformMiniMax, PlatformGLM, PlatformKimi, PlatformDeepSeek, PlatformWindsurf}
 }
 
 type SchedulerSnapshotService struct {

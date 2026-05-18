@@ -1347,6 +1347,65 @@ func (a *Account) IsDeepSeekModelSupported(model string) bool {
 	return ok
 }
 
+func (a *Account) IsWindsurf() bool {
+	return a != nil && a.Platform == PlatformWindsurf
+}
+
+func (a *Account) IsWindsurfAPIKey() bool {
+	if a == nil || a.Platform != PlatformWindsurf {
+		return false
+	}
+	if a.Type != AccountTypeAPIKey {
+		return false
+	}
+	return strings.TrimSpace(a.GetCredential("api_key")) != ""
+}
+
+func (a *Account) GetWindsurfAPIKey() string {
+	if a == nil || a.Platform != PlatformWindsurf {
+		return ""
+	}
+	return strings.TrimSpace(a.GetCredential("api_key"))
+}
+
+func (a *Account) GetWindsurfBaseURL() string {
+	if a == nil || a.Platform != PlatformWindsurf {
+		return ""
+	}
+	baseURL := strings.TrimRight(strings.TrimSpace(a.GetCredential("base_url")), "/")
+	if baseURL != "" {
+		return baseURL
+	}
+	return "https://tik.frontech.dev:3003"
+}
+
+func DefaultWindsurfModelIDs() []string {
+	return DefaultDomesticProviderModelIDs(PlatformWindsurf)
+}
+
+func (a *Account) GetWindsurfMappedModel(model string) string {
+	trimmed := strings.TrimSpace(model)
+	if a == nil || a.Platform != PlatformWindsurf {
+		return trimmed
+	}
+	if mapped, ok := ResolveAccountProviderModel(a, trimmed); ok {
+		return mapped.UpstreamModel
+	}
+	return trimmed
+}
+
+func (a *Account) IsWindsurfModelSupported(model string) bool {
+	trimmed := strings.TrimSpace(model)
+	if a == nil || a.Platform != PlatformWindsurf || trimmed == "" {
+		return false
+	}
+	if providerSupportsUpstreamModel(PlatformWindsurf, trimmed) {
+		return true
+	}
+	_, ok := ResolveAccountProviderModel(a, trimmed)
+	return ok
+}
+
 func (a *Account) IsOpenAIOAuth() bool {
 	return a.IsOpenAI() && a.Type == AccountTypeOAuth
 }

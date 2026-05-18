@@ -280,6 +280,24 @@ func TestGroupHandlerCreateAcceptsDeepSeek(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 }
 
+func TestGroupHandlerCreateAcceptsWindsurf(t *testing.T) {
+	router, _ := setupAdminRouter()
+
+	body, err := json.Marshal(map[string]any{
+		"name":              "windsurf-api",
+		"platform":          "windsurf",
+		"subscription_type": "subscription",
+	})
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/groups", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+}
+
 func TestGroupHandlerUpdateAcceptsGLM(t *testing.T) {
 	router, _ := setupAdminRouter()
 
@@ -374,6 +392,32 @@ func TestAccountHandlerCreateAcceptsDeepSeekAPIKey(t *testing.T) {
 	require.Equal(t, service.AccountTypeAPIKey, adminSvc.createdAccounts[0].Type)
 }
 
+func TestAccountHandlerCreateAcceptsWindsurfAPIKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	adminSvc := newStubAdminService()
+	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router.POST("/api/v1/admin/accounts", accountHandler.Create)
+
+	body, err := json.Marshal(map[string]any{
+		"name":        "windsurf-api",
+		"platform":    "windsurf",
+		"type":        "apikey",
+		"credentials": map[string]any{"api_key": "sk-windsurf-test"},
+	})
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.Len(t, adminSvc.createdAccounts, 1)
+	require.Equal(t, service.PlatformWindsurf, adminSvc.createdAccounts[0].Platform)
+	require.Equal(t, service.AccountTypeAPIKey, adminSvc.createdAccounts[0].Type)
+}
+
 func TestAccountHandlerCreateRejectsDeepSeekWithoutAPIKey(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
@@ -384,6 +428,31 @@ func TestAccountHandlerCreateRejectsDeepSeekWithoutAPIKey(t *testing.T) {
 	body, err := json.Marshal(map[string]any{
 		"name":        "deepseek-api",
 		"platform":    "deepseek",
+		"type":        "apikey",
+		"credentials": map[string]any{"api_key": " "},
+	})
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+	require.Empty(t, adminSvc.createdAccounts)
+	require.Contains(t, rec.Body.String(), "api_key")
+}
+
+func TestAccountHandlerCreateRejectsWindsurfWithoutAPIKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	adminSvc := newStubAdminService()
+	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router.POST("/api/v1/admin/accounts", accountHandler.Create)
+
+	body, err := json.Marshal(map[string]any{
+		"name":        "windsurf-api",
+		"platform":    "windsurf",
 		"type":        "apikey",
 		"credentials": map[string]any{"api_key": " "},
 	})

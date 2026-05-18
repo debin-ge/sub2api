@@ -115,7 +115,8 @@ const platformOptions = computed(() => [
   { value: 'minimax', label: 'MiniMax' },
   { value: 'glm', label: 'GLM' },
   { value: 'kimi', label: 'Kimi' },
-  { value: 'deepseek', label: 'DeepSeek' }
+  { value: 'deepseek', label: 'DeepSeek' },
+  { value: 'windsurf', label: 'Windsurf' }
 ])
 
 const timeRangeOptions = computed(() => [
