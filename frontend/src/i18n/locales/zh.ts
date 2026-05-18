@@ -101,6 +101,7 @@ export default {
       kimi: 'Kimi',
       deepseek: 'DeepSeek',
       windsurf: 'Windsurf',
+      opencode: 'OpenCode',
       more: '更多'
     },
     // CTA 区块
@@ -900,7 +901,8 @@ export default {
       glm: 'GLM',
       kimi: 'Kimi',
       deepseek: 'DeepSeek',
-      windsurf: 'Windsurf'
+      windsurf: 'Windsurf',
+      opencode: 'OpenCode'
     },
     extraModelsHeader: '附加模型',
     extraModelsEmpty: '无附加模型',
@@ -2081,6 +2083,7 @@ export default {
         kimi: 'Kimi',
         deepseek: 'DeepSeek',
         windsurf: 'Windsurf',
+        opencode: 'OpenCode',
       },
       saving: '保存中...',
       noGroups: '暂无分组',
@@ -3073,6 +3076,7 @@ export default {
         kimi: 'Kimi',
         deepseek: 'DeepSeek',
         windsurf: 'Windsurf',
+        opencode: 'OpenCode',
       },
       types: {
         oauth: 'OAuth',
@@ -3377,6 +3381,9 @@ export default {
 	      windsurf: {
 	        apiKeyHint: '您的 Windsurf 反代 API Key',
 	      },
+	      opencode: {
+	        apiKeyHint: '您的 OpenCode2API API Key',
+	      },
 	      anthropic: {
         apiKeyPassthrough: '自动透传（仅替换认证）',
         apiKeyPassthroughDesc:
@@ -3404,6 +3411,7 @@ export default {
       searchModels: '搜索模型...',
       noMatchingModels: '没有匹配的模型',
       fillRelatedModels: '同步最新支持模型',
+      failedToLoadModels: '加载最新支持模型失败',
       clearAllModels: '清除所有模型',
       customModelName: '自定义模型名称',
       enterCustomModelName: '输入自定义模型名称',

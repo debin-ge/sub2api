@@ -81,6 +81,7 @@ const platformLabel = computed(() => {
   if (props.platform === 'kimi') return 'Kimi'
   if (props.platform === 'deepseek') return 'DeepSeek'
   if (props.platform === 'windsurf') return 'Windsurf'
+  if (props.platform === 'opencode') return 'OpenCode'
   return 'Gemini'
 })
 
@@ -146,6 +147,9 @@ const platformClass = computed(() => {
   if (props.platform === 'windsurf') {
     return 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300'
   }
+  if (props.platform === 'opencode') {
+    return 'bg-slate-100 text-slate-700 dark:bg-slate-800/60 dark:text-slate-300'
+  }
   return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
 })
 
@@ -173,6 +177,9 @@ const typeClass = computed(() => {
   }
   if (props.platform === 'windsurf') {
     return 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300'
+  }
+  if (props.platform === 'opencode') {
+    return 'bg-slate-100 text-slate-700 dark:bg-slate-800/60 dark:text-slate-300'
   }
   return 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400'
 })

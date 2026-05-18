@@ -111,6 +111,9 @@ func RegisterGatewayRoutes(
 				}
 				h.WindsurfGateway.Messages(c)
 				return
+			case service.PlatformOpenCode:
+				writeOpenCodeUnsupported(c, h)
+				return
 			}
 			h.Gateway.Messages(c)
 		})
@@ -146,9 +149,17 @@ func RegisterGatewayRoutes(
 				writeWindsurfUnsupported(c, h)
 				return
 			}
+			if getGroupPlatform(c) == service.PlatformOpenCode {
+				writeOpenCodeUnsupported(c, h)
+				return
+			}
 			h.Gateway.CountTokens(c)
 		})
 		gateway.GET("/models", func(c *gin.Context) {
+			if getGroupPlatform(c) == service.PlatformOpenCode {
+				writeOpenCodeModels(c, h)
+				return
+			}
 			h.Gateway.Models(c)
 		})
 		gateway.GET("/usage", func(c *gin.Context) {
@@ -170,6 +181,10 @@ func RegisterGatewayRoutes(
 			}
 			if getGroupPlatform(c) == service.PlatformWindsurf {
 				writeWindsurfUnsupported(c, h)
+				return
+			}
+			if getGroupPlatform(c) == service.PlatformOpenCode {
+				writeOpenCodeUnsupported(c, h)
 				return
 			}
 			h.Gateway.Usage(c)
@@ -195,6 +210,9 @@ func RegisterGatewayRoutes(
 			case service.PlatformWindsurf:
 				writeWindsurfUnsupported(c, h)
 				return
+			case service.PlatformOpenCode:
+				writeOpenCodeResponses(c, h)
+				return
 			}
 			h.Gateway.Responses(c)
 		})
@@ -217,6 +235,9 @@ func RegisterGatewayRoutes(
 				return
 			case service.PlatformWindsurf:
 				writeWindsurfUnsupported(c, h)
+				return
+			case service.PlatformOpenCode:
+				writeOpenCodeResponses(c, h)
 				return
 			}
 			h.Gateway.Responses(c)
@@ -242,6 +263,10 @@ func RegisterGatewayRoutes(
 				writeWindsurfUnsupported(c, h)
 				return
 			}
+			if getGroupPlatform(c) == service.PlatformOpenCode {
+				writeOpenCodeUnsupported(c, h)
+				return
+			}
 			h.OpenAIGateway.ResponsesWebSocket(c)
 		})
 		// OpenAI Chat Completions API: auto-route based on group platform
@@ -265,6 +290,9 @@ func RegisterGatewayRoutes(
 			case service.PlatformWindsurf:
 				writeWindsurfChatCompletions(c, h)
 				return
+			case service.PlatformOpenCode:
+				writeOpenCodeChatCompletions(c, h)
+				return
 			}
 			h.Gateway.ChatCompletions(c)
 		})
@@ -287,6 +315,10 @@ func RegisterGatewayRoutes(
 			}
 			if getGroupPlatform(c) == service.PlatformWindsurf {
 				writeWindsurfUnsupported(c, h)
+				return
+			}
+			if getGroupPlatform(c) == service.PlatformOpenCode {
+				writeOpenCodeUnsupported(c, h)
 				return
 			}
 			if getGroupPlatform(c) != service.PlatformOpenAI {
@@ -319,6 +351,10 @@ func RegisterGatewayRoutes(
 			}
 			if getGroupPlatform(c) == service.PlatformWindsurf {
 				writeWindsurfUnsupported(c, h)
+				return
+			}
+			if getGroupPlatform(c) == service.PlatformOpenCode {
+				writeOpenCodeUnsupported(c, h)
 				return
 			}
 			if getGroupPlatform(c) != service.PlatformOpenAI {
@@ -370,6 +406,9 @@ func RegisterGatewayRoutes(
 		case service.PlatformWindsurf:
 			writeWindsurfUnsupported(c, h)
 			return
+		case service.PlatformOpenCode:
+			writeOpenCodeResponses(c, h)
+			return
 		}
 		h.Gateway.Responses(c)
 	}
@@ -394,6 +433,10 @@ func RegisterGatewayRoutes(
 		}
 		if getGroupPlatform(c) == service.PlatformWindsurf {
 			writeWindsurfUnsupported(c, h)
+			return
+		}
+		if getGroupPlatform(c) == service.PlatformOpenCode {
+			writeOpenCodeUnsupported(c, h)
 			return
 		}
 		h.OpenAIGateway.ResponsesWebSocket(c)
@@ -424,6 +467,10 @@ func RegisterGatewayRoutes(
 				writeWindsurfUnsupported(c, h)
 				return
 			}
+			if getGroupPlatform(c) == service.PlatformOpenCode {
+				writeOpenCodeUnsupported(c, h)
+				return
+			}
 			h.OpenAIGateway.ResponsesWebSocket(c)
 		})
 	}
@@ -448,6 +495,9 @@ func RegisterGatewayRoutes(
 		case service.PlatformWindsurf:
 			writeWindsurfChatCompletions(c, h)
 			return
+		case service.PlatformOpenCode:
+			writeOpenCodeChatCompletions(c, h)
+			return
 		}
 		h.Gateway.ChatCompletions(c)
 	})
@@ -470,6 +520,10 @@ func RegisterGatewayRoutes(
 		}
 		if getGroupPlatform(c) == service.PlatformWindsurf {
 			writeWindsurfUnsupported(c, h)
+			return
+		}
+		if getGroupPlatform(c) == service.PlatformOpenCode {
+			writeOpenCodeUnsupported(c, h)
 			return
 		}
 		if getGroupPlatform(c) != service.PlatformOpenAI {
@@ -502,6 +556,10 @@ func RegisterGatewayRoutes(
 		}
 		if getGroupPlatform(c) == service.PlatformWindsurf {
 			writeWindsurfUnsupported(c, h)
+			return
+		}
+		if getGroupPlatform(c) == service.PlatformOpenCode {
+			writeOpenCodeUnsupported(c, h)
 			return
 		}
 		if getGroupPlatform(c) != service.PlatformOpenAI {
@@ -696,6 +754,62 @@ func writeWindsurfChatCompletions(c *gin.Context, h *handler.Handlers) {
 		"error": gin.H{
 			"type":    "api_error",
 			"message": "windsurf gateway service unavailable",
+		},
+	})
+}
+
+func writeOpenCodeUnsupported(c *gin.Context, h *handler.Handlers) {
+	if h != nil && h.OpenCodeGateway != nil {
+		h.OpenCodeGateway.Unsupported(c)
+		return
+	}
+	c.JSON(http.StatusNotFound, gin.H{
+		"type": "error",
+		"error": gin.H{
+			"type":    "not_found_error",
+			"message": "OpenCode gateway supports /v1/models, /v1/chat/completions, and /v1/responses only",
+		},
+	})
+}
+
+func writeOpenCodeChatCompletions(c *gin.Context, h *handler.Handlers) {
+	if h != nil && h.OpenCodeGateway != nil {
+		h.OpenCodeGateway.ChatCompletions(c)
+		return
+	}
+	c.JSON(http.StatusServiceUnavailable, gin.H{
+		"type": "error",
+		"error": gin.H{
+			"type":    "api_error",
+			"message": "opencode gateway service unavailable",
+		},
+	})
+}
+
+func writeOpenCodeResponses(c *gin.Context, h *handler.Handlers) {
+	if h != nil && h.OpenCodeGateway != nil {
+		h.OpenCodeGateway.Responses(c)
+		return
+	}
+	c.JSON(http.StatusServiceUnavailable, gin.H{
+		"type": "error",
+		"error": gin.H{
+			"type":    "api_error",
+			"message": "opencode gateway service unavailable",
+		},
+	})
+}
+
+func writeOpenCodeModels(c *gin.Context, h *handler.Handlers) {
+	if h != nil && h.OpenCodeGateway != nil {
+		h.OpenCodeGateway.Models(c)
+		return
+	}
+	c.JSON(http.StatusServiceUnavailable, gin.H{
+		"type": "error",
+		"error": gin.H{
+			"type":    "api_error",
+			"message": "opencode gateway service unavailable",
 		},
 	})
 }

@@ -39,6 +39,10 @@
   <svg v-else-if="platform === 'windsurf'" :class="sizeClass" viewBox="0 0 24 24" fill="currentColor">
     <path d="M3.2 6.2h3.2l2.05 9.1 2.45-9.1h2.2l2.45 9.1 2.05-9.1h3.2L17.25 19h-3.1L12 11.1 9.85 19h-3.1L3.2 6.2Z" />
   </svg>
+  <!-- OpenCode logo mark -->
+  <svg v-else-if="platform === 'opencode'" :class="sizeClass" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M6.2 4h11.6A2.2 2.2 0 0 1 20 6.2v11.6a2.2 2.2 0 0 1-2.2 2.2H6.2A2.2 2.2 0 0 1 4 17.8V6.2A2.2 2.2 0 0 1 6.2 4Zm1.1 4.1 3.25 3.9-3.25 3.9h2.45L13 12 9.75 8.1H7.3Zm6.1 6.25V16h3.8v-1.65h-3.8Z" />
+  </svg>
   <!-- Fallback: generic platform icon -->
   <svg v-else :class="sizeClass" fill="currentColor" viewBox="0 0 24 24">
     <path

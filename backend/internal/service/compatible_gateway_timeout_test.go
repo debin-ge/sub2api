@@ -18,6 +18,7 @@ func TestCompatibleGatewayDefaultClientsUseSixtySecondHeaderTimeout(t *testing.T
 		{name: "kimi", client: NewKimiGatewayService(nil, nil).httpClient},
 		{name: "deepseek", client: NewDeepSeekGatewayService(nil, nil).httpClient},
 		{name: "windsurf", client: NewWindsurfGatewayService(nil, nil).httpClient},
+		{name: "opencode", client: NewOpenCodeGatewayService(nil, nil).httpClient},
 	}
 
 	for _, tt := range tests {
@@ -55,6 +56,7 @@ func TestCompatibleGatewayProvidersUseConfiguredTimeout(t *testing.T) {
 		{name: "kimi", client: ProvideKimiGatewayService(cfg).httpClient},
 		{name: "deepseek", client: ProvideDeepSeekGatewayService(cfg).httpClient},
 		{name: "windsurf", client: ProvideWindsurfGatewayService(cfg).httpClient},
+		{name: "opencode", client: ProvideOpenCodeGatewayService(cfg).httpClient},
 	}
 
 	for _, tt := range tests {

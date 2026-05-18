@@ -81,6 +81,32 @@ func TestGatewayModelListProviderWindsurfDefaultsAndAccountMappings(t *testing.T
 	mustNotContainStrings(t, models, []string{"swe-grep", "swe-1-mini", "wildcard-*", "bad-target"})
 }
 
+func TestGatewayModelListProviderOpenCodeDefaultsAndAccountMappings(t *testing.T) {
+	provider := NewGatewayModelListProvider(GatewayModelListOptions{})
+	accounts := []Account{
+		{
+			Platform: PlatformOpenCode,
+			Credentials: map[string]any{
+				"model_mapping": map[string]any{
+					"gpt-5":      "opencode/gpt5-nano",
+					"fast":       "gpt5-nano",
+					"wildcard-*": "opencode/gpt5-nano",
+					"bad-target": "claude-sonnet-4-6",
+				},
+			},
+		},
+	}
+
+	models := provider.ModelsForProvider(PlatformOpenCode, accounts)
+	assertStringSlicesEqual(t, models, []string{
+		"fast",
+		"gpt-5",
+		"gpt5-nano",
+		"opencode/big-pickle",
+		"opencode/gpt5-nano",
+	})
+}
+
 func TestGatewayModelListProviderUnknownProvider(t *testing.T) {
 	provider := NewGatewayModelListProvider(GatewayModelListOptions{})
 

@@ -42,6 +42,7 @@ const (
 	PlatformKimi        = domain.PlatformKimi
 	PlatformDeepSeek    = domain.PlatformDeepSeek
 	PlatformWindsurf    = domain.PlatformWindsurf
+	PlatformOpenCode    = domain.PlatformOpenCode
 )
 
 // Account type constants

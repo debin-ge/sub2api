@@ -607,6 +607,12 @@ func validateCreateAccountRequest(req CreateAccountRequest) error {
 	if strings.TrimSpace(apiKey) == "" {
 		return fmt.Errorf("%s account api_key is required", req.Platform)
 	}
+	if req.Platform == service.PlatformOpenCode {
+		baseURL, _ := req.Credentials["base_url"].(string)
+		if strings.TrimSpace(baseURL) == "" {
+			return fmt.Errorf("%s account base_url is required", req.Platform)
+		}
+	}
 	return nil
 }
 
@@ -706,12 +712,18 @@ func validateUpdateAccountRequest(account *service.Account, req UpdateAccountReq
 	if strings.TrimSpace(apiKey) == "" {
 		return fmt.Errorf("%s account api_key is required", account.Platform)
 	}
+	if account.Platform == service.PlatformOpenCode {
+		baseURL, _ := credentials["base_url"].(string)
+		if strings.TrimSpace(baseURL) == "" {
+			return fmt.Errorf("%s account base_url is required", account.Platform)
+		}
+	}
 	return nil
 }
 
 func requiresAPIKeyAccount(platform string) bool {
 	switch platform {
-	case service.PlatformGLM, service.PlatformKimi, service.PlatformDeepSeek, service.PlatformWindsurf:
+	case service.PlatformGLM, service.PlatformKimi, service.PlatformDeepSeek, service.PlatformWindsurf, service.PlatformOpenCode:
 		return true
 	default:
 		return false
@@ -2165,6 +2177,21 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 		return
 	}
 
+	// Handle OpenCode2API-compatible API Key accounts.
+	if account.Platform == service.PlatformOpenCode {
+		modelIDs, err := service.FetchOpenCodeAvailableModelIDs(c.Request.Context(), account, nil)
+		if err != nil {
+			slog.WarnContext(c.Request.Context(), "opencode.available_models.fetch_failed",
+				slog.Int64("account_id", account.ID),
+				slog.String("error", err.Error()),
+			)
+			response.Success(c, buildOpenCodeAvailableModels())
+			return
+		}
+		response.Success(c, buildOpenCodeAvailableModelsFromIDs(modelIDs))
+		return
+	}
+
 	// Handle Claude/Anthropic accounts
 	// For OAuth and Setup-Token accounts: return default models
 	if account.IsOAuth() {
@@ -2270,6 +2297,24 @@ func buildWindsurfAvailableModels() []claude.Model {
 }
 
 func buildWindsurfAvailableModelsFromIDs(modelIDs []string) []claude.Model {
+	models := make([]claude.Model, 0, len(modelIDs))
+	for _, modelID := range modelIDs {
+		models = append(models, claude.Model{
+			ID:          modelID,
+			Type:        "model",
+			DisplayName: modelID,
+			CreatedAt:   "2024-01-01T00:00:00Z",
+		})
+	}
+	return models
+}
+
+func buildOpenCodeAvailableModels() []claude.Model {
+	modelIDs := service.DefaultOpenCodeModelIDs()
+	return buildOpenCodeAvailableModelsFromIDs(modelIDs)
+}
+
+func buildOpenCodeAvailableModelsFromIDs(modelIDs []string) []claude.Model {
 	models := make([]claude.Model, 0, len(modelIDs))
 	for _, modelID := range modelIDs {
 		models = append(models, claude.Model{

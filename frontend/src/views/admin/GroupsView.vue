@@ -2777,6 +2777,8 @@
                                   ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300'
                                   : group.platform === 'windsurf'
                                     ? 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300'
+                                    : group.platform === 'opencode'
+                                      ? 'bg-slate-100 text-slate-700 dark:bg-slate-800/60 dark:text-slate-300'
                                   : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
                   ]"
                 >
@@ -2944,6 +2946,7 @@ const platformOptions = computed(() => [
   { value: "kimi", label: "Kimi" },
   { value: "deepseek", label: "DeepSeek" },
   { value: "windsurf", label: "Windsurf" },
+  { value: "opencode", label: "OpenCode" },
 ]);
 
 const platformFilterOptions = computed(() => [
@@ -2957,6 +2960,7 @@ const platformFilterOptions = computed(() => [
   { value: "kimi", label: "Kimi" },
   { value: "deepseek", label: "DeepSeek" },
   { value: "windsurf", label: "Windsurf" },
+  { value: "opencode", label: "OpenCode" },
 ]);
 
 const editStatusOptions = computed(() => [

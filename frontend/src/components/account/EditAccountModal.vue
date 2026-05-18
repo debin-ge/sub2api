@@ -211,6 +211,34 @@
             />
           </div>
         </template>
+        <template v-else-if="account.platform === 'opencode'">
+          <div>
+            <label class="input-label">OpenCode API Key</label>
+            <input
+              v-model="editApiKey"
+              data-testid="opencode-api-key"
+              type="password"
+              class="input font-mono"
+              autocomplete="new-password"
+              data-1p-ignore
+              data-lpignore="true"
+              data-bwignore="true"
+              placeholder="sk-..."
+            />
+            <p class="input-hint">{{ t('admin.accounts.leaveEmptyToKeep') }}</p>
+          </div>
+          <div>
+            <label class="input-label">Base URL</label>
+            <input
+              v-model="editOpenCodeBaseUrl"
+              data-testid="opencode-base-url"
+              type="text"
+              required
+              class="input font-mono"
+              placeholder="http://127.0.0.1:8080"
+            />
+          </div>
+        </template>
         <template v-else>
           <div>
             <label class="input-label">{{ t('admin.accounts.baseUrl') }}</label>
@@ -324,7 +352,7 @@
 
             <!-- Whitelist Mode -->
             <div v-if="modelRestrictionMode === 'whitelist'">
-              <ModelWhitelistSelector v-model="allowedModels" :platform="account?.platform || 'anthropic'" />
+              <ModelWhitelistSelector v-model="allowedModels" :platform="account?.platform || 'anthropic'" :load-related-models="loadAccountAvailableModelIDs" />
               <p class="text-xs text-gray-500 dark:text-gray-400">
                 {{ t('admin.accounts.selectedModels', { count: allowedModels.length }) }}
                 <span v-if="allowedModels.length === 0">{{
@@ -639,7 +667,7 @@
 
           <!-- Whitelist Mode -->
           <div v-if="modelRestrictionMode === 'whitelist'">
-            <ModelWhitelistSelector v-model="allowedModels" :platform="account?.platform || 'anthropic'" />
+            <ModelWhitelistSelector v-model="allowedModels" :platform="account?.platform || 'anthropic'" :load-related-models="loadAccountAvailableModelIDs" />
             <p class="text-xs text-gray-500 dark:text-gray-400">
               {{ t('admin.accounts.selectedModels', { count: allowedModels.length }) }}
               <span v-if="allowedModels.length === 0">{{
@@ -851,7 +879,7 @@
 
           <!-- Whitelist Mode -->
           <div v-if="modelRestrictionMode === 'whitelist'">
-            <ModelWhitelistSelector v-model="allowedModels" :platform="account?.platform || 'anthropic'" />
+            <ModelWhitelistSelector v-model="allowedModels" :platform="account?.platform || 'anthropic'" :load-related-models="loadAccountAvailableModelIDs" />
             <p class="text-xs text-gray-500 dark:text-gray-400">
               {{ t('admin.accounts.selectedModels', { count: allowedModels.length }) }}
               <span v-if="allowedModels.length === 0">{{
@@ -2389,6 +2417,7 @@ import {
   DEEPSEEK_ANTHROPIC_BASE_URL,
   DEEPSEEK_OPENAI_BASE_URL,
   WINDSURF_BASE_URL,
+  OPENCODE_BASE_URL,
   VERTEX_LOCATION_OPTIONS
 } from '@/constants/account'
 import {
@@ -2433,7 +2462,7 @@ const baseUrlHint = computed(() => {
   return t('admin.accounts.baseUrlHint')
 })
 
-const isFixedEndpointGatewayPlatformValue = (platform?: string) => platform === 'glm' || platform === 'kimi' || platform === 'deepseek' || platform === 'windsurf'
+const isFixedEndpointGatewayPlatformValue = (platform?: string) => platform === 'glm' || platform === 'kimi' || platform === 'deepseek' || platform === 'windsurf' || platform === 'opencode'
 const isFixedEndpointGatewayPlatform = computed(() => isFixedEndpointGatewayPlatformValue(props.account?.platform))
 
 const antigravityPresetMappings = computed(() => getPresetMappingsByPlatform('antigravity'))
@@ -2465,6 +2494,7 @@ const editKimiOpenAIBaseUrl = ref(KIMI_OPENAI_BASE_URL)
 const editDeepSeekAnthropicBaseUrl = ref(DEEPSEEK_ANTHROPIC_BASE_URL)
 const editDeepSeekOpenAIBaseUrl = ref(DEEPSEEK_OPENAI_BASE_URL)
 const editWindsurfBaseUrl = ref(WINDSURF_BASE_URL)
+const editOpenCodeBaseUrl = ref(OPENCODE_BASE_URL)
 // Bedrock credentials
 const editBedrockAccessKeyId = ref('')
 const editBedrockSecretAccessKey = ref('')
@@ -2645,6 +2675,15 @@ const openAICompactModeOptions = computed(() => [
 const isOpenAIModelRestrictionDisabled = computed(() =>
   props.account?.platform === 'openai' && openaiPassthroughEnabled.value
 )
+
+const loadAccountAvailableModelIDs = async () => {
+  if (!props.account?.id) return []
+  const models = await adminAPI.accounts.getAvailableModels(props.account.id)
+  return models
+    .map(model => model.id?.trim())
+    .filter((model): model is string => Boolean(model))
+}
+
 const openAICompactStatusKey = computed(() => {
   const extra = props.account?.extra as Record<string, unknown> | undefined
   if (!props.account || props.account.platform !== 'openai') return ''
@@ -2700,6 +2739,7 @@ const defaultBaseUrl = computed(() => {
   if (props.account?.platform === 'kimi') return KIMI_ANTHROPIC_BASE_URL
   if (props.account?.platform === 'deepseek') return DEEPSEEK_ANTHROPIC_BASE_URL
   if (props.account?.platform === 'windsurf') return WINDSURF_BASE_URL
+  if (props.account?.platform === 'opencode') return OPENCODE_BASE_URL
   return 'https://api.anthropic.com'
 })
 
@@ -2794,6 +2834,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   editDeepSeekAnthropicBaseUrl.value = DEEPSEEK_ANTHROPIC_BASE_URL
   editDeepSeekOpenAIBaseUrl.value = DEEPSEEK_OPENAI_BASE_URL
   editWindsurfBaseUrl.value = WINDSURF_BASE_URL
+  editOpenCodeBaseUrl.value = OPENCODE_BASE_URL
 
   // Load mixed scheduling setting (only for antigravity accounts)
   mixedScheduling.value = false
@@ -2942,7 +2983,9 @@ const syncFormFromAccount = (newAccount: Account | null) => {
                   ? DEEPSEEK_ANTHROPIC_BASE_URL
                   : newAccount.platform === 'windsurf'
                     ? WINDSURF_BASE_URL
-                  : 'https://api.anthropic.com'
+                    : newAccount.platform === 'opencode'
+                      ? OPENCODE_BASE_URL
+                      : 'https://api.anthropic.com'
     editBaseUrl.value = (credentials.base_url as string) || platformDefaultUrl
     if (newAccount.platform === 'minimax') {
       editMiniMaxAnthropicBaseUrl.value =
@@ -2966,6 +3009,8 @@ const syncFormFromAccount = (newAccount: Account | null) => {
         (credentials.base_url_openai as string) || DEEPSEEK_OPENAI_BASE_URL
     } else if (newAccount.platform === 'windsurf') {
       editWindsurfBaseUrl.value = (credentials.base_url as string) || WINDSURF_BASE_URL
+    } else if (newAccount.platform === 'opencode') {
+      editOpenCodeBaseUrl.value = (credentials.base_url as string) || OPENCODE_BASE_URL
     }
 
     // Load model mappings and detect mode
@@ -3111,7 +3156,9 @@ const syncFormFromAccount = (newAccount: Account | null) => {
                   ? DEEPSEEK_ANTHROPIC_BASE_URL
                   : newAccount.platform === 'windsurf'
                     ? WINDSURF_BASE_URL
-                  : 'https://api.anthropic.com'
+                    : newAccount.platform === 'opencode'
+                      ? OPENCODE_BASE_URL
+                      : 'https://api.anthropic.com'
     editBaseUrl.value = platformDefaultUrl
 
     // Load model mappings for OpenAI OAuth accounts
@@ -3673,6 +3720,19 @@ const handleSubmit = async () => {
         delete newCredentials.base_url_anthropic
         delete newCredentials.base_url_openai
         newCredentials.base_url = editWindsurfBaseUrl.value.trim() || WINDSURF_BASE_URL
+        delete newCredentials.compact_model_mapping
+        delete newCredentials.pool_mode
+        delete newCredentials.pool_mode_retry_count
+        delete newCredentials.custom_error_codes_enabled
+        delete newCredentials.custom_error_codes
+        delete newCredentials.intercept_warmup_requests
+        delete newCredentials.temp_unschedulable_enabled
+        delete newCredentials.temp_unschedulable_rules
+      } else if (props.account.platform === 'opencode') {
+        delete newCredentials.auth_scheme
+        delete newCredentials.base_url_anthropic
+        delete newCredentials.base_url_openai
+        newCredentials.base_url = editOpenCodeBaseUrl.value.trim()
         delete newCredentials.compact_model_mapping
         delete newCredentials.pool_mode
         delete newCredentials.pool_mode_retry_count

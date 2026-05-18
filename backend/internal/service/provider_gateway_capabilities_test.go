@@ -12,6 +12,7 @@ func TestProviderGatewayCapabilitiesDomesticDefaults(t *testing.T) {
 		{platform: PlatformKimi, models: []string{"kimi-for-coding"}},
 		{platform: PlatformDeepSeek, models: []string{"deepseek-v4-flash", "deepseek-v4-pro"}},
 		{platform: PlatformWindsurf, models: windsurfOfficialModelIDs},
+		{platform: PlatformOpenCode, models: []string{"opencode/big-pickle", "opencode/gpt5-nano", "gpt5-nano"}},
 	}
 
 	for _, tc := range cases {

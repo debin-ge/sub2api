@@ -23,6 +23,7 @@ export const KIMI_OPENAI_BASE_URL = 'https://api.kimi.com/coding/v1'
 export const DEEPSEEK_ANTHROPIC_BASE_URL = 'https://api.deepseek.com/anthropic'
 export const DEEPSEEK_OPENAI_BASE_URL = 'https://api.deepseek.com'
 export const WINDSURF_BASE_URL = 'https://tik.frontech.dev:3003'
+export const OPENCODE_BASE_URL = ''
 
 /** Vertex AI location options for Service Account accounts */
 export const VERTEX_LOCATION_OPTIONS = [

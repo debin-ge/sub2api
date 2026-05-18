@@ -101,6 +101,7 @@ export default {
       kimi: 'Kimi',
       deepseek: 'DeepSeek',
       windsurf: 'Windsurf',
+      opencode: 'OpenCode',
       more: 'More'
     },
     // CTA section
@@ -896,7 +897,8 @@ export default {
       glm: 'GLM',
       kimi: 'Kimi',
       deepseek: 'DeepSeek',
-      windsurf: 'Windsurf'
+      windsurf: 'Windsurf',
+      opencode: 'OpenCode'
     },
     extraModelsHeader: 'Extra Models',
     extraModelsEmpty: 'No extra models',
@@ -2053,6 +2055,7 @@ export default {
         kimi: 'Kimi',
         deepseek: 'DeepSeek',
         windsurf: 'Windsurf',
+        opencode: 'OpenCode',
       },
       deleteConfirm:
         "Are you sure you want to delete '{name}'? All associated API keys will no longer belong to any group.",
@@ -2878,6 +2881,7 @@ export default {
         kimi: 'Kimi',
         deepseek: 'DeepSeek',
         windsurf: 'Windsurf',
+        opencode: 'OpenCode',
       },
       types: {
         oauth: 'OAuth',
@@ -3232,6 +3236,9 @@ export default {
 	      windsurf: {
 	        apiKeyHint: 'Your Windsurf reverse proxy API Key',
 	      },
+	      opencode: {
+	        apiKeyHint: 'Your OpenCode2API API Key',
+	      },
 	      anthropic: {
         apiKeyPassthrough: 'Auto passthrough (auth only)',
         apiKeyPassthroughDesc:
@@ -3260,6 +3267,7 @@ export default {
       searchModels: 'Search models...',
       noMatchingModels: 'No matching models',
       fillRelatedModels: 'Sync latest supported models',
+      failedToLoadModels: 'Failed to load latest supported models',
       clearAllModels: 'Clear all models',
       customModelName: 'Custom model name',
       enterCustomModelName: 'Enter custom model name',

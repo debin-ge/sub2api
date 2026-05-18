@@ -609,6 +609,19 @@ func validateDataAccount(item DataAccount) error {
 			return errors.New("windsurf account api_key is required")
 		}
 	}
+	if item.Platform == service.PlatformOpenCode {
+		if item.Type != service.AccountTypeAPIKey {
+			return errors.New("opencode account type must be apikey")
+		}
+		apiKey, _ := item.Credentials["api_key"].(string)
+		if strings.TrimSpace(apiKey) == "" {
+			return errors.New("opencode account api_key is required")
+		}
+		baseURL, _ := item.Credentials["base_url"].(string)
+		if strings.TrimSpace(baseURL) == "" {
+			return errors.New("opencode account base_url is required")
+		}
+	}
 	if item.RateMultiplier != nil && *item.RateMultiplier < 0 {
 		return errors.New("rate_multiplier must be >= 0")
 	}

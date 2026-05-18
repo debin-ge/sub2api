@@ -707,6 +707,44 @@ func (s *GatewayService) HandleWindsurfUpstreamError(ctx context.Context, accoun
 	}
 }
 
+func (s *GatewayService) HandleOpenCodeUpstreamError(ctx context.Context, account *Account, failoverErr *UpstreamFailoverError) {
+	if s == nil || account == nil || failoverErr == nil {
+		return
+	}
+	mapping := MapOpenCodeUpstreamStatus(failoverErr.StatusCode)
+	if failoverErr.StatusCode == http.StatusUnauthorized || failoverErr.StatusCode == http.StatusForbidden || failoverErr.StatusCode == http.StatusPaymentRequired {
+		headers := failoverErr.ResponseHeaders
+		if headers == nil {
+			headers = http.Header{}
+		}
+		if s.rateLimitService != nil && s.rateLimitService.accountRepo != nil && failoverErr.StatusCode != http.StatusPaymentRequired {
+			s.rateLimitService.HandleUpstreamError(ctx, account, failoverErr.StatusCode, headers, failoverErr.ResponseBody)
+			return
+		}
+		s.setOpenCodeAuthError(ctx, account.ID, failoverErr)
+		return
+	}
+	if !mapping.Retryable {
+		return
+	}
+	headers := failoverErr.ResponseHeaders
+	if headers == nil {
+		headers = http.Header{}
+	}
+	switch {
+	case failoverErr.StatusCode == http.StatusTooManyRequests:
+		if s.rateLimitService != nil && s.rateLimitService.accountRepo != nil {
+			s.rateLimitService.HandleUpstreamError(ctx, account, failoverErr.StatusCode, headers, failoverErr.ResponseBody)
+			return
+		}
+		s.setOpenCodeRateLimited(ctx, account.ID, time.Now().Add(5*time.Minute))
+	case failoverErr.StatusCode == http.StatusServiceUnavailable || failoverErr.StatusCode == 529:
+		s.setOpenCodeOverloaded(ctx, account.ID, s.glmOverloadUntil())
+	case failoverErr.StatusCode >= http.StatusInternalServerError:
+		s.setOpenCodeOverloaded(ctx, account.ID, s.glmOverloadUntil())
+	}
+}
+
 func (s *GatewayService) setGLMAuthError(ctx context.Context, accountID int64, failoverErr *UpstreamFailoverError) {
 	if s == nil || s.accountRepo == nil || failoverErr == nil {
 		return
@@ -797,6 +835,31 @@ func (s *GatewayService) setWindsurfAuthError(ctx context.Context, accountID int
 	}
 }
 
+func (s *GatewayService) setOpenCodeAuthError(ctx context.Context, accountID int64, failoverErr *UpstreamFailoverError) {
+	if s == nil || s.accountRepo == nil || failoverErr == nil {
+		return
+	}
+	message := "Authentication failed"
+	if failoverErr.StatusCode == http.StatusForbidden {
+		message = "Authorization failed"
+	}
+	if failoverErr.StatusCode == http.StatusPaymentRequired {
+		message = "Insufficient OpenCode quota"
+	}
+	upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(failoverErr.ResponseBody))
+	upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
+	if upstreamMsg != "" {
+		message = fmt.Sprintf("%s (%d): %s", message, failoverErr.StatusCode, upstreamMsg)
+	} else if failoverErr.StatusCode == http.StatusPaymentRequired {
+		message = fmt.Sprintf("%s (%d)", message, failoverErr.StatusCode)
+	} else {
+		message = fmt.Sprintf("%s (%d): invalid OpenCode credentials", message, failoverErr.StatusCode)
+	}
+	if err := s.accountRepo.SetError(ctx, accountID, message); err != nil {
+		slog.Warn("opencode_auth_error_set_failed", "account_id", accountID, "status_code", failoverErr.StatusCode, "error", err)
+	}
+}
+
 func (s *GatewayService) setMiniMaxRateLimited(ctx context.Context, accountID int64, resetAt time.Time) {
 	if s == nil || s.accountRepo == nil {
 		return
@@ -884,6 +947,24 @@ func (s *GatewayService) setWindsurfOverloaded(ctx context.Context, accountID in
 	}
 	if err := s.accountRepo.SetOverloaded(ctx, accountID, until); err != nil {
 		slog.Warn("windsurf_overload_set_failed", "account_id", accountID, "error", err)
+	}
+}
+
+func (s *GatewayService) setOpenCodeRateLimited(ctx context.Context, accountID int64, resetAt time.Time) {
+	if s == nil || s.accountRepo == nil {
+		return
+	}
+	if err := s.accountRepo.SetRateLimited(ctx, accountID, resetAt); err != nil {
+		slog.Warn("opencode_rate_limit_set_failed", "account_id", accountID, "error", err)
+	}
+}
+
+func (s *GatewayService) setOpenCodeOverloaded(ctx context.Context, accountID int64, until time.Time) {
+	if s == nil || s.accountRepo == nil {
+		return
+	}
+	if err := s.accountRepo.SetOverloaded(ctx, accountID, until); err != nil {
+		slog.Warn("opencode_overload_set_failed", "account_id", accountID, "error", err)
 	}
 }
 
@@ -4099,6 +4180,12 @@ func (s *GatewayService) isModelSupportedByAccount(account *Account, requestedMo
 	}
 	if account.Platform == PlatformWindsurf {
 		return account.IsWindsurfModelSupported(requestedModel)
+	}
+	if account.Platform == PlatformOpenCode {
+		if strings.TrimSpace(requestedModel) == "" {
+			return true
+		}
+		return account.IsOpenCodeModelSupported(requestedModel)
 	}
 	if account.Platform == PlatformMiniMax {
 		return account.IsMiniMaxModelSupported(requestedModel)
@@ -9223,6 +9310,8 @@ func resolveAccountUpstreamModel(account *Account, requestedModel string) string
 		return account.GetDeepSeekMappedModel(requestedModel)
 	case PlatformWindsurf:
 		return account.GetWindsurfMappedModel(requestedModel)
+	case PlatformOpenCode:
+		return account.GetOpenCodeMappedModel(requestedModel)
 	}
 	return account.GetMappedModel(requestedModel)
 }

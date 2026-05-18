@@ -200,6 +200,9 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 	if account.IsWindsurf() {
 		return s.testWindsurfAccountConnection(c, account, modelID)
 	}
+	if account.IsOpenCode() {
+		return s.testOpenCodeAccountConnection(c, account, modelID)
+	}
 
 	return s.testClaudeAccountConnection(c, account, modelID)
 }
@@ -338,6 +341,51 @@ func (s *AccountTestService) processOpenAICompatibleChatCompletionsResponse(c *g
 	s.sendEvent(c, TestEvent{Type: "content", Text: text})
 	s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
 	return nil
+}
+
+func (s *AccountTestService) testOpenCodeAccountConnection(c *gin.Context, account *Account, modelID string) error {
+	ctx := c.Request.Context()
+
+	testModelID := strings.TrimSpace(modelID)
+	if testModelID == "" {
+		testModelID = DefaultOpenCodeModelIDs()[0]
+	}
+
+	payloadBytes, _ := json.Marshal(createOpenAICompatibleChatCompletionsTestPayload(testModelID))
+
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.Header().Set("Cache-Control", "no-cache")
+	c.Writer.Header().Set("Connection", "keep-alive")
+	c.Writer.Header().Set("X-Accel-Buffering", "no")
+	c.Writer.Flush()
+
+	req, _, upstreamModel, err := NewOpenCodeGatewayService(nil, nil).buildOpenCodeJSONRequest(ctx, c, account, payloadBytes, "/v1/chat/completions")
+	if err != nil {
+		return s.sendErrorAndEnd(c, err.Error())
+	}
+	s.sendEvent(c, TestEvent{Type: "test_start", Model: upstreamModel})
+
+	proxyURL := ""
+	if account.ProxyID != nil && account.Proxy != nil {
+		proxyURL = account.Proxy.URL()
+	}
+
+	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+	if err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+	if resp.StatusCode != http.StatusOK {
+		errMsg := fmt.Sprintf("API returned %d: %s", resp.StatusCode, string(body))
+		if s.accountRepo != nil && (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusPaymentRequired) {
+			_ = s.accountRepo.SetError(ctx, account.ID, errMsg)
+		}
+		return s.sendErrorAndEnd(c, errMsg)
+	}
+
+	return s.processOpenAICompatibleChatCompletionsResponse(c, body)
 }
 
 func (s *AccountTestService) testCodingPlanAccountConnection(c *gin.Context, account *Account, modelID string) error {

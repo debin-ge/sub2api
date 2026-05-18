@@ -103,6 +103,12 @@ var windsurfLegacyModelIDs = []string{
 	"phoenix-alpha",
 }
 
+var opencodeDefaultModelIDs = []string{
+	"opencode/big-pickle",
+	"opencode/gpt5-nano",
+	"gpt5-nano",
+}
+
 var domesticProviderCapabilities = map[string]ProviderGatewayCapabilities{
 	PlatformMiniMax: {
 		Platform:        PlatformMiniMax,
@@ -164,6 +170,12 @@ var domesticProviderCapabilities = map[string]ProviderGatewayCapabilities{
 		DefaultModelIDs:   windsurfOfficialModelIDs,
 		PublicModelIDs:    windsurfOfficialModelIDs,
 		SupportedModelIDs: mergeProviderModelIDs(windsurfOfficialModelIDs, windsurfLegacyModelIDs),
+	},
+	PlatformOpenCode: {
+		Platform:          PlatformOpenCode,
+		DefaultModelIDs:   opencodeDefaultModelIDs,
+		PublicModelIDs:    opencodeDefaultModelIDs,
+		SupportedModelIDs: opencodeDefaultModelIDs,
 	},
 }
 

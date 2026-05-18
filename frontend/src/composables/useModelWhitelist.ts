@@ -277,6 +277,11 @@ const windsurfGatewayModels = [
   'phoenix-alpha'
 ]
 
+// OpenCode2API-compatible gateway
+const opencodeGatewayModels = [
+  'opencode/big-pickle', 'opencode/gpt5-nano', 'gpt5-nano'
+]
+
 // 百度 文心
 const baiduModels = [
   'ernie-4.0-8k-latest', 'ernie-4.0-8k', 'ernie-4.0-turbo-8k',
@@ -327,6 +332,7 @@ const allModelsList: string[] = [
   ...kimiModels,
   ...deepseekGatewayModels,
   ...windsurfGatewayModels,
+  ...opencodeGatewayModels,
   ...baiduModels,
   ...sparkModels,
   ...hunyuanModels,
@@ -418,6 +424,12 @@ const windsurfPresetMappings = [
   { label: 'GPT-5.5 xhigh fast', from: 'gpt-5.5-xhigh-fast', to: 'gpt-5-5-xhigh-priority', color: 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-300' },
   { label: 'Gemini 3.1 Pro', from: 'gemini-3.1-pro', to: 'gemini-3-1-pro-high', color: 'bg-sky-100 text-sky-700 hover:bg-sky-200 dark:bg-sky-900/30 dark:text-sky-300' },
   { label: 'SWE-1.6', from: 'swe-1.6', to: 'swe-1-6', color: 'bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-300' }
+]
+
+const opencodePresetMappings = [
+  { label: 'big-pickle passthrough', from: 'opencode/big-pickle', to: 'opencode/big-pickle', color: 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800/60 dark:text-slate-300' },
+  { label: 'gpt5-nano passthrough', from: 'gpt5-nano', to: 'gpt5-nano', color: 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800/60 dark:text-zinc-300' },
+  { label: 'opencode/gpt5-nano passthrough', from: 'opencode/gpt5-nano', to: 'opencode/gpt5-nano', color: 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200 dark:bg-neutral-800/60 dark:text-neutral-300' }
 ]
 
 // Antigravity 预设映射（支持通配符）
@@ -513,6 +525,7 @@ export function getModelsByPlatform(platform: string): string[] {
     case 'qwen': return qwenModels
     case 'deepseek': return deepseekGatewayModels
     case 'windsurf': return windsurfGatewayModels
+    case 'opencode': return opencodeGatewayModels
     case 'mistral': return mistralModels
     case 'meta': return metaModels
     case 'xai': return xaiModels
@@ -540,6 +553,7 @@ export function getPresetMappingsByPlatform(platform: string) {
   if (platform === 'kimi') return kimiPresetMappings
   if (platform === 'deepseek') return deepseekPresetMappings
   if (platform === 'windsurf') return windsurfPresetMappings
+  if (platform === 'opencode') return opencodePresetMappings
   if (platform === 'antigravity') return antigravityPresetMappings
   if (platform === 'bedrock') return bedrockPresetMappings
   return anthropicPresetMappings

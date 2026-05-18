@@ -332,3 +332,90 @@ func TestAccountHandlerGetAvailableModels_WindsurfFetchesUpstreamModels(t *testi
 		ID string `json:"id"`
 	}{{ID: "claude-opus-4-7-max"}, {ID: "gpt-5-5-high-priority"}}, resp.Data)
 }
+
+func TestAccountHandlerGetAvailableModels_OpenCodeFetchesUpstreamModels(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			t.Errorf("path = %q, want /v1/models", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer sk-opencode" {
+			t.Errorf("authorization = %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"object":"list","data":[{"id":"opencode/big-pickle"},{"id":"opencode/gpt5-high"}]}`))
+	}))
+	defer upstream.Close()
+
+	svc := &availableModelsAdminService{
+		stubAdminService: newStubAdminService(),
+		account: service.Account{
+			ID:       50,
+			Name:     "opencode-api",
+			Platform: service.PlatformOpenCode,
+			Type:     service.AccountTypeAPIKey,
+			Status:   service.StatusActive,
+			Credentials: map[string]any{
+				"api_key":  "sk-opencode",
+				"base_url": upstream.URL,
+			},
+		},
+	}
+	router := setupAvailableModelsRouter(svc)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/accounts/50/models", nil)
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var resp struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Equal(t, []struct {
+		ID string `json:"id"`
+	}{{ID: "opencode/big-pickle"}, {ID: "opencode/gpt5-high"}}, resp.Data)
+}
+
+func TestAccountHandlerGetAvailableModels_OpenCodeFallsBackToDefaults(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "not implemented", http.StatusNotFound)
+	}))
+	defer upstream.Close()
+
+	svc := &availableModelsAdminService{
+		stubAdminService: newStubAdminService(),
+		account: service.Account{
+			ID:       51,
+			Name:     "opencode-api",
+			Platform: service.PlatformOpenCode,
+			Type:     service.AccountTypeAPIKey,
+			Status:   service.StatusActive,
+			Credentials: map[string]any{
+				"api_key":  "sk-opencode",
+				"base_url": upstream.URL,
+			},
+		},
+	}
+	router := setupAvailableModelsRouter(svc)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/accounts/51/models", nil)
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var resp struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	expected := service.DefaultOpenCodeModelIDs()
+	require.Len(t, resp.Data, len(expected))
+	for i, modelID := range expected {
+		require.Equal(t, modelID, resp.Data[i].ID)
+	}
+}

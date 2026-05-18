@@ -27,6 +27,7 @@ const (
 	PlatformKimi        = "kimi"
 	PlatformDeepSeek    = "deepseek"
 	PlatformWindsurf    = "windsurf"
+	PlatformOpenCode    = "opencode"
 )
 
 // Account type constants

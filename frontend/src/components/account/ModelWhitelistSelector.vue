@@ -81,9 +81,12 @@
       <button
         type="button"
         @click="fillRelated"
+        :disabled="loadingRelatedModels"
+        data-testid="fill-related-models"
         class="rounded-lg border border-blue-200 px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-900/30"
+        :class="{ 'cursor-not-allowed opacity-60': loadingRelatedModels }"
       >
-        {{ t('admin.accounts.fillRelatedModels') }}
+        {{ loadingRelatedModels ? t('common.loading') + '...' : t('admin.accounts.fillRelatedModels') }}
       </button>
       <button
         type="button"
@@ -133,6 +136,7 @@ const props = defineProps<{
   modelValue: string[]
   platform?: string
   platforms?: string[]
+  loadRelatedModels?: () => Promise<string[]>
 }>()
 
 const emit = defineEmits<{
@@ -145,6 +149,8 @@ const showDropdown = ref(false)
 const searchQuery = ref('')
 const customModel = ref('')
 const isComposing = ref(false)
+const loadingRelatedModels = ref(false)
+const syncedModelIDs = ref<string[]>([])
 const normalizedPlatforms = computed(() => {
   const rawPlatforms =
     props.platforms && props.platforms.length > 0
@@ -162,19 +168,43 @@ const normalizedPlatforms = computed(() => {
   )
 })
 
-const availableOptions = computed(() => {
-  if (normalizedPlatforms.value.length === 0) {
-    return allModels
+const dedupeModels = (models: string[]) => {
+  const seen = new Set<string>()
+  const result: string[] = []
+  for (const model of models) {
+    const normalized = model.trim()
+    if (!normalized || seen.has(normalized)) continue
+    seen.add(normalized)
+    result.push(normalized)
   }
+  return result
+}
 
-  const allowedModels = new Set<string>()
+const staticRelatedModels = () => {
+  const models: string[] = []
   for (const platform of normalizedPlatforms.value) {
     for (const model of getModelsByPlatform(platform)) {
-      allowedModels.add(model)
+      models.push(model)
     }
   }
+  return dedupeModels(models)
+}
 
-  return allModels.filter(model => allowedModels.has(model.value))
+const availableOptions = computed(() => {
+  const optionByValue = new Map(allModels.map(model => [model.value, model]))
+  const optionValues = normalizedPlatforms.value.length === 0
+    ? allModels.map(model => model.value)
+    : staticRelatedModels()
+
+  for (const model of syncedModelIDs.value) {
+    optionValues.push(model)
+  }
+
+  return dedupeModels(optionValues).map(value => optionByValue.get(value) ?? {
+    value,
+    label: value,
+    platform: 'custom'
+  })
 })
 
 const allowCustomModelInput = computed(() => (
@@ -225,13 +255,26 @@ const handleEnter = () => {
   if (!isComposing.value) addCustom()
 }
 
-const fillRelated = () => {
+const fillRelated = async () => {
+  let relatedModels: string[]
+  if (props.loadRelatedModels) {
+    loadingRelatedModels.value = true
+    try {
+      relatedModels = dedupeModels(await props.loadRelatedModels())
+      syncedModelIDs.value = dedupeModels([...syncedModelIDs.value, ...relatedModels])
+    } catch (error: any) {
+      appStore.showError(error?.message || t('admin.accounts.failedToLoadModels'))
+      return
+    } finally {
+      loadingRelatedModels.value = false
+    }
+  } else {
+    relatedModels = staticRelatedModels()
+  }
   const newModels = [...props.modelValue]
-  for (const platform of normalizedPlatforms.value) {
-    for (const model of getModelsByPlatform(platform)) {
-      if (!newModels.includes(model)) {
-        newModels.push(model)
-      }
+  for (const model of relatedModels) {
+    if (!newModels.includes(model)) {
+      newModels.push(model)
     }
   }
   emit('update:modelValue', newModels)

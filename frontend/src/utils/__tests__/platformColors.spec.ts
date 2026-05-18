@@ -56,4 +56,12 @@ describe('platformColors', () => {
     expect(platformBadgeClass('windsurf')).not.toBe(platformBadgeClass('anthropic'))
     expect(platformBadgeClass('windsurf')).not.toBe(platformBadgeClass('deepseek'))
   })
+
+  it('returns OpenCode labels and a distinct slate visual style', () => {
+    expect(platformLabel('opencode')).toBe('OpenCode')
+    expect(platformBadgeClass('opencode')).toContain('slate')
+    expect(platformButtonClass('opencode')).toContain('slate')
+    expect(platformBadgeClass('opencode')).not.toBe(platformBadgeClass('openai'))
+    expect(platformBadgeClass('opencode')).not.toBe(platformBadgeClass('windsurf'))
+  })
 })

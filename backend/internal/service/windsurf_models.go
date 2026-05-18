@@ -59,25 +59,29 @@ func FetchWindsurfAvailableModelIDs(ctx context.Context, account *Account, httpC
 }
 
 func parseWindsurfModelListBody(body []byte) ([]string, error) {
-	var payload any
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return nil, fmt.Errorf("parse windsurf models response: %w", err)
-	}
-	return normalizeWindsurfFetchedModelIDs(collectWindsurfModelIDs(payload)), nil
+	return parseCompatibleGatewayModelListBody(body, "windsurf")
 }
 
-func collectWindsurfModelIDs(value any) []string {
+func parseCompatibleGatewayModelListBody(body []byte, provider string) ([]string, error) {
+	var payload any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, fmt.Errorf("parse %s models response: %w", provider, err)
+	}
+	return normalizeCompatibleGatewayFetchedModelIDs(collectCompatibleGatewayModelIDs(payload)), nil
+}
+
+func collectCompatibleGatewayModelIDs(value any) []string {
 	switch typed := value.(type) {
 	case []any:
 		var modelIDs []string
 		for _, item := range typed {
-			modelIDs = append(modelIDs, collectWindsurfModelIDs(item)...)
+			modelIDs = append(modelIDs, collectCompatibleGatewayModelIDs(item)...)
 		}
 		return modelIDs
 	case map[string]any:
 		for _, key := range []string{"data", "models"} {
 			if nested, ok := typed[key]; ok {
-				if modelIDs := collectWindsurfModelIDs(nested); len(modelIDs) > 0 {
+				if modelIDs := collectCompatibleGatewayModelIDs(nested); len(modelIDs) > 0 {
 					return modelIDs
 				}
 			}
@@ -93,7 +97,7 @@ func collectWindsurfModelIDs(value any) []string {
 	return nil
 }
 
-func normalizeWindsurfFetchedModelIDs(candidates []string) []string {
+func normalizeCompatibleGatewayFetchedModelIDs(candidates []string) []string {
 	seen := make(map[string]struct{}, len(candidates))
 	modelIDs := make([]string, 0, len(candidates))
 	for _, candidate := range candidates {

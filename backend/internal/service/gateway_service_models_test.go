@@ -78,3 +78,14 @@ func TestGatewayServiceGetAvailableModelsDomesticIncludesAliasesWhenConfigured(t
 		"deepseek-v4-pro",
 	})
 }
+
+func TestGatewayServiceGetAvailableModelsOpenCodeDefaultsWhenNoAccounts(t *testing.T) {
+	svc := &GatewayService{
+		accountRepo: &modelsListAccountRepoStub{},
+		cfg:         &config.Config{},
+	}
+
+	models := svc.GetAvailableModels(context.Background(), nil, PlatformOpenCode)
+
+	assertStringSlicesEqual(t, models, []string{"gpt5-nano", "opencode/big-pickle", "opencode/gpt5-nano"})
+}

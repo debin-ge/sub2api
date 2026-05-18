@@ -116,7 +116,8 @@ const platformOptions = computed(() => [
   { value: 'glm', label: 'GLM' },
   { value: 'kimi', label: 'Kimi' },
   { value: 'deepseek', label: 'DeepSeek' },
-  { value: 'windsurf', label: 'Windsurf' }
+  { value: 'windsurf', label: 'Windsurf' },
+  { value: 'opencode', label: 'OpenCode' }
 ])
 
 const timeRangeOptions = computed(() => [

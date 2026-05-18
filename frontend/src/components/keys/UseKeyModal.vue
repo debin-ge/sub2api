@@ -185,6 +185,8 @@ const defaultClientTab = computed(() => {
       return 'gemini'
     case 'antigravity':
       return 'claude'
+    case 'opencode':
+      return 'opencode'
     default:
       return 'claude'
   }
@@ -286,6 +288,10 @@ const clientTabs = computed((): TabConfig[] => {
       return [
         { id: 'claude', label: t('keys.useKeyModal.cliTabs.claudeCode'), icon: TerminalIcon },
         { id: 'gemini', label: t('keys.useKeyModal.cliTabs.geminiCli'), icon: SparkleIcon },
+        { id: 'opencode', label: t('keys.useKeyModal.cliTabs.opencode'), icon: TerminalIcon }
+      ]
+    case 'opencode':
+      return [
         { id: 'opencode', label: t('keys.useKeyModal.cliTabs.opencode'), icon: TerminalIcon }
       ]
     default:
@@ -413,6 +419,8 @@ const currentFiles = computed((): FileConfig[] => {
         return [generateOpenCodeConfig('glm', apiBase, apiKey, 'opencode.json (GLM)')]
       case 'kimi':
         return [generateOpenCodeConfig('kimi', apiBase, apiKey, 'opencode.json (Kimi)')]
+      case 'opencode':
+        return [generateOpenCodeConfig('opencode', apiBase, apiKey, 'opencode.json (OpenCode)')]
       default:
         return [generateOpenCodeConfig('openai', apiBase, apiKey)]
     }
@@ -1189,6 +1197,23 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
       modalities: { input: ['text'], output: ['text'] }
     }
   }
+  const opencodeModels = {
+    'opencode/big-pickle': {
+      name: 'OpenCode Big Pickle',
+      limit: { context: 200000, output: 64000 },
+      modalities: { input: ['text'], output: ['text'] }
+    },
+    'opencode/gpt5-nano': {
+      name: 'OpenCode GPT-5 Nano',
+      limit: { context: 200000, output: 64000 },
+      modalities: { input: ['text'], output: ['text'] }
+    },
+    'gpt5-nano': {
+      name: 'GPT-5 Nano',
+      limit: { context: 200000, output: 64000 },
+      modalities: { input: ['text'], output: ['text'] }
+    }
+  }
 
   if (platform === 'gemini') {
     provider[platform].npm = '@ai-sdk/google'
@@ -1215,6 +1240,10 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     provider[platform].npm = '@ai-sdk/openai'
     provider[platform].name = 'Windsurf'
     provider[platform].models = windsurfModels
+  } else if (platform === 'opencode') {
+    provider[platform].npm = '@ai-sdk/openai'
+    provider[platform].name = 'OpenCode'
+    provider[platform].models = opencodeModels
   } else if (platform === 'antigravity-claude') {
     provider[platform].npm = '@ai-sdk/anthropic'
     provider[platform].name = 'Antigravity (Claude)'

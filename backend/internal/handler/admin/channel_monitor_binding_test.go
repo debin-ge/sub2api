@@ -24,7 +24,7 @@ func TestChannelMonitorProviderBindingsAllowDomesticProviders(t *testing.T) {
 				t.Fatalf("field %s not found", tc.field)
 			}
 			binding := field.Tag.Get("binding")
-			for _, provider := range []string{"minimax", "glm", "kimi", "deepseek", "windsurf"} {
+			for _, provider := range []string{"minimax", "glm", "kimi", "deepseek", "windsurf", "opencode"} {
 				if !strings.Contains(binding, provider) {
 					t.Fatalf("binding %q does not include provider %q", binding, provider)
 				}

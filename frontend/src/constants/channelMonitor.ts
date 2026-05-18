@@ -17,6 +17,7 @@ export const PROVIDER_GLM: Provider = 'glm'
 export const PROVIDER_KIMI: Provider = 'kimi'
 export const PROVIDER_DEEPSEEK: Provider = 'deepseek'
 export const PROVIDER_WINDSURF: Provider = 'windsurf'
+export const PROVIDER_OPENCODE: Provider = 'opencode'
 
 export const PROVIDERS: readonly Provider[] = [
   PROVIDER_ANTHROPIC,
@@ -27,6 +28,7 @@ export const PROVIDERS: readonly Provider[] = [
   PROVIDER_KIMI,
   PROVIDER_DEEPSEEK,
   PROVIDER_WINDSURF,
+  PROVIDER_OPENCODE,
 ]
 
 export const STATUS_OPERATIONAL: MonitorStatus = 'operational'

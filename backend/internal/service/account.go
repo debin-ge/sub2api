@@ -1406,6 +1406,61 @@ func (a *Account) IsWindsurfModelSupported(model string) bool {
 	return ok
 }
 
+func (a *Account) IsOpenCode() bool {
+	return a != nil && a.Platform == PlatformOpenCode
+}
+
+func (a *Account) IsOpenCodeAPIKey() bool {
+	if a == nil || a.Platform != PlatformOpenCode {
+		return false
+	}
+	if a.Type != AccountTypeAPIKey {
+		return false
+	}
+	return strings.TrimSpace(a.GetCredential("api_key")) != ""
+}
+
+func (a *Account) GetOpenCodeAPIKey() string {
+	if a == nil || a.Platform != PlatformOpenCode {
+		return ""
+	}
+	return strings.TrimSpace(a.GetCredential("api_key"))
+}
+
+func (a *Account) GetOpenCodeBaseURL() string {
+	if a == nil || a.Platform != PlatformOpenCode {
+		return ""
+	}
+	return strings.TrimRight(strings.TrimSpace(a.GetCredential("base_url")), "/")
+}
+
+func DefaultOpenCodeModelIDs() []string {
+	return DefaultDomesticProviderModelIDs(PlatformOpenCode)
+}
+
+func (a *Account) GetOpenCodeMappedModel(model string) string {
+	trimmed := strings.TrimSpace(model)
+	if a == nil || a.Platform != PlatformOpenCode {
+		return trimmed
+	}
+	if mapped, ok := ResolveAccountProviderModel(a, trimmed); ok {
+		return mapped.UpstreamModel
+	}
+	return trimmed
+}
+
+func (a *Account) IsOpenCodeModelSupported(model string) bool {
+	trimmed := strings.TrimSpace(model)
+	if a == nil || a.Platform != PlatformOpenCode || trimmed == "" {
+		return false
+	}
+	if providerSupportsUpstreamModel(PlatformOpenCode, trimmed) {
+		return true
+	}
+	_, ok := ResolveAccountProviderModel(a, trimmed)
+	return ok
+}
+
 func (a *Account) IsOpenAIOAuth() bool {
 	return a.IsOpenAI() && a.Type == AccountTypeOAuth
 }

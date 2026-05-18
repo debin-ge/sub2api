@@ -92,6 +92,11 @@ func ProvideWindsurfGatewayService(cfg *config.Config) *WindsurfGatewayService {
 	return NewWindsurfGatewayServiceWithTimeout(nil, compileResponseHeaderFilter(cfg), compatibleGatewayUpstreamTimeoutFromConfig(cfg))
 }
 
+// ProvideOpenCodeGatewayService creates the OpenCode2API-compatible gateway service.
+func ProvideOpenCodeGatewayService(cfg *config.Config) *OpenCodeGatewayService {
+	return NewOpenCodeGatewayServiceWithTimeout(nil, compileResponseHeaderFilter(cfg), compatibleGatewayUpstreamTimeoutFromConfig(cfg))
+}
+
 // ProvideTokenRefreshService creates and starts TokenRefreshService
 func ProvideTokenRefreshService(
 	accountRepo AccountRepository,
@@ -511,6 +516,7 @@ var ProviderSet = wire.NewSet(
 	ProvideKimiGatewayService,
 	ProvideDeepSeekGatewayService,
 	ProvideWindsurfGatewayService,
+	ProvideOpenCodeGatewayService,
 	NewOAuthService,
 	NewOpenAIOAuthService,
 	NewGeminiOAuthService,

@@ -26,6 +26,7 @@ func newGatewayRoutesTestRouterForPlatform(platform string) *gin.Engine {
 		GLMGateway:      &handler.GLMGatewayHandler{},
 		KimiGateway:     &handler.KimiGatewayHandler{},
 		DeepSeekGateway: &handler.DeepSeekGatewayHandler{},
+		OpenCodeGateway: &handler.OpenCodeGatewayHandler{},
 	})
 }
 
@@ -466,4 +467,106 @@ func TestGatewayRoutesDeepSeekModelsReturnsDefaultList(t *testing.T) {
 	require.Contains(t, w.Body.String(), "deepseek-v4-pro")
 	require.NotContains(t, w.Body.String(), "deepseek-chat")
 	require.NotContains(t, w.Body.String(), "claude-sonnet")
+}
+
+func TestGatewayRoutesOpenCodeMessagesUnsupported(t *testing.T) {
+	router := newGatewayRoutesTestRouterForPlatform(service.PlatformOpenCode)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"opencode/big-pickle","messages":[{"role":"user","content":"hello"}]}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusNotFound, w.Code)
+	require.Contains(t, w.Body.String(), "OpenCode gateway supports /v1/models, /v1/chat/completions, and /v1/responses only")
+}
+
+func TestGatewayRoutesOpenCodeChatCompletionsDispatchesToOpenCodeHandler(t *testing.T) {
+	router := newGatewayRoutesTestRouterForPlatform(service.PlatformOpenCode)
+
+	for _, path := range []string{"/v1/chat/completions", "/chat/completions"} {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"model":"opencode/big-pickle","messages":[{"role":"user","content":"hello"}]}`))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusServiceUnavailable, w.Code, "path=%s", path)
+		require.Contains(t, w.Body.String(), "opencode gateway service unavailable", "path=%s", path)
+	}
+}
+
+func TestGatewayRoutesOpenCodeResponsesDispatchesToOpenCodeHandler(t *testing.T) {
+	router := newGatewayRoutesTestRouterForPlatform(service.PlatformOpenCode)
+
+	for _, path := range []string{
+		"/v1/responses",
+		"/v1/responses/compact",
+		"/responses",
+		"/responses/compact",
+		"/backend-api/codex/responses",
+		"/backend-api/codex/responses/compact",
+	} {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"model":"opencode/big-pickle","input":"hello"}`))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusServiceUnavailable, w.Code, "path=%s", path)
+		require.Contains(t, w.Body.String(), "opencode gateway service unavailable", "path=%s", path)
+	}
+}
+
+func TestGatewayRoutesOpenCodeUnsupportedEndpointsReturnNotFound(t *testing.T) {
+	router := newGatewayRoutesTestRouterForPlatform(service.PlatformOpenCode)
+
+	for _, path := range []string{
+		"/v1/messages/count_tokens",
+		"/v1/images/generations",
+		"/v1/images/edits",
+		"/images/generations",
+		"/images/edits",
+	} {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"model":"opencode/big-pickle"}`))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusNotFound, w.Code, "path=%s should be OpenCode unsupported", path)
+		require.Contains(t, w.Body.String(), "not_found_error", "path=%s", path)
+		require.Contains(t, w.Body.String(), "OpenCode gateway supports /v1/models, /v1/chat/completions, and /v1/responses only", "path=%s", path)
+	}
+}
+
+func TestGatewayRoutesOpenCodeUnsupportedGetEndpointsReturnNotFound(t *testing.T) {
+	router := newGatewayRoutesTestRouterForPlatform(service.PlatformOpenCode)
+
+	for _, path := range []string{
+		"/v1/usage",
+		"/v1/responses",
+		"/responses",
+		"/backend-api/codex/responses",
+	} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		w := httptest.NewRecorder()
+
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusNotFound, w.Code, "path=%s should be OpenCode unsupported", path)
+		require.Contains(t, w.Body.String(), "not_found_error", "path=%s", path)
+		require.Contains(t, w.Body.String(), "OpenCode gateway supports /v1/models, /v1/chat/completions, and /v1/responses only", "path=%s", path)
+	}
+}
+
+func TestGatewayRoutesOpenCodeModelsDispatchesToOpenCodeHandler(t *testing.T) {
+	router := newGatewayRoutesTestRouterForPlatform(service.PlatformOpenCode)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusServiceUnavailable, w.Code)
+	require.Contains(t, w.Body.String(), "opencode gateway service unavailable")
 }

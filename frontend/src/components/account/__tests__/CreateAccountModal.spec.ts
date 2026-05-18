@@ -84,7 +84,7 @@ const ModelWhitelistSelectorStub = defineComponent({
       <button
         type="button"
         data-testid="select-models"
-        @click="$emit('update:modelValue', platform === 'glm' ? ['GLM-4.7'] : platform === 'kimi' ? ['kimi-for-coding'] : platform === 'deepseek' ? ['deepseek-v4-pro'] : platform === 'windsurf' ? ['claude-sonnet-4.6'] : ['gpt-5.2'])"
+        @click="$emit('update:modelValue', platform === 'glm' ? ['GLM-4.7'] : platform === 'kimi' ? ['kimi-for-coding'] : platform === 'deepseek' ? ['deepseek-v4-pro'] : platform === 'windsurf' ? ['claude-sonnet-4.6'] : platform === 'opencode' ? ['opencode/gpt5-nano'] : ['gpt-5.2'])"
       >
         select
       </button>
@@ -371,6 +371,50 @@ describe('CreateAccountModal', () => {
         base_url: 'https://custom.example/windsurf',
         model_mapping: {
           'claude-sonnet-4.6': 'claude-sonnet-4.6'
+        }
+      })
+    }))
+    expect(Object.keys(payload.credentials).sort()).toEqual(['api_key', 'base_url', 'model_mapping'])
+    expect(payload.credentials.base_url_anthropic).toBeUndefined()
+    expect(payload.credentials.base_url_openai).toBeUndefined()
+    expect(checkMixedChannelRiskMock).not.toHaveBeenCalled()
+  })
+
+  it('submits OpenCode API key credentials with a single OpenCode2API base URL', async () => {
+    createAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    createAccountMock.mockResolvedValue({ id: 6 })
+
+    const wrapper = mountModal()
+
+    expect(wrapper.find('[data-testid="create-platform-opencode"]').exists()).toBe(true)
+
+    await wrapper.get('[data-tour="account-form-name"]').setValue('OpenCode Gateway')
+    await wrapper.get('[data-testid="create-platform-opencode"]').trigger('click')
+    expect(wrapper.text()).toContain('admin.accounts.opencode.apiKeyHint')
+    expect(wrapper.find('[data-testid="opencode-base-url"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="model-whitelist-selector"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="model-whitelist-platform"]').text()).toBe('opencode')
+    expect(wrapper.find('[data-testid="quota-limit-card"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="opencode-api-key"]').setValue('sk-opencode-test')
+    await wrapper.get('[data-testid="opencode-base-url"]').setValue('https://custom.example/opencode')
+    await wrapper.get('[data-testid="select-models"]').trigger('click')
+    expect(wrapper.get('[data-testid="model-whitelist-value"]').text()).toBe('opencode/gpt5-nano')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createAccountMock).toHaveBeenCalledTimes(1)
+    const payload = createAccountMock.mock.calls[0]?.[0]
+    expect(payload).toEqual(expect.objectContaining({
+      name: 'OpenCode Gateway',
+      platform: 'opencode',
+      type: 'apikey',
+      credentials: expect.objectContaining({
+        api_key: 'sk-opencode-test',
+        base_url: 'https://custom.example/opencode',
+        model_mapping: {
+          'opencode/gpt5-nano': 'opencode/gpt5-nano'
         }
       })
     }))

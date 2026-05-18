@@ -70,7 +70,7 @@
       <!-- Platform Selection - Segmented Control Style -->
       <div>
         <label class="input-label">{{ t('admin.accounts.platform') }}</label>
-        <div class="mt-2 grid grid-cols-2 gap-1 rounded-lg bg-gray-100 p-1 dark:bg-dark-700 sm:grid-cols-4 lg:grid-cols-9" data-tour="account-form-platform">
+        <div class="mt-2 grid grid-cols-2 gap-1 rounded-lg bg-gray-100 p-1 dark:bg-dark-700 sm:grid-cols-5 lg:grid-cols-10" data-tour="account-form-platform">
           <button
             type="button"
             @click="form.platform = 'anthropic'"
@@ -216,6 +216,20 @@
           >
             <Icon name="key" size="sm" />
             Windsurf
+          </button>
+          <button
+            type="button"
+            data-testid="create-platform-opencode"
+            @click="form.platform = 'opencode'"
+            :class="[
+              'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2.5 text-sm font-medium transition-all',
+              form.platform === 'opencode'
+                ? 'bg-white text-slate-700 shadow-sm dark:bg-dark-600 dark:text-slate-300'
+                : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
+            ]"
+          >
+            <Icon name="key" size="sm" />
+            OpenCode
           </button>
         </div>
       </div>
@@ -1245,6 +1259,31 @@
               type="text"
               class="input font-mono"
               :placeholder="WINDSURF_BASE_URL"
+            />
+          </div>
+        </template>
+        <template v-else-if="form.platform === 'opencode'">
+          <div>
+            <label class="input-label">OpenCode API Key</label>
+            <input
+              v-model="apiKeyValue"
+              data-testid="opencode-api-key"
+              type="password"
+              required
+              class="input font-mono"
+              placeholder="sk-..."
+            />
+            <p class="input-hint">{{ apiKeyHint }}</p>
+          </div>
+          <div>
+            <label class="input-label">Base URL</label>
+            <input
+              v-model="opencodeBaseUrl"
+              data-testid="opencode-base-url"
+              type="text"
+              required
+              class="input font-mono"
+              placeholder="http://127.0.0.1:8080"
             />
           </div>
         </template>
@@ -3385,6 +3424,7 @@ import {
   DEEPSEEK_ANTHROPIC_BASE_URL,
   DEEPSEEK_OPENAI_BASE_URL,
   WINDSURF_BASE_URL,
+  OPENCODE_BASE_URL,
   VERTEX_LOCATION_OPTIONS
 } from '@/constants/account'
 import {
@@ -3435,10 +3475,11 @@ const apiKeyHint = computed(() => {
   if (form.platform === 'kimi') return t('admin.accounts.kimi.apiKeyHint')
   if (form.platform === 'deepseek') return t('admin.accounts.deepseek.apiKeyHint')
   if (form.platform === 'windsurf') return t('admin.accounts.windsurf.apiKeyHint')
+  if (form.platform === 'opencode') return t('admin.accounts.opencode.apiKeyHint')
   return t('admin.accounts.apiKeyHint')
 })
 
-const isFixedEndpointGatewayPlatformValue = (platform?: string) => platform === 'glm' || platform === 'kimi' || platform === 'deepseek' || platform === 'windsurf'
+const isFixedEndpointGatewayPlatformValue = (platform?: string) => platform === 'glm' || platform === 'kimi' || platform === 'deepseek' || platform === 'windsurf' || platform === 'opencode'
 const isFixedEndpointGatewayPlatform = computed(() => isFixedEndpointGatewayPlatformValue(form.platform))
 
 interface Props {
@@ -3522,6 +3563,7 @@ const kimiOpenAIBaseUrl = ref(KIMI_OPENAI_BASE_URL)
 const deepseekAnthropicBaseUrl = ref(DEEPSEEK_ANTHROPIC_BASE_URL)
 const deepseekOpenAIBaseUrl = ref(DEEPSEEK_OPENAI_BASE_URL)
 const windsurfBaseUrl = ref(WINDSURF_BASE_URL)
+const opencodeBaseUrl = ref(OPENCODE_BASE_URL)
 const editQuotaLimit = ref<number | null>(null)
 const editQuotaDailyLimit = ref<number | null>(null)
 const editQuotaWeeklyLimit = ref<number | null>(null)
@@ -3858,6 +3900,10 @@ watch(
       form.type = 'apikey'
       return
     }
+    if (form.platform === 'opencode') {
+      form.type = 'apikey'
+      return
+    }
     // Antigravity upstream 类型（实际创建为 apikey）
     if (form.platform === 'antigravity' && agType === 'upstream') {
       form.type = 'apikey'
@@ -3899,7 +3945,9 @@ watch(
                   ? DEEPSEEK_ANTHROPIC_BASE_URL
                   : newPlatform === 'windsurf'
                     ? WINDSURF_BASE_URL
-                  : 'https://api.anthropic.com'
+                    : newPlatform === 'opencode'
+                      ? OPENCODE_BASE_URL
+                      : 'https://api.anthropic.com'
     minimaxAnthropicBaseUrl.value = MINIMAX_ANTHROPIC_BASE_URL
     minimaxOpenAIBaseUrl.value = MINIMAX_OPENAI_BASE_URL
     glmAnthropicBaseUrl.value = GLM_ANTHROPIC_BASE_URL
@@ -3909,6 +3957,7 @@ watch(
     deepseekAnthropicBaseUrl.value = DEEPSEEK_ANTHROPIC_BASE_URL
     deepseekOpenAIBaseUrl.value = DEEPSEEK_OPENAI_BASE_URL
     windsurfBaseUrl.value = WINDSURF_BASE_URL
+    opencodeBaseUrl.value = OPENCODE_BASE_URL
     // Clear model-related settings
     allowedModels.value = []
     modelMappings.value = []
@@ -3943,6 +3992,10 @@ watch(
     }
     if (newPlatform === 'windsurf') {
       accountCategory.value = 'apikey'
+    }
+    if (newPlatform === 'opencode') {
+      accountCategory.value = 'apikey'
+      modelRestrictionMode.value = 'whitelist'
     }
     if (newPlatform !== 'gemini' && newPlatform !== 'anthropic' && accountCategory.value === 'service_account') {
       accountCategory.value = 'oauth-based'
@@ -4360,6 +4413,7 @@ const resetForm = () => {
   deepseekAnthropicBaseUrl.value = DEEPSEEK_ANTHROPIC_BASE_URL
   deepseekOpenAIBaseUrl.value = DEEPSEEK_OPENAI_BASE_URL
   windsurfBaseUrl.value = WINDSURF_BASE_URL
+  opencodeBaseUrl.value = OPENCODE_BASE_URL
   editQuotaLimit.value = null
   editQuotaDailyLimit.value = null
   editQuotaWeeklyLimit.value = null
@@ -4770,6 +4824,11 @@ const handleSubmit = async () => {
               api_key: apiKeyValue.value.trim(),
               base_url: windsurfBaseUrl.value.trim() || WINDSURF_BASE_URL
             }
+          : form.platform === 'opencode'
+            ? {
+                api_key: apiKeyValue.value.trim(),
+                base_url: opencodeBaseUrl.value.trim()
+              }
     : {
         base_url: apiKeyBaseUrl.value.trim() || defaultBaseUrl,
         api_key: apiKeyValue.value.trim()

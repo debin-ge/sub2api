@@ -90,6 +90,12 @@ describe('useModelWhitelist', () => {
     expect(models.indexOf('claude-sonnet-4-6')).toBeLessThan(models.indexOf('claude-sonnet-4.6'))
   })
 
+  it('opencode 模型列表包含 OpenCode2API 默认模型', () => {
+    const models = getModelsByPlatform('opencode')
+
+    expect(models).toEqual(['opencode/big-pickle', 'opencode/gpt5-nano', 'gpt5-nano'])
+  })
+
   it('glm 预设映射 Claude family aliases to GLM models', () => {
     const mappings = getPresetMappingsByPlatform('glm')
 
@@ -168,5 +174,15 @@ describe('useModelWhitelist', () => {
     expect(mapping).toEqual({
       'gpt-5.4-mini': 'gpt-5.4-mini'
     })
+  })
+
+  it('opencode 预设映射提供默认模型透传', () => {
+    const mappings = getPresetMappingsByPlatform('opencode')
+
+    expect(mappings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ from: 'opencode/big-pickle', to: 'opencode/big-pickle' }),
+      expect.objectContaining({ from: 'opencode/gpt5-nano', to: 'opencode/gpt5-nano' }),
+      expect.objectContaining({ from: 'gpt5-nano', to: 'gpt5-nano' })
+    ]))
   })
 })
