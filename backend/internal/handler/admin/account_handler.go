@@ -2152,7 +2152,16 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 
 	// Handle Windsurf reverse proxy API Key accounts.
 	if account.Platform == service.PlatformWindsurf {
-		response.Success(c, buildWindsurfAvailableModels())
+		modelIDs, err := service.FetchWindsurfAvailableModelIDs(c.Request.Context(), account, nil)
+		if err != nil {
+			slog.WarnContext(c.Request.Context(), "windsurf.available_models.fetch_failed",
+				slog.Int64("account_id", account.ID),
+				slog.String("error", err.Error()),
+			)
+			response.Success(c, buildWindsurfAvailableModels())
+			return
+		}
+		response.Success(c, buildWindsurfAvailableModelsFromIDs(modelIDs))
 		return
 	}
 
@@ -2257,7 +2266,10 @@ func buildDeepSeekAvailableModels() []claude.Model {
 }
 
 func buildWindsurfAvailableModels() []claude.Model {
-	modelIDs := service.DefaultWindsurfModelIDs()
+	return buildWindsurfAvailableModelsFromIDs(service.DefaultWindsurfModelIDs())
+}
+
+func buildWindsurfAvailableModelsFromIDs(modelIDs []string) []claude.Model {
 	models := make([]claude.Model, 0, len(modelIDs))
 	for _, modelID := range modelIDs {
 		models = append(models, claude.Model{

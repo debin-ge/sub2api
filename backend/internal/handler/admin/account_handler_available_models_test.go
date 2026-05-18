@@ -244,6 +244,11 @@ func TestAccountHandlerGetAvailableModels_DeepSeekReturnsOfficialModels(t *testi
 }
 
 func TestAccountHandlerGetAvailableModels_WindsurfReturnsOfficialModels(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "not implemented", http.StatusNotFound)
+	}))
+	defer upstream.Close()
+
 	svc := &availableModelsAdminService{
 		stubAdminService: newStubAdminService(),
 		account: service.Account{
@@ -253,7 +258,8 @@ func TestAccountHandlerGetAvailableModels_WindsurfReturnsOfficialModels(t *testi
 			Type:     service.AccountTypeAPIKey,
 			Status:   service.StatusActive,
 			Credentials: map[string]any{
-				"api_key": "sk-windsurf",
+				"api_key":  "sk-windsurf",
+				"base_url": upstream.URL,
 				"model_mapping": map[string]any{
 					"claude-3-5-sonnet-latest": "claude-sonnet-4.6",
 				},
@@ -279,4 +285,50 @@ func TestAccountHandlerGetAvailableModels_WindsurfReturnsOfficialModels(t *testi
 	for i, modelID := range expected {
 		require.Equal(t, modelID, resp.Data[i].ID)
 	}
+}
+
+func TestAccountHandlerGetAvailableModels_WindsurfFetchesUpstreamModels(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			t.Errorf("path = %q, want /v1/models", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer sk-windsurf" {
+			t.Errorf("authorization = %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"object":"list","data":[{"id":"claude-opus-4-7-max"},{"id":"gpt-5-5-high-priority"}]}`))
+	}))
+	defer upstream.Close()
+
+	svc := &availableModelsAdminService{
+		stubAdminService: newStubAdminService(),
+		account: service.Account{
+			ID:       49,
+			Name:     "windsurf-api",
+			Platform: service.PlatformWindsurf,
+			Type:     service.AccountTypeAPIKey,
+			Status:   service.StatusActive,
+			Credentials: map[string]any{
+				"api_key":  "sk-windsurf",
+				"base_url": upstream.URL,
+			},
+		},
+	}
+	router := setupAvailableModelsRouter(svc)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/accounts/49/models", nil)
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var resp struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Equal(t, []struct {
+		ID string `json:"id"`
+	}{{ID: "claude-opus-4-7-max"}, {ID: "gpt-5-5-high-priority"}}, resp.Data)
 }

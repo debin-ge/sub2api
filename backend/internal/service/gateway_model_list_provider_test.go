@@ -68,10 +68,13 @@ func TestGatewayModelListProviderWindsurfDefaultsAndAccountMappings(t *testing.T
 
 	models := provider.ModelsForProvider(PlatformWindsurf, accounts)
 	mustContainStrings(t, models, []string{
-		"claude-sonnet-4.6",
-		"claude-opus-4.6",
-		"gpt-5.4",
-		"swe-1.6",
+		"claude-sonnet-4-6",
+		"claude-opus-4-7-xhigh",
+		"claude-opus-4-7-max",
+		"gpt-5-5-high",
+		"gpt-5-5-xhigh-priority",
+		"gpt-5-4-high",
+		"swe-1-6",
 		"claude-3-5-sonnet-latest",
 		"opus",
 	})

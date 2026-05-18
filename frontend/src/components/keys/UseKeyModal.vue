@@ -1093,6 +1093,81 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     }
   }
   const windsurfModels = {
+    'claude-sonnet-4-6': {
+      name: 'Claude Sonnet 4.6',
+      limit: { context: 200000, output: 64000 },
+      modalities: { input: ['text'], output: ['text'] }
+    },
+    'claude-sonnet-4-6-thinking': {
+      name: 'Claude Sonnet 4.6 Thinking',
+      limit: { context: 200000, output: 64000 },
+      modalities: { input: ['text'], output: ['text'] }
+    },
+    'claude-opus-4-7-xhigh': {
+      name: 'Claude Opus 4.7 XHigh',
+      limit: { context: 200000, output: 64000 },
+      modalities: { input: ['text'], output: ['text'] }
+    },
+    'claude-opus-4-7-xhigh-fast': {
+      name: 'Claude Opus 4.7 XHigh Fast',
+      limit: { context: 200000, output: 64000 },
+      modalities: { input: ['text'], output: ['text'] }
+    },
+    'claude-opus-4-7-max': {
+      name: 'Claude Opus 4.7 Max',
+      limit: { context: 200000, output: 64000 },
+      modalities: { input: ['text'], output: ['text'] }
+    },
+    'claude-opus-4-7-max-fast': {
+      name: 'Claude Opus 4.7 Max Fast',
+      limit: { context: 200000, output: 64000 },
+      modalities: { input: ['text'], output: ['text'] }
+    },
+    'gpt-5-5-high': {
+      name: 'GPT-5.5 High Thinking',
+      limit: { context: 200000, output: 64000 },
+      modalities: { input: ['text'], output: ['text'] }
+    },
+    'gpt-5-5-high-priority': {
+      name: 'GPT-5.5 High Thinking Fast',
+      limit: { context: 200000, output: 64000 },
+      modalities: { input: ['text'], output: ['text'] }
+    },
+    'gpt-5-5-xhigh': {
+      name: 'GPT-5.5 XHigh Thinking',
+      limit: { context: 200000, output: 64000 },
+      modalities: { input: ['text'], output: ['text'] }
+    },
+    'gpt-5-5-xhigh-priority': {
+      name: 'GPT-5.5 XHigh Thinking Fast',
+      limit: { context: 200000, output: 64000 },
+      modalities: { input: ['text'], output: ['text'] }
+    },
+    'gpt-5-4-high': {
+      name: 'GPT-5.4 High Thinking',
+      limit: { context: 200000, output: 64000 },
+      modalities: { input: ['text'], output: ['text'] }
+    },
+    'gpt-5-4-xhigh-priority': {
+      name: 'GPT-5.4 XHigh Thinking Fast',
+      limit: { context: 200000, output: 64000 },
+      modalities: { input: ['text'], output: ['text'] }
+    },
+    'gemini-3-1-pro-high': {
+      name: 'Gemini 3.1 Pro High Thinking',
+      limit: { context: 200000, output: 64000 },
+      modalities: { input: ['text'], output: ['text'] }
+    },
+    'swe-1-6': {
+      name: 'SWE-1.6',
+      limit: { context: 200000, output: 64000 },
+      modalities: { input: ['text'], output: ['text'] }
+    },
+    'swe-1-6-fast': {
+      name: 'SWE-1.6 Fast',
+      limit: { context: 200000, output: 64000 },
+      modalities: { input: ['text'], output: ['text'] }
+    },
     'claude-sonnet-4.6': {
       name: 'Claude Sonnet 4.6',
       limit: { context: 200000, output: 64000 },

@@ -38,7 +38,7 @@ func TestAccountTestServiceWindsurfUsesOpenAICompatibleBearerProbe(t *testing.T)
 	require.Equal(t, "https://tik.frontech.dev:3003/v1/chat/completions", upstream.req.URL.String())
 	require.Equal(t, "Bearer sk-windsurf", upstream.req.Header.Get("Authorization"))
 	require.Empty(t, upstream.req.Header.Get("x-api-key"))
-	require.Equal(t, "claude-sonnet-4.6", gjson.GetBytes(upstream.body, "model").String())
+	require.Equal(t, "claude-sonnet-4-6", gjson.GetBytes(upstream.body, "model").String())
 	require.False(t, gjson.GetBytes(upstream.body, "stream").Bool())
 	require.Contains(t, rec.Body.String(), `"type":"test_complete"`)
 }

@@ -8,6 +8,101 @@ type ProviderGatewayCapabilities struct {
 	AliasRules        []ModelAliasRule
 }
 
+// windsurfOfficialModelIDs is the static fallback catalog used when the
+// reverse proxy cannot expose /v1/models. Keep it aligned with Windsurf's
+// public model_uid list.
+var windsurfOfficialModelIDs = []string{
+	"claude-sonnet-4-6",
+	"claude-sonnet-4-6-thinking",
+	"claude-sonnet-4-6-1m",
+	"claude-sonnet-4-6-thinking-1m",
+	"claude-opus-4-7-xhigh",
+	"claude-opus-4-7-xhigh-fast",
+	"claude-opus-4-7-max",
+	"claude-opus-4-7-max-fast",
+	"claude-opus-4-7-high",
+	"claude-opus-4-7-high-fast",
+	"claude-opus-4-7-medium",
+	"claude-opus-4-7-medium-fast",
+	"claude-opus-4-7-low",
+	"claude-opus-4-7-low-fast",
+	"claude-opus-4-6",
+	"claude-opus-4-6-thinking",
+	"claude-opus-4-6-fast",
+	"claude-opus-4-6-thinking-fast",
+	"claude-opus-4-6-1m",
+	"claude-opus-4-6-thinking-1m",
+	"gpt-5-5-high",
+	"gpt-5-5-high-priority",
+	"gpt-5-5-xhigh",
+	"gpt-5-5-xhigh-priority",
+	"gpt-5-5-medium",
+	"gpt-5-5-medium-priority",
+	"gpt-5-5-low",
+	"gpt-5-5-low-priority",
+	"gpt-5-5-none",
+	"gpt-5-5-none-priority",
+	"gpt-5-5-review",
+	"gpt-5-4-high",
+	"gpt-5-4-high-priority",
+	"gpt-5-4-xhigh",
+	"gpt-5-4-xhigh-priority",
+	"gpt-5-4-medium",
+	"gpt-5-4-medium-priority",
+	"gpt-5-4-low",
+	"gpt-5-4-low-priority",
+	"gpt-5-4-none",
+	"gpt-5-4-none-priority",
+	"gpt-5-4-mini-high",
+	"gpt-5-4-mini-xhigh",
+	"gpt-5-4-mini-medium",
+	"gpt-5-4-mini-low",
+	"gpt-5-3-codex-high",
+	"gpt-5-3-codex-high-priority",
+	"gpt-5-3-codex-xhigh",
+	"gpt-5-3-codex-xhigh-priority",
+	"gpt-5-3-codex-medium",
+	"gpt-5-3-codex-medium-priority",
+	"gpt-5-3-codex-low",
+	"gpt-5-3-codex-low-priority",
+	"gpt-5-3-codex-spark-medium",
+	"gemini-3-1-pro-high",
+	"gemini-3-1-pro-low",
+	"deepseek-v4",
+	"glm-5-1",
+	"kimi-k2-6",
+	"kimi-k2-5",
+	"minimax-m2-5",
+	"swe-1-6",
+	"swe-1-6-fast",
+	"swe-check",
+	"adaptive",
+	"arena-smart",
+	"arena-mixed",
+	"arena-fast",
+	"opus-4-7-review",
+}
+
+var windsurfLegacyModelIDs = []string{
+	"claude-sonnet-4.6",
+	"claude-sonnet-4.6-thinking",
+	"claude-opus-4.6",
+	"claude-opus-4.6-thinking",
+	"claude-opus-4.6-fast",
+	"claude-opus-4.6-fast-thinking",
+	"gpt-5.4",
+	"gpt-5.4-mini",
+	"gpt-5.3-codex-spark",
+	"gemini-3.1-pro",
+	"glm-5",
+	"minimax-m2.5",
+	"swe-1.6",
+	"swe-1.6-fast",
+	"swe-1.5",
+	"swe-1",
+	"phoenix-alpha",
+}
+
 var domesticProviderCapabilities = map[string]ProviderGatewayCapabilities{
 	PlatformMiniMax: {
 		Platform:        PlatformMiniMax,
@@ -65,64 +160,10 @@ var domesticProviderCapabilities = map[string]ProviderGatewayCapabilities{
 		},
 	},
 	PlatformWindsurf: {
-		Platform: PlatformWindsurf,
-		DefaultModelIDs: []string{
-			"claude-sonnet-4.6",
-			"claude-sonnet-4.6-thinking",
-			"claude-opus-4.6",
-			"claude-opus-4.6-thinking",
-			"claude-opus-4.6-fast",
-			"claude-opus-4.6-fast-thinking",
-			"gpt-5.4",
-			"gpt-5.4-mini",
-			"gpt-5.3-codex-spark",
-			"gemini-3.1-pro",
-			"glm-5",
-			"minimax-m2.5",
-			"swe-1.6",
-			"swe-1.6-fast",
-			"swe-1.5",
-			"swe-1",
-			"phoenix-alpha",
-		},
-		PublicModelIDs: []string{
-			"claude-sonnet-4.6",
-			"claude-sonnet-4.6-thinking",
-			"claude-opus-4.6",
-			"claude-opus-4.6-thinking",
-			"claude-opus-4.6-fast",
-			"claude-opus-4.6-fast-thinking",
-			"gpt-5.4",
-			"gpt-5.4-mini",
-			"gpt-5.3-codex-spark",
-			"gemini-3.1-pro",
-			"glm-5",
-			"minimax-m2.5",
-			"swe-1.6",
-			"swe-1.6-fast",
-			"swe-1.5",
-			"swe-1",
-			"phoenix-alpha",
-		},
-		SupportedModelIDs: []string{
-			"claude-sonnet-4.6",
-			"claude-sonnet-4.6-thinking",
-			"claude-opus-4.6",
-			"claude-opus-4.6-thinking",
-			"claude-opus-4.6-fast",
-			"claude-opus-4.6-fast-thinking",
-			"gpt-5.4",
-			"gpt-5.4-mini",
-			"gpt-5.3-codex-spark",
-			"gemini-3.1-pro",
-			"glm-5",
-			"minimax-m2.5",
-			"swe-1.6",
-			"swe-1.6-fast",
-			"swe-1.5",
-			"swe-1",
-			"phoenix-alpha",
-		},
+		Platform:          PlatformWindsurf,
+		DefaultModelIDs:   windsurfOfficialModelIDs,
+		PublicModelIDs:    windsurfOfficialModelIDs,
+		SupportedModelIDs: mergeProviderModelIDs(windsurfOfficialModelIDs, windsurfLegacyModelIDs),
 	},
 }
 
@@ -148,6 +189,24 @@ func DefaultDomesticProviderModelIDs(platform string) []string {
 
 func DefaultMiniMaxModelIDs() []string {
 	return DefaultDomesticProviderModelIDs(PlatformMiniMax)
+}
+
+func mergeProviderModelIDs(slices ...[]string) []string {
+	seen := make(map[string]struct{})
+	var merged []string
+	for _, models := range slices {
+		for _, model := range models {
+			if model == "" {
+				continue
+			}
+			if _, ok := seen[model]; ok {
+				continue
+			}
+			seen[model] = struct{}{}
+			merged = append(merged, model)
+		}
+	}
+	return merged
 }
 
 func providerSupportsUpstreamModel(platform, model string) bool {

@@ -76,25 +76,18 @@ describe('useModelWhitelist', () => {
   it('windsurf 模型列表包含反代后端支持的官方模型', () => {
     const models = getModelsByPlatform('windsurf')
 
-    expect(models).toEqual([
-      'claude-sonnet-4.6',
-      'claude-sonnet-4.6-thinking',
-      'claude-opus-4.6',
-      'claude-opus-4.6-thinking',
-      'claude-opus-4.6-fast',
-      'claude-opus-4.6-fast-thinking',
-      'gpt-5.4',
-      'gpt-5.4-mini',
-      'gpt-5.3-codex-spark',
-      'gemini-3.1-pro',
-      'glm-5',
-      'minimax-m2.5',
-      'swe-1.6',
-      'swe-1.6-fast',
-      'swe-1.5',
-      'swe-1',
-      'phoenix-alpha'
-    ])
+    expect(models).toEqual(expect.arrayContaining([
+      'claude-sonnet-4-6',
+      'claude-opus-4-7-xhigh',
+      'claude-opus-4-7-max',
+      'gpt-5-5-high',
+      'gpt-5-5-xhigh-priority',
+      'gpt-5-4-high',
+      'gemini-3-1-pro-high',
+      'swe-1-6'
+    ]))
+    expect(models).toContain('claude-sonnet-4.6')
+    expect(models.indexOf('claude-sonnet-4-6')).toBeLessThan(models.indexOf('claude-sonnet-4.6'))
   })
 
   it('glm 预设映射 Claude family aliases to GLM models', () => {
@@ -138,11 +131,12 @@ describe('useModelWhitelist', () => {
     const mappings = getPresetMappingsByPlatform('windsurf')
 
     expect(mappings).toEqual(expect.arrayContaining([
-      expect.objectContaining({ from: 'claude-sonnet-*', to: 'claude-sonnet-4.6' }),
-      expect.objectContaining({ from: 'claude-opus-*', to: 'claude-opus-4.6' }),
-      expect.objectContaining({ from: 'gpt-5.4', to: 'gpt-5.4' }),
-      expect.objectContaining({ from: 'gemini-3.1-pro', to: 'gemini-3.1-pro' }),
-      expect.objectContaining({ from: 'swe-1.6', to: 'swe-1.6' })
+      expect.objectContaining({ from: 'claude-sonnet-*', to: 'claude-sonnet-4-6' }),
+      expect.objectContaining({ from: 'claude-opus-*', to: 'claude-opus-4-7-xhigh' }),
+      expect.objectContaining({ from: 'gpt-5.5-high', to: 'gpt-5-5-high' }),
+      expect.objectContaining({ from: 'gpt-5.5-xhigh-fast', to: 'gpt-5-5-xhigh-priority' }),
+      expect.objectContaining({ from: 'gemini-3.1-pro', to: 'gemini-3-1-pro-high' }),
+      expect.objectContaining({ from: 'swe-1.6', to: 'swe-1-6' })
     ]))
   })
 

@@ -11,25 +11,7 @@ func TestProviderGatewayCapabilitiesDomesticDefaults(t *testing.T) {
 		{platform: PlatformGLM, models: []string{"GLM-5.1", "GLM-4.7", "GLM-4.5-air"}},
 		{platform: PlatformKimi, models: []string{"kimi-for-coding"}},
 		{platform: PlatformDeepSeek, models: []string{"deepseek-v4-flash", "deepseek-v4-pro"}},
-		{platform: PlatformWindsurf, models: []string{
-			"claude-sonnet-4.6",
-			"claude-sonnet-4.6-thinking",
-			"claude-opus-4.6",
-			"claude-opus-4.6-thinking",
-			"claude-opus-4.6-fast",
-			"claude-opus-4.6-fast-thinking",
-			"gpt-5.4",
-			"gpt-5.4-mini",
-			"gpt-5.3-codex-spark",
-			"gemini-3.1-pro",
-			"glm-5",
-			"minimax-m2.5",
-			"swe-1.6",
-			"swe-1.6-fast",
-			"swe-1.5",
-			"swe-1",
-			"phoenix-alpha",
-		}},
+		{platform: PlatformWindsurf, models: windsurfOfficialModelIDs},
 	}
 
 	for _, tc := range cases {
@@ -43,6 +25,18 @@ func TestProviderGatewayCapabilitiesDomesticDefaults(t *testing.T) {
 			}
 			assertStringSlicesEqual(t, caps.DefaultModelIDs, tc.models)
 			assertStringSlicesEqual(t, caps.PublicModelIDs, tc.models)
+			if tc.platform == PlatformWindsurf {
+				mustContainStrings(t, caps.DefaultModelIDs, []string{
+					"claude-opus-4-7-xhigh",
+					"claude-opus-4-7-max",
+					"gpt-5-5-high",
+					"gpt-5-5-xhigh-priority",
+				})
+				mustContainStrings(t, caps.SupportedModelIDs, []string{
+					"claude-sonnet-4.6",
+					"gpt-5.4",
+				})
+			}
 		})
 	}
 }

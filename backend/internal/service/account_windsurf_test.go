@@ -28,11 +28,14 @@ func TestAccountWindsurfHelpersUseSingleBaseURLAndMappedModels(t *testing.T) {
 	if got := acc.GetWindsurfBaseURL(); got != "https://proxy.example/windsurf" {
 		t.Fatalf("base url = %q", got)
 	}
-	if got := DefaultWindsurfModelIDs(); len(got) < 4 || got[0] != "claude-sonnet-4.6" || got[1] != "claude-sonnet-4.6-thinking" {
+	if got := DefaultWindsurfModelIDs(); len(got) < 4 || got[0] != "claude-sonnet-4-6" || got[1] != "claude-sonnet-4-6-thinking" {
 		t.Fatalf("default windsurf models = %#v", got)
 	}
 
 	for _, model := range []string{
+		"claude-sonnet-4-6",
+		"claude-opus-4-7-xhigh",
+		"gpt-5-5-xhigh-priority",
 		"claude-sonnet-4.6",
 		" claude-opus-4.6 ",
 		"gpt-5.4",
