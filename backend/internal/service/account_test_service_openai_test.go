@@ -99,6 +99,109 @@ func (r *openAIAccountTestRepo) SetError(_ context.Context, id int64, errorMsg s
 	return nil
 }
 
+func TestAccountTestService_OpenAIAPIKeyAzureUsesAPIKeyHeader(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, recorder := newTestContext()
+
+	resp := newJSONResponse(http.StatusOK, "")
+	resp.Body = io.NopCloser(strings.NewReader(`data: {"type":"response.completed"}
+
+	`))
+
+	upstream := &queuedHTTPUpstream{responses: []*http.Response{resp}}
+	svc := &AccountTestService{
+		httpUpstream: upstream,
+		cfg:          rawChatCompletionsTestConfig(),
+	}
+	account := &Account{
+		ID:          91,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "azure-key",
+			"base_url": "https://daqia-mpf7tfno-eastus2.cognitiveservices.azure.com/openai/v1",
+		},
+	}
+
+	err := svc.testOpenAIAccountConnection(ctx, account, "gpt-5.5", "", "")
+
+	require.NoError(t, err)
+	require.Len(t, upstream.requests, 1)
+	req := upstream.requests[0]
+	require.Equal(t, "https://daqia-mpf7tfno-eastus2.cognitiveservices.azure.com/openai/v1/responses", req.URL.String())
+	require.Equal(t, "azure-key", req.Header.Get("api-key"))
+	require.Empty(t, req.Header.Get("Authorization"))
+	require.Contains(t, recorder.Body.String(), "test_complete")
+}
+
+func TestAccountTestService_OpenAIAPIKeyAzureIgnoresStaleUnsupportedProbe(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, recorder := newTestContext()
+
+	resp := newJSONResponse(http.StatusOK, "")
+	resp.Body = io.NopCloser(strings.NewReader(`data: {"type":"response.completed"}
+
+`))
+
+	upstream := &queuedHTTPUpstream{responses: []*http.Response{resp}}
+	svc := &AccountTestService{
+		httpUpstream: upstream,
+		cfg:          rawChatCompletionsTestConfig(),
+	}
+	account := &Account{
+		ID:          93,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "azure-key",
+			"base_url": "https://daqia-mpf7tfno-eastus2.cognitiveservices.azure.com/openai/v1",
+		},
+		Extra: map[string]any{"openai_responses_supported": false},
+	}
+
+	err := svc.testOpenAIAccountConnection(ctx, account, "gpt-5.5", "", "")
+
+	require.NoError(t, err)
+	require.Len(t, upstream.requests, 1)
+	require.Contains(t, recorder.Body.String(), "test_complete")
+}
+
+func TestProbeOpenAIAPIKeyResponsesSupport_AzureUsesAPIKeyHeader(t *testing.T) {
+	resp := newJSONResponse(http.StatusOK, `{"status":"completed"}`)
+	upstream := &queuedHTTPUpstream{responses: []*http.Response{resp}}
+	account := &Account{
+		ID:          92,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "azure-key",
+			"base_url": "https://daqia-mpf7tfno-eastus2.cognitiveservices.azure.com/openai/v1",
+		},
+	}
+	repo := &openAIAccountTestRepo{
+		mockAccountRepoForGemini: mockAccountRepoForGemini{
+			accountsByID: map[int64]*Account{account.ID: account},
+		},
+	}
+	svc := &AccountTestService{
+		accountRepo:  repo,
+		httpUpstream: upstream,
+		cfg:          rawChatCompletionsTestConfig(),
+	}
+
+	svc.ProbeOpenAIAPIKeyResponsesSupport(context.Background(), account.ID)
+
+	require.Len(t, upstream.requests, 1)
+	req := upstream.requests[0]
+	require.Equal(t, "https://daqia-mpf7tfno-eastus2.cognitiveservices.azure.com/openai/v1/responses", req.URL.String())
+	require.Equal(t, "azure-key", req.Header.Get("api-key"))
+	require.Empty(t, req.Header.Get("Authorization"))
+	require.Equal(t, map[string]any{"openai_responses_supported": true}, repo.updatedExtra)
+}
+
 func TestAccountTestService_OpenAISuccessPersistsSnapshotFromHeaders(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctx, recorder := newTestContext()
