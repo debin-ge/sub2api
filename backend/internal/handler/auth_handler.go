@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"strings"
 
@@ -529,29 +530,14 @@ func (h *AuthHandler) ValidateInvitationCode(c *gin.Context) {
 		return
 	}
 
-	// 验证邀请码
-	redeemCode, err := h.redeemService.GetByCode(c.Request.Context(), req.Code)
-	if err != nil {
+	if err := h.authService.ValidateRegistrationInvitationCode(c.Request.Context(), req.Code); err != nil {
+		if errors.Is(err, service.ErrServiceUnavailable) {
+			response.ErrorFrom(c, err)
+			return
+		}
 		response.Success(c, ValidateInvitationCodeResponse{
 			Valid:     false,
 			ErrorCode: "INVITATION_CODE_NOT_FOUND",
-		})
-		return
-	}
-
-	// 检查类型和状态
-	if redeemCode.Type != service.RedeemTypeInvitation {
-		response.Success(c, ValidateInvitationCodeResponse{
-			Valid:     false,
-			ErrorCode: "INVITATION_CODE_INVALID",
-		})
-		return
-	}
-
-	if redeemCode.Status != service.StatusUnused {
-		response.Success(c, ValidateInvitationCodeResponse{
-			Valid:     false,
-			ErrorCode: "INVITATION_CODE_USED",
 		})
 		return
 	}

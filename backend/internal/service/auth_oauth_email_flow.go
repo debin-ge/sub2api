@@ -54,27 +54,11 @@ func (s *AuthService) SendPendingOAuthVerifyCode(ctx context.Context, email stri
 	}, nil
 }
 
-func (s *AuthService) validateOAuthRegistrationInvitation(ctx context.Context, invitationCode string) (*RedeemCode, error) {
+func (s *AuthService) validateOAuthRegistrationInvitation(ctx context.Context, invitationCode string) (*registrationInvitationResolution, error) {
 	if s == nil || s.settingService == nil || !s.settingService.IsInvitationCodeEnabled(ctx) {
 		return nil, nil
 	}
-	if s.redeemRepo == nil && s.oauthEmailFlowClient(ctx) == nil {
-		return nil, ErrServiceUnavailable
-	}
-
-	invitationCode = strings.TrimSpace(invitationCode)
-	if invitationCode == "" {
-		return nil, ErrInvitationCodeRequired
-	}
-
-	redeemCode, err := s.loadOAuthRegistrationInvitation(ctx, invitationCode)
-	if err != nil {
-		return nil, ErrInvitationCodeInvalid
-	}
-	if redeemCode.Type != RedeemTypeInvitation || redeemCode.Status != StatusUnused {
-		return nil, ErrInvitationCodeInvalid
-	}
-	return redeemCode, nil
+	return s.resolveRegistrationInvitation(ctx, invitationCode)
 }
 
 // VerifyOAuthEmailCode verifies the locally entered email verification code for
@@ -264,12 +248,12 @@ func (s *AuthService) FinalizeOAuthEmailAccount(
 	}
 
 	signupSource = normalizeOAuthSignupSource(signupSource)
-	invitationRedeemCode, err := s.validateOAuthRegistrationInvitation(ctx, invitationCode)
+	invitation, err := s.validateOAuthRegistrationInvitation(ctx, invitationCode)
 	if err != nil {
 		return err
 	}
-	if invitationRedeemCode != nil {
-		if err := s.useOAuthRegistrationInvitation(ctx, invitationRedeemCode.ID, user.ID); err != nil {
+	if invitation != nil && invitation.redeemCode != nil {
+		if err := s.useOAuthRegistrationInvitation(ctx, invitation.redeemCode.ID, user.ID); err != nil {
 			return ErrInvitationCodeInvalid
 		}
 	}
@@ -277,7 +261,7 @@ func (s *AuthService) FinalizeOAuthEmailAccount(
 	s.updateOAuthSignupSource(ctx, user.ID, signupSource)
 	grantPlan := s.resolveSignupGrantPlan(ctx, signupSource)
 	s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
-	s.bindOAuthAffiliate(ctx, user.ID, affiliateCode)
+	s.bindOAuthAffiliate(ctx, user.ID, registrationAffiliateCode(invitation, affiliateCode))
 	return nil
 }
 

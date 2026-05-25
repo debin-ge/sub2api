@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -72,6 +73,93 @@ type defaultSubscriptionAssignerStub struct {
 }
 
 type refreshTokenCacheStub struct{}
+
+type affiliateRepoStub struct {
+	codeOwners    map[string]int64
+	ensureUserIDs []int64
+	bindCalls     []struct {
+		userID    int64
+		inviterID int64
+	}
+}
+
+func (s *affiliateRepoStub) EnsureUserAffiliate(ctx context.Context, userID int64) (*AffiliateSummary, error) {
+	s.ensureUserIDs = append(s.ensureUserIDs, userID)
+	return &AffiliateSummary{UserID: userID, AffCode: "SELF"}, nil
+}
+
+func (s *affiliateRepoStub) GetAffiliateByCode(ctx context.Context, code string) (*AffiliateSummary, error) {
+	normalized := strings.ToUpper(strings.TrimSpace(code))
+	userID, ok := s.codeOwners[normalized]
+	if !ok {
+		return nil, ErrAffiliateProfileNotFound
+	}
+	return &AffiliateSummary{UserID: userID, AffCode: normalized}, nil
+}
+
+func (s *affiliateRepoStub) BindInviter(ctx context.Context, userID, inviterID int64) (bool, error) {
+	s.bindCalls = append(s.bindCalls, struct {
+		userID    int64
+		inviterID int64
+	}{userID: userID, inviterID: inviterID})
+	return true, nil
+}
+
+func (s *affiliateRepoStub) AccrueQuota(context.Context, int64, int64, float64, int, *int64) (bool, error) {
+	panic("unexpected AccrueQuota call")
+}
+
+func (s *affiliateRepoStub) GetAccruedRebateFromInvitee(context.Context, int64, int64) (float64, error) {
+	panic("unexpected GetAccruedRebateFromInvitee call")
+}
+
+func (s *affiliateRepoStub) ThawFrozenQuota(context.Context, int64) (float64, error) {
+	panic("unexpected ThawFrozenQuota call")
+}
+
+func (s *affiliateRepoStub) TransferQuotaToBalance(context.Context, int64) (float64, float64, error) {
+	panic("unexpected TransferQuotaToBalance call")
+}
+
+func (s *affiliateRepoStub) ListInvitees(context.Context, int64, int) ([]AffiliateInvitee, error) {
+	panic("unexpected ListInvitees call")
+}
+
+func (s *affiliateRepoStub) UpdateUserAffCode(context.Context, int64, string) error {
+	panic("unexpected UpdateUserAffCode call")
+}
+
+func (s *affiliateRepoStub) ResetUserAffCode(context.Context, int64) (string, error) {
+	panic("unexpected ResetUserAffCode call")
+}
+
+func (s *affiliateRepoStub) SetUserRebateRate(context.Context, int64, *float64) error {
+	panic("unexpected SetUserRebateRate call")
+}
+
+func (s *affiliateRepoStub) BatchSetUserRebateRate(context.Context, []int64, *float64) error {
+	panic("unexpected BatchSetUserRebateRate call")
+}
+
+func (s *affiliateRepoStub) ListUsersWithCustomSettings(context.Context, AffiliateAdminFilter) ([]AffiliateAdminEntry, int64, error) {
+	panic("unexpected ListUsersWithCustomSettings call")
+}
+
+func (s *affiliateRepoStub) ListAffiliateInviteRecords(context.Context, AffiliateRecordFilter) ([]AffiliateInviteRecord, int64, error) {
+	panic("unexpected ListAffiliateInviteRecords call")
+}
+
+func (s *affiliateRepoStub) ListAffiliateRebateRecords(context.Context, AffiliateRecordFilter) ([]AffiliateRebateRecord, int64, error) {
+	panic("unexpected ListAffiliateRebateRecords call")
+}
+
+func (s *affiliateRepoStub) ListAffiliateTransferRecords(context.Context, AffiliateRecordFilter) ([]AffiliateTransferRecord, int64, error) {
+	panic("unexpected ListAffiliateTransferRecords call")
+}
+
+func (s *affiliateRepoStub) GetAffiliateUserOverview(context.Context, int64) (*AffiliateUserOverview, error) {
+	panic("unexpected GetAffiliateUserOverview call")
+}
 
 func (s *defaultSubscriptionAssignerStub) AssignOrExtendSubscription(_ context.Context, input *AssignSubscriptionInput) (*UserSubscription, bool, error) {
 	if input != nil {
@@ -390,6 +478,68 @@ func TestAuthService_Register_Success(t *testing.T) {
 	require.Equal(t, 2, user.Concurrency)
 	require.Len(t, repo.created, 1)
 	require.True(t, user.CheckPassword("password"))
+}
+
+func TestAuthService_Register_AffiliateCodeSatisfiesInvitationRequirement(t *testing.T) {
+	repo := &userRepoStub{nextID: 100}
+	service := newAuthService(repo, map[string]string{
+		SettingKeyRegistrationEnabled:                 "true",
+		SettingKeyInvitationCodeEnabled:               "true",
+		SettingKeyAffiliateEnabled:                    "true",
+		SettingKeyAuthSourceDefaultEmailGrantOnSignup: "false",
+	}, nil)
+	redeemRepo := &redeemCodeRepoStub{}
+	affiliateRepo := &affiliateRepoStub{codeOwners: map[string]int64{"AFF123": 7}}
+	service.redeemRepo = redeemRepo
+	service.affiliateService = NewAffiliateService(affiliateRepo, service.settingService, nil, nil)
+
+	require.NoError(t, service.ValidateRegistrationInvitationCode(context.Background(), "aff123"))
+
+	token, user, err := service.RegisterWithVerification(context.Background(), "invitee@test.com", "password", "", "", "aff123", "")
+
+	require.NoError(t, err)
+	require.NotEmpty(t, token)
+	require.NotNil(t, user)
+	require.Equal(t, int64(100), user.ID)
+	require.Empty(t, redeemRepo.useCalls)
+	require.Equal(t, []int64{100, 100}, affiliateRepo.ensureUserIDs)
+	require.Equal(t, []struct {
+		userID    int64
+		inviterID int64
+	}{{userID: 100, inviterID: 7}}, affiliateRepo.bindCalls)
+}
+
+func TestAuthService_Register_InvitationRedeemCodeStillConsumesOnce(t *testing.T) {
+	repo := &userRepoStub{nextID: 101}
+	service := newAuthService(repo, map[string]string{
+		SettingKeyRegistrationEnabled:                 "true",
+		SettingKeyInvitationCodeEnabled:               "true",
+		SettingKeyAffiliateEnabled:                    "true",
+		SettingKeyAuthSourceDefaultEmailGrantOnSignup: "false",
+	}, nil)
+	redeemRepo := &redeemCodeRepoStub{
+		codesByCode: map[string]*RedeemCode{
+			"INVITE1": {
+				ID:     12,
+				Code:   "INVITE1",
+				Type:   RedeemTypeInvitation,
+				Status: StatusUnused,
+			},
+		},
+	}
+	affiliateRepo := &affiliateRepoStub{codeOwners: map[string]int64{"AFF123": 7}}
+	service.redeemRepo = redeemRepo
+	service.affiliateService = NewAffiliateService(affiliateRepo, service.settingService, nil, nil)
+
+	_, user, err := service.RegisterWithVerification(context.Background(), "redeem@test.com", "password", "", "", "INVITE1", "")
+
+	require.NoError(t, err)
+	require.NotNil(t, user)
+	require.Equal(t, []struct {
+		id     int64
+		userID int64
+	}{{id: 12, userID: 101}}, redeemRepo.useCalls)
+	require.Empty(t, affiliateRepo.bindCalls)
 }
 
 func TestAuthService_ValidateToken_ExpiredReturnsClaimsWithError(t *testing.T) {
