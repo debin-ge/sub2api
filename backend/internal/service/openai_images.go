@@ -646,7 +646,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 	if err != nil {
 		return nil, err
 	}
-	upstreamReq, err := s.buildOpenAIImagesRequest(upstreamCtx, c, account, forwardBody, forwardContentType, token, parsed.Endpoint)
+	upstreamReq, err := s.buildOpenAIImagesRequest(upstreamCtx, c, account, forwardBody, forwardContentType, token, parsed.Endpoint, upstreamModel)
 	if err != nil {
 		return nil, err
 	}
@@ -757,6 +757,7 @@ func (s *OpenAIGatewayService) buildOpenAIImagesRequest(
 	contentType string,
 	token string,
 	endpoint string,
+	upstreamModel string,
 ) (*http.Request, error) {
 	targetURL := openAIImagesGenerationsURL
 	if endpoint == openAIImagesEditsEndpoint {
@@ -768,14 +769,18 @@ func (s *OpenAIGatewayService) buildOpenAIImagesRequest(
 		if err != nil {
 			return nil, err
 		}
-		targetURL = buildOpenAIImagesURL(validatedURL, endpoint)
+		if isAzureOpenAIAPIKeyAccount(account) {
+			targetURL = buildAzureOpenAIImagesURL(validatedURL, upstreamModel, endpoint, getAzureAPIVersion(account))
+		} else {
+			targetURL = buildOpenAIImagesURL(validatedURL, endpoint)
+		}
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, targetURL, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+token)
+	setOpenAIUpstreamAuthHeader(req, account, token)
 	for key, values := range c.Request.Header {
 		if !openaiPassthroughAllowedHeaders[strings.ToLower(key)] {
 			continue
