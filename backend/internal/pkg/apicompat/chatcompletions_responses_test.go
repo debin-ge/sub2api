@@ -1144,3 +1144,134 @@ func TestBufferedResponseAccumulator_IgnoresNonFunctionCallItems(t *testing.T) {
 
 	assert.False(t, acc.HasContent())
 }
+
+// ---------------------------------------------------------------------------
+// ResponsesToChatCompletionsRequest tests
+// ---------------------------------------------------------------------------
+
+func TestResponsesToChatCompletionsRequest_StringInput(t *testing.T) {
+	maxOutputTokens := 512
+	temperature := 0.25
+	topP := 0.9
+	req := &ResponsesRequest{
+		Model:           "gpt-5.2",
+		Instructions:    "Answer precisely.",
+		Input:           json.RawMessage(`"Hello"`),
+		MaxOutputTokens: &maxOutputTokens,
+		Temperature:     &temperature,
+		TopP:            &topP,
+		Stream:          true,
+		Reasoning:       &ResponsesReasoning{Effort: " high "},
+		ServiceTier:     "priority",
+	}
+
+	chat, err := ResponsesToChatCompletionsRequest(req)
+	require.NoError(t, err)
+	assert.Equal(t, "gpt-5.2", chat.Model)
+	assert.Equal(t, &maxOutputTokens, chat.MaxCompletionTokens)
+	assert.Equal(t, &temperature, chat.Temperature)
+	assert.Equal(t, &topP, chat.TopP)
+	assert.True(t, chat.Stream)
+	assert.Equal(t, "high", chat.ReasoningEffort)
+	assert.Equal(t, "priority", chat.ServiceTier)
+
+	require.Len(t, chat.Messages, 2)
+	assert.Equal(t, "system", chat.Messages[0].Role)
+	assert.JSONEq(t, `"Answer precisely."`, string(chat.Messages[0].Content))
+	assert.Equal(t, "user", chat.Messages[1].Role)
+	assert.JSONEq(t, `"Hello"`, string(chat.Messages[1].Content))
+}
+
+func TestResponsesToChatCompletionsRequest_MessageArrayWithTools(t *testing.T) {
+	req := &ResponsesRequest{
+		Model: "gpt-5.2",
+		Input: json.RawMessage(`[
+			{"role":"user","content":[{"type":"input_text","text":"Use the tool"}]},
+			{"role":"user","content":[{"type":"input_text","text":"City: "},{"type":"input_text","text":"Paris"}]},
+			{"type":"function_call","call_id":"call_1","name":"lookup","arguments":"{\"city\":\"Paris\"}"},
+			{"type":"function_call_output","call_id":"call_1","output":"sunny"}
+		]`),
+		Tools: []ResponsesTool{
+			{
+				Type:        "function",
+				Name:        "lookup",
+				Description: "Look up weather",
+				Parameters:  json.RawMessage(`{"type":"object"}`),
+			},
+		},
+		ToolChoice: json.RawMessage(`{"type":"function","name":"lookup"}`),
+	}
+
+	chat, err := ResponsesToChatCompletionsRequest(req)
+	require.NoError(t, err)
+	require.Len(t, chat.Messages, 4)
+
+	assert.Equal(t, "user", chat.Messages[0].Role)
+	assert.JSONEq(t, `"Use the tool"`, string(chat.Messages[0].Content))
+
+	assert.Equal(t, "user", chat.Messages[1].Role)
+	var parts []ChatContentPart
+	require.NoError(t, json.Unmarshal(chat.Messages[1].Content, &parts))
+	require.Len(t, parts, 2)
+	assert.Equal(t, ChatContentPart{Type: "text", Text: "City: "}, parts[0])
+	assert.Equal(t, ChatContentPart{Type: "text", Text: "Paris"}, parts[1])
+
+	assert.Equal(t, "assistant", chat.Messages[2].Role)
+	require.Len(t, chat.Messages[2].ToolCalls, 1)
+	assert.Equal(t, "call_1", chat.Messages[2].ToolCalls[0].ID)
+	assert.Equal(t, "function", chat.Messages[2].ToolCalls[0].Type)
+	assert.Equal(t, "lookup", chat.Messages[2].ToolCalls[0].Function.Name)
+	assert.Equal(t, `{"city":"Paris"}`, chat.Messages[2].ToolCalls[0].Function.Arguments)
+
+	assert.Equal(t, "tool", chat.Messages[3].Role)
+	assert.Equal(t, "call_1", chat.Messages[3].ToolCallID)
+	assert.JSONEq(t, `"sunny"`, string(chat.Messages[3].Content))
+
+	require.Len(t, chat.Tools, 1)
+	assert.Equal(t, "function", chat.Tools[0].Type)
+	require.NotNil(t, chat.Tools[0].Function)
+	assert.Equal(t, "lookup", chat.Tools[0].Function.Name)
+	assert.Equal(t, "Look up weather", chat.Tools[0].Function.Description)
+	assert.JSONEq(t, `{"type":"object"}`, string(chat.Tools[0].Function.Parameters))
+
+	var toolChoice struct {
+		Type     string `json:"type"`
+		Function struct {
+			Name string `json:"name"`
+		} `json:"function"`
+	}
+	require.NoError(t, json.Unmarshal(chat.ToolChoice, &toolChoice))
+	assert.Equal(t, "function", toolChoice.Type)
+	assert.Equal(t, "lookup", toolChoice.Function.Name)
+}
+
+func TestResponsesToChatCompletionsRequest_RejectsInputImage(t *testing.T) {
+	req := &ResponsesRequest{
+		Model: "gpt-5.2",
+		Input: json.RawMessage(`[
+			{"role":"user","content":[{"type":"input_image","image_url":"data:image/png;base64,abc123"}]}
+		]`),
+	}
+
+	_, err := ResponsesToChatCompletionsRequest(req)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "input_image")
+}
+
+func TestResponsesToChatCompletionsRequest_RejectsUnsupportedTool(t *testing.T) {
+	req := &ResponsesRequest{
+		Model: "gpt-5.2",
+		Input: json.RawMessage(`"Hello"`),
+		Tools: []ResponsesTool{{Type: "web_search"}},
+	}
+
+	_, err := ResponsesToChatCompletionsRequest(req)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "web_search")
+}
+
+func TestResponsesToChatCompletionsRequest_RejectsNilRequest(t *testing.T) {
+	_, err := ResponsesToChatCompletionsRequest(nil)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "nil")
+}
