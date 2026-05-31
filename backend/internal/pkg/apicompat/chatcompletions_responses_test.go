@@ -1411,3 +1411,145 @@ func TestResponsesToChatCompletionsRequest_AcceptsHarmlessCompatibilityFields(t 
 	require.NoError(t, err)
 	assert.Equal(t, "medium", chat.ReasoningEffort)
 }
+
+// ---------------------------------------------------------------------------
+// ChatCompletionsToResponsesResponse tests
+// ---------------------------------------------------------------------------
+
+func TestChatCompletionsToResponsesResponse_TextAndUsage(t *testing.T) {
+	chat := &ChatCompletionsResponse{
+		ID:    "chatcmpl_text",
+		Model: "upstream-model",
+		Choices: []ChatChoice{{
+			Message: ChatMessage{
+				Role:    "assistant",
+				Content: json.RawMessage(`"Hello from chat"`),
+			},
+			FinishReason: "stop",
+		}},
+		Usage: &ChatUsage{
+			PromptTokens:     12,
+			CompletionTokens: 7,
+			TotalTokens:      19,
+		},
+	}
+
+	resp := ChatCompletionsToResponsesResponse(chat, "client-model")
+
+	assert.Equal(t, "chatcmpl_text", resp.ID)
+	assert.Equal(t, "response", resp.Object)
+	assert.Equal(t, "client-model", resp.Model)
+	assert.Equal(t, "completed", resp.Status)
+	require.Len(t, resp.Output, 1)
+	assert.Equal(t, "message", resp.Output[0].Type)
+	assert.Equal(t, "assistant", resp.Output[0].Role)
+	assert.Equal(t, "completed", resp.Output[0].Status)
+	require.Len(t, resp.Output[0].Content, 1)
+	assert.Equal(t, "output_text", resp.Output[0].Content[0].Type)
+	assert.Equal(t, "Hello from chat", resp.Output[0].Content[0].Text)
+	require.NotNil(t, resp.Usage)
+	assert.Equal(t, 12, resp.Usage.InputTokens)
+	assert.Equal(t, 7, resp.Usage.OutputTokens)
+	assert.Equal(t, 19, resp.Usage.TotalTokens)
+}
+
+func TestChatCompletionsToResponsesResponse_ToolCall(t *testing.T) {
+	chat := &ChatCompletionsResponse{
+		Choices: []ChatChoice{{
+			Message: ChatMessage{
+				Role: "assistant",
+				ToolCalls: []ChatToolCall{{
+					ID:   "call_lookup",
+					Type: "function",
+					Function: ChatFunctionCall{
+						Name:      "lookup",
+						Arguments: `{"city":"Paris"}`,
+					},
+				}},
+			},
+			FinishReason: "tool_calls",
+		}},
+	}
+
+	resp := ChatCompletionsToResponsesResponse(chat, "gpt-4o")
+
+	assert.Equal(t, "response", resp.Object)
+	assert.Equal(t, "gpt-4o", resp.Model)
+	assert.Equal(t, "completed", resp.Status)
+	assert.NotEmpty(t, resp.ID)
+	assert.Contains(t, resp.ID, "resp_")
+	require.Len(t, resp.Output, 1)
+	assert.Equal(t, "function_call", resp.Output[0].Type)
+	assert.Equal(t, "call_lookup", resp.Output[0].CallID)
+	assert.Equal(t, "lookup", resp.Output[0].Name)
+	assert.Equal(t, `{"city":"Paris"}`, resp.Output[0].Arguments)
+	assert.Equal(t, "completed", resp.Output[0].Status)
+}
+
+func TestChatCompletionsToResponsesResponse_ReasoningCachedUsageAndLength(t *testing.T) {
+	chat := &ChatCompletionsResponse{
+		ID: "chatcmpl_reasoning",
+		Choices: []ChatChoice{{
+			Message: ChatMessage{
+				Role:             "assistant",
+				Content:          json.RawMessage(`"Partial answer"`),
+				ReasoningContent: "Worked through the problem.",
+			},
+			FinishReason: "length",
+		}},
+		Usage: &ChatUsage{
+			PromptTokens:     100,
+			CompletionTokens: 50,
+			PromptTokensDetails: &ChatTokenDetails{
+				CachedTokens: 80,
+			},
+		},
+	}
+
+	resp := ChatCompletionsToResponsesResponse(chat, "client-model")
+
+	assert.Equal(t, "incomplete", resp.Status)
+	require.NotNil(t, resp.IncompleteDetails)
+	assert.Equal(t, "max_output_tokens", resp.IncompleteDetails.Reason)
+	require.Len(t, resp.Output, 2)
+	assert.Equal(t, "reasoning", resp.Output[0].Type)
+	require.Len(t, resp.Output[0].Summary, 1)
+	assert.Equal(t, "summary_text", resp.Output[0].Summary[0].Type)
+	assert.Equal(t, "Worked through the problem.", resp.Output[0].Summary[0].Text)
+	assert.Equal(t, "message", resp.Output[1].Type)
+	assert.Equal(t, "Partial answer", resp.Output[1].Content[0].Text)
+	require.NotNil(t, resp.Usage)
+	assert.Equal(t, 100, resp.Usage.InputTokens)
+	assert.Equal(t, 50, resp.Usage.OutputTokens)
+	assert.Equal(t, 150, resp.Usage.TotalTokens)
+	require.NotNil(t, resp.Usage.InputTokensDetails)
+	assert.Equal(t, 80, resp.Usage.InputTokensDetails.CachedTokens)
+}
+
+func TestChatCompletionsToResponsesResponse_NilResponseSafety(t *testing.T) {
+	resp := ChatCompletionsToResponsesResponse(nil, "client-model")
+
+	require.NotNil(t, resp)
+	assert.Equal(t, "response", resp.Object)
+	assert.Equal(t, "client-model", resp.Model)
+	assert.Equal(t, "completed", resp.Status)
+	assert.NotEmpty(t, resp.ID)
+	assert.Contains(t, resp.ID, "resp_")
+}
+
+func TestChatCompletionsToResponsesResponse_EmptyChoiceMessage(t *testing.T) {
+	chat := &ChatCompletionsResponse{
+		Choices: []ChatChoice{{}},
+	}
+
+	resp := ChatCompletionsToResponsesResponse(chat, "gpt-4o")
+
+	assert.Equal(t, "completed", resp.Status)
+	require.Len(t, resp.Output, 1)
+	assert.Equal(t, "message", resp.Output[0].Type)
+	assert.Equal(t, "assistant", resp.Output[0].Role)
+	assert.Equal(t, "completed", resp.Output[0].Status)
+	require.Len(t, resp.Output[0].Content, 1)
+	assert.Equal(t, "output_text", resp.Output[0].Content[0].Type)
+	assert.Equal(t, "", resp.Output[0].Content[0].Text)
+}
