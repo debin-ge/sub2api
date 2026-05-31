@@ -1486,6 +1486,31 @@ func TestChatCompletionsToResponsesResponse_ToolCall(t *testing.T) {
 	assert.Equal(t, "completed", resp.Output[0].Status)
 }
 
+func TestChatCompletionsToResponsesResponse_ToolCallPreservesEmptyArguments(t *testing.T) {
+	chat := &ChatCompletionsResponse{
+		Choices: []ChatChoice{{
+			Message: ChatMessage{
+				Role: "assistant",
+				ToolCalls: []ChatToolCall{{
+					ID:   "call_empty",
+					Type: "function",
+					Function: ChatFunctionCall{
+						Name:      "empty_args",
+						Arguments: "",
+					},
+				}},
+			},
+			FinishReason: "tool_calls",
+		}},
+	}
+
+	resp := ChatCompletionsToResponsesResponse(chat, "gpt-4o")
+
+	require.Len(t, resp.Output, 1)
+	assert.Equal(t, "function_call", resp.Output[0].Type)
+	assert.Equal(t, "", resp.Output[0].Arguments)
+}
+
 func TestChatCompletionsToResponsesResponse_ReasoningCachedUsageAndLength(t *testing.T) {
 	chat := &ChatCompletionsResponse{
 		ID: "chatcmpl_reasoning",

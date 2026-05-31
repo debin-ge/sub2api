@@ -54,16 +54,12 @@ func ChatCompletionsToResponsesResponse(resp *ChatCompletionsResponse, model str
 	}
 
 	for _, tc := range msg.ToolCalls {
-		args := tc.Function.Arguments
-		if args == "" {
-			args = "{}"
-		}
 		outputs = append(outputs, ResponsesOutput{
 			Type:      "function_call",
 			ID:        generateItemID(),
 			CallID:    tc.ID,
 			Name:      tc.Function.Name,
-			Arguments: args,
+			Arguments: tc.Function.Arguments,
 			Status:    "completed",
 		})
 	}
