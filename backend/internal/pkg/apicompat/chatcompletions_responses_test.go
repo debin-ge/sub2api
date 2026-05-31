@@ -1275,3 +1275,139 @@ func TestResponsesToChatCompletionsRequest_RejectsNilRequest(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "nil")
 }
+
+func TestResponsesToChatCompletionsRequest_RejectsPreviousResponseID(t *testing.T) {
+	req := &ResponsesRequest{
+		Model:              "gpt-5.2",
+		Input:              json.RawMessage(`"Hello"`),
+		PreviousResponseID: "resp_previous",
+	}
+
+	_, err := ResponsesToChatCompletionsRequest(req)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "previous_response_id")
+}
+
+func TestResponsesToChatCompletionsRequest_AssistantReplayOutputText(t *testing.T) {
+	req := &ResponsesRequest{
+		Model: "gpt-5.2",
+		Input: json.RawMessage(`[
+			{"role":"assistant","content":[{"type":"output_text","text":"Earlier answer"}]}
+		]`),
+	}
+
+	chat, err := ResponsesToChatCompletionsRequest(req)
+	require.NoError(t, err)
+	require.Len(t, chat.Messages, 1)
+	assert.Equal(t, "assistant", chat.Messages[0].Role)
+	assert.JSONEq(t, `"Earlier answer"`, string(chat.Messages[0].Content))
+}
+
+func TestResponsesToChatCompletionsRequest_AssistantReplayRoundTrip(t *testing.T) {
+	original := &ChatCompletionsRequest{
+		Model: "gpt-5.2",
+		Messages: []ChatMessage{
+			{Role: "user", Content: json.RawMessage(`"Question"`)},
+			{Role: "assistant", Content: json.RawMessage(`"Earlier answer"`)},
+		},
+	}
+
+	responses, err := ChatCompletionsToResponses(original)
+	require.NoError(t, err)
+	chat, err := ResponsesToChatCompletionsRequest(responses)
+	require.NoError(t, err)
+
+	require.Len(t, chat.Messages, 2)
+	assert.Equal(t, "user", chat.Messages[0].Role)
+	assert.JSONEq(t, `"Question"`, string(chat.Messages[0].Content))
+	assert.Equal(t, "assistant", chat.Messages[1].Role)
+	assert.JSONEq(t, `"Earlier answer"`, string(chat.Messages[1].Content))
+}
+
+func TestResponsesToChatCompletionsRequest_RejectsOutputTextForInputRole(t *testing.T) {
+	req := &ResponsesRequest{
+		Model: "gpt-5.2",
+		Input: json.RawMessage(`[
+			{"role":"user","content":[{"type":"output_text","text":"Wrong direction"}]}
+		]`),
+	}
+
+	_, err := ResponsesToChatCompletionsRequest(req)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "output_text")
+}
+
+func TestResponsesToChatCompletionsRequest_RejectsInputTextForAssistant(t *testing.T) {
+	req := &ResponsesRequest{
+		Model: "gpt-5.2",
+		Input: json.RawMessage(`[
+			{"role":"assistant","content":[{"type":"input_text","text":"Wrong direction"}]}
+		]`),
+	}
+
+	_, err := ResponsesToChatCompletionsRequest(req)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "input_text")
+}
+
+func TestResponsesToChatCompletionsRequest_CoalescesAdjacentFunctionCalls(t *testing.T) {
+	req := &ResponsesRequest{
+		Model: "gpt-5.2",
+		Input: json.RawMessage(`[
+			{"type":"function_call","call_id":"call_1","name":"lookup_weather","arguments":"{\"city\":\"Paris\"}"},
+			{"type":"function_call","call_id":"call_2","name":"lookup_time","arguments":"{\"city\":\"Paris\"}"},
+			{"type":"function_call_output","call_id":"call_1","output":"sunny"},
+			{"type":"function_call_output","call_id":"call_2","output":"14:00"}
+		]`),
+	}
+
+	chat, err := ResponsesToChatCompletionsRequest(req)
+	require.NoError(t, err)
+	require.Len(t, chat.Messages, 3)
+
+	assert.Equal(t, "assistant", chat.Messages[0].Role)
+	require.Len(t, chat.Messages[0].ToolCalls, 2)
+	assert.Equal(t, "call_1", chat.Messages[0].ToolCalls[0].ID)
+	assert.Equal(t, "lookup_weather", chat.Messages[0].ToolCalls[0].Function.Name)
+	assert.Equal(t, "call_2", chat.Messages[0].ToolCalls[1].ID)
+	assert.Equal(t, "lookup_time", chat.Messages[0].ToolCalls[1].Function.Name)
+
+	assert.Equal(t, "tool", chat.Messages[1].Role)
+	assert.Equal(t, "call_1", chat.Messages[1].ToolCallID)
+	assert.Equal(t, "tool", chat.Messages[2].Role)
+	assert.Equal(t, "call_2", chat.Messages[2].ToolCallID)
+}
+
+func TestResponsesToChatCompletionsRequest_RejectsAllowedToolsToolChoice(t *testing.T) {
+	req := &ResponsesRequest{
+		Model:      "gpt-5.2",
+		Input:      json.RawMessage(`"Hello"`),
+		ToolChoice: json.RawMessage(`{"type":"allowed_tools","tools":[{"type":"function","name":"lookup"}]}`),
+	}
+
+	_, err := ResponsesToChatCompletionsRequest(req)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "allowed_tools")
+}
+
+func TestResponsesToChatCompletionsRequest_AcceptsHarmlessCompatibilityFields(t *testing.T) {
+	store := false
+	parallelToolCalls := true
+	req := &ResponsesRequest{
+		Model:             "gpt-5.2",
+		Input:             json.RawMessage(`"Hello"`),
+		Include:           []string{"reasoning.encrypted_content"},
+		Store:             &store,
+		ParallelToolCalls: &parallelToolCalls,
+		Reasoning: &ResponsesReasoning{
+			Effort:  "medium",
+			Summary: "auto",
+		},
+		Text:           &ResponsesText{Verbosity: "high"},
+		PromptCacheKey: "cache-key",
+	}
+
+	chat, err := ResponsesToChatCompletionsRequest(req)
+	require.NoError(t, err)
+	assert.Equal(t, "medium", chat.ReasoningEffort)
+}

@@ -7,12 +7,15 @@ import (
 	"strings"
 )
 
-// ResponsesToChatCompletionsRequest converts a Responses API request into a
-// Chat Completions request. Responses features without a Chat Completions
-// equivalent are rejected instead of being silently dropped.
+// ResponsesToChatCompletionsRequest maps supported Responses API request fields
+// into a Chat Completions request. Unsupported stateful and selector shapes
+// that would change request semantics are rejected instead of silently dropped.
 func ResponsesToChatCompletionsRequest(req *ResponsesRequest) (*ChatCompletionsRequest, error) {
 	if req == nil {
 		return nil, fmt.Errorf("responses request is nil")
+	}
+	if strings.TrimSpace(req.PreviousResponseID) != "" {
+		return nil, fmt.Errorf("unsupported responses previous_response_id")
 	}
 
 	messages, err := convertResponsesInputToChatMessages(req.Input)
@@ -95,6 +98,10 @@ func convertResponsesInputToChatMessages(input json.RawMessage) ([]ChatMessage, 
 			if err != nil {
 				return nil, fmt.Errorf("convert responses input item %d: %w", i, err)
 			}
+			if item.Type == "function_call" && i > 0 && items[i-1].Type == "function_call" {
+				messages[len(messages)-1].ToolCalls = append(messages[len(messages)-1].ToolCalls, message.ToolCalls...)
+				continue
+			}
 			messages = append(messages, message)
 		}
 		return messages, nil
@@ -163,14 +170,14 @@ func convertResponsesRoleMessageToChat(item ResponsesInputItem) (ChatMessage, er
 		return ChatMessage{}, fmt.Errorf("unsupported responses message role %q", item.Role)
 	}
 
-	content, err := convertResponsesMessageContentToChat(item.Content)
+	content, err := convertResponsesMessageContentToChat(item.Role, item.Content)
 	if err != nil {
 		return ChatMessage{}, err
 	}
 	return ChatMessage{Role: item.Role, Content: content}, nil
 }
 
-func convertResponsesMessageContentToChat(content json.RawMessage) (json.RawMessage, error) {
+func convertResponsesMessageContentToChat(role string, content json.RawMessage) (json.RawMessage, error) {
 	raw := bytes.TrimSpace(content)
 	if len(raw) == 0 {
 		return nil, fmt.Errorf("message is missing content")
@@ -190,10 +197,15 @@ func convertResponsesMessageContentToChat(content json.RawMessage) (json.RawMess
 			return nil, fmt.Errorf("parse message content parts: %w", err)
 		}
 
+		textPartType := "input_text"
+		if role == "assistant" {
+			textPartType = "output_text"
+		}
+
 		chatParts := make([]ChatContentPart, 0, len(parts))
 		for i, part := range parts {
 			switch part.Type {
-			case "input_text":
+			case textPartType:
 				chatParts = append(chatParts, ChatContentPart{
 					Type: "text",
 					Text: part.Text,
@@ -255,7 +267,11 @@ func convertResponsesToolChoiceToChat(raw json.RawMessage) (json.RawMessage, err
 	if err := json.Unmarshal(raw, &choiceObject); err != nil {
 		return nil, fmt.Errorf("parse responses tool_choice: %w", err)
 	}
-	if choiceObject.Type != "function" {
+	switch choiceObject.Type {
+	case "function":
+	case "allowed_tools":
+		return nil, fmt.Errorf("unsupported responses tool_choice type %q", choiceObject.Type)
+	default:
 		return nil, fmt.Errorf("unsupported responses tool_choice type %q", choiceObject.Type)
 	}
 	if strings.TrimSpace(choiceObject.Name) == "" {
