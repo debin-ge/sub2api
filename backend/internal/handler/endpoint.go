@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"net/http"
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -50,12 +51,26 @@ func NormalizeInboundEndpoint(path string) string {
 		return EndpointImagesGenerations
 	case strings.Contains(path, EndpointImagesEdits) || strings.Contains(path, "/images/edits"):
 		return EndpointImagesEdits
-	case strings.Contains(path, EndpointResponses):
+	case containsEndpointPath(path, EndpointResponses) || containsEndpointPath(path, "/responses"):
 		return EndpointResponses
 	case strings.Contains(path, EndpointGeminiModels):
 		return EndpointGeminiModels
 	default:
 		return path
+	}
+}
+
+func containsEndpointPath(path, endpoint string) bool {
+	for {
+		idx := strings.Index(path, endpoint)
+		if idx < 0 {
+			return false
+		}
+		suffix := path[idx+len(endpoint):]
+		if suffix == "" || strings.HasPrefix(suffix, "/") {
+			return true
+		}
+		path = suffix
 	}
 }
 
@@ -216,5 +231,30 @@ func GetUpstreamEndpoint(c *gin.Context, platform string) string {
 	if c != nil && c.Request != nil && c.Request.URL != nil {
 		rawPath = c.Request.URL.Path
 	}
+	if inbound == EndpointResponses && c != nil && c.Request != nil && c.Request.Method == http.MethodPost && isResponsesRootPath(rawPath) {
+		if upstreamEndpoint, ok := providerResponsesBridgeEndpoint(platform); ok {
+			return upstreamEndpoint
+		}
+	}
 	return DeriveUpstreamEndpoint(inbound, rawPath, platform)
+}
+
+func isResponsesRootPath(path string) bool {
+	switch strings.TrimRight(strings.TrimSpace(path), "/") {
+	case EndpointResponses, "/responses", "/backend-api/codex/responses":
+		return true
+	default:
+		return false
+	}
+}
+
+func providerResponsesBridgeEndpoint(platform string) (string, bool) {
+	switch platform {
+	case service.PlatformMiniMax, service.PlatformGLM, service.PlatformKimi:
+		return EndpointMessages, true
+	case service.PlatformDeepSeek, service.PlatformWindsurf:
+		return EndpointChatCompletions, true
+	default:
+		return "", false
+	}
 }
