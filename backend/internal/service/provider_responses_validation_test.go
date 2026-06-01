@@ -160,6 +160,39 @@ func TestValidateProviderResponsesCompatibilityRequest(t *testing.T) {
 		requireProviderResponsesCompatibilityError(t, err, "web_search")
 	})
 
+	t.Run("rejects malformed function tool choice objects", func(t *testing.T) {
+		t.Parallel()
+
+		cases := []struct {
+			name string
+			body []byte
+		}{
+			{
+				name: "missing name",
+				body: []byte(`{"model":"gpt-5","input":"hello","tool_choice":{"type":"function"}}`),
+			},
+			{
+				name: "blank name",
+				body: []byte(`{"model":"gpt-5","input":"hello","tool_choice":{"type":"function","name":"  "}}`),
+			},
+			{
+				name: "nested only name",
+				body: []byte(`{"model":"gpt-5","input":"hello","tool_choice":{"type":"function","function":{"name":"lookup"}}}`),
+			},
+		}
+
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+
+				err := ValidateProviderResponsesCompatibilityRequest("/v1/responses", tc.body)
+
+				requireProviderResponsesCompatibilityError(t, err, "tool_choice")
+				requireProviderResponsesCompatibilityError(t, err, "name")
+			})
+		}
+	})
+
 	t.Run("rejects unsupported tool choice string", func(t *testing.T) {
 		t.Parallel()
 

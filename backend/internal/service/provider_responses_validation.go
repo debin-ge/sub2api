@@ -156,6 +156,9 @@ func unsupportedProviderResponsesToolChoiceType(value any) string {
 	case map[string]any:
 		choiceType := strings.TrimSpace(firstNonEmptyString(choice["type"]))
 		if choiceType == "function" {
+			if firstNonEmptyString(choice["name"]) == "" {
+				return "function tool_choice name is required"
+			}
 			return ""
 		}
 		if choiceType == "" {
