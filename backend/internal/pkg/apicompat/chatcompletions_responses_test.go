@@ -1597,3 +1597,256 @@ func TestChatCompletionsToResponsesResponse_EmptyChoiceMessage(t *testing.T) {
 	assert.Equal(t, "output_text", resp.Output[0].Content[0].Type)
 	assert.Equal(t, "", resp.Output[0].Content[0].Text)
 }
+
+func TestChatChunkToResponsesEvents_StreamingTextCreatedDeltaAndCompletionUsage(t *testing.T) {
+	state := NewChatCompletionsToResponsesState("client-model")
+
+	first := ChatChunkToResponsesEvents(&ChatCompletionsChunk{
+		ID:    "chatcmpl_stream",
+		Model: "upstream-model",
+		Choices: []ChatChunkChoice{{
+			Delta: ChatDelta{Content: chatTestStringPtr("Hello")},
+		}},
+	}, state)
+
+	require.Len(t, first, 3)
+	assert.Equal(t, "response.created", first[0].Type)
+	require.NotNil(t, first[0].Response)
+	assert.Equal(t, "chatcmpl_stream", first[0].Response.ID)
+	assert.Equal(t, "client-model", first[0].Response.Model)
+	assert.Equal(t, "in_progress", first[0].Response.Status)
+	assert.Equal(t, "response.output_item.added", first[1].Type)
+	require.NotNil(t, first[1].Item)
+	assert.Equal(t, "message", first[1].Item.Type)
+	assert.Equal(t, "assistant", first[1].Item.Role)
+	assert.Equal(t, "in_progress", first[1].Item.Status)
+	assert.Equal(t, "response.output_text.delta", first[2].Type)
+	assert.Equal(t, "Hello", first[2].Delta)
+	assert.Equal(t, first[1].Item.ID, first[2].ItemID)
+
+	second := ChatChunkToResponsesEvents(&ChatCompletionsChunk{
+		Usage: &ChatUsage{
+			PromptTokens:     10,
+			CompletionTokens: 4,
+			PromptTokensDetails: &ChatTokenDetails{
+				CachedTokens: 6,
+			},
+		},
+		Choices: []ChatChunkChoice{{
+			FinishReason: chatTestStringPtr("stop"),
+		}},
+	}, state)
+
+	require.Len(t, second, 3)
+	assert.Equal(t, "response.output_text.done", second[0].Type)
+	assert.Equal(t, "response.output_item.done", second[1].Type)
+	assert.Equal(t, "response.completed", second[2].Type)
+	require.NotNil(t, second[2].Response)
+	assert.Equal(t, "completed", second[2].Response.Status)
+	require.NotNil(t, second[2].Response.Usage)
+	assert.Equal(t, 10, second[2].Response.Usage.InputTokens)
+	assert.Equal(t, 4, second[2].Response.Usage.OutputTokens)
+	assert.Equal(t, 14, second[2].Response.Usage.TotalTokens)
+	require.NotNil(t, second[2].Response.Usage.InputTokensDetails)
+	assert.Equal(t, 6, second[2].Response.Usage.InputTokensDetails.CachedTokens)
+	chatAssertMonotonicSequence(t, append(first, second...))
+}
+
+func TestChatChunkToResponsesEvents_ToolCallArgumentFragments(t *testing.T) {
+	state := NewChatCompletionsToResponsesState("gpt-4o")
+	toolIndex := 0
+
+	events := ChatChunkToResponsesEvents(&ChatCompletionsChunk{
+		ID: "chatcmpl_tool",
+		Choices: []ChatChunkChoice{{
+			Delta: ChatDelta{ToolCalls: []ChatToolCall{{
+				Index: &toolIndex,
+				ID:    "call_lookup",
+				Type:  "function",
+				Function: ChatFunctionCall{
+					Name:      "lookup",
+					Arguments: `{"city":`,
+				},
+			}}},
+		}},
+	}, state)
+
+	require.Len(t, events, 3)
+	assert.Equal(t, "response.created", events[0].Type)
+	assert.Equal(t, "response.output_item.added", events[1].Type)
+	require.NotNil(t, events[1].Item)
+	assert.Equal(t, "function_call", events[1].Item.Type)
+	assert.Equal(t, "call_lookup", events[1].Item.CallID)
+	assert.Equal(t, "lookup", events[1].Item.Name)
+	assert.Equal(t, "in_progress", events[1].Item.Status)
+	assert.Equal(t, "response.function_call_arguments.delta", events[2].Type)
+	assert.Equal(t, `{"city":`, events[2].Delta)
+	assert.Equal(t, "call_lookup", events[2].CallID)
+	assert.Equal(t, "lookup", events[2].Name)
+	assert.Equal(t, events[1].Item.ID, events[2].ItemID)
+
+	events = ChatChunkToResponsesEvents(&ChatCompletionsChunk{
+		Choices: []ChatChunkChoice{{
+			Delta: ChatDelta{ToolCalls: []ChatToolCall{{
+				Index: &toolIndex,
+				Function: ChatFunctionCall{
+					Arguments: `"Paris"}`,
+				},
+			}}},
+		}},
+	}, state)
+	require.Len(t, events, 1)
+	assert.Equal(t, "response.function_call_arguments.delta", events[0].Type)
+	assert.Equal(t, `"Paris"}`, events[0].Delta)
+	assert.Equal(t, "call_lookup", events[0].CallID)
+	assert.Equal(t, "lookup", events[0].Name)
+
+	events = ChatChunkToResponsesEvents(&ChatCompletionsChunk{
+		Choices: []ChatChunkChoice{{
+			FinishReason: chatTestStringPtr("tool_calls"),
+		}},
+	}, state)
+	require.Len(t, events, 3)
+	assert.Equal(t, "response.function_call_arguments.done", events[0].Type)
+	assert.Equal(t, "call_lookup", events[0].CallID)
+	assert.Equal(t, "lookup", events[0].Name)
+	assert.Equal(t, "response.output_item.done", events[1].Type)
+	assert.Equal(t, "response.completed", events[2].Type)
+}
+
+func TestChatChunkToResponsesEvents_ReasoningDeltaAndClose(t *testing.T) {
+	state := NewChatCompletionsToResponsesState("")
+
+	events := ChatChunkToResponsesEvents(&ChatCompletionsChunk{
+		Model: "chunk-model",
+		Choices: []ChatChunkChoice{{
+			Delta: ChatDelta{ReasoningContent: chatTestStringPtr("Think")},
+		}},
+	}, state)
+
+	require.Len(t, events, 3)
+	assert.Equal(t, "response.created", events[0].Type)
+	require.NotNil(t, events[0].Response)
+	assert.Equal(t, "chunk-model", events[0].Response.Model)
+	assert.Contains(t, events[0].Response.ID, "resp_")
+	assert.Equal(t, "response.output_item.added", events[1].Type)
+	require.NotNil(t, events[1].Item)
+	assert.Equal(t, "reasoning", events[1].Item.Type)
+	assert.Equal(t, "response.reasoning_summary_text.delta", events[2].Type)
+	assert.Equal(t, "Think", events[2].Delta)
+	assert.Equal(t, events[1].Item.ID, events[2].ItemID)
+
+	events = ChatChunkToResponsesEvents(&ChatCompletionsChunk{
+		Choices: []ChatChunkChoice{{
+			FinishReason: chatTestStringPtr("stop"),
+		}},
+	}, state)
+	require.Len(t, events, 3)
+	assert.Equal(t, "response.reasoning_summary_text.done", events[0].Type)
+	assert.Equal(t, "response.output_item.done", events[1].Type)
+	assert.Equal(t, "response.completed", events[2].Type)
+}
+
+func TestFinalizeChatCompletionsResponsesStream_IdempotentAndNoDuplicateAfterTerminal(t *testing.T) {
+	state := NewChatCompletionsToResponsesState("gpt-4o")
+	events := ChatChunkToResponsesEvents(&ChatCompletionsChunk{
+		ID: "chatcmpl_finalize",
+		Choices: []ChatChunkChoice{{
+			Delta: ChatDelta{Content: chatTestStringPtr("partial")},
+		}},
+	}, state)
+	require.NotEmpty(t, events)
+
+	events = FinalizeChatCompletionsResponsesStream(state)
+	require.Len(t, events, 3)
+	assert.Equal(t, "response.output_text.done", events[0].Type)
+	assert.Equal(t, "response.output_item.done", events[1].Type)
+	assert.Equal(t, "response.completed", events[2].Type)
+	assert.Nil(t, FinalizeChatCompletionsResponsesStream(state))
+
+	state = NewChatCompletionsToResponsesState("gpt-4o")
+	_ = ChatChunkToResponsesEvents(&ChatCompletionsChunk{
+		Choices: []ChatChunkChoice{{
+			Delta: ChatDelta{Content: chatTestStringPtr("done")},
+		}},
+	}, state)
+	events = ChatChunkToResponsesEvents(&ChatCompletionsChunk{
+		Choices: []ChatChunkChoice{{
+			FinishReason: chatTestStringPtr("stop"),
+		}},
+	}, state)
+	require.NotEmpty(t, events)
+	assert.Nil(t, FinalizeChatCompletionsResponsesStream(state))
+}
+
+func TestChatChunkToResponsesEvents_MonotonicSequenceNumbersAcrossMixedEvents(t *testing.T) {
+	state := NewChatCompletionsToResponsesState("gpt-4o")
+	toolIndex := 0
+
+	var all []ResponsesStreamEvent
+	all = append(all, ChatChunkToResponsesEvents(&ChatCompletionsChunk{
+		Choices: []ChatChunkChoice{{
+			Delta: ChatDelta{ReasoningContent: chatTestStringPtr("plan")},
+		}},
+	}, state)...)
+	all = append(all, ChatChunkToResponsesEvents(&ChatCompletionsChunk{
+		Choices: []ChatChunkChoice{{
+			Delta: ChatDelta{Content: chatTestStringPtr("answer")},
+		}},
+	}, state)...)
+	all = append(all, ChatChunkToResponsesEvents(&ChatCompletionsChunk{
+		Choices: []ChatChunkChoice{{
+			Delta: ChatDelta{ToolCalls: []ChatToolCall{{
+				Index: &toolIndex,
+				ID:    "call_1",
+				Type:  "function",
+				Function: ChatFunctionCall{
+					Name:      "lookup",
+					Arguments: "{}",
+				},
+			}}},
+		}},
+	}, state)...)
+	all = append(all, ChatChunkToResponsesEvents(&ChatCompletionsChunk{
+		Choices: []ChatChunkChoice{{
+			FinishReason: chatTestStringPtr("tool_calls"),
+		}},
+	}, state)...)
+
+	chatAssertMonotonicSequence(t, all)
+}
+
+func TestChatChunkToResponsesEvents_LengthFinishReasonIncomplete(t *testing.T) {
+	state := NewChatCompletionsToResponsesState("gpt-4o")
+
+	events := ChatChunkToResponsesEvents(&ChatCompletionsChunk{
+		Choices: []ChatChunkChoice{{
+			FinishReason: chatTestStringPtr("length"),
+		}},
+	}, state)
+
+	require.Len(t, events, 2)
+	assert.Equal(t, "response.created", events[0].Type)
+	assert.Equal(t, "response.incomplete", events[1].Type)
+	require.NotNil(t, events[1].Response)
+	assert.Equal(t, "incomplete", events[1].Response.Status)
+	require.NotNil(t, events[1].Response.IncompleteDetails)
+	assert.Equal(t, "max_output_tokens", events[1].Response.IncompleteDetails.Reason)
+}
+
+func TestChatChunkToResponsesEvents_NilInputsReturnNil(t *testing.T) {
+	assert.Nil(t, ChatChunkToResponsesEvents(nil, NewChatCompletionsToResponsesState("gpt-4o")))
+	assert.Nil(t, ChatChunkToResponsesEvents(&ChatCompletionsChunk{}, nil))
+	assert.Nil(t, FinalizeChatCompletionsResponsesStream(nil))
+}
+
+func chatTestStringPtr(s string) *string {
+	return &s
+}
+
+func chatAssertMonotonicSequence(t *testing.T, events []ResponsesStreamEvent) {
+	t.Helper()
+	for i, event := range events {
+		assert.Equal(t, i, event.SequenceNumber, "event %d (%s)", i, event.Type)
+	}
+}
