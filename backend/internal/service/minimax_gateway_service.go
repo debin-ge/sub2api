@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
 	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
 	"github.com/gin-gonic/gin"
@@ -216,6 +217,68 @@ func (s *MiniMaxGatewayService) ForwardChatCompletions(ctx context.Context, c *g
 		_ = s.quotaService.RollbackTextRequest(ctx, account.ID, requestID)
 	}
 	return result, nil
+}
+
+func (s *MiniMaxGatewayService) ForwardResponses(ctx context.Context, c *gin.Context, account *Account, body []byte, requestID string) (*ForwardResult, error) {
+	if s == nil {
+		return nil, fmt.Errorf("minimax gateway service unavailable")
+	}
+	if err := ValidateProviderResponsesCompatibilityRequest(requestPathForResponsesValidation(c), body); err != nil {
+		writeProviderResponsesCompatibilityError(c, err)
+		return nil, err
+	}
+	anthropicBody, err := miniMaxResponsesAnthropicBody(body)
+	if err != nil {
+		return nil, err
+	}
+	if _, _, _, err := s.buildMessagesRequest(ctx, c, account, anthropicBody); err != nil {
+		return nil, err
+	}
+
+	requestID = strings.TrimSpace(requestID)
+	if s.quotaService == nil {
+		return nil, fmt.Errorf("minimax quota service unavailable")
+	}
+	decision, err := s.quotaService.ReserveTextRequest(ctx, account, requestID)
+	if err != nil {
+		return nil, err
+	}
+	if decision == nil || !decision.Allowed {
+		return nil, fmt.Errorf("minimax quota exhausted")
+	}
+
+	result, err := forwardProviderResponsesViaAnthropic(ctx, c, providerResponsesAnthropicConfig{
+		ServiceName:               "minimax",
+		HTTPClient:                s.httpClient,
+		Account:                   account,
+		Body:                      body,
+		BuildRequest:              s.buildMessagesRequest,
+		ShouldReturnUpstreamError: shouldReturnMiniMaxUpstreamError,
+		ReadErrorBody:             readMiniMaxNonStreamResponseBody,
+		ResponseHeaderFilter:      s.responseHeaderFilter,
+	})
+	if err != nil {
+		_ = s.quotaService.RollbackTextRequest(ctx, account.ID, requestID)
+		return nil, err
+	}
+	return result, nil
+}
+
+func miniMaxResponsesAnthropicBody(body []byte) ([]byte, error) {
+	var responsesReq apicompat.ResponsesRequest
+	if err := json.Unmarshal(body, &responsesReq); err != nil {
+		return nil, fmt.Errorf("parse responses request: %w", err)
+	}
+	anthropicReq, err := apicompat.ResponsesToAnthropicRequest(&responsesReq)
+	if err != nil {
+		return nil, fmt.Errorf("convert responses to anthropic: %w", err)
+	}
+	anthropicReq.Stream = true
+	anthropicBody, err := json.Marshal(anthropicReq)
+	if err != nil {
+		return nil, fmt.Errorf("marshal anthropic request: %w", err)
+	}
+	return anthropicBody, nil
 }
 
 func shouldReturnMiniMaxUpstreamError(status int) bool {
