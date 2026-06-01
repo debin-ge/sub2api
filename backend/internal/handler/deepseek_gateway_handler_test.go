@@ -18,13 +18,14 @@ import (
 )
 
 type fakeDeepSeekForwarder struct {
-	account        *service.Account
-	body           []byte
-	requestID      string
-	messagesCalled int
-	chatCalled     int
-	errs           []error
-	panicMessages  bool
+	account         *service.Account
+	body            []byte
+	requestID       string
+	messagesCalled  int
+	chatCalled      int
+	responsesCalled int
+	errs            []error
+	panicMessages   bool
 }
 
 func (f *fakeDeepSeekForwarder) ForwardMessages(ctx context.Context, c *gin.Context, account *service.Account, body []byte, requestID string) (*service.ForwardResult, error) {
@@ -75,6 +76,33 @@ func (f *fakeDeepSeekForwarder) ForwardChatCompletions(ctx context.Context, c *g
 		Usage: service.ClaudeUsage{
 			InputTokens:  13,
 			OutputTokens: 5,
+		},
+		Duration: time.Millisecond,
+	}, nil
+}
+
+func (f *fakeDeepSeekForwarder) ForwardResponses(ctx context.Context, c *gin.Context, account *service.Account, body []byte, requestID string) (*service.ForwardResult, error) {
+	f.responsesCalled++
+	f.account = account
+	f.body = append([]byte(nil), body...)
+	f.requestID = requestID
+	if len(f.errs) > 0 {
+		err := f.errs[0]
+		f.errs = f.errs[1:]
+		if err != nil {
+			return nil, err
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"id": "resp_1", "object": "response", "model": "deepseek-chat"})
+	effort := "medium"
+	return &service.ForwardResult{
+		RequestID:       "deepseek-upstream-resp-req-1",
+		Model:           "deepseek-chat",
+		UpstreamModel:   "deepseek-v4-flash",
+		ReasoningEffort: &effort,
+		Usage: service.ClaudeUsage{
+			InputTokens:  9,
+			OutputTokens: 4,
 		},
 		Duration: time.Millisecond,
 	}, nil
@@ -290,6 +318,66 @@ func TestDeepSeekGatewayHandlerChatCompletionsSuccessForwardsAndRecordsUsage(t *
 	require.Equal(t, 1, billing.calls)
 }
 
+func TestDeepSeekGatewayHandlerResponsesSuccessForwardsAndRecordsUsage(t *testing.T) {
+	account := deepseekTestAccount(101)
+	forwarder := &fakeDeepSeekForwarder{}
+	concurrency := &fakeDeepSeekConcurrencyController{allowWait: true}
+	billing := &fakeDeepSeekBillingChecker{}
+	gateway := &fakeDeepSeekGatewayService{
+		selections: []*service.AccountSelectionResult{{Account: account, Acquired: true}},
+	}
+	h := &DeepSeekGatewayHandler{
+		deepseekService:     forwarder,
+		gatewayService:      gateway,
+		concurrencyHelper:   concurrency,
+		billingCacheService: billing,
+	}
+	c, rec, apiKey := newDeepSeekHandlerTestContextForPath(t, "/v1/responses", service.PlatformDeepSeek, `{"model":"deepseek-chat","input":"hello","reasoning":{"effort":"medium"}}`)
+
+	h.Responses(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, 1, forwarder.responsesCalled)
+	require.Equal(t, 0, forwarder.messagesCalled)
+	require.Equal(t, 0, forwarder.chatCalled)
+	require.Equal(t, account, forwarder.account)
+	require.JSONEq(t, `{"model":"deepseek-chat","input":"hello","reasoning":{"effort":"medium"}}`, string(forwarder.body))
+	require.Equal(t, "deepseek-client-req-1", forwarder.requestID)
+	require.Equal(t, "deepseek-chat", gateway.selectedModel)
+	require.Equal(t, int64(99), gateway.selectedUserID)
+	require.NotNil(t, gateway.recorded)
+	require.Equal(t, apiKey, gateway.recorded.APIKey)
+	require.Equal(t, account, gateway.recorded.Account)
+	require.Equal(t, "/v1/responses", gateway.recorded.InboundEndpoint)
+	require.Equal(t, "/v1/chat/completions", gateway.recorded.UpstreamEndpoint)
+	require.NotNil(t, gateway.recorded.Result.ReasoningEffort)
+	require.Equal(t, "medium", *gateway.recorded.Result.ReasoningEffort)
+	require.NotEmpty(t, gateway.recorded.RequestPayloadHash)
+	require.Equal(t, 1, billing.calls)
+}
+
+func TestDeepSeekGatewayHandlerResponsesRejectsPreviousResponseIDBeforeForwarding(t *testing.T) {
+	forwarder := &fakeDeepSeekForwarder{}
+	concurrency := &fakeDeepSeekConcurrencyController{allowWait: true}
+	billing := &fakeDeepSeekBillingChecker{}
+	h := &DeepSeekGatewayHandler{
+		deepseekService:     forwarder,
+		gatewayService:      &fakeDeepSeekGatewayService{},
+		concurrencyHelper:   concurrency,
+		billingCacheService: billing,
+	}
+	c, rec, _ := newDeepSeekHandlerTestContextForPath(t, "/v1/responses", service.PlatformDeepSeek, `{"model":"deepseek-chat","previous_response_id":"resp_1","input":"hello"}`)
+
+	h.Responses(c)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Contains(t, rec.Body.String(), "invalid_request_error")
+	require.Contains(t, rec.Body.String(), "previous_response_id")
+	require.Equal(t, 0, forwarder.responsesCalled)
+	require.Equal(t, 0, concurrency.incrementWaitCalls)
+	require.Equal(t, 0, billing.calls)
+}
+
 func TestDeepSeekGatewayHandlerMessagesRejectsInvalidPlatform(t *testing.T) {
 	h := &DeepSeekGatewayHandler{}
 	c, rec, _ := newDeepSeekHandlerTestContext(t, service.PlatformOpenAI, `{"model":"deepseek-v4-flash"}`)
@@ -432,7 +520,7 @@ func TestDeepSeekGatewayHandlerUnsupportedReturnsNotFound(t *testing.T) {
 
 	require.Equal(t, http.StatusNotFound, rec.Code)
 	require.Contains(t, rec.Body.String(), "not_found_error")
-	require.Contains(t, rec.Body.String(), "DeepSeek gateway supports /v1/messages and /v1/chat/completions only")
+	require.Contains(t, rec.Body.String(), "DeepSeek gateway supports /v1/messages, /v1/chat/completions, and /v1/responses only")
 }
 
 func TestDeepSeekGatewayHandlerRetryableUpstreamErrorFailsOverToNextAccount(t *testing.T) {
