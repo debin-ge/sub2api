@@ -1551,6 +1551,25 @@ func TestChatCompletionsToResponsesResponse_ReasoningCachedUsageAndLength(t *tes
 	assert.Equal(t, 80, resp.Usage.InputTokensDetails.CachedTokens)
 }
 
+func TestChatCompletionsToResponsesResponse_ContentFilterIncomplete(t *testing.T) {
+	chat := &ChatCompletionsResponse{
+		ID: "chatcmpl_filtered",
+		Choices: []ChatChoice{{
+			Message: ChatMessage{
+				Role:    "assistant",
+				Content: json.RawMessage(`"filtered"`),
+			},
+			FinishReason: "content_filter",
+		}},
+	}
+
+	resp := ChatCompletionsToResponsesResponse(chat, "gpt-4o")
+
+	assert.Equal(t, "incomplete", resp.Status)
+	require.NotNil(t, resp.IncompleteDetails)
+	assert.Equal(t, "content_filter", resp.IncompleteDetails.Reason)
+}
+
 func TestChatCompletionsToResponsesResponse_NilResponseSafety(t *testing.T) {
 	resp := ChatCompletionsToResponsesResponse(nil, "client-model")
 

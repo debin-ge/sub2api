@@ -21,9 +21,13 @@ func ChatCompletionsToResponsesResponse(resp *ChatCompletionsResponse, model str
 	if len(resp.Choices) > 0 {
 		choice = resp.Choices[0]
 	}
-	if choice.FinishReason == "length" {
+	switch choice.FinishReason {
+	case "length":
 		out.Status = "incomplete"
 		out.IncompleteDetails = &ResponsesIncompleteDetails{Reason: "max_output_tokens"}
+	case "content_filter":
+		out.Status = "incomplete"
+		out.IncompleteDetails = &ResponsesIncompleteDetails{Reason: "content_filter"}
 	}
 
 	msg := choice.Message
