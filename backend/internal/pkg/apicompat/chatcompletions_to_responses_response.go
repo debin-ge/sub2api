@@ -104,6 +104,7 @@ type chatResponsesStreamItem struct {
 	Type        string
 	CallID      string
 	Name        string
+	Opened      bool
 	Closed      bool
 }
 
@@ -270,26 +271,38 @@ func chatResponsesToolDelta(toolCall ChatToolCall, state *ChatCompletionsToRespo
 	if state.CurrentCategory != "function_call" {
 		events = append(events, chatResponsesCloseCurrentCategory(state)...)
 		state.CurrentCategory = "function_call"
-	} else if state.ActiveToolIndex != nil && *state.ActiveToolIndex != index {
-		events = append(events, chatResponsesCloseToolCallIndex(*state.ActiveToolIndex, state)...)
 	}
 	activeToolIndex := index
 	state.ActiveToolIndex = &activeToolIndex
 
+	if state.ToolItems == nil {
+		state.ToolItems = make(map[int]*chatResponsesStreamItem)
+	}
 	item := state.ToolItems[index]
-	if item == nil {
+	if item == nil || item.Closed {
 		item = &chatResponsesStreamItem{
-			OutputIndex: state.NextOutputIndex,
-			ItemID:      generateItemID(),
-			Type:        "function_call",
-			CallID:      toolCall.ID,
-			Name:        toolCall.Function.Name,
+			ItemID: generateItemID(),
+			Type:   "function_call",
+			CallID: toolCall.ID,
+			Name:   toolCall.Function.Name,
 		}
-		if item.CallID == "" {
-			item.CallID = fmt.Sprintf("call_%d", index)
-		}
-		state.NextOutputIndex++
 		state.ToolItems[index] = item
+	} else {
+		if !item.Opened && item.CallID == "" && toolCall.ID != "" {
+			item.CallID = toolCall.ID
+		}
+		if item.Name == "" && toolCall.Function.Name != "" {
+			item.Name = toolCall.Function.Name
+		}
+	}
+
+	if !item.Opened && item.CallID == "" && toolCall.Function.Arguments != "" {
+		item.CallID = fmt.Sprintf("call_%d", index)
+	}
+	if !item.Opened && item.CallID != "" {
+		item.OutputIndex = state.NextOutputIndex
+		state.NextOutputIndex++
+		item.Opened = true
 		state.ToolOrder = append(state.ToolOrder, index)
 		events = append(events, chatResponsesEvent(state, "response.output_item.added", &ResponsesStreamEvent{
 			OutputIndex: item.OutputIndex,
@@ -301,13 +314,6 @@ func chatResponsesToolDelta(toolCall ChatToolCall, state *ChatCompletionsToRespo
 				Status: "in_progress",
 			},
 		}))
-	} else {
-		if item.CallID == "" && toolCall.ID != "" {
-			item.CallID = toolCall.ID
-		}
-		if item.Name == "" && toolCall.Function.Name != "" {
-			item.Name = toolCall.Function.Name
-		}
 	}
 
 	if toolCall.Function.Arguments != "" {
@@ -431,7 +437,7 @@ func chatResponsesCloseToolCalls(state *ChatCompletionsToResponsesState) []Respo
 
 func chatResponsesCloseToolCallIndex(index int, state *ChatCompletionsToResponsesState) []ResponsesStreamEvent {
 	item := state.ToolItems[index]
-	if item == nil || item.Closed {
+	if item == nil || !item.Opened || item.Closed {
 		return nil
 	}
 	item.Closed = true
