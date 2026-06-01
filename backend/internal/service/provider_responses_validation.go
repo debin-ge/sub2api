@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -41,6 +42,10 @@ func ValidateProviderResponsesCompatibilityRequest(path string, body []byte) err
 		return newProviderResponsesCompatibilityError("previous_response_id is not supported for this provider Responses compatibility path")
 	}
 
+	if message := invalidProviderResponsesInput(payload); message != "" {
+		return newProviderResponsesCompatibilityError(message)
+	}
+
 	if IsImageGenerationIntent("/v1/responses", model, body) {
 		return newProviderResponsesCompatibilityError("image_generation and image edit requests are not supported for provider Responses compatibility")
 	}
@@ -49,12 +54,12 @@ func ValidateProviderResponsesCompatibilityRequest(path string, body []byte) err
 		return newProviderResponsesCompatibilityError("input_image content is not supported for provider Responses compatibility")
 	}
 
-	if toolType := unsupportedProviderResponsesToolType(payload["tools"]); toolType != "" {
-		return newProviderResponsesCompatibilityError("unsupported Responses tool type: " + toolType)
+	if message := invalidProviderResponsesTools(payload); message != "" {
+		return newProviderResponsesCompatibilityError(message)
 	}
 
-	if toolChoiceType := unsupportedProviderResponsesToolChoiceType(payload["tool_choice"]); toolChoiceType != "" {
-		return newProviderResponsesCompatibilityError("unsupported Responses tool_choice type: " + toolChoiceType)
+	if message := invalidProviderResponsesToolChoice(payload); message != "" {
+		return newProviderResponsesCompatibilityError(message)
 	}
 
 	return nil
@@ -98,6 +103,19 @@ func hasPreviousResponseID(value any) bool {
 	return true
 }
 
+func invalidProviderResponsesInput(payload map[string]any) string {
+	value, ok := payload["input"]
+	if !ok || value == nil {
+		return "input must be a JSON string or array"
+	}
+	switch value.(type) {
+	case string, []any:
+		return ""
+	default:
+		return "input must be a JSON string or array"
+	}
+}
+
 func containsInputImage(value any) bool {
 	switch v := value.(type) {
 	case []any:
@@ -119,39 +137,52 @@ func containsInputImage(value any) bool {
 	return false
 }
 
-func unsupportedProviderResponsesToolType(value any) string {
-	tools, ok := value.([]any)
-	if !ok {
+func invalidProviderResponsesTools(payload map[string]any) string {
+	value, ok := payload["tools"]
+	if !ok || value == nil {
 		return ""
 	}
-	for _, rawTool := range tools {
+	tools, ok := value.([]any)
+	if !ok {
+		return "tools must be an array"
+	}
+	for i, rawTool := range tools {
 		tool, ok := rawTool.(map[string]any)
 		if !ok {
-			return "unknown"
+			return "unsupported Responses tool type: unknown"
 		}
 		toolType := strings.TrimSpace(firstNonEmptyString(tool["type"]))
 		if toolType != "function" {
 			if toolType == "" {
-				return "unknown"
+				return "unsupported Responses tool type: unknown"
 			}
-			return toolType
+			return "unsupported Responses tool type: " + toolType
+		}
+		if strings.TrimSpace(firstNonEmptyString(tool["name"])) == "" {
+			return "tools function at index " + strconv.Itoa(i) + " name must be a non-empty string"
 		}
 	}
 	return ""
 }
 
-func unsupportedProviderResponsesToolChoiceType(value any) string {
-	if value == nil {
+func invalidProviderResponsesToolChoice(payload map[string]any) string {
+	value, ok := payload["tool_choice"]
+	if !ok {
 		return ""
+	}
+	if value == nil {
+		return "tool_choice must be auto, none, required, or a function object"
 	}
 	switch choice := value.(type) {
 	case string:
 		choice = strings.TrimSpace(choice)
 		switch choice {
-		case "", "auto", "none", "required":
+		case "auto", "none", "required":
 			return ""
+		case "":
+			return "tool_choice must not be empty"
 		default:
-			return choice
+			return "unsupported Responses tool_choice type: " + choice
 		}
 	case map[string]any:
 		choiceType := strings.TrimSpace(firstNonEmptyString(choice["type"]))
@@ -162,10 +193,10 @@ func unsupportedProviderResponsesToolChoiceType(value any) string {
 			return ""
 		}
 		if choiceType == "" {
-			return "unknown"
+			return "unsupported Responses tool_choice type: unknown"
 		}
-		return choiceType
+		return "unsupported Responses tool_choice type: " + choiceType
 	default:
-		return "unknown"
+		return "unsupported Responses tool_choice type: unknown"
 	}
 }

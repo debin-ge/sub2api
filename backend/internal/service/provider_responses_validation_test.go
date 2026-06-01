@@ -72,6 +72,30 @@ func TestValidateProviderResponsesCompatibilityRequest(t *testing.T) {
 		requireProviderResponsesCompatibilityError(t, err, "model")
 	})
 
+	t.Run("rejects missing input", func(t *testing.T) {
+		t.Parallel()
+
+		err := ValidateProviderResponsesCompatibilityRequest("/v1/responses", []byte(`{"model":"gpt-5"}`))
+
+		requireProviderResponsesCompatibilityError(t, err, "input")
+	})
+
+	t.Run("rejects null input", func(t *testing.T) {
+		t.Parallel()
+
+		err := ValidateProviderResponsesCompatibilityRequest("/v1/responses", []byte(`{"model":"gpt-5","input":null}`))
+
+		requireProviderResponsesCompatibilityError(t, err, "input")
+	})
+
+	t.Run("rejects object input", func(t *testing.T) {
+		t.Parallel()
+
+		err := ValidateProviderResponsesCompatibilityRequest("/v1/responses", []byte(`{"model":"gpt-5","input":{"role":"user","content":"hello"}}`))
+
+		requireProviderResponsesCompatibilityError(t, err, "input")
+	})
+
 	t.Run("rejects compact paths", func(t *testing.T) {
 		t.Parallel()
 
@@ -152,6 +176,43 @@ func TestValidateProviderResponsesCompatibilityRequest(t *testing.T) {
 		requireProviderResponsesCompatibilityError(t, err, "custom_builtin")
 	})
 
+	t.Run("rejects non array tools", func(t *testing.T) {
+		t.Parallel()
+
+		err := ValidateProviderResponsesCompatibilityRequest("/v1/responses", []byte(`{"model":"gpt-5","input":"hello","tools":{"type":"function","name":"lookup"}}`))
+
+		requireProviderResponsesCompatibilityError(t, err, "tools")
+	})
+
+	t.Run("rejects malformed function tools", func(t *testing.T) {
+		t.Parallel()
+
+		cases := []struct {
+			name string
+			body []byte
+		}{
+			{
+				name: "missing name",
+				body: []byte(`{"model":"gpt-5","input":"hello","tools":[{"type":"function"}]}`),
+			},
+			{
+				name: "blank name",
+				body: []byte(`{"model":"gpt-5","input":"hello","tools":[{"type":"function","name":"  "}]}`),
+			},
+		}
+
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+
+				err := ValidateProviderResponsesCompatibilityRequest("/v1/responses", tc.body)
+
+				requireProviderResponsesCompatibilityError(t, err, "tools")
+				requireProviderResponsesCompatibilityError(t, err, "name")
+			})
+		}
+	})
+
 	t.Run("rejects unsupported tool choice object", func(t *testing.T) {
 		t.Parallel()
 
@@ -199,6 +260,30 @@ func TestValidateProviderResponsesCompatibilityRequest(t *testing.T) {
 		err := ValidateProviderResponsesCompatibilityRequest("/v1/responses", []byte(`{"model":"gpt-5","input":"hello","tool_choice":"image_generation"}`))
 
 		requireProviderResponsesCompatibilityError(t, err, "image_generation")
+	})
+
+	t.Run("rejects null tool choice", func(t *testing.T) {
+		t.Parallel()
+
+		err := ValidateProviderResponsesCompatibilityRequest("/v1/responses", []byte(`{"model":"gpt-5","input":"hello","tool_choice":null}`))
+
+		requireProviderResponsesCompatibilityError(t, err, "tool_choice")
+	})
+
+	t.Run("rejects empty tool choice string", func(t *testing.T) {
+		t.Parallel()
+
+		err := ValidateProviderResponsesCompatibilityRequest("/v1/responses", []byte(`{"model":"gpt-5","input":"hello","tool_choice":""}`))
+
+		requireProviderResponsesCompatibilityError(t, err, "tool_choice")
+	})
+
+	t.Run("rejects blank tool choice string", func(t *testing.T) {
+		t.Parallel()
+
+		err := ValidateProviderResponsesCompatibilityRequest("/v1/responses", []byte(`{"model":"gpt-5","input":"hello","tool_choice":"  "}`))
+
+		requireProviderResponsesCompatibilityError(t, err, "tool_choice")
 	})
 }
 
