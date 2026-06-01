@@ -286,10 +286,17 @@ func TestGetUpstreamEndpoint_ProviderResponsesRootPOSTUsesPlannedBridge(t *testi
 		{service.PlatformDeepSeek, EndpointChatCompletions},
 		{service.PlatformWindsurf, EndpointChatCompletions},
 	}
+	paths := []string{
+		"/v1/responses",
+		"/responses",
+		"/backend-api/codex/responses",
+	}
 	for _, tt := range tests {
-		t.Run(tt.platform, func(t *testing.T) {
-			require.Equal(t, tt.want, getUpstreamEndpointForRequest(t, http.MethodPost, "/responses", tt.platform))
-		})
+		for _, path := range paths {
+			t.Run(tt.platform+path, func(t *testing.T) {
+				require.Equal(t, tt.want, getUpstreamEndpointForRequest(t, http.MethodPost, path, tt.platform))
+			})
+		}
 	}
 }
 
