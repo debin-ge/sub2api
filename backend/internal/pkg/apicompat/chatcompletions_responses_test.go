@@ -1637,19 +1637,22 @@ func TestChatChunkToResponsesEvents_StreamingTextCreatedDeltaAndCompletionUsage(
 		}},
 	}, state)
 
-	require.Len(t, second, 3)
+	require.Len(t, second, 2)
 	assert.Equal(t, "response.output_text.done", second[0].Type)
 	assert.Equal(t, "response.output_item.done", second[1].Type)
-	assert.Equal(t, "response.completed", second[2].Type)
-	require.NotNil(t, second[2].Response)
-	assert.Equal(t, "completed", second[2].Response.Status)
-	require.NotNil(t, second[2].Response.Usage)
-	assert.Equal(t, 10, second[2].Response.Usage.InputTokens)
-	assert.Equal(t, 4, second[2].Response.Usage.OutputTokens)
-	assert.Equal(t, 14, second[2].Response.Usage.TotalTokens)
-	require.NotNil(t, second[2].Response.Usage.InputTokensDetails)
-	assert.Equal(t, 6, second[2].Response.Usage.InputTokensDetails.CachedTokens)
-	chatAssertMonotonicSequence(t, append(first, second...))
+
+	final := FinalizeChatCompletionsResponsesStream(state)
+	require.Len(t, final, 1)
+	assert.Equal(t, "response.completed", final[0].Type)
+	require.NotNil(t, final[0].Response)
+	assert.Equal(t, "completed", final[0].Response.Status)
+	require.NotNil(t, final[0].Response.Usage)
+	assert.Equal(t, 10, final[0].Response.Usage.InputTokens)
+	assert.Equal(t, 4, final[0].Response.Usage.OutputTokens)
+	assert.Equal(t, 14, final[0].Response.Usage.TotalTokens)
+	require.NotNil(t, final[0].Response.Usage.InputTokensDetails)
+	assert.Equal(t, 6, final[0].Response.Usage.InputTokensDetails.CachedTokens)
+	chatAssertMonotonicSequence(t, append(append(first, second...), final...))
 }
 
 func TestChatChunkToResponsesEvents_ToolCallArgumentFragments(t *testing.T) {
@@ -1706,12 +1709,148 @@ func TestChatChunkToResponsesEvents_ToolCallArgumentFragments(t *testing.T) {
 			FinishReason: chatTestStringPtr("tool_calls"),
 		}},
 	}, state)
-	require.Len(t, events, 3)
+	require.Len(t, events, 2)
 	assert.Equal(t, "response.function_call_arguments.done", events[0].Type)
 	assert.Equal(t, "call_lookup", events[0].CallID)
 	assert.Equal(t, "lookup", events[0].Name)
 	assert.Equal(t, "response.output_item.done", events[1].Type)
-	assert.Equal(t, "response.completed", events[2].Type)
+
+	events = FinalizeChatCompletionsResponsesStream(state)
+	require.Len(t, events, 1)
+	assert.Equal(t, "response.completed", events[0].Type)
+}
+
+func TestChatChunkToResponsesEvents_SequentialToolIndicesClosePreviousBeforeOpeningNext(t *testing.T) {
+	state := NewChatCompletionsToResponsesState("gpt-4o")
+	firstToolIndex := 0
+	secondToolIndex := 1
+
+	first := ChatChunkToResponsesEvents(&ChatCompletionsChunk{
+		ID: "chatcmpl_tools",
+		Choices: []ChatChunkChoice{{
+			Delta: ChatDelta{ToolCalls: []ChatToolCall{{
+				Index: &firstToolIndex,
+				ID:    "call_first",
+				Type:  "function",
+				Function: ChatFunctionCall{
+					Name:      "first",
+					Arguments: `{"one":`,
+				},
+			}}},
+		}},
+	}, state)
+	require.Len(t, first, 3)
+	assert.Equal(t, "response.output_item.added", first[1].Type)
+	require.NotNil(t, first[1].Item)
+	firstItemID := first[1].Item.ID
+
+	second := ChatChunkToResponsesEvents(&ChatCompletionsChunk{
+		Choices: []ChatChunkChoice{{
+			Delta: ChatDelta{ToolCalls: []ChatToolCall{{
+				Index: &secondToolIndex,
+				ID:    "call_second",
+				Type:  "function",
+				Function: ChatFunctionCall{
+					Name:      "second",
+					Arguments: `{"two":2}`,
+				},
+			}}},
+		}},
+	}, state)
+
+	require.Len(t, second, 4)
+	assert.Equal(t, "response.function_call_arguments.done", second[0].Type)
+	assert.Equal(t, firstItemID, second[0].ItemID)
+	assert.Equal(t, "call_first", second[0].CallID)
+	assert.Equal(t, "response.output_item.done", second[1].Type)
+	require.NotNil(t, second[1].Item)
+	assert.Equal(t, firstItemID, second[1].Item.ID)
+	assert.Equal(t, "call_first", second[1].Item.CallID)
+	assert.Equal(t, "response.output_item.added", second[2].Type)
+	require.NotNil(t, second[2].Item)
+	assert.Equal(t, "call_second", second[2].Item.CallID)
+	assert.Equal(t, "second", second[2].Item.Name)
+	assert.Equal(t, "response.function_call_arguments.delta", second[3].Type)
+	assert.Equal(t, second[2].Item.ID, second[3].ItemID)
+	assert.Equal(t, "call_second", second[3].CallID)
+	assert.Equal(t, `{"two":2}`, second[3].Delta)
+}
+
+func TestChatChunkToResponsesEvents_UsageOnlyChunkAfterFinishEmitsTerminalWithUsage(t *testing.T) {
+	state := NewChatCompletionsToResponsesState("gpt-4o")
+
+	first := ChatChunkToResponsesEvents(&ChatCompletionsChunk{
+		ID: "chatcmpl_usage_after_finish",
+		Choices: []ChatChunkChoice{{
+			Delta: ChatDelta{Content: chatTestStringPtr("Hello")},
+		}},
+	}, state)
+	require.NotEmpty(t, first)
+
+	finish := ChatChunkToResponsesEvents(&ChatCompletionsChunk{
+		Choices: []ChatChunkChoice{{
+			FinishReason: chatTestStringPtr("stop"),
+		}},
+	}, state)
+	require.Len(t, finish, 2)
+	assert.Equal(t, "response.output_text.done", finish[0].Type)
+	assert.Equal(t, "response.output_item.done", finish[1].Type)
+
+	usage := ChatChunkToResponsesEvents(&ChatCompletionsChunk{
+		Usage: &ChatUsage{
+			PromptTokens:     11,
+			CompletionTokens: 5,
+			TotalTokens:      16,
+			PromptTokensDetails: &ChatTokenDetails{
+				CachedTokens: 7,
+			},
+		},
+		Choices: []ChatChunkChoice{},
+	}, state)
+	require.Len(t, usage, 1)
+	assert.Equal(t, "response.completed", usage[0].Type)
+	require.NotNil(t, usage[0].Response)
+	require.NotNil(t, usage[0].Response.Usage)
+	assert.Equal(t, 11, usage[0].Response.Usage.InputTokens)
+	assert.Equal(t, 5, usage[0].Response.Usage.OutputTokens)
+	assert.Equal(t, 16, usage[0].Response.Usage.TotalTokens)
+	require.NotNil(t, usage[0].Response.Usage.InputTokensDetails)
+	assert.Equal(t, 7, usage[0].Response.Usage.InputTokensDetails.CachedTokens)
+
+	assert.Nil(t, FinalizeChatCompletionsResponsesStream(state))
+	assert.Nil(t, ChatChunkToResponsesEvents(&ChatCompletionsChunk{
+		Choices: []ChatChunkChoice{{
+			Delta: ChatDelta{Content: chatTestStringPtr("ignored")},
+		}},
+	}, state))
+}
+
+func TestFinalizeChatCompletionsResponsesStream_EmitsPendingFinishWhenNoUsageChunkArrives(t *testing.T) {
+	state := NewChatCompletionsToResponsesState("gpt-4o")
+
+	first := ChatChunkToResponsesEvents(&ChatCompletionsChunk{
+		ID: "chatcmpl_pending_finish",
+		Choices: []ChatChunkChoice{{
+			Delta: ChatDelta{Content: chatTestStringPtr("partial")},
+		}},
+	}, state)
+	require.NotEmpty(t, first)
+
+	finish := ChatChunkToResponsesEvents(&ChatCompletionsChunk{
+		Choices: []ChatChunkChoice{{
+			FinishReason: chatTestStringPtr("stop"),
+		}},
+	}, state)
+	require.Len(t, finish, 2)
+	assert.Equal(t, "response.output_text.done", finish[0].Type)
+	assert.Equal(t, "response.output_item.done", finish[1].Type)
+
+	events := FinalizeChatCompletionsResponsesStream(state)
+	require.Len(t, events, 1)
+	assert.Equal(t, "response.completed", events[0].Type)
+	require.NotNil(t, events[0].Response)
+	assert.Equal(t, "completed", events[0].Response.Status)
+	assert.Nil(t, FinalizeChatCompletionsResponsesStream(state))
 }
 
 func TestChatChunkToResponsesEvents_ReasoningDeltaAndClose(t *testing.T) {
@@ -1741,10 +1880,13 @@ func TestChatChunkToResponsesEvents_ReasoningDeltaAndClose(t *testing.T) {
 			FinishReason: chatTestStringPtr("stop"),
 		}},
 	}, state)
-	require.Len(t, events, 3)
+	require.Len(t, events, 2)
 	assert.Equal(t, "response.reasoning_summary_text.done", events[0].Type)
 	assert.Equal(t, "response.output_item.done", events[1].Type)
-	assert.Equal(t, "response.completed", events[2].Type)
+
+	events = FinalizeChatCompletionsResponsesStream(state)
+	require.Len(t, events, 1)
+	assert.Equal(t, "response.completed", events[0].Type)
 }
 
 func TestFinalizeChatCompletionsResponsesStream_IdempotentAndNoDuplicateAfterTerminal(t *testing.T) {
@@ -1776,6 +1918,9 @@ func TestFinalizeChatCompletionsResponsesStream_IdempotentAndNoDuplicateAfterTer
 		}},
 	}, state)
 	require.NotEmpty(t, events)
+	events = FinalizeChatCompletionsResponsesStream(state)
+	require.Len(t, events, 1)
+	assert.Equal(t, "response.completed", events[0].Type)
 	assert.Nil(t, FinalizeChatCompletionsResponsesStream(state))
 }
 
@@ -1825,13 +1970,16 @@ func TestChatChunkToResponsesEvents_LengthFinishReasonIncomplete(t *testing.T) {
 		}},
 	}, state)
 
-	require.Len(t, events, 2)
+	require.Len(t, events, 1)
 	assert.Equal(t, "response.created", events[0].Type)
-	assert.Equal(t, "response.incomplete", events[1].Type)
-	require.NotNil(t, events[1].Response)
-	assert.Equal(t, "incomplete", events[1].Response.Status)
-	require.NotNil(t, events[1].Response.IncompleteDetails)
-	assert.Equal(t, "max_output_tokens", events[1].Response.IncompleteDetails.Reason)
+
+	events = FinalizeChatCompletionsResponsesStream(state)
+	require.Len(t, events, 1)
+	assert.Equal(t, "response.incomplete", events[0].Type)
+	require.NotNil(t, events[0].Response)
+	assert.Equal(t, "incomplete", events[0].Response.Status)
+	require.NotNil(t, events[0].Response.IncompleteDetails)
+	assert.Equal(t, "max_output_tokens", events[0].Response.IncompleteDetails.Reason)
 }
 
 func TestChatChunkToResponsesEvents_NilInputsReturnNil(t *testing.T) {

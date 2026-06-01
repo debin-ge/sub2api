@@ -93,7 +93,9 @@ type ChatCompletionsToResponsesState struct {
 	ReasoningItem   *chatResponsesStreamItem
 	ToolItems       map[int]*chatResponsesStreamItem
 	ToolOrder       []int
+	ActiveToolIndex *int
 	Usage           *ChatUsage
+	PendingFinish   *string
 }
 
 type chatResponsesStreamItem struct {
@@ -137,10 +139,14 @@ func ChatChunkToResponsesEvents(chunk *ChatCompletionsChunk, state *ChatCompleti
 		if choice.FinishReason != nil {
 			events = append(events, chatResponsesEnsureCreated(state)...)
 			events = append(events, chatResponsesCloseCurrentCategory(state)...)
-			events = append(events, chatResponsesTerminalEvent(*choice.FinishReason, state))
-			state.CompletedSent = true
+			finishReason := *choice.FinishReason
+			state.PendingFinish = &finishReason
 			return events
 		}
+	}
+
+	if state.PendingFinish != nil && chunk.Usage != nil && len(chunk.Choices) == 0 {
+		events = append(events, chatResponsesEmitTerminal(*state.PendingFinish, state))
 	}
 
 	return events
@@ -155,8 +161,11 @@ func FinalizeChatCompletionsResponsesStream(state *ChatCompletionsToResponsesSta
 
 	var events []ResponsesStreamEvent
 	events = append(events, chatResponsesCloseCurrentCategory(state)...)
-	events = append(events, chatResponsesTerminalEvent("stop", state))
-	state.CompletedSent = true
+	finishReason := "stop"
+	if state.PendingFinish != nil {
+		finishReason = *state.PendingFinish
+	}
+	events = append(events, chatResponsesEmitTerminal(finishReason, state))
 	return events
 }
 
@@ -261,7 +270,11 @@ func chatResponsesToolDelta(toolCall ChatToolCall, state *ChatCompletionsToRespo
 	if state.CurrentCategory != "function_call" {
 		events = append(events, chatResponsesCloseCurrentCategory(state)...)
 		state.CurrentCategory = "function_call"
+	} else if state.ActiveToolIndex != nil && *state.ActiveToolIndex != index {
+		events = append(events, chatResponsesCloseToolCallIndex(*state.ActiveToolIndex, state)...)
 	}
+	activeToolIndex := index
+	state.ActiveToolIndex = &activeToolIndex
 
 	item := state.ToolItems[index]
 	if item == nil {
@@ -409,32 +422,47 @@ func chatResponsesCloseReasoning(state *ChatCompletionsToResponsesState) []Respo
 func chatResponsesCloseToolCalls(state *ChatCompletionsToResponsesState) []ResponsesStreamEvent {
 	var events []ResponsesStreamEvent
 	for _, index := range state.ToolOrder {
-		item := state.ToolItems[index]
-		if item == nil || item.Closed {
-			continue
-		}
-		item.Closed = true
-		events = append(events,
-			chatResponsesEvent(state, "response.function_call_arguments.done", &ResponsesStreamEvent{
-				OutputIndex: item.OutputIndex,
-				ItemID:      item.ItemID,
-				CallID:      item.CallID,
-				Name:        item.Name,
-			}),
-			chatResponsesEvent(state, "response.output_item.done", &ResponsesStreamEvent{
-				OutputIndex: item.OutputIndex,
-				Item: &ResponsesOutput{
-					Type:   "function_call",
-					ID:     item.ItemID,
-					CallID: item.CallID,
-					Name:   item.Name,
-					Status: "completed",
-				},
-			}),
-		)
+		events = append(events, chatResponsesCloseToolCallIndex(index, state)...)
 	}
 	state.CurrentCategory = ""
+	state.ActiveToolIndex = nil
 	return events
+}
+
+func chatResponsesCloseToolCallIndex(index int, state *ChatCompletionsToResponsesState) []ResponsesStreamEvent {
+	item := state.ToolItems[index]
+	if item == nil || item.Closed {
+		return nil
+	}
+	item.Closed = true
+	if state.ActiveToolIndex != nil && *state.ActiveToolIndex == index {
+		state.ActiveToolIndex = nil
+	}
+	return []ResponsesStreamEvent{
+		chatResponsesEvent(state, "response.function_call_arguments.done", &ResponsesStreamEvent{
+			OutputIndex: item.OutputIndex,
+			ItemID:      item.ItemID,
+			CallID:      item.CallID,
+			Name:        item.Name,
+		}),
+		chatResponsesEvent(state, "response.output_item.done", &ResponsesStreamEvent{
+			OutputIndex: item.OutputIndex,
+			Item: &ResponsesOutput{
+				Type:   "function_call",
+				ID:     item.ItemID,
+				CallID: item.CallID,
+				Name:   item.Name,
+				Status: "completed",
+			},
+		}),
+	}
+}
+
+func chatResponsesEmitTerminal(finishReason string, state *ChatCompletionsToResponsesState) ResponsesStreamEvent {
+	event := chatResponsesTerminalEvent(finishReason, state)
+	state.CompletedSent = true
+	state.PendingFinish = nil
+	return event
 }
 
 func chatResponsesTerminalEvent(finishReason string, state *ChatCompletionsToResponsesState) ResponsesStreamEvent {
