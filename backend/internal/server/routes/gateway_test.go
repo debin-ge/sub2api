@@ -464,6 +464,24 @@ func TestGatewayRoutesDeepSeekModelsReturnsDefaultList(t *testing.T) {
 	require.NotContains(t, w.Body.String(), "claude-sonnet")
 }
 
+func TestGatewayRoutesWindsurfResponsesWebSocketAliasesReturnNotFound(t *testing.T) {
+	router := newGatewayRoutesTestRouterForPlatform(service.PlatformWindsurf)
+
+	for _, path := range []string{
+		"/v1/responses",
+		"/responses",
+		"/backend-api/codex/responses",
+	} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		w := httptest.NewRecorder()
+
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusNotFound, w.Code, "path=%s should be Windsurf unsupported", path)
+		require.Contains(t, w.Body.String(), "not_found_error", "path=%s", path)
+		require.Contains(t, w.Body.String(), "Windsurf gateway supports /v1/messages, /v1/chat/completions, and /v1/responses only", "path=%s", path)
+	}
+}
+
 func TestGatewayRoutesProviderResponsesRootsDispatchToProviderHandlers(t *testing.T) {
 	for _, tc := range []struct {
 		platform string
