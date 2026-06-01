@@ -196,19 +196,19 @@ func RegisterGatewayRoutes(
 				h.OpenAIGateway.Responses(c)
 				return
 			case service.PlatformMiniMax:
-				writeMiniMaxUnsupported(c, h)
+				writeMiniMaxResponses(c, h)
 				return
 			case service.PlatformGLM:
-				writeGLMUnsupported(c, h)
+				writeGLMResponses(c, h)
 				return
 			case service.PlatformKimi:
-				writeKimiUnsupported(c, h)
+				writeKimiResponses(c, h)
 				return
 			case service.PlatformDeepSeek:
-				writeDeepSeekUnsupported(c, h)
+				writeDeepSeekResponses(c, h)
 				return
 			case service.PlatformWindsurf:
-				writeWindsurfUnsupported(c, h)
+				writeWindsurfResponses(c, h)
 				return
 			case service.PlatformOpenCode:
 				writeOpenCodeResponses(c, h)
@@ -392,6 +392,32 @@ func RegisterGatewayRoutes(
 			h.OpenAIGateway.Responses(c)
 			return
 		case service.PlatformMiniMax:
+			writeMiniMaxResponses(c, h)
+			return
+		case service.PlatformGLM:
+			writeGLMResponses(c, h)
+			return
+		case service.PlatformKimi:
+			writeKimiResponses(c, h)
+			return
+		case service.PlatformDeepSeek:
+			writeDeepSeekResponses(c, h)
+			return
+		case service.PlatformWindsurf:
+			writeWindsurfResponses(c, h)
+			return
+		case service.PlatformOpenCode:
+			writeOpenCodeResponses(c, h)
+			return
+		}
+		h.Gateway.Responses(c)
+	}
+	responsesSubpathHandler := func(c *gin.Context) {
+		switch getGroupPlatform(c) {
+		case service.PlatformOpenAI:
+			h.OpenAIGateway.Responses(c)
+			return
+		case service.PlatformMiniMax:
 			writeMiniMaxUnsupported(c, h)
 			return
 		case service.PlatformGLM:
@@ -413,7 +439,7 @@ func RegisterGatewayRoutes(
 		h.Gateway.Responses(c)
 	}
 	r.POST("/responses", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, responsesHandler)
-	r.POST("/responses/*subpath", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, responsesHandler)
+	r.POST("/responses/*subpath", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, responsesSubpathHandler)
 	r.GET("/responses", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, func(c *gin.Context) {
 		if getGroupPlatform(c) == service.PlatformMiniMax {
 			writeMiniMaxUnsupported(c, h)
@@ -445,7 +471,7 @@ func RegisterGatewayRoutes(
 	codexDirect.Use(bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic)
 	{
 		codexDirect.POST("/responses", responsesHandler)
-		codexDirect.POST("/responses/*subpath", responsesHandler)
+		codexDirect.POST("/responses/*subpath", responsesSubpathHandler)
 		codexDirect.GET("/responses", func(c *gin.Context) {
 			if getGroupPlatform(c) == service.PlatformMiniMax {
 				writeMiniMaxUnsupported(c, h)
@@ -618,16 +644,32 @@ func getGroupPlatform(c *gin.Context) string {
 	return apiKey.Group.Platform
 }
 
-func writeMiniMaxUnsupported(c *gin.Context, h *handler.Handlers) {
-	if h != nil && h.MiniMaxGateway != nil {
-		h.MiniMaxGateway.Unsupported(c)
-		return
-	}
+type providerResponsesHandler interface {
+	Responses(*gin.Context)
+}
+
+func writeMiniMaxUnsupported(c *gin.Context, _ *handler.Handlers) {
 	c.JSON(http.StatusNotFound, gin.H{
 		"type": "error",
 		"error": gin.H{
 			"type":    "not_found_error",
-			"message": "MiniMax gateway supports /v1/messages, /v1/chat/completions, and /v1/models only",
+			"message": "MiniMax gateway supports /v1/messages, /v1/chat/completions, /v1/responses, and /v1/models only",
+		},
+	})
+}
+
+func writeMiniMaxResponses(c *gin.Context, h *handler.Handlers) {
+	if h != nil && h.MiniMaxGateway != nil {
+		if responsesHandler, ok := any(h.MiniMaxGateway).(providerResponsesHandler); ok {
+			responsesHandler.Responses(c)
+			return
+		}
+	}
+	c.JSON(http.StatusServiceUnavailable, gin.H{
+		"type": "error",
+		"error": gin.H{
+			"type":    "api_error",
+			"message": "minimax gateway service unavailable",
 		},
 	})
 }
@@ -646,16 +688,28 @@ func writeMiniMaxChatCompletions(c *gin.Context, h *handler.Handlers) {
 	})
 }
 
-func writeGLMUnsupported(c *gin.Context, h *handler.Handlers) {
-	if h != nil && h.GLMGateway != nil {
-		h.GLMGateway.Unsupported(c)
-		return
-	}
+func writeGLMUnsupported(c *gin.Context, _ *handler.Handlers) {
 	c.JSON(http.StatusNotFound, gin.H{
 		"type": "error",
 		"error": gin.H{
 			"type":    "not_found_error",
-			"message": "GLM gateway supports /v1/messages and /v1/chat/completions only",
+			"message": "GLM gateway supports /v1/messages, /v1/chat/completions, and /v1/responses only",
+		},
+	})
+}
+
+func writeGLMResponses(c *gin.Context, h *handler.Handlers) {
+	if h != nil && h.GLMGateway != nil {
+		if responsesHandler, ok := any(h.GLMGateway).(providerResponsesHandler); ok {
+			responsesHandler.Responses(c)
+			return
+		}
+	}
+	c.JSON(http.StatusServiceUnavailable, gin.H{
+		"type": "error",
+		"error": gin.H{
+			"type":    "api_error",
+			"message": "glm gateway service unavailable",
 		},
 	})
 }
@@ -674,16 +728,28 @@ func writeGLMChatCompletions(c *gin.Context, h *handler.Handlers) {
 	})
 }
 
-func writeKimiUnsupported(c *gin.Context, h *handler.Handlers) {
-	if h != nil && h.KimiGateway != nil {
-		h.KimiGateway.Unsupported(c)
-		return
-	}
+func writeKimiUnsupported(c *gin.Context, _ *handler.Handlers) {
 	c.JSON(http.StatusNotFound, gin.H{
 		"type": "error",
 		"error": gin.H{
 			"type":    "not_found_error",
-			"message": "Kimi gateway supports /v1/messages and /v1/chat/completions only",
+			"message": "Kimi gateway supports /v1/messages, /v1/chat/completions, and /v1/responses only",
+		},
+	})
+}
+
+func writeKimiResponses(c *gin.Context, h *handler.Handlers) {
+	if h != nil && h.KimiGateway != nil {
+		if responsesHandler, ok := any(h.KimiGateway).(providerResponsesHandler); ok {
+			responsesHandler.Responses(c)
+			return
+		}
+	}
+	c.JSON(http.StatusServiceUnavailable, gin.H{
+		"type": "error",
+		"error": gin.H{
+			"type":    "api_error",
+			"message": "kimi gateway service unavailable",
 		},
 	})
 }
@@ -702,16 +768,28 @@ func writeKimiChatCompletions(c *gin.Context, h *handler.Handlers) {
 	})
 }
 
-func writeDeepSeekUnsupported(c *gin.Context, h *handler.Handlers) {
-	if h != nil && h.DeepSeekGateway != nil {
-		h.DeepSeekGateway.Unsupported(c)
-		return
-	}
+func writeDeepSeekUnsupported(c *gin.Context, _ *handler.Handlers) {
 	c.JSON(http.StatusNotFound, gin.H{
 		"type": "error",
 		"error": gin.H{
 			"type":    "not_found_error",
-			"message": "DeepSeek gateway supports /v1/messages and /v1/chat/completions only",
+			"message": "DeepSeek gateway supports /v1/messages, /v1/chat/completions, and /v1/responses only",
+		},
+	})
+}
+
+func writeDeepSeekResponses(c *gin.Context, h *handler.Handlers) {
+	if h != nil && h.DeepSeekGateway != nil {
+		if responsesHandler, ok := any(h.DeepSeekGateway).(providerResponsesHandler); ok {
+			responsesHandler.Responses(c)
+			return
+		}
+	}
+	c.JSON(http.StatusServiceUnavailable, gin.H{
+		"type": "error",
+		"error": gin.H{
+			"type":    "api_error",
+			"message": "deepseek gateway service unavailable",
 		},
 	})
 }
@@ -730,16 +808,28 @@ func writeDeepSeekChatCompletions(c *gin.Context, h *handler.Handlers) {
 	})
 }
 
-func writeWindsurfUnsupported(c *gin.Context, h *handler.Handlers) {
-	if h != nil && h.WindsurfGateway != nil {
-		h.WindsurfGateway.Unsupported(c)
-		return
-	}
+func writeWindsurfUnsupported(c *gin.Context, _ *handler.Handlers) {
 	c.JSON(http.StatusNotFound, gin.H{
 		"type": "error",
 		"error": gin.H{
 			"type":    "not_found_error",
-			"message": "Windsurf gateway supports /v1/messages and /v1/chat/completions only",
+			"message": "Windsurf gateway supports /v1/messages, /v1/chat/completions, and /v1/responses only",
+		},
+	})
+}
+
+func writeWindsurfResponses(c *gin.Context, h *handler.Handlers) {
+	if h != nil && h.WindsurfGateway != nil {
+		if responsesHandler, ok := any(h.WindsurfGateway).(providerResponsesHandler); ok {
+			responsesHandler.Responses(c)
+			return
+		}
+	}
+	c.JSON(http.StatusServiceUnavailable, gin.H{
+		"type": "error",
+		"error": gin.H{
+			"type":    "api_error",
+			"message": "windsurf gateway service unavailable",
 		},
 	})
 }
