@@ -18,13 +18,14 @@ import (
 )
 
 type fakeGLMForwarder struct {
-	account        *service.Account
-	body           []byte
-	requestID      string
-	messagesCalled int
-	chatCalled     int
-	errs           []error
-	panicMessages  bool
+	account         *service.Account
+	body            []byte
+	requestID       string
+	messagesCalled  int
+	chatCalled      int
+	responsesCalled int
+	errs            []error
+	panicMessages   bool
 }
 
 func (f *fakeGLMForwarder) ForwardMessages(ctx context.Context, c *gin.Context, account *service.Account, body []byte, requestID string) (*service.ForwardResult, error) {
@@ -75,6 +76,33 @@ func (f *fakeGLMForwarder) ForwardChatCompletions(ctx context.Context, c *gin.Co
 		Usage: service.ClaudeUsage{
 			InputTokens:  13,
 			OutputTokens: 5,
+		},
+		Duration: time.Millisecond,
+	}, nil
+}
+
+func (f *fakeGLMForwarder) ForwardResponses(ctx context.Context, c *gin.Context, account *service.Account, body []byte, requestID string) (*service.ForwardResult, error) {
+	f.responsesCalled++
+	f.account = account
+	f.body = append([]byte(nil), body...)
+	f.requestID = requestID
+	if len(f.errs) > 0 {
+		err := f.errs[0]
+		f.errs = f.errs[1:]
+		if err != nil {
+			return nil, err
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"id": "resp_1", "object": "response", "model": "glm-5.1"})
+	effort := "medium"
+	return &service.ForwardResult{
+		RequestID:       "glm-upstream-resp-req-1",
+		Model:           "glm-5.1",
+		UpstreamModel:   "GLM-5.1",
+		ReasoningEffort: &effort,
+		Usage: service.ClaudeUsage{
+			InputTokens:  9,
+			OutputTokens: 4,
 		},
 		Duration: time.Millisecond,
 	}, nil
@@ -290,6 +318,66 @@ func TestGLMGatewayHandlerChatCompletionsSuccessForwardsAndRecordsUsage(t *testi
 	require.Equal(t, 1, billing.calls)
 }
 
+func TestGLMGatewayHandlerResponsesSuccessForwardsAndRecordsUsage(t *testing.T) {
+	account := glmTestAccount(101)
+	forwarder := &fakeGLMForwarder{}
+	concurrency := &fakeGLMConcurrencyController{allowWait: true}
+	billing := &fakeGLMBillingChecker{}
+	gateway := &fakeGLMGatewayService{
+		selections: []*service.AccountSelectionResult{{Account: account, Acquired: true}},
+	}
+	h := &GLMGatewayHandler{
+		glmService:          forwarder,
+		gatewayService:      gateway,
+		concurrencyHelper:   concurrency,
+		billingCacheService: billing,
+	}
+	c, rec, apiKey := newGLMHandlerTestContextForPath(t, "/v1/responses", service.PlatformGLM, `{"model":"glm-5.1","input":"hello","reasoning":{"effort":"medium"}}`)
+
+	h.Responses(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, 1, forwarder.responsesCalled)
+	require.Equal(t, 0, forwarder.messagesCalled)
+	require.Equal(t, 0, forwarder.chatCalled)
+	require.Equal(t, account, forwarder.account)
+	require.JSONEq(t, `{"model":"glm-5.1","input":"hello","reasoning":{"effort":"medium"}}`, string(forwarder.body))
+	require.Equal(t, "glm-client-req-1", forwarder.requestID)
+	require.Equal(t, "glm-5.1", gateway.selectedModel)
+	require.Equal(t, int64(99), gateway.selectedUserID)
+	require.NotNil(t, gateway.recorded)
+	require.Equal(t, apiKey, gateway.recorded.APIKey)
+	require.Equal(t, account, gateway.recorded.Account)
+	require.Equal(t, "/v1/responses", gateway.recorded.InboundEndpoint)
+	require.Equal(t, "/v1/messages", gateway.recorded.UpstreamEndpoint)
+	require.NotNil(t, gateway.recorded.Result.ReasoningEffort)
+	require.Equal(t, "medium", *gateway.recorded.Result.ReasoningEffort)
+	require.NotEmpty(t, gateway.recorded.RequestPayloadHash)
+	require.Equal(t, 1, billing.calls)
+}
+
+func TestGLMGatewayHandlerResponsesRejectsPreviousResponseIDBeforeForwarding(t *testing.T) {
+	forwarder := &fakeGLMForwarder{}
+	concurrency := &fakeGLMConcurrencyController{allowWait: true}
+	billing := &fakeGLMBillingChecker{}
+	h := &GLMGatewayHandler{
+		glmService:          forwarder,
+		gatewayService:      &fakeGLMGatewayService{},
+		concurrencyHelper:   concurrency,
+		billingCacheService: billing,
+	}
+	c, rec, _ := newGLMHandlerTestContextForPath(t, "/v1/responses", service.PlatformGLM, `{"model":"glm-5.1","previous_response_id":"resp_1","input":"hello"}`)
+
+	h.Responses(c)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Contains(t, rec.Body.String(), "invalid_request_error")
+	require.Contains(t, rec.Body.String(), "previous_response_id")
+	require.Equal(t, 0, forwarder.responsesCalled)
+	require.Equal(t, 0, concurrency.incrementWaitCalls)
+	require.Equal(t, 0, billing.calls)
+}
+
 func TestGLMGatewayHandlerMessagesRejectsInvalidPlatform(t *testing.T) {
 	h := &GLMGatewayHandler{}
 	c, rec, _ := newGLMHandlerTestContext(t, service.PlatformOpenAI, `{"model":"claude-sonnet-4-5"}`)
@@ -398,7 +486,7 @@ func TestGLMGatewayHandlerUnsupportedReturnsNotFound(t *testing.T) {
 
 	require.Equal(t, http.StatusNotFound, rec.Code)
 	require.Contains(t, rec.Body.String(), "not_found_error")
-	require.Contains(t, rec.Body.String(), "GLM gateway supports /v1/messages and /v1/chat/completions only")
+	require.Contains(t, rec.Body.String(), "GLM gateway supports /v1/messages, /v1/chat/completions, and /v1/responses only")
 }
 
 func TestGLMGatewayHandlerRetryableUpstreamErrorFailsOverToNextAccount(t *testing.T) {
