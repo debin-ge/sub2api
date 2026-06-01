@@ -84,16 +84,26 @@ func forwardProviderResponsesViaAnthropic(ctx context.Context, c *gin.Context, c
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if providerResponsesShouldReturnUpstreamError(cfg, resp.StatusCode) {
+	if resp.StatusCode >= http.StatusBadRequest {
 		respBody, readErr := providerResponsesReadErrorBody(cfg, resp.Body)
 		if readErr != nil {
 			return nil, readErr
 		}
-		return nil, &UpstreamFailoverError{
-			StatusCode:      resp.StatusCode,
-			ResponseBody:    respBody,
-			ResponseHeaders: resp.Header.Clone(),
+		if providerResponsesShouldReturnUpstreamError(cfg, resp.StatusCode) {
+			return nil, &UpstreamFailoverError{
+				StatusCode:      resp.StatusCode,
+				ResponseBody:    respBody,
+				ResponseHeaders: resp.Header.Clone(),
+			}
 		}
+
+		upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
+		upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
+		if upstreamMsg == "" {
+			upstreamMsg = http.StatusText(resp.StatusCode)
+		}
+		writeResponsesError(c, mapUpstreamStatusCode(resp.StatusCode), "server_error", upstreamMsg)
+		return nil, fmt.Errorf("upstream error: %d %s", resp.StatusCode, upstreamMsg)
 	}
 
 	if clientStream {
@@ -174,6 +184,14 @@ func providerResponsesMaxLineSize(cfg providerResponsesAnthropicConfig) int {
 	return defaultMaxLineSize
 }
 
+func providerResponsesScannerBufferSize(maxLineSize int) int {
+	const defaultScannerBufferSize = 64 * 1024
+	if maxLineSize > 0 && maxLineSize < defaultScannerBufferSize {
+		return maxLineSize
+	}
+	return defaultScannerBufferSize
+}
+
 func handleProviderResponsesAnthropicBufferedStreamingResponse(
 	resp *http.Response,
 	c *gin.Context,
@@ -186,7 +204,8 @@ func handleProviderResponsesAnthropicBufferedStreamingResponse(
 	requestID := resp.Header.Get("x-request-id")
 
 	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 0, 64*1024), providerResponsesMaxLineSize(cfg))
+	maxLineSize := providerResponsesMaxLineSize(cfg)
+	scanner.Buffer(make([]byte, 0, providerResponsesScannerBufferSize(maxLineSize)), maxLineSize)
 
 	var finalResp *apicompat.AnthropicResponse
 	var usage ClaudeUsage
@@ -235,7 +254,7 @@ func handleProviderResponsesAnthropicBufferedStreamingResponse(
 		}
 		if event.Type == "content_block_delta" && event.Delta != nil && finalResp != nil && event.Index != nil {
 			idx := *event.Index
-			if idx < len(finalResp.Content) {
+			if idx >= 0 && idx < len(finalResp.Content) {
 				switch event.Delta.Type {
 				case "text_delta":
 					finalResp.Content[idx].Text += event.Delta.Text
@@ -255,7 +274,11 @@ func handleProviderResponsesAnthropicBufferedStreamingResponse(
 				zap.String("request_id", requestID),
 				zap.String("service", providerResponsesAnthropicServiceName(cfg)),
 			)
+			if !c.Writer.Written() {
+				writeResponsesError(c, http.StatusBadGateway, "server_error", "Upstream stream read failed")
+			}
 		}
+		return nil, fmt.Errorf("upstream stream read failed: %w", err)
 	}
 
 	if finalResp == nil {
@@ -323,7 +346,8 @@ func handleProviderResponsesAnthropicStreamingResponse(
 	firstChunk := true
 
 	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 0, 64*1024), providerResponsesMaxLineSize(cfg))
+	maxLineSize := providerResponsesMaxLineSize(cfg)
+	scanner.Buffer(make([]byte, 0, providerResponsesScannerBufferSize(maxLineSize)), maxLineSize)
 
 	resultWithUsage := func() *ForwardResult {
 		return &ForwardResult{
@@ -433,6 +457,7 @@ func handleProviderResponsesAnthropicStreamingResponse(
 				zap.String("service", providerResponsesAnthropicServiceName(cfg)),
 			)
 		}
+		return resultWithUsage(), fmt.Errorf("upstream stream read failed: %w", err)
 	}
 
 	return finalizeStream()

@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"testing/iotest"
 
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
@@ -235,6 +236,453 @@ func TestForwardProviderResponsesViaAnthropicUpstreamErrorReturnsFailoverWithout
 	}
 }
 
+func TestForwardProviderResponsesViaAnthropicUpstreamErrorWritesNonFailoverResponse(t *testing.T) {
+	t.Parallel()
+
+	for _, status := range []int{http.StatusBadRequest, http.StatusNotFound} {
+		status := status
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			t.Parallel()
+
+			body := []byte(`{"model":"client-model","input":"hello"}`)
+			httpClient := &http.Client{Transport: providerResponsesRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: status,
+					Header:     http.Header{"X-Request-Id": []string{"upstream-client-error"}},
+					Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"provider said no"}}`)),
+				}, nil
+			})}
+
+			c, rec := newProviderResponsesAnthropicTestContext("/v1/responses", body)
+			result, err := forwardProviderResponsesViaAnthropic(context.Background(), c, providerResponsesAnthropicConfig{
+				ServiceName: "test-provider",
+				HTTPClient:  httpClient,
+				Account:     &Account{ID: 42},
+				Body:        body,
+				BuildRequest: func(ctx context.Context, c *gin.Context, account *Account, body []byte) (*http.Request, string, string, error) {
+					req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://provider.test/v1/messages", bytes.NewReader(body))
+					return req, "client-model", "upstream-model", err
+				},
+				ShouldReturnUpstreamError: func(int) bool { return false },
+			})
+
+			if result != nil {
+				t.Fatalf("result = %+v, want nil", result)
+			}
+			if err == nil {
+				t.Fatal("expected non-failover upstream error")
+			}
+			var failoverErr *UpstreamFailoverError
+			if errors.As(err, &failoverErr) {
+				t.Fatalf("err = %T, want non-failover error", err)
+			}
+			if rec.Code != status {
+				t.Fatalf("status = %d, want %d; body=%s", rec.Code, status, rec.Body.String())
+			}
+			if got := gjson.Get(rec.Body.String(), "error.code").String(); got != "server_error" {
+				t.Fatalf("error.code = %q, want server_error; body=%s", got, rec.Body.String())
+			}
+			if got := gjson.Get(rec.Body.String(), "error.message").String(); got != "provider said no" {
+				t.Fatalf("error.message = %q, want provider said no; body=%s", got, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestForwardProviderResponsesViaAnthropicBufferedReadErrorReturnsError(t *testing.T) {
+	t.Parallel()
+
+	body := []byte(`{"model":"client-model","input":"hello"}`)
+	httpClient := &http.Client{Transport: providerResponsesRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+			Body:       io.NopCloser(iotest.ErrReader(errors.New("read failed"))),
+		}, nil
+	})}
+
+	c, rec := newProviderResponsesAnthropicTestContext("/v1/responses", body)
+	result, err := forwardProviderResponsesViaAnthropic(context.Background(), c, providerResponsesAnthropicConfig{
+		ServiceName: "test-provider",
+		HTTPClient:  httpClient,
+		Account:     &Account{ID: 42},
+		Body:        body,
+		BuildRequest: func(ctx context.Context, c *gin.Context, account *Account, body []byte) (*http.Request, string, string, error) {
+			req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://provider.test/v1/messages", bytes.NewReader(body))
+			return req, "client-model", "upstream-model", err
+		},
+		ShouldReturnUpstreamError: func(status int) bool { return status >= 400 },
+	})
+
+	if result != nil {
+		t.Fatalf("result = %+v, want nil", result)
+	}
+	if err == nil {
+		t.Fatal("expected buffered stream read error")
+	}
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502; body=%s", rec.Code, rec.Body.String())
+	}
+	if got := gjson.Get(rec.Body.String(), "error.code").String(); got != "server_error" {
+		t.Fatalf("error.code = %q, want server_error; body=%s", got, rec.Body.String())
+	}
+}
+
+func TestForwardProviderResponsesViaAnthropicBufferedOverlongLineReturnsError(t *testing.T) {
+	t.Parallel()
+
+	body := []byte(`{"model":"client-model","input":"hello"}`)
+	httpClient := &http.Client{Transport: providerResponsesRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return providerResponsesAnthropicRawSSE(http.StatusOK, strings.Join([]string{
+			`event: message_start`,
+			`data: {"type":"message_start","message":{"id":"msg_overlong","type":"message","role":"assistant","content":[],"model":"upstream-model","usage":{"input_tokens":1}}}`,
+			``,
+			strings.Repeat("x", 512),
+		}, "\n")), nil
+	})}
+
+	c, rec := newProviderResponsesAnthropicTestContext("/v1/responses", body)
+	result, err := forwardProviderResponsesViaAnthropic(context.Background(), c, providerResponsesAnthropicConfig{
+		ServiceName: "test-provider",
+		HTTPClient:  httpClient,
+		Account:     &Account{ID: 42},
+		Body:        body,
+		BuildRequest: func(ctx context.Context, c *gin.Context, account *Account, body []byte) (*http.Request, string, string, error) {
+			req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://provider.test/v1/messages", bytes.NewReader(body))
+			return req, "client-model", "upstream-model", err
+		},
+		ShouldReturnUpstreamError: func(status int) bool { return status >= 400 },
+		MaxLineSize:               256,
+	})
+
+	if result != nil {
+		t.Fatalf("result = %+v, want nil", result)
+	}
+	if err == nil {
+		t.Fatal("expected scanner error")
+	}
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502; body=%s", rec.Code, rec.Body.String())
+	}
+	if got := gjson.Get(rec.Body.String(), "error.code").String(); got != "server_error" {
+		t.Fatalf("error.code = %q, want server_error; body=%s", got, rec.Body.String())
+	}
+	if gjson.Get(rec.Body.String(), "id").Exists() || gjson.Get(rec.Body.String(), "output").Exists() {
+		t.Fatalf("client body looks like success response: %s", rec.Body.String())
+	}
+}
+
+func TestForwardProviderResponsesViaAnthropicStreamingReadErrorReturnsError(t *testing.T) {
+	t.Parallel()
+
+	body := []byte(`{"model":"client-model","input":"hello","stream":true}`)
+	httpClient := &http.Client{Transport: providerResponsesRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+			Body: &providerResponsesErrorAfterReader{data: []byte(strings.Join([]string{
+				`event: message_start`,
+				`data: {"type":"message_start","message":{"id":"msg_read_error","type":"message","role":"assistant","content":[],"model":"upstream-model","usage":{"input_tokens":1}}}`,
+				``,
+			}, "\n"))},
+		}, nil
+	})}
+
+	c, rec := newProviderResponsesAnthropicTestContext("/v1/responses", body)
+	result, err := forwardProviderResponsesViaAnthropic(context.Background(), c, providerResponsesAnthropicConfig{
+		ServiceName: "test-provider",
+		HTTPClient:  httpClient,
+		Account:     &Account{ID: 42},
+		Body:        body,
+		BuildRequest: func(ctx context.Context, c *gin.Context, account *Account, body []byte) (*http.Request, string, string, error) {
+			req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://provider.test/v1/messages", bytes.NewReader(body))
+			return req, "client-model", "upstream-model", err
+		},
+		ShouldReturnUpstreamError: func(status int) bool { return status >= 400 },
+	})
+
+	if result == nil || !result.Stream {
+		t.Fatalf("result.Stream = %v, want true", result != nil && result.Stream)
+	}
+	if err == nil {
+		t.Fatal("expected streaming read error")
+	}
+	if strings.Contains(rec.Body.String(), "event: response.completed") {
+		t.Fatalf("stream finalized as completed after read error: %s", rec.Body.String())
+	}
+}
+
+func TestForwardProviderResponsesViaAnthropicStreamingOverlongLineReturnsError(t *testing.T) {
+	t.Parallel()
+
+	body := []byte(`{"model":"client-model","input":"hello","stream":true}`)
+	httpClient := &http.Client{Transport: providerResponsesRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return providerResponsesAnthropicRawSSE(http.StatusOK, strings.Join([]string{
+			`event: message_start`,
+			`data: {"type":"message_start","message":{"id":"msg_overlong","type":"message","role":"assistant","content":[],"model":"upstream-model","usage":{"input_tokens":1}}}`,
+			``,
+			strings.Repeat("x", 512),
+		}, "\n")), nil
+	})}
+
+	c, rec := newProviderResponsesAnthropicTestContext("/v1/responses", body)
+	result, err := forwardProviderResponsesViaAnthropic(context.Background(), c, providerResponsesAnthropicConfig{
+		ServiceName: "test-provider",
+		HTTPClient:  httpClient,
+		Account:     &Account{ID: 42},
+		Body:        body,
+		BuildRequest: func(ctx context.Context, c *gin.Context, account *Account, body []byte) (*http.Request, string, string, error) {
+			req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://provider.test/v1/messages", bytes.NewReader(body))
+			return req, "client-model", "upstream-model", err
+		},
+		ShouldReturnUpstreamError: func(status int) bool { return status >= 400 },
+		MaxLineSize:               256,
+	})
+
+	if result == nil || !result.Stream {
+		t.Fatalf("result.Stream = %v, want true", result != nil && result.Stream)
+	}
+	if err == nil {
+		t.Fatal("expected scanner error")
+	}
+	if strings.Contains(rec.Body.String(), "event: response.completed") {
+		t.Fatalf("stream finalized as completed after scanner error: %s", rec.Body.String())
+	}
+}
+
+func TestForwardProviderResponsesViaAnthropicNegativeContentBlockIndexDoesNotPanic(t *testing.T) {
+	t.Parallel()
+
+	body := []byte(`{"model":"client-model","input":"hello"}`)
+	httpClient := &http.Client{Transport: providerResponsesRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return providerResponsesAnthropicNegativeIndexSSE(), nil
+	})}
+
+	c, rec := newProviderResponsesAnthropicTestContext("/v1/responses", body)
+	var result *ForwardResult
+	var err error
+	func() {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				t.Fatalf("forwardProviderResponsesViaAnthropic panicked: %v", recovered)
+			}
+		}()
+		result, err = forwardProviderResponsesViaAnthropic(context.Background(), c, providerResponsesAnthropicConfig{
+			ServiceName: "test-provider",
+			HTTPClient:  httpClient,
+			Account:     &Account{ID: 42},
+			Body:        body,
+			BuildRequest: func(ctx context.Context, c *gin.Context, account *Account, body []byte) (*http.Request, string, string, error) {
+				req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://provider.test/v1/messages", bytes.NewReader(body))
+				return req, "client-model", "upstream-model", err
+			},
+			ShouldReturnUpstreamError: func(status int) bool { return status >= 400 },
+		})
+	}()
+
+	if err != nil {
+		t.Fatalf("forwardProviderResponsesViaAnthropic returned error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("result is nil")
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestForwardProviderResponsesViaAnthropicNonFailoverUpstreamErrorWritesResponsesError(t *testing.T) {
+	t.Parallel()
+
+	body := []byte(`{"model":"client-model","input":"hello"}`)
+	httpClient := &http.Client{Transport: providerResponsesRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusBadRequest,
+			Header: http.Header{
+				"Content-Type": []string{"application/json"},
+				"X-Request-Id": []string{"bad_request"},
+			},
+			Body: io.NopCloser(strings.NewReader(`{"error":{"message":"bad input"}}`)),
+		}, nil
+	})}
+
+	c, rec := newProviderResponsesAnthropicTestContext("/v1/responses", body)
+	result, err := forwardProviderResponsesViaAnthropic(context.Background(), c, providerResponsesAnthropicConfig{
+		ServiceName: "test-provider",
+		HTTPClient:  httpClient,
+		Account:     &Account{ID: 42},
+		Body:        body,
+		BuildRequest: func(ctx context.Context, c *gin.Context, account *Account, body []byte) (*http.Request, string, string, error) {
+			req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://provider.test/v1/messages", bytes.NewReader(body))
+			return req, "client-model", "upstream-model", err
+		},
+		ShouldReturnUpstreamError: func(status int) bool { return false },
+	})
+
+	if result != nil {
+		t.Fatalf("result = %+v, want nil", result)
+	}
+	if err == nil {
+		t.Fatal("expected upstream error")
+	}
+	var failoverErr *UpstreamFailoverError
+	if errors.As(err, &failoverErr) {
+		t.Fatalf("err = %T %v, want non-failover error", err, err)
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body=%s", rec.Code, rec.Body.String())
+	}
+	if got := gjson.Get(rec.Body.String(), "error.code").String(); got != "server_error" {
+		t.Fatalf("error.code = %q, want server_error; body=%s", got, rec.Body.String())
+	}
+	if got := gjson.Get(rec.Body.String(), "error.message").String(); got != "bad input" {
+		t.Fatalf("error.message = %q, want bad input; body=%s", got, rec.Body.String())
+	}
+	if gjson.Get(rec.Body.String(), "id").Exists() || gjson.Get(rec.Body.String(), "output").Exists() {
+		t.Fatalf("client body looks like success response: %s", rec.Body.String())
+	}
+}
+
+func TestForwardProviderResponsesViaAnthropicBufferedScannerErrorReturnsError(t *testing.T) {
+	t.Parallel()
+
+	body := []byte(`{"model":"client-model","input":"hello"}`)
+	httpClient := &http.Client{Transport: providerResponsesRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+			Body: &providerResponsesErrorAfterReader{data: []byte(strings.Join([]string{
+				`event: message_start`,
+				`data: {"type":"message_start","message":{"id":"msg_read_error","type":"message","role":"assistant","content":[],"model":"upstream-model","usage":{"input_tokens":1}}}`,
+				``,
+			}, "\n"))},
+		}, nil
+	})}
+
+	c, rec := newProviderResponsesAnthropicTestContext("/v1/responses", body)
+	result, err := forwardProviderResponsesViaAnthropic(context.Background(), c, providerResponsesAnthropicConfig{
+		ServiceName: "test-provider",
+		HTTPClient:  httpClient,
+		Account:     &Account{ID: 42},
+		Body:        body,
+		BuildRequest: func(ctx context.Context, c *gin.Context, account *Account, body []byte) (*http.Request, string, string, error) {
+			req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://provider.test/v1/messages", bytes.NewReader(body))
+			return req, "client-model", "upstream-model", err
+		},
+		ShouldReturnUpstreamError: func(status int) bool { return status >= 400 },
+	})
+
+	if err == nil {
+		t.Fatal("expected scanner error")
+	}
+	if result != nil {
+		t.Fatalf("result = %+v, want nil", result)
+	}
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502; body=%s", rec.Code, rec.Body.String())
+	}
+	if got := gjson.Get(rec.Body.String(), "error.code").String(); got != "server_error" {
+		t.Fatalf("error.code = %q, want server_error; body=%s", got, rec.Body.String())
+	}
+	if gjson.Get(rec.Body.String(), "id").Exists() || gjson.Get(rec.Body.String(), "output").Exists() {
+		t.Fatalf("client body looks like success response: %s", rec.Body.String())
+	}
+}
+
+func TestForwardProviderResponsesViaAnthropicStreamingScannerErrorReturnsError(t *testing.T) {
+	t.Parallel()
+
+	body := []byte(`{"model":"client-model","input":"hello","stream":true}`)
+	httpClient := &http.Client{Transport: providerResponsesRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+			Body: &providerResponsesErrorAfterReader{data: []byte(strings.Join([]string{
+				`event: message_start`,
+				`data: {"type":"message_start","message":{"id":"msg_read_error","type":"message","role":"assistant","content":[],"model":"upstream-model","usage":{"input_tokens":1}}}`,
+				``,
+			}, "\n"))},
+		}, nil
+	})}
+
+	c, _ := newProviderResponsesAnthropicTestContext("/v1/responses", body)
+	result, err := forwardProviderResponsesViaAnthropic(context.Background(), c, providerResponsesAnthropicConfig{
+		ServiceName: "test-provider",
+		HTTPClient:  httpClient,
+		Account:     &Account{ID: 42},
+		Body:        body,
+		BuildRequest: func(ctx context.Context, c *gin.Context, account *Account, body []byte) (*http.Request, string, string, error) {
+			req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://provider.test/v1/messages", bytes.NewReader(body))
+			return req, "client-model", "upstream-model", err
+		},
+		ShouldReturnUpstreamError: func(status int) bool { return status >= 400 },
+	})
+
+	if result == nil || !result.Stream {
+		t.Fatalf("result.Stream = %v, want true", result != nil && result.Stream)
+	}
+	if err == nil {
+		t.Fatal("expected scanner error")
+	}
+}
+
+func TestForwardProviderResponsesViaAnthropicIgnoresNegativeContentBlockIndex(t *testing.T) {
+	t.Parallel()
+
+	body := []byte(`{"model":"client-model","input":"hello"}`)
+	httpClient := &http.Client{Transport: providerResponsesRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return providerResponsesAnthropicRawSSE(http.StatusOK, strings.Join([]string{
+			`event: message_start`,
+			`data: ` + mustProviderResponsesJSON(map[string]any{
+				"type": "message_start",
+				"message": map[string]any{
+					"id":      "msg_123",
+					"type":    "message",
+					"role":    "assistant",
+					"content": []any{},
+					"model":   "upstream-model",
+				},
+			}),
+			``,
+			`event: content_block_delta`,
+			`data: {"type":"content_block_delta","index":-1,"delta":{"type":"text_delta","text":"ignored"}}`,
+			``,
+			`event: message_delta`,
+			`data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}`,
+			``,
+			`event: message_stop`,
+			`data: {"type":"message_stop"}`,
+			``,
+		}, "\n")), nil
+	})}
+
+	c, rec := newProviderResponsesAnthropicTestContext("/v1/responses", body)
+	result, err := forwardProviderResponsesViaAnthropic(context.Background(), c, providerResponsesAnthropicConfig{
+		ServiceName: "test-provider",
+		HTTPClient:  httpClient,
+		Account:     &Account{ID: 42},
+		Body:        body,
+		BuildRequest: func(ctx context.Context, c *gin.Context, account *Account, body []byte) (*http.Request, string, string, error) {
+			req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://provider.test/v1/messages", bytes.NewReader(body))
+			return req, "client-model", "upstream-model", err
+		},
+		ShouldReturnUpstreamError: func(status int) bool { return status >= 400 },
+	})
+
+	if err != nil {
+		t.Fatalf("forwardProviderResponsesViaAnthropic returned error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("result is nil")
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "ignored") {
+		t.Fatalf("negative-index delta was applied: %s", rec.Body.String())
+	}
+}
+
 func newProviderResponsesAnthropicTestContext(path string, body []byte) (*gin.Context, *httptest.ResponseRecorder) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
@@ -294,6 +742,61 @@ func providerResponsesAnthropicSSE(requestID, model, text string) *http.Response
 			`data: {"type":"message_stop"}`,
 			``,
 		}, "\n"))),
+	}
+}
+
+type providerResponsesErrorAfterReader struct {
+	data []byte
+	done bool
+}
+
+func (r *providerResponsesErrorAfterReader) Read(p []byte) (int, error) {
+	if !r.done {
+		r.done = true
+		return copy(p, r.data), nil
+	}
+	return 0, errors.New("read failed")
+}
+
+func (r *providerResponsesErrorAfterReader) Close() error {
+	return nil
+}
+
+func providerResponsesAnthropicNegativeIndexSSE() *http.Response {
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"Content-Type": []string{"text/event-stream"},
+			"X-Request-Id": []string{"req_negative_index"},
+		},
+		Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+			`event: message_start`,
+			`data: {"type":"message_start","message":{"id":"msg_negative","type":"message","role":"assistant","content":[],"model":"upstream-model","stop_reason":"","usage":{"input_tokens":1}}}`,
+			``,
+			`event: content_block_start`,
+			`data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`,
+			``,
+			`event: content_block_delta`,
+			`data: {"type":"content_block_delta","index":-1,"delta":{"type":"text_delta","text":"ignored"}}`,
+			``,
+			`event: message_delta`,
+			`data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}`,
+			``,
+			`event: message_stop`,
+			`data: {"type":"message_stop"}`,
+			``,
+		}, "\n"))),
+	}
+}
+
+func providerResponsesAnthropicRawSSE(status int, body string) *http.Response {
+	return &http.Response{
+		StatusCode: status,
+		Header: http.Header{
+			"Content-Type": []string{"text/event-stream"},
+			"X-Request-Id": []string{"req_raw"},
+		},
+		Body: io.NopCloser(strings.NewReader(body)),
 	}
 }
 
