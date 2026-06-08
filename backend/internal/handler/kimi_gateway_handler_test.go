@@ -135,7 +135,7 @@ type fakeKimiBillingChecker struct {
 	err   error
 }
 
-func (f *fakeKimiBillingChecker) CheckBillingEligibility(ctx context.Context, user *service.User, apiKey *service.APIKey, group *service.Group, subscription *service.UserSubscription) error {
+func (f *fakeKimiBillingChecker) CheckBillingEligibility(ctx context.Context, user *service.User, apiKey *service.APIKey, group *service.Group, subscription *service.UserSubscription, quotaPlatform string) error {
 	f.calls++
 	return f.err
 }

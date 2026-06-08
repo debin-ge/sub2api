@@ -30,6 +30,10 @@ func isAzureOpenAIAPIKeyAccount(account *Account) bool {
 		isAzureOpenAIBaseURL(account.GetOpenAIBaseURL())
 }
 
+func IsAzureOpenAIAPIKeyAccount(account *Account) bool {
+	return isAzureOpenAIAPIKeyAccount(account)
+}
+
 func setOpenAIUpstreamAuthHeader(req *http.Request, account *Account, token string) {
 	if req == nil {
 		return
@@ -87,4 +91,3 @@ func getAzureAPIVersion(account *Account) string {
 	}
 	return defaultAzureAPIVersion
 }
-

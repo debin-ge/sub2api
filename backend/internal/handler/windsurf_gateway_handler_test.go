@@ -96,7 +96,7 @@ type fakeWindsurfBillingChecker struct {
 	calls int
 }
 
-func (f *fakeWindsurfBillingChecker) CheckBillingEligibility(ctx context.Context, user *service.User, apiKey *service.APIKey, group *service.Group, subscription *service.UserSubscription) error {
+func (f *fakeWindsurfBillingChecker) CheckBillingEligibility(ctx context.Context, user *service.User, apiKey *service.APIKey, group *service.Group, subscription *service.UserSubscription, quotaPlatform string) error {
 	f.calls++
 	return nil
 }

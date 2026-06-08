@@ -106,7 +106,7 @@ func (r *codingPlanAccountTestRepo) ListSchedulableUngroupedByPlatforms(context.
 func (r *codingPlanAccountTestRepo) SetRateLimited(context.Context, int64, time.Time) error {
 	return nil
 }
-func (r *codingPlanAccountTestRepo) SetModelRateLimit(context.Context, int64, string, time.Time) error {
+func (r *codingPlanAccountTestRepo) SetModelRateLimit(context.Context, int64, string, time.Time, ...string) error {
 	return nil
 }
 func (r *codingPlanAccountTestRepo) SetOverloaded(context.Context, int64, time.Time) error {
@@ -128,11 +128,17 @@ func (r *codingPlanAccountTestRepo) ClearModelRateLimits(context.Context, int64)
 func (r *codingPlanAccountTestRepo) UpdateSessionWindow(context.Context, int64, *time.Time, *time.Time, string) error {
 	return nil
 }
+func (r *codingPlanAccountTestRepo) UpdateSessionWindowEnd(context.Context, int64, time.Time) error {
+	return nil
+}
 func (r *codingPlanAccountTestRepo) UpdateExtra(context.Context, int64, map[string]any) error {
 	return nil
 }
 func (r *codingPlanAccountTestRepo) BulkUpdate(context.Context, []int64, AccountBulkUpdate) (int64, error) {
 	return 0, nil
+}
+func (r *codingPlanAccountTestRepo) RevertProxyFallback(context.Context, int64) error {
+	return nil
 }
 func (r *codingPlanAccountTestRepo) IncrementQuotaUsed(context.Context, int64, float64) error {
 	return nil
