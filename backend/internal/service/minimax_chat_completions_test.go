@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -134,6 +135,67 @@ func TestMiniMaxGatewayServiceForwardChatCompletionsBuildsSafeUpstreamRequest(t 
 		t.Fatalf("usage = %+v", result.Usage)
 	}
 	if cache.reserveCalls != 1 || cache.requestID != "req-1" {
+		t.Fatalf("reserve calls=%d requestID=%q", cache.reserveCalls, cache.requestID)
+	}
+	if cache.rollbackCalls != 0 {
+		t.Fatalf("unexpected rollback calls=%d", cache.rollbackCalls)
+	}
+}
+
+func TestMiniMaxGatewayServiceForwardResponsesBuildsAnthropicRequestAndWritesResponses(t *testing.T) {
+	var captured *http.Request
+	var capturedBody []byte
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		captured = req
+		var err error
+		capturedBody, err = io.ReadAll(req.Body)
+		if err != nil {
+			t.Fatalf("read upstream body: %v", err)
+		}
+		return providerResponsesAnthropicSSE("up-resp-req-1", "MiniMax-M2.7", "hello"), nil
+	})}
+	cache := &minimaxQuotaCacheStub{allowed: true, used: 1}
+	svc := NewMiniMaxGatewayService(client, NewMiniMaxQuotaService(cache, nil), nil)
+	c, rec := newMiniMaxGatewayTestContext()
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	body := []byte(`{"model":"claude-sonnet-4-5","input":"hello","reasoning":{"effort":"medium"}}`)
+
+	result, err := svc.ForwardResponses(context.Background(), c, miniMaxGatewayTestAccount("https://api.minimaxi.com/anthropic"), body, " req-responses ")
+
+	if err != nil {
+		t.Fatalf("ForwardResponses error = %v", err)
+	}
+	if captured == nil {
+		t.Fatal("expected upstream request")
+	}
+	if got := captured.URL.String(); got != "https://api.minimaxi.com/anthropic/v1/messages" {
+		t.Fatalf("upstream url = %q", got)
+	}
+	if got := captured.Header.Get("Authorization"); got != "Bearer sk-cp-test" {
+		t.Fatalf("Authorization = %q", got)
+	}
+	if got := gjson.GetBytes(capturedBody, "model").String(); got != "MiniMax-M2.7" {
+		t.Fatalf("upstream model = %q body=%s", got, string(capturedBody))
+	}
+	if got := gjson.GetBytes(capturedBody, "messages.0.role").String(); got != "user" {
+		t.Fatalf("first message role = %q body=%s", got, string(capturedBody))
+	}
+	if !gjson.GetBytes(capturedBody, "stream").Bool() {
+		t.Fatalf("upstream stream = false body=%s", string(capturedBody))
+	}
+	if result.RequestID != "up-resp-req-1" || result.Model != "claude-sonnet-4-5" || result.UpstreamModel != "MiniMax-M2.7" {
+		t.Fatalf("result metadata = %+v", result)
+	}
+	if result.ReasoningEffort == nil || *result.ReasoningEffort != "medium" {
+		t.Fatalf("reasoning effort = %v", result.ReasoningEffort)
+	}
+	if got := gjson.Get(rec.Body.String(), "object").String(); got != "response" {
+		t.Fatalf("response object = %q body=%s", got, rec.Body.String())
+	}
+	if got := gjson.Get(rec.Body.String(), "output.0.content.0.text").String(); got != "hello" {
+		t.Fatalf("response text = %q body=%s", got, rec.Body.String())
+	}
+	if cache.reserveCalls != 1 || cache.requestID != "req-responses" {
 		t.Fatalf("reserve calls=%d requestID=%q", cache.reserveCalls, cache.requestID)
 	}
 	if cache.rollbackCalls != 0 {

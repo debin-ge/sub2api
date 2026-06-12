@@ -23,6 +23,7 @@ import (
 type kimiMessagesForwarder interface {
 	ForwardMessages(ctx context.Context, c *gin.Context, account *service.Account, body []byte, requestID string) (*service.ForwardResult, error)
 	ForwardChatCompletions(ctx context.Context, c *gin.Context, account *service.Account, body []byte, requestID string) (*service.ForwardResult, error)
+	ForwardResponses(ctx context.Context, c *gin.Context, account *service.Account, body []byte, requestID string) (*service.ForwardResult, error)
 }
 
 type kimiGatewayService interface {
@@ -513,8 +514,230 @@ func (h *KimiGatewayHandler) ChatCompletions(c *gin.Context) {
 	}
 }
 
+// Responses handles Kimi OpenAI-compatible POST /v1/responses requests.
+func (h *KimiGatewayHandler) Responses(c *gin.Context) {
+	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
+	if !ok {
+		h.errorResponse(c, http.StatusUnauthorized, "authentication_error", "Invalid API key")
+		return
+	}
+	if apiKey.Group == nil || apiKey.Group.Platform != service.PlatformKimi {
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Kimi gateway requires a Kimi group")
+		return
+	}
+
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		h.errorResponse(c, http.StatusInternalServerError, "api_error", "User context not found")
+		return
+	}
+
+	body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
+	if err != nil {
+		if maxErr, ok := extractMaxBytesError(err); ok {
+			h.errorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
+			return
+		}
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
+		return
+	}
+	if len(body) == 0 {
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Request body is empty")
+		return
+	}
+	setOpsRequestContext(c, "", false, body)
+
+	parsedReq, err := service.ParseGatewayRequest(body, "responses")
+	if err != nil {
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
+		return
+	}
+	reqModel := parsedReq.Model
+	if reqModel == "" {
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "model is required")
+		return
+	}
+	if reqModel != "kimi-for-coding" {
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Kimi gateway only supports model kimi-for-coding")
+		return
+	}
+	parsedReq.Model = reqModel
+	parsedReq.GroupID = apiKey.GroupID
+	parsedReq.SessionContext = &service.SessionContext{
+		ClientIP:  ip.GetClientIP(c),
+		UserAgent: c.GetHeader("User-Agent"),
+		APIKeyID:  apiKey.ID,
+	}
+	setOpsRequestContext(c, reqModel, parsedReq.Stream, body)
+	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(parsedReq.Stream, false)))
+
+	requestPath := ""
+	if c.Request != nil && c.Request.URL != nil {
+		requestPath = c.Request.URL.Path
+	}
+	if err := service.ValidateProviderResponsesCompatibilityRequest(requestPath, body); err != nil {
+		var compatErr *service.ProviderResponsesCompatibilityError
+		if errors.As(err, &compatErr) && compatErr != nil {
+			h.errorResponse(c, compatErr.StatusCode, compatErr.Type, compatErr.Message)
+			return
+		}
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", err.Error())
+		return
+	}
+
+	if h.gatewayService == nil || h.kimiService == nil {
+		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "kimi gateway service unavailable")
+		return
+	}
+	concurrencyHelper := h.chatConcurrencyController()
+	if concurrencyHelper == nil || h.billingCacheService == nil {
+		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "kimi gateway service unavailable")
+		return
+	}
+
+	subscription, _ := middleware2.GetSubscriptionFromContext(c)
+	streamStarted := false
+	maxWait := service.CalculateMaxWait(subject.Concurrency)
+	canWait, err := concurrencyHelper.IncrementWaitCount(c.Request.Context(), subject.UserID, maxWait)
+	waitCounted := false
+	if err == nil && !canWait {
+		h.errorResponse(c, http.StatusTooManyRequests, "rate_limit_error", "Too many pending requests, please retry later")
+		return
+	}
+	if err == nil && canWait {
+		waitCounted = true
+	}
+	defer func() {
+		if waitCounted {
+			concurrencyHelper.DecrementWaitCount(c.Request.Context(), subject.UserID)
+		}
+	}()
+
+	userRelease, err := concurrencyHelper.AcquireUserSlotWithWait(c, subject.UserID, subject.Concurrency, parsedReq.Stream, &streamStarted)
+	if err != nil {
+		if !streamStarted {
+			h.errorResponse(c, http.StatusTooManyRequests, "rate_limit_error", "Too many pending requests, please retry later")
+		}
+		return
+	}
+	if waitCounted {
+		concurrencyHelper.DecrementWaitCount(c.Request.Context(), subject.UserID)
+		waitCounted = false
+	}
+	if userRelease != nil {
+		defer userRelease()
+	}
+
+	if err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription); err != nil {
+		status, code, message, retryAfter := billingErrorDetails(err)
+		if retryAfter > 0 {
+			c.Header("Retry-After", strconv.Itoa(retryAfter))
+		}
+		if !streamStarted {
+			h.errorResponse(c, status, code, message)
+		}
+		return
+	}
+
+	sessionHash := h.gatewayService.GenerateSessionHash(parsedReq)
+	fs := NewFailoverState(h.maxAccountSwitches, false)
+
+	for {
+		selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), apiKey.GroupID, sessionHash, reqModel, fs.FailedAccountIDs, parsedReq.MetadataUserID, subject.UserID)
+		if err != nil || selection == nil || selection.Account == nil {
+			if fs.LastFailoverErr != nil && !streamStarted {
+				status, errType, message := kimiForwardErrorDetails(fs.LastFailoverErr)
+				h.errorResponse(c, status, errType, message)
+				return
+			}
+			h.streamingAwareError(c, http.StatusServiceUnavailable, "api_error", "Service temporarily unavailable", streamStarted)
+			return
+		}
+		release, acquired := h.acquireKimiAccountSlot(c, selection, parsedReq.Stream, &streamStarted, concurrencyHelper)
+		if !acquired {
+			return
+		}
+		releaseOnce := onceRelease(release)
+		defer releaseOnce()
+
+		account := selection.Account
+		if !account.IsKimiCode() {
+			h.streamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available Kimi coding-plan accounts", streamStarted)
+			return
+		}
+		setOpsSelectedAccount(c, account.ID, account.Platform)
+
+		result, err := h.kimiService.ForwardResponses(c.Request.Context(), c, account, body, kimiRequestID(c))
+		releaseOnce()
+		if err != nil {
+			if c.Writer.Written() || streamStarted {
+				return
+			}
+			var failoverErr *service.UpstreamFailoverError
+			if errors.As(err, &failoverErr) {
+				mapping := service.MapKimiUpstreamStatus(failoverErr.StatusCode)
+				if shouldHandleKimiUpstreamDegradation(failoverErr, mapping) {
+					h.handleKimiUpstreamDegradation(c.Request.Context(), account, failoverErr)
+				}
+				if mapping.Retryable {
+					failoverAction := fs.HandleFailoverError(c.Request.Context(), h.kimiTempUnscheduler(), account.ID, account.Platform, failoverErr)
+					switch failoverAction {
+					case FailoverContinue:
+						continue
+					case FailoverCanceled:
+						return
+					case FailoverExhausted:
+						status, errType, message := kimiForwardErrorDetails(failoverErr)
+						h.errorResponse(c, status, errType, message)
+						return
+					}
+				}
+				status, errType, message := kimiForwardErrorDetails(failoverErr)
+				h.errorResponse(c, status, errType, message)
+				return
+			}
+			status, errType, message := kimiForwardErrorDetails(err)
+			h.errorResponse(c, status, errType, message)
+			return
+		}
+
+		userAgent := c.GetHeader("User-Agent")
+		clientIP := ip.GetClientIP(c)
+		requestPayloadHash := service.HashUsageRequestPayload(body)
+		inboundEndpoint := GetInboundEndpoint(c)
+		upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
+
+		h.submitUsageRecordTask(func(ctx context.Context) {
+			if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
+				Result:             result,
+				ParsedRequest:      parsedReq,
+				APIKey:             apiKey,
+				User:               apiKey.User,
+				Account:            account,
+				Subscription:       subscription,
+				InboundEndpoint:    inboundEndpoint,
+				UpstreamEndpoint:   upstreamEndpoint,
+				UserAgent:          userAgent,
+				IPAddress:          clientIP,
+				RequestPayloadHash: requestPayloadHash,
+				APIKeyService:      h.apiKeyService,
+			}); err != nil {
+				logger.L().With(
+					zap.String("component", "handler.kimi_gateway.responses"),
+					zap.Int64("user_id", subject.UserID),
+					zap.Int64("api_key_id", apiKey.ID),
+					zap.Any("group_id", apiKey.GroupID),
+					zap.String("model", reqModel),
+					zap.Int64("account_id", account.ID),
+				).Error("kimi_gateway.record_usage_failed", zap.Error(err))
+			}
+		})
+		return
+	}
+}
+
 func (h *KimiGatewayHandler) Unsupported(c *gin.Context) {
-	h.errorResponse(c, http.StatusNotFound, "not_found_error", "Kimi gateway supports /v1/messages and /v1/chat/completions only")
+	h.errorResponse(c, http.StatusNotFound, "not_found_error", "Kimi gateway supports /v1/messages, /v1/chat/completions, and /v1/responses only")
 }
 
 func (h *KimiGatewayHandler) streamingAwareError(c *gin.Context, status int, errType, message string, streamStarted bool) {

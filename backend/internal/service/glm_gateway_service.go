@@ -186,6 +186,25 @@ func (s *GLMGatewayService) ForwardChatCompletions(ctx context.Context, c *gin.C
 	return s.handleNonStreamingChatCompletionsResponse(resp, c, originalModel, upstreamModel, start)
 }
 
+func (s *GLMGatewayService) ForwardResponses(ctx context.Context, c *gin.Context, account *Account, body []byte, requestID string) (*ForwardResult, error) {
+	if s == nil {
+		return nil, fmt.Errorf("glm gateway service unavailable")
+	}
+	if _, err := validateGLMAccount(account); err != nil {
+		return nil, err
+	}
+	return forwardProviderResponsesViaAnthropic(ctx, c, providerResponsesAnthropicConfig{
+		ServiceName:               "glm",
+		HTTPClient:                s.httpClient,
+		Account:                   account,
+		Body:                      body,
+		BuildRequest:              s.buildMessagesRequest,
+		ShouldReturnUpstreamError: shouldReturnGLMUpstreamError,
+		ReadErrorBody:             readGLMNonStreamResponseBody,
+		ResponseHeaderFilter:      s.responseHeaderFilter,
+	})
+}
+
 func shouldReturnGLMUpstreamError(status int) bool {
 	return status >= http.StatusBadRequest
 }

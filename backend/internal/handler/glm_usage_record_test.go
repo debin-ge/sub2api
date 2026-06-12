@@ -70,6 +70,10 @@ func (f *glmUsageForwarder) ForwardChatCompletions(ctx context.Context, c *gin.C
 	return f.ForwardMessages(ctx, c, account, body, requestID)
 }
 
+func (f *glmUsageForwarder) ForwardResponses(ctx context.Context, c *gin.Context, account *service.Account, body []byte, requestID string) (*service.ForwardResult, error) {
+	return f.ForwardMessages(ctx, c, account, body, requestID)
+}
+
 func TestGLMUsageRecordMetadata(t *testing.T) {
 	usageRepo := &glmUsageLogRepoStub{}
 	cfg := &config.Config{}

@@ -239,6 +239,59 @@ func TestKimiGatewayServiceForwardChatCompletionsBuildsRequestAndParsesUsage(t *
 	}
 }
 
+func TestKimiGatewayServiceForwardResponsesBuildsAnthropicRequestAndWritesResponses(t *testing.T) {
+	var captured *http.Request
+	var capturedBody []byte
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		captured = req
+		var err error
+		capturedBody, err = io.ReadAll(req.Body)
+		if err != nil {
+			t.Fatalf("read upstream body: %v", err)
+		}
+		return providerResponsesAnthropicSSE("kimi-resp-1", "kimi-for-coding", "hello"), nil
+	})}
+	svc := NewKimiGatewayService(client, nil)
+	c, rec := newKimiGatewayTestContext("/v1/responses")
+	body := []byte(`{"model":"kimi-for-coding","input":"hello","reasoning":{"effort":"medium"}}`)
+
+	result, err := svc.ForwardResponses(context.Background(), c, kimiGatewayTestAccount(), body, "req-responses")
+
+	if err != nil {
+		t.Fatalf("ForwardResponses error = %v", err)
+	}
+	if captured == nil {
+		t.Fatal("expected upstream request")
+	}
+	if got := captured.URL.String(); got != "https://api.kimi.com/coding/v1/messages" {
+		t.Fatalf("upstream url = %q", got)
+	}
+	if got := captured.Header.Get("Authorization"); got != "Bearer sk-kimi-test" {
+		t.Fatalf("Authorization = %q", got)
+	}
+	if got := gjson.GetBytes(capturedBody, "model").String(); got != "kimi-for-coding" {
+		t.Fatalf("upstream model = %q body=%s", got, string(capturedBody))
+	}
+	if got := gjson.GetBytes(capturedBody, "messages.0.role").String(); got != "user" {
+		t.Fatalf("first message role = %q body=%s", got, string(capturedBody))
+	}
+	if !gjson.GetBytes(capturedBody, "stream").Bool() {
+		t.Fatalf("upstream stream = false body=%s", string(capturedBody))
+	}
+	if result.RequestID != "kimi-resp-1" || result.Model != "kimi-for-coding" || result.UpstreamModel != "kimi-for-coding" {
+		t.Fatalf("result metadata = %+v", result)
+	}
+	if result.ReasoningEffort == nil || *result.ReasoningEffort != "medium" {
+		t.Fatalf("reasoning effort = %v", result.ReasoningEffort)
+	}
+	if got := gjson.Get(rec.Body.String(), "object").String(); got != "response" {
+		t.Fatalf("response object = %q body=%s", got, rec.Body.String())
+	}
+	if got := gjson.Get(rec.Body.String(), "output.0.content.0.text").String(); got != "hello" {
+		t.Fatalf("response text = %q body=%s", got, rec.Body.String())
+	}
+}
+
 func TestKimiGatewayServiceRejectsMultimodalBeforeForwarding(t *testing.T) {
 	tests := []struct {
 		name    string

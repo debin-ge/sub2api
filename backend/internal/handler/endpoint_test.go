@@ -26,6 +26,8 @@ func TestNormalizeInboundEndpoint(t *testing.T) {
 		{"/v1/chat/completions", EndpointChatCompletions},
 		{"/v1/embeddings", EndpointEmbeddings},
 		{"/v1/responses", EndpointResponses},
+		{"/responses", EndpointResponses},
+		{"/backend-api/codex/responses", EndpointResponses},
 		{"/v1/images/generations", EndpointImagesGenerations},
 		{"/v1/images/edits", EndpointImagesEdits},
 		{"/v1beta/models", EndpointGeminiModels},
@@ -41,9 +43,15 @@ func TestNormalizeInboundEndpoint(t *testing.T) {
 		// Gin route patterns with wildcards.
 		{"/v1beta/models/*modelAction", EndpointGeminiModels},
 		{"/v1/responses/*subpath", EndpointResponses},
+		{"/responses/*subpath", EndpointResponses},
+		{"/backend-api/codex/responses/*subpath", EndpointResponses},
+		{"/responses/compact", EndpointResponses},
+		{"/backend-api/codex/responses/compact", EndpointResponses},
 
 		// Unknown path is returned as-is.
 		{"/v1/embeddings", "/v1/embeddings"},
+		{"/foo/v1/responses-not-root", "/foo/v1/responses-not-root"},
+		{"/foo/responses-not-root", "/foo/responses-not-root"},
 		{"", ""},
 		{"  /v1/messages  ", EndpointMessages},
 	}
@@ -267,4 +275,80 @@ func TestGetUpstreamEndpoint_FullFlow(t *testing.T) {
 
 	got := GetUpstreamEndpoint(c, service.PlatformOpenAI)
 	require.Equal(t, "/v1/responses/compact", got)
+}
+
+func TestGetUpstreamEndpoint_ProviderResponsesRootPOSTUsesPlannedBridge(t *testing.T) {
+	tests := []struct {
+		platform string
+		want     string
+	}{
+		{service.PlatformMiniMax, EndpointMessages},
+		{service.PlatformGLM, EndpointMessages},
+		{service.PlatformKimi, EndpointMessages},
+		{service.PlatformDeepSeek, EndpointChatCompletions},
+		{service.PlatformWindsurf, EndpointChatCompletions},
+	}
+	paths := []string{
+		"/v1/responses",
+		"/responses",
+		"/backend-api/codex/responses",
+	}
+	for _, tt := range tests {
+		for _, path := range paths {
+			t.Run(tt.platform+path, func(t *testing.T) {
+				require.Equal(t, tt.want, getUpstreamEndpointForRequest(t, http.MethodPost, path, tt.platform))
+			})
+		}
+	}
+}
+
+func TestGetUpstreamEndpoint_ProviderResponsesSubpathPOSTRemainsResponses(t *testing.T) {
+	platforms := []string{
+		service.PlatformMiniMax,
+		service.PlatformGLM,
+		service.PlatformKimi,
+		service.PlatformDeepSeek,
+		service.PlatformWindsurf,
+	}
+	paths := []string{
+		"/v1/responses/compact",
+		"/responses/custom",
+		"/backend-api/codex/responses/compact",
+	}
+	for _, platform := range platforms {
+		for _, path := range paths {
+			t.Run(platform+path, func(t *testing.T) {
+				require.Equal(t, EndpointResponses, getUpstreamEndpointForRequest(t, http.MethodPost, path, platform))
+			})
+		}
+	}
+}
+
+func TestGetUpstreamEndpoint_ProviderResponsesGETRemainsResponses(t *testing.T) {
+	platforms := []string{
+		service.PlatformMiniMax,
+		service.PlatformGLM,
+		service.PlatformKimi,
+		service.PlatformDeepSeek,
+		service.PlatformWindsurf,
+	}
+	for _, platform := range platforms {
+		t.Run(platform, func(t *testing.T) {
+			require.Equal(t, EndpointResponses, getUpstreamEndpointForRequest(t, http.MethodGet, "/v1/responses", platform))
+		})
+	}
+}
+
+func TestGetUpstreamEndpoint_OpenCodeResponsesRootPOSTRemainsResponses(t *testing.T) {
+	require.Equal(t, EndpointResponses, getUpstreamEndpointForRequest(t, http.MethodPost, "/v1/responses", service.PlatformOpenCode))
+}
+
+func getUpstreamEndpointForRequest(t *testing.T, method, path, platform string) string {
+	t.Helper()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(method, path, nil)
+	c.Set(ctxKeyInboundEndpoint, NormalizeInboundEndpoint(c.Request.URL.Path))
+	return GetUpstreamEndpoint(c, platform)
 }

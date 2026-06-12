@@ -70,6 +70,10 @@ func (f *miniMaxUsageForwarder) ForwardChatCompletions(ctx context.Context, c *g
 	return f.ForwardMessages(ctx, c, account, body, requestID)
 }
 
+func (f *miniMaxUsageForwarder) ForwardResponses(ctx context.Context, c *gin.Context, account *service.Account, body []byte, requestID string) (*service.ForwardResult, error) {
+	return f.ForwardMessages(ctx, c, account, body, requestID)
+}
+
 func TestMiniMaxUsageRecordMetadata(t *testing.T) {
 	usageRepo := &miniMaxUsageLogRepoStub{}
 	cfg := &config.Config{}

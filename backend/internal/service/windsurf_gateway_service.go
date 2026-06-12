@@ -178,6 +178,28 @@ func (s *WindsurfGatewayService) ForwardChatCompletions(ctx context.Context, c *
 	return s.handleNonStreamingChatCompletionsResponse(resp, c, originalModel, upstreamModel, start)
 }
 
+func (s *WindsurfGatewayService) ForwardResponses(ctx context.Context, c *gin.Context, account *Account, body []byte, requestID string) (*ForwardResult, error) {
+	if s == nil {
+		return nil, fmt.Errorf("windsurf gateway service unavailable")
+	}
+	if _, err := validateWindsurfAccount(account); err != nil {
+		return nil, err
+	}
+	return forwardProviderResponsesViaChat(ctx, c, providerResponsesChatConfig{
+		ServiceName:               "windsurf",
+		HTTPClient:                s.httpClient,
+		Account:                   account,
+		Body:                      body,
+		BuildRequest:              s.buildChatCompletionsRequest,
+		ShouldReturnUpstreamError: shouldReturnWindsurfUpstreamError,
+		ReadErrorBody:             readGLMNonStreamResponseBody,
+		ResponseHeaderFilter:      s.responseHeaderFilter,
+		ParseUsage:                parseWindsurfOpenAIUsage,
+		ParseStreamingUsage:       parseWindsurfOpenAIStreamingUsage,
+		MaxLineSize:               defaultMaxLineSize,
+	})
+}
+
 func (s *WindsurfGatewayService) glmResponseCompat() *GLMGatewayService {
 	return &GLMGatewayService{responseHeaderFilter: s.responseHeaderFilter}
 }

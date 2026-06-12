@@ -178,6 +178,28 @@ func (s *DeepSeekGatewayService) ForwardChatCompletions(ctx context.Context, c *
 	return s.handleNonStreamingChatCompletionsResponse(resp, c, originalModel, upstreamModel, start)
 }
 
+func (s *DeepSeekGatewayService) ForwardResponses(ctx context.Context, c *gin.Context, account *Account, body []byte, requestID string) (*ForwardResult, error) {
+	if s == nil {
+		return nil, fmt.Errorf("deepseek gateway service unavailable")
+	}
+	if _, err := validateDeepSeekAccount(account); err != nil {
+		return nil, err
+	}
+	return forwardProviderResponsesViaChat(ctx, c, providerResponsesChatConfig{
+		ServiceName:               "deepseek",
+		HTTPClient:                s.httpClient,
+		Account:                   account,
+		Body:                      body,
+		BuildRequest:              s.buildChatCompletionsRequest,
+		ShouldReturnUpstreamError: shouldReturnDeepSeekUpstreamError,
+		ReadErrorBody:             readGLMNonStreamResponseBody,
+		ResponseHeaderFilter:      s.responseHeaderFilter,
+		ParseUsage:                parseDeepSeekOpenAIUsage,
+		ParseStreamingUsage:       parseDeepSeekOpenAIStreamingUsage,
+		MaxLineSize:               defaultMaxLineSize,
+	})
+}
+
 func (s *DeepSeekGatewayService) glmResponseCompat() *GLMGatewayService {
 	return &GLMGatewayService{responseHeaderFilter: s.responseHeaderFilter}
 }

@@ -231,6 +231,71 @@ func TestDeepSeekGatewayServiceForwardChatCompletionsFallsBackToPromptTokensWhen
 	}
 }
 
+func TestDeepSeekGatewayServiceForwardResponsesBuildsChatRequestAndWritesResponses(t *testing.T) {
+	var captured *http.Request
+	var capturedBody []byte
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		captured = req
+		var err error
+		capturedBody, err = io.ReadAll(req.Body)
+		if err != nil {
+			t.Fatalf("read upstream body: %v", err)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": {"application/json"}, "X-Request-Id": {"deepseek-resp-1"}},
+			Body:       io.NopCloser(strings.NewReader(`{"id":"chat_1","model":"deepseek-v4-flash","choices":[{"index":0,"message":{"role":"assistant","content":"hello"},"finish_reason":"stop"}],"usage":{"prompt_tokens":16,"prompt_cache_miss_tokens":11,"prompt_cache_hit_tokens":5,"completion_tokens":6}}`)),
+		}, nil
+	})}
+	svc := NewDeepSeekGatewayService(client, nil)
+	c, rec := newDeepSeekGatewayTestContext("/v1/responses")
+	body := []byte(`{"model":"deepseek-chat","input":"hello","reasoning":{"effort":"medium"}}`)
+
+	result, err := svc.ForwardResponses(context.Background(), c, deepSeekGatewayTestAccount(), body, "req-responses")
+	if err != nil {
+		t.Fatalf("ForwardResponses error = %v", err)
+	}
+	if got := captured.URL.String(); got != "https://api.deepseek.com/chat/completions" {
+		t.Fatalf("upstream url = %q", got)
+	}
+	if got := captured.Header.Get("Authorization"); got != "Bearer sk-deepseek-test" {
+		t.Fatalf("Authorization = %q", got)
+	}
+	if got := captured.Header.Get("x-api-key"); got != "" {
+		t.Fatalf("x-api-key should not be sent for OpenAI API, got %q", got)
+	}
+	if got := gjson.GetBytes(capturedBody, "model").String(); got != "deepseek-v4-flash" {
+		t.Fatalf("upstream model = %q body=%s", got, string(capturedBody))
+	}
+	if got := gjson.GetBytes(capturedBody, "reasoning_effort").String(); got != "medium" {
+		t.Fatalf("reasoning_effort was not preserved body=%s", string(capturedBody))
+	}
+	if got := gjson.GetBytes(capturedBody, "messages.0.role").String(); got != "user" {
+		t.Fatalf("first message role = %q body=%s", got, string(capturedBody))
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := gjson.Get(rec.Body.String(), "object").String(); got != "response" {
+		t.Fatalf("response object = %q body=%s", got, rec.Body.String())
+	}
+	if got := gjson.Get(rec.Body.String(), "model").String(); got != "deepseek-chat" {
+		t.Fatalf("response model = %q body=%s", got, rec.Body.String())
+	}
+	if got := gjson.Get(rec.Body.String(), "output.0.content.0.text").String(); got != "hello" {
+		t.Fatalf("response text = %q body=%s", got, rec.Body.String())
+	}
+	if result.RequestID != "deepseek-resp-1" || result.Model != "deepseek-chat" || result.UpstreamModel != "deepseek-v4-flash" {
+		t.Fatalf("result metadata = %+v", result)
+	}
+	if result.ReasoningEffort == nil || *result.ReasoningEffort != "medium" {
+		t.Fatalf("ReasoningEffort = %v, want medium", result.ReasoningEffort)
+	}
+	if result.Usage.InputTokens != 11 || result.Usage.OutputTokens != 6 || result.Usage.CacheReadInputTokens != 5 {
+		t.Fatalf("usage = %+v", result.Usage)
+	}
+}
+
 func TestDeepSeekGatewayServiceRejectsUnsupportedModelsBeforeForwarding(t *testing.T) {
 	tests := []string{"claude-sonnet-4-5-haiku", "gpt-5.4", "deepseek-v4-flashy"}
 	for _, model := range tests {

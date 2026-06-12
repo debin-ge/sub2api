@@ -203,6 +203,65 @@ func TestGLMGatewayServiceForwardChatCompletionsBuildsRequestAndParsesUsage(t *t
 	}
 }
 
+func TestGLMGatewayServiceForwardResponsesBuildsAnthropicRequestAndWritesResponses(t *testing.T) {
+	var captured *http.Request
+	var capturedBody []byte
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		captured = req
+		var err error
+		capturedBody, err = io.ReadAll(req.Body)
+		if err != nil {
+			t.Fatalf("read upstream body: %v", err)
+		}
+		return providerResponsesAnthropicSSE("glm-resp-1", "GLM-5.1", "hello"), nil
+	})}
+	svc := NewGLMGatewayService(client, nil)
+	c, rec := newGLMGatewayTestContext("/v1/responses")
+	body := []byte(`{"model":"claude-sonnet-4-5","input":"hello","reasoning":{"effort":"medium"}}`)
+
+	result, err := svc.ForwardResponses(context.Background(), c, glmGatewayTestAccount(), body, "req-responses")
+
+	if err != nil {
+		t.Fatalf("ForwardResponses error = %v", err)
+	}
+	if captured == nil {
+		t.Fatal("expected upstream request")
+	}
+	if got := captured.URL.String(); got != "https://open.bigmodel.cn/api/anthropic/v1/messages" {
+		t.Fatalf("upstream url = %q", got)
+	}
+	if got := captured.Header.Get("Authorization"); got != "Bearer sk-glm-test" {
+		t.Fatalf("Authorization = %q", got)
+	}
+	if got := gjson.GetBytes(capturedBody, "model").String(); got != "GLM-5.1" {
+		t.Fatalf("upstream model = %q body=%s", got, string(capturedBody))
+	}
+	if got := gjson.GetBytes(capturedBody, "messages.0.role").String(); got != "user" {
+		t.Fatalf("first message role = %q body=%s", got, string(capturedBody))
+	}
+	if !gjson.GetBytes(capturedBody, "stream").Bool() {
+		t.Fatalf("upstream stream = false body=%s", string(capturedBody))
+	}
+	if result.RequestID != "glm-resp-1" {
+		t.Fatalf("request id = %q", result.RequestID)
+	}
+	if result.Model != "claude-sonnet-4-5" || result.UpstreamModel != "GLM-5.1" {
+		t.Fatalf("result metadata = %+v", result)
+	}
+	if result.ReasoningEffort == nil || *result.ReasoningEffort != "medium" {
+		t.Fatalf("reasoning effort = %v", result.ReasoningEffort)
+	}
+	if result.Stream {
+		t.Fatal("expected non-stream result")
+	}
+	if got := gjson.Get(rec.Body.String(), "object").String(); got != "response" {
+		t.Fatalf("response object = %q body=%s", got, rec.Body.String())
+	}
+	if got := gjson.Get(rec.Body.String(), "output.0.content.0.text").String(); got != "hello" {
+		t.Fatalf("response text = %q body=%s", got, rec.Body.String())
+	}
+}
+
 func TestGLMGatewayServiceAllowsAnthropicToolAndThinkingContent(t *testing.T) {
 	calls := 0
 	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {

@@ -16,11 +16,12 @@ import (
 )
 
 type fakeWindsurfForwarder struct {
-	account        *service.Account
-	body           []byte
-	requestID      string
-	messagesCalled int
-	chatCalled     int
+	account         *service.Account
+	body            []byte
+	requestID       string
+	messagesCalled  int
+	chatCalled      int
+	responsesCalled int
 }
 
 func (f *fakeWindsurfForwarder) ForwardMessages(ctx context.Context, c *gin.Context, account *service.Account, body []byte, requestID string) (*service.ForwardResult, error) {
@@ -54,6 +55,26 @@ func (f *fakeWindsurfForwarder) ForwardChatCompletions(ctx context.Context, c *g
 		Usage: service.ClaudeUsage{
 			InputTokens:  13,
 			OutputTokens: 5,
+		},
+		Duration: time.Millisecond,
+	}, nil
+}
+
+func (f *fakeWindsurfForwarder) ForwardResponses(ctx context.Context, c *gin.Context, account *service.Account, body []byte, requestID string) (*service.ForwardResult, error) {
+	f.responsesCalled++
+	f.account = account
+	f.body = append([]byte(nil), body...)
+	f.requestID = requestID
+	c.JSON(http.StatusOK, gin.H{"id": "resp_1", "object": "response", "model": "claude-3-5-sonnet-latest"})
+	effort := "medium"
+	return &service.ForwardResult{
+		RequestID:       "windsurf-upstream-resp-req-1",
+		Model:           "claude-3-5-sonnet-latest",
+		UpstreamModel:   "claude-sonnet-4.6",
+		ReasoningEffort: &effort,
+		Usage: service.ClaudeUsage{
+			InputTokens:  9,
+			OutputTokens: 4,
 		},
 		Duration: time.Millisecond,
 	}, nil
@@ -244,6 +265,66 @@ func TestWindsurfGatewayHandlerChatCompletionsSuccessForwardsAndRecordsUsage(t *
 	require.Equal(t, 1, billing.calls)
 }
 
+func TestWindsurfGatewayHandlerResponsesSuccessForwardsAndRecordsUsage(t *testing.T) {
+	account := windsurfTestAccount(101)
+	forwarder := &fakeWindsurfForwarder{}
+	concurrency := &fakeWindsurfConcurrencyController{allowWait: true}
+	billing := &fakeWindsurfBillingChecker{}
+	gateway := &fakeWindsurfGatewayService{
+		selections: []*service.AccountSelectionResult{{Account: account, Acquired: true}},
+	}
+	h := &WindsurfGatewayHandler{
+		windsurfService:     forwarder,
+		gatewayService:      gateway,
+		concurrencyHelper:   concurrency,
+		billingCacheService: billing,
+	}
+	c, rec, apiKey := newWindsurfHandlerTestContext(t, "/v1/responses", service.PlatformWindsurf, `{"model":"claude-3-5-sonnet-latest","input":"hello","reasoning":{"effort":"medium"}}`)
+
+	h.Responses(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, 1, forwarder.responsesCalled)
+	require.Equal(t, 0, forwarder.messagesCalled)
+	require.Equal(t, 0, forwarder.chatCalled)
+	require.Equal(t, account, forwarder.account)
+	require.JSONEq(t, `{"model":"claude-3-5-sonnet-latest","input":"hello","reasoning":{"effort":"medium"}}`, string(forwarder.body))
+	require.Equal(t, "windsurf-client-req-1", forwarder.requestID)
+	require.Equal(t, "claude-3-5-sonnet-latest", gateway.selectedModel)
+	require.Equal(t, int64(99), gateway.selectedUserID)
+	require.NotNil(t, gateway.recorded)
+	require.Equal(t, apiKey, gateway.recorded.APIKey)
+	require.Equal(t, account, gateway.recorded.Account)
+	require.Equal(t, "/v1/responses", gateway.recorded.InboundEndpoint)
+	require.Equal(t, "/v1/chat/completions", gateway.recorded.UpstreamEndpoint)
+	require.NotNil(t, gateway.recorded.Result.ReasoningEffort)
+	require.Equal(t, "medium", *gateway.recorded.Result.ReasoningEffort)
+	require.NotEmpty(t, gateway.recorded.RequestPayloadHash)
+	require.Equal(t, 1, billing.calls)
+}
+
+func TestWindsurfGatewayHandlerResponsesRejectsPreviousResponseIDBeforeForwarding(t *testing.T) {
+	forwarder := &fakeWindsurfForwarder{}
+	concurrency := &fakeWindsurfConcurrencyController{allowWait: true}
+	billing := &fakeWindsurfBillingChecker{}
+	h := &WindsurfGatewayHandler{
+		windsurfService:     forwarder,
+		gatewayService:      &fakeWindsurfGatewayService{},
+		concurrencyHelper:   concurrency,
+		billingCacheService: billing,
+	}
+	c, rec, _ := newWindsurfHandlerTestContext(t, "/v1/responses", service.PlatformWindsurf, `{"model":"claude-sonnet-4.6","previous_response_id":"resp_1","input":"hello"}`)
+
+	h.Responses(c)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Contains(t, rec.Body.String(), "invalid_request_error")
+	require.Contains(t, rec.Body.String(), "previous_response_id")
+	require.Equal(t, 0, forwarder.responsesCalled)
+	require.Equal(t, 0, concurrency.incrementWaitCalls)
+	require.Equal(t, 0, billing.calls)
+}
+
 func TestWindsurfGatewayHandlerMessagesRejectsInvalidPlatform(t *testing.T) {
 	h := &WindsurfGatewayHandler{}
 	c, rec, _ := newWindsurfHandlerTestContext(t, "/v1/messages", service.PlatformOpenAI, `{"model":"claude-sonnet-4.6"}`)
@@ -263,5 +344,5 @@ func TestWindsurfGatewayHandlerUnsupportedReturnsNotFound(t *testing.T) {
 
 	require.Equal(t, http.StatusNotFound, rec.Code)
 	require.Contains(t, rec.Body.String(), "not_found_error")
-	require.Contains(t, rec.Body.String(), "Windsurf gateway supports /v1/messages and /v1/chat/completions only")
+	require.Contains(t, rec.Body.String(), "Windsurf gateway supports /v1/messages, /v1/chat/completions, and /v1/responses only")
 }
