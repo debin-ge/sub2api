@@ -63,7 +63,7 @@ func TestResponsesToChatCompletionsRequest_InstructionsAndInputDeveloperRole(t *
 		]`),
 	}
 
-	out, err := ResponsesToChatCompletionsRequest(req)
+	out, err := LegacyResponsesToChatCompletionsRequest(req)
 	require.NoError(t, err)
 	require.Len(t, out.Messages, 3)
 

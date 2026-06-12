@@ -17,7 +17,7 @@ func collectStreamEvents(t *testing.T, chunks []string) []ResponsesStreamEvent {
 		require.NoError(t, json.Unmarshal([]byte(payload), &chunk))
 		events = append(events, ChatCompletionsChunkToResponsesEvents(&chunk, state)...)
 	}
-	events = append(events, FinalizeChatCompletionsResponsesStream(state)...)
+	events = append(events, LegacyFinalizeChatCompletionsResponsesStream(state)...)
 	return events
 }
 

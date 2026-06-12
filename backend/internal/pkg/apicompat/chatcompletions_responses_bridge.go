@@ -7,10 +7,11 @@ import (
 	"time"
 )
 
-// ResponsesToChatCompletionsRequest converts a Responses API request into a
+// LegacyResponsesToChatCompletionsRequest converts a Responses API request into a
 // Chat Completions request for upstreams that only implement
 // /v1/chat/completions.
-func ResponsesToChatCompletionsRequest(req *ResponsesRequest) (*ChatCompletionsRequest, error) {
+// Deprecated: Use ResponsesToChatCompletionsRequest from responses_to_chatcompletions_request.go.
+func LegacyResponsesToChatCompletionsRequest(req *ResponsesRequest) (*ChatCompletionsRequest, error) {
 	if req == nil {
 		return nil, fmt.Errorf("responses request is nil")
 	}
@@ -779,8 +780,9 @@ func ChatCompletionsChunkToResponsesEvents(
 	return events
 }
 
-// FinalizeChatCompletionsResponsesStream emits terminal Responses events.
-func FinalizeChatCompletionsResponsesStream(state *ChatCompletionsToResponsesStreamState) []ResponsesStreamEvent {
+// LegacyFinalizeChatCompletionsResponsesStream emits terminal Responses events.
+// Deprecated: Use FinalizeChatCompletionsResponsesStream from chatcompletions_to_responses_response.go.
+func LegacyFinalizeChatCompletionsResponsesStream(state *ChatCompletionsToResponsesStreamState) []ResponsesStreamEvent {
 	if state == nil || state.CompletedSent {
 		return nil
 	}
