@@ -822,6 +822,49 @@ func TestOpenAIGatewayServiceForwardImages_APIKeyGenerationUsesConfiguredV1BaseU
 	require.Equal(t, "aGVsbG8=", gjson.Get(rec.Body.String(), "data.0.b64_json").String())
 }
 
+func TestOpenAIGatewayServiceForwardImages_APIKeyNonStreamIgnoresClientCancel(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	reqCtx, cancel := context.WithCancel(context.Background())
+	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","response_format":"b64_json"}`)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body)).WithContext(reqCtx)
+	c.Request.Header.Set("Content-Type", "application/json")
+	cancel()
+
+	upstream := &httpUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"created":1710000007,"data":[{"b64_json":"aGVsbG8="}]}`)),
+		},
+	}
+	svc := &OpenAIGatewayService{
+		cfg:          &config.Config{},
+		httpUpstream: upstream,
+	}
+	parsed, err := svc.ParseOpenAIImagesRequest(c, body)
+	require.NoError(t, err)
+
+	account := &Account{
+		ID:       6,
+		Name:     "openai-apikey",
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key":  "test-api-key",
+			"base_url": "https://image-upstream.example/v1",
+		},
+	}
+
+	result, err := svc.ForwardImages(reqCtx, c, account, body, parsed, "")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, upstream.lastReq)
+	require.NoError(t, upstream.lastReq.Context().Err())
+}
+
 func TestOpenAIGatewayServiceForwardImages_APIKeyStreamJSONResponseBillsImage(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","stream":true,"response_format":"b64_json"}`)
