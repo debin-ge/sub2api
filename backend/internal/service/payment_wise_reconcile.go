@@ -6,13 +6,18 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
+	dbpredicate "github.com/Wei-Shaw/sub2api/ent/predicate"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 )
 
-const pendingWiseReconcileLimit = 100
+const (
+	pendingWiseReconcileLimit = 100
+	wiseReconcileWindow       = 72 * time.Hour
+)
 
 type WiseWebhookReconcileResult struct {
 	Matched     bool
@@ -51,44 +56,49 @@ func (s *PaymentService) HandleWiseWebhook(ctx context.Context, rawBody string, 
 }
 
 func (s *PaymentService) ReconcilePendingWiseOrders(ctx context.Context) (*WiseWebhookReconcileResult, error) {
-	orders, err := s.entClient.PaymentOrder.Query().
-		Where(
-			paymentorder.PaymentTypeEQ(payment.TypeWise),
-			paymentorder.StatusEQ(OrderStatusPending),
-		).
-		Order(dbent.Asc(paymentorder.FieldCreatedAt)).
-		Limit(pendingWiseReconcileLimit).
-		All(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("query pending wise orders: %w", err)
-	}
-
 	result := &WiseWebhookReconcileResult{
-		Reason:  "event_verified_no_pending",
-		Scanned: len(orders),
+		Reason: "event_verified_no_pending",
 	}
-	for _, order := range orders {
-		if order == nil {
-			continue
-		}
-		orderResult, err := s.ReconcileWiseOrderByOutTradeNo(ctx, order.OutTradeNo)
+	now := time.Now()
+	var lastID int64
+	for {
+		orders, err := s.queryWiseReconciliationCandidates(ctx, lastID, now)
 		if err != nil {
-			slog.Warn("wise pending order reconcile failed", "orderID", order.ID, "outTradeNo", order.OutTradeNo, "error", err)
-			continue
+			return nil, err
 		}
-		if orderResult == nil {
-			continue
+		if len(orders) == 0 {
+			break
 		}
-		if orderResult.Matched {
-			result.Matched = true
-		}
-		if orderResult.AutoFulfill {
-			result.AutoFulfill = true
-			result.Fulfilled++
-			if result.OrderID == "" {
-				result.OrderID = orderResult.OrderID
-				result.TradeNo = orderResult.TradeNo
+		result.Scanned += len(orders)
+		for _, order := range orders {
+			if order == nil {
+				continue
 			}
+			if order.ID > lastID {
+				lastID = order.ID
+			}
+			orderResult, err := s.ReconcileWiseOrderByOutTradeNo(ctx, order.OutTradeNo)
+			if err != nil {
+				slog.Warn("wise pending order reconcile failed", "orderID", order.ID, "outTradeNo", order.OutTradeNo, "error", err)
+				continue
+			}
+			if orderResult == nil {
+				continue
+			}
+			if orderResult.Matched {
+				result.Matched = true
+			}
+			if orderResult.AutoFulfill {
+				result.AutoFulfill = true
+				result.Fulfilled++
+				if result.OrderID == "" {
+					result.OrderID = orderResult.OrderID
+					result.TradeNo = orderResult.TradeNo
+				}
+			}
+		}
+		if len(orders) < pendingWiseReconcileLimit {
+			break
 		}
 	}
 
@@ -98,6 +108,35 @@ func (s *PaymentService) ReconcilePendingWiseOrders(ctx context.Context) (*WiseW
 		result.Reason = "event_verified_no_auto_fulfill"
 	}
 	return result, nil
+}
+
+func (s *PaymentService) queryWiseReconciliationCandidates(ctx context.Context, afterID int64, now time.Time) ([]*dbent.PaymentOrder, error) {
+	predicates := []dbpredicate.PaymentOrder{
+		paymentorder.PaymentTypeEQ(payment.TypeWise),
+		paymentorder.Or(
+			paymentorder.StatusEQ(OrderStatusPending),
+			paymentorder.And(
+				paymentorder.StatusEQ(OrderStatusExpired),
+				paymentorder.ExpiresAtGTE(wiseReconcileCutoff(now)),
+			),
+		),
+	}
+	if afterID > 0 {
+		predicates = append(predicates, paymentorder.IDGT(afterID))
+	}
+	orders, err := s.entClient.PaymentOrder.Query().
+		Where(predicates...).
+		Order(dbent.Asc(paymentorder.FieldID)).
+		Limit(pendingWiseReconcileLimit).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("query pending wise orders: %w", err)
+	}
+	return orders, nil
+}
+
+func wiseReconcileCutoff(now time.Time) time.Time {
+	return now.Add(-wiseReconcileWindow)
 }
 
 func (s *PaymentService) ReconcileWiseOrderByOutTradeNo(ctx context.Context, outTradeNo string) (*WiseWebhookReconcileResult, error) {

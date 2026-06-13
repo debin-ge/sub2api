@@ -11,6 +11,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
+	"fmt"
 	"testing"
 	"time"
 
@@ -79,6 +80,241 @@ func TestReconcilePendingWiseOrdersQueriesPendingWiseOrdersByOutTradeNo(t *testi
 	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
 	require.NoError(t, err)
 	require.Equal(t, OrderStatusPending, reloaded.Status)
+}
+
+func TestReconcilePendingWiseOrdersScansBeyondFirstPage(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("wise-page@example.com").
+		SetPasswordHash("hash").
+		SetUsername("wise-page-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	var lastOutTradeNo string
+	for i := 0; i < pendingWiseReconcileLimit+1; i++ {
+		outTradeNo := fmt.Sprintf("sub2_wise_page_%03d", i)
+		_, err := client.PaymentOrder.Create().
+			SetUserID(user.ID).
+			SetUserEmail(user.Email).
+			SetUserName(user.Username).
+			SetAmount(88).
+			SetPayAmount(88).
+			SetFeeRate(0).
+			SetRechargeCode(fmt.Sprintf("WISE-PAGE-%03d", i)).
+			SetOutTradeNo(outTradeNo).
+			SetPaymentType(payment.TypeWise).
+			SetPaymentTradeNo(fmt.Sprintf("wise-upstream-page-%03d", i)).
+			SetOrderType(payment.OrderTypeBalance).
+			SetStatus(OrderStatusPending).
+			SetExpiresAt(time.Now().Add(time.Hour)).
+			SetClientIP("127.0.0.1").
+			SetSrcHost("api.example.com").
+			Save(ctx)
+		require.NoError(t, err)
+		lastOutTradeNo = outTradeNo
+	}
+
+	provider := &paymentOrderLifecycleQueryProvider{
+		key: payment.TypeWise,
+		resp: &payment.QueryOrderResponse{
+			TradeNo: "wise-upstream-page",
+			Status:  payment.ProviderStatusPending,
+			Metadata: map[string]string{
+				"reconcile_decision": "no_match",
+				"reconcile_reason":   "activity_not_found",
+			},
+		},
+	}
+	registry := payment.NewRegistry()
+	registry.Register(provider)
+	svc := &PaymentService{
+		entClient:       client,
+		registry:        registry,
+		providersLoaded: true,
+	}
+
+	result, err := svc.ReconcilePendingWiseOrders(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, pendingWiseReconcileLimit+1, result.Scanned)
+	require.Equal(t, pendingWiseReconcileLimit+1, provider.queryCalls)
+	require.Equal(t, lastOutTradeNo, provider.lastQueryTradeNo)
+	require.Equal(t, "event_verified_no_auto_fulfill", result.Reason)
+}
+
+func TestReconcilePendingWiseOrdersAutoFulfillsExpiredOrderInsideWindow(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+	now := time.Now()
+
+	user, err := client.User.Create().
+		SetEmail("wise-expired@example.com").
+		SetPasswordHash("hash").
+		SetUsername("wise-expired-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(88).
+		SetPayAmount(88).
+		SetFeeRate(0).
+		SetRechargeCode("WISE-EXPIRED").
+		SetOutTradeNo("sub2_wise_expired_123").
+		SetPaymentType(payment.TypeWise).
+		SetPaymentTradeNo("wise-upstream-expired").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusExpired).
+		SetExpiresAt(now.Add(-time.Hour)).
+		SetUpdatedAt(now.Add(-time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	userRepo := &mockUserRepo{
+		getByIDUser: &User{
+			ID:       user.ID,
+			Email:    user.Email,
+			Username: user.Username,
+			Balance:  0,
+		},
+	}
+	userRepo.updateBalanceFn = func(ctx context.Context, id int64, amount float64) error {
+		require.Equal(t, user.ID, id)
+		userRepo.getByIDUser.Balance += amount
+		return nil
+	}
+	redeemRepo := &paymentOrderLifecycleRedeemRepo{
+		codesByCode: map[string]*RedeemCode{
+			order.RechargeCode: {
+				ID:     1,
+				Code:   order.RechargeCode,
+				Type:   RedeemTypeBalance,
+				Value:  order.Amount,
+				Status: StatusUnused,
+			},
+		},
+	}
+	redeemService := NewRedeemService(
+		redeemRepo,
+		userRepo,
+		nil,
+		nil,
+		nil,
+		client,
+		nil,
+		nil,
+	)
+	provider := &paymentOrderLifecycleQueryProvider{
+		key: payment.TypeWise,
+		resp: &payment.QueryOrderResponse{
+			TradeNo: "wise-upstream-expired",
+			Status:  payment.ProviderStatusPaid,
+			Amount:  88,
+			Metadata: map[string]string{
+				"profile_id":          "profile-123",
+				"balance_id":          "balance-123",
+				"currency":            "USD",
+				"settlement_strategy": "exact_only",
+			},
+		},
+	}
+	registry := payment.NewRegistry()
+	registry.Register(provider)
+	svc := &PaymentService{
+		entClient:       client,
+		registry:        registry,
+		redeemService:   redeemService,
+		userRepo:        userRepo,
+		providersLoaded: true,
+	}
+
+	result, err := svc.ReconcilePendingWiseOrders(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.AutoFulfill)
+	require.Equal(t, 1, result.Fulfilled)
+	require.Equal(t, "event_verified_reconciled", result.Reason)
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusCompleted, reloaded.Status)
+	require.Equal(t, 88.0, userRepo.getByIDUser.Balance)
+	require.Len(t, redeemRepo.useCalls, 1)
+}
+
+func TestReconcilePendingWiseOrdersDoesNotAutoFulfillExpiredAmountMismatch(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+	now := time.Now()
+
+	user, err := client.User.Create().
+		SetEmail("wise-expired-mismatch@example.com").
+		SetPasswordHash("hash").
+		SetUsername("wise-expired-mismatch-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(88).
+		SetPayAmount(88).
+		SetFeeRate(0).
+		SetRechargeCode("WISE-EXPIRED-MISMATCH").
+		SetOutTradeNo("sub2_wise_expired_mismatch_123").
+		SetPaymentType(payment.TypeWise).
+		SetPaymentTradeNo("wise-upstream-expired-mismatch").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusExpired).
+		SetExpiresAt(now.Add(-time.Hour)).
+		SetUpdatedAt(now.Add(-time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	provider := &paymentOrderLifecycleQueryProvider{
+		key: payment.TypeWise,
+		resp: &payment.QueryOrderResponse{
+			TradeNo: "wise-upstream-expired-mismatch",
+			Status:  payment.ProviderStatusPaid,
+			Amount:  88.001,
+			Metadata: map[string]string{
+				"profile_id":          "profile-123",
+				"balance_id":          "balance-123",
+				"currency":            "USD",
+				"settlement_strategy": "exact_only",
+			},
+		},
+	}
+	registry := payment.NewRegistry()
+	registry.Register(provider)
+	svc := &PaymentService{
+		entClient:       client,
+		registry:        registry,
+		providersLoaded: true,
+	}
+
+	result, err := svc.ReconcilePendingWiseOrders(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.Matched)
+	require.False(t, result.AutoFulfill)
+	require.Equal(t, 0, result.Fulfilled)
+	require.Equal(t, "event_verified_no_auto_fulfill", result.Reason)
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusExpired, reloaded.Status)
+	require.Equal(t, 88.0, reloaded.PayAmount)
 }
 
 func TestWiseWebhookUnsupportedSignedEventDoesNotTriggerReconcile(t *testing.T) {

@@ -171,9 +171,6 @@ For v1, enable only Wise balance / bank transfer methods whose settled amount eq
 | **Currency** | Collection currency for this provider instance | Yes |
 | **Webhook Public Key** | Wise webhook RSA public key | Yes |
 | **Settlement Strategy** | Fixed to `exact_only` in v1 | Yes |
-| **Allowed Methods Note** | Admin note. Recommended: record that only Wise balance / bank transfer is enabled | No |
-| **Reconcile Window Hours** | Reserved reconciliation window setting. Defaults to 72 hours | No |
-| **Auto Fulfill Fee Payments** | Must remain `false` in v1. Fee-deducted methods must not auto-fulfill | No |
 
 ---
 

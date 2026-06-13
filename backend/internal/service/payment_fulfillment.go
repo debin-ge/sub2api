@@ -147,15 +147,22 @@ func (s *PaymentService) toPaid(ctx context.Context, o *dbent.PaymentOrder, trad
 	previousStatus := o.Status
 	now := time.Now()
 	grace := now.Add(-paymentGraceMinutes * time.Minute)
+	expiredRecoveryPredicate := paymentorder.And(
+		paymentorder.StatusEQ(OrderStatusExpired),
+		paymentorder.UpdatedAtGTE(grace),
+	)
+	if payment.GetBasePaymentType(pk) == payment.TypeWise {
+		expiredRecoveryPredicate = paymentorder.And(
+			paymentorder.StatusEQ(OrderStatusExpired),
+			paymentorder.ExpiresAtGTE(wiseReconcileCutoff(now)),
+		)
+	}
 	c, err := s.entClient.PaymentOrder.Update().Where(
 		paymentorder.IDEQ(o.ID),
 		paymentorder.Or(
 			paymentorder.StatusEQ(OrderStatusPending),
 			paymentorder.StatusEQ(OrderStatusCancelled),
-			paymentorder.And(
-				paymentorder.StatusEQ(OrderStatusExpired),
-				paymentorder.UpdatedAtGTE(grace),
-			),
+			expiredRecoveryPredicate,
 		),
 	).SetStatus(OrderStatusPaid).SetPayAmount(paid).SetPaymentTradeNo(tradeNo).SetPaidAt(now).ClearFailedAt().ClearFailedReason().Save(ctx)
 	if err != nil {

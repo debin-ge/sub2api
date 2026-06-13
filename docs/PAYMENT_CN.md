@@ -171,9 +171,6 @@ v1 仅建议在 Wise 后台启用 Wise balance / bank transfer 等到账金额�
 | **币种** | 当前实例收款币种 | 是 |
 | **Webhook Public Key** | Wise webhook RSA 公钥 | 是 |
 | **Settlement Strategy** | v1 固定为 `exact_only` | 是 |
-| **Allowed Methods Note** | 管理备注，建议记录“仅启用 Wise balance / bank transfer” | 否 |
-| **Reconcile Window Hours** | 预留对账窗口配置，当前默认 72 小时 | 否 |
-| **Auto Fulfill Fee Payments** | v1 必须保持 `false`，手续费扣减方式不得自动入账 | 否 |
 
 ---
 
