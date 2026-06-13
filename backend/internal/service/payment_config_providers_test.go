@@ -119,6 +119,7 @@ func TestWiseProviderConfigRegistration(t *testing.T) {
 
 	require.NoError(t, validateProviderRequest(payment.TypeWise, "Wise Provider", payment.TypeWise))
 	require.True(t, isSensitiveProviderConfigField(payment.TypeWise, "apiToken"))
+	require.True(t, isSensitiveProviderConfigField(payment.TypeWise, "apitoken"))
 	require.False(t, isSensitiveProviderConfigField(payment.TypeWise, "quickPayBaseUrl"))
 	require.False(t, isSensitiveProviderConfigField(payment.TypeWise, "webhookPublicKey"))
 }
