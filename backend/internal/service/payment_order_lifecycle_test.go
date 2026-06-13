@@ -517,6 +517,73 @@ func TestReconcilePaidDoesNotReturnAlreadyPaidWhenFulfillmentRejectsAmountMismat
 	require.Equal(t, 88.0, reloaded.PayAmount)
 }
 
+func TestReconcilePaidDoesNotFulfillWisePaidQueryWithMissingSnapshotMetadata(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("wise-missing-metadata@example.com").
+		SetPasswordHash("hash").
+		SetUsername("wise-missing-metadata-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(88).
+		SetPayAmount(88).
+		SetFeeRate(0).
+		SetRechargeCode("WISE-MISSING-METADATA").
+		SetOutTradeNo("sub2_wise_missing_metadata").
+		SetPaymentType(payment.TypeWise).
+		SetPaymentTradeNo("").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusPending).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		SetProviderSnapshot(map[string]any{
+			"schema_version":       2,
+			"provider_key":         payment.TypeWise,
+			"merchant_id":          "profile-123",
+			"balance_id":           "balance-123",
+			"currency":             "USD",
+			"settlement_strategy":  "exact_only",
+			"provider_instance_id": "88",
+		}).
+		Save(ctx)
+	require.NoError(t, err)
+
+	registry := payment.NewRegistry()
+	provider := &paymentOrderLifecycleQueryProvider{
+		key: payment.TypeWise,
+		resp: &payment.QueryOrderResponse{
+			TradeNo: "wise-upstream-missing-metadata",
+			Status:  payment.ProviderStatusPaid,
+			Amount:  88,
+		},
+	}
+	registry.Register(provider)
+
+	svc := &PaymentService{
+		entClient:       client,
+		registry:        registry,
+		providersLoaded: true,
+	}
+
+	result := svc.reconcilePaid(ctx, order)
+	require.Empty(t, result)
+	require.Equal(t, order.OutTradeNo, provider.lastQueryTradeNo)
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusPending, reloaded.Status)
+	require.Empty(t, reloaded.PaymentTradeNo)
+	require.Equal(t, 88.0, reloaded.PayAmount)
+}
+
 func TestVerifyOrderByOutTradeNoDoesNotCancelUnpaidUpstreamOrder(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentOrderLifecycleTestClient(t)

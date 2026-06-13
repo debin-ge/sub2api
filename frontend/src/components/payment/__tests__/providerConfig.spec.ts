@@ -57,7 +57,8 @@ describe('PROVIDER_CONFIG_FIELDS.wise', () => {
     expect(fields.find(field => field.key === 'apiToken')?.sensitive).toBe(true)
     expect(fields.find(field => field.key === 'quickPayBaseUrl')?.sensitive).toBe(false)
     expect(fields.find(field => field.key === 'settlementStrategy')?.defaultValue).toBe('exact_only')
-    expect(fields.find(field => field.key === 'autoFulfillFeePayments')?.defaultValue).toBe('false')
+    expect(fields.find(field => field.key === 'autoFulfillFeePayments')).toBeUndefined()
+    expect(fields.find(field => field.key === 'reconcileWindowHours')).toBeUndefined()
   })
 })
 

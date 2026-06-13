@@ -101,7 +101,11 @@ func (s *PaymentService) confirmPayment(ctx context.Context, oid int64, tradeNo 
 		})
 		return fmt.Errorf("invalid paid amount from provider: %v", paid)
 	}
-	if math.Abs(paid-o.PayAmount) > paymentAmountToleranceForCurrency(PaymentOrderCurrency(o)) {
+	if payment.GetBasePaymentType(pk) == payment.TypeWise && !payment.AmountsEqualByMinorUnit(o.PayAmount, paid, PaymentOrderCurrency(o)) {
+		s.writeAuditLog(ctx, o.ID, "PAYMENT_AMOUNT_MISMATCH", pk, map[string]any{"expected": o.PayAmount, "paid": paid, "tradeNo": tradeNo})
+		return fmt.Errorf("amount mismatch: expected %s, got %s", strconv.FormatFloat(o.PayAmount, 'f', -1, 64), strconv.FormatFloat(paid, 'f', -1, 64))
+	}
+	if payment.GetBasePaymentType(pk) != payment.TypeWise && math.Abs(paid-o.PayAmount) > paymentAmountToleranceForCurrency(PaymentOrderCurrency(o)) {
 		s.writeAuditLog(ctx, o.ID, "PAYMENT_AMOUNT_MISMATCH", pk, map[string]any{"expected": o.PayAmount, "paid": paid, "tradeNo": tradeNo})
 		return fmt.Errorf("amount mismatch: expected %s, got %s", strconv.FormatFloat(o.PayAmount, 'f', -1, 64), strconv.FormatFloat(paid, 'f', -1, 64))
 	}

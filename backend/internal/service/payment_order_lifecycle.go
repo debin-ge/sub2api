@@ -178,6 +178,27 @@ func (s *PaymentService) checkPaidWithOptions(ctx context.Context, o *dbent.Paym
 			}
 			resp = retriedResp
 		}
+		if payment.GetBasePaymentType(prov.ProviderKey()) == payment.TypeWise {
+			if !payment.AmountsEqualByMinorUnit(o.PayAmount, resp.Amount, PaymentOrderCurrency(o)) {
+				s.writeAuditLog(ctx, o.ID, "PAYMENT_AMOUNT_MISMATCH", prov.ProviderKey(), map[string]any{
+					"expected": o.PayAmount,
+					"paid":     resp.Amount,
+					"tradeNo":  resp.TradeNo,
+					"queryRef": queryRef,
+				})
+				slog.Warn("wise paid query returned non-exact amount", "orderID", o.ID, "queryRef", queryRef, "expected", o.PayAmount, "paid", resp.Amount)
+				return ""
+			}
+			if err := validateProviderNotificationMetadata(o, prov.ProviderKey(), resp.Metadata); err != nil {
+				s.writeAuditLog(ctx, o.ID, "PAYMENT_PROVIDER_METADATA_MISMATCH", prov.ProviderKey(), map[string]any{
+					"detail":   err.Error(),
+					"tradeNo":  resp.TradeNo,
+					"queryRef": queryRef,
+				})
+				slog.Warn("wise paid query metadata mismatch", "orderID", o.ID, "queryRef", queryRef, "error", err)
+				return ""
+			}
+		}
 		notificationTradeNo := o.PaymentTradeNo
 		if upstreamTradeNo := strings.TrimSpace(resp.TradeNo); paymentOrderShouldPersistUpstreamTradeNo(queryRef, upstreamTradeNo, notificationTradeNo) {
 			if _, updateErr := s.entClient.PaymentOrder.Update().

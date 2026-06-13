@@ -135,7 +135,7 @@ func expectedNotificationProviderKeyForOrder(registry *payment.Registry, order *
 }
 
 func validateProviderSnapshotMetadata(order *dbent.PaymentOrder, providerKey string, metadata map[string]string) error {
-	if order == nil || len(metadata) == 0 {
+	if order == nil {
 		return nil
 	}
 
@@ -144,7 +144,15 @@ func validateProviderSnapshotMetadata(order *dbent.PaymentOrder, providerKey str
 		return nil
 	}
 
-	switch strings.TrimSpace(providerKey) {
+	normalizedProviderKey := strings.TrimSpace(providerKey)
+	if len(metadata) == 0 {
+		if payment.GetBasePaymentType(normalizedProviderKey) == payment.TypeWise {
+			return fmt.Errorf("wise notification metadata missing")
+		}
+		return nil
+	}
+
+	switch normalizedProviderKey {
 	case payment.TypeWxpay:
 		if expected := strings.TrimSpace(snapshot.MerchantAppID); expected != "" {
 			actual := strings.TrimSpace(metadata["appid"])

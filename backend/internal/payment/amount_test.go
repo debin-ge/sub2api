@@ -202,6 +202,32 @@ func TestAmountToMinorUnitRejectsUnsupportedPrecision(t *testing.T) {
 	}
 }
 
+func TestAmountsEqualByMinorUnitRequiresExactCurrencyPrecision(t *testing.T) {
+	tests := []struct {
+		name     string
+		expected float64
+		actual   float64
+		currency string
+		want     bool
+	}{
+		{name: "two decimal exact", expected: 88.00, actual: 88.0, currency: "USD", want: true},
+		{name: "two decimal rejects one minor unit mismatch", expected: 88.00, actual: 87.99, currency: "USD", want: false},
+		{name: "two decimal rejects sub-cent mismatch", expected: 88.00, actual: 88.001, currency: "USD", want: false},
+		{name: "three decimal exact", expected: 12.345, actual: 12.345, currency: "KWD", want: true},
+		{name: "three decimal rejects sub-fils mismatch", expected: 12.345, actual: 12.3456, currency: "KWD", want: false},
+		{name: "zero decimal exact", expected: 100, actual: 100, currency: "JPY", want: true},
+		{name: "zero decimal rejects fractional mismatch", expected: 100, actual: 100.1, currency: "JPY", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := AmountsEqualByMinorUnit(tt.expected, tt.actual, tt.currency); got != tt.want {
+				t.Fatalf("AmountsEqualByMinorUnit(%v, %v, %q) = %v, want %v", tt.expected, tt.actual, tt.currency, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestThreeDecimalPaymentCurrencies(t *testing.T) {
 	for _, currency := range []string{"BHD", "IQD", "JOD", "KWD", "LYD", "OMR", "TND"} {
 		t.Run(currency, func(t *testing.T) {
