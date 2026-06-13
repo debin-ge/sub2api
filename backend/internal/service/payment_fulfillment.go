@@ -172,6 +172,11 @@ func (s *PaymentService) ensureWiseTransactionUnused(ctx context.Context, curren
 	return nil
 }
 
+func isWiseTransactionReuseConstraintError(err error) bool {
+	return dbent.IsConstraintError(err) &&
+		strings.Contains(strings.ToLower(err.Error()), "paymentorder_payment_type_payment_trade_no")
+}
+
 func validateProviderNotificationMetadata(order *dbent.PaymentOrder, providerKey string, metadata map[string]string) error {
 	return validateProviderSnapshotMetadata(order, providerKey, metadata)
 }
@@ -214,6 +219,13 @@ func (s *PaymentService) toPaid(ctx context.Context, o *dbent.PaymentOrder, trad
 		),
 	).SetStatus(OrderStatusPaid).SetPayAmount(paid).SetPaymentTradeNo(tradeNo).SetPaidAt(now).ClearFailedAt().ClearFailedReason().Save(ctx)
 	if err != nil {
+		if payment.GetBasePaymentType(pk) == payment.TypeWise && isWiseTransactionReuseConstraintError(err) {
+			s.writeAuditLog(ctx, o.ID, "PAYMENT_TRANSACTION_REUSED", pk, map[string]any{
+				"detail":              err.Error(),
+				"wise_transaction_id": tradeNo,
+			})
+			return fmt.Errorf("wise transaction already used: %s", tradeNo)
+		}
 		return fmt.Errorf("update to PAID: %w", err)
 	}
 	if c == 0 {

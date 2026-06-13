@@ -880,6 +880,14 @@ var (
 				},
 			},
 			{
+				Name:    "paymentorder_payment_type_payment_trade_no",
+				Unique:  true,
+				Columns: []*schema.Column{PaymentOrdersColumns[9], PaymentOrdersColumns[10]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "payment_type = 'wise' AND payment_trade_no <> ''",
+				},
+			},
+			{
 				Name:    "paymentorder_user_id",
 				Unique:  false,
 				Columns: []*schema.Column{PaymentOrdersColumns[39]},
