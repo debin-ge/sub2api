@@ -171,6 +171,9 @@ For v1, enable only Wise balance / bank transfer methods whose settled amount eq
 | **Currency** | Collection currency for this provider instance | Yes |
 | **Webhook Public Key** | Wise webhook RSA public key | Yes |
 | **Settlement Strategy** | Fixed to `exact_only` in v1 | Yes |
+| **Allowed Methods Note** | Admin note. Recommended: record that only Wise balance / bank transfer is enabled | No |
+| **Reconcile Window Hours** | Reserved reconciliation window setting. Defaults to 72 hours | No |
+| **Auto Fulfill Fee Payments** | Must remain `false` in v1. Fee-deducted methods must not auto-fulfill | No |
 
 ---
 
@@ -237,7 +240,7 @@ When adding a provider, the system auto-generates callback URLs from your site d
 - Callback URLs must use **HTTPS** (required by Stripe, strongly recommended for others)
 - Ensure your firewall allows callback requests from payment platforms
 - The system automatically verifies callback signatures to prevent forgery
-- Balance top-up is processed automatically upon successful payment — no manual intervention needed
+- Balance top-up is processed automatically after provider verification / reconciliation passes. Wise fee-deducted or amount-mismatched payments require manual review
 
 ---
 
