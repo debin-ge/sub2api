@@ -160,7 +160,7 @@ func (w *Wise) QueryOrder(ctx context.Context, tradeNo string) (*payment.QueryOr
 			status = payment.ProviderStatusPaid
 		}
 		return &payment.QueryOrderResponse{
-			TradeNo:  wiseTransactionID(tx, outTradeNo),
+			TradeNo:  outTradeNo,
 			Status:   status,
 			Amount:   tx.NetAmount.InexactFloat64(),
 			PaidAt:   paidAt,
@@ -477,6 +477,9 @@ func transactionMetadata(tx wiseTransaction, decision wiseSettlementDecision) ma
 	addDecimalMetadata(metadata, "gross_amount", tx.GrossAmount)
 	addDecimalMetadata(metadata, "fee_amount", tx.FeeAmount)
 	addDecimalMetadata(metadata, "net_amount", tx.NetAmount)
+	if id := strings.TrimSpace(tx.ID); id != "" {
+		metadata["wise_transaction_id"] = id
+	}
 	for key, value := range decision.Metadata {
 		if strings.TrimSpace(value) != "" {
 			metadata[key] = value
@@ -499,14 +502,6 @@ func addDecimalMetadata(metadata map[string]string, key string, amount decimal.D
 	if !amount.IsZero() {
 		metadata[key] = amount.String()
 	}
-}
-
-func wiseTransactionID(tx wiseTransaction, fallback string) string {
-	id := strings.TrimSpace(tx.ID)
-	if id != "" {
-		return id
-	}
-	return fallback
 }
 
 func wiseTransactionStatusCompleted(status string) bool {
