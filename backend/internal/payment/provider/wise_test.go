@@ -12,7 +12,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	"github.com/shopspring/decimal"
@@ -221,8 +223,8 @@ func TestWiseQueryOrderFindsCompletedCreditStatementTransaction(t *testing.T) {
 				"totalFees": {"value": "0", "currency": "USD"},
 				"details": {
 					"type": "DEPOSIT",
-					"description": "Payment for sub2_20260612AbCdEf12",
-					"reference": "customer-ref-1"
+					"description": "Payment received",
+					"paymentReference": "sub2_20260612AbCdEf12"
 				}
 			}
 		]
@@ -233,12 +235,12 @@ func TestWiseQueryOrderFindsCompletedCreditStatementTransaction(t *testing.T) {
 	resp, err := prov.QueryOrder(context.Background(), outTradeNo)
 	require.NoError(t, err)
 
-	require.Equal(t, "/v1/profiles/profile-123/balance-statements/balance-123/statement", req.path)
+	require.Equal(t, "/v1/profiles/profile-123/balance-statements/balance-123/statement.json", req.path)
 	require.Equal(t, "Bearer token-123", req.authorization)
 	require.Equal(t, "application/json", req.accept)
 	require.Equal(t, "COMPACT", req.query.Get("type"))
-	require.NotEmpty(t, req.query.Get("intervalStart"))
-	require.NotEmpty(t, req.query.Get("intervalEnd"))
+	require.Equal(t, "USD", req.query.Get("currency"))
+	assertWiseStatementIntervalQuery(t, req.query)
 	require.Equal(t, "wise-ref-1", resp.TradeNo)
 	require.Equal(t, payment.ProviderStatusPaid, resp.Status)
 	require.InDelta(t, 123.45, resp.Amount, 0.000001)
@@ -322,6 +324,40 @@ func TestWiseQueryOrderRejectsEmptyTradeNo(t *testing.T) {
 	require.ErrorContains(t, err, "missing order reference")
 }
 
+func TestWiseDoJSONReturnsNon2xxSummary(t *testing.T) {
+	t.Parallel()
+
+	prov, cleanup := newWiseDoJSONTestProvider(t, http.StatusBadGateway, " upstream unavailable ")
+	defer cleanup()
+
+	var out wiseStatementResponse
+	err := prov.doJSON(context.Background(), http.MethodGet, "/fail", &out)
+	require.ErrorContains(t, err, "wise HTTP 502: upstream unavailable")
+}
+
+func TestWiseDoJSONTruncatesNon2xxSummary(t *testing.T) {
+	t.Parallel()
+
+	prov, cleanup := newWiseDoJSONTestProvider(t, http.StatusTeapot, strings.Repeat("x", wiseMaxErrorSummaryBytes+20))
+	defer cleanup()
+
+	var out wiseStatementResponse
+	err := prov.doJSON(context.Background(), http.MethodGet, "/fail", &out)
+	require.Error(t, err)
+	require.Len(t, strings.TrimPrefix(err.Error(), "wise HTTP 418: "), wiseMaxErrorSummaryBytes)
+}
+
+func TestWiseDoJSONReturnsMalformedJSONError(t *testing.T) {
+	t.Parallel()
+
+	prov, cleanup := newWiseDoJSONTestProvider(t, http.StatusOK, `{"transactions":`)
+	defer cleanup()
+
+	var out wiseStatementResponse
+	err := prov.doJSON(context.Background(), http.MethodGet, "/statement.json", &out)
+	require.ErrorContains(t, err, "wise parse response")
+}
+
 type wiseStatementTestRequest struct {
 	path          string
 	authorization string
@@ -349,6 +385,34 @@ func newWiseStatementTestProvider(t *testing.T, statement string) (*Wise, *wiseS
 	prov.httpClient = server.Client()
 
 	return prov, req, server.Close
+}
+
+func newWiseDoJSONTestProvider(t *testing.T, statusCode int, body string) (*Wise, func()) {
+	t.Helper()
+
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(statusCode)
+		_, _ = w.Write([]byte(body))
+	}))
+
+	cfg := validWiseConfig()
+	cfg["apiBase"] = server.URL
+	prov, err := NewWise("1", cfg)
+	require.NoError(t, err)
+	prov.httpClient = server.Client()
+
+	return prov, server.Close
+}
+
+func assertWiseStatementIntervalQuery(t *testing.T, query url.Values) {
+	t.Helper()
+
+	intervalStart, err := time.Parse(time.RFC3339, query.Get("intervalStart"))
+	require.NoError(t, err)
+	intervalEnd, err := time.Parse(time.RFC3339, query.Get("intervalEnd"))
+	require.NoError(t, err)
+
+	require.InDelta(t, (wiseStatementLookback + wiseStatementLookahead).Seconds(), intervalEnd.Sub(intervalStart).Seconds(), 1)
 }
 
 func TestWiseTransactionReferencesOrder(t *testing.T) {

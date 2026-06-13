@@ -277,9 +277,10 @@ type wiseStatementTransaction struct {
 	Amount          wiseMoneyAmount `json:"amount"`
 	TotalFees       wiseMoneyAmount `json:"totalFees"`
 	Details         struct {
-		Type        string `json:"type"`
-		Description string `json:"description"`
-		Reference   string `json:"reference"`
+		Type             string `json:"type"`
+		Description      string `json:"description"`
+		PaymentReference string `json:"paymentReference"`
+		Reference        string `json:"reference"`
 	} `json:"details"`
 }
 
@@ -403,12 +404,16 @@ func (w *Wise) queryStatement(ctx context.Context) ([]wiseTransaction, error) {
 	now := time.Now().UTC()
 	profileID := strings.TrimSpace(w.config["profileId"])
 	balanceID := strings.TrimSpace(w.config["balanceId"])
+	query := url.Values{}
+	query.Set("intervalStart", now.Add(-wiseStatementLookback).Format(time.RFC3339))
+	query.Set("intervalEnd", now.Add(wiseStatementLookahead).Format(time.RFC3339))
+	query.Set("type", "COMPACT")
+	query.Set("currency", w.currency())
 	path := fmt.Sprintf(
-		"/v1/profiles/%s/balance-statements/%s/statement?intervalStart=%s&intervalEnd=%s&type=COMPACT",
+		"/v1/profiles/%s/balance-statements/%s/statement.json?%s",
 		url.PathEscape(profileID),
 		url.PathEscape(balanceID),
-		url.QueryEscape(now.Add(-wiseStatementLookback).Format(time.RFC3339)),
-		url.QueryEscape(now.Add(wiseStatementLookahead).Format(time.RFC3339)),
+		query.Encode(),
 	)
 
 	var statement wiseStatementResponse
@@ -434,6 +439,11 @@ func (w *Wise) normalizeStatementTransaction(row wiseStatementTransaction, profi
 		occurredAt = parsed
 	}
 
+	reference := strings.TrimSpace(row.Details.PaymentReference)
+	if reference == "" {
+		reference = strings.TrimSpace(row.Details.Reference)
+	}
+
 	raw, _ := json.Marshal(row)
 	netAmount := row.Amount.Value
 	feeAmount := row.TotalFees.Value
@@ -449,7 +459,7 @@ func (w *Wise) normalizeStatementTransaction(row wiseStatementTransaction, profi
 		FeeAmount:   feeAmount,
 		NetAmount:   netAmount,
 		Description: strings.TrimSpace(row.Details.Description),
-		Reference:   strings.TrimSpace(row.Details.Reference),
+		Reference:   reference,
 		OccurredAt:  occurredAt,
 		Raw:         raw,
 	}
