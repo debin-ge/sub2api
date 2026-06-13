@@ -97,8 +97,13 @@ func (w *Wise) CreatePayment(ctx context.Context, req payment.CreatePaymentReque
 	if amount == "" {
 		return nil, fmt.Errorf("wise create payment: missing amount")
 	}
-	if _, err := payment.AmountToMinorUnit(amount, w.currency()); err != nil {
+	currency := w.currency()
+	minorAmount, err := payment.AmountToMinorUnit(amount, currency)
+	if err != nil {
 		return nil, fmt.Errorf("wise create payment: invalid amount: %w", err)
+	}
+	if minorAmount <= 0 {
+		return nil, fmt.Errorf("wise create payment: amount must be positive")
 	}
 	payURL, err := w.quickPayURL(amount, orderID)
 	if err != nil {
@@ -107,7 +112,7 @@ func (w *Wise) CreatePayment(ctx context.Context, req payment.CreatePaymentReque
 	return &payment.CreatePaymentResponse{
 		TradeNo:    orderID,
 		PayURL:     payURL,
-		Currency:   w.currency(),
+		Currency:   currency,
 		ResultType: payment.CreatePaymentResultOrderCreated,
 	}, nil
 }
@@ -277,7 +282,37 @@ func wiseTransactionReferencesOrder(tx wiseTransaction, outTradeNo string) bool 
 	if outTradeNo == "" {
 		return false
 	}
-	return strings.Contains(tx.Description, outTradeNo) || strings.Contains(tx.Reference, outTradeNo)
+	return wiseTextReferencesOrderID(tx.Description, outTradeNo) || wiseTextReferencesOrderID(tx.Reference, outTradeNo)
+}
+
+func wiseTextReferencesOrderID(text, outTradeNo string) bool {
+	outTradeNo = strings.TrimSpace(outTradeNo)
+	if outTradeNo == "" {
+		return false
+	}
+	for start := 0; start < len(text); {
+		idx := strings.Index(text[start:], outTradeNo)
+		if idx == -1 {
+			return false
+		}
+		idx += start
+		beforeOK := idx == 0 || !wiseIsOrderIDChar(text[idx-1])
+		afterIdx := idx + len(outTradeNo)
+		afterOK := afterIdx == len(text) || !wiseIsOrderIDChar(text[afterIdx])
+		if beforeOK && afterOK {
+			return true
+		}
+		start = idx + 1
+	}
+	return false
+}
+
+func wiseIsOrderIDChar(ch byte) bool {
+	return ch >= 'a' && ch <= 'z' ||
+		ch >= 'A' && ch <= 'Z' ||
+		ch >= '0' && ch <= '9' ||
+		ch == '_' ||
+		ch == '-'
 }
 
 var _ payment.Provider = (*Wise)(nil)

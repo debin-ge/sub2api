@@ -4,6 +4,11 @@ package provider
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"encoding/pem"
 	"net/url"
 	"testing"
 
@@ -73,6 +78,44 @@ func TestNewWiseValidatesConfig(t *testing.T) {
 	require.ErrorContains(t, err, "exact_only")
 }
 
+func TestNewWiseRejectsInvalidWebhookPublicKey(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		publicKey  func(t *testing.T) string
+		wantErrMsg string
+	}{
+		{
+			name: "malformed PEM",
+			publicKey: func(t *testing.T) string {
+				t.Helper()
+				return "not a pem public key"
+			},
+			wantErrMsg: "webhookPublicKey must be PEM encoded",
+		},
+		{
+			name: "non-RSA PKIX public key",
+			publicKey: func(t *testing.T) string {
+				t.Helper()
+				return testWiseECDSAPublicKeyPEM(t)
+			},
+			wantErrMsg: "webhookPublicKey must be an RSA public key",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg := validWiseConfig()
+			cfg["webhookPublicKey"] = tt.publicKey(t)
+			_, err := NewWise("1", cfg)
+			require.ErrorContains(t, err, tt.wantErrMsg)
+		})
+	}
+}
+
 func validWiseConfig() map[string]string {
 	return map[string]string{
 		"quickPayBaseUrl":    "https://wise.com/pay/business/account",
@@ -84,6 +127,19 @@ func validWiseConfig() map[string]string {
 		"webhookPublicKey":   testWisePublicKeyPEM,
 		"settlementStrategy": "exact_only",
 	}
+}
+
+func testWiseECDSAPublicKeyPEM(t *testing.T) string {
+	t.Helper()
+
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	der, err := x509.MarshalPKIXPublicKey(&priv.PublicKey)
+	require.NoError(t, err)
+	return string(pem.EncodeToMemory(&pem.Block{
+		Type:  "PUBLIC KEY",
+		Bytes: der,
+	}))
 }
 
 func TestWiseCreatePaymentBuildsQuickPayURL(t *testing.T) {
@@ -130,6 +186,67 @@ func TestWiseCreatePaymentMergesExistingQuickPayQuery(t *testing.T) {
 	require.Equal(t, "88", parsed.Query().Get("amount"))
 	require.Equal(t, "USD", parsed.Query().Get("currency"))
 	require.Equal(t, "sub2_order", parsed.Query().Get("description"))
+}
+
+func TestWiseCreatePaymentRejectsNonPositiveAmount(t *testing.T) {
+	t.Parallel()
+
+	prov, err := NewWise("1", validWiseConfig())
+	require.NoError(t, err)
+
+	for _, amount := range []string{"0", "-1"} {
+		t.Run(amount, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := prov.CreatePayment(context.Background(), payment.CreatePaymentRequest{
+				OrderID: "sub2_order",
+				Amount:  amount,
+			})
+			require.ErrorContains(t, err, "amount must be positive")
+		})
+	}
+}
+
+func TestWiseTransactionReferencesOrder(t *testing.T) {
+	t.Parallel()
+
+	const outTradeNo = "sub2_20260612AbCdEf12"
+	tests := []struct {
+		name string
+		tx   wiseTransaction
+		want bool
+	}{
+		{
+			name: "exact reference matches",
+			tx: wiseTransaction{
+				Reference: outTradeNo,
+			},
+			want: true,
+		},
+		{
+			name: "description with surrounding text matches",
+			tx: wiseTransaction{
+				Description: "Payment for sub2_20260612AbCdEf12",
+			},
+			want: true,
+		},
+		{
+			name: "prefix collision does not match",
+			tx: wiseTransaction{
+				Description: "Payment for sub2_20260612AbCdEf123",
+				Reference:   "sub2_20260612AbCdEf123",
+			},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			require.Equal(t, tt.want, wiseTransactionReferencesOrder(tt.tx, outTradeNo))
+		})
+	}
 }
 
 func TestWiseExactSettlementStrategy(t *testing.T) {
