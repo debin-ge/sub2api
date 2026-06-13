@@ -188,6 +188,31 @@ func TestBuildPaymentOrderProviderSnapshot_IncludesProviderCurrency(t *testing.T
 	require.Equal(t, "acct-78", airwallexSnapshot["merchant_id"])
 }
 
+func TestBuildPaymentOrderProviderSnapshotWise(t *testing.T) {
+	t.Parallel()
+
+	snapshot := buildPaymentOrderProviderSnapshot(&payment.InstanceSelection{
+		InstanceID:  "88",
+		ProviderKey: payment.TypeWise,
+		Config: map[string]string{
+			"profileId":          "profile-123",
+			"balanceId":          "balance-123",
+			"currency":           "USD",
+			"settlementStrategy": "exact_only",
+		},
+		PaymentMode: "redirect",
+	}, CreateOrderRequest{PaymentType: payment.TypeWise})
+
+	require.Equal(t, 2, snapshot["schema_version"])
+	require.Equal(t, payment.TypeWise, snapshot["provider_key"])
+	require.Equal(t, "88", snapshot["provider_instance_id"])
+	require.Equal(t, "redirect", snapshot["payment_mode"])
+	require.Equal(t, "profile-123", snapshot["merchant_id"])
+	require.Equal(t, "balance-123", snapshot["balance_id"])
+	require.Equal(t, "USD", snapshot["currency"])
+	require.Equal(t, "exact_only", snapshot["settlement_strategy"])
+}
+
 func valueOrEmpty(v *string) string {
 	if v == nil {
 		return ""

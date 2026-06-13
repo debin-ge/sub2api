@@ -114,6 +114,38 @@ func TestValidateProviderRequest(t *testing.T) {
 	}
 }
 
+func TestWiseProviderConfigRegistration(t *testing.T) {
+	t.Parallel()
+
+	require.NoError(t, validateProviderRequest(payment.TypeWise, "Wise Provider", payment.TypeWise))
+	require.True(t, isSensitiveProviderConfigField(payment.TypeWise, "apiToken"))
+	require.False(t, isSensitiveProviderConfigField(payment.TypeWise, "quickPayBaseUrl"))
+	require.False(t, isSensitiveProviderConfigField(payment.TypeWise, "webhookPublicKey"))
+}
+
+func TestWiseProtectedConfigChanges(t *testing.T) {
+	t.Parallel()
+
+	current := map[string]string{
+		"quickPayBaseUrl":    "https://wise.com/pay/business/account",
+		"apiBase":            "https://api.wise.com",
+		"apiToken":           "old-token",
+		"profileId":          "profile-123",
+		"balanceId":          "balance-123",
+		"currency":           "USD",
+		"webhookPublicKey":   "old-public-key",
+		"settlementStrategy": "exact_only",
+	}
+	next := cloneStringMap(current)
+	next["balanceId"] = "balance-456"
+
+	require.True(t, hasPendingOrderProtectedConfigChange(payment.TypeWise, current, next))
+
+	next = cloneStringMap(current)
+	next["allowedMethodsNote"] = "bank transfer only"
+	require.False(t, hasPendingOrderProtectedConfigChange(payment.TypeWise, current, next))
+}
+
 func TestIsSensitiveProviderConfigField(t *testing.T) {
 	t.Parallel()
 
@@ -718,4 +750,12 @@ func validWxpayProviderConfigWithJSAPIAppID(t *testing.T) map[string]string {
 	cfg := validWxpayProviderConfig(t)
 	cfg["mpAppId"] = "wx-mp-app-test"
 	return cfg
+}
+
+func cloneStringMap(in map[string]string) map[string]string {
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }

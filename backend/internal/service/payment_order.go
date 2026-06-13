@@ -303,6 +303,18 @@ func buildPaymentOrderProviderSnapshot(sel *payment.InstanceSelection, req Creat
 		}
 		snapshot["currency"] = paymentProviderConfigCurrency(providerKey, sel.Config)
 	}
+	if providerKey == payment.TypeWise {
+		if profileID := strings.TrimSpace(sel.Config["profileId"]); profileID != "" {
+			snapshot["merchant_id"] = profileID
+		}
+		if balanceID := strings.TrimSpace(sel.Config["balanceId"]); balanceID != "" {
+			snapshot["balance_id"] = balanceID
+		}
+		snapshot["currency"] = paymentProviderConfigCurrency(providerKey, sel.Config)
+		if strategy := strings.TrimSpace(sel.Config["settlementStrategy"]); strategy != "" {
+			snapshot["settlement_strategy"] = strategy
+		}
+	}
 
 	if len(snapshot) == 1 {
 		return nil
