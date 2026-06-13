@@ -25,6 +25,7 @@ Sub2API has a built-in payment system that enables user self-service top-up with
 | **Alipay (Direct)** | Desktop QR code, mobile Alipay redirect | Direct integration with Alipay Open Platform, returning desktop QR codes and mobile WAP/app launch links |
 | **WeChat Pay (Direct)** | Native QR, H5, MP/JSAPI Pay | Direct integration with WeChat Pay APIv3 with environment-aware routing |
 | **Stripe** | Card, Alipay, WeChat Pay, Link, etc. | International payments, multi-currency support |
+| **Wise** | Wise Quick Pay / bank transfer | International collection. v1 auto-fulfills only exact-settlement Wise balance / bank transfer payments. |
 
 > Alipay/WeChat Pay direct and EasyPay can both exist as backend provider instances, but the frontend always exposes only two visible buttons: `Alipay` and `WeChat Pay`. Admins choose exactly one source for each visible method: direct or EasyPay. Direct channels connect to payment APIs directly with lower fees; EasyPay aggregates through third-party platforms with easier setup.
 
@@ -154,6 +155,23 @@ International payment platform supporting multiple payment methods and currencie
 | **Publishable Key** | Stripe publishable key (`pk_live_...` or `pk_test_...`) | Yes |
 | **Webhook Secret** | Stripe Webhook signing secret (`whsec_...`) | Yes |
 
+### Wise
+
+Wise uses hosted redirect plus automatic reconciliation. Sub2API builds a Wise Quick Pay/payment link URL with `amount`, `currency`, and `description=<out_trade_no>`.
+
+For v1, enable only Wise balance / bank transfer methods whose settled amount equals the order amount. Do not enable card, Apple Pay, or Google Pay for automatic fulfillment; fee-deducted transactions require manual review.
+
+| Parameter | Description | Required |
+|-----------|-------------|----------|
+| **Quick Pay Base URL** | Wise Quick Pay/payment link without order query parameters | Yes |
+| **API Base** | Wise API base URL. Production usually uses `https://api.wise.com` | Yes |
+| **API Token** | Wise API token or OAuth access token | Yes |
+| **Profile ID** | Wise business profile ID | Yes |
+| **Balance ID** | Wise balance ID | Yes |
+| **Currency** | Collection currency for this provider instance | Yes |
+| **Webhook Public Key** | Wise webhook RSA public key | Yes |
+| **Settlement Strategy** | Fixed to `exact_only` in v1 | Yes |
+
 ---
 
 ## Provider Instance Management
@@ -195,6 +213,7 @@ When adding a provider, the system auto-generates callback URLs from your site d
 | **Alipay (Direct)** | `https://your-domain.com/api/v1/payment/webhook/alipay` |
 | **WeChat Pay (Direct)** | `https://your-domain.com/api/v1/payment/webhook/wxpay` |
 | **Stripe** | `https://your-domain.com/api/v1/payment/webhook/stripe` |
+| **Wise** | `https://your-domain.com/api/v1/payment/webhook/wise` |
 
 > Replace `your-domain.com` with your actual domain. For EasyPay / Alipay / WeChat Pay, the callback URL is auto-filled when adding the provider — no manual configuration needed.
 
@@ -205,6 +224,13 @@ When adding a provider, the system auto-generates callback URLs from your site d
 3. Add an endpoint with the callback URL
 4. Subscribe to events: `payment_intent.succeeded`, `payment_intent.payment_failed`
 5. Copy the generated Webhook Secret (`whsec_...`) to your provider configuration
+
+### Wise Webhook Setup
+
+1. Create a webhook in Wise and use `/api/v1/payment/webhook/wise` as the endpoint path.
+2. Subscribe to balance/account-details credit events such as `balances#credit`, `balances#update`, or account details payment state changes.
+3. Copy the Wise webhook RSA public key into the provider configuration.
+4. When a webhook arrives, Sub2API verifies the signature first, then queries Wise statement/activity data for strict reconciliation.
 
 ### Important Notes
 
@@ -231,10 +257,15 @@ User selects amount and payment method
   ├─ EasyPay     → QR code / H5 redirect
   ├─ Alipay      → Desktop QR payload (Face-to-Face preferred, Website Pay fallback) / mobile Alipay redirect
   ├─ WeChat Pay  → Desktop Native QR / non-WeChat H5 / in-WeChat JSAPI
-  └─ Stripe      → Payment Element (card/Alipay/WeChat/etc.)
+  ├─ Stripe      → Payment Element (card/Alipay/WeChat/etc.)
+  └─ Wise        → Hosted Quick Pay/payment link redirect
        │
        ▼
-  Webhook callback verified → Order PAID
+  Webhook callback verified
+  └─ Wise        → Query statement/activity and reconcile exact settlement
+       │
+       ▼
+  Order PAID
        │
        ▼
   Auto top-up to user balance → Order COMPLETED

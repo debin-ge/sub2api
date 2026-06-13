@@ -25,6 +25,7 @@ Sub2API 内置支付系统，支持用户自助充值，无需部署独立的支
 | **支付宝官方** | 桌面二维码扫码、移动端支付宝跳转 | 直接对接支付宝开放平台，桌面端返回二维码，移动端返回 WAP/唤起链接 |
 | **微信官方** | Native 扫码、H5、公众号/JSAPI 支付 | 直接对接微信支付 APIv3，按终端环境自动分流 |
 | **Stripe** | 银行卡、支付宝、微信支付、Link 等 | 国际支付，支持多币种 |
+| **Wise** | Wise Quick Pay / bank transfer | 国际收款，v1 仅自动处理到账金额等于订单金额的 Wise balance / bank transfer |
 
 > 支付宝官方 / 微信官方与易支付可以同时作为后台服务商实例存在，但前台始终只展示 `支付宝`、`微信支付` 两个可见按钮。管理员需要分别为这两个按钮选择唯一支付来源：官方或易支付。官方渠道直接对接 API，资金直达商户账户，手续费更低；易支付通过第三方平台聚合，接入门槛更低。
 
@@ -154,6 +155,23 @@ Sub2API 内置支付系统，支持用户自助充值，无需部署独立的支
 | **Publishable Key** | Stripe 可公开密钥（`pk_live_...` 或 `pk_test_...`） | 是 |
 | **Webhook Secret** | Stripe Webhook 签名密钥（`whsec_...`） | 是 |
 
+### Wise
+
+Wise 接入采用 hosted redirect + 自动对账模式。系统会生成 Wise Quick Pay/payment link 跳转地址，并追加 `amount`、`currency`、`description=订单号`。
+
+v1 仅建议在 Wise 后台启用 Wise balance / bank transfer 等到账金额等于订单金额的方式。请不要启用 card、Apple Pay、Google Pay 自动入账；这些方式可能扣除收款手续费，系统会进入人工审核而不会自动发放余额或订阅。
+
+| 参数 | 说明 | 必填 |
+|------|------|------|
+| **Quick Pay 基础链接** | Wise Quick Pay/payment link，不带订单参数 | 是 |
+| **API Base** | Wise API 地址，生产环境通常为 `https://api.wise.com` | 是 |
+| **API Token** | Wise API token 或 OAuth access token | 是 |
+| **Profile ID** | Wise business profile ID | 是 |
+| **Balance ID** | Wise balance ID | 是 |
+| **币种** | 当前实例收款币种 | 是 |
+| **Webhook Public Key** | Wise webhook RSA 公钥 | 是 |
+| **Settlement Strategy** | v1 固定为 `exact_only` | 是 |
+
 ---
 
 ## 服务商实例管理
@@ -195,6 +213,7 @@ Sub2API 内置支付系统，支持用户自助充值，无需部署独立的支
 | **支付宝官方** | `https://your-domain.com/api/v1/payment/webhook/alipay` |
 | **微信官方** | `https://your-domain.com/api/v1/payment/webhook/wxpay` |
 | **Stripe** | `https://your-domain.com/api/v1/payment/webhook/stripe` |
+| **Wise** | `https://your-domain.com/api/v1/payment/webhook/wise` |
 
 > 将 `your-domain.com` 替换为你的实际域名。EasyPay / 支付宝 / 微信的回调地址在添加服务商时自动填入，无需手动配置。
 
@@ -205,6 +224,13 @@ Sub2API 内置支付系统，支持用户自助充值，无需部署独立的支
 3. 添加端点，填写回调地址
 4. 订阅事件：`payment_intent.succeeded`、`payment_intent.payment_failed`
 5. 将生成的 Webhook Secret（`whsec_...`）填入服务商配置
+
+### Wise Webhook 设置
+
+1. 在 Wise 后台创建 webhook，URL 填写 `/api/v1/payment/webhook/wise`。
+2. 订阅 balance/account-details 入账相关事件，例如 `balances#credit`、`balances#update` 或 account details payment state change。
+3. 将 Wise webhook RSA 公钥填入服务商配置。
+4. 系统收到 webhook 后会先验签，再查询 Wise statement/activity 完成严格对账。
 
 ### 注意事项
 
@@ -231,10 +257,15 @@ Sub2API 内置支付系统，支持用户自助充值，无需部署独立的支
   ├─ EasyPay    → 扫码 / H5 跳转
   ├─ 支付宝官方  → 桌面扫码单（当面付优先，电脑网站支付回退）/ 移动端支付宝跳转
   ├─ 微信官方    → 桌面 Native 扫码 / 非微信 H5 / 微信内 JSAPI
-  └─ Stripe     → Payment Element（银行卡/支付宝/微信等）
+  ├─ Stripe     → Payment Element（银行卡/支付宝/微信等）
+  └─ Wise       → Hosted Quick Pay/payment link 跳转
        │
        ▼
-  支付回调验签 → 订单 PAID
+  支付回调验签
+  └─ Wise       → 查询 statement/activity 并按到账金额严格对账
+       │
+       ▼
+  订单 PAID
        │
        ▼
   自动充值到用户余额 → 订单 COMPLETED
