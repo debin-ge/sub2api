@@ -3,6 +3,7 @@ import {
   buildPaymentErrorToastMessage,
   describePaymentScenarioError,
   normalizePaymentMethodForDisplay,
+  paymentMethodI18nKey,
 } from '../paymentUx'
 
 describe('normalizePaymentMethodForDisplay', () => {
@@ -14,6 +15,11 @@ describe('normalizePaymentMethodForDisplay', () => {
 
   it('leaves non-aliased methods untouched', () => {
     expect(normalizePaymentMethodForDisplay('stripe')).toBe('stripe')
+  })
+
+  it('keeps Wise payment method display key', () => {
+    expect(normalizePaymentMethodForDisplay('wise')).toBe('wise')
+    expect(paymentMethodI18nKey('wise')).toBe('payment.methods.wise')
   })
 })
 

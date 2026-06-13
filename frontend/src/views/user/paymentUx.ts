@@ -4,6 +4,7 @@ import { extractApiErrorCode } from '@/utils/apiError'
 const DISPLAY_METHOD_ALIASES: Record<string, string> = {
   wechat: 'wxpay',
   wechat_pay: 'wxpay',
+  wise: 'wise',
 }
 
 export interface PaymentScenarioContext {
