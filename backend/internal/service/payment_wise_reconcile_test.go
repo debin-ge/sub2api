@@ -283,6 +283,7 @@ func TestReconcilePendingWiseOrdersAutoFulfillsExpiredOrderInsideWindow(t *testi
 				"balance_id":          "balance-123",
 				"currency":            "USD",
 				"settlement_strategy": "exact_only",
+				"wise_transaction_id": "wise-upstream-expired",
 			},
 		},
 	}
@@ -641,6 +642,90 @@ func TestReconcileWiseOrderByOutTradeNoDoesNotAutoFulfillAmountMismatch(t *testi
 	require.NoError(t, err)
 	require.Equal(t, OrderStatusPending, reloaded.Status)
 	require.Equal(t, 88.0, reloaded.PayAmount)
+}
+
+func TestReconcileWiseOrderByOutTradeNoRejectsReusedWiseTransactionID(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("wise-reused-tx@example.com").
+		SetPasswordHash("hash").
+		SetUsername("wise-reused-tx-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	_, err = client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(88).
+		SetPayAmount(88).
+		SetFeeRate(0).
+		SetRechargeCode("WISE-REUSED-TX-COMPLETED").
+		SetOutTradeNo("sub2_wise_reused_tx_completed").
+		SetPaymentType(payment.TypeWise).
+		SetPaymentTradeNo("wise-tx-reused").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusCompleted).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(88).
+		SetPayAmount(88).
+		SetFeeRate(0).
+		SetRechargeCode("WISE-REUSED-TX-PENDING").
+		SetOutTradeNo("sub2_wise_reused_tx_pending").
+		SetPaymentType(payment.TypeWise).
+		SetPaymentTradeNo("wise-upstream-reused-tx-pending").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusPending).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	provider := &paymentOrderLifecycleQueryProvider{
+		key: payment.TypeWise,
+		resp: &payment.QueryOrderResponse{
+			TradeNo: "wise-tx-reused",
+			Status:  payment.ProviderStatusPaid,
+			Amount:  88,
+			Metadata: map[string]string{
+				"profile_id":          "profile-123",
+				"balance_id":          "balance-123",
+				"currency":            "USD",
+				"settlement_strategy": "exact_only",
+				"wise_transaction_id": "wise-tx-reused",
+			},
+		},
+	}
+	registry := payment.NewRegistry()
+	registry.Register(provider)
+	svc := &PaymentService{
+		entClient:       client,
+		registry:        registry,
+		providersLoaded: true,
+	}
+
+	result, err := svc.ReconcileWiseOrderByOutTradeNo(ctx, order.OutTradeNo)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.Matched)
+	require.False(t, result.AutoFulfill)
+	require.Equal(t, "transaction_reused", result.Reason)
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusPending, reloaded.Status)
 }
 
 func TestReconcileWiseOrderByOutTradeNoDoesNotAutoFulfillSubCentMismatch(t *testing.T) {

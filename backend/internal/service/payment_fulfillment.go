@@ -109,6 +109,25 @@ func (s *PaymentService) confirmPayment(ctx context.Context, oid int64, tradeNo 
 		s.writeAuditLog(ctx, o.ID, "PAYMENT_AMOUNT_MISMATCH", pk, map[string]any{"expected": o.PayAmount, "paid": paid, "tradeNo": tradeNo})
 		return fmt.Errorf("amount mismatch: expected %s, got %s", strconv.FormatFloat(o.PayAmount, 'f', -1, 64), strconv.FormatFloat(paid, 'f', -1, 64))
 	}
+	if payment.GetBasePaymentType(pk) == payment.TypeWise {
+		wiseTransactionID := wiseTransactionIDFromMetadata(metadata)
+		if wiseTransactionID == "" {
+			s.writeAuditLog(ctx, o.ID, "PAYMENT_PROVIDER_METADATA_MISMATCH", pk, map[string]any{
+				"detail":  "wise transaction id missing",
+				"tradeNo": tradeNo,
+			})
+			return fmt.Errorf("wise transaction id missing")
+		}
+		if err := s.ensureWiseTransactionUnused(ctx, o.ID, wiseTransactionID); err != nil {
+			s.writeAuditLog(ctx, o.ID, "PAYMENT_TRANSACTION_REUSED", pk, map[string]any{
+				"detail":              err.Error(),
+				"tradeNo":             tradeNo,
+				"wise_transaction_id": wiseTransactionID,
+			})
+			return err
+		}
+		tradeNo = wiseTransactionID
+	}
 	return s.toPaid(ctx, o, tradeNo, paid, pk)
 }
 
@@ -122,6 +141,35 @@ func paymentAmountToleranceForCurrency(currency string) float64 {
 
 func isValidProviderAmount(amount float64) bool {
 	return amount > 0 && !math.IsNaN(amount) && !math.IsInf(amount, 0)
+}
+
+func wiseTransactionIDFromMetadata(metadata map[string]string) string {
+	if metadata == nil {
+		return ""
+	}
+	return strings.TrimSpace(metadata["wise_transaction_id"])
+}
+
+func (s *PaymentService) ensureWiseTransactionUnused(ctx context.Context, currentOrderID int64, transactionID string) error {
+	transactionID = strings.TrimSpace(transactionID)
+	if transactionID == "" {
+		return fmt.Errorf("wise transaction id missing")
+	}
+	exists, err := s.entClient.PaymentOrder.Query().
+		Where(
+			paymentorder.IDNEQ(currentOrderID),
+			paymentorder.PaymentTypeEQ(payment.TypeWise),
+			paymentorder.PaymentTradeNoEQ(transactionID),
+			paymentorder.StatusIn(OrderStatusPaid, OrderStatusRecharging, OrderStatusCompleted),
+		).
+		Exist(ctx)
+	if err != nil {
+		return fmt.Errorf("check wise transaction reuse: %w", err)
+	}
+	if exists {
+		return fmt.Errorf("wise transaction already used: %s", transactionID)
+	}
+	return nil
 }
 
 func validateProviderNotificationMetadata(order *dbent.PaymentOrder, providerKey string, metadata map[string]string) error {

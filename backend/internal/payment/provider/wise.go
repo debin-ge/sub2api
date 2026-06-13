@@ -196,8 +196,12 @@ func (w *Wise) queryOrderFromTransactions(outTradeNo string, transactions []wise
 		if decision.AutoFulfill {
 			status = payment.ProviderStatusPaid
 		}
+		tradeNo := strings.TrimSpace(tx.ID)
+		if tradeNo == "" {
+			tradeNo = outTradeNo
+		}
 		return &payment.QueryOrderResponse{
-			TradeNo:  outTradeNo,
+			TradeNo:  tradeNo,
 			Status:   status,
 			Amount:   tx.NetAmount.InexactFloat64(),
 			PaidAt:   paidAt,

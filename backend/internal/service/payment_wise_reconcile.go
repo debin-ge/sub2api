@@ -366,9 +366,37 @@ func (s *PaymentService) handleWiseQueryOrderResponse(ctx context.Context, order
 			Reason:      "metadata_mismatch",
 		}, nil
 	}
+	wiseTransactionID := wiseTransactionIDFromMetadata(resp.Metadata)
+	if wiseTransactionID == "" {
+		s.writeAuditLog(ctx, order.ID, "PAYMENT_PROVIDER_METADATA_MISMATCH", payment.TypeWise, map[string]any{
+			"detail":  "wise transaction id missing",
+			"tradeNo": resp.TradeNo,
+		})
+		return &WiseWebhookReconcileResult{
+			Matched:     true,
+			AutoFulfill: false,
+			OrderID:     order.OutTradeNo,
+			TradeNo:     resp.TradeNo,
+			Reason:      "transaction_id_missing",
+		}, nil
+	}
+	if err := s.ensureWiseTransactionUnused(ctx, order.ID, wiseTransactionID); err != nil {
+		s.writeAuditLog(ctx, order.ID, "PAYMENT_TRANSACTION_REUSED", payment.TypeWise, map[string]any{
+			"detail":              err.Error(),
+			"tradeNo":             resp.TradeNo,
+			"wise_transaction_id": wiseTransactionID,
+		})
+		return &WiseWebhookReconcileResult{
+			Matched:     true,
+			AutoFulfill: false,
+			OrderID:     order.OutTradeNo,
+			TradeNo:     resp.TradeNo,
+			Reason:      "transaction_reused",
+		}, nil
+	}
 
 	notification := &payment.PaymentNotification{
-		TradeNo:  resp.TradeNo,
+		TradeNo:  wiseTransactionID,
 		OrderID:  order.OutTradeNo,
 		Amount:   resp.Amount,
 		Status:   payment.NotificationStatusSuccess,
@@ -381,7 +409,7 @@ func (s *PaymentService) handleWiseQueryOrderResponse(ctx context.Context, order
 		Matched:     true,
 		AutoFulfill: true,
 		OrderID:     order.OutTradeNo,
-		TradeNo:     resp.TradeNo,
+		TradeNo:     wiseTransactionID,
 		Reason:      "auto_fulfilled",
 		Fulfilled:   1,
 	}, nil
