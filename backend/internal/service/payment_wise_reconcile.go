@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -37,6 +38,9 @@ func (s *PaymentService) HandleWiseWebhook(ctx context.Context, rawBody string, 
 		if _, err := prov.VerifyNotification(ctx, rawBody, headers); err != nil {
 			lastErr = err
 			continue
+		}
+		if !wiseWebhookEventIsReconcileTrigger(rawBody) {
+			return &WiseWebhookReconcileResult{Reason: "event_ignored_unsupported"}, nil
 		}
 		return s.ReconcilePendingWiseOrders(ctx)
 	}
@@ -172,4 +176,19 @@ func (s *PaymentService) ReconcileWiseOrderByOutTradeNo(ctx context.Context, out
 		Reason:      "auto_fulfilled",
 		Fulfilled:   1,
 	}, nil
+}
+
+func wiseWebhookEventIsReconcileTrigger(rawBody string) bool {
+	var event struct {
+		EventType string `json:"event_type"`
+	}
+	if err := json.Unmarshal([]byte(rawBody), &event); err != nil {
+		return false
+	}
+	switch strings.TrimSpace(event.EventType) {
+	case "balances#credit", "balances#update", "account-details-payment#state-change":
+		return true
+	default:
+		return false
+	}
 }

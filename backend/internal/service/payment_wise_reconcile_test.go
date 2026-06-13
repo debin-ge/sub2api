@@ -4,6 +4,13 @@ package service
 
 import (
 	"context"
+	"crypto"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/pem"
 	"testing"
 	"time"
 
@@ -74,6 +81,136 @@ func TestReconcilePendingWiseOrdersQueriesPendingWiseOrdersByOutTradeNo(t *testi
 	require.Equal(t, OrderStatusPending, reloaded.Status)
 }
 
+func TestWiseWebhookUnsupportedSignedEventDoesNotTriggerReconcile(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+	priv, publicKeyPEM := newWiseReconcileWebhookKey(t)
+	_, err := client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeWise).
+		SetName("wise-webhook").
+		SetConfig(encryptWebhookProviderConfig(t, validWiseReconcileConfig(publicKeyPEM))).
+		SetSupportedTypes(payment.TypeWise).
+		SetEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+
+	user, err := client.User.Create().
+		SetEmail("wise-unsupported@example.com").
+		SetPasswordHash("hash").
+		SetUsername("wise-unsupported-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	_, err = client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(88).
+		SetPayAmount(88).
+		SetFeeRate(0).
+		SetRechargeCode("WISE-UNSUPPORTED").
+		SetOutTradeNo("sub2_wise_unsupported_123").
+		SetPaymentType(payment.TypeWise).
+		SetPaymentTradeNo("wise-upstream-unsupported").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusPending).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	provider := &paymentOrderLifecycleQueryProvider{
+		key: payment.TypeWise,
+		resp: &payment.QueryOrderResponse{
+			TradeNo: "wise-upstream-unsupported",
+			Status:  payment.ProviderStatusPaid,
+			Amount:  88,
+		},
+	}
+	registry := payment.NewRegistry()
+	registry.Register(provider)
+	svc := &PaymentService{
+		entClient:       client,
+		loadBalancer:    newWebhookProviderTestLoadBalancer(client),
+		registry:        registry,
+		providersLoaded: true,
+	}
+	rawBody := `{"event_type":"unsupported#event","data":{"resource":{"id":"resource-123"}}}`
+
+	result, err := svc.HandleWiseWebhook(ctx, rawBody, map[string]string{
+		"x-signature-sha256": signWiseReconcileWebhook(t, priv, rawBody),
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, result.Matched)
+	require.False(t, result.AutoFulfill)
+	require.Equal(t, 0, result.Scanned)
+	require.Equal(t, 0, result.Fulfilled)
+	require.Equal(t, "event_ignored_unsupported", result.Reason)
+	require.Equal(t, 0, provider.queryCalls)
+}
+
+func TestReconcileWiseOrderByOutTradeNoDoesNotFallbackWhenPinnedProviderMissing(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("wise-pinned-missing@example.com").
+		SetPasswordHash("hash").
+		SetUsername("wise-pinned-missing-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	missingInstanceID := "999999"
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(88).
+		SetPayAmount(88).
+		SetFeeRate(0).
+		SetRechargeCode("WISE-PINNED-MISSING").
+		SetOutTradeNo("sub2_wise_pinned_missing_123").
+		SetPaymentType(payment.TypeWise).
+		SetPaymentTradeNo("wise-upstream-pinned-missing").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusPending).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		SetProviderInstanceID(missingInstanceID).
+		SetProviderKey(payment.TypeWise).
+		SetProviderSnapshot(map[string]any{
+			"schema_version":       1,
+			"provider_instance_id": missingInstanceID,
+			"provider_key":         payment.TypeWise,
+		}).
+		Save(ctx)
+	require.NoError(t, err)
+
+	provider := &paymentOrderLifecycleQueryProvider{
+		key: payment.TypeWise,
+		resp: &payment.QueryOrderResponse{
+			TradeNo: "registry-should-not-be-used",
+			Status:  payment.ProviderStatusPending,
+			Amount:  88,
+		},
+	}
+	registry := payment.NewRegistry()
+	registry.Register(provider)
+	svc := &PaymentService{
+		entClient:       client,
+		registry:        registry,
+		providersLoaded: true,
+	}
+
+	result, err := svc.ReconcileWiseOrderByOutTradeNo(ctx, order.OutTradeNo)
+	require.Nil(t, result)
+	require.ErrorContains(t, err, "provider snapshot instance 999999 is missing")
+	require.Equal(t, 0, provider.queryCalls)
+}
+
 func TestReconcileWiseOrderByOutTradeNoDoesNotAutoFulfillNonPaidNoMatch(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentOrderLifecycleTestClient(t)
@@ -137,4 +274,55 @@ func TestReconcileWiseOrderByOutTradeNoDoesNotAutoFulfillNonPaidNoMatch(t *testi
 	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
 	require.NoError(t, err)
 	require.Equal(t, OrderStatusPending, reloaded.Status)
+}
+
+func validWiseReconcileConfig(publicKeyPEM string) map[string]string {
+	return map[string]string{
+		"quickPayBaseUrl":    "https://wise.com/pay/business/account",
+		"apiBase":            "https://api.wise.com",
+		"apiToken":           "token-123",
+		"profileId":          "profile-123",
+		"balanceId":          "balance-123",
+		"currency":           "USD",
+		"webhookPublicKey":   publicKeyPEM,
+		"settlementStrategy": "exact_only",
+	}
+}
+
+func newWiseReconcileWebhookKey(t *testing.T) (*rsa.PrivateKey, string) {
+	t.Helper()
+
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	der, err := x509.MarshalPKIXPublicKey(&priv.PublicKey)
+	require.NoError(t, err)
+	return priv, string(pem.EncodeToMemory(&pem.Block{
+		Type:  "PUBLIC KEY",
+		Bytes: der,
+	}))
+}
+
+func signWiseReconcileWebhook(t *testing.T, priv *rsa.PrivateKey, rawBody string) string {
+	t.Helper()
+
+	digest := sha256.Sum256([]byte(rawBody))
+	signature, err := rsa.SignPKCS1v15(rand.Reader, priv, crypto.SHA256, digest[:])
+	require.NoError(t, err)
+	return base64.StdEncoding.EncodeToString(signature)
+}
+
+func TestWiseWebhookEventIsReconcileTrigger(t *testing.T) {
+	t.Parallel()
+
+	for _, rawBody := range []string{
+		`{"event_type":"balances#credit"}`,
+		`{"event_type":"balances#update"}`,
+		`{"event_type":"account-details-payment#state-change"}`,
+	} {
+		require.True(t, wiseWebhookEventIsReconcileTrigger(rawBody), rawBody)
+	}
+
+	require.False(t, wiseWebhookEventIsReconcileTrigger(`{"event_type":"unsupported#event"}`))
+	require.False(t, wiseWebhookEventIsReconcileTrigger(`{"event_type":`))
+	require.False(t, wiseWebhookEventIsReconcileTrigger(`{}`))
 }
