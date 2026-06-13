@@ -11,11 +11,9 @@ import (
 )
 
 const (
-	wiseDefaultAPIBase       = "https://api.wise.com"
-	wiseDefaultStrategy      = "exact_only"
-	wiseHTTPTimeout          = 15 * time.Second
-	wiseMaxResponseSize      = 1 << 20
-	wiseMaxErrorSummaryBytes = 512
+	wiseDefaultAPIBase  = "https://api.wise.com"
+	wiseDefaultStrategy = "exact_only"
+	wiseHTTPTimeout     = 15 * time.Second
 )
 
 type Wise struct {
@@ -49,12 +47,14 @@ func NewWise(instanceID string, config map[string]string) (*Wise, error) {
 		return nil, fmt.Errorf("wise config currency: %w", err)
 	}
 	cfg["currency"] = currency
-	if strings.TrimSpace(cfg["settlementStrategy"]) == "" {
-		cfg["settlementStrategy"] = wiseDefaultStrategy
+	strategy := strings.TrimSpace(cfg["settlementStrategy"])
+	if strategy == "" {
+		strategy = wiseDefaultStrategy
 	}
-	if cfg["settlementStrategy"] != wiseDefaultStrategy {
+	if strategy != wiseDefaultStrategy {
 		return nil, fmt.Errorf("wise settlementStrategy must be exact_only")
 	}
+	cfg["settlementStrategy"] = strategy
 	return &Wise{
 		instanceID: instanceID,
 		config:     cfg,
