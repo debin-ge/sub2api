@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { PAYMENT_CURRENCY_OPTIONS, PROVIDER_CONFIG_FIELDS } from '@/components/payment/providerConfig'
+import {
+  PAYMENT_CURRENCY_OPTIONS,
+  PROVIDER_CONFIG_FIELDS,
+  PROVIDER_SUPPORTED_TYPES,
+  WEBHOOK_PATHS,
+} from '@/components/payment/providerConfig'
 
 function findField(providerKey: string, key: string) {
   const fields = PROVIDER_CONFIG_FIELDS[providerKey] || []
@@ -38,6 +43,21 @@ describe('PROVIDER_CONFIG_FIELDS.airwallex', () => {
 
   it('explains that apiBase must match the Airwallex key environment', () => {
     expect(findField('airwallex', 'apiBase')?.hintKey).toBe('admin.settings.payment.field_airwallexApiBaseHint')
+  })
+})
+
+describe('PROVIDER_CONFIG_FIELDS.wise', () => {
+  it('declares Wise supported type and callback path', () => {
+    expect(PROVIDER_SUPPORTED_TYPES.wise).toEqual(['wise'])
+    expect(WEBHOOK_PATHS.wise).toBe('/api/v1/payment/webhook/wise')
+  })
+
+  it('marks apiToken sensitive and settlement exact-only fields visible', () => {
+    const fields = PROVIDER_CONFIG_FIELDS.wise
+    expect(fields.find(field => field.key === 'apiToken')?.sensitive).toBe(true)
+    expect(fields.find(field => field.key === 'quickPayBaseUrl')?.sensitive).toBe(false)
+    expect(fields.find(field => field.key === 'settlementStrategy')?.defaultValue).toBe('exact_only')
+    expect(fields.find(field => field.key === 'autoFulfillFeePayments')?.defaultValue).toBe('false')
   })
 })
 

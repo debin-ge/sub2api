@@ -36,13 +36,14 @@ export const PROVIDER_SUPPORTED_TYPES: Record<string, string[]> = {
   wxpay: ['wxpay'],
   stripe: ['card', 'alipay', 'wxpay', 'link'],
   airwallex: ['airwallex'],
+  wise: ['wise'],
 }
 
 /** Available payment modes for EasyPay providers. */
 export const EASYPAY_PAYMENT_MODES = ['qrcode', 'popup'] as const
 
 /** Fixed display order for user-facing payment methods */
-export const METHOD_ORDER = ['alipay', 'alipay_direct', 'wxpay', 'wxpay_direct', 'stripe', 'airwallex'] as const
+export const METHOD_ORDER = ['alipay', 'alipay_direct', 'wxpay', 'wxpay_direct', 'stripe', 'airwallex', 'wise'] as const
 
 /** Payment mode constants */
 export const PAYMENT_MODE_QRCODE = 'qrcode'
@@ -96,6 +97,7 @@ export const WEBHOOK_PATHS: Record<string, string> = {
   wxpay: '/api/v1/payment/webhook/wxpay',
   stripe: '/api/v1/payment/webhook/stripe',
   airwallex: '/api/v1/payment/webhook/airwallex',
+  wise: '/api/v1/payment/webhook/wise',
 }
 
 export const RETURN_PATH = '/payment/result'
@@ -146,6 +148,19 @@ export const PROVIDER_CONFIG_FIELDS: Record<string, ConfigFieldDef[]> = {
     { key: 'countryCode', label: '', sensitive: false, defaultValue: 'CN' },
     { key: 'currency', label: '', sensitive: false, defaultValue: 'CNY', hintKey: 'admin.settings.payment.field_paymentCurrencyHint', options: PAYMENT_CURRENCY_OPTIONS },
     { key: 'accountId', label: '', sensitive: false, optional: true, clearable: true, hintKey: 'admin.settings.payment.field_accountIdHint' },
+  ],
+  wise: [
+    { key: 'quickPayBaseUrl', label: '', sensitive: false, hintKey: 'admin.settings.payment.field_wiseQuickPayBaseUrlHint' },
+    { key: 'apiBase', label: '', sensitive: false, defaultValue: 'https://api.wise.com', hintKey: 'admin.settings.payment.field_wiseApiBaseHint' },
+    { key: 'apiToken', label: '', sensitive: true },
+    { key: 'profileId', label: '', sensitive: false },
+    { key: 'balanceId', label: '', sensitive: false },
+    { key: 'currency', label: '', sensitive: false, defaultValue: 'USD', hintKey: 'admin.settings.payment.field_paymentCurrencyHint', options: PAYMENT_CURRENCY_OPTIONS },
+    { key: 'webhookPublicKey', label: '', sensitive: false, hintKey: 'admin.settings.payment.field_wiseWebhookPublicKeyHint' },
+    { key: 'settlementStrategy', label: '', sensitive: false, defaultValue: 'exact_only', hintKey: 'admin.settings.payment.field_wiseSettlementStrategyHint' },
+    { key: 'allowedMethodsNote', label: '', sensitive: false, optional: true, defaultValue: 'Wise balance / bank transfer only' },
+    { key: 'reconcileWindowHours', label: '', sensitive: false, optional: true, defaultValue: '72' },
+    { key: 'autoFulfillFeePayments', label: '', sensitive: false, defaultValue: 'false', hintKey: 'admin.settings.payment.field_wiseAutoFulfillFeePaymentsHint' },
   ],
 }
 
