@@ -9,6 +9,8 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/pem"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"testing"
 
@@ -207,6 +209,148 @@ func TestWiseCreatePaymentRejectsNonPositiveAmount(t *testing.T) {
 	}
 }
 
+func TestWiseQueryOrderFindsCompletedCreditStatementTransaction(t *testing.T) {
+	const outTradeNo = "sub2_20260612AbCdEf12"
+	statement := `{
+		"transactions": [
+			{
+				"type": "CREDIT",
+				"date": "2026-06-12T10:20:30Z",
+				"referenceNumber": "wise-ref-1",
+				"amount": {"value": "123.45", "currency": "usd"},
+				"totalFees": {"value": "0", "currency": "USD"},
+				"details": {
+					"type": "DEPOSIT",
+					"description": "Payment for sub2_20260612AbCdEf12",
+					"reference": "customer-ref-1"
+				}
+			}
+		]
+	}`
+	prov, req, cleanup := newWiseStatementTestProvider(t, statement)
+	defer cleanup()
+
+	resp, err := prov.QueryOrder(context.Background(), outTradeNo)
+	require.NoError(t, err)
+
+	require.Equal(t, "/v1/profiles/profile-123/balance-statements/balance-123/statement", req.path)
+	require.Equal(t, "Bearer token-123", req.authorization)
+	require.Equal(t, "application/json", req.accept)
+	require.Equal(t, "COMPACT", req.query.Get("type"))
+	require.NotEmpty(t, req.query.Get("intervalStart"))
+	require.NotEmpty(t, req.query.Get("intervalEnd"))
+	require.Equal(t, "wise-ref-1", resp.TradeNo)
+	require.Equal(t, payment.ProviderStatusPaid, resp.Status)
+	require.InDelta(t, 123.45, resp.Amount, 0.000001)
+	require.Equal(t, "USD", resp.Metadata["currency"])
+	require.Equal(t, "balance-123", resp.Metadata["balance_id"])
+	require.Equal(t, "profile-123", resp.Metadata["profile_id"])
+	require.Equal(t, "exact_only", resp.Metadata["settlement_strategy"])
+	require.Equal(t, "auto_fulfill", resp.Metadata["reconcile_decision"])
+}
+
+func TestWiseQueryOrderReturnsPaidWithFeeAndNetAmountMetadata(t *testing.T) {
+	const outTradeNo = "sub2_20260612AbCdEf12"
+	statement := `{
+		"transactions": [
+			{
+				"type": "credit",
+				"date": "2026-06-12T10:20:30Z",
+				"referenceNumber": "wise-ref-fee",
+				"amount": {"value": "120.00", "currency": "USD"},
+				"totalFees": {"value": "3.45", "currency": "USD"},
+				"details": {
+					"type": "DEPOSIT",
+					"description": "Customer paid order",
+					"reference": "sub2_20260612AbCdEf12"
+				}
+			}
+		]
+	}`
+	prov, _, cleanup := newWiseStatementTestProvider(t, statement)
+	defer cleanup()
+
+	resp, err := prov.QueryOrder(context.Background(), outTradeNo)
+	require.NoError(t, err)
+
+	require.Equal(t, "wise-ref-fee", resp.TradeNo)
+	require.Equal(t, payment.ProviderStatusPaid, resp.Status)
+	require.InDelta(t, 120.00, resp.Amount, 0.000001)
+	require.Equal(t, "3.45", resp.Metadata["fee_amount"])
+	require.Equal(t, "120", resp.Metadata["net_amount"])
+	require.Equal(t, "123.45", resp.Metadata["gross_amount"])
+	require.Equal(t, "auto_fulfill", resp.Metadata["reconcile_decision"])
+}
+
+func TestWiseQueryOrderReturnsPendingWhenStatementHasNoSafeOrderMatch(t *testing.T) {
+	const outTradeNo = "sub2_20260612AbCdEf12"
+	statement := `{
+		"transactions": [
+			{
+				"type": "credit",
+				"date": "2026-06-12T10:20:30Z",
+				"referenceNumber": "wise-ref-other",
+				"amount": {"value": "123.45", "currency": "USD"},
+				"totalFees": {"value": "0", "currency": "USD"},
+				"details": {
+					"type": "DEPOSIT",
+					"description": "Payment for sub2_20260612AbCdEf123",
+					"reference": "sub2_20260612AbCdEf123"
+				}
+			}
+		]
+	}`
+	prov, _, cleanup := newWiseStatementTestProvider(t, statement)
+	defer cleanup()
+
+	resp, err := prov.QueryOrder(context.Background(), outTradeNo)
+	require.NoError(t, err)
+
+	require.Equal(t, outTradeNo, resp.TradeNo)
+	require.Equal(t, payment.ProviderStatusPending, resp.Status)
+	require.Zero(t, resp.Amount)
+	require.Equal(t, "no_match", resp.Metadata["reconcile_decision"])
+}
+
+func TestWiseQueryOrderRejectsEmptyTradeNo(t *testing.T) {
+	t.Parallel()
+
+	prov, err := NewWise("1", validWiseConfig())
+	require.NoError(t, err)
+
+	_, err = prov.QueryOrder(context.Background(), " ")
+	require.ErrorContains(t, err, "missing order reference")
+}
+
+type wiseStatementTestRequest struct {
+	path          string
+	authorization string
+	accept        string
+	query         url.Values
+}
+
+func newWiseStatementTestProvider(t *testing.T, statement string) (*Wise, *wiseStatementTestRequest, func()) {
+	t.Helper()
+
+	req := &wiseStatementTestRequest{}
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		req.path = r.URL.Path
+		req.authorization = r.Header.Get("Authorization")
+		req.accept = r.Header.Get("Accept")
+		req.query = r.URL.Query()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(statement))
+	}))
+
+	cfg := validWiseConfig()
+	cfg["apiBase"] = server.URL
+	prov, err := NewWise("1", cfg)
+	require.NoError(t, err)
+	prov.httpClient = server.Client()
+
+	return prov, req, server.Close
+}
+
 func TestWiseTransactionReferencesOrder(t *testing.T) {
 	t.Parallel()
 
@@ -305,6 +449,36 @@ func TestWiseExactSettlementStrategyRequiresExactNetAmount(t *testing.T) {
 	require.True(t, decision.Matched)
 	require.False(t, decision.AutoFulfill)
 	require.Equal(t, "amount_mismatch", decision.Reason)
+}
+
+func TestWiseExactSettlementStrategyTreatsZeroPayAmountAsUnknown(t *testing.T) {
+	t.Parallel()
+
+	strategy := wiseExactSettlementStrategy{}
+	order := wiseOrderContext{
+		OutTradeNo: "sub2_20260612AbCdEf12",
+		Currency:   "USD",
+		ProfileID:  "profile-123",
+		BalanceID:  "balance-123",
+	}
+	tx := wiseTransaction{
+		ID:          "wise-tx-1",
+		ProfileID:   "profile-123",
+		BalanceID:   "balance-123",
+		Direction:   "credit",
+		Status:      "completed",
+		Currency:    "USD",
+		NetAmount:   decimal.RequireFromString("120.00"),
+		FeeAmount:   decimal.RequireFromString("3.45"),
+		Description: "Invoice sub2_20260612AbCdEf12",
+	}
+
+	decision := strategy.Match(order, tx)
+	require.True(t, decision.Matched)
+	require.True(t, decision.AutoFulfill)
+	require.Equal(t, "exact_match", decision.Reason)
+	require.Equal(t, "120", decision.NetAmount.String())
+	require.Equal(t, "3.45", decision.FeeAmount.String())
 }
 
 func TestWiseExactSettlementStrategyRejectsMismatchedSettlementFields(t *testing.T) {
