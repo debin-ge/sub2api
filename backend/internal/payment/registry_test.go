@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 // mockProvider implements the Provider interface for testing.
@@ -231,4 +233,11 @@ func TestRegistryConcurrentAccess(t *testing.T) {
 	if len(types) != goroutines {
 		t.Fatalf("after concurrent registration, expected %d types, got %d", goroutines, len(types))
 	}
+}
+
+func TestWisePaymentTypeBaseType(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, TypeWise, GetBasePaymentType(TypeWise))
+	require.Equal(t, "wise_custom", GetBasePaymentType("wise_custom"))
 }
