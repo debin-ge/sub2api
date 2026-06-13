@@ -189,3 +189,89 @@ func TestWiseExactSettlementStrategyRequiresExactNetAmount(t *testing.T) {
 	require.False(t, decision.AutoFulfill)
 	require.Equal(t, "amount_mismatch", decision.Reason)
 }
+
+func TestWiseExactSettlementStrategyRejectsMismatchedSettlementFields(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		mutate     func(*wiseOrderContext, *wiseTransaction)
+		wantReason string
+	}{
+		{
+			name: "profile mismatch",
+			mutate: func(_ *wiseOrderContext, tx *wiseTransaction) {
+				tx.ProfileID = "profile-other"
+			},
+			wantReason: "profile_mismatch",
+		},
+		{
+			name: "balance mismatch",
+			mutate: func(_ *wiseOrderContext, tx *wiseTransaction) {
+				tx.BalanceID = "balance-other"
+			},
+			wantReason: "balance_mismatch",
+		},
+		{
+			name: "currency mismatch",
+			mutate: func(_ *wiseOrderContext, tx *wiseTransaction) {
+				tx.Currency = "EUR"
+			},
+			wantReason: "currency_mismatch",
+		},
+		{
+			name: "direction not credit",
+			mutate: func(_ *wiseOrderContext, tx *wiseTransaction) {
+				tx.Direction = "debit"
+			},
+			wantReason: "direction_not_credit",
+		},
+		{
+			name: "status not completed",
+			mutate: func(_ *wiseOrderContext, tx *wiseTransaction) {
+				tx.Status = "pending"
+			},
+			wantReason: "status_not_completed",
+		},
+		{
+			name: "missing out trade number reference",
+			mutate: func(_ *wiseOrderContext, tx *wiseTransaction) {
+				tx.Description = "Invoice unrelated"
+				tx.Reference = "wise-reference"
+			},
+			wantReason: "reference_mismatch",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			strategy := wiseExactSettlementStrategy{}
+			order := wiseOrderContext{
+				OutTradeNo: "sub2_20260612AbCdEf12",
+				PayAmount:  decimal.RequireFromString("123.45"),
+				Currency:   "USD",
+				ProfileID:  "profile-123",
+				BalanceID:  "balance-123",
+			}
+			tx := wiseTransaction{
+				ID:          "wise-tx-1",
+				ProfileID:   "profile-123",
+				BalanceID:   "balance-123",
+				Direction:   "credit",
+				Status:      "completed",
+				Currency:    "USD",
+				NetAmount:   decimal.RequireFromString("123.45"),
+				Description: "Invoice sub2_20260612AbCdEf12",
+				Reference:   "sub2_20260612AbCdEf12",
+			}
+			tt.mutate(&order, &tx)
+
+			decision := strategy.Match(order, tx)
+			require.False(t, decision.Matched)
+			require.False(t, decision.AutoFulfill)
+			require.Equal(t, tt.wantReason, decision.Reason)
+		})
+	}
+}
