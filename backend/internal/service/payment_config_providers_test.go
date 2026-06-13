@@ -136,12 +136,30 @@ func TestWiseProtectedConfigChanges(t *testing.T) {
 		"webhookPublicKey":   "old-public-key",
 		"settlementStrategy": "exact_only",
 	}
+	for _, tc := range []struct {
+		field string
+		value string
+	}{
+		{field: "quickPayBaseUrl", value: "https://wise.com/pay/business/updated-account"},
+		{field: "apiBase", value: "https://api.sandbox.transferwise.tech"},
+		{field: "apiToken", value: "new-token"},
+		{field: "profileId", value: "profile-456"},
+		{field: "balanceId", value: "balance-456"},
+		{field: "currency", value: "EUR"},
+		{field: "webhookPublicKey", value: "new-public-key"},
+		{field: "settlementStrategy", value: "updated-strategy"},
+	} {
+		tc := tc
+		t.Run(tc.field, func(t *testing.T) {
+			t.Parallel()
+
+			next := cloneStringMap(current)
+			next[tc.field] = tc.value
+			require.True(t, hasPendingOrderProtectedConfigChange(payment.TypeWise, current, next))
+		})
+	}
+
 	next := cloneStringMap(current)
-	next["balanceId"] = "balance-456"
-
-	require.True(t, hasPendingOrderProtectedConfigChange(payment.TypeWise, current, next))
-
-	next = cloneStringMap(current)
 	next["allowedMethodsNote"] = "bank transfer only"
 	require.False(t, hasPendingOrderProtectedConfigChange(payment.TypeWise, current, next))
 }
