@@ -158,6 +158,9 @@ export const PROVIDER_CONFIG_FIELDS: Record<string, ConfigFieldDef[]> = {
     { key: 'currency', label: '', sensitive: false, defaultValue: 'USD', hintKey: 'admin.settings.payment.field_paymentCurrencyHint', options: PAYMENT_CURRENCY_OPTIONS },
     { key: 'webhookPublicKey', label: '', sensitive: false, hintKey: 'admin.settings.payment.field_wiseWebhookPublicKeyHint' },
     { key: 'settlementStrategy', label: '', sensitive: false, defaultValue: 'exact_only', hintKey: 'admin.settings.payment.field_wiseSettlementStrategyHint' },
+    { key: 'allowedMethodsNote', label: '', sensitive: false, optional: true, defaultValue: 'Wise balance / bank transfer only', hintKey: 'admin.settings.payment.field_wiseAllowedMethodsNoteHint' },
+    { key: 'reconcileWindowHours', label: '', sensitive: false, optional: true, defaultValue: '72', hintKey: 'admin.settings.payment.field_wiseReconcileWindowHoursHint' },
+    { key: 'autoFulfillFeePayments', label: '', sensitive: false, defaultValue: 'false', hintKey: 'admin.settings.payment.field_wiseAutoFulfillFeePaymentsHint' },
   ],
 }
 

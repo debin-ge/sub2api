@@ -567,7 +567,7 @@ func TestAuthService_Register_AffiliateCodeSatisfiesInvitationRequirement(t *tes
 		SettingKeyInvitationCodeEnabled:               "true",
 		SettingKeyAffiliateEnabled:                    "true",
 		SettingKeyAuthSourceDefaultEmailGrantOnSignup: "false",
-	}, nil)
+	}, nil, nil)
 	redeemRepo := &redeemCodeRepoStub{}
 	affiliateRepo := &affiliateRepoStub{codeOwners: map[string]int64{"AFF123": 7}}
 	service.redeemRepo = redeemRepo
@@ -596,7 +596,7 @@ func TestAuthService_Register_InvitationRedeemCodeStillConsumesOnce(t *testing.T
 		SettingKeyInvitationCodeEnabled:               "true",
 		SettingKeyAffiliateEnabled:                    "true",
 		SettingKeyAuthSourceDefaultEmailGrantOnSignup: "false",
-	}, nil)
+	}, nil, nil)
 	redeemRepo := &redeemCodeRepoStub{
 		codesByCode: map[string]*RedeemCode{
 			"INVITE1": {

@@ -58,7 +58,7 @@ func TestNewWiseValidatesConfig(t *testing.T) {
 
 	base := validWiseConfig()
 
-	for _, key := range []string{"quickPayBaseUrl", "apiToken", "profileId", "balanceId", "webhookPublicKey"} {
+	for _, key := range []string{"quickPayBaseUrl", "apiToken", "profileId", "balanceId", "currency", "webhookPublicKey"} {
 		cfg := cloneStringMap(base)
 		cfg[key] = ""
 		_, err := NewWise("1", cfg)
@@ -84,6 +84,11 @@ func TestNewWiseValidatesConfig(t *testing.T) {
 	cfg["settlementStrategy"] = "gross_with_fee"
 	_, err = NewWise("1", cfg)
 	require.ErrorContains(t, err, "exact_only")
+
+	cfg = cloneStringMap(base)
+	cfg["autoFulfillFeePayments"] = "true"
+	_, err = NewWise("1", cfg)
+	require.ErrorContains(t, err, "autoFulfillFeePayments is not supported")
 }
 
 func TestNewWiseRejectsInvalidWebhookPublicKey(t *testing.T) {
@@ -377,8 +382,26 @@ func TestWiseQueryOrderFindsCompletedCreditStatementTransaction(t *testing.T) {
 	require.Equal(t, "balance-123", resp.Metadata["balance_id"])
 	require.Equal(t, "profile-123", resp.Metadata["profile_id"])
 	require.Equal(t, "wise-ref-1", resp.Metadata["wise_transaction_id"])
+	require.Equal(t, "Payment received", resp.Metadata["description"])
+	require.Equal(t, "sub2_20260612AbCdEf12", resp.Metadata["reference"])
+	require.Equal(t, "completed", resp.Metadata["transaction_status"])
+	require.Equal(t, "credit", resp.Metadata["direction"])
+	require.Equal(t, "2026-06-12T10:20:30Z", resp.Metadata["occurred_at"])
 	require.Equal(t, "exact_only", resp.Metadata["settlement_strategy"])
 	require.Equal(t, "auto_fulfill", resp.Metadata["reconcile_decision"])
+}
+
+func TestWiseQueryOrderUsesConfiguredReconcileWindow(t *testing.T) {
+	statement := `{"transactions":[]}`
+	prov, req, cleanup := newWiseStatementTestProvider(t, statement)
+	defer cleanup()
+	prov.config["reconcileWindowHours"] = "24"
+
+	resp, err := prov.QueryOrder(context.Background(), "sub2_wise_window_001")
+	require.NoError(t, err)
+
+	require.Equal(t, payment.ProviderStatusPending, resp.Status)
+	assertWiseStatementIntervalDuration(t, req.query, 24*time.Hour+wiseStatementLookahead)
 }
 
 func TestWiseQueryOrdersFetchesStatementOnceForMultipleOrders(t *testing.T) {
@@ -464,6 +487,10 @@ func TestWiseQueryOrderReturnsPaidWithFeeAndNetAmountMetadata(t *testing.T) {
 	require.Equal(t, "3.45", resp.Metadata["fee_amount"])
 	require.Equal(t, "120", resp.Metadata["net_amount"])
 	require.Equal(t, "123.45", resp.Metadata["gross_amount"])
+	require.Equal(t, "Customer paid order", resp.Metadata["description"])
+	require.Equal(t, "sub2_20260612AbCdEf12", resp.Metadata["reference"])
+	require.Equal(t, "completed", resp.Metadata["transaction_status"])
+	require.Equal(t, "2026-06-12T10:20:30Z", resp.Metadata["occurred_at"])
 	require.Equal(t, "auto_fulfill", resp.Metadata["reconcile_decision"])
 }
 
@@ -495,6 +522,42 @@ func TestWiseQueryOrderReturnsPendingWhenStatementHasNoSafeOrderMatch(t *testing
 	require.Equal(t, payment.ProviderStatusPending, resp.Status)
 	require.Zero(t, resp.Amount)
 	require.Equal(t, "no_match", resp.Metadata["reconcile_decision"])
+}
+
+func TestWiseQueryOrderReturnsRejectedMetadataWhenReferencedTransactionFailsSettlement(t *testing.T) {
+	const outTradeNo = "sub2_20260612AbCdEf12"
+	statement := `{
+		"transactions": [
+			{
+				"type": "DEBIT",
+				"date": "2026-06-12T10:20:30Z",
+				"referenceNumber": "wise-ref-rejected",
+				"amount": {"value": "123.45", "currency": "USD"},
+				"totalFees": {"value": "0", "currency": "USD"},
+				"details": {
+					"type": "WITHDRAWAL",
+					"description": "Refund for sub2_20260612AbCdEf12",
+					"paymentReference": "sub2_20260612AbCdEf12"
+				}
+			}
+		]
+	}`
+	prov, _, cleanup := newWiseStatementTestProvider(t, statement)
+	defer cleanup()
+
+	resp, err := prov.QueryOrder(context.Background(), outTradeNo)
+	require.NoError(t, err)
+
+	require.Equal(t, "wise-ref-rejected", resp.TradeNo)
+	require.Equal(t, payment.ProviderStatusPending, resp.Status)
+	require.Equal(t, "rejected", resp.Metadata["reconcile_decision"])
+	require.Equal(t, "direction_not_credit", resp.Metadata["reconcile_reason"])
+	require.Equal(t, "wise-ref-rejected", resp.Metadata["wise_transaction_id"])
+	require.Equal(t, "Refund for sub2_20260612AbCdEf12", resp.Metadata["description"])
+	require.Equal(t, outTradeNo, resp.Metadata["reference"])
+	require.Equal(t, "debit", resp.Metadata["direction"])
+	require.Equal(t, "completed", resp.Metadata["transaction_status"])
+	require.Equal(t, "2026-06-12T10:20:30Z", resp.Metadata["occurred_at"])
 }
 
 func TestWiseQueryOrderRejectsEmptyTradeNo(t *testing.T) {
@@ -591,13 +654,18 @@ func newWiseDoJSONTestProvider(t *testing.T, statusCode int, body string) (*Wise
 
 func assertWiseStatementIntervalQuery(t *testing.T, query url.Values) {
 	t.Helper()
+	assertWiseStatementIntervalDuration(t, query, wiseStatementLookback+wiseStatementLookahead)
+}
+
+func assertWiseStatementIntervalDuration(t *testing.T, query url.Values, want time.Duration) {
+	t.Helper()
 
 	intervalStart, err := time.Parse(time.RFC3339, query.Get("intervalStart"))
 	require.NoError(t, err)
 	intervalEnd, err := time.Parse(time.RFC3339, query.Get("intervalEnd"))
 	require.NoError(t, err)
 
-	require.InDelta(t, (wiseStatementLookback + wiseStatementLookahead).Seconds(), intervalEnd.Sub(intervalStart).Seconds(), 1)
+	require.InDelta(t, want.Seconds(), intervalEnd.Sub(intervalStart).Seconds(), 1)
 }
 
 func TestWiseTransactionReferencesOrder(t *testing.T) {

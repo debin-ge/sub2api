@@ -10,11 +10,14 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"testing"
 	"time"
 
+	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	"github.com/stretchr/testify/require"
 )
@@ -379,6 +382,196 @@ func TestReconcilePendingWiseOrdersDoesNotAutoFulfillExpiredAmountMismatch(t *te
 	require.Equal(t, 88.0, reloaded.PayAmount)
 }
 
+func TestQueryWiseReconciliationCandidatesIncludesCancelledOrdersInsideWindow(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+	now := time.Now()
+
+	user, err := client.User.Create().
+		SetEmail("wise-cancelled-candidate@example.com").
+		SetPasswordHash("hash").
+		SetUsername("wise-cancelled-candidate-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	cancelledOrder, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(88).
+		SetPayAmount(88).
+		SetFeeRate(0).
+		SetRechargeCode("WISE-CANCELLED-CANDIDATE").
+		SetOutTradeNo("sub2_wise_cancelled_candidate_123").
+		SetPaymentType(payment.TypeWise).
+		SetPaymentTradeNo("wise-upstream-cancelled-candidate").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusCancelled).
+		SetExpiresAt(now.Add(-time.Hour)).
+		SetUpdatedAt(now.Add(-time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	outsideWindowOrder, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(88).
+		SetPayAmount(88).
+		SetFeeRate(0).
+		SetRechargeCode("WISE-CANCELLED-OLD").
+		SetOutTradeNo("sub2_wise_cancelled_old_123").
+		SetPaymentType(payment.TypeWise).
+		SetPaymentTradeNo("wise-upstream-cancelled-old").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusCancelled).
+		SetExpiresAt(now.Add(-wiseReconcileWindow - time.Hour)).
+		SetUpdatedAt(now.Add(-wiseReconcileWindow - time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	svc := &PaymentService{entClient: client}
+
+	candidates, _, _, err := svc.queryWiseReconciliationCandidates(ctx, 0, now)
+	require.NoError(t, err)
+
+	ids := make(map[int64]bool, len(candidates))
+	for _, candidate := range candidates {
+		ids[candidate.ID] = true
+	}
+	require.True(t, ids[cancelledOrder.ID])
+	require.False(t, ids[outsideWindowOrder.ID])
+}
+
+func TestQueryWiseReconciliationCandidatesUsesConfiguredProviderWindow(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+	now := time.Now()
+
+	priv, publicKeyPEM := newWiseReconcileWebhookKey(t)
+	_ = priv
+	config := validWiseReconcileConfig(publicKeyPEM)
+	config["reconcileWindowHours"] = "168"
+	instance, err := client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeWise).
+		SetName("wise-long-window").
+		SetConfig(encryptWebhookProviderConfig(t, config)).
+		SetSupportedTypes(payment.TypeWise).
+		SetEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+
+	user, err := client.User.Create().
+		SetEmail("wise-configured-window@example.com").
+		SetPasswordHash("hash").
+		SetUsername("wise-configured-window-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	instanceID := fmt.Sprintf("%d", instance.ID)
+	longWindowOrder, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(88).
+		SetPayAmount(88).
+		SetFeeRate(0).
+		SetRechargeCode("WISE-CONFIG-WINDOW-LONG").
+		SetOutTradeNo("sub2_wise_config_window_long").
+		SetPaymentType(payment.TypeWise).
+		SetPaymentTradeNo("wise-config-window-long").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusExpired).
+		SetExpiresAt(now.Add(-100 * time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		SetProviderInstanceID(instanceID).
+		SetProviderKey(payment.TypeWise).
+		Save(ctx)
+	require.NoError(t, err)
+
+	oldOrder, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(88).
+		SetPayAmount(88).
+		SetFeeRate(0).
+		SetRechargeCode("WISE-CONFIG-WINDOW-OLD").
+		SetOutTradeNo("sub2_wise_config_window_old").
+		SetPaymentType(payment.TypeWise).
+		SetPaymentTradeNo("wise-config-window-old").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusExpired).
+		SetExpiresAt(now.Add(-200 * time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		SetProviderInstanceID(instanceID).
+		SetProviderKey(payment.TypeWise).
+		Save(ctx)
+	require.NoError(t, err)
+
+	svc := &PaymentService{
+		entClient:    client,
+		loadBalancer: newWebhookProviderTestLoadBalancer(client),
+	}
+
+	candidates, _, _, err := svc.queryWiseReconciliationCandidates(ctx, 0, now)
+	require.NoError(t, err)
+
+	ids := make(map[int64]bool, len(candidates))
+	for _, candidate := range candidates {
+		ids[candidate.ID] = true
+	}
+	require.True(t, ids[longWindowOrder.ID])
+	require.False(t, ids[oldOrder.ID])
+}
+
+func TestWiseToPaidDoesNotRecoverCancelledOrderOutsideConfiguredWindow(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+	now := time.Now()
+
+	user, err := client.User.Create().
+		SetEmail("wise-old-cancelled@example.com").
+		SetPasswordHash("hash").
+		SetUsername("wise-old-cancelled-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(88).
+		SetPayAmount(88).
+		SetFeeRate(0).
+		SetRechargeCode("WISE-OLD-CANCELLED").
+		SetOutTradeNo("sub2_wise_old_cancelled").
+		SetPaymentType(payment.TypeWise).
+		SetPaymentTradeNo("wise-old-cancelled-original").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusCancelled).
+		SetExpiresAt(now.Add(-wiseReconcileWindow - time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	svc := &PaymentService{entClient: client}
+	err = svc.toPaid(ctx, order, "wise-old-cancelled-paid", 88, payment.TypeWise)
+	require.NoError(t, err)
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusCancelled, reloaded.Status)
+	require.Equal(t, "wise-old-cancelled-original", reloaded.PaymentTradeNo)
+}
+
 func TestWiseWebhookUnsupportedSignedEventDoesNotTriggerReconcile(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentOrderLifecycleTestClient(t)
@@ -574,6 +767,70 @@ func TestReconcileWiseOrderByOutTradeNoDoesNotAutoFulfillNonPaidNoMatch(t *testi
 	require.Equal(t, OrderStatusPending, reloaded.Status)
 }
 
+func TestHandleWiseQueryOrderResponseWritesAuditForRejectedReferencedTransaction(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("wise-rejected-audit@example.com").
+		SetPasswordHash("hash").
+		SetUsername("wise-rejected-audit-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(88).
+		SetPayAmount(88).
+		SetFeeRate(0).
+		SetRechargeCode("WISE-REJECTED-AUDIT").
+		SetOutTradeNo("sub2_wise_rejected_audit_123").
+		SetPaymentType(payment.TypeWise).
+		SetPaymentTradeNo("wise-upstream-rejected-audit").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusPending).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	svc := &PaymentService{entClient: client}
+	result, err := svc.handleWiseQueryOrderResponse(ctx, order, &payment.QueryOrderResponse{
+		TradeNo: "wise-rejected-tx",
+		Status:  payment.ProviderStatusPending,
+		Metadata: map[string]string{
+			"reconcile_decision":  "rejected",
+			"reconcile_reason":    "currency_mismatch",
+			"wise_transaction_id": "wise-rejected-tx",
+			"description":         "Payment for sub2_wise_rejected_audit_123",
+			"reference":           "sub2_wise_rejected_audit_123",
+			"transaction_status":  "completed",
+			"direction":           "credit",
+			"occurred_at":         "2026-06-12T10:20:30Z",
+			"currency":            "EUR",
+			"net_amount":          "88",
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.Matched)
+	require.False(t, result.AutoFulfill)
+	require.Equal(t, "currency_mismatch", result.Reason)
+
+	detail := requireWiseAuditDetail(t, ctx, client, order.ID, "PAYMENT_WISE_RECONCILE_MANUAL_REVIEW")
+	require.Equal(t, "currency_mismatch", detail["reason"])
+	require.Equal(t, "rejected", detail["reconcileDecision"])
+	require.Equal(t, "wise-rejected-tx", detail["wise_transaction_id"])
+	require.Equal(t, "Payment for sub2_wise_rejected_audit_123", detail["description"])
+	require.Equal(t, "sub2_wise_rejected_audit_123", detail["reference"])
+	require.Equal(t, "2026-06-12T10:20:30Z", detail["occurred_at"])
+	require.Equal(t, "EUR", detail["currency"])
+	require.Equal(t, "88", detail["net_amount"])
+}
+
 func TestReconcileWiseOrderByOutTradeNoDoesNotAutoFulfillAmountMismatch(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentOrderLifecycleTestClient(t)
@@ -617,6 +874,15 @@ func TestReconcileWiseOrderByOutTradeNoDoesNotAutoFulfillAmountMismatch(t *testi
 				"balance_id":          "balance-123",
 				"currency":            "USD",
 				"settlement_strategy": "exact_only",
+				"wise_transaction_id": "wise-upstream-amount-mismatch",
+				"description":         "Card-like fee deducted for sub2_wise_amount_mismatch_123",
+				"reference":           "sub2_wise_amount_mismatch_123",
+				"transaction_status":  "completed",
+				"direction":           "credit",
+				"occurred_at":         "2026-06-12T10:20:30Z",
+				"gross_amount":        "88",
+				"fee_amount":          "0.01",
+				"net_amount":          "87.99",
 			},
 		},
 	}
@@ -642,6 +908,17 @@ func TestReconcileWiseOrderByOutTradeNoDoesNotAutoFulfillAmountMismatch(t *testi
 	require.NoError(t, err)
 	require.Equal(t, OrderStatusPending, reloaded.Status)
 	require.Equal(t, 88.0, reloaded.PayAmount)
+
+	detail := requireWiseAuditDetail(t, ctx, client, order.ID, "PAYMENT_AMOUNT_MISMATCH")
+	require.Equal(t, "amount_mismatch", detail["reason"])
+	require.Equal(t, "manual_review", detail["reconcile_decision"])
+	require.Equal(t, "manual_review", detail["reconcileDecision"])
+	require.Equal(t, "wise-upstream-amount-mismatch", detail["wise_transaction_id"])
+	require.Equal(t, "Card-like fee deducted for sub2_wise_amount_mismatch_123", detail["description"])
+	require.Equal(t, "sub2_wise_amount_mismatch_123", detail["reference"])
+	require.Equal(t, "0.01", detail["fee_amount"])
+	require.Equal(t, "87.99", detail["net_amount"])
+	require.Equal(t, "manual_review", detail["reviewAction"])
 }
 
 func TestReconcileWiseOrderByOutTradeNoRejectsReusedWiseTransactionID(t *testing.T) {
@@ -794,7 +1071,7 @@ func TestReconcileWiseOrderByOutTradeNoDoesNotAutoFulfillSubCentMismatch(t *test
 	require.Equal(t, OrderStatusPending, reloaded.Status)
 }
 
-func TestReconcileWiseOrderByOutTradeNoDoesNotAutoFulfillMissingSnapshotMetadata(t *testing.T) {
+func TestHandleWiseQueryOrderResponseDoesNotAutoFulfillMissingSnapshotMetadata(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentOrderLifecycleTestClient(t)
 
@@ -833,23 +1110,15 @@ func TestReconcileWiseOrderByOutTradeNoDoesNotAutoFulfillMissingSnapshotMetadata
 		Save(ctx)
 	require.NoError(t, err)
 
-	provider := &paymentOrderLifecycleQueryProvider{
-		key: payment.TypeWise,
-		resp: &payment.QueryOrderResponse{
-			TradeNo: "wise-upstream-missing-snapshot-metadata",
-			Status:  payment.ProviderStatusPaid,
-			Amount:  88,
-		},
-	}
-	registry := payment.NewRegistry()
-	registry.Register(provider)
 	svc := &PaymentService{
-		entClient:       client,
-		registry:        registry,
-		providersLoaded: true,
+		entClient: client,
 	}
 
-	result, err := svc.ReconcileWiseOrderByOutTradeNo(ctx, order.OutTradeNo)
+	result, err := svc.handleWiseQueryOrderResponse(ctx, order, &payment.QueryOrderResponse{
+		TradeNo: "wise-upstream-missing-snapshot-metadata",
+		Status:  payment.ProviderStatusPaid,
+		Amount:  88,
+	})
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.True(t, result.Matched)
@@ -872,6 +1141,22 @@ func validWiseReconcileConfig(publicKeyPEM string) map[string]string {
 		"webhookPublicKey":   publicKeyPEM,
 		"settlementStrategy": "exact_only",
 	}
+}
+
+func requireWiseAuditDetail(t *testing.T, ctx context.Context, client *dbent.Client, orderID int64, action string) map[string]any {
+	t.Helper()
+
+	log, err := client.PaymentAuditLog.Query().
+		Where(
+			paymentauditlog.OrderIDEQ(fmt.Sprintf("%d", orderID)),
+			paymentauditlog.ActionEQ(action),
+		).
+		Only(ctx)
+	require.NoError(t, err)
+
+	var detail map[string]any
+	require.NoError(t, json.Unmarshal([]byte(log.Detail), &detail))
+	return detail
 }
 
 func newWiseReconcileWebhookKey(t *testing.T) (*rsa.PrivateKey, string) {

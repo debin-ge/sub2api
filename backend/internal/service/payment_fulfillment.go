@@ -14,6 +14,7 @@ import (
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
+	dbpredicate "github.com/Wei-Shaw/sub2api/ent/predicate"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
@@ -204,19 +205,24 @@ func (s *PaymentService) toPaid(ctx context.Context, o *dbent.PaymentOrder, trad
 		paymentorder.StatusEQ(OrderStatusExpired),
 		paymentorder.UpdatedAtGTE(grace),
 	)
+	statusRecoveryPredicates := []dbpredicate.PaymentOrder{
+		paymentorder.StatusEQ(OrderStatusPending),
+		paymentorder.StatusEQ(OrderStatusCancelled),
+		expiredRecoveryPredicate,
+	}
 	if payment.GetBasePaymentType(pk) == payment.TypeWise {
-		expiredRecoveryPredicate = paymentorder.And(
-			paymentorder.StatusEQ(OrderStatusExpired),
-			paymentorder.ExpiresAtGTE(wiseReconcileCutoff(now)),
-		)
+		wiseCutoff := now.Add(-s.wiseReconcileWindowForOrder(ctx, o))
+		statusRecoveryPredicates = []dbpredicate.PaymentOrder{
+			paymentorder.StatusEQ(OrderStatusPending),
+			paymentorder.And(
+				paymentorder.StatusIn(OrderStatusExpired, OrderStatusCancelled),
+				paymentorder.ExpiresAtGTE(wiseCutoff),
+			),
+		}
 	}
 	c, err := s.entClient.PaymentOrder.Update().Where(
 		paymentorder.IDEQ(o.ID),
-		paymentorder.Or(
-			paymentorder.StatusEQ(OrderStatusPending),
-			paymentorder.StatusEQ(OrderStatusCancelled),
-			expiredRecoveryPredicate,
-		),
+		paymentorder.Or(statusRecoveryPredicates...),
 	).SetStatus(OrderStatusPaid).SetPayAmount(paid).SetPaymentTradeNo(tradeNo).SetPaidAt(now).ClearFailedAt().ClearFailedReason().Save(ctx)
 	if err != nil {
 		if payment.GetBasePaymentType(pk) == payment.TypeWise && isWiseTransactionReuseConstraintError(err) {

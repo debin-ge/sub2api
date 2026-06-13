@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,6 +30,7 @@ const (
 	wiseMaxErrorSummaryBytes = 512
 	wiseStatementLookback    = 72 * time.Hour
 	wiseStatementLookahead   = 5 * time.Minute
+	wiseMaxStatementLookback = 720 * time.Hour
 )
 
 type Wise struct {
@@ -50,6 +52,9 @@ func NewWise(instanceID string, config map[string]string) (*Wise, error) {
 	}
 	if strings.TrimSpace(cfg["balanceId"]) == "" {
 		return nil, fmt.Errorf("wise config missing required key: balanceId")
+	}
+	if strings.TrimSpace(cfg["currency"]) == "" {
+		return nil, fmt.Errorf("wise config missing required key: currency")
 	}
 	if strings.TrimSpace(cfg["webhookPublicKey"]) == "" {
 		return nil, fmt.Errorf("wise config missing required key: webhookPublicKey")
@@ -83,6 +88,12 @@ func NewWise(instanceID string, config map[string]string) (*Wise, error) {
 		return nil, fmt.Errorf("wise settlementStrategy must be exact_only")
 	}
 	cfg["settlementStrategy"] = strategy
+	if strings.EqualFold(strings.TrimSpace(cfg["autoFulfillFeePayments"]), "true") {
+		return nil, fmt.Errorf("wise autoFulfillFeePayments is not supported in v1")
+	}
+	if err := normalizeWiseReconcileWindowConfig(cfg); err != nil {
+		return nil, err
+	}
 	return &Wise{
 		instanceID: instanceID,
 		config:     cfg,
@@ -178,12 +189,16 @@ func (w *Wise) queryOrderFromTransactions(outTradeNo string, transactions []wise
 		ProfileID:  strings.TrimSpace(w.config["profileId"]),
 		BalanceID:  strings.TrimSpace(w.config["balanceId"]),
 	}
+	var rejected *payment.QueryOrderResponse
 	for _, tx := range transactions {
 		if !wiseTransactionReferencesOrder(tx, outTradeNo) {
 			continue
 		}
 		decision := strategy.Match(order, tx)
 		if !decision.Matched {
+			if rejected == nil {
+				rejected = wisePendingQueryResponse(outTradeNo, tx, decision)
+			}
 			continue
 		}
 
@@ -208,6 +223,9 @@ func (w *Wise) queryOrderFromTransactions(outTradeNo string, transactions []wise
 			Metadata: metadata,
 		}
 	}
+	if rejected != nil {
+		return rejected
+	}
 
 	return &payment.QueryOrderResponse{
 		TradeNo: outTradeNo,
@@ -219,6 +237,20 @@ func (w *Wise) queryOrderFromTransactions(outTradeNo string, transactions []wise
 			"reconcile_decision":  "no_match",
 			"reconcile_reason":    "no_matching_transaction",
 		},
+	}
+}
+
+func wisePendingQueryResponse(outTradeNo string, tx wiseTransaction, decision wiseSettlementDecision) *payment.QueryOrderResponse {
+	metadata := transactionMetadata(tx, decision)
+	tradeNo := strings.TrimSpace(tx.ID)
+	if tradeNo == "" {
+		tradeNo = outTradeNo
+	}
+	return &payment.QueryOrderResponse{
+		TradeNo:  tradeNo,
+		Status:   payment.ProviderStatusPending,
+		Amount:   tx.NetAmount.InexactFloat64(),
+		Metadata: metadata,
 	}
 }
 
@@ -320,6 +352,39 @@ func (w *Wise) currency() string {
 		return payment.DefaultPaymentCurrency
 	}
 	return currency
+}
+
+func normalizeWiseReconcileWindowConfig(cfg map[string]string) error {
+	raw := strings.TrimSpace(cfg["reconcileWindowHours"])
+	if raw == "" {
+		cfg["reconcileWindowHours"] = strconv.Itoa(int(wiseStatementLookback / time.Hour))
+		return nil
+	}
+	hours, err := strconv.Atoi(raw)
+	if err != nil || hours <= 0 {
+		return fmt.Errorf("wise reconcileWindowHours must be a positive integer")
+	}
+	maxHours := int(wiseMaxStatementLookback / time.Hour)
+	if hours > maxHours {
+		return fmt.Errorf("wise reconcileWindowHours must be <= %d", int(wiseMaxStatementLookback/time.Hour))
+	}
+	cfg["reconcileWindowHours"] = strconv.Itoa(hours)
+	return nil
+}
+
+func (w *Wise) statementLookback() time.Duration {
+	if w == nil {
+		return wiseStatementLookback
+	}
+	hours, err := strconv.Atoi(strings.TrimSpace(w.config["reconcileWindowHours"]))
+	if err != nil || hours <= 0 {
+		return wiseStatementLookback
+	}
+	maxHours := int(wiseMaxStatementLookback / time.Hour)
+	if hours > maxHours {
+		return wiseMaxStatementLookback
+	}
+	return time.Duration(hours) * time.Hour
 }
 
 func (w *Wise) quickPayURL(amount, outTradeNo string) (string, error) {
@@ -498,7 +563,7 @@ func (w *Wise) queryStatement(ctx context.Context) ([]wiseTransaction, error) {
 	profileID := strings.TrimSpace(w.config["profileId"])
 	balanceID := strings.TrimSpace(w.config["balanceId"])
 	query := url.Values{}
-	query.Set("intervalStart", now.Add(-wiseStatementLookback).Format(time.RFC3339))
+	query.Set("intervalStart", now.Add(-w.statementLookback()).Format(time.RFC3339))
 	query.Set("intervalEnd", now.Add(wiseStatementLookahead).Format(time.RFC3339))
 	query.Set("type", "COMPACT")
 	query.Set("currency", w.currency())
@@ -563,6 +628,8 @@ func transactionMetadata(tx wiseTransaction, decision wiseSettlementDecision) ma
 		"currency":            tx.Currency,
 		"profile_id":          tx.ProfileID,
 		"balance_id":          tx.BalanceID,
+		"direction":           tx.Direction,
+		"transaction_status":  tx.Status,
 		"settlement_strategy": wiseDefaultStrategy,
 		"reconcile_reason":    decision.Reason,
 		"reconcile_decision":  wiseReconcileDecision(decision),
@@ -572,6 +639,15 @@ func transactionMetadata(tx wiseTransaction, decision wiseSettlementDecision) ma
 	addDecimalMetadata(metadata, "net_amount", tx.NetAmount)
 	if id := strings.TrimSpace(tx.ID); id != "" {
 		metadata["wise_transaction_id"] = id
+	}
+	if description := strings.TrimSpace(tx.Description); description != "" {
+		metadata["description"] = description
+	}
+	if reference := strings.TrimSpace(tx.Reference); reference != "" {
+		metadata["reference"] = reference
+	}
+	if !tx.OccurredAt.IsZero() {
+		metadata["occurred_at"] = tx.OccurredAt.UTC().Format(time.RFC3339)
 	}
 	for key, value := range decision.Metadata {
 		if strings.TrimSpace(value) != "" {

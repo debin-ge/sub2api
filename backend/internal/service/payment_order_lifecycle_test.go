@@ -517,7 +517,7 @@ func TestReconcilePaidDoesNotReturnAlreadyPaidWhenFulfillmentRejectsAmountMismat
 	require.Equal(t, 88.0, reloaded.PayAmount)
 }
 
-func TestReconcilePaidDoesNotFulfillWisePaidQueryWithMissingSnapshotMetadata(t *testing.T) {
+func TestHandleWiseQueryOrderResponseDoesNotFulfillWisePaidQueryWithMissingSnapshotMetadata(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentOrderLifecycleTestClient(t)
 
@@ -556,26 +556,20 @@ func TestReconcilePaidDoesNotFulfillWisePaidQueryWithMissingSnapshotMetadata(t *
 		Save(ctx)
 	require.NoError(t, err)
 
-	registry := payment.NewRegistry()
-	provider := &paymentOrderLifecycleQueryProvider{
-		key: payment.TypeWise,
-		resp: &payment.QueryOrderResponse{
-			TradeNo: "wise-upstream-missing-metadata",
-			Status:  payment.ProviderStatusPaid,
-			Amount:  88,
-		},
-	}
-	registry.Register(provider)
-
 	svc := &PaymentService{
-		entClient:       client,
-		registry:        registry,
-		providersLoaded: true,
+		entClient: client,
 	}
 
-	result := svc.reconcilePaid(ctx, order)
-	require.Empty(t, result)
-	require.Equal(t, order.OutTradeNo, provider.lastQueryTradeNo)
+	result, err := svc.handleWiseQueryOrderResponse(ctx, order, &payment.QueryOrderResponse{
+		TradeNo: "wise-upstream-missing-metadata",
+		Status:  payment.ProviderStatusPaid,
+		Amount:  88,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.Matched)
+	require.False(t, result.AutoFulfill)
+	require.Equal(t, "metadata_mismatch", result.Reason)
 
 	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
 	require.NoError(t, err)

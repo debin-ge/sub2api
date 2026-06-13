@@ -18,6 +18,7 @@ import (
 const (
 	pendingWiseReconcileLimit = 100
 	wiseReconcileWindow       = 72 * time.Hour
+	wiseMaxReconcileWindow    = 720 * time.Hour
 )
 
 type WiseWebhookReconcileResult struct {
@@ -74,24 +75,17 @@ func (s *PaymentService) ReconcilePendingWiseOrders(ctx context.Context) (*WiseW
 	orders := make([]*dbent.PaymentOrder, 0, pendingWiseReconcileLimit)
 	var lastID int64
 	for {
-		page, err := s.queryWiseReconciliationCandidates(ctx, lastID, now)
+		page, nextLastID, hasMore, err := s.queryWiseReconciliationCandidates(ctx, lastID, now)
 		if err != nil {
 			return nil, err
 		}
-		if len(page) == 0 {
+		if nextLastID == 0 {
 			break
 		}
 		result.Scanned += len(page)
 		orders = append(orders, page...)
-		for _, order := range page {
-			if order == nil {
-				continue
-			}
-			if order.ID > lastID {
-				lastID = order.ID
-			}
-		}
-		if len(page) < pendingWiseReconcileLimit {
+		lastID = nextLastID
+		if !hasMore {
 			break
 		}
 	}
@@ -109,14 +103,14 @@ func (s *PaymentService) ReconcilePendingWiseOrders(ctx context.Context) (*WiseW
 	return result, nil
 }
 
-func (s *PaymentService) queryWiseReconciliationCandidates(ctx context.Context, afterID int64, now time.Time) ([]*dbent.PaymentOrder, error) {
+func (s *PaymentService) queryWiseReconciliationCandidates(ctx context.Context, afterID int64, now time.Time) ([]*dbent.PaymentOrder, int64, bool, error) {
 	predicates := []dbpredicate.PaymentOrder{
 		paymentorder.PaymentTypeEQ(payment.TypeWise),
 		paymentorder.Or(
 			paymentorder.StatusEQ(OrderStatusPending),
 			paymentorder.And(
-				paymentorder.StatusEQ(OrderStatusExpired),
-				paymentorder.ExpiresAtGTE(wiseReconcileCutoff(now)),
+				paymentorder.StatusIn(OrderStatusExpired, OrderStatusCancelled),
+				paymentorder.ExpiresAtGTE(now.Add(-wiseMaxReconcileWindow)),
 			),
 		),
 	}
@@ -129,9 +123,85 @@ func (s *PaymentService) queryWiseReconciliationCandidates(ctx context.Context, 
 		Limit(pendingWiseReconcileLimit).
 		All(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("query pending wise orders: %w", err)
+		return nil, 0, false, fmt.Errorf("query pending wise orders: %w", err)
 	}
-	return orders, nil
+	if len(orders) == 0 {
+		return nil, 0, false, nil
+	}
+	lastID := afterID
+	candidates := make([]*dbent.PaymentOrder, 0, len(orders))
+	for _, order := range orders {
+		if order == nil {
+			continue
+		}
+		if order.ID > lastID {
+			lastID = order.ID
+		}
+		if s.wiseOrderInsideReconcileWindow(ctx, order, now) {
+			candidates = append(candidates, order)
+		}
+	}
+	return candidates, lastID, len(orders) == pendingWiseReconcileLimit, nil
+}
+
+func (s *PaymentService) wiseOrderInsideReconcileWindow(ctx context.Context, order *dbent.PaymentOrder, now time.Time) bool {
+	if order == nil {
+		return false
+	}
+	if order.Status == OrderStatusPending {
+		return true
+	}
+	if order.Status != OrderStatusExpired && order.Status != OrderStatusCancelled {
+		return false
+	}
+	return !order.ExpiresAt.Before(now.Add(-s.wiseReconcileWindowForOrder(ctx, order)))
+}
+
+func (s *PaymentService) wiseReconcileWindowForOrder(ctx context.Context, order *dbent.PaymentOrder) time.Duration {
+	if s == nil || order == nil || strings.TrimSpace(order.PaymentType) != payment.TypeWise {
+		return wiseReconcileWindow
+	}
+	instID, ok := wiseOrderProviderInstanceID(order)
+	if !ok || s.loadBalancer == nil {
+		return wiseReconcileWindow
+	}
+	config, err := s.loadBalancer.GetInstanceConfig(ctx, instID)
+	if err != nil {
+		slog.Warn("wise reconcile window config lookup failed", "orderID", order.ID, "instanceID", instID, "error", err)
+		return wiseReconcileWindow
+	}
+	return wiseReconcileWindowFromConfig(config)
+}
+
+func wiseOrderProviderInstanceID(order *dbent.PaymentOrder) (int64, bool) {
+	if order == nil {
+		return 0, false
+	}
+	raw := strings.TrimSpace(psStringValue(order.ProviderInstanceID))
+	if raw == "" {
+		return 0, false
+	}
+	instID, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || instID <= 0 {
+		return 0, false
+	}
+	return instID, true
+}
+
+func wiseReconcileWindowFromConfig(config map[string]string) time.Duration {
+	raw := strings.TrimSpace(providerConfigFieldValue(config, "reconcileWindowHours"))
+	if raw == "" {
+		return wiseReconcileWindow
+	}
+	hours, err := strconv.Atoi(raw)
+	if err != nil || hours <= 0 {
+		return wiseReconcileWindow
+	}
+	maxHours := int(wiseMaxReconcileWindow / time.Hour)
+	if hours > maxHours {
+		return wiseMaxReconcileWindow
+	}
+	return time.Duration(hours) * time.Hour
 }
 
 func (s *PaymentService) groupWiseReconciliationOrders(ctx context.Context, orders []*dbent.PaymentOrder) []*wiseReconcileOrderGroup {
@@ -308,7 +378,8 @@ func (s *PaymentService) handleWiseQueryOrderResponse(ctx context.Context, order
 		if reason == "provider_status_" {
 			reason = "provider_status_not_paid"
 		}
-		matched := strings.TrimSpace(resp.Metadata["reconcile_decision"]) != "no_match"
+		decision := strings.TrimSpace(resp.Metadata["reconcile_decision"])
+		matched := wiseReconcileDecisionReferencesTransaction(decision)
 		slog.Info("wise order not auto-fulfilled during reconciliation",
 			"orderID", order.ID,
 			"outTradeNo", order.OutTradeNo,
@@ -317,6 +388,10 @@ func (s *PaymentService) handleWiseQueryOrderResponse(ctx context.Context, order
 			"matched", matched,
 			"metadata", resp.Metadata,
 		)
+		if matched {
+			s.writeAuditLog(ctx, order.ID, "PAYMENT_WISE_RECONCILE_MANUAL_REVIEW", payment.TypeWise,
+				wiseReconcileAuditDetail(order, resp, reason, "manual_review"))
+		}
 		return &WiseWebhookReconcileResult{
 			Matched:     matched,
 			AutoFulfill: false,
@@ -326,11 +401,8 @@ func (s *PaymentService) handleWiseQueryOrderResponse(ctx context.Context, order
 		}, nil
 	}
 	if !isValidProviderAmount(resp.Amount) {
-		s.writeAuditLog(ctx, order.ID, "PAYMENT_INVALID_AMOUNT", payment.TypeWise, map[string]any{
-			"expected": order.PayAmount,
-			"paid":     resp.Amount,
-			"tradeNo":  resp.TradeNo,
-		})
+		s.writeAuditLog(ctx, order.ID, "PAYMENT_INVALID_AMOUNT", payment.TypeWise,
+			wiseReconcileAuditDetail(order, resp, "invalid_amount", "manual_review"))
 		return &WiseWebhookReconcileResult{
 			Matched:     true,
 			AutoFulfill: false,
@@ -340,11 +412,11 @@ func (s *PaymentService) handleWiseQueryOrderResponse(ctx context.Context, order
 		}, nil
 	}
 	if !payment.AmountsEqualByMinorUnit(order.PayAmount, resp.Amount, PaymentOrderCurrency(order)) {
-		s.writeAuditLog(ctx, order.ID, "PAYMENT_AMOUNT_MISMATCH", payment.TypeWise, map[string]any{
-			"expected": order.PayAmount,
-			"paid":     resp.Amount,
-			"tradeNo":  resp.TradeNo,
-		})
+		detail := wiseReconcileAuditDetail(order, resp, "amount_mismatch", "manual_review")
+		detail["reconcile_reason"] = "amount_mismatch"
+		detail["reconcile_decision"] = "manual_review"
+		detail["reconcileDecision"] = "manual_review"
+		s.writeAuditLog(ctx, order.ID, "PAYMENT_AMOUNT_MISMATCH", payment.TypeWise, detail)
 		return &WiseWebhookReconcileResult{
 			Matched:     true,
 			AutoFulfill: false,
@@ -354,10 +426,9 @@ func (s *PaymentService) handleWiseQueryOrderResponse(ctx context.Context, order
 		}, nil
 	}
 	if err := validateProviderNotificationMetadata(order, payment.TypeWise, resp.Metadata); err != nil {
-		s.writeAuditLog(ctx, order.ID, "PAYMENT_PROVIDER_METADATA_MISMATCH", payment.TypeWise, map[string]any{
-			"detail":  err.Error(),
-			"tradeNo": resp.TradeNo,
-		})
+		detail := wiseReconcileAuditDetail(order, resp, "metadata_mismatch", "manual_review")
+		detail["detail"] = err.Error()
+		s.writeAuditLog(ctx, order.ID, "PAYMENT_PROVIDER_METADATA_MISMATCH", payment.TypeWise, detail)
 		return &WiseWebhookReconcileResult{
 			Matched:     true,
 			AutoFulfill: false,
@@ -368,10 +439,9 @@ func (s *PaymentService) handleWiseQueryOrderResponse(ctx context.Context, order
 	}
 	wiseTransactionID := wiseTransactionIDFromMetadata(resp.Metadata)
 	if wiseTransactionID == "" {
-		s.writeAuditLog(ctx, order.ID, "PAYMENT_PROVIDER_METADATA_MISMATCH", payment.TypeWise, map[string]any{
-			"detail":  "wise transaction id missing",
-			"tradeNo": resp.TradeNo,
-		})
+		detail := wiseReconcileAuditDetail(order, resp, "transaction_id_missing", "manual_review")
+		detail["detail"] = "wise transaction id missing"
+		s.writeAuditLog(ctx, order.ID, "PAYMENT_PROVIDER_METADATA_MISMATCH", payment.TypeWise, detail)
 		return &WiseWebhookReconcileResult{
 			Matched:     true,
 			AutoFulfill: false,
@@ -381,11 +451,10 @@ func (s *PaymentService) handleWiseQueryOrderResponse(ctx context.Context, order
 		}, nil
 	}
 	if err := s.ensureWiseTransactionUnused(ctx, order.ID, wiseTransactionID); err != nil {
-		s.writeAuditLog(ctx, order.ID, "PAYMENT_TRANSACTION_REUSED", payment.TypeWise, map[string]any{
-			"detail":              err.Error(),
-			"tradeNo":             resp.TradeNo,
-			"wise_transaction_id": wiseTransactionID,
-		})
+		detail := wiseReconcileAuditDetail(order, resp, "transaction_reused", "manual_review")
+		detail["detail"] = err.Error()
+		detail["wise_transaction_id"] = wiseTransactionID
+		s.writeAuditLog(ctx, order.ID, "PAYMENT_TRANSACTION_REUSED", payment.TypeWise, detail)
 		return &WiseWebhookReconcileResult{
 			Matched:     true,
 			AutoFulfill: false,
@@ -413,6 +482,49 @@ func (s *PaymentService) handleWiseQueryOrderResponse(ctx context.Context, order
 		Reason:      "auto_fulfilled",
 		Fulfilled:   1,
 	}, nil
+}
+
+func wiseReconcileDecisionReferencesTransaction(decision string) bool {
+	switch strings.TrimSpace(decision) {
+	case "manual_review", "rejected", "auto_fulfill":
+		return true
+	default:
+		return false
+	}
+}
+
+func wiseReconcileAuditDetail(order *dbent.PaymentOrder, resp *payment.QueryOrderResponse, reason, reviewAction string) map[string]any {
+	detail := map[string]any{
+		"reason":       strings.TrimSpace(reason),
+		"reviewAction": strings.TrimSpace(reviewAction),
+	}
+	if order != nil {
+		detail["expected"] = order.PayAmount
+		detail["outTradeNo"] = order.OutTradeNo
+		detail["orderStatus"] = order.Status
+	}
+	if resp == nil {
+		return detail
+	}
+	detail["tradeNo"] = resp.TradeNo
+	if isValidProviderAmount(resp.Amount) {
+		detail["paid"] = resp.Amount
+	} else {
+		detail["paid"] = fmt.Sprintf("%v", resp.Amount)
+	}
+	if resp.Status != "" {
+		detail["providerStatus"] = resp.Status
+	}
+	for key, value := range resp.Metadata {
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		detail[key] = value
+		if key == "reconcile_decision" {
+			detail["reconcileDecision"] = value
+		}
+	}
+	return detail
 }
 
 func wiseWebhookEventIsReconcileTrigger(rawBody string) bool {

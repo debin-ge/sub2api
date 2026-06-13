@@ -129,7 +129,7 @@ var providerPendingOrderProtectedConfigFields = map[string]map[string]struct{}{
 	payment.TypeWxpay:     {"privatekey": {}, "apiv3key": {}, "publickey": {}, "appid": {}, "mpappid": {}, "mchid": {}, "publickeyid": {}, "certserial": {}},
 	payment.TypeStripe:    {"secretkey": {}, "webhooksecret": {}, "currency": {}},
 	payment.TypeAirwallex: {"clientid": {}, "apikey": {}, "webhooksecret": {}, "apibase": {}, "accountid": {}, "currency": {}},
-	payment.TypeWise:      {"quickpaybaseurl": {}, "apibase": {}, "apitoken": {}, "profileid": {}, "balanceid": {}, "currency": {}, "webhookpublickey": {}, "settlementstrategy": {}},
+	payment.TypeWise:      {"quickpaybaseurl": {}, "apibase": {}, "apitoken": {}, "profileid": {}, "balanceid": {}, "currency": {}, "webhookpublickey": {}, "settlementstrategy": {}, "reconcilewindowhours": {}},
 }
 
 func isSensitiveProviderConfigField(providerKey, fieldName string) bool {
@@ -164,6 +164,18 @@ func providerConfigFieldValue(config map[string]string, fieldName string) string
 }
 
 func (s *PaymentConfigService) countPendingOrders(ctx context.Context, providerInstanceID int64) (int, error) {
+	inst, err := s.entClient.PaymentProviderInstance.Get(ctx, providerInstanceID)
+	if err != nil {
+		return 0, fmt.Errorf("load provider instance: %w", err)
+	}
+	wiseWindow := wiseReconcileWindow
+	if inst.ProviderKey == payment.TypeWise {
+		config, err := s.decryptConfig(inst.Config)
+		if err != nil {
+			return 0, fmt.Errorf("decrypt provider config: %w", err)
+		}
+		wiseWindow = wiseReconcileWindowFromConfig(config)
+	}
 	return s.entClient.PaymentOrder.Query().
 		Where(
 			paymentorder.ProviderInstanceIDEQ(strconv.FormatInt(providerInstanceID, 10)),
@@ -171,8 +183,8 @@ func (s *PaymentConfigService) countPendingOrders(ctx context.Context, providerI
 				paymentorder.StatusIn(pendingOrderStatuses...),
 				paymentorder.And(
 					paymentorder.PaymentTypeEQ(payment.TypeWise),
-					paymentorder.StatusEQ(payment.OrderStatusExpired),
-					paymentorder.ExpiresAtGTE(wiseReconcileCutoff(time.Now())),
+					paymentorder.StatusIn(payment.OrderStatusExpired, payment.OrderStatusCancelled),
+					paymentorder.ExpiresAtGTE(time.Now().Add(-wiseWindow)),
 				),
 			),
 		).Count(ctx)
