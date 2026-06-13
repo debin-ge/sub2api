@@ -276,6 +276,76 @@ func TestReconcileWiseOrderByOutTradeNoDoesNotAutoFulfillNonPaidNoMatch(t *testi
 	require.Equal(t, OrderStatusPending, reloaded.Status)
 }
 
+func TestReconcileWiseOrderByOutTradeNoDoesNotAutoFulfillAmountMismatch(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("wise-amount-mismatch@example.com").
+		SetPasswordHash("hash").
+		SetUsername("wise-amount-mismatch-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(88).
+		SetPayAmount(88).
+		SetFeeRate(0).
+		SetRechargeCode("WISE-AMOUNT-MISMATCH").
+		SetOutTradeNo("sub2_wise_amount_mismatch_123").
+		SetPaymentType(payment.TypeWise).
+		SetPaymentTradeNo("wise-upstream-amount-mismatch").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusPending).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	provider := &paymentOrderLifecycleQueryProvider{
+		key: payment.TypeWise,
+		resp: &payment.QueryOrderResponse{
+			TradeNo: "wise-upstream-amount-mismatch",
+			Status:  payment.ProviderStatusPaid,
+			Amount:  87.99,
+			Metadata: map[string]string{
+				"reconcile_decision":  "auto_fulfill",
+				"reconcile_reason":    "exact_match",
+				"profile_id":          "profile-123",
+				"balance_id":          "balance-123",
+				"currency":            "USD",
+				"settlement_strategy": "exact_only",
+			},
+		},
+	}
+	registry := payment.NewRegistry()
+	registry.Register(provider)
+	svc := &PaymentService{
+		entClient:       client,
+		registry:        registry,
+		providersLoaded: true,
+	}
+
+	result, err := svc.ReconcileWiseOrderByOutTradeNo(ctx, order.OutTradeNo)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.Matched)
+	require.False(t, result.AutoFulfill)
+	require.Equal(t, order.OutTradeNo, result.OrderID)
+	require.Equal(t, "wise-upstream-amount-mismatch", result.TradeNo)
+	require.Equal(t, "amount_mismatch", result.Reason)
+	require.Equal(t, order.OutTradeNo, provider.lastQueryTradeNo)
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusPending, reloaded.Status)
+	require.Equal(t, 88.0, reloaded.PayAmount)
+}
+
 func validWiseReconcileConfig(publicKeyPEM string) map[string]string {
 	return map[string]string{
 		"quickPayBaseUrl":    "https://wise.com/pay/business/account",

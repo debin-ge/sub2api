@@ -313,6 +313,8 @@ func buildPaymentOrderProviderSnapshot(sel *payment.InstanceSelection, req Creat
 		snapshot["currency"] = paymentProviderConfigCurrency(providerKey, sel.Config)
 		if strategy := strings.TrimSpace(sel.Config["settlementStrategy"]); strategy != "" {
 			snapshot["settlement_strategy"] = strategy
+		} else {
+			snapshot["settlement_strategy"] = wiseSettlementStrategyExactOnly
 		}
 	}
 

@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"testing"
 
+	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	"github.com/stretchr/testify/require"
 )
@@ -211,6 +212,100 @@ func TestBuildPaymentOrderProviderSnapshotWise(t *testing.T) {
 	require.Equal(t, "balance-123", snapshot["balance_id"])
 	require.Equal(t, "USD", snapshot["currency"])
 	require.Equal(t, "exact_only", snapshot["settlement_strategy"])
+
+	defaultStrategySnapshot := buildPaymentOrderProviderSnapshot(&payment.InstanceSelection{
+		InstanceID:  "89",
+		ProviderKey: payment.TypeWise,
+		Config: map[string]string{
+			"profileId": "profile-456",
+			"balanceId": "balance-456",
+			"currency":  "EUR",
+		},
+		PaymentMode: "redirect",
+	}, CreateOrderRequest{PaymentType: payment.TypeWise})
+	require.Equal(t, "exact_only", defaultStrategySnapshot["settlement_strategy"])
+}
+
+func TestValidateProviderSnapshotMetadataWise(t *testing.T) {
+	t.Parallel()
+
+	order := &dbent.PaymentOrder{
+		ProviderSnapshot: map[string]any{
+			"schema_version":       2,
+			"provider_key":         payment.TypeWise,
+			"merchant_id":          "profile-123",
+			"balance_id":           "balance-123",
+			"currency":             "USD",
+			"settlement_strategy":  "exact_only",
+			"provider_instance_id": "88",
+		},
+	}
+
+	require.NoError(t, validateProviderSnapshotMetadata(order, payment.TypeWise, map[string]string{
+		"profile_id":          "profile-123",
+		"balance_id":          "balance-123",
+		"currency":            "USD",
+		"settlement_strategy": "exact_only",
+	}))
+	require.NoError(t, validateProviderSnapshotMetadata(order, payment.TypeWise, map[string]string{
+		"merchant_id":         "profile-123",
+		"balance_id":          "balance-123",
+		"currency":            "usd",
+		"settlement_strategy": "exact_only",
+	}))
+
+	tests := []struct {
+		name    string
+		patch   map[string]string
+		wantErr string
+	}{
+		{
+			name: "profile mismatch",
+			patch: map[string]string{
+				"profile_id": "profile-999",
+			},
+			wantErr: "wise profile_id mismatch",
+		},
+		{
+			name: "balance mismatch",
+			patch: map[string]string{
+				"balance_id": "balance-999",
+			},
+			wantErr: "wise balance_id mismatch",
+		},
+		{
+			name: "currency mismatch",
+			patch: map[string]string{
+				"currency": "EUR",
+			},
+			wantErr: "wise currency mismatch",
+		},
+		{
+			name: "settlement strategy mismatch",
+			patch: map[string]string{
+				"settlement_strategy": "gross_with_fee",
+			},
+			wantErr: "wise settlement_strategy mismatch",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			metadata := map[string]string{
+				"profile_id":          "profile-123",
+				"balance_id":          "balance-123",
+				"currency":            "USD",
+				"settlement_strategy": "exact_only",
+			}
+			for key, value := range tt.patch {
+				metadata[key] = value
+			}
+			require.ErrorContains(t, validateProviderSnapshotMetadata(order, payment.TypeWise, metadata), tt.wantErr)
+		})
+	}
 }
 
 func valueOrEmpty(v *string) string {

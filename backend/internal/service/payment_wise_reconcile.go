@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math"
 	"strings"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
@@ -155,6 +156,34 @@ func (s *PaymentService) ReconcileWiseOrderByOutTradeNo(ctx context.Context, out
 			OrderID:     order.OutTradeNo,
 			TradeNo:     resp.TradeNo,
 			Reason:      reason,
+		}, nil
+	}
+	if !isValidProviderAmount(resp.Amount) {
+		s.writeAuditLog(ctx, order.ID, "PAYMENT_INVALID_AMOUNT", payment.TypeWise, map[string]any{
+			"expected": order.PayAmount,
+			"paid":     resp.Amount,
+			"tradeNo":  resp.TradeNo,
+		})
+		return &WiseWebhookReconcileResult{
+			Matched:     true,
+			AutoFulfill: false,
+			OrderID:     order.OutTradeNo,
+			TradeNo:     resp.TradeNo,
+			Reason:      "invalid_amount",
+		}, nil
+	}
+	if math.Abs(resp.Amount-order.PayAmount) > paymentAmountToleranceForCurrency(PaymentOrderCurrency(order)) {
+		s.writeAuditLog(ctx, order.ID, "PAYMENT_AMOUNT_MISMATCH", payment.TypeWise, map[string]any{
+			"expected": order.PayAmount,
+			"paid":     resp.Amount,
+			"tradeNo":  resp.TradeNo,
+		})
+		return &WiseWebhookReconcileResult{
+			Matched:     true,
+			AutoFulfill: false,
+			OrderID:     order.OutTradeNo,
+			TradeNo:     resp.TradeNo,
+			Reason:      "amount_mismatch",
 		}, nil
 	}
 

@@ -10,6 +10,8 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 )
 
+const wiseSettlementStrategyExactOnly = "exact_only"
+
 type paymentOrderProviderSnapshot struct {
 	SchemaVersion      int
 	ProviderInstanceID string
@@ -17,7 +19,9 @@ type paymentOrderProviderSnapshot struct {
 	PaymentMode        string
 	MerchantAppID      string
 	MerchantID         string
+	BalanceID          string
 	Currency           string
+	SettlementStrategy string
 }
 
 func psOrderProviderSnapshot(order *dbent.PaymentOrder) *paymentOrderProviderSnapshot {
@@ -32,7 +36,9 @@ func psOrderProviderSnapshot(order *dbent.PaymentOrder) *paymentOrderProviderSna
 		PaymentMode:        psSnapshotStringValue(order.ProviderSnapshot["payment_mode"]),
 		MerchantAppID:      psSnapshotStringValue(order.ProviderSnapshot["merchant_app_id"]),
 		MerchantID:         psSnapshotStringValue(order.ProviderSnapshot["merchant_id"]),
+		BalanceID:          psSnapshotStringValue(order.ProviderSnapshot["balance_id"]),
 		Currency:           psSnapshotStringValue(order.ProviderSnapshot["currency"]),
+		SettlementStrategy: psSnapshotStringValue(order.ProviderSnapshot["settlement_strategy"]),
 	}
 	if snapshot.SchemaVersion == 0 &&
 		snapshot.ProviderInstanceID == "" &&
@@ -40,7 +46,9 @@ func psOrderProviderSnapshot(order *dbent.PaymentOrder) *paymentOrderProviderSna
 		snapshot.PaymentMode == "" &&
 		snapshot.MerchantAppID == "" &&
 		snapshot.MerchantID == "" &&
-		snapshot.Currency == "" {
+		snapshot.BalanceID == "" &&
+		snapshot.Currency == "" &&
+		snapshot.SettlementStrategy == "" {
 		return nil
 	}
 	return snapshot
@@ -219,6 +227,46 @@ func validateProviderSnapshotMetadata(order *dbent.PaymentOrder, providerKey str
 		}
 		if actual := strings.TrimSpace(metadata["status"]); actual != "" && !strings.EqualFold(actual, "SUCCEEDED") {
 			return fmt.Errorf("airwallex status mismatch: expected SUCCEEDED, got %s", actual)
+		}
+	case payment.TypeWise:
+		if expected := strings.TrimSpace(snapshot.MerchantID); expected != "" {
+			actual := strings.TrimSpace(metadata["profile_id"])
+			if actual == "" {
+				actual = strings.TrimSpace(metadata["merchant_id"])
+			}
+			if actual == "" {
+				return fmt.Errorf("wise profile_id missing")
+			}
+			if !strings.EqualFold(expected, actual) {
+				return fmt.Errorf("wise profile_id mismatch: expected %s, got %s", expected, actual)
+			}
+		}
+		if expected := strings.TrimSpace(snapshot.BalanceID); expected != "" {
+			actual := strings.TrimSpace(metadata["balance_id"])
+			if actual == "" {
+				return fmt.Errorf("wise balance_id missing")
+			}
+			if !strings.EqualFold(expected, actual) {
+				return fmt.Errorf("wise balance_id mismatch: expected %s, got %s", expected, actual)
+			}
+		}
+		if expected := strings.TrimSpace(snapshot.Currency); expected != "" {
+			actual := strings.ToUpper(strings.TrimSpace(metadata["currency"]))
+			if actual == "" {
+				return fmt.Errorf("wise notification missing currency")
+			}
+			if !strings.EqualFold(expected, actual) {
+				return fmt.Errorf("wise currency mismatch: expected %s, got %s", expected, actual)
+			}
+		}
+		if expected := strings.TrimSpace(snapshot.SettlementStrategy); expected != "" {
+			actual := strings.TrimSpace(metadata["settlement_strategy"])
+			if actual == "" {
+				return fmt.Errorf("wise settlement_strategy missing")
+			}
+			if !strings.EqualFold(expected, actual) {
+				return fmt.Errorf("wise settlement_strategy mismatch: expected %s, got %s", expected, actual)
+			}
 		}
 	}
 
