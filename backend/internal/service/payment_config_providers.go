@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
@@ -166,7 +167,14 @@ func (s *PaymentConfigService) countPendingOrders(ctx context.Context, providerI
 	return s.entClient.PaymentOrder.Query().
 		Where(
 			paymentorder.ProviderInstanceIDEQ(strconv.FormatInt(providerInstanceID, 10)),
-			paymentorder.StatusIn(pendingOrderStatuses...),
+			paymentorder.Or(
+				paymentorder.StatusIn(pendingOrderStatuses...),
+				paymentorder.And(
+					paymentorder.PaymentTypeEQ(payment.TypeWise),
+					paymentorder.StatusEQ(payment.OrderStatusExpired),
+					paymentorder.ExpiresAtGTE(wiseReconcileCutoff(time.Now())),
+				),
+			),
 		).Count(ctx)
 }
 
@@ -219,6 +227,13 @@ func validateProviderRequest(providerKey, name, supportedTypes string) error {
 	}
 	if !validProviderKeys[providerKey] {
 		return infraerrors.BadRequest("VALIDATION_ERROR", fmt.Sprintf("invalid provider key: %s", providerKey))
+	}
+	if providerKey == payment.TypeWise {
+		for _, supportedType := range splitTypes(supportedTypes) {
+			if supportedType != payment.TypeWise {
+				return infraerrors.BadRequest("VALIDATION_ERROR", "wise supports only wise payment type")
+			}
+		}
 	}
 	// supported_types can be empty (provider accepts no payment types until configured)
 	return nil

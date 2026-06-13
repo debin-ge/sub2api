@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,6 +28,16 @@ type WiseWebhookReconcileResult struct {
 	Reason      string
 	Scanned     int
 	Fulfilled   int
+}
+
+type wiseBatchOrderQuerier interface {
+	QueryOrders(ctx context.Context, tradeNos []string) (map[string]*payment.QueryOrderResponse, error)
+}
+
+type wiseReconcileOrderGroup struct {
+	key      string
+	provider payment.Provider
+	orders   []*dbent.PaymentOrder
 }
 
 func (s *PaymentService) HandleWiseWebhook(ctx context.Context, rawBody string, headers map[string]string) (*WiseWebhookReconcileResult, error) {
@@ -60,46 +71,34 @@ func (s *PaymentService) ReconcilePendingWiseOrders(ctx context.Context) (*WiseW
 		Reason: "event_verified_no_pending",
 	}
 	now := time.Now()
+	orders := make([]*dbent.PaymentOrder, 0, pendingWiseReconcileLimit)
 	var lastID int64
 	for {
-		orders, err := s.queryWiseReconciliationCandidates(ctx, lastID, now)
+		page, err := s.queryWiseReconciliationCandidates(ctx, lastID, now)
 		if err != nil {
 			return nil, err
 		}
-		if len(orders) == 0 {
+		if len(page) == 0 {
 			break
 		}
-		result.Scanned += len(orders)
-		for _, order := range orders {
+		result.Scanned += len(page)
+		orders = append(orders, page...)
+		for _, order := range page {
 			if order == nil {
 				continue
 			}
 			if order.ID > lastID {
 				lastID = order.ID
 			}
-			orderResult, err := s.ReconcileWiseOrderByOutTradeNo(ctx, order.OutTradeNo)
-			if err != nil {
-				slog.Warn("wise pending order reconcile failed", "orderID", order.ID, "outTradeNo", order.OutTradeNo, "error", err)
-				continue
-			}
-			if orderResult == nil {
-				continue
-			}
-			if orderResult.Matched {
-				result.Matched = true
-			}
-			if orderResult.AutoFulfill {
-				result.AutoFulfill = true
-				result.Fulfilled++
-				if result.OrderID == "" {
-					result.OrderID = orderResult.OrderID
-					result.TradeNo = orderResult.TradeNo
-				}
-			}
 		}
-		if len(orders) < pendingWiseReconcileLimit {
+		if len(page) < pendingWiseReconcileLimit {
 			break
 		}
+	}
+
+	groups := s.groupWiseReconciliationOrders(ctx, orders)
+	for _, group := range groups {
+		s.reconcileWiseOrderGroup(ctx, group, result)
 	}
 
 	if result.Fulfilled > 0 {
@@ -135,6 +134,132 @@ func (s *PaymentService) queryWiseReconciliationCandidates(ctx context.Context, 
 	return orders, nil
 }
 
+func (s *PaymentService) groupWiseReconciliationOrders(ctx context.Context, orders []*dbent.PaymentOrder) []*wiseReconcileOrderGroup {
+	groups := make([]*wiseReconcileOrderGroup, 0)
+	byKey := make(map[string]*wiseReconcileOrderGroup)
+	for _, order := range orders {
+		if order == nil {
+			continue
+		}
+		key, prov, err := s.wiseReconciliationProviderForOrder(ctx, order)
+		if err != nil {
+			slog.Warn("wise pending order provider resolution failed", "orderID", order.ID, "outTradeNo", order.OutTradeNo, "error", err)
+			continue
+		}
+		group := byKey[key]
+		if group == nil {
+			group = &wiseReconcileOrderGroup{
+				key:      key,
+				provider: prov,
+			}
+			byKey[key] = group
+			groups = append(groups, group)
+		}
+		group.orders = append(group.orders, order)
+	}
+	return groups
+}
+
+func (s *PaymentService) wiseReconciliationProviderForOrder(ctx context.Context, order *dbent.PaymentOrder) (string, payment.Provider, error) {
+	inst, err := s.getOrderProviderInstance(ctx, order)
+	if err != nil {
+		return "", nil, fmt.Errorf("load order provider instance: %w", err)
+	}
+	if inst != nil {
+		prov, err := s.createProviderFromInstance(ctx, inst)
+		if err != nil {
+			return "", nil, err
+		}
+		return "instance:" + strconv.FormatInt(int64(inst.ID), 10), prov, nil
+	}
+	if !paymentOrderAllowsRegistryFallback(order) {
+		return "", nil, fmt.Errorf("order %d provider instance is unresolved", order.ID)
+	}
+	providerKey := paymentOrderFallbackProviderKey(s.registry, order)
+	if providerKey == "" {
+		return "", nil, fmt.Errorf("order %d provider fallback key is missing", order.ID)
+	}
+	if !s.webhookRegistryFallbackAllowed(ctx, providerKey) {
+		return "", nil, fmt.Errorf("order %d provider fallback is ambiguous for %s", order.ID, providerKey)
+	}
+	s.EnsureProviders(ctx)
+	prov, err := s.registry.GetProvider(order.PaymentType)
+	if err != nil {
+		return "", nil, err
+	}
+	return "registry:" + providerKey + ":" + strings.TrimSpace(order.PaymentType), prov, nil
+}
+
+func (s *PaymentService) reconcileWiseOrderGroup(ctx context.Context, group *wiseReconcileOrderGroup, aggregate *WiseWebhookReconcileResult) {
+	if group == nil || group.provider == nil || aggregate == nil {
+		return
+	}
+	if batchProvider, ok := group.provider.(wiseBatchOrderQuerier); ok {
+		tradeNos := make([]string, 0, len(group.orders))
+		for _, order := range group.orders {
+			if order == nil {
+				continue
+			}
+			tradeNos = append(tradeNos, order.OutTradeNo)
+		}
+		responses, err := batchProvider.QueryOrders(ctx, tradeNos)
+		if err != nil {
+			slog.Warn("wise pending order batch reconcile failed", "providerGroup", group.key, "orders", len(group.orders), "error", err)
+			return
+		}
+		for _, order := range group.orders {
+			if order == nil {
+				continue
+			}
+			orderResult, err := s.handleWiseQueryOrderResponse(ctx, order, responses[strings.TrimSpace(order.OutTradeNo)])
+			s.mergeWiseReconcileResult(aggregate, order, orderResult, err)
+		}
+		return
+	}
+
+	for _, order := range group.orders {
+		if order == nil {
+			continue
+		}
+		resp, err := group.provider.QueryOrder(ctx, order.OutTradeNo)
+		if err != nil {
+			err = fmt.Errorf("query wise order %s: %w", order.OutTradeNo, err)
+		}
+		orderResult, handleErr := s.handleWiseQueryOrderResponse(ctx, order, resp)
+		if err == nil {
+			err = handleErr
+		}
+		s.mergeWiseReconcileResult(aggregate, order, orderResult, err)
+	}
+}
+
+func (s *PaymentService) mergeWiseReconcileResult(aggregate *WiseWebhookReconcileResult, order *dbent.PaymentOrder, orderResult *WiseWebhookReconcileResult, err error) {
+	if err != nil {
+		orderID := int64(0)
+		outTradeNo := ""
+		if order != nil {
+			orderID = order.ID
+			outTradeNo = order.OutTradeNo
+		}
+		slog.Warn("wise pending order reconcile failed", "orderID", orderID, "outTradeNo", outTradeNo, "error", err)
+		return
+	}
+	if aggregate == nil || orderResult == nil {
+		return
+	}
+	if orderResult.Matched {
+		aggregate.Matched = true
+	}
+	if orderResult.AutoFulfill {
+		aggregate.AutoFulfill = true
+		aggregate.Fulfilled++
+		if aggregate.OrderID == "" {
+			aggregate.OrderID = orderResult.OrderID
+			aggregate.TradeNo = orderResult.TradeNo
+		}
+	}
+}
+
 func wiseReconcileCutoff(now time.Time) time.Time {
 	return now.Add(-wiseReconcileWindow)
 }
@@ -162,6 +287,10 @@ func (s *PaymentService) ReconcileWiseOrderByOutTradeNo(ctx context.Context, out
 	if err != nil {
 		return nil, fmt.Errorf("query wise order %s: %w", order.OutTradeNo, err)
 	}
+	return s.handleWiseQueryOrderResponse(ctx, order, resp)
+}
+
+func (s *PaymentService) handleWiseQueryOrderResponse(ctx context.Context, order *dbent.PaymentOrder, resp *payment.QueryOrderResponse) (*WiseWebhookReconcileResult, error) {
 	if resp == nil {
 		return &WiseWebhookReconcileResult{
 			Matched:     false,

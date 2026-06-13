@@ -145,6 +145,67 @@ func TestReconcilePendingWiseOrdersScansBeyondFirstPage(t *testing.T) {
 	require.Equal(t, "event_verified_no_auto_fulfill", result.Reason)
 }
 
+func TestReconcilePendingWiseOrdersBatchesProviderStatementQuery(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("wise-batch-page@example.com").
+		SetPasswordHash("hash").
+		SetUsername("wise-batch-page-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	responses := make(map[string]*payment.QueryOrderResponse, pendingWiseReconcileLimit+1)
+	for i := 0; i < pendingWiseReconcileLimit+1; i++ {
+		outTradeNo := fmt.Sprintf("sub2_wise_batch_page_%03d", i)
+		_, err := client.PaymentOrder.Create().
+			SetUserID(user.ID).
+			SetUserEmail(user.Email).
+			SetUserName(user.Username).
+			SetAmount(88).
+			SetPayAmount(88).
+			SetFeeRate(0).
+			SetRechargeCode(fmt.Sprintf("WISE-BATCH-PAGE-%03d", i)).
+			SetOutTradeNo(outTradeNo).
+			SetPaymentType(payment.TypeWise).
+			SetPaymentTradeNo(fmt.Sprintf("wise-upstream-batch-page-%03d", i)).
+			SetOrderType(payment.OrderTypeBalance).
+			SetStatus(OrderStatusPending).
+			SetExpiresAt(time.Now().Add(time.Hour)).
+			SetClientIP("127.0.0.1").
+			SetSrcHost("api.example.com").
+			Save(ctx)
+		require.NoError(t, err)
+		responses[outTradeNo] = &payment.QueryOrderResponse{
+			TradeNo: outTradeNo,
+			Status:  payment.ProviderStatusPending,
+			Metadata: map[string]string{
+				"reconcile_decision": "no_match",
+				"reconcile_reason":   "activity_not_found",
+			},
+		}
+	}
+
+	provider := &wiseBatchReconcileProvider{responses: responses}
+	registry := payment.NewRegistry()
+	registry.Register(provider)
+	svc := &PaymentService{
+		entClient:       client,
+		registry:        registry,
+		providersLoaded: true,
+	}
+
+	result, err := svc.ReconcilePendingWiseOrders(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, pendingWiseReconcileLimit+1, result.Scanned)
+	require.Equal(t, 1, provider.batchCalls)
+	require.Equal(t, 0, provider.queryCalls)
+	require.Len(t, provider.lastBatchTradeNos, pendingWiseReconcileLimit+1)
+	require.Equal(t, "event_verified_no_auto_fulfill", result.Reason)
+}
+
 func TestReconcilePendingWiseOrdersAutoFulfillsExpiredOrderInsideWindow(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentOrderLifecycleTestClient(t)
@@ -764,4 +825,67 @@ func TestWiseWebhookEventIsReconcileTrigger(t *testing.T) {
 	require.False(t, wiseWebhookEventIsReconcileTrigger(`{"event_type":"unsupported#event"}`))
 	require.False(t, wiseWebhookEventIsReconcileTrigger(`{"event_type":`))
 	require.False(t, wiseWebhookEventIsReconcileTrigger(`{}`))
+}
+
+type wiseBatchReconcileProvider struct {
+	responses         map[string]*payment.QueryOrderResponse
+	batchCalls        int
+	queryCalls        int
+	lastBatchTradeNos []string
+}
+
+func (p *wiseBatchReconcileProvider) Name() string {
+	return "wise-batch-reconcile-provider"
+}
+
+func (p *wiseBatchReconcileProvider) ProviderKey() string {
+	return payment.TypeWise
+}
+
+func (p *wiseBatchReconcileProvider) SupportedTypes() []payment.PaymentType {
+	return []payment.PaymentType{payment.TypeWise}
+}
+
+func (p *wiseBatchReconcileProvider) CreatePayment(context.Context, payment.CreatePaymentRequest) (*payment.CreatePaymentResponse, error) {
+	panic("unexpected call")
+}
+
+func (p *wiseBatchReconcileProvider) QueryOrder(context.Context, string) (*payment.QueryOrderResponse, error) {
+	p.queryCalls++
+	return &payment.QueryOrderResponse{
+		Status: payment.ProviderStatusPending,
+		Metadata: map[string]string{
+			"reconcile_decision": "no_match",
+			"reconcile_reason":   "activity_not_found",
+		},
+	}, nil
+}
+
+func (p *wiseBatchReconcileProvider) QueryOrders(_ context.Context, tradeNos []string) (map[string]*payment.QueryOrderResponse, error) {
+	p.batchCalls++
+	p.lastBatchTradeNos = append([]string(nil), tradeNos...)
+	result := make(map[string]*payment.QueryOrderResponse, len(tradeNos))
+	for _, tradeNo := range tradeNos {
+		if resp, ok := p.responses[tradeNo]; ok {
+			result[tradeNo] = resp
+			continue
+		}
+		result[tradeNo] = &payment.QueryOrderResponse{
+			TradeNo: tradeNo,
+			Status:  payment.ProviderStatusPending,
+			Metadata: map[string]string{
+				"reconcile_decision": "no_match",
+				"reconcile_reason":   "activity_not_found",
+			},
+		}
+	}
+	return result, nil
+}
+
+func (p *wiseBatchReconcileProvider) VerifyNotification(context.Context, string, map[string]string) (*payment.PaymentNotification, error) {
+	panic("unexpected call")
+}
+
+func (p *wiseBatchReconcileProvider) Refund(context.Context, payment.RefundRequest) (*payment.RefundResponse, error) {
+	panic("unexpected call")
 }

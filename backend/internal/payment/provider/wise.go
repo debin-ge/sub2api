@@ -137,6 +137,40 @@ func (w *Wise) QueryOrder(ctx context.Context, tradeNo string) (*payment.QueryOr
 		return nil, fmt.Errorf("wise query order: %w", err)
 	}
 
+	return w.queryOrderFromTransactions(outTradeNo, transactions), nil
+}
+
+func (w *Wise) QueryOrders(ctx context.Context, tradeNos []string) (map[string]*payment.QueryOrderResponse, error) {
+	normalized := make([]string, 0, len(tradeNos))
+	seen := make(map[string]struct{}, len(tradeNos))
+	for _, tradeNo := range tradeNos {
+		outTradeNo := strings.TrimSpace(tradeNo)
+		if outTradeNo == "" {
+			continue
+		}
+		if _, ok := seen[outTradeNo]; ok {
+			continue
+		}
+		seen[outTradeNo] = struct{}{}
+		normalized = append(normalized, outTradeNo)
+	}
+	if len(normalized) == 0 {
+		return map[string]*payment.QueryOrderResponse{}, nil
+	}
+
+	transactions, err := w.queryStatement(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("wise query orders: %w", err)
+	}
+
+	responses := make(map[string]*payment.QueryOrderResponse, len(normalized))
+	for _, outTradeNo := range normalized {
+		responses[outTradeNo] = w.queryOrderFromTransactions(outTradeNo, transactions)
+	}
+	return responses, nil
+}
+
+func (w *Wise) queryOrderFromTransactions(outTradeNo string, transactions []wiseTransaction) *payment.QueryOrderResponse {
 	strategy := wiseExactSettlementStrategy{}
 	order := wiseOrderContext{
 		OutTradeNo: outTradeNo,
@@ -168,7 +202,7 @@ func (w *Wise) QueryOrder(ctx context.Context, tradeNo string) (*payment.QueryOr
 			Amount:   tx.NetAmount.InexactFloat64(),
 			PaidAt:   paidAt,
 			Metadata: metadata,
-		}, nil
+		}
 	}
 
 	return &payment.QueryOrderResponse{
@@ -181,7 +215,7 @@ func (w *Wise) QueryOrder(ctx context.Context, tradeNo string) (*payment.QueryOr
 			"reconcile_decision":  "no_match",
 			"reconcile_reason":    "no_matching_transaction",
 		},
-	}, nil
+	}
 }
 
 func (w *Wise) VerifyNotification(ctx context.Context, rawBody string, headers map[string]string) (*payment.PaymentNotification, error) {

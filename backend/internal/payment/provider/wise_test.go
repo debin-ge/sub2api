@@ -381,6 +381,56 @@ func TestWiseQueryOrderFindsCompletedCreditStatementTransaction(t *testing.T) {
 	require.Equal(t, "auto_fulfill", resp.Metadata["reconcile_decision"])
 }
 
+func TestWiseQueryOrdersFetchesStatementOnceForMultipleOrders(t *testing.T) {
+	statement := `{
+		"transactions": [
+			{
+				"type": "CREDIT",
+				"date": "2026-06-12T10:20:30Z",
+				"referenceNumber": "wise-ref-1",
+				"amount": {"value": "12.34", "currency": "USD"},
+				"totalFees": {"value": "0", "currency": "USD"},
+				"details": {
+					"type": "DEPOSIT",
+					"description": "Payment received",
+					"paymentReference": "sub2_wise_batch_001"
+				}
+			},
+			{
+				"type": "CREDIT",
+				"date": "2026-06-12T10:21:30Z",
+				"referenceNumber": "wise-ref-2",
+				"amount": {"value": "56.78", "currency": "USD"},
+				"totalFees": {"value": "0", "currency": "USD"},
+				"details": {
+					"type": "DEPOSIT",
+					"description": "Payment received",
+					"paymentReference": "sub2_wise_batch_002"
+				}
+			}
+		]
+	}`
+	prov, req, cleanup := newWiseStatementTestProvider(t, statement)
+	defer cleanup()
+
+	responses, err := prov.QueryOrders(context.Background(), []string{
+		"sub2_wise_batch_001",
+		"sub2_wise_batch_002",
+		"sub2_wise_batch_001",
+		" ",
+	})
+	require.NoError(t, err)
+
+	require.Equal(t, 1, req.calls)
+	require.Len(t, responses, 2)
+	require.Equal(t, payment.ProviderStatusPaid, responses["sub2_wise_batch_001"].Status)
+	require.InDelta(t, 12.34, responses["sub2_wise_batch_001"].Amount, 0.000001)
+	require.Equal(t, "wise-ref-1", responses["sub2_wise_batch_001"].Metadata["wise_transaction_id"])
+	require.Equal(t, payment.ProviderStatusPaid, responses["sub2_wise_batch_002"].Status)
+	require.InDelta(t, 56.78, responses["sub2_wise_batch_002"].Amount, 0.000001)
+	require.Equal(t, "wise-ref-2", responses["sub2_wise_batch_002"].Metadata["wise_transaction_id"])
+}
+
 func TestWiseQueryOrderReturnsPaidWithFeeAndNetAmountMetadata(t *testing.T) {
 	const outTradeNo = "sub2_20260612AbCdEf12"
 	statement := `{
@@ -494,6 +544,7 @@ type wiseStatementTestRequest struct {
 	authorization string
 	accept        string
 	query         url.Values
+	calls         int
 }
 
 func newWiseStatementTestProvider(t *testing.T, statement string) (*Wise, *wiseStatementTestRequest, func()) {
@@ -501,6 +552,7 @@ func newWiseStatementTestProvider(t *testing.T, statement string) (*Wise, *wiseS
 
 	req := &wiseStatementTestRequest{}
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		req.calls++
 		req.path = r.URL.Path
 		req.authorization = r.Header.Get("Authorization")
 		req.accept = r.Header.Get("Accept")

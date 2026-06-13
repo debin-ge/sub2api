@@ -66,6 +66,21 @@ func TestValidateProviderRequest(t *testing.T) {
 			wantErr:        false,
 		},
 		{
+			name:           "valid wise provider",
+			providerKey:    payment.TypeWise,
+			providerName:   "Wise Provider",
+			supportedTypes: payment.TypeWise,
+			wantErr:        false,
+		},
+		{
+			name:           "wise rejects future wallet method",
+			providerKey:    payment.TypeWise,
+			providerName:   "Wise Provider",
+			supportedTypes: "wise,card",
+			wantErr:        true,
+			errContains:    "wise supports only wise payment type",
+		},
+		{
 			name:           "invalid provider key",
 			providerKey:    "invalid",
 			providerName:   "Name",
@@ -642,6 +657,81 @@ func TestUpdateProviderInstanceClearsAirwallexAccountID(t *testing.T) {
 	require.Equal(t, "client-id-test", cfg["clientId"])
 }
 
+func TestWiseExpiredOrdersInsideReconcileWindowProtectProviderInstance(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	svc := &PaymentConfigService{
+		entClient:     client,
+		encryptionKey: []byte("0123456789abcdef0123456789abcdef"),
+	}
+
+	instance, err := svc.CreateProviderInstance(ctx, CreateProviderInstanceRequest{
+		ProviderKey:    payment.TypeWise,
+		Name:           "wise-protected-expired",
+		Config:         validWiseProviderConfigForConfigService(t),
+		SupportedTypes: []string{payment.TypeWise},
+		Enabled:        true,
+	})
+	require.NoError(t, err)
+	createWiseExpiredProviderConfigOrder(t, ctx, client, instance, time.Now().Add(-time.Hour))
+
+	updated, err := svc.UpdateProviderInstance(ctx, instance.ID, UpdateProviderInstanceRequest{
+		Config: map[string]string{"profileId": "profile-updated"},
+	})
+	require.Nil(t, updated)
+	require.Error(t, err)
+	require.Equal(t, "PENDING_ORDERS", infraerrors.Reason(err))
+
+	updated, err = svc.UpdateProviderInstance(ctx, instance.ID, UpdateProviderInstanceRequest{
+		Enabled: boolPtrValue(false),
+	})
+	require.Nil(t, updated)
+	require.Error(t, err)
+	require.Equal(t, "PENDING_ORDERS", infraerrors.Reason(err))
+
+	err = svc.DeleteProviderInstance(ctx, instance.ID)
+	require.Error(t, err)
+	require.Equal(t, "PENDING_ORDERS", infraerrors.Reason(err))
+}
+
+func TestWiseExpiredOrdersOutsideReconcileWindowDoNotProtectProviderInstance(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	svc := &PaymentConfigService{
+		entClient:     client,
+		encryptionKey: []byte("0123456789abcdef0123456789abcdef"),
+	}
+
+	instance, err := svc.CreateProviderInstance(ctx, CreateProviderInstanceRequest{
+		ProviderKey:    payment.TypeWise,
+		Name:           "wise-unprotected-expired",
+		Config:         validWiseProviderConfigForConfigService(t),
+		SupportedTypes: []string{payment.TypeWise},
+		Enabled:        true,
+	})
+	require.NoError(t, err)
+	createWiseExpiredProviderConfigOrder(t, ctx, client, instance, time.Now().Add(-wiseReconcileWindow-time.Hour))
+
+	updated, err := svc.UpdateProviderInstance(ctx, instance.ID, UpdateProviderInstanceRequest{
+		Config: map[string]string{"profileId": "profile-updated"},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+
+	updated, err = svc.UpdateProviderInstance(ctx, instance.ID, UpdateProviderInstanceRequest{
+		Enabled: boolPtrValue(false),
+	})
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+
+	err = svc.DeleteProviderInstance(ctx, instance.ID)
+	require.NoError(t, err)
+}
+
 func createPendingProviderConfigOrder(t *testing.T, ctx context.Context, client *dbent.Client, instance *dbent.PaymentProviderInstance) {
 	t.Helper()
 
@@ -675,6 +765,39 @@ func createPendingProviderConfigOrder(t *testing.T, ctx context.Context, client 
 	require.NoError(t, err)
 }
 
+func createWiseExpiredProviderConfigOrder(t *testing.T, ctx context.Context, client *dbent.Client, instance *dbent.PaymentProviderInstance, expiresAt time.Time) {
+	t.Helper()
+
+	user, err := client.User.Create().
+		SetEmail("provider-config-wise-expired@example.com").
+		SetPasswordHash("hash").
+		SetUsername("provider-config-wise-expired-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	instanceID := strconv.FormatInt(instance.ID, 10)
+	_, err = client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(88).
+		SetPayAmount(88).
+		SetFeeRate(0).
+		SetRechargeCode("EXPIRED-WISE-PROVIDER-CONFIG-" + instanceID).
+		SetOutTradeNo("sub2_expired_wise_provider_config_" + instanceID).
+		SetPaymentType(payment.TypeWise).
+		SetPaymentTradeNo("").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusExpired).
+		SetExpiresAt(expiresAt).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		SetProviderInstanceID(instanceID).
+		SetProviderKey(instance.ProviderKey).
+		Save(ctx)
+	require.NoError(t, err)
+}
+
 func providerPendingOrderPaymentType(providerKey string) string {
 	switch providerKey {
 	case payment.TypeWxpay:
@@ -688,6 +811,35 @@ func providerPendingOrderPaymentType(providerKey string) string {
 	default:
 		return payment.TypeAlipay
 	}
+}
+
+func validWiseProviderConfigForConfigService(t *testing.T) map[string]string {
+	t.Helper()
+
+	_, publicKeyPEM := newWiseConfigServiceWebhookKey(t)
+	return map[string]string{
+		"quickPayBaseUrl":    "https://wise.com/pay/business/account",
+		"apiBase":            "https://api.wise.com",
+		"apiToken":           "token-test",
+		"profileId":          "profile-123",
+		"balanceId":          "balance-123",
+		"currency":           "USD",
+		"webhookPublicKey":   publicKeyPEM,
+		"settlementStrategy": "exact_only",
+	}
+}
+
+func newWiseConfigServiceWebhookKey(t *testing.T) (*rsa.PrivateKey, string) {
+	t.Helper()
+
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	der, err := x509.MarshalPKIXPublicKey(&priv.PublicKey)
+	require.NoError(t, err)
+	return priv, string(pem.EncodeToMemory(&pem.Block{
+		Type:  "PUBLIC KEY",
+		Bytes: der,
+	}))
 }
 
 func validStripeProviderConfig(t *testing.T) map[string]string {
