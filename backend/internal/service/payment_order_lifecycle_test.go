@@ -796,6 +796,19 @@ func TestPaymentOrderQueryReferenceUsesOutTradeNoForOfficialProviders(t *testing
 	}))
 }
 
+func TestPaymentOrderQueryReferenceUsesOutTradeNoForWise(t *testing.T) {
+	t.Parallel()
+
+	order := &dbent.PaymentOrder{
+		PaymentType:    payment.TypeWise,
+		OutTradeNo:     "sub2_wise_123",
+		PaymentTradeNo: "wise-tx-123",
+	}
+	provider := &paymentOrderLifecycleQueryProvider{key: payment.TypeWise}
+
+	require.Equal(t, "sub2_wise_123", paymentOrderQueryReference(order, provider))
+}
+
 func newPaymentOrderLifecycleTestClient(t *testing.T) *dbent.Client {
 	t.Helper()
 

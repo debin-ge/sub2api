@@ -100,6 +100,18 @@ func TestWriteSuccessResponse(t *testing.T) {
 	}
 }
 
+func TestWriteSuccessResponseWiseReturnsEmpty200(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+
+	writeSuccessResponse(c, payment.TypeWise)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Empty(t, w.Body.String())
+}
+
 // TestUnknownOrderWebhookAcksWithSuccess exercises the response contract that
 // handleNotify relies on when HandlePaymentNotification returns ErrOrderNotFound:
 // we still need to emit the provider-specific 2xx so the provider stops
@@ -185,6 +197,11 @@ func TestExtractOutTradeNo(t *testing.T) {
 			assert.Equal(t, tt.want, extractOutTradeNo(tt.rawBody, tt.providerKey))
 		})
 	}
+}
+
+func TestExtractOutTradeNoWiseReturnsEmptyBecauseWebhookTriggersReconcile(t *testing.T) {
+	got := extractOutTradeNo(`{"event_type":"balances#credit"}`, payment.TypeWise)
+	require.Empty(t, got)
 }
 
 func TestVerifyNotificationWithProvidersReturnsMatchedProvider(t *testing.T) {
