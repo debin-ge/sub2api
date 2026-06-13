@@ -2,8 +2,11 @@ package provider
 
 import (
 	"context"
+	"crypto"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
@@ -182,7 +185,18 @@ func (w *Wise) QueryOrder(ctx context.Context, tradeNo string) (*payment.QueryOr
 }
 
 func (w *Wise) VerifyNotification(ctx context.Context, rawBody string, headers map[string]string) (*payment.PaymentNotification, error) {
-	return nil, fmt.Errorf("wise VerifyNotification not implemented")
+	_ = ctx
+	if err := verifyWiseWebhookSignature(rawBody, headers, w.config["webhookPublicKey"]); err != nil {
+		return nil, err
+	}
+	var event wiseWebhookEvent
+	if err := json.Unmarshal([]byte(rawBody), &event); err != nil {
+		return nil, fmt.Errorf("wise parse webhook: %w", err)
+	}
+	if !wiseWebhookEventSupported(event.EventType) {
+		return nil, nil
+	}
+	return nil, nil
 }
 
 func (w *Wise) Refund(ctx context.Context, req payment.RefundRequest) (*payment.RefundResponse, error) {
@@ -216,6 +230,47 @@ func parseWiseWebhookPublicKey(raw string) (*rsa.PublicKey, error) {
 		return nil, fmt.Errorf("wise webhookPublicKey must be an RSA public key")
 	}
 	return rsaPub, nil
+}
+
+type wiseWebhookEvent struct {
+	EventType string `json:"event_type"`
+	Data      struct {
+		Resource struct {
+			ID        string `json:"id"`
+			ProfileID string `json:"profile_id"`
+			AccountID string `json:"account_id"`
+			Type      string `json:"type"`
+		} `json:"resource"`
+	} `json:"data"`
+}
+
+func wiseWebhookEventSupported(eventType string) bool {
+	switch strings.TrimSpace(eventType) {
+	case "balances#credit", "balances#update", "account-details-payment#state-change":
+		return true
+	default:
+		return false
+	}
+}
+
+func verifyWiseWebhookSignature(rawBody string, headers map[string]string, publicKeyPEM string) error {
+	header := strings.TrimSpace(headers["x-signature-sha256"])
+	if header == "" {
+		return fmt.Errorf("wise notification missing x-signature-sha256 header")
+	}
+	signatureBytes, err := base64.StdEncoding.DecodeString(header)
+	if err != nil {
+		return fmt.Errorf("wise invalid signature")
+	}
+	publicKey, err := parseWiseWebhookPublicKey(publicKeyPEM)
+	if err != nil {
+		return err
+	}
+	digest := sha256.Sum256([]byte(rawBody))
+	if err := rsa.VerifyPKCS1v15(publicKey, crypto.SHA256, digest[:], signatureBytes); err != nil {
+		return fmt.Errorf("wise invalid signature")
+	}
+	return nil
 }
 
 func (w *Wise) currency() string {

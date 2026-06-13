@@ -4,10 +4,14 @@ package provider
 
 import (
 	"context"
+	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
@@ -144,6 +148,131 @@ func testWiseECDSAPublicKeyPEM(t *testing.T) string {
 		Type:  "PUBLIC KEY",
 		Bytes: der,
 	}))
+}
+
+func TestWiseVerifyNotificationVerifiesRSASignature(t *testing.T) {
+	t.Parallel()
+
+	prov, priv := newWiseWebhookTestProvider(t)
+	rawBody := `{"event_type":"balances#credit","data":{"resource":{"id":"transfer-123","profile_id":"profile-123","account_id":"balance-123","type":"balance"}}}`
+	headers := map[string]string{
+		"x-signature-sha256": testWiseWebhookSignature(t, priv, rawBody),
+	}
+
+	notification, err := prov.VerifyNotification(context.Background(), rawBody, headers)
+	require.NoError(t, err)
+	require.Nil(t, notification)
+}
+
+func TestWiseVerifyNotificationRejectsInvalidSignature(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		signature func(t *testing.T, priv *rsa.PrivateKey, rawBody string) string
+	}{
+		{
+			name: "invalid base64",
+			signature: func(t *testing.T, _ *rsa.PrivateKey, _ string) string {
+				t.Helper()
+				return "not-base64!"
+			},
+		},
+		{
+			name: "mismatched signature",
+			signature: func(t *testing.T, priv *rsa.PrivateKey, _ string) string {
+				t.Helper()
+				return testWiseWebhookSignature(t, priv, `{"event_type":"balances#update"}`)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			prov, priv := newWiseWebhookTestProvider(t)
+			rawBody := `{"event_type":"balances#credit"}`
+			headers := map[string]string{
+				"x-signature-sha256": tt.signature(t, priv, rawBody),
+			}
+
+			notification, err := prov.VerifyNotification(context.Background(), rawBody, headers)
+			require.ErrorContains(t, err, "invalid signature")
+			require.Nil(t, notification)
+		})
+	}
+}
+
+func TestWiseVerifyNotificationRejectsMissingSignature(t *testing.T) {
+	t.Parallel()
+
+	prov, _ := newWiseWebhookTestProvider(t)
+
+	notification, err := prov.VerifyNotification(context.Background(), `{"event_type":"balances#credit"}`, nil)
+	require.ErrorContains(t, err, "missing x-signature-sha256")
+	require.Nil(t, notification)
+}
+
+func TestWiseVerifyNotificationIgnoresUnsupportedEventWithValidSignature(t *testing.T) {
+	t.Parallel()
+
+	prov, priv := newWiseWebhookTestProvider(t)
+	rawBody := `{"event_type":"unsupported#event","data":{"resource":{"id":"resource-123"}}}`
+	headers := map[string]string{
+		"x-signature-sha256": testWiseWebhookSignature(t, priv, rawBody),
+	}
+
+	notification, err := prov.VerifyNotification(context.Background(), rawBody, headers)
+	require.NoError(t, err)
+	require.Nil(t, notification)
+}
+
+func TestWiseVerifyNotificationRejectsMalformedJSONWithValidSignature(t *testing.T) {
+	t.Parallel()
+
+	prov, priv := newWiseWebhookTestProvider(t)
+	rawBody := `{"event_type":`
+	headers := map[string]string{
+		"x-signature-sha256": testWiseWebhookSignature(t, priv, rawBody),
+	}
+
+	notification, err := prov.VerifyNotification(context.Background(), rawBody, headers)
+	require.ErrorContains(t, err, "wise parse webhook")
+	require.Nil(t, notification)
+}
+
+func newWiseWebhookTestProvider(t *testing.T) (*Wise, *rsa.PrivateKey) {
+	t.Helper()
+
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+
+	cfg := validWiseConfig()
+	cfg["webhookPublicKey"] = testWiseRSAPublicKeyPEM(t, &priv.PublicKey)
+	prov, err := NewWise("1", cfg)
+	require.NoError(t, err)
+	return prov, priv
+}
+
+func testWiseRSAPublicKeyPEM(t *testing.T, publicKey *rsa.PublicKey) string {
+	t.Helper()
+
+	der, err := x509.MarshalPKIXPublicKey(publicKey)
+	require.NoError(t, err)
+	return string(pem.EncodeToMemory(&pem.Block{
+		Type:  "PUBLIC KEY",
+		Bytes: der,
+	}))
+}
+
+func testWiseWebhookSignature(t *testing.T, priv *rsa.PrivateKey, rawBody string) string {
+	t.Helper()
+
+	digest := sha256.Sum256([]byte(rawBody))
+	signature, err := rsa.SignPKCS1v15(rand.Reader, priv, crypto.SHA256, digest[:])
+	require.NoError(t, err)
+	return base64.StdEncoding.EncodeToString(signature)
 }
 
 func TestWiseCreatePaymentBuildsQuickPayURL(t *testing.T) {
