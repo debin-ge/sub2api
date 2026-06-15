@@ -23,3 +23,10 @@ describe('AppSidebar header styles', () => {
     expect(componentSource).not.toContain("from '@/components/common/VersionBadge.vue'")
   })
 })
+
+describe('AppSidebar docs entry', () => {
+  it('does not render docs as an in-app sidebar navigation item', () => {
+    expect(componentSource).not.toContain("{ path: '/docs'")
+    expect(componentSource).not.toContain('DocsIcon')
+  })
+})

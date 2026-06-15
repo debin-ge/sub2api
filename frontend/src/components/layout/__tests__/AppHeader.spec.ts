@@ -12,4 +12,10 @@ describe('AppHeader user menu', () => {
     expect(componentSource).not.toContain('https://github.com/Wei-Shaw/sub2api')
     expect(componentSource).not.toContain("t('nav.github')")
   })
+
+  it('opens the built-in docs page from the header', () => {
+    expect(componentSource).toContain('href="/docs"')
+    expect(componentSource).toContain('target="_blank"')
+    expect(componentSource).not.toContain('docUrl')
+  })
 })

@@ -5,13 +5,13 @@
 填写你的 Sub2API 部署地址，例如：
 
 ```text
-https://your-sub2api.example.com
+https://tiktoken.net/
 ```
 
 如果 SDK 要求填写 OpenAI 风格 `baseURL`，通常需要指向 `/v1`：
 
 ```text
-https://your-sub2api.example.com/v1
+https://tiktoken.net/v1
 ```
 
 如果管理员提供了带路径的地址，请以管理员给出的完整地址为准，避免重复拼接 `/v1`。
@@ -21,14 +21,14 @@ https://your-sub2api.example.com/v1
 推荐使用 Bearer Token：
 
 ```http
-Authorization: Bearer sk-your-key
+Authorization: Bearer $YOUR_KEY
 ```
 
 curl 中可以写成：
 
 ```bash
-curl "$BASE_URL/v1/models" \
-  -H "Authorization: Bearer $SUB2API_KEY"
+curl "${BASE_URL}v1/models" \
+  -H "Authorization: Bearer $YOUR_KEY"
 ```
 
 部分兼容客户端可能使用 `api-key`、`x-api-key` 或 SDK 配置项。除非管理员或客户端要求其他方式，优先使用 `Authorization` 请求头。
@@ -77,8 +77,8 @@ curl "$BASE_URL/v1/models" \
 建议先调用：
 
 ```bash
-curl "$BASE_URL/v1/models" \
-  -H "Authorization: Bearer $SUB2API_KEY"
+curl "${BASE_URL}v1/models" \
+  -H "Authorization: Bearer $YOUR_KEY"
 ```
 
 然后用返回的模型名发起最小请求。如果最小请求仍失败，请把错误码、请求路径、模型名和时间点提供给管理员排查，注意不要发送完整 API Key。

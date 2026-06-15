@@ -3,8 +3,8 @@
 This page shows how to send your first request through Sub2API. Replace the placeholder address and key with your own deployment information.
 
 ```bash
-export BASE_URL="https://your-sub2api.example.com"
-export SUB2API_KEY="sk-your-key"
+export BASE_URL="https://tiktoken.net/"
+export YOUR_KEY="your-api-key"
 ```
 
 ## 1. Confirm the Base URL
@@ -12,7 +12,7 @@ export SUB2API_KEY="sk-your-key"
 The Base URL is the address of your Sub2API deployment, for example:
 
 ```text
-https://your-sub2api.example.com
+https://tiktoken.net/
 ```
 
 The examples below use `$BASE_URL`. If your deployment is behind a reverse proxy path, use the full address provided by your admin.
@@ -22,13 +22,13 @@ The examples below use `$BASE_URL`. If your deployment is behind a reverse proxy
 Sub2API API Keys are usually passed through HTTP Bearer authentication:
 
 ```http
-Authorization: Bearer sk-your-key
+Authorization: Bearer $YOUR_KEY
 ```
 
-The command-line examples use `$SUB2API_KEY`:
+The command-line examples use `$YOUR_KEY`:
 
 ```bash
-export SUB2API_KEY="sk-your-key"
+export YOUR_KEY="your-api-key"
 ```
 
 Do not expose real keys in frontend code, logs, or public repositories.
@@ -38,8 +38,8 @@ Do not expose real keys in frontend code, logs, or public repositories.
 Query `/v1/models` first to confirm that the key is valid and to see the models actually available to the current group.
 
 ```bash
-curl "$BASE_URL/v1/models" \
-  -H "Authorization: Bearer $SUB2API_KEY"
+curl "${BASE_URL}v1/models" \
+  -H "Authorization: Bearer $YOUR_KEY"
 ```
 
 The response depends on deployment configuration. The model list is affected by the API Key's group, upstream accounts, model mappings, channel pricing, and admin settings.
@@ -49,8 +49,8 @@ The response depends on deployment configuration. The model list is affected by 
 If your client uses the OpenAI Chat Completions format, call `/v1/chat/completions`:
 
 ```bash
-curl "$BASE_URL/v1/chat/completions" \
-  -H "Authorization: Bearer $SUB2API_KEY" \
+curl "${BASE_URL}v1/chat/completions" \
+  -H "Authorization: Bearer $YOUR_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gpt-4o-mini",
@@ -67,8 +67,8 @@ If the example model is not available, use a model name returned by `/v1/models`
 If your client uses the Anthropic Messages format, call `/v1/messages`:
 
 ```bash
-curl "$BASE_URL/v1/messages" \
-  -H "Authorization: Bearer $SUB2API_KEY" \
+curl "${BASE_URL}v1/messages" \
+  -H "Authorization: Bearer $YOUR_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "claude-3-5-sonnet-latest",
@@ -86,7 +86,17 @@ If the deployment has not enabled the Anthropic compatible endpoint or model map
 | Check | Description |
 | --- | --- |
 | Base URL | Make sure there are no extra paths, spaces, or typos. |
-| API Key | Use `Authorization: Bearer $SUB2API_KEY`. |
+| API Key | Use `Authorization: Bearer $YOUR_KEY`. |
 | Model name | Prefer names returned by `/v1/models`. |
 | Endpoint format | OpenAI, Anthropic, Gemini, and other APIs use different request body formats. Do not mix them directly. |
 | Permissions | 403, 404, or model unavailable errors are often related to groups, channels, or model mappings. |
+
+## 7. Next Steps
+
+| Next step | Document |
+| --- | --- |
+| Understand key permissions and security | API Keys and Accounts. |
+| Integrate a specific SDK or command-line tool | Client Integration. |
+| Copy complete configuration templates | Copy-Ready Configuration Snippets. |
+| Choose models and endpoints | Models and Platforms, Endpoint Selection Guide. |
+| Fix failed requests | Troubleshooting. |

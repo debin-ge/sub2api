@@ -5,13 +5,13 @@
 Use the address of your Sub2API deployment, for example:
 
 ```text
-https://your-sub2api.example.com
+https://tiktoken.net/
 ```
 
 If an SDK asks for an OpenAI-style `baseURL`, it usually needs to point to `/v1`:
 
 ```text
-https://your-sub2api.example.com/v1
+https://tiktoken.net/v1
 ```
 
 If your admin provides an address with a path, use that full address and avoid appending `/v1` twice.
@@ -21,14 +21,14 @@ If your admin provides an address with a path, use that full address and avoid a
 Prefer Bearer tokens:
 
 ```http
-Authorization: Bearer sk-your-key
+Authorization: Bearer $YOUR_KEY
 ```
 
 With curl:
 
 ```bash
-curl "$BASE_URL/v1/models" \
-  -H "Authorization: Bearer $SUB2API_KEY"
+curl "${BASE_URL}v1/models" \
+  -H "Authorization: Bearer $YOUR_KEY"
 ```
 
 Some compatible clients may use `api-key`, `x-api-key`, or SDK configuration fields. Unless your admin or client requires another method, use the `Authorization` header.
@@ -77,8 +77,8 @@ A model failure does not necessarily mean Sub2API is unavailable. Common causes 
 Start with:
 
 ```bash
-curl "$BASE_URL/v1/models" \
-  -H "Authorization: Bearer $SUB2API_KEY"
+curl "${BASE_URL}v1/models" \
+  -H "Authorization: Bearer $YOUR_KEY"
 ```
 
 Then send a minimal request with a returned model name. If the minimal request still fails, provide the status code, request path, model name, and request time to an admin. Do not send the full API Key.

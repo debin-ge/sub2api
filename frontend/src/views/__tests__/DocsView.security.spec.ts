@@ -16,6 +16,10 @@ vi.mock('@/stores', () => ({
     publicSettingsLoaded: true,
     fetchPublicSettings,
   }),
+  useAuthStore: () => ({
+    user: null,
+    isAdmin: false,
+  }),
 }))
 
 vi.mock('@/docs/registry', () => {
@@ -56,6 +60,7 @@ function createDocsRouter() {
     routes: [
       { path: '/home', component: { template: '<div>Home</div>' } },
       { path: '/login', component: { template: '<div>Login</div>' } },
+      { path: '/dashboard', component: { template: '<div>Dashboard</div>' } },
       { path: '/docs', component: DocsView },
       { path: '/docs/:slug', component: DocsView },
     ],
@@ -70,7 +75,7 @@ async function mountDocs() {
 
   const wrapper = mount(DocsView, {
     global: {
-      plugins: [router],
+      plugins: [router, i18n],
     },
   })
 

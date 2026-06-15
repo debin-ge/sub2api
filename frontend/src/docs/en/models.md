@@ -32,18 +32,62 @@ Model availability is usually determined by these factors:
 Start with:
 
 ```bash
-curl "$BASE_URL/v1/models" \
-  -H "Authorization: Bearer $SUB2API_KEY"
+curl "${BASE_URL}v1/models" \
+  -H "Authorization: Bearer $YOUR_KEY"
 ```
 
 For Gemini native clients, you can also check:
 
 ```bash
-curl "$BASE_URL/v1beta/models" \
-  -H "Authorization: Bearer $SUB2API_KEY"
+curl "${BASE_URL}v1beta/models" \
+  -H "Authorization: Bearer $YOUR_KEY"
 ```
 
 Do not treat example model names in the docs as guaranteed availability. Examples only explain request formats. Production clients should use model names returned by the API or mapping names explicitly provided by an admin.
+
+## Model Selection Method
+
+Choose models by task goal, not popularity:
+
+| Task type | Recommendation | Watch |
+| --- | --- | --- |
+| Classification, tagging, simple rewriting | Prefer lower-cost, low-latency models. | Cost, stability, throughput. |
+| Support chat and general conversation | Choose stable chat models with enough context. | First-token latency, answer quality, concurrency. |
+| Long summarization or knowledge base Q&A | Choose models with longer context and good retrieval behavior. | Context length, citation accuracy, cost. |
+| Complex reasoning, planning, analysis | Choose stronger reasoning models and cap output length. | Task success rate, output consistency. |
+| Code generation or review | Prefer models that work well with coding workflows, Responses, or tool calls. | Code correctness, context window, tool support. |
+| Embeddings and retrieval | Use dedicated embedding models instead of chat models. | Vector dimension, retrieval quality, cost. |
+| Image generation or editing | Use image models and image endpoints exposed by the deployment. | Size, quality, response time. |
+
+For cost-sensitive tasks, route most requests to a lower-cost model first and upgrade failed or high-risk cases to a stronger model.
+
+## Matching Models and Endpoints
+
+Model availability does not mean every endpoint is available. Confirm both model and endpoint:
+
+| Model or client type | Common endpoint | Notes |
+| --- | --- | --- |
+| OpenAI Chat compatible model | `/v1/chat/completions` | Request body uses `messages`. |
+| Responses compatible model | `/v1/responses` | Good for clients that support the Responses API. |
+| Claude or Anthropic compatible model | `/v1/messages` | Usually requires `max_tokens`. |
+| Gemini native model | `/v1beta/models/{model}:generateContent` | Request body uses `contents` and `parts`. |
+| Embedding model | `/v1/embeddings` | Input is text or an array of text. |
+| Image model | `/v1/images/generations`, `/v1/images/edits` | Parameters and file formats depend on upstream capability. |
+
+If you send a Gemini request body to an OpenAI endpoint, or OpenAI `messages` to a Gemini native endpoint, the request can fail even when the API Key has model permission.
+
+## Pre-Launch Validation
+
+Before using a model in production:
+
+1. Call `/v1/models` with the production API Key.
+2. Send a minimal non-streaming request using the same Base URL as production.
+3. If the business uses streaming, validate a streaming request too.
+4. Test output quality, latency, and failure rate with real prompt samples.
+5. Confirm pricing, quota, model mapping, and fallback channels with an admin.
+6. Keep a quick rollback path for model name and endpoint configuration.
+
+Treat model changes like product releases. When prompts, context length, output format, or tool calls matter, switching models can change result quality.
 
 ## When a Model Is Unavailable
 
@@ -56,3 +100,16 @@ Do not treat example model names in the docs as guaranteed availability. Example
 | Streaming request disconnects | Network, proxy, upstream rate limit, client timeout, or SSE parsing issue. |
 
 If your business needs a fixed model, ask an admin to confirm the model mapping, channel priority, pricing, and fallback channels instead of relying only on a hard-coded client-side model name.
+
+## Fallback Model Strategy
+
+High-availability workloads should prepare fallback models, but avoid automatic fallback to models with very different behavior.
+
+| Strategy | Best for |
+| --- | --- |
+| Same-capability fallback | Alternative models in the same API family for most production requests. |
+| Degraded model | Return a simpler result with a lower-cost model when a stronger model is unavailable. |
+| Human fallback | Compliance, finance, or critical business results that should not be guessed. |
+| Queue retry | Non-real-time tasks where delayed retry is safer than immediate model switching. |
+
+Fallback models should use the same endpoint format and pass minimal request validation ahead of time.

@@ -18,7 +18,7 @@ Sub2API 是一个面向多模型服务的统一 API 网关。它把不同上游�
 
 | 概念 | 说明 |
 | --- | --- |
-| Base URL | 当前 Sub2API 部署的访问地址，例如 `https://your-sub2api.example.com`。 |
+| Base URL | 当前 Sub2API 部署的访问地址，例如 `https://tiktoken.net/`。 |
 | API Key | 由 Sub2API 分发的访问密钥，通常以 `Bearer` Token 形式传入。 |
 | 分组 | 管理员用来控制用户可访问模型、渠道、价格和额度的配置单元。 |
 | 渠道 | Sub2API 连接到上游平台或账号的配置。不同渠道可支持不同模型和接口。 |
@@ -31,8 +31,8 @@ Sub2API 是一个面向多模型服务的统一 API 网关。它把不同上游�
 2. 设置环境变量：
 
 ```bash
-export BASE_URL="https://your-sub2api.example.com"
-export SUB2API_KEY="sk-your-key"
+export BASE_URL="https://tiktoken.net/"
+export YOUR_KEY="your-api-key"
 ```
 
 3. 调用 `/v1/models` 查看当前密钥实际可用的模型列表。
@@ -43,9 +43,20 @@ export SUB2API_KEY="sk-your-key"
 
 | 步骤 | 建议 |
 | --- | --- |
-| 验证密钥 | 先调用 `$BASE_URL/v1/models`，确认鉴权与模型列表正常。 |
+| 验证密钥 | 先调用 `${BASE_URL}v1/models`，确认鉴权与模型列表正常。 |
 | 选择接口 | OpenAI SDK 优先使用 `/v1/chat/completions` 或 `/v1/responses`；Claude 类客户端优先使用 `/v1/messages`；Gemini 原生客户端使用 `/v1beta` 路径。 |
 | 固定模型名 | 使用 `/v1/models` 返回的模型名，或管理员明确提供的映射名。 |
 | 开启流式 | 确认客户端支持流式响应后，再使用 `stream: true` 或 SSE 端点。 |
 | 排查失败 | 遇到 401、403、404、429 或上游 5xx 时，先确认密钥、分组、端点和模型是否匹配当前部署。 |
 
+## 文档阅读路径
+
+| 目标 | 建议阅读 |
+| --- | --- |
+| 第一次调用接口 | 先看快速开始，再看 API Key 与账户。 |
+| 配置具体客户端 | 查看客户端接入和可复制配置模板。 |
+| 不确定该用哪个接口 | 查看端点选择指南和 API 参考。 |
+| 不确定该用哪个模型 | 查看模型与平台中的选择方法。 |
+| 关注余额和成本 | 查看计费与用量。 |
+| 请求失败或结果异常 | 查看错误排查和常见问题。 |
+| 准备生产上线 | 查看最佳实践中的上线清单。 |

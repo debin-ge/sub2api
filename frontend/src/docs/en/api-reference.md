@@ -7,17 +7,17 @@ This page lists common Sub2API compatible endpoints. Actual support depends on t
 Most APIs use Bearer tokens:
 
 ```http
-Authorization: Bearer sk-your-key
+Authorization: Bearer $YOUR_KEY
 ```
 
 curl example:
 
 ```bash
-curl "$BASE_URL/v1/models" \
-  -H "Authorization: Bearer $SUB2API_KEY"
+curl "${BASE_URL}v1/models" \
+  -H "Authorization: Bearer $YOUR_KEY"
 ```
 
-Some compatible clients may send keys through `api-key`, `x-api-key`, or SDK-specific fields. Unless your admin says otherwise, prefer `Authorization: Bearer $SUB2API_KEY`.
+Some compatible clients may send keys through `api-key`, `x-api-key`, or SDK-specific fields. Unless your admin says otherwise, prefer `Authorization: Bearer $YOUR_KEY`.
 
 ## OpenAI Compatible Endpoints
 

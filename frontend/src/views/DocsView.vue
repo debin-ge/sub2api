@@ -18,7 +18,16 @@
           >
             {{ uiText.home }}
           </RouterLink>
+          <LocaleSwitcher />
           <RouterLink
+            v-if="authStore.user"
+            :to="dashboardPath"
+            class="inline-flex items-center justify-center rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-primary-600/20 transition hover:bg-primary-700"
+          >
+            {{ uiText.dashboard }}
+          </RouterLink>
+          <RouterLink
+            v-else
             to="/login"
             class="inline-flex items-center justify-center rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-primary-600/20 transition hover:bg-primary-700"
           >
@@ -61,9 +70,6 @@
                   @click="mobileNavOpen = false"
                 >
                   <span class="block truncate">{{ doc.title }}</span>
-                  <span class="mt-0.5 block line-clamp-2 text-xs font-normal text-gray-500 dark:text-dark-400">
-                    {{ doc.description }}
-                  </span>
                 </RouterLink>
               </div>
             </section>
@@ -158,7 +164,8 @@ import {
   type UserDocEntry,
 } from '@/docs/registry'
 import i18n from '@/i18n'
-import { useAppStore } from '@/stores'
+import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
+import { useAppStore, useAuthStore } from '@/stores'
 import { sanitizeUrl } from '@/utils/url'
 
 interface DocGroup {
@@ -174,6 +181,7 @@ interface TocItem {
 
 const route = useRoute()
 const appStore = useAppStore()
+const authStore = useAuthStore()
 
 const markdownContainer = ref<HTMLElement | null>(null)
 const renderedHtml = ref('')
@@ -198,6 +206,7 @@ const currentLocale = computed(() => normalizeUserDocLocale(String(i18n.global.l
 const localeDocs = computed(() => userDocsByLocale[currentLocale.value] ?? userDocsByLocale.zh)
 const currentDoc = computed(() => findUserDoc(routeSlug.value, currentLocale.value))
 const activeSlug = computed(() => currentDoc.value?.slug ?? routeSlug.value ?? defaultUserDocSlug)
+const dashboardPath = computed(() => authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
 const siteName = computed(() => appStore.cachedPublicSettings?.site_name || appStore.siteName || 'Sub2API')
 const siteLogo = computed(() => sanitizeUrl(appStore.cachedPublicSettings?.site_logo || appStore.siteLogo || '', {
   allowRelative: true,
@@ -207,6 +216,7 @@ const uiText = computed(() => currentLocale.value === 'zh'
   ? {
       home: '首页',
       login: '登录',
+      dashboard: '返回控制台',
       loadingSettings: '正在加载站点设置...',
       docNavigation: '文档导航',
       notFoundTitle: '文档不存在',
@@ -221,6 +231,7 @@ const uiText = computed(() => currentLocale.value === 'zh'
   : {
       home: 'Home',
       login: 'Log in',
+      dashboard: 'Back to Dashboard',
       loadingSettings: 'Loading site settings...',
       docNavigation: 'Documentation',
       notFoundTitle: 'Document Not Found',
