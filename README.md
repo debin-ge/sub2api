@@ -34,6 +34,10 @@ Demo credentials (shared demo environment; **not** created automatically for sel
 
 Sub2API is an AI API gateway platform designed to distribute and manage API quotas from AI product subscriptions. Users can access upstream AI services through platform-generated API Keys, while the platform handles authentication, billing, load balancing, and request forwarding.
 
+## User Docs
+
+After deployment, open the built-in user documentation center at `/docs`. It covers product introduction, quick start, API reference, supported models, client integration, error handling, and FAQ for end users and API consumers.
+
 ## Features
 
 - **Multi-Account Management** - Support multiple upstream account types (OAuth, API Key)
