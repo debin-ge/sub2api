@@ -1,13 +1,13 @@
 # 客户端接入
 
-本页给出常见客户端的完整接入路径：先验证密钥和模型，再配置 SDK 或工具，最后处理流式、超时和错误。请将示例中的 `https://tiktoken.net/` 替换为管理员提供的地址，并统一通过 `$YOUR_KEY` 传递 API Key。
+本页给出常见客户端的完整接入路径：先验证密钥和模型，再配置 SDK 或工具，最后处理流式、超时和错误。请将示例中的 `{{BASE_URL}}` 替换为管理员提供的地址，并统一通过 `$YOUR_KEY` 传递 API Key。
 
 ## 接入前准备
 
 先设置通用环境变量：
 
 ```bash
-export BASE_URL="https://tiktoken.net/"
+export BASE_URL="{{BASE_URL}}"
 export YOUR_KEY="replace-with-your-api-key"
 ```
 
@@ -31,7 +31,7 @@ curl "${BASE_URL}v1/chat/completions" \
   -d '{
     "model": "gpt-4o-mini",
     "messages": [
-      { "role": "user", "content": "你好，Sub2API。" }
+      { "role": "user", "content": "你好，{{SITE_NAME}}。" }
     ]
   }'
 ```
@@ -46,7 +46,7 @@ curl -N "${BASE_URL}v1/chat/completions" \
     "model": "gpt-4o-mini",
     "stream": true,
     "messages": [
-      { "role": "user", "content": "分三点介绍 Sub2API。" }
+      { "role": "user", "content": "分三点介绍 {{SITE_NAME}}。" }
     ]
   }'
 ```
@@ -58,7 +58,7 @@ curl -N "${BASE_URL}v1/chat/completions" \
 多数 OpenAI SDK 需要把 `baseURL` 配到 `/v1` 级别：
 
 ```bash
-export OPENAI_BASE_URL="https://tiktoken.net/v1"
+export OPENAI_BASE_URL="{{BASE_URL}}v1"
 export OPENAI_API_KEY="$YOUR_KEY"
 ```
 
@@ -72,7 +72,7 @@ const client = new OpenAI({
 
 const result = await client.chat.completions.create({
   model: 'gpt-4o-mini',
-  messages: [{ role: 'user', content: '用一句话介绍 Sub2API。' }],
+  messages: [{ role: 'user', content: '用一句话介绍 {{SITE_NAME}}。' }],
 })
 
 console.log(result.choices[0]?.message?.content)
@@ -97,7 +97,7 @@ for await (const chunk of stream) {
 ## OpenAI SDK Python
 
 ```bash
-export OPENAI_BASE_URL="https://tiktoken.net/v1"
+export OPENAI_BASE_URL="{{BASE_URL}}v1"
 export OPENAI_API_KEY="$YOUR_KEY"
 ```
 
@@ -109,21 +109,21 @@ client = OpenAI()
 response = client.chat.completions.create(
     model="gpt-4o-mini",
     messages=[
-        {"role": "user", "content": "用一句话介绍 Sub2API。"},
+        {"role": "user", "content": "用一句话介绍 {{SITE_NAME}}。"},
     ],
 )
 
 print(response.choices[0].message.content)
 ```
 
-如果出现 `404`，优先检查 `OPENAI_BASE_URL` 是否写成了 `https://tiktoken.net/v1/v1` 或缺少 `/v1`。
+如果出现 `404`，优先检查 `OPENAI_BASE_URL` 是否写成了 `{{BASE_URL}}v1/v1` 或缺少 `/v1`。
 
 ## Claude Code 环境变量
 
 Claude Code 或 Anthropic 兼容客户端通常需要 Anthropic Base URL 和 API Key。不同版本的客户端变量名可能不同，请以客户端自身文档为准；常见配置如下：
 
 ```bash
-export ANTHROPIC_BASE_URL="https://tiktoken.net/"
+export ANTHROPIC_BASE_URL="{{BASE_URL}}"
 export ANTHROPIC_AUTH_TOKEN="$YOUR_KEY"
 ```
 
@@ -157,7 +157,7 @@ Messages 请求通常需要 `max_tokens`。如果你把 OpenAI 的 `messages` �
 如果管理员提供 Antigravity Claude 兼容入口，可将客户端指向 `/antigravity` 路径：
 
 ```bash
-export ANTHROPIC_BASE_URL="https://tiktoken.net/antigravity"
+export ANTHROPIC_BASE_URL="{{BASE_URL}}antigravity"
 export ANTHROPIC_AUTH_TOKEN="$YOUR_KEY"
 ```
 
@@ -175,7 +175,7 @@ curl "${BASE_URL}v1beta/models/gemini-2.0-flash:generateContent" \
     "contents": [
       {
         "parts": [
-          { "text": "用一句话介绍 Sub2API。" }
+          { "text": "用一句话介绍 {{SITE_NAME}}。" }
         ]
       }
     ]
@@ -203,7 +203,7 @@ Gemini 原生端点不使用 OpenAI `messages` 格式。请使用当前部署支
 
 ## Codex `/v1/responses` 示例
 
-支持 Responses API 的编码客户端可指向 Sub2API 的 `/v1/responses`：
+支持 Responses API 的编码客户端可指向 {{SITE_NAME}} 的 `/v1/responses`：
 
 ```bash
 curl "${BASE_URL}v1/responses" \
@@ -221,7 +221,7 @@ curl "${BASE_URL}v1/responses" \
 
 | 项目 | 建议 |
 | --- | --- |
-| Base URL | 根地址用于 curl 拼接路径；OpenAI SDK 通常使用 `https://tiktoken.net/v1`。 |
+| Base URL | 根地址用于 curl 拼接路径；OpenAI SDK 通常使用 `{{BASE_URL}}v1`。 |
 | API Key | 使用 `$YOUR_KEY` 或客户端要求的环境变量，不要写入源码。 |
 | 模型名 | 以 `/v1/models`、`/v1beta/models` 或管理员映射说明为准。 |
 | 超时 | 长输出和流式请求需要更长的 HTTP、代理和负载均衡超时。 |

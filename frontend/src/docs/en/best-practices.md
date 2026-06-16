@@ -1,12 +1,12 @@
 # Best Practices
 
-This page is for users integrating Sub2API into business systems. The goal is stable requests, easier troubleshooting, controlled cost, and fewer key or configuration risks.
+This page is for users integrating {{SITE_NAME}} into business systems. The goal is stable requests, easier troubleshooting, controlled cost, and fewer key or configuration risks.
 
 ## Pre-Integration Checklist
 
 | Check | Recommendation |
 | --- | --- |
-| Base URL | Use `https://tiktoken.net/` or the full address provided by an admin. |
+| Base URL | Use `{{BASE_URL}}` or the full address provided by an admin. |
 | API Key | Use the `$YOUR_KEY` environment variable and do not write it into source code. |
 | Model list | Call `/v1/models` first to confirm models available to the current key. |
 | Endpoint format | Choose OpenAI, Anthropic, Gemini, or Antigravity format based on the client. |
@@ -17,9 +17,9 @@ This page is for users integrating Sub2API into business systems. The goal is st
 Keep configuration in environment variables or a secure configuration system:
 
 ```bash
-export BASE_URL="https://tiktoken.net/"
+export BASE_URL="{{BASE_URL}}"
 export YOUR_KEY="replace-with-your-api-key"
-export OPENAI_BASE_URL="https://tiktoken.net/v1"
+export OPENAI_BASE_URL="{{BASE_URL}}v1"
 export OPENAI_API_KEY="$YOUR_KEY"
 ```
 

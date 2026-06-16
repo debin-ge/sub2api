@@ -1,8 +1,8 @@
 # 产品概览
 
-Sub2API 是一个面向多模型服务的统一 API 网关。它把不同上游平台的模型、鉴权、额度、分组和计费配置收敛到同一套入口，方便应用侧用稳定的 Base URL 和 API Key 接入。
+{{SITE_NAME}} 是一个面向多模型服务的统一 API 网关。它把不同上游平台的模型、鉴权、额度、分组和计费配置收敛到同一套入口，方便应用侧用稳定的 Base URL 和 API Key 接入。
 
-实际可用能力取决于当前部署的管理配置，包括用户所在分组、上游账号状态、模型映射、渠道价格、额度策略和管理员启用的端点。不要假设每个 Sub2API 部署都支持全部模型或全部接口。
+实际可用能力取决于当前部署的管理配置，包括用户所在分组、上游账号状态、模型映射、渠道价格、额度策略和管理员启用的端点。不要假设每个 {{SITE_NAME}} 部署都支持全部模型或全部接口。
 
 ## 适用场景
 
@@ -18,12 +18,12 @@ Sub2API 是一个面向多模型服务的统一 API 网关。它把不同上游�
 
 | 概念 | 说明 |
 | --- | --- |
-| Base URL | 当前 Sub2API 部署的访问地址，例如 `https://tiktoken.net/`。 |
-| API Key | 由 Sub2API 分发的访问密钥，通常以 `Bearer` Token 形式传入。 |
+| Base URL | 当前 {{SITE_NAME}} 部署的访问地址，例如 `{{BASE_URL}}`。 |
+| API Key | 由 {{SITE_NAME}} 分发的访问密钥，通常以 `Bearer` Token 形式传入。 |
 | 分组 | 管理员用来控制用户可访问模型、渠道、价格和额度的配置单元。 |
-| 渠道 | Sub2API 连接到上游平台或账号的配置。不同渠道可支持不同模型和接口。 |
+| 渠道 | {{SITE_NAME}} 连接到上游平台或账号的配置。不同渠道可支持不同模型和接口。 |
 | 模型映射 | 管理员可以把用户请求中的模型名映射到实际上游模型。 |
-| 端点兼容层 | Sub2API 提供 OpenAI、Anthropic、Gemini、Antigravity 等风格的接口入口。 |
+| 端点兼容层 | {{SITE_NAME}} 提供 OpenAI、Anthropic、Gemini、Antigravity 等风格的接口入口。 |
 
 ## 基本调用流程
 
@@ -31,7 +31,7 @@ Sub2API 是一个面向多模型服务的统一 API 网关。它把不同上游�
 2. 设置环境变量：
 
 ```bash
-export BASE_URL="https://tiktoken.net/"
+export BASE_URL="{{BASE_URL}}"
 export YOUR_KEY="your-api-key"
 ```
 

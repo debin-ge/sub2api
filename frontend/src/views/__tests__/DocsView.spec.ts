@@ -7,6 +7,17 @@ import DocsView from '../DocsView.vue'
 import i18n from '@/i18n'
 
 const fetchPublicSettings = vi.fn()
+const appState = {
+  cachedPublicSettings: null as null | {
+    site_name?: string
+    site_logo?: string
+    api_base_url?: string
+  },
+  siteName: 'Sub2API',
+  siteLogo: '',
+  apiBaseUrl: '',
+  publicSettingsLoaded: true,
+}
 const authState = {
   user: null as null | { role: string },
   isAdmin: false,
@@ -14,10 +25,11 @@ const authState = {
 
 vi.mock('@/stores', () => ({
   useAppStore: () => ({
-    cachedPublicSettings: null,
-    siteName: 'Sub2API',
-    siteLogo: '',
-    publicSettingsLoaded: true,
+    cachedPublicSettings: appState.cachedPublicSettings,
+    siteName: appState.siteName,
+    siteLogo: appState.siteLogo,
+    apiBaseUrl: appState.apiBaseUrl,
+    publicSettingsLoaded: appState.publicSettingsLoaded,
     fetchPublicSettings,
   }),
   useAuthStore: () => authState,
@@ -57,6 +69,11 @@ async function mountDocs(path = '/docs') {
 describe('DocsView', () => {
   beforeEach(() => {
     fetchPublicSettings.mockReset()
+    appState.cachedPublicSettings = null
+    appState.siteName = 'Sub2API'
+    appState.siteLogo = ''
+    appState.apiBaseUrl = ''
+    appState.publicSettingsLoaded = true
     authState.user = null
     authState.isAdmin = false
     i18n.global.locale.value = 'en'
@@ -93,6 +110,23 @@ describe('DocsView', () => {
 
     expect(wrapper.text()).toContain('产品概览')
     expect(wrapper.text()).toContain('文档导航')
+  })
+
+  it('renders documentation with the configured site name and base URL', async () => {
+    appState.cachedPublicSettings = {
+      site_name: 'Acme AI',
+      site_logo: '',
+      api_base_url: 'https://api.acme.test/',
+    }
+    appState.siteName = 'Acme AI'
+    appState.apiBaseUrl = 'https://api.acme.test/'
+
+    const wrapper = await mountDocs('/docs/quickstart')
+
+    expect(wrapper.text()).toContain('Acme AI')
+    expect(wrapper.text()).toContain('https://api.acme.test/')
+    expect(wrapper.text()).not.toContain('Sub2API')
+    expect(wrapper.text()).not.toContain('tiktoken.net')
   })
 
   it('renders a language switcher in the docs header', async () => {

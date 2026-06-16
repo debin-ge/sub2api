@@ -1,11 +1,11 @@
 # 可复制配置模板
 
-本页提供可以直接复制后修改的配置模板。除非管理员提供了其他地址，否则示例使用 `https://tiktoken.net/` 作为 Base URL，并统一用 `$YOUR_KEY` 传递 API Key。
+本页提供可以直接复制后修改的配置模板。除非管理员提供了其他地址，否则示例使用 `{{BASE_URL}}` 作为 Base URL，并统一用 `$YOUR_KEY` 传递 API Key。
 
 ## 通用环境变量
 
 ```bash
-export BASE_URL="https://tiktoken.net/"
+export BASE_URL="{{BASE_URL}}"
 export YOUR_KEY="replace-with-your-api-key"
 ```
 
@@ -24,14 +24,14 @@ curl -i "${BASE_URL}v1/models" \
 import OpenAI from 'openai'
 
 const client = new OpenAI({
-  baseURL: process.env.OPENAI_BASE_URL ?? 'https://tiktoken.net/v1',
+  baseURL: process.env.OPENAI_BASE_URL ?? '{{BASE_URL}}v1',
   apiKey: process.env.OPENAI_API_KEY ?? process.env.YOUR_KEY,
 })
 
 const response = await client.chat.completions.create({
   model: 'gpt-4o-mini',
   messages: [
-    { role: 'user', content: '用一句话介绍 Sub2API。' },
+    { role: 'user', content: '用一句话介绍 {{SITE_NAME}}。' },
   ],
 })
 
@@ -41,7 +41,7 @@ console.log(response.choices[0]?.message?.content)
 推荐环境变量：
 
 ```bash
-export OPENAI_BASE_URL="https://tiktoken.net/v1"
+export OPENAI_BASE_URL="{{BASE_URL}}v1"
 export OPENAI_API_KEY="$YOUR_KEY"
 ```
 
@@ -52,14 +52,14 @@ import os
 from openai import OpenAI
 
 client = OpenAI(
-    base_url=os.getenv("OPENAI_BASE_URL", "https://tiktoken.net/v1"),
+    base_url=os.getenv("OPENAI_BASE_URL", "{{BASE_URL}}v1"),
     api_key=os.getenv("OPENAI_API_KEY") or os.getenv("YOUR_KEY"),
 )
 
 response = client.chat.completions.create(
     model="gpt-4o-mini",
     messages=[
-        {"role": "user", "content": "用一句话介绍 Sub2API。"},
+        {"role": "user", "content": "用一句话介绍 {{SITE_NAME}}。"},
     ],
 )
 
@@ -113,7 +113,7 @@ curl "${BASE_URL}v1/messages" \
 ## Claude Code 或 Anthropic 兼容客户端
 
 ```bash
-export ANTHROPIC_BASE_URL="https://tiktoken.net/"
+export ANTHROPIC_BASE_URL="{{BASE_URL}}"
 export ANTHROPIC_AUTH_TOKEN="$YOUR_KEY"
 ```
 
@@ -126,7 +126,7 @@ export ANTHROPIC_API_KEY="$YOUR_KEY"
 如果使用 Antigravity Claude 兼容入口：
 
 ```bash
-export ANTHROPIC_BASE_URL="https://tiktoken.net/antigravity"
+export ANTHROPIC_BASE_URL="{{BASE_URL}}antigravity"
 export ANTHROPIC_AUTH_TOKEN="$YOUR_KEY"
 ```
 
@@ -142,7 +142,7 @@ curl "${BASE_URL}v1beta/models/gemini-2.0-flash:generateContent" \
     "contents": [
       {
         "parts": [
-          { "text": "用一句话介绍 Sub2API。" }
+          { "text": "用一句话介绍 {{SITE_NAME}}。" }
         ]
       }
     ]
@@ -174,17 +174,17 @@ curl "${BASE_URL}v1/embeddings" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "text-embedding-3-small",
-    "input": "Sub2API 统一多模型 API 接入。"
+    "input": "{{SITE_NAME}} 统一多模型 API 接入。"
   }'
 ```
 
 ## 前端应用的安全代理
 
-不要在浏览器中直接暴露 API Key。前端应用应请求你自己的服务端接口，再由服务端调用 Sub2API：
+不要在浏览器中直接暴露 API Key。前端应用应请求你自己的服务端接口，再由服务端调用 {{SITE_NAME}}：
 
 ```ts
 // server-side only
-const response = await fetch('https://tiktoken.net/v1/chat/completions', {
+const response = await fetch('{{BASE_URL}}v1/chat/completions', {
   method: 'POST',
   headers: {
     Authorization: `Bearer ${process.env.YOUR_KEY}`,
@@ -201,8 +201,8 @@ const response = await fetch('https://tiktoken.net/v1/chat/completions', {
 
 | 占位项 | 替换为 |
 | --- | --- |
-| `$YOUR_KEY` | 你的 Sub2API API Key 环境变量。 |
+| `$YOUR_KEY` | 你的 {{SITE_NAME}} API Key 环境变量。 |
 | `gpt-4o-mini` | `/v1/models` 返回的 OpenAI 兼容模型。 |
 | `claude-3-5-sonnet-latest` | `/v1/models` 返回或管理员提供的 Anthropic 兼容模型。 |
 | `gemini-2.0-flash` | `/v1beta/models` 返回或管理员提供的 Gemini 模型。 |
-| `https://tiktoken.net/` | 管理员提供的部署地址。 |
+| `{{BASE_URL}}` | 管理员提供的部署地址。 |

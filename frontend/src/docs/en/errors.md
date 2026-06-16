@@ -1,6 +1,6 @@
 # Troubleshooting
 
-Sub2API errors may come from the gateway itself or from upstream platforms. When troubleshooting, first check the Base URL, API Key, endpoint path, model name, and current group permissions, then decide whether an admin needs to inspect configuration.
+{{SITE_NAME}} errors may come from the gateway itself or from upstream platforms. When troubleshooting, first check the Base URL, API Key, endpoint path, model name, and current group permissions, then decide whether an admin needs to inspect configuration.
 
 ## Troubleshooting Order
 
@@ -26,7 +26,7 @@ curl -i "${BASE_URL}v1/models" \
 | 401 | Unauthenticated | Missing API Key, wrong format, invalid key, or request header does not use Bearer. | Check `Authorization: Bearer $YOUR_KEY` and confirm the key has not expired or been deleted. |
 | 403 | No permission | The key is valid, but the group cannot access the model, channel, or endpoint. | Query `/v1/models` and ask an admin to check group, pricing, and model permissions. |
 | 404 | Not found | Missing path, disabled endpoint, wrong model name, or missing mapping. | Check the API family and path, and make sure the model name comes from the current deployment. |
-| 429 | Too many requests | Hit a Sub2API, upstream account, group, or client-side rate limit. | Lower concurrency, add retry backoff, or ask an admin to adjust limits and quotas. |
+| 429 | Too many requests | Hit a {{SITE_NAME}}, upstream account, group, or client-side rate limit. | Lower concurrency, add retry backoff, or ask an admin to adjust limits and quotas. |
 | 5xx | Service error | Upstream failure, network issue, channel misconfiguration, or internal service error. | Retry later, record the error and request time, and switch models or contact an admin if needed. |
 
 ## 401 Unauthenticated
@@ -68,7 +68,7 @@ Common causes:
 
 | Check | Example |
 | --- | --- |
-| Duplicated `/v1` | `https://tiktoken.net/v1/v1/chat/completions` is wrong. |
+| Duplicated `/v1` | `{{BASE_URL}}v1/v1/chat/completions` is wrong. |
 | Missing `/v1beta` | Gemini native requests need `/v1beta/models/...`. |
 | Missing `/antigravity` | Antigravity clients need the corresponding path. |
 | Model name exists | Use results from `/v1/models` or `/v1beta/models`. |
@@ -94,7 +94,7 @@ If the response is 404 or explicitly says the endpoint is unsupported, the deplo
 
 | Check | Example |
 | --- | --- |
-| OpenAI SDK | `baseURL` is usually `https://tiktoken.net/v1`. |
+| OpenAI SDK | `baseURL` is usually `{{BASE_URL}}v1`. |
 | Anthropic compatible | Usually requests `${BASE_URL}v1/messages`; avoid duplicated `/v1/v1/messages`. |
 | Gemini native | Use `${BASE_URL}v1beta/models/{model}:generateContent`. |
 | Antigravity | Use `${BASE_URL}antigravity/...` and confirm that the admin enabled it. |

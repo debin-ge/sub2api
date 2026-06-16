@@ -1,6 +1,6 @@
 # Billing and Usage
 
-Sub2API billing and usage views depend on the current deployment's groups, channel pricing, multipliers, quotas, and admin policies. Different deployments may use different rules, so this page explains the general concepts users should understand while integrating.
+{{SITE_NAME}} billing and usage views depend on the current deployment's groups, channel pricing, multipliers, quotas, and admin policies. Different deployments may use different rules, so this page explains the general concepts users should understand while integrating.
 
 ## How Usage Is Usually Generated
 

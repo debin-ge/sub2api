@@ -1,6 +1,6 @@
 # 错误排查
 
-Sub2API 错误可能来自网关本身，也可能来自上游平台。排查时先确认 Base URL、API Key、端点路径、模型名和当前分组权限，再判断是否需要联系管理员。
+{{SITE_NAME}} 错误可能来自网关本身，也可能来自上游平台。排查时先确认 Base URL、API Key、端点路径、模型名和当前分组权限，再判断是否需要联系管理员。
 
 ## 排查顺序
 
@@ -26,7 +26,7 @@ curl -i "${BASE_URL}v1/models" \
 | 401 | 未认证 | API Key 缺失、格式错误、密钥无效或请求头未使用 Bearer。 | 检查 `Authorization: Bearer $YOUR_KEY`，确认密钥未过期或被删除。 |
 | 403 | 无权限 | 密钥有效，但分组不允许访问该模型、渠道或端点。 | 查询 `/v1/models`，联系管理员检查分组、价格和模型权限。 |
 | 404 | 未找到 | 路径不存在、端点未启用、模型名错误或映射缺失。 | 核对接口族和路径，确认模型名来自当前部署返回结果。 |
-| 429 | 请求过多 | 命中 Sub2API、上游账号、分组或客户端侧速率限制。 | 降低并发，增加重试退避，或联系管理员调整限流和额度。 |
+| 429 | 请求过多 | 命中 {{SITE_NAME}}、上游账号、分组或客户端侧速率限制。 | 降低并发，增加重试退避，或联系管理员调整限流和额度。 |
 | 5xx | 服务错误 | 上游故障、网络异常、渠道配置错误、服务内部错误。 | 稍后重试，记录错误信息和请求时间，必要时切换模型或联系管理员。 |
 
 ## 401 未认证
@@ -68,7 +68,7 @@ curl -i "${BASE_URL}v1/models" \
 
 | 检查项 | 示例 |
 | --- | --- |
-| 是否重复 `/v1` | `https://tiktoken.net/v1/v1/chat/completions` 是错误路径。 |
+| 是否重复 `/v1` | `{{BASE_URL}}v1/v1/chat/completions` 是错误路径。 |
 | 是否缺少 `/v1beta` | Gemini 原生请求需要 `/v1beta/models/...`。 |
 | 是否缺少 `/antigravity` | Antigravity 客户端需要对应路径。 |
 | 模型名是否存在 | 使用 `/v1/models` 或 `/v1beta/models` 返回结果。 |
@@ -94,7 +94,7 @@ curl -i "${BASE_URL}v1/models" \
 
 | 检查项 | 示例 |
 | --- | --- |
-| OpenAI SDK | `baseURL` 通常应为 `https://tiktoken.net/v1`。 |
+| OpenAI SDK | `baseURL` 通常应为 `{{BASE_URL}}v1`。 |
 | Anthropic 兼容 | 通常请求 `${BASE_URL}v1/messages`，不要误拼成重复 `/v1/v1/messages`。 |
 | Gemini 原生 | 使用 `${BASE_URL}v1beta/models/{model}:generateContent`。 |
 | Antigravity | 使用 `${BASE_URL}antigravity/...`，并确认管理员已启用。 |

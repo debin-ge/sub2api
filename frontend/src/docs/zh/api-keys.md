@@ -1,6 +1,6 @@
 # API Key 与账户
 
-文档页面可以公开查看，但调用 Sub2API 接口需要有效的 API Key。API Key 决定了你能访问哪些模型、端点、分组额度和计费策略，因此接入前应先确认密钥来源、权限范围和安全保存方式。
+文档页面可以公开查看，但调用 {{SITE_NAME}} 接口需要有效的 API Key。API Key 决定了你能访问哪些模型、端点、分组额度和计费策略，因此接入前应先确认密钥来源、权限范围和安全保存方式。
 
 ## 登录与调用权限
 
@@ -30,7 +30,7 @@ API Key 一般来自管理员或控制台的密钥页面。拿到密钥后，先
 本项目文档统一使用以下环境变量：
 
 ```bash
-export BASE_URL="https://tiktoken.net/"
+export BASE_URL="{{BASE_URL}}"
 export YOUR_KEY="replace-with-your-api-key"
 ```
 
@@ -44,7 +44,7 @@ curl "${BASE_URL}v1/models" \
 如果某个 SDK 要求 Base URL 指向 `/v1`，可以单独设置：
 
 ```bash
-export OPENAI_BASE_URL="https://tiktoken.net/v1"
+export OPENAI_BASE_URL="{{BASE_URL}}v1"
 export OPENAI_API_KEY="$YOUR_KEY"
 ```
 

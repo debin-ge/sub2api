@@ -1,6 +1,6 @@
 # API Keys and Accounts
 
-The documentation can be viewed publicly, but API requests to Sub2API require a valid API Key. The key determines which models, endpoints, group quotas, and pricing rules you can use, so confirm the key source, permission scope, and storage method before integrating.
+The documentation can be viewed publicly, but API requests to {{SITE_NAME}} require a valid API Key. The key determines which models, endpoints, group quotas, and pricing rules you can use, so confirm the key source, permission scope, and storage method before integrating.
 
 ## Login and API Access
 
@@ -30,7 +30,7 @@ If you cannot see keys in the dashboard, ask an admin whether your account can c
 These docs use the following environment variables:
 
 ```bash
-export BASE_URL="https://tiktoken.net/"
+export BASE_URL="{{BASE_URL}}"
 export YOUR_KEY="replace-with-your-api-key"
 ```
 
@@ -44,7 +44,7 @@ curl "${BASE_URL}v1/models" \
 If an SDK expects the Base URL at the `/v1` level, configure a separate value:
 
 ```bash
-export OPENAI_BASE_URL="https://tiktoken.net/v1"
+export OPENAI_BASE_URL="{{BASE_URL}}v1"
 export OPENAI_API_KEY="$YOUR_KEY"
 ```
 

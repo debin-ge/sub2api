@@ -1,6 +1,6 @@
 # API Reference
 
-This page lists common Sub2API compatible endpoints. Actual support depends on the current deployment's routes, groups, upstream accounts, model mappings, channel pricing, and admin settings.
+This page lists common {{SITE_NAME}} compatible endpoints. Actual support depends on the current deployment's routes, groups, upstream accounts, model mappings, channel pricing, and admin settings.
 
 ## Authentication
 
@@ -68,7 +68,7 @@ Some compatible clients may send keys through `api-key`, `x-api-key`, or SDK-spe
 
 ## Responses and Errors
 
-Successful responses usually follow the corresponding compatible API structure. Errors may come from Sub2API itself or from an upstream platform. When troubleshooting, check:
+Successful responses usually follow the corresponding compatible API structure. Errors may come from {{SITE_NAME}} itself or from an upstream platform. When troubleshooting, check:
 
 1. Whether the API Key is correct.
 2. Whether the current group can access the model.

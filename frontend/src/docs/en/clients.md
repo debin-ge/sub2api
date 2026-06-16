@@ -1,13 +1,13 @@
 # Client Integration
 
-This page gives a full integration path for common clients: verify the key and models first, configure an SDK or tool next, then handle streaming, timeouts, and errors. Replace `https://tiktoken.net/` with the address provided by an admin, and pass the API Key through `$YOUR_KEY`.
+This page gives a full integration path for common clients: verify the key and models first, configure an SDK or tool next, then handle streaming, timeouts, and errors. Replace `{{BASE_URL}}` with the address provided by an admin, and pass the API Key through `$YOUR_KEY`.
 
 ## Before You Configure a Client
 
 Set common environment variables:
 
 ```bash
-export BASE_URL="https://tiktoken.net/"
+export BASE_URL="{{BASE_URL}}"
 export YOUR_KEY="replace-with-your-api-key"
 ```
 
@@ -31,7 +31,7 @@ curl "${BASE_URL}v1/chat/completions" \
   -d '{
     "model": "gpt-4o-mini",
     "messages": [
-      { "role": "user", "content": "Hello, Sub2API." }
+      { "role": "user", "content": "Hello, {{SITE_NAME}}." }
     ]
   }'
 ```
@@ -46,7 +46,7 @@ curl -N "${BASE_URL}v1/chat/completions" \
     "model": "gpt-4o-mini",
     "stream": true,
     "messages": [
-      { "role": "user", "content": "Explain Sub2API in three points." }
+      { "role": "user", "content": "Explain {{SITE_NAME}} in three points." }
     ]
   }'
 ```
@@ -58,7 +58,7 @@ If the example model is unavailable, use a model returned by `/v1/models`.
 Most OpenAI SDK configurations expect `baseURL` at the `/v1` level:
 
 ```bash
-export OPENAI_BASE_URL="https://tiktoken.net/v1"
+export OPENAI_BASE_URL="{{BASE_URL}}v1"
 export OPENAI_API_KEY="$YOUR_KEY"
 ```
 
@@ -72,7 +72,7 @@ const client = new OpenAI({
 
 const result = await client.chat.completions.create({
   model: 'gpt-4o-mini',
-  messages: [{ role: 'user', content: 'Introduce Sub2API in one sentence.' }],
+  messages: [{ role: 'user', content: 'Introduce {{SITE_NAME}} in one sentence.' }],
 })
 
 console.log(result.choices[0]?.message?.content)
@@ -97,7 +97,7 @@ If the environment variable already includes `/v1`, do not append `/v1` again in
 ## OpenAI SDK Python
 
 ```bash
-export OPENAI_BASE_URL="https://tiktoken.net/v1"
+export OPENAI_BASE_URL="{{BASE_URL}}v1"
 export OPENAI_API_KEY="$YOUR_KEY"
 ```
 
@@ -109,21 +109,21 @@ client = OpenAI()
 response = client.chat.completions.create(
     model="gpt-4o-mini",
     messages=[
-        {"role": "user", "content": "Introduce Sub2API in one sentence."},
+        {"role": "user", "content": "Introduce {{SITE_NAME}} in one sentence."},
     ],
 )
 
 print(response.choices[0].message.content)
 ```
 
-If you see `404`, first check whether `OPENAI_BASE_URL` became `https://tiktoken.net/v1/v1` or is missing `/v1`.
+If you see `404`, first check whether `OPENAI_BASE_URL` became `{{BASE_URL}}v1/v1` or is missing `/v1`.
 
 ## Claude Code Environment Variables
 
 Claude Code or Anthropic compatible clients usually need an Anthropic Base URL and API Key. Environment variable names vary by client version, so follow the client documentation. A common setup is:
 
 ```bash
-export ANTHROPIC_BASE_URL="https://tiktoken.net/"
+export ANTHROPIC_BASE_URL="{{BASE_URL}}"
 export ANTHROPIC_AUTH_TOKEN="$YOUR_KEY"
 ```
 
@@ -157,7 +157,7 @@ Messages requests usually require `max_tokens`. If you copy an OpenAI `messages`
 If an admin provides an Antigravity Claude compatible entry point, point the client to the `/antigravity` path:
 
 ```bash
-export ANTHROPIC_BASE_URL="https://tiktoken.net/antigravity"
+export ANTHROPIC_BASE_URL="{{BASE_URL}}antigravity"
 export ANTHROPIC_AUTH_TOKEN="$YOUR_KEY"
 ```
 
@@ -175,7 +175,7 @@ curl "${BASE_URL}v1beta/models/gemini-2.0-flash:generateContent" \
     "contents": [
       {
         "parts": [
-          { "text": "Introduce Sub2API in one sentence." }
+          { "text": "Introduce {{SITE_NAME}} in one sentence." }
         ]
       }
     ]
@@ -203,7 +203,7 @@ Gemini native endpoints do not use the OpenAI `messages` format. Use a Gemini mo
 
 ## Codex `/v1/responses` Example
 
-Coding clients that support the Responses API can point to Sub2API's `/v1/responses`:
+Coding clients that support the Responses API can point to {{SITE_NAME}}'s `/v1/responses`:
 
 ```bash
 curl "${BASE_URL}v1/responses" \
@@ -221,7 +221,7 @@ If the model or Responses API is not enabled in the current deployment, use an a
 
 | Item | Recommendation |
 | --- | --- |
-| Base URL | Use the root address for curl path joining; OpenAI SDKs usually use `https://tiktoken.net/v1`. |
+| Base URL | Use the root address for curl path joining; OpenAI SDKs usually use `{{BASE_URL}}v1`. |
 | API Key | Use `$YOUR_KEY` or the environment variable required by the client, and do not write keys into source code. |
 | Model name | Use `/v1/models`, `/v1beta/models`, or admin-provided mapping documentation. |
 | Timeout | Long outputs and streaming requests need longer HTTP, proxy, and load balancer timeouts. |

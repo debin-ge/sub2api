@@ -30,7 +30,7 @@ Choose endpoints based on your client and request format first, then the model. 
 Command-line examples use the root address:
 
 ```bash
-export BASE_URL="https://tiktoken.net/"
+export BASE_URL="{{BASE_URL}}"
 export YOUR_KEY="replace-with-your-api-key"
 ```
 
@@ -45,10 +45,10 @@ SDKs often need a more specific URL:
 
 | Client | Common Base URL |
 | --- | --- |
-| OpenAI SDK | `https://tiktoken.net/v1` |
-| Anthropic compatible clients | `https://tiktoken.net/` or the Anthropic Base URL required by the client. |
-| Gemini native clients | `https://tiktoken.net/`, with `/v1beta` in request paths. |
-| Antigravity clients | `https://tiktoken.net/antigravity` |
+| OpenAI SDK | `{{BASE_URL}}v1` |
+| Anthropic compatible clients | `{{BASE_URL}}` or the Anthropic Base URL required by the client. |
+| Gemini native clients | `{{BASE_URL}}`, with `/v1beta` in request paths. |
+| Antigravity clients | `{{BASE_URL}}antigravity` |
 
 If you see `/v1/v1`, `//v1`, or a missing `/v1beta`, the Base URL and the client's automatic path joining probably do not match.
 
@@ -101,7 +101,7 @@ Use `/antigravity/...` only when an admin provides an Antigravity compatible ent
 
 1. Whether the deployment enables Antigravity routes.
 2. Whether the API Key group exposes the related models.
-3. Whether the client Base URL points to `https://tiktoken.net/antigravity`.
+3. Whether the client Base URL points to `{{BASE_URL}}antigravity`.
 4. Whether request paths match the client's expectation.
 
 ## Endpoint Self-Check

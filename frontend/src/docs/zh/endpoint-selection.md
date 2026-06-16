@@ -30,7 +30,7 @@
 通用命令行示例使用根地址：
 
 ```bash
-export BASE_URL="https://tiktoken.net/"
+export BASE_URL="{{BASE_URL}}"
 export YOUR_KEY="replace-with-your-api-key"
 ```
 
@@ -45,10 +45,10 @@ SDK 通常要求更具体的地址：
 
 | 客户端 | 常见 Base URL |
 | --- | --- |
-| OpenAI SDK | `https://tiktoken.net/v1` |
-| Anthropic 兼容客户端 | `https://tiktoken.net/` 或客户端要求的 Anthropic Base URL。 |
-| Gemini 原生客户端 | `https://tiktoken.net/`，请求路径包含 `/v1beta`。 |
-| Antigravity 客户端 | `https://tiktoken.net/antigravity` |
+| OpenAI SDK | `{{BASE_URL}}v1` |
+| Anthropic 兼容客户端 | `{{BASE_URL}}` 或客户端要求的 Anthropic Base URL。 |
+| Gemini 原生客户端 | `{{BASE_URL}}`，请求路径包含 `/v1beta`。 |
+| Antigravity 客户端 | `{{BASE_URL}}antigravity` |
 
 如果出现 `/v1/v1`、`//v1` 或缺少 `/v1beta` 的路径，通常是 Base URL 和客户端自动拼接规则不匹配。
 
@@ -101,7 +101,7 @@ Gemini 原生示例：
 
 1. 当前部署是否启用 Antigravity 路由。
 2. API Key 所属分组是否开放相关模型。
-3. 客户端 Base URL 是否指向 `https://tiktoken.net/antigravity`。
+3. 客户端 Base URL 是否指向 `{{BASE_URL}}antigravity`。
 4. 请求路径是否与客户端期望一致。
 
 ## 端点选择自检

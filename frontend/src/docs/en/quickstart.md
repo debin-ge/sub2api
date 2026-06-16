@@ -1,25 +1,25 @@
 # Quick Start
 
-This page shows how to send your first request through Sub2API. Replace the placeholder address and key with your own deployment information.
+This page shows how to send your first request through {{SITE_NAME}}. Replace the placeholder address and key with your own deployment information.
 
 ```bash
-export BASE_URL="https://tiktoken.net/"
+export BASE_URL="{{BASE_URL}}"
 export YOUR_KEY="your-api-key"
 ```
 
 ## 1. Confirm the Base URL
 
-The Base URL is the address of your Sub2API deployment, for example:
+The Base URL is the address of your {{SITE_NAME}} deployment, for example:
 
 ```text
-https://tiktoken.net/
+{{BASE_URL}}
 ```
 
 The examples below use `$BASE_URL`. If your deployment is behind a reverse proxy path, use the full address provided by your admin.
 
 ## 2. Set the API Key
 
-Sub2API API Keys are usually passed through HTTP Bearer authentication:
+{{SITE_NAME}} API Keys are usually passed through HTTP Bearer authentication:
 
 ```http
 Authorization: Bearer $YOUR_KEY
@@ -55,7 +55,7 @@ curl "${BASE_URL}v1/chat/completions" \
   -d '{
     "model": "gpt-4o-mini",
     "messages": [
-      { "role": "user", "content": "Introduce Sub2API in one sentence." }
+      { "role": "user", "content": "Introduce {{SITE_NAME}} in one sentence." }
     ]
   }'
 ```
@@ -74,7 +74,7 @@ curl "${BASE_URL}v1/messages" \
     "model": "claude-3-5-sonnet-latest",
     "max_tokens": 256,
     "messages": [
-      { "role": "user", "content": "Introduce Sub2API in one sentence." }
+      { "role": "user", "content": "Introduce {{SITE_NAME}} in one sentence." }
     ]
   }'
 ```

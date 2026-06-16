@@ -1,8 +1,8 @@
 # Product Overview
 
-Sub2API is a unified API gateway for multi-model services. It brings model routing, authentication, quotas, groups, and billing configuration from different upstream platforms into one entry point, so applications can integrate through a stable Base URL and API Key.
+{{SITE_NAME}} is a unified API gateway for multi-model services. It brings model routing, authentication, quotas, groups, and billing configuration from different upstream platforms into one entry point, so applications can integrate through a stable Base URL and API Key.
 
-The features available in a specific deployment depend on its admin configuration, including the user's group, upstream account status, model mappings, channel pricing, quota policy, and enabled endpoints. Do not assume every Sub2API deployment supports every model or API.
+The features available in a specific deployment depend on its admin configuration, including the user's group, upstream account status, model mappings, channel pricing, quota policy, and enabled endpoints. Do not assume every {{SITE_NAME}} deployment supports every model or API.
 
 ## Use Cases
 
@@ -18,12 +18,12 @@ The features available in a specific deployment depend on its admin configuratio
 
 | Concept | Description |
 | --- | --- |
-| Base URL | The access address of the current Sub2API deployment, for example `https://tiktoken.net/`. |
-| API Key | The access key issued by Sub2API, usually sent as a `Bearer` token. |
+| Base URL | The access address of the current {{SITE_NAME}} deployment, for example `{{BASE_URL}}`. |
+| API Key | The access key issued by {{SITE_NAME}}, usually sent as a `Bearer` token. |
 | Group | A configuration unit admins use to control accessible models, channels, prices, and quotas. |
-| Channel | A Sub2API connection to an upstream platform or account. Different channels may support different models and APIs. |
+| Channel | A {{SITE_NAME}} connection to an upstream platform or account. Different channels may support different models and APIs. |
 | Model mapping | Admins can map the model name used in a request to a different upstream model. |
-| Endpoint compatibility layer | Sub2API provides OpenAI, Anthropic, Gemini, Antigravity, and similar API-style entry points. |
+| Endpoint compatibility layer | {{SITE_NAME}} provides OpenAI, Anthropic, Gemini, Antigravity, and similar API-style entry points. |
 
 ## Basic Request Flow
 
@@ -31,7 +31,7 @@ The features available in a specific deployment depend on its admin configuratio
 2. Set environment variables:
 
 ```bash
-export BASE_URL="https://tiktoken.net/"
+export BASE_URL="{{BASE_URL}}"
 export YOUR_KEY="your-api-key"
 ```
 

@@ -40,7 +40,7 @@ export const userDocsByLocale: Record<UserDocLocale, UserDocEntry[]> = {
     {
       slug: 'overview',
       title: '产品概览',
-      description: '了解 Sub2API 的适用场景、核心概念和基本调用流程。',
+      description: '了解 {{SITE_NAME}} 的适用场景、核心概念和基本调用流程。',
       category: '入门',
       content: overviewContent,
     },
@@ -89,7 +89,7 @@ export const userDocsByLocale: Record<UserDocLocale, UserDocEntry[]> = {
     {
       slug: 'clients',
       title: '客户端接入',
-      description: '使用 curl、OpenAI SDK、Claude Code、Gemini 和 Codex 接入 Sub2API。',
+      description: '使用 curl、OpenAI SDK、Claude Code、Gemini 和 Codex 接入 {{SITE_NAME}}。',
       category: '接入',
       content: clientsContent,
     },
@@ -126,7 +126,7 @@ export const userDocsByLocale: Record<UserDocLocale, UserDocEntry[]> = {
     {
       slug: 'overview',
       title: 'Product Overview',
-      description: 'Understand where Sub2API fits, its core concepts, and the basic request flow.',
+      description: 'Understand where {{SITE_NAME}} fits, its core concepts, and the basic request flow.',
       category: 'Getting Started',
       content: overviewContentEn,
     },
@@ -175,7 +175,7 @@ export const userDocsByLocale: Record<UserDocLocale, UserDocEntry[]> = {
     {
       slug: 'clients',
       title: 'Client Integration',
-      description: 'Connect to Sub2API with curl, the OpenAI SDK, Claude Code, Gemini, and Codex.',
+      description: 'Connect to {{SITE_NAME}} with curl, the OpenAI SDK, Claude Code, Gemini, and Codex.',
       category: 'Integration',
       content: clientsContentEn,
     },

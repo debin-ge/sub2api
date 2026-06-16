@@ -1,12 +1,12 @@
 # 最佳实践
 
-本页面向把 Sub2API 接入业务系统的用户。目标是让调用稳定、可排查、成本可控，并减少密钥和配置风险。
+本页面向把 {{SITE_NAME}} 接入业务系统的用户。目标是让调用稳定、可排查、成本可控，并减少密钥和配置风险。
 
 ## 接入前检查
 
 | 检查项 | 建议 |
 | --- | --- |
-| Base URL | 使用 `https://tiktoken.net/` 或管理员提供的完整地址。 |
+| Base URL | 使用 `{{BASE_URL}}` 或管理员提供的完整地址。 |
 | API Key | 使用 `$YOUR_KEY` 环境变量，不要写入源码。 |
 | 模型列表 | 先调用 `/v1/models` 确认当前密钥可访问模型。 |
 | 端点格式 | 根据客户端选择 OpenAI、Anthropic、Gemini 或 Antigravity 格式。 |
@@ -17,9 +17,9 @@
 把配置集中放在环境变量或安全配置系统中：
 
 ```bash
-export BASE_URL="https://tiktoken.net/"
+export BASE_URL="{{BASE_URL}}"
 export YOUR_KEY="replace-with-your-api-key"
-export OPENAI_BASE_URL="https://tiktoken.net/v1"
+export OPENAI_BASE_URL="{{BASE_URL}}v1"
 export OPENAI_API_KEY="$YOUR_KEY"
 ```
 

@@ -1,6 +1,6 @@
 # Models and Platforms
 
-Sub2API can connect to multiple model platforms through different channels. Frontends and clients should not assume a deployment supports every platform, model, or endpoint. The available models are defined by the current API Key's response from `/v1/models`, `/v1beta/models`, or by admin guidance.
+{{SITE_NAME}} can connect to multiple model platforms through different channels. Frontends and clients should not assume a deployment supports every platform, model, or endpoint. The available models are defined by the current API Key's response from `/v1/models`, `/v1beta/models`, or by admin guidance.
 
 Model availability is usually determined by these factors:
 

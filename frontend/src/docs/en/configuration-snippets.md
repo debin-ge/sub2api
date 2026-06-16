@@ -1,11 +1,11 @@
 # Copy-Ready Configuration Snippets
 
-This page provides templates you can copy and adjust. Unless an admin provides another address, examples use `https://tiktoken.net/` as the Base URL and pass the API Key through `$YOUR_KEY`.
+This page provides templates you can copy and adjust. Unless an admin provides another address, examples use `{{BASE_URL}}` as the Base URL and pass the API Key through `$YOUR_KEY`.
 
 ## Common Environment Variables
 
 ```bash
-export BASE_URL="https://tiktoken.net/"
+export BASE_URL="{{BASE_URL}}"
 export YOUR_KEY="replace-with-your-api-key"
 ```
 
@@ -24,14 +24,14 @@ curl -i "${BASE_URL}v1/models" \
 import OpenAI from 'openai'
 
 const client = new OpenAI({
-  baseURL: process.env.OPENAI_BASE_URL ?? 'https://tiktoken.net/v1',
+  baseURL: process.env.OPENAI_BASE_URL ?? '{{BASE_URL}}v1',
   apiKey: process.env.OPENAI_API_KEY ?? process.env.YOUR_KEY,
 })
 
 const response = await client.chat.completions.create({
   model: 'gpt-4o-mini',
   messages: [
-    { role: 'user', content: 'Introduce Sub2API in one sentence.' },
+    { role: 'user', content: 'Introduce {{SITE_NAME}} in one sentence.' },
   ],
 })
 
@@ -41,7 +41,7 @@ console.log(response.choices[0]?.message?.content)
 Recommended environment variables:
 
 ```bash
-export OPENAI_BASE_URL="https://tiktoken.net/v1"
+export OPENAI_BASE_URL="{{BASE_URL}}v1"
 export OPENAI_API_KEY="$YOUR_KEY"
 ```
 
@@ -52,14 +52,14 @@ import os
 from openai import OpenAI
 
 client = OpenAI(
-    base_url=os.getenv("OPENAI_BASE_URL", "https://tiktoken.net/v1"),
+    base_url=os.getenv("OPENAI_BASE_URL", "{{BASE_URL}}v1"),
     api_key=os.getenv("OPENAI_API_KEY") or os.getenv("YOUR_KEY"),
 )
 
 response = client.chat.completions.create(
     model="gpt-4o-mini",
     messages=[
-        {"role": "user", "content": "Introduce Sub2API in one sentence."},
+        {"role": "user", "content": "Introduce {{SITE_NAME}} in one sentence."},
     ],
 )
 
@@ -113,7 +113,7 @@ curl "${BASE_URL}v1/messages" \
 ## Claude Code or Anthropic Compatible Clients
 
 ```bash
-export ANTHROPIC_BASE_URL="https://tiktoken.net/"
+export ANTHROPIC_BASE_URL="{{BASE_URL}}"
 export ANTHROPIC_AUTH_TOKEN="$YOUR_KEY"
 ```
 
@@ -126,7 +126,7 @@ export ANTHROPIC_API_KEY="$YOUR_KEY"
 If you use an Antigravity Claude compatible entry point:
 
 ```bash
-export ANTHROPIC_BASE_URL="https://tiktoken.net/antigravity"
+export ANTHROPIC_BASE_URL="{{BASE_URL}}antigravity"
 export ANTHROPIC_AUTH_TOKEN="$YOUR_KEY"
 ```
 
@@ -142,7 +142,7 @@ curl "${BASE_URL}v1beta/models/gemini-2.0-flash:generateContent" \
     "contents": [
       {
         "parts": [
-          { "text": "Introduce Sub2API in one sentence." }
+          { "text": "Introduce {{SITE_NAME}} in one sentence." }
         ]
       }
     ]
@@ -174,17 +174,17 @@ curl "${BASE_URL}v1/embeddings" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "text-embedding-3-small",
-    "input": "Sub2API unifies multi-model API access."
+    "input": "{{SITE_NAME}} unifies multi-model API access."
   }'
 ```
 
 ## Safe Proxy for Frontend Apps
 
-Do not expose API Keys directly in browsers. Frontend apps should call your own server endpoint, and the server should call Sub2API:
+Do not expose API Keys directly in browsers. Frontend apps should call your own server endpoint, and the server should call {{SITE_NAME}}:
 
 ```ts
 // server-side only
-const response = await fetch('https://tiktoken.net/v1/chat/completions', {
+const response = await fetch('{{BASE_URL}}v1/chat/completions', {
   method: 'POST',
   headers: {
     Authorization: `Bearer ${process.env.YOUR_KEY}`,
@@ -201,8 +201,8 @@ const response = await fetch('https://tiktoken.net/v1/chat/completions', {
 
 | Placeholder | Replace with |
 | --- | --- |
-| `$YOUR_KEY` | Your Sub2API API Key environment variable. |
+| `$YOUR_KEY` | Your {{SITE_NAME}} API Key environment variable. |
 | `gpt-4o-mini` | An OpenAI compatible model returned by `/v1/models`. |
 | `claude-3-5-sonnet-latest` | An Anthropic compatible model returned by `/v1/models` or provided by an admin. |
 | `gemini-2.0-flash` | A Gemini model returned by `/v1beta/models` or provided by an admin. |
-| `https://tiktoken.net/` | The deployment address provided by an admin. |
+| `{{BASE_URL}}` | The deployment address provided by an admin. |

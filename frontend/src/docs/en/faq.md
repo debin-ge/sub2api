@@ -2,16 +2,16 @@
 
 ## What should I use as the Base URL?
 
-Use the address of your Sub2API deployment, for example:
+Use the address of your {{SITE_NAME}} deployment, for example:
 
 ```text
-https://tiktoken.net/
+{{BASE_URL}}
 ```
 
 If an SDK asks for an OpenAI-style `baseURL`, it usually needs to point to `/v1`:
 
 ```text
-https://tiktoken.net/v1
+{{BASE_URL}}v1
 ```
 
 If your admin provides an address with a path, use that full address and avoid appending `/v1` twice.
@@ -66,7 +66,7 @@ Common causes:
 
 ## Why did the model request fail?
 
-A model failure does not necessarily mean Sub2API is unavailable. Common causes include:
+A model failure does not necessarily mean {{SITE_NAME}} is unavailable. Common causes include:
 
 1. The current API Key group does not have permission for the model.
 2. The upstream account has insufficient quota, an invalid key, or rate limiting.

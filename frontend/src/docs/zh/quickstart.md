@@ -1,25 +1,25 @@
 # 快速开始
 
-本页演示如何用 Sub2API 完成第一次请求。示例使用占位地址和密钥，请替换为你的部署信息。
+本页演示如何用 {{SITE_NAME}} 完成第一次请求。示例使用占位地址和密钥，请替换为你的部署信息。
 
 ```bash
-export BASE_URL="https://tiktoken.net/"
+export BASE_URL="{{BASE_URL}}"
 export YOUR_KEY="your-api-key"
 ```
 
 ## 1. 确认 Base URL
 
-Base URL 是你的 Sub2API 部署地址，例如：
+Base URL 是你的 {{SITE_NAME}} 部署地址，例如：
 
 ```text
-https://tiktoken.net/
+{{BASE_URL}}
 ```
 
 后续示例统一使用 `$BASE_URL`。如果你的部署带有反向代理路径，请以管理员提供的完整地址为准。
 
 ## 2. 设置 API Key
 
-Sub2API API Key 通常通过 HTTP Bearer 认证传递：
+{{SITE_NAME}} API Key 通常通过 HTTP Bearer 认证传递：
 
 ```http
 Authorization: Bearer $YOUR_KEY
@@ -55,7 +55,7 @@ curl "${BASE_URL}v1/chat/completions" \
   -d '{
     "model": "gpt-4o-mini",
     "messages": [
-      { "role": "user", "content": "用一句话介绍 Sub2API。" }
+      { "role": "user", "content": "用一句话介绍 {{SITE_NAME}}。" }
     ]
   }'
 ```
@@ -74,7 +74,7 @@ curl "${BASE_URL}v1/messages" \
     "model": "claude-3-5-sonnet-latest",
     "max_tokens": 256,
     "messages": [
-      { "role": "user", "content": "用一句话介绍 Sub2API。" }
+      { "role": "user", "content": "用一句话介绍 {{SITE_NAME}}。" }
     ]
   }'
 ```

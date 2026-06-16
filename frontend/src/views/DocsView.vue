@@ -84,16 +84,16 @@
             {{ uiText.loadingSettings }}
           </div>
 
-          <article v-if="currentDoc" class="min-w-0">
+          <article v-if="displayDoc" class="min-w-0">
             <header class="mb-8 border-b border-gray-200 pb-6 dark:border-dark-800">
               <p class="text-sm font-medium text-primary-700 dark:text-primary-300">
-                {{ currentDoc.category }}
+                {{ displayDoc.category }}
               </p>
               <h1 class="mt-2 break-words text-3xl font-bold tracking-normal text-gray-950 dark:text-white sm:text-4xl">
-                {{ currentDoc.title }}
+                {{ displayDoc.title }}
               </h1>
               <p class="mt-3 max-w-3xl text-base leading-7 text-gray-600 dark:text-dark-300">
-                {{ currentDoc.description }}
+                {{ displayDoc.description }}
               </p>
             </header>
 
@@ -208,10 +208,21 @@ const currentDoc = computed(() => findUserDoc(routeSlug.value, currentLocale.val
 const activeSlug = computed(() => currentDoc.value?.slug ?? routeSlug.value ?? defaultUserDocSlug)
 const dashboardPath = computed(() => authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
 const siteName = computed(() => appStore.cachedPublicSettings?.site_name || appStore.siteName || 'Sub2API')
+const siteBaseUrl = computed(() => normalizeBaseUrl(appStore.cachedPublicSettings?.api_base_url || appStore.apiBaseUrl || ''))
 const siteLogo = computed(() => sanitizeUrl(appStore.cachedPublicSettings?.site_logo || appStore.siteLogo || '', {
   allowRelative: true,
   allowDataUrl: true,
 }))
+const displayDoc = computed<UserDocEntry | null>(() => {
+  const doc = currentDoc.value
+  if (!doc) return null
+  return {
+    ...doc,
+    title: resolveDocText(doc.title),
+    description: resolveDocText(doc.description),
+    category: resolveDocText(doc.category),
+  }
+})
 const uiText = computed(() => currentLocale.value === 'zh'
   ? {
       home: '首页',
@@ -265,6 +276,40 @@ function generateHeadingId(text: string, index: number): string {
   return base ? `${base}-${index}` : `heading-${index}`
 }
 
+function normalizeBaseUrl(value: string): string {
+  const trimmed = value.trim()
+  const fallback = typeof window === 'undefined' ? '/' : `${window.location.origin}/`
+  const base = trimmed || fallback
+  return base.endsWith('/') ? base : `${base}/`
+}
+
+function resolveDocText(value: string): string {
+  return value
+    .replace(/\{\{SITE_NAME\}\}/g, siteName.value)
+    .replace(/\{\{BASE_URL\}\}/g, siteBaseUrl.value)
+    .replace(/Sub2API/g, siteName.value)
+    .replace(/https:\/\/tiktoken\.net\//g, siteBaseUrl.value)
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function resolveDocHtml(value: string): string {
+  const escapedSiteName = escapeHtml(siteName.value)
+  const escapedBaseUrl = escapeHtml(siteBaseUrl.value)
+  return value
+    .replace(/\{\{SITE_NAME\}\}/g, escapedSiteName)
+    .replace(/\{\{BASE_URL\}\}/g, escapedBaseUrl)
+    .replace(/Sub2API/g, escapedSiteName)
+    .replace(/https:\/\/tiktoken\.net\//g, escapedBaseUrl)
+}
+
 function getTextContent(html: string): string {
   const template = document.createElement('template')
   template.innerHTML = html
@@ -294,7 +339,7 @@ function renderMarkdown(doc: UserDocEntry | null) {
   })
 
   const template = document.createElement('template')
-  template.innerHTML = sanitized
+  template.innerHTML = resolveDocHtml(sanitized)
 
   const toc: TocItem[] = []
   template.content.querySelectorAll('h1, h2, h3, h4').forEach((heading, index) => {
@@ -378,7 +423,7 @@ function injectCopyButtons() {
   })
 }
 
-watch(currentDoc, (doc) => {
+watch(displayDoc, (doc) => {
   renderMarkdown(doc)
 }, { immediate: true })
 

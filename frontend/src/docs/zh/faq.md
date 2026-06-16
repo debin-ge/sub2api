@@ -2,16 +2,16 @@
 
 ## Base URL 应该填什么？
 
-填写你的 Sub2API 部署地址，例如：
+填写你的 {{SITE_NAME}} 部署地址，例如：
 
 ```text
-https://tiktoken.net/
+{{BASE_URL}}
 ```
 
 如果 SDK 要求填写 OpenAI 风格 `baseURL`，通常需要指向 `/v1`：
 
 ```text
-https://tiktoken.net/v1
+{{BASE_URL}}v1
 ```
 
 如果管理员提供了带路径的地址，请以管理员给出的完整地址为准，避免重复拼接 `/v1`。
@@ -66,7 +66,7 @@ curl "${BASE_URL}v1/models" \
 
 ## 为什么模型调用失败？
 
-模型失败不一定表示 Sub2API 不可用。常见原因包括：
+模型失败不一定表示 {{SITE_NAME}} 不可用。常见原因包括：
 
 1. 当前 API Key 分组没有该模型权限。
 2. 上游账号额度不足、密钥失效或被限流。
