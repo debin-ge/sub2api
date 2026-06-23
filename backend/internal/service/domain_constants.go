@@ -35,6 +35,19 @@ const (
 	AffiliateRebatePerInviteeCapDefault = 0.0   // 0 = 无上限
 )
 
+// Benchmark settings
+const (
+	BenchmarkEnabledDefault                       = false
+	BenchmarkPublicEnabledDefault                 = false
+	BenchmarkHomeEnabledDefault                   = false
+	BenchmarkDefaultSuiteIDDefault          int64 = 0
+	BenchmarkGlobalConcurrencyDefault             = 4
+	BenchmarkDefaultTimeoutSecondsDefault         = 120
+	BenchmarkLowConfidenceThresholdDefault        = 0.70
+	BenchmarkHighConfidenceThresholdDefault       = 0.90
+	BenchmarkScheduleEnabledDefault               = false
+)
+
 // Platform constants
 const (
 	PlatformAnthropic   = domain.PlatformAnthropic
@@ -146,6 +159,17 @@ const (
 	SettingKeyLoginAgreementMode               = "login_agreement_mode"                // 条款确认展示模式：modal / checkbox
 	SettingKeyLoginAgreementUpdatedAt          = "login_agreement_updated_at"          // 条款更新日期（展示用）
 	SettingKeyLoginAgreementDocuments          = "login_agreement_documents"           // 条款文档列表（JSON，Markdown 内容）
+
+	// Benchmark 设置
+	SettingKeyBenchmarkEnabled                 = "benchmark_enabled"                   // 是否启用 benchmark 功能
+	SettingKeyBenchmarkPublicEnabled           = "benchmark_public_enabled"            // 是否启用公开 benchmark 输出
+	SettingKeyBenchmarkHomeEnabled             = "benchmark_home_enabled"              // 是否在公开首页暴露 benchmark 入口
+	SettingKeyBenchmarkDefaultSuiteID          = "benchmark_default_suite_id"          // benchmark 默认 suite ID
+	SettingKeyBenchmarkGlobalConcurrency       = "benchmark_global_concurrency"        // benchmark 全局并发限制
+	SettingKeyBenchmarkDefaultTimeoutSeconds   = "benchmark_default_timeout_seconds"   // benchmark 默认超时秒数
+	SettingKeyBenchmarkLowConfidenceThreshold  = "benchmark_low_confidence_threshold"  // benchmark 低置信度覆盖率阈值
+	SettingKeyBenchmarkHighConfidenceThreshold = "benchmark_high_confidence_threshold" // benchmark 高置信度覆盖率阈值
+	SettingKeyBenchmarkScheduleEnabled         = "benchmark_schedule_enabled"          // 是否启用 benchmark 调度
 
 	// 邮件服务设置
 	SettingKeySMTPHost     = "smtp_host"      // SMTP服务器地址

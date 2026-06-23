@@ -40,6 +40,15 @@ type SystemSettings struct {
 	LoginAgreementMode               string                   `json:"login_agreement_mode"`
 	LoginAgreementUpdatedAt          string                   `json:"login_agreement_updated_at"`
 	LoginAgreementDocuments          []LoginAgreementDocument `json:"login_agreement_documents"`
+	BenchmarkEnabled                 bool                     `json:"benchmark_enabled"`
+	BenchmarkPublicEnabled           bool                     `json:"benchmark_public_enabled"`
+	BenchmarkHomeEnabled             bool                     `json:"benchmark_home_enabled"`
+	BenchmarkDefaultSuiteID          int64                    `json:"benchmark_default_suite_id"`
+	BenchmarkGlobalConcurrency       int                      `json:"benchmark_global_concurrency"`
+	BenchmarkDefaultTimeoutSeconds   int                      `json:"benchmark_default_timeout_seconds"`
+	BenchmarkLowConfidenceThreshold  float64                  `json:"benchmark_low_confidence_threshold"`
+	BenchmarkHighConfidenceThreshold float64                  `json:"benchmark_high_confidence_threshold"`
+	BenchmarkScheduleEnabled         bool                     `json:"benchmark_schedule_enabled"`
 
 	SMTPHost               string `json:"smtp_host"`
 	SMTPPort               int    `json:"smtp_port"`
@@ -286,6 +295,7 @@ type PublicSettings struct {
 	DocURL                           string                   `json:"doc_url"`
 	HomeContent                      string                   `json:"home_content"`
 	HideCcsImportButton              bool                     `json:"hide_ccs_import_button"`
+	BenchmarkHomeEnabled             bool                     `json:"benchmark_home_enabled"`
 	PurchaseSubscriptionEnabled      bool                     `json:"purchase_subscription_enabled"`
 	PurchaseSubscriptionURL          string                   `json:"purchase_subscription_url"`
 	TableDefaultPageSize             int                      `json:"table_default_page_size"`

@@ -24,6 +24,15 @@ type SystemSettings struct {
 	LoginAgreementMode               string
 	LoginAgreementUpdatedAt          string
 	LoginAgreementDocuments          []LoginAgreementDocument
+	BenchmarkEnabled                 bool
+	BenchmarkPublicEnabled           bool
+	BenchmarkHomeEnabled             bool
+	BenchmarkDefaultSuiteID          int64
+	BenchmarkGlobalConcurrency       int
+	BenchmarkDefaultTimeoutSeconds   int
+	BenchmarkLowConfidenceThreshold  float64
+	BenchmarkHighConfidenceThreshold float64
+	BenchmarkScheduleEnabled         bool
 
 	SMTPHost               string
 	SMTPPort               int
@@ -257,6 +266,7 @@ type PublicSettings struct {
 	DocURL                           string
 	HomeContent                      string
 	HideCcsImportButton              bool
+	BenchmarkHomeEnabled             bool
 
 	PurchaseSubscriptionEnabled bool
 	PurchaseSubscriptionURL     string

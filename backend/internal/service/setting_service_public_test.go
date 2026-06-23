@@ -37,11 +37,21 @@ func (s *settingPublicRepoStub) GetMultiple(ctx context.Context, keys []string) 
 }
 
 func (s *settingPublicRepoStub) SetMultiple(ctx context.Context, settings map[string]string) error {
-	panic("unexpected SetMultiple call")
+	if s.values == nil {
+		s.values = make(map[string]string, len(settings))
+	}
+	for key, value := range settings {
+		s.values[key] = value
+	}
+	return nil
 }
 
 func (s *settingPublicRepoStub) GetAll(ctx context.Context) (map[string]string, error) {
-	panic("unexpected GetAll call")
+	out := make(map[string]string, len(s.values))
+	for key, value := range s.values {
+		out[key] = value
+	}
+	return out, nil
 }
 
 func (s *settingPublicRepoStub) Delete(ctx context.Context, key string) error {
@@ -163,4 +173,47 @@ func TestSettingService_GetPublicSettings_FallsBackToConfigForWeChatOAuthCapabil
 	require.True(t, settings.WeChatOAuthOpenEnabled)
 	require.False(t, settings.WeChatOAuthMPEnabled)
 	require.False(t, settings.WeChatOAuthMobileEnabled)
+}
+
+func TestSettingService_GetPublicSettings_IncludesBenchmarkHomeFlag(t *testing.T) {
+	repo := &settingPublicRepoStub{
+		values: map[string]string{
+			SettingKeyBenchmarkHomeEnabled: "true",
+		},
+	}
+	svc := NewSettingService(repo, &config.Config{})
+
+	settings, err := svc.GetPublicSettings(context.Background())
+	require.NoError(t, err)
+	require.True(t, settings.BenchmarkHomeEnabled)
+}
+
+func TestSettingService_BenchmarkSettingsRoundTrip(t *testing.T) {
+	repo := &settingPublicRepoStub{values: map[string]string{}}
+	svc := NewSettingService(repo, &config.Config{})
+
+	err := svc.UpdateSettings(context.Background(), &SystemSettings{
+		BenchmarkEnabled:                 true,
+		BenchmarkPublicEnabled:           true,
+		BenchmarkHomeEnabled:             true,
+		BenchmarkDefaultSuiteID:          42,
+		BenchmarkGlobalConcurrency:       7,
+		BenchmarkDefaultTimeoutSeconds:   180,
+		BenchmarkLowConfidenceThreshold:  0.6,
+		BenchmarkHighConfidenceThreshold: 0.92,
+		BenchmarkScheduleEnabled:         true,
+	})
+	require.NoError(t, err)
+
+	settings, err := svc.GetAllSettings(context.Background())
+	require.NoError(t, err)
+	require.True(t, settings.BenchmarkEnabled)
+	require.True(t, settings.BenchmarkPublicEnabled)
+	require.True(t, settings.BenchmarkHomeEnabled)
+	require.EqualValues(t, 42, settings.BenchmarkDefaultSuiteID)
+	require.Equal(t, 7, settings.BenchmarkGlobalConcurrency)
+	require.Equal(t, 180, settings.BenchmarkDefaultTimeoutSeconds)
+	require.InDelta(t, 0.6, settings.BenchmarkLowConfidenceThreshold, 0.000001)
+	require.InDelta(t, 0.92, settings.BenchmarkHighConfidenceThreshold, 0.000001)
+	require.True(t, settings.BenchmarkScheduleEnabled)
 }

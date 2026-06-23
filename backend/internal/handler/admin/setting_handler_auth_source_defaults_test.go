@@ -206,6 +206,105 @@ func TestSettingHandler_UpdateSettings_PreservesOmittedAuthSourceDefaults(t *tes
 	require.Equal(t, true, data["force_email_on_third_party_signup"])
 }
 
+func TestSettingHandler_GetSettings_ExposesBenchmarkSettings(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := &settingHandlerRepoStub{
+		values: map[string]string{
+			service.SettingKeyBenchmarkEnabled:                  "true",
+			service.SettingKeyBenchmarkPublicEnabled:            "true",
+			service.SettingKeyBenchmarkHomeEnabled:              "true",
+			service.SettingKeyBenchmarkDefaultSuiteID:           "42",
+			service.SettingKeyBenchmarkGlobalConcurrency:        "7",
+			service.SettingKeyBenchmarkDefaultTimeoutSeconds:    "180",
+			service.SettingKeyBenchmarkLowConfidenceThreshold:   "0.6",
+			service.SettingKeyBenchmarkHighConfidenceThreshold:  "0.92",
+			service.SettingKeyBenchmarkScheduleEnabled:          "true",
+			service.SettingKeyAuthSourceDefaultEmailConcurrency: "5",
+		},
+	}
+	svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
+	handler := NewSettingHandler(svc, nil, nil, nil, nil, nil, nil)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/admin/settings", nil)
+
+	handler.GetSettings(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var resp response.Response
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	data, ok := resp.Data.(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, true, data["benchmark_enabled"])
+	require.Equal(t, true, data["benchmark_public_enabled"])
+	require.Equal(t, true, data["benchmark_home_enabled"])
+	require.Equal(t, float64(42), data["benchmark_default_suite_id"])
+	require.Equal(t, float64(7), data["benchmark_global_concurrency"])
+	require.Equal(t, float64(180), data["benchmark_default_timeout_seconds"])
+	require.Equal(t, 0.6, data["benchmark_low_confidence_threshold"])
+	require.Equal(t, 0.92, data["benchmark_high_confidence_threshold"])
+	require.Equal(t, true, data["benchmark_schedule_enabled"])
+}
+
+func TestSettingHandler_UpdateSettings_PersistsBenchmarkSettings(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := &settingHandlerRepoStub{
+		values: map[string]string{
+			service.SettingKeyPromoCodeEnabled: "true",
+		},
+	}
+	svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
+	handler := NewSettingHandler(svc, nil, nil, nil, nil, nil, nil)
+
+	body := map[string]any{
+		"promo_code_enabled":                  true,
+		"benchmark_enabled":                   true,
+		"benchmark_public_enabled":            true,
+		"benchmark_home_enabled":              true,
+		"benchmark_default_suite_id":          42,
+		"benchmark_global_concurrency":        7,
+		"benchmark_default_timeout_seconds":   180,
+		"benchmark_low_confidence_threshold":  0.6,
+		"benchmark_high_confidence_threshold": 0.92,
+		"benchmark_schedule_enabled":          true,
+	}
+	rawBody, err := json.Marshal(body)
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/admin/settings", bytes.NewReader(rawBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	handler.UpdateSettings(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "true", repo.values[service.SettingKeyBenchmarkEnabled])
+	require.Equal(t, "true", repo.values[service.SettingKeyBenchmarkPublicEnabled])
+	require.Equal(t, "true", repo.values[service.SettingKeyBenchmarkHomeEnabled])
+	require.Equal(t, "42", repo.values[service.SettingKeyBenchmarkDefaultSuiteID])
+	require.Equal(t, "7", repo.values[service.SettingKeyBenchmarkGlobalConcurrency])
+	require.Equal(t, "180", repo.values[service.SettingKeyBenchmarkDefaultTimeoutSeconds])
+	require.Equal(t, "0.60000000", repo.values[service.SettingKeyBenchmarkLowConfidenceThreshold])
+	require.Equal(t, "0.92000000", repo.values[service.SettingKeyBenchmarkHighConfidenceThreshold])
+	require.Equal(t, "true", repo.values[service.SettingKeyBenchmarkScheduleEnabled])
+
+	var resp response.Response
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	data, ok := resp.Data.(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, true, data["benchmark_enabled"])
+	require.Equal(t, true, data["benchmark_public_enabled"])
+	require.Equal(t, true, data["benchmark_home_enabled"])
+	require.Equal(t, float64(42), data["benchmark_default_suite_id"])
+	require.Equal(t, float64(7), data["benchmark_global_concurrency"])
+	require.Equal(t, float64(180), data["benchmark_default_timeout_seconds"])
+	require.Equal(t, 0.6, data["benchmark_low_confidence_threshold"])
+	require.Equal(t, 0.92, data["benchmark_high_confidence_threshold"])
+	require.Equal(t, true, data["benchmark_schedule_enabled"])
+}
+
 func TestSettingHandler_UpdateSettings_PersistsPaymentVisibleMethodsAndAdvancedScheduler(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := &settingHandlerRepoStub{
@@ -505,4 +604,88 @@ func TestDiffSettings_IncludesAuthSourceDefaultsAndForceEmail(t *testing.T) {
 	require.Contains(t, changed, "auth_source_default_email_grant_on_signup")
 	require.Contains(t, changed, "auth_source_default_email_grant_on_first_bind")
 	require.Contains(t, changed, "force_email_on_third_party_signup")
+}
+
+func TestDiffSettings_IncludesBenchmarkSettings(t *testing.T) {
+	changed := diffSettings(
+		&service.SystemSettings{
+			BenchmarkEnabled:                 false,
+			BenchmarkPublicEnabled:           false,
+			BenchmarkHomeEnabled:             false,
+			BenchmarkDefaultSuiteID:          0,
+			BenchmarkGlobalConcurrency:       4,
+			BenchmarkDefaultTimeoutSeconds:   120,
+			BenchmarkLowConfidenceThreshold:  0.70,
+			BenchmarkHighConfidenceThreshold: 0.90,
+			BenchmarkScheduleEnabled:         false,
+		},
+		&service.SystemSettings{
+			BenchmarkEnabled:                 true,
+			BenchmarkPublicEnabled:           true,
+			BenchmarkHomeEnabled:             true,
+			BenchmarkDefaultSuiteID:          42,
+			BenchmarkGlobalConcurrency:       7,
+			BenchmarkDefaultTimeoutSeconds:   180,
+			BenchmarkLowConfidenceThreshold:  0.60,
+			BenchmarkHighConfidenceThreshold: 0.92,
+			BenchmarkScheduleEnabled:         true,
+		},
+		&service.AuthSourceDefaultSettings{},
+		&service.AuthSourceDefaultSettings{},
+		UpdateSettingsRequest{},
+	)
+
+	require.Contains(t, changed, "benchmark_enabled")
+	require.Contains(t, changed, "benchmark_public_enabled")
+	require.Contains(t, changed, "benchmark_home_enabled")
+	require.Contains(t, changed, "benchmark_default_suite_id")
+	require.Contains(t, changed, "benchmark_global_concurrency")
+	require.Contains(t, changed, "benchmark_default_timeout_seconds")
+	require.Contains(t, changed, "benchmark_low_confidence_threshold")
+	require.Contains(t, changed, "benchmark_high_confidence_threshold")
+	require.Contains(t, changed, "benchmark_schedule_enabled")
+}
+
+func TestSettingHandler_UpdateSettings_PreservesOmittedBenchmarkSettings(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := &settingHandlerRepoStub{
+		values: map[string]string{
+			service.SettingKeyPromoCodeEnabled:                 "true",
+			service.SettingKeyBenchmarkEnabled:                 "true",
+			service.SettingKeyBenchmarkPublicEnabled:           "true",
+			service.SettingKeyBenchmarkHomeEnabled:             "true",
+			service.SettingKeyBenchmarkDefaultSuiteID:          "42",
+			service.SettingKeyBenchmarkGlobalConcurrency:       "7",
+			service.SettingKeyBenchmarkDefaultTimeoutSeconds:   "180",
+			service.SettingKeyBenchmarkLowConfidenceThreshold:  "0.60000000",
+			service.SettingKeyBenchmarkHighConfidenceThreshold: "0.92000000",
+			service.SettingKeyBenchmarkScheduleEnabled:         "true",
+		},
+	}
+	svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
+	handler := NewSettingHandler(svc, nil, nil, nil, nil, nil, nil)
+
+	body := map[string]any{
+		"promo_code_enabled": false,
+	}
+	rawBody, err := json.Marshal(body)
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/admin/settings", bytes.NewReader(rawBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	handler.UpdateSettings(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "true", repo.values[service.SettingKeyBenchmarkEnabled])
+	require.Equal(t, "true", repo.values[service.SettingKeyBenchmarkPublicEnabled])
+	require.Equal(t, "true", repo.values[service.SettingKeyBenchmarkHomeEnabled])
+	require.Equal(t, "42", repo.values[service.SettingKeyBenchmarkDefaultSuiteID])
+	require.Equal(t, "7", repo.values[service.SettingKeyBenchmarkGlobalConcurrency])
+	require.Equal(t, "180", repo.values[service.SettingKeyBenchmarkDefaultTimeoutSeconds])
+	require.Equal(t, "0.60000000", repo.values[service.SettingKeyBenchmarkLowConfidenceThreshold])
+	require.Equal(t, "0.92000000", repo.values[service.SettingKeyBenchmarkHighConfidenceThreshold])
+	require.Equal(t, "true", repo.values[service.SettingKeyBenchmarkScheduleEnabled])
 }

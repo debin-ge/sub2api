@@ -718,6 +718,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyDocURL,
 		SettingKeyHomeContent,
 		SettingKeyHideCcsImportButton,
+		SettingKeyBenchmarkHomeEnabled,
 		SettingKeyPurchaseSubscriptionEnabled,
 		SettingKeyPurchaseSubscriptionURL,
 		SettingKeyTableDefaultPageSize,
@@ -843,6 +844,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		DocURL:                           settings[SettingKeyDocURL],
 		HomeContent:                      settings[SettingKeyHomeContent],
 		HideCcsImportButton:              settings[SettingKeyHideCcsImportButton] == "true",
+		BenchmarkHomeEnabled:             settings[SettingKeyBenchmarkHomeEnabled] == "true",
 		PurchaseSubscriptionEnabled:      settings[SettingKeyPurchaseSubscriptionEnabled] == "true",
 		PurchaseSubscriptionURL:          strings.TrimSpace(settings[SettingKeyPurchaseSubscriptionURL]),
 		TableDefaultPageSize:             tableDefaultPageSize,
@@ -1157,6 +1159,7 @@ type PublicSettingsInjectionPayload struct {
 	DocURL                           string                   `json:"doc_url"`
 	HomeContent                      string                   `json:"home_content"`
 	HideCcsImportButton              bool                     `json:"hide_ccs_import_button"`
+	BenchmarkHomeEnabled             bool                     `json:"benchmark_home_enabled"`
 	PurchaseSubscriptionEnabled      bool                     `json:"purchase_subscription_enabled"`
 	PurchaseSubscriptionURL          string                   `json:"purchase_subscription_url"`
 	TableDefaultPageSize             int                      `json:"table_default_page_size"`
@@ -1223,6 +1226,7 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		DocURL:                           settings.DocURL,
 		HomeContent:                      settings.HomeContent,
 		HideCcsImportButton:              settings.HideCcsImportButton,
+		BenchmarkHomeEnabled:             settings.BenchmarkHomeEnabled,
 		PurchaseSubscriptionEnabled:      settings.PurchaseSubscriptionEnabled,
 		PurchaseSubscriptionURL:          settings.PurchaseSubscriptionURL,
 		TableDefaultPageSize:             settings.TableDefaultPageSize,
@@ -1691,6 +1695,15 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyLoginAgreementMode] = settings.LoginAgreementMode
 	updates[SettingKeyLoginAgreementUpdatedAt] = settings.LoginAgreementUpdatedAt
 	updates[SettingKeyLoginAgreementDocuments] = loginAgreementDocumentsJSON
+	updates[SettingKeyBenchmarkEnabled] = strconv.FormatBool(settings.BenchmarkEnabled)
+	updates[SettingKeyBenchmarkPublicEnabled] = strconv.FormatBool(settings.BenchmarkPublicEnabled)
+	updates[SettingKeyBenchmarkHomeEnabled] = strconv.FormatBool(settings.BenchmarkHomeEnabled)
+	updates[SettingKeyBenchmarkDefaultSuiteID] = strconv.FormatInt(settings.BenchmarkDefaultSuiteID, 10)
+	updates[SettingKeyBenchmarkGlobalConcurrency] = strconv.Itoa(settings.BenchmarkGlobalConcurrency)
+	updates[SettingKeyBenchmarkDefaultTimeoutSeconds] = strconv.Itoa(settings.BenchmarkDefaultTimeoutSeconds)
+	updates[SettingKeyBenchmarkLowConfidenceThreshold] = strconv.FormatFloat(settings.BenchmarkLowConfidenceThreshold, 'f', 8, 64)
+	updates[SettingKeyBenchmarkHighConfidenceThreshold] = strconv.FormatFloat(settings.BenchmarkHighConfidenceThreshold, 'f', 8, 64)
+	updates[SettingKeyBenchmarkScheduleEnabled] = strconv.FormatBool(settings.BenchmarkScheduleEnabled)
 
 	// 邮件服务设置（只有非空才更新密码）
 	updates[SettingKeySMTPHost] = settings.SMTPHost
@@ -2744,6 +2757,15 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyOIDCConnectUserInfoEmailPath:              "",
 		SettingKeyOIDCConnectUserInfoIDPath:                 "",
 		SettingKeyOIDCConnectUserInfoUsernamePath:           "",
+		SettingKeyBenchmarkEnabled:                          strconv.FormatBool(BenchmarkEnabledDefault),
+		SettingKeyBenchmarkPublicEnabled:                    strconv.FormatBool(BenchmarkPublicEnabledDefault),
+		SettingKeyBenchmarkHomeEnabled:                      strconv.FormatBool(BenchmarkHomeEnabledDefault),
+		SettingKeyBenchmarkDefaultSuiteID:                   strconv.FormatInt(BenchmarkDefaultSuiteIDDefault, 10),
+		SettingKeyBenchmarkGlobalConcurrency:                strconv.Itoa(BenchmarkGlobalConcurrencyDefault),
+		SettingKeyBenchmarkDefaultTimeoutSeconds:            strconv.Itoa(BenchmarkDefaultTimeoutSecondsDefault),
+		SettingKeyBenchmarkLowConfidenceThreshold:           strconv.FormatFloat(BenchmarkLowConfidenceThresholdDefault, 'f', 8, 64),
+		SettingKeyBenchmarkHighConfidenceThreshold:          strconv.FormatFloat(BenchmarkHighConfidenceThresholdDefault, 'f', 8, 64),
+		SettingKeyBenchmarkScheduleEnabled:                  strconv.FormatBool(BenchmarkScheduleEnabledDefault),
 		SettingKeyDefaultConcurrency:                        strconv.Itoa(s.cfg.Default.UserConcurrency),
 		SettingKeyDefaultBalance:                            strconv.FormatFloat(s.cfg.Default.UserBalance, 'f', 8, 64),
 		SettingKeyAffiliateRebateRate:                       strconv.FormatFloat(AffiliateRebateRateDefault, 'f', 8, 64),
@@ -2868,6 +2890,10 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		LoginAgreementMode:               normalizeLoginAgreementMode(settings[SettingKeyLoginAgreementMode]),
 		LoginAgreementUpdatedAt:          loginAgreementUpdatedAt,
 		LoginAgreementDocuments:          loginAgreementDocuments,
+		BenchmarkEnabled:                 settings[SettingKeyBenchmarkEnabled] == "true",
+		BenchmarkPublicEnabled:           settings[SettingKeyBenchmarkPublicEnabled] == "true",
+		BenchmarkHomeEnabled:             settings[SettingKeyBenchmarkHomeEnabled] == "true",
+		BenchmarkScheduleEnabled:         settings[SettingKeyBenchmarkScheduleEnabled] == "true",
 		SMTPHost:                         settings[SettingKeySMTPHost],
 		SMTPUsername:                     settings[SettingKeySMTPUsername],
 		SMTPFrom:                         settings[SettingKeySMTPFrom],
@@ -2910,6 +2936,24 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		result.DefaultConcurrency = s.cfg.Default.UserConcurrency
 	}
 
+	if suiteID, err := strconv.ParseInt(settings[SettingKeyBenchmarkDefaultSuiteID], 10, 64); err == nil {
+		result.BenchmarkDefaultSuiteID = suiteID
+	} else {
+		result.BenchmarkDefaultSuiteID = BenchmarkDefaultSuiteIDDefault
+	}
+
+	if concurrency, err := strconv.Atoi(settings[SettingKeyBenchmarkGlobalConcurrency]); err == nil {
+		result.BenchmarkGlobalConcurrency = concurrency
+	} else {
+		result.BenchmarkGlobalConcurrency = BenchmarkGlobalConcurrencyDefault
+	}
+
+	if timeoutSeconds, err := strconv.Atoi(settings[SettingKeyBenchmarkDefaultTimeoutSeconds]); err == nil {
+		result.BenchmarkDefaultTimeoutSeconds = timeoutSeconds
+	} else {
+		result.BenchmarkDefaultTimeoutSeconds = BenchmarkDefaultTimeoutSecondsDefault
+	}
+
 	if rpm, err := strconv.Atoi(settings[SettingKeyDefaultUserRPMLimit]); err == nil && rpm >= 0 {
 		result.DefaultUserRPMLimit = rpm
 	}
@@ -2939,6 +2983,16 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	}
 	if perInviteeCap, err := strconv.ParseFloat(settings[SettingKeyAffiliateRebatePerInviteeCap], 64); err == nil && perInviteeCap >= 0 {
 		result.AffiliateRebatePerInviteeCap = perInviteeCap
+	}
+	if lowThreshold, err := strconv.ParseFloat(settings[SettingKeyBenchmarkLowConfidenceThreshold], 64); err == nil {
+		result.BenchmarkLowConfidenceThreshold = lowThreshold
+	} else {
+		result.BenchmarkLowConfidenceThreshold = BenchmarkLowConfidenceThresholdDefault
+	}
+	if highThreshold, err := strconv.ParseFloat(settings[SettingKeyBenchmarkHighConfidenceThreshold], 64); err == nil {
+		result.BenchmarkHighConfidenceThreshold = highThreshold
+	} else {
+		result.BenchmarkHighConfidenceThreshold = BenchmarkHighConfidenceThresholdDefault
 	}
 	result.DefaultSubscriptions = parseDefaultSubscriptions(settings[SettingKeyDefaultSubscriptions])
 

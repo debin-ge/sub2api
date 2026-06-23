@@ -132,6 +132,15 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		LoginAgreementMode:                     settings.LoginAgreementMode,
 		LoginAgreementUpdatedAt:                settings.LoginAgreementUpdatedAt,
 		LoginAgreementDocuments:                loginAgreementDocumentsToDTO(settings.LoginAgreementDocuments),
+		BenchmarkEnabled:                       settings.BenchmarkEnabled,
+		BenchmarkPublicEnabled:                 settings.BenchmarkPublicEnabled,
+		BenchmarkHomeEnabled:                   settings.BenchmarkHomeEnabled,
+		BenchmarkDefaultSuiteID:                settings.BenchmarkDefaultSuiteID,
+		BenchmarkGlobalConcurrency:             settings.BenchmarkGlobalConcurrency,
+		BenchmarkDefaultTimeoutSeconds:         settings.BenchmarkDefaultTimeoutSeconds,
+		BenchmarkLowConfidenceThreshold:        settings.BenchmarkLowConfidenceThreshold,
+		BenchmarkHighConfidenceThreshold:       settings.BenchmarkHighConfidenceThreshold,
+		BenchmarkScheduleEnabled:               settings.BenchmarkScheduleEnabled,
 		SMTPHost:                               settings.SMTPHost,
 		SMTPPort:                               settings.SMTPPort,
 		SMTPUsername:                           settings.SMTPUsername,
@@ -396,6 +405,15 @@ type UpdateSettingsRequest struct {
 	LoginAgreementMode               string                       `json:"login_agreement_mode"`
 	LoginAgreementUpdatedAt          string                       `json:"login_agreement_updated_at"`
 	LoginAgreementDocuments          []dto.LoginAgreementDocument `json:"login_agreement_documents"`
+	BenchmarkEnabled                 *bool                        `json:"benchmark_enabled"`
+	BenchmarkPublicEnabled           *bool                        `json:"benchmark_public_enabled"`
+	BenchmarkHomeEnabled             *bool                        `json:"benchmark_home_enabled"`
+	BenchmarkDefaultSuiteID          *int64                       `json:"benchmark_default_suite_id"`
+	BenchmarkGlobalConcurrency       *int                         `json:"benchmark_global_concurrency"`
+	BenchmarkDefaultTimeoutSeconds   *int                         `json:"benchmark_default_timeout_seconds"`
+	BenchmarkLowConfidenceThreshold  *float64                     `json:"benchmark_low_confidence_threshold"`
+	BenchmarkHighConfidenceThreshold *float64                     `json:"benchmark_high_confidence_threshold"`
+	BenchmarkScheduleEnabled         *bool                        `json:"benchmark_schedule_enabled"`
 
 	// 邮件服务设置
 	SMTPHost     string `json:"smtp_host"`
@@ -1478,16 +1496,70 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		LoginAgreementMode:               loginAgreementMode,
 		LoginAgreementUpdatedAt:          loginAgreementUpdatedAt,
 		LoginAgreementDocuments:          loginAgreementDocuments,
-		SMTPHost:                         req.SMTPHost,
-		SMTPPort:                         req.SMTPPort,
-		SMTPUsername:                     req.SMTPUsername,
-		SMTPPassword:                     req.SMTPPassword,
-		SMTPFrom:                         req.SMTPFrom,
-		SMTPFromName:                     req.SMTPFromName,
-		SMTPUseTLS:                       req.SMTPUseTLS,
-		TurnstileEnabled:                 req.TurnstileEnabled,
-		TurnstileSiteKey:                 req.TurnstileSiteKey,
-		TurnstileSecretKey:               req.TurnstileSecretKey,
+		BenchmarkEnabled: func() bool {
+			if req.BenchmarkEnabled != nil {
+				return *req.BenchmarkEnabled
+			}
+			return previousSettings.BenchmarkEnabled
+		}(),
+		BenchmarkPublicEnabled: func() bool {
+			if req.BenchmarkPublicEnabled != nil {
+				return *req.BenchmarkPublicEnabled
+			}
+			return previousSettings.BenchmarkPublicEnabled
+		}(),
+		BenchmarkHomeEnabled: func() bool {
+			if req.BenchmarkHomeEnabled != nil {
+				return *req.BenchmarkHomeEnabled
+			}
+			return previousSettings.BenchmarkHomeEnabled
+		}(),
+		BenchmarkDefaultSuiteID: func() int64 {
+			if req.BenchmarkDefaultSuiteID != nil {
+				return *req.BenchmarkDefaultSuiteID
+			}
+			return previousSettings.BenchmarkDefaultSuiteID
+		}(),
+		BenchmarkGlobalConcurrency: func() int {
+			if req.BenchmarkGlobalConcurrency != nil {
+				return *req.BenchmarkGlobalConcurrency
+			}
+			return previousSettings.BenchmarkGlobalConcurrency
+		}(),
+		BenchmarkDefaultTimeoutSeconds: func() int {
+			if req.BenchmarkDefaultTimeoutSeconds != nil {
+				return *req.BenchmarkDefaultTimeoutSeconds
+			}
+			return previousSettings.BenchmarkDefaultTimeoutSeconds
+		}(),
+		BenchmarkLowConfidenceThreshold: func() float64 {
+			if req.BenchmarkLowConfidenceThreshold != nil {
+				return *req.BenchmarkLowConfidenceThreshold
+			}
+			return previousSettings.BenchmarkLowConfidenceThreshold
+		}(),
+		BenchmarkHighConfidenceThreshold: func() float64 {
+			if req.BenchmarkHighConfidenceThreshold != nil {
+				return *req.BenchmarkHighConfidenceThreshold
+			}
+			return previousSettings.BenchmarkHighConfidenceThreshold
+		}(),
+		BenchmarkScheduleEnabled: func() bool {
+			if req.BenchmarkScheduleEnabled != nil {
+				return *req.BenchmarkScheduleEnabled
+			}
+			return previousSettings.BenchmarkScheduleEnabled
+		}(),
+		SMTPHost:           req.SMTPHost,
+		SMTPPort:           req.SMTPPort,
+		SMTPUsername:       req.SMTPUsername,
+		SMTPPassword:       req.SMTPPassword,
+		SMTPFrom:           req.SMTPFrom,
+		SMTPFromName:       req.SMTPFromName,
+		SMTPUseTLS:         req.SMTPUseTLS,
+		TurnstileEnabled:   req.TurnstileEnabled,
+		TurnstileSiteKey:   req.TurnstileSiteKey,
+		TurnstileSecretKey: req.TurnstileSecretKey,
 		APIKeyACLTrustForwardedIP: func() bool {
 			if req.APIKeyACLTrustForwardedIP != nil {
 				return *req.APIKeyACLTrustForwardedIP
@@ -1926,6 +1998,15 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		LoginAgreementMode:                     updatedSettings.LoginAgreementMode,
 		LoginAgreementUpdatedAt:                updatedSettings.LoginAgreementUpdatedAt,
 		LoginAgreementDocuments:                loginAgreementDocumentsToDTO(updatedSettings.LoginAgreementDocuments),
+		BenchmarkEnabled:                       updatedSettings.BenchmarkEnabled,
+		BenchmarkPublicEnabled:                 updatedSettings.BenchmarkPublicEnabled,
+		BenchmarkHomeEnabled:                   updatedSettings.BenchmarkHomeEnabled,
+		BenchmarkDefaultSuiteID:                updatedSettings.BenchmarkDefaultSuiteID,
+		BenchmarkGlobalConcurrency:             updatedSettings.BenchmarkGlobalConcurrency,
+		BenchmarkDefaultTimeoutSeconds:         updatedSettings.BenchmarkDefaultTimeoutSeconds,
+		BenchmarkLowConfidenceThreshold:        updatedSettings.BenchmarkLowConfidenceThreshold,
+		BenchmarkHighConfidenceThreshold:       updatedSettings.BenchmarkHighConfidenceThreshold,
+		BenchmarkScheduleEnabled:               updatedSettings.BenchmarkScheduleEnabled,
 		SMTPHost:                               updatedSettings.SMTPHost,
 		SMTPPort:                               updatedSettings.SMTPPort,
 		SMTPUsername:                           updatedSettings.SMTPUsername,
@@ -2414,6 +2495,33 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.HideCcsImportButton != after.HideCcsImportButton {
 		changed = append(changed, "hide_ccs_import_button")
+	}
+	if before.BenchmarkEnabled != after.BenchmarkEnabled {
+		changed = append(changed, "benchmark_enabled")
+	}
+	if before.BenchmarkPublicEnabled != after.BenchmarkPublicEnabled {
+		changed = append(changed, "benchmark_public_enabled")
+	}
+	if before.BenchmarkHomeEnabled != after.BenchmarkHomeEnabled {
+		changed = append(changed, "benchmark_home_enabled")
+	}
+	if before.BenchmarkDefaultSuiteID != after.BenchmarkDefaultSuiteID {
+		changed = append(changed, "benchmark_default_suite_id")
+	}
+	if before.BenchmarkGlobalConcurrency != after.BenchmarkGlobalConcurrency {
+		changed = append(changed, "benchmark_global_concurrency")
+	}
+	if before.BenchmarkDefaultTimeoutSeconds != after.BenchmarkDefaultTimeoutSeconds {
+		changed = append(changed, "benchmark_default_timeout_seconds")
+	}
+	if before.BenchmarkLowConfidenceThreshold != after.BenchmarkLowConfidenceThreshold {
+		changed = append(changed, "benchmark_low_confidence_threshold")
+	}
+	if before.BenchmarkHighConfidenceThreshold != after.BenchmarkHighConfidenceThreshold {
+		changed = append(changed, "benchmark_high_confidence_threshold")
+	}
+	if before.BenchmarkScheduleEnabled != after.BenchmarkScheduleEnabled {
+		changed = append(changed, "benchmark_schedule_enabled")
 	}
 	if before.DefaultConcurrency != after.DefaultConcurrency {
 		changed = append(changed, "default_concurrency")
