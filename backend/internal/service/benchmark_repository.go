@@ -10,14 +10,21 @@ import (
 type BenchmarkRepository interface {
 	CreateSuite(ctx context.Context, input BenchmarkSuiteInput) (*ent.BenchmarkSuite, error)
 	ListSuites(ctx context.Context, input BenchmarkListInput) ([]*ent.BenchmarkSuite, int, error)
+	GetSuite(ctx context.Context, id int64) (*ent.BenchmarkSuite, error)
 	CreateTarget(ctx context.Context, input BenchmarkTargetInput) (*ent.BenchmarkTarget, error)
 	ListTargets(ctx context.Context, input BenchmarkListInput) ([]*ent.BenchmarkTarget, int, error)
+	GetTarget(ctx context.Context, id int64) (*ent.BenchmarkTarget, error)
+	ListTargetsByIDs(ctx context.Context, ids []int64) ([]*ent.BenchmarkTarget, error)
 	CreateTask(ctx context.Context, input BenchmarkTaskInput) (*ent.BenchmarkTask, error)
 	ListTasks(ctx context.Context, input BenchmarkTaskListInput) ([]*ent.BenchmarkTask, int, error)
+	ListEnabledTasksForSuite(ctx context.Context, suiteID int64) ([]*ent.BenchmarkTask, error)
 	CreateProfile(ctx context.Context, input BenchmarkProfileInput) (*ent.BenchmarkProfile, error)
 	GetProfile(ctx context.Context, id int64) (*ent.BenchmarkProfile, error)
 	CreateRunWithSnapshots(ctx context.Context, input BenchmarkCreateRunInput) (*ent.BenchmarkRun, error)
+	GetRun(ctx context.Context, id int64) (*ent.BenchmarkRun, error)
 	ListRuns(ctx context.Context, input BenchmarkRunListInput) ([]*ent.BenchmarkRun, int, error)
+	ListRunTargets(ctx context.Context, runID int64) ([]*ent.BenchmarkRunTarget, error)
+	ListRunTasks(ctx context.Context, runID int64) ([]*ent.BenchmarkRunTask, error)
 	ListRunResults(ctx context.Context, runID int64) ([]*ent.BenchmarkResult, error)
 	UpdateResult(ctx context.Context, id int64, input BenchmarkResultUpdateInput) error
 	SaveScoreSnapshots(ctx context.Context, runID int64, snapshots []BenchmarkScoreSnapshotInput) error

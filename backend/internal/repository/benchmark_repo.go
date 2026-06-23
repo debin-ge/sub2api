@@ -10,6 +10,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkresult"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkrun"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkruntarget"
+	"github.com/Wei-Shaw/sub2api/ent/benchmarkruntask"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkscoresnapshot"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarksuite"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarktarget"
@@ -64,6 +65,10 @@ func (r *benchmarkRepository) ListSuites(ctx context.Context, input service.Benc
 	return rows, total, nil
 }
 
+func (r *benchmarkRepository) GetSuite(ctx context.Context, id int64) (*dbent.BenchmarkSuite, error) {
+	return clientFromContext(ctx, r.client).BenchmarkSuite.Get(ctx, id)
+}
+
 func (r *benchmarkRepository) CreateTarget(ctx context.Context, input service.BenchmarkTargetInput) (*dbent.BenchmarkTarget, error) {
 	builder := clientFromContext(ctx, r.client).BenchmarkTarget.Create().
 		SetModelName(input.ModelName).
@@ -107,6 +112,49 @@ func (r *benchmarkRepository) ListTargets(ctx context.Context, input service.Ben
 		return nil, 0, err
 	}
 	return rows, total, nil
+}
+
+func (r *benchmarkRepository) GetTarget(ctx context.Context, id int64) (*dbent.BenchmarkTarget, error) {
+	return clientFromContext(ctx, r.client).BenchmarkTarget.Get(ctx, id)
+}
+
+func (r *benchmarkRepository) ListTargetsByIDs(ctx context.Context, ids []int64) ([]*dbent.BenchmarkTarget, error) {
+	orderedIDs := make([]int64, 0, len(ids))
+	seen := make(map[int64]struct{}, len(ids))
+	for _, id := range ids {
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		orderedIDs = append(orderedIDs, id)
+	}
+	if len(orderedIDs) == 0 {
+		return []*dbent.BenchmarkTarget{}, nil
+	}
+
+	rows, err := clientFromContext(ctx, r.client).BenchmarkTarget.Query().
+		Where(benchmarktarget.IDIn(orderedIDs...)).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) != len(orderedIDs) {
+		return nil, fmt.Errorf("benchmark targets missing: requested %d unique ids, found %d", len(orderedIDs), len(rows))
+	}
+
+	byID := make(map[int64]*dbent.BenchmarkTarget, len(rows))
+	for _, target := range rows {
+		byID[target.ID] = target
+	}
+	ordered := make([]*dbent.BenchmarkTarget, 0, len(orderedIDs))
+	for _, id := range orderedIDs {
+		target, ok := byID[id]
+		if !ok {
+			return nil, fmt.Errorf("benchmark target %d not found", id)
+		}
+		ordered = append(ordered, target)
+	}
+	return ordered, nil
 }
 
 func (r *benchmarkRepository) CreateTask(ctx context.Context, input service.BenchmarkTaskInput) (*dbent.BenchmarkTask, error) {
@@ -164,6 +212,16 @@ func (r *benchmarkRepository) ListTasks(ctx context.Context, input service.Bench
 	return rows, total, nil
 }
 
+func (r *benchmarkRepository) ListEnabledTasksForSuite(ctx context.Context, suiteID int64) ([]*dbent.BenchmarkTask, error) {
+	return clientFromContext(ctx, r.client).BenchmarkTask.Query().
+		Where(
+			benchmarktask.SuiteIDEQ(suiteID),
+			benchmarktask.EnabledEQ(true),
+		).
+		Order(dbent.Asc(benchmarktask.FieldID)).
+		All(ctx)
+}
+
 func (r *benchmarkRepository) CreateProfile(ctx context.Context, input service.BenchmarkProfileInput) (*dbent.BenchmarkProfile, error) {
 	builder := clientFromContext(ctx, r.client).BenchmarkProfile.Create().
 		SetSuiteID(input.SuiteID).
@@ -213,6 +271,10 @@ func (r *benchmarkRepository) CreateRunWithSnapshots(ctx context.Context, input 
 	return run, nil
 }
 
+func (r *benchmarkRepository) GetRun(ctx context.Context, id int64) (*dbent.BenchmarkRun, error) {
+	return clientFromContext(ctx, r.client).BenchmarkRun.Get(ctx, id)
+}
+
 func (r *benchmarkRepository) ListRuns(ctx context.Context, input service.BenchmarkRunListInput) ([]*dbent.BenchmarkRun, int, error) {
 	client := clientFromContext(ctx, r.client)
 	query := client.BenchmarkRun.Query()
@@ -239,6 +301,20 @@ func (r *benchmarkRepository) ListRuns(ctx context.Context, input service.Benchm
 		return nil, 0, err
 	}
 	return rows, total, nil
+}
+
+func (r *benchmarkRepository) ListRunTargets(ctx context.Context, runID int64) ([]*dbent.BenchmarkRunTarget, error) {
+	return clientFromContext(ctx, r.client).BenchmarkRunTarget.Query().
+		Where(benchmarkruntarget.RunIDEQ(runID)).
+		Order(dbent.Asc(benchmarkruntarget.FieldTargetOrder), dbent.Asc(benchmarkruntarget.FieldID)).
+		All(ctx)
+}
+
+func (r *benchmarkRepository) ListRunTasks(ctx context.Context, runID int64) ([]*dbent.BenchmarkRunTask, error) {
+	return clientFromContext(ctx, r.client).BenchmarkRunTask.Query().
+		Where(benchmarkruntask.RunIDEQ(runID)).
+		Order(dbent.Asc(benchmarkruntask.FieldTaskOrder), dbent.Asc(benchmarkruntask.FieldID)).
+		All(ctx)
 }
 
 func (r *benchmarkRepository) ListRunResults(ctx context.Context, runID int64) ([]*dbent.BenchmarkResult, error) {

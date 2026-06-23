@@ -430,6 +430,48 @@ func TestBenchmarkRepositoryCreateRunSnapshot(t *testing.T) {
 	require.Equal(t, "Mutated reasoning prompt", mutatedTask.Prompt)
 }
 
+func TestBenchmarkRepositoryReadRunSnapshots(t *testing.T) {
+	fixture := newBenchmarkFixture(t, "read-run-snapshots")
+	runID := fixture.runIDs[0]
+
+	run, err := fixture.repo.GetRun(fixture.ctx, runID)
+	require.NoError(t, err)
+	require.Equal(t, runID, run.ID)
+	require.Equal(t, service.BenchmarkRunStatusQueued, run.Status)
+	require.Equal(t, fixture.suite.ID, run.SuiteID)
+	require.Equal(t, fixture.profile.ID, run.ProfileID)
+
+	runTargets, err := fixture.repo.ListRunTargets(fixture.ctx, runID)
+	require.NoError(t, err)
+	require.Len(t, runTargets, 1)
+	require.Equal(t, fixture.target.ID, runTargets[0].TargetID)
+	require.Equal(t, fixture.target.ModelName, runTargets[0].ModelName)
+	require.Equal(t, fixture.target.ChannelID, runTargets[0].ChannelID)
+	require.NotNil(t, runTargets[0].DisplayNameSnapshot)
+	require.Equal(t, "Radar Model Snapshot", *runTargets[0].DisplayNameSnapshot)
+	require.NotNil(t, runTargets[0].ChannelNameSnapshot)
+	require.Equal(t, "primary-openai", *runTargets[0].ChannelNameSnapshot)
+	require.NotNil(t, runTargets[0].ProviderSnapshot)
+	require.Equal(t, "openai", *runTargets[0].ProviderSnapshot)
+
+	runTasks, err := fixture.repo.ListRunTasks(fixture.ctx, runID)
+	require.NoError(t, err)
+	require.Len(t, runTasks, 1)
+	require.Equal(t, fixture.task.ID, runTasks[0].TaskID)
+	require.Equal(t, fixture.task.Type, runTasks[0].Type)
+	require.Equal(t, "Original reasoning prompt", runTasks[0].PromptSnapshot)
+	require.Equal(t, fixture.task.VerifierType, runTasks[0].VerifierTypeSnapshot)
+	require.Equal(t, "answer", runTasks[0].VerifierConfigSnapshot["field"])
+	require.InDelta(t, fixture.task.Weight, runTasks[0].WeightSnapshot, 0.000001)
+
+	results, err := fixture.repo.ListRunResults(fixture.ctx, runID)
+	require.NoError(t, err)
+	require.Len(t, results, len(runTargets)*len(runTasks))
+	require.Equal(t, service.BenchmarkResultStatusPending, results[0].Status)
+	require.Equal(t, runTargets[0].ID, results[0].RunTargetID)
+	require.Equal(t, runTasks[0].ID, results[0].RunTaskID)
+}
+
 func TestBenchmarkRepositorySaveScoreSnapshotsRollsBackOnError(t *testing.T) {
 	fixture := newBenchmarkFixture(t, "score-rollback")
 
