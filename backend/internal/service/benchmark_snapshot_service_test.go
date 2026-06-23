@@ -188,6 +188,43 @@ func TestBenchmarkSnapshotStoresIndependentMetrics(t *testing.T) {
 	require.InDelta(t, 0.32, snapshot.EstimatedCost, 0.000001)
 }
 
+func TestBenchmarkSnapshotFallsBackToPromptAndCompletionTokensForAverage(t *testing.T) {
+	t.Parallel()
+
+	var savedSnapshots []BenchmarkScoreSnapshotInput
+
+	repo := newBenchmarkServiceRepoStub(t)
+	repo.listRunScoreInputsFn = func(ctx context.Context, runID int64) ([]BenchmarkRunScoreInput, error) {
+		return []BenchmarkRunScoreInput{
+			benchmarkRunScoreInput(451, 551, "reasoning", 1, BenchmarkResultStatusScored, benchmarkScoreInputOptions{
+				normalizedScore:  float64Ptr(50),
+				promptTokens:     30,
+				completionTokens: 20,
+				totalTokens:      0,
+				estimatedCost:    0.02,
+			}),
+			benchmarkRunScoreInput(451, 552, "coding", 1, BenchmarkResultStatusTimeout, benchmarkScoreInputOptions{
+				promptTokens:     10,
+				completionTokens: 5,
+				totalTokens:      0,
+				estimatedCost:    0.03,
+			}),
+		}, nil
+	}
+	repo.saveScoreSnapshotsFn = func(ctx context.Context, runID int64, snapshots []BenchmarkScoreSnapshotInput) error {
+		savedSnapshots = append([]BenchmarkScoreSnapshotInput(nil), snapshots...)
+		return nil
+	}
+
+	err := NewBenchmarkSnapshotService(repo).BuildScoreSnapshots(context.Background(), 124)
+	require.NoError(t, err)
+
+	require.Len(t, savedSnapshots, 1)
+	snapshot := savedSnapshots[0]
+	require.NotNil(t, snapshot.AvgTotalTokens)
+	require.InDelta(t, 32.5, *snapshot.AvgTotalTokens, 0.000001)
+}
+
 func TestBenchmarkSnapshotPublicSnapshotRedactsSensitiveFields(t *testing.T) {
 	t.Parallel()
 
@@ -312,6 +349,88 @@ func TestBenchmarkSnapshotPublicSnapshotRedactsSensitiveFields(t *testing.T) {
 	require.InDelta(t, 700.0, *radar.Targets[0].Metrics.LatencyP50MS, 0.000001)
 }
 
+func TestBenchmarkSnapshotPublicSnapshotTargetsFollowRankOrder(t *testing.T) {
+	t.Parallel()
+
+	const runID int64 = 457
+
+	var published BenchmarkPublicSnapshotInput
+
+	repo := newBenchmarkServiceRepoStub(t)
+	repo.getRunFn = func(ctx context.Context, gotRunID int64) (*ent.BenchmarkRun, error) {
+		require.Equal(t, runID, gotRunID)
+		completedAt := time.Date(2026, 6, 23, 10, 3, 0, 0, time.UTC)
+		return &ent.BenchmarkRun{
+			ID:         runID,
+			SuiteID:    10,
+			ProfileID:  20,
+			Status:     BenchmarkRunStatusCompleted,
+			FinishedAt: &completedAt,
+			ConfigSnapshot: map[string]any{
+				"ranking_basis": "ability_score_only",
+			},
+		}, nil
+	}
+	repo.listScoreSnapshotsFn = func(ctx context.Context, gotRunID int64) ([]*ent.BenchmarkScoreSnapshot, error) {
+		require.Equal(t, runID, gotRunID)
+		return []*ent.BenchmarkScoreSnapshot{
+			{
+				RunID:           runID,
+				RunTargetID:     702,
+				OverallScore:    80,
+				DimensionScores: map[string]any{"reasoning": 80.0},
+				RankingMetadata: map[string]any{"rank": 2},
+			},
+			{
+				RunID:           runID,
+				RunTargetID:     701,
+				OverallScore:    90,
+				DimensionScores: map[string]any{"reasoning": 90.0},
+				RankingMetadata: map[string]any{"rank": 1},
+			},
+		}, nil
+	}
+	repo.listRunScoreInputsFn = func(ctx context.Context, gotRunID int64) ([]BenchmarkRunScoreInput, error) {
+		require.Equal(t, runID, gotRunID)
+		return []BenchmarkRunScoreInput{
+			benchmarkRunScoreInput(701, 801, "reasoning", 1, BenchmarkResultStatusScored, benchmarkScoreInputOptions{
+				modelName:       "rank-one-model",
+				displayName:     "Rank One",
+				channelName:     "alpha",
+				channelID:       11,
+				normalizedScore: float64Ptr(90),
+			}),
+			benchmarkRunScoreInput(702, 802, "reasoning", 1, BenchmarkResultStatusScored, benchmarkScoreInputOptions{
+				modelName:       "rank-two-model",
+				displayName:     "Rank Two",
+				channelName:     "beta",
+				channelID:       22,
+				normalizedScore: float64Ptr(80),
+			}),
+		}, nil
+	}
+	repo.publishPublicSnapshotFn = func(ctx context.Context, input BenchmarkPublicSnapshotInput) error {
+		published = input
+		return nil
+	}
+
+	err := NewBenchmarkSnapshotService(repo).PublishPublicSnapshot(context.Background(), runID)
+	require.NoError(t, err)
+
+	payloadBytes, err := json.Marshal(published.Snapshot)
+	require.NoError(t, err)
+
+	var radar BenchmarkPublicRadar
+	require.NoError(t, json.Unmarshal(payloadBytes, &radar))
+	require.Len(t, radar.Targets, 2)
+	require.Equal(t, 1, radar.Targets[0].Rank)
+	require.Equal(t, "Rank One", radar.Targets[0].DisplayName)
+	require.Equal(t, int64(11), radar.Targets[0].ChannelID)
+	require.Equal(t, 2, radar.Targets[1].Rank)
+	require.Equal(t, "Rank Two", radar.Targets[1].DisplayName)
+	require.Equal(t, int64(22), radar.Targets[1].ChannelID)
+}
+
 func TestBenchmarkSnapshotGetPublicRadarDecodesLatestSnapshot(t *testing.T) {
 	t.Parallel()
 
@@ -373,21 +492,24 @@ func TestBenchmarkSnapshotGetPublicRadarDecodesLatestSnapshot(t *testing.T) {
 }
 
 type benchmarkScoreInputOptions struct {
-	targetID        int64
-	modelName       string
-	displayName     string
-	channelName     string
-	provider        string
-	targetConfig    map[string]any
-	promptSnapshot  string
-	verifierConfig  map[string]any
-	taskSnapshot    map[string]any
-	rawResponse     map[string]any
-	errorMessage    *string
-	normalizedScore *float64
-	latencyMS       *int
-	totalTokens     int
-	estimatedCost   float64
+	targetID         int64
+	channelID        int64
+	modelName        string
+	displayName      string
+	channelName      string
+	provider         string
+	targetConfig     map[string]any
+	promptSnapshot   string
+	verifierConfig   map[string]any
+	taskSnapshot     map[string]any
+	rawResponse      map[string]any
+	errorMessage     *string
+	normalizedScore  *float64
+	latencyMS        *int
+	promptTokens     int
+	completionTokens int
+	totalTokens      int
+	estimatedCost    float64
 }
 
 func benchmarkRunScoreInput(runTargetID, runTaskID int64, taskType string, weight float64, status string, opts benchmarkScoreInputOptions) BenchmarkRunScoreInput {
@@ -404,6 +526,7 @@ func benchmarkRunScoreInput(runTargetID, runTaskID int64, taskType string, weigh
 	runTarget := &ent.BenchmarkRunTarget{
 		ID:             runTargetID,
 		TargetID:       targetID,
+		ChannelID:      opts.channelID,
 		ModelName:      modelName,
 		TargetOrder:    int(runTargetID),
 		ConfigSnapshot: benchmarkCloneAnyMap(opts.targetConfig),
@@ -434,15 +557,17 @@ func benchmarkRunScoreInput(runTargetID, runTaskID int64, taskType string, weigh
 		RunTarget: runTarget,
 		RunTask:   runTask,
 		Result: &ent.BenchmarkResult{
-			RunTargetID:     runTargetID,
-			RunTaskID:       runTaskID,
-			Status:          status,
-			NormalizedScore: opts.normalizedScore,
-			LatencyMs:       opts.latencyMS,
-			TotalTokens:     opts.totalTokens,
-			EstimatedCost:   opts.estimatedCost,
-			RawResponse:     benchmarkCloneAnyMap(opts.rawResponse),
-			ErrorMessage:    opts.errorMessage,
+			RunTargetID:      runTargetID,
+			RunTaskID:        runTaskID,
+			Status:           status,
+			NormalizedScore:  opts.normalizedScore,
+			LatencyMs:        opts.latencyMS,
+			PromptTokens:     opts.promptTokens,
+			CompletionTokens: opts.completionTokens,
+			TotalTokens:      opts.totalTokens,
+			EstimatedCost:    opts.estimatedCost,
+			RawResponse:      benchmarkCloneAnyMap(opts.rawResponse),
+			ErrorMessage:     opts.errorMessage,
 		},
 	}
 }

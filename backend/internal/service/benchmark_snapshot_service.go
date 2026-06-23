@@ -120,8 +120,12 @@ func (s *BenchmarkSnapshotService) BuildScoreSnapshots(ctx context.Context, runI
 				invalidReasonBreakdown[result.Status]++
 			}
 
-			if result.TotalTokens > 0 || result.PromptTokens > 0 || result.CompletionTokens > 0 {
-				tokenSum += result.TotalTokens
+			tokenCount := result.TotalTokens
+			if tokenCount <= 0 && result.PromptTokens+result.CompletionTokens > 0 {
+				tokenCount = result.PromptTokens + result.CompletionTokens
+			}
+			if tokenCount > 0 {
+				tokenSum += tokenCount
 				tokenSamples++
 			}
 			estimatedCost += result.EstimatedCost
@@ -263,6 +267,9 @@ func (s *BenchmarkSnapshotService) PublishPublicSnapshot(ctx context.Context, ru
 		}
 		radar.Targets = append(radar.Targets, target)
 	}
+	sort.SliceStable(radar.Targets, func(i, j int) bool {
+		return radar.Targets[i].Rank < radar.Targets[j].Rank
+	})
 
 	payload, err := benchmarkPublicRadarPayload(radar)
 	if err != nil {
