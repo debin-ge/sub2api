@@ -97,6 +97,9 @@ func RegisterAdminRoutes(
 
 		// 邀请返利（专属用户管理）
 		registerAffiliateRoutes(admin, h)
+
+		// Benchmark 管理
+		registerAdminBenchmarkRoutes(admin, h)
 	}
 }
 
