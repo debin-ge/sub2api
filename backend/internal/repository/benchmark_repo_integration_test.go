@@ -228,6 +228,41 @@ func (f *benchmarkFixture) runTargetByTargetID(t *testing.T, runID, targetID int
 	return runTarget
 }
 
+func TestBenchmarkRepositoryListTargetsByIDsPreservesDedupedInputOrderAndReportsMissingIDs(t *testing.T) {
+	fixture := newBenchmarkFixture(t, "tid")
+
+	secondaryTarget, err := fixture.repo.CreateTarget(fixture.ctx, service.BenchmarkTargetInput{
+		ModelName:          uniqueTestValue(t, "tid-secondary"),
+		ChannelID:          102,
+		DisplayName:        "Secondary Radar Model",
+		SupportedTaskTypes: []string{"reasoning"},
+		MaxConcurrency:     1,
+		Enabled:            true,
+		PublicVisible:      true,
+		SortOrder:          2,
+	})
+	require.NoError(t, err)
+	fixture.extraTargetIDs = append(fixture.extraTargetIDs, secondaryTarget.ID)
+
+	targets, err := fixture.repo.ListTargetsByIDs(fixture.ctx, []int64{
+		secondaryTarget.ID,
+		fixture.target.ID,
+		secondaryTarget.ID,
+		fixture.target.ID,
+	})
+	require.NoError(t, err)
+	require.Len(t, targets, 2)
+	require.Equal(t, []int64{secondaryTarget.ID, fixture.target.ID}, []int64{targets[0].ID, targets[1].ID})
+
+	missingTargets, err := fixture.repo.ListTargetsByIDs(fixture.ctx, []int64{
+		secondaryTarget.ID,
+		-987654321,
+		secondaryTarget.ID,
+	})
+	require.Nil(t, missingTargets)
+	require.EqualError(t, err, "benchmark targets missing: [-987654321]")
+}
+
 func TestBenchmarkRepositoryCreateRunSnapshot(t *testing.T) {
 	ctx := context.Background()
 	tx := testEntTx(t)
@@ -428,6 +463,64 @@ func TestBenchmarkRepositoryCreateRunSnapshot(t *testing.T) {
 		Only(txCtx)
 	require.NoError(t, err)
 	require.Equal(t, "Mutated reasoning prompt", mutatedTask.Prompt)
+}
+
+func TestBenchmarkServiceCreateRunWithRepositoryMaterializesQueuedRun(t *testing.T) {
+	fixture := newBenchmarkFixture(t, "service-create-run")
+	svc := service.NewBenchmarkService(fixture.repo)
+
+	run, err := svc.CreateRun(fixture.ctx, service.BenchmarkCreateRunRequest{
+		ProfileID:   fixture.profile.ID,
+		TriggerType: "scheduled",
+	})
+	require.NoError(t, err)
+	fixture.runIDs = append(fixture.runIDs, run.ID)
+
+	storedRun, err := fixture.repo.GetRun(fixture.ctx, run.ID)
+	require.NoError(t, err)
+	require.Equal(t, service.BenchmarkRunStatusQueued, storedRun.Status)
+	require.Equal(t, fixture.suite.ID, storedRun.SuiteID)
+	require.Equal(t, fixture.profile.ID, storedRun.ProfileID)
+
+	runTargets, err := fixture.repo.ListRunTargets(fixture.ctx, run.ID)
+	require.NoError(t, err)
+	require.Len(t, runTargets, 1)
+	require.Equal(t, fixture.target.ID, runTargets[0].TargetID)
+	require.Equal(t, fixture.target.ModelName, runTargets[0].ModelName)
+	require.NotEmpty(t, runTargets[0].ConfigSnapshot)
+
+	runTasks, err := fixture.repo.ListRunTasks(fixture.ctx, run.ID)
+	require.NoError(t, err)
+	require.Len(t, runTasks, 1)
+	require.Equal(t, fixture.task.ID, runTasks[0].TaskID)
+	require.Equal(t, fixture.task.Prompt, runTasks[0].PromptSnapshot)
+	require.NotEmpty(t, runTasks[0].TaskSnapshot)
+
+	results, err := fixture.repo.ListRunResults(fixture.ctx, run.ID)
+	require.NoError(t, err)
+	require.Len(t, results, len(runTargets)*len(runTasks))
+	for _, result := range results {
+		require.Equal(t, service.BenchmarkResultStatusPending, result.Status)
+		require.Equal(t, run.ID, result.RunID)
+	}
+
+	configSnapshot := storedRun.ConfigSnapshot
+	require.Equal(t, float64(fixture.profile.ID), configSnapshot["profile_id"])
+	require.Equal(t, service.BenchmarkTaskScaleSmall, configSnapshot["task_scale"])
+	require.Equal(t, []any{"reasoning"}, configSnapshot["task_types"])
+	require.Equal(t, float64(42), configSnapshot["selection_seed"])
+	require.Contains(t, configSnapshot, "task_count_limit")
+	require.Contains(t, configSnapshot, "per_type_limit")
+	require.Contains(t, configSnapshot, "difficulty_filter")
+	require.Contains(t, configSnapshot, "tag_filter")
+	require.Equal(t, "seeded", configSnapshot["sampling_strategy"])
+	require.Equal(t, "ability_score_only", configSnapshot["ranking_basis"])
+	runtimeConfig, ok := configSnapshot["runtime_config"].(map[string]any)
+	require.True(t, ok)
+	require.Contains(t, runtimeConfig, "temperature")
+	scoringConfig, ok := configSnapshot["scoring_config"].(map[string]any)
+	require.True(t, ok)
+	require.Contains(t, scoringConfig, "normalize")
 }
 
 func TestBenchmarkRepositoryReadRunSnapshots(t *testing.T) {

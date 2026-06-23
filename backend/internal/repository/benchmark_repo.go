@@ -138,21 +138,23 @@ func (r *benchmarkRepository) ListTargetsByIDs(ctx context.Context, ids []int64)
 	if err != nil {
 		return nil, err
 	}
-	if len(rows) != len(orderedIDs) {
-		return nil, fmt.Errorf("benchmark targets missing: requested %d unique ids, found %d", len(orderedIDs), len(rows))
-	}
 
 	byID := make(map[int64]*dbent.BenchmarkTarget, len(rows))
 	for _, target := range rows {
 		byID[target.ID] = target
 	}
 	ordered := make([]*dbent.BenchmarkTarget, 0, len(orderedIDs))
+	missingIDs := make([]int64, 0)
 	for _, id := range orderedIDs {
 		target, ok := byID[id]
 		if !ok {
-			return nil, fmt.Errorf("benchmark target %d not found", id)
+			missingIDs = append(missingIDs, id)
+			continue
 		}
 		ordered = append(ordered, target)
+	}
+	if len(missingIDs) > 0 {
+		return nil, fmt.Errorf("benchmark targets missing: %v", missingIDs)
 	}
 	return ordered, nil
 }

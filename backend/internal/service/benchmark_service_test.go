@@ -626,6 +626,27 @@ func TestBenchmarkServicePreviewProfileAppliesPerTypeLimit(t *testing.T) {
 	require.True(t, preview.SelectedTaskIDs[0] == 201 || preview.SelectedTaskIDs[0] == 204 || preview.SelectedTaskIDs[1] == 201 || preview.SelectedTaskIDs[1] == 204)
 }
 
+func TestBenchmarkServicePreviewProfileCanClearFiltersAndPerTypeLimit(t *testing.T) {
+	t.Parallel()
+
+	repo, profile := newBenchmarkPreviewRepoStub(t)
+	profile.PerTypeLimit = map[string]int{"reasoning": 1}
+	profile.DifficultyFilter = []string{"easy"}
+	profile.TagFilter = []string{"public"}
+
+	svc := NewBenchmarkService(repo)
+	preview, err := svc.PreviewProfile(context.Background(), profile.ID, BenchmarkProfilePreviewInput{
+		TaskScale:        BenchmarkTaskScaleCustom,
+		PerTypeLimit:     map[string]int{},
+		DifficultyFilter: []string{},
+		TagFilter:        []string{},
+	})
+	require.NoError(t, err)
+	require.Equal(t, []int64{201, 202, 204}, preview.SelectedTaskIDs)
+	require.Equal(t, 3, preview.TaskCount)
+	require.Equal(t, 6, preview.ResultCount)
+}
+
 func TestBenchmarkServicePreviewProfileReturnsResultMatrixSize(t *testing.T) {
 	t.Parallel()
 
@@ -667,6 +688,25 @@ func TestBenchmarkServicePreviewProfileRejectsMissingProfileTargets(t *testing.T
 	preview, err := svc.PreviewProfile(context.Background(), profile.ID, BenchmarkProfilePreviewInput{})
 	require.Nil(t, preview)
 	require.EqualError(t, err, "benchmark targets missing: [102]")
+}
+
+func TestBenchmarkServicePreviewProfileRejectsExplicitEmptyTargetAndTaskTypeOverrides(t *testing.T) {
+	t.Parallel()
+
+	repo, profile := newBenchmarkPreviewRepoStub(t)
+	svc := NewBenchmarkService(repo)
+
+	preview, err := svc.PreviewProfile(context.Background(), profile.ID, BenchmarkProfilePreviewInput{
+		TargetIDs: []int64{},
+	})
+	require.Nil(t, preview)
+	require.EqualError(t, err, "at least one target is required")
+
+	preview, err = svc.PreviewProfile(context.Background(), profile.ID, BenchmarkProfilePreviewInput{
+		TaskTypes: []string{},
+	})
+	require.Nil(t, preview)
+	require.EqualError(t, err, "at least one task type is required")
 }
 
 func TestBenchmarkServiceCreateRunMaterializesTargetAndTaskSnapshots(t *testing.T) {
@@ -769,7 +809,17 @@ func TestBenchmarkServiceCreateRunMaterializesTargetAndTaskSnapshots(t *testing.
 	require.Equal(t, int64(7), gotInput.ConfigSnapshot["selection_seed"])
 	require.Equal(t, 5, gotInput.ConfigSnapshot["task_count_limit"])
 	require.Equal(t, map[string]int{}, gotInput.ConfigSnapshot["per_type_limit"])
+	require.Equal(t, "balanced", gotInput.ConfigSnapshot["sampling_strategy"])
 	require.Equal(t, "ability_score_only", gotInput.ConfigSnapshot["ranking_basis"])
+	require.Equal(t, map[string]any{"timeout": 30}, gotInput.ConfigSnapshot["runtime_config"])
+	require.Equal(t, map[string]any{"mode": "strict"}, gotInput.ConfigSnapshot["scoring_config"])
+
+	runtimeSnapshot, ok := gotInput.ConfigSnapshot["runtime_config"].(map[string]any)
+	require.True(t, ok)
+	profile.RuntimeConfig["timeout"] = 15
+	require.Equal(t, 30, runtimeSnapshot["timeout"])
+	runtimeSnapshot["timeout"] = 99
+	require.Equal(t, 15, profile.RuntimeConfig["timeout"])
 }
 
 func TestBenchmarkServiceCreateRunRejectsDisabledProfile(t *testing.T) {
@@ -818,7 +868,10 @@ func newBenchmarkPreviewRepoStub(t *testing.T) (*benchmarkServiceRepoStub, *ent.
 		PerTypeLimit:     map[string]int{},
 		DifficultyFilter: []string{"easy"},
 		TagFilter:        []string{"public"},
+		SamplingStrategy: "balanced",
 		SelectionSeed:    int64Ptr(7),
+		RuntimeConfig:    map[string]any{"timeout": 30},
+		ScoringConfig:    map[string]any{"mode": "strict"},
 		Enabled:          true,
 	}
 	targets := []*ent.BenchmarkTarget{

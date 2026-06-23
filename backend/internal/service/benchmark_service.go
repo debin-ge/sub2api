@@ -202,7 +202,7 @@ func (s *BenchmarkService) selectBenchmarkProfile(ctx context.Context, profileID
 
 func (s *BenchmarkService) selectBenchmarkProfileFromProfile(ctx context.Context, profile *ent.BenchmarkProfile, override BenchmarkProfilePreviewInput) (*benchmarkProfileSelection, error) {
 	targetIDs := benchmarkCloneInt64Slice(profile.TargetIds)
-	if len(override.TargetIDs) > 0 {
+	if override.TargetIDs != nil {
 		targetIDs = benchmarkCloneInt64Slice(override.TargetIDs)
 	}
 	if len(targetIDs) == 0 {
@@ -215,7 +215,7 @@ func (s *BenchmarkService) selectBenchmarkProfileFromProfile(ctx context.Context
 	}
 
 	taskTypes := benchmarkCloneStringSlice(profile.TaskTypes)
-	if len(override.TaskTypes) > 0 {
+	if override.TaskTypes != nil {
 		taskTypes = benchmarkCloneStringSlice(override.TaskTypes)
 	}
 	if len(taskTypes) == 0 {
@@ -243,15 +243,15 @@ func (s *BenchmarkService) selectBenchmarkProfileFromProfile(ctx context.Context
 		taskCountLimit = override.TaskCountLimit
 	}
 	perTypeLimit := benchmarkCloneIntMap(profile.PerTypeLimit)
-	if len(override.PerTypeLimit) > 0 {
+	if override.PerTypeLimit != nil {
 		perTypeLimit = benchmarkCloneIntMap(override.PerTypeLimit)
 	}
 	difficultyFilter := benchmarkCloneStringSlice(profile.DifficultyFilter)
-	if len(override.DifficultyFilter) > 0 {
+	if override.DifficultyFilter != nil {
 		difficultyFilter = benchmarkCloneStringSlice(override.DifficultyFilter)
 	}
 	tagFilter := benchmarkCloneStringSlice(profile.TagFilter)
-	if len(override.TagFilter) > 0 {
+	if override.TagFilter != nil {
 		tagFilter = benchmarkCloneStringSlice(override.TagFilter)
 	}
 	selectionSeed := profile.SelectionSeed
@@ -399,6 +399,9 @@ func benchmarkRunConfigSnapshot(selection *benchmarkProfileSelection) map[string
 		"per_type_limit":    benchmarkCloneIntMap(selection.perTypeLimit),
 		"difficulty_filter": benchmarkCloneStringSlice(selection.difficultyFilter),
 		"tag_filter":        benchmarkCloneStringSlice(selection.tagFilter),
+		"sampling_strategy": selection.profile.SamplingStrategy,
+		"runtime_config":    benchmarkCloneAnyMap(selection.profile.RuntimeConfig),
+		"scoring_config":    benchmarkCloneAnyMap(selection.profile.ScoringConfig),
 		"ranking_basis":     "ability_score_only",
 	}
 }
