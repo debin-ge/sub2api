@@ -108,13 +108,42 @@ func buildBenchmarkGatewayUserPayload(req BenchmarkGatewayRequest) map[string]an
 		if isBenchmarkGatewayInternalPayloadKey(key) {
 			continue
 		}
-		payload[key] = value
+		payload[key] = cloneBenchmarkGatewayPayloadValue(value)
 	}
 	payload["model"] = req.ModelName
 	if _, ok := payload["input"]; !ok && payload["messages"] == nil && req.Prompt != "" {
 		payload["input"] = req.Prompt
 	}
 	return payload
+}
+
+func cloneBenchmarkGatewayPayloadValue(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		return cloneBenchmarkGatewayPayloadMap(typed)
+	case []any:
+		cloned := make([]any, len(typed))
+		for i, item := range typed {
+			cloned[i] = cloneBenchmarkGatewayPayloadValue(item)
+		}
+		return cloned
+	case []map[string]any:
+		cloned := make([]map[string]any, len(typed))
+		for i, item := range typed {
+			cloned[i] = cloneBenchmarkGatewayPayloadMap(item)
+		}
+		return cloned
+	default:
+		return value
+	}
+}
+
+func cloneBenchmarkGatewayPayloadMap(payload map[string]any) map[string]any {
+	cloned := make(map[string]any, len(payload))
+	for key, value := range payload {
+		cloned[key] = cloneBenchmarkGatewayPayloadValue(value)
+	}
+	return cloned
 }
 
 func isBenchmarkGatewayInternalPayloadKey(key string) bool {
