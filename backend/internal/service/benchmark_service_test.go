@@ -317,6 +317,40 @@ func TestBenchmarkServiceListSuitesDelegatesInput(t *testing.T) {
 	require.Equal(t, 123, total)
 }
 
+func TestNormalizeBenchmarkListInput(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, BenchmarkListInput{Page: 1, PageSize: 20}, NormalizeBenchmarkListInput(BenchmarkListInput{}))
+	require.Equal(t, BenchmarkListInput{Page: 1, PageSize: 20}, NormalizeBenchmarkListInput(BenchmarkListInput{Page: -1, PageSize: -5}))
+	require.Equal(t, BenchmarkListInput{Page: 3, PageSize: 100}, NormalizeBenchmarkListInput(BenchmarkListInput{Page: 3, PageSize: 999}))
+
+	taskInput := NormalizeBenchmarkTaskListInput(BenchmarkTaskListInput{
+		BenchmarkListInput: BenchmarkListInput{Page: 0, PageSize: 101},
+		SuiteID:            17,
+		TaskTypes:          []string{"reasoning"},
+		Enabled:            boolPtr(true),
+	})
+	require.Equal(t, BenchmarkTaskListInput{
+		BenchmarkListInput: BenchmarkListInput{Page: 1, PageSize: 100},
+		SuiteID:            17,
+		TaskTypes:          []string{"reasoning"},
+		Enabled:            boolPtr(true),
+	}, taskInput)
+
+	runInput := NormalizeBenchmarkRunListInput(BenchmarkRunListInput{
+		BenchmarkListInput: BenchmarkListInput{Page: 0, PageSize: 0},
+		SuiteID:            7,
+		ProfileID:          8,
+		Status:             []string{BenchmarkRunStatusQueued},
+	})
+	require.Equal(t, BenchmarkRunListInput{
+		BenchmarkListInput: BenchmarkListInput{Page: 1, PageSize: 20},
+		SuiteID:            7,
+		ProfileID:          8,
+		Status:             []string{BenchmarkRunStatusQueued},
+	}, runInput)
+}
+
 func TestBenchmarkServiceCreateTargetRejectsEmptyModelName(t *testing.T) {
 	svc := NewBenchmarkService(newBenchmarkServiceRepoStub(t))
 
@@ -541,6 +575,20 @@ func TestBenchmarkServiceListProfilesDelegatesInput(t *testing.T) {
 	require.Equal(t, 12, total)
 }
 
+func TestBenchmarkServiceListProfilesNormalizesPagination(t *testing.T) {
+	t.Parallel()
+
+	repo := newBenchmarkServiceRepoStub(t)
+	repo.listProfilesFn = func(ctx context.Context, input BenchmarkListInput) ([]*ent.BenchmarkProfile, int, error) {
+		require.Equal(t, BenchmarkListInput{Page: 1, PageSize: 100}, input)
+		return nil, 0, nil
+	}
+
+	svc := NewBenchmarkService(repo)
+	_, _, err := svc.ListProfiles(context.Background(), BenchmarkListInput{Page: 0, PageSize: 999})
+	require.NoError(t, err)
+}
+
 func TestBenchmarkServiceCreateProfileRejectsEmptyTargets(t *testing.T) {
 	svc := NewBenchmarkService(newBenchmarkServiceRepoStub(t))
 
@@ -697,6 +745,30 @@ func TestBenchmarkServiceListRunsDelegatesInput(t *testing.T) {
 	require.Equal(t, 21, total)
 }
 
+func TestBenchmarkServiceListRunsNormalizesPagination(t *testing.T) {
+	t.Parallel()
+
+	repo := newBenchmarkServiceRepoStub(t)
+	repo.listRunsFn = func(ctx context.Context, input BenchmarkRunListInput) ([]*ent.BenchmarkRun, int, error) {
+		require.Equal(t, BenchmarkRunListInput{
+			BenchmarkListInput: BenchmarkListInput{Page: 1, PageSize: 20},
+			SuiteID:            7,
+			ProfileID:          8,
+			Status:             []string{BenchmarkRunStatusQueued},
+		}, input)
+		return nil, 0, nil
+	}
+
+	svc := NewBenchmarkService(repo)
+	_, _, err := svc.ListRuns(context.Background(), BenchmarkRunListInput{
+		BenchmarkListInput: BenchmarkListInput{Page: -5, PageSize: 0},
+		SuiteID:            7,
+		ProfileID:          8,
+		Status:             []string{BenchmarkRunStatusQueued},
+	})
+	require.NoError(t, err)
+}
+
 func TestBenchmarkServiceGetRunDelegatesInput(t *testing.T) {
 	t.Parallel()
 
@@ -711,6 +783,38 @@ func TestBenchmarkServiceGetRunDelegatesInput(t *testing.T) {
 	got, err := svc.GetRun(context.Background(), 33)
 	require.NoError(t, err)
 	require.Same(t, want, got)
+}
+
+func TestBenchmarkServiceListRunTargetsDelegatesInput(t *testing.T) {
+	t.Parallel()
+
+	want := []*ent.BenchmarkRunTarget{{ID: 61}, {ID: 62}}
+	repo := newBenchmarkServiceRepoStub(t)
+	repo.listRunTargetsFn = func(ctx context.Context, runID int64) ([]*ent.BenchmarkRunTarget, error) {
+		require.Equal(t, int64(66), runID)
+		return want, nil
+	}
+
+	svc := NewBenchmarkService(repo)
+	got, err := svc.ListRunTargets(context.Background(), 66)
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+}
+
+func TestBenchmarkServiceListRunTasksDelegatesInput(t *testing.T) {
+	t.Parallel()
+
+	want := []*ent.BenchmarkRunTask{{ID: 71}, {ID: 72}}
+	repo := newBenchmarkServiceRepoStub(t)
+	repo.listRunTasksFn = func(ctx context.Context, runID int64) ([]*ent.BenchmarkRunTask, error) {
+		require.Equal(t, int64(77), runID)
+		return want, nil
+	}
+
+	svc := NewBenchmarkService(repo)
+	got, err := svc.ListRunTasks(context.Background(), 77)
+	require.NoError(t, err)
+	require.Equal(t, want, got)
 }
 
 func TestBenchmarkServiceListRunResultsDelegatesInput(t *testing.T) {

@@ -62,12 +62,34 @@ func NewBenchmarkService(repo BenchmarkRepository) *BenchmarkService {
 	return &BenchmarkService{repo: repo}
 }
 
+func NormalizeBenchmarkListInput(input BenchmarkListInput) BenchmarkListInput {
+	if input.Page <= 0 {
+		input.Page = 1
+	}
+	if input.PageSize <= 0 {
+		input.PageSize = 20
+	} else if input.PageSize > 100 {
+		input.PageSize = 100
+	}
+	return input
+}
+
+func NormalizeBenchmarkTaskListInput(input BenchmarkTaskListInput) BenchmarkTaskListInput {
+	input.BenchmarkListInput = NormalizeBenchmarkListInput(input.BenchmarkListInput)
+	return input
+}
+
+func NormalizeBenchmarkRunListInput(input BenchmarkRunListInput) BenchmarkRunListInput {
+	input.BenchmarkListInput = NormalizeBenchmarkListInput(input.BenchmarkListInput)
+	return input
+}
+
 func (s *BenchmarkService) CreateSuite(ctx context.Context, input BenchmarkSuiteInput) (*ent.BenchmarkSuite, error) {
 	return s.repo.CreateSuite(ctx, input)
 }
 
 func (s *BenchmarkService) ListSuites(ctx context.Context, input BenchmarkListInput) ([]*ent.BenchmarkSuite, int, error) {
-	return s.repo.ListSuites(ctx, input)
+	return s.repo.ListSuites(ctx, NormalizeBenchmarkListInput(input))
 }
 
 func (s *BenchmarkService) CreateTarget(ctx context.Context, input BenchmarkTargetInput) (*ent.BenchmarkTarget, error) {
@@ -81,7 +103,7 @@ func (s *BenchmarkService) CreateTarget(ctx context.Context, input BenchmarkTarg
 }
 
 func (s *BenchmarkService) ListTargets(ctx context.Context, input BenchmarkListInput) ([]*ent.BenchmarkTarget, int, error) {
-	return s.repo.ListTargets(ctx, input)
+	return s.repo.ListTargets(ctx, NormalizeBenchmarkListInput(input))
 }
 
 func (s *BenchmarkService) CreateTask(ctx context.Context, input BenchmarkTaskInput) (*ent.BenchmarkTask, error) {
@@ -95,7 +117,7 @@ func (s *BenchmarkService) CreateTask(ctx context.Context, input BenchmarkTaskIn
 }
 
 func (s *BenchmarkService) ListTasks(ctx context.Context, input BenchmarkTaskListInput) ([]*ent.BenchmarkTask, int, error) {
-	return s.repo.ListTasks(ctx, input)
+	return s.repo.ListTasks(ctx, NormalizeBenchmarkTaskListInput(input))
 }
 
 func (s *BenchmarkService) CreateProfile(ctx context.Context, input BenchmarkProfileInput) (*ent.BenchmarkProfile, error) {
@@ -126,15 +148,23 @@ func (s *BenchmarkService) GetProfile(ctx context.Context, id int64) (*ent.Bench
 }
 
 func (s *BenchmarkService) ListProfiles(ctx context.Context, input BenchmarkListInput) ([]*ent.BenchmarkProfile, int, error) {
-	return s.repo.ListProfiles(ctx, input)
+	return s.repo.ListProfiles(ctx, NormalizeBenchmarkListInput(input))
 }
 
 func (s *BenchmarkService) ListRuns(ctx context.Context, input BenchmarkRunListInput) ([]*ent.BenchmarkRun, int, error) {
-	return s.repo.ListRuns(ctx, input)
+	return s.repo.ListRuns(ctx, NormalizeBenchmarkRunListInput(input))
 }
 
 func (s *BenchmarkService) GetRun(ctx context.Context, id int64) (*ent.BenchmarkRun, error) {
 	return s.repo.GetRun(ctx, id)
+}
+
+func (s *BenchmarkService) ListRunTargets(ctx context.Context, runID int64) ([]*ent.BenchmarkRunTarget, error) {
+	return s.repo.ListRunTargets(ctx, runID)
+}
+
+func (s *BenchmarkService) ListRunTasks(ctx context.Context, runID int64) ([]*ent.BenchmarkRunTask, error) {
+	return s.repo.ListRunTasks(ctx, runID)
 }
 
 func (s *BenchmarkService) ListRunResults(ctx context.Context, runID int64) ([]*ent.BenchmarkResult, error) {
