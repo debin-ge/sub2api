@@ -152,6 +152,8 @@ type BenchmarkRunTaskInput struct {
 	TaskSnapshot           map[string]any
 }
 
+// BenchmarkResultUpdateInput uses three-state nullable semantics:
+// nil leaves a field unchanged, a non-nil pointer sets it, and Clear* forces NULL.
 type BenchmarkResultUpdateInput struct {
 	Status               *string
 	RequestID            *string

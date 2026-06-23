@@ -385,6 +385,56 @@ func TestBenchmarkRepositoryUpdateResultClearsNullableFields(t *testing.T) {
 	require.Nil(t, cleared.ErrorMessage)
 	require.Nil(t, cleared.StartedAt)
 	require.Nil(t, cleared.FinishedAt)
+
+	sameCallRequestID := "req-same-call"
+	sameCallScore := 77.7
+	sameCallMaxScore := 88.8
+	sameCallNormalizedScore := 0.875
+	sameCallEvaluatorType := "automatic"
+	sameCallLatencyMS := 4321
+	sameCallErrorCode := "E99"
+	sameCallErrorMessage := "same-call error"
+	sameCallStartedAt := time.Date(2026, 6, 23, 11, 0, 0, 0, time.UTC)
+	sameCallFinishedAt := time.Date(2026, 6, 23, 11, 1, 0, 0, time.UTC)
+
+	err = repo.UpdateResult(txCtx, result.ID, service.BenchmarkResultUpdateInput{
+		RequestID:            &sameCallRequestID,
+		ClearRequestID:       true,
+		Score:                &sameCallScore,
+		ClearScore:           true,
+		MaxScore:             &sameCallMaxScore,
+		ClearMaxScore:        true,
+		NormalizedScore:      &sameCallNormalizedScore,
+		ClearNormalizedScore: true,
+		EvaluatorType:        &sameCallEvaluatorType,
+		ClearEvaluatorType:   true,
+		LatencyMS:            &sameCallLatencyMS,
+		ClearLatencyMS:       true,
+		ErrorCode:            &sameCallErrorCode,
+		ClearErrorCode:       true,
+		ErrorMessage:         &sameCallErrorMessage,
+		ClearErrorMessage:    true,
+		StartedAt:            &sameCallStartedAt,
+		ClearStartedAt:       true,
+		FinishedAt:           &sameCallFinishedAt,
+		ClearFinishedAt:      true,
+	})
+	require.NoError(t, err)
+
+	sameCallCleared, err := client.BenchmarkResult.Query().
+		Where(benchmarkresult.IDEQ(result.ID)).
+		Only(txCtx)
+	require.NoError(t, err)
+	require.Nil(t, sameCallCleared.RequestID)
+	require.Nil(t, sameCallCleared.Score)
+	require.Nil(t, sameCallCleared.MaxScore)
+	require.Nil(t, sameCallCleared.NormalizedScore)
+	require.Nil(t, sameCallCleared.EvaluatorType)
+	require.Nil(t, sameCallCleared.LatencyMs)
+	require.Nil(t, sameCallCleared.ErrorCode)
+	require.Nil(t, sameCallCleared.ErrorMessage)
+	require.Nil(t, sameCallCleared.StartedAt)
+	require.Nil(t, sameCallCleared.FinishedAt)
 }
 
 func ptrInt64(v int64) *int64 {
