@@ -125,6 +125,26 @@ func (s *BenchmarkService) GetProfile(ctx context.Context, id int64) (*ent.Bench
 	return s.repo.GetProfile(ctx, id)
 }
 
+func (s *BenchmarkService) ListProfiles(ctx context.Context, input BenchmarkListInput) ([]*ent.BenchmarkProfile, int, error) {
+	return s.repo.ListProfiles(ctx, input)
+}
+
+func (s *BenchmarkService) ListRuns(ctx context.Context, input BenchmarkRunListInput) ([]*ent.BenchmarkRun, int, error) {
+	return s.repo.ListRuns(ctx, input)
+}
+
+func (s *BenchmarkService) GetRun(ctx context.Context, id int64) (*ent.BenchmarkRun, error) {
+	return s.repo.GetRun(ctx, id)
+}
+
+func (s *BenchmarkService) ListRunResults(ctx context.Context, runID int64) ([]*ent.BenchmarkResult, error) {
+	return s.repo.ListRunResults(ctx, runID)
+}
+
+func (s *BenchmarkService) ListScoreSnapshots(ctx context.Context, runID int64) ([]*ent.BenchmarkScoreSnapshot, error) {
+	return s.repo.ListScoreSnapshots(ctx, runID)
+}
+
 func (s *BenchmarkService) PreviewProfile(ctx context.Context, profileID int64, override BenchmarkProfilePreviewInput) (*BenchmarkProfilePreview, error) {
 	selection, err := s.selectBenchmarkProfile(ctx, profileID, override)
 	if err != nil {

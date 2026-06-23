@@ -25,10 +25,13 @@ type benchmarkServiceRepoStub struct {
 	listEnabledTasksForSuiteFn func(ctx context.Context, suiteID int64) ([]*ent.BenchmarkTask, error)
 	createProfileFn            func(ctx context.Context, input BenchmarkProfileInput) (*ent.BenchmarkProfile, error)
 	getProfileFn               func(ctx context.Context, id int64) (*ent.BenchmarkProfile, error)
+	listProfilesFn             func(ctx context.Context, input BenchmarkListInput) ([]*ent.BenchmarkProfile, int, error)
 	createRunWithSnapshotsFn   func(ctx context.Context, input BenchmarkCreateRunInput) (*ent.BenchmarkRun, error)
 	getRunFn                   func(ctx context.Context, id int64) (*ent.BenchmarkRun, error)
+	listRunsFn                 func(ctx context.Context, input BenchmarkRunListInput) ([]*ent.BenchmarkRun, int, error)
 	listRunTargetsFn           func(ctx context.Context, runID int64) ([]*ent.BenchmarkRunTarget, error)
 	listRunTasksFn             func(ctx context.Context, runID int64) ([]*ent.BenchmarkRunTask, error)
+	listRunResultsFn           func(ctx context.Context, runID int64) ([]*ent.BenchmarkResult, error)
 	listRunScoreInputsFn       func(ctx context.Context, runID int64) ([]BenchmarkRunScoreInput, error)
 	listScoreSnapshotsFn       func(ctx context.Context, runID int64) ([]*ent.BenchmarkScoreSnapshot, error)
 	saveScoreSnapshotsFn       func(ctx context.Context, runID int64, snapshots []BenchmarkScoreSnapshotInput) error
@@ -137,6 +140,14 @@ func (s *benchmarkServiceRepoStub) GetProfile(ctx context.Context, id int64) (*e
 	return nil, nil
 }
 
+func (s *benchmarkServiceRepoStub) ListProfiles(ctx context.Context, input BenchmarkListInput) ([]*ent.BenchmarkProfile, int, error) {
+	if s.listProfilesFn != nil {
+		return s.listProfilesFn(ctx, input)
+	}
+	s.t.Fatalf("unexpected ListProfiles call")
+	return nil, 0, nil
+}
+
 func (s *benchmarkServiceRepoStub) CreateRunWithSnapshots(ctx context.Context, input BenchmarkCreateRunInput) (*ent.BenchmarkRun, error) {
 	if s.createRunWithSnapshotsFn != nil {
 		return s.createRunWithSnapshotsFn(ctx, input)
@@ -154,6 +165,9 @@ func (s *benchmarkServiceRepoStub) GetRun(ctx context.Context, id int64) (*ent.B
 }
 
 func (s *benchmarkServiceRepoStub) ListRuns(ctx context.Context, input BenchmarkRunListInput) ([]*ent.BenchmarkRun, int, error) {
+	if s.listRunsFn != nil {
+		return s.listRunsFn(ctx, input)
+	}
 	s.t.Fatalf("unexpected ListRuns call")
 	return nil, 0, nil
 }
@@ -191,6 +205,9 @@ func (s *benchmarkServiceRepoStub) ListScoreSnapshots(ctx context.Context, runID
 }
 
 func (s *benchmarkServiceRepoStub) ListRunResults(ctx context.Context, runID int64) ([]*ent.BenchmarkResult, error) {
+	if s.listRunResultsFn != nil {
+		return s.listRunResultsFn(ctx, runID)
+	}
 	s.t.Fatalf("unexpected ListRunResults call")
 	return nil, nil
 }
@@ -507,6 +524,23 @@ func TestBenchmarkServiceListTasksDelegatesInput(t *testing.T) {
 	require.Equal(t, 8, total)
 }
 
+func TestBenchmarkServiceListProfilesDelegatesInput(t *testing.T) {
+	t.Parallel()
+
+	want := []*ent.BenchmarkProfile{{ID: 1}, {ID: 2}}
+	repo := newBenchmarkServiceRepoStub(t)
+	repo.listProfilesFn = func(ctx context.Context, input BenchmarkListInput) ([]*ent.BenchmarkProfile, int, error) {
+		require.Equal(t, BenchmarkListInput{Page: 5, PageSize: 15}, input)
+		return want, 12, nil
+	}
+
+	svc := NewBenchmarkService(repo)
+	got, total, err := svc.ListProfiles(context.Background(), BenchmarkListInput{Page: 5, PageSize: 15})
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+	require.Equal(t, 12, total)
+}
+
 func TestBenchmarkServiceCreateProfileRejectsEmptyTargets(t *testing.T) {
 	svc := NewBenchmarkService(newBenchmarkServiceRepoStub(t))
 
@@ -634,6 +668,81 @@ func TestBenchmarkServiceCreateProfileAcceptsValidInput(t *testing.T) {
 		Metadata:         map[string]any{"owner": "bench"},
 		Enabled:          true,
 	}, gotInput)
+}
+
+func TestBenchmarkServiceListRunsDelegatesInput(t *testing.T) {
+	t.Parallel()
+
+	want := []*ent.BenchmarkRun{{ID: 11}, {ID: 12}}
+	repo := newBenchmarkServiceRepoStub(t)
+	repo.listRunsFn = func(ctx context.Context, input BenchmarkRunListInput) ([]*ent.BenchmarkRun, int, error) {
+		require.Equal(t, BenchmarkRunListInput{
+			BenchmarkListInput: BenchmarkListInput{Page: 2, PageSize: 20},
+			SuiteID:            7,
+			ProfileID:          8,
+			Status:             []string{BenchmarkRunStatusQueued, BenchmarkRunStatusCompleted},
+		}, input)
+		return want, 21, nil
+	}
+
+	svc := NewBenchmarkService(repo)
+	got, total, err := svc.ListRuns(context.Background(), BenchmarkRunListInput{
+		BenchmarkListInput: BenchmarkListInput{Page: 2, PageSize: 20},
+		SuiteID:            7,
+		ProfileID:          8,
+		Status:             []string{BenchmarkRunStatusQueued, BenchmarkRunStatusCompleted},
+	})
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+	require.Equal(t, 21, total)
+}
+
+func TestBenchmarkServiceGetRunDelegatesInput(t *testing.T) {
+	t.Parallel()
+
+	want := &ent.BenchmarkRun{ID: 33}
+	repo := newBenchmarkServiceRepoStub(t)
+	repo.getRunFn = func(ctx context.Context, id int64) (*ent.BenchmarkRun, error) {
+		require.Equal(t, int64(33), id)
+		return want, nil
+	}
+
+	svc := NewBenchmarkService(repo)
+	got, err := svc.GetRun(context.Background(), 33)
+	require.NoError(t, err)
+	require.Same(t, want, got)
+}
+
+func TestBenchmarkServiceListRunResultsDelegatesInput(t *testing.T) {
+	t.Parallel()
+
+	want := []*ent.BenchmarkResult{{ID: 101}, {ID: 102}}
+	repo := newBenchmarkServiceRepoStub(t)
+	repo.listRunResultsFn = func(ctx context.Context, runID int64) ([]*ent.BenchmarkResult, error) {
+		require.Equal(t, int64(44), runID)
+		return want, nil
+	}
+
+	svc := NewBenchmarkService(repo)
+	got, err := svc.ListRunResults(context.Background(), 44)
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+}
+
+func TestBenchmarkServiceListScoreSnapshotsDelegatesInput(t *testing.T) {
+	t.Parallel()
+
+	want := []*ent.BenchmarkScoreSnapshot{{ID: 201}, {ID: 202}}
+	repo := newBenchmarkServiceRepoStub(t)
+	repo.listScoreSnapshotsFn = func(ctx context.Context, runID int64) ([]*ent.BenchmarkScoreSnapshot, error) {
+		require.Equal(t, int64(55), runID)
+		return want, nil
+	}
+
+	svc := NewBenchmarkService(repo)
+	got, err := svc.ListScoreSnapshots(context.Background(), 55)
+	require.NoError(t, err)
+	require.Equal(t, want, got)
 }
 
 func TestBenchmarkServicePreviewProfileUsesTaskTypesAndScale(t *testing.T) {

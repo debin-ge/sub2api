@@ -252,6 +252,25 @@ func (r *benchmarkRepository) GetProfile(ctx context.Context, id int64) (*dbent.
 	return clientFromContext(ctx, r.client).BenchmarkProfile.Get(ctx, id)
 }
 
+func (r *benchmarkRepository) ListProfiles(ctx context.Context, input service.BenchmarkListInput) ([]*dbent.BenchmarkProfile, int, error) {
+	client := clientFromContext(ctx, r.client)
+	query := client.BenchmarkProfile.Query()
+	total, err := query.Clone().Count(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	limit, offset := benchmarkLimitOffset(input)
+	rows, err := query.
+		Order(dbent.Asc(benchmarkprofile.FieldID)).
+		Limit(limit).
+		Offset(offset).
+		All(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	return rows, total, nil
+}
+
 func (r *benchmarkRepository) CreateRunWithSnapshots(ctx context.Context, input service.BenchmarkCreateRunInput) (*dbent.BenchmarkRun, error) {
 	if tx := dbent.TxFromContext(ctx); tx != nil {
 		return r.createRunWithSnapshots(ctx, tx.Client(), input)

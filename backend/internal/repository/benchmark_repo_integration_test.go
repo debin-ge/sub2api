@@ -23,16 +23,17 @@ import (
 )
 
 type benchmarkFixture struct {
-	ctx            context.Context
-	client         *dbent.Client
-	repo           service.BenchmarkRepository
-	suite          *dbent.BenchmarkSuite
-	target         *dbent.BenchmarkTarget
-	task           *dbent.BenchmarkTask
-	profile        *dbent.BenchmarkProfile
-	createRunInput service.BenchmarkCreateRunInput
-	runIDs         []int64
-	extraTargetIDs []int64
+	ctx             context.Context
+	client          *dbent.Client
+	repo            service.BenchmarkRepository
+	suite           *dbent.BenchmarkSuite
+	target          *dbent.BenchmarkTarget
+	task            *dbent.BenchmarkTask
+	profile         *dbent.BenchmarkProfile
+	createRunInput  service.BenchmarkCreateRunInput
+	runIDs          []int64
+	extraTargetIDs  []int64
+	extraProfileIDs []int64
 }
 
 func cleanupBenchmarkFixture(ctx context.Context, client *dbent.Client, fixture *benchmarkFixture) {
@@ -49,6 +50,11 @@ func cleanupBenchmarkFixture(ctx context.Context, client *dbent.Client, fixture 
 	for i := len(fixture.extraTargetIDs) - 1; i >= 0; i-- {
 		targetID := fixture.extraTargetIDs[i]
 		_, _ = client.BenchmarkTarget.Delete().Where(benchmarktarget.IDEQ(targetID)).Exec(ctx)
+	}
+
+	for i := len(fixture.extraProfileIDs) - 1; i >= 0; i-- {
+		profileID := fixture.extraProfileIDs[i]
+		_, _ = client.BenchmarkProfile.Delete().Where(benchmarkprofile.IDEQ(profileID)).Exec(ctx)
 	}
 
 	if fixture.profile != nil {
@@ -261,6 +267,54 @@ func TestBenchmarkRepositoryListTargetsByIDsPreservesDedupedInputOrderAndReports
 	})
 	require.Nil(t, missingTargets)
 	require.EqualError(t, err, "benchmark targets missing: [-987654321]")
+}
+
+func TestBenchmarkRepositoryListProfiles(t *testing.T) {
+	fixture := newBenchmarkFixture(t, "list-profiles")
+
+	profileB, err := fixture.repo.CreateProfile(fixture.ctx, service.BenchmarkProfileInput{
+		SuiteID:          fixture.suite.ID,
+		Name:             "list-profiles-b",
+		Description:      "second profile",
+		TaskScale:        service.BenchmarkTaskScaleMedium,
+		SamplingStrategy: "seeded",
+		TargetIDs:        []int64{fixture.target.ID},
+		TaskTypes:        []string{"reasoning"},
+		Enabled:          true,
+	})
+	require.NoError(t, err)
+	fixture.extraProfileIDs = append(fixture.extraProfileIDs, profileB.ID)
+
+	profileC, err := fixture.repo.CreateProfile(fixture.ctx, service.BenchmarkProfileInput{
+		SuiteID:          fixture.suite.ID,
+		Name:             "list-profiles-c",
+		Description:      "third profile",
+		TaskScale:        service.BenchmarkTaskScaleFull,
+		SamplingStrategy: "seeded",
+		TargetIDs:        []int64{fixture.target.ID},
+		TaskTypes:        []string{"reasoning"},
+		Enabled:          true,
+	})
+	require.NoError(t, err)
+	fixture.extraProfileIDs = append(fixture.extraProfileIDs, profileC.ID)
+
+	profiles, total, err := fixture.repo.ListProfiles(fixture.ctx, service.BenchmarkListInput{
+		Page:     1,
+		PageSize: 2,
+	})
+	require.NoError(t, err)
+	require.Equal(t, 3, total)
+	require.Len(t, profiles, 2)
+	require.Equal(t, []int64{fixture.profile.ID, profileB.ID}, []int64{profiles[0].ID, profiles[1].ID})
+
+	pageTwo, totalTwo, err := fixture.repo.ListProfiles(fixture.ctx, service.BenchmarkListInput{
+		Page:     2,
+		PageSize: 2,
+	})
+	require.NoError(t, err)
+	require.Equal(t, 3, totalTwo)
+	require.Len(t, pageTwo, 1)
+	require.Equal(t, profileC.ID, pageTwo[0].ID)
 }
 
 func TestBenchmarkRepositoryCreateRunSnapshot(t *testing.T) {

@@ -20,6 +20,7 @@ type BenchmarkRepository interface {
 	ListEnabledTasksForSuite(ctx context.Context, suiteID int64) ([]*ent.BenchmarkTask, error)
 	CreateProfile(ctx context.Context, input BenchmarkProfileInput) (*ent.BenchmarkProfile, error)
 	GetProfile(ctx context.Context, id int64) (*ent.BenchmarkProfile, error)
+	ListProfiles(ctx context.Context, input BenchmarkListInput) ([]*ent.BenchmarkProfile, int, error)
 	CreateRunWithSnapshots(ctx context.Context, input BenchmarkCreateRunInput) (*ent.BenchmarkRun, error)
 	GetRun(ctx context.Context, id int64) (*ent.BenchmarkRun, error)
 	ListRuns(ctx context.Context, input BenchmarkRunListInput) ([]*ent.BenchmarkRun, int, error)
