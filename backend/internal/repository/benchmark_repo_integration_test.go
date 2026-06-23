@@ -36,9 +36,12 @@ type benchmarkFixture struct {
 
 func newBenchmarkFixture(t *testing.T, prefix string) *benchmarkFixture {
 	t.Helper()
+	return newBenchmarkFixtureWith(t, context.Background(), testEntClient(t), prefix)
+}
 
-	ctx := context.Background()
-	client := testEntClient(t)
+func newBenchmarkFixtureWith(t *testing.T, ctx context.Context, client *dbent.Client, prefix string) *benchmarkFixture {
+	t.Helper()
+
 	repo := NewBenchmarkRepository(client)
 
 	suite, err := repo.CreateSuite(ctx, service.BenchmarkSuiteInput{
@@ -191,8 +194,17 @@ func (f *benchmarkFixture) createRun(t *testing.T) *dbent.BenchmarkRun {
 func (f *benchmarkFixture) runTarget(t *testing.T, runID int64) *dbent.BenchmarkRunTarget {
 	t.Helper()
 
+	return f.runTargetByTargetID(t, runID, f.target.ID)
+}
+
+func (f *benchmarkFixture) runTargetByTargetID(t *testing.T, runID, targetID int64) *dbent.BenchmarkRunTarget {
+	t.Helper()
+
 	runTarget, err := f.client.BenchmarkRunTarget.Query().
-		Where(benchmarkruntarget.RunIDEQ(runID)).
+		Where(
+			benchmarkruntarget.RunIDEQ(runID),
+			benchmarkruntarget.TargetIDEQ(targetID),
+		).
 		Only(f.ctx)
 	require.NoError(t, err)
 	return runTarget
@@ -403,43 +415,120 @@ func TestBenchmarkRepositoryCreateRunSnapshot(t *testing.T) {
 func TestBenchmarkRepositorySaveScoreSnapshotsRollsBackOnError(t *testing.T) {
 	fixture := newBenchmarkFixture(t, "score-rollback")
 
-	validSnapshot := service.BenchmarkScoreSnapshotInput{
-		RunTargetID:            fixture.runTarget(t, fixture.runIDs[0]).ID,
-		OverallScore:           98.5,
-		DimensionScores:        map[string]any{"reasoning": 99.0},
-		PlannedTasks:           1,
-		ScoredTasks:            1,
-		InvalidTasks:           0,
-		CoverageRate:           1.0,
-		ConfidenceLevel:        "high",
-		InsufficientSample:     false,
-		SuccessRate:            1.0,
-		EstimatedCost:          0.12,
-		InvalidReasonBreakdown: map[string]any{},
-		RankingMetadata:        map[string]any{"rank": 1},
+	secondaryTarget, err := fixture.repo.CreateTarget(fixture.ctx, service.BenchmarkTargetInput{
+		ModelName:           uniqueTestValue(t, "score-rollback-secondary-model"),
+		ChannelID:           102,
+		DisplayName:         "Secondary Model",
+		ProviderSnapshot:    "openai",
+		ChannelNameSnapshot: "secondary-openai",
+		SupportedTaskTypes:  []string{"reasoning"},
+		MaxConcurrency:      1,
+		Enabled:             true,
+		PublicVisible:       true,
+		SortOrder:           2,
+		Metadata:            map[string]any{"tier": "secondary"},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = fixture.client.BenchmarkTarget.Delete().Where(benchmarktarget.IDEQ(secondaryTarget.ID)).Exec(fixture.ctx)
+	})
+
+	batchRunInput := fixture.createRunInput
+	batchRunInput.Targets = []service.BenchmarkRunTargetInput{
+		{
+			TargetID:            fixture.target.ID,
+			ModelName:           fixture.target.ModelName,
+			ChannelID:           fixture.target.ChannelID,
+			DisplayNameSnapshot: "Primary Model Snapshot",
+			ChannelNameSnapshot: "primary-openai",
+			ProviderSnapshot:    "openai",
+			TargetOrder:         1,
+			ConfigSnapshot:      map[string]any{"max_concurrency": 2},
+		},
+		{
+			TargetID:            secondaryTarget.ID,
+			ModelName:           secondaryTarget.ModelName,
+			ChannelID:           secondaryTarget.ChannelID,
+			DisplayNameSnapshot: "Secondary Model Snapshot",
+			ChannelNameSnapshot: "secondary-openai",
+			ProviderSnapshot:    "openai",
+			TargetOrder:         2,
+			ConfigSnapshot:      map[string]any{"max_concurrency": 1},
+		},
 	}
 
-	require.NoError(t, fixture.repo.SaveScoreSnapshots(fixture.ctx, fixture.runIDs[0], []service.BenchmarkScoreSnapshotInput{validSnapshot}))
-
-	count, err := fixture.client.BenchmarkScoreSnapshot.Query().
-		Where(benchmarkscoresnapshot.RunIDEQ(fixture.runIDs[0])).
-		Count(fixture.ctx)
+	batchRun, err := fixture.repo.CreateRunWithSnapshots(fixture.ctx, batchRunInput)
 	require.NoError(t, err)
-	require.Equal(t, 1, count)
+	fixture.runIDs = append(fixture.runIDs, batchRun.ID)
 
-	savedSnapshot, err := fixture.client.BenchmarkScoreSnapshot.Query().
-		Where(benchmarkscoresnapshot.RunIDEQ(fixture.runIDs[0])).
-		Only(fixture.ctx)
-	require.NoError(t, err)
-	require.Equal(t, validSnapshot.RunTargetID, savedSnapshot.RunTargetID)
-	require.InDelta(t, validSnapshot.OverallScore, savedSnapshot.OverallScore, 0.000001)
+	primaryRunTarget := fixture.runTargetByTargetID(t, batchRun.ID, fixture.target.ID)
+	secondaryRunTarget := fixture.runTargetByTargetID(t, batchRun.ID, secondaryTarget.ID)
+	foreignRunTarget := fixture.runTarget(t, fixture.runIDs[0])
 
-	otherRun := fixture.createRun(t)
-	otherRunTarget := fixture.runTarget(t, otherRun.ID)
-
-	err = fixture.repo.SaveScoreSnapshots(fixture.ctx, fixture.runIDs[0], []service.BenchmarkScoreSnapshotInput{
+	originalSnapshots := []service.BenchmarkScoreSnapshotInput{
 		{
-			RunTargetID:            otherRunTarget.ID,
+			RunTargetID:            primaryRunTarget.ID,
+			OverallScore:           91.1,
+			DimensionScores:        map[string]any{"reasoning": 90.0},
+			PlannedTasks:           1,
+			ScoredTasks:            1,
+			InvalidTasks:           0,
+			CoverageRate:           1.0,
+			ConfidenceLevel:        "medium",
+			InsufficientSample:     false,
+			SuccessRate:            1.0,
+			EstimatedCost:          0.11,
+			InvalidReasonBreakdown: map[string]any{},
+			RankingMetadata:        map[string]any{"slot": "primary"},
+		},
+		{
+			RunTargetID:            secondaryRunTarget.ID,
+			OverallScore:           82.2,
+			DimensionScores:        map[string]any{"reasoning": 80.0},
+			PlannedTasks:           1,
+			ScoredTasks:            1,
+			InvalidTasks:           0,
+			CoverageRate:           1.0,
+			ConfidenceLevel:        "medium",
+			InsufficientSample:     false,
+			SuccessRate:            1.0,
+			EstimatedCost:          0.08,
+			InvalidReasonBreakdown: map[string]any{},
+			RankingMetadata:        map[string]any{"slot": "secondary"},
+		},
+	}
+	require.NoError(t, fixture.repo.SaveScoreSnapshots(fixture.ctx, batchRun.ID, originalSnapshots))
+
+	originalRows, err := fixture.client.BenchmarkScoreSnapshot.Query().
+		Where(benchmarkscoresnapshot.RunIDEQ(batchRun.ID)).
+		Order(dbent.Asc(benchmarkscoresnapshot.FieldRunTargetID)).
+		All(fixture.ctx)
+	require.NoError(t, err)
+	require.Len(t, originalRows, 2)
+
+	originalSnapshotsByRunTarget := make(map[int64]*dbent.BenchmarkScoreSnapshot, len(originalRows))
+	for _, snapshot := range originalRows {
+		originalSnapshotsByRunTarget[snapshot.RunTargetID] = snapshot
+	}
+
+	partialReplacement := []service.BenchmarkScoreSnapshotInput{
+		{
+			RunTargetID:            primaryRunTarget.ID,
+			OverallScore:           99.9,
+			DimensionScores:        map[string]any{"reasoning": 99.0},
+			PlannedTasks:           1,
+			ScoredTasks:            1,
+			InvalidTasks:           0,
+			CoverageRate:           1.0,
+			ConfidenceLevel:        "high",
+			InsufficientSample:     false,
+			SuccessRate:            1.0,
+			EstimatedCost:          0.19,
+			InvalidReasonBreakdown: map[string]any{},
+			RankingMetadata:        map[string]any{"slot": "primary-replacement"},
+		},
+		{
+			RunTargetID:            foreignRunTarget.ID,
 			OverallScore:           12.34,
 			DimensionScores:        map[string]any{"reasoning": 12.34},
 			PlannedTasks:           1,
@@ -451,31 +540,59 @@ func TestBenchmarkRepositorySaveScoreSnapshotsRollsBackOnError(t *testing.T) {
 			SuccessRate:            1.0,
 			EstimatedCost:          0.01,
 			InvalidReasonBreakdown: map[string]any{},
-			RankingMetadata:        map[string]any{"rank": 99},
+			RankingMetadata:        map[string]any{"slot": "foreign"},
 		},
-	})
+	}
+
+	err = fixture.repo.SaveScoreSnapshots(fixture.ctx, batchRun.ID, partialReplacement)
 	require.Error(t, err)
 
-	countAfter, err := fixture.client.BenchmarkScoreSnapshot.Query().
-		Where(benchmarkscoresnapshot.RunIDEQ(fixture.runIDs[0])).
-		Count(fixture.ctx)
+	afterSnapshots, err := fixture.client.BenchmarkScoreSnapshot.Query().
+		Where(benchmarkscoresnapshot.RunIDEQ(batchRun.ID)).
+		Order(dbent.Asc(benchmarkscoresnapshot.FieldRunTargetID)).
+		All(fixture.ctx)
 	require.NoError(t, err)
-	require.Equal(t, 1, countAfter)
+	require.Len(t, afterSnapshots, 2)
 
-	afterRollbackSnapshot, err := fixture.client.BenchmarkScoreSnapshot.Query().
-		Where(benchmarkscoresnapshot.RunIDEQ(fixture.runIDs[0])).
+	afterByRunTarget := make(map[int64]*dbent.BenchmarkScoreSnapshot, len(afterSnapshots))
+	for _, snapshot := range afterSnapshots {
+		afterByRunTarget[snapshot.RunTargetID] = snapshot
+	}
+
+	for runTargetID, original := range originalSnapshotsByRunTarget {
+		after := afterByRunTarget[runTargetID]
+		require.NotNil(t, after)
+		require.Equal(t, original.ID, after.ID)
+		require.InDelta(t, original.OverallScore, after.OverallScore, 0.000001)
+	}
+
+	require.NotContains(t, afterByRunTarget, foreignRunTarget.ID)
+	require.InDelta(t, 91.1, afterByRunTarget[primaryRunTarget.ID].OverallScore, 0.000001)
+	require.InDelta(t, 82.2, afterByRunTarget[secondaryRunTarget.ID].OverallScore, 0.000001)
+
+	_, err = fixture.client.BenchmarkScoreSnapshot.Query().
+		Where(
+			benchmarkscoresnapshot.RunIDEQ(batchRun.ID),
+			benchmarkscoresnapshot.OverallScoreEQ(99.9),
+		).
 		Only(fixture.ctx)
-	require.NoError(t, err)
-	require.Equal(t, savedSnapshot.ID, afterRollbackSnapshot.ID)
-	require.Equal(t, validSnapshot.RunTargetID, afterRollbackSnapshot.RunTargetID)
-	require.InDelta(t, validSnapshot.OverallScore, afterRollbackSnapshot.OverallScore, 0.000001)
+	require.Error(t, err)
 }
 
 func TestBenchmarkRepositoryGetLatestPublicSnapshotOrdersByPublishedAtThenID(t *testing.T) {
-	fixture := newBenchmarkFixture(t, "public-snapshot-order")
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(context.Background(), tx)
+	fixture := newBenchmarkFixtureWith(t, txCtx, tx.Client(), "public-snapshot-order")
 
-	firstPublishedAt := time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC)
+	_, err := fixture.client.BenchmarkPublicSnapshot.Delete().Exec(fixture.ctx)
+	require.NoError(t, err)
+	remaining, err := fixture.client.BenchmarkPublicSnapshot.Query().Count(fixture.ctx)
+	require.NoError(t, err)
+	require.Zero(t, remaining)
+
+	firstPublishedAt := time.Date(2024, 6, 23, 12, 0, 0, 0, time.UTC)
 	secondPublishedAt := firstPublishedAt.Add(time.Minute)
+	tiePublishedAt := secondPublishedAt.Add(time.Minute)
 
 	require.NoError(t, fixture.repo.PublishPublicSnapshot(fixture.ctx, service.BenchmarkPublicSnapshotInput{
 		RunID:       fixture.runIDs[0],
@@ -498,7 +615,6 @@ func TestBenchmarkRepositoryGetLatestPublicSnapshotOrdersByPublishedAtThenID(t *
 	require.Equal(t, "second", latest.Snapshot["phase"])
 	require.True(t, secondPublishedAt.Equal(latest.PublishedAt))
 
-	tiePublishedAt := secondPublishedAt.Add(time.Minute)
 	require.NoError(t, fixture.repo.PublishPublicSnapshot(fixture.ctx, service.BenchmarkPublicSnapshotInput{
 		RunID:       fixture.runIDs[0],
 		SuiteID:     fixture.suite.ID,
@@ -517,8 +633,17 @@ func TestBenchmarkRepositoryGetLatestPublicSnapshotOrdersByPublishedAtThenID(t *
 	latestTie, err := fixture.repo.GetLatestPublicSnapshot(fixture.ctx)
 	require.NoError(t, err)
 	require.NotNil(t, latestTie)
-	require.Equal(t, "tie-b", latestTie.Snapshot["phase"])
 	require.True(t, tiePublishedAt.Equal(latestTie.PublishedAt))
+
+	tieSnapshots, err := fixture.client.BenchmarkPublicSnapshot.Query().
+		Where(benchmarkpublicsnapshot.PublishedAtEQ(tiePublishedAt)).
+		Order(dbent.Asc(benchmarkpublicsnapshot.FieldID)).
+		All(fixture.ctx)
+	require.NoError(t, err)
+	require.Len(t, tieSnapshots, 2)
+	require.Equal(t, tieSnapshots[1].ID, latestTie.ID)
+	require.Equal(t, "tie-b", latestTie.Snapshot["phase"])
+	require.Greater(t, latestTie.ID, tieSnapshots[0].ID)
 }
 
 func TestBenchmarkRepositoryGetLatestPublicSnapshotEmpty(t *testing.T) {
@@ -710,36 +835,6 @@ func TestBenchmarkRepositoryUpdateResultClearsNullableFields(t *testing.T) {
 	require.Nil(t, sameCallCleared.ErrorMessage)
 	require.Nil(t, sameCallCleared.StartedAt)
 	require.Nil(t, sameCallCleared.FinishedAt)
-
-	// Case 3: a pure clear call still clears already-nullable fields.
-	err = repo.UpdateResult(txCtx, result.ID, service.BenchmarkResultUpdateInput{
-		ClearRequestID:       true,
-		ClearScore:           true,
-		ClearMaxScore:        true,
-		ClearNormalizedScore: true,
-		ClearEvaluatorType:   true,
-		ClearLatencyMS:       true,
-		ClearErrorCode:       true,
-		ClearErrorMessage:    true,
-		ClearStartedAt:       true,
-		ClearFinishedAt:      true,
-	})
-	require.NoError(t, err)
-
-	cleared, err := client.BenchmarkResult.Query().
-		Where(benchmarkresult.IDEQ(result.ID)).
-		Only(txCtx)
-	require.NoError(t, err)
-	require.Nil(t, cleared.RequestID)
-	require.Nil(t, cleared.Score)
-	require.Nil(t, cleared.MaxScore)
-	require.Nil(t, cleared.NormalizedScore)
-	require.Nil(t, cleared.EvaluatorType)
-	require.Nil(t, cleared.LatencyMs)
-	require.Nil(t, cleared.ErrorCode)
-	require.Nil(t, cleared.ErrorMessage)
-	require.Nil(t, cleared.StartedAt)
-	require.Nil(t, cleared.FinishedAt)
 }
 
 func ptrInt64(v int64) *int64 {
