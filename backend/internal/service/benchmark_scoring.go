@@ -64,8 +64,8 @@ func ComputeBenchmarkTargetScore(results []BenchmarkScoredResult, thresholds Ben
 	}
 	if len(latencies) > 0 {
 		sort.Ints(latencies)
-		out.LatencyP50MS = percentileNearestRank(latencies, 0.50)
-		out.LatencyP95MS = percentileNearestRank(latencies, 0.95)
+		out.LatencyP50MS = upperInclusivePercentile(latencies, 0.50)
+		out.LatencyP95MS = upperInclusivePercentile(latencies, 0.95)
 	}
 	switch {
 	case out.CoverageRate >= thresholds.HighCoverage:
@@ -79,7 +79,10 @@ func ComputeBenchmarkTargetScore(results []BenchmarkScoredResult, thresholds Ben
 	return out
 }
 
-func percentileNearestRank(sorted []int, percentile float64) int {
+// upperInclusivePercentile uses a conservative upper-inclusive percentile.
+// For even sample counts, P50 returns the upper median instead of averaging or
+// choosing the lower median.
+func upperInclusivePercentile(sorted []int, percentile float64) int {
 	if len(sorted) == 0 {
 		return 0
 	}

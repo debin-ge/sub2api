@@ -1,6 +1,9 @@
 package service
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 func TestComputeBenchmarkTargetScoreExcludesInvalidResults(t *testing.T) {
 	t.Parallel()
@@ -14,12 +17,8 @@ func TestComputeBenchmarkTargetScoreExcludesInvalidResults(t *testing.T) {
 	if score.PlannedTasks != 3 || score.ScoredTasks != 2 || score.InvalidTasks != 1 {
 		t.Fatalf("basis = %#v", score)
 	}
-	if score.OverallScore != 86.66666666666667 {
-		t.Fatalf("overall score = %v", score.OverallScore)
-	}
-	if score.CoverageRate != 0.6666666666666666 {
-		t.Fatalf("coverage = %v", score.CoverageRate)
-	}
+	assertFloatNear(t, score.OverallScore, 86.66666666666667)
+	assertFloatNear(t, score.CoverageRate, 0.6666666666666666)
 	if score.ConfidenceLevel != BenchmarkConfidenceLow || !score.InsufficientSample {
 		t.Fatalf("confidence = %s insufficient=%v", score.ConfidenceLevel, score.InsufficientSample)
 	}
@@ -33,16 +32,36 @@ func TestComputeBenchmarkTargetScoreMetricsAreSeparate(t *testing.T) {
 		{TaskID: 2, TaskType: "math", Weight: 1, Status: BenchmarkResultStatusScored, NormalizedScore: 50, LatencyMS: 100, TotalTokens: 10, EstimatedCost: 0.01},
 	}, BenchmarkConfidenceThresholds{HighCoverage: 0.9, MediumCoverage: 0.7})
 
-	if score.OverallScore != 50 {
-		t.Fatalf("overall score = %v", score.OverallScore)
-	}
+	assertFloatNear(t, score.OverallScore, 50)
 	if score.LatencyP50MS != 300 || score.LatencyP95MS != 300 {
 		t.Fatalf("latency p50/p95 = %d/%d", score.LatencyP50MS, score.LatencyP95MS)
 	}
-	if score.AvgTotalTokens != 20 {
-		t.Fatalf("avg tokens = %v", score.AvgTotalTokens)
+	assertFloatNear(t, score.AvgTotalTokens, 20)
+	assertFloatNear(t, score.EstimatedCost, 0.03)
+}
+
+func TestUpperInclusivePercentileBoundaries(t *testing.T) {
+	t.Parallel()
+
+	if got := upperInclusivePercentile(nil, 0.50); got != 0 {
+		t.Fatalf("empty percentile = %d", got)
 	}
-	if score.EstimatedCost != 0.03 {
-		t.Fatalf("cost = %v", score.EstimatedCost)
+	if got := upperInclusivePercentile([]int{100}, 0.95); got != 100 {
+		t.Fatalf("single percentile = %d", got)
+	}
+	if got := upperInclusivePercentile([]int{100, 300}, 0.50); got != 300 {
+		t.Fatalf("two-sample p50 = %d", got)
+	}
+	if got := upperInclusivePercentile([]int{100, 300}, 0.95); got != 300 {
+		t.Fatalf("two-sample p95 = %d", got)
+	}
+}
+
+func assertFloatNear(t *testing.T, got, want float64) {
+	t.Helper()
+
+	const tolerance = 1e-9
+	if math.Abs(got-want) > tolerance {
+		t.Fatalf("got %v, want %v", got, want)
 	}
 }
