@@ -251,25 +251,37 @@ func (r *benchmarkRepository) UpdateResult(ctx context.Context, id int64, input 
 	if input.Status != nil {
 		builder.SetStatus(*input.Status)
 	}
-	if input.RequestID != nil {
+	if input.ClearRequestID {
+		builder.ClearRequestID()
+	} else if input.RequestID != nil {
 		builder.SetRequestID(*input.RequestID)
 	}
-	if input.Score != nil {
+	if input.ClearScore {
+		builder.ClearScore()
+	} else if input.Score != nil {
 		builder.SetScore(*input.Score)
 	}
-	if input.MaxScore != nil {
+	if input.ClearMaxScore {
+		builder.ClearMaxScore()
+	} else if input.MaxScore != nil {
 		builder.SetMaxScore(*input.MaxScore)
 	}
-	if input.NormalizedScore != nil {
+	if input.ClearNormalizedScore {
+		builder.ClearNormalizedScore()
+	} else if input.NormalizedScore != nil {
 		builder.SetNormalizedScore(*input.NormalizedScore)
 	}
-	if input.EvaluatorType != nil {
+	if input.ClearEvaluatorType {
+		builder.ClearEvaluatorType()
+	} else if input.EvaluatorType != nil {
 		builder.SetEvaluatorType(*input.EvaluatorType)
 	}
 	if input.EvaluatorOutput != nil {
 		builder.SetEvaluatorOutput(input.EvaluatorOutput)
 	}
-	if input.LatencyMS != nil {
+	if input.ClearLatencyMS {
+		builder.ClearLatencyMs()
+	} else if input.LatencyMS != nil {
 		builder.SetLatencyMs(*input.LatencyMS)
 	}
 	if input.PromptTokens != nil {
@@ -287,19 +299,27 @@ func (r *benchmarkRepository) UpdateResult(ctx context.Context, id int64, input 
 	if input.RawResponse != nil {
 		builder.SetRawResponse(input.RawResponse)
 	}
-	if input.ErrorCode != nil {
+	if input.ClearErrorCode {
+		builder.ClearErrorCode()
+	} else if input.ErrorCode != nil {
 		builder.SetErrorCode(*input.ErrorCode)
 	}
-	if input.ErrorMessage != nil {
+	if input.ClearErrorMessage {
+		builder.ClearErrorMessage()
+	} else if input.ErrorMessage != nil {
 		builder.SetErrorMessage(*input.ErrorMessage)
 	}
 	if input.AttemptCount != nil {
 		builder.SetAttemptCount(*input.AttemptCount)
 	}
-	if input.StartedAt != nil {
+	if input.ClearStartedAt {
+		builder.ClearStartedAt()
+	} else if input.StartedAt != nil {
 		builder.SetStartedAt(*input.StartedAt)
 	}
-	if input.FinishedAt != nil {
+	if input.ClearFinishedAt {
+		builder.ClearFinishedAt()
+	} else if input.FinishedAt != nil {
 		builder.SetFinishedAt(*input.FinishedAt)
 	}
 	return builder.Exec(ctx)

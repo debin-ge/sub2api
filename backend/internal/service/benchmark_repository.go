@@ -153,24 +153,34 @@ type BenchmarkRunTaskInput struct {
 }
 
 type BenchmarkResultUpdateInput struct {
-	Status           *string
-	RequestID        *string
-	Score            *float64
-	MaxScore         *float64
-	NormalizedScore  *float64
-	EvaluatorType    *string
-	EvaluatorOutput  map[string]any
-	LatencyMS        *int
-	PromptTokens     *int
-	CompletionTokens *int
-	TotalTokens      *int
-	EstimatedCost    *float64
-	RawResponse      map[string]any
-	ErrorCode        *string
-	ErrorMessage     *string
-	AttemptCount     *int
-	StartedAt        *time.Time
-	FinishedAt       *time.Time
+	Status               *string
+	RequestID            *string
+	ClearRequestID       bool
+	Score                *float64
+	ClearScore           bool
+	MaxScore             *float64
+	ClearMaxScore        bool
+	NormalizedScore      *float64
+	ClearNormalizedScore bool
+	EvaluatorType        *string
+	ClearEvaluatorType   bool
+	EvaluatorOutput      map[string]any
+	LatencyMS            *int
+	ClearLatencyMS       bool
+	PromptTokens         *int
+	CompletionTokens     *int
+	TotalTokens          *int
+	EstimatedCost        *float64
+	RawResponse          map[string]any
+	ErrorCode            *string
+	ClearErrorCode       bool
+	ErrorMessage         *string
+	ClearErrorMessage    bool
+	AttemptCount         *int
+	StartedAt            *time.Time
+	ClearStartedAt       bool
+	FinishedAt           *time.Time
+	ClearFinishedAt      bool
 }
 
 type BenchmarkScoreSnapshotInput struct {
