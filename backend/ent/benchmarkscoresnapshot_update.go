@@ -169,13 +169,13 @@ func (_u *BenchmarkScoreSnapshotUpdate) AddCoverageRate(v float64) *BenchmarkSco
 }
 
 // SetConfidenceLevel sets the "confidence_level" field.
-func (_u *BenchmarkScoreSnapshotUpdate) SetConfidenceLevel(v string) *BenchmarkScoreSnapshotUpdate {
+func (_u *BenchmarkScoreSnapshotUpdate) SetConfidenceLevel(v benchmarkscoresnapshot.ConfidenceLevel) *BenchmarkScoreSnapshotUpdate {
 	_u.mutation.SetConfidenceLevel(v)
 	return _u
 }
 
 // SetNillableConfidenceLevel sets the "confidence_level" field if the given value is not nil.
-func (_u *BenchmarkScoreSnapshotUpdate) SetNillableConfidenceLevel(v *string) *BenchmarkScoreSnapshotUpdate {
+func (_u *BenchmarkScoreSnapshotUpdate) SetNillableConfidenceLevel(v *benchmarkscoresnapshot.ConfidenceLevel) *BenchmarkScoreSnapshotUpdate {
 	if v != nil {
 		_u.SetConfidenceLevel(*v)
 	}
@@ -447,7 +447,7 @@ func (_u *BenchmarkScoreSnapshotUpdate) sqlSave(ctx context.Context) (_node int,
 		_spec.AddField(benchmarkscoresnapshot.FieldCoverageRate, field.TypeFloat64, value)
 	}
 	if value, ok := _u.mutation.ConfidenceLevel(); ok {
-		_spec.SetField(benchmarkscoresnapshot.FieldConfidenceLevel, field.TypeString, value)
+		_spec.SetField(benchmarkscoresnapshot.FieldConfidenceLevel, field.TypeEnum, value)
 	}
 	if value, ok := _u.mutation.InsufficientSample(); ok {
 		_spec.SetField(benchmarkscoresnapshot.FieldInsufficientSample, field.TypeBool, value)
@@ -715,13 +715,13 @@ func (_u *BenchmarkScoreSnapshotUpdateOne) AddCoverageRate(v float64) *Benchmark
 }
 
 // SetConfidenceLevel sets the "confidence_level" field.
-func (_u *BenchmarkScoreSnapshotUpdateOne) SetConfidenceLevel(v string) *BenchmarkScoreSnapshotUpdateOne {
+func (_u *BenchmarkScoreSnapshotUpdateOne) SetConfidenceLevel(v benchmarkscoresnapshot.ConfidenceLevel) *BenchmarkScoreSnapshotUpdateOne {
 	_u.mutation.SetConfidenceLevel(v)
 	return _u
 }
 
 // SetNillableConfidenceLevel sets the "confidence_level" field if the given value is not nil.
-func (_u *BenchmarkScoreSnapshotUpdateOne) SetNillableConfidenceLevel(v *string) *BenchmarkScoreSnapshotUpdateOne {
+func (_u *BenchmarkScoreSnapshotUpdateOne) SetNillableConfidenceLevel(v *benchmarkscoresnapshot.ConfidenceLevel) *BenchmarkScoreSnapshotUpdateOne {
 	if v != nil {
 		_u.SetConfidenceLevel(*v)
 	}
@@ -1023,7 +1023,7 @@ func (_u *BenchmarkScoreSnapshotUpdateOne) sqlSave(ctx context.Context) (_node *
 		_spec.AddField(benchmarkscoresnapshot.FieldCoverageRate, field.TypeFloat64, value)
 	}
 	if value, ok := _u.mutation.ConfidenceLevel(); ok {
-		_spec.SetField(benchmarkscoresnapshot.FieldConfidenceLevel, field.TypeString, value)
+		_spec.SetField(benchmarkscoresnapshot.FieldConfidenceLevel, field.TypeEnum, value)
 	}
 	if value, ok := _u.mutation.InsufficientSample(); ok {
 		_spec.SetField(benchmarkscoresnapshot.FieldInsufficientSample, field.TypeBool, value)

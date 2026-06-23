@@ -39,8 +39,8 @@ func (BenchmarkRun) Fields() []ent.Field {
 		field.String("trigger_type").
 			NotEmpty().
 			MaxLen(32),
-		field.String("task_scale").
-			MaxLen(20).
+		field.Enum("task_scale").
+			Values("small", "medium", "full", "custom").
 			Default("medium"),
 		field.JSON("task_types", []string{}).
 			Default(func() []string { return []string{} }).

@@ -3,6 +3,7 @@
 package benchmarkrun
 
 import (
+	"fmt"
 	"time"
 
 	"entgo.io/ent/dialect/sql"
@@ -158,10 +159,6 @@ var (
 	StatusValidator func(string) error
 	// TriggerTypeValidator is a validator for the "trigger_type" field. It is called by the builders before save.
 	TriggerTypeValidator func(string) error
-	// DefaultTaskScale holds the default value on creation for the "task_scale" field.
-	DefaultTaskScale string
-	// TaskScaleValidator is a validator for the "task_scale" field. It is called by the builders before save.
-	TaskScaleValidator func(string) error
 	// DefaultTaskTypes holds the default value on creation for the "task_types" field.
 	DefaultTaskTypes func() []string
 	// DefaultPlannedTargetCount holds the default value on creation for the "planned_target_count" field.
@@ -173,6 +170,34 @@ var (
 	// DefaultConfigSnapshot holds the default value on creation for the "config_snapshot" field.
 	DefaultConfigSnapshot func() map[string]interface{}
 )
+
+// TaskScale defines the type for the "task_scale" enum field.
+type TaskScale string
+
+// TaskScaleMedium is the default value of the TaskScale enum.
+const DefaultTaskScale = TaskScaleMedium
+
+// TaskScale values.
+const (
+	TaskScaleSmall  TaskScale = "small"
+	TaskScaleMedium TaskScale = "medium"
+	TaskScaleFull   TaskScale = "full"
+	TaskScaleCustom TaskScale = "custom"
+)
+
+func (ts TaskScale) String() string {
+	return string(ts)
+}
+
+// TaskScaleValidator is a validator for the "task_scale" field enum values. It is called by the builders before save.
+func TaskScaleValidator(ts TaskScale) error {
+	switch ts {
+	case TaskScaleSmall, TaskScaleMedium, TaskScaleFull, TaskScaleCustom:
+		return nil
+	default:
+		return fmt.Errorf("benchmarkrun: invalid enum value for task_scale field: %q", ts)
+	}
+}
 
 // OrderOption defines the ordering options for the BenchmarkRun queries.
 type OrderOption func(*sql.Selector)

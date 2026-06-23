@@ -199,13 +199,13 @@ func (_u *BenchmarkTaskUpdate) AddWeight(v float64) *BenchmarkTaskUpdate {
 }
 
 // SetMinScale sets the "min_scale" field.
-func (_u *BenchmarkTaskUpdate) SetMinScale(v string) *BenchmarkTaskUpdate {
+func (_u *BenchmarkTaskUpdate) SetMinScale(v benchmarktask.MinScale) *BenchmarkTaskUpdate {
 	_u.mutation.SetMinScale(v)
 	return _u
 }
 
 // SetNillableMinScale sets the "min_scale" field if the given value is not nil.
-func (_u *BenchmarkTaskUpdate) SetNillableMinScale(v *string) *BenchmarkTaskUpdate {
+func (_u *BenchmarkTaskUpdate) SetNillableMinScale(v *benchmarktask.MinScale) *BenchmarkTaskUpdate {
 	if v != nil {
 		_u.SetMinScale(*v)
 	}
@@ -440,7 +440,7 @@ func (_u *BenchmarkTaskUpdate) sqlSave(ctx context.Context) (_node int, err erro
 		_spec.AddField(benchmarktask.FieldWeight, field.TypeFloat64, value)
 	}
 	if value, ok := _u.mutation.MinScale(); ok {
-		_spec.SetField(benchmarktask.FieldMinScale, field.TypeString, value)
+		_spec.SetField(benchmarktask.FieldMinScale, field.TypeEnum, value)
 	}
 	if value, ok := _u.mutation.PublicPrompt(); ok {
 		_spec.SetField(benchmarktask.FieldPublicPrompt, field.TypeBool, value)
@@ -713,13 +713,13 @@ func (_u *BenchmarkTaskUpdateOne) AddWeight(v float64) *BenchmarkTaskUpdateOne {
 }
 
 // SetMinScale sets the "min_scale" field.
-func (_u *BenchmarkTaskUpdateOne) SetMinScale(v string) *BenchmarkTaskUpdateOne {
+func (_u *BenchmarkTaskUpdateOne) SetMinScale(v benchmarktask.MinScale) *BenchmarkTaskUpdateOne {
 	_u.mutation.SetMinScale(v)
 	return _u
 }
 
 // SetNillableMinScale sets the "min_scale" field if the given value is not nil.
-func (_u *BenchmarkTaskUpdateOne) SetNillableMinScale(v *string) *BenchmarkTaskUpdateOne {
+func (_u *BenchmarkTaskUpdateOne) SetNillableMinScale(v *benchmarktask.MinScale) *BenchmarkTaskUpdateOne {
 	if v != nil {
 		_u.SetMinScale(*v)
 	}
@@ -984,7 +984,7 @@ func (_u *BenchmarkTaskUpdateOne) sqlSave(ctx context.Context) (_node *Benchmark
 		_spec.AddField(benchmarktask.FieldWeight, field.TypeFloat64, value)
 	}
 	if value, ok := _u.mutation.MinScale(); ok {
-		_spec.SetField(benchmarktask.FieldMinScale, field.TypeString, value)
+		_spec.SetField(benchmarktask.FieldMinScale, field.TypeEnum, value)
 	}
 	if value, ok := _u.mutation.PublicPrompt(); ok {
 		_spec.SetField(benchmarktask.FieldPublicPrompt, field.TypeBool, value)

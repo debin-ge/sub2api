@@ -34,7 +34,7 @@ type BenchmarkProfile struct {
 	// TaskTypes holds the value of the "task_types" field.
 	TaskTypes []string `json:"task_types,omitempty"`
 	// TaskScale holds the value of the "task_scale" field.
-	TaskScale string `json:"task_scale,omitempty"`
+	TaskScale benchmarkprofile.TaskScale `json:"task_scale,omitempty"`
 	// TaskCountLimit holds the value of the "task_count_limit" field.
 	TaskCountLimit *int `json:"task_count_limit,omitempty"`
 	// PerTypeLimit holds the value of the "per_type_limit" field.
@@ -201,7 +201,7 @@ func (_m *BenchmarkProfile) assignValues(columns []string, values []any) error {
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field task_scale", values[i])
 			} else if value.Valid {
-				_m.TaskScale = value.String
+				_m.TaskScale = benchmarkprofile.TaskScale(value.String)
 			}
 		case benchmarkprofile.FieldTaskCountLimit:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -357,7 +357,7 @@ func (_m *BenchmarkProfile) String() string {
 	builder.WriteString(fmt.Sprintf("%v", _m.TaskTypes))
 	builder.WriteString(", ")
 	builder.WriteString("task_scale=")
-	builder.WriteString(_m.TaskScale)
+	builder.WriteString(fmt.Sprintf("%v", _m.TaskScale))
 	builder.WriteString(", ")
 	if v := _m.TaskCountLimit; v != nil {
 		builder.WriteString("task_count_limit=")

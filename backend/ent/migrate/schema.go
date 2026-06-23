@@ -431,7 +431,7 @@ var (
 		{Name: "description", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
 		{Name: "target_ids", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "task_types", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
-		{Name: "task_scale", Type: field.TypeString, Size: 20, Default: "medium"},
+		{Name: "task_scale", Type: field.TypeEnum, Enums: []string{"small", "medium", "full", "custom"}, Default: "medium"},
 		{Name: "task_count_limit", Type: field.TypeInt, Nullable: true},
 		{Name: "per_type_limit", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "difficulty_filter", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
@@ -610,7 +610,7 @@ var (
 		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "status", Type: field.TypeString, Size: 32},
 		{Name: "trigger_type", Type: field.TypeString, Size: 32},
-		{Name: "task_scale", Type: field.TypeString, Size: 20, Default: "medium"},
+		{Name: "task_scale", Type: field.TypeEnum, Enums: []string{"small", "medium", "full", "custom"}, Default: "medium"},
 		{Name: "task_types", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "selection_seed", Type: field.TypeInt64, Nullable: true},
 		{Name: "planned_target_count", Type: field.TypeInt, Default: 0},
@@ -720,6 +720,11 @@ var (
 				Unique:  true,
 				Columns: []*schema.Column{BenchmarkRunTargetsColumns[9], BenchmarkRunTargetsColumns[10]},
 			},
+			{
+				Name:    "benchmark_run_targets_run_id_id_key",
+				Unique:  true,
+				Columns: []*schema.Column{BenchmarkRunTargetsColumns[9], BenchmarkRunTargetsColumns[0]},
+			},
 		},
 	}
 	// BenchmarkRunTasksColumns holds the columns for the "benchmark_run_tasks" table.
@@ -778,6 +783,11 @@ var (
 				Unique:  true,
 				Columns: []*schema.Column{BenchmarkRunTasksColumns[11], BenchmarkRunTasksColumns[12]},
 			},
+			{
+				Name:    "benchmark_run_tasks_run_id_id_key",
+				Unique:  true,
+				Columns: []*schema.Column{BenchmarkRunTasksColumns[11], BenchmarkRunTasksColumns[0]},
+			},
 		},
 	}
 	// BenchmarkSchedulesColumns holds the columns for the "benchmark_schedules" table.
@@ -833,7 +843,7 @@ var (
 		{Name: "scored_tasks", Type: field.TypeInt, Default: 0},
 		{Name: "invalid_tasks", Type: field.TypeInt, Default: 0},
 		{Name: "coverage_rate", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(10,4)"}},
-		{Name: "confidence_level", Type: field.TypeString, Size: 20, Default: "low"},
+		{Name: "confidence_level", Type: field.TypeEnum, Enums: []string{"high", "medium", "low"}, Default: "low"},
 		{Name: "insufficient_sample", Type: field.TypeBool, Default: false},
 		{Name: "success_rate", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(10,4)"}},
 		{Name: "latency_p50_ms", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(12,4)"}},
@@ -990,7 +1000,7 @@ var (
 		{Name: "verifier_type", Type: field.TypeString, Size: 50},
 		{Name: "verifier_config", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "weight", Type: field.TypeFloat64, Default: 1, SchemaType: map[string]string{"postgres": "decimal(10,4)"}},
-		{Name: "min_scale", Type: field.TypeString, Size: 20, Default: "small"},
+		{Name: "min_scale", Type: field.TypeEnum, Enums: []string{"small", "medium", "full", "custom"}, Default: "small"},
 		{Name: "public_prompt", Type: field.TypeBool, Default: false},
 		{Name: "enabled", Type: field.TypeBool, Default: true},
 		{Name: "metadata", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},

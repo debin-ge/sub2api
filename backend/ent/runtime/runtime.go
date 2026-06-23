@@ -484,12 +484,6 @@ func init() {
 	benchmarkprofileDescTaskTypes := benchmarkprofileFields[4].Descriptor()
 	// benchmarkprofile.DefaultTaskTypes holds the default value on creation for the task_types field.
 	benchmarkprofile.DefaultTaskTypes = benchmarkprofileDescTaskTypes.Default.(func() []string)
-	// benchmarkprofileDescTaskScale is the schema descriptor for task_scale field.
-	benchmarkprofileDescTaskScale := benchmarkprofileFields[5].Descriptor()
-	// benchmarkprofile.DefaultTaskScale holds the default value on creation for the task_scale field.
-	benchmarkprofile.DefaultTaskScale = benchmarkprofileDescTaskScale.Default.(string)
-	// benchmarkprofile.TaskScaleValidator is a validator for the "task_scale" field. It is called by the builders before save.
-	benchmarkprofile.TaskScaleValidator = benchmarkprofileDescTaskScale.Validators[0].(func(string) error)
 	// benchmarkprofileDescPerTypeLimit is the schema descriptor for per_type_limit field.
 	benchmarkprofileDescPerTypeLimit := benchmarkprofileFields[7].Descriptor()
 	// benchmarkprofile.DefaultPerTypeLimit holds the default value on creation for the per_type_limit field.
@@ -674,12 +668,6 @@ func init() {
 			return nil
 		}
 	}()
-	// benchmarkrunDescTaskScale is the schema descriptor for task_scale field.
-	benchmarkrunDescTaskScale := benchmarkrunFields[4].Descriptor()
-	// benchmarkrun.DefaultTaskScale holds the default value on creation for the task_scale field.
-	benchmarkrun.DefaultTaskScale = benchmarkrunDescTaskScale.Default.(string)
-	// benchmarkrun.TaskScaleValidator is a validator for the "task_scale" field. It is called by the builders before save.
-	benchmarkrun.TaskScaleValidator = benchmarkrunDescTaskScale.Validators[0].(func(string) error)
 	// benchmarkrunDescTaskTypes is the schema descriptor for task_types field.
 	benchmarkrunDescTaskTypes := benchmarkrunFields[5].Descriptor()
 	// benchmarkrun.DefaultTaskTypes holds the default value on creation for the task_types field.
@@ -899,12 +887,6 @@ func init() {
 	benchmarkscoresnapshotDescCoverageRate := benchmarkscoresnapshotFields[7].Descriptor()
 	// benchmarkscoresnapshot.DefaultCoverageRate holds the default value on creation for the coverage_rate field.
 	benchmarkscoresnapshot.DefaultCoverageRate = benchmarkscoresnapshotDescCoverageRate.Default.(float64)
-	// benchmarkscoresnapshotDescConfidenceLevel is the schema descriptor for confidence_level field.
-	benchmarkscoresnapshotDescConfidenceLevel := benchmarkscoresnapshotFields[8].Descriptor()
-	// benchmarkscoresnapshot.DefaultConfidenceLevel holds the default value on creation for the confidence_level field.
-	benchmarkscoresnapshot.DefaultConfidenceLevel = benchmarkscoresnapshotDescConfidenceLevel.Default.(string)
-	// benchmarkscoresnapshot.ConfidenceLevelValidator is a validator for the "confidence_level" field. It is called by the builders before save.
-	benchmarkscoresnapshot.ConfidenceLevelValidator = benchmarkscoresnapshotDescConfidenceLevel.Validators[0].(func(string) error)
 	// benchmarkscoresnapshotDescInsufficientSample is the schema descriptor for insufficient_sample field.
 	benchmarkscoresnapshotDescInsufficientSample := benchmarkscoresnapshotFields[9].Descriptor()
 	// benchmarkscoresnapshot.DefaultInsufficientSample holds the default value on creation for the insufficient_sample field.
@@ -1162,12 +1144,6 @@ func init() {
 	benchmarktaskDescWeight := benchmarktaskFields[11].Descriptor()
 	// benchmarktask.DefaultWeight holds the default value on creation for the weight field.
 	benchmarktask.DefaultWeight = benchmarktaskDescWeight.Default.(float64)
-	// benchmarktaskDescMinScale is the schema descriptor for min_scale field.
-	benchmarktaskDescMinScale := benchmarktaskFields[12].Descriptor()
-	// benchmarktask.DefaultMinScale holds the default value on creation for the min_scale field.
-	benchmarktask.DefaultMinScale = benchmarktaskDescMinScale.Default.(string)
-	// benchmarktask.MinScaleValidator is a validator for the "min_scale" field. It is called by the builders before save.
-	benchmarktask.MinScaleValidator = benchmarktaskDescMinScale.Validators[0].(func(string) error)
 	// benchmarktaskDescPublicPrompt is the schema descriptor for public_prompt field.
 	benchmarktaskDescPublicPrompt := benchmarktaskFields[13].Descriptor()
 	// benchmarktask.DefaultPublicPrompt holds the default value on creation for the public_prompt field.

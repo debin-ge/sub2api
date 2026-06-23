@@ -67,8 +67,8 @@ func (BenchmarkTask) Fields() []ent.Field {
 		field.Float("weight").
 			Default(1).
 			SchemaType(map[string]string{dialect.Postgres: "decimal(10,4)"}),
-		field.String("min_scale").
-			MaxLen(20).
+		field.Enum("min_scale").
+			Values("small", "medium", "full", "custom").
 			Default("small"),
 		field.Bool("public_prompt").
 			Default(false),

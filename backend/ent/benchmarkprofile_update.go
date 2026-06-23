@@ -112,13 +112,13 @@ func (_u *BenchmarkProfileUpdate) AppendTaskTypes(v []string) *BenchmarkProfileU
 }
 
 // SetTaskScale sets the "task_scale" field.
-func (_u *BenchmarkProfileUpdate) SetTaskScale(v string) *BenchmarkProfileUpdate {
+func (_u *BenchmarkProfileUpdate) SetTaskScale(v benchmarkprofile.TaskScale) *BenchmarkProfileUpdate {
 	_u.mutation.SetTaskScale(v)
 	return _u
 }
 
 // SetNillableTaskScale sets the "task_scale" field if the given value is not nil.
-func (_u *BenchmarkProfileUpdate) SetNillableTaskScale(v *string) *BenchmarkProfileUpdate {
+func (_u *BenchmarkProfileUpdate) SetNillableTaskScale(v *benchmarkprofile.TaskScale) *BenchmarkProfileUpdate {
 	if v != nil {
 		_u.SetTaskScale(*v)
 	}
@@ -479,7 +479,7 @@ func (_u *BenchmarkProfileUpdate) sqlSave(ctx context.Context) (_node int, err e
 		})
 	}
 	if value, ok := _u.mutation.TaskScale(); ok {
-		_spec.SetField(benchmarkprofile.FieldTaskScale, field.TypeString, value)
+		_spec.SetField(benchmarkprofile.FieldTaskScale, field.TypeEnum, value)
 	}
 	if value, ok := _u.mutation.TaskCountLimit(); ok {
 		_spec.SetField(benchmarkprofile.FieldTaskCountLimit, field.TypeInt, value)
@@ -796,13 +796,13 @@ func (_u *BenchmarkProfileUpdateOne) AppendTaskTypes(v []string) *BenchmarkProfi
 }
 
 // SetTaskScale sets the "task_scale" field.
-func (_u *BenchmarkProfileUpdateOne) SetTaskScale(v string) *BenchmarkProfileUpdateOne {
+func (_u *BenchmarkProfileUpdateOne) SetTaskScale(v benchmarkprofile.TaskScale) *BenchmarkProfileUpdateOne {
 	_u.mutation.SetTaskScale(v)
 	return _u
 }
 
 // SetNillableTaskScale sets the "task_scale" field if the given value is not nil.
-func (_u *BenchmarkProfileUpdateOne) SetNillableTaskScale(v *string) *BenchmarkProfileUpdateOne {
+func (_u *BenchmarkProfileUpdateOne) SetNillableTaskScale(v *benchmarkprofile.TaskScale) *BenchmarkProfileUpdateOne {
 	if v != nil {
 		_u.SetTaskScale(*v)
 	}
@@ -1193,7 +1193,7 @@ func (_u *BenchmarkProfileUpdateOne) sqlSave(ctx context.Context) (_node *Benchm
 		})
 	}
 	if value, ok := _u.mutation.TaskScale(); ok {
-		_spec.SetField(benchmarkprofile.FieldTaskScale, field.TypeString, value)
+		_spec.SetField(benchmarkprofile.FieldTaskScale, field.TypeEnum, value)
 	}
 	if value, ok := _u.mutation.TaskCountLimit(); ok {
 		_spec.SetField(benchmarkprofile.FieldTaskCountLimit, field.TypeInt, value)

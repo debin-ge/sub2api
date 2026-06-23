@@ -42,8 +42,8 @@ func (BenchmarkScoreSnapshot) Fields() []ent.Field {
 		field.Float("coverage_rate").
 			Default(0).
 			SchemaType(map[string]string{dialect.Postgres: "decimal(10,4)"}),
-		field.String("confidence_level").
-			MaxLen(20).
+		field.Enum("confidence_level").
+			Values("high", "medium", "low").
 			Default("low"),
 		field.Bool("insufficient_sample").
 			Default(false),

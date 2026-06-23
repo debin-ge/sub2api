@@ -149,13 +149,13 @@ func (_c *BenchmarkTaskCreate) SetNillableWeight(v *float64) *BenchmarkTaskCreat
 }
 
 // SetMinScale sets the "min_scale" field.
-func (_c *BenchmarkTaskCreate) SetMinScale(v string) *BenchmarkTaskCreate {
+func (_c *BenchmarkTaskCreate) SetMinScale(v benchmarktask.MinScale) *BenchmarkTaskCreate {
 	_c.mutation.SetMinScale(v)
 	return _c
 }
 
 // SetNillableMinScale sets the "min_scale" field if the given value is not nil.
-func (_c *BenchmarkTaskCreate) SetNillableMinScale(v *string) *BenchmarkTaskCreate {
+func (_c *BenchmarkTaskCreate) SetNillableMinScale(v *benchmarktask.MinScale) *BenchmarkTaskCreate {
 	if v != nil {
 		_c.SetMinScale(*v)
 	}
@@ -465,7 +465,7 @@ func (_c *BenchmarkTaskCreate) createSpec() (*BenchmarkTask, *sqlgraph.CreateSpe
 		_node.Weight = value
 	}
 	if value, ok := _c.mutation.MinScale(); ok {
-		_spec.SetField(benchmarktask.FieldMinScale, field.TypeString, value)
+		_spec.SetField(benchmarktask.FieldMinScale, field.TypeEnum, value)
 		_node.MinScale = value
 	}
 	if value, ok := _c.mutation.PublicPrompt(); ok {
@@ -740,7 +740,7 @@ func (u *BenchmarkTaskUpsert) AddWeight(v float64) *BenchmarkTaskUpsert {
 }
 
 // SetMinScale sets the "min_scale" field.
-func (u *BenchmarkTaskUpsert) SetMinScale(v string) *BenchmarkTaskUpsert {
+func (u *BenchmarkTaskUpsert) SetMinScale(v benchmarktask.MinScale) *BenchmarkTaskUpsert {
 	u.Set(benchmarktask.FieldMinScale, v)
 	return u
 }
@@ -1036,7 +1036,7 @@ func (u *BenchmarkTaskUpsertOne) UpdateWeight() *BenchmarkTaskUpsertOne {
 }
 
 // SetMinScale sets the "min_scale" field.
-func (u *BenchmarkTaskUpsertOne) SetMinScale(v string) *BenchmarkTaskUpsertOne {
+func (u *BenchmarkTaskUpsertOne) SetMinScale(v benchmarktask.MinScale) *BenchmarkTaskUpsertOne {
 	return u.Update(func(s *BenchmarkTaskUpsert) {
 		s.SetMinScale(v)
 	})
@@ -1506,7 +1506,7 @@ func (u *BenchmarkTaskUpsertBulk) UpdateWeight() *BenchmarkTaskUpsertBulk {
 }
 
 // SetMinScale sets the "min_scale" field.
-func (u *BenchmarkTaskUpsertBulk) SetMinScale(v string) *BenchmarkTaskUpsertBulk {
+func (u *BenchmarkTaskUpsertBulk) SetMinScale(v benchmarktask.MinScale) *BenchmarkTaskUpsertBulk {
 	return u.Update(func(s *BenchmarkTaskUpsert) {
 		s.SetMinScale(v)
 	})

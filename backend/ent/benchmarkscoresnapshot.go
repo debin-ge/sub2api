@@ -37,7 +37,7 @@ type BenchmarkScoreSnapshot struct {
 	// CoverageRate holds the value of the "coverage_rate" field.
 	CoverageRate float64 `json:"coverage_rate,omitempty"`
 	// ConfidenceLevel holds the value of the "confidence_level" field.
-	ConfidenceLevel string `json:"confidence_level,omitempty"`
+	ConfidenceLevel benchmarkscoresnapshot.ConfidenceLevel `json:"confidence_level,omitempty"`
 	// InsufficientSample holds the value of the "insufficient_sample" field.
 	InsufficientSample bool `json:"insufficient_sample,omitempty"`
 	// SuccessRate holds the value of the "success_rate" field.
@@ -187,7 +187,7 @@ func (_m *BenchmarkScoreSnapshot) assignValues(columns []string, values []any) e
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field confidence_level", values[i])
 			} else if value.Valid {
-				_m.ConfidenceLevel = value.String
+				_m.ConfidenceLevel = benchmarkscoresnapshot.ConfidenceLevel(value.String)
 			}
 		case benchmarkscoresnapshot.FieldInsufficientSample:
 			if value, ok := values[i].(*sql.NullBool); !ok {
@@ -321,7 +321,7 @@ func (_m *BenchmarkScoreSnapshot) String() string {
 	builder.WriteString(fmt.Sprintf("%v", _m.CoverageRate))
 	builder.WriteString(", ")
 	builder.WriteString("confidence_level=")
-	builder.WriteString(_m.ConfidenceLevel)
+	builder.WriteString(fmt.Sprintf("%v", _m.ConfidenceLevel))
 	builder.WriteString(", ")
 	builder.WriteString("insufficient_sample=")
 	builder.WriteString(fmt.Sprintf("%v", _m.InsufficientSample))

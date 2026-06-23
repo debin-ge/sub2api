@@ -8887,7 +8887,7 @@ type BenchmarkProfileMutation struct {
 	appendtarget_ids        []int64
 	task_types              *[]string
 	appendtask_types        []string
-	task_scale              *string
+	task_scale              *benchmarkprofile.TaskScale
 	task_count_limit        *int
 	addtask_count_limit     *int
 	per_type_limit          *map[string]int
@@ -9313,12 +9313,12 @@ func (m *BenchmarkProfileMutation) ResetTaskTypes() {
 }
 
 // SetTaskScale sets the "task_scale" field.
-func (m *BenchmarkProfileMutation) SetTaskScale(s string) {
-	m.task_scale = &s
+func (m *BenchmarkProfileMutation) SetTaskScale(bs benchmarkprofile.TaskScale) {
+	m.task_scale = &bs
 }
 
 // TaskScale returns the value of the "task_scale" field in the mutation.
-func (m *BenchmarkProfileMutation) TaskScale() (r string, exists bool) {
+func (m *BenchmarkProfileMutation) TaskScale() (r benchmarkprofile.TaskScale, exists bool) {
 	v := m.task_scale
 	if v == nil {
 		return
@@ -9329,7 +9329,7 @@ func (m *BenchmarkProfileMutation) TaskScale() (r string, exists bool) {
 // OldTaskScale returns the old "task_scale" field's value of the BenchmarkProfile entity.
 // If the BenchmarkProfile object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *BenchmarkProfileMutation) OldTaskScale(ctx context.Context) (v string, err error) {
+func (m *BenchmarkProfileMutation) OldTaskScale(ctx context.Context) (v benchmarkprofile.TaskScale, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldTaskScale is only allowed on UpdateOne operations")
 	}
@@ -10232,7 +10232,7 @@ func (m *BenchmarkProfileMutation) SetField(name string, value ent.Value) error 
 		m.SetTaskTypes(v)
 		return nil
 	case benchmarkprofile.FieldTaskScale:
-		v, ok := value.(string)
+		v, ok := value.(benchmarkprofile.TaskScale)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
@@ -13529,7 +13529,7 @@ type BenchmarkRunMutation struct {
 	updated_at              *time.Time
 	status                  *string
 	trigger_type            *string
-	task_scale              *string
+	task_scale              *benchmarkrun.TaskScale
 	task_types              *[]string
 	appendtask_types        []string
 	selection_seed          *int64
@@ -13886,12 +13886,12 @@ func (m *BenchmarkRunMutation) ResetTriggerType() {
 }
 
 // SetTaskScale sets the "task_scale" field.
-func (m *BenchmarkRunMutation) SetTaskScale(s string) {
-	m.task_scale = &s
+func (m *BenchmarkRunMutation) SetTaskScale(bs benchmarkrun.TaskScale) {
+	m.task_scale = &bs
 }
 
 // TaskScale returns the value of the "task_scale" field in the mutation.
-func (m *BenchmarkRunMutation) TaskScale() (r string, exists bool) {
+func (m *BenchmarkRunMutation) TaskScale() (r benchmarkrun.TaskScale, exists bool) {
 	v := m.task_scale
 	if v == nil {
 		return
@@ -13902,7 +13902,7 @@ func (m *BenchmarkRunMutation) TaskScale() (r string, exists bool) {
 // OldTaskScale returns the old "task_scale" field's value of the BenchmarkRun entity.
 // If the BenchmarkRun object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *BenchmarkRunMutation) OldTaskScale(ctx context.Context) (v string, err error) {
+func (m *BenchmarkRunMutation) OldTaskScale(ctx context.Context) (v benchmarkrun.TaskScale, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldTaskScale is only allowed on UpdateOne operations")
 	}
@@ -15010,7 +15010,7 @@ func (m *BenchmarkRunMutation) SetField(name string, value ent.Value) error {
 		m.SetTriggerType(v)
 		return nil
 	case benchmarkrun.FieldTaskScale:
-		v, ok := value.(string)
+		v, ok := value.(benchmarkrun.TaskScale)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
@@ -18807,7 +18807,7 @@ type BenchmarkScoreSnapshotMutation struct {
 	addinvalid_tasks         *int
 	coverage_rate            *float64
 	addcoverage_rate         *float64
-	confidence_level         *string
+	confidence_level         *benchmarkscoresnapshot.ConfidenceLevel
 	insufficient_sample      *bool
 	success_rate             *float64
 	addsuccess_rate          *float64
@@ -19319,12 +19319,12 @@ func (m *BenchmarkScoreSnapshotMutation) ResetCoverageRate() {
 }
 
 // SetConfidenceLevel sets the "confidence_level" field.
-func (m *BenchmarkScoreSnapshotMutation) SetConfidenceLevel(s string) {
-	m.confidence_level = &s
+func (m *BenchmarkScoreSnapshotMutation) SetConfidenceLevel(bl benchmarkscoresnapshot.ConfidenceLevel) {
+	m.confidence_level = &bl
 }
 
 // ConfidenceLevel returns the value of the "confidence_level" field in the mutation.
-func (m *BenchmarkScoreSnapshotMutation) ConfidenceLevel() (r string, exists bool) {
+func (m *BenchmarkScoreSnapshotMutation) ConfidenceLevel() (r benchmarkscoresnapshot.ConfidenceLevel, exists bool) {
 	v := m.confidence_level
 	if v == nil {
 		return
@@ -19335,7 +19335,7 @@ func (m *BenchmarkScoreSnapshotMutation) ConfidenceLevel() (r string, exists boo
 // OldConfidenceLevel returns the old "confidence_level" field's value of the BenchmarkScoreSnapshot entity.
 // If the BenchmarkScoreSnapshot object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *BenchmarkScoreSnapshotMutation) OldConfidenceLevel(ctx context.Context) (v string, err error) {
+func (m *BenchmarkScoreSnapshotMutation) OldConfidenceLevel(ctx context.Context) (v benchmarkscoresnapshot.ConfidenceLevel, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldConfidenceLevel is only allowed on UpdateOne operations")
 	}
@@ -20118,7 +20118,7 @@ func (m *BenchmarkScoreSnapshotMutation) SetField(name string, value ent.Value) 
 		m.SetCoverageRate(v)
 		return nil
 	case benchmarkscoresnapshot.FieldConfidenceLevel:
-		v, ok := value.(string)
+		v, ok := value.(benchmarkscoresnapshot.ConfidenceLevel)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
@@ -23200,7 +23200,7 @@ type BenchmarkTaskMutation struct {
 	verifier_config  *map[string]interface{}
 	weight           *float64
 	addweight        *float64
-	min_scale        *string
+	min_scale        *benchmarktask.MinScale
 	public_prompt    *bool
 	enabled          *bool
 	metadata         *map[string]interface{}
@@ -23879,12 +23879,12 @@ func (m *BenchmarkTaskMutation) ResetWeight() {
 }
 
 // SetMinScale sets the "min_scale" field.
-func (m *BenchmarkTaskMutation) SetMinScale(s string) {
-	m.min_scale = &s
+func (m *BenchmarkTaskMutation) SetMinScale(bs benchmarktask.MinScale) {
+	m.min_scale = &bs
 }
 
 // MinScale returns the value of the "min_scale" field in the mutation.
-func (m *BenchmarkTaskMutation) MinScale() (r string, exists bool) {
+func (m *BenchmarkTaskMutation) MinScale() (r benchmarktask.MinScale, exists bool) {
 	v := m.min_scale
 	if v == nil {
 		return
@@ -23895,7 +23895,7 @@ func (m *BenchmarkTaskMutation) MinScale() (r string, exists bool) {
 // OldMinScale returns the old "min_scale" field's value of the BenchmarkTask entity.
 // If the BenchmarkTask object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *BenchmarkTaskMutation) OldMinScale(ctx context.Context) (v string, err error) {
+func (m *BenchmarkTaskMutation) OldMinScale(ctx context.Context) (v benchmarktask.MinScale, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldMinScale is only allowed on UpdateOne operations")
 	}
@@ -24389,7 +24389,7 @@ func (m *BenchmarkTaskMutation) SetField(name string, value ent.Value) error {
 		m.SetWeight(v)
 		return nil
 	case benchmarktask.FieldMinScale:
-		v, ok := value.(string)
+		v, ok := value.(benchmarktask.MinScale)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}

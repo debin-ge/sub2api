@@ -93,13 +93,13 @@ func (_c *BenchmarkProfileCreate) SetTaskTypes(v []string) *BenchmarkProfileCrea
 }
 
 // SetTaskScale sets the "task_scale" field.
-func (_c *BenchmarkProfileCreate) SetTaskScale(v string) *BenchmarkProfileCreate {
+func (_c *BenchmarkProfileCreate) SetTaskScale(v benchmarkprofile.TaskScale) *BenchmarkProfileCreate {
 	_c.mutation.SetTaskScale(v)
 	return _c
 }
 
 // SetNillableTaskScale sets the "task_scale" field if the given value is not nil.
-func (_c *BenchmarkProfileCreate) SetNillableTaskScale(v *string) *BenchmarkProfileCreate {
+func (_c *BenchmarkProfileCreate) SetNillableTaskScale(v *benchmarkprofile.TaskScale) *BenchmarkProfileCreate {
 	if v != nil {
 		_c.SetTaskScale(*v)
 	}
@@ -442,7 +442,7 @@ func (_c *BenchmarkProfileCreate) createSpec() (*BenchmarkProfile, *sqlgraph.Cre
 		_node.TaskTypes = value
 	}
 	if value, ok := _c.mutation.TaskScale(); ok {
-		_spec.SetField(benchmarkprofile.FieldTaskScale, field.TypeString, value)
+		_spec.SetField(benchmarkprofile.FieldTaskScale, field.TypeEnum, value)
 		_node.TaskScale = value
 	}
 	if value, ok := _c.mutation.TaskCountLimit(); ok {
@@ -681,7 +681,7 @@ func (u *BenchmarkProfileUpsert) UpdateTaskTypes() *BenchmarkProfileUpsert {
 }
 
 // SetTaskScale sets the "task_scale" field.
-func (u *BenchmarkProfileUpsert) SetTaskScale(v string) *BenchmarkProfileUpsert {
+func (u *BenchmarkProfileUpsert) SetTaskScale(v benchmarkprofile.TaskScale) *BenchmarkProfileUpsert {
 	u.Set(benchmarkprofile.FieldTaskScale, v)
 	return u
 }
@@ -973,7 +973,7 @@ func (u *BenchmarkProfileUpsertOne) UpdateTaskTypes() *BenchmarkProfileUpsertOne
 }
 
 // SetTaskScale sets the "task_scale" field.
-func (u *BenchmarkProfileUpsertOne) SetTaskScale(v string) *BenchmarkProfileUpsertOne {
+func (u *BenchmarkProfileUpsertOne) SetTaskScale(v benchmarkprofile.TaskScale) *BenchmarkProfileUpsertOne {
 	return u.Update(func(s *BenchmarkProfileUpsert) {
 		s.SetTaskScale(v)
 	})
@@ -1457,7 +1457,7 @@ func (u *BenchmarkProfileUpsertBulk) UpdateTaskTypes() *BenchmarkProfileUpsertBu
 }
 
 // SetTaskScale sets the "task_scale" field.
-func (u *BenchmarkProfileUpsertBulk) SetTaskScale(v string) *BenchmarkProfileUpsertBulk {
+func (u *BenchmarkProfileUpsertBulk) SetTaskScale(v benchmarkprofile.TaskScale) *BenchmarkProfileUpsertBulk {
 	return u.Update(func(s *BenchmarkProfileUpsert) {
 		s.SetTaskScale(v)
 	})

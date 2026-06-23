@@ -3,6 +3,7 @@
 package benchmarkscoresnapshot
 
 import (
+	"fmt"
 	"time"
 
 	"entgo.io/ent/dialect/sql"
@@ -118,10 +119,6 @@ var (
 	DefaultInvalidTasks int
 	// DefaultCoverageRate holds the default value on creation for the "coverage_rate" field.
 	DefaultCoverageRate float64
-	// DefaultConfidenceLevel holds the default value on creation for the "confidence_level" field.
-	DefaultConfidenceLevel string
-	// ConfidenceLevelValidator is a validator for the "confidence_level" field. It is called by the builders before save.
-	ConfidenceLevelValidator func(string) error
 	// DefaultInsufficientSample holds the default value on creation for the "insufficient_sample" field.
 	DefaultInsufficientSample bool
 	// DefaultSuccessRate holds the default value on creation for the "success_rate" field.
@@ -135,6 +132,33 @@ var (
 	// DefaultCreatedAt holds the default value on creation for the "created_at" field.
 	DefaultCreatedAt func() time.Time
 )
+
+// ConfidenceLevel defines the type for the "confidence_level" enum field.
+type ConfidenceLevel string
+
+// ConfidenceLevelLow is the default value of the ConfidenceLevel enum.
+const DefaultConfidenceLevel = ConfidenceLevelLow
+
+// ConfidenceLevel values.
+const (
+	ConfidenceLevelHigh   ConfidenceLevel = "high"
+	ConfidenceLevelMedium ConfidenceLevel = "medium"
+	ConfidenceLevelLow    ConfidenceLevel = "low"
+)
+
+func (cl ConfidenceLevel) String() string {
+	return string(cl)
+}
+
+// ConfidenceLevelValidator is a validator for the "confidence_level" field enum values. It is called by the builders before save.
+func ConfidenceLevelValidator(cl ConfidenceLevel) error {
+	switch cl {
+	case ConfidenceLevelHigh, ConfidenceLevelMedium, ConfidenceLevelLow:
+		return nil
+	default:
+		return fmt.Errorf("benchmarkscoresnapshot: invalid enum value for confidence_level field: %q", cl)
+	}
+}
 
 // OrderOption defines the ordering options for the BenchmarkScoreSnapshot queries.
 type OrderOption func(*sql.Selector)

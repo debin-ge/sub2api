@@ -85,5 +85,8 @@ func (BenchmarkRunTarget) Indexes() []ent.Index {
 		index.Fields("run_id", "target_id").
 			Unique().
 			StorageKey("benchmark_run_targets_run_target_key"),
+		index.Fields("run_id", "id").
+			Unique().
+			StorageKey("benchmark_run_targets_run_id_id_key"),
 	}
 }

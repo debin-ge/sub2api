@@ -45,8 +45,8 @@ func (BenchmarkProfile) Fields() []ent.Field {
 		field.JSON("task_types", []string{}).
 			Default(func() []string { return []string{} }).
 			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
-		field.String("task_scale").
-			MaxLen(20).
+		field.Enum("task_scale").
+			Values("small", "medium", "full", "custom").
 			Default("medium"),
 		field.Int("task_count_limit").
 			Optional().

@@ -48,7 +48,7 @@ type BenchmarkTask struct {
 	// Weight holds the value of the "weight" field.
 	Weight float64 `json:"weight,omitempty"`
 	// MinScale holds the value of the "min_scale" field.
-	MinScale string `json:"min_scale,omitempty"`
+	MinScale benchmarktask.MinScale `json:"min_scale,omitempty"`
 	// PublicPrompt holds the value of the "public_prompt" field.
 	PublicPrompt bool `json:"public_prompt,omitempty"`
 	// Enabled holds the value of the "enabled" field.
@@ -228,7 +228,7 @@ func (_m *BenchmarkTask) assignValues(columns []string, values []any) error {
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field min_scale", values[i])
 			} else if value.Valid {
-				_m.MinScale = value.String
+				_m.MinScale = benchmarktask.MinScale(value.String)
 			}
 		case benchmarktask.FieldPublicPrompt:
 			if value, ok := values[i].(*sql.NullBool); !ok {
@@ -343,7 +343,7 @@ func (_m *BenchmarkTask) String() string {
 	builder.WriteString(fmt.Sprintf("%v", _m.Weight))
 	builder.WriteString(", ")
 	builder.WriteString("min_scale=")
-	builder.WriteString(_m.MinScale)
+	builder.WriteString(fmt.Sprintf("%v", _m.MinScale))
 	builder.WriteString(", ")
 	builder.WriteString("public_prompt=")
 	builder.WriteString(fmt.Sprintf("%v", _m.PublicPrompt))

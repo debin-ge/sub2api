@@ -99,13 +99,13 @@ func (_u *BenchmarkRunUpdate) SetNillableTriggerType(v *string) *BenchmarkRunUpd
 }
 
 // SetTaskScale sets the "task_scale" field.
-func (_u *BenchmarkRunUpdate) SetTaskScale(v string) *BenchmarkRunUpdate {
+func (_u *BenchmarkRunUpdate) SetTaskScale(v benchmarkrun.TaskScale) *BenchmarkRunUpdate {
 	_u.mutation.SetTaskScale(v)
 	return _u
 }
 
 // SetNillableTaskScale sets the "task_scale" field if the given value is not nil.
-func (_u *BenchmarkRunUpdate) SetNillableTaskScale(v *string) *BenchmarkRunUpdate {
+func (_u *BenchmarkRunUpdate) SetNillableTaskScale(v *benchmarkrun.TaskScale) *BenchmarkRunUpdate {
 	if v != nil {
 		_u.SetTaskScale(*v)
 	}
@@ -598,7 +598,7 @@ func (_u *BenchmarkRunUpdate) sqlSave(ctx context.Context) (_node int, err error
 		_spec.SetField(benchmarkrun.FieldTriggerType, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.TaskScale(); ok {
-		_spec.SetField(benchmarkrun.FieldTaskScale, field.TypeString, value)
+		_spec.SetField(benchmarkrun.FieldTaskScale, field.TypeEnum, value)
 	}
 	if value, ok := _u.mutation.TaskTypes(); ok {
 		_spec.SetField(benchmarkrun.FieldTaskTypes, field.TypeJSON, value)
@@ -1031,13 +1031,13 @@ func (_u *BenchmarkRunUpdateOne) SetNillableTriggerType(v *string) *BenchmarkRun
 }
 
 // SetTaskScale sets the "task_scale" field.
-func (_u *BenchmarkRunUpdateOne) SetTaskScale(v string) *BenchmarkRunUpdateOne {
+func (_u *BenchmarkRunUpdateOne) SetTaskScale(v benchmarkrun.TaskScale) *BenchmarkRunUpdateOne {
 	_u.mutation.SetTaskScale(v)
 	return _u
 }
 
 // SetNillableTaskScale sets the "task_scale" field if the given value is not nil.
-func (_u *BenchmarkRunUpdateOne) SetNillableTaskScale(v *string) *BenchmarkRunUpdateOne {
+func (_u *BenchmarkRunUpdateOne) SetNillableTaskScale(v *benchmarkrun.TaskScale) *BenchmarkRunUpdateOne {
 	if v != nil {
 		_u.SetTaskScale(*v)
 	}
@@ -1560,7 +1560,7 @@ func (_u *BenchmarkRunUpdateOne) sqlSave(ctx context.Context) (_node *BenchmarkR
 		_spec.SetField(benchmarkrun.FieldTriggerType, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.TaskScale(); ok {
-		_spec.SetField(benchmarkrun.FieldTaskScale, field.TypeString, value)
+		_spec.SetField(benchmarkrun.FieldTaskScale, field.TypeEnum, value)
 	}
 	if value, ok := _u.mutation.TaskTypes(); ok {
 		_spec.SetField(benchmarkrun.FieldTaskTypes, field.TypeJSON, value)

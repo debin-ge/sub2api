@@ -3,6 +3,7 @@
 package benchmarkprofile
 
 import (
+	"fmt"
 	"time"
 
 	"entgo.io/ent/dialect/sql"
@@ -136,10 +137,6 @@ var (
 	DefaultTargetIds func() []int64
 	// DefaultTaskTypes holds the default value on creation for the "task_types" field.
 	DefaultTaskTypes func() []string
-	// DefaultTaskScale holds the default value on creation for the "task_scale" field.
-	DefaultTaskScale string
-	// TaskScaleValidator is a validator for the "task_scale" field. It is called by the builders before save.
-	TaskScaleValidator func(string) error
 	// DefaultPerTypeLimit holds the default value on creation for the "per_type_limit" field.
 	DefaultPerTypeLimit func() map[string]int
 	// DefaultDifficultyFilter holds the default value on creation for the "difficulty_filter" field.
@@ -157,6 +154,34 @@ var (
 	// DefaultMetadata holds the default value on creation for the "metadata" field.
 	DefaultMetadata func() map[string]interface{}
 )
+
+// TaskScale defines the type for the "task_scale" enum field.
+type TaskScale string
+
+// TaskScaleMedium is the default value of the TaskScale enum.
+const DefaultTaskScale = TaskScaleMedium
+
+// TaskScale values.
+const (
+	TaskScaleSmall  TaskScale = "small"
+	TaskScaleMedium TaskScale = "medium"
+	TaskScaleFull   TaskScale = "full"
+	TaskScaleCustom TaskScale = "custom"
+)
+
+func (ts TaskScale) String() string {
+	return string(ts)
+}
+
+// TaskScaleValidator is a validator for the "task_scale" field enum values. It is called by the builders before save.
+func TaskScaleValidator(ts TaskScale) error {
+	switch ts {
+	case TaskScaleSmall, TaskScaleMedium, TaskScaleFull, TaskScaleCustom:
+		return nil
+	default:
+		return fmt.Errorf("benchmarkprofile: invalid enum value for task_scale field: %q", ts)
+	}
+}
 
 // OrderOption defines the ordering options for the BenchmarkProfile queries.
 type OrderOption func(*sql.Selector)

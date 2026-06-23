@@ -33,7 +33,7 @@ type BenchmarkRun struct {
 	// TriggerType holds the value of the "trigger_type" field.
 	TriggerType string `json:"trigger_type,omitempty"`
 	// TaskScale holds the value of the "task_scale" field.
-	TaskScale string `json:"task_scale,omitempty"`
+	TaskScale benchmarkrun.TaskScale `json:"task_scale,omitempty"`
 	// TaskTypes holds the value of the "task_types" field.
 	TaskTypes []string `json:"task_types,omitempty"`
 	// SelectionSeed holds the value of the "selection_seed" field.
@@ -222,7 +222,7 @@ func (_m *BenchmarkRun) assignValues(columns []string, values []any) error {
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field task_scale", values[i])
 			} else if value.Valid {
-				_m.TaskScale = value.String
+				_m.TaskScale = benchmarkrun.TaskScale(value.String)
 			}
 		case benchmarkrun.FieldTaskTypes:
 			if value, ok := values[i].(*[]byte); !ok {
@@ -383,7 +383,7 @@ func (_m *BenchmarkRun) String() string {
 	builder.WriteString(_m.TriggerType)
 	builder.WriteString(", ")
 	builder.WriteString("task_scale=")
-	builder.WriteString(_m.TaskScale)
+	builder.WriteString(fmt.Sprintf("%v", _m.TaskScale))
 	builder.WriteString(", ")
 	builder.WriteString("task_types=")
 	builder.WriteString(fmt.Sprintf("%v", _m.TaskTypes))

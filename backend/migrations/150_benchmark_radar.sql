@@ -29,6 +29,8 @@ CREATE INDEX IF NOT EXISTS benchmark_targets_enabled_public_visible_idx
 CREATE INDEX IF NOT EXISTS benchmark_targets_channel_id_idx
     ON benchmark_targets (channel_id);
 
+COMMENT ON COLUMN benchmark_targets.channel_id IS 'Raw-SQL channel id; service/repository validates existence because channels has no Ent schema.';
+
 CREATE TABLE IF NOT EXISTS benchmark_suites (
     id BIGSERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
@@ -66,7 +68,9 @@ CREATE TABLE IF NOT EXISTS benchmark_tasks (
     enabled BOOLEAN NOT NULL DEFAULT TRUE,
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT benchmark_tasks_min_scale_check
+        CHECK (min_scale IN ('small', 'medium', 'full', 'custom'))
 );
 
 CREATE INDEX IF NOT EXISTS benchmark_tasks_suite_id_idx
@@ -79,6 +83,20 @@ CREATE INDEX IF NOT EXISTS benchmark_tasks_enabled_idx
     ON benchmark_tasks (enabled);
 CREATE INDEX IF NOT EXISTS benchmark_tasks_suite_type_enabled_idx
     ON benchmark_tasks (suite_id, type, enabled);
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'benchmark_tasks_min_scale_check'
+          AND conrelid = 'benchmark_tasks'::regclass
+    ) THEN
+        ALTER TABLE benchmark_tasks
+            ADD CONSTRAINT benchmark_tasks_min_scale_check
+            CHECK (min_scale IN ('small', 'medium', 'full', 'custom'));
+    END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS benchmark_profiles (
     id BIGSERIAL PRIMARY KEY,
@@ -99,13 +117,29 @@ CREATE TABLE IF NOT EXISTS benchmark_profiles (
     enabled BOOLEAN NOT NULL DEFAULT TRUE,
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT benchmark_profiles_task_scale_check
+        CHECK (task_scale IN ('small', 'medium', 'full', 'custom'))
 );
 
 CREATE INDEX IF NOT EXISTS benchmark_profiles_suite_id_idx
     ON benchmark_profiles (suite_id);
 CREATE INDEX IF NOT EXISTS benchmark_profiles_enabled_idx
     ON benchmark_profiles (enabled);
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'benchmark_profiles_task_scale_check'
+          AND conrelid = 'benchmark_profiles'::regclass
+    ) THEN
+        ALTER TABLE benchmark_profiles
+            ADD CONSTRAINT benchmark_profiles_task_scale_check
+            CHECK (task_scale IN ('small', 'medium', 'full', 'custom'));
+    END IF;
+END $$;
 
 DO $$
 BEGIN
@@ -164,7 +198,9 @@ CREATE TABLE IF NOT EXISTS benchmark_runs (
     error_message TEXT,
     created_by BIGINT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT benchmark_runs_task_scale_check
+        CHECK (task_scale IN ('small', 'medium', 'full', 'custom'))
 );
 
 CREATE INDEX IF NOT EXISTS benchmark_runs_suite_id_idx
@@ -175,6 +211,20 @@ CREATE INDEX IF NOT EXISTS benchmark_runs_status_idx
     ON benchmark_runs (status);
 CREATE INDEX IF NOT EXISTS benchmark_runs_created_at_idx
     ON benchmark_runs (created_at);
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'benchmark_runs_task_scale_check'
+          AND conrelid = 'benchmark_runs'::regclass
+    ) THEN
+        ALTER TABLE benchmark_runs
+            ADD CONSTRAINT benchmark_runs_task_scale_check
+            CHECK (task_scale IN ('small', 'medium', 'full', 'custom'));
+    END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS benchmark_run_targets (
     id BIGSERIAL PRIMARY KEY,
@@ -198,6 +248,8 @@ CREATE INDEX IF NOT EXISTS benchmark_run_targets_run_channel_idx
     ON benchmark_run_targets (run_id, channel_id);
 CREATE UNIQUE INDEX IF NOT EXISTS benchmark_run_targets_run_target_key
     ON benchmark_run_targets (run_id, target_id);
+CREATE UNIQUE INDEX IF NOT EXISTS benchmark_run_targets_run_id_id_key
+    ON benchmark_run_targets (run_id, id);
 
 CREATE TABLE IF NOT EXISTS benchmark_run_tasks (
     id BIGSERIAL PRIMARY KEY,
@@ -223,6 +275,8 @@ CREATE INDEX IF NOT EXISTS benchmark_run_tasks_run_type_idx
     ON benchmark_run_tasks (run_id, type);
 CREATE UNIQUE INDEX IF NOT EXISTS benchmark_run_tasks_run_task_key
     ON benchmark_run_tasks (run_id, task_id);
+CREATE UNIQUE INDEX IF NOT EXISTS benchmark_run_tasks_run_id_id_key
+    ON benchmark_run_tasks (run_id, id);
 
 CREATE TABLE IF NOT EXISTS benchmark_results (
     id BIGSERIAL PRIMARY KEY,
@@ -248,7 +302,15 @@ CREATE TABLE IF NOT EXISTS benchmark_results (
     started_at TIMESTAMPTZ,
     finished_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT benchmark_results_run_target_same_run_fkey
+        FOREIGN KEY (run_id, run_target_id)
+        REFERENCES benchmark_run_targets(run_id, id)
+        ON DELETE CASCADE,
+    CONSTRAINT benchmark_results_run_task_same_run_fkey
+        FOREIGN KEY (run_id, run_task_id)
+        REFERENCES benchmark_run_tasks(run_id, id)
+        ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS benchmark_results_run_id_idx
@@ -263,6 +325,35 @@ CREATE INDEX IF NOT EXISTS benchmark_results_status_idx
     ON benchmark_results (status);
 CREATE UNIQUE INDEX IF NOT EXISTS benchmark_results_run_task_target_key
     ON benchmark_results (run_task_id, run_target_id);
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'benchmark_results_run_target_same_run_fkey'
+          AND conrelid = 'benchmark_results'::regclass
+    ) THEN
+        ALTER TABLE benchmark_results
+            ADD CONSTRAINT benchmark_results_run_target_same_run_fkey
+            FOREIGN KEY (run_id, run_target_id)
+            REFERENCES benchmark_run_targets(run_id, id)
+            ON DELETE CASCADE;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'benchmark_results_run_task_same_run_fkey'
+          AND conrelid = 'benchmark_results'::regclass
+    ) THEN
+        ALTER TABLE benchmark_results
+            ADD CONSTRAINT benchmark_results_run_task_same_run_fkey
+            FOREIGN KEY (run_id, run_task_id)
+            REFERENCES benchmark_run_tasks(run_id, id)
+            ON DELETE CASCADE;
+    END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS benchmark_score_snapshots (
     id BIGSERIAL PRIMARY KEY,
@@ -283,7 +374,13 @@ CREATE TABLE IF NOT EXISTS benchmark_score_snapshots (
     estimated_cost NUMERIC(20,10) NOT NULL DEFAULT 0,
     invalid_reason_breakdown JSONB NOT NULL DEFAULT '{}'::jsonb,
     ranking_metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT benchmark_score_snapshots_confidence_level_check
+        CHECK (confidence_level IN ('high', 'medium', 'low')),
+    CONSTRAINT benchmark_score_snapshots_run_target_same_run_fkey
+        FOREIGN KEY (run_id, run_target_id)
+        REFERENCES benchmark_run_targets(run_id, id)
+        ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS benchmark_score_snapshots_run_id_idx
@@ -294,6 +391,33 @@ CREATE INDEX IF NOT EXISTS benchmark_score_snapshots_run_overall_score_idx
     ON benchmark_score_snapshots (run_id, overall_score);
 CREATE UNIQUE INDEX IF NOT EXISTS benchmark_score_snapshots_run_target_key
     ON benchmark_score_snapshots (run_id, run_target_id);
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'benchmark_score_snapshots_confidence_level_check'
+          AND conrelid = 'benchmark_score_snapshots'::regclass
+    ) THEN
+        ALTER TABLE benchmark_score_snapshots
+            ADD CONSTRAINT benchmark_score_snapshots_confidence_level_check
+            CHECK (confidence_level IN ('high', 'medium', 'low'));
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'benchmark_score_snapshots_run_target_same_run_fkey'
+          AND conrelid = 'benchmark_score_snapshots'::regclass
+    ) THEN
+        ALTER TABLE benchmark_score_snapshots
+            ADD CONSTRAINT benchmark_score_snapshots_run_target_same_run_fkey
+            FOREIGN KEY (run_id, run_target_id)
+            REFERENCES benchmark_run_targets(run_id, id)
+            ON DELETE CASCADE;
+    END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS benchmark_public_snapshots (
     id BIGSERIAL PRIMARY KEY,

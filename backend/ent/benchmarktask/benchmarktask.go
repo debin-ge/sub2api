@@ -3,6 +3,7 @@
 package benchmarktask
 
 import (
+	"fmt"
 	"time"
 
 	"entgo.io/ent/dialect/sql"
@@ -134,10 +135,6 @@ var (
 	DefaultVerifierConfig func() map[string]interface{}
 	// DefaultWeight holds the default value on creation for the "weight" field.
 	DefaultWeight float64
-	// DefaultMinScale holds the default value on creation for the "min_scale" field.
-	DefaultMinScale string
-	// MinScaleValidator is a validator for the "min_scale" field. It is called by the builders before save.
-	MinScaleValidator func(string) error
 	// DefaultPublicPrompt holds the default value on creation for the "public_prompt" field.
 	DefaultPublicPrompt bool
 	// DefaultEnabled holds the default value on creation for the "enabled" field.
@@ -145,6 +142,34 @@ var (
 	// DefaultMetadata holds the default value on creation for the "metadata" field.
 	DefaultMetadata func() map[string]interface{}
 )
+
+// MinScale defines the type for the "min_scale" enum field.
+type MinScale string
+
+// MinScaleSmall is the default value of the MinScale enum.
+const DefaultMinScale = MinScaleSmall
+
+// MinScale values.
+const (
+	MinScaleSmall  MinScale = "small"
+	MinScaleMedium MinScale = "medium"
+	MinScaleFull   MinScale = "full"
+	MinScaleCustom MinScale = "custom"
+)
+
+func (ms MinScale) String() string {
+	return string(ms)
+}
+
+// MinScaleValidator is a validator for the "min_scale" field enum values. It is called by the builders before save.
+func MinScaleValidator(ms MinScale) error {
+	switch ms {
+	case MinScaleSmall, MinScaleMedium, MinScaleFull, MinScaleCustom:
+		return nil
+	default:
+		return fmt.Errorf("benchmarktask: invalid enum value for min_scale field: %q", ms)
+	}
+}
 
 // OrderOption defines the ordering options for the BenchmarkTask queries.
 type OrderOption func(*sql.Selector)

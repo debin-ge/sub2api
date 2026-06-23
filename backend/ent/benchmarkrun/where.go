@@ -85,11 +85,6 @@ func TriggerType(v string) predicate.BenchmarkRun {
 	return predicate.BenchmarkRun(sql.FieldEQ(FieldTriggerType, v))
 }
 
-// TaskScale applies equality check predicate on the "task_scale" field. It's identical to TaskScaleEQ.
-func TaskScale(v string) predicate.BenchmarkRun {
-	return predicate.BenchmarkRun(sql.FieldEQ(FieldTaskScale, v))
-}
-
 // SelectionSeed applies equality check predicate on the "selection_seed" field. It's identical to SelectionSeedEQ.
 func SelectionSeed(v int64) predicate.BenchmarkRun {
 	return predicate.BenchmarkRun(sql.FieldEQ(FieldSelectionSeed, v))
@@ -381,68 +376,23 @@ func TriggerTypeContainsFold(v string) predicate.BenchmarkRun {
 }
 
 // TaskScaleEQ applies the EQ predicate on the "task_scale" field.
-func TaskScaleEQ(v string) predicate.BenchmarkRun {
+func TaskScaleEQ(v TaskScale) predicate.BenchmarkRun {
 	return predicate.BenchmarkRun(sql.FieldEQ(FieldTaskScale, v))
 }
 
 // TaskScaleNEQ applies the NEQ predicate on the "task_scale" field.
-func TaskScaleNEQ(v string) predicate.BenchmarkRun {
+func TaskScaleNEQ(v TaskScale) predicate.BenchmarkRun {
 	return predicate.BenchmarkRun(sql.FieldNEQ(FieldTaskScale, v))
 }
 
 // TaskScaleIn applies the In predicate on the "task_scale" field.
-func TaskScaleIn(vs ...string) predicate.BenchmarkRun {
+func TaskScaleIn(vs ...TaskScale) predicate.BenchmarkRun {
 	return predicate.BenchmarkRun(sql.FieldIn(FieldTaskScale, vs...))
 }
 
 // TaskScaleNotIn applies the NotIn predicate on the "task_scale" field.
-func TaskScaleNotIn(vs ...string) predicate.BenchmarkRun {
+func TaskScaleNotIn(vs ...TaskScale) predicate.BenchmarkRun {
 	return predicate.BenchmarkRun(sql.FieldNotIn(FieldTaskScale, vs...))
-}
-
-// TaskScaleGT applies the GT predicate on the "task_scale" field.
-func TaskScaleGT(v string) predicate.BenchmarkRun {
-	return predicate.BenchmarkRun(sql.FieldGT(FieldTaskScale, v))
-}
-
-// TaskScaleGTE applies the GTE predicate on the "task_scale" field.
-func TaskScaleGTE(v string) predicate.BenchmarkRun {
-	return predicate.BenchmarkRun(sql.FieldGTE(FieldTaskScale, v))
-}
-
-// TaskScaleLT applies the LT predicate on the "task_scale" field.
-func TaskScaleLT(v string) predicate.BenchmarkRun {
-	return predicate.BenchmarkRun(sql.FieldLT(FieldTaskScale, v))
-}
-
-// TaskScaleLTE applies the LTE predicate on the "task_scale" field.
-func TaskScaleLTE(v string) predicate.BenchmarkRun {
-	return predicate.BenchmarkRun(sql.FieldLTE(FieldTaskScale, v))
-}
-
-// TaskScaleContains applies the Contains predicate on the "task_scale" field.
-func TaskScaleContains(v string) predicate.BenchmarkRun {
-	return predicate.BenchmarkRun(sql.FieldContains(FieldTaskScale, v))
-}
-
-// TaskScaleHasPrefix applies the HasPrefix predicate on the "task_scale" field.
-func TaskScaleHasPrefix(v string) predicate.BenchmarkRun {
-	return predicate.BenchmarkRun(sql.FieldHasPrefix(FieldTaskScale, v))
-}
-
-// TaskScaleHasSuffix applies the HasSuffix predicate on the "task_scale" field.
-func TaskScaleHasSuffix(v string) predicate.BenchmarkRun {
-	return predicate.BenchmarkRun(sql.FieldHasSuffix(FieldTaskScale, v))
-}
-
-// TaskScaleEqualFold applies the EqualFold predicate on the "task_scale" field.
-func TaskScaleEqualFold(v string) predicate.BenchmarkRun {
-	return predicate.BenchmarkRun(sql.FieldEqualFold(FieldTaskScale, v))
-}
-
-// TaskScaleContainsFold applies the ContainsFold predicate on the "task_scale" field.
-func TaskScaleContainsFold(v string) predicate.BenchmarkRun {
-	return predicate.BenchmarkRun(sql.FieldContainsFold(FieldTaskScale, v))
 }
 
 // SelectionSeedEQ applies the EQ predicate on the "selection_seed" field.

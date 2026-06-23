@@ -82,13 +82,13 @@ func (_c *BenchmarkRunCreate) SetTriggerType(v string) *BenchmarkRunCreate {
 }
 
 // SetTaskScale sets the "task_scale" field.
-func (_c *BenchmarkRunCreate) SetTaskScale(v string) *BenchmarkRunCreate {
+func (_c *BenchmarkRunCreate) SetTaskScale(v benchmarkrun.TaskScale) *BenchmarkRunCreate {
 	_c.mutation.SetTaskScale(v)
 	return _c
 }
 
 // SetNillableTaskScale sets the "task_scale" field if the given value is not nil.
-func (_c *BenchmarkRunCreate) SetNillableTaskScale(v *string) *BenchmarkRunCreate {
+func (_c *BenchmarkRunCreate) SetNillableTaskScale(v *benchmarkrun.TaskScale) *BenchmarkRunCreate {
 	if v != nil {
 		_c.SetTaskScale(*v)
 	}
@@ -476,7 +476,7 @@ func (_c *BenchmarkRunCreate) createSpec() (*BenchmarkRun, *sqlgraph.CreateSpec)
 		_node.TriggerType = value
 	}
 	if value, ok := _c.mutation.TaskScale(); ok {
-		_spec.SetField(benchmarkrun.FieldTaskScale, field.TypeString, value)
+		_spec.SetField(benchmarkrun.FieldTaskScale, field.TypeEnum, value)
 		_node.TaskScale = value
 	}
 	if value, ok := _c.mutation.TaskTypes(); ok {
@@ -746,7 +746,7 @@ func (u *BenchmarkRunUpsert) UpdateTriggerType() *BenchmarkRunUpsert {
 }
 
 // SetTaskScale sets the "task_scale" field.
-func (u *BenchmarkRunUpsert) SetTaskScale(v string) *BenchmarkRunUpsert {
+func (u *BenchmarkRunUpsert) SetTaskScale(v benchmarkrun.TaskScale) *BenchmarkRunUpsert {
 	u.Set(benchmarkrun.FieldTaskScale, v)
 	return u
 }
@@ -1053,7 +1053,7 @@ func (u *BenchmarkRunUpsertOne) UpdateTriggerType() *BenchmarkRunUpsertOne {
 }
 
 // SetTaskScale sets the "task_scale" field.
-func (u *BenchmarkRunUpsertOne) SetTaskScale(v string) *BenchmarkRunUpsertOne {
+func (u *BenchmarkRunUpsertOne) SetTaskScale(v benchmarkrun.TaskScale) *BenchmarkRunUpsertOne {
 	return u.Update(func(s *BenchmarkRunUpsert) {
 		s.SetTaskScale(v)
 	})
@@ -1558,7 +1558,7 @@ func (u *BenchmarkRunUpsertBulk) UpdateTriggerType() *BenchmarkRunUpsertBulk {
 }
 
 // SetTaskScale sets the "task_scale" field.
-func (u *BenchmarkRunUpsertBulk) SetTaskScale(v string) *BenchmarkRunUpsertBulk {
+func (u *BenchmarkRunUpsertBulk) SetTaskScale(v benchmarkrun.TaskScale) *BenchmarkRunUpsertBulk {
 	return u.Update(func(s *BenchmarkRunUpsert) {
 		s.SetTaskScale(v)
 	})
