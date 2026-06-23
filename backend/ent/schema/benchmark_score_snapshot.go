@@ -42,9 +42,9 @@ func (BenchmarkScoreSnapshot) Fields() []ent.Field {
 		field.Float("coverage_rate").
 			Default(0).
 			SchemaType(map[string]string{dialect.Postgres: "decimal(10,4)"}),
-		field.Float("confidence_level").
-			Default(0).
-			SchemaType(map[string]string{dialect.Postgres: "decimal(10,4)"}),
+		field.String("confidence_level").
+			MaxLen(20).
+			Default("low"),
 		field.Bool("insufficient_sample").
 			Default(false),
 		field.Float("success_rate").
@@ -95,8 +95,14 @@ func (BenchmarkScoreSnapshot) Edges() []ent.Edge {
 
 func (BenchmarkScoreSnapshot) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("run_id"),
-		index.Fields("run_target_id"),
-		index.Fields("run_id", "overall_score"),
+		index.Fields("run_id").
+			StorageKey("benchmark_score_snapshots_run_id_idx"),
+		index.Fields("run_target_id").
+			StorageKey("benchmark_score_snapshots_run_target_id_idx"),
+		index.Fields("run_id", "overall_score").
+			StorageKey("benchmark_score_snapshots_run_overall_score_idx"),
+		index.Fields("run_id", "run_target_id").
+			Unique().
+			StorageKey("benchmark_score_snapshots_run_target_key"),
 	}
 }

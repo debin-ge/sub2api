@@ -48,7 +48,7 @@ func (BenchmarkTarget) Fields() []ent.Field {
 			Nillable().
 			MaxLen(200),
 		field.JSON("supported_task_types", []string{}).
-			Default([]string{}).
+			Default(func() []string { return []string{} }).
 			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
 		field.Int("max_concurrency").
 			Default(1),
@@ -80,8 +80,12 @@ func (BenchmarkTarget) Edges() []ent.Edge {
 
 func (BenchmarkTarget) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("model_name", "channel_id").Unique(),
-		index.Fields("enabled", "public_visible"),
-		index.Fields("channel_id"),
+		index.Fields("model_name", "channel_id").
+			Unique().
+			StorageKey("benchmark_targets_model_channel_key"),
+		index.Fields("enabled", "public_visible").
+			StorageKey("benchmark_targets_enabled_public_visible_idx"),
+		index.Fields("channel_id").
+			StorageKey("benchmark_targets_channel_id_idx"),
 	}
 }

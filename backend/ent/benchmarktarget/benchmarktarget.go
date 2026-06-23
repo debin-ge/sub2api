@@ -103,7 +103,7 @@ var (
 	// ChannelNameSnapshotValidator is a validator for the "channel_name_snapshot" field. It is called by the builders before save.
 	ChannelNameSnapshotValidator func(string) error
 	// DefaultSupportedTaskTypes holds the default value on creation for the "supported_task_types" field.
-	DefaultSupportedTaskTypes []string
+	DefaultSupportedTaskTypes func() []string
 	// DefaultMaxConcurrency holds the default value on creation for the "max_concurrency" field.
 	DefaultMaxConcurrency int
 	// DefaultEnabled holds the default value on creation for the "enabled" field.

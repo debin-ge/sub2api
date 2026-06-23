@@ -431,7 +431,7 @@ var (
 		{Name: "description", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
 		{Name: "target_ids", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "task_types", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
-		{Name: "task_scale", Type: field.TypeInt, Default: 1},
+		{Name: "task_scale", Type: field.TypeString, Size: 20, Default: "medium"},
 		{Name: "task_count_limit", Type: field.TypeInt, Nullable: true},
 		{Name: "per_type_limit", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "difficulty_filter", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
@@ -459,12 +459,12 @@ var (
 		},
 		Indexes: []*schema.Index{
 			{
-				Name:    "benchmarkprofile_suite_id",
+				Name:    "benchmark_profiles_suite_id_idx",
 				Unique:  false,
 				Columns: []*schema.Column{BenchmarkProfilesColumns[18]},
 			},
 			{
-				Name:    "benchmarkprofile_enabled",
+				Name:    "benchmark_profiles_enabled_idx",
 				Unique:  false,
 				Columns: []*schema.Column{BenchmarkProfilesColumns[16]},
 			},
@@ -507,12 +507,12 @@ var (
 		},
 		Indexes: []*schema.Index{
 			{
-				Name:    "benchmarkpublicsnapshot_published_at",
+				Name:    "benchmark_public_snapshots_published_at_idx",
 				Unique:  false,
 				Columns: []*schema.Column{BenchmarkPublicSnapshotsColumns[2]},
 			},
 			{
-				Name:    "benchmarkpublicsnapshot_run_id",
+				Name:    "benchmark_public_snapshots_run_id_idx",
 				Unique:  false,
 				Columns: []*schema.Column{BenchmarkPublicSnapshotsColumns[5]},
 			},
@@ -572,29 +572,34 @@ var (
 		},
 		Indexes: []*schema.Index{
 			{
-				Name:    "benchmarkresult_run_id",
+				Name:    "benchmark_results_run_id_idx",
 				Unique:  false,
 				Columns: []*schema.Column{BenchmarkResultsColumns[21]},
 			},
 			{
-				Name:    "benchmarkresult_run_id_run_target_id",
+				Name:    "benchmark_results_run_target_idx",
 				Unique:  false,
 				Columns: []*schema.Column{BenchmarkResultsColumns[21], BenchmarkResultsColumns[22]},
 			},
 			{
-				Name:    "benchmarkresult_run_id_run_task_id",
+				Name:    "benchmark_results_run_task_idx",
 				Unique:  false,
 				Columns: []*schema.Column{BenchmarkResultsColumns[21], BenchmarkResultsColumns[23]},
 			},
 			{
-				Name:    "benchmarkresult_request_id",
+				Name:    "benchmark_results_request_id_idx",
 				Unique:  false,
 				Columns: []*schema.Column{BenchmarkResultsColumns[3]},
 			},
 			{
-				Name:    "benchmarkresult_status",
+				Name:    "benchmark_results_status_idx",
 				Unique:  false,
 				Columns: []*schema.Column{BenchmarkResultsColumns[4]},
+			},
+			{
+				Name:    "benchmark_results_run_task_target_key",
+				Unique:  true,
+				Columns: []*schema.Column{BenchmarkResultsColumns[23], BenchmarkResultsColumns[22]},
 			},
 		},
 	}
@@ -605,7 +610,7 @@ var (
 		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "status", Type: field.TypeString, Size: 32},
 		{Name: "trigger_type", Type: field.TypeString, Size: 32},
-		{Name: "task_scale", Type: field.TypeInt, Default: 1},
+		{Name: "task_scale", Type: field.TypeString, Size: 20, Default: "medium"},
 		{Name: "task_types", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "selection_seed", Type: field.TypeInt64, Nullable: true},
 		{Name: "planned_target_count", Type: field.TypeInt, Default: 0},
@@ -640,22 +645,22 @@ var (
 		},
 		Indexes: []*schema.Index{
 			{
-				Name:    "benchmarkrun_suite_id",
+				Name:    "benchmark_runs_suite_id_idx",
 				Unique:  false,
 				Columns: []*schema.Column{BenchmarkRunsColumns[17]},
 			},
 			{
-				Name:    "benchmarkrun_profile_id",
+				Name:    "benchmark_runs_profile_id_idx",
 				Unique:  false,
 				Columns: []*schema.Column{BenchmarkRunsColumns[16]},
 			},
 			{
-				Name:    "benchmarkrun_status",
+				Name:    "benchmark_runs_status_idx",
 				Unique:  false,
 				Columns: []*schema.Column{BenchmarkRunsColumns[3]},
 			},
 			{
-				Name:    "benchmarkrun_created_at",
+				Name:    "benchmark_runs_created_at_idx",
 				Unique:  false,
 				Columns: []*schema.Column{BenchmarkRunsColumns[1]},
 			},
@@ -696,19 +701,24 @@ var (
 		},
 		Indexes: []*schema.Index{
 			{
-				Name:    "benchmarkruntarget_run_id",
+				Name:    "benchmark_run_targets_run_id_idx",
 				Unique:  false,
 				Columns: []*schema.Column{BenchmarkRunTargetsColumns[9]},
 			},
 			{
-				Name:    "benchmarkruntarget_target_id",
+				Name:    "benchmark_run_targets_target_id_idx",
 				Unique:  false,
 				Columns: []*schema.Column{BenchmarkRunTargetsColumns[10]},
 			},
 			{
-				Name:    "benchmarkruntarget_run_id_channel_id",
+				Name:    "benchmark_run_targets_run_channel_idx",
 				Unique:  false,
 				Columns: []*schema.Column{BenchmarkRunTargetsColumns[9], BenchmarkRunTargetsColumns[2]},
+			},
+			{
+				Name:    "benchmark_run_targets_run_target_key",
+				Unique:  true,
+				Columns: []*schema.Column{BenchmarkRunTargetsColumns[9], BenchmarkRunTargetsColumns[10]},
 			},
 		},
 	}
@@ -749,19 +759,24 @@ var (
 		},
 		Indexes: []*schema.Index{
 			{
-				Name:    "benchmarkruntask_run_id",
+				Name:    "benchmark_run_tasks_run_id_idx",
 				Unique:  false,
 				Columns: []*schema.Column{BenchmarkRunTasksColumns[11]},
 			},
 			{
-				Name:    "benchmarkruntask_task_id",
+				Name:    "benchmark_run_tasks_task_id_idx",
 				Unique:  false,
 				Columns: []*schema.Column{BenchmarkRunTasksColumns[12]},
 			},
 			{
-				Name:    "benchmarkruntask_run_id_type",
+				Name:    "benchmark_run_tasks_run_type_idx",
 				Unique:  false,
 				Columns: []*schema.Column{BenchmarkRunTasksColumns[11], BenchmarkRunTasksColumns[2]},
+			},
+			{
+				Name:    "benchmark_run_tasks_run_task_key",
+				Unique:  true,
+				Columns: []*schema.Column{BenchmarkRunTasksColumns[11], BenchmarkRunTasksColumns[12]},
 			},
 		},
 	}
@@ -793,17 +808,17 @@ var (
 		},
 		Indexes: []*schema.Index{
 			{
-				Name:    "benchmarkschedule_enabled",
+				Name:    "benchmark_schedules_enabled_idx",
 				Unique:  false,
 				Columns: []*schema.Column{BenchmarkSchedulesColumns[5]},
 			},
 			{
-				Name:    "benchmarkschedule_next_run_at",
+				Name:    "benchmark_schedules_next_run_at_idx",
 				Unique:  false,
 				Columns: []*schema.Column{BenchmarkSchedulesColumns[7]},
 			},
 			{
-				Name:    "benchmarkschedule_profile_id",
+				Name:    "benchmark_schedules_profile_id_idx",
 				Unique:  false,
 				Columns: []*schema.Column{BenchmarkSchedulesColumns[9]},
 			},
@@ -818,7 +833,7 @@ var (
 		{Name: "scored_tasks", Type: field.TypeInt, Default: 0},
 		{Name: "invalid_tasks", Type: field.TypeInt, Default: 0},
 		{Name: "coverage_rate", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(10,4)"}},
-		{Name: "confidence_level", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(10,4)"}},
+		{Name: "confidence_level", Type: field.TypeString, Size: 20, Default: "low"},
 		{Name: "insufficient_sample", Type: field.TypeBool, Default: false},
 		{Name: "success_rate", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(10,4)"}},
 		{Name: "latency_p50_ms", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(12,4)"}},
@@ -852,19 +867,24 @@ var (
 		},
 		Indexes: []*schema.Index{
 			{
-				Name:    "benchmarkscoresnapshot_run_id",
+				Name:    "benchmark_score_snapshots_run_id_idx",
 				Unique:  false,
 				Columns: []*schema.Column{BenchmarkScoreSnapshotsColumns[17]},
 			},
 			{
-				Name:    "benchmarkscoresnapshot_run_target_id",
+				Name:    "benchmark_score_snapshots_run_target_id_idx",
 				Unique:  false,
 				Columns: []*schema.Column{BenchmarkScoreSnapshotsColumns[18]},
 			},
 			{
-				Name:    "benchmarkscoresnapshot_run_id_overall_score",
+				Name:    "benchmark_score_snapshots_run_overall_score_idx",
 				Unique:  false,
 				Columns: []*schema.Column{BenchmarkScoreSnapshotsColumns[17], BenchmarkScoreSnapshotsColumns[1]},
+			},
+			{
+				Name:    "benchmark_score_snapshots_run_target_key",
+				Unique:  true,
+				Columns: []*schema.Column{BenchmarkScoreSnapshotsColumns[17], BenchmarkScoreSnapshotsColumns[18]},
 			},
 		},
 	}
@@ -896,14 +916,19 @@ var (
 		},
 		Indexes: []*schema.Index{
 			{
-				Name:    "benchmarksuite_slug",
+				Name:    "benchmark_suites_slug_key",
 				Unique:  true,
 				Columns: []*schema.Column{BenchmarkSuitesColumns[4]},
 			},
 			{
-				Name:    "benchmarksuite_enabled_public_visible",
+				Name:    "benchmark_suites_enabled_public_visible_idx",
 				Unique:  false,
 				Columns: []*schema.Column{BenchmarkSuitesColumns[6], BenchmarkSuitesColumns[7]},
+			},
+			{
+				Name:    "benchmark_suites_default_profile_id_idx",
+				Unique:  false,
+				Columns: []*schema.Column{BenchmarkSuitesColumns[9]},
 			},
 		},
 	}
@@ -933,17 +958,17 @@ var (
 		PrimaryKey: []*schema.Column{BenchmarkTargetsColumns[0]},
 		Indexes: []*schema.Index{
 			{
-				Name:    "benchmarktarget_model_name_channel_id",
+				Name:    "benchmark_targets_model_channel_key",
 				Unique:  true,
 				Columns: []*schema.Column{BenchmarkTargetsColumns[3], BenchmarkTargetsColumns[4]},
 			},
 			{
-				Name:    "benchmarktarget_enabled_public_visible",
+				Name:    "benchmark_targets_enabled_public_visible_idx",
 				Unique:  false,
 				Columns: []*schema.Column{BenchmarkTargetsColumns[12], BenchmarkTargetsColumns[13]},
 			},
 			{
-				Name:    "benchmarktarget_channel_id",
+				Name:    "benchmark_targets_channel_id_idx",
 				Unique:  false,
 				Columns: []*schema.Column{BenchmarkTargetsColumns[4]},
 			},
@@ -965,7 +990,7 @@ var (
 		{Name: "verifier_type", Type: field.TypeString, Size: 50},
 		{Name: "verifier_config", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "weight", Type: field.TypeFloat64, Default: 1, SchemaType: map[string]string{"postgres": "decimal(10,4)"}},
-		{Name: "min_scale", Type: field.TypeInt, Default: 1},
+		{Name: "min_scale", Type: field.TypeString, Size: 20, Default: "small"},
 		{Name: "public_prompt", Type: field.TypeBool, Default: false},
 		{Name: "enabled", Type: field.TypeBool, Default: true},
 		{Name: "metadata", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
@@ -986,27 +1011,27 @@ var (
 		},
 		Indexes: []*schema.Index{
 			{
-				Name:    "benchmarktask_suite_id",
+				Name:    "benchmark_tasks_suite_id_idx",
 				Unique:  false,
 				Columns: []*schema.Column{BenchmarkTasksColumns[18]},
 			},
 			{
-				Name:    "benchmarktask_type",
+				Name:    "benchmark_tasks_type_idx",
 				Unique:  false,
 				Columns: []*schema.Column{BenchmarkTasksColumns[4]},
 			},
 			{
-				Name:    "benchmarktask_difficulty",
+				Name:    "benchmark_tasks_difficulty_idx",
 				Unique:  false,
 				Columns: []*schema.Column{BenchmarkTasksColumns[6]},
 			},
 			{
-				Name:    "benchmarktask_enabled",
+				Name:    "benchmark_tasks_enabled_idx",
 				Unique:  false,
 				Columns: []*schema.Column{BenchmarkTasksColumns[16]},
 			},
 			{
-				Name:    "benchmarktask_suite_id_type_enabled",
+				Name:    "benchmark_tasks_suite_type_enabled_idx",
 				Unique:  false,
 				Columns: []*schema.Column{BenchmarkTasksColumns[18], BenchmarkTasksColumns[4], BenchmarkTasksColumns[16]},
 			},

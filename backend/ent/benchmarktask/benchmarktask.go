@@ -121,7 +121,7 @@ var (
 	// DifficultyValidator is a validator for the "difficulty" field. It is called by the builders before save.
 	DifficultyValidator func(string) error
 	// DefaultTags holds the default value on creation for the "tags" field.
-	DefaultTags []string
+	DefaultTags func() []string
 	// PromptValidator is a validator for the "prompt" field. It is called by the builders before save.
 	PromptValidator func(string) error
 	// DefaultInputPayload holds the default value on creation for the "input_payload" field.
@@ -135,7 +135,9 @@ var (
 	// DefaultWeight holds the default value on creation for the "weight" field.
 	DefaultWeight float64
 	// DefaultMinScale holds the default value on creation for the "min_scale" field.
-	DefaultMinScale int
+	DefaultMinScale string
+	// MinScaleValidator is a validator for the "min_scale" field. It is called by the builders before save.
+	MinScaleValidator func(string) error
 	// DefaultPublicPrompt holds the default value on creation for the "public_prompt" field.
 	DefaultPublicPrompt bool
 	// DefaultEnabled holds the default value on creation for the "enabled" field.

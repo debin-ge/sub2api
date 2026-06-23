@@ -118,10 +118,18 @@ func (BenchmarkResult) Edges() []ent.Edge {
 
 func (BenchmarkResult) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("run_id"),
-		index.Fields("run_id", "run_target_id"),
-		index.Fields("run_id", "run_task_id"),
-		index.Fields("request_id"),
-		index.Fields("status"),
+		index.Fields("run_id").
+			StorageKey("benchmark_results_run_id_idx"),
+		index.Fields("run_id", "run_target_id").
+			StorageKey("benchmark_results_run_target_idx"),
+		index.Fields("run_id", "run_task_id").
+			StorageKey("benchmark_results_run_task_idx"),
+		index.Fields("request_id").
+			StorageKey("benchmark_results_request_id_idx"),
+		index.Fields("status").
+			StorageKey("benchmark_results_status_idx"),
+		index.Fields("run_task_id", "run_target_id").
+			Unique().
+			StorageKey("benchmark_results_run_task_target_key"),
 	}
 }

@@ -82,13 +82,13 @@ func (_c *BenchmarkRunCreate) SetTriggerType(v string) *BenchmarkRunCreate {
 }
 
 // SetTaskScale sets the "task_scale" field.
-func (_c *BenchmarkRunCreate) SetTaskScale(v int) *BenchmarkRunCreate {
+func (_c *BenchmarkRunCreate) SetTaskScale(v string) *BenchmarkRunCreate {
 	_c.mutation.SetTaskScale(v)
 	return _c
 }
 
 // SetNillableTaskScale sets the "task_scale" field if the given value is not nil.
-func (_c *BenchmarkRunCreate) SetNillableTaskScale(v *int) *BenchmarkRunCreate {
+func (_c *BenchmarkRunCreate) SetNillableTaskScale(v *string) *BenchmarkRunCreate {
 	if v != nil {
 		_c.SetTaskScale(*v)
 	}
@@ -352,7 +352,7 @@ func (_c *BenchmarkRunCreate) defaults() {
 		_c.mutation.SetTaskScale(v)
 	}
 	if _, ok := _c.mutation.TaskTypes(); !ok {
-		v := benchmarkrun.DefaultTaskTypes
+		v := benchmarkrun.DefaultTaskTypes()
 		_c.mutation.SetTaskTypes(v)
 	}
 	if _, ok := _c.mutation.PlannedTargetCount(); !ok {
@@ -405,6 +405,11 @@ func (_c *BenchmarkRunCreate) check() error {
 	}
 	if _, ok := _c.mutation.TaskScale(); !ok {
 		return &ValidationError{Name: "task_scale", err: errors.New(`ent: missing required field "BenchmarkRun.task_scale"`)}
+	}
+	if v, ok := _c.mutation.TaskScale(); ok {
+		if err := benchmarkrun.TaskScaleValidator(v); err != nil {
+			return &ValidationError{Name: "task_scale", err: fmt.Errorf(`ent: validator failed for field "BenchmarkRun.task_scale": %w`, err)}
+		}
 	}
 	if _, ok := _c.mutation.TaskTypes(); !ok {
 		return &ValidationError{Name: "task_types", err: errors.New(`ent: missing required field "BenchmarkRun.task_types"`)}
@@ -471,7 +476,7 @@ func (_c *BenchmarkRunCreate) createSpec() (*BenchmarkRun, *sqlgraph.CreateSpec)
 		_node.TriggerType = value
 	}
 	if value, ok := _c.mutation.TaskScale(); ok {
-		_spec.SetField(benchmarkrun.FieldTaskScale, field.TypeInt, value)
+		_spec.SetField(benchmarkrun.FieldTaskScale, field.TypeString, value)
 		_node.TaskScale = value
 	}
 	if value, ok := _c.mutation.TaskTypes(); ok {
@@ -741,7 +746,7 @@ func (u *BenchmarkRunUpsert) UpdateTriggerType() *BenchmarkRunUpsert {
 }
 
 // SetTaskScale sets the "task_scale" field.
-func (u *BenchmarkRunUpsert) SetTaskScale(v int) *BenchmarkRunUpsert {
+func (u *BenchmarkRunUpsert) SetTaskScale(v string) *BenchmarkRunUpsert {
 	u.Set(benchmarkrun.FieldTaskScale, v)
 	return u
 }
@@ -749,12 +754,6 @@ func (u *BenchmarkRunUpsert) SetTaskScale(v int) *BenchmarkRunUpsert {
 // UpdateTaskScale sets the "task_scale" field to the value that was provided on create.
 func (u *BenchmarkRunUpsert) UpdateTaskScale() *BenchmarkRunUpsert {
 	u.SetExcluded(benchmarkrun.FieldTaskScale)
-	return u
-}
-
-// AddTaskScale adds v to the "task_scale" field.
-func (u *BenchmarkRunUpsert) AddTaskScale(v int) *BenchmarkRunUpsert {
-	u.Add(benchmarkrun.FieldTaskScale, v)
 	return u
 }
 
@@ -1054,16 +1053,9 @@ func (u *BenchmarkRunUpsertOne) UpdateTriggerType() *BenchmarkRunUpsertOne {
 }
 
 // SetTaskScale sets the "task_scale" field.
-func (u *BenchmarkRunUpsertOne) SetTaskScale(v int) *BenchmarkRunUpsertOne {
+func (u *BenchmarkRunUpsertOne) SetTaskScale(v string) *BenchmarkRunUpsertOne {
 	return u.Update(func(s *BenchmarkRunUpsert) {
 		s.SetTaskScale(v)
-	})
-}
-
-// AddTaskScale adds v to the "task_scale" field.
-func (u *BenchmarkRunUpsertOne) AddTaskScale(v int) *BenchmarkRunUpsertOne {
-	return u.Update(func(s *BenchmarkRunUpsert) {
-		s.AddTaskScale(v)
 	})
 }
 
@@ -1566,16 +1558,9 @@ func (u *BenchmarkRunUpsertBulk) UpdateTriggerType() *BenchmarkRunUpsertBulk {
 }
 
 // SetTaskScale sets the "task_scale" field.
-func (u *BenchmarkRunUpsertBulk) SetTaskScale(v int) *BenchmarkRunUpsertBulk {
+func (u *BenchmarkRunUpsertBulk) SetTaskScale(v string) *BenchmarkRunUpsertBulk {
 	return u.Update(func(s *BenchmarkRunUpsert) {
 		s.SetTaskScale(v)
-	})
-}
-
-// AddTaskScale adds v to the "task_scale" field.
-func (u *BenchmarkRunUpsertBulk) AddTaskScale(v int) *BenchmarkRunUpsertBulk {
-	return u.Update(func(s *BenchmarkRunUpsert) {
-		s.AddTaskScale(v)
 	})
 }
 

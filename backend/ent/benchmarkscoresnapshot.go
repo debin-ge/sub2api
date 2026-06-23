@@ -37,7 +37,7 @@ type BenchmarkScoreSnapshot struct {
 	// CoverageRate holds the value of the "coverage_rate" field.
 	CoverageRate float64 `json:"coverage_rate,omitempty"`
 	// ConfidenceLevel holds the value of the "confidence_level" field.
-	ConfidenceLevel float64 `json:"confidence_level,omitempty"`
+	ConfidenceLevel string `json:"confidence_level,omitempty"`
 	// InsufficientSample holds the value of the "insufficient_sample" field.
 	InsufficientSample bool `json:"insufficient_sample,omitempty"`
 	// SuccessRate holds the value of the "success_rate" field.
@@ -104,10 +104,12 @@ func (*BenchmarkScoreSnapshot) scanValues(columns []string) ([]any, error) {
 			values[i] = new([]byte)
 		case benchmarkscoresnapshot.FieldInsufficientSample:
 			values[i] = new(sql.NullBool)
-		case benchmarkscoresnapshot.FieldOverallScore, benchmarkscoresnapshot.FieldCoverageRate, benchmarkscoresnapshot.FieldConfidenceLevel, benchmarkscoresnapshot.FieldSuccessRate, benchmarkscoresnapshot.FieldLatencyP50Ms, benchmarkscoresnapshot.FieldLatencyP95Ms, benchmarkscoresnapshot.FieldAvgTotalTokens, benchmarkscoresnapshot.FieldEstimatedCost:
+		case benchmarkscoresnapshot.FieldOverallScore, benchmarkscoresnapshot.FieldCoverageRate, benchmarkscoresnapshot.FieldSuccessRate, benchmarkscoresnapshot.FieldLatencyP50Ms, benchmarkscoresnapshot.FieldLatencyP95Ms, benchmarkscoresnapshot.FieldAvgTotalTokens, benchmarkscoresnapshot.FieldEstimatedCost:
 			values[i] = new(sql.NullFloat64)
 		case benchmarkscoresnapshot.FieldID, benchmarkscoresnapshot.FieldRunID, benchmarkscoresnapshot.FieldRunTargetID, benchmarkscoresnapshot.FieldPlannedTasks, benchmarkscoresnapshot.FieldScoredTasks, benchmarkscoresnapshot.FieldInvalidTasks:
 			values[i] = new(sql.NullInt64)
+		case benchmarkscoresnapshot.FieldConfidenceLevel:
+			values[i] = new(sql.NullString)
 		case benchmarkscoresnapshot.FieldCreatedAt:
 			values[i] = new(sql.NullTime)
 		default:
@@ -182,10 +184,10 @@ func (_m *BenchmarkScoreSnapshot) assignValues(columns []string, values []any) e
 				_m.CoverageRate = value.Float64
 			}
 		case benchmarkscoresnapshot.FieldConfidenceLevel:
-			if value, ok := values[i].(*sql.NullFloat64); !ok {
+			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field confidence_level", values[i])
 			} else if value.Valid {
-				_m.ConfidenceLevel = value.Float64
+				_m.ConfidenceLevel = value.String
 			}
 		case benchmarkscoresnapshot.FieldInsufficientSample:
 			if value, ok := values[i].(*sql.NullBool); !ok {
@@ -319,7 +321,7 @@ func (_m *BenchmarkScoreSnapshot) String() string {
 	builder.WriteString(fmt.Sprintf("%v", _m.CoverageRate))
 	builder.WriteString(", ")
 	builder.WriteString("confidence_level=")
-	builder.WriteString(fmt.Sprintf("%v", _m.ConfidenceLevel))
+	builder.WriteString(_m.ConfidenceLevel)
 	builder.WriteString(", ")
 	builder.WriteString("insufficient_sample=")
 	builder.WriteString(fmt.Sprintf("%v", _m.InsufficientSample))

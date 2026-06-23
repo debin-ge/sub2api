@@ -99,23 +99,16 @@ func (_u *BenchmarkRunUpdate) SetNillableTriggerType(v *string) *BenchmarkRunUpd
 }
 
 // SetTaskScale sets the "task_scale" field.
-func (_u *BenchmarkRunUpdate) SetTaskScale(v int) *BenchmarkRunUpdate {
-	_u.mutation.ResetTaskScale()
+func (_u *BenchmarkRunUpdate) SetTaskScale(v string) *BenchmarkRunUpdate {
 	_u.mutation.SetTaskScale(v)
 	return _u
 }
 
 // SetNillableTaskScale sets the "task_scale" field if the given value is not nil.
-func (_u *BenchmarkRunUpdate) SetNillableTaskScale(v *int) *BenchmarkRunUpdate {
+func (_u *BenchmarkRunUpdate) SetNillableTaskScale(v *string) *BenchmarkRunUpdate {
 	if v != nil {
 		_u.SetTaskScale(*v)
 	}
-	return _u
-}
-
-// AddTaskScale adds value to the "task_scale" field.
-func (_u *BenchmarkRunUpdate) AddTaskScale(v int) *BenchmarkRunUpdate {
-	_u.mutation.AddTaskScale(v)
 	return _u
 }
 
@@ -569,6 +562,11 @@ func (_u *BenchmarkRunUpdate) check() error {
 			return &ValidationError{Name: "trigger_type", err: fmt.Errorf(`ent: validator failed for field "BenchmarkRun.trigger_type": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.TaskScale(); ok {
+		if err := benchmarkrun.TaskScaleValidator(v); err != nil {
+			return &ValidationError{Name: "task_scale", err: fmt.Errorf(`ent: validator failed for field "BenchmarkRun.task_scale": %w`, err)}
+		}
+	}
 	if _u.mutation.SuiteCleared() && len(_u.mutation.SuiteIDs()) > 0 {
 		return errors.New(`ent: clearing a required unique edge "BenchmarkRun.suite"`)
 	}
@@ -600,10 +598,7 @@ func (_u *BenchmarkRunUpdate) sqlSave(ctx context.Context) (_node int, err error
 		_spec.SetField(benchmarkrun.FieldTriggerType, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.TaskScale(); ok {
-		_spec.SetField(benchmarkrun.FieldTaskScale, field.TypeInt, value)
-	}
-	if value, ok := _u.mutation.AddedTaskScale(); ok {
-		_spec.AddField(benchmarkrun.FieldTaskScale, field.TypeInt, value)
+		_spec.SetField(benchmarkrun.FieldTaskScale, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.TaskTypes(); ok {
 		_spec.SetField(benchmarkrun.FieldTaskTypes, field.TypeJSON, value)
@@ -1036,23 +1031,16 @@ func (_u *BenchmarkRunUpdateOne) SetNillableTriggerType(v *string) *BenchmarkRun
 }
 
 // SetTaskScale sets the "task_scale" field.
-func (_u *BenchmarkRunUpdateOne) SetTaskScale(v int) *BenchmarkRunUpdateOne {
-	_u.mutation.ResetTaskScale()
+func (_u *BenchmarkRunUpdateOne) SetTaskScale(v string) *BenchmarkRunUpdateOne {
 	_u.mutation.SetTaskScale(v)
 	return _u
 }
 
 // SetNillableTaskScale sets the "task_scale" field if the given value is not nil.
-func (_u *BenchmarkRunUpdateOne) SetNillableTaskScale(v *int) *BenchmarkRunUpdateOne {
+func (_u *BenchmarkRunUpdateOne) SetNillableTaskScale(v *string) *BenchmarkRunUpdateOne {
 	if v != nil {
 		_u.SetTaskScale(*v)
 	}
-	return _u
-}
-
-// AddTaskScale adds value to the "task_scale" field.
-func (_u *BenchmarkRunUpdateOne) AddTaskScale(v int) *BenchmarkRunUpdateOne {
-	_u.mutation.AddTaskScale(v)
 	return _u
 }
 
@@ -1519,6 +1507,11 @@ func (_u *BenchmarkRunUpdateOne) check() error {
 			return &ValidationError{Name: "trigger_type", err: fmt.Errorf(`ent: validator failed for field "BenchmarkRun.trigger_type": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.TaskScale(); ok {
+		if err := benchmarkrun.TaskScaleValidator(v); err != nil {
+			return &ValidationError{Name: "task_scale", err: fmt.Errorf(`ent: validator failed for field "BenchmarkRun.task_scale": %w`, err)}
+		}
+	}
 	if _u.mutation.SuiteCleared() && len(_u.mutation.SuiteIDs()) > 0 {
 		return errors.New(`ent: clearing a required unique edge "BenchmarkRun.suite"`)
 	}
@@ -1567,10 +1560,7 @@ func (_u *BenchmarkRunUpdateOne) sqlSave(ctx context.Context) (_node *BenchmarkR
 		_spec.SetField(benchmarkrun.FieldTriggerType, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.TaskScale(); ok {
-		_spec.SetField(benchmarkrun.FieldTaskScale, field.TypeInt, value)
-	}
-	if value, ok := _u.mutation.AddedTaskScale(); ok {
-		_spec.AddField(benchmarkrun.FieldTaskScale, field.TypeInt, value)
+		_spec.SetField(benchmarkrun.FieldTaskScale, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.TaskTypes(); ok {
 		_spec.SetField(benchmarkrun.FieldTaskTypes, field.TypeJSON, value)

@@ -91,7 +91,7 @@ func CoverageRate(v float64) predicate.BenchmarkScoreSnapshot {
 }
 
 // ConfidenceLevel applies equality check predicate on the "confidence_level" field. It's identical to ConfidenceLevelEQ.
-func ConfidenceLevel(v float64) predicate.BenchmarkScoreSnapshot {
+func ConfidenceLevel(v string) predicate.BenchmarkScoreSnapshot {
 	return predicate.BenchmarkScoreSnapshot(sql.FieldEQ(FieldConfidenceLevel, v))
 }
 
@@ -371,43 +371,68 @@ func CoverageRateLTE(v float64) predicate.BenchmarkScoreSnapshot {
 }
 
 // ConfidenceLevelEQ applies the EQ predicate on the "confidence_level" field.
-func ConfidenceLevelEQ(v float64) predicate.BenchmarkScoreSnapshot {
+func ConfidenceLevelEQ(v string) predicate.BenchmarkScoreSnapshot {
 	return predicate.BenchmarkScoreSnapshot(sql.FieldEQ(FieldConfidenceLevel, v))
 }
 
 // ConfidenceLevelNEQ applies the NEQ predicate on the "confidence_level" field.
-func ConfidenceLevelNEQ(v float64) predicate.BenchmarkScoreSnapshot {
+func ConfidenceLevelNEQ(v string) predicate.BenchmarkScoreSnapshot {
 	return predicate.BenchmarkScoreSnapshot(sql.FieldNEQ(FieldConfidenceLevel, v))
 }
 
 // ConfidenceLevelIn applies the In predicate on the "confidence_level" field.
-func ConfidenceLevelIn(vs ...float64) predicate.BenchmarkScoreSnapshot {
+func ConfidenceLevelIn(vs ...string) predicate.BenchmarkScoreSnapshot {
 	return predicate.BenchmarkScoreSnapshot(sql.FieldIn(FieldConfidenceLevel, vs...))
 }
 
 // ConfidenceLevelNotIn applies the NotIn predicate on the "confidence_level" field.
-func ConfidenceLevelNotIn(vs ...float64) predicate.BenchmarkScoreSnapshot {
+func ConfidenceLevelNotIn(vs ...string) predicate.BenchmarkScoreSnapshot {
 	return predicate.BenchmarkScoreSnapshot(sql.FieldNotIn(FieldConfidenceLevel, vs...))
 }
 
 // ConfidenceLevelGT applies the GT predicate on the "confidence_level" field.
-func ConfidenceLevelGT(v float64) predicate.BenchmarkScoreSnapshot {
+func ConfidenceLevelGT(v string) predicate.BenchmarkScoreSnapshot {
 	return predicate.BenchmarkScoreSnapshot(sql.FieldGT(FieldConfidenceLevel, v))
 }
 
 // ConfidenceLevelGTE applies the GTE predicate on the "confidence_level" field.
-func ConfidenceLevelGTE(v float64) predicate.BenchmarkScoreSnapshot {
+func ConfidenceLevelGTE(v string) predicate.BenchmarkScoreSnapshot {
 	return predicate.BenchmarkScoreSnapshot(sql.FieldGTE(FieldConfidenceLevel, v))
 }
 
 // ConfidenceLevelLT applies the LT predicate on the "confidence_level" field.
-func ConfidenceLevelLT(v float64) predicate.BenchmarkScoreSnapshot {
+func ConfidenceLevelLT(v string) predicate.BenchmarkScoreSnapshot {
 	return predicate.BenchmarkScoreSnapshot(sql.FieldLT(FieldConfidenceLevel, v))
 }
 
 // ConfidenceLevelLTE applies the LTE predicate on the "confidence_level" field.
-func ConfidenceLevelLTE(v float64) predicate.BenchmarkScoreSnapshot {
+func ConfidenceLevelLTE(v string) predicate.BenchmarkScoreSnapshot {
 	return predicate.BenchmarkScoreSnapshot(sql.FieldLTE(FieldConfidenceLevel, v))
+}
+
+// ConfidenceLevelContains applies the Contains predicate on the "confidence_level" field.
+func ConfidenceLevelContains(v string) predicate.BenchmarkScoreSnapshot {
+	return predicate.BenchmarkScoreSnapshot(sql.FieldContains(FieldConfidenceLevel, v))
+}
+
+// ConfidenceLevelHasPrefix applies the HasPrefix predicate on the "confidence_level" field.
+func ConfidenceLevelHasPrefix(v string) predicate.BenchmarkScoreSnapshot {
+	return predicate.BenchmarkScoreSnapshot(sql.FieldHasPrefix(FieldConfidenceLevel, v))
+}
+
+// ConfidenceLevelHasSuffix applies the HasSuffix predicate on the "confidence_level" field.
+func ConfidenceLevelHasSuffix(v string) predicate.BenchmarkScoreSnapshot {
+	return predicate.BenchmarkScoreSnapshot(sql.FieldHasSuffix(FieldConfidenceLevel, v))
+}
+
+// ConfidenceLevelEqualFold applies the EqualFold predicate on the "confidence_level" field.
+func ConfidenceLevelEqualFold(v string) predicate.BenchmarkScoreSnapshot {
+	return predicate.BenchmarkScoreSnapshot(sql.FieldEqualFold(FieldConfidenceLevel, v))
+}
+
+// ConfidenceLevelContainsFold applies the ContainsFold predicate on the "confidence_level" field.
+func ConfidenceLevelContainsFold(v string) predicate.BenchmarkScoreSnapshot {
+	return predicate.BenchmarkScoreSnapshot(sql.FieldContainsFold(FieldConfidenceLevel, v))
 }
 
 // InsufficientSampleEQ applies the EQ predicate on the "insufficient_sample" field.

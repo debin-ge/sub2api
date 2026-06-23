@@ -93,13 +93,13 @@ func (_c *BenchmarkProfileCreate) SetTaskTypes(v []string) *BenchmarkProfileCrea
 }
 
 // SetTaskScale sets the "task_scale" field.
-func (_c *BenchmarkProfileCreate) SetTaskScale(v int) *BenchmarkProfileCreate {
+func (_c *BenchmarkProfileCreate) SetTaskScale(v string) *BenchmarkProfileCreate {
 	_c.mutation.SetTaskScale(v)
 	return _c
 }
 
 // SetNillableTaskScale sets the "task_scale" field if the given value is not nil.
-func (_c *BenchmarkProfileCreate) SetNillableTaskScale(v *int) *BenchmarkProfileCreate {
+func (_c *BenchmarkProfileCreate) SetNillableTaskScale(v *string) *BenchmarkProfileCreate {
 	if v != nil {
 		_c.SetTaskScale(*v)
 	}
@@ -284,11 +284,11 @@ func (_c *BenchmarkProfileCreate) defaults() {
 		_c.mutation.SetUpdatedAt(v)
 	}
 	if _, ok := _c.mutation.TargetIds(); !ok {
-		v := benchmarkprofile.DefaultTargetIds
+		v := benchmarkprofile.DefaultTargetIds()
 		_c.mutation.SetTargetIds(v)
 	}
 	if _, ok := _c.mutation.TaskTypes(); !ok {
-		v := benchmarkprofile.DefaultTaskTypes
+		v := benchmarkprofile.DefaultTaskTypes()
 		_c.mutation.SetTaskTypes(v)
 	}
 	if _, ok := _c.mutation.TaskScale(); !ok {
@@ -300,11 +300,11 @@ func (_c *BenchmarkProfileCreate) defaults() {
 		_c.mutation.SetPerTypeLimit(v)
 	}
 	if _, ok := _c.mutation.DifficultyFilter(); !ok {
-		v := benchmarkprofile.DefaultDifficultyFilter
+		v := benchmarkprofile.DefaultDifficultyFilter()
 		_c.mutation.SetDifficultyFilter(v)
 	}
 	if _, ok := _c.mutation.TagFilter(); !ok {
-		v := benchmarkprofile.DefaultTagFilter
+		v := benchmarkprofile.DefaultTagFilter()
 		_c.mutation.SetTagFilter(v)
 	}
 	if _, ok := _c.mutation.RuntimeConfig(); !ok {
@@ -352,6 +352,11 @@ func (_c *BenchmarkProfileCreate) check() error {
 	}
 	if _, ok := _c.mutation.TaskScale(); !ok {
 		return &ValidationError{Name: "task_scale", err: errors.New(`ent: missing required field "BenchmarkProfile.task_scale"`)}
+	}
+	if v, ok := _c.mutation.TaskScale(); ok {
+		if err := benchmarkprofile.TaskScaleValidator(v); err != nil {
+			return &ValidationError{Name: "task_scale", err: fmt.Errorf(`ent: validator failed for field "BenchmarkProfile.task_scale": %w`, err)}
+		}
 	}
 	if _, ok := _c.mutation.PerTypeLimit(); !ok {
 		return &ValidationError{Name: "per_type_limit", err: errors.New(`ent: missing required field "BenchmarkProfile.per_type_limit"`)}
@@ -437,7 +442,7 @@ func (_c *BenchmarkProfileCreate) createSpec() (*BenchmarkProfile, *sqlgraph.Cre
 		_node.TaskTypes = value
 	}
 	if value, ok := _c.mutation.TaskScale(); ok {
-		_spec.SetField(benchmarkprofile.FieldTaskScale, field.TypeInt, value)
+		_spec.SetField(benchmarkprofile.FieldTaskScale, field.TypeString, value)
 		_node.TaskScale = value
 	}
 	if value, ok := _c.mutation.TaskCountLimit(); ok {
@@ -676,7 +681,7 @@ func (u *BenchmarkProfileUpsert) UpdateTaskTypes() *BenchmarkProfileUpsert {
 }
 
 // SetTaskScale sets the "task_scale" field.
-func (u *BenchmarkProfileUpsert) SetTaskScale(v int) *BenchmarkProfileUpsert {
+func (u *BenchmarkProfileUpsert) SetTaskScale(v string) *BenchmarkProfileUpsert {
 	u.Set(benchmarkprofile.FieldTaskScale, v)
 	return u
 }
@@ -684,12 +689,6 @@ func (u *BenchmarkProfileUpsert) SetTaskScale(v int) *BenchmarkProfileUpsert {
 // UpdateTaskScale sets the "task_scale" field to the value that was provided on create.
 func (u *BenchmarkProfileUpsert) UpdateTaskScale() *BenchmarkProfileUpsert {
 	u.SetExcluded(benchmarkprofile.FieldTaskScale)
-	return u
-}
-
-// AddTaskScale adds v to the "task_scale" field.
-func (u *BenchmarkProfileUpsert) AddTaskScale(v int) *BenchmarkProfileUpsert {
-	u.Add(benchmarkprofile.FieldTaskScale, v)
 	return u
 }
 
@@ -974,16 +973,9 @@ func (u *BenchmarkProfileUpsertOne) UpdateTaskTypes() *BenchmarkProfileUpsertOne
 }
 
 // SetTaskScale sets the "task_scale" field.
-func (u *BenchmarkProfileUpsertOne) SetTaskScale(v int) *BenchmarkProfileUpsertOne {
+func (u *BenchmarkProfileUpsertOne) SetTaskScale(v string) *BenchmarkProfileUpsertOne {
 	return u.Update(func(s *BenchmarkProfileUpsert) {
 		s.SetTaskScale(v)
-	})
-}
-
-// AddTaskScale adds v to the "task_scale" field.
-func (u *BenchmarkProfileUpsertOne) AddTaskScale(v int) *BenchmarkProfileUpsertOne {
-	return u.Update(func(s *BenchmarkProfileUpsert) {
-		s.AddTaskScale(v)
 	})
 }
 
@@ -1465,16 +1457,9 @@ func (u *BenchmarkProfileUpsertBulk) UpdateTaskTypes() *BenchmarkProfileUpsertBu
 }
 
 // SetTaskScale sets the "task_scale" field.
-func (u *BenchmarkProfileUpsertBulk) SetTaskScale(v int) *BenchmarkProfileUpsertBulk {
+func (u *BenchmarkProfileUpsertBulk) SetTaskScale(v string) *BenchmarkProfileUpsertBulk {
 	return u.Update(func(s *BenchmarkProfileUpsert) {
 		s.SetTaskScale(v)
-	})
-}
-
-// AddTaskScale adds v to the "task_scale" field.
-func (u *BenchmarkProfileUpsertBulk) AddTaskScale(v int) *BenchmarkProfileUpsertBulk {
-	return u.Update(func(s *BenchmarkProfileUpsert) {
-		s.AddTaskScale(v)
 	})
 }
 

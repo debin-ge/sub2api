@@ -260,7 +260,7 @@ func (_c *BenchmarkTargetCreate) defaults() {
 		_c.mutation.SetUpdatedAt(v)
 	}
 	if _, ok := _c.mutation.SupportedTaskTypes(); !ok {
-		v := benchmarktarget.DefaultSupportedTaskTypes
+		v := benchmarktarget.DefaultSupportedTaskTypes()
 		_c.mutation.SetSupportedTaskTypes(v)
 	}
 	if _, ok := _c.mutation.MaxConcurrency(); !ok {

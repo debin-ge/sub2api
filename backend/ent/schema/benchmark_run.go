@@ -39,10 +39,11 @@ func (BenchmarkRun) Fields() []ent.Field {
 		field.String("trigger_type").
 			NotEmpty().
 			MaxLen(32),
-		field.Int("task_scale").
-			Default(1),
+		field.String("task_scale").
+			MaxLen(20).
+			Default("medium"),
 		field.JSON("task_types", []string{}).
-			Default([]string{}).
+			Default(func() []string { return []string{} }).
 			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
 		field.Int64("selection_seed").
 			Optional().
@@ -101,9 +102,13 @@ func (BenchmarkRun) Edges() []ent.Edge {
 
 func (BenchmarkRun) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("suite_id"),
-		index.Fields("profile_id"),
-		index.Fields("status"),
-		index.Fields("created_at"),
+		index.Fields("suite_id").
+			StorageKey("benchmark_runs_suite_id_idx"),
+		index.Fields("profile_id").
+			StorageKey("benchmark_runs_profile_id_idx"),
+		index.Fields("status").
+			StorageKey("benchmark_runs_status_idx"),
+		index.Fields("created_at").
+			StorageKey("benchmark_runs_created_at_idx"),
 	}
 }

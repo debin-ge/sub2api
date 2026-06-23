@@ -119,7 +119,9 @@ var (
 	// DefaultCoverageRate holds the default value on creation for the "coverage_rate" field.
 	DefaultCoverageRate float64
 	// DefaultConfidenceLevel holds the default value on creation for the "confidence_level" field.
-	DefaultConfidenceLevel float64
+	DefaultConfidenceLevel string
+	// ConfidenceLevelValidator is a validator for the "confidence_level" field. It is called by the builders before save.
+	ConfidenceLevelValidator func(string) error
 	// DefaultInsufficientSample holds the default value on creation for the "insufficient_sample" field.
 	DefaultInsufficientSample bool
 	// DefaultSuccessRate holds the default value on creation for the "success_rate" field.

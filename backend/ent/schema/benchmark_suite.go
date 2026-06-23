@@ -71,7 +71,12 @@ func (BenchmarkSuite) Edges() []ent.Edge {
 
 func (BenchmarkSuite) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("slug").Unique(),
-		index.Fields("enabled", "public_visible"),
+		index.Fields("slug").
+			Unique().
+			StorageKey("benchmark_suites_slug_key"),
+		index.Fields("enabled", "public_visible").
+			StorageKey("benchmark_suites_enabled_public_visible_idx"),
+		index.Fields("default_profile_id").
+			StorageKey("benchmark_suites_default_profile_id_idx"),
 	}
 }

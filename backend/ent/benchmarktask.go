@@ -48,7 +48,7 @@ type BenchmarkTask struct {
 	// Weight holds the value of the "weight" field.
 	Weight float64 `json:"weight,omitempty"`
 	// MinScale holds the value of the "min_scale" field.
-	MinScale int `json:"min_scale,omitempty"`
+	MinScale string `json:"min_scale,omitempty"`
 	// PublicPrompt holds the value of the "public_prompt" field.
 	PublicPrompt bool `json:"public_prompt,omitempty"`
 	// Enabled holds the value of the "enabled" field.
@@ -103,9 +103,9 @@ func (*BenchmarkTask) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case benchmarktask.FieldWeight:
 			values[i] = new(sql.NullFloat64)
-		case benchmarktask.FieldID, benchmarktask.FieldSuiteID, benchmarktask.FieldMinScale:
+		case benchmarktask.FieldID, benchmarktask.FieldSuiteID:
 			values[i] = new(sql.NullInt64)
-		case benchmarktask.FieldTitle, benchmarktask.FieldType, benchmarktask.FieldCategory, benchmarktask.FieldDifficulty, benchmarktask.FieldPrompt, benchmarktask.FieldVerifierType:
+		case benchmarktask.FieldTitle, benchmarktask.FieldType, benchmarktask.FieldCategory, benchmarktask.FieldDifficulty, benchmarktask.FieldPrompt, benchmarktask.FieldVerifierType, benchmarktask.FieldMinScale:
 			values[i] = new(sql.NullString)
 		case benchmarktask.FieldCreatedAt, benchmarktask.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -225,10 +225,10 @@ func (_m *BenchmarkTask) assignValues(columns []string, values []any) error {
 				_m.Weight = value.Float64
 			}
 		case benchmarktask.FieldMinScale:
-			if value, ok := values[i].(*sql.NullInt64); !ok {
+			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field min_scale", values[i])
 			} else if value.Valid {
-				_m.MinScale = int(value.Int64)
+				_m.MinScale = value.String
 			}
 		case benchmarktask.FieldPublicPrompt:
 			if value, ok := values[i].(*sql.NullBool); !ok {
@@ -343,7 +343,7 @@ func (_m *BenchmarkTask) String() string {
 	builder.WriteString(fmt.Sprintf("%v", _m.Weight))
 	builder.WriteString(", ")
 	builder.WriteString("min_scale=")
-	builder.WriteString(fmt.Sprintf("%v", _m.MinScale))
+	builder.WriteString(_m.MinScale)
 	builder.WriteString(", ")
 	builder.WriteString("public_prompt=")
 	builder.WriteString(fmt.Sprintf("%v", _m.PublicPrompt))

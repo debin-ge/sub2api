@@ -113,13 +113,13 @@ func (_c *BenchmarkScoreSnapshotCreate) SetNillableCoverageRate(v *float64) *Ben
 }
 
 // SetConfidenceLevel sets the "confidence_level" field.
-func (_c *BenchmarkScoreSnapshotCreate) SetConfidenceLevel(v float64) *BenchmarkScoreSnapshotCreate {
+func (_c *BenchmarkScoreSnapshotCreate) SetConfidenceLevel(v string) *BenchmarkScoreSnapshotCreate {
 	_c.mutation.SetConfidenceLevel(v)
 	return _c
 }
 
 // SetNillableConfidenceLevel sets the "confidence_level" field if the given value is not nil.
-func (_c *BenchmarkScoreSnapshotCreate) SetNillableConfidenceLevel(v *float64) *BenchmarkScoreSnapshotCreate {
+func (_c *BenchmarkScoreSnapshotCreate) SetNillableConfidenceLevel(v *string) *BenchmarkScoreSnapshotCreate {
 	if v != nil {
 		_c.SetConfidenceLevel(*v)
 	}
@@ -364,6 +364,11 @@ func (_c *BenchmarkScoreSnapshotCreate) check() error {
 	if _, ok := _c.mutation.ConfidenceLevel(); !ok {
 		return &ValidationError{Name: "confidence_level", err: errors.New(`ent: missing required field "BenchmarkScoreSnapshot.confidence_level"`)}
 	}
+	if v, ok := _c.mutation.ConfidenceLevel(); ok {
+		if err := benchmarkscoresnapshot.ConfidenceLevelValidator(v); err != nil {
+			return &ValidationError{Name: "confidence_level", err: fmt.Errorf(`ent: validator failed for field "BenchmarkScoreSnapshot.confidence_level": %w`, err)}
+		}
+	}
 	if _, ok := _c.mutation.InsufficientSample(); !ok {
 		return &ValidationError{Name: "insufficient_sample", err: errors.New(`ent: missing required field "BenchmarkScoreSnapshot.insufficient_sample"`)}
 	}
@@ -440,7 +445,7 @@ func (_c *BenchmarkScoreSnapshotCreate) createSpec() (*BenchmarkScoreSnapshot, *
 		_node.CoverageRate = value
 	}
 	if value, ok := _c.mutation.ConfidenceLevel(); ok {
-		_spec.SetField(benchmarkscoresnapshot.FieldConfidenceLevel, field.TypeFloat64, value)
+		_spec.SetField(benchmarkscoresnapshot.FieldConfidenceLevel, field.TypeString, value)
 		_node.ConfidenceLevel = value
 	}
 	if value, ok := _c.mutation.InsufficientSample(); ok {
@@ -692,7 +697,7 @@ func (u *BenchmarkScoreSnapshotUpsert) AddCoverageRate(v float64) *BenchmarkScor
 }
 
 // SetConfidenceLevel sets the "confidence_level" field.
-func (u *BenchmarkScoreSnapshotUpsert) SetConfidenceLevel(v float64) *BenchmarkScoreSnapshotUpsert {
+func (u *BenchmarkScoreSnapshotUpsert) SetConfidenceLevel(v string) *BenchmarkScoreSnapshotUpsert {
 	u.Set(benchmarkscoresnapshot.FieldConfidenceLevel, v)
 	return u
 }
@@ -700,12 +705,6 @@ func (u *BenchmarkScoreSnapshotUpsert) SetConfidenceLevel(v float64) *BenchmarkS
 // UpdateConfidenceLevel sets the "confidence_level" field to the value that was provided on create.
 func (u *BenchmarkScoreSnapshotUpsert) UpdateConfidenceLevel() *BenchmarkScoreSnapshotUpsert {
 	u.SetExcluded(benchmarkscoresnapshot.FieldConfidenceLevel)
-	return u
-}
-
-// AddConfidenceLevel adds v to the "confidence_level" field.
-func (u *BenchmarkScoreSnapshotUpsert) AddConfidenceLevel(v float64) *BenchmarkScoreSnapshotUpsert {
-	u.Add(benchmarkscoresnapshot.FieldConfidenceLevel, v)
 	return u
 }
 
@@ -1046,16 +1045,9 @@ func (u *BenchmarkScoreSnapshotUpsertOne) UpdateCoverageRate() *BenchmarkScoreSn
 }
 
 // SetConfidenceLevel sets the "confidence_level" field.
-func (u *BenchmarkScoreSnapshotUpsertOne) SetConfidenceLevel(v float64) *BenchmarkScoreSnapshotUpsertOne {
+func (u *BenchmarkScoreSnapshotUpsertOne) SetConfidenceLevel(v string) *BenchmarkScoreSnapshotUpsertOne {
 	return u.Update(func(s *BenchmarkScoreSnapshotUpsert) {
 		s.SetConfidenceLevel(v)
-	})
-}
-
-// AddConfidenceLevel adds v to the "confidence_level" field.
-func (u *BenchmarkScoreSnapshotUpsertOne) AddConfidenceLevel(v float64) *BenchmarkScoreSnapshotUpsertOne {
-	return u.Update(func(s *BenchmarkScoreSnapshotUpsert) {
-		s.AddConfidenceLevel(v)
 	})
 }
 
@@ -1593,16 +1585,9 @@ func (u *BenchmarkScoreSnapshotUpsertBulk) UpdateCoverageRate() *BenchmarkScoreS
 }
 
 // SetConfidenceLevel sets the "confidence_level" field.
-func (u *BenchmarkScoreSnapshotUpsertBulk) SetConfidenceLevel(v float64) *BenchmarkScoreSnapshotUpsertBulk {
+func (u *BenchmarkScoreSnapshotUpsertBulk) SetConfidenceLevel(v string) *BenchmarkScoreSnapshotUpsertBulk {
 	return u.Update(func(s *BenchmarkScoreSnapshotUpsert) {
 		s.SetConfidenceLevel(v)
-	})
-}
-
-// AddConfidenceLevel adds v to the "confidence_level" field.
-func (u *BenchmarkScoreSnapshotUpsertBulk) AddConfidenceLevel(v float64) *BenchmarkScoreSnapshotUpsertBulk {
-	return u.Update(func(s *BenchmarkScoreSnapshotUpsert) {
-		s.AddConfidenceLevel(v)
 	})
 }
 

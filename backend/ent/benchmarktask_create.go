@@ -149,13 +149,13 @@ func (_c *BenchmarkTaskCreate) SetNillableWeight(v *float64) *BenchmarkTaskCreat
 }
 
 // SetMinScale sets the "min_scale" field.
-func (_c *BenchmarkTaskCreate) SetMinScale(v int) *BenchmarkTaskCreate {
+func (_c *BenchmarkTaskCreate) SetMinScale(v string) *BenchmarkTaskCreate {
 	_c.mutation.SetMinScale(v)
 	return _c
 }
 
 // SetNillableMinScale sets the "min_scale" field if the given value is not nil.
-func (_c *BenchmarkTaskCreate) SetNillableMinScale(v *int) *BenchmarkTaskCreate {
+func (_c *BenchmarkTaskCreate) SetNillableMinScale(v *string) *BenchmarkTaskCreate {
 	if v != nil {
 		_c.SetMinScale(*v)
 	}
@@ -260,7 +260,7 @@ func (_c *BenchmarkTaskCreate) defaults() {
 		_c.mutation.SetUpdatedAt(v)
 	}
 	if _, ok := _c.mutation.Tags(); !ok {
-		v := benchmarktask.DefaultTags
+		v := benchmarktask.DefaultTags()
 		_c.mutation.SetTags(v)
 	}
 	if _, ok := _c.mutation.InputPayload(); !ok {
@@ -368,6 +368,11 @@ func (_c *BenchmarkTaskCreate) check() error {
 	if _, ok := _c.mutation.MinScale(); !ok {
 		return &ValidationError{Name: "min_scale", err: errors.New(`ent: missing required field "BenchmarkTask.min_scale"`)}
 	}
+	if v, ok := _c.mutation.MinScale(); ok {
+		if err := benchmarktask.MinScaleValidator(v); err != nil {
+			return &ValidationError{Name: "min_scale", err: fmt.Errorf(`ent: validator failed for field "BenchmarkTask.min_scale": %w`, err)}
+		}
+	}
 	if _, ok := _c.mutation.PublicPrompt(); !ok {
 		return &ValidationError{Name: "public_prompt", err: errors.New(`ent: missing required field "BenchmarkTask.public_prompt"`)}
 	}
@@ -460,7 +465,7 @@ func (_c *BenchmarkTaskCreate) createSpec() (*BenchmarkTask, *sqlgraph.CreateSpe
 		_node.Weight = value
 	}
 	if value, ok := _c.mutation.MinScale(); ok {
-		_spec.SetField(benchmarktask.FieldMinScale, field.TypeInt, value)
+		_spec.SetField(benchmarktask.FieldMinScale, field.TypeString, value)
 		_node.MinScale = value
 	}
 	if value, ok := _c.mutation.PublicPrompt(); ok {
@@ -735,7 +740,7 @@ func (u *BenchmarkTaskUpsert) AddWeight(v float64) *BenchmarkTaskUpsert {
 }
 
 // SetMinScale sets the "min_scale" field.
-func (u *BenchmarkTaskUpsert) SetMinScale(v int) *BenchmarkTaskUpsert {
+func (u *BenchmarkTaskUpsert) SetMinScale(v string) *BenchmarkTaskUpsert {
 	u.Set(benchmarktask.FieldMinScale, v)
 	return u
 }
@@ -743,12 +748,6 @@ func (u *BenchmarkTaskUpsert) SetMinScale(v int) *BenchmarkTaskUpsert {
 // UpdateMinScale sets the "min_scale" field to the value that was provided on create.
 func (u *BenchmarkTaskUpsert) UpdateMinScale() *BenchmarkTaskUpsert {
 	u.SetExcluded(benchmarktask.FieldMinScale)
-	return u
-}
-
-// AddMinScale adds v to the "min_scale" field.
-func (u *BenchmarkTaskUpsert) AddMinScale(v int) *BenchmarkTaskUpsert {
-	u.Add(benchmarktask.FieldMinScale, v)
 	return u
 }
 
@@ -1037,16 +1036,9 @@ func (u *BenchmarkTaskUpsertOne) UpdateWeight() *BenchmarkTaskUpsertOne {
 }
 
 // SetMinScale sets the "min_scale" field.
-func (u *BenchmarkTaskUpsertOne) SetMinScale(v int) *BenchmarkTaskUpsertOne {
+func (u *BenchmarkTaskUpsertOne) SetMinScale(v string) *BenchmarkTaskUpsertOne {
 	return u.Update(func(s *BenchmarkTaskUpsert) {
 		s.SetMinScale(v)
-	})
-}
-
-// AddMinScale adds v to the "min_scale" field.
-func (u *BenchmarkTaskUpsertOne) AddMinScale(v int) *BenchmarkTaskUpsertOne {
-	return u.Update(func(s *BenchmarkTaskUpsert) {
-		s.AddMinScale(v)
 	})
 }
 
@@ -1514,16 +1506,9 @@ func (u *BenchmarkTaskUpsertBulk) UpdateWeight() *BenchmarkTaskUpsertBulk {
 }
 
 // SetMinScale sets the "min_scale" field.
-func (u *BenchmarkTaskUpsertBulk) SetMinScale(v int) *BenchmarkTaskUpsertBulk {
+func (u *BenchmarkTaskUpsertBulk) SetMinScale(v string) *BenchmarkTaskUpsertBulk {
 	return u.Update(func(s *BenchmarkTaskUpsert) {
 		s.SetMinScale(v)
-	})
-}
-
-// AddMinScale adds v to the "min_scale" field.
-func (u *BenchmarkTaskUpsertBulk) AddMinScale(v int) *BenchmarkTaskUpsertBulk {
-	return u.Update(func(s *BenchmarkTaskUpsert) {
-		s.AddMinScale(v)
 	})
 }
 

@@ -33,7 +33,7 @@ type BenchmarkRun struct {
 	// TriggerType holds the value of the "trigger_type" field.
 	TriggerType string `json:"trigger_type,omitempty"`
 	// TaskScale holds the value of the "task_scale" field.
-	TaskScale int `json:"task_scale,omitempty"`
+	TaskScale string `json:"task_scale,omitempty"`
 	// TaskTypes holds the value of the "task_types" field.
 	TaskTypes []string `json:"task_types,omitempty"`
 	// SelectionSeed holds the value of the "selection_seed" field.
@@ -155,9 +155,9 @@ func (*BenchmarkRun) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case benchmarkrun.FieldTaskTypes, benchmarkrun.FieldConfigSnapshot:
 			values[i] = new([]byte)
-		case benchmarkrun.FieldID, benchmarkrun.FieldSuiteID, benchmarkrun.FieldProfileID, benchmarkrun.FieldTaskScale, benchmarkrun.FieldSelectionSeed, benchmarkrun.FieldPlannedTargetCount, benchmarkrun.FieldPlannedTaskCount, benchmarkrun.FieldPlannedResultCount, benchmarkrun.FieldCreatedBy:
+		case benchmarkrun.FieldID, benchmarkrun.FieldSuiteID, benchmarkrun.FieldProfileID, benchmarkrun.FieldSelectionSeed, benchmarkrun.FieldPlannedTargetCount, benchmarkrun.FieldPlannedTaskCount, benchmarkrun.FieldPlannedResultCount, benchmarkrun.FieldCreatedBy:
 			values[i] = new(sql.NullInt64)
-		case benchmarkrun.FieldStatus, benchmarkrun.FieldTriggerType, benchmarkrun.FieldErrorMessage:
+		case benchmarkrun.FieldStatus, benchmarkrun.FieldTriggerType, benchmarkrun.FieldTaskScale, benchmarkrun.FieldErrorMessage:
 			values[i] = new(sql.NullString)
 		case benchmarkrun.FieldCreatedAt, benchmarkrun.FieldUpdatedAt, benchmarkrun.FieldStartedAt, benchmarkrun.FieldFinishedAt:
 			values[i] = new(sql.NullTime)
@@ -219,10 +219,10 @@ func (_m *BenchmarkRun) assignValues(columns []string, values []any) error {
 				_m.TriggerType = value.String
 			}
 		case benchmarkrun.FieldTaskScale:
-			if value, ok := values[i].(*sql.NullInt64); !ok {
+			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field task_scale", values[i])
 			} else if value.Valid {
-				_m.TaskScale = int(value.Int64)
+				_m.TaskScale = value.String
 			}
 		case benchmarkrun.FieldTaskTypes:
 			if value, ok := values[i].(*[]byte); !ok {
@@ -383,7 +383,7 @@ func (_m *BenchmarkRun) String() string {
 	builder.WriteString(_m.TriggerType)
 	builder.WriteString(", ")
 	builder.WriteString("task_scale=")
-	builder.WriteString(fmt.Sprintf("%v", _m.TaskScale))
+	builder.WriteString(_m.TaskScale)
 	builder.WriteString(", ")
 	builder.WriteString("task_types=")
 	builder.WriteString(fmt.Sprintf("%v", _m.TaskTypes))

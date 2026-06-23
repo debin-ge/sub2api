@@ -34,7 +34,7 @@ type BenchmarkProfile struct {
 	// TaskTypes holds the value of the "task_types" field.
 	TaskTypes []string `json:"task_types,omitempty"`
 	// TaskScale holds the value of the "task_scale" field.
-	TaskScale int `json:"task_scale,omitempty"`
+	TaskScale string `json:"task_scale,omitempty"`
 	// TaskCountLimit holds the value of the "task_count_limit" field.
 	TaskCountLimit *int `json:"task_count_limit,omitempty"`
 	// PerTypeLimit holds the value of the "per_type_limit" field.
@@ -123,9 +123,9 @@ func (*BenchmarkProfile) scanValues(columns []string) ([]any, error) {
 			values[i] = new([]byte)
 		case benchmarkprofile.FieldEnabled:
 			values[i] = new(sql.NullBool)
-		case benchmarkprofile.FieldID, benchmarkprofile.FieldSuiteID, benchmarkprofile.FieldTaskScale, benchmarkprofile.FieldTaskCountLimit, benchmarkprofile.FieldSelectionSeed:
+		case benchmarkprofile.FieldID, benchmarkprofile.FieldSuiteID, benchmarkprofile.FieldTaskCountLimit, benchmarkprofile.FieldSelectionSeed:
 			values[i] = new(sql.NullInt64)
-		case benchmarkprofile.FieldName, benchmarkprofile.FieldDescription, benchmarkprofile.FieldSamplingStrategy:
+		case benchmarkprofile.FieldName, benchmarkprofile.FieldDescription, benchmarkprofile.FieldTaskScale, benchmarkprofile.FieldSamplingStrategy:
 			values[i] = new(sql.NullString)
 		case benchmarkprofile.FieldCreatedAt, benchmarkprofile.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -198,10 +198,10 @@ func (_m *BenchmarkProfile) assignValues(columns []string, values []any) error {
 				}
 			}
 		case benchmarkprofile.FieldTaskScale:
-			if value, ok := values[i].(*sql.NullInt64); !ok {
+			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field task_scale", values[i])
 			} else if value.Valid {
-				_m.TaskScale = int(value.Int64)
+				_m.TaskScale = value.String
 			}
 		case benchmarkprofile.FieldTaskCountLimit:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -357,7 +357,7 @@ func (_m *BenchmarkProfile) String() string {
 	builder.WriteString(fmt.Sprintf("%v", _m.TaskTypes))
 	builder.WriteString(", ")
 	builder.WriteString("task_scale=")
-	builder.WriteString(fmt.Sprintf("%v", _m.TaskScale))
+	builder.WriteString(_m.TaskScale)
 	builder.WriteString(", ")
 	if v := _m.TaskCountLimit; v != nil {
 		builder.WriteString("task_count_limit=")

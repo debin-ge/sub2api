@@ -63,7 +63,9 @@ func (BenchmarkPublicSnapshot) Edges() []ent.Edge {
 
 func (BenchmarkPublicSnapshot) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("published_at"),
-		index.Fields("run_id"),
+		index.Fields("published_at").
+			StorageKey("benchmark_public_snapshots_published_at_idx"),
+		index.Fields("run_id").
+			StorageKey("benchmark_public_snapshots_run_id_idx"),
 	}
 }

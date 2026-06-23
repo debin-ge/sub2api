@@ -133,17 +133,19 @@ var (
 	// NameValidator is a validator for the "name" field. It is called by the builders before save.
 	NameValidator func(string) error
 	// DefaultTargetIds holds the default value on creation for the "target_ids" field.
-	DefaultTargetIds []int64
+	DefaultTargetIds func() []int64
 	// DefaultTaskTypes holds the default value on creation for the "task_types" field.
-	DefaultTaskTypes []string
+	DefaultTaskTypes func() []string
 	// DefaultTaskScale holds the default value on creation for the "task_scale" field.
-	DefaultTaskScale int
+	DefaultTaskScale string
+	// TaskScaleValidator is a validator for the "task_scale" field. It is called by the builders before save.
+	TaskScaleValidator func(string) error
 	// DefaultPerTypeLimit holds the default value on creation for the "per_type_limit" field.
 	DefaultPerTypeLimit func() map[string]int
 	// DefaultDifficultyFilter holds the default value on creation for the "difficulty_filter" field.
-	DefaultDifficultyFilter []string
+	DefaultDifficultyFilter func() []string
 	// DefaultTagFilter holds the default value on creation for the "tag_filter" field.
-	DefaultTagFilter []string
+	DefaultTagFilter func() []string
 	// SamplingStrategyValidator is a validator for the "sampling_strategy" field. It is called by the builders before save.
 	SamplingStrategyValidator func(string) error
 	// DefaultRuntimeConfig holds the default value on creation for the "runtime_config" field.

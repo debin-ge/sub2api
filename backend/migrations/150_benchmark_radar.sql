@@ -6,7 +6,7 @@ SET LOCAL statement_timeout = '10min';
 CREATE TABLE IF NOT EXISTS benchmark_targets (
     id BIGSERIAL PRIMARY KEY,
     model_name VARCHAR(200) NOT NULL,
-    channel_id BIGINT NOT NULL REFERENCES channels(id) ON DELETE RESTRICT,
+    channel_id BIGINT NOT NULL,
     display_name VARCHAR(200),
     provider_snapshot VARCHAR(100),
     channel_name_snapshot VARCHAR(200),
@@ -61,7 +61,7 @@ CREATE TABLE IF NOT EXISTS benchmark_tasks (
     verifier_type VARCHAR(50) NOT NULL,
     verifier_config JSONB NOT NULL DEFAULT '{}'::jsonb,
     weight NUMERIC(10,4) NOT NULL DEFAULT 1,
-    min_scale INT NOT NULL DEFAULT 1,
+    min_scale VARCHAR(20) NOT NULL DEFAULT 'small',
     public_prompt BOOLEAN NOT NULL DEFAULT FALSE,
     enabled BOOLEAN NOT NULL DEFAULT TRUE,
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -87,7 +87,7 @@ CREATE TABLE IF NOT EXISTS benchmark_profiles (
     description TEXT,
     target_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
     task_types JSONB NOT NULL DEFAULT '[]'::jsonb,
-    task_scale INT NOT NULL DEFAULT 1,
+    task_scale VARCHAR(20) NOT NULL DEFAULT 'medium',
     task_count_limit INT,
     per_type_limit JSONB NOT NULL DEFAULT '{}'::jsonb,
     difficulty_filter JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -113,6 +113,7 @@ BEGIN
         SELECT 1
         FROM pg_constraint
         WHERE conname = 'benchmark_suites_default_profile_id_fkey'
+          AND conrelid = 'benchmark_suites'::regclass
     ) THEN
         ALTER TABLE benchmark_suites
             ADD CONSTRAINT benchmark_suites_default_profile_id_fkey
@@ -151,7 +152,7 @@ CREATE TABLE IF NOT EXISTS benchmark_runs (
     profile_id BIGINT NOT NULL REFERENCES benchmark_profiles(id) ON DELETE RESTRICT,
     status VARCHAR(32) NOT NULL,
     trigger_type VARCHAR(32) NOT NULL,
-    task_scale INT NOT NULL DEFAULT 1,
+    task_scale VARCHAR(20) NOT NULL DEFAULT 'medium',
     task_types JSONB NOT NULL DEFAULT '[]'::jsonb,
     selection_seed BIGINT,
     planned_target_count INT NOT NULL DEFAULT 0,
@@ -195,6 +196,8 @@ CREATE INDEX IF NOT EXISTS benchmark_run_targets_target_id_idx
     ON benchmark_run_targets (target_id);
 CREATE INDEX IF NOT EXISTS benchmark_run_targets_run_channel_idx
     ON benchmark_run_targets (run_id, channel_id);
+CREATE UNIQUE INDEX IF NOT EXISTS benchmark_run_targets_run_target_key
+    ON benchmark_run_targets (run_id, target_id);
 
 CREATE TABLE IF NOT EXISTS benchmark_run_tasks (
     id BIGSERIAL PRIMARY KEY,
@@ -218,6 +221,8 @@ CREATE INDEX IF NOT EXISTS benchmark_run_tasks_task_id_idx
     ON benchmark_run_tasks (task_id);
 CREATE INDEX IF NOT EXISTS benchmark_run_tasks_run_type_idx
     ON benchmark_run_tasks (run_id, type);
+CREATE UNIQUE INDEX IF NOT EXISTS benchmark_run_tasks_run_task_key
+    ON benchmark_run_tasks (run_id, task_id);
 
 CREATE TABLE IF NOT EXISTS benchmark_results (
     id BIGSERIAL PRIMARY KEY,
@@ -256,6 +261,8 @@ CREATE INDEX IF NOT EXISTS benchmark_results_request_id_idx
     ON benchmark_results (request_id);
 CREATE INDEX IF NOT EXISTS benchmark_results_status_idx
     ON benchmark_results (status);
+CREATE UNIQUE INDEX IF NOT EXISTS benchmark_results_run_task_target_key
+    ON benchmark_results (run_task_id, run_target_id);
 
 CREATE TABLE IF NOT EXISTS benchmark_score_snapshots (
     id BIGSERIAL PRIMARY KEY,
@@ -267,7 +274,7 @@ CREATE TABLE IF NOT EXISTS benchmark_score_snapshots (
     scored_tasks INT NOT NULL DEFAULT 0,
     invalid_tasks INT NOT NULL DEFAULT 0,
     coverage_rate NUMERIC(10,4) NOT NULL DEFAULT 0,
-    confidence_level NUMERIC(10,4) NOT NULL DEFAULT 0,
+    confidence_level VARCHAR(20) NOT NULL DEFAULT 'low',
     insufficient_sample BOOLEAN NOT NULL DEFAULT FALSE,
     success_rate NUMERIC(10,4) NOT NULL DEFAULT 0,
     latency_p50_ms NUMERIC(12,4),
@@ -285,6 +292,8 @@ CREATE INDEX IF NOT EXISTS benchmark_score_snapshots_run_target_id_idx
     ON benchmark_score_snapshots (run_target_id);
 CREATE INDEX IF NOT EXISTS benchmark_score_snapshots_run_overall_score_idx
     ON benchmark_score_snapshots (run_id, overall_score);
+CREATE UNIQUE INDEX IF NOT EXISTS benchmark_score_snapshots_run_target_key
+    ON benchmark_score_snapshots (run_id, run_target_id);
 
 CREATE TABLE IF NOT EXISTS benchmark_public_snapshots (
     id BIGSERIAL PRIMARY KEY,

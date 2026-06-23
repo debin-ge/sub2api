@@ -112,23 +112,16 @@ func (_u *BenchmarkProfileUpdate) AppendTaskTypes(v []string) *BenchmarkProfileU
 }
 
 // SetTaskScale sets the "task_scale" field.
-func (_u *BenchmarkProfileUpdate) SetTaskScale(v int) *BenchmarkProfileUpdate {
-	_u.mutation.ResetTaskScale()
+func (_u *BenchmarkProfileUpdate) SetTaskScale(v string) *BenchmarkProfileUpdate {
 	_u.mutation.SetTaskScale(v)
 	return _u
 }
 
 // SetNillableTaskScale sets the "task_scale" field if the given value is not nil.
-func (_u *BenchmarkProfileUpdate) SetNillableTaskScale(v *int) *BenchmarkProfileUpdate {
+func (_u *BenchmarkProfileUpdate) SetNillableTaskScale(v *string) *BenchmarkProfileUpdate {
 	if v != nil {
 		_u.SetTaskScale(*v)
 	}
-	return _u
-}
-
-// AddTaskScale adds value to the "task_scale" field.
-func (_u *BenchmarkProfileUpdate) AddTaskScale(v int) *BenchmarkProfileUpdate {
-	_u.mutation.AddTaskScale(v)
 	return _u
 }
 
@@ -429,6 +422,11 @@ func (_u *BenchmarkProfileUpdate) check() error {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "BenchmarkProfile.name": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.TaskScale(); ok {
+		if err := benchmarkprofile.TaskScaleValidator(v); err != nil {
+			return &ValidationError{Name: "task_scale", err: fmt.Errorf(`ent: validator failed for field "BenchmarkProfile.task_scale": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.SamplingStrategy(); ok {
 		if err := benchmarkprofile.SamplingStrategyValidator(v); err != nil {
 			return &ValidationError{Name: "sampling_strategy", err: fmt.Errorf(`ent: validator failed for field "BenchmarkProfile.sampling_strategy": %w`, err)}
@@ -481,10 +479,7 @@ func (_u *BenchmarkProfileUpdate) sqlSave(ctx context.Context) (_node int, err e
 		})
 	}
 	if value, ok := _u.mutation.TaskScale(); ok {
-		_spec.SetField(benchmarkprofile.FieldTaskScale, field.TypeInt, value)
-	}
-	if value, ok := _u.mutation.AddedTaskScale(); ok {
-		_spec.AddField(benchmarkprofile.FieldTaskScale, field.TypeInt, value)
+		_spec.SetField(benchmarkprofile.FieldTaskScale, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.TaskCountLimit(); ok {
 		_spec.SetField(benchmarkprofile.FieldTaskCountLimit, field.TypeInt, value)
@@ -801,23 +796,16 @@ func (_u *BenchmarkProfileUpdateOne) AppendTaskTypes(v []string) *BenchmarkProfi
 }
 
 // SetTaskScale sets the "task_scale" field.
-func (_u *BenchmarkProfileUpdateOne) SetTaskScale(v int) *BenchmarkProfileUpdateOne {
-	_u.mutation.ResetTaskScale()
+func (_u *BenchmarkProfileUpdateOne) SetTaskScale(v string) *BenchmarkProfileUpdateOne {
 	_u.mutation.SetTaskScale(v)
 	return _u
 }
 
 // SetNillableTaskScale sets the "task_scale" field if the given value is not nil.
-func (_u *BenchmarkProfileUpdateOne) SetNillableTaskScale(v *int) *BenchmarkProfileUpdateOne {
+func (_u *BenchmarkProfileUpdateOne) SetNillableTaskScale(v *string) *BenchmarkProfileUpdateOne {
 	if v != nil {
 		_u.SetTaskScale(*v)
 	}
-	return _u
-}
-
-// AddTaskScale adds value to the "task_scale" field.
-func (_u *BenchmarkProfileUpdateOne) AddTaskScale(v int) *BenchmarkProfileUpdateOne {
-	_u.mutation.AddTaskScale(v)
 	return _u
 }
 
@@ -1131,6 +1119,11 @@ func (_u *BenchmarkProfileUpdateOne) check() error {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "BenchmarkProfile.name": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.TaskScale(); ok {
+		if err := benchmarkprofile.TaskScaleValidator(v); err != nil {
+			return &ValidationError{Name: "task_scale", err: fmt.Errorf(`ent: validator failed for field "BenchmarkProfile.task_scale": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.SamplingStrategy(); ok {
 		if err := benchmarkprofile.SamplingStrategyValidator(v); err != nil {
 			return &ValidationError{Name: "sampling_strategy", err: fmt.Errorf(`ent: validator failed for field "BenchmarkProfile.sampling_strategy": %w`, err)}
@@ -1200,10 +1193,7 @@ func (_u *BenchmarkProfileUpdateOne) sqlSave(ctx context.Context) (_node *Benchm
 		})
 	}
 	if value, ok := _u.mutation.TaskScale(); ok {
-		_spec.SetField(benchmarkprofile.FieldTaskScale, field.TypeInt, value)
-	}
-	if value, ok := _u.mutation.AddedTaskScale(); ok {
-		_spec.AddField(benchmarkprofile.FieldTaskScale, field.TypeInt, value)
+		_spec.SetField(benchmarkprofile.FieldTaskScale, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.TaskCountLimit(); ok {
 		_spec.SetField(benchmarkprofile.FieldTaskCountLimit, field.TypeInt, value)

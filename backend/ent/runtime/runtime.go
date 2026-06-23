@@ -479,15 +479,17 @@ func init() {
 	// benchmarkprofileDescTargetIds is the schema descriptor for target_ids field.
 	benchmarkprofileDescTargetIds := benchmarkprofileFields[3].Descriptor()
 	// benchmarkprofile.DefaultTargetIds holds the default value on creation for the target_ids field.
-	benchmarkprofile.DefaultTargetIds = benchmarkprofileDescTargetIds.Default.([]int64)
+	benchmarkprofile.DefaultTargetIds = benchmarkprofileDescTargetIds.Default.(func() []int64)
 	// benchmarkprofileDescTaskTypes is the schema descriptor for task_types field.
 	benchmarkprofileDescTaskTypes := benchmarkprofileFields[4].Descriptor()
 	// benchmarkprofile.DefaultTaskTypes holds the default value on creation for the task_types field.
-	benchmarkprofile.DefaultTaskTypes = benchmarkprofileDescTaskTypes.Default.([]string)
+	benchmarkprofile.DefaultTaskTypes = benchmarkprofileDescTaskTypes.Default.(func() []string)
 	// benchmarkprofileDescTaskScale is the schema descriptor for task_scale field.
 	benchmarkprofileDescTaskScale := benchmarkprofileFields[5].Descriptor()
 	// benchmarkprofile.DefaultTaskScale holds the default value on creation for the task_scale field.
-	benchmarkprofile.DefaultTaskScale = benchmarkprofileDescTaskScale.Default.(int)
+	benchmarkprofile.DefaultTaskScale = benchmarkprofileDescTaskScale.Default.(string)
+	// benchmarkprofile.TaskScaleValidator is a validator for the "task_scale" field. It is called by the builders before save.
+	benchmarkprofile.TaskScaleValidator = benchmarkprofileDescTaskScale.Validators[0].(func(string) error)
 	// benchmarkprofileDescPerTypeLimit is the schema descriptor for per_type_limit field.
 	benchmarkprofileDescPerTypeLimit := benchmarkprofileFields[7].Descriptor()
 	// benchmarkprofile.DefaultPerTypeLimit holds the default value on creation for the per_type_limit field.
@@ -495,11 +497,11 @@ func init() {
 	// benchmarkprofileDescDifficultyFilter is the schema descriptor for difficulty_filter field.
 	benchmarkprofileDescDifficultyFilter := benchmarkprofileFields[8].Descriptor()
 	// benchmarkprofile.DefaultDifficultyFilter holds the default value on creation for the difficulty_filter field.
-	benchmarkprofile.DefaultDifficultyFilter = benchmarkprofileDescDifficultyFilter.Default.([]string)
+	benchmarkprofile.DefaultDifficultyFilter = benchmarkprofileDescDifficultyFilter.Default.(func() []string)
 	// benchmarkprofileDescTagFilter is the schema descriptor for tag_filter field.
 	benchmarkprofileDescTagFilter := benchmarkprofileFields[9].Descriptor()
 	// benchmarkprofile.DefaultTagFilter holds the default value on creation for the tag_filter field.
-	benchmarkprofile.DefaultTagFilter = benchmarkprofileDescTagFilter.Default.([]string)
+	benchmarkprofile.DefaultTagFilter = benchmarkprofileDescTagFilter.Default.(func() []string)
 	// benchmarkprofileDescSamplingStrategy is the schema descriptor for sampling_strategy field.
 	benchmarkprofileDescSamplingStrategy := benchmarkprofileFields[10].Descriptor()
 	// benchmarkprofile.SamplingStrategyValidator is a validator for the "sampling_strategy" field. It is called by the builders before save.
@@ -675,11 +677,13 @@ func init() {
 	// benchmarkrunDescTaskScale is the schema descriptor for task_scale field.
 	benchmarkrunDescTaskScale := benchmarkrunFields[4].Descriptor()
 	// benchmarkrun.DefaultTaskScale holds the default value on creation for the task_scale field.
-	benchmarkrun.DefaultTaskScale = benchmarkrunDescTaskScale.Default.(int)
+	benchmarkrun.DefaultTaskScale = benchmarkrunDescTaskScale.Default.(string)
+	// benchmarkrun.TaskScaleValidator is a validator for the "task_scale" field. It is called by the builders before save.
+	benchmarkrun.TaskScaleValidator = benchmarkrunDescTaskScale.Validators[0].(func(string) error)
 	// benchmarkrunDescTaskTypes is the schema descriptor for task_types field.
 	benchmarkrunDescTaskTypes := benchmarkrunFields[5].Descriptor()
 	// benchmarkrun.DefaultTaskTypes holds the default value on creation for the task_types field.
-	benchmarkrun.DefaultTaskTypes = benchmarkrunDescTaskTypes.Default.([]string)
+	benchmarkrun.DefaultTaskTypes = benchmarkrunDescTaskTypes.Default.(func() []string)
 	// benchmarkrunDescPlannedTargetCount is the schema descriptor for planned_target_count field.
 	benchmarkrunDescPlannedTargetCount := benchmarkrunFields[7].Descriptor()
 	// benchmarkrun.DefaultPlannedTargetCount holds the default value on creation for the planned_target_count field.
@@ -898,7 +902,9 @@ func init() {
 	// benchmarkscoresnapshotDescConfidenceLevel is the schema descriptor for confidence_level field.
 	benchmarkscoresnapshotDescConfidenceLevel := benchmarkscoresnapshotFields[8].Descriptor()
 	// benchmarkscoresnapshot.DefaultConfidenceLevel holds the default value on creation for the confidence_level field.
-	benchmarkscoresnapshot.DefaultConfidenceLevel = benchmarkscoresnapshotDescConfidenceLevel.Default.(float64)
+	benchmarkscoresnapshot.DefaultConfidenceLevel = benchmarkscoresnapshotDescConfidenceLevel.Default.(string)
+	// benchmarkscoresnapshot.ConfidenceLevelValidator is a validator for the "confidence_level" field. It is called by the builders before save.
+	benchmarkscoresnapshot.ConfidenceLevelValidator = benchmarkscoresnapshotDescConfidenceLevel.Validators[0].(func(string) error)
 	// benchmarkscoresnapshotDescInsufficientSample is the schema descriptor for insufficient_sample field.
 	benchmarkscoresnapshotDescInsufficientSample := benchmarkscoresnapshotFields[9].Descriptor()
 	// benchmarkscoresnapshot.DefaultInsufficientSample holds the default value on creation for the insufficient_sample field.
@@ -1034,7 +1040,7 @@ func init() {
 	// benchmarktargetDescSupportedTaskTypes is the schema descriptor for supported_task_types field.
 	benchmarktargetDescSupportedTaskTypes := benchmarktargetFields[5].Descriptor()
 	// benchmarktarget.DefaultSupportedTaskTypes holds the default value on creation for the supported_task_types field.
-	benchmarktarget.DefaultSupportedTaskTypes = benchmarktargetDescSupportedTaskTypes.Default.([]string)
+	benchmarktarget.DefaultSupportedTaskTypes = benchmarktargetDescSupportedTaskTypes.Default.(func() []string)
 	// benchmarktargetDescMaxConcurrency is the schema descriptor for max_concurrency field.
 	benchmarktargetDescMaxConcurrency := benchmarktargetFields[6].Descriptor()
 	// benchmarktarget.DefaultMaxConcurrency holds the default value on creation for the max_concurrency field.
@@ -1117,7 +1123,7 @@ func init() {
 	// benchmarktaskDescTags is the schema descriptor for tags field.
 	benchmarktaskDescTags := benchmarktaskFields[5].Descriptor()
 	// benchmarktask.DefaultTags holds the default value on creation for the tags field.
-	benchmarktask.DefaultTags = benchmarktaskDescTags.Default.([]string)
+	benchmarktask.DefaultTags = benchmarktaskDescTags.Default.(func() []string)
 	// benchmarktaskDescPrompt is the schema descriptor for prompt field.
 	benchmarktaskDescPrompt := benchmarktaskFields[6].Descriptor()
 	// benchmarktask.PromptValidator is a validator for the "prompt" field. It is called by the builders before save.
@@ -1159,7 +1165,9 @@ func init() {
 	// benchmarktaskDescMinScale is the schema descriptor for min_scale field.
 	benchmarktaskDescMinScale := benchmarktaskFields[12].Descriptor()
 	// benchmarktask.DefaultMinScale holds the default value on creation for the min_scale field.
-	benchmarktask.DefaultMinScale = benchmarktaskDescMinScale.Default.(int)
+	benchmarktask.DefaultMinScale = benchmarktaskDescMinScale.Default.(string)
+	// benchmarktask.MinScaleValidator is a validator for the "min_scale" field. It is called by the builders before save.
+	benchmarktask.MinScaleValidator = benchmarktaskDescMinScale.Validators[0].(func(string) error)
 	// benchmarktaskDescPublicPrompt is the schema descriptor for public_prompt field.
 	benchmarktaskDescPublicPrompt := benchmarktaskFields[13].Descriptor()
 	// benchmarktask.DefaultPublicPrompt holds the default value on creation for the public_prompt field.

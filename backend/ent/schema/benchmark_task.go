@@ -47,7 +47,7 @@ func (BenchmarkTask) Fields() []ent.Field {
 			Nillable().
 			MaxLen(50),
 		field.JSON("tags", []string{}).
-			Default([]string{}).
+			Default(func() []string { return []string{} }).
 			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
 		field.String("prompt").
 			NotEmpty().
@@ -67,8 +67,9 @@ func (BenchmarkTask) Fields() []ent.Field {
 		field.Float("weight").
 			Default(1).
 			SchemaType(map[string]string{dialect.Postgres: "decimal(10,4)"}),
-		field.Int("min_scale").
-			Default(1),
+		field.String("min_scale").
+			MaxLen(20).
+			Default("small"),
 		field.Bool("public_prompt").
 			Default(false),
 		field.Bool("enabled").
@@ -92,10 +93,15 @@ func (BenchmarkTask) Edges() []ent.Edge {
 
 func (BenchmarkTask) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("suite_id"),
-		index.Fields("type"),
-		index.Fields("difficulty"),
-		index.Fields("enabled"),
-		index.Fields("suite_id", "type", "enabled"),
+		index.Fields("suite_id").
+			StorageKey("benchmark_tasks_suite_id_idx"),
+		index.Fields("type").
+			StorageKey("benchmark_tasks_type_idx"),
+		index.Fields("difficulty").
+			StorageKey("benchmark_tasks_difficulty_idx"),
+		index.Fields("enabled").
+			StorageKey("benchmark_tasks_enabled_idx"),
+		index.Fields("suite_id", "type", "enabled").
+			StorageKey("benchmark_tasks_suite_type_enabled_idx"),
 	}
 }

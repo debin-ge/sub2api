@@ -40,13 +40,14 @@ func (BenchmarkProfile) Fields() []ent.Field {
 			Nillable().
 			SchemaType(map[string]string{dialect.Postgres: "text"}),
 		field.JSON("target_ids", []int64{}).
-			Default([]int64{}).
+			Default(func() []int64 { return []int64{} }).
 			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
 		field.JSON("task_types", []string{}).
-			Default([]string{}).
+			Default(func() []string { return []string{} }).
 			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
-		field.Int("task_scale").
-			Default(1),
+		field.String("task_scale").
+			MaxLen(20).
+			Default("medium"),
 		field.Int("task_count_limit").
 			Optional().
 			Nillable(),
@@ -54,10 +55,10 @@ func (BenchmarkProfile) Fields() []ent.Field {
 			Default(func() map[string]int { return map[string]int{} }).
 			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
 		field.JSON("difficulty_filter", []string{}).
-			Default([]string{}).
+			Default(func() []string { return []string{} }).
 			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
 		field.JSON("tag_filter", []string{}).
-			Default([]string{}).
+			Default(func() []string { return []string{} }).
 			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
 		field.String("sampling_strategy").
 			NotEmpty().
@@ -95,7 +96,9 @@ func (BenchmarkProfile) Edges() []ent.Edge {
 
 func (BenchmarkProfile) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("suite_id"),
-		index.Fields("enabled"),
+		index.Fields("suite_id").
+			StorageKey("benchmark_profiles_suite_id_idx"),
+		index.Fields("enabled").
+			StorageKey("benchmark_profiles_enabled_idx"),
 	}
 }

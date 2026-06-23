@@ -106,7 +106,7 @@ func Weight(v float64) predicate.BenchmarkTask {
 }
 
 // MinScale applies equality check predicate on the "min_scale" field. It's identical to MinScaleEQ.
-func MinScale(v int) predicate.BenchmarkTask {
+func MinScale(v string) predicate.BenchmarkTask {
 	return predicate.BenchmarkTask(sql.FieldEQ(FieldMinScale, v))
 }
 
@@ -671,43 +671,68 @@ func WeightLTE(v float64) predicate.BenchmarkTask {
 }
 
 // MinScaleEQ applies the EQ predicate on the "min_scale" field.
-func MinScaleEQ(v int) predicate.BenchmarkTask {
+func MinScaleEQ(v string) predicate.BenchmarkTask {
 	return predicate.BenchmarkTask(sql.FieldEQ(FieldMinScale, v))
 }
 
 // MinScaleNEQ applies the NEQ predicate on the "min_scale" field.
-func MinScaleNEQ(v int) predicate.BenchmarkTask {
+func MinScaleNEQ(v string) predicate.BenchmarkTask {
 	return predicate.BenchmarkTask(sql.FieldNEQ(FieldMinScale, v))
 }
 
 // MinScaleIn applies the In predicate on the "min_scale" field.
-func MinScaleIn(vs ...int) predicate.BenchmarkTask {
+func MinScaleIn(vs ...string) predicate.BenchmarkTask {
 	return predicate.BenchmarkTask(sql.FieldIn(FieldMinScale, vs...))
 }
 
 // MinScaleNotIn applies the NotIn predicate on the "min_scale" field.
-func MinScaleNotIn(vs ...int) predicate.BenchmarkTask {
+func MinScaleNotIn(vs ...string) predicate.BenchmarkTask {
 	return predicate.BenchmarkTask(sql.FieldNotIn(FieldMinScale, vs...))
 }
 
 // MinScaleGT applies the GT predicate on the "min_scale" field.
-func MinScaleGT(v int) predicate.BenchmarkTask {
+func MinScaleGT(v string) predicate.BenchmarkTask {
 	return predicate.BenchmarkTask(sql.FieldGT(FieldMinScale, v))
 }
 
 // MinScaleGTE applies the GTE predicate on the "min_scale" field.
-func MinScaleGTE(v int) predicate.BenchmarkTask {
+func MinScaleGTE(v string) predicate.BenchmarkTask {
 	return predicate.BenchmarkTask(sql.FieldGTE(FieldMinScale, v))
 }
 
 // MinScaleLT applies the LT predicate on the "min_scale" field.
-func MinScaleLT(v int) predicate.BenchmarkTask {
+func MinScaleLT(v string) predicate.BenchmarkTask {
 	return predicate.BenchmarkTask(sql.FieldLT(FieldMinScale, v))
 }
 
 // MinScaleLTE applies the LTE predicate on the "min_scale" field.
-func MinScaleLTE(v int) predicate.BenchmarkTask {
+func MinScaleLTE(v string) predicate.BenchmarkTask {
 	return predicate.BenchmarkTask(sql.FieldLTE(FieldMinScale, v))
+}
+
+// MinScaleContains applies the Contains predicate on the "min_scale" field.
+func MinScaleContains(v string) predicate.BenchmarkTask {
+	return predicate.BenchmarkTask(sql.FieldContains(FieldMinScale, v))
+}
+
+// MinScaleHasPrefix applies the HasPrefix predicate on the "min_scale" field.
+func MinScaleHasPrefix(v string) predicate.BenchmarkTask {
+	return predicate.BenchmarkTask(sql.FieldHasPrefix(FieldMinScale, v))
+}
+
+// MinScaleHasSuffix applies the HasSuffix predicate on the "min_scale" field.
+func MinScaleHasSuffix(v string) predicate.BenchmarkTask {
+	return predicate.BenchmarkTask(sql.FieldHasSuffix(FieldMinScale, v))
+}
+
+// MinScaleEqualFold applies the EqualFold predicate on the "min_scale" field.
+func MinScaleEqualFold(v string) predicate.BenchmarkTask {
+	return predicate.BenchmarkTask(sql.FieldEqualFold(FieldMinScale, v))
+}
+
+// MinScaleContainsFold applies the ContainsFold predicate on the "min_scale" field.
+func MinScaleContainsFold(v string) predicate.BenchmarkTask {
+	return predicate.BenchmarkTask(sql.FieldContainsFold(FieldMinScale, v))
 }
 
 // PublicPromptEQ applies the EQ predicate on the "public_prompt" field.

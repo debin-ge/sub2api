@@ -159,9 +159,11 @@ var (
 	// TriggerTypeValidator is a validator for the "trigger_type" field. It is called by the builders before save.
 	TriggerTypeValidator func(string) error
 	// DefaultTaskScale holds the default value on creation for the "task_scale" field.
-	DefaultTaskScale int
+	DefaultTaskScale string
+	// TaskScaleValidator is a validator for the "task_scale" field. It is called by the builders before save.
+	TaskScaleValidator func(string) error
 	// DefaultTaskTypes holds the default value on creation for the "task_types" field.
-	DefaultTaskTypes []string
+	DefaultTaskTypes func() []string
 	// DefaultPlannedTargetCount holds the default value on creation for the "planned_target_count" field.
 	DefaultPlannedTargetCount int
 	// DefaultPlannedTaskCount holds the default value on creation for the "planned_task_count" field.

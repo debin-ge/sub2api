@@ -169,23 +169,16 @@ func (_u *BenchmarkScoreSnapshotUpdate) AddCoverageRate(v float64) *BenchmarkSco
 }
 
 // SetConfidenceLevel sets the "confidence_level" field.
-func (_u *BenchmarkScoreSnapshotUpdate) SetConfidenceLevel(v float64) *BenchmarkScoreSnapshotUpdate {
-	_u.mutation.ResetConfidenceLevel()
+func (_u *BenchmarkScoreSnapshotUpdate) SetConfidenceLevel(v string) *BenchmarkScoreSnapshotUpdate {
 	_u.mutation.SetConfidenceLevel(v)
 	return _u
 }
 
 // SetNillableConfidenceLevel sets the "confidence_level" field if the given value is not nil.
-func (_u *BenchmarkScoreSnapshotUpdate) SetNillableConfidenceLevel(v *float64) *BenchmarkScoreSnapshotUpdate {
+func (_u *BenchmarkScoreSnapshotUpdate) SetNillableConfidenceLevel(v *string) *BenchmarkScoreSnapshotUpdate {
 	if v != nil {
 		_u.SetConfidenceLevel(*v)
 	}
-	return _u
-}
-
-// AddConfidenceLevel adds value to the "confidence_level" field.
-func (_u *BenchmarkScoreSnapshotUpdate) AddConfidenceLevel(v float64) *BenchmarkScoreSnapshotUpdate {
-	_u.mutation.AddConfidenceLevel(v)
 	return _u
 }
 
@@ -394,6 +387,11 @@ func (_u *BenchmarkScoreSnapshotUpdate) ExecX(ctx context.Context) {
 
 // check runs all checks and user-defined validators on the builder.
 func (_u *BenchmarkScoreSnapshotUpdate) check() error {
+	if v, ok := _u.mutation.ConfidenceLevel(); ok {
+		if err := benchmarkscoresnapshot.ConfidenceLevelValidator(v); err != nil {
+			return &ValidationError{Name: "confidence_level", err: fmt.Errorf(`ent: validator failed for field "BenchmarkScoreSnapshot.confidence_level": %w`, err)}
+		}
+	}
 	if _u.mutation.RunCleared() && len(_u.mutation.RunIDs()) > 0 {
 		return errors.New(`ent: clearing a required unique edge "BenchmarkScoreSnapshot.run"`)
 	}
@@ -449,10 +447,7 @@ func (_u *BenchmarkScoreSnapshotUpdate) sqlSave(ctx context.Context) (_node int,
 		_spec.AddField(benchmarkscoresnapshot.FieldCoverageRate, field.TypeFloat64, value)
 	}
 	if value, ok := _u.mutation.ConfidenceLevel(); ok {
-		_spec.SetField(benchmarkscoresnapshot.FieldConfidenceLevel, field.TypeFloat64, value)
-	}
-	if value, ok := _u.mutation.AddedConfidenceLevel(); ok {
-		_spec.AddField(benchmarkscoresnapshot.FieldConfidenceLevel, field.TypeFloat64, value)
+		_spec.SetField(benchmarkscoresnapshot.FieldConfidenceLevel, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.InsufficientSample(); ok {
 		_spec.SetField(benchmarkscoresnapshot.FieldInsufficientSample, field.TypeBool, value)
@@ -720,23 +715,16 @@ func (_u *BenchmarkScoreSnapshotUpdateOne) AddCoverageRate(v float64) *Benchmark
 }
 
 // SetConfidenceLevel sets the "confidence_level" field.
-func (_u *BenchmarkScoreSnapshotUpdateOne) SetConfidenceLevel(v float64) *BenchmarkScoreSnapshotUpdateOne {
-	_u.mutation.ResetConfidenceLevel()
+func (_u *BenchmarkScoreSnapshotUpdateOne) SetConfidenceLevel(v string) *BenchmarkScoreSnapshotUpdateOne {
 	_u.mutation.SetConfidenceLevel(v)
 	return _u
 }
 
 // SetNillableConfidenceLevel sets the "confidence_level" field if the given value is not nil.
-func (_u *BenchmarkScoreSnapshotUpdateOne) SetNillableConfidenceLevel(v *float64) *BenchmarkScoreSnapshotUpdateOne {
+func (_u *BenchmarkScoreSnapshotUpdateOne) SetNillableConfidenceLevel(v *string) *BenchmarkScoreSnapshotUpdateOne {
 	if v != nil {
 		_u.SetConfidenceLevel(*v)
 	}
-	return _u
-}
-
-// AddConfidenceLevel adds value to the "confidence_level" field.
-func (_u *BenchmarkScoreSnapshotUpdateOne) AddConfidenceLevel(v float64) *BenchmarkScoreSnapshotUpdateOne {
-	_u.mutation.AddConfidenceLevel(v)
 	return _u
 }
 
@@ -958,6 +946,11 @@ func (_u *BenchmarkScoreSnapshotUpdateOne) ExecX(ctx context.Context) {
 
 // check runs all checks and user-defined validators on the builder.
 func (_u *BenchmarkScoreSnapshotUpdateOne) check() error {
+	if v, ok := _u.mutation.ConfidenceLevel(); ok {
+		if err := benchmarkscoresnapshot.ConfidenceLevelValidator(v); err != nil {
+			return &ValidationError{Name: "confidence_level", err: fmt.Errorf(`ent: validator failed for field "BenchmarkScoreSnapshot.confidence_level": %w`, err)}
+		}
+	}
 	if _u.mutation.RunCleared() && len(_u.mutation.RunIDs()) > 0 {
 		return errors.New(`ent: clearing a required unique edge "BenchmarkScoreSnapshot.run"`)
 	}
@@ -1030,10 +1023,7 @@ func (_u *BenchmarkScoreSnapshotUpdateOne) sqlSave(ctx context.Context) (_node *
 		_spec.AddField(benchmarkscoresnapshot.FieldCoverageRate, field.TypeFloat64, value)
 	}
 	if value, ok := _u.mutation.ConfidenceLevel(); ok {
-		_spec.SetField(benchmarkscoresnapshot.FieldConfidenceLevel, field.TypeFloat64, value)
-	}
-	if value, ok := _u.mutation.AddedConfidenceLevel(); ok {
-		_spec.AddField(benchmarkscoresnapshot.FieldConfidenceLevel, field.TypeFloat64, value)
+		_spec.SetField(benchmarkscoresnapshot.FieldConfidenceLevel, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.InsufficientSample(); ok {
 		_spec.SetField(benchmarkscoresnapshot.FieldInsufficientSample, field.TypeBool, value)

@@ -199,23 +199,16 @@ func (_u *BenchmarkTaskUpdate) AddWeight(v float64) *BenchmarkTaskUpdate {
 }
 
 // SetMinScale sets the "min_scale" field.
-func (_u *BenchmarkTaskUpdate) SetMinScale(v int) *BenchmarkTaskUpdate {
-	_u.mutation.ResetMinScale()
+func (_u *BenchmarkTaskUpdate) SetMinScale(v string) *BenchmarkTaskUpdate {
 	_u.mutation.SetMinScale(v)
 	return _u
 }
 
 // SetNillableMinScale sets the "min_scale" field if the given value is not nil.
-func (_u *BenchmarkTaskUpdate) SetNillableMinScale(v *int) *BenchmarkTaskUpdate {
+func (_u *BenchmarkTaskUpdate) SetNillableMinScale(v *string) *BenchmarkTaskUpdate {
 	if v != nil {
 		_u.SetMinScale(*v)
 	}
-	return _u
-}
-
-// AddMinScale adds value to the "min_scale" field.
-func (_u *BenchmarkTaskUpdate) AddMinScale(v int) *BenchmarkTaskUpdate {
-	_u.mutation.AddMinScale(v)
 	return _u
 }
 
@@ -373,6 +366,11 @@ func (_u *BenchmarkTaskUpdate) check() error {
 			return &ValidationError{Name: "verifier_type", err: fmt.Errorf(`ent: validator failed for field "BenchmarkTask.verifier_type": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.MinScale(); ok {
+		if err := benchmarktask.MinScaleValidator(v); err != nil {
+			return &ValidationError{Name: "min_scale", err: fmt.Errorf(`ent: validator failed for field "BenchmarkTask.min_scale": %w`, err)}
+		}
+	}
 	if _u.mutation.SuiteCleared() && len(_u.mutation.SuiteIDs()) > 0 {
 		return errors.New(`ent: clearing a required unique edge "BenchmarkTask.suite"`)
 	}
@@ -442,10 +440,7 @@ func (_u *BenchmarkTaskUpdate) sqlSave(ctx context.Context) (_node int, err erro
 		_spec.AddField(benchmarktask.FieldWeight, field.TypeFloat64, value)
 	}
 	if value, ok := _u.mutation.MinScale(); ok {
-		_spec.SetField(benchmarktask.FieldMinScale, field.TypeInt, value)
-	}
-	if value, ok := _u.mutation.AddedMinScale(); ok {
-		_spec.AddField(benchmarktask.FieldMinScale, field.TypeInt, value)
+		_spec.SetField(benchmarktask.FieldMinScale, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.PublicPrompt(); ok {
 		_spec.SetField(benchmarktask.FieldPublicPrompt, field.TypeBool, value)
@@ -718,23 +713,16 @@ func (_u *BenchmarkTaskUpdateOne) AddWeight(v float64) *BenchmarkTaskUpdateOne {
 }
 
 // SetMinScale sets the "min_scale" field.
-func (_u *BenchmarkTaskUpdateOne) SetMinScale(v int) *BenchmarkTaskUpdateOne {
-	_u.mutation.ResetMinScale()
+func (_u *BenchmarkTaskUpdateOne) SetMinScale(v string) *BenchmarkTaskUpdateOne {
 	_u.mutation.SetMinScale(v)
 	return _u
 }
 
 // SetNillableMinScale sets the "min_scale" field if the given value is not nil.
-func (_u *BenchmarkTaskUpdateOne) SetNillableMinScale(v *int) *BenchmarkTaskUpdateOne {
+func (_u *BenchmarkTaskUpdateOne) SetNillableMinScale(v *string) *BenchmarkTaskUpdateOne {
 	if v != nil {
 		_u.SetMinScale(*v)
 	}
-	return _u
-}
-
-// AddMinScale adds value to the "min_scale" field.
-func (_u *BenchmarkTaskUpdateOne) AddMinScale(v int) *BenchmarkTaskUpdateOne {
-	_u.mutation.AddMinScale(v)
 	return _u
 }
 
@@ -905,6 +893,11 @@ func (_u *BenchmarkTaskUpdateOne) check() error {
 			return &ValidationError{Name: "verifier_type", err: fmt.Errorf(`ent: validator failed for field "BenchmarkTask.verifier_type": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.MinScale(); ok {
+		if err := benchmarktask.MinScaleValidator(v); err != nil {
+			return &ValidationError{Name: "min_scale", err: fmt.Errorf(`ent: validator failed for field "BenchmarkTask.min_scale": %w`, err)}
+		}
+	}
 	if _u.mutation.SuiteCleared() && len(_u.mutation.SuiteIDs()) > 0 {
 		return errors.New(`ent: clearing a required unique edge "BenchmarkTask.suite"`)
 	}
@@ -991,10 +984,7 @@ func (_u *BenchmarkTaskUpdateOne) sqlSave(ctx context.Context) (_node *Benchmark
 		_spec.AddField(benchmarktask.FieldWeight, field.TypeFloat64, value)
 	}
 	if value, ok := _u.mutation.MinScale(); ok {
-		_spec.SetField(benchmarktask.FieldMinScale, field.TypeInt, value)
-	}
-	if value, ok := _u.mutation.AddedMinScale(); ok {
-		_spec.AddField(benchmarktask.FieldMinScale, field.TypeInt, value)
+		_spec.SetField(benchmarktask.FieldMinScale, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.PublicPrompt(); ok {
 		_spec.SetField(benchmarktask.FieldPublicPrompt, field.TypeBool, value)

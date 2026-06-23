@@ -81,7 +81,7 @@ func Description(v string) predicate.BenchmarkProfile {
 }
 
 // TaskScale applies equality check predicate on the "task_scale" field. It's identical to TaskScaleEQ.
-func TaskScale(v int) predicate.BenchmarkProfile {
+func TaskScale(v string) predicate.BenchmarkProfile {
 	return predicate.BenchmarkProfile(sql.FieldEQ(FieldTaskScale, v))
 }
 
@@ -346,43 +346,68 @@ func DescriptionContainsFold(v string) predicate.BenchmarkProfile {
 }
 
 // TaskScaleEQ applies the EQ predicate on the "task_scale" field.
-func TaskScaleEQ(v int) predicate.BenchmarkProfile {
+func TaskScaleEQ(v string) predicate.BenchmarkProfile {
 	return predicate.BenchmarkProfile(sql.FieldEQ(FieldTaskScale, v))
 }
 
 // TaskScaleNEQ applies the NEQ predicate on the "task_scale" field.
-func TaskScaleNEQ(v int) predicate.BenchmarkProfile {
+func TaskScaleNEQ(v string) predicate.BenchmarkProfile {
 	return predicate.BenchmarkProfile(sql.FieldNEQ(FieldTaskScale, v))
 }
 
 // TaskScaleIn applies the In predicate on the "task_scale" field.
-func TaskScaleIn(vs ...int) predicate.BenchmarkProfile {
+func TaskScaleIn(vs ...string) predicate.BenchmarkProfile {
 	return predicate.BenchmarkProfile(sql.FieldIn(FieldTaskScale, vs...))
 }
 
 // TaskScaleNotIn applies the NotIn predicate on the "task_scale" field.
-func TaskScaleNotIn(vs ...int) predicate.BenchmarkProfile {
+func TaskScaleNotIn(vs ...string) predicate.BenchmarkProfile {
 	return predicate.BenchmarkProfile(sql.FieldNotIn(FieldTaskScale, vs...))
 }
 
 // TaskScaleGT applies the GT predicate on the "task_scale" field.
-func TaskScaleGT(v int) predicate.BenchmarkProfile {
+func TaskScaleGT(v string) predicate.BenchmarkProfile {
 	return predicate.BenchmarkProfile(sql.FieldGT(FieldTaskScale, v))
 }
 
 // TaskScaleGTE applies the GTE predicate on the "task_scale" field.
-func TaskScaleGTE(v int) predicate.BenchmarkProfile {
+func TaskScaleGTE(v string) predicate.BenchmarkProfile {
 	return predicate.BenchmarkProfile(sql.FieldGTE(FieldTaskScale, v))
 }
 
 // TaskScaleLT applies the LT predicate on the "task_scale" field.
-func TaskScaleLT(v int) predicate.BenchmarkProfile {
+func TaskScaleLT(v string) predicate.BenchmarkProfile {
 	return predicate.BenchmarkProfile(sql.FieldLT(FieldTaskScale, v))
 }
 
 // TaskScaleLTE applies the LTE predicate on the "task_scale" field.
-func TaskScaleLTE(v int) predicate.BenchmarkProfile {
+func TaskScaleLTE(v string) predicate.BenchmarkProfile {
 	return predicate.BenchmarkProfile(sql.FieldLTE(FieldTaskScale, v))
+}
+
+// TaskScaleContains applies the Contains predicate on the "task_scale" field.
+func TaskScaleContains(v string) predicate.BenchmarkProfile {
+	return predicate.BenchmarkProfile(sql.FieldContains(FieldTaskScale, v))
+}
+
+// TaskScaleHasPrefix applies the HasPrefix predicate on the "task_scale" field.
+func TaskScaleHasPrefix(v string) predicate.BenchmarkProfile {
+	return predicate.BenchmarkProfile(sql.FieldHasPrefix(FieldTaskScale, v))
+}
+
+// TaskScaleHasSuffix applies the HasSuffix predicate on the "task_scale" field.
+func TaskScaleHasSuffix(v string) predicate.BenchmarkProfile {
+	return predicate.BenchmarkProfile(sql.FieldHasSuffix(FieldTaskScale, v))
+}
+
+// TaskScaleEqualFold applies the EqualFold predicate on the "task_scale" field.
+func TaskScaleEqualFold(v string) predicate.BenchmarkProfile {
+	return predicate.BenchmarkProfile(sql.FieldEqualFold(FieldTaskScale, v))
+}
+
+// TaskScaleContainsFold applies the ContainsFold predicate on the "task_scale" field.
+func TaskScaleContainsFold(v string) predicate.BenchmarkProfile {
+	return predicate.BenchmarkProfile(sql.FieldContainsFold(FieldTaskScale, v))
 }
 
 // TaskCountLimitEQ applies the EQ predicate on the "task_count_limit" field.

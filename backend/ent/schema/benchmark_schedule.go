@@ -66,8 +66,11 @@ func (BenchmarkSchedule) Edges() []ent.Edge {
 
 func (BenchmarkSchedule) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("enabled"),
-		index.Fields("next_run_at"),
-		index.Fields("profile_id"),
+		index.Fields("enabled").
+			StorageKey("benchmark_schedules_enabled_idx"),
+		index.Fields("next_run_at").
+			StorageKey("benchmark_schedules_next_run_at_idx"),
+		index.Fields("profile_id").
+			StorageKey("benchmark_schedules_profile_id_idx"),
 	}
 }
