@@ -101,3 +101,90 @@ func TestSelectBenchmarkTasksRespectsPerTypeLimit(t *testing.T) {
 		t.Fatalf("selected task count = %d, want 3; selected tasks = %#v", len(got), got)
 	}
 }
+
+func TestSelectBenchmarkTasksFullScaleAppliesPerTypeLimit(t *testing.T) {
+	t.Parallel()
+
+	tasks := []BenchmarkTaskCandidate{
+		{ID: 1, Type: "math_reasoning", Weight: 1, MinScale: BenchmarkTaskScaleSmall, Enabled: true},
+		{ID: 2, Type: "math_reasoning", Weight: 1, MinScale: BenchmarkTaskScaleMedium, Enabled: true},
+		{ID: 3, Type: "coding", Weight: 1, MinScale: BenchmarkTaskScaleSmall, Enabled: true},
+		{ID: 4, Type: "coding", Weight: 1, MinScale: BenchmarkTaskScaleMedium, Enabled: true},
+		{ID: 5, Type: "knowledge", Weight: 1, MinScale: BenchmarkTaskScaleSmall, Enabled: true},
+		{ID: 6, Type: "knowledge", Weight: 1, MinScale: BenchmarkTaskScaleMedium, Enabled: true},
+	}
+	got, err := SelectBenchmarkTasks(tasks, BenchmarkSelectionConfig{
+		TaskTypes: []string{"math_reasoning", "coding", "knowledge"},
+		TaskScale: BenchmarkTaskScaleFull,
+		PerTypeLimit: map[string]int{
+			"math_reasoning": 1,
+			"coding":         0,
+			"unknown":        -1,
+		},
+		SelectionSeed: 20260623,
+	})
+	if err != nil {
+		t.Fatalf("SelectBenchmarkTasks error = %v", err)
+	}
+	counts := countSelectedTaskTypes(got)
+	if counts["math_reasoning"] != 1 {
+		t.Fatalf("math_reasoning selections = %d, want 1; selected tasks = %#v", counts["math_reasoning"], got)
+	}
+	if counts["coding"] != 0 {
+		t.Fatalf("coding selections = %d, want 0; selected tasks = %#v", counts["coding"], got)
+	}
+	if counts["knowledge"] != 2 {
+		t.Fatalf("knowledge selections = %d, want 2; selected tasks = %#v", counts["knowledge"], got)
+	}
+	if len(got) != 3 {
+		t.Fatalf("selected task count = %d, want 3; selected tasks = %#v", len(got), got)
+	}
+}
+
+func TestSelectBenchmarkTasksLargeLimitAppliesPerTypeLimit(t *testing.T) {
+	t.Parallel()
+
+	tasks := []BenchmarkTaskCandidate{
+		{ID: 1, Type: "math_reasoning", Weight: 1, MinScale: BenchmarkTaskScaleSmall, Enabled: true},
+		{ID: 2, Type: "math_reasoning", Weight: 1, MinScale: BenchmarkTaskScaleSmall, Enabled: true},
+		{ID: 3, Type: "coding", Weight: 1, MinScale: BenchmarkTaskScaleSmall, Enabled: true},
+		{ID: 4, Type: "coding", Weight: 1, MinScale: BenchmarkTaskScaleSmall, Enabled: true},
+		{ID: 5, Type: "knowledge", Weight: 1, MinScale: BenchmarkTaskScaleSmall, Enabled: true},
+		{ID: 6, Type: "knowledge", Weight: 1, MinScale: BenchmarkTaskScaleSmall, Enabled: true},
+	}
+	got, err := SelectBenchmarkTasks(tasks, BenchmarkSelectionConfig{
+		TaskTypes:      []string{"math_reasoning", "coding", "knowledge"},
+		TaskScale:      BenchmarkTaskScaleCustom,
+		TaskCountLimit: 10,
+		PerTypeLimit: map[string]int{
+			"math_reasoning": 1,
+			"coding":         -1,
+			"unknown":        1,
+		},
+		SelectionSeed: 20260623,
+	})
+	if err != nil {
+		t.Fatalf("SelectBenchmarkTasks error = %v", err)
+	}
+	counts := countSelectedTaskTypes(got)
+	if counts["math_reasoning"] != 1 {
+		t.Fatalf("math_reasoning selections = %d, want 1; selected tasks = %#v", counts["math_reasoning"], got)
+	}
+	if counts["coding"] != 0 {
+		t.Fatalf("coding selections = %d, want 0; selected tasks = %#v", counts["coding"], got)
+	}
+	if counts["knowledge"] != 2 {
+		t.Fatalf("knowledge selections = %d, want 2; selected tasks = %#v", counts["knowledge"], got)
+	}
+	if len(got) != 3 {
+		t.Fatalf("selected task count = %d, want 3; selected tasks = %#v", len(got), got)
+	}
+}
+
+func countSelectedTaskTypes(tasks []BenchmarkTaskCandidate) map[string]int {
+	counts := map[string]int{}
+	for _, task := range tasks {
+		counts[task.Type]++
+	}
+	return counts
+}
