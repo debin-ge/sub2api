@@ -15,6 +15,7 @@ type benchmarkRunnerRepoStub struct {
 
 	claimPendingResultsFn   func(ctx context.Context, runID int64, limit int) ([]*ent.BenchmarkResult, error)
 	getRunResultContextFn   func(ctx context.Context, resultID int64) (*BenchmarkRunResultContext, error)
+	requeueClaimedResultsFn func(ctx context.Context, resultIDs []int64) error
 	updateResultFn          func(ctx context.Context, id int64, input BenchmarkResultUpdateInput) error
 	countRunResultsFn       func(ctx context.Context, runID int64) (map[string]int, error)
 	updateRunStatusFn       func(ctx context.Context, runID int64, status string, errorMessage *string) error
@@ -23,6 +24,7 @@ type benchmarkRunnerRepoStub struct {
 		limit int
 	}
 	updateCalls    []benchmarkRunnerUpdateCall
+	requeueCalls   [][]int64
 	runStatusCalls []benchmarkRunnerRunStatusCall
 }
 
@@ -60,6 +62,15 @@ func (s *benchmarkRunnerRepoStub) GetRunResultContext(ctx context.Context, resul
 	}
 	s.t.Fatalf("unexpected GetRunResultContext call")
 	return nil, nil
+}
+
+func (s *benchmarkRunnerRepoStub) RequeueClaimedResults(ctx context.Context, resultIDs []int64) error {
+	cloned := append([]int64(nil), resultIDs...)
+	s.requeueCalls = append(s.requeueCalls, cloned)
+	if s.requeueClaimedResultsFn != nil {
+		return s.requeueClaimedResultsFn(ctx, cloned)
+	}
+	return nil
 }
 
 func (s *benchmarkRunnerRepoStub) UpdateResult(ctx context.Context, id int64, input BenchmarkResultUpdateInput) error {
@@ -318,6 +329,50 @@ func TestBenchmarkRunnerPreservesGatewayMetricsOnInvalidError(t *testing.T) {
 	require.Contains(t, *update.ErrorMessage, "upstream 502")
 }
 
+func TestBenchmarkRunnerRequeuesCurrentAndRemainingClaimedResultsOnInfrastructureError(t *testing.T) {
+	t.Parallel()
+
+	repo := newBenchmarkRunnerRepoStub(t)
+	firstCtx := benchmarkRunnerTestResultContextWithIDs(101, 201, 401, 601)
+	secondCtx := benchmarkRunnerTestResultContextWithIDs(101, 202, 402, 602)
+	thirdCtx := benchmarkRunnerTestResultContextWithIDs(101, 203, 403, 603)
+	contextByResultID := map[int64]*BenchmarkRunResultContext{
+		firstCtx.Result.ID:  firstCtx,
+		secondCtx.Result.ID: secondCtx,
+		thirdCtx.Result.ID:  thirdCtx,
+	}
+
+	repo.claimPendingResultsFn = func(ctx context.Context, runID int64, limit int) ([]*ent.BenchmarkResult, error) {
+		return []*ent.BenchmarkResult{firstCtx.Result, secondCtx.Result, thirdCtx.Result}, nil
+	}
+	repo.getRunResultContextFn = func(ctx context.Context, resultID int64) (*BenchmarkRunResultContext, error) {
+		return contextByResultID[resultID], nil
+	}
+	repo.updateResultFn = func(ctx context.Context, id int64, input BenchmarkResultUpdateInput) error {
+		if id == secondCtx.Result.ID {
+			return errors.New("write failed")
+		}
+		return nil
+	}
+
+	client := &benchmarkRunnerClientStub{
+		executeFn: func(ctx context.Context, req BenchmarkGatewayRequest) (*BenchmarkGatewayResponse, error) {
+			return &BenchmarkGatewayResponse{
+				RequestID:   "req-success",
+				Content:     "Paris",
+				RawResponse: map[string]any{"answer": "Paris"},
+			}, nil
+		},
+	}
+
+	err := NewBenchmarkRunner(repo, client).RunOnce(context.Background(), firstCtx.Run.ID)
+	require.EqualError(t, err, "write failed")
+	require.Len(t, repo.updateCalls, 2)
+	require.Len(t, repo.requeueCalls, 1)
+	require.Equal(t, []int64{secondCtx.Result.ID, thirdCtx.Result.ID}, repo.requeueCalls[0])
+	require.Empty(t, repo.runStatusCalls)
+}
+
 func TestBenchmarkRunnerMarksRateLimitedInvalid(t *testing.T) {
 	t.Parallel()
 
@@ -397,6 +452,75 @@ func TestBenchmarkRunnerMarksParseErrorInvalid(t *testing.T) {
 	require.Equal(t, map[string]any{"error": *update.ErrorMessage}, update.EvaluatorOutput)
 }
 
+func TestBenchmarkRunnerClearsPreviousEvaluatorOutputOnRetrySuccess(t *testing.T) {
+	t.Parallel()
+
+	repo := newBenchmarkRunnerRepoStub(t)
+	parseCtx := benchmarkRunnerTestResultContext()
+	parseCtx.Task.VerifierTypeSnapshot = "json_object"
+	parseCtx.Task.VerifierConfigSnapshot = map[string]any{"required_keys": []any{"answer"}}
+
+	successCtx := benchmarkRunnerTestResultContext()
+	successCtx.Result.ID = parseCtx.Result.ID
+	successCtx.Result.RunID = parseCtx.Result.RunID
+	successCtx.Result.RunTaskID = parseCtx.Result.RunTaskID
+	successCtx.Result.RunTargetID = parseCtx.Result.RunTargetID
+	successCtx.Result.AttemptCount = 2
+
+	runPhase := 0
+	repo.claimPendingResultsFn = func(ctx context.Context, runID int64, limit int) ([]*ent.BenchmarkResult, error) {
+		runPhase++
+		switch runPhase {
+		case 1:
+			return []*ent.BenchmarkResult{parseCtx.Result}, nil
+		case 2:
+			return []*ent.BenchmarkResult{successCtx.Result}, nil
+		default:
+			return nil, nil
+		}
+	}
+	repo.getRunResultContextFn = func(ctx context.Context, resultID int64) (*BenchmarkRunResultContext, error) {
+		if runPhase == 1 {
+			return parseCtx, nil
+		}
+		return successCtx, nil
+	}
+	repo.countRunResultsFn = func(ctx context.Context, runID int64) (map[string]int, error) {
+		return map[string]int{BenchmarkResultStatusPending: 1}, nil
+	}
+
+	client := &benchmarkRunnerClientStub{
+		executeFn: func(ctx context.Context, req BenchmarkGatewayRequest) (*BenchmarkGatewayResponse, error) {
+			if runPhase == 1 {
+				return &BenchmarkGatewayResponse{
+					RequestID:   "req-parse",
+					Content:     "not-json",
+					RawResponse: map[string]any{"content": "not-json"},
+				}, nil
+			}
+			return &BenchmarkGatewayResponse{
+				RequestID:   "req-success",
+				Content:     "Paris",
+				RawResponse: map[string]any{"answer": "Paris"},
+			}, nil
+		},
+	}
+
+	runner := NewBenchmarkRunner(repo, client)
+	require.NoError(t, runner.RunOnce(context.Background(), parseCtx.Run.ID))
+	require.NoError(t, runner.RunOnce(context.Background(), successCtx.Run.ID))
+	require.Len(t, repo.updateCalls, 2)
+
+	parseUpdate := repo.updateCalls[0].input
+	require.Equal(t, map[string]any{"error": *parseUpdate.ErrorMessage}, parseUpdate.EvaluatorOutput)
+
+	successUpdate := repo.updateCalls[1].input
+	require.NotNil(t, successUpdate.Status)
+	require.Equal(t, BenchmarkResultStatusScored, *successUpdate.Status)
+	require.True(t, successUpdate.ClearEvaluatorOutput)
+	require.Nil(t, successUpdate.EvaluatorOutput)
+}
+
 func TestBenchmarkRunnerMarksVerifierHardErrorInvalid(t *testing.T) {
 	t.Parallel()
 
@@ -461,24 +585,28 @@ func TestBenchmarkRunnerMovesRunToScoringWhenTerminal(t *testing.T) {
 }
 
 func benchmarkRunnerTestResultContext() *BenchmarkRunResultContext {
+	return benchmarkRunnerTestResultContextWithIDs(101, 201, 401, 601)
+}
+
+func benchmarkRunnerTestResultContextWithIDs(runID, targetID, taskID, resultID int64) *BenchmarkRunResultContext {
 	run := &ent.BenchmarkRun{
-		ID:     101,
+		ID:     runID,
 		Status: BenchmarkRunStatusRunning,
 		ConfigSnapshot: map[string]any{
 			"runtime_config": map[string]any{"timeout": 30},
 		},
 	}
 	target := &ent.BenchmarkRunTarget{
-		ID:        201,
+		ID:        targetID,
 		RunID:     run.ID,
-		TargetID:  301,
+		TargetID:  targetID + 100,
 		ModelName: "gpt-test",
 		ChannelID: 77,
 	}
 	task := &ent.BenchmarkRunTask{
-		ID:                     401,
+		ID:                     taskID,
 		RunID:                  run.ID,
-		TaskID:                 501,
+		TaskID:                 taskID + 100,
 		PromptSnapshot:         "What is the capital of France?",
 		VerifierTypeSnapshot:   "exact_match",
 		VerifierConfigSnapshot: map[string]any{"expected": "Paris"},
@@ -489,7 +617,7 @@ func benchmarkRunnerTestResultContext() *BenchmarkRunResultContext {
 		},
 	}
 	result := &ent.BenchmarkResult{
-		ID:           601,
+		ID:           resultID,
 		RunID:        run.ID,
 		RunTaskID:    task.ID,
 		RunTargetID:  target.ID,

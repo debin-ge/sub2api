@@ -27,6 +27,7 @@ type BenchmarkRepository interface {
 	ListRunTasks(ctx context.Context, runID int64) ([]*ent.BenchmarkRunTask, error)
 	ListRunResults(ctx context.Context, runID int64) ([]*ent.BenchmarkResult, error)
 	ClaimPendingResults(ctx context.Context, runID int64, limit int) ([]*ent.BenchmarkResult, error)
+	RequeueClaimedResults(ctx context.Context, resultIDs []int64) error
 	UpdateRunStatus(ctx context.Context, runID int64, status string, errorMessage *string) error
 	CountRunResultsByStatus(ctx context.Context, runID int64) (map[string]int, error)
 	GetRunResultContext(ctx context.Context, resultID int64) (*BenchmarkRunResultContext, error)
@@ -185,6 +186,7 @@ type BenchmarkResultUpdateInput struct {
 	EvaluatorType        *string
 	ClearEvaluatorType   bool
 	EvaluatorOutput      map[string]any
+	ClearEvaluatorOutput bool
 	LatencyMS            *int
 	ClearLatencyMS       bool
 	PromptTokens         *int

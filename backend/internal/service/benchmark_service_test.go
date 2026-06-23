@@ -199,6 +199,11 @@ func (s *benchmarkServiceRepoStub) GetRunResultContext(ctx context.Context, resu
 	return nil, nil
 }
 
+func (s *benchmarkServiceRepoStub) RequeueClaimedResults(ctx context.Context, resultIDs []int64) error {
+	s.t.Fatalf("unexpected RequeueClaimedResults call")
+	return nil
+}
+
 func (s *benchmarkServiceRepoStub) SaveScoreSnapshots(ctx context.Context, runID int64, snapshots []BenchmarkScoreSnapshotInput) error {
 	s.t.Fatalf("unexpected SaveScoreSnapshots call")
 	return nil

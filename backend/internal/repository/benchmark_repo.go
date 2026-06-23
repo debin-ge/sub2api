@@ -351,6 +351,20 @@ func (r *benchmarkRepository) ClaimPendingResults(ctx context.Context, runID int
 	return results, nil
 }
 
+func (r *benchmarkRepository) RequeueClaimedResults(ctx context.Context, resultIDs []int64) error {
+	if len(resultIDs) == 0 {
+		return nil
+	}
+	err := clientFromContext(ctx, r.client).BenchmarkResult.Update().
+		Where(
+			benchmarkresult.IDIn(resultIDs...),
+			benchmarkresult.StatusEQ(service.BenchmarkResultStatusRunning),
+		).
+		SetStatus(service.BenchmarkResultStatusPending).
+		Exec(ctx)
+	return err
+}
+
 func (r *benchmarkRepository) UpdateRunStatus(ctx context.Context, runID int64, status string, errorMessage *string) error {
 	builder := clientFromContext(ctx, r.client).BenchmarkRun.UpdateOneID(runID).SetStatus(status)
 	if errorMessage == nil {
@@ -449,7 +463,9 @@ func (r *benchmarkRepository) UpdateResult(ctx context.Context, id int64, input 
 	} else if input.EvaluatorType != nil {
 		builder.SetEvaluatorType(*input.EvaluatorType)
 	}
-	if input.EvaluatorOutput != nil {
+	if input.ClearEvaluatorOutput {
+		builder.SetEvaluatorOutput(map[string]any{})
+	} else if input.EvaluatorOutput != nil {
 		builder.SetEvaluatorOutput(input.EvaluatorOutput)
 	}
 	if input.ClearLatencyMS {

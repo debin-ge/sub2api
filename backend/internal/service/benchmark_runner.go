@@ -30,13 +30,13 @@ func (r *BenchmarkRunner) RunOnce(ctx context.Context, runID int64) error {
 		return err
 	}
 
-	for _, result := range claimed {
+	for i, result := range claimed {
 		resultCtx, err := r.repo.GetRunResultContext(ctx, result.ID)
 		if err != nil {
-			return err
+			return r.requeueClaimedResults(ctx, claimed[i:], err)
 		}
 		if err := r.runResultOnce(ctx, resultCtx); err != nil {
-			return err
+			return r.requeueClaimedResults(ctx, claimed[i:], err)
 		}
 	}
 
@@ -50,6 +50,23 @@ func (r *BenchmarkRunner) RunOnce(ctx context.Context, runID int64) error {
 		nextStatus = BenchmarkRunStatusRunning
 	}
 	return r.repo.UpdateRunStatus(ctx, runID, nextStatus, nil)
+}
+
+func (r *BenchmarkRunner) requeueClaimedResults(ctx context.Context, claimed []*ent.BenchmarkResult, runErr error) error {
+	resultIDs := make([]int64, 0, len(claimed))
+	for _, result := range claimed {
+		if result == nil || result.ID <= 0 {
+			continue
+		}
+		resultIDs = append(resultIDs, result.ID)
+	}
+	if len(resultIDs) == 0 {
+		return runErr
+	}
+	if err := r.repo.RequeueClaimedResults(ctx, resultIDs); err != nil {
+		return errors.Join(runErr, fmt.Errorf("requeue claimed results: %w", err))
+	}
+	return runErr
 }
 
 func (r *BenchmarkRunner) runResultOnce(ctx context.Context, resultCtx *BenchmarkRunResultContext) error {
@@ -88,6 +105,7 @@ func (r *BenchmarkRunner) runResultOnce(ctx context.Context, resultCtx *Benchmar
 				ClearMaxScore:        true,
 				ClearNormalizedScore: true,
 				ClearEvaluatorType:   true,
+				ClearEvaluatorOutput: true,
 				ErrorCode:            benchmarkRunnerStringPtr(status),
 				ErrorMessage:         &errMessage,
 				StartedAt:            &startedAt,
@@ -120,6 +138,7 @@ func (r *BenchmarkRunner) runResultOnce(ctx context.Context, resultCtx *Benchmar
 				ClearMaxScore:        true,
 				ClearNormalizedScore: true,
 				EvaluatorType:        benchmarkRunnerStringPtr(resultCtx.Task.VerifierTypeSnapshot),
+				ClearEvaluatorOutput: true,
 				ErrorCode:            benchmarkRunnerStringPtr(BenchmarkResultStatusVerifierError),
 				ErrorMessage:         &errMessage,
 				StartedAt:            &startedAt,
@@ -130,57 +149,60 @@ func (r *BenchmarkRunner) runResultOnce(ctx context.Context, resultCtx *Benchmar
 
 	switch verifierResult.Status {
 	case BenchmarkResultStatusScored:
+		scoredUpdate := BenchmarkResultUpdateInput{
+			Status:            benchmarkRunnerStringPtr(BenchmarkResultStatusScored),
+			RequestID:         &requestID,
+			Score:             &verifierResult.Score,
+			MaxScore:          &verifierResult.MaxScore,
+			NormalizedScore:   &verifierResult.NormalizedScore,
+			EvaluatorType:     benchmarkRunnerStringPtr(resultCtx.Task.VerifierTypeSnapshot),
+			ClearErrorCode:    true,
+			ClearErrorMessage: true,
+			StartedAt:         &startedAt,
+			FinishedAt:        &finishedAt,
+		}
+		benchmarkRunnerSetEvaluatorOutput(&scoredUpdate, verifierResult.Output)
 		return r.repo.UpdateResult(ctx, resultCtx.Result.ID, benchmarkRunnerResponseUpdateInput(
 			resp,
-			BenchmarkResultUpdateInput{
-				Status:            benchmarkRunnerStringPtr(BenchmarkResultStatusScored),
-				RequestID:         &requestID,
-				Score:             &verifierResult.Score,
-				MaxScore:          &verifierResult.MaxScore,
-				NormalizedScore:   &verifierResult.NormalizedScore,
-				EvaluatorType:     benchmarkRunnerStringPtr(resultCtx.Task.VerifierTypeSnapshot),
-				EvaluatorOutput:   benchmarkCloneAnyMap(verifierResult.Output),
-				ClearErrorCode:    true,
-				ClearErrorMessage: true,
-				StartedAt:         &startedAt,
-				FinishedAt:        &finishedAt,
-			},
+			scoredUpdate,
 		))
 	case BenchmarkResultStatusParseError:
 		errMessage := benchmarkRunnerVerifierErrorMessage(verifierResult, "benchmark verifier parse error")
+		parseUpdate := BenchmarkResultUpdateInput{
+			Status:               benchmarkRunnerStringPtr(BenchmarkResultStatusParseError),
+			RequestID:            &requestID,
+			ClearScore:           true,
+			ClearMaxScore:        true,
+			ClearNormalizedScore: true,
+			EvaluatorType:        benchmarkRunnerStringPtr(resultCtx.Task.VerifierTypeSnapshot),
+			ErrorCode:            benchmarkRunnerStringPtr(BenchmarkResultStatusParseError),
+			ErrorMessage:         &errMessage,
+			StartedAt:            &startedAt,
+			FinishedAt:           &finishedAt,
+		}
+		benchmarkRunnerSetEvaluatorOutput(&parseUpdate, verifierResult.Output)
 		return r.repo.UpdateResult(ctx, resultCtx.Result.ID, benchmarkRunnerResponseUpdateInput(
 			resp,
-			BenchmarkResultUpdateInput{
-				Status:               benchmarkRunnerStringPtr(BenchmarkResultStatusParseError),
-				RequestID:            &requestID,
-				ClearScore:           true,
-				ClearMaxScore:        true,
-				ClearNormalizedScore: true,
-				EvaluatorType:        benchmarkRunnerStringPtr(resultCtx.Task.VerifierTypeSnapshot),
-				EvaluatorOutput:      benchmarkCloneAnyMap(verifierResult.Output),
-				ErrorCode:            benchmarkRunnerStringPtr(BenchmarkResultStatusParseError),
-				ErrorMessage:         &errMessage,
-				StartedAt:            &startedAt,
-				FinishedAt:           &finishedAt,
-			},
+			parseUpdate,
 		))
 	default:
 		errMessage := fmt.Sprintf("unexpected benchmark verifier status: %s", verifierResult.Status)
+		unexpectedUpdate := BenchmarkResultUpdateInput{
+			Status:               benchmarkRunnerStringPtr(BenchmarkResultStatusVerifierError),
+			RequestID:            &requestID,
+			ClearScore:           true,
+			ClearMaxScore:        true,
+			ClearNormalizedScore: true,
+			EvaluatorType:        benchmarkRunnerStringPtr(resultCtx.Task.VerifierTypeSnapshot),
+			ErrorCode:            benchmarkRunnerStringPtr(BenchmarkResultStatusVerifierError),
+			ErrorMessage:         &errMessage,
+			StartedAt:            &startedAt,
+			FinishedAt:           &finishedAt,
+		}
+		benchmarkRunnerSetEvaluatorOutput(&unexpectedUpdate, verifierResult.Output)
 		return r.repo.UpdateResult(ctx, resultCtx.Result.ID, benchmarkRunnerResponseUpdateInput(
 			resp,
-			BenchmarkResultUpdateInput{
-				Status:               benchmarkRunnerStringPtr(BenchmarkResultStatusVerifierError),
-				RequestID:            &requestID,
-				ClearScore:           true,
-				ClearMaxScore:        true,
-				ClearNormalizedScore: true,
-				EvaluatorType:        benchmarkRunnerStringPtr(resultCtx.Task.VerifierTypeSnapshot),
-				EvaluatorOutput:      benchmarkCloneAnyMap(verifierResult.Output),
-				ErrorCode:            benchmarkRunnerStringPtr(BenchmarkResultStatusVerifierError),
-				ErrorMessage:         &errMessage,
-				StartedAt:            &startedAt,
-				FinishedAt:           &finishedAt,
-			},
+			unexpectedUpdate,
 		))
 	}
 }
@@ -271,6 +293,19 @@ func benchmarkRunnerResponseUpdateInput(resp *BenchmarkGatewayResponse, input Be
 	input.TotalTokens = benchmarkRunnerIntPtr(resp.TotalTokens)
 	input.EstimatedCost = benchmarkRunnerFloat64Ptr(resp.EstimatedCost)
 	return input
+}
+
+func benchmarkRunnerSetEvaluatorOutput(input *BenchmarkResultUpdateInput, output map[string]any) {
+	if input == nil {
+		return
+	}
+	if len(output) == 0 {
+		input.ClearEvaluatorOutput = true
+		input.EvaluatorOutput = nil
+		return
+	}
+	input.ClearEvaluatorOutput = false
+	input.EvaluatorOutput = benchmarkCloneAnyMap(output)
 }
 
 func benchmarkRunnerVerifierErrorMessage(result BenchmarkVerifierResult, fallback string) string {

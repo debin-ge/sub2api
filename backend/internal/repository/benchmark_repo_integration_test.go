@@ -993,6 +993,7 @@ func TestBenchmarkRepositoryUpdateResultClearsNullableFields(t *testing.T) {
 	maxScore := 100.0
 	normalizedScore := 0.985
 	evaluatorType := "manual"
+	evaluatorOutput := map[string]any{"error": "old-parse-error"}
 	latencyMS := 1234
 	errorCode := "E42"
 	errorMessage := "initial error"
@@ -1005,6 +1006,7 @@ func TestBenchmarkRepositoryUpdateResultClearsNullableFields(t *testing.T) {
 		MaxScore:        &maxScore,
 		NormalizedScore: &normalizedScore,
 		EvaluatorType:   &evaluatorType,
+		EvaluatorOutput: evaluatorOutput,
 		LatencyMS:       &latencyMS,
 		ErrorCode:       &errorCode,
 		ErrorMessage:    &errorMessage,
@@ -1027,6 +1029,7 @@ func TestBenchmarkRepositoryUpdateResultClearsNullableFields(t *testing.T) {
 	require.InDelta(t, normalizedScore, *updated.NormalizedScore, 0.000001)
 	require.NotNil(t, updated.EvaluatorType)
 	require.Equal(t, evaluatorType, *updated.EvaluatorType)
+	require.Equal(t, evaluatorOutput, updated.EvaluatorOutput)
 	require.NotNil(t, updated.LatencyMs)
 	require.Equal(t, latencyMS, *updated.LatencyMs)
 	require.NotNil(t, updated.ErrorCode)
@@ -1044,6 +1047,7 @@ func TestBenchmarkRepositoryUpdateResultClearsNullableFields(t *testing.T) {
 	sameCallMaxScore := 88.8
 	sameCallNormalizedScore := 0.875
 	sameCallEvaluatorType := "automatic"
+	sameCallEvaluatorOutput := map[string]any{"error": "new-error"}
 	sameCallLatencyMS := 4321
 	sameCallErrorCode := "E99"
 	sameCallErrorMessage := "same-call error"
@@ -1061,6 +1065,8 @@ func TestBenchmarkRepositoryUpdateResultClearsNullableFields(t *testing.T) {
 		ClearNormalizedScore: true,
 		EvaluatorType:        &sameCallEvaluatorType,
 		ClearEvaluatorType:   true,
+		EvaluatorOutput:      sameCallEvaluatorOutput,
+		ClearEvaluatorOutput: true,
 		LatencyMS:            &sameCallLatencyMS,
 		ClearLatencyMS:       true,
 		ErrorCode:            &sameCallErrorCode,
@@ -1083,6 +1089,7 @@ func TestBenchmarkRepositoryUpdateResultClearsNullableFields(t *testing.T) {
 	require.Nil(t, sameCallCleared.MaxScore)
 	require.Nil(t, sameCallCleared.NormalizedScore)
 	require.Nil(t, sameCallCleared.EvaluatorType)
+	require.Empty(t, sameCallCleared.EvaluatorOutput)
 	require.Nil(t, sameCallCleared.LatencyMs)
 	require.Nil(t, sameCallCleared.ErrorCode)
 	require.Nil(t, sameCallCleared.ErrorMessage)
@@ -1096,6 +1103,7 @@ func TestBenchmarkRepositoryUpdateResultClearsNullableFields(t *testing.T) {
 		ClearMaxScore:        true,
 		ClearNormalizedScore: true,
 		ClearEvaluatorType:   true,
+		ClearEvaluatorOutput: true,
 		ClearLatencyMS:       true,
 		ClearErrorCode:       true,
 		ClearErrorMessage:    true,
@@ -1113,11 +1121,79 @@ func TestBenchmarkRepositoryUpdateResultClearsNullableFields(t *testing.T) {
 	require.Nil(t, clearedAgain.MaxScore)
 	require.Nil(t, clearedAgain.NormalizedScore)
 	require.Nil(t, clearedAgain.EvaluatorType)
+	require.Empty(t, clearedAgain.EvaluatorOutput)
 	require.Nil(t, clearedAgain.LatencyMs)
 	require.Nil(t, clearedAgain.ErrorCode)
 	require.Nil(t, clearedAgain.ErrorMessage)
 	require.Nil(t, clearedAgain.StartedAt)
 	require.Nil(t, clearedAgain.FinishedAt)
+}
+
+func TestBenchmarkRepositoryRequeueClaimedResults(t *testing.T) {
+	fixture := newBenchmarkFixture(t, "requeue-claimed")
+
+	secondTask, err := fixture.repo.CreateTask(fixture.ctx, service.BenchmarkTaskInput{
+		SuiteID:        fixture.suite.ID,
+		Title:          "Requeue second task",
+		Type:           "reasoning",
+		Category:       "logic",
+		Difficulty:     "medium",
+		Prompt:         "Second prompt",
+		InputPayload:   map[string]any{"question": "3+3"},
+		ExpectedOutput: map[string]any{"answer": "6"},
+		VerifierType:   "exact_match",
+		VerifierConfig: map[string]any{"expected": "6"},
+		Weight:         1,
+		MinScale:       service.BenchmarkTaskScaleSmall,
+		Enabled:        true,
+	})
+	require.NoError(t, err)
+
+	runInput := fixture.createRunInput
+	runInput.Tasks = append(runInput.Tasks, service.BenchmarkRunTaskInput{
+		TaskID:                 secondTask.ID,
+		TaskOrder:              2,
+		Type:                   secondTask.Type,
+		Category:               stringValue(secondTask.Category),
+		Difficulty:             stringValue(secondTask.Difficulty),
+		WeightSnapshot:         secondTask.Weight,
+		PromptSnapshot:         secondTask.Prompt,
+		VerifierTypeSnapshot:   secondTask.VerifierType,
+		VerifierConfigSnapshot: secondTask.VerifierConfig,
+		TaskSnapshot: map[string]any{
+			"title":         secondTask.Title,
+			"prompt":        secondTask.Prompt,
+			"input_payload": secondTask.InputPayload,
+		},
+	})
+
+	run, err := fixture.repo.CreateRunWithSnapshots(fixture.ctx, runInput)
+	require.NoError(t, err)
+	fixture.runIDs = append(fixture.runIDs, run.ID)
+
+	claimed, err := fixture.repo.ClaimPendingResults(fixture.ctx, run.ID, 2)
+	require.NoError(t, err)
+	require.Len(t, claimed, 2)
+
+	scoredStatus := service.BenchmarkResultStatusScored
+	require.NoError(t, fixture.repo.UpdateResult(fixture.ctx, claimed[0].ID, service.BenchmarkResultUpdateInput{
+		Status: &scoredStatus,
+	}))
+
+	err = fixture.repo.RequeueClaimedResults(fixture.ctx, []int64{claimed[0].ID, claimed[1].ID})
+	require.NoError(t, err)
+
+	results, err := fixture.repo.ListRunResults(fixture.ctx, run.ID)
+	require.NoError(t, err)
+	require.Len(t, results, 2)
+
+	byID := make(map[int64]*dbent.BenchmarkResult, len(results))
+	for _, result := range results {
+		byID[result.ID] = result
+	}
+
+	require.Equal(t, service.BenchmarkResultStatusScored, byID[claimed[0].ID].Status)
+	require.Equal(t, service.BenchmarkResultStatusPending, byID[claimed[1].ID].Status)
 }
 
 func TestBenchmarkRepositoryClaimPendingResults(t *testing.T) {
