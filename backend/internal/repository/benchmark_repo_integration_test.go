@@ -35,6 +35,36 @@ type benchmarkFixture struct {
 	extraTargetIDs []int64
 }
 
+func cleanupBenchmarkFixture(ctx context.Context, client *dbent.Client, fixture *benchmarkFixture) {
+	for i := len(fixture.runIDs) - 1; i >= 0; i-- {
+		runID := fixture.runIDs[i]
+		_, _ = client.BenchmarkPublicSnapshot.Delete().Where(benchmarkpublicsnapshot.RunIDEQ(runID)).Exec(ctx)
+		_, _ = client.BenchmarkScoreSnapshot.Delete().Where(benchmarkscoresnapshot.RunIDEQ(runID)).Exec(ctx)
+		_, _ = client.BenchmarkResult.Delete().Where(benchmarkresult.RunIDEQ(runID)).Exec(ctx)
+		_, _ = client.BenchmarkRunTask.Delete().Where(benchmarkruntask.RunIDEQ(runID)).Exec(ctx)
+		_, _ = client.BenchmarkRunTarget.Delete().Where(benchmarkruntarget.RunIDEQ(runID)).Exec(ctx)
+		_, _ = client.BenchmarkRun.Delete().Where(benchmarkrun.IDEQ(runID)).Exec(ctx)
+	}
+
+	for i := len(fixture.extraTargetIDs) - 1; i >= 0; i-- {
+		targetID := fixture.extraTargetIDs[i]
+		_, _ = client.BenchmarkTarget.Delete().Where(benchmarktarget.IDEQ(targetID)).Exec(ctx)
+	}
+
+	if fixture.profile != nil {
+		_, _ = client.BenchmarkProfile.Delete().Where(benchmarkprofile.IDEQ(fixture.profile.ID)).Exec(ctx)
+	}
+	if fixture.task != nil {
+		_, _ = client.BenchmarkTask.Delete().Where(benchmarktask.IDEQ(fixture.task.ID)).Exec(ctx)
+	}
+	if fixture.target != nil {
+		_, _ = client.BenchmarkTarget.Delete().Where(benchmarktarget.IDEQ(fixture.target.ID)).Exec(ctx)
+	}
+	if fixture.suite != nil {
+		_, _ = client.BenchmarkSuite.Delete().Where(benchmarksuite.IDEQ(fixture.suite.ID)).Exec(ctx)
+	}
+}
+
 func newBenchmarkFixture(t *testing.T, prefix string) *benchmarkFixture {
 	t.Helper()
 	return newBenchmarkFixtureWith(t, context.Background(), testEntClient(t), prefix)
@@ -44,6 +74,15 @@ func newBenchmarkFixtureWith(t *testing.T, ctx context.Context, client *dbent.Cl
 	t.Helper()
 
 	repo := NewBenchmarkRepository(client)
+	fixture := &benchmarkFixture{
+		ctx:    ctx,
+		client: client,
+		repo:   repo,
+	}
+
+	t.Cleanup(func() {
+		cleanupBenchmarkFixture(ctx, client, fixture)
+	})
 
 	suite, err := repo.CreateSuite(ctx, service.BenchmarkSuiteInput{
 		Name:          uniqueTestValue(t, prefix+"-suite"),
@@ -54,6 +93,7 @@ func newBenchmarkFixtureWith(t *testing.T, ctx context.Context, client *dbent.Cl
 		Metadata:      map[string]any{"scope": prefix},
 	})
 	require.NoError(t, err)
+	fixture.suite = suite
 
 	target, err := repo.CreateTarget(ctx, service.BenchmarkTargetInput{
 		ModelName:           uniqueTestValue(t, prefix+"-model"),
@@ -69,6 +109,7 @@ func newBenchmarkFixtureWith(t *testing.T, ctx context.Context, client *dbent.Cl
 		Metadata:            map[string]any{"tier": "test"},
 	})
 	require.NoError(t, err)
+	fixture.target = target
 
 	task, err := repo.CreateTask(ctx, service.BenchmarkTaskInput{
 		SuiteID:        suite.ID,
@@ -89,6 +130,7 @@ func newBenchmarkFixtureWith(t *testing.T, ctx context.Context, client *dbent.Cl
 		Metadata:       map[string]any{"case": prefix},
 	})
 	require.NoError(t, err)
+	fixture.task = task
 
 	profile, err := repo.CreateProfile(ctx, service.BenchmarkProfileInput{
 		SuiteID:          suite.ID,
@@ -106,6 +148,7 @@ func newBenchmarkFixtureWith(t *testing.T, ctx context.Context, client *dbent.Cl
 		Enabled:          true,
 	})
 	require.NoError(t, err)
+	fixture.profile = profile
 
 	createRunInput := service.BenchmarkCreateRunInput{
 		SuiteID:       suite.ID,
@@ -151,38 +194,8 @@ func newBenchmarkFixtureWith(t *testing.T, ctx context.Context, client *dbent.Cl
 
 	run, err := repo.CreateRunWithSnapshots(ctx, createRunInput)
 	require.NoError(t, err)
-
-	fixture := &benchmarkFixture{
-		ctx:            ctx,
-		client:         client,
-		repo:           repo,
-		suite:          suite,
-		target:         target,
-		task:           task,
-		profile:        profile,
-		createRunInput: createRunInput,
-		runIDs:         []int64{run.ID},
-	}
-
-	t.Cleanup(func() {
-		for i := len(fixture.runIDs) - 1; i >= 0; i-- {
-			runID := fixture.runIDs[i]
-			_, _ = client.BenchmarkPublicSnapshot.Delete().Where(benchmarkpublicsnapshot.RunIDEQ(runID)).Exec(ctx)
-			_, _ = client.BenchmarkScoreSnapshot.Delete().Where(benchmarkscoresnapshot.RunIDEQ(runID)).Exec(ctx)
-			_, _ = client.BenchmarkResult.Delete().Where(benchmarkresult.RunIDEQ(runID)).Exec(ctx)
-			_, _ = client.BenchmarkRunTask.Delete().Where(benchmarkruntask.RunIDEQ(runID)).Exec(ctx)
-			_, _ = client.BenchmarkRunTarget.Delete().Where(benchmarkruntarget.RunIDEQ(runID)).Exec(ctx)
-			_, _ = client.BenchmarkRun.Delete().Where(benchmarkrun.IDEQ(runID)).Exec(ctx)
-		}
-		for i := len(fixture.extraTargetIDs) - 1; i >= 0; i-- {
-			targetID := fixture.extraTargetIDs[i]
-			_, _ = client.BenchmarkTarget.Delete().Where(benchmarktarget.IDEQ(targetID)).Exec(ctx)
-		}
-		_, _ = client.BenchmarkProfile.Delete().Where(benchmarkprofile.IDEQ(profile.ID)).Exec(ctx)
-		_, _ = client.BenchmarkTask.Delete().Where(benchmarktask.IDEQ(task.ID)).Exec(ctx)
-		_, _ = client.BenchmarkTarget.Delete().Where(benchmarktarget.IDEQ(target.ID)).Exec(ctx)
-		_, _ = client.BenchmarkSuite.Delete().Where(benchmarksuite.IDEQ(suite.ID)).Exec(ctx)
-	})
+	fixture.createRunInput = createRunInput
+	fixture.runIDs = []int64{run.ID}
 
 	return fixture
 }
@@ -514,6 +527,9 @@ func TestBenchmarkRepositorySaveScoreSnapshotsRollsBackOnError(t *testing.T) {
 		originalSnapshotsByRunTarget[snapshot.RunTargetID] = snapshot
 	}
 
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(fixture.ctx, tx)
+
 	partialReplacement := []service.BenchmarkScoreSnapshotInput{
 		{
 			RunTargetID:            primaryRunTarget.ID,
@@ -547,13 +563,13 @@ func TestBenchmarkRepositorySaveScoreSnapshotsRollsBackOnError(t *testing.T) {
 		},
 	}
 
-	err = fixture.repo.SaveScoreSnapshots(fixture.ctx, batchRun.ID, partialReplacement)
+	err = fixture.repo.SaveScoreSnapshots(txCtx, batchRun.ID, partialReplacement)
 	require.Error(t, err)
 
-	afterSnapshots, err := fixture.client.BenchmarkScoreSnapshot.Query().
+	afterSnapshots, err := tx.Client().BenchmarkScoreSnapshot.Query().
 		Where(benchmarkscoresnapshot.RunIDEQ(batchRun.ID)).
 		Order(dbent.Asc(benchmarkscoresnapshot.FieldRunTargetID)).
-		All(fixture.ctx)
+		All(txCtx)
 	require.NoError(t, err)
 	require.Len(t, afterSnapshots, 2)
 
@@ -573,13 +589,109 @@ func TestBenchmarkRepositorySaveScoreSnapshotsRollsBackOnError(t *testing.T) {
 	require.InDelta(t, 91.1, afterByRunTarget[primaryRunTarget.ID].OverallScore, 0.000001)
 	require.InDelta(t, 82.2, afterByRunTarget[secondaryRunTarget.ID].OverallScore, 0.000001)
 
-	_, err = fixture.client.BenchmarkScoreSnapshot.Query().
+	_, err = tx.Client().BenchmarkScoreSnapshot.Query().
 		Where(
 			benchmarkscoresnapshot.RunIDEQ(batchRun.ID),
 			benchmarkscoresnapshot.OverallScoreEQ(99.9),
 		).
-		Only(fixture.ctx)
+		Only(txCtx)
 	require.Error(t, err)
+}
+
+func TestBenchmarkRepositoryCreateRunWithSnapshotsRollsBackOnDuplicateRunTaskError(t *testing.T) {
+	fixture := newBenchmarkFixture(t, "run-rb")
+
+	beforeRuns, err := fixture.client.BenchmarkRun.Query().
+		Where(
+			benchmarkrun.SuiteIDEQ(fixture.suite.ID),
+			benchmarkrun.ProfileIDEQ(fixture.profile.ID),
+		).
+		Count(fixture.ctx)
+	require.NoError(t, err)
+
+	beforeRunTargets, err := fixture.client.BenchmarkRunTarget.Query().
+		QueryRun().
+		Where(
+			benchmarkrun.SuiteIDEQ(fixture.suite.ID),
+			benchmarkrun.ProfileIDEQ(fixture.profile.ID),
+		).
+		Count(fixture.ctx)
+	require.NoError(t, err)
+
+	beforeRunTasks, err := fixture.client.BenchmarkRunTask.Query().
+		QueryRun().
+		Where(
+			benchmarkrun.SuiteIDEQ(fixture.suite.ID),
+			benchmarkrun.ProfileIDEQ(fixture.profile.ID),
+		).
+		Count(fixture.ctx)
+	require.NoError(t, err)
+
+	beforeResults, err := fixture.client.BenchmarkResult.Query().
+		QueryRun().
+		Where(
+			benchmarkrun.SuiteIDEQ(fixture.suite.ID),
+			benchmarkrun.ProfileIDEQ(fixture.profile.ID),
+		).
+		Count(fixture.ctx)
+	require.NoError(t, err)
+
+	input := fixture.createRunInput
+	input.Tasks = append(input.Tasks, service.BenchmarkRunTaskInput{
+		TaskID:                 fixture.createRunInput.Tasks[0].TaskID,
+		TaskOrder:              fixture.createRunInput.Tasks[0].TaskOrder + 1,
+		Type:                   fixture.createRunInput.Tasks[0].Type,
+		Category:               fixture.createRunInput.Tasks[0].Category,
+		Difficulty:             fixture.createRunInput.Tasks[0].Difficulty,
+		WeightSnapshot:         fixture.createRunInput.Tasks[0].WeightSnapshot,
+		PromptSnapshot:         fixture.createRunInput.Tasks[0].PromptSnapshot,
+		VerifierTypeSnapshot:   fixture.createRunInput.Tasks[0].VerifierTypeSnapshot,
+		VerifierConfigSnapshot: fixture.createRunInput.Tasks[0].VerifierConfigSnapshot,
+		TaskSnapshot:           fixture.createRunInput.Tasks[0].TaskSnapshot,
+	})
+
+	run, err := fixture.repo.CreateRunWithSnapshots(fixture.ctx, input)
+	require.Error(t, err)
+	require.Nil(t, run)
+
+	afterRuns, err := fixture.client.BenchmarkRun.Query().
+		Where(
+			benchmarkrun.SuiteIDEQ(fixture.suite.ID),
+			benchmarkrun.ProfileIDEQ(fixture.profile.ID),
+		).
+		Count(fixture.ctx)
+	require.NoError(t, err)
+	require.Equal(t, beforeRuns, afterRuns)
+
+	afterRunTargets, err := fixture.client.BenchmarkRunTarget.Query().
+		QueryRun().
+		Where(
+			benchmarkrun.SuiteIDEQ(fixture.suite.ID),
+			benchmarkrun.ProfileIDEQ(fixture.profile.ID),
+		).
+		Count(fixture.ctx)
+	require.NoError(t, err)
+	require.Equal(t, beforeRunTargets, afterRunTargets)
+
+	afterRunTasks, err := fixture.client.BenchmarkRunTask.Query().
+		QueryRun().
+		Where(
+			benchmarkrun.SuiteIDEQ(fixture.suite.ID),
+			benchmarkrun.ProfileIDEQ(fixture.profile.ID),
+		).
+		Count(fixture.ctx)
+	require.NoError(t, err)
+	require.Equal(t, beforeRunTasks, afterRunTasks)
+
+	afterResults, err := fixture.client.BenchmarkResult.Query().
+		QueryRun().
+		Where(
+			benchmarkrun.SuiteIDEQ(fixture.suite.ID),
+			benchmarkrun.ProfileIDEQ(fixture.profile.ID),
+		).
+		Count(fixture.ctx)
+	require.NoError(t, err)
+	require.Equal(t, beforeResults, afterResults)
 }
 
 func TestBenchmarkRepositoryGetLatestPublicSnapshotOrdersByPublishedAtThenID(t *testing.T) {
@@ -654,6 +766,9 @@ func TestBenchmarkRepositoryGetLatestPublicSnapshotEmpty(t *testing.T) {
 	tx := testEntTx(t)
 	txCtx := dbent.NewTxContext(ctx, tx)
 	repo := NewBenchmarkRepository(tx.Client())
+
+	_, err := tx.Client().BenchmarkPublicSnapshot.Delete().Exec(txCtx)
+	require.NoError(t, err)
 
 	snapshot, err := repo.GetLatestPublicSnapshot(txCtx)
 	require.NoError(t, err)

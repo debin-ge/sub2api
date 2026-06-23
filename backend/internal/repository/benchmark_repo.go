@@ -2,12 +2,14 @@ package repository
 
 import (
 	"context"
+	"fmt"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkprofile"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkpublicsnapshot"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkresult"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkrun"
+	"github.com/Wei-Shaw/sub2api/ent/benchmarkruntarget"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkscoresnapshot"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarksuite"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarktarget"
@@ -470,6 +472,36 @@ func (r *benchmarkRepository) createRunWithSnapshots(ctx context.Context, client
 }
 
 func (r *benchmarkRepository) saveScoreSnapshots(ctx context.Context, client *dbent.Client, runID int64, snapshots []service.BenchmarkScoreSnapshotInput) error {
+	if len(snapshots) > 0 {
+		uniqueRunTargetIDs := make(map[int64]struct{}, len(snapshots))
+		for _, snapshot := range snapshots {
+			uniqueRunTargetIDs[snapshot.RunTargetID] = struct{}{}
+		}
+
+		runTargetIDs := make([]int64, 0, len(uniqueRunTargetIDs))
+		for runTargetID := range uniqueRunTargetIDs {
+			runTargetIDs = append(runTargetIDs, runTargetID)
+		}
+
+		matchedCount, err := client.BenchmarkRunTarget.Query().
+			Where(
+				benchmarkruntarget.RunIDEQ(runID),
+				benchmarkruntarget.IDIn(runTargetIDs...),
+			).
+			Count(ctx)
+		if err != nil {
+			return err
+		}
+		if matchedCount != len(uniqueRunTargetIDs) {
+			return fmt.Errorf(
+				"benchmark run %d has %d/%d owned score snapshot targets",
+				runID,
+				matchedCount,
+				len(uniqueRunTargetIDs),
+			)
+		}
+	}
+
 	if _, err := client.BenchmarkScoreSnapshot.Delete().
 		Where(benchmarkscoresnapshot.RunIDEQ(runID)).
 		Exec(ctx); err != nil {
