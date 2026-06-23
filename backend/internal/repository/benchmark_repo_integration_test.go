@@ -357,35 +357,7 @@ func TestBenchmarkRepositoryUpdateResultClearsNullableFields(t *testing.T) {
 	require.NotNil(t, updated.FinishedAt)
 	require.True(t, finishedAt.Equal(*updated.FinishedAt))
 
-	err = repo.UpdateResult(txCtx, result.ID, service.BenchmarkResultUpdateInput{
-		ClearRequestID:       true,
-		ClearScore:           true,
-		ClearMaxScore:        true,
-		ClearNormalizedScore: true,
-		ClearEvaluatorType:   true,
-		ClearLatencyMS:       true,
-		ClearErrorCode:       true,
-		ClearErrorMessage:    true,
-		ClearStartedAt:       true,
-		ClearFinishedAt:      true,
-	})
-	require.NoError(t, err)
-
-	cleared, err := client.BenchmarkResult.Query().
-		Where(benchmarkresult.IDEQ(result.ID)).
-		Only(txCtx)
-	require.NoError(t, err)
-	require.Nil(t, cleared.RequestID)
-	require.Nil(t, cleared.Score)
-	require.Nil(t, cleared.MaxScore)
-	require.Nil(t, cleared.NormalizedScore)
-	require.Nil(t, cleared.EvaluatorType)
-	require.Nil(t, cleared.LatencyMs)
-	require.Nil(t, cleared.ErrorCode)
-	require.Nil(t, cleared.ErrorMessage)
-	require.Nil(t, cleared.StartedAt)
-	require.Nil(t, cleared.FinishedAt)
-
+	// Case 2: while the row is populated, a conflicting update must still clear.
 	sameCallRequestID := "req-same-call"
 	sameCallScore := 77.7
 	sameCallMaxScore := 88.8
@@ -435,6 +407,36 @@ func TestBenchmarkRepositoryUpdateResultClearsNullableFields(t *testing.T) {
 	require.Nil(t, sameCallCleared.ErrorMessage)
 	require.Nil(t, sameCallCleared.StartedAt)
 	require.Nil(t, sameCallCleared.FinishedAt)
+
+	// Case 3: a pure clear call still clears already-nullable fields.
+	err = repo.UpdateResult(txCtx, result.ID, service.BenchmarkResultUpdateInput{
+		ClearRequestID:       true,
+		ClearScore:           true,
+		ClearMaxScore:        true,
+		ClearNormalizedScore: true,
+		ClearEvaluatorType:   true,
+		ClearLatencyMS:       true,
+		ClearErrorCode:       true,
+		ClearErrorMessage:    true,
+		ClearStartedAt:       true,
+		ClearFinishedAt:      true,
+	})
+	require.NoError(t, err)
+
+	cleared, err := client.BenchmarkResult.Query().
+		Where(benchmarkresult.IDEQ(result.ID)).
+		Only(txCtx)
+	require.NoError(t, err)
+	require.Nil(t, cleared.RequestID)
+	require.Nil(t, cleared.Score)
+	require.Nil(t, cleared.MaxScore)
+	require.Nil(t, cleared.NormalizedScore)
+	require.Nil(t, cleared.EvaluatorType)
+	require.Nil(t, cleared.LatencyMs)
+	require.Nil(t, cleared.ErrorCode)
+	require.Nil(t, cleared.ErrorMessage)
+	require.Nil(t, cleared.StartedAt)
+	require.Nil(t, cleared.FinishedAt)
 }
 
 func ptrInt64(v int64) *int64 {
