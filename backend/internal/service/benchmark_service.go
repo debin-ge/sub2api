@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/Wei-Shaw/sub2api/ent"
 )
@@ -24,7 +25,7 @@ func (s *BenchmarkService) ListSuites(ctx context.Context, input BenchmarkListIn
 }
 
 func (s *BenchmarkService) CreateTarget(ctx context.Context, input BenchmarkTargetInput) (*ent.BenchmarkTarget, error) {
-	if input.ModelName == "" {
+	if strings.TrimSpace(input.ModelName) == "" {
 		return nil, errors.New("model name is required")
 	}
 	if input.ChannelID <= 0 {
@@ -38,10 +39,10 @@ func (s *BenchmarkService) ListTargets(ctx context.Context, input BenchmarkListI
 }
 
 func (s *BenchmarkService) CreateTask(ctx context.Context, input BenchmarkTaskInput) (*ent.BenchmarkTask, error) {
-	if input.Type == "" {
+	if strings.TrimSpace(input.Type) == "" {
 		return nil, errors.New("task type is required")
 	}
-	if !isSupportedBenchmarkTaskScale(input.MinScale) {
+	if !isValidBenchmarkTaskScale(input.MinScale) {
 		return nil, errors.New("unsupported task scale")
 	}
 	return s.repo.CreateTask(ctx, input)
@@ -55,10 +56,20 @@ func (s *BenchmarkService) CreateProfile(ctx context.Context, input BenchmarkPro
 	if len(input.TargetIDs) == 0 {
 		return nil, errors.New("at least one target is required")
 	}
+	for _, targetID := range input.TargetIDs {
+		if targetID <= 0 {
+			return nil, errors.New("target id must be positive")
+		}
+	}
 	if len(input.TaskTypes) == 0 {
 		return nil, errors.New("at least one task type is required")
 	}
-	if !isSupportedBenchmarkTaskScale(input.TaskScale) {
+	for _, taskType := range input.TaskTypes {
+		if strings.TrimSpace(taskType) == "" {
+			return nil, errors.New("task type is required")
+		}
+	}
+	if !isValidBenchmarkTaskScale(input.TaskScale) {
 		return nil, errors.New("unsupported task scale")
 	}
 	return s.repo.CreateProfile(ctx, input)
@@ -68,7 +79,7 @@ func (s *BenchmarkService) GetProfile(ctx context.Context, id int64) (*ent.Bench
 	return s.repo.GetProfile(ctx, id)
 }
 
-func isSupportedBenchmarkTaskScale(scale string) bool {
+func isValidBenchmarkTaskScale(scale string) bool {
 	switch scale {
 	case "", BenchmarkTaskScaleSmall, BenchmarkTaskScaleMedium, BenchmarkTaskScaleFull, BenchmarkTaskScaleCustom:
 		return true

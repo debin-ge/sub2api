@@ -10,10 +10,7 @@ func SelectBenchmarkTasks(tasks []BenchmarkTaskCandidate, cfg BenchmarkSelection
 	if cfg.TaskScale == "" {
 		cfg.TaskScale = BenchmarkTaskScaleMedium
 	}
-	if cfg.TaskScale != BenchmarkTaskScaleSmall &&
-		cfg.TaskScale != BenchmarkTaskScaleMedium &&
-		cfg.TaskScale != BenchmarkTaskScaleFull &&
-		cfg.TaskScale != BenchmarkTaskScaleCustom {
+	if !isValidBenchmarkTaskScale(cfg.TaskScale) {
 		return nil, errors.New("invalid benchmark task scale")
 	}
 

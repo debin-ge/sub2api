@@ -2,6 +2,33 @@ package service
 
 import "testing"
 
+func TestIsValidBenchmarkTaskScale(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name  string
+		scale string
+		want  bool
+	}{
+		{name: "empty", scale: "", want: true},
+		{name: "small", scale: BenchmarkTaskScaleSmall, want: true},
+		{name: "medium", scale: BenchmarkTaskScaleMedium, want: true},
+		{name: "full", scale: BenchmarkTaskScaleFull, want: true},
+		{name: "custom", scale: BenchmarkTaskScaleCustom, want: true},
+		{name: "invalid", scale: "giant", want: false},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := isValidBenchmarkTaskScale(tc.scale); got != tc.want {
+				t.Fatalf("isValidBenchmarkTaskScale(%q) = %v, want %v", tc.scale, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestSelectBenchmarkTasksFiltersByTypeDifficultyAndTags(t *testing.T) {
 	t.Parallel()
 
@@ -55,6 +82,15 @@ func TestSelectBenchmarkTasksCustomLimitIsStable(t *testing.T) {
 		if first[i].ID != second[i].ID {
 			t.Fatalf("selection not stable: %#v vs %#v", first, second)
 		}
+	}
+}
+
+func TestSelectBenchmarkTasksRejectsInvalidTaskScale(t *testing.T) {
+	t.Parallel()
+
+	_, err := SelectBenchmarkTasks(nil, BenchmarkSelectionConfig{TaskScale: "giant"})
+	if err == nil || err.Error() != "invalid benchmark task scale" {
+		t.Fatalf("SelectBenchmarkTasks error = %v, want invalid benchmark task scale", err)
 	}
 }
 
