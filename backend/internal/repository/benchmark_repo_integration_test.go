@@ -32,6 +32,7 @@ type benchmarkFixture struct {
 	profile        *dbent.BenchmarkProfile
 	createRunInput service.BenchmarkCreateRunInput
 	runIDs         []int64
+	extraTargetIDs []int64
 }
 
 func newBenchmarkFixture(t *testing.T, prefix string) *benchmarkFixture {
@@ -172,6 +173,10 @@ func newBenchmarkFixtureWith(t *testing.T, ctx context.Context, client *dbent.Cl
 			_, _ = client.BenchmarkRunTask.Delete().Where(benchmarkruntask.RunIDEQ(runID)).Exec(ctx)
 			_, _ = client.BenchmarkRunTarget.Delete().Where(benchmarkruntarget.RunIDEQ(runID)).Exec(ctx)
 			_, _ = client.BenchmarkRun.Delete().Where(benchmarkrun.IDEQ(runID)).Exec(ctx)
+		}
+		for i := len(fixture.extraTargetIDs) - 1; i >= 0; i-- {
+			targetID := fixture.extraTargetIDs[i]
+			_, _ = client.BenchmarkTarget.Delete().Where(benchmarktarget.IDEQ(targetID)).Exec(ctx)
 		}
 		_, _ = client.BenchmarkProfile.Delete().Where(benchmarkprofile.IDEQ(profile.ID)).Exec(ctx)
 		_, _ = client.BenchmarkTask.Delete().Where(benchmarktask.IDEQ(task.ID)).Exec(ctx)
@@ -429,9 +434,7 @@ func TestBenchmarkRepositorySaveScoreSnapshotsRollsBackOnError(t *testing.T) {
 		Metadata:            map[string]any{"tier": "secondary"},
 	})
 	require.NoError(t, err)
-	t.Cleanup(func() {
-		_, _ = fixture.client.BenchmarkTarget.Delete().Where(benchmarktarget.IDEQ(secondaryTarget.ID)).Exec(fixture.ctx)
-	})
+	fixture.extraTargetIDs = append(fixture.extraTargetIDs, secondaryTarget.ID)
 
 	batchRunInput := fixture.createRunInput
 	batchRunInput.Targets = []service.BenchmarkRunTargetInput{
@@ -835,6 +838,36 @@ func TestBenchmarkRepositoryUpdateResultClearsNullableFields(t *testing.T) {
 	require.Nil(t, sameCallCleared.ErrorMessage)
 	require.Nil(t, sameCallCleared.StartedAt)
 	require.Nil(t, sameCallCleared.FinishedAt)
+
+	// Case 3: a pure clear call should remain a no-op on already-null fields.
+	err = repo.UpdateResult(txCtx, result.ID, service.BenchmarkResultUpdateInput{
+		ClearRequestID:       true,
+		ClearScore:           true,
+		ClearMaxScore:        true,
+		ClearNormalizedScore: true,
+		ClearEvaluatorType:   true,
+		ClearLatencyMS:       true,
+		ClearErrorCode:       true,
+		ClearErrorMessage:    true,
+		ClearStartedAt:       true,
+		ClearFinishedAt:      true,
+	})
+	require.NoError(t, err)
+
+	clearedAgain, err := client.BenchmarkResult.Query().
+		Where(benchmarkresult.IDEQ(result.ID)).
+		Only(txCtx)
+	require.NoError(t, err)
+	require.Nil(t, clearedAgain.RequestID)
+	require.Nil(t, clearedAgain.Score)
+	require.Nil(t, clearedAgain.MaxScore)
+	require.Nil(t, clearedAgain.NormalizedScore)
+	require.Nil(t, clearedAgain.EvaluatorType)
+	require.Nil(t, clearedAgain.LatencyMs)
+	require.Nil(t, clearedAgain.ErrorCode)
+	require.Nil(t, clearedAgain.ErrorMessage)
+	require.Nil(t, clearedAgain.StartedAt)
+	require.Nil(t, clearedAgain.FinishedAt)
 }
 
 func ptrInt64(v int64) *int64 {
