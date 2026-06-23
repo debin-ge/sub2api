@@ -373,6 +373,62 @@ func TestBenchmarkRunnerRequeuesCurrentAndRemainingClaimedResultsOnInfrastructur
 	require.Empty(t, repo.runStatusCalls)
 }
 
+func TestBenchmarkRunnerRequeuesWithUsableContextAfterCancellation(t *testing.T) {
+	t.Parallel()
+
+	type contextKey string
+
+	repo := newBenchmarkRunnerRepoStub(t)
+	firstCtx := benchmarkRunnerTestResultContextWithIDs(101, 201, 401, 601)
+	secondCtx := benchmarkRunnerTestResultContextWithIDs(101, 202, 402, 602)
+	contextByResultID := map[int64]*BenchmarkRunResultContext{
+		firstCtx.Result.ID:  firstCtx,
+		secondCtx.Result.ID: secondCtx,
+	}
+
+	baseCtx := context.WithValue(context.Background(), contextKey("trace_id"), "trace-123")
+	runCtx, cancel := context.WithTimeout(baseCtx, time.Minute)
+	defer cancel()
+
+	repo.claimPendingResultsFn = func(ctx context.Context, runID int64, limit int) ([]*ent.BenchmarkResult, error) {
+		return []*ent.BenchmarkResult{firstCtx.Result, secondCtx.Result}, nil
+	}
+	repo.getRunResultContextFn = func(ctx context.Context, resultID int64) (*BenchmarkRunResultContext, error) {
+		if resultID == secondCtx.Result.ID {
+			cancel()
+			return nil, context.Canceled
+		}
+		return contextByResultID[resultID], nil
+	}
+	repo.requeueClaimedResultsFn = func(ctx context.Context, resultIDs []int64) error {
+		if err := ctx.Err(); err != nil {
+			return errors.New("requeue received canceled ctx")
+		}
+		if _, ok := ctx.Deadline(); ok {
+			return errors.New("requeue received deadline")
+		}
+		if got := ctx.Value(contextKey("trace_id")); got != "trace-123" {
+			return errors.New("requeue lost context values")
+		}
+		return nil
+	}
+
+	client := &benchmarkRunnerClientStub{
+		executeFn: func(ctx context.Context, req BenchmarkGatewayRequest) (*BenchmarkGatewayResponse, error) {
+			return &BenchmarkGatewayResponse{
+				RequestID:   "req-success",
+				Content:     "Paris",
+				RawResponse: map[string]any{"answer": "Paris"},
+			}, nil
+		},
+	}
+
+	err := NewBenchmarkRunner(repo, client).RunOnce(runCtx, firstCtx.Run.ID)
+	require.EqualError(t, err, context.Canceled.Error())
+	require.Len(t, repo.requeueCalls, 1)
+	require.Equal(t, []int64{secondCtx.Result.ID}, repo.requeueCalls[0])
+}
+
 func TestBenchmarkRunnerMarksRateLimitedInvalid(t *testing.T) {
 	t.Parallel()
 

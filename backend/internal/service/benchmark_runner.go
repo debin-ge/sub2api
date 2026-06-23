@@ -63,7 +63,7 @@ func (r *BenchmarkRunner) requeueClaimedResults(ctx context.Context, claimed []*
 	if len(resultIDs) == 0 {
 		return runErr
 	}
-	if err := r.repo.RequeueClaimedResults(ctx, resultIDs); err != nil {
+	if err := r.repo.RequeueClaimedResults(benchmarkRunnerCleanupContext(ctx), resultIDs); err != nil {
 		return errors.Join(runErr, fmt.Errorf("requeue claimed results: %w", err))
 	}
 	return runErr
@@ -293,6 +293,13 @@ func benchmarkRunnerResponseUpdateInput(resp *BenchmarkGatewayResponse, input Be
 	input.TotalTokens = benchmarkRunnerIntPtr(resp.TotalTokens)
 	input.EstimatedCost = benchmarkRunnerFloat64Ptr(resp.EstimatedCost)
 	return input
+}
+
+func benchmarkRunnerCleanupContext(ctx context.Context) context.Context {
+	if ctx == nil {
+		return context.Background()
+	}
+	return context.WithoutCancel(ctx)
 }
 
 func benchmarkRunnerSetEvaluatorOutput(input *BenchmarkResultUpdateInput, output map[string]any) {
