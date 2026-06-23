@@ -29,6 +29,8 @@ type benchmarkServiceRepoStub struct {
 	getRunFn                   func(ctx context.Context, id int64) (*ent.BenchmarkRun, error)
 	listRunTargetsFn           func(ctx context.Context, runID int64) ([]*ent.BenchmarkRunTarget, error)
 	listRunTasksFn             func(ctx context.Context, runID int64) ([]*ent.BenchmarkRunTask, error)
+	listRunScoreInputsFn       func(ctx context.Context, runID int64) ([]BenchmarkRunScoreInput, error)
+	listScoreSnapshotsFn       func(ctx context.Context, runID int64) ([]*ent.BenchmarkScoreSnapshot, error)
 }
 
 func newBenchmarkServiceRepoStub(t *testing.T) *benchmarkServiceRepoStub {
@@ -166,6 +168,22 @@ func (s *benchmarkServiceRepoStub) ListRunTasks(ctx context.Context, runID int64
 		return s.listRunTasksFn(ctx, runID)
 	}
 	s.t.Fatalf("unexpected ListRunTasks call")
+	return nil, nil
+}
+
+func (s *benchmarkServiceRepoStub) ListRunScoreInputs(ctx context.Context, runID int64) ([]BenchmarkRunScoreInput, error) {
+	if s.listRunScoreInputsFn != nil {
+		return s.listRunScoreInputsFn(ctx, runID)
+	}
+	s.t.Fatalf("unexpected ListRunScoreInputs call")
+	return nil, nil
+}
+
+func (s *benchmarkServiceRepoStub) ListScoreSnapshots(ctx context.Context, runID int64) ([]*ent.BenchmarkScoreSnapshot, error) {
+	if s.listScoreSnapshotsFn != nil {
+		return s.listScoreSnapshotsFn(ctx, runID)
+	}
+	s.t.Fatalf("unexpected ListScoreSnapshots call")
 	return nil, nil
 }
 

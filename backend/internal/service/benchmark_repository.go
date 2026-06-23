@@ -26,6 +26,8 @@ type BenchmarkRepository interface {
 	ListRunTargets(ctx context.Context, runID int64) ([]*ent.BenchmarkRunTarget, error)
 	ListRunTasks(ctx context.Context, runID int64) ([]*ent.BenchmarkRunTask, error)
 	ListRunResults(ctx context.Context, runID int64) ([]*ent.BenchmarkResult, error)
+	ListRunScoreInputs(ctx context.Context, runID int64) ([]BenchmarkRunScoreInput, error)
+	ListScoreSnapshots(ctx context.Context, runID int64) ([]*ent.BenchmarkScoreSnapshot, error)
 	ClaimPendingResults(ctx context.Context, runID int64, limit int) ([]*ent.BenchmarkResult, error)
 	RequeueClaimedResults(ctx context.Context, resultIDs []int64) error
 	UpdateRunStatus(ctx context.Context, runID int64, status string, errorMessage *string) error
@@ -169,6 +171,12 @@ type BenchmarkRunResultContext struct {
 	Run    *ent.BenchmarkRun
 	Target *ent.BenchmarkRunTarget
 	Task   *ent.BenchmarkRunTask
+}
+
+type BenchmarkRunScoreInput struct {
+	RunTarget *ent.BenchmarkRunTarget
+	RunTask   *ent.BenchmarkRunTask
+	Result    *ent.BenchmarkResult
 }
 
 // BenchmarkResultUpdateInput uses three-state nullable semantics:

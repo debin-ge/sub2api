@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkprofile"
@@ -323,6 +324,71 @@ func (r *benchmarkRepository) ListRunResults(ctx context.Context, runID int64) (
 	return clientFromContext(ctx, r.client).BenchmarkResult.Query().
 		Where(benchmarkresult.RunIDEQ(runID)).
 		Order(dbent.Asc(benchmarkresult.FieldID)).
+		All(ctx)
+}
+
+func (r *benchmarkRepository) ListRunScoreInputs(ctx context.Context, runID int64) ([]service.BenchmarkRunScoreInput, error) {
+	rows, err := clientFromContext(ctx, r.client).BenchmarkResult.Query().
+		Where(benchmarkresult.RunIDEQ(runID)).
+		WithRunTarget().
+		WithRunTask().
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	type runScoreItem struct {
+		target *dbent.BenchmarkRunTarget
+		task   *dbent.BenchmarkRunTask
+		result *dbent.BenchmarkResult
+	}
+
+	items := make([]runScoreItem, 0, len(rows))
+	for _, result := range rows {
+		target, err := result.Edges.RunTargetOrErr()
+		if err != nil {
+			return nil, err
+		}
+		task, err := result.Edges.RunTaskOrErr()
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, runScoreItem{
+			target: target,
+			task:   task,
+			result: result,
+		})
+	}
+
+	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].target.TargetOrder != items[j].target.TargetOrder {
+			return items[i].target.TargetOrder < items[j].target.TargetOrder
+		}
+		if items[i].task.TaskOrder != items[j].task.TaskOrder {
+			return items[i].task.TaskOrder < items[j].task.TaskOrder
+		}
+		return items[i].result.ID < items[j].result.ID
+	})
+
+	scoreInputs := make([]service.BenchmarkRunScoreInput, 0, len(items))
+	for _, item := range items {
+		scoreInputs = append(scoreInputs, service.BenchmarkRunScoreInput{
+			RunTarget: item.target,
+			RunTask:   item.task,
+			Result:    item.result,
+		})
+	}
+	return scoreInputs, nil
+}
+
+func (r *benchmarkRepository) ListScoreSnapshots(ctx context.Context, runID int64) ([]*dbent.BenchmarkScoreSnapshot, error) {
+	return clientFromContext(ctx, r.client).BenchmarkScoreSnapshot.Query().
+		Where(benchmarkscoresnapshot.RunIDEQ(runID)).
+		Order(
+			dbent.Desc(benchmarkscoresnapshot.FieldOverallScore),
+			dbent.Desc(benchmarkscoresnapshot.FieldCoverageRate),
+			dbent.Asc(benchmarkscoresnapshot.FieldRunTargetID),
+		).
 		All(ctx)
 }
 

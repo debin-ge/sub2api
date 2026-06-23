@@ -565,6 +565,317 @@ func TestBenchmarkRepositoryReadRunSnapshots(t *testing.T) {
 	require.Equal(t, runTasks[0].ID, results[0].RunTaskID)
 }
 
+func TestBenchmarkRepositoryListRunScoreInputs(t *testing.T) {
+	fixture := newBenchmarkFixture(t, "run-score-inputs")
+
+	secondaryTarget, err := fixture.repo.CreateTarget(fixture.ctx, service.BenchmarkTargetInput{
+		ModelName:           uniqueTestValue(t, "run-score-inputs-secondary-model"),
+		ChannelID:           102,
+		DisplayName:         "Secondary Radar Model",
+		ProviderSnapshot:    "openai",
+		ChannelNameSnapshot: "secondary-openai",
+		SupportedTaskTypes:  []string{"reasoning", "coding"},
+		MaxConcurrency:      1,
+		Enabled:             true,
+		PublicVisible:       true,
+		SortOrder:           2,
+		Metadata:            map[string]any{"tier": "secondary"},
+	})
+	require.NoError(t, err)
+	fixture.extraTargetIDs = append(fixture.extraTargetIDs, secondaryTarget.ID)
+
+	secondaryTask, err := fixture.repo.CreateTask(fixture.ctx, service.BenchmarkTaskInput{
+		SuiteID:        fixture.suite.ID,
+		Title:          "Coding snapshot task",
+		Type:           "coding",
+		Category:       "code",
+		Difficulty:     "medium",
+		Tags:           []string{"snapshot", "code"},
+		Prompt:         "Original coding prompt",
+		InputPayload:   map[string]any{"language": "go"},
+		ExpectedOutput: map[string]any{"passes": true},
+		VerifierType:   "json_contains",
+		VerifierConfig: map[string]any{"field": "passes"},
+		Weight:         2,
+		MinScale:       service.BenchmarkTaskScaleMedium,
+		PublicPrompt:   false,
+		Enabled:        true,
+		Metadata:       map[string]any{"case": "secondary"},
+	})
+	require.NoError(t, err)
+
+	runInput := fixture.createRunInput
+	runInput.Targets = []service.BenchmarkRunTargetInput{
+		{
+			TargetID:            fixture.target.ID,
+			ModelName:           fixture.target.ModelName,
+			ChannelID:           fixture.target.ChannelID,
+			DisplayNameSnapshot: "Primary Model Snapshot",
+			ChannelNameSnapshot: "primary-openai",
+			ProviderSnapshot:    "openai",
+			TargetOrder:         1,
+			ConfigSnapshot:      map[string]any{"max_concurrency": 2},
+		},
+		{
+			TargetID:            secondaryTarget.ID,
+			ModelName:           secondaryTarget.ModelName,
+			ChannelID:           secondaryTarget.ChannelID,
+			DisplayNameSnapshot: "Secondary Model Snapshot",
+			ChannelNameSnapshot: "secondary-openai",
+			ProviderSnapshot:    "openai",
+			TargetOrder:         2,
+			ConfigSnapshot:      map[string]any{"max_concurrency": 1},
+		},
+	}
+	runInput.Tasks = []service.BenchmarkRunTaskInput{
+		{
+			TaskID:                 fixture.task.ID,
+			TaskOrder:              1,
+			Type:                   fixture.task.Type,
+			Category:               stringValue(fixture.task.Category),
+			Difficulty:             stringValue(fixture.task.Difficulty),
+			WeightSnapshot:         fixture.task.Weight,
+			PromptSnapshot:         fixture.task.Prompt,
+			VerifierTypeSnapshot:   fixture.task.VerifierType,
+			VerifierConfigSnapshot: fixture.task.VerifierConfig,
+			TaskSnapshot: map[string]any{
+				"title":  fixture.task.Title,
+				"prompt": fixture.task.Prompt,
+			},
+		},
+		{
+			TaskID:                 secondaryTask.ID,
+			TaskOrder:              2,
+			Type:                   secondaryTask.Type,
+			Category:               stringValue(secondaryTask.Category),
+			Difficulty:             stringValue(secondaryTask.Difficulty),
+			WeightSnapshot:         secondaryTask.Weight,
+			PromptSnapshot:         secondaryTask.Prompt,
+			VerifierTypeSnapshot:   secondaryTask.VerifierType,
+			VerifierConfigSnapshot: secondaryTask.VerifierConfig,
+			TaskSnapshot: map[string]any{
+				"title":  secondaryTask.Title,
+				"prompt": secondaryTask.Prompt,
+			},
+		},
+	}
+
+	run, err := fixture.repo.CreateRunWithSnapshots(fixture.ctx, runInput)
+	require.NoError(t, err)
+	fixture.runIDs = append(fixture.runIDs, run.ID)
+
+	_, err = fixture.client.BenchmarkTarget.UpdateOneID(fixture.target.ID).
+		SetModelName("mutated-primary-model").
+		SetDisplayName("Mutated Primary Model").
+		Save(fixture.ctx)
+	require.NoError(t, err)
+	_, err = fixture.client.BenchmarkTarget.UpdateOneID(secondaryTarget.ID).
+		SetModelName("mutated-secondary-model").
+		SetDisplayName("Mutated Secondary Model").
+		Save(fixture.ctx)
+	require.NoError(t, err)
+	_, err = fixture.client.BenchmarkTask.UpdateOneID(fixture.task.ID).
+		SetPrompt("Mutated reasoning prompt").
+		Save(fixture.ctx)
+	require.NoError(t, err)
+	_, err = fixture.client.BenchmarkTask.UpdateOneID(secondaryTask.ID).
+		SetPrompt("Mutated coding prompt").
+		Save(fixture.ctx)
+	require.NoError(t, err)
+
+	scoreInputs, err := fixture.repo.ListRunScoreInputs(fixture.ctx, run.ID)
+	require.NoError(t, err)
+	require.Len(t, scoreInputs, 4)
+
+	require.NotNil(t, scoreInputs[0].RunTarget)
+	require.NotNil(t, scoreInputs[0].RunTask)
+	require.NotNil(t, scoreInputs[0].Result)
+	require.Equal(t, fixture.target.ID, scoreInputs[0].RunTarget.TargetID)
+	require.NotNil(t, scoreInputs[0].RunTarget.DisplayNameSnapshot)
+	require.Equal(t, "Primary Model Snapshot", *scoreInputs[0].RunTarget.DisplayNameSnapshot)
+	require.Equal(t, fixture.task.ID, scoreInputs[0].RunTask.TaskID)
+	require.Equal(t, "Original reasoning prompt", scoreInputs[0].RunTask.PromptSnapshot)
+	require.Equal(t, scoreInputs[0].RunTarget.ID, scoreInputs[0].Result.RunTargetID)
+	require.Equal(t, scoreInputs[0].RunTask.ID, scoreInputs[0].Result.RunTaskID)
+
+	require.Equal(t, fixture.target.ID, scoreInputs[1].RunTarget.TargetID)
+	require.NotNil(t, scoreInputs[1].RunTask)
+	require.Equal(t, secondaryTask.ID, scoreInputs[1].RunTask.TaskID)
+	require.NotNil(t, scoreInputs[1].RunTask.PromptSnapshot)
+	require.Equal(t, "Original coding prompt", scoreInputs[1].RunTask.PromptSnapshot)
+
+	require.Equal(t, secondaryTarget.ID, scoreInputs[2].RunTarget.TargetID)
+	require.Equal(t, fixture.task.ID, scoreInputs[2].RunTask.TaskID)
+	require.NotNil(t, scoreInputs[3].RunTarget)
+	require.Equal(t, secondaryTarget.ID, scoreInputs[3].RunTarget.TargetID)
+	require.Equal(t, secondaryTask.ID, scoreInputs[3].RunTask.TaskID)
+
+	for _, scoreInput := range scoreInputs {
+		require.NotNil(t, scoreInput.RunTarget)
+		require.NotNil(t, scoreInput.RunTask)
+		require.NotNil(t, scoreInput.Result)
+		require.Equal(t, run.ID, scoreInput.Result.RunID)
+	}
+}
+
+func TestBenchmarkRepositoryListScoreSnapshotsUsesRankingOrder(t *testing.T) {
+	fixture := newBenchmarkFixture(t, "score-snapshot-order")
+
+	secondaryTarget, err := fixture.repo.CreateTarget(fixture.ctx, service.BenchmarkTargetInput{
+		ModelName:           uniqueTestValue(t, "score-snapshot-order-secondary-model"),
+		ChannelID:           103,
+		DisplayName:         "Secondary Snapshot Model",
+		ProviderSnapshot:    "openai",
+		ChannelNameSnapshot: "secondary-openai",
+		SupportedTaskTypes:  []string{"reasoning"},
+		MaxConcurrency:      1,
+		Enabled:             true,
+		PublicVisible:       true,
+		SortOrder:           2,
+		Metadata:            map[string]any{"tier": "secondary"},
+	})
+	require.NoError(t, err)
+	fixture.extraTargetIDs = append(fixture.extraTargetIDs, secondaryTarget.ID)
+
+	runOneInput := fixture.createRunInput
+	runOneInput.Targets = []service.BenchmarkRunTargetInput{
+		{
+			TargetID:            fixture.target.ID,
+			ModelName:           fixture.target.ModelName,
+			ChannelID:           fixture.target.ChannelID,
+			DisplayNameSnapshot: "Primary Snapshot Model",
+			ChannelNameSnapshot: "primary-openai",
+			ProviderSnapshot:    "openai",
+			TargetOrder:         1,
+			ConfigSnapshot:      map[string]any{"max_concurrency": 2},
+		},
+		{
+			TargetID:            secondaryTarget.ID,
+			ModelName:           secondaryTarget.ModelName,
+			ChannelID:           secondaryTarget.ChannelID,
+			DisplayNameSnapshot: "Secondary Snapshot Model",
+			ChannelNameSnapshot: "secondary-openai",
+			ProviderSnapshot:    "openai",
+			TargetOrder:         2,
+			ConfigSnapshot:      map[string]any{"max_concurrency": 1},
+		},
+	}
+	runOneInput.Tasks = []service.BenchmarkRunTaskInput{
+		{
+			TaskID:                 fixture.task.ID,
+			TaskOrder:              1,
+			Type:                   fixture.task.Type,
+			Category:               stringValue(fixture.task.Category),
+			Difficulty:             stringValue(fixture.task.Difficulty),
+			WeightSnapshot:         fixture.task.Weight,
+			PromptSnapshot:         fixture.task.Prompt,
+			VerifierTypeSnapshot:   fixture.task.VerifierType,
+			VerifierConfigSnapshot: fixture.task.VerifierConfig,
+			TaskSnapshot: map[string]any{
+				"title":  fixture.task.Title,
+				"prompt": fixture.task.Prompt,
+			},
+		},
+	}
+	runOne, err := fixture.repo.CreateRunWithSnapshots(fixture.ctx, runOneInput)
+	require.NoError(t, err)
+	fixture.runIDs = append(fixture.runIDs, runOne.ID)
+
+	secondRunInput := fixture.createRunInput
+	secondRunInput.Targets = []service.BenchmarkRunTargetInput{
+		{
+			TargetID:            secondaryTarget.ID,
+			ModelName:           secondaryTarget.ModelName,
+			ChannelID:           secondaryTarget.ChannelID,
+			DisplayNameSnapshot: "Secondary Snapshot Model",
+			ChannelNameSnapshot: "secondary-openai",
+			ProviderSnapshot:    "openai",
+			TargetOrder:         1,
+			ConfigSnapshot:      map[string]any{"max_concurrency": 1},
+		},
+	}
+	secondRun, err := fixture.repo.CreateRunWithSnapshots(fixture.ctx, secondRunInput)
+	require.NoError(t, err)
+	fixture.runIDs = append(fixture.runIDs, secondRun.ID)
+
+	primaryRunTarget := fixture.runTargetByTargetID(t, runOne.ID, fixture.target.ID)
+	secondaryRunTarget, err := fixture.client.BenchmarkRunTarget.Query().
+		Where(
+			benchmarkruntarget.RunIDEQ(runOne.ID),
+			benchmarkruntarget.TargetIDEQ(secondaryTarget.ID),
+		).
+		Only(fixture.ctx)
+	require.NoError(t, err)
+	secondRunTarget, err := fixture.client.BenchmarkRunTarget.Query().
+		Where(
+			benchmarkruntarget.RunIDEQ(secondRun.ID),
+			benchmarkruntarget.TargetIDEQ(secondaryTarget.ID),
+		).
+		Only(fixture.ctx)
+	require.NoError(t, err)
+
+	require.NoError(t, fixture.repo.SaveScoreSnapshots(fixture.ctx, secondRun.ID, []service.BenchmarkScoreSnapshotInput{
+		{
+			RunTargetID:            secondRunTarget.ID,
+			OverallScore:           99.0,
+			DimensionScores:        map[string]any{"rank": "second-run"},
+			PlannedTasks:           1,
+			ScoredTasks:            1,
+			InvalidTasks:           0,
+			CoverageRate:           0.99,
+			ConfidenceLevel:        service.BenchmarkConfidenceHigh,
+			InsufficientSample:     false,
+			SuccessRate:            1.0,
+			EstimatedCost:          0.2,
+			InvalidReasonBreakdown: map[string]any{},
+			RankingMetadata:        map[string]any{"slot": "second-run"},
+		},
+	}))
+
+	require.NoError(t, fixture.repo.SaveScoreSnapshots(fixture.ctx, runOne.ID, []service.BenchmarkScoreSnapshotInput{
+		{
+			RunTargetID:            primaryRunTarget.ID,
+			OverallScore:           91.0,
+			DimensionScores:        map[string]any{"rank": "primary"},
+			PlannedTasks:           1,
+			ScoredTasks:            1,
+			InvalidTasks:           0,
+			CoverageRate:           0.90,
+			ConfidenceLevel:        service.BenchmarkConfidenceHigh,
+			InsufficientSample:     false,
+			SuccessRate:            1.0,
+			EstimatedCost:          0.09,
+			InvalidReasonBreakdown: map[string]any{},
+			RankingMetadata:        map[string]any{"slot": "primary"},
+		},
+		{
+			RunTargetID:            secondaryRunTarget.ID,
+			OverallScore:           91.0,
+			DimensionScores:        map[string]any{"rank": "secondary"},
+			PlannedTasks:           1,
+			ScoredTasks:            1,
+			InvalidTasks:           0,
+			CoverageRate:           0.95,
+			ConfidenceLevel:        service.BenchmarkConfidenceHigh,
+			InsufficientSample:     false,
+			SuccessRate:            1.0,
+			EstimatedCost:          0.10,
+			InvalidReasonBreakdown: map[string]any{},
+			RankingMetadata:        map[string]any{"slot": "secondary"},
+		},
+	}))
+
+	snapshots, err := fixture.repo.ListScoreSnapshots(fixture.ctx, runOne.ID)
+	require.NoError(t, err)
+	require.Len(t, snapshots, 2)
+	require.Equal(t, secondaryRunTarget.ID, snapshots[0].RunTargetID)
+	require.InDelta(t, 91.0, snapshots[0].OverallScore, 0.000001)
+	require.InDelta(t, 0.95, snapshots[0].CoverageRate, 0.000001)
+	require.Equal(t, primaryRunTarget.ID, snapshots[1].RunTargetID)
+	require.InDelta(t, 91.0, snapshots[1].OverallScore, 0.000001)
+	require.InDelta(t, 0.90, snapshots[1].CoverageRate, 0.000001)
+}
+
 func TestBenchmarkRepositorySaveScoreSnapshotsRollsBackOnError(t *testing.T) {
 	fixture := newBenchmarkFixture(t, "score-rollback")
 
