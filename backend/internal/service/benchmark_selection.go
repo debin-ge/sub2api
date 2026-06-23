@@ -40,7 +40,7 @@ func SelectBenchmarkTasks(tasks []BenchmarkTaskCandidate, cfg BenchmarkSelection
 		filtered = append(filtered, task)
 	}
 	sort.Slice(filtered, func(i, j int) bool { return filtered[i].ID < filtered[j].ID })
-	if cfg.TaskScale == BenchmarkTaskScaleFull {
+	if cfg.TaskScale == BenchmarkTaskScaleFull && len(cfg.PerTypeLimit) == 0 {
 		return filtered, nil
 	}
 
@@ -55,7 +55,7 @@ func SelectBenchmarkTasks(tasks []BenchmarkTaskCandidate, cfg BenchmarkSelection
 			limit = len(filtered)
 		}
 	}
-	if limit >= len(filtered) {
+	if limit >= len(filtered) && len(cfg.PerTypeLimit) == 0 {
 		return filtered, nil
 	}
 
@@ -76,6 +76,7 @@ func SelectBenchmarkTasks(tasks []BenchmarkTaskCandidate, cfg BenchmarkSelection
 	}
 
 	selected := make([]BenchmarkTaskCandidate, 0, limit)
+	selectedByType := map[string]int{}
 	for len(selected) < limit {
 		added := false
 		for _, typ := range types {
@@ -85,8 +86,14 @@ func SelectBenchmarkTasks(tasks []BenchmarkTaskCandidate, cfg BenchmarkSelection
 			if len(grouped[typ]) == 0 {
 				continue
 			}
+			if cap, ok := cfg.PerTypeLimit[typ]; ok {
+				if cap <= 0 || selectedByType[typ] >= cap {
+					continue
+				}
+			}
 			selected = append(selected, grouped[typ][0])
 			grouped[typ] = grouped[typ][1:]
+			selectedByType[typ]++
 			added = true
 		}
 		if !added {

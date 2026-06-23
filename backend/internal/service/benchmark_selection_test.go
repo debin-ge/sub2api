@@ -57,3 +57,47 @@ func TestSelectBenchmarkTasksCustomLimitIsStable(t *testing.T) {
 		}
 	}
 }
+
+func TestSelectBenchmarkTasksRespectsPerTypeLimit(t *testing.T) {
+	t.Parallel()
+
+	tasks := []BenchmarkTaskCandidate{
+		{ID: 1, Type: "math_reasoning", Difficulty: "easy", Weight: 1, MinScale: BenchmarkTaskScaleSmall, Enabled: true},
+		{ID: 2, Type: "math_reasoning", Difficulty: "medium", Weight: 1, MinScale: BenchmarkTaskScaleSmall, Enabled: true},
+		{ID: 3, Type: "math_reasoning", Difficulty: "hard", Weight: 1, MinScale: BenchmarkTaskScaleSmall, Enabled: true},
+		{ID: 4, Type: "coding", Difficulty: "easy", Weight: 1, MinScale: BenchmarkTaskScaleSmall, Enabled: true},
+		{ID: 5, Type: "coding", Difficulty: "medium", Weight: 1, MinScale: BenchmarkTaskScaleSmall, Enabled: true},
+		{ID: 6, Type: "knowledge", Difficulty: "easy", Weight: 1, MinScale: BenchmarkTaskScaleSmall, Enabled: true},
+		{ID: 7, Type: "knowledge", Difficulty: "medium", Weight: 1, MinScale: BenchmarkTaskScaleSmall, Enabled: true},
+	}
+	got, err := SelectBenchmarkTasks(tasks, BenchmarkSelectionConfig{
+		TaskTypes:      []string{"math_reasoning", "coding", "knowledge"},
+		TaskScale:      BenchmarkTaskScaleCustom,
+		TaskCountLimit: 6,
+		PerTypeLimit: map[string]int{
+			"math_reasoning": 1,
+			"coding":         0,
+			"unknown":        -1,
+		},
+		SelectionSeed: 20260623,
+	})
+	if err != nil {
+		t.Fatalf("SelectBenchmarkTasks error = %v", err)
+	}
+	counts := map[string]int{}
+	for _, task := range got {
+		counts[task.Type]++
+		if task.Type == "coding" {
+			t.Fatalf("selected type with zero per-type limit: %#v", got)
+		}
+	}
+	if counts["math_reasoning"] != 1 {
+		t.Fatalf("math_reasoning selections = %d, want 1; selected tasks = %#v", counts["math_reasoning"], got)
+	}
+	if counts["knowledge"] != 2 {
+		t.Fatalf("knowledge selections = %d, want 2; selected tasks = %#v", counts["knowledge"], got)
+	}
+	if len(got) != 3 {
+		t.Fatalf("selected task count = %d, want 3; selected tasks = %#v", len(got), got)
+	}
+}
