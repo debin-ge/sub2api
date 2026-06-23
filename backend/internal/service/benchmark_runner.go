@@ -75,24 +75,25 @@ func (r *BenchmarkRunner) runResultOnce(ctx context.Context, resultCtx *Benchmar
 	if err != nil {
 		status := benchmarkRunnerGatewayErrorStatus(err)
 		errMessage := err.Error()
-		return r.repo.UpdateResult(ctx, resultCtx.Result.ID, BenchmarkResultUpdateInput{
-			Status:               benchmarkRunnerStringPtr(status),
-			RequestID:            benchmarkRunnerStringPtr(deterministicBenchmarkGatewayRequestID(req)),
-			ClearScore:           true,
-			ClearMaxScore:        true,
-			ClearNormalizedScore: true,
-			ClearEvaluatorType:   true,
-			RawResponse:          map[string]any{},
-			ClearLatencyMS:       true,
-			PromptTokens:         benchmarkRunnerIntPtr(0),
-			CompletionTokens:     benchmarkRunnerIntPtr(0),
-			TotalTokens:          benchmarkRunnerIntPtr(0),
-			EstimatedCost:        benchmarkRunnerFloat64Ptr(0),
-			ErrorCode:            benchmarkRunnerStringPtr(status),
-			ErrorMessage:         &errMessage,
-			StartedAt:            &startedAt,
-			FinishedAt:           &finishedAt,
-		})
+		requestID := deterministicBenchmarkGatewayRequestID(req)
+		if resp != nil && strings.TrimSpace(resp.RequestID) != "" {
+			requestID = resp.RequestID
+		}
+		return r.repo.UpdateResult(ctx, resultCtx.Result.ID, benchmarkRunnerResponseUpdateInput(
+			resp,
+			BenchmarkResultUpdateInput{
+				Status:               benchmarkRunnerStringPtr(status),
+				RequestID:            benchmarkRunnerStringPtr(requestID),
+				ClearScore:           true,
+				ClearMaxScore:        true,
+				ClearNormalizedScore: true,
+				ClearEvaluatorType:   true,
+				ErrorCode:            benchmarkRunnerStringPtr(status),
+				ErrorMessage:         &errMessage,
+				StartedAt:            &startedAt,
+				FinishedAt:           &finishedAt,
+			},
+		))
 	}
 
 	if resp == nil {

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -264,5 +265,50 @@ func TestBenchmarkGatewayRequestDeepClonesUserPayload(t *testing.T) {
 	}
 	if metadata["labels"].([]any)[0] != "stable" {
 		t.Fatalf("original payload metadata labels were mutated: %#v", metadata)
+	}
+}
+
+func TestBenchmarkGatewayExecutePreservesPartialResponseOnError(t *testing.T) {
+	t.Parallel()
+
+	wantResp := &BenchmarkGatewayResponse{
+		RequestID:        "provider-req-partial",
+		Content:          "partial body",
+		RawResponse:      map[string]any{"provider_status": 502},
+		LatencyMS:        789,
+		PromptTokens:     21,
+		CompletionTokens: 13,
+		TotalTokens:      34,
+		EstimatedCost:    0.0456,
+	}
+	wantErr := errors.New("upstream 502")
+
+	client := newBenchmarkGatewayClient(func(ctx context.Context, req benchmarkGatewayInternalRequest) (*BenchmarkGatewayResponse, error) {
+		return wantResp, wantErr
+	})
+
+	resp, err := client.Execute(context.Background(), BenchmarkGatewayRequest{
+		RunID:       1,
+		RunTargetID: 2,
+		RunTaskID:   3,
+		Attempt:     1,
+		ModelName:   "target-model",
+		ChannelID:   4,
+		Prompt:      "answer",
+	})
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("Execute error = %v, want %v", err, wantErr)
+	}
+	if resp == nil {
+		t.Fatal("expected partial response to be preserved")
+	}
+	if resp.RequestID != wantResp.RequestID {
+		t.Fatalf("response request id = %q, want %q", resp.RequestID, wantResp.RequestID)
+	}
+	if resp.LatencyMS != wantResp.LatencyMS || resp.TotalTokens != wantResp.TotalTokens {
+		t.Fatalf("response metrics = %#v, want %#v", resp, wantResp)
+	}
+	if resp.EstimatedCost != wantResp.EstimatedCost {
+		t.Fatalf("response estimated cost = %v, want %v", resp.EstimatedCost, wantResp.EstimatedCost)
 	}
 }

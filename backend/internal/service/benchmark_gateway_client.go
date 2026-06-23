@@ -77,16 +77,16 @@ func (c *benchmarkGatewayClient) Execute(ctx context.Context, req BenchmarkGatew
 	}
 
 	resp, err := c.execute(ctx, internalReq)
-	if err != nil {
-		return nil, err
-	}
 	if resp == nil {
+		if err != nil {
+			return nil, err
+		}
 		resp = &BenchmarkGatewayResponse{}
 	}
 	if strings.TrimSpace(resp.RequestID) == "" {
 		resp.RequestID = internalReq.RequestID
 	}
-	return resp, nil
+	return resp, err
 }
 
 func buildBenchmarkGatewayInternalRequest(req BenchmarkGatewayRequest) benchmarkGatewayInternalRequest {

@@ -262,6 +262,62 @@ func TestBenchmarkRunnerMarksGatewayErrorInvalid(t *testing.T) {
 	require.Contains(t, *update.ErrorMessage, "upstream 502")
 }
 
+func TestBenchmarkRunnerPreservesGatewayMetricsOnInvalidError(t *testing.T) {
+	t.Parallel()
+
+	repo := newBenchmarkRunnerRepoStub(t)
+	ctxValue := benchmarkRunnerTestResultContext()
+	repo.claimPendingResultsFn = func(ctx context.Context, runID int64, limit int) ([]*ent.BenchmarkResult, error) {
+		return []*ent.BenchmarkResult{ctxValue.Result}, nil
+	}
+	repo.getRunResultContextFn = func(ctx context.Context, resultID int64) (*BenchmarkRunResultContext, error) {
+		return ctxValue, nil
+	}
+	repo.countRunResultsFn = func(ctx context.Context, runID int64) (map[string]int, error) {
+		return map[string]int{BenchmarkResultStatusPending: 1}, nil
+	}
+
+	client := newBenchmarkGatewayClient(func(ctx context.Context, req benchmarkGatewayInternalRequest) (*BenchmarkGatewayResponse, error) {
+		return &BenchmarkGatewayResponse{
+			RequestID:        "provider-partial-err",
+			Content:          "partial body",
+			RawResponse:      map[string]any{"provider_status": 502, "body": "partial"},
+			LatencyMS:        456,
+			PromptTokens:     9,
+			CompletionTokens: 4,
+			TotalTokens:      13,
+			EstimatedCost:    0.0099,
+		}, errors.New("upstream 502")
+	})
+
+	err := NewBenchmarkRunner(repo, client).RunOnce(context.Background(), ctxValue.Run.ID)
+	require.NoError(t, err)
+	require.Len(t, repo.updateCalls, 1)
+	update := repo.updateCalls[0].input
+	require.NotNil(t, update.Status)
+	require.Equal(t, BenchmarkResultStatusChannelError, *update.Status)
+	require.True(t, update.ClearScore)
+	require.True(t, update.ClearMaxScore)
+	require.True(t, update.ClearNormalizedScore)
+	require.Equal(t, map[string]any{"provider_status": 502, "body": "partial"}, update.RawResponse)
+	require.NotNil(t, update.RequestID)
+	require.Equal(t, "provider-partial-err", *update.RequestID)
+	require.NotNil(t, update.LatencyMS)
+	require.Equal(t, 456, *update.LatencyMS)
+	require.NotNil(t, update.PromptTokens)
+	require.Equal(t, 9, *update.PromptTokens)
+	require.NotNil(t, update.CompletionTokens)
+	require.Equal(t, 4, *update.CompletionTokens)
+	require.NotNil(t, update.TotalTokens)
+	require.Equal(t, 13, *update.TotalTokens)
+	require.NotNil(t, update.EstimatedCost)
+	require.InDelta(t, 0.0099, *update.EstimatedCost, 0.000001)
+	require.NotNil(t, update.ErrorCode)
+	require.Equal(t, BenchmarkResultStatusChannelError, *update.ErrorCode)
+	require.NotNil(t, update.ErrorMessage)
+	require.Contains(t, *update.ErrorMessage, "upstream 502")
+}
+
 func TestBenchmarkRunnerMarksRateLimitedInvalid(t *testing.T) {
 	t.Parallel()
 
