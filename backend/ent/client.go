@@ -22,6 +22,17 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
 	"github.com/Wei-Shaw/sub2api/ent/authidentity"
 	"github.com/Wei-Shaw/sub2api/ent/authidentitychannel"
+	"github.com/Wei-Shaw/sub2api/ent/benchmarkprofile"
+	"github.com/Wei-Shaw/sub2api/ent/benchmarkpublicsnapshot"
+	"github.com/Wei-Shaw/sub2api/ent/benchmarkresult"
+	"github.com/Wei-Shaw/sub2api/ent/benchmarkrun"
+	"github.com/Wei-Shaw/sub2api/ent/benchmarkruntarget"
+	"github.com/Wei-Shaw/sub2api/ent/benchmarkruntask"
+	"github.com/Wei-Shaw/sub2api/ent/benchmarkschedule"
+	"github.com/Wei-Shaw/sub2api/ent/benchmarkscoresnapshot"
+	"github.com/Wei-Shaw/sub2api/ent/benchmarksuite"
+	"github.com/Wei-Shaw/sub2api/ent/benchmarktarget"
+	"github.com/Wei-Shaw/sub2api/ent/benchmarktask"
 	"github.com/Wei-Shaw/sub2api/ent/channelmonitor"
 	"github.com/Wei-Shaw/sub2api/ent/channelmonitordailyrollup"
 	"github.com/Wei-Shaw/sub2api/ent/channelmonitorhistory"
@@ -73,6 +84,28 @@ type Client struct {
 	AuthIdentity *AuthIdentityClient
 	// AuthIdentityChannel is the client for interacting with the AuthIdentityChannel builders.
 	AuthIdentityChannel *AuthIdentityChannelClient
+	// BenchmarkProfile is the client for interacting with the BenchmarkProfile builders.
+	BenchmarkProfile *BenchmarkProfileClient
+	// BenchmarkPublicSnapshot is the client for interacting with the BenchmarkPublicSnapshot builders.
+	BenchmarkPublicSnapshot *BenchmarkPublicSnapshotClient
+	// BenchmarkResult is the client for interacting with the BenchmarkResult builders.
+	BenchmarkResult *BenchmarkResultClient
+	// BenchmarkRun is the client for interacting with the BenchmarkRun builders.
+	BenchmarkRun *BenchmarkRunClient
+	// BenchmarkRunTarget is the client for interacting with the BenchmarkRunTarget builders.
+	BenchmarkRunTarget *BenchmarkRunTargetClient
+	// BenchmarkRunTask is the client for interacting with the BenchmarkRunTask builders.
+	BenchmarkRunTask *BenchmarkRunTaskClient
+	// BenchmarkSchedule is the client for interacting with the BenchmarkSchedule builders.
+	BenchmarkSchedule *BenchmarkScheduleClient
+	// BenchmarkScoreSnapshot is the client for interacting with the BenchmarkScoreSnapshot builders.
+	BenchmarkScoreSnapshot *BenchmarkScoreSnapshotClient
+	// BenchmarkSuite is the client for interacting with the BenchmarkSuite builders.
+	BenchmarkSuite *BenchmarkSuiteClient
+	// BenchmarkTarget is the client for interacting with the BenchmarkTarget builders.
+	BenchmarkTarget *BenchmarkTargetClient
+	// BenchmarkTask is the client for interacting with the BenchmarkTask builders.
+	BenchmarkTask *BenchmarkTaskClient
 	// ChannelMonitor is the client for interacting with the ChannelMonitor builders.
 	ChannelMonitor *ChannelMonitorClient
 	// ChannelMonitorDailyRollup is the client for interacting with the ChannelMonitorDailyRollup builders.
@@ -147,6 +180,17 @@ func (c *Client) init() {
 	c.AnnouncementRead = NewAnnouncementReadClient(c.config)
 	c.AuthIdentity = NewAuthIdentityClient(c.config)
 	c.AuthIdentityChannel = NewAuthIdentityChannelClient(c.config)
+	c.BenchmarkProfile = NewBenchmarkProfileClient(c.config)
+	c.BenchmarkPublicSnapshot = NewBenchmarkPublicSnapshotClient(c.config)
+	c.BenchmarkResult = NewBenchmarkResultClient(c.config)
+	c.BenchmarkRun = NewBenchmarkRunClient(c.config)
+	c.BenchmarkRunTarget = NewBenchmarkRunTargetClient(c.config)
+	c.BenchmarkRunTask = NewBenchmarkRunTaskClient(c.config)
+	c.BenchmarkSchedule = NewBenchmarkScheduleClient(c.config)
+	c.BenchmarkScoreSnapshot = NewBenchmarkScoreSnapshotClient(c.config)
+	c.BenchmarkSuite = NewBenchmarkSuiteClient(c.config)
+	c.BenchmarkTarget = NewBenchmarkTargetClient(c.config)
+	c.BenchmarkTask = NewBenchmarkTaskClient(c.config)
 	c.ChannelMonitor = NewChannelMonitorClient(c.config)
 	c.ChannelMonitorDailyRollup = NewChannelMonitorDailyRollupClient(c.config)
 	c.ChannelMonitorHistory = NewChannelMonitorHistoryClient(c.config)
@@ -274,6 +318,17 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		AnnouncementRead:              NewAnnouncementReadClient(cfg),
 		AuthIdentity:                  NewAuthIdentityClient(cfg),
 		AuthIdentityChannel:           NewAuthIdentityChannelClient(cfg),
+		BenchmarkProfile:              NewBenchmarkProfileClient(cfg),
+		BenchmarkPublicSnapshot:       NewBenchmarkPublicSnapshotClient(cfg),
+		BenchmarkResult:               NewBenchmarkResultClient(cfg),
+		BenchmarkRun:                  NewBenchmarkRunClient(cfg),
+		BenchmarkRunTarget:            NewBenchmarkRunTargetClient(cfg),
+		BenchmarkRunTask:              NewBenchmarkRunTaskClient(cfg),
+		BenchmarkSchedule:             NewBenchmarkScheduleClient(cfg),
+		BenchmarkScoreSnapshot:        NewBenchmarkScoreSnapshotClient(cfg),
+		BenchmarkSuite:                NewBenchmarkSuiteClient(cfg),
+		BenchmarkTarget:               NewBenchmarkTargetClient(cfg),
+		BenchmarkTask:                 NewBenchmarkTaskClient(cfg),
 		ChannelMonitor:                NewChannelMonitorClient(cfg),
 		ChannelMonitorDailyRollup:     NewChannelMonitorDailyRollupClient(cfg),
 		ChannelMonitorHistory:         NewChannelMonitorHistoryClient(cfg),
@@ -328,6 +383,17 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		AnnouncementRead:              NewAnnouncementReadClient(cfg),
 		AuthIdentity:                  NewAuthIdentityClient(cfg),
 		AuthIdentityChannel:           NewAuthIdentityChannelClient(cfg),
+		BenchmarkProfile:              NewBenchmarkProfileClient(cfg),
+		BenchmarkPublicSnapshot:       NewBenchmarkPublicSnapshotClient(cfg),
+		BenchmarkResult:               NewBenchmarkResultClient(cfg),
+		BenchmarkRun:                  NewBenchmarkRunClient(cfg),
+		BenchmarkRunTarget:            NewBenchmarkRunTargetClient(cfg),
+		BenchmarkRunTask:              NewBenchmarkRunTaskClient(cfg),
+		BenchmarkSchedule:             NewBenchmarkScheduleClient(cfg),
+		BenchmarkScoreSnapshot:        NewBenchmarkScoreSnapshotClient(cfg),
+		BenchmarkSuite:                NewBenchmarkSuiteClient(cfg),
+		BenchmarkTarget:               NewBenchmarkTargetClient(cfg),
+		BenchmarkTask:                 NewBenchmarkTaskClient(cfg),
 		ChannelMonitor:                NewChannelMonitorClient(cfg),
 		ChannelMonitorDailyRollup:     NewChannelMonitorDailyRollupClient(cfg),
 		ChannelMonitorHistory:         NewChannelMonitorHistoryClient(cfg),
@@ -386,8 +452,11 @@ func (c *Client) Close() error {
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
 		c.APIKey, c.Account, c.AccountGroup, c.Announcement, c.AnnouncementRead,
-		c.AuthIdentity, c.AuthIdentityChannel, c.ChannelMonitor,
-		c.ChannelMonitorDailyRollup, c.ChannelMonitorHistory,
+		c.AuthIdentity, c.AuthIdentityChannel, c.BenchmarkProfile,
+		c.BenchmarkPublicSnapshot, c.BenchmarkResult, c.BenchmarkRun,
+		c.BenchmarkRunTarget, c.BenchmarkRunTask, c.BenchmarkSchedule,
+		c.BenchmarkScoreSnapshot, c.BenchmarkSuite, c.BenchmarkTarget, c.BenchmarkTask,
+		c.ChannelMonitor, c.ChannelMonitorDailyRollup, c.ChannelMonitorHistory,
 		c.ChannelMonitorRequestTemplate, c.ErrorPassthroughRule, c.Group,
 		c.IdempotencyRecord, c.IdentityAdoptionDecision, c.PaymentAuditLog,
 		c.PaymentOrder, c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode,
@@ -405,8 +474,11 @@ func (c *Client) Use(hooks ...Hook) {
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
 		c.APIKey, c.Account, c.AccountGroup, c.Announcement, c.AnnouncementRead,
-		c.AuthIdentity, c.AuthIdentityChannel, c.ChannelMonitor,
-		c.ChannelMonitorDailyRollup, c.ChannelMonitorHistory,
+		c.AuthIdentity, c.AuthIdentityChannel, c.BenchmarkProfile,
+		c.BenchmarkPublicSnapshot, c.BenchmarkResult, c.BenchmarkRun,
+		c.BenchmarkRunTarget, c.BenchmarkRunTask, c.BenchmarkSchedule,
+		c.BenchmarkScoreSnapshot, c.BenchmarkSuite, c.BenchmarkTarget, c.BenchmarkTask,
+		c.ChannelMonitor, c.ChannelMonitorDailyRollup, c.ChannelMonitorHistory,
 		c.ChannelMonitorRequestTemplate, c.ErrorPassthroughRule, c.Group,
 		c.IdempotencyRecord, c.IdentityAdoptionDecision, c.PaymentAuditLog,
 		c.PaymentOrder, c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode,
@@ -436,6 +508,28 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.AuthIdentity.mutate(ctx, m)
 	case *AuthIdentityChannelMutation:
 		return c.AuthIdentityChannel.mutate(ctx, m)
+	case *BenchmarkProfileMutation:
+		return c.BenchmarkProfile.mutate(ctx, m)
+	case *BenchmarkPublicSnapshotMutation:
+		return c.BenchmarkPublicSnapshot.mutate(ctx, m)
+	case *BenchmarkResultMutation:
+		return c.BenchmarkResult.mutate(ctx, m)
+	case *BenchmarkRunMutation:
+		return c.BenchmarkRun.mutate(ctx, m)
+	case *BenchmarkRunTargetMutation:
+		return c.BenchmarkRunTarget.mutate(ctx, m)
+	case *BenchmarkRunTaskMutation:
+		return c.BenchmarkRunTask.mutate(ctx, m)
+	case *BenchmarkScheduleMutation:
+		return c.BenchmarkSchedule.mutate(ctx, m)
+	case *BenchmarkScoreSnapshotMutation:
+		return c.BenchmarkScoreSnapshot.mutate(ctx, m)
+	case *BenchmarkSuiteMutation:
+		return c.BenchmarkSuite.mutate(ctx, m)
+	case *BenchmarkTargetMutation:
+		return c.BenchmarkTarget.mutate(ctx, m)
+	case *BenchmarkTaskMutation:
+		return c.BenchmarkTask.mutate(ctx, m)
 	case *ChannelMonitorMutation:
 		return c.ChannelMonitor.mutate(ctx, m)
 	case *ChannelMonitorDailyRollupMutation:
@@ -1636,6 +1730,2029 @@ func (c *AuthIdentityChannelClient) mutate(ctx context.Context, m *AuthIdentityC
 		return (&AuthIdentityChannelDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown AuthIdentityChannel mutation op: %q", m.Op())
+	}
+}
+
+// BenchmarkProfileClient is a client for the BenchmarkProfile schema.
+type BenchmarkProfileClient struct {
+	config
+}
+
+// NewBenchmarkProfileClient returns a client for the BenchmarkProfile from the given config.
+func NewBenchmarkProfileClient(c config) *BenchmarkProfileClient {
+	return &BenchmarkProfileClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `benchmarkprofile.Hooks(f(g(h())))`.
+func (c *BenchmarkProfileClient) Use(hooks ...Hook) {
+	c.hooks.BenchmarkProfile = append(c.hooks.BenchmarkProfile, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `benchmarkprofile.Intercept(f(g(h())))`.
+func (c *BenchmarkProfileClient) Intercept(interceptors ...Interceptor) {
+	c.inters.BenchmarkProfile = append(c.inters.BenchmarkProfile, interceptors...)
+}
+
+// Create returns a builder for creating a BenchmarkProfile entity.
+func (c *BenchmarkProfileClient) Create() *BenchmarkProfileCreate {
+	mutation := newBenchmarkProfileMutation(c.config, OpCreate)
+	return &BenchmarkProfileCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of BenchmarkProfile entities.
+func (c *BenchmarkProfileClient) CreateBulk(builders ...*BenchmarkProfileCreate) *BenchmarkProfileCreateBulk {
+	return &BenchmarkProfileCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *BenchmarkProfileClient) MapCreateBulk(slice any, setFunc func(*BenchmarkProfileCreate, int)) *BenchmarkProfileCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &BenchmarkProfileCreateBulk{err: fmt.Errorf("calling to BenchmarkProfileClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*BenchmarkProfileCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &BenchmarkProfileCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for BenchmarkProfile.
+func (c *BenchmarkProfileClient) Update() *BenchmarkProfileUpdate {
+	mutation := newBenchmarkProfileMutation(c.config, OpUpdate)
+	return &BenchmarkProfileUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *BenchmarkProfileClient) UpdateOne(_m *BenchmarkProfile) *BenchmarkProfileUpdateOne {
+	mutation := newBenchmarkProfileMutation(c.config, OpUpdateOne, withBenchmarkProfile(_m))
+	return &BenchmarkProfileUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *BenchmarkProfileClient) UpdateOneID(id int64) *BenchmarkProfileUpdateOne {
+	mutation := newBenchmarkProfileMutation(c.config, OpUpdateOne, withBenchmarkProfileID(id))
+	return &BenchmarkProfileUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for BenchmarkProfile.
+func (c *BenchmarkProfileClient) Delete() *BenchmarkProfileDelete {
+	mutation := newBenchmarkProfileMutation(c.config, OpDelete)
+	return &BenchmarkProfileDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *BenchmarkProfileClient) DeleteOne(_m *BenchmarkProfile) *BenchmarkProfileDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *BenchmarkProfileClient) DeleteOneID(id int64) *BenchmarkProfileDeleteOne {
+	builder := c.Delete().Where(benchmarkprofile.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &BenchmarkProfileDeleteOne{builder}
+}
+
+// Query returns a query builder for BenchmarkProfile.
+func (c *BenchmarkProfileClient) Query() *BenchmarkProfileQuery {
+	return &BenchmarkProfileQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeBenchmarkProfile},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a BenchmarkProfile entity by its id.
+func (c *BenchmarkProfileClient) Get(ctx context.Context, id int64) (*BenchmarkProfile, error) {
+	return c.Query().Where(benchmarkprofile.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *BenchmarkProfileClient) GetX(ctx context.Context, id int64) *BenchmarkProfile {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QuerySuite queries the suite edge of a BenchmarkProfile.
+func (c *BenchmarkProfileClient) QuerySuite(_m *BenchmarkProfile) *BenchmarkSuiteQuery {
+	query := (&BenchmarkSuiteClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(benchmarkprofile.Table, benchmarkprofile.FieldID, id),
+			sqlgraph.To(benchmarksuite.Table, benchmarksuite.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, benchmarkprofile.SuiteTable, benchmarkprofile.SuiteColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QuerySchedules queries the schedules edge of a BenchmarkProfile.
+func (c *BenchmarkProfileClient) QuerySchedules(_m *BenchmarkProfile) *BenchmarkScheduleQuery {
+	query := (&BenchmarkScheduleClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(benchmarkprofile.Table, benchmarkprofile.FieldID, id),
+			sqlgraph.To(benchmarkschedule.Table, benchmarkschedule.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, benchmarkprofile.SchedulesTable, benchmarkprofile.SchedulesColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryRuns queries the runs edge of a BenchmarkProfile.
+func (c *BenchmarkProfileClient) QueryRuns(_m *BenchmarkProfile) *BenchmarkRunQuery {
+	query := (&BenchmarkRunClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(benchmarkprofile.Table, benchmarkprofile.FieldID, id),
+			sqlgraph.To(benchmarkrun.Table, benchmarkrun.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, benchmarkprofile.RunsTable, benchmarkprofile.RunsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryPublicSnapshots queries the public_snapshots edge of a BenchmarkProfile.
+func (c *BenchmarkProfileClient) QueryPublicSnapshots(_m *BenchmarkProfile) *BenchmarkPublicSnapshotQuery {
+	query := (&BenchmarkPublicSnapshotClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(benchmarkprofile.Table, benchmarkprofile.FieldID, id),
+			sqlgraph.To(benchmarkpublicsnapshot.Table, benchmarkpublicsnapshot.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, benchmarkprofile.PublicSnapshotsTable, benchmarkprofile.PublicSnapshotsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *BenchmarkProfileClient) Hooks() []Hook {
+	return c.hooks.BenchmarkProfile
+}
+
+// Interceptors returns the client interceptors.
+func (c *BenchmarkProfileClient) Interceptors() []Interceptor {
+	return c.inters.BenchmarkProfile
+}
+
+func (c *BenchmarkProfileClient) mutate(ctx context.Context, m *BenchmarkProfileMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&BenchmarkProfileCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&BenchmarkProfileUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&BenchmarkProfileUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&BenchmarkProfileDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown BenchmarkProfile mutation op: %q", m.Op())
+	}
+}
+
+// BenchmarkPublicSnapshotClient is a client for the BenchmarkPublicSnapshot schema.
+type BenchmarkPublicSnapshotClient struct {
+	config
+}
+
+// NewBenchmarkPublicSnapshotClient returns a client for the BenchmarkPublicSnapshot from the given config.
+func NewBenchmarkPublicSnapshotClient(c config) *BenchmarkPublicSnapshotClient {
+	return &BenchmarkPublicSnapshotClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `benchmarkpublicsnapshot.Hooks(f(g(h())))`.
+func (c *BenchmarkPublicSnapshotClient) Use(hooks ...Hook) {
+	c.hooks.BenchmarkPublicSnapshot = append(c.hooks.BenchmarkPublicSnapshot, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `benchmarkpublicsnapshot.Intercept(f(g(h())))`.
+func (c *BenchmarkPublicSnapshotClient) Intercept(interceptors ...Interceptor) {
+	c.inters.BenchmarkPublicSnapshot = append(c.inters.BenchmarkPublicSnapshot, interceptors...)
+}
+
+// Create returns a builder for creating a BenchmarkPublicSnapshot entity.
+func (c *BenchmarkPublicSnapshotClient) Create() *BenchmarkPublicSnapshotCreate {
+	mutation := newBenchmarkPublicSnapshotMutation(c.config, OpCreate)
+	return &BenchmarkPublicSnapshotCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of BenchmarkPublicSnapshot entities.
+func (c *BenchmarkPublicSnapshotClient) CreateBulk(builders ...*BenchmarkPublicSnapshotCreate) *BenchmarkPublicSnapshotCreateBulk {
+	return &BenchmarkPublicSnapshotCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *BenchmarkPublicSnapshotClient) MapCreateBulk(slice any, setFunc func(*BenchmarkPublicSnapshotCreate, int)) *BenchmarkPublicSnapshotCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &BenchmarkPublicSnapshotCreateBulk{err: fmt.Errorf("calling to BenchmarkPublicSnapshotClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*BenchmarkPublicSnapshotCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &BenchmarkPublicSnapshotCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for BenchmarkPublicSnapshot.
+func (c *BenchmarkPublicSnapshotClient) Update() *BenchmarkPublicSnapshotUpdate {
+	mutation := newBenchmarkPublicSnapshotMutation(c.config, OpUpdate)
+	return &BenchmarkPublicSnapshotUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *BenchmarkPublicSnapshotClient) UpdateOne(_m *BenchmarkPublicSnapshot) *BenchmarkPublicSnapshotUpdateOne {
+	mutation := newBenchmarkPublicSnapshotMutation(c.config, OpUpdateOne, withBenchmarkPublicSnapshot(_m))
+	return &BenchmarkPublicSnapshotUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *BenchmarkPublicSnapshotClient) UpdateOneID(id int64) *BenchmarkPublicSnapshotUpdateOne {
+	mutation := newBenchmarkPublicSnapshotMutation(c.config, OpUpdateOne, withBenchmarkPublicSnapshotID(id))
+	return &BenchmarkPublicSnapshotUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for BenchmarkPublicSnapshot.
+func (c *BenchmarkPublicSnapshotClient) Delete() *BenchmarkPublicSnapshotDelete {
+	mutation := newBenchmarkPublicSnapshotMutation(c.config, OpDelete)
+	return &BenchmarkPublicSnapshotDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *BenchmarkPublicSnapshotClient) DeleteOne(_m *BenchmarkPublicSnapshot) *BenchmarkPublicSnapshotDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *BenchmarkPublicSnapshotClient) DeleteOneID(id int64) *BenchmarkPublicSnapshotDeleteOne {
+	builder := c.Delete().Where(benchmarkpublicsnapshot.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &BenchmarkPublicSnapshotDeleteOne{builder}
+}
+
+// Query returns a query builder for BenchmarkPublicSnapshot.
+func (c *BenchmarkPublicSnapshotClient) Query() *BenchmarkPublicSnapshotQuery {
+	return &BenchmarkPublicSnapshotQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeBenchmarkPublicSnapshot},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a BenchmarkPublicSnapshot entity by its id.
+func (c *BenchmarkPublicSnapshotClient) Get(ctx context.Context, id int64) (*BenchmarkPublicSnapshot, error) {
+	return c.Query().Where(benchmarkpublicsnapshot.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *BenchmarkPublicSnapshotClient) GetX(ctx context.Context, id int64) *BenchmarkPublicSnapshot {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryRun queries the run edge of a BenchmarkPublicSnapshot.
+func (c *BenchmarkPublicSnapshotClient) QueryRun(_m *BenchmarkPublicSnapshot) *BenchmarkRunQuery {
+	query := (&BenchmarkRunClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(benchmarkpublicsnapshot.Table, benchmarkpublicsnapshot.FieldID, id),
+			sqlgraph.To(benchmarkrun.Table, benchmarkrun.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, benchmarkpublicsnapshot.RunTable, benchmarkpublicsnapshot.RunColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QuerySuite queries the suite edge of a BenchmarkPublicSnapshot.
+func (c *BenchmarkPublicSnapshotClient) QuerySuite(_m *BenchmarkPublicSnapshot) *BenchmarkSuiteQuery {
+	query := (&BenchmarkSuiteClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(benchmarkpublicsnapshot.Table, benchmarkpublicsnapshot.FieldID, id),
+			sqlgraph.To(benchmarksuite.Table, benchmarksuite.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, benchmarkpublicsnapshot.SuiteTable, benchmarkpublicsnapshot.SuiteColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryProfile queries the profile edge of a BenchmarkPublicSnapshot.
+func (c *BenchmarkPublicSnapshotClient) QueryProfile(_m *BenchmarkPublicSnapshot) *BenchmarkProfileQuery {
+	query := (&BenchmarkProfileClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(benchmarkpublicsnapshot.Table, benchmarkpublicsnapshot.FieldID, id),
+			sqlgraph.To(benchmarkprofile.Table, benchmarkprofile.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, benchmarkpublicsnapshot.ProfileTable, benchmarkpublicsnapshot.ProfileColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *BenchmarkPublicSnapshotClient) Hooks() []Hook {
+	return c.hooks.BenchmarkPublicSnapshot
+}
+
+// Interceptors returns the client interceptors.
+func (c *BenchmarkPublicSnapshotClient) Interceptors() []Interceptor {
+	return c.inters.BenchmarkPublicSnapshot
+}
+
+func (c *BenchmarkPublicSnapshotClient) mutate(ctx context.Context, m *BenchmarkPublicSnapshotMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&BenchmarkPublicSnapshotCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&BenchmarkPublicSnapshotUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&BenchmarkPublicSnapshotUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&BenchmarkPublicSnapshotDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown BenchmarkPublicSnapshot mutation op: %q", m.Op())
+	}
+}
+
+// BenchmarkResultClient is a client for the BenchmarkResult schema.
+type BenchmarkResultClient struct {
+	config
+}
+
+// NewBenchmarkResultClient returns a client for the BenchmarkResult from the given config.
+func NewBenchmarkResultClient(c config) *BenchmarkResultClient {
+	return &BenchmarkResultClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `benchmarkresult.Hooks(f(g(h())))`.
+func (c *BenchmarkResultClient) Use(hooks ...Hook) {
+	c.hooks.BenchmarkResult = append(c.hooks.BenchmarkResult, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `benchmarkresult.Intercept(f(g(h())))`.
+func (c *BenchmarkResultClient) Intercept(interceptors ...Interceptor) {
+	c.inters.BenchmarkResult = append(c.inters.BenchmarkResult, interceptors...)
+}
+
+// Create returns a builder for creating a BenchmarkResult entity.
+func (c *BenchmarkResultClient) Create() *BenchmarkResultCreate {
+	mutation := newBenchmarkResultMutation(c.config, OpCreate)
+	return &BenchmarkResultCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of BenchmarkResult entities.
+func (c *BenchmarkResultClient) CreateBulk(builders ...*BenchmarkResultCreate) *BenchmarkResultCreateBulk {
+	return &BenchmarkResultCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *BenchmarkResultClient) MapCreateBulk(slice any, setFunc func(*BenchmarkResultCreate, int)) *BenchmarkResultCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &BenchmarkResultCreateBulk{err: fmt.Errorf("calling to BenchmarkResultClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*BenchmarkResultCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &BenchmarkResultCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for BenchmarkResult.
+func (c *BenchmarkResultClient) Update() *BenchmarkResultUpdate {
+	mutation := newBenchmarkResultMutation(c.config, OpUpdate)
+	return &BenchmarkResultUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *BenchmarkResultClient) UpdateOne(_m *BenchmarkResult) *BenchmarkResultUpdateOne {
+	mutation := newBenchmarkResultMutation(c.config, OpUpdateOne, withBenchmarkResult(_m))
+	return &BenchmarkResultUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *BenchmarkResultClient) UpdateOneID(id int64) *BenchmarkResultUpdateOne {
+	mutation := newBenchmarkResultMutation(c.config, OpUpdateOne, withBenchmarkResultID(id))
+	return &BenchmarkResultUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for BenchmarkResult.
+func (c *BenchmarkResultClient) Delete() *BenchmarkResultDelete {
+	mutation := newBenchmarkResultMutation(c.config, OpDelete)
+	return &BenchmarkResultDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *BenchmarkResultClient) DeleteOne(_m *BenchmarkResult) *BenchmarkResultDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *BenchmarkResultClient) DeleteOneID(id int64) *BenchmarkResultDeleteOne {
+	builder := c.Delete().Where(benchmarkresult.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &BenchmarkResultDeleteOne{builder}
+}
+
+// Query returns a query builder for BenchmarkResult.
+func (c *BenchmarkResultClient) Query() *BenchmarkResultQuery {
+	return &BenchmarkResultQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeBenchmarkResult},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a BenchmarkResult entity by its id.
+func (c *BenchmarkResultClient) Get(ctx context.Context, id int64) (*BenchmarkResult, error) {
+	return c.Query().Where(benchmarkresult.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *BenchmarkResultClient) GetX(ctx context.Context, id int64) *BenchmarkResult {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryRun queries the run edge of a BenchmarkResult.
+func (c *BenchmarkResultClient) QueryRun(_m *BenchmarkResult) *BenchmarkRunQuery {
+	query := (&BenchmarkRunClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(benchmarkresult.Table, benchmarkresult.FieldID, id),
+			sqlgraph.To(benchmarkrun.Table, benchmarkrun.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, benchmarkresult.RunTable, benchmarkresult.RunColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryRunTask queries the run_task edge of a BenchmarkResult.
+func (c *BenchmarkResultClient) QueryRunTask(_m *BenchmarkResult) *BenchmarkRunTaskQuery {
+	query := (&BenchmarkRunTaskClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(benchmarkresult.Table, benchmarkresult.FieldID, id),
+			sqlgraph.To(benchmarkruntask.Table, benchmarkruntask.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, benchmarkresult.RunTaskTable, benchmarkresult.RunTaskColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryRunTarget queries the run_target edge of a BenchmarkResult.
+func (c *BenchmarkResultClient) QueryRunTarget(_m *BenchmarkResult) *BenchmarkRunTargetQuery {
+	query := (&BenchmarkRunTargetClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(benchmarkresult.Table, benchmarkresult.FieldID, id),
+			sqlgraph.To(benchmarkruntarget.Table, benchmarkruntarget.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, benchmarkresult.RunTargetTable, benchmarkresult.RunTargetColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *BenchmarkResultClient) Hooks() []Hook {
+	return c.hooks.BenchmarkResult
+}
+
+// Interceptors returns the client interceptors.
+func (c *BenchmarkResultClient) Interceptors() []Interceptor {
+	return c.inters.BenchmarkResult
+}
+
+func (c *BenchmarkResultClient) mutate(ctx context.Context, m *BenchmarkResultMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&BenchmarkResultCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&BenchmarkResultUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&BenchmarkResultUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&BenchmarkResultDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown BenchmarkResult mutation op: %q", m.Op())
+	}
+}
+
+// BenchmarkRunClient is a client for the BenchmarkRun schema.
+type BenchmarkRunClient struct {
+	config
+}
+
+// NewBenchmarkRunClient returns a client for the BenchmarkRun from the given config.
+func NewBenchmarkRunClient(c config) *BenchmarkRunClient {
+	return &BenchmarkRunClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `benchmarkrun.Hooks(f(g(h())))`.
+func (c *BenchmarkRunClient) Use(hooks ...Hook) {
+	c.hooks.BenchmarkRun = append(c.hooks.BenchmarkRun, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `benchmarkrun.Intercept(f(g(h())))`.
+func (c *BenchmarkRunClient) Intercept(interceptors ...Interceptor) {
+	c.inters.BenchmarkRun = append(c.inters.BenchmarkRun, interceptors...)
+}
+
+// Create returns a builder for creating a BenchmarkRun entity.
+func (c *BenchmarkRunClient) Create() *BenchmarkRunCreate {
+	mutation := newBenchmarkRunMutation(c.config, OpCreate)
+	return &BenchmarkRunCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of BenchmarkRun entities.
+func (c *BenchmarkRunClient) CreateBulk(builders ...*BenchmarkRunCreate) *BenchmarkRunCreateBulk {
+	return &BenchmarkRunCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *BenchmarkRunClient) MapCreateBulk(slice any, setFunc func(*BenchmarkRunCreate, int)) *BenchmarkRunCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &BenchmarkRunCreateBulk{err: fmt.Errorf("calling to BenchmarkRunClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*BenchmarkRunCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &BenchmarkRunCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for BenchmarkRun.
+func (c *BenchmarkRunClient) Update() *BenchmarkRunUpdate {
+	mutation := newBenchmarkRunMutation(c.config, OpUpdate)
+	return &BenchmarkRunUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *BenchmarkRunClient) UpdateOne(_m *BenchmarkRun) *BenchmarkRunUpdateOne {
+	mutation := newBenchmarkRunMutation(c.config, OpUpdateOne, withBenchmarkRun(_m))
+	return &BenchmarkRunUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *BenchmarkRunClient) UpdateOneID(id int64) *BenchmarkRunUpdateOne {
+	mutation := newBenchmarkRunMutation(c.config, OpUpdateOne, withBenchmarkRunID(id))
+	return &BenchmarkRunUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for BenchmarkRun.
+func (c *BenchmarkRunClient) Delete() *BenchmarkRunDelete {
+	mutation := newBenchmarkRunMutation(c.config, OpDelete)
+	return &BenchmarkRunDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *BenchmarkRunClient) DeleteOne(_m *BenchmarkRun) *BenchmarkRunDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *BenchmarkRunClient) DeleteOneID(id int64) *BenchmarkRunDeleteOne {
+	builder := c.Delete().Where(benchmarkrun.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &BenchmarkRunDeleteOne{builder}
+}
+
+// Query returns a query builder for BenchmarkRun.
+func (c *BenchmarkRunClient) Query() *BenchmarkRunQuery {
+	return &BenchmarkRunQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeBenchmarkRun},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a BenchmarkRun entity by its id.
+func (c *BenchmarkRunClient) Get(ctx context.Context, id int64) (*BenchmarkRun, error) {
+	return c.Query().Where(benchmarkrun.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *BenchmarkRunClient) GetX(ctx context.Context, id int64) *BenchmarkRun {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QuerySuite queries the suite edge of a BenchmarkRun.
+func (c *BenchmarkRunClient) QuerySuite(_m *BenchmarkRun) *BenchmarkSuiteQuery {
+	query := (&BenchmarkSuiteClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(benchmarkrun.Table, benchmarkrun.FieldID, id),
+			sqlgraph.To(benchmarksuite.Table, benchmarksuite.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, benchmarkrun.SuiteTable, benchmarkrun.SuiteColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryProfile queries the profile edge of a BenchmarkRun.
+func (c *BenchmarkRunClient) QueryProfile(_m *BenchmarkRun) *BenchmarkProfileQuery {
+	query := (&BenchmarkProfileClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(benchmarkrun.Table, benchmarkrun.FieldID, id),
+			sqlgraph.To(benchmarkprofile.Table, benchmarkprofile.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, benchmarkrun.ProfileTable, benchmarkrun.ProfileColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryRunTargets queries the run_targets edge of a BenchmarkRun.
+func (c *BenchmarkRunClient) QueryRunTargets(_m *BenchmarkRun) *BenchmarkRunTargetQuery {
+	query := (&BenchmarkRunTargetClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(benchmarkrun.Table, benchmarkrun.FieldID, id),
+			sqlgraph.To(benchmarkruntarget.Table, benchmarkruntarget.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, benchmarkrun.RunTargetsTable, benchmarkrun.RunTargetsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryRunTasks queries the run_tasks edge of a BenchmarkRun.
+func (c *BenchmarkRunClient) QueryRunTasks(_m *BenchmarkRun) *BenchmarkRunTaskQuery {
+	query := (&BenchmarkRunTaskClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(benchmarkrun.Table, benchmarkrun.FieldID, id),
+			sqlgraph.To(benchmarkruntask.Table, benchmarkruntask.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, benchmarkrun.RunTasksTable, benchmarkrun.RunTasksColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryResults queries the results edge of a BenchmarkRun.
+func (c *BenchmarkRunClient) QueryResults(_m *BenchmarkRun) *BenchmarkResultQuery {
+	query := (&BenchmarkResultClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(benchmarkrun.Table, benchmarkrun.FieldID, id),
+			sqlgraph.To(benchmarkresult.Table, benchmarkresult.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, benchmarkrun.ResultsTable, benchmarkrun.ResultsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryScoreSnapshots queries the score_snapshots edge of a BenchmarkRun.
+func (c *BenchmarkRunClient) QueryScoreSnapshots(_m *BenchmarkRun) *BenchmarkScoreSnapshotQuery {
+	query := (&BenchmarkScoreSnapshotClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(benchmarkrun.Table, benchmarkrun.FieldID, id),
+			sqlgraph.To(benchmarkscoresnapshot.Table, benchmarkscoresnapshot.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, benchmarkrun.ScoreSnapshotsTable, benchmarkrun.ScoreSnapshotsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryPublicSnapshots queries the public_snapshots edge of a BenchmarkRun.
+func (c *BenchmarkRunClient) QueryPublicSnapshots(_m *BenchmarkRun) *BenchmarkPublicSnapshotQuery {
+	query := (&BenchmarkPublicSnapshotClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(benchmarkrun.Table, benchmarkrun.FieldID, id),
+			sqlgraph.To(benchmarkpublicsnapshot.Table, benchmarkpublicsnapshot.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, benchmarkrun.PublicSnapshotsTable, benchmarkrun.PublicSnapshotsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *BenchmarkRunClient) Hooks() []Hook {
+	return c.hooks.BenchmarkRun
+}
+
+// Interceptors returns the client interceptors.
+func (c *BenchmarkRunClient) Interceptors() []Interceptor {
+	return c.inters.BenchmarkRun
+}
+
+func (c *BenchmarkRunClient) mutate(ctx context.Context, m *BenchmarkRunMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&BenchmarkRunCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&BenchmarkRunUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&BenchmarkRunUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&BenchmarkRunDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown BenchmarkRun mutation op: %q", m.Op())
+	}
+}
+
+// BenchmarkRunTargetClient is a client for the BenchmarkRunTarget schema.
+type BenchmarkRunTargetClient struct {
+	config
+}
+
+// NewBenchmarkRunTargetClient returns a client for the BenchmarkRunTarget from the given config.
+func NewBenchmarkRunTargetClient(c config) *BenchmarkRunTargetClient {
+	return &BenchmarkRunTargetClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `benchmarkruntarget.Hooks(f(g(h())))`.
+func (c *BenchmarkRunTargetClient) Use(hooks ...Hook) {
+	c.hooks.BenchmarkRunTarget = append(c.hooks.BenchmarkRunTarget, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `benchmarkruntarget.Intercept(f(g(h())))`.
+func (c *BenchmarkRunTargetClient) Intercept(interceptors ...Interceptor) {
+	c.inters.BenchmarkRunTarget = append(c.inters.BenchmarkRunTarget, interceptors...)
+}
+
+// Create returns a builder for creating a BenchmarkRunTarget entity.
+func (c *BenchmarkRunTargetClient) Create() *BenchmarkRunTargetCreate {
+	mutation := newBenchmarkRunTargetMutation(c.config, OpCreate)
+	return &BenchmarkRunTargetCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of BenchmarkRunTarget entities.
+func (c *BenchmarkRunTargetClient) CreateBulk(builders ...*BenchmarkRunTargetCreate) *BenchmarkRunTargetCreateBulk {
+	return &BenchmarkRunTargetCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *BenchmarkRunTargetClient) MapCreateBulk(slice any, setFunc func(*BenchmarkRunTargetCreate, int)) *BenchmarkRunTargetCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &BenchmarkRunTargetCreateBulk{err: fmt.Errorf("calling to BenchmarkRunTargetClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*BenchmarkRunTargetCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &BenchmarkRunTargetCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for BenchmarkRunTarget.
+func (c *BenchmarkRunTargetClient) Update() *BenchmarkRunTargetUpdate {
+	mutation := newBenchmarkRunTargetMutation(c.config, OpUpdate)
+	return &BenchmarkRunTargetUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *BenchmarkRunTargetClient) UpdateOne(_m *BenchmarkRunTarget) *BenchmarkRunTargetUpdateOne {
+	mutation := newBenchmarkRunTargetMutation(c.config, OpUpdateOne, withBenchmarkRunTarget(_m))
+	return &BenchmarkRunTargetUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *BenchmarkRunTargetClient) UpdateOneID(id int64) *BenchmarkRunTargetUpdateOne {
+	mutation := newBenchmarkRunTargetMutation(c.config, OpUpdateOne, withBenchmarkRunTargetID(id))
+	return &BenchmarkRunTargetUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for BenchmarkRunTarget.
+func (c *BenchmarkRunTargetClient) Delete() *BenchmarkRunTargetDelete {
+	mutation := newBenchmarkRunTargetMutation(c.config, OpDelete)
+	return &BenchmarkRunTargetDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *BenchmarkRunTargetClient) DeleteOne(_m *BenchmarkRunTarget) *BenchmarkRunTargetDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *BenchmarkRunTargetClient) DeleteOneID(id int64) *BenchmarkRunTargetDeleteOne {
+	builder := c.Delete().Where(benchmarkruntarget.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &BenchmarkRunTargetDeleteOne{builder}
+}
+
+// Query returns a query builder for BenchmarkRunTarget.
+func (c *BenchmarkRunTargetClient) Query() *BenchmarkRunTargetQuery {
+	return &BenchmarkRunTargetQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeBenchmarkRunTarget},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a BenchmarkRunTarget entity by its id.
+func (c *BenchmarkRunTargetClient) Get(ctx context.Context, id int64) (*BenchmarkRunTarget, error) {
+	return c.Query().Where(benchmarkruntarget.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *BenchmarkRunTargetClient) GetX(ctx context.Context, id int64) *BenchmarkRunTarget {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryRun queries the run edge of a BenchmarkRunTarget.
+func (c *BenchmarkRunTargetClient) QueryRun(_m *BenchmarkRunTarget) *BenchmarkRunQuery {
+	query := (&BenchmarkRunClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(benchmarkruntarget.Table, benchmarkruntarget.FieldID, id),
+			sqlgraph.To(benchmarkrun.Table, benchmarkrun.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, benchmarkruntarget.RunTable, benchmarkruntarget.RunColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryTarget queries the target edge of a BenchmarkRunTarget.
+func (c *BenchmarkRunTargetClient) QueryTarget(_m *BenchmarkRunTarget) *BenchmarkTargetQuery {
+	query := (&BenchmarkTargetClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(benchmarkruntarget.Table, benchmarkruntarget.FieldID, id),
+			sqlgraph.To(benchmarktarget.Table, benchmarktarget.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, benchmarkruntarget.TargetTable, benchmarkruntarget.TargetColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryResults queries the results edge of a BenchmarkRunTarget.
+func (c *BenchmarkRunTargetClient) QueryResults(_m *BenchmarkRunTarget) *BenchmarkResultQuery {
+	query := (&BenchmarkResultClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(benchmarkruntarget.Table, benchmarkruntarget.FieldID, id),
+			sqlgraph.To(benchmarkresult.Table, benchmarkresult.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, benchmarkruntarget.ResultsTable, benchmarkruntarget.ResultsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryScoreSnapshots queries the score_snapshots edge of a BenchmarkRunTarget.
+func (c *BenchmarkRunTargetClient) QueryScoreSnapshots(_m *BenchmarkRunTarget) *BenchmarkScoreSnapshotQuery {
+	query := (&BenchmarkScoreSnapshotClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(benchmarkruntarget.Table, benchmarkruntarget.FieldID, id),
+			sqlgraph.To(benchmarkscoresnapshot.Table, benchmarkscoresnapshot.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, benchmarkruntarget.ScoreSnapshotsTable, benchmarkruntarget.ScoreSnapshotsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *BenchmarkRunTargetClient) Hooks() []Hook {
+	return c.hooks.BenchmarkRunTarget
+}
+
+// Interceptors returns the client interceptors.
+func (c *BenchmarkRunTargetClient) Interceptors() []Interceptor {
+	return c.inters.BenchmarkRunTarget
+}
+
+func (c *BenchmarkRunTargetClient) mutate(ctx context.Context, m *BenchmarkRunTargetMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&BenchmarkRunTargetCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&BenchmarkRunTargetUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&BenchmarkRunTargetUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&BenchmarkRunTargetDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown BenchmarkRunTarget mutation op: %q", m.Op())
+	}
+}
+
+// BenchmarkRunTaskClient is a client for the BenchmarkRunTask schema.
+type BenchmarkRunTaskClient struct {
+	config
+}
+
+// NewBenchmarkRunTaskClient returns a client for the BenchmarkRunTask from the given config.
+func NewBenchmarkRunTaskClient(c config) *BenchmarkRunTaskClient {
+	return &BenchmarkRunTaskClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `benchmarkruntask.Hooks(f(g(h())))`.
+func (c *BenchmarkRunTaskClient) Use(hooks ...Hook) {
+	c.hooks.BenchmarkRunTask = append(c.hooks.BenchmarkRunTask, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `benchmarkruntask.Intercept(f(g(h())))`.
+func (c *BenchmarkRunTaskClient) Intercept(interceptors ...Interceptor) {
+	c.inters.BenchmarkRunTask = append(c.inters.BenchmarkRunTask, interceptors...)
+}
+
+// Create returns a builder for creating a BenchmarkRunTask entity.
+func (c *BenchmarkRunTaskClient) Create() *BenchmarkRunTaskCreate {
+	mutation := newBenchmarkRunTaskMutation(c.config, OpCreate)
+	return &BenchmarkRunTaskCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of BenchmarkRunTask entities.
+func (c *BenchmarkRunTaskClient) CreateBulk(builders ...*BenchmarkRunTaskCreate) *BenchmarkRunTaskCreateBulk {
+	return &BenchmarkRunTaskCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *BenchmarkRunTaskClient) MapCreateBulk(slice any, setFunc func(*BenchmarkRunTaskCreate, int)) *BenchmarkRunTaskCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &BenchmarkRunTaskCreateBulk{err: fmt.Errorf("calling to BenchmarkRunTaskClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*BenchmarkRunTaskCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &BenchmarkRunTaskCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for BenchmarkRunTask.
+func (c *BenchmarkRunTaskClient) Update() *BenchmarkRunTaskUpdate {
+	mutation := newBenchmarkRunTaskMutation(c.config, OpUpdate)
+	return &BenchmarkRunTaskUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *BenchmarkRunTaskClient) UpdateOne(_m *BenchmarkRunTask) *BenchmarkRunTaskUpdateOne {
+	mutation := newBenchmarkRunTaskMutation(c.config, OpUpdateOne, withBenchmarkRunTask(_m))
+	return &BenchmarkRunTaskUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *BenchmarkRunTaskClient) UpdateOneID(id int64) *BenchmarkRunTaskUpdateOne {
+	mutation := newBenchmarkRunTaskMutation(c.config, OpUpdateOne, withBenchmarkRunTaskID(id))
+	return &BenchmarkRunTaskUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for BenchmarkRunTask.
+func (c *BenchmarkRunTaskClient) Delete() *BenchmarkRunTaskDelete {
+	mutation := newBenchmarkRunTaskMutation(c.config, OpDelete)
+	return &BenchmarkRunTaskDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *BenchmarkRunTaskClient) DeleteOne(_m *BenchmarkRunTask) *BenchmarkRunTaskDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *BenchmarkRunTaskClient) DeleteOneID(id int64) *BenchmarkRunTaskDeleteOne {
+	builder := c.Delete().Where(benchmarkruntask.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &BenchmarkRunTaskDeleteOne{builder}
+}
+
+// Query returns a query builder for BenchmarkRunTask.
+func (c *BenchmarkRunTaskClient) Query() *BenchmarkRunTaskQuery {
+	return &BenchmarkRunTaskQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeBenchmarkRunTask},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a BenchmarkRunTask entity by its id.
+func (c *BenchmarkRunTaskClient) Get(ctx context.Context, id int64) (*BenchmarkRunTask, error) {
+	return c.Query().Where(benchmarkruntask.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *BenchmarkRunTaskClient) GetX(ctx context.Context, id int64) *BenchmarkRunTask {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryRun queries the run edge of a BenchmarkRunTask.
+func (c *BenchmarkRunTaskClient) QueryRun(_m *BenchmarkRunTask) *BenchmarkRunQuery {
+	query := (&BenchmarkRunClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(benchmarkruntask.Table, benchmarkruntask.FieldID, id),
+			sqlgraph.To(benchmarkrun.Table, benchmarkrun.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, benchmarkruntask.RunTable, benchmarkruntask.RunColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryTask queries the task edge of a BenchmarkRunTask.
+func (c *BenchmarkRunTaskClient) QueryTask(_m *BenchmarkRunTask) *BenchmarkTaskQuery {
+	query := (&BenchmarkTaskClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(benchmarkruntask.Table, benchmarkruntask.FieldID, id),
+			sqlgraph.To(benchmarktask.Table, benchmarktask.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, benchmarkruntask.TaskTable, benchmarkruntask.TaskColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryResults queries the results edge of a BenchmarkRunTask.
+func (c *BenchmarkRunTaskClient) QueryResults(_m *BenchmarkRunTask) *BenchmarkResultQuery {
+	query := (&BenchmarkResultClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(benchmarkruntask.Table, benchmarkruntask.FieldID, id),
+			sqlgraph.To(benchmarkresult.Table, benchmarkresult.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, benchmarkruntask.ResultsTable, benchmarkruntask.ResultsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *BenchmarkRunTaskClient) Hooks() []Hook {
+	return c.hooks.BenchmarkRunTask
+}
+
+// Interceptors returns the client interceptors.
+func (c *BenchmarkRunTaskClient) Interceptors() []Interceptor {
+	return c.inters.BenchmarkRunTask
+}
+
+func (c *BenchmarkRunTaskClient) mutate(ctx context.Context, m *BenchmarkRunTaskMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&BenchmarkRunTaskCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&BenchmarkRunTaskUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&BenchmarkRunTaskUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&BenchmarkRunTaskDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown BenchmarkRunTask mutation op: %q", m.Op())
+	}
+}
+
+// BenchmarkScheduleClient is a client for the BenchmarkSchedule schema.
+type BenchmarkScheduleClient struct {
+	config
+}
+
+// NewBenchmarkScheduleClient returns a client for the BenchmarkSchedule from the given config.
+func NewBenchmarkScheduleClient(c config) *BenchmarkScheduleClient {
+	return &BenchmarkScheduleClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `benchmarkschedule.Hooks(f(g(h())))`.
+func (c *BenchmarkScheduleClient) Use(hooks ...Hook) {
+	c.hooks.BenchmarkSchedule = append(c.hooks.BenchmarkSchedule, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `benchmarkschedule.Intercept(f(g(h())))`.
+func (c *BenchmarkScheduleClient) Intercept(interceptors ...Interceptor) {
+	c.inters.BenchmarkSchedule = append(c.inters.BenchmarkSchedule, interceptors...)
+}
+
+// Create returns a builder for creating a BenchmarkSchedule entity.
+func (c *BenchmarkScheduleClient) Create() *BenchmarkScheduleCreate {
+	mutation := newBenchmarkScheduleMutation(c.config, OpCreate)
+	return &BenchmarkScheduleCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of BenchmarkSchedule entities.
+func (c *BenchmarkScheduleClient) CreateBulk(builders ...*BenchmarkScheduleCreate) *BenchmarkScheduleCreateBulk {
+	return &BenchmarkScheduleCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *BenchmarkScheduleClient) MapCreateBulk(slice any, setFunc func(*BenchmarkScheduleCreate, int)) *BenchmarkScheduleCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &BenchmarkScheduleCreateBulk{err: fmt.Errorf("calling to BenchmarkScheduleClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*BenchmarkScheduleCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &BenchmarkScheduleCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for BenchmarkSchedule.
+func (c *BenchmarkScheduleClient) Update() *BenchmarkScheduleUpdate {
+	mutation := newBenchmarkScheduleMutation(c.config, OpUpdate)
+	return &BenchmarkScheduleUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *BenchmarkScheduleClient) UpdateOne(_m *BenchmarkSchedule) *BenchmarkScheduleUpdateOne {
+	mutation := newBenchmarkScheduleMutation(c.config, OpUpdateOne, withBenchmarkSchedule(_m))
+	return &BenchmarkScheduleUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *BenchmarkScheduleClient) UpdateOneID(id int64) *BenchmarkScheduleUpdateOne {
+	mutation := newBenchmarkScheduleMutation(c.config, OpUpdateOne, withBenchmarkScheduleID(id))
+	return &BenchmarkScheduleUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for BenchmarkSchedule.
+func (c *BenchmarkScheduleClient) Delete() *BenchmarkScheduleDelete {
+	mutation := newBenchmarkScheduleMutation(c.config, OpDelete)
+	return &BenchmarkScheduleDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *BenchmarkScheduleClient) DeleteOne(_m *BenchmarkSchedule) *BenchmarkScheduleDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *BenchmarkScheduleClient) DeleteOneID(id int64) *BenchmarkScheduleDeleteOne {
+	builder := c.Delete().Where(benchmarkschedule.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &BenchmarkScheduleDeleteOne{builder}
+}
+
+// Query returns a query builder for BenchmarkSchedule.
+func (c *BenchmarkScheduleClient) Query() *BenchmarkScheduleQuery {
+	return &BenchmarkScheduleQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeBenchmarkSchedule},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a BenchmarkSchedule entity by its id.
+func (c *BenchmarkScheduleClient) Get(ctx context.Context, id int64) (*BenchmarkSchedule, error) {
+	return c.Query().Where(benchmarkschedule.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *BenchmarkScheduleClient) GetX(ctx context.Context, id int64) *BenchmarkSchedule {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryProfile queries the profile edge of a BenchmarkSchedule.
+func (c *BenchmarkScheduleClient) QueryProfile(_m *BenchmarkSchedule) *BenchmarkProfileQuery {
+	query := (&BenchmarkProfileClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(benchmarkschedule.Table, benchmarkschedule.FieldID, id),
+			sqlgraph.To(benchmarkprofile.Table, benchmarkprofile.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, benchmarkschedule.ProfileTable, benchmarkschedule.ProfileColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *BenchmarkScheduleClient) Hooks() []Hook {
+	return c.hooks.BenchmarkSchedule
+}
+
+// Interceptors returns the client interceptors.
+func (c *BenchmarkScheduleClient) Interceptors() []Interceptor {
+	return c.inters.BenchmarkSchedule
+}
+
+func (c *BenchmarkScheduleClient) mutate(ctx context.Context, m *BenchmarkScheduleMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&BenchmarkScheduleCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&BenchmarkScheduleUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&BenchmarkScheduleUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&BenchmarkScheduleDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown BenchmarkSchedule mutation op: %q", m.Op())
+	}
+}
+
+// BenchmarkScoreSnapshotClient is a client for the BenchmarkScoreSnapshot schema.
+type BenchmarkScoreSnapshotClient struct {
+	config
+}
+
+// NewBenchmarkScoreSnapshotClient returns a client for the BenchmarkScoreSnapshot from the given config.
+func NewBenchmarkScoreSnapshotClient(c config) *BenchmarkScoreSnapshotClient {
+	return &BenchmarkScoreSnapshotClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `benchmarkscoresnapshot.Hooks(f(g(h())))`.
+func (c *BenchmarkScoreSnapshotClient) Use(hooks ...Hook) {
+	c.hooks.BenchmarkScoreSnapshot = append(c.hooks.BenchmarkScoreSnapshot, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `benchmarkscoresnapshot.Intercept(f(g(h())))`.
+func (c *BenchmarkScoreSnapshotClient) Intercept(interceptors ...Interceptor) {
+	c.inters.BenchmarkScoreSnapshot = append(c.inters.BenchmarkScoreSnapshot, interceptors...)
+}
+
+// Create returns a builder for creating a BenchmarkScoreSnapshot entity.
+func (c *BenchmarkScoreSnapshotClient) Create() *BenchmarkScoreSnapshotCreate {
+	mutation := newBenchmarkScoreSnapshotMutation(c.config, OpCreate)
+	return &BenchmarkScoreSnapshotCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of BenchmarkScoreSnapshot entities.
+func (c *BenchmarkScoreSnapshotClient) CreateBulk(builders ...*BenchmarkScoreSnapshotCreate) *BenchmarkScoreSnapshotCreateBulk {
+	return &BenchmarkScoreSnapshotCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *BenchmarkScoreSnapshotClient) MapCreateBulk(slice any, setFunc func(*BenchmarkScoreSnapshotCreate, int)) *BenchmarkScoreSnapshotCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &BenchmarkScoreSnapshotCreateBulk{err: fmt.Errorf("calling to BenchmarkScoreSnapshotClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*BenchmarkScoreSnapshotCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &BenchmarkScoreSnapshotCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for BenchmarkScoreSnapshot.
+func (c *BenchmarkScoreSnapshotClient) Update() *BenchmarkScoreSnapshotUpdate {
+	mutation := newBenchmarkScoreSnapshotMutation(c.config, OpUpdate)
+	return &BenchmarkScoreSnapshotUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *BenchmarkScoreSnapshotClient) UpdateOne(_m *BenchmarkScoreSnapshot) *BenchmarkScoreSnapshotUpdateOne {
+	mutation := newBenchmarkScoreSnapshotMutation(c.config, OpUpdateOne, withBenchmarkScoreSnapshot(_m))
+	return &BenchmarkScoreSnapshotUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *BenchmarkScoreSnapshotClient) UpdateOneID(id int64) *BenchmarkScoreSnapshotUpdateOne {
+	mutation := newBenchmarkScoreSnapshotMutation(c.config, OpUpdateOne, withBenchmarkScoreSnapshotID(id))
+	return &BenchmarkScoreSnapshotUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for BenchmarkScoreSnapshot.
+func (c *BenchmarkScoreSnapshotClient) Delete() *BenchmarkScoreSnapshotDelete {
+	mutation := newBenchmarkScoreSnapshotMutation(c.config, OpDelete)
+	return &BenchmarkScoreSnapshotDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *BenchmarkScoreSnapshotClient) DeleteOne(_m *BenchmarkScoreSnapshot) *BenchmarkScoreSnapshotDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *BenchmarkScoreSnapshotClient) DeleteOneID(id int64) *BenchmarkScoreSnapshotDeleteOne {
+	builder := c.Delete().Where(benchmarkscoresnapshot.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &BenchmarkScoreSnapshotDeleteOne{builder}
+}
+
+// Query returns a query builder for BenchmarkScoreSnapshot.
+func (c *BenchmarkScoreSnapshotClient) Query() *BenchmarkScoreSnapshotQuery {
+	return &BenchmarkScoreSnapshotQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeBenchmarkScoreSnapshot},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a BenchmarkScoreSnapshot entity by its id.
+func (c *BenchmarkScoreSnapshotClient) Get(ctx context.Context, id int64) (*BenchmarkScoreSnapshot, error) {
+	return c.Query().Where(benchmarkscoresnapshot.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *BenchmarkScoreSnapshotClient) GetX(ctx context.Context, id int64) *BenchmarkScoreSnapshot {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryRun queries the run edge of a BenchmarkScoreSnapshot.
+func (c *BenchmarkScoreSnapshotClient) QueryRun(_m *BenchmarkScoreSnapshot) *BenchmarkRunQuery {
+	query := (&BenchmarkRunClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(benchmarkscoresnapshot.Table, benchmarkscoresnapshot.FieldID, id),
+			sqlgraph.To(benchmarkrun.Table, benchmarkrun.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, benchmarkscoresnapshot.RunTable, benchmarkscoresnapshot.RunColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryRunTarget queries the run_target edge of a BenchmarkScoreSnapshot.
+func (c *BenchmarkScoreSnapshotClient) QueryRunTarget(_m *BenchmarkScoreSnapshot) *BenchmarkRunTargetQuery {
+	query := (&BenchmarkRunTargetClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(benchmarkscoresnapshot.Table, benchmarkscoresnapshot.FieldID, id),
+			sqlgraph.To(benchmarkruntarget.Table, benchmarkruntarget.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, benchmarkscoresnapshot.RunTargetTable, benchmarkscoresnapshot.RunTargetColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *BenchmarkScoreSnapshotClient) Hooks() []Hook {
+	return c.hooks.BenchmarkScoreSnapshot
+}
+
+// Interceptors returns the client interceptors.
+func (c *BenchmarkScoreSnapshotClient) Interceptors() []Interceptor {
+	return c.inters.BenchmarkScoreSnapshot
+}
+
+func (c *BenchmarkScoreSnapshotClient) mutate(ctx context.Context, m *BenchmarkScoreSnapshotMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&BenchmarkScoreSnapshotCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&BenchmarkScoreSnapshotUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&BenchmarkScoreSnapshotUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&BenchmarkScoreSnapshotDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown BenchmarkScoreSnapshot mutation op: %q", m.Op())
+	}
+}
+
+// BenchmarkSuiteClient is a client for the BenchmarkSuite schema.
+type BenchmarkSuiteClient struct {
+	config
+}
+
+// NewBenchmarkSuiteClient returns a client for the BenchmarkSuite from the given config.
+func NewBenchmarkSuiteClient(c config) *BenchmarkSuiteClient {
+	return &BenchmarkSuiteClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `benchmarksuite.Hooks(f(g(h())))`.
+func (c *BenchmarkSuiteClient) Use(hooks ...Hook) {
+	c.hooks.BenchmarkSuite = append(c.hooks.BenchmarkSuite, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `benchmarksuite.Intercept(f(g(h())))`.
+func (c *BenchmarkSuiteClient) Intercept(interceptors ...Interceptor) {
+	c.inters.BenchmarkSuite = append(c.inters.BenchmarkSuite, interceptors...)
+}
+
+// Create returns a builder for creating a BenchmarkSuite entity.
+func (c *BenchmarkSuiteClient) Create() *BenchmarkSuiteCreate {
+	mutation := newBenchmarkSuiteMutation(c.config, OpCreate)
+	return &BenchmarkSuiteCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of BenchmarkSuite entities.
+func (c *BenchmarkSuiteClient) CreateBulk(builders ...*BenchmarkSuiteCreate) *BenchmarkSuiteCreateBulk {
+	return &BenchmarkSuiteCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *BenchmarkSuiteClient) MapCreateBulk(slice any, setFunc func(*BenchmarkSuiteCreate, int)) *BenchmarkSuiteCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &BenchmarkSuiteCreateBulk{err: fmt.Errorf("calling to BenchmarkSuiteClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*BenchmarkSuiteCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &BenchmarkSuiteCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for BenchmarkSuite.
+func (c *BenchmarkSuiteClient) Update() *BenchmarkSuiteUpdate {
+	mutation := newBenchmarkSuiteMutation(c.config, OpUpdate)
+	return &BenchmarkSuiteUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *BenchmarkSuiteClient) UpdateOne(_m *BenchmarkSuite) *BenchmarkSuiteUpdateOne {
+	mutation := newBenchmarkSuiteMutation(c.config, OpUpdateOne, withBenchmarkSuite(_m))
+	return &BenchmarkSuiteUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *BenchmarkSuiteClient) UpdateOneID(id int64) *BenchmarkSuiteUpdateOne {
+	mutation := newBenchmarkSuiteMutation(c.config, OpUpdateOne, withBenchmarkSuiteID(id))
+	return &BenchmarkSuiteUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for BenchmarkSuite.
+func (c *BenchmarkSuiteClient) Delete() *BenchmarkSuiteDelete {
+	mutation := newBenchmarkSuiteMutation(c.config, OpDelete)
+	return &BenchmarkSuiteDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *BenchmarkSuiteClient) DeleteOne(_m *BenchmarkSuite) *BenchmarkSuiteDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *BenchmarkSuiteClient) DeleteOneID(id int64) *BenchmarkSuiteDeleteOne {
+	builder := c.Delete().Where(benchmarksuite.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &BenchmarkSuiteDeleteOne{builder}
+}
+
+// Query returns a query builder for BenchmarkSuite.
+func (c *BenchmarkSuiteClient) Query() *BenchmarkSuiteQuery {
+	return &BenchmarkSuiteQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeBenchmarkSuite},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a BenchmarkSuite entity by its id.
+func (c *BenchmarkSuiteClient) Get(ctx context.Context, id int64) (*BenchmarkSuite, error) {
+	return c.Query().Where(benchmarksuite.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *BenchmarkSuiteClient) GetX(ctx context.Context, id int64) *BenchmarkSuite {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryDefaultProfile queries the default_profile edge of a BenchmarkSuite.
+func (c *BenchmarkSuiteClient) QueryDefaultProfile(_m *BenchmarkSuite) *BenchmarkProfileQuery {
+	query := (&BenchmarkProfileClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(benchmarksuite.Table, benchmarksuite.FieldID, id),
+			sqlgraph.To(benchmarkprofile.Table, benchmarkprofile.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, false, benchmarksuite.DefaultProfileTable, benchmarksuite.DefaultProfileColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryTasks queries the tasks edge of a BenchmarkSuite.
+func (c *BenchmarkSuiteClient) QueryTasks(_m *BenchmarkSuite) *BenchmarkTaskQuery {
+	query := (&BenchmarkTaskClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(benchmarksuite.Table, benchmarksuite.FieldID, id),
+			sqlgraph.To(benchmarktask.Table, benchmarktask.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, benchmarksuite.TasksTable, benchmarksuite.TasksColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryProfiles queries the profiles edge of a BenchmarkSuite.
+func (c *BenchmarkSuiteClient) QueryProfiles(_m *BenchmarkSuite) *BenchmarkProfileQuery {
+	query := (&BenchmarkProfileClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(benchmarksuite.Table, benchmarksuite.FieldID, id),
+			sqlgraph.To(benchmarkprofile.Table, benchmarkprofile.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, benchmarksuite.ProfilesTable, benchmarksuite.ProfilesColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryRuns queries the runs edge of a BenchmarkSuite.
+func (c *BenchmarkSuiteClient) QueryRuns(_m *BenchmarkSuite) *BenchmarkRunQuery {
+	query := (&BenchmarkRunClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(benchmarksuite.Table, benchmarksuite.FieldID, id),
+			sqlgraph.To(benchmarkrun.Table, benchmarkrun.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, benchmarksuite.RunsTable, benchmarksuite.RunsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryPublicSnapshots queries the public_snapshots edge of a BenchmarkSuite.
+func (c *BenchmarkSuiteClient) QueryPublicSnapshots(_m *BenchmarkSuite) *BenchmarkPublicSnapshotQuery {
+	query := (&BenchmarkPublicSnapshotClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(benchmarksuite.Table, benchmarksuite.FieldID, id),
+			sqlgraph.To(benchmarkpublicsnapshot.Table, benchmarkpublicsnapshot.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, benchmarksuite.PublicSnapshotsTable, benchmarksuite.PublicSnapshotsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *BenchmarkSuiteClient) Hooks() []Hook {
+	return c.hooks.BenchmarkSuite
+}
+
+// Interceptors returns the client interceptors.
+func (c *BenchmarkSuiteClient) Interceptors() []Interceptor {
+	return c.inters.BenchmarkSuite
+}
+
+func (c *BenchmarkSuiteClient) mutate(ctx context.Context, m *BenchmarkSuiteMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&BenchmarkSuiteCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&BenchmarkSuiteUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&BenchmarkSuiteUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&BenchmarkSuiteDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown BenchmarkSuite mutation op: %q", m.Op())
+	}
+}
+
+// BenchmarkTargetClient is a client for the BenchmarkTarget schema.
+type BenchmarkTargetClient struct {
+	config
+}
+
+// NewBenchmarkTargetClient returns a client for the BenchmarkTarget from the given config.
+func NewBenchmarkTargetClient(c config) *BenchmarkTargetClient {
+	return &BenchmarkTargetClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `benchmarktarget.Hooks(f(g(h())))`.
+func (c *BenchmarkTargetClient) Use(hooks ...Hook) {
+	c.hooks.BenchmarkTarget = append(c.hooks.BenchmarkTarget, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `benchmarktarget.Intercept(f(g(h())))`.
+func (c *BenchmarkTargetClient) Intercept(interceptors ...Interceptor) {
+	c.inters.BenchmarkTarget = append(c.inters.BenchmarkTarget, interceptors...)
+}
+
+// Create returns a builder for creating a BenchmarkTarget entity.
+func (c *BenchmarkTargetClient) Create() *BenchmarkTargetCreate {
+	mutation := newBenchmarkTargetMutation(c.config, OpCreate)
+	return &BenchmarkTargetCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of BenchmarkTarget entities.
+func (c *BenchmarkTargetClient) CreateBulk(builders ...*BenchmarkTargetCreate) *BenchmarkTargetCreateBulk {
+	return &BenchmarkTargetCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *BenchmarkTargetClient) MapCreateBulk(slice any, setFunc func(*BenchmarkTargetCreate, int)) *BenchmarkTargetCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &BenchmarkTargetCreateBulk{err: fmt.Errorf("calling to BenchmarkTargetClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*BenchmarkTargetCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &BenchmarkTargetCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for BenchmarkTarget.
+func (c *BenchmarkTargetClient) Update() *BenchmarkTargetUpdate {
+	mutation := newBenchmarkTargetMutation(c.config, OpUpdate)
+	return &BenchmarkTargetUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *BenchmarkTargetClient) UpdateOne(_m *BenchmarkTarget) *BenchmarkTargetUpdateOne {
+	mutation := newBenchmarkTargetMutation(c.config, OpUpdateOne, withBenchmarkTarget(_m))
+	return &BenchmarkTargetUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *BenchmarkTargetClient) UpdateOneID(id int64) *BenchmarkTargetUpdateOne {
+	mutation := newBenchmarkTargetMutation(c.config, OpUpdateOne, withBenchmarkTargetID(id))
+	return &BenchmarkTargetUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for BenchmarkTarget.
+func (c *BenchmarkTargetClient) Delete() *BenchmarkTargetDelete {
+	mutation := newBenchmarkTargetMutation(c.config, OpDelete)
+	return &BenchmarkTargetDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *BenchmarkTargetClient) DeleteOne(_m *BenchmarkTarget) *BenchmarkTargetDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *BenchmarkTargetClient) DeleteOneID(id int64) *BenchmarkTargetDeleteOne {
+	builder := c.Delete().Where(benchmarktarget.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &BenchmarkTargetDeleteOne{builder}
+}
+
+// Query returns a query builder for BenchmarkTarget.
+func (c *BenchmarkTargetClient) Query() *BenchmarkTargetQuery {
+	return &BenchmarkTargetQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeBenchmarkTarget},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a BenchmarkTarget entity by its id.
+func (c *BenchmarkTargetClient) Get(ctx context.Context, id int64) (*BenchmarkTarget, error) {
+	return c.Query().Where(benchmarktarget.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *BenchmarkTargetClient) GetX(ctx context.Context, id int64) *BenchmarkTarget {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryRunTargets queries the run_targets edge of a BenchmarkTarget.
+func (c *BenchmarkTargetClient) QueryRunTargets(_m *BenchmarkTarget) *BenchmarkRunTargetQuery {
+	query := (&BenchmarkRunTargetClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(benchmarktarget.Table, benchmarktarget.FieldID, id),
+			sqlgraph.To(benchmarkruntarget.Table, benchmarkruntarget.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, benchmarktarget.RunTargetsTable, benchmarktarget.RunTargetsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *BenchmarkTargetClient) Hooks() []Hook {
+	return c.hooks.BenchmarkTarget
+}
+
+// Interceptors returns the client interceptors.
+func (c *BenchmarkTargetClient) Interceptors() []Interceptor {
+	return c.inters.BenchmarkTarget
+}
+
+func (c *BenchmarkTargetClient) mutate(ctx context.Context, m *BenchmarkTargetMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&BenchmarkTargetCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&BenchmarkTargetUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&BenchmarkTargetUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&BenchmarkTargetDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown BenchmarkTarget mutation op: %q", m.Op())
+	}
+}
+
+// BenchmarkTaskClient is a client for the BenchmarkTask schema.
+type BenchmarkTaskClient struct {
+	config
+}
+
+// NewBenchmarkTaskClient returns a client for the BenchmarkTask from the given config.
+func NewBenchmarkTaskClient(c config) *BenchmarkTaskClient {
+	return &BenchmarkTaskClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `benchmarktask.Hooks(f(g(h())))`.
+func (c *BenchmarkTaskClient) Use(hooks ...Hook) {
+	c.hooks.BenchmarkTask = append(c.hooks.BenchmarkTask, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `benchmarktask.Intercept(f(g(h())))`.
+func (c *BenchmarkTaskClient) Intercept(interceptors ...Interceptor) {
+	c.inters.BenchmarkTask = append(c.inters.BenchmarkTask, interceptors...)
+}
+
+// Create returns a builder for creating a BenchmarkTask entity.
+func (c *BenchmarkTaskClient) Create() *BenchmarkTaskCreate {
+	mutation := newBenchmarkTaskMutation(c.config, OpCreate)
+	return &BenchmarkTaskCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of BenchmarkTask entities.
+func (c *BenchmarkTaskClient) CreateBulk(builders ...*BenchmarkTaskCreate) *BenchmarkTaskCreateBulk {
+	return &BenchmarkTaskCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *BenchmarkTaskClient) MapCreateBulk(slice any, setFunc func(*BenchmarkTaskCreate, int)) *BenchmarkTaskCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &BenchmarkTaskCreateBulk{err: fmt.Errorf("calling to BenchmarkTaskClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*BenchmarkTaskCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &BenchmarkTaskCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for BenchmarkTask.
+func (c *BenchmarkTaskClient) Update() *BenchmarkTaskUpdate {
+	mutation := newBenchmarkTaskMutation(c.config, OpUpdate)
+	return &BenchmarkTaskUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *BenchmarkTaskClient) UpdateOne(_m *BenchmarkTask) *BenchmarkTaskUpdateOne {
+	mutation := newBenchmarkTaskMutation(c.config, OpUpdateOne, withBenchmarkTask(_m))
+	return &BenchmarkTaskUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *BenchmarkTaskClient) UpdateOneID(id int64) *BenchmarkTaskUpdateOne {
+	mutation := newBenchmarkTaskMutation(c.config, OpUpdateOne, withBenchmarkTaskID(id))
+	return &BenchmarkTaskUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for BenchmarkTask.
+func (c *BenchmarkTaskClient) Delete() *BenchmarkTaskDelete {
+	mutation := newBenchmarkTaskMutation(c.config, OpDelete)
+	return &BenchmarkTaskDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *BenchmarkTaskClient) DeleteOne(_m *BenchmarkTask) *BenchmarkTaskDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *BenchmarkTaskClient) DeleteOneID(id int64) *BenchmarkTaskDeleteOne {
+	builder := c.Delete().Where(benchmarktask.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &BenchmarkTaskDeleteOne{builder}
+}
+
+// Query returns a query builder for BenchmarkTask.
+func (c *BenchmarkTaskClient) Query() *BenchmarkTaskQuery {
+	return &BenchmarkTaskQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeBenchmarkTask},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a BenchmarkTask entity by its id.
+func (c *BenchmarkTaskClient) Get(ctx context.Context, id int64) (*BenchmarkTask, error) {
+	return c.Query().Where(benchmarktask.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *BenchmarkTaskClient) GetX(ctx context.Context, id int64) *BenchmarkTask {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QuerySuite queries the suite edge of a BenchmarkTask.
+func (c *BenchmarkTaskClient) QuerySuite(_m *BenchmarkTask) *BenchmarkSuiteQuery {
+	query := (&BenchmarkSuiteClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(benchmarktask.Table, benchmarktask.FieldID, id),
+			sqlgraph.To(benchmarksuite.Table, benchmarksuite.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, benchmarktask.SuiteTable, benchmarktask.SuiteColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryRunTasks queries the run_tasks edge of a BenchmarkTask.
+func (c *BenchmarkTaskClient) QueryRunTasks(_m *BenchmarkTask) *BenchmarkRunTaskQuery {
+	query := (&BenchmarkRunTaskClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(benchmarktask.Table, benchmarktask.FieldID, id),
+			sqlgraph.To(benchmarkruntask.Table, benchmarkruntask.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, benchmarktask.RunTasksTable, benchmarktask.RunTasksColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *BenchmarkTaskClient) Hooks() []Hook {
+	return c.hooks.BenchmarkTask
+}
+
+// Interceptors returns the client interceptors.
+func (c *BenchmarkTaskClient) Interceptors() []Interceptor {
+	return c.inters.BenchmarkTask
+}
+
+func (c *BenchmarkTaskClient) mutate(ctx context.Context, m *BenchmarkTaskMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&BenchmarkTaskCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&BenchmarkTaskUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&BenchmarkTaskUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&BenchmarkTaskDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown BenchmarkTask mutation op: %q", m.Op())
 	}
 }
 
@@ -6210,7 +8327,10 @@ func (c *UserSubscriptionClient) mutate(ctx context.Context, m *UserSubscription
 type (
 	hooks struct {
 		APIKey, Account, AccountGroup, Announcement, AnnouncementRead, AuthIdentity,
-		AuthIdentityChannel, ChannelMonitor, ChannelMonitorDailyRollup,
+		AuthIdentityChannel, BenchmarkProfile, BenchmarkPublicSnapshot,
+		BenchmarkResult, BenchmarkRun, BenchmarkRunTarget, BenchmarkRunTask,
+		BenchmarkSchedule, BenchmarkScoreSnapshot, BenchmarkSuite, BenchmarkTarget,
+		BenchmarkTask, ChannelMonitor, ChannelMonitorDailyRollup,
 		ChannelMonitorHistory, ChannelMonitorRequestTemplate, ErrorPassthroughRule,
 		Group, IdempotencyRecord, IdentityAdoptionDecision, PaymentAuditLog,
 		PaymentOrder, PaymentProviderInstance, PendingAuthSession, PromoCode,
@@ -6221,7 +8341,10 @@ type (
 	}
 	inters struct {
 		APIKey, Account, AccountGroup, Announcement, AnnouncementRead, AuthIdentity,
-		AuthIdentityChannel, ChannelMonitor, ChannelMonitorDailyRollup,
+		AuthIdentityChannel, BenchmarkProfile, BenchmarkPublicSnapshot,
+		BenchmarkResult, BenchmarkRun, BenchmarkRunTarget, BenchmarkRunTask,
+		BenchmarkSchedule, BenchmarkScoreSnapshot, BenchmarkSuite, BenchmarkTarget,
+		BenchmarkTask, ChannelMonitor, ChannelMonitorDailyRollup,
 		ChannelMonitorHistory, ChannelMonitorRequestTemplate, ErrorPassthroughRule,
 		Group, IdempotencyRecord, IdentityAdoptionDecision, PaymentAuditLog,
 		PaymentOrder, PaymentProviderInstance, PendingAuthSession, PromoCode,

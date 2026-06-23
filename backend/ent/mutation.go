@@ -19,6 +19,17 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
 	"github.com/Wei-Shaw/sub2api/ent/authidentity"
 	"github.com/Wei-Shaw/sub2api/ent/authidentitychannel"
+	"github.com/Wei-Shaw/sub2api/ent/benchmarkprofile"
+	"github.com/Wei-Shaw/sub2api/ent/benchmarkpublicsnapshot"
+	"github.com/Wei-Shaw/sub2api/ent/benchmarkresult"
+	"github.com/Wei-Shaw/sub2api/ent/benchmarkrun"
+	"github.com/Wei-Shaw/sub2api/ent/benchmarkruntarget"
+	"github.com/Wei-Shaw/sub2api/ent/benchmarkruntask"
+	"github.com/Wei-Shaw/sub2api/ent/benchmarkschedule"
+	"github.com/Wei-Shaw/sub2api/ent/benchmarkscoresnapshot"
+	"github.com/Wei-Shaw/sub2api/ent/benchmarksuite"
+	"github.com/Wei-Shaw/sub2api/ent/benchmarktarget"
+	"github.com/Wei-Shaw/sub2api/ent/benchmarktask"
 	"github.com/Wei-Shaw/sub2api/ent/channelmonitor"
 	"github.com/Wei-Shaw/sub2api/ent/channelmonitordailyrollup"
 	"github.com/Wei-Shaw/sub2api/ent/channelmonitorhistory"
@@ -67,6 +78,17 @@ const (
 	TypeAnnouncementRead              = "AnnouncementRead"
 	TypeAuthIdentity                  = "AuthIdentity"
 	TypeAuthIdentityChannel           = "AuthIdentityChannel"
+	TypeBenchmarkProfile              = "BenchmarkProfile"
+	TypeBenchmarkPublicSnapshot       = "BenchmarkPublicSnapshot"
+	TypeBenchmarkResult               = "BenchmarkResult"
+	TypeBenchmarkRun                  = "BenchmarkRun"
+	TypeBenchmarkRunTarget            = "BenchmarkRunTarget"
+	TypeBenchmarkRunTask              = "BenchmarkRunTask"
+	TypeBenchmarkSchedule             = "BenchmarkSchedule"
+	TypeBenchmarkScoreSnapshot        = "BenchmarkScoreSnapshot"
+	TypeBenchmarkSuite                = "BenchmarkSuite"
+	TypeBenchmarkTarget               = "BenchmarkTarget"
+	TypeBenchmarkTask                 = "BenchmarkTask"
 	TypeChannelMonitor                = "ChannelMonitor"
 	TypeChannelMonitorDailyRollup     = "ChannelMonitorDailyRollup"
 	TypeChannelMonitorHistory         = "ChannelMonitorHistory"
@@ -8849,6 +8871,15920 @@ func (m *AuthIdentityChannelMutation) ResetEdge(name string) error {
 		return nil
 	}
 	return fmt.Errorf("unknown AuthIdentityChannel edge %s", name)
+}
+
+// BenchmarkProfileMutation represents an operation that mutates the BenchmarkProfile nodes in the graph.
+type BenchmarkProfileMutation struct {
+	config
+	op                      Op
+	typ                     string
+	id                      *int64
+	created_at              *time.Time
+	updated_at              *time.Time
+	name                    *string
+	description             *string
+	target_ids              *[]int64
+	appendtarget_ids        []int64
+	task_types              *[]string
+	appendtask_types        []string
+	task_scale              *int
+	addtask_scale           *int
+	task_count_limit        *int
+	addtask_count_limit     *int
+	per_type_limit          *map[string]int
+	difficulty_filter       *[]string
+	appenddifficulty_filter []string
+	tag_filter              *[]string
+	appendtag_filter        []string
+	sampling_strategy       *string
+	selection_seed          *int64
+	addselection_seed       *int64
+	runtime_config          *map[string]interface{}
+	scoring_config          *map[string]interface{}
+	enabled                 *bool
+	metadata                *map[string]interface{}
+	clearedFields           map[string]struct{}
+	suite                   *int64
+	clearedsuite            bool
+	schedules               map[int64]struct{}
+	removedschedules        map[int64]struct{}
+	clearedschedules        bool
+	runs                    map[int64]struct{}
+	removedruns             map[int64]struct{}
+	clearedruns             bool
+	public_snapshots        map[int64]struct{}
+	removedpublic_snapshots map[int64]struct{}
+	clearedpublic_snapshots bool
+	done                    bool
+	oldValue                func(context.Context) (*BenchmarkProfile, error)
+	predicates              []predicate.BenchmarkProfile
+}
+
+var _ ent.Mutation = (*BenchmarkProfileMutation)(nil)
+
+// benchmarkprofileOption allows management of the mutation configuration using functional options.
+type benchmarkprofileOption func(*BenchmarkProfileMutation)
+
+// newBenchmarkProfileMutation creates new mutation for the BenchmarkProfile entity.
+func newBenchmarkProfileMutation(c config, op Op, opts ...benchmarkprofileOption) *BenchmarkProfileMutation {
+	m := &BenchmarkProfileMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeBenchmarkProfile,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withBenchmarkProfileID sets the ID field of the mutation.
+func withBenchmarkProfileID(id int64) benchmarkprofileOption {
+	return func(m *BenchmarkProfileMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *BenchmarkProfile
+		)
+		m.oldValue = func(ctx context.Context) (*BenchmarkProfile, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().BenchmarkProfile.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withBenchmarkProfile sets the old BenchmarkProfile of the mutation.
+func withBenchmarkProfile(node *BenchmarkProfile) benchmarkprofileOption {
+	return func(m *BenchmarkProfileMutation) {
+		m.oldValue = func(context.Context) (*BenchmarkProfile, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m BenchmarkProfileMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m BenchmarkProfileMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *BenchmarkProfileMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *BenchmarkProfileMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().BenchmarkProfile.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *BenchmarkProfileMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *BenchmarkProfileMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the BenchmarkProfile entity.
+// If the BenchmarkProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkProfileMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *BenchmarkProfileMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *BenchmarkProfileMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *BenchmarkProfileMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the BenchmarkProfile entity.
+// If the BenchmarkProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkProfileMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *BenchmarkProfileMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetSuiteID sets the "suite_id" field.
+func (m *BenchmarkProfileMutation) SetSuiteID(i int64) {
+	m.suite = &i
+}
+
+// SuiteID returns the value of the "suite_id" field in the mutation.
+func (m *BenchmarkProfileMutation) SuiteID() (r int64, exists bool) {
+	v := m.suite
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSuiteID returns the old "suite_id" field's value of the BenchmarkProfile entity.
+// If the BenchmarkProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkProfileMutation) OldSuiteID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSuiteID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSuiteID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSuiteID: %w", err)
+	}
+	return oldValue.SuiteID, nil
+}
+
+// ResetSuiteID resets all changes to the "suite_id" field.
+func (m *BenchmarkProfileMutation) ResetSuiteID() {
+	m.suite = nil
+}
+
+// SetName sets the "name" field.
+func (m *BenchmarkProfileMutation) SetName(s string) {
+	m.name = &s
+}
+
+// Name returns the value of the "name" field in the mutation.
+func (m *BenchmarkProfileMutation) Name() (r string, exists bool) {
+	v := m.name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldName returns the old "name" field's value of the BenchmarkProfile entity.
+// If the BenchmarkProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkProfileMutation) OldName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldName: %w", err)
+	}
+	return oldValue.Name, nil
+}
+
+// ResetName resets all changes to the "name" field.
+func (m *BenchmarkProfileMutation) ResetName() {
+	m.name = nil
+}
+
+// SetDescription sets the "description" field.
+func (m *BenchmarkProfileMutation) SetDescription(s string) {
+	m.description = &s
+}
+
+// Description returns the value of the "description" field in the mutation.
+func (m *BenchmarkProfileMutation) Description() (r string, exists bool) {
+	v := m.description
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDescription returns the old "description" field's value of the BenchmarkProfile entity.
+// If the BenchmarkProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkProfileMutation) OldDescription(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDescription is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDescription requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDescription: %w", err)
+	}
+	return oldValue.Description, nil
+}
+
+// ClearDescription clears the value of the "description" field.
+func (m *BenchmarkProfileMutation) ClearDescription() {
+	m.description = nil
+	m.clearedFields[benchmarkprofile.FieldDescription] = struct{}{}
+}
+
+// DescriptionCleared returns if the "description" field was cleared in this mutation.
+func (m *BenchmarkProfileMutation) DescriptionCleared() bool {
+	_, ok := m.clearedFields[benchmarkprofile.FieldDescription]
+	return ok
+}
+
+// ResetDescription resets all changes to the "description" field.
+func (m *BenchmarkProfileMutation) ResetDescription() {
+	m.description = nil
+	delete(m.clearedFields, benchmarkprofile.FieldDescription)
+}
+
+// SetTargetIds sets the "target_ids" field.
+func (m *BenchmarkProfileMutation) SetTargetIds(i []int64) {
+	m.target_ids = &i
+	m.appendtarget_ids = nil
+}
+
+// TargetIds returns the value of the "target_ids" field in the mutation.
+func (m *BenchmarkProfileMutation) TargetIds() (r []int64, exists bool) {
+	v := m.target_ids
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTargetIds returns the old "target_ids" field's value of the BenchmarkProfile entity.
+// If the BenchmarkProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkProfileMutation) OldTargetIds(ctx context.Context) (v []int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTargetIds is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTargetIds requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTargetIds: %w", err)
+	}
+	return oldValue.TargetIds, nil
+}
+
+// AppendTargetIds adds i to the "target_ids" field.
+func (m *BenchmarkProfileMutation) AppendTargetIds(i []int64) {
+	m.appendtarget_ids = append(m.appendtarget_ids, i...)
+}
+
+// AppendedTargetIds returns the list of values that were appended to the "target_ids" field in this mutation.
+func (m *BenchmarkProfileMutation) AppendedTargetIds() ([]int64, bool) {
+	if len(m.appendtarget_ids) == 0 {
+		return nil, false
+	}
+	return m.appendtarget_ids, true
+}
+
+// ResetTargetIds resets all changes to the "target_ids" field.
+func (m *BenchmarkProfileMutation) ResetTargetIds() {
+	m.target_ids = nil
+	m.appendtarget_ids = nil
+}
+
+// SetTaskTypes sets the "task_types" field.
+func (m *BenchmarkProfileMutation) SetTaskTypes(s []string) {
+	m.task_types = &s
+	m.appendtask_types = nil
+}
+
+// TaskTypes returns the value of the "task_types" field in the mutation.
+func (m *BenchmarkProfileMutation) TaskTypes() (r []string, exists bool) {
+	v := m.task_types
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTaskTypes returns the old "task_types" field's value of the BenchmarkProfile entity.
+// If the BenchmarkProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkProfileMutation) OldTaskTypes(ctx context.Context) (v []string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTaskTypes is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTaskTypes requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTaskTypes: %w", err)
+	}
+	return oldValue.TaskTypes, nil
+}
+
+// AppendTaskTypes adds s to the "task_types" field.
+func (m *BenchmarkProfileMutation) AppendTaskTypes(s []string) {
+	m.appendtask_types = append(m.appendtask_types, s...)
+}
+
+// AppendedTaskTypes returns the list of values that were appended to the "task_types" field in this mutation.
+func (m *BenchmarkProfileMutation) AppendedTaskTypes() ([]string, bool) {
+	if len(m.appendtask_types) == 0 {
+		return nil, false
+	}
+	return m.appendtask_types, true
+}
+
+// ResetTaskTypes resets all changes to the "task_types" field.
+func (m *BenchmarkProfileMutation) ResetTaskTypes() {
+	m.task_types = nil
+	m.appendtask_types = nil
+}
+
+// SetTaskScale sets the "task_scale" field.
+func (m *BenchmarkProfileMutation) SetTaskScale(i int) {
+	m.task_scale = &i
+	m.addtask_scale = nil
+}
+
+// TaskScale returns the value of the "task_scale" field in the mutation.
+func (m *BenchmarkProfileMutation) TaskScale() (r int, exists bool) {
+	v := m.task_scale
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTaskScale returns the old "task_scale" field's value of the BenchmarkProfile entity.
+// If the BenchmarkProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkProfileMutation) OldTaskScale(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTaskScale is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTaskScale requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTaskScale: %w", err)
+	}
+	return oldValue.TaskScale, nil
+}
+
+// AddTaskScale adds i to the "task_scale" field.
+func (m *BenchmarkProfileMutation) AddTaskScale(i int) {
+	if m.addtask_scale != nil {
+		*m.addtask_scale += i
+	} else {
+		m.addtask_scale = &i
+	}
+}
+
+// AddedTaskScale returns the value that was added to the "task_scale" field in this mutation.
+func (m *BenchmarkProfileMutation) AddedTaskScale() (r int, exists bool) {
+	v := m.addtask_scale
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetTaskScale resets all changes to the "task_scale" field.
+func (m *BenchmarkProfileMutation) ResetTaskScale() {
+	m.task_scale = nil
+	m.addtask_scale = nil
+}
+
+// SetTaskCountLimit sets the "task_count_limit" field.
+func (m *BenchmarkProfileMutation) SetTaskCountLimit(i int) {
+	m.task_count_limit = &i
+	m.addtask_count_limit = nil
+}
+
+// TaskCountLimit returns the value of the "task_count_limit" field in the mutation.
+func (m *BenchmarkProfileMutation) TaskCountLimit() (r int, exists bool) {
+	v := m.task_count_limit
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTaskCountLimit returns the old "task_count_limit" field's value of the BenchmarkProfile entity.
+// If the BenchmarkProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkProfileMutation) OldTaskCountLimit(ctx context.Context) (v *int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTaskCountLimit is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTaskCountLimit requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTaskCountLimit: %w", err)
+	}
+	return oldValue.TaskCountLimit, nil
+}
+
+// AddTaskCountLimit adds i to the "task_count_limit" field.
+func (m *BenchmarkProfileMutation) AddTaskCountLimit(i int) {
+	if m.addtask_count_limit != nil {
+		*m.addtask_count_limit += i
+	} else {
+		m.addtask_count_limit = &i
+	}
+}
+
+// AddedTaskCountLimit returns the value that was added to the "task_count_limit" field in this mutation.
+func (m *BenchmarkProfileMutation) AddedTaskCountLimit() (r int, exists bool) {
+	v := m.addtask_count_limit
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearTaskCountLimit clears the value of the "task_count_limit" field.
+func (m *BenchmarkProfileMutation) ClearTaskCountLimit() {
+	m.task_count_limit = nil
+	m.addtask_count_limit = nil
+	m.clearedFields[benchmarkprofile.FieldTaskCountLimit] = struct{}{}
+}
+
+// TaskCountLimitCleared returns if the "task_count_limit" field was cleared in this mutation.
+func (m *BenchmarkProfileMutation) TaskCountLimitCleared() bool {
+	_, ok := m.clearedFields[benchmarkprofile.FieldTaskCountLimit]
+	return ok
+}
+
+// ResetTaskCountLimit resets all changes to the "task_count_limit" field.
+func (m *BenchmarkProfileMutation) ResetTaskCountLimit() {
+	m.task_count_limit = nil
+	m.addtask_count_limit = nil
+	delete(m.clearedFields, benchmarkprofile.FieldTaskCountLimit)
+}
+
+// SetPerTypeLimit sets the "per_type_limit" field.
+func (m *BenchmarkProfileMutation) SetPerTypeLimit(value map[string]int) {
+	m.per_type_limit = &value
+}
+
+// PerTypeLimit returns the value of the "per_type_limit" field in the mutation.
+func (m *BenchmarkProfileMutation) PerTypeLimit() (r map[string]int, exists bool) {
+	v := m.per_type_limit
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPerTypeLimit returns the old "per_type_limit" field's value of the BenchmarkProfile entity.
+// If the BenchmarkProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkProfileMutation) OldPerTypeLimit(ctx context.Context) (v map[string]int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPerTypeLimit is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPerTypeLimit requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPerTypeLimit: %w", err)
+	}
+	return oldValue.PerTypeLimit, nil
+}
+
+// ResetPerTypeLimit resets all changes to the "per_type_limit" field.
+func (m *BenchmarkProfileMutation) ResetPerTypeLimit() {
+	m.per_type_limit = nil
+}
+
+// SetDifficultyFilter sets the "difficulty_filter" field.
+func (m *BenchmarkProfileMutation) SetDifficultyFilter(s []string) {
+	m.difficulty_filter = &s
+	m.appenddifficulty_filter = nil
+}
+
+// DifficultyFilter returns the value of the "difficulty_filter" field in the mutation.
+func (m *BenchmarkProfileMutation) DifficultyFilter() (r []string, exists bool) {
+	v := m.difficulty_filter
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDifficultyFilter returns the old "difficulty_filter" field's value of the BenchmarkProfile entity.
+// If the BenchmarkProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkProfileMutation) OldDifficultyFilter(ctx context.Context) (v []string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDifficultyFilter is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDifficultyFilter requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDifficultyFilter: %w", err)
+	}
+	return oldValue.DifficultyFilter, nil
+}
+
+// AppendDifficultyFilter adds s to the "difficulty_filter" field.
+func (m *BenchmarkProfileMutation) AppendDifficultyFilter(s []string) {
+	m.appenddifficulty_filter = append(m.appenddifficulty_filter, s...)
+}
+
+// AppendedDifficultyFilter returns the list of values that were appended to the "difficulty_filter" field in this mutation.
+func (m *BenchmarkProfileMutation) AppendedDifficultyFilter() ([]string, bool) {
+	if len(m.appenddifficulty_filter) == 0 {
+		return nil, false
+	}
+	return m.appenddifficulty_filter, true
+}
+
+// ResetDifficultyFilter resets all changes to the "difficulty_filter" field.
+func (m *BenchmarkProfileMutation) ResetDifficultyFilter() {
+	m.difficulty_filter = nil
+	m.appenddifficulty_filter = nil
+}
+
+// SetTagFilter sets the "tag_filter" field.
+func (m *BenchmarkProfileMutation) SetTagFilter(s []string) {
+	m.tag_filter = &s
+	m.appendtag_filter = nil
+}
+
+// TagFilter returns the value of the "tag_filter" field in the mutation.
+func (m *BenchmarkProfileMutation) TagFilter() (r []string, exists bool) {
+	v := m.tag_filter
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTagFilter returns the old "tag_filter" field's value of the BenchmarkProfile entity.
+// If the BenchmarkProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkProfileMutation) OldTagFilter(ctx context.Context) (v []string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTagFilter is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTagFilter requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTagFilter: %w", err)
+	}
+	return oldValue.TagFilter, nil
+}
+
+// AppendTagFilter adds s to the "tag_filter" field.
+func (m *BenchmarkProfileMutation) AppendTagFilter(s []string) {
+	m.appendtag_filter = append(m.appendtag_filter, s...)
+}
+
+// AppendedTagFilter returns the list of values that were appended to the "tag_filter" field in this mutation.
+func (m *BenchmarkProfileMutation) AppendedTagFilter() ([]string, bool) {
+	if len(m.appendtag_filter) == 0 {
+		return nil, false
+	}
+	return m.appendtag_filter, true
+}
+
+// ResetTagFilter resets all changes to the "tag_filter" field.
+func (m *BenchmarkProfileMutation) ResetTagFilter() {
+	m.tag_filter = nil
+	m.appendtag_filter = nil
+}
+
+// SetSamplingStrategy sets the "sampling_strategy" field.
+func (m *BenchmarkProfileMutation) SetSamplingStrategy(s string) {
+	m.sampling_strategy = &s
+}
+
+// SamplingStrategy returns the value of the "sampling_strategy" field in the mutation.
+func (m *BenchmarkProfileMutation) SamplingStrategy() (r string, exists bool) {
+	v := m.sampling_strategy
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSamplingStrategy returns the old "sampling_strategy" field's value of the BenchmarkProfile entity.
+// If the BenchmarkProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkProfileMutation) OldSamplingStrategy(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSamplingStrategy is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSamplingStrategy requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSamplingStrategy: %w", err)
+	}
+	return oldValue.SamplingStrategy, nil
+}
+
+// ResetSamplingStrategy resets all changes to the "sampling_strategy" field.
+func (m *BenchmarkProfileMutation) ResetSamplingStrategy() {
+	m.sampling_strategy = nil
+}
+
+// SetSelectionSeed sets the "selection_seed" field.
+func (m *BenchmarkProfileMutation) SetSelectionSeed(i int64) {
+	m.selection_seed = &i
+	m.addselection_seed = nil
+}
+
+// SelectionSeed returns the value of the "selection_seed" field in the mutation.
+func (m *BenchmarkProfileMutation) SelectionSeed() (r int64, exists bool) {
+	v := m.selection_seed
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSelectionSeed returns the old "selection_seed" field's value of the BenchmarkProfile entity.
+// If the BenchmarkProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkProfileMutation) OldSelectionSeed(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSelectionSeed is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSelectionSeed requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSelectionSeed: %w", err)
+	}
+	return oldValue.SelectionSeed, nil
+}
+
+// AddSelectionSeed adds i to the "selection_seed" field.
+func (m *BenchmarkProfileMutation) AddSelectionSeed(i int64) {
+	if m.addselection_seed != nil {
+		*m.addselection_seed += i
+	} else {
+		m.addselection_seed = &i
+	}
+}
+
+// AddedSelectionSeed returns the value that was added to the "selection_seed" field in this mutation.
+func (m *BenchmarkProfileMutation) AddedSelectionSeed() (r int64, exists bool) {
+	v := m.addselection_seed
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearSelectionSeed clears the value of the "selection_seed" field.
+func (m *BenchmarkProfileMutation) ClearSelectionSeed() {
+	m.selection_seed = nil
+	m.addselection_seed = nil
+	m.clearedFields[benchmarkprofile.FieldSelectionSeed] = struct{}{}
+}
+
+// SelectionSeedCleared returns if the "selection_seed" field was cleared in this mutation.
+func (m *BenchmarkProfileMutation) SelectionSeedCleared() bool {
+	_, ok := m.clearedFields[benchmarkprofile.FieldSelectionSeed]
+	return ok
+}
+
+// ResetSelectionSeed resets all changes to the "selection_seed" field.
+func (m *BenchmarkProfileMutation) ResetSelectionSeed() {
+	m.selection_seed = nil
+	m.addselection_seed = nil
+	delete(m.clearedFields, benchmarkprofile.FieldSelectionSeed)
+}
+
+// SetRuntimeConfig sets the "runtime_config" field.
+func (m *BenchmarkProfileMutation) SetRuntimeConfig(value map[string]interface{}) {
+	m.runtime_config = &value
+}
+
+// RuntimeConfig returns the value of the "runtime_config" field in the mutation.
+func (m *BenchmarkProfileMutation) RuntimeConfig() (r map[string]interface{}, exists bool) {
+	v := m.runtime_config
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRuntimeConfig returns the old "runtime_config" field's value of the BenchmarkProfile entity.
+// If the BenchmarkProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkProfileMutation) OldRuntimeConfig(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRuntimeConfig is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRuntimeConfig requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRuntimeConfig: %w", err)
+	}
+	return oldValue.RuntimeConfig, nil
+}
+
+// ResetRuntimeConfig resets all changes to the "runtime_config" field.
+func (m *BenchmarkProfileMutation) ResetRuntimeConfig() {
+	m.runtime_config = nil
+}
+
+// SetScoringConfig sets the "scoring_config" field.
+func (m *BenchmarkProfileMutation) SetScoringConfig(value map[string]interface{}) {
+	m.scoring_config = &value
+}
+
+// ScoringConfig returns the value of the "scoring_config" field in the mutation.
+func (m *BenchmarkProfileMutation) ScoringConfig() (r map[string]interface{}, exists bool) {
+	v := m.scoring_config
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldScoringConfig returns the old "scoring_config" field's value of the BenchmarkProfile entity.
+// If the BenchmarkProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkProfileMutation) OldScoringConfig(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldScoringConfig is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldScoringConfig requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldScoringConfig: %w", err)
+	}
+	return oldValue.ScoringConfig, nil
+}
+
+// ResetScoringConfig resets all changes to the "scoring_config" field.
+func (m *BenchmarkProfileMutation) ResetScoringConfig() {
+	m.scoring_config = nil
+}
+
+// SetEnabled sets the "enabled" field.
+func (m *BenchmarkProfileMutation) SetEnabled(b bool) {
+	m.enabled = &b
+}
+
+// Enabled returns the value of the "enabled" field in the mutation.
+func (m *BenchmarkProfileMutation) Enabled() (r bool, exists bool) {
+	v := m.enabled
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnabled returns the old "enabled" field's value of the BenchmarkProfile entity.
+// If the BenchmarkProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkProfileMutation) OldEnabled(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEnabled is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEnabled requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEnabled: %w", err)
+	}
+	return oldValue.Enabled, nil
+}
+
+// ResetEnabled resets all changes to the "enabled" field.
+func (m *BenchmarkProfileMutation) ResetEnabled() {
+	m.enabled = nil
+}
+
+// SetMetadata sets the "metadata" field.
+func (m *BenchmarkProfileMutation) SetMetadata(value map[string]interface{}) {
+	m.metadata = &value
+}
+
+// Metadata returns the value of the "metadata" field in the mutation.
+func (m *BenchmarkProfileMutation) Metadata() (r map[string]interface{}, exists bool) {
+	v := m.metadata
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMetadata returns the old "metadata" field's value of the BenchmarkProfile entity.
+// If the BenchmarkProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkProfileMutation) OldMetadata(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMetadata is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMetadata requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMetadata: %w", err)
+	}
+	return oldValue.Metadata, nil
+}
+
+// ResetMetadata resets all changes to the "metadata" field.
+func (m *BenchmarkProfileMutation) ResetMetadata() {
+	m.metadata = nil
+}
+
+// ClearSuite clears the "suite" edge to the BenchmarkSuite entity.
+func (m *BenchmarkProfileMutation) ClearSuite() {
+	m.clearedsuite = true
+	m.clearedFields[benchmarkprofile.FieldSuiteID] = struct{}{}
+}
+
+// SuiteCleared reports if the "suite" edge to the BenchmarkSuite entity was cleared.
+func (m *BenchmarkProfileMutation) SuiteCleared() bool {
+	return m.clearedsuite
+}
+
+// SuiteIDs returns the "suite" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// SuiteID instead. It exists only for internal usage by the builders.
+func (m *BenchmarkProfileMutation) SuiteIDs() (ids []int64) {
+	if id := m.suite; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetSuite resets all changes to the "suite" edge.
+func (m *BenchmarkProfileMutation) ResetSuite() {
+	m.suite = nil
+	m.clearedsuite = false
+}
+
+// AddScheduleIDs adds the "schedules" edge to the BenchmarkSchedule entity by ids.
+func (m *BenchmarkProfileMutation) AddScheduleIDs(ids ...int64) {
+	if m.schedules == nil {
+		m.schedules = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.schedules[ids[i]] = struct{}{}
+	}
+}
+
+// ClearSchedules clears the "schedules" edge to the BenchmarkSchedule entity.
+func (m *BenchmarkProfileMutation) ClearSchedules() {
+	m.clearedschedules = true
+}
+
+// SchedulesCleared reports if the "schedules" edge to the BenchmarkSchedule entity was cleared.
+func (m *BenchmarkProfileMutation) SchedulesCleared() bool {
+	return m.clearedschedules
+}
+
+// RemoveScheduleIDs removes the "schedules" edge to the BenchmarkSchedule entity by IDs.
+func (m *BenchmarkProfileMutation) RemoveScheduleIDs(ids ...int64) {
+	if m.removedschedules == nil {
+		m.removedschedules = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.schedules, ids[i])
+		m.removedschedules[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedSchedules returns the removed IDs of the "schedules" edge to the BenchmarkSchedule entity.
+func (m *BenchmarkProfileMutation) RemovedSchedulesIDs() (ids []int64) {
+	for id := range m.removedschedules {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// SchedulesIDs returns the "schedules" edge IDs in the mutation.
+func (m *BenchmarkProfileMutation) SchedulesIDs() (ids []int64) {
+	for id := range m.schedules {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetSchedules resets all changes to the "schedules" edge.
+func (m *BenchmarkProfileMutation) ResetSchedules() {
+	m.schedules = nil
+	m.clearedschedules = false
+	m.removedschedules = nil
+}
+
+// AddRunIDs adds the "runs" edge to the BenchmarkRun entity by ids.
+func (m *BenchmarkProfileMutation) AddRunIDs(ids ...int64) {
+	if m.runs == nil {
+		m.runs = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.runs[ids[i]] = struct{}{}
+	}
+}
+
+// ClearRuns clears the "runs" edge to the BenchmarkRun entity.
+func (m *BenchmarkProfileMutation) ClearRuns() {
+	m.clearedruns = true
+}
+
+// RunsCleared reports if the "runs" edge to the BenchmarkRun entity was cleared.
+func (m *BenchmarkProfileMutation) RunsCleared() bool {
+	return m.clearedruns
+}
+
+// RemoveRunIDs removes the "runs" edge to the BenchmarkRun entity by IDs.
+func (m *BenchmarkProfileMutation) RemoveRunIDs(ids ...int64) {
+	if m.removedruns == nil {
+		m.removedruns = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.runs, ids[i])
+		m.removedruns[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedRuns returns the removed IDs of the "runs" edge to the BenchmarkRun entity.
+func (m *BenchmarkProfileMutation) RemovedRunsIDs() (ids []int64) {
+	for id := range m.removedruns {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// RunsIDs returns the "runs" edge IDs in the mutation.
+func (m *BenchmarkProfileMutation) RunsIDs() (ids []int64) {
+	for id := range m.runs {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetRuns resets all changes to the "runs" edge.
+func (m *BenchmarkProfileMutation) ResetRuns() {
+	m.runs = nil
+	m.clearedruns = false
+	m.removedruns = nil
+}
+
+// AddPublicSnapshotIDs adds the "public_snapshots" edge to the BenchmarkPublicSnapshot entity by ids.
+func (m *BenchmarkProfileMutation) AddPublicSnapshotIDs(ids ...int64) {
+	if m.public_snapshots == nil {
+		m.public_snapshots = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.public_snapshots[ids[i]] = struct{}{}
+	}
+}
+
+// ClearPublicSnapshots clears the "public_snapshots" edge to the BenchmarkPublicSnapshot entity.
+func (m *BenchmarkProfileMutation) ClearPublicSnapshots() {
+	m.clearedpublic_snapshots = true
+}
+
+// PublicSnapshotsCleared reports if the "public_snapshots" edge to the BenchmarkPublicSnapshot entity was cleared.
+func (m *BenchmarkProfileMutation) PublicSnapshotsCleared() bool {
+	return m.clearedpublic_snapshots
+}
+
+// RemovePublicSnapshotIDs removes the "public_snapshots" edge to the BenchmarkPublicSnapshot entity by IDs.
+func (m *BenchmarkProfileMutation) RemovePublicSnapshotIDs(ids ...int64) {
+	if m.removedpublic_snapshots == nil {
+		m.removedpublic_snapshots = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.public_snapshots, ids[i])
+		m.removedpublic_snapshots[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedPublicSnapshots returns the removed IDs of the "public_snapshots" edge to the BenchmarkPublicSnapshot entity.
+func (m *BenchmarkProfileMutation) RemovedPublicSnapshotsIDs() (ids []int64) {
+	for id := range m.removedpublic_snapshots {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// PublicSnapshotsIDs returns the "public_snapshots" edge IDs in the mutation.
+func (m *BenchmarkProfileMutation) PublicSnapshotsIDs() (ids []int64) {
+	for id := range m.public_snapshots {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetPublicSnapshots resets all changes to the "public_snapshots" edge.
+func (m *BenchmarkProfileMutation) ResetPublicSnapshots() {
+	m.public_snapshots = nil
+	m.clearedpublic_snapshots = false
+	m.removedpublic_snapshots = nil
+}
+
+// Where appends a list predicates to the BenchmarkProfileMutation builder.
+func (m *BenchmarkProfileMutation) Where(ps ...predicate.BenchmarkProfile) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the BenchmarkProfileMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *BenchmarkProfileMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.BenchmarkProfile, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *BenchmarkProfileMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *BenchmarkProfileMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (BenchmarkProfile).
+func (m *BenchmarkProfileMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *BenchmarkProfileMutation) Fields() []string {
+	fields := make([]string, 0, 18)
+	if m.created_at != nil {
+		fields = append(fields, benchmarkprofile.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, benchmarkprofile.FieldUpdatedAt)
+	}
+	if m.suite != nil {
+		fields = append(fields, benchmarkprofile.FieldSuiteID)
+	}
+	if m.name != nil {
+		fields = append(fields, benchmarkprofile.FieldName)
+	}
+	if m.description != nil {
+		fields = append(fields, benchmarkprofile.FieldDescription)
+	}
+	if m.target_ids != nil {
+		fields = append(fields, benchmarkprofile.FieldTargetIds)
+	}
+	if m.task_types != nil {
+		fields = append(fields, benchmarkprofile.FieldTaskTypes)
+	}
+	if m.task_scale != nil {
+		fields = append(fields, benchmarkprofile.FieldTaskScale)
+	}
+	if m.task_count_limit != nil {
+		fields = append(fields, benchmarkprofile.FieldTaskCountLimit)
+	}
+	if m.per_type_limit != nil {
+		fields = append(fields, benchmarkprofile.FieldPerTypeLimit)
+	}
+	if m.difficulty_filter != nil {
+		fields = append(fields, benchmarkprofile.FieldDifficultyFilter)
+	}
+	if m.tag_filter != nil {
+		fields = append(fields, benchmarkprofile.FieldTagFilter)
+	}
+	if m.sampling_strategy != nil {
+		fields = append(fields, benchmarkprofile.FieldSamplingStrategy)
+	}
+	if m.selection_seed != nil {
+		fields = append(fields, benchmarkprofile.FieldSelectionSeed)
+	}
+	if m.runtime_config != nil {
+		fields = append(fields, benchmarkprofile.FieldRuntimeConfig)
+	}
+	if m.scoring_config != nil {
+		fields = append(fields, benchmarkprofile.FieldScoringConfig)
+	}
+	if m.enabled != nil {
+		fields = append(fields, benchmarkprofile.FieldEnabled)
+	}
+	if m.metadata != nil {
+		fields = append(fields, benchmarkprofile.FieldMetadata)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *BenchmarkProfileMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case benchmarkprofile.FieldCreatedAt:
+		return m.CreatedAt()
+	case benchmarkprofile.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case benchmarkprofile.FieldSuiteID:
+		return m.SuiteID()
+	case benchmarkprofile.FieldName:
+		return m.Name()
+	case benchmarkprofile.FieldDescription:
+		return m.Description()
+	case benchmarkprofile.FieldTargetIds:
+		return m.TargetIds()
+	case benchmarkprofile.FieldTaskTypes:
+		return m.TaskTypes()
+	case benchmarkprofile.FieldTaskScale:
+		return m.TaskScale()
+	case benchmarkprofile.FieldTaskCountLimit:
+		return m.TaskCountLimit()
+	case benchmarkprofile.FieldPerTypeLimit:
+		return m.PerTypeLimit()
+	case benchmarkprofile.FieldDifficultyFilter:
+		return m.DifficultyFilter()
+	case benchmarkprofile.FieldTagFilter:
+		return m.TagFilter()
+	case benchmarkprofile.FieldSamplingStrategy:
+		return m.SamplingStrategy()
+	case benchmarkprofile.FieldSelectionSeed:
+		return m.SelectionSeed()
+	case benchmarkprofile.FieldRuntimeConfig:
+		return m.RuntimeConfig()
+	case benchmarkprofile.FieldScoringConfig:
+		return m.ScoringConfig()
+	case benchmarkprofile.FieldEnabled:
+		return m.Enabled()
+	case benchmarkprofile.FieldMetadata:
+		return m.Metadata()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *BenchmarkProfileMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case benchmarkprofile.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case benchmarkprofile.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case benchmarkprofile.FieldSuiteID:
+		return m.OldSuiteID(ctx)
+	case benchmarkprofile.FieldName:
+		return m.OldName(ctx)
+	case benchmarkprofile.FieldDescription:
+		return m.OldDescription(ctx)
+	case benchmarkprofile.FieldTargetIds:
+		return m.OldTargetIds(ctx)
+	case benchmarkprofile.FieldTaskTypes:
+		return m.OldTaskTypes(ctx)
+	case benchmarkprofile.FieldTaskScale:
+		return m.OldTaskScale(ctx)
+	case benchmarkprofile.FieldTaskCountLimit:
+		return m.OldTaskCountLimit(ctx)
+	case benchmarkprofile.FieldPerTypeLimit:
+		return m.OldPerTypeLimit(ctx)
+	case benchmarkprofile.FieldDifficultyFilter:
+		return m.OldDifficultyFilter(ctx)
+	case benchmarkprofile.FieldTagFilter:
+		return m.OldTagFilter(ctx)
+	case benchmarkprofile.FieldSamplingStrategy:
+		return m.OldSamplingStrategy(ctx)
+	case benchmarkprofile.FieldSelectionSeed:
+		return m.OldSelectionSeed(ctx)
+	case benchmarkprofile.FieldRuntimeConfig:
+		return m.OldRuntimeConfig(ctx)
+	case benchmarkprofile.FieldScoringConfig:
+		return m.OldScoringConfig(ctx)
+	case benchmarkprofile.FieldEnabled:
+		return m.OldEnabled(ctx)
+	case benchmarkprofile.FieldMetadata:
+		return m.OldMetadata(ctx)
+	}
+	return nil, fmt.Errorf("unknown BenchmarkProfile field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *BenchmarkProfileMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case benchmarkprofile.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case benchmarkprofile.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case benchmarkprofile.FieldSuiteID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSuiteID(v)
+		return nil
+	case benchmarkprofile.FieldName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetName(v)
+		return nil
+	case benchmarkprofile.FieldDescription:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDescription(v)
+		return nil
+	case benchmarkprofile.FieldTargetIds:
+		v, ok := value.([]int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTargetIds(v)
+		return nil
+	case benchmarkprofile.FieldTaskTypes:
+		v, ok := value.([]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTaskTypes(v)
+		return nil
+	case benchmarkprofile.FieldTaskScale:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTaskScale(v)
+		return nil
+	case benchmarkprofile.FieldTaskCountLimit:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTaskCountLimit(v)
+		return nil
+	case benchmarkprofile.FieldPerTypeLimit:
+		v, ok := value.(map[string]int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPerTypeLimit(v)
+		return nil
+	case benchmarkprofile.FieldDifficultyFilter:
+		v, ok := value.([]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDifficultyFilter(v)
+		return nil
+	case benchmarkprofile.FieldTagFilter:
+		v, ok := value.([]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTagFilter(v)
+		return nil
+	case benchmarkprofile.FieldSamplingStrategy:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSamplingStrategy(v)
+		return nil
+	case benchmarkprofile.FieldSelectionSeed:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSelectionSeed(v)
+		return nil
+	case benchmarkprofile.FieldRuntimeConfig:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRuntimeConfig(v)
+		return nil
+	case benchmarkprofile.FieldScoringConfig:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetScoringConfig(v)
+		return nil
+	case benchmarkprofile.FieldEnabled:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEnabled(v)
+		return nil
+	case benchmarkprofile.FieldMetadata:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMetadata(v)
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkProfile field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *BenchmarkProfileMutation) AddedFields() []string {
+	var fields []string
+	if m.addtask_scale != nil {
+		fields = append(fields, benchmarkprofile.FieldTaskScale)
+	}
+	if m.addtask_count_limit != nil {
+		fields = append(fields, benchmarkprofile.FieldTaskCountLimit)
+	}
+	if m.addselection_seed != nil {
+		fields = append(fields, benchmarkprofile.FieldSelectionSeed)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *BenchmarkProfileMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case benchmarkprofile.FieldTaskScale:
+		return m.AddedTaskScale()
+	case benchmarkprofile.FieldTaskCountLimit:
+		return m.AddedTaskCountLimit()
+	case benchmarkprofile.FieldSelectionSeed:
+		return m.AddedSelectionSeed()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *BenchmarkProfileMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case benchmarkprofile.FieldTaskScale:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddTaskScale(v)
+		return nil
+	case benchmarkprofile.FieldTaskCountLimit:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddTaskCountLimit(v)
+		return nil
+	case benchmarkprofile.FieldSelectionSeed:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddSelectionSeed(v)
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkProfile numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *BenchmarkProfileMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(benchmarkprofile.FieldDescription) {
+		fields = append(fields, benchmarkprofile.FieldDescription)
+	}
+	if m.FieldCleared(benchmarkprofile.FieldTaskCountLimit) {
+		fields = append(fields, benchmarkprofile.FieldTaskCountLimit)
+	}
+	if m.FieldCleared(benchmarkprofile.FieldSelectionSeed) {
+		fields = append(fields, benchmarkprofile.FieldSelectionSeed)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *BenchmarkProfileMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *BenchmarkProfileMutation) ClearField(name string) error {
+	switch name {
+	case benchmarkprofile.FieldDescription:
+		m.ClearDescription()
+		return nil
+	case benchmarkprofile.FieldTaskCountLimit:
+		m.ClearTaskCountLimit()
+		return nil
+	case benchmarkprofile.FieldSelectionSeed:
+		m.ClearSelectionSeed()
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkProfile nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *BenchmarkProfileMutation) ResetField(name string) error {
+	switch name {
+	case benchmarkprofile.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case benchmarkprofile.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case benchmarkprofile.FieldSuiteID:
+		m.ResetSuiteID()
+		return nil
+	case benchmarkprofile.FieldName:
+		m.ResetName()
+		return nil
+	case benchmarkprofile.FieldDescription:
+		m.ResetDescription()
+		return nil
+	case benchmarkprofile.FieldTargetIds:
+		m.ResetTargetIds()
+		return nil
+	case benchmarkprofile.FieldTaskTypes:
+		m.ResetTaskTypes()
+		return nil
+	case benchmarkprofile.FieldTaskScale:
+		m.ResetTaskScale()
+		return nil
+	case benchmarkprofile.FieldTaskCountLimit:
+		m.ResetTaskCountLimit()
+		return nil
+	case benchmarkprofile.FieldPerTypeLimit:
+		m.ResetPerTypeLimit()
+		return nil
+	case benchmarkprofile.FieldDifficultyFilter:
+		m.ResetDifficultyFilter()
+		return nil
+	case benchmarkprofile.FieldTagFilter:
+		m.ResetTagFilter()
+		return nil
+	case benchmarkprofile.FieldSamplingStrategy:
+		m.ResetSamplingStrategy()
+		return nil
+	case benchmarkprofile.FieldSelectionSeed:
+		m.ResetSelectionSeed()
+		return nil
+	case benchmarkprofile.FieldRuntimeConfig:
+		m.ResetRuntimeConfig()
+		return nil
+	case benchmarkprofile.FieldScoringConfig:
+		m.ResetScoringConfig()
+		return nil
+	case benchmarkprofile.FieldEnabled:
+		m.ResetEnabled()
+		return nil
+	case benchmarkprofile.FieldMetadata:
+		m.ResetMetadata()
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkProfile field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *BenchmarkProfileMutation) AddedEdges() []string {
+	edges := make([]string, 0, 4)
+	if m.suite != nil {
+		edges = append(edges, benchmarkprofile.EdgeSuite)
+	}
+	if m.schedules != nil {
+		edges = append(edges, benchmarkprofile.EdgeSchedules)
+	}
+	if m.runs != nil {
+		edges = append(edges, benchmarkprofile.EdgeRuns)
+	}
+	if m.public_snapshots != nil {
+		edges = append(edges, benchmarkprofile.EdgePublicSnapshots)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *BenchmarkProfileMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case benchmarkprofile.EdgeSuite:
+		if id := m.suite; id != nil {
+			return []ent.Value{*id}
+		}
+	case benchmarkprofile.EdgeSchedules:
+		ids := make([]ent.Value, 0, len(m.schedules))
+		for id := range m.schedules {
+			ids = append(ids, id)
+		}
+		return ids
+	case benchmarkprofile.EdgeRuns:
+		ids := make([]ent.Value, 0, len(m.runs))
+		for id := range m.runs {
+			ids = append(ids, id)
+		}
+		return ids
+	case benchmarkprofile.EdgePublicSnapshots:
+		ids := make([]ent.Value, 0, len(m.public_snapshots))
+		for id := range m.public_snapshots {
+			ids = append(ids, id)
+		}
+		return ids
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *BenchmarkProfileMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 4)
+	if m.removedschedules != nil {
+		edges = append(edges, benchmarkprofile.EdgeSchedules)
+	}
+	if m.removedruns != nil {
+		edges = append(edges, benchmarkprofile.EdgeRuns)
+	}
+	if m.removedpublic_snapshots != nil {
+		edges = append(edges, benchmarkprofile.EdgePublicSnapshots)
+	}
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *BenchmarkProfileMutation) RemovedIDs(name string) []ent.Value {
+	switch name {
+	case benchmarkprofile.EdgeSchedules:
+		ids := make([]ent.Value, 0, len(m.removedschedules))
+		for id := range m.removedschedules {
+			ids = append(ids, id)
+		}
+		return ids
+	case benchmarkprofile.EdgeRuns:
+		ids := make([]ent.Value, 0, len(m.removedruns))
+		for id := range m.removedruns {
+			ids = append(ids, id)
+		}
+		return ids
+	case benchmarkprofile.EdgePublicSnapshots:
+		ids := make([]ent.Value, 0, len(m.removedpublic_snapshots))
+		for id := range m.removedpublic_snapshots {
+			ids = append(ids, id)
+		}
+		return ids
+	}
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *BenchmarkProfileMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 4)
+	if m.clearedsuite {
+		edges = append(edges, benchmarkprofile.EdgeSuite)
+	}
+	if m.clearedschedules {
+		edges = append(edges, benchmarkprofile.EdgeSchedules)
+	}
+	if m.clearedruns {
+		edges = append(edges, benchmarkprofile.EdgeRuns)
+	}
+	if m.clearedpublic_snapshots {
+		edges = append(edges, benchmarkprofile.EdgePublicSnapshots)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *BenchmarkProfileMutation) EdgeCleared(name string) bool {
+	switch name {
+	case benchmarkprofile.EdgeSuite:
+		return m.clearedsuite
+	case benchmarkprofile.EdgeSchedules:
+		return m.clearedschedules
+	case benchmarkprofile.EdgeRuns:
+		return m.clearedruns
+	case benchmarkprofile.EdgePublicSnapshots:
+		return m.clearedpublic_snapshots
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *BenchmarkProfileMutation) ClearEdge(name string) error {
+	switch name {
+	case benchmarkprofile.EdgeSuite:
+		m.ClearSuite()
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkProfile unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *BenchmarkProfileMutation) ResetEdge(name string) error {
+	switch name {
+	case benchmarkprofile.EdgeSuite:
+		m.ResetSuite()
+		return nil
+	case benchmarkprofile.EdgeSchedules:
+		m.ResetSchedules()
+		return nil
+	case benchmarkprofile.EdgeRuns:
+		m.ResetRuns()
+		return nil
+	case benchmarkprofile.EdgePublicSnapshots:
+		m.ResetPublicSnapshots()
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkProfile edge %s", name)
+}
+
+// BenchmarkPublicSnapshotMutation represents an operation that mutates the BenchmarkPublicSnapshot nodes in the graph.
+type BenchmarkPublicSnapshotMutation struct {
+	config
+	op             Op
+	typ            string
+	id             *int64
+	snapshot       *map[string]interface{}
+	published_at   *time.Time
+	created_at     *time.Time
+	clearedFields  map[string]struct{}
+	run            *int64
+	clearedrun     bool
+	suite          *int64
+	clearedsuite   bool
+	profile        *int64
+	clearedprofile bool
+	done           bool
+	oldValue       func(context.Context) (*BenchmarkPublicSnapshot, error)
+	predicates     []predicate.BenchmarkPublicSnapshot
+}
+
+var _ ent.Mutation = (*BenchmarkPublicSnapshotMutation)(nil)
+
+// benchmarkpublicsnapshotOption allows management of the mutation configuration using functional options.
+type benchmarkpublicsnapshotOption func(*BenchmarkPublicSnapshotMutation)
+
+// newBenchmarkPublicSnapshotMutation creates new mutation for the BenchmarkPublicSnapshot entity.
+func newBenchmarkPublicSnapshotMutation(c config, op Op, opts ...benchmarkpublicsnapshotOption) *BenchmarkPublicSnapshotMutation {
+	m := &BenchmarkPublicSnapshotMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeBenchmarkPublicSnapshot,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withBenchmarkPublicSnapshotID sets the ID field of the mutation.
+func withBenchmarkPublicSnapshotID(id int64) benchmarkpublicsnapshotOption {
+	return func(m *BenchmarkPublicSnapshotMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *BenchmarkPublicSnapshot
+		)
+		m.oldValue = func(ctx context.Context) (*BenchmarkPublicSnapshot, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().BenchmarkPublicSnapshot.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withBenchmarkPublicSnapshot sets the old BenchmarkPublicSnapshot of the mutation.
+func withBenchmarkPublicSnapshot(node *BenchmarkPublicSnapshot) benchmarkpublicsnapshotOption {
+	return func(m *BenchmarkPublicSnapshotMutation) {
+		m.oldValue = func(context.Context) (*BenchmarkPublicSnapshot, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m BenchmarkPublicSnapshotMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m BenchmarkPublicSnapshotMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *BenchmarkPublicSnapshotMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *BenchmarkPublicSnapshotMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().BenchmarkPublicSnapshot.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetRunID sets the "run_id" field.
+func (m *BenchmarkPublicSnapshotMutation) SetRunID(i int64) {
+	m.run = &i
+}
+
+// RunID returns the value of the "run_id" field in the mutation.
+func (m *BenchmarkPublicSnapshotMutation) RunID() (r int64, exists bool) {
+	v := m.run
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRunID returns the old "run_id" field's value of the BenchmarkPublicSnapshot entity.
+// If the BenchmarkPublicSnapshot object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkPublicSnapshotMutation) OldRunID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRunID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRunID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRunID: %w", err)
+	}
+	return oldValue.RunID, nil
+}
+
+// ResetRunID resets all changes to the "run_id" field.
+func (m *BenchmarkPublicSnapshotMutation) ResetRunID() {
+	m.run = nil
+}
+
+// SetSuiteID sets the "suite_id" field.
+func (m *BenchmarkPublicSnapshotMutation) SetSuiteID(i int64) {
+	m.suite = &i
+}
+
+// SuiteID returns the value of the "suite_id" field in the mutation.
+func (m *BenchmarkPublicSnapshotMutation) SuiteID() (r int64, exists bool) {
+	v := m.suite
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSuiteID returns the old "suite_id" field's value of the BenchmarkPublicSnapshot entity.
+// If the BenchmarkPublicSnapshot object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkPublicSnapshotMutation) OldSuiteID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSuiteID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSuiteID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSuiteID: %w", err)
+	}
+	return oldValue.SuiteID, nil
+}
+
+// ResetSuiteID resets all changes to the "suite_id" field.
+func (m *BenchmarkPublicSnapshotMutation) ResetSuiteID() {
+	m.suite = nil
+}
+
+// SetProfileID sets the "profile_id" field.
+func (m *BenchmarkPublicSnapshotMutation) SetProfileID(i int64) {
+	m.profile = &i
+}
+
+// ProfileID returns the value of the "profile_id" field in the mutation.
+func (m *BenchmarkPublicSnapshotMutation) ProfileID() (r int64, exists bool) {
+	v := m.profile
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProfileID returns the old "profile_id" field's value of the BenchmarkPublicSnapshot entity.
+// If the BenchmarkPublicSnapshot object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkPublicSnapshotMutation) OldProfileID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProfileID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProfileID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProfileID: %w", err)
+	}
+	return oldValue.ProfileID, nil
+}
+
+// ResetProfileID resets all changes to the "profile_id" field.
+func (m *BenchmarkPublicSnapshotMutation) ResetProfileID() {
+	m.profile = nil
+}
+
+// SetSnapshot sets the "snapshot" field.
+func (m *BenchmarkPublicSnapshotMutation) SetSnapshot(value map[string]interface{}) {
+	m.snapshot = &value
+}
+
+// Snapshot returns the value of the "snapshot" field in the mutation.
+func (m *BenchmarkPublicSnapshotMutation) Snapshot() (r map[string]interface{}, exists bool) {
+	v := m.snapshot
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSnapshot returns the old "snapshot" field's value of the BenchmarkPublicSnapshot entity.
+// If the BenchmarkPublicSnapshot object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkPublicSnapshotMutation) OldSnapshot(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSnapshot is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSnapshot requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSnapshot: %w", err)
+	}
+	return oldValue.Snapshot, nil
+}
+
+// ResetSnapshot resets all changes to the "snapshot" field.
+func (m *BenchmarkPublicSnapshotMutation) ResetSnapshot() {
+	m.snapshot = nil
+}
+
+// SetPublishedAt sets the "published_at" field.
+func (m *BenchmarkPublicSnapshotMutation) SetPublishedAt(t time.Time) {
+	m.published_at = &t
+}
+
+// PublishedAt returns the value of the "published_at" field in the mutation.
+func (m *BenchmarkPublicSnapshotMutation) PublishedAt() (r time.Time, exists bool) {
+	v := m.published_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPublishedAt returns the old "published_at" field's value of the BenchmarkPublicSnapshot entity.
+// If the BenchmarkPublicSnapshot object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkPublicSnapshotMutation) OldPublishedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPublishedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPublishedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPublishedAt: %w", err)
+	}
+	return oldValue.PublishedAt, nil
+}
+
+// ResetPublishedAt resets all changes to the "published_at" field.
+func (m *BenchmarkPublicSnapshotMutation) ResetPublishedAt() {
+	m.published_at = nil
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *BenchmarkPublicSnapshotMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *BenchmarkPublicSnapshotMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the BenchmarkPublicSnapshot entity.
+// If the BenchmarkPublicSnapshot object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkPublicSnapshotMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *BenchmarkPublicSnapshotMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// ClearRun clears the "run" edge to the BenchmarkRun entity.
+func (m *BenchmarkPublicSnapshotMutation) ClearRun() {
+	m.clearedrun = true
+	m.clearedFields[benchmarkpublicsnapshot.FieldRunID] = struct{}{}
+}
+
+// RunCleared reports if the "run" edge to the BenchmarkRun entity was cleared.
+func (m *BenchmarkPublicSnapshotMutation) RunCleared() bool {
+	return m.clearedrun
+}
+
+// RunIDs returns the "run" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// RunID instead. It exists only for internal usage by the builders.
+func (m *BenchmarkPublicSnapshotMutation) RunIDs() (ids []int64) {
+	if id := m.run; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetRun resets all changes to the "run" edge.
+func (m *BenchmarkPublicSnapshotMutation) ResetRun() {
+	m.run = nil
+	m.clearedrun = false
+}
+
+// ClearSuite clears the "suite" edge to the BenchmarkSuite entity.
+func (m *BenchmarkPublicSnapshotMutation) ClearSuite() {
+	m.clearedsuite = true
+	m.clearedFields[benchmarkpublicsnapshot.FieldSuiteID] = struct{}{}
+}
+
+// SuiteCleared reports if the "suite" edge to the BenchmarkSuite entity was cleared.
+func (m *BenchmarkPublicSnapshotMutation) SuiteCleared() bool {
+	return m.clearedsuite
+}
+
+// SuiteIDs returns the "suite" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// SuiteID instead. It exists only for internal usage by the builders.
+func (m *BenchmarkPublicSnapshotMutation) SuiteIDs() (ids []int64) {
+	if id := m.suite; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetSuite resets all changes to the "suite" edge.
+func (m *BenchmarkPublicSnapshotMutation) ResetSuite() {
+	m.suite = nil
+	m.clearedsuite = false
+}
+
+// ClearProfile clears the "profile" edge to the BenchmarkProfile entity.
+func (m *BenchmarkPublicSnapshotMutation) ClearProfile() {
+	m.clearedprofile = true
+	m.clearedFields[benchmarkpublicsnapshot.FieldProfileID] = struct{}{}
+}
+
+// ProfileCleared reports if the "profile" edge to the BenchmarkProfile entity was cleared.
+func (m *BenchmarkPublicSnapshotMutation) ProfileCleared() bool {
+	return m.clearedprofile
+}
+
+// ProfileIDs returns the "profile" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// ProfileID instead. It exists only for internal usage by the builders.
+func (m *BenchmarkPublicSnapshotMutation) ProfileIDs() (ids []int64) {
+	if id := m.profile; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetProfile resets all changes to the "profile" edge.
+func (m *BenchmarkPublicSnapshotMutation) ResetProfile() {
+	m.profile = nil
+	m.clearedprofile = false
+}
+
+// Where appends a list predicates to the BenchmarkPublicSnapshotMutation builder.
+func (m *BenchmarkPublicSnapshotMutation) Where(ps ...predicate.BenchmarkPublicSnapshot) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the BenchmarkPublicSnapshotMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *BenchmarkPublicSnapshotMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.BenchmarkPublicSnapshot, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *BenchmarkPublicSnapshotMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *BenchmarkPublicSnapshotMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (BenchmarkPublicSnapshot).
+func (m *BenchmarkPublicSnapshotMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *BenchmarkPublicSnapshotMutation) Fields() []string {
+	fields := make([]string, 0, 6)
+	if m.run != nil {
+		fields = append(fields, benchmarkpublicsnapshot.FieldRunID)
+	}
+	if m.suite != nil {
+		fields = append(fields, benchmarkpublicsnapshot.FieldSuiteID)
+	}
+	if m.profile != nil {
+		fields = append(fields, benchmarkpublicsnapshot.FieldProfileID)
+	}
+	if m.snapshot != nil {
+		fields = append(fields, benchmarkpublicsnapshot.FieldSnapshot)
+	}
+	if m.published_at != nil {
+		fields = append(fields, benchmarkpublicsnapshot.FieldPublishedAt)
+	}
+	if m.created_at != nil {
+		fields = append(fields, benchmarkpublicsnapshot.FieldCreatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *BenchmarkPublicSnapshotMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case benchmarkpublicsnapshot.FieldRunID:
+		return m.RunID()
+	case benchmarkpublicsnapshot.FieldSuiteID:
+		return m.SuiteID()
+	case benchmarkpublicsnapshot.FieldProfileID:
+		return m.ProfileID()
+	case benchmarkpublicsnapshot.FieldSnapshot:
+		return m.Snapshot()
+	case benchmarkpublicsnapshot.FieldPublishedAt:
+		return m.PublishedAt()
+	case benchmarkpublicsnapshot.FieldCreatedAt:
+		return m.CreatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *BenchmarkPublicSnapshotMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case benchmarkpublicsnapshot.FieldRunID:
+		return m.OldRunID(ctx)
+	case benchmarkpublicsnapshot.FieldSuiteID:
+		return m.OldSuiteID(ctx)
+	case benchmarkpublicsnapshot.FieldProfileID:
+		return m.OldProfileID(ctx)
+	case benchmarkpublicsnapshot.FieldSnapshot:
+		return m.OldSnapshot(ctx)
+	case benchmarkpublicsnapshot.FieldPublishedAt:
+		return m.OldPublishedAt(ctx)
+	case benchmarkpublicsnapshot.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown BenchmarkPublicSnapshot field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *BenchmarkPublicSnapshotMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case benchmarkpublicsnapshot.FieldRunID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRunID(v)
+		return nil
+	case benchmarkpublicsnapshot.FieldSuiteID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSuiteID(v)
+		return nil
+	case benchmarkpublicsnapshot.FieldProfileID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProfileID(v)
+		return nil
+	case benchmarkpublicsnapshot.FieldSnapshot:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSnapshot(v)
+		return nil
+	case benchmarkpublicsnapshot.FieldPublishedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPublishedAt(v)
+		return nil
+	case benchmarkpublicsnapshot.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkPublicSnapshot field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *BenchmarkPublicSnapshotMutation) AddedFields() []string {
+	var fields []string
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *BenchmarkPublicSnapshotMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *BenchmarkPublicSnapshotMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown BenchmarkPublicSnapshot numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *BenchmarkPublicSnapshotMutation) ClearedFields() []string {
+	return nil
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *BenchmarkPublicSnapshotMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *BenchmarkPublicSnapshotMutation) ClearField(name string) error {
+	return fmt.Errorf("unknown BenchmarkPublicSnapshot nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *BenchmarkPublicSnapshotMutation) ResetField(name string) error {
+	switch name {
+	case benchmarkpublicsnapshot.FieldRunID:
+		m.ResetRunID()
+		return nil
+	case benchmarkpublicsnapshot.FieldSuiteID:
+		m.ResetSuiteID()
+		return nil
+	case benchmarkpublicsnapshot.FieldProfileID:
+		m.ResetProfileID()
+		return nil
+	case benchmarkpublicsnapshot.FieldSnapshot:
+		m.ResetSnapshot()
+		return nil
+	case benchmarkpublicsnapshot.FieldPublishedAt:
+		m.ResetPublishedAt()
+		return nil
+	case benchmarkpublicsnapshot.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkPublicSnapshot field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *BenchmarkPublicSnapshotMutation) AddedEdges() []string {
+	edges := make([]string, 0, 3)
+	if m.run != nil {
+		edges = append(edges, benchmarkpublicsnapshot.EdgeRun)
+	}
+	if m.suite != nil {
+		edges = append(edges, benchmarkpublicsnapshot.EdgeSuite)
+	}
+	if m.profile != nil {
+		edges = append(edges, benchmarkpublicsnapshot.EdgeProfile)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *BenchmarkPublicSnapshotMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case benchmarkpublicsnapshot.EdgeRun:
+		if id := m.run; id != nil {
+			return []ent.Value{*id}
+		}
+	case benchmarkpublicsnapshot.EdgeSuite:
+		if id := m.suite; id != nil {
+			return []ent.Value{*id}
+		}
+	case benchmarkpublicsnapshot.EdgeProfile:
+		if id := m.profile; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *BenchmarkPublicSnapshotMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 3)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *BenchmarkPublicSnapshotMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *BenchmarkPublicSnapshotMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 3)
+	if m.clearedrun {
+		edges = append(edges, benchmarkpublicsnapshot.EdgeRun)
+	}
+	if m.clearedsuite {
+		edges = append(edges, benchmarkpublicsnapshot.EdgeSuite)
+	}
+	if m.clearedprofile {
+		edges = append(edges, benchmarkpublicsnapshot.EdgeProfile)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *BenchmarkPublicSnapshotMutation) EdgeCleared(name string) bool {
+	switch name {
+	case benchmarkpublicsnapshot.EdgeRun:
+		return m.clearedrun
+	case benchmarkpublicsnapshot.EdgeSuite:
+		return m.clearedsuite
+	case benchmarkpublicsnapshot.EdgeProfile:
+		return m.clearedprofile
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *BenchmarkPublicSnapshotMutation) ClearEdge(name string) error {
+	switch name {
+	case benchmarkpublicsnapshot.EdgeRun:
+		m.ClearRun()
+		return nil
+	case benchmarkpublicsnapshot.EdgeSuite:
+		m.ClearSuite()
+		return nil
+	case benchmarkpublicsnapshot.EdgeProfile:
+		m.ClearProfile()
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkPublicSnapshot unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *BenchmarkPublicSnapshotMutation) ResetEdge(name string) error {
+	switch name {
+	case benchmarkpublicsnapshot.EdgeRun:
+		m.ResetRun()
+		return nil
+	case benchmarkpublicsnapshot.EdgeSuite:
+		m.ResetSuite()
+		return nil
+	case benchmarkpublicsnapshot.EdgeProfile:
+		m.ResetProfile()
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkPublicSnapshot edge %s", name)
+}
+
+// BenchmarkResultMutation represents an operation that mutates the BenchmarkResult nodes in the graph.
+type BenchmarkResultMutation struct {
+	config
+	op                   Op
+	typ                  string
+	id                   *int64
+	created_at           *time.Time
+	updated_at           *time.Time
+	request_id           *string
+	status               *string
+	score                *float64
+	addscore             *float64
+	max_score            *float64
+	addmax_score         *float64
+	normalized_score     *float64
+	addnormalized_score  *float64
+	evaluator_type       *string
+	evaluator_output     *map[string]interface{}
+	latency_ms           *int
+	addlatency_ms        *int
+	prompt_tokens        *int
+	addprompt_tokens     *int
+	completion_tokens    *int
+	addcompletion_tokens *int
+	total_tokens         *int
+	addtotal_tokens      *int
+	estimated_cost       *float64
+	addestimated_cost    *float64
+	raw_response         *map[string]interface{}
+	error_code           *string
+	error_message        *string
+	attempt_count        *int
+	addattempt_count     *int
+	started_at           *time.Time
+	finished_at          *time.Time
+	clearedFields        map[string]struct{}
+	run                  *int64
+	clearedrun           bool
+	run_task             *int64
+	clearedrun_task      bool
+	run_target           *int64
+	clearedrun_target    bool
+	done                 bool
+	oldValue             func(context.Context) (*BenchmarkResult, error)
+	predicates           []predicate.BenchmarkResult
+}
+
+var _ ent.Mutation = (*BenchmarkResultMutation)(nil)
+
+// benchmarkresultOption allows management of the mutation configuration using functional options.
+type benchmarkresultOption func(*BenchmarkResultMutation)
+
+// newBenchmarkResultMutation creates new mutation for the BenchmarkResult entity.
+func newBenchmarkResultMutation(c config, op Op, opts ...benchmarkresultOption) *BenchmarkResultMutation {
+	m := &BenchmarkResultMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeBenchmarkResult,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withBenchmarkResultID sets the ID field of the mutation.
+func withBenchmarkResultID(id int64) benchmarkresultOption {
+	return func(m *BenchmarkResultMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *BenchmarkResult
+		)
+		m.oldValue = func(ctx context.Context) (*BenchmarkResult, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().BenchmarkResult.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withBenchmarkResult sets the old BenchmarkResult of the mutation.
+func withBenchmarkResult(node *BenchmarkResult) benchmarkresultOption {
+	return func(m *BenchmarkResultMutation) {
+		m.oldValue = func(context.Context) (*BenchmarkResult, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m BenchmarkResultMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m BenchmarkResultMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *BenchmarkResultMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *BenchmarkResultMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().BenchmarkResult.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *BenchmarkResultMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *BenchmarkResultMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the BenchmarkResult entity.
+// If the BenchmarkResult object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkResultMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *BenchmarkResultMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *BenchmarkResultMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *BenchmarkResultMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the BenchmarkResult entity.
+// If the BenchmarkResult object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkResultMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *BenchmarkResultMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetRunID sets the "run_id" field.
+func (m *BenchmarkResultMutation) SetRunID(i int64) {
+	m.run = &i
+}
+
+// RunID returns the value of the "run_id" field in the mutation.
+func (m *BenchmarkResultMutation) RunID() (r int64, exists bool) {
+	v := m.run
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRunID returns the old "run_id" field's value of the BenchmarkResult entity.
+// If the BenchmarkResult object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkResultMutation) OldRunID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRunID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRunID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRunID: %w", err)
+	}
+	return oldValue.RunID, nil
+}
+
+// ResetRunID resets all changes to the "run_id" field.
+func (m *BenchmarkResultMutation) ResetRunID() {
+	m.run = nil
+}
+
+// SetRunTaskID sets the "run_task_id" field.
+func (m *BenchmarkResultMutation) SetRunTaskID(i int64) {
+	m.run_task = &i
+}
+
+// RunTaskID returns the value of the "run_task_id" field in the mutation.
+func (m *BenchmarkResultMutation) RunTaskID() (r int64, exists bool) {
+	v := m.run_task
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRunTaskID returns the old "run_task_id" field's value of the BenchmarkResult entity.
+// If the BenchmarkResult object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkResultMutation) OldRunTaskID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRunTaskID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRunTaskID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRunTaskID: %w", err)
+	}
+	return oldValue.RunTaskID, nil
+}
+
+// ResetRunTaskID resets all changes to the "run_task_id" field.
+func (m *BenchmarkResultMutation) ResetRunTaskID() {
+	m.run_task = nil
+}
+
+// SetRunTargetID sets the "run_target_id" field.
+func (m *BenchmarkResultMutation) SetRunTargetID(i int64) {
+	m.run_target = &i
+}
+
+// RunTargetID returns the value of the "run_target_id" field in the mutation.
+func (m *BenchmarkResultMutation) RunTargetID() (r int64, exists bool) {
+	v := m.run_target
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRunTargetID returns the old "run_target_id" field's value of the BenchmarkResult entity.
+// If the BenchmarkResult object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkResultMutation) OldRunTargetID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRunTargetID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRunTargetID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRunTargetID: %w", err)
+	}
+	return oldValue.RunTargetID, nil
+}
+
+// ResetRunTargetID resets all changes to the "run_target_id" field.
+func (m *BenchmarkResultMutation) ResetRunTargetID() {
+	m.run_target = nil
+}
+
+// SetRequestID sets the "request_id" field.
+func (m *BenchmarkResultMutation) SetRequestID(s string) {
+	m.request_id = &s
+}
+
+// RequestID returns the value of the "request_id" field in the mutation.
+func (m *BenchmarkResultMutation) RequestID() (r string, exists bool) {
+	v := m.request_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequestID returns the old "request_id" field's value of the BenchmarkResult entity.
+// If the BenchmarkResult object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkResultMutation) OldRequestID(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequestID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequestID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequestID: %w", err)
+	}
+	return oldValue.RequestID, nil
+}
+
+// ClearRequestID clears the value of the "request_id" field.
+func (m *BenchmarkResultMutation) ClearRequestID() {
+	m.request_id = nil
+	m.clearedFields[benchmarkresult.FieldRequestID] = struct{}{}
+}
+
+// RequestIDCleared returns if the "request_id" field was cleared in this mutation.
+func (m *BenchmarkResultMutation) RequestIDCleared() bool {
+	_, ok := m.clearedFields[benchmarkresult.FieldRequestID]
+	return ok
+}
+
+// ResetRequestID resets all changes to the "request_id" field.
+func (m *BenchmarkResultMutation) ResetRequestID() {
+	m.request_id = nil
+	delete(m.clearedFields, benchmarkresult.FieldRequestID)
+}
+
+// SetStatus sets the "status" field.
+func (m *BenchmarkResultMutation) SetStatus(s string) {
+	m.status = &s
+}
+
+// Status returns the value of the "status" field in the mutation.
+func (m *BenchmarkResultMutation) Status() (r string, exists bool) {
+	v := m.status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStatus returns the old "status" field's value of the BenchmarkResult entity.
+// If the BenchmarkResult object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkResultMutation) OldStatus(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStatus: %w", err)
+	}
+	return oldValue.Status, nil
+}
+
+// ResetStatus resets all changes to the "status" field.
+func (m *BenchmarkResultMutation) ResetStatus() {
+	m.status = nil
+}
+
+// SetScore sets the "score" field.
+func (m *BenchmarkResultMutation) SetScore(f float64) {
+	m.score = &f
+	m.addscore = nil
+}
+
+// Score returns the value of the "score" field in the mutation.
+func (m *BenchmarkResultMutation) Score() (r float64, exists bool) {
+	v := m.score
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldScore returns the old "score" field's value of the BenchmarkResult entity.
+// If the BenchmarkResult object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkResultMutation) OldScore(ctx context.Context) (v *float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldScore is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldScore requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldScore: %w", err)
+	}
+	return oldValue.Score, nil
+}
+
+// AddScore adds f to the "score" field.
+func (m *BenchmarkResultMutation) AddScore(f float64) {
+	if m.addscore != nil {
+		*m.addscore += f
+	} else {
+		m.addscore = &f
+	}
+}
+
+// AddedScore returns the value that was added to the "score" field in this mutation.
+func (m *BenchmarkResultMutation) AddedScore() (r float64, exists bool) {
+	v := m.addscore
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearScore clears the value of the "score" field.
+func (m *BenchmarkResultMutation) ClearScore() {
+	m.score = nil
+	m.addscore = nil
+	m.clearedFields[benchmarkresult.FieldScore] = struct{}{}
+}
+
+// ScoreCleared returns if the "score" field was cleared in this mutation.
+func (m *BenchmarkResultMutation) ScoreCleared() bool {
+	_, ok := m.clearedFields[benchmarkresult.FieldScore]
+	return ok
+}
+
+// ResetScore resets all changes to the "score" field.
+func (m *BenchmarkResultMutation) ResetScore() {
+	m.score = nil
+	m.addscore = nil
+	delete(m.clearedFields, benchmarkresult.FieldScore)
+}
+
+// SetMaxScore sets the "max_score" field.
+func (m *BenchmarkResultMutation) SetMaxScore(f float64) {
+	m.max_score = &f
+	m.addmax_score = nil
+}
+
+// MaxScore returns the value of the "max_score" field in the mutation.
+func (m *BenchmarkResultMutation) MaxScore() (r float64, exists bool) {
+	v := m.max_score
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMaxScore returns the old "max_score" field's value of the BenchmarkResult entity.
+// If the BenchmarkResult object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkResultMutation) OldMaxScore(ctx context.Context) (v *float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMaxScore is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMaxScore requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMaxScore: %w", err)
+	}
+	return oldValue.MaxScore, nil
+}
+
+// AddMaxScore adds f to the "max_score" field.
+func (m *BenchmarkResultMutation) AddMaxScore(f float64) {
+	if m.addmax_score != nil {
+		*m.addmax_score += f
+	} else {
+		m.addmax_score = &f
+	}
+}
+
+// AddedMaxScore returns the value that was added to the "max_score" field in this mutation.
+func (m *BenchmarkResultMutation) AddedMaxScore() (r float64, exists bool) {
+	v := m.addmax_score
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearMaxScore clears the value of the "max_score" field.
+func (m *BenchmarkResultMutation) ClearMaxScore() {
+	m.max_score = nil
+	m.addmax_score = nil
+	m.clearedFields[benchmarkresult.FieldMaxScore] = struct{}{}
+}
+
+// MaxScoreCleared returns if the "max_score" field was cleared in this mutation.
+func (m *BenchmarkResultMutation) MaxScoreCleared() bool {
+	_, ok := m.clearedFields[benchmarkresult.FieldMaxScore]
+	return ok
+}
+
+// ResetMaxScore resets all changes to the "max_score" field.
+func (m *BenchmarkResultMutation) ResetMaxScore() {
+	m.max_score = nil
+	m.addmax_score = nil
+	delete(m.clearedFields, benchmarkresult.FieldMaxScore)
+}
+
+// SetNormalizedScore sets the "normalized_score" field.
+func (m *BenchmarkResultMutation) SetNormalizedScore(f float64) {
+	m.normalized_score = &f
+	m.addnormalized_score = nil
+}
+
+// NormalizedScore returns the value of the "normalized_score" field in the mutation.
+func (m *BenchmarkResultMutation) NormalizedScore() (r float64, exists bool) {
+	v := m.normalized_score
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldNormalizedScore returns the old "normalized_score" field's value of the BenchmarkResult entity.
+// If the BenchmarkResult object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkResultMutation) OldNormalizedScore(ctx context.Context) (v *float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldNormalizedScore is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldNormalizedScore requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldNormalizedScore: %w", err)
+	}
+	return oldValue.NormalizedScore, nil
+}
+
+// AddNormalizedScore adds f to the "normalized_score" field.
+func (m *BenchmarkResultMutation) AddNormalizedScore(f float64) {
+	if m.addnormalized_score != nil {
+		*m.addnormalized_score += f
+	} else {
+		m.addnormalized_score = &f
+	}
+}
+
+// AddedNormalizedScore returns the value that was added to the "normalized_score" field in this mutation.
+func (m *BenchmarkResultMutation) AddedNormalizedScore() (r float64, exists bool) {
+	v := m.addnormalized_score
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearNormalizedScore clears the value of the "normalized_score" field.
+func (m *BenchmarkResultMutation) ClearNormalizedScore() {
+	m.normalized_score = nil
+	m.addnormalized_score = nil
+	m.clearedFields[benchmarkresult.FieldNormalizedScore] = struct{}{}
+}
+
+// NormalizedScoreCleared returns if the "normalized_score" field was cleared in this mutation.
+func (m *BenchmarkResultMutation) NormalizedScoreCleared() bool {
+	_, ok := m.clearedFields[benchmarkresult.FieldNormalizedScore]
+	return ok
+}
+
+// ResetNormalizedScore resets all changes to the "normalized_score" field.
+func (m *BenchmarkResultMutation) ResetNormalizedScore() {
+	m.normalized_score = nil
+	m.addnormalized_score = nil
+	delete(m.clearedFields, benchmarkresult.FieldNormalizedScore)
+}
+
+// SetEvaluatorType sets the "evaluator_type" field.
+func (m *BenchmarkResultMutation) SetEvaluatorType(s string) {
+	m.evaluator_type = &s
+}
+
+// EvaluatorType returns the value of the "evaluator_type" field in the mutation.
+func (m *BenchmarkResultMutation) EvaluatorType() (r string, exists bool) {
+	v := m.evaluator_type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEvaluatorType returns the old "evaluator_type" field's value of the BenchmarkResult entity.
+// If the BenchmarkResult object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkResultMutation) OldEvaluatorType(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEvaluatorType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEvaluatorType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEvaluatorType: %w", err)
+	}
+	return oldValue.EvaluatorType, nil
+}
+
+// ClearEvaluatorType clears the value of the "evaluator_type" field.
+func (m *BenchmarkResultMutation) ClearEvaluatorType() {
+	m.evaluator_type = nil
+	m.clearedFields[benchmarkresult.FieldEvaluatorType] = struct{}{}
+}
+
+// EvaluatorTypeCleared returns if the "evaluator_type" field was cleared in this mutation.
+func (m *BenchmarkResultMutation) EvaluatorTypeCleared() bool {
+	_, ok := m.clearedFields[benchmarkresult.FieldEvaluatorType]
+	return ok
+}
+
+// ResetEvaluatorType resets all changes to the "evaluator_type" field.
+func (m *BenchmarkResultMutation) ResetEvaluatorType() {
+	m.evaluator_type = nil
+	delete(m.clearedFields, benchmarkresult.FieldEvaluatorType)
+}
+
+// SetEvaluatorOutput sets the "evaluator_output" field.
+func (m *BenchmarkResultMutation) SetEvaluatorOutput(value map[string]interface{}) {
+	m.evaluator_output = &value
+}
+
+// EvaluatorOutput returns the value of the "evaluator_output" field in the mutation.
+func (m *BenchmarkResultMutation) EvaluatorOutput() (r map[string]interface{}, exists bool) {
+	v := m.evaluator_output
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEvaluatorOutput returns the old "evaluator_output" field's value of the BenchmarkResult entity.
+// If the BenchmarkResult object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkResultMutation) OldEvaluatorOutput(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEvaluatorOutput is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEvaluatorOutput requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEvaluatorOutput: %w", err)
+	}
+	return oldValue.EvaluatorOutput, nil
+}
+
+// ResetEvaluatorOutput resets all changes to the "evaluator_output" field.
+func (m *BenchmarkResultMutation) ResetEvaluatorOutput() {
+	m.evaluator_output = nil
+}
+
+// SetLatencyMs sets the "latency_ms" field.
+func (m *BenchmarkResultMutation) SetLatencyMs(i int) {
+	m.latency_ms = &i
+	m.addlatency_ms = nil
+}
+
+// LatencyMs returns the value of the "latency_ms" field in the mutation.
+func (m *BenchmarkResultMutation) LatencyMs() (r int, exists bool) {
+	v := m.latency_ms
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLatencyMs returns the old "latency_ms" field's value of the BenchmarkResult entity.
+// If the BenchmarkResult object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkResultMutation) OldLatencyMs(ctx context.Context) (v *int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLatencyMs is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLatencyMs requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLatencyMs: %w", err)
+	}
+	return oldValue.LatencyMs, nil
+}
+
+// AddLatencyMs adds i to the "latency_ms" field.
+func (m *BenchmarkResultMutation) AddLatencyMs(i int) {
+	if m.addlatency_ms != nil {
+		*m.addlatency_ms += i
+	} else {
+		m.addlatency_ms = &i
+	}
+}
+
+// AddedLatencyMs returns the value that was added to the "latency_ms" field in this mutation.
+func (m *BenchmarkResultMutation) AddedLatencyMs() (r int, exists bool) {
+	v := m.addlatency_ms
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearLatencyMs clears the value of the "latency_ms" field.
+func (m *BenchmarkResultMutation) ClearLatencyMs() {
+	m.latency_ms = nil
+	m.addlatency_ms = nil
+	m.clearedFields[benchmarkresult.FieldLatencyMs] = struct{}{}
+}
+
+// LatencyMsCleared returns if the "latency_ms" field was cleared in this mutation.
+func (m *BenchmarkResultMutation) LatencyMsCleared() bool {
+	_, ok := m.clearedFields[benchmarkresult.FieldLatencyMs]
+	return ok
+}
+
+// ResetLatencyMs resets all changes to the "latency_ms" field.
+func (m *BenchmarkResultMutation) ResetLatencyMs() {
+	m.latency_ms = nil
+	m.addlatency_ms = nil
+	delete(m.clearedFields, benchmarkresult.FieldLatencyMs)
+}
+
+// SetPromptTokens sets the "prompt_tokens" field.
+func (m *BenchmarkResultMutation) SetPromptTokens(i int) {
+	m.prompt_tokens = &i
+	m.addprompt_tokens = nil
+}
+
+// PromptTokens returns the value of the "prompt_tokens" field in the mutation.
+func (m *BenchmarkResultMutation) PromptTokens() (r int, exists bool) {
+	v := m.prompt_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPromptTokens returns the old "prompt_tokens" field's value of the BenchmarkResult entity.
+// If the BenchmarkResult object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkResultMutation) OldPromptTokens(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPromptTokens is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPromptTokens requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPromptTokens: %w", err)
+	}
+	return oldValue.PromptTokens, nil
+}
+
+// AddPromptTokens adds i to the "prompt_tokens" field.
+func (m *BenchmarkResultMutation) AddPromptTokens(i int) {
+	if m.addprompt_tokens != nil {
+		*m.addprompt_tokens += i
+	} else {
+		m.addprompt_tokens = &i
+	}
+}
+
+// AddedPromptTokens returns the value that was added to the "prompt_tokens" field in this mutation.
+func (m *BenchmarkResultMutation) AddedPromptTokens() (r int, exists bool) {
+	v := m.addprompt_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetPromptTokens resets all changes to the "prompt_tokens" field.
+func (m *BenchmarkResultMutation) ResetPromptTokens() {
+	m.prompt_tokens = nil
+	m.addprompt_tokens = nil
+}
+
+// SetCompletionTokens sets the "completion_tokens" field.
+func (m *BenchmarkResultMutation) SetCompletionTokens(i int) {
+	m.completion_tokens = &i
+	m.addcompletion_tokens = nil
+}
+
+// CompletionTokens returns the value of the "completion_tokens" field in the mutation.
+func (m *BenchmarkResultMutation) CompletionTokens() (r int, exists bool) {
+	v := m.completion_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCompletionTokens returns the old "completion_tokens" field's value of the BenchmarkResult entity.
+// If the BenchmarkResult object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkResultMutation) OldCompletionTokens(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCompletionTokens is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCompletionTokens requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCompletionTokens: %w", err)
+	}
+	return oldValue.CompletionTokens, nil
+}
+
+// AddCompletionTokens adds i to the "completion_tokens" field.
+func (m *BenchmarkResultMutation) AddCompletionTokens(i int) {
+	if m.addcompletion_tokens != nil {
+		*m.addcompletion_tokens += i
+	} else {
+		m.addcompletion_tokens = &i
+	}
+}
+
+// AddedCompletionTokens returns the value that was added to the "completion_tokens" field in this mutation.
+func (m *BenchmarkResultMutation) AddedCompletionTokens() (r int, exists bool) {
+	v := m.addcompletion_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetCompletionTokens resets all changes to the "completion_tokens" field.
+func (m *BenchmarkResultMutation) ResetCompletionTokens() {
+	m.completion_tokens = nil
+	m.addcompletion_tokens = nil
+}
+
+// SetTotalTokens sets the "total_tokens" field.
+func (m *BenchmarkResultMutation) SetTotalTokens(i int) {
+	m.total_tokens = &i
+	m.addtotal_tokens = nil
+}
+
+// TotalTokens returns the value of the "total_tokens" field in the mutation.
+func (m *BenchmarkResultMutation) TotalTokens() (r int, exists bool) {
+	v := m.total_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTotalTokens returns the old "total_tokens" field's value of the BenchmarkResult entity.
+// If the BenchmarkResult object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkResultMutation) OldTotalTokens(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTotalTokens is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTotalTokens requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTotalTokens: %w", err)
+	}
+	return oldValue.TotalTokens, nil
+}
+
+// AddTotalTokens adds i to the "total_tokens" field.
+func (m *BenchmarkResultMutation) AddTotalTokens(i int) {
+	if m.addtotal_tokens != nil {
+		*m.addtotal_tokens += i
+	} else {
+		m.addtotal_tokens = &i
+	}
+}
+
+// AddedTotalTokens returns the value that was added to the "total_tokens" field in this mutation.
+func (m *BenchmarkResultMutation) AddedTotalTokens() (r int, exists bool) {
+	v := m.addtotal_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetTotalTokens resets all changes to the "total_tokens" field.
+func (m *BenchmarkResultMutation) ResetTotalTokens() {
+	m.total_tokens = nil
+	m.addtotal_tokens = nil
+}
+
+// SetEstimatedCost sets the "estimated_cost" field.
+func (m *BenchmarkResultMutation) SetEstimatedCost(f float64) {
+	m.estimated_cost = &f
+	m.addestimated_cost = nil
+}
+
+// EstimatedCost returns the value of the "estimated_cost" field in the mutation.
+func (m *BenchmarkResultMutation) EstimatedCost() (r float64, exists bool) {
+	v := m.estimated_cost
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEstimatedCost returns the old "estimated_cost" field's value of the BenchmarkResult entity.
+// If the BenchmarkResult object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkResultMutation) OldEstimatedCost(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEstimatedCost is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEstimatedCost requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEstimatedCost: %w", err)
+	}
+	return oldValue.EstimatedCost, nil
+}
+
+// AddEstimatedCost adds f to the "estimated_cost" field.
+func (m *BenchmarkResultMutation) AddEstimatedCost(f float64) {
+	if m.addestimated_cost != nil {
+		*m.addestimated_cost += f
+	} else {
+		m.addestimated_cost = &f
+	}
+}
+
+// AddedEstimatedCost returns the value that was added to the "estimated_cost" field in this mutation.
+func (m *BenchmarkResultMutation) AddedEstimatedCost() (r float64, exists bool) {
+	v := m.addestimated_cost
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetEstimatedCost resets all changes to the "estimated_cost" field.
+func (m *BenchmarkResultMutation) ResetEstimatedCost() {
+	m.estimated_cost = nil
+	m.addestimated_cost = nil
+}
+
+// SetRawResponse sets the "raw_response" field.
+func (m *BenchmarkResultMutation) SetRawResponse(value map[string]interface{}) {
+	m.raw_response = &value
+}
+
+// RawResponse returns the value of the "raw_response" field in the mutation.
+func (m *BenchmarkResultMutation) RawResponse() (r map[string]interface{}, exists bool) {
+	v := m.raw_response
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRawResponse returns the old "raw_response" field's value of the BenchmarkResult entity.
+// If the BenchmarkResult object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkResultMutation) OldRawResponse(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRawResponse is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRawResponse requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRawResponse: %w", err)
+	}
+	return oldValue.RawResponse, nil
+}
+
+// ResetRawResponse resets all changes to the "raw_response" field.
+func (m *BenchmarkResultMutation) ResetRawResponse() {
+	m.raw_response = nil
+}
+
+// SetErrorCode sets the "error_code" field.
+func (m *BenchmarkResultMutation) SetErrorCode(s string) {
+	m.error_code = &s
+}
+
+// ErrorCode returns the value of the "error_code" field in the mutation.
+func (m *BenchmarkResultMutation) ErrorCode() (r string, exists bool) {
+	v := m.error_code
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldErrorCode returns the old "error_code" field's value of the BenchmarkResult entity.
+// If the BenchmarkResult object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkResultMutation) OldErrorCode(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldErrorCode is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldErrorCode requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldErrorCode: %w", err)
+	}
+	return oldValue.ErrorCode, nil
+}
+
+// ClearErrorCode clears the value of the "error_code" field.
+func (m *BenchmarkResultMutation) ClearErrorCode() {
+	m.error_code = nil
+	m.clearedFields[benchmarkresult.FieldErrorCode] = struct{}{}
+}
+
+// ErrorCodeCleared returns if the "error_code" field was cleared in this mutation.
+func (m *BenchmarkResultMutation) ErrorCodeCleared() bool {
+	_, ok := m.clearedFields[benchmarkresult.FieldErrorCode]
+	return ok
+}
+
+// ResetErrorCode resets all changes to the "error_code" field.
+func (m *BenchmarkResultMutation) ResetErrorCode() {
+	m.error_code = nil
+	delete(m.clearedFields, benchmarkresult.FieldErrorCode)
+}
+
+// SetErrorMessage sets the "error_message" field.
+func (m *BenchmarkResultMutation) SetErrorMessage(s string) {
+	m.error_message = &s
+}
+
+// ErrorMessage returns the value of the "error_message" field in the mutation.
+func (m *BenchmarkResultMutation) ErrorMessage() (r string, exists bool) {
+	v := m.error_message
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldErrorMessage returns the old "error_message" field's value of the BenchmarkResult entity.
+// If the BenchmarkResult object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkResultMutation) OldErrorMessage(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldErrorMessage is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldErrorMessage requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldErrorMessage: %w", err)
+	}
+	return oldValue.ErrorMessage, nil
+}
+
+// ClearErrorMessage clears the value of the "error_message" field.
+func (m *BenchmarkResultMutation) ClearErrorMessage() {
+	m.error_message = nil
+	m.clearedFields[benchmarkresult.FieldErrorMessage] = struct{}{}
+}
+
+// ErrorMessageCleared returns if the "error_message" field was cleared in this mutation.
+func (m *BenchmarkResultMutation) ErrorMessageCleared() bool {
+	_, ok := m.clearedFields[benchmarkresult.FieldErrorMessage]
+	return ok
+}
+
+// ResetErrorMessage resets all changes to the "error_message" field.
+func (m *BenchmarkResultMutation) ResetErrorMessage() {
+	m.error_message = nil
+	delete(m.clearedFields, benchmarkresult.FieldErrorMessage)
+}
+
+// SetAttemptCount sets the "attempt_count" field.
+func (m *BenchmarkResultMutation) SetAttemptCount(i int) {
+	m.attempt_count = &i
+	m.addattempt_count = nil
+}
+
+// AttemptCount returns the value of the "attempt_count" field in the mutation.
+func (m *BenchmarkResultMutation) AttemptCount() (r int, exists bool) {
+	v := m.attempt_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAttemptCount returns the old "attempt_count" field's value of the BenchmarkResult entity.
+// If the BenchmarkResult object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkResultMutation) OldAttemptCount(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAttemptCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAttemptCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAttemptCount: %w", err)
+	}
+	return oldValue.AttemptCount, nil
+}
+
+// AddAttemptCount adds i to the "attempt_count" field.
+func (m *BenchmarkResultMutation) AddAttemptCount(i int) {
+	if m.addattempt_count != nil {
+		*m.addattempt_count += i
+	} else {
+		m.addattempt_count = &i
+	}
+}
+
+// AddedAttemptCount returns the value that was added to the "attempt_count" field in this mutation.
+func (m *BenchmarkResultMutation) AddedAttemptCount() (r int, exists bool) {
+	v := m.addattempt_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetAttemptCount resets all changes to the "attempt_count" field.
+func (m *BenchmarkResultMutation) ResetAttemptCount() {
+	m.attempt_count = nil
+	m.addattempt_count = nil
+}
+
+// SetStartedAt sets the "started_at" field.
+func (m *BenchmarkResultMutation) SetStartedAt(t time.Time) {
+	m.started_at = &t
+}
+
+// StartedAt returns the value of the "started_at" field in the mutation.
+func (m *BenchmarkResultMutation) StartedAt() (r time.Time, exists bool) {
+	v := m.started_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStartedAt returns the old "started_at" field's value of the BenchmarkResult entity.
+// If the BenchmarkResult object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkResultMutation) OldStartedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStartedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStartedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStartedAt: %w", err)
+	}
+	return oldValue.StartedAt, nil
+}
+
+// ClearStartedAt clears the value of the "started_at" field.
+func (m *BenchmarkResultMutation) ClearStartedAt() {
+	m.started_at = nil
+	m.clearedFields[benchmarkresult.FieldStartedAt] = struct{}{}
+}
+
+// StartedAtCleared returns if the "started_at" field was cleared in this mutation.
+func (m *BenchmarkResultMutation) StartedAtCleared() bool {
+	_, ok := m.clearedFields[benchmarkresult.FieldStartedAt]
+	return ok
+}
+
+// ResetStartedAt resets all changes to the "started_at" field.
+func (m *BenchmarkResultMutation) ResetStartedAt() {
+	m.started_at = nil
+	delete(m.clearedFields, benchmarkresult.FieldStartedAt)
+}
+
+// SetFinishedAt sets the "finished_at" field.
+func (m *BenchmarkResultMutation) SetFinishedAt(t time.Time) {
+	m.finished_at = &t
+}
+
+// FinishedAt returns the value of the "finished_at" field in the mutation.
+func (m *BenchmarkResultMutation) FinishedAt() (r time.Time, exists bool) {
+	v := m.finished_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldFinishedAt returns the old "finished_at" field's value of the BenchmarkResult entity.
+// If the BenchmarkResult object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkResultMutation) OldFinishedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldFinishedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldFinishedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldFinishedAt: %w", err)
+	}
+	return oldValue.FinishedAt, nil
+}
+
+// ClearFinishedAt clears the value of the "finished_at" field.
+func (m *BenchmarkResultMutation) ClearFinishedAt() {
+	m.finished_at = nil
+	m.clearedFields[benchmarkresult.FieldFinishedAt] = struct{}{}
+}
+
+// FinishedAtCleared returns if the "finished_at" field was cleared in this mutation.
+func (m *BenchmarkResultMutation) FinishedAtCleared() bool {
+	_, ok := m.clearedFields[benchmarkresult.FieldFinishedAt]
+	return ok
+}
+
+// ResetFinishedAt resets all changes to the "finished_at" field.
+func (m *BenchmarkResultMutation) ResetFinishedAt() {
+	m.finished_at = nil
+	delete(m.clearedFields, benchmarkresult.FieldFinishedAt)
+}
+
+// ClearRun clears the "run" edge to the BenchmarkRun entity.
+func (m *BenchmarkResultMutation) ClearRun() {
+	m.clearedrun = true
+	m.clearedFields[benchmarkresult.FieldRunID] = struct{}{}
+}
+
+// RunCleared reports if the "run" edge to the BenchmarkRun entity was cleared.
+func (m *BenchmarkResultMutation) RunCleared() bool {
+	return m.clearedrun
+}
+
+// RunIDs returns the "run" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// RunID instead. It exists only for internal usage by the builders.
+func (m *BenchmarkResultMutation) RunIDs() (ids []int64) {
+	if id := m.run; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetRun resets all changes to the "run" edge.
+func (m *BenchmarkResultMutation) ResetRun() {
+	m.run = nil
+	m.clearedrun = false
+}
+
+// ClearRunTask clears the "run_task" edge to the BenchmarkRunTask entity.
+func (m *BenchmarkResultMutation) ClearRunTask() {
+	m.clearedrun_task = true
+	m.clearedFields[benchmarkresult.FieldRunTaskID] = struct{}{}
+}
+
+// RunTaskCleared reports if the "run_task" edge to the BenchmarkRunTask entity was cleared.
+func (m *BenchmarkResultMutation) RunTaskCleared() bool {
+	return m.clearedrun_task
+}
+
+// RunTaskIDs returns the "run_task" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// RunTaskID instead. It exists only for internal usage by the builders.
+func (m *BenchmarkResultMutation) RunTaskIDs() (ids []int64) {
+	if id := m.run_task; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetRunTask resets all changes to the "run_task" edge.
+func (m *BenchmarkResultMutation) ResetRunTask() {
+	m.run_task = nil
+	m.clearedrun_task = false
+}
+
+// ClearRunTarget clears the "run_target" edge to the BenchmarkRunTarget entity.
+func (m *BenchmarkResultMutation) ClearRunTarget() {
+	m.clearedrun_target = true
+	m.clearedFields[benchmarkresult.FieldRunTargetID] = struct{}{}
+}
+
+// RunTargetCleared reports if the "run_target" edge to the BenchmarkRunTarget entity was cleared.
+func (m *BenchmarkResultMutation) RunTargetCleared() bool {
+	return m.clearedrun_target
+}
+
+// RunTargetIDs returns the "run_target" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// RunTargetID instead. It exists only for internal usage by the builders.
+func (m *BenchmarkResultMutation) RunTargetIDs() (ids []int64) {
+	if id := m.run_target; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetRunTarget resets all changes to the "run_target" edge.
+func (m *BenchmarkResultMutation) ResetRunTarget() {
+	m.run_target = nil
+	m.clearedrun_target = false
+}
+
+// Where appends a list predicates to the BenchmarkResultMutation builder.
+func (m *BenchmarkResultMutation) Where(ps ...predicate.BenchmarkResult) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the BenchmarkResultMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *BenchmarkResultMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.BenchmarkResult, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *BenchmarkResultMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *BenchmarkResultMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (BenchmarkResult).
+func (m *BenchmarkResultMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *BenchmarkResultMutation) Fields() []string {
+	fields := make([]string, 0, 23)
+	if m.created_at != nil {
+		fields = append(fields, benchmarkresult.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, benchmarkresult.FieldUpdatedAt)
+	}
+	if m.run != nil {
+		fields = append(fields, benchmarkresult.FieldRunID)
+	}
+	if m.run_task != nil {
+		fields = append(fields, benchmarkresult.FieldRunTaskID)
+	}
+	if m.run_target != nil {
+		fields = append(fields, benchmarkresult.FieldRunTargetID)
+	}
+	if m.request_id != nil {
+		fields = append(fields, benchmarkresult.FieldRequestID)
+	}
+	if m.status != nil {
+		fields = append(fields, benchmarkresult.FieldStatus)
+	}
+	if m.score != nil {
+		fields = append(fields, benchmarkresult.FieldScore)
+	}
+	if m.max_score != nil {
+		fields = append(fields, benchmarkresult.FieldMaxScore)
+	}
+	if m.normalized_score != nil {
+		fields = append(fields, benchmarkresult.FieldNormalizedScore)
+	}
+	if m.evaluator_type != nil {
+		fields = append(fields, benchmarkresult.FieldEvaluatorType)
+	}
+	if m.evaluator_output != nil {
+		fields = append(fields, benchmarkresult.FieldEvaluatorOutput)
+	}
+	if m.latency_ms != nil {
+		fields = append(fields, benchmarkresult.FieldLatencyMs)
+	}
+	if m.prompt_tokens != nil {
+		fields = append(fields, benchmarkresult.FieldPromptTokens)
+	}
+	if m.completion_tokens != nil {
+		fields = append(fields, benchmarkresult.FieldCompletionTokens)
+	}
+	if m.total_tokens != nil {
+		fields = append(fields, benchmarkresult.FieldTotalTokens)
+	}
+	if m.estimated_cost != nil {
+		fields = append(fields, benchmarkresult.FieldEstimatedCost)
+	}
+	if m.raw_response != nil {
+		fields = append(fields, benchmarkresult.FieldRawResponse)
+	}
+	if m.error_code != nil {
+		fields = append(fields, benchmarkresult.FieldErrorCode)
+	}
+	if m.error_message != nil {
+		fields = append(fields, benchmarkresult.FieldErrorMessage)
+	}
+	if m.attempt_count != nil {
+		fields = append(fields, benchmarkresult.FieldAttemptCount)
+	}
+	if m.started_at != nil {
+		fields = append(fields, benchmarkresult.FieldStartedAt)
+	}
+	if m.finished_at != nil {
+		fields = append(fields, benchmarkresult.FieldFinishedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *BenchmarkResultMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case benchmarkresult.FieldCreatedAt:
+		return m.CreatedAt()
+	case benchmarkresult.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case benchmarkresult.FieldRunID:
+		return m.RunID()
+	case benchmarkresult.FieldRunTaskID:
+		return m.RunTaskID()
+	case benchmarkresult.FieldRunTargetID:
+		return m.RunTargetID()
+	case benchmarkresult.FieldRequestID:
+		return m.RequestID()
+	case benchmarkresult.FieldStatus:
+		return m.Status()
+	case benchmarkresult.FieldScore:
+		return m.Score()
+	case benchmarkresult.FieldMaxScore:
+		return m.MaxScore()
+	case benchmarkresult.FieldNormalizedScore:
+		return m.NormalizedScore()
+	case benchmarkresult.FieldEvaluatorType:
+		return m.EvaluatorType()
+	case benchmarkresult.FieldEvaluatorOutput:
+		return m.EvaluatorOutput()
+	case benchmarkresult.FieldLatencyMs:
+		return m.LatencyMs()
+	case benchmarkresult.FieldPromptTokens:
+		return m.PromptTokens()
+	case benchmarkresult.FieldCompletionTokens:
+		return m.CompletionTokens()
+	case benchmarkresult.FieldTotalTokens:
+		return m.TotalTokens()
+	case benchmarkresult.FieldEstimatedCost:
+		return m.EstimatedCost()
+	case benchmarkresult.FieldRawResponse:
+		return m.RawResponse()
+	case benchmarkresult.FieldErrorCode:
+		return m.ErrorCode()
+	case benchmarkresult.FieldErrorMessage:
+		return m.ErrorMessage()
+	case benchmarkresult.FieldAttemptCount:
+		return m.AttemptCount()
+	case benchmarkresult.FieldStartedAt:
+		return m.StartedAt()
+	case benchmarkresult.FieldFinishedAt:
+		return m.FinishedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *BenchmarkResultMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case benchmarkresult.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case benchmarkresult.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case benchmarkresult.FieldRunID:
+		return m.OldRunID(ctx)
+	case benchmarkresult.FieldRunTaskID:
+		return m.OldRunTaskID(ctx)
+	case benchmarkresult.FieldRunTargetID:
+		return m.OldRunTargetID(ctx)
+	case benchmarkresult.FieldRequestID:
+		return m.OldRequestID(ctx)
+	case benchmarkresult.FieldStatus:
+		return m.OldStatus(ctx)
+	case benchmarkresult.FieldScore:
+		return m.OldScore(ctx)
+	case benchmarkresult.FieldMaxScore:
+		return m.OldMaxScore(ctx)
+	case benchmarkresult.FieldNormalizedScore:
+		return m.OldNormalizedScore(ctx)
+	case benchmarkresult.FieldEvaluatorType:
+		return m.OldEvaluatorType(ctx)
+	case benchmarkresult.FieldEvaluatorOutput:
+		return m.OldEvaluatorOutput(ctx)
+	case benchmarkresult.FieldLatencyMs:
+		return m.OldLatencyMs(ctx)
+	case benchmarkresult.FieldPromptTokens:
+		return m.OldPromptTokens(ctx)
+	case benchmarkresult.FieldCompletionTokens:
+		return m.OldCompletionTokens(ctx)
+	case benchmarkresult.FieldTotalTokens:
+		return m.OldTotalTokens(ctx)
+	case benchmarkresult.FieldEstimatedCost:
+		return m.OldEstimatedCost(ctx)
+	case benchmarkresult.FieldRawResponse:
+		return m.OldRawResponse(ctx)
+	case benchmarkresult.FieldErrorCode:
+		return m.OldErrorCode(ctx)
+	case benchmarkresult.FieldErrorMessage:
+		return m.OldErrorMessage(ctx)
+	case benchmarkresult.FieldAttemptCount:
+		return m.OldAttemptCount(ctx)
+	case benchmarkresult.FieldStartedAt:
+		return m.OldStartedAt(ctx)
+	case benchmarkresult.FieldFinishedAt:
+		return m.OldFinishedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown BenchmarkResult field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *BenchmarkResultMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case benchmarkresult.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case benchmarkresult.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case benchmarkresult.FieldRunID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRunID(v)
+		return nil
+	case benchmarkresult.FieldRunTaskID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRunTaskID(v)
+		return nil
+	case benchmarkresult.FieldRunTargetID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRunTargetID(v)
+		return nil
+	case benchmarkresult.FieldRequestID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequestID(v)
+		return nil
+	case benchmarkresult.FieldStatus:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStatus(v)
+		return nil
+	case benchmarkresult.FieldScore:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetScore(v)
+		return nil
+	case benchmarkresult.FieldMaxScore:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMaxScore(v)
+		return nil
+	case benchmarkresult.FieldNormalizedScore:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetNormalizedScore(v)
+		return nil
+	case benchmarkresult.FieldEvaluatorType:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEvaluatorType(v)
+		return nil
+	case benchmarkresult.FieldEvaluatorOutput:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEvaluatorOutput(v)
+		return nil
+	case benchmarkresult.FieldLatencyMs:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLatencyMs(v)
+		return nil
+	case benchmarkresult.FieldPromptTokens:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPromptTokens(v)
+		return nil
+	case benchmarkresult.FieldCompletionTokens:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCompletionTokens(v)
+		return nil
+	case benchmarkresult.FieldTotalTokens:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTotalTokens(v)
+		return nil
+	case benchmarkresult.FieldEstimatedCost:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEstimatedCost(v)
+		return nil
+	case benchmarkresult.FieldRawResponse:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRawResponse(v)
+		return nil
+	case benchmarkresult.FieldErrorCode:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetErrorCode(v)
+		return nil
+	case benchmarkresult.FieldErrorMessage:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetErrorMessage(v)
+		return nil
+	case benchmarkresult.FieldAttemptCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAttemptCount(v)
+		return nil
+	case benchmarkresult.FieldStartedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStartedAt(v)
+		return nil
+	case benchmarkresult.FieldFinishedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetFinishedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkResult field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *BenchmarkResultMutation) AddedFields() []string {
+	var fields []string
+	if m.addscore != nil {
+		fields = append(fields, benchmarkresult.FieldScore)
+	}
+	if m.addmax_score != nil {
+		fields = append(fields, benchmarkresult.FieldMaxScore)
+	}
+	if m.addnormalized_score != nil {
+		fields = append(fields, benchmarkresult.FieldNormalizedScore)
+	}
+	if m.addlatency_ms != nil {
+		fields = append(fields, benchmarkresult.FieldLatencyMs)
+	}
+	if m.addprompt_tokens != nil {
+		fields = append(fields, benchmarkresult.FieldPromptTokens)
+	}
+	if m.addcompletion_tokens != nil {
+		fields = append(fields, benchmarkresult.FieldCompletionTokens)
+	}
+	if m.addtotal_tokens != nil {
+		fields = append(fields, benchmarkresult.FieldTotalTokens)
+	}
+	if m.addestimated_cost != nil {
+		fields = append(fields, benchmarkresult.FieldEstimatedCost)
+	}
+	if m.addattempt_count != nil {
+		fields = append(fields, benchmarkresult.FieldAttemptCount)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *BenchmarkResultMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case benchmarkresult.FieldScore:
+		return m.AddedScore()
+	case benchmarkresult.FieldMaxScore:
+		return m.AddedMaxScore()
+	case benchmarkresult.FieldNormalizedScore:
+		return m.AddedNormalizedScore()
+	case benchmarkresult.FieldLatencyMs:
+		return m.AddedLatencyMs()
+	case benchmarkresult.FieldPromptTokens:
+		return m.AddedPromptTokens()
+	case benchmarkresult.FieldCompletionTokens:
+		return m.AddedCompletionTokens()
+	case benchmarkresult.FieldTotalTokens:
+		return m.AddedTotalTokens()
+	case benchmarkresult.FieldEstimatedCost:
+		return m.AddedEstimatedCost()
+	case benchmarkresult.FieldAttemptCount:
+		return m.AddedAttemptCount()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *BenchmarkResultMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case benchmarkresult.FieldScore:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddScore(v)
+		return nil
+	case benchmarkresult.FieldMaxScore:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddMaxScore(v)
+		return nil
+	case benchmarkresult.FieldNormalizedScore:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddNormalizedScore(v)
+		return nil
+	case benchmarkresult.FieldLatencyMs:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddLatencyMs(v)
+		return nil
+	case benchmarkresult.FieldPromptTokens:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddPromptTokens(v)
+		return nil
+	case benchmarkresult.FieldCompletionTokens:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCompletionTokens(v)
+		return nil
+	case benchmarkresult.FieldTotalTokens:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddTotalTokens(v)
+		return nil
+	case benchmarkresult.FieldEstimatedCost:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddEstimatedCost(v)
+		return nil
+	case benchmarkresult.FieldAttemptCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddAttemptCount(v)
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkResult numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *BenchmarkResultMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(benchmarkresult.FieldRequestID) {
+		fields = append(fields, benchmarkresult.FieldRequestID)
+	}
+	if m.FieldCleared(benchmarkresult.FieldScore) {
+		fields = append(fields, benchmarkresult.FieldScore)
+	}
+	if m.FieldCleared(benchmarkresult.FieldMaxScore) {
+		fields = append(fields, benchmarkresult.FieldMaxScore)
+	}
+	if m.FieldCleared(benchmarkresult.FieldNormalizedScore) {
+		fields = append(fields, benchmarkresult.FieldNormalizedScore)
+	}
+	if m.FieldCleared(benchmarkresult.FieldEvaluatorType) {
+		fields = append(fields, benchmarkresult.FieldEvaluatorType)
+	}
+	if m.FieldCleared(benchmarkresult.FieldLatencyMs) {
+		fields = append(fields, benchmarkresult.FieldLatencyMs)
+	}
+	if m.FieldCleared(benchmarkresult.FieldErrorCode) {
+		fields = append(fields, benchmarkresult.FieldErrorCode)
+	}
+	if m.FieldCleared(benchmarkresult.FieldErrorMessage) {
+		fields = append(fields, benchmarkresult.FieldErrorMessage)
+	}
+	if m.FieldCleared(benchmarkresult.FieldStartedAt) {
+		fields = append(fields, benchmarkresult.FieldStartedAt)
+	}
+	if m.FieldCleared(benchmarkresult.FieldFinishedAt) {
+		fields = append(fields, benchmarkresult.FieldFinishedAt)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *BenchmarkResultMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *BenchmarkResultMutation) ClearField(name string) error {
+	switch name {
+	case benchmarkresult.FieldRequestID:
+		m.ClearRequestID()
+		return nil
+	case benchmarkresult.FieldScore:
+		m.ClearScore()
+		return nil
+	case benchmarkresult.FieldMaxScore:
+		m.ClearMaxScore()
+		return nil
+	case benchmarkresult.FieldNormalizedScore:
+		m.ClearNormalizedScore()
+		return nil
+	case benchmarkresult.FieldEvaluatorType:
+		m.ClearEvaluatorType()
+		return nil
+	case benchmarkresult.FieldLatencyMs:
+		m.ClearLatencyMs()
+		return nil
+	case benchmarkresult.FieldErrorCode:
+		m.ClearErrorCode()
+		return nil
+	case benchmarkresult.FieldErrorMessage:
+		m.ClearErrorMessage()
+		return nil
+	case benchmarkresult.FieldStartedAt:
+		m.ClearStartedAt()
+		return nil
+	case benchmarkresult.FieldFinishedAt:
+		m.ClearFinishedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkResult nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *BenchmarkResultMutation) ResetField(name string) error {
+	switch name {
+	case benchmarkresult.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case benchmarkresult.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case benchmarkresult.FieldRunID:
+		m.ResetRunID()
+		return nil
+	case benchmarkresult.FieldRunTaskID:
+		m.ResetRunTaskID()
+		return nil
+	case benchmarkresult.FieldRunTargetID:
+		m.ResetRunTargetID()
+		return nil
+	case benchmarkresult.FieldRequestID:
+		m.ResetRequestID()
+		return nil
+	case benchmarkresult.FieldStatus:
+		m.ResetStatus()
+		return nil
+	case benchmarkresult.FieldScore:
+		m.ResetScore()
+		return nil
+	case benchmarkresult.FieldMaxScore:
+		m.ResetMaxScore()
+		return nil
+	case benchmarkresult.FieldNormalizedScore:
+		m.ResetNormalizedScore()
+		return nil
+	case benchmarkresult.FieldEvaluatorType:
+		m.ResetEvaluatorType()
+		return nil
+	case benchmarkresult.FieldEvaluatorOutput:
+		m.ResetEvaluatorOutput()
+		return nil
+	case benchmarkresult.FieldLatencyMs:
+		m.ResetLatencyMs()
+		return nil
+	case benchmarkresult.FieldPromptTokens:
+		m.ResetPromptTokens()
+		return nil
+	case benchmarkresult.FieldCompletionTokens:
+		m.ResetCompletionTokens()
+		return nil
+	case benchmarkresult.FieldTotalTokens:
+		m.ResetTotalTokens()
+		return nil
+	case benchmarkresult.FieldEstimatedCost:
+		m.ResetEstimatedCost()
+		return nil
+	case benchmarkresult.FieldRawResponse:
+		m.ResetRawResponse()
+		return nil
+	case benchmarkresult.FieldErrorCode:
+		m.ResetErrorCode()
+		return nil
+	case benchmarkresult.FieldErrorMessage:
+		m.ResetErrorMessage()
+		return nil
+	case benchmarkresult.FieldAttemptCount:
+		m.ResetAttemptCount()
+		return nil
+	case benchmarkresult.FieldStartedAt:
+		m.ResetStartedAt()
+		return nil
+	case benchmarkresult.FieldFinishedAt:
+		m.ResetFinishedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkResult field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *BenchmarkResultMutation) AddedEdges() []string {
+	edges := make([]string, 0, 3)
+	if m.run != nil {
+		edges = append(edges, benchmarkresult.EdgeRun)
+	}
+	if m.run_task != nil {
+		edges = append(edges, benchmarkresult.EdgeRunTask)
+	}
+	if m.run_target != nil {
+		edges = append(edges, benchmarkresult.EdgeRunTarget)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *BenchmarkResultMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case benchmarkresult.EdgeRun:
+		if id := m.run; id != nil {
+			return []ent.Value{*id}
+		}
+	case benchmarkresult.EdgeRunTask:
+		if id := m.run_task; id != nil {
+			return []ent.Value{*id}
+		}
+	case benchmarkresult.EdgeRunTarget:
+		if id := m.run_target; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *BenchmarkResultMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 3)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *BenchmarkResultMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *BenchmarkResultMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 3)
+	if m.clearedrun {
+		edges = append(edges, benchmarkresult.EdgeRun)
+	}
+	if m.clearedrun_task {
+		edges = append(edges, benchmarkresult.EdgeRunTask)
+	}
+	if m.clearedrun_target {
+		edges = append(edges, benchmarkresult.EdgeRunTarget)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *BenchmarkResultMutation) EdgeCleared(name string) bool {
+	switch name {
+	case benchmarkresult.EdgeRun:
+		return m.clearedrun
+	case benchmarkresult.EdgeRunTask:
+		return m.clearedrun_task
+	case benchmarkresult.EdgeRunTarget:
+		return m.clearedrun_target
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *BenchmarkResultMutation) ClearEdge(name string) error {
+	switch name {
+	case benchmarkresult.EdgeRun:
+		m.ClearRun()
+		return nil
+	case benchmarkresult.EdgeRunTask:
+		m.ClearRunTask()
+		return nil
+	case benchmarkresult.EdgeRunTarget:
+		m.ClearRunTarget()
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkResult unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *BenchmarkResultMutation) ResetEdge(name string) error {
+	switch name {
+	case benchmarkresult.EdgeRun:
+		m.ResetRun()
+		return nil
+	case benchmarkresult.EdgeRunTask:
+		m.ResetRunTask()
+		return nil
+	case benchmarkresult.EdgeRunTarget:
+		m.ResetRunTarget()
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkResult edge %s", name)
+}
+
+// BenchmarkRunMutation represents an operation that mutates the BenchmarkRun nodes in the graph.
+type BenchmarkRunMutation struct {
+	config
+	op                      Op
+	typ                     string
+	id                      *int64
+	created_at              *time.Time
+	updated_at              *time.Time
+	status                  *string
+	trigger_type            *string
+	task_scale              *int
+	addtask_scale           *int
+	task_types              *[]string
+	appendtask_types        []string
+	selection_seed          *int64
+	addselection_seed       *int64
+	planned_target_count    *int
+	addplanned_target_count *int
+	planned_task_count      *int
+	addplanned_task_count   *int
+	planned_result_count    *int
+	addplanned_result_count *int
+	started_at              *time.Time
+	finished_at             *time.Time
+	config_snapshot         *map[string]interface{}
+	error_message           *string
+	created_by              *int64
+	addcreated_by           *int64
+	clearedFields           map[string]struct{}
+	suite                   *int64
+	clearedsuite            bool
+	profile                 *int64
+	clearedprofile          bool
+	run_targets             map[int64]struct{}
+	removedrun_targets      map[int64]struct{}
+	clearedrun_targets      bool
+	run_tasks               map[int64]struct{}
+	removedrun_tasks        map[int64]struct{}
+	clearedrun_tasks        bool
+	results                 map[int64]struct{}
+	removedresults          map[int64]struct{}
+	clearedresults          bool
+	score_snapshots         map[int64]struct{}
+	removedscore_snapshots  map[int64]struct{}
+	clearedscore_snapshots  bool
+	public_snapshots        map[int64]struct{}
+	removedpublic_snapshots map[int64]struct{}
+	clearedpublic_snapshots bool
+	done                    bool
+	oldValue                func(context.Context) (*BenchmarkRun, error)
+	predicates              []predicate.BenchmarkRun
+}
+
+var _ ent.Mutation = (*BenchmarkRunMutation)(nil)
+
+// benchmarkrunOption allows management of the mutation configuration using functional options.
+type benchmarkrunOption func(*BenchmarkRunMutation)
+
+// newBenchmarkRunMutation creates new mutation for the BenchmarkRun entity.
+func newBenchmarkRunMutation(c config, op Op, opts ...benchmarkrunOption) *BenchmarkRunMutation {
+	m := &BenchmarkRunMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeBenchmarkRun,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withBenchmarkRunID sets the ID field of the mutation.
+func withBenchmarkRunID(id int64) benchmarkrunOption {
+	return func(m *BenchmarkRunMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *BenchmarkRun
+		)
+		m.oldValue = func(ctx context.Context) (*BenchmarkRun, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().BenchmarkRun.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withBenchmarkRun sets the old BenchmarkRun of the mutation.
+func withBenchmarkRun(node *BenchmarkRun) benchmarkrunOption {
+	return func(m *BenchmarkRunMutation) {
+		m.oldValue = func(context.Context) (*BenchmarkRun, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m BenchmarkRunMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m BenchmarkRunMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *BenchmarkRunMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *BenchmarkRunMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().BenchmarkRun.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *BenchmarkRunMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *BenchmarkRunMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the BenchmarkRun entity.
+// If the BenchmarkRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkRunMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *BenchmarkRunMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *BenchmarkRunMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *BenchmarkRunMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the BenchmarkRun entity.
+// If the BenchmarkRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkRunMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *BenchmarkRunMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetSuiteID sets the "suite_id" field.
+func (m *BenchmarkRunMutation) SetSuiteID(i int64) {
+	m.suite = &i
+}
+
+// SuiteID returns the value of the "suite_id" field in the mutation.
+func (m *BenchmarkRunMutation) SuiteID() (r int64, exists bool) {
+	v := m.suite
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSuiteID returns the old "suite_id" field's value of the BenchmarkRun entity.
+// If the BenchmarkRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkRunMutation) OldSuiteID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSuiteID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSuiteID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSuiteID: %w", err)
+	}
+	return oldValue.SuiteID, nil
+}
+
+// ResetSuiteID resets all changes to the "suite_id" field.
+func (m *BenchmarkRunMutation) ResetSuiteID() {
+	m.suite = nil
+}
+
+// SetProfileID sets the "profile_id" field.
+func (m *BenchmarkRunMutation) SetProfileID(i int64) {
+	m.profile = &i
+}
+
+// ProfileID returns the value of the "profile_id" field in the mutation.
+func (m *BenchmarkRunMutation) ProfileID() (r int64, exists bool) {
+	v := m.profile
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProfileID returns the old "profile_id" field's value of the BenchmarkRun entity.
+// If the BenchmarkRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkRunMutation) OldProfileID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProfileID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProfileID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProfileID: %w", err)
+	}
+	return oldValue.ProfileID, nil
+}
+
+// ResetProfileID resets all changes to the "profile_id" field.
+func (m *BenchmarkRunMutation) ResetProfileID() {
+	m.profile = nil
+}
+
+// SetStatus sets the "status" field.
+func (m *BenchmarkRunMutation) SetStatus(s string) {
+	m.status = &s
+}
+
+// Status returns the value of the "status" field in the mutation.
+func (m *BenchmarkRunMutation) Status() (r string, exists bool) {
+	v := m.status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStatus returns the old "status" field's value of the BenchmarkRun entity.
+// If the BenchmarkRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkRunMutation) OldStatus(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStatus: %w", err)
+	}
+	return oldValue.Status, nil
+}
+
+// ResetStatus resets all changes to the "status" field.
+func (m *BenchmarkRunMutation) ResetStatus() {
+	m.status = nil
+}
+
+// SetTriggerType sets the "trigger_type" field.
+func (m *BenchmarkRunMutation) SetTriggerType(s string) {
+	m.trigger_type = &s
+}
+
+// TriggerType returns the value of the "trigger_type" field in the mutation.
+func (m *BenchmarkRunMutation) TriggerType() (r string, exists bool) {
+	v := m.trigger_type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTriggerType returns the old "trigger_type" field's value of the BenchmarkRun entity.
+// If the BenchmarkRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkRunMutation) OldTriggerType(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTriggerType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTriggerType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTriggerType: %w", err)
+	}
+	return oldValue.TriggerType, nil
+}
+
+// ResetTriggerType resets all changes to the "trigger_type" field.
+func (m *BenchmarkRunMutation) ResetTriggerType() {
+	m.trigger_type = nil
+}
+
+// SetTaskScale sets the "task_scale" field.
+func (m *BenchmarkRunMutation) SetTaskScale(i int) {
+	m.task_scale = &i
+	m.addtask_scale = nil
+}
+
+// TaskScale returns the value of the "task_scale" field in the mutation.
+func (m *BenchmarkRunMutation) TaskScale() (r int, exists bool) {
+	v := m.task_scale
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTaskScale returns the old "task_scale" field's value of the BenchmarkRun entity.
+// If the BenchmarkRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkRunMutation) OldTaskScale(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTaskScale is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTaskScale requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTaskScale: %w", err)
+	}
+	return oldValue.TaskScale, nil
+}
+
+// AddTaskScale adds i to the "task_scale" field.
+func (m *BenchmarkRunMutation) AddTaskScale(i int) {
+	if m.addtask_scale != nil {
+		*m.addtask_scale += i
+	} else {
+		m.addtask_scale = &i
+	}
+}
+
+// AddedTaskScale returns the value that was added to the "task_scale" field in this mutation.
+func (m *BenchmarkRunMutation) AddedTaskScale() (r int, exists bool) {
+	v := m.addtask_scale
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetTaskScale resets all changes to the "task_scale" field.
+func (m *BenchmarkRunMutation) ResetTaskScale() {
+	m.task_scale = nil
+	m.addtask_scale = nil
+}
+
+// SetTaskTypes sets the "task_types" field.
+func (m *BenchmarkRunMutation) SetTaskTypes(s []string) {
+	m.task_types = &s
+	m.appendtask_types = nil
+}
+
+// TaskTypes returns the value of the "task_types" field in the mutation.
+func (m *BenchmarkRunMutation) TaskTypes() (r []string, exists bool) {
+	v := m.task_types
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTaskTypes returns the old "task_types" field's value of the BenchmarkRun entity.
+// If the BenchmarkRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkRunMutation) OldTaskTypes(ctx context.Context) (v []string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTaskTypes is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTaskTypes requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTaskTypes: %w", err)
+	}
+	return oldValue.TaskTypes, nil
+}
+
+// AppendTaskTypes adds s to the "task_types" field.
+func (m *BenchmarkRunMutation) AppendTaskTypes(s []string) {
+	m.appendtask_types = append(m.appendtask_types, s...)
+}
+
+// AppendedTaskTypes returns the list of values that were appended to the "task_types" field in this mutation.
+func (m *BenchmarkRunMutation) AppendedTaskTypes() ([]string, bool) {
+	if len(m.appendtask_types) == 0 {
+		return nil, false
+	}
+	return m.appendtask_types, true
+}
+
+// ResetTaskTypes resets all changes to the "task_types" field.
+func (m *BenchmarkRunMutation) ResetTaskTypes() {
+	m.task_types = nil
+	m.appendtask_types = nil
+}
+
+// SetSelectionSeed sets the "selection_seed" field.
+func (m *BenchmarkRunMutation) SetSelectionSeed(i int64) {
+	m.selection_seed = &i
+	m.addselection_seed = nil
+}
+
+// SelectionSeed returns the value of the "selection_seed" field in the mutation.
+func (m *BenchmarkRunMutation) SelectionSeed() (r int64, exists bool) {
+	v := m.selection_seed
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSelectionSeed returns the old "selection_seed" field's value of the BenchmarkRun entity.
+// If the BenchmarkRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkRunMutation) OldSelectionSeed(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSelectionSeed is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSelectionSeed requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSelectionSeed: %w", err)
+	}
+	return oldValue.SelectionSeed, nil
+}
+
+// AddSelectionSeed adds i to the "selection_seed" field.
+func (m *BenchmarkRunMutation) AddSelectionSeed(i int64) {
+	if m.addselection_seed != nil {
+		*m.addselection_seed += i
+	} else {
+		m.addselection_seed = &i
+	}
+}
+
+// AddedSelectionSeed returns the value that was added to the "selection_seed" field in this mutation.
+func (m *BenchmarkRunMutation) AddedSelectionSeed() (r int64, exists bool) {
+	v := m.addselection_seed
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearSelectionSeed clears the value of the "selection_seed" field.
+func (m *BenchmarkRunMutation) ClearSelectionSeed() {
+	m.selection_seed = nil
+	m.addselection_seed = nil
+	m.clearedFields[benchmarkrun.FieldSelectionSeed] = struct{}{}
+}
+
+// SelectionSeedCleared returns if the "selection_seed" field was cleared in this mutation.
+func (m *BenchmarkRunMutation) SelectionSeedCleared() bool {
+	_, ok := m.clearedFields[benchmarkrun.FieldSelectionSeed]
+	return ok
+}
+
+// ResetSelectionSeed resets all changes to the "selection_seed" field.
+func (m *BenchmarkRunMutation) ResetSelectionSeed() {
+	m.selection_seed = nil
+	m.addselection_seed = nil
+	delete(m.clearedFields, benchmarkrun.FieldSelectionSeed)
+}
+
+// SetPlannedTargetCount sets the "planned_target_count" field.
+func (m *BenchmarkRunMutation) SetPlannedTargetCount(i int) {
+	m.planned_target_count = &i
+	m.addplanned_target_count = nil
+}
+
+// PlannedTargetCount returns the value of the "planned_target_count" field in the mutation.
+func (m *BenchmarkRunMutation) PlannedTargetCount() (r int, exists bool) {
+	v := m.planned_target_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPlannedTargetCount returns the old "planned_target_count" field's value of the BenchmarkRun entity.
+// If the BenchmarkRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkRunMutation) OldPlannedTargetCount(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPlannedTargetCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPlannedTargetCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPlannedTargetCount: %w", err)
+	}
+	return oldValue.PlannedTargetCount, nil
+}
+
+// AddPlannedTargetCount adds i to the "planned_target_count" field.
+func (m *BenchmarkRunMutation) AddPlannedTargetCount(i int) {
+	if m.addplanned_target_count != nil {
+		*m.addplanned_target_count += i
+	} else {
+		m.addplanned_target_count = &i
+	}
+}
+
+// AddedPlannedTargetCount returns the value that was added to the "planned_target_count" field in this mutation.
+func (m *BenchmarkRunMutation) AddedPlannedTargetCount() (r int, exists bool) {
+	v := m.addplanned_target_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetPlannedTargetCount resets all changes to the "planned_target_count" field.
+func (m *BenchmarkRunMutation) ResetPlannedTargetCount() {
+	m.planned_target_count = nil
+	m.addplanned_target_count = nil
+}
+
+// SetPlannedTaskCount sets the "planned_task_count" field.
+func (m *BenchmarkRunMutation) SetPlannedTaskCount(i int) {
+	m.planned_task_count = &i
+	m.addplanned_task_count = nil
+}
+
+// PlannedTaskCount returns the value of the "planned_task_count" field in the mutation.
+func (m *BenchmarkRunMutation) PlannedTaskCount() (r int, exists bool) {
+	v := m.planned_task_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPlannedTaskCount returns the old "planned_task_count" field's value of the BenchmarkRun entity.
+// If the BenchmarkRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkRunMutation) OldPlannedTaskCount(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPlannedTaskCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPlannedTaskCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPlannedTaskCount: %w", err)
+	}
+	return oldValue.PlannedTaskCount, nil
+}
+
+// AddPlannedTaskCount adds i to the "planned_task_count" field.
+func (m *BenchmarkRunMutation) AddPlannedTaskCount(i int) {
+	if m.addplanned_task_count != nil {
+		*m.addplanned_task_count += i
+	} else {
+		m.addplanned_task_count = &i
+	}
+}
+
+// AddedPlannedTaskCount returns the value that was added to the "planned_task_count" field in this mutation.
+func (m *BenchmarkRunMutation) AddedPlannedTaskCount() (r int, exists bool) {
+	v := m.addplanned_task_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetPlannedTaskCount resets all changes to the "planned_task_count" field.
+func (m *BenchmarkRunMutation) ResetPlannedTaskCount() {
+	m.planned_task_count = nil
+	m.addplanned_task_count = nil
+}
+
+// SetPlannedResultCount sets the "planned_result_count" field.
+func (m *BenchmarkRunMutation) SetPlannedResultCount(i int) {
+	m.planned_result_count = &i
+	m.addplanned_result_count = nil
+}
+
+// PlannedResultCount returns the value of the "planned_result_count" field in the mutation.
+func (m *BenchmarkRunMutation) PlannedResultCount() (r int, exists bool) {
+	v := m.planned_result_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPlannedResultCount returns the old "planned_result_count" field's value of the BenchmarkRun entity.
+// If the BenchmarkRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkRunMutation) OldPlannedResultCount(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPlannedResultCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPlannedResultCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPlannedResultCount: %w", err)
+	}
+	return oldValue.PlannedResultCount, nil
+}
+
+// AddPlannedResultCount adds i to the "planned_result_count" field.
+func (m *BenchmarkRunMutation) AddPlannedResultCount(i int) {
+	if m.addplanned_result_count != nil {
+		*m.addplanned_result_count += i
+	} else {
+		m.addplanned_result_count = &i
+	}
+}
+
+// AddedPlannedResultCount returns the value that was added to the "planned_result_count" field in this mutation.
+func (m *BenchmarkRunMutation) AddedPlannedResultCount() (r int, exists bool) {
+	v := m.addplanned_result_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetPlannedResultCount resets all changes to the "planned_result_count" field.
+func (m *BenchmarkRunMutation) ResetPlannedResultCount() {
+	m.planned_result_count = nil
+	m.addplanned_result_count = nil
+}
+
+// SetStartedAt sets the "started_at" field.
+func (m *BenchmarkRunMutation) SetStartedAt(t time.Time) {
+	m.started_at = &t
+}
+
+// StartedAt returns the value of the "started_at" field in the mutation.
+func (m *BenchmarkRunMutation) StartedAt() (r time.Time, exists bool) {
+	v := m.started_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStartedAt returns the old "started_at" field's value of the BenchmarkRun entity.
+// If the BenchmarkRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkRunMutation) OldStartedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStartedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStartedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStartedAt: %w", err)
+	}
+	return oldValue.StartedAt, nil
+}
+
+// ClearStartedAt clears the value of the "started_at" field.
+func (m *BenchmarkRunMutation) ClearStartedAt() {
+	m.started_at = nil
+	m.clearedFields[benchmarkrun.FieldStartedAt] = struct{}{}
+}
+
+// StartedAtCleared returns if the "started_at" field was cleared in this mutation.
+func (m *BenchmarkRunMutation) StartedAtCleared() bool {
+	_, ok := m.clearedFields[benchmarkrun.FieldStartedAt]
+	return ok
+}
+
+// ResetStartedAt resets all changes to the "started_at" field.
+func (m *BenchmarkRunMutation) ResetStartedAt() {
+	m.started_at = nil
+	delete(m.clearedFields, benchmarkrun.FieldStartedAt)
+}
+
+// SetFinishedAt sets the "finished_at" field.
+func (m *BenchmarkRunMutation) SetFinishedAt(t time.Time) {
+	m.finished_at = &t
+}
+
+// FinishedAt returns the value of the "finished_at" field in the mutation.
+func (m *BenchmarkRunMutation) FinishedAt() (r time.Time, exists bool) {
+	v := m.finished_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldFinishedAt returns the old "finished_at" field's value of the BenchmarkRun entity.
+// If the BenchmarkRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkRunMutation) OldFinishedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldFinishedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldFinishedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldFinishedAt: %w", err)
+	}
+	return oldValue.FinishedAt, nil
+}
+
+// ClearFinishedAt clears the value of the "finished_at" field.
+func (m *BenchmarkRunMutation) ClearFinishedAt() {
+	m.finished_at = nil
+	m.clearedFields[benchmarkrun.FieldFinishedAt] = struct{}{}
+}
+
+// FinishedAtCleared returns if the "finished_at" field was cleared in this mutation.
+func (m *BenchmarkRunMutation) FinishedAtCleared() bool {
+	_, ok := m.clearedFields[benchmarkrun.FieldFinishedAt]
+	return ok
+}
+
+// ResetFinishedAt resets all changes to the "finished_at" field.
+func (m *BenchmarkRunMutation) ResetFinishedAt() {
+	m.finished_at = nil
+	delete(m.clearedFields, benchmarkrun.FieldFinishedAt)
+}
+
+// SetConfigSnapshot sets the "config_snapshot" field.
+func (m *BenchmarkRunMutation) SetConfigSnapshot(value map[string]interface{}) {
+	m.config_snapshot = &value
+}
+
+// ConfigSnapshot returns the value of the "config_snapshot" field in the mutation.
+func (m *BenchmarkRunMutation) ConfigSnapshot() (r map[string]interface{}, exists bool) {
+	v := m.config_snapshot
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldConfigSnapshot returns the old "config_snapshot" field's value of the BenchmarkRun entity.
+// If the BenchmarkRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkRunMutation) OldConfigSnapshot(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldConfigSnapshot is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldConfigSnapshot requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldConfigSnapshot: %w", err)
+	}
+	return oldValue.ConfigSnapshot, nil
+}
+
+// ResetConfigSnapshot resets all changes to the "config_snapshot" field.
+func (m *BenchmarkRunMutation) ResetConfigSnapshot() {
+	m.config_snapshot = nil
+}
+
+// SetErrorMessage sets the "error_message" field.
+func (m *BenchmarkRunMutation) SetErrorMessage(s string) {
+	m.error_message = &s
+}
+
+// ErrorMessage returns the value of the "error_message" field in the mutation.
+func (m *BenchmarkRunMutation) ErrorMessage() (r string, exists bool) {
+	v := m.error_message
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldErrorMessage returns the old "error_message" field's value of the BenchmarkRun entity.
+// If the BenchmarkRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkRunMutation) OldErrorMessage(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldErrorMessage is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldErrorMessage requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldErrorMessage: %w", err)
+	}
+	return oldValue.ErrorMessage, nil
+}
+
+// ClearErrorMessage clears the value of the "error_message" field.
+func (m *BenchmarkRunMutation) ClearErrorMessage() {
+	m.error_message = nil
+	m.clearedFields[benchmarkrun.FieldErrorMessage] = struct{}{}
+}
+
+// ErrorMessageCleared returns if the "error_message" field was cleared in this mutation.
+func (m *BenchmarkRunMutation) ErrorMessageCleared() bool {
+	_, ok := m.clearedFields[benchmarkrun.FieldErrorMessage]
+	return ok
+}
+
+// ResetErrorMessage resets all changes to the "error_message" field.
+func (m *BenchmarkRunMutation) ResetErrorMessage() {
+	m.error_message = nil
+	delete(m.clearedFields, benchmarkrun.FieldErrorMessage)
+}
+
+// SetCreatedBy sets the "created_by" field.
+func (m *BenchmarkRunMutation) SetCreatedBy(i int64) {
+	m.created_by = &i
+	m.addcreated_by = nil
+}
+
+// CreatedBy returns the value of the "created_by" field in the mutation.
+func (m *BenchmarkRunMutation) CreatedBy() (r int64, exists bool) {
+	v := m.created_by
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedBy returns the old "created_by" field's value of the BenchmarkRun entity.
+// If the BenchmarkRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkRunMutation) OldCreatedBy(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedBy is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedBy requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedBy: %w", err)
+	}
+	return oldValue.CreatedBy, nil
+}
+
+// AddCreatedBy adds i to the "created_by" field.
+func (m *BenchmarkRunMutation) AddCreatedBy(i int64) {
+	if m.addcreated_by != nil {
+		*m.addcreated_by += i
+	} else {
+		m.addcreated_by = &i
+	}
+}
+
+// AddedCreatedBy returns the value that was added to the "created_by" field in this mutation.
+func (m *BenchmarkRunMutation) AddedCreatedBy() (r int64, exists bool) {
+	v := m.addcreated_by
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearCreatedBy clears the value of the "created_by" field.
+func (m *BenchmarkRunMutation) ClearCreatedBy() {
+	m.created_by = nil
+	m.addcreated_by = nil
+	m.clearedFields[benchmarkrun.FieldCreatedBy] = struct{}{}
+}
+
+// CreatedByCleared returns if the "created_by" field was cleared in this mutation.
+func (m *BenchmarkRunMutation) CreatedByCleared() bool {
+	_, ok := m.clearedFields[benchmarkrun.FieldCreatedBy]
+	return ok
+}
+
+// ResetCreatedBy resets all changes to the "created_by" field.
+func (m *BenchmarkRunMutation) ResetCreatedBy() {
+	m.created_by = nil
+	m.addcreated_by = nil
+	delete(m.clearedFields, benchmarkrun.FieldCreatedBy)
+}
+
+// ClearSuite clears the "suite" edge to the BenchmarkSuite entity.
+func (m *BenchmarkRunMutation) ClearSuite() {
+	m.clearedsuite = true
+	m.clearedFields[benchmarkrun.FieldSuiteID] = struct{}{}
+}
+
+// SuiteCleared reports if the "suite" edge to the BenchmarkSuite entity was cleared.
+func (m *BenchmarkRunMutation) SuiteCleared() bool {
+	return m.clearedsuite
+}
+
+// SuiteIDs returns the "suite" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// SuiteID instead. It exists only for internal usage by the builders.
+func (m *BenchmarkRunMutation) SuiteIDs() (ids []int64) {
+	if id := m.suite; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetSuite resets all changes to the "suite" edge.
+func (m *BenchmarkRunMutation) ResetSuite() {
+	m.suite = nil
+	m.clearedsuite = false
+}
+
+// ClearProfile clears the "profile" edge to the BenchmarkProfile entity.
+func (m *BenchmarkRunMutation) ClearProfile() {
+	m.clearedprofile = true
+	m.clearedFields[benchmarkrun.FieldProfileID] = struct{}{}
+}
+
+// ProfileCleared reports if the "profile" edge to the BenchmarkProfile entity was cleared.
+func (m *BenchmarkRunMutation) ProfileCleared() bool {
+	return m.clearedprofile
+}
+
+// ProfileIDs returns the "profile" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// ProfileID instead. It exists only for internal usage by the builders.
+func (m *BenchmarkRunMutation) ProfileIDs() (ids []int64) {
+	if id := m.profile; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetProfile resets all changes to the "profile" edge.
+func (m *BenchmarkRunMutation) ResetProfile() {
+	m.profile = nil
+	m.clearedprofile = false
+}
+
+// AddRunTargetIDs adds the "run_targets" edge to the BenchmarkRunTarget entity by ids.
+func (m *BenchmarkRunMutation) AddRunTargetIDs(ids ...int64) {
+	if m.run_targets == nil {
+		m.run_targets = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.run_targets[ids[i]] = struct{}{}
+	}
+}
+
+// ClearRunTargets clears the "run_targets" edge to the BenchmarkRunTarget entity.
+func (m *BenchmarkRunMutation) ClearRunTargets() {
+	m.clearedrun_targets = true
+}
+
+// RunTargetsCleared reports if the "run_targets" edge to the BenchmarkRunTarget entity was cleared.
+func (m *BenchmarkRunMutation) RunTargetsCleared() bool {
+	return m.clearedrun_targets
+}
+
+// RemoveRunTargetIDs removes the "run_targets" edge to the BenchmarkRunTarget entity by IDs.
+func (m *BenchmarkRunMutation) RemoveRunTargetIDs(ids ...int64) {
+	if m.removedrun_targets == nil {
+		m.removedrun_targets = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.run_targets, ids[i])
+		m.removedrun_targets[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedRunTargets returns the removed IDs of the "run_targets" edge to the BenchmarkRunTarget entity.
+func (m *BenchmarkRunMutation) RemovedRunTargetsIDs() (ids []int64) {
+	for id := range m.removedrun_targets {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// RunTargetsIDs returns the "run_targets" edge IDs in the mutation.
+func (m *BenchmarkRunMutation) RunTargetsIDs() (ids []int64) {
+	for id := range m.run_targets {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetRunTargets resets all changes to the "run_targets" edge.
+func (m *BenchmarkRunMutation) ResetRunTargets() {
+	m.run_targets = nil
+	m.clearedrun_targets = false
+	m.removedrun_targets = nil
+}
+
+// AddRunTaskIDs adds the "run_tasks" edge to the BenchmarkRunTask entity by ids.
+func (m *BenchmarkRunMutation) AddRunTaskIDs(ids ...int64) {
+	if m.run_tasks == nil {
+		m.run_tasks = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.run_tasks[ids[i]] = struct{}{}
+	}
+}
+
+// ClearRunTasks clears the "run_tasks" edge to the BenchmarkRunTask entity.
+func (m *BenchmarkRunMutation) ClearRunTasks() {
+	m.clearedrun_tasks = true
+}
+
+// RunTasksCleared reports if the "run_tasks" edge to the BenchmarkRunTask entity was cleared.
+func (m *BenchmarkRunMutation) RunTasksCleared() bool {
+	return m.clearedrun_tasks
+}
+
+// RemoveRunTaskIDs removes the "run_tasks" edge to the BenchmarkRunTask entity by IDs.
+func (m *BenchmarkRunMutation) RemoveRunTaskIDs(ids ...int64) {
+	if m.removedrun_tasks == nil {
+		m.removedrun_tasks = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.run_tasks, ids[i])
+		m.removedrun_tasks[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedRunTasks returns the removed IDs of the "run_tasks" edge to the BenchmarkRunTask entity.
+func (m *BenchmarkRunMutation) RemovedRunTasksIDs() (ids []int64) {
+	for id := range m.removedrun_tasks {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// RunTasksIDs returns the "run_tasks" edge IDs in the mutation.
+func (m *BenchmarkRunMutation) RunTasksIDs() (ids []int64) {
+	for id := range m.run_tasks {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetRunTasks resets all changes to the "run_tasks" edge.
+func (m *BenchmarkRunMutation) ResetRunTasks() {
+	m.run_tasks = nil
+	m.clearedrun_tasks = false
+	m.removedrun_tasks = nil
+}
+
+// AddResultIDs adds the "results" edge to the BenchmarkResult entity by ids.
+func (m *BenchmarkRunMutation) AddResultIDs(ids ...int64) {
+	if m.results == nil {
+		m.results = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.results[ids[i]] = struct{}{}
+	}
+}
+
+// ClearResults clears the "results" edge to the BenchmarkResult entity.
+func (m *BenchmarkRunMutation) ClearResults() {
+	m.clearedresults = true
+}
+
+// ResultsCleared reports if the "results" edge to the BenchmarkResult entity was cleared.
+func (m *BenchmarkRunMutation) ResultsCleared() bool {
+	return m.clearedresults
+}
+
+// RemoveResultIDs removes the "results" edge to the BenchmarkResult entity by IDs.
+func (m *BenchmarkRunMutation) RemoveResultIDs(ids ...int64) {
+	if m.removedresults == nil {
+		m.removedresults = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.results, ids[i])
+		m.removedresults[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedResults returns the removed IDs of the "results" edge to the BenchmarkResult entity.
+func (m *BenchmarkRunMutation) RemovedResultsIDs() (ids []int64) {
+	for id := range m.removedresults {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResultsIDs returns the "results" edge IDs in the mutation.
+func (m *BenchmarkRunMutation) ResultsIDs() (ids []int64) {
+	for id := range m.results {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetResults resets all changes to the "results" edge.
+func (m *BenchmarkRunMutation) ResetResults() {
+	m.results = nil
+	m.clearedresults = false
+	m.removedresults = nil
+}
+
+// AddScoreSnapshotIDs adds the "score_snapshots" edge to the BenchmarkScoreSnapshot entity by ids.
+func (m *BenchmarkRunMutation) AddScoreSnapshotIDs(ids ...int64) {
+	if m.score_snapshots == nil {
+		m.score_snapshots = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.score_snapshots[ids[i]] = struct{}{}
+	}
+}
+
+// ClearScoreSnapshots clears the "score_snapshots" edge to the BenchmarkScoreSnapshot entity.
+func (m *BenchmarkRunMutation) ClearScoreSnapshots() {
+	m.clearedscore_snapshots = true
+}
+
+// ScoreSnapshotsCleared reports if the "score_snapshots" edge to the BenchmarkScoreSnapshot entity was cleared.
+func (m *BenchmarkRunMutation) ScoreSnapshotsCleared() bool {
+	return m.clearedscore_snapshots
+}
+
+// RemoveScoreSnapshotIDs removes the "score_snapshots" edge to the BenchmarkScoreSnapshot entity by IDs.
+func (m *BenchmarkRunMutation) RemoveScoreSnapshotIDs(ids ...int64) {
+	if m.removedscore_snapshots == nil {
+		m.removedscore_snapshots = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.score_snapshots, ids[i])
+		m.removedscore_snapshots[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedScoreSnapshots returns the removed IDs of the "score_snapshots" edge to the BenchmarkScoreSnapshot entity.
+func (m *BenchmarkRunMutation) RemovedScoreSnapshotsIDs() (ids []int64) {
+	for id := range m.removedscore_snapshots {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ScoreSnapshotsIDs returns the "score_snapshots" edge IDs in the mutation.
+func (m *BenchmarkRunMutation) ScoreSnapshotsIDs() (ids []int64) {
+	for id := range m.score_snapshots {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetScoreSnapshots resets all changes to the "score_snapshots" edge.
+func (m *BenchmarkRunMutation) ResetScoreSnapshots() {
+	m.score_snapshots = nil
+	m.clearedscore_snapshots = false
+	m.removedscore_snapshots = nil
+}
+
+// AddPublicSnapshotIDs adds the "public_snapshots" edge to the BenchmarkPublicSnapshot entity by ids.
+func (m *BenchmarkRunMutation) AddPublicSnapshotIDs(ids ...int64) {
+	if m.public_snapshots == nil {
+		m.public_snapshots = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.public_snapshots[ids[i]] = struct{}{}
+	}
+}
+
+// ClearPublicSnapshots clears the "public_snapshots" edge to the BenchmarkPublicSnapshot entity.
+func (m *BenchmarkRunMutation) ClearPublicSnapshots() {
+	m.clearedpublic_snapshots = true
+}
+
+// PublicSnapshotsCleared reports if the "public_snapshots" edge to the BenchmarkPublicSnapshot entity was cleared.
+func (m *BenchmarkRunMutation) PublicSnapshotsCleared() bool {
+	return m.clearedpublic_snapshots
+}
+
+// RemovePublicSnapshotIDs removes the "public_snapshots" edge to the BenchmarkPublicSnapshot entity by IDs.
+func (m *BenchmarkRunMutation) RemovePublicSnapshotIDs(ids ...int64) {
+	if m.removedpublic_snapshots == nil {
+		m.removedpublic_snapshots = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.public_snapshots, ids[i])
+		m.removedpublic_snapshots[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedPublicSnapshots returns the removed IDs of the "public_snapshots" edge to the BenchmarkPublicSnapshot entity.
+func (m *BenchmarkRunMutation) RemovedPublicSnapshotsIDs() (ids []int64) {
+	for id := range m.removedpublic_snapshots {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// PublicSnapshotsIDs returns the "public_snapshots" edge IDs in the mutation.
+func (m *BenchmarkRunMutation) PublicSnapshotsIDs() (ids []int64) {
+	for id := range m.public_snapshots {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetPublicSnapshots resets all changes to the "public_snapshots" edge.
+func (m *BenchmarkRunMutation) ResetPublicSnapshots() {
+	m.public_snapshots = nil
+	m.clearedpublic_snapshots = false
+	m.removedpublic_snapshots = nil
+}
+
+// Where appends a list predicates to the BenchmarkRunMutation builder.
+func (m *BenchmarkRunMutation) Where(ps ...predicate.BenchmarkRun) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the BenchmarkRunMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *BenchmarkRunMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.BenchmarkRun, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *BenchmarkRunMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *BenchmarkRunMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (BenchmarkRun).
+func (m *BenchmarkRunMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *BenchmarkRunMutation) Fields() []string {
+	fields := make([]string, 0, 17)
+	if m.created_at != nil {
+		fields = append(fields, benchmarkrun.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, benchmarkrun.FieldUpdatedAt)
+	}
+	if m.suite != nil {
+		fields = append(fields, benchmarkrun.FieldSuiteID)
+	}
+	if m.profile != nil {
+		fields = append(fields, benchmarkrun.FieldProfileID)
+	}
+	if m.status != nil {
+		fields = append(fields, benchmarkrun.FieldStatus)
+	}
+	if m.trigger_type != nil {
+		fields = append(fields, benchmarkrun.FieldTriggerType)
+	}
+	if m.task_scale != nil {
+		fields = append(fields, benchmarkrun.FieldTaskScale)
+	}
+	if m.task_types != nil {
+		fields = append(fields, benchmarkrun.FieldTaskTypes)
+	}
+	if m.selection_seed != nil {
+		fields = append(fields, benchmarkrun.FieldSelectionSeed)
+	}
+	if m.planned_target_count != nil {
+		fields = append(fields, benchmarkrun.FieldPlannedTargetCount)
+	}
+	if m.planned_task_count != nil {
+		fields = append(fields, benchmarkrun.FieldPlannedTaskCount)
+	}
+	if m.planned_result_count != nil {
+		fields = append(fields, benchmarkrun.FieldPlannedResultCount)
+	}
+	if m.started_at != nil {
+		fields = append(fields, benchmarkrun.FieldStartedAt)
+	}
+	if m.finished_at != nil {
+		fields = append(fields, benchmarkrun.FieldFinishedAt)
+	}
+	if m.config_snapshot != nil {
+		fields = append(fields, benchmarkrun.FieldConfigSnapshot)
+	}
+	if m.error_message != nil {
+		fields = append(fields, benchmarkrun.FieldErrorMessage)
+	}
+	if m.created_by != nil {
+		fields = append(fields, benchmarkrun.FieldCreatedBy)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *BenchmarkRunMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case benchmarkrun.FieldCreatedAt:
+		return m.CreatedAt()
+	case benchmarkrun.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case benchmarkrun.FieldSuiteID:
+		return m.SuiteID()
+	case benchmarkrun.FieldProfileID:
+		return m.ProfileID()
+	case benchmarkrun.FieldStatus:
+		return m.Status()
+	case benchmarkrun.FieldTriggerType:
+		return m.TriggerType()
+	case benchmarkrun.FieldTaskScale:
+		return m.TaskScale()
+	case benchmarkrun.FieldTaskTypes:
+		return m.TaskTypes()
+	case benchmarkrun.FieldSelectionSeed:
+		return m.SelectionSeed()
+	case benchmarkrun.FieldPlannedTargetCount:
+		return m.PlannedTargetCount()
+	case benchmarkrun.FieldPlannedTaskCount:
+		return m.PlannedTaskCount()
+	case benchmarkrun.FieldPlannedResultCount:
+		return m.PlannedResultCount()
+	case benchmarkrun.FieldStartedAt:
+		return m.StartedAt()
+	case benchmarkrun.FieldFinishedAt:
+		return m.FinishedAt()
+	case benchmarkrun.FieldConfigSnapshot:
+		return m.ConfigSnapshot()
+	case benchmarkrun.FieldErrorMessage:
+		return m.ErrorMessage()
+	case benchmarkrun.FieldCreatedBy:
+		return m.CreatedBy()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *BenchmarkRunMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case benchmarkrun.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case benchmarkrun.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case benchmarkrun.FieldSuiteID:
+		return m.OldSuiteID(ctx)
+	case benchmarkrun.FieldProfileID:
+		return m.OldProfileID(ctx)
+	case benchmarkrun.FieldStatus:
+		return m.OldStatus(ctx)
+	case benchmarkrun.FieldTriggerType:
+		return m.OldTriggerType(ctx)
+	case benchmarkrun.FieldTaskScale:
+		return m.OldTaskScale(ctx)
+	case benchmarkrun.FieldTaskTypes:
+		return m.OldTaskTypes(ctx)
+	case benchmarkrun.FieldSelectionSeed:
+		return m.OldSelectionSeed(ctx)
+	case benchmarkrun.FieldPlannedTargetCount:
+		return m.OldPlannedTargetCount(ctx)
+	case benchmarkrun.FieldPlannedTaskCount:
+		return m.OldPlannedTaskCount(ctx)
+	case benchmarkrun.FieldPlannedResultCount:
+		return m.OldPlannedResultCount(ctx)
+	case benchmarkrun.FieldStartedAt:
+		return m.OldStartedAt(ctx)
+	case benchmarkrun.FieldFinishedAt:
+		return m.OldFinishedAt(ctx)
+	case benchmarkrun.FieldConfigSnapshot:
+		return m.OldConfigSnapshot(ctx)
+	case benchmarkrun.FieldErrorMessage:
+		return m.OldErrorMessage(ctx)
+	case benchmarkrun.FieldCreatedBy:
+		return m.OldCreatedBy(ctx)
+	}
+	return nil, fmt.Errorf("unknown BenchmarkRun field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *BenchmarkRunMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case benchmarkrun.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case benchmarkrun.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case benchmarkrun.FieldSuiteID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSuiteID(v)
+		return nil
+	case benchmarkrun.FieldProfileID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProfileID(v)
+		return nil
+	case benchmarkrun.FieldStatus:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStatus(v)
+		return nil
+	case benchmarkrun.FieldTriggerType:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTriggerType(v)
+		return nil
+	case benchmarkrun.FieldTaskScale:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTaskScale(v)
+		return nil
+	case benchmarkrun.FieldTaskTypes:
+		v, ok := value.([]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTaskTypes(v)
+		return nil
+	case benchmarkrun.FieldSelectionSeed:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSelectionSeed(v)
+		return nil
+	case benchmarkrun.FieldPlannedTargetCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPlannedTargetCount(v)
+		return nil
+	case benchmarkrun.FieldPlannedTaskCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPlannedTaskCount(v)
+		return nil
+	case benchmarkrun.FieldPlannedResultCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPlannedResultCount(v)
+		return nil
+	case benchmarkrun.FieldStartedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStartedAt(v)
+		return nil
+	case benchmarkrun.FieldFinishedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetFinishedAt(v)
+		return nil
+	case benchmarkrun.FieldConfigSnapshot:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetConfigSnapshot(v)
+		return nil
+	case benchmarkrun.FieldErrorMessage:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetErrorMessage(v)
+		return nil
+	case benchmarkrun.FieldCreatedBy:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedBy(v)
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkRun field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *BenchmarkRunMutation) AddedFields() []string {
+	var fields []string
+	if m.addtask_scale != nil {
+		fields = append(fields, benchmarkrun.FieldTaskScale)
+	}
+	if m.addselection_seed != nil {
+		fields = append(fields, benchmarkrun.FieldSelectionSeed)
+	}
+	if m.addplanned_target_count != nil {
+		fields = append(fields, benchmarkrun.FieldPlannedTargetCount)
+	}
+	if m.addplanned_task_count != nil {
+		fields = append(fields, benchmarkrun.FieldPlannedTaskCount)
+	}
+	if m.addplanned_result_count != nil {
+		fields = append(fields, benchmarkrun.FieldPlannedResultCount)
+	}
+	if m.addcreated_by != nil {
+		fields = append(fields, benchmarkrun.FieldCreatedBy)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *BenchmarkRunMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case benchmarkrun.FieldTaskScale:
+		return m.AddedTaskScale()
+	case benchmarkrun.FieldSelectionSeed:
+		return m.AddedSelectionSeed()
+	case benchmarkrun.FieldPlannedTargetCount:
+		return m.AddedPlannedTargetCount()
+	case benchmarkrun.FieldPlannedTaskCount:
+		return m.AddedPlannedTaskCount()
+	case benchmarkrun.FieldPlannedResultCount:
+		return m.AddedPlannedResultCount()
+	case benchmarkrun.FieldCreatedBy:
+		return m.AddedCreatedBy()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *BenchmarkRunMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case benchmarkrun.FieldTaskScale:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddTaskScale(v)
+		return nil
+	case benchmarkrun.FieldSelectionSeed:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddSelectionSeed(v)
+		return nil
+	case benchmarkrun.FieldPlannedTargetCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddPlannedTargetCount(v)
+		return nil
+	case benchmarkrun.FieldPlannedTaskCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddPlannedTaskCount(v)
+		return nil
+	case benchmarkrun.FieldPlannedResultCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddPlannedResultCount(v)
+		return nil
+	case benchmarkrun.FieldCreatedBy:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCreatedBy(v)
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkRun numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *BenchmarkRunMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(benchmarkrun.FieldSelectionSeed) {
+		fields = append(fields, benchmarkrun.FieldSelectionSeed)
+	}
+	if m.FieldCleared(benchmarkrun.FieldStartedAt) {
+		fields = append(fields, benchmarkrun.FieldStartedAt)
+	}
+	if m.FieldCleared(benchmarkrun.FieldFinishedAt) {
+		fields = append(fields, benchmarkrun.FieldFinishedAt)
+	}
+	if m.FieldCleared(benchmarkrun.FieldErrorMessage) {
+		fields = append(fields, benchmarkrun.FieldErrorMessage)
+	}
+	if m.FieldCleared(benchmarkrun.FieldCreatedBy) {
+		fields = append(fields, benchmarkrun.FieldCreatedBy)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *BenchmarkRunMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *BenchmarkRunMutation) ClearField(name string) error {
+	switch name {
+	case benchmarkrun.FieldSelectionSeed:
+		m.ClearSelectionSeed()
+		return nil
+	case benchmarkrun.FieldStartedAt:
+		m.ClearStartedAt()
+		return nil
+	case benchmarkrun.FieldFinishedAt:
+		m.ClearFinishedAt()
+		return nil
+	case benchmarkrun.FieldErrorMessage:
+		m.ClearErrorMessage()
+		return nil
+	case benchmarkrun.FieldCreatedBy:
+		m.ClearCreatedBy()
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkRun nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *BenchmarkRunMutation) ResetField(name string) error {
+	switch name {
+	case benchmarkrun.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case benchmarkrun.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case benchmarkrun.FieldSuiteID:
+		m.ResetSuiteID()
+		return nil
+	case benchmarkrun.FieldProfileID:
+		m.ResetProfileID()
+		return nil
+	case benchmarkrun.FieldStatus:
+		m.ResetStatus()
+		return nil
+	case benchmarkrun.FieldTriggerType:
+		m.ResetTriggerType()
+		return nil
+	case benchmarkrun.FieldTaskScale:
+		m.ResetTaskScale()
+		return nil
+	case benchmarkrun.FieldTaskTypes:
+		m.ResetTaskTypes()
+		return nil
+	case benchmarkrun.FieldSelectionSeed:
+		m.ResetSelectionSeed()
+		return nil
+	case benchmarkrun.FieldPlannedTargetCount:
+		m.ResetPlannedTargetCount()
+		return nil
+	case benchmarkrun.FieldPlannedTaskCount:
+		m.ResetPlannedTaskCount()
+		return nil
+	case benchmarkrun.FieldPlannedResultCount:
+		m.ResetPlannedResultCount()
+		return nil
+	case benchmarkrun.FieldStartedAt:
+		m.ResetStartedAt()
+		return nil
+	case benchmarkrun.FieldFinishedAt:
+		m.ResetFinishedAt()
+		return nil
+	case benchmarkrun.FieldConfigSnapshot:
+		m.ResetConfigSnapshot()
+		return nil
+	case benchmarkrun.FieldErrorMessage:
+		m.ResetErrorMessage()
+		return nil
+	case benchmarkrun.FieldCreatedBy:
+		m.ResetCreatedBy()
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkRun field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *BenchmarkRunMutation) AddedEdges() []string {
+	edges := make([]string, 0, 7)
+	if m.suite != nil {
+		edges = append(edges, benchmarkrun.EdgeSuite)
+	}
+	if m.profile != nil {
+		edges = append(edges, benchmarkrun.EdgeProfile)
+	}
+	if m.run_targets != nil {
+		edges = append(edges, benchmarkrun.EdgeRunTargets)
+	}
+	if m.run_tasks != nil {
+		edges = append(edges, benchmarkrun.EdgeRunTasks)
+	}
+	if m.results != nil {
+		edges = append(edges, benchmarkrun.EdgeResults)
+	}
+	if m.score_snapshots != nil {
+		edges = append(edges, benchmarkrun.EdgeScoreSnapshots)
+	}
+	if m.public_snapshots != nil {
+		edges = append(edges, benchmarkrun.EdgePublicSnapshots)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *BenchmarkRunMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case benchmarkrun.EdgeSuite:
+		if id := m.suite; id != nil {
+			return []ent.Value{*id}
+		}
+	case benchmarkrun.EdgeProfile:
+		if id := m.profile; id != nil {
+			return []ent.Value{*id}
+		}
+	case benchmarkrun.EdgeRunTargets:
+		ids := make([]ent.Value, 0, len(m.run_targets))
+		for id := range m.run_targets {
+			ids = append(ids, id)
+		}
+		return ids
+	case benchmarkrun.EdgeRunTasks:
+		ids := make([]ent.Value, 0, len(m.run_tasks))
+		for id := range m.run_tasks {
+			ids = append(ids, id)
+		}
+		return ids
+	case benchmarkrun.EdgeResults:
+		ids := make([]ent.Value, 0, len(m.results))
+		for id := range m.results {
+			ids = append(ids, id)
+		}
+		return ids
+	case benchmarkrun.EdgeScoreSnapshots:
+		ids := make([]ent.Value, 0, len(m.score_snapshots))
+		for id := range m.score_snapshots {
+			ids = append(ids, id)
+		}
+		return ids
+	case benchmarkrun.EdgePublicSnapshots:
+		ids := make([]ent.Value, 0, len(m.public_snapshots))
+		for id := range m.public_snapshots {
+			ids = append(ids, id)
+		}
+		return ids
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *BenchmarkRunMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 7)
+	if m.removedrun_targets != nil {
+		edges = append(edges, benchmarkrun.EdgeRunTargets)
+	}
+	if m.removedrun_tasks != nil {
+		edges = append(edges, benchmarkrun.EdgeRunTasks)
+	}
+	if m.removedresults != nil {
+		edges = append(edges, benchmarkrun.EdgeResults)
+	}
+	if m.removedscore_snapshots != nil {
+		edges = append(edges, benchmarkrun.EdgeScoreSnapshots)
+	}
+	if m.removedpublic_snapshots != nil {
+		edges = append(edges, benchmarkrun.EdgePublicSnapshots)
+	}
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *BenchmarkRunMutation) RemovedIDs(name string) []ent.Value {
+	switch name {
+	case benchmarkrun.EdgeRunTargets:
+		ids := make([]ent.Value, 0, len(m.removedrun_targets))
+		for id := range m.removedrun_targets {
+			ids = append(ids, id)
+		}
+		return ids
+	case benchmarkrun.EdgeRunTasks:
+		ids := make([]ent.Value, 0, len(m.removedrun_tasks))
+		for id := range m.removedrun_tasks {
+			ids = append(ids, id)
+		}
+		return ids
+	case benchmarkrun.EdgeResults:
+		ids := make([]ent.Value, 0, len(m.removedresults))
+		for id := range m.removedresults {
+			ids = append(ids, id)
+		}
+		return ids
+	case benchmarkrun.EdgeScoreSnapshots:
+		ids := make([]ent.Value, 0, len(m.removedscore_snapshots))
+		for id := range m.removedscore_snapshots {
+			ids = append(ids, id)
+		}
+		return ids
+	case benchmarkrun.EdgePublicSnapshots:
+		ids := make([]ent.Value, 0, len(m.removedpublic_snapshots))
+		for id := range m.removedpublic_snapshots {
+			ids = append(ids, id)
+		}
+		return ids
+	}
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *BenchmarkRunMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 7)
+	if m.clearedsuite {
+		edges = append(edges, benchmarkrun.EdgeSuite)
+	}
+	if m.clearedprofile {
+		edges = append(edges, benchmarkrun.EdgeProfile)
+	}
+	if m.clearedrun_targets {
+		edges = append(edges, benchmarkrun.EdgeRunTargets)
+	}
+	if m.clearedrun_tasks {
+		edges = append(edges, benchmarkrun.EdgeRunTasks)
+	}
+	if m.clearedresults {
+		edges = append(edges, benchmarkrun.EdgeResults)
+	}
+	if m.clearedscore_snapshots {
+		edges = append(edges, benchmarkrun.EdgeScoreSnapshots)
+	}
+	if m.clearedpublic_snapshots {
+		edges = append(edges, benchmarkrun.EdgePublicSnapshots)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *BenchmarkRunMutation) EdgeCleared(name string) bool {
+	switch name {
+	case benchmarkrun.EdgeSuite:
+		return m.clearedsuite
+	case benchmarkrun.EdgeProfile:
+		return m.clearedprofile
+	case benchmarkrun.EdgeRunTargets:
+		return m.clearedrun_targets
+	case benchmarkrun.EdgeRunTasks:
+		return m.clearedrun_tasks
+	case benchmarkrun.EdgeResults:
+		return m.clearedresults
+	case benchmarkrun.EdgeScoreSnapshots:
+		return m.clearedscore_snapshots
+	case benchmarkrun.EdgePublicSnapshots:
+		return m.clearedpublic_snapshots
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *BenchmarkRunMutation) ClearEdge(name string) error {
+	switch name {
+	case benchmarkrun.EdgeSuite:
+		m.ClearSuite()
+		return nil
+	case benchmarkrun.EdgeProfile:
+		m.ClearProfile()
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkRun unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *BenchmarkRunMutation) ResetEdge(name string) error {
+	switch name {
+	case benchmarkrun.EdgeSuite:
+		m.ResetSuite()
+		return nil
+	case benchmarkrun.EdgeProfile:
+		m.ResetProfile()
+		return nil
+	case benchmarkrun.EdgeRunTargets:
+		m.ResetRunTargets()
+		return nil
+	case benchmarkrun.EdgeRunTasks:
+		m.ResetRunTasks()
+		return nil
+	case benchmarkrun.EdgeResults:
+		m.ResetResults()
+		return nil
+	case benchmarkrun.EdgeScoreSnapshots:
+		m.ResetScoreSnapshots()
+		return nil
+	case benchmarkrun.EdgePublicSnapshots:
+		m.ResetPublicSnapshots()
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkRun edge %s", name)
+}
+
+// BenchmarkRunTargetMutation represents an operation that mutates the BenchmarkRunTarget nodes in the graph.
+type BenchmarkRunTargetMutation struct {
+	config
+	op                     Op
+	typ                    string
+	id                     *int64
+	model_name             *string
+	channel_id             *int64
+	addchannel_id          *int64
+	display_name_snapshot  *string
+	channel_name_snapshot  *string
+	provider_snapshot      *string
+	target_order           *int
+	addtarget_order        *int
+	config_snapshot        *map[string]interface{}
+	created_at             *time.Time
+	clearedFields          map[string]struct{}
+	run                    *int64
+	clearedrun             bool
+	target                 *int64
+	clearedtarget          bool
+	results                map[int64]struct{}
+	removedresults         map[int64]struct{}
+	clearedresults         bool
+	score_snapshots        map[int64]struct{}
+	removedscore_snapshots map[int64]struct{}
+	clearedscore_snapshots bool
+	done                   bool
+	oldValue               func(context.Context) (*BenchmarkRunTarget, error)
+	predicates             []predicate.BenchmarkRunTarget
+}
+
+var _ ent.Mutation = (*BenchmarkRunTargetMutation)(nil)
+
+// benchmarkruntargetOption allows management of the mutation configuration using functional options.
+type benchmarkruntargetOption func(*BenchmarkRunTargetMutation)
+
+// newBenchmarkRunTargetMutation creates new mutation for the BenchmarkRunTarget entity.
+func newBenchmarkRunTargetMutation(c config, op Op, opts ...benchmarkruntargetOption) *BenchmarkRunTargetMutation {
+	m := &BenchmarkRunTargetMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeBenchmarkRunTarget,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withBenchmarkRunTargetID sets the ID field of the mutation.
+func withBenchmarkRunTargetID(id int64) benchmarkruntargetOption {
+	return func(m *BenchmarkRunTargetMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *BenchmarkRunTarget
+		)
+		m.oldValue = func(ctx context.Context) (*BenchmarkRunTarget, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().BenchmarkRunTarget.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withBenchmarkRunTarget sets the old BenchmarkRunTarget of the mutation.
+func withBenchmarkRunTarget(node *BenchmarkRunTarget) benchmarkruntargetOption {
+	return func(m *BenchmarkRunTargetMutation) {
+		m.oldValue = func(context.Context) (*BenchmarkRunTarget, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m BenchmarkRunTargetMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m BenchmarkRunTargetMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *BenchmarkRunTargetMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *BenchmarkRunTargetMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().BenchmarkRunTarget.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetRunID sets the "run_id" field.
+func (m *BenchmarkRunTargetMutation) SetRunID(i int64) {
+	m.run = &i
+}
+
+// RunID returns the value of the "run_id" field in the mutation.
+func (m *BenchmarkRunTargetMutation) RunID() (r int64, exists bool) {
+	v := m.run
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRunID returns the old "run_id" field's value of the BenchmarkRunTarget entity.
+// If the BenchmarkRunTarget object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkRunTargetMutation) OldRunID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRunID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRunID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRunID: %w", err)
+	}
+	return oldValue.RunID, nil
+}
+
+// ResetRunID resets all changes to the "run_id" field.
+func (m *BenchmarkRunTargetMutation) ResetRunID() {
+	m.run = nil
+}
+
+// SetTargetID sets the "target_id" field.
+func (m *BenchmarkRunTargetMutation) SetTargetID(i int64) {
+	m.target = &i
+}
+
+// TargetID returns the value of the "target_id" field in the mutation.
+func (m *BenchmarkRunTargetMutation) TargetID() (r int64, exists bool) {
+	v := m.target
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTargetID returns the old "target_id" field's value of the BenchmarkRunTarget entity.
+// If the BenchmarkRunTarget object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkRunTargetMutation) OldTargetID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTargetID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTargetID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTargetID: %w", err)
+	}
+	return oldValue.TargetID, nil
+}
+
+// ResetTargetID resets all changes to the "target_id" field.
+func (m *BenchmarkRunTargetMutation) ResetTargetID() {
+	m.target = nil
+}
+
+// SetModelName sets the "model_name" field.
+func (m *BenchmarkRunTargetMutation) SetModelName(s string) {
+	m.model_name = &s
+}
+
+// ModelName returns the value of the "model_name" field in the mutation.
+func (m *BenchmarkRunTargetMutation) ModelName() (r string, exists bool) {
+	v := m.model_name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldModelName returns the old "model_name" field's value of the BenchmarkRunTarget entity.
+// If the BenchmarkRunTarget object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkRunTargetMutation) OldModelName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldModelName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldModelName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldModelName: %w", err)
+	}
+	return oldValue.ModelName, nil
+}
+
+// ResetModelName resets all changes to the "model_name" field.
+func (m *BenchmarkRunTargetMutation) ResetModelName() {
+	m.model_name = nil
+}
+
+// SetChannelID sets the "channel_id" field.
+func (m *BenchmarkRunTargetMutation) SetChannelID(i int64) {
+	m.channel_id = &i
+	m.addchannel_id = nil
+}
+
+// ChannelID returns the value of the "channel_id" field in the mutation.
+func (m *BenchmarkRunTargetMutation) ChannelID() (r int64, exists bool) {
+	v := m.channel_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldChannelID returns the old "channel_id" field's value of the BenchmarkRunTarget entity.
+// If the BenchmarkRunTarget object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkRunTargetMutation) OldChannelID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldChannelID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldChannelID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldChannelID: %w", err)
+	}
+	return oldValue.ChannelID, nil
+}
+
+// AddChannelID adds i to the "channel_id" field.
+func (m *BenchmarkRunTargetMutation) AddChannelID(i int64) {
+	if m.addchannel_id != nil {
+		*m.addchannel_id += i
+	} else {
+		m.addchannel_id = &i
+	}
+}
+
+// AddedChannelID returns the value that was added to the "channel_id" field in this mutation.
+func (m *BenchmarkRunTargetMutation) AddedChannelID() (r int64, exists bool) {
+	v := m.addchannel_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetChannelID resets all changes to the "channel_id" field.
+func (m *BenchmarkRunTargetMutation) ResetChannelID() {
+	m.channel_id = nil
+	m.addchannel_id = nil
+}
+
+// SetDisplayNameSnapshot sets the "display_name_snapshot" field.
+func (m *BenchmarkRunTargetMutation) SetDisplayNameSnapshot(s string) {
+	m.display_name_snapshot = &s
+}
+
+// DisplayNameSnapshot returns the value of the "display_name_snapshot" field in the mutation.
+func (m *BenchmarkRunTargetMutation) DisplayNameSnapshot() (r string, exists bool) {
+	v := m.display_name_snapshot
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDisplayNameSnapshot returns the old "display_name_snapshot" field's value of the BenchmarkRunTarget entity.
+// If the BenchmarkRunTarget object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkRunTargetMutation) OldDisplayNameSnapshot(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDisplayNameSnapshot is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDisplayNameSnapshot requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDisplayNameSnapshot: %w", err)
+	}
+	return oldValue.DisplayNameSnapshot, nil
+}
+
+// ClearDisplayNameSnapshot clears the value of the "display_name_snapshot" field.
+func (m *BenchmarkRunTargetMutation) ClearDisplayNameSnapshot() {
+	m.display_name_snapshot = nil
+	m.clearedFields[benchmarkruntarget.FieldDisplayNameSnapshot] = struct{}{}
+}
+
+// DisplayNameSnapshotCleared returns if the "display_name_snapshot" field was cleared in this mutation.
+func (m *BenchmarkRunTargetMutation) DisplayNameSnapshotCleared() bool {
+	_, ok := m.clearedFields[benchmarkruntarget.FieldDisplayNameSnapshot]
+	return ok
+}
+
+// ResetDisplayNameSnapshot resets all changes to the "display_name_snapshot" field.
+func (m *BenchmarkRunTargetMutation) ResetDisplayNameSnapshot() {
+	m.display_name_snapshot = nil
+	delete(m.clearedFields, benchmarkruntarget.FieldDisplayNameSnapshot)
+}
+
+// SetChannelNameSnapshot sets the "channel_name_snapshot" field.
+func (m *BenchmarkRunTargetMutation) SetChannelNameSnapshot(s string) {
+	m.channel_name_snapshot = &s
+}
+
+// ChannelNameSnapshot returns the value of the "channel_name_snapshot" field in the mutation.
+func (m *BenchmarkRunTargetMutation) ChannelNameSnapshot() (r string, exists bool) {
+	v := m.channel_name_snapshot
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldChannelNameSnapshot returns the old "channel_name_snapshot" field's value of the BenchmarkRunTarget entity.
+// If the BenchmarkRunTarget object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkRunTargetMutation) OldChannelNameSnapshot(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldChannelNameSnapshot is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldChannelNameSnapshot requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldChannelNameSnapshot: %w", err)
+	}
+	return oldValue.ChannelNameSnapshot, nil
+}
+
+// ClearChannelNameSnapshot clears the value of the "channel_name_snapshot" field.
+func (m *BenchmarkRunTargetMutation) ClearChannelNameSnapshot() {
+	m.channel_name_snapshot = nil
+	m.clearedFields[benchmarkruntarget.FieldChannelNameSnapshot] = struct{}{}
+}
+
+// ChannelNameSnapshotCleared returns if the "channel_name_snapshot" field was cleared in this mutation.
+func (m *BenchmarkRunTargetMutation) ChannelNameSnapshotCleared() bool {
+	_, ok := m.clearedFields[benchmarkruntarget.FieldChannelNameSnapshot]
+	return ok
+}
+
+// ResetChannelNameSnapshot resets all changes to the "channel_name_snapshot" field.
+func (m *BenchmarkRunTargetMutation) ResetChannelNameSnapshot() {
+	m.channel_name_snapshot = nil
+	delete(m.clearedFields, benchmarkruntarget.FieldChannelNameSnapshot)
+}
+
+// SetProviderSnapshot sets the "provider_snapshot" field.
+func (m *BenchmarkRunTargetMutation) SetProviderSnapshot(s string) {
+	m.provider_snapshot = &s
+}
+
+// ProviderSnapshot returns the value of the "provider_snapshot" field in the mutation.
+func (m *BenchmarkRunTargetMutation) ProviderSnapshot() (r string, exists bool) {
+	v := m.provider_snapshot
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProviderSnapshot returns the old "provider_snapshot" field's value of the BenchmarkRunTarget entity.
+// If the BenchmarkRunTarget object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkRunTargetMutation) OldProviderSnapshot(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProviderSnapshot is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProviderSnapshot requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProviderSnapshot: %w", err)
+	}
+	return oldValue.ProviderSnapshot, nil
+}
+
+// ClearProviderSnapshot clears the value of the "provider_snapshot" field.
+func (m *BenchmarkRunTargetMutation) ClearProviderSnapshot() {
+	m.provider_snapshot = nil
+	m.clearedFields[benchmarkruntarget.FieldProviderSnapshot] = struct{}{}
+}
+
+// ProviderSnapshotCleared returns if the "provider_snapshot" field was cleared in this mutation.
+func (m *BenchmarkRunTargetMutation) ProviderSnapshotCleared() bool {
+	_, ok := m.clearedFields[benchmarkruntarget.FieldProviderSnapshot]
+	return ok
+}
+
+// ResetProviderSnapshot resets all changes to the "provider_snapshot" field.
+func (m *BenchmarkRunTargetMutation) ResetProviderSnapshot() {
+	m.provider_snapshot = nil
+	delete(m.clearedFields, benchmarkruntarget.FieldProviderSnapshot)
+}
+
+// SetTargetOrder sets the "target_order" field.
+func (m *BenchmarkRunTargetMutation) SetTargetOrder(i int) {
+	m.target_order = &i
+	m.addtarget_order = nil
+}
+
+// TargetOrder returns the value of the "target_order" field in the mutation.
+func (m *BenchmarkRunTargetMutation) TargetOrder() (r int, exists bool) {
+	v := m.target_order
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTargetOrder returns the old "target_order" field's value of the BenchmarkRunTarget entity.
+// If the BenchmarkRunTarget object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkRunTargetMutation) OldTargetOrder(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTargetOrder is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTargetOrder requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTargetOrder: %w", err)
+	}
+	return oldValue.TargetOrder, nil
+}
+
+// AddTargetOrder adds i to the "target_order" field.
+func (m *BenchmarkRunTargetMutation) AddTargetOrder(i int) {
+	if m.addtarget_order != nil {
+		*m.addtarget_order += i
+	} else {
+		m.addtarget_order = &i
+	}
+}
+
+// AddedTargetOrder returns the value that was added to the "target_order" field in this mutation.
+func (m *BenchmarkRunTargetMutation) AddedTargetOrder() (r int, exists bool) {
+	v := m.addtarget_order
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetTargetOrder resets all changes to the "target_order" field.
+func (m *BenchmarkRunTargetMutation) ResetTargetOrder() {
+	m.target_order = nil
+	m.addtarget_order = nil
+}
+
+// SetConfigSnapshot sets the "config_snapshot" field.
+func (m *BenchmarkRunTargetMutation) SetConfigSnapshot(value map[string]interface{}) {
+	m.config_snapshot = &value
+}
+
+// ConfigSnapshot returns the value of the "config_snapshot" field in the mutation.
+func (m *BenchmarkRunTargetMutation) ConfigSnapshot() (r map[string]interface{}, exists bool) {
+	v := m.config_snapshot
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldConfigSnapshot returns the old "config_snapshot" field's value of the BenchmarkRunTarget entity.
+// If the BenchmarkRunTarget object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkRunTargetMutation) OldConfigSnapshot(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldConfigSnapshot is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldConfigSnapshot requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldConfigSnapshot: %w", err)
+	}
+	return oldValue.ConfigSnapshot, nil
+}
+
+// ResetConfigSnapshot resets all changes to the "config_snapshot" field.
+func (m *BenchmarkRunTargetMutation) ResetConfigSnapshot() {
+	m.config_snapshot = nil
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *BenchmarkRunTargetMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *BenchmarkRunTargetMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the BenchmarkRunTarget entity.
+// If the BenchmarkRunTarget object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkRunTargetMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *BenchmarkRunTargetMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// ClearRun clears the "run" edge to the BenchmarkRun entity.
+func (m *BenchmarkRunTargetMutation) ClearRun() {
+	m.clearedrun = true
+	m.clearedFields[benchmarkruntarget.FieldRunID] = struct{}{}
+}
+
+// RunCleared reports if the "run" edge to the BenchmarkRun entity was cleared.
+func (m *BenchmarkRunTargetMutation) RunCleared() bool {
+	return m.clearedrun
+}
+
+// RunIDs returns the "run" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// RunID instead. It exists only for internal usage by the builders.
+func (m *BenchmarkRunTargetMutation) RunIDs() (ids []int64) {
+	if id := m.run; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetRun resets all changes to the "run" edge.
+func (m *BenchmarkRunTargetMutation) ResetRun() {
+	m.run = nil
+	m.clearedrun = false
+}
+
+// ClearTarget clears the "target" edge to the BenchmarkTarget entity.
+func (m *BenchmarkRunTargetMutation) ClearTarget() {
+	m.clearedtarget = true
+	m.clearedFields[benchmarkruntarget.FieldTargetID] = struct{}{}
+}
+
+// TargetCleared reports if the "target" edge to the BenchmarkTarget entity was cleared.
+func (m *BenchmarkRunTargetMutation) TargetCleared() bool {
+	return m.clearedtarget
+}
+
+// TargetIDs returns the "target" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// TargetID instead. It exists only for internal usage by the builders.
+func (m *BenchmarkRunTargetMutation) TargetIDs() (ids []int64) {
+	if id := m.target; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetTarget resets all changes to the "target" edge.
+func (m *BenchmarkRunTargetMutation) ResetTarget() {
+	m.target = nil
+	m.clearedtarget = false
+}
+
+// AddResultIDs adds the "results" edge to the BenchmarkResult entity by ids.
+func (m *BenchmarkRunTargetMutation) AddResultIDs(ids ...int64) {
+	if m.results == nil {
+		m.results = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.results[ids[i]] = struct{}{}
+	}
+}
+
+// ClearResults clears the "results" edge to the BenchmarkResult entity.
+func (m *BenchmarkRunTargetMutation) ClearResults() {
+	m.clearedresults = true
+}
+
+// ResultsCleared reports if the "results" edge to the BenchmarkResult entity was cleared.
+func (m *BenchmarkRunTargetMutation) ResultsCleared() bool {
+	return m.clearedresults
+}
+
+// RemoveResultIDs removes the "results" edge to the BenchmarkResult entity by IDs.
+func (m *BenchmarkRunTargetMutation) RemoveResultIDs(ids ...int64) {
+	if m.removedresults == nil {
+		m.removedresults = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.results, ids[i])
+		m.removedresults[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedResults returns the removed IDs of the "results" edge to the BenchmarkResult entity.
+func (m *BenchmarkRunTargetMutation) RemovedResultsIDs() (ids []int64) {
+	for id := range m.removedresults {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResultsIDs returns the "results" edge IDs in the mutation.
+func (m *BenchmarkRunTargetMutation) ResultsIDs() (ids []int64) {
+	for id := range m.results {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetResults resets all changes to the "results" edge.
+func (m *BenchmarkRunTargetMutation) ResetResults() {
+	m.results = nil
+	m.clearedresults = false
+	m.removedresults = nil
+}
+
+// AddScoreSnapshotIDs adds the "score_snapshots" edge to the BenchmarkScoreSnapshot entity by ids.
+func (m *BenchmarkRunTargetMutation) AddScoreSnapshotIDs(ids ...int64) {
+	if m.score_snapshots == nil {
+		m.score_snapshots = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.score_snapshots[ids[i]] = struct{}{}
+	}
+}
+
+// ClearScoreSnapshots clears the "score_snapshots" edge to the BenchmarkScoreSnapshot entity.
+func (m *BenchmarkRunTargetMutation) ClearScoreSnapshots() {
+	m.clearedscore_snapshots = true
+}
+
+// ScoreSnapshotsCleared reports if the "score_snapshots" edge to the BenchmarkScoreSnapshot entity was cleared.
+func (m *BenchmarkRunTargetMutation) ScoreSnapshotsCleared() bool {
+	return m.clearedscore_snapshots
+}
+
+// RemoveScoreSnapshotIDs removes the "score_snapshots" edge to the BenchmarkScoreSnapshot entity by IDs.
+func (m *BenchmarkRunTargetMutation) RemoveScoreSnapshotIDs(ids ...int64) {
+	if m.removedscore_snapshots == nil {
+		m.removedscore_snapshots = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.score_snapshots, ids[i])
+		m.removedscore_snapshots[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedScoreSnapshots returns the removed IDs of the "score_snapshots" edge to the BenchmarkScoreSnapshot entity.
+func (m *BenchmarkRunTargetMutation) RemovedScoreSnapshotsIDs() (ids []int64) {
+	for id := range m.removedscore_snapshots {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ScoreSnapshotsIDs returns the "score_snapshots" edge IDs in the mutation.
+func (m *BenchmarkRunTargetMutation) ScoreSnapshotsIDs() (ids []int64) {
+	for id := range m.score_snapshots {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetScoreSnapshots resets all changes to the "score_snapshots" edge.
+func (m *BenchmarkRunTargetMutation) ResetScoreSnapshots() {
+	m.score_snapshots = nil
+	m.clearedscore_snapshots = false
+	m.removedscore_snapshots = nil
+}
+
+// Where appends a list predicates to the BenchmarkRunTargetMutation builder.
+func (m *BenchmarkRunTargetMutation) Where(ps ...predicate.BenchmarkRunTarget) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the BenchmarkRunTargetMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *BenchmarkRunTargetMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.BenchmarkRunTarget, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *BenchmarkRunTargetMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *BenchmarkRunTargetMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (BenchmarkRunTarget).
+func (m *BenchmarkRunTargetMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *BenchmarkRunTargetMutation) Fields() []string {
+	fields := make([]string, 0, 10)
+	if m.run != nil {
+		fields = append(fields, benchmarkruntarget.FieldRunID)
+	}
+	if m.target != nil {
+		fields = append(fields, benchmarkruntarget.FieldTargetID)
+	}
+	if m.model_name != nil {
+		fields = append(fields, benchmarkruntarget.FieldModelName)
+	}
+	if m.channel_id != nil {
+		fields = append(fields, benchmarkruntarget.FieldChannelID)
+	}
+	if m.display_name_snapshot != nil {
+		fields = append(fields, benchmarkruntarget.FieldDisplayNameSnapshot)
+	}
+	if m.channel_name_snapshot != nil {
+		fields = append(fields, benchmarkruntarget.FieldChannelNameSnapshot)
+	}
+	if m.provider_snapshot != nil {
+		fields = append(fields, benchmarkruntarget.FieldProviderSnapshot)
+	}
+	if m.target_order != nil {
+		fields = append(fields, benchmarkruntarget.FieldTargetOrder)
+	}
+	if m.config_snapshot != nil {
+		fields = append(fields, benchmarkruntarget.FieldConfigSnapshot)
+	}
+	if m.created_at != nil {
+		fields = append(fields, benchmarkruntarget.FieldCreatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *BenchmarkRunTargetMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case benchmarkruntarget.FieldRunID:
+		return m.RunID()
+	case benchmarkruntarget.FieldTargetID:
+		return m.TargetID()
+	case benchmarkruntarget.FieldModelName:
+		return m.ModelName()
+	case benchmarkruntarget.FieldChannelID:
+		return m.ChannelID()
+	case benchmarkruntarget.FieldDisplayNameSnapshot:
+		return m.DisplayNameSnapshot()
+	case benchmarkruntarget.FieldChannelNameSnapshot:
+		return m.ChannelNameSnapshot()
+	case benchmarkruntarget.FieldProviderSnapshot:
+		return m.ProviderSnapshot()
+	case benchmarkruntarget.FieldTargetOrder:
+		return m.TargetOrder()
+	case benchmarkruntarget.FieldConfigSnapshot:
+		return m.ConfigSnapshot()
+	case benchmarkruntarget.FieldCreatedAt:
+		return m.CreatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *BenchmarkRunTargetMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case benchmarkruntarget.FieldRunID:
+		return m.OldRunID(ctx)
+	case benchmarkruntarget.FieldTargetID:
+		return m.OldTargetID(ctx)
+	case benchmarkruntarget.FieldModelName:
+		return m.OldModelName(ctx)
+	case benchmarkruntarget.FieldChannelID:
+		return m.OldChannelID(ctx)
+	case benchmarkruntarget.FieldDisplayNameSnapshot:
+		return m.OldDisplayNameSnapshot(ctx)
+	case benchmarkruntarget.FieldChannelNameSnapshot:
+		return m.OldChannelNameSnapshot(ctx)
+	case benchmarkruntarget.FieldProviderSnapshot:
+		return m.OldProviderSnapshot(ctx)
+	case benchmarkruntarget.FieldTargetOrder:
+		return m.OldTargetOrder(ctx)
+	case benchmarkruntarget.FieldConfigSnapshot:
+		return m.OldConfigSnapshot(ctx)
+	case benchmarkruntarget.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown BenchmarkRunTarget field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *BenchmarkRunTargetMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case benchmarkruntarget.FieldRunID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRunID(v)
+		return nil
+	case benchmarkruntarget.FieldTargetID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTargetID(v)
+		return nil
+	case benchmarkruntarget.FieldModelName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetModelName(v)
+		return nil
+	case benchmarkruntarget.FieldChannelID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetChannelID(v)
+		return nil
+	case benchmarkruntarget.FieldDisplayNameSnapshot:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDisplayNameSnapshot(v)
+		return nil
+	case benchmarkruntarget.FieldChannelNameSnapshot:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetChannelNameSnapshot(v)
+		return nil
+	case benchmarkruntarget.FieldProviderSnapshot:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProviderSnapshot(v)
+		return nil
+	case benchmarkruntarget.FieldTargetOrder:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTargetOrder(v)
+		return nil
+	case benchmarkruntarget.FieldConfigSnapshot:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetConfigSnapshot(v)
+		return nil
+	case benchmarkruntarget.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkRunTarget field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *BenchmarkRunTargetMutation) AddedFields() []string {
+	var fields []string
+	if m.addchannel_id != nil {
+		fields = append(fields, benchmarkruntarget.FieldChannelID)
+	}
+	if m.addtarget_order != nil {
+		fields = append(fields, benchmarkruntarget.FieldTargetOrder)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *BenchmarkRunTargetMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case benchmarkruntarget.FieldChannelID:
+		return m.AddedChannelID()
+	case benchmarkruntarget.FieldTargetOrder:
+		return m.AddedTargetOrder()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *BenchmarkRunTargetMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case benchmarkruntarget.FieldChannelID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddChannelID(v)
+		return nil
+	case benchmarkruntarget.FieldTargetOrder:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddTargetOrder(v)
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkRunTarget numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *BenchmarkRunTargetMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(benchmarkruntarget.FieldDisplayNameSnapshot) {
+		fields = append(fields, benchmarkruntarget.FieldDisplayNameSnapshot)
+	}
+	if m.FieldCleared(benchmarkruntarget.FieldChannelNameSnapshot) {
+		fields = append(fields, benchmarkruntarget.FieldChannelNameSnapshot)
+	}
+	if m.FieldCleared(benchmarkruntarget.FieldProviderSnapshot) {
+		fields = append(fields, benchmarkruntarget.FieldProviderSnapshot)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *BenchmarkRunTargetMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *BenchmarkRunTargetMutation) ClearField(name string) error {
+	switch name {
+	case benchmarkruntarget.FieldDisplayNameSnapshot:
+		m.ClearDisplayNameSnapshot()
+		return nil
+	case benchmarkruntarget.FieldChannelNameSnapshot:
+		m.ClearChannelNameSnapshot()
+		return nil
+	case benchmarkruntarget.FieldProviderSnapshot:
+		m.ClearProviderSnapshot()
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkRunTarget nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *BenchmarkRunTargetMutation) ResetField(name string) error {
+	switch name {
+	case benchmarkruntarget.FieldRunID:
+		m.ResetRunID()
+		return nil
+	case benchmarkruntarget.FieldTargetID:
+		m.ResetTargetID()
+		return nil
+	case benchmarkruntarget.FieldModelName:
+		m.ResetModelName()
+		return nil
+	case benchmarkruntarget.FieldChannelID:
+		m.ResetChannelID()
+		return nil
+	case benchmarkruntarget.FieldDisplayNameSnapshot:
+		m.ResetDisplayNameSnapshot()
+		return nil
+	case benchmarkruntarget.FieldChannelNameSnapshot:
+		m.ResetChannelNameSnapshot()
+		return nil
+	case benchmarkruntarget.FieldProviderSnapshot:
+		m.ResetProviderSnapshot()
+		return nil
+	case benchmarkruntarget.FieldTargetOrder:
+		m.ResetTargetOrder()
+		return nil
+	case benchmarkruntarget.FieldConfigSnapshot:
+		m.ResetConfigSnapshot()
+		return nil
+	case benchmarkruntarget.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkRunTarget field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *BenchmarkRunTargetMutation) AddedEdges() []string {
+	edges := make([]string, 0, 4)
+	if m.run != nil {
+		edges = append(edges, benchmarkruntarget.EdgeRun)
+	}
+	if m.target != nil {
+		edges = append(edges, benchmarkruntarget.EdgeTarget)
+	}
+	if m.results != nil {
+		edges = append(edges, benchmarkruntarget.EdgeResults)
+	}
+	if m.score_snapshots != nil {
+		edges = append(edges, benchmarkruntarget.EdgeScoreSnapshots)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *BenchmarkRunTargetMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case benchmarkruntarget.EdgeRun:
+		if id := m.run; id != nil {
+			return []ent.Value{*id}
+		}
+	case benchmarkruntarget.EdgeTarget:
+		if id := m.target; id != nil {
+			return []ent.Value{*id}
+		}
+	case benchmarkruntarget.EdgeResults:
+		ids := make([]ent.Value, 0, len(m.results))
+		for id := range m.results {
+			ids = append(ids, id)
+		}
+		return ids
+	case benchmarkruntarget.EdgeScoreSnapshots:
+		ids := make([]ent.Value, 0, len(m.score_snapshots))
+		for id := range m.score_snapshots {
+			ids = append(ids, id)
+		}
+		return ids
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *BenchmarkRunTargetMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 4)
+	if m.removedresults != nil {
+		edges = append(edges, benchmarkruntarget.EdgeResults)
+	}
+	if m.removedscore_snapshots != nil {
+		edges = append(edges, benchmarkruntarget.EdgeScoreSnapshots)
+	}
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *BenchmarkRunTargetMutation) RemovedIDs(name string) []ent.Value {
+	switch name {
+	case benchmarkruntarget.EdgeResults:
+		ids := make([]ent.Value, 0, len(m.removedresults))
+		for id := range m.removedresults {
+			ids = append(ids, id)
+		}
+		return ids
+	case benchmarkruntarget.EdgeScoreSnapshots:
+		ids := make([]ent.Value, 0, len(m.removedscore_snapshots))
+		for id := range m.removedscore_snapshots {
+			ids = append(ids, id)
+		}
+		return ids
+	}
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *BenchmarkRunTargetMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 4)
+	if m.clearedrun {
+		edges = append(edges, benchmarkruntarget.EdgeRun)
+	}
+	if m.clearedtarget {
+		edges = append(edges, benchmarkruntarget.EdgeTarget)
+	}
+	if m.clearedresults {
+		edges = append(edges, benchmarkruntarget.EdgeResults)
+	}
+	if m.clearedscore_snapshots {
+		edges = append(edges, benchmarkruntarget.EdgeScoreSnapshots)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *BenchmarkRunTargetMutation) EdgeCleared(name string) bool {
+	switch name {
+	case benchmarkruntarget.EdgeRun:
+		return m.clearedrun
+	case benchmarkruntarget.EdgeTarget:
+		return m.clearedtarget
+	case benchmarkruntarget.EdgeResults:
+		return m.clearedresults
+	case benchmarkruntarget.EdgeScoreSnapshots:
+		return m.clearedscore_snapshots
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *BenchmarkRunTargetMutation) ClearEdge(name string) error {
+	switch name {
+	case benchmarkruntarget.EdgeRun:
+		m.ClearRun()
+		return nil
+	case benchmarkruntarget.EdgeTarget:
+		m.ClearTarget()
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkRunTarget unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *BenchmarkRunTargetMutation) ResetEdge(name string) error {
+	switch name {
+	case benchmarkruntarget.EdgeRun:
+		m.ResetRun()
+		return nil
+	case benchmarkruntarget.EdgeTarget:
+		m.ResetTarget()
+		return nil
+	case benchmarkruntarget.EdgeResults:
+		m.ResetResults()
+		return nil
+	case benchmarkruntarget.EdgeScoreSnapshots:
+		m.ResetScoreSnapshots()
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkRunTarget edge %s", name)
+}
+
+// BenchmarkRunTaskMutation represents an operation that mutates the BenchmarkRunTask nodes in the graph.
+type BenchmarkRunTaskMutation struct {
+	config
+	op                       Op
+	typ                      string
+	id                       *int64
+	task_order               *int
+	addtask_order            *int
+	_type                    *string
+	category                 *string
+	difficulty               *string
+	weight_snapshot          *float64
+	addweight_snapshot       *float64
+	prompt_snapshot          *string
+	verifier_type_snapshot   *string
+	verifier_config_snapshot *map[string]interface{}
+	task_snapshot            *map[string]interface{}
+	created_at               *time.Time
+	clearedFields            map[string]struct{}
+	run                      *int64
+	clearedrun               bool
+	task                     *int64
+	clearedtask              bool
+	results                  map[int64]struct{}
+	removedresults           map[int64]struct{}
+	clearedresults           bool
+	done                     bool
+	oldValue                 func(context.Context) (*BenchmarkRunTask, error)
+	predicates               []predicate.BenchmarkRunTask
+}
+
+var _ ent.Mutation = (*BenchmarkRunTaskMutation)(nil)
+
+// benchmarkruntaskOption allows management of the mutation configuration using functional options.
+type benchmarkruntaskOption func(*BenchmarkRunTaskMutation)
+
+// newBenchmarkRunTaskMutation creates new mutation for the BenchmarkRunTask entity.
+func newBenchmarkRunTaskMutation(c config, op Op, opts ...benchmarkruntaskOption) *BenchmarkRunTaskMutation {
+	m := &BenchmarkRunTaskMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeBenchmarkRunTask,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withBenchmarkRunTaskID sets the ID field of the mutation.
+func withBenchmarkRunTaskID(id int64) benchmarkruntaskOption {
+	return func(m *BenchmarkRunTaskMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *BenchmarkRunTask
+		)
+		m.oldValue = func(ctx context.Context) (*BenchmarkRunTask, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().BenchmarkRunTask.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withBenchmarkRunTask sets the old BenchmarkRunTask of the mutation.
+func withBenchmarkRunTask(node *BenchmarkRunTask) benchmarkruntaskOption {
+	return func(m *BenchmarkRunTaskMutation) {
+		m.oldValue = func(context.Context) (*BenchmarkRunTask, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m BenchmarkRunTaskMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m BenchmarkRunTaskMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *BenchmarkRunTaskMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *BenchmarkRunTaskMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().BenchmarkRunTask.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetRunID sets the "run_id" field.
+func (m *BenchmarkRunTaskMutation) SetRunID(i int64) {
+	m.run = &i
+}
+
+// RunID returns the value of the "run_id" field in the mutation.
+func (m *BenchmarkRunTaskMutation) RunID() (r int64, exists bool) {
+	v := m.run
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRunID returns the old "run_id" field's value of the BenchmarkRunTask entity.
+// If the BenchmarkRunTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkRunTaskMutation) OldRunID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRunID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRunID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRunID: %w", err)
+	}
+	return oldValue.RunID, nil
+}
+
+// ResetRunID resets all changes to the "run_id" field.
+func (m *BenchmarkRunTaskMutation) ResetRunID() {
+	m.run = nil
+}
+
+// SetTaskID sets the "task_id" field.
+func (m *BenchmarkRunTaskMutation) SetTaskID(i int64) {
+	m.task = &i
+}
+
+// TaskID returns the value of the "task_id" field in the mutation.
+func (m *BenchmarkRunTaskMutation) TaskID() (r int64, exists bool) {
+	v := m.task
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTaskID returns the old "task_id" field's value of the BenchmarkRunTask entity.
+// If the BenchmarkRunTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkRunTaskMutation) OldTaskID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTaskID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTaskID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTaskID: %w", err)
+	}
+	return oldValue.TaskID, nil
+}
+
+// ResetTaskID resets all changes to the "task_id" field.
+func (m *BenchmarkRunTaskMutation) ResetTaskID() {
+	m.task = nil
+}
+
+// SetTaskOrder sets the "task_order" field.
+func (m *BenchmarkRunTaskMutation) SetTaskOrder(i int) {
+	m.task_order = &i
+	m.addtask_order = nil
+}
+
+// TaskOrder returns the value of the "task_order" field in the mutation.
+func (m *BenchmarkRunTaskMutation) TaskOrder() (r int, exists bool) {
+	v := m.task_order
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTaskOrder returns the old "task_order" field's value of the BenchmarkRunTask entity.
+// If the BenchmarkRunTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkRunTaskMutation) OldTaskOrder(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTaskOrder is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTaskOrder requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTaskOrder: %w", err)
+	}
+	return oldValue.TaskOrder, nil
+}
+
+// AddTaskOrder adds i to the "task_order" field.
+func (m *BenchmarkRunTaskMutation) AddTaskOrder(i int) {
+	if m.addtask_order != nil {
+		*m.addtask_order += i
+	} else {
+		m.addtask_order = &i
+	}
+}
+
+// AddedTaskOrder returns the value that was added to the "task_order" field in this mutation.
+func (m *BenchmarkRunTaskMutation) AddedTaskOrder() (r int, exists bool) {
+	v := m.addtask_order
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetTaskOrder resets all changes to the "task_order" field.
+func (m *BenchmarkRunTaskMutation) ResetTaskOrder() {
+	m.task_order = nil
+	m.addtask_order = nil
+}
+
+// SetType sets the "type" field.
+func (m *BenchmarkRunTaskMutation) SetType(s string) {
+	m._type = &s
+}
+
+// GetType returns the value of the "type" field in the mutation.
+func (m *BenchmarkRunTaskMutation) GetType() (r string, exists bool) {
+	v := m._type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldType returns the old "type" field's value of the BenchmarkRunTask entity.
+// If the BenchmarkRunTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkRunTaskMutation) OldType(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldType: %w", err)
+	}
+	return oldValue.Type, nil
+}
+
+// ResetType resets all changes to the "type" field.
+func (m *BenchmarkRunTaskMutation) ResetType() {
+	m._type = nil
+}
+
+// SetCategory sets the "category" field.
+func (m *BenchmarkRunTaskMutation) SetCategory(s string) {
+	m.category = &s
+}
+
+// Category returns the value of the "category" field in the mutation.
+func (m *BenchmarkRunTaskMutation) Category() (r string, exists bool) {
+	v := m.category
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCategory returns the old "category" field's value of the BenchmarkRunTask entity.
+// If the BenchmarkRunTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkRunTaskMutation) OldCategory(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCategory is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCategory requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCategory: %w", err)
+	}
+	return oldValue.Category, nil
+}
+
+// ClearCategory clears the value of the "category" field.
+func (m *BenchmarkRunTaskMutation) ClearCategory() {
+	m.category = nil
+	m.clearedFields[benchmarkruntask.FieldCategory] = struct{}{}
+}
+
+// CategoryCleared returns if the "category" field was cleared in this mutation.
+func (m *BenchmarkRunTaskMutation) CategoryCleared() bool {
+	_, ok := m.clearedFields[benchmarkruntask.FieldCategory]
+	return ok
+}
+
+// ResetCategory resets all changes to the "category" field.
+func (m *BenchmarkRunTaskMutation) ResetCategory() {
+	m.category = nil
+	delete(m.clearedFields, benchmarkruntask.FieldCategory)
+}
+
+// SetDifficulty sets the "difficulty" field.
+func (m *BenchmarkRunTaskMutation) SetDifficulty(s string) {
+	m.difficulty = &s
+}
+
+// Difficulty returns the value of the "difficulty" field in the mutation.
+func (m *BenchmarkRunTaskMutation) Difficulty() (r string, exists bool) {
+	v := m.difficulty
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDifficulty returns the old "difficulty" field's value of the BenchmarkRunTask entity.
+// If the BenchmarkRunTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkRunTaskMutation) OldDifficulty(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDifficulty is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDifficulty requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDifficulty: %w", err)
+	}
+	return oldValue.Difficulty, nil
+}
+
+// ClearDifficulty clears the value of the "difficulty" field.
+func (m *BenchmarkRunTaskMutation) ClearDifficulty() {
+	m.difficulty = nil
+	m.clearedFields[benchmarkruntask.FieldDifficulty] = struct{}{}
+}
+
+// DifficultyCleared returns if the "difficulty" field was cleared in this mutation.
+func (m *BenchmarkRunTaskMutation) DifficultyCleared() bool {
+	_, ok := m.clearedFields[benchmarkruntask.FieldDifficulty]
+	return ok
+}
+
+// ResetDifficulty resets all changes to the "difficulty" field.
+func (m *BenchmarkRunTaskMutation) ResetDifficulty() {
+	m.difficulty = nil
+	delete(m.clearedFields, benchmarkruntask.FieldDifficulty)
+}
+
+// SetWeightSnapshot sets the "weight_snapshot" field.
+func (m *BenchmarkRunTaskMutation) SetWeightSnapshot(f float64) {
+	m.weight_snapshot = &f
+	m.addweight_snapshot = nil
+}
+
+// WeightSnapshot returns the value of the "weight_snapshot" field in the mutation.
+func (m *BenchmarkRunTaskMutation) WeightSnapshot() (r float64, exists bool) {
+	v := m.weight_snapshot
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldWeightSnapshot returns the old "weight_snapshot" field's value of the BenchmarkRunTask entity.
+// If the BenchmarkRunTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkRunTaskMutation) OldWeightSnapshot(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldWeightSnapshot is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldWeightSnapshot requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldWeightSnapshot: %w", err)
+	}
+	return oldValue.WeightSnapshot, nil
+}
+
+// AddWeightSnapshot adds f to the "weight_snapshot" field.
+func (m *BenchmarkRunTaskMutation) AddWeightSnapshot(f float64) {
+	if m.addweight_snapshot != nil {
+		*m.addweight_snapshot += f
+	} else {
+		m.addweight_snapshot = &f
+	}
+}
+
+// AddedWeightSnapshot returns the value that was added to the "weight_snapshot" field in this mutation.
+func (m *BenchmarkRunTaskMutation) AddedWeightSnapshot() (r float64, exists bool) {
+	v := m.addweight_snapshot
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetWeightSnapshot resets all changes to the "weight_snapshot" field.
+func (m *BenchmarkRunTaskMutation) ResetWeightSnapshot() {
+	m.weight_snapshot = nil
+	m.addweight_snapshot = nil
+}
+
+// SetPromptSnapshot sets the "prompt_snapshot" field.
+func (m *BenchmarkRunTaskMutation) SetPromptSnapshot(s string) {
+	m.prompt_snapshot = &s
+}
+
+// PromptSnapshot returns the value of the "prompt_snapshot" field in the mutation.
+func (m *BenchmarkRunTaskMutation) PromptSnapshot() (r string, exists bool) {
+	v := m.prompt_snapshot
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPromptSnapshot returns the old "prompt_snapshot" field's value of the BenchmarkRunTask entity.
+// If the BenchmarkRunTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkRunTaskMutation) OldPromptSnapshot(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPromptSnapshot is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPromptSnapshot requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPromptSnapshot: %w", err)
+	}
+	return oldValue.PromptSnapshot, nil
+}
+
+// ResetPromptSnapshot resets all changes to the "prompt_snapshot" field.
+func (m *BenchmarkRunTaskMutation) ResetPromptSnapshot() {
+	m.prompt_snapshot = nil
+}
+
+// SetVerifierTypeSnapshot sets the "verifier_type_snapshot" field.
+func (m *BenchmarkRunTaskMutation) SetVerifierTypeSnapshot(s string) {
+	m.verifier_type_snapshot = &s
+}
+
+// VerifierTypeSnapshot returns the value of the "verifier_type_snapshot" field in the mutation.
+func (m *BenchmarkRunTaskMutation) VerifierTypeSnapshot() (r string, exists bool) {
+	v := m.verifier_type_snapshot
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVerifierTypeSnapshot returns the old "verifier_type_snapshot" field's value of the BenchmarkRunTask entity.
+// If the BenchmarkRunTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkRunTaskMutation) OldVerifierTypeSnapshot(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVerifierTypeSnapshot is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVerifierTypeSnapshot requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVerifierTypeSnapshot: %w", err)
+	}
+	return oldValue.VerifierTypeSnapshot, nil
+}
+
+// ResetVerifierTypeSnapshot resets all changes to the "verifier_type_snapshot" field.
+func (m *BenchmarkRunTaskMutation) ResetVerifierTypeSnapshot() {
+	m.verifier_type_snapshot = nil
+}
+
+// SetVerifierConfigSnapshot sets the "verifier_config_snapshot" field.
+func (m *BenchmarkRunTaskMutation) SetVerifierConfigSnapshot(value map[string]interface{}) {
+	m.verifier_config_snapshot = &value
+}
+
+// VerifierConfigSnapshot returns the value of the "verifier_config_snapshot" field in the mutation.
+func (m *BenchmarkRunTaskMutation) VerifierConfigSnapshot() (r map[string]interface{}, exists bool) {
+	v := m.verifier_config_snapshot
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVerifierConfigSnapshot returns the old "verifier_config_snapshot" field's value of the BenchmarkRunTask entity.
+// If the BenchmarkRunTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkRunTaskMutation) OldVerifierConfigSnapshot(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVerifierConfigSnapshot is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVerifierConfigSnapshot requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVerifierConfigSnapshot: %w", err)
+	}
+	return oldValue.VerifierConfigSnapshot, nil
+}
+
+// ResetVerifierConfigSnapshot resets all changes to the "verifier_config_snapshot" field.
+func (m *BenchmarkRunTaskMutation) ResetVerifierConfigSnapshot() {
+	m.verifier_config_snapshot = nil
+}
+
+// SetTaskSnapshot sets the "task_snapshot" field.
+func (m *BenchmarkRunTaskMutation) SetTaskSnapshot(value map[string]interface{}) {
+	m.task_snapshot = &value
+}
+
+// TaskSnapshot returns the value of the "task_snapshot" field in the mutation.
+func (m *BenchmarkRunTaskMutation) TaskSnapshot() (r map[string]interface{}, exists bool) {
+	v := m.task_snapshot
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTaskSnapshot returns the old "task_snapshot" field's value of the BenchmarkRunTask entity.
+// If the BenchmarkRunTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkRunTaskMutation) OldTaskSnapshot(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTaskSnapshot is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTaskSnapshot requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTaskSnapshot: %w", err)
+	}
+	return oldValue.TaskSnapshot, nil
+}
+
+// ResetTaskSnapshot resets all changes to the "task_snapshot" field.
+func (m *BenchmarkRunTaskMutation) ResetTaskSnapshot() {
+	m.task_snapshot = nil
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *BenchmarkRunTaskMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *BenchmarkRunTaskMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the BenchmarkRunTask entity.
+// If the BenchmarkRunTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkRunTaskMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *BenchmarkRunTaskMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// ClearRun clears the "run" edge to the BenchmarkRun entity.
+func (m *BenchmarkRunTaskMutation) ClearRun() {
+	m.clearedrun = true
+	m.clearedFields[benchmarkruntask.FieldRunID] = struct{}{}
+}
+
+// RunCleared reports if the "run" edge to the BenchmarkRun entity was cleared.
+func (m *BenchmarkRunTaskMutation) RunCleared() bool {
+	return m.clearedrun
+}
+
+// RunIDs returns the "run" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// RunID instead. It exists only for internal usage by the builders.
+func (m *BenchmarkRunTaskMutation) RunIDs() (ids []int64) {
+	if id := m.run; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetRun resets all changes to the "run" edge.
+func (m *BenchmarkRunTaskMutation) ResetRun() {
+	m.run = nil
+	m.clearedrun = false
+}
+
+// ClearTask clears the "task" edge to the BenchmarkTask entity.
+func (m *BenchmarkRunTaskMutation) ClearTask() {
+	m.clearedtask = true
+	m.clearedFields[benchmarkruntask.FieldTaskID] = struct{}{}
+}
+
+// TaskCleared reports if the "task" edge to the BenchmarkTask entity was cleared.
+func (m *BenchmarkRunTaskMutation) TaskCleared() bool {
+	return m.clearedtask
+}
+
+// TaskIDs returns the "task" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// TaskID instead. It exists only for internal usage by the builders.
+func (m *BenchmarkRunTaskMutation) TaskIDs() (ids []int64) {
+	if id := m.task; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetTask resets all changes to the "task" edge.
+func (m *BenchmarkRunTaskMutation) ResetTask() {
+	m.task = nil
+	m.clearedtask = false
+}
+
+// AddResultIDs adds the "results" edge to the BenchmarkResult entity by ids.
+func (m *BenchmarkRunTaskMutation) AddResultIDs(ids ...int64) {
+	if m.results == nil {
+		m.results = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.results[ids[i]] = struct{}{}
+	}
+}
+
+// ClearResults clears the "results" edge to the BenchmarkResult entity.
+func (m *BenchmarkRunTaskMutation) ClearResults() {
+	m.clearedresults = true
+}
+
+// ResultsCleared reports if the "results" edge to the BenchmarkResult entity was cleared.
+func (m *BenchmarkRunTaskMutation) ResultsCleared() bool {
+	return m.clearedresults
+}
+
+// RemoveResultIDs removes the "results" edge to the BenchmarkResult entity by IDs.
+func (m *BenchmarkRunTaskMutation) RemoveResultIDs(ids ...int64) {
+	if m.removedresults == nil {
+		m.removedresults = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.results, ids[i])
+		m.removedresults[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedResults returns the removed IDs of the "results" edge to the BenchmarkResult entity.
+func (m *BenchmarkRunTaskMutation) RemovedResultsIDs() (ids []int64) {
+	for id := range m.removedresults {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResultsIDs returns the "results" edge IDs in the mutation.
+func (m *BenchmarkRunTaskMutation) ResultsIDs() (ids []int64) {
+	for id := range m.results {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetResults resets all changes to the "results" edge.
+func (m *BenchmarkRunTaskMutation) ResetResults() {
+	m.results = nil
+	m.clearedresults = false
+	m.removedresults = nil
+}
+
+// Where appends a list predicates to the BenchmarkRunTaskMutation builder.
+func (m *BenchmarkRunTaskMutation) Where(ps ...predicate.BenchmarkRunTask) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the BenchmarkRunTaskMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *BenchmarkRunTaskMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.BenchmarkRunTask, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *BenchmarkRunTaskMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *BenchmarkRunTaskMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (BenchmarkRunTask).
+func (m *BenchmarkRunTaskMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *BenchmarkRunTaskMutation) Fields() []string {
+	fields := make([]string, 0, 12)
+	if m.run != nil {
+		fields = append(fields, benchmarkruntask.FieldRunID)
+	}
+	if m.task != nil {
+		fields = append(fields, benchmarkruntask.FieldTaskID)
+	}
+	if m.task_order != nil {
+		fields = append(fields, benchmarkruntask.FieldTaskOrder)
+	}
+	if m._type != nil {
+		fields = append(fields, benchmarkruntask.FieldType)
+	}
+	if m.category != nil {
+		fields = append(fields, benchmarkruntask.FieldCategory)
+	}
+	if m.difficulty != nil {
+		fields = append(fields, benchmarkruntask.FieldDifficulty)
+	}
+	if m.weight_snapshot != nil {
+		fields = append(fields, benchmarkruntask.FieldWeightSnapshot)
+	}
+	if m.prompt_snapshot != nil {
+		fields = append(fields, benchmarkruntask.FieldPromptSnapshot)
+	}
+	if m.verifier_type_snapshot != nil {
+		fields = append(fields, benchmarkruntask.FieldVerifierTypeSnapshot)
+	}
+	if m.verifier_config_snapshot != nil {
+		fields = append(fields, benchmarkruntask.FieldVerifierConfigSnapshot)
+	}
+	if m.task_snapshot != nil {
+		fields = append(fields, benchmarkruntask.FieldTaskSnapshot)
+	}
+	if m.created_at != nil {
+		fields = append(fields, benchmarkruntask.FieldCreatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *BenchmarkRunTaskMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case benchmarkruntask.FieldRunID:
+		return m.RunID()
+	case benchmarkruntask.FieldTaskID:
+		return m.TaskID()
+	case benchmarkruntask.FieldTaskOrder:
+		return m.TaskOrder()
+	case benchmarkruntask.FieldType:
+		return m.GetType()
+	case benchmarkruntask.FieldCategory:
+		return m.Category()
+	case benchmarkruntask.FieldDifficulty:
+		return m.Difficulty()
+	case benchmarkruntask.FieldWeightSnapshot:
+		return m.WeightSnapshot()
+	case benchmarkruntask.FieldPromptSnapshot:
+		return m.PromptSnapshot()
+	case benchmarkruntask.FieldVerifierTypeSnapshot:
+		return m.VerifierTypeSnapshot()
+	case benchmarkruntask.FieldVerifierConfigSnapshot:
+		return m.VerifierConfigSnapshot()
+	case benchmarkruntask.FieldTaskSnapshot:
+		return m.TaskSnapshot()
+	case benchmarkruntask.FieldCreatedAt:
+		return m.CreatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *BenchmarkRunTaskMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case benchmarkruntask.FieldRunID:
+		return m.OldRunID(ctx)
+	case benchmarkruntask.FieldTaskID:
+		return m.OldTaskID(ctx)
+	case benchmarkruntask.FieldTaskOrder:
+		return m.OldTaskOrder(ctx)
+	case benchmarkruntask.FieldType:
+		return m.OldType(ctx)
+	case benchmarkruntask.FieldCategory:
+		return m.OldCategory(ctx)
+	case benchmarkruntask.FieldDifficulty:
+		return m.OldDifficulty(ctx)
+	case benchmarkruntask.FieldWeightSnapshot:
+		return m.OldWeightSnapshot(ctx)
+	case benchmarkruntask.FieldPromptSnapshot:
+		return m.OldPromptSnapshot(ctx)
+	case benchmarkruntask.FieldVerifierTypeSnapshot:
+		return m.OldVerifierTypeSnapshot(ctx)
+	case benchmarkruntask.FieldVerifierConfigSnapshot:
+		return m.OldVerifierConfigSnapshot(ctx)
+	case benchmarkruntask.FieldTaskSnapshot:
+		return m.OldTaskSnapshot(ctx)
+	case benchmarkruntask.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown BenchmarkRunTask field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *BenchmarkRunTaskMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case benchmarkruntask.FieldRunID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRunID(v)
+		return nil
+	case benchmarkruntask.FieldTaskID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTaskID(v)
+		return nil
+	case benchmarkruntask.FieldTaskOrder:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTaskOrder(v)
+		return nil
+	case benchmarkruntask.FieldType:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetType(v)
+		return nil
+	case benchmarkruntask.FieldCategory:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCategory(v)
+		return nil
+	case benchmarkruntask.FieldDifficulty:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDifficulty(v)
+		return nil
+	case benchmarkruntask.FieldWeightSnapshot:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetWeightSnapshot(v)
+		return nil
+	case benchmarkruntask.FieldPromptSnapshot:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPromptSnapshot(v)
+		return nil
+	case benchmarkruntask.FieldVerifierTypeSnapshot:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVerifierTypeSnapshot(v)
+		return nil
+	case benchmarkruntask.FieldVerifierConfigSnapshot:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVerifierConfigSnapshot(v)
+		return nil
+	case benchmarkruntask.FieldTaskSnapshot:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTaskSnapshot(v)
+		return nil
+	case benchmarkruntask.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkRunTask field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *BenchmarkRunTaskMutation) AddedFields() []string {
+	var fields []string
+	if m.addtask_order != nil {
+		fields = append(fields, benchmarkruntask.FieldTaskOrder)
+	}
+	if m.addweight_snapshot != nil {
+		fields = append(fields, benchmarkruntask.FieldWeightSnapshot)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *BenchmarkRunTaskMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case benchmarkruntask.FieldTaskOrder:
+		return m.AddedTaskOrder()
+	case benchmarkruntask.FieldWeightSnapshot:
+		return m.AddedWeightSnapshot()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *BenchmarkRunTaskMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case benchmarkruntask.FieldTaskOrder:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddTaskOrder(v)
+		return nil
+	case benchmarkruntask.FieldWeightSnapshot:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddWeightSnapshot(v)
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkRunTask numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *BenchmarkRunTaskMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(benchmarkruntask.FieldCategory) {
+		fields = append(fields, benchmarkruntask.FieldCategory)
+	}
+	if m.FieldCleared(benchmarkruntask.FieldDifficulty) {
+		fields = append(fields, benchmarkruntask.FieldDifficulty)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *BenchmarkRunTaskMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *BenchmarkRunTaskMutation) ClearField(name string) error {
+	switch name {
+	case benchmarkruntask.FieldCategory:
+		m.ClearCategory()
+		return nil
+	case benchmarkruntask.FieldDifficulty:
+		m.ClearDifficulty()
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkRunTask nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *BenchmarkRunTaskMutation) ResetField(name string) error {
+	switch name {
+	case benchmarkruntask.FieldRunID:
+		m.ResetRunID()
+		return nil
+	case benchmarkruntask.FieldTaskID:
+		m.ResetTaskID()
+		return nil
+	case benchmarkruntask.FieldTaskOrder:
+		m.ResetTaskOrder()
+		return nil
+	case benchmarkruntask.FieldType:
+		m.ResetType()
+		return nil
+	case benchmarkruntask.FieldCategory:
+		m.ResetCategory()
+		return nil
+	case benchmarkruntask.FieldDifficulty:
+		m.ResetDifficulty()
+		return nil
+	case benchmarkruntask.FieldWeightSnapshot:
+		m.ResetWeightSnapshot()
+		return nil
+	case benchmarkruntask.FieldPromptSnapshot:
+		m.ResetPromptSnapshot()
+		return nil
+	case benchmarkruntask.FieldVerifierTypeSnapshot:
+		m.ResetVerifierTypeSnapshot()
+		return nil
+	case benchmarkruntask.FieldVerifierConfigSnapshot:
+		m.ResetVerifierConfigSnapshot()
+		return nil
+	case benchmarkruntask.FieldTaskSnapshot:
+		m.ResetTaskSnapshot()
+		return nil
+	case benchmarkruntask.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkRunTask field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *BenchmarkRunTaskMutation) AddedEdges() []string {
+	edges := make([]string, 0, 3)
+	if m.run != nil {
+		edges = append(edges, benchmarkruntask.EdgeRun)
+	}
+	if m.task != nil {
+		edges = append(edges, benchmarkruntask.EdgeTask)
+	}
+	if m.results != nil {
+		edges = append(edges, benchmarkruntask.EdgeResults)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *BenchmarkRunTaskMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case benchmarkruntask.EdgeRun:
+		if id := m.run; id != nil {
+			return []ent.Value{*id}
+		}
+	case benchmarkruntask.EdgeTask:
+		if id := m.task; id != nil {
+			return []ent.Value{*id}
+		}
+	case benchmarkruntask.EdgeResults:
+		ids := make([]ent.Value, 0, len(m.results))
+		for id := range m.results {
+			ids = append(ids, id)
+		}
+		return ids
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *BenchmarkRunTaskMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 3)
+	if m.removedresults != nil {
+		edges = append(edges, benchmarkruntask.EdgeResults)
+	}
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *BenchmarkRunTaskMutation) RemovedIDs(name string) []ent.Value {
+	switch name {
+	case benchmarkruntask.EdgeResults:
+		ids := make([]ent.Value, 0, len(m.removedresults))
+		for id := range m.removedresults {
+			ids = append(ids, id)
+		}
+		return ids
+	}
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *BenchmarkRunTaskMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 3)
+	if m.clearedrun {
+		edges = append(edges, benchmarkruntask.EdgeRun)
+	}
+	if m.clearedtask {
+		edges = append(edges, benchmarkruntask.EdgeTask)
+	}
+	if m.clearedresults {
+		edges = append(edges, benchmarkruntask.EdgeResults)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *BenchmarkRunTaskMutation) EdgeCleared(name string) bool {
+	switch name {
+	case benchmarkruntask.EdgeRun:
+		return m.clearedrun
+	case benchmarkruntask.EdgeTask:
+		return m.clearedtask
+	case benchmarkruntask.EdgeResults:
+		return m.clearedresults
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *BenchmarkRunTaskMutation) ClearEdge(name string) error {
+	switch name {
+	case benchmarkruntask.EdgeRun:
+		m.ClearRun()
+		return nil
+	case benchmarkruntask.EdgeTask:
+		m.ClearTask()
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkRunTask unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *BenchmarkRunTaskMutation) ResetEdge(name string) error {
+	switch name {
+	case benchmarkruntask.EdgeRun:
+		m.ResetRun()
+		return nil
+	case benchmarkruntask.EdgeTask:
+		m.ResetTask()
+		return nil
+	case benchmarkruntask.EdgeResults:
+		m.ResetResults()
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkRunTask edge %s", name)
+}
+
+// BenchmarkScheduleMutation represents an operation that mutates the BenchmarkSchedule nodes in the graph.
+type BenchmarkScheduleMutation struct {
+	config
+	op             Op
+	typ            string
+	id             *int64
+	created_at     *time.Time
+	updated_at     *time.Time
+	name           *string
+	cron_expr      *string
+	enabled        *bool
+	last_run_at    *time.Time
+	next_run_at    *time.Time
+	metadata       *map[string]interface{}
+	clearedFields  map[string]struct{}
+	profile        *int64
+	clearedprofile bool
+	done           bool
+	oldValue       func(context.Context) (*BenchmarkSchedule, error)
+	predicates     []predicate.BenchmarkSchedule
+}
+
+var _ ent.Mutation = (*BenchmarkScheduleMutation)(nil)
+
+// benchmarkscheduleOption allows management of the mutation configuration using functional options.
+type benchmarkscheduleOption func(*BenchmarkScheduleMutation)
+
+// newBenchmarkScheduleMutation creates new mutation for the BenchmarkSchedule entity.
+func newBenchmarkScheduleMutation(c config, op Op, opts ...benchmarkscheduleOption) *BenchmarkScheduleMutation {
+	m := &BenchmarkScheduleMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeBenchmarkSchedule,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withBenchmarkScheduleID sets the ID field of the mutation.
+func withBenchmarkScheduleID(id int64) benchmarkscheduleOption {
+	return func(m *BenchmarkScheduleMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *BenchmarkSchedule
+		)
+		m.oldValue = func(ctx context.Context) (*BenchmarkSchedule, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().BenchmarkSchedule.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withBenchmarkSchedule sets the old BenchmarkSchedule of the mutation.
+func withBenchmarkSchedule(node *BenchmarkSchedule) benchmarkscheduleOption {
+	return func(m *BenchmarkScheduleMutation) {
+		m.oldValue = func(context.Context) (*BenchmarkSchedule, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m BenchmarkScheduleMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m BenchmarkScheduleMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *BenchmarkScheduleMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *BenchmarkScheduleMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().BenchmarkSchedule.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *BenchmarkScheduleMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *BenchmarkScheduleMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the BenchmarkSchedule entity.
+// If the BenchmarkSchedule object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkScheduleMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *BenchmarkScheduleMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *BenchmarkScheduleMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *BenchmarkScheduleMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the BenchmarkSchedule entity.
+// If the BenchmarkSchedule object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkScheduleMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *BenchmarkScheduleMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetProfileID sets the "profile_id" field.
+func (m *BenchmarkScheduleMutation) SetProfileID(i int64) {
+	m.profile = &i
+}
+
+// ProfileID returns the value of the "profile_id" field in the mutation.
+func (m *BenchmarkScheduleMutation) ProfileID() (r int64, exists bool) {
+	v := m.profile
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProfileID returns the old "profile_id" field's value of the BenchmarkSchedule entity.
+// If the BenchmarkSchedule object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkScheduleMutation) OldProfileID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProfileID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProfileID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProfileID: %w", err)
+	}
+	return oldValue.ProfileID, nil
+}
+
+// ResetProfileID resets all changes to the "profile_id" field.
+func (m *BenchmarkScheduleMutation) ResetProfileID() {
+	m.profile = nil
+}
+
+// SetName sets the "name" field.
+func (m *BenchmarkScheduleMutation) SetName(s string) {
+	m.name = &s
+}
+
+// Name returns the value of the "name" field in the mutation.
+func (m *BenchmarkScheduleMutation) Name() (r string, exists bool) {
+	v := m.name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldName returns the old "name" field's value of the BenchmarkSchedule entity.
+// If the BenchmarkSchedule object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkScheduleMutation) OldName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldName: %w", err)
+	}
+	return oldValue.Name, nil
+}
+
+// ResetName resets all changes to the "name" field.
+func (m *BenchmarkScheduleMutation) ResetName() {
+	m.name = nil
+}
+
+// SetCronExpr sets the "cron_expr" field.
+func (m *BenchmarkScheduleMutation) SetCronExpr(s string) {
+	m.cron_expr = &s
+}
+
+// CronExpr returns the value of the "cron_expr" field in the mutation.
+func (m *BenchmarkScheduleMutation) CronExpr() (r string, exists bool) {
+	v := m.cron_expr
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCronExpr returns the old "cron_expr" field's value of the BenchmarkSchedule entity.
+// If the BenchmarkSchedule object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkScheduleMutation) OldCronExpr(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCronExpr is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCronExpr requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCronExpr: %w", err)
+	}
+	return oldValue.CronExpr, nil
+}
+
+// ResetCronExpr resets all changes to the "cron_expr" field.
+func (m *BenchmarkScheduleMutation) ResetCronExpr() {
+	m.cron_expr = nil
+}
+
+// SetEnabled sets the "enabled" field.
+func (m *BenchmarkScheduleMutation) SetEnabled(b bool) {
+	m.enabled = &b
+}
+
+// Enabled returns the value of the "enabled" field in the mutation.
+func (m *BenchmarkScheduleMutation) Enabled() (r bool, exists bool) {
+	v := m.enabled
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnabled returns the old "enabled" field's value of the BenchmarkSchedule entity.
+// If the BenchmarkSchedule object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkScheduleMutation) OldEnabled(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEnabled is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEnabled requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEnabled: %w", err)
+	}
+	return oldValue.Enabled, nil
+}
+
+// ResetEnabled resets all changes to the "enabled" field.
+func (m *BenchmarkScheduleMutation) ResetEnabled() {
+	m.enabled = nil
+}
+
+// SetLastRunAt sets the "last_run_at" field.
+func (m *BenchmarkScheduleMutation) SetLastRunAt(t time.Time) {
+	m.last_run_at = &t
+}
+
+// LastRunAt returns the value of the "last_run_at" field in the mutation.
+func (m *BenchmarkScheduleMutation) LastRunAt() (r time.Time, exists bool) {
+	v := m.last_run_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLastRunAt returns the old "last_run_at" field's value of the BenchmarkSchedule entity.
+// If the BenchmarkSchedule object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkScheduleMutation) OldLastRunAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLastRunAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLastRunAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLastRunAt: %w", err)
+	}
+	return oldValue.LastRunAt, nil
+}
+
+// ClearLastRunAt clears the value of the "last_run_at" field.
+func (m *BenchmarkScheduleMutation) ClearLastRunAt() {
+	m.last_run_at = nil
+	m.clearedFields[benchmarkschedule.FieldLastRunAt] = struct{}{}
+}
+
+// LastRunAtCleared returns if the "last_run_at" field was cleared in this mutation.
+func (m *BenchmarkScheduleMutation) LastRunAtCleared() bool {
+	_, ok := m.clearedFields[benchmarkschedule.FieldLastRunAt]
+	return ok
+}
+
+// ResetLastRunAt resets all changes to the "last_run_at" field.
+func (m *BenchmarkScheduleMutation) ResetLastRunAt() {
+	m.last_run_at = nil
+	delete(m.clearedFields, benchmarkschedule.FieldLastRunAt)
+}
+
+// SetNextRunAt sets the "next_run_at" field.
+func (m *BenchmarkScheduleMutation) SetNextRunAt(t time.Time) {
+	m.next_run_at = &t
+}
+
+// NextRunAt returns the value of the "next_run_at" field in the mutation.
+func (m *BenchmarkScheduleMutation) NextRunAt() (r time.Time, exists bool) {
+	v := m.next_run_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldNextRunAt returns the old "next_run_at" field's value of the BenchmarkSchedule entity.
+// If the BenchmarkSchedule object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkScheduleMutation) OldNextRunAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldNextRunAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldNextRunAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldNextRunAt: %w", err)
+	}
+	return oldValue.NextRunAt, nil
+}
+
+// ClearNextRunAt clears the value of the "next_run_at" field.
+func (m *BenchmarkScheduleMutation) ClearNextRunAt() {
+	m.next_run_at = nil
+	m.clearedFields[benchmarkschedule.FieldNextRunAt] = struct{}{}
+}
+
+// NextRunAtCleared returns if the "next_run_at" field was cleared in this mutation.
+func (m *BenchmarkScheduleMutation) NextRunAtCleared() bool {
+	_, ok := m.clearedFields[benchmarkschedule.FieldNextRunAt]
+	return ok
+}
+
+// ResetNextRunAt resets all changes to the "next_run_at" field.
+func (m *BenchmarkScheduleMutation) ResetNextRunAt() {
+	m.next_run_at = nil
+	delete(m.clearedFields, benchmarkschedule.FieldNextRunAt)
+}
+
+// SetMetadata sets the "metadata" field.
+func (m *BenchmarkScheduleMutation) SetMetadata(value map[string]interface{}) {
+	m.metadata = &value
+}
+
+// Metadata returns the value of the "metadata" field in the mutation.
+func (m *BenchmarkScheduleMutation) Metadata() (r map[string]interface{}, exists bool) {
+	v := m.metadata
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMetadata returns the old "metadata" field's value of the BenchmarkSchedule entity.
+// If the BenchmarkSchedule object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkScheduleMutation) OldMetadata(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMetadata is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMetadata requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMetadata: %w", err)
+	}
+	return oldValue.Metadata, nil
+}
+
+// ResetMetadata resets all changes to the "metadata" field.
+func (m *BenchmarkScheduleMutation) ResetMetadata() {
+	m.metadata = nil
+}
+
+// ClearProfile clears the "profile" edge to the BenchmarkProfile entity.
+func (m *BenchmarkScheduleMutation) ClearProfile() {
+	m.clearedprofile = true
+	m.clearedFields[benchmarkschedule.FieldProfileID] = struct{}{}
+}
+
+// ProfileCleared reports if the "profile" edge to the BenchmarkProfile entity was cleared.
+func (m *BenchmarkScheduleMutation) ProfileCleared() bool {
+	return m.clearedprofile
+}
+
+// ProfileIDs returns the "profile" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// ProfileID instead. It exists only for internal usage by the builders.
+func (m *BenchmarkScheduleMutation) ProfileIDs() (ids []int64) {
+	if id := m.profile; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetProfile resets all changes to the "profile" edge.
+func (m *BenchmarkScheduleMutation) ResetProfile() {
+	m.profile = nil
+	m.clearedprofile = false
+}
+
+// Where appends a list predicates to the BenchmarkScheduleMutation builder.
+func (m *BenchmarkScheduleMutation) Where(ps ...predicate.BenchmarkSchedule) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the BenchmarkScheduleMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *BenchmarkScheduleMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.BenchmarkSchedule, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *BenchmarkScheduleMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *BenchmarkScheduleMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (BenchmarkSchedule).
+func (m *BenchmarkScheduleMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *BenchmarkScheduleMutation) Fields() []string {
+	fields := make([]string, 0, 9)
+	if m.created_at != nil {
+		fields = append(fields, benchmarkschedule.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, benchmarkschedule.FieldUpdatedAt)
+	}
+	if m.profile != nil {
+		fields = append(fields, benchmarkschedule.FieldProfileID)
+	}
+	if m.name != nil {
+		fields = append(fields, benchmarkschedule.FieldName)
+	}
+	if m.cron_expr != nil {
+		fields = append(fields, benchmarkschedule.FieldCronExpr)
+	}
+	if m.enabled != nil {
+		fields = append(fields, benchmarkschedule.FieldEnabled)
+	}
+	if m.last_run_at != nil {
+		fields = append(fields, benchmarkschedule.FieldLastRunAt)
+	}
+	if m.next_run_at != nil {
+		fields = append(fields, benchmarkschedule.FieldNextRunAt)
+	}
+	if m.metadata != nil {
+		fields = append(fields, benchmarkschedule.FieldMetadata)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *BenchmarkScheduleMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case benchmarkschedule.FieldCreatedAt:
+		return m.CreatedAt()
+	case benchmarkschedule.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case benchmarkschedule.FieldProfileID:
+		return m.ProfileID()
+	case benchmarkschedule.FieldName:
+		return m.Name()
+	case benchmarkschedule.FieldCronExpr:
+		return m.CronExpr()
+	case benchmarkschedule.FieldEnabled:
+		return m.Enabled()
+	case benchmarkschedule.FieldLastRunAt:
+		return m.LastRunAt()
+	case benchmarkschedule.FieldNextRunAt:
+		return m.NextRunAt()
+	case benchmarkschedule.FieldMetadata:
+		return m.Metadata()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *BenchmarkScheduleMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case benchmarkschedule.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case benchmarkschedule.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case benchmarkschedule.FieldProfileID:
+		return m.OldProfileID(ctx)
+	case benchmarkschedule.FieldName:
+		return m.OldName(ctx)
+	case benchmarkschedule.FieldCronExpr:
+		return m.OldCronExpr(ctx)
+	case benchmarkschedule.FieldEnabled:
+		return m.OldEnabled(ctx)
+	case benchmarkschedule.FieldLastRunAt:
+		return m.OldLastRunAt(ctx)
+	case benchmarkschedule.FieldNextRunAt:
+		return m.OldNextRunAt(ctx)
+	case benchmarkschedule.FieldMetadata:
+		return m.OldMetadata(ctx)
+	}
+	return nil, fmt.Errorf("unknown BenchmarkSchedule field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *BenchmarkScheduleMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case benchmarkschedule.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case benchmarkschedule.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case benchmarkschedule.FieldProfileID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProfileID(v)
+		return nil
+	case benchmarkschedule.FieldName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetName(v)
+		return nil
+	case benchmarkschedule.FieldCronExpr:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCronExpr(v)
+		return nil
+	case benchmarkschedule.FieldEnabled:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEnabled(v)
+		return nil
+	case benchmarkschedule.FieldLastRunAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLastRunAt(v)
+		return nil
+	case benchmarkschedule.FieldNextRunAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetNextRunAt(v)
+		return nil
+	case benchmarkschedule.FieldMetadata:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMetadata(v)
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkSchedule field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *BenchmarkScheduleMutation) AddedFields() []string {
+	var fields []string
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *BenchmarkScheduleMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *BenchmarkScheduleMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown BenchmarkSchedule numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *BenchmarkScheduleMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(benchmarkschedule.FieldLastRunAt) {
+		fields = append(fields, benchmarkschedule.FieldLastRunAt)
+	}
+	if m.FieldCleared(benchmarkschedule.FieldNextRunAt) {
+		fields = append(fields, benchmarkschedule.FieldNextRunAt)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *BenchmarkScheduleMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *BenchmarkScheduleMutation) ClearField(name string) error {
+	switch name {
+	case benchmarkschedule.FieldLastRunAt:
+		m.ClearLastRunAt()
+		return nil
+	case benchmarkschedule.FieldNextRunAt:
+		m.ClearNextRunAt()
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkSchedule nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *BenchmarkScheduleMutation) ResetField(name string) error {
+	switch name {
+	case benchmarkschedule.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case benchmarkschedule.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case benchmarkschedule.FieldProfileID:
+		m.ResetProfileID()
+		return nil
+	case benchmarkschedule.FieldName:
+		m.ResetName()
+		return nil
+	case benchmarkschedule.FieldCronExpr:
+		m.ResetCronExpr()
+		return nil
+	case benchmarkschedule.FieldEnabled:
+		m.ResetEnabled()
+		return nil
+	case benchmarkschedule.FieldLastRunAt:
+		m.ResetLastRunAt()
+		return nil
+	case benchmarkschedule.FieldNextRunAt:
+		m.ResetNextRunAt()
+		return nil
+	case benchmarkschedule.FieldMetadata:
+		m.ResetMetadata()
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkSchedule field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *BenchmarkScheduleMutation) AddedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.profile != nil {
+		edges = append(edges, benchmarkschedule.EdgeProfile)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *BenchmarkScheduleMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case benchmarkschedule.EdgeProfile:
+		if id := m.profile; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *BenchmarkScheduleMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 1)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *BenchmarkScheduleMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *BenchmarkScheduleMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.clearedprofile {
+		edges = append(edges, benchmarkschedule.EdgeProfile)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *BenchmarkScheduleMutation) EdgeCleared(name string) bool {
+	switch name {
+	case benchmarkschedule.EdgeProfile:
+		return m.clearedprofile
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *BenchmarkScheduleMutation) ClearEdge(name string) error {
+	switch name {
+	case benchmarkschedule.EdgeProfile:
+		m.ClearProfile()
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkSchedule unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *BenchmarkScheduleMutation) ResetEdge(name string) error {
+	switch name {
+	case benchmarkschedule.EdgeProfile:
+		m.ResetProfile()
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkSchedule edge %s", name)
+}
+
+// BenchmarkScoreSnapshotMutation represents an operation that mutates the BenchmarkScoreSnapshot nodes in the graph.
+type BenchmarkScoreSnapshotMutation struct {
+	config
+	op                       Op
+	typ                      string
+	id                       *int64
+	overall_score            *float64
+	addoverall_score         *float64
+	dimension_scores         *map[string]interface{}
+	planned_tasks            *int
+	addplanned_tasks         *int
+	scored_tasks             *int
+	addscored_tasks          *int
+	invalid_tasks            *int
+	addinvalid_tasks         *int
+	coverage_rate            *float64
+	addcoverage_rate         *float64
+	confidence_level         *float64
+	addconfidence_level      *float64
+	insufficient_sample      *bool
+	success_rate             *float64
+	addsuccess_rate          *float64
+	latency_p50_ms           *float64
+	addlatency_p50_ms        *float64
+	latency_p95_ms           *float64
+	addlatency_p95_ms        *float64
+	avg_total_tokens         *float64
+	addavg_total_tokens      *float64
+	estimated_cost           *float64
+	addestimated_cost        *float64
+	invalid_reason_breakdown *map[string]interface{}
+	ranking_metadata         *map[string]interface{}
+	created_at               *time.Time
+	clearedFields            map[string]struct{}
+	run                      *int64
+	clearedrun               bool
+	run_target               *int64
+	clearedrun_target        bool
+	done                     bool
+	oldValue                 func(context.Context) (*BenchmarkScoreSnapshot, error)
+	predicates               []predicate.BenchmarkScoreSnapshot
+}
+
+var _ ent.Mutation = (*BenchmarkScoreSnapshotMutation)(nil)
+
+// benchmarkscoresnapshotOption allows management of the mutation configuration using functional options.
+type benchmarkscoresnapshotOption func(*BenchmarkScoreSnapshotMutation)
+
+// newBenchmarkScoreSnapshotMutation creates new mutation for the BenchmarkScoreSnapshot entity.
+func newBenchmarkScoreSnapshotMutation(c config, op Op, opts ...benchmarkscoresnapshotOption) *BenchmarkScoreSnapshotMutation {
+	m := &BenchmarkScoreSnapshotMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeBenchmarkScoreSnapshot,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withBenchmarkScoreSnapshotID sets the ID field of the mutation.
+func withBenchmarkScoreSnapshotID(id int64) benchmarkscoresnapshotOption {
+	return func(m *BenchmarkScoreSnapshotMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *BenchmarkScoreSnapshot
+		)
+		m.oldValue = func(ctx context.Context) (*BenchmarkScoreSnapshot, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().BenchmarkScoreSnapshot.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withBenchmarkScoreSnapshot sets the old BenchmarkScoreSnapshot of the mutation.
+func withBenchmarkScoreSnapshot(node *BenchmarkScoreSnapshot) benchmarkscoresnapshotOption {
+	return func(m *BenchmarkScoreSnapshotMutation) {
+		m.oldValue = func(context.Context) (*BenchmarkScoreSnapshot, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m BenchmarkScoreSnapshotMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m BenchmarkScoreSnapshotMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *BenchmarkScoreSnapshotMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *BenchmarkScoreSnapshotMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().BenchmarkScoreSnapshot.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetRunID sets the "run_id" field.
+func (m *BenchmarkScoreSnapshotMutation) SetRunID(i int64) {
+	m.run = &i
+}
+
+// RunID returns the value of the "run_id" field in the mutation.
+func (m *BenchmarkScoreSnapshotMutation) RunID() (r int64, exists bool) {
+	v := m.run
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRunID returns the old "run_id" field's value of the BenchmarkScoreSnapshot entity.
+// If the BenchmarkScoreSnapshot object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkScoreSnapshotMutation) OldRunID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRunID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRunID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRunID: %w", err)
+	}
+	return oldValue.RunID, nil
+}
+
+// ResetRunID resets all changes to the "run_id" field.
+func (m *BenchmarkScoreSnapshotMutation) ResetRunID() {
+	m.run = nil
+}
+
+// SetRunTargetID sets the "run_target_id" field.
+func (m *BenchmarkScoreSnapshotMutation) SetRunTargetID(i int64) {
+	m.run_target = &i
+}
+
+// RunTargetID returns the value of the "run_target_id" field in the mutation.
+func (m *BenchmarkScoreSnapshotMutation) RunTargetID() (r int64, exists bool) {
+	v := m.run_target
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRunTargetID returns the old "run_target_id" field's value of the BenchmarkScoreSnapshot entity.
+// If the BenchmarkScoreSnapshot object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkScoreSnapshotMutation) OldRunTargetID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRunTargetID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRunTargetID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRunTargetID: %w", err)
+	}
+	return oldValue.RunTargetID, nil
+}
+
+// ResetRunTargetID resets all changes to the "run_target_id" field.
+func (m *BenchmarkScoreSnapshotMutation) ResetRunTargetID() {
+	m.run_target = nil
+}
+
+// SetOverallScore sets the "overall_score" field.
+func (m *BenchmarkScoreSnapshotMutation) SetOverallScore(f float64) {
+	m.overall_score = &f
+	m.addoverall_score = nil
+}
+
+// OverallScore returns the value of the "overall_score" field in the mutation.
+func (m *BenchmarkScoreSnapshotMutation) OverallScore() (r float64, exists bool) {
+	v := m.overall_score
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOverallScore returns the old "overall_score" field's value of the BenchmarkScoreSnapshot entity.
+// If the BenchmarkScoreSnapshot object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkScoreSnapshotMutation) OldOverallScore(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOverallScore is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOverallScore requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOverallScore: %w", err)
+	}
+	return oldValue.OverallScore, nil
+}
+
+// AddOverallScore adds f to the "overall_score" field.
+func (m *BenchmarkScoreSnapshotMutation) AddOverallScore(f float64) {
+	if m.addoverall_score != nil {
+		*m.addoverall_score += f
+	} else {
+		m.addoverall_score = &f
+	}
+}
+
+// AddedOverallScore returns the value that was added to the "overall_score" field in this mutation.
+func (m *BenchmarkScoreSnapshotMutation) AddedOverallScore() (r float64, exists bool) {
+	v := m.addoverall_score
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetOverallScore resets all changes to the "overall_score" field.
+func (m *BenchmarkScoreSnapshotMutation) ResetOverallScore() {
+	m.overall_score = nil
+	m.addoverall_score = nil
+}
+
+// SetDimensionScores sets the "dimension_scores" field.
+func (m *BenchmarkScoreSnapshotMutation) SetDimensionScores(value map[string]interface{}) {
+	m.dimension_scores = &value
+}
+
+// DimensionScores returns the value of the "dimension_scores" field in the mutation.
+func (m *BenchmarkScoreSnapshotMutation) DimensionScores() (r map[string]interface{}, exists bool) {
+	v := m.dimension_scores
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDimensionScores returns the old "dimension_scores" field's value of the BenchmarkScoreSnapshot entity.
+// If the BenchmarkScoreSnapshot object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkScoreSnapshotMutation) OldDimensionScores(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDimensionScores is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDimensionScores requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDimensionScores: %w", err)
+	}
+	return oldValue.DimensionScores, nil
+}
+
+// ResetDimensionScores resets all changes to the "dimension_scores" field.
+func (m *BenchmarkScoreSnapshotMutation) ResetDimensionScores() {
+	m.dimension_scores = nil
+}
+
+// SetPlannedTasks sets the "planned_tasks" field.
+func (m *BenchmarkScoreSnapshotMutation) SetPlannedTasks(i int) {
+	m.planned_tasks = &i
+	m.addplanned_tasks = nil
+}
+
+// PlannedTasks returns the value of the "planned_tasks" field in the mutation.
+func (m *BenchmarkScoreSnapshotMutation) PlannedTasks() (r int, exists bool) {
+	v := m.planned_tasks
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPlannedTasks returns the old "planned_tasks" field's value of the BenchmarkScoreSnapshot entity.
+// If the BenchmarkScoreSnapshot object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkScoreSnapshotMutation) OldPlannedTasks(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPlannedTasks is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPlannedTasks requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPlannedTasks: %w", err)
+	}
+	return oldValue.PlannedTasks, nil
+}
+
+// AddPlannedTasks adds i to the "planned_tasks" field.
+func (m *BenchmarkScoreSnapshotMutation) AddPlannedTasks(i int) {
+	if m.addplanned_tasks != nil {
+		*m.addplanned_tasks += i
+	} else {
+		m.addplanned_tasks = &i
+	}
+}
+
+// AddedPlannedTasks returns the value that was added to the "planned_tasks" field in this mutation.
+func (m *BenchmarkScoreSnapshotMutation) AddedPlannedTasks() (r int, exists bool) {
+	v := m.addplanned_tasks
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetPlannedTasks resets all changes to the "planned_tasks" field.
+func (m *BenchmarkScoreSnapshotMutation) ResetPlannedTasks() {
+	m.planned_tasks = nil
+	m.addplanned_tasks = nil
+}
+
+// SetScoredTasks sets the "scored_tasks" field.
+func (m *BenchmarkScoreSnapshotMutation) SetScoredTasks(i int) {
+	m.scored_tasks = &i
+	m.addscored_tasks = nil
+}
+
+// ScoredTasks returns the value of the "scored_tasks" field in the mutation.
+func (m *BenchmarkScoreSnapshotMutation) ScoredTasks() (r int, exists bool) {
+	v := m.scored_tasks
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldScoredTasks returns the old "scored_tasks" field's value of the BenchmarkScoreSnapshot entity.
+// If the BenchmarkScoreSnapshot object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkScoreSnapshotMutation) OldScoredTasks(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldScoredTasks is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldScoredTasks requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldScoredTasks: %w", err)
+	}
+	return oldValue.ScoredTasks, nil
+}
+
+// AddScoredTasks adds i to the "scored_tasks" field.
+func (m *BenchmarkScoreSnapshotMutation) AddScoredTasks(i int) {
+	if m.addscored_tasks != nil {
+		*m.addscored_tasks += i
+	} else {
+		m.addscored_tasks = &i
+	}
+}
+
+// AddedScoredTasks returns the value that was added to the "scored_tasks" field in this mutation.
+func (m *BenchmarkScoreSnapshotMutation) AddedScoredTasks() (r int, exists bool) {
+	v := m.addscored_tasks
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetScoredTasks resets all changes to the "scored_tasks" field.
+func (m *BenchmarkScoreSnapshotMutation) ResetScoredTasks() {
+	m.scored_tasks = nil
+	m.addscored_tasks = nil
+}
+
+// SetInvalidTasks sets the "invalid_tasks" field.
+func (m *BenchmarkScoreSnapshotMutation) SetInvalidTasks(i int) {
+	m.invalid_tasks = &i
+	m.addinvalid_tasks = nil
+}
+
+// InvalidTasks returns the value of the "invalid_tasks" field in the mutation.
+func (m *BenchmarkScoreSnapshotMutation) InvalidTasks() (r int, exists bool) {
+	v := m.invalid_tasks
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldInvalidTasks returns the old "invalid_tasks" field's value of the BenchmarkScoreSnapshot entity.
+// If the BenchmarkScoreSnapshot object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkScoreSnapshotMutation) OldInvalidTasks(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldInvalidTasks is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldInvalidTasks requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldInvalidTasks: %w", err)
+	}
+	return oldValue.InvalidTasks, nil
+}
+
+// AddInvalidTasks adds i to the "invalid_tasks" field.
+func (m *BenchmarkScoreSnapshotMutation) AddInvalidTasks(i int) {
+	if m.addinvalid_tasks != nil {
+		*m.addinvalid_tasks += i
+	} else {
+		m.addinvalid_tasks = &i
+	}
+}
+
+// AddedInvalidTasks returns the value that was added to the "invalid_tasks" field in this mutation.
+func (m *BenchmarkScoreSnapshotMutation) AddedInvalidTasks() (r int, exists bool) {
+	v := m.addinvalid_tasks
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetInvalidTasks resets all changes to the "invalid_tasks" field.
+func (m *BenchmarkScoreSnapshotMutation) ResetInvalidTasks() {
+	m.invalid_tasks = nil
+	m.addinvalid_tasks = nil
+}
+
+// SetCoverageRate sets the "coverage_rate" field.
+func (m *BenchmarkScoreSnapshotMutation) SetCoverageRate(f float64) {
+	m.coverage_rate = &f
+	m.addcoverage_rate = nil
+}
+
+// CoverageRate returns the value of the "coverage_rate" field in the mutation.
+func (m *BenchmarkScoreSnapshotMutation) CoverageRate() (r float64, exists bool) {
+	v := m.coverage_rate
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCoverageRate returns the old "coverage_rate" field's value of the BenchmarkScoreSnapshot entity.
+// If the BenchmarkScoreSnapshot object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkScoreSnapshotMutation) OldCoverageRate(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCoverageRate is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCoverageRate requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCoverageRate: %w", err)
+	}
+	return oldValue.CoverageRate, nil
+}
+
+// AddCoverageRate adds f to the "coverage_rate" field.
+func (m *BenchmarkScoreSnapshotMutation) AddCoverageRate(f float64) {
+	if m.addcoverage_rate != nil {
+		*m.addcoverage_rate += f
+	} else {
+		m.addcoverage_rate = &f
+	}
+}
+
+// AddedCoverageRate returns the value that was added to the "coverage_rate" field in this mutation.
+func (m *BenchmarkScoreSnapshotMutation) AddedCoverageRate() (r float64, exists bool) {
+	v := m.addcoverage_rate
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetCoverageRate resets all changes to the "coverage_rate" field.
+func (m *BenchmarkScoreSnapshotMutation) ResetCoverageRate() {
+	m.coverage_rate = nil
+	m.addcoverage_rate = nil
+}
+
+// SetConfidenceLevel sets the "confidence_level" field.
+func (m *BenchmarkScoreSnapshotMutation) SetConfidenceLevel(f float64) {
+	m.confidence_level = &f
+	m.addconfidence_level = nil
+}
+
+// ConfidenceLevel returns the value of the "confidence_level" field in the mutation.
+func (m *BenchmarkScoreSnapshotMutation) ConfidenceLevel() (r float64, exists bool) {
+	v := m.confidence_level
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldConfidenceLevel returns the old "confidence_level" field's value of the BenchmarkScoreSnapshot entity.
+// If the BenchmarkScoreSnapshot object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkScoreSnapshotMutation) OldConfidenceLevel(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldConfidenceLevel is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldConfidenceLevel requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldConfidenceLevel: %w", err)
+	}
+	return oldValue.ConfidenceLevel, nil
+}
+
+// AddConfidenceLevel adds f to the "confidence_level" field.
+func (m *BenchmarkScoreSnapshotMutation) AddConfidenceLevel(f float64) {
+	if m.addconfidence_level != nil {
+		*m.addconfidence_level += f
+	} else {
+		m.addconfidence_level = &f
+	}
+}
+
+// AddedConfidenceLevel returns the value that was added to the "confidence_level" field in this mutation.
+func (m *BenchmarkScoreSnapshotMutation) AddedConfidenceLevel() (r float64, exists bool) {
+	v := m.addconfidence_level
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetConfidenceLevel resets all changes to the "confidence_level" field.
+func (m *BenchmarkScoreSnapshotMutation) ResetConfidenceLevel() {
+	m.confidence_level = nil
+	m.addconfidence_level = nil
+}
+
+// SetInsufficientSample sets the "insufficient_sample" field.
+func (m *BenchmarkScoreSnapshotMutation) SetInsufficientSample(b bool) {
+	m.insufficient_sample = &b
+}
+
+// InsufficientSample returns the value of the "insufficient_sample" field in the mutation.
+func (m *BenchmarkScoreSnapshotMutation) InsufficientSample() (r bool, exists bool) {
+	v := m.insufficient_sample
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldInsufficientSample returns the old "insufficient_sample" field's value of the BenchmarkScoreSnapshot entity.
+// If the BenchmarkScoreSnapshot object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkScoreSnapshotMutation) OldInsufficientSample(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldInsufficientSample is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldInsufficientSample requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldInsufficientSample: %w", err)
+	}
+	return oldValue.InsufficientSample, nil
+}
+
+// ResetInsufficientSample resets all changes to the "insufficient_sample" field.
+func (m *BenchmarkScoreSnapshotMutation) ResetInsufficientSample() {
+	m.insufficient_sample = nil
+}
+
+// SetSuccessRate sets the "success_rate" field.
+func (m *BenchmarkScoreSnapshotMutation) SetSuccessRate(f float64) {
+	m.success_rate = &f
+	m.addsuccess_rate = nil
+}
+
+// SuccessRate returns the value of the "success_rate" field in the mutation.
+func (m *BenchmarkScoreSnapshotMutation) SuccessRate() (r float64, exists bool) {
+	v := m.success_rate
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSuccessRate returns the old "success_rate" field's value of the BenchmarkScoreSnapshot entity.
+// If the BenchmarkScoreSnapshot object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkScoreSnapshotMutation) OldSuccessRate(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSuccessRate is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSuccessRate requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSuccessRate: %w", err)
+	}
+	return oldValue.SuccessRate, nil
+}
+
+// AddSuccessRate adds f to the "success_rate" field.
+func (m *BenchmarkScoreSnapshotMutation) AddSuccessRate(f float64) {
+	if m.addsuccess_rate != nil {
+		*m.addsuccess_rate += f
+	} else {
+		m.addsuccess_rate = &f
+	}
+}
+
+// AddedSuccessRate returns the value that was added to the "success_rate" field in this mutation.
+func (m *BenchmarkScoreSnapshotMutation) AddedSuccessRate() (r float64, exists bool) {
+	v := m.addsuccess_rate
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetSuccessRate resets all changes to the "success_rate" field.
+func (m *BenchmarkScoreSnapshotMutation) ResetSuccessRate() {
+	m.success_rate = nil
+	m.addsuccess_rate = nil
+}
+
+// SetLatencyP50Ms sets the "latency_p50_ms" field.
+func (m *BenchmarkScoreSnapshotMutation) SetLatencyP50Ms(f float64) {
+	m.latency_p50_ms = &f
+	m.addlatency_p50_ms = nil
+}
+
+// LatencyP50Ms returns the value of the "latency_p50_ms" field in the mutation.
+func (m *BenchmarkScoreSnapshotMutation) LatencyP50Ms() (r float64, exists bool) {
+	v := m.latency_p50_ms
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLatencyP50Ms returns the old "latency_p50_ms" field's value of the BenchmarkScoreSnapshot entity.
+// If the BenchmarkScoreSnapshot object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkScoreSnapshotMutation) OldLatencyP50Ms(ctx context.Context) (v *float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLatencyP50Ms is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLatencyP50Ms requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLatencyP50Ms: %w", err)
+	}
+	return oldValue.LatencyP50Ms, nil
+}
+
+// AddLatencyP50Ms adds f to the "latency_p50_ms" field.
+func (m *BenchmarkScoreSnapshotMutation) AddLatencyP50Ms(f float64) {
+	if m.addlatency_p50_ms != nil {
+		*m.addlatency_p50_ms += f
+	} else {
+		m.addlatency_p50_ms = &f
+	}
+}
+
+// AddedLatencyP50Ms returns the value that was added to the "latency_p50_ms" field in this mutation.
+func (m *BenchmarkScoreSnapshotMutation) AddedLatencyP50Ms() (r float64, exists bool) {
+	v := m.addlatency_p50_ms
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearLatencyP50Ms clears the value of the "latency_p50_ms" field.
+func (m *BenchmarkScoreSnapshotMutation) ClearLatencyP50Ms() {
+	m.latency_p50_ms = nil
+	m.addlatency_p50_ms = nil
+	m.clearedFields[benchmarkscoresnapshot.FieldLatencyP50Ms] = struct{}{}
+}
+
+// LatencyP50MsCleared returns if the "latency_p50_ms" field was cleared in this mutation.
+func (m *BenchmarkScoreSnapshotMutation) LatencyP50MsCleared() bool {
+	_, ok := m.clearedFields[benchmarkscoresnapshot.FieldLatencyP50Ms]
+	return ok
+}
+
+// ResetLatencyP50Ms resets all changes to the "latency_p50_ms" field.
+func (m *BenchmarkScoreSnapshotMutation) ResetLatencyP50Ms() {
+	m.latency_p50_ms = nil
+	m.addlatency_p50_ms = nil
+	delete(m.clearedFields, benchmarkscoresnapshot.FieldLatencyP50Ms)
+}
+
+// SetLatencyP95Ms sets the "latency_p95_ms" field.
+func (m *BenchmarkScoreSnapshotMutation) SetLatencyP95Ms(f float64) {
+	m.latency_p95_ms = &f
+	m.addlatency_p95_ms = nil
+}
+
+// LatencyP95Ms returns the value of the "latency_p95_ms" field in the mutation.
+func (m *BenchmarkScoreSnapshotMutation) LatencyP95Ms() (r float64, exists bool) {
+	v := m.latency_p95_ms
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLatencyP95Ms returns the old "latency_p95_ms" field's value of the BenchmarkScoreSnapshot entity.
+// If the BenchmarkScoreSnapshot object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkScoreSnapshotMutation) OldLatencyP95Ms(ctx context.Context) (v *float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLatencyP95Ms is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLatencyP95Ms requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLatencyP95Ms: %w", err)
+	}
+	return oldValue.LatencyP95Ms, nil
+}
+
+// AddLatencyP95Ms adds f to the "latency_p95_ms" field.
+func (m *BenchmarkScoreSnapshotMutation) AddLatencyP95Ms(f float64) {
+	if m.addlatency_p95_ms != nil {
+		*m.addlatency_p95_ms += f
+	} else {
+		m.addlatency_p95_ms = &f
+	}
+}
+
+// AddedLatencyP95Ms returns the value that was added to the "latency_p95_ms" field in this mutation.
+func (m *BenchmarkScoreSnapshotMutation) AddedLatencyP95Ms() (r float64, exists bool) {
+	v := m.addlatency_p95_ms
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearLatencyP95Ms clears the value of the "latency_p95_ms" field.
+func (m *BenchmarkScoreSnapshotMutation) ClearLatencyP95Ms() {
+	m.latency_p95_ms = nil
+	m.addlatency_p95_ms = nil
+	m.clearedFields[benchmarkscoresnapshot.FieldLatencyP95Ms] = struct{}{}
+}
+
+// LatencyP95MsCleared returns if the "latency_p95_ms" field was cleared in this mutation.
+func (m *BenchmarkScoreSnapshotMutation) LatencyP95MsCleared() bool {
+	_, ok := m.clearedFields[benchmarkscoresnapshot.FieldLatencyP95Ms]
+	return ok
+}
+
+// ResetLatencyP95Ms resets all changes to the "latency_p95_ms" field.
+func (m *BenchmarkScoreSnapshotMutation) ResetLatencyP95Ms() {
+	m.latency_p95_ms = nil
+	m.addlatency_p95_ms = nil
+	delete(m.clearedFields, benchmarkscoresnapshot.FieldLatencyP95Ms)
+}
+
+// SetAvgTotalTokens sets the "avg_total_tokens" field.
+func (m *BenchmarkScoreSnapshotMutation) SetAvgTotalTokens(f float64) {
+	m.avg_total_tokens = &f
+	m.addavg_total_tokens = nil
+}
+
+// AvgTotalTokens returns the value of the "avg_total_tokens" field in the mutation.
+func (m *BenchmarkScoreSnapshotMutation) AvgTotalTokens() (r float64, exists bool) {
+	v := m.avg_total_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAvgTotalTokens returns the old "avg_total_tokens" field's value of the BenchmarkScoreSnapshot entity.
+// If the BenchmarkScoreSnapshot object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkScoreSnapshotMutation) OldAvgTotalTokens(ctx context.Context) (v *float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAvgTotalTokens is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAvgTotalTokens requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAvgTotalTokens: %w", err)
+	}
+	return oldValue.AvgTotalTokens, nil
+}
+
+// AddAvgTotalTokens adds f to the "avg_total_tokens" field.
+func (m *BenchmarkScoreSnapshotMutation) AddAvgTotalTokens(f float64) {
+	if m.addavg_total_tokens != nil {
+		*m.addavg_total_tokens += f
+	} else {
+		m.addavg_total_tokens = &f
+	}
+}
+
+// AddedAvgTotalTokens returns the value that was added to the "avg_total_tokens" field in this mutation.
+func (m *BenchmarkScoreSnapshotMutation) AddedAvgTotalTokens() (r float64, exists bool) {
+	v := m.addavg_total_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearAvgTotalTokens clears the value of the "avg_total_tokens" field.
+func (m *BenchmarkScoreSnapshotMutation) ClearAvgTotalTokens() {
+	m.avg_total_tokens = nil
+	m.addavg_total_tokens = nil
+	m.clearedFields[benchmarkscoresnapshot.FieldAvgTotalTokens] = struct{}{}
+}
+
+// AvgTotalTokensCleared returns if the "avg_total_tokens" field was cleared in this mutation.
+func (m *BenchmarkScoreSnapshotMutation) AvgTotalTokensCleared() bool {
+	_, ok := m.clearedFields[benchmarkscoresnapshot.FieldAvgTotalTokens]
+	return ok
+}
+
+// ResetAvgTotalTokens resets all changes to the "avg_total_tokens" field.
+func (m *BenchmarkScoreSnapshotMutation) ResetAvgTotalTokens() {
+	m.avg_total_tokens = nil
+	m.addavg_total_tokens = nil
+	delete(m.clearedFields, benchmarkscoresnapshot.FieldAvgTotalTokens)
+}
+
+// SetEstimatedCost sets the "estimated_cost" field.
+func (m *BenchmarkScoreSnapshotMutation) SetEstimatedCost(f float64) {
+	m.estimated_cost = &f
+	m.addestimated_cost = nil
+}
+
+// EstimatedCost returns the value of the "estimated_cost" field in the mutation.
+func (m *BenchmarkScoreSnapshotMutation) EstimatedCost() (r float64, exists bool) {
+	v := m.estimated_cost
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEstimatedCost returns the old "estimated_cost" field's value of the BenchmarkScoreSnapshot entity.
+// If the BenchmarkScoreSnapshot object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkScoreSnapshotMutation) OldEstimatedCost(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEstimatedCost is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEstimatedCost requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEstimatedCost: %w", err)
+	}
+	return oldValue.EstimatedCost, nil
+}
+
+// AddEstimatedCost adds f to the "estimated_cost" field.
+func (m *BenchmarkScoreSnapshotMutation) AddEstimatedCost(f float64) {
+	if m.addestimated_cost != nil {
+		*m.addestimated_cost += f
+	} else {
+		m.addestimated_cost = &f
+	}
+}
+
+// AddedEstimatedCost returns the value that was added to the "estimated_cost" field in this mutation.
+func (m *BenchmarkScoreSnapshotMutation) AddedEstimatedCost() (r float64, exists bool) {
+	v := m.addestimated_cost
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetEstimatedCost resets all changes to the "estimated_cost" field.
+func (m *BenchmarkScoreSnapshotMutation) ResetEstimatedCost() {
+	m.estimated_cost = nil
+	m.addestimated_cost = nil
+}
+
+// SetInvalidReasonBreakdown sets the "invalid_reason_breakdown" field.
+func (m *BenchmarkScoreSnapshotMutation) SetInvalidReasonBreakdown(value map[string]interface{}) {
+	m.invalid_reason_breakdown = &value
+}
+
+// InvalidReasonBreakdown returns the value of the "invalid_reason_breakdown" field in the mutation.
+func (m *BenchmarkScoreSnapshotMutation) InvalidReasonBreakdown() (r map[string]interface{}, exists bool) {
+	v := m.invalid_reason_breakdown
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldInvalidReasonBreakdown returns the old "invalid_reason_breakdown" field's value of the BenchmarkScoreSnapshot entity.
+// If the BenchmarkScoreSnapshot object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkScoreSnapshotMutation) OldInvalidReasonBreakdown(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldInvalidReasonBreakdown is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldInvalidReasonBreakdown requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldInvalidReasonBreakdown: %w", err)
+	}
+	return oldValue.InvalidReasonBreakdown, nil
+}
+
+// ResetInvalidReasonBreakdown resets all changes to the "invalid_reason_breakdown" field.
+func (m *BenchmarkScoreSnapshotMutation) ResetInvalidReasonBreakdown() {
+	m.invalid_reason_breakdown = nil
+}
+
+// SetRankingMetadata sets the "ranking_metadata" field.
+func (m *BenchmarkScoreSnapshotMutation) SetRankingMetadata(value map[string]interface{}) {
+	m.ranking_metadata = &value
+}
+
+// RankingMetadata returns the value of the "ranking_metadata" field in the mutation.
+func (m *BenchmarkScoreSnapshotMutation) RankingMetadata() (r map[string]interface{}, exists bool) {
+	v := m.ranking_metadata
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRankingMetadata returns the old "ranking_metadata" field's value of the BenchmarkScoreSnapshot entity.
+// If the BenchmarkScoreSnapshot object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkScoreSnapshotMutation) OldRankingMetadata(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRankingMetadata is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRankingMetadata requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRankingMetadata: %w", err)
+	}
+	return oldValue.RankingMetadata, nil
+}
+
+// ResetRankingMetadata resets all changes to the "ranking_metadata" field.
+func (m *BenchmarkScoreSnapshotMutation) ResetRankingMetadata() {
+	m.ranking_metadata = nil
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *BenchmarkScoreSnapshotMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *BenchmarkScoreSnapshotMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the BenchmarkScoreSnapshot entity.
+// If the BenchmarkScoreSnapshot object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkScoreSnapshotMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *BenchmarkScoreSnapshotMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// ClearRun clears the "run" edge to the BenchmarkRun entity.
+func (m *BenchmarkScoreSnapshotMutation) ClearRun() {
+	m.clearedrun = true
+	m.clearedFields[benchmarkscoresnapshot.FieldRunID] = struct{}{}
+}
+
+// RunCleared reports if the "run" edge to the BenchmarkRun entity was cleared.
+func (m *BenchmarkScoreSnapshotMutation) RunCleared() bool {
+	return m.clearedrun
+}
+
+// RunIDs returns the "run" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// RunID instead. It exists only for internal usage by the builders.
+func (m *BenchmarkScoreSnapshotMutation) RunIDs() (ids []int64) {
+	if id := m.run; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetRun resets all changes to the "run" edge.
+func (m *BenchmarkScoreSnapshotMutation) ResetRun() {
+	m.run = nil
+	m.clearedrun = false
+}
+
+// ClearRunTarget clears the "run_target" edge to the BenchmarkRunTarget entity.
+func (m *BenchmarkScoreSnapshotMutation) ClearRunTarget() {
+	m.clearedrun_target = true
+	m.clearedFields[benchmarkscoresnapshot.FieldRunTargetID] = struct{}{}
+}
+
+// RunTargetCleared reports if the "run_target" edge to the BenchmarkRunTarget entity was cleared.
+func (m *BenchmarkScoreSnapshotMutation) RunTargetCleared() bool {
+	return m.clearedrun_target
+}
+
+// RunTargetIDs returns the "run_target" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// RunTargetID instead. It exists only for internal usage by the builders.
+func (m *BenchmarkScoreSnapshotMutation) RunTargetIDs() (ids []int64) {
+	if id := m.run_target; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetRunTarget resets all changes to the "run_target" edge.
+func (m *BenchmarkScoreSnapshotMutation) ResetRunTarget() {
+	m.run_target = nil
+	m.clearedrun_target = false
+}
+
+// Where appends a list predicates to the BenchmarkScoreSnapshotMutation builder.
+func (m *BenchmarkScoreSnapshotMutation) Where(ps ...predicate.BenchmarkScoreSnapshot) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the BenchmarkScoreSnapshotMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *BenchmarkScoreSnapshotMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.BenchmarkScoreSnapshot, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *BenchmarkScoreSnapshotMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *BenchmarkScoreSnapshotMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (BenchmarkScoreSnapshot).
+func (m *BenchmarkScoreSnapshotMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *BenchmarkScoreSnapshotMutation) Fields() []string {
+	fields := make([]string, 0, 18)
+	if m.run != nil {
+		fields = append(fields, benchmarkscoresnapshot.FieldRunID)
+	}
+	if m.run_target != nil {
+		fields = append(fields, benchmarkscoresnapshot.FieldRunTargetID)
+	}
+	if m.overall_score != nil {
+		fields = append(fields, benchmarkscoresnapshot.FieldOverallScore)
+	}
+	if m.dimension_scores != nil {
+		fields = append(fields, benchmarkscoresnapshot.FieldDimensionScores)
+	}
+	if m.planned_tasks != nil {
+		fields = append(fields, benchmarkscoresnapshot.FieldPlannedTasks)
+	}
+	if m.scored_tasks != nil {
+		fields = append(fields, benchmarkscoresnapshot.FieldScoredTasks)
+	}
+	if m.invalid_tasks != nil {
+		fields = append(fields, benchmarkscoresnapshot.FieldInvalidTasks)
+	}
+	if m.coverage_rate != nil {
+		fields = append(fields, benchmarkscoresnapshot.FieldCoverageRate)
+	}
+	if m.confidence_level != nil {
+		fields = append(fields, benchmarkscoresnapshot.FieldConfidenceLevel)
+	}
+	if m.insufficient_sample != nil {
+		fields = append(fields, benchmarkscoresnapshot.FieldInsufficientSample)
+	}
+	if m.success_rate != nil {
+		fields = append(fields, benchmarkscoresnapshot.FieldSuccessRate)
+	}
+	if m.latency_p50_ms != nil {
+		fields = append(fields, benchmarkscoresnapshot.FieldLatencyP50Ms)
+	}
+	if m.latency_p95_ms != nil {
+		fields = append(fields, benchmarkscoresnapshot.FieldLatencyP95Ms)
+	}
+	if m.avg_total_tokens != nil {
+		fields = append(fields, benchmarkscoresnapshot.FieldAvgTotalTokens)
+	}
+	if m.estimated_cost != nil {
+		fields = append(fields, benchmarkscoresnapshot.FieldEstimatedCost)
+	}
+	if m.invalid_reason_breakdown != nil {
+		fields = append(fields, benchmarkscoresnapshot.FieldInvalidReasonBreakdown)
+	}
+	if m.ranking_metadata != nil {
+		fields = append(fields, benchmarkscoresnapshot.FieldRankingMetadata)
+	}
+	if m.created_at != nil {
+		fields = append(fields, benchmarkscoresnapshot.FieldCreatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *BenchmarkScoreSnapshotMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case benchmarkscoresnapshot.FieldRunID:
+		return m.RunID()
+	case benchmarkscoresnapshot.FieldRunTargetID:
+		return m.RunTargetID()
+	case benchmarkscoresnapshot.FieldOverallScore:
+		return m.OverallScore()
+	case benchmarkscoresnapshot.FieldDimensionScores:
+		return m.DimensionScores()
+	case benchmarkscoresnapshot.FieldPlannedTasks:
+		return m.PlannedTasks()
+	case benchmarkscoresnapshot.FieldScoredTasks:
+		return m.ScoredTasks()
+	case benchmarkscoresnapshot.FieldInvalidTasks:
+		return m.InvalidTasks()
+	case benchmarkscoresnapshot.FieldCoverageRate:
+		return m.CoverageRate()
+	case benchmarkscoresnapshot.FieldConfidenceLevel:
+		return m.ConfidenceLevel()
+	case benchmarkscoresnapshot.FieldInsufficientSample:
+		return m.InsufficientSample()
+	case benchmarkscoresnapshot.FieldSuccessRate:
+		return m.SuccessRate()
+	case benchmarkscoresnapshot.FieldLatencyP50Ms:
+		return m.LatencyP50Ms()
+	case benchmarkscoresnapshot.FieldLatencyP95Ms:
+		return m.LatencyP95Ms()
+	case benchmarkscoresnapshot.FieldAvgTotalTokens:
+		return m.AvgTotalTokens()
+	case benchmarkscoresnapshot.FieldEstimatedCost:
+		return m.EstimatedCost()
+	case benchmarkscoresnapshot.FieldInvalidReasonBreakdown:
+		return m.InvalidReasonBreakdown()
+	case benchmarkscoresnapshot.FieldRankingMetadata:
+		return m.RankingMetadata()
+	case benchmarkscoresnapshot.FieldCreatedAt:
+		return m.CreatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *BenchmarkScoreSnapshotMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case benchmarkscoresnapshot.FieldRunID:
+		return m.OldRunID(ctx)
+	case benchmarkscoresnapshot.FieldRunTargetID:
+		return m.OldRunTargetID(ctx)
+	case benchmarkscoresnapshot.FieldOverallScore:
+		return m.OldOverallScore(ctx)
+	case benchmarkscoresnapshot.FieldDimensionScores:
+		return m.OldDimensionScores(ctx)
+	case benchmarkscoresnapshot.FieldPlannedTasks:
+		return m.OldPlannedTasks(ctx)
+	case benchmarkscoresnapshot.FieldScoredTasks:
+		return m.OldScoredTasks(ctx)
+	case benchmarkscoresnapshot.FieldInvalidTasks:
+		return m.OldInvalidTasks(ctx)
+	case benchmarkscoresnapshot.FieldCoverageRate:
+		return m.OldCoverageRate(ctx)
+	case benchmarkscoresnapshot.FieldConfidenceLevel:
+		return m.OldConfidenceLevel(ctx)
+	case benchmarkscoresnapshot.FieldInsufficientSample:
+		return m.OldInsufficientSample(ctx)
+	case benchmarkscoresnapshot.FieldSuccessRate:
+		return m.OldSuccessRate(ctx)
+	case benchmarkscoresnapshot.FieldLatencyP50Ms:
+		return m.OldLatencyP50Ms(ctx)
+	case benchmarkscoresnapshot.FieldLatencyP95Ms:
+		return m.OldLatencyP95Ms(ctx)
+	case benchmarkscoresnapshot.FieldAvgTotalTokens:
+		return m.OldAvgTotalTokens(ctx)
+	case benchmarkscoresnapshot.FieldEstimatedCost:
+		return m.OldEstimatedCost(ctx)
+	case benchmarkscoresnapshot.FieldInvalidReasonBreakdown:
+		return m.OldInvalidReasonBreakdown(ctx)
+	case benchmarkscoresnapshot.FieldRankingMetadata:
+		return m.OldRankingMetadata(ctx)
+	case benchmarkscoresnapshot.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown BenchmarkScoreSnapshot field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *BenchmarkScoreSnapshotMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case benchmarkscoresnapshot.FieldRunID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRunID(v)
+		return nil
+	case benchmarkscoresnapshot.FieldRunTargetID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRunTargetID(v)
+		return nil
+	case benchmarkscoresnapshot.FieldOverallScore:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOverallScore(v)
+		return nil
+	case benchmarkscoresnapshot.FieldDimensionScores:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDimensionScores(v)
+		return nil
+	case benchmarkscoresnapshot.FieldPlannedTasks:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPlannedTasks(v)
+		return nil
+	case benchmarkscoresnapshot.FieldScoredTasks:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetScoredTasks(v)
+		return nil
+	case benchmarkscoresnapshot.FieldInvalidTasks:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetInvalidTasks(v)
+		return nil
+	case benchmarkscoresnapshot.FieldCoverageRate:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCoverageRate(v)
+		return nil
+	case benchmarkscoresnapshot.FieldConfidenceLevel:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetConfidenceLevel(v)
+		return nil
+	case benchmarkscoresnapshot.FieldInsufficientSample:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetInsufficientSample(v)
+		return nil
+	case benchmarkscoresnapshot.FieldSuccessRate:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSuccessRate(v)
+		return nil
+	case benchmarkscoresnapshot.FieldLatencyP50Ms:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLatencyP50Ms(v)
+		return nil
+	case benchmarkscoresnapshot.FieldLatencyP95Ms:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLatencyP95Ms(v)
+		return nil
+	case benchmarkscoresnapshot.FieldAvgTotalTokens:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAvgTotalTokens(v)
+		return nil
+	case benchmarkscoresnapshot.FieldEstimatedCost:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEstimatedCost(v)
+		return nil
+	case benchmarkscoresnapshot.FieldInvalidReasonBreakdown:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetInvalidReasonBreakdown(v)
+		return nil
+	case benchmarkscoresnapshot.FieldRankingMetadata:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRankingMetadata(v)
+		return nil
+	case benchmarkscoresnapshot.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkScoreSnapshot field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *BenchmarkScoreSnapshotMutation) AddedFields() []string {
+	var fields []string
+	if m.addoverall_score != nil {
+		fields = append(fields, benchmarkscoresnapshot.FieldOverallScore)
+	}
+	if m.addplanned_tasks != nil {
+		fields = append(fields, benchmarkscoresnapshot.FieldPlannedTasks)
+	}
+	if m.addscored_tasks != nil {
+		fields = append(fields, benchmarkscoresnapshot.FieldScoredTasks)
+	}
+	if m.addinvalid_tasks != nil {
+		fields = append(fields, benchmarkscoresnapshot.FieldInvalidTasks)
+	}
+	if m.addcoverage_rate != nil {
+		fields = append(fields, benchmarkscoresnapshot.FieldCoverageRate)
+	}
+	if m.addconfidence_level != nil {
+		fields = append(fields, benchmarkscoresnapshot.FieldConfidenceLevel)
+	}
+	if m.addsuccess_rate != nil {
+		fields = append(fields, benchmarkscoresnapshot.FieldSuccessRate)
+	}
+	if m.addlatency_p50_ms != nil {
+		fields = append(fields, benchmarkscoresnapshot.FieldLatencyP50Ms)
+	}
+	if m.addlatency_p95_ms != nil {
+		fields = append(fields, benchmarkscoresnapshot.FieldLatencyP95Ms)
+	}
+	if m.addavg_total_tokens != nil {
+		fields = append(fields, benchmarkscoresnapshot.FieldAvgTotalTokens)
+	}
+	if m.addestimated_cost != nil {
+		fields = append(fields, benchmarkscoresnapshot.FieldEstimatedCost)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *BenchmarkScoreSnapshotMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case benchmarkscoresnapshot.FieldOverallScore:
+		return m.AddedOverallScore()
+	case benchmarkscoresnapshot.FieldPlannedTasks:
+		return m.AddedPlannedTasks()
+	case benchmarkscoresnapshot.FieldScoredTasks:
+		return m.AddedScoredTasks()
+	case benchmarkscoresnapshot.FieldInvalidTasks:
+		return m.AddedInvalidTasks()
+	case benchmarkscoresnapshot.FieldCoverageRate:
+		return m.AddedCoverageRate()
+	case benchmarkscoresnapshot.FieldConfidenceLevel:
+		return m.AddedConfidenceLevel()
+	case benchmarkscoresnapshot.FieldSuccessRate:
+		return m.AddedSuccessRate()
+	case benchmarkscoresnapshot.FieldLatencyP50Ms:
+		return m.AddedLatencyP50Ms()
+	case benchmarkscoresnapshot.FieldLatencyP95Ms:
+		return m.AddedLatencyP95Ms()
+	case benchmarkscoresnapshot.FieldAvgTotalTokens:
+		return m.AddedAvgTotalTokens()
+	case benchmarkscoresnapshot.FieldEstimatedCost:
+		return m.AddedEstimatedCost()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *BenchmarkScoreSnapshotMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case benchmarkscoresnapshot.FieldOverallScore:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddOverallScore(v)
+		return nil
+	case benchmarkscoresnapshot.FieldPlannedTasks:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddPlannedTasks(v)
+		return nil
+	case benchmarkscoresnapshot.FieldScoredTasks:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddScoredTasks(v)
+		return nil
+	case benchmarkscoresnapshot.FieldInvalidTasks:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddInvalidTasks(v)
+		return nil
+	case benchmarkscoresnapshot.FieldCoverageRate:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCoverageRate(v)
+		return nil
+	case benchmarkscoresnapshot.FieldConfidenceLevel:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddConfidenceLevel(v)
+		return nil
+	case benchmarkscoresnapshot.FieldSuccessRate:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddSuccessRate(v)
+		return nil
+	case benchmarkscoresnapshot.FieldLatencyP50Ms:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddLatencyP50Ms(v)
+		return nil
+	case benchmarkscoresnapshot.FieldLatencyP95Ms:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddLatencyP95Ms(v)
+		return nil
+	case benchmarkscoresnapshot.FieldAvgTotalTokens:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddAvgTotalTokens(v)
+		return nil
+	case benchmarkscoresnapshot.FieldEstimatedCost:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddEstimatedCost(v)
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkScoreSnapshot numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *BenchmarkScoreSnapshotMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(benchmarkscoresnapshot.FieldLatencyP50Ms) {
+		fields = append(fields, benchmarkscoresnapshot.FieldLatencyP50Ms)
+	}
+	if m.FieldCleared(benchmarkscoresnapshot.FieldLatencyP95Ms) {
+		fields = append(fields, benchmarkscoresnapshot.FieldLatencyP95Ms)
+	}
+	if m.FieldCleared(benchmarkscoresnapshot.FieldAvgTotalTokens) {
+		fields = append(fields, benchmarkscoresnapshot.FieldAvgTotalTokens)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *BenchmarkScoreSnapshotMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *BenchmarkScoreSnapshotMutation) ClearField(name string) error {
+	switch name {
+	case benchmarkscoresnapshot.FieldLatencyP50Ms:
+		m.ClearLatencyP50Ms()
+		return nil
+	case benchmarkscoresnapshot.FieldLatencyP95Ms:
+		m.ClearLatencyP95Ms()
+		return nil
+	case benchmarkscoresnapshot.FieldAvgTotalTokens:
+		m.ClearAvgTotalTokens()
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkScoreSnapshot nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *BenchmarkScoreSnapshotMutation) ResetField(name string) error {
+	switch name {
+	case benchmarkscoresnapshot.FieldRunID:
+		m.ResetRunID()
+		return nil
+	case benchmarkscoresnapshot.FieldRunTargetID:
+		m.ResetRunTargetID()
+		return nil
+	case benchmarkscoresnapshot.FieldOverallScore:
+		m.ResetOverallScore()
+		return nil
+	case benchmarkscoresnapshot.FieldDimensionScores:
+		m.ResetDimensionScores()
+		return nil
+	case benchmarkscoresnapshot.FieldPlannedTasks:
+		m.ResetPlannedTasks()
+		return nil
+	case benchmarkscoresnapshot.FieldScoredTasks:
+		m.ResetScoredTasks()
+		return nil
+	case benchmarkscoresnapshot.FieldInvalidTasks:
+		m.ResetInvalidTasks()
+		return nil
+	case benchmarkscoresnapshot.FieldCoverageRate:
+		m.ResetCoverageRate()
+		return nil
+	case benchmarkscoresnapshot.FieldConfidenceLevel:
+		m.ResetConfidenceLevel()
+		return nil
+	case benchmarkscoresnapshot.FieldInsufficientSample:
+		m.ResetInsufficientSample()
+		return nil
+	case benchmarkscoresnapshot.FieldSuccessRate:
+		m.ResetSuccessRate()
+		return nil
+	case benchmarkscoresnapshot.FieldLatencyP50Ms:
+		m.ResetLatencyP50Ms()
+		return nil
+	case benchmarkscoresnapshot.FieldLatencyP95Ms:
+		m.ResetLatencyP95Ms()
+		return nil
+	case benchmarkscoresnapshot.FieldAvgTotalTokens:
+		m.ResetAvgTotalTokens()
+		return nil
+	case benchmarkscoresnapshot.FieldEstimatedCost:
+		m.ResetEstimatedCost()
+		return nil
+	case benchmarkscoresnapshot.FieldInvalidReasonBreakdown:
+		m.ResetInvalidReasonBreakdown()
+		return nil
+	case benchmarkscoresnapshot.FieldRankingMetadata:
+		m.ResetRankingMetadata()
+		return nil
+	case benchmarkscoresnapshot.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkScoreSnapshot field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *BenchmarkScoreSnapshotMutation) AddedEdges() []string {
+	edges := make([]string, 0, 2)
+	if m.run != nil {
+		edges = append(edges, benchmarkscoresnapshot.EdgeRun)
+	}
+	if m.run_target != nil {
+		edges = append(edges, benchmarkscoresnapshot.EdgeRunTarget)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *BenchmarkScoreSnapshotMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case benchmarkscoresnapshot.EdgeRun:
+		if id := m.run; id != nil {
+			return []ent.Value{*id}
+		}
+	case benchmarkscoresnapshot.EdgeRunTarget:
+		if id := m.run_target; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *BenchmarkScoreSnapshotMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 2)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *BenchmarkScoreSnapshotMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *BenchmarkScoreSnapshotMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 2)
+	if m.clearedrun {
+		edges = append(edges, benchmarkscoresnapshot.EdgeRun)
+	}
+	if m.clearedrun_target {
+		edges = append(edges, benchmarkscoresnapshot.EdgeRunTarget)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *BenchmarkScoreSnapshotMutation) EdgeCleared(name string) bool {
+	switch name {
+	case benchmarkscoresnapshot.EdgeRun:
+		return m.clearedrun
+	case benchmarkscoresnapshot.EdgeRunTarget:
+		return m.clearedrun_target
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *BenchmarkScoreSnapshotMutation) ClearEdge(name string) error {
+	switch name {
+	case benchmarkscoresnapshot.EdgeRun:
+		m.ClearRun()
+		return nil
+	case benchmarkscoresnapshot.EdgeRunTarget:
+		m.ClearRunTarget()
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkScoreSnapshot unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *BenchmarkScoreSnapshotMutation) ResetEdge(name string) error {
+	switch name {
+	case benchmarkscoresnapshot.EdgeRun:
+		m.ResetRun()
+		return nil
+	case benchmarkscoresnapshot.EdgeRunTarget:
+		m.ResetRunTarget()
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkScoreSnapshot edge %s", name)
+}
+
+// BenchmarkSuiteMutation represents an operation that mutates the BenchmarkSuite nodes in the graph.
+type BenchmarkSuiteMutation struct {
+	config
+	op                      Op
+	typ                     string
+	id                      *int64
+	created_at              *time.Time
+	updated_at              *time.Time
+	name                    *string
+	slug                    *string
+	description             *string
+	enabled                 *bool
+	public_visible          *bool
+	metadata                *map[string]interface{}
+	clearedFields           map[string]struct{}
+	default_profile         *int64
+	cleareddefault_profile  bool
+	tasks                   map[int64]struct{}
+	removedtasks            map[int64]struct{}
+	clearedtasks            bool
+	profiles                map[int64]struct{}
+	removedprofiles         map[int64]struct{}
+	clearedprofiles         bool
+	runs                    map[int64]struct{}
+	removedruns             map[int64]struct{}
+	clearedruns             bool
+	public_snapshots        map[int64]struct{}
+	removedpublic_snapshots map[int64]struct{}
+	clearedpublic_snapshots bool
+	done                    bool
+	oldValue                func(context.Context) (*BenchmarkSuite, error)
+	predicates              []predicate.BenchmarkSuite
+}
+
+var _ ent.Mutation = (*BenchmarkSuiteMutation)(nil)
+
+// benchmarksuiteOption allows management of the mutation configuration using functional options.
+type benchmarksuiteOption func(*BenchmarkSuiteMutation)
+
+// newBenchmarkSuiteMutation creates new mutation for the BenchmarkSuite entity.
+func newBenchmarkSuiteMutation(c config, op Op, opts ...benchmarksuiteOption) *BenchmarkSuiteMutation {
+	m := &BenchmarkSuiteMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeBenchmarkSuite,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withBenchmarkSuiteID sets the ID field of the mutation.
+func withBenchmarkSuiteID(id int64) benchmarksuiteOption {
+	return func(m *BenchmarkSuiteMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *BenchmarkSuite
+		)
+		m.oldValue = func(ctx context.Context) (*BenchmarkSuite, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().BenchmarkSuite.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withBenchmarkSuite sets the old BenchmarkSuite of the mutation.
+func withBenchmarkSuite(node *BenchmarkSuite) benchmarksuiteOption {
+	return func(m *BenchmarkSuiteMutation) {
+		m.oldValue = func(context.Context) (*BenchmarkSuite, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m BenchmarkSuiteMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m BenchmarkSuiteMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *BenchmarkSuiteMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *BenchmarkSuiteMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().BenchmarkSuite.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *BenchmarkSuiteMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *BenchmarkSuiteMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the BenchmarkSuite entity.
+// If the BenchmarkSuite object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkSuiteMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *BenchmarkSuiteMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *BenchmarkSuiteMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *BenchmarkSuiteMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the BenchmarkSuite entity.
+// If the BenchmarkSuite object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkSuiteMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *BenchmarkSuiteMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetName sets the "name" field.
+func (m *BenchmarkSuiteMutation) SetName(s string) {
+	m.name = &s
+}
+
+// Name returns the value of the "name" field in the mutation.
+func (m *BenchmarkSuiteMutation) Name() (r string, exists bool) {
+	v := m.name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldName returns the old "name" field's value of the BenchmarkSuite entity.
+// If the BenchmarkSuite object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkSuiteMutation) OldName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldName: %w", err)
+	}
+	return oldValue.Name, nil
+}
+
+// ResetName resets all changes to the "name" field.
+func (m *BenchmarkSuiteMutation) ResetName() {
+	m.name = nil
+}
+
+// SetSlug sets the "slug" field.
+func (m *BenchmarkSuiteMutation) SetSlug(s string) {
+	m.slug = &s
+}
+
+// Slug returns the value of the "slug" field in the mutation.
+func (m *BenchmarkSuiteMutation) Slug() (r string, exists bool) {
+	v := m.slug
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSlug returns the old "slug" field's value of the BenchmarkSuite entity.
+// If the BenchmarkSuite object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkSuiteMutation) OldSlug(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSlug is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSlug requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSlug: %w", err)
+	}
+	return oldValue.Slug, nil
+}
+
+// ResetSlug resets all changes to the "slug" field.
+func (m *BenchmarkSuiteMutation) ResetSlug() {
+	m.slug = nil
+}
+
+// SetDescription sets the "description" field.
+func (m *BenchmarkSuiteMutation) SetDescription(s string) {
+	m.description = &s
+}
+
+// Description returns the value of the "description" field in the mutation.
+func (m *BenchmarkSuiteMutation) Description() (r string, exists bool) {
+	v := m.description
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDescription returns the old "description" field's value of the BenchmarkSuite entity.
+// If the BenchmarkSuite object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkSuiteMutation) OldDescription(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDescription is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDescription requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDescription: %w", err)
+	}
+	return oldValue.Description, nil
+}
+
+// ClearDescription clears the value of the "description" field.
+func (m *BenchmarkSuiteMutation) ClearDescription() {
+	m.description = nil
+	m.clearedFields[benchmarksuite.FieldDescription] = struct{}{}
+}
+
+// DescriptionCleared returns if the "description" field was cleared in this mutation.
+func (m *BenchmarkSuiteMutation) DescriptionCleared() bool {
+	_, ok := m.clearedFields[benchmarksuite.FieldDescription]
+	return ok
+}
+
+// ResetDescription resets all changes to the "description" field.
+func (m *BenchmarkSuiteMutation) ResetDescription() {
+	m.description = nil
+	delete(m.clearedFields, benchmarksuite.FieldDescription)
+}
+
+// SetEnabled sets the "enabled" field.
+func (m *BenchmarkSuiteMutation) SetEnabled(b bool) {
+	m.enabled = &b
+}
+
+// Enabled returns the value of the "enabled" field in the mutation.
+func (m *BenchmarkSuiteMutation) Enabled() (r bool, exists bool) {
+	v := m.enabled
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnabled returns the old "enabled" field's value of the BenchmarkSuite entity.
+// If the BenchmarkSuite object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkSuiteMutation) OldEnabled(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEnabled is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEnabled requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEnabled: %w", err)
+	}
+	return oldValue.Enabled, nil
+}
+
+// ResetEnabled resets all changes to the "enabled" field.
+func (m *BenchmarkSuiteMutation) ResetEnabled() {
+	m.enabled = nil
+}
+
+// SetPublicVisible sets the "public_visible" field.
+func (m *BenchmarkSuiteMutation) SetPublicVisible(b bool) {
+	m.public_visible = &b
+}
+
+// PublicVisible returns the value of the "public_visible" field in the mutation.
+func (m *BenchmarkSuiteMutation) PublicVisible() (r bool, exists bool) {
+	v := m.public_visible
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPublicVisible returns the old "public_visible" field's value of the BenchmarkSuite entity.
+// If the BenchmarkSuite object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkSuiteMutation) OldPublicVisible(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPublicVisible is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPublicVisible requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPublicVisible: %w", err)
+	}
+	return oldValue.PublicVisible, nil
+}
+
+// ResetPublicVisible resets all changes to the "public_visible" field.
+func (m *BenchmarkSuiteMutation) ResetPublicVisible() {
+	m.public_visible = nil
+}
+
+// SetDefaultProfileID sets the "default_profile_id" field.
+func (m *BenchmarkSuiteMutation) SetDefaultProfileID(i int64) {
+	m.default_profile = &i
+}
+
+// DefaultProfileID returns the value of the "default_profile_id" field in the mutation.
+func (m *BenchmarkSuiteMutation) DefaultProfileID() (r int64, exists bool) {
+	v := m.default_profile
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDefaultProfileID returns the old "default_profile_id" field's value of the BenchmarkSuite entity.
+// If the BenchmarkSuite object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkSuiteMutation) OldDefaultProfileID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDefaultProfileID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDefaultProfileID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDefaultProfileID: %w", err)
+	}
+	return oldValue.DefaultProfileID, nil
+}
+
+// ClearDefaultProfileID clears the value of the "default_profile_id" field.
+func (m *BenchmarkSuiteMutation) ClearDefaultProfileID() {
+	m.default_profile = nil
+	m.clearedFields[benchmarksuite.FieldDefaultProfileID] = struct{}{}
+}
+
+// DefaultProfileIDCleared returns if the "default_profile_id" field was cleared in this mutation.
+func (m *BenchmarkSuiteMutation) DefaultProfileIDCleared() bool {
+	_, ok := m.clearedFields[benchmarksuite.FieldDefaultProfileID]
+	return ok
+}
+
+// ResetDefaultProfileID resets all changes to the "default_profile_id" field.
+func (m *BenchmarkSuiteMutation) ResetDefaultProfileID() {
+	m.default_profile = nil
+	delete(m.clearedFields, benchmarksuite.FieldDefaultProfileID)
+}
+
+// SetMetadata sets the "metadata" field.
+func (m *BenchmarkSuiteMutation) SetMetadata(value map[string]interface{}) {
+	m.metadata = &value
+}
+
+// Metadata returns the value of the "metadata" field in the mutation.
+func (m *BenchmarkSuiteMutation) Metadata() (r map[string]interface{}, exists bool) {
+	v := m.metadata
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMetadata returns the old "metadata" field's value of the BenchmarkSuite entity.
+// If the BenchmarkSuite object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkSuiteMutation) OldMetadata(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMetadata is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMetadata requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMetadata: %w", err)
+	}
+	return oldValue.Metadata, nil
+}
+
+// ResetMetadata resets all changes to the "metadata" field.
+func (m *BenchmarkSuiteMutation) ResetMetadata() {
+	m.metadata = nil
+}
+
+// ClearDefaultProfile clears the "default_profile" edge to the BenchmarkProfile entity.
+func (m *BenchmarkSuiteMutation) ClearDefaultProfile() {
+	m.cleareddefault_profile = true
+	m.clearedFields[benchmarksuite.FieldDefaultProfileID] = struct{}{}
+}
+
+// DefaultProfileCleared reports if the "default_profile" edge to the BenchmarkProfile entity was cleared.
+func (m *BenchmarkSuiteMutation) DefaultProfileCleared() bool {
+	return m.DefaultProfileIDCleared() || m.cleareddefault_profile
+}
+
+// DefaultProfileIDs returns the "default_profile" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// DefaultProfileID instead. It exists only for internal usage by the builders.
+func (m *BenchmarkSuiteMutation) DefaultProfileIDs() (ids []int64) {
+	if id := m.default_profile; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetDefaultProfile resets all changes to the "default_profile" edge.
+func (m *BenchmarkSuiteMutation) ResetDefaultProfile() {
+	m.default_profile = nil
+	m.cleareddefault_profile = false
+}
+
+// AddTaskIDs adds the "tasks" edge to the BenchmarkTask entity by ids.
+func (m *BenchmarkSuiteMutation) AddTaskIDs(ids ...int64) {
+	if m.tasks == nil {
+		m.tasks = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.tasks[ids[i]] = struct{}{}
+	}
+}
+
+// ClearTasks clears the "tasks" edge to the BenchmarkTask entity.
+func (m *BenchmarkSuiteMutation) ClearTasks() {
+	m.clearedtasks = true
+}
+
+// TasksCleared reports if the "tasks" edge to the BenchmarkTask entity was cleared.
+func (m *BenchmarkSuiteMutation) TasksCleared() bool {
+	return m.clearedtasks
+}
+
+// RemoveTaskIDs removes the "tasks" edge to the BenchmarkTask entity by IDs.
+func (m *BenchmarkSuiteMutation) RemoveTaskIDs(ids ...int64) {
+	if m.removedtasks == nil {
+		m.removedtasks = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.tasks, ids[i])
+		m.removedtasks[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedTasks returns the removed IDs of the "tasks" edge to the BenchmarkTask entity.
+func (m *BenchmarkSuiteMutation) RemovedTasksIDs() (ids []int64) {
+	for id := range m.removedtasks {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// TasksIDs returns the "tasks" edge IDs in the mutation.
+func (m *BenchmarkSuiteMutation) TasksIDs() (ids []int64) {
+	for id := range m.tasks {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetTasks resets all changes to the "tasks" edge.
+func (m *BenchmarkSuiteMutation) ResetTasks() {
+	m.tasks = nil
+	m.clearedtasks = false
+	m.removedtasks = nil
+}
+
+// AddProfileIDs adds the "profiles" edge to the BenchmarkProfile entity by ids.
+func (m *BenchmarkSuiteMutation) AddProfileIDs(ids ...int64) {
+	if m.profiles == nil {
+		m.profiles = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.profiles[ids[i]] = struct{}{}
+	}
+}
+
+// ClearProfiles clears the "profiles" edge to the BenchmarkProfile entity.
+func (m *BenchmarkSuiteMutation) ClearProfiles() {
+	m.clearedprofiles = true
+}
+
+// ProfilesCleared reports if the "profiles" edge to the BenchmarkProfile entity was cleared.
+func (m *BenchmarkSuiteMutation) ProfilesCleared() bool {
+	return m.clearedprofiles
+}
+
+// RemoveProfileIDs removes the "profiles" edge to the BenchmarkProfile entity by IDs.
+func (m *BenchmarkSuiteMutation) RemoveProfileIDs(ids ...int64) {
+	if m.removedprofiles == nil {
+		m.removedprofiles = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.profiles, ids[i])
+		m.removedprofiles[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedProfiles returns the removed IDs of the "profiles" edge to the BenchmarkProfile entity.
+func (m *BenchmarkSuiteMutation) RemovedProfilesIDs() (ids []int64) {
+	for id := range m.removedprofiles {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ProfilesIDs returns the "profiles" edge IDs in the mutation.
+func (m *BenchmarkSuiteMutation) ProfilesIDs() (ids []int64) {
+	for id := range m.profiles {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetProfiles resets all changes to the "profiles" edge.
+func (m *BenchmarkSuiteMutation) ResetProfiles() {
+	m.profiles = nil
+	m.clearedprofiles = false
+	m.removedprofiles = nil
+}
+
+// AddRunIDs adds the "runs" edge to the BenchmarkRun entity by ids.
+func (m *BenchmarkSuiteMutation) AddRunIDs(ids ...int64) {
+	if m.runs == nil {
+		m.runs = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.runs[ids[i]] = struct{}{}
+	}
+}
+
+// ClearRuns clears the "runs" edge to the BenchmarkRun entity.
+func (m *BenchmarkSuiteMutation) ClearRuns() {
+	m.clearedruns = true
+}
+
+// RunsCleared reports if the "runs" edge to the BenchmarkRun entity was cleared.
+func (m *BenchmarkSuiteMutation) RunsCleared() bool {
+	return m.clearedruns
+}
+
+// RemoveRunIDs removes the "runs" edge to the BenchmarkRun entity by IDs.
+func (m *BenchmarkSuiteMutation) RemoveRunIDs(ids ...int64) {
+	if m.removedruns == nil {
+		m.removedruns = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.runs, ids[i])
+		m.removedruns[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedRuns returns the removed IDs of the "runs" edge to the BenchmarkRun entity.
+func (m *BenchmarkSuiteMutation) RemovedRunsIDs() (ids []int64) {
+	for id := range m.removedruns {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// RunsIDs returns the "runs" edge IDs in the mutation.
+func (m *BenchmarkSuiteMutation) RunsIDs() (ids []int64) {
+	for id := range m.runs {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetRuns resets all changes to the "runs" edge.
+func (m *BenchmarkSuiteMutation) ResetRuns() {
+	m.runs = nil
+	m.clearedruns = false
+	m.removedruns = nil
+}
+
+// AddPublicSnapshotIDs adds the "public_snapshots" edge to the BenchmarkPublicSnapshot entity by ids.
+func (m *BenchmarkSuiteMutation) AddPublicSnapshotIDs(ids ...int64) {
+	if m.public_snapshots == nil {
+		m.public_snapshots = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.public_snapshots[ids[i]] = struct{}{}
+	}
+}
+
+// ClearPublicSnapshots clears the "public_snapshots" edge to the BenchmarkPublicSnapshot entity.
+func (m *BenchmarkSuiteMutation) ClearPublicSnapshots() {
+	m.clearedpublic_snapshots = true
+}
+
+// PublicSnapshotsCleared reports if the "public_snapshots" edge to the BenchmarkPublicSnapshot entity was cleared.
+func (m *BenchmarkSuiteMutation) PublicSnapshotsCleared() bool {
+	return m.clearedpublic_snapshots
+}
+
+// RemovePublicSnapshotIDs removes the "public_snapshots" edge to the BenchmarkPublicSnapshot entity by IDs.
+func (m *BenchmarkSuiteMutation) RemovePublicSnapshotIDs(ids ...int64) {
+	if m.removedpublic_snapshots == nil {
+		m.removedpublic_snapshots = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.public_snapshots, ids[i])
+		m.removedpublic_snapshots[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedPublicSnapshots returns the removed IDs of the "public_snapshots" edge to the BenchmarkPublicSnapshot entity.
+func (m *BenchmarkSuiteMutation) RemovedPublicSnapshotsIDs() (ids []int64) {
+	for id := range m.removedpublic_snapshots {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// PublicSnapshotsIDs returns the "public_snapshots" edge IDs in the mutation.
+func (m *BenchmarkSuiteMutation) PublicSnapshotsIDs() (ids []int64) {
+	for id := range m.public_snapshots {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetPublicSnapshots resets all changes to the "public_snapshots" edge.
+func (m *BenchmarkSuiteMutation) ResetPublicSnapshots() {
+	m.public_snapshots = nil
+	m.clearedpublic_snapshots = false
+	m.removedpublic_snapshots = nil
+}
+
+// Where appends a list predicates to the BenchmarkSuiteMutation builder.
+func (m *BenchmarkSuiteMutation) Where(ps ...predicate.BenchmarkSuite) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the BenchmarkSuiteMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *BenchmarkSuiteMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.BenchmarkSuite, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *BenchmarkSuiteMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *BenchmarkSuiteMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (BenchmarkSuite).
+func (m *BenchmarkSuiteMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *BenchmarkSuiteMutation) Fields() []string {
+	fields := make([]string, 0, 9)
+	if m.created_at != nil {
+		fields = append(fields, benchmarksuite.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, benchmarksuite.FieldUpdatedAt)
+	}
+	if m.name != nil {
+		fields = append(fields, benchmarksuite.FieldName)
+	}
+	if m.slug != nil {
+		fields = append(fields, benchmarksuite.FieldSlug)
+	}
+	if m.description != nil {
+		fields = append(fields, benchmarksuite.FieldDescription)
+	}
+	if m.enabled != nil {
+		fields = append(fields, benchmarksuite.FieldEnabled)
+	}
+	if m.public_visible != nil {
+		fields = append(fields, benchmarksuite.FieldPublicVisible)
+	}
+	if m.default_profile != nil {
+		fields = append(fields, benchmarksuite.FieldDefaultProfileID)
+	}
+	if m.metadata != nil {
+		fields = append(fields, benchmarksuite.FieldMetadata)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *BenchmarkSuiteMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case benchmarksuite.FieldCreatedAt:
+		return m.CreatedAt()
+	case benchmarksuite.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case benchmarksuite.FieldName:
+		return m.Name()
+	case benchmarksuite.FieldSlug:
+		return m.Slug()
+	case benchmarksuite.FieldDescription:
+		return m.Description()
+	case benchmarksuite.FieldEnabled:
+		return m.Enabled()
+	case benchmarksuite.FieldPublicVisible:
+		return m.PublicVisible()
+	case benchmarksuite.FieldDefaultProfileID:
+		return m.DefaultProfileID()
+	case benchmarksuite.FieldMetadata:
+		return m.Metadata()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *BenchmarkSuiteMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case benchmarksuite.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case benchmarksuite.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case benchmarksuite.FieldName:
+		return m.OldName(ctx)
+	case benchmarksuite.FieldSlug:
+		return m.OldSlug(ctx)
+	case benchmarksuite.FieldDescription:
+		return m.OldDescription(ctx)
+	case benchmarksuite.FieldEnabled:
+		return m.OldEnabled(ctx)
+	case benchmarksuite.FieldPublicVisible:
+		return m.OldPublicVisible(ctx)
+	case benchmarksuite.FieldDefaultProfileID:
+		return m.OldDefaultProfileID(ctx)
+	case benchmarksuite.FieldMetadata:
+		return m.OldMetadata(ctx)
+	}
+	return nil, fmt.Errorf("unknown BenchmarkSuite field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *BenchmarkSuiteMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case benchmarksuite.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case benchmarksuite.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case benchmarksuite.FieldName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetName(v)
+		return nil
+	case benchmarksuite.FieldSlug:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSlug(v)
+		return nil
+	case benchmarksuite.FieldDescription:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDescription(v)
+		return nil
+	case benchmarksuite.FieldEnabled:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEnabled(v)
+		return nil
+	case benchmarksuite.FieldPublicVisible:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPublicVisible(v)
+		return nil
+	case benchmarksuite.FieldDefaultProfileID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDefaultProfileID(v)
+		return nil
+	case benchmarksuite.FieldMetadata:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMetadata(v)
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkSuite field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *BenchmarkSuiteMutation) AddedFields() []string {
+	var fields []string
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *BenchmarkSuiteMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *BenchmarkSuiteMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown BenchmarkSuite numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *BenchmarkSuiteMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(benchmarksuite.FieldDescription) {
+		fields = append(fields, benchmarksuite.FieldDescription)
+	}
+	if m.FieldCleared(benchmarksuite.FieldDefaultProfileID) {
+		fields = append(fields, benchmarksuite.FieldDefaultProfileID)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *BenchmarkSuiteMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *BenchmarkSuiteMutation) ClearField(name string) error {
+	switch name {
+	case benchmarksuite.FieldDescription:
+		m.ClearDescription()
+		return nil
+	case benchmarksuite.FieldDefaultProfileID:
+		m.ClearDefaultProfileID()
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkSuite nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *BenchmarkSuiteMutation) ResetField(name string) error {
+	switch name {
+	case benchmarksuite.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case benchmarksuite.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case benchmarksuite.FieldName:
+		m.ResetName()
+		return nil
+	case benchmarksuite.FieldSlug:
+		m.ResetSlug()
+		return nil
+	case benchmarksuite.FieldDescription:
+		m.ResetDescription()
+		return nil
+	case benchmarksuite.FieldEnabled:
+		m.ResetEnabled()
+		return nil
+	case benchmarksuite.FieldPublicVisible:
+		m.ResetPublicVisible()
+		return nil
+	case benchmarksuite.FieldDefaultProfileID:
+		m.ResetDefaultProfileID()
+		return nil
+	case benchmarksuite.FieldMetadata:
+		m.ResetMetadata()
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkSuite field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *BenchmarkSuiteMutation) AddedEdges() []string {
+	edges := make([]string, 0, 5)
+	if m.default_profile != nil {
+		edges = append(edges, benchmarksuite.EdgeDefaultProfile)
+	}
+	if m.tasks != nil {
+		edges = append(edges, benchmarksuite.EdgeTasks)
+	}
+	if m.profiles != nil {
+		edges = append(edges, benchmarksuite.EdgeProfiles)
+	}
+	if m.runs != nil {
+		edges = append(edges, benchmarksuite.EdgeRuns)
+	}
+	if m.public_snapshots != nil {
+		edges = append(edges, benchmarksuite.EdgePublicSnapshots)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *BenchmarkSuiteMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case benchmarksuite.EdgeDefaultProfile:
+		if id := m.default_profile; id != nil {
+			return []ent.Value{*id}
+		}
+	case benchmarksuite.EdgeTasks:
+		ids := make([]ent.Value, 0, len(m.tasks))
+		for id := range m.tasks {
+			ids = append(ids, id)
+		}
+		return ids
+	case benchmarksuite.EdgeProfiles:
+		ids := make([]ent.Value, 0, len(m.profiles))
+		for id := range m.profiles {
+			ids = append(ids, id)
+		}
+		return ids
+	case benchmarksuite.EdgeRuns:
+		ids := make([]ent.Value, 0, len(m.runs))
+		for id := range m.runs {
+			ids = append(ids, id)
+		}
+		return ids
+	case benchmarksuite.EdgePublicSnapshots:
+		ids := make([]ent.Value, 0, len(m.public_snapshots))
+		for id := range m.public_snapshots {
+			ids = append(ids, id)
+		}
+		return ids
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *BenchmarkSuiteMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 5)
+	if m.removedtasks != nil {
+		edges = append(edges, benchmarksuite.EdgeTasks)
+	}
+	if m.removedprofiles != nil {
+		edges = append(edges, benchmarksuite.EdgeProfiles)
+	}
+	if m.removedruns != nil {
+		edges = append(edges, benchmarksuite.EdgeRuns)
+	}
+	if m.removedpublic_snapshots != nil {
+		edges = append(edges, benchmarksuite.EdgePublicSnapshots)
+	}
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *BenchmarkSuiteMutation) RemovedIDs(name string) []ent.Value {
+	switch name {
+	case benchmarksuite.EdgeTasks:
+		ids := make([]ent.Value, 0, len(m.removedtasks))
+		for id := range m.removedtasks {
+			ids = append(ids, id)
+		}
+		return ids
+	case benchmarksuite.EdgeProfiles:
+		ids := make([]ent.Value, 0, len(m.removedprofiles))
+		for id := range m.removedprofiles {
+			ids = append(ids, id)
+		}
+		return ids
+	case benchmarksuite.EdgeRuns:
+		ids := make([]ent.Value, 0, len(m.removedruns))
+		for id := range m.removedruns {
+			ids = append(ids, id)
+		}
+		return ids
+	case benchmarksuite.EdgePublicSnapshots:
+		ids := make([]ent.Value, 0, len(m.removedpublic_snapshots))
+		for id := range m.removedpublic_snapshots {
+			ids = append(ids, id)
+		}
+		return ids
+	}
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *BenchmarkSuiteMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 5)
+	if m.cleareddefault_profile {
+		edges = append(edges, benchmarksuite.EdgeDefaultProfile)
+	}
+	if m.clearedtasks {
+		edges = append(edges, benchmarksuite.EdgeTasks)
+	}
+	if m.clearedprofiles {
+		edges = append(edges, benchmarksuite.EdgeProfiles)
+	}
+	if m.clearedruns {
+		edges = append(edges, benchmarksuite.EdgeRuns)
+	}
+	if m.clearedpublic_snapshots {
+		edges = append(edges, benchmarksuite.EdgePublicSnapshots)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *BenchmarkSuiteMutation) EdgeCleared(name string) bool {
+	switch name {
+	case benchmarksuite.EdgeDefaultProfile:
+		return m.cleareddefault_profile
+	case benchmarksuite.EdgeTasks:
+		return m.clearedtasks
+	case benchmarksuite.EdgeProfiles:
+		return m.clearedprofiles
+	case benchmarksuite.EdgeRuns:
+		return m.clearedruns
+	case benchmarksuite.EdgePublicSnapshots:
+		return m.clearedpublic_snapshots
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *BenchmarkSuiteMutation) ClearEdge(name string) error {
+	switch name {
+	case benchmarksuite.EdgeDefaultProfile:
+		m.ClearDefaultProfile()
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkSuite unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *BenchmarkSuiteMutation) ResetEdge(name string) error {
+	switch name {
+	case benchmarksuite.EdgeDefaultProfile:
+		m.ResetDefaultProfile()
+		return nil
+	case benchmarksuite.EdgeTasks:
+		m.ResetTasks()
+		return nil
+	case benchmarksuite.EdgeProfiles:
+		m.ResetProfiles()
+		return nil
+	case benchmarksuite.EdgeRuns:
+		m.ResetRuns()
+		return nil
+	case benchmarksuite.EdgePublicSnapshots:
+		m.ResetPublicSnapshots()
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkSuite edge %s", name)
+}
+
+// BenchmarkTargetMutation represents an operation that mutates the BenchmarkTarget nodes in the graph.
+type BenchmarkTargetMutation struct {
+	config
+	op                         Op
+	typ                        string
+	id                         *int64
+	created_at                 *time.Time
+	updated_at                 *time.Time
+	model_name                 *string
+	channel_id                 *int64
+	addchannel_id              *int64
+	display_name               *string
+	provider_snapshot          *string
+	channel_name_snapshot      *string
+	supported_task_types       *[]string
+	appendsupported_task_types []string
+	max_concurrency            *int
+	addmax_concurrency         *int
+	per_run_budget             *float64
+	addper_run_budget          *float64
+	daily_budget               *float64
+	adddaily_budget            *float64
+	enabled                    *bool
+	public_visible             *bool
+	sort_order                 *int
+	addsort_order              *int
+	metadata                   *map[string]interface{}
+	clearedFields              map[string]struct{}
+	run_targets                map[int64]struct{}
+	removedrun_targets         map[int64]struct{}
+	clearedrun_targets         bool
+	done                       bool
+	oldValue                   func(context.Context) (*BenchmarkTarget, error)
+	predicates                 []predicate.BenchmarkTarget
+}
+
+var _ ent.Mutation = (*BenchmarkTargetMutation)(nil)
+
+// benchmarktargetOption allows management of the mutation configuration using functional options.
+type benchmarktargetOption func(*BenchmarkTargetMutation)
+
+// newBenchmarkTargetMutation creates new mutation for the BenchmarkTarget entity.
+func newBenchmarkTargetMutation(c config, op Op, opts ...benchmarktargetOption) *BenchmarkTargetMutation {
+	m := &BenchmarkTargetMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeBenchmarkTarget,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withBenchmarkTargetID sets the ID field of the mutation.
+func withBenchmarkTargetID(id int64) benchmarktargetOption {
+	return func(m *BenchmarkTargetMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *BenchmarkTarget
+		)
+		m.oldValue = func(ctx context.Context) (*BenchmarkTarget, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().BenchmarkTarget.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withBenchmarkTarget sets the old BenchmarkTarget of the mutation.
+func withBenchmarkTarget(node *BenchmarkTarget) benchmarktargetOption {
+	return func(m *BenchmarkTargetMutation) {
+		m.oldValue = func(context.Context) (*BenchmarkTarget, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m BenchmarkTargetMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m BenchmarkTargetMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *BenchmarkTargetMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *BenchmarkTargetMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().BenchmarkTarget.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *BenchmarkTargetMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *BenchmarkTargetMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the BenchmarkTarget entity.
+// If the BenchmarkTarget object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkTargetMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *BenchmarkTargetMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *BenchmarkTargetMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *BenchmarkTargetMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the BenchmarkTarget entity.
+// If the BenchmarkTarget object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkTargetMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *BenchmarkTargetMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetModelName sets the "model_name" field.
+func (m *BenchmarkTargetMutation) SetModelName(s string) {
+	m.model_name = &s
+}
+
+// ModelName returns the value of the "model_name" field in the mutation.
+func (m *BenchmarkTargetMutation) ModelName() (r string, exists bool) {
+	v := m.model_name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldModelName returns the old "model_name" field's value of the BenchmarkTarget entity.
+// If the BenchmarkTarget object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkTargetMutation) OldModelName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldModelName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldModelName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldModelName: %w", err)
+	}
+	return oldValue.ModelName, nil
+}
+
+// ResetModelName resets all changes to the "model_name" field.
+func (m *BenchmarkTargetMutation) ResetModelName() {
+	m.model_name = nil
+}
+
+// SetChannelID sets the "channel_id" field.
+func (m *BenchmarkTargetMutation) SetChannelID(i int64) {
+	m.channel_id = &i
+	m.addchannel_id = nil
+}
+
+// ChannelID returns the value of the "channel_id" field in the mutation.
+func (m *BenchmarkTargetMutation) ChannelID() (r int64, exists bool) {
+	v := m.channel_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldChannelID returns the old "channel_id" field's value of the BenchmarkTarget entity.
+// If the BenchmarkTarget object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkTargetMutation) OldChannelID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldChannelID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldChannelID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldChannelID: %w", err)
+	}
+	return oldValue.ChannelID, nil
+}
+
+// AddChannelID adds i to the "channel_id" field.
+func (m *BenchmarkTargetMutation) AddChannelID(i int64) {
+	if m.addchannel_id != nil {
+		*m.addchannel_id += i
+	} else {
+		m.addchannel_id = &i
+	}
+}
+
+// AddedChannelID returns the value that was added to the "channel_id" field in this mutation.
+func (m *BenchmarkTargetMutation) AddedChannelID() (r int64, exists bool) {
+	v := m.addchannel_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetChannelID resets all changes to the "channel_id" field.
+func (m *BenchmarkTargetMutation) ResetChannelID() {
+	m.channel_id = nil
+	m.addchannel_id = nil
+}
+
+// SetDisplayName sets the "display_name" field.
+func (m *BenchmarkTargetMutation) SetDisplayName(s string) {
+	m.display_name = &s
+}
+
+// DisplayName returns the value of the "display_name" field in the mutation.
+func (m *BenchmarkTargetMutation) DisplayName() (r string, exists bool) {
+	v := m.display_name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDisplayName returns the old "display_name" field's value of the BenchmarkTarget entity.
+// If the BenchmarkTarget object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkTargetMutation) OldDisplayName(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDisplayName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDisplayName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDisplayName: %w", err)
+	}
+	return oldValue.DisplayName, nil
+}
+
+// ClearDisplayName clears the value of the "display_name" field.
+func (m *BenchmarkTargetMutation) ClearDisplayName() {
+	m.display_name = nil
+	m.clearedFields[benchmarktarget.FieldDisplayName] = struct{}{}
+}
+
+// DisplayNameCleared returns if the "display_name" field was cleared in this mutation.
+func (m *BenchmarkTargetMutation) DisplayNameCleared() bool {
+	_, ok := m.clearedFields[benchmarktarget.FieldDisplayName]
+	return ok
+}
+
+// ResetDisplayName resets all changes to the "display_name" field.
+func (m *BenchmarkTargetMutation) ResetDisplayName() {
+	m.display_name = nil
+	delete(m.clearedFields, benchmarktarget.FieldDisplayName)
+}
+
+// SetProviderSnapshot sets the "provider_snapshot" field.
+func (m *BenchmarkTargetMutation) SetProviderSnapshot(s string) {
+	m.provider_snapshot = &s
+}
+
+// ProviderSnapshot returns the value of the "provider_snapshot" field in the mutation.
+func (m *BenchmarkTargetMutation) ProviderSnapshot() (r string, exists bool) {
+	v := m.provider_snapshot
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProviderSnapshot returns the old "provider_snapshot" field's value of the BenchmarkTarget entity.
+// If the BenchmarkTarget object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkTargetMutation) OldProviderSnapshot(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProviderSnapshot is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProviderSnapshot requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProviderSnapshot: %w", err)
+	}
+	return oldValue.ProviderSnapshot, nil
+}
+
+// ClearProviderSnapshot clears the value of the "provider_snapshot" field.
+func (m *BenchmarkTargetMutation) ClearProviderSnapshot() {
+	m.provider_snapshot = nil
+	m.clearedFields[benchmarktarget.FieldProviderSnapshot] = struct{}{}
+}
+
+// ProviderSnapshotCleared returns if the "provider_snapshot" field was cleared in this mutation.
+func (m *BenchmarkTargetMutation) ProviderSnapshotCleared() bool {
+	_, ok := m.clearedFields[benchmarktarget.FieldProviderSnapshot]
+	return ok
+}
+
+// ResetProviderSnapshot resets all changes to the "provider_snapshot" field.
+func (m *BenchmarkTargetMutation) ResetProviderSnapshot() {
+	m.provider_snapshot = nil
+	delete(m.clearedFields, benchmarktarget.FieldProviderSnapshot)
+}
+
+// SetChannelNameSnapshot sets the "channel_name_snapshot" field.
+func (m *BenchmarkTargetMutation) SetChannelNameSnapshot(s string) {
+	m.channel_name_snapshot = &s
+}
+
+// ChannelNameSnapshot returns the value of the "channel_name_snapshot" field in the mutation.
+func (m *BenchmarkTargetMutation) ChannelNameSnapshot() (r string, exists bool) {
+	v := m.channel_name_snapshot
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldChannelNameSnapshot returns the old "channel_name_snapshot" field's value of the BenchmarkTarget entity.
+// If the BenchmarkTarget object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkTargetMutation) OldChannelNameSnapshot(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldChannelNameSnapshot is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldChannelNameSnapshot requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldChannelNameSnapshot: %w", err)
+	}
+	return oldValue.ChannelNameSnapshot, nil
+}
+
+// ClearChannelNameSnapshot clears the value of the "channel_name_snapshot" field.
+func (m *BenchmarkTargetMutation) ClearChannelNameSnapshot() {
+	m.channel_name_snapshot = nil
+	m.clearedFields[benchmarktarget.FieldChannelNameSnapshot] = struct{}{}
+}
+
+// ChannelNameSnapshotCleared returns if the "channel_name_snapshot" field was cleared in this mutation.
+func (m *BenchmarkTargetMutation) ChannelNameSnapshotCleared() bool {
+	_, ok := m.clearedFields[benchmarktarget.FieldChannelNameSnapshot]
+	return ok
+}
+
+// ResetChannelNameSnapshot resets all changes to the "channel_name_snapshot" field.
+func (m *BenchmarkTargetMutation) ResetChannelNameSnapshot() {
+	m.channel_name_snapshot = nil
+	delete(m.clearedFields, benchmarktarget.FieldChannelNameSnapshot)
+}
+
+// SetSupportedTaskTypes sets the "supported_task_types" field.
+func (m *BenchmarkTargetMutation) SetSupportedTaskTypes(s []string) {
+	m.supported_task_types = &s
+	m.appendsupported_task_types = nil
+}
+
+// SupportedTaskTypes returns the value of the "supported_task_types" field in the mutation.
+func (m *BenchmarkTargetMutation) SupportedTaskTypes() (r []string, exists bool) {
+	v := m.supported_task_types
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSupportedTaskTypes returns the old "supported_task_types" field's value of the BenchmarkTarget entity.
+// If the BenchmarkTarget object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkTargetMutation) OldSupportedTaskTypes(ctx context.Context) (v []string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSupportedTaskTypes is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSupportedTaskTypes requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSupportedTaskTypes: %w", err)
+	}
+	return oldValue.SupportedTaskTypes, nil
+}
+
+// AppendSupportedTaskTypes adds s to the "supported_task_types" field.
+func (m *BenchmarkTargetMutation) AppendSupportedTaskTypes(s []string) {
+	m.appendsupported_task_types = append(m.appendsupported_task_types, s...)
+}
+
+// AppendedSupportedTaskTypes returns the list of values that were appended to the "supported_task_types" field in this mutation.
+func (m *BenchmarkTargetMutation) AppendedSupportedTaskTypes() ([]string, bool) {
+	if len(m.appendsupported_task_types) == 0 {
+		return nil, false
+	}
+	return m.appendsupported_task_types, true
+}
+
+// ResetSupportedTaskTypes resets all changes to the "supported_task_types" field.
+func (m *BenchmarkTargetMutation) ResetSupportedTaskTypes() {
+	m.supported_task_types = nil
+	m.appendsupported_task_types = nil
+}
+
+// SetMaxConcurrency sets the "max_concurrency" field.
+func (m *BenchmarkTargetMutation) SetMaxConcurrency(i int) {
+	m.max_concurrency = &i
+	m.addmax_concurrency = nil
+}
+
+// MaxConcurrency returns the value of the "max_concurrency" field in the mutation.
+func (m *BenchmarkTargetMutation) MaxConcurrency() (r int, exists bool) {
+	v := m.max_concurrency
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMaxConcurrency returns the old "max_concurrency" field's value of the BenchmarkTarget entity.
+// If the BenchmarkTarget object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkTargetMutation) OldMaxConcurrency(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMaxConcurrency is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMaxConcurrency requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMaxConcurrency: %w", err)
+	}
+	return oldValue.MaxConcurrency, nil
+}
+
+// AddMaxConcurrency adds i to the "max_concurrency" field.
+func (m *BenchmarkTargetMutation) AddMaxConcurrency(i int) {
+	if m.addmax_concurrency != nil {
+		*m.addmax_concurrency += i
+	} else {
+		m.addmax_concurrency = &i
+	}
+}
+
+// AddedMaxConcurrency returns the value that was added to the "max_concurrency" field in this mutation.
+func (m *BenchmarkTargetMutation) AddedMaxConcurrency() (r int, exists bool) {
+	v := m.addmax_concurrency
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetMaxConcurrency resets all changes to the "max_concurrency" field.
+func (m *BenchmarkTargetMutation) ResetMaxConcurrency() {
+	m.max_concurrency = nil
+	m.addmax_concurrency = nil
+}
+
+// SetPerRunBudget sets the "per_run_budget" field.
+func (m *BenchmarkTargetMutation) SetPerRunBudget(f float64) {
+	m.per_run_budget = &f
+	m.addper_run_budget = nil
+}
+
+// PerRunBudget returns the value of the "per_run_budget" field in the mutation.
+func (m *BenchmarkTargetMutation) PerRunBudget() (r float64, exists bool) {
+	v := m.per_run_budget
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPerRunBudget returns the old "per_run_budget" field's value of the BenchmarkTarget entity.
+// If the BenchmarkTarget object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkTargetMutation) OldPerRunBudget(ctx context.Context) (v *float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPerRunBudget is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPerRunBudget requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPerRunBudget: %w", err)
+	}
+	return oldValue.PerRunBudget, nil
+}
+
+// AddPerRunBudget adds f to the "per_run_budget" field.
+func (m *BenchmarkTargetMutation) AddPerRunBudget(f float64) {
+	if m.addper_run_budget != nil {
+		*m.addper_run_budget += f
+	} else {
+		m.addper_run_budget = &f
+	}
+}
+
+// AddedPerRunBudget returns the value that was added to the "per_run_budget" field in this mutation.
+func (m *BenchmarkTargetMutation) AddedPerRunBudget() (r float64, exists bool) {
+	v := m.addper_run_budget
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearPerRunBudget clears the value of the "per_run_budget" field.
+func (m *BenchmarkTargetMutation) ClearPerRunBudget() {
+	m.per_run_budget = nil
+	m.addper_run_budget = nil
+	m.clearedFields[benchmarktarget.FieldPerRunBudget] = struct{}{}
+}
+
+// PerRunBudgetCleared returns if the "per_run_budget" field was cleared in this mutation.
+func (m *BenchmarkTargetMutation) PerRunBudgetCleared() bool {
+	_, ok := m.clearedFields[benchmarktarget.FieldPerRunBudget]
+	return ok
+}
+
+// ResetPerRunBudget resets all changes to the "per_run_budget" field.
+func (m *BenchmarkTargetMutation) ResetPerRunBudget() {
+	m.per_run_budget = nil
+	m.addper_run_budget = nil
+	delete(m.clearedFields, benchmarktarget.FieldPerRunBudget)
+}
+
+// SetDailyBudget sets the "daily_budget" field.
+func (m *BenchmarkTargetMutation) SetDailyBudget(f float64) {
+	m.daily_budget = &f
+	m.adddaily_budget = nil
+}
+
+// DailyBudget returns the value of the "daily_budget" field in the mutation.
+func (m *BenchmarkTargetMutation) DailyBudget() (r float64, exists bool) {
+	v := m.daily_budget
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDailyBudget returns the old "daily_budget" field's value of the BenchmarkTarget entity.
+// If the BenchmarkTarget object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkTargetMutation) OldDailyBudget(ctx context.Context) (v *float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDailyBudget is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDailyBudget requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDailyBudget: %w", err)
+	}
+	return oldValue.DailyBudget, nil
+}
+
+// AddDailyBudget adds f to the "daily_budget" field.
+func (m *BenchmarkTargetMutation) AddDailyBudget(f float64) {
+	if m.adddaily_budget != nil {
+		*m.adddaily_budget += f
+	} else {
+		m.adddaily_budget = &f
+	}
+}
+
+// AddedDailyBudget returns the value that was added to the "daily_budget" field in this mutation.
+func (m *BenchmarkTargetMutation) AddedDailyBudget() (r float64, exists bool) {
+	v := m.adddaily_budget
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearDailyBudget clears the value of the "daily_budget" field.
+func (m *BenchmarkTargetMutation) ClearDailyBudget() {
+	m.daily_budget = nil
+	m.adddaily_budget = nil
+	m.clearedFields[benchmarktarget.FieldDailyBudget] = struct{}{}
+}
+
+// DailyBudgetCleared returns if the "daily_budget" field was cleared in this mutation.
+func (m *BenchmarkTargetMutation) DailyBudgetCleared() bool {
+	_, ok := m.clearedFields[benchmarktarget.FieldDailyBudget]
+	return ok
+}
+
+// ResetDailyBudget resets all changes to the "daily_budget" field.
+func (m *BenchmarkTargetMutation) ResetDailyBudget() {
+	m.daily_budget = nil
+	m.adddaily_budget = nil
+	delete(m.clearedFields, benchmarktarget.FieldDailyBudget)
+}
+
+// SetEnabled sets the "enabled" field.
+func (m *BenchmarkTargetMutation) SetEnabled(b bool) {
+	m.enabled = &b
+}
+
+// Enabled returns the value of the "enabled" field in the mutation.
+func (m *BenchmarkTargetMutation) Enabled() (r bool, exists bool) {
+	v := m.enabled
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnabled returns the old "enabled" field's value of the BenchmarkTarget entity.
+// If the BenchmarkTarget object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkTargetMutation) OldEnabled(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEnabled is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEnabled requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEnabled: %w", err)
+	}
+	return oldValue.Enabled, nil
+}
+
+// ResetEnabled resets all changes to the "enabled" field.
+func (m *BenchmarkTargetMutation) ResetEnabled() {
+	m.enabled = nil
+}
+
+// SetPublicVisible sets the "public_visible" field.
+func (m *BenchmarkTargetMutation) SetPublicVisible(b bool) {
+	m.public_visible = &b
+}
+
+// PublicVisible returns the value of the "public_visible" field in the mutation.
+func (m *BenchmarkTargetMutation) PublicVisible() (r bool, exists bool) {
+	v := m.public_visible
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPublicVisible returns the old "public_visible" field's value of the BenchmarkTarget entity.
+// If the BenchmarkTarget object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkTargetMutation) OldPublicVisible(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPublicVisible is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPublicVisible requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPublicVisible: %w", err)
+	}
+	return oldValue.PublicVisible, nil
+}
+
+// ResetPublicVisible resets all changes to the "public_visible" field.
+func (m *BenchmarkTargetMutation) ResetPublicVisible() {
+	m.public_visible = nil
+}
+
+// SetSortOrder sets the "sort_order" field.
+func (m *BenchmarkTargetMutation) SetSortOrder(i int) {
+	m.sort_order = &i
+	m.addsort_order = nil
+}
+
+// SortOrder returns the value of the "sort_order" field in the mutation.
+func (m *BenchmarkTargetMutation) SortOrder() (r int, exists bool) {
+	v := m.sort_order
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSortOrder returns the old "sort_order" field's value of the BenchmarkTarget entity.
+// If the BenchmarkTarget object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkTargetMutation) OldSortOrder(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSortOrder is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSortOrder requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSortOrder: %w", err)
+	}
+	return oldValue.SortOrder, nil
+}
+
+// AddSortOrder adds i to the "sort_order" field.
+func (m *BenchmarkTargetMutation) AddSortOrder(i int) {
+	if m.addsort_order != nil {
+		*m.addsort_order += i
+	} else {
+		m.addsort_order = &i
+	}
+}
+
+// AddedSortOrder returns the value that was added to the "sort_order" field in this mutation.
+func (m *BenchmarkTargetMutation) AddedSortOrder() (r int, exists bool) {
+	v := m.addsort_order
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetSortOrder resets all changes to the "sort_order" field.
+func (m *BenchmarkTargetMutation) ResetSortOrder() {
+	m.sort_order = nil
+	m.addsort_order = nil
+}
+
+// SetMetadata sets the "metadata" field.
+func (m *BenchmarkTargetMutation) SetMetadata(value map[string]interface{}) {
+	m.metadata = &value
+}
+
+// Metadata returns the value of the "metadata" field in the mutation.
+func (m *BenchmarkTargetMutation) Metadata() (r map[string]interface{}, exists bool) {
+	v := m.metadata
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMetadata returns the old "metadata" field's value of the BenchmarkTarget entity.
+// If the BenchmarkTarget object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkTargetMutation) OldMetadata(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMetadata is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMetadata requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMetadata: %w", err)
+	}
+	return oldValue.Metadata, nil
+}
+
+// ResetMetadata resets all changes to the "metadata" field.
+func (m *BenchmarkTargetMutation) ResetMetadata() {
+	m.metadata = nil
+}
+
+// AddRunTargetIDs adds the "run_targets" edge to the BenchmarkRunTarget entity by ids.
+func (m *BenchmarkTargetMutation) AddRunTargetIDs(ids ...int64) {
+	if m.run_targets == nil {
+		m.run_targets = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.run_targets[ids[i]] = struct{}{}
+	}
+}
+
+// ClearRunTargets clears the "run_targets" edge to the BenchmarkRunTarget entity.
+func (m *BenchmarkTargetMutation) ClearRunTargets() {
+	m.clearedrun_targets = true
+}
+
+// RunTargetsCleared reports if the "run_targets" edge to the BenchmarkRunTarget entity was cleared.
+func (m *BenchmarkTargetMutation) RunTargetsCleared() bool {
+	return m.clearedrun_targets
+}
+
+// RemoveRunTargetIDs removes the "run_targets" edge to the BenchmarkRunTarget entity by IDs.
+func (m *BenchmarkTargetMutation) RemoveRunTargetIDs(ids ...int64) {
+	if m.removedrun_targets == nil {
+		m.removedrun_targets = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.run_targets, ids[i])
+		m.removedrun_targets[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedRunTargets returns the removed IDs of the "run_targets" edge to the BenchmarkRunTarget entity.
+func (m *BenchmarkTargetMutation) RemovedRunTargetsIDs() (ids []int64) {
+	for id := range m.removedrun_targets {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// RunTargetsIDs returns the "run_targets" edge IDs in the mutation.
+func (m *BenchmarkTargetMutation) RunTargetsIDs() (ids []int64) {
+	for id := range m.run_targets {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetRunTargets resets all changes to the "run_targets" edge.
+func (m *BenchmarkTargetMutation) ResetRunTargets() {
+	m.run_targets = nil
+	m.clearedrun_targets = false
+	m.removedrun_targets = nil
+}
+
+// Where appends a list predicates to the BenchmarkTargetMutation builder.
+func (m *BenchmarkTargetMutation) Where(ps ...predicate.BenchmarkTarget) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the BenchmarkTargetMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *BenchmarkTargetMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.BenchmarkTarget, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *BenchmarkTargetMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *BenchmarkTargetMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (BenchmarkTarget).
+func (m *BenchmarkTargetMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *BenchmarkTargetMutation) Fields() []string {
+	fields := make([]string, 0, 15)
+	if m.created_at != nil {
+		fields = append(fields, benchmarktarget.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, benchmarktarget.FieldUpdatedAt)
+	}
+	if m.model_name != nil {
+		fields = append(fields, benchmarktarget.FieldModelName)
+	}
+	if m.channel_id != nil {
+		fields = append(fields, benchmarktarget.FieldChannelID)
+	}
+	if m.display_name != nil {
+		fields = append(fields, benchmarktarget.FieldDisplayName)
+	}
+	if m.provider_snapshot != nil {
+		fields = append(fields, benchmarktarget.FieldProviderSnapshot)
+	}
+	if m.channel_name_snapshot != nil {
+		fields = append(fields, benchmarktarget.FieldChannelNameSnapshot)
+	}
+	if m.supported_task_types != nil {
+		fields = append(fields, benchmarktarget.FieldSupportedTaskTypes)
+	}
+	if m.max_concurrency != nil {
+		fields = append(fields, benchmarktarget.FieldMaxConcurrency)
+	}
+	if m.per_run_budget != nil {
+		fields = append(fields, benchmarktarget.FieldPerRunBudget)
+	}
+	if m.daily_budget != nil {
+		fields = append(fields, benchmarktarget.FieldDailyBudget)
+	}
+	if m.enabled != nil {
+		fields = append(fields, benchmarktarget.FieldEnabled)
+	}
+	if m.public_visible != nil {
+		fields = append(fields, benchmarktarget.FieldPublicVisible)
+	}
+	if m.sort_order != nil {
+		fields = append(fields, benchmarktarget.FieldSortOrder)
+	}
+	if m.metadata != nil {
+		fields = append(fields, benchmarktarget.FieldMetadata)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *BenchmarkTargetMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case benchmarktarget.FieldCreatedAt:
+		return m.CreatedAt()
+	case benchmarktarget.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case benchmarktarget.FieldModelName:
+		return m.ModelName()
+	case benchmarktarget.FieldChannelID:
+		return m.ChannelID()
+	case benchmarktarget.FieldDisplayName:
+		return m.DisplayName()
+	case benchmarktarget.FieldProviderSnapshot:
+		return m.ProviderSnapshot()
+	case benchmarktarget.FieldChannelNameSnapshot:
+		return m.ChannelNameSnapshot()
+	case benchmarktarget.FieldSupportedTaskTypes:
+		return m.SupportedTaskTypes()
+	case benchmarktarget.FieldMaxConcurrency:
+		return m.MaxConcurrency()
+	case benchmarktarget.FieldPerRunBudget:
+		return m.PerRunBudget()
+	case benchmarktarget.FieldDailyBudget:
+		return m.DailyBudget()
+	case benchmarktarget.FieldEnabled:
+		return m.Enabled()
+	case benchmarktarget.FieldPublicVisible:
+		return m.PublicVisible()
+	case benchmarktarget.FieldSortOrder:
+		return m.SortOrder()
+	case benchmarktarget.FieldMetadata:
+		return m.Metadata()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *BenchmarkTargetMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case benchmarktarget.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case benchmarktarget.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case benchmarktarget.FieldModelName:
+		return m.OldModelName(ctx)
+	case benchmarktarget.FieldChannelID:
+		return m.OldChannelID(ctx)
+	case benchmarktarget.FieldDisplayName:
+		return m.OldDisplayName(ctx)
+	case benchmarktarget.FieldProviderSnapshot:
+		return m.OldProviderSnapshot(ctx)
+	case benchmarktarget.FieldChannelNameSnapshot:
+		return m.OldChannelNameSnapshot(ctx)
+	case benchmarktarget.FieldSupportedTaskTypes:
+		return m.OldSupportedTaskTypes(ctx)
+	case benchmarktarget.FieldMaxConcurrency:
+		return m.OldMaxConcurrency(ctx)
+	case benchmarktarget.FieldPerRunBudget:
+		return m.OldPerRunBudget(ctx)
+	case benchmarktarget.FieldDailyBudget:
+		return m.OldDailyBudget(ctx)
+	case benchmarktarget.FieldEnabled:
+		return m.OldEnabled(ctx)
+	case benchmarktarget.FieldPublicVisible:
+		return m.OldPublicVisible(ctx)
+	case benchmarktarget.FieldSortOrder:
+		return m.OldSortOrder(ctx)
+	case benchmarktarget.FieldMetadata:
+		return m.OldMetadata(ctx)
+	}
+	return nil, fmt.Errorf("unknown BenchmarkTarget field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *BenchmarkTargetMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case benchmarktarget.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case benchmarktarget.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case benchmarktarget.FieldModelName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetModelName(v)
+		return nil
+	case benchmarktarget.FieldChannelID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetChannelID(v)
+		return nil
+	case benchmarktarget.FieldDisplayName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDisplayName(v)
+		return nil
+	case benchmarktarget.FieldProviderSnapshot:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProviderSnapshot(v)
+		return nil
+	case benchmarktarget.FieldChannelNameSnapshot:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetChannelNameSnapshot(v)
+		return nil
+	case benchmarktarget.FieldSupportedTaskTypes:
+		v, ok := value.([]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSupportedTaskTypes(v)
+		return nil
+	case benchmarktarget.FieldMaxConcurrency:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMaxConcurrency(v)
+		return nil
+	case benchmarktarget.FieldPerRunBudget:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPerRunBudget(v)
+		return nil
+	case benchmarktarget.FieldDailyBudget:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDailyBudget(v)
+		return nil
+	case benchmarktarget.FieldEnabled:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEnabled(v)
+		return nil
+	case benchmarktarget.FieldPublicVisible:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPublicVisible(v)
+		return nil
+	case benchmarktarget.FieldSortOrder:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSortOrder(v)
+		return nil
+	case benchmarktarget.FieldMetadata:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMetadata(v)
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkTarget field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *BenchmarkTargetMutation) AddedFields() []string {
+	var fields []string
+	if m.addchannel_id != nil {
+		fields = append(fields, benchmarktarget.FieldChannelID)
+	}
+	if m.addmax_concurrency != nil {
+		fields = append(fields, benchmarktarget.FieldMaxConcurrency)
+	}
+	if m.addper_run_budget != nil {
+		fields = append(fields, benchmarktarget.FieldPerRunBudget)
+	}
+	if m.adddaily_budget != nil {
+		fields = append(fields, benchmarktarget.FieldDailyBudget)
+	}
+	if m.addsort_order != nil {
+		fields = append(fields, benchmarktarget.FieldSortOrder)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *BenchmarkTargetMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case benchmarktarget.FieldChannelID:
+		return m.AddedChannelID()
+	case benchmarktarget.FieldMaxConcurrency:
+		return m.AddedMaxConcurrency()
+	case benchmarktarget.FieldPerRunBudget:
+		return m.AddedPerRunBudget()
+	case benchmarktarget.FieldDailyBudget:
+		return m.AddedDailyBudget()
+	case benchmarktarget.FieldSortOrder:
+		return m.AddedSortOrder()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *BenchmarkTargetMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case benchmarktarget.FieldChannelID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddChannelID(v)
+		return nil
+	case benchmarktarget.FieldMaxConcurrency:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddMaxConcurrency(v)
+		return nil
+	case benchmarktarget.FieldPerRunBudget:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddPerRunBudget(v)
+		return nil
+	case benchmarktarget.FieldDailyBudget:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddDailyBudget(v)
+		return nil
+	case benchmarktarget.FieldSortOrder:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddSortOrder(v)
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkTarget numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *BenchmarkTargetMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(benchmarktarget.FieldDisplayName) {
+		fields = append(fields, benchmarktarget.FieldDisplayName)
+	}
+	if m.FieldCleared(benchmarktarget.FieldProviderSnapshot) {
+		fields = append(fields, benchmarktarget.FieldProviderSnapshot)
+	}
+	if m.FieldCleared(benchmarktarget.FieldChannelNameSnapshot) {
+		fields = append(fields, benchmarktarget.FieldChannelNameSnapshot)
+	}
+	if m.FieldCleared(benchmarktarget.FieldPerRunBudget) {
+		fields = append(fields, benchmarktarget.FieldPerRunBudget)
+	}
+	if m.FieldCleared(benchmarktarget.FieldDailyBudget) {
+		fields = append(fields, benchmarktarget.FieldDailyBudget)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *BenchmarkTargetMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *BenchmarkTargetMutation) ClearField(name string) error {
+	switch name {
+	case benchmarktarget.FieldDisplayName:
+		m.ClearDisplayName()
+		return nil
+	case benchmarktarget.FieldProviderSnapshot:
+		m.ClearProviderSnapshot()
+		return nil
+	case benchmarktarget.FieldChannelNameSnapshot:
+		m.ClearChannelNameSnapshot()
+		return nil
+	case benchmarktarget.FieldPerRunBudget:
+		m.ClearPerRunBudget()
+		return nil
+	case benchmarktarget.FieldDailyBudget:
+		m.ClearDailyBudget()
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkTarget nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *BenchmarkTargetMutation) ResetField(name string) error {
+	switch name {
+	case benchmarktarget.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case benchmarktarget.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case benchmarktarget.FieldModelName:
+		m.ResetModelName()
+		return nil
+	case benchmarktarget.FieldChannelID:
+		m.ResetChannelID()
+		return nil
+	case benchmarktarget.FieldDisplayName:
+		m.ResetDisplayName()
+		return nil
+	case benchmarktarget.FieldProviderSnapshot:
+		m.ResetProviderSnapshot()
+		return nil
+	case benchmarktarget.FieldChannelNameSnapshot:
+		m.ResetChannelNameSnapshot()
+		return nil
+	case benchmarktarget.FieldSupportedTaskTypes:
+		m.ResetSupportedTaskTypes()
+		return nil
+	case benchmarktarget.FieldMaxConcurrency:
+		m.ResetMaxConcurrency()
+		return nil
+	case benchmarktarget.FieldPerRunBudget:
+		m.ResetPerRunBudget()
+		return nil
+	case benchmarktarget.FieldDailyBudget:
+		m.ResetDailyBudget()
+		return nil
+	case benchmarktarget.FieldEnabled:
+		m.ResetEnabled()
+		return nil
+	case benchmarktarget.FieldPublicVisible:
+		m.ResetPublicVisible()
+		return nil
+	case benchmarktarget.FieldSortOrder:
+		m.ResetSortOrder()
+		return nil
+	case benchmarktarget.FieldMetadata:
+		m.ResetMetadata()
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkTarget field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *BenchmarkTargetMutation) AddedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.run_targets != nil {
+		edges = append(edges, benchmarktarget.EdgeRunTargets)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *BenchmarkTargetMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case benchmarktarget.EdgeRunTargets:
+		ids := make([]ent.Value, 0, len(m.run_targets))
+		for id := range m.run_targets {
+			ids = append(ids, id)
+		}
+		return ids
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *BenchmarkTargetMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.removedrun_targets != nil {
+		edges = append(edges, benchmarktarget.EdgeRunTargets)
+	}
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *BenchmarkTargetMutation) RemovedIDs(name string) []ent.Value {
+	switch name {
+	case benchmarktarget.EdgeRunTargets:
+		ids := make([]ent.Value, 0, len(m.removedrun_targets))
+		for id := range m.removedrun_targets {
+			ids = append(ids, id)
+		}
+		return ids
+	}
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *BenchmarkTargetMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.clearedrun_targets {
+		edges = append(edges, benchmarktarget.EdgeRunTargets)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *BenchmarkTargetMutation) EdgeCleared(name string) bool {
+	switch name {
+	case benchmarktarget.EdgeRunTargets:
+		return m.clearedrun_targets
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *BenchmarkTargetMutation) ClearEdge(name string) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown BenchmarkTarget unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *BenchmarkTargetMutation) ResetEdge(name string) error {
+	switch name {
+	case benchmarktarget.EdgeRunTargets:
+		m.ResetRunTargets()
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkTarget edge %s", name)
+}
+
+// BenchmarkTaskMutation represents an operation that mutates the BenchmarkTask nodes in the graph.
+type BenchmarkTaskMutation struct {
+	config
+	op               Op
+	typ              string
+	id               *int64
+	created_at       *time.Time
+	updated_at       *time.Time
+	title            *string
+	_type            *string
+	category         *string
+	difficulty       *string
+	tags             *[]string
+	appendtags       []string
+	prompt           *string
+	input_payload    *map[string]interface{}
+	expected_output  *map[string]interface{}
+	verifier_type    *string
+	verifier_config  *map[string]interface{}
+	weight           *float64
+	addweight        *float64
+	min_scale        *int
+	addmin_scale     *int
+	public_prompt    *bool
+	enabled          *bool
+	metadata         *map[string]interface{}
+	clearedFields    map[string]struct{}
+	suite            *int64
+	clearedsuite     bool
+	run_tasks        map[int64]struct{}
+	removedrun_tasks map[int64]struct{}
+	clearedrun_tasks bool
+	done             bool
+	oldValue         func(context.Context) (*BenchmarkTask, error)
+	predicates       []predicate.BenchmarkTask
+}
+
+var _ ent.Mutation = (*BenchmarkTaskMutation)(nil)
+
+// benchmarktaskOption allows management of the mutation configuration using functional options.
+type benchmarktaskOption func(*BenchmarkTaskMutation)
+
+// newBenchmarkTaskMutation creates new mutation for the BenchmarkTask entity.
+func newBenchmarkTaskMutation(c config, op Op, opts ...benchmarktaskOption) *BenchmarkTaskMutation {
+	m := &BenchmarkTaskMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeBenchmarkTask,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withBenchmarkTaskID sets the ID field of the mutation.
+func withBenchmarkTaskID(id int64) benchmarktaskOption {
+	return func(m *BenchmarkTaskMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *BenchmarkTask
+		)
+		m.oldValue = func(ctx context.Context) (*BenchmarkTask, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().BenchmarkTask.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withBenchmarkTask sets the old BenchmarkTask of the mutation.
+func withBenchmarkTask(node *BenchmarkTask) benchmarktaskOption {
+	return func(m *BenchmarkTaskMutation) {
+		m.oldValue = func(context.Context) (*BenchmarkTask, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m BenchmarkTaskMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m BenchmarkTaskMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *BenchmarkTaskMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *BenchmarkTaskMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().BenchmarkTask.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *BenchmarkTaskMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *BenchmarkTaskMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the BenchmarkTask entity.
+// If the BenchmarkTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkTaskMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *BenchmarkTaskMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *BenchmarkTaskMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *BenchmarkTaskMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the BenchmarkTask entity.
+// If the BenchmarkTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkTaskMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *BenchmarkTaskMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetSuiteID sets the "suite_id" field.
+func (m *BenchmarkTaskMutation) SetSuiteID(i int64) {
+	m.suite = &i
+}
+
+// SuiteID returns the value of the "suite_id" field in the mutation.
+func (m *BenchmarkTaskMutation) SuiteID() (r int64, exists bool) {
+	v := m.suite
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSuiteID returns the old "suite_id" field's value of the BenchmarkTask entity.
+// If the BenchmarkTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkTaskMutation) OldSuiteID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSuiteID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSuiteID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSuiteID: %w", err)
+	}
+	return oldValue.SuiteID, nil
+}
+
+// ResetSuiteID resets all changes to the "suite_id" field.
+func (m *BenchmarkTaskMutation) ResetSuiteID() {
+	m.suite = nil
+}
+
+// SetTitle sets the "title" field.
+func (m *BenchmarkTaskMutation) SetTitle(s string) {
+	m.title = &s
+}
+
+// Title returns the value of the "title" field in the mutation.
+func (m *BenchmarkTaskMutation) Title() (r string, exists bool) {
+	v := m.title
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTitle returns the old "title" field's value of the BenchmarkTask entity.
+// If the BenchmarkTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkTaskMutation) OldTitle(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTitle is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTitle requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTitle: %w", err)
+	}
+	return oldValue.Title, nil
+}
+
+// ResetTitle resets all changes to the "title" field.
+func (m *BenchmarkTaskMutation) ResetTitle() {
+	m.title = nil
+}
+
+// SetType sets the "type" field.
+func (m *BenchmarkTaskMutation) SetType(s string) {
+	m._type = &s
+}
+
+// GetType returns the value of the "type" field in the mutation.
+func (m *BenchmarkTaskMutation) GetType() (r string, exists bool) {
+	v := m._type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldType returns the old "type" field's value of the BenchmarkTask entity.
+// If the BenchmarkTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkTaskMutation) OldType(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldType: %w", err)
+	}
+	return oldValue.Type, nil
+}
+
+// ResetType resets all changes to the "type" field.
+func (m *BenchmarkTaskMutation) ResetType() {
+	m._type = nil
+}
+
+// SetCategory sets the "category" field.
+func (m *BenchmarkTaskMutation) SetCategory(s string) {
+	m.category = &s
+}
+
+// Category returns the value of the "category" field in the mutation.
+func (m *BenchmarkTaskMutation) Category() (r string, exists bool) {
+	v := m.category
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCategory returns the old "category" field's value of the BenchmarkTask entity.
+// If the BenchmarkTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkTaskMutation) OldCategory(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCategory is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCategory requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCategory: %w", err)
+	}
+	return oldValue.Category, nil
+}
+
+// ClearCategory clears the value of the "category" field.
+func (m *BenchmarkTaskMutation) ClearCategory() {
+	m.category = nil
+	m.clearedFields[benchmarktask.FieldCategory] = struct{}{}
+}
+
+// CategoryCleared returns if the "category" field was cleared in this mutation.
+func (m *BenchmarkTaskMutation) CategoryCleared() bool {
+	_, ok := m.clearedFields[benchmarktask.FieldCategory]
+	return ok
+}
+
+// ResetCategory resets all changes to the "category" field.
+func (m *BenchmarkTaskMutation) ResetCategory() {
+	m.category = nil
+	delete(m.clearedFields, benchmarktask.FieldCategory)
+}
+
+// SetDifficulty sets the "difficulty" field.
+func (m *BenchmarkTaskMutation) SetDifficulty(s string) {
+	m.difficulty = &s
+}
+
+// Difficulty returns the value of the "difficulty" field in the mutation.
+func (m *BenchmarkTaskMutation) Difficulty() (r string, exists bool) {
+	v := m.difficulty
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDifficulty returns the old "difficulty" field's value of the BenchmarkTask entity.
+// If the BenchmarkTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkTaskMutation) OldDifficulty(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDifficulty is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDifficulty requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDifficulty: %w", err)
+	}
+	return oldValue.Difficulty, nil
+}
+
+// ClearDifficulty clears the value of the "difficulty" field.
+func (m *BenchmarkTaskMutation) ClearDifficulty() {
+	m.difficulty = nil
+	m.clearedFields[benchmarktask.FieldDifficulty] = struct{}{}
+}
+
+// DifficultyCleared returns if the "difficulty" field was cleared in this mutation.
+func (m *BenchmarkTaskMutation) DifficultyCleared() bool {
+	_, ok := m.clearedFields[benchmarktask.FieldDifficulty]
+	return ok
+}
+
+// ResetDifficulty resets all changes to the "difficulty" field.
+func (m *BenchmarkTaskMutation) ResetDifficulty() {
+	m.difficulty = nil
+	delete(m.clearedFields, benchmarktask.FieldDifficulty)
+}
+
+// SetTags sets the "tags" field.
+func (m *BenchmarkTaskMutation) SetTags(s []string) {
+	m.tags = &s
+	m.appendtags = nil
+}
+
+// Tags returns the value of the "tags" field in the mutation.
+func (m *BenchmarkTaskMutation) Tags() (r []string, exists bool) {
+	v := m.tags
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTags returns the old "tags" field's value of the BenchmarkTask entity.
+// If the BenchmarkTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkTaskMutation) OldTags(ctx context.Context) (v []string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTags is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTags requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTags: %w", err)
+	}
+	return oldValue.Tags, nil
+}
+
+// AppendTags adds s to the "tags" field.
+func (m *BenchmarkTaskMutation) AppendTags(s []string) {
+	m.appendtags = append(m.appendtags, s...)
+}
+
+// AppendedTags returns the list of values that were appended to the "tags" field in this mutation.
+func (m *BenchmarkTaskMutation) AppendedTags() ([]string, bool) {
+	if len(m.appendtags) == 0 {
+		return nil, false
+	}
+	return m.appendtags, true
+}
+
+// ResetTags resets all changes to the "tags" field.
+func (m *BenchmarkTaskMutation) ResetTags() {
+	m.tags = nil
+	m.appendtags = nil
+}
+
+// SetPrompt sets the "prompt" field.
+func (m *BenchmarkTaskMutation) SetPrompt(s string) {
+	m.prompt = &s
+}
+
+// Prompt returns the value of the "prompt" field in the mutation.
+func (m *BenchmarkTaskMutation) Prompt() (r string, exists bool) {
+	v := m.prompt
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPrompt returns the old "prompt" field's value of the BenchmarkTask entity.
+// If the BenchmarkTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkTaskMutation) OldPrompt(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPrompt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPrompt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPrompt: %w", err)
+	}
+	return oldValue.Prompt, nil
+}
+
+// ResetPrompt resets all changes to the "prompt" field.
+func (m *BenchmarkTaskMutation) ResetPrompt() {
+	m.prompt = nil
+}
+
+// SetInputPayload sets the "input_payload" field.
+func (m *BenchmarkTaskMutation) SetInputPayload(value map[string]interface{}) {
+	m.input_payload = &value
+}
+
+// InputPayload returns the value of the "input_payload" field in the mutation.
+func (m *BenchmarkTaskMutation) InputPayload() (r map[string]interface{}, exists bool) {
+	v := m.input_payload
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldInputPayload returns the old "input_payload" field's value of the BenchmarkTask entity.
+// If the BenchmarkTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkTaskMutation) OldInputPayload(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldInputPayload is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldInputPayload requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldInputPayload: %w", err)
+	}
+	return oldValue.InputPayload, nil
+}
+
+// ResetInputPayload resets all changes to the "input_payload" field.
+func (m *BenchmarkTaskMutation) ResetInputPayload() {
+	m.input_payload = nil
+}
+
+// SetExpectedOutput sets the "expected_output" field.
+func (m *BenchmarkTaskMutation) SetExpectedOutput(value map[string]interface{}) {
+	m.expected_output = &value
+}
+
+// ExpectedOutput returns the value of the "expected_output" field in the mutation.
+func (m *BenchmarkTaskMutation) ExpectedOutput() (r map[string]interface{}, exists bool) {
+	v := m.expected_output
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldExpectedOutput returns the old "expected_output" field's value of the BenchmarkTask entity.
+// If the BenchmarkTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkTaskMutation) OldExpectedOutput(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldExpectedOutput is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldExpectedOutput requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldExpectedOutput: %w", err)
+	}
+	return oldValue.ExpectedOutput, nil
+}
+
+// ResetExpectedOutput resets all changes to the "expected_output" field.
+func (m *BenchmarkTaskMutation) ResetExpectedOutput() {
+	m.expected_output = nil
+}
+
+// SetVerifierType sets the "verifier_type" field.
+func (m *BenchmarkTaskMutation) SetVerifierType(s string) {
+	m.verifier_type = &s
+}
+
+// VerifierType returns the value of the "verifier_type" field in the mutation.
+func (m *BenchmarkTaskMutation) VerifierType() (r string, exists bool) {
+	v := m.verifier_type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVerifierType returns the old "verifier_type" field's value of the BenchmarkTask entity.
+// If the BenchmarkTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkTaskMutation) OldVerifierType(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVerifierType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVerifierType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVerifierType: %w", err)
+	}
+	return oldValue.VerifierType, nil
+}
+
+// ResetVerifierType resets all changes to the "verifier_type" field.
+func (m *BenchmarkTaskMutation) ResetVerifierType() {
+	m.verifier_type = nil
+}
+
+// SetVerifierConfig sets the "verifier_config" field.
+func (m *BenchmarkTaskMutation) SetVerifierConfig(value map[string]interface{}) {
+	m.verifier_config = &value
+}
+
+// VerifierConfig returns the value of the "verifier_config" field in the mutation.
+func (m *BenchmarkTaskMutation) VerifierConfig() (r map[string]interface{}, exists bool) {
+	v := m.verifier_config
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVerifierConfig returns the old "verifier_config" field's value of the BenchmarkTask entity.
+// If the BenchmarkTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkTaskMutation) OldVerifierConfig(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVerifierConfig is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVerifierConfig requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVerifierConfig: %w", err)
+	}
+	return oldValue.VerifierConfig, nil
+}
+
+// ResetVerifierConfig resets all changes to the "verifier_config" field.
+func (m *BenchmarkTaskMutation) ResetVerifierConfig() {
+	m.verifier_config = nil
+}
+
+// SetWeight sets the "weight" field.
+func (m *BenchmarkTaskMutation) SetWeight(f float64) {
+	m.weight = &f
+	m.addweight = nil
+}
+
+// Weight returns the value of the "weight" field in the mutation.
+func (m *BenchmarkTaskMutation) Weight() (r float64, exists bool) {
+	v := m.weight
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldWeight returns the old "weight" field's value of the BenchmarkTask entity.
+// If the BenchmarkTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkTaskMutation) OldWeight(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldWeight is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldWeight requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldWeight: %w", err)
+	}
+	return oldValue.Weight, nil
+}
+
+// AddWeight adds f to the "weight" field.
+func (m *BenchmarkTaskMutation) AddWeight(f float64) {
+	if m.addweight != nil {
+		*m.addweight += f
+	} else {
+		m.addweight = &f
+	}
+}
+
+// AddedWeight returns the value that was added to the "weight" field in this mutation.
+func (m *BenchmarkTaskMutation) AddedWeight() (r float64, exists bool) {
+	v := m.addweight
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetWeight resets all changes to the "weight" field.
+func (m *BenchmarkTaskMutation) ResetWeight() {
+	m.weight = nil
+	m.addweight = nil
+}
+
+// SetMinScale sets the "min_scale" field.
+func (m *BenchmarkTaskMutation) SetMinScale(i int) {
+	m.min_scale = &i
+	m.addmin_scale = nil
+}
+
+// MinScale returns the value of the "min_scale" field in the mutation.
+func (m *BenchmarkTaskMutation) MinScale() (r int, exists bool) {
+	v := m.min_scale
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMinScale returns the old "min_scale" field's value of the BenchmarkTask entity.
+// If the BenchmarkTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkTaskMutation) OldMinScale(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMinScale is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMinScale requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMinScale: %w", err)
+	}
+	return oldValue.MinScale, nil
+}
+
+// AddMinScale adds i to the "min_scale" field.
+func (m *BenchmarkTaskMutation) AddMinScale(i int) {
+	if m.addmin_scale != nil {
+		*m.addmin_scale += i
+	} else {
+		m.addmin_scale = &i
+	}
+}
+
+// AddedMinScale returns the value that was added to the "min_scale" field in this mutation.
+func (m *BenchmarkTaskMutation) AddedMinScale() (r int, exists bool) {
+	v := m.addmin_scale
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetMinScale resets all changes to the "min_scale" field.
+func (m *BenchmarkTaskMutation) ResetMinScale() {
+	m.min_scale = nil
+	m.addmin_scale = nil
+}
+
+// SetPublicPrompt sets the "public_prompt" field.
+func (m *BenchmarkTaskMutation) SetPublicPrompt(b bool) {
+	m.public_prompt = &b
+}
+
+// PublicPrompt returns the value of the "public_prompt" field in the mutation.
+func (m *BenchmarkTaskMutation) PublicPrompt() (r bool, exists bool) {
+	v := m.public_prompt
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPublicPrompt returns the old "public_prompt" field's value of the BenchmarkTask entity.
+// If the BenchmarkTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkTaskMutation) OldPublicPrompt(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPublicPrompt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPublicPrompt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPublicPrompt: %w", err)
+	}
+	return oldValue.PublicPrompt, nil
+}
+
+// ResetPublicPrompt resets all changes to the "public_prompt" field.
+func (m *BenchmarkTaskMutation) ResetPublicPrompt() {
+	m.public_prompt = nil
+}
+
+// SetEnabled sets the "enabled" field.
+func (m *BenchmarkTaskMutation) SetEnabled(b bool) {
+	m.enabled = &b
+}
+
+// Enabled returns the value of the "enabled" field in the mutation.
+func (m *BenchmarkTaskMutation) Enabled() (r bool, exists bool) {
+	v := m.enabled
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnabled returns the old "enabled" field's value of the BenchmarkTask entity.
+// If the BenchmarkTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkTaskMutation) OldEnabled(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEnabled is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEnabled requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEnabled: %w", err)
+	}
+	return oldValue.Enabled, nil
+}
+
+// ResetEnabled resets all changes to the "enabled" field.
+func (m *BenchmarkTaskMutation) ResetEnabled() {
+	m.enabled = nil
+}
+
+// SetMetadata sets the "metadata" field.
+func (m *BenchmarkTaskMutation) SetMetadata(value map[string]interface{}) {
+	m.metadata = &value
+}
+
+// Metadata returns the value of the "metadata" field in the mutation.
+func (m *BenchmarkTaskMutation) Metadata() (r map[string]interface{}, exists bool) {
+	v := m.metadata
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMetadata returns the old "metadata" field's value of the BenchmarkTask entity.
+// If the BenchmarkTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BenchmarkTaskMutation) OldMetadata(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMetadata is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMetadata requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMetadata: %w", err)
+	}
+	return oldValue.Metadata, nil
+}
+
+// ResetMetadata resets all changes to the "metadata" field.
+func (m *BenchmarkTaskMutation) ResetMetadata() {
+	m.metadata = nil
+}
+
+// ClearSuite clears the "suite" edge to the BenchmarkSuite entity.
+func (m *BenchmarkTaskMutation) ClearSuite() {
+	m.clearedsuite = true
+	m.clearedFields[benchmarktask.FieldSuiteID] = struct{}{}
+}
+
+// SuiteCleared reports if the "suite" edge to the BenchmarkSuite entity was cleared.
+func (m *BenchmarkTaskMutation) SuiteCleared() bool {
+	return m.clearedsuite
+}
+
+// SuiteIDs returns the "suite" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// SuiteID instead. It exists only for internal usage by the builders.
+func (m *BenchmarkTaskMutation) SuiteIDs() (ids []int64) {
+	if id := m.suite; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetSuite resets all changes to the "suite" edge.
+func (m *BenchmarkTaskMutation) ResetSuite() {
+	m.suite = nil
+	m.clearedsuite = false
+}
+
+// AddRunTaskIDs adds the "run_tasks" edge to the BenchmarkRunTask entity by ids.
+func (m *BenchmarkTaskMutation) AddRunTaskIDs(ids ...int64) {
+	if m.run_tasks == nil {
+		m.run_tasks = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.run_tasks[ids[i]] = struct{}{}
+	}
+}
+
+// ClearRunTasks clears the "run_tasks" edge to the BenchmarkRunTask entity.
+func (m *BenchmarkTaskMutation) ClearRunTasks() {
+	m.clearedrun_tasks = true
+}
+
+// RunTasksCleared reports if the "run_tasks" edge to the BenchmarkRunTask entity was cleared.
+func (m *BenchmarkTaskMutation) RunTasksCleared() bool {
+	return m.clearedrun_tasks
+}
+
+// RemoveRunTaskIDs removes the "run_tasks" edge to the BenchmarkRunTask entity by IDs.
+func (m *BenchmarkTaskMutation) RemoveRunTaskIDs(ids ...int64) {
+	if m.removedrun_tasks == nil {
+		m.removedrun_tasks = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.run_tasks, ids[i])
+		m.removedrun_tasks[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedRunTasks returns the removed IDs of the "run_tasks" edge to the BenchmarkRunTask entity.
+func (m *BenchmarkTaskMutation) RemovedRunTasksIDs() (ids []int64) {
+	for id := range m.removedrun_tasks {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// RunTasksIDs returns the "run_tasks" edge IDs in the mutation.
+func (m *BenchmarkTaskMutation) RunTasksIDs() (ids []int64) {
+	for id := range m.run_tasks {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetRunTasks resets all changes to the "run_tasks" edge.
+func (m *BenchmarkTaskMutation) ResetRunTasks() {
+	m.run_tasks = nil
+	m.clearedrun_tasks = false
+	m.removedrun_tasks = nil
+}
+
+// Where appends a list predicates to the BenchmarkTaskMutation builder.
+func (m *BenchmarkTaskMutation) Where(ps ...predicate.BenchmarkTask) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the BenchmarkTaskMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *BenchmarkTaskMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.BenchmarkTask, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *BenchmarkTaskMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *BenchmarkTaskMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (BenchmarkTask).
+func (m *BenchmarkTaskMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *BenchmarkTaskMutation) Fields() []string {
+	fields := make([]string, 0, 18)
+	if m.created_at != nil {
+		fields = append(fields, benchmarktask.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, benchmarktask.FieldUpdatedAt)
+	}
+	if m.suite != nil {
+		fields = append(fields, benchmarktask.FieldSuiteID)
+	}
+	if m.title != nil {
+		fields = append(fields, benchmarktask.FieldTitle)
+	}
+	if m._type != nil {
+		fields = append(fields, benchmarktask.FieldType)
+	}
+	if m.category != nil {
+		fields = append(fields, benchmarktask.FieldCategory)
+	}
+	if m.difficulty != nil {
+		fields = append(fields, benchmarktask.FieldDifficulty)
+	}
+	if m.tags != nil {
+		fields = append(fields, benchmarktask.FieldTags)
+	}
+	if m.prompt != nil {
+		fields = append(fields, benchmarktask.FieldPrompt)
+	}
+	if m.input_payload != nil {
+		fields = append(fields, benchmarktask.FieldInputPayload)
+	}
+	if m.expected_output != nil {
+		fields = append(fields, benchmarktask.FieldExpectedOutput)
+	}
+	if m.verifier_type != nil {
+		fields = append(fields, benchmarktask.FieldVerifierType)
+	}
+	if m.verifier_config != nil {
+		fields = append(fields, benchmarktask.FieldVerifierConfig)
+	}
+	if m.weight != nil {
+		fields = append(fields, benchmarktask.FieldWeight)
+	}
+	if m.min_scale != nil {
+		fields = append(fields, benchmarktask.FieldMinScale)
+	}
+	if m.public_prompt != nil {
+		fields = append(fields, benchmarktask.FieldPublicPrompt)
+	}
+	if m.enabled != nil {
+		fields = append(fields, benchmarktask.FieldEnabled)
+	}
+	if m.metadata != nil {
+		fields = append(fields, benchmarktask.FieldMetadata)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *BenchmarkTaskMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case benchmarktask.FieldCreatedAt:
+		return m.CreatedAt()
+	case benchmarktask.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case benchmarktask.FieldSuiteID:
+		return m.SuiteID()
+	case benchmarktask.FieldTitle:
+		return m.Title()
+	case benchmarktask.FieldType:
+		return m.GetType()
+	case benchmarktask.FieldCategory:
+		return m.Category()
+	case benchmarktask.FieldDifficulty:
+		return m.Difficulty()
+	case benchmarktask.FieldTags:
+		return m.Tags()
+	case benchmarktask.FieldPrompt:
+		return m.Prompt()
+	case benchmarktask.FieldInputPayload:
+		return m.InputPayload()
+	case benchmarktask.FieldExpectedOutput:
+		return m.ExpectedOutput()
+	case benchmarktask.FieldVerifierType:
+		return m.VerifierType()
+	case benchmarktask.FieldVerifierConfig:
+		return m.VerifierConfig()
+	case benchmarktask.FieldWeight:
+		return m.Weight()
+	case benchmarktask.FieldMinScale:
+		return m.MinScale()
+	case benchmarktask.FieldPublicPrompt:
+		return m.PublicPrompt()
+	case benchmarktask.FieldEnabled:
+		return m.Enabled()
+	case benchmarktask.FieldMetadata:
+		return m.Metadata()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *BenchmarkTaskMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case benchmarktask.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case benchmarktask.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case benchmarktask.FieldSuiteID:
+		return m.OldSuiteID(ctx)
+	case benchmarktask.FieldTitle:
+		return m.OldTitle(ctx)
+	case benchmarktask.FieldType:
+		return m.OldType(ctx)
+	case benchmarktask.FieldCategory:
+		return m.OldCategory(ctx)
+	case benchmarktask.FieldDifficulty:
+		return m.OldDifficulty(ctx)
+	case benchmarktask.FieldTags:
+		return m.OldTags(ctx)
+	case benchmarktask.FieldPrompt:
+		return m.OldPrompt(ctx)
+	case benchmarktask.FieldInputPayload:
+		return m.OldInputPayload(ctx)
+	case benchmarktask.FieldExpectedOutput:
+		return m.OldExpectedOutput(ctx)
+	case benchmarktask.FieldVerifierType:
+		return m.OldVerifierType(ctx)
+	case benchmarktask.FieldVerifierConfig:
+		return m.OldVerifierConfig(ctx)
+	case benchmarktask.FieldWeight:
+		return m.OldWeight(ctx)
+	case benchmarktask.FieldMinScale:
+		return m.OldMinScale(ctx)
+	case benchmarktask.FieldPublicPrompt:
+		return m.OldPublicPrompt(ctx)
+	case benchmarktask.FieldEnabled:
+		return m.OldEnabled(ctx)
+	case benchmarktask.FieldMetadata:
+		return m.OldMetadata(ctx)
+	}
+	return nil, fmt.Errorf("unknown BenchmarkTask field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *BenchmarkTaskMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case benchmarktask.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case benchmarktask.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case benchmarktask.FieldSuiteID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSuiteID(v)
+		return nil
+	case benchmarktask.FieldTitle:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTitle(v)
+		return nil
+	case benchmarktask.FieldType:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetType(v)
+		return nil
+	case benchmarktask.FieldCategory:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCategory(v)
+		return nil
+	case benchmarktask.FieldDifficulty:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDifficulty(v)
+		return nil
+	case benchmarktask.FieldTags:
+		v, ok := value.([]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTags(v)
+		return nil
+	case benchmarktask.FieldPrompt:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPrompt(v)
+		return nil
+	case benchmarktask.FieldInputPayload:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetInputPayload(v)
+		return nil
+	case benchmarktask.FieldExpectedOutput:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetExpectedOutput(v)
+		return nil
+	case benchmarktask.FieldVerifierType:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVerifierType(v)
+		return nil
+	case benchmarktask.FieldVerifierConfig:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVerifierConfig(v)
+		return nil
+	case benchmarktask.FieldWeight:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetWeight(v)
+		return nil
+	case benchmarktask.FieldMinScale:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMinScale(v)
+		return nil
+	case benchmarktask.FieldPublicPrompt:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPublicPrompt(v)
+		return nil
+	case benchmarktask.FieldEnabled:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEnabled(v)
+		return nil
+	case benchmarktask.FieldMetadata:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMetadata(v)
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkTask field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *BenchmarkTaskMutation) AddedFields() []string {
+	var fields []string
+	if m.addweight != nil {
+		fields = append(fields, benchmarktask.FieldWeight)
+	}
+	if m.addmin_scale != nil {
+		fields = append(fields, benchmarktask.FieldMinScale)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *BenchmarkTaskMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case benchmarktask.FieldWeight:
+		return m.AddedWeight()
+	case benchmarktask.FieldMinScale:
+		return m.AddedMinScale()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *BenchmarkTaskMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case benchmarktask.FieldWeight:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddWeight(v)
+		return nil
+	case benchmarktask.FieldMinScale:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddMinScale(v)
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkTask numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *BenchmarkTaskMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(benchmarktask.FieldCategory) {
+		fields = append(fields, benchmarktask.FieldCategory)
+	}
+	if m.FieldCleared(benchmarktask.FieldDifficulty) {
+		fields = append(fields, benchmarktask.FieldDifficulty)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *BenchmarkTaskMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *BenchmarkTaskMutation) ClearField(name string) error {
+	switch name {
+	case benchmarktask.FieldCategory:
+		m.ClearCategory()
+		return nil
+	case benchmarktask.FieldDifficulty:
+		m.ClearDifficulty()
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkTask nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *BenchmarkTaskMutation) ResetField(name string) error {
+	switch name {
+	case benchmarktask.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case benchmarktask.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case benchmarktask.FieldSuiteID:
+		m.ResetSuiteID()
+		return nil
+	case benchmarktask.FieldTitle:
+		m.ResetTitle()
+		return nil
+	case benchmarktask.FieldType:
+		m.ResetType()
+		return nil
+	case benchmarktask.FieldCategory:
+		m.ResetCategory()
+		return nil
+	case benchmarktask.FieldDifficulty:
+		m.ResetDifficulty()
+		return nil
+	case benchmarktask.FieldTags:
+		m.ResetTags()
+		return nil
+	case benchmarktask.FieldPrompt:
+		m.ResetPrompt()
+		return nil
+	case benchmarktask.FieldInputPayload:
+		m.ResetInputPayload()
+		return nil
+	case benchmarktask.FieldExpectedOutput:
+		m.ResetExpectedOutput()
+		return nil
+	case benchmarktask.FieldVerifierType:
+		m.ResetVerifierType()
+		return nil
+	case benchmarktask.FieldVerifierConfig:
+		m.ResetVerifierConfig()
+		return nil
+	case benchmarktask.FieldWeight:
+		m.ResetWeight()
+		return nil
+	case benchmarktask.FieldMinScale:
+		m.ResetMinScale()
+		return nil
+	case benchmarktask.FieldPublicPrompt:
+		m.ResetPublicPrompt()
+		return nil
+	case benchmarktask.FieldEnabled:
+		m.ResetEnabled()
+		return nil
+	case benchmarktask.FieldMetadata:
+		m.ResetMetadata()
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkTask field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *BenchmarkTaskMutation) AddedEdges() []string {
+	edges := make([]string, 0, 2)
+	if m.suite != nil {
+		edges = append(edges, benchmarktask.EdgeSuite)
+	}
+	if m.run_tasks != nil {
+		edges = append(edges, benchmarktask.EdgeRunTasks)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *BenchmarkTaskMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case benchmarktask.EdgeSuite:
+		if id := m.suite; id != nil {
+			return []ent.Value{*id}
+		}
+	case benchmarktask.EdgeRunTasks:
+		ids := make([]ent.Value, 0, len(m.run_tasks))
+		for id := range m.run_tasks {
+			ids = append(ids, id)
+		}
+		return ids
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *BenchmarkTaskMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 2)
+	if m.removedrun_tasks != nil {
+		edges = append(edges, benchmarktask.EdgeRunTasks)
+	}
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *BenchmarkTaskMutation) RemovedIDs(name string) []ent.Value {
+	switch name {
+	case benchmarktask.EdgeRunTasks:
+		ids := make([]ent.Value, 0, len(m.removedrun_tasks))
+		for id := range m.removedrun_tasks {
+			ids = append(ids, id)
+		}
+		return ids
+	}
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *BenchmarkTaskMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 2)
+	if m.clearedsuite {
+		edges = append(edges, benchmarktask.EdgeSuite)
+	}
+	if m.clearedrun_tasks {
+		edges = append(edges, benchmarktask.EdgeRunTasks)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *BenchmarkTaskMutation) EdgeCleared(name string) bool {
+	switch name {
+	case benchmarktask.EdgeSuite:
+		return m.clearedsuite
+	case benchmarktask.EdgeRunTasks:
+		return m.clearedrun_tasks
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *BenchmarkTaskMutation) ClearEdge(name string) error {
+	switch name {
+	case benchmarktask.EdgeSuite:
+		m.ClearSuite()
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkTask unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *BenchmarkTaskMutation) ResetEdge(name string) error {
+	switch name {
+	case benchmarktask.EdgeSuite:
+		m.ResetSuite()
+		return nil
+	case benchmarktask.EdgeRunTasks:
+		m.ResetRunTasks()
+		return nil
+	}
+	return fmt.Errorf("unknown BenchmarkTask edge %s", name)
 }
 
 // ChannelMonitorMutation represents an operation that mutates the ChannelMonitor nodes in the graph.

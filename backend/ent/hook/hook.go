@@ -93,6 +93,138 @@ func (f AuthIdentityChannelFunc) Mutate(ctx context.Context, m ent.Mutation) (en
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AuthIdentityChannelMutation", m)
 }
 
+// The BenchmarkProfileFunc type is an adapter to allow the use of ordinary
+// function as BenchmarkProfile mutator.
+type BenchmarkProfileFunc func(context.Context, *ent.BenchmarkProfileMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f BenchmarkProfileFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.BenchmarkProfileMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.BenchmarkProfileMutation", m)
+}
+
+// The BenchmarkPublicSnapshotFunc type is an adapter to allow the use of ordinary
+// function as BenchmarkPublicSnapshot mutator.
+type BenchmarkPublicSnapshotFunc func(context.Context, *ent.BenchmarkPublicSnapshotMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f BenchmarkPublicSnapshotFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.BenchmarkPublicSnapshotMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.BenchmarkPublicSnapshotMutation", m)
+}
+
+// The BenchmarkResultFunc type is an adapter to allow the use of ordinary
+// function as BenchmarkResult mutator.
+type BenchmarkResultFunc func(context.Context, *ent.BenchmarkResultMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f BenchmarkResultFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.BenchmarkResultMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.BenchmarkResultMutation", m)
+}
+
+// The BenchmarkRunFunc type is an adapter to allow the use of ordinary
+// function as BenchmarkRun mutator.
+type BenchmarkRunFunc func(context.Context, *ent.BenchmarkRunMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f BenchmarkRunFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.BenchmarkRunMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.BenchmarkRunMutation", m)
+}
+
+// The BenchmarkRunTargetFunc type is an adapter to allow the use of ordinary
+// function as BenchmarkRunTarget mutator.
+type BenchmarkRunTargetFunc func(context.Context, *ent.BenchmarkRunTargetMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f BenchmarkRunTargetFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.BenchmarkRunTargetMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.BenchmarkRunTargetMutation", m)
+}
+
+// The BenchmarkRunTaskFunc type is an adapter to allow the use of ordinary
+// function as BenchmarkRunTask mutator.
+type BenchmarkRunTaskFunc func(context.Context, *ent.BenchmarkRunTaskMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f BenchmarkRunTaskFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.BenchmarkRunTaskMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.BenchmarkRunTaskMutation", m)
+}
+
+// The BenchmarkScheduleFunc type is an adapter to allow the use of ordinary
+// function as BenchmarkSchedule mutator.
+type BenchmarkScheduleFunc func(context.Context, *ent.BenchmarkScheduleMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f BenchmarkScheduleFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.BenchmarkScheduleMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.BenchmarkScheduleMutation", m)
+}
+
+// The BenchmarkScoreSnapshotFunc type is an adapter to allow the use of ordinary
+// function as BenchmarkScoreSnapshot mutator.
+type BenchmarkScoreSnapshotFunc func(context.Context, *ent.BenchmarkScoreSnapshotMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f BenchmarkScoreSnapshotFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.BenchmarkScoreSnapshotMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.BenchmarkScoreSnapshotMutation", m)
+}
+
+// The BenchmarkSuiteFunc type is an adapter to allow the use of ordinary
+// function as BenchmarkSuite mutator.
+type BenchmarkSuiteFunc func(context.Context, *ent.BenchmarkSuiteMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f BenchmarkSuiteFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.BenchmarkSuiteMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.BenchmarkSuiteMutation", m)
+}
+
+// The BenchmarkTargetFunc type is an adapter to allow the use of ordinary
+// function as BenchmarkTarget mutator.
+type BenchmarkTargetFunc func(context.Context, *ent.BenchmarkTargetMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f BenchmarkTargetFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.BenchmarkTargetMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.BenchmarkTargetMutation", m)
+}
+
+// The BenchmarkTaskFunc type is an adapter to allow the use of ordinary
+// function as BenchmarkTask mutator.
+type BenchmarkTaskFunc func(context.Context, *ent.BenchmarkTaskMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f BenchmarkTaskFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.BenchmarkTaskMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.BenchmarkTaskMutation", m)
+}
+
 // The ChannelMonitorFunc type is an adapter to allow the use of ordinary
 // function as ChannelMonitor mutator.
 type ChannelMonitorFunc func(context.Context, *ent.ChannelMonitorMutation) (ent.Value, error)

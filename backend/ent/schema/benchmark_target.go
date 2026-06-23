@@ -1,0 +1,87 @@
+package schema
+
+import (
+	"github.com/Wei-Shaw/sub2api/ent/schema/mixins"
+
+	"entgo.io/ent"
+	"entgo.io/ent/dialect"
+	"entgo.io/ent/dialect/entsql"
+	"entgo.io/ent/schema"
+	"entgo.io/ent/schema/edge"
+	"entgo.io/ent/schema/field"
+	"entgo.io/ent/schema/index"
+)
+
+// BenchmarkTarget holds the model/channel target used by benchmark rankings.
+type BenchmarkTarget struct {
+	ent.Schema
+}
+
+func (BenchmarkTarget) Annotations() []schema.Annotation {
+	return []schema.Annotation{
+		entsql.Annotation{Table: "benchmark_targets"},
+	}
+}
+
+func (BenchmarkTarget) Mixin() []ent.Mixin {
+	return []ent.Mixin{
+		mixins.TimeMixin{},
+	}
+}
+
+func (BenchmarkTarget) Fields() []ent.Field {
+	return []ent.Field{
+		field.String("model_name").
+			NotEmpty().
+			MaxLen(200),
+		field.Int64("channel_id"),
+		field.String("display_name").
+			Optional().
+			Nillable().
+			MaxLen(200),
+		field.String("provider_snapshot").
+			Optional().
+			Nillable().
+			MaxLen(100),
+		field.String("channel_name_snapshot").
+			Optional().
+			Nillable().
+			MaxLen(200),
+		field.JSON("supported_task_types", []string{}).
+			Default([]string{}).
+			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
+		field.Int("max_concurrency").
+			Default(1),
+		field.Float("per_run_budget").
+			Optional().
+			Nillable().
+			SchemaType(map[string]string{dialect.Postgres: "decimal(20,10)"}),
+		field.Float("daily_budget").
+			Optional().
+			Nillable().
+			SchemaType(map[string]string{dialect.Postgres: "decimal(20,10)"}),
+		field.Bool("enabled").
+			Default(true),
+		field.Bool("public_visible").
+			Default(false),
+		field.Int("sort_order").
+			Default(0),
+		field.JSON("metadata", map[string]any{}).
+			Default(func() map[string]any { return map[string]any{} }).
+			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
+	}
+}
+
+func (BenchmarkTarget) Edges() []ent.Edge {
+	return []ent.Edge{
+		edge.To("run_targets", BenchmarkRunTarget.Type),
+	}
+}
+
+func (BenchmarkTarget) Indexes() []ent.Index {
+	return []ent.Index{
+		index.Fields("model_name", "channel_id").Unique(),
+		index.Fields("enabled", "public_visible"),
+		index.Fields("channel_id"),
+	}
+}

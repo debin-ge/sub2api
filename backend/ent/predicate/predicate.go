@@ -27,6 +27,39 @@ type AuthIdentity func(*sql.Selector)
 // AuthIdentityChannel is the predicate function for authidentitychannel builders.
 type AuthIdentityChannel func(*sql.Selector)
 
+// BenchmarkProfile is the predicate function for benchmarkprofile builders.
+type BenchmarkProfile func(*sql.Selector)
+
+// BenchmarkPublicSnapshot is the predicate function for benchmarkpublicsnapshot builders.
+type BenchmarkPublicSnapshot func(*sql.Selector)
+
+// BenchmarkResult is the predicate function for benchmarkresult builders.
+type BenchmarkResult func(*sql.Selector)
+
+// BenchmarkRun is the predicate function for benchmarkrun builders.
+type BenchmarkRun func(*sql.Selector)
+
+// BenchmarkRunTarget is the predicate function for benchmarkruntarget builders.
+type BenchmarkRunTarget func(*sql.Selector)
+
+// BenchmarkRunTask is the predicate function for benchmarkruntask builders.
+type BenchmarkRunTask func(*sql.Selector)
+
+// BenchmarkSchedule is the predicate function for benchmarkschedule builders.
+type BenchmarkSchedule func(*sql.Selector)
+
+// BenchmarkScoreSnapshot is the predicate function for benchmarkscoresnapshot builders.
+type BenchmarkScoreSnapshot func(*sql.Selector)
+
+// BenchmarkSuite is the predicate function for benchmarksuite builders.
+type BenchmarkSuite func(*sql.Selector)
+
+// BenchmarkTarget is the predicate function for benchmarktarget builders.
+type BenchmarkTarget func(*sql.Selector)
+
+// BenchmarkTask is the predicate function for benchmarktask builders.
+type BenchmarkTask func(*sql.Selector)
+
 // ChannelMonitor is the predicate function for channelmonitor builders.
 type ChannelMonitor func(*sql.Selector)
 
