@@ -543,6 +543,10 @@ func writeBenchmarkError(c *gin.Context, err error) {
 	if err == nil {
 		return
 	}
+	if strings.HasPrefix(err.Error(), "benchmark targets missing:") {
+		response.ErrorFrom(c, infraerrors.BadRequest("INVALID_TARGET_IDS", err.Error()))
+		return
+	}
 	if ent.IsNotFound(err) || infraerrors.IsNotFound(err) {
 		response.ErrorFrom(c, infraerrors.NotFound("BENCHMARK_NOT_FOUND", "benchmark resource not found"))
 		return

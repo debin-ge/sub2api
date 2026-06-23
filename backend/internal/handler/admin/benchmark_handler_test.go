@@ -312,6 +312,25 @@ func TestBenchmarkHandlerPreviewProfileReturnsCountsAndRankingBasis(t *testing.T
 	require.NotContains(t, raw, "RankingBasis")
 }
 
+func TestBenchmarkHandlerPreviewProfileMissingOverrideTargetsReturns400(t *testing.T) {
+	svc := &benchmarkAdminServiceStub{
+		previewProfileFn: func(ctx context.Context, profileID int64, override service.BenchmarkProfilePreviewInput) (*service.BenchmarkProfilePreview, error) {
+			require.Equal(t, int64(7), profileID)
+			require.Equal(t, []int64{999}, override.TargetIDs)
+			return nil, errors.New("benchmark targets missing: [999]")
+		},
+	}
+	router := newBenchmarkTestRouter(&BenchmarkHandler{benchmarkService: svc, snapshotService: &benchmarkSnapshotServiceStub{}})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/benchmark/profiles/7/preview", bytes.NewBufferString(`{"target_ids":[999]}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Contains(t, rec.Body.String(), "INVALID_TARGET_IDS")
+}
+
 func TestBenchmarkHandlerCreateRun(t *testing.T) {
 	svc := &benchmarkAdminServiceStub{
 		createRunFn: func(ctx context.Context, input service.BenchmarkCreateRunRequest) (*ent.BenchmarkRun, error) {
@@ -328,6 +347,25 @@ func TestBenchmarkHandlerCreateRun(t *testing.T) {
 	router.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestBenchmarkHandlerCreateRunMissingOverrideTargetsReturns400(t *testing.T) {
+	svc := &benchmarkAdminServiceStub{
+		createRunFn: func(ctx context.Context, input service.BenchmarkCreateRunRequest) (*ent.BenchmarkRun, error) {
+			require.Equal(t, int64(7), input.ProfileID)
+			require.Equal(t, []int64{999}, input.Override.TargetIDs)
+			return nil, errors.New("benchmark targets missing: [999]")
+		},
+	}
+	router := newBenchmarkTestRouter(&BenchmarkHandler{benchmarkService: svc, snapshotService: &benchmarkSnapshotServiceStub{}})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/benchmark/runs", bytes.NewBufferString(`{"profile_id":7,"override":{"target_ids":[999]}}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Contains(t, rec.Body.String(), "INVALID_TARGET_IDS")
 }
 
 func TestBenchmarkHandlerListRunResults(t *testing.T) {
