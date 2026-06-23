@@ -746,7 +746,7 @@ func TestBenchmarkRepositoryListScoreSnapshotsUsesRankingOrder(t *testing.T) {
 			DisplayNameSnapshot: "Primary Snapshot Model",
 			ChannelNameSnapshot: "primary-openai",
 			ProviderSnapshot:    "openai",
-			TargetOrder:         1,
+			TargetOrder:         2,
 			ConfigSnapshot:      map[string]any{"max_concurrency": 2},
 		},
 		{
@@ -756,7 +756,7 @@ func TestBenchmarkRepositoryListScoreSnapshotsUsesRankingOrder(t *testing.T) {
 			DisplayNameSnapshot: "Secondary Snapshot Model",
 			ChannelNameSnapshot: "secondary-openai",
 			ProviderSnapshot:    "openai",
-			TargetOrder:         2,
+			TargetOrder:         1,
 			ConfigSnapshot:      map[string]any{"max_concurrency": 1},
 		},
 	}
@@ -813,6 +813,8 @@ func TestBenchmarkRepositoryListScoreSnapshotsUsesRankingOrder(t *testing.T) {
 		).
 		Only(fixture.ctx)
 	require.NoError(t, err)
+	require.Less(t, primaryRunTarget.ID, secondaryRunTarget.ID)
+	require.Greater(t, primaryRunTarget.TargetOrder, secondaryRunTarget.TargetOrder)
 
 	require.NoError(t, fixture.repo.SaveScoreSnapshots(fixture.ctx, secondRun.ID, []service.BenchmarkScoreSnapshotInput{
 		{
@@ -855,7 +857,7 @@ func TestBenchmarkRepositoryListScoreSnapshotsUsesRankingOrder(t *testing.T) {
 			PlannedTasks:           1,
 			ScoredTasks:            1,
 			InvalidTasks:           0,
-			CoverageRate:           0.95,
+			CoverageRate:           0.90,
 			ConfidenceLevel:        service.BenchmarkConfidenceHigh,
 			InsufficientSample:     false,
 			SuccessRate:            1.0,
@@ -868,10 +870,10 @@ func TestBenchmarkRepositoryListScoreSnapshotsUsesRankingOrder(t *testing.T) {
 	snapshots, err := fixture.repo.ListScoreSnapshots(fixture.ctx, runOne.ID)
 	require.NoError(t, err)
 	require.Len(t, snapshots, 2)
-	require.Equal(t, secondaryRunTarget.ID, snapshots[0].RunTargetID)
+	require.Equal(t, primaryRunTarget.ID, snapshots[0].RunTargetID)
 	require.InDelta(t, 91.0, snapshots[0].OverallScore, 0.000001)
-	require.InDelta(t, 0.95, snapshots[0].CoverageRate, 0.000001)
-	require.Equal(t, primaryRunTarget.ID, snapshots[1].RunTargetID)
+	require.InDelta(t, 0.90, snapshots[0].CoverageRate, 0.000001)
+	require.Equal(t, secondaryRunTarget.ID, snapshots[1].RunTargetID)
 	require.InDelta(t, 91.0, snapshots[1].OverallScore, 0.000001)
 	require.InDelta(t, 0.90, snapshots[1].CoverageRate, 0.000001)
 }
