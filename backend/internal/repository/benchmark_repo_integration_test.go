@@ -1120,6 +1120,166 @@ func TestBenchmarkRepositoryUpdateResultClearsNullableFields(t *testing.T) {
 	require.Nil(t, clearedAgain.FinishedAt)
 }
 
+func TestBenchmarkRepositoryClaimPendingResults(t *testing.T) {
+	fixture := newBenchmarkFixture(t, "claim-pending")
+
+	secondTask, err := fixture.repo.CreateTask(fixture.ctx, service.BenchmarkTaskInput{
+		SuiteID:        fixture.suite.ID,
+		Title:          "Second claim task",
+		Type:           "reasoning",
+		Category:       "logic",
+		Difficulty:     "medium",
+		Prompt:         "Second prompt",
+		InputPayload:   map[string]any{"question": "3+3"},
+		ExpectedOutput: map[string]any{"answer": "6"},
+		VerifierType:   "exact_match",
+		VerifierConfig: map[string]any{"expected": "6"},
+		Weight:         1,
+		MinScale:       service.BenchmarkTaskScaleSmall,
+		Enabled:        true,
+	})
+	require.NoError(t, err)
+
+	secondTarget, err := fixture.repo.CreateTarget(fixture.ctx, service.BenchmarkTargetInput{
+		ModelName:           uniqueTestValue(t, "claim-pending-secondary-model"),
+		ChannelID:           102,
+		DisplayName:         "Secondary claim model",
+		ProviderSnapshot:    "openai",
+		ChannelNameSnapshot: "secondary-openai",
+		SupportedTaskTypes:  []string{"reasoning"},
+		MaxConcurrency:      1,
+		Enabled:             true,
+		PublicVisible:       true,
+		SortOrder:           2,
+	})
+	require.NoError(t, err)
+	fixture.extraTargetIDs = append(fixture.extraTargetIDs, secondTarget.ID)
+
+	runInput := fixture.createRunInput
+	runInput.Targets = []service.BenchmarkRunTargetInput{
+		{
+			TargetID:            fixture.target.ID,
+			ModelName:           fixture.target.ModelName,
+			ChannelID:           fixture.target.ChannelID,
+			DisplayNameSnapshot: "Primary snapshot",
+			ChannelNameSnapshot: "primary-openai",
+			ProviderSnapshot:    "openai",
+			TargetOrder:         1,
+			ConfigSnapshot:      map[string]any{"max_concurrency": 2},
+		},
+		{
+			TargetID:            secondTarget.ID,
+			ModelName:           secondTarget.ModelName,
+			ChannelID:           secondTarget.ChannelID,
+			DisplayNameSnapshot: "Secondary snapshot",
+			ChannelNameSnapshot: "secondary-openai",
+			ProviderSnapshot:    "openai",
+			TargetOrder:         2,
+			ConfigSnapshot:      map[string]any{"max_concurrency": 1},
+		},
+	}
+	runInput.Tasks = append(runInput.Tasks, service.BenchmarkRunTaskInput{
+		TaskID:                 secondTask.ID,
+		TaskOrder:              2,
+		Type:                   secondTask.Type,
+		Category:               stringValue(secondTask.Category),
+		Difficulty:             stringValue(secondTask.Difficulty),
+		WeightSnapshot:         secondTask.Weight,
+		PromptSnapshot:         secondTask.Prompt,
+		VerifierTypeSnapshot:   secondTask.VerifierType,
+		VerifierConfigSnapshot: secondTask.VerifierConfig,
+		TaskSnapshot: map[string]any{
+			"title":         secondTask.Title,
+			"prompt":        secondTask.Prompt,
+			"input_payload": secondTask.InputPayload,
+		},
+	})
+
+	run, err := fixture.repo.CreateRunWithSnapshots(fixture.ctx, runInput)
+	require.NoError(t, err)
+	fixture.runIDs = append(fixture.runIDs, run.ID)
+
+	results, err := fixture.repo.ListRunResults(fixture.ctx, run.ID)
+	require.NoError(t, err)
+	require.Len(t, results, 4)
+
+	rateLimitedStatus := service.BenchmarkResultStatusRateLimited
+	require.NoError(t, fixture.repo.UpdateResult(fixture.ctx, results[1].ID, service.BenchmarkResultUpdateInput{
+		Status: &rateLimitedStatus,
+	}))
+
+	runningStatus := service.BenchmarkResultStatusRunning
+	require.NoError(t, fixture.repo.UpdateResult(fixture.ctx, results[3].ID, service.BenchmarkResultUpdateInput{
+		Status: &runningStatus,
+	}))
+
+	claimed, err := fixture.repo.ClaimPendingResults(fixture.ctx, run.ID, 2)
+	require.NoError(t, err)
+	require.Len(t, claimed, 2)
+	require.Equal(t, []int64{results[0].ID, results[2].ID}, []int64{claimed[0].ID, claimed[1].ID})
+
+	for _, result := range claimed {
+		require.Equal(t, service.BenchmarkResultStatusRunning, result.Status)
+		require.Equal(t, 1, result.AttemptCount)
+	}
+
+	stored, err := fixture.repo.ListRunResults(fixture.ctx, run.ID)
+	require.NoError(t, err)
+	require.Len(t, stored, 4)
+
+	byID := make(map[int64]*dbent.BenchmarkResult, len(stored))
+	for _, result := range stored {
+		byID[result.ID] = result
+	}
+
+	require.Equal(t, service.BenchmarkResultStatusRunning, byID[results[0].ID].Status)
+	require.Equal(t, 1, byID[results[0].ID].AttemptCount)
+	require.Equal(t, service.BenchmarkResultStatusRateLimited, byID[results[1].ID].Status)
+	require.Equal(t, 0, byID[results[1].ID].AttemptCount)
+	require.Equal(t, service.BenchmarkResultStatusRunning, byID[results[2].ID].Status)
+	require.Equal(t, 1, byID[results[2].ID].AttemptCount)
+	require.Equal(t, service.BenchmarkResultStatusRunning, byID[results[3].ID].Status)
+	require.Equal(t, 0, byID[results[3].ID].AttemptCount)
+}
+
+func TestBenchmarkRepositoryRunResultContext(t *testing.T) {
+	fixture := newBenchmarkFixture(t, "run-result-context")
+	runID := fixture.runIDs[0]
+
+	results, err := fixture.repo.ListRunResults(fixture.ctx, runID)
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+
+	_, err = fixture.client.BenchmarkTarget.UpdateOneID(fixture.target.ID).
+		SetModelName("mutated-model-name").
+		SetChannelID(999).
+		Save(fixture.ctx)
+	require.NoError(t, err)
+
+	_, err = fixture.client.BenchmarkTask.UpdateOneID(fixture.task.ID).
+		SetPrompt("mutated prompt").
+		SetVerifierConfig(map[string]any{"field": "mutated"}).
+		Save(fixture.ctx)
+	require.NoError(t, err)
+
+	resultCtx, err := fixture.repo.GetRunResultContext(fixture.ctx, results[0].ID)
+	require.NoError(t, err)
+	require.NotNil(t, resultCtx)
+	require.Equal(t, results[0].ID, resultCtx.Result.ID)
+	require.Equal(t, runID, resultCtx.Run.ID)
+	require.Equal(t, fixture.runTarget(t, runID).ID, resultCtx.Target.ID)
+	require.Equal(t, fixture.target.ID, resultCtx.Target.TargetID)
+	require.Equal(t, fixture.target.ModelName, resultCtx.Target.ModelName)
+	require.Equal(t, fixture.target.ChannelID, resultCtx.Target.ChannelID)
+	require.NotNil(t, resultCtx.Target.DisplayNameSnapshot)
+	require.Equal(t, "Radar Model Snapshot", *resultCtx.Target.DisplayNameSnapshot)
+	require.Equal(t, fixture.task.ID, resultCtx.Task.TaskID)
+	require.Equal(t, "Original reasoning prompt", resultCtx.Task.PromptSnapshot)
+	require.Equal(t, fixture.task.VerifierType, resultCtx.Task.VerifierTypeSnapshot)
+	require.Equal(t, "answer", resultCtx.Task.VerifierConfigSnapshot["field"])
+	require.Equal(t, "Original reasoning prompt", resultCtx.Task.TaskSnapshot["prompt"])
+}
+
 func ptrInt64(v int64) *int64 {
 	return &v
 }

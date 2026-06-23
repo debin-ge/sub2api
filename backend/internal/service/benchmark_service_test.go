@@ -179,6 +179,26 @@ func (s *benchmarkServiceRepoStub) UpdateResult(ctx context.Context, id int64, i
 	return nil
 }
 
+func (s *benchmarkServiceRepoStub) ClaimPendingResults(ctx context.Context, runID int64, limit int) ([]*ent.BenchmarkResult, error) {
+	s.t.Fatalf("unexpected ClaimPendingResults call")
+	return nil, nil
+}
+
+func (s *benchmarkServiceRepoStub) UpdateRunStatus(ctx context.Context, runID int64, status string, errorMessage *string) error {
+	s.t.Fatalf("unexpected UpdateRunStatus call")
+	return nil
+}
+
+func (s *benchmarkServiceRepoStub) CountRunResultsByStatus(ctx context.Context, runID int64) (map[string]int, error) {
+	s.t.Fatalf("unexpected CountRunResultsByStatus call")
+	return nil, nil
+}
+
+func (s *benchmarkServiceRepoStub) GetRunResultContext(ctx context.Context, resultID int64) (*BenchmarkRunResultContext, error) {
+	s.t.Fatalf("unexpected GetRunResultContext call")
+	return nil, nil
+}
+
 func (s *benchmarkServiceRepoStub) SaveScoreSnapshots(ctx context.Context, runID int64, snapshots []BenchmarkScoreSnapshotInput) error {
 	s.t.Fatalf("unexpected SaveScoreSnapshots call")
 	return nil

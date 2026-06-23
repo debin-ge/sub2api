@@ -326,6 +326,99 @@ func (r *benchmarkRepository) ListRunResults(ctx context.Context, runID int64) (
 		All(ctx)
 }
 
+func (r *benchmarkRepository) ClaimPendingResults(ctx context.Context, runID int64, limit int) ([]*dbent.BenchmarkResult, error) {
+	if limit <= 0 {
+		return []*dbent.BenchmarkResult{}, nil
+	}
+	if tx := dbent.TxFromContext(ctx); tx != nil {
+		return r.claimPendingResults(ctx, tx.Client(), runID, limit)
+	}
+
+	tx, err := r.client.Tx(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	txCtx := dbent.NewTxContext(ctx, tx)
+	results, err := r.claimPendingResults(txCtx, tx.Client(), runID, limit)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
+func (r *benchmarkRepository) UpdateRunStatus(ctx context.Context, runID int64, status string, errorMessage *string) error {
+	builder := clientFromContext(ctx, r.client).BenchmarkRun.UpdateOneID(runID).SetStatus(status)
+	if errorMessage == nil {
+		builder.ClearErrorMessage()
+	} else {
+		builder.SetErrorMessage(*errorMessage)
+	}
+	return builder.Exec(ctx)
+}
+
+func (r *benchmarkRepository) CountRunResultsByStatus(ctx context.Context, runID int64) (map[string]int, error) {
+	rows, err := clientFromContext(ctx, r.client).QueryContext(
+		ctx,
+		`SELECT status, COUNT(*) FROM benchmark_results WHERE run_id = $1 GROUP BY status`,
+		runID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	counts := make(map[string]int)
+	for rows.Next() {
+		var status string
+		var count int
+		if err := rows.Scan(&status, &count); err != nil {
+			return nil, err
+		}
+		counts[status] = count
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return counts, nil
+}
+
+func (r *benchmarkRepository) GetRunResultContext(ctx context.Context, resultID int64) (*service.BenchmarkRunResultContext, error) {
+	result, err := clientFromContext(ctx, r.client).BenchmarkResult.Query().
+		Where(benchmarkresult.IDEQ(resultID)).
+		WithRun().
+		WithRunTarget().
+		WithRunTask().
+		Only(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	run, err := result.Edges.RunOrErr()
+	if err != nil {
+		return nil, err
+	}
+	target, err := result.Edges.RunTargetOrErr()
+	if err != nil {
+		return nil, err
+	}
+	task, err := result.Edges.RunTaskOrErr()
+	if err != nil {
+		return nil, err
+	}
+
+	return &service.BenchmarkRunResultContext{
+		Result: result,
+		Run:    run,
+		Target: target,
+		Task:   task,
+	}, nil
+}
+
 func (r *benchmarkRepository) UpdateResult(ctx context.Context, id int64, input service.BenchmarkResultUpdateInput) error {
 	builder := clientFromContext(ctx, r.client).BenchmarkResult.UpdateOneID(id)
 	if input.Status != nil {
@@ -611,6 +704,60 @@ func (r *benchmarkRepository) saveScoreSnapshots(ctx context.Context, client *db
 	}
 
 	return nil
+}
+
+func (r *benchmarkRepository) claimPendingResults(ctx context.Context, client *dbent.Client, runID int64, limit int) ([]*dbent.BenchmarkResult, error) {
+	rows, err := client.QueryContext(
+		ctx,
+		`
+WITH claimed AS (
+	SELECT id
+	FROM benchmark_results
+	WHERE run_id = $1 AND status = $2
+	ORDER BY id ASC
+	LIMIT $3
+	FOR UPDATE SKIP LOCKED
+),
+updated AS (
+	UPDATE benchmark_results AS br
+	SET status = $4,
+	    attempt_count = br.attempt_count + 1,
+	    updated_at = NOW()
+	FROM claimed
+	WHERE br.id = claimed.id
+	RETURNING br.id
+)
+SELECT id FROM updated ORDER BY id ASC
+`,
+		runID,
+		service.BenchmarkResultStatusPending,
+		limit,
+		service.BenchmarkResultStatusRunning,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	claimedIDs := make([]int64, 0, limit)
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		claimedIDs = append(claimedIDs, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(claimedIDs) == 0 {
+		return []*dbent.BenchmarkResult{}, nil
+	}
+
+	return client.BenchmarkResult.Query().
+		Where(benchmarkresult.IDIn(claimedIDs...)).
+		Order(dbent.Asc(benchmarkresult.FieldID)).
+		All(ctx)
 }
 
 func benchmarkLimitOffset(input service.BenchmarkListInput) (int, int) {
