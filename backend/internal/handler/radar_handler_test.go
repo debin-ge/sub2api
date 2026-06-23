@@ -31,11 +31,18 @@ func newRadarHandlerTestRouter(h *RadarHandler) *gin.Engine {
 	return router
 }
 
+func TestRadarHandlerSnapshotFieldIsConcreteService(t *testing.T) {
+	t.Parallel()
+
+	var snapshot *service.BenchmarkSnapshotService = (&RadarHandler{}).snapshot
+	require.Nil(t, snapshot)
+}
+
 func TestRadarHandlerReturnsEmptyRadarWhenNoSnapshot(t *testing.T) {
 	t.Parallel()
 
 	router := newRadarHandlerTestRouter(&RadarHandler{
-		snapshot: &radarSnapshotServiceStub{},
+		reader: &radarSnapshotServiceStub{},
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/public/radar", nil)
@@ -52,7 +59,7 @@ func TestRadarHandlerReturnsLatestPublicSnapshot(t *testing.T) {
 
 	completedAt := time.Date(2026, 6, 24, 8, 30, 0, 0, time.UTC)
 	router := newRadarHandlerTestRouter(&RadarHandler{
-		snapshot: &radarSnapshotServiceStub{
+		reader: &radarSnapshotServiceStub{
 			getPublicRadarFn: func(context.Context) (*service.BenchmarkPublicRadar, error) {
 				return &service.BenchmarkPublicRadar{
 					RankingBasis: "ability_score_only",
@@ -129,7 +136,7 @@ func TestRadarHandlerNeverReturnsSensitiveFields(t *testing.T) {
 	t.Parallel()
 
 	router := newRadarHandlerTestRouter(&RadarHandler{
-		snapshot: &radarSnapshotServiceStub{
+		reader: &radarSnapshotServiceStub{
 			getPublicRadarFn: func(context.Context) (*service.BenchmarkPublicRadar, error) {
 				return &service.BenchmarkPublicRadar{
 					RankingBasis: "ability_score_only",

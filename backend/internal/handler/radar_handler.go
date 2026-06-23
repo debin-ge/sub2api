@@ -14,7 +14,8 @@ type radarSnapshotReader interface {
 }
 
 type RadarHandler struct {
-	snapshot radarSnapshotReader
+	snapshot *service.BenchmarkSnapshotService
+	reader   radarSnapshotReader
 }
 
 func NewRadarHandler(snapshot *service.BenchmarkSnapshotService) *RadarHandler {
@@ -28,7 +29,12 @@ type radarResponse struct {
 }
 
 func (h *RadarHandler) GetCurrent(c *gin.Context) {
-	radar, err := h.snapshot.GetPublicRadar(c.Request.Context())
+	reader := h.reader
+	if reader == nil {
+		reader = h.snapshot
+	}
+
+	radar, err := reader.GetPublicRadar(c.Request.Context())
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
