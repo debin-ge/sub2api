@@ -566,6 +566,7 @@ var ProviderSet = wire.NewSet(
 	NewUsageService,
 	NewDashboardService,
 	NewBenchmarkService,
+	NewBenchmarkSnapshotService,
 	// BenchmarkRunner stays out of ProviderSet until a concrete BenchmarkGatewayClient provider exists.
 	ProvidePricingService,
 	NewBillingService,

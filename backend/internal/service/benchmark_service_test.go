@@ -31,6 +31,9 @@ type benchmarkServiceRepoStub struct {
 	listRunTasksFn             func(ctx context.Context, runID int64) ([]*ent.BenchmarkRunTask, error)
 	listRunScoreInputsFn       func(ctx context.Context, runID int64) ([]BenchmarkRunScoreInput, error)
 	listScoreSnapshotsFn       func(ctx context.Context, runID int64) ([]*ent.BenchmarkScoreSnapshot, error)
+	saveScoreSnapshotsFn       func(ctx context.Context, runID int64, snapshots []BenchmarkScoreSnapshotInput) error
+	publishPublicSnapshotFn    func(ctx context.Context, input BenchmarkPublicSnapshotInput) error
+	getLatestPublicSnapshotFn  func(ctx context.Context) (*ent.BenchmarkPublicSnapshot, error)
 }
 
 func newBenchmarkServiceRepoStub(t *testing.T) *benchmarkServiceRepoStub {
@@ -223,16 +226,25 @@ func (s *benchmarkServiceRepoStub) RequeueClaimedResults(ctx context.Context, re
 }
 
 func (s *benchmarkServiceRepoStub) SaveScoreSnapshots(ctx context.Context, runID int64, snapshots []BenchmarkScoreSnapshotInput) error {
+	if s.saveScoreSnapshotsFn != nil {
+		return s.saveScoreSnapshotsFn(ctx, runID, snapshots)
+	}
 	s.t.Fatalf("unexpected SaveScoreSnapshots call")
 	return nil
 }
 
 func (s *benchmarkServiceRepoStub) PublishPublicSnapshot(ctx context.Context, input BenchmarkPublicSnapshotInput) error {
+	if s.publishPublicSnapshotFn != nil {
+		return s.publishPublicSnapshotFn(ctx, input)
+	}
 	s.t.Fatalf("unexpected PublishPublicSnapshot call")
 	return nil
 }
 
 func (s *benchmarkServiceRepoStub) GetLatestPublicSnapshot(ctx context.Context) (*ent.BenchmarkPublicSnapshot, error) {
+	if s.getLatestPublicSnapshotFn != nil {
+		return s.getLatestPublicSnapshotFn(ctx)
+	}
 	s.t.Fatalf("unexpected GetLatestPublicSnapshot call")
 	return nil, nil
 }
