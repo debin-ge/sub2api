@@ -128,6 +128,18 @@ type benchmarkProfilePreviewOverrideRequest struct {
 	SelectionSeed    *int64         `json:"selection_seed"`
 }
 
+type benchmarkProfilePreviewResponse struct {
+	TargetCount       int      `json:"target_count"`
+	TaskCount         int      `json:"task_count"`
+	ResultCount       int      `json:"result_count"`
+	TaskTypes         []string `json:"task_types"`
+	TaskScale         string   `json:"task_scale"`
+	RankingBasis      string   `json:"ranking_basis"`
+	EstimatedCost     float64  `json:"estimated_cost"`
+	SelectedTaskIDs   []int64  `json:"selected_task_ids"`
+	SelectedTargetIDs []int64  `json:"selected_target_ids"`
+}
+
 func (h *BenchmarkHandler) ListSuites(c *gin.Context) {
 	input := service.NormalizeBenchmarkListInput(parseBenchmarkListInput(c))
 	items, total, err := h.benchmarkService.ListSuites(c.Request.Context(), input)
@@ -321,7 +333,17 @@ func (h *BenchmarkHandler) PreviewProfile(c *gin.Context) {
 		writeBenchmarkError(c, err)
 		return
 	}
-	response.Success(c, preview)
+	response.Success(c, benchmarkProfilePreviewResponse{
+		TargetCount:       preview.TargetCount,
+		TaskCount:         preview.TaskCount,
+		ResultCount:       preview.ResultCount,
+		TaskTypes:         preview.TaskTypes,
+		TaskScale:         preview.TaskScale,
+		RankingBasis:      preview.RankingBasis,
+		EstimatedCost:     preview.EstimatedCost,
+		SelectedTaskIDs:   preview.SelectedTaskIDs,
+		SelectedTargetIDs: preview.SelectedTargetIDs,
+	})
 }
 
 func (h *BenchmarkHandler) CreateRun(c *gin.Context) {

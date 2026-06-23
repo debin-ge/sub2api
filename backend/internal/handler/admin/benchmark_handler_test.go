@@ -251,10 +251,15 @@ func TestBenchmarkHandlerPreviewProfileReturnsCountsAndRankingBasis(t *testing.T
 		previewProfileFn: func(ctx context.Context, profileID int64, override service.BenchmarkProfilePreviewInput) (*service.BenchmarkProfilePreview, error) {
 			require.Equal(t, int64(7), profileID)
 			return &service.BenchmarkProfilePreview{
-				TargetCount:  2,
-				TaskCount:    3,
-				ResultCount:  6,
-				RankingBasis: "ability_score_only",
+				TargetCount:       2,
+				TaskCount:         3,
+				ResultCount:       6,
+				TaskTypes:         []string{"reasoning", "coding"},
+				TaskScale:         service.BenchmarkTaskScaleMedium,
+				RankingBasis:      "ability_score_only",
+				EstimatedCost:     1.25,
+				SelectedTaskIDs:   []int64{101, 102, 103},
+				SelectedTargetIDs: []int64{201, 202},
 			}, nil
 		},
 	}
@@ -268,12 +273,43 @@ func TestBenchmarkHandlerPreviewProfileReturnsCountsAndRankingBasis(t *testing.T
 	require.Equal(t, http.StatusOK, rec.Code)
 	var resp benchmarkHTTPResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
-	var preview service.BenchmarkProfilePreview
+	var preview struct {
+		TargetCount       int      `json:"target_count"`
+		TaskCount         int      `json:"task_count"`
+		ResultCount       int      `json:"result_count"`
+		TaskTypes         []string `json:"task_types"`
+		TaskScale         string   `json:"task_scale"`
+		RankingBasis      string   `json:"ranking_basis"`
+		EstimatedCost     float64  `json:"estimated_cost"`
+		SelectedTaskIDs   []int64  `json:"selected_task_ids"`
+		SelectedTargetIDs []int64  `json:"selected_target_ids"`
+	}
 	require.NoError(t, json.Unmarshal(resp.Data, &preview))
 	require.Equal(t, 2, preview.TargetCount)
 	require.Equal(t, 3, preview.TaskCount)
 	require.Equal(t, 6, preview.ResultCount)
+	require.Equal(t, []string{"reasoning", "coding"}, preview.TaskTypes)
+	require.Equal(t, service.BenchmarkTaskScaleMedium, preview.TaskScale)
 	require.Equal(t, "ability_score_only", preview.RankingBasis)
+	require.InDelta(t, 1.25, preview.EstimatedCost, 0.000001)
+	require.Equal(t, []int64{101, 102, 103}, preview.SelectedTaskIDs)
+	require.Equal(t, []int64{201, 202}, preview.SelectedTargetIDs)
+
+	var raw map[string]any
+	require.NoError(t, json.Unmarshal(resp.Data, &raw))
+	require.Contains(t, raw, "target_count")
+	require.Contains(t, raw, "task_count")
+	require.Contains(t, raw, "result_count")
+	require.Contains(t, raw, "task_types")
+	require.Contains(t, raw, "task_scale")
+	require.Contains(t, raw, "ranking_basis")
+	require.Contains(t, raw, "estimated_cost")
+	require.Contains(t, raw, "selected_task_ids")
+	require.Contains(t, raw, "selected_target_ids")
+	require.NotContains(t, raw, "TargetCount")
+	require.NotContains(t, raw, "TaskCount")
+	require.NotContains(t, raw, "ResultCount")
+	require.NotContains(t, raw, "RankingBasis")
 }
 
 func TestBenchmarkHandlerCreateRun(t *testing.T) {
