@@ -516,12 +516,14 @@ func TestBenchmarkSnapshotGetPublicRadarDecodesLatestSnapshot(t *testing.T) {
 	}
 
 	repo := newBenchmarkServiceRepoStub(t)
+	publishedAt := time.Date(2026, 6, 24, 9, 15, 0, 0, time.UTC)
 	repo.getLatestPublicSnapshotFn = func(ctx context.Context) (*ent.BenchmarkPublicSnapshot, error) {
 		return &ent.BenchmarkPublicSnapshot{
-			RunID:     999,
-			SuiteID:   10,
-			ProfileID: 20,
-			Snapshot:  benchmarkSnapshotStructMap(t, radar),
+			RunID:       999,
+			SuiteID:     10,
+			ProfileID:   20,
+			Snapshot:    benchmarkSnapshotStructMap(t, radar),
+			PublishedAt: publishedAt,
 		}, nil
 	}
 
@@ -531,6 +533,8 @@ func TestBenchmarkSnapshotGetPublicRadarDecodesLatestSnapshot(t *testing.T) {
 	require.Equal(t, radar.RankingBasis, got.RankingBasis)
 	require.NotNil(t, got.LatestRun)
 	require.Equal(t, radar.LatestRun.ID, got.LatestRun.ID)
+	require.NotNil(t, got.PublishedAt)
+	require.Equal(t, publishedAt, *got.PublishedAt)
 	require.Equal(t, radar.Targets[0].DisplayName, got.Targets[0].DisplayName)
 	require.InDelta(t, radar.Targets[0].OverallScore, got.Targets[0].OverallScore, 0.000001)
 	require.InDelta(t, radar.Targets[0].Metrics.EstimatedCost, got.Targets[0].Metrics.EstimatedCost, 0.000001)

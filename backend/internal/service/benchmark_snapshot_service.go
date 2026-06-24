@@ -28,6 +28,7 @@ func (s *BenchmarkSnapshotService) SetSettingService(settingService *SettingServ
 
 type BenchmarkPublicRadar struct {
 	RankingBasis string                  `json:"ranking_basis"`
+	PublishedAt  *time.Time              `json:"published_at,omitempty"`
 	LatestRun    *BenchmarkPublicRun     `json:"latest_run,omitempty"`
 	Targets      []BenchmarkPublicTarget `json:"targets"`
 }
@@ -288,12 +289,14 @@ func (s *BenchmarkSnapshotService) PublishPublicSnapshot(ctx context.Context, ru
 		return radar.Targets[i].Rank < radar.Targets[j].Rank
 	})
 
+	publishedAt := time.Now().UTC()
+	radar.PublishedAt = &publishedAt
+
 	payload, err := benchmarkPublicRadarPayload(radar)
 	if err != nil {
 		return err
 	}
 
-	publishedAt := time.Now().UTC()
 	return s.repo.PublishPublicSnapshot(ctx, BenchmarkPublicSnapshotInput{
 		RunID:       run.ID,
 		SuiteID:     run.SuiteID,
@@ -320,6 +323,10 @@ func (s *BenchmarkSnapshotService) GetPublicRadar(ctx context.Context) (*Benchma
 	var radar BenchmarkPublicRadar
 	if err := json.Unmarshal(payload, &radar); err != nil {
 		return nil, err
+	}
+	if radar.PublishedAt == nil && !snapshot.PublishedAt.IsZero() {
+		publishedAt := snapshot.PublishedAt
+		radar.PublishedAt = &publishedAt
 	}
 	return &radar, nil
 }

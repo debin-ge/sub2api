@@ -221,6 +221,20 @@ export interface BenchmarkRun {
   created_by?: number | null
 }
 
+export interface BenchmarkRunTargetSnapshot {
+  id: number
+  run_id?: number
+  target_id: number
+  model_name: string
+  channel_id: number
+  display_name_snapshot?: string | null
+  channel_name_snapshot?: string | null
+  provider_snapshot?: string | null
+  target_order?: number
+  config_snapshot?: Record<string, unknown>
+  created_at?: string
+}
+
 export interface BenchmarkRunListParams extends BenchmarkListParams {
   suite_id?: number
   profile_id?: number
@@ -259,6 +273,9 @@ export interface BenchmarkResult {
   attempt_count: number
   started_at?: string | null
   finished_at?: string | null
+  edges?: {
+    run_target?: BenchmarkRunTargetSnapshot
+  }
 }
 
 export interface BenchmarkScoreSnapshot {
@@ -281,6 +298,9 @@ export interface BenchmarkScoreSnapshot {
   invalid_reason_breakdown?: Record<string, number>
   ranking_metadata?: Record<string, unknown>
   created_at?: string
+  edges?: {
+    run_target?: BenchmarkRunTargetSnapshot
+  }
 }
 
 export interface BenchmarkSchedule {
@@ -352,6 +372,7 @@ export interface BenchmarkRadarTarget {
 
 export interface BenchmarkPublicRadar {
   ranking_basis: 'ability_score_only'
+  published_at?: string | null
   latest_run: BenchmarkPublicRadarLatestRun | null
   targets: BenchmarkRadarTarget[]
 }

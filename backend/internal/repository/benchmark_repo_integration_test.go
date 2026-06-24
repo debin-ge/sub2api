@@ -617,6 +617,10 @@ func TestBenchmarkRepositoryReadRunSnapshots(t *testing.T) {
 	require.Equal(t, service.BenchmarkResultStatusPending, results[0].Status)
 	require.Equal(t, runTargets[0].ID, results[0].RunTargetID)
 	require.Equal(t, runTasks[0].ID, results[0].RunTaskID)
+	resultRunTarget, err := results[0].Edges.RunTargetOrErr()
+	require.NoError(t, err)
+	require.Equal(t, runTargets[0].ID, resultRunTarget.ID)
+	require.Equal(t, "Radar Model Snapshot", *resultRunTarget.DisplayNameSnapshot)
 }
 
 func TestBenchmarkRepositoryListRunScoreInputs(t *testing.T) {
@@ -927,6 +931,10 @@ func TestBenchmarkRepositoryListScoreSnapshotsUsesRankingOrder(t *testing.T) {
 	require.Equal(t, primaryRunTarget.ID, snapshots[0].RunTargetID)
 	require.InDelta(t, 91.0, snapshots[0].OverallScore, 0.000001)
 	require.InDelta(t, 0.90, snapshots[0].CoverageRate, 0.000001)
+	snapshotRunTarget, err := snapshots[0].Edges.RunTargetOrErr()
+	require.NoError(t, err)
+	require.Equal(t, primaryRunTarget.ID, snapshotRunTarget.ID)
+	require.Equal(t, "Primary Snapshot Model", *snapshotRunTarget.DisplayNameSnapshot)
 	require.Equal(t, secondaryRunTarget.ID, snapshots[1].RunTargetID)
 	require.InDelta(t, 91.0, snapshots[1].OverallScore, 0.000001)
 	require.InDelta(t, 0.90, snapshots[1].CoverageRate, 0.000001)

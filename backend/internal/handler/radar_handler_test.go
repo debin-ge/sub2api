@@ -140,11 +140,13 @@ func TestRadarHandlerReturnsLatestPublicSnapshot(t *testing.T) {
 	t.Parallel()
 
 	completedAt := time.Date(2026, 6, 24, 8, 30, 0, 0, time.UTC)
+	publishedAt := time.Date(2026, 6, 24, 9, 15, 0, 0, time.UTC)
 	router := newRadarHandlerTestRouter(&RadarHandler{
 		reader: &radarSnapshotServiceStub{
 			getPublicRadarFn: func(context.Context) (*service.BenchmarkPublicRadar, error) {
 				return &service.BenchmarkPublicRadar{
 					RankingBasis: "ability_score_only",
+					PublishedAt:  &publishedAt,
 					LatestRun: &service.BenchmarkPublicRun{
 						ID:          42,
 						SuiteID:     7,
@@ -192,6 +194,7 @@ func TestRadarHandlerReturnsLatestPublicSnapshot(t *testing.T) {
 	var payload map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &payload))
 	require.Equal(t, "ability_score_only", payload["ranking_basis"])
+	require.Equal(t, publishedAt.Format(time.RFC3339), payload["published_at"])
 
 	latestRun, ok := payload["latest_run"].(map[string]any)
 	require.True(t, ok)

@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -37,6 +38,7 @@ func (h *RadarHandler) SetSettingService(settingService *service.SettingService)
 
 type radarResponse struct {
 	RankingBasis string                          `json:"ranking_basis"`
+	PublishedAt  *time.Time                      `json:"published_at,omitempty"`
 	LatestRun    *service.BenchmarkPublicRun     `json:"latest_run"`
 	Targets      []service.BenchmarkPublicTarget `json:"targets"`
 }
@@ -66,6 +68,7 @@ func (h *RadarHandler) GetCurrent(c *gin.Context) {
 
 	c.JSON(http.StatusOK, radarResponse{
 		RankingBasis: radar.RankingBasis,
+		PublishedAt:  radar.PublishedAt,
 		LatestRun:    radar.LatestRun,
 		Targets:      radar.Targets,
 	})

@@ -410,10 +410,25 @@ func TestBenchmarkHandlerCreateRunMissingOverrideTargetsReturns400(t *testing.T)
 }
 
 func TestBenchmarkHandlerListRunResults(t *testing.T) {
+	displayName := "Run Snapshot Model"
 	svc := &benchmarkAdminServiceStub{
 		listRunResultsFn: func(ctx context.Context, runID int64) ([]*ent.BenchmarkResult, error) {
 			require.Equal(t, int64(41), runID)
-			return []*ent.BenchmarkResult{{ID: 1}, {ID: 2}}, nil
+			return []*ent.BenchmarkResult{
+				{
+					ID:          1,
+					RunTargetID: 501,
+					Edges: ent.BenchmarkResultEdges{
+						RunTarget: &ent.BenchmarkRunTarget{
+							ID:                  501,
+							TargetID:            11,
+							ModelName:           "gpt-4.1",
+							ChannelID:           7,
+							DisplayNameSnapshot: &displayName,
+						},
+					},
+				},
+			}, nil
 		},
 	}
 	router := newBenchmarkTestRouter(&BenchmarkHandler{benchmarkService: svc, snapshotService: &benchmarkSnapshotServiceStub{}})
@@ -425,16 +440,38 @@ func TestBenchmarkHandlerListRunResults(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	var resp benchmarkHTTPResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
-	var results []ent.BenchmarkResult
+	var results []map[string]any
 	require.NoError(t, json.Unmarshal(resp.Data, &results))
-	require.Len(t, results, 2)
+	require.Len(t, results, 1)
+	edges, ok := results[0]["edges"].(map[string]any)
+	require.True(t, ok)
+	runTarget, ok := edges["run_target"].(map[string]any)
+	require.True(t, ok)
+	require.EqualValues(t, 501, runTarget["id"])
+	require.EqualValues(t, 11, runTarget["target_id"])
+	require.Equal(t, "Run Snapshot Model", runTarget["display_name_snapshot"])
 }
 
 func TestBenchmarkHandlerListRunScores(t *testing.T) {
+	displayName := "Run Snapshot Score Model"
 	svc := &benchmarkAdminServiceStub{
 		listScoreSnapshotsFn: func(ctx context.Context, runID int64) ([]*ent.BenchmarkScoreSnapshot, error) {
 			require.Equal(t, int64(42), runID)
-			return []*ent.BenchmarkScoreSnapshot{{ID: 1}, {ID: 2}}, nil
+			return []*ent.BenchmarkScoreSnapshot{
+				{
+					ID:          1,
+					RunTargetID: 601,
+					Edges: ent.BenchmarkScoreSnapshotEdges{
+						RunTarget: &ent.BenchmarkRunTarget{
+							ID:                  601,
+							TargetID:            12,
+							ModelName:           "claude-3-5-sonnet",
+							ChannelID:           8,
+							DisplayNameSnapshot: &displayName,
+						},
+					},
+				},
+			}, nil
 		},
 	}
 	router := newBenchmarkTestRouter(&BenchmarkHandler{benchmarkService: svc, snapshotService: &benchmarkSnapshotServiceStub{}})
@@ -446,9 +483,16 @@ func TestBenchmarkHandlerListRunScores(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	var resp benchmarkHTTPResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
-	var scores []ent.BenchmarkScoreSnapshot
+	var scores []map[string]any
 	require.NoError(t, json.Unmarshal(resp.Data, &scores))
-	require.Len(t, scores, 2)
+	require.Len(t, scores, 1)
+	edges, ok := scores[0]["edges"].(map[string]any)
+	require.True(t, ok)
+	runTarget, ok := edges["run_target"].(map[string]any)
+	require.True(t, ok)
+	require.EqualValues(t, 601, runTarget["id"])
+	require.EqualValues(t, 12, runTarget["target_id"])
+	require.Equal(t, "Run Snapshot Score Model", runTarget["display_name_snapshot"])
 }
 
 func TestBenchmarkHandlerPublishRun(t *testing.T) {

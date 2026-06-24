@@ -401,6 +401,7 @@ func (r *benchmarkRepository) ListRunTasks(ctx context.Context, runID int64) ([]
 func (r *benchmarkRepository) ListRunResults(ctx context.Context, runID int64) ([]*dbent.BenchmarkResult, error) {
 	return clientFromContext(ctx, r.client).BenchmarkResult.Query().
 		Where(benchmarkresult.RunIDEQ(runID)).
+		WithRunTarget().
 		Order(dbent.Asc(benchmarkresult.FieldID)).
 		All(ctx)
 }
@@ -462,6 +463,7 @@ func (r *benchmarkRepository) ListRunScoreInputs(ctx context.Context, runID int6
 func (r *benchmarkRepository) ListScoreSnapshots(ctx context.Context, runID int64) ([]*dbent.BenchmarkScoreSnapshot, error) {
 	return clientFromContext(ctx, r.client).BenchmarkScoreSnapshot.Query().
 		Where(benchmarkscoresnapshot.RunIDEQ(runID)).
+		WithRunTarget().
 		Order(
 			dbent.Desc(benchmarkscoresnapshot.FieldOverallScore),
 			dbent.Desc(benchmarkscoresnapshot.FieldCoverageRate),
