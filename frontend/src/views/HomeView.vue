@@ -1,6 +1,6 @@
 <template>
   <!-- Custom Home Content: Full Page Mode -->
-  <div v-if="homeContent" class="min-h-screen">
+  <div v-if="hasHomeContent" class="min-h-screen">
     <!-- iframe mode -->
     <iframe
       v-if="isHomeContentUrl"
@@ -10,6 +10,93 @@
     ></iframe>
     <!-- HTML mode - SECURITY: homeContent is admin-only setting, XSS risk is acceptable -->
     <div v-else v-html="homeContent"></div>
+  </div>
+
+  <!-- Radar Home Page -->
+  <div v-else-if="showBenchmarkRadarHome" class="min-h-screen bg-gray-50 dark:bg-dark-950">
+    <header class="border-b border-gray-200 bg-white/90 px-6 py-4 backdrop-blur dark:border-dark-800 dark:bg-dark-950/90">
+      <nav class="mx-auto flex max-w-6xl items-center justify-between">
+        <div class="flex min-w-0 items-center gap-3">
+          <div class="h-10 w-10 overflow-hidden rounded-xl shadow-sm">
+            <img :src="siteLogo || '/logo.png'" alt="Logo" class="h-full w-full object-contain" />
+          </div>
+          <span class="max-w-[11rem] truncate text-sm font-semibold text-gray-900 dark:text-white sm:max-w-xs">
+            {{ siteName }}
+          </span>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <LocaleSwitcher />
+
+          <router-link
+            to="/docs"
+            class="rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
+            :title="t('home.viewDocs')"
+          >
+            <Icon name="book" size="md" />
+          </router-link>
+
+          <button
+            @click="toggleTheme"
+            class="rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
+            :title="isDark ? t('home.switchToLight') : t('home.switchToDark')"
+          >
+            <Icon v-if="isDark" name="sun" size="md" />
+            <Icon v-else name="moon" size="md" />
+          </button>
+
+          <router-link
+            v-if="isAuthenticated"
+            :to="dashboardPath"
+            class="inline-flex items-center gap-1.5 rounded-full bg-gray-900 py-1 pl-1 pr-2.5 transition-colors hover:bg-gray-800 dark:bg-gray-800 dark:hover:bg-gray-700"
+          >
+            <span
+              class="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-[10px] font-semibold text-white"
+            >
+              {{ userInitial }}
+            </span>
+            <span class="text-xs font-medium text-white">{{ t('home.dashboard') }}</span>
+            <Icon name="arrowRight" size="sm" class="text-gray-400" />
+          </router-link>
+          <router-link
+            v-else
+            to="/login"
+            class="inline-flex items-center rounded-full bg-gray-900 px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-gray-800 dark:bg-gray-800 dark:hover:bg-gray-700"
+          >
+            {{ t('home.login') }}
+          </router-link>
+        </div>
+      </nav>
+    </header>
+
+    <main class="mx-auto max-w-6xl px-6 py-8">
+      <div class="mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+        <div>
+          <p class="text-sm font-medium text-primary-600 dark:text-primary-400">Public Benchmark</p>
+          <h1 class="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">AI Model Radar</h1>
+          <p class="mt-2 max-w-2xl text-sm text-gray-600 dark:text-dark-300">
+            按公开 Benchmark 展示模型能力分，并单独列出延迟、成功率、Token 和成本等运行指标。
+          </p>
+        </div>
+      </div>
+
+      <RadarEmptyState
+        v-if="radarLoading"
+        title="正在加载 Radar 数据"
+        description="请稍候，正在读取最新公开排行。"
+      />
+      <RadarEmptyState
+        v-else-if="radarError"
+        title="暂时无法加载 Radar 数据"
+        :description="radarError"
+      />
+      <div v-else-if="radar && radar.targets.length > 0" class="space-y-6">
+        <RadarSummaryCards :radar="radar" />
+        <RadarDimensionChart :targets="radar.targets" />
+        <RadarRankTable :targets="radar.targets" />
+      </div>
+      <RadarEmptyState v-else />
+    </main>
   </div>
 
   <!-- Default Home Page -->
@@ -436,11 +523,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore, useAppStore } from '@/stores'
 import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import Icon from '@/components/icons/Icon.vue'
+import RadarDimensionChart from '@/components/radar/RadarDimensionChart.vue'
+import RadarEmptyState from '@/components/radar/RadarEmptyState.vue'
+import RadarRankTable from '@/components/radar/RadarRankTable.vue'
+import RadarSummaryCards from '@/components/radar/RadarSummaryCards.vue'
+import { radarAPI } from '@/api/radar'
+import type { BenchmarkPublicRadar } from '@/types/benchmark'
 
 const { t } = useI18n()
 
@@ -452,6 +545,15 @@ const siteName = computed(() => appStore.cachedPublicSettings?.site_name || appS
 const siteLogo = computed(() => appStore.cachedPublicSettings?.site_logo || appStore.siteLogo || '')
 const siteSubtitle = computed(() => appStore.cachedPublicSettings?.site_subtitle || 'AI API Gateway Platform')
 const homeContent = computed(() => appStore.cachedPublicSettings?.home_content || '')
+const hasHomeContent = computed(() => homeContent.value.trim().length > 0)
+const showBenchmarkRadarHome = computed(() => {
+  return !hasHomeContent.value && appStore.cachedPublicSettings?.benchmark_home_enabled === true
+})
+
+const radar = ref<BenchmarkPublicRadar | null>(null)
+const radarLoading = ref(false)
+const radarLoaded = ref(false)
+const radarError = ref('')
 
 // Check if homeContent is a URL (for iframe display)
 const isHomeContentUrl = computed(() => {
@@ -493,6 +595,33 @@ function initTheme() {
     document.documentElement.classList.add('dark')
   }
 }
+
+async function loadPublicRadar() {
+  if (radarLoading.value || radarLoaded.value) return
+
+  radarLoading.value = true
+  radarError.value = ''
+
+  try {
+    radar.value = await radarAPI.getCurrent()
+    radarLoaded.value = true
+  } catch (error) {
+    radar.value = null
+    radarError.value = error instanceof Error ? error.message : '公开 Radar 数据读取失败。'
+  } finally {
+    radarLoading.value = false
+  }
+}
+
+watch(
+  showBenchmarkRadarHome,
+  (enabled) => {
+    if (enabled) {
+      loadPublicRadar()
+    }
+  },
+  { immediate: true },
+)
 
 onMounted(() => {
   initTheme()
