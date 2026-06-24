@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkprofile"
@@ -12,6 +13,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkrun"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkruntarget"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkruntask"
+	"github.com/Wei-Shaw/sub2api/ent/benchmarkschedule"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkscoresnapshot"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarksuite"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarktarget"
@@ -269,6 +271,63 @@ func (r *benchmarkRepository) ListProfiles(ctx context.Context, input service.Be
 		return nil, 0, err
 	}
 	return rows, total, nil
+}
+
+func (r *benchmarkRepository) ListSchedules(ctx context.Context, input service.BenchmarkScheduleListInput) ([]*dbent.BenchmarkSchedule, int, error) {
+	client := clientFromContext(ctx, r.client)
+	query := client.BenchmarkSchedule.Query()
+	if input.ProfileID > 0 {
+		query = query.Where(benchmarkschedule.ProfileIDEQ(input.ProfileID))
+	}
+	if input.Enabled != nil {
+		query = query.Where(benchmarkschedule.EnabledEQ(*input.Enabled))
+	}
+	total, err := query.Clone().Count(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	limit, offset := benchmarkLimitOffset(input.BenchmarkListInput)
+	rows, err := query.
+		Order(dbent.Asc(benchmarkschedule.FieldID)).
+		Limit(limit).
+		Offset(offset).
+		All(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	return rows, total, nil
+}
+
+func (r *benchmarkRepository) CreateSchedule(ctx context.Context, input service.BenchmarkScheduleInput) (*dbent.BenchmarkSchedule, error) {
+	return clientFromContext(ctx, r.client).BenchmarkSchedule.Create().
+		SetProfileID(input.ProfileID).
+		SetName(input.Name).
+		SetCronExpr(input.CronExpr).
+		SetEnabled(input.Enabled).
+		SetNillableNextRunAt(input.NextRunAt).
+		SetMetadata(benchmarkMap(input.Metadata)).
+		Save(ctx)
+}
+
+func (r *benchmarkRepository) GetSchedule(ctx context.Context, id int64) (*dbent.BenchmarkSchedule, error) {
+	return clientFromContext(ctx, r.client).BenchmarkSchedule.Get(ctx, id)
+}
+
+func (r *benchmarkRepository) ListDueSchedules(ctx context.Context, now time.Time) ([]*dbent.BenchmarkSchedule, error) {
+	return clientFromContext(ctx, r.client).BenchmarkSchedule.Query().
+		Where(
+			benchmarkschedule.EnabledEQ(true),
+			benchmarkschedule.NextRunAtLTE(now),
+		).
+		Order(dbent.Asc(benchmarkschedule.FieldNextRunAt), dbent.Asc(benchmarkschedule.FieldID)).
+		All(ctx)
+}
+
+func (r *benchmarkRepository) UpdateScheduleAfterRun(ctx context.Context, id int64, lastRunAt time.Time, nextRunAt time.Time) error {
+	return clientFromContext(ctx, r.client).BenchmarkSchedule.UpdateOneID(id).
+		SetLastRunAt(lastRunAt).
+		SetNextRunAt(nextRunAt).
+		Exec(ctx)
 }
 
 func (r *benchmarkRepository) CreateRunWithSnapshots(ctx context.Context, input service.BenchmarkCreateRunInput) (*dbent.BenchmarkRun, error) {

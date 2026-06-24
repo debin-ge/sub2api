@@ -32,5 +32,8 @@ func registerAdminBenchmarkRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		benchmark.GET("/runs/:id/results", h.Admin.Benchmark.ListRunResults)
 		benchmark.GET("/runs/:id/scores", h.Admin.Benchmark.ListRunScores)
 		benchmark.POST("/runs/:id/publish", h.Admin.Benchmark.PublishRun)
+		benchmark.GET("/schedules", h.Admin.Benchmark.ListSchedules)
+		benchmark.POST("/schedules", h.Admin.Benchmark.CreateSchedule)
+		benchmark.POST("/schedules/:id/trigger", h.Admin.Benchmark.TriggerSchedule)
 	}
 }

@@ -101,6 +101,12 @@ func ProvideRadarHandler(snapshotService *service.BenchmarkSnapshotService, sett
 	return h
 }
 
+func ProvideBenchmarkHandler(benchmarkService *service.BenchmarkService, scheduleService *service.BenchmarkScheduleService, snapshotService *service.BenchmarkSnapshotService) *admin.BenchmarkHandler {
+	h := admin.NewBenchmarkHandler(benchmarkService, snapshotService)
+	h.SetScheduleService(scheduleService)
+	return h
+}
+
 // ProvideHandlers creates the Handlers struct
 func ProvideHandlers(
 	authHandler *AuthHandler,
@@ -213,7 +219,7 @@ var ProviderSet = wire.NewSet(
 	admin.NewContentModerationHandler,
 	admin.NewPaymentHandler,
 	admin.NewAffiliateHandler,
-	admin.NewBenchmarkHandler,
+	ProvideBenchmarkHandler,
 
 	// AdminHandlers and Handlers constructors
 	ProvideAdminHandlers,

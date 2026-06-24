@@ -527,6 +527,12 @@ func ProvideBenchmarkService(repo BenchmarkRepository, settingService *SettingSe
 	return svc
 }
 
+func ProvideBenchmarkScheduleService(repo BenchmarkRepository, benchmarkService *BenchmarkService, settingService *SettingService) *BenchmarkScheduleService {
+	svc := NewBenchmarkScheduleService(repo, benchmarkService)
+	svc.SetSettingService(settingService)
+	return svc
+}
+
 func ProvideBenchmarkSnapshotService(repo BenchmarkRepository, settingService *SettingService) *BenchmarkSnapshotService {
 	svc := NewBenchmarkSnapshotService(repo)
 	svc.SetSettingService(settingService)
@@ -578,6 +584,7 @@ var ProviderSet = wire.NewSet(
 	NewUsageService,
 	NewDashboardService,
 	ProvideBenchmarkService,
+	ProvideBenchmarkScheduleService,
 	ProvideBenchmarkSnapshotService,
 	// BenchmarkRunner stays out of ProviderSet until a concrete BenchmarkGatewayClient provider exists.
 	ProvidePricingService,

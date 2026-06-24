@@ -21,6 +21,11 @@ type BenchmarkRepository interface {
 	CreateProfile(ctx context.Context, input BenchmarkProfileInput) (*ent.BenchmarkProfile, error)
 	GetProfile(ctx context.Context, id int64) (*ent.BenchmarkProfile, error)
 	ListProfiles(ctx context.Context, input BenchmarkListInput) ([]*ent.BenchmarkProfile, int, error)
+	ListSchedules(ctx context.Context, input BenchmarkScheduleListInput) ([]*ent.BenchmarkSchedule, int, error)
+	CreateSchedule(ctx context.Context, input BenchmarkScheduleInput) (*ent.BenchmarkSchedule, error)
+	GetSchedule(ctx context.Context, id int64) (*ent.BenchmarkSchedule, error)
+	ListDueSchedules(ctx context.Context, now time.Time) ([]*ent.BenchmarkSchedule, error)
+	UpdateScheduleAfterRun(ctx context.Context, id int64, lastRunAt time.Time, nextRunAt time.Time) error
 	CreateRunWithSnapshots(ctx context.Context, input BenchmarkCreateRunInput) (*ent.BenchmarkRun, error)
 	GetRun(ctx context.Context, id int64) (*ent.BenchmarkRun, error)
 	ListRuns(ctx context.Context, input BenchmarkRunListInput) ([]*ent.BenchmarkRun, int, error)
@@ -57,6 +62,12 @@ type BenchmarkRunListInput struct {
 	SuiteID   int64
 	ProfileID int64
 	Status    []string
+}
+
+type BenchmarkScheduleListInput struct {
+	BenchmarkListInput
+	ProfileID int64
+	Enabled   *bool
 }
 
 type BenchmarkSuiteInput struct {
@@ -121,6 +132,15 @@ type BenchmarkProfileInput struct {
 	ScoringConfig    map[string]any
 	Metadata         map[string]any
 	Enabled          bool
+}
+
+type BenchmarkScheduleInput struct {
+	ProfileID int64
+	Name      string
+	CronExpr  string
+	Enabled   bool
+	NextRunAt *time.Time
+	Metadata  map[string]any
 }
 
 type BenchmarkCreateRunInput struct {

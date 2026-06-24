@@ -41,6 +41,24 @@ func TestBenchmarkRoutesRegisterAdminBenchmarkRoutes(t *testing.T) {
 	assertRouteRegistered(t, router, http.MethodPost, "/api/v1/admin/benchmark/runs/:id/publish")
 }
 
+func TestBenchmarkRoutesRegisterAdminBenchmarkScheduleRoutes(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	v1 := router.Group("/api/v1")
+
+	RegisterAdminRoutes(v1, &handler.Handlers{
+		Admin: &handler.AdminHandlers{},
+	}, middleware.AdminAuthMiddleware(func(c *gin.Context) {
+		c.Next()
+	}))
+
+	assertRouteRegistered(t, router, http.MethodGet, "/api/v1/admin/benchmark/schedules")
+	assertRouteRegistered(t, router, http.MethodPost, "/api/v1/admin/benchmark/schedules")
+	assertRouteRegistered(t, router, http.MethodPost, "/api/v1/admin/benchmark/schedules/:id/trigger")
+}
+
 func assertRouteRegistered(t *testing.T, router *gin.Engine, method string, path string) {
 	t.Helper()
 

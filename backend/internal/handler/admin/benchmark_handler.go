@@ -4,6 +4,7 @@ import (
 	"context"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/ent"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
@@ -34,8 +35,15 @@ type benchmarkAdminSnapshotService interface {
 	PublishPublicSnapshot(ctx context.Context, runID int64) error
 }
 
+type benchmarkScheduleAdminService interface {
+	ListSchedules(ctx context.Context, input service.BenchmarkScheduleListInput) ([]*ent.BenchmarkSchedule, int, error)
+	CreateSchedule(ctx context.Context, input service.BenchmarkScheduleInput) (*ent.BenchmarkSchedule, error)
+	TriggerSchedule(ctx context.Context, id int64, now time.Time) (*ent.BenchmarkRun, error)
+}
+
 type BenchmarkHandler struct {
 	benchmarkService benchmarkAdminService
+	scheduleService  benchmarkScheduleAdminService
 	snapshotService  benchmarkAdminSnapshotService
 }
 
@@ -44,6 +52,10 @@ func NewBenchmarkHandler(benchmarkService *service.BenchmarkService, snapshotSer
 		benchmarkService: benchmarkService,
 		snapshotService:  snapshotService,
 	}
+}
+
+func (h *BenchmarkHandler) SetScheduleService(scheduleService *service.BenchmarkScheduleService) {
+	h.scheduleService = scheduleService
 }
 
 type benchmarkSuiteCreateRequest struct {
@@ -115,6 +127,14 @@ type benchmarkRunCreateRequest struct {
 	TriggerType string                                 `json:"trigger_type"`
 	CreatedBy   *int64                                 `json:"created_by"`
 	Override    benchmarkProfilePreviewOverrideRequest `json:"override"`
+}
+
+type benchmarkScheduleCreateRequest struct {
+	ProfileID int64          `json:"profile_id"`
+	Name      string         `json:"name"`
+	CronExpr  string         `json:"cron_expr"`
+	Enabled   bool           `json:"enabled"`
+	Metadata  map[string]any `json:"metadata"`
 }
 
 type benchmarkProfilePreviewOverrideRequest struct {
@@ -374,6 +394,73 @@ func (h *BenchmarkHandler) CreateRun(c *gin.Context) {
 	response.Success(c, run)
 }
 
+func (h *BenchmarkHandler) ListSchedules(c *gin.Context) {
+	scheduleService, ok := h.requireScheduleService(c)
+	if !ok {
+		return
+	}
+	input, ok := parseBenchmarkScheduleListInput(c)
+	if !ok {
+		return
+	}
+	input = service.NormalizeBenchmarkScheduleListInput(input)
+	items, total, err := scheduleService.ListSchedules(c.Request.Context(), input)
+	if err != nil {
+		writeBenchmarkError(c, err)
+		return
+	}
+	response.Paginated(c, items, int64(total), input.Page, input.PageSize)
+}
+
+func (h *BenchmarkHandler) CreateSchedule(c *gin.Context) {
+	scheduleService, ok := h.requireScheduleService(c)
+	if !ok {
+		return
+	}
+	var req benchmarkScheduleCreateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ErrorFrom(c, infraerrors.BadRequest("VALIDATION_ERROR", err.Error()))
+		return
+	}
+	schedule, err := scheduleService.CreateSchedule(c.Request.Context(), service.BenchmarkScheduleInput{
+		ProfileID: req.ProfileID,
+		Name:      req.Name,
+		CronExpr:  req.CronExpr,
+		Enabled:   req.Enabled,
+		Metadata:  req.Metadata,
+	})
+	if err != nil {
+		writeBenchmarkError(c, err)
+		return
+	}
+	response.Success(c, schedule)
+}
+
+func (h *BenchmarkHandler) TriggerSchedule(c *gin.Context) {
+	scheduleService, ok := h.requireScheduleService(c)
+	if !ok {
+		return
+	}
+	id, ok := parseBenchmarkPathID(c, "id", "INVALID_SCHEDULE_ID", "invalid schedule id")
+	if !ok {
+		return
+	}
+	run, err := scheduleService.TriggerSchedule(c.Request.Context(), id, time.Now())
+	if err != nil {
+		writeBenchmarkError(c, err)
+		return
+	}
+	response.Success(c, run)
+}
+
+func (h *BenchmarkHandler) requireScheduleService(c *gin.Context) (benchmarkScheduleAdminService, bool) {
+	if h.scheduleService == nil {
+		response.ErrorFrom(c, infraerrors.ServiceUnavailable("BENCHMARK_SCHEDULE_SERVICE_UNAVAILABLE", "benchmark schedule service unavailable"))
+		return nil, false
+	}
+	return h.scheduleService, true
+}
+
 func (h *BenchmarkHandler) ListRuns(c *gin.Context) {
 	input, ok := parseBenchmarkRunListInput(c)
 	if !ok {
@@ -503,6 +590,29 @@ func parseBenchmarkRunListInput(c *gin.Context) (service.BenchmarkRunListInput, 
 	return input, true
 }
 
+func parseBenchmarkScheduleListInput(c *gin.Context) (service.BenchmarkScheduleListInput, bool) {
+	input := service.BenchmarkScheduleListInput{
+		BenchmarkListInput: parseBenchmarkListInput(c),
+	}
+	if profileID := strings.TrimSpace(c.Query("profile_id")); profileID != "" {
+		id, err := strconv.ParseInt(profileID, 10, 64)
+		if err != nil || id <= 0 {
+			response.ErrorFrom(c, infraerrors.BadRequest("INVALID_PROFILE_ID", "invalid profile id"))
+			return service.BenchmarkScheduleListInput{}, false
+		}
+		input.ProfileID = id
+	}
+	if enabled := strings.TrimSpace(c.Query("enabled")); enabled != "" {
+		value, err := strconv.ParseBool(enabled)
+		if err != nil {
+			response.ErrorFrom(c, infraerrors.BadRequest("INVALID_ENABLED", "invalid enabled"))
+			return service.BenchmarkScheduleListInput{}, false
+		}
+		input.Enabled = &value
+	}
+	return input, true
+}
+
 func benchmarkQueryInt(c *gin.Context, key string) int {
 	value, err := strconv.Atoi(strings.TrimSpace(c.Query(key)))
 	if err != nil {
@@ -547,6 +657,10 @@ func writeBenchmarkError(c *gin.Context, err error) {
 		response.ErrorFrom(c, infraerrors.BadRequest("INVALID_TARGET_IDS", err.Error()))
 		return
 	}
+	if strings.HasPrefix(err.Error(), "invalid cron expression:") {
+		response.ErrorFrom(c, infraerrors.BadRequest("VALIDATION_ERROR", err.Error()))
+		return
+	}
 	if ent.IsNotFound(err) || infraerrors.IsNotFound(err) {
 		response.ErrorFrom(c, infraerrors.NotFound("BENCHMARK_NOT_FOUND", "benchmark resource not found"))
 		return
@@ -562,6 +676,9 @@ func isBenchmarkValidationError(err error) bool {
 	switch err.Error() {
 	case "model name is required",
 		"channel id must be positive",
+		"profile id must be positive",
+		"schedule name is required",
+		"cron expr is required",
 		"task type is required",
 		"unsupported task scale",
 		"at least one target is required",

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/ent"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
@@ -102,6 +103,24 @@ func (s *benchmarkSnapshotServiceStub) PublishPublicSnapshot(ctx context.Context
 	return s.publishPublicSnapshotFn(ctx, runID)
 }
 
+type benchmarkScheduleAdminServiceStub struct {
+	listSchedulesFn   func(ctx context.Context, input service.BenchmarkScheduleListInput) ([]*ent.BenchmarkSchedule, int, error)
+	createScheduleFn  func(ctx context.Context, input service.BenchmarkScheduleInput) (*ent.BenchmarkSchedule, error)
+	triggerScheduleFn func(ctx context.Context, id int64, now time.Time) (*ent.BenchmarkRun, error)
+}
+
+func (s *benchmarkScheduleAdminServiceStub) ListSchedules(ctx context.Context, input service.BenchmarkScheduleListInput) ([]*ent.BenchmarkSchedule, int, error) {
+	return s.listSchedulesFn(ctx, input)
+}
+
+func (s *benchmarkScheduleAdminServiceStub) CreateSchedule(ctx context.Context, input service.BenchmarkScheduleInput) (*ent.BenchmarkSchedule, error) {
+	return s.createScheduleFn(ctx, input)
+}
+
+func (s *benchmarkScheduleAdminServiceStub) TriggerSchedule(ctx context.Context, id int64, now time.Time) (*ent.BenchmarkRun, error) {
+	return s.triggerScheduleFn(ctx, id, now)
+}
+
 type benchmarkHTTPResponse struct {
 	Code    int             `json:"code"`
 	Message string          `json:"message"`
@@ -137,6 +156,9 @@ func newBenchmarkTestRouter(handler *BenchmarkHandler) *gin.Engine {
 	router.GET("/api/v1/admin/benchmark/runs/:id/results", handler.ListRunResults)
 	router.GET("/api/v1/admin/benchmark/runs/:id/scores", handler.ListRunScores)
 	router.POST("/api/v1/admin/benchmark/runs/:id/publish", handler.PublishRun)
+	router.GET("/api/v1/admin/benchmark/schedules", handler.ListSchedules)
+	router.POST("/api/v1/admin/benchmark/schedules", handler.CreateSchedule)
+	router.POST("/api/v1/admin/benchmark/schedules/:id/trigger", handler.TriggerSchedule)
 
 	return router
 }
@@ -446,4 +468,134 @@ func TestBenchmarkHandlerPublishRun(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.True(t, called)
+}
+
+func TestBenchmarkHandlerListSchedules(t *testing.T) {
+	enabled := true
+	scheduleSvc := &benchmarkScheduleAdminServiceStub{
+		listSchedulesFn: func(ctx context.Context, input service.BenchmarkScheduleListInput) ([]*ent.BenchmarkSchedule, int, error) {
+			require.Equal(t, service.BenchmarkScheduleListInput{
+				BenchmarkListInput: service.BenchmarkListInput{Page: 1, PageSize: 100},
+				ProfileID:          7,
+				Enabled:            &enabled,
+			}, input)
+			return []*ent.BenchmarkSchedule{{ID: 1, ProfileID: 7, Name: "nightly"}}, 1, nil
+		},
+	}
+	router := newBenchmarkTestRouter(&BenchmarkHandler{
+		benchmarkService: &benchmarkAdminServiceStub{},
+		scheduleService:  scheduleSvc,
+		snapshotService:  &benchmarkSnapshotServiceStub{},
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/benchmark/schedules?page=0&page_size=999&profile_id=7&enabled=true", nil)
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var resp benchmarkHTTPResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	var page benchmarkPaginatedResponse
+	require.NoError(t, json.Unmarshal(resp.Data, &page))
+	require.Equal(t, int64(1), page.Total)
+	require.Equal(t, 1, page.Page)
+	require.Equal(t, 100, page.PageSize)
+}
+
+func TestBenchmarkHandlerCreateSchedule(t *testing.T) {
+	scheduleSvc := &benchmarkScheduleAdminServiceStub{
+		createScheduleFn: func(ctx context.Context, input service.BenchmarkScheduleInput) (*ent.BenchmarkSchedule, error) {
+			require.Equal(t, int64(7), input.ProfileID)
+			require.Equal(t, "nightly", input.Name)
+			require.Equal(t, "0 * * * *", input.CronExpr)
+			require.True(t, input.Enabled)
+			require.Equal(t, map[string]any{"scope": "daily"}, input.Metadata)
+			require.Nil(t, input.NextRunAt)
+			return &ent.BenchmarkSchedule{
+				ID:        12,
+				ProfileID: input.ProfileID,
+				Name:      input.Name,
+				CronExpr:  input.CronExpr,
+				Enabled:   input.Enabled,
+				Metadata:  input.Metadata,
+			}, nil
+		},
+	}
+	router := newBenchmarkTestRouter(&BenchmarkHandler{
+		benchmarkService: &benchmarkAdminServiceStub{},
+		scheduleService:  scheduleSvc,
+		snapshotService:  &benchmarkSnapshotServiceStub{},
+	})
+
+	body := `{"profile_id":7,"name":"nightly","cron_expr":"0 * * * *","enabled":true,"metadata":{"scope":"daily"}}`
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/benchmark/schedules", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var resp benchmarkHTTPResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	var schedule ent.BenchmarkSchedule
+	require.NoError(t, json.Unmarshal(resp.Data, &schedule))
+	require.Equal(t, int64(12), schedule.ID)
+}
+
+func TestBenchmarkHandlerTriggerSchedule(t *testing.T) {
+	scheduleSvc := &benchmarkScheduleAdminServiceStub{
+		triggerScheduleFn: func(ctx context.Context, id int64, now time.Time) (*ent.BenchmarkRun, error) {
+			require.Equal(t, int64(12), id)
+			require.False(t, now.IsZero())
+			return &ent.BenchmarkRun{ID: 52, ProfileID: 7, TriggerType: "scheduled"}, nil
+		},
+	}
+	router := newBenchmarkTestRouter(&BenchmarkHandler{
+		benchmarkService: &benchmarkAdminServiceStub{},
+		scheduleService:  scheduleSvc,
+		snapshotService:  &benchmarkSnapshotServiceStub{},
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/benchmark/schedules/12/trigger", nil)
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var resp benchmarkHTTPResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	var run ent.BenchmarkRun
+	require.NoError(t, json.Unmarshal(resp.Data, &run))
+	require.Equal(t, int64(52), run.ID)
+}
+
+func TestBenchmarkHandlerScheduleServiceUnavailableDoesNotPanic(t *testing.T) {
+	router := newBenchmarkTestRouter(&BenchmarkHandler{
+		benchmarkService: &benchmarkAdminServiceStub{},
+		snapshotService:  &benchmarkSnapshotServiceStub{},
+	})
+
+	tests := []struct {
+		method string
+		path   string
+		body   string
+	}{
+		{method: http.MethodGet, path: "/api/v1/admin/benchmark/schedules"},
+		{method: http.MethodPost, path: "/api/v1/admin/benchmark/schedules", body: `{"profile_id":7,"name":"nightly","cron_expr":"0 * * * *"}`},
+		{method: http.MethodPost, path: "/api/v1/admin/benchmark/schedules/12/trigger"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.method+" "+tt.path, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(tt.method, tt.path, bytes.NewBufferString(tt.body))
+			if tt.body != "" {
+				req.Header.Set("Content-Type", "application/json")
+			}
+
+			require.NotPanics(t, func() {
+				router.ServeHTTP(rec, req)
+			})
+			require.Equal(t, http.StatusServiceUnavailable, rec.Code)
+			require.Contains(t, rec.Body.String(), "BENCHMARK_SCHEDULE_SERVICE_UNAVAILABLE")
+		})
+	}
 }

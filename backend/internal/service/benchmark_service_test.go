@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkprofile"
@@ -41,6 +42,11 @@ type benchmarkServiceRepoStub struct {
 	createProfileFn            func(ctx context.Context, input BenchmarkProfileInput) (*ent.BenchmarkProfile, error)
 	getProfileFn               func(ctx context.Context, id int64) (*ent.BenchmarkProfile, error)
 	listProfilesFn             func(ctx context.Context, input BenchmarkListInput) ([]*ent.BenchmarkProfile, int, error)
+	listSchedulesFn            func(ctx context.Context, input BenchmarkScheduleListInput) ([]*ent.BenchmarkSchedule, int, error)
+	createScheduleFn           func(ctx context.Context, input BenchmarkScheduleInput) (*ent.BenchmarkSchedule, error)
+	getScheduleFn              func(ctx context.Context, id int64) (*ent.BenchmarkSchedule, error)
+	listDueSchedulesFn         func(ctx context.Context, now time.Time) ([]*ent.BenchmarkSchedule, error)
+	updateScheduleAfterRunFn   func(ctx context.Context, id int64, lastRunAt time.Time, nextRunAt time.Time) error
 	createRunWithSnapshotsFn   func(ctx context.Context, input BenchmarkCreateRunInput) (*ent.BenchmarkRun, error)
 	getRunFn                   func(ctx context.Context, id int64) (*ent.BenchmarkRun, error)
 	listRunsFn                 func(ctx context.Context, input BenchmarkRunListInput) ([]*ent.BenchmarkRun, int, error)
@@ -161,6 +167,46 @@ func (s *benchmarkServiceRepoStub) ListProfiles(ctx context.Context, input Bench
 	}
 	s.t.Fatalf("unexpected ListProfiles call")
 	return nil, 0, nil
+}
+
+func (s *benchmarkServiceRepoStub) ListSchedules(ctx context.Context, input BenchmarkScheduleListInput) ([]*ent.BenchmarkSchedule, int, error) {
+	if s.listSchedulesFn != nil {
+		return s.listSchedulesFn(ctx, input)
+	}
+	s.t.Fatalf("unexpected ListSchedules call")
+	return nil, 0, nil
+}
+
+func (s *benchmarkServiceRepoStub) CreateSchedule(ctx context.Context, input BenchmarkScheduleInput) (*ent.BenchmarkSchedule, error) {
+	if s.createScheduleFn != nil {
+		return s.createScheduleFn(ctx, input)
+	}
+	s.t.Fatalf("unexpected CreateSchedule call")
+	return nil, nil
+}
+
+func (s *benchmarkServiceRepoStub) GetSchedule(ctx context.Context, id int64) (*ent.BenchmarkSchedule, error) {
+	if s.getScheduleFn != nil {
+		return s.getScheduleFn(ctx, id)
+	}
+	s.t.Fatalf("unexpected GetSchedule call")
+	return nil, nil
+}
+
+func (s *benchmarkServiceRepoStub) ListDueSchedules(ctx context.Context, now time.Time) ([]*ent.BenchmarkSchedule, error) {
+	if s.listDueSchedulesFn != nil {
+		return s.listDueSchedulesFn(ctx, now)
+	}
+	s.t.Fatalf("unexpected ListDueSchedules call")
+	return nil, nil
+}
+
+func (s *benchmarkServiceRepoStub) UpdateScheduleAfterRun(ctx context.Context, id int64, lastRunAt time.Time, nextRunAt time.Time) error {
+	if s.updateScheduleAfterRunFn != nil {
+		return s.updateScheduleAfterRunFn(ctx, id, lastRunAt, nextRunAt)
+	}
+	s.t.Fatalf("unexpected UpdateScheduleAfterRun call")
+	return nil
 }
 
 func (s *benchmarkServiceRepoStub) CreateRunWithSnapshots(ctx context.Context, input BenchmarkCreateRunInput) (*ent.BenchmarkRun, error) {
