@@ -422,6 +422,71 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/benchmark',
+    redirect: '/admin/benchmark/dashboard'
+  },
+  {
+    path: '/admin/benchmark/dashboard',
+    name: 'AdminBenchmarkDashboard',
+    component: () => import('@/views/admin/benchmark/BenchmarkDashboardView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Benchmark Dashboard',
+    }
+  },
+  {
+    path: '/admin/benchmark/targets',
+    name: 'AdminBenchmarkTargets',
+    component: () => import('@/views/admin/benchmark/BenchmarkTargetsView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Benchmark Targets',
+    }
+  },
+  {
+    path: '/admin/benchmark/tasks',
+    name: 'AdminBenchmarkTasks',
+    component: () => import('@/views/admin/benchmark/BenchmarkTasksView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Benchmark Tasks',
+    }
+  },
+  {
+    path: '/admin/benchmark/profiles',
+    name: 'AdminBenchmarkProfiles',
+    component: () => import('@/views/admin/benchmark/BenchmarkProfilesView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Benchmark Profiles',
+    }
+  },
+  {
+    path: '/admin/benchmark/runs',
+    name: 'AdminBenchmarkRuns',
+    component: () => import('@/views/admin/benchmark/BenchmarkRunsView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Benchmark Runs',
+    }
+  },
+  {
+    path: '/admin/benchmark/runs/:id',
+    name: 'AdminBenchmarkRunDetail',
+    component: () => import('@/views/admin/benchmark/BenchmarkRunDetailView.vue'),
+    props: route => ({ runId: route.params.id }),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Benchmark Run Detail',
+    }
+  },
+  {
     path: '/admin/users',
     name: 'AdminUsers',
     component: () => import('@/views/admin/UsersView.vue'),

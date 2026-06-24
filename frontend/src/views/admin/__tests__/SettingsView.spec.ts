@@ -290,6 +290,15 @@ const ImageUploadStub = defineComponent({
 });
 
 const baseSettingsResponse = {
+  benchmark_enabled: false,
+  benchmark_public_enabled: false,
+  benchmark_home_enabled: false,
+  benchmark_default_suite_id: 1,
+  benchmark_global_concurrency: 4,
+  benchmark_default_timeout_seconds: 120,
+  benchmark_low_confidence_threshold: 0.6,
+  benchmark_high_confidence_threshold: 0.9,
+  benchmark_schedule_enabled: false,
   registration_enabled: true,
   email_verify_enabled: false,
   registration_email_suffix_whitelist: [],
@@ -429,6 +438,7 @@ function mountView() {
         AppLayout: AppLayoutStub,
         Select: SelectStub,
         Toggle: ToggleStub,
+        RouterLink: true,
         Icon: true,
         ConfirmDialog: true,
         PaymentProviderList: true,
@@ -450,6 +460,16 @@ async function openPaymentTab(wrapper: ReturnType<typeof mountView>) {
 
   expect(paymentTabButton).toBeDefined();
   await paymentTabButton?.trigger("click");
+  await flushPromises();
+}
+
+async function openFeaturesTab(wrapper: ReturnType<typeof mountView>) {
+  const featuresTabButton = wrapper
+    .findAll("button")
+    .find((node) => node.text().includes("admin.settings.tabs.features"));
+
+  expect(featuresTabButton).toBeDefined();
+  await featuresTabButton?.trigger("click");
   await flushPromises();
 }
 
@@ -630,6 +650,50 @@ describe("admin SettingsView payment visible method controls", () => {
     );
   });
 
+  it("submits benchmark feature settings from the features tab", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      benchmark_enabled: true,
+      benchmark_public_enabled: true,
+      benchmark_home_enabled: false,
+      benchmark_default_suite_id: 7,
+      benchmark_global_concurrency: 6,
+      benchmark_default_timeout_seconds: 150,
+      benchmark_low_confidence_threshold: 0.65,
+      benchmark_high_confidence_threshold: 0.92,
+      benchmark_schedule_enabled: false,
+    });
+
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openFeaturesTab(wrapper);
+    await wrapper.get('[data-test="benchmark-home-toggle"]').setValue(true);
+    await wrapper.get('[data-test="benchmark-schedule-toggle"]').setValue(true);
+    await wrapper.get('[data-test="benchmark-default-suite-input"]').setValue("9");
+    await wrapper.get('[data-test="benchmark-global-concurrency-input"]').setValue("8");
+    await wrapper.get('[data-test="benchmark-default-timeout-input"]').setValue("180");
+    await wrapper.get('[data-test="benchmark-low-threshold-input"]').setValue("0.7");
+    await wrapper.get('[data-test="benchmark-high-threshold-input"]').setValue("0.95");
+
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        benchmark_enabled: true,
+        benchmark_public_enabled: true,
+        benchmark_home_enabled: true,
+        benchmark_default_suite_id: 9,
+        benchmark_global_concurrency: 8,
+        benchmark_default_timeout_seconds: 180,
+        benchmark_low_confidence_threshold: 0.7,
+        benchmark_high_confidence_threshold: 0.95,
+        benchmark_schedule_enabled: true,
+      }),
+    );
+  });
+
   it("submits Antigravity user agent version gateway setting", async () => {
     getSettings.mockResolvedValueOnce({
       ...baseSettingsResponse,
@@ -691,6 +755,7 @@ describe("admin SettingsView payment visible method controls", () => {
           AppLayout: AppLayoutStub,
           Select: SelectStub,
           Toggle: ToggleStub,
+          RouterLink: true,
           Icon: true,
           ConfirmDialog: true,
           PaymentProviderList: PaymentProviderListStub,
@@ -1140,5 +1205,185 @@ describe("admin SettingsView platform quota matrix", () => {
     const quotas = payload["default_platform_quotas"] as Record<string, Record<string, unknown>>;
     // 不管输入是什么，提交值应为 null（而非 "" 或 NaN）
     expect(quotas["anthropic"]?.["daily"]).toBe(null);
+  });
+});
+
+describe("admin SettingsView benchmark feature settings", () => {
+  beforeEach(() => {
+    getSettings.mockReset();
+    updateSettings.mockReset();
+    getWebSearchEmulationConfig.mockReset();
+    updateWebSearchEmulationConfig.mockReset();
+    getAdminApiKey.mockReset();
+    getOverloadCooldownSettings.mockReset();
+    getRateLimit429CooldownSettings.mockReset();
+    updateRateLimit429CooldownSettings.mockReset();
+    getStreamTimeoutSettings.mockReset();
+    getRectifierSettings.mockReset();
+    getBetaPolicySettings.mockReset();
+    getGroups.mockReset();
+    listProxies.mockReset();
+    getProviders.mockReset();
+    updateProvider.mockReset();
+    createProvider.mockReset();
+    deleteProvider.mockReset();
+    fetchPublicSettings.mockReset();
+    adminSettingsFetch.mockReset();
+    showError.mockReset();
+    showSuccess.mockReset();
+    localeRef.value = "zh-CN";
+
+    getSettings.mockResolvedValue({
+      ...baseSettingsResponse,
+      benchmark_enabled: true,
+      benchmark_public_enabled: true,
+      benchmark_home_enabled: true,
+      benchmark_default_suite_id: 42,
+      benchmark_global_concurrency: 7,
+      benchmark_default_timeout_seconds: 180,
+      benchmark_low_confidence_threshold: 0.6,
+      benchmark_high_confidence_threshold: 0.92,
+      benchmark_schedule_enabled: true,
+    });
+    updateSettings.mockImplementation(async (payload) => ({
+      ...baseSettingsResponse,
+      ...payload,
+    }));
+    getWebSearchEmulationConfig.mockResolvedValue({
+      enabled: false,
+      providers: [],
+    });
+    updateWebSearchEmulationConfig.mockResolvedValue({
+      enabled: false,
+      providers: [],
+    });
+    getAdminApiKey.mockResolvedValue({
+      exists: false,
+      masked_key: "",
+    });
+    getOverloadCooldownSettings.mockResolvedValue({
+      enabled: true,
+      cooldown_minutes: 10,
+    });
+    getRateLimit429CooldownSettings.mockResolvedValue({
+      enabled: true,
+      cooldown_seconds: 5,
+    });
+    updateRateLimit429CooldownSettings.mockImplementation(async (payload) => payload);
+    getStreamTimeoutSettings.mockResolvedValue({
+      enabled: true,
+      action: "temp_unsched",
+      temp_unsched_minutes: 5,
+      threshold_count: 3,
+      threshold_window_minutes: 10,
+    });
+    getRectifierSettings.mockResolvedValue({
+      enabled: true,
+      thinking_signature_enabled: true,
+      thinking_budget_enabled: true,
+      apikey_signature_enabled: false,
+      apikey_signature_patterns: [],
+    });
+    getBetaPolicySettings.mockResolvedValue({
+      rules: [],
+    });
+    getGroups.mockResolvedValue([]);
+    listProxies.mockResolvedValue({
+      items: [],
+    });
+    getProviders.mockResolvedValue({
+      data: [],
+    });
+    fetchPublicSettings.mockResolvedValue(undefined);
+    adminSettingsFetch.mockResolvedValue(undefined);
+  });
+
+  it("loads benchmark fields and submits them through updateSettings", async () => {
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openFeaturesTab(wrapper);
+
+    expect(
+      (
+        wrapper.get('[data-testid="benchmark-enabled"]')
+          .element as HTMLInputElement
+      ).checked,
+    ).toBe(true);
+    expect(
+      (
+        wrapper.get('[data-testid="benchmark-public-enabled"]')
+          .element as HTMLInputElement
+      ).checked,
+    ).toBe(true);
+    expect(
+      (
+        wrapper.get('[data-testid="benchmark-home-enabled"]')
+          .element as HTMLInputElement
+      ).checked,
+    ).toBe(true);
+    expect(
+      (
+        wrapper.get('[data-testid="benchmark-default-suite-id"]')
+          .element as HTMLInputElement
+      ).value,
+    ).toBe("42");
+    expect(
+      (
+        wrapper.get('[data-testid="benchmark-global-concurrency"]')
+          .element as HTMLInputElement
+      ).value,
+    ).toBe("7");
+    expect(
+      (
+        wrapper.get('[data-testid="benchmark-default-timeout-seconds"]')
+          .element as HTMLInputElement
+      ).value,
+    ).toBe("180");
+    expect(
+      (
+        wrapper.get('[data-testid="benchmark-low-confidence-threshold"]')
+          .element as HTMLInputElement
+      ).value,
+    ).toBe("0.6");
+    expect(
+      (
+        wrapper.get('[data-testid="benchmark-high-confidence-threshold"]')
+          .element as HTMLInputElement
+      ).value,
+    ).toBe("0.92");
+    expect(
+      (
+        wrapper.get('[data-testid="benchmark-schedule-enabled"]')
+          .element as HTMLInputElement
+      ).checked,
+    ).toBe(true);
+
+    await wrapper.get('[data-testid="benchmark-enabled"]').setValue(false);
+    await wrapper.get('[data-testid="benchmark-public-enabled"]').setValue(false);
+    await wrapper.get('[data-testid="benchmark-home-enabled"]').setValue(false);
+    await wrapper.get('[data-testid="benchmark-default-suite-id"]').setValue("84");
+    await wrapper.get('[data-testid="benchmark-global-concurrency"]').setValue("9");
+    await wrapper.get('[data-testid="benchmark-default-timeout-seconds"]').setValue("240");
+    await wrapper.get('[data-testid="benchmark-low-confidence-threshold"]').setValue("0.55");
+    await wrapper.get('[data-testid="benchmark-high-confidence-threshold"]').setValue("0.95");
+    await wrapper.get('[data-testid="benchmark-schedule-enabled"]').setValue(false);
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledTimes(1);
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        benchmark_enabled: false,
+        benchmark_public_enabled: false,
+        benchmark_home_enabled: false,
+        benchmark_default_suite_id: 84,
+        benchmark_global_concurrency: 9,
+        benchmark_default_timeout_seconds: 240,
+        benchmark_low_confidence_threshold: 0.55,
+        benchmark_high_confidence_threshold: 0.95,
+        benchmark_schedule_enabled: false,
+      }),
+    );
   });
 });

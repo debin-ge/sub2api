@@ -714,6 +714,19 @@ const adminNavItems = computed((): NavItem[] => {
   const baseItems: NavItem[] = [
     { path: '/admin/dashboard', label: t('nav.dashboard'), icon: DashboardIcon },
     { path: '/admin/ops', label: t('nav.ops'), icon: ChartIcon, featureFlag: flagOpsMonitoring },
+    {
+      path: '/admin/benchmark',
+      label: t('nav.modelRadar'),
+      icon: ChartIcon,
+      expandOnly: true,
+      children: [
+        { path: '/admin/benchmark/dashboard', label: t('nav.benchmarkDashboard'), icon: DashboardIcon },
+        { path: '/admin/benchmark/targets', label: t('nav.benchmarkTargets'), icon: ChannelIcon },
+        { path: '/admin/benchmark/tasks', label: t('nav.benchmarkTasks'), icon: TicketIcon },
+        { path: '/admin/benchmark/profiles', label: t('nav.benchmarkProfiles'), icon: FolderIcon },
+        { path: '/admin/benchmark/runs', label: t('nav.benchmarkRuns'), icon: GlobeIcon },
+      ],
+    },
     { path: '/admin/users', label: t('nav.users'), icon: UsersIcon, hideInSimpleMode: true },
     { path: '/admin/groups', label: t('nav.groups'), icon: FolderIcon, hideInSimpleMode: true },
     {

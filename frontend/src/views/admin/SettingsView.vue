@@ -5175,6 +5175,184 @@
         <div class="card">
           <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
             <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+              {{ t('admin.settings.features.benchmark.title') }}
+            </h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              {{ t('admin.settings.features.benchmark.description') }}
+            </p>
+            <p class="mt-1.5 text-xs">
+              <router-link
+                to="/admin/benchmark/dashboard"
+                class="inline-flex items-center gap-1 text-primary-600 hover:underline dark:text-primary-400"
+              >
+                {{ t('admin.settings.features.benchmark.configureLink') }}
+                <span aria-hidden="true">→</span>
+              </router-link>
+            </p>
+          </div>
+          <div class="space-y-5 p-6">
+            <div class="flex items-center justify-between">
+              <div>
+                <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {{ t('admin.settings.features.benchmark.enabled') }}
+                </label>
+                <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t('admin.settings.features.benchmark.enabledHint') }}
+                </p>
+              </div>
+              <Toggle
+                v-model="form.benchmark_enabled"
+                data-test="benchmark-enabled-toggle"
+                data-testid="benchmark-enabled"
+              />
+            </div>
+
+            <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
+              <div class="flex items-center justify-between rounded-lg border border-gray-100 px-4 py-3 dark:border-dark-700">
+                <div class="pr-4">
+                  <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {{ t('admin.settings.features.benchmark.publicEnabled') }}
+                  </label>
+                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t('admin.settings.features.benchmark.publicEnabledHint') }}
+                  </p>
+                </div>
+                <Toggle
+                  v-model="form.benchmark_public_enabled"
+                  data-test="benchmark-public-toggle"
+                  data-testid="benchmark-public-enabled"
+                />
+              </div>
+
+              <div class="flex items-center justify-between rounded-lg border border-gray-100 px-4 py-3 dark:border-dark-700">
+                <div class="pr-4">
+                  <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {{ t('admin.settings.features.benchmark.homeEnabled') }}
+                  </label>
+                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t('admin.settings.features.benchmark.homeEnabledHint') }}
+                  </p>
+                </div>
+                <Toggle
+                  v-model="form.benchmark_home_enabled"
+                  data-test="benchmark-home-toggle"
+                  data-testid="benchmark-home-enabled"
+                />
+              </div>
+
+              <div class="flex items-center justify-between rounded-lg border border-gray-100 px-4 py-3 dark:border-dark-700">
+                <div class="pr-4">
+                  <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {{ t('admin.settings.features.benchmark.scheduleEnabled') }}
+                  </label>
+                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t('admin.settings.features.benchmark.scheduleEnabledHint') }}
+                  </p>
+                </div>
+                <Toggle
+                  v-model="form.benchmark_schedule_enabled"
+                  data-test="benchmark-schedule-toggle"
+                  data-testid="benchmark-schedule-enabled"
+                />
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
+              <div>
+                <label class="input-label">
+                  {{ t('admin.settings.features.benchmark.defaultSuite') }}
+                </label>
+                <input
+                  v-model.number="form.benchmark_default_suite_id"
+                  data-test="benchmark-default-suite-input"
+                  data-testid="benchmark-default-suite-id"
+                  type="number"
+                  min="0"
+                  class="input"
+                />
+                <p class="mt-1 text-xs text-gray-400">
+                  {{ t('admin.settings.features.benchmark.defaultSuiteHint') }}
+                </p>
+              </div>
+
+              <div>
+                <label class="input-label">
+                  {{ t('admin.settings.features.benchmark.globalConcurrency') }}
+                </label>
+                <input
+                  v-model.number="form.benchmark_global_concurrency"
+                  data-test="benchmark-global-concurrency-input"
+                  data-testid="benchmark-global-concurrency"
+                  type="number"
+                  min="1"
+                  class="input"
+                />
+                <p class="mt-1 text-xs text-gray-400">
+                  {{ t('admin.settings.features.benchmark.globalConcurrencyHint') }}
+                </p>
+              </div>
+
+              <div>
+                <label class="input-label">
+                  {{ t('admin.settings.features.benchmark.defaultTimeoutSeconds') }}
+                </label>
+                <input
+                  v-model.number="form.benchmark_default_timeout_seconds"
+                  data-test="benchmark-default-timeout-input"
+                  data-testid="benchmark-default-timeout-seconds"
+                  type="number"
+                  min="1"
+                  class="input"
+                />
+                <p class="mt-1 text-xs text-gray-400">
+                  {{ t('admin.settings.features.benchmark.defaultTimeoutSecondsHint') }}
+                </p>
+              </div>
+
+              <div>
+                <label class="input-label">
+                  {{ t('admin.settings.features.benchmark.lowConfidenceThreshold') }}
+                </label>
+                <input
+                  v-model.number="form.benchmark_low_confidence_threshold"
+                  data-test="benchmark-low-threshold-input"
+                  data-testid="benchmark-low-confidence-threshold"
+                  type="number"
+                  min="0"
+                  max="1"
+                  step="0.01"
+                  class="input"
+                />
+                <p class="mt-1 text-xs text-gray-400">
+                  {{ t('admin.settings.features.benchmark.lowConfidenceThresholdHint') }}
+                </p>
+              </div>
+
+              <div>
+                <label class="input-label">
+                  {{ t('admin.settings.features.benchmark.highConfidenceThreshold') }}
+                </label>
+                <input
+                  v-model.number="form.benchmark_high_confidence_threshold"
+                  data-test="benchmark-high-threshold-input"
+                  data-testid="benchmark-high-confidence-threshold"
+                  type="number"
+                  min="0"
+                  max="1"
+                  step="0.01"
+                  class="input"
+                />
+                <p class="mt-1 text-xs text-gray-400">
+                  {{ t('admin.settings.features.benchmark.highConfidenceThresholdHint') }}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
               {{ t('admin.settings.features.channelMonitor.title') }}
             </h2>
             <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -7146,6 +7324,15 @@ const form = reactive<SettingsForm>({
   subscription_expiry_notify_enabled: true,
   account_quota_notify_enabled: false,
   account_quota_notify_emails: [] as NotifyEmailEntry[],
+  benchmark_enabled: false,
+  benchmark_public_enabled: false,
+  benchmark_home_enabled: false,
+  benchmark_default_suite_id: 0,
+  benchmark_global_concurrency: 4,
+  benchmark_default_timeout_seconds: 120,
+  benchmark_low_confidence_threshold: 0.7,
+  benchmark_high_confidence_threshold: 0.9,
+  benchmark_schedule_enabled: false,
   // Channel Monitor feature switch
   channel_monitor_enabled: true,
   channel_monitor_default_interval_seconds: 60,
@@ -8059,6 +8246,19 @@ async function saveSettings() {
       }
     }
 
+    if (
+      Number(form.benchmark_low_confidence_threshold) >
+      Number(form.benchmark_high_confidence_threshold)
+    ) {
+      appStore.showError(
+        localText(
+          "低置信阈值不能大于高置信阈值。",
+          "Low confidence threshold cannot be greater than high confidence threshold.",
+        ),
+      );
+      return;
+    }
+
     if (form.wechat_connect_mp_enabled && form.wechat_connect_mobile_enabled) {
       appStore.showError(
         localText(
@@ -8290,6 +8490,20 @@ async function saveSettings() {
       account_quota_notify_emails: (
         form.account_quota_notify_emails || []
       ).filter((e) => e.email.trim() !== ""),
+      benchmark_enabled: form.benchmark_enabled,
+      benchmark_public_enabled: form.benchmark_public_enabled,
+      benchmark_home_enabled: form.benchmark_home_enabled,
+      benchmark_default_suite_id:
+        Math.max(0, Math.floor(Number(form.benchmark_default_suite_id) || 0)),
+      benchmark_global_concurrency:
+        Math.max(1, Math.floor(Number(form.benchmark_global_concurrency) || 1)),
+      benchmark_default_timeout_seconds:
+        Math.max(1, Math.floor(Number(form.benchmark_default_timeout_seconds) || 1)),
+      benchmark_low_confidence_threshold:
+        Math.min(1, Math.max(0, Number(form.benchmark_low_confidence_threshold) || 0)),
+      benchmark_high_confidence_threshold:
+        Math.min(1, Math.max(0, Number(form.benchmark_high_confidence_threshold) || 0)),
+      benchmark_schedule_enabled: form.benchmark_schedule_enabled,
       // Channel Monitor feature switch
       channel_monitor_enabled: form.channel_monitor_enabled,
       channel_monitor_default_interval_seconds:

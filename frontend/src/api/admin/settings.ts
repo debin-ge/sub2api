@@ -608,6 +608,17 @@ export interface SystemSettings {
   account_quota_notify_enabled: boolean;
   account_quota_notify_emails: NotifyEmailEntry[];
 
+  // Benchmark / Radar feature switch
+  benchmark_enabled: boolean;
+  benchmark_public_enabled: boolean;
+  benchmark_home_enabled: boolean;
+  benchmark_default_suite_id: number;
+  benchmark_global_concurrency: number;
+  benchmark_default_timeout_seconds: number;
+  benchmark_low_confidence_threshold: number;
+  benchmark_high_confidence_threshold: number;
+  benchmark_schedule_enabled: boolean;
+
   // Channel Monitor feature switch
   channel_monitor_enabled: boolean;
   channel_monitor_default_interval_seconds: number;
@@ -840,6 +851,15 @@ export interface UpdateSettingsRequest {
   subscription_expiry_notify_enabled?: boolean;
   account_quota_notify_enabled?: boolean;
   account_quota_notify_emails?: NotifyEmailEntry[];
+  benchmark_enabled?: boolean;
+  benchmark_public_enabled?: boolean;
+  benchmark_home_enabled?: boolean;
+  benchmark_default_suite_id?: number;
+  benchmark_global_concurrency?: number;
+  benchmark_default_timeout_seconds?: number;
+  benchmark_low_confidence_threshold?: number;
+  benchmark_high_confidence_threshold?: number;
+  benchmark_schedule_enabled?: boolean;
 
   // Channel Monitor feature switch
   channel_monitor_enabled?: boolean;
