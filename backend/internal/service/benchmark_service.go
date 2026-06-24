@@ -6,10 +6,24 @@ import (
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/ent"
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
 
+type BenchmarkRuntime struct {
+	Enabled               bool
+	PublicEnabled         bool
+	GlobalConcurrency     int
+	DefaultTimeoutSeconds int
+	ConfidenceThresholds  BenchmarkConfidenceThresholds
+}
+
+type benchmarkRuntimeProvider interface {
+	GetBenchmarkRuntime(ctx context.Context) BenchmarkRuntime
+}
+
 type BenchmarkService struct {
-	repo BenchmarkRepository
+	repo            BenchmarkRepository
+	runtimeProvider benchmarkRuntimeProvider
 }
 
 type BenchmarkProfilePreviewInput struct {
@@ -60,6 +74,50 @@ type benchmarkProfileSelection struct {
 
 func NewBenchmarkService(repo BenchmarkRepository) *BenchmarkService {
 	return &BenchmarkService{repo: repo}
+}
+
+func (s *BenchmarkService) SetBenchmarkRuntimeProvider(provider benchmarkRuntimeProvider) {
+	s.runtimeProvider = provider
+}
+
+func (s *BenchmarkService) SetSettingService(settingService *SettingService) {
+	s.SetBenchmarkRuntimeProvider(settingService)
+}
+
+func benchmarkRuntimeDefaults(enabled, publicEnabled bool) BenchmarkRuntime {
+	return BenchmarkRuntime{
+		Enabled:               enabled,
+		PublicEnabled:         publicEnabled,
+		GlobalConcurrency:     BenchmarkGlobalConcurrencyDefault,
+		DefaultTimeoutSeconds: BenchmarkDefaultTimeoutSecondsDefault,
+		ConfidenceThresholds: BenchmarkConfidenceThresholds{
+			MediumCoverage: BenchmarkLowConfidenceThresholdDefault,
+			HighCoverage:   BenchmarkHighConfidenceThresholdDefault,
+		},
+	}
+}
+
+func normalizeBenchmarkRuntime(runtime BenchmarkRuntime) BenchmarkRuntime {
+	if runtime.GlobalConcurrency <= 0 {
+		runtime.GlobalConcurrency = BenchmarkGlobalConcurrencyDefault
+	}
+	if runtime.DefaultTimeoutSeconds <= 0 {
+		runtime.DefaultTimeoutSeconds = BenchmarkDefaultTimeoutSecondsDefault
+	}
+	if runtime.ConfidenceThresholds.MediumCoverage <= 0 {
+		runtime.ConfidenceThresholds.MediumCoverage = BenchmarkLowConfidenceThresholdDefault
+	}
+	if runtime.ConfidenceThresholds.HighCoverage <= 0 {
+		runtime.ConfidenceThresholds.HighCoverage = BenchmarkHighConfidenceThresholdDefault
+	}
+	return runtime
+}
+
+func (s *BenchmarkService) getBenchmarkRuntime(ctx context.Context) BenchmarkRuntime {
+	if s == nil || s.runtimeProvider == nil {
+		return benchmarkRuntimeDefaults(true, true)
+	}
+	return normalizeBenchmarkRuntime(s.runtimeProvider.GetBenchmarkRuntime(ctx))
 }
 
 func NormalizeBenchmarkListInput(input BenchmarkListInput) BenchmarkListInput {
@@ -194,6 +252,11 @@ func (s *BenchmarkService) PreviewProfile(ctx context.Context, profileID int64, 
 }
 
 func (s *BenchmarkService) CreateRun(ctx context.Context, input BenchmarkCreateRunRequest) (*ent.BenchmarkRun, error) {
+	runtime := s.getBenchmarkRuntime(ctx)
+	if !runtime.Enabled {
+		return nil, infraerrors.Forbidden("BENCHMARK_DISABLED", "benchmark is disabled")
+	}
+
 	profile, err := s.repo.GetProfile(ctx, input.ProfileID)
 	if err != nil {
 		return nil, err

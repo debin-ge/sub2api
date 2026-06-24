@@ -920,6 +920,46 @@ type ChannelMonitorRuntime struct {
 	DefaultIntervalSeconds int
 }
 
+// GetBenchmarkRuntime reads the benchmark runtime settings directly from the
+// settings store. Repo errors fail closed for the enable flags while keeping
+// the rest of the runtime fields on their defaults for downstream consumers.
+func (s *SettingService) GetBenchmarkRuntime(ctx context.Context) BenchmarkRuntime {
+	runtime := benchmarkRuntimeDefaults(false, false)
+	if s == nil || s.settingRepo == nil {
+		return runtime
+	}
+
+	vals, err := s.settingRepo.GetMultiple(ctx, []string{
+		SettingKeyBenchmarkEnabled,
+		SettingKeyBenchmarkPublicEnabled,
+		SettingKeyBenchmarkGlobalConcurrency,
+		SettingKeyBenchmarkDefaultTimeoutSeconds,
+		SettingKeyBenchmarkLowConfidenceThreshold,
+		SettingKeyBenchmarkHighConfidenceThreshold,
+	})
+	if err != nil {
+		return runtime
+	}
+
+	runtime.Enabled = vals[SettingKeyBenchmarkEnabled] == "true"
+	runtime.PublicEnabled = vals[SettingKeyBenchmarkPublicEnabled] == "true"
+
+	if concurrency, err := strconv.Atoi(vals[SettingKeyBenchmarkGlobalConcurrency]); err == nil && concurrency > 0 {
+		runtime.GlobalConcurrency = concurrency
+	}
+	if timeoutSeconds, err := strconv.Atoi(vals[SettingKeyBenchmarkDefaultTimeoutSeconds]); err == nil && timeoutSeconds > 0 {
+		runtime.DefaultTimeoutSeconds = timeoutSeconds
+	}
+	if lowThreshold, err := strconv.ParseFloat(vals[SettingKeyBenchmarkLowConfidenceThreshold], 64); err == nil && lowThreshold > 0 {
+		runtime.ConfidenceThresholds.MediumCoverage = lowThreshold
+	}
+	if highThreshold, err := strconv.ParseFloat(vals[SettingKeyBenchmarkHighConfidenceThreshold], 64); err == nil && highThreshold > 0 {
+		runtime.ConfidenceThresholds.HighCoverage = highThreshold
+	}
+
+	return runtime
+}
+
 // GetChannelMonitorRuntime reads the channel monitor feature flags directly from
 // the settings store. Fail-open: on error returns Enabled=true with the default interval.
 func (s *SettingService) GetChannelMonitorRuntime(ctx context.Context) ChannelMonitorRuntime {

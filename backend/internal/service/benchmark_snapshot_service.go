@@ -10,11 +10,20 @@ import (
 )
 
 type BenchmarkSnapshotService struct {
-	repo BenchmarkRepository
+	repo            BenchmarkRepository
+	runtimeProvider benchmarkRuntimeProvider
 }
 
 func NewBenchmarkSnapshotService(repo BenchmarkRepository) *BenchmarkSnapshotService {
 	return &BenchmarkSnapshotService{repo: repo}
+}
+
+func (s *BenchmarkSnapshotService) SetBenchmarkRuntimeProvider(provider benchmarkRuntimeProvider) {
+	s.runtimeProvider = provider
+}
+
+func (s *BenchmarkSnapshotService) SetSettingService(settingService *SettingService) {
+	s.SetBenchmarkRuntimeProvider(settingService)
 }
 
 type BenchmarkPublicRadar struct {
@@ -65,6 +74,7 @@ func (s *BenchmarkSnapshotService) BuildScoreSnapshots(ctx context.Context, runI
 	if err != nil {
 		return err
 	}
+	thresholds := s.getConfidenceThresholds(ctx)
 
 	grouped := make(map[int64][]BenchmarkRunScoreInput)
 	for _, input := range inputs {
@@ -131,7 +141,7 @@ func (s *BenchmarkSnapshotService) BuildScoreSnapshots(ctx context.Context, runI
 			estimatedCost += result.EstimatedCost
 		}
 
-		score := ComputeBenchmarkTargetScore(abilityResults, BenchmarkConfidenceThresholds{})
+		score := ComputeBenchmarkTargetScore(abilityResults, thresholds)
 		if len(group) > 0 {
 			score.SuccessRate = float64(successCount) / float64(len(group))
 		}
@@ -193,6 +203,13 @@ func (s *BenchmarkSnapshotService) BuildScoreSnapshots(ctx context.Context, runI
 	}
 
 	return s.repo.SaveScoreSnapshots(ctx, runID, snapshots)
+}
+
+func (s *BenchmarkSnapshotService) getConfidenceThresholds(ctx context.Context) BenchmarkConfidenceThresholds {
+	if s == nil || s.runtimeProvider == nil {
+		return BenchmarkConfidenceThresholds{}
+	}
+	return normalizeBenchmarkRuntime(s.runtimeProvider.GetBenchmarkRuntime(ctx)).ConfidenceThresholds
 }
 
 func (s *BenchmarkSnapshotService) PublishPublicSnapshot(ctx context.Context, runID int64) error {

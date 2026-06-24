@@ -8,8 +8,23 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkprofile"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarktask"
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/stretchr/testify/require"
 )
+
+type benchmarkRuntimeProviderStub struct {
+	runtime               BenchmarkRuntime
+	getBenchmarkRuntimeFn func(context.Context) BenchmarkRuntime
+	calls                 int
+}
+
+func (s *benchmarkRuntimeProviderStub) GetBenchmarkRuntime(ctx context.Context) BenchmarkRuntime {
+	s.calls++
+	if s.getBenchmarkRuntimeFn != nil {
+		return s.getBenchmarkRuntimeFn(ctx)
+	}
+	return s.runtime
+}
 
 type benchmarkServiceRepoStub struct {
 	t                          *testing.T
@@ -1105,6 +1120,31 @@ func TestBenchmarkServiceCreateRunRejectsDisabledProfile(t *testing.T) {
 	run, err := svc.CreateRun(context.Background(), BenchmarkCreateRunRequest{ProfileID: profile.ID})
 	require.Nil(t, run)
 	require.EqualError(t, err, "benchmark profile is disabled")
+}
+
+func TestBenchmarkServiceCreateRunRejectsWhenBenchmarkDisabled(t *testing.T) {
+	t.Parallel()
+
+	repo, profile := newBenchmarkPreviewRepoStub(t)
+	svc := NewBenchmarkService(repo)
+	svc.SetBenchmarkRuntimeProvider(&benchmarkRuntimeProviderStub{
+		runtime: BenchmarkRuntime{
+			Enabled:               false,
+			PublicEnabled:         false,
+			GlobalConcurrency:     BenchmarkGlobalConcurrencyDefault,
+			DefaultTimeoutSeconds: BenchmarkDefaultTimeoutSecondsDefault,
+			ConfidenceThresholds: BenchmarkConfidenceThresholds{
+				MediumCoverage: BenchmarkLowConfidenceThresholdDefault,
+				HighCoverage:   BenchmarkHighConfidenceThresholdDefault,
+			},
+		},
+	})
+
+	run, err := svc.CreateRun(context.Background(), BenchmarkCreateRunRequest{ProfileID: profile.ID})
+	require.Nil(t, run)
+	require.Error(t, err)
+	require.True(t, infraerrors.IsForbidden(err))
+	require.Equal(t, "BENCHMARK_DISABLED", infraerrors.Reason(err))
 }
 
 func TestBenchmarkServiceCreateRunRejectsNoSelectedTasks(t *testing.T) {

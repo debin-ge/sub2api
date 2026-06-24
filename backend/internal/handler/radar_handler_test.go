@@ -15,13 +15,23 @@ import (
 
 type radarSnapshotServiceStub struct {
 	getPublicRadarFn func(context.Context) (*service.BenchmarkPublicRadar, error)
+	calls            int
 }
 
 func (s *radarSnapshotServiceStub) GetPublicRadar(ctx context.Context) (*service.BenchmarkPublicRadar, error) {
+	s.calls++
 	if s.getPublicRadarFn != nil {
 		return s.getPublicRadarFn(ctx)
 	}
 	return nil, nil
+}
+
+type radarRuntimeProviderStub struct {
+	runtime service.BenchmarkRuntime
+}
+
+func (s *radarRuntimeProviderStub) GetBenchmarkRuntime(context.Context) service.BenchmarkRuntime {
+	return s.runtime
 }
 
 func newRadarHandlerTestRouter(h *RadarHandler) *gin.Engine {
@@ -52,6 +62,78 @@ func TestRadarHandlerReturnsEmptyRadarWhenNoSnapshot(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.JSONEq(t, `{"ranking_basis":"ability_score_only","latest_run":null,"targets":[]}`, rec.Body.String())
 	require.NotContains(t, rec.Body.String(), `"success"`)
+}
+
+func TestRadarHandlerReturnsEmptyRadarWhenBenchmarkPublicDisabled(t *testing.T) {
+	t.Parallel()
+
+	reader := &radarSnapshotServiceStub{
+		getPublicRadarFn: func(context.Context) (*service.BenchmarkPublicRadar, error) {
+			return &service.BenchmarkPublicRadar{
+				RankingBasis: "ability_score_only",
+				Targets: []service.BenchmarkPublicTarget{
+					{Rank: 1, Model: "gpt-4.1"},
+				},
+			}, nil
+		},
+	}
+	handler := &RadarHandler{
+		reader: reader,
+	}
+	handler.SetBenchmarkRuntimeProvider(&radarRuntimeProviderStub{
+		runtime: service.BenchmarkRuntime{
+			Enabled:               true,
+			PublicEnabled:         false,
+			GlobalConcurrency:     service.BenchmarkGlobalConcurrencyDefault,
+			DefaultTimeoutSeconds: service.BenchmarkDefaultTimeoutSecondsDefault,
+			ConfidenceThresholds: service.BenchmarkConfidenceThresholds{
+				MediumCoverage: service.BenchmarkLowConfidenceThresholdDefault,
+				HighCoverage:   service.BenchmarkHighConfidenceThresholdDefault,
+			},
+		},
+	})
+
+	router := newRadarHandlerTestRouter(handler)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/public/radar", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.JSONEq(t, `{"ranking_basis":"ability_score_only","latest_run":null,"targets":[]}`, rec.Body.String())
+}
+
+func TestRadarHandlerSkipsSnapshotLookupWhenBenchmarkPublicDisabled(t *testing.T) {
+	t.Parallel()
+
+	reader := &radarSnapshotServiceStub{
+		getPublicRadarFn: func(context.Context) (*service.BenchmarkPublicRadar, error) {
+			t.Fatal("snapshot lookup should be skipped when benchmark public output is disabled")
+			return nil, nil
+		},
+	}
+	handler := &RadarHandler{
+		reader: reader,
+	}
+	handler.SetBenchmarkRuntimeProvider(&radarRuntimeProviderStub{
+		runtime: service.BenchmarkRuntime{
+			Enabled:               true,
+			PublicEnabled:         false,
+			GlobalConcurrency:     service.BenchmarkGlobalConcurrencyDefault,
+			DefaultTimeoutSeconds: service.BenchmarkDefaultTimeoutSecondsDefault,
+			ConfidenceThresholds: service.BenchmarkConfidenceThresholds{
+				MediumCoverage: service.BenchmarkLowConfidenceThresholdDefault,
+				HighCoverage:   service.BenchmarkHighConfidenceThresholdDefault,
+			},
+		},
+	})
+
+	router := newRadarHandlerTestRouter(handler)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/public/radar", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, 0, reader.calls)
 }
 
 func TestRadarHandlerReturnsLatestPublicSnapshot(t *testing.T) {

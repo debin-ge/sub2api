@@ -64,6 +64,13 @@ func (s *benchmarkRunnerRepoStub) GetRunResultContext(ctx context.Context, resul
 	return nil, nil
 }
 
+func (s *benchmarkRunnerRepoStub) GetRun(ctx context.Context, id int64) (*ent.BenchmarkRun, error) {
+	if s.getRunFn != nil {
+		return s.getRunFn(ctx, id)
+	}
+	return &ent.BenchmarkRun{ID: id}, nil
+}
+
 func (s *benchmarkRunnerRepoStub) RequeueClaimedResults(ctx context.Context, resultIDs []int64) error {
 	cloned := append([]int64(nil), resultIDs...)
 	s.requeueCalls = append(s.requeueCalls, cloned)
@@ -638,6 +645,273 @@ func TestBenchmarkRunnerMovesRunToScoringWhenTerminal(t *testing.T) {
 	require.Equal(t, int64(123), repo.runStatusCalls[0].runID)
 	require.Equal(t, BenchmarkRunStatusScoring, repo.runStatusCalls[0].status)
 	require.Nil(t, repo.runStatusCalls[0].errorMessage)
+}
+
+func TestBenchmarkRunnerUsesSettingServiceDefaultTimeoutWhenRunConfigMissing(t *testing.T) {
+	t.Parallel()
+
+	repo := newBenchmarkRunnerRepoStub(t)
+	ctxValue := benchmarkRunnerTestResultContext()
+	ctxValue.Run.ConfigSnapshot = map[string]any{}
+	repo.claimPendingResultsFn = func(ctx context.Context, runID int64, limit int) ([]*ent.BenchmarkResult, error) {
+		return []*ent.BenchmarkResult{ctxValue.Result}, nil
+	}
+	repo.getRunResultContextFn = func(ctx context.Context, resultID int64) (*BenchmarkRunResultContext, error) {
+		return ctxValue, nil
+	}
+	repo.countRunResultsFn = func(ctx context.Context, runID int64) (map[string]int, error) {
+		return map[string]int{
+			BenchmarkResultStatusScored: 1,
+		}, nil
+	}
+
+	client := &benchmarkRunnerClientStub{
+		executeFn: func(ctx context.Context, req BenchmarkGatewayRequest) (*BenchmarkGatewayResponse, error) {
+			return &BenchmarkGatewayResponse{RequestID: "req-timeout-default", Content: "Paris"}, nil
+		},
+	}
+
+	runner := NewBenchmarkRunner(repo, client)
+	runner.SetBenchmarkRuntimeProvider(&benchmarkRuntimeProviderStub{
+		runtime: BenchmarkRuntime{
+			Enabled:               true,
+			PublicEnabled:         true,
+			GlobalConcurrency:     BenchmarkGlobalConcurrencyDefault,
+			DefaultTimeoutSeconds: 45,
+			ConfidenceThresholds: BenchmarkConfidenceThresholds{
+				MediumCoverage: BenchmarkLowConfidenceThresholdDefault,
+				HighCoverage:   BenchmarkHighConfidenceThresholdDefault,
+			},
+		},
+	})
+
+	err := runner.RunOnce(context.Background(), ctxValue.Run.ID)
+	require.NoError(t, err)
+	require.Len(t, client.requests, 1)
+	require.Equal(t, 45*time.Second, client.requests[0].Timeout)
+}
+
+func TestBenchmarkRunnerPrefersRunRuntimeTimeoutOverSettingDefault(t *testing.T) {
+	t.Parallel()
+
+	repo := newBenchmarkRunnerRepoStub(t)
+	ctxValue := benchmarkRunnerTestResultContext()
+	repo.claimPendingResultsFn = func(ctx context.Context, runID int64, limit int) ([]*ent.BenchmarkResult, error) {
+		return []*ent.BenchmarkResult{ctxValue.Result}, nil
+	}
+	repo.getRunResultContextFn = func(ctx context.Context, resultID int64) (*BenchmarkRunResultContext, error) {
+		return ctxValue, nil
+	}
+	repo.countRunResultsFn = func(ctx context.Context, runID int64) (map[string]int, error) {
+		return map[string]int{
+			BenchmarkResultStatusScored: 1,
+		}, nil
+	}
+
+	client := &benchmarkRunnerClientStub{
+		executeFn: func(ctx context.Context, req BenchmarkGatewayRequest) (*BenchmarkGatewayResponse, error) {
+			return &BenchmarkGatewayResponse{RequestID: "req-timeout-explicit", Content: "Paris"}, nil
+		},
+	}
+
+	runner := NewBenchmarkRunner(repo, client)
+	runner.SetBenchmarkRuntimeProvider(&benchmarkRuntimeProviderStub{
+		runtime: BenchmarkRuntime{
+			Enabled:               true,
+			PublicEnabled:         true,
+			GlobalConcurrency:     BenchmarkGlobalConcurrencyDefault,
+			DefaultTimeoutSeconds: 45,
+			ConfidenceThresholds: BenchmarkConfidenceThresholds{
+				MediumCoverage: BenchmarkLowConfidenceThresholdDefault,
+				HighCoverage:   BenchmarkHighConfidenceThresholdDefault,
+			},
+		},
+	})
+
+	err := runner.RunOnce(context.Background(), ctxValue.Run.ID)
+	require.NoError(t, err)
+	require.Len(t, client.requests, 1)
+	require.Equal(t, 30*time.Second, client.requests[0].Timeout)
+}
+
+func TestBenchmarkRunnerSupportsFloatingPointRuntimeTimeoutOverride(t *testing.T) {
+	t.Parallel()
+
+	repo := newBenchmarkRunnerRepoStub(t)
+	ctxValue := benchmarkRunnerTestResultContext()
+	ctxValue.Run.ConfigSnapshot = map[string]any{
+		"runtime_config": map[string]any{"timeout": 30.5},
+	}
+	repo.claimPendingResultsFn = func(ctx context.Context, runID int64, limit int) ([]*ent.BenchmarkResult, error) {
+		return []*ent.BenchmarkResult{ctxValue.Result}, nil
+	}
+	repo.getRunResultContextFn = func(ctx context.Context, resultID int64) (*BenchmarkRunResultContext, error) {
+		return ctxValue, nil
+	}
+	repo.countRunResultsFn = func(ctx context.Context, runID int64) (map[string]int, error) {
+		return map[string]int{
+			BenchmarkResultStatusScored: 1,
+		}, nil
+	}
+
+	client := &benchmarkRunnerClientStub{
+		executeFn: func(ctx context.Context, req BenchmarkGatewayRequest) (*BenchmarkGatewayResponse, error) {
+			return &BenchmarkGatewayResponse{RequestID: "req-timeout-float", Content: "Paris"}, nil
+		},
+	}
+
+	runner := NewBenchmarkRunner(repo, client)
+	runner.SetBenchmarkRuntimeProvider(&benchmarkRuntimeProviderStub{
+		runtime: BenchmarkRuntime{
+			Enabled:               true,
+			PublicEnabled:         true,
+			GlobalConcurrency:     BenchmarkGlobalConcurrencyDefault,
+			DefaultTimeoutSeconds: 45,
+			ConfidenceThresholds: BenchmarkConfidenceThresholds{
+				MediumCoverage: BenchmarkLowConfidenceThresholdDefault,
+				HighCoverage:   BenchmarkHighConfidenceThresholdDefault,
+			},
+		},
+	})
+
+	err := runner.RunOnce(context.Background(), ctxValue.Run.ID)
+	require.NoError(t, err)
+	require.Len(t, client.requests, 1)
+	require.Equal(t, 30500*time.Millisecond, client.requests[0].Timeout)
+}
+
+func TestBenchmarkRunnerUsesSettingServiceGlobalConcurrencyForClaimLimit(t *testing.T) {
+	t.Parallel()
+
+	repo := newBenchmarkRunnerRepoStub(t)
+	repo.claimPendingResultsFn = func(ctx context.Context, runID int64, limit int) ([]*ent.BenchmarkResult, error) {
+		return nil, nil
+	}
+	repo.countRunResultsFn = func(ctx context.Context, runID int64) (map[string]int, error) {
+		return map[string]int{
+			BenchmarkResultStatusScored: 1,
+		}, nil
+	}
+
+	runner := NewBenchmarkRunner(repo, &benchmarkRunnerClientStub{})
+	runner.SetBenchmarkRuntimeProvider(&benchmarkRuntimeProviderStub{
+		runtime: BenchmarkRuntime{
+			Enabled:               true,
+			PublicEnabled:         true,
+			GlobalConcurrency:     7,
+			DefaultTimeoutSeconds: BenchmarkDefaultTimeoutSecondsDefault,
+			ConfidenceThresholds: BenchmarkConfidenceThresholds{
+				MediumCoverage: BenchmarkLowConfidenceThresholdDefault,
+				HighCoverage:   BenchmarkHighConfidenceThresholdDefault,
+			},
+		},
+	})
+
+	err := runner.RunOnce(context.Background(), 123)
+	require.NoError(t, err)
+	require.Equal(t, 7, repo.claimPendingResultsCall.limit)
+}
+
+func TestBenchmarkRunnerPrefersRunRuntimeConcurrencyOverSettingDefault(t *testing.T) {
+	t.Parallel()
+
+	repo := newBenchmarkRunnerRepoStub(t)
+	repo.getRunFn = func(ctx context.Context, id int64) (*ent.BenchmarkRun, error) {
+		require.Equal(t, int64(123), id)
+		return &ent.BenchmarkRun{
+			ID:     id,
+			Status: BenchmarkRunStatusRunning,
+			ConfigSnapshot: map[string]any{
+				"runtime_config": map[string]any{
+					"max_concurrency": 3,
+				},
+			},
+		}, nil
+	}
+	repo.claimPendingResultsFn = func(ctx context.Context, runID int64, limit int) ([]*ent.BenchmarkResult, error) {
+		return nil, nil
+	}
+	repo.countRunResultsFn = func(ctx context.Context, runID int64) (map[string]int, error) {
+		return map[string]int{
+			BenchmarkResultStatusScored: 1,
+		}, nil
+	}
+
+	runner := NewBenchmarkRunner(repo, &benchmarkRunnerClientStub{})
+	runner.SetBenchmarkRuntimeProvider(&benchmarkRuntimeProviderStub{
+		runtime: BenchmarkRuntime{
+			Enabled:               true,
+			PublicEnabled:         true,
+			GlobalConcurrency:     7,
+			DefaultTimeoutSeconds: BenchmarkDefaultTimeoutSecondsDefault,
+			ConfidenceThresholds: BenchmarkConfidenceThresholds{
+				MediumCoverage: BenchmarkLowConfidenceThresholdDefault,
+				HighCoverage:   BenchmarkHighConfidenceThresholdDefault,
+			},
+		},
+	})
+
+	err := runner.RunOnce(context.Background(), 123)
+	require.NoError(t, err)
+	require.Equal(t, 3, repo.claimPendingResultsCall.limit)
+}
+
+func TestBenchmarkRunnerIgnoresNonIntegerRuntimeConcurrencyOverride(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name     string
+		override any
+	}{
+		{name: "fraction less than one", override: 0.5},
+		{name: "fraction greater than one", override: 3.7},
+		{name: "negative integer", override: -1},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			repo := newBenchmarkRunnerRepoStub(t)
+			repo.getRunFn = func(ctx context.Context, id int64) (*ent.BenchmarkRun, error) {
+				return &ent.BenchmarkRun{
+					ID:     id,
+					Status: BenchmarkRunStatusRunning,
+					ConfigSnapshot: map[string]any{
+						"runtime_config": map[string]any{
+							"max_concurrency": tc.override,
+						},
+					},
+				}, nil
+			}
+			repo.claimPendingResultsFn = func(ctx context.Context, runID int64, limit int) ([]*ent.BenchmarkResult, error) {
+				return nil, nil
+			}
+			repo.countRunResultsFn = func(ctx context.Context, runID int64) (map[string]int, error) {
+				return map[string]int{
+					BenchmarkResultStatusScored: 1,
+				}, nil
+			}
+
+			runner := NewBenchmarkRunner(repo, &benchmarkRunnerClientStub{})
+			runner.SetBenchmarkRuntimeProvider(&benchmarkRuntimeProviderStub{
+				runtime: BenchmarkRuntime{
+					Enabled:               true,
+					PublicEnabled:         true,
+					GlobalConcurrency:     7,
+					DefaultTimeoutSeconds: BenchmarkDefaultTimeoutSecondsDefault,
+					ConfidenceThresholds: BenchmarkConfidenceThresholds{
+						MediumCoverage: BenchmarkLowConfidenceThresholdDefault,
+						HighCoverage:   BenchmarkHighConfidenceThresholdDefault,
+					},
+				},
+			})
+
+			err := runner.RunOnce(context.Background(), 123)
+			require.NoError(t, err)
+			require.Equal(t, 7, repo.claimPendingResultsCall.limit)
+		})
+	}
 }
 
 func benchmarkRunnerTestResultContext() *BenchmarkRunResultContext {

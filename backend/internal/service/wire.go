@@ -521,6 +521,18 @@ func ProvideSettingService(settingRepo SettingRepository, groupRepo GroupReposit
 	return svc
 }
 
+func ProvideBenchmarkService(repo BenchmarkRepository, settingService *SettingService) *BenchmarkService {
+	svc := NewBenchmarkService(repo)
+	svc.SetSettingService(settingService)
+	return svc
+}
+
+func ProvideBenchmarkSnapshotService(repo BenchmarkRepository, settingService *SettingService) *BenchmarkSnapshotService {
+	svc := NewBenchmarkSnapshotService(repo)
+	svc.SetSettingService(settingService)
+	return svc
+}
+
 // ProvideBillingCacheService wires BillingCacheService with its RPM dependencies.
 func ProvideBillingCacheService(
 	cache BillingCache,
@@ -565,8 +577,8 @@ var ProviderSet = wire.NewSet(
 	NewPromoService,
 	NewUsageService,
 	NewDashboardService,
-	NewBenchmarkService,
-	NewBenchmarkSnapshotService,
+	ProvideBenchmarkService,
+	ProvideBenchmarkSnapshotService,
 	// BenchmarkRunner stays out of ProviderSet until a concrete BenchmarkGatewayClient provider exists.
 	ProvidePricingService,
 	NewBillingService,

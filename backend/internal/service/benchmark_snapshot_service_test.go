@@ -225,6 +225,51 @@ func TestBenchmarkSnapshotFallsBackToPromptAndCompletionTokensForAverage(t *test
 	require.InDelta(t, 32.5, *snapshot.AvgTotalTokens, 0.000001)
 }
 
+func TestBenchmarkSnapshotUsesSettingServiceConfidenceThresholds(t *testing.T) {
+	t.Parallel()
+
+	var savedSnapshots []BenchmarkScoreSnapshotInput
+
+	repo := newBenchmarkServiceRepoStub(t)
+	repo.listRunScoreInputsFn = func(ctx context.Context, runID int64) ([]BenchmarkRunScoreInput, error) {
+		return []BenchmarkRunScoreInput{
+			benchmarkRunScoreInput(601, 701, "reasoning", 1, BenchmarkResultStatusScored, benchmarkScoreInputOptions{
+				normalizedScore: float64Ptr(80),
+			}),
+			benchmarkRunScoreInput(601, 702, "coding", 1, BenchmarkResultStatusScored, benchmarkScoreInputOptions{
+				normalizedScore: float64Ptr(70),
+			}),
+			benchmarkRunScoreInput(601, 703, "coding", 1, BenchmarkResultStatusTimeout, benchmarkScoreInputOptions{}),
+		}, nil
+	}
+	repo.saveScoreSnapshotsFn = func(ctx context.Context, runID int64, snapshots []BenchmarkScoreSnapshotInput) error {
+		savedSnapshots = append([]BenchmarkScoreSnapshotInput(nil), snapshots...)
+		return nil
+	}
+
+	svc := NewBenchmarkSnapshotService(repo)
+	svc.SetBenchmarkRuntimeProvider(&benchmarkRuntimeProviderStub{
+		runtime: BenchmarkRuntime{
+			Enabled:               true,
+			PublicEnabled:         true,
+			GlobalConcurrency:     BenchmarkGlobalConcurrencyDefault,
+			DefaultTimeoutSeconds: BenchmarkDefaultTimeoutSecondsDefault,
+			ConfidenceThresholds: BenchmarkConfidenceThresholds{
+				MediumCoverage: 0.6,
+				HighCoverage:   0.95,
+			},
+		},
+	})
+
+	err := svc.BuildScoreSnapshots(context.Background(), 125)
+	require.NoError(t, err)
+
+	require.Len(t, savedSnapshots, 1)
+	require.Equal(t, BenchmarkConfidenceMedium, savedSnapshots[0].ConfidenceLevel)
+	require.False(t, savedSnapshots[0].InsufficientSample)
+	require.InDelta(t, 2.0/3.0, savedSnapshots[0].CoverageRate, 0.000001)
+}
+
 func TestBenchmarkSnapshotPublicSnapshotRedactsSensitiveFields(t *testing.T) {
 	t.Parallel()
 

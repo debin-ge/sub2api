@@ -95,6 +95,12 @@ func ProvideAdminSettingHandler(settingService *service.SettingService, emailSer
 	return h
 }
 
+func ProvideRadarHandler(snapshotService *service.BenchmarkSnapshotService, settingService *service.SettingService) *RadarHandler {
+	h := NewRadarHandler(snapshotService)
+	h.SetSettingService(settingService)
+	return h
+}
+
 // ProvideHandlers creates the Handlers struct
 func ProvideHandlers(
 	authHandler *AuthHandler,
@@ -174,7 +180,7 @@ var ProviderSet = wire.NewSet(
 	NewPaymentHandler,
 	NewPaymentWebhookHandler,
 	NewAvailableChannelHandler,
-	NewRadarHandler,
+	ProvideRadarHandler,
 
 	// Admin handlers
 	admin.NewDashboardHandler,

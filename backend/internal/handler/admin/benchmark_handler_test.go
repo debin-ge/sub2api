@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/ent"
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -347,6 +348,24 @@ func TestBenchmarkHandlerCreateRun(t *testing.T) {
 	router.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestBenchmarkHandlerCreateRunReturns403WhenBenchmarkDisabled(t *testing.T) {
+	svc := &benchmarkAdminServiceStub{
+		createRunFn: func(ctx context.Context, input service.BenchmarkCreateRunRequest) (*ent.BenchmarkRun, error) {
+			require.Equal(t, int64(7), input.ProfileID)
+			return nil, infraerrors.Forbidden("BENCHMARK_DISABLED", "benchmark is disabled")
+		},
+	}
+	router := newBenchmarkTestRouter(&BenchmarkHandler{benchmarkService: svc, snapshotService: &benchmarkSnapshotServiceStub{}})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/benchmark/runs", bytes.NewBufferString(`{"profile_id":7}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusForbidden, rec.Code)
+	require.Contains(t, rec.Body.String(), "BENCHMARK_DISABLED")
 }
 
 func TestBenchmarkHandlerCreateRunMissingOverrideTargetsReturns400(t *testing.T) {

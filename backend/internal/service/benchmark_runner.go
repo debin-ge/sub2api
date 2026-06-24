@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -13,8 +14,9 @@ import (
 const benchmarkRunnerDefaultClaimLimit = 20
 
 type BenchmarkRunner struct {
-	repo   BenchmarkRepository
-	client BenchmarkGatewayClient
+	repo            BenchmarkRepository
+	client          BenchmarkGatewayClient
+	runtimeProvider benchmarkRuntimeProvider
 }
 
 func NewBenchmarkRunner(repo BenchmarkRepository, client BenchmarkGatewayClient) *BenchmarkRunner {
@@ -24,8 +26,22 @@ func NewBenchmarkRunner(repo BenchmarkRepository, client BenchmarkGatewayClient)
 	}
 }
 
+func (r *BenchmarkRunner) SetBenchmarkRuntimeProvider(provider benchmarkRuntimeProvider) {
+	r.runtimeProvider = provider
+}
+
+func (r *BenchmarkRunner) SetSettingService(settingService *SettingService) {
+	r.SetBenchmarkRuntimeProvider(settingService)
+}
+
 func (r *BenchmarkRunner) RunOnce(ctx context.Context, runID int64) error {
-	claimed, err := r.repo.ClaimPendingResults(ctx, runID, benchmarkRunnerDefaultClaimLimit)
+	runtime, hasRuntimeProvider := r.getBenchmarkRuntime(ctx)
+	run, err := r.repo.GetRun(ctx, runID)
+	if err != nil {
+		return err
+	}
+
+	claimed, err := r.repo.ClaimPendingResults(ctx, runID, benchmarkRunnerClaimLimit(run, runtime, hasRuntimeProvider))
 	if err != nil {
 		return err
 	}
@@ -35,7 +51,7 @@ func (r *BenchmarkRunner) RunOnce(ctx context.Context, runID int64) error {
 		if err != nil {
 			return r.requeueClaimedResults(ctx, claimed[i:], err)
 		}
-		if err := r.runResultOnce(ctx, resultCtx); err != nil {
+		if err := r.runResultOnce(ctx, resultCtx, runtime, hasRuntimeProvider); err != nil {
 			return r.requeueClaimedResults(ctx, claimed[i:], err)
 		}
 	}
@@ -50,6 +66,26 @@ func (r *BenchmarkRunner) RunOnce(ctx context.Context, runID int64) error {
 		nextStatus = BenchmarkRunStatusRunning
 	}
 	return r.repo.UpdateRunStatus(ctx, runID, nextStatus, nil)
+}
+
+func benchmarkRunnerClaimLimit(run *ent.BenchmarkRun, runtime BenchmarkRuntime, hasRuntimeProvider bool) int {
+	if value, ok := benchmarkRunnerRuntimeConfigPositiveInt(run, "max_concurrency"); ok {
+		return value
+	}
+	if value, ok := benchmarkRunnerRuntimeConfigPositiveInt(run, "concurrency"); ok {
+		return value
+	}
+	if hasRuntimeProvider && runtime.GlobalConcurrency > 0 {
+		return runtime.GlobalConcurrency
+	}
+	return benchmarkRunnerDefaultClaimLimit
+}
+
+func (r *BenchmarkRunner) getBenchmarkRuntime(ctx context.Context) (BenchmarkRuntime, bool) {
+	if r == nil || r.runtimeProvider == nil {
+		return BenchmarkRuntime{GlobalConcurrency: benchmarkRunnerDefaultClaimLimit}, false
+	}
+	return normalizeBenchmarkRuntime(r.runtimeProvider.GetBenchmarkRuntime(ctx)), true
 }
 
 func (r *BenchmarkRunner) requeueClaimedResults(ctx context.Context, claimed []*ent.BenchmarkResult, runErr error) error {
@@ -69,7 +105,7 @@ func (r *BenchmarkRunner) requeueClaimedResults(ctx context.Context, claimed []*
 	return runErr
 }
 
-func (r *BenchmarkRunner) runResultOnce(ctx context.Context, resultCtx *BenchmarkRunResultContext) error {
+func (r *BenchmarkRunner) runResultOnce(ctx context.Context, resultCtx *BenchmarkRunResultContext, runtime BenchmarkRuntime, hasRuntimeProvider bool) error {
 	if resultCtx == nil || resultCtx.Result == nil || resultCtx.Run == nil || resultCtx.Target == nil || resultCtx.Task == nil {
 		return errors.New("benchmark run result context is incomplete")
 	}
@@ -84,7 +120,7 @@ func (r *BenchmarkRunner) runResultOnce(ctx context.Context, resultCtx *Benchmar
 		ChannelID:    resultCtx.Target.ChannelID,
 		Prompt:       resultCtx.Task.PromptSnapshot,
 		InputPayload: benchmarkRunnerInputPayload(resultCtx.Task),
-		Timeout:      benchmarkRunnerTimeout(resultCtx.Run),
+		Timeout:      benchmarkRunnerTimeout(resultCtx.Run, runtime, hasRuntimeProvider),
 	}
 
 	resp, err := r.client.Execute(ctx, req)
@@ -238,29 +274,64 @@ func benchmarkRunnerIsRateLimitError(err error) bool {
 	return errors.As(err, &target)
 }
 
-func benchmarkRunnerTimeout(run *ent.BenchmarkRun) time.Duration {
-	if run == nil {
-		return 0
+func benchmarkRunnerTimeout(run *ent.BenchmarkRun, runtime BenchmarkRuntime, hasRuntimeProvider bool) time.Duration {
+	if value, ok := benchmarkRunnerRuntimeConfigPositiveDuration(run, "timeout"); ok {
+		return value
+	}
+	if hasRuntimeProvider && runtime.DefaultTimeoutSeconds > 0 {
+		return time.Duration(runtime.DefaultTimeoutSeconds) * time.Second
+	}
+	return 0
+}
+
+func benchmarkRunnerRuntimeConfigPositiveInt(run *ent.BenchmarkRun, key string) (int, bool) {
+	if run == nil || len(run.ConfigSnapshot) == 0 {
+		return 0, false
 	}
 	runtimeConfig, ok := run.ConfigSnapshot["runtime_config"].(map[string]any)
 	if !ok {
-		return 0
+		return 0, false
 	}
-	switch value := runtimeConfig["timeout"].(type) {
+	switch value := runtimeConfig[key].(type) {
 	case int:
 		if value > 0 {
-			return time.Duration(value) * time.Second
+			return value, true
 		}
 	case int64:
 		if value > 0 {
-			return time.Duration(value) * time.Second
+			return int(value), true
+		}
+	case float64:
+		if value > 0 && value == math.Trunc(value) {
+			return int(value), true
+		}
+	}
+	return 0, false
+}
+
+func benchmarkRunnerRuntimeConfigPositiveDuration(run *ent.BenchmarkRun, key string) (time.Duration, bool) {
+	if run == nil || len(run.ConfigSnapshot) == 0 {
+		return 0, false
+	}
+	runtimeConfig, ok := run.ConfigSnapshot["runtime_config"].(map[string]any)
+	if !ok {
+		return 0, false
+	}
+	switch value := runtimeConfig[key].(type) {
+	case int:
+		if value > 0 {
+			return time.Duration(value) * time.Second, true
+		}
+	case int64:
+		if value > 0 {
+			return time.Duration(value) * time.Second, true
 		}
 	case float64:
 		if value > 0 {
-			return time.Duration(value * float64(time.Second))
+			return time.Duration(value * float64(time.Second)), true
 		}
 	}
-	return 0
+	return 0, false
 }
 
 func benchmarkRunnerInputPayload(task *ent.BenchmarkRunTask) map[string]any {
