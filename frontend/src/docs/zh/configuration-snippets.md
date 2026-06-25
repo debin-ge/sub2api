@@ -197,6 +197,13 @@ const response = await fetch('{{BASE_URL}}v1/chat/completions', {
 })
 ```
 
+## OpenCode CLI 环境配置
+
+```bash
+export OPENCODE_API_BASE="{{BASE_URL}}v1"
+export OPENCODE_API_KEY="$YOUR_KEY"
+```
+
 ## 常见替换项
 
 | 占位项 | 替换为 |

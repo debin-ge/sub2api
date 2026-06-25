@@ -197,6 +197,13 @@ const response = await fetch('{{BASE_URL}}v1/chat/completions', {
 })
 ```
 
+## OpenCode CLI Environment Configuration
+
+```bash
+export OPENCODE_API_BASE="{{BASE_URL}}v1"
+export OPENCODE_API_KEY="$YOUR_KEY"
+```
+
 ## Common Replacements
 
 | Placeholder | Replace with |
