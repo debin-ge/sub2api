@@ -118,23 +118,6 @@ print(response.choices[0].message.content)
 
 If you see `404`, first check whether `OPENAI_BASE_URL` became `{{BASE_URL}}v1/v1` or is missing `/v1`.
 
-## Claude Code Environment Variables
-
-Claude Code or Anthropic compatible clients usually need an Anthropic Base URL and API Key. Environment variable names vary by client version, so follow the client documentation. A common setup is:
-
-```bash
-export ANTHROPIC_BASE_URL="{{BASE_URL}}"
-export ANTHROPIC_AUTH_TOKEN="$YOUR_KEY"
-```
-
-Some clients require `ANTHROPIC_API_KEY`:
-
-```bash
-export ANTHROPIC_API_KEY="$YOUR_KEY"
-```
-
-Then choose a Claude compatible model supported by the current deployment. Model names should come from `/v1/models` or an admin-provided mapping name.
-
 ## Anthropic Messages Request
 
 ```bash
@@ -151,17 +134,6 @@ curl "${BASE_URL}v1/messages" \
 ```
 
 Messages requests usually require `max_tokens`. If you copy an OpenAI `messages` shape to an Anthropic endpoint, also confirm that the fields match the client or upstream requirements.
-
-## Antigravity Claude Environment Variables
-
-If an admin provides an Antigravity Claude compatible entry point, point the client to the `/antigravity` path:
-
-```bash
-export ANTHROPIC_BASE_URL="{{BASE_URL}}antigravity"
-export ANTHROPIC_AUTH_TOKEN="$YOUR_KEY"
-```
-
-If you see 404 or model unavailable errors, confirm that the deployment has enabled `/antigravity/v1/messages` and that your group has access to the corresponding model.
 
 ## Gemini Native Endpoints
 
@@ -201,21 +173,86 @@ curl -N "${BASE_URL}v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse
 
 Gemini native endpoints do not use the OpenAI `messages` format. Use a Gemini model name or mapping name supported by the current deployment.
 
-## Codex `/v1/responses` Example
+## CLI Coding Clients (Coding Agents)
 
-Coding clients that support the Responses API can point to {{SITE_NAME}}'s `/v1/responses`:
+These command-line tools (such as Claude Code CLI, Codex CLI, and OpenCode CLI) run directly in your terminal. You can easily configure and switch their underlying relay services using environment variables.
+
+### Claude Code CLI
+
+The official Claude Code client can be directed to this platform by setting the Anthropic API Base URL and key:
 
 ```bash
-curl "${BASE_URL}v1/responses" \
-  -H "Authorization: Bearer $YOUR_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "gpt-4.1",
-    "input": "Write a TypeScript function that returns the sum of two numbers."
-  }'
+export ANTHROPIC_BASE_URL="{{BASE_URL}}"
+export ANTHROPIC_API_KEY="$YOUR_KEY"
 ```
 
-If the model or Responses API is not enabled in the current deployment, use an available model from `/v1/models` or ask an admin to enable the corresponding channel.
+Or for certain versions:
+
+```bash
+export ANTHROPIC_AUTH_TOKEN="$YOUR_KEY"
+```
+
+Once configured, run `claude` in your terminal to spin up the agent and interact with compatible models.
+
+If an admin provides a custom `/antigravity` route, you can change the Base URL to:
+
+```bash
+export ANTHROPIC_BASE_URL="{{BASE_URL}}antigravity"
+export ANTHROPIC_AUTH_TOKEN="$YOUR_KEY"
+```
+
+### Codex CLI
+
+Codex CLI relies on the OpenAI-formatted Responses API. Set the following environment variables to route requests to this platform:
+
+```bash
+export OPENAI_BASE_URL="{{BASE_URL}}v1"
+export OPENAI_API_KEY="$YOUR_KEY"
+```
+
+**Important Note**: If you use Nginx to reverse-proxy this platform, ensure that Nginx includes the following configuration in its `http` block:
+```nginx
+underscores_in_headers on;
+```
+If this setting is missing, Nginx drops headers containing underscores (like `session_id`), causing sticky session functionality to fail in multi-account environments.
+
+### OpenCode CLI
+
+OpenCode CLI connects to the OpenCode2API channel. Configure the endpoints and key as follows:
+
+```bash
+export OPENCODE_API_BASE="{{BASE_URL}}v1"
+export OPENCODE_API_KEY="$YOUR_KEY"
+```
+
+If using a generic compatible client, simply point the OpenAI SDK `OPENAI_BASE_URL` and `OPENAI_API_KEY` to the `/v1` path of this platform.
+
+## Third-Party GUI & Integrated Tools
+
+These graphical tools help save your API keys and let you manage, configure, and switch between different underlying AI clients from a single workspace.
+
+### CC-Switch: Client Switching & One-Click Import
+
+* **Client Management & Switching**: CC-Switch is a local utility that allows you to easily configure, manage, and switch between multiple clients (Claude, Gemini, Codex, etc.).
+* **One-Click Configuration**: To avoid modifying environment variables for each client manually, this platform integrates a one-click import button using the `ccswitch://` protocol. In the **"API Keys"** section, click **"Import to CC-Switch"** next to your API Key, select the target client type (Claude, Gemini, or Codex), and CC-Switch will automatically configure the endpoint and key for you.
+* **Manual Configuration Parameters**:
+  * Claude Client: `app: "claude"`, `endpoint: "{{BASE_URL}}"`
+  * Codex Client: `app: "codex"`, `endpoint: "{{BASE_URL}}v1"`, default model `gpt-5.4`
+  * Gemini Client: `app: "gemini"`, `endpoint: "{{BASE_URL}}"`
+
+### Cockpit: Centralized Management & Switching
+
+* **Centralized Dashboard**: Cockpit is a local agent workspace GUI that lets you monitor, manage, and switch between parallel CLI agent sessions (like Claude Code CLI, Codex CLI, OpenCode CLI, etc.).
+* **Configuration & Switching**: In Cockpit's settings panel, you can independently configure API credentials for different engines, allowing you to switch clients at will. Update the API Base URL (or Endpoint) settings as follows:
+  * **Claude Engine**: Set Endpoint to `{{BASE_URL}}` and enter the platform API Key.
+  * **Codex Engine**: Set Endpoint to `{{BASE_URL}}v1` and enter the platform API Key.
+  * **OpenCode Engine**: Set Endpoint to `{{BASE_URL}}v1` and enter the platform API Key.
+
+### Codex App
+
+For the Codex App desktop client, configure it via its settings panel:
+1. Replace the OpenAI API Base URL with: `{{BASE_URL}}v1`
+2. Enter the API Key generated by this platform.
 
 ## Client Configuration Tips
 
