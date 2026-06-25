@@ -1,18 +1,22 @@
 # Best Practices
 
-This page is for users integrating {{SITE_NAME}} into business systems. The goal is stable requests, easier troubleshooting, controlled cost, and fewer key or configuration risks.
+This guide is for developers integrating {{SITE_NAME}} into production and business systems. The goal is to achieve high availability, fast troubleshooting, controlled costs, and secure credential handling.
+
+---
 
 ## Pre-Integration Checklist
 
-| Check | Recommendation |
-| --- | --- |
-| Base URL | Use `{{BASE_URL}}` or the full address provided by an admin. |
-| API Key | Use the `$YOUR_KEY` environment variable and do not write it into source code. |
-| Model list | Call `/v1/models` first to confirm models available to the current key. |
-| Endpoint format | Choose OpenAI, Anthropic, Gemini, or Antigravity format based on the client. |
-| Minimal request | Run one non-streaming minimal request before adding business logic. |
+| Check | Best Practice Recommendation |
+| :--- | :--- |
+| **Base URL** | Configure to `{{BASE_URL}}`, appending `/v1` depending on the client library. |
+| **API Key** | Must be passed via environment variables; never hardcode it as a literal string in your code. |
+| **Model Whitelist** | Call `/v1/models` first to verify that the key actually has permission for the model. |
+| **Endpoint Match** | Choose the compatible API family (OpenAI/Claude/Gemini/Antigravity) that matches your client. |
+| **Minimal Check** | Ensure one non-streaming request succeeds before writing any complex business logic. |
 
-## Configuration Management
+---
+
+## Configuration & Environment Management
 
 Keep configuration in environment variables or a secure configuration system:
 
@@ -23,79 +27,73 @@ export OPENAI_BASE_URL="{{BASE_URL}}v1"
 export OPENAI_API_KEY="$YOUR_KEY"
 ```
 
-Use different API Keys for test, staging, and production. Log environment name, model name, and request path to simplify debugging.
+> [!TIP]
+> **Environment Isolation**: Always use different API Keys for test, staging, and production environments. Log the environment name, the requested model, and the request path to dramatically simplify debugging in production.
 
-## Model Selection
+---
+
+## Model Selection Strategy
 
 Do not choose only by model name. Consider task type, cost, context length, latency, and stability:
 
-| Task | Recommendation |
-| --- | --- |
-| Classification, tagging, simple rewriting | Prefer lower-cost, low-latency models. |
-| Long summarization or complex reasoning | Choose models with stronger reasoning and longer context. |
-| Code generation or repair | Prefer models and clients that work well with Responses or coding workflows. |
-| High concurrency | Choose stable channels and prepare fallback models. |
-| Strict structured output | Use lower temperature, clear schemas, or post-processing validation. |
+| Workload Scenario | Model Selection Recommendation |
+| :--- | :--- |
+| **Classification, tagging, simple text rewriting** | Prefer lower-cost, low-latency models. |
+| **Long summarization or complex reasoning** | Choose models with stronger reasoning and longer context. |
+| **Code generation or repair (IDE)** | Prefer models that work well with Responses API or coding workflows. |
+| **High concurrency workloads** | Ensure the backend has stable fallback channels, and prepare fallback models. |
+| **Strict structured output** | Use lower temperatures (`temperature <= 0.2`), and enforce post-processing validation. |
 
-Before launch, ask an admin to confirm model mappings and fallback channels so upstream changes do not break production.
+---
 
 ## Error Handling and Retries
 
-| Status | Recommendation |
-| --- | --- |
-| 401 | Do not retry. Check API Key and headers. |
-| 403 | Do not retry blindly. Check group permission, quota, and model access. |
-| 404 | Check path, Base URL joining, and model name. |
-| 429 | Use exponential backoff, lower concurrency, and cap maximum retries. |
-| 5xx | Retry after a short backoff, and log request time, model, and error details. |
+Implement differential handling logic based on HTTP status codes returned by the gateway:
 
-For workflows with side effects, do not replay requests unconditionally. When retrying, make the business operation idempotent.
+| HTTP Status Code | Client Retry Strategy | Notes & Action |
+| :--- | :--- | :--- |
+| **401 Unauthorized** | 🚫 **Never retry** | Check if the key variable is configured and if the Bearer prefix is present. |
+| **403 Forbidden** | 🚫 **Do not retry blindly** | The key is valid, but the associated group lacks permissions for the model. |
+| **404 Not Found** | 🚫 **Never retry** | Confirm the path is correct and the model name contains no typos. |
+| **429 Too Many Requests** | ✅ **Exponential backoff** | Lower concurrency, add jitter (random delays), and cap maximum retries. |
+| **5xx Server Error** | ✅ **Retry after short delay** | Retry 2-3 times with exponential backoff and log the error details. |
 
-## Streaming
+> [!IMPORTANT]
+> **Retry Idempotency**: For workflows that perform write operations or have billing side-effects, do not replay requests unconditionally. Ensure idempotency at the business layer by introducing unique request identifiers.
 
-Streaming is useful for long text, chat UIs, and fast first-token feedback. Before using it, confirm:
+---
 
-1. The client supports SSE or streaming reads.
-2. Reverse proxies do not buffer responses.
-3. Timeouts are long enough for large outputs.
-4. The client closes connections correctly when the user cancels.
-5. There is a non-streaming or retry fallback.
+## Streaming (SSE) Specifications
 
-Streaming failures are not always model issues. Proxy behavior and client parsing are more common causes.
+Streaming responses provide a great first-token experience. Before using it, confirm:
+1. The client supports SSE and parses the `data: [DONE]` marker properly.
+2. Reverse proxies (such as Nginx, Cloudflare) **do not buffer responses** and support chunked streaming.
+3. Timeouts (e.g. read timeouts) are configured long enough to cover large outputs.
+4. When a user cancels a request, the client closes the connection properly to prevent backend billing waste.
 
-## Cost Control
+> [!NOTE]
+> Streaming failures are not always model issues. Proxy timeouts and client-side parsing logic are more common causes of broken connections.
 
-| Practice | Notes |
-| --- | --- |
-| Limit `max_tokens` | Control output length and avoid runaway generation. |
-| Trim context | Send only necessary history and materials. |
-| Tier models | Route simple tasks to lower-cost models and upgrade only when needed. |
-| Control concurrency | Avoid batch jobs or scheduled tasks exhausting quota instantly. |
-| Monitor retries | Repeated failed requests can amplify cost. |
+---
 
-After releasing a new feature, watch usage curves and failure rates to catch loops or excessive retries.
+## Cost Governance
 
-## Logging and Troubleshooting
+* **Limit `max_tokens`**: Always specify output length limits to prevent runaway token consumption due to dead loops or prompt injection.
+* **Trim Context**: Discard redundant chat history and send only necessary context to the model.
+* **Tiered Models**: Route simple tasks to lower-cost models first, and upgrade only when complex reasoning is required.
+* **Smooth Concurrency**: Avoid scheduled jobs or Cron tasks hitting the gateway at the same moment to prevent instant quota exhaustion.
 
-Recommended log fields:
+> [!WARNING]
+> After releasing a new feature, monitor usage curves and failure rates closely. Protect your account against loops or excessive retries.
 
-1. Request time and duration.
-2. Request path and model name.
-3. Status code and error summary.
-4. Client version or service name.
-5. Request ID, business user ID, or task ID.
-
-Do not log full API Keys, private user data, or long sensitive prompts. When asking an admin for help, provide time, model, path, status code, and a redacted request summary.
+---
 
 ## Production Launch Checklist
 
-Before launch, confirm:
-
-- API Keys are isolated by environment and have a rotation plan.
-- `/v1/models` returns the expected models.
-- Critical endpoints pass minimal request tests.
-- 429 and 5xx use backoff retries.
-- 401, 403, and 404 produce clear user-facing errors.
-- Logs are redacted and can correlate requests with business tasks.
-- Cost, quota, or failure rate has a monitoring path.
-- A fallback model or manual handling path exists.
+- [ ] **Environment Isolation**: API Keys are isolated by environment and have a rotation plan.
+- [ ] **Model Whitelist**: `/v1/models` returns the expected models in the production environment.
+- [ ] **Endpoint Validation**: Critical endpoints pass minimal non-streaming and streaming tests.
+- [ ] **Retry Jitter**: 429 and 5xx errors use exponential backoff retries with random jitter.
+- [ ] **Error Friendliness**: 401, 403, and 404 produce clear user-facing errors rather than stack traces.
+- [ ] **Logs Redacted**: Logs are redacted (no raw keys) and can correlate requests with business tasks.
+- [ ] **Fallback Plan**: A fallback model or manual handling path exists for critical transactions.
