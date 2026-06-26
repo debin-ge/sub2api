@@ -13,7 +13,7 @@ describe('HomeView footer', () => {
   it('shows the tiktoken ownership notice', () => {
     const homeSource = readSource('views/HomeView.vue')
 
-    expect(homeSource).toContain('tiktoken is owned by Jerrywell Pte. Ltd.')
+    expect(homeSource).toContain('TikToken is owned by Jerrywell Pte. Ltd.')
   })
 
   it('does not render the docs text link in the footer', () => {
