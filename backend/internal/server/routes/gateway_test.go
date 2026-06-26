@@ -47,8 +47,10 @@ func newGatewayRoutesTestRouterForPlatformWithHandlers(platform string, handlers
 		servermiddleware.APIKeyAuthMiddleware(func(c *gin.Context) {
 			groupID := int64(1)
 			c.Set(string(servermiddleware.ContextKeyAPIKey), &service.APIKey{
+				UserID:  101,
 				GroupID: &groupID,
 				Group:   &service.Group{Platform: platform},
+				User:    &service.User{ID: 101, Status: service.StatusActive, Balance: 12.34},
 			})
 			c.Set(string(servermiddleware.ContextKeyUser), servermiddleware.AuthSubject{UserID: 101, Concurrency: 1})
 			c.Next()
@@ -61,6 +63,19 @@ func newGatewayRoutesTestRouterForPlatformWithHandlers(platform string, handlers
 	)
 
 	return router
+}
+
+func TestGatewayRoutesBalanceIsRegistered(t *testing.T) {
+	router := newGatewayRoutesTestRouter()
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/balance", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Contains(t, w.Body.String(), `"balance":12.34`)
+	require.Contains(t, w.Body.String(), `"user_id":101`)
 }
 
 func TestGatewayRoutesOpenAIResponsesCompactPathIsRegistered(t *testing.T) {

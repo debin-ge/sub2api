@@ -1217,6 +1217,27 @@ func cloneAPIKeyWithGroup(apiKey *service.APIKey, group *service.Group) *service
 	return &cloned
 }
 
+// Balance returns the wallet balance for the authenticated API Key owner.
+// GET /v1/balance
+func (h *GatewayHandler) Balance(c *gin.Context) {
+	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
+	if !ok || apiKey == nil || apiKey.User == nil {
+		h.errorResponse(c, http.StatusUnauthorized, "authentication_error", "Invalid API key")
+		return
+	}
+
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok || subject.UserID <= 0 {
+		h.errorResponse(c, http.StatusUnauthorized, "authentication_error", "Invalid API key")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"balance": apiKey.User.Balance,
+		"user_id": subject.UserID,
+	})
+}
+
 // Usage handles getting account balance and usage statistics for CC Switch integration
 // GET /v1/usage
 //

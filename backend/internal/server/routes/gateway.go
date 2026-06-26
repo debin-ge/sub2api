@@ -163,6 +163,7 @@ func RegisterGatewayRoutes(
 			}
 			h.Gateway.Models(c)
 		})
+		gateway.GET("/balance", h.Gateway.Balance)
 		gateway.GET("/usage", func(c *gin.Context) {
 			if getGroupPlatform(c) == service.PlatformMiniMax {
 				writeMiniMaxUnsupported(c, h)

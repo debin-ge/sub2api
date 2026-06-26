@@ -110,6 +110,10 @@ func GoogleErrorWriter(c *gin.Context, status int, message string) {
 // 如果未分组且系统设置不允许未分组 Key 调度则返回 403。
 func RequireGroupAssignment(settingService *service.SettingService, writeError GatewayErrorWriter) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if c.Request != nil && c.Request.URL != nil && c.Request.URL.Path == "/v1/balance" {
+			c.Next()
+			return
+		}
 		apiKey, ok := GetAPIKeyFromContext(c)
 		if !ok || apiKey.GroupID != nil {
 			c.Next()
