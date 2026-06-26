@@ -67,6 +67,21 @@ server:
 run_mode: "standard"
 
 # =============================================================================
+# Reseller / Sub-site Configuration
+# 子站 / 下级代理商配置
+# =============================================================================
+reseller:
+  # Enable when this instance is deployed as a reseller sub-site.
+  # 当前实例作为下级代理商子站运行时启用。
+  enabled: false
+  # Parent sub2api base URL, without /v1/balance.
+  # 上级 sub2api 基础地址，不包含 /v1/balance。
+  upstream_endpoint: ""
+  # User API Key from the reseller account on the parent sub2api instance.
+  # 上级站点中下级代理商用户账户名下的普通用户 API Key。
+  upstream_api_key: ""
+
+# =============================================================================
 # CORS Configuration
 # 跨域资源共享 (CORS) 配置
 # =============================================================================

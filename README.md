@@ -223,6 +223,20 @@ ADMIN_PASSWORD=your_admin_password
 SERVER_PORT=8080
 ```
 
+### Reseller Upstream Balance
+
+When this instance runs as a reseller sub-site, configure the parent sub2api endpoint and the user API key issued to the reseller account on the parent instance:
+
+```env
+RESELLER_ENABLED=true
+RESELLER_UPSTREAM_ENDPOINT=https://parent.example.com
+RESELLER_UPSTREAM_API_KEY=sk-xxxx
+```
+
+`RESELLER_UPSTREAM_API_KEY` is a normal user API key from the parent instance. It is not an admin API key and not an upstream AI provider key.
+
+After enabling it, the admin Dashboard shows “Upstream Account Balance”. This is the reseller account balance on the parent provider, not the local balance of end users on the sub-site.
+
 **Generate secure secrets:**
 ```bash
 # Generate JWT_SECRET

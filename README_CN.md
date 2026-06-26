@@ -222,6 +222,20 @@ ADMIN_PASSWORD=your_admin_password
 SERVER_PORT=8080
 ```
 
+### 子站上游账户余额查询
+
+当当前实例作为下级代理商子站部署时，可以配置上级 sub2api 地址和上级分配的用户 API Key，在后台查看“上游账户余额”。
+
+```env
+RESELLER_ENABLED=true
+RESELLER_UPSTREAM_ENDPOINT=https://parent.example.com
+RESELLER_UPSTREAM_API_KEY=sk-xxxx
+```
+
+`RESELLER_UPSTREAM_API_KEY` 是上级站点中下级代理商用户账户名下的普通用户 API Key，不是管理员 API Key，也不是账号管理中的 AI 上游账号 Key。
+
+启用后，后台 Dashboard 会显示“上游账户余额”。该余额表示子站在上级供应商中的账户余额，不等同于子站内终端用户的本地余额。
+
 **生成安全密钥：**
 ```bash
 # 生成 JWT_SECRET
