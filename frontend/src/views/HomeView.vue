@@ -420,16 +420,8 @@
         class="mx-auto flex max-w-6xl flex-col items-center justify-center gap-4 text-center sm:flex-row sm:text-left"
       >
         <p class="text-sm text-gray-500 dark:text-dark-400">
-          &copy; {{ currentYear }} {{ siteName }}. {{ t('home.footer.allRightsReserved') }}
+          tiktoken is owned by Jerrywell Pte. Ltd.
         </p>
-        <div class="flex items-center gap-4">
-          <router-link
-            to="/docs"
-            class="text-sm text-gray-500 transition-colors hover:text-gray-700 dark:text-dark-400 dark:hover:text-white"
-          >
-            {{ t('home.docs') }}
-          </router-link>
-        </div>
       </div>
     </footer>
   </div>
@@ -471,9 +463,6 @@ const userInitial = computed(() => {
   if (!user || !user.email) return ''
   return user.email.charAt(0).toUpperCase()
 })
-
-// Current year for footer
-const currentYear = computed(() => new Date().getFullYear())
 
 // Toggle theme
 function toggleTheme() {
