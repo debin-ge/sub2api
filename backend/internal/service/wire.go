@@ -55,6 +55,11 @@ func ProvideDeepSeekBalanceClient() *DeepSeekBalanceClient {
 	return NewDeepSeekBalanceClient(nil)
 }
 
+// ProvideResellerBalanceClient creates the reseller upstream balance API client with defaults.
+func ProvideResellerBalanceClient() *ResellerBalanceClient {
+	return NewResellerBalanceClient(nil)
+}
+
 // ProvideMiniMaxGatewayService creates the MiniMax Anthropic-compatible gateway service.
 func ProvideMiniMaxGatewayService(quotaService *MiniMaxQuotaService, cfg *config.Config) *MiniMaxGatewayService {
 	return NewMiniMaxGatewayServiceWithTimeout(nil, quotaService, compileResponseHeaderFilter(cfg), compatibleGatewayUpstreamTimeoutFromConfig(cfg))
@@ -578,6 +583,7 @@ var ProviderSet = wire.NewSet(
 	wire.Bind(new(MiniMaxRemainsFetcher), new(*MiniMaxTokenPlanClient)),
 	ProvideMiniMaxRemainsSyncRunner,
 	ProvideDeepSeekBalanceClient,
+	ProvideResellerBalanceClient,
 	NewDeepSeekBalanceHealthService,
 	wire.Bind(new(DeepSeekBalanceFetcher), new(*DeepSeekBalanceClient)),
 	ProvideDeepSeekBalanceHealthRunner,
