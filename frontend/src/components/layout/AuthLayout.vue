@@ -56,7 +56,7 @@
 
       <!-- Copyright -->
       <div class="mt-8 text-center text-xs text-gray-400 dark:text-dark-500">
-        &copy; {{ currentYear }} {{ siteName }}. {{ t('home.footer.allRightsReserved') }}
+        &copy; {{ currentYear }} {{ siteName }}.{{ t('home.footer.allRightsReserved') }}
       </div>
     </div>
   </div>
