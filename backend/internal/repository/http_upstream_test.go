@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/klauspost/compress/zstd"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
@@ -81,6 +83,30 @@ func (s *HTTPUpstreamSuite) TestGetOrCreateClient_InvalidURLReturnsError() {
 	svc := s.newService()
 	_, err := svc.getClientEntry("://bad-proxy-url", 1, 1, service.HTTPUpstreamProfileDefault, false, false)
 	require.Error(s.T(), err, "expected error for invalid proxy URL")
+}
+
+func (s *HTTPUpstreamSuite) TestDecompressResponseBody_Zstd() {
+	encoder, err := zstd.NewWriter(nil)
+	require.NoError(s.T(), err)
+	compressed := encoder.EncodeAll([]byte("zstd-body"), nil)
+
+	resp := &http.Response{
+		Header: http.Header{
+			"Content-Encoding": []string{"zstd"},
+			"Content-Length":   []string{"123"},
+		},
+		Body:          io.NopCloser(bytes.NewReader(compressed)),
+		ContentLength: int64(len(compressed)),
+	}
+
+	decompressResponseBody(resp)
+
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(s.T(), err)
+	require.Equal(s.T(), "zstd-body", string(body))
+	require.Empty(s.T(), resp.Header.Get("Content-Encoding"))
+	require.Empty(s.T(), resp.Header.Get("Content-Length"))
+	require.Equal(s.T(), int64(-1), resp.ContentLength)
 }
 
 func (s *HTTPUpstreamSuite) TestOpenAIProfileDefaultsToHTTP2AndNoHeaderTimeout() {
