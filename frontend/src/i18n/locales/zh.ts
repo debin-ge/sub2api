@@ -111,7 +111,7 @@ export default {
       button: '免费注册'
     },
     footer: {
-      allRightsReserved: ' is owned by Jerrywell Pte. Ltd.'
+      allRightsReserved: 'net is owned by Jerrywell Pte. Ltd.'
     }
   },
 

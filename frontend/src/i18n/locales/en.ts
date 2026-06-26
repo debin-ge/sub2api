@@ -111,7 +111,7 @@ export default {
       button: 'Sign Up Free'
     },
     footer: {
-      allRightsReserved: ' is owned by Jerrywell Pte. Ltd.'
+      allRightsReserved: 'net is owned by Jerrywell Pte. Ltd.'
     }
   },
 
