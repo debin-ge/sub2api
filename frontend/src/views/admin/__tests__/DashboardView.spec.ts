@@ -4,10 +4,11 @@ import { flushPromises, mount } from '@vue/test-utils'
 import type { DashboardStats } from '@/types'
 import DashboardView from '../DashboardView.vue'
 
-const { getSnapshotV2, getUserUsageTrend, getUserSpendingRanking } = vi.hoisted(() => ({
+const { getSnapshotV2, getUserUsageTrend, getUserSpendingRanking, getUpstreamBalance } = vi.hoisted(() => ({
   getSnapshotV2: vi.fn(),
   getUserUsageTrend: vi.fn(),
-  getUserSpendingRanking: vi.fn()
+  getUserSpendingRanking: vi.fn(),
+  getUpstreamBalance: vi.fn()
 }))
 
 vi.mock('@/api/admin', () => ({
@@ -16,6 +17,9 @@ vi.mock('@/api/admin', () => ({
       getSnapshotV2,
       getUserUsageTrend,
       getUserSpendingRanking
+    },
+    reseller: {
+      getUpstreamBalance
     }
   }
 }))
@@ -90,6 +94,7 @@ describe('admin DashboardView', () => {
     getSnapshotV2.mockReset()
     getUserUsageTrend.mockReset()
     getUserSpendingRanking.mockReset()
+    getUpstreamBalance.mockReset()
 
     getSnapshotV2.mockResolvedValue({
       stats: createDashboardStats(),
@@ -109,6 +114,13 @@ describe('admin DashboardView', () => {
       total_tokens: 0,
       start_date: '',
       end_date: ''
+    })
+    getUpstreamBalance.mockResolvedValue({
+      enabled: false,
+      configured: false,
+      upstream_endpoint: '',
+      status: 'disabled',
+      balance: 0
     })
   })
 
@@ -139,5 +151,39 @@ describe('admin DashboardView', () => {
       end_date: formatLocalDate(now),
       granularity: 'hour'
     }))
+  })
+
+  it('renders reseller upstream balance when enabled', async () => {
+    getUpstreamBalance.mockResolvedValue({
+      enabled: true,
+      configured: true,
+      upstream_endpoint: 'https://parent.example.com',
+      status: 'ok',
+      balance: 12.34,
+      user_id: 42,
+      checked_at: '2026-06-26T10:00:00Z'
+    })
+
+    const wrapper = mount(DashboardView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          LoadingSpinner: true,
+          Icon: true,
+          DateRangePicker: true,
+          Select: true,
+          ModelDistributionChart: true,
+          TokenUsageTrend: true,
+          Line: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(getUpstreamBalance).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('admin.dashboard.upstreamBalance')
+    expect(wrapper.text()).toContain('12.34')
+    expect(wrapper.text()).toContain('admin.dashboard.upstreamBalanceConnected')
   })
 })
