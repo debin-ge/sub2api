@@ -22,6 +22,7 @@ const {
   updateProvider,
   createProvider,
   deleteProvider,
+  getUpstreamBalance,
   fetchPublicSettings,
   adminSettingsFetch,
   showError,
@@ -44,6 +45,7 @@ const {
   updateProvider: vi.fn(),
   createProvider: vi.fn(),
   deleteProvider: vi.fn(),
+  getUpstreamBalance: vi.fn(),
   fetchPublicSettings: vi.fn(),
   adminSettingsFetch: vi.fn(),
   showError: vi.fn(),
@@ -78,6 +80,9 @@ vi.mock("@/api", () => ({
       updateProvider,
       createProvider,
       deleteProvider,
+    },
+    reseller: {
+      getUpstreamBalance,
     },
   },
 }));
@@ -161,6 +166,14 @@ vi.mock("vue-i18n", async () => {
     "admin.settings.payment.findProvider": "查看支持的支付方式",
     "admin.settings.openaiExperimentalScheduler.title": "OpenAI 实验调度策略",
     "admin.settings.openaiExperimentalScheduler.description": "默认关闭。开启后仅影响本网关在 OpenAI 账号间的实验性调度选择逻辑，不代表上游 OpenAI 官方能力。",
+    "admin.settings.tabs.reseller": "子站配置",
+    "admin.settings.reseller.title": "子站上游配置",
+    "admin.settings.reseller.description": "用于查看当前子站在上级供应商中的账户余额。",
+    "admin.settings.reseller.testConnection": "测试连接",
+    "admin.settings.reseller.endpoint": "上游 Endpoint",
+    "admin.settings.reseller.upstreamBalance": "上游账户余额",
+    "admin.settings.reseller.localBalanceHint": "该余额属于子站在上级供应商中的账户，不是本地用户余额。",
+    "admin.settings.reseller.status.ok": "已连接",
     "admin.settings.site.uploadImage": "上传图片",
     "admin.settings.site.remove": "移除",
     "admin.settings.platformQuota.platform": "平台",
@@ -473,6 +486,14 @@ async function openUsersTab(wrapper: ReturnType<typeof mountView>) {
   await flushPromises();
 }
 
+async function openResellerTab(wrapper: ReturnType<typeof mountView>) {
+  const resellerTabButton = wrapper.find("#settings-tab-reseller");
+
+  expect(resellerTabButton.exists()).toBe(true);
+  await resellerTabButton.trigger("click");
+  await flushPromises();
+}
+
 describe("admin SettingsView payment visible method controls", () => {
   beforeEach(() => {
     getSettings.mockReset();
@@ -492,6 +513,7 @@ describe("admin SettingsView payment visible method controls", () => {
     updateProvider.mockReset();
     createProvider.mockReset();
     deleteProvider.mockReset();
+    getUpstreamBalance.mockReset();
     fetchPublicSettings.mockReset();
     adminSettingsFetch.mockReset();
     showError.mockReset();
@@ -547,6 +569,13 @@ describe("admin SettingsView payment visible method controls", () => {
     });
     getProviders.mockResolvedValue({
       data: [],
+    });
+    getUpstreamBalance.mockResolvedValue({
+      enabled: false,
+      configured: false,
+      upstream_endpoint: "",
+      status: "disabled",
+      balance: 0,
     });
     fetchPublicSettings.mockResolvedValue(undefined);
     adminSettingsFetch.mockResolvedValue(undefined);
@@ -742,6 +771,28 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(paymentHelpImageUpload?.attributes("data-upload-label")).toBe("上传图片");
     expect(paymentHelpImageUpload?.attributes("data-remove-label")).toBe("移除");
   });
+
+  it("shows reseller settings tab and upstream balance without exposing api key", async () => {
+    getUpstreamBalance.mockResolvedValue({
+      enabled: true,
+      configured: true,
+      upstream_endpoint: "https://parent.example.com",
+      status: "ok",
+      balance: 12.34,
+      user_id: 42,
+    });
+
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openResellerTab(wrapper);
+
+    expect(wrapper.text()).toContain("子站配置");
+    expect(wrapper.text()).toContain("https://parent.example.com");
+    expect(wrapper.text()).toContain("12.34");
+    expect(wrapper.text()).toContain("已连接");
+    expect(wrapper.text()).not.toContain("sk-parent");
+  });
 });
 
 describe("admin SettingsView wechat connect controls", () => {
@@ -763,6 +814,7 @@ describe("admin SettingsView wechat connect controls", () => {
     updateProvider.mockReset();
     createProvider.mockReset();
     deleteProvider.mockReset();
+    getUpstreamBalance.mockReset();
     fetchPublicSettings.mockReset();
     adminSettingsFetch.mockReset();
     showError.mockReset();
@@ -821,6 +873,13 @@ describe("admin SettingsView wechat connect controls", () => {
     });
     getProviders.mockResolvedValue({
       data: [],
+    });
+    getUpstreamBalance.mockResolvedValue({
+      enabled: false,
+      configured: false,
+      upstream_endpoint: "",
+      status: "disabled",
+      balance: 0,
     });
     fetchPublicSettings.mockResolvedValue(undefined);
     adminSettingsFetch.mockResolvedValue(undefined);
@@ -1008,6 +1067,7 @@ describe("admin SettingsView platform quota matrix", () => {
     updateProvider.mockReset();
     createProvider.mockReset();
     deleteProvider.mockReset();
+    getUpstreamBalance.mockReset();
     fetchPublicSettings.mockReset();
     adminSettingsFetch.mockReset();
     showError.mockReset();
@@ -1031,6 +1091,13 @@ describe("admin SettingsView platform quota matrix", () => {
     getGroups.mockResolvedValue([]);
     listProxies.mockResolvedValue({ items: [] });
     getProviders.mockResolvedValue({ data: [] });
+    getUpstreamBalance.mockResolvedValue({
+      enabled: false,
+      configured: false,
+      upstream_endpoint: "",
+      status: "disabled",
+      balance: 0,
+    });
   });
 
   it("从 baseSettings 加载默认平台配额数据并在 Users tab 渲染 4 平台行", async () => {

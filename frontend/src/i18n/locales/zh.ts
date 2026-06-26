@@ -5594,9 +5594,31 @@ export default {
         security: '安全与认证',
         users: '用户默认值',
         gateway: '网关服务',
+        reseller: '子站配置',
         email: '邮件设置',
         backup: '数据备份',
         payment: '支付设置',
+      },
+      reseller: {
+        title: '子站上游配置',
+        description: '用于查看当前子站在上级供应商中的账户余额。',
+        mode: '子站模式',
+        endpoint: '上游 Endpoint',
+        apiKey: '上游 API Key',
+        apiKeyConfigured: '已配置',
+        apiKeyNotConfigured: '未配置',
+        testConnection: '测试连接',
+        upstreamBalance: '上游账户余额',
+        localBalanceHint: '该余额属于子站在上级供应商中的账户，不是本地用户余额。',
+        status: {
+          ok: '已连接',
+          disabled: '子站模式未启用',
+          notConfigured: '缺少上游 Endpoint 或 API Key',
+          authFailed: '上游 API Key 无效',
+          unreachable: '上游不可达',
+          invalidResponse: '上游余额响应格式异常',
+          upstreamError: '上游返回错误'
+        }
       },
       features: {
         channelMonitor: {

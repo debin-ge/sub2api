@@ -5434,9 +5434,31 @@ export default {
         security: 'Security',
         users: 'Users',
         gateway: 'Gateway',
+        reseller: 'Reseller',
         email: 'Email',
         backup: 'Backup',
         payment: 'Payment',
+      },
+      reseller: {
+        title: 'Reseller Upstream Configuration',
+        description: 'View this sub-site account balance on the parent provider.',
+        mode: 'Reseller Mode',
+        endpoint: 'Upstream Endpoint',
+        apiKey: 'Upstream API Key',
+        apiKeyConfigured: 'Configured',
+        apiKeyNotConfigured: 'Not configured',
+        testConnection: 'Test Connection',
+        upstreamBalance: 'Upstream Account Balance',
+        localBalanceHint: 'This balance belongs to the sub-site account on the parent provider. It is not a local user balance.',
+        status: {
+          ok: 'Connected',
+          disabled: 'Reseller mode is disabled',
+          notConfigured: 'Missing upstream endpoint or API key',
+          authFailed: 'Invalid upstream API key',
+          unreachable: 'Upstream is unreachable',
+          invalidResponse: 'Invalid upstream balance response',
+          upstreamError: 'Upstream returned an error'
+        }
       },
       features: {
         channelMonitor: {
