@@ -461,6 +461,13 @@ const (
 // 值为 map[platform]{daily,weekly,monthly}，null/缺省 = 不限制；0 = 禁用；>0 = USD 上限。
 const SettingKeyDefaultPlatformQuotas = "default_platform_quotas"
 
+// Reseller 子站配置
+const (
+	SettingKeyResellerEnabled          = "reseller_enabled"
+	SettingKeyResellerUpstreamEndpoint = "reseller_upstream_endpoint"
+	SettingKeyResellerUpstreamAPIKey   = "reseller_upstream_api_key"
+)
+
 // SettingKeyAuthSourcePlatformQuotas 返回某 auth source 的 platform quota JSON key。
 // 形如 auth_source_default_{source}_platform_quotas
 func SettingKeyAuthSourcePlatformQuotas(source string) string {

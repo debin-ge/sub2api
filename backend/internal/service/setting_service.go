@@ -1942,6 +1942,14 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 
 	updates[SettingKeyAllowUserViewErrorRequests] = strconv.FormatBool(settings.AllowUserViewErrorRequests)
 
+	// Reseller 子站配置
+	updates[SettingKeyResellerEnabled] = strconv.FormatBool(settings.ResellerEnabled)
+	updates[SettingKeyResellerUpstreamEndpoint] = strings.TrimSpace(settings.ResellerUpstreamEndpoint)
+	// API Key 仅在非空时保存（空值表示保留当前配置）
+	if strings.TrimSpace(settings.ResellerUpstreamAPIKey) != "" {
+		updates[SettingKeyResellerUpstreamAPIKey] = strings.TrimSpace(settings.ResellerUpstreamAPIKey)
+	}
+
 	return updates, nil
 }
 
@@ -3394,6 +3402,32 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	}
 
 	result.AllowUserViewErrorRequests = settings[SettingKeyAllowUserViewErrorRequests] == "true" // default false
+
+	// Reseller 子站配置：
+	// - 兼容 config.yaml/env（避免老部署因为未迁移到数据库设置而被意外关闭）
+	// - 支持在后台"系统设置"中覆盖并持久化（存储于 DB）
+	resellerBase := config.ResellerConfig{}
+	if s.cfg != nil {
+		resellerBase = s.cfg.Reseller
+	}
+
+	if raw, ok := settings[SettingKeyResellerEnabled]; ok {
+		result.ResellerEnabled = raw == "true"
+	} else {
+		result.ResellerEnabled = resellerBase.Enabled
+	}
+
+	if v, ok := settings[SettingKeyResellerUpstreamEndpoint]; ok && strings.TrimSpace(v) != "" {
+		result.ResellerUpstreamEndpoint = strings.TrimSpace(v)
+	} else {
+		result.ResellerUpstreamEndpoint = resellerBase.UpstreamEndpoint
+	}
+
+	result.ResellerUpstreamAPIKey = strings.TrimSpace(settings[SettingKeyResellerUpstreamAPIKey])
+	if result.ResellerUpstreamAPIKey == "" {
+		result.ResellerUpstreamAPIKey = strings.TrimSpace(resellerBase.UpstreamAPIKey)
+	}
+	result.ResellerUpstreamAPIKeyConfigured = result.ResellerUpstreamAPIKey != ""
 
 	return result
 }

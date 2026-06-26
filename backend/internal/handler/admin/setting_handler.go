@@ -299,6 +299,11 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		AffiliateEnabled: settings.AffiliateEnabled,
 
 		AllowUserViewErrorRequests: settings.AllowUserViewErrorRequests,
+
+		// Reseller 子站配置
+		ResellerEnabled:                  settings.ResellerEnabled,
+		ResellerUpstreamEndpoint:         settings.ResellerUpstreamEndpoint,
+		ResellerUpstreamAPIKeyConfigured: settings.ResellerUpstreamAPIKeyConfigured,
 	}
 
 	// OpenAI fast policy (stored under a dedicated setting key)
@@ -662,6 +667,11 @@ type UpdateSettingsRequest struct {
 	AuthSourceDingTalkPlatformQuotas map[string]*service.DefaultPlatformQuotaSetting `json:"auth_source_default_dingtalk_platform_quotas"`
 
 	AllowUserViewErrorRequests *bool `json:"allow_user_view_error_requests"`
+
+	// Reseller 子站配置
+	ResellerEnabled          *bool  `json:"reseller_enabled"`
+	ResellerUpstreamEndpoint string `json:"reseller_upstream_endpoint"`
+	ResellerUpstreamAPIKey   string `json:"reseller_upstream_api_key"`
 }
 
 // UpdateSettings 更新系统设置
@@ -1601,6 +1611,26 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.AllowUserViewErrorRequests
 		}(),
+		// Reseller 子站配置
+		ResellerEnabled: func() bool {
+			if req.ResellerEnabled != nil {
+				return *req.ResellerEnabled
+			}
+			return previousSettings.ResellerEnabled
+		}(),
+		ResellerUpstreamEndpoint: func() string {
+			if req.ResellerUpstreamEndpoint != "" {
+				return req.ResellerUpstreamEndpoint
+			}
+			return previousSettings.ResellerUpstreamEndpoint
+		}(),
+		ResellerUpstreamAPIKey: func() string {
+			// 仅在提供新值时更新
+			if req.ResellerUpstreamAPIKey != "" {
+				return req.ResellerUpstreamAPIKey
+			}
+			return previousSettings.ResellerUpstreamAPIKey
+		}(),
 		OpsMonitoringEnabled: func() bool {
 			if req.OpsMonitoringEnabled != nil {
 				return *req.OpsMonitoringEnabled
@@ -2092,6 +2122,11 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 
 		RiskControlEnabled:         updatedSettings.RiskControlEnabled,
 		AllowUserViewErrorRequests: updatedSettings.AllowUserViewErrorRequests,
+
+		// Reseller 子站配置
+		ResellerEnabled:                  updatedSettings.ResellerEnabled,
+		ResellerUpstreamEndpoint:         updatedSettings.ResellerUpstreamEndpoint,
+		ResellerUpstreamAPIKeyConfigured: updatedSettings.ResellerUpstreamAPIKeyConfigured,
 	}
 	if fastPolicy, err := h.settingService.GetOpenAIFastPolicySettings(c.Request.Context()); err != nil {
 		slog.Error("openai_fast_policy_settings_get_failed", "error", err)

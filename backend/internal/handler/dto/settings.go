@@ -255,6 +255,11 @@ type SystemSettings struct {
 
 	// 允许终端用户在用量页查看自己的失败请求
 	AllowUserViewErrorRequests bool `json:"allow_user_view_error_requests"`
+
+	// Reseller 子站配置
+	ResellerEnabled                  bool   `json:"reseller_enabled"`
+	ResellerUpstreamEndpoint         string `json:"reseller_upstream_endpoint"`
+	ResellerUpstreamAPIKeyConfigured bool   `json:"reseller_upstream_api_key_configured"`
 }
 
 type DefaultSubscriptionSetting struct {

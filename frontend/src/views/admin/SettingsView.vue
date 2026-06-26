@@ -6582,6 +6582,68 @@
                 {{ t("admin.settings.reseller.localBalanceHint") }}
               </div>
 
+              <!-- 启用子站模式 -->
+              <div class="flex items-center justify-between">
+                <div>
+                  <label class="font-medium text-gray-900 dark:text-white">
+                    {{ t("admin.settings.reseller.enabledLabel") }}
+                  </label>
+                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t("admin.settings.reseller.enabledHint") }}
+                  </p>
+                </div>
+                <Toggle v-model="form.reseller_enabled" />
+              </div>
+
+              <!-- 上游 Endpoint -->
+              <div>
+                <label
+                  for="reseller-upstream-endpoint"
+                  class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
+                >
+                  {{ t("admin.settings.reseller.endpointLabel") }}
+                </label>
+                <input
+                  id="reseller-upstream-endpoint"
+                  v-model="form.reseller_upstream_endpoint"
+                  type="url"
+                  class="input"
+                  :placeholder="t('admin.settings.reseller.endpointPlaceholder')"
+                />
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t("admin.settings.reseller.endpointHint") }}
+                </p>
+              </div>
+
+              <!-- 上游 API Key -->
+              <div>
+                <label
+                  for="reseller-upstream-api-key"
+                  class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
+                >
+                  {{ t("admin.settings.reseller.apiKeyLabel") }}
+                </label>
+                <input
+                  id="reseller-upstream-api-key"
+                  v-model="form.reseller_upstream_api_key"
+                  type="password"
+                  class="input"
+                  :placeholder="
+                    form.reseller_upstream_api_key_configured
+                      ? t('admin.settings.reseller.apiKeyConfigured')
+                      : t('admin.settings.reseller.apiKeyPlaceholder')
+                  "
+                />
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  {{
+                    form.reseller_upstream_api_key_configured
+                      ? t("admin.settings.reseller.apiKeyConfiguredHint")
+                      : t("admin.settings.reseller.apiKeyHint")
+                  }}
+                </p>
+              </div>
+
+              <!-- 测试连接 -->
               <div class="flex justify-end">
                 <button
                   type="button"
@@ -6597,13 +6659,14 @@
                 </button>
               </div>
 
+              <!-- 连接状态 -->
               <div class="grid gap-4 md:grid-cols-2">
                 <div>
                   <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
                     {{ t("admin.settings.reseller.mode") }}
                   </p>
                   <p class="mt-1 text-sm font-semibold text-gray-900 dark:text-white">
-                    {{ resellerBalance?.enabled ? t("common.enabled") : t("common.disabled") }}
+                    {{ form.reseller_enabled ? t("common.enabled") : t("common.disabled") }}
                   </p>
                 </div>
                 <div>
@@ -6654,7 +6717,7 @@
 
         <!-- Save Button -->
         <div
-          v-show="activeTab !== 'backup' && activeTab !== 'reseller'"
+          v-show="activeTab !== 'backup'"
           class="flex justify-end"
         >
           <button
@@ -7055,6 +7118,10 @@ type SettingsForm = Omit<
   openai_advanced_scheduler_enabled: boolean;
   // 系统全局平台限额 map；form 内始终归一化为全 4 平台对象（模板非空绑定依赖此不变量）
   default_platform_quotas: DefaultPlatformQuotasMap;
+  reseller_enabled: boolean;
+  reseller_upstream_endpoint: string;
+  reseller_upstream_api_key: string;
+  reseller_upstream_api_key_configured: boolean;
 };
 
 const form = reactive<SettingsForm>({
@@ -7267,6 +7334,10 @@ const form = reactive<SettingsForm>({
   affiliate_enabled: false,
   // Allow user view error requests
   allow_user_view_error_requests: false,
+  reseller_enabled: false,
+  reseller_upstream_endpoint: "",
+  reseller_upstream_api_key: "",
+  reseller_upstream_api_key_configured: false,
 });
 
 const siteDisplayName = computed(() => form.site_name.trim() || "Sub2API");
@@ -8428,6 +8499,10 @@ async function saveSettings() {
       // Affiliate (邀请返利) feature switch
       affiliate_enabled: form.affiliate_enabled,
       allow_user_view_error_requests: form.allow_user_view_error_requests,
+      // Reseller 子站配置
+      reseller_enabled: form.reseller_enabled,
+      reseller_upstream_endpoint: form.reseller_upstream_endpoint?.trim() || "",
+      reseller_upstream_api_key: form.reseller_upstream_api_key?.trim() || "",
     };
 
     // 仅当 openai_fast_policy_settings 已成功从后端加载时才回写，
