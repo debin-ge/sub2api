@@ -10,10 +10,22 @@ function readSource(path: string) {
 }
 
 describe('HomeView footer', () => {
-  it('shows the tiktoken ownership notice', () => {
+  it('uses the localized footer notice', () => {
     const homeSource = readSource('views/HomeView.vue')
 
-    expect(homeSource).toContain('TikToken is owned by Jerrywell Pte. Ltd.')
+    expect(homeSource).toContain(
+      "&copy; {{ currentYear }} {{ siteName }}. {{ t('home.footer.allRightsReserved') }}",
+    )
+    expect(homeSource).not.toContain('&copy; {{ currentYear }} TikToken is owned')
+  })
+
+  it('defines the footer notice in both locales', () => {
+    const zhSource = readSource('i18n/locales/zh.ts')
+    const enSource = readSource('i18n/locales/en.ts')
+
+    for (const source of [zhSource, enSource]) {
+      expect(source).toContain("allRightsReserved: 'TikToken is owned by Jerrywell Pte. Ltd.'")
+    }
   })
 
   it('does not render the docs text link in the footer', () => {

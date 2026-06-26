@@ -437,7 +437,6 @@ var allowedHeaders = map[string]bool{
 	"sec-fetch-mode":                            true,
 	"user-agent":                                true,
 	"content-type":                              true,
-	"accept-encoding":                           true,
 	"x-claude-code-session-id":                  true,
 	"x-client-request-id":                       true,
 }

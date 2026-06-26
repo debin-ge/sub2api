@@ -69,7 +69,7 @@ const messages: Record<string, string> = {
   'home.viewDocs': 'Docs',
   'home.switchToLight': 'Light',
   'home.switchToDark': 'Dark',
-  'home.footer.allRightsReserved': 'All rights reserved.',
+  'home.footer.allRightsReserved': 'TikToken is owned by Jerrywell Pte. Ltd.',
 }
 
 vi.mock('vue-i18n', async () => {
@@ -191,6 +191,8 @@ describe('KeyUsageView daily detail', () => {
     expect(String(fetchMock.mock.calls[0][0])).toContain('days=30')
 
     const text = wrapper.text()
+    expect(text).toContain('Sub2API. TikToken is owned by Jerrywell Pte. Ltd.')
+    expect(text).not.toContain('Sub2API. All rights reserved.')
     expect(text).toContain('Daily Detail')
     expect(text).toContain('Date')
     expect(text).toContain('Cache Read')
