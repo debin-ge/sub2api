@@ -420,7 +420,7 @@
         class="mx-auto flex max-w-6xl flex-col items-center justify-center gap-4 text-center sm:flex-row sm:text-left"
       >
         <p class="text-sm text-gray-500 dark:text-dark-400">
-          &copy; {{ currentYear }} TikToken is owned by Jerrywell Pte. Ltd.
+          &copy; {{ currentYear }} {{ siteName }}. {{ t('home.footer.allRightsReserved') }}
         </p>
       </div>
     </footer>
