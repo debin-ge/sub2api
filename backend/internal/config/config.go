@@ -93,6 +93,7 @@ type Config struct {
 	Gemini                  GeminiConfig                  `mapstructure:"gemini"`
 	Update                  UpdateConfig                  `mapstructure:"update"`
 	Idempotency             IdempotencyConfig             `mapstructure:"idempotency"`
+	Reseller                ResellerConfig                `mapstructure:"reseller"`
 }
 
 type LogConfig struct {
@@ -173,6 +174,12 @@ type IdempotencyConfig struct {
 	CleanupIntervalSeconds int `mapstructure:"cleanup_interval_seconds"`
 	// CleanupBatchSize 每次清理的最大记录数。
 	CleanupBatchSize int `mapstructure:"cleanup_batch_size"`
+}
+
+type ResellerConfig struct {
+	Enabled          bool   `mapstructure:"enabled"`
+	UpstreamEndpoint string `mapstructure:"upstream_endpoint"`
+	UpstreamAPIKey   string `mapstructure:"upstream_api_key"`
 }
 
 type LinuxDoConnectConfig struct {
@@ -1488,6 +1495,8 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 	cfg.Log.Environment = strings.TrimSpace(cfg.Log.Environment)
 	cfg.Log.StacktraceLevel = strings.ToLower(strings.TrimSpace(cfg.Log.StacktraceLevel))
 	cfg.Log.Output.FilePath = strings.TrimSpace(cfg.Log.Output.FilePath)
+	cfg.Reseller.UpstreamEndpoint = strings.TrimRight(strings.TrimSpace(cfg.Reseller.UpstreamEndpoint), "/")
+	cfg.Reseller.UpstreamAPIKey = strings.TrimSpace(cfg.Reseller.UpstreamAPIKey)
 	cfg.Gateway.ForcedCodexInstructionsTemplateFile = strings.TrimSpace(cfg.Gateway.ForcedCodexInstructionsTemplateFile)
 	if cfg.Gateway.ForcedCodexInstructionsTemplateFile != "" {
 		content, err := os.ReadFile(cfg.Gateway.ForcedCodexInstructionsTemplateFile)
@@ -1838,6 +1847,11 @@ func setDefaults() {
 	viper.SetDefault("idempotency.cleanup_interval_seconds", 60)
 	viper.SetDefault("idempotency.cleanup_batch_size", 500)
 
+	// Reseller / sub-site upstream balance
+	viper.SetDefault("reseller.enabled", false)
+	viper.SetDefault("reseller.upstream_endpoint", "")
+	viper.SetDefault("reseller.upstream_api_key", "")
+
 	// Gateway
 	viper.SetDefault("gateway.response_header_timeout", 600) // 600秒(10分钟)等待上游响应头，LLM高负载时可能排队较久
 	viper.SetDefault("gateway.compatible_upstream_timeout_seconds", 60)
@@ -2100,6 +2114,17 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("server.frontend_url invalid: must not include userinfo")
 		}
 		warnIfInsecureURL("server.frontend_url", c.Server.FrontendURL)
+	}
+	if c.Reseller.Enabled {
+		if strings.TrimSpace(c.Reseller.UpstreamEndpoint) == "" {
+			return fmt.Errorf("reseller.upstream_endpoint is required when reseller.enabled=true")
+		}
+		if strings.TrimSpace(c.Reseller.UpstreamAPIKey) == "" {
+			return fmt.Errorf("reseller.upstream_api_key is required when reseller.enabled=true")
+		}
+		if err := ValidateAbsoluteHTTPURL(c.Reseller.UpstreamEndpoint); err != nil {
+			return fmt.Errorf("reseller.upstream_endpoint invalid: %w", err)
+		}
 	}
 	if c.JWT.ExpireHour <= 0 {
 		return fmt.Errorf("jwt.expire_hour must be positive")

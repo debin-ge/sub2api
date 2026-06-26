@@ -84,6 +84,60 @@ func TestLoadDefaultSchedulingConfig(t *testing.T) {
 	}
 }
 
+func TestConfigResellerDefaults(t *testing.T) {
+	resetViperWithJWTSecret(t)
+
+	cfg, err := Load()
+
+	require.NoError(t, err)
+	require.False(t, cfg.Reseller.Enabled)
+	require.Empty(t, cfg.Reseller.UpstreamEndpoint)
+	require.Empty(t, cfg.Reseller.UpstreamAPIKey)
+}
+
+func TestConfigResellerEnv(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	t.Setenv("RESELLER_ENABLED", "true")
+	t.Setenv("RESELLER_UPSTREAM_ENDPOINT", "https://parent.example.com/")
+	t.Setenv("RESELLER_UPSTREAM_API_KEY", "sk-parent")
+
+	cfg, err := Load()
+
+	require.NoError(t, err)
+	require.True(t, cfg.Reseller.Enabled)
+	require.Equal(t, "https://parent.example.com", cfg.Reseller.UpstreamEndpoint)
+	require.Equal(t, "sk-parent", cfg.Reseller.UpstreamAPIKey)
+}
+
+func TestConfigResellerEnabledRequiresEndpointAndKey(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	cfg.Reseller.Enabled = true
+	cfg.Reseller.UpstreamEndpoint = ""
+	cfg.Reseller.UpstreamAPIKey = "sk-parent"
+
+	require.ErrorContains(t, cfg.Validate(), "reseller.upstream_endpoint")
+
+	cfg.Reseller.UpstreamEndpoint = "https://parent.example.com"
+	cfg.Reseller.UpstreamAPIKey = ""
+
+	require.ErrorContains(t, cfg.Validate(), "reseller.upstream_api_key")
+}
+
+func TestConfigResellerRejectsInvalidEndpoint(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	cfg.Reseller.Enabled = true
+	cfg.Reseller.UpstreamEndpoint = "://bad-url"
+	cfg.Reseller.UpstreamAPIKey = "sk-parent"
+
+	require.ErrorContains(t, cfg.Validate(), "reseller.upstream_endpoint")
+}
+
 func TestLoadDefaultOpenAIWSConfig(t *testing.T) {
 	resetViperWithJWTSecret(t)
 
