@@ -341,6 +341,54 @@ function renderMarkdown(doc: UserDocEntry | null) {
   const template = document.createElement('template')
   template.innerHTML = resolveDocHtml(sanitized)
 
+  // Parse GitHub-style alerts in blockquotes
+  template.content.querySelectorAll('blockquote').forEach((bq) => {
+    const firstP = bq.querySelector('p') || bq
+    const text = firstP.innerHTML.trim()
+    const match = text.match(/^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\](?:\s*<br\s*\/?>)?\s*/i)
+    if (match) {
+      const type = match[1].toUpperCase()
+      bq.className = `alert-box alert-${type.toLowerCase()}`
+
+      // Remove prefix from the first paragraph
+      firstP.innerHTML = text.slice(match[0].length)
+
+      const header = document.createElement('div')
+      header.className = 'alert-title'
+
+      let icon = ''
+      let label = type
+      if (currentLocale.value === 'zh') {
+        if (type === 'NOTE') label = '说明'
+        else if (type === 'TIP') label = '提示'
+        else if (type === 'IMPORTANT') label = '重要'
+        else if (type === 'WARNING') label = '警告'
+        else if (type === 'CAUTION') label = '注意'
+      } else {
+        if (type === 'NOTE') label = 'Note'
+        else if (type === 'TIP') label = 'Tip'
+        else if (type === 'IMPORTANT') label = 'Important'
+        else if (type === 'WARNING') label = 'Warning'
+        else if (type === 'CAUTION') label = 'Caution'
+      }
+
+      if (type === 'NOTE') {
+        icon = '<svg class="w-4 h-4 mr-2 inline-block" viewBox="0 0 16 16" version="1.1" width="16" height="16" aria-hidden="true" fill="currentColor"><path d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm8-3a1 1 0 1 0 0-2 1 1 0 0 0 0 2Zm1.5 5.25a.75.75 0 0 0-1.5 0v3a.75.75 0 0 0 1.5 0v-3ZM8 6.75a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Z"></path></svg>'
+      } else if (type === 'TIP') {
+        icon = '<svg class="w-4 h-4 mr-2 inline-block" viewBox="0 0 16 16" version="1.1" width="16" height="16" aria-hidden="true" fill="currentColor"><path d="M8 1.5a6.5 6.5 0 0 1 5 10.652v1.973a.875.875 0 0 1-.875.875H3.875a.875.875 0 0 1-.875-.875v-1.973A6.5 6.5 0 0 1 8 1.5Zm0 1.5a5 5 0 0 0-3.844 8.188c.27.324.419.736.419 1.16v1.152h6.85v-1.152c0-.424.149-.836.419-1.16A5 5 0 0 0 8 3ZM6.5 13.5v.5h3v-.5h-3Z"></path></svg>'
+      } else if (type === 'IMPORTANT') {
+        icon = '<svg class="w-4 h-4 mr-2 inline-block" viewBox="0 0 16 16" version="1.1" width="16" height="16" aria-hidden="true" fill="currentColor"><path d="M0 1.75C0 .784.784 0 1.75 0h12.5C15.216 0 16 .784 16 1.75v12.5A1.75 1.75 0 0 1 14.25 16H1.75A1.75 1.75 0 0 1 0 14.25ZM1.75 1.5a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h12.5a.25.25 0 0 0 .25-.25V1.75a.25.25 0 0 0-.25-.25Zm6.5 11.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm-.75-2.25a.75.75 0 0 1-.75-.75v-5a.75.75 0 0 1 1.5 0v5a.75.75 0 0 1-.75.75Z"></path></svg>'
+      } else if (type === 'WARNING') {
+        icon = '<svg class="w-4 h-4 mr-2 inline-block" viewBox="0 0 16 16" version="1.1" width="16" height="16" aria-hidden="true" fill="currentColor"><path d="M6.457 1.047c.659-1.203 2.427-1.203 3.086 0l6.03 11a1.861 1.861 0 0 1-1.631 2.753H2.058a1.86 1.86 0 0 1-1.63-2.753l6.029-11ZM8.002 2a.3.3 0 0 0-.265.15l-6.03 11a.3.3 0 0 0 .265.45h12.06a.3.3 0 0 0 .265-.45l-6.03-11a.3.3 0 0 0-.265-.15ZM8 4a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 8 4Zm0 6a.75.75 0 1 1 0 1.5.75.75 0 0 1 0-1.5Z"></path></svg>'
+      } else if (type === 'CAUTION') {
+        icon = '<svg class="w-4 h-4 mr-2 inline-block" viewBox="0 0 16 16" version="1.1" width="16" height="16" aria-hidden="true" fill="currentColor"><path d="M4.47.22A.75.75 0 0 1 5 0h6a.75.75 0 0 1 .53.22l4.25 4.25c.141.14.22.331.22.53v6a.75.75 0 0 1-.22.53l-4.25 4.25A.75.75 0 0 1 11 16H5a.75.75 0 0 1-.53-.22L.22 11.53A.75.75 0 0 1 0 11V5c0-.199.079-.39.22-.53Zm.84 1.28L1.5 5.31v5.38l3.81 3.81h5.38l3.81-3.81V5.31L10.69 1.5ZM8 4a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 8 4Zm0 6a.75.75 0 1 1 0 1.5.75.75 0 0 1 0-1.5Z"></path></svg>'
+      }
+
+      header.innerHTML = `${icon}<span>${label}</span>`
+      bq.insertBefore(header, bq.firstChild)
+    }
+  })
+
   const toc: TocItem[] = []
   template.content.querySelectorAll('h1, h2, h3, h4').forEach((heading, index) => {
     const level = Number(heading.tagName.slice(1))
@@ -500,6 +548,59 @@ onUnmounted(() => {
 
 .docs-content :deep(blockquote) {
   @apply my-5 border-l-4 border-gray-300 pl-4 text-gray-600 dark:border-dark-600 dark:text-dark-300;
+}
+
+.docs-content :deep(blockquote.alert-box) {
+  @apply my-5 border-l-4 rounded-r-lg p-4 bg-opacity-40 dark:bg-opacity-10;
+  border-left-width: 4px;
+}
+
+.docs-content :deep(blockquote.alert-box .alert-title) {
+  @apply mb-2 flex items-center text-sm font-semibold uppercase tracking-wider;
+}
+
+.docs-content :deep(blockquote.alert-box p) {
+  @apply mb-0 text-sm text-gray-800 dark:text-dark-100;
+}
+
+/* Note Type */
+.docs-content :deep(blockquote.alert-note) {
+  @apply border-blue-500 bg-blue-50/50 dark:bg-blue-500/10;
+}
+.docs-content :deep(blockquote.alert-note .alert-title) {
+  @apply text-blue-600 dark:text-blue-400;
+}
+
+/* Tip Type */
+.docs-content :deep(blockquote.alert-tip) {
+  @apply border-emerald-500 bg-emerald-50/50 dark:bg-emerald-500/10;
+}
+.docs-content :deep(blockquote.alert-tip .alert-title) {
+  @apply text-emerald-600 dark:text-emerald-400;
+}
+
+/* Important Type */
+.docs-content :deep(blockquote.alert-important) {
+  @apply border-purple-500 bg-purple-50/50 dark:bg-purple-500/10;
+}
+.docs-content :deep(blockquote.alert-important .alert-title) {
+  @apply text-purple-600 dark:text-purple-400;
+}
+
+/* Warning Type */
+.docs-content :deep(blockquote.alert-warning) {
+  @apply border-amber-500 bg-amber-50/50 dark:bg-amber-500/10;
+}
+.docs-content :deep(blockquote.alert-warning .alert-title) {
+  @apply text-amber-600 dark:text-amber-400;
+}
+
+/* Caution Type */
+.docs-content :deep(blockquote.alert-caution) {
+  @apply border-rose-500 bg-rose-50/50 dark:bg-rose-500/10;
+}
+.docs-content :deep(blockquote.alert-caution .alert-title) {
+  @apply text-rose-600 dark:text-rose-400;
 }
 
 .docs-content :deep(code) {

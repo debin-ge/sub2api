@@ -1,5 +1,6 @@
 import { mount, flushPromises } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
+import { ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import HomeView from '../HomeView.vue'
@@ -46,10 +47,23 @@ vi.mock('@/api/radar', () => ({
 
 vi.mock('vue-i18n', async (importOriginal) => {
   const actual = await importOriginal<typeof import('vue-i18n')>()
+  const messages: Record<string, string> = {
+    'benchmark.public.home.eyebrow': 'HOME_RADAR_EYEBROW',
+    'benchmark.public.home.title': 'HOME_RADAR_TITLE',
+    'benchmark.public.home.description': 'HOME_RADAR_DESCRIPTION',
+    'benchmark.public.home.loadingTitle': 'HOME_RADAR_LOADING_TITLE',
+    'benchmark.public.home.loadingDescription': 'HOME_RADAR_LOADING_DESCRIPTION',
+    'benchmark.public.home.errorTitle': 'HOME_RADAR_ERROR_TITLE',
+    'benchmark.public.home.loadError': 'HOME_RADAR_LOAD_FAILED',
+    'benchmark.public.empty.title': 'RADAR_EMPTY_TITLE',
+    'benchmark.public.empty.description': 'RADAR_EMPTY_DESCRIPTION',
+  }
+  const locale = ref('en-GB')
   return {
     ...actual,
     useI18n: () => ({
-      t: (key: string) => key,
+      locale,
+      t: (key: string) => messages[key] ?? key,
     }),
   }
 })
@@ -157,7 +171,7 @@ describe('HomeView Radar home', () => {
     const wrapper = await mountHome()
 
     expect(wrapper.text()).toContain('Custom Home')
-    expect(wrapper.text()).not.toContain('AI Model Radar')
+    expect(wrapper.text()).not.toContain('HOME_RADAR_TITLE')
     expect(radarAPI.getCurrent).not.toHaveBeenCalled()
   })
 
@@ -167,17 +181,17 @@ describe('HomeView Radar home', () => {
     const wrapper = await mountHome()
 
     expect(radarAPI.getCurrent).toHaveBeenCalledTimes(1)
-    expect(wrapper.text()).toContain('AI Model Radar')
+    expect(wrapper.text()).toContain('HOME_RADAR_EYEBROW')
+    expect(wrapper.text()).toContain('HOME_RADAR_TITLE')
+    expect(wrapper.text()).toContain('HOME_RADAR_DESCRIPTION')
     expect(wrapper.text()).toContain('GPT-4o')
-    expect(wrapper.text()).toContain('能力分')
-    expect(wrapper.text()).not.toContain('综合分')
   })
 
   it('keeps the legacy home when Radar home is disabled', async () => {
     const wrapper = await mountHome()
 
     expect(wrapper.text()).toContain('AI API Gateway Platform')
-    expect(wrapper.text()).not.toContain('AI Model Radar')
+    expect(wrapper.text()).not.toContain('HOME_RADAR_TITLE')
     expect(radarAPI.getCurrent).not.toHaveBeenCalled()
   })
 
@@ -188,7 +202,7 @@ describe('HomeView Radar home', () => {
     const wrapper = await mountHome()
 
     expect(radarAPI.getCurrent).toHaveBeenCalledTimes(1)
-    expect(wrapper.text()).toContain('AI Model Radar')
+    expect(wrapper.text()).toContain('HOME_RADAR_TITLE')
     expect(wrapper.text()).toContain('GPT-4o')
     expect(wrapper.text()).not.toContain('Custom Home')
   })
@@ -203,8 +217,19 @@ describe('HomeView Radar home', () => {
 
     const wrapper = await mountHome()
 
-    expect(wrapper.text()).toContain('暂无 Radar 数据')
+    expect(wrapper.text()).toContain('RADAR_EMPTY_TITLE')
+    expect(wrapper.text()).toContain('RADAR_EMPTY_DESCRIPTION')
     expect(wrapper.text()).not.toContain('参评模型')
     expect(wrapper.text()).not.toContain('能力维度')
+  })
+
+  it('uses translated fallback copy when public radar loading fails without an Error object', async () => {
+    appState.cachedPublicSettings.benchmark_home_enabled = true
+    vi.mocked(radarAPI.getCurrent).mockRejectedValue('boom')
+
+    const wrapper = await mountHome()
+
+    expect(wrapper.text()).toContain('HOME_RADAR_ERROR_TITLE')
+    expect(wrapper.text()).toContain('HOME_RADAR_LOAD_FAILED')
   })
 })

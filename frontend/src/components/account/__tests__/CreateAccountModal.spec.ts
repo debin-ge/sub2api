@@ -150,6 +150,13 @@ function mountModal() {
 }
 
 describe('CreateAccountModal', () => {
+  it('does not render external proxy promotion links', () => {
+    const wrapper = mountModal()
+
+    expect(wrapper.find('a[href*="bestproxy.com"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('admin.proxies.ad.inline')
+  })
+
   it('submits MiniMax Token Plan API key credentials with both upstream base URLs', async () => {
     createAccountMock.mockReset()
     checkMixedChannelRiskMock.mockReset()

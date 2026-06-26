@@ -1,85 +1,108 @@
 # 常见问题
 
+本页汇总了用户在接入和使用 {{SITE_NAME}} 时最常遇到的疑问及其解决方案。
+
+---
+
 ## Base URL 应该填什么？
 
-填写你的 {{SITE_NAME}} 部署地址，例如：
+> **Q: Base URL 应该填什么？**
+>
+> **A:** 通常请填写您的 {{SITE_NAME}} 部署根地址，例如：
+> ```text
+> {{BASE_URL}}
+> ```
+> 如果您使用的 SDK（如 OpenAI SDK）要求填写标准 OpenAI 风格的 `baseURL`，通常需要指向 `/v1` 端点：
+> ```text
+> {{BASE_URL}}v1
+> ```
+> *注意：如果管理员提供了带特定子路径的自定义地址，请以其给出的完整 URL 为准，并注意不要在客户端配置时重复拼接 `/v1`。*
 
-```text
-{{BASE_URL}}
-```
-
-如果 SDK 要求填写 OpenAI 风格 `baseURL`，通常需要指向 `/v1`：
-
-```text
-{{BASE_URL}}v1
-```
-
-如果管理员提供了带路径的地址，请以管理员给出的完整地址为准，避免重复拼接 `/v1`。
+---
 
 ## API Key 放在哪个请求头？
 
-推荐使用 Bearer Token：
+> **Q: API Key 放在哪个请求头？**
+>
+> **A:** 平台推荐使用标准 Bearer Token 形式放置在 HTTP 标头中：
+> ```http
+> Authorization: Bearer $YOUR_KEY
+> ```
+> 例如在 `curl` 命令中：
+> ```bash
+> curl "${BASE_URL}v1/models" \
+>   -H "Authorization: Bearer $YOUR_KEY"
+> ```
+> 某些兼容客户端可能会使用 `api-key`、`x-api-key` 或特定的 SDK 属性进行配置。除非管理员或特定客户端有明确要求，否则一律建议优先使用标准的 `Authorization: Bearer` 标头。
 
-```http
-Authorization: Bearer $YOUR_KEY
-```
-
-curl 中可以写成：
-
-```bash
-curl "${BASE_URL}v1/models" \
-  -H "Authorization: Bearer $YOUR_KEY"
-```
-
-部分兼容客户端可能使用 `api-key`、`x-api-key` 或 SDK 配置项。除非管理员或客户端要求其他方式，优先使用 `Authorization` 请求头。
+---
 
 ## 为什么 `/v1/models` 的结果和别人不一样？
 
-`/v1/models` 返回的是当前 API Key 实际可用的模型视图。不同用户或密钥可能属于不同分组，因此会受到分组权限、上游账号、模型映射、渠道价格、额度和管理员配置影响。
+> **Q: 为什么 `/v1/models` 的结果和别人不一样？**
+>
+> **A:** `/v1/models` 端点返回的是针对当前 API Key **实际被授权可用** 的模型视图列表。
+>
+> 平台后台将用户和密钥划分到不同的**分组 (Group)** 中，每个分组的可用模型可能因管理员分配的上游账号、自定义模型映射、费率定价以及额度策略而有所不同。
+>
+> > [!IMPORTANT]
+> > 如果您发现可用模型列表中缺少了某个模型，这通常不是前端或页面显示错误。请确认当前密钥所属的分组是否已开放该模型，以及后台是否配置了至少一个可用渠道。
 
-如果缺少某个模型，请不要假设是前端显示问题。先确认当前密钥所属分组是否开放该模型，以及管理员是否配置了可用渠道。
+---
 
 ## 应该选择哪个端点？
 
-| 客户端或需求 | 推荐端点 |
-| --- | --- |
-| OpenAI Chat Completions 兼容客户端 | `/v1/chat/completions` |
-| OpenAI Responses 或 Codex 类客户端 | `/v1/responses` |
-| Claude Code 或 Anthropic Messages 兼容客户端 | `/v1/messages` |
-| Gemini 原生客户端 | `/v1beta/models/{model}:generateContent` |
-| Antigravity 兼容客户端 | `/antigravity/...` |
-| Embedding | `/v1/embeddings` |
-| 图片生成或编辑 | `/v1/images/generations`、`/v1/images/edits` |
+> **Q: 应该选择哪个端点？**
+>
+> **A:** 您需要根据使用的客户端生态或业务需求来选择最匹配的路由路径。
 
-端点和请求体格式需要匹配。不要把 OpenAI `messages` 请求体直接发到 Gemini 原生端点，也不要把 Gemini `contents` 请求体发到 OpenAI Chat Completions 端点。
+| 客户端或需求场景 | 推荐访问端点路径 |
+| :--- | :--- |
+| **OpenAI Chat Completions 兼容客户端** | `/v1/chat/completions` |
+| **OpenAI Responses 或 Codex 类客户端** | `/v1/responses` |
+| **Claude Code 或 Anthropic 兼容客户端** | `/v1/messages` |
+| **Gemini 原生客户端** | `/v1beta/models/{model}:generateContent` |
+| **Antigravity 专有客户端** | `/antigravity/...` |
+| **文本向量化 (Embedding)** | `/v1/embeddings` |
+| **图片生成与编辑 (DALL-E)** | `/v1/images/generations`、`/v1/images/edits` |
+
+> [!CAUTION]
+> 请求体参数格式必须与端点路径严格匹配。例如，不要将 OpenAI 的 `messages` 请求体格式直接发送到 Gemini 的原生端点，反之亦然。
+
+---
 
 ## 为什么会返回 404？
 
-常见原因：
+> **Q: 为什么会返回 404？**
+>
+> **A:** 接口返回 404 错误通常表示路由不匹配或端点未启用。请按下方对照表进行排查。
 
-| 原因 | 处理 |
-| --- | --- |
-| Base URL 拼错 | 检查是否重复 `/v1`，或缺少 `/antigravity`、`/v1beta` 等路径。 |
-| 端点未启用 | 联系管理员确认当前部署是否支持该接口。 |
-| 模型名不存在 | 使用 `/v1/models` 返回的模型名，或管理员提供的映射名。 |
-| 接口族不匹配 | 按 OpenAI、Anthropic、Gemini 或 Antigravity 的格式重新选择端点。 |
+| 404 常见原因 | 排查及解决方法 |
+| :--- | :--- |
+| **Base URL 拼接错误** | 检查是否因 SDK 自动拼接导致 URL 出现了重复的 `/v1`（如 `/v1/v1/...`），或缺少了 `/antigravity`、`/v1beta` 等必要路径。 |
+| **端点未启用** | 当前部署实例可能未开启图片生成、Embedding 或 Responses 等部分高级接口。请向管理员确认。 |
+| **模型名称拼写错误** | 调用的模型名不在后台可用列表中。请务必使用 `/v1/models` 返回的合法名称。 |
+| **接口协议族不匹配** | 确认您的请求体数据格式和目标端点路径符合同一套 API 协议规范。 |
+
+---
 
 ## 为什么模型调用失败？
 
-模型失败不一定表示 {{SITE_NAME}} 不可用。常见原因包括：
+> **Q: 为什么模型调用失败？**
+>
+> **A:** 模型调用发生失败（如返回 403、429 或 5xx 等）并不一定意味着 {{SITE_NAME}} 服务整体挂掉。
 
-1. 当前 API Key 分组没有该模型权限。
-2. 上游账号额度不足、密钥失效或被限流。
-3. 管理员未配置模型映射或渠道价格。
-4. 请求体参数不被该上游模型支持。
-5. 流式请求被代理或客户端超时中断。
+常见的调用失败诱因包括：
+1. 当前 API Key 绑定的分组没有该模型的授权。
+2. 该模型在后台关联的上游账号余额耗尽、密钥失效或被上游风控。
+3. 后台尚未给该模型配置适用的映射规则或渠道单价倍率。
+4. 您的客户端请求体参数（如 `temperature` 范围或 `max_tokens`）不被目标模型所接受。
+5. 流式数据返回被本地的网络反向代理或过于敏感的网关超时拦截。
 
-建议先调用：
-
-```bash
-curl "${BASE_URL}v1/models" \
-  -H "Authorization: Bearer $YOUR_KEY"
-```
-
-然后用返回的模型名发起最小请求。如果最小请求仍失败，请把错误码、请求路径、模型名和时间点提供给管理员排查，注意不要发送完整 API Key。
-
+> [!TIP]
+> 遇到调用失败时，建议先使用命令行执行以下最简测试以隔离问题：
+> ```bash
+> curl "${BASE_URL}v1/models" \
+>   -H "Authorization: Bearer $YOUR_KEY"
+> ```
+> 如果最简测试也失败，请收集您的**请求时间、请求路径、模型名称、脱敏后的 Key 后四位以及报错详情**，并联系管理员协助排查。

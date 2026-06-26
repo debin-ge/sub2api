@@ -5,22 +5,24 @@
     <div class="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-gray-100 dark:bg-dark-800">
       <span class="text-lg font-semibold text-gray-500 dark:text-dark-300">R</span>
     </div>
-    <h3 class="text-sm font-semibold text-gray-900 dark:text-white">{{ title }}</h3>
-    <p v-if="description" class="mt-2 text-sm text-gray-500 dark:text-dark-400">
-      {{ description }}
+    <h3 class="text-sm font-semibold text-gray-900 dark:text-white">{{ resolvedTitle }}</h3>
+    <p v-if="resolvedDescription" class="mt-2 text-sm text-gray-500 dark:text-dark-400">
+      {{ resolvedDescription }}
     </p>
   </div>
 </template>
 
 <script setup lang="ts">
-withDefaults(
-  defineProps<{
-    title?: string
-    description?: string
-  }>(),
-  {
-    title: '暂无 Radar 数据',
-    description: '公开基准完成后会在这里展示模型能力排行。',
-  },
-)
+import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
+
+const props = defineProps<{
+  title?: string
+  description?: string
+}>()
+
+const resolvedTitle = computed(() => props.title || t('benchmark.public.empty.title'))
+const resolvedDescription = computed(() => props.description || t('benchmark.public.empty.description'))
 </script>

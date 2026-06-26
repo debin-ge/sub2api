@@ -3,27 +3,27 @@
     <div class="space-y-6">
       <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">Benchmark Runs</h1>
-          <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">创建、查看和发布 benchmark run。</p>
+          <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">{{ t('benchmark.admin.runs.title') }}</h1>
+          <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('benchmark.admin.runs.description') }}</p>
         </div>
         <button type="button" class="btn btn-secondary inline-flex items-center gap-2" :disabled="loading" @click="reload">
           <Icon name="refresh" size="sm" :class="loading ? 'animate-spin' : ''" />
-          刷新
+          {{ t('benchmark.admin.runs.refresh') }}
         </button>
       </div>
 
       <section class="card">
         <div class="grid grid-cols-1 gap-4 p-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
           <label class="block">
-            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Profile</span>
+            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('benchmark.admin.runs.fields.profile') }}</span>
             <select v-model.number="createProfileId" data-test="run-profile-select" class="input mt-1">
-              <option :value="0">请选择 profile</option>
+              <option :value="0">{{ t('benchmark.admin.runs.chooseProfile') }}</option>
               <option v-for="profile in profiles" :key="profile.id" :value="profile.id">{{ profile.name }}</option>
             </select>
           </label>
           <button type="button" data-test="create-run-button" class="btn btn-primary inline-flex items-center gap-2" :disabled="creating || !createProfileId" @click="createRun">
             <Icon name="play" size="sm" />
-            创建 Run
+            {{ t('benchmark.admin.runs.createRun') }}
           </button>
         </div>
       </section>
@@ -31,21 +31,22 @@
       <section class="card">
         <DataTable :columns="columns" :data="runs" :loading="loading">
           <template #cell-id="{ row }">
-            <span class="font-medium text-gray-900 dark:text-white">Run #{{ row.id }}</span>
+            <span class="font-medium text-gray-900 dark:text-white">{{ benchmarkRunFallback(row.id, t) }}</span>
           </template>
           <template #cell-profile_id="{ row }">{{ profileName(row.profile_id) }}</template>
           <template #cell-status="{ row }">
             <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium" :class="statusClass(row.status)">
-              {{ row.status }}
+              {{ benchmarkRunStatusLabel(row.status, t) }}
             </span>
           </template>
-          <template #cell-task_types="{ row }">{{ row.task_types.join(', ') || '-' }}</template>
+          <template #cell-task_scale="{ row }">{{ benchmarkTaskScaleLabel(row.task_scale, t) }}</template>
+          <template #cell-task_types="{ row }">{{ formatTaskTypes(row.task_types) }}</template>
           <template #cell-planned="{ row }">
-            {{ row.planned_target_count }} target / {{ row.planned_task_count }} task / {{ row.planned_result_count }} result
+            {{ t('benchmark.admin.runs.planSummary', { targets: row.planned_target_count, tasks: row.planned_task_count, results: row.planned_result_count }) }}
           </template>
           <template #cell-finished_at="{ row }">{{ formatDate(row.finished_at || row.updated_at || row.created_at) }}</template>
           <template #empty>
-            <EmptyState title="暂无 Run" description="选择 profile 创建第一个 benchmark run。" />
+            <EmptyState :title="t('benchmark.admin.runs.emptyTitle')" :description="t('benchmark.admin.runs.emptyDescription')" />
           </template>
         </DataTable>
       </section>
@@ -63,7 +64,8 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
@@ -73,8 +75,16 @@ import { adminAPI } from '@/api/admin'
 import { useAppStore } from '@/stores/app'
 import type { Column } from '@/components/common/types'
 import type { BenchmarkProfile, BenchmarkRun, BenchmarkRunStatus } from '@/types/benchmark'
+import {
+  benchmarkProfileFallback,
+  benchmarkRunFallback,
+  benchmarkRunStatusLabel,
+  benchmarkTaskScaleLabel,
+  benchmarkTaskTypeLabel,
+} from '@/components/radar/benchmarkI18n'
 
 const appStore = useAppStore()
+const { locale, t } = useI18n()
 
 const runs = ref<BenchmarkRun[]>([])
 const profiles = ref<BenchmarkProfile[]>([])
@@ -83,15 +93,15 @@ const creating = ref(false)
 const createProfileId = ref(0)
 const pagination = reactive({ page: 1, page_size: 20, total: 0 })
 
-const columns: Column[] = [
-  { key: 'id', label: 'Run' },
-  { key: 'profile_id', label: 'Profile' },
-  { key: 'status', label: 'Status' },
-  { key: 'task_scale', label: 'Scale' },
-  { key: 'task_types', label: 'Task types' },
-  { key: 'planned', label: 'Plan' },
-  { key: 'finished_at', label: 'Finished' },
-]
+const columns = computed<Column[]>(() => [
+  { key: 'id', label: t('benchmark.admin.runs.columns.run') },
+  { key: 'profile_id', label: t('benchmark.admin.runs.columns.profile') },
+  { key: 'status', label: t('benchmark.admin.runs.columns.status') },
+  { key: 'task_scale', label: t('benchmark.admin.runs.columns.scale') },
+  { key: 'task_types', label: t('benchmark.admin.runs.columns.taskTypes') },
+  { key: 'planned', label: t('benchmark.admin.runs.columns.plan') },
+  { key: 'finished_at', label: t('benchmark.admin.runs.columns.finished') },
+])
 
 async function reload() {
   loading.value = true
@@ -104,7 +114,7 @@ async function reload() {
     profiles.value = profileRes.items || []
     pagination.total = runRes.total || 0
   } catch (error) {
-    appStore.showError(error instanceof Error ? error.message : '加载 Run 失败')
+    appStore.showError(error instanceof Error ? error.message : t('benchmark.admin.runs.loadError'))
   } finally {
     loading.value = false
   }
@@ -120,16 +130,16 @@ async function createRun() {
     })
     runs.value = [created, ...runs.value.filter((run) => run.id !== created.id)]
     pagination.total += 1
-    appStore.showSuccess(`Run #${created.id} 已创建`)
+    appStore.showSuccess(t('benchmark.admin.runs.createSuccess', { id: created.id }))
   } catch (error) {
-    appStore.showError(error instanceof Error ? error.message : '创建 Run 失败')
+    appStore.showError(error instanceof Error ? error.message : t('benchmark.admin.runs.createError'))
   } finally {
     creating.value = false
   }
 }
 
 function profileName(id: number): string {
-  return profiles.value.find((profile) => profile.id === id)?.name || `Profile #${id}`
+  return profiles.value.find((profile) => profile.id === id)?.name || benchmarkProfileFallback(id, t)
 }
 
 function statusClass(status: BenchmarkRunStatus): string {
@@ -141,7 +151,18 @@ function statusClass(status: BenchmarkRunStatus): string {
 
 function formatDate(value?: string | null): string {
   if (!value) return '-'
-  return new Date(value).toLocaleString()
+  return new Intl.DateTimeFormat(locale.value, {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value))
+}
+
+function formatTaskTypes(taskTypes: string[]): string {
+  if (taskTypes.length === 0) return '-'
+  return taskTypes.map((taskType) => benchmarkTaskTypeLabel(taskType, t)).join(', ')
 }
 
 function onPageChange(page: number) {

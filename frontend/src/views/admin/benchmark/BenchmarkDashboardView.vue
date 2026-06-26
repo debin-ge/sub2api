@@ -3,12 +3,12 @@
     <div class="space-y-6">
       <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">Benchmark Dashboard</h1>
-          <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">后台 benchmark 运行概览与最新排行榜。</p>
+          <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">{{ t('benchmark.admin.dashboard.title') }}</h1>
+          <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('benchmark.admin.dashboard.description') }}</p>
         </div>
         <button type="button" class="btn btn-secondary inline-flex items-center gap-2" :disabled="loading" @click="load">
           <Icon name="refresh" size="sm" :class="loading ? 'animate-spin' : ''" />
-          刷新
+          {{ t('benchmark.admin.dashboard.refresh') }}
         </button>
       </div>
 
@@ -22,15 +22,15 @@
 
       <section class="card">
         <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
-          <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Top 5 排名</h2>
-          <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">基于最新 completed run 的 score snapshot，按能力分排序。</p>
+          <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('benchmark.admin.dashboard.topTitle') }}</h2>
+          <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('benchmark.admin.dashboard.topDescription') }}</p>
         </div>
         <DataTable :columns="columns" :data="topScores" :loading="loading">
           <template #cell-rank="{ row }">#{{ row.rank }}</template>
           <template #cell-target="{ row }">
             <div class="flex items-center gap-2">
               <span class="font-medium text-gray-900 dark:text-white">{{ scoreTargetName(row) }}</span>
-              <span v-if="row.insufficient_sample" class="inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">样本不足</span>
+              <span v-if="row.insufficient_sample" class="inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">{{ t('benchmark.admin.runDetail.insufficientSample') }}</span>
             </div>
           </template>
           <template #cell-overall_score="{ row }">{{ formatNumber(row.overall_score) }}</template>
@@ -39,7 +39,7 @@
           <template #cell-avg_total_tokens="{ row }">{{ formatInteger(row.avg_total_tokens) }}</template>
           <template #cell-estimated_cost="{ row }">{{ formatCost(row.estimated_cost) }}</template>
           <template #empty>
-            <EmptyState title="暂无排名" description="等待 completed run 生成 score snapshot。" />
+            <EmptyState :title="t('benchmark.admin.dashboard.emptyTitle')" :description="t('benchmark.admin.dashboard.emptyDescription')" />
           </template>
         </DataTable>
       </section>
@@ -49,6 +49,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
@@ -58,10 +59,17 @@ import { radarAPI } from '@/api/radar'
 import { useAppStore } from '@/stores/app'
 import type { Column } from '@/components/common/types'
 import type { BenchmarkPublicRadar, BenchmarkRun, BenchmarkScoreSnapshot } from '@/types/benchmark'
+import {
+  benchmarkChannelFallback,
+  benchmarkRunFallback,
+  benchmarkRunStatusLabel,
+  benchmarkTargetFallback,
+} from '@/components/radar/benchmarkI18n'
 
 type RankedScore = BenchmarkScoreSnapshot & { rank: number }
 
 const appStore = useAppStore()
+const { locale, t } = useI18n()
 const loading = ref(false)
 const latestRun = ref<BenchmarkRun | null>(null)
 const latestCompletedRun = ref<BenchmarkRun | null>(null)
@@ -71,26 +79,30 @@ const profileCount = ref(0)
 const scores = ref<BenchmarkScoreSnapshot[]>([])
 const publicRadar = ref<BenchmarkPublicRadar | null>(null)
 
-const columns: Column[] = [
-  { key: 'rank', label: 'Rank' },
-  { key: 'target', label: 'Target' },
-  { key: 'overall_score', label: '能力分' },
-  { key: 'success_rate', label: 'Success' },
-  { key: 'latency_p50_ms', label: 'P50 latency' },
-  { key: 'avg_total_tokens', label: 'Token' },
-  { key: 'estimated_cost', label: 'Cost' },
-]
+const columns = computed<Column[]>(() => [
+  { key: 'rank', label: t('benchmark.admin.dashboard.columns.rank') },
+  { key: 'target', label: t('benchmark.admin.dashboard.columns.target') },
+  { key: 'overall_score', label: t('benchmark.admin.dashboard.columns.abilityScore') },
+  { key: 'success_rate', label: t('benchmark.admin.dashboard.columns.successRate') },
+  { key: 'latency_p50_ms', label: t('benchmark.admin.dashboard.columns.p50Latency') },
+  { key: 'avg_total_tokens', label: t('benchmark.admin.dashboard.columns.token') },
+  { key: 'estimated_cost', label: t('benchmark.admin.dashboard.columns.cost') },
+])
 
 const cards = computed(() => [
-  { label: 'Latest run', value: latestRun.value?.status || '暂无 run', meta: latestRun.value ? `Run #${latestRun.value.id}` : undefined },
   {
-    label: 'Public snapshot',
-    value: publicRadar.value?.published_at ? formatDate(publicRadar.value.published_at) : '等待发布',
-    meta: publicRadar.value?.latest_run ? `Run #${publicRadar.value.latest_run.id}` : '暂无公开快照',
+    label: t('benchmark.admin.dashboard.latestRun'),
+    value: latestRun.value ? benchmarkRunStatusLabel(latestRun.value.status, t) : t('benchmark.admin.dashboard.noRun'),
+    meta: latestRun.value ? benchmarkRunFallback(latestRun.value.id, t) : undefined,
   },
-  { label: 'Targets', value: String(targetCount.value) },
-  { label: 'Tasks', value: String(taskCount.value) },
-  { label: 'Profiles', value: String(profileCount.value) },
+  {
+    label: t('benchmark.admin.dashboard.publicSnapshot'),
+    value: publicRadar.value?.published_at ? formatDate(publicRadar.value.published_at) : t('benchmark.admin.dashboard.waitingPublish'),
+    meta: publicRadar.value?.latest_run ? benchmarkRunFallback(publicRadar.value.latest_run.id, t) : t('benchmark.admin.dashboard.noPublicSnapshot'),
+  },
+  { label: t('benchmark.admin.dashboard.targets'), value: formatInteger(targetCount.value) },
+  { label: t('benchmark.admin.dashboard.tasks'), value: formatInteger(taskCount.value) },
+  { label: t('benchmark.admin.dashboard.profiles'), value: formatInteger(profileCount.value) },
 ])
 
 const topScores = computed<RankedScore[]>(() =>
@@ -125,7 +137,7 @@ async function load() {
       publicRadar.value = null
     }
   } catch (error) {
-    appStore.showError(error instanceof Error ? error.message : '加载 Benchmark Dashboard 失败')
+    appStore.showError(error instanceof Error ? error.message : t('benchmark.admin.dashboard.loadError'))
   } finally {
     loading.value = false
   }
@@ -133,7 +145,7 @@ async function load() {
 
 function scoreTargetName(score: BenchmarkScoreSnapshot): string {
   const runTarget = score.edges?.run_target
-  if (!runTarget) return `Target #${score.run_target_id}`
+  if (!runTarget) return benchmarkTargetFallback(score.run_target_id, t)
   return runTargetLabel(runTarget, score.run_target_id)
 }
 
@@ -148,40 +160,60 @@ function runTargetLabel(
 ): string {
   if (runTarget.display_name_snapshot) return runTarget.display_name_snapshot
   if (runTarget.model_name) {
-    const channelLabel = runTarget.channel_name_snapshot || (runTarget.channel_id ? `Channel #${runTarget.channel_id}` : null)
+    const channelLabel = runTarget.channel_name_snapshot || (runTarget.channel_id ? benchmarkChannelFallback(runTarget.channel_id, t) : null)
     return channelLabel ? `${runTarget.model_name} · ${channelLabel}` : runTarget.model_name
   }
-  return `Target #${id}`
+  return benchmarkTargetFallback(id, t)
 }
 
 function formatNumber(value?: number | null): string {
   if (value === undefined || value === null) return '-'
-  return Number(value).toFixed(1).replace(/\.0$/, '')
+  return new Intl.NumberFormat(locale.value, {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(Number(value))
 }
 
 function formatPercent(value?: number | null): string {
   if (value === undefined || value === null) return '-'
-  return `${Math.round(Number(value) * 100)}%`
+  return new Intl.NumberFormat(locale.value, {
+    style: 'percent',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(Number(value))
 }
 
 function formatLatency(value?: number | null): string {
   if (value === undefined || value === null) return '-'
-  return `${Math.round(Number(value))} ms`
+  return `${new Intl.NumberFormat(locale.value, { maximumFractionDigits: 0 }).format(Number(value))} ms`
 }
 
 function formatInteger(value?: number | null): string {
   if (value === undefined || value === null) return '-'
-  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(Number(value))
+  return new Intl.NumberFormat(locale.value, {
+    maximumFractionDigits: 0,
+  }).format(Number(value))
 }
 
 function formatCost(value?: number | null): string {
   if (value === undefined || value === null) return '-'
-  return `$${Number(value).toFixed(4)}`
+  return new Intl.NumberFormat(locale.value, {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 4,
+    maximumFractionDigits: 4,
+  }).format(Number(value))
 }
 
 function formatDate(value?: string | null): string {
   if (!value) return '-'
-  return new Date(value).toLocaleString()
+  return new Intl.DateTimeFormat(locale.value, {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value))
 }
 
 onMounted(load)

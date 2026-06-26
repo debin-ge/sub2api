@@ -3,30 +3,30 @@
     <div class="space-y-6">
       <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">Benchmark Targets</h1>
-          <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">管理参与 benchmark 的模型和通道快照。</p>
+          <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">{{ t('benchmark.admin.targets.title') }}</h1>
+          <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('benchmark.admin.targets.description') }}</p>
         </div>
         <button type="button" class="btn btn-secondary inline-flex items-center gap-2" :disabled="loading" @click="load">
           <Icon name="refresh" size="sm" :class="loading ? 'animate-spin' : ''" />
-          刷新
+          {{ t('benchmark.admin.targets.refresh') }}
         </button>
       </div>
 
       <section class="card">
         <form class="grid grid-cols-1 gap-4 p-6 lg:grid-cols-6 lg:items-end" @submit.prevent="createTarget">
           <label class="block lg:col-span-2">
-            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Model name</span>
+            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('benchmark.admin.targets.fields.modelName') }}</span>
             <input v-model.trim="form.model_name" class="input mt-1" required />
           </label>
           <label class="block">
-            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Channel ID</span>
+            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('benchmark.admin.targets.fields.channelId') }}</span>
             <input v-model.number="form.channel_id" type="number" min="1" class="input mt-1" required />
           </label>
           <label class="block lg:col-span-2">
-            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Display name</span>
+            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('benchmark.admin.targets.fields.displayName') }}</span>
             <input v-model.trim="form.display_name" class="input mt-1" />
           </label>
-          <button type="submit" class="btn btn-primary" :disabled="saving">创建 Target</button>
+          <button type="submit" class="btn btn-primary" :disabled="saving">{{ t('benchmark.admin.targets.create') }}</button>
         </form>
       </section>
 
@@ -38,22 +38,22 @@
               <p class="mt-1 font-mono text-xs text-gray-500 dark:text-gray-400">{{ row.model_name }}</p>
             </div>
           </template>
-          <template #cell-supported_task_types="{ row }">{{ row.supported_task_types?.join(', ') || '-' }}</template>
+          <template #cell-supported_task_types="{ row }">{{ row.supported_task_types?.map((taskType: string) => benchmarkTaskTypeLabel(taskType, t)).join(', ') || '-' }}</template>
           <template #cell-budget="{ row }">
             {{ row.per_run_budget ?? '-' }} / {{ row.daily_budget ?? '-' }}
           </template>
           <template #cell-enabled="{ row }">
             <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium" :class="row.enabled ? enabledClass : disabledClass">
-              {{ row.enabled ? 'enabled' : 'disabled' }}
+              {{ benchmarkEnabledLabel(row.enabled, t) }}
             </span>
           </template>
           <template #cell-public_visible="{ row }">
             <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium" :class="row.public_visible ? enabledClass : disabledClass">
-              {{ row.public_visible ? 'public' : 'private' }}
+              {{ benchmarkVisibilityLabel(row.public_visible, t) }}
             </span>
           </template>
           <template #empty>
-            <EmptyState title="暂无 Target" description="添加模型 target 后会显示在这里。" />
+            <EmptyState :title="t('benchmark.admin.targets.emptyTitle')" :description="t('benchmark.admin.targets.emptyDescription')" />
           </template>
         </DataTable>
       </section>
@@ -71,7 +71,8 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
@@ -81,8 +82,10 @@ import { adminAPI } from '@/api/admin'
 import { useAppStore } from '@/stores/app'
 import type { Column } from '@/components/common/types'
 import type { BenchmarkTarget, CreateBenchmarkTargetRequest } from '@/types/benchmark'
+import { benchmarkEnabledLabel, benchmarkTaskTypeLabel, benchmarkVisibilityLabel } from '@/components/radar/benchmarkI18n'
 
 const appStore = useAppStore()
+const { t } = useI18n()
 const enabledClass = 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
 const disabledClass = 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-300'
 
@@ -102,16 +105,16 @@ const form = reactive<CreateBenchmarkTargetRequest>({
   sort_order: 0,
 })
 
-const columns: Column[] = [
-  { key: 'model_name', label: 'Model' },
-  { key: 'channel_id', label: 'Channel' },
-  { key: 'provider_snapshot', label: 'Provider' },
-  { key: 'supported_task_types', label: 'Task types' },
-  { key: 'max_concurrency', label: 'Concurrency' },
-  { key: 'budget', label: 'Budget' },
-  { key: 'enabled', label: 'Status' },
-  { key: 'public_visible', label: 'Visibility' },
-]
+const columns = computed<Column[]>(() => [
+  { key: 'model_name', label: t('benchmark.admin.targets.columns.model') },
+  { key: 'channel_id', label: t('benchmark.admin.targets.columns.channel') },
+  { key: 'provider_snapshot', label: t('benchmark.admin.targets.columns.provider') },
+  { key: 'supported_task_types', label: t('benchmark.admin.targets.columns.taskTypes') },
+  { key: 'max_concurrency', label: t('benchmark.admin.targets.columns.concurrency') },
+  { key: 'budget', label: t('benchmark.admin.targets.columns.budget') },
+  { key: 'enabled', label: t('benchmark.admin.targets.columns.status') },
+  { key: 'public_visible', label: t('benchmark.admin.targets.columns.visibility') },
+])
 
 async function load() {
   loading.value = true
@@ -123,7 +126,7 @@ async function load() {
     targets.value = response.items || []
     pagination.total = response.total || 0
   } catch (error) {
-    appStore.showError(error instanceof Error ? error.message : '加载 Target 失败')
+    appStore.showError(error instanceof Error ? error.message : t('benchmark.admin.targets.loadError'))
   } finally {
     loading.value = false
   }
@@ -139,9 +142,9 @@ async function createTarget() {
     })
     targets.value = [created, ...targets.value.filter((target) => target.id !== created.id)]
     pagination.total += 1
-    appStore.showSuccess('Target 已创建')
+    appStore.showSuccess(t('benchmark.admin.targets.createSuccess'))
   } catch (error) {
-    appStore.showError(error instanceof Error ? error.message : '创建 Target 失败')
+    appStore.showError(error instanceof Error ? error.message : t('benchmark.admin.targets.createError'))
   } finally {
     saving.value = false
   }

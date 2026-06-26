@@ -72,22 +72,22 @@
     <main class="mx-auto max-w-6xl px-6 py-8">
       <div class="mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
-          <p class="text-sm font-medium text-primary-600 dark:text-primary-400">Public Benchmark</p>
-          <h1 class="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">AI Model Radar</h1>
+          <p class="text-sm font-medium text-primary-600 dark:text-primary-400">{{ t('benchmark.public.home.eyebrow') }}</p>
+          <h1 class="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">{{ t('benchmark.public.home.title') }}</h1>
           <p class="mt-2 max-w-2xl text-sm text-gray-600 dark:text-dark-300">
-            按公开 Benchmark 展示模型能力分，并单独列出延迟、成功率、Token 和成本等运行指标。
+            {{ t('benchmark.public.home.description') }}
           </p>
         </div>
       </div>
 
       <RadarEmptyState
         v-if="radarLoading"
-        title="正在加载 Radar 数据"
-        description="请稍候，正在读取最新公开排行。"
+        :title="t('benchmark.public.home.loadingTitle')"
+        :description="t('benchmark.public.home.loadingDescription')"
       />
       <RadarEmptyState
         v-else-if="radarError"
-        title="暂时无法加载 Radar 数据"
+        :title="t('benchmark.public.home.errorTitle')"
         :description="radarError"
       />
       <div v-else-if="radar && radar.targets.length > 0" class="space-y-6">
@@ -607,7 +607,7 @@ async function loadPublicRadar() {
     radarLoaded.value = true
   } catch (error) {
     radar.value = null
-    radarError.value = error instanceof Error ? error.message : '公开 Radar 数据读取失败。'
+    radarError.value = error instanceof Error ? error.message : t('benchmark.public.home.loadError')
   } finally {
     radarLoading.value = false
   }

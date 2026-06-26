@@ -18,48 +18,53 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import type { BenchmarkPublicRadar } from '@/types/benchmark'
+import { benchmarkRunFallback } from '@/components/radar/benchmarkI18n'
 
 const props = defineProps<{
   radar: BenchmarkPublicRadar
 }>()
 
+const { locale, t } = useI18n()
+
 const scoredTargets = computed(() => props.radar.targets.filter((target) => !target.score_basis.insufficient_sample))
 const averageAbilityScore = computed(() => {
   if (props.radar.targets.length === 0) return '-'
   const total = props.radar.targets.reduce((sum, target) => sum + target.overall_score, 0)
-  return (total / props.radar.targets.length).toFixed(1)
+  return new Intl.NumberFormat(locale.value, {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(total / props.radar.targets.length)
 })
 
 const cards = computed(() => [
   {
-    label: '参评模型',
-    value: props.radar.targets.length.toString(),
-    caption: '公开可见目标',
+    label: t('benchmark.public.summary.targetsLabel'),
+    value: new Intl.NumberFormat(locale.value, { maximumFractionDigits: 0 }).format(props.radar.targets.length),
+    caption: t('benchmark.public.summary.targetsCaption'),
   },
   {
-    label: '平均能力分',
+    label: t('benchmark.public.summary.averageScoreLabel'),
     value: averageAbilityScore.value,
-    caption: '仅表示任务能力表现',
+    caption: t('benchmark.public.summary.averageScoreCaption'),
   },
   {
-    label: '样本状态',
-    value: `${scoredTargets.value.length}/${props.radar.targets.length}`,
-    caption: '达到有效样本的模型',
+    label: t('benchmark.public.summary.sampleStatusLabel'),
+    value: `${new Intl.NumberFormat(locale.value, { maximumFractionDigits: 0 }).format(scoredTargets.value.length)}/${new Intl.NumberFormat(locale.value, { maximumFractionDigits: 0 }).format(props.radar.targets.length)}`,
+    caption: t('benchmark.public.summary.sampleStatusCaption'),
   },
   {
-    label: '最新运行',
-    value: props.radar.latest_run ? `#${props.radar.latest_run.id}` : '-',
-    caption: props.radar.latest_run?.completed_at ? formatDate(props.radar.latest_run.completed_at) : '暂无完成记录',
+    label: t('benchmark.public.summary.latestRunLabel'),
+    value: props.radar.latest_run ? benchmarkRunFallback(props.radar.latest_run.id, t) : '-',
+    caption: props.radar.latest_run?.completed_at
+      ? new Intl.DateTimeFormat(locale.value, {
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      }).format(new Date(props.radar.latest_run.completed_at))
+      : t('benchmark.public.summary.latestRunEmptyCaption'),
   },
 ])
-
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date(value))
-}
 </script>

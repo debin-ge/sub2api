@@ -2,6 +2,8 @@
 
 本页提供可以直接复制后修改的配置模板。除非管理员提供了其他地址，否则示例使用 `{{BASE_URL}}` 作为 Base URL，并统一用 `$YOUR_KEY` 传递 API Key。
 
+---
+
 ## 通用环境变量
 
 ```bash
@@ -15,6 +17,8 @@ export YOUR_KEY="replace-with-your-api-key"
 curl -i "${BASE_URL}v1/models" \
   -H "Authorization: Bearer $YOUR_KEY"
 ```
+
+---
 
 ## OpenAI SDK
 
@@ -66,6 +70,8 @@ response = client.chat.completions.create(
 print(response.choices[0].message.content)
 ```
 
+---
+
 ## OpenAI Chat Completions curl
 
 ```bash
@@ -83,6 +89,8 @@ curl "${BASE_URL}v1/chat/completions" \
   }'
 ```
 
+---
+
 ## OpenAI Responses curl
 
 ```bash
@@ -94,6 +102,8 @@ curl "${BASE_URL}v1/responses" \
     "input": "用 TypeScript 写一个 debounce 函数。"
   }'
 ```
+
+---
 
 ## Anthropic Messages curl
 
@@ -109,6 +119,8 @@ curl "${BASE_URL}v1/messages" \
     ]
   }'
 ```
+
+---
 
 ## Claude Code 或 Anthropic 兼容客户端
 
@@ -129,6 +141,8 @@ export ANTHROPIC_API_KEY="$YOUR_KEY"
 export ANTHROPIC_BASE_URL="{{BASE_URL}}antigravity"
 export ANTHROPIC_AUTH_TOKEN="$YOUR_KEY"
 ```
+
+---
 
 ## Gemini 原生 curl
 
@@ -166,6 +180,8 @@ curl "${BASE_URL}v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse" \
   }'
 ```
 
+---
+
 ## Embeddings
 
 ```bash
@@ -177,6 +193,8 @@ curl "${BASE_URL}v1/embeddings" \
     "input": "{{SITE_NAME}} 统一多模型 API 接入。"
   }'
 ```
+
+---
 
 ## 前端应用的安全代理
 
@@ -197,6 +215,8 @@ const response = await fetch('{{BASE_URL}}v1/chat/completions', {
 })
 ```
 
+---
+
 ## OpenCode CLI 环境配置
 
 ```bash
@@ -204,12 +224,14 @@ export OPENCODE_API_BASE="{{BASE_URL}}v1"
 export OPENCODE_API_KEY="$YOUR_KEY"
 ```
 
+---
+
 ## 常见替换项
 
 | 占位项 | 替换为 |
-| --- | --- |
-| `$YOUR_KEY` | 你的 {{SITE_NAME}} API Key 环境变量。 |
-| `gpt-4o-mini` | `/v1/models` 返回的 OpenAI 兼容模型。 |
-| `claude-3-5-sonnet-latest` | `/v1/models` 返回或管理员提供的 Anthropic 兼容模型。 |
-| `gemini-2.0-flash` | `/v1beta/models` 返回或管理员提供的 Gemini 模型。 |
-| `{{BASE_URL}}` | 管理员提供的部署地址。 |
+| :--- | :--- |
+| **`$YOUR_KEY`** | 你的 {{SITE_NAME}} API Key 环境变量。 |
+| **`gpt-4o-mini`** | `/v1/models` 返回的 OpenAI 兼容模型。 |
+| **`claude-3-5-sonnet-latest`** | `/v1/models` 返回或管理员提供的 Anthropic 兼容模型。 |
+| **`gemini-2.0-flash`** | `/v1beta/models` 返回或管理员提供的 Gemini 模型。 |
+| **`{{BASE_URL}}`** | 管理员提供的部署地址。 |

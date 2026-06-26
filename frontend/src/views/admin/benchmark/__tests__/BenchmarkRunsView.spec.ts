@@ -1,9 +1,13 @@
 import { mount, flushPromises } from '@vue/test-utils'
+import { ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import BenchmarkRunsView from '../BenchmarkRunsView.vue'
 import BenchmarkRunDetailView from '../BenchmarkRunDetailView.vue'
 import { adminAPI } from '@/api/admin'
+
+const showError = vi.fn()
+const showSuccess = vi.fn()
 
 vi.mock('@/api/admin', () => ({
   adminAPI: {
@@ -22,17 +26,35 @@ vi.mock('@/api/admin', () => ({
 
 vi.mock('@/stores/app', () => ({
   useAppStore: () => ({
-    showError: vi.fn(),
-    showSuccess: vi.fn(),
+    showError,
+    showSuccess,
   }),
 }))
 
 vi.mock('vue-i18n', async (importOriginal) => {
   const actual = await importOriginal<typeof import('vue-i18n')>()
+  const locale = ref('de-DE')
   return {
     ...actual,
     useI18n: () => ({
-      t: (key: string) => key,
+      locale,
+      t: (key: string, params?: Record<string, unknown>) => {
+        if (key === 'benchmark.fallback.run') return `RUN_LABEL_${params?.id as number}`
+        if (key === 'benchmark.fallback.profile') return `PROFILE_LABEL_${params?.id as number}`
+        if (key === 'benchmark.fallback.result') return `RESULT_LABEL_${params?.id as number}`
+        if (key === 'benchmark.fallback.channel') return `CHANNEL_LABEL_${params?.id as number}`
+        if (key === 'benchmark.fallback.target') return `TARGET_LABEL_${params?.id as number}`
+        if (key === 'benchmark.admin.runs.createSuccess') return `RUN_CREATED_${params?.id as number}`
+        if (key === 'benchmark.admin.runDetail.publishSuccess') return 'DETAIL_PUBLISHED_TOAST'
+        if (key === 'benchmark.admin.runDetail.columns.abilityScore') return 'DETAIL_SCORE_LABEL'
+        if (key === 'benchmark.admin.runDetail.columns.token') return 'DETAIL_TOKEN_LABEL'
+        if (key === 'benchmark.admin.runDetail.columns.cost') return 'DETAIL_COST_LABEL'
+        if (key === 'benchmark.admin.runDetail.insufficientSample') return 'DETAIL_INSUFFICIENT'
+        if (key === 'benchmark.enums.resultStatus.parse_error') return 'PARSE_ERROR_LABEL'
+        if (key === 'benchmark.enums.resultStatus.timeout') return 'TIMEOUT_LABEL'
+        if (key === 'benchmark.enums.runStatus.queued') return 'RUN_STATUS_QUEUED'
+        return key
+      },
     }),
   }
 })
@@ -63,6 +85,8 @@ function mountDetailView(runId = 9) {
 describe('BenchmarkRunsView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    showError.mockReset()
+    showSuccess.mockReset()
     Object.defineProperty(window, 'matchMedia', {
       configurable: true,
       value: vi.fn().mockImplementation((query: string) => ({
@@ -82,7 +106,7 @@ describe('BenchmarkRunsView', () => {
         {
           id: 9,
           suite_id: 1,
-          profile_id: 5,
+          profile_id: 99,
           status: 'completed',
           trigger_type: 'manual',
           task_scale: 'medium',
@@ -205,7 +229,7 @@ describe('BenchmarkRunsView', () => {
         error_message: 'Invalid JSON',
         prompt_tokens: 100,
         completion_tokens: 10,
-        total_tokens: 110,
+        total_tokens: 1100,
         estimated_cost: 0.01,
         attempt_count: 1,
         edges: {
@@ -235,7 +259,7 @@ describe('BenchmarkRunsView', () => {
         success_rate: 1,
         latency_p50_ms: 880,
         latency_p95_ms: 1200,
-        avg_total_tokens: 140,
+        avg_total_tokens: 1400,
         estimated_cost: 0.02,
         invalid_reason_breakdown: {},
         edges: {
@@ -263,7 +287,7 @@ describe('BenchmarkRunsView', () => {
         success_rate: 0.33,
         latency_p50_ms: 1500,
         latency_p95_ms: 2200,
-        avg_total_tokens: 110,
+        avg_total_tokens: 1100,
         estimated_cost: 0.01,
         invalid_reason_breakdown: {
           parse_error: 2,
@@ -295,25 +319,37 @@ describe('BenchmarkRunsView', () => {
       profile_id: 5,
       trigger_type: 'manual',
     })
-    expect(wrapper.text()).toContain('Run #10')
-    expect(wrapper.text()).toContain('queued')
+    expect(showSuccess).toHaveBeenCalledWith('RUN_CREATED_10')
+    expect(wrapper.text()).toContain('RUN_LABEL_10')
+    expect(wrapper.text()).toContain('RUN_STATUS_QUEUED')
+    expect(wrapper.text()).toContain('PROFILE_LABEL_99')
   })
 
   it('shows score snapshot, invalid reason breakdown, target details, and insufficient sample badge', async () => {
     const wrapper = mountDetailView()
     await flushPromises()
 
-    expect(wrapper.text()).toContain('能力分')
-    expect(wrapper.text()).toContain('91.5')
+    expect(wrapper.text()).toContain('DETAIL_SCORE_LABEL')
+    expect(wrapper.text()).toContain(new Intl.NumberFormat('de-DE', {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1,
+    }).format(91.5))
     expect(wrapper.text()).toContain('GPT-4.1 Snapshot')
     expect(wrapper.text()).toContain('tiny-model · Relay B')
-    expect(wrapper.text()).toContain('样本不足')
-    expect(wrapper.text()).toContain('Token')
-    expect(wrapper.text()).toContain('Cost')
-    expect(wrapper.text()).toContain('$0.0200')
-    expect(wrapper.text()).toContain('parse_error')
-    expect(wrapper.text()).toContain('timeout')
-    expect(wrapper.text()).toContain('Result #101')
+    expect(wrapper.text()).toContain('DETAIL_INSUFFICIENT')
+    expect(wrapper.text()).toContain('DETAIL_TOKEN_LABEL')
+    expect(wrapper.text()).toContain('DETAIL_COST_LABEL')
+    expect(wrapper.text()).toContain(new Intl.NumberFormat('de-DE', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 4,
+      maximumFractionDigits: 4,
+    }).format(0.02))
+    expect(wrapper.text()).toContain('PARSE_ERROR_LABEL')
+    expect(wrapper.text()).toContain('TIMEOUT_LABEL')
+    expect(wrapper.text()).toContain('RESULT_LABEL_101')
+    expect(wrapper.text()).toContain('1.400')
+    expect(wrapper.text()).toContain('1.100')
     expect(wrapper.text()).toContain('Invalid JSON')
   })
 
@@ -325,6 +361,7 @@ describe('BenchmarkRunsView', () => {
     await flushPromises()
 
     expect(adminAPI.benchmark.publishRun).toHaveBeenCalledWith(9)
-    expect(wrapper.text()).toContain('published')
+    expect(showSuccess).toHaveBeenCalledWith('DETAIL_PUBLISHED_TOAST')
+    expect(wrapper.text()).toContain('DETAIL_PUBLISHED_TOAST')
   })
 })

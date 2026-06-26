@@ -1,8 +1,12 @@
 import { mount, flushPromises } from '@vue/test-utils'
+import { ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import BenchmarkProfilesView from '../BenchmarkProfilesView.vue'
 import { adminAPI } from '@/api/admin'
+
+const showError = vi.fn()
+const showSuccess = vi.fn()
 
 vi.mock('@/api/admin', () => ({
   adminAPI: {
@@ -18,17 +22,26 @@ vi.mock('@/api/admin', () => ({
 
 vi.mock('@/stores/app', () => ({
   useAppStore: () => ({
-    showError: vi.fn(),
-    showSuccess: vi.fn(),
+    showError,
+    showSuccess,
   }),
 }))
 
 vi.mock('vue-i18n', async (importOriginal) => {
   const actual = await importOriginal<typeof import('vue-i18n')>()
+  const locale = ref('en-GB')
   return {
     ...actual,
     useI18n: () => ({
-      t: (key: string) => key,
+      locale,
+      t: (key: string, params?: Record<string, unknown>) => {
+        if (key === 'benchmark.fallback.target') return `PROFILE_TARGET_${params?.id as number}`
+        if (key === 'benchmark.admin.profiles.previewCards.target') return 'PROFILE_PREVIEW_TARGETS'
+        if (key === 'benchmark.admin.profiles.previewCards.task') return 'PROFILE_PREVIEW_TASKS'
+        if (key === 'benchmark.admin.profiles.previewCards.result') return 'PROFILE_PREVIEW_RESULTS'
+        if (key === 'benchmark.admin.profiles.createSuccess') return 'PROFILE_CREATED_TOAST'
+        return key
+      },
     }),
   }
 })
@@ -47,6 +60,8 @@ function mountView() {
 describe('BenchmarkProfilesView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    showError.mockReset()
+    showSuccess.mockReset()
     Object.defineProperty(window, 'matchMedia', {
       configurable: true,
       value: vi.fn().mockImplementation((query: string) => ({
@@ -83,9 +98,9 @@ describe('BenchmarkProfilesView', () => {
       items: [
         {
           id: 11,
-          model_name: 'gpt-4.1',
+          model_name: '',
           channel_id: 101,
-          display_name: 'GPT-4.1',
+          display_name: '',
           enabled: true,
           public_visible: true,
           sort_order: 1,
@@ -171,9 +186,10 @@ describe('BenchmarkProfilesView', () => {
       tag_filter: [],
       selection_seed: null,
     })
-    expect(wrapper.text()).toContain('Target 1')
-    expect(wrapper.text()).toContain('Task 2')
-    expect(wrapper.text()).toContain('Result 2')
+    expect(wrapper.text()).toContain('PROFILE_TARGET_11')
+    expect(wrapper.text()).toContain('PROFILE_PREVIEW_TARGETS')
+    expect(wrapper.text()).toContain('PROFILE_PREVIEW_TASKS')
+    expect(wrapper.text()).toContain('PROFILE_PREVIEW_RESULTS')
   })
 
   it('creates a profile with selected task types and scale', async () => {
@@ -204,6 +220,7 @@ describe('BenchmarkProfilesView', () => {
       selection_seed: null,
       enabled: true,
     })
+    expect(showSuccess).toHaveBeenCalledWith('PROFILE_CREATED_TOAST')
   })
 
   it('offers every task scale option', async () => {

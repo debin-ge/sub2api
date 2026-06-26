@@ -1,9 +1,12 @@
 import { mount, flushPromises } from '@vue/test-utils'
+import { ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import BenchmarkDashboardView from '../BenchmarkDashboardView.vue'
 import { adminAPI } from '@/api/admin'
 import { radarAPI } from '@/api/radar'
+
+const showError = vi.fn()
 
 vi.mock('@/api/admin', () => ({
   adminAPI: {
@@ -25,16 +28,30 @@ vi.mock('@/api/radar', () => ({
 
 vi.mock('@/stores/app', () => ({
   useAppStore: () => ({
-    showError: vi.fn(),
+    showError,
   }),
 }))
 
 vi.mock('vue-i18n', async (importOriginal) => {
   const actual = await importOriginal<typeof import('vue-i18n')>()
+  const messages: Record<string, string> = {
+    'benchmark.admin.dashboard.publicSnapshot': 'DASH_PUBLIC_SNAPSHOT',
+    'benchmark.admin.dashboard.noPublicSnapshot': 'DASH_PUBLIC_SNAPSHOT_UNAVAILABLE',
+    'benchmark.admin.dashboard.columns.token': 'DASH_TOKEN_LABEL',
+    'benchmark.admin.dashboard.columns.cost': 'DASH_COST_LABEL',
+    'benchmark.admin.dashboard.loadError': 'DASH_LOAD_FAILED',
+  }
+  const locale = ref('de-DE')
   return {
     ...actual,
     useI18n: () => ({
-      t: (key: string) => key,
+      locale,
+      t: (key: string, params?: Record<string, unknown>) => {
+        if (key === 'benchmark.fallback.run') return `RUN_LABEL_${params?.id as number}`
+        if (key === 'benchmark.fallback.channel') return `CHANNEL_LABEL_${params?.id as number}`
+        if (key === 'benchmark.fallback.target') return `TARGET_LABEL_${params?.id as number}`
+        return messages[key] ?? key
+      },
     }),
   }
 })
@@ -53,6 +70,7 @@ function mountView() {
 describe('BenchmarkDashboardView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    showError.mockReset()
     Object.defineProperty(window, 'matchMedia', {
       configurable: true,
       value: vi.fn().mockImplementation((query: string) => ({
@@ -185,10 +203,10 @@ describe('BenchmarkDashboardView', () => {
     await flushPromises()
 
     expect(radarAPI.getCurrent).toHaveBeenCalled()
-    expect(wrapper.text()).toContain('Public snapshot')
+    expect(wrapper.text()).toContain('DASH_PUBLIC_SNAPSHOT')
     expect(wrapper.text()).toContain('2026')
-    expect(wrapper.text()).toContain('Run #9')
-    expect(wrapper.text()).not.toContain('暂无 public snapshot 管理接口')
+    expect(wrapper.text()).toContain('RUN_LABEL_9')
+    expect(wrapper.text()).not.toContain('DASH_PUBLIC_SNAPSHOT_UNAVAILABLE')
   })
 
   it('uses the latest completed run for ranking and shows independent token and cost metrics', async () => {
@@ -203,9 +221,23 @@ describe('BenchmarkDashboardView', () => {
     })
     expect(adminAPI.benchmark.getRunScores).toHaveBeenCalledWith(9)
     expect(wrapper.text()).toContain('gpt-4.1 · OpenAI')
-    expect(wrapper.text()).toContain('Token')
+    expect(wrapper.text()).toContain('DASH_TOKEN_LABEL')
     expect(wrapper.text()).toContain('140')
-    expect(wrapper.text()).toContain('Cost')
-    expect(wrapper.text()).toContain('$0.0200')
+    expect(wrapper.text()).toContain('DASH_COST_LABEL')
+    expect(wrapper.text()).toContain(new Intl.NumberFormat('de-DE', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 4,
+      maximumFractionDigits: 4,
+    }).format(0.02))
+  })
+
+  it('uses translated error fallback when benchmark dashboard loading throws a non-Error value', async () => {
+    vi.mocked(adminAPI.benchmark.listRuns).mockReset().mockRejectedValue('boom')
+
+    mountView()
+    await flushPromises()
+
+    expect(showError).toHaveBeenCalledWith('DASH_LOAD_FAILED')
   })
 })

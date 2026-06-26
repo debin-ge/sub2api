@@ -3,39 +3,39 @@
     <div class="space-y-6">
       <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">Benchmark Profiles</h1>
-          <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">管理评测目标、任务类型与采样规模。</p>
+          <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">{{ t('benchmark.admin.profiles.title') }}</h1>
+          <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('benchmark.admin.profiles.description') }}</p>
         </div>
         <button type="button" class="btn btn-secondary inline-flex items-center gap-2" :disabled="loading" @click="reload">
           <Icon name="refresh" size="sm" :class="loading ? 'animate-spin' : ''" />
-          刷新
+          {{ t('benchmark.admin.profiles.refresh') }}
         </button>
       </div>
 
       <div class="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,420px)_1fr]">
         <section class="card">
           <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
-            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">创建 Profile</h2>
-            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">选择 target、task type 与运行规模。</p>
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('benchmark.admin.profiles.createTitle') }}</h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('benchmark.admin.profiles.createDescription') }}</p>
           </div>
           <form class="space-y-4 p-6" @submit.prevent="createProfile">
             <label class="block">
-              <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Name</span>
+              <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('benchmark.admin.profiles.fields.name') }}</span>
               <input v-model.trim="form.name" data-test="profile-name-input" class="input mt-1" required />
             </label>
 
             <label class="block">
-              <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Suite ID</span>
+              <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('benchmark.admin.profiles.fields.suiteId') }}</span>
               <input v-model.number="form.suite_id" data-test="profile-suite-input" type="number" min="1" class="input mt-1" required />
             </label>
 
             <label class="block">
-              <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Description</span>
+              <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('benchmark.admin.profiles.fields.description') }}</span>
               <textarea v-model.trim="form.description" rows="2" class="input mt-1" />
             </label>
 
             <div>
-              <p class="text-sm font-medium text-gray-700 dark:text-gray-300">Targets</p>
+              <p class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('benchmark.admin.profiles.fields.targets') }}</p>
               <div class="mt-2 max-h-40 space-y-2 overflow-y-auto rounded-lg border border-gray-100 p-3 dark:border-dark-700">
                 <label v-for="target in targets" :key="target.id" class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
                   <input
@@ -47,12 +47,12 @@
                   />
                   <span>{{ targetLabel(target) }}</span>
                 </label>
-                <p v-if="targets.length === 0" class="text-sm text-gray-500 dark:text-gray-400">暂无 target。</p>
+                <p v-if="targets.length === 0" class="text-sm text-gray-500 dark:text-gray-400">{{ t('benchmark.admin.profiles.noTargets') }}</p>
               </div>
             </div>
 
             <div>
-              <p class="text-sm font-medium text-gray-700 dark:text-gray-300">Task types</p>
+              <p class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('benchmark.admin.profiles.fields.taskTypes') }}</p>
               <div class="mt-2 flex flex-wrap gap-2">
                 <label v-for="type in taskTypes" :key="type" class="inline-flex items-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-sm dark:border-dark-700">
                   <input
@@ -62,13 +62,13 @@
                     :value="type"
                     class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                   />
-                  <span>{{ type }}</span>
+                  <span>{{ benchmarkTaskTypeLabel(type, t) }}</span>
                 </label>
               </div>
             </div>
 
             <div>
-              <p class="text-sm font-medium text-gray-700 dark:text-gray-300">Task scale</p>
+              <p class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('benchmark.admin.profiles.fields.taskScale') }}</p>
               <div class="mt-2 grid grid-cols-2 gap-2">
                 <label v-for="scale in scales" :key="scale" class="inline-flex items-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-sm dark:border-dark-700">
                   <input
@@ -78,33 +78,33 @@
                     :value="scale"
                     class="border-gray-300 text-primary-600 focus:ring-primary-500"
                   />
-                  <span>{{ scale }}</span>
+                  <span>{{ benchmarkTaskScaleLabel(scale, t) }}</span>
                 </label>
               </div>
             </div>
 
             <button type="button" data-test="create-profile-button" class="btn btn-primary w-full" :disabled="saving" @click="createProfile">
-              创建 Profile
+              {{ t('benchmark.admin.profiles.createTitle') }}
             </button>
           </form>
         </section>
 
         <section class="card">
           <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
-            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Profile Preview</h2>
-            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">基于现有 profile 调整筛选条件后预览样本量。</p>
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('benchmark.admin.profiles.previewTitle') }}</h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('benchmark.admin.profiles.previewDescription') }}</p>
           </div>
           <div class="space-y-4 p-6">
             <label class="block">
-              <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Profile</span>
+              <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('benchmark.admin.profiles.fields.profile') }}</span>
               <select v-model.number="previewProfileId" data-test="preview-profile-select" class="input mt-1" @change="syncPreviewFromProfile">
-                <option :value="0">请选择 profile</option>
+                <option :value="0">{{ t('benchmark.admin.profiles.chooseProfile') }}</option>
                 <option v-for="profile in profiles" :key="profile.id" :value="profile.id">{{ profile.name }}</option>
               </select>
             </label>
 
             <div>
-              <p class="text-sm font-medium text-gray-700 dark:text-gray-300">Task types</p>
+              <p class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('benchmark.admin.profiles.fields.taskTypes') }}</p>
               <div class="mt-2 flex flex-wrap gap-2">
                 <label v-for="type in taskTypes" :key="type" class="inline-flex items-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-sm dark:border-dark-700">
                   <input
@@ -114,13 +114,13 @@
                     :value="type"
                     class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                   />
-                  <span>{{ type }}</span>
+                  <span>{{ benchmarkTaskTypeLabel(type, t) }}</span>
                 </label>
               </div>
             </div>
 
             <div>
-              <p class="text-sm font-medium text-gray-700 dark:text-gray-300">Task scale</p>
+              <p class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('benchmark.admin.profiles.fields.taskScale') }}</p>
               <div class="mt-2 grid grid-cols-2 gap-2">
                 <label v-for="scale in scales" :key="scale" class="inline-flex items-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-sm dark:border-dark-700">
                   <input
@@ -130,27 +130,27 @@
                     :value="scale"
                     class="border-gray-300 text-primary-600 focus:ring-primary-500"
                   />
-                  <span>{{ scale }}</span>
+                  <span>{{ benchmarkTaskScaleLabel(scale, t) }}</span>
                 </label>
               </div>
             </div>
 
             <button type="button" data-test="preview-button" class="btn btn-secondary" :disabled="previewing || !previewProfileId" @click="previewSelectedProfile">
-              预览
+              {{ t('benchmark.admin.profiles.preview') }}
             </button>
 
             <div v-if="profilePreview" class="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div class="rounded-lg bg-gray-50 p-4 dark:bg-dark-700/50">
-                <p class="text-xs text-gray-500 dark:text-gray-400">Target</p>
-                <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">Target {{ profilePreview.target_count }}</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('benchmark.admin.profiles.previewCards.target') }}</p>
+                <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">{{ formatInteger(profilePreview.target_count) }}</p>
               </div>
               <div class="rounded-lg bg-gray-50 p-4 dark:bg-dark-700/50">
-                <p class="text-xs text-gray-500 dark:text-gray-400">Task</p>
-                <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">Task {{ profilePreview.task_count }}</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('benchmark.admin.profiles.previewCards.task') }}</p>
+                <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">{{ formatInteger(profilePreview.task_count) }}</p>
               </div>
               <div class="rounded-lg bg-gray-50 p-4 dark:bg-dark-700/50">
-                <p class="text-xs text-gray-500 dark:text-gray-400">Result</p>
-                <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">Result {{ profilePreview.result_count }}</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('benchmark.admin.profiles.previewCards.result') }}</p>
+                <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">{{ formatInteger(profilePreview.result_count) }}</p>
               </div>
             </div>
           </div>
@@ -166,15 +166,15 @@
             </div>
           </template>
           <template #cell-target_ids="{ row }">{{ row.target_ids.length }}</template>
-          <template #cell-task_types="{ row }">{{ row.task_types.join(', ') || '-' }}</template>
-          <template #cell-task_scale="{ row }">{{ row.task_scale }}</template>
+          <template #cell-task_types="{ row }">{{ formatTaskTypes(row.task_types) }}</template>
+          <template #cell-task_scale="{ row }">{{ benchmarkTaskScaleLabel(row.task_scale, t) }}</template>
           <template #cell-enabled="{ row }">
             <span :class="row.enabled ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300' : 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-300'" class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium">
-              {{ row.enabled ? 'enabled' : 'disabled' }}
+              {{ benchmarkEnabledLabel(row.enabled, t) }}
             </span>
           </template>
           <template #empty>
-            <EmptyState title="暂无 Profile" description="创建第一个 benchmark profile 后会显示在这里。" />
+            <EmptyState :title="t('benchmark.admin.profiles.emptyTitle')" :description="t('benchmark.admin.profiles.emptyDescription')" />
           </template>
         </DataTable>
       </section>
@@ -193,6 +193,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
@@ -210,8 +211,10 @@ import type {
   BenchmarkTaskScale,
   CreateBenchmarkProfileRequest,
 } from '@/types/benchmark'
+import { benchmarkEnabledLabel, benchmarkTargetFallback, benchmarkTaskScaleLabel, benchmarkTaskTypeLabel } from '@/components/radar/benchmarkI18n'
 
 const appStore = useAppStore()
+const { locale, t } = useI18n()
 const scales: BenchmarkTaskScale[] = ['small', 'medium', 'full', 'custom']
 
 const profiles = ref<BenchmarkProfile[]>([])
@@ -251,13 +254,13 @@ const preview = reactive<BenchmarkProfilePreviewRequest>({
   selection_seed: null,
 })
 
-const columns: Column[] = [
-  { key: 'name', label: 'Name' },
-  { key: 'target_ids', label: 'Targets' },
-  { key: 'task_types', label: 'Task types' },
-  { key: 'task_scale', label: 'Scale' },
-  { key: 'enabled', label: 'Status' },
-]
+const columns = computed<Column[]>(() => [
+  { key: 'name', label: t('benchmark.admin.profiles.columns.name') },
+  { key: 'target_ids', label: t('benchmark.admin.profiles.columns.targets') },
+  { key: 'task_types', label: t('benchmark.admin.profiles.columns.taskTypes') },
+  { key: 'task_scale', label: t('benchmark.admin.profiles.columns.scale') },
+  { key: 'enabled', label: t('benchmark.admin.profiles.columns.status') },
+])
 
 const taskTypes = computed(() => {
   const values = new Set<string>()
@@ -267,7 +270,7 @@ const taskTypes = computed(() => {
 })
 
 function targetLabel(target: BenchmarkTarget): string {
-  return target.display_name || target.model_name || `Target #${target.id}`
+  return target.display_name || target.model_name || benchmarkTargetFallback(target.id, t)
 }
 
 function profileById(id: number): BenchmarkProfile | undefined {
@@ -287,7 +290,7 @@ async function reload() {
     tasks.value = taskRes.items || []
     pagination.total = profileRes.total || 0
   } catch (error) {
-    appStore.showError(error instanceof Error ? error.message : '加载 Profile 失败')
+    appStore.showError(error instanceof Error ? error.message : t('benchmark.admin.profiles.loadError'))
   } finally {
     loading.value = false
   }
@@ -326,9 +329,9 @@ async function createProfile() {
     })
     profiles.value = [created, ...profiles.value.filter((profile) => profile.id !== created.id)]
     pagination.total += 1
-    appStore.showSuccess('Profile 已创建')
+    appStore.showSuccess(t('benchmark.admin.profiles.createSuccess'))
   } catch (error) {
-    appStore.showError(error instanceof Error ? error.message : '创建 Profile 失败')
+    appStore.showError(error instanceof Error ? error.message : t('benchmark.admin.profiles.createError'))
   } finally {
     saving.value = false
   }
@@ -349,10 +352,21 @@ async function previewSelectedProfile() {
       selection_seed: preview.selection_seed ?? null,
     })
   } catch (error) {
-    appStore.showError(error instanceof Error ? error.message : '预览 Profile 失败')
+    appStore.showError(error instanceof Error ? error.message : t('benchmark.admin.profiles.previewError'))
   } finally {
     previewing.value = false
   }
+}
+
+function formatTaskTypes(taskTypes: string[]): string {
+  if (taskTypes.length === 0) return '-'
+  return taskTypes.map((taskType) => benchmarkTaskTypeLabel(taskType, t)).join(', ')
+}
+
+function formatInteger(value: number): string {
+  return new Intl.NumberFormat(locale.value, {
+    maximumFractionDigits: 0,
+  }).format(value)
 }
 
 function onPageChange(page: number) {

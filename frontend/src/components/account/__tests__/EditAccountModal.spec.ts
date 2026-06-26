@@ -368,6 +368,13 @@ function mountModal(account = buildAccount()) {
 }
 
 describe('EditAccountModal', () => {
+  it('does not render external proxy promotion links', () => {
+    const wrapper = mountModal()
+
+    expect(wrapper.find('a[href*="bestproxy.com"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('admin.proxies.ad.inline')
+  })
+
   it('reopening the same account rehydrates the OpenAI whitelist from props', async () => {
     const account = buildAccount()
     updateAccountMock.mockReset()

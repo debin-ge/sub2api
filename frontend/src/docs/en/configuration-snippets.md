@@ -2,6 +2,8 @@
 
 This page provides templates you can copy and adjust. Unless an admin provides another address, examples use `{{BASE_URL}}` as the Base URL and pass the API Key through `$YOUR_KEY`.
 
+---
+
 ## Common Environment Variables
 
 ```bash
@@ -15,6 +17,8 @@ Verify the key:
 curl -i "${BASE_URL}v1/models" \
   -H "Authorization: Bearer $YOUR_KEY"
 ```
+
+---
 
 ## OpenAI SDK
 
@@ -66,6 +70,8 @@ response = client.chat.completions.create(
 print(response.choices[0].message.content)
 ```
 
+---
+
 ## OpenAI Chat Completions curl
 
 ```bash
@@ -83,6 +89,8 @@ curl "${BASE_URL}v1/chat/completions" \
   }'
 ```
 
+---
+
 ## OpenAI Responses curl
 
 ```bash
@@ -94,6 +102,8 @@ curl "${BASE_URL}v1/responses" \
     "input": "Write a debounce function in TypeScript."
   }'
 ```
+
+---
 
 ## Anthropic Messages curl
 
@@ -109,6 +119,8 @@ curl "${BASE_URL}v1/messages" \
     ]
   }'
 ```
+
+---
 
 ## Claude Code or Anthropic Compatible Clients
 
@@ -129,6 +141,8 @@ If you use an Antigravity Claude compatible entry point:
 export ANTHROPIC_BASE_URL="{{BASE_URL}}antigravity"
 export ANTHROPIC_AUTH_TOKEN="$YOUR_KEY"
 ```
+
+---
 
 ## Gemini Native curl
 
@@ -166,6 +180,8 @@ curl "${BASE_URL}v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse" \
   }'
 ```
 
+---
+
 ## Embeddings
 
 ```bash
@@ -177,6 +193,8 @@ curl "${BASE_URL}v1/embeddings" \
     "input": "{{SITE_NAME}} unifies multi-model API access."
   }'
 ```
+
+---
 
 ## Safe Proxy for Frontend Apps
 
@@ -197,6 +215,8 @@ const response = await fetch('{{BASE_URL}}v1/chat/completions', {
 })
 ```
 
+---
+
 ## OpenCode CLI Environment Configuration
 
 ```bash
@@ -204,12 +224,14 @@ export OPENCODE_API_BASE="{{BASE_URL}}v1"
 export OPENCODE_API_KEY="$YOUR_KEY"
 ```
 
+---
+
 ## Common Replacements
 
 | Placeholder | Replace with |
-| --- | --- |
-| `$YOUR_KEY` | Your {{SITE_NAME}} API Key environment variable. |
-| `gpt-4o-mini` | An OpenAI compatible model returned by `/v1/models`. |
-| `claude-3-5-sonnet-latest` | An Anthropic compatible model returned by `/v1/models` or provided by an admin. |
-| `gemini-2.0-flash` | A Gemini model returned by `/v1beta/models` or provided by an admin. |
-| `{{BASE_URL}}` | The deployment address provided by an admin. |
+| :--- | :--- |
+| **`$YOUR_KEY`** | Your {{SITE_NAME}} API Key environment variable. |
+| **`gpt-4o-mini`** | An OpenAI compatible model returned by `/v1/models`. |
+| **`claude-3-5-sonnet-latest`** | An Anthropic compatible model returned by `/v1/models` or provided by an admin. |
+| **`gemini-2.0-flash`** | A Gemini model returned by `/v1beta/models` or provided by an admin. |
+| **`{{BASE_URL}}`** | The deployment address provided by an admin. |
