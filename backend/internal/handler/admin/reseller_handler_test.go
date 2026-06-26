@@ -27,7 +27,7 @@ func (s *resellerBalanceClientStub) Fetch(ctx context.Context, in service.Resell
 func TestResellerHandlerUpstreamBalanceDisabled(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	h := newResellerHandler(&config.Config{}, &resellerBalanceClientStub{})
+	h := newResellerHandler(&config.Config{}, nil, &resellerBalanceClientStub{})
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/admin/reseller/upstream-balance", nil)
@@ -57,7 +57,7 @@ func TestResellerHandlerUpstreamBalanceConfigured(t *testing.T) {
 			UpstreamEndpoint: "https://parent.example.com",
 			UpstreamAPIKey:   "sk-parent",
 		},
-	}, client)
+	}, nil, client)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/admin/reseller/upstream-balance", nil)
@@ -73,6 +73,37 @@ func TestResellerHandlerUpstreamBalanceConfigured(t *testing.T) {
 	require.NotContains(t, w.Body.String(), "sk-parent")
 }
 
+func TestResellerHandlerUpstreamBalanceUsesRuntimeSettings(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	client := &resellerBalanceClientStub{result: &service.ResellerBalanceResult{
+		Enabled:          true,
+		Configured:       true,
+		UpstreamEndpoint: "https://runtime.example.com",
+		Status:           service.ResellerBalanceStatusOK,
+		Balance:          56.78,
+		UserID:           99,
+	}}
+	settingService := service.NewSettingService(&settingHandlerRepoStub{values: map[string]string{
+		service.SettingKeyResellerEnabled:          "true",
+		service.SettingKeyResellerUpstreamEndpoint: "https://runtime.example.com",
+		service.SettingKeyResellerUpstreamAPIKey:   "sk-runtime",
+	}}, &config.Config{})
+	h := newResellerHandler(&config.Config{}, settingService, client)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/admin/reseller/upstream-balance", nil)
+
+	h.GetUpstreamBalance(c)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, "https://runtime.example.com", client.request.Endpoint)
+	require.Equal(t, "sk-runtime", client.request.APIKey)
+	require.Contains(t, w.Body.String(), `"status":"ok"`)
+	require.Contains(t, w.Body.String(), `"balance":56.78`)
+	require.NotContains(t, w.Body.String(), "sk-runtime")
+}
+
 func TestResellerHandlerUpstreamBalanceClientError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -82,7 +113,7 @@ func TestResellerHandlerUpstreamBalanceClientError(t *testing.T) {
 			UpstreamEndpoint: "https://parent.example.com",
 			UpstreamAPIKey:   "sk-parent",
 		},
-	}, &resellerBalanceClientStub{err: errors.New("boom")})
+	}, nil, &resellerBalanceClientStub{err: errors.New("boom")})
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/admin/reseller/upstream-balance", nil)

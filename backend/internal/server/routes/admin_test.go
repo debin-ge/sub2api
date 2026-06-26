@@ -21,7 +21,7 @@ func TestRegisterResellerRoutesUpstreamBalance(t *testing.T) {
 		adminGroup,
 		&handler.Handlers{
 			Admin: &handler.AdminHandlers{
-				Reseller: admin.NewResellerHandler(&config.Config{}, nil),
+				Reseller: admin.NewResellerHandler(&config.Config{}, nil, nil),
 			},
 		},
 	)
