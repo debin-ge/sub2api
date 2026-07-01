@@ -12,13 +12,16 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
+	"github.com/Wei-Shaw/sub2api/ent/paymentwebhookdelivery"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
+	paymentprovider "github.com/Wei-Shaw/sub2api/internal/payment/provider"
 	"github.com/stretchr/testify/require"
 )
 
@@ -207,6 +210,67 @@ func TestReconcilePendingWiseOrdersBatchesProviderStatementQuery(t *testing.T) {
 	require.Equal(t, 0, provider.queryCalls)
 	require.Len(t, provider.lastBatchTradeNos, pendingWiseReconcileLimit+1)
 	require.Equal(t, "event_verified_no_auto_fulfill", result.Reason)
+}
+
+func TestReconcilePendingWiseOrdersBatchPassesEarliestOrderCreatedAtToProvider(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+	now := time.Now().UTC()
+	earliestCreatedAt := now.Add(-90 * time.Hour).Truncate(time.Second)
+	laterCreatedAt := now.Add(-2 * time.Hour).Truncate(time.Second)
+
+	user, err := client.User.Create().
+		SetEmail("wise-batch-created-at@example.com").
+		SetPasswordHash("hash").
+		SetUsername("wise-batch-created-at-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		outTradeNo string
+		createdAt  time.Time
+	}{
+		{outTradeNo: "sub2_wise_batch_created_at_001", createdAt: laterCreatedAt},
+		{outTradeNo: "sub2_wise_batch_created_at_002", createdAt: earliestCreatedAt},
+	} {
+		_, err := client.PaymentOrder.Create().
+			SetUserID(user.ID).
+			SetUserEmail(user.Email).
+			SetUserName(user.Username).
+			SetAmount(88).
+			SetPayAmount(88).
+			SetFeeRate(0).
+			SetRechargeCode(tc.outTradeNo).
+			SetOutTradeNo(tc.outTradeNo).
+			SetPaymentType(payment.TypeWise).
+			SetPaymentTradeNo("wise-upstream-" + tc.outTradeNo).
+			SetOrderType(payment.OrderTypeBalance).
+			SetStatus(OrderStatusPending).
+			SetExpiresAt(now.Add(time.Hour)).
+			SetCreatedAt(tc.createdAt).
+			SetClientIP("127.0.0.1").
+			SetSrcHost("api.example.com").
+			Save(ctx)
+		require.NoError(t, err)
+	}
+
+	provider := &wiseBatchReconcileProvider{}
+	registry := payment.NewRegistry()
+	registry.Register(provider)
+	svc := &PaymentService{
+		entClient:       client,
+		registry:        registry,
+		providersLoaded: true,
+	}
+
+	result, err := svc.ReconcilePendingWiseOrders(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 2, result.Scanned)
+	require.Equal(t, 1, provider.batchCalls)
+	gotCreatedAt, ok := paymentprovider.WiseOrderCreatedAtFromContext(provider.lastBatchContext)
+	require.True(t, ok)
+	require.WithinDuration(t, earliestCreatedAt, gotCreatedAt, time.Second)
 }
 
 func TestReconcilePendingWiseOrdersAutoFulfillsExpiredOrderInsideWindow(t *testing.T) {
@@ -642,6 +706,158 @@ func TestWiseWebhookUnsupportedSignedEventDoesNotTriggerReconcile(t *testing.T) 
 	require.Equal(t, 0, provider.queryCalls)
 }
 
+func TestHandleWiseWebhookFastIgnoresTestNotification(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+	svc, priv := newWiseWebhookFastTestService(t, ctx, client)
+	rawBody := `{"event_type":"balances#credit","data":{"resource":{"id":"resource-123"}}}`
+
+	result, err := svc.HandleWiseWebhookFast(ctx, rawBody, signedWiseWebhookFastHeaders(t, priv, rawBody, "delivery-test", true))
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "delivery-test", result.DeliveryID)
+	require.Equal(t, "balances#credit", result.EventType)
+	require.True(t, result.TestNotification)
+	require.False(t, result.Duplicate)
+	require.False(t, result.Queued)
+	require.Equal(t, "test_notification", result.Reason)
+
+	delivery := requireWiseWebhookDelivery(t, ctx, client, "delivery-test")
+	require.Equal(t, PaymentWebhookDeliveryStatusIgnored, delivery.Status)
+	require.NotNil(t, delivery.ProcessedAt)
+}
+
+func TestHandleWiseWebhookFastDuplicateDeliveryDoesNotQueue(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+	svc, priv := newWiseWebhookFastTestService(t, ctx, client)
+	rawBody := `{"event_type":"balances#credit"}`
+
+	first, err := svc.HandleWiseWebhookFast(ctx, rawBody, signedWiseWebhookFastHeaders(t, priv, rawBody, "delivery-dup", false))
+	require.NoError(t, err)
+	require.True(t, first.Queued)
+	require.Equal(t, "queued", first.Reason)
+
+	second, err := svc.HandleWiseWebhookFast(ctx, rawBody, signedWiseWebhookFastHeaders(t, priv, rawBody, "delivery-dup", false))
+	require.NoError(t, err)
+	require.NotNil(t, second)
+	require.True(t, second.Duplicate)
+	require.False(t, second.Queued)
+	require.Equal(t, "duplicate_delivery", second.Reason)
+}
+
+func TestHandleWiseWebhookFastRetriesExistingReceivedDelivery(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+	svc, priv := newWiseWebhookFastTestService(t, ctx, client)
+	rawBody := `{"event_type":"balances#credit"}`
+
+	record, err := svc.RecordPaymentWebhookDelivery(ctx, PaymentWebhookDeliveryInput{
+		ProviderKey: payment.TypeWise,
+		DeliveryID:  "delivery-retry-received",
+		EventType:   "balances#credit",
+		RawBody:     rawBody,
+	})
+	require.NoError(t, err)
+
+	result, err := svc.HandleWiseWebhookFast(ctx, rawBody, signedWiseWebhookFastHeaders(t, priv, rawBody, "delivery-retry-received", false))
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, result.Duplicate)
+	require.True(t, result.Queued)
+	require.Equal(t, "queued", result.Reason)
+
+	delivery, err := client.PaymentWebhookDelivery.Get(ctx, int64(record.ID))
+	require.NoError(t, err)
+	require.NotEqual(t, PaymentWebhookDeliveryStatusReceived, delivery.Status)
+}
+
+func TestHandleWiseWebhookFastIgnoresUnsupportedEvent(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+	svc, priv := newWiseWebhookFastTestService(t, ctx, client)
+	rawBody := `{"event_type":"unsupported#event"}`
+
+	result, err := svc.HandleWiseWebhookFast(ctx, rawBody, signedWiseWebhookFastHeaders(t, priv, rawBody, "delivery-unsupported", false))
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, result.Queued)
+	require.Equal(t, "event_ignored_unsupported", result.Reason)
+
+	delivery := requireWiseWebhookDelivery(t, ctx, client, "delivery-unsupported")
+	require.Equal(t, PaymentWebhookDeliveryStatusIgnored, delivery.Status)
+	require.NotNil(t, delivery.ProcessedAt)
+}
+
+func TestHandleWiseWebhookFastRequiresDeliveryIDAndValidSignature(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+	svc, priv := newWiseWebhookFastTestService(t, ctx, client)
+	rawBody := `{"event_type":"balances#credit"}`
+
+	_, err := svc.HandleWiseWebhookFast(ctx, rawBody, map[string]string{
+		"x-signature-sha256": "bad-signature",
+		"x-delivery-id":      "delivery-invalid-signature",
+	})
+	require.Error(t, err)
+	count, countErr := client.PaymentWebhookDelivery.Query().
+		Where(paymentwebhookdelivery.ProviderKeyEQ(payment.TypeWise), paymentwebhookdelivery.DeliveryIDEQ("delivery-invalid-signature")).
+		Count(ctx)
+	require.NoError(t, countErr)
+	require.Zero(t, count)
+
+	_, err = svc.HandleWiseWebhookFast(ctx, rawBody, signedWiseWebhookFastHeaders(t, priv, rawBody, "", false))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "delivery id")
+}
+
+func TestReconcilePendingWiseOrdersReturnsErrorWhenProviderQueryFails(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("wise-query-fails@example.com").
+		SetPasswordHash("hash").
+		SetUsername("wise-query-fails-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	_, err = client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(88).
+		SetPayAmount(88).
+		SetFeeRate(0).
+		SetRechargeCode("WISE-QUERY-FAILS").
+		SetOutTradeNo("sub2_wise_query_fails_123").
+		SetPaymentType(payment.TypeWise).
+		SetPaymentTradeNo("wise-query-fails-upstream").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusPending).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	provider := &wiseFailingReconcileProvider{err: errors.New("wise statement timeout")}
+	registry := payment.NewRegistry()
+	registry.Register(provider)
+	svc := &PaymentService{
+		entClient:       client,
+		registry:        registry,
+		providersLoaded: true,
+	}
+
+	result, err := svc.ReconcilePendingWiseOrders(ctx)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "wise reconciliation failed")
+	require.NotNil(t, result)
+	require.Equal(t, 1, result.Scanned)
+	require.Equal(t, 1, provider.queryCalls)
+}
+
 func TestReconcileWiseOrderByOutTradeNoDoesNotFallbackWhenPinnedProviderMissing(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentOrderLifecycleTestClient(t)
@@ -767,6 +983,126 @@ func TestReconcileWiseOrderByOutTradeNoDoesNotAutoFulfillNonPaidNoMatch(t *testi
 	require.Equal(t, OrderStatusPending, reloaded.Status)
 }
 
+func TestReconcileWiseOrderByOutTradeNoPassesOrderCreatedAtToProvider(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+	createdAt := time.Now().UTC().Add(-96 * time.Hour).Truncate(time.Second)
+
+	user, err := client.User.Create().
+		SetEmail("wise-single-created-at@example.com").
+		SetPasswordHash("hash").
+		SetUsername("wise-single-created-at-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(88).
+		SetPayAmount(88).
+		SetFeeRate(0).
+		SetRechargeCode("WISE-SINGLE-CREATED-AT").
+		SetOutTradeNo("sub2_wise_single_created_at").
+		SetPaymentType(payment.TypeWise).
+		SetPaymentTradeNo("wise-upstream-single-created-at").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusPending).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetCreatedAt(createdAt).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	provider := &paymentOrderLifecycleQueryProvider{
+		key: payment.TypeWise,
+		resp: &payment.QueryOrderResponse{
+			TradeNo: "wise-upstream-single-created-at",
+			Status:  payment.ProviderStatusPending,
+			Metadata: map[string]string{
+				"reconcile_decision": "no_match",
+				"reconcile_reason":   "activity_not_found",
+			},
+		},
+	}
+	registry := payment.NewRegistry()
+	registry.Register(provider)
+	svc := &PaymentService{
+		entClient:       client,
+		registry:        registry,
+		providersLoaded: true,
+	}
+
+	result, err := svc.ReconcileWiseOrderByOutTradeNo(ctx, order.OutTradeNo)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, order.OutTradeNo, provider.lastQueryTradeNo)
+	gotCreatedAt, ok := paymentprovider.WiseOrderCreatedAtFromContext(provider.lastQueryContext)
+	require.True(t, ok)
+	require.WithinDuration(t, createdAt, gotCreatedAt, time.Second)
+}
+
+func TestHandleWiseQueryOrderResponseWritesAuditForNoMatch(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("wise-no-match-audit@example.com").
+		SetPasswordHash("hash").
+		SetUsername("wise-no-match-audit-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(88).
+		SetPayAmount(88).
+		SetFeeRate(0).
+		SetRechargeCode("WISE-NO-MATCH-AUDIT").
+		SetOutTradeNo("sub2_wise_no_match_audit_123").
+		SetPaymentType(payment.TypeWise).
+		SetPaymentTradeNo("wise-upstream-no-match-audit").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusPending).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	svc := &PaymentService{entClient: client}
+	result, err := svc.handleWiseQueryOrderResponse(ctx, order, &payment.QueryOrderResponse{
+		TradeNo: "sub2_wise_no_match_audit_123",
+		Status:  payment.ProviderStatusPending,
+		Metadata: map[string]string{
+			"reconcile_decision": "no_match",
+			"reconcile_reason":   "no_matching_transaction",
+			"profile_id":         "profile-123",
+			"balance_id":         "balance-123",
+			"currency":           "USD",
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, result.Matched)
+	require.False(t, result.AutoFulfill)
+	require.Equal(t, "no_matching_transaction", result.Reason)
+
+	detail := requireWiseAuditDetail(t, ctx, client, order.ID, "PAYMENT_WISE_RECONCILE_NO_MATCH")
+	require.Equal(t, "no_matching_transaction", detail["reason"])
+	require.Equal(t, "no_match", detail["reviewAction"])
+	require.Equal(t, "no_match", detail["reconcileDecision"])
+	require.Equal(t, "sub2_wise_no_match_audit_123", detail["outTradeNo"])
+	require.Equal(t, payment.ProviderStatusPending, detail["providerStatus"])
+	require.Equal(t, float64(88), detail["expected"])
+	require.Equal(t, "profile-123", detail["profile_id"])
+	require.Equal(t, "balance-123", detail["balance_id"])
+	require.Equal(t, "USD", detail["currency"])
+}
+
 func TestHandleWiseQueryOrderResponseWritesAuditForRejectedReferencedTransaction(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentOrderLifecycleTestClient(t)
@@ -829,6 +1165,62 @@ func TestHandleWiseQueryOrderResponseWritesAuditForRejectedReferencedTransaction
 	require.Equal(t, "2026-06-12T10:20:30Z", detail["occurred_at"])
 	require.Equal(t, "EUR", detail["currency"])
 	require.Equal(t, "88", detail["net_amount"])
+}
+
+func TestPaymentOrderExpiryRunOnceReconcilesPendingWiseOrders(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("wise-expiry-runner@example.com").
+		SetPasswordHash("hash").
+		SetUsername("wise-expiry-runner-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(88).
+		SetPayAmount(88).
+		SetFeeRate(0).
+		SetRechargeCode("WISE-EXPIRY-RUNNER").
+		SetOutTradeNo("sub2_wise_expiry_runner_123").
+		SetPaymentType(payment.TypeWise).
+		SetPaymentTradeNo("wise-expiry-runner-upstream").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusPending).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	provider := &paymentOrderLifecycleQueryProvider{
+		key: payment.TypeWise,
+		resp: &payment.QueryOrderResponse{
+			TradeNo: order.OutTradeNo,
+			Status:  payment.ProviderStatusPending,
+			Metadata: map[string]string{
+				"reconcile_decision": "no_match",
+				"reconcile_reason":   "no_matching_transaction",
+			},
+		},
+	}
+	registry := payment.NewRegistry()
+	registry.Register(provider)
+	paymentSvc := &PaymentService{
+		entClient:       client,
+		registry:        registry,
+		providersLoaded: true,
+	}
+	expirySvc := NewPaymentOrderExpiryService(paymentSvc, time.Minute)
+
+	expirySvc.runOnce()
+
+	require.Equal(t, 1, provider.queryCalls)
+	require.Equal(t, order.OutTradeNo, provider.lastQueryTradeNo)
 }
 
 func TestReconcileWiseOrderByOutTradeNoDoesNotAutoFulfillAmountMismatch(t *testing.T) {
@@ -1184,24 +1576,64 @@ func signWiseReconcileWebhook(t *testing.T, priv *rsa.PrivateKey, rawBody string
 func TestWiseWebhookEventIsReconcileTrigger(t *testing.T) {
 	t.Parallel()
 
-	for _, rawBody := range []string{
-		`{"event_type":"balances#credit"}`,
-		`{"event_type":"balances#update"}`,
-		`{"event_type":"account-details-payment#state-change"}`,
-	} {
-		require.True(t, wiseWebhookEventIsReconcileTrigger(rawBody), rawBody)
-	}
-
+	require.True(t, wiseWebhookEventIsReconcileTrigger(`{"event_type":"balances#credit"}`))
+	require.False(t, wiseWebhookEventIsReconcileTrigger(`{"event_type":"balances#update"}`))
+	require.False(t, wiseWebhookEventIsReconcileTrigger(`{"event_type":"account-details-payment#state-change"}`))
 	require.False(t, wiseWebhookEventIsReconcileTrigger(`{"event_type":"unsupported#event"}`))
 	require.False(t, wiseWebhookEventIsReconcileTrigger(`{"event_type":`))
 	require.False(t, wiseWebhookEventIsReconcileTrigger(`{}`))
+}
+
+func TestWiseWebhookEnvelopeFromBody(t *testing.T) {
+	t.Parallel()
+
+	envelope := wiseWebhookEnvelopeFromBody(`{"event_type":" balances#credit "}`)
+	require.Equal(t, "balances#credit", envelope.EventType)
+
+	require.Empty(t, wiseWebhookEnvelopeFromBody(`{"event_type":`).EventType)
+	require.Empty(t, wiseWebhookEnvelopeFromBody(`{}`).EventType)
 }
 
 type wiseBatchReconcileProvider struct {
 	responses         map[string]*payment.QueryOrderResponse
 	batchCalls        int
 	queryCalls        int
+	lastBatchContext  context.Context
 	lastBatchTradeNos []string
+}
+
+type wiseFailingReconcileProvider struct {
+	err        error
+	queryCalls int
+}
+
+func (p *wiseFailingReconcileProvider) Name() string {
+	return "wise-failing-reconcile-provider"
+}
+
+func (p *wiseFailingReconcileProvider) ProviderKey() string {
+	return payment.TypeWise
+}
+
+func (p *wiseFailingReconcileProvider) SupportedTypes() []payment.PaymentType {
+	return []payment.PaymentType{payment.TypeWise}
+}
+
+func (p *wiseFailingReconcileProvider) CreatePayment(context.Context, payment.CreatePaymentRequest) (*payment.CreatePaymentResponse, error) {
+	panic("unexpected call")
+}
+
+func (p *wiseFailingReconcileProvider) QueryOrder(context.Context, string) (*payment.QueryOrderResponse, error) {
+	p.queryCalls++
+	return nil, p.err
+}
+
+func (p *wiseFailingReconcileProvider) VerifyNotification(context.Context, string, map[string]string) (*payment.PaymentNotification, error) {
+	panic("unexpected call")
+}
+
+func (p *wiseFailingReconcileProvider) Refund(context.Context, payment.RefundRequest) (*payment.RefundResponse, error) {
+	panic("unexpected call")
 }
 
 func (p *wiseBatchReconcileProvider) Name() string {
@@ -1231,8 +1663,9 @@ func (p *wiseBatchReconcileProvider) QueryOrder(context.Context, string) (*payme
 	}, nil
 }
 
-func (p *wiseBatchReconcileProvider) QueryOrders(_ context.Context, tradeNos []string) (map[string]*payment.QueryOrderResponse, error) {
+func (p *wiseBatchReconcileProvider) QueryOrders(ctx context.Context, tradeNos []string) (map[string]*payment.QueryOrderResponse, error) {
 	p.batchCalls++
+	p.lastBatchContext = ctx
 	p.lastBatchTradeNos = append([]string(nil), tradeNos...)
 	result := make(map[string]*payment.QueryOrderResponse, len(tradeNos))
 	for _, tradeNo := range tradeNos {
@@ -1258,4 +1691,49 @@ func (p *wiseBatchReconcileProvider) VerifyNotification(context.Context, string,
 
 func (p *wiseBatchReconcileProvider) Refund(context.Context, payment.RefundRequest) (*payment.RefundResponse, error) {
 	panic("unexpected call")
+}
+
+func newWiseWebhookFastTestService(t *testing.T, ctx context.Context, client *dbent.Client) (*PaymentService, *rsa.PrivateKey) {
+	t.Helper()
+
+	priv, publicKeyPEM := newWiseReconcileWebhookKey(t)
+	_, err := client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeWise).
+		SetName("wise-webhook-fast").
+		SetConfig(encryptWebhookProviderConfig(t, validWiseReconcileConfig(publicKeyPEM))).
+		SetSupportedTypes(payment.TypeWise).
+		SetEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+
+	svc := &PaymentService{
+		entClient:    client,
+		loadBalancer: newWebhookProviderTestLoadBalancer(client),
+	}
+	return svc, priv
+}
+
+func signedWiseWebhookFastHeaders(t *testing.T, priv *rsa.PrivateKey, rawBody, deliveryID string, testNotification bool) map[string]string {
+	t.Helper()
+
+	headers := map[string]string{
+		"x-signature-sha256": signWiseReconcileWebhook(t, priv, rawBody),
+	}
+	if deliveryID != "" {
+		headers["x-delivery-id"] = deliveryID
+	}
+	if testNotification {
+		headers["x-test-notification"] = "true"
+	}
+	return headers
+}
+
+func requireWiseWebhookDelivery(t *testing.T, ctx context.Context, client *dbent.Client, deliveryID string) *dbent.PaymentWebhookDelivery {
+	t.Helper()
+
+	delivery, err := client.PaymentWebhookDelivery.Query().
+		Where(paymentwebhookdelivery.ProviderKeyEQ(payment.TypeWise), paymentwebhookdelivery.DeliveryIDEQ(deliveryID)).
+		Only(ctx)
+	require.NoError(t, err)
+	return delivery
 }

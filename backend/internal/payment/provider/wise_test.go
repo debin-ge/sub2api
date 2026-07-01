@@ -12,7 +12,9 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/json"
 	"encoding/pem"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -58,7 +60,7 @@ func TestNewWiseValidatesConfig(t *testing.T) {
 
 	base := validWiseConfig()
 
-	for _, key := range []string{"quickPayBaseUrl", "apiToken", "profileId", "balanceId", "currency", "webhookPublicKey"} {
+	for _, key := range []string{"quickPayBaseUrl", "apiToken", "profileId", "balanceId", "currency"} {
 		cfg := cloneStringMap(base)
 		cfg[key] = ""
 		_, err := NewWise("1", cfg)
@@ -89,6 +91,78 @@ func TestNewWiseValidatesConfig(t *testing.T) {
 	cfg["autoFulfillFeePayments"] = "true"
 	_, err = NewWise("1", cfg)
 	require.ErrorContains(t, err, "autoFulfillFeePayments is not supported")
+}
+
+func TestWiseWebhookPublicKeyDefaultsProductionAndSandbox(t *testing.T) {
+	t.Parallel()
+
+	production := validWiseConfig()
+	delete(production, "webhookPublicKey")
+	prov, err := NewWise("1", production)
+	require.NoError(t, err)
+	require.Equal(t, "production", prov.config["environment"])
+	require.Contains(t, prov.config["webhookPublicKey"], "AvO8vXV+JksBzZAY6GhSO")
+	_, err = parseWiseWebhookPublicKey(prov.config["webhookPublicKey"])
+	require.NoError(t, err)
+
+	sandbox := validWiseConfig()
+	delete(sandbox, "webhookPublicKey")
+	sandbox["environment"] = " sandbox "
+	prov, err = NewWise("1", sandbox)
+	require.NoError(t, err)
+	require.Equal(t, "sandbox", prov.config["environment"])
+	require.Contains(t, prov.config["webhookPublicKey"], "wpb91cEYuyJNQepZAVfP")
+	_, err = parseWiseWebhookPublicKey(prov.config["webhookPublicKey"])
+	require.NoError(t, err)
+}
+
+func TestWiseWebhookPublicKeyOverrideWins(t *testing.T) {
+	t.Parallel()
+
+	cfg := validWiseConfig()
+	cfg["environment"] = "sandbox"
+	prov, err := NewWise("1", cfg)
+	require.NoError(t, err)
+	require.Equal(t, "sandbox", prov.config["environment"])
+	require.Equal(t, testWisePublicKeyPEM, prov.config["webhookPublicKey"])
+}
+
+func TestNewWiseAllowsMissingWebhookPublicKey(t *testing.T) {
+	t.Parallel()
+
+	cfg := validWiseConfig()
+	delete(cfg, "webhookPublicKey")
+	prov, err := NewWise("1", cfg)
+	require.NoError(t, err)
+	require.NotEmpty(t, prov.config["webhookPublicKey"])
+}
+
+func TestNewWiseRejectsInvalidEnvironment(t *testing.T) {
+	t.Parallel()
+
+	cfg := validWiseConfig()
+	cfg["environment"] = "staging"
+	_, err := NewWise("1", cfg)
+	require.ErrorContains(t, err, "environment")
+}
+
+func TestNewWiseNormalizesAllowedMethodsNote(t *testing.T) {
+	t.Parallel()
+
+	cfg := validWiseConfig()
+	cfg["allowedMethodsNote"] = "  Wise balance / bank transfer only  "
+	prov, err := NewWise("1", cfg)
+	require.NoError(t, err)
+	require.Equal(t, "Wise balance / bank transfer only", prov.config["allowedMethodsNote"])
+}
+
+func TestNewWiseRejectsOverlongAllowedMethodsNote(t *testing.T) {
+	t.Parallel()
+
+	cfg := validWiseConfig()
+	cfg["allowedMethodsNote"] = strings.Repeat("x", wiseMaxAllowedMethodsNoteLength+1)
+	_, err := NewWise("1", cfg)
+	require.ErrorContains(t, err, "allowedMethodsNote")
 }
 
 func TestNewWiseRejectsInvalidWebhookPublicKey(t *testing.T) {
@@ -129,6 +203,33 @@ func TestNewWiseRejectsInvalidWebhookPublicKey(t *testing.T) {
 	}
 }
 
+func TestWiseWebhookHeaderHelpers(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, "delivery-123", wiseWebhookDeliveryID(map[string]string{
+		"x-delivery-id": " delivery-123 ",
+	}))
+	require.Equal(t, "delivery-456", wiseWebhookDeliveryID(map[string]string{
+		"X-Delivery-ID": "\tdelivery-456\n",
+	}))
+	require.Empty(t, wiseWebhookDeliveryID(nil))
+
+	for _, raw := range []string{"true", "TRUE", " TrUe "} {
+		require.True(t, wiseWebhookIsTestNotification(map[string]string{
+			"x-test-notification": raw,
+		}))
+	}
+	for _, raw := range []string{"", "false", "1", "yes"} {
+		require.False(t, wiseWebhookIsTestNotification(map[string]string{
+			"x-test-notification": raw,
+		}))
+	}
+	require.True(t, wiseWebhookIsTestNotification(map[string]string{
+		"X-Test-Notification": "true",
+	}))
+	require.False(t, wiseWebhookIsTestNotification(nil))
+}
+
 func validWiseConfig() map[string]string {
 	return map[string]string{
 		"quickPayBaseUrl":    "https://wise.com/pay/business/account",
@@ -160,6 +261,20 @@ func TestWiseVerifyNotificationVerifiesRSASignature(t *testing.T) {
 
 	prov, priv := newWiseWebhookTestProvider(t)
 	rawBody := `{"event_type":"balances#credit","data":{"resource":{"id":"transfer-123","profile_id":"profile-123","account_id":"balance-123","type":"balance"}}}`
+	headers := map[string]string{
+		"x-signature-sha256": testWiseWebhookSignature(t, priv, rawBody),
+	}
+
+	notification, err := prov.VerifyNotification(context.Background(), rawBody, headers)
+	require.NoError(t, err)
+	require.Nil(t, notification)
+}
+
+func TestWiseVerifyNotificationAcceptsNumericResourceID(t *testing.T) {
+	t.Parallel()
+
+	prov, priv := newWiseWebhookTestProvider(t)
+	rawBody := `{"event_type":"balances#credit","data":{"resource":{"id":164653629,"profile_id":93254508,"account_id":164653629,"type":"balance"}}}`
 	headers := map[string]string{
 		"x-signature-sha256": testWiseWebhookSignature(t, priv, rawBody),
 	}
@@ -302,7 +417,7 @@ func TestWiseCreatePaymentBuildsQuickPayURL(t *testing.T) {
 	require.Equal(t, "/pay/business/account", parsed.Path)
 	require.Equal(t, "123.45", parsed.Query().Get("amount"))
 	require.Equal(t, "USD", parsed.Query().Get("currency"))
-	require.Equal(t, "sub2_20260612AbCdEf12", parsed.Query().Get("description"))
+	require.Equal(t, "sub220260612AbCdEf12", parsed.Query().Get("description"))
 }
 
 func TestWiseCreatePaymentMergesExistingQuickPayQuery(t *testing.T) {
@@ -323,7 +438,7 @@ func TestWiseCreatePaymentMergesExistingQuickPayQuery(t *testing.T) {
 	require.Equal(t, "en", parsed.Query().Get("locale"))
 	require.Equal(t, "88", parsed.Query().Get("amount"))
 	require.Equal(t, "USD", parsed.Query().Get("currency"))
-	require.Equal(t, "sub2_order", parsed.Query().Get("description"))
+	require.Equal(t, "sub2order", parsed.Query().Get("description"))
 }
 
 func TestWiseCreatePaymentRejectsNonPositiveAmount(t *testing.T) {
@@ -524,6 +639,188 @@ func TestWiseQueryOrderReturnsPendingWhenStatementHasNoSafeOrderMatch(t *testing
 	require.Equal(t, "no_match", resp.Metadata["reconcile_decision"])
 }
 
+func TestWiseQueryOrderDoesNotAutoFulfillActivityWithoutBalanceProof(t *testing.T) {
+	const outTradeNo = "sub2_wise_activity_001"
+	statement := `{"transactions":[]}`
+	activities := `{
+		"activities": [
+			{
+				"id": "activity-1",
+				"type": "BALANCE_DEPOSIT",
+				"resource": {"type": "BALANCE_TRANSACTION", "id": "balance-tx-1"},
+				"title": "<positive>Money received</positive>",
+				"description": "Payment for sub2_wise_activity_001",
+				"primaryAmount": "123.45 USD",
+				"secondaryAmount": "",
+				"status": "COMPLETED",
+				"createdOn": "2026-06-12T10:20:30.000Z",
+				"updatedOn": "2026-06-12T10:21:30.000Z"
+			}
+		]
+	}`
+	prov, req, cleanup := newWiseEndpointTestProvider(t, statement, http.StatusOK, activities, http.StatusOK)
+	defer cleanup()
+
+	resp, err := prov.QueryOrder(context.Background(), outTradeNo)
+	require.NoError(t, err)
+
+	require.Equal(t, 1, req.statementCalls)
+	require.Equal(t, 1, req.activityCalls)
+	require.Equal(t, "/v1/profiles/profile-123/activities", req.activityPath)
+	require.Equal(t, "COMPLETED", req.activityQuery.Get("status"))
+	require.Equal(t, "100", req.activityQuery.Get("size"))
+	require.NotEmpty(t, req.activityQuery.Get("since"))
+	require.NotEmpty(t, req.activityQuery.Get("until"))
+	require.Equal(t, "balance-tx-1", resp.TradeNo)
+	require.Equal(t, payment.ProviderStatusPending, resp.Status)
+	require.InDelta(t, 123.45, resp.Amount, 0.000001)
+	require.Equal(t, "USD", resp.Metadata["currency"])
+	require.Equal(t, "credit", resp.Metadata["direction"])
+	require.Equal(t, "completed", resp.Metadata["transaction_status"])
+	require.Equal(t, "balance-tx-1", resp.Metadata["wise_transaction_id"])
+	require.Empty(t, resp.Metadata["balance_id"])
+	require.Equal(t, "activity-1", resp.Metadata["activity_id"])
+	require.Equal(t, "BALANCE_DEPOSIT", resp.Metadata["activity_type"])
+	require.Equal(t, "BALANCE_TRANSACTION", resp.Metadata["activity_resource_type"])
+	require.Equal(t, "balance-tx-1", resp.Metadata["activity_resource_id"])
+	require.Equal(t, "Money received", resp.Metadata["activity_title"])
+	require.Equal(t, "Payment for sub2_wise_activity_001", resp.Metadata["activity_description"])
+	require.Equal(t, "2026-06-12T10:20:30Z", resp.Metadata["occurred_at"])
+	require.Equal(t, "rejected", resp.Metadata["reconcile_decision"])
+	require.Equal(t, "balance_unverified", resp.Metadata["reconcile_reason"])
+}
+
+func TestWiseQueryOrderDoesNotAutoFulfillActivityAfterStatementFailure(t *testing.T) {
+	const outTradeNo = "sub2_wise_activity_after_statement_error"
+	activities := `{
+		"activities": [
+			{
+				"id": "activity-after-error",
+				"type": "BALANCE_DEPOSIT",
+				"resource": {"type": "BALANCE_TRANSACTION", "id": "balance-tx-after-error"},
+				"title": "Money received",
+				"description": "Payment for sub2_wise_activity_after_statement_error",
+				"primaryAmount": "88.00 USD",
+				"status": "COMPLETED",
+				"createdOn": "2026-06-12T10:20:30.000Z"
+			}
+		]
+	}`
+	prov, req, cleanup := newWiseEndpointTestProvider(t, `{"error":"statement unavailable"}`, http.StatusBadGateway, activities, http.StatusOK)
+	defer cleanup()
+
+	resp, err := prov.QueryOrder(context.Background(), outTradeNo)
+	require.NoError(t, err)
+
+	require.Equal(t, 1, req.statementCalls)
+	require.Equal(t, 1, req.activityCalls)
+	require.Equal(t, "balance-tx-after-error", resp.TradeNo)
+	require.Equal(t, payment.ProviderStatusPending, resp.Status)
+	require.InDelta(t, 88.00, resp.Amount, 0.000001)
+	require.Equal(t, "balance-tx-after-error", resp.Metadata["wise_transaction_id"])
+	require.Equal(t, "rejected", resp.Metadata["reconcile_decision"])
+	require.Equal(t, "balance_unverified", resp.Metadata["reconcile_reason"])
+}
+
+func TestWiseQueryOrdersFetchesActivitiesOnceForMultipleOrdersWithoutAutoFulfill(t *testing.T) {
+	statement := `{"transactions":[]}`
+	activities := `{
+		"activities": [
+			{
+				"id": "activity-batch-1",
+				"type": "BALANCE_DEPOSIT",
+				"resource": {"type": "BALANCE_TRANSACTION", "id": "balance-tx-batch-1"},
+				"title": "Money received",
+				"description": "Payment for sub2_wise_activity_batch_001",
+				"primaryAmount": "12.34 USD",
+				"status": "COMPLETED",
+				"createdOn": "2026-06-12T10:20:30.000Z"
+			},
+			{
+				"id": "activity-batch-2",
+				"type": "BALANCE_DEPOSIT",
+				"resource": {"type": "BALANCE_TRANSACTION", "id": "balance-tx-batch-2"},
+				"title": "Money received",
+				"description": "Payment for sub2_wise_activity_batch_002",
+				"primaryAmount": "56.78 USD",
+				"status": "COMPLETED",
+				"createdOn": "2026-06-12T10:21:30.000Z"
+			}
+		]
+	}`
+	prov, req, cleanup := newWiseEndpointTestProvider(t, statement, http.StatusOK, activities, http.StatusOK)
+	defer cleanup()
+
+	responses, err := prov.QueryOrders(context.Background(), []string{
+		"sub2_wise_activity_batch_001",
+		"sub2_wise_activity_batch_002",
+		"sub2_wise_activity_batch_001",
+		" ",
+	})
+	require.NoError(t, err)
+
+	require.Equal(t, 1, req.statementCalls)
+	require.Equal(t, 1, req.activityCalls)
+	require.Len(t, responses, 2)
+	require.Equal(t, "balance-tx-batch-1", responses["sub2_wise_activity_batch_001"].TradeNo)
+	require.Equal(t, payment.ProviderStatusPending, responses["sub2_wise_activity_batch_001"].Status)
+	require.InDelta(t, 12.34, responses["sub2_wise_activity_batch_001"].Amount, 0.000001)
+	require.Equal(t, "balance_unverified", responses["sub2_wise_activity_batch_001"].Metadata["reconcile_reason"])
+	require.Equal(t, "balance-tx-batch-2", responses["sub2_wise_activity_batch_002"].TradeNo)
+	require.Equal(t, payment.ProviderStatusPending, responses["sub2_wise_activity_batch_002"].Status)
+	require.InDelta(t, 56.78, responses["sub2_wise_activity_batch_002"].Amount, 0.000001)
+	require.Equal(t, "balance_unverified", responses["sub2_wise_activity_batch_002"].Metadata["reconcile_reason"])
+}
+
+func TestWiseQueryOrderUsesOrderCreatedAtQueryWindow(t *testing.T) {
+	const outTradeNo = "sub2_wise_window_from_order"
+	createdAt := time.Now().UTC().Add(-74 * time.Hour).Truncate(time.Second)
+	statement := `{"transactions":[]}`
+	activities := `{"activities":[]}`
+	prov, req, cleanup := newWiseEndpointTestProvider(t, statement, http.StatusOK, activities, http.StatusOK)
+	defer cleanup()
+
+	resp, err := prov.QueryOrder(WithWiseOrderCreatedAt(context.Background(), createdAt), outTradeNo)
+	require.NoError(t, err)
+
+	require.Equal(t, payment.ProviderStatusPending, resp.Status)
+	intervalStart, err := time.Parse(time.RFC3339, req.statementQuery.Get("intervalStart"))
+	require.NoError(t, err)
+	require.WithinDuration(t, createdAt.Add(-wiseOrderCreatedAtQueryPadding), intervalStart, time.Second)
+	activitySince, err := time.Parse(time.RFC3339, req.activityQuery.Get("since"))
+	require.NoError(t, err)
+	require.WithinDuration(t, createdAt.Add(-wiseOrderCreatedAtQueryPadding), activitySince, time.Second)
+}
+
+func TestWiseQueryOrderDoesNotAutoFulfillUnparseableActivityAmount(t *testing.T) {
+	const outTradeNo = "sub2_wise_activity_unparseable"
+	statement := `{"transactions":[]}`
+	activities := `{
+		"activities": [
+			{
+				"id": "activity-unparseable",
+				"type": "BALANCE_DEPOSIT",
+				"resource": {"type": "BALANCE_TRANSACTION", "id": "balance-tx-unparseable"},
+				"title": "Money received",
+				"description": "Payment for sub2_wise_activity_unparseable",
+				"primaryAmount": "USD 123.45",
+				"status": "COMPLETED",
+				"createdOn": "2026-06-12T10:20:30.000Z"
+			}
+		]
+	}`
+	prov, _, cleanup := newWiseEndpointTestProvider(t, statement, http.StatusOK, activities, http.StatusOK)
+	defer cleanup()
+
+	resp, err := prov.QueryOrder(context.Background(), outTradeNo)
+	require.NoError(t, err)
+
+	require.Equal(t, "balance-tx-unparseable", resp.TradeNo)
+	require.Equal(t, payment.ProviderStatusPending, resp.Status)
+	require.Equal(t, "rejected", resp.Metadata["reconcile_decision"])
+	require.Equal(t, "activity_amount_unparseable", resp.Metadata["reconcile_reason"])
+}
+
 func TestWiseQueryOrderReturnsRejectedMetadataWhenReferencedTransactionFailsSettlement(t *testing.T) {
 	const outTradeNo = "sub2_20260612AbCdEf12"
 	statement := `{
@@ -604,6 +901,190 @@ func TestWiseDoJSONReturnsMalformedJSONError(t *testing.T) {
 	require.ErrorContains(t, err, "wise parse response")
 }
 
+func TestWiseCreateProfileSubscriptionCreatesSubscription(t *testing.T) {
+	t.Parallel()
+
+	var gotMethod string
+	var gotPath string
+	var gotAuthorization string
+	var gotContentType string
+	var gotAccept string
+	var gotBody []byte
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		gotAuthorization = r.Header.Get("Authorization")
+		gotContentType = r.Header.Get("Content-Type")
+		gotAccept = r.Header.Get("Accept")
+		var err error
+		gotBody, err = io.ReadAll(r.Body)
+		require.NoError(t, err)
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"id":"sub-123",
+			"trigger_on":"balances#credit",
+			"delivery":{"version":"4.0.0","url":"https://example.com/api/v1/payment/webhook/wise"}
+		}`))
+	}))
+	defer server.Close()
+
+	client := NewWiseSubscriptionClient(server.URL, "token-123")
+	client.httpClient = server.Client()
+
+	resp, err := client.CreateProfileSubscription(context.Background(), WiseProfileSubscriptionRequest{
+		ProfileID:   "profile-123",
+		Name:        " Sub2API Wise balance credit - 42 ",
+		DeliveryURL: "https://example.com/api/v1/payment/webhook/wise",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "sub-123", resp.ID)
+
+	require.Equal(t, http.MethodPost, gotMethod)
+	require.Equal(t, "/v3/profiles/profile-123/subscriptions", gotPath)
+	require.Equal(t, "Bearer token-123", gotAuthorization)
+	require.Equal(t, "application/json", gotContentType)
+	require.Equal(t, "application/json", gotAccept)
+	require.JSONEq(t, `{
+		"name":"Sub2API Wise balance credit - 42",
+		"trigger_on":"balances#credit",
+		"delivery":{"version":"4.0.0","url":"https://example.com/api/v1/payment/webhook/wise"}
+	}`, string(gotBody))
+}
+
+func TestWiseCreateProfileSubscriptionMasksAPITokenInError(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"error": "token-123 is invalid",
+		})
+	}))
+	defer server.Close()
+
+	client := NewWiseSubscriptionClient(server.URL, "token-123")
+	client.httpClient = server.Client()
+
+	_, err := client.CreateProfileSubscription(context.Background(), WiseProfileSubscriptionRequest{
+		ProfileID:   "profile-123",
+		Name:        "Sub2API Wise balance credit - 42",
+		DeliveryURL: "https://example.com/api/v1/payment/webhook/wise",
+	})
+	require.Error(t, err)
+	require.ErrorContains(t, err, "wise subscription HTTP 401")
+	require.NotContains(t, err.Error(), "token-123")
+}
+
+func TestWiseCreateProfileSubscriptionRejectsNilClient(t *testing.T) {
+	t.Parallel()
+
+	var client *WiseSubscriptionClient
+	var err error
+	require.NotPanics(t, func() {
+		_, err = client.CreateProfileSubscription(context.Background(), WiseProfileSubscriptionRequest{
+			ProfileID:   "profile-123",
+			Name:        "Sub2API Wise balance credit - 42",
+			DeliveryURL: "https://example.com/api/v1/payment/webhook/wise",
+		})
+	})
+	require.ErrorContains(t, err, "wise subscription: nil client")
+}
+
+func TestWiseCreateProfileSubscriptionValidatesRequest(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		client  *WiseSubscriptionClient
+		req     WiseProfileSubscriptionRequest
+		wantErr string
+	}{
+		{
+			name:    "empty profile id",
+			client:  NewWiseSubscriptionClient("https://api.wise.com", "token-123"),
+			req:     WiseProfileSubscriptionRequest{ProfileID: " ", DeliveryURL: "https://example.com/webhook"},
+			wantErr: "missing profile id",
+		},
+		{
+			name:    "empty api token",
+			client:  NewWiseSubscriptionClient("https://api.wise.com", " "),
+			req:     WiseProfileSubscriptionRequest{ProfileID: "profile-123", DeliveryURL: "https://example.com/webhook"},
+			wantErr: "missing API token",
+		},
+		{
+			name:    "non https delivery url",
+			client:  NewWiseSubscriptionClient("https://api.wise.com", "token-123"),
+			req:     WiseProfileSubscriptionRequest{ProfileID: "profile-123", DeliveryURL: "http://example.com/webhook"},
+			wantErr: "webhookDeliveryUrl must be an HTTPS URL",
+		},
+		{
+			name:    "invalid delivery url",
+			client:  NewWiseSubscriptionClient("https://api.wise.com", "token-123"),
+			req:     WiseProfileSubscriptionRequest{ProfileID: "profile-123", DeliveryURL: "://bad"},
+			wantErr: "webhookDeliveryUrl must be an HTTPS URL",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := tt.client.CreateProfileSubscription(context.Background(), tt.req)
+			require.ErrorContains(t, err, tt.wantErr)
+		})
+	}
+}
+
+func TestWiseCreateProfileSubscriptionEscapesProfileID(t *testing.T) {
+	t.Parallel()
+
+	var gotPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.EscapedPath()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"sub-123"}`))
+	}))
+	defer server.Close()
+
+	client := NewWiseSubscriptionClient(server.URL, "token-123")
+	client.httpClient = server.Client()
+
+	_, err := client.CreateProfileSubscription(context.Background(), WiseProfileSubscriptionRequest{
+		ProfileID:   "profile/123 with space",
+		Name:        "Sub2API Wise balance credit - 42",
+		DeliveryURL: "https://example.com/api/v1/payment/webhook/wise",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "/v3/profiles/profile%2F123%20with%20space/subscriptions", gotPath)
+}
+
+func TestWiseCreateProfileSubscriptionUsesDefaultHTTPClientFallback(t *testing.T) {
+	t.Parallel()
+
+	called := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"sub-123"}`))
+	}))
+	defer server.Close()
+
+	client := NewWiseSubscriptionClient(server.URL, "token-123")
+	client.httpClient = nil
+
+	resp, err := client.CreateProfileSubscription(context.Background(), WiseProfileSubscriptionRequest{
+		ProfileID:   "profile-123",
+		Name:        "Sub2API Wise balance credit - 42",
+		DeliveryURL: "https://example.com/api/v1/payment/webhook/wise",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "sub-123", resp.ID)
+	require.True(t, called)
+}
+
 type wiseStatementTestRequest struct {
 	path          string
 	authorization string
@@ -612,18 +1093,69 @@ type wiseStatementTestRequest struct {
 	calls         int
 }
 
+type wiseEndpointTestRequest struct {
+	statementCalls int
+	activityCalls  int
+	statementPath  string
+	activityPath   string
+	statementQuery url.Values
+	activityQuery  url.Values
+}
+
+func newWiseEndpointTestProvider(t *testing.T, statement string, statementStatus int, activities string, activityStatus int) (*Wise, *wiseEndpointTestRequest, func()) {
+	t.Helper()
+
+	req := &wiseEndpointTestRequest{}
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/profiles/profile-123/balance-statements/balance-123/statement.json":
+			req.statementCalls++
+			req.statementPath = r.URL.Path
+			req.statementQuery = r.URL.Query()
+			w.WriteHeader(statementStatus)
+			_, _ = w.Write([]byte(statement))
+		case "/v1/profiles/profile-123/activities":
+			req.activityCalls++
+			req.activityPath = r.URL.Path
+			req.activityQuery = r.URL.Query()
+			w.WriteHeader(activityStatus)
+			_, _ = w.Write([]byte(activities))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"error":"unexpected path"}`))
+		}
+	}))
+
+	cfg := validWiseConfig()
+	cfg["apiBase"] = server.URL
+	prov, err := NewWise("1", cfg)
+	require.NoError(t, err)
+	prov.httpClient = server.Client()
+
+	return prov, req, server.Close
+}
+
 func newWiseStatementTestProvider(t *testing.T, statement string) (*Wise, *wiseStatementTestRequest, func()) {
 	t.Helper()
 
 	req := &wiseStatementTestRequest{}
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		req.calls++
-		req.path = r.URL.Path
-		req.authorization = r.Header.Get("Authorization")
-		req.accept = r.Header.Get("Accept")
-		req.query = r.URL.Query()
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(statement))
+		switch r.URL.Path {
+		case "/v1/profiles/profile-123/balance-statements/balance-123/statement.json":
+			req.calls++
+			req.path = r.URL.Path
+			req.authorization = r.Header.Get("Authorization")
+			req.accept = r.Header.Get("Accept")
+			req.query = r.URL.Query()
+			_, _ = w.Write([]byte(statement))
+		case "/v1/profiles/profile-123/activities":
+			_, _ = w.Write([]byte(`{"activities":[]}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"error":"unexpected path"}`))
+		}
 	}))
 
 	cfg := validWiseConfig()
@@ -692,10 +1224,24 @@ func TestWiseTransactionReferencesOrder(t *testing.T) {
 			want: true,
 		},
 		{
+			name: "alphanumeric wise reference matches",
+			tx: wiseTransaction{
+				Description: "Payment for sub220260612AbCdEf12",
+			},
+			want: true,
+		},
+		{
 			name: "prefix collision does not match",
 			tx: wiseTransaction{
 				Description: "Payment for sub2_20260612AbCdEf123",
 				Reference:   "sub2_20260612AbCdEf123",
+			},
+			want: false,
+		},
+		{
+			name: "alphanumeric wise reference collision does not match",
+			tx: wiseTransaction{
+				Description: "Payment for sub220260612AbCdEf123",
 			},
 			want: false,
 		},

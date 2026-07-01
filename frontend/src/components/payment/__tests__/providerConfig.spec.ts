@@ -61,6 +61,18 @@ describe('PROVIDER_CONFIG_FIELDS.wise', () => {
     expect(fields.find(field => field.key === 'reconcileWindowHours')?.defaultValue).toBe('72')
     expect(fields.find(field => field.key === 'autoFulfillFeePayments')?.defaultValue).toBe('false')
   })
+
+  it('adds Wise environment and keeps webhook public key as an optional override', () => {
+    const environment = findField('wise', 'environment')
+    expect(environment?.defaultValue).toBe('production')
+    expect(environment?.options?.map(option => option.value)).toEqual(['production', 'sandbox'])
+
+    const webhookPublicKey = findField('wise', 'webhookPublicKey')
+    expect(webhookPublicKey?.sensitive).toBe(false)
+    expect(webhookPublicKey?.optional).toBe(true)
+    expect(webhookPublicKey?.clearable).toBe(true)
+    expect(webhookPublicKey?.hintKey).toBe('admin.settings.payment.field_wiseWebhookPublicKeyHint')
+  })
 })
 
 describe('PROVIDER_CONFIG_FIELDS.stripe', () => {

@@ -50,6 +50,61 @@ func TestBuildCreateOrderResponseDefaultsToOrderCreated(t *testing.T) {
 	}
 }
 
+func TestOrderIDPrefixFromSiteName(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		siteName string
+		want     string
+	}{
+		{
+			name:     "english site name removes punctuation",
+			siteName: "Jerrywell Pte. Ltd.",
+			want:     "JerrywellPteLtd",
+		},
+		{
+			name:     "chinese site name uses pinyin initials",
+			siteName: "杰瑞科技",
+			want:     "JRKJ",
+		},
+		{
+			name:     "empty result falls back to default",
+			siteName: "🚀",
+			want:     "Sub2API",
+		},
+		{
+			name:     "long prefix is capped",
+			siteName: "VeryLongSiteNameForPaymentOrders",
+			want:     "VeryLongSiteNameForPayme",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := orderIDPrefixFromSiteName(tt.siteName); got != tt.want {
+				t.Fatalf("orderIDPrefixFromSiteName(%q) = %q, want %q", tt.siteName, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPaymentServiceOrderIDPrefixUsesSiteNameSetting(t *testing.T) {
+	t.Parallel()
+
+	repo := &paymentConfigSettingRepoStub{values: map[string]string{
+		SettingKeySiteName: "杰瑞科技",
+	}}
+	svc := NewPaymentService(nil, nil, nil, nil, nil, &PaymentConfigService{settingRepo: repo}, nil, nil, nil)
+
+	if got := svc.orderIDPrefix(context.Background()); got != "JRKJ" {
+		t.Fatalf("orderIDPrefix() = %q, want JRKJ", got)
+	}
+}
+
 func TestBuildCreateOrderResponseCopiesJSAPIPayload(t *testing.T) {
 	t.Parallel()
 

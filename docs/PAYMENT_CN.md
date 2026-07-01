@@ -157,19 +157,22 @@ Sub2API 内置支付系统，支持用户自助充值，无需部署独立的支
 
 ### Wise
 
-Wise 接入采用 hosted redirect + 自动对账模式。系统会生成 Wise Quick Pay/payment link 跳转地址，并追加 `amount`、`currency`、`description=订单号`。
+Wise 接入采用 hosted redirect + profile-level webhook subscription + 自动对账模式。系统会生成 Wise Quick Pay/payment link 跳转地址，并追加 `amount`、`currency`、`description=纯字母数字订单 reference`。该 Wise description 由本地 `out_trade_no` 去除非字母数字字符后生成，避免 Wise Quick Pay hosted 页面因特殊字符拒绝访问。
 
-v1 仅建议在 Wise 后台启用 Wise balance / bank transfer 等到账金额等于订单金额的方式。请不要启用 card、Apple Pay、Google Pay 自动入账；这些方式可能扣除收款手续费，系统会进入人工审核而不会自动发放余额或订阅。
+Wise 自动创建 webhook subscription 还需要当前 Sub2API 实例的公网 HTTPS 基础地址。请在系统设置中配置 **API 端点地址** 或 **前端基础 URL**，也可以在部署环境中设置 `API_BASE_URL`、`FRONTEND_URL`、`SERVER_FRONTEND_URL`、`SITE_URL`、`BASE_URL` 或 `APP_URL`。系统会向 Wise 注册 `<base-url>/api/v1/payment/webhook/wise`。
+
+v1 仅自动入账 Wise balance / bank transfer 中到账金额等于订单金额的交易。card、Apple Pay、Google Pay 等可能扣除收款手续费的交易不会自动发放余额或订阅，系统会进入人工审核。
 
 | 参数 | 说明 | 必填 |
 |------|------|------|
 | **Quick Pay 基础链接** | Wise Quick Pay/payment link，不带订单参数 | 是 |
+| **环境** | Wise 环境：`production` 或 `sandbox`，默认 `production` | 否 |
 | **API Base** | Wise API 地址，生产环境通常为 `https://api.wise.com` | 是 |
-| **API Token** | Wise API token 或 OAuth access token | 是 |
+| **API Token** | Wise user/API token，用于创建 profile-level subscription 和查询 statement/activity；不需要 `clientKey` 或 client credentials access token | 是 |
 | **Profile ID** | Wise business profile ID | 是 |
 | **Balance ID** | Wise balance ID | 是 |
 | **币种** | 当前实例收款币种 | 是 |
-| **Webhook Public Key** | Wise webhook RSA 公钥 | 是 |
+| **Webhook Public Key** | Wise webhook RSA 公钥的可选覆盖项；通常由系统按环境使用内置公钥 | 否 |
 | **Settlement Strategy** | v1 固定为 `exact_only` | 是 |
 
 ---
@@ -184,6 +187,7 @@ v1 仅建议在 Wise 后台启用 Wise balance / bank transfer 等到账金额�
 - **退款控制** — 每个实例可单独开启或关闭退款功能
 - **支付方式** — 每个实例可选择支持的支付方式子集
 - **排序** — 拖拽调整实例顺序
+- **站点名前缀订单号** — 新支付订单的 `out_trade_no` 使用系统站点名称生成纯字母数字前缀；中文站点名会转为近似拼音首字母，无法生成时回退 `Sub2API`。历史 `sub2_` 订单号继续兼容。
 
 ### 实例限额配置
 
@@ -227,17 +231,19 @@ v1 仅建议在 Wise 后台启用 Wise balance / bank transfer 等到账金额�
 
 ### Wise Webhook 设置
 
-1. 在 Wise 后台创建 webhook，URL 填写 `/api/v1/payment/webhook/wise`。
-2. 订阅 balance/account-details 入账相关事件，例如 `balances#credit`、`balances#update` 或 account details payment state change。
-3. 将 Wise webhook RSA 公钥填入服务商配置。
-4. 系统收到 webhook 后会先验签，再查询 Wise statement/activity 完成严格对账。
+管理员无需手动在 Wise 后台创建 webhook。保存并启用 Wise provider 时，系统会使用配置的 Wise user/API token 调用 `POST /v3/profiles/{profileId}/subscriptions`，自动创建 profile-level `balances#credit` subscription。
+
+1. 确认站点域名可公网访问，Wise Webhook URL 必须是公网 **HTTPS** 地址：`https://your-domain.com/api/v1/payment/webhook/wise`。
+2. 保存并启用 Wise provider，系统自动创建或复用 profile-level `balances#credit` subscription。
+3. Wise 创建订阅时会发送 test notification；系统会快速 ACK，但不会触发对账或订单入账。
+4. 正式 webhook 到达后，系统只在请求内完成快速验签、幂等记录和异步对账触发，然后立即 ACK；完整对账由后台任务查询 Wise statement/activity 完成。
 
 ### 注意事项
 
-- 回调地址必须是 **HTTPS**（Stripe 强制要求，其他服务商强烈推荐）
+- 回调地址必须是 **HTTPS**（Stripe 强制要求，Wise 要求公网 HTTPS，其他服务商强烈推荐）
 - 确保服务器防火墙允许支付平台的回调请求
 - 系统会自动进行签名验证，防止伪造回调
-- 支付成功并通过服务商验签 / 对账后自动完成余额充值；Wise 手续费扣减或金额不一致场景需要人工审核
+- 支付成功并通过服务商验签 / 对账后自动完成余额充值；Wise v1 只自动入账到账金额等于订单金额的 Wise balance / bank transfer，手续费扣减、金额不一致或 card / Apple Pay / Google Pay 等交易需要人工审核
 
 ---
 
@@ -262,7 +268,11 @@ v1 仅建议在 Wise 后台启用 Wise balance / bank transfer 等到账金额�
        │
        ▼
   支付回调验签
-  └─ Wise       → 查询 statement/activity 并按到账金额严格对账
+  └─ Wise       → 快速 ACK，幂等记录并触发异步对账
+       │
+       ▼
+  Wise 后台对账
+  └─ 查询 statement/activity，并仅自动确认到账金额等于订单金额的 balance / bank transfer
        │
        ▼
   订单 PAID

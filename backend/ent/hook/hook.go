@@ -225,6 +225,30 @@ func (f PaymentProviderInstanceFunc) Mutate(ctx context.Context, m ent.Mutation)
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.PaymentProviderInstanceMutation", m)
 }
 
+// The PaymentProviderWebhookSubscriptionFunc type is an adapter to allow the use of ordinary
+// function as PaymentProviderWebhookSubscription mutator.
+type PaymentProviderWebhookSubscriptionFunc func(context.Context, *ent.PaymentProviderWebhookSubscriptionMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f PaymentProviderWebhookSubscriptionFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.PaymentProviderWebhookSubscriptionMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.PaymentProviderWebhookSubscriptionMutation", m)
+}
+
+// The PaymentWebhookDeliveryFunc type is an adapter to allow the use of ordinary
+// function as PaymentWebhookDelivery mutator.
+type PaymentWebhookDeliveryFunc func(context.Context, *ent.PaymentWebhookDeliveryMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f PaymentWebhookDeliveryFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.PaymentWebhookDeliveryMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.PaymentWebhookDeliveryMutation", m)
+}
+
 // The PendingAuthSessionFunc type is an adapter to allow the use of ordinary
 // function as PendingAuthSession mutator.
 type PendingAuthSessionFunc func(context.Context, *ent.PendingAuthSessionMutation) (ent.Value, error)

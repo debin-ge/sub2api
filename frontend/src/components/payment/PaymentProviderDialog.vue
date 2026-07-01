@@ -186,6 +186,35 @@
           </div>
         </div>
 
+        <!-- Wise 自动 Webhook 订阅状态 -->
+        <div
+          v-if="showWiseWebhookSubscriptionStatus"
+          class="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-dark-700 dark:bg-dark-800/70"
+        >
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <p class="text-xs font-semibold text-gray-900 dark:text-white">
+              {{ t('admin.settings.payment.wiseWebhookSubscriptionTitle') }}
+            </p>
+            <span :class="wiseWebhookSubscriptionBadgeClass">
+              {{ t(wiseWebhookSubscriptionLabelKey) }}
+            </span>
+          </div>
+          <div class="mt-2 space-y-1.5 text-xs text-gray-600 dark:text-gray-300">
+            <p v-if="editing?.webhook_subscription_id">
+              <span class="font-medium">{{ t('admin.settings.payment.wiseWebhookSubscriptionId') }}:</span>
+              <span class="font-mono">{{ editing.webhook_subscription_id }}</span>
+            </p>
+            <p>
+              <span class="font-medium">{{ t('admin.settings.payment.wiseWebhookDeliveryUrl') }}:</span>
+              <code class="break-all font-mono text-gray-800 dark:text-gray-100">{{ wiseWebhookDeliveryUrl }}</code>
+            </p>
+            <p v-if="wiseWebhookSubscriptionError" class="text-red-600 dark:text-red-300">
+              <span class="font-medium">{{ t('admin.settings.payment.wiseWebhookSubscriptionError') }}:</span>
+              {{ wiseWebhookSubscriptionError }}
+            </p>
+          </div>
+        </div>
+
         <!-- 服务商 Webhook 提示 -->
         <div v-if="providerWebhookUrl" class="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-800/50 dark:bg-blue-900/20">
           <p class="text-xs text-blue-700 dark:text-blue-300">
@@ -382,6 +411,43 @@ const providerWebhookUrl = computed(() => {
 
 const providerWebhookHint = computed(() =>
   providerWebhookHintMap[form.provider_key] || 'admin.settings.payment.stripeWebhookHint',
+)
+
+const showWiseWebhookSubscriptionStatus = computed(() =>
+  !!props.editing && form.provider_key === 'wise',
+)
+
+const wiseWebhookSubscriptionStatus = computed(() =>
+  (props.editing?.webhook_subscription_status || '').trim().toLowerCase(),
+)
+
+const wiseWebhookSubscriptionLabelKey = computed(() => {
+  if (wiseWebhookSubscriptionStatus.value === 'active') {
+    return 'admin.settings.payment.wiseWebhookSubscriptionActive'
+  }
+  if (wiseWebhookSubscriptionStatus.value === 'failed') {
+    return 'admin.settings.payment.wiseWebhookSubscriptionFailed'
+  }
+  return 'admin.settings.payment.wiseWebhookSubscriptionUnknown'
+})
+
+const wiseWebhookSubscriptionBadgeClass = computed(() => {
+  const base = 'inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium'
+  if (wiseWebhookSubscriptionStatus.value === 'active') {
+    return `${base} bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300`
+  }
+  if (wiseWebhookSubscriptionStatus.value === 'failed') {
+    return `${base} bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300`
+  }
+  return `${base} bg-gray-200 text-gray-700 dark:bg-dark-700 dark:text-gray-300`
+})
+
+const wiseWebhookDeliveryUrl = computed(() =>
+  (props.editing?.webhook_delivery_url || '').trim() || providerWebhookUrl.value,
+)
+
+const wiseWebhookSubscriptionError = computed(() =>
+  (props.editing?.webhook_subscription_error || '').trim(),
 )
 
 const callbackPaths = computed(() => PROVIDER_CALLBACK_PATHS[form.provider_key] || null)
@@ -681,9 +747,17 @@ function loadProvider(provider: ProviderInstance) {
   // Pre-fill config from API response. Backend omits sensitive fields entirely,
   // so those inputs stay blank — submitting blank preserves the stored secret.
   if (provider.config) {
+    const sensitiveKeys = new Set(
+      (PROVIDER_CONFIG_FIELDS[provider.provider_key] || [])
+        .filter(field => field.sensitive)
+        .map(field => field.key),
+    )
     for (const [k, v] of Object.entries(provider.config)) {
       // Skip notifyUrl/returnUrl — they are derived from callbackBaseUrl
       if (k === 'notifyUrl' || k === 'returnUrl') continue
+      // Defense in depth: never hydrate sensitive values even if an old or
+      // misconfigured backend response includes them.
+      if (sensitiveKeys.has(k)) continue
       config[k] = v
     }
     // Extract base URLs from existing callback URLs

@@ -13,6 +13,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	dbpredicate "github.com/Wei-Shaw/sub2api/ent/predicate"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
+	paymentprovider "github.com/Wei-Shaw/sub2api/internal/payment/provider"
 )
 
 const (
@@ -29,6 +30,20 @@ type WiseWebhookReconcileResult struct {
 	Reason      string
 	Scanned     int
 	Fulfilled   int
+	Errors      []string
+}
+
+type WiseWebhookHandleResult struct {
+	DeliveryID       string
+	EventType        string
+	TestNotification bool
+	Duplicate        bool
+	Queued           bool
+	Reason           string
+}
+
+type wiseWebhookEnvelope struct {
+	EventType string
 }
 
 type wiseBatchOrderQuerier interface {
@@ -67,6 +82,102 @@ func (s *PaymentService) HandleWiseWebhook(ctx context.Context, rawBody string, 
 	return nil, fmt.Errorf("no wise webhook provider could verify notification")
 }
 
+func (s *PaymentService) HandleWiseWebhookFast(ctx context.Context, rawBody string, headers map[string]string) (*WiseWebhookHandleResult, error) {
+	providers, err := s.getEnabledWebhookProvidersByKey(ctx, payment.TypeWise)
+	if err != nil {
+		return nil, err
+	}
+
+	var lastErr error
+	for _, prov := range providers {
+		if prov == nil {
+			continue
+		}
+		if _, err := prov.VerifyNotification(ctx, rawBody, headers); err != nil {
+			lastErr = err
+			continue
+		}
+
+		envelope := wiseWebhookEnvelopeFromBody(rawBody)
+		deliveryID := wiseWebhookHeaderValue(headers, "x-delivery-id")
+		if deliveryID == "" {
+			return nil, fmt.Errorf("wise webhook delivery id is required")
+		}
+		testNotification := strings.EqualFold(wiseWebhookHeaderValue(headers, "x-test-notification"), "true")
+		result := &WiseWebhookHandleResult{
+			DeliveryID:       deliveryID,
+			EventType:        envelope.EventType,
+			TestNotification: testNotification,
+		}
+
+		record, err := s.RecordPaymentWebhookDelivery(ctx, PaymentWebhookDeliveryInput{
+			ProviderKey:      payment.TypeWise,
+			DeliveryID:       deliveryID,
+			EventType:        envelope.EventType,
+			TestNotification: testNotification,
+			RawBody:          rawBody,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		if testNotification {
+			if !record.Inserted {
+				result.Duplicate = true
+				result.Reason = "duplicate_delivery"
+				return result, nil
+			}
+			result.Reason = "test_notification"
+			if err := s.MarkPaymentWebhookDeliveryStatus(ctx, record.ID, PaymentWebhookDeliveryStatusIgnored, ""); err != nil {
+				return nil, err
+			}
+			return result, nil
+		}
+		if !wiseWebhookEventIsReconcileTrigger(rawBody) {
+			if !record.Inserted {
+				result.Duplicate = true
+				result.Reason = "duplicate_delivery"
+				return result, nil
+			}
+			result.Reason = "event_ignored_unsupported"
+			if err := s.MarkPaymentWebhookDeliveryStatus(ctx, record.ID, PaymentWebhookDeliveryStatusIgnored, ""); err != nil {
+				return nil, err
+			}
+			return result, nil
+		}
+
+		queued, err := s.TryQueuePaymentWebhookDelivery(ctx, record.ID)
+		if err != nil {
+			return nil, err
+		}
+		if !queued {
+			result.Duplicate = true
+			result.Reason = "duplicate_delivery"
+			return result, nil
+		}
+		result.Queued = true
+		result.Reason = "queued"
+		go s.runWiseWebhookReconciliation(record.ID)
+		return result, nil
+	}
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, fmt.Errorf("no wise webhook provider could verify notification")
+}
+
+func (s *PaymentService) runWiseWebhookReconciliation(deliveryRecordID int) {
+	ctx, cancel := context.WithTimeout(context.Background(), expiryCheckTimeout)
+	defer cancel()
+
+	if _, err := s.ReconcilePendingWiseOrders(ctx); err != nil {
+		slog.Error("wise webhook reconciliation failed", "deliveryRecordID", deliveryRecordID, "error", err)
+		_ = s.MarkPaymentWebhookDeliveryStatus(context.Background(), deliveryRecordID, PaymentWebhookDeliveryStatusFailed, err.Error())
+		return
+	}
+	_ = s.MarkPaymentWebhookDeliveryStatus(context.Background(), deliveryRecordID, PaymentWebhookDeliveryStatusProcessed, "")
+}
+
 func (s *PaymentService) ReconcilePendingWiseOrders(ctx context.Context) (*WiseWebhookReconcileResult, error) {
 	result := &WiseWebhookReconcileResult{
 		Reason: "event_verified_no_pending",
@@ -90,15 +201,19 @@ func (s *PaymentService) ReconcilePendingWiseOrders(ctx context.Context) (*WiseW
 		}
 	}
 
-	groups := s.groupWiseReconciliationOrders(ctx, orders)
+	groups, reconcileErrs := s.groupWiseReconciliationOrders(ctx, orders)
 	for _, group := range groups {
-		s.reconcileWiseOrderGroup(ctx, group, result)
+		reconcileErrs = append(reconcileErrs, s.reconcileWiseOrderGroup(ctx, group, result)...)
 	}
 
 	if result.Fulfilled > 0 {
 		result.Reason = "event_verified_reconciled"
 	} else if result.Scanned > 0 {
 		result.Reason = "event_verified_no_auto_fulfill"
+	}
+	if len(reconcileErrs) > 0 {
+		result.Errors = wiseReconcileErrorStrings(reconcileErrs)
+		return result, fmt.Errorf("wise reconciliation failed: %d error(s)", len(reconcileErrs))
 	}
 	return result, nil
 }
@@ -204,8 +319,29 @@ func wiseReconcileWindowFromConfig(config map[string]string) time.Duration {
 	return time.Duration(hours) * time.Hour
 }
 
-func (s *PaymentService) groupWiseReconciliationOrders(ctx context.Context, orders []*dbent.PaymentOrder) []*wiseReconcileOrderGroup {
+func wiseWebhookEnvelopeFromBody(rawBody string) wiseWebhookEnvelope {
+	var payload struct {
+		EventType string `json:"event_type"`
+	}
+	if err := json.Unmarshal([]byte(rawBody), &payload); err != nil {
+		return wiseWebhookEnvelope{}
+	}
+	return wiseWebhookEnvelope{EventType: strings.TrimSpace(payload.EventType)}
+}
+
+func wiseWebhookHeaderValue(headers map[string]string, name string) string {
+	name = strings.ToLower(strings.TrimSpace(name))
+	for key, value := range headers {
+		if strings.ToLower(strings.TrimSpace(key)) == name {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func (s *PaymentService) groupWiseReconciliationOrders(ctx context.Context, orders []*dbent.PaymentOrder) ([]*wiseReconcileOrderGroup, []error) {
 	groups := make([]*wiseReconcileOrderGroup, 0)
+	errs := make([]error, 0)
 	byKey := make(map[string]*wiseReconcileOrderGroup)
 	for _, order := range orders {
 		if order == nil {
@@ -214,6 +350,7 @@ func (s *PaymentService) groupWiseReconciliationOrders(ctx context.Context, orde
 		key, prov, err := s.wiseReconciliationProviderForOrder(ctx, order)
 		if err != nil {
 			slog.Warn("wise pending order provider resolution failed", "orderID", order.ID, "outTradeNo", order.OutTradeNo, "error", err)
+			errs = append(errs, fmt.Errorf("resolve wise provider for %s: %w", order.OutTradeNo, err))
 			continue
 		}
 		group := byKey[key]
@@ -227,7 +364,7 @@ func (s *PaymentService) groupWiseReconciliationOrders(ctx context.Context, orde
 		}
 		group.orders = append(group.orders, order)
 	}
-	return groups
+	return groups, errs
 }
 
 func (s *PaymentService) wiseReconciliationProviderForOrder(ctx context.Context, order *dbent.PaymentOrder) (string, payment.Provider, error) {
@@ -260,9 +397,10 @@ func (s *PaymentService) wiseReconciliationProviderForOrder(ctx context.Context,
 	return "registry:" + providerKey + ":" + strings.TrimSpace(order.PaymentType), prov, nil
 }
 
-func (s *PaymentService) reconcileWiseOrderGroup(ctx context.Context, group *wiseReconcileOrderGroup, aggregate *WiseWebhookReconcileResult) {
+func (s *PaymentService) reconcileWiseOrderGroup(ctx context.Context, group *wiseReconcileOrderGroup, aggregate *WiseWebhookReconcileResult) []error {
+	errs := make([]error, 0)
 	if group == nil || group.provider == nil || aggregate == nil {
-		return
+		return errs
 	}
 	if batchProvider, ok := group.provider.(wiseBatchOrderQuerier); ok {
 		tradeNos := make([]string, 0, len(group.orders))
@@ -272,10 +410,10 @@ func (s *PaymentService) reconcileWiseOrderGroup(ctx context.Context, group *wis
 			}
 			tradeNos = append(tradeNos, order.OutTradeNo)
 		}
-		responses, err := batchProvider.QueryOrders(ctx, tradeNos)
+		responses, err := batchProvider.QueryOrders(wiseOrderGroupQueryContext(ctx, group.orders), tradeNos)
 		if err != nil {
 			slog.Warn("wise pending order batch reconcile failed", "providerGroup", group.key, "orders", len(group.orders), "error", err)
-			return
+			return append(errs, fmt.Errorf("query wise order batch %s: %w", group.key, err))
 		}
 		for _, order := range group.orders {
 			if order == nil {
@@ -283,15 +421,18 @@ func (s *PaymentService) reconcileWiseOrderGroup(ctx context.Context, group *wis
 			}
 			orderResult, err := s.handleWiseQueryOrderResponse(ctx, order, responses[strings.TrimSpace(order.OutTradeNo)])
 			s.mergeWiseReconcileResult(aggregate, order, orderResult, err)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("handle wise order %s: %w", order.OutTradeNo, err))
+			}
 		}
-		return
+		return errs
 	}
 
 	for _, order := range group.orders {
 		if order == nil {
 			continue
 		}
-		resp, err := group.provider.QueryOrder(ctx, order.OutTradeNo)
+		resp, err := group.provider.QueryOrder(paymentprovider.WithWiseOrderCreatedAt(ctx, order.CreatedAt), order.OutTradeNo)
 		if err != nil {
 			err = fmt.Errorf("query wise order %s: %w", order.OutTradeNo, err)
 		}
@@ -300,7 +441,22 @@ func (s *PaymentService) reconcileWiseOrderGroup(ctx context.Context, group *wis
 			err = handleErr
 		}
 		s.mergeWiseReconcileResult(aggregate, order, orderResult, err)
+		if err != nil {
+			errs = append(errs, err)
+		}
 	}
+	return errs
+}
+
+func wiseReconcileErrorStrings(errs []error) []string {
+	out := make([]string, 0, len(errs))
+	for _, err := range errs {
+		if err == nil {
+			continue
+		}
+		out = append(out, err.Error())
+	}
+	return out
 }
 
 func (s *PaymentService) mergeWiseReconcileResult(aggregate *WiseWebhookReconcileResult, order *dbent.PaymentOrder, orderResult *WiseWebhookReconcileResult, err error) {
@@ -353,11 +509,24 @@ func (s *PaymentService) ReconcileWiseOrderByOutTradeNo(ctx context.Context, out
 		return nil, err
 	}
 
-	resp, err := prov.QueryOrder(ctx, order.OutTradeNo)
+	resp, err := prov.QueryOrder(paymentprovider.WithWiseOrderCreatedAt(ctx, order.CreatedAt), order.OutTradeNo)
 	if err != nil {
 		return nil, fmt.Errorf("query wise order %s: %w", order.OutTradeNo, err)
 	}
 	return s.handleWiseQueryOrderResponse(ctx, order, resp)
+}
+
+func wiseOrderGroupQueryContext(ctx context.Context, orders []*dbent.PaymentOrder) context.Context {
+	var earliest time.Time
+	for _, order := range orders {
+		if order == nil || order.CreatedAt.IsZero() {
+			continue
+		}
+		if earliest.IsZero() || order.CreatedAt.Before(earliest) {
+			earliest = order.CreatedAt
+		}
+	}
+	return paymentprovider.WithWiseOrderCreatedAt(ctx, earliest)
 }
 
 func (s *PaymentService) handleWiseQueryOrderResponse(ctx context.Context, order *dbent.PaymentOrder, resp *payment.QueryOrderResponse) (*WiseWebhookReconcileResult, error) {
@@ -391,6 +560,9 @@ func (s *PaymentService) handleWiseQueryOrderResponse(ctx context.Context, order
 		if matched {
 			s.writeAuditLog(ctx, order.ID, "PAYMENT_WISE_RECONCILE_MANUAL_REVIEW", payment.TypeWise,
 				wiseReconcileAuditDetail(order, resp, reason, "manual_review"))
+		} else if decision == "no_match" {
+			s.writeAuditLog(ctx, order.ID, "PAYMENT_WISE_RECONCILE_NO_MATCH", payment.TypeWise,
+				wiseReconcileAuditDetail(order, resp, reason, "no_match"))
 		}
 		return &WiseWebhookReconcileResult{
 			Matched:     matched,
@@ -528,14 +700,8 @@ func wiseReconcileAuditDetail(order *dbent.PaymentOrder, resp *payment.QueryOrde
 }
 
 func wiseWebhookEventIsReconcileTrigger(rawBody string) bool {
-	var event struct {
-		EventType string `json:"event_type"`
-	}
-	if err := json.Unmarshal([]byte(rawBody), &event); err != nil {
-		return false
-	}
-	switch strings.TrimSpace(event.EventType) {
-	case "balances#credit", "balances#update", "account-details-payment#state-change":
+	switch wiseWebhookEnvelopeFromBody(rawBody).EventType {
+	case "balances#credit":
 		return true
 	default:
 		return false

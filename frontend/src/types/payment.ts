@@ -149,6 +149,10 @@ export interface ProviderInstance {
   allow_user_refund: boolean
   limits: string
   sort_order: number
+  webhook_subscription_status?: string
+  webhook_subscription_id?: string
+  webhook_subscription_error?: string
+  webhook_delivery_url?: string
 }
 
 // ==================== Request / Response ====================

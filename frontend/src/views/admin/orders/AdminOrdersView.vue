@@ -62,14 +62,14 @@
           <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.orderId') }}</p><p class="font-mono text-sm font-medium text-gray-900 dark:text-white">#{{ selectedOrder.id }}</p></div>
           <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.orderNo') }}</p><p class="text-sm font-medium text-gray-900 dark:text-white">{{ selectedOrder.out_trade_no }}</p></div>
           <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.status') }}</p><OrderStatusBadge :status="selectedOrder.status" /></div>
-          <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.amount') }}</p><p class="text-sm font-medium text-gray-900 dark:text-white">{{ selectedOrder.order_type === 'balance' ? '$' : '¥' }}{{ selectedOrder.amount.toFixed(2) }}</p></div>
-          <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.payAmount') }}</p><p class="text-sm font-medium text-gray-900 dark:text-white">¥{{ selectedOrder.pay_amount.toFixed(2) }}</p></div>
+          <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.amount') }}</p><p class="text-sm font-medium text-gray-900 dark:text-white">{{ formatOrderAmount(selectedOrder, selectedOrder.amount) }}</p></div>
+          <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.payAmount') }}</p><p class="text-sm font-medium text-gray-900 dark:text-white">{{ formatOrderAmount(selectedOrder, selectedOrder.pay_amount) }}</p></div>
           <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.paymentMethod') }}</p><p class="text-sm text-gray-700 dark:text-gray-300">{{ t('payment.methods.' + selectedOrder.payment_type, selectedOrder.payment_type) }}</p></div>
           <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.admin.feeRate') }}</p><p class="text-sm text-gray-700 dark:text-gray-300">{{ selectedOrder.fee_rate }}%</p></div>
           <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.createdAt') }}</p><p class="text-sm text-gray-700 dark:text-gray-300">{{ formatDateTime(selectedOrder.created_at) }}</p></div>
           <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.admin.expiresAt') }}</p><p class="text-sm text-gray-700 dark:text-gray-300">{{ formatDateTime(selectedOrder.expires_at) }}</p></div>
           <div v-if="selectedOrder.paid_at"><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.admin.paidAt') }}</p><p class="text-sm text-gray-700 dark:text-gray-300">{{ formatDateTime(selectedOrder.paid_at) }}</p></div>
-          <div v-if="selectedOrder.refund_amount"><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.admin.refundAmount') }}</p><p class="text-sm font-medium text-red-600 dark:text-red-400">{{ selectedOrder.order_type === 'balance' ? '$' : '¥' }}{{ selectedOrder.refund_amount.toFixed(2) }}</p></div>
+          <div v-if="selectedOrder.refund_amount"><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.admin.refundAmount') }}</p><p class="text-sm font-medium text-red-600 dark:text-red-400">{{ formatOrderAmount(selectedOrder, selectedOrder.refund_amount) }}</p></div>
           <div v-if="selectedOrder.refund_reason" class="col-span-2"><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.admin.refundReason') }}</p><p class="text-sm text-gray-700 dark:text-gray-300">{{ selectedOrder.refund_reason }}</p></div>
           <!-- Refund request info -->
           <div v-if="selectedOrder.refund_requested_at" class="col-span-2 border-t border-gray-200 pt-3 dark:border-dark-600">
@@ -87,6 +87,59 @@
                 <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.admin.refundRequestReason') }}</p>
                 <p class="text-sm text-gray-700 dark:text-gray-300">{{ selectedOrder.refund_request_reason }}</p>
               </div>
+            </div>
+          </div>
+        </div>
+        <!-- Wise Reconciliation Detail -->
+        <div v-if="wiseReconcileDetail" class="rounded-lg border border-lime-200 bg-lime-50 p-3 dark:border-lime-800/60 dark:bg-lime-950/30">
+          <p class="mb-2 text-xs font-medium text-lime-800 dark:text-lime-200">{{ t('payment.admin.wiseReconcile.title') }}</p>
+          <p v-if="wiseReconcileNeedsManualReview" class="mb-3 rounded-md bg-amber-50 px-2 py-1.5 text-xs text-amber-700 dark:bg-amber-900/30 dark:text-amber-200">
+            {{ t('payment.admin.wiseReconcile.manualReviewWarning') }}
+          </p>
+          <div class="grid grid-cols-2 gap-3 text-xs">
+            <div v-if="wiseDetailText('reconcile_decision') || wiseDetailText('reconcileDecision')">
+              <p class="text-gray-500 dark:text-gray-400">{{ t('payment.admin.wiseReconcile.decision') }}</p>
+              <p class="font-medium text-gray-900 dark:text-white">{{ wiseDetailText('reconcile_decision') || wiseDetailText('reconcileDecision') }}</p>
+            </div>
+            <div v-if="wiseDetailText('reason') || wiseDetailText('reconcile_reason')">
+              <p class="text-gray-500 dark:text-gray-400">{{ t('payment.admin.wiseReconcile.reason') }}</p>
+              <p class="font-medium text-gray-900 dark:text-white">{{ wiseDetailText('reason') || wiseDetailText('reconcile_reason') }}</p>
+            </div>
+            <div v-if="wiseDetailText('wise_transaction_id')">
+              <p class="text-gray-500 dark:text-gray-400">{{ t('payment.admin.wiseReconcile.transactionId') }}</p>
+              <p class="font-mono font-medium text-gray-900 dark:text-white">{{ wiseDetailText('wise_transaction_id') }}</p>
+            </div>
+            <div v-if="wiseDetailText('transaction_status')">
+              <p class="text-gray-500 dark:text-gray-400">{{ t('payment.admin.wiseReconcile.status') }}</p>
+              <p class="font-medium text-gray-900 dark:text-white">{{ wiseDetailText('transaction_status') }}</p>
+            </div>
+            <div v-if="wiseDetailText('gross_amount')">
+              <p class="text-gray-500 dark:text-gray-400">{{ t('payment.admin.wiseReconcile.grossAmount') }}</p>
+              <p class="font-medium text-gray-900 dark:text-white">{{ formatWiseDetailAmount('gross_amount') }}</p>
+            </div>
+            <div v-if="wiseDetailText('fee_amount')">
+              <p class="text-gray-500 dark:text-gray-400">{{ t('payment.admin.wiseReconcile.feeAmount') }}</p>
+              <p class="font-medium text-gray-900 dark:text-white">{{ formatWiseDetailAmount('fee_amount') }}</p>
+            </div>
+            <div v-if="wiseDetailText('net_amount')">
+              <p class="text-gray-500 dark:text-gray-400">{{ t('payment.admin.wiseReconcile.netAmount') }}</p>
+              <p class="font-medium text-gray-900 dark:text-white">{{ formatWiseDetailAmount('net_amount') }}</p>
+            </div>
+            <div v-if="wiseDetailText('currency')">
+              <p class="text-gray-500 dark:text-gray-400">{{ t('payment.admin.wiseReconcile.currency') }}</p>
+              <p class="font-medium text-gray-900 dark:text-white">{{ wiseDetailText('currency') }}</p>
+            </div>
+            <div v-if="wiseDetailText('occurred_at')">
+              <p class="text-gray-500 dark:text-gray-400">{{ t('payment.admin.wiseReconcile.occurredAt') }}</p>
+              <p class="font-medium text-gray-900 dark:text-white">{{ formatDateTime(wiseDetailText('occurred_at')) }}</p>
+            </div>
+            <div v-if="wiseDetailText('reference')" class="col-span-2">
+              <p class="text-gray-500 dark:text-gray-400">{{ t('payment.admin.wiseReconcile.reference') }}</p>
+              <p class="break-all font-mono font-medium text-gray-900 dark:text-white">{{ wiseDetailText('reference') }}</p>
+            </div>
+            <div v-if="wiseDetailText('description')" class="col-span-2">
+              <p class="text-gray-500 dark:text-gray-400">{{ t('payment.admin.wiseReconcile.description') }}</p>
+              <p class="break-all font-medium text-gray-900 dark:text-white">{{ wiseDetailText('description') }}</p>
             </div>
           </div>
         </div>
@@ -149,6 +202,28 @@ const showDetailDialog = ref(false)
 const showRefundDialog = ref(false)
 const refundSubmitting = ref(false)
 const orderAuditLogs = ref<AuditLog[]>([])
+
+const wiseReconcileDetail = computed<Record<string, unknown> | null>(() => {
+  if (selectedOrder.value?.payment_type !== 'wise') return null
+  for (const log of [...orderAuditLogs.value].reverse()) {
+    const detail = parseAuditDetail(log.detail)
+    if (!detail) continue
+    if (
+      log.action.startsWith('PAYMENT_WISE') ||
+      hasDetailKey(detail, 'wise_transaction_id') ||
+      hasDetailKey(detail, 'reconcile_decision') ||
+      hasDetailKey(detail, 'reconcileDecision')
+    ) {
+      return detail
+    }
+  }
+  return null
+})
+
+const wiseReconcileNeedsManualReview = computed(() => {
+  const action = wiseDetailText('reviewAction') || wiseDetailText('reconcile_decision') || wiseDetailText('reconcileDecision')
+  return action === 'manual_review' || action === 'rejected'
+})
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 function debounceLoadOrders() {
@@ -237,6 +312,43 @@ async function handleRefund(data: { amount: number; reason: string; deduct_balan
 }
 
 function formatDateTime(dateStr: string): string { return formatOrderDateTime(dateStr) }
+
+function formatOrderAmount(order: PaymentOrder, value: number): string {
+  const currency = String(order.currency || '').trim().toUpperCase()
+  if (currency) return `${currency} ${value.toFixed(2)}`
+  return `${order.order_type === 'balance' ? '$' : '¥'}${value.toFixed(2)}`
+}
+
+function parseAuditDetail(detail: string | null): Record<string, unknown> | null {
+  if (!detail) return null
+  try {
+    const parsed = JSON.parse(detail) as unknown
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>
+    }
+  } catch { /* ignore non-JSON detail */ }
+  return null
+}
+
+function hasDetailKey(detail: Record<string, unknown>, key: string): boolean {
+  const value = detail[key]
+  return value !== undefined && value !== null && String(value).trim() !== ''
+}
+
+function wiseDetailText(key: string): string {
+  const value = wiseReconcileDetail.value?.[key]
+  if (value === undefined || value === null) return ''
+  return String(value).trim()
+}
+
+function formatWiseDetailAmount(key: string): string {
+  const raw = wiseDetailText(key)
+  if (!raw) return ''
+  const currency = wiseDetailText('currency') || String(selectedOrder.value?.currency || '').trim().toUpperCase()
+  const numeric = Number(raw)
+  const amount = Number.isFinite(numeric) ? numeric.toFixed(2) : raw
+  return currency ? `${currency} ${amount}` : amount
+}
 
 onMounted(() => loadOrders())
 </script>

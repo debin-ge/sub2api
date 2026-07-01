@@ -59,6 +59,13 @@ const orderFactory = (status: string) => ({
   refund_amount: 0,
 })
 
+const wiseOrderFactory = (status: string) => ({
+  ...orderFactory(status),
+  payment_type: 'wise',
+  out_trade_no: 'sub2_wise_20260612abcd1234',
+  currency: 'USD',
+})
+
 describe('PaymentStatusPanel', () => {
   beforeEach(() => {
     vi.useFakeTimers()
@@ -159,6 +166,45 @@ describe('PaymentStatusPanel', () => {
 
     expect(pollOrderStatus).toHaveBeenCalledWith(42)
     expect(verifyOrder).toHaveBeenCalledWith('sub2_20260420abcd1234')
+    expect(wrapper.text()).toContain('payment.result.success')
+    expect(wrapper.emitted('success')).toHaveLength(1)
+  })
+
+  it('lets Wise users manually refresh status after paying in the hosted page', async () => {
+    pollOrderStatus.mockResolvedValue(wiseOrderFactory('PENDING'))
+    verifyOrder.mockResolvedValue({
+      data: wiseOrderFactory('COMPLETED'),
+    })
+
+    const wrapper = mount(PaymentStatusPanel, {
+      props: {
+        orderId: 42,
+        qrCode: '',
+        payUrl: 'https://wise.com/pay/business/account?amount=88&currency=USD&description=sub2_wise_20260612abcd1234',
+        expiresAt: '2099-01-01T12:30:00Z',
+        paymentType: 'wise',
+        orderType: 'balance',
+        currency: 'USD',
+      },
+      global: {
+        stubs: {
+          Icon: true,
+        },
+      },
+    })
+
+    await flushPromises()
+    expect(wrapper.text()).toContain('payment.qr.refreshStatus')
+
+    const refreshButton = wrapper
+      .findAll('button')
+      .find(button => button.text() === 'payment.qr.refreshStatus')
+    if (!refreshButton) throw new Error('Wise refresh button not found')
+    await refreshButton.trigger('click')
+    await flushPromises()
+
+    expect(pollOrderStatus).toHaveBeenCalledWith(42)
+    expect(verifyOrder).toHaveBeenCalledWith('sub2_wise_20260612abcd1234')
     expect(wrapper.text()).toContain('payment.result.success')
     expect(wrapper.emitted('success')).toHaveLength(1)
   })

@@ -26,12 +26,39 @@ const (
 	wiseDefaultStrategy = "exact_only"
 	wiseHTTPTimeout     = 15 * time.Second
 
-	wiseMaxResponseSize      = 1 << 20
-	wiseMaxErrorSummaryBytes = 512
-	wiseStatementLookback    = 72 * time.Hour
-	wiseStatementLookahead   = 5 * time.Minute
-	wiseMaxStatementLookback = 720 * time.Hour
+	wiseMaxResponseSize            = 1 << 20
+	wiseMaxErrorSummaryBytes       = 512
+	wiseStatementLookback          = 72 * time.Hour
+	wiseStatementLookahead         = 5 * time.Minute
+	wiseOrderCreatedAtQueryPadding = 10 * time.Minute
+	wiseMaxStatementLookback       = 720 * time.Hour
+
+	wiseActivityPageSize            = 100
+	wiseMaxAllowedMethodsNoteLength = 500
 )
+
+type wiseOrderCreatedAtContextKey struct{}
+
+func WithWiseOrderCreatedAt(ctx context.Context, createdAt time.Time) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if createdAt.IsZero() {
+		return ctx
+	}
+	return context.WithValue(ctx, wiseOrderCreatedAtContextKey{}, createdAt.UTC())
+}
+
+func WiseOrderCreatedAtFromContext(ctx context.Context) (time.Time, bool) {
+	if ctx == nil {
+		return time.Time{}, false
+	}
+	createdAt, ok := ctx.Value(wiseOrderCreatedAtContextKey{}).(time.Time)
+	if !ok || createdAt.IsZero() {
+		return time.Time{}, false
+	}
+	return createdAt.UTC(), true
+}
 
 type Wise struct {
 	instanceID string
@@ -56,9 +83,6 @@ func NewWise(instanceID string, config map[string]string) (*Wise, error) {
 	if strings.TrimSpace(cfg["currency"]) == "" {
 		return nil, fmt.Errorf("wise config missing required key: currency")
 	}
-	if strings.TrimSpace(cfg["webhookPublicKey"]) == "" {
-		return nil, fmt.Errorf("wise config missing required key: webhookPublicKey")
-	}
 	if strings.TrimSpace(cfg["apiBase"]) == "" {
 		cfg["apiBase"] = wiseDefaultAPIBase
 	}
@@ -72,7 +96,7 @@ func NewWise(instanceID string, config map[string]string) (*Wise, error) {
 		return nil, err
 	}
 	cfg["apiBase"] = strings.TrimRight(apiBase, "/")
-	if _, err := parseWiseWebhookPublicKey(cfg["webhookPublicKey"]); err != nil {
+	if err := normalizeWiseWebhookConfig(cfg); err != nil {
 		return nil, err
 	}
 	currency, err := payment.NormalizePaymentCurrency(cfg["currency"])
@@ -91,6 +115,11 @@ func NewWise(instanceID string, config map[string]string) (*Wise, error) {
 	if strings.EqualFold(strings.TrimSpace(cfg["autoFulfillFeePayments"]), "true") {
 		return nil, fmt.Errorf("wise autoFulfillFeePayments is not supported in v1")
 	}
+	note := strings.TrimSpace(cfg["allowedMethodsNote"])
+	if len([]rune(note)) > wiseMaxAllowedMethodsNoteLength {
+		return nil, fmt.Errorf("wise allowedMethodsNote must be <= %d characters", wiseMaxAllowedMethodsNoteLength)
+	}
+	cfg["allowedMethodsNote"] = note
 	if err := normalizeWiseReconcileWindowConfig(cfg); err != nil {
 		return nil, err
 	}
@@ -143,12 +172,30 @@ func (w *Wise) QueryOrder(ctx context.Context, tradeNo string) (*payment.QueryOr
 		return nil, fmt.Errorf("wise query order: missing order reference")
 	}
 
-	transactions, err := w.queryStatement(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("wise query order: %w", err)
+	transactions, statementErr := w.queryStatement(ctx)
+	var statementResp *payment.QueryOrderResponse
+	if statementErr == nil {
+		statementResp = w.queryOrderFromTransactions(outTradeNo, transactions)
+		if !wiseQueryResponseIsNoMatch(statementResp) {
+			return statementResp, nil
+		}
 	}
 
-	return w.queryOrderFromTransactions(outTradeNo, transactions), nil
+	activityTransactions, activityErr := w.queryActivities(ctx)
+	if activityErr != nil {
+		if statementErr != nil {
+			return nil, fmt.Errorf("wise query order: statement: %v; activities: %w", statementErr, activityErr)
+		}
+		return statementResp, nil
+	}
+	activityResp := w.queryOrderFromTransactions(outTradeNo, activityTransactions)
+	if !wiseQueryResponseIsNoMatch(activityResp) {
+		return activityResp, nil
+	}
+	if statementResp != nil {
+		return statementResp, nil
+	}
+	return activityResp, nil
 }
 
 func (w *Wise) QueryOrders(ctx context.Context, tradeNos []string) (map[string]*payment.QueryOrderResponse, error) {
@@ -169,16 +216,45 @@ func (w *Wise) QueryOrders(ctx context.Context, tradeNos []string) (map[string]*
 		return map[string]*payment.QueryOrderResponse{}, nil
 	}
 
-	transactions, err := w.queryStatement(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("wise query orders: %w", err)
+	responses := make(map[string]*payment.QueryOrderResponse, len(normalized))
+	needsActivity := make([]string, 0, len(normalized))
+	transactions, statementErr := w.queryStatement(ctx)
+	if statementErr == nil {
+		for _, outTradeNo := range normalized {
+			resp := w.queryOrderFromTransactions(outTradeNo, transactions)
+			responses[outTradeNo] = resp
+			if wiseQueryResponseIsNoMatch(resp) {
+				needsActivity = append(needsActivity, outTradeNo)
+			}
+		}
+	} else {
+		needsActivity = append(needsActivity, normalized...)
 	}
 
-	responses := make(map[string]*payment.QueryOrderResponse, len(normalized))
-	for _, outTradeNo := range normalized {
-		responses[outTradeNo] = w.queryOrderFromTransactions(outTradeNo, transactions)
+	if len(needsActivity) > 0 {
+		activityTransactions, activityErr := w.queryActivities(ctx)
+		if activityErr != nil {
+			if statementErr != nil {
+				return nil, fmt.Errorf("wise query orders: statement: %v; activities: %w", statementErr, activityErr)
+			}
+			return responses, nil
+		}
+		for _, outTradeNo := range needsActivity {
+			resp := w.queryOrderFromTransactions(outTradeNo, activityTransactions)
+			if statementErr != nil || !wiseQueryResponseIsNoMatch(resp) {
+				responses[outTradeNo] = resp
+			}
+		}
 	}
 	return responses, nil
+}
+
+func wiseQueryResponseIsNoMatch(resp *payment.QueryOrderResponse) bool {
+	if resp == nil {
+		return true
+	}
+	return resp.Status == payment.ProviderStatusPending &&
+		strings.TrimSpace(resp.Metadata["reconcile_decision"]) == "no_match"
 }
 
 func (w *Wise) queryOrderFromTransactions(outTradeNo string, transactions []wiseTransaction) *payment.QueryOrderResponse {
@@ -259,7 +335,7 @@ func (w *Wise) VerifyNotification(ctx context.Context, rawBody string, headers m
 	if err := verifyWiseWebhookSignature(rawBody, headers, w.config["webhookPublicKey"]); err != nil {
 		return nil, err
 	}
-	var event wiseWebhookEvent
+	var event wiseWebhookEnvelope
 	if err := json.Unmarshal([]byte(rawBody), &event); err != nil {
 		return nil, fmt.Errorf("wise parse webhook: %w", err)
 	}
@@ -302,16 +378,8 @@ func parseWiseWebhookPublicKey(raw string) (*rsa.PublicKey, error) {
 	return rsaPub, nil
 }
 
-type wiseWebhookEvent struct {
+type wiseWebhookEnvelope struct {
 	EventType string `json:"event_type"`
-	Data      struct {
-		Resource struct {
-			ID        string `json:"id"`
-			ProfileID string `json:"profile_id"`
-			AccountID string `json:"account_id"`
-			Type      string `json:"type"`
-		} `json:"resource"`
-	} `json:"data"`
 }
 
 func wiseWebhookEventSupported(eventType string) bool {
@@ -341,6 +409,29 @@ func verifyWiseWebhookSignature(rawBody string, headers map[string]string, publi
 		return fmt.Errorf("wise invalid signature")
 	}
 	return nil
+}
+
+func wiseWebhookDeliveryID(headers map[string]string) string {
+	return strings.TrimSpace(wiseWebhookHeader(headers, "x-delivery-id"))
+}
+
+func wiseWebhookIsTestNotification(headers map[string]string) bool {
+	return strings.EqualFold(strings.TrimSpace(wiseWebhookHeader(headers, "x-test-notification")), "true")
+}
+
+func wiseWebhookHeader(headers map[string]string, name string) string {
+	if len(headers) == 0 {
+		return ""
+	}
+	if value, ok := headers[name]; ok {
+		return value
+	}
+	for key, value := range headers {
+		if strings.EqualFold(strings.TrimSpace(key), name) {
+			return value
+		}
+	}
+	return ""
 }
 
 func (w *Wise) currency() string {
@@ -395,7 +486,7 @@ func (w *Wise) quickPayURL(amount, outTradeNo string) (string, error) {
 	q := parsed.Query()
 	q.Set("amount", amount)
 	q.Set("currency", w.currency())
-	q.Set("description", outTradeNo)
+	q.Set("description", wiseSafePaymentReference(outTradeNo))
 	parsed.RawQuery = q.Encode()
 	return parsed.String(), nil
 }
@@ -409,23 +500,48 @@ type wiseOrderContext struct {
 }
 
 type wiseTransaction struct {
-	ID          string
-	ProfileID   string
-	BalanceID   string
-	Direction   string
-	Status      string
-	Currency    string
-	GrossAmount decimal.Decimal
-	FeeAmount   decimal.Decimal
-	NetAmount   decimal.Decimal
-	Description string
-	Reference   string
-	OccurredAt  time.Time
-	Raw         json.RawMessage
+	ID           string
+	ProfileID    string
+	BalanceID    string
+	Direction    string
+	Status       string
+	Currency     string
+	GrossAmount  decimal.Decimal
+	FeeAmount    decimal.Decimal
+	NetAmount    decimal.Decimal
+	Description  string
+	Reference    string
+	OccurredAt   time.Time
+	RejectReason string
+	Metadata     map[string]string
+	Raw          json.RawMessage
 }
 
 type wiseStatementResponse struct {
 	Transactions []wiseStatementTransaction `json:"transactions"`
+}
+
+type wiseActivityResponse struct {
+	Cursor     string         `json:"cursor"`
+	Activities []wiseActivity `json:"activities"`
+}
+
+type wiseActivity struct {
+	ID              string               `json:"id"`
+	Type            string               `json:"type"`
+	Resource        wiseActivityResource `json:"resource"`
+	Title           string               `json:"title"`
+	Description     string               `json:"description"`
+	PrimaryAmount   string               `json:"primaryAmount"`
+	SecondaryAmount string               `json:"secondaryAmount"`
+	Status          string               `json:"status"`
+	CreatedOn       string               `json:"createdOn"`
+	UpdatedOn       string               `json:"updatedOn"`
+}
+
+type wiseActivityResource struct {
+	Type string `json:"type"`
+	ID   string `json:"id"`
 }
 
 type wiseStatementTransaction struct {
@@ -467,6 +583,9 @@ type wiseExactSettlementStrategy struct{}
 func (wiseExactSettlementStrategy) Name() string { return wiseDefaultStrategy }
 
 func (wiseExactSettlementStrategy) Match(order wiseOrderContext, tx wiseTransaction) wiseSettlementDecision {
+	if reason := strings.TrimSpace(tx.RejectReason); reason != "" {
+		return wiseSettlementDecision{Matched: false, Reason: reason}
+	}
 	if !strings.EqualFold(strings.TrimSpace(tx.ProfileID), strings.TrimSpace(order.ProfileID)) {
 		return wiseSettlementDecision{Matched: false, Reason: "profile_mismatch"}
 	}
@@ -563,7 +682,7 @@ func (w *Wise) queryStatement(ctx context.Context) ([]wiseTransaction, error) {
 	profileID := strings.TrimSpace(w.config["profileId"])
 	balanceID := strings.TrimSpace(w.config["balanceId"])
 	query := url.Values{}
-	query.Set("intervalStart", now.Add(-w.statementLookback()).Format(time.RFC3339))
+	query.Set("intervalStart", wiseQueryWindowStart(ctx, now, w.statementLookback()).Format(time.RFC3339))
 	query.Set("intervalEnd", now.Add(wiseStatementLookahead).Format(time.RFC3339))
 	query.Set("type", "COMPACT")
 	query.Set("currency", w.currency())
@@ -584,6 +703,46 @@ func (w *Wise) queryStatement(ctx context.Context) ([]wiseTransaction, error) {
 		transactions = append(transactions, w.normalizeStatementTransaction(row, profileID, balanceID))
 	}
 	return transactions, nil
+}
+
+func (w *Wise) queryActivities(ctx context.Context) ([]wiseTransaction, error) {
+	now := time.Now().UTC()
+	profileID := strings.TrimSpace(w.config["profileId"])
+	query := url.Values{}
+	query.Set("since", wiseQueryWindowStart(ctx, now, w.statementLookback()).Format(time.RFC3339))
+	query.Set("until", now.Add(wiseStatementLookahead).Format(time.RFC3339))
+	query.Set("size", strconv.Itoa(wiseActivityPageSize))
+	query.Set("status", "COMPLETED")
+	path := fmt.Sprintf(
+		"/v1/profiles/%s/activities?%s",
+		url.PathEscape(profileID),
+		query.Encode(),
+	)
+
+	var response wiseActivityResponse
+	if err := w.doJSON(ctx, http.MethodGet, path, &response); err != nil {
+		return nil, err
+	}
+
+	transactions := make([]wiseTransaction, 0, len(response.Activities))
+	for _, row := range response.Activities {
+		transactions = append(transactions, w.normalizeActivity(row, profileID))
+	}
+	return transactions, nil
+}
+
+func wiseQueryWindowStart(ctx context.Context, now time.Time, lookback time.Duration) time.Time {
+	start := now.UTC().Add(-lookback)
+	createdAt, ok := WiseOrderCreatedAtFromContext(ctx)
+	if !ok {
+		return start
+	}
+	orderStart := createdAt.UTC().Add(-wiseOrderCreatedAtQueryPadding)
+	hardFloor := now.UTC().Add(-wiseMaxStatementLookback)
+	if orderStart.Before(hardFloor) {
+		return hardFloor
+	}
+	return orderStart
 }
 
 func (w *Wise) normalizeStatementTransaction(row wiseStatementTransaction, profileID, balanceID string) wiseTransaction {
@@ -623,6 +782,115 @@ func (w *Wise) normalizeStatementTransaction(row wiseStatementTransaction, profi
 	}
 }
 
+func (w *Wise) normalizeActivity(row wiseActivity, profileID string) wiseTransaction {
+	id := strings.TrimSpace(row.Resource.ID)
+	if id == "" {
+		id = strings.TrimSpace(row.ID)
+	}
+	title := stripWiseActivityMarkup(row.Title)
+	description := stripWiseActivityMarkup(row.Description)
+	amount, currency, ok := parseWiseActivityPrimaryAmount(row.PrimaryAmount)
+	direction := "credit"
+	if amount.IsNegative() {
+		direction = "debit"
+	}
+
+	var occurredAt time.Time
+	for _, raw := range []string{row.CreatedOn, row.UpdatedOn} {
+		if parsed, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(raw)); err == nil {
+			occurredAt = parsed
+			break
+		}
+	}
+
+	raw, _ := json.Marshal(row)
+	metadata := map[string]string{}
+	if activityID := strings.TrimSpace(row.ID); activityID != "" {
+		metadata["activity_id"] = activityID
+	}
+	if activityType := strings.TrimSpace(row.Type); activityType != "" {
+		metadata["activity_type"] = activityType
+	}
+	if resourceType := strings.TrimSpace(row.Resource.Type); resourceType != "" {
+		metadata["activity_resource_type"] = resourceType
+	}
+	if resourceID := strings.TrimSpace(row.Resource.ID); resourceID != "" {
+		metadata["activity_resource_id"] = resourceID
+	}
+	if title != "" {
+		metadata["activity_title"] = title
+	}
+	if description != "" {
+		metadata["activity_description"] = description
+	}
+	if primaryAmount := strings.TrimSpace(row.PrimaryAmount); primaryAmount != "" {
+		metadata["activity_primary_amount"] = primaryAmount
+	}
+
+	tx := wiseTransaction{
+		ID:          id,
+		ProfileID:   profileID,
+		Direction:   direction,
+		Status:      strings.ToLower(strings.TrimSpace(row.Status)),
+		Currency:    currency,
+		GrossAmount: amount,
+		NetAmount:   amount,
+		Description: description,
+		Reference:   description,
+		OccurredAt:  occurredAt,
+		Metadata:    metadata,
+		Raw:         raw,
+	}
+	if !ok {
+		tx.RejectReason = "activity_amount_unparseable"
+	} else {
+		tx.RejectReason = "balance_unverified"
+	}
+	return tx
+}
+
+func parseWiseActivityPrimaryAmount(raw string) (decimal.Decimal, string, bool) {
+	parts := strings.Fields(strings.TrimSpace(raw))
+	if len(parts) != 2 {
+		return decimal.Zero, "", false
+	}
+	amountText := strings.TrimPrefix(parts[0], "+")
+	if amountText == "" {
+		return decimal.Zero, "", false
+	}
+	amount, err := decimal.NewFromString(amountText)
+	if err != nil {
+		return decimal.Zero, "", false
+	}
+	currency, err := payment.NormalizePaymentCurrency(parts[1])
+	if err != nil {
+		return decimal.Zero, "", false
+	}
+	return amount, currency, true
+}
+
+func stripWiseActivityMarkup(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	var b strings.Builder
+	inTag := false
+	for _, r := range raw {
+		switch r {
+		case '<':
+			inTag = true
+		case '>':
+			inTag = false
+		default:
+			if !inTag {
+				b.WriteRune(r)
+			}
+		}
+	}
+	return strings.Join(strings.Fields(b.String()), " ")
+}
+
 func transactionMetadata(tx wiseTransaction, decision wiseSettlementDecision) map[string]string {
 	metadata := map[string]string{
 		"currency":            tx.Currency,
@@ -648,6 +916,11 @@ func transactionMetadata(tx wiseTransaction, decision wiseSettlementDecision) ma
 	}
 	if !tx.OccurredAt.IsZero() {
 		metadata["occurred_at"] = tx.OccurredAt.UTC().Format(time.RFC3339)
+	}
+	for key, value := range tx.Metadata {
+		if strings.TrimSpace(value) != "" {
+			metadata[key] = value
+		}
 	}
 	for key, value := range decision.Metadata {
 		if strings.TrimSpace(value) != "" {
@@ -687,7 +960,29 @@ func wiseTransactionReferencesOrder(tx wiseTransaction, outTradeNo string) bool 
 	if outTradeNo == "" {
 		return false
 	}
-	return wiseTextReferencesOrderID(tx.Description, outTradeNo) || wiseTextReferencesOrderID(tx.Reference, outTradeNo)
+	wiseReference := wiseSafePaymentReference(outTradeNo)
+	return wiseTextReferencesOrderID(tx.Description, outTradeNo) ||
+		wiseTextReferencesOrderID(tx.Reference, outTradeNo) ||
+		(wiseReference != outTradeNo &&
+			(wiseTextReferencesOrderID(tx.Description, wiseReference) ||
+				wiseTextReferencesOrderID(tx.Reference, wiseReference)))
+}
+
+func wiseSafePaymentReference(outTradeNo string) string {
+	outTradeNo = strings.TrimSpace(outTradeNo)
+	if outTradeNo == "" {
+		return ""
+	}
+	var b strings.Builder
+	b.Grow(len(outTradeNo))
+	for _, ch := range outTradeNo {
+		if ch >= 'a' && ch <= 'z' ||
+			ch >= 'A' && ch <= 'Z' ||
+			ch >= '0' && ch <= '9' {
+			b.WriteRune(ch)
+		}
+	}
+	return b.String()
 }
 
 func wiseTextReferencesOrderID(text, outTradeNo string) bool {

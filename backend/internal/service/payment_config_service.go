@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"os"
 	"strconv"
 	"strings"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/paymentproviderinstance"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
+	"github.com/Wei-Shaw/sub2api/internal/payment/provider"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
 
@@ -180,14 +182,56 @@ type UpdatePlanRequest struct {
 // PaymentConfigService manages payment configuration and CRUD for
 // provider instances, channels, and subscription plans.
 type PaymentConfigService struct {
-	entClient     *dbent.Client
-	settingRepo   SettingRepository
-	encryptionKey []byte
+	entClient                     *dbent.Client
+	settingRepo                   SettingRepository
+	encryptionKey                 []byte
+	wiseSubscriptionClientFactory func(config map[string]string) wiseProfileSubscriptionCreator
+	webhookBaseURLResolver        func(ctx context.Context) string
 }
 
 // NewPaymentConfigService creates a new PaymentConfigService.
 func NewPaymentConfigService(entClient *dbent.Client, settingRepo SettingRepository, encryptionKey []byte) *PaymentConfigService {
-	return &PaymentConfigService{entClient: entClient, settingRepo: settingRepo, encryptionKey: encryptionKey}
+	svc := &PaymentConfigService{entClient: entClient, settingRepo: settingRepo, encryptionKey: encryptionKey}
+	svc.wiseSubscriptionClientFactory = defaultWiseSubscriptionClientFactory
+	svc.webhookBaseURLResolver = svc.resolveWebhookBaseURL
+	return svc
+}
+
+func defaultWiseSubscriptionClientFactory(config map[string]string) wiseProfileSubscriptionCreator {
+	return provider.NewWiseSubscriptionClient(
+		providerConfigFieldValue(config, "apiBase"),
+		providerConfigFieldValue(config, "apiToken"),
+	)
+}
+
+func (s *PaymentConfigService) resolveWebhookBaseURL(ctx context.Context) string {
+	if s == nil || s.settingRepo == nil {
+		return resolveWebhookBaseURLFromEnv()
+	}
+	for _, key := range []string{SettingKeyAPIBaseURL, SettingKeyFrontendURL, "SITE_URL", "BASE_URL", "APP_URL"} {
+		value, err := s.settingRepo.GetValue(ctx, key)
+		if err != nil {
+			continue
+		}
+		value = strings.TrimRight(strings.TrimSpace(value), "/")
+		if value != "" {
+			return value
+		}
+	}
+	if value := resolveWebhookBaseURLFromEnv(); value != "" {
+		return value
+	}
+	return ""
+}
+
+func resolveWebhookBaseURLFromEnv() string {
+	for _, key := range []string{"API_BASE_URL", "FRONTEND_URL", "SERVER_FRONTEND_URL", "SITE_URL", "BASE_URL", "APP_URL"} {
+		value := strings.TrimRight(strings.TrimSpace(os.Getenv(key)), "/")
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 // IsPaymentEnabled returns whether the payment system is enabled.

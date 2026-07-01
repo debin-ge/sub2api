@@ -82,8 +82,8 @@ func (h *PaymentWebhookHandler) WiseWebhook(c *gin.Context) {
 		headers[strings.ToLower(k)] = c.GetHeader(k)
 	}
 
-	if _, err := h.paymentService.HandleWiseWebhook(c.Request.Context(), string(body), headers); err != nil {
-		slog.Error("[Payment Webhook] wise reconcile failed", "provider", payment.TypeWise, "error", err, "bodyLen", len(body))
+	if _, err := h.paymentService.HandleWiseWebhookFast(c.Request.Context(), string(body), headers); err != nil {
+		slog.Error("[Payment Webhook] wise webhook failed", "provider", payment.TypeWise, "error", err, "bodyLen", len(body))
 		c.String(http.StatusBadRequest, "verify failed")
 		return
 	}

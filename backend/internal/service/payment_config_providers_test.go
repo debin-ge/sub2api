@@ -13,6 +13,7 @@ import (
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/ent/paymentproviderwebhooksubscription"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/stretchr/testify/assert"
@@ -179,6 +180,98 @@ func TestWiseProtectedConfigChanges(t *testing.T) {
 	next := cloneStringMap(current)
 	next["allowedMethodsNote"] = "bank transfer only"
 	require.False(t, hasPendingOrderProtectedConfigChange(payment.TypeWise, current, next))
+}
+
+func TestListProviderInstancesWithWiseSubscriptionStatus(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	svc := &PaymentConfigService{
+		entClient:     client,
+		encryptionKey: []byte("0123456789abcdef0123456789abcdef"),
+	}
+
+	wiseInst, err := svc.CreateProviderInstance(ctx, CreateProviderInstanceRequest{
+		ProviderKey:    payment.TypeWise,
+		Name:           "Wise",
+		Config:         validWiseProviderConfigForConfigService(t),
+		SupportedTypes: []string{payment.TypeWise},
+		Enabled:        false,
+		SortOrder:      1,
+	})
+	require.NoError(t, err)
+	stripeInst, err := svc.CreateProviderInstance(ctx, CreateProviderInstanceRequest{
+		ProviderKey:    payment.TypeStripe,
+		Name:           "Stripe",
+		Config:         validStripeProviderConfig(t),
+		SupportedTypes: []string{payment.TypeStripe},
+		Enabled:        false,
+		SortOrder:      2,
+	})
+	require.NoError(t, err)
+
+	older := time.Now().Add(-time.Hour)
+	newer := time.Now()
+	_, err = client.PaymentProviderWebhookSubscription.Create().
+		SetProviderInstanceID(wiseInst.ID).
+		SetProviderKey(payment.TypeWise).
+		SetExternalSubscriptionID("sub-old").
+		SetTriggerOn(wiseWebhookSubscriptionTrigger).
+		SetDeliveryVersion(wiseWebhookSubscriptionDeliveryVersion).
+		SetDeliveryURL("https://old.example.com/api/v1/payment/webhook/wise").
+		SetStatus(wiseWebhookSubscriptionStatusFailed).
+		SetLastError("old failure").
+		SetSyncedAt(older).
+		SetUpdatedAt(older).
+		Save(ctx)
+	require.NoError(t, err)
+	_, err = client.PaymentProviderWebhookSubscription.Create().
+		SetProviderInstanceID(wiseInst.ID).
+		SetProviderKey(payment.TypeWise).
+		SetExternalSubscriptionID("sub-current").
+		SetTriggerOn(wiseWebhookSubscriptionTrigger).
+		SetDeliveryVersion(wiseWebhookSubscriptionDeliveryVersion).
+		SetDeliveryURL("https://api.example.com/api/v1/payment/webhook/wise").
+		SetStatus(wiseWebhookSubscriptionStatusActive).
+		SetSyncedAt(newer).
+		SetUpdatedAt(newer).
+		Save(ctx)
+	require.NoError(t, err)
+	_, err = client.PaymentProviderWebhookSubscription.Create().
+		SetProviderInstanceID(stripeInst.ID).
+		SetProviderKey(payment.TypeWise).
+		SetExternalSubscriptionID("sub-wrong-instance").
+		SetTriggerOn(wiseWebhookSubscriptionTrigger).
+		SetDeliveryVersion(wiseWebhookSubscriptionDeliveryVersion).
+		SetDeliveryURL("https://wrong.example.com/api/v1/payment/webhook/wise").
+		SetStatus(wiseWebhookSubscriptionStatusFailed).
+		SetLastError("wrong instance").
+		SetUpdatedAt(newer.Add(time.Hour)).
+		Save(ctx)
+	require.NoError(t, err)
+
+	resp, err := svc.ListProviderInstancesWithConfig(ctx)
+	require.NoError(t, err)
+	require.Len(t, resp, 2)
+
+	require.Equal(t, int64(wiseInst.ID), resp[0].ID)
+	require.Equal(t, wiseWebhookSubscriptionStatusActive, resp[0].WebhookSubscriptionStatus)
+	require.Equal(t, "sub-current", resp[0].WebhookSubscriptionID)
+	require.Empty(t, resp[0].WebhookSubscriptionError)
+	require.Equal(t, "https://api.example.com/api/v1/payment/webhook/wise", resp[0].WebhookDeliveryURL)
+
+	require.Equal(t, int64(stripeInst.ID), resp[1].ID)
+	require.Empty(t, resp[1].WebhookSubscriptionStatus)
+	require.Empty(t, resp[1].WebhookSubscriptionID)
+	require.Empty(t, resp[1].WebhookSubscriptionError)
+	require.Empty(t, resp[1].WebhookDeliveryURL)
+
+	count, err := client.PaymentProviderWebhookSubscription.Query().
+		Where(paymentproviderwebhooksubscription.ProviderInstanceIDEQ(wiseInst.ID)).
+		Count(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 2, count)
 }
 
 func TestIsSensitiveProviderConfigField(t *testing.T) {
@@ -666,6 +759,12 @@ func TestWiseExpiredOrdersInsideReconcileWindowProtectProviderInstance(t *testin
 	svc := &PaymentConfigService{
 		entClient:     client,
 		encryptionKey: []byte("0123456789abcdef0123456789abcdef"),
+		wiseSubscriptionClientFactory: func(map[string]string) wiseProfileSubscriptionCreator {
+			return &wiseSubscriptionCreatorStub{}
+		},
+		webhookBaseURLResolver: func(context.Context) string {
+			return "https://api.example.com"
+		},
 	}
 
 	instance, err := svc.CreateProviderInstance(ctx, CreateProviderInstanceRequest{
@@ -705,6 +804,12 @@ func TestWiseCancelledOrdersInsideReconcileWindowProtectProviderInstance(t *test
 	svc := &PaymentConfigService{
 		entClient:     client,
 		encryptionKey: []byte("0123456789abcdef0123456789abcdef"),
+		wiseSubscriptionClientFactory: func(map[string]string) wiseProfileSubscriptionCreator {
+			return &wiseSubscriptionCreatorStub{}
+		},
+		webhookBaseURLResolver: func(context.Context) string {
+			return "https://api.example.com"
+		},
 	}
 
 	instance, err := svc.CreateProviderInstance(ctx, CreateProviderInstanceRequest{
@@ -733,6 +838,12 @@ func TestWiseProviderConfigProtectionUsesConfiguredReconcileWindow(t *testing.T)
 	svc := &PaymentConfigService{
 		entClient:     client,
 		encryptionKey: []byte("0123456789abcdef0123456789abcdef"),
+		wiseSubscriptionClientFactory: func(map[string]string) wiseProfileSubscriptionCreator {
+			return &wiseSubscriptionCreatorStub{}
+		},
+		webhookBaseURLResolver: func(context.Context) string {
+			return "https://api.example.com"
+		},
 	}
 	config := validWiseProviderConfigForConfigService(t)
 	config["reconcileWindowHours"] = "168"
@@ -762,6 +873,12 @@ func TestWiseExpiredOrdersOutsideReconcileWindowDoNotProtectProviderInstance(t *
 	svc := &PaymentConfigService{
 		entClient:     client,
 		encryptionKey: []byte("0123456789abcdef0123456789abcdef"),
+		wiseSubscriptionClientFactory: func(map[string]string) wiseProfileSubscriptionCreator {
+			return &wiseSubscriptionCreatorStub{}
+		},
+		webhookBaseURLResolver: func(context.Context) string {
+			return "https://api.example.com"
+		},
 	}
 
 	instance, err := svc.CreateProviderInstance(ctx, CreateProviderInstanceRequest{

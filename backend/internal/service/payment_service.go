@@ -16,6 +16,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/paymentproviderinstance"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	"github.com/Wei-Shaw/sub2api/internal/payment/provider"
+	"golang.org/x/text/encoding/simplifiedchinese"
 )
 
 // --- Order Status Constants ---
@@ -45,7 +46,9 @@ const (
 	topUsersLimit      = 10
 	amountToleranceCNY = 0.01
 
-	orderIDPrefix = "sub2_"
+	defaultOrderIDPrefix   = "Sub2API"
+	legacyOrderIDPrefix    = "sub2_"
+	maxOrderIDPrefixLength = 24
 )
 
 const paymentResumeSigningKeyEnv = "PAYMENT_RESUME_SIGNING_KEY"
@@ -53,11 +56,106 @@ const paymentResumeSigningKeyEnv = "PAYMENT_RESUME_SIGNING_KEY"
 // --- Types ---
 
 // generateOutTradeNo creates a unique external order ID for payment providers.
-// Format: sub2_20250409aB3kX9mQ (prefix + date + 8-char random)
-func generateOutTradeNo() string {
+// Format: <site-prefix>20250409aB3kX9mQ (prefix + date + 8-char random)
+func generateOutTradeNo(prefix string) string {
 	date := time.Now().Format("20060102")
 	rnd := generateRandomString(8)
-	return orderIDPrefix + date + rnd
+	prefix = strings.TrimSpace(prefix)
+	if prefix == "" {
+		prefix = defaultOrderIDPrefix
+	}
+	return prefix + date + rnd
+}
+
+func orderIDPrefixFromSiteName(siteName string) string {
+	siteName = strings.TrimSpace(siteName)
+	var b strings.Builder
+	b.Grow(min(len(siteName), maxOrderIDPrefixLength))
+	for _, ch := range siteName {
+		if b.Len() >= maxOrderIDPrefixLength {
+			break
+		}
+		switch {
+		case ch >= 'a' && ch <= 'z',
+			ch >= 'A' && ch <= 'Z',
+			ch >= '0' && ch <= '9':
+			b.WriteRune(ch)
+		default:
+			if initial, ok := chinesePinyinInitial(ch); ok {
+				b.WriteByte(initial)
+			}
+		}
+	}
+	prefix := b.String()
+	if prefix == "" {
+		return defaultOrderIDPrefix
+	}
+	if len(prefix) > maxOrderIDPrefixLength {
+		return prefix[:maxOrderIDPrefixLength]
+	}
+	return prefix
+}
+
+func chinesePinyinInitial(ch rune) (byte, bool) {
+	if ch < '\u4e00' || ch > '\u9fff' {
+		return 0, false
+	}
+	encoded, err := simplifiedchinese.GBK.NewEncoder().String(string(ch))
+	if err != nil || len(encoded) < 2 {
+		return 0, false
+	}
+	code := int(encoded[0])<<8 + int(encoded[1])
+	if code < 0xB0A1 || code > 0xF7FE {
+		return 0, false
+	}
+	switch {
+	case code < 0xB0C5:
+		return 'A', true
+	case code < 0xB2C1:
+		return 'B', true
+	case code < 0xB4EE:
+		return 'C', true
+	case code < 0xB6EA:
+		return 'D', true
+	case code < 0xB7A2:
+		return 'E', true
+	case code < 0xB8C1:
+		return 'F', true
+	case code < 0xB9FE:
+		return 'G', true
+	case code < 0xBBF7:
+		return 'H', true
+	case code < 0xBFA6:
+		return 'J', true
+	case code < 0xC0AC:
+		return 'K', true
+	case code < 0xC2E8:
+		return 'L', true
+	case code < 0xC4C3:
+		return 'M', true
+	case code < 0xC5B6:
+		return 'N', true
+	case code < 0xC5BE:
+		return 'O', true
+	case code < 0xC6DA:
+		return 'P', true
+	case code < 0xC8BB:
+		return 'Q', true
+	case code < 0xC8F6:
+		return 'R', true
+	case code < 0xCBFA:
+		return 'S', true
+	case code < 0xCDDA:
+		return 'T', true
+	case code < 0xCEF4:
+		return 'W', true
+	case code < 0xD1B9:
+		return 'X', true
+	case code < 0xD4D1:
+		return 'Y', true
+	default:
+		return 'Z', true
+	}
 }
 
 func generateRandomString(n int) string {
@@ -183,6 +281,7 @@ type PaymentService struct {
 	redeemService            *RedeemService
 	subscriptionSvc          *SubscriptionService
 	configService            *PaymentConfigService
+	settingRepo              SettingRepository
 	userRepo                 UserRepository
 	groupRepo                GroupRepository
 	resumeService            *PaymentResumeService
@@ -191,9 +290,23 @@ type PaymentService struct {
 }
 
 func NewPaymentService(entClient *dbent.Client, registry *payment.Registry, loadBalancer payment.LoadBalancer, redeemService *RedeemService, subscriptionSvc *SubscriptionService, configService *PaymentConfigService, userRepo UserRepository, groupRepo GroupRepository, affiliateService *AffiliateService) *PaymentService {
-	svc := &PaymentService{entClient: entClient, registry: registry, loadBalancer: newVisibleMethodLoadBalancer(loadBalancer, configService), redeemService: redeemService, subscriptionSvc: subscriptionSvc, configService: configService, userRepo: userRepo, groupRepo: groupRepo, affiliateService: affiliateService}
+	var settingRepo SettingRepository
+	if configService != nil {
+		settingRepo = configService.settingRepo
+	}
+	svc := &PaymentService{entClient: entClient, registry: registry, loadBalancer: newVisibleMethodLoadBalancer(loadBalancer, configService), redeemService: redeemService, subscriptionSvc: subscriptionSvc, configService: configService, settingRepo: settingRepo, userRepo: userRepo, groupRepo: groupRepo, affiliateService: affiliateService}
 	svc.resumeService = psNewPaymentResumeService(configService)
 	return svc
+}
+
+func (s *PaymentService) orderIDPrefix(ctx context.Context) string {
+	siteName := ""
+	if s != nil && s.settingRepo != nil {
+		if value, err := s.settingRepo.GetValue(ctx, SettingKeySiteName); err == nil {
+			siteName = value
+		}
+	}
+	return orderIDPrefixFromSiteName(siteName)
 }
 
 func (s *PaymentService) SetNotificationEmailService(notificationEmailService *NotificationEmailService) {

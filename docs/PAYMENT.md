@@ -157,19 +157,22 @@ International payment platform supporting multiple payment methods and currencie
 
 ### Wise
 
-Wise uses hosted redirect plus automatic reconciliation. Sub2API builds a Wise Quick Pay/payment link URL with `amount`, `currency`, and `description=<out_trade_no>`.
+Wise uses hosted redirect plus profile-level webhook subscription and automatic reconciliation. Sub2API builds a Wise Quick Pay/payment link URL with `amount`, `currency`, and `description=<alphanumeric order reference>`. The Wise description is derived from the local `out_trade_no` by removing non-alphanumeric characters so the hosted page remains compatible with Wise Quick Pay.
 
-For v1, enable only Wise balance / bank transfer methods whose settled amount equals the order amount. Do not enable card, Apple Pay, or Google Pay for automatic fulfillment; fee-deducted transactions require manual review.
+Automatic Wise webhook subscription also requires a public HTTPS base URL for this Sub2API instance. Configure **API Base URL** or **Frontend URL** in system settings, or set one of `API_BASE_URL`, `FRONTEND_URL`, `SERVER_FRONTEND_URL`, `SITE_URL`, `BASE_URL`, or `APP_URL` in the deployment environment. The system registers `<base-url>/api/v1/payment/webhook/wise` with Wise.
+
+In v1, Sub2API auto-fulfills only Wise balance / bank transfer transactions whose settled amount exactly equals the order amount. Card, Apple Pay, Google Pay, and other fee-deducted transactions do not auto-credit balance or subscriptions; they require manual review.
 
 | Parameter | Description | Required |
 |-----------|-------------|----------|
 | **Quick Pay Base URL** | Wise Quick Pay/payment link without order query parameters | Yes |
+| **Environment** | Wise environment: `production` or `sandbox`; defaults to `production` | No |
 | **API Base** | Wise API base URL. Production usually uses `https://api.wise.com` | Yes |
-| **API Token** | Wise API token or OAuth access token | Yes |
+| **API Token** | Wise user/API token used for profile-level subscription creation and statement/activity queries; no `clientKey` or client credentials access token is required | Yes |
 | **Profile ID** | Wise business profile ID | Yes |
 | **Balance ID** | Wise balance ID | Yes |
 | **Currency** | Collection currency for this provider instance | Yes |
-| **Webhook Public Key** | Wise webhook RSA public key | Yes |
+| **Webhook Public Key** | Optional override for the Wise webhook RSA public key; normally the system uses the built-in key for the selected environment | No |
 | **Settlement Strategy** | Fixed to `exact_only` in v1 | Yes |
 
 ---
@@ -184,6 +187,7 @@ You can create **multiple instances** of the same provider type for load balanci
 - **Refund control** — Enable or disable refunds per instance
 - **Payment methods** — Each instance can support a subset of payment methods
 - **Ordering** — Drag to reorder instances
+- **Site-based order references** — New payment `out_trade_no` values use the system site name as an alphanumeric prefix. Non-ASCII site names are converted to approximate pinyin initials; empty results fall back to `Sub2API`. Legacy `sub2_` order references remain supported.
 
 ### Instance Limit Configuration
 
@@ -227,17 +231,19 @@ When adding a provider, the system auto-generates callback URLs from your site d
 
 ### Wise Webhook Setup
 
-1. Create a webhook in Wise and use `/api/v1/payment/webhook/wise` as the endpoint path.
-2. Subscribe to balance/account-details credit events such as `balances#credit`, `balances#update`, or account details payment state changes.
-3. Copy the Wise webhook RSA public key into the provider configuration.
-4. When a webhook arrives, Sub2API verifies the signature first, then queries Wise statement/activity data for strict reconciliation.
+Admins do not need to manually create a webhook in the Wise dashboard. When a Wise provider is saved and enabled, the system uses the configured Wise user/API token to call `POST /v3/profiles/{profileId}/subscriptions` and automatically creates a profile-level `balances#credit` subscription.
+
+1. Confirm the site domain is publicly reachable. The Wise Webhook URL must be a public **HTTPS** URL: `https://your-domain.com/api/v1/payment/webhook/wise`.
+2. Save and enable the Wise provider; the system automatically creates or reuses the profile-level `balances#credit` subscription.
+3. Wise sends a test notification when creating the subscription; the system ACKs it quickly, but it does not trigger reconciliation or order fulfillment.
+4. For real webhooks, the request path only performs quick signature verification, idempotent delivery recording, and async reconciliation triggering before ACK. Full reconciliation is handled by background jobs that query Wise statement/activity data.
 
 ### Important Notes
 
-- Callback URLs must use **HTTPS** (required by Stripe, strongly recommended for others)
+- Callback URLs must use **HTTPS** (required by Stripe, public HTTPS required by Wise, strongly recommended for others)
 - Ensure your firewall allows callback requests from payment platforms
 - The system automatically verifies callback signatures to prevent forgery
-- Balance top-up is processed automatically after provider verification / reconciliation passes. Wise fee-deducted or amount-mismatched payments require manual review
+- Balance top-up is processed automatically after provider verification / reconciliation passes. Wise v1 auto-fulfills only Wise balance / bank transfer transactions whose settled amount exactly equals the order amount; fee-deducted, amount-mismatched, card, Apple Pay, and Google Pay transactions require manual review
 
 ---
 
@@ -262,7 +268,11 @@ User selects amount and payment method
        │
        ▼
   Webhook callback verified
-  └─ Wise        → Query statement/activity and reconcile exact settlement
+  └─ Wise        → Quick ACK, idempotent delivery record, trigger async reconciliation
+       │
+       ▼
+  Wise background reconciliation
+  └─ Query statement/activity and auto-confirm only exact-settlement balance / bank transfer payments
        │
        ▼
   Order PAID

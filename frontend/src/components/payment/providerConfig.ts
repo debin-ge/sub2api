@@ -68,6 +68,11 @@ export const PAYMENT_CURRENCY_OPTIONS: TypeOption[] = [
   { value: 'NZD', label: 'NZD' },
 ]
 
+export const WISE_ENVIRONMENT_OPTIONS: TypeOption[] = [
+  { value: 'production', label: 'Production' },
+  { value: 'sandbox', label: 'Sandbox' },
+]
+
 // 与后端当前集成的 stripe-go v85.0.0 的 stripe.APIVersion 保持一致。
 export const STRIPE_SDK_API_VERSION = '2026-03-25.dahlia'
 
@@ -151,12 +156,13 @@ export const PROVIDER_CONFIG_FIELDS: Record<string, ConfigFieldDef[]> = {
   ],
   wise: [
     { key: 'quickPayBaseUrl', label: '', sensitive: false, hintKey: 'admin.settings.payment.field_wiseQuickPayBaseUrlHint' },
+    { key: 'environment', label: '', sensitive: false, defaultValue: 'production', options: WISE_ENVIRONMENT_OPTIONS },
     { key: 'apiBase', label: '', sensitive: false, defaultValue: 'https://api.wise.com', hintKey: 'admin.settings.payment.field_wiseApiBaseHint' },
     { key: 'apiToken', label: '', sensitive: true },
     { key: 'profileId', label: '', sensitive: false },
     { key: 'balanceId', label: '', sensitive: false },
     { key: 'currency', label: '', sensitive: false, defaultValue: 'USD', hintKey: 'admin.settings.payment.field_paymentCurrencyHint', options: PAYMENT_CURRENCY_OPTIONS },
-    { key: 'webhookPublicKey', label: '', sensitive: false, hintKey: 'admin.settings.payment.field_wiseWebhookPublicKeyHint' },
+    { key: 'webhookPublicKey', label: '', sensitive: false, optional: true, clearable: true, hintKey: 'admin.settings.payment.field_wiseWebhookPublicKeyHint' },
     { key: 'settlementStrategy', label: '', sensitive: false, defaultValue: 'exact_only', hintKey: 'admin.settings.payment.field_wiseSettlementStrategyHint' },
     { key: 'allowedMethodsNote', label: '', sensitive: false, optional: true, defaultValue: 'Wise balance / bank transfer only', hintKey: 'admin.settings.payment.field_wiseAllowedMethodsNoteHint' },
     { key: 'reconcileWindowHours', label: '', sensitive: false, optional: true, defaultValue: '72', hintKey: 'admin.settings.payment.field_wiseReconcileWindowHoursHint' },

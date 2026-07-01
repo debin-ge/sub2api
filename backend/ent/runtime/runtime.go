@@ -23,6 +23,8 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	"github.com/Wei-Shaw/sub2api/ent/paymentproviderinstance"
+	"github.com/Wei-Shaw/sub2api/ent/paymentproviderwebhooksubscription"
+	"github.com/Wei-Shaw/sub2api/ent/paymentwebhookdelivery"
 	"github.com/Wei-Shaw/sub2api/ent/pendingauthsession"
 	"github.com/Wei-Shaw/sub2api/ent/promocode"
 	"github.com/Wei-Shaw/sub2api/ent/promocodeusage"
@@ -1114,6 +1116,162 @@ func init() {
 	paymentproviderinstance.DefaultUpdatedAt = paymentproviderinstanceDescUpdatedAt.Default.(func() time.Time)
 	// paymentproviderinstance.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	paymentproviderinstance.UpdateDefaultUpdatedAt = paymentproviderinstanceDescUpdatedAt.UpdateDefault.(func() time.Time)
+	paymentproviderwebhooksubscriptionFields := schema.PaymentProviderWebhookSubscription{}.Fields()
+	_ = paymentproviderwebhooksubscriptionFields
+	// paymentproviderwebhooksubscriptionDescProviderKey is the schema descriptor for provider_key field.
+	paymentproviderwebhooksubscriptionDescProviderKey := paymentproviderwebhooksubscriptionFields[1].Descriptor()
+	// paymentproviderwebhooksubscription.ProviderKeyValidator is a validator for the "provider_key" field. It is called by the builders before save.
+	paymentproviderwebhooksubscription.ProviderKeyValidator = func() func(string) error {
+		validators := paymentproviderwebhooksubscriptionDescProviderKey.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(provider_key string) error {
+			for _, fn := range fns {
+				if err := fn(provider_key); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// paymentproviderwebhooksubscriptionDescExternalSubscriptionID is the schema descriptor for external_subscription_id field.
+	paymentproviderwebhooksubscriptionDescExternalSubscriptionID := paymentproviderwebhooksubscriptionFields[2].Descriptor()
+	// paymentproviderwebhooksubscription.DefaultExternalSubscriptionID holds the default value on creation for the external_subscription_id field.
+	paymentproviderwebhooksubscription.DefaultExternalSubscriptionID = paymentproviderwebhooksubscriptionDescExternalSubscriptionID.Default.(string)
+	// paymentproviderwebhooksubscription.ExternalSubscriptionIDValidator is a validator for the "external_subscription_id" field. It is called by the builders before save.
+	paymentproviderwebhooksubscription.ExternalSubscriptionIDValidator = paymentproviderwebhooksubscriptionDescExternalSubscriptionID.Validators[0].(func(string) error)
+	// paymentproviderwebhooksubscriptionDescTriggerOn is the schema descriptor for trigger_on field.
+	paymentproviderwebhooksubscriptionDescTriggerOn := paymentproviderwebhooksubscriptionFields[3].Descriptor()
+	// paymentproviderwebhooksubscription.TriggerOnValidator is a validator for the "trigger_on" field. It is called by the builders before save.
+	paymentproviderwebhooksubscription.TriggerOnValidator = func() func(string) error {
+		validators := paymentproviderwebhooksubscriptionDescTriggerOn.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(trigger_on string) error {
+			for _, fn := range fns {
+				if err := fn(trigger_on); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// paymentproviderwebhooksubscriptionDescDeliveryVersion is the schema descriptor for delivery_version field.
+	paymentproviderwebhooksubscriptionDescDeliveryVersion := paymentproviderwebhooksubscriptionFields[4].Descriptor()
+	// paymentproviderwebhooksubscription.DeliveryVersionValidator is a validator for the "delivery_version" field. It is called by the builders before save.
+	paymentproviderwebhooksubscription.DeliveryVersionValidator = func() func(string) error {
+		validators := paymentproviderwebhooksubscriptionDescDeliveryVersion.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(delivery_version string) error {
+			for _, fn := range fns {
+				if err := fn(delivery_version); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// paymentproviderwebhooksubscriptionDescDeliveryURL is the schema descriptor for delivery_url field.
+	paymentproviderwebhooksubscriptionDescDeliveryURL := paymentproviderwebhooksubscriptionFields[5].Descriptor()
+	// paymentproviderwebhooksubscription.DeliveryURLValidator is a validator for the "delivery_url" field. It is called by the builders before save.
+	paymentproviderwebhooksubscription.DeliveryURLValidator = paymentproviderwebhooksubscriptionDescDeliveryURL.Validators[0].(func(string) error)
+	// paymentproviderwebhooksubscriptionDescStatus is the schema descriptor for status field.
+	paymentproviderwebhooksubscriptionDescStatus := paymentproviderwebhooksubscriptionFields[6].Descriptor()
+	// paymentproviderwebhooksubscription.DefaultStatus holds the default value on creation for the status field.
+	paymentproviderwebhooksubscription.DefaultStatus = paymentproviderwebhooksubscriptionDescStatus.Default.(string)
+	// paymentproviderwebhooksubscription.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	paymentproviderwebhooksubscription.StatusValidator = paymentproviderwebhooksubscriptionDescStatus.Validators[0].(func(string) error)
+	// paymentproviderwebhooksubscriptionDescCreatedAt is the schema descriptor for created_at field.
+	paymentproviderwebhooksubscriptionDescCreatedAt := paymentproviderwebhooksubscriptionFields[9].Descriptor()
+	// paymentproviderwebhooksubscription.DefaultCreatedAt holds the default value on creation for the created_at field.
+	paymentproviderwebhooksubscription.DefaultCreatedAt = paymentproviderwebhooksubscriptionDescCreatedAt.Default.(func() time.Time)
+	// paymentproviderwebhooksubscriptionDescUpdatedAt is the schema descriptor for updated_at field.
+	paymentproviderwebhooksubscriptionDescUpdatedAt := paymentproviderwebhooksubscriptionFields[10].Descriptor()
+	// paymentproviderwebhooksubscription.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	paymentproviderwebhooksubscription.DefaultUpdatedAt = paymentproviderwebhooksubscriptionDescUpdatedAt.Default.(func() time.Time)
+	// paymentproviderwebhooksubscription.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	paymentproviderwebhooksubscription.UpdateDefaultUpdatedAt = paymentproviderwebhooksubscriptionDescUpdatedAt.UpdateDefault.(func() time.Time)
+	paymentwebhookdeliveryFields := schema.PaymentWebhookDelivery{}.Fields()
+	_ = paymentwebhookdeliveryFields
+	// paymentwebhookdeliveryDescProviderKey is the schema descriptor for provider_key field.
+	paymentwebhookdeliveryDescProviderKey := paymentwebhookdeliveryFields[0].Descriptor()
+	// paymentwebhookdelivery.ProviderKeyValidator is a validator for the "provider_key" field. It is called by the builders before save.
+	paymentwebhookdelivery.ProviderKeyValidator = func() func(string) error {
+		validators := paymentwebhookdeliveryDescProviderKey.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(provider_key string) error {
+			for _, fn := range fns {
+				if err := fn(provider_key); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// paymentwebhookdeliveryDescDeliveryID is the schema descriptor for delivery_id field.
+	paymentwebhookdeliveryDescDeliveryID := paymentwebhookdeliveryFields[1].Descriptor()
+	// paymentwebhookdelivery.DeliveryIDValidator is a validator for the "delivery_id" field. It is called by the builders before save.
+	paymentwebhookdelivery.DeliveryIDValidator = func() func(string) error {
+		validators := paymentwebhookdeliveryDescDeliveryID.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(delivery_id string) error {
+			for _, fn := range fns {
+				if err := fn(delivery_id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// paymentwebhookdeliveryDescEventType is the schema descriptor for event_type field.
+	paymentwebhookdeliveryDescEventType := paymentwebhookdeliveryFields[2].Descriptor()
+	// paymentwebhookdelivery.DefaultEventType holds the default value on creation for the event_type field.
+	paymentwebhookdelivery.DefaultEventType = paymentwebhookdeliveryDescEventType.Default.(string)
+	// paymentwebhookdelivery.EventTypeValidator is a validator for the "event_type" field. It is called by the builders before save.
+	paymentwebhookdelivery.EventTypeValidator = paymentwebhookdeliveryDescEventType.Validators[0].(func(string) error)
+	// paymentwebhookdeliveryDescTestNotification is the schema descriptor for test_notification field.
+	paymentwebhookdeliveryDescTestNotification := paymentwebhookdeliveryFields[3].Descriptor()
+	// paymentwebhookdelivery.DefaultTestNotification holds the default value on creation for the test_notification field.
+	paymentwebhookdelivery.DefaultTestNotification = paymentwebhookdeliveryDescTestNotification.Default.(bool)
+	// paymentwebhookdeliveryDescStatus is the schema descriptor for status field.
+	paymentwebhookdeliveryDescStatus := paymentwebhookdeliveryFields[4].Descriptor()
+	// paymentwebhookdelivery.DefaultStatus holds the default value on creation for the status field.
+	paymentwebhookdelivery.DefaultStatus = paymentwebhookdeliveryDescStatus.Default.(string)
+	// paymentwebhookdelivery.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	paymentwebhookdelivery.StatusValidator = paymentwebhookdeliveryDescStatus.Validators[0].(func(string) error)
+	// paymentwebhookdeliveryDescRawBodyHash is the schema descriptor for raw_body_hash field.
+	paymentwebhookdeliveryDescRawBodyHash := paymentwebhookdeliveryFields[5].Descriptor()
+	// paymentwebhookdelivery.DefaultRawBodyHash holds the default value on creation for the raw_body_hash field.
+	paymentwebhookdelivery.DefaultRawBodyHash = paymentwebhookdeliveryDescRawBodyHash.Default.(string)
+	// paymentwebhookdelivery.RawBodyHashValidator is a validator for the "raw_body_hash" field. It is called by the builders before save.
+	paymentwebhookdelivery.RawBodyHashValidator = paymentwebhookdeliveryDescRawBodyHash.Validators[0].(func(string) error)
+	// paymentwebhookdeliveryDescReceivedAt is the schema descriptor for received_at field.
+	paymentwebhookdeliveryDescReceivedAt := paymentwebhookdeliveryFields[7].Descriptor()
+	// paymentwebhookdelivery.DefaultReceivedAt holds the default value on creation for the received_at field.
+	paymentwebhookdelivery.DefaultReceivedAt = paymentwebhookdeliveryDescReceivedAt.Default.(func() time.Time)
+	// paymentwebhookdeliveryDescCreatedAt is the schema descriptor for created_at field.
+	paymentwebhookdeliveryDescCreatedAt := paymentwebhookdeliveryFields[9].Descriptor()
+	// paymentwebhookdelivery.DefaultCreatedAt holds the default value on creation for the created_at field.
+	paymentwebhookdelivery.DefaultCreatedAt = paymentwebhookdeliveryDescCreatedAt.Default.(func() time.Time)
+	// paymentwebhookdeliveryDescUpdatedAt is the schema descriptor for updated_at field.
+	paymentwebhookdeliveryDescUpdatedAt := paymentwebhookdeliveryFields[10].Descriptor()
+	// paymentwebhookdelivery.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	paymentwebhookdelivery.DefaultUpdatedAt = paymentwebhookdeliveryDescUpdatedAt.Default.(func() time.Time)
+	// paymentwebhookdelivery.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	paymentwebhookdelivery.UpdateDefaultUpdatedAt = paymentwebhookdeliveryDescUpdatedAt.UpdateDefault.(func() time.Time)
 	pendingauthsessionMixin := schema.PendingAuthSession{}.Mixin()
 	pendingauthsessionMixinFields0 := pendingauthsessionMixin[0].Fields()
 	_ = pendingauthsessionMixinFields0

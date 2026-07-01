@@ -158,7 +158,8 @@ func (s *PaymentService) checkPaidWithOptions(ctx context.Context, o *dbent.Paym
 	if queryRef == "" {
 		return ""
 	}
-	resp, err := prov.QueryOrder(ctx, queryRef)
+	queryCtx := paymentProviderQueryContext(ctx, o, prov)
+	resp, err := prov.QueryOrder(queryCtx, queryRef)
 	if err != nil {
 		slog.Warn("query upstream failed", "orderID", o.ID, "error", err)
 		return ""
@@ -172,7 +173,7 @@ func (s *PaymentService) checkPaidWithOptions(ctx context.Context, o *dbent.Paym
 				"queryRef": queryRef,
 			})
 			slog.Warn("query upstream returned invalid paid amount", "orderID", o.ID, "queryRef", queryRef, "paid", resp.Amount)
-			retriedResp, retryOK := requeryPaidOrderOnce(ctx, prov, queryRef)
+			retriedResp, retryOK := requeryPaidOrderOnce(queryCtx, prov, queryRef)
 			if !retryOK {
 				return ""
 			}
@@ -224,6 +225,16 @@ func (s *PaymentService) checkPaidWithOptions(ctx context.Context, o *dbent.Paym
 		_ = cp.CancelPayment(ctx, queryRef)
 	}
 	return ""
+}
+
+func paymentProviderQueryContext(ctx context.Context, order *dbent.PaymentOrder, prov payment.Provider) context.Context {
+	if order == nil || prov == nil {
+		return ctx
+	}
+	if payment.GetBasePaymentType(prov.ProviderKey()) != payment.TypeWise {
+		return ctx
+	}
+	return provider.WithWiseOrderCreatedAt(ctx, order.CreatedAt)
 }
 
 func requeryPaidOrderOnce(ctx context.Context, prov payment.Provider, queryRef string) (*payment.QueryOrderResponse, bool) {

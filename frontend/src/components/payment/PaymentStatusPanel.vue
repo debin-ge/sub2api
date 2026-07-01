@@ -87,6 +87,9 @@
           <button v-if="payUrl" class="btn btn-secondary text-sm" @click="reopenPopup">
             {{ t('payment.qr.openPayWindow') }}
           </button>
+          <button v-if="canManualVerify" class="btn btn-primary text-sm" :disabled="verifying" @click="manualVerifyPendingOrder">
+            {{ verifying ? t('common.processing') : t('payment.qr.refreshStatus') }}
+          </button>
         </div>
       </div>
       <div class="card p-4 text-center">
@@ -107,6 +110,9 @@
           <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('payment.qr.payInNewWindowHint') }}</p>
           <button v-if="payUrl" class="btn btn-secondary text-sm" @click="reopenPopup">
             {{ t('payment.qr.openPayWindow') }}
+          </button>
+          <button v-if="canManualVerify" class="btn btn-primary text-sm" :disabled="verifying" @click="manualVerifyPendingOrder">
+            {{ verifying ? t('common.processing') : t('payment.qr.refreshStatus') }}
           </button>
         </div>
       </div>
@@ -159,7 +165,9 @@ const qrCanvas = ref<HTMLCanvasElement | null>(null)
 const qrUrl = ref('')
 const remainingSeconds = ref(0)
 const cancelling = ref(false)
+const verifying = ref(false)
 const paidOrder = ref<PaymentOrder | null>(null)
+const lastPolledOrder = ref<PaymentOrder | null>(null)
 const paymentCurrency = computed(() => normalizePaymentCurrency(props.currency))
 const localeCode = computed(() => {
   const raw = i18n.locale as unknown
@@ -183,6 +191,8 @@ const VERIFY_RETRY_MAX_ATTEMPTS = 6
 
 const isAlipay = computed(() => props.paymentType.includes('alipay'))
 const isWxpay = computed(() => props.paymentType.includes('wxpay'))
+const isWise = computed(() => props.paymentType.includes('wise'))
+const canManualVerify = computed(() => isWise.value && !outcome.value)
 
 const qrBorderClass = computed(() => {
   if (isAlipay.value) return 'border-[#00AEEF] bg-blue-50 dark:border-[#00AEEF]/70 dark:bg-blue-950/20'
@@ -267,23 +277,57 @@ async function tryRecoverPendingOrder(order: PaymentOrder): Promise<PaymentOrder
   }
 }
 
-async function pollStatus() {
-  if (!props.orderId || outcome.value) return
-  let order = await paymentStore.pollOrderStatus(props.orderId)
-  if (!order) return
-  order = await tryRecoverPendingOrder(order)
+function settleTerminalOrder(order: PaymentOrder): boolean {
   if (isSuccessStatus(order.status)) {
     cleanup()
     paidOrder.value = order
     setOutcome('success')
     emit('success')
-  } else if (order.status === 'CANCELLED') {
+    return true
+  }
+  if (order.status === 'CANCELLED') {
     cleanup()
     setOutcome('cancelled')
-  } else if (order.status === 'EXPIRED' || order.status === 'FAILED') {
+    return true
+  }
+  if (order.status === 'EXPIRED' || order.status === 'FAILED') {
     cleanup()
     setOutcome('expired')
+    return true
   }
+  return false
+}
+
+async function manualVerifyPendingOrder() {
+  if (!isWise.value || verifying.value || outcome.value) return
+  verifying.value = true
+  try {
+    let order = lastPolledOrder.value
+    if (!order && props.orderId) {
+      order = await paymentStore.pollOrderStatus(props.orderId)
+      if (order) lastPolledOrder.value = order
+    }
+    const outTradeNo = String(order?.out_trade_no || '').trim()
+    if (!outTradeNo) return
+    const result = await paymentAPI.verifyOrder(outTradeNo)
+    const verifiedOrder = result.data ?? order
+    lastPolledOrder.value = verifiedOrder
+    settleTerminalOrder(verifiedOrder)
+  } catch (err: unknown) {
+    appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error')))
+  } finally {
+    verifying.value = false
+  }
+}
+
+async function pollStatus() {
+  if (!props.orderId || outcome.value) return
+  let order = await paymentStore.pollOrderStatus(props.orderId)
+  if (!order) return
+  lastPolledOrder.value = order
+  order = await tryRecoverPendingOrder(order)
+  lastPolledOrder.value = order
+  settleTerminalOrder(order)
 }
 
 function startCountdown(seconds: number) {

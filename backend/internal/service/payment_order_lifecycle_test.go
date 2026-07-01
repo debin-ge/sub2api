@@ -11,6 +11,7 @@ import (
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/enttest"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
+	paymentprovider "github.com/Wei-Shaw/sub2api/internal/payment/provider"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/stretchr/testify/require"
 
@@ -21,6 +22,7 @@ import (
 
 type paymentOrderLifecycleQueryProvider struct {
 	key               string
+	lastQueryContext  context.Context
 	lastQueryTradeNo  string
 	lastCancelTradeNo string
 	queryCalls        int
@@ -56,7 +58,8 @@ func (p *paymentOrderLifecycleQueryProvider) CreatePayment(context.Context, paym
 	panic("unexpected call")
 }
 
-func (p *paymentOrderLifecycleQueryProvider) QueryOrder(_ context.Context, tradeNo string) (*payment.QueryOrderResponse, error) {
+func (p *paymentOrderLifecycleQueryProvider) QueryOrder(ctx context.Context, tradeNo string) (*payment.QueryOrderResponse, error) {
+	p.lastQueryContext = ctx
 	p.lastQueryTradeNo = tradeNo
 	p.queryCalls++
 	if len(p.responses) > 0 {
@@ -932,6 +935,66 @@ func TestPaymentOrderQueryReferenceUsesOutTradeNoForWise(t *testing.T) {
 	provider := &paymentOrderLifecycleQueryProvider{key: payment.TypeWise}
 
 	require.Equal(t, "sub2_wise_123", paymentOrderQueryReference(order, provider))
+}
+
+func TestReconcilePaidWisePassesOrderCreatedAtToProvider(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+	createdAt := time.Now().UTC().Add(-96 * time.Hour).Truncate(time.Second)
+
+	user, err := client.User.Create().
+		SetEmail("wise-created-at-query@example.com").
+		SetPasswordHash("hash").
+		SetUsername("wise-created-at-query-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(88).
+		SetPayAmount(88).
+		SetFeeRate(0).
+		SetRechargeCode("WISE-CREATED-AT-QUERY").
+		SetOutTradeNo("sub2_wise_created_at_query").
+		SetPaymentType(payment.TypeWise).
+		SetPaymentTradeNo("wise-upstream-created-at-query").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusPending).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetCreatedAt(createdAt).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	provider := &paymentOrderLifecycleQueryProvider{
+		key: payment.TypeWise,
+		resp: &payment.QueryOrderResponse{
+			TradeNo: "wise-upstream-created-at-query",
+			Status:  payment.ProviderStatusPending,
+			Metadata: map[string]string{
+				"reconcile_decision": "no_match",
+				"reconcile_reason":   "activity_not_found",
+			},
+		},
+	}
+	registry := payment.NewRegistry()
+	registry.Register(provider)
+
+	svc := &PaymentService{
+		entClient:       client,
+		registry:        registry,
+		providersLoaded: true,
+	}
+
+	result := svc.reconcilePaid(ctx, order)
+	require.Empty(t, result)
+	require.Equal(t, order.OutTradeNo, provider.lastQueryTradeNo)
+	gotCreatedAt, ok := paymentprovider.WiseOrderCreatedAtFromContext(provider.lastQueryContext)
+	require.True(t, ok)
+	require.WithinDuration(t, createdAt, gotCreatedAt, time.Second)
 }
 
 func newPaymentOrderLifecycleTestClient(t *testing.T) *dbent.Client {
