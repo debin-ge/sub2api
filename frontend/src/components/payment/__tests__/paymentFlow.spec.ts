@@ -49,6 +49,18 @@ describe('getVisibleMethods', () => {
     })
   })
 
+  it('keeps Wise as a top-level visible method', () => {
+    const visible = getVisibleMethods({
+      wise: methodLimit({ single_min: 20, fee_rate: 0 }),
+      stripe: methodLimit({ fee_rate: 3 }),
+    })
+
+    expect(visible).toEqual({
+      wise: methodLimit({ single_min: 20, fee_rate: 0 }),
+      stripe: methodLimit({ fee_rate: 3 }),
+    })
+  })
+
   it('prefers canonical visible methods over aliases when both exist', () => {
     const visible = getVisibleMethods({
       alipay: methodLimit({ single_min: 2 }),
@@ -127,6 +139,25 @@ describe('decidePaymentLaunch', () => {
     expect(decision.paymentState.currency).toBe('CNY')
     expect(decision.paymentState.countryCode).toBe('CN')
     expect(decision.paymentState.paymentEnv).toBe('demo')
+  })
+
+  it('routes Wise pay_url through hosted redirect waiting flow', () => {
+    const decision = decidePaymentLaunch(createOrderResult({
+      payment_type: 'wise',
+      pay_url: 'https://wise.com/pay/business/account?amount=88&currency=USD&description=sub2_wise',
+      out_trade_no: 'sub2_wise',
+      currency: 'USD',
+    }), {
+      visibleMethod: 'wise',
+      orderType: 'balance',
+      isMobile: false,
+    })
+
+    expect(decision.kind).toBe('redirect_waiting')
+    expect(decision.paymentState.paymentType).toBe('wise')
+    expect(decision.paymentState.payUrl).toContain('wise.com/pay')
+    expect(decision.paymentState.outTradeNo).toBe('sub2_wise')
+    expect(decision.paymentState.currency).toBe('USD')
   })
 
   it('keeps hosted redirect metadata for recovery flows', () => {

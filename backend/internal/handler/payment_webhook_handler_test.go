@@ -3,20 +3,38 @@
 package handler
 
 import (
+	"bytes"
 	"context"
+	"crypto"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
+	"crypto/x509"
+	"database/sql"
+	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
+	"entgo.io/ent/dialect"
+	entsql "entgo.io/ent/dialect/sql"
+	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/ent/enttest"
+	"github.com/Wei-Shaw/sub2api/ent/paymentwebhookdelivery"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	_ "modernc.org/sqlite"
 )
+
+const wiseWebhookHandlerTestEncryptionKey = "12345678901234567890123456789012"
 
 func TestWriteSuccessResponse(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -95,6 +113,107 @@ func TestWriteSuccessResponse(t *testing.T) {
 				assert.Equal(t, tt.wantJSONMessage, resp.Message)
 			} else {
 				assert.Equal(t, tt.wantBody, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestWriteSuccessResponseWiseReturnsEmpty200(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+
+	writeSuccessResponse(c, payment.TypeWise)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Empty(t, w.Body.String())
+}
+
+func TestWiseWebhookHandlerEndpointCases(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name             string
+		rawBody          string
+		deliveryID       string
+		testNotification bool
+		signBody         string
+		wantStatus       int
+		wantBody         string
+		wantDeliveryID   string
+		wantNoDelivery   bool
+		repeatRequest    bool
+	}{
+		{
+			name:             "test notification returns empty 200 and records ignored delivery",
+			rawBody:          `{"event_type":"balances#credit","data":{"resource":{"id":"resource-123"}}}`,
+			deliveryID:       "handler-delivery-test",
+			testNotification: true,
+			wantStatus:       http.StatusOK,
+			wantDeliveryID:   "handler-delivery-test",
+		},
+		{
+			name:           "duplicate delivery returns empty 200",
+			rawBody:        `{"event_type":"balances#credit"}`,
+			deliveryID:     "handler-delivery-dup",
+			wantStatus:     http.StatusOK,
+			wantDeliveryID: "handler-delivery-dup",
+			repeatRequest:  true,
+		},
+		{
+			name:           "unsupported signed event returns empty 200 and records ignored delivery",
+			rawBody:        `{"event_type":"unsupported#event"}`,
+			deliveryID:     "handler-delivery-unsupported",
+			wantStatus:     http.StatusOK,
+			wantDeliveryID: "handler-delivery-unsupported",
+		},
+		{
+			name:           "invalid signature returns 400 and does not record delivery",
+			rawBody:        `{"event_type":"balances#credit"}`,
+			deliveryID:     "handler-delivery-invalid-signature",
+			signBody:       `{"event_type":"different"}`,
+			wantStatus:     http.StatusBadRequest,
+			wantBody:       "verify failed",
+			wantNoDelivery: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			client := newWiseWebhookHandlerTestClient(t)
+			priv := createWiseWebhookHandlerProvider(t, ctx, client)
+			handler := newWiseWebhookHandlerForTest(client)
+
+			w := postWiseWebhookHandlerRequest(t, handler, priv, tt.rawBody, tt.signBody, tt.deliveryID, tt.testNotification)
+			require.Equal(t, tt.wantStatus, w.Code)
+			if tt.wantBody != "" {
+				require.Contains(t, w.Body.String(), tt.wantBody)
+			} else {
+				require.Empty(t, w.Body.String())
+			}
+
+			if tt.repeatRequest {
+				w = postWiseWebhookHandlerRequest(t, handler, priv, tt.rawBody, tt.signBody, tt.deliveryID, tt.testNotification)
+				require.Equal(t, tt.wantStatus, w.Code)
+				require.Empty(t, w.Body.String())
+			}
+
+			if tt.wantNoDelivery {
+				count, err := client.PaymentWebhookDelivery.Query().
+					Where(paymentwebhookdelivery.ProviderKeyEQ(payment.TypeWise), paymentwebhookdelivery.DeliveryIDEQ(tt.deliveryID)).
+					Count(ctx)
+				require.NoError(t, err)
+				require.Zero(t, count)
+				return
+			}
+			if tt.wantDeliveryID != "" {
+				delivery, err := client.PaymentWebhookDelivery.Query().
+					Where(paymentwebhookdelivery.ProviderKeyEQ(payment.TypeWise), paymentwebhookdelivery.DeliveryIDEQ(tt.wantDeliveryID)).
+					Only(ctx)
+				require.NoError(t, err)
+				require.Equal(t, tt.wantDeliveryID, delivery.DeliveryID)
 			}
 		})
 	}
@@ -187,6 +306,11 @@ func TestExtractOutTradeNo(t *testing.T) {
 	}
 }
 
+func TestExtractOutTradeNoWiseReturnsEmptyBecauseWebhookTriggersReconcile(t *testing.T) {
+	got := extractOutTradeNo(`{"event_type":"balances#credit"}`, payment.TypeWise)
+	require.Empty(t, got)
+}
+
 func TestVerifyNotificationWithProvidersReturnsMatchedProvider(t *testing.T) {
 	firstErr := errors.New("wrong provider")
 	providers := []payment.Provider{
@@ -225,6 +349,106 @@ func TestVerifyNotificationWithProvidersFailsWhenAllProvidersReject(t *testing.T
 
 	_, _, err := verifyNotificationWithProviders(context.Background(), providers, "{}", nil)
 	require.Error(t, err)
+}
+
+func newWiseWebhookHandlerTestClient(t *testing.T) *dbent.Client {
+	t.Helper()
+
+	dbName := strings.NewReplacer("/", "_", " ", "_").Replace(t.Name())
+	db, err := sql.Open("sqlite", "file:wise_webhook_handler_"+dbName+"?mode=memory&cache=shared&_fk=1")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	_, err = db.Exec("PRAGMA foreign_keys = ON")
+	require.NoError(t, err)
+
+	drv := entsql.OpenDB(dialect.SQLite, db)
+	client := enttest.NewClient(t, enttest.WithOptions(dbent.Driver(drv)))
+	t.Cleanup(func() { _ = client.Close() })
+	return client
+}
+
+func newWiseWebhookHandlerForTest(client *dbent.Client) *PaymentWebhookHandler {
+	registry := payment.NewRegistry()
+	loadBalancer := payment.NewDefaultLoadBalancer(client, []byte(wiseWebhookHandlerTestEncryptionKey))
+	paymentSvc := service.NewPaymentService(client, registry, loadBalancer, nil, nil, nil, nil, nil, nil)
+	return NewPaymentWebhookHandler(paymentSvc, registry)
+}
+
+func createWiseWebhookHandlerProvider(t *testing.T, ctx context.Context, client *dbent.Client) *rsa.PrivateKey {
+	t.Helper()
+
+	priv, publicKeyPEM := newWiseWebhookHandlerKey(t)
+	encryptedConfig := encryptWiseWebhookHandlerConfig(t, map[string]string{
+		"quickPayBaseUrl":    "https://wise.com/pay/business/account",
+		"apiBase":            "https://api.wise.com",
+		"apiToken":           "token-123",
+		"profileId":          "profile-123",
+		"balanceId":          "balance-123",
+		"currency":           "USD",
+		"webhookPublicKey":   publicKeyPEM,
+		"settlementStrategy": "exact_only",
+	})
+	_, err := client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeWise).
+		SetName("wise-webhook-handler").
+		SetConfig(encryptedConfig).
+		SetSupportedTypes(payment.TypeWise).
+		SetEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+	return priv
+}
+
+func postWiseWebhookHandlerRequest(t *testing.T, handler *PaymentWebhookHandler, priv *rsa.PrivateKey, rawBody, signBody, deliveryID string, testNotification bool) *httptest.ResponseRecorder {
+	t.Helper()
+
+	if signBody == "" {
+		signBody = rawBody
+	}
+	req := httptest.NewRequest(http.MethodPost, "/wise", bytes.NewBufferString(rawBody))
+	req.Header.Set("X-Signature-Sha256", signWiseWebhookHandlerBody(t, priv, signBody))
+	req.Header.Set("X-Delivery-Id", deliveryID)
+	if testNotification {
+		req.Header.Set("X-Test-Notification", "true")
+	}
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = req
+	handler.WiseWebhook(c)
+	return w
+}
+
+func encryptWiseWebhookHandlerConfig(t *testing.T, config map[string]string) string {
+	t.Helper()
+
+	data, err := json.Marshal(config)
+	require.NoError(t, err)
+	encrypted, err := payment.Encrypt(string(data), []byte(wiseWebhookHandlerTestEncryptionKey))
+	require.NoError(t, err)
+	return encrypted
+}
+
+func newWiseWebhookHandlerKey(t *testing.T) (*rsa.PrivateKey, string) {
+	t.Helper()
+
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	der, err := x509.MarshalPKIXPublicKey(&priv.PublicKey)
+	require.NoError(t, err)
+	return priv, string(pem.EncodeToMemory(&pem.Block{
+		Type:  "PUBLIC KEY",
+		Bytes: der,
+	}))
+}
+
+func signWiseWebhookHandlerBody(t *testing.T, priv *rsa.PrivateKey, rawBody string) string {
+	t.Helper()
+
+	digest := sha256.Sum256([]byte(rawBody))
+	signature, err := rsa.SignPKCS1v15(rand.Reader, priv, crypto.SHA256, digest[:])
+	require.NoError(t, err)
+	return base64.StdEncoding.EncodeToString(signature)
 }
 
 type webhookHandlerProviderStub struct {

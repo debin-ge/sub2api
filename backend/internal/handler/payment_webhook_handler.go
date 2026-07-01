@@ -67,6 +67,30 @@ func (h *PaymentWebhookHandler) AirwallexWebhook(c *gin.Context) {
 	h.handleNotify(c, payment.TypeAirwallex)
 }
 
+// WiseWebhook handles Wise webhook events.
+// POST /api/v1/payment/webhook/wise
+func (h *PaymentWebhookHandler) WiseWebhook(c *gin.Context) {
+	body, err := io.ReadAll(io.LimitReader(c.Request.Body, maxWebhookBodySize))
+	if err != nil {
+		slog.Error("[Payment Webhook] failed to read body", "provider", payment.TypeWise, "error", err)
+		c.String(http.StatusBadRequest, "failed to read body")
+		return
+	}
+
+	headers := make(map[string]string)
+	for k := range c.Request.Header {
+		headers[strings.ToLower(k)] = c.GetHeader(k)
+	}
+
+	if _, err := h.paymentService.HandleWiseWebhookFast(c.Request.Context(), string(body), headers); err != nil {
+		slog.Error("[Payment Webhook] wise webhook failed", "provider", payment.TypeWise, "error", err, "bodyLen", len(body))
+		c.String(http.StatusBadRequest, "verify failed")
+		return
+	}
+
+	writeSuccessResponse(c, payment.TypeWise)
+}
+
 // handleNotify is the shared logic for all provider webhook handlers.
 func (h *PaymentWebhookHandler) handleNotify(c *gin.Context, providerKey string) {
 	var rawBody string
@@ -203,12 +227,12 @@ const (
 
 // writeSuccessResponse 返回各支付服务商要求的成功响应。
 // 微信支付需要 JSON {"code":"SUCCESS","message":"成功"}；
-// Stripe 和空中云汇接受空 200，其它服务商接受纯文本 "success"。
+// Stripe、空中云汇和 Wise 接受空 200，其它服务商接受纯文本 "success"。
 func writeSuccessResponse(c *gin.Context, providerKey string) {
 	switch providerKey {
 	case payment.TypeWxpay:
 		c.JSON(http.StatusOK, wxpaySuccessResponse{Code: wxpaySuccessCode, Message: wxpaySuccessMessage})
-	case payment.TypeStripe, payment.TypeAirwallex:
+	case payment.TypeStripe, payment.TypeAirwallex, payment.TypeWise:
 		c.String(http.StatusOK, "")
 	default:
 		c.String(http.StatusOK, "success")

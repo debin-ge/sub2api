@@ -344,6 +344,23 @@ func TestGetPaymentConfigKeepsStoredEnabledTypes(t *testing.T) {
 	}
 }
 
+func TestResolveWebhookBaseURLFallsBackToEnvironment(t *testing.T) {
+	t.Setenv("API_BASE_URL", "")
+	t.Setenv("FRONTEND_URL", "")
+	t.Setenv("SITE_URL", "")
+	t.Setenv("BASE_URL", "")
+	t.Setenv("APP_URL", "https://pay.example.com/")
+
+	svc := &PaymentConfigService{
+		settingRepo: &paymentConfigSettingRepoStub{values: map[string]string{}},
+	}
+
+	got := svc.resolveWebhookBaseURL(context.Background())
+	if got != "https://pay.example.com" {
+		t.Fatalf("resolveWebhookBaseURL() = %q, want %q", got, "https://pay.example.com")
+	}
+}
+
 func newPaymentConfigServiceTestClient(t *testing.T) *dbent.Client {
 	t.Helper()
 

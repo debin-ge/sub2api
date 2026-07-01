@@ -2,6 +2,7 @@ package payment
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/shopspring/decimal"
@@ -94,6 +95,29 @@ func AmountToMinorUnit(amountStr, currency string) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("invalid amount: %s", amountStr)
 	}
+	return decimalAmountToMinorUnit(d, currency)
+}
+
+func AmountFloatToMinorUnit(amount float64, currency string) (int64, error) {
+	if math.IsNaN(amount) || math.IsInf(amount, 0) {
+		return 0, fmt.Errorf("invalid amount: %v", amount)
+	}
+	return decimalAmountToMinorUnit(decimal.NewFromFloat(amount), currency)
+}
+
+func AmountsEqualByMinorUnit(expected, actual float64, currency string) bool {
+	expectedMinor, err := AmountFloatToMinorUnit(expected, currency)
+	if err != nil {
+		return false
+	}
+	actualMinor, err := AmountFloatToMinorUnit(actual, currency)
+	if err != nil {
+		return false
+	}
+	return expectedMinor == actualMinor
+}
+
+func decimalAmountToMinorUnit(d decimal.Decimal, currency string) (int64, error) {
 	normalizedCurrency, err := NormalizePaymentCurrency(currency)
 	if err != nil {
 		return 0, err

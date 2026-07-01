@@ -14,6 +14,15 @@ const messages: Record<string, string> = {
   'admin.settings.payment.stripeWebhookHint': 'Configure Stripe webhook.',
   'admin.settings.payment.stripeWebhookApiVersionHint': 'Use Stripe API version {version}.',
   'admin.settings.payment.airwallexWebhookHint': 'Select payment_intent.succeeded and use the latest stable API version.',
+  'admin.settings.payment.wiseWebhookHint': 'Sub2API automatically creates the Wise webhook subscription for this URL.',
+  'admin.settings.payment.wiseGuideSummary': 'Wise uses hosted redirect plus automatic reconciliation.',
+  'admin.settings.payment.wiseWebhookSubscriptionTitle': 'Wise webhook subscription',
+  'admin.settings.payment.wiseWebhookSubscriptionActive': 'Automatically subscribed',
+  'admin.settings.payment.wiseWebhookSubscriptionFailed': 'Subscription failed',
+  'admin.settings.payment.wiseWebhookSubscriptionUnknown': 'Not synced yet',
+  'admin.settings.payment.wiseWebhookSubscriptionId': 'Subscription ID',
+  'admin.settings.payment.wiseWebhookSubscriptionError': 'Error',
+  'admin.settings.payment.wiseWebhookDeliveryUrl': 'Delivery URL',
 }
 
 vi.mock('vue-i18n', () => ({
@@ -57,15 +66,18 @@ function mountDialog(options: { editing?: ProviderInstance | null } = {}) {
         { value: 'wxpay', label: 'WeChat Pay' },
         { value: 'stripe', label: 'Stripe' },
         { value: 'airwallex', label: 'Airwallex' },
+        { value: 'wise', label: 'Wise' },
       ],
       enabledKeyOptions: [
         { value: 'alipay', label: 'Alipay' },
         { value: 'wxpay', label: 'WeChat Pay' },
         { value: 'airwallex', label: 'Airwallex' },
+        { value: 'wise', label: 'Wise' },
       ],
       allPaymentTypes: [
         { value: 'alipay', label: 'Alipay' },
         { value: 'wxpay', label: 'WeChat Pay' },
+        { value: 'wise', label: 'Wise' },
       ],
       redirectLabel: 'Redirect',
     },
@@ -155,5 +167,75 @@ describe('PaymentProviderDialog payment guide', () => {
 
     const payload = wrapper.emitted('save')?.[0]?.[0] as { config: Record<string, string> }
     expect(payload.config.accountId).toBe('')
+  })
+
+  it('does not prefill or resubmit sensitive Wise config values when editing', async () => {
+    const provider = providerFactory({
+      provider_key: 'wise',
+      name: 'Wise',
+      supported_types: ['wise'],
+      config: {
+        quickPayBaseUrl: 'https://wise.com/pay/business/account',
+        apiBase: 'https://api.wise.com',
+        apiToken: 'wise-secret-token',
+        profileId: 'profile-123',
+        balanceId: 'balance-123',
+        currency: 'USD',
+        webhookPublicKey: '-----BEGIN PUBLIC KEY-----\npublic\n-----END PUBLIC KEY-----',
+        settlementStrategy: 'exact_only',
+      },
+    })
+    const wrapper = mountDialog({ editing: provider })
+
+    ;(wrapper.vm as unknown as { loadProvider: (provider: ProviderInstance) => void }).loadProvider(provider)
+    await nextTick()
+
+    const fieldValues = [
+      ...wrapper.findAll('input').map(input => (input.element as HTMLInputElement).value),
+      ...wrapper.findAll('textarea').map(textarea => (textarea.element as HTMLTextAreaElement).value),
+    ]
+    expect(fieldValues).not.toContain('wise-secret-token')
+    expect(fieldValues).toContain('profile-123')
+
+    await wrapper.find('form').trigger('submit.prevent')
+
+    const payload = wrapper.emitted('save')?.[0]?.[0] as { config: Record<string, string> }
+    expect(payload.config.apiToken).toBeUndefined()
+    expect(payload.config.profileId).toBe('profile-123')
+  })
+
+  it.each([
+    ['active', 'Automatically subscribed', undefined],
+    ['failed', 'Subscription failed', 'remote rejected credentials'],
+    ['', 'Not synced yet', undefined],
+  ])('shows Wise webhook subscription %s status while editing', async (status, label, error) => {
+    const provider = providerFactory({
+      provider_key: 'wise',
+      name: 'Wise',
+      supported_types: ['wise'],
+      webhook_subscription_status: status,
+      webhook_subscription_id: status ? 'subscription-123' : '',
+      webhook_subscription_error: error,
+      webhook_delivery_url: status
+        ? 'https://api.example.com/api/v1/payment/webhook/wise'
+        : '',
+    })
+    const wrapper = mountDialog({ editing: provider })
+
+    ;(wrapper.vm as unknown as { loadProvider: (provider: ProviderInstance) => void }).loadProvider(provider)
+    await nextTick()
+
+    expect(wrapper.text()).toContain('Wise webhook subscription')
+    expect(wrapper.text()).toContain(label)
+    expect(wrapper.text()).toContain(
+      status
+        ? 'https://api.example.com/api/v1/payment/webhook/wise'
+        : '/api/v1/payment/webhook/wise',
+    )
+    expect(wrapper.text()).toContain('Sub2API automatically creates the Wise webhook subscription for this URL.')
+    if (error) {
+      expect(wrapper.text()).toContain('Error')
+      expect(wrapper.text()).toContain(error)
+    }
   })
 })

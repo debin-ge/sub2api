@@ -57,6 +57,10 @@
                 @select="selectedMethod = $event"
               />
             </div>
+            <div v-if="selectedMethod === 'wise'" class="rounded-xl border border-lime-200 bg-lime-50 p-4 text-sm text-lime-900 dark:border-lime-800/60 dark:bg-lime-950/40 dark:text-lime-100">
+              <p class="font-medium">{{ t('payment.wisePaymentNoticeTitle') }}</p>
+              <p class="mt-1 leading-relaxed">{{ t('payment.wisePaymentNoticeBody') }}</p>
+            </div>
             <div v-if="validAmount > 0" class="card p-6">
               <div class="space-y-2 text-sm">
                 <div class="flex justify-between">
@@ -145,6 +149,10 @@
                   :selected="selectedMethod"
                   @select="selectedMethod = $event"
                 />
+              </div>
+              <div v-if="selectedMethod === 'wise'" class="rounded-xl border border-lime-200 bg-lime-50 p-4 text-sm text-lime-900 dark:border-lime-800/60 dark:bg-lime-950/40 dark:text-lime-100">
+                <p class="font-medium">{{ t('payment.wisePaymentNoticeTitle') }}</p>
+                <p class="mt-1 leading-relaxed">{{ t('payment.wisePaymentNoticeBody') }}</p>
               </div>
               <div v-if="feeRate > 0 && selectedPlan.price > 0" class="card p-6">
                 <div class="space-y-2 text-sm">

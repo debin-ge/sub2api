@@ -880,6 +880,14 @@ var (
 				},
 			},
 			{
+				Name:    "paymentorder_payment_type_payment_trade_no",
+				Unique:  true,
+				Columns: []*schema.Column{PaymentOrdersColumns[9], PaymentOrdersColumns[10]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "payment_type = 'wise' AND payment_trade_no <> ''",
+				},
+			},
+			{
 				Name:    "paymentorder_user_id",
 				Unique:  false,
 				Columns: []*schema.Column{PaymentOrdersColumns[39]},
@@ -947,6 +955,87 @@ var (
 				Name:    "paymentproviderinstance_enabled",
 				Unique:  false,
 				Columns: []*schema.Column{PaymentProviderInstancesColumns[5]},
+			},
+		},
+	}
+	// PaymentProviderWebhookSubscriptionsColumns holds the columns for the "payment_provider_webhook_subscriptions" table.
+	PaymentProviderWebhookSubscriptionsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "provider_instance_id", Type: field.TypeInt64},
+		{Name: "provider_key", Type: field.TypeString, Size: 30},
+		{Name: "external_subscription_id", Type: field.TypeString, Size: 128, Default: ""},
+		{Name: "trigger_on", Type: field.TypeString, Size: 100},
+		{Name: "delivery_version", Type: field.TypeString, Size: 20},
+		{Name: "delivery_url", Type: field.TypeString, SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "status", Type: field.TypeString, Size: 30, Default: "unknown"},
+		{Name: "last_error", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "synced_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+	}
+	// PaymentProviderWebhookSubscriptionsTable holds the schema information for the "payment_provider_webhook_subscriptions" table.
+	PaymentProviderWebhookSubscriptionsTable = &schema.Table{
+		Name:       "payment_provider_webhook_subscriptions",
+		Columns:    PaymentProviderWebhookSubscriptionsColumns,
+		PrimaryKey: []*schema.Column{PaymentProviderWebhookSubscriptionsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "paymentproviderwebhooksubscription_provider_instance_id_trigger_on_delivery_url",
+				Unique:  true,
+				Columns: []*schema.Column{PaymentProviderWebhookSubscriptionsColumns[1], PaymentProviderWebhookSubscriptionsColumns[4], PaymentProviderWebhookSubscriptionsColumns[6]},
+			},
+			{
+				Name:    "paymentproviderwebhooksubscription_provider_key",
+				Unique:  false,
+				Columns: []*schema.Column{PaymentProviderWebhookSubscriptionsColumns[2]},
+			},
+			{
+				Name:    "paymentproviderwebhooksubscription_external_subscription_id",
+				Unique:  false,
+				Columns: []*schema.Column{PaymentProviderWebhookSubscriptionsColumns[3]},
+			},
+			{
+				Name:    "paymentproviderwebhooksubscription_status",
+				Unique:  false,
+				Columns: []*schema.Column{PaymentProviderWebhookSubscriptionsColumns[7]},
+			},
+		},
+	}
+	// PaymentWebhookDeliveriesColumns holds the columns for the "payment_webhook_deliveries" table.
+	PaymentWebhookDeliveriesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "provider_key", Type: field.TypeString, Size: 30},
+		{Name: "delivery_id", Type: field.TypeString, Size: 128},
+		{Name: "event_type", Type: field.TypeString, Size: 100, Default: ""},
+		{Name: "test_notification", Type: field.TypeBool, Default: false},
+		{Name: "status", Type: field.TypeString, Size: 30, Default: "received"},
+		{Name: "raw_body_hash", Type: field.TypeString, Size: 64, Default: ""},
+		{Name: "error", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "received_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "processed_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+	}
+	// PaymentWebhookDeliveriesTable holds the schema information for the "payment_webhook_deliveries" table.
+	PaymentWebhookDeliveriesTable = &schema.Table{
+		Name:       "payment_webhook_deliveries",
+		Columns:    PaymentWebhookDeliveriesColumns,
+		PrimaryKey: []*schema.Column{PaymentWebhookDeliveriesColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "paymentwebhookdelivery_provider_key_delivery_id",
+				Unique:  true,
+				Columns: []*schema.Column{PaymentWebhookDeliveriesColumns[1], PaymentWebhookDeliveriesColumns[2]},
+			},
+			{
+				Name:    "paymentwebhookdelivery_provider_key_received_at",
+				Unique:  false,
+				Columns: []*schema.Column{PaymentWebhookDeliveriesColumns[1], PaymentWebhookDeliveriesColumns[8]},
+			},
+			{
+				Name:    "paymentwebhookdelivery_status",
+				Unique:  false,
+				Columns: []*schema.Column{PaymentWebhookDeliveriesColumns[5]},
 			},
 		},
 	}
@@ -1792,6 +1881,8 @@ var (
 		PaymentAuditLogsTable,
 		PaymentOrdersTable,
 		PaymentProviderInstancesTable,
+		PaymentProviderWebhookSubscriptionsTable,
+		PaymentWebhookDeliveriesTable,
 		PendingAuthSessionsTable,
 		PromoCodesTable,
 		PromoCodeUsagesTable,
@@ -1881,6 +1972,12 @@ func init() {
 	}
 	PaymentProviderInstancesTable.Annotation = &entsql.Annotation{
 		Table: "payment_provider_instances",
+	}
+	PaymentProviderWebhookSubscriptionsTable.Annotation = &entsql.Annotation{
+		Table: "payment_provider_webhook_subscriptions",
+	}
+	PaymentWebhookDeliveriesTable.Annotation = &entsql.Annotation{
+		Table: "payment_webhook_deliveries",
 	}
 	PendingAuthSessionsTable.ForeignKeys[0].RefTable = UsersTable
 	PendingAuthSessionsTable.Annotation = &entsql.Annotation{

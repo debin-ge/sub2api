@@ -2,6 +2,10 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"testing"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
@@ -253,6 +257,39 @@ func TestGetAvailableMethodLimitsOmitsMixedCurrencyMethod(t *testing.T) {
 	require.Error(t, err)
 	appErr := infraerrors.FromError(err)
 	require.Equal(t, "PAYMENT_METHOD_CURRENCY_CONFLICT", appErr.Reason)
+}
+
+func TestWiseMethodCurrencyUsesProviderConfig(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	svc := &PaymentConfigService{entClient: client}
+
+	encConfig, err := svc.encryptConfig(map[string]string{
+		"quickPayBaseUrl":    "https://wise.com/pay/business/account",
+		"apiBase":            "https://api.wise.com",
+		"apiToken":           "token-123",
+		"profileId":          "profile-123",
+		"balanceId":          "balance-123",
+		"currency":           "USD",
+		"webhookPublicKey":   testPaymentConfigPublicKeyPEM(t),
+		"settlementStrategy": "exact_only",
+	})
+	require.NoError(t, err)
+
+	_, err = client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeWise).
+		SetName("Wise USD").
+		SetConfig(encConfig).
+		SetSupportedTypes(payment.TypeWise).
+		SetEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+
+	currency, err := svc.ValidateMethodCurrencyConsistency(ctx, payment.TypeWise)
+	require.NoError(t, err)
+	require.Equal(t, "USD", currency)
 }
 
 func TestPcComputeGlobalRange(t *testing.T) {
@@ -514,4 +551,14 @@ func TestGetAvailableMethodLimitsPreservesLegacyCrossProviderBehaviorWhenVisible
 
 	require.Equal(t, 10.0, resp.GlobalMin)
 	require.Equal(t, 400.0, resp.GlobalMax)
+}
+
+func testPaymentConfigPublicKeyPEM(t *testing.T) string {
+	t.Helper()
+
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	pubDER, err := x509.MarshalPKIXPublicKey(&key.PublicKey)
+	require.NoError(t, err)
+	return string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pubDER}))
 }

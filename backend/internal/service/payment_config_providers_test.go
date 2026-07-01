@@ -13,6 +13,7 @@ import (
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/ent/paymentproviderwebhooksubscription"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/stretchr/testify/assert"
@@ -66,6 +67,21 @@ func TestValidateProviderRequest(t *testing.T) {
 			wantErr:        false,
 		},
 		{
+			name:           "valid wise provider",
+			providerKey:    payment.TypeWise,
+			providerName:   "Wise Provider",
+			supportedTypes: payment.TypeWise,
+			wantErr:        false,
+		},
+		{
+			name:           "wise rejects future wallet method",
+			providerKey:    payment.TypeWise,
+			providerName:   "Wise Provider",
+			supportedTypes: "wise,card",
+			wantErr:        true,
+			errContains:    "wise supports only wise payment type",
+		},
+		{
 			name:           "invalid provider key",
 			providerKey:    "invalid",
 			providerName:   "Name",
@@ -112,6 +128,150 @@ func TestValidateProviderRequest(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestWiseProviderConfigRegistration(t *testing.T) {
+	t.Parallel()
+
+	require.NoError(t, validateProviderRequest(payment.TypeWise, "Wise Provider", payment.TypeWise))
+	require.True(t, isSensitiveProviderConfigField(payment.TypeWise, "apiToken"))
+	require.True(t, isSensitiveProviderConfigField(payment.TypeWise, "apitoken"))
+	require.False(t, isSensitiveProviderConfigField(payment.TypeWise, "quickPayBaseUrl"))
+	require.False(t, isSensitiveProviderConfigField(payment.TypeWise, "webhookPublicKey"))
+}
+
+func TestWiseProtectedConfigChanges(t *testing.T) {
+	t.Parallel()
+
+	current := map[string]string{
+		"quickPayBaseUrl":    "https://wise.com/pay/business/account",
+		"apiBase":            "https://api.wise.com",
+		"apiToken":           "old-token",
+		"profileId":          "profile-123",
+		"balanceId":          "balance-123",
+		"currency":           "USD",
+		"webhookPublicKey":   "old-public-key",
+		"settlementStrategy": "exact_only",
+	}
+	for _, tc := range []struct {
+		field string
+		value string
+	}{
+		{field: "quickPayBaseUrl", value: "https://wise.com/pay/business/updated-account"},
+		{field: "apiBase", value: "https://api.sandbox.transferwise.tech"},
+		{field: "apiToken", value: "new-token"},
+		{field: "profileId", value: "profile-456"},
+		{field: "balanceId", value: "balance-456"},
+		{field: "currency", value: "EUR"},
+		{field: "webhookPublicKey", value: "new-public-key"},
+		{field: "settlementStrategy", value: "updated-strategy"},
+		{field: "reconcileWindowHours", value: "168"},
+	} {
+		tc := tc
+		t.Run(tc.field, func(t *testing.T) {
+			t.Parallel()
+
+			next := cloneStringMap(current)
+			next[tc.field] = tc.value
+			require.True(t, hasPendingOrderProtectedConfigChange(payment.TypeWise, current, next))
+		})
+	}
+
+	next := cloneStringMap(current)
+	next["allowedMethodsNote"] = "bank transfer only"
+	require.False(t, hasPendingOrderProtectedConfigChange(payment.TypeWise, current, next))
+}
+
+func TestListProviderInstancesWithWiseSubscriptionStatus(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	svc := &PaymentConfigService{
+		entClient:     client,
+		encryptionKey: []byte("0123456789abcdef0123456789abcdef"),
+	}
+
+	wiseInst, err := svc.CreateProviderInstance(ctx, CreateProviderInstanceRequest{
+		ProviderKey:    payment.TypeWise,
+		Name:           "Wise",
+		Config:         validWiseProviderConfigForConfigService(t),
+		SupportedTypes: []string{payment.TypeWise},
+		Enabled:        false,
+		SortOrder:      1,
+	})
+	require.NoError(t, err)
+	stripeInst, err := svc.CreateProviderInstance(ctx, CreateProviderInstanceRequest{
+		ProviderKey:    payment.TypeStripe,
+		Name:           "Stripe",
+		Config:         validStripeProviderConfig(t),
+		SupportedTypes: []string{payment.TypeStripe},
+		Enabled:        false,
+		SortOrder:      2,
+	})
+	require.NoError(t, err)
+
+	older := time.Now().Add(-time.Hour)
+	newer := time.Now()
+	_, err = client.PaymentProviderWebhookSubscription.Create().
+		SetProviderInstanceID(wiseInst.ID).
+		SetProviderKey(payment.TypeWise).
+		SetExternalSubscriptionID("sub-old").
+		SetTriggerOn(wiseWebhookSubscriptionTrigger).
+		SetDeliveryVersion(wiseWebhookSubscriptionDeliveryVersion).
+		SetDeliveryURL("https://old.example.com/api/v1/payment/webhook/wise").
+		SetStatus(wiseWebhookSubscriptionStatusFailed).
+		SetLastError("old failure").
+		SetSyncedAt(older).
+		SetUpdatedAt(older).
+		Save(ctx)
+	require.NoError(t, err)
+	_, err = client.PaymentProviderWebhookSubscription.Create().
+		SetProviderInstanceID(wiseInst.ID).
+		SetProviderKey(payment.TypeWise).
+		SetExternalSubscriptionID("sub-current").
+		SetTriggerOn(wiseWebhookSubscriptionTrigger).
+		SetDeliveryVersion(wiseWebhookSubscriptionDeliveryVersion).
+		SetDeliveryURL("https://api.example.com/api/v1/payment/webhook/wise").
+		SetStatus(wiseWebhookSubscriptionStatusActive).
+		SetSyncedAt(newer).
+		SetUpdatedAt(newer).
+		Save(ctx)
+	require.NoError(t, err)
+	_, err = client.PaymentProviderWebhookSubscription.Create().
+		SetProviderInstanceID(stripeInst.ID).
+		SetProviderKey(payment.TypeWise).
+		SetExternalSubscriptionID("sub-wrong-instance").
+		SetTriggerOn(wiseWebhookSubscriptionTrigger).
+		SetDeliveryVersion(wiseWebhookSubscriptionDeliveryVersion).
+		SetDeliveryURL("https://wrong.example.com/api/v1/payment/webhook/wise").
+		SetStatus(wiseWebhookSubscriptionStatusFailed).
+		SetLastError("wrong instance").
+		SetUpdatedAt(newer.Add(time.Hour)).
+		Save(ctx)
+	require.NoError(t, err)
+
+	resp, err := svc.ListProviderInstancesWithConfig(ctx)
+	require.NoError(t, err)
+	require.Len(t, resp, 2)
+
+	require.Equal(t, int64(wiseInst.ID), resp[0].ID)
+	require.Equal(t, wiseWebhookSubscriptionStatusActive, resp[0].WebhookSubscriptionStatus)
+	require.Equal(t, "sub-current", resp[0].WebhookSubscriptionID)
+	require.Empty(t, resp[0].WebhookSubscriptionError)
+	require.Equal(t, "https://api.example.com/api/v1/payment/webhook/wise", resp[0].WebhookDeliveryURL)
+
+	require.Equal(t, int64(stripeInst.ID), resp[1].ID)
+	require.Empty(t, resp[1].WebhookSubscriptionStatus)
+	require.Empty(t, resp[1].WebhookSubscriptionID)
+	require.Empty(t, resp[1].WebhookSubscriptionError)
+	require.Empty(t, resp[1].WebhookDeliveryURL)
+
+	count, err := client.PaymentProviderWebhookSubscription.Query().
+		Where(paymentproviderwebhooksubscription.ProviderInstanceIDEQ(wiseInst.ID)).
+		Count(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 2, count)
 }
 
 func TestIsSensitiveProviderConfigField(t *testing.T) {
@@ -591,6 +751,162 @@ func TestUpdateProviderInstanceClearsAirwallexAccountID(t *testing.T) {
 	require.Equal(t, "client-id-test", cfg["clientId"])
 }
 
+func TestWiseExpiredOrdersInsideReconcileWindowProtectProviderInstance(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	svc := &PaymentConfigService{
+		entClient:     client,
+		encryptionKey: []byte("0123456789abcdef0123456789abcdef"),
+		wiseSubscriptionClientFactory: func(map[string]string) wiseProfileSubscriptionCreator {
+			return &wiseSubscriptionCreatorStub{}
+		},
+		webhookBaseURLResolver: func(context.Context) string {
+			return "https://api.example.com"
+		},
+	}
+
+	instance, err := svc.CreateProviderInstance(ctx, CreateProviderInstanceRequest{
+		ProviderKey:    payment.TypeWise,
+		Name:           "wise-protected-expired",
+		Config:         validWiseProviderConfigForConfigService(t),
+		SupportedTypes: []string{payment.TypeWise},
+		Enabled:        true,
+	})
+	require.NoError(t, err)
+	createWiseExpiredProviderConfigOrder(t, ctx, client, instance, time.Now().Add(-time.Hour))
+
+	updated, err := svc.UpdateProviderInstance(ctx, instance.ID, UpdateProviderInstanceRequest{
+		Config: map[string]string{"profileId": "profile-updated"},
+	})
+	require.Nil(t, updated)
+	require.Error(t, err)
+	require.Equal(t, "PENDING_ORDERS", infraerrors.Reason(err))
+
+	updated, err = svc.UpdateProviderInstance(ctx, instance.ID, UpdateProviderInstanceRequest{
+		Enabled: boolPtrValue(false),
+	})
+	require.Nil(t, updated)
+	require.Error(t, err)
+	require.Equal(t, "PENDING_ORDERS", infraerrors.Reason(err))
+
+	err = svc.DeleteProviderInstance(ctx, instance.ID)
+	require.Error(t, err)
+	require.Equal(t, "PENDING_ORDERS", infraerrors.Reason(err))
+}
+
+func TestWiseCancelledOrdersInsideReconcileWindowProtectProviderInstance(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	svc := &PaymentConfigService{
+		entClient:     client,
+		encryptionKey: []byte("0123456789abcdef0123456789abcdef"),
+		wiseSubscriptionClientFactory: func(map[string]string) wiseProfileSubscriptionCreator {
+			return &wiseSubscriptionCreatorStub{}
+		},
+		webhookBaseURLResolver: func(context.Context) string {
+			return "https://api.example.com"
+		},
+	}
+
+	instance, err := svc.CreateProviderInstance(ctx, CreateProviderInstanceRequest{
+		ProviderKey:    payment.TypeWise,
+		Name:           "wise-protected-cancelled",
+		Config:         validWiseProviderConfigForConfigService(t),
+		SupportedTypes: []string{payment.TypeWise},
+		Enabled:        true,
+	})
+	require.NoError(t, err)
+	createWiseProviderConfigOrder(t, ctx, client, instance, OrderStatusCancelled, time.Now().Add(-time.Hour))
+
+	updated, err := svc.UpdateProviderInstance(ctx, instance.ID, UpdateProviderInstanceRequest{
+		Config: map[string]string{"profileId": "profile-updated"},
+	})
+	require.Nil(t, updated)
+	require.Error(t, err)
+	require.Equal(t, "PENDING_ORDERS", infraerrors.Reason(err))
+}
+
+func TestWiseProviderConfigProtectionUsesConfiguredReconcileWindow(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	svc := &PaymentConfigService{
+		entClient:     client,
+		encryptionKey: []byte("0123456789abcdef0123456789abcdef"),
+		wiseSubscriptionClientFactory: func(map[string]string) wiseProfileSubscriptionCreator {
+			return &wiseSubscriptionCreatorStub{}
+		},
+		webhookBaseURLResolver: func(context.Context) string {
+			return "https://api.example.com"
+		},
+	}
+	config := validWiseProviderConfigForConfigService(t)
+	config["reconcileWindowHours"] = "168"
+	instance, err := svc.CreateProviderInstance(ctx, CreateProviderInstanceRequest{
+		ProviderKey:    payment.TypeWise,
+		Name:           "wise-protected-configured-window",
+		Config:         config,
+		SupportedTypes: []string{payment.TypeWise},
+		Enabled:        true,
+	})
+	require.NoError(t, err)
+	createWiseProviderConfigOrder(t, ctx, client, instance, OrderStatusExpired, time.Now().Add(-100*time.Hour))
+
+	updated, err := svc.UpdateProviderInstance(ctx, instance.ID, UpdateProviderInstanceRequest{
+		Config: map[string]string{"profileId": "profile-updated"},
+	})
+	require.Nil(t, updated)
+	require.Error(t, err)
+	require.Equal(t, "PENDING_ORDERS", infraerrors.Reason(err))
+}
+
+func TestWiseExpiredOrdersOutsideReconcileWindowDoNotProtectProviderInstance(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	svc := &PaymentConfigService{
+		entClient:     client,
+		encryptionKey: []byte("0123456789abcdef0123456789abcdef"),
+		wiseSubscriptionClientFactory: func(map[string]string) wiseProfileSubscriptionCreator {
+			return &wiseSubscriptionCreatorStub{}
+		},
+		webhookBaseURLResolver: func(context.Context) string {
+			return "https://api.example.com"
+		},
+	}
+
+	instance, err := svc.CreateProviderInstance(ctx, CreateProviderInstanceRequest{
+		ProviderKey:    payment.TypeWise,
+		Name:           "wise-unprotected-expired",
+		Config:         validWiseProviderConfigForConfigService(t),
+		SupportedTypes: []string{payment.TypeWise},
+		Enabled:        true,
+	})
+	require.NoError(t, err)
+	createWiseExpiredProviderConfigOrder(t, ctx, client, instance, time.Now().Add(-wiseReconcileWindow-time.Hour))
+
+	updated, err := svc.UpdateProviderInstance(ctx, instance.ID, UpdateProviderInstanceRequest{
+		Config: map[string]string{"profileId": "profile-updated"},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+
+	updated, err = svc.UpdateProviderInstance(ctx, instance.ID, UpdateProviderInstanceRequest{
+		Enabled: boolPtrValue(false),
+	})
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+
+	err = svc.DeleteProviderInstance(ctx, instance.ID)
+	require.NoError(t, err)
+}
+
 func createPendingProviderConfigOrder(t *testing.T, ctx context.Context, client *dbent.Client, instance *dbent.PaymentProviderInstance) {
 	t.Helper()
 
@@ -624,6 +940,44 @@ func createPendingProviderConfigOrder(t *testing.T, ctx context.Context, client 
 	require.NoError(t, err)
 }
 
+func createWiseExpiredProviderConfigOrder(t *testing.T, ctx context.Context, client *dbent.Client, instance *dbent.PaymentProviderInstance, expiresAt time.Time) {
+	t.Helper()
+	createWiseProviderConfigOrder(t, ctx, client, instance, OrderStatusExpired, expiresAt)
+}
+
+func createWiseProviderConfigOrder(t *testing.T, ctx context.Context, client *dbent.Client, instance *dbent.PaymentProviderInstance, status string, expiresAt time.Time) {
+	t.Helper()
+
+	user, err := client.User.Create().
+		SetEmail("provider-config-wise-expired@example.com").
+		SetPasswordHash("hash").
+		SetUsername("provider-config-wise-expired-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	instanceID := strconv.FormatInt(instance.ID, 10)
+	_, err = client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(88).
+		SetPayAmount(88).
+		SetFeeRate(0).
+		SetRechargeCode("EXPIRED-WISE-PROVIDER-CONFIG-" + instanceID).
+		SetOutTradeNo("sub2_expired_wise_provider_config_" + instanceID).
+		SetPaymentType(payment.TypeWise).
+		SetPaymentTradeNo("").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(status).
+		SetExpiresAt(expiresAt).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		SetProviderInstanceID(instanceID).
+		SetProviderKey(instance.ProviderKey).
+		Save(ctx)
+	require.NoError(t, err)
+}
+
 func providerPendingOrderPaymentType(providerKey string) string {
 	switch providerKey {
 	case payment.TypeWxpay:
@@ -637,6 +991,35 @@ func providerPendingOrderPaymentType(providerKey string) string {
 	default:
 		return payment.TypeAlipay
 	}
+}
+
+func validWiseProviderConfigForConfigService(t *testing.T) map[string]string {
+	t.Helper()
+
+	_, publicKeyPEM := newWiseConfigServiceWebhookKey(t)
+	return map[string]string{
+		"quickPayBaseUrl":    "https://wise.com/pay/business/account",
+		"apiBase":            "https://api.wise.com",
+		"apiToken":           "token-test",
+		"profileId":          "profile-123",
+		"balanceId":          "balance-123",
+		"currency":           "USD",
+		"webhookPublicKey":   publicKeyPEM,
+		"settlementStrategy": "exact_only",
+	}
+}
+
+func newWiseConfigServiceWebhookKey(t *testing.T) (*rsa.PrivateKey, string) {
+	t.Helper()
+
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	der, err := x509.MarshalPKIXPublicKey(&priv.PublicKey)
+	require.NoError(t, err)
+	return priv, string(pem.EncodeToMemory(&pem.Block{
+		Type:  "PUBLIC KEY",
+		Bytes: der,
+	}))
 }
 
 func validStripeProviderConfig(t *testing.T) map[string]string {
@@ -718,4 +1101,12 @@ func validWxpayProviderConfigWithJSAPIAppID(t *testing.T) map[string]string {
 	cfg := validWxpayProviderConfig(t)
 	cfg["mpAppId"] = "wx-mp-app-test"
 	return cfg
+}
+
+func cloneStringMap(in map[string]string) map[string]string {
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }

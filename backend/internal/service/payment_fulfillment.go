@@ -14,6 +14,7 @@ import (
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
+	dbpredicate "github.com/Wei-Shaw/sub2api/ent/predicate"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
@@ -53,10 +54,10 @@ func parseLegacyPaymentOrderID(orderID string, lookupErr error) (int64, bool) {
 		return 0, false
 	}
 	orderID = strings.TrimSpace(orderID)
-	if !strings.HasPrefix(orderID, orderIDPrefix) {
+	if !strings.HasPrefix(orderID, legacyOrderIDPrefix) {
 		return 0, false
 	}
-	trimmed := strings.TrimPrefix(orderID, orderIDPrefix)
+	trimmed := strings.TrimPrefix(orderID, legacyOrderIDPrefix)
 	if trimmed == "" || trimmed == orderID {
 		return 0, false
 	}
@@ -101,9 +102,32 @@ func (s *PaymentService) confirmPayment(ctx context.Context, oid int64, tradeNo 
 		})
 		return fmt.Errorf("invalid paid amount from provider: %v", paid)
 	}
-	if math.Abs(paid-o.PayAmount) > paymentAmountToleranceForCurrency(PaymentOrderCurrency(o)) {
+	if payment.GetBasePaymentType(pk) == payment.TypeWise && !payment.AmountsEqualByMinorUnit(o.PayAmount, paid, PaymentOrderCurrency(o)) {
 		s.writeAuditLog(ctx, o.ID, "PAYMENT_AMOUNT_MISMATCH", pk, map[string]any{"expected": o.PayAmount, "paid": paid, "tradeNo": tradeNo})
 		return fmt.Errorf("amount mismatch: expected %s, got %s", strconv.FormatFloat(o.PayAmount, 'f', -1, 64), strconv.FormatFloat(paid, 'f', -1, 64))
+	}
+	if payment.GetBasePaymentType(pk) != payment.TypeWise && math.Abs(paid-o.PayAmount) > paymentAmountToleranceForCurrency(PaymentOrderCurrency(o)) {
+		s.writeAuditLog(ctx, o.ID, "PAYMENT_AMOUNT_MISMATCH", pk, map[string]any{"expected": o.PayAmount, "paid": paid, "tradeNo": tradeNo})
+		return fmt.Errorf("amount mismatch: expected %s, got %s", strconv.FormatFloat(o.PayAmount, 'f', -1, 64), strconv.FormatFloat(paid, 'f', -1, 64))
+	}
+	if payment.GetBasePaymentType(pk) == payment.TypeWise {
+		wiseTransactionID := wiseTransactionIDFromMetadata(metadata)
+		if wiseTransactionID == "" {
+			s.writeAuditLog(ctx, o.ID, "PAYMENT_PROVIDER_METADATA_MISMATCH", pk, map[string]any{
+				"detail":  "wise transaction id missing",
+				"tradeNo": tradeNo,
+			})
+			return fmt.Errorf("wise transaction id missing")
+		}
+		if err := s.ensureWiseTransactionUnused(ctx, o.ID, wiseTransactionID); err != nil {
+			s.writeAuditLog(ctx, o.ID, "PAYMENT_TRANSACTION_REUSED", pk, map[string]any{
+				"detail":              err.Error(),
+				"tradeNo":             tradeNo,
+				"wise_transaction_id": wiseTransactionID,
+			})
+			return err
+		}
+		tradeNo = wiseTransactionID
 	}
 	return s.toPaid(ctx, o, tradeNo, paid, pk)
 }
@@ -118,6 +142,40 @@ func paymentAmountToleranceForCurrency(currency string) float64 {
 
 func isValidProviderAmount(amount float64) bool {
 	return amount > 0 && !math.IsNaN(amount) && !math.IsInf(amount, 0)
+}
+
+func wiseTransactionIDFromMetadata(metadata map[string]string) string {
+	if metadata == nil {
+		return ""
+	}
+	return strings.TrimSpace(metadata["wise_transaction_id"])
+}
+
+func (s *PaymentService) ensureWiseTransactionUnused(ctx context.Context, currentOrderID int64, transactionID string) error {
+	transactionID = strings.TrimSpace(transactionID)
+	if transactionID == "" {
+		return fmt.Errorf("wise transaction id missing")
+	}
+	exists, err := s.entClient.PaymentOrder.Query().
+		Where(
+			paymentorder.IDNEQ(currentOrderID),
+			paymentorder.PaymentTypeEQ(payment.TypeWise),
+			paymentorder.PaymentTradeNoEQ(transactionID),
+			paymentorder.StatusIn(OrderStatusPaid, OrderStatusRecharging, OrderStatusCompleted),
+		).
+		Exist(ctx)
+	if err != nil {
+		return fmt.Errorf("check wise transaction reuse: %w", err)
+	}
+	if exists {
+		return fmt.Errorf("wise transaction already used: %s", transactionID)
+	}
+	return nil
+}
+
+func isWiseTransactionReuseConstraintError(err error) bool {
+	return dbent.IsConstraintError(err) &&
+		strings.Contains(strings.ToLower(err.Error()), "paymentorder_payment_type_payment_trade_no")
 }
 
 func validateProviderNotificationMetadata(order *dbent.PaymentOrder, providerKey string, metadata map[string]string) error {
@@ -143,18 +201,37 @@ func (s *PaymentService) toPaid(ctx context.Context, o *dbent.PaymentOrder, trad
 	previousStatus := o.Status
 	now := time.Now()
 	grace := now.Add(-paymentGraceMinutes * time.Minute)
+	expiredRecoveryPredicate := paymentorder.And(
+		paymentorder.StatusEQ(OrderStatusExpired),
+		paymentorder.UpdatedAtGTE(grace),
+	)
+	statusRecoveryPredicates := []dbpredicate.PaymentOrder{
+		paymentorder.StatusEQ(OrderStatusPending),
+		paymentorder.StatusEQ(OrderStatusCancelled),
+		expiredRecoveryPredicate,
+	}
+	if payment.GetBasePaymentType(pk) == payment.TypeWise {
+		wiseCutoff := now.Add(-s.wiseReconcileWindowForOrder(ctx, o))
+		statusRecoveryPredicates = []dbpredicate.PaymentOrder{
+			paymentorder.StatusEQ(OrderStatusPending),
+			paymentorder.And(
+				paymentorder.StatusIn(OrderStatusExpired, OrderStatusCancelled),
+				paymentorder.ExpiresAtGTE(wiseCutoff),
+			),
+		}
+	}
 	c, err := s.entClient.PaymentOrder.Update().Where(
 		paymentorder.IDEQ(o.ID),
-		paymentorder.Or(
-			paymentorder.StatusEQ(OrderStatusPending),
-			paymentorder.StatusEQ(OrderStatusCancelled),
-			paymentorder.And(
-				paymentorder.StatusEQ(OrderStatusExpired),
-				paymentorder.UpdatedAtGTE(grace),
-			),
-		),
+		paymentorder.Or(statusRecoveryPredicates...),
 	).SetStatus(OrderStatusPaid).SetPayAmount(paid).SetPaymentTradeNo(tradeNo).SetPaidAt(now).ClearFailedAt().ClearFailedReason().Save(ctx)
 	if err != nil {
+		if payment.GetBasePaymentType(pk) == payment.TypeWise && isWiseTransactionReuseConstraintError(err) {
+			s.writeAuditLog(ctx, o.ID, "PAYMENT_TRANSACTION_REUSED", pk, map[string]any{
+				"detail":              err.Error(),
+				"wise_transaction_id": tradeNo,
+			})
+			return fmt.Errorf("wise transaction already used: %s", tradeNo)
+		}
 		return fmt.Errorf("update to PAID: %w", err)
 	}
 	if c == 0 {

@@ -7,10 +7,13 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"time"
 
+	"entgo.io/ent/dialect/sql"
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	"github.com/Wei-Shaw/sub2api/ent/paymentproviderinstance"
+	"github.com/Wei-Shaw/sub2api/ent/paymentproviderwebhooksubscription"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	"github.com/Wei-Shaw/sub2api/internal/payment/provider"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
@@ -47,6 +50,11 @@ type ProviderInstanceResponse struct {
 	AllowUserRefund bool              `json:"allow_user_refund"`
 	SortOrder       int               `json:"sort_order"`
 	PaymentMode     string            `json:"payment_mode"`
+
+	WebhookSubscriptionStatus string `json:"webhook_subscription_status"`
+	WebhookSubscriptionID     string `json:"webhook_subscription_id"`
+	WebhookSubscriptionError  string `json:"webhook_subscription_error"`
+	WebhookDeliveryURL        string `json:"webhook_delivery_url"`
 }
 
 // ListProviderInstancesWithConfig returns provider instances with decrypted config.
@@ -68,9 +76,41 @@ func (s *PaymentConfigService) ListProviderInstancesWithConfig(ctx context.Conte
 		if err != nil {
 			return nil, fmt.Errorf("decrypt config for instance %d: %w", inst.ID, err)
 		}
+		if inst.ProviderKey == payment.TypeWise {
+			if err := s.populateWiseWebhookSubscriptionStatus(ctx, inst.ID, &resp); err != nil {
+				return nil, err
+			}
+		}
 		result = append(result, resp)
 	}
 	return result, nil
+}
+
+func (s *PaymentConfigService) populateWiseWebhookSubscriptionStatus(ctx context.Context, providerInstanceID int64, resp *ProviderInstanceResponse) error {
+	sub, err := s.entClient.PaymentProviderWebhookSubscription.Query().
+		Where(
+			paymentproviderwebhooksubscription.ProviderInstanceIDEQ(providerInstanceID),
+			paymentproviderwebhooksubscription.ProviderKeyEQ(payment.TypeWise),
+		).
+		Order(
+			paymentproviderwebhooksubscription.ByUpdatedAt(sql.OrderDesc()),
+			paymentproviderwebhooksubscription.ByID(sql.OrderDesc()),
+		).
+		First(ctx)
+	if dbent.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("load wise webhook subscription for provider instance %d: %w", providerInstanceID, err)
+	}
+
+	resp.WebhookSubscriptionStatus = sub.Status
+	resp.WebhookSubscriptionID = sub.ExternalSubscriptionID
+	if sub.LastError != nil {
+		resp.WebhookSubscriptionError = *sub.LastError
+	}
+	resp.WebhookDeliveryURL = sub.DeliveryURL
+	return nil
 }
 
 // decryptAndMaskConfig returns the stored config with sensitive fields omitted.
@@ -115,6 +155,7 @@ var providerSensitiveConfigFields = map[string]map[string]struct{}{
 	payment.TypeWxpay:     {"privatekey": {}, "apiv3key": {}, "publickey": {}},
 	payment.TypeStripe:    {"secretkey": {}, "webhooksecret": {}},
 	payment.TypeAirwallex: {"apikey": {}, "webhooksecret": {}},
+	payment.TypeWise:      {"apitoken": {}},
 }
 
 // providerPendingOrderProtectedConfigFields lists config keys that cannot be
@@ -127,6 +168,7 @@ var providerPendingOrderProtectedConfigFields = map[string]map[string]struct{}{
 	payment.TypeWxpay:     {"privatekey": {}, "apiv3key": {}, "publickey": {}, "appid": {}, "mpappid": {}, "mchid": {}, "publickeyid": {}, "certserial": {}},
 	payment.TypeStripe:    {"secretkey": {}, "webhooksecret": {}, "currency": {}},
 	payment.TypeAirwallex: {"clientid": {}, "apikey": {}, "webhooksecret": {}, "apibase": {}, "accountid": {}, "currency": {}},
+	payment.TypeWise:      {"quickpaybaseurl": {}, "apibase": {}, "apitoken": {}, "profileid": {}, "balanceid": {}, "currency": {}, "webhookpublickey": {}, "settlementstrategy": {}, "reconcilewindowhours": {}},
 }
 
 func isSensitiveProviderConfigField(providerKey, fieldName string) bool {
@@ -151,6 +193,41 @@ func hasPendingOrderProtectedConfigChange(providerKey string, currentConfig, nex
 	return false
 }
 
+var wiseSubscriptionRelevantConfigFields = map[string]struct{}{
+	// These fields are the only config inputs used to build the Wise
+	// profile-level subscription request/client. Local payment and webhook
+	// verification settings must not create duplicate remote subscriptions.
+	"apibase":   {},
+	"apitoken":  {},
+	"profileid": {},
+}
+
+var wiseSubscriptionRemoteTargetConfigFields = map[string]struct{}{
+	// The subscription table does not store profile ID or Wise API base.
+	// If either changes, an active local row is not enough evidence that the
+	// remote subscription matches the candidate config.
+	"apibase":   {},
+	"profileid": {},
+}
+
+func hasWiseSubscriptionRelevantConfigChange(currentConfig, nextConfig map[string]string) bool {
+	for fieldName := range wiseSubscriptionRelevantConfigFields {
+		if providerConfigFieldValue(currentConfig, fieldName) != providerConfigFieldValue(nextConfig, fieldName) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasWiseSubscriptionRemoteTargetConfigChange(currentConfig, nextConfig map[string]string) bool {
+	for fieldName := range wiseSubscriptionRemoteTargetConfigFields {
+		if providerConfigFieldValue(currentConfig, fieldName) != providerConfigFieldValue(nextConfig, fieldName) {
+			return true
+		}
+	}
+	return false
+}
+
 func providerConfigFieldValue(config map[string]string, fieldName string) string {
 	for key, value := range config {
 		if strings.EqualFold(key, fieldName) {
@@ -161,10 +238,29 @@ func providerConfigFieldValue(config map[string]string, fieldName string) string
 }
 
 func (s *PaymentConfigService) countPendingOrders(ctx context.Context, providerInstanceID int64) (int, error) {
+	inst, err := s.entClient.PaymentProviderInstance.Get(ctx, providerInstanceID)
+	if err != nil {
+		return 0, fmt.Errorf("load provider instance: %w", err)
+	}
+	wiseWindow := wiseReconcileWindow
+	if inst.ProviderKey == payment.TypeWise {
+		config, err := s.decryptConfig(inst.Config)
+		if err != nil {
+			return 0, fmt.Errorf("decrypt provider config: %w", err)
+		}
+		wiseWindow = wiseReconcileWindowFromConfig(config)
+	}
 	return s.entClient.PaymentOrder.Query().
 		Where(
 			paymentorder.ProviderInstanceIDEQ(strconv.FormatInt(providerInstanceID, 10)),
-			paymentorder.StatusIn(pendingOrderStatuses...),
+			paymentorder.Or(
+				paymentorder.StatusIn(pendingOrderStatuses...),
+				paymentorder.And(
+					paymentorder.PaymentTypeEQ(payment.TypeWise),
+					paymentorder.StatusIn(payment.OrderStatusExpired, payment.OrderStatusCancelled),
+					paymentorder.ExpiresAtGTE(time.Now().Add(-wiseWindow)),
+				),
+			),
 		).Count(ctx)
 }
 
@@ -177,7 +273,12 @@ func (s *PaymentConfigService) countPendingOrdersByPlan(ctx context.Context, pla
 }
 
 var validProviderKeys = map[string]bool{
-	payment.TypeEasyPay: true, payment.TypeAlipay: true, payment.TypeWxpay: true, payment.TypeStripe: true, payment.TypeAirwallex: true,
+	payment.TypeEasyPay:   true,
+	payment.TypeAlipay:    true,
+	payment.TypeWxpay:     true,
+	payment.TypeStripe:    true,
+	payment.TypeAirwallex: true,
+	payment.TypeWise:      true,
 }
 
 func (s *PaymentConfigService) CreateProviderInstance(ctx context.Context, req CreateProviderInstanceRequest) (*dbent.PaymentProviderInstance, error) {
@@ -198,12 +299,24 @@ func (s *PaymentConfigService) CreateProviderInstance(ctx context.Context, req C
 		return nil, err
 	}
 	allowUserRefund := req.AllowUserRefund && req.RefundEnabled
-	return s.entClient.PaymentProviderInstance.Create().
+	inst, err := s.entClient.PaymentProviderInstance.Create().
 		SetProviderKey(req.ProviderKey).SetName(req.Name).SetConfig(enc).
 		SetSupportedTypes(typesStr).SetEnabled(req.Enabled).SetPaymentMode(req.PaymentMode).
 		SetSortOrder(req.SortOrder).SetLimits(req.Limits).SetRefundEnabled(req.RefundEnabled).
 		SetAllowUserRefund(allowUserRefund).
 		Save(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if req.ProviderKey == payment.TypeWise && req.Enabled {
+		if err := s.ensureWiseWebhookSubscription(ctx, inst, req.Config); err != nil {
+			if disableErr := s.entClient.PaymentProviderInstance.UpdateOneID(inst.ID).SetEnabled(false).Exec(ctx); disableErr != nil {
+				return nil, fmt.Errorf("%w; disable provider instance after subscription failure: %v", err, disableErr)
+			}
+			return nil, err
+		}
+	}
+	return inst, nil
 }
 
 func validateProviderRequest(providerKey, name, supportedTypes string) error {
@@ -212,6 +325,13 @@ func validateProviderRequest(providerKey, name, supportedTypes string) error {
 	}
 	if !validProviderKeys[providerKey] {
 		return infraerrors.BadRequest("VALIDATION_ERROR", fmt.Sprintf("invalid provider key: %s", providerKey))
+	}
+	if providerKey == payment.TypeWise {
+		for _, supportedType := range splitTypes(supportedTypes) {
+			if supportedType != payment.TypeWise {
+				return infraerrors.BadRequest("VALIDATION_ERROR", "wise supports only wise payment type")
+			}
+		}
 	}
 	// supported_types can be empty (provider accepts no payment types until configured)
 	return nil
@@ -249,8 +369,9 @@ func (s *PaymentConfigService) UpdateProviderInstance(ctx context.Context, id in
 		return nil, err
 	}
 	var mergedConfig map[string]string
+	var currentConfig map[string]string
 	if req.Config != nil {
-		currentConfig, err := s.decryptConfig(current.Config)
+		currentConfig, err = s.decryptConfig(current.Config)
 		if err != nil {
 			return nil, fmt.Errorf("decrypt existing config: %w", err)
 		}
@@ -298,7 +419,31 @@ func (s *PaymentConfigService) UpdateProviderInstance(ctx context.Context, id in
 			return nil, err
 		}
 	}
-	u := s.entClient.PaymentProviderInstance.UpdateOneID(id)
+	wiseRemoteTargetConfigChanged := current.ProviderKey == payment.TypeWise &&
+		mergedConfig != nil &&
+		hasWiseSubscriptionRemoteTargetConfigChange(currentConfig, mergedConfig)
+	var wisePreSaveSubscriptionResult *wiseWebhookSubscriptionEnsureResult
+	if current.ProviderKey == payment.TypeWise && current.Enabled && finalEnabled && wiseRemoteTargetConfigChanged {
+		wisePreSaveSubscriptionResult, err = s.ensureWiseWebhookSubscriptionDryRun(ctx, current, mergedConfig)
+		if err != nil {
+			return nil, err
+		}
+	}
+	saveClient := s.entClient
+	var tx *dbent.Tx
+	if wisePreSaveSubscriptionResult != nil && wisePreSaveSubscriptionResult.RemoteCreated {
+		tx, err = s.entClient.Tx(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("start provider instance update transaction: %w", err)
+		}
+		defer func() {
+			if tx != nil {
+				_ = tx.Rollback()
+			}
+		}()
+		saveClient = tx.Client()
+	}
+	u := saveClient.PaymentProviderInstance.UpdateOneID(id)
 	if req.Name != nil {
 		u.SetName(*req.Name)
 	}
@@ -374,7 +519,65 @@ func (s *PaymentConfigService) UpdateProviderInstance(ctx context.Context, id in
 	if req.PaymentMode != nil {
 		u.SetPaymentMode(*req.PaymentMode)
 	}
-	return u.Save(ctx)
+	saved, err := u.Save(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if saved.ProviderKey == payment.TypeWise && !saved.Enabled && wiseRemoteTargetConfigChanged {
+		if err := s.invalidateWiseWebhookSubscription(ctx, saved.ID); err != nil {
+			return nil, fmt.Errorf("invalidate wise webhook subscription after config change: %w", err)
+		}
+	}
+	if saved.ProviderKey == payment.TypeWise && saved.Enabled {
+		transitionedToEnabled := !current.Enabled
+		relevantConfigChanged := mergedConfig != nil && hasWiseSubscriptionRelevantConfigChange(currentConfig, mergedConfig)
+		if wisePreSaveSubscriptionResult != nil && wisePreSaveSubscriptionResult.RemoteCreated {
+			if err := upsertWiseWebhookSubscriptionWithClient(
+				ctx,
+				saveClient,
+				saved,
+				wisePreSaveSubscriptionResult.ExternalID,
+				wisePreSaveSubscriptionResult.DeliveryURL,
+				wiseWebhookSubscriptionStatusActive,
+				"",
+			); err != nil {
+				return nil, fmt.Errorf("wise webhook subscription persist after provider config update: %w", err)
+			}
+			if tx != nil {
+				if err := tx.Commit(); err != nil {
+					return nil, fmt.Errorf("commit provider instance update transaction: %w", err)
+				}
+				tx = nil
+			}
+			return saved, nil
+		}
+		if !transitionedToEnabled && !relevantConfigChanged {
+			return saved, nil
+		}
+
+		configForSubscription := mergedConfig
+		if configForSubscription == nil {
+			configForSubscription, err = s.decryptConfig(saved.Config)
+			if err != nil {
+				return nil, fmt.Errorf("decrypt saved config: %w", err)
+			}
+		}
+		if err := s.ensureWiseWebhookSubscriptionWithPersistentFailure(ctx, saved, configForSubscription, wiseRemoteTargetConfigChanged); err != nil {
+			if transitionedToEnabled {
+				if disableErr := s.entClient.PaymentProviderInstance.UpdateOneID(saved.ID).SetEnabled(false).Exec(ctx); disableErr != nil {
+					return nil, fmt.Errorf("%w; disable provider instance after subscription failure: %v", err, disableErr)
+				}
+			}
+			return nil, err
+		}
+	}
+	if tx != nil {
+		if err := tx.Commit(); err != nil {
+			return nil, fmt.Errorf("commit provider instance update transaction: %w", err)
+		}
+		tx = nil
+	}
+	return saved, nil
 }
 
 // GetUserRefundEligibleInstanceIDs returns provider instance IDs that allow user refund.

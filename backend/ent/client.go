@@ -33,6 +33,8 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	"github.com/Wei-Shaw/sub2api/ent/paymentproviderinstance"
+	"github.com/Wei-Shaw/sub2api/ent/paymentproviderwebhooksubscription"
+	"github.com/Wei-Shaw/sub2api/ent/paymentwebhookdelivery"
 	"github.com/Wei-Shaw/sub2api/ent/pendingauthsession"
 	"github.com/Wei-Shaw/sub2api/ent/promocode"
 	"github.com/Wei-Shaw/sub2api/ent/promocodeusage"
@@ -95,6 +97,10 @@ type Client struct {
 	PaymentOrder *PaymentOrderClient
 	// PaymentProviderInstance is the client for interacting with the PaymentProviderInstance builders.
 	PaymentProviderInstance *PaymentProviderInstanceClient
+	// PaymentProviderWebhookSubscription is the client for interacting with the PaymentProviderWebhookSubscription builders.
+	PaymentProviderWebhookSubscription *PaymentProviderWebhookSubscriptionClient
+	// PaymentWebhookDelivery is the client for interacting with the PaymentWebhookDelivery builders.
+	PaymentWebhookDelivery *PaymentWebhookDeliveryClient
 	// PendingAuthSession is the client for interacting with the PendingAuthSession builders.
 	PendingAuthSession *PendingAuthSessionClient
 	// PromoCode is the client for interacting with the PromoCode builders.
@@ -158,6 +164,8 @@ func (c *Client) init() {
 	c.PaymentAuditLog = NewPaymentAuditLogClient(c.config)
 	c.PaymentOrder = NewPaymentOrderClient(c.config)
 	c.PaymentProviderInstance = NewPaymentProviderInstanceClient(c.config)
+	c.PaymentProviderWebhookSubscription = NewPaymentProviderWebhookSubscriptionClient(c.config)
+	c.PaymentWebhookDelivery = NewPaymentWebhookDeliveryClient(c.config)
 	c.PendingAuthSession = NewPendingAuthSessionClient(c.config)
 	c.PromoCode = NewPromoCodeClient(c.config)
 	c.PromoCodeUsage = NewPromoCodeUsageClient(c.config)
@@ -265,43 +273,45 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 	cfg := c.config
 	cfg.driver = tx
 	return &Tx{
-		ctx:                           ctx,
-		config:                        cfg,
-		APIKey:                        NewAPIKeyClient(cfg),
-		Account:                       NewAccountClient(cfg),
-		AccountGroup:                  NewAccountGroupClient(cfg),
-		Announcement:                  NewAnnouncementClient(cfg),
-		AnnouncementRead:              NewAnnouncementReadClient(cfg),
-		AuthIdentity:                  NewAuthIdentityClient(cfg),
-		AuthIdentityChannel:           NewAuthIdentityChannelClient(cfg),
-		ChannelMonitor:                NewChannelMonitorClient(cfg),
-		ChannelMonitorDailyRollup:     NewChannelMonitorDailyRollupClient(cfg),
-		ChannelMonitorHistory:         NewChannelMonitorHistoryClient(cfg),
-		ChannelMonitorRequestTemplate: NewChannelMonitorRequestTemplateClient(cfg),
-		ErrorPassthroughRule:          NewErrorPassthroughRuleClient(cfg),
-		Group:                         NewGroupClient(cfg),
-		IdempotencyRecord:             NewIdempotencyRecordClient(cfg),
-		IdentityAdoptionDecision:      NewIdentityAdoptionDecisionClient(cfg),
-		PaymentAuditLog:               NewPaymentAuditLogClient(cfg),
-		PaymentOrder:                  NewPaymentOrderClient(cfg),
-		PaymentProviderInstance:       NewPaymentProviderInstanceClient(cfg),
-		PendingAuthSession:            NewPendingAuthSessionClient(cfg),
-		PromoCode:                     NewPromoCodeClient(cfg),
-		PromoCodeUsage:                NewPromoCodeUsageClient(cfg),
-		Proxy:                         NewProxyClient(cfg),
-		RedeemCode:                    NewRedeemCodeClient(cfg),
-		SecuritySecret:                NewSecuritySecretClient(cfg),
-		Setting:                       NewSettingClient(cfg),
-		SubscriptionPlan:              NewSubscriptionPlanClient(cfg),
-		TLSFingerprintProfile:         NewTLSFingerprintProfileClient(cfg),
-		UsageCleanupTask:              NewUsageCleanupTaskClient(cfg),
-		UsageLog:                      NewUsageLogClient(cfg),
-		User:                          NewUserClient(cfg),
-		UserAllowedGroup:              NewUserAllowedGroupClient(cfg),
-		UserAttributeDefinition:       NewUserAttributeDefinitionClient(cfg),
-		UserAttributeValue:            NewUserAttributeValueClient(cfg),
-		UserPlatformQuota:             NewUserPlatformQuotaClient(cfg),
-		UserSubscription:              NewUserSubscriptionClient(cfg),
+		ctx:                                ctx,
+		config:                             cfg,
+		APIKey:                             NewAPIKeyClient(cfg),
+		Account:                            NewAccountClient(cfg),
+		AccountGroup:                       NewAccountGroupClient(cfg),
+		Announcement:                       NewAnnouncementClient(cfg),
+		AnnouncementRead:                   NewAnnouncementReadClient(cfg),
+		AuthIdentity:                       NewAuthIdentityClient(cfg),
+		AuthIdentityChannel:                NewAuthIdentityChannelClient(cfg),
+		ChannelMonitor:                     NewChannelMonitorClient(cfg),
+		ChannelMonitorDailyRollup:          NewChannelMonitorDailyRollupClient(cfg),
+		ChannelMonitorHistory:              NewChannelMonitorHistoryClient(cfg),
+		ChannelMonitorRequestTemplate:      NewChannelMonitorRequestTemplateClient(cfg),
+		ErrorPassthroughRule:               NewErrorPassthroughRuleClient(cfg),
+		Group:                              NewGroupClient(cfg),
+		IdempotencyRecord:                  NewIdempotencyRecordClient(cfg),
+		IdentityAdoptionDecision:           NewIdentityAdoptionDecisionClient(cfg),
+		PaymentAuditLog:                    NewPaymentAuditLogClient(cfg),
+		PaymentOrder:                       NewPaymentOrderClient(cfg),
+		PaymentProviderInstance:            NewPaymentProviderInstanceClient(cfg),
+		PaymentProviderWebhookSubscription: NewPaymentProviderWebhookSubscriptionClient(cfg),
+		PaymentWebhookDelivery:             NewPaymentWebhookDeliveryClient(cfg),
+		PendingAuthSession:                 NewPendingAuthSessionClient(cfg),
+		PromoCode:                          NewPromoCodeClient(cfg),
+		PromoCodeUsage:                     NewPromoCodeUsageClient(cfg),
+		Proxy:                              NewProxyClient(cfg),
+		RedeemCode:                         NewRedeemCodeClient(cfg),
+		SecuritySecret:                     NewSecuritySecretClient(cfg),
+		Setting:                            NewSettingClient(cfg),
+		SubscriptionPlan:                   NewSubscriptionPlanClient(cfg),
+		TLSFingerprintProfile:              NewTLSFingerprintProfileClient(cfg),
+		UsageCleanupTask:                   NewUsageCleanupTaskClient(cfg),
+		UsageLog:                           NewUsageLogClient(cfg),
+		User:                               NewUserClient(cfg),
+		UserAllowedGroup:                   NewUserAllowedGroupClient(cfg),
+		UserAttributeDefinition:            NewUserAttributeDefinitionClient(cfg),
+		UserAttributeValue:                 NewUserAttributeValueClient(cfg),
+		UserPlatformQuota:                  NewUserPlatformQuotaClient(cfg),
+		UserSubscription:                   NewUserSubscriptionClient(cfg),
 	}, nil
 }
 
@@ -319,43 +329,45 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 	cfg := c.config
 	cfg.driver = &txDriver{tx: tx, drv: c.driver}
 	return &Tx{
-		ctx:                           ctx,
-		config:                        cfg,
-		APIKey:                        NewAPIKeyClient(cfg),
-		Account:                       NewAccountClient(cfg),
-		AccountGroup:                  NewAccountGroupClient(cfg),
-		Announcement:                  NewAnnouncementClient(cfg),
-		AnnouncementRead:              NewAnnouncementReadClient(cfg),
-		AuthIdentity:                  NewAuthIdentityClient(cfg),
-		AuthIdentityChannel:           NewAuthIdentityChannelClient(cfg),
-		ChannelMonitor:                NewChannelMonitorClient(cfg),
-		ChannelMonitorDailyRollup:     NewChannelMonitorDailyRollupClient(cfg),
-		ChannelMonitorHistory:         NewChannelMonitorHistoryClient(cfg),
-		ChannelMonitorRequestTemplate: NewChannelMonitorRequestTemplateClient(cfg),
-		ErrorPassthroughRule:          NewErrorPassthroughRuleClient(cfg),
-		Group:                         NewGroupClient(cfg),
-		IdempotencyRecord:             NewIdempotencyRecordClient(cfg),
-		IdentityAdoptionDecision:      NewIdentityAdoptionDecisionClient(cfg),
-		PaymentAuditLog:               NewPaymentAuditLogClient(cfg),
-		PaymentOrder:                  NewPaymentOrderClient(cfg),
-		PaymentProviderInstance:       NewPaymentProviderInstanceClient(cfg),
-		PendingAuthSession:            NewPendingAuthSessionClient(cfg),
-		PromoCode:                     NewPromoCodeClient(cfg),
-		PromoCodeUsage:                NewPromoCodeUsageClient(cfg),
-		Proxy:                         NewProxyClient(cfg),
-		RedeemCode:                    NewRedeemCodeClient(cfg),
-		SecuritySecret:                NewSecuritySecretClient(cfg),
-		Setting:                       NewSettingClient(cfg),
-		SubscriptionPlan:              NewSubscriptionPlanClient(cfg),
-		TLSFingerprintProfile:         NewTLSFingerprintProfileClient(cfg),
-		UsageCleanupTask:              NewUsageCleanupTaskClient(cfg),
-		UsageLog:                      NewUsageLogClient(cfg),
-		User:                          NewUserClient(cfg),
-		UserAllowedGroup:              NewUserAllowedGroupClient(cfg),
-		UserAttributeDefinition:       NewUserAttributeDefinitionClient(cfg),
-		UserAttributeValue:            NewUserAttributeValueClient(cfg),
-		UserPlatformQuota:             NewUserPlatformQuotaClient(cfg),
-		UserSubscription:              NewUserSubscriptionClient(cfg),
+		ctx:                                ctx,
+		config:                             cfg,
+		APIKey:                             NewAPIKeyClient(cfg),
+		Account:                            NewAccountClient(cfg),
+		AccountGroup:                       NewAccountGroupClient(cfg),
+		Announcement:                       NewAnnouncementClient(cfg),
+		AnnouncementRead:                   NewAnnouncementReadClient(cfg),
+		AuthIdentity:                       NewAuthIdentityClient(cfg),
+		AuthIdentityChannel:                NewAuthIdentityChannelClient(cfg),
+		ChannelMonitor:                     NewChannelMonitorClient(cfg),
+		ChannelMonitorDailyRollup:          NewChannelMonitorDailyRollupClient(cfg),
+		ChannelMonitorHistory:              NewChannelMonitorHistoryClient(cfg),
+		ChannelMonitorRequestTemplate:      NewChannelMonitorRequestTemplateClient(cfg),
+		ErrorPassthroughRule:               NewErrorPassthroughRuleClient(cfg),
+		Group:                              NewGroupClient(cfg),
+		IdempotencyRecord:                  NewIdempotencyRecordClient(cfg),
+		IdentityAdoptionDecision:           NewIdentityAdoptionDecisionClient(cfg),
+		PaymentAuditLog:                    NewPaymentAuditLogClient(cfg),
+		PaymentOrder:                       NewPaymentOrderClient(cfg),
+		PaymentProviderInstance:            NewPaymentProviderInstanceClient(cfg),
+		PaymentProviderWebhookSubscription: NewPaymentProviderWebhookSubscriptionClient(cfg),
+		PaymentWebhookDelivery:             NewPaymentWebhookDeliveryClient(cfg),
+		PendingAuthSession:                 NewPendingAuthSessionClient(cfg),
+		PromoCode:                          NewPromoCodeClient(cfg),
+		PromoCodeUsage:                     NewPromoCodeUsageClient(cfg),
+		Proxy:                              NewProxyClient(cfg),
+		RedeemCode:                         NewRedeemCodeClient(cfg),
+		SecuritySecret:                     NewSecuritySecretClient(cfg),
+		Setting:                            NewSettingClient(cfg),
+		SubscriptionPlan:                   NewSubscriptionPlanClient(cfg),
+		TLSFingerprintProfile:              NewTLSFingerprintProfileClient(cfg),
+		UsageCleanupTask:                   NewUsageCleanupTaskClient(cfg),
+		UsageLog:                           NewUsageLogClient(cfg),
+		User:                               NewUserClient(cfg),
+		UserAllowedGroup:                   NewUserAllowedGroupClient(cfg),
+		UserAttributeDefinition:            NewUserAttributeDefinitionClient(cfg),
+		UserAttributeValue:                 NewUserAttributeValueClient(cfg),
+		UserPlatformQuota:                  NewUserPlatformQuotaClient(cfg),
+		UserSubscription:                   NewUserSubscriptionClient(cfg),
 	}, nil
 }
 
@@ -390,11 +402,13 @@ func (c *Client) Use(hooks ...Hook) {
 		c.ChannelMonitorDailyRollup, c.ChannelMonitorHistory,
 		c.ChannelMonitorRequestTemplate, c.ErrorPassthroughRule, c.Group,
 		c.IdempotencyRecord, c.IdentityAdoptionDecision, c.PaymentAuditLog,
-		c.PaymentOrder, c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode,
-		c.PromoCodeUsage, c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting,
-		c.SubscriptionPlan, c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog,
-		c.User, c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
-		c.UserPlatformQuota, c.UserSubscription,
+		c.PaymentOrder, c.PaymentProviderInstance,
+		c.PaymentProviderWebhookSubscription, c.PaymentWebhookDelivery,
+		c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage, c.Proxy, c.RedeemCode,
+		c.SecuritySecret, c.Setting, c.SubscriptionPlan, c.TLSFingerprintProfile,
+		c.UsageCleanupTask, c.UsageLog, c.User, c.UserAllowedGroup,
+		c.UserAttributeDefinition, c.UserAttributeValue, c.UserPlatformQuota,
+		c.UserSubscription,
 	} {
 		n.Use(hooks...)
 	}
@@ -409,11 +423,13 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.ChannelMonitorDailyRollup, c.ChannelMonitorHistory,
 		c.ChannelMonitorRequestTemplate, c.ErrorPassthroughRule, c.Group,
 		c.IdempotencyRecord, c.IdentityAdoptionDecision, c.PaymentAuditLog,
-		c.PaymentOrder, c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode,
-		c.PromoCodeUsage, c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting,
-		c.SubscriptionPlan, c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog,
-		c.User, c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
-		c.UserPlatformQuota, c.UserSubscription,
+		c.PaymentOrder, c.PaymentProviderInstance,
+		c.PaymentProviderWebhookSubscription, c.PaymentWebhookDelivery,
+		c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage, c.Proxy, c.RedeemCode,
+		c.SecuritySecret, c.Setting, c.SubscriptionPlan, c.TLSFingerprintProfile,
+		c.UsageCleanupTask, c.UsageLog, c.User, c.UserAllowedGroup,
+		c.UserAttributeDefinition, c.UserAttributeValue, c.UserPlatformQuota,
+		c.UserSubscription,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -458,6 +474,10 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.PaymentOrder.mutate(ctx, m)
 	case *PaymentProviderInstanceMutation:
 		return c.PaymentProviderInstance.mutate(ctx, m)
+	case *PaymentProviderWebhookSubscriptionMutation:
+		return c.PaymentProviderWebhookSubscription.mutate(ctx, m)
+	case *PaymentWebhookDeliveryMutation:
+		return c.PaymentWebhookDelivery.mutate(ctx, m)
 	case *PendingAuthSessionMutation:
 		return c.PendingAuthSession.mutate(ctx, m)
 	case *PromoCodeMutation:
@@ -3376,6 +3396,272 @@ func (c *PaymentProviderInstanceClient) mutate(ctx context.Context, m *PaymentPr
 	}
 }
 
+// PaymentProviderWebhookSubscriptionClient is a client for the PaymentProviderWebhookSubscription schema.
+type PaymentProviderWebhookSubscriptionClient struct {
+	config
+}
+
+// NewPaymentProviderWebhookSubscriptionClient returns a client for the PaymentProviderWebhookSubscription from the given config.
+func NewPaymentProviderWebhookSubscriptionClient(c config) *PaymentProviderWebhookSubscriptionClient {
+	return &PaymentProviderWebhookSubscriptionClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `paymentproviderwebhooksubscription.Hooks(f(g(h())))`.
+func (c *PaymentProviderWebhookSubscriptionClient) Use(hooks ...Hook) {
+	c.hooks.PaymentProviderWebhookSubscription = append(c.hooks.PaymentProviderWebhookSubscription, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `paymentproviderwebhooksubscription.Intercept(f(g(h())))`.
+func (c *PaymentProviderWebhookSubscriptionClient) Intercept(interceptors ...Interceptor) {
+	c.inters.PaymentProviderWebhookSubscription = append(c.inters.PaymentProviderWebhookSubscription, interceptors...)
+}
+
+// Create returns a builder for creating a PaymentProviderWebhookSubscription entity.
+func (c *PaymentProviderWebhookSubscriptionClient) Create() *PaymentProviderWebhookSubscriptionCreate {
+	mutation := newPaymentProviderWebhookSubscriptionMutation(c.config, OpCreate)
+	return &PaymentProviderWebhookSubscriptionCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of PaymentProviderWebhookSubscription entities.
+func (c *PaymentProviderWebhookSubscriptionClient) CreateBulk(builders ...*PaymentProviderWebhookSubscriptionCreate) *PaymentProviderWebhookSubscriptionCreateBulk {
+	return &PaymentProviderWebhookSubscriptionCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *PaymentProviderWebhookSubscriptionClient) MapCreateBulk(slice any, setFunc func(*PaymentProviderWebhookSubscriptionCreate, int)) *PaymentProviderWebhookSubscriptionCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &PaymentProviderWebhookSubscriptionCreateBulk{err: fmt.Errorf("calling to PaymentProviderWebhookSubscriptionClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*PaymentProviderWebhookSubscriptionCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &PaymentProviderWebhookSubscriptionCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for PaymentProviderWebhookSubscription.
+func (c *PaymentProviderWebhookSubscriptionClient) Update() *PaymentProviderWebhookSubscriptionUpdate {
+	mutation := newPaymentProviderWebhookSubscriptionMutation(c.config, OpUpdate)
+	return &PaymentProviderWebhookSubscriptionUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *PaymentProviderWebhookSubscriptionClient) UpdateOne(_m *PaymentProviderWebhookSubscription) *PaymentProviderWebhookSubscriptionUpdateOne {
+	mutation := newPaymentProviderWebhookSubscriptionMutation(c.config, OpUpdateOne, withPaymentProviderWebhookSubscription(_m))
+	return &PaymentProviderWebhookSubscriptionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *PaymentProviderWebhookSubscriptionClient) UpdateOneID(id int64) *PaymentProviderWebhookSubscriptionUpdateOne {
+	mutation := newPaymentProviderWebhookSubscriptionMutation(c.config, OpUpdateOne, withPaymentProviderWebhookSubscriptionID(id))
+	return &PaymentProviderWebhookSubscriptionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for PaymentProviderWebhookSubscription.
+func (c *PaymentProviderWebhookSubscriptionClient) Delete() *PaymentProviderWebhookSubscriptionDelete {
+	mutation := newPaymentProviderWebhookSubscriptionMutation(c.config, OpDelete)
+	return &PaymentProviderWebhookSubscriptionDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *PaymentProviderWebhookSubscriptionClient) DeleteOne(_m *PaymentProviderWebhookSubscription) *PaymentProviderWebhookSubscriptionDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *PaymentProviderWebhookSubscriptionClient) DeleteOneID(id int64) *PaymentProviderWebhookSubscriptionDeleteOne {
+	builder := c.Delete().Where(paymentproviderwebhooksubscription.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &PaymentProviderWebhookSubscriptionDeleteOne{builder}
+}
+
+// Query returns a query builder for PaymentProviderWebhookSubscription.
+func (c *PaymentProviderWebhookSubscriptionClient) Query() *PaymentProviderWebhookSubscriptionQuery {
+	return &PaymentProviderWebhookSubscriptionQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypePaymentProviderWebhookSubscription},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a PaymentProviderWebhookSubscription entity by its id.
+func (c *PaymentProviderWebhookSubscriptionClient) Get(ctx context.Context, id int64) (*PaymentProviderWebhookSubscription, error) {
+	return c.Query().Where(paymentproviderwebhooksubscription.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *PaymentProviderWebhookSubscriptionClient) GetX(ctx context.Context, id int64) *PaymentProviderWebhookSubscription {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *PaymentProviderWebhookSubscriptionClient) Hooks() []Hook {
+	return c.hooks.PaymentProviderWebhookSubscription
+}
+
+// Interceptors returns the client interceptors.
+func (c *PaymentProviderWebhookSubscriptionClient) Interceptors() []Interceptor {
+	return c.inters.PaymentProviderWebhookSubscription
+}
+
+func (c *PaymentProviderWebhookSubscriptionClient) mutate(ctx context.Context, m *PaymentProviderWebhookSubscriptionMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&PaymentProviderWebhookSubscriptionCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&PaymentProviderWebhookSubscriptionUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&PaymentProviderWebhookSubscriptionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&PaymentProviderWebhookSubscriptionDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown PaymentProviderWebhookSubscription mutation op: %q", m.Op())
+	}
+}
+
+// PaymentWebhookDeliveryClient is a client for the PaymentWebhookDelivery schema.
+type PaymentWebhookDeliveryClient struct {
+	config
+}
+
+// NewPaymentWebhookDeliveryClient returns a client for the PaymentWebhookDelivery from the given config.
+func NewPaymentWebhookDeliveryClient(c config) *PaymentWebhookDeliveryClient {
+	return &PaymentWebhookDeliveryClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `paymentwebhookdelivery.Hooks(f(g(h())))`.
+func (c *PaymentWebhookDeliveryClient) Use(hooks ...Hook) {
+	c.hooks.PaymentWebhookDelivery = append(c.hooks.PaymentWebhookDelivery, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `paymentwebhookdelivery.Intercept(f(g(h())))`.
+func (c *PaymentWebhookDeliveryClient) Intercept(interceptors ...Interceptor) {
+	c.inters.PaymentWebhookDelivery = append(c.inters.PaymentWebhookDelivery, interceptors...)
+}
+
+// Create returns a builder for creating a PaymentWebhookDelivery entity.
+func (c *PaymentWebhookDeliveryClient) Create() *PaymentWebhookDeliveryCreate {
+	mutation := newPaymentWebhookDeliveryMutation(c.config, OpCreate)
+	return &PaymentWebhookDeliveryCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of PaymentWebhookDelivery entities.
+func (c *PaymentWebhookDeliveryClient) CreateBulk(builders ...*PaymentWebhookDeliveryCreate) *PaymentWebhookDeliveryCreateBulk {
+	return &PaymentWebhookDeliveryCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *PaymentWebhookDeliveryClient) MapCreateBulk(slice any, setFunc func(*PaymentWebhookDeliveryCreate, int)) *PaymentWebhookDeliveryCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &PaymentWebhookDeliveryCreateBulk{err: fmt.Errorf("calling to PaymentWebhookDeliveryClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*PaymentWebhookDeliveryCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &PaymentWebhookDeliveryCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for PaymentWebhookDelivery.
+func (c *PaymentWebhookDeliveryClient) Update() *PaymentWebhookDeliveryUpdate {
+	mutation := newPaymentWebhookDeliveryMutation(c.config, OpUpdate)
+	return &PaymentWebhookDeliveryUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *PaymentWebhookDeliveryClient) UpdateOne(_m *PaymentWebhookDelivery) *PaymentWebhookDeliveryUpdateOne {
+	mutation := newPaymentWebhookDeliveryMutation(c.config, OpUpdateOne, withPaymentWebhookDelivery(_m))
+	return &PaymentWebhookDeliveryUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *PaymentWebhookDeliveryClient) UpdateOneID(id int64) *PaymentWebhookDeliveryUpdateOne {
+	mutation := newPaymentWebhookDeliveryMutation(c.config, OpUpdateOne, withPaymentWebhookDeliveryID(id))
+	return &PaymentWebhookDeliveryUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for PaymentWebhookDelivery.
+func (c *PaymentWebhookDeliveryClient) Delete() *PaymentWebhookDeliveryDelete {
+	mutation := newPaymentWebhookDeliveryMutation(c.config, OpDelete)
+	return &PaymentWebhookDeliveryDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *PaymentWebhookDeliveryClient) DeleteOne(_m *PaymentWebhookDelivery) *PaymentWebhookDeliveryDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *PaymentWebhookDeliveryClient) DeleteOneID(id int64) *PaymentWebhookDeliveryDeleteOne {
+	builder := c.Delete().Where(paymentwebhookdelivery.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &PaymentWebhookDeliveryDeleteOne{builder}
+}
+
+// Query returns a query builder for PaymentWebhookDelivery.
+func (c *PaymentWebhookDeliveryClient) Query() *PaymentWebhookDeliveryQuery {
+	return &PaymentWebhookDeliveryQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypePaymentWebhookDelivery},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a PaymentWebhookDelivery entity by its id.
+func (c *PaymentWebhookDeliveryClient) Get(ctx context.Context, id int64) (*PaymentWebhookDelivery, error) {
+	return c.Query().Where(paymentwebhookdelivery.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *PaymentWebhookDeliveryClient) GetX(ctx context.Context, id int64) *PaymentWebhookDelivery {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *PaymentWebhookDeliveryClient) Hooks() []Hook {
+	return c.hooks.PaymentWebhookDelivery
+}
+
+// Interceptors returns the client interceptors.
+func (c *PaymentWebhookDeliveryClient) Interceptors() []Interceptor {
+	return c.inters.PaymentWebhookDelivery
+}
+
+func (c *PaymentWebhookDeliveryClient) mutate(ctx context.Context, m *PaymentWebhookDeliveryMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&PaymentWebhookDeliveryCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&PaymentWebhookDeliveryUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&PaymentWebhookDeliveryUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&PaymentWebhookDeliveryDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown PaymentWebhookDelivery mutation op: %q", m.Op())
+	}
+}
+
 // PendingAuthSessionClient is a client for the PendingAuthSession schema.
 type PendingAuthSessionClient struct {
 	config
@@ -6213,22 +6499,22 @@ type (
 		AuthIdentityChannel, ChannelMonitor, ChannelMonitorDailyRollup,
 		ChannelMonitorHistory, ChannelMonitorRequestTemplate, ErrorPassthroughRule,
 		Group, IdempotencyRecord, IdentityAdoptionDecision, PaymentAuditLog,
-		PaymentOrder, PaymentProviderInstance, PendingAuthSession, PromoCode,
-		PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting, SubscriptionPlan,
-		TLSFingerprintProfile, UsageCleanupTask, UsageLog, User, UserAllowedGroup,
-		UserAttributeDefinition, UserAttributeValue, UserPlatformQuota,
-		UserSubscription []ent.Hook
+		PaymentOrder, PaymentProviderInstance, PaymentProviderWebhookSubscription,
+		PaymentWebhookDelivery, PendingAuthSession, PromoCode, PromoCodeUsage, Proxy,
+		RedeemCode, SecuritySecret, Setting, SubscriptionPlan, TLSFingerprintProfile,
+		UsageCleanupTask, UsageLog, User, UserAllowedGroup, UserAttributeDefinition,
+		UserAttributeValue, UserPlatformQuota, UserSubscription []ent.Hook
 	}
 	inters struct {
 		APIKey, Account, AccountGroup, Announcement, AnnouncementRead, AuthIdentity,
 		AuthIdentityChannel, ChannelMonitor, ChannelMonitorDailyRollup,
 		ChannelMonitorHistory, ChannelMonitorRequestTemplate, ErrorPassthroughRule,
 		Group, IdempotencyRecord, IdentityAdoptionDecision, PaymentAuditLog,
-		PaymentOrder, PaymentProviderInstance, PendingAuthSession, PromoCode,
-		PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting, SubscriptionPlan,
-		TLSFingerprintProfile, UsageCleanupTask, UsageLog, User, UserAllowedGroup,
-		UserAttributeDefinition, UserAttributeValue, UserPlatformQuota,
-		UserSubscription []ent.Interceptor
+		PaymentOrder, PaymentProviderInstance, PaymentProviderWebhookSubscription,
+		PaymentWebhookDelivery, PendingAuthSession, PromoCode, PromoCodeUsage, Proxy,
+		RedeemCode, SecuritySecret, Setting, SubscriptionPlan, TLSFingerprintProfile,
+		UsageCleanupTask, UsageLog, User, UserAllowedGroup, UserAttributeDefinition,
+		UserAttributeValue, UserPlatformQuota, UserSubscription []ent.Interceptor
 	}
 )
 

@@ -11,6 +11,7 @@ import (
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/enttest"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
+	paymentprovider "github.com/Wei-Shaw/sub2api/internal/payment/provider"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/stretchr/testify/require"
 
@@ -21,6 +22,7 @@ import (
 
 type paymentOrderLifecycleQueryProvider struct {
 	key               string
+	lastQueryContext  context.Context
 	lastQueryTradeNo  string
 	lastCancelTradeNo string
 	queryCalls        int
@@ -56,7 +58,8 @@ func (p *paymentOrderLifecycleQueryProvider) CreatePayment(context.Context, paym
 	panic("unexpected call")
 }
 
-func (p *paymentOrderLifecycleQueryProvider) QueryOrder(_ context.Context, tradeNo string) (*payment.QueryOrderResponse, error) {
+func (p *paymentOrderLifecycleQueryProvider) QueryOrder(ctx context.Context, tradeNo string) (*payment.QueryOrderResponse, error) {
+	p.lastQueryContext = ctx
 	p.lastQueryTradeNo = tradeNo
 	p.queryCalls++
 	if len(p.responses) > 0 {
@@ -453,6 +456,131 @@ func TestVerifyOrderByOutTradeNoRejectsPaidQueryWithZeroAmount(t *testing.T) {
 	require.Empty(t, redeemRepo.useCalls)
 }
 
+func TestReconcilePaidDoesNotReturnAlreadyPaidWhenFulfillmentRejectsAmountMismatch(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("checkpaid-amount-mismatch@example.com").
+		SetPasswordHash("hash").
+		SetUsername("checkpaid-amount-mismatch-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(88).
+		SetPayAmount(88).
+		SetFeeRate(0).
+		SetRechargeCode("CHECKPAID-AMOUNT-MISMATCH").
+		SetOutTradeNo("sub2_checkpaid_amount_mismatch").
+		SetPaymentType(payment.TypeWise).
+		SetPaymentTradeNo("").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusPending).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	registry := payment.NewRegistry()
+	provider := &paymentOrderLifecycleQueryProvider{
+		key: payment.TypeWise,
+		resp: &payment.QueryOrderResponse{
+			TradeNo: "wise-upstream-amount-mismatch",
+			Status:  payment.ProviderStatusPaid,
+			Amount:  87.99,
+			Metadata: map[string]string{
+				"profile_id":          "profile-123",
+				"balance_id":          "balance-123",
+				"currency":            "USD",
+				"settlement_strategy": "exact_only",
+			},
+		},
+	}
+	registry.Register(provider)
+
+	svc := &PaymentService{
+		entClient:       client,
+		registry:        registry,
+		providersLoaded: true,
+	}
+
+	result := svc.reconcilePaid(ctx, order)
+	require.Empty(t, result)
+	require.Equal(t, order.OutTradeNo, provider.lastQueryTradeNo)
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusPending, reloaded.Status)
+	require.Empty(t, reloaded.PaymentTradeNo)
+	require.Equal(t, 88.0, reloaded.PayAmount)
+}
+
+func TestHandleWiseQueryOrderResponseDoesNotFulfillWisePaidQueryWithMissingSnapshotMetadata(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("wise-missing-metadata@example.com").
+		SetPasswordHash("hash").
+		SetUsername("wise-missing-metadata-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(88).
+		SetPayAmount(88).
+		SetFeeRate(0).
+		SetRechargeCode("WISE-MISSING-METADATA").
+		SetOutTradeNo("sub2_wise_missing_metadata").
+		SetPaymentType(payment.TypeWise).
+		SetPaymentTradeNo("").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusPending).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		SetProviderSnapshot(map[string]any{
+			"schema_version":       2,
+			"provider_key":         payment.TypeWise,
+			"merchant_id":          "profile-123",
+			"balance_id":           "balance-123",
+			"currency":             "USD",
+			"settlement_strategy":  "exact_only",
+			"provider_instance_id": "88",
+		}).
+		Save(ctx)
+	require.NoError(t, err)
+
+	svc := &PaymentService{
+		entClient: client,
+	}
+
+	result, err := svc.handleWiseQueryOrderResponse(ctx, order, &payment.QueryOrderResponse{
+		TradeNo: "wise-upstream-missing-metadata",
+		Status:  payment.ProviderStatusPaid,
+		Amount:  88,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.Matched)
+	require.False(t, result.AutoFulfill)
+	require.Equal(t, "metadata_mismatch", result.Reason)
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusPending, reloaded.Status)
+	require.Empty(t, reloaded.PaymentTradeNo)
+	require.Equal(t, 88.0, reloaded.PayAmount)
+}
+
 func TestVerifyOrderByOutTradeNoDoesNotCancelUnpaidUpstreamOrder(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentOrderLifecycleTestClient(t)
@@ -794,6 +922,79 @@ func TestPaymentOrderQueryReferenceUsesOutTradeNoForOfficialProviders(t *testing
 	require.Equal(t, "sub2_out_trade_no", paymentOrderQueryReference(order, paymentFulfillmentTestProvider{
 		key: payment.TypeWxpay,
 	}))
+}
+
+func TestPaymentOrderQueryReferenceUsesOutTradeNoForWise(t *testing.T) {
+	t.Parallel()
+
+	order := &dbent.PaymentOrder{
+		PaymentType:    payment.TypeWise,
+		OutTradeNo:     "sub2_wise_123",
+		PaymentTradeNo: "wise-tx-123",
+	}
+	provider := &paymentOrderLifecycleQueryProvider{key: payment.TypeWise}
+
+	require.Equal(t, "sub2_wise_123", paymentOrderQueryReference(order, provider))
+}
+
+func TestReconcilePaidWisePassesOrderCreatedAtToProvider(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+	createdAt := time.Now().UTC().Add(-96 * time.Hour).Truncate(time.Second)
+
+	user, err := client.User.Create().
+		SetEmail("wise-created-at-query@example.com").
+		SetPasswordHash("hash").
+		SetUsername("wise-created-at-query-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(88).
+		SetPayAmount(88).
+		SetFeeRate(0).
+		SetRechargeCode("WISE-CREATED-AT-QUERY").
+		SetOutTradeNo("sub2_wise_created_at_query").
+		SetPaymentType(payment.TypeWise).
+		SetPaymentTradeNo("wise-upstream-created-at-query").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusPending).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetCreatedAt(createdAt).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	provider := &paymentOrderLifecycleQueryProvider{
+		key: payment.TypeWise,
+		resp: &payment.QueryOrderResponse{
+			TradeNo: "wise-upstream-created-at-query",
+			Status:  payment.ProviderStatusPending,
+			Metadata: map[string]string{
+				"reconcile_decision": "no_match",
+				"reconcile_reason":   "activity_not_found",
+			},
+		},
+	}
+	registry := payment.NewRegistry()
+	registry.Register(provider)
+
+	svc := &PaymentService{
+		entClient:       client,
+		registry:        registry,
+		providersLoaded: true,
+	}
+
+	result := svc.reconcilePaid(ctx, order)
+	require.Empty(t, result)
+	require.Equal(t, order.OutTradeNo, provider.lastQueryTradeNo)
+	gotCreatedAt, ok := paymentprovider.WiseOrderCreatedAtFromContext(provider.lastQueryContext)
+	require.True(t, ok)
+	require.WithinDuration(t, createdAt, gotCreatedAt, time.Second)
 }
 
 func newPaymentOrderLifecycleTestClient(t *testing.T) *dbent.Client {

@@ -224,8 +224,9 @@ func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderReq
 
 func (s *PaymentService) allocateOutTradeNo(ctx context.Context, tx *dbent.Tx) (string, error) {
 	const maxAttempts = 5
+	prefix := s.orderIDPrefix(ctx)
 	for attempt := 0; attempt < maxAttempts; attempt++ {
-		candidate := generateOutTradeNo()
+		candidate := generateOutTradeNo(prefix)
 		exists, err := tx.PaymentOrder.Query().Where(paymentorder.OutTradeNo(candidate)).Exist(ctx)
 		if err != nil {
 			return "", fmt.Errorf("check out_trade_no uniqueness: %w", err)
@@ -302,6 +303,20 @@ func buildPaymentOrderProviderSnapshot(sel *payment.InstanceSelection, req Creat
 			snapshot["merchant_id"] = accountID
 		}
 		snapshot["currency"] = paymentProviderConfigCurrency(providerKey, sel.Config)
+	}
+	if providerKey == payment.TypeWise {
+		if profileID := strings.TrimSpace(sel.Config["profileId"]); profileID != "" {
+			snapshot["merchant_id"] = profileID
+		}
+		if balanceID := strings.TrimSpace(sel.Config["balanceId"]); balanceID != "" {
+			snapshot["balance_id"] = balanceID
+		}
+		snapshot["currency"] = paymentProviderConfigCurrency(providerKey, sel.Config)
+		if strategy := strings.TrimSpace(sel.Config["settlementStrategy"]); strategy != "" {
+			snapshot["settlement_strategy"] = strategy
+		} else {
+			snapshot["settlement_strategy"] = wiseSettlementStrategyExactOnly
+		}
 	}
 
 	if len(snapshot) == 1 {

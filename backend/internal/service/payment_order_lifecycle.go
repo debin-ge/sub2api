@@ -158,7 +158,8 @@ func (s *PaymentService) checkPaidWithOptions(ctx context.Context, o *dbent.Paym
 	if queryRef == "" {
 		return ""
 	}
-	resp, err := prov.QueryOrder(ctx, queryRef)
+	queryCtx := paymentProviderQueryContext(ctx, o, prov)
+	resp, err := prov.QueryOrder(queryCtx, queryRef)
 	if err != nil {
 		slog.Warn("query upstream failed", "orderID", o.ID, "error", err)
 		return ""
@@ -172,11 +173,32 @@ func (s *PaymentService) checkPaidWithOptions(ctx context.Context, o *dbent.Paym
 				"queryRef": queryRef,
 			})
 			slog.Warn("query upstream returned invalid paid amount", "orderID", o.ID, "queryRef", queryRef, "paid", resp.Amount)
-			retriedResp, retryOK := requeryPaidOrderOnce(ctx, prov, queryRef)
+			retriedResp, retryOK := requeryPaidOrderOnce(queryCtx, prov, queryRef)
 			if !retryOK {
 				return ""
 			}
 			resp = retriedResp
+		}
+		if payment.GetBasePaymentType(prov.ProviderKey()) == payment.TypeWise {
+			if !payment.AmountsEqualByMinorUnit(o.PayAmount, resp.Amount, PaymentOrderCurrency(o)) {
+				s.writeAuditLog(ctx, o.ID, "PAYMENT_AMOUNT_MISMATCH", prov.ProviderKey(), map[string]any{
+					"expected": o.PayAmount,
+					"paid":     resp.Amount,
+					"tradeNo":  resp.TradeNo,
+					"queryRef": queryRef,
+				})
+				slog.Warn("wise paid query returned non-exact amount", "orderID", o.ID, "queryRef", queryRef, "expected", o.PayAmount, "paid", resp.Amount)
+				return ""
+			}
+			if err := validateProviderNotificationMetadata(o, prov.ProviderKey(), resp.Metadata); err != nil {
+				s.writeAuditLog(ctx, o.ID, "PAYMENT_PROVIDER_METADATA_MISMATCH", prov.ProviderKey(), map[string]any{
+					"detail":   err.Error(),
+					"tradeNo":  resp.TradeNo,
+					"queryRef": queryRef,
+				})
+				slog.Warn("wise paid query metadata mismatch", "orderID", o.ID, "queryRef", queryRef, "error", err)
+				return ""
+			}
 		}
 		notificationTradeNo := o.PaymentTradeNo
 		if upstreamTradeNo := strings.TrimSpace(resp.TradeNo); paymentOrderShouldPersistUpstreamTradeNo(queryRef, upstreamTradeNo, notificationTradeNo) {
@@ -192,7 +214,7 @@ func (s *PaymentService) checkPaidWithOptions(ctx context.Context, o *dbent.Paym
 		}
 		if err := s.HandlePaymentNotification(ctx, &payment.PaymentNotification{TradeNo: notificationTradeNo, OrderID: o.OutTradeNo, Amount: resp.Amount, Status: payment.ProviderStatusSuccess, Metadata: resp.Metadata}, prov.ProviderKey()); err != nil {
 			slog.Error("fulfillment failed during checkPaid", "orderID", o.ID, "error", err)
-			// Still return already_paid — order was paid, fulfillment can be retried
+			return ""
 		}
 		return checkPaidResultAlreadyPaid
 	}
@@ -203,6 +225,16 @@ func (s *PaymentService) checkPaidWithOptions(ctx context.Context, o *dbent.Paym
 		_ = cp.CancelPayment(ctx, queryRef)
 	}
 	return ""
+}
+
+func paymentProviderQueryContext(ctx context.Context, order *dbent.PaymentOrder, prov payment.Provider) context.Context {
+	if order == nil || prov == nil {
+		return ctx
+	}
+	if payment.GetBasePaymentType(prov.ProviderKey()) != payment.TypeWise {
+		return ctx
+	}
+	return provider.WithWiseOrderCreatedAt(ctx, order.CreatedAt)
 }
 
 func requeryPaidOrderOnce(ctx context.Context, prov payment.Provider, queryRef string) (*payment.QueryOrderResponse, bool) {
@@ -242,7 +274,7 @@ func paymentOrderQueryReference(order *dbent.PaymentOrder, prov payment.Provider
 	}
 
 	switch payment.GetBasePaymentType(providerKey) {
-	case payment.TypeAlipay, payment.TypeEasyPay, payment.TypeWxpay:
+	case payment.TypeAlipay, payment.TypeEasyPay, payment.TypeWxpay, payment.TypeWise:
 		return strings.TrimSpace(order.OutTradeNo)
 	default:
 		if tradeNo := strings.TrimSpace(order.PaymentTradeNo); tradeNo != "" {
