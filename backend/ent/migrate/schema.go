@@ -812,6 +812,11 @@ var (
 				Unique:  false,
 				Columns: []*schema.Column{PaymentAuditLogsColumns[1]},
 			},
+			{
+				Name:    "idx_payment_audit_logs_order_action_uniq",
+				Unique:  true,
+				Columns: []*schema.Column{PaymentAuditLogsColumns[1], PaymentAuditLogsColumns[2]},
+			},
 		},
 	}
 	// PaymentOrdersColumns holds the columns for the "payment_orders" table.

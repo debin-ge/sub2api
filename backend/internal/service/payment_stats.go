@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"math"
 	"sort"
@@ -152,8 +154,18 @@ func buildTopUsers(orders []*dbent.PaymentOrder) []TopUserStat {
 
 func (s *PaymentService) writeAuditLog(ctx context.Context, oid int64, action, op string, detail map[string]any) {
 	dj, _ := json.Marshal(detail)
-	_, err := s.entClient.PaymentAuditLog.Create().SetOrderID(strconv.FormatInt(oid, 10)).SetAction(action).SetDetail(string(dj)).SetOperator(op).Save(ctx)
+	err := s.entClient.PaymentAuditLog.Create().
+		SetOrderID(strconv.FormatInt(oid, 10)).
+		SetAction(action).
+		SetDetail(string(dj)).
+		SetOperator(op).
+		OnConflictColumns(paymentauditlog.FieldOrderID, paymentauditlog.FieldAction).
+		DoNothing().
+		Exec(ctx)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return
+		}
 		slog.Error("audit log failed", "orderID", oid, "action", action, "error", err)
 	}
 }

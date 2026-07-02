@@ -50,5 +50,8 @@ func (PaymentAuditLog) Fields() []ent.Field {
 func (PaymentAuditLog) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("order_id"),
+		index.Fields("order_id", "action").
+			Unique().
+			StorageKey("idx_payment_audit_logs_order_action_uniq"),
 	}
 }
