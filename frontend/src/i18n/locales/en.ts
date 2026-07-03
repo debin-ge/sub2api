@@ -293,6 +293,9 @@ export default {
       tasks: {
         title: 'Tasks',
         description: 'Manage task types, difficulty, prompts, and verifiers.',
+        applyStandard: 'Apply Standard Task Set',
+        applyStandardSuccess: 'Standard task set applied: {created} created, {existing} existing, {enabled} enabled',
+        applyStandardError: 'Failed to apply standard task set',
         refresh: 'Refresh',
         create: 'Create Task',
         update: 'Update Task',
@@ -308,7 +311,7 @@ export default {
         deleteConfirm: 'Delete this benchmark task?',
         jsonError: '{field} must be a valid JSON object',
         emptyTitle: 'No tasks yet',
-        emptyDescription: 'Created benchmark tasks will appear here.',
+        emptyDescription: 'Apply the standard task set first, or create a custom task manually.',
         fields: {
           suiteId: 'Suite ID',
           title: 'Title',

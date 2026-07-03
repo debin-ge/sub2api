@@ -293,6 +293,9 @@ export default {
       tasks: {
         title: '评测任务',
         description: '管理任务类型、难度、prompt 与 verifier。',
+        applyStandard: '应用标准任务集',
+        applyStandardSuccess: '标准任务集已应用：新增 {created} 个，已有 {existing} 个，启用 {enabled} 个',
+        applyStandardError: '应用标准任务集失败',
         refresh: '刷新',
         create: '创建任务',
         update: '更新任务',
@@ -308,7 +311,7 @@ export default {
         deleteConfirm: '确定要删除这个评测任务吗？',
         jsonError: '{field} 不是有效的 JSON 对象',
         emptyTitle: '暂无任务',
-        emptyDescription: '创建 benchmark 任务后会显示在这里。',
+        emptyDescription: '可以先应用标准任务集，也可以手动创建自定义任务。',
         fields: {
           suiteId: 'Suite ID',
           title: '标题',

@@ -1,11 +1,12 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
-const { listTargets, createTarget, listTasks, createTask, listRuns, createRun, createStandardRun, listSchedules, createSchedule } = vi.hoisted(() => ({
+const { listTargets, createTarget, listTasks, createTask, applyStandardTasks, listRuns, createRun, createStandardRun, listSchedules, createSchedule } = vi.hoisted(() => ({
   listTargets: vi.fn(),
   createTarget: vi.fn(),
   listTasks: vi.fn(),
   createTask: vi.fn(),
+  applyStandardTasks: vi.fn(),
   listRuns: vi.fn(),
   createRun: vi.fn(),
   createStandardRun: vi.fn(),
@@ -22,6 +23,7 @@ vi.mock('@/api/admin', () => ({
       deleteTarget: vi.fn(),
       listTasks,
       createTask,
+      applyStandardTasks,
       updateTask: vi.fn(),
       deleteTask: vi.fn(),
       listRuns,
@@ -114,6 +116,35 @@ describe('BenchmarkTasksView', () => {
     expect(payload).not.toHaveProperty('suite_id')
     expect(payload).not.toHaveProperty('min_scale')
     expect(payload).toHaveProperty('sort_order')
+  })
+})
+
+describe('BenchmarkTasksView standard task set', () => {
+  it('applies the standard task set and reloads tasks', async () => {
+    const { default: View } = await import('../BenchmarkTasksView.vue')
+    applyStandardTasks.mockResolvedValue({ created_count: 6, existing_count: 0, enabled_count: 6, tasks: [] })
+    const wrapper = mount(View, { global: { stubs } })
+    await flushPromises()
+
+    await wrapper.find('[data-test="apply-standard-tasks-button"]').trigger('click')
+    await flushPromises()
+
+    expect(applyStandardTasks).toHaveBeenCalledTimes(1)
+    expect(listTasks).toHaveBeenCalledTimes(2)
+    expect(showSuccess).toHaveBeenCalled()
+  })
+
+  it('does not apply the standard task set twice while pending', async () => {
+    const { default: View } = await import('../BenchmarkTasksView.vue')
+    applyStandardTasks.mockReturnValue(new Promise(() => {}))
+    const wrapper = mount(View, { global: { stubs } })
+    await flushPromises()
+
+    const button = wrapper.find('[data-test="apply-standard-tasks-button"]')
+    await Promise.all([button.trigger('click'), button.trigger('click')])
+    await flushPromises()
+
+    expect(applyStandardTasks).toHaveBeenCalledTimes(1)
   })
 })
 

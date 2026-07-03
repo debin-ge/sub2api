@@ -6,10 +6,22 @@
           <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">{{ t('benchmark.admin.tasks.title') }}</h1>
           <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('benchmark.admin.tasks.description') }}</p>
         </div>
-        <button type="button" class="btn btn-secondary inline-flex items-center gap-2" :disabled="loading" @click="load">
-          <Icon name="refresh" size="sm" :class="loading ? 'animate-spin' : ''" />
-          {{ t('benchmark.admin.tasks.refresh') }}
-        </button>
+        <div class="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            data-test="apply-standard-tasks-button"
+            class="btn btn-primary inline-flex items-center gap-2"
+            :disabled="loading || applyingStandardTasks"
+            @click="applyStandardTasks"
+          >
+            <Icon name="play" size="sm" />
+            {{ t('benchmark.admin.tasks.applyStandard') }}
+          </button>
+          <button type="button" class="btn btn-secondary inline-flex items-center gap-2" :disabled="loading || applyingStandardTasks" @click="load">
+            <Icon name="refresh" size="sm" :class="loading ? 'animate-spin' : ''" />
+            {{ t('benchmark.admin.tasks.refresh') }}
+          </button>
+        </div>
       </div>
 
       <section class="card">
@@ -157,6 +169,7 @@ const disabledClass = 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray
 
 const tasks = ref<BenchmarkTask[]>([])
 const loading = ref(false)
+const applyingStandardTasks = ref(false)
 const saving = ref(false)
 const deletingId = ref<number | null>(null)
 const editingTask = ref<BenchmarkTask | null>(null)
@@ -218,6 +231,25 @@ async function load() {
     appStore.showError(error instanceof Error ? error.message : t('benchmark.admin.tasks.loadError'))
   } finally {
     loading.value = false
+  }
+}
+
+async function applyStandardTasks() {
+  if (loading.value || applyingStandardTasks.value) return
+
+  applyingStandardTasks.value = true
+  try {
+    const result = await adminAPI.benchmark.applyStandardTasks()
+    appStore.showSuccess(t('benchmark.admin.tasks.applyStandardSuccess', {
+      created: result.created_count,
+      existing: result.existing_count,
+      enabled: result.enabled_count,
+    }))
+    await load()
+  } catch (error) {
+    appStore.showError(error instanceof Error ? error.message : t('benchmark.admin.tasks.applyStandardError'))
+  } finally {
+    applyingStandardTasks.value = false
   }
 }
 
