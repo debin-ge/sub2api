@@ -28,8 +28,6 @@ type Tx struct {
 	AuthIdentity *AuthIdentityClient
 	// AuthIdentityChannel is the client for interacting with the AuthIdentityChannel builders.
 	AuthIdentityChannel *AuthIdentityChannelClient
-	// BenchmarkProfile is the client for interacting with the BenchmarkProfile builders.
-	BenchmarkProfile *BenchmarkProfileClient
 	// BenchmarkPublicSnapshot is the client for interacting with the BenchmarkPublicSnapshot builders.
 	BenchmarkPublicSnapshot *BenchmarkPublicSnapshotClient
 	// BenchmarkResult is the client for interacting with the BenchmarkResult builders.
@@ -42,12 +40,10 @@ type Tx struct {
 	BenchmarkRunTask *BenchmarkRunTaskClient
 	// BenchmarkSchedule is the client for interacting with the BenchmarkSchedule builders.
 	BenchmarkSchedule *BenchmarkScheduleClient
-	// BenchmarkScoreSnapshot is the client for interacting with the BenchmarkScoreSnapshot builders.
-	BenchmarkScoreSnapshot *BenchmarkScoreSnapshotClient
-	// BenchmarkSuite is the client for interacting with the BenchmarkSuite builders.
-	BenchmarkSuite *BenchmarkSuiteClient
 	// BenchmarkTarget is the client for interacting with the BenchmarkTarget builders.
 	BenchmarkTarget *BenchmarkTargetClient
+	// BenchmarkTargetScore is the client for interacting with the BenchmarkTargetScore builders.
+	BenchmarkTargetScore *BenchmarkTargetScoreClient
 	// BenchmarkTask is the client for interacting with the BenchmarkTask builders.
 	BenchmarkTask *BenchmarkTaskClient
 	// ChannelMonitor is the client for interacting with the ChannelMonitor builders.
@@ -244,16 +240,14 @@ func (tx *Tx) init() {
 	tx.AnnouncementRead = NewAnnouncementReadClient(tx.config)
 	tx.AuthIdentity = NewAuthIdentityClient(tx.config)
 	tx.AuthIdentityChannel = NewAuthIdentityChannelClient(tx.config)
-	tx.BenchmarkProfile = NewBenchmarkProfileClient(tx.config)
 	tx.BenchmarkPublicSnapshot = NewBenchmarkPublicSnapshotClient(tx.config)
 	tx.BenchmarkResult = NewBenchmarkResultClient(tx.config)
 	tx.BenchmarkRun = NewBenchmarkRunClient(tx.config)
 	tx.BenchmarkRunTarget = NewBenchmarkRunTargetClient(tx.config)
 	tx.BenchmarkRunTask = NewBenchmarkRunTaskClient(tx.config)
 	tx.BenchmarkSchedule = NewBenchmarkScheduleClient(tx.config)
-	tx.BenchmarkScoreSnapshot = NewBenchmarkScoreSnapshotClient(tx.config)
-	tx.BenchmarkSuite = NewBenchmarkSuiteClient(tx.config)
 	tx.BenchmarkTarget = NewBenchmarkTargetClient(tx.config)
+	tx.BenchmarkTargetScore = NewBenchmarkTargetScoreClient(tx.config)
 	tx.BenchmarkTask = NewBenchmarkTaskClient(tx.config)
 	tx.ChannelMonitor = NewChannelMonitorClient(tx.config)
 	tx.ChannelMonitorDailyRollup = NewChannelMonitorDailyRollupClient(tx.config)

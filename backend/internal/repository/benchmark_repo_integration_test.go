@@ -14,6 +14,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkrun"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkruntarget"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkruntask"
+	"github.com/Wei-Shaw/sub2api/ent/benchmarkschedule"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkscoresnapshot"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarksuite"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarktarget"
@@ -23,17 +24,19 @@ import (
 )
 
 type benchmarkFixture struct {
-	ctx             context.Context
-	client          *dbent.Client
-	repo            service.BenchmarkRepository
-	suite           *dbent.BenchmarkSuite
-	target          *dbent.BenchmarkTarget
-	task            *dbent.BenchmarkTask
-	profile         *dbent.BenchmarkProfile
-	createRunInput  service.BenchmarkCreateRunInput
-	runIDs          []int64
-	extraTargetIDs  []int64
-	extraProfileIDs []int64
+	ctx              context.Context
+	client           *dbent.Client
+	repo             service.BenchmarkRepository
+	suite            *dbent.BenchmarkSuite
+	target           *dbent.BenchmarkTarget
+	task             *dbent.BenchmarkTask
+	profile          *dbent.BenchmarkProfile
+	createRunInput   service.BenchmarkCreateRunInput
+	runIDs           []int64
+	extraTargetIDs   []int64
+	extraTaskIDs     []int64
+	extraProfileIDs  []int64
+	extraScheduleIDs []int64
 }
 
 func cleanupBenchmarkFixture(ctx context.Context, client *dbent.Client, fixture *benchmarkFixture) {
@@ -52,6 +55,11 @@ func cleanupBenchmarkFixture(ctx context.Context, client *dbent.Client, fixture 
 		_, _ = client.BenchmarkTarget.Delete().Where(benchmarktarget.IDEQ(targetID)).Exec(ctx)
 	}
 
+	for i := len(fixture.extraScheduleIDs) - 1; i >= 0; i-- {
+		scheduleID := fixture.extraScheduleIDs[i]
+		_, _ = client.BenchmarkSchedule.Delete().Where(benchmarkschedule.IDEQ(scheduleID)).Exec(ctx)
+	}
+
 	for i := len(fixture.extraProfileIDs) - 1; i >= 0; i-- {
 		profileID := fixture.extraProfileIDs[i]
 		_, _ = client.BenchmarkProfile.Delete().Where(benchmarkprofile.IDEQ(profileID)).Exec(ctx)
@@ -59,6 +67,10 @@ func cleanupBenchmarkFixture(ctx context.Context, client *dbent.Client, fixture 
 
 	if fixture.profile != nil {
 		_, _ = client.BenchmarkProfile.Delete().Where(benchmarkprofile.IDEQ(fixture.profile.ID)).Exec(ctx)
+	}
+	for i := len(fixture.extraTaskIDs) - 1; i >= 0; i-- {
+		taskID := fixture.extraTaskIDs[i]
+		_, _ = client.BenchmarkTask.Delete().Where(benchmarktask.IDEQ(taskID)).Exec(ctx)
 	}
 	if fixture.task != nil {
 		_, _ = client.BenchmarkTask.Delete().Where(benchmarktask.IDEQ(fixture.task.ID)).Exec(ctx)
@@ -1504,6 +1516,518 @@ func TestBenchmarkRepositoryUpdateResultClearsNullableFields(t *testing.T) {
 	require.Nil(t, clearedAgain.FinishedAt)
 }
 
+func TestBenchmarkRepositoryUpdateDeleteBenchmarkEntities(t *testing.T) {
+	fixture := newBenchmarkFixture(t, "update-delete")
+	ctx := fixture.ctx
+
+	updatedSuite, err := fixture.repo.UpdateSuite(ctx, fixture.suite.ID, service.BenchmarkSuiteInput{
+		Name:          "Updated benchmark suite",
+		Slug:          uniqueTestValue(t, "updated-suite"),
+		Enabled:       false,
+		PublicVisible: false,
+		Metadata:      map[string]any{"updated": true},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "Updated benchmark suite", updatedSuite.Name)
+	require.Nil(t, updatedSuite.Description)
+	require.Nil(t, updatedSuite.DefaultProfileID)
+	require.False(t, updatedSuite.Enabled)
+
+	perRunBudget := 12.5
+	dailyBudget := 25.0
+	updatedTarget, err := fixture.repo.UpdateTarget(ctx, fixture.target.ID, service.BenchmarkTargetInput{
+		ModelName:           fixture.target.ModelName,
+		ChannelID:           fixture.target.ChannelID,
+		DisplayName:         "GPT-4.1 official",
+		ProviderSnapshot:    "openai",
+		ChannelNameSnapshot: "primary",
+		SupportedTaskTypes:  []string{"reasoning", "coding"},
+		MaxConcurrency:      2,
+		PerRunBudget:        &perRunBudget,
+		DailyBudget:         &dailyBudget,
+		Enabled:             true,
+		PublicVisible:       true,
+		SortOrder:           3,
+		Metadata:            map[string]any{"tier": "updated"},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, updatedTarget.DisplayName)
+	require.Equal(t, "GPT-4.1 official", *updatedTarget.DisplayName)
+	require.Equal(t, []string{"reasoning", "coding"}, updatedTarget.SupportedTaskTypes)
+	require.NotNil(t, updatedTarget.PerRunBudget)
+	require.InDelta(t, perRunBudget, *updatedTarget.PerRunBudget, 0.000001)
+
+	clearedTarget, err := fixture.repo.UpdateTarget(ctx, fixture.target.ID, service.BenchmarkTargetInput{
+		ModelName:          fixture.target.ModelName,
+		ChannelID:          fixture.target.ChannelID,
+		SupportedTaskTypes: []string{"reasoning"},
+		Enabled:            true,
+		PublicVisible:      true,
+	})
+	require.NoError(t, err)
+	require.Nil(t, clearedTarget.DisplayName)
+	require.Nil(t, clearedTarget.ProviderSnapshot)
+	require.Nil(t, clearedTarget.ChannelNameSnapshot)
+	require.Nil(t, clearedTarget.PerRunBudget)
+	require.Nil(t, clearedTarget.DailyBudget)
+	require.Equal(t, 1, clearedTarget.MaxConcurrency)
+
+	updatedTask, err := fixture.repo.UpdateTask(ctx, fixture.task.ID, service.BenchmarkTaskInput{
+		SuiteID:        fixture.suite.ID,
+		Title:          "Reasoning v2",
+		Type:           "reasoning",
+		Prompt:         "answer exactly yes",
+		VerifierType:   "exact_match",
+		VerifierConfig: map[string]any{"expected": "yes"},
+		Weight:         2,
+		MinScale:       service.BenchmarkTaskScaleSmall,
+		Enabled:        true,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "Reasoning v2", updatedTask.Title)
+	require.InDelta(t, 2.0, updatedTask.Weight, 0.000001)
+	require.Nil(t, updatedTask.Category)
+	require.Nil(t, updatedTask.Difficulty)
+
+	gotTask, err := fixture.repo.GetTask(ctx, fixture.task.ID)
+	require.NoError(t, err)
+	require.Equal(t, updatedTask.ID, gotTask.ID)
+
+	taskLimit := 20
+	updatedProfile, err := fixture.repo.UpdateProfile(ctx, fixture.profile.ID, service.BenchmarkProfileInput{
+		SuiteID:          fixture.suite.ID,
+		Name:             "medium profile",
+		TargetIDs:        []int64{fixture.target.ID},
+		TaskTypes:        []string{"reasoning"},
+		TaskScale:        service.BenchmarkTaskScaleMedium,
+		TaskCountLimit:   &taskLimit,
+		SamplingStrategy: "random",
+		Enabled:          true,
+	})
+	require.NoError(t, err)
+	require.Equal(t, service.BenchmarkTaskScaleMedium, string(updatedProfile.TaskScale))
+	require.NotNil(t, updatedProfile.TaskCountLimit)
+	require.Equal(t, taskLimit, *updatedProfile.TaskCountLimit)
+	require.Nil(t, updatedProfile.Description)
+	require.Nil(t, updatedProfile.SelectionSeed)
+
+	nextRunAt := time.Now().Add(time.Hour).UTC().Truncate(time.Second)
+	schedule, err := fixture.repo.CreateSchedule(ctx, service.BenchmarkScheduleInput{
+		ProfileID: fixture.profile.ID,
+		Name:      "every five",
+		CronExpr:  "*/5 * * * *",
+		Enabled:   true,
+		NextRunAt: &nextRunAt,
+		Metadata:  map[string]any{"source": "test"},
+	})
+	require.NoError(t, err)
+	fixture.extraScheduleIDs = append(fixture.extraScheduleIDs, schedule.ID)
+
+	updatedSchedule, err := fixture.repo.UpdateSchedule(ctx, schedule.ID, service.BenchmarkScheduleInput{
+		ProfileID: fixture.profile.ID,
+		Name:      "every ten",
+		CronExpr:  "*/10 * * * *",
+		Enabled:   false,
+		Metadata:  map[string]any{"updated": true},
+	})
+	require.NoError(t, err)
+	require.False(t, updatedSchedule.Enabled)
+	require.Nil(t, updatedSchedule.NextRunAt)
+
+	deleteSuite, err := fixture.repo.CreateSuite(ctx, service.BenchmarkSuiteInput{
+		Name:    uniqueTestValue(t, "delete-suite"),
+		Slug:    uniqueTestValue(t, "delete-suite"),
+		Enabled: true,
+	})
+	require.NoError(t, err)
+	require.NoError(t, fixture.repo.DeleteSuite(ctx, deleteSuite.ID))
+	_, err = fixture.repo.GetSuite(ctx, deleteSuite.ID)
+	require.True(t, dbent.IsNotFound(err), "expected deleted suite to be missing, got %v", err)
+
+	deleteTarget, err := fixture.repo.CreateTarget(ctx, service.BenchmarkTargetInput{
+		ModelName:          uniqueTestValue(t, "delete-target"),
+		ChannelID:          303,
+		SupportedTaskTypes: []string{"reasoning"},
+		Enabled:            true,
+	})
+	require.NoError(t, err)
+	fixture.extraTargetIDs = append(fixture.extraTargetIDs, deleteTarget.ID)
+	require.NoError(t, fixture.repo.DeleteTarget(ctx, deleteTarget.ID))
+	_, err = fixture.repo.GetTarget(ctx, deleteTarget.ID)
+	require.True(t, dbent.IsNotFound(err), "expected deleted target to be missing, got %v", err)
+
+	deleteTask, err := fixture.repo.CreateTask(ctx, service.BenchmarkTaskInput{
+		SuiteID:      fixture.suite.ID,
+		Title:        "delete task",
+		Type:         "reasoning",
+		Prompt:       "delete prompt",
+		VerifierType: "exact_match",
+		Enabled:      true,
+	})
+	require.NoError(t, err)
+	fixture.extraTaskIDs = append(fixture.extraTaskIDs, deleteTask.ID)
+	require.NoError(t, fixture.repo.DeleteTask(ctx, deleteTask.ID))
+	_, err = fixture.repo.GetTask(ctx, deleteTask.ID)
+	require.True(t, dbent.IsNotFound(err), "expected deleted task to be missing, got %v", err)
+
+	deleteProfile, err := fixture.repo.CreateProfile(ctx, service.BenchmarkProfileInput{
+		SuiteID:          fixture.suite.ID,
+		Name:             "delete profile",
+		TargetIDs:        []int64{fixture.target.ID},
+		TaskTypes:        []string{"reasoning"},
+		TaskScale:        service.BenchmarkTaskScaleSmall,
+		SamplingStrategy: "seeded",
+		Enabled:          true,
+	})
+	require.NoError(t, err)
+	fixture.extraProfileIDs = append(fixture.extraProfileIDs, deleteProfile.ID)
+	deleteSchedule, err := fixture.repo.CreateSchedule(ctx, service.BenchmarkScheduleInput{
+		ProfileID: deleteProfile.ID,
+		Name:      "delete schedule",
+		CronExpr:  "*/15 * * * *",
+		Enabled:   false,
+	})
+	require.NoError(t, err)
+	fixture.extraScheduleIDs = append(fixture.extraScheduleIDs, deleteSchedule.ID)
+	require.NoError(t, fixture.repo.DeleteSchedule(ctx, deleteSchedule.ID))
+	_, err = fixture.repo.GetSchedule(ctx, deleteSchedule.ID)
+	require.True(t, dbent.IsNotFound(err), "expected deleted schedule to be missing, got %v", err)
+	require.NoError(t, fixture.repo.DeleteProfile(ctx, deleteProfile.ID))
+	_, err = fixture.repo.GetProfile(ctx, deleteProfile.ID)
+	require.True(t, dbent.IsNotFound(err), "expected deleted profile to be missing, got %v", err)
+}
+
+func TestBenchmarkRepositoryCancelRunSkipsPendingAndRunningResults(t *testing.T) {
+	fixture := newBenchmarkFixture(t, "cancel-run")
+	ctx := fixture.ctx
+
+	secondTask, err := fixture.repo.CreateTask(ctx, service.BenchmarkTaskInput{
+		SuiteID:      fixture.suite.ID,
+		Title:        "cancel second task",
+		Type:         "reasoning",
+		Prompt:       "second prompt",
+		VerifierType: "exact_match",
+		Enabled:      true,
+	})
+	require.NoError(t, err)
+	fixture.extraTaskIDs = append(fixture.extraTaskIDs, secondTask.ID)
+
+	thirdTask, err := fixture.repo.CreateTask(ctx, service.BenchmarkTaskInput{
+		SuiteID:      fixture.suite.ID,
+		Title:        "cancel third task",
+		Type:         "reasoning",
+		Prompt:       "third prompt",
+		VerifierType: "exact_match",
+		Enabled:      true,
+	})
+	require.NoError(t, err)
+	fixture.extraTaskIDs = append(fixture.extraTaskIDs, thirdTask.ID)
+
+	runInput := fixture.createRunInput
+	runInput.Tasks = append(runInput.Tasks,
+		service.BenchmarkRunTaskInput{
+			TaskID:               secondTask.ID,
+			TaskOrder:            2,
+			Type:                 secondTask.Type,
+			PromptSnapshot:       secondTask.Prompt,
+			VerifierTypeSnapshot: secondTask.VerifierType,
+		},
+		service.BenchmarkRunTaskInput{
+			TaskID:               thirdTask.ID,
+			TaskOrder:            3,
+			Type:                 thirdTask.Type,
+			PromptSnapshot:       thirdTask.Prompt,
+			VerifierTypeSnapshot: thirdTask.VerifierType,
+		},
+	)
+	run, err := fixture.repo.CreateRunWithSnapshots(ctx, runInput)
+	require.NoError(t, err)
+	fixture.runIDs = append(fixture.runIDs, run.ID)
+
+	results, err := fixture.repo.ListRunResults(ctx, run.ID)
+	require.NoError(t, err)
+	require.Len(t, results, 3)
+
+	runningStatus := service.BenchmarkResultStatusRunning
+	require.NoError(t, fixture.repo.UpdateResult(ctx, results[0].ID, service.BenchmarkResultUpdateInput{Status: &runningStatus}))
+	scoredStatus := service.BenchmarkResultStatusScored
+	require.NoError(t, fixture.repo.UpdateResult(ctx, results[1].ID, service.BenchmarkResultUpdateInput{Status: &scoredStatus}))
+
+	require.NoError(t, fixture.repo.CancelRun(ctx, run.ID, ""))
+
+	canceledRun, err := fixture.repo.GetRun(ctx, run.ID)
+	require.NoError(t, err)
+	require.Equal(t, service.BenchmarkRunStatusCanceled, canceledRun.Status)
+	require.NotNil(t, canceledRun.FinishedAt)
+	require.NotNil(t, canceledRun.ErrorMessage)
+	require.Equal(t, "canceled", *canceledRun.ErrorMessage)
+
+	updatedResults, err := fixture.repo.ListRunResults(ctx, run.ID)
+	require.NoError(t, err)
+	require.Len(t, updatedResults, 3)
+
+	byID := make(map[int64]*dbent.BenchmarkResult, len(updatedResults))
+	for _, result := range updatedResults {
+		byID[result.ID] = result
+	}
+	for _, resultID := range []int64{results[0].ID, results[2].ID} {
+		result := byID[resultID]
+		require.Equal(t, service.BenchmarkResultStatusSkipped, result.Status)
+		require.NotNil(t, result.ErrorCode)
+		require.Equal(t, service.BenchmarkResultStatusSkipped, *result.ErrorCode)
+		require.NotNil(t, result.ErrorMessage)
+		require.Equal(t, "canceled", *result.ErrorMessage)
+		require.NotNil(t, result.FinishedAt)
+	}
+	require.Equal(t, service.BenchmarkResultStatusScored, byID[results[1].ID].Status)
+
+	for _, terminalStatus := range []string{
+		service.BenchmarkRunStatusCompleted,
+		service.BenchmarkRunStatusFailed,
+		service.BenchmarkRunStatusCanceled,
+	} {
+		terminalRun := fixture.createRun(t)
+		terminalMessage := "terminal state"
+		require.NoError(t, fixture.repo.UpdateRunStatus(ctx, terminalRun.ID, terminalStatus, &terminalMessage))
+
+		err := fixture.repo.CancelRun(ctx, terminalRun.ID, "must not overwrite")
+		require.Error(t, err)
+
+		storedRun, err := fixture.repo.GetRun(ctx, terminalRun.ID)
+		require.NoError(t, err)
+		require.Equal(t, terminalStatus, storedRun.Status)
+		require.NotNil(t, storedRun.ErrorMessage)
+		require.Equal(t, terminalMessage, *storedRun.ErrorMessage)
+
+		storedResults, err := fixture.repo.ListRunResults(ctx, terminalRun.ID)
+		require.NoError(t, err)
+		require.Len(t, storedResults, 1)
+		require.Equal(t, service.BenchmarkResultStatusPending, storedResults[0].Status)
+		require.Nil(t, storedResults[0].ErrorCode)
+		require.Nil(t, storedResults[0].ErrorMessage)
+	}
+}
+
+func TestBenchmarkRepositoryClaimRunnableRunsPersistsQueuedRunsAsRunning(t *testing.T) {
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(context.Background(), tx)
+	fixture := newBenchmarkFixtureWith(t, txCtx, tx.Client(), "claim-runs")
+	ctx := fixture.ctx
+
+	queuedRunID := fixture.runIDs[0]
+	queuedWarning := "queued warning"
+	require.NoError(t, fixture.repo.UpdateRunStatus(ctx, queuedRunID, service.BenchmarkRunStatusQueued, &queuedWarning))
+
+	secondQueuedRun := fixture.createRun(t)
+	secondQueuedWarning := "second queued warning"
+	require.NoError(t, fixture.repo.UpdateRunStatus(ctx, secondQueuedRun.ID, service.BenchmarkRunStatusQueued, &secondQueuedWarning))
+
+	scoringRun := fixture.createRun(t)
+	require.NoError(t, fixture.repo.UpdateRunStatus(ctx, scoringRun.ID, service.BenchmarkRunStatusScoring, nil))
+
+	completedRun := fixture.createRun(t)
+	require.NoError(t, fixture.repo.UpdateRunStatus(ctx, completedRun.ID, service.BenchmarkRunStatusCompleted, nil))
+
+	claimedIDs := make(map[int64]struct{})
+	for attempt := 0; attempt < 20; attempt++ {
+		claimed, err := fixture.repo.ClaimRunnableRuns(ctx, 20)
+		require.NoError(t, err)
+		for _, run := range claimed {
+			claimedIDs[run.ID] = struct{}{}
+		}
+		if _, ok := claimedIDs[queuedRunID]; !ok {
+			continue
+		}
+		if _, ok := claimedIDs[secondQueuedRun.ID]; !ok {
+			continue
+		}
+		if _, ok := claimedIDs[scoringRun.ID]; !ok {
+			continue
+		}
+		break
+	}
+	require.Contains(t, claimedIDs, queuedRunID)
+	require.Contains(t, claimedIDs, secondQueuedRun.ID)
+	require.Contains(t, claimedIDs, scoringRun.ID)
+	require.NotContains(t, claimedIDs, completedRun.ID)
+
+	firstQueuedRun, err := fixture.repo.GetRun(ctx, queuedRunID)
+	require.NoError(t, err)
+	require.Equal(t, service.BenchmarkRunStatusRunning, firstQueuedRun.Status)
+	require.NotNil(t, firstQueuedRun.StartedAt)
+	require.Nil(t, firstQueuedRun.ErrorMessage)
+	firstStartedAt := *firstQueuedRun.StartedAt
+
+	secondStoredRun, err := fixture.repo.GetRun(ctx, secondQueuedRun.ID)
+	require.NoError(t, err)
+	require.Equal(t, service.BenchmarkRunStatusRunning, secondStoredRun.Status)
+	require.NotNil(t, secondStoredRun.StartedAt)
+	require.Nil(t, secondStoredRun.ErrorMessage)
+
+	claimedAgain, err := fixture.repo.ClaimRunnableRuns(ctx, 20)
+	require.NoError(t, err)
+	require.NotContains(t, benchmarkRunIDs(claimedAgain), completedRun.ID)
+
+	firstQueuedRunAgain, err := fixture.repo.GetRun(ctx, queuedRunID)
+	require.NoError(t, err)
+	require.Equal(t, service.BenchmarkRunStatusRunning, firstQueuedRunAgain.Status)
+	require.NotNil(t, firstQueuedRunAgain.StartedAt)
+	require.True(t, firstStartedAt.Equal(*firstQueuedRunAgain.StartedAt))
+	require.Nil(t, firstQueuedRunAgain.ErrorMessage)
+}
+
+func TestBenchmarkRepositoryMarkRunStartedAndFinished(t *testing.T) {
+	fixture := newBenchmarkFixture(t, "mark-run")
+	ctx := fixture.ctx
+	runID := fixture.runIDs[0]
+
+	initialError := "queued with warning"
+	require.NoError(t, fixture.repo.UpdateRunStatus(ctx, runID, service.BenchmarkRunStatusQueued, &initialError))
+
+	require.NoError(t, fixture.repo.MarkRunStarted(ctx, runID))
+	startedRun, err := fixture.repo.GetRun(ctx, runID)
+	require.NoError(t, err)
+	require.Equal(t, service.BenchmarkRunStatusRunning, startedRun.Status)
+	require.NotNil(t, startedRun.StartedAt)
+	require.Nil(t, startedRun.ErrorMessage)
+	firstStartedAt := *startedRun.StartedAt
+
+	require.NoError(t, fixture.repo.MarkRunStarted(ctx, runID))
+	startedAgain, err := fixture.repo.GetRun(ctx, runID)
+	require.NoError(t, err)
+	require.NotNil(t, startedAgain.StartedAt)
+	require.True(t, firstStartedAt.Equal(*startedAgain.StartedAt))
+
+	failure := "score failed"
+	require.NoError(t, fixture.repo.MarkRunFinished(ctx, runID, service.BenchmarkRunStatusFailed, &failure))
+	failedRun, err := fixture.repo.GetRun(ctx, runID)
+	require.NoError(t, err)
+	require.Equal(t, service.BenchmarkRunStatusFailed, failedRun.Status)
+	require.NotNil(t, failedRun.FinishedAt)
+	require.NotNil(t, failedRun.ErrorMessage)
+	require.Equal(t, failure, *failedRun.ErrorMessage)
+
+	err = fixture.repo.MarkRunFinished(ctx, runID, service.BenchmarkRunStatusCompleted, nil)
+	require.Error(t, err)
+	stillFailedRun, err := fixture.repo.GetRun(ctx, runID)
+	require.NoError(t, err)
+	require.Equal(t, service.BenchmarkRunStatusFailed, stillFailedRun.Status)
+	require.NotNil(t, stillFailedRun.ErrorMessage)
+	require.Equal(t, failure, *stillFailedRun.ErrorMessage)
+
+	completableRun := fixture.createRun(t)
+	require.NoError(t, fixture.repo.MarkRunStarted(ctx, completableRun.ID))
+	require.NoError(t, fixture.repo.MarkRunFinished(ctx, completableRun.ID, service.BenchmarkRunStatusCompleted, nil))
+	completedRun, err := fixture.repo.GetRun(ctx, completableRun.ID)
+	require.NoError(t, err)
+	require.Equal(t, service.BenchmarkRunStatusCompleted, completedRun.Status)
+	require.NotNil(t, completedRun.FinishedAt)
+	require.Nil(t, completedRun.ErrorMessage)
+
+	canceledRun := fixture.createRun(t)
+	canceledMessage := "already canceled"
+	require.NoError(t, fixture.repo.UpdateRunStatus(ctx, canceledRun.ID, service.BenchmarkRunStatusCanceled, &canceledMessage))
+	err = fixture.repo.MarkRunStarted(ctx, canceledRun.ID)
+	require.Error(t, err)
+	stillCanceledRun, err := fixture.repo.GetRun(ctx, canceledRun.ID)
+	require.NoError(t, err)
+	require.Equal(t, service.BenchmarkRunStatusCanceled, stillCanceledRun.Status)
+	require.NotNil(t, stillCanceledRun.ErrorMessage)
+	require.Equal(t, canceledMessage, *stillCanceledRun.ErrorMessage)
+
+	err = fixture.repo.MarkRunStarted(ctx, completedRun.ID)
+	require.Error(t, err)
+	completedRunAfterStartedAttempt, err := fixture.repo.GetRun(ctx, completedRun.ID)
+	require.NoError(t, err)
+	require.Equal(t, service.BenchmarkRunStatusCompleted, completedRunAfterStartedAttempt.Status)
+
+	err = fixture.repo.MarkRunStarted(ctx, failedRun.ID)
+	require.Error(t, err)
+	failedRunAfterStartedAttempt, err := fixture.repo.GetRun(ctx, failedRun.ID)
+	require.NoError(t, err)
+	require.Equal(t, service.BenchmarkRunStatusFailed, failedRunAfterStartedAttempt.Status)
+
+	err = fixture.repo.MarkRunStarted(ctx, -987654321)
+	require.Error(t, err)
+
+	err = fixture.repo.MarkRunFinished(ctx, canceledRun.ID, service.BenchmarkRunStatusCompleted, nil)
+	require.Error(t, err)
+	stillCanceledAfterFinishAttempt, err := fixture.repo.GetRun(ctx, canceledRun.ID)
+	require.NoError(t, err)
+	require.Equal(t, service.BenchmarkRunStatusCanceled, stillCanceledAfterFinishAttempt.Status)
+	require.NotNil(t, stillCanceledAfterFinishAttempt.ErrorMessage)
+	require.Equal(t, canceledMessage, *stillCanceledAfterFinishAttempt.ErrorMessage)
+
+	err = fixture.repo.MarkRunFinished(ctx, completedRun.ID, service.BenchmarkRunStatusFailed, &failure)
+	require.Error(t, err)
+	completedRunAfterFinishAttempt, err := fixture.repo.GetRun(ctx, completedRun.ID)
+	require.NoError(t, err)
+	require.Equal(t, service.BenchmarkRunStatusCompleted, completedRunAfterFinishAttempt.Status)
+	require.Nil(t, completedRunAfterFinishAttempt.ErrorMessage)
+
+	err = fixture.repo.MarkRunFinished(ctx, failedRun.ID, service.BenchmarkRunStatusCompleted, nil)
+	require.Error(t, err)
+	failedRunAfterFinishAttempt, err := fixture.repo.GetRun(ctx, failedRun.ID)
+	require.NoError(t, err)
+	require.Equal(t, service.BenchmarkRunStatusFailed, failedRunAfterFinishAttempt.Status)
+	require.NotNil(t, failedRunAfterFinishAttempt.ErrorMessage)
+	require.Equal(t, failure, *failedRunAfterFinishAttempt.ErrorMessage)
+
+	err = fixture.repo.MarkRunFinished(ctx, -987654321, service.BenchmarkRunStatusCompleted, nil)
+	require.Error(t, err)
+}
+
+func TestBenchmarkRepositoryMarkRunSnapshotting(t *testing.T) {
+	fixture := newBenchmarkFixture(t, "mark-run-snapshotting")
+	ctx := fixture.ctx
+
+	runningRun := fixture.createRun(t)
+	runningWarning := "running warning"
+	require.NoError(t, fixture.repo.MarkRunStarted(ctx, runningRun.ID))
+	require.NoError(t, fixture.repo.UpdateRunStatus(ctx, runningRun.ID, service.BenchmarkRunStatusRunning, &runningWarning))
+	require.NoError(t, fixture.repo.MarkRunSnapshotting(ctx, runningRun.ID))
+	snapshottingRun, err := fixture.repo.GetRun(ctx, runningRun.ID)
+	require.NoError(t, err)
+	require.Equal(t, service.BenchmarkRunStatusSnapshotting, snapshottingRun.Status)
+	require.Nil(t, snapshottingRun.ErrorMessage)
+
+	scoringRun := fixture.createRun(t)
+	scoringWarning := "scoring warning"
+	require.NoError(t, fixture.repo.MarkRunStarted(ctx, scoringRun.ID))
+	require.NoError(t, fixture.repo.UpdateRunStatus(ctx, scoringRun.ID, service.BenchmarkRunStatusScoring, &scoringWarning))
+	require.NoError(t, fixture.repo.MarkRunSnapshotting(ctx, scoringRun.ID))
+	scoringSnapshottingRun, err := fixture.repo.GetRun(ctx, scoringRun.ID)
+	require.NoError(t, err)
+	require.Equal(t, service.BenchmarkRunStatusSnapshotting, scoringSnapshottingRun.Status)
+	require.Nil(t, scoringSnapshottingRun.ErrorMessage)
+
+	require.NoError(t, fixture.repo.MarkRunSnapshotting(ctx, scoringRun.ID))
+	stillSnapshottingRun, err := fixture.repo.GetRun(ctx, scoringRun.ID)
+	require.NoError(t, err)
+	require.Equal(t, service.BenchmarkRunStatusSnapshotting, stillSnapshottingRun.Status)
+
+	for _, terminalStatus := range []string{
+		service.BenchmarkRunStatusCanceled,
+		service.BenchmarkRunStatusCompleted,
+		service.BenchmarkRunStatusFailed,
+	} {
+		terminalRun := fixture.createRun(t)
+		terminalMessage := terminalStatus + " message"
+		require.NoError(t, fixture.repo.UpdateRunStatus(ctx, terminalRun.ID, terminalStatus, &terminalMessage))
+
+		err := fixture.repo.MarkRunSnapshotting(ctx, terminalRun.ID)
+		require.Error(t, err)
+		storedRun, err := fixture.repo.GetRun(ctx, terminalRun.ID)
+		require.NoError(t, err)
+		require.Equal(t, terminalStatus, storedRun.Status)
+		require.NotNil(t, storedRun.ErrorMessage)
+		require.Equal(t, terminalMessage, *storedRun.ErrorMessage)
+	}
+
+	err = fixture.repo.MarkRunSnapshotting(ctx, -987654321)
+	require.Error(t, err)
+}
+
 func TestBenchmarkRepositoryRequeueClaimedResults(t *testing.T) {
 	fixture := newBenchmarkFixture(t, "requeue-claimed")
 
@@ -1733,6 +2257,14 @@ func TestBenchmarkRepositoryRunResultContext(t *testing.T) {
 
 func ptrInt64(v int64) *int64 {
 	return &v
+}
+
+func benchmarkRunIDs(runs []*dbent.BenchmarkRun) []int64 {
+	ids := make([]int64, 0, len(runs))
+	for _, run := range runs {
+		ids = append(ids, run.ID)
+	}
+	return ids
 }
 
 func stringValue(v *string) string {

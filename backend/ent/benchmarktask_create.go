@@ -12,7 +12,6 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkruntask"
-	"github.com/Wei-Shaw/sub2api/ent/benchmarksuite"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarktask"
 )
 
@@ -52,12 +51,6 @@ func (_c *BenchmarkTaskCreate) SetNillableUpdatedAt(v *time.Time) *BenchmarkTask
 	return _c
 }
 
-// SetSuiteID sets the "suite_id" field.
-func (_c *BenchmarkTaskCreate) SetSuiteID(v int64) *BenchmarkTaskCreate {
-	_c.mutation.SetSuiteID(v)
-	return _c
-}
-
 // SetTitle sets the "title" field.
 func (_c *BenchmarkTaskCreate) SetTitle(v string) *BenchmarkTaskCreate {
 	_c.mutation.SetTitle(v)
@@ -67,20 +60,6 @@ func (_c *BenchmarkTaskCreate) SetTitle(v string) *BenchmarkTaskCreate {
 // SetType sets the "type" field.
 func (_c *BenchmarkTaskCreate) SetType(v string) *BenchmarkTaskCreate {
 	_c.mutation.SetType(v)
-	return _c
-}
-
-// SetCategory sets the "category" field.
-func (_c *BenchmarkTaskCreate) SetCategory(v string) *BenchmarkTaskCreate {
-	_c.mutation.SetCategory(v)
-	return _c
-}
-
-// SetNillableCategory sets the "category" field if the given value is not nil.
-func (_c *BenchmarkTaskCreate) SetNillableCategory(v *string) *BenchmarkTaskCreate {
-	if v != nil {
-		_c.SetCategory(*v)
-	}
 	return _c
 }
 
@@ -95,12 +74,6 @@ func (_c *BenchmarkTaskCreate) SetNillableDifficulty(v *string) *BenchmarkTaskCr
 	if v != nil {
 		_c.SetDifficulty(*v)
 	}
-	return _c
-}
-
-// SetTags sets the "tags" field.
-func (_c *BenchmarkTaskCreate) SetTags(v []string) *BenchmarkTaskCreate {
-	_c.mutation.SetTags(v)
 	return _c
 }
 
@@ -148,20 +121,6 @@ func (_c *BenchmarkTaskCreate) SetNillableWeight(v *float64) *BenchmarkTaskCreat
 	return _c
 }
 
-// SetMinScale sets the "min_scale" field.
-func (_c *BenchmarkTaskCreate) SetMinScale(v benchmarktask.MinScale) *BenchmarkTaskCreate {
-	_c.mutation.SetMinScale(v)
-	return _c
-}
-
-// SetNillableMinScale sets the "min_scale" field if the given value is not nil.
-func (_c *BenchmarkTaskCreate) SetNillableMinScale(v *benchmarktask.MinScale) *BenchmarkTaskCreate {
-	if v != nil {
-		_c.SetMinScale(*v)
-	}
-	return _c
-}
-
 // SetPublicPrompt sets the "public_prompt" field.
 func (_c *BenchmarkTaskCreate) SetPublicPrompt(v bool) *BenchmarkTaskCreate {
 	_c.mutation.SetPublicPrompt(v)
@@ -190,15 +149,18 @@ func (_c *BenchmarkTaskCreate) SetNillableEnabled(v *bool) *BenchmarkTaskCreate 
 	return _c
 }
 
-// SetMetadata sets the "metadata" field.
-func (_c *BenchmarkTaskCreate) SetMetadata(v map[string]interface{}) *BenchmarkTaskCreate {
-	_c.mutation.SetMetadata(v)
+// SetSortOrder sets the "sort_order" field.
+func (_c *BenchmarkTaskCreate) SetSortOrder(v int) *BenchmarkTaskCreate {
+	_c.mutation.SetSortOrder(v)
 	return _c
 }
 
-// SetSuite sets the "suite" edge to the BenchmarkSuite entity.
-func (_c *BenchmarkTaskCreate) SetSuite(v *BenchmarkSuite) *BenchmarkTaskCreate {
-	return _c.SetSuiteID(v.ID)
+// SetNillableSortOrder sets the "sort_order" field if the given value is not nil.
+func (_c *BenchmarkTaskCreate) SetNillableSortOrder(v *int) *BenchmarkTaskCreate {
+	if v != nil {
+		_c.SetSortOrder(*v)
+	}
+	return _c
 }
 
 // AddRunTaskIDs adds the "run_tasks" edge to the BenchmarkRunTask entity by IDs.
@@ -259,10 +221,6 @@ func (_c *BenchmarkTaskCreate) defaults() {
 		v := benchmarktask.DefaultUpdatedAt()
 		_c.mutation.SetUpdatedAt(v)
 	}
-	if _, ok := _c.mutation.Tags(); !ok {
-		v := benchmarktask.DefaultTags()
-		_c.mutation.SetTags(v)
-	}
 	if _, ok := _c.mutation.InputPayload(); !ok {
 		v := benchmarktask.DefaultInputPayload()
 		_c.mutation.SetInputPayload(v)
@@ -279,10 +237,6 @@ func (_c *BenchmarkTaskCreate) defaults() {
 		v := benchmarktask.DefaultWeight
 		_c.mutation.SetWeight(v)
 	}
-	if _, ok := _c.mutation.MinScale(); !ok {
-		v := benchmarktask.DefaultMinScale
-		_c.mutation.SetMinScale(v)
-	}
 	if _, ok := _c.mutation.PublicPrompt(); !ok {
 		v := benchmarktask.DefaultPublicPrompt
 		_c.mutation.SetPublicPrompt(v)
@@ -291,9 +245,9 @@ func (_c *BenchmarkTaskCreate) defaults() {
 		v := benchmarktask.DefaultEnabled
 		_c.mutation.SetEnabled(v)
 	}
-	if _, ok := _c.mutation.Metadata(); !ok {
-		v := benchmarktask.DefaultMetadata()
-		_c.mutation.SetMetadata(v)
+	if _, ok := _c.mutation.SortOrder(); !ok {
+		v := benchmarktask.DefaultSortOrder
+		_c.mutation.SetSortOrder(v)
 	}
 }
 
@@ -304,9 +258,6 @@ func (_c *BenchmarkTaskCreate) check() error {
 	}
 	if _, ok := _c.mutation.UpdatedAt(); !ok {
 		return &ValidationError{Name: "updated_at", err: errors.New(`ent: missing required field "BenchmarkTask.updated_at"`)}
-	}
-	if _, ok := _c.mutation.SuiteID(); !ok {
-		return &ValidationError{Name: "suite_id", err: errors.New(`ent: missing required field "BenchmarkTask.suite_id"`)}
 	}
 	if _, ok := _c.mutation.Title(); !ok {
 		return &ValidationError{Name: "title", err: errors.New(`ent: missing required field "BenchmarkTask.title"`)}
@@ -324,18 +275,10 @@ func (_c *BenchmarkTaskCreate) check() error {
 			return &ValidationError{Name: "type", err: fmt.Errorf(`ent: validator failed for field "BenchmarkTask.type": %w`, err)}
 		}
 	}
-	if v, ok := _c.mutation.Category(); ok {
-		if err := benchmarktask.CategoryValidator(v); err != nil {
-			return &ValidationError{Name: "category", err: fmt.Errorf(`ent: validator failed for field "BenchmarkTask.category": %w`, err)}
-		}
-	}
 	if v, ok := _c.mutation.Difficulty(); ok {
 		if err := benchmarktask.DifficultyValidator(v); err != nil {
 			return &ValidationError{Name: "difficulty", err: fmt.Errorf(`ent: validator failed for field "BenchmarkTask.difficulty": %w`, err)}
 		}
-	}
-	if _, ok := _c.mutation.Tags(); !ok {
-		return &ValidationError{Name: "tags", err: errors.New(`ent: missing required field "BenchmarkTask.tags"`)}
 	}
 	if _, ok := _c.mutation.Prompt(); !ok {
 		return &ValidationError{Name: "prompt", err: errors.New(`ent: missing required field "BenchmarkTask.prompt"`)}
@@ -365,25 +308,14 @@ func (_c *BenchmarkTaskCreate) check() error {
 	if _, ok := _c.mutation.Weight(); !ok {
 		return &ValidationError{Name: "weight", err: errors.New(`ent: missing required field "BenchmarkTask.weight"`)}
 	}
-	if _, ok := _c.mutation.MinScale(); !ok {
-		return &ValidationError{Name: "min_scale", err: errors.New(`ent: missing required field "BenchmarkTask.min_scale"`)}
-	}
-	if v, ok := _c.mutation.MinScale(); ok {
-		if err := benchmarktask.MinScaleValidator(v); err != nil {
-			return &ValidationError{Name: "min_scale", err: fmt.Errorf(`ent: validator failed for field "BenchmarkTask.min_scale": %w`, err)}
-		}
-	}
 	if _, ok := _c.mutation.PublicPrompt(); !ok {
 		return &ValidationError{Name: "public_prompt", err: errors.New(`ent: missing required field "BenchmarkTask.public_prompt"`)}
 	}
 	if _, ok := _c.mutation.Enabled(); !ok {
 		return &ValidationError{Name: "enabled", err: errors.New(`ent: missing required field "BenchmarkTask.enabled"`)}
 	}
-	if _, ok := _c.mutation.Metadata(); !ok {
-		return &ValidationError{Name: "metadata", err: errors.New(`ent: missing required field "BenchmarkTask.metadata"`)}
-	}
-	if len(_c.mutation.SuiteIDs()) == 0 {
-		return &ValidationError{Name: "suite", err: errors.New(`ent: missing required edge "BenchmarkTask.suite"`)}
+	if _, ok := _c.mutation.SortOrder(); !ok {
+		return &ValidationError{Name: "sort_order", err: errors.New(`ent: missing required field "BenchmarkTask.sort_order"`)}
 	}
 	return nil
 }
@@ -428,17 +360,9 @@ func (_c *BenchmarkTaskCreate) createSpec() (*BenchmarkTask, *sqlgraph.CreateSpe
 		_spec.SetField(benchmarktask.FieldType, field.TypeString, value)
 		_node.Type = value
 	}
-	if value, ok := _c.mutation.Category(); ok {
-		_spec.SetField(benchmarktask.FieldCategory, field.TypeString, value)
-		_node.Category = &value
-	}
 	if value, ok := _c.mutation.Difficulty(); ok {
 		_spec.SetField(benchmarktask.FieldDifficulty, field.TypeString, value)
 		_node.Difficulty = &value
-	}
-	if value, ok := _c.mutation.Tags(); ok {
-		_spec.SetField(benchmarktask.FieldTags, field.TypeJSON, value)
-		_node.Tags = value
 	}
 	if value, ok := _c.mutation.Prompt(); ok {
 		_spec.SetField(benchmarktask.FieldPrompt, field.TypeString, value)
@@ -464,10 +388,6 @@ func (_c *BenchmarkTaskCreate) createSpec() (*BenchmarkTask, *sqlgraph.CreateSpe
 		_spec.SetField(benchmarktask.FieldWeight, field.TypeFloat64, value)
 		_node.Weight = value
 	}
-	if value, ok := _c.mutation.MinScale(); ok {
-		_spec.SetField(benchmarktask.FieldMinScale, field.TypeEnum, value)
-		_node.MinScale = value
-	}
 	if value, ok := _c.mutation.PublicPrompt(); ok {
 		_spec.SetField(benchmarktask.FieldPublicPrompt, field.TypeBool, value)
 		_node.PublicPrompt = value
@@ -476,26 +396,9 @@ func (_c *BenchmarkTaskCreate) createSpec() (*BenchmarkTask, *sqlgraph.CreateSpe
 		_spec.SetField(benchmarktask.FieldEnabled, field.TypeBool, value)
 		_node.Enabled = value
 	}
-	if value, ok := _c.mutation.Metadata(); ok {
-		_spec.SetField(benchmarktask.FieldMetadata, field.TypeJSON, value)
-		_node.Metadata = value
-	}
-	if nodes := _c.mutation.SuiteIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.M2O,
-			Inverse: true,
-			Table:   benchmarktask.SuiteTable,
-			Columns: []string{benchmarktask.SuiteColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(benchmarksuite.FieldID, field.TypeInt64),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_node.SuiteID = nodes[0]
-		_spec.Edges = append(_spec.Edges, edge)
+	if value, ok := _c.mutation.SortOrder(); ok {
+		_spec.SetField(benchmarktask.FieldSortOrder, field.TypeInt, value)
+		_node.SortOrder = value
 	}
 	if nodes := _c.mutation.RunTasksIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
@@ -577,18 +480,6 @@ func (u *BenchmarkTaskUpsert) UpdateUpdatedAt() *BenchmarkTaskUpsert {
 	return u
 }
 
-// SetSuiteID sets the "suite_id" field.
-func (u *BenchmarkTaskUpsert) SetSuiteID(v int64) *BenchmarkTaskUpsert {
-	u.Set(benchmarktask.FieldSuiteID, v)
-	return u
-}
-
-// UpdateSuiteID sets the "suite_id" field to the value that was provided on create.
-func (u *BenchmarkTaskUpsert) UpdateSuiteID() *BenchmarkTaskUpsert {
-	u.SetExcluded(benchmarktask.FieldSuiteID)
-	return u
-}
-
 // SetTitle sets the "title" field.
 func (u *BenchmarkTaskUpsert) SetTitle(v string) *BenchmarkTaskUpsert {
 	u.Set(benchmarktask.FieldTitle, v)
@@ -613,24 +504,6 @@ func (u *BenchmarkTaskUpsert) UpdateType() *BenchmarkTaskUpsert {
 	return u
 }
 
-// SetCategory sets the "category" field.
-func (u *BenchmarkTaskUpsert) SetCategory(v string) *BenchmarkTaskUpsert {
-	u.Set(benchmarktask.FieldCategory, v)
-	return u
-}
-
-// UpdateCategory sets the "category" field to the value that was provided on create.
-func (u *BenchmarkTaskUpsert) UpdateCategory() *BenchmarkTaskUpsert {
-	u.SetExcluded(benchmarktask.FieldCategory)
-	return u
-}
-
-// ClearCategory clears the value of the "category" field.
-func (u *BenchmarkTaskUpsert) ClearCategory() *BenchmarkTaskUpsert {
-	u.SetNull(benchmarktask.FieldCategory)
-	return u
-}
-
 // SetDifficulty sets the "difficulty" field.
 func (u *BenchmarkTaskUpsert) SetDifficulty(v string) *BenchmarkTaskUpsert {
 	u.Set(benchmarktask.FieldDifficulty, v)
@@ -646,18 +519,6 @@ func (u *BenchmarkTaskUpsert) UpdateDifficulty() *BenchmarkTaskUpsert {
 // ClearDifficulty clears the value of the "difficulty" field.
 func (u *BenchmarkTaskUpsert) ClearDifficulty() *BenchmarkTaskUpsert {
 	u.SetNull(benchmarktask.FieldDifficulty)
-	return u
-}
-
-// SetTags sets the "tags" field.
-func (u *BenchmarkTaskUpsert) SetTags(v []string) *BenchmarkTaskUpsert {
-	u.Set(benchmarktask.FieldTags, v)
-	return u
-}
-
-// UpdateTags sets the "tags" field to the value that was provided on create.
-func (u *BenchmarkTaskUpsert) UpdateTags() *BenchmarkTaskUpsert {
-	u.SetExcluded(benchmarktask.FieldTags)
 	return u
 }
 
@@ -739,18 +600,6 @@ func (u *BenchmarkTaskUpsert) AddWeight(v float64) *BenchmarkTaskUpsert {
 	return u
 }
 
-// SetMinScale sets the "min_scale" field.
-func (u *BenchmarkTaskUpsert) SetMinScale(v benchmarktask.MinScale) *BenchmarkTaskUpsert {
-	u.Set(benchmarktask.FieldMinScale, v)
-	return u
-}
-
-// UpdateMinScale sets the "min_scale" field to the value that was provided on create.
-func (u *BenchmarkTaskUpsert) UpdateMinScale() *BenchmarkTaskUpsert {
-	u.SetExcluded(benchmarktask.FieldMinScale)
-	return u
-}
-
 // SetPublicPrompt sets the "public_prompt" field.
 func (u *BenchmarkTaskUpsert) SetPublicPrompt(v bool) *BenchmarkTaskUpsert {
 	u.Set(benchmarktask.FieldPublicPrompt, v)
@@ -775,15 +624,21 @@ func (u *BenchmarkTaskUpsert) UpdateEnabled() *BenchmarkTaskUpsert {
 	return u
 }
 
-// SetMetadata sets the "metadata" field.
-func (u *BenchmarkTaskUpsert) SetMetadata(v map[string]interface{}) *BenchmarkTaskUpsert {
-	u.Set(benchmarktask.FieldMetadata, v)
+// SetSortOrder sets the "sort_order" field.
+func (u *BenchmarkTaskUpsert) SetSortOrder(v int) *BenchmarkTaskUpsert {
+	u.Set(benchmarktask.FieldSortOrder, v)
 	return u
 }
 
-// UpdateMetadata sets the "metadata" field to the value that was provided on create.
-func (u *BenchmarkTaskUpsert) UpdateMetadata() *BenchmarkTaskUpsert {
-	u.SetExcluded(benchmarktask.FieldMetadata)
+// UpdateSortOrder sets the "sort_order" field to the value that was provided on create.
+func (u *BenchmarkTaskUpsert) UpdateSortOrder() *BenchmarkTaskUpsert {
+	u.SetExcluded(benchmarktask.FieldSortOrder)
+	return u
+}
+
+// AddSortOrder adds v to the "sort_order" field.
+func (u *BenchmarkTaskUpsert) AddSortOrder(v int) *BenchmarkTaskUpsert {
+	u.Add(benchmarktask.FieldSortOrder, v)
 	return u
 }
 
@@ -846,20 +701,6 @@ func (u *BenchmarkTaskUpsertOne) UpdateUpdatedAt() *BenchmarkTaskUpsertOne {
 	})
 }
 
-// SetSuiteID sets the "suite_id" field.
-func (u *BenchmarkTaskUpsertOne) SetSuiteID(v int64) *BenchmarkTaskUpsertOne {
-	return u.Update(func(s *BenchmarkTaskUpsert) {
-		s.SetSuiteID(v)
-	})
-}
-
-// UpdateSuiteID sets the "suite_id" field to the value that was provided on create.
-func (u *BenchmarkTaskUpsertOne) UpdateSuiteID() *BenchmarkTaskUpsertOne {
-	return u.Update(func(s *BenchmarkTaskUpsert) {
-		s.UpdateSuiteID()
-	})
-}
-
 // SetTitle sets the "title" field.
 func (u *BenchmarkTaskUpsertOne) SetTitle(v string) *BenchmarkTaskUpsertOne {
 	return u.Update(func(s *BenchmarkTaskUpsert) {
@@ -888,27 +729,6 @@ func (u *BenchmarkTaskUpsertOne) UpdateType() *BenchmarkTaskUpsertOne {
 	})
 }
 
-// SetCategory sets the "category" field.
-func (u *BenchmarkTaskUpsertOne) SetCategory(v string) *BenchmarkTaskUpsertOne {
-	return u.Update(func(s *BenchmarkTaskUpsert) {
-		s.SetCategory(v)
-	})
-}
-
-// UpdateCategory sets the "category" field to the value that was provided on create.
-func (u *BenchmarkTaskUpsertOne) UpdateCategory() *BenchmarkTaskUpsertOne {
-	return u.Update(func(s *BenchmarkTaskUpsert) {
-		s.UpdateCategory()
-	})
-}
-
-// ClearCategory clears the value of the "category" field.
-func (u *BenchmarkTaskUpsertOne) ClearCategory() *BenchmarkTaskUpsertOne {
-	return u.Update(func(s *BenchmarkTaskUpsert) {
-		s.ClearCategory()
-	})
-}
-
 // SetDifficulty sets the "difficulty" field.
 func (u *BenchmarkTaskUpsertOne) SetDifficulty(v string) *BenchmarkTaskUpsertOne {
 	return u.Update(func(s *BenchmarkTaskUpsert) {
@@ -927,20 +747,6 @@ func (u *BenchmarkTaskUpsertOne) UpdateDifficulty() *BenchmarkTaskUpsertOne {
 func (u *BenchmarkTaskUpsertOne) ClearDifficulty() *BenchmarkTaskUpsertOne {
 	return u.Update(func(s *BenchmarkTaskUpsert) {
 		s.ClearDifficulty()
-	})
-}
-
-// SetTags sets the "tags" field.
-func (u *BenchmarkTaskUpsertOne) SetTags(v []string) *BenchmarkTaskUpsertOne {
-	return u.Update(func(s *BenchmarkTaskUpsert) {
-		s.SetTags(v)
-	})
-}
-
-// UpdateTags sets the "tags" field to the value that was provided on create.
-func (u *BenchmarkTaskUpsertOne) UpdateTags() *BenchmarkTaskUpsertOne {
-	return u.Update(func(s *BenchmarkTaskUpsert) {
-		s.UpdateTags()
 	})
 }
 
@@ -1035,20 +841,6 @@ func (u *BenchmarkTaskUpsertOne) UpdateWeight() *BenchmarkTaskUpsertOne {
 	})
 }
 
-// SetMinScale sets the "min_scale" field.
-func (u *BenchmarkTaskUpsertOne) SetMinScale(v benchmarktask.MinScale) *BenchmarkTaskUpsertOne {
-	return u.Update(func(s *BenchmarkTaskUpsert) {
-		s.SetMinScale(v)
-	})
-}
-
-// UpdateMinScale sets the "min_scale" field to the value that was provided on create.
-func (u *BenchmarkTaskUpsertOne) UpdateMinScale() *BenchmarkTaskUpsertOne {
-	return u.Update(func(s *BenchmarkTaskUpsert) {
-		s.UpdateMinScale()
-	})
-}
-
 // SetPublicPrompt sets the "public_prompt" field.
 func (u *BenchmarkTaskUpsertOne) SetPublicPrompt(v bool) *BenchmarkTaskUpsertOne {
 	return u.Update(func(s *BenchmarkTaskUpsert) {
@@ -1077,17 +869,24 @@ func (u *BenchmarkTaskUpsertOne) UpdateEnabled() *BenchmarkTaskUpsertOne {
 	})
 }
 
-// SetMetadata sets the "metadata" field.
-func (u *BenchmarkTaskUpsertOne) SetMetadata(v map[string]interface{}) *BenchmarkTaskUpsertOne {
+// SetSortOrder sets the "sort_order" field.
+func (u *BenchmarkTaskUpsertOne) SetSortOrder(v int) *BenchmarkTaskUpsertOne {
 	return u.Update(func(s *BenchmarkTaskUpsert) {
-		s.SetMetadata(v)
+		s.SetSortOrder(v)
 	})
 }
 
-// UpdateMetadata sets the "metadata" field to the value that was provided on create.
-func (u *BenchmarkTaskUpsertOne) UpdateMetadata() *BenchmarkTaskUpsertOne {
+// AddSortOrder adds v to the "sort_order" field.
+func (u *BenchmarkTaskUpsertOne) AddSortOrder(v int) *BenchmarkTaskUpsertOne {
 	return u.Update(func(s *BenchmarkTaskUpsert) {
-		s.UpdateMetadata()
+		s.AddSortOrder(v)
+	})
+}
+
+// UpdateSortOrder sets the "sort_order" field to the value that was provided on create.
+func (u *BenchmarkTaskUpsertOne) UpdateSortOrder() *BenchmarkTaskUpsertOne {
+	return u.Update(func(s *BenchmarkTaskUpsert) {
+		s.UpdateSortOrder()
 	})
 }
 
@@ -1316,20 +1115,6 @@ func (u *BenchmarkTaskUpsertBulk) UpdateUpdatedAt() *BenchmarkTaskUpsertBulk {
 	})
 }
 
-// SetSuiteID sets the "suite_id" field.
-func (u *BenchmarkTaskUpsertBulk) SetSuiteID(v int64) *BenchmarkTaskUpsertBulk {
-	return u.Update(func(s *BenchmarkTaskUpsert) {
-		s.SetSuiteID(v)
-	})
-}
-
-// UpdateSuiteID sets the "suite_id" field to the value that was provided on create.
-func (u *BenchmarkTaskUpsertBulk) UpdateSuiteID() *BenchmarkTaskUpsertBulk {
-	return u.Update(func(s *BenchmarkTaskUpsert) {
-		s.UpdateSuiteID()
-	})
-}
-
 // SetTitle sets the "title" field.
 func (u *BenchmarkTaskUpsertBulk) SetTitle(v string) *BenchmarkTaskUpsertBulk {
 	return u.Update(func(s *BenchmarkTaskUpsert) {
@@ -1358,27 +1143,6 @@ func (u *BenchmarkTaskUpsertBulk) UpdateType() *BenchmarkTaskUpsertBulk {
 	})
 }
 
-// SetCategory sets the "category" field.
-func (u *BenchmarkTaskUpsertBulk) SetCategory(v string) *BenchmarkTaskUpsertBulk {
-	return u.Update(func(s *BenchmarkTaskUpsert) {
-		s.SetCategory(v)
-	})
-}
-
-// UpdateCategory sets the "category" field to the value that was provided on create.
-func (u *BenchmarkTaskUpsertBulk) UpdateCategory() *BenchmarkTaskUpsertBulk {
-	return u.Update(func(s *BenchmarkTaskUpsert) {
-		s.UpdateCategory()
-	})
-}
-
-// ClearCategory clears the value of the "category" field.
-func (u *BenchmarkTaskUpsertBulk) ClearCategory() *BenchmarkTaskUpsertBulk {
-	return u.Update(func(s *BenchmarkTaskUpsert) {
-		s.ClearCategory()
-	})
-}
-
 // SetDifficulty sets the "difficulty" field.
 func (u *BenchmarkTaskUpsertBulk) SetDifficulty(v string) *BenchmarkTaskUpsertBulk {
 	return u.Update(func(s *BenchmarkTaskUpsert) {
@@ -1397,20 +1161,6 @@ func (u *BenchmarkTaskUpsertBulk) UpdateDifficulty() *BenchmarkTaskUpsertBulk {
 func (u *BenchmarkTaskUpsertBulk) ClearDifficulty() *BenchmarkTaskUpsertBulk {
 	return u.Update(func(s *BenchmarkTaskUpsert) {
 		s.ClearDifficulty()
-	})
-}
-
-// SetTags sets the "tags" field.
-func (u *BenchmarkTaskUpsertBulk) SetTags(v []string) *BenchmarkTaskUpsertBulk {
-	return u.Update(func(s *BenchmarkTaskUpsert) {
-		s.SetTags(v)
-	})
-}
-
-// UpdateTags sets the "tags" field to the value that was provided on create.
-func (u *BenchmarkTaskUpsertBulk) UpdateTags() *BenchmarkTaskUpsertBulk {
-	return u.Update(func(s *BenchmarkTaskUpsert) {
-		s.UpdateTags()
 	})
 }
 
@@ -1505,20 +1255,6 @@ func (u *BenchmarkTaskUpsertBulk) UpdateWeight() *BenchmarkTaskUpsertBulk {
 	})
 }
 
-// SetMinScale sets the "min_scale" field.
-func (u *BenchmarkTaskUpsertBulk) SetMinScale(v benchmarktask.MinScale) *BenchmarkTaskUpsertBulk {
-	return u.Update(func(s *BenchmarkTaskUpsert) {
-		s.SetMinScale(v)
-	})
-}
-
-// UpdateMinScale sets the "min_scale" field to the value that was provided on create.
-func (u *BenchmarkTaskUpsertBulk) UpdateMinScale() *BenchmarkTaskUpsertBulk {
-	return u.Update(func(s *BenchmarkTaskUpsert) {
-		s.UpdateMinScale()
-	})
-}
-
 // SetPublicPrompt sets the "public_prompt" field.
 func (u *BenchmarkTaskUpsertBulk) SetPublicPrompt(v bool) *BenchmarkTaskUpsertBulk {
 	return u.Update(func(s *BenchmarkTaskUpsert) {
@@ -1547,17 +1283,24 @@ func (u *BenchmarkTaskUpsertBulk) UpdateEnabled() *BenchmarkTaskUpsertBulk {
 	})
 }
 
-// SetMetadata sets the "metadata" field.
-func (u *BenchmarkTaskUpsertBulk) SetMetadata(v map[string]interface{}) *BenchmarkTaskUpsertBulk {
+// SetSortOrder sets the "sort_order" field.
+func (u *BenchmarkTaskUpsertBulk) SetSortOrder(v int) *BenchmarkTaskUpsertBulk {
 	return u.Update(func(s *BenchmarkTaskUpsert) {
-		s.SetMetadata(v)
+		s.SetSortOrder(v)
 	})
 }
 
-// UpdateMetadata sets the "metadata" field to the value that was provided on create.
-func (u *BenchmarkTaskUpsertBulk) UpdateMetadata() *BenchmarkTaskUpsertBulk {
+// AddSortOrder adds v to the "sort_order" field.
+func (u *BenchmarkTaskUpsertBulk) AddSortOrder(v int) *BenchmarkTaskUpsertBulk {
 	return u.Update(func(s *BenchmarkTaskUpsert) {
-		s.UpdateMetadata()
+		s.AddSortOrder(v)
+	})
+}
+
+// UpdateSortOrder sets the "sort_order" field to the value that was provided on create.
+func (u *BenchmarkTaskUpsertBulk) UpdateSortOrder() *BenchmarkTaskUpsertBulk {
+	return u.Update(func(s *BenchmarkTaskUpsert) {
+		s.UpdateSortOrder()
 	})
 }
 

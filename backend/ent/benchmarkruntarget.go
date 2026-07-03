@@ -3,7 +3,6 @@
 package ent
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -32,12 +31,8 @@ type BenchmarkRunTarget struct {
 	DisplayNameSnapshot *string `json:"display_name_snapshot,omitempty"`
 	// ChannelNameSnapshot holds the value of the "channel_name_snapshot" field.
 	ChannelNameSnapshot *string `json:"channel_name_snapshot,omitempty"`
-	// ProviderSnapshot holds the value of the "provider_snapshot" field.
-	ProviderSnapshot *string `json:"provider_snapshot,omitempty"`
 	// TargetOrder holds the value of the "target_order" field.
 	TargetOrder int `json:"target_order,omitempty"`
-	// ConfigSnapshot holds the value of the "config_snapshot" field.
-	ConfigSnapshot map[string]interface{} `json:"config_snapshot,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
@@ -54,8 +49,8 @@ type BenchmarkRunTargetEdges struct {
 	Target *BenchmarkTarget `json:"target,omitempty"`
 	// Results holds the value of the results edge.
 	Results []*BenchmarkResult `json:"results,omitempty"`
-	// ScoreSnapshots holds the value of the score_snapshots edge.
-	ScoreSnapshots []*BenchmarkScoreSnapshot `json:"score_snapshots,omitempty"`
+	// TargetScores holds the value of the target_scores edge.
+	TargetScores []*BenchmarkTargetScore `json:"target_scores,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
 	loadedTypes [4]bool
@@ -92,13 +87,13 @@ func (e BenchmarkRunTargetEdges) ResultsOrErr() ([]*BenchmarkResult, error) {
 	return nil, &NotLoadedError{edge: "results"}
 }
 
-// ScoreSnapshotsOrErr returns the ScoreSnapshots value or an error if the edge
+// TargetScoresOrErr returns the TargetScores value or an error if the edge
 // was not loaded in eager-loading.
-func (e BenchmarkRunTargetEdges) ScoreSnapshotsOrErr() ([]*BenchmarkScoreSnapshot, error) {
+func (e BenchmarkRunTargetEdges) TargetScoresOrErr() ([]*BenchmarkTargetScore, error) {
 	if e.loadedTypes[3] {
-		return e.ScoreSnapshots, nil
+		return e.TargetScores, nil
 	}
-	return nil, &NotLoadedError{edge: "score_snapshots"}
+	return nil, &NotLoadedError{edge: "target_scores"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -106,11 +101,9 @@ func (*BenchmarkRunTarget) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case benchmarkruntarget.FieldConfigSnapshot:
-			values[i] = new([]byte)
 		case benchmarkruntarget.FieldID, benchmarkruntarget.FieldRunID, benchmarkruntarget.FieldTargetID, benchmarkruntarget.FieldChannelID, benchmarkruntarget.FieldTargetOrder:
 			values[i] = new(sql.NullInt64)
-		case benchmarkruntarget.FieldModelName, benchmarkruntarget.FieldDisplayNameSnapshot, benchmarkruntarget.FieldChannelNameSnapshot, benchmarkruntarget.FieldProviderSnapshot:
+		case benchmarkruntarget.FieldModelName, benchmarkruntarget.FieldDisplayNameSnapshot, benchmarkruntarget.FieldChannelNameSnapshot:
 			values[i] = new(sql.NullString)
 		case benchmarkruntarget.FieldCreatedAt:
 			values[i] = new(sql.NullTime)
@@ -173,26 +166,11 @@ func (_m *BenchmarkRunTarget) assignValues(columns []string, values []any) error
 				_m.ChannelNameSnapshot = new(string)
 				*_m.ChannelNameSnapshot = value.String
 			}
-		case benchmarkruntarget.FieldProviderSnapshot:
-			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field provider_snapshot", values[i])
-			} else if value.Valid {
-				_m.ProviderSnapshot = new(string)
-				*_m.ProviderSnapshot = value.String
-			}
 		case benchmarkruntarget.FieldTargetOrder:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
 				return fmt.Errorf("unexpected type %T for field target_order", values[i])
 			} else if value.Valid {
 				_m.TargetOrder = int(value.Int64)
-			}
-		case benchmarkruntarget.FieldConfigSnapshot:
-			if value, ok := values[i].(*[]byte); !ok {
-				return fmt.Errorf("unexpected type %T for field config_snapshot", values[i])
-			} else if value != nil && len(*value) > 0 {
-				if err := json.Unmarshal(*value, &_m.ConfigSnapshot); err != nil {
-					return fmt.Errorf("unmarshal field config_snapshot: %w", err)
-				}
 			}
 		case benchmarkruntarget.FieldCreatedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
@@ -228,9 +206,9 @@ func (_m *BenchmarkRunTarget) QueryResults() *BenchmarkResultQuery {
 	return NewBenchmarkRunTargetClient(_m.config).QueryResults(_m)
 }
 
-// QueryScoreSnapshots queries the "score_snapshots" edge of the BenchmarkRunTarget entity.
-func (_m *BenchmarkRunTarget) QueryScoreSnapshots() *BenchmarkScoreSnapshotQuery {
-	return NewBenchmarkRunTargetClient(_m.config).QueryScoreSnapshots(_m)
+// QueryTargetScores queries the "target_scores" edge of the BenchmarkRunTarget entity.
+func (_m *BenchmarkRunTarget) QueryTargetScores() *BenchmarkTargetScoreQuery {
+	return NewBenchmarkRunTargetClient(_m.config).QueryTargetScores(_m)
 }
 
 // Update returns a builder for updating this BenchmarkRunTarget.
@@ -278,16 +256,8 @@ func (_m *BenchmarkRunTarget) String() string {
 		builder.WriteString(*v)
 	}
 	builder.WriteString(", ")
-	if v := _m.ProviderSnapshot; v != nil {
-		builder.WriteString("provider_snapshot=")
-		builder.WriteString(*v)
-	}
-	builder.WriteString(", ")
 	builder.WriteString("target_order=")
 	builder.WriteString(fmt.Sprintf("%v", _m.TargetOrder))
-	builder.WriteString(", ")
-	builder.WriteString("config_snapshot=")
-	builder.WriteString(fmt.Sprintf("%v", _m.ConfigSnapshot))
 	builder.WriteString(", ")
 	builder.WriteString("created_at=")
 	builder.WriteString(_m.CreatedAt.Format(time.ANSIC))

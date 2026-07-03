@@ -101,9 +101,10 @@ func ProvideRadarHandler(snapshotService *service.BenchmarkSnapshotService, sett
 	return h
 }
 
-func ProvideBenchmarkHandler(benchmarkService *service.BenchmarkService, scheduleService *service.BenchmarkScheduleService, snapshotService *service.BenchmarkSnapshotService) *admin.BenchmarkHandler {
+func ProvideBenchmarkHandler(benchmarkService *service.BenchmarkService, scheduleService *service.BenchmarkScheduleService, snapshotService *service.BenchmarkSnapshotService, processor *service.BenchmarkProcessor) *admin.BenchmarkHandler {
 	h := admin.NewBenchmarkHandler(benchmarkService, snapshotService)
 	h.SetScheduleService(scheduleService)
+	h.SetProcessor(processor)
 	return h
 }
 

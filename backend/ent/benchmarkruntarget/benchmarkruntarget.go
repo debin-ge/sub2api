@@ -26,12 +26,8 @@ const (
 	FieldDisplayNameSnapshot = "display_name_snapshot"
 	// FieldChannelNameSnapshot holds the string denoting the channel_name_snapshot field in the database.
 	FieldChannelNameSnapshot = "channel_name_snapshot"
-	// FieldProviderSnapshot holds the string denoting the provider_snapshot field in the database.
-	FieldProviderSnapshot = "provider_snapshot"
 	// FieldTargetOrder holds the string denoting the target_order field in the database.
 	FieldTargetOrder = "target_order"
-	// FieldConfigSnapshot holds the string denoting the config_snapshot field in the database.
-	FieldConfigSnapshot = "config_snapshot"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
 	FieldCreatedAt = "created_at"
 	// EdgeRun holds the string denoting the run edge name in mutations.
@@ -40,8 +36,8 @@ const (
 	EdgeTarget = "target"
 	// EdgeResults holds the string denoting the results edge name in mutations.
 	EdgeResults = "results"
-	// EdgeScoreSnapshots holds the string denoting the score_snapshots edge name in mutations.
-	EdgeScoreSnapshots = "score_snapshots"
+	// EdgeTargetScores holds the string denoting the target_scores edge name in mutations.
+	EdgeTargetScores = "target_scores"
 	// Table holds the table name of the benchmarkruntarget in the database.
 	Table = "benchmark_run_targets"
 	// RunTable is the table that holds the run relation/edge.
@@ -65,13 +61,13 @@ const (
 	ResultsInverseTable = "benchmark_results"
 	// ResultsColumn is the table column denoting the results relation/edge.
 	ResultsColumn = "run_target_id"
-	// ScoreSnapshotsTable is the table that holds the score_snapshots relation/edge.
-	ScoreSnapshotsTable = "benchmark_score_snapshots"
-	// ScoreSnapshotsInverseTable is the table name for the BenchmarkScoreSnapshot entity.
-	// It exists in this package in order to avoid circular dependency with the "benchmarkscoresnapshot" package.
-	ScoreSnapshotsInverseTable = "benchmark_score_snapshots"
-	// ScoreSnapshotsColumn is the table column denoting the score_snapshots relation/edge.
-	ScoreSnapshotsColumn = "run_target_id"
+	// TargetScoresTable is the table that holds the target_scores relation/edge.
+	TargetScoresTable = "benchmark_target_scores"
+	// TargetScoresInverseTable is the table name for the BenchmarkTargetScore entity.
+	// It exists in this package in order to avoid circular dependency with the "benchmarktargetscore" package.
+	TargetScoresInverseTable = "benchmark_target_scores"
+	// TargetScoresColumn is the table column denoting the target_scores relation/edge.
+	TargetScoresColumn = "run_target_id"
 )
 
 // Columns holds all SQL columns for benchmarkruntarget fields.
@@ -83,9 +79,7 @@ var Columns = []string{
 	FieldChannelID,
 	FieldDisplayNameSnapshot,
 	FieldChannelNameSnapshot,
-	FieldProviderSnapshot,
 	FieldTargetOrder,
-	FieldConfigSnapshot,
 	FieldCreatedAt,
 }
 
@@ -106,12 +100,8 @@ var (
 	DisplayNameSnapshotValidator func(string) error
 	// ChannelNameSnapshotValidator is a validator for the "channel_name_snapshot" field. It is called by the builders before save.
 	ChannelNameSnapshotValidator func(string) error
-	// ProviderSnapshotValidator is a validator for the "provider_snapshot" field. It is called by the builders before save.
-	ProviderSnapshotValidator func(string) error
 	// DefaultTargetOrder holds the default value on creation for the "target_order" field.
 	DefaultTargetOrder int
-	// DefaultConfigSnapshot holds the default value on creation for the "config_snapshot" field.
-	DefaultConfigSnapshot func() map[string]interface{}
 	// DefaultCreatedAt holds the default value on creation for the "created_at" field.
 	DefaultCreatedAt func() time.Time
 )
@@ -154,11 +144,6 @@ func ByChannelNameSnapshot(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldChannelNameSnapshot, opts...).ToFunc()
 }
 
-// ByProviderSnapshot orders the results by the provider_snapshot field.
-func ByProviderSnapshot(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldProviderSnapshot, opts...).ToFunc()
-}
-
 // ByTargetOrder orders the results by the target_order field.
 func ByTargetOrder(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldTargetOrder, opts...).ToFunc()
@@ -197,17 +182,17 @@ func ByResults(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 	}
 }
 
-// ByScoreSnapshotsCount orders the results by score_snapshots count.
-func ByScoreSnapshotsCount(opts ...sql.OrderTermOption) OrderOption {
+// ByTargetScoresCount orders the results by target_scores count.
+func ByTargetScoresCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
-		sqlgraph.OrderByNeighborsCount(s, newScoreSnapshotsStep(), opts...)
+		sqlgraph.OrderByNeighborsCount(s, newTargetScoresStep(), opts...)
 	}
 }
 
-// ByScoreSnapshots orders the results by score_snapshots terms.
-func ByScoreSnapshots(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+// ByTargetScores orders the results by target_scores terms.
+func ByTargetScores(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 	return func(s *sql.Selector) {
-		sqlgraph.OrderByNeighborTerms(s, newScoreSnapshotsStep(), append([]sql.OrderTerm{term}, terms...)...)
+		sqlgraph.OrderByNeighborTerms(s, newTargetScoresStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
 func newRunStep() *sqlgraph.Step {
@@ -231,10 +216,10 @@ func newResultsStep() *sqlgraph.Step {
 		sqlgraph.Edge(sqlgraph.O2M, false, ResultsTable, ResultsColumn),
 	)
 }
-func newScoreSnapshotsStep() *sqlgraph.Step {
+func newTargetScoresStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
-		sqlgraph.To(ScoreSnapshotsInverseTable, FieldID),
-		sqlgraph.Edge(sqlgraph.O2M, false, ScoreSnapshotsTable, ScoreSnapshotsColumn),
+		sqlgraph.To(TargetScoresInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, TargetScoresTable, TargetScoresColumn),
 	)
 }

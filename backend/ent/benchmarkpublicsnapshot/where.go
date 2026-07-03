@@ -60,16 +60,6 @@ func RunID(v int64) predicate.BenchmarkPublicSnapshot {
 	return predicate.BenchmarkPublicSnapshot(sql.FieldEQ(FieldRunID, v))
 }
 
-// SuiteID applies equality check predicate on the "suite_id" field. It's identical to SuiteIDEQ.
-func SuiteID(v int64) predicate.BenchmarkPublicSnapshot {
-	return predicate.BenchmarkPublicSnapshot(sql.FieldEQ(FieldSuiteID, v))
-}
-
-// ProfileID applies equality check predicate on the "profile_id" field. It's identical to ProfileIDEQ.
-func ProfileID(v int64) predicate.BenchmarkPublicSnapshot {
-	return predicate.BenchmarkPublicSnapshot(sql.FieldEQ(FieldProfileID, v))
-}
-
 // PublishedAt applies equality check predicate on the "published_at" field. It's identical to PublishedAtEQ.
 func PublishedAt(v time.Time) predicate.BenchmarkPublicSnapshot {
 	return predicate.BenchmarkPublicSnapshot(sql.FieldEQ(FieldPublishedAt, v))
@@ -98,46 +88,6 @@ func RunIDIn(vs ...int64) predicate.BenchmarkPublicSnapshot {
 // RunIDNotIn applies the NotIn predicate on the "run_id" field.
 func RunIDNotIn(vs ...int64) predicate.BenchmarkPublicSnapshot {
 	return predicate.BenchmarkPublicSnapshot(sql.FieldNotIn(FieldRunID, vs...))
-}
-
-// SuiteIDEQ applies the EQ predicate on the "suite_id" field.
-func SuiteIDEQ(v int64) predicate.BenchmarkPublicSnapshot {
-	return predicate.BenchmarkPublicSnapshot(sql.FieldEQ(FieldSuiteID, v))
-}
-
-// SuiteIDNEQ applies the NEQ predicate on the "suite_id" field.
-func SuiteIDNEQ(v int64) predicate.BenchmarkPublicSnapshot {
-	return predicate.BenchmarkPublicSnapshot(sql.FieldNEQ(FieldSuiteID, v))
-}
-
-// SuiteIDIn applies the In predicate on the "suite_id" field.
-func SuiteIDIn(vs ...int64) predicate.BenchmarkPublicSnapshot {
-	return predicate.BenchmarkPublicSnapshot(sql.FieldIn(FieldSuiteID, vs...))
-}
-
-// SuiteIDNotIn applies the NotIn predicate on the "suite_id" field.
-func SuiteIDNotIn(vs ...int64) predicate.BenchmarkPublicSnapshot {
-	return predicate.BenchmarkPublicSnapshot(sql.FieldNotIn(FieldSuiteID, vs...))
-}
-
-// ProfileIDEQ applies the EQ predicate on the "profile_id" field.
-func ProfileIDEQ(v int64) predicate.BenchmarkPublicSnapshot {
-	return predicate.BenchmarkPublicSnapshot(sql.FieldEQ(FieldProfileID, v))
-}
-
-// ProfileIDNEQ applies the NEQ predicate on the "profile_id" field.
-func ProfileIDNEQ(v int64) predicate.BenchmarkPublicSnapshot {
-	return predicate.BenchmarkPublicSnapshot(sql.FieldNEQ(FieldProfileID, v))
-}
-
-// ProfileIDIn applies the In predicate on the "profile_id" field.
-func ProfileIDIn(vs ...int64) predicate.BenchmarkPublicSnapshot {
-	return predicate.BenchmarkPublicSnapshot(sql.FieldIn(FieldProfileID, vs...))
-}
-
-// ProfileIDNotIn applies the NotIn predicate on the "profile_id" field.
-func ProfileIDNotIn(vs ...int64) predicate.BenchmarkPublicSnapshot {
-	return predicate.BenchmarkPublicSnapshot(sql.FieldNotIn(FieldProfileID, vs...))
 }
 
 // PublishedAtEQ applies the EQ predicate on the "published_at" field.
@@ -235,52 +185,6 @@ func HasRun() predicate.BenchmarkPublicSnapshot {
 func HasRunWith(preds ...predicate.BenchmarkRun) predicate.BenchmarkPublicSnapshot {
 	return predicate.BenchmarkPublicSnapshot(func(s *sql.Selector) {
 		step := newRunStep()
-		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
-			for _, p := range preds {
-				p(s)
-			}
-		})
-	})
-}
-
-// HasSuite applies the HasEdge predicate on the "suite" edge.
-func HasSuite() predicate.BenchmarkPublicSnapshot {
-	return predicate.BenchmarkPublicSnapshot(func(s *sql.Selector) {
-		step := sqlgraph.NewStep(
-			sqlgraph.From(Table, FieldID),
-			sqlgraph.Edge(sqlgraph.M2O, true, SuiteTable, SuiteColumn),
-		)
-		sqlgraph.HasNeighbors(s, step)
-	})
-}
-
-// HasSuiteWith applies the HasEdge predicate on the "suite" edge with a given conditions (other predicates).
-func HasSuiteWith(preds ...predicate.BenchmarkSuite) predicate.BenchmarkPublicSnapshot {
-	return predicate.BenchmarkPublicSnapshot(func(s *sql.Selector) {
-		step := newSuiteStep()
-		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
-			for _, p := range preds {
-				p(s)
-			}
-		})
-	})
-}
-
-// HasProfile applies the HasEdge predicate on the "profile" edge.
-func HasProfile() predicate.BenchmarkPublicSnapshot {
-	return predicate.BenchmarkPublicSnapshot(func(s *sql.Selector) {
-		step := sqlgraph.NewStep(
-			sqlgraph.From(Table, FieldID),
-			sqlgraph.Edge(sqlgraph.M2O, true, ProfileTable, ProfileColumn),
-		)
-		sqlgraph.HasNeighbors(s, step)
-	})
-}
-
-// HasProfileWith applies the HasEdge predicate on the "profile" edge with a given conditions (other predicates).
-func HasProfileWith(preds ...predicate.BenchmarkProfile) predicate.BenchmarkPublicSnapshot {
-	return predicate.BenchmarkPublicSnapshot(func(s *sql.Selector) {
-		step := newProfileStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

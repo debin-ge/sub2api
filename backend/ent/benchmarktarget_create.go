@@ -77,20 +77,6 @@ func (_c *BenchmarkTargetCreate) SetNillableDisplayName(v *string) *BenchmarkTar
 	return _c
 }
 
-// SetProviderSnapshot sets the "provider_snapshot" field.
-func (_c *BenchmarkTargetCreate) SetProviderSnapshot(v string) *BenchmarkTargetCreate {
-	_c.mutation.SetProviderSnapshot(v)
-	return _c
-}
-
-// SetNillableProviderSnapshot sets the "provider_snapshot" field if the given value is not nil.
-func (_c *BenchmarkTargetCreate) SetNillableProviderSnapshot(v *string) *BenchmarkTargetCreate {
-	if v != nil {
-		_c.SetProviderSnapshot(*v)
-	}
-	return _c
-}
-
 // SetChannelNameSnapshot sets the "channel_name_snapshot" field.
 func (_c *BenchmarkTargetCreate) SetChannelNameSnapshot(v string) *BenchmarkTargetCreate {
 	_c.mutation.SetChannelNameSnapshot(v)
@@ -101,54 +87,6 @@ func (_c *BenchmarkTargetCreate) SetChannelNameSnapshot(v string) *BenchmarkTarg
 func (_c *BenchmarkTargetCreate) SetNillableChannelNameSnapshot(v *string) *BenchmarkTargetCreate {
 	if v != nil {
 		_c.SetChannelNameSnapshot(*v)
-	}
-	return _c
-}
-
-// SetSupportedTaskTypes sets the "supported_task_types" field.
-func (_c *BenchmarkTargetCreate) SetSupportedTaskTypes(v []string) *BenchmarkTargetCreate {
-	_c.mutation.SetSupportedTaskTypes(v)
-	return _c
-}
-
-// SetMaxConcurrency sets the "max_concurrency" field.
-func (_c *BenchmarkTargetCreate) SetMaxConcurrency(v int) *BenchmarkTargetCreate {
-	_c.mutation.SetMaxConcurrency(v)
-	return _c
-}
-
-// SetNillableMaxConcurrency sets the "max_concurrency" field if the given value is not nil.
-func (_c *BenchmarkTargetCreate) SetNillableMaxConcurrency(v *int) *BenchmarkTargetCreate {
-	if v != nil {
-		_c.SetMaxConcurrency(*v)
-	}
-	return _c
-}
-
-// SetPerRunBudget sets the "per_run_budget" field.
-func (_c *BenchmarkTargetCreate) SetPerRunBudget(v float64) *BenchmarkTargetCreate {
-	_c.mutation.SetPerRunBudget(v)
-	return _c
-}
-
-// SetNillablePerRunBudget sets the "per_run_budget" field if the given value is not nil.
-func (_c *BenchmarkTargetCreate) SetNillablePerRunBudget(v *float64) *BenchmarkTargetCreate {
-	if v != nil {
-		_c.SetPerRunBudget(*v)
-	}
-	return _c
-}
-
-// SetDailyBudget sets the "daily_budget" field.
-func (_c *BenchmarkTargetCreate) SetDailyBudget(v float64) *BenchmarkTargetCreate {
-	_c.mutation.SetDailyBudget(v)
-	return _c
-}
-
-// SetNillableDailyBudget sets the "daily_budget" field if the given value is not nil.
-func (_c *BenchmarkTargetCreate) SetNillableDailyBudget(v *float64) *BenchmarkTargetCreate {
-	if v != nil {
-		_c.SetDailyBudget(*v)
 	}
 	return _c
 }
@@ -192,12 +130,6 @@ func (_c *BenchmarkTargetCreate) SetNillableSortOrder(v *int) *BenchmarkTargetCr
 	if v != nil {
 		_c.SetSortOrder(*v)
 	}
-	return _c
-}
-
-// SetMetadata sets the "metadata" field.
-func (_c *BenchmarkTargetCreate) SetMetadata(v map[string]interface{}) *BenchmarkTargetCreate {
-	_c.mutation.SetMetadata(v)
 	return _c
 }
 
@@ -259,14 +191,6 @@ func (_c *BenchmarkTargetCreate) defaults() {
 		v := benchmarktarget.DefaultUpdatedAt()
 		_c.mutation.SetUpdatedAt(v)
 	}
-	if _, ok := _c.mutation.SupportedTaskTypes(); !ok {
-		v := benchmarktarget.DefaultSupportedTaskTypes()
-		_c.mutation.SetSupportedTaskTypes(v)
-	}
-	if _, ok := _c.mutation.MaxConcurrency(); !ok {
-		v := benchmarktarget.DefaultMaxConcurrency
-		_c.mutation.SetMaxConcurrency(v)
-	}
 	if _, ok := _c.mutation.Enabled(); !ok {
 		v := benchmarktarget.DefaultEnabled
 		_c.mutation.SetEnabled(v)
@@ -278,10 +202,6 @@ func (_c *BenchmarkTargetCreate) defaults() {
 	if _, ok := _c.mutation.SortOrder(); !ok {
 		v := benchmarktarget.DefaultSortOrder
 		_c.mutation.SetSortOrder(v)
-	}
-	if _, ok := _c.mutation.Metadata(); !ok {
-		v := benchmarktarget.DefaultMetadata()
-		_c.mutation.SetMetadata(v)
 	}
 }
 
@@ -309,21 +229,10 @@ func (_c *BenchmarkTargetCreate) check() error {
 			return &ValidationError{Name: "display_name", err: fmt.Errorf(`ent: validator failed for field "BenchmarkTarget.display_name": %w`, err)}
 		}
 	}
-	if v, ok := _c.mutation.ProviderSnapshot(); ok {
-		if err := benchmarktarget.ProviderSnapshotValidator(v); err != nil {
-			return &ValidationError{Name: "provider_snapshot", err: fmt.Errorf(`ent: validator failed for field "BenchmarkTarget.provider_snapshot": %w`, err)}
-		}
-	}
 	if v, ok := _c.mutation.ChannelNameSnapshot(); ok {
 		if err := benchmarktarget.ChannelNameSnapshotValidator(v); err != nil {
 			return &ValidationError{Name: "channel_name_snapshot", err: fmt.Errorf(`ent: validator failed for field "BenchmarkTarget.channel_name_snapshot": %w`, err)}
 		}
-	}
-	if _, ok := _c.mutation.SupportedTaskTypes(); !ok {
-		return &ValidationError{Name: "supported_task_types", err: errors.New(`ent: missing required field "BenchmarkTarget.supported_task_types"`)}
-	}
-	if _, ok := _c.mutation.MaxConcurrency(); !ok {
-		return &ValidationError{Name: "max_concurrency", err: errors.New(`ent: missing required field "BenchmarkTarget.max_concurrency"`)}
 	}
 	if _, ok := _c.mutation.Enabled(); !ok {
 		return &ValidationError{Name: "enabled", err: errors.New(`ent: missing required field "BenchmarkTarget.enabled"`)}
@@ -333,9 +242,6 @@ func (_c *BenchmarkTargetCreate) check() error {
 	}
 	if _, ok := _c.mutation.SortOrder(); !ok {
 		return &ValidationError{Name: "sort_order", err: errors.New(`ent: missing required field "BenchmarkTarget.sort_order"`)}
-	}
-	if _, ok := _c.mutation.Metadata(); !ok {
-		return &ValidationError{Name: "metadata", err: errors.New(`ent: missing required field "BenchmarkTarget.metadata"`)}
 	}
 	return nil
 }
@@ -384,29 +290,9 @@ func (_c *BenchmarkTargetCreate) createSpec() (*BenchmarkTarget, *sqlgraph.Creat
 		_spec.SetField(benchmarktarget.FieldDisplayName, field.TypeString, value)
 		_node.DisplayName = &value
 	}
-	if value, ok := _c.mutation.ProviderSnapshot(); ok {
-		_spec.SetField(benchmarktarget.FieldProviderSnapshot, field.TypeString, value)
-		_node.ProviderSnapshot = &value
-	}
 	if value, ok := _c.mutation.ChannelNameSnapshot(); ok {
 		_spec.SetField(benchmarktarget.FieldChannelNameSnapshot, field.TypeString, value)
 		_node.ChannelNameSnapshot = &value
-	}
-	if value, ok := _c.mutation.SupportedTaskTypes(); ok {
-		_spec.SetField(benchmarktarget.FieldSupportedTaskTypes, field.TypeJSON, value)
-		_node.SupportedTaskTypes = value
-	}
-	if value, ok := _c.mutation.MaxConcurrency(); ok {
-		_spec.SetField(benchmarktarget.FieldMaxConcurrency, field.TypeInt, value)
-		_node.MaxConcurrency = value
-	}
-	if value, ok := _c.mutation.PerRunBudget(); ok {
-		_spec.SetField(benchmarktarget.FieldPerRunBudget, field.TypeFloat64, value)
-		_node.PerRunBudget = &value
-	}
-	if value, ok := _c.mutation.DailyBudget(); ok {
-		_spec.SetField(benchmarktarget.FieldDailyBudget, field.TypeFloat64, value)
-		_node.DailyBudget = &value
 	}
 	if value, ok := _c.mutation.Enabled(); ok {
 		_spec.SetField(benchmarktarget.FieldEnabled, field.TypeBool, value)
@@ -419,10 +305,6 @@ func (_c *BenchmarkTargetCreate) createSpec() (*BenchmarkTarget, *sqlgraph.Creat
 	if value, ok := _c.mutation.SortOrder(); ok {
 		_spec.SetField(benchmarktarget.FieldSortOrder, field.TypeInt, value)
 		_node.SortOrder = value
-	}
-	if value, ok := _c.mutation.Metadata(); ok {
-		_spec.SetField(benchmarktarget.FieldMetadata, field.TypeJSON, value)
-		_node.Metadata = value
 	}
 	if nodes := _c.mutation.RunTargetsIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
@@ -552,24 +434,6 @@ func (u *BenchmarkTargetUpsert) ClearDisplayName() *BenchmarkTargetUpsert {
 	return u
 }
 
-// SetProviderSnapshot sets the "provider_snapshot" field.
-func (u *BenchmarkTargetUpsert) SetProviderSnapshot(v string) *BenchmarkTargetUpsert {
-	u.Set(benchmarktarget.FieldProviderSnapshot, v)
-	return u
-}
-
-// UpdateProviderSnapshot sets the "provider_snapshot" field to the value that was provided on create.
-func (u *BenchmarkTargetUpsert) UpdateProviderSnapshot() *BenchmarkTargetUpsert {
-	u.SetExcluded(benchmarktarget.FieldProviderSnapshot)
-	return u
-}
-
-// ClearProviderSnapshot clears the value of the "provider_snapshot" field.
-func (u *BenchmarkTargetUpsert) ClearProviderSnapshot() *BenchmarkTargetUpsert {
-	u.SetNull(benchmarktarget.FieldProviderSnapshot)
-	return u
-}
-
 // SetChannelNameSnapshot sets the "channel_name_snapshot" field.
 func (u *BenchmarkTargetUpsert) SetChannelNameSnapshot(v string) *BenchmarkTargetUpsert {
 	u.Set(benchmarktarget.FieldChannelNameSnapshot, v)
@@ -585,84 +449,6 @@ func (u *BenchmarkTargetUpsert) UpdateChannelNameSnapshot() *BenchmarkTargetUpse
 // ClearChannelNameSnapshot clears the value of the "channel_name_snapshot" field.
 func (u *BenchmarkTargetUpsert) ClearChannelNameSnapshot() *BenchmarkTargetUpsert {
 	u.SetNull(benchmarktarget.FieldChannelNameSnapshot)
-	return u
-}
-
-// SetSupportedTaskTypes sets the "supported_task_types" field.
-func (u *BenchmarkTargetUpsert) SetSupportedTaskTypes(v []string) *BenchmarkTargetUpsert {
-	u.Set(benchmarktarget.FieldSupportedTaskTypes, v)
-	return u
-}
-
-// UpdateSupportedTaskTypes sets the "supported_task_types" field to the value that was provided on create.
-func (u *BenchmarkTargetUpsert) UpdateSupportedTaskTypes() *BenchmarkTargetUpsert {
-	u.SetExcluded(benchmarktarget.FieldSupportedTaskTypes)
-	return u
-}
-
-// SetMaxConcurrency sets the "max_concurrency" field.
-func (u *BenchmarkTargetUpsert) SetMaxConcurrency(v int) *BenchmarkTargetUpsert {
-	u.Set(benchmarktarget.FieldMaxConcurrency, v)
-	return u
-}
-
-// UpdateMaxConcurrency sets the "max_concurrency" field to the value that was provided on create.
-func (u *BenchmarkTargetUpsert) UpdateMaxConcurrency() *BenchmarkTargetUpsert {
-	u.SetExcluded(benchmarktarget.FieldMaxConcurrency)
-	return u
-}
-
-// AddMaxConcurrency adds v to the "max_concurrency" field.
-func (u *BenchmarkTargetUpsert) AddMaxConcurrency(v int) *BenchmarkTargetUpsert {
-	u.Add(benchmarktarget.FieldMaxConcurrency, v)
-	return u
-}
-
-// SetPerRunBudget sets the "per_run_budget" field.
-func (u *BenchmarkTargetUpsert) SetPerRunBudget(v float64) *BenchmarkTargetUpsert {
-	u.Set(benchmarktarget.FieldPerRunBudget, v)
-	return u
-}
-
-// UpdatePerRunBudget sets the "per_run_budget" field to the value that was provided on create.
-func (u *BenchmarkTargetUpsert) UpdatePerRunBudget() *BenchmarkTargetUpsert {
-	u.SetExcluded(benchmarktarget.FieldPerRunBudget)
-	return u
-}
-
-// AddPerRunBudget adds v to the "per_run_budget" field.
-func (u *BenchmarkTargetUpsert) AddPerRunBudget(v float64) *BenchmarkTargetUpsert {
-	u.Add(benchmarktarget.FieldPerRunBudget, v)
-	return u
-}
-
-// ClearPerRunBudget clears the value of the "per_run_budget" field.
-func (u *BenchmarkTargetUpsert) ClearPerRunBudget() *BenchmarkTargetUpsert {
-	u.SetNull(benchmarktarget.FieldPerRunBudget)
-	return u
-}
-
-// SetDailyBudget sets the "daily_budget" field.
-func (u *BenchmarkTargetUpsert) SetDailyBudget(v float64) *BenchmarkTargetUpsert {
-	u.Set(benchmarktarget.FieldDailyBudget, v)
-	return u
-}
-
-// UpdateDailyBudget sets the "daily_budget" field to the value that was provided on create.
-func (u *BenchmarkTargetUpsert) UpdateDailyBudget() *BenchmarkTargetUpsert {
-	u.SetExcluded(benchmarktarget.FieldDailyBudget)
-	return u
-}
-
-// AddDailyBudget adds v to the "daily_budget" field.
-func (u *BenchmarkTargetUpsert) AddDailyBudget(v float64) *BenchmarkTargetUpsert {
-	u.Add(benchmarktarget.FieldDailyBudget, v)
-	return u
-}
-
-// ClearDailyBudget clears the value of the "daily_budget" field.
-func (u *BenchmarkTargetUpsert) ClearDailyBudget() *BenchmarkTargetUpsert {
-	u.SetNull(benchmarktarget.FieldDailyBudget)
 	return u
 }
 
@@ -705,18 +491,6 @@ func (u *BenchmarkTargetUpsert) UpdateSortOrder() *BenchmarkTargetUpsert {
 // AddSortOrder adds v to the "sort_order" field.
 func (u *BenchmarkTargetUpsert) AddSortOrder(v int) *BenchmarkTargetUpsert {
 	u.Add(benchmarktarget.FieldSortOrder, v)
-	return u
-}
-
-// SetMetadata sets the "metadata" field.
-func (u *BenchmarkTargetUpsert) SetMetadata(v map[string]interface{}) *BenchmarkTargetUpsert {
-	u.Set(benchmarktarget.FieldMetadata, v)
-	return u
-}
-
-// UpdateMetadata sets the "metadata" field to the value that was provided on create.
-func (u *BenchmarkTargetUpsert) UpdateMetadata() *BenchmarkTargetUpsert {
-	u.SetExcluded(benchmarktarget.FieldMetadata)
 	return u
 }
 
@@ -835,27 +609,6 @@ func (u *BenchmarkTargetUpsertOne) ClearDisplayName() *BenchmarkTargetUpsertOne 
 	})
 }
 
-// SetProviderSnapshot sets the "provider_snapshot" field.
-func (u *BenchmarkTargetUpsertOne) SetProviderSnapshot(v string) *BenchmarkTargetUpsertOne {
-	return u.Update(func(s *BenchmarkTargetUpsert) {
-		s.SetProviderSnapshot(v)
-	})
-}
-
-// UpdateProviderSnapshot sets the "provider_snapshot" field to the value that was provided on create.
-func (u *BenchmarkTargetUpsertOne) UpdateProviderSnapshot() *BenchmarkTargetUpsertOne {
-	return u.Update(func(s *BenchmarkTargetUpsert) {
-		s.UpdateProviderSnapshot()
-	})
-}
-
-// ClearProviderSnapshot clears the value of the "provider_snapshot" field.
-func (u *BenchmarkTargetUpsertOne) ClearProviderSnapshot() *BenchmarkTargetUpsertOne {
-	return u.Update(func(s *BenchmarkTargetUpsert) {
-		s.ClearProviderSnapshot()
-	})
-}
-
 // SetChannelNameSnapshot sets the "channel_name_snapshot" field.
 func (u *BenchmarkTargetUpsertOne) SetChannelNameSnapshot(v string) *BenchmarkTargetUpsertOne {
 	return u.Update(func(s *BenchmarkTargetUpsert) {
@@ -874,97 +627,6 @@ func (u *BenchmarkTargetUpsertOne) UpdateChannelNameSnapshot() *BenchmarkTargetU
 func (u *BenchmarkTargetUpsertOne) ClearChannelNameSnapshot() *BenchmarkTargetUpsertOne {
 	return u.Update(func(s *BenchmarkTargetUpsert) {
 		s.ClearChannelNameSnapshot()
-	})
-}
-
-// SetSupportedTaskTypes sets the "supported_task_types" field.
-func (u *BenchmarkTargetUpsertOne) SetSupportedTaskTypes(v []string) *BenchmarkTargetUpsertOne {
-	return u.Update(func(s *BenchmarkTargetUpsert) {
-		s.SetSupportedTaskTypes(v)
-	})
-}
-
-// UpdateSupportedTaskTypes sets the "supported_task_types" field to the value that was provided on create.
-func (u *BenchmarkTargetUpsertOne) UpdateSupportedTaskTypes() *BenchmarkTargetUpsertOne {
-	return u.Update(func(s *BenchmarkTargetUpsert) {
-		s.UpdateSupportedTaskTypes()
-	})
-}
-
-// SetMaxConcurrency sets the "max_concurrency" field.
-func (u *BenchmarkTargetUpsertOne) SetMaxConcurrency(v int) *BenchmarkTargetUpsertOne {
-	return u.Update(func(s *BenchmarkTargetUpsert) {
-		s.SetMaxConcurrency(v)
-	})
-}
-
-// AddMaxConcurrency adds v to the "max_concurrency" field.
-func (u *BenchmarkTargetUpsertOne) AddMaxConcurrency(v int) *BenchmarkTargetUpsertOne {
-	return u.Update(func(s *BenchmarkTargetUpsert) {
-		s.AddMaxConcurrency(v)
-	})
-}
-
-// UpdateMaxConcurrency sets the "max_concurrency" field to the value that was provided on create.
-func (u *BenchmarkTargetUpsertOne) UpdateMaxConcurrency() *BenchmarkTargetUpsertOne {
-	return u.Update(func(s *BenchmarkTargetUpsert) {
-		s.UpdateMaxConcurrency()
-	})
-}
-
-// SetPerRunBudget sets the "per_run_budget" field.
-func (u *BenchmarkTargetUpsertOne) SetPerRunBudget(v float64) *BenchmarkTargetUpsertOne {
-	return u.Update(func(s *BenchmarkTargetUpsert) {
-		s.SetPerRunBudget(v)
-	})
-}
-
-// AddPerRunBudget adds v to the "per_run_budget" field.
-func (u *BenchmarkTargetUpsertOne) AddPerRunBudget(v float64) *BenchmarkTargetUpsertOne {
-	return u.Update(func(s *BenchmarkTargetUpsert) {
-		s.AddPerRunBudget(v)
-	})
-}
-
-// UpdatePerRunBudget sets the "per_run_budget" field to the value that was provided on create.
-func (u *BenchmarkTargetUpsertOne) UpdatePerRunBudget() *BenchmarkTargetUpsertOne {
-	return u.Update(func(s *BenchmarkTargetUpsert) {
-		s.UpdatePerRunBudget()
-	})
-}
-
-// ClearPerRunBudget clears the value of the "per_run_budget" field.
-func (u *BenchmarkTargetUpsertOne) ClearPerRunBudget() *BenchmarkTargetUpsertOne {
-	return u.Update(func(s *BenchmarkTargetUpsert) {
-		s.ClearPerRunBudget()
-	})
-}
-
-// SetDailyBudget sets the "daily_budget" field.
-func (u *BenchmarkTargetUpsertOne) SetDailyBudget(v float64) *BenchmarkTargetUpsertOne {
-	return u.Update(func(s *BenchmarkTargetUpsert) {
-		s.SetDailyBudget(v)
-	})
-}
-
-// AddDailyBudget adds v to the "daily_budget" field.
-func (u *BenchmarkTargetUpsertOne) AddDailyBudget(v float64) *BenchmarkTargetUpsertOne {
-	return u.Update(func(s *BenchmarkTargetUpsert) {
-		s.AddDailyBudget(v)
-	})
-}
-
-// UpdateDailyBudget sets the "daily_budget" field to the value that was provided on create.
-func (u *BenchmarkTargetUpsertOne) UpdateDailyBudget() *BenchmarkTargetUpsertOne {
-	return u.Update(func(s *BenchmarkTargetUpsert) {
-		s.UpdateDailyBudget()
-	})
-}
-
-// ClearDailyBudget clears the value of the "daily_budget" field.
-func (u *BenchmarkTargetUpsertOne) ClearDailyBudget() *BenchmarkTargetUpsertOne {
-	return u.Update(func(s *BenchmarkTargetUpsert) {
-		s.ClearDailyBudget()
 	})
 }
 
@@ -1014,20 +676,6 @@ func (u *BenchmarkTargetUpsertOne) AddSortOrder(v int) *BenchmarkTargetUpsertOne
 func (u *BenchmarkTargetUpsertOne) UpdateSortOrder() *BenchmarkTargetUpsertOne {
 	return u.Update(func(s *BenchmarkTargetUpsert) {
 		s.UpdateSortOrder()
-	})
-}
-
-// SetMetadata sets the "metadata" field.
-func (u *BenchmarkTargetUpsertOne) SetMetadata(v map[string]interface{}) *BenchmarkTargetUpsertOne {
-	return u.Update(func(s *BenchmarkTargetUpsert) {
-		s.SetMetadata(v)
-	})
-}
-
-// UpdateMetadata sets the "metadata" field to the value that was provided on create.
-func (u *BenchmarkTargetUpsertOne) UpdateMetadata() *BenchmarkTargetUpsertOne {
-	return u.Update(func(s *BenchmarkTargetUpsert) {
-		s.UpdateMetadata()
 	})
 }
 
@@ -1312,27 +960,6 @@ func (u *BenchmarkTargetUpsertBulk) ClearDisplayName() *BenchmarkTargetUpsertBul
 	})
 }
 
-// SetProviderSnapshot sets the "provider_snapshot" field.
-func (u *BenchmarkTargetUpsertBulk) SetProviderSnapshot(v string) *BenchmarkTargetUpsertBulk {
-	return u.Update(func(s *BenchmarkTargetUpsert) {
-		s.SetProviderSnapshot(v)
-	})
-}
-
-// UpdateProviderSnapshot sets the "provider_snapshot" field to the value that was provided on create.
-func (u *BenchmarkTargetUpsertBulk) UpdateProviderSnapshot() *BenchmarkTargetUpsertBulk {
-	return u.Update(func(s *BenchmarkTargetUpsert) {
-		s.UpdateProviderSnapshot()
-	})
-}
-
-// ClearProviderSnapshot clears the value of the "provider_snapshot" field.
-func (u *BenchmarkTargetUpsertBulk) ClearProviderSnapshot() *BenchmarkTargetUpsertBulk {
-	return u.Update(func(s *BenchmarkTargetUpsert) {
-		s.ClearProviderSnapshot()
-	})
-}
-
 // SetChannelNameSnapshot sets the "channel_name_snapshot" field.
 func (u *BenchmarkTargetUpsertBulk) SetChannelNameSnapshot(v string) *BenchmarkTargetUpsertBulk {
 	return u.Update(func(s *BenchmarkTargetUpsert) {
@@ -1351,97 +978,6 @@ func (u *BenchmarkTargetUpsertBulk) UpdateChannelNameSnapshot() *BenchmarkTarget
 func (u *BenchmarkTargetUpsertBulk) ClearChannelNameSnapshot() *BenchmarkTargetUpsertBulk {
 	return u.Update(func(s *BenchmarkTargetUpsert) {
 		s.ClearChannelNameSnapshot()
-	})
-}
-
-// SetSupportedTaskTypes sets the "supported_task_types" field.
-func (u *BenchmarkTargetUpsertBulk) SetSupportedTaskTypes(v []string) *BenchmarkTargetUpsertBulk {
-	return u.Update(func(s *BenchmarkTargetUpsert) {
-		s.SetSupportedTaskTypes(v)
-	})
-}
-
-// UpdateSupportedTaskTypes sets the "supported_task_types" field to the value that was provided on create.
-func (u *BenchmarkTargetUpsertBulk) UpdateSupportedTaskTypes() *BenchmarkTargetUpsertBulk {
-	return u.Update(func(s *BenchmarkTargetUpsert) {
-		s.UpdateSupportedTaskTypes()
-	})
-}
-
-// SetMaxConcurrency sets the "max_concurrency" field.
-func (u *BenchmarkTargetUpsertBulk) SetMaxConcurrency(v int) *BenchmarkTargetUpsertBulk {
-	return u.Update(func(s *BenchmarkTargetUpsert) {
-		s.SetMaxConcurrency(v)
-	})
-}
-
-// AddMaxConcurrency adds v to the "max_concurrency" field.
-func (u *BenchmarkTargetUpsertBulk) AddMaxConcurrency(v int) *BenchmarkTargetUpsertBulk {
-	return u.Update(func(s *BenchmarkTargetUpsert) {
-		s.AddMaxConcurrency(v)
-	})
-}
-
-// UpdateMaxConcurrency sets the "max_concurrency" field to the value that was provided on create.
-func (u *BenchmarkTargetUpsertBulk) UpdateMaxConcurrency() *BenchmarkTargetUpsertBulk {
-	return u.Update(func(s *BenchmarkTargetUpsert) {
-		s.UpdateMaxConcurrency()
-	})
-}
-
-// SetPerRunBudget sets the "per_run_budget" field.
-func (u *BenchmarkTargetUpsertBulk) SetPerRunBudget(v float64) *BenchmarkTargetUpsertBulk {
-	return u.Update(func(s *BenchmarkTargetUpsert) {
-		s.SetPerRunBudget(v)
-	})
-}
-
-// AddPerRunBudget adds v to the "per_run_budget" field.
-func (u *BenchmarkTargetUpsertBulk) AddPerRunBudget(v float64) *BenchmarkTargetUpsertBulk {
-	return u.Update(func(s *BenchmarkTargetUpsert) {
-		s.AddPerRunBudget(v)
-	})
-}
-
-// UpdatePerRunBudget sets the "per_run_budget" field to the value that was provided on create.
-func (u *BenchmarkTargetUpsertBulk) UpdatePerRunBudget() *BenchmarkTargetUpsertBulk {
-	return u.Update(func(s *BenchmarkTargetUpsert) {
-		s.UpdatePerRunBudget()
-	})
-}
-
-// ClearPerRunBudget clears the value of the "per_run_budget" field.
-func (u *BenchmarkTargetUpsertBulk) ClearPerRunBudget() *BenchmarkTargetUpsertBulk {
-	return u.Update(func(s *BenchmarkTargetUpsert) {
-		s.ClearPerRunBudget()
-	})
-}
-
-// SetDailyBudget sets the "daily_budget" field.
-func (u *BenchmarkTargetUpsertBulk) SetDailyBudget(v float64) *BenchmarkTargetUpsertBulk {
-	return u.Update(func(s *BenchmarkTargetUpsert) {
-		s.SetDailyBudget(v)
-	})
-}
-
-// AddDailyBudget adds v to the "daily_budget" field.
-func (u *BenchmarkTargetUpsertBulk) AddDailyBudget(v float64) *BenchmarkTargetUpsertBulk {
-	return u.Update(func(s *BenchmarkTargetUpsert) {
-		s.AddDailyBudget(v)
-	})
-}
-
-// UpdateDailyBudget sets the "daily_budget" field to the value that was provided on create.
-func (u *BenchmarkTargetUpsertBulk) UpdateDailyBudget() *BenchmarkTargetUpsertBulk {
-	return u.Update(func(s *BenchmarkTargetUpsert) {
-		s.UpdateDailyBudget()
-	})
-}
-
-// ClearDailyBudget clears the value of the "daily_budget" field.
-func (u *BenchmarkTargetUpsertBulk) ClearDailyBudget() *BenchmarkTargetUpsertBulk {
-	return u.Update(func(s *BenchmarkTargetUpsert) {
-		s.ClearDailyBudget()
 	})
 }
 
@@ -1491,20 +1027,6 @@ func (u *BenchmarkTargetUpsertBulk) AddSortOrder(v int) *BenchmarkTargetUpsertBu
 func (u *BenchmarkTargetUpsertBulk) UpdateSortOrder() *BenchmarkTargetUpsertBulk {
 	return u.Update(func(s *BenchmarkTargetUpsert) {
 		s.UpdateSortOrder()
-	})
-}
-
-// SetMetadata sets the "metadata" field.
-func (u *BenchmarkTargetUpsertBulk) SetMetadata(v map[string]interface{}) *BenchmarkTargetUpsertBulk {
-	return u.Update(func(s *BenchmarkTargetUpsert) {
-		s.SetMetadata(v)
-	})
-}
-
-// UpdateMetadata sets the "metadata" field to the value that was provided on create.
-func (u *BenchmarkTargetUpsertBulk) UpdateMetadata() *BenchmarkTargetUpsertBulk {
-	return u.Update(func(s *BenchmarkTargetUpsert) {
-		s.UpdateMetadata()
 	})
 }
 

@@ -25,12 +25,14 @@ type BenchmarkScheduleService struct {
 	repo            BenchmarkRepository
 	runCreator      benchmarkScheduleRunCreator
 	settingProvider benchmarkScheduleSettingProvider
+	nowFn           func() time.Time
 }
 
 func NewBenchmarkScheduleService(repo BenchmarkRepository, runCreator benchmarkScheduleRunCreator) *BenchmarkScheduleService {
 	return &BenchmarkScheduleService{
 		repo:       repo,
 		runCreator: runCreator,
+		nowFn:      time.Now,
 	}
 }
 
@@ -60,25 +62,52 @@ func (s *BenchmarkScheduleService) ListSchedules(ctx context.Context, input Benc
 }
 
 func (s *BenchmarkScheduleService) CreateSchedule(ctx context.Context, input BenchmarkScheduleInput) (*ent.BenchmarkSchedule, error) {
-	if input.ProfileID <= 0 {
-		return nil, errors.New("profile id must be positive")
+	prepared, err := prepareBenchmarkScheduleInput(input, s.now())
+	if err != nil {
+		return nil, err
 	}
+	return s.repo.CreateSchedule(ctx, prepared)
+}
+
+func (s *BenchmarkScheduleService) now() time.Time {
+	if s == nil || s.nowFn == nil {
+		return time.Now()
+	}
+	return s.nowFn()
+}
+
+func prepareBenchmarkScheduleInput(input BenchmarkScheduleInput, now time.Time) (BenchmarkScheduleInput, error) {
 	if strings.TrimSpace(input.Name) == "" {
-		return nil, errors.New("schedule name is required")
+		return BenchmarkScheduleInput{}, errors.New("schedule name is required")
 	}
 	if strings.TrimSpace(input.CronExpr) == "" {
-		return nil, errors.New("cron expr is required")
+		return BenchmarkScheduleInput{}, errors.New("cron expr is required")
 	}
-	nextRunAt, err := ComputeNextRunAt(input.CronExpr, time.Now())
+	if input.TaskCount < 0 {
+		return BenchmarkScheduleInput{}, errors.New("task count must not be negative")
+	}
+	nextRunAt, err := ComputeNextRunAt(input.CronExpr, now)
 	if err != nil {
-		return nil, fmt.Errorf("invalid cron expression: %w", err)
+		return BenchmarkScheduleInput{}, fmt.Errorf("invalid cron expression: %w", err)
 	}
 	input.NextRunAt = &nextRunAt
-	return s.repo.CreateSchedule(ctx, input)
+	return input, nil
 }
 
 func (s *BenchmarkScheduleService) GetSchedule(ctx context.Context, id int64) (*ent.BenchmarkSchedule, error) {
 	return s.repo.GetSchedule(ctx, id)
+}
+
+func (s *BenchmarkScheduleService) UpdateSchedule(ctx context.Context, id int64, input BenchmarkScheduleInput) (*ent.BenchmarkSchedule, error) {
+	prepared, err := prepareBenchmarkScheduleInput(input, s.now())
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.UpdateSchedule(ctx, id, prepared)
+}
+
+func (s *BenchmarkScheduleService) DeleteSchedule(ctx context.Context, id int64) error {
+	return s.repo.DeleteSchedule(ctx, id)
 }
 
 func (s *BenchmarkScheduleService) TriggerSchedule(ctx context.Context, id int64, now time.Time) (*ent.BenchmarkRun, error) {
@@ -111,9 +140,12 @@ func (s *BenchmarkScheduleService) TriggerDue(ctx context.Context, now time.Time
 }
 
 func (s *BenchmarkScheduleService) triggerSchedule(ctx context.Context, schedule *ent.BenchmarkSchedule, now time.Time) (*ent.BenchmarkRun, error) {
+	scheduleID := schedule.ID
 	run, err := s.runCreator.CreateRun(ctx, BenchmarkCreateRunRequest{
-		ProfileID:   schedule.ProfileID,
-		TriggerType: "scheduled",
+		TargetIDs:   benchmarkCloneInt64Slice(schedule.TargetIds),
+		TaskCount:   schedule.TaskCount,
+		TriggerType: BenchmarkTriggerScheduled,
+		ScheduleID:  &scheduleID,
 	})
 	if err != nil {
 		return nil, err

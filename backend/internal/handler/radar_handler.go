@@ -41,6 +41,7 @@ type radarResponse struct {
 	PublishedAt  *time.Time                      `json:"published_at,omitempty"`
 	LatestRun    *service.BenchmarkPublicRun     `json:"latest_run"`
 	Targets      []service.BenchmarkPublicTarget `json:"targets"`
+	Trends       []service.BenchmarkPublicTrend  `json:"trends"`
 }
 
 func (h *RadarHandler) GetCurrent(c *gin.Context) {
@@ -71,6 +72,7 @@ func (h *RadarHandler) GetCurrent(c *gin.Context) {
 		PublishedAt:  radar.PublishedAt,
 		LatestRun:    radar.LatestRun,
 		Targets:      radar.Targets,
+		Trends:       radar.Trends,
 	})
 }
 
@@ -81,10 +83,6 @@ func (h *RadarHandler) getBenchmarkRuntime(ctx context.Context) service.Benchmar
 			PublicEnabled:         true,
 			GlobalConcurrency:     service.BenchmarkGlobalConcurrencyDefault,
 			DefaultTimeoutSeconds: service.BenchmarkDefaultTimeoutSecondsDefault,
-			ConfidenceThresholds: service.BenchmarkConfidenceThresholds{
-				MediumCoverage: service.BenchmarkLowConfidenceThresholdDefault,
-				HighCoverage:   service.BenchmarkHighConfidenceThresholdDefault,
-			},
 		}
 	}
 	return h.runtimeProvider.GetBenchmarkRuntime(ctx)
@@ -95,5 +93,6 @@ func emptyRadarResponse() radarResponse {
 		RankingBasis: "ability_score_only",
 		LatestRun:    nil,
 		Targets:      []service.BenchmarkPublicTarget{},
+		Trends:       []service.BenchmarkPublicTrend{},
 	}
 }

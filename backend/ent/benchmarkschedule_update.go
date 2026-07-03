@@ -10,8 +10,8 @@ import (
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
+	"entgo.io/ent/dialect/sql/sqljson"
 	"entgo.io/ent/schema/field"
-	"github.com/Wei-Shaw/sub2api/ent/benchmarkprofile"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkschedule"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
 )
@@ -32,20 +32,6 @@ func (_u *BenchmarkScheduleUpdate) Where(ps ...predicate.BenchmarkSchedule) *Ben
 // SetUpdatedAt sets the "updated_at" field.
 func (_u *BenchmarkScheduleUpdate) SetUpdatedAt(v time.Time) *BenchmarkScheduleUpdate {
 	_u.mutation.SetUpdatedAt(v)
-	return _u
-}
-
-// SetProfileID sets the "profile_id" field.
-func (_u *BenchmarkScheduleUpdate) SetProfileID(v int64) *BenchmarkScheduleUpdate {
-	_u.mutation.SetProfileID(v)
-	return _u
-}
-
-// SetNillableProfileID sets the "profile_id" field if the given value is not nil.
-func (_u *BenchmarkScheduleUpdate) SetNillableProfileID(v *int64) *BenchmarkScheduleUpdate {
-	if v != nil {
-		_u.SetProfileID(*v)
-	}
 	return _u
 }
 
@@ -91,6 +77,39 @@ func (_u *BenchmarkScheduleUpdate) SetNillableEnabled(v *bool) *BenchmarkSchedul
 	return _u
 }
 
+// SetTargetIds sets the "target_ids" field.
+func (_u *BenchmarkScheduleUpdate) SetTargetIds(v []int64) *BenchmarkScheduleUpdate {
+	_u.mutation.SetTargetIds(v)
+	return _u
+}
+
+// AppendTargetIds appends value to the "target_ids" field.
+func (_u *BenchmarkScheduleUpdate) AppendTargetIds(v []int64) *BenchmarkScheduleUpdate {
+	_u.mutation.AppendTargetIds(v)
+	return _u
+}
+
+// SetTaskCount sets the "task_count" field.
+func (_u *BenchmarkScheduleUpdate) SetTaskCount(v int) *BenchmarkScheduleUpdate {
+	_u.mutation.ResetTaskCount()
+	_u.mutation.SetTaskCount(v)
+	return _u
+}
+
+// SetNillableTaskCount sets the "task_count" field if the given value is not nil.
+func (_u *BenchmarkScheduleUpdate) SetNillableTaskCount(v *int) *BenchmarkScheduleUpdate {
+	if v != nil {
+		_u.SetTaskCount(*v)
+	}
+	return _u
+}
+
+// AddTaskCount adds value to the "task_count" field.
+func (_u *BenchmarkScheduleUpdate) AddTaskCount(v int) *BenchmarkScheduleUpdate {
+	_u.mutation.AddTaskCount(v)
+	return _u
+}
+
 // SetLastRunAt sets the "last_run_at" field.
 func (_u *BenchmarkScheduleUpdate) SetLastRunAt(v time.Time) *BenchmarkScheduleUpdate {
 	_u.mutation.SetLastRunAt(v)
@@ -131,26 +150,9 @@ func (_u *BenchmarkScheduleUpdate) ClearNextRunAt() *BenchmarkScheduleUpdate {
 	return _u
 }
 
-// SetMetadata sets the "metadata" field.
-func (_u *BenchmarkScheduleUpdate) SetMetadata(v map[string]interface{}) *BenchmarkScheduleUpdate {
-	_u.mutation.SetMetadata(v)
-	return _u
-}
-
-// SetProfile sets the "profile" edge to the BenchmarkProfile entity.
-func (_u *BenchmarkScheduleUpdate) SetProfile(v *BenchmarkProfile) *BenchmarkScheduleUpdate {
-	return _u.SetProfileID(v.ID)
-}
-
 // Mutation returns the BenchmarkScheduleMutation object of the builder.
 func (_u *BenchmarkScheduleUpdate) Mutation() *BenchmarkScheduleMutation {
 	return _u.mutation
-}
-
-// ClearProfile clears the "profile" edge to the BenchmarkProfile entity.
-func (_u *BenchmarkScheduleUpdate) ClearProfile() *BenchmarkScheduleUpdate {
-	_u.mutation.ClearProfile()
-	return _u
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -201,9 +203,6 @@ func (_u *BenchmarkScheduleUpdate) check() error {
 			return &ValidationError{Name: "cron_expr", err: fmt.Errorf(`ent: validator failed for field "BenchmarkSchedule.cron_expr": %w`, err)}
 		}
 	}
-	if _u.mutation.ProfileCleared() && len(_u.mutation.ProfileIDs()) > 0 {
-		return errors.New(`ent: clearing a required unique edge "BenchmarkSchedule.profile"`)
-	}
 	return nil
 }
 
@@ -231,6 +230,20 @@ func (_u *BenchmarkScheduleUpdate) sqlSave(ctx context.Context) (_node int, err 
 	if value, ok := _u.mutation.Enabled(); ok {
 		_spec.SetField(benchmarkschedule.FieldEnabled, field.TypeBool, value)
 	}
+	if value, ok := _u.mutation.TargetIds(); ok {
+		_spec.SetField(benchmarkschedule.FieldTargetIds, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedTargetIds(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, benchmarkschedule.FieldTargetIds, value)
+		})
+	}
+	if value, ok := _u.mutation.TaskCount(); ok {
+		_spec.SetField(benchmarkschedule.FieldTaskCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedTaskCount(); ok {
+		_spec.AddField(benchmarkschedule.FieldTaskCount, field.TypeInt, value)
+	}
 	if value, ok := _u.mutation.LastRunAt(); ok {
 		_spec.SetField(benchmarkschedule.FieldLastRunAt, field.TypeTime, value)
 	}
@@ -242,38 +255,6 @@ func (_u *BenchmarkScheduleUpdate) sqlSave(ctx context.Context) (_node int, err 
 	}
 	if _u.mutation.NextRunAtCleared() {
 		_spec.ClearField(benchmarkschedule.FieldNextRunAt, field.TypeTime)
-	}
-	if value, ok := _u.mutation.Metadata(); ok {
-		_spec.SetField(benchmarkschedule.FieldMetadata, field.TypeJSON, value)
-	}
-	if _u.mutation.ProfileCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.M2O,
-			Inverse: true,
-			Table:   benchmarkschedule.ProfileTable,
-			Columns: []string{benchmarkschedule.ProfileColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(benchmarkprofile.FieldID, field.TypeInt64),
-			},
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := _u.mutation.ProfileIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.M2O,
-			Inverse: true,
-			Table:   benchmarkschedule.ProfileTable,
-			Columns: []string{benchmarkschedule.ProfileColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(benchmarkprofile.FieldID, field.TypeInt64),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -298,20 +279,6 @@ type BenchmarkScheduleUpdateOne struct {
 // SetUpdatedAt sets the "updated_at" field.
 func (_u *BenchmarkScheduleUpdateOne) SetUpdatedAt(v time.Time) *BenchmarkScheduleUpdateOne {
 	_u.mutation.SetUpdatedAt(v)
-	return _u
-}
-
-// SetProfileID sets the "profile_id" field.
-func (_u *BenchmarkScheduleUpdateOne) SetProfileID(v int64) *BenchmarkScheduleUpdateOne {
-	_u.mutation.SetProfileID(v)
-	return _u
-}
-
-// SetNillableProfileID sets the "profile_id" field if the given value is not nil.
-func (_u *BenchmarkScheduleUpdateOne) SetNillableProfileID(v *int64) *BenchmarkScheduleUpdateOne {
-	if v != nil {
-		_u.SetProfileID(*v)
-	}
 	return _u
 }
 
@@ -357,6 +324,39 @@ func (_u *BenchmarkScheduleUpdateOne) SetNillableEnabled(v *bool) *BenchmarkSche
 	return _u
 }
 
+// SetTargetIds sets the "target_ids" field.
+func (_u *BenchmarkScheduleUpdateOne) SetTargetIds(v []int64) *BenchmarkScheduleUpdateOne {
+	_u.mutation.SetTargetIds(v)
+	return _u
+}
+
+// AppendTargetIds appends value to the "target_ids" field.
+func (_u *BenchmarkScheduleUpdateOne) AppendTargetIds(v []int64) *BenchmarkScheduleUpdateOne {
+	_u.mutation.AppendTargetIds(v)
+	return _u
+}
+
+// SetTaskCount sets the "task_count" field.
+func (_u *BenchmarkScheduleUpdateOne) SetTaskCount(v int) *BenchmarkScheduleUpdateOne {
+	_u.mutation.ResetTaskCount()
+	_u.mutation.SetTaskCount(v)
+	return _u
+}
+
+// SetNillableTaskCount sets the "task_count" field if the given value is not nil.
+func (_u *BenchmarkScheduleUpdateOne) SetNillableTaskCount(v *int) *BenchmarkScheduleUpdateOne {
+	if v != nil {
+		_u.SetTaskCount(*v)
+	}
+	return _u
+}
+
+// AddTaskCount adds value to the "task_count" field.
+func (_u *BenchmarkScheduleUpdateOne) AddTaskCount(v int) *BenchmarkScheduleUpdateOne {
+	_u.mutation.AddTaskCount(v)
+	return _u
+}
+
 // SetLastRunAt sets the "last_run_at" field.
 func (_u *BenchmarkScheduleUpdateOne) SetLastRunAt(v time.Time) *BenchmarkScheduleUpdateOne {
 	_u.mutation.SetLastRunAt(v)
@@ -397,26 +397,9 @@ func (_u *BenchmarkScheduleUpdateOne) ClearNextRunAt() *BenchmarkScheduleUpdateO
 	return _u
 }
 
-// SetMetadata sets the "metadata" field.
-func (_u *BenchmarkScheduleUpdateOne) SetMetadata(v map[string]interface{}) *BenchmarkScheduleUpdateOne {
-	_u.mutation.SetMetadata(v)
-	return _u
-}
-
-// SetProfile sets the "profile" edge to the BenchmarkProfile entity.
-func (_u *BenchmarkScheduleUpdateOne) SetProfile(v *BenchmarkProfile) *BenchmarkScheduleUpdateOne {
-	return _u.SetProfileID(v.ID)
-}
-
 // Mutation returns the BenchmarkScheduleMutation object of the builder.
 func (_u *BenchmarkScheduleUpdateOne) Mutation() *BenchmarkScheduleMutation {
 	return _u.mutation
-}
-
-// ClearProfile clears the "profile" edge to the BenchmarkProfile entity.
-func (_u *BenchmarkScheduleUpdateOne) ClearProfile() *BenchmarkScheduleUpdateOne {
-	_u.mutation.ClearProfile()
-	return _u
 }
 
 // Where appends a list predicates to the BenchmarkScheduleUpdate builder.
@@ -480,9 +463,6 @@ func (_u *BenchmarkScheduleUpdateOne) check() error {
 			return &ValidationError{Name: "cron_expr", err: fmt.Errorf(`ent: validator failed for field "BenchmarkSchedule.cron_expr": %w`, err)}
 		}
 	}
-	if _u.mutation.ProfileCleared() && len(_u.mutation.ProfileIDs()) > 0 {
-		return errors.New(`ent: clearing a required unique edge "BenchmarkSchedule.profile"`)
-	}
 	return nil
 }
 
@@ -527,6 +507,20 @@ func (_u *BenchmarkScheduleUpdateOne) sqlSave(ctx context.Context) (_node *Bench
 	if value, ok := _u.mutation.Enabled(); ok {
 		_spec.SetField(benchmarkschedule.FieldEnabled, field.TypeBool, value)
 	}
+	if value, ok := _u.mutation.TargetIds(); ok {
+		_spec.SetField(benchmarkschedule.FieldTargetIds, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedTargetIds(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, benchmarkschedule.FieldTargetIds, value)
+		})
+	}
+	if value, ok := _u.mutation.TaskCount(); ok {
+		_spec.SetField(benchmarkschedule.FieldTaskCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedTaskCount(); ok {
+		_spec.AddField(benchmarkschedule.FieldTaskCount, field.TypeInt, value)
+	}
 	if value, ok := _u.mutation.LastRunAt(); ok {
 		_spec.SetField(benchmarkschedule.FieldLastRunAt, field.TypeTime, value)
 	}
@@ -538,38 +532,6 @@ func (_u *BenchmarkScheduleUpdateOne) sqlSave(ctx context.Context) (_node *Bench
 	}
 	if _u.mutation.NextRunAtCleared() {
 		_spec.ClearField(benchmarkschedule.FieldNextRunAt, field.TypeTime)
-	}
-	if value, ok := _u.mutation.Metadata(); ok {
-		_spec.SetField(benchmarkschedule.FieldMetadata, field.TypeJSON, value)
-	}
-	if _u.mutation.ProfileCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.M2O,
-			Inverse: true,
-			Table:   benchmarkschedule.ProfileTable,
-			Columns: []string{benchmarkschedule.ProfileColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(benchmarkprofile.FieldID, field.TypeInt64),
-			},
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := _u.mutation.ProfileIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.M2O,
-			Inverse: true,
-			Table:   benchmarkschedule.ProfileTable,
-			Columns: []string{benchmarkschedule.ProfileColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(benchmarkprofile.FieldID, field.TypeInt64),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
 	_node = &BenchmarkSchedule{config: _u.config}
 	_spec.Assign = _node.assignValues

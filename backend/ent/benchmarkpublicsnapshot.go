@@ -10,10 +10,8 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
-	"github.com/Wei-Shaw/sub2api/ent/benchmarkprofile"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkpublicsnapshot"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkrun"
-	"github.com/Wei-Shaw/sub2api/ent/benchmarksuite"
 )
 
 // BenchmarkPublicSnapshot is the model entity for the BenchmarkPublicSnapshot schema.
@@ -23,10 +21,6 @@ type BenchmarkPublicSnapshot struct {
 	ID int64 `json:"id,omitempty"`
 	// RunID holds the value of the "run_id" field.
 	RunID int64 `json:"run_id,omitempty"`
-	// SuiteID holds the value of the "suite_id" field.
-	SuiteID int64 `json:"suite_id,omitempty"`
-	// ProfileID holds the value of the "profile_id" field.
-	ProfileID int64 `json:"profile_id,omitempty"`
 	// Snapshot holds the value of the "snapshot" field.
 	Snapshot map[string]interface{} `json:"snapshot,omitempty"`
 	// PublishedAt holds the value of the "published_at" field.
@@ -43,13 +37,9 @@ type BenchmarkPublicSnapshot struct {
 type BenchmarkPublicSnapshotEdges struct {
 	// Run holds the value of the run edge.
 	Run *BenchmarkRun `json:"run,omitempty"`
-	// Suite holds the value of the suite edge.
-	Suite *BenchmarkSuite `json:"suite,omitempty"`
-	// Profile holds the value of the profile edge.
-	Profile *BenchmarkProfile `json:"profile,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [3]bool
+	loadedTypes [1]bool
 }
 
 // RunOrErr returns the Run value or an error if the edge
@@ -63,28 +53,6 @@ func (e BenchmarkPublicSnapshotEdges) RunOrErr() (*BenchmarkRun, error) {
 	return nil, &NotLoadedError{edge: "run"}
 }
 
-// SuiteOrErr returns the Suite value or an error if the edge
-// was not loaded in eager-loading, or loaded but was not found.
-func (e BenchmarkPublicSnapshotEdges) SuiteOrErr() (*BenchmarkSuite, error) {
-	if e.Suite != nil {
-		return e.Suite, nil
-	} else if e.loadedTypes[1] {
-		return nil, &NotFoundError{label: benchmarksuite.Label}
-	}
-	return nil, &NotLoadedError{edge: "suite"}
-}
-
-// ProfileOrErr returns the Profile value or an error if the edge
-// was not loaded in eager-loading, or loaded but was not found.
-func (e BenchmarkPublicSnapshotEdges) ProfileOrErr() (*BenchmarkProfile, error) {
-	if e.Profile != nil {
-		return e.Profile, nil
-	} else if e.loadedTypes[2] {
-		return nil, &NotFoundError{label: benchmarkprofile.Label}
-	}
-	return nil, &NotLoadedError{edge: "profile"}
-}
-
 // scanValues returns the types for scanning values from sql.Rows.
 func (*BenchmarkPublicSnapshot) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
@@ -92,7 +60,7 @@ func (*BenchmarkPublicSnapshot) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case benchmarkpublicsnapshot.FieldSnapshot:
 			values[i] = new([]byte)
-		case benchmarkpublicsnapshot.FieldID, benchmarkpublicsnapshot.FieldRunID, benchmarkpublicsnapshot.FieldSuiteID, benchmarkpublicsnapshot.FieldProfileID:
+		case benchmarkpublicsnapshot.FieldID, benchmarkpublicsnapshot.FieldRunID:
 			values[i] = new(sql.NullInt64)
 		case benchmarkpublicsnapshot.FieldPublishedAt, benchmarkpublicsnapshot.FieldCreatedAt:
 			values[i] = new(sql.NullTime)
@@ -122,18 +90,6 @@ func (_m *BenchmarkPublicSnapshot) assignValues(columns []string, values []any) 
 				return fmt.Errorf("unexpected type %T for field run_id", values[i])
 			} else if value.Valid {
 				_m.RunID = value.Int64
-			}
-		case benchmarkpublicsnapshot.FieldSuiteID:
-			if value, ok := values[i].(*sql.NullInt64); !ok {
-				return fmt.Errorf("unexpected type %T for field suite_id", values[i])
-			} else if value.Valid {
-				_m.SuiteID = value.Int64
-			}
-		case benchmarkpublicsnapshot.FieldProfileID:
-			if value, ok := values[i].(*sql.NullInt64); !ok {
-				return fmt.Errorf("unexpected type %T for field profile_id", values[i])
-			} else if value.Valid {
-				_m.ProfileID = value.Int64
 			}
 		case benchmarkpublicsnapshot.FieldSnapshot:
 			if value, ok := values[i].(*[]byte); !ok {
@@ -173,16 +129,6 @@ func (_m *BenchmarkPublicSnapshot) QueryRun() *BenchmarkRunQuery {
 	return NewBenchmarkPublicSnapshotClient(_m.config).QueryRun(_m)
 }
 
-// QuerySuite queries the "suite" edge of the BenchmarkPublicSnapshot entity.
-func (_m *BenchmarkPublicSnapshot) QuerySuite() *BenchmarkSuiteQuery {
-	return NewBenchmarkPublicSnapshotClient(_m.config).QuerySuite(_m)
-}
-
-// QueryProfile queries the "profile" edge of the BenchmarkPublicSnapshot entity.
-func (_m *BenchmarkPublicSnapshot) QueryProfile() *BenchmarkProfileQuery {
-	return NewBenchmarkPublicSnapshotClient(_m.config).QueryProfile(_m)
-}
-
 // Update returns a builder for updating this BenchmarkPublicSnapshot.
 // Note that you need to call BenchmarkPublicSnapshot.Unwrap() before calling this method if this BenchmarkPublicSnapshot
 // was returned from a transaction, and the transaction was committed or rolled back.
@@ -208,12 +154,6 @@ func (_m *BenchmarkPublicSnapshot) String() string {
 	builder.WriteString(fmt.Sprintf("id=%v, ", _m.ID))
 	builder.WriteString("run_id=")
 	builder.WriteString(fmt.Sprintf("%v", _m.RunID))
-	builder.WriteString(", ")
-	builder.WriteString("suite_id=")
-	builder.WriteString(fmt.Sprintf("%v", _m.SuiteID))
-	builder.WriteString(", ")
-	builder.WriteString("profile_id=")
-	builder.WriteString(fmt.Sprintf("%v", _m.ProfileID))
 	builder.WriteString(", ")
 	builder.WriteString("snapshot=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Snapshot))

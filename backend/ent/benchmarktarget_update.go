@@ -10,7 +10,6 @@ import (
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
-	"entgo.io/ent/dialect/sql/sqljson"
 	"entgo.io/ent/schema/field"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkruntarget"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarktarget"
@@ -91,26 +90,6 @@ func (_u *BenchmarkTargetUpdate) ClearDisplayName() *BenchmarkTargetUpdate {
 	return _u
 }
 
-// SetProviderSnapshot sets the "provider_snapshot" field.
-func (_u *BenchmarkTargetUpdate) SetProviderSnapshot(v string) *BenchmarkTargetUpdate {
-	_u.mutation.SetProviderSnapshot(v)
-	return _u
-}
-
-// SetNillableProviderSnapshot sets the "provider_snapshot" field if the given value is not nil.
-func (_u *BenchmarkTargetUpdate) SetNillableProviderSnapshot(v *string) *BenchmarkTargetUpdate {
-	if v != nil {
-		_u.SetProviderSnapshot(*v)
-	}
-	return _u
-}
-
-// ClearProviderSnapshot clears the value of the "provider_snapshot" field.
-func (_u *BenchmarkTargetUpdate) ClearProviderSnapshot() *BenchmarkTargetUpdate {
-	_u.mutation.ClearProviderSnapshot()
-	return _u
-}
-
 // SetChannelNameSnapshot sets the "channel_name_snapshot" field.
 func (_u *BenchmarkTargetUpdate) SetChannelNameSnapshot(v string) *BenchmarkTargetUpdate {
 	_u.mutation.SetChannelNameSnapshot(v)
@@ -128,93 +107,6 @@ func (_u *BenchmarkTargetUpdate) SetNillableChannelNameSnapshot(v *string) *Benc
 // ClearChannelNameSnapshot clears the value of the "channel_name_snapshot" field.
 func (_u *BenchmarkTargetUpdate) ClearChannelNameSnapshot() *BenchmarkTargetUpdate {
 	_u.mutation.ClearChannelNameSnapshot()
-	return _u
-}
-
-// SetSupportedTaskTypes sets the "supported_task_types" field.
-func (_u *BenchmarkTargetUpdate) SetSupportedTaskTypes(v []string) *BenchmarkTargetUpdate {
-	_u.mutation.SetSupportedTaskTypes(v)
-	return _u
-}
-
-// AppendSupportedTaskTypes appends value to the "supported_task_types" field.
-func (_u *BenchmarkTargetUpdate) AppendSupportedTaskTypes(v []string) *BenchmarkTargetUpdate {
-	_u.mutation.AppendSupportedTaskTypes(v)
-	return _u
-}
-
-// SetMaxConcurrency sets the "max_concurrency" field.
-func (_u *BenchmarkTargetUpdate) SetMaxConcurrency(v int) *BenchmarkTargetUpdate {
-	_u.mutation.ResetMaxConcurrency()
-	_u.mutation.SetMaxConcurrency(v)
-	return _u
-}
-
-// SetNillableMaxConcurrency sets the "max_concurrency" field if the given value is not nil.
-func (_u *BenchmarkTargetUpdate) SetNillableMaxConcurrency(v *int) *BenchmarkTargetUpdate {
-	if v != nil {
-		_u.SetMaxConcurrency(*v)
-	}
-	return _u
-}
-
-// AddMaxConcurrency adds value to the "max_concurrency" field.
-func (_u *BenchmarkTargetUpdate) AddMaxConcurrency(v int) *BenchmarkTargetUpdate {
-	_u.mutation.AddMaxConcurrency(v)
-	return _u
-}
-
-// SetPerRunBudget sets the "per_run_budget" field.
-func (_u *BenchmarkTargetUpdate) SetPerRunBudget(v float64) *BenchmarkTargetUpdate {
-	_u.mutation.ResetPerRunBudget()
-	_u.mutation.SetPerRunBudget(v)
-	return _u
-}
-
-// SetNillablePerRunBudget sets the "per_run_budget" field if the given value is not nil.
-func (_u *BenchmarkTargetUpdate) SetNillablePerRunBudget(v *float64) *BenchmarkTargetUpdate {
-	if v != nil {
-		_u.SetPerRunBudget(*v)
-	}
-	return _u
-}
-
-// AddPerRunBudget adds value to the "per_run_budget" field.
-func (_u *BenchmarkTargetUpdate) AddPerRunBudget(v float64) *BenchmarkTargetUpdate {
-	_u.mutation.AddPerRunBudget(v)
-	return _u
-}
-
-// ClearPerRunBudget clears the value of the "per_run_budget" field.
-func (_u *BenchmarkTargetUpdate) ClearPerRunBudget() *BenchmarkTargetUpdate {
-	_u.mutation.ClearPerRunBudget()
-	return _u
-}
-
-// SetDailyBudget sets the "daily_budget" field.
-func (_u *BenchmarkTargetUpdate) SetDailyBudget(v float64) *BenchmarkTargetUpdate {
-	_u.mutation.ResetDailyBudget()
-	_u.mutation.SetDailyBudget(v)
-	return _u
-}
-
-// SetNillableDailyBudget sets the "daily_budget" field if the given value is not nil.
-func (_u *BenchmarkTargetUpdate) SetNillableDailyBudget(v *float64) *BenchmarkTargetUpdate {
-	if v != nil {
-		_u.SetDailyBudget(*v)
-	}
-	return _u
-}
-
-// AddDailyBudget adds value to the "daily_budget" field.
-func (_u *BenchmarkTargetUpdate) AddDailyBudget(v float64) *BenchmarkTargetUpdate {
-	_u.mutation.AddDailyBudget(v)
-	return _u
-}
-
-// ClearDailyBudget clears the value of the "daily_budget" field.
-func (_u *BenchmarkTargetUpdate) ClearDailyBudget() *BenchmarkTargetUpdate {
-	_u.mutation.ClearDailyBudget()
 	return _u
 }
 
@@ -264,12 +156,6 @@ func (_u *BenchmarkTargetUpdate) SetNillableSortOrder(v *int) *BenchmarkTargetUp
 // AddSortOrder adds value to the "sort_order" field.
 func (_u *BenchmarkTargetUpdate) AddSortOrder(v int) *BenchmarkTargetUpdate {
 	_u.mutation.AddSortOrder(v)
-	return _u
-}
-
-// SetMetadata sets the "metadata" field.
-func (_u *BenchmarkTargetUpdate) SetMetadata(v map[string]interface{}) *BenchmarkTargetUpdate {
-	_u.mutation.SetMetadata(v)
 	return _u
 }
 
@@ -362,11 +248,6 @@ func (_u *BenchmarkTargetUpdate) check() error {
 			return &ValidationError{Name: "display_name", err: fmt.Errorf(`ent: validator failed for field "BenchmarkTarget.display_name": %w`, err)}
 		}
 	}
-	if v, ok := _u.mutation.ProviderSnapshot(); ok {
-		if err := benchmarktarget.ProviderSnapshotValidator(v); err != nil {
-			return &ValidationError{Name: "provider_snapshot", err: fmt.Errorf(`ent: validator failed for field "BenchmarkTarget.provider_snapshot": %w`, err)}
-		}
-	}
 	if v, ok := _u.mutation.ChannelNameSnapshot(); ok {
 		if err := benchmarktarget.ChannelNameSnapshotValidator(v); err != nil {
 			return &ValidationError{Name: "channel_name_snapshot", err: fmt.Errorf(`ent: validator failed for field "BenchmarkTarget.channel_name_snapshot": %w`, err)}
@@ -405,49 +286,11 @@ func (_u *BenchmarkTargetUpdate) sqlSave(ctx context.Context) (_node int, err er
 	if _u.mutation.DisplayNameCleared() {
 		_spec.ClearField(benchmarktarget.FieldDisplayName, field.TypeString)
 	}
-	if value, ok := _u.mutation.ProviderSnapshot(); ok {
-		_spec.SetField(benchmarktarget.FieldProviderSnapshot, field.TypeString, value)
-	}
-	if _u.mutation.ProviderSnapshotCleared() {
-		_spec.ClearField(benchmarktarget.FieldProviderSnapshot, field.TypeString)
-	}
 	if value, ok := _u.mutation.ChannelNameSnapshot(); ok {
 		_spec.SetField(benchmarktarget.FieldChannelNameSnapshot, field.TypeString, value)
 	}
 	if _u.mutation.ChannelNameSnapshotCleared() {
 		_spec.ClearField(benchmarktarget.FieldChannelNameSnapshot, field.TypeString)
-	}
-	if value, ok := _u.mutation.SupportedTaskTypes(); ok {
-		_spec.SetField(benchmarktarget.FieldSupportedTaskTypes, field.TypeJSON, value)
-	}
-	if value, ok := _u.mutation.AppendedSupportedTaskTypes(); ok {
-		_spec.AddModifier(func(u *sql.UpdateBuilder) {
-			sqljson.Append(u, benchmarktarget.FieldSupportedTaskTypes, value)
-		})
-	}
-	if value, ok := _u.mutation.MaxConcurrency(); ok {
-		_spec.SetField(benchmarktarget.FieldMaxConcurrency, field.TypeInt, value)
-	}
-	if value, ok := _u.mutation.AddedMaxConcurrency(); ok {
-		_spec.AddField(benchmarktarget.FieldMaxConcurrency, field.TypeInt, value)
-	}
-	if value, ok := _u.mutation.PerRunBudget(); ok {
-		_spec.SetField(benchmarktarget.FieldPerRunBudget, field.TypeFloat64, value)
-	}
-	if value, ok := _u.mutation.AddedPerRunBudget(); ok {
-		_spec.AddField(benchmarktarget.FieldPerRunBudget, field.TypeFloat64, value)
-	}
-	if _u.mutation.PerRunBudgetCleared() {
-		_spec.ClearField(benchmarktarget.FieldPerRunBudget, field.TypeFloat64)
-	}
-	if value, ok := _u.mutation.DailyBudget(); ok {
-		_spec.SetField(benchmarktarget.FieldDailyBudget, field.TypeFloat64, value)
-	}
-	if value, ok := _u.mutation.AddedDailyBudget(); ok {
-		_spec.AddField(benchmarktarget.FieldDailyBudget, field.TypeFloat64, value)
-	}
-	if _u.mutation.DailyBudgetCleared() {
-		_spec.ClearField(benchmarktarget.FieldDailyBudget, field.TypeFloat64)
 	}
 	if value, ok := _u.mutation.Enabled(); ok {
 		_spec.SetField(benchmarktarget.FieldEnabled, field.TypeBool, value)
@@ -460,9 +303,6 @@ func (_u *BenchmarkTargetUpdate) sqlSave(ctx context.Context) (_node int, err er
 	}
 	if value, ok := _u.mutation.AddedSortOrder(); ok {
 		_spec.AddField(benchmarktarget.FieldSortOrder, field.TypeInt, value)
-	}
-	if value, ok := _u.mutation.Metadata(); ok {
-		_spec.SetField(benchmarktarget.FieldMetadata, field.TypeJSON, value)
 	}
 	if _u.mutation.RunTargetsCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -590,26 +430,6 @@ func (_u *BenchmarkTargetUpdateOne) ClearDisplayName() *BenchmarkTargetUpdateOne
 	return _u
 }
 
-// SetProviderSnapshot sets the "provider_snapshot" field.
-func (_u *BenchmarkTargetUpdateOne) SetProviderSnapshot(v string) *BenchmarkTargetUpdateOne {
-	_u.mutation.SetProviderSnapshot(v)
-	return _u
-}
-
-// SetNillableProviderSnapshot sets the "provider_snapshot" field if the given value is not nil.
-func (_u *BenchmarkTargetUpdateOne) SetNillableProviderSnapshot(v *string) *BenchmarkTargetUpdateOne {
-	if v != nil {
-		_u.SetProviderSnapshot(*v)
-	}
-	return _u
-}
-
-// ClearProviderSnapshot clears the value of the "provider_snapshot" field.
-func (_u *BenchmarkTargetUpdateOne) ClearProviderSnapshot() *BenchmarkTargetUpdateOne {
-	_u.mutation.ClearProviderSnapshot()
-	return _u
-}
-
 // SetChannelNameSnapshot sets the "channel_name_snapshot" field.
 func (_u *BenchmarkTargetUpdateOne) SetChannelNameSnapshot(v string) *BenchmarkTargetUpdateOne {
 	_u.mutation.SetChannelNameSnapshot(v)
@@ -627,93 +447,6 @@ func (_u *BenchmarkTargetUpdateOne) SetNillableChannelNameSnapshot(v *string) *B
 // ClearChannelNameSnapshot clears the value of the "channel_name_snapshot" field.
 func (_u *BenchmarkTargetUpdateOne) ClearChannelNameSnapshot() *BenchmarkTargetUpdateOne {
 	_u.mutation.ClearChannelNameSnapshot()
-	return _u
-}
-
-// SetSupportedTaskTypes sets the "supported_task_types" field.
-func (_u *BenchmarkTargetUpdateOne) SetSupportedTaskTypes(v []string) *BenchmarkTargetUpdateOne {
-	_u.mutation.SetSupportedTaskTypes(v)
-	return _u
-}
-
-// AppendSupportedTaskTypes appends value to the "supported_task_types" field.
-func (_u *BenchmarkTargetUpdateOne) AppendSupportedTaskTypes(v []string) *BenchmarkTargetUpdateOne {
-	_u.mutation.AppendSupportedTaskTypes(v)
-	return _u
-}
-
-// SetMaxConcurrency sets the "max_concurrency" field.
-func (_u *BenchmarkTargetUpdateOne) SetMaxConcurrency(v int) *BenchmarkTargetUpdateOne {
-	_u.mutation.ResetMaxConcurrency()
-	_u.mutation.SetMaxConcurrency(v)
-	return _u
-}
-
-// SetNillableMaxConcurrency sets the "max_concurrency" field if the given value is not nil.
-func (_u *BenchmarkTargetUpdateOne) SetNillableMaxConcurrency(v *int) *BenchmarkTargetUpdateOne {
-	if v != nil {
-		_u.SetMaxConcurrency(*v)
-	}
-	return _u
-}
-
-// AddMaxConcurrency adds value to the "max_concurrency" field.
-func (_u *BenchmarkTargetUpdateOne) AddMaxConcurrency(v int) *BenchmarkTargetUpdateOne {
-	_u.mutation.AddMaxConcurrency(v)
-	return _u
-}
-
-// SetPerRunBudget sets the "per_run_budget" field.
-func (_u *BenchmarkTargetUpdateOne) SetPerRunBudget(v float64) *BenchmarkTargetUpdateOne {
-	_u.mutation.ResetPerRunBudget()
-	_u.mutation.SetPerRunBudget(v)
-	return _u
-}
-
-// SetNillablePerRunBudget sets the "per_run_budget" field if the given value is not nil.
-func (_u *BenchmarkTargetUpdateOne) SetNillablePerRunBudget(v *float64) *BenchmarkTargetUpdateOne {
-	if v != nil {
-		_u.SetPerRunBudget(*v)
-	}
-	return _u
-}
-
-// AddPerRunBudget adds value to the "per_run_budget" field.
-func (_u *BenchmarkTargetUpdateOne) AddPerRunBudget(v float64) *BenchmarkTargetUpdateOne {
-	_u.mutation.AddPerRunBudget(v)
-	return _u
-}
-
-// ClearPerRunBudget clears the value of the "per_run_budget" field.
-func (_u *BenchmarkTargetUpdateOne) ClearPerRunBudget() *BenchmarkTargetUpdateOne {
-	_u.mutation.ClearPerRunBudget()
-	return _u
-}
-
-// SetDailyBudget sets the "daily_budget" field.
-func (_u *BenchmarkTargetUpdateOne) SetDailyBudget(v float64) *BenchmarkTargetUpdateOne {
-	_u.mutation.ResetDailyBudget()
-	_u.mutation.SetDailyBudget(v)
-	return _u
-}
-
-// SetNillableDailyBudget sets the "daily_budget" field if the given value is not nil.
-func (_u *BenchmarkTargetUpdateOne) SetNillableDailyBudget(v *float64) *BenchmarkTargetUpdateOne {
-	if v != nil {
-		_u.SetDailyBudget(*v)
-	}
-	return _u
-}
-
-// AddDailyBudget adds value to the "daily_budget" field.
-func (_u *BenchmarkTargetUpdateOne) AddDailyBudget(v float64) *BenchmarkTargetUpdateOne {
-	_u.mutation.AddDailyBudget(v)
-	return _u
-}
-
-// ClearDailyBudget clears the value of the "daily_budget" field.
-func (_u *BenchmarkTargetUpdateOne) ClearDailyBudget() *BenchmarkTargetUpdateOne {
-	_u.mutation.ClearDailyBudget()
 	return _u
 }
 
@@ -763,12 +496,6 @@ func (_u *BenchmarkTargetUpdateOne) SetNillableSortOrder(v *int) *BenchmarkTarge
 // AddSortOrder adds value to the "sort_order" field.
 func (_u *BenchmarkTargetUpdateOne) AddSortOrder(v int) *BenchmarkTargetUpdateOne {
 	_u.mutation.AddSortOrder(v)
-	return _u
-}
-
-// SetMetadata sets the "metadata" field.
-func (_u *BenchmarkTargetUpdateOne) SetMetadata(v map[string]interface{}) *BenchmarkTargetUpdateOne {
-	_u.mutation.SetMetadata(v)
 	return _u
 }
 
@@ -874,11 +601,6 @@ func (_u *BenchmarkTargetUpdateOne) check() error {
 			return &ValidationError{Name: "display_name", err: fmt.Errorf(`ent: validator failed for field "BenchmarkTarget.display_name": %w`, err)}
 		}
 	}
-	if v, ok := _u.mutation.ProviderSnapshot(); ok {
-		if err := benchmarktarget.ProviderSnapshotValidator(v); err != nil {
-			return &ValidationError{Name: "provider_snapshot", err: fmt.Errorf(`ent: validator failed for field "BenchmarkTarget.provider_snapshot": %w`, err)}
-		}
-	}
 	if v, ok := _u.mutation.ChannelNameSnapshot(); ok {
 		if err := benchmarktarget.ChannelNameSnapshotValidator(v); err != nil {
 			return &ValidationError{Name: "channel_name_snapshot", err: fmt.Errorf(`ent: validator failed for field "BenchmarkTarget.channel_name_snapshot": %w`, err)}
@@ -934,49 +656,11 @@ func (_u *BenchmarkTargetUpdateOne) sqlSave(ctx context.Context) (_node *Benchma
 	if _u.mutation.DisplayNameCleared() {
 		_spec.ClearField(benchmarktarget.FieldDisplayName, field.TypeString)
 	}
-	if value, ok := _u.mutation.ProviderSnapshot(); ok {
-		_spec.SetField(benchmarktarget.FieldProviderSnapshot, field.TypeString, value)
-	}
-	if _u.mutation.ProviderSnapshotCleared() {
-		_spec.ClearField(benchmarktarget.FieldProviderSnapshot, field.TypeString)
-	}
 	if value, ok := _u.mutation.ChannelNameSnapshot(); ok {
 		_spec.SetField(benchmarktarget.FieldChannelNameSnapshot, field.TypeString, value)
 	}
 	if _u.mutation.ChannelNameSnapshotCleared() {
 		_spec.ClearField(benchmarktarget.FieldChannelNameSnapshot, field.TypeString)
-	}
-	if value, ok := _u.mutation.SupportedTaskTypes(); ok {
-		_spec.SetField(benchmarktarget.FieldSupportedTaskTypes, field.TypeJSON, value)
-	}
-	if value, ok := _u.mutation.AppendedSupportedTaskTypes(); ok {
-		_spec.AddModifier(func(u *sql.UpdateBuilder) {
-			sqljson.Append(u, benchmarktarget.FieldSupportedTaskTypes, value)
-		})
-	}
-	if value, ok := _u.mutation.MaxConcurrency(); ok {
-		_spec.SetField(benchmarktarget.FieldMaxConcurrency, field.TypeInt, value)
-	}
-	if value, ok := _u.mutation.AddedMaxConcurrency(); ok {
-		_spec.AddField(benchmarktarget.FieldMaxConcurrency, field.TypeInt, value)
-	}
-	if value, ok := _u.mutation.PerRunBudget(); ok {
-		_spec.SetField(benchmarktarget.FieldPerRunBudget, field.TypeFloat64, value)
-	}
-	if value, ok := _u.mutation.AddedPerRunBudget(); ok {
-		_spec.AddField(benchmarktarget.FieldPerRunBudget, field.TypeFloat64, value)
-	}
-	if _u.mutation.PerRunBudgetCleared() {
-		_spec.ClearField(benchmarktarget.FieldPerRunBudget, field.TypeFloat64)
-	}
-	if value, ok := _u.mutation.DailyBudget(); ok {
-		_spec.SetField(benchmarktarget.FieldDailyBudget, field.TypeFloat64, value)
-	}
-	if value, ok := _u.mutation.AddedDailyBudget(); ok {
-		_spec.AddField(benchmarktarget.FieldDailyBudget, field.TypeFloat64, value)
-	}
-	if _u.mutation.DailyBudgetCleared() {
-		_spec.ClearField(benchmarktarget.FieldDailyBudget, field.TypeFloat64)
 	}
 	if value, ok := _u.mutation.Enabled(); ok {
 		_spec.SetField(benchmarktarget.FieldEnabled, field.TypeBool, value)
@@ -989,9 +673,6 @@ func (_u *BenchmarkTargetUpdateOne) sqlSave(ctx context.Context) (_node *Benchma
 	}
 	if value, ok := _u.mutation.AddedSortOrder(); ok {
 		_spec.AddField(benchmarktarget.FieldSortOrder, field.TypeInt, value)
-	}
-	if value, ok := _u.mutation.Metadata(); ok {
-		_spec.SetField(benchmarktarget.FieldMetadata, field.TypeJSON, value)
 	}
 	if _u.mutation.RunTargetsCleared() {
 		edge := &sqlgraph.EdgeSpec{

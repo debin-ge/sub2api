@@ -8,39 +8,59 @@ import (
 )
 
 type BenchmarkRepository interface {
-	CreateSuite(ctx context.Context, input BenchmarkSuiteInput) (*ent.BenchmarkSuite, error)
-	ListSuites(ctx context.Context, input BenchmarkListInput) ([]*ent.BenchmarkSuite, int, error)
-	GetSuite(ctx context.Context, id int64) (*ent.BenchmarkSuite, error)
+	// Targets
 	CreateTarget(ctx context.Context, input BenchmarkTargetInput) (*ent.BenchmarkTarget, error)
 	ListTargets(ctx context.Context, input BenchmarkListInput) ([]*ent.BenchmarkTarget, int, error)
 	GetTarget(ctx context.Context, id int64) (*ent.BenchmarkTarget, error)
+	UpdateTarget(ctx context.Context, id int64, input BenchmarkTargetInput) (*ent.BenchmarkTarget, error)
+	DeleteTarget(ctx context.Context, id int64) error
 	ListTargetsByIDs(ctx context.Context, ids []int64) ([]*ent.BenchmarkTarget, error)
+	ListEnabledTargets(ctx context.Context) ([]*ent.BenchmarkTarget, error)
+
+	// Tasks
 	CreateTask(ctx context.Context, input BenchmarkTaskInput) (*ent.BenchmarkTask, error)
+	GetTask(ctx context.Context, id int64) (*ent.BenchmarkTask, error)
+	UpdateTask(ctx context.Context, id int64, input BenchmarkTaskInput) (*ent.BenchmarkTask, error)
+	DeleteTask(ctx context.Context, id int64) error
 	ListTasks(ctx context.Context, input BenchmarkTaskListInput) ([]*ent.BenchmarkTask, int, error)
-	ListEnabledTasksForSuite(ctx context.Context, suiteID int64) ([]*ent.BenchmarkTask, error)
-	CreateProfile(ctx context.Context, input BenchmarkProfileInput) (*ent.BenchmarkProfile, error)
-	GetProfile(ctx context.Context, id int64) (*ent.BenchmarkProfile, error)
-	ListProfiles(ctx context.Context, input BenchmarkListInput) ([]*ent.BenchmarkProfile, int, error)
+	ListEnabledTasks(ctx context.Context) ([]*ent.BenchmarkTask, error)
+
+	// Schedules
 	ListSchedules(ctx context.Context, input BenchmarkScheduleListInput) ([]*ent.BenchmarkSchedule, int, error)
 	CreateSchedule(ctx context.Context, input BenchmarkScheduleInput) (*ent.BenchmarkSchedule, error)
 	GetSchedule(ctx context.Context, id int64) (*ent.BenchmarkSchedule, error)
+	UpdateSchedule(ctx context.Context, id int64, input BenchmarkScheduleInput) (*ent.BenchmarkSchedule, error)
+	DeleteSchedule(ctx context.Context, id int64) error
 	ListDueSchedules(ctx context.Context, now time.Time) ([]*ent.BenchmarkSchedule, error)
 	UpdateScheduleAfterRun(ctx context.Context, id int64, lastRunAt time.Time, nextRunAt time.Time) error
+
+	// Runs
 	CreateRunWithSnapshots(ctx context.Context, input BenchmarkCreateRunInput) (*ent.BenchmarkRun, error)
 	GetRun(ctx context.Context, id int64) (*ent.BenchmarkRun, error)
 	ListRuns(ctx context.Context, input BenchmarkRunListInput) ([]*ent.BenchmarkRun, int, error)
+	CancelRun(ctx context.Context, runID int64, reason string) error
+	ClaimRunnableRuns(ctx context.Context, limit int) ([]*ent.BenchmarkRun, error)
+	MarkRunStarted(ctx context.Context, runID int64) error
+	MarkRunFinished(ctx context.Context, runID int64, status string, errorMessage *string) error
+	UpdateRunStatus(ctx context.Context, runID int64, status string, errorMessage *string) error
+
+	// Run children
 	ListRunTargets(ctx context.Context, runID int64) ([]*ent.BenchmarkRunTarget, error)
 	ListRunTasks(ctx context.Context, runID int64) ([]*ent.BenchmarkRunTask, error)
 	ListRunResults(ctx context.Context, runID int64) ([]*ent.BenchmarkResult, error)
 	ListRunScoreInputs(ctx context.Context, runID int64) ([]BenchmarkRunScoreInput, error)
-	ListScoreSnapshots(ctx context.Context, runID int64) ([]*ent.BenchmarkScoreSnapshot, error)
 	ClaimPendingResults(ctx context.Context, runID int64, limit int) ([]*ent.BenchmarkResult, error)
 	RequeueClaimedResults(ctx context.Context, resultIDs []int64) error
-	UpdateRunStatus(ctx context.Context, runID int64, status string, errorMessage *string) error
 	CountRunResultsByStatus(ctx context.Context, runID int64) (map[string]int, error)
 	GetRunResultContext(ctx context.Context, resultID int64) (*BenchmarkRunResultContext, error)
 	UpdateResult(ctx context.Context, id int64, input BenchmarkResultUpdateInput) error
-	SaveScoreSnapshots(ctx context.Context, runID int64, snapshots []BenchmarkScoreSnapshotInput) error
+
+	// Scores & trends
+	SaveTargetScores(ctx context.Context, runID int64, scores []BenchmarkTargetScoreInput) error
+	ListTargetScores(ctx context.Context, runID int64) ([]*ent.BenchmarkTargetScore, error)
+	ListTrendScores(ctx context.Context, since time.Time, limit int) ([]*ent.BenchmarkTargetScore, error)
+
+	// Public snapshots
 	PublishPublicSnapshot(ctx context.Context, input BenchmarkPublicSnapshotInput) error
 	GetLatestPublicSnapshot(ctx context.Context) (*ent.BenchmarkPublicSnapshot, error)
 }
@@ -52,112 +72,62 @@ type BenchmarkListInput struct {
 
 type BenchmarkTaskListInput struct {
 	BenchmarkListInput
-	SuiteID   int64
 	TaskTypes []string
 	Enabled   *bool
 }
 
 type BenchmarkRunListInput struct {
 	BenchmarkListInput
-	SuiteID   int64
-	ProfileID int64
-	Status    []string
+	Status []string
 }
 
 type BenchmarkScheduleListInput struct {
 	BenchmarkListInput
-	ProfileID int64
-	Enabled   *bool
-}
-
-type BenchmarkSuiteInput struct {
-	Name             string
-	Slug             string
-	Description      string
-	Enabled          bool
-	PublicVisible    bool
-	DefaultProfileID *int64
-	Metadata         map[string]any
+	Enabled *bool
 }
 
 type BenchmarkTargetInput struct {
 	ModelName           string
 	ChannelID           int64
 	DisplayName         string
-	ProviderSnapshot    string
 	ChannelNameSnapshot string
-	SupportedTaskTypes  []string
-	MaxConcurrency      int
-	PerRunBudget        *float64
-	DailyBudget         *float64
 	Enabled             bool
 	PublicVisible       bool
 	SortOrder           int
-	Metadata            map[string]any
 }
 
 type BenchmarkTaskInput struct {
-	SuiteID        int64
 	Title          string
 	Type           string
-	Category       string
 	Difficulty     string
-	Tags           []string
 	Prompt         string
 	InputPayload   map[string]any
 	ExpectedOutput map[string]any
 	VerifierType   string
 	VerifierConfig map[string]any
 	Weight         float64
-	MinScale       string
 	PublicPrompt   bool
 	Enabled        bool
-	Metadata       map[string]any
-}
-
-type BenchmarkProfileInput struct {
-	SuiteID          int64
-	Name             string
-	Description      string
-	TargetIDs        []int64
-	TaskTypes        []string
-	TaskScale        string
-	TaskCountLimit   *int
-	PerTypeLimit     map[string]int
-	DifficultyFilter []string
-	TagFilter        []string
-	SamplingStrategy string
-	SelectionSeed    *int64
-	RuntimeConfig    map[string]any
-	ScoringConfig    map[string]any
-	Metadata         map[string]any
-	Enabled          bool
+	SortOrder      int
 }
 
 type BenchmarkScheduleInput struct {
-	ProfileID int64
 	Name      string
 	CronExpr  string
 	Enabled   bool
+	TargetIDs []int64
+	TaskCount int
 	NextRunAt *time.Time
-	Metadata  map[string]any
 }
 
 type BenchmarkCreateRunInput struct {
-	SuiteID            int64
-	ProfileID          int64
 	Status             string
 	TriggerType        string
-	TaskScale          string
-	TaskTypes          []string
-	SelectionSeed      *int64
+	ScheduleID         *int64
+	TaskCount          int
 	PlannedTargetCount int
 	PlannedTaskCount   int
 	PlannedResultCount int
-	StartedAt          *time.Time
-	FinishedAt         *time.Time
-	ConfigSnapshot     map[string]any
-	ErrorMessage       *string
 	CreatedBy          *int64
 	Targets            []BenchmarkRunTargetInput
 	Tasks              []BenchmarkRunTaskInput
@@ -169,16 +139,13 @@ type BenchmarkRunTargetInput struct {
 	ChannelID           int64
 	DisplayNameSnapshot string
 	ChannelNameSnapshot string
-	ProviderSnapshot    string
 	TargetOrder         int
-	ConfigSnapshot      map[string]any
 }
 
 type BenchmarkRunTaskInput struct {
 	TaskID                 int64
 	TaskOrder              int
 	Type                   string
-	Category               string
 	Difficulty             string
 	WeightSnapshot         float64
 	PromptSnapshot         string
@@ -206,10 +173,6 @@ type BenchmarkResultUpdateInput struct {
 	Status               *string
 	RequestID            *string
 	ClearRequestID       bool
-	Score                *float64
-	ClearScore           bool
-	MaxScore             *float64
-	ClearMaxScore        bool
 	NormalizedScore      *float64
 	ClearNormalizedScore bool
 	EvaluatorType        *string
@@ -234,29 +197,23 @@ type BenchmarkResultUpdateInput struct {
 	ClearFinishedAt      bool
 }
 
-type BenchmarkScoreSnapshotInput struct {
+type BenchmarkTargetScoreInput struct {
 	RunTargetID            int64
+	ModelName              string
+	ChannelID              int64
 	OverallScore           float64
+	PassedCount            int
+	TotalCount             int
 	DimensionScores        map[string]any
-	PlannedTasks           int
-	ScoredTasks            int
-	InvalidTasks           int
-	CoverageRate           float64
-	ConfidenceLevel        string
-	InsufficientSample     bool
-	SuccessRate            float64
-	LatencyP50MS           *float64
-	LatencyP95MS           *float64
+	AvgLatencyMS           *float64
 	AvgTotalTokens         *float64
-	EstimatedCost          float64
+	TotalCost              float64
 	InvalidReasonBreakdown map[string]any
-	RankingMetadata        map[string]any
+	FinishedAt             time.Time
 }
 
 type BenchmarkPublicSnapshotInput struct {
 	RunID       int64
-	SuiteID     int64
-	ProfileID   int64
 	Snapshot    map[string]any
 	PublishedAt *time.Time
 }

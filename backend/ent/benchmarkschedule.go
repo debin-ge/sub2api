@@ -10,7 +10,6 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
-	"github.com/Wei-Shaw/sub2api/ent/benchmarkprofile"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkschedule"
 )
 
@@ -23,44 +22,21 @@ type BenchmarkSchedule struct {
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	// UpdatedAt holds the value of the "updated_at" field.
 	UpdatedAt time.Time `json:"updated_at,omitempty"`
-	// ProfileID holds the value of the "profile_id" field.
-	ProfileID int64 `json:"profile_id,omitempty"`
 	// Name holds the value of the "name" field.
 	Name string `json:"name,omitempty"`
 	// CronExpr holds the value of the "cron_expr" field.
 	CronExpr string `json:"cron_expr,omitempty"`
 	// Enabled holds the value of the "enabled" field.
 	Enabled bool `json:"enabled,omitempty"`
+	// TargetIds holds the value of the "target_ids" field.
+	TargetIds []int64 `json:"target_ids,omitempty"`
+	// TaskCount holds the value of the "task_count" field.
+	TaskCount int `json:"task_count,omitempty"`
 	// LastRunAt holds the value of the "last_run_at" field.
 	LastRunAt *time.Time `json:"last_run_at,omitempty"`
 	// NextRunAt holds the value of the "next_run_at" field.
-	NextRunAt *time.Time `json:"next_run_at,omitempty"`
-	// Metadata holds the value of the "metadata" field.
-	Metadata map[string]interface{} `json:"metadata,omitempty"`
-	// Edges holds the relations/edges for other nodes in the graph.
-	// The values are being populated by the BenchmarkScheduleQuery when eager-loading is set.
-	Edges        BenchmarkScheduleEdges `json:"edges"`
+	NextRunAt    *time.Time `json:"next_run_at,omitempty"`
 	selectValues sql.SelectValues
-}
-
-// BenchmarkScheduleEdges holds the relations/edges for other nodes in the graph.
-type BenchmarkScheduleEdges struct {
-	// Profile holds the value of the profile edge.
-	Profile *BenchmarkProfile `json:"profile,omitempty"`
-	// loadedTypes holds the information for reporting if a
-	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [1]bool
-}
-
-// ProfileOrErr returns the Profile value or an error if the edge
-// was not loaded in eager-loading, or loaded but was not found.
-func (e BenchmarkScheduleEdges) ProfileOrErr() (*BenchmarkProfile, error) {
-	if e.Profile != nil {
-		return e.Profile, nil
-	} else if e.loadedTypes[0] {
-		return nil, &NotFoundError{label: benchmarkprofile.Label}
-	}
-	return nil, &NotLoadedError{edge: "profile"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -68,11 +44,11 @@ func (*BenchmarkSchedule) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case benchmarkschedule.FieldMetadata:
+		case benchmarkschedule.FieldTargetIds:
 			values[i] = new([]byte)
 		case benchmarkschedule.FieldEnabled:
 			values[i] = new(sql.NullBool)
-		case benchmarkschedule.FieldID, benchmarkschedule.FieldProfileID:
+		case benchmarkschedule.FieldID, benchmarkschedule.FieldTaskCount:
 			values[i] = new(sql.NullInt64)
 		case benchmarkschedule.FieldName, benchmarkschedule.FieldCronExpr:
 			values[i] = new(sql.NullString)
@@ -111,12 +87,6 @@ func (_m *BenchmarkSchedule) assignValues(columns []string, values []any) error 
 			} else if value.Valid {
 				_m.UpdatedAt = value.Time
 			}
-		case benchmarkschedule.FieldProfileID:
-			if value, ok := values[i].(*sql.NullInt64); !ok {
-				return fmt.Errorf("unexpected type %T for field profile_id", values[i])
-			} else if value.Valid {
-				_m.ProfileID = value.Int64
-			}
 		case benchmarkschedule.FieldName:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field name", values[i])
@@ -135,6 +105,20 @@ func (_m *BenchmarkSchedule) assignValues(columns []string, values []any) error 
 			} else if value.Valid {
 				_m.Enabled = value.Bool
 			}
+		case benchmarkschedule.FieldTargetIds:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field target_ids", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.TargetIds); err != nil {
+					return fmt.Errorf("unmarshal field target_ids: %w", err)
+				}
+			}
+		case benchmarkschedule.FieldTaskCount:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field task_count", values[i])
+			} else if value.Valid {
+				_m.TaskCount = int(value.Int64)
+			}
 		case benchmarkschedule.FieldLastRunAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
 				return fmt.Errorf("unexpected type %T for field last_run_at", values[i])
@@ -149,14 +133,6 @@ func (_m *BenchmarkSchedule) assignValues(columns []string, values []any) error 
 				_m.NextRunAt = new(time.Time)
 				*_m.NextRunAt = value.Time
 			}
-		case benchmarkschedule.FieldMetadata:
-			if value, ok := values[i].(*[]byte); !ok {
-				return fmt.Errorf("unexpected type %T for field metadata", values[i])
-			} else if value != nil && len(*value) > 0 {
-				if err := json.Unmarshal(*value, &_m.Metadata); err != nil {
-					return fmt.Errorf("unmarshal field metadata: %w", err)
-				}
-			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
 		}
@@ -168,11 +144,6 @@ func (_m *BenchmarkSchedule) assignValues(columns []string, values []any) error 
 // This includes values selected through modifiers, order, etc.
 func (_m *BenchmarkSchedule) Value(name string) (ent.Value, error) {
 	return _m.selectValues.Get(name)
-}
-
-// QueryProfile queries the "profile" edge of the BenchmarkSchedule entity.
-func (_m *BenchmarkSchedule) QueryProfile() *BenchmarkProfileQuery {
-	return NewBenchmarkScheduleClient(_m.config).QueryProfile(_m)
 }
 
 // Update returns a builder for updating this BenchmarkSchedule.
@@ -204,9 +175,6 @@ func (_m *BenchmarkSchedule) String() string {
 	builder.WriteString("updated_at=")
 	builder.WriteString(_m.UpdatedAt.Format(time.ANSIC))
 	builder.WriteString(", ")
-	builder.WriteString("profile_id=")
-	builder.WriteString(fmt.Sprintf("%v", _m.ProfileID))
-	builder.WriteString(", ")
 	builder.WriteString("name=")
 	builder.WriteString(_m.Name)
 	builder.WriteString(", ")
@@ -215,6 +183,12 @@ func (_m *BenchmarkSchedule) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("enabled=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Enabled))
+	builder.WriteString(", ")
+	builder.WriteString("target_ids=")
+	builder.WriteString(fmt.Sprintf("%v", _m.TargetIds))
+	builder.WriteString(", ")
+	builder.WriteString("task_count=")
+	builder.WriteString(fmt.Sprintf("%v", _m.TaskCount))
 	builder.WriteString(", ")
 	if v := _m.LastRunAt; v != nil {
 		builder.WriteString("last_run_at=")
@@ -225,9 +199,6 @@ func (_m *BenchmarkSchedule) String() string {
 		builder.WriteString("next_run_at=")
 		builder.WriteString(v.Format(time.ANSIC))
 	}
-	builder.WriteString(", ")
-	builder.WriteString("metadata=")
-	builder.WriteString(fmt.Sprintf("%v", _m.Metadata))
 	builder.WriteByte(')')
 	return builder.String()
 }

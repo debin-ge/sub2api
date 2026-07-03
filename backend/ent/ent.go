@@ -19,16 +19,14 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
 	"github.com/Wei-Shaw/sub2api/ent/authidentity"
 	"github.com/Wei-Shaw/sub2api/ent/authidentitychannel"
-	"github.com/Wei-Shaw/sub2api/ent/benchmarkprofile"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkpublicsnapshot"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkresult"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkrun"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkruntarget"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkruntask"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkschedule"
-	"github.com/Wei-Shaw/sub2api/ent/benchmarkscoresnapshot"
-	"github.com/Wei-Shaw/sub2api/ent/benchmarksuite"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarktarget"
+	"github.com/Wei-Shaw/sub2api/ent/benchmarktargetscore"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarktask"
 	"github.com/Wei-Shaw/sub2api/ent/channelmonitor"
 	"github.com/Wei-Shaw/sub2api/ent/channelmonitordailyrollup"
@@ -125,16 +123,14 @@ func checkColumn(t, c string) error {
 			announcementread.Table:              announcementread.ValidColumn,
 			authidentity.Table:                  authidentity.ValidColumn,
 			authidentitychannel.Table:           authidentitychannel.ValidColumn,
-			benchmarkprofile.Table:              benchmarkprofile.ValidColumn,
 			benchmarkpublicsnapshot.Table:       benchmarkpublicsnapshot.ValidColumn,
 			benchmarkresult.Table:               benchmarkresult.ValidColumn,
 			benchmarkrun.Table:                  benchmarkrun.ValidColumn,
 			benchmarkruntarget.Table:            benchmarkruntarget.ValidColumn,
 			benchmarkruntask.Table:              benchmarkruntask.ValidColumn,
 			benchmarkschedule.Table:             benchmarkschedule.ValidColumn,
-			benchmarkscoresnapshot.Table:        benchmarkscoresnapshot.ValidColumn,
-			benchmarksuite.Table:                benchmarksuite.ValidColumn,
 			benchmarktarget.Table:               benchmarktarget.ValidColumn,
+			benchmarktargetscore.Table:          benchmarktargetscore.ValidColumn,
 			benchmarktask.Table:                 benchmarktask.ValidColumn,
 			channelmonitor.Table:                channelmonitor.ValidColumn,
 			channelmonitordailyrollup.Table:     channelmonitordailyrollup.ValidColumn,

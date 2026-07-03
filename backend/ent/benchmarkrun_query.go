@@ -13,14 +13,12 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
-	"github.com/Wei-Shaw/sub2api/ent/benchmarkprofile"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkpublicsnapshot"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkresult"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkrun"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkruntarget"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkruntask"
-	"github.com/Wei-Shaw/sub2api/ent/benchmarkscoresnapshot"
-	"github.com/Wei-Shaw/sub2api/ent/benchmarksuite"
+	"github.com/Wei-Shaw/sub2api/ent/benchmarktargetscore"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
 )
 
@@ -31,12 +29,10 @@ type BenchmarkRunQuery struct {
 	order               []benchmarkrun.OrderOption
 	inters              []Interceptor
 	predicates          []predicate.BenchmarkRun
-	withSuite           *BenchmarkSuiteQuery
-	withProfile         *BenchmarkProfileQuery
 	withRunTargets      *BenchmarkRunTargetQuery
 	withRunTasks        *BenchmarkRunTaskQuery
 	withResults         *BenchmarkResultQuery
-	withScoreSnapshots  *BenchmarkScoreSnapshotQuery
+	withTargetScores    *BenchmarkTargetScoreQuery
 	withPublicSnapshots *BenchmarkPublicSnapshotQuery
 	modifiers           []func(*sql.Selector)
 	// intermediate query (i.e. traversal path).
@@ -73,50 +69,6 @@ func (_q *BenchmarkRunQuery) Unique(unique bool) *BenchmarkRunQuery {
 func (_q *BenchmarkRunQuery) Order(o ...benchmarkrun.OrderOption) *BenchmarkRunQuery {
 	_q.order = append(_q.order, o...)
 	return _q
-}
-
-// QuerySuite chains the current query on the "suite" edge.
-func (_q *BenchmarkRunQuery) QuerySuite() *BenchmarkSuiteQuery {
-	query := (&BenchmarkSuiteClient{config: _q.config}).Query()
-	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
-		if err := _q.prepareQuery(ctx); err != nil {
-			return nil, err
-		}
-		selector := _q.sqlQuery(ctx)
-		if err := selector.Err(); err != nil {
-			return nil, err
-		}
-		step := sqlgraph.NewStep(
-			sqlgraph.From(benchmarkrun.Table, benchmarkrun.FieldID, selector),
-			sqlgraph.To(benchmarksuite.Table, benchmarksuite.FieldID),
-			sqlgraph.Edge(sqlgraph.M2O, true, benchmarkrun.SuiteTable, benchmarkrun.SuiteColumn),
-		)
-		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
-		return fromU, nil
-	}
-	return query
-}
-
-// QueryProfile chains the current query on the "profile" edge.
-func (_q *BenchmarkRunQuery) QueryProfile() *BenchmarkProfileQuery {
-	query := (&BenchmarkProfileClient{config: _q.config}).Query()
-	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
-		if err := _q.prepareQuery(ctx); err != nil {
-			return nil, err
-		}
-		selector := _q.sqlQuery(ctx)
-		if err := selector.Err(); err != nil {
-			return nil, err
-		}
-		step := sqlgraph.NewStep(
-			sqlgraph.From(benchmarkrun.Table, benchmarkrun.FieldID, selector),
-			sqlgraph.To(benchmarkprofile.Table, benchmarkprofile.FieldID),
-			sqlgraph.Edge(sqlgraph.M2O, true, benchmarkrun.ProfileTable, benchmarkrun.ProfileColumn),
-		)
-		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
-		return fromU, nil
-	}
-	return query
 }
 
 // QueryRunTargets chains the current query on the "run_targets" edge.
@@ -185,9 +137,9 @@ func (_q *BenchmarkRunQuery) QueryResults() *BenchmarkResultQuery {
 	return query
 }
 
-// QueryScoreSnapshots chains the current query on the "score_snapshots" edge.
-func (_q *BenchmarkRunQuery) QueryScoreSnapshots() *BenchmarkScoreSnapshotQuery {
-	query := (&BenchmarkScoreSnapshotClient{config: _q.config}).Query()
+// QueryTargetScores chains the current query on the "target_scores" edge.
+func (_q *BenchmarkRunQuery) QueryTargetScores() *BenchmarkTargetScoreQuery {
+	query := (&BenchmarkTargetScoreClient{config: _q.config}).Query()
 	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
 		if err := _q.prepareQuery(ctx); err != nil {
 			return nil, err
@@ -198,8 +150,8 @@ func (_q *BenchmarkRunQuery) QueryScoreSnapshots() *BenchmarkScoreSnapshotQuery 
 		}
 		step := sqlgraph.NewStep(
 			sqlgraph.From(benchmarkrun.Table, benchmarkrun.FieldID, selector),
-			sqlgraph.To(benchmarkscoresnapshot.Table, benchmarkscoresnapshot.FieldID),
-			sqlgraph.Edge(sqlgraph.O2M, false, benchmarkrun.ScoreSnapshotsTable, benchmarkrun.ScoreSnapshotsColumn),
+			sqlgraph.To(benchmarktargetscore.Table, benchmarktargetscore.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, benchmarkrun.TargetScoresTable, benchmarkrun.TargetScoresColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
 		return fromU, nil
@@ -421,39 +373,15 @@ func (_q *BenchmarkRunQuery) Clone() *BenchmarkRunQuery {
 		order:               append([]benchmarkrun.OrderOption{}, _q.order...),
 		inters:              append([]Interceptor{}, _q.inters...),
 		predicates:          append([]predicate.BenchmarkRun{}, _q.predicates...),
-		withSuite:           _q.withSuite.Clone(),
-		withProfile:         _q.withProfile.Clone(),
 		withRunTargets:      _q.withRunTargets.Clone(),
 		withRunTasks:        _q.withRunTasks.Clone(),
 		withResults:         _q.withResults.Clone(),
-		withScoreSnapshots:  _q.withScoreSnapshots.Clone(),
+		withTargetScores:    _q.withTargetScores.Clone(),
 		withPublicSnapshots: _q.withPublicSnapshots.Clone(),
 		// clone intermediate query.
 		sql:  _q.sql.Clone(),
 		path: _q.path,
 	}
-}
-
-// WithSuite tells the query-builder to eager-load the nodes that are connected to
-// the "suite" edge. The optional arguments are used to configure the query builder of the edge.
-func (_q *BenchmarkRunQuery) WithSuite(opts ...func(*BenchmarkSuiteQuery)) *BenchmarkRunQuery {
-	query := (&BenchmarkSuiteClient{config: _q.config}).Query()
-	for _, opt := range opts {
-		opt(query)
-	}
-	_q.withSuite = query
-	return _q
-}
-
-// WithProfile tells the query-builder to eager-load the nodes that are connected to
-// the "profile" edge. The optional arguments are used to configure the query builder of the edge.
-func (_q *BenchmarkRunQuery) WithProfile(opts ...func(*BenchmarkProfileQuery)) *BenchmarkRunQuery {
-	query := (&BenchmarkProfileClient{config: _q.config}).Query()
-	for _, opt := range opts {
-		opt(query)
-	}
-	_q.withProfile = query
-	return _q
 }
 
 // WithRunTargets tells the query-builder to eager-load the nodes that are connected to
@@ -489,14 +417,14 @@ func (_q *BenchmarkRunQuery) WithResults(opts ...func(*BenchmarkResultQuery)) *B
 	return _q
 }
 
-// WithScoreSnapshots tells the query-builder to eager-load the nodes that are connected to
-// the "score_snapshots" edge. The optional arguments are used to configure the query builder of the edge.
-func (_q *BenchmarkRunQuery) WithScoreSnapshots(opts ...func(*BenchmarkScoreSnapshotQuery)) *BenchmarkRunQuery {
-	query := (&BenchmarkScoreSnapshotClient{config: _q.config}).Query()
+// WithTargetScores tells the query-builder to eager-load the nodes that are connected to
+// the "target_scores" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *BenchmarkRunQuery) WithTargetScores(opts ...func(*BenchmarkTargetScoreQuery)) *BenchmarkRunQuery {
+	query := (&BenchmarkTargetScoreClient{config: _q.config}).Query()
 	for _, opt := range opts {
 		opt(query)
 	}
-	_q.withScoreSnapshots = query
+	_q.withTargetScores = query
 	return _q
 }
 
@@ -589,13 +517,11 @@ func (_q *BenchmarkRunQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]
 	var (
 		nodes       = []*BenchmarkRun{}
 		_spec       = _q.querySpec()
-		loadedTypes = [7]bool{
-			_q.withSuite != nil,
-			_q.withProfile != nil,
+		loadedTypes = [5]bool{
 			_q.withRunTargets != nil,
 			_q.withRunTasks != nil,
 			_q.withResults != nil,
-			_q.withScoreSnapshots != nil,
+			_q.withTargetScores != nil,
 			_q.withPublicSnapshots != nil,
 		}
 	)
@@ -620,18 +546,6 @@ func (_q *BenchmarkRunQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]
 	if len(nodes) == 0 {
 		return nodes, nil
 	}
-	if query := _q.withSuite; query != nil {
-		if err := _q.loadSuite(ctx, query, nodes, nil,
-			func(n *BenchmarkRun, e *BenchmarkSuite) { n.Edges.Suite = e }); err != nil {
-			return nil, err
-		}
-	}
-	if query := _q.withProfile; query != nil {
-		if err := _q.loadProfile(ctx, query, nodes, nil,
-			func(n *BenchmarkRun, e *BenchmarkProfile) { n.Edges.Profile = e }); err != nil {
-			return nil, err
-		}
-	}
 	if query := _q.withRunTargets; query != nil {
 		if err := _q.loadRunTargets(ctx, query, nodes,
 			func(n *BenchmarkRun) { n.Edges.RunTargets = []*BenchmarkRunTarget{} },
@@ -653,12 +567,10 @@ func (_q *BenchmarkRunQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]
 			return nil, err
 		}
 	}
-	if query := _q.withScoreSnapshots; query != nil {
-		if err := _q.loadScoreSnapshots(ctx, query, nodes,
-			func(n *BenchmarkRun) { n.Edges.ScoreSnapshots = []*BenchmarkScoreSnapshot{} },
-			func(n *BenchmarkRun, e *BenchmarkScoreSnapshot) {
-				n.Edges.ScoreSnapshots = append(n.Edges.ScoreSnapshots, e)
-			}); err != nil {
+	if query := _q.withTargetScores; query != nil {
+		if err := _q.loadTargetScores(ctx, query, nodes,
+			func(n *BenchmarkRun) { n.Edges.TargetScores = []*BenchmarkTargetScore{} },
+			func(n *BenchmarkRun, e *BenchmarkTargetScore) { n.Edges.TargetScores = append(n.Edges.TargetScores, e) }); err != nil {
 			return nil, err
 		}
 	}
@@ -674,64 +586,6 @@ func (_q *BenchmarkRunQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]
 	return nodes, nil
 }
 
-func (_q *BenchmarkRunQuery) loadSuite(ctx context.Context, query *BenchmarkSuiteQuery, nodes []*BenchmarkRun, init func(*BenchmarkRun), assign func(*BenchmarkRun, *BenchmarkSuite)) error {
-	ids := make([]int64, 0, len(nodes))
-	nodeids := make(map[int64][]*BenchmarkRun)
-	for i := range nodes {
-		fk := nodes[i].SuiteID
-		if _, ok := nodeids[fk]; !ok {
-			ids = append(ids, fk)
-		}
-		nodeids[fk] = append(nodeids[fk], nodes[i])
-	}
-	if len(ids) == 0 {
-		return nil
-	}
-	query.Where(benchmarksuite.IDIn(ids...))
-	neighbors, err := query.All(ctx)
-	if err != nil {
-		return err
-	}
-	for _, n := range neighbors {
-		nodes, ok := nodeids[n.ID]
-		if !ok {
-			return fmt.Errorf(`unexpected foreign-key "suite_id" returned %v`, n.ID)
-		}
-		for i := range nodes {
-			assign(nodes[i], n)
-		}
-	}
-	return nil
-}
-func (_q *BenchmarkRunQuery) loadProfile(ctx context.Context, query *BenchmarkProfileQuery, nodes []*BenchmarkRun, init func(*BenchmarkRun), assign func(*BenchmarkRun, *BenchmarkProfile)) error {
-	ids := make([]int64, 0, len(nodes))
-	nodeids := make(map[int64][]*BenchmarkRun)
-	for i := range nodes {
-		fk := nodes[i].ProfileID
-		if _, ok := nodeids[fk]; !ok {
-			ids = append(ids, fk)
-		}
-		nodeids[fk] = append(nodeids[fk], nodes[i])
-	}
-	if len(ids) == 0 {
-		return nil
-	}
-	query.Where(benchmarkprofile.IDIn(ids...))
-	neighbors, err := query.All(ctx)
-	if err != nil {
-		return err
-	}
-	for _, n := range neighbors {
-		nodes, ok := nodeids[n.ID]
-		if !ok {
-			return fmt.Errorf(`unexpected foreign-key "profile_id" returned %v`, n.ID)
-		}
-		for i := range nodes {
-			assign(nodes[i], n)
-		}
-	}
-	return nil
-}
 func (_q *BenchmarkRunQuery) loadRunTargets(ctx context.Context, query *BenchmarkRunTargetQuery, nodes []*BenchmarkRun, init func(*BenchmarkRun), assign func(*BenchmarkRun, *BenchmarkRunTarget)) error {
 	fks := make([]driver.Value, 0, len(nodes))
 	nodeids := make(map[int64]*BenchmarkRun)
@@ -822,7 +676,7 @@ func (_q *BenchmarkRunQuery) loadResults(ctx context.Context, query *BenchmarkRe
 	}
 	return nil
 }
-func (_q *BenchmarkRunQuery) loadScoreSnapshots(ctx context.Context, query *BenchmarkScoreSnapshotQuery, nodes []*BenchmarkRun, init func(*BenchmarkRun), assign func(*BenchmarkRun, *BenchmarkScoreSnapshot)) error {
+func (_q *BenchmarkRunQuery) loadTargetScores(ctx context.Context, query *BenchmarkTargetScoreQuery, nodes []*BenchmarkRun, init func(*BenchmarkRun), assign func(*BenchmarkRun, *BenchmarkTargetScore)) error {
 	fks := make([]driver.Value, 0, len(nodes))
 	nodeids := make(map[int64]*BenchmarkRun)
 	for i := range nodes {
@@ -833,10 +687,10 @@ func (_q *BenchmarkRunQuery) loadScoreSnapshots(ctx context.Context, query *Benc
 		}
 	}
 	if len(query.ctx.Fields) > 0 {
-		query.ctx.AppendFieldOnce(benchmarkscoresnapshot.FieldRunID)
+		query.ctx.AppendFieldOnce(benchmarktargetscore.FieldRunID)
 	}
-	query.Where(predicate.BenchmarkScoreSnapshot(func(s *sql.Selector) {
-		s.Where(sql.InValues(s.C(benchmarkrun.ScoreSnapshotsColumn), fks...))
+	query.Where(predicate.BenchmarkTargetScore(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(benchmarkrun.TargetScoresColumn), fks...))
 	}))
 	neighbors, err := query.All(ctx)
 	if err != nil {
@@ -910,12 +764,6 @@ func (_q *BenchmarkRunQuery) querySpec() *sqlgraph.QuerySpec {
 			if fields[i] != benchmarkrun.FieldID {
 				_spec.Node.Columns = append(_spec.Node.Columns, fields[i])
 			}
-		}
-		if _q.withSuite != nil {
-			_spec.Node.AddColumnOnce(benchmarkrun.FieldSuiteID)
-		}
-		if _q.withProfile != nil {
-			_spec.Node.AddColumnOnce(benchmarkrun.FieldProfileID)
 		}
 	}
 	if ps := _q.predicates; len(ps) > 0 {

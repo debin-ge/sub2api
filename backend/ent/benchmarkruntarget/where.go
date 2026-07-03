@@ -85,11 +85,6 @@ func ChannelNameSnapshot(v string) predicate.BenchmarkRunTarget {
 	return predicate.BenchmarkRunTarget(sql.FieldEQ(FieldChannelNameSnapshot, v))
 }
 
-// ProviderSnapshot applies equality check predicate on the "provider_snapshot" field. It's identical to ProviderSnapshotEQ.
-func ProviderSnapshot(v string) predicate.BenchmarkRunTarget {
-	return predicate.BenchmarkRunTarget(sql.FieldEQ(FieldProviderSnapshot, v))
-}
-
 // TargetOrder applies equality check predicate on the "target_order" field. It's identical to TargetOrderEQ.
 func TargetOrder(v int) predicate.BenchmarkRunTarget {
 	return predicate.BenchmarkRunTarget(sql.FieldEQ(FieldTargetOrder, v))
@@ -395,81 +390,6 @@ func ChannelNameSnapshotContainsFold(v string) predicate.BenchmarkRunTarget {
 	return predicate.BenchmarkRunTarget(sql.FieldContainsFold(FieldChannelNameSnapshot, v))
 }
 
-// ProviderSnapshotEQ applies the EQ predicate on the "provider_snapshot" field.
-func ProviderSnapshotEQ(v string) predicate.BenchmarkRunTarget {
-	return predicate.BenchmarkRunTarget(sql.FieldEQ(FieldProviderSnapshot, v))
-}
-
-// ProviderSnapshotNEQ applies the NEQ predicate on the "provider_snapshot" field.
-func ProviderSnapshotNEQ(v string) predicate.BenchmarkRunTarget {
-	return predicate.BenchmarkRunTarget(sql.FieldNEQ(FieldProviderSnapshot, v))
-}
-
-// ProviderSnapshotIn applies the In predicate on the "provider_snapshot" field.
-func ProviderSnapshotIn(vs ...string) predicate.BenchmarkRunTarget {
-	return predicate.BenchmarkRunTarget(sql.FieldIn(FieldProviderSnapshot, vs...))
-}
-
-// ProviderSnapshotNotIn applies the NotIn predicate on the "provider_snapshot" field.
-func ProviderSnapshotNotIn(vs ...string) predicate.BenchmarkRunTarget {
-	return predicate.BenchmarkRunTarget(sql.FieldNotIn(FieldProviderSnapshot, vs...))
-}
-
-// ProviderSnapshotGT applies the GT predicate on the "provider_snapshot" field.
-func ProviderSnapshotGT(v string) predicate.BenchmarkRunTarget {
-	return predicate.BenchmarkRunTarget(sql.FieldGT(FieldProviderSnapshot, v))
-}
-
-// ProviderSnapshotGTE applies the GTE predicate on the "provider_snapshot" field.
-func ProviderSnapshotGTE(v string) predicate.BenchmarkRunTarget {
-	return predicate.BenchmarkRunTarget(sql.FieldGTE(FieldProviderSnapshot, v))
-}
-
-// ProviderSnapshotLT applies the LT predicate on the "provider_snapshot" field.
-func ProviderSnapshotLT(v string) predicate.BenchmarkRunTarget {
-	return predicate.BenchmarkRunTarget(sql.FieldLT(FieldProviderSnapshot, v))
-}
-
-// ProviderSnapshotLTE applies the LTE predicate on the "provider_snapshot" field.
-func ProviderSnapshotLTE(v string) predicate.BenchmarkRunTarget {
-	return predicate.BenchmarkRunTarget(sql.FieldLTE(FieldProviderSnapshot, v))
-}
-
-// ProviderSnapshotContains applies the Contains predicate on the "provider_snapshot" field.
-func ProviderSnapshotContains(v string) predicate.BenchmarkRunTarget {
-	return predicate.BenchmarkRunTarget(sql.FieldContains(FieldProviderSnapshot, v))
-}
-
-// ProviderSnapshotHasPrefix applies the HasPrefix predicate on the "provider_snapshot" field.
-func ProviderSnapshotHasPrefix(v string) predicate.BenchmarkRunTarget {
-	return predicate.BenchmarkRunTarget(sql.FieldHasPrefix(FieldProviderSnapshot, v))
-}
-
-// ProviderSnapshotHasSuffix applies the HasSuffix predicate on the "provider_snapshot" field.
-func ProviderSnapshotHasSuffix(v string) predicate.BenchmarkRunTarget {
-	return predicate.BenchmarkRunTarget(sql.FieldHasSuffix(FieldProviderSnapshot, v))
-}
-
-// ProviderSnapshotIsNil applies the IsNil predicate on the "provider_snapshot" field.
-func ProviderSnapshotIsNil() predicate.BenchmarkRunTarget {
-	return predicate.BenchmarkRunTarget(sql.FieldIsNull(FieldProviderSnapshot))
-}
-
-// ProviderSnapshotNotNil applies the NotNil predicate on the "provider_snapshot" field.
-func ProviderSnapshotNotNil() predicate.BenchmarkRunTarget {
-	return predicate.BenchmarkRunTarget(sql.FieldNotNull(FieldProviderSnapshot))
-}
-
-// ProviderSnapshotEqualFold applies the EqualFold predicate on the "provider_snapshot" field.
-func ProviderSnapshotEqualFold(v string) predicate.BenchmarkRunTarget {
-	return predicate.BenchmarkRunTarget(sql.FieldEqualFold(FieldProviderSnapshot, v))
-}
-
-// ProviderSnapshotContainsFold applies the ContainsFold predicate on the "provider_snapshot" field.
-func ProviderSnapshotContainsFold(v string) predicate.BenchmarkRunTarget {
-	return predicate.BenchmarkRunTarget(sql.FieldContainsFold(FieldProviderSnapshot, v))
-}
-
 // TargetOrderEQ applies the EQ predicate on the "target_order" field.
 func TargetOrderEQ(v int) predicate.BenchmarkRunTarget {
 	return predicate.BenchmarkRunTarget(sql.FieldEQ(FieldTargetOrder, v))
@@ -619,21 +539,21 @@ func HasResultsWith(preds ...predicate.BenchmarkResult) predicate.BenchmarkRunTa
 	})
 }
 
-// HasScoreSnapshots applies the HasEdge predicate on the "score_snapshots" edge.
-func HasScoreSnapshots() predicate.BenchmarkRunTarget {
+// HasTargetScores applies the HasEdge predicate on the "target_scores" edge.
+func HasTargetScores() predicate.BenchmarkRunTarget {
 	return predicate.BenchmarkRunTarget(func(s *sql.Selector) {
 		step := sqlgraph.NewStep(
 			sqlgraph.From(Table, FieldID),
-			sqlgraph.Edge(sqlgraph.O2M, false, ScoreSnapshotsTable, ScoreSnapshotsColumn),
+			sqlgraph.Edge(sqlgraph.O2M, false, TargetScoresTable, TargetScoresColumn),
 		)
 		sqlgraph.HasNeighbors(s, step)
 	})
 }
 
-// HasScoreSnapshotsWith applies the HasEdge predicate on the "score_snapshots" edge with a given conditions (other predicates).
-func HasScoreSnapshotsWith(preds ...predicate.BenchmarkScoreSnapshot) predicate.BenchmarkRunTarget {
+// HasTargetScoresWith applies the HasEdge predicate on the "target_scores" edge with a given conditions (other predicates).
+func HasTargetScoresWith(preds ...predicate.BenchmarkTargetScore) predicate.BenchmarkRunTarget {
 	return predicate.BenchmarkRunTarget(func(s *sql.Selector) {
-		step := newScoreSnapshotsStep()
+		step := newTargetScoresStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

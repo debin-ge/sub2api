@@ -4,7 +4,6 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/schema/mixins"
 
 	"entgo.io/ent"
-	"entgo.io/ent/dialect"
 	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema"
 	"entgo.io/ent/schema/edge"
@@ -39,36 +38,16 @@ func (BenchmarkTarget) Fields() []ent.Field {
 			Optional().
 			Nillable().
 			MaxLen(200),
-		field.String("provider_snapshot").
-			Optional().
-			Nillable().
-			MaxLen(100),
 		field.String("channel_name_snapshot").
 			Optional().
 			Nillable().
 			MaxLen(200),
-		field.JSON("supported_task_types", []string{}).
-			Default(func() []string { return []string{} }).
-			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
-		field.Int("max_concurrency").
-			Default(1),
-		field.Float("per_run_budget").
-			Optional().
-			Nillable().
-			SchemaType(map[string]string{dialect.Postgres: "decimal(20,10)"}),
-		field.Float("daily_budget").
-			Optional().
-			Nillable().
-			SchemaType(map[string]string{dialect.Postgres: "decimal(20,10)"}),
 		field.Bool("enabled").
 			Default(true),
 		field.Bool("public_visible").
-			Default(false),
+			Default(true),
 		field.Int("sort_order").
 			Default(0),
-		field.JSON("metadata", map[string]any{}).
-			Default(func() map[string]any { return map[string]any{} }).
-			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
 	}
 }
 

@@ -12,16 +12,14 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
 	"github.com/Wei-Shaw/sub2api/ent/authidentity"
 	"github.com/Wei-Shaw/sub2api/ent/authidentitychannel"
-	"github.com/Wei-Shaw/sub2api/ent/benchmarkprofile"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkpublicsnapshot"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkresult"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkrun"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkruntarget"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkruntask"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkschedule"
-	"github.com/Wei-Shaw/sub2api/ent/benchmarkscoresnapshot"
-	"github.com/Wei-Shaw/sub2api/ent/benchmarksuite"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarktarget"
+	"github.com/Wei-Shaw/sub2api/ent/benchmarktargetscore"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarktask"
 	"github.com/Wei-Shaw/sub2api/ent/channelmonitor"
 	"github.com/Wei-Shaw/sub2api/ent/channelmonitordailyrollup"
@@ -443,105 +441,18 @@ func init() {
 	authidentitychannelDescMetadata := authidentitychannelFields[6].Descriptor()
 	// authidentitychannel.DefaultMetadata holds the default value on creation for the metadata field.
 	authidentitychannel.DefaultMetadata = authidentitychannelDescMetadata.Default.(func() map[string]interface{})
-	benchmarkprofileMixin := schema.BenchmarkProfile{}.Mixin()
-	benchmarkprofileMixinFields0 := benchmarkprofileMixin[0].Fields()
-	_ = benchmarkprofileMixinFields0
-	benchmarkprofileFields := schema.BenchmarkProfile{}.Fields()
-	_ = benchmarkprofileFields
-	// benchmarkprofileDescCreatedAt is the schema descriptor for created_at field.
-	benchmarkprofileDescCreatedAt := benchmarkprofileMixinFields0[0].Descriptor()
-	// benchmarkprofile.DefaultCreatedAt holds the default value on creation for the created_at field.
-	benchmarkprofile.DefaultCreatedAt = benchmarkprofileDescCreatedAt.Default.(func() time.Time)
-	// benchmarkprofileDescUpdatedAt is the schema descriptor for updated_at field.
-	benchmarkprofileDescUpdatedAt := benchmarkprofileMixinFields0[1].Descriptor()
-	// benchmarkprofile.DefaultUpdatedAt holds the default value on creation for the updated_at field.
-	benchmarkprofile.DefaultUpdatedAt = benchmarkprofileDescUpdatedAt.Default.(func() time.Time)
-	// benchmarkprofile.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
-	benchmarkprofile.UpdateDefaultUpdatedAt = benchmarkprofileDescUpdatedAt.UpdateDefault.(func() time.Time)
-	// benchmarkprofileDescName is the schema descriptor for name field.
-	benchmarkprofileDescName := benchmarkprofileFields[1].Descriptor()
-	// benchmarkprofile.NameValidator is a validator for the "name" field. It is called by the builders before save.
-	benchmarkprofile.NameValidator = func() func(string) error {
-		validators := benchmarkprofileDescName.Validators
-		fns := [...]func(string) error{
-			validators[0].(func(string) error),
-			validators[1].(func(string) error),
-		}
-		return func(name string) error {
-			for _, fn := range fns {
-				if err := fn(name); err != nil {
-					return err
-				}
-			}
-			return nil
-		}
-	}()
-	// benchmarkprofileDescTargetIds is the schema descriptor for target_ids field.
-	benchmarkprofileDescTargetIds := benchmarkprofileFields[3].Descriptor()
-	// benchmarkprofile.DefaultTargetIds holds the default value on creation for the target_ids field.
-	benchmarkprofile.DefaultTargetIds = benchmarkprofileDescTargetIds.Default.(func() []int64)
-	// benchmarkprofileDescTaskTypes is the schema descriptor for task_types field.
-	benchmarkprofileDescTaskTypes := benchmarkprofileFields[4].Descriptor()
-	// benchmarkprofile.DefaultTaskTypes holds the default value on creation for the task_types field.
-	benchmarkprofile.DefaultTaskTypes = benchmarkprofileDescTaskTypes.Default.(func() []string)
-	// benchmarkprofileDescPerTypeLimit is the schema descriptor for per_type_limit field.
-	benchmarkprofileDescPerTypeLimit := benchmarkprofileFields[7].Descriptor()
-	// benchmarkprofile.DefaultPerTypeLimit holds the default value on creation for the per_type_limit field.
-	benchmarkprofile.DefaultPerTypeLimit = benchmarkprofileDescPerTypeLimit.Default.(func() map[string]int)
-	// benchmarkprofileDescDifficultyFilter is the schema descriptor for difficulty_filter field.
-	benchmarkprofileDescDifficultyFilter := benchmarkprofileFields[8].Descriptor()
-	// benchmarkprofile.DefaultDifficultyFilter holds the default value on creation for the difficulty_filter field.
-	benchmarkprofile.DefaultDifficultyFilter = benchmarkprofileDescDifficultyFilter.Default.(func() []string)
-	// benchmarkprofileDescTagFilter is the schema descriptor for tag_filter field.
-	benchmarkprofileDescTagFilter := benchmarkprofileFields[9].Descriptor()
-	// benchmarkprofile.DefaultTagFilter holds the default value on creation for the tag_filter field.
-	benchmarkprofile.DefaultTagFilter = benchmarkprofileDescTagFilter.Default.(func() []string)
-	// benchmarkprofileDescSamplingStrategy is the schema descriptor for sampling_strategy field.
-	benchmarkprofileDescSamplingStrategy := benchmarkprofileFields[10].Descriptor()
-	// benchmarkprofile.SamplingStrategyValidator is a validator for the "sampling_strategy" field. It is called by the builders before save.
-	benchmarkprofile.SamplingStrategyValidator = func() func(string) error {
-		validators := benchmarkprofileDescSamplingStrategy.Validators
-		fns := [...]func(string) error{
-			validators[0].(func(string) error),
-			validators[1].(func(string) error),
-		}
-		return func(sampling_strategy string) error {
-			for _, fn := range fns {
-				if err := fn(sampling_strategy); err != nil {
-					return err
-				}
-			}
-			return nil
-		}
-	}()
-	// benchmarkprofileDescRuntimeConfig is the schema descriptor for runtime_config field.
-	benchmarkprofileDescRuntimeConfig := benchmarkprofileFields[12].Descriptor()
-	// benchmarkprofile.DefaultRuntimeConfig holds the default value on creation for the runtime_config field.
-	benchmarkprofile.DefaultRuntimeConfig = benchmarkprofileDescRuntimeConfig.Default.(func() map[string]interface{})
-	// benchmarkprofileDescScoringConfig is the schema descriptor for scoring_config field.
-	benchmarkprofileDescScoringConfig := benchmarkprofileFields[13].Descriptor()
-	// benchmarkprofile.DefaultScoringConfig holds the default value on creation for the scoring_config field.
-	benchmarkprofile.DefaultScoringConfig = benchmarkprofileDescScoringConfig.Default.(func() map[string]interface{})
-	// benchmarkprofileDescEnabled is the schema descriptor for enabled field.
-	benchmarkprofileDescEnabled := benchmarkprofileFields[14].Descriptor()
-	// benchmarkprofile.DefaultEnabled holds the default value on creation for the enabled field.
-	benchmarkprofile.DefaultEnabled = benchmarkprofileDescEnabled.Default.(bool)
-	// benchmarkprofileDescMetadata is the schema descriptor for metadata field.
-	benchmarkprofileDescMetadata := benchmarkprofileFields[15].Descriptor()
-	// benchmarkprofile.DefaultMetadata holds the default value on creation for the metadata field.
-	benchmarkprofile.DefaultMetadata = benchmarkprofileDescMetadata.Default.(func() map[string]interface{})
 	benchmarkpublicsnapshotFields := schema.BenchmarkPublicSnapshot{}.Fields()
 	_ = benchmarkpublicsnapshotFields
 	// benchmarkpublicsnapshotDescSnapshot is the schema descriptor for snapshot field.
-	benchmarkpublicsnapshotDescSnapshot := benchmarkpublicsnapshotFields[3].Descriptor()
+	benchmarkpublicsnapshotDescSnapshot := benchmarkpublicsnapshotFields[1].Descriptor()
 	// benchmarkpublicsnapshot.DefaultSnapshot holds the default value on creation for the snapshot field.
 	benchmarkpublicsnapshot.DefaultSnapshot = benchmarkpublicsnapshotDescSnapshot.Default.(func() map[string]interface{})
 	// benchmarkpublicsnapshotDescPublishedAt is the schema descriptor for published_at field.
-	benchmarkpublicsnapshotDescPublishedAt := benchmarkpublicsnapshotFields[4].Descriptor()
+	benchmarkpublicsnapshotDescPublishedAt := benchmarkpublicsnapshotFields[2].Descriptor()
 	// benchmarkpublicsnapshot.DefaultPublishedAt holds the default value on creation for the published_at field.
 	benchmarkpublicsnapshot.DefaultPublishedAt = benchmarkpublicsnapshotDescPublishedAt.Default.(func() time.Time)
 	// benchmarkpublicsnapshotDescCreatedAt is the schema descriptor for created_at field.
-	benchmarkpublicsnapshotDescCreatedAt := benchmarkpublicsnapshotFields[5].Descriptor()
+	benchmarkpublicsnapshotDescCreatedAt := benchmarkpublicsnapshotFields[3].Descriptor()
 	// benchmarkpublicsnapshot.DefaultCreatedAt holds the default value on creation for the created_at field.
 	benchmarkpublicsnapshot.DefaultCreatedAt = benchmarkpublicsnapshotDescCreatedAt.Default.(func() time.Time)
 	benchmarkresultMixin := schema.BenchmarkResult{}.Mixin()
@@ -582,39 +493,39 @@ func init() {
 		}
 	}()
 	// benchmarkresultDescEvaluatorType is the schema descriptor for evaluator_type field.
-	benchmarkresultDescEvaluatorType := benchmarkresultFields[8].Descriptor()
+	benchmarkresultDescEvaluatorType := benchmarkresultFields[6].Descriptor()
 	// benchmarkresult.EvaluatorTypeValidator is a validator for the "evaluator_type" field. It is called by the builders before save.
 	benchmarkresult.EvaluatorTypeValidator = benchmarkresultDescEvaluatorType.Validators[0].(func(string) error)
 	// benchmarkresultDescEvaluatorOutput is the schema descriptor for evaluator_output field.
-	benchmarkresultDescEvaluatorOutput := benchmarkresultFields[9].Descriptor()
+	benchmarkresultDescEvaluatorOutput := benchmarkresultFields[7].Descriptor()
 	// benchmarkresult.DefaultEvaluatorOutput holds the default value on creation for the evaluator_output field.
 	benchmarkresult.DefaultEvaluatorOutput = benchmarkresultDescEvaluatorOutput.Default.(func() map[string]interface{})
 	// benchmarkresultDescPromptTokens is the schema descriptor for prompt_tokens field.
-	benchmarkresultDescPromptTokens := benchmarkresultFields[11].Descriptor()
+	benchmarkresultDescPromptTokens := benchmarkresultFields[9].Descriptor()
 	// benchmarkresult.DefaultPromptTokens holds the default value on creation for the prompt_tokens field.
 	benchmarkresult.DefaultPromptTokens = benchmarkresultDescPromptTokens.Default.(int)
 	// benchmarkresultDescCompletionTokens is the schema descriptor for completion_tokens field.
-	benchmarkresultDescCompletionTokens := benchmarkresultFields[12].Descriptor()
+	benchmarkresultDescCompletionTokens := benchmarkresultFields[10].Descriptor()
 	// benchmarkresult.DefaultCompletionTokens holds the default value on creation for the completion_tokens field.
 	benchmarkresult.DefaultCompletionTokens = benchmarkresultDescCompletionTokens.Default.(int)
 	// benchmarkresultDescTotalTokens is the schema descriptor for total_tokens field.
-	benchmarkresultDescTotalTokens := benchmarkresultFields[13].Descriptor()
+	benchmarkresultDescTotalTokens := benchmarkresultFields[11].Descriptor()
 	// benchmarkresult.DefaultTotalTokens holds the default value on creation for the total_tokens field.
 	benchmarkresult.DefaultTotalTokens = benchmarkresultDescTotalTokens.Default.(int)
 	// benchmarkresultDescEstimatedCost is the schema descriptor for estimated_cost field.
-	benchmarkresultDescEstimatedCost := benchmarkresultFields[14].Descriptor()
+	benchmarkresultDescEstimatedCost := benchmarkresultFields[12].Descriptor()
 	// benchmarkresult.DefaultEstimatedCost holds the default value on creation for the estimated_cost field.
 	benchmarkresult.DefaultEstimatedCost = benchmarkresultDescEstimatedCost.Default.(float64)
 	// benchmarkresultDescRawResponse is the schema descriptor for raw_response field.
-	benchmarkresultDescRawResponse := benchmarkresultFields[15].Descriptor()
+	benchmarkresultDescRawResponse := benchmarkresultFields[13].Descriptor()
 	// benchmarkresult.DefaultRawResponse holds the default value on creation for the raw_response field.
 	benchmarkresult.DefaultRawResponse = benchmarkresultDescRawResponse.Default.(func() map[string]interface{})
 	// benchmarkresultDescErrorCode is the schema descriptor for error_code field.
-	benchmarkresultDescErrorCode := benchmarkresultFields[16].Descriptor()
+	benchmarkresultDescErrorCode := benchmarkresultFields[14].Descriptor()
 	// benchmarkresult.ErrorCodeValidator is a validator for the "error_code" field. It is called by the builders before save.
 	benchmarkresult.ErrorCodeValidator = benchmarkresultDescErrorCode.Validators[0].(func(string) error)
 	// benchmarkresultDescAttemptCount is the schema descriptor for attempt_count field.
-	benchmarkresultDescAttemptCount := benchmarkresultFields[18].Descriptor()
+	benchmarkresultDescAttemptCount := benchmarkresultFields[16].Descriptor()
 	// benchmarkresult.DefaultAttemptCount holds the default value on creation for the attempt_count field.
 	benchmarkresult.DefaultAttemptCount = benchmarkresultDescAttemptCount.Default.(int)
 	benchmarkrunMixin := schema.BenchmarkRun{}.Mixin()
@@ -633,7 +544,7 @@ func init() {
 	// benchmarkrun.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	benchmarkrun.UpdateDefaultUpdatedAt = benchmarkrunDescUpdatedAt.UpdateDefault.(func() time.Time)
 	// benchmarkrunDescStatus is the schema descriptor for status field.
-	benchmarkrunDescStatus := benchmarkrunFields[2].Descriptor()
+	benchmarkrunDescStatus := benchmarkrunFields[0].Descriptor()
 	// benchmarkrun.StatusValidator is a validator for the "status" field. It is called by the builders before save.
 	benchmarkrun.StatusValidator = func() func(string) error {
 		validators := benchmarkrunDescStatus.Validators
@@ -651,7 +562,7 @@ func init() {
 		}
 	}()
 	// benchmarkrunDescTriggerType is the schema descriptor for trigger_type field.
-	benchmarkrunDescTriggerType := benchmarkrunFields[3].Descriptor()
+	benchmarkrunDescTriggerType := benchmarkrunFields[1].Descriptor()
 	// benchmarkrun.TriggerTypeValidator is a validator for the "trigger_type" field. It is called by the builders before save.
 	benchmarkrun.TriggerTypeValidator = func() func(string) error {
 		validators := benchmarkrunDescTriggerType.Validators
@@ -668,26 +579,22 @@ func init() {
 			return nil
 		}
 	}()
-	// benchmarkrunDescTaskTypes is the schema descriptor for task_types field.
-	benchmarkrunDescTaskTypes := benchmarkrunFields[5].Descriptor()
-	// benchmarkrun.DefaultTaskTypes holds the default value on creation for the task_types field.
-	benchmarkrun.DefaultTaskTypes = benchmarkrunDescTaskTypes.Default.(func() []string)
+	// benchmarkrunDescTaskCount is the schema descriptor for task_count field.
+	benchmarkrunDescTaskCount := benchmarkrunFields[3].Descriptor()
+	// benchmarkrun.DefaultTaskCount holds the default value on creation for the task_count field.
+	benchmarkrun.DefaultTaskCount = benchmarkrunDescTaskCount.Default.(int)
 	// benchmarkrunDescPlannedTargetCount is the schema descriptor for planned_target_count field.
-	benchmarkrunDescPlannedTargetCount := benchmarkrunFields[7].Descriptor()
+	benchmarkrunDescPlannedTargetCount := benchmarkrunFields[4].Descriptor()
 	// benchmarkrun.DefaultPlannedTargetCount holds the default value on creation for the planned_target_count field.
 	benchmarkrun.DefaultPlannedTargetCount = benchmarkrunDescPlannedTargetCount.Default.(int)
 	// benchmarkrunDescPlannedTaskCount is the schema descriptor for planned_task_count field.
-	benchmarkrunDescPlannedTaskCount := benchmarkrunFields[8].Descriptor()
+	benchmarkrunDescPlannedTaskCount := benchmarkrunFields[5].Descriptor()
 	// benchmarkrun.DefaultPlannedTaskCount holds the default value on creation for the planned_task_count field.
 	benchmarkrun.DefaultPlannedTaskCount = benchmarkrunDescPlannedTaskCount.Default.(int)
 	// benchmarkrunDescPlannedResultCount is the schema descriptor for planned_result_count field.
-	benchmarkrunDescPlannedResultCount := benchmarkrunFields[9].Descriptor()
+	benchmarkrunDescPlannedResultCount := benchmarkrunFields[6].Descriptor()
 	// benchmarkrun.DefaultPlannedResultCount holds the default value on creation for the planned_result_count field.
 	benchmarkrun.DefaultPlannedResultCount = benchmarkrunDescPlannedResultCount.Default.(int)
-	// benchmarkrunDescConfigSnapshot is the schema descriptor for config_snapshot field.
-	benchmarkrunDescConfigSnapshot := benchmarkrunFields[12].Descriptor()
-	// benchmarkrun.DefaultConfigSnapshot holds the default value on creation for the config_snapshot field.
-	benchmarkrun.DefaultConfigSnapshot = benchmarkrunDescConfigSnapshot.Default.(func() map[string]interface{})
 	benchmarkruntargetFields := schema.BenchmarkRunTarget{}.Fields()
 	_ = benchmarkruntargetFields
 	// benchmarkruntargetDescModelName is the schema descriptor for model_name field.
@@ -716,20 +623,12 @@ func init() {
 	benchmarkruntargetDescChannelNameSnapshot := benchmarkruntargetFields[5].Descriptor()
 	// benchmarkruntarget.ChannelNameSnapshotValidator is a validator for the "channel_name_snapshot" field. It is called by the builders before save.
 	benchmarkruntarget.ChannelNameSnapshotValidator = benchmarkruntargetDescChannelNameSnapshot.Validators[0].(func(string) error)
-	// benchmarkruntargetDescProviderSnapshot is the schema descriptor for provider_snapshot field.
-	benchmarkruntargetDescProviderSnapshot := benchmarkruntargetFields[6].Descriptor()
-	// benchmarkruntarget.ProviderSnapshotValidator is a validator for the "provider_snapshot" field. It is called by the builders before save.
-	benchmarkruntarget.ProviderSnapshotValidator = benchmarkruntargetDescProviderSnapshot.Validators[0].(func(string) error)
 	// benchmarkruntargetDescTargetOrder is the schema descriptor for target_order field.
-	benchmarkruntargetDescTargetOrder := benchmarkruntargetFields[7].Descriptor()
+	benchmarkruntargetDescTargetOrder := benchmarkruntargetFields[6].Descriptor()
 	// benchmarkruntarget.DefaultTargetOrder holds the default value on creation for the target_order field.
 	benchmarkruntarget.DefaultTargetOrder = benchmarkruntargetDescTargetOrder.Default.(int)
-	// benchmarkruntargetDescConfigSnapshot is the schema descriptor for config_snapshot field.
-	benchmarkruntargetDescConfigSnapshot := benchmarkruntargetFields[8].Descriptor()
-	// benchmarkruntarget.DefaultConfigSnapshot holds the default value on creation for the config_snapshot field.
-	benchmarkruntarget.DefaultConfigSnapshot = benchmarkruntargetDescConfigSnapshot.Default.(func() map[string]interface{})
 	// benchmarkruntargetDescCreatedAt is the schema descriptor for created_at field.
-	benchmarkruntargetDescCreatedAt := benchmarkruntargetFields[9].Descriptor()
+	benchmarkruntargetDescCreatedAt := benchmarkruntargetFields[7].Descriptor()
 	// benchmarkruntarget.DefaultCreatedAt holds the default value on creation for the created_at field.
 	benchmarkruntarget.DefaultCreatedAt = benchmarkruntargetDescCreatedAt.Default.(func() time.Time)
 	benchmarkruntaskFields := schema.BenchmarkRunTask{}.Fields()
@@ -756,24 +655,20 @@ func init() {
 			return nil
 		}
 	}()
-	// benchmarkruntaskDescCategory is the schema descriptor for category field.
-	benchmarkruntaskDescCategory := benchmarkruntaskFields[4].Descriptor()
-	// benchmarkruntask.CategoryValidator is a validator for the "category" field. It is called by the builders before save.
-	benchmarkruntask.CategoryValidator = benchmarkruntaskDescCategory.Validators[0].(func(string) error)
 	// benchmarkruntaskDescDifficulty is the schema descriptor for difficulty field.
-	benchmarkruntaskDescDifficulty := benchmarkruntaskFields[5].Descriptor()
+	benchmarkruntaskDescDifficulty := benchmarkruntaskFields[4].Descriptor()
 	// benchmarkruntask.DifficultyValidator is a validator for the "difficulty" field. It is called by the builders before save.
 	benchmarkruntask.DifficultyValidator = benchmarkruntaskDescDifficulty.Validators[0].(func(string) error)
 	// benchmarkruntaskDescWeightSnapshot is the schema descriptor for weight_snapshot field.
-	benchmarkruntaskDescWeightSnapshot := benchmarkruntaskFields[6].Descriptor()
+	benchmarkruntaskDescWeightSnapshot := benchmarkruntaskFields[5].Descriptor()
 	// benchmarkruntask.DefaultWeightSnapshot holds the default value on creation for the weight_snapshot field.
 	benchmarkruntask.DefaultWeightSnapshot = benchmarkruntaskDescWeightSnapshot.Default.(float64)
 	// benchmarkruntaskDescPromptSnapshot is the schema descriptor for prompt_snapshot field.
-	benchmarkruntaskDescPromptSnapshot := benchmarkruntaskFields[7].Descriptor()
+	benchmarkruntaskDescPromptSnapshot := benchmarkruntaskFields[6].Descriptor()
 	// benchmarkruntask.PromptSnapshotValidator is a validator for the "prompt_snapshot" field. It is called by the builders before save.
 	benchmarkruntask.PromptSnapshotValidator = benchmarkruntaskDescPromptSnapshot.Validators[0].(func(string) error)
 	// benchmarkruntaskDescVerifierTypeSnapshot is the schema descriptor for verifier_type_snapshot field.
-	benchmarkruntaskDescVerifierTypeSnapshot := benchmarkruntaskFields[8].Descriptor()
+	benchmarkruntaskDescVerifierTypeSnapshot := benchmarkruntaskFields[7].Descriptor()
 	// benchmarkruntask.VerifierTypeSnapshotValidator is a validator for the "verifier_type_snapshot" field. It is called by the builders before save.
 	benchmarkruntask.VerifierTypeSnapshotValidator = func() func(string) error {
 		validators := benchmarkruntaskDescVerifierTypeSnapshot.Validators
@@ -791,15 +686,15 @@ func init() {
 		}
 	}()
 	// benchmarkruntaskDescVerifierConfigSnapshot is the schema descriptor for verifier_config_snapshot field.
-	benchmarkruntaskDescVerifierConfigSnapshot := benchmarkruntaskFields[9].Descriptor()
+	benchmarkruntaskDescVerifierConfigSnapshot := benchmarkruntaskFields[8].Descriptor()
 	// benchmarkruntask.DefaultVerifierConfigSnapshot holds the default value on creation for the verifier_config_snapshot field.
 	benchmarkruntask.DefaultVerifierConfigSnapshot = benchmarkruntaskDescVerifierConfigSnapshot.Default.(func() map[string]interface{})
 	// benchmarkruntaskDescTaskSnapshot is the schema descriptor for task_snapshot field.
-	benchmarkruntaskDescTaskSnapshot := benchmarkruntaskFields[10].Descriptor()
+	benchmarkruntaskDescTaskSnapshot := benchmarkruntaskFields[9].Descriptor()
 	// benchmarkruntask.DefaultTaskSnapshot holds the default value on creation for the task_snapshot field.
 	benchmarkruntask.DefaultTaskSnapshot = benchmarkruntaskDescTaskSnapshot.Default.(func() map[string]interface{})
 	// benchmarkruntaskDescCreatedAt is the schema descriptor for created_at field.
-	benchmarkruntaskDescCreatedAt := benchmarkruntaskFields[11].Descriptor()
+	benchmarkruntaskDescCreatedAt := benchmarkruntaskFields[10].Descriptor()
 	// benchmarkruntask.DefaultCreatedAt holds the default value on creation for the created_at field.
 	benchmarkruntask.DefaultCreatedAt = benchmarkruntaskDescCreatedAt.Default.(func() time.Time)
 	benchmarkscheduleMixin := schema.BenchmarkSchedule{}.Mixin()
@@ -818,7 +713,7 @@ func init() {
 	// benchmarkschedule.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	benchmarkschedule.UpdateDefaultUpdatedAt = benchmarkscheduleDescUpdatedAt.UpdateDefault.(func() time.Time)
 	// benchmarkscheduleDescName is the schema descriptor for name field.
-	benchmarkscheduleDescName := benchmarkscheduleFields[1].Descriptor()
+	benchmarkscheduleDescName := benchmarkscheduleFields[0].Descriptor()
 	// benchmarkschedule.NameValidator is a validator for the "name" field. It is called by the builders before save.
 	benchmarkschedule.NameValidator = func() func(string) error {
 		validators := benchmarkscheduleDescName.Validators
@@ -836,7 +731,7 @@ func init() {
 		}
 	}()
 	// benchmarkscheduleDescCronExpr is the schema descriptor for cron_expr field.
-	benchmarkscheduleDescCronExpr := benchmarkscheduleFields[2].Descriptor()
+	benchmarkscheduleDescCronExpr := benchmarkscheduleFields[1].Descriptor()
 	// benchmarkschedule.CronExprValidator is a validator for the "cron_expr" field. It is called by the builders before save.
 	benchmarkschedule.CronExprValidator = func() func(string) error {
 		validators := benchmarkscheduleDescCronExpr.Validators
@@ -854,126 +749,17 @@ func init() {
 		}
 	}()
 	// benchmarkscheduleDescEnabled is the schema descriptor for enabled field.
-	benchmarkscheduleDescEnabled := benchmarkscheduleFields[3].Descriptor()
+	benchmarkscheduleDescEnabled := benchmarkscheduleFields[2].Descriptor()
 	// benchmarkschedule.DefaultEnabled holds the default value on creation for the enabled field.
 	benchmarkschedule.DefaultEnabled = benchmarkscheduleDescEnabled.Default.(bool)
-	// benchmarkscheduleDescMetadata is the schema descriptor for metadata field.
-	benchmarkscheduleDescMetadata := benchmarkscheduleFields[6].Descriptor()
-	// benchmarkschedule.DefaultMetadata holds the default value on creation for the metadata field.
-	benchmarkschedule.DefaultMetadata = benchmarkscheduleDescMetadata.Default.(func() map[string]interface{})
-	benchmarkscoresnapshotFields := schema.BenchmarkScoreSnapshot{}.Fields()
-	_ = benchmarkscoresnapshotFields
-	// benchmarkscoresnapshotDescOverallScore is the schema descriptor for overall_score field.
-	benchmarkscoresnapshotDescOverallScore := benchmarkscoresnapshotFields[2].Descriptor()
-	// benchmarkscoresnapshot.DefaultOverallScore holds the default value on creation for the overall_score field.
-	benchmarkscoresnapshot.DefaultOverallScore = benchmarkscoresnapshotDescOverallScore.Default.(float64)
-	// benchmarkscoresnapshotDescDimensionScores is the schema descriptor for dimension_scores field.
-	benchmarkscoresnapshotDescDimensionScores := benchmarkscoresnapshotFields[3].Descriptor()
-	// benchmarkscoresnapshot.DefaultDimensionScores holds the default value on creation for the dimension_scores field.
-	benchmarkscoresnapshot.DefaultDimensionScores = benchmarkscoresnapshotDescDimensionScores.Default.(func() map[string]interface{})
-	// benchmarkscoresnapshotDescPlannedTasks is the schema descriptor for planned_tasks field.
-	benchmarkscoresnapshotDescPlannedTasks := benchmarkscoresnapshotFields[4].Descriptor()
-	// benchmarkscoresnapshot.DefaultPlannedTasks holds the default value on creation for the planned_tasks field.
-	benchmarkscoresnapshot.DefaultPlannedTasks = benchmarkscoresnapshotDescPlannedTasks.Default.(int)
-	// benchmarkscoresnapshotDescScoredTasks is the schema descriptor for scored_tasks field.
-	benchmarkscoresnapshotDescScoredTasks := benchmarkscoresnapshotFields[5].Descriptor()
-	// benchmarkscoresnapshot.DefaultScoredTasks holds the default value on creation for the scored_tasks field.
-	benchmarkscoresnapshot.DefaultScoredTasks = benchmarkscoresnapshotDescScoredTasks.Default.(int)
-	// benchmarkscoresnapshotDescInvalidTasks is the schema descriptor for invalid_tasks field.
-	benchmarkscoresnapshotDescInvalidTasks := benchmarkscoresnapshotFields[6].Descriptor()
-	// benchmarkscoresnapshot.DefaultInvalidTasks holds the default value on creation for the invalid_tasks field.
-	benchmarkscoresnapshot.DefaultInvalidTasks = benchmarkscoresnapshotDescInvalidTasks.Default.(int)
-	// benchmarkscoresnapshotDescCoverageRate is the schema descriptor for coverage_rate field.
-	benchmarkscoresnapshotDescCoverageRate := benchmarkscoresnapshotFields[7].Descriptor()
-	// benchmarkscoresnapshot.DefaultCoverageRate holds the default value on creation for the coverage_rate field.
-	benchmarkscoresnapshot.DefaultCoverageRate = benchmarkscoresnapshotDescCoverageRate.Default.(float64)
-	// benchmarkscoresnapshotDescInsufficientSample is the schema descriptor for insufficient_sample field.
-	benchmarkscoresnapshotDescInsufficientSample := benchmarkscoresnapshotFields[9].Descriptor()
-	// benchmarkscoresnapshot.DefaultInsufficientSample holds the default value on creation for the insufficient_sample field.
-	benchmarkscoresnapshot.DefaultInsufficientSample = benchmarkscoresnapshotDescInsufficientSample.Default.(bool)
-	// benchmarkscoresnapshotDescSuccessRate is the schema descriptor for success_rate field.
-	benchmarkscoresnapshotDescSuccessRate := benchmarkscoresnapshotFields[10].Descriptor()
-	// benchmarkscoresnapshot.DefaultSuccessRate holds the default value on creation for the success_rate field.
-	benchmarkscoresnapshot.DefaultSuccessRate = benchmarkscoresnapshotDescSuccessRate.Default.(float64)
-	// benchmarkscoresnapshotDescEstimatedCost is the schema descriptor for estimated_cost field.
-	benchmarkscoresnapshotDescEstimatedCost := benchmarkscoresnapshotFields[14].Descriptor()
-	// benchmarkscoresnapshot.DefaultEstimatedCost holds the default value on creation for the estimated_cost field.
-	benchmarkscoresnapshot.DefaultEstimatedCost = benchmarkscoresnapshotDescEstimatedCost.Default.(float64)
-	// benchmarkscoresnapshotDescInvalidReasonBreakdown is the schema descriptor for invalid_reason_breakdown field.
-	benchmarkscoresnapshotDescInvalidReasonBreakdown := benchmarkscoresnapshotFields[15].Descriptor()
-	// benchmarkscoresnapshot.DefaultInvalidReasonBreakdown holds the default value on creation for the invalid_reason_breakdown field.
-	benchmarkscoresnapshot.DefaultInvalidReasonBreakdown = benchmarkscoresnapshotDescInvalidReasonBreakdown.Default.(func() map[string]interface{})
-	// benchmarkscoresnapshotDescRankingMetadata is the schema descriptor for ranking_metadata field.
-	benchmarkscoresnapshotDescRankingMetadata := benchmarkscoresnapshotFields[16].Descriptor()
-	// benchmarkscoresnapshot.DefaultRankingMetadata holds the default value on creation for the ranking_metadata field.
-	benchmarkscoresnapshot.DefaultRankingMetadata = benchmarkscoresnapshotDescRankingMetadata.Default.(func() map[string]interface{})
-	// benchmarkscoresnapshotDescCreatedAt is the schema descriptor for created_at field.
-	benchmarkscoresnapshotDescCreatedAt := benchmarkscoresnapshotFields[17].Descriptor()
-	// benchmarkscoresnapshot.DefaultCreatedAt holds the default value on creation for the created_at field.
-	benchmarkscoresnapshot.DefaultCreatedAt = benchmarkscoresnapshotDescCreatedAt.Default.(func() time.Time)
-	benchmarksuiteMixin := schema.BenchmarkSuite{}.Mixin()
-	benchmarksuiteMixinFields0 := benchmarksuiteMixin[0].Fields()
-	_ = benchmarksuiteMixinFields0
-	benchmarksuiteFields := schema.BenchmarkSuite{}.Fields()
-	_ = benchmarksuiteFields
-	// benchmarksuiteDescCreatedAt is the schema descriptor for created_at field.
-	benchmarksuiteDescCreatedAt := benchmarksuiteMixinFields0[0].Descriptor()
-	// benchmarksuite.DefaultCreatedAt holds the default value on creation for the created_at field.
-	benchmarksuite.DefaultCreatedAt = benchmarksuiteDescCreatedAt.Default.(func() time.Time)
-	// benchmarksuiteDescUpdatedAt is the schema descriptor for updated_at field.
-	benchmarksuiteDescUpdatedAt := benchmarksuiteMixinFields0[1].Descriptor()
-	// benchmarksuite.DefaultUpdatedAt holds the default value on creation for the updated_at field.
-	benchmarksuite.DefaultUpdatedAt = benchmarksuiteDescUpdatedAt.Default.(func() time.Time)
-	// benchmarksuite.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
-	benchmarksuite.UpdateDefaultUpdatedAt = benchmarksuiteDescUpdatedAt.UpdateDefault.(func() time.Time)
-	// benchmarksuiteDescName is the schema descriptor for name field.
-	benchmarksuiteDescName := benchmarksuiteFields[0].Descriptor()
-	// benchmarksuite.NameValidator is a validator for the "name" field. It is called by the builders before save.
-	benchmarksuite.NameValidator = func() func(string) error {
-		validators := benchmarksuiteDescName.Validators
-		fns := [...]func(string) error{
-			validators[0].(func(string) error),
-			validators[1].(func(string) error),
-		}
-		return func(name string) error {
-			for _, fn := range fns {
-				if err := fn(name); err != nil {
-					return err
-				}
-			}
-			return nil
-		}
-	}()
-	// benchmarksuiteDescSlug is the schema descriptor for slug field.
-	benchmarksuiteDescSlug := benchmarksuiteFields[1].Descriptor()
-	// benchmarksuite.SlugValidator is a validator for the "slug" field. It is called by the builders before save.
-	benchmarksuite.SlugValidator = func() func(string) error {
-		validators := benchmarksuiteDescSlug.Validators
-		fns := [...]func(string) error{
-			validators[0].(func(string) error),
-			validators[1].(func(string) error),
-		}
-		return func(slug string) error {
-			for _, fn := range fns {
-				if err := fn(slug); err != nil {
-					return err
-				}
-			}
-			return nil
-		}
-	}()
-	// benchmarksuiteDescEnabled is the schema descriptor for enabled field.
-	benchmarksuiteDescEnabled := benchmarksuiteFields[3].Descriptor()
-	// benchmarksuite.DefaultEnabled holds the default value on creation for the enabled field.
-	benchmarksuite.DefaultEnabled = benchmarksuiteDescEnabled.Default.(bool)
-	// benchmarksuiteDescPublicVisible is the schema descriptor for public_visible field.
-	benchmarksuiteDescPublicVisible := benchmarksuiteFields[4].Descriptor()
-	// benchmarksuite.DefaultPublicVisible holds the default value on creation for the public_visible field.
-	benchmarksuite.DefaultPublicVisible = benchmarksuiteDescPublicVisible.Default.(bool)
-	// benchmarksuiteDescMetadata is the schema descriptor for metadata field.
-	benchmarksuiteDescMetadata := benchmarksuiteFields[6].Descriptor()
-	// benchmarksuite.DefaultMetadata holds the default value on creation for the metadata field.
-	benchmarksuite.DefaultMetadata = benchmarksuiteDescMetadata.Default.(func() map[string]interface{})
+	// benchmarkscheduleDescTargetIds is the schema descriptor for target_ids field.
+	benchmarkscheduleDescTargetIds := benchmarkscheduleFields[3].Descriptor()
+	// benchmarkschedule.DefaultTargetIds holds the default value on creation for the target_ids field.
+	benchmarkschedule.DefaultTargetIds = benchmarkscheduleDescTargetIds.Default.(func() []int64)
+	// benchmarkscheduleDescTaskCount is the schema descriptor for task_count field.
+	benchmarkscheduleDescTaskCount := benchmarkscheduleFields[4].Descriptor()
+	// benchmarkschedule.DefaultTaskCount holds the default value on creation for the task_count field.
+	benchmarkschedule.DefaultTaskCount = benchmarkscheduleDescTaskCount.Default.(int)
 	benchmarktargetMixin := schema.BenchmarkTarget{}.Mixin()
 	benchmarktargetMixinFields0 := benchmarktargetMixin[0].Fields()
 	_ = benchmarktargetMixinFields0
@@ -1011,38 +797,70 @@ func init() {
 	benchmarktargetDescDisplayName := benchmarktargetFields[2].Descriptor()
 	// benchmarktarget.DisplayNameValidator is a validator for the "display_name" field. It is called by the builders before save.
 	benchmarktarget.DisplayNameValidator = benchmarktargetDescDisplayName.Validators[0].(func(string) error)
-	// benchmarktargetDescProviderSnapshot is the schema descriptor for provider_snapshot field.
-	benchmarktargetDescProviderSnapshot := benchmarktargetFields[3].Descriptor()
-	// benchmarktarget.ProviderSnapshotValidator is a validator for the "provider_snapshot" field. It is called by the builders before save.
-	benchmarktarget.ProviderSnapshotValidator = benchmarktargetDescProviderSnapshot.Validators[0].(func(string) error)
 	// benchmarktargetDescChannelNameSnapshot is the schema descriptor for channel_name_snapshot field.
-	benchmarktargetDescChannelNameSnapshot := benchmarktargetFields[4].Descriptor()
+	benchmarktargetDescChannelNameSnapshot := benchmarktargetFields[3].Descriptor()
 	// benchmarktarget.ChannelNameSnapshotValidator is a validator for the "channel_name_snapshot" field. It is called by the builders before save.
 	benchmarktarget.ChannelNameSnapshotValidator = benchmarktargetDescChannelNameSnapshot.Validators[0].(func(string) error)
-	// benchmarktargetDescSupportedTaskTypes is the schema descriptor for supported_task_types field.
-	benchmarktargetDescSupportedTaskTypes := benchmarktargetFields[5].Descriptor()
-	// benchmarktarget.DefaultSupportedTaskTypes holds the default value on creation for the supported_task_types field.
-	benchmarktarget.DefaultSupportedTaskTypes = benchmarktargetDescSupportedTaskTypes.Default.(func() []string)
-	// benchmarktargetDescMaxConcurrency is the schema descriptor for max_concurrency field.
-	benchmarktargetDescMaxConcurrency := benchmarktargetFields[6].Descriptor()
-	// benchmarktarget.DefaultMaxConcurrency holds the default value on creation for the max_concurrency field.
-	benchmarktarget.DefaultMaxConcurrency = benchmarktargetDescMaxConcurrency.Default.(int)
 	// benchmarktargetDescEnabled is the schema descriptor for enabled field.
-	benchmarktargetDescEnabled := benchmarktargetFields[9].Descriptor()
+	benchmarktargetDescEnabled := benchmarktargetFields[4].Descriptor()
 	// benchmarktarget.DefaultEnabled holds the default value on creation for the enabled field.
 	benchmarktarget.DefaultEnabled = benchmarktargetDescEnabled.Default.(bool)
 	// benchmarktargetDescPublicVisible is the schema descriptor for public_visible field.
-	benchmarktargetDescPublicVisible := benchmarktargetFields[10].Descriptor()
+	benchmarktargetDescPublicVisible := benchmarktargetFields[5].Descriptor()
 	// benchmarktarget.DefaultPublicVisible holds the default value on creation for the public_visible field.
 	benchmarktarget.DefaultPublicVisible = benchmarktargetDescPublicVisible.Default.(bool)
 	// benchmarktargetDescSortOrder is the schema descriptor for sort_order field.
-	benchmarktargetDescSortOrder := benchmarktargetFields[11].Descriptor()
+	benchmarktargetDescSortOrder := benchmarktargetFields[6].Descriptor()
 	// benchmarktarget.DefaultSortOrder holds the default value on creation for the sort_order field.
 	benchmarktarget.DefaultSortOrder = benchmarktargetDescSortOrder.Default.(int)
-	// benchmarktargetDescMetadata is the schema descriptor for metadata field.
-	benchmarktargetDescMetadata := benchmarktargetFields[12].Descriptor()
-	// benchmarktarget.DefaultMetadata holds the default value on creation for the metadata field.
-	benchmarktarget.DefaultMetadata = benchmarktargetDescMetadata.Default.(func() map[string]interface{})
+	benchmarktargetscoreFields := schema.BenchmarkTargetScore{}.Fields()
+	_ = benchmarktargetscoreFields
+	// benchmarktargetscoreDescModelName is the schema descriptor for model_name field.
+	benchmarktargetscoreDescModelName := benchmarktargetscoreFields[2].Descriptor()
+	// benchmarktargetscore.ModelNameValidator is a validator for the "model_name" field. It is called by the builders before save.
+	benchmarktargetscore.ModelNameValidator = func() func(string) error {
+		validators := benchmarktargetscoreDescModelName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(model_name string) error {
+			for _, fn := range fns {
+				if err := fn(model_name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// benchmarktargetscoreDescOverallScore is the schema descriptor for overall_score field.
+	benchmarktargetscoreDescOverallScore := benchmarktargetscoreFields[4].Descriptor()
+	// benchmarktargetscore.DefaultOverallScore holds the default value on creation for the overall_score field.
+	benchmarktargetscore.DefaultOverallScore = benchmarktargetscoreDescOverallScore.Default.(float64)
+	// benchmarktargetscoreDescPassedCount is the schema descriptor for passed_count field.
+	benchmarktargetscoreDescPassedCount := benchmarktargetscoreFields[5].Descriptor()
+	// benchmarktargetscore.DefaultPassedCount holds the default value on creation for the passed_count field.
+	benchmarktargetscore.DefaultPassedCount = benchmarktargetscoreDescPassedCount.Default.(int)
+	// benchmarktargetscoreDescTotalCount is the schema descriptor for total_count field.
+	benchmarktargetscoreDescTotalCount := benchmarktargetscoreFields[6].Descriptor()
+	// benchmarktargetscore.DefaultTotalCount holds the default value on creation for the total_count field.
+	benchmarktargetscore.DefaultTotalCount = benchmarktargetscoreDescTotalCount.Default.(int)
+	// benchmarktargetscoreDescDimensionScores is the schema descriptor for dimension_scores field.
+	benchmarktargetscoreDescDimensionScores := benchmarktargetscoreFields[7].Descriptor()
+	// benchmarktargetscore.DefaultDimensionScores holds the default value on creation for the dimension_scores field.
+	benchmarktargetscore.DefaultDimensionScores = benchmarktargetscoreDescDimensionScores.Default.(func() map[string]interface{})
+	// benchmarktargetscoreDescTotalCost is the schema descriptor for total_cost field.
+	benchmarktargetscoreDescTotalCost := benchmarktargetscoreFields[10].Descriptor()
+	// benchmarktargetscore.DefaultTotalCost holds the default value on creation for the total_cost field.
+	benchmarktargetscore.DefaultTotalCost = benchmarktargetscoreDescTotalCost.Default.(float64)
+	// benchmarktargetscoreDescInvalidReasonBreakdown is the schema descriptor for invalid_reason_breakdown field.
+	benchmarktargetscoreDescInvalidReasonBreakdown := benchmarktargetscoreFields[11].Descriptor()
+	// benchmarktargetscore.DefaultInvalidReasonBreakdown holds the default value on creation for the invalid_reason_breakdown field.
+	benchmarktargetscore.DefaultInvalidReasonBreakdown = benchmarktargetscoreDescInvalidReasonBreakdown.Default.(func() map[string]interface{})
+	// benchmarktargetscoreDescCreatedAt is the schema descriptor for created_at field.
+	benchmarktargetscoreDescCreatedAt := benchmarktargetscoreFields[13].Descriptor()
+	// benchmarktargetscore.DefaultCreatedAt holds the default value on creation for the created_at field.
+	benchmarktargetscore.DefaultCreatedAt = benchmarktargetscoreDescCreatedAt.Default.(func() time.Time)
 	benchmarktaskMixin := schema.BenchmarkTask{}.Mixin()
 	benchmarktaskMixinFields0 := benchmarktaskMixin[0].Fields()
 	_ = benchmarktaskMixinFields0
@@ -1059,7 +877,7 @@ func init() {
 	// benchmarktask.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	benchmarktask.UpdateDefaultUpdatedAt = benchmarktaskDescUpdatedAt.UpdateDefault.(func() time.Time)
 	// benchmarktaskDescTitle is the schema descriptor for title field.
-	benchmarktaskDescTitle := benchmarktaskFields[1].Descriptor()
+	benchmarktaskDescTitle := benchmarktaskFields[0].Descriptor()
 	// benchmarktask.TitleValidator is a validator for the "title" field. It is called by the builders before save.
 	benchmarktask.TitleValidator = func() func(string) error {
 		validators := benchmarktaskDescTitle.Validators
@@ -1077,7 +895,7 @@ func init() {
 		}
 	}()
 	// benchmarktaskDescType is the schema descriptor for type field.
-	benchmarktaskDescType := benchmarktaskFields[2].Descriptor()
+	benchmarktaskDescType := benchmarktaskFields[1].Descriptor()
 	// benchmarktask.TypeValidator is a validator for the "type" field. It is called by the builders before save.
 	benchmarktask.TypeValidator = func() func(string) error {
 		validators := benchmarktaskDescType.Validators
@@ -1094,32 +912,24 @@ func init() {
 			return nil
 		}
 	}()
-	// benchmarktaskDescCategory is the schema descriptor for category field.
-	benchmarktaskDescCategory := benchmarktaskFields[3].Descriptor()
-	// benchmarktask.CategoryValidator is a validator for the "category" field. It is called by the builders before save.
-	benchmarktask.CategoryValidator = benchmarktaskDescCategory.Validators[0].(func(string) error)
 	// benchmarktaskDescDifficulty is the schema descriptor for difficulty field.
-	benchmarktaskDescDifficulty := benchmarktaskFields[4].Descriptor()
+	benchmarktaskDescDifficulty := benchmarktaskFields[2].Descriptor()
 	// benchmarktask.DifficultyValidator is a validator for the "difficulty" field. It is called by the builders before save.
 	benchmarktask.DifficultyValidator = benchmarktaskDescDifficulty.Validators[0].(func(string) error)
-	// benchmarktaskDescTags is the schema descriptor for tags field.
-	benchmarktaskDescTags := benchmarktaskFields[5].Descriptor()
-	// benchmarktask.DefaultTags holds the default value on creation for the tags field.
-	benchmarktask.DefaultTags = benchmarktaskDescTags.Default.(func() []string)
 	// benchmarktaskDescPrompt is the schema descriptor for prompt field.
-	benchmarktaskDescPrompt := benchmarktaskFields[6].Descriptor()
+	benchmarktaskDescPrompt := benchmarktaskFields[3].Descriptor()
 	// benchmarktask.PromptValidator is a validator for the "prompt" field. It is called by the builders before save.
 	benchmarktask.PromptValidator = benchmarktaskDescPrompt.Validators[0].(func(string) error)
 	// benchmarktaskDescInputPayload is the schema descriptor for input_payload field.
-	benchmarktaskDescInputPayload := benchmarktaskFields[7].Descriptor()
+	benchmarktaskDescInputPayload := benchmarktaskFields[4].Descriptor()
 	// benchmarktask.DefaultInputPayload holds the default value on creation for the input_payload field.
 	benchmarktask.DefaultInputPayload = benchmarktaskDescInputPayload.Default.(func() map[string]interface{})
 	// benchmarktaskDescExpectedOutput is the schema descriptor for expected_output field.
-	benchmarktaskDescExpectedOutput := benchmarktaskFields[8].Descriptor()
+	benchmarktaskDescExpectedOutput := benchmarktaskFields[5].Descriptor()
 	// benchmarktask.DefaultExpectedOutput holds the default value on creation for the expected_output field.
 	benchmarktask.DefaultExpectedOutput = benchmarktaskDescExpectedOutput.Default.(func() map[string]interface{})
 	// benchmarktaskDescVerifierType is the schema descriptor for verifier_type field.
-	benchmarktaskDescVerifierType := benchmarktaskFields[9].Descriptor()
+	benchmarktaskDescVerifierType := benchmarktaskFields[6].Descriptor()
 	// benchmarktask.VerifierTypeValidator is a validator for the "verifier_type" field. It is called by the builders before save.
 	benchmarktask.VerifierTypeValidator = func() func(string) error {
 		validators := benchmarktaskDescVerifierType.Validators
@@ -1137,25 +947,25 @@ func init() {
 		}
 	}()
 	// benchmarktaskDescVerifierConfig is the schema descriptor for verifier_config field.
-	benchmarktaskDescVerifierConfig := benchmarktaskFields[10].Descriptor()
+	benchmarktaskDescVerifierConfig := benchmarktaskFields[7].Descriptor()
 	// benchmarktask.DefaultVerifierConfig holds the default value on creation for the verifier_config field.
 	benchmarktask.DefaultVerifierConfig = benchmarktaskDescVerifierConfig.Default.(func() map[string]interface{})
 	// benchmarktaskDescWeight is the schema descriptor for weight field.
-	benchmarktaskDescWeight := benchmarktaskFields[11].Descriptor()
+	benchmarktaskDescWeight := benchmarktaskFields[8].Descriptor()
 	// benchmarktask.DefaultWeight holds the default value on creation for the weight field.
 	benchmarktask.DefaultWeight = benchmarktaskDescWeight.Default.(float64)
 	// benchmarktaskDescPublicPrompt is the schema descriptor for public_prompt field.
-	benchmarktaskDescPublicPrompt := benchmarktaskFields[13].Descriptor()
+	benchmarktaskDescPublicPrompt := benchmarktaskFields[9].Descriptor()
 	// benchmarktask.DefaultPublicPrompt holds the default value on creation for the public_prompt field.
 	benchmarktask.DefaultPublicPrompt = benchmarktaskDescPublicPrompt.Default.(bool)
 	// benchmarktaskDescEnabled is the schema descriptor for enabled field.
-	benchmarktaskDescEnabled := benchmarktaskFields[14].Descriptor()
+	benchmarktaskDescEnabled := benchmarktaskFields[10].Descriptor()
 	// benchmarktask.DefaultEnabled holds the default value on creation for the enabled field.
 	benchmarktask.DefaultEnabled = benchmarktaskDescEnabled.Default.(bool)
-	// benchmarktaskDescMetadata is the schema descriptor for metadata field.
-	benchmarktaskDescMetadata := benchmarktaskFields[15].Descriptor()
-	// benchmarktask.DefaultMetadata holds the default value on creation for the metadata field.
-	benchmarktask.DefaultMetadata = benchmarktaskDescMetadata.Default.(func() map[string]interface{})
+	// benchmarktaskDescSortOrder is the schema descriptor for sort_order field.
+	benchmarktaskDescSortOrder := benchmarktaskFields[11].Descriptor()
+	// benchmarktask.DefaultSortOrder holds the default value on creation for the sort_order field.
+	benchmarktask.DefaultSortOrder = benchmarktaskDescSortOrder.Default.(int)
 	channelmonitorMixin := schema.ChannelMonitor{}.Mixin()
 	channelmonitorMixinFields0 := channelmonitorMixin[0].Fields()
 	_ = channelmonitorMixinFields0

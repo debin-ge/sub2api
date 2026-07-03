@@ -11,7 +11,6 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
-	"github.com/Wei-Shaw/sub2api/ent/benchmarkprofile"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkschedule"
 )
 
@@ -51,12 +50,6 @@ func (_c *BenchmarkScheduleCreate) SetNillableUpdatedAt(v *time.Time) *Benchmark
 	return _c
 }
 
-// SetProfileID sets the "profile_id" field.
-func (_c *BenchmarkScheduleCreate) SetProfileID(v int64) *BenchmarkScheduleCreate {
-	_c.mutation.SetProfileID(v)
-	return _c
-}
-
 // SetName sets the "name" field.
 func (_c *BenchmarkScheduleCreate) SetName(v string) *BenchmarkScheduleCreate {
 	_c.mutation.SetName(v)
@@ -79,6 +72,26 @@ func (_c *BenchmarkScheduleCreate) SetEnabled(v bool) *BenchmarkScheduleCreate {
 func (_c *BenchmarkScheduleCreate) SetNillableEnabled(v *bool) *BenchmarkScheduleCreate {
 	if v != nil {
 		_c.SetEnabled(*v)
+	}
+	return _c
+}
+
+// SetTargetIds sets the "target_ids" field.
+func (_c *BenchmarkScheduleCreate) SetTargetIds(v []int64) *BenchmarkScheduleCreate {
+	_c.mutation.SetTargetIds(v)
+	return _c
+}
+
+// SetTaskCount sets the "task_count" field.
+func (_c *BenchmarkScheduleCreate) SetTaskCount(v int) *BenchmarkScheduleCreate {
+	_c.mutation.SetTaskCount(v)
+	return _c
+}
+
+// SetNillableTaskCount sets the "task_count" field if the given value is not nil.
+func (_c *BenchmarkScheduleCreate) SetNillableTaskCount(v *int) *BenchmarkScheduleCreate {
+	if v != nil {
+		_c.SetTaskCount(*v)
 	}
 	return _c
 }
@@ -109,17 +122,6 @@ func (_c *BenchmarkScheduleCreate) SetNillableNextRunAt(v *time.Time) *Benchmark
 		_c.SetNextRunAt(*v)
 	}
 	return _c
-}
-
-// SetMetadata sets the "metadata" field.
-func (_c *BenchmarkScheduleCreate) SetMetadata(v map[string]interface{}) *BenchmarkScheduleCreate {
-	_c.mutation.SetMetadata(v)
-	return _c
-}
-
-// SetProfile sets the "profile" edge to the BenchmarkProfile entity.
-func (_c *BenchmarkScheduleCreate) SetProfile(v *BenchmarkProfile) *BenchmarkScheduleCreate {
-	return _c.SetProfileID(v.ID)
 }
 
 // Mutation returns the BenchmarkScheduleMutation object of the builder.
@@ -169,9 +171,13 @@ func (_c *BenchmarkScheduleCreate) defaults() {
 		v := benchmarkschedule.DefaultEnabled
 		_c.mutation.SetEnabled(v)
 	}
-	if _, ok := _c.mutation.Metadata(); !ok {
-		v := benchmarkschedule.DefaultMetadata()
-		_c.mutation.SetMetadata(v)
+	if _, ok := _c.mutation.TargetIds(); !ok {
+		v := benchmarkschedule.DefaultTargetIds()
+		_c.mutation.SetTargetIds(v)
+	}
+	if _, ok := _c.mutation.TaskCount(); !ok {
+		v := benchmarkschedule.DefaultTaskCount
+		_c.mutation.SetTaskCount(v)
 	}
 }
 
@@ -182,9 +188,6 @@ func (_c *BenchmarkScheduleCreate) check() error {
 	}
 	if _, ok := _c.mutation.UpdatedAt(); !ok {
 		return &ValidationError{Name: "updated_at", err: errors.New(`ent: missing required field "BenchmarkSchedule.updated_at"`)}
-	}
-	if _, ok := _c.mutation.ProfileID(); !ok {
-		return &ValidationError{Name: "profile_id", err: errors.New(`ent: missing required field "BenchmarkSchedule.profile_id"`)}
 	}
 	if _, ok := _c.mutation.Name(); !ok {
 		return &ValidationError{Name: "name", err: errors.New(`ent: missing required field "BenchmarkSchedule.name"`)}
@@ -205,11 +208,11 @@ func (_c *BenchmarkScheduleCreate) check() error {
 	if _, ok := _c.mutation.Enabled(); !ok {
 		return &ValidationError{Name: "enabled", err: errors.New(`ent: missing required field "BenchmarkSchedule.enabled"`)}
 	}
-	if _, ok := _c.mutation.Metadata(); !ok {
-		return &ValidationError{Name: "metadata", err: errors.New(`ent: missing required field "BenchmarkSchedule.metadata"`)}
+	if _, ok := _c.mutation.TargetIds(); !ok {
+		return &ValidationError{Name: "target_ids", err: errors.New(`ent: missing required field "BenchmarkSchedule.target_ids"`)}
 	}
-	if len(_c.mutation.ProfileIDs()) == 0 {
-		return &ValidationError{Name: "profile", err: errors.New(`ent: missing required edge "BenchmarkSchedule.profile"`)}
+	if _, ok := _c.mutation.TaskCount(); !ok {
+		return &ValidationError{Name: "task_count", err: errors.New(`ent: missing required field "BenchmarkSchedule.task_count"`)}
 	}
 	return nil
 }
@@ -258,6 +261,14 @@ func (_c *BenchmarkScheduleCreate) createSpec() (*BenchmarkSchedule, *sqlgraph.C
 		_spec.SetField(benchmarkschedule.FieldEnabled, field.TypeBool, value)
 		_node.Enabled = value
 	}
+	if value, ok := _c.mutation.TargetIds(); ok {
+		_spec.SetField(benchmarkschedule.FieldTargetIds, field.TypeJSON, value)
+		_node.TargetIds = value
+	}
+	if value, ok := _c.mutation.TaskCount(); ok {
+		_spec.SetField(benchmarkschedule.FieldTaskCount, field.TypeInt, value)
+		_node.TaskCount = value
+	}
 	if value, ok := _c.mutation.LastRunAt(); ok {
 		_spec.SetField(benchmarkschedule.FieldLastRunAt, field.TypeTime, value)
 		_node.LastRunAt = &value
@@ -265,27 +276,6 @@ func (_c *BenchmarkScheduleCreate) createSpec() (*BenchmarkSchedule, *sqlgraph.C
 	if value, ok := _c.mutation.NextRunAt(); ok {
 		_spec.SetField(benchmarkschedule.FieldNextRunAt, field.TypeTime, value)
 		_node.NextRunAt = &value
-	}
-	if value, ok := _c.mutation.Metadata(); ok {
-		_spec.SetField(benchmarkschedule.FieldMetadata, field.TypeJSON, value)
-		_node.Metadata = value
-	}
-	if nodes := _c.mutation.ProfileIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.M2O,
-			Inverse: true,
-			Table:   benchmarkschedule.ProfileTable,
-			Columns: []string{benchmarkschedule.ProfileColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(benchmarkprofile.FieldID, field.TypeInt64),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_node.ProfileID = nodes[0]
-		_spec.Edges = append(_spec.Edges, edge)
 	}
 	return _node, _spec
 }
@@ -351,18 +341,6 @@ func (u *BenchmarkScheduleUpsert) UpdateUpdatedAt() *BenchmarkScheduleUpsert {
 	return u
 }
 
-// SetProfileID sets the "profile_id" field.
-func (u *BenchmarkScheduleUpsert) SetProfileID(v int64) *BenchmarkScheduleUpsert {
-	u.Set(benchmarkschedule.FieldProfileID, v)
-	return u
-}
-
-// UpdateProfileID sets the "profile_id" field to the value that was provided on create.
-func (u *BenchmarkScheduleUpsert) UpdateProfileID() *BenchmarkScheduleUpsert {
-	u.SetExcluded(benchmarkschedule.FieldProfileID)
-	return u
-}
-
 // SetName sets the "name" field.
 func (u *BenchmarkScheduleUpsert) SetName(v string) *BenchmarkScheduleUpsert {
 	u.Set(benchmarkschedule.FieldName, v)
@@ -399,6 +377,36 @@ func (u *BenchmarkScheduleUpsert) UpdateEnabled() *BenchmarkScheduleUpsert {
 	return u
 }
 
+// SetTargetIds sets the "target_ids" field.
+func (u *BenchmarkScheduleUpsert) SetTargetIds(v []int64) *BenchmarkScheduleUpsert {
+	u.Set(benchmarkschedule.FieldTargetIds, v)
+	return u
+}
+
+// UpdateTargetIds sets the "target_ids" field to the value that was provided on create.
+func (u *BenchmarkScheduleUpsert) UpdateTargetIds() *BenchmarkScheduleUpsert {
+	u.SetExcluded(benchmarkschedule.FieldTargetIds)
+	return u
+}
+
+// SetTaskCount sets the "task_count" field.
+func (u *BenchmarkScheduleUpsert) SetTaskCount(v int) *BenchmarkScheduleUpsert {
+	u.Set(benchmarkschedule.FieldTaskCount, v)
+	return u
+}
+
+// UpdateTaskCount sets the "task_count" field to the value that was provided on create.
+func (u *BenchmarkScheduleUpsert) UpdateTaskCount() *BenchmarkScheduleUpsert {
+	u.SetExcluded(benchmarkschedule.FieldTaskCount)
+	return u
+}
+
+// AddTaskCount adds v to the "task_count" field.
+func (u *BenchmarkScheduleUpsert) AddTaskCount(v int) *BenchmarkScheduleUpsert {
+	u.Add(benchmarkschedule.FieldTaskCount, v)
+	return u
+}
+
 // SetLastRunAt sets the "last_run_at" field.
 func (u *BenchmarkScheduleUpsert) SetLastRunAt(v time.Time) *BenchmarkScheduleUpsert {
 	u.Set(benchmarkschedule.FieldLastRunAt, v)
@@ -432,18 +440,6 @@ func (u *BenchmarkScheduleUpsert) UpdateNextRunAt() *BenchmarkScheduleUpsert {
 // ClearNextRunAt clears the value of the "next_run_at" field.
 func (u *BenchmarkScheduleUpsert) ClearNextRunAt() *BenchmarkScheduleUpsert {
 	u.SetNull(benchmarkschedule.FieldNextRunAt)
-	return u
-}
-
-// SetMetadata sets the "metadata" field.
-func (u *BenchmarkScheduleUpsert) SetMetadata(v map[string]interface{}) *BenchmarkScheduleUpsert {
-	u.Set(benchmarkschedule.FieldMetadata, v)
-	return u
-}
-
-// UpdateMetadata sets the "metadata" field to the value that was provided on create.
-func (u *BenchmarkScheduleUpsert) UpdateMetadata() *BenchmarkScheduleUpsert {
-	u.SetExcluded(benchmarkschedule.FieldMetadata)
 	return u
 }
 
@@ -506,20 +502,6 @@ func (u *BenchmarkScheduleUpsertOne) UpdateUpdatedAt() *BenchmarkScheduleUpsertO
 	})
 }
 
-// SetProfileID sets the "profile_id" field.
-func (u *BenchmarkScheduleUpsertOne) SetProfileID(v int64) *BenchmarkScheduleUpsertOne {
-	return u.Update(func(s *BenchmarkScheduleUpsert) {
-		s.SetProfileID(v)
-	})
-}
-
-// UpdateProfileID sets the "profile_id" field to the value that was provided on create.
-func (u *BenchmarkScheduleUpsertOne) UpdateProfileID() *BenchmarkScheduleUpsertOne {
-	return u.Update(func(s *BenchmarkScheduleUpsert) {
-		s.UpdateProfileID()
-	})
-}
-
 // SetName sets the "name" field.
 func (u *BenchmarkScheduleUpsertOne) SetName(v string) *BenchmarkScheduleUpsertOne {
 	return u.Update(func(s *BenchmarkScheduleUpsert) {
@@ -562,6 +544,41 @@ func (u *BenchmarkScheduleUpsertOne) UpdateEnabled() *BenchmarkScheduleUpsertOne
 	})
 }
 
+// SetTargetIds sets the "target_ids" field.
+func (u *BenchmarkScheduleUpsertOne) SetTargetIds(v []int64) *BenchmarkScheduleUpsertOne {
+	return u.Update(func(s *BenchmarkScheduleUpsert) {
+		s.SetTargetIds(v)
+	})
+}
+
+// UpdateTargetIds sets the "target_ids" field to the value that was provided on create.
+func (u *BenchmarkScheduleUpsertOne) UpdateTargetIds() *BenchmarkScheduleUpsertOne {
+	return u.Update(func(s *BenchmarkScheduleUpsert) {
+		s.UpdateTargetIds()
+	})
+}
+
+// SetTaskCount sets the "task_count" field.
+func (u *BenchmarkScheduleUpsertOne) SetTaskCount(v int) *BenchmarkScheduleUpsertOne {
+	return u.Update(func(s *BenchmarkScheduleUpsert) {
+		s.SetTaskCount(v)
+	})
+}
+
+// AddTaskCount adds v to the "task_count" field.
+func (u *BenchmarkScheduleUpsertOne) AddTaskCount(v int) *BenchmarkScheduleUpsertOne {
+	return u.Update(func(s *BenchmarkScheduleUpsert) {
+		s.AddTaskCount(v)
+	})
+}
+
+// UpdateTaskCount sets the "task_count" field to the value that was provided on create.
+func (u *BenchmarkScheduleUpsertOne) UpdateTaskCount() *BenchmarkScheduleUpsertOne {
+	return u.Update(func(s *BenchmarkScheduleUpsert) {
+		s.UpdateTaskCount()
+	})
+}
+
 // SetLastRunAt sets the "last_run_at" field.
 func (u *BenchmarkScheduleUpsertOne) SetLastRunAt(v time.Time) *BenchmarkScheduleUpsertOne {
 	return u.Update(func(s *BenchmarkScheduleUpsert) {
@@ -601,20 +618,6 @@ func (u *BenchmarkScheduleUpsertOne) UpdateNextRunAt() *BenchmarkScheduleUpsertO
 func (u *BenchmarkScheduleUpsertOne) ClearNextRunAt() *BenchmarkScheduleUpsertOne {
 	return u.Update(func(s *BenchmarkScheduleUpsert) {
 		s.ClearNextRunAt()
-	})
-}
-
-// SetMetadata sets the "metadata" field.
-func (u *BenchmarkScheduleUpsertOne) SetMetadata(v map[string]interface{}) *BenchmarkScheduleUpsertOne {
-	return u.Update(func(s *BenchmarkScheduleUpsert) {
-		s.SetMetadata(v)
-	})
-}
-
-// UpdateMetadata sets the "metadata" field to the value that was provided on create.
-func (u *BenchmarkScheduleUpsertOne) UpdateMetadata() *BenchmarkScheduleUpsertOne {
-	return u.Update(func(s *BenchmarkScheduleUpsert) {
-		s.UpdateMetadata()
 	})
 }
 
@@ -843,20 +846,6 @@ func (u *BenchmarkScheduleUpsertBulk) UpdateUpdatedAt() *BenchmarkScheduleUpsert
 	})
 }
 
-// SetProfileID sets the "profile_id" field.
-func (u *BenchmarkScheduleUpsertBulk) SetProfileID(v int64) *BenchmarkScheduleUpsertBulk {
-	return u.Update(func(s *BenchmarkScheduleUpsert) {
-		s.SetProfileID(v)
-	})
-}
-
-// UpdateProfileID sets the "profile_id" field to the value that was provided on create.
-func (u *BenchmarkScheduleUpsertBulk) UpdateProfileID() *BenchmarkScheduleUpsertBulk {
-	return u.Update(func(s *BenchmarkScheduleUpsert) {
-		s.UpdateProfileID()
-	})
-}
-
 // SetName sets the "name" field.
 func (u *BenchmarkScheduleUpsertBulk) SetName(v string) *BenchmarkScheduleUpsertBulk {
 	return u.Update(func(s *BenchmarkScheduleUpsert) {
@@ -899,6 +888,41 @@ func (u *BenchmarkScheduleUpsertBulk) UpdateEnabled() *BenchmarkScheduleUpsertBu
 	})
 }
 
+// SetTargetIds sets the "target_ids" field.
+func (u *BenchmarkScheduleUpsertBulk) SetTargetIds(v []int64) *BenchmarkScheduleUpsertBulk {
+	return u.Update(func(s *BenchmarkScheduleUpsert) {
+		s.SetTargetIds(v)
+	})
+}
+
+// UpdateTargetIds sets the "target_ids" field to the value that was provided on create.
+func (u *BenchmarkScheduleUpsertBulk) UpdateTargetIds() *BenchmarkScheduleUpsertBulk {
+	return u.Update(func(s *BenchmarkScheduleUpsert) {
+		s.UpdateTargetIds()
+	})
+}
+
+// SetTaskCount sets the "task_count" field.
+func (u *BenchmarkScheduleUpsertBulk) SetTaskCount(v int) *BenchmarkScheduleUpsertBulk {
+	return u.Update(func(s *BenchmarkScheduleUpsert) {
+		s.SetTaskCount(v)
+	})
+}
+
+// AddTaskCount adds v to the "task_count" field.
+func (u *BenchmarkScheduleUpsertBulk) AddTaskCount(v int) *BenchmarkScheduleUpsertBulk {
+	return u.Update(func(s *BenchmarkScheduleUpsert) {
+		s.AddTaskCount(v)
+	})
+}
+
+// UpdateTaskCount sets the "task_count" field to the value that was provided on create.
+func (u *BenchmarkScheduleUpsertBulk) UpdateTaskCount() *BenchmarkScheduleUpsertBulk {
+	return u.Update(func(s *BenchmarkScheduleUpsert) {
+		s.UpdateTaskCount()
+	})
+}
+
 // SetLastRunAt sets the "last_run_at" field.
 func (u *BenchmarkScheduleUpsertBulk) SetLastRunAt(v time.Time) *BenchmarkScheduleUpsertBulk {
 	return u.Update(func(s *BenchmarkScheduleUpsert) {
@@ -938,20 +962,6 @@ func (u *BenchmarkScheduleUpsertBulk) UpdateNextRunAt() *BenchmarkScheduleUpsert
 func (u *BenchmarkScheduleUpsertBulk) ClearNextRunAt() *BenchmarkScheduleUpsertBulk {
 	return u.Update(func(s *BenchmarkScheduleUpsert) {
 		s.ClearNextRunAt()
-	})
-}
-
-// SetMetadata sets the "metadata" field.
-func (u *BenchmarkScheduleUpsertBulk) SetMetadata(v map[string]interface{}) *BenchmarkScheduleUpsertBulk {
-	return u.Update(func(s *BenchmarkScheduleUpsert) {
-		s.SetMetadata(v)
-	})
-}
-
-// UpdateMetadata sets the "metadata" field to the value that was provided on create.
-func (u *BenchmarkScheduleUpsertBulk) UpdateMetadata() *BenchmarkScheduleUpsertBulk {
-	return u.Update(func(s *BenchmarkScheduleUpsert) {
-		s.UpdateMetadata()
 	})
 }
 

@@ -11,14 +11,12 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
-	"github.com/Wei-Shaw/sub2api/ent/benchmarkprofile"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkpublicsnapshot"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkresult"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkrun"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkruntarget"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkruntask"
-	"github.com/Wei-Shaw/sub2api/ent/benchmarkscoresnapshot"
-	"github.com/Wei-Shaw/sub2api/ent/benchmarksuite"
+	"github.com/Wei-Shaw/sub2api/ent/benchmarktargetscore"
 )
 
 // BenchmarkRunCreate is the builder for creating a BenchmarkRun entity.
@@ -57,18 +55,6 @@ func (_c *BenchmarkRunCreate) SetNillableUpdatedAt(v *time.Time) *BenchmarkRunCr
 	return _c
 }
 
-// SetSuiteID sets the "suite_id" field.
-func (_c *BenchmarkRunCreate) SetSuiteID(v int64) *BenchmarkRunCreate {
-	_c.mutation.SetSuiteID(v)
-	return _c
-}
-
-// SetProfileID sets the "profile_id" field.
-func (_c *BenchmarkRunCreate) SetProfileID(v int64) *BenchmarkRunCreate {
-	_c.mutation.SetProfileID(v)
-	return _c
-}
-
 // SetStatus sets the "status" field.
 func (_c *BenchmarkRunCreate) SetStatus(v string) *BenchmarkRunCreate {
 	_c.mutation.SetStatus(v)
@@ -81,36 +67,30 @@ func (_c *BenchmarkRunCreate) SetTriggerType(v string) *BenchmarkRunCreate {
 	return _c
 }
 
-// SetTaskScale sets the "task_scale" field.
-func (_c *BenchmarkRunCreate) SetTaskScale(v benchmarkrun.TaskScale) *BenchmarkRunCreate {
-	_c.mutation.SetTaskScale(v)
+// SetScheduleID sets the "schedule_id" field.
+func (_c *BenchmarkRunCreate) SetScheduleID(v int64) *BenchmarkRunCreate {
+	_c.mutation.SetScheduleID(v)
 	return _c
 }
 
-// SetNillableTaskScale sets the "task_scale" field if the given value is not nil.
-func (_c *BenchmarkRunCreate) SetNillableTaskScale(v *benchmarkrun.TaskScale) *BenchmarkRunCreate {
+// SetNillableScheduleID sets the "schedule_id" field if the given value is not nil.
+func (_c *BenchmarkRunCreate) SetNillableScheduleID(v *int64) *BenchmarkRunCreate {
 	if v != nil {
-		_c.SetTaskScale(*v)
+		_c.SetScheduleID(*v)
 	}
 	return _c
 }
 
-// SetTaskTypes sets the "task_types" field.
-func (_c *BenchmarkRunCreate) SetTaskTypes(v []string) *BenchmarkRunCreate {
-	_c.mutation.SetTaskTypes(v)
+// SetTaskCount sets the "task_count" field.
+func (_c *BenchmarkRunCreate) SetTaskCount(v int) *BenchmarkRunCreate {
+	_c.mutation.SetTaskCount(v)
 	return _c
 }
 
-// SetSelectionSeed sets the "selection_seed" field.
-func (_c *BenchmarkRunCreate) SetSelectionSeed(v int64) *BenchmarkRunCreate {
-	_c.mutation.SetSelectionSeed(v)
-	return _c
-}
-
-// SetNillableSelectionSeed sets the "selection_seed" field if the given value is not nil.
-func (_c *BenchmarkRunCreate) SetNillableSelectionSeed(v *int64) *BenchmarkRunCreate {
+// SetNillableTaskCount sets the "task_count" field if the given value is not nil.
+func (_c *BenchmarkRunCreate) SetNillableTaskCount(v *int) *BenchmarkRunCreate {
 	if v != nil {
-		_c.SetSelectionSeed(*v)
+		_c.SetTaskCount(*v)
 	}
 	return _c
 }
@@ -185,12 +165,6 @@ func (_c *BenchmarkRunCreate) SetNillableFinishedAt(v *time.Time) *BenchmarkRunC
 	return _c
 }
 
-// SetConfigSnapshot sets the "config_snapshot" field.
-func (_c *BenchmarkRunCreate) SetConfigSnapshot(v map[string]interface{}) *BenchmarkRunCreate {
-	_c.mutation.SetConfigSnapshot(v)
-	return _c
-}
-
 // SetErrorMessage sets the "error_message" field.
 func (_c *BenchmarkRunCreate) SetErrorMessage(v string) *BenchmarkRunCreate {
 	_c.mutation.SetErrorMessage(v)
@@ -217,16 +191,6 @@ func (_c *BenchmarkRunCreate) SetNillableCreatedBy(v *int64) *BenchmarkRunCreate
 		_c.SetCreatedBy(*v)
 	}
 	return _c
-}
-
-// SetSuite sets the "suite" edge to the BenchmarkSuite entity.
-func (_c *BenchmarkRunCreate) SetSuite(v *BenchmarkSuite) *BenchmarkRunCreate {
-	return _c.SetSuiteID(v.ID)
-}
-
-// SetProfile sets the "profile" edge to the BenchmarkProfile entity.
-func (_c *BenchmarkRunCreate) SetProfile(v *BenchmarkProfile) *BenchmarkRunCreate {
-	return _c.SetProfileID(v.ID)
 }
 
 // AddRunTargetIDs adds the "run_targets" edge to the BenchmarkRunTarget entity by IDs.
@@ -274,19 +238,19 @@ func (_c *BenchmarkRunCreate) AddResults(v ...*BenchmarkResult) *BenchmarkRunCre
 	return _c.AddResultIDs(ids...)
 }
 
-// AddScoreSnapshotIDs adds the "score_snapshots" edge to the BenchmarkScoreSnapshot entity by IDs.
-func (_c *BenchmarkRunCreate) AddScoreSnapshotIDs(ids ...int64) *BenchmarkRunCreate {
-	_c.mutation.AddScoreSnapshotIDs(ids...)
+// AddTargetScoreIDs adds the "target_scores" edge to the BenchmarkTargetScore entity by IDs.
+func (_c *BenchmarkRunCreate) AddTargetScoreIDs(ids ...int64) *BenchmarkRunCreate {
+	_c.mutation.AddTargetScoreIDs(ids...)
 	return _c
 }
 
-// AddScoreSnapshots adds the "score_snapshots" edges to the BenchmarkScoreSnapshot entity.
-func (_c *BenchmarkRunCreate) AddScoreSnapshots(v ...*BenchmarkScoreSnapshot) *BenchmarkRunCreate {
+// AddTargetScores adds the "target_scores" edges to the BenchmarkTargetScore entity.
+func (_c *BenchmarkRunCreate) AddTargetScores(v ...*BenchmarkTargetScore) *BenchmarkRunCreate {
 	ids := make([]int64, len(v))
 	for i := range v {
 		ids[i] = v[i].ID
 	}
-	return _c.AddScoreSnapshotIDs(ids...)
+	return _c.AddTargetScoreIDs(ids...)
 }
 
 // AddPublicSnapshotIDs adds the "public_snapshots" edge to the BenchmarkPublicSnapshot entity by IDs.
@@ -347,13 +311,9 @@ func (_c *BenchmarkRunCreate) defaults() {
 		v := benchmarkrun.DefaultUpdatedAt()
 		_c.mutation.SetUpdatedAt(v)
 	}
-	if _, ok := _c.mutation.TaskScale(); !ok {
-		v := benchmarkrun.DefaultTaskScale
-		_c.mutation.SetTaskScale(v)
-	}
-	if _, ok := _c.mutation.TaskTypes(); !ok {
-		v := benchmarkrun.DefaultTaskTypes()
-		_c.mutation.SetTaskTypes(v)
+	if _, ok := _c.mutation.TaskCount(); !ok {
+		v := benchmarkrun.DefaultTaskCount
+		_c.mutation.SetTaskCount(v)
 	}
 	if _, ok := _c.mutation.PlannedTargetCount(); !ok {
 		v := benchmarkrun.DefaultPlannedTargetCount
@@ -367,10 +327,6 @@ func (_c *BenchmarkRunCreate) defaults() {
 		v := benchmarkrun.DefaultPlannedResultCount
 		_c.mutation.SetPlannedResultCount(v)
 	}
-	if _, ok := _c.mutation.ConfigSnapshot(); !ok {
-		v := benchmarkrun.DefaultConfigSnapshot()
-		_c.mutation.SetConfigSnapshot(v)
-	}
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -380,12 +336,6 @@ func (_c *BenchmarkRunCreate) check() error {
 	}
 	if _, ok := _c.mutation.UpdatedAt(); !ok {
 		return &ValidationError{Name: "updated_at", err: errors.New(`ent: missing required field "BenchmarkRun.updated_at"`)}
-	}
-	if _, ok := _c.mutation.SuiteID(); !ok {
-		return &ValidationError{Name: "suite_id", err: errors.New(`ent: missing required field "BenchmarkRun.suite_id"`)}
-	}
-	if _, ok := _c.mutation.ProfileID(); !ok {
-		return &ValidationError{Name: "profile_id", err: errors.New(`ent: missing required field "BenchmarkRun.profile_id"`)}
 	}
 	if _, ok := _c.mutation.Status(); !ok {
 		return &ValidationError{Name: "status", err: errors.New(`ent: missing required field "BenchmarkRun.status"`)}
@@ -403,16 +353,8 @@ func (_c *BenchmarkRunCreate) check() error {
 			return &ValidationError{Name: "trigger_type", err: fmt.Errorf(`ent: validator failed for field "BenchmarkRun.trigger_type": %w`, err)}
 		}
 	}
-	if _, ok := _c.mutation.TaskScale(); !ok {
-		return &ValidationError{Name: "task_scale", err: errors.New(`ent: missing required field "BenchmarkRun.task_scale"`)}
-	}
-	if v, ok := _c.mutation.TaskScale(); ok {
-		if err := benchmarkrun.TaskScaleValidator(v); err != nil {
-			return &ValidationError{Name: "task_scale", err: fmt.Errorf(`ent: validator failed for field "BenchmarkRun.task_scale": %w`, err)}
-		}
-	}
-	if _, ok := _c.mutation.TaskTypes(); !ok {
-		return &ValidationError{Name: "task_types", err: errors.New(`ent: missing required field "BenchmarkRun.task_types"`)}
+	if _, ok := _c.mutation.TaskCount(); !ok {
+		return &ValidationError{Name: "task_count", err: errors.New(`ent: missing required field "BenchmarkRun.task_count"`)}
 	}
 	if _, ok := _c.mutation.PlannedTargetCount(); !ok {
 		return &ValidationError{Name: "planned_target_count", err: errors.New(`ent: missing required field "BenchmarkRun.planned_target_count"`)}
@@ -422,15 +364,6 @@ func (_c *BenchmarkRunCreate) check() error {
 	}
 	if _, ok := _c.mutation.PlannedResultCount(); !ok {
 		return &ValidationError{Name: "planned_result_count", err: errors.New(`ent: missing required field "BenchmarkRun.planned_result_count"`)}
-	}
-	if _, ok := _c.mutation.ConfigSnapshot(); !ok {
-		return &ValidationError{Name: "config_snapshot", err: errors.New(`ent: missing required field "BenchmarkRun.config_snapshot"`)}
-	}
-	if len(_c.mutation.SuiteIDs()) == 0 {
-		return &ValidationError{Name: "suite", err: errors.New(`ent: missing required edge "BenchmarkRun.suite"`)}
-	}
-	if len(_c.mutation.ProfileIDs()) == 0 {
-		return &ValidationError{Name: "profile", err: errors.New(`ent: missing required edge "BenchmarkRun.profile"`)}
 	}
 	return nil
 }
@@ -475,17 +408,13 @@ func (_c *BenchmarkRunCreate) createSpec() (*BenchmarkRun, *sqlgraph.CreateSpec)
 		_spec.SetField(benchmarkrun.FieldTriggerType, field.TypeString, value)
 		_node.TriggerType = value
 	}
-	if value, ok := _c.mutation.TaskScale(); ok {
-		_spec.SetField(benchmarkrun.FieldTaskScale, field.TypeEnum, value)
-		_node.TaskScale = value
+	if value, ok := _c.mutation.ScheduleID(); ok {
+		_spec.SetField(benchmarkrun.FieldScheduleID, field.TypeInt64, value)
+		_node.ScheduleID = &value
 	}
-	if value, ok := _c.mutation.TaskTypes(); ok {
-		_spec.SetField(benchmarkrun.FieldTaskTypes, field.TypeJSON, value)
-		_node.TaskTypes = value
-	}
-	if value, ok := _c.mutation.SelectionSeed(); ok {
-		_spec.SetField(benchmarkrun.FieldSelectionSeed, field.TypeInt64, value)
-		_node.SelectionSeed = &value
+	if value, ok := _c.mutation.TaskCount(); ok {
+		_spec.SetField(benchmarkrun.FieldTaskCount, field.TypeInt, value)
+		_node.TaskCount = value
 	}
 	if value, ok := _c.mutation.PlannedTargetCount(); ok {
 		_spec.SetField(benchmarkrun.FieldPlannedTargetCount, field.TypeInt, value)
@@ -507,10 +436,6 @@ func (_c *BenchmarkRunCreate) createSpec() (*BenchmarkRun, *sqlgraph.CreateSpec)
 		_spec.SetField(benchmarkrun.FieldFinishedAt, field.TypeTime, value)
 		_node.FinishedAt = &value
 	}
-	if value, ok := _c.mutation.ConfigSnapshot(); ok {
-		_spec.SetField(benchmarkrun.FieldConfigSnapshot, field.TypeJSON, value)
-		_node.ConfigSnapshot = value
-	}
 	if value, ok := _c.mutation.ErrorMessage(); ok {
 		_spec.SetField(benchmarkrun.FieldErrorMessage, field.TypeString, value)
 		_node.ErrorMessage = &value
@@ -518,40 +443,6 @@ func (_c *BenchmarkRunCreate) createSpec() (*BenchmarkRun, *sqlgraph.CreateSpec)
 	if value, ok := _c.mutation.CreatedBy(); ok {
 		_spec.SetField(benchmarkrun.FieldCreatedBy, field.TypeInt64, value)
 		_node.CreatedBy = &value
-	}
-	if nodes := _c.mutation.SuiteIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.M2O,
-			Inverse: true,
-			Table:   benchmarkrun.SuiteTable,
-			Columns: []string{benchmarkrun.SuiteColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(benchmarksuite.FieldID, field.TypeInt64),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_node.SuiteID = nodes[0]
-		_spec.Edges = append(_spec.Edges, edge)
-	}
-	if nodes := _c.mutation.ProfileIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.M2O,
-			Inverse: true,
-			Table:   benchmarkrun.ProfileTable,
-			Columns: []string{benchmarkrun.ProfileColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(benchmarkprofile.FieldID, field.TypeInt64),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_node.ProfileID = nodes[0]
-		_spec.Edges = append(_spec.Edges, edge)
 	}
 	if nodes := _c.mutation.RunTargetsIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
@@ -601,15 +492,15 @@ func (_c *BenchmarkRunCreate) createSpec() (*BenchmarkRun, *sqlgraph.CreateSpec)
 		}
 		_spec.Edges = append(_spec.Edges, edge)
 	}
-	if nodes := _c.mutation.ScoreSnapshotsIDs(); len(nodes) > 0 {
+	if nodes := _c.mutation.TargetScoresIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
 			Inverse: false,
-			Table:   benchmarkrun.ScoreSnapshotsTable,
-			Columns: []string{benchmarkrun.ScoreSnapshotsColumn},
+			Table:   benchmarkrun.TargetScoresTable,
+			Columns: []string{benchmarkrun.TargetScoresColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(benchmarkscoresnapshot.FieldID, field.TypeInt64),
+				IDSpec: sqlgraph.NewFieldSpec(benchmarktargetscore.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {
@@ -697,30 +588,6 @@ func (u *BenchmarkRunUpsert) UpdateUpdatedAt() *BenchmarkRunUpsert {
 	return u
 }
 
-// SetSuiteID sets the "suite_id" field.
-func (u *BenchmarkRunUpsert) SetSuiteID(v int64) *BenchmarkRunUpsert {
-	u.Set(benchmarkrun.FieldSuiteID, v)
-	return u
-}
-
-// UpdateSuiteID sets the "suite_id" field to the value that was provided on create.
-func (u *BenchmarkRunUpsert) UpdateSuiteID() *BenchmarkRunUpsert {
-	u.SetExcluded(benchmarkrun.FieldSuiteID)
-	return u
-}
-
-// SetProfileID sets the "profile_id" field.
-func (u *BenchmarkRunUpsert) SetProfileID(v int64) *BenchmarkRunUpsert {
-	u.Set(benchmarkrun.FieldProfileID, v)
-	return u
-}
-
-// UpdateProfileID sets the "profile_id" field to the value that was provided on create.
-func (u *BenchmarkRunUpsert) UpdateProfileID() *BenchmarkRunUpsert {
-	u.SetExcluded(benchmarkrun.FieldProfileID)
-	return u
-}
-
 // SetStatus sets the "status" field.
 func (u *BenchmarkRunUpsert) SetStatus(v string) *BenchmarkRunUpsert {
 	u.Set(benchmarkrun.FieldStatus, v)
@@ -745,51 +612,45 @@ func (u *BenchmarkRunUpsert) UpdateTriggerType() *BenchmarkRunUpsert {
 	return u
 }
 
-// SetTaskScale sets the "task_scale" field.
-func (u *BenchmarkRunUpsert) SetTaskScale(v benchmarkrun.TaskScale) *BenchmarkRunUpsert {
-	u.Set(benchmarkrun.FieldTaskScale, v)
+// SetScheduleID sets the "schedule_id" field.
+func (u *BenchmarkRunUpsert) SetScheduleID(v int64) *BenchmarkRunUpsert {
+	u.Set(benchmarkrun.FieldScheduleID, v)
 	return u
 }
 
-// UpdateTaskScale sets the "task_scale" field to the value that was provided on create.
-func (u *BenchmarkRunUpsert) UpdateTaskScale() *BenchmarkRunUpsert {
-	u.SetExcluded(benchmarkrun.FieldTaskScale)
+// UpdateScheduleID sets the "schedule_id" field to the value that was provided on create.
+func (u *BenchmarkRunUpsert) UpdateScheduleID() *BenchmarkRunUpsert {
+	u.SetExcluded(benchmarkrun.FieldScheduleID)
 	return u
 }
 
-// SetTaskTypes sets the "task_types" field.
-func (u *BenchmarkRunUpsert) SetTaskTypes(v []string) *BenchmarkRunUpsert {
-	u.Set(benchmarkrun.FieldTaskTypes, v)
+// AddScheduleID adds v to the "schedule_id" field.
+func (u *BenchmarkRunUpsert) AddScheduleID(v int64) *BenchmarkRunUpsert {
+	u.Add(benchmarkrun.FieldScheduleID, v)
 	return u
 }
 
-// UpdateTaskTypes sets the "task_types" field to the value that was provided on create.
-func (u *BenchmarkRunUpsert) UpdateTaskTypes() *BenchmarkRunUpsert {
-	u.SetExcluded(benchmarkrun.FieldTaskTypes)
+// ClearScheduleID clears the value of the "schedule_id" field.
+func (u *BenchmarkRunUpsert) ClearScheduleID() *BenchmarkRunUpsert {
+	u.SetNull(benchmarkrun.FieldScheduleID)
 	return u
 }
 
-// SetSelectionSeed sets the "selection_seed" field.
-func (u *BenchmarkRunUpsert) SetSelectionSeed(v int64) *BenchmarkRunUpsert {
-	u.Set(benchmarkrun.FieldSelectionSeed, v)
+// SetTaskCount sets the "task_count" field.
+func (u *BenchmarkRunUpsert) SetTaskCount(v int) *BenchmarkRunUpsert {
+	u.Set(benchmarkrun.FieldTaskCount, v)
 	return u
 }
 
-// UpdateSelectionSeed sets the "selection_seed" field to the value that was provided on create.
-func (u *BenchmarkRunUpsert) UpdateSelectionSeed() *BenchmarkRunUpsert {
-	u.SetExcluded(benchmarkrun.FieldSelectionSeed)
+// UpdateTaskCount sets the "task_count" field to the value that was provided on create.
+func (u *BenchmarkRunUpsert) UpdateTaskCount() *BenchmarkRunUpsert {
+	u.SetExcluded(benchmarkrun.FieldTaskCount)
 	return u
 }
 
-// AddSelectionSeed adds v to the "selection_seed" field.
-func (u *BenchmarkRunUpsert) AddSelectionSeed(v int64) *BenchmarkRunUpsert {
-	u.Add(benchmarkrun.FieldSelectionSeed, v)
-	return u
-}
-
-// ClearSelectionSeed clears the value of the "selection_seed" field.
-func (u *BenchmarkRunUpsert) ClearSelectionSeed() *BenchmarkRunUpsert {
-	u.SetNull(benchmarkrun.FieldSelectionSeed)
+// AddTaskCount adds v to the "task_count" field.
+func (u *BenchmarkRunUpsert) AddTaskCount(v int) *BenchmarkRunUpsert {
+	u.Add(benchmarkrun.FieldTaskCount, v)
 	return u
 }
 
@@ -880,18 +741,6 @@ func (u *BenchmarkRunUpsert) UpdateFinishedAt() *BenchmarkRunUpsert {
 // ClearFinishedAt clears the value of the "finished_at" field.
 func (u *BenchmarkRunUpsert) ClearFinishedAt() *BenchmarkRunUpsert {
 	u.SetNull(benchmarkrun.FieldFinishedAt)
-	return u
-}
-
-// SetConfigSnapshot sets the "config_snapshot" field.
-func (u *BenchmarkRunUpsert) SetConfigSnapshot(v map[string]interface{}) *BenchmarkRunUpsert {
-	u.Set(benchmarkrun.FieldConfigSnapshot, v)
-	return u
-}
-
-// UpdateConfigSnapshot sets the "config_snapshot" field to the value that was provided on create.
-func (u *BenchmarkRunUpsert) UpdateConfigSnapshot() *BenchmarkRunUpsert {
-	u.SetExcluded(benchmarkrun.FieldConfigSnapshot)
 	return u
 }
 
@@ -996,34 +845,6 @@ func (u *BenchmarkRunUpsertOne) UpdateUpdatedAt() *BenchmarkRunUpsertOne {
 	})
 }
 
-// SetSuiteID sets the "suite_id" field.
-func (u *BenchmarkRunUpsertOne) SetSuiteID(v int64) *BenchmarkRunUpsertOne {
-	return u.Update(func(s *BenchmarkRunUpsert) {
-		s.SetSuiteID(v)
-	})
-}
-
-// UpdateSuiteID sets the "suite_id" field to the value that was provided on create.
-func (u *BenchmarkRunUpsertOne) UpdateSuiteID() *BenchmarkRunUpsertOne {
-	return u.Update(func(s *BenchmarkRunUpsert) {
-		s.UpdateSuiteID()
-	})
-}
-
-// SetProfileID sets the "profile_id" field.
-func (u *BenchmarkRunUpsertOne) SetProfileID(v int64) *BenchmarkRunUpsertOne {
-	return u.Update(func(s *BenchmarkRunUpsert) {
-		s.SetProfileID(v)
-	})
-}
-
-// UpdateProfileID sets the "profile_id" field to the value that was provided on create.
-func (u *BenchmarkRunUpsertOne) UpdateProfileID() *BenchmarkRunUpsertOne {
-	return u.Update(func(s *BenchmarkRunUpsert) {
-		s.UpdateProfileID()
-	})
-}
-
 // SetStatus sets the "status" field.
 func (u *BenchmarkRunUpsertOne) SetStatus(v string) *BenchmarkRunUpsertOne {
 	return u.Update(func(s *BenchmarkRunUpsert) {
@@ -1052,59 +873,52 @@ func (u *BenchmarkRunUpsertOne) UpdateTriggerType() *BenchmarkRunUpsertOne {
 	})
 }
 
-// SetTaskScale sets the "task_scale" field.
-func (u *BenchmarkRunUpsertOne) SetTaskScale(v benchmarkrun.TaskScale) *BenchmarkRunUpsertOne {
+// SetScheduleID sets the "schedule_id" field.
+func (u *BenchmarkRunUpsertOne) SetScheduleID(v int64) *BenchmarkRunUpsertOne {
 	return u.Update(func(s *BenchmarkRunUpsert) {
-		s.SetTaskScale(v)
+		s.SetScheduleID(v)
 	})
 }
 
-// UpdateTaskScale sets the "task_scale" field to the value that was provided on create.
-func (u *BenchmarkRunUpsertOne) UpdateTaskScale() *BenchmarkRunUpsertOne {
+// AddScheduleID adds v to the "schedule_id" field.
+func (u *BenchmarkRunUpsertOne) AddScheduleID(v int64) *BenchmarkRunUpsertOne {
 	return u.Update(func(s *BenchmarkRunUpsert) {
-		s.UpdateTaskScale()
+		s.AddScheduleID(v)
 	})
 }
 
-// SetTaskTypes sets the "task_types" field.
-func (u *BenchmarkRunUpsertOne) SetTaskTypes(v []string) *BenchmarkRunUpsertOne {
+// UpdateScheduleID sets the "schedule_id" field to the value that was provided on create.
+func (u *BenchmarkRunUpsertOne) UpdateScheduleID() *BenchmarkRunUpsertOne {
 	return u.Update(func(s *BenchmarkRunUpsert) {
-		s.SetTaskTypes(v)
+		s.UpdateScheduleID()
 	})
 }
 
-// UpdateTaskTypes sets the "task_types" field to the value that was provided on create.
-func (u *BenchmarkRunUpsertOne) UpdateTaskTypes() *BenchmarkRunUpsertOne {
+// ClearScheduleID clears the value of the "schedule_id" field.
+func (u *BenchmarkRunUpsertOne) ClearScheduleID() *BenchmarkRunUpsertOne {
 	return u.Update(func(s *BenchmarkRunUpsert) {
-		s.UpdateTaskTypes()
+		s.ClearScheduleID()
 	})
 }
 
-// SetSelectionSeed sets the "selection_seed" field.
-func (u *BenchmarkRunUpsertOne) SetSelectionSeed(v int64) *BenchmarkRunUpsertOne {
+// SetTaskCount sets the "task_count" field.
+func (u *BenchmarkRunUpsertOne) SetTaskCount(v int) *BenchmarkRunUpsertOne {
 	return u.Update(func(s *BenchmarkRunUpsert) {
-		s.SetSelectionSeed(v)
+		s.SetTaskCount(v)
 	})
 }
 
-// AddSelectionSeed adds v to the "selection_seed" field.
-func (u *BenchmarkRunUpsertOne) AddSelectionSeed(v int64) *BenchmarkRunUpsertOne {
+// AddTaskCount adds v to the "task_count" field.
+func (u *BenchmarkRunUpsertOne) AddTaskCount(v int) *BenchmarkRunUpsertOne {
 	return u.Update(func(s *BenchmarkRunUpsert) {
-		s.AddSelectionSeed(v)
+		s.AddTaskCount(v)
 	})
 }
 
-// UpdateSelectionSeed sets the "selection_seed" field to the value that was provided on create.
-func (u *BenchmarkRunUpsertOne) UpdateSelectionSeed() *BenchmarkRunUpsertOne {
+// UpdateTaskCount sets the "task_count" field to the value that was provided on create.
+func (u *BenchmarkRunUpsertOne) UpdateTaskCount() *BenchmarkRunUpsertOne {
 	return u.Update(func(s *BenchmarkRunUpsert) {
-		s.UpdateSelectionSeed()
-	})
-}
-
-// ClearSelectionSeed clears the value of the "selection_seed" field.
-func (u *BenchmarkRunUpsertOne) ClearSelectionSeed() *BenchmarkRunUpsertOne {
-	return u.Update(func(s *BenchmarkRunUpsert) {
-		s.ClearSelectionSeed()
+		s.UpdateTaskCount()
 	})
 }
 
@@ -1210,20 +1024,6 @@ func (u *BenchmarkRunUpsertOne) UpdateFinishedAt() *BenchmarkRunUpsertOne {
 func (u *BenchmarkRunUpsertOne) ClearFinishedAt() *BenchmarkRunUpsertOne {
 	return u.Update(func(s *BenchmarkRunUpsert) {
 		s.ClearFinishedAt()
-	})
-}
-
-// SetConfigSnapshot sets the "config_snapshot" field.
-func (u *BenchmarkRunUpsertOne) SetConfigSnapshot(v map[string]interface{}) *BenchmarkRunUpsertOne {
-	return u.Update(func(s *BenchmarkRunUpsert) {
-		s.SetConfigSnapshot(v)
-	})
-}
-
-// UpdateConfigSnapshot sets the "config_snapshot" field to the value that was provided on create.
-func (u *BenchmarkRunUpsertOne) UpdateConfigSnapshot() *BenchmarkRunUpsertOne {
-	return u.Update(func(s *BenchmarkRunUpsert) {
-		s.UpdateConfigSnapshot()
 	})
 }
 
@@ -1501,34 +1301,6 @@ func (u *BenchmarkRunUpsertBulk) UpdateUpdatedAt() *BenchmarkRunUpsertBulk {
 	})
 }
 
-// SetSuiteID sets the "suite_id" field.
-func (u *BenchmarkRunUpsertBulk) SetSuiteID(v int64) *BenchmarkRunUpsertBulk {
-	return u.Update(func(s *BenchmarkRunUpsert) {
-		s.SetSuiteID(v)
-	})
-}
-
-// UpdateSuiteID sets the "suite_id" field to the value that was provided on create.
-func (u *BenchmarkRunUpsertBulk) UpdateSuiteID() *BenchmarkRunUpsertBulk {
-	return u.Update(func(s *BenchmarkRunUpsert) {
-		s.UpdateSuiteID()
-	})
-}
-
-// SetProfileID sets the "profile_id" field.
-func (u *BenchmarkRunUpsertBulk) SetProfileID(v int64) *BenchmarkRunUpsertBulk {
-	return u.Update(func(s *BenchmarkRunUpsert) {
-		s.SetProfileID(v)
-	})
-}
-
-// UpdateProfileID sets the "profile_id" field to the value that was provided on create.
-func (u *BenchmarkRunUpsertBulk) UpdateProfileID() *BenchmarkRunUpsertBulk {
-	return u.Update(func(s *BenchmarkRunUpsert) {
-		s.UpdateProfileID()
-	})
-}
-
 // SetStatus sets the "status" field.
 func (u *BenchmarkRunUpsertBulk) SetStatus(v string) *BenchmarkRunUpsertBulk {
 	return u.Update(func(s *BenchmarkRunUpsert) {
@@ -1557,59 +1329,52 @@ func (u *BenchmarkRunUpsertBulk) UpdateTriggerType() *BenchmarkRunUpsertBulk {
 	})
 }
 
-// SetTaskScale sets the "task_scale" field.
-func (u *BenchmarkRunUpsertBulk) SetTaskScale(v benchmarkrun.TaskScale) *BenchmarkRunUpsertBulk {
+// SetScheduleID sets the "schedule_id" field.
+func (u *BenchmarkRunUpsertBulk) SetScheduleID(v int64) *BenchmarkRunUpsertBulk {
 	return u.Update(func(s *BenchmarkRunUpsert) {
-		s.SetTaskScale(v)
+		s.SetScheduleID(v)
 	})
 }
 
-// UpdateTaskScale sets the "task_scale" field to the value that was provided on create.
-func (u *BenchmarkRunUpsertBulk) UpdateTaskScale() *BenchmarkRunUpsertBulk {
+// AddScheduleID adds v to the "schedule_id" field.
+func (u *BenchmarkRunUpsertBulk) AddScheduleID(v int64) *BenchmarkRunUpsertBulk {
 	return u.Update(func(s *BenchmarkRunUpsert) {
-		s.UpdateTaskScale()
+		s.AddScheduleID(v)
 	})
 }
 
-// SetTaskTypes sets the "task_types" field.
-func (u *BenchmarkRunUpsertBulk) SetTaskTypes(v []string) *BenchmarkRunUpsertBulk {
+// UpdateScheduleID sets the "schedule_id" field to the value that was provided on create.
+func (u *BenchmarkRunUpsertBulk) UpdateScheduleID() *BenchmarkRunUpsertBulk {
 	return u.Update(func(s *BenchmarkRunUpsert) {
-		s.SetTaskTypes(v)
+		s.UpdateScheduleID()
 	})
 }
 
-// UpdateTaskTypes sets the "task_types" field to the value that was provided on create.
-func (u *BenchmarkRunUpsertBulk) UpdateTaskTypes() *BenchmarkRunUpsertBulk {
+// ClearScheduleID clears the value of the "schedule_id" field.
+func (u *BenchmarkRunUpsertBulk) ClearScheduleID() *BenchmarkRunUpsertBulk {
 	return u.Update(func(s *BenchmarkRunUpsert) {
-		s.UpdateTaskTypes()
+		s.ClearScheduleID()
 	})
 }
 
-// SetSelectionSeed sets the "selection_seed" field.
-func (u *BenchmarkRunUpsertBulk) SetSelectionSeed(v int64) *BenchmarkRunUpsertBulk {
+// SetTaskCount sets the "task_count" field.
+func (u *BenchmarkRunUpsertBulk) SetTaskCount(v int) *BenchmarkRunUpsertBulk {
 	return u.Update(func(s *BenchmarkRunUpsert) {
-		s.SetSelectionSeed(v)
+		s.SetTaskCount(v)
 	})
 }
 
-// AddSelectionSeed adds v to the "selection_seed" field.
-func (u *BenchmarkRunUpsertBulk) AddSelectionSeed(v int64) *BenchmarkRunUpsertBulk {
+// AddTaskCount adds v to the "task_count" field.
+func (u *BenchmarkRunUpsertBulk) AddTaskCount(v int) *BenchmarkRunUpsertBulk {
 	return u.Update(func(s *BenchmarkRunUpsert) {
-		s.AddSelectionSeed(v)
+		s.AddTaskCount(v)
 	})
 }
 
-// UpdateSelectionSeed sets the "selection_seed" field to the value that was provided on create.
-func (u *BenchmarkRunUpsertBulk) UpdateSelectionSeed() *BenchmarkRunUpsertBulk {
+// UpdateTaskCount sets the "task_count" field to the value that was provided on create.
+func (u *BenchmarkRunUpsertBulk) UpdateTaskCount() *BenchmarkRunUpsertBulk {
 	return u.Update(func(s *BenchmarkRunUpsert) {
-		s.UpdateSelectionSeed()
-	})
-}
-
-// ClearSelectionSeed clears the value of the "selection_seed" field.
-func (u *BenchmarkRunUpsertBulk) ClearSelectionSeed() *BenchmarkRunUpsertBulk {
-	return u.Update(func(s *BenchmarkRunUpsert) {
-		s.ClearSelectionSeed()
+		s.UpdateTaskCount()
 	})
 }
 
@@ -1715,20 +1480,6 @@ func (u *BenchmarkRunUpsertBulk) UpdateFinishedAt() *BenchmarkRunUpsertBulk {
 func (u *BenchmarkRunUpsertBulk) ClearFinishedAt() *BenchmarkRunUpsertBulk {
 	return u.Update(func(s *BenchmarkRunUpsert) {
 		s.ClearFinishedAt()
-	})
-}
-
-// SetConfigSnapshot sets the "config_snapshot" field.
-func (u *BenchmarkRunUpsertBulk) SetConfigSnapshot(v map[string]interface{}) *BenchmarkRunUpsertBulk {
-	return u.Update(func(s *BenchmarkRunUpsert) {
-		s.SetConfigSnapshot(v)
-	})
-}
-
-// UpdateConfigSnapshot sets the "config_snapshot" field to the value that was provided on create.
-func (u *BenchmarkRunUpsertBulk) UpdateConfigSnapshot() *BenchmarkRunUpsertBulk {
-	return u.Update(func(s *BenchmarkRunUpsert) {
-		s.UpdateConfigSnapshot()
 	})
 }
 

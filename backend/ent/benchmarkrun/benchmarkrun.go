@@ -3,7 +3,6 @@
 package benchmarkrun
 
 import (
-	"fmt"
 	"time"
 
 	"entgo.io/ent/dialect/sql"
@@ -19,20 +18,14 @@ const (
 	FieldCreatedAt = "created_at"
 	// FieldUpdatedAt holds the string denoting the updated_at field in the database.
 	FieldUpdatedAt = "updated_at"
-	// FieldSuiteID holds the string denoting the suite_id field in the database.
-	FieldSuiteID = "suite_id"
-	// FieldProfileID holds the string denoting the profile_id field in the database.
-	FieldProfileID = "profile_id"
 	// FieldStatus holds the string denoting the status field in the database.
 	FieldStatus = "status"
 	// FieldTriggerType holds the string denoting the trigger_type field in the database.
 	FieldTriggerType = "trigger_type"
-	// FieldTaskScale holds the string denoting the task_scale field in the database.
-	FieldTaskScale = "task_scale"
-	// FieldTaskTypes holds the string denoting the task_types field in the database.
-	FieldTaskTypes = "task_types"
-	// FieldSelectionSeed holds the string denoting the selection_seed field in the database.
-	FieldSelectionSeed = "selection_seed"
+	// FieldScheduleID holds the string denoting the schedule_id field in the database.
+	FieldScheduleID = "schedule_id"
+	// FieldTaskCount holds the string denoting the task_count field in the database.
+	FieldTaskCount = "task_count"
 	// FieldPlannedTargetCount holds the string denoting the planned_target_count field in the database.
 	FieldPlannedTargetCount = "planned_target_count"
 	// FieldPlannedTaskCount holds the string denoting the planned_task_count field in the database.
@@ -43,42 +36,22 @@ const (
 	FieldStartedAt = "started_at"
 	// FieldFinishedAt holds the string denoting the finished_at field in the database.
 	FieldFinishedAt = "finished_at"
-	// FieldConfigSnapshot holds the string denoting the config_snapshot field in the database.
-	FieldConfigSnapshot = "config_snapshot"
 	// FieldErrorMessage holds the string denoting the error_message field in the database.
 	FieldErrorMessage = "error_message"
 	// FieldCreatedBy holds the string denoting the created_by field in the database.
 	FieldCreatedBy = "created_by"
-	// EdgeSuite holds the string denoting the suite edge name in mutations.
-	EdgeSuite = "suite"
-	// EdgeProfile holds the string denoting the profile edge name in mutations.
-	EdgeProfile = "profile"
 	// EdgeRunTargets holds the string denoting the run_targets edge name in mutations.
 	EdgeRunTargets = "run_targets"
 	// EdgeRunTasks holds the string denoting the run_tasks edge name in mutations.
 	EdgeRunTasks = "run_tasks"
 	// EdgeResults holds the string denoting the results edge name in mutations.
 	EdgeResults = "results"
-	// EdgeScoreSnapshots holds the string denoting the score_snapshots edge name in mutations.
-	EdgeScoreSnapshots = "score_snapshots"
+	// EdgeTargetScores holds the string denoting the target_scores edge name in mutations.
+	EdgeTargetScores = "target_scores"
 	// EdgePublicSnapshots holds the string denoting the public_snapshots edge name in mutations.
 	EdgePublicSnapshots = "public_snapshots"
 	// Table holds the table name of the benchmarkrun in the database.
 	Table = "benchmark_runs"
-	// SuiteTable is the table that holds the suite relation/edge.
-	SuiteTable = "benchmark_runs"
-	// SuiteInverseTable is the table name for the BenchmarkSuite entity.
-	// It exists in this package in order to avoid circular dependency with the "benchmarksuite" package.
-	SuiteInverseTable = "benchmark_suites"
-	// SuiteColumn is the table column denoting the suite relation/edge.
-	SuiteColumn = "suite_id"
-	// ProfileTable is the table that holds the profile relation/edge.
-	ProfileTable = "benchmark_runs"
-	// ProfileInverseTable is the table name for the BenchmarkProfile entity.
-	// It exists in this package in order to avoid circular dependency with the "benchmarkprofile" package.
-	ProfileInverseTable = "benchmark_profiles"
-	// ProfileColumn is the table column denoting the profile relation/edge.
-	ProfileColumn = "profile_id"
 	// RunTargetsTable is the table that holds the run_targets relation/edge.
 	RunTargetsTable = "benchmark_run_targets"
 	// RunTargetsInverseTable is the table name for the BenchmarkRunTarget entity.
@@ -100,13 +73,13 @@ const (
 	ResultsInverseTable = "benchmark_results"
 	// ResultsColumn is the table column denoting the results relation/edge.
 	ResultsColumn = "run_id"
-	// ScoreSnapshotsTable is the table that holds the score_snapshots relation/edge.
-	ScoreSnapshotsTable = "benchmark_score_snapshots"
-	// ScoreSnapshotsInverseTable is the table name for the BenchmarkScoreSnapshot entity.
-	// It exists in this package in order to avoid circular dependency with the "benchmarkscoresnapshot" package.
-	ScoreSnapshotsInverseTable = "benchmark_score_snapshots"
-	// ScoreSnapshotsColumn is the table column denoting the score_snapshots relation/edge.
-	ScoreSnapshotsColumn = "run_id"
+	// TargetScoresTable is the table that holds the target_scores relation/edge.
+	TargetScoresTable = "benchmark_target_scores"
+	// TargetScoresInverseTable is the table name for the BenchmarkTargetScore entity.
+	// It exists in this package in order to avoid circular dependency with the "benchmarktargetscore" package.
+	TargetScoresInverseTable = "benchmark_target_scores"
+	// TargetScoresColumn is the table column denoting the target_scores relation/edge.
+	TargetScoresColumn = "run_id"
 	// PublicSnapshotsTable is the table that holds the public_snapshots relation/edge.
 	PublicSnapshotsTable = "benchmark_public_snapshots"
 	// PublicSnapshotsInverseTable is the table name for the BenchmarkPublicSnapshot entity.
@@ -121,19 +94,15 @@ var Columns = []string{
 	FieldID,
 	FieldCreatedAt,
 	FieldUpdatedAt,
-	FieldSuiteID,
-	FieldProfileID,
 	FieldStatus,
 	FieldTriggerType,
-	FieldTaskScale,
-	FieldTaskTypes,
-	FieldSelectionSeed,
+	FieldScheduleID,
+	FieldTaskCount,
 	FieldPlannedTargetCount,
 	FieldPlannedTaskCount,
 	FieldPlannedResultCount,
 	FieldStartedAt,
 	FieldFinishedAt,
-	FieldConfigSnapshot,
 	FieldErrorMessage,
 	FieldCreatedBy,
 }
@@ -159,45 +128,15 @@ var (
 	StatusValidator func(string) error
 	// TriggerTypeValidator is a validator for the "trigger_type" field. It is called by the builders before save.
 	TriggerTypeValidator func(string) error
-	// DefaultTaskTypes holds the default value on creation for the "task_types" field.
-	DefaultTaskTypes func() []string
+	// DefaultTaskCount holds the default value on creation for the "task_count" field.
+	DefaultTaskCount int
 	// DefaultPlannedTargetCount holds the default value on creation for the "planned_target_count" field.
 	DefaultPlannedTargetCount int
 	// DefaultPlannedTaskCount holds the default value on creation for the "planned_task_count" field.
 	DefaultPlannedTaskCount int
 	// DefaultPlannedResultCount holds the default value on creation for the "planned_result_count" field.
 	DefaultPlannedResultCount int
-	// DefaultConfigSnapshot holds the default value on creation for the "config_snapshot" field.
-	DefaultConfigSnapshot func() map[string]interface{}
 )
-
-// TaskScale defines the type for the "task_scale" enum field.
-type TaskScale string
-
-// TaskScaleMedium is the default value of the TaskScale enum.
-const DefaultTaskScale = TaskScaleMedium
-
-// TaskScale values.
-const (
-	TaskScaleSmall  TaskScale = "small"
-	TaskScaleMedium TaskScale = "medium"
-	TaskScaleFull   TaskScale = "full"
-	TaskScaleCustom TaskScale = "custom"
-)
-
-func (ts TaskScale) String() string {
-	return string(ts)
-}
-
-// TaskScaleValidator is a validator for the "task_scale" field enum values. It is called by the builders before save.
-func TaskScaleValidator(ts TaskScale) error {
-	switch ts {
-	case TaskScaleSmall, TaskScaleMedium, TaskScaleFull, TaskScaleCustom:
-		return nil
-	default:
-		return fmt.Errorf("benchmarkrun: invalid enum value for task_scale field: %q", ts)
-	}
-}
 
 // OrderOption defines the ordering options for the BenchmarkRun queries.
 type OrderOption func(*sql.Selector)
@@ -217,16 +156,6 @@ func ByUpdatedAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldUpdatedAt, opts...).ToFunc()
 }
 
-// BySuiteID orders the results by the suite_id field.
-func BySuiteID(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldSuiteID, opts...).ToFunc()
-}
-
-// ByProfileID orders the results by the profile_id field.
-func ByProfileID(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldProfileID, opts...).ToFunc()
-}
-
 // ByStatus orders the results by the status field.
 func ByStatus(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldStatus, opts...).ToFunc()
@@ -237,14 +166,14 @@ func ByTriggerType(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldTriggerType, opts...).ToFunc()
 }
 
-// ByTaskScale orders the results by the task_scale field.
-func ByTaskScale(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldTaskScale, opts...).ToFunc()
+// ByScheduleID orders the results by the schedule_id field.
+func ByScheduleID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldScheduleID, opts...).ToFunc()
 }
 
-// BySelectionSeed orders the results by the selection_seed field.
-func BySelectionSeed(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldSelectionSeed, opts...).ToFunc()
+// ByTaskCount orders the results by the task_count field.
+func ByTaskCount(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldTaskCount, opts...).ToFunc()
 }
 
 // ByPlannedTargetCount orders the results by the planned_target_count field.
@@ -280,20 +209,6 @@ func ByErrorMessage(opts ...sql.OrderTermOption) OrderOption {
 // ByCreatedBy orders the results by the created_by field.
 func ByCreatedBy(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldCreatedBy, opts...).ToFunc()
-}
-
-// BySuiteField orders the results by suite field.
-func BySuiteField(field string, opts ...sql.OrderTermOption) OrderOption {
-	return func(s *sql.Selector) {
-		sqlgraph.OrderByNeighborTerms(s, newSuiteStep(), sql.OrderByField(field, opts...))
-	}
-}
-
-// ByProfileField orders the results by profile field.
-func ByProfileField(field string, opts ...sql.OrderTermOption) OrderOption {
-	return func(s *sql.Selector) {
-		sqlgraph.OrderByNeighborTerms(s, newProfileStep(), sql.OrderByField(field, opts...))
-	}
 }
 
 // ByRunTargetsCount orders the results by run_targets count.
@@ -338,17 +253,17 @@ func ByResults(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 	}
 }
 
-// ByScoreSnapshotsCount orders the results by score_snapshots count.
-func ByScoreSnapshotsCount(opts ...sql.OrderTermOption) OrderOption {
+// ByTargetScoresCount orders the results by target_scores count.
+func ByTargetScoresCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
-		sqlgraph.OrderByNeighborsCount(s, newScoreSnapshotsStep(), opts...)
+		sqlgraph.OrderByNeighborsCount(s, newTargetScoresStep(), opts...)
 	}
 }
 
-// ByScoreSnapshots orders the results by score_snapshots terms.
-func ByScoreSnapshots(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+// ByTargetScores orders the results by target_scores terms.
+func ByTargetScores(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 	return func(s *sql.Selector) {
-		sqlgraph.OrderByNeighborTerms(s, newScoreSnapshotsStep(), append([]sql.OrderTerm{term}, terms...)...)
+		sqlgraph.OrderByNeighborTerms(s, newTargetScoresStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
 
@@ -364,20 +279,6 @@ func ByPublicSnapshots(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 	return func(s *sql.Selector) {
 		sqlgraph.OrderByNeighborTerms(s, newPublicSnapshotsStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
-}
-func newSuiteStep() *sqlgraph.Step {
-	return sqlgraph.NewStep(
-		sqlgraph.From(Table, FieldID),
-		sqlgraph.To(SuiteInverseTable, FieldID),
-		sqlgraph.Edge(sqlgraph.M2O, true, SuiteTable, SuiteColumn),
-	)
-}
-func newProfileStep() *sqlgraph.Step {
-	return sqlgraph.NewStep(
-		sqlgraph.From(Table, FieldID),
-		sqlgraph.To(ProfileInverseTable, FieldID),
-		sqlgraph.Edge(sqlgraph.M2O, true, ProfileTable, ProfileColumn),
-	)
 }
 func newRunTargetsStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
@@ -400,11 +301,11 @@ func newResultsStep() *sqlgraph.Step {
 		sqlgraph.Edge(sqlgraph.O2M, false, ResultsTable, ResultsColumn),
 	)
 }
-func newScoreSnapshotsStep() *sqlgraph.Step {
+func newTargetScoresStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
-		sqlgraph.To(ScoreSnapshotsInverseTable, FieldID),
-		sqlgraph.Edge(sqlgraph.O2M, false, ScoreSnapshotsTable, ScoreSnapshotsColumn),
+		sqlgraph.To(TargetScoresInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, TargetScoresTable, TargetScoresColumn),
 	)
 }
 func newPublicSnapshotsStep() *sqlgraph.Step {

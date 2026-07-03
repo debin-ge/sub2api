@@ -1,226 +1,52 @@
 package service
 
-import "testing"
+import (
+	"testing"
+)
 
-func TestIsValidBenchmarkTaskScale(t *testing.T) {
-	t.Parallel()
-
-	cases := []struct {
-		name  string
-		scale string
-		want  bool
-	}{
-		{name: "empty", scale: "", want: true},
-		{name: "small", scale: BenchmarkTaskScaleSmall, want: true},
-		{name: "medium", scale: BenchmarkTaskScaleMedium, want: true},
-		{name: "full", scale: BenchmarkTaskScaleFull, want: true},
-		{name: "custom", scale: BenchmarkTaskScaleCustom, want: true},
-		{name: "invalid", scale: "giant", want: false},
-	}
-
-	for _, tc := range cases {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			if got := isValidBenchmarkTaskScale(tc.scale); got != tc.want {
-				t.Fatalf("isValidBenchmarkTaskScale(%q) = %v, want %v", tc.scale, got, tc.want)
-			}
-		})
-	}
-}
-
-func TestSelectBenchmarkTasksFiltersByTypeDifficultyAndTags(t *testing.T) {
-	t.Parallel()
-
+func TestSelectBenchmarkTasksAllEnabled(t *testing.T) {
 	tasks := []BenchmarkTaskCandidate{
-		{ID: 1, Type: "math_reasoning", Difficulty: "easy", Tags: []string{"public"}, Weight: 1, MinScale: BenchmarkTaskScaleSmall, Enabled: true},
-		{ID: 2, Type: "coding", Difficulty: "hard", Tags: []string{"private"}, Weight: 1, MinScale: BenchmarkTaskScaleMedium, Enabled: true},
-		{ID: 3, Type: "math_reasoning", Difficulty: "hard", Tags: []string{"public"}, Weight: 1, MinScale: BenchmarkTaskScaleSmall, Enabled: false},
+		{ID: 3, Type: "coding", SortOrder: 2, Enabled: true},
+		{ID: 1, Type: "reasoning", SortOrder: 1, Enabled: true},
+		{ID: 2, Type: "math", SortOrder: 1, Enabled: false},
+		{ID: 4, Type: "writing", SortOrder: 3, Enabled: true},
 	}
-	got, err := SelectBenchmarkTasks(tasks, BenchmarkSelectionConfig{
-		TaskTypes:        []string{"math_reasoning"},
-		TaskScale:        BenchmarkTaskScaleSmall,
-		DifficultyFilter: []string{"easy"},
-		TagFilter:        []string{"public"},
-		SelectionSeed:    42,
-	})
-	if err != nil {
-		t.Fatalf("SelectBenchmarkTasks error = %v", err)
-	}
-	if len(got) != 1 || got[0].ID != 1 {
-		t.Fatalf("selected tasks = %#v", got)
-	}
-}
 
-func TestSelectBenchmarkTasksCustomLimitIsStable(t *testing.T) {
-	t.Parallel()
-
-	tasks := []BenchmarkTaskCandidate{
-		{ID: 1, Type: "math_reasoning", Difficulty: "easy", Weight: 1, MinScale: BenchmarkTaskScaleSmall, Enabled: true},
-		{ID: 2, Type: "math_reasoning", Difficulty: "medium", Weight: 1, MinScale: BenchmarkTaskScaleSmall, Enabled: true},
-		{ID: 3, Type: "coding", Difficulty: "hard", Weight: 1, MinScale: BenchmarkTaskScaleSmall, Enabled: true},
-		{ID: 4, Type: "coding", Difficulty: "easy", Weight: 1, MinScale: BenchmarkTaskScaleSmall, Enabled: true},
+	got := SelectBenchmarkTasks(tasks, 0)
+	if len(got) != 3 {
+		t.Fatalf("expected 3 enabled tasks, got %d", len(got))
 	}
-	cfg := BenchmarkSelectionConfig{
-		TaskTypes:      []string{"math_reasoning", "coding"},
-		TaskScale:      BenchmarkTaskScaleCustom,
-		TaskCountLimit: 2,
-		SelectionSeed:  20260623,
-	}
-	first, err := SelectBenchmarkTasks(tasks, cfg)
-	if err != nil {
-		t.Fatalf("first selection error = %v", err)
-	}
-	second, err := SelectBenchmarkTasks(tasks, cfg)
-	if err != nil {
-		t.Fatalf("second selection error = %v", err)
-	}
-	if len(first) != 2 || len(second) != 2 {
-		t.Fatalf("selection lengths = %d and %d", len(first), len(second))
-	}
-	for i := range first {
-		if first[i].ID != second[i].ID {
-			t.Fatalf("selection not stable: %#v vs %#v", first, second)
+	// ordered by sort_order then id: id1(s1), id3(s2), id4(s3)
+	wantIDs := []int64{1, 3, 4}
+	for i, task := range got {
+		if task.ID != wantIDs[i] {
+			t.Fatalf("position %d: want id %d, got %d", i, wantIDs[i], task.ID)
 		}
 	}
 }
 
-func TestSelectBenchmarkTasksRejectsInvalidTaskScale(t *testing.T) {
-	t.Parallel()
-
-	_, err := SelectBenchmarkTasks(nil, BenchmarkSelectionConfig{TaskScale: "giant"})
-	if err == nil || err.Error() != "invalid benchmark task scale" {
-		t.Fatalf("SelectBenchmarkTasks error = %v, want invalid benchmark task scale", err)
-	}
-}
-
-func TestSelectBenchmarkTasksRespectsPerTypeLimit(t *testing.T) {
-	t.Parallel()
-
+func TestSelectBenchmarkTasksFirstN(t *testing.T) {
 	tasks := []BenchmarkTaskCandidate{
-		{ID: 1, Type: "math_reasoning", Difficulty: "easy", Weight: 1, MinScale: BenchmarkTaskScaleSmall, Enabled: true},
-		{ID: 2, Type: "math_reasoning", Difficulty: "medium", Weight: 1, MinScale: BenchmarkTaskScaleSmall, Enabled: true},
-		{ID: 3, Type: "math_reasoning", Difficulty: "hard", Weight: 1, MinScale: BenchmarkTaskScaleSmall, Enabled: true},
-		{ID: 4, Type: "coding", Difficulty: "easy", Weight: 1, MinScale: BenchmarkTaskScaleSmall, Enabled: true},
-		{ID: 5, Type: "coding", Difficulty: "medium", Weight: 1, MinScale: BenchmarkTaskScaleSmall, Enabled: true},
-		{ID: 6, Type: "knowledge", Difficulty: "easy", Weight: 1, MinScale: BenchmarkTaskScaleSmall, Enabled: true},
-		{ID: 7, Type: "knowledge", Difficulty: "medium", Weight: 1, MinScale: BenchmarkTaskScaleSmall, Enabled: true},
+		{ID: 1, SortOrder: 1, Enabled: true},
+		{ID: 2, SortOrder: 2, Enabled: true},
+		{ID: 3, SortOrder: 3, Enabled: true},
 	}
-	got, err := SelectBenchmarkTasks(tasks, BenchmarkSelectionConfig{
-		TaskTypes:      []string{"math_reasoning", "coding", "knowledge"},
-		TaskScale:      BenchmarkTaskScaleCustom,
-		TaskCountLimit: 6,
-		PerTypeLimit: map[string]int{
-			"math_reasoning": 1,
-			"coding":         0,
-			"unknown":        -1,
-		},
-		SelectionSeed: 20260623,
-	})
-	if err != nil {
-		t.Fatalf("SelectBenchmarkTasks error = %v", err)
+	got := SelectBenchmarkTasks(tasks, 2)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 tasks, got %d", len(got))
 	}
-	counts := map[string]int{}
-	for _, task := range got {
-		counts[task.Type]++
-		if task.Type == "coding" {
-			t.Fatalf("selected type with zero per-type limit: %#v", got)
-		}
-	}
-	if counts["math_reasoning"] != 1 {
-		t.Fatalf("math_reasoning selections = %d, want 1; selected tasks = %#v", counts["math_reasoning"], got)
-	}
-	if counts["knowledge"] != 2 {
-		t.Fatalf("knowledge selections = %d, want 2; selected tasks = %#v", counts["knowledge"], got)
-	}
-	if len(got) != 3 {
-		t.Fatalf("selected task count = %d, want 3; selected tasks = %#v", len(got), got)
+	if got[0].ID != 1 || got[1].ID != 2 {
+		t.Fatalf("expected first 2 by order, got %v %v", got[0].ID, got[1].ID)
 	}
 }
 
-func TestSelectBenchmarkTasksFullScaleAppliesPerTypeLimit(t *testing.T) {
-	t.Parallel()
-
+func TestSelectBenchmarkTasksCountExceedsAvailable(t *testing.T) {
 	tasks := []BenchmarkTaskCandidate{
-		{ID: 1, Type: "math_reasoning", Weight: 1, MinScale: BenchmarkTaskScaleSmall, Enabled: true},
-		{ID: 2, Type: "math_reasoning", Weight: 1, MinScale: BenchmarkTaskScaleMedium, Enabled: true},
-		{ID: 3, Type: "coding", Weight: 1, MinScale: BenchmarkTaskScaleSmall, Enabled: true},
-		{ID: 4, Type: "coding", Weight: 1, MinScale: BenchmarkTaskScaleMedium, Enabled: true},
-		{ID: 5, Type: "knowledge", Weight: 1, MinScale: BenchmarkTaskScaleSmall, Enabled: true},
-		{ID: 6, Type: "knowledge", Weight: 1, MinScale: BenchmarkTaskScaleMedium, Enabled: true},
+		{ID: 1, Enabled: true},
+		{ID: 2, Enabled: true},
 	}
-	got, err := SelectBenchmarkTasks(tasks, BenchmarkSelectionConfig{
-		TaskTypes: []string{"math_reasoning", "coding", "knowledge"},
-		TaskScale: BenchmarkTaskScaleFull,
-		PerTypeLimit: map[string]int{
-			"math_reasoning": 1,
-			"coding":         0,
-			"unknown":        -1,
-		},
-		SelectionSeed: 20260623,
-	})
-	if err != nil {
-		t.Fatalf("SelectBenchmarkTasks error = %v", err)
+	got := SelectBenchmarkTasks(tasks, 10)
+	if len(got) != 2 {
+		t.Fatalf("expected all available when count exceeds, got %d", len(got))
 	}
-	counts := countSelectedTaskTypes(got)
-	if counts["math_reasoning"] != 1 {
-		t.Fatalf("math_reasoning selections = %d, want 1; selected tasks = %#v", counts["math_reasoning"], got)
-	}
-	if counts["coding"] != 0 {
-		t.Fatalf("coding selections = %d, want 0; selected tasks = %#v", counts["coding"], got)
-	}
-	if counts["knowledge"] != 2 {
-		t.Fatalf("knowledge selections = %d, want 2; selected tasks = %#v", counts["knowledge"], got)
-	}
-	if len(got) != 3 {
-		t.Fatalf("selected task count = %d, want 3; selected tasks = %#v", len(got), got)
-	}
-}
-
-func TestSelectBenchmarkTasksLargeLimitAppliesPerTypeLimit(t *testing.T) {
-	t.Parallel()
-
-	tasks := []BenchmarkTaskCandidate{
-		{ID: 1, Type: "math_reasoning", Weight: 1, MinScale: BenchmarkTaskScaleSmall, Enabled: true},
-		{ID: 2, Type: "math_reasoning", Weight: 1, MinScale: BenchmarkTaskScaleSmall, Enabled: true},
-		{ID: 3, Type: "coding", Weight: 1, MinScale: BenchmarkTaskScaleSmall, Enabled: true},
-		{ID: 4, Type: "coding", Weight: 1, MinScale: BenchmarkTaskScaleSmall, Enabled: true},
-		{ID: 5, Type: "knowledge", Weight: 1, MinScale: BenchmarkTaskScaleSmall, Enabled: true},
-		{ID: 6, Type: "knowledge", Weight: 1, MinScale: BenchmarkTaskScaleSmall, Enabled: true},
-	}
-	got, err := SelectBenchmarkTasks(tasks, BenchmarkSelectionConfig{
-		TaskTypes:      []string{"math_reasoning", "coding", "knowledge"},
-		TaskScale:      BenchmarkTaskScaleCustom,
-		TaskCountLimit: 10,
-		PerTypeLimit: map[string]int{
-			"math_reasoning": 1,
-			"coding":         -1,
-			"unknown":        1,
-		},
-		SelectionSeed: 20260623,
-	})
-	if err != nil {
-		t.Fatalf("SelectBenchmarkTasks error = %v", err)
-	}
-	counts := countSelectedTaskTypes(got)
-	if counts["math_reasoning"] != 1 {
-		t.Fatalf("math_reasoning selections = %d, want 1; selected tasks = %#v", counts["math_reasoning"], got)
-	}
-	if counts["coding"] != 0 {
-		t.Fatalf("coding selections = %d, want 0; selected tasks = %#v", counts["coding"], got)
-	}
-	if counts["knowledge"] != 2 {
-		t.Fatalf("knowledge selections = %d, want 2; selected tasks = %#v", counts["knowledge"], got)
-	}
-	if len(got) != 3 {
-		t.Fatalf("selected task count = %d, want 3; selected tasks = %#v", len(got), got)
-	}
-}
-
-func countSelectedTaskTypes(tasks []BenchmarkTaskCandidate) map[string]int {
-	counts := map[string]int{}
-	for _, task := range tasks {
-		counts[task.Type]++
-	}
-	return counts
 }

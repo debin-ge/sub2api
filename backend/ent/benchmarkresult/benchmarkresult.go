@@ -28,10 +28,6 @@ const (
 	FieldRequestID = "request_id"
 	// FieldStatus holds the string denoting the status field in the database.
 	FieldStatus = "status"
-	// FieldScore holds the string denoting the score field in the database.
-	FieldScore = "score"
-	// FieldMaxScore holds the string denoting the max_score field in the database.
-	FieldMaxScore = "max_score"
 	// FieldNormalizedScore holds the string denoting the normalized_score field in the database.
 	FieldNormalizedScore = "normalized_score"
 	// FieldEvaluatorType holds the string denoting the evaluator_type field in the database.
@@ -101,8 +97,6 @@ var Columns = []string{
 	FieldRunTargetID,
 	FieldRequestID,
 	FieldStatus,
-	FieldScore,
-	FieldMaxScore,
 	FieldNormalizedScore,
 	FieldEvaluatorType,
 	FieldEvaluatorOutput,
@@ -201,16 +195,6 @@ func ByRequestID(opts ...sql.OrderTermOption) OrderOption {
 // ByStatus orders the results by the status field.
 func ByStatus(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldStatus, opts...).ToFunc()
-}
-
-// ByScore orders the results by the score field.
-func ByScore(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldScore, opts...).ToFunc()
-}
-
-// ByMaxScore orders the results by the max_score field.
-func ByMaxScore(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldMaxScore, opts...).ToFunc()
 }
 
 // ByNormalizedScore orders the results by the normalized_score field.

@@ -28,8 +28,6 @@ type BenchmarkRunTask struct {
 	TaskOrder int `json:"task_order,omitempty"`
 	// Type holds the value of the "type" field.
 	Type string `json:"type,omitempty"`
-	// Category holds the value of the "category" field.
-	Category *string `json:"category,omitempty"`
 	// Difficulty holds the value of the "difficulty" field.
 	Difficulty *string `json:"difficulty,omitempty"`
 	// WeightSnapshot holds the value of the "weight_snapshot" field.
@@ -105,7 +103,7 @@ func (*BenchmarkRunTask) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullFloat64)
 		case benchmarkruntask.FieldID, benchmarkruntask.FieldRunID, benchmarkruntask.FieldTaskID, benchmarkruntask.FieldTaskOrder:
 			values[i] = new(sql.NullInt64)
-		case benchmarkruntask.FieldType, benchmarkruntask.FieldCategory, benchmarkruntask.FieldDifficulty, benchmarkruntask.FieldPromptSnapshot, benchmarkruntask.FieldVerifierTypeSnapshot:
+		case benchmarkruntask.FieldType, benchmarkruntask.FieldDifficulty, benchmarkruntask.FieldPromptSnapshot, benchmarkruntask.FieldVerifierTypeSnapshot:
 			values[i] = new(sql.NullString)
 		case benchmarkruntask.FieldCreatedAt:
 			values[i] = new(sql.NullTime)
@@ -153,13 +151,6 @@ func (_m *BenchmarkRunTask) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field type", values[i])
 			} else if value.Valid {
 				_m.Type = value.String
-			}
-		case benchmarkruntask.FieldCategory:
-			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field category", values[i])
-			} else if value.Valid {
-				_m.Category = new(string)
-				*_m.Category = value.String
 			}
 		case benchmarkruntask.FieldDifficulty:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -270,11 +261,6 @@ func (_m *BenchmarkRunTask) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("type=")
 	builder.WriteString(_m.Type)
-	builder.WriteString(", ")
-	if v := _m.Category; v != nil {
-		builder.WriteString("category=")
-		builder.WriteString(*v)
-	}
 	builder.WriteString(", ")
 	if v := _m.Difficulty; v != nil {
 		builder.WriteString("difficulty=")

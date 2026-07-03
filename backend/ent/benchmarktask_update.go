@@ -10,10 +10,8 @@ import (
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
-	"entgo.io/ent/dialect/sql/sqljson"
 	"entgo.io/ent/schema/field"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkruntask"
-	"github.com/Wei-Shaw/sub2api/ent/benchmarksuite"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarktask"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
 )
@@ -34,20 +32,6 @@ func (_u *BenchmarkTaskUpdate) Where(ps ...predicate.BenchmarkTask) *BenchmarkTa
 // SetUpdatedAt sets the "updated_at" field.
 func (_u *BenchmarkTaskUpdate) SetUpdatedAt(v time.Time) *BenchmarkTaskUpdate {
 	_u.mutation.SetUpdatedAt(v)
-	return _u
-}
-
-// SetSuiteID sets the "suite_id" field.
-func (_u *BenchmarkTaskUpdate) SetSuiteID(v int64) *BenchmarkTaskUpdate {
-	_u.mutation.SetSuiteID(v)
-	return _u
-}
-
-// SetNillableSuiteID sets the "suite_id" field if the given value is not nil.
-func (_u *BenchmarkTaskUpdate) SetNillableSuiteID(v *int64) *BenchmarkTaskUpdate {
-	if v != nil {
-		_u.SetSuiteID(*v)
-	}
 	return _u
 }
 
@@ -79,26 +63,6 @@ func (_u *BenchmarkTaskUpdate) SetNillableType(v *string) *BenchmarkTaskUpdate {
 	return _u
 }
 
-// SetCategory sets the "category" field.
-func (_u *BenchmarkTaskUpdate) SetCategory(v string) *BenchmarkTaskUpdate {
-	_u.mutation.SetCategory(v)
-	return _u
-}
-
-// SetNillableCategory sets the "category" field if the given value is not nil.
-func (_u *BenchmarkTaskUpdate) SetNillableCategory(v *string) *BenchmarkTaskUpdate {
-	if v != nil {
-		_u.SetCategory(*v)
-	}
-	return _u
-}
-
-// ClearCategory clears the value of the "category" field.
-func (_u *BenchmarkTaskUpdate) ClearCategory() *BenchmarkTaskUpdate {
-	_u.mutation.ClearCategory()
-	return _u
-}
-
 // SetDifficulty sets the "difficulty" field.
 func (_u *BenchmarkTaskUpdate) SetDifficulty(v string) *BenchmarkTaskUpdate {
 	_u.mutation.SetDifficulty(v)
@@ -116,18 +80,6 @@ func (_u *BenchmarkTaskUpdate) SetNillableDifficulty(v *string) *BenchmarkTaskUp
 // ClearDifficulty clears the value of the "difficulty" field.
 func (_u *BenchmarkTaskUpdate) ClearDifficulty() *BenchmarkTaskUpdate {
 	_u.mutation.ClearDifficulty()
-	return _u
-}
-
-// SetTags sets the "tags" field.
-func (_u *BenchmarkTaskUpdate) SetTags(v []string) *BenchmarkTaskUpdate {
-	_u.mutation.SetTags(v)
-	return _u
-}
-
-// AppendTags appends value to the "tags" field.
-func (_u *BenchmarkTaskUpdate) AppendTags(v []string) *BenchmarkTaskUpdate {
-	_u.mutation.AppendTags(v)
 	return _u
 }
 
@@ -198,20 +150,6 @@ func (_u *BenchmarkTaskUpdate) AddWeight(v float64) *BenchmarkTaskUpdate {
 	return _u
 }
 
-// SetMinScale sets the "min_scale" field.
-func (_u *BenchmarkTaskUpdate) SetMinScale(v benchmarktask.MinScale) *BenchmarkTaskUpdate {
-	_u.mutation.SetMinScale(v)
-	return _u
-}
-
-// SetNillableMinScale sets the "min_scale" field if the given value is not nil.
-func (_u *BenchmarkTaskUpdate) SetNillableMinScale(v *benchmarktask.MinScale) *BenchmarkTaskUpdate {
-	if v != nil {
-		_u.SetMinScale(*v)
-	}
-	return _u
-}
-
 // SetPublicPrompt sets the "public_prompt" field.
 func (_u *BenchmarkTaskUpdate) SetPublicPrompt(v bool) *BenchmarkTaskUpdate {
 	_u.mutation.SetPublicPrompt(v)
@@ -240,15 +178,25 @@ func (_u *BenchmarkTaskUpdate) SetNillableEnabled(v *bool) *BenchmarkTaskUpdate 
 	return _u
 }
 
-// SetMetadata sets the "metadata" field.
-func (_u *BenchmarkTaskUpdate) SetMetadata(v map[string]interface{}) *BenchmarkTaskUpdate {
-	_u.mutation.SetMetadata(v)
+// SetSortOrder sets the "sort_order" field.
+func (_u *BenchmarkTaskUpdate) SetSortOrder(v int) *BenchmarkTaskUpdate {
+	_u.mutation.ResetSortOrder()
+	_u.mutation.SetSortOrder(v)
 	return _u
 }
 
-// SetSuite sets the "suite" edge to the BenchmarkSuite entity.
-func (_u *BenchmarkTaskUpdate) SetSuite(v *BenchmarkSuite) *BenchmarkTaskUpdate {
-	return _u.SetSuiteID(v.ID)
+// SetNillableSortOrder sets the "sort_order" field if the given value is not nil.
+func (_u *BenchmarkTaskUpdate) SetNillableSortOrder(v *int) *BenchmarkTaskUpdate {
+	if v != nil {
+		_u.SetSortOrder(*v)
+	}
+	return _u
+}
+
+// AddSortOrder adds value to the "sort_order" field.
+func (_u *BenchmarkTaskUpdate) AddSortOrder(v int) *BenchmarkTaskUpdate {
+	_u.mutation.AddSortOrder(v)
+	return _u
 }
 
 // AddRunTaskIDs adds the "run_tasks" edge to the BenchmarkRunTask entity by IDs.
@@ -269,12 +217,6 @@ func (_u *BenchmarkTaskUpdate) AddRunTasks(v ...*BenchmarkRunTask) *BenchmarkTas
 // Mutation returns the BenchmarkTaskMutation object of the builder.
 func (_u *BenchmarkTaskUpdate) Mutation() *BenchmarkTaskMutation {
 	return _u.mutation
-}
-
-// ClearSuite clears the "suite" edge to the BenchmarkSuite entity.
-func (_u *BenchmarkTaskUpdate) ClearSuite() *BenchmarkTaskUpdate {
-	_u.mutation.ClearSuite()
-	return _u
 }
 
 // ClearRunTasks clears all "run_tasks" edges to the BenchmarkRunTask entity.
@@ -346,11 +288,6 @@ func (_u *BenchmarkTaskUpdate) check() error {
 			return &ValidationError{Name: "type", err: fmt.Errorf(`ent: validator failed for field "BenchmarkTask.type": %w`, err)}
 		}
 	}
-	if v, ok := _u.mutation.Category(); ok {
-		if err := benchmarktask.CategoryValidator(v); err != nil {
-			return &ValidationError{Name: "category", err: fmt.Errorf(`ent: validator failed for field "BenchmarkTask.category": %w`, err)}
-		}
-	}
 	if v, ok := _u.mutation.Difficulty(); ok {
 		if err := benchmarktask.DifficultyValidator(v); err != nil {
 			return &ValidationError{Name: "difficulty", err: fmt.Errorf(`ent: validator failed for field "BenchmarkTask.difficulty": %w`, err)}
@@ -365,14 +302,6 @@ func (_u *BenchmarkTaskUpdate) check() error {
 		if err := benchmarktask.VerifierTypeValidator(v); err != nil {
 			return &ValidationError{Name: "verifier_type", err: fmt.Errorf(`ent: validator failed for field "BenchmarkTask.verifier_type": %w`, err)}
 		}
-	}
-	if v, ok := _u.mutation.MinScale(); ok {
-		if err := benchmarktask.MinScaleValidator(v); err != nil {
-			return &ValidationError{Name: "min_scale", err: fmt.Errorf(`ent: validator failed for field "BenchmarkTask.min_scale": %w`, err)}
-		}
-	}
-	if _u.mutation.SuiteCleared() && len(_u.mutation.SuiteIDs()) > 0 {
-		return errors.New(`ent: clearing a required unique edge "BenchmarkTask.suite"`)
 	}
 	return nil
 }
@@ -398,25 +327,11 @@ func (_u *BenchmarkTaskUpdate) sqlSave(ctx context.Context) (_node int, err erro
 	if value, ok := _u.mutation.GetType(); ok {
 		_spec.SetField(benchmarktask.FieldType, field.TypeString, value)
 	}
-	if value, ok := _u.mutation.Category(); ok {
-		_spec.SetField(benchmarktask.FieldCategory, field.TypeString, value)
-	}
-	if _u.mutation.CategoryCleared() {
-		_spec.ClearField(benchmarktask.FieldCategory, field.TypeString)
-	}
 	if value, ok := _u.mutation.Difficulty(); ok {
 		_spec.SetField(benchmarktask.FieldDifficulty, field.TypeString, value)
 	}
 	if _u.mutation.DifficultyCleared() {
 		_spec.ClearField(benchmarktask.FieldDifficulty, field.TypeString)
-	}
-	if value, ok := _u.mutation.Tags(); ok {
-		_spec.SetField(benchmarktask.FieldTags, field.TypeJSON, value)
-	}
-	if value, ok := _u.mutation.AppendedTags(); ok {
-		_spec.AddModifier(func(u *sql.UpdateBuilder) {
-			sqljson.Append(u, benchmarktask.FieldTags, value)
-		})
 	}
 	if value, ok := _u.mutation.Prompt(); ok {
 		_spec.SetField(benchmarktask.FieldPrompt, field.TypeString, value)
@@ -439,46 +354,17 @@ func (_u *BenchmarkTaskUpdate) sqlSave(ctx context.Context) (_node int, err erro
 	if value, ok := _u.mutation.AddedWeight(); ok {
 		_spec.AddField(benchmarktask.FieldWeight, field.TypeFloat64, value)
 	}
-	if value, ok := _u.mutation.MinScale(); ok {
-		_spec.SetField(benchmarktask.FieldMinScale, field.TypeEnum, value)
-	}
 	if value, ok := _u.mutation.PublicPrompt(); ok {
 		_spec.SetField(benchmarktask.FieldPublicPrompt, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.Enabled(); ok {
 		_spec.SetField(benchmarktask.FieldEnabled, field.TypeBool, value)
 	}
-	if value, ok := _u.mutation.Metadata(); ok {
-		_spec.SetField(benchmarktask.FieldMetadata, field.TypeJSON, value)
+	if value, ok := _u.mutation.SortOrder(); ok {
+		_spec.SetField(benchmarktask.FieldSortOrder, field.TypeInt, value)
 	}
-	if _u.mutation.SuiteCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.M2O,
-			Inverse: true,
-			Table:   benchmarktask.SuiteTable,
-			Columns: []string{benchmarktask.SuiteColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(benchmarksuite.FieldID, field.TypeInt64),
-			},
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := _u.mutation.SuiteIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.M2O,
-			Inverse: true,
-			Table:   benchmarktask.SuiteTable,
-			Columns: []string{benchmarktask.SuiteColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(benchmarksuite.FieldID, field.TypeInt64),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	if value, ok := _u.mutation.AddedSortOrder(); ok {
+		_spec.AddField(benchmarktask.FieldSortOrder, field.TypeInt, value)
 	}
 	if _u.mutation.RunTasksCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -551,20 +437,6 @@ func (_u *BenchmarkTaskUpdateOne) SetUpdatedAt(v time.Time) *BenchmarkTaskUpdate
 	return _u
 }
 
-// SetSuiteID sets the "suite_id" field.
-func (_u *BenchmarkTaskUpdateOne) SetSuiteID(v int64) *BenchmarkTaskUpdateOne {
-	_u.mutation.SetSuiteID(v)
-	return _u
-}
-
-// SetNillableSuiteID sets the "suite_id" field if the given value is not nil.
-func (_u *BenchmarkTaskUpdateOne) SetNillableSuiteID(v *int64) *BenchmarkTaskUpdateOne {
-	if v != nil {
-		_u.SetSuiteID(*v)
-	}
-	return _u
-}
-
 // SetTitle sets the "title" field.
 func (_u *BenchmarkTaskUpdateOne) SetTitle(v string) *BenchmarkTaskUpdateOne {
 	_u.mutation.SetTitle(v)
@@ -593,26 +465,6 @@ func (_u *BenchmarkTaskUpdateOne) SetNillableType(v *string) *BenchmarkTaskUpdat
 	return _u
 }
 
-// SetCategory sets the "category" field.
-func (_u *BenchmarkTaskUpdateOne) SetCategory(v string) *BenchmarkTaskUpdateOne {
-	_u.mutation.SetCategory(v)
-	return _u
-}
-
-// SetNillableCategory sets the "category" field if the given value is not nil.
-func (_u *BenchmarkTaskUpdateOne) SetNillableCategory(v *string) *BenchmarkTaskUpdateOne {
-	if v != nil {
-		_u.SetCategory(*v)
-	}
-	return _u
-}
-
-// ClearCategory clears the value of the "category" field.
-func (_u *BenchmarkTaskUpdateOne) ClearCategory() *BenchmarkTaskUpdateOne {
-	_u.mutation.ClearCategory()
-	return _u
-}
-
 // SetDifficulty sets the "difficulty" field.
 func (_u *BenchmarkTaskUpdateOne) SetDifficulty(v string) *BenchmarkTaskUpdateOne {
 	_u.mutation.SetDifficulty(v)
@@ -630,18 +482,6 @@ func (_u *BenchmarkTaskUpdateOne) SetNillableDifficulty(v *string) *BenchmarkTas
 // ClearDifficulty clears the value of the "difficulty" field.
 func (_u *BenchmarkTaskUpdateOne) ClearDifficulty() *BenchmarkTaskUpdateOne {
 	_u.mutation.ClearDifficulty()
-	return _u
-}
-
-// SetTags sets the "tags" field.
-func (_u *BenchmarkTaskUpdateOne) SetTags(v []string) *BenchmarkTaskUpdateOne {
-	_u.mutation.SetTags(v)
-	return _u
-}
-
-// AppendTags appends value to the "tags" field.
-func (_u *BenchmarkTaskUpdateOne) AppendTags(v []string) *BenchmarkTaskUpdateOne {
-	_u.mutation.AppendTags(v)
 	return _u
 }
 
@@ -712,20 +552,6 @@ func (_u *BenchmarkTaskUpdateOne) AddWeight(v float64) *BenchmarkTaskUpdateOne {
 	return _u
 }
 
-// SetMinScale sets the "min_scale" field.
-func (_u *BenchmarkTaskUpdateOne) SetMinScale(v benchmarktask.MinScale) *BenchmarkTaskUpdateOne {
-	_u.mutation.SetMinScale(v)
-	return _u
-}
-
-// SetNillableMinScale sets the "min_scale" field if the given value is not nil.
-func (_u *BenchmarkTaskUpdateOne) SetNillableMinScale(v *benchmarktask.MinScale) *BenchmarkTaskUpdateOne {
-	if v != nil {
-		_u.SetMinScale(*v)
-	}
-	return _u
-}
-
 // SetPublicPrompt sets the "public_prompt" field.
 func (_u *BenchmarkTaskUpdateOne) SetPublicPrompt(v bool) *BenchmarkTaskUpdateOne {
 	_u.mutation.SetPublicPrompt(v)
@@ -754,15 +580,25 @@ func (_u *BenchmarkTaskUpdateOne) SetNillableEnabled(v *bool) *BenchmarkTaskUpda
 	return _u
 }
 
-// SetMetadata sets the "metadata" field.
-func (_u *BenchmarkTaskUpdateOne) SetMetadata(v map[string]interface{}) *BenchmarkTaskUpdateOne {
-	_u.mutation.SetMetadata(v)
+// SetSortOrder sets the "sort_order" field.
+func (_u *BenchmarkTaskUpdateOne) SetSortOrder(v int) *BenchmarkTaskUpdateOne {
+	_u.mutation.ResetSortOrder()
+	_u.mutation.SetSortOrder(v)
 	return _u
 }
 
-// SetSuite sets the "suite" edge to the BenchmarkSuite entity.
-func (_u *BenchmarkTaskUpdateOne) SetSuite(v *BenchmarkSuite) *BenchmarkTaskUpdateOne {
-	return _u.SetSuiteID(v.ID)
+// SetNillableSortOrder sets the "sort_order" field if the given value is not nil.
+func (_u *BenchmarkTaskUpdateOne) SetNillableSortOrder(v *int) *BenchmarkTaskUpdateOne {
+	if v != nil {
+		_u.SetSortOrder(*v)
+	}
+	return _u
+}
+
+// AddSortOrder adds value to the "sort_order" field.
+func (_u *BenchmarkTaskUpdateOne) AddSortOrder(v int) *BenchmarkTaskUpdateOne {
+	_u.mutation.AddSortOrder(v)
+	return _u
 }
 
 // AddRunTaskIDs adds the "run_tasks" edge to the BenchmarkRunTask entity by IDs.
@@ -783,12 +619,6 @@ func (_u *BenchmarkTaskUpdateOne) AddRunTasks(v ...*BenchmarkRunTask) *Benchmark
 // Mutation returns the BenchmarkTaskMutation object of the builder.
 func (_u *BenchmarkTaskUpdateOne) Mutation() *BenchmarkTaskMutation {
 	return _u.mutation
-}
-
-// ClearSuite clears the "suite" edge to the BenchmarkSuite entity.
-func (_u *BenchmarkTaskUpdateOne) ClearSuite() *BenchmarkTaskUpdateOne {
-	_u.mutation.ClearSuite()
-	return _u
 }
 
 // ClearRunTasks clears all "run_tasks" edges to the BenchmarkRunTask entity.
@@ -873,11 +703,6 @@ func (_u *BenchmarkTaskUpdateOne) check() error {
 			return &ValidationError{Name: "type", err: fmt.Errorf(`ent: validator failed for field "BenchmarkTask.type": %w`, err)}
 		}
 	}
-	if v, ok := _u.mutation.Category(); ok {
-		if err := benchmarktask.CategoryValidator(v); err != nil {
-			return &ValidationError{Name: "category", err: fmt.Errorf(`ent: validator failed for field "BenchmarkTask.category": %w`, err)}
-		}
-	}
 	if v, ok := _u.mutation.Difficulty(); ok {
 		if err := benchmarktask.DifficultyValidator(v); err != nil {
 			return &ValidationError{Name: "difficulty", err: fmt.Errorf(`ent: validator failed for field "BenchmarkTask.difficulty": %w`, err)}
@@ -892,14 +717,6 @@ func (_u *BenchmarkTaskUpdateOne) check() error {
 		if err := benchmarktask.VerifierTypeValidator(v); err != nil {
 			return &ValidationError{Name: "verifier_type", err: fmt.Errorf(`ent: validator failed for field "BenchmarkTask.verifier_type": %w`, err)}
 		}
-	}
-	if v, ok := _u.mutation.MinScale(); ok {
-		if err := benchmarktask.MinScaleValidator(v); err != nil {
-			return &ValidationError{Name: "min_scale", err: fmt.Errorf(`ent: validator failed for field "BenchmarkTask.min_scale": %w`, err)}
-		}
-	}
-	if _u.mutation.SuiteCleared() && len(_u.mutation.SuiteIDs()) > 0 {
-		return errors.New(`ent: clearing a required unique edge "BenchmarkTask.suite"`)
 	}
 	return nil
 }
@@ -942,25 +759,11 @@ func (_u *BenchmarkTaskUpdateOne) sqlSave(ctx context.Context) (_node *Benchmark
 	if value, ok := _u.mutation.GetType(); ok {
 		_spec.SetField(benchmarktask.FieldType, field.TypeString, value)
 	}
-	if value, ok := _u.mutation.Category(); ok {
-		_spec.SetField(benchmarktask.FieldCategory, field.TypeString, value)
-	}
-	if _u.mutation.CategoryCleared() {
-		_spec.ClearField(benchmarktask.FieldCategory, field.TypeString)
-	}
 	if value, ok := _u.mutation.Difficulty(); ok {
 		_spec.SetField(benchmarktask.FieldDifficulty, field.TypeString, value)
 	}
 	if _u.mutation.DifficultyCleared() {
 		_spec.ClearField(benchmarktask.FieldDifficulty, field.TypeString)
-	}
-	if value, ok := _u.mutation.Tags(); ok {
-		_spec.SetField(benchmarktask.FieldTags, field.TypeJSON, value)
-	}
-	if value, ok := _u.mutation.AppendedTags(); ok {
-		_spec.AddModifier(func(u *sql.UpdateBuilder) {
-			sqljson.Append(u, benchmarktask.FieldTags, value)
-		})
 	}
 	if value, ok := _u.mutation.Prompt(); ok {
 		_spec.SetField(benchmarktask.FieldPrompt, field.TypeString, value)
@@ -983,46 +786,17 @@ func (_u *BenchmarkTaskUpdateOne) sqlSave(ctx context.Context) (_node *Benchmark
 	if value, ok := _u.mutation.AddedWeight(); ok {
 		_spec.AddField(benchmarktask.FieldWeight, field.TypeFloat64, value)
 	}
-	if value, ok := _u.mutation.MinScale(); ok {
-		_spec.SetField(benchmarktask.FieldMinScale, field.TypeEnum, value)
-	}
 	if value, ok := _u.mutation.PublicPrompt(); ok {
 		_spec.SetField(benchmarktask.FieldPublicPrompt, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.Enabled(); ok {
 		_spec.SetField(benchmarktask.FieldEnabled, field.TypeBool, value)
 	}
-	if value, ok := _u.mutation.Metadata(); ok {
-		_spec.SetField(benchmarktask.FieldMetadata, field.TypeJSON, value)
+	if value, ok := _u.mutation.SortOrder(); ok {
+		_spec.SetField(benchmarktask.FieldSortOrder, field.TypeInt, value)
 	}
-	if _u.mutation.SuiteCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.M2O,
-			Inverse: true,
-			Table:   benchmarktask.SuiteTable,
-			Columns: []string{benchmarktask.SuiteColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(benchmarksuite.FieldID, field.TypeInt64),
-			},
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := _u.mutation.SuiteIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.M2O,
-			Inverse: true,
-			Table:   benchmarktask.SuiteTable,
-			Columns: []string{benchmarktask.SuiteColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(benchmarksuite.FieldID, field.TypeInt64),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	if value, ok := _u.mutation.AddedSortOrder(); ok {
+		_spec.AddField(benchmarktask.FieldSortOrder, field.TypeInt, value)
 	}
 	if _u.mutation.RunTasksCleared() {
 		edge := &sqlgraph.EdgeSpec{

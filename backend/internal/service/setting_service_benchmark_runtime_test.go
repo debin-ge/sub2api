@@ -63,8 +63,6 @@ func TestSettingServiceGetBenchmarkRuntimeFailsClosedOnRepoError(t *testing.T) {
 	require.False(t, runtime.PublicEnabled)
 	require.Equal(t, BenchmarkGlobalConcurrencyDefault, runtime.GlobalConcurrency)
 	require.Equal(t, BenchmarkDefaultTimeoutSecondsDefault, runtime.DefaultTimeoutSeconds)
-	require.Equal(t, BenchmarkLowConfidenceThresholdDefault, runtime.ConfidenceThresholds.MediumCoverage)
-	require.Equal(t, BenchmarkHighConfidenceThresholdDefault, runtime.ConfidenceThresholds.HighCoverage)
 }
 
 func TestSettingServiceGetBenchmarkRuntimeParsesEnabledFlags(t *testing.T) {
@@ -72,12 +70,10 @@ func TestSettingServiceGetBenchmarkRuntimeParsesEnabledFlags(t *testing.T) {
 
 	svc := NewSettingService(&benchmarkRuntimeSettingRepoStub{
 		values: map[string]string{
-			SettingKeyBenchmarkEnabled:                 "true",
-			SettingKeyBenchmarkPublicEnabled:           "true",
-			SettingKeyBenchmarkGlobalConcurrency:       "7",
-			SettingKeyBenchmarkDefaultTimeoutSeconds:   "180",
-			SettingKeyBenchmarkLowConfidenceThreshold:  "0.6",
-			SettingKeyBenchmarkHighConfidenceThreshold: "0.92",
+			SettingKeyBenchmarkEnabled:               "true",
+			SettingKeyBenchmarkPublicEnabled:         "true",
+			SettingKeyBenchmarkGlobalConcurrency:     "7",
+			SettingKeyBenchmarkDefaultTimeoutSeconds: "180",
 		},
 	}, &config.Config{})
 
@@ -86,6 +82,4 @@ func TestSettingServiceGetBenchmarkRuntimeParsesEnabledFlags(t *testing.T) {
 	require.True(t, runtime.PublicEnabled)
 	require.Equal(t, 7, runtime.GlobalConcurrency)
 	require.Equal(t, 180, runtime.DefaultTimeoutSeconds)
-	require.Equal(t, 0.6, runtime.ConfidenceThresholds.MediumCoverage)
-	require.Equal(t, 0.92, runtime.ConfidenceThresholds.HighCoverage)
 }

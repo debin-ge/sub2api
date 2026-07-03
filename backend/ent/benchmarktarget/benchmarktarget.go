@@ -24,26 +24,14 @@ const (
 	FieldChannelID = "channel_id"
 	// FieldDisplayName holds the string denoting the display_name field in the database.
 	FieldDisplayName = "display_name"
-	// FieldProviderSnapshot holds the string denoting the provider_snapshot field in the database.
-	FieldProviderSnapshot = "provider_snapshot"
 	// FieldChannelNameSnapshot holds the string denoting the channel_name_snapshot field in the database.
 	FieldChannelNameSnapshot = "channel_name_snapshot"
-	// FieldSupportedTaskTypes holds the string denoting the supported_task_types field in the database.
-	FieldSupportedTaskTypes = "supported_task_types"
-	// FieldMaxConcurrency holds the string denoting the max_concurrency field in the database.
-	FieldMaxConcurrency = "max_concurrency"
-	// FieldPerRunBudget holds the string denoting the per_run_budget field in the database.
-	FieldPerRunBudget = "per_run_budget"
-	// FieldDailyBudget holds the string denoting the daily_budget field in the database.
-	FieldDailyBudget = "daily_budget"
 	// FieldEnabled holds the string denoting the enabled field in the database.
 	FieldEnabled = "enabled"
 	// FieldPublicVisible holds the string denoting the public_visible field in the database.
 	FieldPublicVisible = "public_visible"
 	// FieldSortOrder holds the string denoting the sort_order field in the database.
 	FieldSortOrder = "sort_order"
-	// FieldMetadata holds the string denoting the metadata field in the database.
-	FieldMetadata = "metadata"
 	// EdgeRunTargets holds the string denoting the run_targets edge name in mutations.
 	EdgeRunTargets = "run_targets"
 	// Table holds the table name of the benchmarktarget in the database.
@@ -65,16 +53,10 @@ var Columns = []string{
 	FieldModelName,
 	FieldChannelID,
 	FieldDisplayName,
-	FieldProviderSnapshot,
 	FieldChannelNameSnapshot,
-	FieldSupportedTaskTypes,
-	FieldMaxConcurrency,
-	FieldPerRunBudget,
-	FieldDailyBudget,
 	FieldEnabled,
 	FieldPublicVisible,
 	FieldSortOrder,
-	FieldMetadata,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -98,22 +80,14 @@ var (
 	ModelNameValidator func(string) error
 	// DisplayNameValidator is a validator for the "display_name" field. It is called by the builders before save.
 	DisplayNameValidator func(string) error
-	// ProviderSnapshotValidator is a validator for the "provider_snapshot" field. It is called by the builders before save.
-	ProviderSnapshotValidator func(string) error
 	// ChannelNameSnapshotValidator is a validator for the "channel_name_snapshot" field. It is called by the builders before save.
 	ChannelNameSnapshotValidator func(string) error
-	// DefaultSupportedTaskTypes holds the default value on creation for the "supported_task_types" field.
-	DefaultSupportedTaskTypes func() []string
-	// DefaultMaxConcurrency holds the default value on creation for the "max_concurrency" field.
-	DefaultMaxConcurrency int
 	// DefaultEnabled holds the default value on creation for the "enabled" field.
 	DefaultEnabled bool
 	// DefaultPublicVisible holds the default value on creation for the "public_visible" field.
 	DefaultPublicVisible bool
 	// DefaultSortOrder holds the default value on creation for the "sort_order" field.
 	DefaultSortOrder int
-	// DefaultMetadata holds the default value on creation for the "metadata" field.
-	DefaultMetadata func() map[string]interface{}
 )
 
 // OrderOption defines the ordering options for the BenchmarkTarget queries.
@@ -149,29 +123,9 @@ func ByDisplayName(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldDisplayName, opts...).ToFunc()
 }
 
-// ByProviderSnapshot orders the results by the provider_snapshot field.
-func ByProviderSnapshot(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldProviderSnapshot, opts...).ToFunc()
-}
-
 // ByChannelNameSnapshot orders the results by the channel_name_snapshot field.
 func ByChannelNameSnapshot(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldChannelNameSnapshot, opts...).ToFunc()
-}
-
-// ByMaxConcurrency orders the results by the max_concurrency field.
-func ByMaxConcurrency(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldMaxConcurrency, opts...).ToFunc()
-}
-
-// ByPerRunBudget orders the results by the per_run_budget field.
-func ByPerRunBudget(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldPerRunBudget, opts...).ToFunc()
-}
-
-// ByDailyBudget orders the results by the daily_budget field.
-func ByDailyBudget(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldDailyBudget, opts...).ToFunc()
 }
 
 // ByEnabled orders the results by the enabled field.

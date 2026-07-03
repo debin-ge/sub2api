@@ -113,60 +113,6 @@ func (_u *BenchmarkResultUpdate) SetNillableStatus(v *string) *BenchmarkResultUp
 	return _u
 }
 
-// SetScore sets the "score" field.
-func (_u *BenchmarkResultUpdate) SetScore(v float64) *BenchmarkResultUpdate {
-	_u.mutation.ResetScore()
-	_u.mutation.SetScore(v)
-	return _u
-}
-
-// SetNillableScore sets the "score" field if the given value is not nil.
-func (_u *BenchmarkResultUpdate) SetNillableScore(v *float64) *BenchmarkResultUpdate {
-	if v != nil {
-		_u.SetScore(*v)
-	}
-	return _u
-}
-
-// AddScore adds value to the "score" field.
-func (_u *BenchmarkResultUpdate) AddScore(v float64) *BenchmarkResultUpdate {
-	_u.mutation.AddScore(v)
-	return _u
-}
-
-// ClearScore clears the value of the "score" field.
-func (_u *BenchmarkResultUpdate) ClearScore() *BenchmarkResultUpdate {
-	_u.mutation.ClearScore()
-	return _u
-}
-
-// SetMaxScore sets the "max_score" field.
-func (_u *BenchmarkResultUpdate) SetMaxScore(v float64) *BenchmarkResultUpdate {
-	_u.mutation.ResetMaxScore()
-	_u.mutation.SetMaxScore(v)
-	return _u
-}
-
-// SetNillableMaxScore sets the "max_score" field if the given value is not nil.
-func (_u *BenchmarkResultUpdate) SetNillableMaxScore(v *float64) *BenchmarkResultUpdate {
-	if v != nil {
-		_u.SetMaxScore(*v)
-	}
-	return _u
-}
-
-// AddMaxScore adds value to the "max_score" field.
-func (_u *BenchmarkResultUpdate) AddMaxScore(v float64) *BenchmarkResultUpdate {
-	_u.mutation.AddMaxScore(v)
-	return _u
-}
-
-// ClearMaxScore clears the value of the "max_score" field.
-func (_u *BenchmarkResultUpdate) ClearMaxScore() *BenchmarkResultUpdate {
-	_u.mutation.ClearMaxScore()
-	return _u
-}
-
 // SetNormalizedScore sets the "normalized_score" field.
 func (_u *BenchmarkResultUpdate) SetNormalizedScore(v float64) *BenchmarkResultUpdate {
 	_u.mutation.ResetNormalizedScore()
@@ -570,24 +516,6 @@ func (_u *BenchmarkResultUpdate) sqlSave(ctx context.Context) (_node int, err er
 	if value, ok := _u.mutation.Status(); ok {
 		_spec.SetField(benchmarkresult.FieldStatus, field.TypeString, value)
 	}
-	if value, ok := _u.mutation.Score(); ok {
-		_spec.SetField(benchmarkresult.FieldScore, field.TypeFloat64, value)
-	}
-	if value, ok := _u.mutation.AddedScore(); ok {
-		_spec.AddField(benchmarkresult.FieldScore, field.TypeFloat64, value)
-	}
-	if _u.mutation.ScoreCleared() {
-		_spec.ClearField(benchmarkresult.FieldScore, field.TypeFloat64)
-	}
-	if value, ok := _u.mutation.MaxScore(); ok {
-		_spec.SetField(benchmarkresult.FieldMaxScore, field.TypeFloat64, value)
-	}
-	if value, ok := _u.mutation.AddedMaxScore(); ok {
-		_spec.AddField(benchmarkresult.FieldMaxScore, field.TypeFloat64, value)
-	}
-	if _u.mutation.MaxScoreCleared() {
-		_spec.ClearField(benchmarkresult.FieldMaxScore, field.TypeFloat64)
-	}
 	if value, ok := _u.mutation.NormalizedScore(); ok {
 		_spec.SetField(benchmarkresult.FieldNormalizedScore, field.TypeFloat64, value)
 	}
@@ -858,60 +786,6 @@ func (_u *BenchmarkResultUpdateOne) SetNillableStatus(v *string) *BenchmarkResul
 	if v != nil {
 		_u.SetStatus(*v)
 	}
-	return _u
-}
-
-// SetScore sets the "score" field.
-func (_u *BenchmarkResultUpdateOne) SetScore(v float64) *BenchmarkResultUpdateOne {
-	_u.mutation.ResetScore()
-	_u.mutation.SetScore(v)
-	return _u
-}
-
-// SetNillableScore sets the "score" field if the given value is not nil.
-func (_u *BenchmarkResultUpdateOne) SetNillableScore(v *float64) *BenchmarkResultUpdateOne {
-	if v != nil {
-		_u.SetScore(*v)
-	}
-	return _u
-}
-
-// AddScore adds value to the "score" field.
-func (_u *BenchmarkResultUpdateOne) AddScore(v float64) *BenchmarkResultUpdateOne {
-	_u.mutation.AddScore(v)
-	return _u
-}
-
-// ClearScore clears the value of the "score" field.
-func (_u *BenchmarkResultUpdateOne) ClearScore() *BenchmarkResultUpdateOne {
-	_u.mutation.ClearScore()
-	return _u
-}
-
-// SetMaxScore sets the "max_score" field.
-func (_u *BenchmarkResultUpdateOne) SetMaxScore(v float64) *BenchmarkResultUpdateOne {
-	_u.mutation.ResetMaxScore()
-	_u.mutation.SetMaxScore(v)
-	return _u
-}
-
-// SetNillableMaxScore sets the "max_score" field if the given value is not nil.
-func (_u *BenchmarkResultUpdateOne) SetNillableMaxScore(v *float64) *BenchmarkResultUpdateOne {
-	if v != nil {
-		_u.SetMaxScore(*v)
-	}
-	return _u
-}
-
-// AddMaxScore adds value to the "max_score" field.
-func (_u *BenchmarkResultUpdateOne) AddMaxScore(v float64) *BenchmarkResultUpdateOne {
-	_u.mutation.AddMaxScore(v)
-	return _u
-}
-
-// ClearMaxScore clears the value of the "max_score" field.
-func (_u *BenchmarkResultUpdateOne) ClearMaxScore() *BenchmarkResultUpdateOne {
-	_u.mutation.ClearMaxScore()
 	return _u
 }
 
@@ -1347,24 +1221,6 @@ func (_u *BenchmarkResultUpdateOne) sqlSave(ctx context.Context) (_node *Benchma
 	}
 	if value, ok := _u.mutation.Status(); ok {
 		_spec.SetField(benchmarkresult.FieldStatus, field.TypeString, value)
-	}
-	if value, ok := _u.mutation.Score(); ok {
-		_spec.SetField(benchmarkresult.FieldScore, field.TypeFloat64, value)
-	}
-	if value, ok := _u.mutation.AddedScore(); ok {
-		_spec.AddField(benchmarkresult.FieldScore, field.TypeFloat64, value)
-	}
-	if _u.mutation.ScoreCleared() {
-		_spec.ClearField(benchmarkresult.FieldScore, field.TypeFloat64)
-	}
-	if value, ok := _u.mutation.MaxScore(); ok {
-		_spec.SetField(benchmarkresult.FieldMaxScore, field.TypeFloat64, value)
-	}
-	if value, ok := _u.mutation.AddedMaxScore(); ok {
-		_spec.AddField(benchmarkresult.FieldMaxScore, field.TypeFloat64, value)
-	}
-	if _u.mutation.MaxScoreCleared() {
-		_spec.ClearField(benchmarkresult.FieldMaxScore, field.TypeFloat64)
 	}
 	if value, ok := _u.mutation.NormalizedScore(); ok {
 		_spec.SetField(benchmarkresult.FieldNormalizedScore, field.TypeFloat64, value)

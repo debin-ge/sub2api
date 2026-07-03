@@ -12,7 +12,8 @@ import (
 	"entgo.io/ent/schema/index"
 )
 
-// BenchmarkRunTarget stores the per-run target snapshot.
+// BenchmarkRunTarget stores the per-run target snapshot so trends stay
+// comparable even if the source target is later edited.
 type BenchmarkRunTarget struct {
 	ent.Schema
 }
@@ -39,15 +40,8 @@ func (BenchmarkRunTarget) Fields() []ent.Field {
 			Optional().
 			Nillable().
 			MaxLen(200),
-		field.String("provider_snapshot").
-			Optional().
-			Nillable().
-			MaxLen(100),
 		field.Int("target_order").
 			Default(0),
-		field.JSON("config_snapshot", map[string]any{}).
-			Default(func() map[string]any { return map[string]any{} }).
-			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
 		field.Time("created_at").
 			Immutable().
 			Default(time.Now).
@@ -69,7 +63,7 @@ func (BenchmarkRunTarget) Edges() []ent.Edge {
 			Unique(),
 		edge.To("results", BenchmarkResult.Type).
 			Annotations(entsql.OnDelete(entsql.Cascade)),
-		edge.To("score_snapshots", BenchmarkScoreSnapshot.Type).
+		edge.To("target_scores", BenchmarkTargetScore.Type).
 			Annotations(entsql.OnDelete(entsql.Cascade)),
 	}
 }

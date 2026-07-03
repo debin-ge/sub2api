@@ -11,10 +11,8 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
-	"github.com/Wei-Shaw/sub2api/ent/benchmarkprofile"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkpublicsnapshot"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkrun"
-	"github.com/Wei-Shaw/sub2api/ent/benchmarksuite"
 )
 
 // BenchmarkPublicSnapshotCreate is the builder for creating a BenchmarkPublicSnapshot entity.
@@ -28,18 +26,6 @@ type BenchmarkPublicSnapshotCreate struct {
 // SetRunID sets the "run_id" field.
 func (_c *BenchmarkPublicSnapshotCreate) SetRunID(v int64) *BenchmarkPublicSnapshotCreate {
 	_c.mutation.SetRunID(v)
-	return _c
-}
-
-// SetSuiteID sets the "suite_id" field.
-func (_c *BenchmarkPublicSnapshotCreate) SetSuiteID(v int64) *BenchmarkPublicSnapshotCreate {
-	_c.mutation.SetSuiteID(v)
-	return _c
-}
-
-// SetProfileID sets the "profile_id" field.
-func (_c *BenchmarkPublicSnapshotCreate) SetProfileID(v int64) *BenchmarkPublicSnapshotCreate {
-	_c.mutation.SetProfileID(v)
 	return _c
 }
 
@@ -80,16 +66,6 @@ func (_c *BenchmarkPublicSnapshotCreate) SetNillableCreatedAt(v *time.Time) *Ben
 // SetRun sets the "run" edge to the BenchmarkRun entity.
 func (_c *BenchmarkPublicSnapshotCreate) SetRun(v *BenchmarkRun) *BenchmarkPublicSnapshotCreate {
 	return _c.SetRunID(v.ID)
-}
-
-// SetSuite sets the "suite" edge to the BenchmarkSuite entity.
-func (_c *BenchmarkPublicSnapshotCreate) SetSuite(v *BenchmarkSuite) *BenchmarkPublicSnapshotCreate {
-	return _c.SetSuiteID(v.ID)
-}
-
-// SetProfile sets the "profile" edge to the BenchmarkProfile entity.
-func (_c *BenchmarkPublicSnapshotCreate) SetProfile(v *BenchmarkProfile) *BenchmarkPublicSnapshotCreate {
-	return _c.SetProfileID(v.ID)
 }
 
 // Mutation returns the BenchmarkPublicSnapshotMutation object of the builder.
@@ -146,12 +122,6 @@ func (_c *BenchmarkPublicSnapshotCreate) check() error {
 	if _, ok := _c.mutation.RunID(); !ok {
 		return &ValidationError{Name: "run_id", err: errors.New(`ent: missing required field "BenchmarkPublicSnapshot.run_id"`)}
 	}
-	if _, ok := _c.mutation.SuiteID(); !ok {
-		return &ValidationError{Name: "suite_id", err: errors.New(`ent: missing required field "BenchmarkPublicSnapshot.suite_id"`)}
-	}
-	if _, ok := _c.mutation.ProfileID(); !ok {
-		return &ValidationError{Name: "profile_id", err: errors.New(`ent: missing required field "BenchmarkPublicSnapshot.profile_id"`)}
-	}
 	if _, ok := _c.mutation.Snapshot(); !ok {
 		return &ValidationError{Name: "snapshot", err: errors.New(`ent: missing required field "BenchmarkPublicSnapshot.snapshot"`)}
 	}
@@ -163,12 +133,6 @@ func (_c *BenchmarkPublicSnapshotCreate) check() error {
 	}
 	if len(_c.mutation.RunIDs()) == 0 {
 		return &ValidationError{Name: "run", err: errors.New(`ent: missing required edge "BenchmarkPublicSnapshot.run"`)}
-	}
-	if len(_c.mutation.SuiteIDs()) == 0 {
-		return &ValidationError{Name: "suite", err: errors.New(`ent: missing required edge "BenchmarkPublicSnapshot.suite"`)}
-	}
-	if len(_c.mutation.ProfileIDs()) == 0 {
-		return &ValidationError{Name: "profile", err: errors.New(`ent: missing required edge "BenchmarkPublicSnapshot.profile"`)}
 	}
 	return nil
 }
@@ -224,40 +188,6 @@ func (_c *BenchmarkPublicSnapshotCreate) createSpec() (*BenchmarkPublicSnapshot,
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
 		_node.RunID = nodes[0]
-		_spec.Edges = append(_spec.Edges, edge)
-	}
-	if nodes := _c.mutation.SuiteIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.M2O,
-			Inverse: true,
-			Table:   benchmarkpublicsnapshot.SuiteTable,
-			Columns: []string{benchmarkpublicsnapshot.SuiteColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(benchmarksuite.FieldID, field.TypeInt64),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_node.SuiteID = nodes[0]
-		_spec.Edges = append(_spec.Edges, edge)
-	}
-	if nodes := _c.mutation.ProfileIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.M2O,
-			Inverse: true,
-			Table:   benchmarkpublicsnapshot.ProfileTable,
-			Columns: []string{benchmarkpublicsnapshot.ProfileColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(benchmarkprofile.FieldID, field.TypeInt64),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_node.ProfileID = nodes[0]
 		_spec.Edges = append(_spec.Edges, edge)
 	}
 	return _node, _spec
@@ -321,30 +251,6 @@ func (u *BenchmarkPublicSnapshotUpsert) SetRunID(v int64) *BenchmarkPublicSnapsh
 // UpdateRunID sets the "run_id" field to the value that was provided on create.
 func (u *BenchmarkPublicSnapshotUpsert) UpdateRunID() *BenchmarkPublicSnapshotUpsert {
 	u.SetExcluded(benchmarkpublicsnapshot.FieldRunID)
-	return u
-}
-
-// SetSuiteID sets the "suite_id" field.
-func (u *BenchmarkPublicSnapshotUpsert) SetSuiteID(v int64) *BenchmarkPublicSnapshotUpsert {
-	u.Set(benchmarkpublicsnapshot.FieldSuiteID, v)
-	return u
-}
-
-// UpdateSuiteID sets the "suite_id" field to the value that was provided on create.
-func (u *BenchmarkPublicSnapshotUpsert) UpdateSuiteID() *BenchmarkPublicSnapshotUpsert {
-	u.SetExcluded(benchmarkpublicsnapshot.FieldSuiteID)
-	return u
-}
-
-// SetProfileID sets the "profile_id" field.
-func (u *BenchmarkPublicSnapshotUpsert) SetProfileID(v int64) *BenchmarkPublicSnapshotUpsert {
-	u.Set(benchmarkpublicsnapshot.FieldProfileID, v)
-	return u
-}
-
-// UpdateProfileID sets the "profile_id" field to the value that was provided on create.
-func (u *BenchmarkPublicSnapshotUpsert) UpdateProfileID() *BenchmarkPublicSnapshotUpsert {
-	u.SetExcluded(benchmarkpublicsnapshot.FieldProfileID)
 	return u
 }
 
@@ -428,34 +334,6 @@ func (u *BenchmarkPublicSnapshotUpsertOne) SetRunID(v int64) *BenchmarkPublicSna
 func (u *BenchmarkPublicSnapshotUpsertOne) UpdateRunID() *BenchmarkPublicSnapshotUpsertOne {
 	return u.Update(func(s *BenchmarkPublicSnapshotUpsert) {
 		s.UpdateRunID()
-	})
-}
-
-// SetSuiteID sets the "suite_id" field.
-func (u *BenchmarkPublicSnapshotUpsertOne) SetSuiteID(v int64) *BenchmarkPublicSnapshotUpsertOne {
-	return u.Update(func(s *BenchmarkPublicSnapshotUpsert) {
-		s.SetSuiteID(v)
-	})
-}
-
-// UpdateSuiteID sets the "suite_id" field to the value that was provided on create.
-func (u *BenchmarkPublicSnapshotUpsertOne) UpdateSuiteID() *BenchmarkPublicSnapshotUpsertOne {
-	return u.Update(func(s *BenchmarkPublicSnapshotUpsert) {
-		s.UpdateSuiteID()
-	})
-}
-
-// SetProfileID sets the "profile_id" field.
-func (u *BenchmarkPublicSnapshotUpsertOne) SetProfileID(v int64) *BenchmarkPublicSnapshotUpsertOne {
-	return u.Update(func(s *BenchmarkPublicSnapshotUpsert) {
-		s.SetProfileID(v)
-	})
-}
-
-// UpdateProfileID sets the "profile_id" field to the value that was provided on create.
-func (u *BenchmarkPublicSnapshotUpsertOne) UpdateProfileID() *BenchmarkPublicSnapshotUpsertOne {
-	return u.Update(func(s *BenchmarkPublicSnapshotUpsert) {
-		s.UpdateProfileID()
 	})
 }
 
@@ -709,34 +587,6 @@ func (u *BenchmarkPublicSnapshotUpsertBulk) SetRunID(v int64) *BenchmarkPublicSn
 func (u *BenchmarkPublicSnapshotUpsertBulk) UpdateRunID() *BenchmarkPublicSnapshotUpsertBulk {
 	return u.Update(func(s *BenchmarkPublicSnapshotUpsert) {
 		s.UpdateRunID()
-	})
-}
-
-// SetSuiteID sets the "suite_id" field.
-func (u *BenchmarkPublicSnapshotUpsertBulk) SetSuiteID(v int64) *BenchmarkPublicSnapshotUpsertBulk {
-	return u.Update(func(s *BenchmarkPublicSnapshotUpsert) {
-		s.SetSuiteID(v)
-	})
-}
-
-// UpdateSuiteID sets the "suite_id" field to the value that was provided on create.
-func (u *BenchmarkPublicSnapshotUpsertBulk) UpdateSuiteID() *BenchmarkPublicSnapshotUpsertBulk {
-	return u.Update(func(s *BenchmarkPublicSnapshotUpsert) {
-		s.UpdateSuiteID()
-	})
-}
-
-// SetProfileID sets the "profile_id" field.
-func (u *BenchmarkPublicSnapshotUpsertBulk) SetProfileID(v int64) *BenchmarkPublicSnapshotUpsertBulk {
-	return u.Update(func(s *BenchmarkPublicSnapshotUpsert) {
-		s.SetProfileID(v)
-	})
-}
-
-// UpdateProfileID sets the "profile_id" field to the value that was provided on create.
-func (u *BenchmarkPublicSnapshotUpsertBulk) UpdateProfileID() *BenchmarkPublicSnapshotUpsertBulk {
-	return u.Update(func(s *BenchmarkPublicSnapshotUpsert) {
-		s.UpdateProfileID()
 	})
 }
 

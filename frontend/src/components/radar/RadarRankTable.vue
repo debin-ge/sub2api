@@ -9,8 +9,8 @@
             <th class="w-16 px-4 py-3 text-left">{{ t('benchmark.public.table.rank') }}</th>
             <th class="min-w-64 px-4 py-3 text-left">{{ t('benchmark.public.table.model') }}</th>
             <th class="px-4 py-3 text-right">{{ t('benchmark.public.table.abilityScore') }}</th>
+            <th class="px-4 py-3 text-right">{{ t('benchmark.public.table.passed') }}</th>
             <th class="px-4 py-3 text-right">{{ t('benchmark.public.table.latency') }}</th>
-            <th class="px-4 py-3 text-right">{{ t('benchmark.public.table.successRate') }}</th>
             <th class="px-4 py-3 text-right">{{ t('benchmark.public.table.token') }}</th>
             <th class="px-4 py-3 text-right">{{ t('benchmark.public.table.cost') }}</th>
           </tr>
@@ -22,21 +22,13 @@
             class="transition-colors hover:bg-gray-50 dark:hover:bg-dark-800/60"
           >
             <td class="px-4 py-4 align-top font-semibold text-gray-500 dark:text-dark-400">
-              #{{ target.rank }}
+              #{{ formatInteger(target.rank) }}
             </td>
             <td class="px-4 py-4 align-top">
               <div class="flex flex-col gap-1">
-                <div class="flex flex-wrap items-center gap-2">
-                  <span class="font-semibold text-gray-900 dark:text-white">
-                    {{ displayName(target) }}
-                  </span>
-                  <span
-                    v-if="target.score_basis.insufficient_sample"
-                    class="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 dark:border-amber-700/50 dark:bg-amber-900/30 dark:text-amber-300"
-                  >
-                    {{ t('benchmark.public.table.insufficientSample') }}
-                  </span>
-                </div>
+                <span class="font-semibold text-gray-900 dark:text-white">
+                  {{ displayName(target) }}
+                </span>
                 <span class="text-xs text-gray-500 dark:text-dark-400">
                   {{ target.model }} · {{ channelName(target) }}
                 </span>
@@ -48,19 +40,16 @@
               </span>
             </td>
             <td class="px-4 py-4 text-right align-top text-gray-700 dark:text-dark-200">
-              <div>{{ formatLatency(target.metrics.latency_p50_ms) }}</div>
-              <div v-if="target.metrics.latency_p95_ms != null" class="text-xs text-gray-400 dark:text-dark-500">
-                {{ t('benchmark.public.table.p95Prefix') }} {{ formatLatency(target.metrics.latency_p95_ms) }}
-              </div>
+              {{ formatInteger(target.passed_count) }} / {{ formatInteger(target.total_count) }}
             </td>
             <td class="px-4 py-4 text-right align-top text-gray-700 dark:text-dark-200">
-              {{ formatPercent(target.metrics.success_rate) }}
+              {{ formatLatency(target.metrics.avg_latency_ms) }}
             </td>
             <td class="px-4 py-4 text-right align-top text-gray-700 dark:text-dark-200">
               {{ formatInteger(target.metrics.avg_total_tokens) }}
             </td>
             <td class="px-4 py-4 text-right align-top text-gray-700 dark:text-dark-200">
-              {{ formatCost(target.metrics.estimated_cost) }}
+              {{ formatCost(target.metrics.total_cost) }}
             </td>
           </tr>
         </tbody>
@@ -105,14 +94,6 @@ function formatLatency(value?: number | null): string {
     }).format(value / 1000)}s`
   }
   return `${new Intl.NumberFormat(locale.value, { maximumFractionDigits: 0 }).format(value)}ms`
-}
-
-function formatPercent(value: number): string {
-  return new Intl.NumberFormat(locale.value, {
-    style: 'percent',
-    minimumFractionDigits: 1,
-    maximumFractionDigits: 1,
-  }).format(value)
 }
 
 function formatInteger(value?: number | null): string {

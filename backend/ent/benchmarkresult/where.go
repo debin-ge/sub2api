@@ -90,16 +90,6 @@ func Status(v string) predicate.BenchmarkResult {
 	return predicate.BenchmarkResult(sql.FieldEQ(FieldStatus, v))
 }
 
-// Score applies equality check predicate on the "score" field. It's identical to ScoreEQ.
-func Score(v float64) predicate.BenchmarkResult {
-	return predicate.BenchmarkResult(sql.FieldEQ(FieldScore, v))
-}
-
-// MaxScore applies equality check predicate on the "max_score" field. It's identical to MaxScoreEQ.
-func MaxScore(v float64) predicate.BenchmarkResult {
-	return predicate.BenchmarkResult(sql.FieldEQ(FieldMaxScore, v))
-}
-
 // NormalizedScore applies equality check predicate on the "normalized_score" field. It's identical to NormalizedScoreEQ.
 func NormalizedScore(v float64) predicate.BenchmarkResult {
 	return predicate.BenchmarkResult(sql.FieldEQ(FieldNormalizedScore, v))
@@ -438,106 +428,6 @@ func StatusEqualFold(v string) predicate.BenchmarkResult {
 // StatusContainsFold applies the ContainsFold predicate on the "status" field.
 func StatusContainsFold(v string) predicate.BenchmarkResult {
 	return predicate.BenchmarkResult(sql.FieldContainsFold(FieldStatus, v))
-}
-
-// ScoreEQ applies the EQ predicate on the "score" field.
-func ScoreEQ(v float64) predicate.BenchmarkResult {
-	return predicate.BenchmarkResult(sql.FieldEQ(FieldScore, v))
-}
-
-// ScoreNEQ applies the NEQ predicate on the "score" field.
-func ScoreNEQ(v float64) predicate.BenchmarkResult {
-	return predicate.BenchmarkResult(sql.FieldNEQ(FieldScore, v))
-}
-
-// ScoreIn applies the In predicate on the "score" field.
-func ScoreIn(vs ...float64) predicate.BenchmarkResult {
-	return predicate.BenchmarkResult(sql.FieldIn(FieldScore, vs...))
-}
-
-// ScoreNotIn applies the NotIn predicate on the "score" field.
-func ScoreNotIn(vs ...float64) predicate.BenchmarkResult {
-	return predicate.BenchmarkResult(sql.FieldNotIn(FieldScore, vs...))
-}
-
-// ScoreGT applies the GT predicate on the "score" field.
-func ScoreGT(v float64) predicate.BenchmarkResult {
-	return predicate.BenchmarkResult(sql.FieldGT(FieldScore, v))
-}
-
-// ScoreGTE applies the GTE predicate on the "score" field.
-func ScoreGTE(v float64) predicate.BenchmarkResult {
-	return predicate.BenchmarkResult(sql.FieldGTE(FieldScore, v))
-}
-
-// ScoreLT applies the LT predicate on the "score" field.
-func ScoreLT(v float64) predicate.BenchmarkResult {
-	return predicate.BenchmarkResult(sql.FieldLT(FieldScore, v))
-}
-
-// ScoreLTE applies the LTE predicate on the "score" field.
-func ScoreLTE(v float64) predicate.BenchmarkResult {
-	return predicate.BenchmarkResult(sql.FieldLTE(FieldScore, v))
-}
-
-// ScoreIsNil applies the IsNil predicate on the "score" field.
-func ScoreIsNil() predicate.BenchmarkResult {
-	return predicate.BenchmarkResult(sql.FieldIsNull(FieldScore))
-}
-
-// ScoreNotNil applies the NotNil predicate on the "score" field.
-func ScoreNotNil() predicate.BenchmarkResult {
-	return predicate.BenchmarkResult(sql.FieldNotNull(FieldScore))
-}
-
-// MaxScoreEQ applies the EQ predicate on the "max_score" field.
-func MaxScoreEQ(v float64) predicate.BenchmarkResult {
-	return predicate.BenchmarkResult(sql.FieldEQ(FieldMaxScore, v))
-}
-
-// MaxScoreNEQ applies the NEQ predicate on the "max_score" field.
-func MaxScoreNEQ(v float64) predicate.BenchmarkResult {
-	return predicate.BenchmarkResult(sql.FieldNEQ(FieldMaxScore, v))
-}
-
-// MaxScoreIn applies the In predicate on the "max_score" field.
-func MaxScoreIn(vs ...float64) predicate.BenchmarkResult {
-	return predicate.BenchmarkResult(sql.FieldIn(FieldMaxScore, vs...))
-}
-
-// MaxScoreNotIn applies the NotIn predicate on the "max_score" field.
-func MaxScoreNotIn(vs ...float64) predicate.BenchmarkResult {
-	return predicate.BenchmarkResult(sql.FieldNotIn(FieldMaxScore, vs...))
-}
-
-// MaxScoreGT applies the GT predicate on the "max_score" field.
-func MaxScoreGT(v float64) predicate.BenchmarkResult {
-	return predicate.BenchmarkResult(sql.FieldGT(FieldMaxScore, v))
-}
-
-// MaxScoreGTE applies the GTE predicate on the "max_score" field.
-func MaxScoreGTE(v float64) predicate.BenchmarkResult {
-	return predicate.BenchmarkResult(sql.FieldGTE(FieldMaxScore, v))
-}
-
-// MaxScoreLT applies the LT predicate on the "max_score" field.
-func MaxScoreLT(v float64) predicate.BenchmarkResult {
-	return predicate.BenchmarkResult(sql.FieldLT(FieldMaxScore, v))
-}
-
-// MaxScoreLTE applies the LTE predicate on the "max_score" field.
-func MaxScoreLTE(v float64) predicate.BenchmarkResult {
-	return predicate.BenchmarkResult(sql.FieldLTE(FieldMaxScore, v))
-}
-
-// MaxScoreIsNil applies the IsNil predicate on the "max_score" field.
-func MaxScoreIsNil() predicate.BenchmarkResult {
-	return predicate.BenchmarkResult(sql.FieldIsNull(FieldMaxScore))
-}
-
-// MaxScoreNotNil applies the NotNil predicate on the "max_score" field.
-func MaxScoreNotNil() predicate.BenchmarkResult {
-	return predicate.BenchmarkResult(sql.FieldNotNull(FieldMaxScore))
 }
 
 // NormalizedScoreEQ applies the EQ predicate on the "normalized_score" field.

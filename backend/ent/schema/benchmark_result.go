@@ -41,14 +41,7 @@ func (BenchmarkResult) Fields() []ent.Field {
 		field.String("status").
 			NotEmpty().
 			MaxLen(32),
-		field.Float("score").
-			Optional().
-			Nillable().
-			SchemaType(map[string]string{dialect.Postgres: "decimal(10,4)"}),
-		field.Float("max_score").
-			Optional().
-			Nillable().
-			SchemaType(map[string]string{dialect.Postgres: "decimal(10,4)"}),
+		// normalized_score is 0-100; pass=100, fail=0, or a partial score.
 		field.Float("normalized_score").
 			Optional().
 			Nillable().

@@ -32,10 +32,6 @@ func (BenchmarkRunTask) Fields() []ent.Field {
 		field.String("type").
 			NotEmpty().
 			MaxLen(50),
-		field.String("category").
-			Optional().
-			Nillable().
-			MaxLen(100),
 		field.String("difficulty").
 			Optional().
 			Nillable().

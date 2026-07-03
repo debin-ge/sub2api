@@ -13,6 +13,8 @@ import (
 )
 
 // BenchmarkTask holds reusable benchmark prompts and verifier configuration.
+// Tasks are global and form a fixed set; each run executes all enabled tasks
+// (or the first N by sort_order).
 type BenchmarkTask struct {
 	ent.Schema
 }
@@ -31,24 +33,16 @@ func (BenchmarkTask) Mixin() []ent.Mixin {
 
 func (BenchmarkTask) Fields() []ent.Field {
 	return []ent.Field{
-		field.Int64("suite_id"),
 		field.String("title").
 			NotEmpty().
 			MaxLen(200),
 		field.String("type").
 			NotEmpty().
 			MaxLen(50),
-		field.String("category").
-			Optional().
-			Nillable().
-			MaxLen(100),
 		field.String("difficulty").
 			Optional().
 			Nillable().
 			MaxLen(50),
-		field.JSON("tags", []string{}).
-			Default(func() []string { return []string{} }).
-			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
 		field.String("prompt").
 			NotEmpty().
 			SchemaType(map[string]string{dialect.Postgres: "text"}),
@@ -67,41 +61,28 @@ func (BenchmarkTask) Fields() []ent.Field {
 		field.Float("weight").
 			Default(1).
 			SchemaType(map[string]string{dialect.Postgres: "decimal(10,4)"}),
-		field.Enum("min_scale").
-			Values("small", "medium", "full", "custom").
-			Default("small"),
 		field.Bool("public_prompt").
 			Default(false),
 		field.Bool("enabled").
 			Default(true),
-		field.JSON("metadata", map[string]any{}).
-			Default(func() map[string]any { return map[string]any{} }).
-			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
+		field.Int("sort_order").
+			Default(0),
 	}
 }
 
 func (BenchmarkTask) Edges() []ent.Edge {
 	return []ent.Edge{
-		edge.From("suite", BenchmarkSuite.Type).
-			Ref("tasks").
-			Field("suite_id").
-			Required().
-			Unique(),
 		edge.To("run_tasks", BenchmarkRunTask.Type),
 	}
 }
 
 func (BenchmarkTask) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("suite_id").
-			StorageKey("benchmark_tasks_suite_id_idx"),
 		index.Fields("type").
 			StorageKey("benchmark_tasks_type_idx"),
-		index.Fields("difficulty").
-			StorageKey("benchmark_tasks_difficulty_idx"),
 		index.Fields("enabled").
 			StorageKey("benchmark_tasks_enabled_idx"),
-		index.Fields("suite_id", "type", "enabled").
-			StorageKey("benchmark_tasks_suite_type_enabled_idx"),
+		index.Fields("enabled", "sort_order").
+			StorageKey("benchmark_tasks_enabled_sort_idx"),
 	}
 }

@@ -16,10 +16,6 @@ const (
 	FieldID = "id"
 	// FieldRunID holds the string denoting the run_id field in the database.
 	FieldRunID = "run_id"
-	// FieldSuiteID holds the string denoting the suite_id field in the database.
-	FieldSuiteID = "suite_id"
-	// FieldProfileID holds the string denoting the profile_id field in the database.
-	FieldProfileID = "profile_id"
 	// FieldSnapshot holds the string denoting the snapshot field in the database.
 	FieldSnapshot = "snapshot"
 	// FieldPublishedAt holds the string denoting the published_at field in the database.
@@ -28,10 +24,6 @@ const (
 	FieldCreatedAt = "created_at"
 	// EdgeRun holds the string denoting the run edge name in mutations.
 	EdgeRun = "run"
-	// EdgeSuite holds the string denoting the suite edge name in mutations.
-	EdgeSuite = "suite"
-	// EdgeProfile holds the string denoting the profile edge name in mutations.
-	EdgeProfile = "profile"
 	// Table holds the table name of the benchmarkpublicsnapshot in the database.
 	Table = "benchmark_public_snapshots"
 	// RunTable is the table that holds the run relation/edge.
@@ -41,28 +33,12 @@ const (
 	RunInverseTable = "benchmark_runs"
 	// RunColumn is the table column denoting the run relation/edge.
 	RunColumn = "run_id"
-	// SuiteTable is the table that holds the suite relation/edge.
-	SuiteTable = "benchmark_public_snapshots"
-	// SuiteInverseTable is the table name for the BenchmarkSuite entity.
-	// It exists in this package in order to avoid circular dependency with the "benchmarksuite" package.
-	SuiteInverseTable = "benchmark_suites"
-	// SuiteColumn is the table column denoting the suite relation/edge.
-	SuiteColumn = "suite_id"
-	// ProfileTable is the table that holds the profile relation/edge.
-	ProfileTable = "benchmark_public_snapshots"
-	// ProfileInverseTable is the table name for the BenchmarkProfile entity.
-	// It exists in this package in order to avoid circular dependency with the "benchmarkprofile" package.
-	ProfileInverseTable = "benchmark_profiles"
-	// ProfileColumn is the table column denoting the profile relation/edge.
-	ProfileColumn = "profile_id"
 )
 
 // Columns holds all SQL columns for benchmarkpublicsnapshot fields.
 var Columns = []string{
 	FieldID,
 	FieldRunID,
-	FieldSuiteID,
-	FieldProfileID,
 	FieldSnapshot,
 	FieldPublishedAt,
 	FieldCreatedAt,
@@ -100,16 +76,6 @@ func ByRunID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldRunID, opts...).ToFunc()
 }
 
-// BySuiteID orders the results by the suite_id field.
-func BySuiteID(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldSuiteID, opts...).ToFunc()
-}
-
-// ByProfileID orders the results by the profile_id field.
-func ByProfileID(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldProfileID, opts...).ToFunc()
-}
-
 // ByPublishedAt orders the results by the published_at field.
 func ByPublishedAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldPublishedAt, opts...).ToFunc()
@@ -126,38 +92,10 @@ func ByRunField(field string, opts ...sql.OrderTermOption) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newRunStep(), sql.OrderByField(field, opts...))
 	}
 }
-
-// BySuiteField orders the results by suite field.
-func BySuiteField(field string, opts ...sql.OrderTermOption) OrderOption {
-	return func(s *sql.Selector) {
-		sqlgraph.OrderByNeighborTerms(s, newSuiteStep(), sql.OrderByField(field, opts...))
-	}
-}
-
-// ByProfileField orders the results by profile field.
-func ByProfileField(field string, opts ...sql.OrderTermOption) OrderOption {
-	return func(s *sql.Selector) {
-		sqlgraph.OrderByNeighborTerms(s, newProfileStep(), sql.OrderByField(field, opts...))
-	}
-}
 func newRunStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(RunInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.M2O, true, RunTable, RunColumn),
-	)
-}
-func newSuiteStep() *sqlgraph.Step {
-	return sqlgraph.NewStep(
-		sqlgraph.From(Table, FieldID),
-		sqlgraph.To(SuiteInverseTable, FieldID),
-		sqlgraph.Edge(sqlgraph.M2O, true, SuiteTable, SuiteColumn),
-	)
-}
-func newProfileStep() *sqlgraph.Step {
-	return sqlgraph.NewStep(
-		sqlgraph.From(Table, FieldID),
-		sqlgraph.To(ProfileInverseTable, FieldID),
-		sqlgraph.Edge(sqlgraph.M2O, true, ProfileTable, ProfileColumn),
 	)
 }

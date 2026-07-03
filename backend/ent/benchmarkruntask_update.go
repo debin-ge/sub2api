@@ -93,26 +93,6 @@ func (_u *BenchmarkRunTaskUpdate) SetNillableType(v *string) *BenchmarkRunTaskUp
 	return _u
 }
 
-// SetCategory sets the "category" field.
-func (_u *BenchmarkRunTaskUpdate) SetCategory(v string) *BenchmarkRunTaskUpdate {
-	_u.mutation.SetCategory(v)
-	return _u
-}
-
-// SetNillableCategory sets the "category" field if the given value is not nil.
-func (_u *BenchmarkRunTaskUpdate) SetNillableCategory(v *string) *BenchmarkRunTaskUpdate {
-	if v != nil {
-		_u.SetCategory(*v)
-	}
-	return _u
-}
-
-// ClearCategory clears the value of the "category" field.
-func (_u *BenchmarkRunTaskUpdate) ClearCategory() *BenchmarkRunTaskUpdate {
-	_u.mutation.ClearCategory()
-	return _u
-}
-
 // SetDifficulty sets the "difficulty" field.
 func (_u *BenchmarkRunTaskUpdate) SetDifficulty(v string) *BenchmarkRunTaskUpdate {
 	_u.mutation.SetDifficulty(v)
@@ -291,11 +271,6 @@ func (_u *BenchmarkRunTaskUpdate) check() error {
 			return &ValidationError{Name: "type", err: fmt.Errorf(`ent: validator failed for field "BenchmarkRunTask.type": %w`, err)}
 		}
 	}
-	if v, ok := _u.mutation.Category(); ok {
-		if err := benchmarkruntask.CategoryValidator(v); err != nil {
-			return &ValidationError{Name: "category", err: fmt.Errorf(`ent: validator failed for field "BenchmarkRunTask.category": %w`, err)}
-		}
-	}
 	if v, ok := _u.mutation.Difficulty(); ok {
 		if err := benchmarkruntask.DifficultyValidator(v); err != nil {
 			return &ValidationError{Name: "difficulty", err: fmt.Errorf(`ent: validator failed for field "BenchmarkRunTask.difficulty": %w`, err)}
@@ -340,12 +315,6 @@ func (_u *BenchmarkRunTaskUpdate) sqlSave(ctx context.Context) (_node int, err e
 	}
 	if value, ok := _u.mutation.GetType(); ok {
 		_spec.SetField(benchmarkruntask.FieldType, field.TypeString, value)
-	}
-	if value, ok := _u.mutation.Category(); ok {
-		_spec.SetField(benchmarkruntask.FieldCategory, field.TypeString, value)
-	}
-	if _u.mutation.CategoryCleared() {
-		_spec.ClearField(benchmarkruntask.FieldCategory, field.TypeString)
 	}
 	if value, ok := _u.mutation.Difficulty(); ok {
 		_spec.SetField(benchmarkruntask.FieldDifficulty, field.TypeString, value)
@@ -557,26 +526,6 @@ func (_u *BenchmarkRunTaskUpdateOne) SetNillableType(v *string) *BenchmarkRunTas
 	return _u
 }
 
-// SetCategory sets the "category" field.
-func (_u *BenchmarkRunTaskUpdateOne) SetCategory(v string) *BenchmarkRunTaskUpdateOne {
-	_u.mutation.SetCategory(v)
-	return _u
-}
-
-// SetNillableCategory sets the "category" field if the given value is not nil.
-func (_u *BenchmarkRunTaskUpdateOne) SetNillableCategory(v *string) *BenchmarkRunTaskUpdateOne {
-	if v != nil {
-		_u.SetCategory(*v)
-	}
-	return _u
-}
-
-// ClearCategory clears the value of the "category" field.
-func (_u *BenchmarkRunTaskUpdateOne) ClearCategory() *BenchmarkRunTaskUpdateOne {
-	_u.mutation.ClearCategory()
-	return _u
-}
-
 // SetDifficulty sets the "difficulty" field.
 func (_u *BenchmarkRunTaskUpdateOne) SetDifficulty(v string) *BenchmarkRunTaskUpdateOne {
 	_u.mutation.SetDifficulty(v)
@@ -768,11 +717,6 @@ func (_u *BenchmarkRunTaskUpdateOne) check() error {
 			return &ValidationError{Name: "type", err: fmt.Errorf(`ent: validator failed for field "BenchmarkRunTask.type": %w`, err)}
 		}
 	}
-	if v, ok := _u.mutation.Category(); ok {
-		if err := benchmarkruntask.CategoryValidator(v); err != nil {
-			return &ValidationError{Name: "category", err: fmt.Errorf(`ent: validator failed for field "BenchmarkRunTask.category": %w`, err)}
-		}
-	}
 	if v, ok := _u.mutation.Difficulty(); ok {
 		if err := benchmarkruntask.DifficultyValidator(v); err != nil {
 			return &ValidationError{Name: "difficulty", err: fmt.Errorf(`ent: validator failed for field "BenchmarkRunTask.difficulty": %w`, err)}
@@ -834,12 +778,6 @@ func (_u *BenchmarkRunTaskUpdateOne) sqlSave(ctx context.Context) (_node *Benchm
 	}
 	if value, ok := _u.mutation.GetType(); ok {
 		_spec.SetField(benchmarkruntask.FieldType, field.TypeString, value)
-	}
-	if value, ok := _u.mutation.Category(); ok {
-		_spec.SetField(benchmarkruntask.FieldCategory, field.TypeString, value)
-	}
-	if _u.mutation.CategoryCleared() {
-		_spec.ClearField(benchmarkruntask.FieldCategory, field.TypeString)
 	}
 	if value, ok := _u.mutation.Difficulty(); ok {
 		_spec.SetField(benchmarkruntask.FieldDifficulty, field.TypeString, value)

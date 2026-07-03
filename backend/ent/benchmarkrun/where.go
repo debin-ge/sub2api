@@ -65,16 +65,6 @@ func UpdatedAt(v time.Time) predicate.BenchmarkRun {
 	return predicate.BenchmarkRun(sql.FieldEQ(FieldUpdatedAt, v))
 }
 
-// SuiteID applies equality check predicate on the "suite_id" field. It's identical to SuiteIDEQ.
-func SuiteID(v int64) predicate.BenchmarkRun {
-	return predicate.BenchmarkRun(sql.FieldEQ(FieldSuiteID, v))
-}
-
-// ProfileID applies equality check predicate on the "profile_id" field. It's identical to ProfileIDEQ.
-func ProfileID(v int64) predicate.BenchmarkRun {
-	return predicate.BenchmarkRun(sql.FieldEQ(FieldProfileID, v))
-}
-
 // Status applies equality check predicate on the "status" field. It's identical to StatusEQ.
 func Status(v string) predicate.BenchmarkRun {
 	return predicate.BenchmarkRun(sql.FieldEQ(FieldStatus, v))
@@ -85,9 +75,14 @@ func TriggerType(v string) predicate.BenchmarkRun {
 	return predicate.BenchmarkRun(sql.FieldEQ(FieldTriggerType, v))
 }
 
-// SelectionSeed applies equality check predicate on the "selection_seed" field. It's identical to SelectionSeedEQ.
-func SelectionSeed(v int64) predicate.BenchmarkRun {
-	return predicate.BenchmarkRun(sql.FieldEQ(FieldSelectionSeed, v))
+// ScheduleID applies equality check predicate on the "schedule_id" field. It's identical to ScheduleIDEQ.
+func ScheduleID(v int64) predicate.BenchmarkRun {
+	return predicate.BenchmarkRun(sql.FieldEQ(FieldScheduleID, v))
+}
+
+// TaskCount applies equality check predicate on the "task_count" field. It's identical to TaskCountEQ.
+func TaskCount(v int) predicate.BenchmarkRun {
+	return predicate.BenchmarkRun(sql.FieldEQ(FieldTaskCount, v))
 }
 
 // PlannedTargetCount applies equality check predicate on the "planned_target_count" field. It's identical to PlannedTargetCountEQ.
@@ -203,46 +198,6 @@ func UpdatedAtLT(v time.Time) predicate.BenchmarkRun {
 // UpdatedAtLTE applies the LTE predicate on the "updated_at" field.
 func UpdatedAtLTE(v time.Time) predicate.BenchmarkRun {
 	return predicate.BenchmarkRun(sql.FieldLTE(FieldUpdatedAt, v))
-}
-
-// SuiteIDEQ applies the EQ predicate on the "suite_id" field.
-func SuiteIDEQ(v int64) predicate.BenchmarkRun {
-	return predicate.BenchmarkRun(sql.FieldEQ(FieldSuiteID, v))
-}
-
-// SuiteIDNEQ applies the NEQ predicate on the "suite_id" field.
-func SuiteIDNEQ(v int64) predicate.BenchmarkRun {
-	return predicate.BenchmarkRun(sql.FieldNEQ(FieldSuiteID, v))
-}
-
-// SuiteIDIn applies the In predicate on the "suite_id" field.
-func SuiteIDIn(vs ...int64) predicate.BenchmarkRun {
-	return predicate.BenchmarkRun(sql.FieldIn(FieldSuiteID, vs...))
-}
-
-// SuiteIDNotIn applies the NotIn predicate on the "suite_id" field.
-func SuiteIDNotIn(vs ...int64) predicate.BenchmarkRun {
-	return predicate.BenchmarkRun(sql.FieldNotIn(FieldSuiteID, vs...))
-}
-
-// ProfileIDEQ applies the EQ predicate on the "profile_id" field.
-func ProfileIDEQ(v int64) predicate.BenchmarkRun {
-	return predicate.BenchmarkRun(sql.FieldEQ(FieldProfileID, v))
-}
-
-// ProfileIDNEQ applies the NEQ predicate on the "profile_id" field.
-func ProfileIDNEQ(v int64) predicate.BenchmarkRun {
-	return predicate.BenchmarkRun(sql.FieldNEQ(FieldProfileID, v))
-}
-
-// ProfileIDIn applies the In predicate on the "profile_id" field.
-func ProfileIDIn(vs ...int64) predicate.BenchmarkRun {
-	return predicate.BenchmarkRun(sql.FieldIn(FieldProfileID, vs...))
-}
-
-// ProfileIDNotIn applies the NotIn predicate on the "profile_id" field.
-func ProfileIDNotIn(vs ...int64) predicate.BenchmarkRun {
-	return predicate.BenchmarkRun(sql.FieldNotIn(FieldProfileID, vs...))
 }
 
 // StatusEQ applies the EQ predicate on the "status" field.
@@ -375,74 +330,94 @@ func TriggerTypeContainsFold(v string) predicate.BenchmarkRun {
 	return predicate.BenchmarkRun(sql.FieldContainsFold(FieldTriggerType, v))
 }
 
-// TaskScaleEQ applies the EQ predicate on the "task_scale" field.
-func TaskScaleEQ(v TaskScale) predicate.BenchmarkRun {
-	return predicate.BenchmarkRun(sql.FieldEQ(FieldTaskScale, v))
+// ScheduleIDEQ applies the EQ predicate on the "schedule_id" field.
+func ScheduleIDEQ(v int64) predicate.BenchmarkRun {
+	return predicate.BenchmarkRun(sql.FieldEQ(FieldScheduleID, v))
 }
 
-// TaskScaleNEQ applies the NEQ predicate on the "task_scale" field.
-func TaskScaleNEQ(v TaskScale) predicate.BenchmarkRun {
-	return predicate.BenchmarkRun(sql.FieldNEQ(FieldTaskScale, v))
+// ScheduleIDNEQ applies the NEQ predicate on the "schedule_id" field.
+func ScheduleIDNEQ(v int64) predicate.BenchmarkRun {
+	return predicate.BenchmarkRun(sql.FieldNEQ(FieldScheduleID, v))
 }
 
-// TaskScaleIn applies the In predicate on the "task_scale" field.
-func TaskScaleIn(vs ...TaskScale) predicate.BenchmarkRun {
-	return predicate.BenchmarkRun(sql.FieldIn(FieldTaskScale, vs...))
+// ScheduleIDIn applies the In predicate on the "schedule_id" field.
+func ScheduleIDIn(vs ...int64) predicate.BenchmarkRun {
+	return predicate.BenchmarkRun(sql.FieldIn(FieldScheduleID, vs...))
 }
 
-// TaskScaleNotIn applies the NotIn predicate on the "task_scale" field.
-func TaskScaleNotIn(vs ...TaskScale) predicate.BenchmarkRun {
-	return predicate.BenchmarkRun(sql.FieldNotIn(FieldTaskScale, vs...))
+// ScheduleIDNotIn applies the NotIn predicate on the "schedule_id" field.
+func ScheduleIDNotIn(vs ...int64) predicate.BenchmarkRun {
+	return predicate.BenchmarkRun(sql.FieldNotIn(FieldScheduleID, vs...))
 }
 
-// SelectionSeedEQ applies the EQ predicate on the "selection_seed" field.
-func SelectionSeedEQ(v int64) predicate.BenchmarkRun {
-	return predicate.BenchmarkRun(sql.FieldEQ(FieldSelectionSeed, v))
+// ScheduleIDGT applies the GT predicate on the "schedule_id" field.
+func ScheduleIDGT(v int64) predicate.BenchmarkRun {
+	return predicate.BenchmarkRun(sql.FieldGT(FieldScheduleID, v))
 }
 
-// SelectionSeedNEQ applies the NEQ predicate on the "selection_seed" field.
-func SelectionSeedNEQ(v int64) predicate.BenchmarkRun {
-	return predicate.BenchmarkRun(sql.FieldNEQ(FieldSelectionSeed, v))
+// ScheduleIDGTE applies the GTE predicate on the "schedule_id" field.
+func ScheduleIDGTE(v int64) predicate.BenchmarkRun {
+	return predicate.BenchmarkRun(sql.FieldGTE(FieldScheduleID, v))
 }
 
-// SelectionSeedIn applies the In predicate on the "selection_seed" field.
-func SelectionSeedIn(vs ...int64) predicate.BenchmarkRun {
-	return predicate.BenchmarkRun(sql.FieldIn(FieldSelectionSeed, vs...))
+// ScheduleIDLT applies the LT predicate on the "schedule_id" field.
+func ScheduleIDLT(v int64) predicate.BenchmarkRun {
+	return predicate.BenchmarkRun(sql.FieldLT(FieldScheduleID, v))
 }
 
-// SelectionSeedNotIn applies the NotIn predicate on the "selection_seed" field.
-func SelectionSeedNotIn(vs ...int64) predicate.BenchmarkRun {
-	return predicate.BenchmarkRun(sql.FieldNotIn(FieldSelectionSeed, vs...))
+// ScheduleIDLTE applies the LTE predicate on the "schedule_id" field.
+func ScheduleIDLTE(v int64) predicate.BenchmarkRun {
+	return predicate.BenchmarkRun(sql.FieldLTE(FieldScheduleID, v))
 }
 
-// SelectionSeedGT applies the GT predicate on the "selection_seed" field.
-func SelectionSeedGT(v int64) predicate.BenchmarkRun {
-	return predicate.BenchmarkRun(sql.FieldGT(FieldSelectionSeed, v))
+// ScheduleIDIsNil applies the IsNil predicate on the "schedule_id" field.
+func ScheduleIDIsNil() predicate.BenchmarkRun {
+	return predicate.BenchmarkRun(sql.FieldIsNull(FieldScheduleID))
 }
 
-// SelectionSeedGTE applies the GTE predicate on the "selection_seed" field.
-func SelectionSeedGTE(v int64) predicate.BenchmarkRun {
-	return predicate.BenchmarkRun(sql.FieldGTE(FieldSelectionSeed, v))
+// ScheduleIDNotNil applies the NotNil predicate on the "schedule_id" field.
+func ScheduleIDNotNil() predicate.BenchmarkRun {
+	return predicate.BenchmarkRun(sql.FieldNotNull(FieldScheduleID))
 }
 
-// SelectionSeedLT applies the LT predicate on the "selection_seed" field.
-func SelectionSeedLT(v int64) predicate.BenchmarkRun {
-	return predicate.BenchmarkRun(sql.FieldLT(FieldSelectionSeed, v))
+// TaskCountEQ applies the EQ predicate on the "task_count" field.
+func TaskCountEQ(v int) predicate.BenchmarkRun {
+	return predicate.BenchmarkRun(sql.FieldEQ(FieldTaskCount, v))
 }
 
-// SelectionSeedLTE applies the LTE predicate on the "selection_seed" field.
-func SelectionSeedLTE(v int64) predicate.BenchmarkRun {
-	return predicate.BenchmarkRun(sql.FieldLTE(FieldSelectionSeed, v))
+// TaskCountNEQ applies the NEQ predicate on the "task_count" field.
+func TaskCountNEQ(v int) predicate.BenchmarkRun {
+	return predicate.BenchmarkRun(sql.FieldNEQ(FieldTaskCount, v))
 }
 
-// SelectionSeedIsNil applies the IsNil predicate on the "selection_seed" field.
-func SelectionSeedIsNil() predicate.BenchmarkRun {
-	return predicate.BenchmarkRun(sql.FieldIsNull(FieldSelectionSeed))
+// TaskCountIn applies the In predicate on the "task_count" field.
+func TaskCountIn(vs ...int) predicate.BenchmarkRun {
+	return predicate.BenchmarkRun(sql.FieldIn(FieldTaskCount, vs...))
 }
 
-// SelectionSeedNotNil applies the NotNil predicate on the "selection_seed" field.
-func SelectionSeedNotNil() predicate.BenchmarkRun {
-	return predicate.BenchmarkRun(sql.FieldNotNull(FieldSelectionSeed))
+// TaskCountNotIn applies the NotIn predicate on the "task_count" field.
+func TaskCountNotIn(vs ...int) predicate.BenchmarkRun {
+	return predicate.BenchmarkRun(sql.FieldNotIn(FieldTaskCount, vs...))
+}
+
+// TaskCountGT applies the GT predicate on the "task_count" field.
+func TaskCountGT(v int) predicate.BenchmarkRun {
+	return predicate.BenchmarkRun(sql.FieldGT(FieldTaskCount, v))
+}
+
+// TaskCountGTE applies the GTE predicate on the "task_count" field.
+func TaskCountGTE(v int) predicate.BenchmarkRun {
+	return predicate.BenchmarkRun(sql.FieldGTE(FieldTaskCount, v))
+}
+
+// TaskCountLT applies the LT predicate on the "task_count" field.
+func TaskCountLT(v int) predicate.BenchmarkRun {
+	return predicate.BenchmarkRun(sql.FieldLT(FieldTaskCount, v))
+}
+
+// TaskCountLTE applies the LTE predicate on the "task_count" field.
+func TaskCountLTE(v int) predicate.BenchmarkRun {
+	return predicate.BenchmarkRun(sql.FieldLTE(FieldTaskCount, v))
 }
 
 // PlannedTargetCountEQ applies the EQ predicate on the "planned_target_count" field.
@@ -790,52 +765,6 @@ func CreatedByNotNil() predicate.BenchmarkRun {
 	return predicate.BenchmarkRun(sql.FieldNotNull(FieldCreatedBy))
 }
 
-// HasSuite applies the HasEdge predicate on the "suite" edge.
-func HasSuite() predicate.BenchmarkRun {
-	return predicate.BenchmarkRun(func(s *sql.Selector) {
-		step := sqlgraph.NewStep(
-			sqlgraph.From(Table, FieldID),
-			sqlgraph.Edge(sqlgraph.M2O, true, SuiteTable, SuiteColumn),
-		)
-		sqlgraph.HasNeighbors(s, step)
-	})
-}
-
-// HasSuiteWith applies the HasEdge predicate on the "suite" edge with a given conditions (other predicates).
-func HasSuiteWith(preds ...predicate.BenchmarkSuite) predicate.BenchmarkRun {
-	return predicate.BenchmarkRun(func(s *sql.Selector) {
-		step := newSuiteStep()
-		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
-			for _, p := range preds {
-				p(s)
-			}
-		})
-	})
-}
-
-// HasProfile applies the HasEdge predicate on the "profile" edge.
-func HasProfile() predicate.BenchmarkRun {
-	return predicate.BenchmarkRun(func(s *sql.Selector) {
-		step := sqlgraph.NewStep(
-			sqlgraph.From(Table, FieldID),
-			sqlgraph.Edge(sqlgraph.M2O, true, ProfileTable, ProfileColumn),
-		)
-		sqlgraph.HasNeighbors(s, step)
-	})
-}
-
-// HasProfileWith applies the HasEdge predicate on the "profile" edge with a given conditions (other predicates).
-func HasProfileWith(preds ...predicate.BenchmarkProfile) predicate.BenchmarkRun {
-	return predicate.BenchmarkRun(func(s *sql.Selector) {
-		step := newProfileStep()
-		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
-			for _, p := range preds {
-				p(s)
-			}
-		})
-	})
-}
-
 // HasRunTargets applies the HasEdge predicate on the "run_targets" edge.
 func HasRunTargets() predicate.BenchmarkRun {
 	return predicate.BenchmarkRun(func(s *sql.Selector) {
@@ -905,21 +834,21 @@ func HasResultsWith(preds ...predicate.BenchmarkResult) predicate.BenchmarkRun {
 	})
 }
 
-// HasScoreSnapshots applies the HasEdge predicate on the "score_snapshots" edge.
-func HasScoreSnapshots() predicate.BenchmarkRun {
+// HasTargetScores applies the HasEdge predicate on the "target_scores" edge.
+func HasTargetScores() predicate.BenchmarkRun {
 	return predicate.BenchmarkRun(func(s *sql.Selector) {
 		step := sqlgraph.NewStep(
 			sqlgraph.From(Table, FieldID),
-			sqlgraph.Edge(sqlgraph.O2M, false, ScoreSnapshotsTable, ScoreSnapshotsColumn),
+			sqlgraph.Edge(sqlgraph.O2M, false, TargetScoresTable, TargetScoresColumn),
 		)
 		sqlgraph.HasNeighbors(s, step)
 	})
 }
 
-// HasScoreSnapshotsWith applies the HasEdge predicate on the "score_snapshots" edge with a given conditions (other predicates).
-func HasScoreSnapshotsWith(preds ...predicate.BenchmarkScoreSnapshot) predicate.BenchmarkRun {
+// HasTargetScoresWith applies the HasEdge predicate on the "target_scores" edge with a given conditions (other predicates).
+func HasTargetScoresWith(preds ...predicate.BenchmarkTargetScore) predicate.BenchmarkRun {
 	return predicate.BenchmarkRun(func(s *sql.Selector) {
-		step := newScoreSnapshotsStep()
+		step := newTargetScoresStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

@@ -14,8 +14,8 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkresult"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkrun"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkruntarget"
-	"github.com/Wei-Shaw/sub2api/ent/benchmarkscoresnapshot"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarktarget"
+	"github.com/Wei-Shaw/sub2api/ent/benchmarktargetscore"
 )
 
 // BenchmarkRunTargetCreate is the builder for creating a BenchmarkRunTarget entity.
@@ -78,20 +78,6 @@ func (_c *BenchmarkRunTargetCreate) SetNillableChannelNameSnapshot(v *string) *B
 	return _c
 }
 
-// SetProviderSnapshot sets the "provider_snapshot" field.
-func (_c *BenchmarkRunTargetCreate) SetProviderSnapshot(v string) *BenchmarkRunTargetCreate {
-	_c.mutation.SetProviderSnapshot(v)
-	return _c
-}
-
-// SetNillableProviderSnapshot sets the "provider_snapshot" field if the given value is not nil.
-func (_c *BenchmarkRunTargetCreate) SetNillableProviderSnapshot(v *string) *BenchmarkRunTargetCreate {
-	if v != nil {
-		_c.SetProviderSnapshot(*v)
-	}
-	return _c
-}
-
 // SetTargetOrder sets the "target_order" field.
 func (_c *BenchmarkRunTargetCreate) SetTargetOrder(v int) *BenchmarkRunTargetCreate {
 	_c.mutation.SetTargetOrder(v)
@@ -103,12 +89,6 @@ func (_c *BenchmarkRunTargetCreate) SetNillableTargetOrder(v *int) *BenchmarkRun
 	if v != nil {
 		_c.SetTargetOrder(*v)
 	}
-	return _c
-}
-
-// SetConfigSnapshot sets the "config_snapshot" field.
-func (_c *BenchmarkRunTargetCreate) SetConfigSnapshot(v map[string]interface{}) *BenchmarkRunTargetCreate {
-	_c.mutation.SetConfigSnapshot(v)
 	return _c
 }
 
@@ -151,19 +131,19 @@ func (_c *BenchmarkRunTargetCreate) AddResults(v ...*BenchmarkResult) *Benchmark
 	return _c.AddResultIDs(ids...)
 }
 
-// AddScoreSnapshotIDs adds the "score_snapshots" edge to the BenchmarkScoreSnapshot entity by IDs.
-func (_c *BenchmarkRunTargetCreate) AddScoreSnapshotIDs(ids ...int64) *BenchmarkRunTargetCreate {
-	_c.mutation.AddScoreSnapshotIDs(ids...)
+// AddTargetScoreIDs adds the "target_scores" edge to the BenchmarkTargetScore entity by IDs.
+func (_c *BenchmarkRunTargetCreate) AddTargetScoreIDs(ids ...int64) *BenchmarkRunTargetCreate {
+	_c.mutation.AddTargetScoreIDs(ids...)
 	return _c
 }
 
-// AddScoreSnapshots adds the "score_snapshots" edges to the BenchmarkScoreSnapshot entity.
-func (_c *BenchmarkRunTargetCreate) AddScoreSnapshots(v ...*BenchmarkScoreSnapshot) *BenchmarkRunTargetCreate {
+// AddTargetScores adds the "target_scores" edges to the BenchmarkTargetScore entity.
+func (_c *BenchmarkRunTargetCreate) AddTargetScores(v ...*BenchmarkTargetScore) *BenchmarkRunTargetCreate {
 	ids := make([]int64, len(v))
 	for i := range v {
 		ids[i] = v[i].ID
 	}
-	return _c.AddScoreSnapshotIDs(ids...)
+	return _c.AddTargetScoreIDs(ids...)
 }
 
 // Mutation returns the BenchmarkRunTargetMutation object of the builder.
@@ -205,10 +185,6 @@ func (_c *BenchmarkRunTargetCreate) defaults() {
 		v := benchmarkruntarget.DefaultTargetOrder
 		_c.mutation.SetTargetOrder(v)
 	}
-	if _, ok := _c.mutation.ConfigSnapshot(); !ok {
-		v := benchmarkruntarget.DefaultConfigSnapshot()
-		_c.mutation.SetConfigSnapshot(v)
-	}
 	if _, ok := _c.mutation.CreatedAt(); !ok {
 		v := benchmarkruntarget.DefaultCreatedAt()
 		_c.mutation.SetCreatedAt(v)
@@ -244,16 +220,8 @@ func (_c *BenchmarkRunTargetCreate) check() error {
 			return &ValidationError{Name: "channel_name_snapshot", err: fmt.Errorf(`ent: validator failed for field "BenchmarkRunTarget.channel_name_snapshot": %w`, err)}
 		}
 	}
-	if v, ok := _c.mutation.ProviderSnapshot(); ok {
-		if err := benchmarkruntarget.ProviderSnapshotValidator(v); err != nil {
-			return &ValidationError{Name: "provider_snapshot", err: fmt.Errorf(`ent: validator failed for field "BenchmarkRunTarget.provider_snapshot": %w`, err)}
-		}
-	}
 	if _, ok := _c.mutation.TargetOrder(); !ok {
 		return &ValidationError{Name: "target_order", err: errors.New(`ent: missing required field "BenchmarkRunTarget.target_order"`)}
-	}
-	if _, ok := _c.mutation.ConfigSnapshot(); !ok {
-		return &ValidationError{Name: "config_snapshot", err: errors.New(`ent: missing required field "BenchmarkRunTarget.config_snapshot"`)}
 	}
 	if _, ok := _c.mutation.CreatedAt(); !ok {
 		return &ValidationError{Name: "created_at", err: errors.New(`ent: missing required field "BenchmarkRunTarget.created_at"`)}
@@ -307,17 +275,9 @@ func (_c *BenchmarkRunTargetCreate) createSpec() (*BenchmarkRunTarget, *sqlgraph
 		_spec.SetField(benchmarkruntarget.FieldChannelNameSnapshot, field.TypeString, value)
 		_node.ChannelNameSnapshot = &value
 	}
-	if value, ok := _c.mutation.ProviderSnapshot(); ok {
-		_spec.SetField(benchmarkruntarget.FieldProviderSnapshot, field.TypeString, value)
-		_node.ProviderSnapshot = &value
-	}
 	if value, ok := _c.mutation.TargetOrder(); ok {
 		_spec.SetField(benchmarkruntarget.FieldTargetOrder, field.TypeInt, value)
 		_node.TargetOrder = value
-	}
-	if value, ok := _c.mutation.ConfigSnapshot(); ok {
-		_spec.SetField(benchmarkruntarget.FieldConfigSnapshot, field.TypeJSON, value)
-		_node.ConfigSnapshot = value
 	}
 	if value, ok := _c.mutation.CreatedAt(); ok {
 		_spec.SetField(benchmarkruntarget.FieldCreatedAt, field.TypeTime, value)
@@ -373,15 +333,15 @@ func (_c *BenchmarkRunTargetCreate) createSpec() (*BenchmarkRunTarget, *sqlgraph
 		}
 		_spec.Edges = append(_spec.Edges, edge)
 	}
-	if nodes := _c.mutation.ScoreSnapshotsIDs(); len(nodes) > 0 {
+	if nodes := _c.mutation.TargetScoresIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
 			Inverse: false,
-			Table:   benchmarkruntarget.ScoreSnapshotsTable,
-			Columns: []string{benchmarkruntarget.ScoreSnapshotsColumn},
+			Table:   benchmarkruntarget.TargetScoresTable,
+			Columns: []string{benchmarkruntarget.TargetScoresColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(benchmarkscoresnapshot.FieldID, field.TypeInt64),
+				IDSpec: sqlgraph.NewFieldSpec(benchmarktargetscore.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {
@@ -531,24 +491,6 @@ func (u *BenchmarkRunTargetUpsert) ClearChannelNameSnapshot() *BenchmarkRunTarge
 	return u
 }
 
-// SetProviderSnapshot sets the "provider_snapshot" field.
-func (u *BenchmarkRunTargetUpsert) SetProviderSnapshot(v string) *BenchmarkRunTargetUpsert {
-	u.Set(benchmarkruntarget.FieldProviderSnapshot, v)
-	return u
-}
-
-// UpdateProviderSnapshot sets the "provider_snapshot" field to the value that was provided on create.
-func (u *BenchmarkRunTargetUpsert) UpdateProviderSnapshot() *BenchmarkRunTargetUpsert {
-	u.SetExcluded(benchmarkruntarget.FieldProviderSnapshot)
-	return u
-}
-
-// ClearProviderSnapshot clears the value of the "provider_snapshot" field.
-func (u *BenchmarkRunTargetUpsert) ClearProviderSnapshot() *BenchmarkRunTargetUpsert {
-	u.SetNull(benchmarkruntarget.FieldProviderSnapshot)
-	return u
-}
-
 // SetTargetOrder sets the "target_order" field.
 func (u *BenchmarkRunTargetUpsert) SetTargetOrder(v int) *BenchmarkRunTargetUpsert {
 	u.Set(benchmarkruntarget.FieldTargetOrder, v)
@@ -564,18 +506,6 @@ func (u *BenchmarkRunTargetUpsert) UpdateTargetOrder() *BenchmarkRunTargetUpsert
 // AddTargetOrder adds v to the "target_order" field.
 func (u *BenchmarkRunTargetUpsert) AddTargetOrder(v int) *BenchmarkRunTargetUpsert {
 	u.Add(benchmarkruntarget.FieldTargetOrder, v)
-	return u
-}
-
-// SetConfigSnapshot sets the "config_snapshot" field.
-func (u *BenchmarkRunTargetUpsert) SetConfigSnapshot(v map[string]interface{}) *BenchmarkRunTargetUpsert {
-	u.Set(benchmarkruntarget.FieldConfigSnapshot, v)
-	return u
-}
-
-// UpdateConfigSnapshot sets the "config_snapshot" field to the value that was provided on create.
-func (u *BenchmarkRunTargetUpsert) UpdateConfigSnapshot() *BenchmarkRunTargetUpsert {
-	u.SetExcluded(benchmarkruntarget.FieldConfigSnapshot)
 	return u
 }
 
@@ -729,27 +659,6 @@ func (u *BenchmarkRunTargetUpsertOne) ClearChannelNameSnapshot() *BenchmarkRunTa
 	})
 }
 
-// SetProviderSnapshot sets the "provider_snapshot" field.
-func (u *BenchmarkRunTargetUpsertOne) SetProviderSnapshot(v string) *BenchmarkRunTargetUpsertOne {
-	return u.Update(func(s *BenchmarkRunTargetUpsert) {
-		s.SetProviderSnapshot(v)
-	})
-}
-
-// UpdateProviderSnapshot sets the "provider_snapshot" field to the value that was provided on create.
-func (u *BenchmarkRunTargetUpsertOne) UpdateProviderSnapshot() *BenchmarkRunTargetUpsertOne {
-	return u.Update(func(s *BenchmarkRunTargetUpsert) {
-		s.UpdateProviderSnapshot()
-	})
-}
-
-// ClearProviderSnapshot clears the value of the "provider_snapshot" field.
-func (u *BenchmarkRunTargetUpsertOne) ClearProviderSnapshot() *BenchmarkRunTargetUpsertOne {
-	return u.Update(func(s *BenchmarkRunTargetUpsert) {
-		s.ClearProviderSnapshot()
-	})
-}
-
 // SetTargetOrder sets the "target_order" field.
 func (u *BenchmarkRunTargetUpsertOne) SetTargetOrder(v int) *BenchmarkRunTargetUpsertOne {
 	return u.Update(func(s *BenchmarkRunTargetUpsert) {
@@ -768,20 +677,6 @@ func (u *BenchmarkRunTargetUpsertOne) AddTargetOrder(v int) *BenchmarkRunTargetU
 func (u *BenchmarkRunTargetUpsertOne) UpdateTargetOrder() *BenchmarkRunTargetUpsertOne {
 	return u.Update(func(s *BenchmarkRunTargetUpsert) {
 		s.UpdateTargetOrder()
-	})
-}
-
-// SetConfigSnapshot sets the "config_snapshot" field.
-func (u *BenchmarkRunTargetUpsertOne) SetConfigSnapshot(v map[string]interface{}) *BenchmarkRunTargetUpsertOne {
-	return u.Update(func(s *BenchmarkRunTargetUpsert) {
-		s.SetConfigSnapshot(v)
-	})
-}
-
-// UpdateConfigSnapshot sets the "config_snapshot" field to the value that was provided on create.
-func (u *BenchmarkRunTargetUpsertOne) UpdateConfigSnapshot() *BenchmarkRunTargetUpsertOne {
-	return u.Update(func(s *BenchmarkRunTargetUpsert) {
-		s.UpdateConfigSnapshot()
 	})
 }
 
@@ -1101,27 +996,6 @@ func (u *BenchmarkRunTargetUpsertBulk) ClearChannelNameSnapshot() *BenchmarkRunT
 	})
 }
 
-// SetProviderSnapshot sets the "provider_snapshot" field.
-func (u *BenchmarkRunTargetUpsertBulk) SetProviderSnapshot(v string) *BenchmarkRunTargetUpsertBulk {
-	return u.Update(func(s *BenchmarkRunTargetUpsert) {
-		s.SetProviderSnapshot(v)
-	})
-}
-
-// UpdateProviderSnapshot sets the "provider_snapshot" field to the value that was provided on create.
-func (u *BenchmarkRunTargetUpsertBulk) UpdateProviderSnapshot() *BenchmarkRunTargetUpsertBulk {
-	return u.Update(func(s *BenchmarkRunTargetUpsert) {
-		s.UpdateProviderSnapshot()
-	})
-}
-
-// ClearProviderSnapshot clears the value of the "provider_snapshot" field.
-func (u *BenchmarkRunTargetUpsertBulk) ClearProviderSnapshot() *BenchmarkRunTargetUpsertBulk {
-	return u.Update(func(s *BenchmarkRunTargetUpsert) {
-		s.ClearProviderSnapshot()
-	})
-}
-
 // SetTargetOrder sets the "target_order" field.
 func (u *BenchmarkRunTargetUpsertBulk) SetTargetOrder(v int) *BenchmarkRunTargetUpsertBulk {
 	return u.Update(func(s *BenchmarkRunTargetUpsert) {
@@ -1140,20 +1014,6 @@ func (u *BenchmarkRunTargetUpsertBulk) AddTargetOrder(v int) *BenchmarkRunTarget
 func (u *BenchmarkRunTargetUpsertBulk) UpdateTargetOrder() *BenchmarkRunTargetUpsertBulk {
 	return u.Update(func(s *BenchmarkRunTargetUpsert) {
 		s.UpdateTargetOrder()
-	})
-}
-
-// SetConfigSnapshot sets the "config_snapshot" field.
-func (u *BenchmarkRunTargetUpsertBulk) SetConfigSnapshot(v map[string]interface{}) *BenchmarkRunTargetUpsertBulk {
-	return u.Update(func(s *BenchmarkRunTargetUpsert) {
-		s.SetConfigSnapshot(v)
-	})
-}
-
-// UpdateConfigSnapshot sets the "config_snapshot" field to the value that was provided on create.
-func (u *BenchmarkRunTargetUpsertBulk) UpdateConfigSnapshot() *BenchmarkRunTargetUpsertBulk {
-	return u.Update(func(s *BenchmarkRunTargetUpsert) {
-		s.UpdateConfigSnapshot()
 	})
 }
 

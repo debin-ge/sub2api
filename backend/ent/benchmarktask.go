@@ -10,7 +10,6 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
-	"github.com/Wei-Shaw/sub2api/ent/benchmarksuite"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarktask"
 )
 
@@ -23,18 +22,12 @@ type BenchmarkTask struct {
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	// UpdatedAt holds the value of the "updated_at" field.
 	UpdatedAt time.Time `json:"updated_at,omitempty"`
-	// SuiteID holds the value of the "suite_id" field.
-	SuiteID int64 `json:"suite_id,omitempty"`
 	// Title holds the value of the "title" field.
 	Title string `json:"title,omitempty"`
 	// Type holds the value of the "type" field.
 	Type string `json:"type,omitempty"`
-	// Category holds the value of the "category" field.
-	Category *string `json:"category,omitempty"`
 	// Difficulty holds the value of the "difficulty" field.
 	Difficulty *string `json:"difficulty,omitempty"`
-	// Tags holds the value of the "tags" field.
-	Tags []string `json:"tags,omitempty"`
 	// Prompt holds the value of the "prompt" field.
 	Prompt string `json:"prompt,omitempty"`
 	// InputPayload holds the value of the "input_payload" field.
@@ -47,14 +40,12 @@ type BenchmarkTask struct {
 	VerifierConfig map[string]interface{} `json:"verifier_config,omitempty"`
 	// Weight holds the value of the "weight" field.
 	Weight float64 `json:"weight,omitempty"`
-	// MinScale holds the value of the "min_scale" field.
-	MinScale benchmarktask.MinScale `json:"min_scale,omitempty"`
 	// PublicPrompt holds the value of the "public_prompt" field.
 	PublicPrompt bool `json:"public_prompt,omitempty"`
 	// Enabled holds the value of the "enabled" field.
 	Enabled bool `json:"enabled,omitempty"`
-	// Metadata holds the value of the "metadata" field.
-	Metadata map[string]interface{} `json:"metadata,omitempty"`
+	// SortOrder holds the value of the "sort_order" field.
+	SortOrder int `json:"sort_order,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the BenchmarkTaskQuery when eager-loading is set.
 	Edges        BenchmarkTaskEdges `json:"edges"`
@@ -63,30 +54,17 @@ type BenchmarkTask struct {
 
 // BenchmarkTaskEdges holds the relations/edges for other nodes in the graph.
 type BenchmarkTaskEdges struct {
-	// Suite holds the value of the suite edge.
-	Suite *BenchmarkSuite `json:"suite,omitempty"`
 	// RunTasks holds the value of the run_tasks edge.
 	RunTasks []*BenchmarkRunTask `json:"run_tasks,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [2]bool
-}
-
-// SuiteOrErr returns the Suite value or an error if the edge
-// was not loaded in eager-loading, or loaded but was not found.
-func (e BenchmarkTaskEdges) SuiteOrErr() (*BenchmarkSuite, error) {
-	if e.Suite != nil {
-		return e.Suite, nil
-	} else if e.loadedTypes[0] {
-		return nil, &NotFoundError{label: benchmarksuite.Label}
-	}
-	return nil, &NotLoadedError{edge: "suite"}
+	loadedTypes [1]bool
 }
 
 // RunTasksOrErr returns the RunTasks value or an error if the edge
 // was not loaded in eager-loading.
 func (e BenchmarkTaskEdges) RunTasksOrErr() ([]*BenchmarkRunTask, error) {
-	if e.loadedTypes[1] {
+	if e.loadedTypes[0] {
 		return e.RunTasks, nil
 	}
 	return nil, &NotLoadedError{edge: "run_tasks"}
@@ -97,15 +75,15 @@ func (*BenchmarkTask) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case benchmarktask.FieldTags, benchmarktask.FieldInputPayload, benchmarktask.FieldExpectedOutput, benchmarktask.FieldVerifierConfig, benchmarktask.FieldMetadata:
+		case benchmarktask.FieldInputPayload, benchmarktask.FieldExpectedOutput, benchmarktask.FieldVerifierConfig:
 			values[i] = new([]byte)
 		case benchmarktask.FieldPublicPrompt, benchmarktask.FieldEnabled:
 			values[i] = new(sql.NullBool)
 		case benchmarktask.FieldWeight:
 			values[i] = new(sql.NullFloat64)
-		case benchmarktask.FieldID, benchmarktask.FieldSuiteID:
+		case benchmarktask.FieldID, benchmarktask.FieldSortOrder:
 			values[i] = new(sql.NullInt64)
-		case benchmarktask.FieldTitle, benchmarktask.FieldType, benchmarktask.FieldCategory, benchmarktask.FieldDifficulty, benchmarktask.FieldPrompt, benchmarktask.FieldVerifierType, benchmarktask.FieldMinScale:
+		case benchmarktask.FieldTitle, benchmarktask.FieldType, benchmarktask.FieldDifficulty, benchmarktask.FieldPrompt, benchmarktask.FieldVerifierType:
 			values[i] = new(sql.NullString)
 		case benchmarktask.FieldCreatedAt, benchmarktask.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -142,12 +120,6 @@ func (_m *BenchmarkTask) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.UpdatedAt = value.Time
 			}
-		case benchmarktask.FieldSuiteID:
-			if value, ok := values[i].(*sql.NullInt64); !ok {
-				return fmt.Errorf("unexpected type %T for field suite_id", values[i])
-			} else if value.Valid {
-				_m.SuiteID = value.Int64
-			}
 		case benchmarktask.FieldTitle:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field title", values[i])
@@ -160,27 +132,12 @@ func (_m *BenchmarkTask) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.Type = value.String
 			}
-		case benchmarktask.FieldCategory:
-			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field category", values[i])
-			} else if value.Valid {
-				_m.Category = new(string)
-				*_m.Category = value.String
-			}
 		case benchmarktask.FieldDifficulty:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field difficulty", values[i])
 			} else if value.Valid {
 				_m.Difficulty = new(string)
 				*_m.Difficulty = value.String
-			}
-		case benchmarktask.FieldTags:
-			if value, ok := values[i].(*[]byte); !ok {
-				return fmt.Errorf("unexpected type %T for field tags", values[i])
-			} else if value != nil && len(*value) > 0 {
-				if err := json.Unmarshal(*value, &_m.Tags); err != nil {
-					return fmt.Errorf("unmarshal field tags: %w", err)
-				}
 			}
 		case benchmarktask.FieldPrompt:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -224,12 +181,6 @@ func (_m *BenchmarkTask) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.Weight = value.Float64
 			}
-		case benchmarktask.FieldMinScale:
-			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field min_scale", values[i])
-			} else if value.Valid {
-				_m.MinScale = benchmarktask.MinScale(value.String)
-			}
 		case benchmarktask.FieldPublicPrompt:
 			if value, ok := values[i].(*sql.NullBool); !ok {
 				return fmt.Errorf("unexpected type %T for field public_prompt", values[i])
@@ -242,13 +193,11 @@ func (_m *BenchmarkTask) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.Enabled = value.Bool
 			}
-		case benchmarktask.FieldMetadata:
-			if value, ok := values[i].(*[]byte); !ok {
-				return fmt.Errorf("unexpected type %T for field metadata", values[i])
-			} else if value != nil && len(*value) > 0 {
-				if err := json.Unmarshal(*value, &_m.Metadata); err != nil {
-					return fmt.Errorf("unmarshal field metadata: %w", err)
-				}
+		case benchmarktask.FieldSortOrder:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field sort_order", values[i])
+			} else if value.Valid {
+				_m.SortOrder = int(value.Int64)
 			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
@@ -261,11 +210,6 @@ func (_m *BenchmarkTask) assignValues(columns []string, values []any) error {
 // This includes values selected through modifiers, order, etc.
 func (_m *BenchmarkTask) Value(name string) (ent.Value, error) {
 	return _m.selectValues.Get(name)
-}
-
-// QuerySuite queries the "suite" edge of the BenchmarkTask entity.
-func (_m *BenchmarkTask) QuerySuite() *BenchmarkSuiteQuery {
-	return NewBenchmarkTaskClient(_m.config).QuerySuite(_m)
 }
 
 // QueryRunTasks queries the "run_tasks" edge of the BenchmarkTask entity.
@@ -302,27 +246,16 @@ func (_m *BenchmarkTask) String() string {
 	builder.WriteString("updated_at=")
 	builder.WriteString(_m.UpdatedAt.Format(time.ANSIC))
 	builder.WriteString(", ")
-	builder.WriteString("suite_id=")
-	builder.WriteString(fmt.Sprintf("%v", _m.SuiteID))
-	builder.WriteString(", ")
 	builder.WriteString("title=")
 	builder.WriteString(_m.Title)
 	builder.WriteString(", ")
 	builder.WriteString("type=")
 	builder.WriteString(_m.Type)
 	builder.WriteString(", ")
-	if v := _m.Category; v != nil {
-		builder.WriteString("category=")
-		builder.WriteString(*v)
-	}
-	builder.WriteString(", ")
 	if v := _m.Difficulty; v != nil {
 		builder.WriteString("difficulty=")
 		builder.WriteString(*v)
 	}
-	builder.WriteString(", ")
-	builder.WriteString("tags=")
-	builder.WriteString(fmt.Sprintf("%v", _m.Tags))
 	builder.WriteString(", ")
 	builder.WriteString("prompt=")
 	builder.WriteString(_m.Prompt)
@@ -342,17 +275,14 @@ func (_m *BenchmarkTask) String() string {
 	builder.WriteString("weight=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Weight))
 	builder.WriteString(", ")
-	builder.WriteString("min_scale=")
-	builder.WriteString(fmt.Sprintf("%v", _m.MinScale))
-	builder.WriteString(", ")
 	builder.WriteString("public_prompt=")
 	builder.WriteString(fmt.Sprintf("%v", _m.PublicPrompt))
 	builder.WriteString(", ")
 	builder.WriteString("enabled=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Enabled))
 	builder.WriteString(", ")
-	builder.WriteString("metadata=")
-	builder.WriteString(fmt.Sprintf("%v", _m.Metadata))
+	builder.WriteString("sort_order=")
+	builder.WriteString(fmt.Sprintf("%v", _m.SortOrder))
 	builder.WriteByte(')')
 	return builder.String()
 }

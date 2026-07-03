@@ -3,7 +3,6 @@
 package ent
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -28,26 +27,14 @@ type BenchmarkTarget struct {
 	ChannelID int64 `json:"channel_id,omitempty"`
 	// DisplayName holds the value of the "display_name" field.
 	DisplayName *string `json:"display_name,omitempty"`
-	// ProviderSnapshot holds the value of the "provider_snapshot" field.
-	ProviderSnapshot *string `json:"provider_snapshot,omitempty"`
 	// ChannelNameSnapshot holds the value of the "channel_name_snapshot" field.
 	ChannelNameSnapshot *string `json:"channel_name_snapshot,omitempty"`
-	// SupportedTaskTypes holds the value of the "supported_task_types" field.
-	SupportedTaskTypes []string `json:"supported_task_types,omitempty"`
-	// MaxConcurrency holds the value of the "max_concurrency" field.
-	MaxConcurrency int `json:"max_concurrency,omitempty"`
-	// PerRunBudget holds the value of the "per_run_budget" field.
-	PerRunBudget *float64 `json:"per_run_budget,omitempty"`
-	// DailyBudget holds the value of the "daily_budget" field.
-	DailyBudget *float64 `json:"daily_budget,omitempty"`
 	// Enabled holds the value of the "enabled" field.
 	Enabled bool `json:"enabled,omitempty"`
 	// PublicVisible holds the value of the "public_visible" field.
 	PublicVisible bool `json:"public_visible,omitempty"`
 	// SortOrder holds the value of the "sort_order" field.
 	SortOrder int `json:"sort_order,omitempty"`
-	// Metadata holds the value of the "metadata" field.
-	Metadata map[string]interface{} `json:"metadata,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the BenchmarkTargetQuery when eager-loading is set.
 	Edges        BenchmarkTargetEdges `json:"edges"`
@@ -77,15 +64,11 @@ func (*BenchmarkTarget) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case benchmarktarget.FieldSupportedTaskTypes, benchmarktarget.FieldMetadata:
-			values[i] = new([]byte)
 		case benchmarktarget.FieldEnabled, benchmarktarget.FieldPublicVisible:
 			values[i] = new(sql.NullBool)
-		case benchmarktarget.FieldPerRunBudget, benchmarktarget.FieldDailyBudget:
-			values[i] = new(sql.NullFloat64)
-		case benchmarktarget.FieldID, benchmarktarget.FieldChannelID, benchmarktarget.FieldMaxConcurrency, benchmarktarget.FieldSortOrder:
+		case benchmarktarget.FieldID, benchmarktarget.FieldChannelID, benchmarktarget.FieldSortOrder:
 			values[i] = new(sql.NullInt64)
-		case benchmarktarget.FieldModelName, benchmarktarget.FieldDisplayName, benchmarktarget.FieldProviderSnapshot, benchmarktarget.FieldChannelNameSnapshot:
+		case benchmarktarget.FieldModelName, benchmarktarget.FieldDisplayName, benchmarktarget.FieldChannelNameSnapshot:
 			values[i] = new(sql.NullString)
 		case benchmarktarget.FieldCreatedAt, benchmarktarget.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -141,47 +124,12 @@ func (_m *BenchmarkTarget) assignValues(columns []string, values []any) error {
 				_m.DisplayName = new(string)
 				*_m.DisplayName = value.String
 			}
-		case benchmarktarget.FieldProviderSnapshot:
-			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field provider_snapshot", values[i])
-			} else if value.Valid {
-				_m.ProviderSnapshot = new(string)
-				*_m.ProviderSnapshot = value.String
-			}
 		case benchmarktarget.FieldChannelNameSnapshot:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field channel_name_snapshot", values[i])
 			} else if value.Valid {
 				_m.ChannelNameSnapshot = new(string)
 				*_m.ChannelNameSnapshot = value.String
-			}
-		case benchmarktarget.FieldSupportedTaskTypes:
-			if value, ok := values[i].(*[]byte); !ok {
-				return fmt.Errorf("unexpected type %T for field supported_task_types", values[i])
-			} else if value != nil && len(*value) > 0 {
-				if err := json.Unmarshal(*value, &_m.SupportedTaskTypes); err != nil {
-					return fmt.Errorf("unmarshal field supported_task_types: %w", err)
-				}
-			}
-		case benchmarktarget.FieldMaxConcurrency:
-			if value, ok := values[i].(*sql.NullInt64); !ok {
-				return fmt.Errorf("unexpected type %T for field max_concurrency", values[i])
-			} else if value.Valid {
-				_m.MaxConcurrency = int(value.Int64)
-			}
-		case benchmarktarget.FieldPerRunBudget:
-			if value, ok := values[i].(*sql.NullFloat64); !ok {
-				return fmt.Errorf("unexpected type %T for field per_run_budget", values[i])
-			} else if value.Valid {
-				_m.PerRunBudget = new(float64)
-				*_m.PerRunBudget = value.Float64
-			}
-		case benchmarktarget.FieldDailyBudget:
-			if value, ok := values[i].(*sql.NullFloat64); !ok {
-				return fmt.Errorf("unexpected type %T for field daily_budget", values[i])
-			} else if value.Valid {
-				_m.DailyBudget = new(float64)
-				*_m.DailyBudget = value.Float64
 			}
 		case benchmarktarget.FieldEnabled:
 			if value, ok := values[i].(*sql.NullBool); !ok {
@@ -200,14 +148,6 @@ func (_m *BenchmarkTarget) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field sort_order", values[i])
 			} else if value.Valid {
 				_m.SortOrder = int(value.Int64)
-			}
-		case benchmarktarget.FieldMetadata:
-			if value, ok := values[i].(*[]byte); !ok {
-				return fmt.Errorf("unexpected type %T for field metadata", values[i])
-			} else if value != nil && len(*value) > 0 {
-				if err := json.Unmarshal(*value, &_m.Metadata); err != nil {
-					return fmt.Errorf("unmarshal field metadata: %w", err)
-				}
 			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
@@ -267,30 +207,9 @@ func (_m *BenchmarkTarget) String() string {
 		builder.WriteString(*v)
 	}
 	builder.WriteString(", ")
-	if v := _m.ProviderSnapshot; v != nil {
-		builder.WriteString("provider_snapshot=")
-		builder.WriteString(*v)
-	}
-	builder.WriteString(", ")
 	if v := _m.ChannelNameSnapshot; v != nil {
 		builder.WriteString("channel_name_snapshot=")
 		builder.WriteString(*v)
-	}
-	builder.WriteString(", ")
-	builder.WriteString("supported_task_types=")
-	builder.WriteString(fmt.Sprintf("%v", _m.SupportedTaskTypes))
-	builder.WriteString(", ")
-	builder.WriteString("max_concurrency=")
-	builder.WriteString(fmt.Sprintf("%v", _m.MaxConcurrency))
-	builder.WriteString(", ")
-	if v := _m.PerRunBudget; v != nil {
-		builder.WriteString("per_run_budget=")
-		builder.WriteString(fmt.Sprintf("%v", *v))
-	}
-	builder.WriteString(", ")
-	if v := _m.DailyBudget; v != nil {
-		builder.WriteString("daily_budget=")
-		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
 	builder.WriteString(", ")
 	builder.WriteString("enabled=")
@@ -301,9 +220,6 @@ func (_m *BenchmarkTarget) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("sort_order=")
 	builder.WriteString(fmt.Sprintf("%v", _m.SortOrder))
-	builder.WriteString(", ")
-	builder.WriteString("metadata=")
-	builder.WriteString(fmt.Sprintf("%v", _m.Metadata))
 	builder.WriteByte(')')
 	return builder.String()
 }

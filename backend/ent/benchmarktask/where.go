@@ -65,11 +65,6 @@ func UpdatedAt(v time.Time) predicate.BenchmarkTask {
 	return predicate.BenchmarkTask(sql.FieldEQ(FieldUpdatedAt, v))
 }
 
-// SuiteID applies equality check predicate on the "suite_id" field. It's identical to SuiteIDEQ.
-func SuiteID(v int64) predicate.BenchmarkTask {
-	return predicate.BenchmarkTask(sql.FieldEQ(FieldSuiteID, v))
-}
-
 // Title applies equality check predicate on the "title" field. It's identical to TitleEQ.
 func Title(v string) predicate.BenchmarkTask {
 	return predicate.BenchmarkTask(sql.FieldEQ(FieldTitle, v))
@@ -78,11 +73,6 @@ func Title(v string) predicate.BenchmarkTask {
 // Type applies equality check predicate on the "type" field. It's identical to TypeEQ.
 func Type(v string) predicate.BenchmarkTask {
 	return predicate.BenchmarkTask(sql.FieldEQ(FieldType, v))
-}
-
-// Category applies equality check predicate on the "category" field. It's identical to CategoryEQ.
-func Category(v string) predicate.BenchmarkTask {
-	return predicate.BenchmarkTask(sql.FieldEQ(FieldCategory, v))
 }
 
 // Difficulty applies equality check predicate on the "difficulty" field. It's identical to DifficultyEQ.
@@ -113,6 +103,11 @@ func PublicPrompt(v bool) predicate.BenchmarkTask {
 // Enabled applies equality check predicate on the "enabled" field. It's identical to EnabledEQ.
 func Enabled(v bool) predicate.BenchmarkTask {
 	return predicate.BenchmarkTask(sql.FieldEQ(FieldEnabled, v))
+}
+
+// SortOrder applies equality check predicate on the "sort_order" field. It's identical to SortOrderEQ.
+func SortOrder(v int) predicate.BenchmarkTask {
+	return predicate.BenchmarkTask(sql.FieldEQ(FieldSortOrder, v))
 }
 
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.
@@ -193,26 +188,6 @@ func UpdatedAtLT(v time.Time) predicate.BenchmarkTask {
 // UpdatedAtLTE applies the LTE predicate on the "updated_at" field.
 func UpdatedAtLTE(v time.Time) predicate.BenchmarkTask {
 	return predicate.BenchmarkTask(sql.FieldLTE(FieldUpdatedAt, v))
-}
-
-// SuiteIDEQ applies the EQ predicate on the "suite_id" field.
-func SuiteIDEQ(v int64) predicate.BenchmarkTask {
-	return predicate.BenchmarkTask(sql.FieldEQ(FieldSuiteID, v))
-}
-
-// SuiteIDNEQ applies the NEQ predicate on the "suite_id" field.
-func SuiteIDNEQ(v int64) predicate.BenchmarkTask {
-	return predicate.BenchmarkTask(sql.FieldNEQ(FieldSuiteID, v))
-}
-
-// SuiteIDIn applies the In predicate on the "suite_id" field.
-func SuiteIDIn(vs ...int64) predicate.BenchmarkTask {
-	return predicate.BenchmarkTask(sql.FieldIn(FieldSuiteID, vs...))
-}
-
-// SuiteIDNotIn applies the NotIn predicate on the "suite_id" field.
-func SuiteIDNotIn(vs ...int64) predicate.BenchmarkTask {
-	return predicate.BenchmarkTask(sql.FieldNotIn(FieldSuiteID, vs...))
 }
 
 // TitleEQ applies the EQ predicate on the "title" field.
@@ -343,81 +318,6 @@ func TypeEqualFold(v string) predicate.BenchmarkTask {
 // TypeContainsFold applies the ContainsFold predicate on the "type" field.
 func TypeContainsFold(v string) predicate.BenchmarkTask {
 	return predicate.BenchmarkTask(sql.FieldContainsFold(FieldType, v))
-}
-
-// CategoryEQ applies the EQ predicate on the "category" field.
-func CategoryEQ(v string) predicate.BenchmarkTask {
-	return predicate.BenchmarkTask(sql.FieldEQ(FieldCategory, v))
-}
-
-// CategoryNEQ applies the NEQ predicate on the "category" field.
-func CategoryNEQ(v string) predicate.BenchmarkTask {
-	return predicate.BenchmarkTask(sql.FieldNEQ(FieldCategory, v))
-}
-
-// CategoryIn applies the In predicate on the "category" field.
-func CategoryIn(vs ...string) predicate.BenchmarkTask {
-	return predicate.BenchmarkTask(sql.FieldIn(FieldCategory, vs...))
-}
-
-// CategoryNotIn applies the NotIn predicate on the "category" field.
-func CategoryNotIn(vs ...string) predicate.BenchmarkTask {
-	return predicate.BenchmarkTask(sql.FieldNotIn(FieldCategory, vs...))
-}
-
-// CategoryGT applies the GT predicate on the "category" field.
-func CategoryGT(v string) predicate.BenchmarkTask {
-	return predicate.BenchmarkTask(sql.FieldGT(FieldCategory, v))
-}
-
-// CategoryGTE applies the GTE predicate on the "category" field.
-func CategoryGTE(v string) predicate.BenchmarkTask {
-	return predicate.BenchmarkTask(sql.FieldGTE(FieldCategory, v))
-}
-
-// CategoryLT applies the LT predicate on the "category" field.
-func CategoryLT(v string) predicate.BenchmarkTask {
-	return predicate.BenchmarkTask(sql.FieldLT(FieldCategory, v))
-}
-
-// CategoryLTE applies the LTE predicate on the "category" field.
-func CategoryLTE(v string) predicate.BenchmarkTask {
-	return predicate.BenchmarkTask(sql.FieldLTE(FieldCategory, v))
-}
-
-// CategoryContains applies the Contains predicate on the "category" field.
-func CategoryContains(v string) predicate.BenchmarkTask {
-	return predicate.BenchmarkTask(sql.FieldContains(FieldCategory, v))
-}
-
-// CategoryHasPrefix applies the HasPrefix predicate on the "category" field.
-func CategoryHasPrefix(v string) predicate.BenchmarkTask {
-	return predicate.BenchmarkTask(sql.FieldHasPrefix(FieldCategory, v))
-}
-
-// CategoryHasSuffix applies the HasSuffix predicate on the "category" field.
-func CategoryHasSuffix(v string) predicate.BenchmarkTask {
-	return predicate.BenchmarkTask(sql.FieldHasSuffix(FieldCategory, v))
-}
-
-// CategoryIsNil applies the IsNil predicate on the "category" field.
-func CategoryIsNil() predicate.BenchmarkTask {
-	return predicate.BenchmarkTask(sql.FieldIsNull(FieldCategory))
-}
-
-// CategoryNotNil applies the NotNil predicate on the "category" field.
-func CategoryNotNil() predicate.BenchmarkTask {
-	return predicate.BenchmarkTask(sql.FieldNotNull(FieldCategory))
-}
-
-// CategoryEqualFold applies the EqualFold predicate on the "category" field.
-func CategoryEqualFold(v string) predicate.BenchmarkTask {
-	return predicate.BenchmarkTask(sql.FieldEqualFold(FieldCategory, v))
-}
-
-// CategoryContainsFold applies the ContainsFold predicate on the "category" field.
-func CategoryContainsFold(v string) predicate.BenchmarkTask {
-	return predicate.BenchmarkTask(sql.FieldContainsFold(FieldCategory, v))
 }
 
 // DifficultyEQ applies the EQ predicate on the "difficulty" field.
@@ -665,26 +565,6 @@ func WeightLTE(v float64) predicate.BenchmarkTask {
 	return predicate.BenchmarkTask(sql.FieldLTE(FieldWeight, v))
 }
 
-// MinScaleEQ applies the EQ predicate on the "min_scale" field.
-func MinScaleEQ(v MinScale) predicate.BenchmarkTask {
-	return predicate.BenchmarkTask(sql.FieldEQ(FieldMinScale, v))
-}
-
-// MinScaleNEQ applies the NEQ predicate on the "min_scale" field.
-func MinScaleNEQ(v MinScale) predicate.BenchmarkTask {
-	return predicate.BenchmarkTask(sql.FieldNEQ(FieldMinScale, v))
-}
-
-// MinScaleIn applies the In predicate on the "min_scale" field.
-func MinScaleIn(vs ...MinScale) predicate.BenchmarkTask {
-	return predicate.BenchmarkTask(sql.FieldIn(FieldMinScale, vs...))
-}
-
-// MinScaleNotIn applies the NotIn predicate on the "min_scale" field.
-func MinScaleNotIn(vs ...MinScale) predicate.BenchmarkTask {
-	return predicate.BenchmarkTask(sql.FieldNotIn(FieldMinScale, vs...))
-}
-
 // PublicPromptEQ applies the EQ predicate on the "public_prompt" field.
 func PublicPromptEQ(v bool) predicate.BenchmarkTask {
 	return predicate.BenchmarkTask(sql.FieldEQ(FieldPublicPrompt, v))
@@ -705,27 +585,44 @@ func EnabledNEQ(v bool) predicate.BenchmarkTask {
 	return predicate.BenchmarkTask(sql.FieldNEQ(FieldEnabled, v))
 }
 
-// HasSuite applies the HasEdge predicate on the "suite" edge.
-func HasSuite() predicate.BenchmarkTask {
-	return predicate.BenchmarkTask(func(s *sql.Selector) {
-		step := sqlgraph.NewStep(
-			sqlgraph.From(Table, FieldID),
-			sqlgraph.Edge(sqlgraph.M2O, true, SuiteTable, SuiteColumn),
-		)
-		sqlgraph.HasNeighbors(s, step)
-	})
+// SortOrderEQ applies the EQ predicate on the "sort_order" field.
+func SortOrderEQ(v int) predicate.BenchmarkTask {
+	return predicate.BenchmarkTask(sql.FieldEQ(FieldSortOrder, v))
 }
 
-// HasSuiteWith applies the HasEdge predicate on the "suite" edge with a given conditions (other predicates).
-func HasSuiteWith(preds ...predicate.BenchmarkSuite) predicate.BenchmarkTask {
-	return predicate.BenchmarkTask(func(s *sql.Selector) {
-		step := newSuiteStep()
-		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
-			for _, p := range preds {
-				p(s)
-			}
-		})
-	})
+// SortOrderNEQ applies the NEQ predicate on the "sort_order" field.
+func SortOrderNEQ(v int) predicate.BenchmarkTask {
+	return predicate.BenchmarkTask(sql.FieldNEQ(FieldSortOrder, v))
+}
+
+// SortOrderIn applies the In predicate on the "sort_order" field.
+func SortOrderIn(vs ...int) predicate.BenchmarkTask {
+	return predicate.BenchmarkTask(sql.FieldIn(FieldSortOrder, vs...))
+}
+
+// SortOrderNotIn applies the NotIn predicate on the "sort_order" field.
+func SortOrderNotIn(vs ...int) predicate.BenchmarkTask {
+	return predicate.BenchmarkTask(sql.FieldNotIn(FieldSortOrder, vs...))
+}
+
+// SortOrderGT applies the GT predicate on the "sort_order" field.
+func SortOrderGT(v int) predicate.BenchmarkTask {
+	return predicate.BenchmarkTask(sql.FieldGT(FieldSortOrder, v))
+}
+
+// SortOrderGTE applies the GTE predicate on the "sort_order" field.
+func SortOrderGTE(v int) predicate.BenchmarkTask {
+	return predicate.BenchmarkTask(sql.FieldGTE(FieldSortOrder, v))
+}
+
+// SortOrderLT applies the LT predicate on the "sort_order" field.
+func SortOrderLT(v int) predicate.BenchmarkTask {
+	return predicate.BenchmarkTask(sql.FieldLT(FieldSortOrder, v))
+}
+
+// SortOrderLTE applies the LTE predicate on the "sort_order" field.
+func SortOrderLTE(v int) predicate.BenchmarkTask {
+	return predicate.BenchmarkTask(sql.FieldLTE(FieldSortOrder, v))
 }
 
 // HasRunTasks applies the HasEdge predicate on the "run_tasks" edge.

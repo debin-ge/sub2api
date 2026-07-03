@@ -35,10 +35,6 @@ type BenchmarkResult struct {
 	RequestID *string `json:"request_id,omitempty"`
 	// Status holds the value of the "status" field.
 	Status string `json:"status,omitempty"`
-	// Score holds the value of the "score" field.
-	Score *float64 `json:"score,omitempty"`
-	// MaxScore holds the value of the "max_score" field.
-	MaxScore *float64 `json:"max_score,omitempty"`
 	// NormalizedScore holds the value of the "normalized_score" field.
 	NormalizedScore *float64 `json:"normalized_score,omitempty"`
 	// EvaluatorType holds the value of the "evaluator_type" field.
@@ -126,7 +122,7 @@ func (*BenchmarkResult) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case benchmarkresult.FieldEvaluatorOutput, benchmarkresult.FieldRawResponse:
 			values[i] = new([]byte)
-		case benchmarkresult.FieldScore, benchmarkresult.FieldMaxScore, benchmarkresult.FieldNormalizedScore, benchmarkresult.FieldEstimatedCost:
+		case benchmarkresult.FieldNormalizedScore, benchmarkresult.FieldEstimatedCost:
 			values[i] = new(sql.NullFloat64)
 		case benchmarkresult.FieldID, benchmarkresult.FieldRunID, benchmarkresult.FieldRunTaskID, benchmarkresult.FieldRunTargetID, benchmarkresult.FieldLatencyMs, benchmarkresult.FieldPromptTokens, benchmarkresult.FieldCompletionTokens, benchmarkresult.FieldTotalTokens, benchmarkresult.FieldAttemptCount:
 			values[i] = new(sql.NullInt64)
@@ -197,20 +193,6 @@ func (_m *BenchmarkResult) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field status", values[i])
 			} else if value.Valid {
 				_m.Status = value.String
-			}
-		case benchmarkresult.FieldScore:
-			if value, ok := values[i].(*sql.NullFloat64); !ok {
-				return fmt.Errorf("unexpected type %T for field score", values[i])
-			} else if value.Valid {
-				_m.Score = new(float64)
-				*_m.Score = value.Float64
-			}
-		case benchmarkresult.FieldMaxScore:
-			if value, ok := values[i].(*sql.NullFloat64); !ok {
-				return fmt.Errorf("unexpected type %T for field max_score", values[i])
-			} else if value.Valid {
-				_m.MaxScore = new(float64)
-				*_m.MaxScore = value.Float64
 			}
 		case benchmarkresult.FieldNormalizedScore:
 			if value, ok := values[i].(*sql.NullFloat64); !ok {
@@ -380,16 +362,6 @@ func (_m *BenchmarkResult) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("status=")
 	builder.WriteString(_m.Status)
-	builder.WriteString(", ")
-	if v := _m.Score; v != nil {
-		builder.WriteString("score=")
-		builder.WriteString(fmt.Sprintf("%v", *v))
-	}
-	builder.WriteString(", ")
-	if v := _m.MaxScore; v != nil {
-		builder.WriteString("max_score=")
-		builder.WriteString(fmt.Sprintf("%v", *v))
-	}
 	builder.WriteString(", ")
 	if v := _m.NormalizedScore; v != nil {
 		builder.WriteString("normalized_score=")

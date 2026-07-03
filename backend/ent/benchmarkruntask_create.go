@@ -57,20 +57,6 @@ func (_c *BenchmarkRunTaskCreate) SetType(v string) *BenchmarkRunTaskCreate {
 	return _c
 }
 
-// SetCategory sets the "category" field.
-func (_c *BenchmarkRunTaskCreate) SetCategory(v string) *BenchmarkRunTaskCreate {
-	_c.mutation.SetCategory(v)
-	return _c
-}
-
-// SetNillableCategory sets the "category" field if the given value is not nil.
-func (_c *BenchmarkRunTaskCreate) SetNillableCategory(v *string) *BenchmarkRunTaskCreate {
-	if v != nil {
-		_c.SetCategory(*v)
-	}
-	return _c
-}
-
 // SetDifficulty sets the "difficulty" field.
 func (_c *BenchmarkRunTaskCreate) SetDifficulty(v string) *BenchmarkRunTaskCreate {
 	_c.mutation.SetDifficulty(v)
@@ -238,11 +224,6 @@ func (_c *BenchmarkRunTaskCreate) check() error {
 			return &ValidationError{Name: "type", err: fmt.Errorf(`ent: validator failed for field "BenchmarkRunTask.type": %w`, err)}
 		}
 	}
-	if v, ok := _c.mutation.Category(); ok {
-		if err := benchmarkruntask.CategoryValidator(v); err != nil {
-			return &ValidationError{Name: "category", err: fmt.Errorf(`ent: validator failed for field "BenchmarkRunTask.category": %w`, err)}
-		}
-	}
 	if v, ok := _c.mutation.Difficulty(); ok {
 		if err := benchmarkruntask.DifficultyValidator(v); err != nil {
 			return &ValidationError{Name: "difficulty", err: fmt.Errorf(`ent: validator failed for field "BenchmarkRunTask.difficulty": %w`, err)}
@@ -316,10 +297,6 @@ func (_c *BenchmarkRunTaskCreate) createSpec() (*BenchmarkRunTask, *sqlgraph.Cre
 	if value, ok := _c.mutation.GetType(); ok {
 		_spec.SetField(benchmarkruntask.FieldType, field.TypeString, value)
 		_node.Type = value
-	}
-	if value, ok := _c.mutation.Category(); ok {
-		_spec.SetField(benchmarkruntask.FieldCategory, field.TypeString, value)
-		_node.Category = &value
 	}
 	if value, ok := _c.mutation.Difficulty(); ok {
 		_spec.SetField(benchmarkruntask.FieldDifficulty, field.TypeString, value)
@@ -502,24 +479,6 @@ func (u *BenchmarkRunTaskUpsert) SetType(v string) *BenchmarkRunTaskUpsert {
 // UpdateType sets the "type" field to the value that was provided on create.
 func (u *BenchmarkRunTaskUpsert) UpdateType() *BenchmarkRunTaskUpsert {
 	u.SetExcluded(benchmarkruntask.FieldType)
-	return u
-}
-
-// SetCategory sets the "category" field.
-func (u *BenchmarkRunTaskUpsert) SetCategory(v string) *BenchmarkRunTaskUpsert {
-	u.Set(benchmarkruntask.FieldCategory, v)
-	return u
-}
-
-// UpdateCategory sets the "category" field to the value that was provided on create.
-func (u *BenchmarkRunTaskUpsert) UpdateCategory() *BenchmarkRunTaskUpsert {
-	u.SetExcluded(benchmarkruntask.FieldCategory)
-	return u
-}
-
-// ClearCategory clears the value of the "category" field.
-func (u *BenchmarkRunTaskUpsert) ClearCategory() *BenchmarkRunTaskUpsert {
-	u.SetNull(benchmarkruntask.FieldCategory)
 	return u
 }
 
@@ -712,27 +671,6 @@ func (u *BenchmarkRunTaskUpsertOne) SetType(v string) *BenchmarkRunTaskUpsertOne
 func (u *BenchmarkRunTaskUpsertOne) UpdateType() *BenchmarkRunTaskUpsertOne {
 	return u.Update(func(s *BenchmarkRunTaskUpsert) {
 		s.UpdateType()
-	})
-}
-
-// SetCategory sets the "category" field.
-func (u *BenchmarkRunTaskUpsertOne) SetCategory(v string) *BenchmarkRunTaskUpsertOne {
-	return u.Update(func(s *BenchmarkRunTaskUpsert) {
-		s.SetCategory(v)
-	})
-}
-
-// UpdateCategory sets the "category" field to the value that was provided on create.
-func (u *BenchmarkRunTaskUpsertOne) UpdateCategory() *BenchmarkRunTaskUpsertOne {
-	return u.Update(func(s *BenchmarkRunTaskUpsert) {
-		s.UpdateCategory()
-	})
-}
-
-// ClearCategory clears the value of the "category" field.
-func (u *BenchmarkRunTaskUpsertOne) ClearCategory() *BenchmarkRunTaskUpsertOne {
-	return u.Update(func(s *BenchmarkRunTaskUpsert) {
-		s.ClearCategory()
 	})
 }
 
@@ -1105,27 +1043,6 @@ func (u *BenchmarkRunTaskUpsertBulk) SetType(v string) *BenchmarkRunTaskUpsertBu
 func (u *BenchmarkRunTaskUpsertBulk) UpdateType() *BenchmarkRunTaskUpsertBulk {
 	return u.Update(func(s *BenchmarkRunTaskUpsert) {
 		s.UpdateType()
-	})
-}
-
-// SetCategory sets the "category" field.
-func (u *BenchmarkRunTaskUpsertBulk) SetCategory(v string) *BenchmarkRunTaskUpsertBulk {
-	return u.Update(func(s *BenchmarkRunTaskUpsert) {
-		s.SetCategory(v)
-	})
-}
-
-// UpdateCategory sets the "category" field to the value that was provided on create.
-func (u *BenchmarkRunTaskUpsertBulk) UpdateCategory() *BenchmarkRunTaskUpsertBulk {
-	return u.Update(func(s *BenchmarkRunTaskUpsert) {
-		s.UpdateCategory()
-	})
-}
-
-// ClearCategory clears the value of the "category" field.
-func (u *BenchmarkRunTaskUpsertBulk) ClearCategory() *BenchmarkRunTaskUpsertBulk {
-	return u.Update(func(s *BenchmarkRunTaskUpsert) {
-		s.ClearCategory()
 	})
 }
 

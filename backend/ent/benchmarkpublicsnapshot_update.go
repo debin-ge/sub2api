@@ -11,10 +11,8 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
-	"github.com/Wei-Shaw/sub2api/ent/benchmarkprofile"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkpublicsnapshot"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkrun"
-	"github.com/Wei-Shaw/sub2api/ent/benchmarksuite"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
 )
 
@@ -45,34 +43,6 @@ func (_u *BenchmarkPublicSnapshotUpdate) SetNillableRunID(v *int64) *BenchmarkPu
 	return _u
 }
 
-// SetSuiteID sets the "suite_id" field.
-func (_u *BenchmarkPublicSnapshotUpdate) SetSuiteID(v int64) *BenchmarkPublicSnapshotUpdate {
-	_u.mutation.SetSuiteID(v)
-	return _u
-}
-
-// SetNillableSuiteID sets the "suite_id" field if the given value is not nil.
-func (_u *BenchmarkPublicSnapshotUpdate) SetNillableSuiteID(v *int64) *BenchmarkPublicSnapshotUpdate {
-	if v != nil {
-		_u.SetSuiteID(*v)
-	}
-	return _u
-}
-
-// SetProfileID sets the "profile_id" field.
-func (_u *BenchmarkPublicSnapshotUpdate) SetProfileID(v int64) *BenchmarkPublicSnapshotUpdate {
-	_u.mutation.SetProfileID(v)
-	return _u
-}
-
-// SetNillableProfileID sets the "profile_id" field if the given value is not nil.
-func (_u *BenchmarkPublicSnapshotUpdate) SetNillableProfileID(v *int64) *BenchmarkPublicSnapshotUpdate {
-	if v != nil {
-		_u.SetProfileID(*v)
-	}
-	return _u
-}
-
 // SetSnapshot sets the "snapshot" field.
 func (_u *BenchmarkPublicSnapshotUpdate) SetSnapshot(v map[string]interface{}) *BenchmarkPublicSnapshotUpdate {
 	_u.mutation.SetSnapshot(v)
@@ -98,16 +68,6 @@ func (_u *BenchmarkPublicSnapshotUpdate) SetRun(v *BenchmarkRun) *BenchmarkPubli
 	return _u.SetRunID(v.ID)
 }
 
-// SetSuite sets the "suite" edge to the BenchmarkSuite entity.
-func (_u *BenchmarkPublicSnapshotUpdate) SetSuite(v *BenchmarkSuite) *BenchmarkPublicSnapshotUpdate {
-	return _u.SetSuiteID(v.ID)
-}
-
-// SetProfile sets the "profile" edge to the BenchmarkProfile entity.
-func (_u *BenchmarkPublicSnapshotUpdate) SetProfile(v *BenchmarkProfile) *BenchmarkPublicSnapshotUpdate {
-	return _u.SetProfileID(v.ID)
-}
-
 // Mutation returns the BenchmarkPublicSnapshotMutation object of the builder.
 func (_u *BenchmarkPublicSnapshotUpdate) Mutation() *BenchmarkPublicSnapshotMutation {
 	return _u.mutation
@@ -116,18 +76,6 @@ func (_u *BenchmarkPublicSnapshotUpdate) Mutation() *BenchmarkPublicSnapshotMuta
 // ClearRun clears the "run" edge to the BenchmarkRun entity.
 func (_u *BenchmarkPublicSnapshotUpdate) ClearRun() *BenchmarkPublicSnapshotUpdate {
 	_u.mutation.ClearRun()
-	return _u
-}
-
-// ClearSuite clears the "suite" edge to the BenchmarkSuite entity.
-func (_u *BenchmarkPublicSnapshotUpdate) ClearSuite() *BenchmarkPublicSnapshotUpdate {
-	_u.mutation.ClearSuite()
-	return _u
-}
-
-// ClearProfile clears the "profile" edge to the BenchmarkProfile entity.
-func (_u *BenchmarkPublicSnapshotUpdate) ClearProfile() *BenchmarkPublicSnapshotUpdate {
-	_u.mutation.ClearProfile()
 	return _u
 }
 
@@ -162,12 +110,6 @@ func (_u *BenchmarkPublicSnapshotUpdate) ExecX(ctx context.Context) {
 func (_u *BenchmarkPublicSnapshotUpdate) check() error {
 	if _u.mutation.RunCleared() && len(_u.mutation.RunIDs()) > 0 {
 		return errors.New(`ent: clearing a required unique edge "BenchmarkPublicSnapshot.run"`)
-	}
-	if _u.mutation.SuiteCleared() && len(_u.mutation.SuiteIDs()) > 0 {
-		return errors.New(`ent: clearing a required unique edge "BenchmarkPublicSnapshot.suite"`)
-	}
-	if _u.mutation.ProfileCleared() && len(_u.mutation.ProfileIDs()) > 0 {
-		return errors.New(`ent: clearing a required unique edge "BenchmarkPublicSnapshot.profile"`)
 	}
 	return nil
 }
@@ -219,64 +161,6 @@ func (_u *BenchmarkPublicSnapshotUpdate) sqlSave(ctx context.Context) (_node int
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
-	if _u.mutation.SuiteCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.M2O,
-			Inverse: true,
-			Table:   benchmarkpublicsnapshot.SuiteTable,
-			Columns: []string{benchmarkpublicsnapshot.SuiteColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(benchmarksuite.FieldID, field.TypeInt64),
-			},
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := _u.mutation.SuiteIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.M2O,
-			Inverse: true,
-			Table:   benchmarkpublicsnapshot.SuiteTable,
-			Columns: []string{benchmarkpublicsnapshot.SuiteColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(benchmarksuite.FieldID, field.TypeInt64),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Add = append(_spec.Edges.Add, edge)
-	}
-	if _u.mutation.ProfileCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.M2O,
-			Inverse: true,
-			Table:   benchmarkpublicsnapshot.ProfileTable,
-			Columns: []string{benchmarkpublicsnapshot.ProfileColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(benchmarkprofile.FieldID, field.TypeInt64),
-			},
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := _u.mutation.ProfileIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.M2O,
-			Inverse: true,
-			Table:   benchmarkpublicsnapshot.ProfileTable,
-			Columns: []string{benchmarkpublicsnapshot.ProfileColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(benchmarkprofile.FieldID, field.TypeInt64),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Add = append(_spec.Edges.Add, edge)
-	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{benchmarkpublicsnapshot.Label}
@@ -311,34 +195,6 @@ func (_u *BenchmarkPublicSnapshotUpdateOne) SetNillableRunID(v *int64) *Benchmar
 	return _u
 }
 
-// SetSuiteID sets the "suite_id" field.
-func (_u *BenchmarkPublicSnapshotUpdateOne) SetSuiteID(v int64) *BenchmarkPublicSnapshotUpdateOne {
-	_u.mutation.SetSuiteID(v)
-	return _u
-}
-
-// SetNillableSuiteID sets the "suite_id" field if the given value is not nil.
-func (_u *BenchmarkPublicSnapshotUpdateOne) SetNillableSuiteID(v *int64) *BenchmarkPublicSnapshotUpdateOne {
-	if v != nil {
-		_u.SetSuiteID(*v)
-	}
-	return _u
-}
-
-// SetProfileID sets the "profile_id" field.
-func (_u *BenchmarkPublicSnapshotUpdateOne) SetProfileID(v int64) *BenchmarkPublicSnapshotUpdateOne {
-	_u.mutation.SetProfileID(v)
-	return _u
-}
-
-// SetNillableProfileID sets the "profile_id" field if the given value is not nil.
-func (_u *BenchmarkPublicSnapshotUpdateOne) SetNillableProfileID(v *int64) *BenchmarkPublicSnapshotUpdateOne {
-	if v != nil {
-		_u.SetProfileID(*v)
-	}
-	return _u
-}
-
 // SetSnapshot sets the "snapshot" field.
 func (_u *BenchmarkPublicSnapshotUpdateOne) SetSnapshot(v map[string]interface{}) *BenchmarkPublicSnapshotUpdateOne {
 	_u.mutation.SetSnapshot(v)
@@ -364,16 +220,6 @@ func (_u *BenchmarkPublicSnapshotUpdateOne) SetRun(v *BenchmarkRun) *BenchmarkPu
 	return _u.SetRunID(v.ID)
 }
 
-// SetSuite sets the "suite" edge to the BenchmarkSuite entity.
-func (_u *BenchmarkPublicSnapshotUpdateOne) SetSuite(v *BenchmarkSuite) *BenchmarkPublicSnapshotUpdateOne {
-	return _u.SetSuiteID(v.ID)
-}
-
-// SetProfile sets the "profile" edge to the BenchmarkProfile entity.
-func (_u *BenchmarkPublicSnapshotUpdateOne) SetProfile(v *BenchmarkProfile) *BenchmarkPublicSnapshotUpdateOne {
-	return _u.SetProfileID(v.ID)
-}
-
 // Mutation returns the BenchmarkPublicSnapshotMutation object of the builder.
 func (_u *BenchmarkPublicSnapshotUpdateOne) Mutation() *BenchmarkPublicSnapshotMutation {
 	return _u.mutation
@@ -382,18 +228,6 @@ func (_u *BenchmarkPublicSnapshotUpdateOne) Mutation() *BenchmarkPublicSnapshotM
 // ClearRun clears the "run" edge to the BenchmarkRun entity.
 func (_u *BenchmarkPublicSnapshotUpdateOne) ClearRun() *BenchmarkPublicSnapshotUpdateOne {
 	_u.mutation.ClearRun()
-	return _u
-}
-
-// ClearSuite clears the "suite" edge to the BenchmarkSuite entity.
-func (_u *BenchmarkPublicSnapshotUpdateOne) ClearSuite() *BenchmarkPublicSnapshotUpdateOne {
-	_u.mutation.ClearSuite()
-	return _u
-}
-
-// ClearProfile clears the "profile" edge to the BenchmarkProfile entity.
-func (_u *BenchmarkPublicSnapshotUpdateOne) ClearProfile() *BenchmarkPublicSnapshotUpdateOne {
-	_u.mutation.ClearProfile()
 	return _u
 }
 
@@ -441,12 +275,6 @@ func (_u *BenchmarkPublicSnapshotUpdateOne) ExecX(ctx context.Context) {
 func (_u *BenchmarkPublicSnapshotUpdateOne) check() error {
 	if _u.mutation.RunCleared() && len(_u.mutation.RunIDs()) > 0 {
 		return errors.New(`ent: clearing a required unique edge "BenchmarkPublicSnapshot.run"`)
-	}
-	if _u.mutation.SuiteCleared() && len(_u.mutation.SuiteIDs()) > 0 {
-		return errors.New(`ent: clearing a required unique edge "BenchmarkPublicSnapshot.suite"`)
-	}
-	if _u.mutation.ProfileCleared() && len(_u.mutation.ProfileIDs()) > 0 {
-		return errors.New(`ent: clearing a required unique edge "BenchmarkPublicSnapshot.profile"`)
 	}
 	return nil
 }
@@ -508,64 +336,6 @@ func (_u *BenchmarkPublicSnapshotUpdateOne) sqlSave(ctx context.Context) (_node 
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(benchmarkrun.FieldID, field.TypeInt64),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Add = append(_spec.Edges.Add, edge)
-	}
-	if _u.mutation.SuiteCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.M2O,
-			Inverse: true,
-			Table:   benchmarkpublicsnapshot.SuiteTable,
-			Columns: []string{benchmarkpublicsnapshot.SuiteColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(benchmarksuite.FieldID, field.TypeInt64),
-			},
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := _u.mutation.SuiteIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.M2O,
-			Inverse: true,
-			Table:   benchmarkpublicsnapshot.SuiteTable,
-			Columns: []string{benchmarkpublicsnapshot.SuiteColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(benchmarksuite.FieldID, field.TypeInt64),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Add = append(_spec.Edges.Add, edge)
-	}
-	if _u.mutation.ProfileCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.M2O,
-			Inverse: true,
-			Table:   benchmarkpublicsnapshot.ProfileTable,
-			Columns: []string{benchmarkpublicsnapshot.ProfileColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(benchmarkprofile.FieldID, field.TypeInt64),
-			},
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := _u.mutation.ProfileIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.M2O,
-			Inverse: true,
-			Table:   benchmarkpublicsnapshot.ProfileTable,
-			Columns: []string{benchmarkpublicsnapshot.ProfileColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(benchmarkprofile.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

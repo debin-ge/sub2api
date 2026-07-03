@@ -26,18 +26,15 @@
           <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('benchmark.admin.dashboard.topDescription') }}</p>
         </div>
         <DataTable :columns="columns" :data="topScores" :loading="loading">
-          <template #cell-rank="{ row }">#{{ row.rank }}</template>
+          <template #cell-rank="{ row }">#{{ formatInteger(row.rank) }}</template>
           <template #cell-target="{ row }">
-            <div class="flex items-center gap-2">
-              <span class="font-medium text-gray-900 dark:text-white">{{ scoreTargetName(row) }}</span>
-              <span v-if="row.insufficient_sample" class="inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">{{ t('benchmark.admin.runDetail.insufficientSample') }}</span>
-            </div>
+            <span class="font-medium text-gray-900 dark:text-white">{{ scoreTargetName(row) }}</span>
           </template>
           <template #cell-overall_score="{ row }">{{ formatNumber(row.overall_score) }}</template>
-          <template #cell-success_rate="{ row }">{{ formatPercent(row.success_rate) }}</template>
-          <template #cell-latency_p50_ms="{ row }">{{ formatLatency(row.latency_p50_ms) }}</template>
+          <template #cell-passed="{ row }">{{ formatInteger(row.passed_count) }} / {{ formatInteger(row.total_count) }}</template>
+          <template #cell-latency="{ row }">{{ formatLatency(row.avg_latency_ms) }}</template>
           <template #cell-avg_total_tokens="{ row }">{{ formatInteger(row.avg_total_tokens) }}</template>
-          <template #cell-estimated_cost="{ row }">{{ formatCost(row.estimated_cost) }}</template>
+          <template #cell-total_cost="{ row }">{{ formatCost(row.total_cost) }}</template>
           <template #empty>
             <EmptyState :title="t('benchmark.admin.dashboard.emptyTitle')" :description="t('benchmark.admin.dashboard.emptyDescription')" />
           </template>
@@ -58,15 +55,14 @@ import { adminAPI } from '@/api/admin'
 import { radarAPI } from '@/api/radar'
 import { useAppStore } from '@/stores/app'
 import type { Column } from '@/components/common/types'
-import type { BenchmarkPublicRadar, BenchmarkRun, BenchmarkScoreSnapshot } from '@/types/benchmark'
+import type { BenchmarkPublicRadar, BenchmarkRun, BenchmarkTargetScore } from '@/types/benchmark'
 import {
-  benchmarkChannelFallback,
   benchmarkRunFallback,
   benchmarkRunStatusLabel,
   benchmarkTargetFallback,
 } from '@/components/radar/benchmarkI18n'
 
-type RankedScore = BenchmarkScoreSnapshot & { rank: number }
+type RankedScore = BenchmarkTargetScore & { rank: number }
 
 const appStore = useAppStore()
 const { locale, t } = useI18n()
@@ -75,18 +71,18 @@ const latestRun = ref<BenchmarkRun | null>(null)
 const latestCompletedRun = ref<BenchmarkRun | null>(null)
 const targetCount = ref(0)
 const taskCount = ref(0)
-const profileCount = ref(0)
-const scores = ref<BenchmarkScoreSnapshot[]>([])
+const scheduleCount = ref(0)
+const scores = ref<BenchmarkTargetScore[]>([])
 const publicRadar = ref<BenchmarkPublicRadar | null>(null)
 
 const columns = computed<Column[]>(() => [
   { key: 'rank', label: t('benchmark.admin.dashboard.columns.rank') },
   { key: 'target', label: t('benchmark.admin.dashboard.columns.target') },
   { key: 'overall_score', label: t('benchmark.admin.dashboard.columns.abilityScore') },
-  { key: 'success_rate', label: t('benchmark.admin.dashboard.columns.successRate') },
-  { key: 'latency_p50_ms', label: t('benchmark.admin.dashboard.columns.p50Latency') },
+  { key: 'passed', label: t('benchmark.admin.dashboard.columns.coverage') },
+  { key: 'latency', label: t('benchmark.admin.dashboard.columns.p50Latency') },
   { key: 'avg_total_tokens', label: t('benchmark.admin.dashboard.columns.token') },
-  { key: 'estimated_cost', label: t('benchmark.admin.dashboard.columns.cost') },
+  { key: 'total_cost', label: t('benchmark.admin.dashboard.columns.cost') },
 ])
 
 const cards = computed(() => [
@@ -102,7 +98,7 @@ const cards = computed(() => [
   },
   { label: t('benchmark.admin.dashboard.targets'), value: formatInteger(targetCount.value) },
   { label: t('benchmark.admin.dashboard.tasks'), value: formatInteger(taskCount.value) },
-  { label: t('benchmark.admin.dashboard.profiles'), value: formatInteger(profileCount.value) },
+  { label: t('benchmark.admin.dashboard.schedules'), value: formatInteger(scheduleCount.value) },
 ])
 
 const topScores = computed<RankedScore[]>(() =>
@@ -115,19 +111,19 @@ const topScores = computed<RankedScore[]>(() =>
 async function load() {
   loading.value = true
   try {
-    const [runRes, completedRunRes, targetRes, taskRes, profileRes] = await Promise.all([
+    const [runRes, completedRunRes, targetRes, taskRes, scheduleRes] = await Promise.all([
       adminAPI.benchmark.listRuns({ page: 1, page_size: 5 }),
       adminAPI.benchmark.listRuns({ status: 'completed', page: 1, page_size: 1 }),
       adminAPI.benchmark.listTargets({ page: 1, page_size: 100 }),
       adminAPI.benchmark.listTasks({ page: 1, page_size: 1 }),
-      adminAPI.benchmark.listProfiles({ page: 1, page_size: 1 }),
+      adminAPI.benchmark.listSchedules({ page: 1, page_size: 1 }),
     ])
 
     latestRun.value = runRes.items?.[0] || null
     latestCompletedRun.value = completedRunRes.items?.[0] || null
     targetCount.value = targetRes.total || 0
     taskCount.value = taskRes.total || 0
-    profileCount.value = profileRes.total || 0
+    scheduleCount.value = scheduleRes.total || 0
     scores.value = latestCompletedRun.value
       ? await adminAPI.benchmark.getRunScores(latestCompletedRun.value.id)
       : []
@@ -143,27 +139,9 @@ async function load() {
   }
 }
 
-function scoreTargetName(score: BenchmarkScoreSnapshot): string {
-  const runTarget = score.edges?.run_target
-  if (!runTarget) return benchmarkTargetFallback(score.run_target_id, t)
-  return runTargetLabel(runTarget, score.run_target_id)
-}
-
-function runTargetLabel(
-  runTarget: {
-    display_name_snapshot?: string | null
-    model_name?: string
-    channel_name_snapshot?: string | null
-    channel_id?: number
-  },
-  id: number
-): string {
-  if (runTarget.display_name_snapshot) return runTarget.display_name_snapshot
-  if (runTarget.model_name) {
-    const channelLabel = runTarget.channel_name_snapshot || (runTarget.channel_id ? benchmarkChannelFallback(runTarget.channel_id, t) : null)
-    return channelLabel ? `${runTarget.model_name} · ${channelLabel}` : runTarget.model_name
-  }
-  return benchmarkTargetFallback(id, t)
+function scoreTargetName(score: BenchmarkTargetScore): string {
+  if (score.model_name) return score.model_name
+  return benchmarkTargetFallback(score.run_target_id, t)
 }
 
 function formatNumber(value?: number | null): string {
@@ -171,15 +149,6 @@ function formatNumber(value?: number | null): string {
   return new Intl.NumberFormat(locale.value, {
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
-  }).format(Number(value))
-}
-
-function formatPercent(value?: number | null): string {
-  if (value === undefined || value === null) return '-'
-  return new Intl.NumberFormat(locale.value, {
-    style: 'percent',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
   }).format(Number(value))
 }
 

@@ -28,7 +28,6 @@ const props = defineProps<{
 
 const { locale, t } = useI18n()
 
-const scoredTargets = computed(() => props.radar.targets.filter((target) => !target.score_basis.insufficient_sample))
 const averageAbilityScore = computed(() => {
   if (props.radar.targets.length === 0) return '-'
   const total = props.radar.targets.reduce((sum, target) => sum + target.overall_score, 0)
@@ -36,6 +35,13 @@ const averageAbilityScore = computed(() => {
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
   }).format(total / props.radar.targets.length)
+})
+
+const passedSummary = computed(() => {
+  const passed = props.radar.targets.reduce((sum, target) => sum + (target.passed_count || 0), 0)
+  const total = props.radar.targets.reduce((sum, target) => sum + (target.total_count || 0), 0)
+  const fmt = (v: number) => new Intl.NumberFormat(locale.value, { maximumFractionDigits: 0 }).format(v)
+  return `${fmt(passed)}/${fmt(total)}`
 })
 
 const cards = computed(() => [
@@ -50,9 +56,9 @@ const cards = computed(() => [
     caption: t('benchmark.public.summary.averageScoreCaption'),
   },
   {
-    label: t('benchmark.public.summary.sampleStatusLabel'),
-    value: `${new Intl.NumberFormat(locale.value, { maximumFractionDigits: 0 }).format(scoredTargets.value.length)}/${new Intl.NumberFormat(locale.value, { maximumFractionDigits: 0 }).format(props.radar.targets.length)}`,
-    caption: t('benchmark.public.summary.sampleStatusCaption'),
+    label: t('benchmark.public.summary.passedLabel'),
+    value: passedSummary.value,
+    caption: t('benchmark.public.summary.passedCaption'),
   },
   {
     label: t('benchmark.public.summary.latestRunLabel'),

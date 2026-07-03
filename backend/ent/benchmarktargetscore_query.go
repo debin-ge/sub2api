@@ -14,17 +14,17 @@ import (
 	"entgo.io/ent/schema/field"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkrun"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkruntarget"
-	"github.com/Wei-Shaw/sub2api/ent/benchmarkscoresnapshot"
+	"github.com/Wei-Shaw/sub2api/ent/benchmarktargetscore"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
 )
 
-// BenchmarkScoreSnapshotQuery is the builder for querying BenchmarkScoreSnapshot entities.
-type BenchmarkScoreSnapshotQuery struct {
+// BenchmarkTargetScoreQuery is the builder for querying BenchmarkTargetScore entities.
+type BenchmarkTargetScoreQuery struct {
 	config
 	ctx           *QueryContext
-	order         []benchmarkscoresnapshot.OrderOption
+	order         []benchmarktargetscore.OrderOption
 	inters        []Interceptor
-	predicates    []predicate.BenchmarkScoreSnapshot
+	predicates    []predicate.BenchmarkTargetScore
 	withRun       *BenchmarkRunQuery
 	withRunTarget *BenchmarkRunTargetQuery
 	modifiers     []func(*sql.Selector)
@@ -33,39 +33,39 @@ type BenchmarkScoreSnapshotQuery struct {
 	path func(context.Context) (*sql.Selector, error)
 }
 
-// Where adds a new predicate for the BenchmarkScoreSnapshotQuery builder.
-func (_q *BenchmarkScoreSnapshotQuery) Where(ps ...predicate.BenchmarkScoreSnapshot) *BenchmarkScoreSnapshotQuery {
+// Where adds a new predicate for the BenchmarkTargetScoreQuery builder.
+func (_q *BenchmarkTargetScoreQuery) Where(ps ...predicate.BenchmarkTargetScore) *BenchmarkTargetScoreQuery {
 	_q.predicates = append(_q.predicates, ps...)
 	return _q
 }
 
 // Limit the number of records to be returned by this query.
-func (_q *BenchmarkScoreSnapshotQuery) Limit(limit int) *BenchmarkScoreSnapshotQuery {
+func (_q *BenchmarkTargetScoreQuery) Limit(limit int) *BenchmarkTargetScoreQuery {
 	_q.ctx.Limit = &limit
 	return _q
 }
 
 // Offset to start from.
-func (_q *BenchmarkScoreSnapshotQuery) Offset(offset int) *BenchmarkScoreSnapshotQuery {
+func (_q *BenchmarkTargetScoreQuery) Offset(offset int) *BenchmarkTargetScoreQuery {
 	_q.ctx.Offset = &offset
 	return _q
 }
 
 // Unique configures the query builder to filter duplicate records on query.
 // By default, unique is set to true, and can be disabled using this method.
-func (_q *BenchmarkScoreSnapshotQuery) Unique(unique bool) *BenchmarkScoreSnapshotQuery {
+func (_q *BenchmarkTargetScoreQuery) Unique(unique bool) *BenchmarkTargetScoreQuery {
 	_q.ctx.Unique = &unique
 	return _q
 }
 
 // Order specifies how the records should be ordered.
-func (_q *BenchmarkScoreSnapshotQuery) Order(o ...benchmarkscoresnapshot.OrderOption) *BenchmarkScoreSnapshotQuery {
+func (_q *BenchmarkTargetScoreQuery) Order(o ...benchmarktargetscore.OrderOption) *BenchmarkTargetScoreQuery {
 	_q.order = append(_q.order, o...)
 	return _q
 }
 
 // QueryRun chains the current query on the "run" edge.
-func (_q *BenchmarkScoreSnapshotQuery) QueryRun() *BenchmarkRunQuery {
+func (_q *BenchmarkTargetScoreQuery) QueryRun() *BenchmarkRunQuery {
 	query := (&BenchmarkRunClient{config: _q.config}).Query()
 	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
 		if err := _q.prepareQuery(ctx); err != nil {
@@ -76,9 +76,9 @@ func (_q *BenchmarkScoreSnapshotQuery) QueryRun() *BenchmarkRunQuery {
 			return nil, err
 		}
 		step := sqlgraph.NewStep(
-			sqlgraph.From(benchmarkscoresnapshot.Table, benchmarkscoresnapshot.FieldID, selector),
+			sqlgraph.From(benchmarktargetscore.Table, benchmarktargetscore.FieldID, selector),
 			sqlgraph.To(benchmarkrun.Table, benchmarkrun.FieldID),
-			sqlgraph.Edge(sqlgraph.M2O, true, benchmarkscoresnapshot.RunTable, benchmarkscoresnapshot.RunColumn),
+			sqlgraph.Edge(sqlgraph.M2O, true, benchmarktargetscore.RunTable, benchmarktargetscore.RunColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
 		return fromU, nil
@@ -87,7 +87,7 @@ func (_q *BenchmarkScoreSnapshotQuery) QueryRun() *BenchmarkRunQuery {
 }
 
 // QueryRunTarget chains the current query on the "run_target" edge.
-func (_q *BenchmarkScoreSnapshotQuery) QueryRunTarget() *BenchmarkRunTargetQuery {
+func (_q *BenchmarkTargetScoreQuery) QueryRunTarget() *BenchmarkRunTargetQuery {
 	query := (&BenchmarkRunTargetClient{config: _q.config}).Query()
 	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
 		if err := _q.prepareQuery(ctx); err != nil {
@@ -98,9 +98,9 @@ func (_q *BenchmarkScoreSnapshotQuery) QueryRunTarget() *BenchmarkRunTargetQuery
 			return nil, err
 		}
 		step := sqlgraph.NewStep(
-			sqlgraph.From(benchmarkscoresnapshot.Table, benchmarkscoresnapshot.FieldID, selector),
+			sqlgraph.From(benchmarktargetscore.Table, benchmarktargetscore.FieldID, selector),
 			sqlgraph.To(benchmarkruntarget.Table, benchmarkruntarget.FieldID),
-			sqlgraph.Edge(sqlgraph.M2O, true, benchmarkscoresnapshot.RunTargetTable, benchmarkscoresnapshot.RunTargetColumn),
+			sqlgraph.Edge(sqlgraph.M2O, true, benchmarktargetscore.RunTargetTable, benchmarktargetscore.RunTargetColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
 		return fromU, nil
@@ -108,21 +108,21 @@ func (_q *BenchmarkScoreSnapshotQuery) QueryRunTarget() *BenchmarkRunTargetQuery
 	return query
 }
 
-// First returns the first BenchmarkScoreSnapshot entity from the query.
-// Returns a *NotFoundError when no BenchmarkScoreSnapshot was found.
-func (_q *BenchmarkScoreSnapshotQuery) First(ctx context.Context) (*BenchmarkScoreSnapshot, error) {
+// First returns the first BenchmarkTargetScore entity from the query.
+// Returns a *NotFoundError when no BenchmarkTargetScore was found.
+func (_q *BenchmarkTargetScoreQuery) First(ctx context.Context) (*BenchmarkTargetScore, error) {
 	nodes, err := _q.Limit(1).All(setContextOp(ctx, _q.ctx, ent.OpQueryFirst))
 	if err != nil {
 		return nil, err
 	}
 	if len(nodes) == 0 {
-		return nil, &NotFoundError{benchmarkscoresnapshot.Label}
+		return nil, &NotFoundError{benchmarktargetscore.Label}
 	}
 	return nodes[0], nil
 }
 
 // FirstX is like First, but panics if an error occurs.
-func (_q *BenchmarkScoreSnapshotQuery) FirstX(ctx context.Context) *BenchmarkScoreSnapshot {
+func (_q *BenchmarkTargetScoreQuery) FirstX(ctx context.Context) *BenchmarkTargetScore {
 	node, err := _q.First(ctx)
 	if err != nil && !IsNotFound(err) {
 		panic(err)
@@ -130,22 +130,22 @@ func (_q *BenchmarkScoreSnapshotQuery) FirstX(ctx context.Context) *BenchmarkSco
 	return node
 }
 
-// FirstID returns the first BenchmarkScoreSnapshot ID from the query.
-// Returns a *NotFoundError when no BenchmarkScoreSnapshot ID was found.
-func (_q *BenchmarkScoreSnapshotQuery) FirstID(ctx context.Context) (id int64, err error) {
+// FirstID returns the first BenchmarkTargetScore ID from the query.
+// Returns a *NotFoundError when no BenchmarkTargetScore ID was found.
+func (_q *BenchmarkTargetScoreQuery) FirstID(ctx context.Context) (id int64, err error) {
 	var ids []int64
 	if ids, err = _q.Limit(1).IDs(setContextOp(ctx, _q.ctx, ent.OpQueryFirstID)); err != nil {
 		return
 	}
 	if len(ids) == 0 {
-		err = &NotFoundError{benchmarkscoresnapshot.Label}
+		err = &NotFoundError{benchmarktargetscore.Label}
 		return
 	}
 	return ids[0], nil
 }
 
 // FirstIDX is like FirstID, but panics if an error occurs.
-func (_q *BenchmarkScoreSnapshotQuery) FirstIDX(ctx context.Context) int64 {
+func (_q *BenchmarkTargetScoreQuery) FirstIDX(ctx context.Context) int64 {
 	id, err := _q.FirstID(ctx)
 	if err != nil && !IsNotFound(err) {
 		panic(err)
@@ -153,10 +153,10 @@ func (_q *BenchmarkScoreSnapshotQuery) FirstIDX(ctx context.Context) int64 {
 	return id
 }
 
-// Only returns a single BenchmarkScoreSnapshot entity found by the query, ensuring it only returns one.
-// Returns a *NotSingularError when more than one BenchmarkScoreSnapshot entity is found.
-// Returns a *NotFoundError when no BenchmarkScoreSnapshot entities are found.
-func (_q *BenchmarkScoreSnapshotQuery) Only(ctx context.Context) (*BenchmarkScoreSnapshot, error) {
+// Only returns a single BenchmarkTargetScore entity found by the query, ensuring it only returns one.
+// Returns a *NotSingularError when more than one BenchmarkTargetScore entity is found.
+// Returns a *NotFoundError when no BenchmarkTargetScore entities are found.
+func (_q *BenchmarkTargetScoreQuery) Only(ctx context.Context) (*BenchmarkTargetScore, error) {
 	nodes, err := _q.Limit(2).All(setContextOp(ctx, _q.ctx, ent.OpQueryOnly))
 	if err != nil {
 		return nil, err
@@ -165,14 +165,14 @@ func (_q *BenchmarkScoreSnapshotQuery) Only(ctx context.Context) (*BenchmarkScor
 	case 1:
 		return nodes[0], nil
 	case 0:
-		return nil, &NotFoundError{benchmarkscoresnapshot.Label}
+		return nil, &NotFoundError{benchmarktargetscore.Label}
 	default:
-		return nil, &NotSingularError{benchmarkscoresnapshot.Label}
+		return nil, &NotSingularError{benchmarktargetscore.Label}
 	}
 }
 
 // OnlyX is like Only, but panics if an error occurs.
-func (_q *BenchmarkScoreSnapshotQuery) OnlyX(ctx context.Context) *BenchmarkScoreSnapshot {
+func (_q *BenchmarkTargetScoreQuery) OnlyX(ctx context.Context) *BenchmarkTargetScore {
 	node, err := _q.Only(ctx)
 	if err != nil {
 		panic(err)
@@ -180,10 +180,10 @@ func (_q *BenchmarkScoreSnapshotQuery) OnlyX(ctx context.Context) *BenchmarkScor
 	return node
 }
 
-// OnlyID is like Only, but returns the only BenchmarkScoreSnapshot ID in the query.
-// Returns a *NotSingularError when more than one BenchmarkScoreSnapshot ID is found.
+// OnlyID is like Only, but returns the only BenchmarkTargetScore ID in the query.
+// Returns a *NotSingularError when more than one BenchmarkTargetScore ID is found.
 // Returns a *NotFoundError when no entities are found.
-func (_q *BenchmarkScoreSnapshotQuery) OnlyID(ctx context.Context) (id int64, err error) {
+func (_q *BenchmarkTargetScoreQuery) OnlyID(ctx context.Context) (id int64, err error) {
 	var ids []int64
 	if ids, err = _q.Limit(2).IDs(setContextOp(ctx, _q.ctx, ent.OpQueryOnlyID)); err != nil {
 		return
@@ -192,15 +192,15 @@ func (_q *BenchmarkScoreSnapshotQuery) OnlyID(ctx context.Context) (id int64, er
 	case 1:
 		id = ids[0]
 	case 0:
-		err = &NotFoundError{benchmarkscoresnapshot.Label}
+		err = &NotFoundError{benchmarktargetscore.Label}
 	default:
-		err = &NotSingularError{benchmarkscoresnapshot.Label}
+		err = &NotSingularError{benchmarktargetscore.Label}
 	}
 	return
 }
 
 // OnlyIDX is like OnlyID, but panics if an error occurs.
-func (_q *BenchmarkScoreSnapshotQuery) OnlyIDX(ctx context.Context) int64 {
+func (_q *BenchmarkTargetScoreQuery) OnlyIDX(ctx context.Context) int64 {
 	id, err := _q.OnlyID(ctx)
 	if err != nil {
 		panic(err)
@@ -208,18 +208,18 @@ func (_q *BenchmarkScoreSnapshotQuery) OnlyIDX(ctx context.Context) int64 {
 	return id
 }
 
-// All executes the query and returns a list of BenchmarkScoreSnapshots.
-func (_q *BenchmarkScoreSnapshotQuery) All(ctx context.Context) ([]*BenchmarkScoreSnapshot, error) {
+// All executes the query and returns a list of BenchmarkTargetScores.
+func (_q *BenchmarkTargetScoreQuery) All(ctx context.Context) ([]*BenchmarkTargetScore, error) {
 	ctx = setContextOp(ctx, _q.ctx, ent.OpQueryAll)
 	if err := _q.prepareQuery(ctx); err != nil {
 		return nil, err
 	}
-	qr := querierAll[[]*BenchmarkScoreSnapshot, *BenchmarkScoreSnapshotQuery]()
-	return withInterceptors[[]*BenchmarkScoreSnapshot](ctx, _q, qr, _q.inters)
+	qr := querierAll[[]*BenchmarkTargetScore, *BenchmarkTargetScoreQuery]()
+	return withInterceptors[[]*BenchmarkTargetScore](ctx, _q, qr, _q.inters)
 }
 
 // AllX is like All, but panics if an error occurs.
-func (_q *BenchmarkScoreSnapshotQuery) AllX(ctx context.Context) []*BenchmarkScoreSnapshot {
+func (_q *BenchmarkTargetScoreQuery) AllX(ctx context.Context) []*BenchmarkTargetScore {
 	nodes, err := _q.All(ctx)
 	if err != nil {
 		panic(err)
@@ -227,20 +227,20 @@ func (_q *BenchmarkScoreSnapshotQuery) AllX(ctx context.Context) []*BenchmarkSco
 	return nodes
 }
 
-// IDs executes the query and returns a list of BenchmarkScoreSnapshot IDs.
-func (_q *BenchmarkScoreSnapshotQuery) IDs(ctx context.Context) (ids []int64, err error) {
+// IDs executes the query and returns a list of BenchmarkTargetScore IDs.
+func (_q *BenchmarkTargetScoreQuery) IDs(ctx context.Context) (ids []int64, err error) {
 	if _q.ctx.Unique == nil && _q.path != nil {
 		_q.Unique(true)
 	}
 	ctx = setContextOp(ctx, _q.ctx, ent.OpQueryIDs)
-	if err = _q.Select(benchmarkscoresnapshot.FieldID).Scan(ctx, &ids); err != nil {
+	if err = _q.Select(benchmarktargetscore.FieldID).Scan(ctx, &ids); err != nil {
 		return nil, err
 	}
 	return ids, nil
 }
 
 // IDsX is like IDs, but panics if an error occurs.
-func (_q *BenchmarkScoreSnapshotQuery) IDsX(ctx context.Context) []int64 {
+func (_q *BenchmarkTargetScoreQuery) IDsX(ctx context.Context) []int64 {
 	ids, err := _q.IDs(ctx)
 	if err != nil {
 		panic(err)
@@ -249,16 +249,16 @@ func (_q *BenchmarkScoreSnapshotQuery) IDsX(ctx context.Context) []int64 {
 }
 
 // Count returns the count of the given query.
-func (_q *BenchmarkScoreSnapshotQuery) Count(ctx context.Context) (int, error) {
+func (_q *BenchmarkTargetScoreQuery) Count(ctx context.Context) (int, error) {
 	ctx = setContextOp(ctx, _q.ctx, ent.OpQueryCount)
 	if err := _q.prepareQuery(ctx); err != nil {
 		return 0, err
 	}
-	return withInterceptors[int](ctx, _q, querierCount[*BenchmarkScoreSnapshotQuery](), _q.inters)
+	return withInterceptors[int](ctx, _q, querierCount[*BenchmarkTargetScoreQuery](), _q.inters)
 }
 
 // CountX is like Count, but panics if an error occurs.
-func (_q *BenchmarkScoreSnapshotQuery) CountX(ctx context.Context) int {
+func (_q *BenchmarkTargetScoreQuery) CountX(ctx context.Context) int {
 	count, err := _q.Count(ctx)
 	if err != nil {
 		panic(err)
@@ -267,7 +267,7 @@ func (_q *BenchmarkScoreSnapshotQuery) CountX(ctx context.Context) int {
 }
 
 // Exist returns true if the query has elements in the graph.
-func (_q *BenchmarkScoreSnapshotQuery) Exist(ctx context.Context) (bool, error) {
+func (_q *BenchmarkTargetScoreQuery) Exist(ctx context.Context) (bool, error) {
 	ctx = setContextOp(ctx, _q.ctx, ent.OpQueryExist)
 	switch _, err := _q.FirstID(ctx); {
 	case IsNotFound(err):
@@ -280,7 +280,7 @@ func (_q *BenchmarkScoreSnapshotQuery) Exist(ctx context.Context) (bool, error) 
 }
 
 // ExistX is like Exist, but panics if an error occurs.
-func (_q *BenchmarkScoreSnapshotQuery) ExistX(ctx context.Context) bool {
+func (_q *BenchmarkTargetScoreQuery) ExistX(ctx context.Context) bool {
 	exist, err := _q.Exist(ctx)
 	if err != nil {
 		panic(err)
@@ -288,18 +288,18 @@ func (_q *BenchmarkScoreSnapshotQuery) ExistX(ctx context.Context) bool {
 	return exist
 }
 
-// Clone returns a duplicate of the BenchmarkScoreSnapshotQuery builder, including all associated steps. It can be
+// Clone returns a duplicate of the BenchmarkTargetScoreQuery builder, including all associated steps. It can be
 // used to prepare common query builders and use them differently after the clone is made.
-func (_q *BenchmarkScoreSnapshotQuery) Clone() *BenchmarkScoreSnapshotQuery {
+func (_q *BenchmarkTargetScoreQuery) Clone() *BenchmarkTargetScoreQuery {
 	if _q == nil {
 		return nil
 	}
-	return &BenchmarkScoreSnapshotQuery{
+	return &BenchmarkTargetScoreQuery{
 		config:        _q.config,
 		ctx:           _q.ctx.Clone(),
-		order:         append([]benchmarkscoresnapshot.OrderOption{}, _q.order...),
+		order:         append([]benchmarktargetscore.OrderOption{}, _q.order...),
 		inters:        append([]Interceptor{}, _q.inters...),
-		predicates:    append([]predicate.BenchmarkScoreSnapshot{}, _q.predicates...),
+		predicates:    append([]predicate.BenchmarkTargetScore{}, _q.predicates...),
 		withRun:       _q.withRun.Clone(),
 		withRunTarget: _q.withRunTarget.Clone(),
 		// clone intermediate query.
@@ -310,7 +310,7 @@ func (_q *BenchmarkScoreSnapshotQuery) Clone() *BenchmarkScoreSnapshotQuery {
 
 // WithRun tells the query-builder to eager-load the nodes that are connected to
 // the "run" edge. The optional arguments are used to configure the query builder of the edge.
-func (_q *BenchmarkScoreSnapshotQuery) WithRun(opts ...func(*BenchmarkRunQuery)) *BenchmarkScoreSnapshotQuery {
+func (_q *BenchmarkTargetScoreQuery) WithRun(opts ...func(*BenchmarkRunQuery)) *BenchmarkTargetScoreQuery {
 	query := (&BenchmarkRunClient{config: _q.config}).Query()
 	for _, opt := range opts {
 		opt(query)
@@ -321,7 +321,7 @@ func (_q *BenchmarkScoreSnapshotQuery) WithRun(opts ...func(*BenchmarkRunQuery))
 
 // WithRunTarget tells the query-builder to eager-load the nodes that are connected to
 // the "run_target" edge. The optional arguments are used to configure the query builder of the edge.
-func (_q *BenchmarkScoreSnapshotQuery) WithRunTarget(opts ...func(*BenchmarkRunTargetQuery)) *BenchmarkScoreSnapshotQuery {
+func (_q *BenchmarkTargetScoreQuery) WithRunTarget(opts ...func(*BenchmarkRunTargetQuery)) *BenchmarkTargetScoreQuery {
 	query := (&BenchmarkRunTargetClient{config: _q.config}).Query()
 	for _, opt := range opts {
 		opt(query)
@@ -340,15 +340,15 @@ func (_q *BenchmarkScoreSnapshotQuery) WithRunTarget(opts ...func(*BenchmarkRunT
 //		Count int `json:"count,omitempty"`
 //	}
 //
-//	client.BenchmarkScoreSnapshot.Query().
-//		GroupBy(benchmarkscoresnapshot.FieldRunID).
+//	client.BenchmarkTargetScore.Query().
+//		GroupBy(benchmarktargetscore.FieldRunID).
 //		Aggregate(ent.Count()).
 //		Scan(ctx, &v)
-func (_q *BenchmarkScoreSnapshotQuery) GroupBy(field string, fields ...string) *BenchmarkScoreSnapshotGroupBy {
+func (_q *BenchmarkTargetScoreQuery) GroupBy(field string, fields ...string) *BenchmarkTargetScoreGroupBy {
 	_q.ctx.Fields = append([]string{field}, fields...)
-	grbuild := &BenchmarkScoreSnapshotGroupBy{build: _q}
+	grbuild := &BenchmarkTargetScoreGroupBy{build: _q}
 	grbuild.flds = &_q.ctx.Fields
-	grbuild.label = benchmarkscoresnapshot.Label
+	grbuild.label = benchmarktargetscore.Label
 	grbuild.scan = grbuild.Scan
 	return grbuild
 }
@@ -362,23 +362,23 @@ func (_q *BenchmarkScoreSnapshotQuery) GroupBy(field string, fields ...string) *
 //		RunID int64 `json:"run_id,omitempty"`
 //	}
 //
-//	client.BenchmarkScoreSnapshot.Query().
-//		Select(benchmarkscoresnapshot.FieldRunID).
+//	client.BenchmarkTargetScore.Query().
+//		Select(benchmarktargetscore.FieldRunID).
 //		Scan(ctx, &v)
-func (_q *BenchmarkScoreSnapshotQuery) Select(fields ...string) *BenchmarkScoreSnapshotSelect {
+func (_q *BenchmarkTargetScoreQuery) Select(fields ...string) *BenchmarkTargetScoreSelect {
 	_q.ctx.Fields = append(_q.ctx.Fields, fields...)
-	sbuild := &BenchmarkScoreSnapshotSelect{BenchmarkScoreSnapshotQuery: _q}
-	sbuild.label = benchmarkscoresnapshot.Label
+	sbuild := &BenchmarkTargetScoreSelect{BenchmarkTargetScoreQuery: _q}
+	sbuild.label = benchmarktargetscore.Label
 	sbuild.flds, sbuild.scan = &_q.ctx.Fields, sbuild.Scan
 	return sbuild
 }
 
-// Aggregate returns a BenchmarkScoreSnapshotSelect configured with the given aggregations.
-func (_q *BenchmarkScoreSnapshotQuery) Aggregate(fns ...AggregateFunc) *BenchmarkScoreSnapshotSelect {
+// Aggregate returns a BenchmarkTargetScoreSelect configured with the given aggregations.
+func (_q *BenchmarkTargetScoreQuery) Aggregate(fns ...AggregateFunc) *BenchmarkTargetScoreSelect {
 	return _q.Select().Aggregate(fns...)
 }
 
-func (_q *BenchmarkScoreSnapshotQuery) prepareQuery(ctx context.Context) error {
+func (_q *BenchmarkTargetScoreQuery) prepareQuery(ctx context.Context) error {
 	for _, inter := range _q.inters {
 		if inter == nil {
 			return fmt.Errorf("ent: uninitialized interceptor (forgotten import ent/runtime?)")
@@ -390,7 +390,7 @@ func (_q *BenchmarkScoreSnapshotQuery) prepareQuery(ctx context.Context) error {
 		}
 	}
 	for _, f := range _q.ctx.Fields {
-		if !benchmarkscoresnapshot.ValidColumn(f) {
+		if !benchmarktargetscore.ValidColumn(f) {
 			return &ValidationError{Name: f, err: fmt.Errorf("ent: invalid field %q for query", f)}
 		}
 	}
@@ -404,9 +404,9 @@ func (_q *BenchmarkScoreSnapshotQuery) prepareQuery(ctx context.Context) error {
 	return nil
 }
 
-func (_q *BenchmarkScoreSnapshotQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*BenchmarkScoreSnapshot, error) {
+func (_q *BenchmarkTargetScoreQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*BenchmarkTargetScore, error) {
 	var (
-		nodes       = []*BenchmarkScoreSnapshot{}
+		nodes       = []*BenchmarkTargetScore{}
 		_spec       = _q.querySpec()
 		loadedTypes = [2]bool{
 			_q.withRun != nil,
@@ -414,10 +414,10 @@ func (_q *BenchmarkScoreSnapshotQuery) sqlAll(ctx context.Context, hooks ...quer
 		}
 	)
 	_spec.ScanValues = func(columns []string) ([]any, error) {
-		return (*BenchmarkScoreSnapshot).scanValues(nil, columns)
+		return (*BenchmarkTargetScore).scanValues(nil, columns)
 	}
 	_spec.Assign = func(columns []string, values []any) error {
-		node := &BenchmarkScoreSnapshot{config: _q.config}
+		node := &BenchmarkTargetScore{config: _q.config}
 		nodes = append(nodes, node)
 		node.Edges.loadedTypes = loadedTypes
 		return node.assignValues(columns, values)
@@ -436,22 +436,22 @@ func (_q *BenchmarkScoreSnapshotQuery) sqlAll(ctx context.Context, hooks ...quer
 	}
 	if query := _q.withRun; query != nil {
 		if err := _q.loadRun(ctx, query, nodes, nil,
-			func(n *BenchmarkScoreSnapshot, e *BenchmarkRun) { n.Edges.Run = e }); err != nil {
+			func(n *BenchmarkTargetScore, e *BenchmarkRun) { n.Edges.Run = e }); err != nil {
 			return nil, err
 		}
 	}
 	if query := _q.withRunTarget; query != nil {
 		if err := _q.loadRunTarget(ctx, query, nodes, nil,
-			func(n *BenchmarkScoreSnapshot, e *BenchmarkRunTarget) { n.Edges.RunTarget = e }); err != nil {
+			func(n *BenchmarkTargetScore, e *BenchmarkRunTarget) { n.Edges.RunTarget = e }); err != nil {
 			return nil, err
 		}
 	}
 	return nodes, nil
 }
 
-func (_q *BenchmarkScoreSnapshotQuery) loadRun(ctx context.Context, query *BenchmarkRunQuery, nodes []*BenchmarkScoreSnapshot, init func(*BenchmarkScoreSnapshot), assign func(*BenchmarkScoreSnapshot, *BenchmarkRun)) error {
+func (_q *BenchmarkTargetScoreQuery) loadRun(ctx context.Context, query *BenchmarkRunQuery, nodes []*BenchmarkTargetScore, init func(*BenchmarkTargetScore), assign func(*BenchmarkTargetScore, *BenchmarkRun)) error {
 	ids := make([]int64, 0, len(nodes))
-	nodeids := make(map[int64][]*BenchmarkScoreSnapshot)
+	nodeids := make(map[int64][]*BenchmarkTargetScore)
 	for i := range nodes {
 		fk := nodes[i].RunID
 		if _, ok := nodeids[fk]; !ok {
@@ -478,9 +478,9 @@ func (_q *BenchmarkScoreSnapshotQuery) loadRun(ctx context.Context, query *Bench
 	}
 	return nil
 }
-func (_q *BenchmarkScoreSnapshotQuery) loadRunTarget(ctx context.Context, query *BenchmarkRunTargetQuery, nodes []*BenchmarkScoreSnapshot, init func(*BenchmarkScoreSnapshot), assign func(*BenchmarkScoreSnapshot, *BenchmarkRunTarget)) error {
+func (_q *BenchmarkTargetScoreQuery) loadRunTarget(ctx context.Context, query *BenchmarkRunTargetQuery, nodes []*BenchmarkTargetScore, init func(*BenchmarkTargetScore), assign func(*BenchmarkTargetScore, *BenchmarkRunTarget)) error {
 	ids := make([]int64, 0, len(nodes))
-	nodeids := make(map[int64][]*BenchmarkScoreSnapshot)
+	nodeids := make(map[int64][]*BenchmarkTargetScore)
 	for i := range nodes {
 		fk := nodes[i].RunTargetID
 		if _, ok := nodeids[fk]; !ok {
@@ -508,7 +508,7 @@ func (_q *BenchmarkScoreSnapshotQuery) loadRunTarget(ctx context.Context, query 
 	return nil
 }
 
-func (_q *BenchmarkScoreSnapshotQuery) sqlCount(ctx context.Context) (int, error) {
+func (_q *BenchmarkTargetScoreQuery) sqlCount(ctx context.Context) (int, error) {
 	_spec := _q.querySpec()
 	if len(_q.modifiers) > 0 {
 		_spec.Modifiers = _q.modifiers
@@ -520,8 +520,8 @@ func (_q *BenchmarkScoreSnapshotQuery) sqlCount(ctx context.Context) (int, error
 	return sqlgraph.CountNodes(ctx, _q.driver, _spec)
 }
 
-func (_q *BenchmarkScoreSnapshotQuery) querySpec() *sqlgraph.QuerySpec {
-	_spec := sqlgraph.NewQuerySpec(benchmarkscoresnapshot.Table, benchmarkscoresnapshot.Columns, sqlgraph.NewFieldSpec(benchmarkscoresnapshot.FieldID, field.TypeInt64))
+func (_q *BenchmarkTargetScoreQuery) querySpec() *sqlgraph.QuerySpec {
+	_spec := sqlgraph.NewQuerySpec(benchmarktargetscore.Table, benchmarktargetscore.Columns, sqlgraph.NewFieldSpec(benchmarktargetscore.FieldID, field.TypeInt64))
 	_spec.From = _q.sql
 	if unique := _q.ctx.Unique; unique != nil {
 		_spec.Unique = *unique
@@ -530,17 +530,17 @@ func (_q *BenchmarkScoreSnapshotQuery) querySpec() *sqlgraph.QuerySpec {
 	}
 	if fields := _q.ctx.Fields; len(fields) > 0 {
 		_spec.Node.Columns = make([]string, 0, len(fields))
-		_spec.Node.Columns = append(_spec.Node.Columns, benchmarkscoresnapshot.FieldID)
+		_spec.Node.Columns = append(_spec.Node.Columns, benchmarktargetscore.FieldID)
 		for i := range fields {
-			if fields[i] != benchmarkscoresnapshot.FieldID {
+			if fields[i] != benchmarktargetscore.FieldID {
 				_spec.Node.Columns = append(_spec.Node.Columns, fields[i])
 			}
 		}
 		if _q.withRun != nil {
-			_spec.Node.AddColumnOnce(benchmarkscoresnapshot.FieldRunID)
+			_spec.Node.AddColumnOnce(benchmarktargetscore.FieldRunID)
 		}
 		if _q.withRunTarget != nil {
-			_spec.Node.AddColumnOnce(benchmarkscoresnapshot.FieldRunTargetID)
+			_spec.Node.AddColumnOnce(benchmarktargetscore.FieldRunTargetID)
 		}
 	}
 	if ps := _q.predicates; len(ps) > 0 {
@@ -566,12 +566,12 @@ func (_q *BenchmarkScoreSnapshotQuery) querySpec() *sqlgraph.QuerySpec {
 	return _spec
 }
 
-func (_q *BenchmarkScoreSnapshotQuery) sqlQuery(ctx context.Context) *sql.Selector {
+func (_q *BenchmarkTargetScoreQuery) sqlQuery(ctx context.Context) *sql.Selector {
 	builder := sql.Dialect(_q.driver.Dialect())
-	t1 := builder.Table(benchmarkscoresnapshot.Table)
+	t1 := builder.Table(benchmarktargetscore.Table)
 	columns := _q.ctx.Fields
 	if len(columns) == 0 {
-		columns = benchmarkscoresnapshot.Columns
+		columns = benchmarktargetscore.Columns
 	}
 	selector := builder.Select(t1.Columns(columns...)...).From(t1)
 	if _q.sql != nil {
@@ -604,7 +604,7 @@ func (_q *BenchmarkScoreSnapshotQuery) sqlQuery(ctx context.Context) *sql.Select
 // ForUpdate locks the selected rows against concurrent updates, and prevent them from being
 // updated, deleted or "selected ... for update" by other sessions, until the transaction is
 // either committed or rolled-back.
-func (_q *BenchmarkScoreSnapshotQuery) ForUpdate(opts ...sql.LockOption) *BenchmarkScoreSnapshotQuery {
+func (_q *BenchmarkTargetScoreQuery) ForUpdate(opts ...sql.LockOption) *BenchmarkTargetScoreQuery {
 	if _q.driver.Dialect() == dialect.Postgres {
 		_q.Unique(false)
 	}
@@ -617,7 +617,7 @@ func (_q *BenchmarkScoreSnapshotQuery) ForUpdate(opts ...sql.LockOption) *Benchm
 // ForShare behaves similarly to ForUpdate, except that it acquires a shared mode lock
 // on any rows that are read. Other sessions can read the rows, but cannot modify them
 // until your transaction commits.
-func (_q *BenchmarkScoreSnapshotQuery) ForShare(opts ...sql.LockOption) *BenchmarkScoreSnapshotQuery {
+func (_q *BenchmarkTargetScoreQuery) ForShare(opts ...sql.LockOption) *BenchmarkTargetScoreQuery {
 	if _q.driver.Dialect() == dialect.Postgres {
 		_q.Unique(false)
 	}
@@ -627,28 +627,28 @@ func (_q *BenchmarkScoreSnapshotQuery) ForShare(opts ...sql.LockOption) *Benchma
 	return _q
 }
 
-// BenchmarkScoreSnapshotGroupBy is the group-by builder for BenchmarkScoreSnapshot entities.
-type BenchmarkScoreSnapshotGroupBy struct {
+// BenchmarkTargetScoreGroupBy is the group-by builder for BenchmarkTargetScore entities.
+type BenchmarkTargetScoreGroupBy struct {
 	selector
-	build *BenchmarkScoreSnapshotQuery
+	build *BenchmarkTargetScoreQuery
 }
 
 // Aggregate adds the given aggregation functions to the group-by query.
-func (_g *BenchmarkScoreSnapshotGroupBy) Aggregate(fns ...AggregateFunc) *BenchmarkScoreSnapshotGroupBy {
+func (_g *BenchmarkTargetScoreGroupBy) Aggregate(fns ...AggregateFunc) *BenchmarkTargetScoreGroupBy {
 	_g.fns = append(_g.fns, fns...)
 	return _g
 }
 
 // Scan applies the selector query and scans the result into the given value.
-func (_g *BenchmarkScoreSnapshotGroupBy) Scan(ctx context.Context, v any) error {
+func (_g *BenchmarkTargetScoreGroupBy) Scan(ctx context.Context, v any) error {
 	ctx = setContextOp(ctx, _g.build.ctx, ent.OpQueryGroupBy)
 	if err := _g.build.prepareQuery(ctx); err != nil {
 		return err
 	}
-	return scanWithInterceptors[*BenchmarkScoreSnapshotQuery, *BenchmarkScoreSnapshotGroupBy](ctx, _g.build, _g, _g.build.inters, v)
+	return scanWithInterceptors[*BenchmarkTargetScoreQuery, *BenchmarkTargetScoreGroupBy](ctx, _g.build, _g, _g.build.inters, v)
 }
 
-func (_g *BenchmarkScoreSnapshotGroupBy) sqlScan(ctx context.Context, root *BenchmarkScoreSnapshotQuery, v any) error {
+func (_g *BenchmarkTargetScoreGroupBy) sqlScan(ctx context.Context, root *BenchmarkTargetScoreQuery, v any) error {
 	selector := root.sqlQuery(ctx).Select()
 	aggregation := make([]string, 0, len(_g.fns))
 	for _, fn := range _g.fns {
@@ -675,28 +675,28 @@ func (_g *BenchmarkScoreSnapshotGroupBy) sqlScan(ctx context.Context, root *Benc
 	return sql.ScanSlice(rows, v)
 }
 
-// BenchmarkScoreSnapshotSelect is the builder for selecting fields of BenchmarkScoreSnapshot entities.
-type BenchmarkScoreSnapshotSelect struct {
-	*BenchmarkScoreSnapshotQuery
+// BenchmarkTargetScoreSelect is the builder for selecting fields of BenchmarkTargetScore entities.
+type BenchmarkTargetScoreSelect struct {
+	*BenchmarkTargetScoreQuery
 	selector
 }
 
 // Aggregate adds the given aggregation functions to the selector query.
-func (_s *BenchmarkScoreSnapshotSelect) Aggregate(fns ...AggregateFunc) *BenchmarkScoreSnapshotSelect {
+func (_s *BenchmarkTargetScoreSelect) Aggregate(fns ...AggregateFunc) *BenchmarkTargetScoreSelect {
 	_s.fns = append(_s.fns, fns...)
 	return _s
 }
 
 // Scan applies the selector query and scans the result into the given value.
-func (_s *BenchmarkScoreSnapshotSelect) Scan(ctx context.Context, v any) error {
+func (_s *BenchmarkTargetScoreSelect) Scan(ctx context.Context, v any) error {
 	ctx = setContextOp(ctx, _s.ctx, ent.OpQuerySelect)
 	if err := _s.prepareQuery(ctx); err != nil {
 		return err
 	}
-	return scanWithInterceptors[*BenchmarkScoreSnapshotQuery, *BenchmarkScoreSnapshotSelect](ctx, _s.BenchmarkScoreSnapshotQuery, _s, _s.inters, v)
+	return scanWithInterceptors[*BenchmarkTargetScoreQuery, *BenchmarkTargetScoreSelect](ctx, _s.BenchmarkTargetScoreQuery, _s, _s.inters, v)
 }
 
-func (_s *BenchmarkScoreSnapshotSelect) sqlScan(ctx context.Context, root *BenchmarkScoreSnapshotQuery, v any) error {
+func (_s *BenchmarkTargetScoreSelect) sqlScan(ctx context.Context, root *BenchmarkTargetScoreQuery, v any) error {
 	selector := root.sqlQuery(ctx)
 	aggregation := make([]string, 0, len(_s.fns))
 	for _, fn := range _s.fns {

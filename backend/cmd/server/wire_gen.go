@@ -242,10 +242,13 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	paymentHandler := admin.NewPaymentHandler(paymentService, paymentConfigService)
 	affiliateHandler := admin.NewAffiliateHandler(affiliateService, adminService)
 	benchmarkRepository := repository.NewBenchmarkRepository(client)
-	benchmarkService := service.ProvideBenchmarkService(benchmarkRepository, settingService)
+	benchmarkService := service.ProvideBenchmarkService(benchmarkRepository, settingService, channelRepository)
 	benchmarkScheduleService := service.ProvideBenchmarkScheduleService(benchmarkRepository, benchmarkService, settingService)
-	benchmarkSnapshotService := service.ProvideBenchmarkSnapshotService(benchmarkRepository, settingService)
-	benchmarkHandler := handler.ProvideBenchmarkHandler(benchmarkService, benchmarkScheduleService, benchmarkSnapshotService)
+	benchmarkSnapshotService := service.ProvideBenchmarkSnapshotService(benchmarkRepository)
+	benchmarkGatewayClient := service.ProvideBenchmarkGatewayClient(openAIGatewayService, channelRepository)
+	benchmarkRunner := service.ProvideBenchmarkRunner(benchmarkRepository, benchmarkGatewayClient, settingService)
+	benchmarkProcessor := service.ProvideBenchmarkProcessor(benchmarkRepository, benchmarkRunner, benchmarkSnapshotService)
+	benchmarkHandler := handler.ProvideBenchmarkHandler(benchmarkService, benchmarkScheduleService, benchmarkSnapshotService, benchmarkProcessor)
 	adminHandlers := handler.ProvideAdminHandlers(dashboardHandler, adminUserHandler, groupHandler, accountHandler, adminAnnouncementHandler, dataManagementHandler, backupHandler, oAuthHandler, openAIOAuthHandler, geminiOAuthHandler, antigravityOAuthHandler, proxyHandler, adminRedeemHandler, promoHandler, settingHandler, opsHandler, systemHandler, adminSubscriptionHandler, adminUsageHandler, userAttributeHandler, errorPassthroughHandler, tlsFingerprintProfileHandler, adminAPIKeyHandler, scheduledTestHandler, channelHandler, channelMonitorHandler, channelMonitorRequestTemplateHandler, contentModerationHandler, paymentHandler, affiliateHandler, benchmarkHandler)
 	usageRecordWorkerPool := service.NewUsageRecordWorkerPool(configConfig)
 	userMsgQueueCache := repository.NewUserMsgQueueCache(redisClient)
@@ -297,8 +300,9 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	deepSeekBalanceHealthService := service.NewDeepSeekBalanceHealthService(accountRepository, deepSeekBalanceClient)
 	deepSeekBalanceHealthRunner := service.ProvideDeepSeekBalanceHealthRunner(deepSeekBalanceHealthService, configConfig)
 	channelMonitorRunner := service.ProvideChannelMonitorRunner(channelMonitorService, settingService)
+	benchmarkRunnerService := service.ProvideBenchmarkRunnerService(benchmarkScheduleService, benchmarkProcessor, configConfig)
 	userPlatformQuotaUsageFlusher := service.ProvideUserPlatformQuotaUsageFlusher(configConfig, billingCache, serviceUserPlatformQuotaRepository, timingWheelService)
-	v := provideCleanup(client, redisClient, opsMetricsCollector, opsAggregationService, opsAlertEvaluatorService, opsCleanupService, opsScheduledReportService, opsSystemLogSink, schedulerSnapshotService, tokenRefreshService, accountExpiryService, proxyExpiryService, subscriptionExpiryService, usageCleanupService, idempotencyCleanupService, pricingService, emailQueueService, billingCacheService, usageRecordWorkerPool, subscriptionService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, openAIGatewayService, scheduledTestRunnerService, backupService, paymentOrderExpiryService, miniMaxRemainsSyncRunner, deepSeekBalanceHealthRunner, channelMonitorRunner, userPlatformQuotaUsageFlusher)
+	v := provideCleanup(client, redisClient, opsMetricsCollector, opsAggregationService, opsAlertEvaluatorService, opsCleanupService, opsScheduledReportService, opsSystemLogSink, schedulerSnapshotService, tokenRefreshService, accountExpiryService, proxyExpiryService, subscriptionExpiryService, usageCleanupService, idempotencyCleanupService, pricingService, emailQueueService, billingCacheService, usageRecordWorkerPool, subscriptionService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, openAIGatewayService, scheduledTestRunnerService, backupService, paymentOrderExpiryService, miniMaxRemainsSyncRunner, deepSeekBalanceHealthRunner, channelMonitorRunner, benchmarkRunnerService, userPlatformQuotaUsageFlusher)
 	application := &Application{
 		Server:  httpServer,
 		Cleanup: v,
@@ -356,6 +360,7 @@ func provideCleanup(
 	miniMaxRemainsSyncRunner *service.MiniMaxRemainsSyncRunner,
 	deepSeekBalanceHealthRunner *service.DeepSeekBalanceHealthRunner,
 	channelMonitorRunner *service.ChannelMonitorRunner,
+	benchmarkRunner *service.BenchmarkRunnerService,
 	quotaFlusher *service.UserPlatformQuotaUsageFlusher,
 ) func() {
 	return func() {
@@ -487,6 +492,12 @@ func provideCleanup(
 			{"ScheduledTestRunnerService", func() error {
 				if scheduledTestRunner != nil {
 					scheduledTestRunner.Stop()
+				}
+				return nil
+			}},
+			{"BenchmarkRunnerService", func() error {
+				if benchmarkRunner != nil {
+					benchmarkRunner.Stop()
 				}
 				return nil
 			}},

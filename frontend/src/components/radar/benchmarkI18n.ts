@@ -1,4 +1,4 @@
-import type { BenchmarkResultStatus, BenchmarkRunStatus, BenchmarkTaskScale } from '@/types/benchmark'
+import type { BenchmarkResultStatus, BenchmarkRunStatus } from '@/types/benchmark'
 
 type BenchmarkTranslator = (key: string, params?: Record<string, unknown>) => string
 
@@ -9,12 +9,8 @@ const benchmarkTaskTypeKeys: Record<string, string> = {
 }
 
 const benchmarkRunStatusKeys: Record<BenchmarkRunStatus, string> = {
-  pending: 'benchmark.enums.runStatus.pending',
-  selecting: 'benchmark.enums.runStatus.selecting',
   queued: 'benchmark.enums.runStatus.queued',
   running: 'benchmark.enums.runStatus.running',
-  scoring: 'benchmark.enums.runStatus.scoring',
-  snapshotting: 'benchmark.enums.runStatus.snapshotting',
   completed: 'benchmark.enums.runStatus.completed',
   failed: 'benchmark.enums.runStatus.failed',
   canceled: 'benchmark.enums.runStatus.canceled',
@@ -31,13 +27,6 @@ const benchmarkResultStatusKeys: Record<BenchmarkResultStatus, string> = {
   rate_limited: 'benchmark.enums.resultStatus.rate_limited',
   verifier_error: 'benchmark.enums.resultStatus.verifier_error',
   skipped: 'benchmark.enums.resultStatus.skipped',
-}
-
-const benchmarkTaskScaleKeys: Record<BenchmarkTaskScale, string> = {
-  small: 'benchmark.enums.taskScale.small',
-  medium: 'benchmark.enums.taskScale.medium',
-  full: 'benchmark.enums.taskScale.full',
-  custom: 'benchmark.enums.taskScale.custom',
 }
 
 export function formatBenchmarkDateTime(value: string, locale: string): string {
@@ -71,15 +60,11 @@ export function benchmarkTaskTypeLabel(taskType: string, t: BenchmarkTranslator)
 }
 
 export function benchmarkRunStatusLabel(status: BenchmarkRunStatus, t: BenchmarkTranslator): string {
-  return t(benchmarkRunStatusKeys[status] || 'benchmark.enums.runStatus.pending')
+  return t(benchmarkRunStatusKeys[status] || 'benchmark.enums.runStatus.queued')
 }
 
 export function benchmarkResultStatusLabel(status: BenchmarkResultStatus, t: BenchmarkTranslator): string {
   return t(benchmarkResultStatusKeys[status] || 'benchmark.enums.resultStatus.pending')
-}
-
-export function benchmarkTaskScaleLabel(scale: BenchmarkTaskScale, t: BenchmarkTranslator): string {
-  return t(benchmarkTaskScaleKeys[scale] || 'benchmark.enums.taskScale.medium')
 }
 
 export function benchmarkEnabledLabel(enabled: boolean, t: BenchmarkTranslator): string {

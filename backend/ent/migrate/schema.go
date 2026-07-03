@@ -422,63 +422,13 @@ var (
 			},
 		},
 	}
-	// BenchmarkProfilesColumns holds the columns for the "benchmark_profiles" table.
-	BenchmarkProfilesColumns = []*schema.Column{
-		{Name: "id", Type: field.TypeInt64, Increment: true},
-		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
-		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
-		{Name: "name", Type: field.TypeString, Size: 100},
-		{Name: "description", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
-		{Name: "target_ids", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
-		{Name: "task_types", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
-		{Name: "task_scale", Type: field.TypeEnum, Enums: []string{"small", "medium", "full", "custom"}, Default: "medium"},
-		{Name: "task_count_limit", Type: field.TypeInt, Nullable: true},
-		{Name: "per_type_limit", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
-		{Name: "difficulty_filter", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
-		{Name: "tag_filter", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
-		{Name: "sampling_strategy", Type: field.TypeString, Size: 50},
-		{Name: "selection_seed", Type: field.TypeInt64, Nullable: true},
-		{Name: "runtime_config", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
-		{Name: "scoring_config", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
-		{Name: "enabled", Type: field.TypeBool, Default: true},
-		{Name: "metadata", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
-		{Name: "suite_id", Type: field.TypeInt64},
-	}
-	// BenchmarkProfilesTable holds the schema information for the "benchmark_profiles" table.
-	BenchmarkProfilesTable = &schema.Table{
-		Name:       "benchmark_profiles",
-		Columns:    BenchmarkProfilesColumns,
-		PrimaryKey: []*schema.Column{BenchmarkProfilesColumns[0]},
-		ForeignKeys: []*schema.ForeignKey{
-			{
-				Symbol:     "benchmark_profiles_benchmark_suites_profiles",
-				Columns:    []*schema.Column{BenchmarkProfilesColumns[18]},
-				RefColumns: []*schema.Column{BenchmarkSuitesColumns[0]},
-				OnDelete:   schema.Cascade,
-			},
-		},
-		Indexes: []*schema.Index{
-			{
-				Name:    "benchmark_profiles_suite_id_idx",
-				Unique:  false,
-				Columns: []*schema.Column{BenchmarkProfilesColumns[18]},
-			},
-			{
-				Name:    "benchmark_profiles_enabled_idx",
-				Unique:  false,
-				Columns: []*schema.Column{BenchmarkProfilesColumns[16]},
-			},
-		},
-	}
 	// BenchmarkPublicSnapshotsColumns holds the columns for the "benchmark_public_snapshots" table.
 	BenchmarkPublicSnapshotsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
 		{Name: "snapshot", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "published_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
-		{Name: "profile_id", Type: field.TypeInt64},
 		{Name: "run_id", Type: field.TypeInt64},
-		{Name: "suite_id", Type: field.TypeInt64},
 	}
 	// BenchmarkPublicSnapshotsTable holds the schema information for the "benchmark_public_snapshots" table.
 	BenchmarkPublicSnapshotsTable = &schema.Table{
@@ -487,22 +437,10 @@ var (
 		PrimaryKey: []*schema.Column{BenchmarkPublicSnapshotsColumns[0]},
 		ForeignKeys: []*schema.ForeignKey{
 			{
-				Symbol:     "benchmark_public_snapshots_benchmark_profiles_public_snapshots",
-				Columns:    []*schema.Column{BenchmarkPublicSnapshotsColumns[4]},
-				RefColumns: []*schema.Column{BenchmarkProfilesColumns[0]},
-				OnDelete:   schema.NoAction,
-			},
-			{
 				Symbol:     "benchmark_public_snapshots_benchmark_runs_public_snapshots",
-				Columns:    []*schema.Column{BenchmarkPublicSnapshotsColumns[5]},
+				Columns:    []*schema.Column{BenchmarkPublicSnapshotsColumns[4]},
 				RefColumns: []*schema.Column{BenchmarkRunsColumns[0]},
 				OnDelete:   schema.Cascade,
-			},
-			{
-				Symbol:     "benchmark_public_snapshots_benchmark_suites_public_snapshots",
-				Columns:    []*schema.Column{BenchmarkPublicSnapshotsColumns[6]},
-				RefColumns: []*schema.Column{BenchmarkSuitesColumns[0]},
-				OnDelete:   schema.NoAction,
 			},
 		},
 		Indexes: []*schema.Index{
@@ -514,7 +452,7 @@ var (
 			{
 				Name:    "benchmark_public_snapshots_run_id_idx",
 				Unique:  false,
-				Columns: []*schema.Column{BenchmarkPublicSnapshotsColumns[5]},
+				Columns: []*schema.Column{BenchmarkPublicSnapshotsColumns[4]},
 			},
 		},
 	}
@@ -525,8 +463,6 @@ var (
 		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "request_id", Type: field.TypeString, Nullable: true, Size: 64},
 		{Name: "status", Type: field.TypeString, Size: 32},
-		{Name: "score", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(10,4)"}},
-		{Name: "max_score", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(10,4)"}},
 		{Name: "normalized_score", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(10,4)"}},
 		{Name: "evaluator_type", Type: field.TypeString, Nullable: true, Size: 50},
 		{Name: "evaluator_output", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
@@ -553,19 +489,19 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "benchmark_results_benchmark_runs_results",
-				Columns:    []*schema.Column{BenchmarkResultsColumns[21]},
+				Columns:    []*schema.Column{BenchmarkResultsColumns[19]},
 				RefColumns: []*schema.Column{BenchmarkRunsColumns[0]},
 				OnDelete:   schema.Cascade,
 			},
 			{
 				Symbol:     "benchmark_results_benchmark_run_targets_results",
-				Columns:    []*schema.Column{BenchmarkResultsColumns[22]},
+				Columns:    []*schema.Column{BenchmarkResultsColumns[20]},
 				RefColumns: []*schema.Column{BenchmarkRunTargetsColumns[0]},
 				OnDelete:   schema.Cascade,
 			},
 			{
 				Symbol:     "benchmark_results_benchmark_run_tasks_results",
-				Columns:    []*schema.Column{BenchmarkResultsColumns[23]},
+				Columns:    []*schema.Column{BenchmarkResultsColumns[21]},
 				RefColumns: []*schema.Column{BenchmarkRunTasksColumns[0]},
 				OnDelete:   schema.Cascade,
 			},
@@ -574,17 +510,17 @@ var (
 			{
 				Name:    "benchmark_results_run_id_idx",
 				Unique:  false,
-				Columns: []*schema.Column{BenchmarkResultsColumns[21]},
+				Columns: []*schema.Column{BenchmarkResultsColumns[19]},
 			},
 			{
 				Name:    "benchmark_results_run_target_idx",
 				Unique:  false,
-				Columns: []*schema.Column{BenchmarkResultsColumns[21], BenchmarkResultsColumns[22]},
+				Columns: []*schema.Column{BenchmarkResultsColumns[19], BenchmarkResultsColumns[20]},
 			},
 			{
 				Name:    "benchmark_results_run_task_idx",
 				Unique:  false,
-				Columns: []*schema.Column{BenchmarkResultsColumns[21], BenchmarkResultsColumns[23]},
+				Columns: []*schema.Column{BenchmarkResultsColumns[19], BenchmarkResultsColumns[21]},
 			},
 			{
 				Name:    "benchmark_results_request_id_idx",
@@ -599,7 +535,7 @@ var (
 			{
 				Name:    "benchmark_results_run_task_target_key",
 				Unique:  true,
-				Columns: []*schema.Column{BenchmarkResultsColumns[23], BenchmarkResultsColumns[22]},
+				Columns: []*schema.Column{BenchmarkResultsColumns[21], BenchmarkResultsColumns[20]},
 			},
 		},
 	}
@@ -610,54 +546,31 @@ var (
 		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "status", Type: field.TypeString, Size: 32},
 		{Name: "trigger_type", Type: field.TypeString, Size: 32},
-		{Name: "task_scale", Type: field.TypeEnum, Enums: []string{"small", "medium", "full", "custom"}, Default: "medium"},
-		{Name: "task_types", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
-		{Name: "selection_seed", Type: field.TypeInt64, Nullable: true},
+		{Name: "schedule_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "task_count", Type: field.TypeInt, Default: 0},
 		{Name: "planned_target_count", Type: field.TypeInt, Default: 0},
 		{Name: "planned_task_count", Type: field.TypeInt, Default: 0},
 		{Name: "planned_result_count", Type: field.TypeInt, Default: 0},
 		{Name: "started_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "finished_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
-		{Name: "config_snapshot", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "error_message", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
 		{Name: "created_by", Type: field.TypeInt64, Nullable: true},
-		{Name: "profile_id", Type: field.TypeInt64},
-		{Name: "suite_id", Type: field.TypeInt64},
 	}
 	// BenchmarkRunsTable holds the schema information for the "benchmark_runs" table.
 	BenchmarkRunsTable = &schema.Table{
 		Name:       "benchmark_runs",
 		Columns:    BenchmarkRunsColumns,
 		PrimaryKey: []*schema.Column{BenchmarkRunsColumns[0]},
-		ForeignKeys: []*schema.ForeignKey{
-			{
-				Symbol:     "benchmark_runs_benchmark_profiles_runs",
-				Columns:    []*schema.Column{BenchmarkRunsColumns[16]},
-				RefColumns: []*schema.Column{BenchmarkProfilesColumns[0]},
-				OnDelete:   schema.NoAction,
-			},
-			{
-				Symbol:     "benchmark_runs_benchmark_suites_runs",
-				Columns:    []*schema.Column{BenchmarkRunsColumns[17]},
-				RefColumns: []*schema.Column{BenchmarkSuitesColumns[0]},
-				OnDelete:   schema.NoAction,
-			},
-		},
 		Indexes: []*schema.Index{
-			{
-				Name:    "benchmark_runs_suite_id_idx",
-				Unique:  false,
-				Columns: []*schema.Column{BenchmarkRunsColumns[17]},
-			},
-			{
-				Name:    "benchmark_runs_profile_id_idx",
-				Unique:  false,
-				Columns: []*schema.Column{BenchmarkRunsColumns[16]},
-			},
 			{
 				Name:    "benchmark_runs_status_idx",
 				Unique:  false,
 				Columns: []*schema.Column{BenchmarkRunsColumns[3]},
+			},
+			{
+				Name:    "benchmark_runs_schedule_id_idx",
+				Unique:  false,
+				Columns: []*schema.Column{BenchmarkRunsColumns[5]},
 			},
 			{
 				Name:    "benchmark_runs_created_at_idx",
@@ -673,9 +586,7 @@ var (
 		{Name: "channel_id", Type: field.TypeInt64},
 		{Name: "display_name_snapshot", Type: field.TypeString, Nullable: true, Size: 200},
 		{Name: "channel_name_snapshot", Type: field.TypeString, Nullable: true, Size: 200},
-		{Name: "provider_snapshot", Type: field.TypeString, Nullable: true, Size: 100},
 		{Name: "target_order", Type: field.TypeInt, Default: 0},
-		{Name: "config_snapshot", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "run_id", Type: field.TypeInt64},
 		{Name: "target_id", Type: field.TypeInt64},
@@ -688,13 +599,13 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "benchmark_run_targets_benchmark_runs_run_targets",
-				Columns:    []*schema.Column{BenchmarkRunTargetsColumns[9]},
+				Columns:    []*schema.Column{BenchmarkRunTargetsColumns[7]},
 				RefColumns: []*schema.Column{BenchmarkRunsColumns[0]},
 				OnDelete:   schema.Cascade,
 			},
 			{
 				Symbol:     "benchmark_run_targets_benchmark_targets_run_targets",
-				Columns:    []*schema.Column{BenchmarkRunTargetsColumns[10]},
+				Columns:    []*schema.Column{BenchmarkRunTargetsColumns[8]},
 				RefColumns: []*schema.Column{BenchmarkTargetsColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -703,27 +614,27 @@ var (
 			{
 				Name:    "benchmark_run_targets_run_id_idx",
 				Unique:  false,
-				Columns: []*schema.Column{BenchmarkRunTargetsColumns[9]},
+				Columns: []*schema.Column{BenchmarkRunTargetsColumns[7]},
 			},
 			{
 				Name:    "benchmark_run_targets_target_id_idx",
 				Unique:  false,
-				Columns: []*schema.Column{BenchmarkRunTargetsColumns[10]},
+				Columns: []*schema.Column{BenchmarkRunTargetsColumns[8]},
 			},
 			{
 				Name:    "benchmark_run_targets_run_channel_idx",
 				Unique:  false,
-				Columns: []*schema.Column{BenchmarkRunTargetsColumns[9], BenchmarkRunTargetsColumns[2]},
+				Columns: []*schema.Column{BenchmarkRunTargetsColumns[7], BenchmarkRunTargetsColumns[2]},
 			},
 			{
 				Name:    "benchmark_run_targets_run_target_key",
 				Unique:  true,
-				Columns: []*schema.Column{BenchmarkRunTargetsColumns[9], BenchmarkRunTargetsColumns[10]},
+				Columns: []*schema.Column{BenchmarkRunTargetsColumns[7], BenchmarkRunTargetsColumns[8]},
 			},
 			{
 				Name:    "benchmark_run_targets_run_id_id_key",
 				Unique:  true,
-				Columns: []*schema.Column{BenchmarkRunTargetsColumns[9], BenchmarkRunTargetsColumns[0]},
+				Columns: []*schema.Column{BenchmarkRunTargetsColumns[7], BenchmarkRunTargetsColumns[0]},
 			},
 		},
 	}
@@ -732,7 +643,6 @@ var (
 		{Name: "id", Type: field.TypeInt64, Increment: true},
 		{Name: "task_order", Type: field.TypeInt, Default: 0},
 		{Name: "type", Type: field.TypeString, Size: 50},
-		{Name: "category", Type: field.TypeString, Nullable: true, Size: 100},
 		{Name: "difficulty", Type: field.TypeString, Nullable: true, Size: 50},
 		{Name: "weight_snapshot", Type: field.TypeFloat64, Default: 1, SchemaType: map[string]string{"postgres": "decimal(10,4)"}},
 		{Name: "prompt_snapshot", Type: field.TypeString, SchemaType: map[string]string{"postgres": "text"}},
@@ -751,13 +661,13 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "benchmark_run_tasks_benchmark_runs_run_tasks",
-				Columns:    []*schema.Column{BenchmarkRunTasksColumns[11]},
+				Columns:    []*schema.Column{BenchmarkRunTasksColumns[10]},
 				RefColumns: []*schema.Column{BenchmarkRunsColumns[0]},
 				OnDelete:   schema.Cascade,
 			},
 			{
 				Symbol:     "benchmark_run_tasks_benchmark_tasks_run_tasks",
-				Columns:    []*schema.Column{BenchmarkRunTasksColumns[12]},
+				Columns:    []*schema.Column{BenchmarkRunTasksColumns[11]},
 				RefColumns: []*schema.Column{BenchmarkTasksColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -766,27 +676,27 @@ var (
 			{
 				Name:    "benchmark_run_tasks_run_id_idx",
 				Unique:  false,
-				Columns: []*schema.Column{BenchmarkRunTasksColumns[11]},
+				Columns: []*schema.Column{BenchmarkRunTasksColumns[10]},
 			},
 			{
 				Name:    "benchmark_run_tasks_task_id_idx",
 				Unique:  false,
-				Columns: []*schema.Column{BenchmarkRunTasksColumns[12]},
+				Columns: []*schema.Column{BenchmarkRunTasksColumns[11]},
 			},
 			{
 				Name:    "benchmark_run_tasks_run_type_idx",
 				Unique:  false,
-				Columns: []*schema.Column{BenchmarkRunTasksColumns[11], BenchmarkRunTasksColumns[2]},
+				Columns: []*schema.Column{BenchmarkRunTasksColumns[10], BenchmarkRunTasksColumns[2]},
 			},
 			{
 				Name:    "benchmark_run_tasks_run_task_key",
 				Unique:  true,
-				Columns: []*schema.Column{BenchmarkRunTasksColumns[11], BenchmarkRunTasksColumns[12]},
+				Columns: []*schema.Column{BenchmarkRunTasksColumns[10], BenchmarkRunTasksColumns[11]},
 			},
 			{
 				Name:    "benchmark_run_tasks_run_id_id_key",
 				Unique:  true,
-				Columns: []*schema.Column{BenchmarkRunTasksColumns[11], BenchmarkRunTasksColumns[0]},
+				Columns: []*schema.Column{BenchmarkRunTasksColumns[10], BenchmarkRunTasksColumns[0]},
 			},
 		},
 	}
@@ -798,24 +708,16 @@ var (
 		{Name: "name", Type: field.TypeString, Size: 100},
 		{Name: "cron_expr", Type: field.TypeString, Size: 100},
 		{Name: "enabled", Type: field.TypeBool, Default: false},
+		{Name: "target_ids", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "task_count", Type: field.TypeInt, Default: 0},
 		{Name: "last_run_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "next_run_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
-		{Name: "metadata", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
-		{Name: "profile_id", Type: field.TypeInt64},
 	}
 	// BenchmarkSchedulesTable holds the schema information for the "benchmark_schedules" table.
 	BenchmarkSchedulesTable = &schema.Table{
 		Name:       "benchmark_schedules",
 		Columns:    BenchmarkSchedulesColumns,
 		PrimaryKey: []*schema.Column{BenchmarkSchedulesColumns[0]},
-		ForeignKeys: []*schema.ForeignKey{
-			{
-				Symbol:     "benchmark_schedules_benchmark_profiles_schedules",
-				Columns:    []*schema.Column{BenchmarkSchedulesColumns[9]},
-				RefColumns: []*schema.Column{BenchmarkProfilesColumns[0]},
-				OnDelete:   schema.Cascade,
-			},
-		},
 		Indexes: []*schema.Index{
 			{
 				Name:    "benchmark_schedules_enabled_idx",
@@ -825,120 +727,7 @@ var (
 			{
 				Name:    "benchmark_schedules_next_run_at_idx",
 				Unique:  false,
-				Columns: []*schema.Column{BenchmarkSchedulesColumns[7]},
-			},
-			{
-				Name:    "benchmark_schedules_profile_id_idx",
-				Unique:  false,
 				Columns: []*schema.Column{BenchmarkSchedulesColumns[9]},
-			},
-		},
-	}
-	// BenchmarkScoreSnapshotsColumns holds the columns for the "benchmark_score_snapshots" table.
-	BenchmarkScoreSnapshotsColumns = []*schema.Column{
-		{Name: "id", Type: field.TypeInt64, Increment: true},
-		{Name: "overall_score", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(10,4)"}},
-		{Name: "dimension_scores", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
-		{Name: "planned_tasks", Type: field.TypeInt, Default: 0},
-		{Name: "scored_tasks", Type: field.TypeInt, Default: 0},
-		{Name: "invalid_tasks", Type: field.TypeInt, Default: 0},
-		{Name: "coverage_rate", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(10,4)"}},
-		{Name: "confidence_level", Type: field.TypeEnum, Enums: []string{"high", "medium", "low"}, Default: "low"},
-		{Name: "insufficient_sample", Type: field.TypeBool, Default: false},
-		{Name: "success_rate", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(10,4)"}},
-		{Name: "latency_p50_ms", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(12,4)"}},
-		{Name: "latency_p95_ms", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(12,4)"}},
-		{Name: "avg_total_tokens", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(20,4)"}},
-		{Name: "estimated_cost", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,10)"}},
-		{Name: "invalid_reason_breakdown", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
-		{Name: "ranking_metadata", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
-		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
-		{Name: "run_id", Type: field.TypeInt64},
-		{Name: "run_target_id", Type: field.TypeInt64},
-	}
-	// BenchmarkScoreSnapshotsTable holds the schema information for the "benchmark_score_snapshots" table.
-	BenchmarkScoreSnapshotsTable = &schema.Table{
-		Name:       "benchmark_score_snapshots",
-		Columns:    BenchmarkScoreSnapshotsColumns,
-		PrimaryKey: []*schema.Column{BenchmarkScoreSnapshotsColumns[0]},
-		ForeignKeys: []*schema.ForeignKey{
-			{
-				Symbol:     "benchmark_score_snapshots_benchmark_runs_score_snapshots",
-				Columns:    []*schema.Column{BenchmarkScoreSnapshotsColumns[17]},
-				RefColumns: []*schema.Column{BenchmarkRunsColumns[0]},
-				OnDelete:   schema.Cascade,
-			},
-			{
-				Symbol:     "benchmark_score_snapshots_benchmark_run_targets_score_snapshots",
-				Columns:    []*schema.Column{BenchmarkScoreSnapshotsColumns[18]},
-				RefColumns: []*schema.Column{BenchmarkRunTargetsColumns[0]},
-				OnDelete:   schema.Cascade,
-			},
-		},
-		Indexes: []*schema.Index{
-			{
-				Name:    "benchmark_score_snapshots_run_id_idx",
-				Unique:  false,
-				Columns: []*schema.Column{BenchmarkScoreSnapshotsColumns[17]},
-			},
-			{
-				Name:    "benchmark_score_snapshots_run_target_id_idx",
-				Unique:  false,
-				Columns: []*schema.Column{BenchmarkScoreSnapshotsColumns[18]},
-			},
-			{
-				Name:    "benchmark_score_snapshots_run_overall_score_idx",
-				Unique:  false,
-				Columns: []*schema.Column{BenchmarkScoreSnapshotsColumns[17], BenchmarkScoreSnapshotsColumns[1]},
-			},
-			{
-				Name:    "benchmark_score_snapshots_run_target_key",
-				Unique:  true,
-				Columns: []*schema.Column{BenchmarkScoreSnapshotsColumns[17], BenchmarkScoreSnapshotsColumns[18]},
-			},
-		},
-	}
-	// BenchmarkSuitesColumns holds the columns for the "benchmark_suites" table.
-	BenchmarkSuitesColumns = []*schema.Column{
-		{Name: "id", Type: field.TypeInt64, Increment: true},
-		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
-		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
-		{Name: "name", Type: field.TypeString, Size: 100},
-		{Name: "slug", Type: field.TypeString, Size: 100},
-		{Name: "description", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
-		{Name: "enabled", Type: field.TypeBool, Default: true},
-		{Name: "public_visible", Type: field.TypeBool, Default: false},
-		{Name: "metadata", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
-		{Name: "default_profile_id", Type: field.TypeInt64, Nullable: true},
-	}
-	// BenchmarkSuitesTable holds the schema information for the "benchmark_suites" table.
-	BenchmarkSuitesTable = &schema.Table{
-		Name:       "benchmark_suites",
-		Columns:    BenchmarkSuitesColumns,
-		PrimaryKey: []*schema.Column{BenchmarkSuitesColumns[0]},
-		ForeignKeys: []*schema.ForeignKey{
-			{
-				Symbol:     "benchmark_suites_benchmark_profiles_default_profile",
-				Columns:    []*schema.Column{BenchmarkSuitesColumns[9]},
-				RefColumns: []*schema.Column{BenchmarkProfilesColumns[0]},
-				OnDelete:   schema.SetNull,
-			},
-		},
-		Indexes: []*schema.Index{
-			{
-				Name:    "benchmark_suites_slug_key",
-				Unique:  true,
-				Columns: []*schema.Column{BenchmarkSuitesColumns[4]},
-			},
-			{
-				Name:    "benchmark_suites_enabled_public_visible_idx",
-				Unique:  false,
-				Columns: []*schema.Column{BenchmarkSuitesColumns[6], BenchmarkSuitesColumns[7]},
-			},
-			{
-				Name:    "benchmark_suites_default_profile_id_idx",
-				Unique:  false,
-				Columns: []*schema.Column{BenchmarkSuitesColumns[9]},
 			},
 		},
 	}
@@ -950,16 +739,10 @@ var (
 		{Name: "model_name", Type: field.TypeString, Size: 200},
 		{Name: "channel_id", Type: field.TypeInt64},
 		{Name: "display_name", Type: field.TypeString, Nullable: true, Size: 200},
-		{Name: "provider_snapshot", Type: field.TypeString, Nullable: true, Size: 100},
 		{Name: "channel_name_snapshot", Type: field.TypeString, Nullable: true, Size: 200},
-		{Name: "supported_task_types", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
-		{Name: "max_concurrency", Type: field.TypeInt, Default: 1},
-		{Name: "per_run_budget", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(20,10)"}},
-		{Name: "daily_budget", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(20,10)"}},
 		{Name: "enabled", Type: field.TypeBool, Default: true},
-		{Name: "public_visible", Type: field.TypeBool, Default: false},
+		{Name: "public_visible", Type: field.TypeBool, Default: true},
 		{Name: "sort_order", Type: field.TypeInt, Default: 0},
-		{Name: "metadata", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
 	}
 	// BenchmarkTargetsTable holds the schema information for the "benchmark_targets" table.
 	BenchmarkTargetsTable = &schema.Table{
@@ -975,12 +758,72 @@ var (
 			{
 				Name:    "benchmark_targets_enabled_public_visible_idx",
 				Unique:  false,
-				Columns: []*schema.Column{BenchmarkTargetsColumns[12], BenchmarkTargetsColumns[13]},
+				Columns: []*schema.Column{BenchmarkTargetsColumns[7], BenchmarkTargetsColumns[8]},
 			},
 			{
 				Name:    "benchmark_targets_channel_id_idx",
 				Unique:  false,
 				Columns: []*schema.Column{BenchmarkTargetsColumns[4]},
+			},
+		},
+	}
+	// BenchmarkTargetScoresColumns holds the columns for the "benchmark_target_scores" table.
+	BenchmarkTargetScoresColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "model_name", Type: field.TypeString, Size: 200},
+		{Name: "channel_id", Type: field.TypeInt64},
+		{Name: "overall_score", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(10,4)"}},
+		{Name: "passed_count", Type: field.TypeInt, Default: 0},
+		{Name: "total_count", Type: field.TypeInt, Default: 0},
+		{Name: "dimension_scores", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "avg_latency_ms", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(12,4)"}},
+		{Name: "avg_total_tokens", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(20,4)"}},
+		{Name: "total_cost", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,10)"}},
+		{Name: "invalid_reason_breakdown", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "finished_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "run_id", Type: field.TypeInt64},
+		{Name: "run_target_id", Type: field.TypeInt64},
+	}
+	// BenchmarkTargetScoresTable holds the schema information for the "benchmark_target_scores" table.
+	BenchmarkTargetScoresTable = &schema.Table{
+		Name:       "benchmark_target_scores",
+		Columns:    BenchmarkTargetScoresColumns,
+		PrimaryKey: []*schema.Column{BenchmarkTargetScoresColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "benchmark_target_scores_benchmark_runs_target_scores",
+				Columns:    []*schema.Column{BenchmarkTargetScoresColumns[13]},
+				RefColumns: []*schema.Column{BenchmarkRunsColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+			{
+				Symbol:     "benchmark_target_scores_benchmark_run_targets_target_scores",
+				Columns:    []*schema.Column{BenchmarkTargetScoresColumns[14]},
+				RefColumns: []*schema.Column{BenchmarkRunTargetsColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "benchmark_target_scores_run_id_idx",
+				Unique:  false,
+				Columns: []*schema.Column{BenchmarkTargetScoresColumns[13]},
+			},
+			{
+				Name:    "benchmark_target_scores_run_overall_score_idx",
+				Unique:  false,
+				Columns: []*schema.Column{BenchmarkTargetScoresColumns[13], BenchmarkTargetScoresColumns[3]},
+			},
+			{
+				Name:    "benchmark_target_scores_trend_idx",
+				Unique:  false,
+				Columns: []*schema.Column{BenchmarkTargetScoresColumns[1], BenchmarkTargetScoresColumns[2], BenchmarkTargetScoresColumns[11]},
+			},
+			{
+				Name:    "benchmark_target_scores_run_target_key",
+				Unique:  true,
+				Columns: []*schema.Column{BenchmarkTargetScoresColumns[13], BenchmarkTargetScoresColumns[14]},
 			},
 		},
 	}
@@ -991,59 +834,37 @@ var (
 		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "title", Type: field.TypeString, Size: 200},
 		{Name: "type", Type: field.TypeString, Size: 50},
-		{Name: "category", Type: field.TypeString, Nullable: true, Size: 100},
 		{Name: "difficulty", Type: field.TypeString, Nullable: true, Size: 50},
-		{Name: "tags", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "prompt", Type: field.TypeString, SchemaType: map[string]string{"postgres": "text"}},
 		{Name: "input_payload", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "expected_output", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "verifier_type", Type: field.TypeString, Size: 50},
 		{Name: "verifier_config", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "weight", Type: field.TypeFloat64, Default: 1, SchemaType: map[string]string{"postgres": "decimal(10,4)"}},
-		{Name: "min_scale", Type: field.TypeEnum, Enums: []string{"small", "medium", "full", "custom"}, Default: "small"},
 		{Name: "public_prompt", Type: field.TypeBool, Default: false},
 		{Name: "enabled", Type: field.TypeBool, Default: true},
-		{Name: "metadata", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
-		{Name: "suite_id", Type: field.TypeInt64},
+		{Name: "sort_order", Type: field.TypeInt, Default: 0},
 	}
 	// BenchmarkTasksTable holds the schema information for the "benchmark_tasks" table.
 	BenchmarkTasksTable = &schema.Table{
 		Name:       "benchmark_tasks",
 		Columns:    BenchmarkTasksColumns,
 		PrimaryKey: []*schema.Column{BenchmarkTasksColumns[0]},
-		ForeignKeys: []*schema.ForeignKey{
-			{
-				Symbol:     "benchmark_tasks_benchmark_suites_tasks",
-				Columns:    []*schema.Column{BenchmarkTasksColumns[18]},
-				RefColumns: []*schema.Column{BenchmarkSuitesColumns[0]},
-				OnDelete:   schema.Cascade,
-			},
-		},
 		Indexes: []*schema.Index{
-			{
-				Name:    "benchmark_tasks_suite_id_idx",
-				Unique:  false,
-				Columns: []*schema.Column{BenchmarkTasksColumns[18]},
-			},
 			{
 				Name:    "benchmark_tasks_type_idx",
 				Unique:  false,
 				Columns: []*schema.Column{BenchmarkTasksColumns[4]},
 			},
 			{
-				Name:    "benchmark_tasks_difficulty_idx",
-				Unique:  false,
-				Columns: []*schema.Column{BenchmarkTasksColumns[6]},
-			},
-			{
 				Name:    "benchmark_tasks_enabled_idx",
 				Unique:  false,
-				Columns: []*schema.Column{BenchmarkTasksColumns[16]},
+				Columns: []*schema.Column{BenchmarkTasksColumns[13]},
 			},
 			{
-				Name:    "benchmark_tasks_suite_type_enabled_idx",
+				Name:    "benchmark_tasks_enabled_sort_idx",
 				Unique:  false,
-				Columns: []*schema.Column{BenchmarkTasksColumns[18], BenchmarkTasksColumns[4], BenchmarkTasksColumns[16]},
+				Columns: []*schema.Column{BenchmarkTasksColumns[13], BenchmarkTasksColumns[14]},
 			},
 		},
 	}
@@ -2406,16 +2227,14 @@ var (
 		AnnouncementReadsTable,
 		AuthIdentitiesTable,
 		AuthIdentityChannelsTable,
-		BenchmarkProfilesTable,
 		BenchmarkPublicSnapshotsTable,
 		BenchmarkResultsTable,
 		BenchmarkRunsTable,
 		BenchmarkRunTargetsTable,
 		BenchmarkRunTasksTable,
 		BenchmarkSchedulesTable,
-		BenchmarkScoreSnapshotsTable,
-		BenchmarkSuitesTable,
 		BenchmarkTargetsTable,
+		BenchmarkTargetScoresTable,
 		BenchmarkTasksTable,
 		ChannelMonitorsTable,
 		ChannelMonitorDailyRollupsTable,
@@ -2479,13 +2298,7 @@ func init() {
 	AuthIdentityChannelsTable.Annotation = &entsql.Annotation{
 		Table: "auth_identity_channels",
 	}
-	BenchmarkProfilesTable.ForeignKeys[0].RefTable = BenchmarkSuitesTable
-	BenchmarkProfilesTable.Annotation = &entsql.Annotation{
-		Table: "benchmark_profiles",
-	}
-	BenchmarkPublicSnapshotsTable.ForeignKeys[0].RefTable = BenchmarkProfilesTable
-	BenchmarkPublicSnapshotsTable.ForeignKeys[1].RefTable = BenchmarkRunsTable
-	BenchmarkPublicSnapshotsTable.ForeignKeys[2].RefTable = BenchmarkSuitesTable
+	BenchmarkPublicSnapshotsTable.ForeignKeys[0].RefTable = BenchmarkRunsTable
 	BenchmarkPublicSnapshotsTable.Annotation = &entsql.Annotation{
 		Table: "benchmark_public_snapshots",
 	}
@@ -2495,8 +2308,6 @@ func init() {
 	BenchmarkResultsTable.Annotation = &entsql.Annotation{
 		Table: "benchmark_results",
 	}
-	BenchmarkRunsTable.ForeignKeys[0].RefTable = BenchmarkProfilesTable
-	BenchmarkRunsTable.ForeignKeys[1].RefTable = BenchmarkSuitesTable
 	BenchmarkRunsTable.Annotation = &entsql.Annotation{
 		Table: "benchmark_runs",
 	}
@@ -2510,23 +2321,17 @@ func init() {
 	BenchmarkRunTasksTable.Annotation = &entsql.Annotation{
 		Table: "benchmark_run_tasks",
 	}
-	BenchmarkSchedulesTable.ForeignKeys[0].RefTable = BenchmarkProfilesTable
 	BenchmarkSchedulesTable.Annotation = &entsql.Annotation{
 		Table: "benchmark_schedules",
-	}
-	BenchmarkScoreSnapshotsTable.ForeignKeys[0].RefTable = BenchmarkRunsTable
-	BenchmarkScoreSnapshotsTable.ForeignKeys[1].RefTable = BenchmarkRunTargetsTable
-	BenchmarkScoreSnapshotsTable.Annotation = &entsql.Annotation{
-		Table: "benchmark_score_snapshots",
-	}
-	BenchmarkSuitesTable.ForeignKeys[0].RefTable = BenchmarkProfilesTable
-	BenchmarkSuitesTable.Annotation = &entsql.Annotation{
-		Table: "benchmark_suites",
 	}
 	BenchmarkTargetsTable.Annotation = &entsql.Annotation{
 		Table: "benchmark_targets",
 	}
-	BenchmarkTasksTable.ForeignKeys[0].RefTable = BenchmarkSuitesTable
+	BenchmarkTargetScoresTable.ForeignKeys[0].RefTable = BenchmarkRunsTable
+	BenchmarkTargetScoresTable.ForeignKeys[1].RefTable = BenchmarkRunTargetsTable
+	BenchmarkTargetScoresTable.Annotation = &entsql.Annotation{
+		Table: "benchmark_target_scores",
+	}
 	BenchmarkTasksTable.Annotation = &entsql.Annotation{
 		Table: "benchmark_tasks",
 	}

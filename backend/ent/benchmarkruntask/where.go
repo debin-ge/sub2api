@@ -75,11 +75,6 @@ func Type(v string) predicate.BenchmarkRunTask {
 	return predicate.BenchmarkRunTask(sql.FieldEQ(FieldType, v))
 }
 
-// Category applies equality check predicate on the "category" field. It's identical to CategoryEQ.
-func Category(v string) predicate.BenchmarkRunTask {
-	return predicate.BenchmarkRunTask(sql.FieldEQ(FieldCategory, v))
-}
-
 // Difficulty applies equality check predicate on the "difficulty" field. It's identical to DifficultyEQ.
 func Difficulty(v string) predicate.BenchmarkRunTask {
 	return predicate.BenchmarkRunTask(sql.FieldEQ(FieldDifficulty, v))
@@ -248,81 +243,6 @@ func TypeEqualFold(v string) predicate.BenchmarkRunTask {
 // TypeContainsFold applies the ContainsFold predicate on the "type" field.
 func TypeContainsFold(v string) predicate.BenchmarkRunTask {
 	return predicate.BenchmarkRunTask(sql.FieldContainsFold(FieldType, v))
-}
-
-// CategoryEQ applies the EQ predicate on the "category" field.
-func CategoryEQ(v string) predicate.BenchmarkRunTask {
-	return predicate.BenchmarkRunTask(sql.FieldEQ(FieldCategory, v))
-}
-
-// CategoryNEQ applies the NEQ predicate on the "category" field.
-func CategoryNEQ(v string) predicate.BenchmarkRunTask {
-	return predicate.BenchmarkRunTask(sql.FieldNEQ(FieldCategory, v))
-}
-
-// CategoryIn applies the In predicate on the "category" field.
-func CategoryIn(vs ...string) predicate.BenchmarkRunTask {
-	return predicate.BenchmarkRunTask(sql.FieldIn(FieldCategory, vs...))
-}
-
-// CategoryNotIn applies the NotIn predicate on the "category" field.
-func CategoryNotIn(vs ...string) predicate.BenchmarkRunTask {
-	return predicate.BenchmarkRunTask(sql.FieldNotIn(FieldCategory, vs...))
-}
-
-// CategoryGT applies the GT predicate on the "category" field.
-func CategoryGT(v string) predicate.BenchmarkRunTask {
-	return predicate.BenchmarkRunTask(sql.FieldGT(FieldCategory, v))
-}
-
-// CategoryGTE applies the GTE predicate on the "category" field.
-func CategoryGTE(v string) predicate.BenchmarkRunTask {
-	return predicate.BenchmarkRunTask(sql.FieldGTE(FieldCategory, v))
-}
-
-// CategoryLT applies the LT predicate on the "category" field.
-func CategoryLT(v string) predicate.BenchmarkRunTask {
-	return predicate.BenchmarkRunTask(sql.FieldLT(FieldCategory, v))
-}
-
-// CategoryLTE applies the LTE predicate on the "category" field.
-func CategoryLTE(v string) predicate.BenchmarkRunTask {
-	return predicate.BenchmarkRunTask(sql.FieldLTE(FieldCategory, v))
-}
-
-// CategoryContains applies the Contains predicate on the "category" field.
-func CategoryContains(v string) predicate.BenchmarkRunTask {
-	return predicate.BenchmarkRunTask(sql.FieldContains(FieldCategory, v))
-}
-
-// CategoryHasPrefix applies the HasPrefix predicate on the "category" field.
-func CategoryHasPrefix(v string) predicate.BenchmarkRunTask {
-	return predicate.BenchmarkRunTask(sql.FieldHasPrefix(FieldCategory, v))
-}
-
-// CategoryHasSuffix applies the HasSuffix predicate on the "category" field.
-func CategoryHasSuffix(v string) predicate.BenchmarkRunTask {
-	return predicate.BenchmarkRunTask(sql.FieldHasSuffix(FieldCategory, v))
-}
-
-// CategoryIsNil applies the IsNil predicate on the "category" field.
-func CategoryIsNil() predicate.BenchmarkRunTask {
-	return predicate.BenchmarkRunTask(sql.FieldIsNull(FieldCategory))
-}
-
-// CategoryNotNil applies the NotNil predicate on the "category" field.
-func CategoryNotNil() predicate.BenchmarkRunTask {
-	return predicate.BenchmarkRunTask(sql.FieldNotNull(FieldCategory))
-}
-
-// CategoryEqualFold applies the EqualFold predicate on the "category" field.
-func CategoryEqualFold(v string) predicate.BenchmarkRunTask {
-	return predicate.BenchmarkRunTask(sql.FieldEqualFold(FieldCategory, v))
-}
-
-// CategoryContainsFold applies the ContainsFold predicate on the "category" field.
-func CategoryContainsFold(v string) predicate.BenchmarkRunTask {
-	return predicate.BenchmarkRunTask(sql.FieldContainsFold(FieldCategory, v))
 }
 
 // DifficultyEQ applies the EQ predicate on the "difficulty" field.

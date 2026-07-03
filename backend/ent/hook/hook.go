@@ -93,18 +93,6 @@ func (f AuthIdentityChannelFunc) Mutate(ctx context.Context, m ent.Mutation) (en
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AuthIdentityChannelMutation", m)
 }
 
-// The BenchmarkProfileFunc type is an adapter to allow the use of ordinary
-// function as BenchmarkProfile mutator.
-type BenchmarkProfileFunc func(context.Context, *ent.BenchmarkProfileMutation) (ent.Value, error)
-
-// Mutate calls f(ctx, m).
-func (f BenchmarkProfileFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
-	if mv, ok := m.(*ent.BenchmarkProfileMutation); ok {
-		return f(ctx, mv)
-	}
-	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.BenchmarkProfileMutation", m)
-}
-
 // The BenchmarkPublicSnapshotFunc type is an adapter to allow the use of ordinary
 // function as BenchmarkPublicSnapshot mutator.
 type BenchmarkPublicSnapshotFunc func(context.Context, *ent.BenchmarkPublicSnapshotMutation) (ent.Value, error)
@@ -177,30 +165,6 @@ func (f BenchmarkScheduleFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.BenchmarkScheduleMutation", m)
 }
 
-// The BenchmarkScoreSnapshotFunc type is an adapter to allow the use of ordinary
-// function as BenchmarkScoreSnapshot mutator.
-type BenchmarkScoreSnapshotFunc func(context.Context, *ent.BenchmarkScoreSnapshotMutation) (ent.Value, error)
-
-// Mutate calls f(ctx, m).
-func (f BenchmarkScoreSnapshotFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
-	if mv, ok := m.(*ent.BenchmarkScoreSnapshotMutation); ok {
-		return f(ctx, mv)
-	}
-	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.BenchmarkScoreSnapshotMutation", m)
-}
-
-// The BenchmarkSuiteFunc type is an adapter to allow the use of ordinary
-// function as BenchmarkSuite mutator.
-type BenchmarkSuiteFunc func(context.Context, *ent.BenchmarkSuiteMutation) (ent.Value, error)
-
-// Mutate calls f(ctx, m).
-func (f BenchmarkSuiteFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
-	if mv, ok := m.(*ent.BenchmarkSuiteMutation); ok {
-		return f(ctx, mv)
-	}
-	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.BenchmarkSuiteMutation", m)
-}
-
 // The BenchmarkTargetFunc type is an adapter to allow the use of ordinary
 // function as BenchmarkTarget mutator.
 type BenchmarkTargetFunc func(context.Context, *ent.BenchmarkTargetMutation) (ent.Value, error)
@@ -211,6 +175,18 @@ func (f BenchmarkTargetFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Va
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.BenchmarkTargetMutation", m)
+}
+
+// The BenchmarkTargetScoreFunc type is an adapter to allow the use of ordinary
+// function as BenchmarkTargetScore mutator.
+type BenchmarkTargetScoreFunc func(context.Context, *ent.BenchmarkTargetScoreMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f BenchmarkTargetScoreFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.BenchmarkTargetScoreMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.BenchmarkTargetScoreMutation", m)
 }
 
 // The BenchmarkTaskFunc type is an adapter to allow the use of ordinary

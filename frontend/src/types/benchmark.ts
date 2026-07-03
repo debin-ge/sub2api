@@ -1,17 +1,6 @@
 import type { BasePaginationResponse } from './index'
 
-export type BenchmarkTaskScale = 'small' | 'medium' | 'full' | 'custom'
-export type BenchmarkConfidenceLevel = 'high' | 'medium' | 'low'
-export type BenchmarkRunStatus =
-  | 'pending'
-  | 'selecting'
-  | 'queued'
-  | 'running'
-  | 'scoring'
-  | 'snapshotting'
-  | 'completed'
-  | 'failed'
-  | 'canceled'
+export type BenchmarkRunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'canceled'
 export type BenchmarkResultStatus =
   | 'pending'
   | 'running'
@@ -31,28 +20,7 @@ export interface BenchmarkListParams {
   page_size?: number
 }
 
-export interface BenchmarkSuite {
-  id: number
-  created_at?: string
-  updated_at?: string
-  name: string
-  slug: string
-  description?: string | null
-  enabled: boolean
-  public_visible: boolean
-  default_profile_id?: number | null
-  metadata?: Record<string, unknown>
-}
-
-export interface CreateBenchmarkSuiteRequest {
-  name: string
-  slug: string
-  description?: string
-  enabled?: boolean
-  public_visible?: boolean
-  default_profile_id?: number | null
-  metadata?: Record<string, unknown>
-}
+// ---- Targets ----
 
 export interface BenchmarkTarget {
   id: number
@@ -61,164 +29,160 @@ export interface BenchmarkTarget {
   model_name: string
   channel_id: number
   display_name?: string | null
-  provider_snapshot?: string | null
   channel_name_snapshot?: string | null
-  supported_task_types?: string[]
-  max_concurrency?: number
-  per_run_budget?: number | null
-  daily_budget?: number | null
   enabled: boolean
   public_visible: boolean
   sort_order: number
-  metadata?: Record<string, unknown>
 }
 
 export interface CreateBenchmarkTargetRequest {
   model_name: string
   channel_id: number
   display_name?: string
-  provider_snapshot?: string
   channel_name_snapshot?: string
-  supported_task_types?: string[]
-  max_concurrency?: number
-  per_run_budget?: number | null
-  daily_budget?: number | null
   enabled?: boolean
   public_visible?: boolean
   sort_order?: number
-  metadata?: Record<string, unknown>
 }
+
+export interface UpdateBenchmarkTargetRequest {
+  model_name: string
+  channel_id: number
+  display_name?: string
+  channel_name_snapshot?: string
+  enabled: boolean
+  public_visible: boolean
+  sort_order: number
+}
+
+// ---- Tasks ----
 
 export interface BenchmarkTask {
   id: number
   created_at?: string
   updated_at?: string
-  suite_id: number
   title: string
   type: string
-  category?: string | null
   difficulty?: string | null
-  tags?: string[]
   prompt: string
   input_payload?: Record<string, unknown>
   expected_output?: Record<string, unknown>
   verifier_type: string
   verifier_config?: Record<string, unknown>
   weight: number
-  min_scale: BenchmarkTaskScale
   public_prompt: boolean
   enabled: boolean
-  metadata?: Record<string, unknown>
+  sort_order: number
 }
 
 export interface BenchmarkTaskListParams extends BenchmarkListParams {
-  suite_id?: number
   task_types?: string[] | string
   enabled?: boolean
 }
 
 export interface CreateBenchmarkTaskRequest {
-  suite_id: number
   title: string
   type: string
-  category?: string
   difficulty?: string
-  tags?: string[]
   prompt: string
   input_payload?: Record<string, unknown>
   expected_output?: Record<string, unknown>
   verifier_type: string
   verifier_config?: Record<string, unknown>
   weight?: number
-  min_scale?: BenchmarkTaskScale
   public_prompt?: boolean
   enabled?: boolean
-  metadata?: Record<string, unknown>
+  sort_order?: number
 }
 
-export interface BenchmarkProfile {
+export interface UpdateBenchmarkTaskRequest {
+  title: string
+  type: string
+  difficulty?: string
+  prompt: string
+  input_payload?: Record<string, unknown>
+  expected_output?: Record<string, unknown>
+  verifier_type: string
+  verifier_config?: Record<string, unknown>
+  weight: number
+  public_prompt: boolean
+  enabled: boolean
+  sort_order: number
+}
+
+// ---- Schedules ----
+
+export interface BenchmarkSchedule {
   id: number
   created_at?: string
   updated_at?: string
-  suite_id: number
   name: string
-  description?: string | null
-  target_ids: number[]
-  task_types: string[]
-  task_scale: BenchmarkTaskScale
-  task_count_limit?: number | null
-  per_type_limit?: Record<string, number>
-  difficulty_filter?: string[]
-  tag_filter?: string[]
-  sampling_strategy?: string
-  selection_seed?: number | null
-  runtime_config?: Record<string, unknown>
-  scoring_config?: Record<string, unknown>
+  cron_expr: string
   enabled: boolean
-  metadata?: Record<string, unknown>
+  target_ids: number[]
+  task_count: number
+  last_run_at?: string | null
+  next_run_at?: string | null
 }
 
-export interface CreateBenchmarkProfileRequest {
-  suite_id: number
-  name: string
-  description?: string
-  target_ids: number[]
-  task_types: string[]
-  task_scale?: BenchmarkTaskScale
-  task_count_limit?: number | null
-  per_type_limit?: Record<string, number>
-  difficulty_filter?: string[]
-  tag_filter?: string[]
-  sampling_strategy?: string
-  selection_seed?: number | null
-  runtime_config?: Record<string, unknown>
-  scoring_config?: Record<string, unknown>
-  metadata?: Record<string, unknown>
+export interface BenchmarkScheduleListParams extends BenchmarkListParams {
   enabled?: boolean
 }
 
-export interface BenchmarkProfilePreviewRequest {
+export interface CreateBenchmarkScheduleRequest {
+  name: string
+  cron_expr: string
+  enabled?: boolean
   target_ids?: number[]
-  task_types?: string[]
-  task_scale?: BenchmarkTaskScale
-  task_count_limit?: number | null
-  per_type_limit?: Record<string, number>
-  difficulty_filter?: string[]
-  tag_filter?: string[]
-  selection_seed?: number | null
+  task_count?: number
 }
 
-export interface BenchmarkProfilePreview {
-  target_count: number
+export interface UpdateBenchmarkScheduleRequest {
+  name: string
+  cron_expr: string
+  enabled: boolean
+  target_ids: number[]
   task_count: number
-  result_count: number
-  task_types: string[]
-  task_scale: BenchmarkTaskScale
-  ranking_basis: 'ability_score_only'
-  estimated_cost: number
-  selected_task_ids: number[]
-  selected_target_ids: number[]
 }
+
+// ---- Runs ----
 
 export interface BenchmarkRun {
   id: number
   created_at?: string
   updated_at?: string
-  suite_id: number
-  profile_id: number
   status: BenchmarkRunStatus
   trigger_type: string
-  task_scale: BenchmarkTaskScale
-  task_types: string[]
-  selection_seed?: number | null
+  schedule_id?: number | null
+  task_count: number
   planned_target_count: number
   planned_task_count: number
   planned_result_count: number
   started_at?: string | null
   finished_at?: string | null
-  config_snapshot?: Record<string, unknown>
   error_message?: string | null
   created_by?: number | null
+}
+
+export interface BenchmarkRunListParams extends BenchmarkListParams {
+  status?: string[] | string
+}
+
+export interface CreateBenchmarkRunRequest {
+  target_ids?: number[]
+  task_count?: number
+  trigger_type?: string
+  created_by?: number | null
+  process_immediately?: boolean
+}
+
+export interface BenchmarkRunPreview {
+  target_count: number
+  task_count: number
+  result_count: number
+  ranking_basis: 'ability_score_only'
+  target_ids: number[]
+  task_ids: number[]
 }
 
 export interface BenchmarkRunTargetSnapshot {
@@ -229,24 +193,11 @@ export interface BenchmarkRunTargetSnapshot {
   channel_id: number
   display_name_snapshot?: string | null
   channel_name_snapshot?: string | null
-  provider_snapshot?: string | null
   target_order?: number
-  config_snapshot?: Record<string, unknown>
   created_at?: string
 }
 
-export interface BenchmarkRunListParams extends BenchmarkListParams {
-  suite_id?: number
-  profile_id?: number
-  status?: string[] | string
-}
-
-export interface CreateBenchmarkRunRequest {
-  profile_id: number
-  trigger_type?: string
-  created_by?: number | null
-  override?: BenchmarkProfilePreviewRequest
-}
+// ---- Results ----
 
 export interface BenchmarkResult {
   id: number
@@ -257,8 +208,6 @@ export interface BenchmarkResult {
   run_target_id: number
   request_id?: string | null
   status: BenchmarkResultStatus
-  score?: number | null
-  max_score?: number | null
   normalized_score?: number | null
   evaluator_type?: string | null
   evaluator_output?: Record<string, unknown>
@@ -278,84 +227,39 @@ export interface BenchmarkResult {
   }
 }
 
-export interface BenchmarkScoreSnapshot {
+// ---- Target Scores (trend data points) ----
+
+export interface BenchmarkTargetScore {
   id: number
   run_id: number
   run_target_id: number
+  model_name: string
+  channel_id: number
   overall_score: number
+  passed_count: number
+  total_count: number
   dimension_scores?: Record<string, number>
-  planned_tasks: number
-  scored_tasks: number
-  invalid_tasks: number
-  coverage_rate: number
-  confidence_level: BenchmarkConfidenceLevel
-  insufficient_sample: boolean
-  success_rate: number
-  latency_p50_ms?: number | null
-  latency_p95_ms?: number | null
+  avg_latency_ms?: number | null
   avg_total_tokens?: number | null
-  estimated_cost: number
+  total_cost: number
   invalid_reason_breakdown?: Record<string, number>
-  ranking_metadata?: Record<string, unknown>
+  finished_at: string
   created_at?: string
-  edges?: {
-    run_target?: BenchmarkRunTargetSnapshot
-  }
 }
 
-export interface BenchmarkSchedule {
-  id: number
-  created_at?: string
-  updated_at?: string
-  profile_id: number
-  name: string
-  cron_expr: string
-  enabled: boolean
-  last_run_at?: string | null
-  next_run_at?: string | null
-  metadata?: Record<string, unknown>
-}
-
-export interface BenchmarkScheduleListParams extends BenchmarkListParams {
-  profile_id?: number
-  enabled?: boolean
-}
-
-export interface CreateBenchmarkScheduleRequest {
-  profile_id: number
-  name: string
-  cron_expr: string
-  enabled?: boolean
-  metadata?: Record<string, unknown>
-}
-
-export interface PublishBenchmarkRunResponse {
-  message: string
-}
+// ---- Public Radar ----
 
 export interface BenchmarkPublicRadarLatestRun {
   id: number
-  suite_id: number
-  profile_id: number
   status: string
+  task_count: number
   completed_at?: string | null
 }
 
-export interface BenchmarkRadarScoreBasis {
-  planned_tasks: number
-  scored_tasks: number
-  invalid_tasks: number
-  coverage_rate: number
-  confidence_level: BenchmarkConfidenceLevel
-  insufficient_sample: boolean
-}
-
 export interface BenchmarkRadarMetrics {
-  success_rate: number
-  latency_p50_ms?: number | null
-  latency_p95_ms?: number | null
+  avg_latency_ms?: number | null
   avg_total_tokens?: number | null
-  estimated_cost: number
+  total_cost: number
 }
 
 export interface BenchmarkRadarTarget {
@@ -365,9 +269,28 @@ export interface BenchmarkRadarTarget {
   channel_name?: string
   display_name?: string
   overall_score: number
+  passed_count: number
+  total_count: number
   dimensions?: Record<string, number>
-  score_basis: BenchmarkRadarScoreBasis
   metrics: BenchmarkRadarMetrics
+}
+
+export interface BenchmarkTrendPoint {
+  run_id: number
+  finished_at: string
+  overall_score: number
+  passed_count: number
+  total_count: number
+  avg_latency_ms?: number | null
+  total_cost: number
+}
+
+export interface BenchmarkPublicTrend {
+  model: string
+  channel_id: number
+  channel_name?: string
+  display_name?: string
+  points: BenchmarkTrendPoint[]
 }
 
 export interface BenchmarkPublicRadar {
@@ -375,4 +298,15 @@ export interface BenchmarkPublicRadar {
   published_at?: string | null
   latest_run: BenchmarkPublicRadarLatestRun | null
   targets: BenchmarkRadarTarget[]
+  trends: BenchmarkPublicTrend[]
+}
+
+// ---- Action responses ----
+
+export interface BenchmarkActionResponse {
+  message: string
+}
+
+export interface BenchmarkProcessResponse {
+  processed: number
 }

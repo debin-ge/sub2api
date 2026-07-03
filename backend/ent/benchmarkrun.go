@@ -3,16 +3,13 @@
 package ent
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
-	"github.com/Wei-Shaw/sub2api/ent/benchmarkprofile"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkrun"
-	"github.com/Wei-Shaw/sub2api/ent/benchmarksuite"
 )
 
 // BenchmarkRun is the model entity for the BenchmarkRun schema.
@@ -24,20 +21,14 @@ type BenchmarkRun struct {
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	// UpdatedAt holds the value of the "updated_at" field.
 	UpdatedAt time.Time `json:"updated_at,omitempty"`
-	// SuiteID holds the value of the "suite_id" field.
-	SuiteID int64 `json:"suite_id,omitempty"`
-	// ProfileID holds the value of the "profile_id" field.
-	ProfileID int64 `json:"profile_id,omitempty"`
 	// Status holds the value of the "status" field.
 	Status string `json:"status,omitempty"`
 	// TriggerType holds the value of the "trigger_type" field.
 	TriggerType string `json:"trigger_type,omitempty"`
-	// TaskScale holds the value of the "task_scale" field.
-	TaskScale benchmarkrun.TaskScale `json:"task_scale,omitempty"`
-	// TaskTypes holds the value of the "task_types" field.
-	TaskTypes []string `json:"task_types,omitempty"`
-	// SelectionSeed holds the value of the "selection_seed" field.
-	SelectionSeed *int64 `json:"selection_seed,omitempty"`
+	// ScheduleID holds the value of the "schedule_id" field.
+	ScheduleID *int64 `json:"schedule_id,omitempty"`
+	// TaskCount holds the value of the "task_count" field.
+	TaskCount int `json:"task_count,omitempty"`
 	// PlannedTargetCount holds the value of the "planned_target_count" field.
 	PlannedTargetCount int `json:"planned_target_count,omitempty"`
 	// PlannedTaskCount holds the value of the "planned_task_count" field.
@@ -48,8 +39,6 @@ type BenchmarkRun struct {
 	StartedAt *time.Time `json:"started_at,omitempty"`
 	// FinishedAt holds the value of the "finished_at" field.
 	FinishedAt *time.Time `json:"finished_at,omitempty"`
-	// ConfigSnapshot holds the value of the "config_snapshot" field.
-	ConfigSnapshot map[string]interface{} `json:"config_snapshot,omitempty"`
 	// ErrorMessage holds the value of the "error_message" field.
 	ErrorMessage *string `json:"error_message,omitempty"`
 	// CreatedBy holds the value of the "created_by" field.
@@ -62,51 +51,25 @@ type BenchmarkRun struct {
 
 // BenchmarkRunEdges holds the relations/edges for other nodes in the graph.
 type BenchmarkRunEdges struct {
-	// Suite holds the value of the suite edge.
-	Suite *BenchmarkSuite `json:"suite,omitempty"`
-	// Profile holds the value of the profile edge.
-	Profile *BenchmarkProfile `json:"profile,omitempty"`
 	// RunTargets holds the value of the run_targets edge.
 	RunTargets []*BenchmarkRunTarget `json:"run_targets,omitempty"`
 	// RunTasks holds the value of the run_tasks edge.
 	RunTasks []*BenchmarkRunTask `json:"run_tasks,omitempty"`
 	// Results holds the value of the results edge.
 	Results []*BenchmarkResult `json:"results,omitempty"`
-	// ScoreSnapshots holds the value of the score_snapshots edge.
-	ScoreSnapshots []*BenchmarkScoreSnapshot `json:"score_snapshots,omitempty"`
+	// TargetScores holds the value of the target_scores edge.
+	TargetScores []*BenchmarkTargetScore `json:"target_scores,omitempty"`
 	// PublicSnapshots holds the value of the public_snapshots edge.
 	PublicSnapshots []*BenchmarkPublicSnapshot `json:"public_snapshots,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [7]bool
-}
-
-// SuiteOrErr returns the Suite value or an error if the edge
-// was not loaded in eager-loading, or loaded but was not found.
-func (e BenchmarkRunEdges) SuiteOrErr() (*BenchmarkSuite, error) {
-	if e.Suite != nil {
-		return e.Suite, nil
-	} else if e.loadedTypes[0] {
-		return nil, &NotFoundError{label: benchmarksuite.Label}
-	}
-	return nil, &NotLoadedError{edge: "suite"}
-}
-
-// ProfileOrErr returns the Profile value or an error if the edge
-// was not loaded in eager-loading, or loaded but was not found.
-func (e BenchmarkRunEdges) ProfileOrErr() (*BenchmarkProfile, error) {
-	if e.Profile != nil {
-		return e.Profile, nil
-	} else if e.loadedTypes[1] {
-		return nil, &NotFoundError{label: benchmarkprofile.Label}
-	}
-	return nil, &NotLoadedError{edge: "profile"}
+	loadedTypes [5]bool
 }
 
 // RunTargetsOrErr returns the RunTargets value or an error if the edge
 // was not loaded in eager-loading.
 func (e BenchmarkRunEdges) RunTargetsOrErr() ([]*BenchmarkRunTarget, error) {
-	if e.loadedTypes[2] {
+	if e.loadedTypes[0] {
 		return e.RunTargets, nil
 	}
 	return nil, &NotLoadedError{edge: "run_targets"}
@@ -115,7 +78,7 @@ func (e BenchmarkRunEdges) RunTargetsOrErr() ([]*BenchmarkRunTarget, error) {
 // RunTasksOrErr returns the RunTasks value or an error if the edge
 // was not loaded in eager-loading.
 func (e BenchmarkRunEdges) RunTasksOrErr() ([]*BenchmarkRunTask, error) {
-	if e.loadedTypes[3] {
+	if e.loadedTypes[1] {
 		return e.RunTasks, nil
 	}
 	return nil, &NotLoadedError{edge: "run_tasks"}
@@ -124,25 +87,25 @@ func (e BenchmarkRunEdges) RunTasksOrErr() ([]*BenchmarkRunTask, error) {
 // ResultsOrErr returns the Results value or an error if the edge
 // was not loaded in eager-loading.
 func (e BenchmarkRunEdges) ResultsOrErr() ([]*BenchmarkResult, error) {
-	if e.loadedTypes[4] {
+	if e.loadedTypes[2] {
 		return e.Results, nil
 	}
 	return nil, &NotLoadedError{edge: "results"}
 }
 
-// ScoreSnapshotsOrErr returns the ScoreSnapshots value or an error if the edge
+// TargetScoresOrErr returns the TargetScores value or an error if the edge
 // was not loaded in eager-loading.
-func (e BenchmarkRunEdges) ScoreSnapshotsOrErr() ([]*BenchmarkScoreSnapshot, error) {
-	if e.loadedTypes[5] {
-		return e.ScoreSnapshots, nil
+func (e BenchmarkRunEdges) TargetScoresOrErr() ([]*BenchmarkTargetScore, error) {
+	if e.loadedTypes[3] {
+		return e.TargetScores, nil
 	}
-	return nil, &NotLoadedError{edge: "score_snapshots"}
+	return nil, &NotLoadedError{edge: "target_scores"}
 }
 
 // PublicSnapshotsOrErr returns the PublicSnapshots value or an error if the edge
 // was not loaded in eager-loading.
 func (e BenchmarkRunEdges) PublicSnapshotsOrErr() ([]*BenchmarkPublicSnapshot, error) {
-	if e.loadedTypes[6] {
+	if e.loadedTypes[4] {
 		return e.PublicSnapshots, nil
 	}
 	return nil, &NotLoadedError{edge: "public_snapshots"}
@@ -153,11 +116,9 @@ func (*BenchmarkRun) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case benchmarkrun.FieldTaskTypes, benchmarkrun.FieldConfigSnapshot:
-			values[i] = new([]byte)
-		case benchmarkrun.FieldID, benchmarkrun.FieldSuiteID, benchmarkrun.FieldProfileID, benchmarkrun.FieldSelectionSeed, benchmarkrun.FieldPlannedTargetCount, benchmarkrun.FieldPlannedTaskCount, benchmarkrun.FieldPlannedResultCount, benchmarkrun.FieldCreatedBy:
+		case benchmarkrun.FieldID, benchmarkrun.FieldScheduleID, benchmarkrun.FieldTaskCount, benchmarkrun.FieldPlannedTargetCount, benchmarkrun.FieldPlannedTaskCount, benchmarkrun.FieldPlannedResultCount, benchmarkrun.FieldCreatedBy:
 			values[i] = new(sql.NullInt64)
-		case benchmarkrun.FieldStatus, benchmarkrun.FieldTriggerType, benchmarkrun.FieldTaskScale, benchmarkrun.FieldErrorMessage:
+		case benchmarkrun.FieldStatus, benchmarkrun.FieldTriggerType, benchmarkrun.FieldErrorMessage:
 			values[i] = new(sql.NullString)
 		case benchmarkrun.FieldCreatedAt, benchmarkrun.FieldUpdatedAt, benchmarkrun.FieldStartedAt, benchmarkrun.FieldFinishedAt:
 			values[i] = new(sql.NullTime)
@@ -194,18 +155,6 @@ func (_m *BenchmarkRun) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.UpdatedAt = value.Time
 			}
-		case benchmarkrun.FieldSuiteID:
-			if value, ok := values[i].(*sql.NullInt64); !ok {
-				return fmt.Errorf("unexpected type %T for field suite_id", values[i])
-			} else if value.Valid {
-				_m.SuiteID = value.Int64
-			}
-		case benchmarkrun.FieldProfileID:
-			if value, ok := values[i].(*sql.NullInt64); !ok {
-				return fmt.Errorf("unexpected type %T for field profile_id", values[i])
-			} else if value.Valid {
-				_m.ProfileID = value.Int64
-			}
 		case benchmarkrun.FieldStatus:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field status", values[i])
@@ -218,26 +167,18 @@ func (_m *BenchmarkRun) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.TriggerType = value.String
 			}
-		case benchmarkrun.FieldTaskScale:
-			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field task_scale", values[i])
-			} else if value.Valid {
-				_m.TaskScale = benchmarkrun.TaskScale(value.String)
-			}
-		case benchmarkrun.FieldTaskTypes:
-			if value, ok := values[i].(*[]byte); !ok {
-				return fmt.Errorf("unexpected type %T for field task_types", values[i])
-			} else if value != nil && len(*value) > 0 {
-				if err := json.Unmarshal(*value, &_m.TaskTypes); err != nil {
-					return fmt.Errorf("unmarshal field task_types: %w", err)
-				}
-			}
-		case benchmarkrun.FieldSelectionSeed:
+		case benchmarkrun.FieldScheduleID:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
-				return fmt.Errorf("unexpected type %T for field selection_seed", values[i])
+				return fmt.Errorf("unexpected type %T for field schedule_id", values[i])
 			} else if value.Valid {
-				_m.SelectionSeed = new(int64)
-				*_m.SelectionSeed = value.Int64
+				_m.ScheduleID = new(int64)
+				*_m.ScheduleID = value.Int64
+			}
+		case benchmarkrun.FieldTaskCount:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field task_count", values[i])
+			} else if value.Valid {
+				_m.TaskCount = int(value.Int64)
 			}
 		case benchmarkrun.FieldPlannedTargetCount:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -271,14 +212,6 @@ func (_m *BenchmarkRun) assignValues(columns []string, values []any) error {
 				_m.FinishedAt = new(time.Time)
 				*_m.FinishedAt = value.Time
 			}
-		case benchmarkrun.FieldConfigSnapshot:
-			if value, ok := values[i].(*[]byte); !ok {
-				return fmt.Errorf("unexpected type %T for field config_snapshot", values[i])
-			} else if value != nil && len(*value) > 0 {
-				if err := json.Unmarshal(*value, &_m.ConfigSnapshot); err != nil {
-					return fmt.Errorf("unmarshal field config_snapshot: %w", err)
-				}
-			}
 		case benchmarkrun.FieldErrorMessage:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field error_message", values[i])
@@ -306,16 +239,6 @@ func (_m *BenchmarkRun) Value(name string) (ent.Value, error) {
 	return _m.selectValues.Get(name)
 }
 
-// QuerySuite queries the "suite" edge of the BenchmarkRun entity.
-func (_m *BenchmarkRun) QuerySuite() *BenchmarkSuiteQuery {
-	return NewBenchmarkRunClient(_m.config).QuerySuite(_m)
-}
-
-// QueryProfile queries the "profile" edge of the BenchmarkRun entity.
-func (_m *BenchmarkRun) QueryProfile() *BenchmarkProfileQuery {
-	return NewBenchmarkRunClient(_m.config).QueryProfile(_m)
-}
-
 // QueryRunTargets queries the "run_targets" edge of the BenchmarkRun entity.
 func (_m *BenchmarkRun) QueryRunTargets() *BenchmarkRunTargetQuery {
 	return NewBenchmarkRunClient(_m.config).QueryRunTargets(_m)
@@ -331,9 +254,9 @@ func (_m *BenchmarkRun) QueryResults() *BenchmarkResultQuery {
 	return NewBenchmarkRunClient(_m.config).QueryResults(_m)
 }
 
-// QueryScoreSnapshots queries the "score_snapshots" edge of the BenchmarkRun entity.
-func (_m *BenchmarkRun) QueryScoreSnapshots() *BenchmarkScoreSnapshotQuery {
-	return NewBenchmarkRunClient(_m.config).QueryScoreSnapshots(_m)
+// QueryTargetScores queries the "target_scores" edge of the BenchmarkRun entity.
+func (_m *BenchmarkRun) QueryTargetScores() *BenchmarkTargetScoreQuery {
+	return NewBenchmarkRunClient(_m.config).QueryTargetScores(_m)
 }
 
 // QueryPublicSnapshots queries the "public_snapshots" edge of the BenchmarkRun entity.
@@ -370,28 +293,19 @@ func (_m *BenchmarkRun) String() string {
 	builder.WriteString("updated_at=")
 	builder.WriteString(_m.UpdatedAt.Format(time.ANSIC))
 	builder.WriteString(", ")
-	builder.WriteString("suite_id=")
-	builder.WriteString(fmt.Sprintf("%v", _m.SuiteID))
-	builder.WriteString(", ")
-	builder.WriteString("profile_id=")
-	builder.WriteString(fmt.Sprintf("%v", _m.ProfileID))
-	builder.WriteString(", ")
 	builder.WriteString("status=")
 	builder.WriteString(_m.Status)
 	builder.WriteString(", ")
 	builder.WriteString("trigger_type=")
 	builder.WriteString(_m.TriggerType)
 	builder.WriteString(", ")
-	builder.WriteString("task_scale=")
-	builder.WriteString(fmt.Sprintf("%v", _m.TaskScale))
-	builder.WriteString(", ")
-	builder.WriteString("task_types=")
-	builder.WriteString(fmt.Sprintf("%v", _m.TaskTypes))
-	builder.WriteString(", ")
-	if v := _m.SelectionSeed; v != nil {
-		builder.WriteString("selection_seed=")
+	if v := _m.ScheduleID; v != nil {
+		builder.WriteString("schedule_id=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
+	builder.WriteString(", ")
+	builder.WriteString("task_count=")
+	builder.WriteString(fmt.Sprintf("%v", _m.TaskCount))
 	builder.WriteString(", ")
 	builder.WriteString("planned_target_count=")
 	builder.WriteString(fmt.Sprintf("%v", _m.PlannedTargetCount))
@@ -411,9 +325,6 @@ func (_m *BenchmarkRun) String() string {
 		builder.WriteString("finished_at=")
 		builder.WriteString(v.Format(time.ANSIC))
 	}
-	builder.WriteString(", ")
-	builder.WriteString("config_snapshot=")
-	builder.WriteString(fmt.Sprintf("%v", _m.ConfigSnapshot))
 	builder.WriteString(", ")
 	if v := _m.ErrorMessage; v != nil {
 		builder.WriteString("error_message=")

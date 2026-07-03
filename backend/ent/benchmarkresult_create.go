@@ -91,34 +91,6 @@ func (_c *BenchmarkResultCreate) SetStatus(v string) *BenchmarkResultCreate {
 	return _c
 }
 
-// SetScore sets the "score" field.
-func (_c *BenchmarkResultCreate) SetScore(v float64) *BenchmarkResultCreate {
-	_c.mutation.SetScore(v)
-	return _c
-}
-
-// SetNillableScore sets the "score" field if the given value is not nil.
-func (_c *BenchmarkResultCreate) SetNillableScore(v *float64) *BenchmarkResultCreate {
-	if v != nil {
-		_c.SetScore(*v)
-	}
-	return _c
-}
-
-// SetMaxScore sets the "max_score" field.
-func (_c *BenchmarkResultCreate) SetMaxScore(v float64) *BenchmarkResultCreate {
-	_c.mutation.SetMaxScore(v)
-	return _c
-}
-
-// SetNillableMaxScore sets the "max_score" field if the given value is not nil.
-func (_c *BenchmarkResultCreate) SetNillableMaxScore(v *float64) *BenchmarkResultCreate {
-	if v != nil {
-		_c.SetMaxScore(*v)
-	}
-	return _c
-}
-
 // SetNormalizedScore sets the "normalized_score" field.
 func (_c *BenchmarkResultCreate) SetNormalizedScore(v float64) *BenchmarkResultCreate {
 	_c.mutation.SetNormalizedScore(v)
@@ -500,14 +472,6 @@ func (_c *BenchmarkResultCreate) createSpec() (*BenchmarkResult, *sqlgraph.Creat
 		_spec.SetField(benchmarkresult.FieldStatus, field.TypeString, value)
 		_node.Status = value
 	}
-	if value, ok := _c.mutation.Score(); ok {
-		_spec.SetField(benchmarkresult.FieldScore, field.TypeFloat64, value)
-		_node.Score = &value
-	}
-	if value, ok := _c.mutation.MaxScore(); ok {
-		_spec.SetField(benchmarkresult.FieldMaxScore, field.TypeFloat64, value)
-		_node.MaxScore = &value
-	}
 	if value, ok := _c.mutation.NormalizedScore(); ok {
 		_spec.SetField(benchmarkresult.FieldNormalizedScore, field.TypeFloat64, value)
 		_node.NormalizedScore = &value
@@ -742,54 +706,6 @@ func (u *BenchmarkResultUpsert) SetStatus(v string) *BenchmarkResultUpsert {
 // UpdateStatus sets the "status" field to the value that was provided on create.
 func (u *BenchmarkResultUpsert) UpdateStatus() *BenchmarkResultUpsert {
 	u.SetExcluded(benchmarkresult.FieldStatus)
-	return u
-}
-
-// SetScore sets the "score" field.
-func (u *BenchmarkResultUpsert) SetScore(v float64) *BenchmarkResultUpsert {
-	u.Set(benchmarkresult.FieldScore, v)
-	return u
-}
-
-// UpdateScore sets the "score" field to the value that was provided on create.
-func (u *BenchmarkResultUpsert) UpdateScore() *BenchmarkResultUpsert {
-	u.SetExcluded(benchmarkresult.FieldScore)
-	return u
-}
-
-// AddScore adds v to the "score" field.
-func (u *BenchmarkResultUpsert) AddScore(v float64) *BenchmarkResultUpsert {
-	u.Add(benchmarkresult.FieldScore, v)
-	return u
-}
-
-// ClearScore clears the value of the "score" field.
-func (u *BenchmarkResultUpsert) ClearScore() *BenchmarkResultUpsert {
-	u.SetNull(benchmarkresult.FieldScore)
-	return u
-}
-
-// SetMaxScore sets the "max_score" field.
-func (u *BenchmarkResultUpsert) SetMaxScore(v float64) *BenchmarkResultUpsert {
-	u.Set(benchmarkresult.FieldMaxScore, v)
-	return u
-}
-
-// UpdateMaxScore sets the "max_score" field to the value that was provided on create.
-func (u *BenchmarkResultUpsert) UpdateMaxScore() *BenchmarkResultUpsert {
-	u.SetExcluded(benchmarkresult.FieldMaxScore)
-	return u
-}
-
-// AddMaxScore adds v to the "max_score" field.
-func (u *BenchmarkResultUpsert) AddMaxScore(v float64) *BenchmarkResultUpsert {
-	u.Add(benchmarkresult.FieldMaxScore, v)
-	return u
-}
-
-// ClearMaxScore clears the value of the "max_score" field.
-func (u *BenchmarkResultUpsert) ClearMaxScore() *BenchmarkResultUpsert {
-	u.SetNull(benchmarkresult.FieldMaxScore)
 	return u
 }
 
@@ -1178,62 +1094,6 @@ func (u *BenchmarkResultUpsertOne) SetStatus(v string) *BenchmarkResultUpsertOne
 func (u *BenchmarkResultUpsertOne) UpdateStatus() *BenchmarkResultUpsertOne {
 	return u.Update(func(s *BenchmarkResultUpsert) {
 		s.UpdateStatus()
-	})
-}
-
-// SetScore sets the "score" field.
-func (u *BenchmarkResultUpsertOne) SetScore(v float64) *BenchmarkResultUpsertOne {
-	return u.Update(func(s *BenchmarkResultUpsert) {
-		s.SetScore(v)
-	})
-}
-
-// AddScore adds v to the "score" field.
-func (u *BenchmarkResultUpsertOne) AddScore(v float64) *BenchmarkResultUpsertOne {
-	return u.Update(func(s *BenchmarkResultUpsert) {
-		s.AddScore(v)
-	})
-}
-
-// UpdateScore sets the "score" field to the value that was provided on create.
-func (u *BenchmarkResultUpsertOne) UpdateScore() *BenchmarkResultUpsertOne {
-	return u.Update(func(s *BenchmarkResultUpsert) {
-		s.UpdateScore()
-	})
-}
-
-// ClearScore clears the value of the "score" field.
-func (u *BenchmarkResultUpsertOne) ClearScore() *BenchmarkResultUpsertOne {
-	return u.Update(func(s *BenchmarkResultUpsert) {
-		s.ClearScore()
-	})
-}
-
-// SetMaxScore sets the "max_score" field.
-func (u *BenchmarkResultUpsertOne) SetMaxScore(v float64) *BenchmarkResultUpsertOne {
-	return u.Update(func(s *BenchmarkResultUpsert) {
-		s.SetMaxScore(v)
-	})
-}
-
-// AddMaxScore adds v to the "max_score" field.
-func (u *BenchmarkResultUpsertOne) AddMaxScore(v float64) *BenchmarkResultUpsertOne {
-	return u.Update(func(s *BenchmarkResultUpsert) {
-		s.AddMaxScore(v)
-	})
-}
-
-// UpdateMaxScore sets the "max_score" field to the value that was provided on create.
-func (u *BenchmarkResultUpsertOne) UpdateMaxScore() *BenchmarkResultUpsertOne {
-	return u.Update(func(s *BenchmarkResultUpsert) {
-		s.UpdateMaxScore()
-	})
-}
-
-// ClearMaxScore clears the value of the "max_score" field.
-func (u *BenchmarkResultUpsertOne) ClearMaxScore() *BenchmarkResultUpsertOne {
-	return u.Update(func(s *BenchmarkResultUpsert) {
-		s.ClearMaxScore()
 	})
 }
 
@@ -1830,62 +1690,6 @@ func (u *BenchmarkResultUpsertBulk) SetStatus(v string) *BenchmarkResultUpsertBu
 func (u *BenchmarkResultUpsertBulk) UpdateStatus() *BenchmarkResultUpsertBulk {
 	return u.Update(func(s *BenchmarkResultUpsert) {
 		s.UpdateStatus()
-	})
-}
-
-// SetScore sets the "score" field.
-func (u *BenchmarkResultUpsertBulk) SetScore(v float64) *BenchmarkResultUpsertBulk {
-	return u.Update(func(s *BenchmarkResultUpsert) {
-		s.SetScore(v)
-	})
-}
-
-// AddScore adds v to the "score" field.
-func (u *BenchmarkResultUpsertBulk) AddScore(v float64) *BenchmarkResultUpsertBulk {
-	return u.Update(func(s *BenchmarkResultUpsert) {
-		s.AddScore(v)
-	})
-}
-
-// UpdateScore sets the "score" field to the value that was provided on create.
-func (u *BenchmarkResultUpsertBulk) UpdateScore() *BenchmarkResultUpsertBulk {
-	return u.Update(func(s *BenchmarkResultUpsert) {
-		s.UpdateScore()
-	})
-}
-
-// ClearScore clears the value of the "score" field.
-func (u *BenchmarkResultUpsertBulk) ClearScore() *BenchmarkResultUpsertBulk {
-	return u.Update(func(s *BenchmarkResultUpsert) {
-		s.ClearScore()
-	})
-}
-
-// SetMaxScore sets the "max_score" field.
-func (u *BenchmarkResultUpsertBulk) SetMaxScore(v float64) *BenchmarkResultUpsertBulk {
-	return u.Update(func(s *BenchmarkResultUpsert) {
-		s.SetMaxScore(v)
-	})
-}
-
-// AddMaxScore adds v to the "max_score" field.
-func (u *BenchmarkResultUpsertBulk) AddMaxScore(v float64) *BenchmarkResultUpsertBulk {
-	return u.Update(func(s *BenchmarkResultUpsert) {
-		s.AddMaxScore(v)
-	})
-}
-
-// UpdateMaxScore sets the "max_score" field to the value that was provided on create.
-func (u *BenchmarkResultUpsertBulk) UpdateMaxScore() *BenchmarkResultUpsertBulk {
-	return u.Update(func(s *BenchmarkResultUpsert) {
-		s.UpdateMaxScore()
-	})
-}
-
-// ClearMaxScore clears the value of the "max_score" field.
-func (u *BenchmarkResultUpsertBulk) ClearMaxScore() *BenchmarkResultUpsertBulk {
-	return u.Update(func(s *BenchmarkResultUpsert) {
-		s.ClearMaxScore()
 	})
 }
 

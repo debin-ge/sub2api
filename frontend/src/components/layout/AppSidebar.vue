@@ -723,7 +723,7 @@ const adminNavItems = computed((): NavItem[] => {
         { path: '/admin/benchmark/dashboard', label: t('nav.benchmarkDashboard'), icon: DashboardIcon },
         { path: '/admin/benchmark/targets', label: t('nav.benchmarkTargets'), icon: ChannelIcon },
         { path: '/admin/benchmark/tasks', label: t('nav.benchmarkTasks'), icon: TicketIcon },
-        { path: '/admin/benchmark/profiles', label: t('nav.benchmarkProfiles'), icon: FolderIcon },
+        { path: '/admin/benchmark/schedules', label: t('nav.benchmarkSchedules'), icon: FolderIcon },
         { path: '/admin/benchmark/runs', label: t('nav.benchmarkRuns'), icon: GlobeIcon },
       ],
     },

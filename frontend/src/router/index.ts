@@ -456,13 +456,13 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
-    path: '/admin/benchmark/profiles',
-    name: 'AdminBenchmarkProfiles',
-    component: () => import('@/views/admin/benchmark/BenchmarkProfilesView.vue'),
+    path: '/admin/benchmark/schedules',
+    name: 'AdminBenchmarkSchedules',
+    component: () => import('@/views/admin/benchmark/BenchmarkSchedulesView.vue'),
     meta: {
       requiresAuth: true,
       requiresAdmin: true,
-      title: 'Benchmark Profiles',
+      title: 'Benchmark Schedules',
     }
   },
   {

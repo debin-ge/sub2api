@@ -7,12 +7,13 @@ import (
 	"entgo.io/ent/dialect"
 	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema"
-	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 )
 
-// BenchmarkSchedule stores disabled-by-default schedule definitions.
+// BenchmarkSchedule stores disabled-by-default cron schedules. Each schedule
+// carries its own run configuration (which targets, how many tasks) instead of
+// referencing a profile.
 type BenchmarkSchedule struct {
 	ent.Schema
 }
@@ -31,7 +32,6 @@ func (BenchmarkSchedule) Mixin() []ent.Mixin {
 
 func (BenchmarkSchedule) Fields() []ent.Field {
 	return []ent.Field{
-		field.Int64("profile_id"),
 		field.String("name").
 			NotEmpty().
 			MaxLen(100),
@@ -40,6 +40,13 @@ func (BenchmarkSchedule) Fields() []ent.Field {
 			MaxLen(100),
 		field.Bool("enabled").
 			Default(false),
+		// target_ids is empty to mean "all enabled targets".
+		field.JSON("target_ids", []int64{}).
+			Default(func() []int64 { return []int64{} }).
+			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
+		// task_count is 0 to mean "all enabled tasks", else first N by sort_order.
+		field.Int("task_count").
+			Default(0),
 		field.Time("last_run_at").
 			Optional().
 			Nillable().
@@ -48,19 +55,6 @@ func (BenchmarkSchedule) Fields() []ent.Field {
 			Optional().
 			Nillable().
 			SchemaType(map[string]string{dialect.Postgres: "timestamptz"}),
-		field.JSON("metadata", map[string]any{}).
-			Default(func() map[string]any { return map[string]any{} }).
-			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
-	}
-}
-
-func (BenchmarkSchedule) Edges() []ent.Edge {
-	return []ent.Edge{
-		edge.From("profile", BenchmarkProfile.Type).
-			Ref("schedules").
-			Field("profile_id").
-			Required().
-			Unique(),
 	}
 }
 
@@ -70,7 +64,5 @@ func (BenchmarkSchedule) Indexes() []ent.Index {
 			StorageKey("benchmark_schedules_enabled_idx"),
 		index.Fields("next_run_at").
 			StorageKey("benchmark_schedules_next_run_at_idx"),
-		index.Fields("profile_id").
-			StorageKey("benchmark_schedules_profile_id_idx"),
 	}
 }

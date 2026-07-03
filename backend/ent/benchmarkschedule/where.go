@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"entgo.io/ent/dialect/sql"
-	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
 )
 
@@ -65,11 +64,6 @@ func UpdatedAt(v time.Time) predicate.BenchmarkSchedule {
 	return predicate.BenchmarkSchedule(sql.FieldEQ(FieldUpdatedAt, v))
 }
 
-// ProfileID applies equality check predicate on the "profile_id" field. It's identical to ProfileIDEQ.
-func ProfileID(v int64) predicate.BenchmarkSchedule {
-	return predicate.BenchmarkSchedule(sql.FieldEQ(FieldProfileID, v))
-}
-
 // Name applies equality check predicate on the "name" field. It's identical to NameEQ.
 func Name(v string) predicate.BenchmarkSchedule {
 	return predicate.BenchmarkSchedule(sql.FieldEQ(FieldName, v))
@@ -83,6 +77,11 @@ func CronExpr(v string) predicate.BenchmarkSchedule {
 // Enabled applies equality check predicate on the "enabled" field. It's identical to EnabledEQ.
 func Enabled(v bool) predicate.BenchmarkSchedule {
 	return predicate.BenchmarkSchedule(sql.FieldEQ(FieldEnabled, v))
+}
+
+// TaskCount applies equality check predicate on the "task_count" field. It's identical to TaskCountEQ.
+func TaskCount(v int) predicate.BenchmarkSchedule {
+	return predicate.BenchmarkSchedule(sql.FieldEQ(FieldTaskCount, v))
 }
 
 // LastRunAt applies equality check predicate on the "last_run_at" field. It's identical to LastRunAtEQ.
@@ -173,26 +172,6 @@ func UpdatedAtLT(v time.Time) predicate.BenchmarkSchedule {
 // UpdatedAtLTE applies the LTE predicate on the "updated_at" field.
 func UpdatedAtLTE(v time.Time) predicate.BenchmarkSchedule {
 	return predicate.BenchmarkSchedule(sql.FieldLTE(FieldUpdatedAt, v))
-}
-
-// ProfileIDEQ applies the EQ predicate on the "profile_id" field.
-func ProfileIDEQ(v int64) predicate.BenchmarkSchedule {
-	return predicate.BenchmarkSchedule(sql.FieldEQ(FieldProfileID, v))
-}
-
-// ProfileIDNEQ applies the NEQ predicate on the "profile_id" field.
-func ProfileIDNEQ(v int64) predicate.BenchmarkSchedule {
-	return predicate.BenchmarkSchedule(sql.FieldNEQ(FieldProfileID, v))
-}
-
-// ProfileIDIn applies the In predicate on the "profile_id" field.
-func ProfileIDIn(vs ...int64) predicate.BenchmarkSchedule {
-	return predicate.BenchmarkSchedule(sql.FieldIn(FieldProfileID, vs...))
-}
-
-// ProfileIDNotIn applies the NotIn predicate on the "profile_id" field.
-func ProfileIDNotIn(vs ...int64) predicate.BenchmarkSchedule {
-	return predicate.BenchmarkSchedule(sql.FieldNotIn(FieldProfileID, vs...))
 }
 
 // NameEQ applies the EQ predicate on the "name" field.
@@ -335,6 +314,46 @@ func EnabledNEQ(v bool) predicate.BenchmarkSchedule {
 	return predicate.BenchmarkSchedule(sql.FieldNEQ(FieldEnabled, v))
 }
 
+// TaskCountEQ applies the EQ predicate on the "task_count" field.
+func TaskCountEQ(v int) predicate.BenchmarkSchedule {
+	return predicate.BenchmarkSchedule(sql.FieldEQ(FieldTaskCount, v))
+}
+
+// TaskCountNEQ applies the NEQ predicate on the "task_count" field.
+func TaskCountNEQ(v int) predicate.BenchmarkSchedule {
+	return predicate.BenchmarkSchedule(sql.FieldNEQ(FieldTaskCount, v))
+}
+
+// TaskCountIn applies the In predicate on the "task_count" field.
+func TaskCountIn(vs ...int) predicate.BenchmarkSchedule {
+	return predicate.BenchmarkSchedule(sql.FieldIn(FieldTaskCount, vs...))
+}
+
+// TaskCountNotIn applies the NotIn predicate on the "task_count" field.
+func TaskCountNotIn(vs ...int) predicate.BenchmarkSchedule {
+	return predicate.BenchmarkSchedule(sql.FieldNotIn(FieldTaskCount, vs...))
+}
+
+// TaskCountGT applies the GT predicate on the "task_count" field.
+func TaskCountGT(v int) predicate.BenchmarkSchedule {
+	return predicate.BenchmarkSchedule(sql.FieldGT(FieldTaskCount, v))
+}
+
+// TaskCountGTE applies the GTE predicate on the "task_count" field.
+func TaskCountGTE(v int) predicate.BenchmarkSchedule {
+	return predicate.BenchmarkSchedule(sql.FieldGTE(FieldTaskCount, v))
+}
+
+// TaskCountLT applies the LT predicate on the "task_count" field.
+func TaskCountLT(v int) predicate.BenchmarkSchedule {
+	return predicate.BenchmarkSchedule(sql.FieldLT(FieldTaskCount, v))
+}
+
+// TaskCountLTE applies the LTE predicate on the "task_count" field.
+func TaskCountLTE(v int) predicate.BenchmarkSchedule {
+	return predicate.BenchmarkSchedule(sql.FieldLTE(FieldTaskCount, v))
+}
+
 // LastRunAtEQ applies the EQ predicate on the "last_run_at" field.
 func LastRunAtEQ(v time.Time) predicate.BenchmarkSchedule {
 	return predicate.BenchmarkSchedule(sql.FieldEQ(FieldLastRunAt, v))
@@ -433,29 +452,6 @@ func NextRunAtIsNil() predicate.BenchmarkSchedule {
 // NextRunAtNotNil applies the NotNil predicate on the "next_run_at" field.
 func NextRunAtNotNil() predicate.BenchmarkSchedule {
 	return predicate.BenchmarkSchedule(sql.FieldNotNull(FieldNextRunAt))
-}
-
-// HasProfile applies the HasEdge predicate on the "profile" edge.
-func HasProfile() predicate.BenchmarkSchedule {
-	return predicate.BenchmarkSchedule(func(s *sql.Selector) {
-		step := sqlgraph.NewStep(
-			sqlgraph.From(Table, FieldID),
-			sqlgraph.Edge(sqlgraph.M2O, true, ProfileTable, ProfileColumn),
-		)
-		sqlgraph.HasNeighbors(s, step)
-	})
-}
-
-// HasProfileWith applies the HasEdge predicate on the "profile" edge with a given conditions (other predicates).
-func HasProfileWith(preds ...predicate.BenchmarkProfile) predicate.BenchmarkSchedule {
-	return predicate.BenchmarkSchedule(func(s *sql.Selector) {
-		step := newProfileStep()
-		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
-			for _, p := range preds {
-				p(s)
-			}
-		})
-	})
 }
 
 // And groups predicates with the AND operator between them.

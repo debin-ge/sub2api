@@ -13,8 +13,8 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkresult"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkrun"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkruntarget"
-	"github.com/Wei-Shaw/sub2api/ent/benchmarkscoresnapshot"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarktarget"
+	"github.com/Wei-Shaw/sub2api/ent/benchmarktargetscore"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
 )
 
@@ -134,26 +134,6 @@ func (_u *BenchmarkRunTargetUpdate) ClearChannelNameSnapshot() *BenchmarkRunTarg
 	return _u
 }
 
-// SetProviderSnapshot sets the "provider_snapshot" field.
-func (_u *BenchmarkRunTargetUpdate) SetProviderSnapshot(v string) *BenchmarkRunTargetUpdate {
-	_u.mutation.SetProviderSnapshot(v)
-	return _u
-}
-
-// SetNillableProviderSnapshot sets the "provider_snapshot" field if the given value is not nil.
-func (_u *BenchmarkRunTargetUpdate) SetNillableProviderSnapshot(v *string) *BenchmarkRunTargetUpdate {
-	if v != nil {
-		_u.SetProviderSnapshot(*v)
-	}
-	return _u
-}
-
-// ClearProviderSnapshot clears the value of the "provider_snapshot" field.
-func (_u *BenchmarkRunTargetUpdate) ClearProviderSnapshot() *BenchmarkRunTargetUpdate {
-	_u.mutation.ClearProviderSnapshot()
-	return _u
-}
-
 // SetTargetOrder sets the "target_order" field.
 func (_u *BenchmarkRunTargetUpdate) SetTargetOrder(v int) *BenchmarkRunTargetUpdate {
 	_u.mutation.ResetTargetOrder()
@@ -172,12 +152,6 @@ func (_u *BenchmarkRunTargetUpdate) SetNillableTargetOrder(v *int) *BenchmarkRun
 // AddTargetOrder adds value to the "target_order" field.
 func (_u *BenchmarkRunTargetUpdate) AddTargetOrder(v int) *BenchmarkRunTargetUpdate {
 	_u.mutation.AddTargetOrder(v)
-	return _u
-}
-
-// SetConfigSnapshot sets the "config_snapshot" field.
-func (_u *BenchmarkRunTargetUpdate) SetConfigSnapshot(v map[string]interface{}) *BenchmarkRunTargetUpdate {
-	_u.mutation.SetConfigSnapshot(v)
 	return _u
 }
 
@@ -206,19 +180,19 @@ func (_u *BenchmarkRunTargetUpdate) AddResults(v ...*BenchmarkResult) *Benchmark
 	return _u.AddResultIDs(ids...)
 }
 
-// AddScoreSnapshotIDs adds the "score_snapshots" edge to the BenchmarkScoreSnapshot entity by IDs.
-func (_u *BenchmarkRunTargetUpdate) AddScoreSnapshotIDs(ids ...int64) *BenchmarkRunTargetUpdate {
-	_u.mutation.AddScoreSnapshotIDs(ids...)
+// AddTargetScoreIDs adds the "target_scores" edge to the BenchmarkTargetScore entity by IDs.
+func (_u *BenchmarkRunTargetUpdate) AddTargetScoreIDs(ids ...int64) *BenchmarkRunTargetUpdate {
+	_u.mutation.AddTargetScoreIDs(ids...)
 	return _u
 }
 
-// AddScoreSnapshots adds the "score_snapshots" edges to the BenchmarkScoreSnapshot entity.
-func (_u *BenchmarkRunTargetUpdate) AddScoreSnapshots(v ...*BenchmarkScoreSnapshot) *BenchmarkRunTargetUpdate {
+// AddTargetScores adds the "target_scores" edges to the BenchmarkTargetScore entity.
+func (_u *BenchmarkRunTargetUpdate) AddTargetScores(v ...*BenchmarkTargetScore) *BenchmarkRunTargetUpdate {
 	ids := make([]int64, len(v))
 	for i := range v {
 		ids[i] = v[i].ID
 	}
-	return _u.AddScoreSnapshotIDs(ids...)
+	return _u.AddTargetScoreIDs(ids...)
 }
 
 // Mutation returns the BenchmarkRunTargetMutation object of the builder.
@@ -259,25 +233,25 @@ func (_u *BenchmarkRunTargetUpdate) RemoveResults(v ...*BenchmarkResult) *Benchm
 	return _u.RemoveResultIDs(ids...)
 }
 
-// ClearScoreSnapshots clears all "score_snapshots" edges to the BenchmarkScoreSnapshot entity.
-func (_u *BenchmarkRunTargetUpdate) ClearScoreSnapshots() *BenchmarkRunTargetUpdate {
-	_u.mutation.ClearScoreSnapshots()
+// ClearTargetScores clears all "target_scores" edges to the BenchmarkTargetScore entity.
+func (_u *BenchmarkRunTargetUpdate) ClearTargetScores() *BenchmarkRunTargetUpdate {
+	_u.mutation.ClearTargetScores()
 	return _u
 }
 
-// RemoveScoreSnapshotIDs removes the "score_snapshots" edge to BenchmarkScoreSnapshot entities by IDs.
-func (_u *BenchmarkRunTargetUpdate) RemoveScoreSnapshotIDs(ids ...int64) *BenchmarkRunTargetUpdate {
-	_u.mutation.RemoveScoreSnapshotIDs(ids...)
+// RemoveTargetScoreIDs removes the "target_scores" edge to BenchmarkTargetScore entities by IDs.
+func (_u *BenchmarkRunTargetUpdate) RemoveTargetScoreIDs(ids ...int64) *BenchmarkRunTargetUpdate {
+	_u.mutation.RemoveTargetScoreIDs(ids...)
 	return _u
 }
 
-// RemoveScoreSnapshots removes "score_snapshots" edges to BenchmarkScoreSnapshot entities.
-func (_u *BenchmarkRunTargetUpdate) RemoveScoreSnapshots(v ...*BenchmarkScoreSnapshot) *BenchmarkRunTargetUpdate {
+// RemoveTargetScores removes "target_scores" edges to BenchmarkTargetScore entities.
+func (_u *BenchmarkRunTargetUpdate) RemoveTargetScores(v ...*BenchmarkTargetScore) *BenchmarkRunTargetUpdate {
 	ids := make([]int64, len(v))
 	for i := range v {
 		ids[i] = v[i].ID
 	}
-	return _u.RemoveScoreSnapshotIDs(ids...)
+	return _u.RemoveTargetScoreIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -324,11 +298,6 @@ func (_u *BenchmarkRunTargetUpdate) check() error {
 			return &ValidationError{Name: "channel_name_snapshot", err: fmt.Errorf(`ent: validator failed for field "BenchmarkRunTarget.channel_name_snapshot": %w`, err)}
 		}
 	}
-	if v, ok := _u.mutation.ProviderSnapshot(); ok {
-		if err := benchmarkruntarget.ProviderSnapshotValidator(v); err != nil {
-			return &ValidationError{Name: "provider_snapshot", err: fmt.Errorf(`ent: validator failed for field "BenchmarkRunTarget.provider_snapshot": %w`, err)}
-		}
-	}
 	if _u.mutation.RunCleared() && len(_u.mutation.RunIDs()) > 0 {
 		return errors.New(`ent: clearing a required unique edge "BenchmarkRunTarget.run"`)
 	}
@@ -371,20 +340,11 @@ func (_u *BenchmarkRunTargetUpdate) sqlSave(ctx context.Context) (_node int, err
 	if _u.mutation.ChannelNameSnapshotCleared() {
 		_spec.ClearField(benchmarkruntarget.FieldChannelNameSnapshot, field.TypeString)
 	}
-	if value, ok := _u.mutation.ProviderSnapshot(); ok {
-		_spec.SetField(benchmarkruntarget.FieldProviderSnapshot, field.TypeString, value)
-	}
-	if _u.mutation.ProviderSnapshotCleared() {
-		_spec.ClearField(benchmarkruntarget.FieldProviderSnapshot, field.TypeString)
-	}
 	if value, ok := _u.mutation.TargetOrder(); ok {
 		_spec.SetField(benchmarkruntarget.FieldTargetOrder, field.TypeInt, value)
 	}
 	if value, ok := _u.mutation.AddedTargetOrder(); ok {
 		_spec.AddField(benchmarkruntarget.FieldTargetOrder, field.TypeInt, value)
-	}
-	if value, ok := _u.mutation.ConfigSnapshot(); ok {
-		_spec.SetField(benchmarkruntarget.FieldConfigSnapshot, field.TypeJSON, value)
 	}
 	if _u.mutation.RunCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -489,28 +449,28 @@ func (_u *BenchmarkRunTargetUpdate) sqlSave(ctx context.Context) (_node int, err
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
-	if _u.mutation.ScoreSnapshotsCleared() {
+	if _u.mutation.TargetScoresCleared() {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
 			Inverse: false,
-			Table:   benchmarkruntarget.ScoreSnapshotsTable,
-			Columns: []string{benchmarkruntarget.ScoreSnapshotsColumn},
+			Table:   benchmarkruntarget.TargetScoresTable,
+			Columns: []string{benchmarkruntarget.TargetScoresColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(benchmarkscoresnapshot.FieldID, field.TypeInt64),
+				IDSpec: sqlgraph.NewFieldSpec(benchmarktargetscore.FieldID, field.TypeInt64),
 			},
 		}
 		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
 	}
-	if nodes := _u.mutation.RemovedScoreSnapshotsIDs(); len(nodes) > 0 && !_u.mutation.ScoreSnapshotsCleared() {
+	if nodes := _u.mutation.RemovedTargetScoresIDs(); len(nodes) > 0 && !_u.mutation.TargetScoresCleared() {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
 			Inverse: false,
-			Table:   benchmarkruntarget.ScoreSnapshotsTable,
-			Columns: []string{benchmarkruntarget.ScoreSnapshotsColumn},
+			Table:   benchmarkruntarget.TargetScoresTable,
+			Columns: []string{benchmarkruntarget.TargetScoresColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(benchmarkscoresnapshot.FieldID, field.TypeInt64),
+				IDSpec: sqlgraph.NewFieldSpec(benchmarktargetscore.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {
@@ -518,15 +478,15 @@ func (_u *BenchmarkRunTargetUpdate) sqlSave(ctx context.Context) (_node int, err
 		}
 		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
 	}
-	if nodes := _u.mutation.ScoreSnapshotsIDs(); len(nodes) > 0 {
+	if nodes := _u.mutation.TargetScoresIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
 			Inverse: false,
-			Table:   benchmarkruntarget.ScoreSnapshotsTable,
-			Columns: []string{benchmarkruntarget.ScoreSnapshotsColumn},
+			Table:   benchmarkruntarget.TargetScoresTable,
+			Columns: []string{benchmarkruntarget.TargetScoresColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(benchmarkscoresnapshot.FieldID, field.TypeInt64),
+				IDSpec: sqlgraph.NewFieldSpec(benchmarktargetscore.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {
@@ -657,26 +617,6 @@ func (_u *BenchmarkRunTargetUpdateOne) ClearChannelNameSnapshot() *BenchmarkRunT
 	return _u
 }
 
-// SetProviderSnapshot sets the "provider_snapshot" field.
-func (_u *BenchmarkRunTargetUpdateOne) SetProviderSnapshot(v string) *BenchmarkRunTargetUpdateOne {
-	_u.mutation.SetProviderSnapshot(v)
-	return _u
-}
-
-// SetNillableProviderSnapshot sets the "provider_snapshot" field if the given value is not nil.
-func (_u *BenchmarkRunTargetUpdateOne) SetNillableProviderSnapshot(v *string) *BenchmarkRunTargetUpdateOne {
-	if v != nil {
-		_u.SetProviderSnapshot(*v)
-	}
-	return _u
-}
-
-// ClearProviderSnapshot clears the value of the "provider_snapshot" field.
-func (_u *BenchmarkRunTargetUpdateOne) ClearProviderSnapshot() *BenchmarkRunTargetUpdateOne {
-	_u.mutation.ClearProviderSnapshot()
-	return _u
-}
-
 // SetTargetOrder sets the "target_order" field.
 func (_u *BenchmarkRunTargetUpdateOne) SetTargetOrder(v int) *BenchmarkRunTargetUpdateOne {
 	_u.mutation.ResetTargetOrder()
@@ -695,12 +635,6 @@ func (_u *BenchmarkRunTargetUpdateOne) SetNillableTargetOrder(v *int) *Benchmark
 // AddTargetOrder adds value to the "target_order" field.
 func (_u *BenchmarkRunTargetUpdateOne) AddTargetOrder(v int) *BenchmarkRunTargetUpdateOne {
 	_u.mutation.AddTargetOrder(v)
-	return _u
-}
-
-// SetConfigSnapshot sets the "config_snapshot" field.
-func (_u *BenchmarkRunTargetUpdateOne) SetConfigSnapshot(v map[string]interface{}) *BenchmarkRunTargetUpdateOne {
-	_u.mutation.SetConfigSnapshot(v)
 	return _u
 }
 
@@ -729,19 +663,19 @@ func (_u *BenchmarkRunTargetUpdateOne) AddResults(v ...*BenchmarkResult) *Benchm
 	return _u.AddResultIDs(ids...)
 }
 
-// AddScoreSnapshotIDs adds the "score_snapshots" edge to the BenchmarkScoreSnapshot entity by IDs.
-func (_u *BenchmarkRunTargetUpdateOne) AddScoreSnapshotIDs(ids ...int64) *BenchmarkRunTargetUpdateOne {
-	_u.mutation.AddScoreSnapshotIDs(ids...)
+// AddTargetScoreIDs adds the "target_scores" edge to the BenchmarkTargetScore entity by IDs.
+func (_u *BenchmarkRunTargetUpdateOne) AddTargetScoreIDs(ids ...int64) *BenchmarkRunTargetUpdateOne {
+	_u.mutation.AddTargetScoreIDs(ids...)
 	return _u
 }
 
-// AddScoreSnapshots adds the "score_snapshots" edges to the BenchmarkScoreSnapshot entity.
-func (_u *BenchmarkRunTargetUpdateOne) AddScoreSnapshots(v ...*BenchmarkScoreSnapshot) *BenchmarkRunTargetUpdateOne {
+// AddTargetScores adds the "target_scores" edges to the BenchmarkTargetScore entity.
+func (_u *BenchmarkRunTargetUpdateOne) AddTargetScores(v ...*BenchmarkTargetScore) *BenchmarkRunTargetUpdateOne {
 	ids := make([]int64, len(v))
 	for i := range v {
 		ids[i] = v[i].ID
 	}
-	return _u.AddScoreSnapshotIDs(ids...)
+	return _u.AddTargetScoreIDs(ids...)
 }
 
 // Mutation returns the BenchmarkRunTargetMutation object of the builder.
@@ -782,25 +716,25 @@ func (_u *BenchmarkRunTargetUpdateOne) RemoveResults(v ...*BenchmarkResult) *Ben
 	return _u.RemoveResultIDs(ids...)
 }
 
-// ClearScoreSnapshots clears all "score_snapshots" edges to the BenchmarkScoreSnapshot entity.
-func (_u *BenchmarkRunTargetUpdateOne) ClearScoreSnapshots() *BenchmarkRunTargetUpdateOne {
-	_u.mutation.ClearScoreSnapshots()
+// ClearTargetScores clears all "target_scores" edges to the BenchmarkTargetScore entity.
+func (_u *BenchmarkRunTargetUpdateOne) ClearTargetScores() *BenchmarkRunTargetUpdateOne {
+	_u.mutation.ClearTargetScores()
 	return _u
 }
 
-// RemoveScoreSnapshotIDs removes the "score_snapshots" edge to BenchmarkScoreSnapshot entities by IDs.
-func (_u *BenchmarkRunTargetUpdateOne) RemoveScoreSnapshotIDs(ids ...int64) *BenchmarkRunTargetUpdateOne {
-	_u.mutation.RemoveScoreSnapshotIDs(ids...)
+// RemoveTargetScoreIDs removes the "target_scores" edge to BenchmarkTargetScore entities by IDs.
+func (_u *BenchmarkRunTargetUpdateOne) RemoveTargetScoreIDs(ids ...int64) *BenchmarkRunTargetUpdateOne {
+	_u.mutation.RemoveTargetScoreIDs(ids...)
 	return _u
 }
 
-// RemoveScoreSnapshots removes "score_snapshots" edges to BenchmarkScoreSnapshot entities.
-func (_u *BenchmarkRunTargetUpdateOne) RemoveScoreSnapshots(v ...*BenchmarkScoreSnapshot) *BenchmarkRunTargetUpdateOne {
+// RemoveTargetScores removes "target_scores" edges to BenchmarkTargetScore entities.
+func (_u *BenchmarkRunTargetUpdateOne) RemoveTargetScores(v ...*BenchmarkTargetScore) *BenchmarkRunTargetUpdateOne {
 	ids := make([]int64, len(v))
 	for i := range v {
 		ids[i] = v[i].ID
 	}
-	return _u.RemoveScoreSnapshotIDs(ids...)
+	return _u.RemoveTargetScoreIDs(ids...)
 }
 
 // Where appends a list predicates to the BenchmarkRunTargetUpdate builder.
@@ -858,11 +792,6 @@ func (_u *BenchmarkRunTargetUpdateOne) check() error {
 	if v, ok := _u.mutation.ChannelNameSnapshot(); ok {
 		if err := benchmarkruntarget.ChannelNameSnapshotValidator(v); err != nil {
 			return &ValidationError{Name: "channel_name_snapshot", err: fmt.Errorf(`ent: validator failed for field "BenchmarkRunTarget.channel_name_snapshot": %w`, err)}
-		}
-	}
-	if v, ok := _u.mutation.ProviderSnapshot(); ok {
-		if err := benchmarkruntarget.ProviderSnapshotValidator(v); err != nil {
-			return &ValidationError{Name: "provider_snapshot", err: fmt.Errorf(`ent: validator failed for field "BenchmarkRunTarget.provider_snapshot": %w`, err)}
 		}
 	}
 	if _u.mutation.RunCleared() && len(_u.mutation.RunIDs()) > 0 {
@@ -924,20 +853,11 @@ func (_u *BenchmarkRunTargetUpdateOne) sqlSave(ctx context.Context) (_node *Benc
 	if _u.mutation.ChannelNameSnapshotCleared() {
 		_spec.ClearField(benchmarkruntarget.FieldChannelNameSnapshot, field.TypeString)
 	}
-	if value, ok := _u.mutation.ProviderSnapshot(); ok {
-		_spec.SetField(benchmarkruntarget.FieldProviderSnapshot, field.TypeString, value)
-	}
-	if _u.mutation.ProviderSnapshotCleared() {
-		_spec.ClearField(benchmarkruntarget.FieldProviderSnapshot, field.TypeString)
-	}
 	if value, ok := _u.mutation.TargetOrder(); ok {
 		_spec.SetField(benchmarkruntarget.FieldTargetOrder, field.TypeInt, value)
 	}
 	if value, ok := _u.mutation.AddedTargetOrder(); ok {
 		_spec.AddField(benchmarkruntarget.FieldTargetOrder, field.TypeInt, value)
-	}
-	if value, ok := _u.mutation.ConfigSnapshot(); ok {
-		_spec.SetField(benchmarkruntarget.FieldConfigSnapshot, field.TypeJSON, value)
 	}
 	if _u.mutation.RunCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -1042,28 +962,28 @@ func (_u *BenchmarkRunTargetUpdateOne) sqlSave(ctx context.Context) (_node *Benc
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
-	if _u.mutation.ScoreSnapshotsCleared() {
+	if _u.mutation.TargetScoresCleared() {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
 			Inverse: false,
-			Table:   benchmarkruntarget.ScoreSnapshotsTable,
-			Columns: []string{benchmarkruntarget.ScoreSnapshotsColumn},
+			Table:   benchmarkruntarget.TargetScoresTable,
+			Columns: []string{benchmarkruntarget.TargetScoresColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(benchmarkscoresnapshot.FieldID, field.TypeInt64),
+				IDSpec: sqlgraph.NewFieldSpec(benchmarktargetscore.FieldID, field.TypeInt64),
 			},
 		}
 		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
 	}
-	if nodes := _u.mutation.RemovedScoreSnapshotsIDs(); len(nodes) > 0 && !_u.mutation.ScoreSnapshotsCleared() {
+	if nodes := _u.mutation.RemovedTargetScoresIDs(); len(nodes) > 0 && !_u.mutation.TargetScoresCleared() {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
 			Inverse: false,
-			Table:   benchmarkruntarget.ScoreSnapshotsTable,
-			Columns: []string{benchmarkruntarget.ScoreSnapshotsColumn},
+			Table:   benchmarkruntarget.TargetScoresTable,
+			Columns: []string{benchmarkruntarget.TargetScoresColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(benchmarkscoresnapshot.FieldID, field.TypeInt64),
+				IDSpec: sqlgraph.NewFieldSpec(benchmarktargetscore.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {
@@ -1071,15 +991,15 @@ func (_u *BenchmarkRunTargetUpdateOne) sqlSave(ctx context.Context) (_node *Benc
 		}
 		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
 	}
-	if nodes := _u.mutation.ScoreSnapshotsIDs(); len(nodes) > 0 {
+	if nodes := _u.mutation.TargetScoresIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
 			Inverse: false,
-			Table:   benchmarkruntarget.ScoreSnapshotsTable,
-			Columns: []string{benchmarkruntarget.ScoreSnapshotsColumn},
+			Table:   benchmarkruntarget.TargetScoresTable,
+			Columns: []string{benchmarkruntarget.TargetScoresColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(benchmarkscoresnapshot.FieldID, field.TypeInt64),
+				IDSpec: sqlgraph.NewFieldSpec(benchmarktargetscore.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

@@ -20,10 +20,7 @@ type BenchmarkRunner struct {
 }
 
 func NewBenchmarkRunner(repo BenchmarkRepository, client BenchmarkGatewayClient) *BenchmarkRunner {
-	return &BenchmarkRunner{
-		repo:   repo,
-		client: client,
-	}
+	return &BenchmarkRunner{repo: repo, client: client}
 }
 
 func (r *BenchmarkRunner) SetBenchmarkRuntimeProvider(provider benchmarkRuntimeProvider) {
@@ -34,14 +31,18 @@ func (r *BenchmarkRunner) SetSettingService(settingService *SettingService) {
 	r.SetBenchmarkRuntimeProvider(settingService)
 }
 
+// RunOnce claims a batch of pending results, executes each through the gateway,
+// verifies, and writes terminal results. It returns once the batch is done; the
+// processor calls it repeatedly until no pending results remain.
 func (r *BenchmarkRunner) RunOnce(ctx context.Context, runID int64) error {
 	runtime, hasRuntimeProvider := r.getBenchmarkRuntime(ctx)
-	run, err := r.repo.GetRun(ctx, runID)
-	if err != nil {
-		return err
+
+	claimLimit := benchmarkRunnerDefaultClaimLimit
+	if hasRuntimeProvider && runtime.GlobalConcurrency > 0 {
+		claimLimit = runtime.GlobalConcurrency
 	}
 
-	claimed, err := r.repo.ClaimPendingResults(ctx, runID, benchmarkRunnerClaimLimit(run, runtime, hasRuntimeProvider))
+	claimed, err := r.repo.ClaimPendingResults(ctx, runID, claimLimit)
 	if err != nil {
 		return err
 	}
@@ -60,25 +61,10 @@ func (r *BenchmarkRunner) RunOnce(ctx context.Context, runID int64) error {
 	if err != nil {
 		return err
 	}
-
-	nextStatus := BenchmarkRunStatusScoring
-	if counts[BenchmarkResultStatusPending] > 0 || counts[BenchmarkResultStatusRunning] > 0 {
-		nextStatus = BenchmarkRunStatusRunning
-	}
-	return r.repo.UpdateRunStatus(ctx, runID, nextStatus, nil)
-}
-
-func benchmarkRunnerClaimLimit(run *ent.BenchmarkRun, runtime BenchmarkRuntime, hasRuntimeProvider bool) int {
-	if value, ok := benchmarkRunnerRuntimeConfigPositiveInt(run, "max_concurrency"); ok {
-		return value
-	}
-	if value, ok := benchmarkRunnerRuntimeConfigPositiveInt(run, "concurrency"); ok {
-		return value
-	}
-	if hasRuntimeProvider && runtime.GlobalConcurrency > 0 {
-		return runtime.GlobalConcurrency
-	}
-	return benchmarkRunnerDefaultClaimLimit
+	// The run stays "running"; the processor flips it to completed once all
+	// results are terminal and scoring is done.
+	_ = counts
+	return r.repo.UpdateRunStatus(ctx, runID, BenchmarkRunStatusRunning, nil)
 }
 
 func (r *BenchmarkRunner) getBenchmarkRuntime(ctx context.Context) (BenchmarkRuntime, bool) {
@@ -120,7 +106,7 @@ func (r *BenchmarkRunner) runResultOnce(ctx context.Context, resultCtx *Benchmar
 		ChannelID:    resultCtx.Target.ChannelID,
 		Prompt:       resultCtx.Task.PromptSnapshot,
 		InputPayload: benchmarkRunnerInputPayload(resultCtx.Task),
-		Timeout:      benchmarkRunnerTimeout(resultCtx.Run, runtime, hasRuntimeProvider),
+		Timeout:      benchmarkRunnerTimeout(runtime, hasRuntimeProvider),
 	}
 
 	resp, err := r.client.Execute(ctx, req)
@@ -137,8 +123,6 @@ func (r *BenchmarkRunner) runResultOnce(ctx context.Context, resultCtx *Benchmar
 			BenchmarkResultUpdateInput{
 				Status:               benchmarkRunnerStringPtr(status),
 				RequestID:            benchmarkRunnerStringPtr(requestID),
-				ClearScore:           true,
-				ClearMaxScore:        true,
 				ClearNormalizedScore: true,
 				ClearEvaluatorType:   true,
 				ClearEvaluatorOutput: true,
@@ -170,8 +154,6 @@ func (r *BenchmarkRunner) runResultOnce(ctx context.Context, resultCtx *Benchmar
 			BenchmarkResultUpdateInput{
 				Status:               benchmarkRunnerStringPtr(BenchmarkResultStatusVerifierError),
 				RequestID:            &requestID,
-				ClearScore:           true,
-				ClearMaxScore:        true,
 				ClearNormalizedScore: true,
 				EvaluatorType:        benchmarkRunnerStringPtr(resultCtx.Task.VerifierTypeSnapshot),
 				ClearEvaluatorOutput: true,
@@ -188,8 +170,6 @@ func (r *BenchmarkRunner) runResultOnce(ctx context.Context, resultCtx *Benchmar
 		scoredUpdate := BenchmarkResultUpdateInput{
 			Status:            benchmarkRunnerStringPtr(BenchmarkResultStatusScored),
 			RequestID:         &requestID,
-			Score:             &verifierResult.Score,
-			MaxScore:          &verifierResult.MaxScore,
 			NormalizedScore:   &verifierResult.NormalizedScore,
 			EvaluatorType:     benchmarkRunnerStringPtr(resultCtx.Task.VerifierTypeSnapshot),
 			ClearErrorCode:    true,
@@ -198,17 +178,12 @@ func (r *BenchmarkRunner) runResultOnce(ctx context.Context, resultCtx *Benchmar
 			FinishedAt:        &finishedAt,
 		}
 		benchmarkRunnerSetEvaluatorOutput(&scoredUpdate, verifierResult.Output)
-		return r.repo.UpdateResult(ctx, resultCtx.Result.ID, benchmarkRunnerResponseUpdateInput(
-			resp,
-			scoredUpdate,
-		))
+		return r.repo.UpdateResult(ctx, resultCtx.Result.ID, benchmarkRunnerResponseUpdateInput(resp, scoredUpdate))
 	case BenchmarkResultStatusParseError:
 		errMessage := benchmarkRunnerVerifierErrorMessage(verifierResult, "benchmark verifier parse error")
 		parseUpdate := BenchmarkResultUpdateInput{
 			Status:               benchmarkRunnerStringPtr(BenchmarkResultStatusParseError),
 			RequestID:            &requestID,
-			ClearScore:           true,
-			ClearMaxScore:        true,
 			ClearNormalizedScore: true,
 			EvaluatorType:        benchmarkRunnerStringPtr(resultCtx.Task.VerifierTypeSnapshot),
 			ErrorCode:            benchmarkRunnerStringPtr(BenchmarkResultStatusParseError),
@@ -217,17 +192,12 @@ func (r *BenchmarkRunner) runResultOnce(ctx context.Context, resultCtx *Benchmar
 			FinishedAt:           &finishedAt,
 		}
 		benchmarkRunnerSetEvaluatorOutput(&parseUpdate, verifierResult.Output)
-		return r.repo.UpdateResult(ctx, resultCtx.Result.ID, benchmarkRunnerResponseUpdateInput(
-			resp,
-			parseUpdate,
-		))
+		return r.repo.UpdateResult(ctx, resultCtx.Result.ID, benchmarkRunnerResponseUpdateInput(resp, parseUpdate))
 	default:
 		errMessage := fmt.Sprintf("unexpected benchmark verifier status: %s", verifierResult.Status)
 		unexpectedUpdate := BenchmarkResultUpdateInput{
 			Status:               benchmarkRunnerStringPtr(BenchmarkResultStatusVerifierError),
 			RequestID:            &requestID,
-			ClearScore:           true,
-			ClearMaxScore:        true,
 			ClearNormalizedScore: true,
 			EvaluatorType:        benchmarkRunnerStringPtr(resultCtx.Task.VerifierTypeSnapshot),
 			ErrorCode:            benchmarkRunnerStringPtr(BenchmarkResultStatusVerifierError),
@@ -236,10 +206,7 @@ func (r *BenchmarkRunner) runResultOnce(ctx context.Context, resultCtx *Benchmar
 			FinishedAt:           &finishedAt,
 		}
 		benchmarkRunnerSetEvaluatorOutput(&unexpectedUpdate, verifierResult.Output)
-		return r.repo.UpdateResult(ctx, resultCtx.Result.ID, benchmarkRunnerResponseUpdateInput(
-			resp,
-			unexpectedUpdate,
-		))
+		return r.repo.UpdateResult(ctx, resultCtx.Result.ID, benchmarkRunnerResponseUpdateInput(resp, unexpectedUpdate))
 	}
 }
 
@@ -274,64 +241,11 @@ func benchmarkRunnerIsRateLimitError(err error) bool {
 	return errors.As(err, &target)
 }
 
-func benchmarkRunnerTimeout(run *ent.BenchmarkRun, runtime BenchmarkRuntime, hasRuntimeProvider bool) time.Duration {
-	if value, ok := benchmarkRunnerRuntimeConfigPositiveDuration(run, "timeout"); ok {
-		return value
-	}
+func benchmarkRunnerTimeout(runtime BenchmarkRuntime, hasRuntimeProvider bool) time.Duration {
 	if hasRuntimeProvider && runtime.DefaultTimeoutSeconds > 0 {
 		return time.Duration(runtime.DefaultTimeoutSeconds) * time.Second
 	}
 	return 0
-}
-
-func benchmarkRunnerRuntimeConfigPositiveInt(run *ent.BenchmarkRun, key string) (int, bool) {
-	if run == nil || len(run.ConfigSnapshot) == 0 {
-		return 0, false
-	}
-	runtimeConfig, ok := run.ConfigSnapshot["runtime_config"].(map[string]any)
-	if !ok {
-		return 0, false
-	}
-	switch value := runtimeConfig[key].(type) {
-	case int:
-		if value > 0 {
-			return value, true
-		}
-	case int64:
-		if value > 0 {
-			return int(value), true
-		}
-	case float64:
-		if value > 0 && value == math.Trunc(value) {
-			return int(value), true
-		}
-	}
-	return 0, false
-}
-
-func benchmarkRunnerRuntimeConfigPositiveDuration(run *ent.BenchmarkRun, key string) (time.Duration, bool) {
-	if run == nil || len(run.ConfigSnapshot) == 0 {
-		return 0, false
-	}
-	runtimeConfig, ok := run.ConfigSnapshot["runtime_config"].(map[string]any)
-	if !ok {
-		return 0, false
-	}
-	switch value := runtimeConfig[key].(type) {
-	case int:
-		if value > 0 {
-			return time.Duration(value) * time.Second, true
-		}
-	case int64:
-		if value > 0 {
-			return time.Duration(value) * time.Second, true
-		}
-	case float64:
-		if value > 0 {
-			return time.Duration(value * float64(time.Second)), true
-		}
-	}
-	return 0, false
 }
 
 func benchmarkRunnerInputPayload(task *ent.BenchmarkRunTask) map[string]any {
@@ -393,14 +307,14 @@ func benchmarkRunnerVerifierErrorMessage(result BenchmarkVerifierResult, fallbac
 	return fallback
 }
 
-func benchmarkRunnerStringPtr(value string) *string {
-	return &value
-}
-
-func benchmarkRunnerIntPtr(value int) *int {
-	return &value
-}
-
+func benchmarkRunnerStringPtr(value string) *string { return &value }
+func benchmarkRunnerIntPtr(value int) *int          { return &value }
 func benchmarkRunnerFloat64Ptr(value float64) *float64 {
 	return &value
+}
+
+// benchmarkRunnerRoundFloat is retained for callers needing rounded metrics.
+func benchmarkRunnerRoundFloat(value float64, decimals int) float64 {
+	pow := math.Pow(10, float64(decimals))
+	return math.Round(value*pow) / pow
 }

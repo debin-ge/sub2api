@@ -130,9 +130,8 @@ describe('HomeView Radar home', () => {
       ranking_basis: 'ability_score_only',
       latest_run: {
         id: 9,
-        suite_id: 1,
-        profile_id: 2,
         status: 'completed',
+        task_count: 20,
         completed_at: '2026-06-24T08:00:00Z',
       },
       targets: [
@@ -143,24 +142,17 @@ describe('HomeView Radar home', () => {
           channel_name: 'OpenAI',
           display_name: 'GPT-4o',
           overall_score: 92.4,
+          passed_count: 20,
+          total_count: 20,
           dimensions: { reasoning: 91, coding: 94 },
-          score_basis: {
-            planned_tasks: 20,
-            scored_tasks: 20,
-            invalid_tasks: 0,
-            coverage_rate: 1,
-            confidence_level: 'high',
-            insufficient_sample: false,
-          },
           metrics: {
-            success_rate: 0.98,
-            latency_p50_ms: 890,
-            latency_p95_ms: 1640,
+            avg_latency_ms: 890,
             avg_total_tokens: 1460,
-            estimated_cost: 0.028,
+            total_cost: 0.028,
           },
         },
       ],
+      trends: [],
     })
   })
 

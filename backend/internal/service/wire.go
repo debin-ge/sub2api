@@ -521,9 +521,10 @@ func ProvideSettingService(settingRepo SettingRepository, groupRepo GroupReposit
 	return svc
 }
 
-func ProvideBenchmarkService(repo BenchmarkRepository, settingService *SettingService) *BenchmarkService {
+func ProvideBenchmarkService(repo BenchmarkRepository, settingService *SettingService, channelRepo ChannelRepository) *BenchmarkService {
 	svc := NewBenchmarkService(repo)
 	svc.SetSettingService(settingService)
+	svc.SetChannelResolver(channelRepo)
 	return svc
 }
 
@@ -533,9 +534,28 @@ func ProvideBenchmarkScheduleService(repo BenchmarkRepository, benchmarkService 
 	return svc
 }
 
-func ProvideBenchmarkSnapshotService(repo BenchmarkRepository, settingService *SettingService) *BenchmarkSnapshotService {
-	svc := NewBenchmarkSnapshotService(repo)
-	svc.SetSettingService(settingService)
+func ProvideBenchmarkSnapshotService(repo BenchmarkRepository) *BenchmarkSnapshotService {
+	return NewBenchmarkSnapshotService(repo)
+}
+
+func ProvideBenchmarkRunner(repo BenchmarkRepository, client BenchmarkGatewayClient, settingService *SettingService) *BenchmarkRunner {
+	runner := NewBenchmarkRunner(repo, client)
+	runner.SetSettingService(settingService)
+	return runner
+}
+
+func ProvideBenchmarkProcessor(repo BenchmarkRepository, runner *BenchmarkRunner, snapshot *BenchmarkSnapshotService) *BenchmarkProcessor {
+	return NewBenchmarkProcessor(repo, runner, snapshot)
+}
+
+// ProvideBenchmarkRunnerService creates and starts the benchmark background daemon.
+func ProvideBenchmarkRunnerService(
+	scheduleSvc *BenchmarkScheduleService,
+	processor *BenchmarkProcessor,
+	cfg *config.Config,
+) *BenchmarkRunnerService {
+	svc := NewBenchmarkRunnerService(scheduleSvc, processor, cfg)
+	svc.Start()
 	return svc
 }
 
@@ -586,7 +606,10 @@ var ProviderSet = wire.NewSet(
 	ProvideBenchmarkService,
 	ProvideBenchmarkScheduleService,
 	ProvideBenchmarkSnapshotService,
-	// BenchmarkRunner stays out of ProviderSet until a concrete BenchmarkGatewayClient provider exists.
+	ProvideBenchmarkGatewayClient,
+	ProvideBenchmarkRunner,
+	ProvideBenchmarkProcessor,
+	ProvideBenchmarkRunnerService,
 	ProvidePricingService,
 	NewBillingService,
 	ProvideBillingCacheService,

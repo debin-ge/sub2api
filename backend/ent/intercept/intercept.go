@@ -15,16 +15,14 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
 	"github.com/Wei-Shaw/sub2api/ent/authidentity"
 	"github.com/Wei-Shaw/sub2api/ent/authidentitychannel"
-	"github.com/Wei-Shaw/sub2api/ent/benchmarkprofile"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkpublicsnapshot"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkresult"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkrun"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkruntarget"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkruntask"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkschedule"
-	"github.com/Wei-Shaw/sub2api/ent/benchmarkscoresnapshot"
-	"github.com/Wei-Shaw/sub2api/ent/benchmarksuite"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarktarget"
+	"github.com/Wei-Shaw/sub2api/ent/benchmarktargetscore"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarktask"
 	"github.com/Wei-Shaw/sub2api/ent/channelmonitor"
 	"github.com/Wei-Shaw/sub2api/ent/channelmonitordailyrollup"
@@ -302,33 +300,6 @@ func (f TraverseAuthIdentityChannel) Traverse(ctx context.Context, q ent.Query) 
 	return fmt.Errorf("unexpected query type %T. expect *ent.AuthIdentityChannelQuery", q)
 }
 
-// The BenchmarkProfileFunc type is an adapter to allow the use of ordinary function as a Querier.
-type BenchmarkProfileFunc func(context.Context, *ent.BenchmarkProfileQuery) (ent.Value, error)
-
-// Query calls f(ctx, q).
-func (f BenchmarkProfileFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
-	if q, ok := q.(*ent.BenchmarkProfileQuery); ok {
-		return f(ctx, q)
-	}
-	return nil, fmt.Errorf("unexpected query type %T. expect *ent.BenchmarkProfileQuery", q)
-}
-
-// The TraverseBenchmarkProfile type is an adapter to allow the use of ordinary function as Traverser.
-type TraverseBenchmarkProfile func(context.Context, *ent.BenchmarkProfileQuery) error
-
-// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
-func (f TraverseBenchmarkProfile) Intercept(next ent.Querier) ent.Querier {
-	return next
-}
-
-// Traverse calls f(ctx, q).
-func (f TraverseBenchmarkProfile) Traverse(ctx context.Context, q ent.Query) error {
-	if q, ok := q.(*ent.BenchmarkProfileQuery); ok {
-		return f(ctx, q)
-	}
-	return fmt.Errorf("unexpected query type %T. expect *ent.BenchmarkProfileQuery", q)
-}
-
 // The BenchmarkPublicSnapshotFunc type is an adapter to allow the use of ordinary function as a Querier.
 type BenchmarkPublicSnapshotFunc func(context.Context, *ent.BenchmarkPublicSnapshotQuery) (ent.Value, error)
 
@@ -491,60 +462,6 @@ func (f TraverseBenchmarkSchedule) Traverse(ctx context.Context, q ent.Query) er
 	return fmt.Errorf("unexpected query type %T. expect *ent.BenchmarkScheduleQuery", q)
 }
 
-// The BenchmarkScoreSnapshotFunc type is an adapter to allow the use of ordinary function as a Querier.
-type BenchmarkScoreSnapshotFunc func(context.Context, *ent.BenchmarkScoreSnapshotQuery) (ent.Value, error)
-
-// Query calls f(ctx, q).
-func (f BenchmarkScoreSnapshotFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
-	if q, ok := q.(*ent.BenchmarkScoreSnapshotQuery); ok {
-		return f(ctx, q)
-	}
-	return nil, fmt.Errorf("unexpected query type %T. expect *ent.BenchmarkScoreSnapshotQuery", q)
-}
-
-// The TraverseBenchmarkScoreSnapshot type is an adapter to allow the use of ordinary function as Traverser.
-type TraverseBenchmarkScoreSnapshot func(context.Context, *ent.BenchmarkScoreSnapshotQuery) error
-
-// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
-func (f TraverseBenchmarkScoreSnapshot) Intercept(next ent.Querier) ent.Querier {
-	return next
-}
-
-// Traverse calls f(ctx, q).
-func (f TraverseBenchmarkScoreSnapshot) Traverse(ctx context.Context, q ent.Query) error {
-	if q, ok := q.(*ent.BenchmarkScoreSnapshotQuery); ok {
-		return f(ctx, q)
-	}
-	return fmt.Errorf("unexpected query type %T. expect *ent.BenchmarkScoreSnapshotQuery", q)
-}
-
-// The BenchmarkSuiteFunc type is an adapter to allow the use of ordinary function as a Querier.
-type BenchmarkSuiteFunc func(context.Context, *ent.BenchmarkSuiteQuery) (ent.Value, error)
-
-// Query calls f(ctx, q).
-func (f BenchmarkSuiteFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
-	if q, ok := q.(*ent.BenchmarkSuiteQuery); ok {
-		return f(ctx, q)
-	}
-	return nil, fmt.Errorf("unexpected query type %T. expect *ent.BenchmarkSuiteQuery", q)
-}
-
-// The TraverseBenchmarkSuite type is an adapter to allow the use of ordinary function as Traverser.
-type TraverseBenchmarkSuite func(context.Context, *ent.BenchmarkSuiteQuery) error
-
-// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
-func (f TraverseBenchmarkSuite) Intercept(next ent.Querier) ent.Querier {
-	return next
-}
-
-// Traverse calls f(ctx, q).
-func (f TraverseBenchmarkSuite) Traverse(ctx context.Context, q ent.Query) error {
-	if q, ok := q.(*ent.BenchmarkSuiteQuery); ok {
-		return f(ctx, q)
-	}
-	return fmt.Errorf("unexpected query type %T. expect *ent.BenchmarkSuiteQuery", q)
-}
-
 // The BenchmarkTargetFunc type is an adapter to allow the use of ordinary function as a Querier.
 type BenchmarkTargetFunc func(context.Context, *ent.BenchmarkTargetQuery) (ent.Value, error)
 
@@ -570,6 +487,33 @@ func (f TraverseBenchmarkTarget) Traverse(ctx context.Context, q ent.Query) erro
 		return f(ctx, q)
 	}
 	return fmt.Errorf("unexpected query type %T. expect *ent.BenchmarkTargetQuery", q)
+}
+
+// The BenchmarkTargetScoreFunc type is an adapter to allow the use of ordinary function as a Querier.
+type BenchmarkTargetScoreFunc func(context.Context, *ent.BenchmarkTargetScoreQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f BenchmarkTargetScoreFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.BenchmarkTargetScoreQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.BenchmarkTargetScoreQuery", q)
+}
+
+// The TraverseBenchmarkTargetScore type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseBenchmarkTargetScore func(context.Context, *ent.BenchmarkTargetScoreQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseBenchmarkTargetScore) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseBenchmarkTargetScore) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.BenchmarkTargetScoreQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.BenchmarkTargetScoreQuery", q)
 }
 
 // The BenchmarkTaskFunc type is an adapter to allow the use of ordinary function as a Querier.
@@ -1372,8 +1316,6 @@ func NewQuery(q ent.Query) (Query, error) {
 		return &query[*ent.AuthIdentityQuery, predicate.AuthIdentity, authidentity.OrderOption]{typ: ent.TypeAuthIdentity, tq: q}, nil
 	case *ent.AuthIdentityChannelQuery:
 		return &query[*ent.AuthIdentityChannelQuery, predicate.AuthIdentityChannel, authidentitychannel.OrderOption]{typ: ent.TypeAuthIdentityChannel, tq: q}, nil
-	case *ent.BenchmarkProfileQuery:
-		return &query[*ent.BenchmarkProfileQuery, predicate.BenchmarkProfile, benchmarkprofile.OrderOption]{typ: ent.TypeBenchmarkProfile, tq: q}, nil
 	case *ent.BenchmarkPublicSnapshotQuery:
 		return &query[*ent.BenchmarkPublicSnapshotQuery, predicate.BenchmarkPublicSnapshot, benchmarkpublicsnapshot.OrderOption]{typ: ent.TypeBenchmarkPublicSnapshot, tq: q}, nil
 	case *ent.BenchmarkResultQuery:
@@ -1386,12 +1328,10 @@ func NewQuery(q ent.Query) (Query, error) {
 		return &query[*ent.BenchmarkRunTaskQuery, predicate.BenchmarkRunTask, benchmarkruntask.OrderOption]{typ: ent.TypeBenchmarkRunTask, tq: q}, nil
 	case *ent.BenchmarkScheduleQuery:
 		return &query[*ent.BenchmarkScheduleQuery, predicate.BenchmarkSchedule, benchmarkschedule.OrderOption]{typ: ent.TypeBenchmarkSchedule, tq: q}, nil
-	case *ent.BenchmarkScoreSnapshotQuery:
-		return &query[*ent.BenchmarkScoreSnapshotQuery, predicate.BenchmarkScoreSnapshot, benchmarkscoresnapshot.OrderOption]{typ: ent.TypeBenchmarkScoreSnapshot, tq: q}, nil
-	case *ent.BenchmarkSuiteQuery:
-		return &query[*ent.BenchmarkSuiteQuery, predicate.BenchmarkSuite, benchmarksuite.OrderOption]{typ: ent.TypeBenchmarkSuite, tq: q}, nil
 	case *ent.BenchmarkTargetQuery:
 		return &query[*ent.BenchmarkTargetQuery, predicate.BenchmarkTarget, benchmarktarget.OrderOption]{typ: ent.TypeBenchmarkTarget, tq: q}, nil
+	case *ent.BenchmarkTargetScoreQuery:
+		return &query[*ent.BenchmarkTargetScoreQuery, predicate.BenchmarkTargetScore, benchmarktargetscore.OrderOption]{typ: ent.TypeBenchmarkTargetScore, tq: q}, nil
 	case *ent.BenchmarkTaskQuery:
 		return &query[*ent.BenchmarkTaskQuery, predicate.BenchmarkTask, benchmarktask.OrderOption]{typ: ent.TypeBenchmarkTask, tq: q}, nil
 	case *ent.ChannelMonitorQuery:

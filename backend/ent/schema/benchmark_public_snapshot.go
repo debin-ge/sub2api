@@ -12,7 +12,8 @@ import (
 	"entgo.io/ent/schema/index"
 )
 
-// BenchmarkPublicSnapshot stores sanitized public homepage payloads.
+// BenchmarkPublicSnapshot stores sanitized public homepage payloads. Raw
+// responses, verifier outputs, and errors stay in private benchmark tables.
 type BenchmarkPublicSnapshot struct {
 	ent.Schema
 }
@@ -26,8 +27,6 @@ func (BenchmarkPublicSnapshot) Annotations() []schema.Annotation {
 func (BenchmarkPublicSnapshot) Fields() []ent.Field {
 	return []ent.Field{
 		field.Int64("run_id"),
-		field.Int64("suite_id"),
-		field.Int64("profile_id"),
 		field.JSON("snapshot", map[string]any{}).
 			Default(func() map[string]any { return map[string]any{} }).
 			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
@@ -46,16 +45,6 @@ func (BenchmarkPublicSnapshot) Edges() []ent.Edge {
 		edge.From("run", BenchmarkRun.Type).
 			Ref("public_snapshots").
 			Field("run_id").
-			Required().
-			Unique(),
-		edge.From("suite", BenchmarkSuite.Type).
-			Ref("public_snapshots").
-			Field("suite_id").
-			Required().
-			Unique(),
-		edge.From("profile", BenchmarkProfile.Type).
-			Ref("public_snapshots").
-			Field("profile_id").
 			Required().
 			Unique(),
 	}

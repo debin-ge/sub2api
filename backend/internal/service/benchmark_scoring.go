@@ -1,37 +1,42 @@
 package service
 
 import (
-	"math"
-	"sort"
 	"time"
 )
 
-func ComputeBenchmarkTargetScore(results []BenchmarkScoredResult, thresholds BenchmarkConfidenceThresholds) BenchmarkTargetScore {
-	if thresholds.HighCoverage <= 0 {
-		thresholds.HighCoverage = 0.9
-	}
-	if thresholds.MediumCoverage <= 0 {
-		thresholds.MediumCoverage = 0.7
+// benchmarkPassThreshold is the normalized score (0-100) at or above which a
+// scored task counts as "passed" for the X/N display. Binary verifiers emit
+// 100 (pass) or 0 (fail), so 50 cleanly separates them while still allowing
+// partial-credit verifiers in the future.
+const benchmarkPassThreshold = 50.0
+
+// ComputeBenchmarkTargetScore aggregates one target's results in a run into an
+// ability score (weighted pass rate, 0-100) plus per-dimension scores and
+// operational metrics. Only scored results count toward the ability score;
+// invalid results are tallied separately so failures stay visible.
+func ComputeBenchmarkTargetScore(results []BenchmarkScoredResult) BenchmarkTargetScoreResult {
+	out := BenchmarkTargetScoreResult{
+		DimensionScores:        map[string]float64{},
+		InvalidReasonBreakdown: map[string]int{},
+		TotalCount:             len(results),
+		ComputedAt:             time.Now(),
 	}
 
-	out := BenchmarkTargetScore{
-		PlannedTasks:    len(results),
-		DimensionScores: map[string]float64{},
-		ComputedAt:      time.Now(),
-	}
-	var weightedSum float64
-	var weightSum float64
-	var tokenSum int
-	var latencies []int
+	var weightedSum, weightSum float64
+	var latencySum, latencyCount float64
+	var tokenSum, tokenCount float64
 	dimWeighted := map[string]float64{}
 	dimWeights := map[string]float64{}
 
 	for _, result := range results {
+		out.TotalCost += result.EstimatedCost
 		if result.Status != BenchmarkResultStatusScored {
-			out.InvalidTasks++
+			out.InvalidReasonBreakdown[result.Status]++
 			continue
 		}
-		out.ScoredTasks++
+		if result.NormalizedScore >= benchmarkPassThreshold {
+			out.PassedCount++
+		}
 		weight := result.Weight
 		if weight <= 0 {
 			weight = 1
@@ -41,10 +46,13 @@ func ComputeBenchmarkTargetScore(results []BenchmarkScoredResult, thresholds Ben
 		dimWeighted[result.TaskType] += result.NormalizedScore * weight
 		dimWeights[result.TaskType] += weight
 		if result.LatencyMS > 0 {
-			latencies = append(latencies, result.LatencyMS)
+			latencySum += float64(result.LatencyMS)
+			latencyCount++
 		}
-		tokenSum += result.TotalTokens
-		out.EstimatedCost += result.EstimatedCost
+		if result.TotalTokens > 0 {
+			tokenSum += float64(result.TotalTokens)
+			tokenCount++
+		}
 	}
 
 	if weightSum > 0 {
@@ -55,43 +63,11 @@ func ComputeBenchmarkTargetScore(results []BenchmarkScoredResult, thresholds Ben
 			out.DimensionScores[typ] = sum / dimWeights[typ]
 		}
 	}
-	if out.PlannedTasks > 0 {
-		out.CoverageRate = float64(out.ScoredTasks) / float64(out.PlannedTasks)
-		out.SuccessRate = out.CoverageRate
+	if latencyCount > 0 {
+		out.AvgLatencyMS = latencySum / latencyCount
 	}
-	if out.ScoredTasks > 0 {
-		out.AvgTotalTokens = float64(tokenSum) / float64(out.ScoredTasks)
-	}
-	if len(latencies) > 0 {
-		sort.Ints(latencies)
-		out.LatencyP50MS = upperInclusivePercentile(latencies, 0.50)
-		out.LatencyP95MS = upperInclusivePercentile(latencies, 0.95)
-	}
-	switch {
-	case out.CoverageRate >= thresholds.HighCoverage:
-		out.ConfidenceLevel = BenchmarkConfidenceHigh
-	case out.CoverageRate >= thresholds.MediumCoverage:
-		out.ConfidenceLevel = BenchmarkConfidenceMedium
-	default:
-		out.ConfidenceLevel = BenchmarkConfidenceLow
-		out.InsufficientSample = true
+	if tokenCount > 0 {
+		out.AvgTotalTokens = tokenSum / tokenCount
 	}
 	return out
-}
-
-// upperInclusivePercentile uses a conservative upper-inclusive percentile.
-// For even sample counts, P50 returns the upper median instead of averaging or
-// choosing the lower median.
-func upperInclusivePercentile(sorted []int, percentile float64) int {
-	if len(sorted) == 0 {
-		return 0
-	}
-	rank := int(math.Ceil(percentile*float64(len(sorted)+1))) - 1
-	if rank < 0 {
-		rank = 0
-	}
-	if rank >= len(sorted) {
-		rank = len(sorted) - 1
-	}
-	return sorted[rank]
 }

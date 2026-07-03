@@ -7,11 +7,10 @@ import type { BenchmarkRadarTarget } from '@/types/benchmark'
 
 const translations: Record<string, string> = {
   'benchmark.public.table.abilityScore': 'RADAR_SCORE_LABEL',
+  'benchmark.public.table.passed': 'RADAR_PASSED_LABEL',
   'benchmark.public.table.latency': 'RADAR_LATENCY_LABEL',
-  'benchmark.public.table.successRate': 'RADAR_SUCCESS_LABEL',
   'benchmark.public.table.token': 'RADAR_TOKEN_LABEL',
   'benchmark.public.table.cost': 'RADAR_COST_LABEL',
-  'benchmark.public.table.insufficientSample': 'RADAR_INSUFFICIENT_SAMPLE',
   'benchmark.public.empty.title': 'RADAR_EMPTY_TITLE',
   'benchmark.public.empty.description': 'RADAR_EMPTY_DESCRIPTION',
 }
@@ -25,7 +24,6 @@ vi.mock('vue-i18n', async (importOriginal) => {
       locale,
       t: (key: string, params?: Record<string, unknown>) => {
         if (key === 'benchmark.fallback.channel') return `RADAR_CHANNEL_${params?.id as number}`
-        if (key === 'benchmark.public.table.p95Prefix') return 'RADAR_P95'
         return translations[key] ?? key
       },
     }),
@@ -40,24 +38,16 @@ function target(overrides: Partial<BenchmarkRadarTarget> = {}): BenchmarkRadarTa
     channel_name: 'Anthropic',
     display_name: 'Claude 3.5 Sonnet',
     overall_score: 91.25,
+    passed_count: 18,
+    total_count: 20,
     dimensions: {
       reasoning: 95,
       coding: 88,
     },
-    score_basis: {
-      planned_tasks: 20,
-      scored_tasks: 18,
-      invalid_tasks: 2,
-      coverage_rate: 0.9,
-      confidence_level: 'high',
-      insufficient_sample: false,
-    },
     metrics: {
-      success_rate: 0.96,
-      latency_p50_ms: 1234,
-      latency_p95_ms: 2410,
+      avg_latency_ms: 1234,
       avg_total_tokens: 1820,
-      estimated_cost: 0.037,
+      total_cost: 0.037,
     },
     ...overrides,
   }
@@ -96,15 +86,18 @@ describe('RadarRankTable', () => {
       },
     })
 
+    expect(wrapper.text()).toContain('RADAR_PASSED_LABEL')
     expect(wrapper.text()).toContain('RADAR_LATENCY_LABEL')
-    expect(wrapper.text()).toContain('RADAR_SUCCESS_LABEL')
     expect(wrapper.text()).toContain('RADAR_TOKEN_LABEL')
     expect(wrapper.text()).toContain('RADAR_COST_LABEL')
+    // avg latency 1234ms -> "1,234s" in de-DE locale (>=1000 formats as seconds)
     expect(wrapper.text()).toContain(`${new Intl.NumberFormat('de-DE', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(1.234)}s`)
-    expect(wrapper.text()).toContain(new Intl.NumberFormat('de-DE', { style: 'percent', minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(0.96))
+    // passed count summary
+    expect(wrapper.text()).toContain('18')
+    expect(wrapper.text()).toContain('20')
     expect(wrapper.text()).toContain('1.820')
     expect(wrapper.text()).toContain(new Intl.NumberFormat('de-DE', {
       style: 'currency',
@@ -114,26 +107,15 @@ describe('RadarRankTable', () => {
     }).format(0.037))
   })
 
-  it('localizes insufficient sample and channel fallback labels', () => {
+  it('localizes channel fallback label when channel name is missing', () => {
     const wrapper = mount(RadarRankTable, {
       props: {
         targets: [
-          target({
-            channel_name: '',
-            score_basis: {
-              planned_tasks: 20,
-              scored_tasks: 2,
-              invalid_tasks: 18,
-              coverage_rate: 0.1,
-              confidence_level: 'low',
-              insufficient_sample: true,
-            },
-          }),
+          target({ channel_name: '' }),
         ],
       },
     })
 
-    expect(wrapper.text()).toContain('RADAR_INSUFFICIENT_SAMPLE')
     expect(wrapper.text()).toContain('RADAR_CHANNEL_7')
   })
 

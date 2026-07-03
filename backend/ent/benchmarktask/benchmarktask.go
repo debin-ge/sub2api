@@ -3,7 +3,6 @@
 package benchmarktask
 
 import (
-	"fmt"
 	"time"
 
 	"entgo.io/ent/dialect/sql"
@@ -19,18 +18,12 @@ const (
 	FieldCreatedAt = "created_at"
 	// FieldUpdatedAt holds the string denoting the updated_at field in the database.
 	FieldUpdatedAt = "updated_at"
-	// FieldSuiteID holds the string denoting the suite_id field in the database.
-	FieldSuiteID = "suite_id"
 	// FieldTitle holds the string denoting the title field in the database.
 	FieldTitle = "title"
 	// FieldType holds the string denoting the type field in the database.
 	FieldType = "type"
-	// FieldCategory holds the string denoting the category field in the database.
-	FieldCategory = "category"
 	// FieldDifficulty holds the string denoting the difficulty field in the database.
 	FieldDifficulty = "difficulty"
-	// FieldTags holds the string denoting the tags field in the database.
-	FieldTags = "tags"
 	// FieldPrompt holds the string denoting the prompt field in the database.
 	FieldPrompt = "prompt"
 	// FieldInputPayload holds the string denoting the input_payload field in the database.
@@ -43,27 +36,16 @@ const (
 	FieldVerifierConfig = "verifier_config"
 	// FieldWeight holds the string denoting the weight field in the database.
 	FieldWeight = "weight"
-	// FieldMinScale holds the string denoting the min_scale field in the database.
-	FieldMinScale = "min_scale"
 	// FieldPublicPrompt holds the string denoting the public_prompt field in the database.
 	FieldPublicPrompt = "public_prompt"
 	// FieldEnabled holds the string denoting the enabled field in the database.
 	FieldEnabled = "enabled"
-	// FieldMetadata holds the string denoting the metadata field in the database.
-	FieldMetadata = "metadata"
-	// EdgeSuite holds the string denoting the suite edge name in mutations.
-	EdgeSuite = "suite"
+	// FieldSortOrder holds the string denoting the sort_order field in the database.
+	FieldSortOrder = "sort_order"
 	// EdgeRunTasks holds the string denoting the run_tasks edge name in mutations.
 	EdgeRunTasks = "run_tasks"
 	// Table holds the table name of the benchmarktask in the database.
 	Table = "benchmark_tasks"
-	// SuiteTable is the table that holds the suite relation/edge.
-	SuiteTable = "benchmark_tasks"
-	// SuiteInverseTable is the table name for the BenchmarkSuite entity.
-	// It exists in this package in order to avoid circular dependency with the "benchmarksuite" package.
-	SuiteInverseTable = "benchmark_suites"
-	// SuiteColumn is the table column denoting the suite relation/edge.
-	SuiteColumn = "suite_id"
 	// RunTasksTable is the table that holds the run_tasks relation/edge.
 	RunTasksTable = "benchmark_run_tasks"
 	// RunTasksInverseTable is the table name for the BenchmarkRunTask entity.
@@ -78,22 +60,18 @@ var Columns = []string{
 	FieldID,
 	FieldCreatedAt,
 	FieldUpdatedAt,
-	FieldSuiteID,
 	FieldTitle,
 	FieldType,
-	FieldCategory,
 	FieldDifficulty,
-	FieldTags,
 	FieldPrompt,
 	FieldInputPayload,
 	FieldExpectedOutput,
 	FieldVerifierType,
 	FieldVerifierConfig,
 	FieldWeight,
-	FieldMinScale,
 	FieldPublicPrompt,
 	FieldEnabled,
-	FieldMetadata,
+	FieldSortOrder,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -117,12 +95,8 @@ var (
 	TitleValidator func(string) error
 	// TypeValidator is a validator for the "type" field. It is called by the builders before save.
 	TypeValidator func(string) error
-	// CategoryValidator is a validator for the "category" field. It is called by the builders before save.
-	CategoryValidator func(string) error
 	// DifficultyValidator is a validator for the "difficulty" field. It is called by the builders before save.
 	DifficultyValidator func(string) error
-	// DefaultTags holds the default value on creation for the "tags" field.
-	DefaultTags func() []string
 	// PromptValidator is a validator for the "prompt" field. It is called by the builders before save.
 	PromptValidator func(string) error
 	// DefaultInputPayload holds the default value on creation for the "input_payload" field.
@@ -139,37 +113,9 @@ var (
 	DefaultPublicPrompt bool
 	// DefaultEnabled holds the default value on creation for the "enabled" field.
 	DefaultEnabled bool
-	// DefaultMetadata holds the default value on creation for the "metadata" field.
-	DefaultMetadata func() map[string]interface{}
+	// DefaultSortOrder holds the default value on creation for the "sort_order" field.
+	DefaultSortOrder int
 )
-
-// MinScale defines the type for the "min_scale" enum field.
-type MinScale string
-
-// MinScaleSmall is the default value of the MinScale enum.
-const DefaultMinScale = MinScaleSmall
-
-// MinScale values.
-const (
-	MinScaleSmall  MinScale = "small"
-	MinScaleMedium MinScale = "medium"
-	MinScaleFull   MinScale = "full"
-	MinScaleCustom MinScale = "custom"
-)
-
-func (ms MinScale) String() string {
-	return string(ms)
-}
-
-// MinScaleValidator is a validator for the "min_scale" field enum values. It is called by the builders before save.
-func MinScaleValidator(ms MinScale) error {
-	switch ms {
-	case MinScaleSmall, MinScaleMedium, MinScaleFull, MinScaleCustom:
-		return nil
-	default:
-		return fmt.Errorf("benchmarktask: invalid enum value for min_scale field: %q", ms)
-	}
-}
 
 // OrderOption defines the ordering options for the BenchmarkTask queries.
 type OrderOption func(*sql.Selector)
@@ -189,11 +135,6 @@ func ByUpdatedAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldUpdatedAt, opts...).ToFunc()
 }
 
-// BySuiteID orders the results by the suite_id field.
-func BySuiteID(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldSuiteID, opts...).ToFunc()
-}
-
 // ByTitle orders the results by the title field.
 func ByTitle(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldTitle, opts...).ToFunc()
@@ -202,11 +143,6 @@ func ByTitle(opts ...sql.OrderTermOption) OrderOption {
 // ByType orders the results by the type field.
 func ByType(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldType, opts...).ToFunc()
-}
-
-// ByCategory orders the results by the category field.
-func ByCategory(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldCategory, opts...).ToFunc()
 }
 
 // ByDifficulty orders the results by the difficulty field.
@@ -229,11 +165,6 @@ func ByWeight(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldWeight, opts...).ToFunc()
 }
 
-// ByMinScale orders the results by the min_scale field.
-func ByMinScale(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldMinScale, opts...).ToFunc()
-}
-
 // ByPublicPrompt orders the results by the public_prompt field.
 func ByPublicPrompt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldPublicPrompt, opts...).ToFunc()
@@ -244,11 +175,9 @@ func ByEnabled(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldEnabled, opts...).ToFunc()
 }
 
-// BySuiteField orders the results by suite field.
-func BySuiteField(field string, opts ...sql.OrderTermOption) OrderOption {
-	return func(s *sql.Selector) {
-		sqlgraph.OrderByNeighborTerms(s, newSuiteStep(), sql.OrderByField(field, opts...))
-	}
+// BySortOrder orders the results by the sort_order field.
+func BySortOrder(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSortOrder, opts...).ToFunc()
 }
 
 // ByRunTasksCount orders the results by run_tasks count.
@@ -263,13 +192,6 @@ func ByRunTasks(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 	return func(s *sql.Selector) {
 		sqlgraph.OrderByNeighborTerms(s, newRunTasksStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
-}
-func newSuiteStep() *sqlgraph.Step {
-	return sqlgraph.NewStep(
-		sqlgraph.From(Table, FieldID),
-		sqlgraph.To(SuiteInverseTable, FieldID),
-		sqlgraph.Edge(sqlgraph.M2O, true, SuiteTable, SuiteColumn),
-	)
 }
 func newRunTasksStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(

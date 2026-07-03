@@ -55,7 +55,7 @@ describe('benchmark admin routes', () => {
       ['AdminBenchmarkDashboard', '/admin/benchmark/dashboard'],
       ['AdminBenchmarkTargets', '/admin/benchmark/targets'],
       ['AdminBenchmarkTasks', '/admin/benchmark/tasks'],
-      ['AdminBenchmarkProfiles', '/admin/benchmark/profiles'],
+      ['AdminBenchmarkSchedules', '/admin/benchmark/schedules'],
       ['AdminBenchmarkRuns', '/admin/benchmark/runs'],
       ['AdminBenchmarkRunDetail', '/admin/benchmark/runs/:id'],
     ] as const
@@ -82,7 +82,7 @@ describe('benchmark admin sidebar group', () => {
     expect(componentSource).toContain("path: '/admin/benchmark/dashboard'")
     expect(componentSource).toContain("path: '/admin/benchmark/targets'")
     expect(componentSource).toContain("path: '/admin/benchmark/tasks'")
-    expect(componentSource).toContain("path: '/admin/benchmark/profiles'")
+    expect(componentSource).toContain("path: '/admin/benchmark/schedules'")
     expect(componentSource).toContain("path: '/admin/benchmark/runs'")
   })
 })

@@ -22,8 +22,6 @@ const (
 	FieldTaskOrder = "task_order"
 	// FieldType holds the string denoting the type field in the database.
 	FieldType = "type"
-	// FieldCategory holds the string denoting the category field in the database.
-	FieldCategory = "category"
 	// FieldDifficulty holds the string denoting the difficulty field in the database.
 	FieldDifficulty = "difficulty"
 	// FieldWeightSnapshot holds the string denoting the weight_snapshot field in the database.
@@ -76,7 +74,6 @@ var Columns = []string{
 	FieldTaskID,
 	FieldTaskOrder,
 	FieldType,
-	FieldCategory,
 	FieldDifficulty,
 	FieldWeightSnapshot,
 	FieldPromptSnapshot,
@@ -101,8 +98,6 @@ var (
 	DefaultTaskOrder int
 	// TypeValidator is a validator for the "type" field. It is called by the builders before save.
 	TypeValidator func(string) error
-	// CategoryValidator is a validator for the "category" field. It is called by the builders before save.
-	CategoryValidator func(string) error
 	// DifficultyValidator is a validator for the "difficulty" field. It is called by the builders before save.
 	DifficultyValidator func(string) error
 	// DefaultWeightSnapshot holds the default value on creation for the "weight_snapshot" field.
@@ -145,11 +140,6 @@ func ByTaskOrder(opts ...sql.OrderTermOption) OrderOption {
 // ByType orders the results by the type field.
 func ByType(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldType, opts...).ToFunc()
-}
-
-// ByCategory orders the results by the category field.
-func ByCategory(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldCategory, opts...).ToFunc()
 }
 
 // ByDifficulty orders the results by the difficulty field.

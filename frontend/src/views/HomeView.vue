@@ -94,6 +94,7 @@
         <RadarSummaryCards :radar="radar" />
         <RadarDimensionChart :targets="radar.targets" />
         <RadarRankTable :targets="radar.targets" />
+        <RadarTrendChart :trends="radar.trends" />
       </div>
       <RadarEmptyState v-else />
     </main>
@@ -532,6 +533,7 @@ import RadarDimensionChart from '@/components/radar/RadarDimensionChart.vue'
 import RadarEmptyState from '@/components/radar/RadarEmptyState.vue'
 import RadarRankTable from '@/components/radar/RadarRankTable.vue'
 import RadarSummaryCards from '@/components/radar/RadarSummaryCards.vue'
+import RadarTrendChart from '@/components/radar/RadarTrendChart.vue'
 import { radarAPI } from '@/api/radar'
 import type { BenchmarkPublicRadar } from '@/types/benchmark'
 

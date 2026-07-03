@@ -1,161 +1,193 @@
 import { apiClient } from '../client'
 import type {
+  BenchmarkActionResponse,
+  BenchmarkListParams,
   BenchmarkPaginatedResponse,
-  BenchmarkProfile,
-  BenchmarkProfilePreview,
-  BenchmarkProfilePreviewRequest,
+  BenchmarkProcessResponse,
   BenchmarkResult,
   BenchmarkRun,
   BenchmarkRunListParams,
+  BenchmarkRunPreview,
   BenchmarkSchedule,
   BenchmarkScheduleListParams,
-  BenchmarkScoreSnapshot,
-  BenchmarkSuite,
   BenchmarkTarget,
+  BenchmarkTargetScore,
   BenchmarkTask,
   BenchmarkTaskListParams,
-  CreateBenchmarkProfileRequest,
   CreateBenchmarkRunRequest,
   CreateBenchmarkScheduleRequest,
-  CreateBenchmarkSuiteRequest,
   CreateBenchmarkTargetRequest,
   CreateBenchmarkTaskRequest,
-  BenchmarkListParams,
-  PublishBenchmarkRunResponse,
+  UpdateBenchmarkScheduleRequest,
+  UpdateBenchmarkTargetRequest,
+  UpdateBenchmarkTaskRequest,
 } from '@/types/benchmark'
 
 function withEnabledDefault<T extends { enabled?: boolean }>(payload: T): T & { enabled: boolean } {
-  return {
-    ...payload,
-    enabled: payload.enabled ?? true,
-  }
+  return { ...payload, enabled: payload.enabled ?? true }
 }
 
 function commaSeparated(value: string[] | string | undefined): string | undefined {
-  if (Array.isArray(value)) {
-    return value.join(',')
-  }
-  return value
+  return Array.isArray(value) ? value.join(',') : value
 }
 
 function normalizeTaskListParams(
-  params?: BenchmarkTaskListParams
+  params?: BenchmarkTaskListParams,
 ): BenchmarkTaskListParams | undefined {
-  if (!params) {
-    return undefined
-  }
-  return {
-    ...params,
-    task_types: commaSeparated(params.task_types),
-  }
+  if (!params) return undefined
+  return { ...params, task_types: commaSeparated(params.task_types) }
 }
 
 function normalizeRunListParams(params?: BenchmarkRunListParams): BenchmarkRunListParams | undefined {
-  if (!params) {
-    return undefined
-  }
-  return {
-    ...params,
-    status: commaSeparated(params.status),
-  }
+  if (!params) return undefined
+  return { ...params, status: commaSeparated(params.status) }
 }
 
-export async function listSuites(
-  params?: BenchmarkListParams
-): Promise<BenchmarkPaginatedResponse<BenchmarkSuite>> {
-  const { data } = await apiClient.get<BenchmarkPaginatedResponse<BenchmarkSuite>>(
-    '/admin/benchmark/suites',
-    { params }
-  )
-  return data
-}
-
-export async function createSuite(payload: CreateBenchmarkSuiteRequest): Promise<BenchmarkSuite> {
-  const { data } = await apiClient.post<BenchmarkSuite>(
-    '/admin/benchmark/suites',
-    withEnabledDefault(payload)
-  )
-  return data
-}
+// ---- Targets ----
 
 export async function listTargets(
-  params?: BenchmarkListParams
+  params?: BenchmarkListParams,
 ): Promise<BenchmarkPaginatedResponse<BenchmarkTarget>> {
   const { data } = await apiClient.get<BenchmarkPaginatedResponse<BenchmarkTarget>>(
     '/admin/benchmark/targets',
-    { params }
+    { params },
   )
+  return data
+}
+
+export async function getTarget(id: number): Promise<BenchmarkTarget> {
+  const { data } = await apiClient.get<BenchmarkTarget>(`/admin/benchmark/targets/${id}`)
   return data
 }
 
 export async function createTarget(payload: CreateBenchmarkTargetRequest): Promise<BenchmarkTarget> {
   const { data } = await apiClient.post<BenchmarkTarget>(
     '/admin/benchmark/targets',
-    withEnabledDefault(payload)
+    withEnabledDefault(payload),
   )
   return data
 }
 
+export async function updateTarget(
+  id: number,
+  payload: UpdateBenchmarkTargetRequest,
+): Promise<BenchmarkTarget> {
+  const { data } = await apiClient.put<BenchmarkTarget>(`/admin/benchmark/targets/${id}`, payload)
+  return data
+}
+
+export async function deleteTarget(id: number): Promise<BenchmarkActionResponse> {
+  const { data } = await apiClient.delete<BenchmarkActionResponse>(`/admin/benchmark/targets/${id}`)
+  return data
+}
+
+// ---- Tasks ----
+
 export async function listTasks(
-  params?: BenchmarkTaskListParams
+  params?: BenchmarkTaskListParams,
 ): Promise<BenchmarkPaginatedResponse<BenchmarkTask>> {
   const { data } = await apiClient.get<BenchmarkPaginatedResponse<BenchmarkTask>>(
     '/admin/benchmark/tasks',
-    { params: normalizeTaskListParams(params) }
+    { params: normalizeTaskListParams(params) },
   )
+  return data
+}
+
+export async function getTask(id: number): Promise<BenchmarkTask> {
+  const { data } = await apiClient.get<BenchmarkTask>(`/admin/benchmark/tasks/${id}`)
   return data
 }
 
 export async function createTask(payload: CreateBenchmarkTaskRequest): Promise<BenchmarkTask> {
   const { data } = await apiClient.post<BenchmarkTask>(
     '/admin/benchmark/tasks',
-    withEnabledDefault(payload)
+    withEnabledDefault(payload),
   )
   return data
 }
 
-export async function listProfiles(
-  params?: BenchmarkListParams
-): Promise<BenchmarkPaginatedResponse<BenchmarkProfile>> {
-  const { data } = await apiClient.get<BenchmarkPaginatedResponse<BenchmarkProfile>>(
-    '/admin/benchmark/profiles',
-    { params }
-  )
-  return data
-}
-
-export async function createProfile(
-  payload: CreateBenchmarkProfileRequest
-): Promise<BenchmarkProfile> {
-  const { data } = await apiClient.post<BenchmarkProfile>(
-    '/admin/benchmark/profiles',
-    withEnabledDefault(payload)
-  )
-  return data
-}
-
-export async function getProfile(id: number): Promise<BenchmarkProfile> {
-  const { data } = await apiClient.get<BenchmarkProfile>(`/admin/benchmark/profiles/${id}`)
-  return data
-}
-
-export async function previewProfile(
+export async function updateTask(
   id: number,
-  payload: BenchmarkProfilePreviewRequest
-): Promise<BenchmarkProfilePreview> {
-  const { data } = await apiClient.post<BenchmarkProfilePreview>(
-    `/admin/benchmark/profiles/${id}/preview`,
-    payload
+  payload: UpdateBenchmarkTaskRequest,
+): Promise<BenchmarkTask> {
+  const { data } = await apiClient.put<BenchmarkTask>(`/admin/benchmark/tasks/${id}`, payload)
+  return data
+}
+
+export async function deleteTask(id: number): Promise<BenchmarkActionResponse> {
+  const { data } = await apiClient.delete<BenchmarkActionResponse>(`/admin/benchmark/tasks/${id}`)
+  return data
+}
+
+// ---- Schedules ----
+
+export async function listSchedules(
+  params?: BenchmarkScheduleListParams,
+): Promise<BenchmarkPaginatedResponse<BenchmarkSchedule>> {
+  const { data } = await apiClient.get<BenchmarkPaginatedResponse<BenchmarkSchedule>>(
+    '/admin/benchmark/schedules',
+    { params },
+  )
+  return data
+}
+
+export async function getSchedule(id: number): Promise<BenchmarkSchedule> {
+  const { data } = await apiClient.get<BenchmarkSchedule>(`/admin/benchmark/schedules/${id}`)
+  return data
+}
+
+export async function createSchedule(
+  payload: CreateBenchmarkScheduleRequest,
+): Promise<BenchmarkSchedule> {
+  const { data } = await apiClient.post<BenchmarkSchedule>(
+    '/admin/benchmark/schedules',
+    payload,
+  )
+  return data
+}
+
+export async function updateSchedule(
+  id: number,
+  payload: UpdateBenchmarkScheduleRequest,
+): Promise<BenchmarkSchedule> {
+  const { data } = await apiClient.put<BenchmarkSchedule>(
+    `/admin/benchmark/schedules/${id}`,
+    payload,
+  )
+  return data
+}
+
+export async function deleteSchedule(id: number): Promise<BenchmarkActionResponse> {
+  const { data } = await apiClient.delete<BenchmarkActionResponse>(
+    `/admin/benchmark/schedules/${id}`,
+  )
+  return data
+}
+
+export async function triggerSchedule(id: number): Promise<BenchmarkRun> {
+  const { data } = await apiClient.post<BenchmarkRun>(`/admin/benchmark/schedules/${id}/trigger`)
+  return data
+}
+
+// ---- Runs ----
+
+export async function previewRun(payload: {
+  target_ids?: number[]
+  task_count?: number
+}): Promise<BenchmarkRunPreview> {
+  const { data } = await apiClient.post<BenchmarkRunPreview>(
+    '/admin/benchmark/runs/preview',
+    payload,
   )
   return data
 }
 
 export async function listRuns(
-  params?: BenchmarkRunListParams
+  params?: BenchmarkRunListParams,
 ): Promise<BenchmarkPaginatedResponse<BenchmarkRun>> {
   const { data } = await apiClient.get<BenchmarkPaginatedResponse<BenchmarkRun>>(
     '/admin/benchmark/runs',
-    { params: normalizeRunListParams(params) }
+    { params: normalizeRunListParams(params) },
   )
   return data
 }
@@ -175,62 +207,77 @@ export async function listRunResults(id: number): Promise<BenchmarkResult[]> {
   return data
 }
 
-export async function getRunScores(id: number): Promise<BenchmarkScoreSnapshot[]> {
-  const { data } = await apiClient.get<BenchmarkScoreSnapshot[]>(
-    `/admin/benchmark/runs/${id}/scores`
+export async function getRunScores(id: number): Promise<BenchmarkTargetScore[]> {
+  const { data } = await apiClient.get<BenchmarkTargetScore[]>(`/admin/benchmark/runs/${id}/scores`)
+  return data
+}
+
+export async function publishRun(id: number): Promise<BenchmarkActionResponse> {
+  const { data } = await apiClient.post<BenchmarkActionResponse>(
+    `/admin/benchmark/runs/${id}/publish`,
   )
   return data
 }
 
-export async function publishRun(id: number): Promise<PublishBenchmarkRunResponse> {
-  const { data } = await apiClient.post<PublishBenchmarkRunResponse>(
-    `/admin/benchmark/runs/${id}/publish`
+export async function cancelRun(id: number): Promise<BenchmarkActionResponse> {
+  const { data } = await apiClient.post<BenchmarkActionResponse>(
+    `/admin/benchmark/runs/${id}/cancel`,
   )
   return data
 }
 
-export async function listSchedules(
-  params?: BenchmarkScheduleListParams
-): Promise<BenchmarkPaginatedResponse<BenchmarkSchedule>> {
-  const { data } = await apiClient.get<BenchmarkPaginatedResponse<BenchmarkSchedule>>(
-    '/admin/benchmark/schedules',
-    { params }
+export async function processRun(id: number): Promise<BenchmarkProcessResponse> {
+  const { data } = await apiClient.post<BenchmarkProcessResponse>(
+    `/admin/benchmark/runs/${id}/process`,
   )
   return data
 }
 
-export async function createSchedule(
-  payload: CreateBenchmarkScheduleRequest
-): Promise<BenchmarkSchedule> {
-  const { data } = await apiClient.post<BenchmarkSchedule>('/admin/benchmark/schedules', payload)
+export async function processDueRuns(): Promise<BenchmarkProcessResponse> {
+  const { data } = await apiClient.post<BenchmarkProcessResponse>(
+    '/admin/benchmark/runs/process-due',
+  )
   return data
 }
 
-export async function triggerSchedule(id: number): Promise<BenchmarkRun> {
-  const { data } = await apiClient.post<BenchmarkRun>(`/admin/benchmark/schedules/${id}/trigger`)
+// ---- Trends ----
+
+export async function getTrends(params?: {
+  days?: number
+  limit?: number
+}): Promise<{ trends: import('@/types/benchmark').BenchmarkPublicTrend[] }> {
+  const { data } = await apiClient.get('/admin/benchmark/trends', { params })
   return data
 }
 
 export const adminBenchmarkAPI = {
-  listSuites,
-  createSuite,
   listTargets,
+  getTarget,
   createTarget,
+  updateTarget,
+  deleteTarget,
   listTasks,
+  getTask,
   createTask,
-  listProfiles,
-  createProfile,
-  getProfile,
-  previewProfile,
+  updateTask,
+  deleteTask,
+  listSchedules,
+  getSchedule,
+  createSchedule,
+  updateSchedule,
+  deleteSchedule,
+  triggerSchedule,
+  previewRun,
   listRuns,
   createRun,
   getRun,
   listRunResults,
   getRunScores,
   publishRun,
-  listSchedules,
-  createSchedule,
-  triggerSchedule,
+  cancelRun,
+  processRun,
+  processDueRuns,
+  getTrends,
 }
 
 export default adminBenchmarkAPI

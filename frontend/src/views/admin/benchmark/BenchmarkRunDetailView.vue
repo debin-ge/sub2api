@@ -17,11 +17,32 @@
             {{ t('benchmark.admin.runDetail.refresh') }}
           </button>
           <button
-            v-if="run?.status === 'completed'"
+            v-if="canProcess"
+            type="button"
+            data-test="detail-process-run"
+            class="btn btn-secondary inline-flex items-center gap-2"
+            :disabled="actionPending"
+            @click="process"
+          >
+            <Icon name="play" size="sm" />
+            {{ t('benchmark.admin.runDetail.process') }}
+          </button>
+          <button
+            v-if="canCancel"
+            type="button"
+            data-test="detail-cancel-run"
+            class="btn btn-danger inline-flex items-center gap-2"
+            :disabled="actionPending"
+            @click="cancel"
+          >
+            {{ t('benchmark.admin.runDetail.cancel') }}
+          </button>
+          <button
+            v-if="canPublish"
             type="button"
             data-test="publish-run-button"
             class="btn btn-primary inline-flex items-center gap-2"
-            :disabled="publishing"
+            :disabled="actionPending"
             @click="publish"
           >
             <Icon name="globe" size="sm" />
@@ -55,19 +76,20 @@
             <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('benchmark.admin.runDetail.rankingDescription') }}</p>
           </div>
           <DataTable :columns="scoreColumns" :data="rankedScores" :loading="false">
-            <template #cell-rank="{ row }">#{{ row.rank }}</template>
+            <template #cell-rank="{ row }">#{{ formatInteger(row.rank) }}</template>
             <template #cell-target="{ row }">
               <div class="flex items-center gap-2">
                 <span class="font-medium text-gray-900 dark:text-white">{{ scoreTargetName(row) }}</span>
-                <span v-if="row.insufficient_sample" class="inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">{{ t('benchmark.admin.runDetail.insufficientSample') }}</span>
               </div>
             </template>
             <template #cell-overall_score="{ row }">{{ formatNumber(row.overall_score) }}</template>
-            <template #cell-coverage_rate="{ row }">{{ formatPercent(row.coverage_rate) }}</template>
-            <template #cell-success_rate="{ row }">{{ formatPercent(row.success_rate) }}</template>
-            <template #cell-latency="{ row }">{{ formatLatency(row.latency_p50_ms) }} / {{ formatLatency(row.latency_p95_ms) }}</template>
+            <template #cell-passed="{ row }">{{ formatInteger(row.passed_count) }} / {{ formatInteger(row.total_count) }}</template>
+            <template #cell-invalid_reason_breakdown="{ row }">
+              <span :data-test="`score-invalid-reasons-${row.id}`">{{ formatInvalidReasonBreakdown(row.invalid_reason_breakdown) }}</span>
+            </template>
+            <template #cell-latency="{ row }">{{ formatLatency(row.avg_latency_ms) }}</template>
             <template #cell-avg_total_tokens="{ row }">{{ formatInteger(row.avg_total_tokens) }}</template>
-            <template #cell-estimated_cost="{ row }">{{ formatCost(row.estimated_cost) }}</template>
+            <template #cell-total_cost="{ row }">{{ formatCost(row.total_cost) }}</template>
             <template #empty>
               <EmptyState :title="t('benchmark.admin.runDetail.emptyScoreTitle')" :description="t('benchmark.admin.runDetail.emptyScoreDescription')" />
             </template>
@@ -82,7 +104,7 @@
             <div class="space-y-3 p-6">
               <div v-for="item in resultStatusBreakdown" :key="item.key" class="flex items-center justify-between rounded-lg bg-gray-50 px-4 py-3 dark:bg-dark-700/50">
                 <span class="text-sm font-medium text-gray-700 dark:text-gray-200">{{ item.key }}</span>
-                <span class="text-sm font-semibold text-gray-900 dark:text-white">{{ item.count }}</span>
+                <span class="text-sm font-semibold text-gray-900 dark:text-white">{{ formatInteger(item.count) }}</span>
               </div>
               <p v-if="resultStatusBreakdown.length === 0" class="text-sm text-gray-500 dark:text-gray-400">{{ t('benchmark.admin.runDetail.noResults') }}</p>
             </div>
@@ -95,7 +117,7 @@
             <div class="space-y-3 p-6">
               <div v-for="item in invalidReasonBreakdown" :key="item.key" class="flex items-center justify-between rounded-lg bg-gray-50 px-4 py-3 dark:bg-dark-700/50">
                 <span class="text-sm font-medium text-gray-700 dark:text-gray-200">{{ item.key }}</span>
-                <span class="text-sm font-semibold text-gray-900 dark:text-white">{{ item.count }}</span>
+                <span class="text-sm font-semibold text-gray-900 dark:text-white">{{ formatInteger(item.count) }}</span>
               </div>
               <p v-if="invalidReasonBreakdown.length === 0" class="text-sm text-gray-500 dark:text-gray-400">{{ t('benchmark.admin.runDetail.noInvalidReasons') }}</p>
             </div>
@@ -110,15 +132,14 @@
             <div v-for="group in resultsByTarget" :key="group.targetId" class="rounded-lg border border-gray-100 dark:border-dark-700">
               <div class="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 px-4 py-3 dark:border-dark-700">
                 <div class="flex items-center gap-2">
-                  <h3 class="font-medium text-gray-900 dark:text-white">{{ targetName(group.targetId) }}</h3>
-                  <span v-if="scoreByTargetId.get(group.targetId)?.insufficient_sample" class="inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">{{ t('benchmark.admin.runDetail.insufficientSample') }}</span>
-                </div>
+                <h3 class="font-medium text-gray-900 dark:text-white">{{ targetName(group.targetId) }}</h3>
+              </div>
                 <span class="text-xs text-gray-500 dark:text-gray-400">{{ t('benchmark.admin.runDetail.targetResultsCount', { count: formatInteger(group.items.length) }) }}</span>
               </div>
               <DataTable :columns="resultColumns" :data="group.items" :loading="false">
                 <template #cell-id="{ row }">{{ benchmarkResultFallback(row.id, t) }}</template>
                 <template #cell-status="{ row }">{{ localizeResultStatus(row.status) }}</template>
-                <template #cell-score="{ row }">{{ row.normalized_score ?? row.score ?? '-' }}</template>
+                <template #cell-score="{ row }">{{ formatNumber(row.normalized_score ?? row.score) }}</template>
                 <template #cell-latency_ms="{ row }">{{ formatLatency(row.latency_ms) }}</template>
                 <template #cell-total_tokens="{ row }">{{ formatInteger(row.total_tokens) }}</template>
                 <template #cell-error="{ row }">{{ row.error_message || row.error_code || '-' }}</template>
@@ -133,7 +154,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
@@ -142,32 +163,33 @@ import Icon from '@/components/icons/Icon.vue'
 import { adminAPI } from '@/api/admin'
 import { useAppStore } from '@/stores/app'
 import type { Column } from '@/components/common/types'
-import type { BenchmarkResult, BenchmarkResultStatus, BenchmarkRun, BenchmarkScoreSnapshot } from '@/types/benchmark'
+import type { BenchmarkResult, BenchmarkResultStatus, BenchmarkRun, BenchmarkTargetScore } from '@/types/benchmark'
 import {
   benchmarkChannelFallback,
   benchmarkResultFallback,
   benchmarkResultStatusLabel,
   benchmarkRunStatusLabel,
   benchmarkTargetFallback,
-  benchmarkTaskTypeLabel,
 } from '@/components/radar/benchmarkI18n'
 
 const props = defineProps<{
   runId?: number | string
 }>()
 
-type RankedScore = BenchmarkScoreSnapshot & { rank: number }
+type RankedScore = BenchmarkTargetScore & { rank: number }
+type RunActionType = 'publish' | 'cancel' | 'process'
 
 const appStore = useAppStore()
 const { locale, t } = useI18n()
 const run = ref<BenchmarkRun | null>(null)
 const results = ref<BenchmarkResult[]>([])
-const scores = ref<BenchmarkScoreSnapshot[]>([])
+const scores = ref<BenchmarkTargetScore[]>([])
 const loading = ref(false)
-const publishing = ref(false)
+const pendingActions = ref<Record<number, RunActionType>>({})
 const publishMessage = ref('')
 const manualRunId = ref<number | null>(null)
 const manualLoadedRunId = ref<number | null>(null)
+let loadSequence = 0
 
 const resolvedRunId = computed(() => {
   if (props.runId === undefined || props.runId === null || props.runId === '') return null
@@ -176,16 +198,20 @@ const resolvedRunId = computed(() => {
 })
 
 const activeRunId = computed(() => resolvedRunId.value || manualLoadedRunId.value)
+const canPublish = computed(() => run.value?.status === 'completed' && scores.value.length > 0)
+const canCancel = computed(() => !!run.value && ['queued', 'running'].includes(run.value.status))
+const canProcess = computed(() => !!run.value && ['queued', 'running'].includes(run.value.status))
+const actionPending = computed(() => !!activeRunId.value && !!pendingActions.value[activeRunId.value])
 
 const scoreColumns = computed<Column[]>(() => [
   { key: 'rank', label: t('benchmark.admin.runDetail.columns.rank') },
   { key: 'target', label: t('benchmark.admin.runDetail.columns.target') },
   { key: 'overall_score', label: t('benchmark.admin.runDetail.columns.abilityScore') },
-  { key: 'coverage_rate', label: t('benchmark.admin.runDetail.columns.coverage') },
-  { key: 'success_rate', label: t('benchmark.admin.runDetail.columns.successRate') },
+  { key: 'passed', label: t('benchmark.admin.runDetail.columns.coverage') },
+  { key: 'invalid_reason_breakdown', label: t('benchmark.admin.runDetail.columns.invalidReasons') },
   { key: 'latency', label: t('benchmark.admin.runDetail.columns.p50p95') },
   { key: 'avg_total_tokens', label: t('benchmark.admin.runDetail.columns.token') },
-  { key: 'estimated_cost', label: t('benchmark.admin.runDetail.columns.cost') },
+  { key: 'total_cost', label: t('benchmark.admin.runDetail.columns.cost') },
 ])
 
 const resultColumns = computed<Column[]>(() => [
@@ -205,20 +231,16 @@ const rankedScores = computed<RankedScore[]>(() =>
 )
 
 const scoreByTargetId = computed(() => {
-  const map = new Map<number, BenchmarkScoreSnapshot>()
+  const map = new Map<number, BenchmarkTargetScore>()
   scores.value.forEach((score) => map.set(score.run_target_id, score))
   return map
 })
 
-const overviewItems = computed(() => [
+const overviewItems = computed<Array<{ label: string; value: string; meta?: string }>>(() => [
   { label: t('benchmark.admin.runDetail.overview.status'), value: run.value ? benchmarkRunStatusLabel(run.value.status, t) : '-' },
   { label: t('benchmark.admin.runDetail.overview.plannedTargets'), value: formatInteger(run.value?.planned_target_count ?? 0) },
   { label: t('benchmark.admin.runDetail.overview.plannedTasks'), value: formatInteger(run.value?.planned_task_count ?? 0) },
-  {
-    label: t('benchmark.admin.runDetail.overview.plannedResults'),
-    value: formatInteger(run.value?.planned_result_count ?? 0),
-    meta: run.value?.task_types.map((taskType) => benchmarkTaskTypeLabel(taskType, t)).join(', ') || undefined,
-  },
+  { label: t('benchmark.admin.runDetail.overview.plannedResults'), value: formatInteger(run.value?.planned_result_count ?? 0) },
 ])
 
 const resultStatusBreakdown = computed(() => countBy(results.value.map((result) => benchmarkResultStatusLabel(result.status, t))))
@@ -245,55 +267,118 @@ const resultsByTarget = computed(() => {
 })
 
 async function load() {
-  if (!activeRunId.value) return
+  const requestedRunId = activeRunId.value
+  if (!requestedRunId) return
+  const requestSequence = ++loadSequence
   loading.value = true
   publishMessage.value = ''
   try {
     const [runRes, resultRes, scoreRes] = await Promise.all([
-      adminAPI.benchmark.getRun(activeRunId.value),
-      adminAPI.benchmark.listRunResults(activeRunId.value),
-      adminAPI.benchmark.getRunScores(activeRunId.value),
+      adminAPI.benchmark.getRun(requestedRunId),
+      adminAPI.benchmark.listRunResults(requestedRunId),
+      adminAPI.benchmark.getRunScores(requestedRunId),
     ])
+    if (requestSequence !== loadSequence || activeRunId.value !== requestedRunId) return
     run.value = runRes
     results.value = resultRes || []
     scores.value = scoreRes || []
   } catch (error) {
+    if (requestSequence !== loadSequence || activeRunId.value !== requestedRunId) return
     appStore.showError(error instanceof Error ? error.message : t('benchmark.admin.runDetail.loadError'))
   } finally {
-    loading.value = false
+    if (requestSequence === loadSequence) {
+      loading.value = false
+    }
   }
 }
 
 function loadManualRun() {
   if (!manualRunId.value) return
   manualLoadedRunId.value = manualRunId.value
-  load()
 }
 
 async function publish() {
-  if (!activeRunId.value) return
-  publishing.value = true
+  const runID = activeRunId.value
+  if (!runID || isRunActionPending(runID)) return
+  setRunActionPending(runID, 'publish')
   try {
-    await adminAPI.benchmark.publishRun(activeRunId.value)
-    publishMessage.value = t('benchmark.admin.runDetail.publishSuccess')
-    appStore.showSuccess(publishMessage.value)
+    await adminAPI.benchmark.publishRun(runID)
+    const message = t('benchmark.admin.runDetail.publishSuccess')
+    if (activeRunId.value === runID) {
+      publishMessage.value = message
+      appStore.showSuccess(message)
+    }
   } catch (error) {
+    if (activeRunId.value !== runID) return
     appStore.showError(error instanceof Error ? error.message : t('benchmark.admin.runDetail.publishError'))
   } finally {
-    publishing.value = false
+    clearRunActionPending(runID)
   }
 }
 
+async function cancel() {
+  const runID = activeRunId.value
+  if (!runID || isRunActionPending(runID)) return
+  setRunActionPending(runID, 'cancel')
+  try {
+    await adminAPI.benchmark.cancelRun(runID)
+    if (activeRunId.value === runID) {
+      appStore.showSuccess(t('benchmark.admin.runDetail.cancelSuccess'))
+      await load()
+    }
+  } catch (error) {
+    if (activeRunId.value !== runID) return
+    appStore.showError(error instanceof Error ? error.message : t('benchmark.admin.runDetail.cancelError'))
+  } finally {
+    clearRunActionPending(runID)
+  }
+}
+
+async function process() {
+  const runID = activeRunId.value
+  if (!runID || isRunActionPending(runID)) return
+  setRunActionPending(runID, 'process')
+  try {
+    const result = await adminAPI.benchmark.processRun(runID)
+    if (activeRunId.value === runID) {
+      appStore.showSuccess(t('benchmark.admin.runDetail.processSuccess', { count: result.processed }))
+      await load()
+    }
+  } catch (error) {
+    if (activeRunId.value !== runID) return
+    appStore.showError(error instanceof Error ? error.message : t('benchmark.admin.runDetail.processError'))
+  } finally {
+    clearRunActionPending(runID)
+  }
+}
+
+function isRunActionPending(runID: number): boolean {
+  return !!pendingActions.value[runID]
+}
+
+function setRunActionPending(runID: number, action: RunActionType) {
+  pendingActions.value = { ...pendingActions.value, [runID]: action }
+}
+
+function clearRunActionPending(runID: number) {
+  const next = { ...pendingActions.value }
+  delete next[runID]
+  pendingActions.value = next
+}
+
 function targetName(id: number): string {
-  const scoreTarget = scoreByTargetId.value.get(id)?.edges?.run_target
-  if (scoreTarget) return runTargetName(scoreTarget, id)
   const resultTarget = results.value.find((item) => item.run_target_id === id)?.edges?.run_target
   if (resultTarget) return runTargetName(resultTarget, id)
+  // Fall back to score map: use model_name + channel hint from score
+  const score = scoreByTargetId.value.get(id)
+  if (score?.model_name) {
+    return score.model_name
+  }
   return benchmarkTargetFallback(id, t)
 }
 
-function scoreTargetName(score: BenchmarkScoreSnapshot): string {
-  return score.edges?.run_target ? runTargetName(score.edges.run_target, score.run_target_id) : targetName(score.run_target_id)
+function scoreTargetName(score: BenchmarkTargetScore): string {
+  return targetName(score.run_target_id)
 }
 
 function runTargetName(
@@ -338,6 +423,16 @@ function localizeResultStatus(status: string): string {
     : status
 }
 
+function formatInvalidReasonBreakdown(breakdown?: Record<string, number>): string {
+  const entries = Object.entries(breakdown || {})
+    .filter(([, count]) => Number(count || 0) > 0)
+    .sort((a, b) => Number(b[1] || 0) - Number(a[1] || 0))
+  if (entries.length === 0) return t('benchmark.admin.runDetail.noInvalidReasonsShort')
+  return entries
+    .map(([reason, count]) => `${localizeResultStatus(reason)}: ${formatInteger(Number(count || 0))}`)
+    .join(', ')
+}
+
 function formatNumber(value?: number | null): string {
   if (value === undefined || value === null) return '-'
   return new Intl.NumberFormat(locale.value, {
@@ -346,13 +441,11 @@ function formatNumber(value?: number | null): string {
   }).format(Number(value))
 }
 
-function formatPercent(value?: number | null): string {
-  if (value === undefined || value === null) return '-'
-  return new Intl.NumberFormat(locale.value, {
-    style: 'percent',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(Number(value))
+function clearRunState() {
+  run.value = null
+  results.value = []
+  scores.value = []
+  publishMessage.value = ''
 }
 
 function formatLatency(value?: number | null): string {
@@ -376,6 +469,16 @@ function formatCost(value?: number | null): string {
     maximumFractionDigits: 4,
   }).format(Number(value))
 }
+
+watch(activeRunId, (runID) => {
+  loadSequence += 1
+  clearRunState()
+  if (runID) {
+    load()
+  } else {
+    loading.value = false
+  }
+})
 
 onMounted(() => {
   if (activeRunId.value) {

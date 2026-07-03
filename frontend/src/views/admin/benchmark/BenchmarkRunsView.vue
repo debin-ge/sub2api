@@ -6,45 +6,106 @@
           <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">{{ t('benchmark.admin.runs.title') }}</h1>
           <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('benchmark.admin.runs.description') }}</p>
         </div>
-        <button type="button" class="btn btn-secondary inline-flex items-center gap-2" :disabled="loading" @click="reload">
-          <Icon name="refresh" size="sm" :class="loading ? 'animate-spin' : ''" />
-          {{ t('benchmark.admin.runs.refresh') }}
-        </button>
+        <div class="flex flex-wrap gap-2">
+          <button type="button" data-test="process-due-runs" class="btn btn-secondary inline-flex items-center gap-2" :disabled="processingDue" @click="processDue">
+            <Icon name="play" size="sm" />
+            {{ t('benchmark.admin.runs.processDue') }}
+          </button>
+          <button type="button" class="btn btn-secondary inline-flex items-center gap-2" :disabled="loading" @click="reload">
+            <Icon name="refresh" size="sm" :class="loading ? 'animate-spin' : ''" />
+            {{ t('benchmark.admin.runs.refresh') }}
+          </button>
+        </div>
       </div>
 
       <section class="card">
-        <div class="grid grid-cols-1 gap-4 p-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-          <label class="block">
-            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('benchmark.admin.runs.fields.profile') }}</span>
-            <select v-model.number="createProfileId" data-test="run-profile-select" class="input mt-1">
-              <option :value="0">{{ t('benchmark.admin.runs.chooseProfile') }}</option>
-              <option v-for="profile in profiles" :key="profile.id" :value="profile.id">{{ profile.name }}</option>
-            </select>
-          </label>
-          <button type="button" data-test="create-run-button" class="btn btn-primary inline-flex items-center gap-2" :disabled="creating || !createProfileId" @click="createRun">
+        <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
+          <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('benchmark.admin.runs.createRun') }}</h2>
+          <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('benchmark.admin.runs.createDescription') }}</p>
+        </div>
+        <form class="space-y-4 p-6" @submit.prevent="createRun">
+          <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <label class="block">
+              <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('benchmark.admin.runs.fields.taskCount') }}</span>
+              <input v-model.number="taskCount" data-test="run-task-count" type="number" min="1" class="input mt-1" />
+            </label>
+            <label class="block">
+              <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('benchmark.admin.runs.fields.triggerType') }}</span>
+              <input v-model.trim="triggerType" data-test="run-trigger-type" class="input mt-1" />
+            </label>
+            <label class="mt-7 inline-flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+              <input v-model="processImmediately" data-test="run-process-immediately" type="checkbox" class="rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
+              {{ t('benchmark.admin.runs.fields.processImmediately') }}
+            </label>
+          </div>
+
+          <div>
+            <p class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('benchmark.admin.runs.fields.targetIds') }}</p>
+            <div class="mt-2 max-h-32 space-y-2 overflow-y-auto rounded-lg border border-gray-100 p-3 dark:border-dark-700">
+              <label v-for="target in targets" :key="target.id" class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
+                <input
+                  v-model="targetIds"
+                  :data-test="`run-target-${target.id}`"
+                  type="checkbox"
+                  :value="target.id"
+                  class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                />
+                <span>{{ targetLabel(target) }}</span>
+              </label>
+              <p v-if="targets.length === 0" class="text-sm text-gray-500 dark:text-gray-400">{{ t('benchmark.admin.runs.noTargets') }}</p>
+            </div>
+          </div>
+
+          <p v-if="formError" data-test="run-form-error" class="text-sm text-red-600 dark:text-red-400">{{ formError }}</p>
+
+          <button type="button" data-test="create-run-button" class="btn btn-primary inline-flex items-center gap-2" :disabled="creating" @click="createRun">
             <Icon name="play" size="sm" />
             {{ t('benchmark.admin.runs.createRun') }}
           </button>
-        </div>
+        </form>
       </section>
 
       <section class="card">
         <DataTable :columns="columns" :data="runs" :loading="loading">
           <template #cell-id="{ row }">
-            <span class="font-medium text-gray-900 dark:text-white">{{ benchmarkRunFallback(row.id, t) }}</span>
+            <router-link :to="`/admin/benchmark/runs/${row.id}`" class="font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400">
+              {{ benchmarkRunFallback(row.id, t) }}
+            </router-link>
           </template>
-          <template #cell-profile_id="{ row }">{{ profileName(row.profile_id) }}</template>
           <template #cell-status="{ row }">
             <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium" :class="statusClass(row.status)">
               {{ benchmarkRunStatusLabel(row.status, t) }}
             </span>
           </template>
-          <template #cell-task_scale="{ row }">{{ benchmarkTaskScaleLabel(row.task_scale, t) }}</template>
-          <template #cell-task_types="{ row }">{{ formatTaskTypes(row.task_types) }}</template>
+          <template #cell-task_count="{ row }">{{ formatInteger(row.task_count) }}</template>
           <template #cell-planned="{ row }">
-            {{ t('benchmark.admin.runs.planSummary', { targets: row.planned_target_count, tasks: row.planned_task_count, results: row.planned_result_count }) }}
+            {{ t('benchmark.admin.runs.planSummary', { targets: formatInteger(row.planned_target_count), tasks: formatInteger(row.planned_task_count), results: formatInteger(row.planned_result_count) }) }}
           </template>
           <template #cell-finished_at="{ row }">{{ formatDate(row.finished_at || row.updated_at || row.created_at) }}</template>
+          <template #cell-actions="{ row }">
+            <div class="flex flex-wrap items-center gap-2">
+              <button
+                v-if="canProcess(row.status)"
+                type="button"
+                class="btn btn-secondary btn-sm"
+                :data-test="`run-process-${row.id}`"
+                :disabled="processingRunId === row.id"
+                @click="processOneRun(row)"
+              >
+                {{ t('benchmark.admin.runs.process') }}
+              </button>
+              <button
+                v-if="canCancel(row.status)"
+                type="button"
+                class="btn btn-danger btn-sm"
+                :data-test="`run-cancel-${row.id}`"
+                :disabled="cancelingRunId === row.id"
+                @click="cancelOneRun(row)"
+              >
+                {{ t('benchmark.admin.runs.cancel') }}
+              </button>
+            </div>
+          </template>
           <template #empty>
             <EmptyState :title="t('benchmark.admin.runs.emptyTitle')" :description="t('benchmark.admin.runs.emptyDescription')" />
           </template>
@@ -74,44 +135,53 @@ import Icon from '@/components/icons/Icon.vue'
 import { adminAPI } from '@/api/admin'
 import { useAppStore } from '@/stores/app'
 import type { Column } from '@/components/common/types'
-import type { BenchmarkProfile, BenchmarkRun, BenchmarkRunStatus } from '@/types/benchmark'
+import type {
+  BenchmarkRun,
+  BenchmarkRunStatus,
+  BenchmarkTarget,
+  CreateBenchmarkRunRequest,
+} from '@/types/benchmark'
 import {
-  benchmarkProfileFallback,
   benchmarkRunFallback,
   benchmarkRunStatusLabel,
-  benchmarkTaskScaleLabel,
-  benchmarkTaskTypeLabel,
+  benchmarkTargetFallback,
 } from '@/components/radar/benchmarkI18n'
 
 const appStore = useAppStore()
 const { locale, t } = useI18n()
 
 const runs = ref<BenchmarkRun[]>([])
-const profiles = ref<BenchmarkProfile[]>([])
+const targets = ref<BenchmarkTarget[]>([])
 const loading = ref(false)
 const creating = ref(false)
-const createProfileId = ref(0)
+const processingDue = ref(false)
+const processingRunId = ref<number | null>(null)
+const cancelingRunId = ref<number | null>(null)
+const targetIds = ref<number[]>([])
+const taskCount = ref<number>(10)
+const triggerType = ref('manual')
+const processImmediately = ref(false)
+const formError = ref('')
 const pagination = reactive({ page: 1, page_size: 20, total: 0 })
 
 const columns = computed<Column[]>(() => [
   { key: 'id', label: t('benchmark.admin.runs.columns.run') },
-  { key: 'profile_id', label: t('benchmark.admin.runs.columns.profile') },
   { key: 'status', label: t('benchmark.admin.runs.columns.status') },
-  { key: 'task_scale', label: t('benchmark.admin.runs.columns.scale') },
-  { key: 'task_types', label: t('benchmark.admin.runs.columns.taskTypes') },
+  { key: 'task_count', label: t('benchmark.admin.runs.columns.taskCount') },
   { key: 'planned', label: t('benchmark.admin.runs.columns.plan') },
   { key: 'finished_at', label: t('benchmark.admin.runs.columns.finished') },
+  { key: 'actions', label: t('benchmark.admin.runs.columns.actions'), sortable: false },
 ])
 
 async function reload() {
   loading.value = true
   try {
-    const [runRes, profileRes] = await Promise.all([
+    const [runRes, targetRes] = await Promise.all([
       adminAPI.benchmark.listRuns({ page: pagination.page, page_size: pagination.page_size }),
-      adminAPI.benchmark.listProfiles({ page: 1, page_size: 100 }),
+      adminAPI.benchmark.listTargets({ page: 1, page_size: 100 }),
     ])
     runs.value = runRes.items || []
-    profiles.value = profileRes.items || []
+    targets.value = targetRes.items || []
     pagination.total = runRes.total || 0
   } catch (error) {
     appStore.showError(error instanceof Error ? error.message : t('benchmark.admin.runs.loadError'))
@@ -121,13 +191,24 @@ async function reload() {
 }
 
 async function createRun() {
-  if (!createProfileId.value) return
+  formError.value = ''
+  if (taskCount.value < 1) {
+    formError.value = t('benchmark.admin.runs.validation.taskCountLimit')
+    return
+  }
+
+  const payload: CreateBenchmarkRunRequest = {
+    task_count: taskCount.value,
+    trigger_type: triggerType.value || 'manual',
+    process_immediately: processImmediately.value,
+  }
+  if (targetIds.value.length > 0) {
+    payload.target_ids = [...targetIds.value]
+  }
+
   creating.value = true
   try {
-    const created = await adminAPI.benchmark.createRun({
-      profile_id: createProfileId.value,
-      trigger_type: 'manual',
-    })
+    const created = await adminAPI.benchmark.createRun(payload)
     runs.value = [created, ...runs.value.filter((run) => run.id !== created.id)]
     pagination.total += 1
     appStore.showSuccess(t('benchmark.admin.runs.createSuccess', { id: created.id }))
@@ -138,15 +219,62 @@ async function createRun() {
   }
 }
 
-function profileName(id: number): string {
-  return profiles.value.find((profile) => profile.id === id)?.name || benchmarkProfileFallback(id, t)
+async function cancelOneRun(run: BenchmarkRun) {
+  cancelingRunId.value = run.id
+  try {
+    await adminAPI.benchmark.cancelRun(run.id)
+    appStore.showSuccess(t('benchmark.admin.runs.cancelSuccess'))
+    await reload()
+  } catch (error) {
+    appStore.showError(error instanceof Error ? error.message : t('benchmark.admin.runs.cancelError'))
+  } finally {
+    cancelingRunId.value = null
+  }
+}
+
+async function processOneRun(run: BenchmarkRun) {
+  processingRunId.value = run.id
+  try {
+    const result = await adminAPI.benchmark.processRun(run.id)
+    appStore.showSuccess(t('benchmark.admin.runs.processSuccess', { count: result.processed }))
+    await reload()
+  } catch (error) {
+    appStore.showError(error instanceof Error ? error.message : t('benchmark.admin.runs.processError'))
+  } finally {
+    processingRunId.value = null
+  }
+}
+
+async function processDue() {
+  processingDue.value = true
+  try {
+    const result = await adminAPI.benchmark.processDueRuns()
+    appStore.showSuccess(t('benchmark.admin.runs.processDueSuccess', { count: result.processed }))
+    await reload()
+  } catch (error) {
+    appStore.showError(error instanceof Error ? error.message : t('benchmark.admin.runs.processDueError'))
+  } finally {
+    processingDue.value = false
+  }
+}
+
+function targetLabel(target: BenchmarkTarget): string {
+  return target.display_name || target.model_name || benchmarkTargetFallback(target.id, t)
 }
 
 function statusClass(status: BenchmarkRunStatus): string {
   if (status === 'completed') return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
   if (status === 'failed' || status === 'canceled') return 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300'
-  if (status === 'running' || status === 'scoring' || status === 'snapshotting') return 'bg-sky-50 text-sky-700 dark:bg-sky-900/20 dark:text-sky-300'
+  if (status === 'running') return 'bg-sky-50 text-sky-700 dark:bg-sky-900/20 dark:text-sky-300'
   return 'bg-gray-100 text-gray-700 dark:bg-dark-700 dark:text-gray-300'
+}
+
+function canCancel(status: BenchmarkRunStatus): boolean {
+  return ['queued', 'running'].includes(status)
+}
+
+function canProcess(status: BenchmarkRunStatus): boolean {
+  return ['queued', 'running'].includes(status)
 }
 
 function formatDate(value?: string | null): string {
@@ -160,9 +288,11 @@ function formatDate(value?: string | null): string {
   }).format(new Date(value))
 }
 
-function formatTaskTypes(taskTypes: string[]): string {
-  if (taskTypes.length === 0) return '-'
-  return taskTypes.map((taskType) => benchmarkTaskTypeLabel(taskType, t)).join(', ')
+function formatInteger(value?: number | null): string {
+  if (value === undefined || value === null) return '-'
+  return new Intl.NumberFormat(locale.value, {
+    maximumFractionDigits: 0,
+  }).format(Number(value))
 }
 
 function onPageChange(page: number) {

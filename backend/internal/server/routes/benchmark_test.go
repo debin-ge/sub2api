@@ -38,7 +38,21 @@ func TestBenchmarkRoutesRegisterAdminBenchmarkRoutes(t *testing.T) {
 
 	assertRouteRegistered(t, router, http.MethodGet, "/api/v1/admin/benchmark/suites")
 	assertRouteRegistered(t, router, http.MethodPost, "/api/v1/admin/benchmark/suites")
+	assertRouteRegistered(t, router, http.MethodGet, "/api/v1/admin/benchmark/suites/:id")
+	assertRouteRegistered(t, router, http.MethodPut, "/api/v1/admin/benchmark/suites/:id")
+	assertRouteRegistered(t, router, http.MethodDelete, "/api/v1/admin/benchmark/suites/:id")
+	assertRouteRegistered(t, router, http.MethodGet, "/api/v1/admin/benchmark/targets/:id")
+	assertRouteRegistered(t, router, http.MethodPut, "/api/v1/admin/benchmark/targets/:id")
+	assertRouteRegistered(t, router, http.MethodDelete, "/api/v1/admin/benchmark/targets/:id")
+	assertRouteRegistered(t, router, http.MethodGet, "/api/v1/admin/benchmark/tasks/:id")
+	assertRouteRegistered(t, router, http.MethodPut, "/api/v1/admin/benchmark/tasks/:id")
+	assertRouteRegistered(t, router, http.MethodDelete, "/api/v1/admin/benchmark/tasks/:id")
+	assertRouteRegistered(t, router, http.MethodPut, "/api/v1/admin/benchmark/profiles/:id")
+	assertRouteRegistered(t, router, http.MethodDelete, "/api/v1/admin/benchmark/profiles/:id")
+	assertRouteRegistered(t, router, http.MethodPost, "/api/v1/admin/benchmark/runs/process-due")
 	assertRouteRegistered(t, router, http.MethodPost, "/api/v1/admin/benchmark/runs/:id/publish")
+	assertRouteRegistered(t, router, http.MethodPost, "/api/v1/admin/benchmark/runs/:id/cancel")
+	assertRouteRegistered(t, router, http.MethodPost, "/api/v1/admin/benchmark/runs/:id/process")
 }
 
 func TestBenchmarkRoutesRegisterAdminBenchmarkScheduleRoutes(t *testing.T) {
@@ -56,6 +70,9 @@ func TestBenchmarkRoutesRegisterAdminBenchmarkScheduleRoutes(t *testing.T) {
 
 	assertRouteRegistered(t, router, http.MethodGet, "/api/v1/admin/benchmark/schedules")
 	assertRouteRegistered(t, router, http.MethodPost, "/api/v1/admin/benchmark/schedules")
+	assertRouteRegistered(t, router, http.MethodGet, "/api/v1/admin/benchmark/schedules/:id")
+	assertRouteRegistered(t, router, http.MethodPut, "/api/v1/admin/benchmark/schedules/:id")
+	assertRouteRegistered(t, router, http.MethodDelete, "/api/v1/admin/benchmark/schedules/:id")
 	assertRouteRegistered(t, router, http.MethodPost, "/api/v1/admin/benchmark/schedules/:id/trigger")
 }
 

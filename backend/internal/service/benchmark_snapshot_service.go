@@ -7,23 +7,17 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/ent"
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
 
+const benchmarkRankingBasisValue = "ability_score_only"
+
 type BenchmarkSnapshotService struct {
-	repo            BenchmarkRepository
-	runtimeProvider benchmarkRuntimeProvider
+	repo BenchmarkRepository
 }
 
 func NewBenchmarkSnapshotService(repo BenchmarkRepository) *BenchmarkSnapshotService {
 	return &BenchmarkSnapshotService{repo: repo}
-}
-
-func (s *BenchmarkSnapshotService) SetBenchmarkRuntimeProvider(provider benchmarkRuntimeProvider) {
-	s.runtimeProvider = provider
-}
-
-func (s *BenchmarkSnapshotService) SetSettingService(settingService *SettingService) {
-	s.SetBenchmarkRuntimeProvider(settingService)
 }
 
 type BenchmarkPublicRadar struct {
@@ -31,186 +25,144 @@ type BenchmarkPublicRadar struct {
 	PublishedAt  *time.Time              `json:"published_at,omitempty"`
 	LatestRun    *BenchmarkPublicRun     `json:"latest_run,omitempty"`
 	Targets      []BenchmarkPublicTarget `json:"targets"`
+	Trends       []BenchmarkPublicTrend  `json:"trends,omitempty"`
 }
 
 type BenchmarkPublicRun struct {
 	ID          int64      `json:"id"`
-	SuiteID     int64      `json:"suite_id"`
-	ProfileID   int64      `json:"profile_id"`
 	Status      string     `json:"status"`
+	TaskCount   int        `json:"task_count"`
 	CompletedAt *time.Time `json:"completed_at,omitempty"`
 }
 
 type BenchmarkPublicTarget struct {
-	Rank         int                       `json:"rank"`
-	Model        string                    `json:"model"`
-	ChannelID    int64                     `json:"channel_id"`
-	ChannelName  string                    `json:"channel_name,omitempty"`
-	DisplayName  string                    `json:"display_name,omitempty"`
-	OverallScore float64                   `json:"overall_score"`
-	Dimensions   map[string]float64        `json:"dimensions,omitempty"`
-	ScoreBasis   BenchmarkPublicScoreBasis `json:"score_basis"`
-	Metrics      BenchmarkPublicMetrics    `json:"metrics"`
-}
-
-type BenchmarkPublicScoreBasis struct {
-	PlannedTasks       int     `json:"planned_tasks"`
-	ScoredTasks        int     `json:"scored_tasks"`
-	InvalidTasks       int     `json:"invalid_tasks"`
-	CoverageRate       float64 `json:"coverage_rate"`
-	ConfidenceLevel    string  `json:"confidence_level"`
-	InsufficientSample bool    `json:"insufficient_sample"`
+	Rank         int                    `json:"rank"`
+	Model        string                 `json:"model"`
+	ChannelID    int64                  `json:"channel_id"`
+	ChannelName  string                 `json:"channel_name,omitempty"`
+	DisplayName  string                 `json:"display_name,omitempty"`
+	OverallScore float64                `json:"overall_score"`
+	PassedCount  int                    `json:"passed_count"`
+	TotalCount   int                    `json:"total_count"`
+	Dimensions   map[string]float64     `json:"dimensions,omitempty"`
+	Metrics      BenchmarkPublicMetrics `json:"metrics"`
 }
 
 type BenchmarkPublicMetrics struct {
-	SuccessRate    float64  `json:"success_rate"`
-	LatencyP50MS   *float64 `json:"latency_p50_ms,omitempty"`
-	LatencyP95MS   *float64 `json:"latency_p95_ms,omitempty"`
+	AvgLatencyMS   *float64 `json:"avg_latency_ms,omitempty"`
 	AvgTotalTokens *float64 `json:"avg_total_tokens,omitempty"`
-	EstimatedCost  float64  `json:"estimated_cost"`
+	TotalCost      float64  `json:"total_cost"`
 }
 
-func (s *BenchmarkSnapshotService) BuildScoreSnapshots(ctx context.Context, runID int64) error {
+type BenchmarkPublicTrend struct {
+	Model       string                      `json:"model"`
+	ChannelID   int64                        `json:"channel_id"`
+	ChannelName string                       `json:"channel_name,omitempty"`
+	DisplayName string                       `json:"display_name,omitempty"`
+	Points      []BenchmarkPublicTrendPoint `json:"points"`
+}
+
+type BenchmarkPublicTrendPoint struct {
+	RunID        int64     `json:"run_id"`
+	FinishedAt   time.Time `json:"finished_at"`
+	OverallScore float64   `json:"overall_score"`
+	PassedCount  int       `json:"passed_count"`
+	TotalCount   int       `json:"total_count"`
+	AvgLatencyMS *float64  `json:"avg_latency_ms,omitempty"`
+	TotalCost    float64   `json:"total_cost"`
+}
+
+// BuildTargetScores aggregates a finished run's results into per-target scores
+// (one trend data point each).
+func (s *BenchmarkSnapshotService) BuildTargetScores(ctx context.Context, runID int64) error {
+	run, err := s.repo.GetRun(ctx, runID)
+	if err != nil {
+		return err
+	}
+	finishedAt := time.Now().UTC()
+	if run != nil && run.FinishedAt != nil {
+		finishedAt = *run.FinishedAt
+	}
+
 	inputs, err := s.repo.ListRunScoreInputs(ctx, runID)
 	if err != nil {
 		return err
 	}
-	thresholds := s.getConfidenceThresholds(ctx)
 
 	grouped := make(map[int64][]BenchmarkRunScoreInput)
+	order := make([]int64, 0)
+	targetByID := make(map[int64]*ent.BenchmarkRunTarget)
 	for _, input := range inputs {
 		if input.RunTarget == nil || input.RunTask == nil || input.Result == nil {
 			continue
 		}
-		grouped[input.RunTarget.ID] = append(grouped[input.RunTarget.ID], input)
+		id := input.RunTarget.ID
+		if _, ok := grouped[id]; !ok {
+			order = append(order, id)
+			targetByID[id] = input.RunTarget
+		}
+		grouped[id] = append(grouped[id], input)
 	}
 
-	snapshots := make([]BenchmarkScoreSnapshotInput, 0, len(grouped))
-	for runTargetID, group := range grouped {
+	scores := make([]BenchmarkTargetScoreInput, 0, len(grouped))
+	for _, runTargetID := range order {
+		group := grouped[runTargetID]
+		runTarget := targetByID[runTargetID]
+
 		abilityResults := make([]BenchmarkScoredResult, 0, len(group))
-		invalidReasonBreakdown := make(map[string]int)
-		latencies := make([]int, 0, len(group))
-		var tokenSum int
-		var tokenSamples int
-		var successCount int
-		var estimatedCost float64
-
 		for _, input := range group {
-			result := input.Result
-			runTask := input.RunTask
-
-			var normalizedScore float64
-			if result.NormalizedScore != nil {
-				normalizedScore = *result.NormalizedScore
+			var normalized float64
+			if input.Result.NormalizedScore != nil {
+				normalized = *input.Result.NormalizedScore
 			}
-
-			var latencyMS int
-			if result.LatencyMs != nil {
-				latencyMS = *result.LatencyMs
-				if latencyMS > 0 {
-					latencies = append(latencies, latencyMS)
-				}
+			latency := 0
+			if input.Result.LatencyMs != nil {
+				latency = *input.Result.LatencyMs
 			}
-
 			abilityResults = append(abilityResults, BenchmarkScoredResult{
-				TaskID:           runTask.TaskID,
-				TaskType:         runTask.Type,
-				Weight:           runTask.WeightSnapshot,
-				Status:           result.Status,
-				NormalizedScore:  normalizedScore,
-				LatencyMS:        latencyMS,
-				PromptTokens:     result.PromptTokens,
-				CompletionTokens: result.CompletionTokens,
-				TotalTokens:      result.TotalTokens,
-				EstimatedCost:    result.EstimatedCost,
+				TaskID:          input.RunTask.TaskID,
+				TaskType:        input.RunTask.Type,
+				Weight:          input.RunTask.WeightSnapshot,
+				Status:          input.Result.Status,
+				NormalizedScore: normalized,
+				LatencyMS:       latency,
+				TotalTokens:     input.Result.TotalTokens,
+				EstimatedCost:   input.Result.EstimatedCost,
 			})
-
-			if result.Status == BenchmarkResultStatusScored {
-				successCount++
-			} else {
-				invalidReasonBreakdown[result.Status]++
-			}
-
-			tokenCount := result.TotalTokens
-			if tokenCount <= 0 && result.PromptTokens+result.CompletionTokens > 0 {
-				tokenCount = result.PromptTokens + result.CompletionTokens
-			}
-			if tokenCount > 0 {
-				tokenSum += tokenCount
-				tokenSamples++
-			}
-			estimatedCost += result.EstimatedCost
 		}
 
-		score := ComputeBenchmarkTargetScore(abilityResults, thresholds)
-		if len(group) > 0 {
-			score.SuccessRate = float64(successCount) / float64(len(group))
-		}
-		if len(latencies) > 0 {
-			sort.Ints(latencies)
-			p50 := float64(upperInclusivePercentile(latencies, 0.50))
-			p95 := float64(upperInclusivePercentile(latencies, 0.95))
-			score.LatencyP50MS = int(p50)
-			score.LatencyP95MS = int(p95)
-		}
-		if tokenSamples > 0 {
-			score.AvgTotalTokens = float64(tokenSum) / float64(tokenSamples)
-		} else {
-			score.AvgTotalTokens = 0
-		}
-		score.EstimatedCost = estimatedCost
-
-		snapshot := BenchmarkScoreSnapshotInput{
+		score := ComputeBenchmarkTargetScore(abilityResults)
+		input := BenchmarkTargetScoreInput{
 			RunTargetID:            runTargetID,
+			ModelName:              runTarget.ModelName,
+			ChannelID:              runTarget.ChannelID,
 			OverallScore:           score.OverallScore,
+			PassedCount:            score.PassedCount,
+			TotalCount:             score.TotalCount,
 			DimensionScores:        benchmarkFloatMapToAny(score.DimensionScores),
-			PlannedTasks:           score.PlannedTasks,
-			ScoredTasks:            score.ScoredTasks,
-			InvalidTasks:           score.InvalidTasks,
-			CoverageRate:           score.CoverageRate,
-			ConfidenceLevel:        score.ConfidenceLevel,
-			InsufficientSample:     score.InsufficientSample,
-			SuccessRate:            score.SuccessRate,
-			EstimatedCost:          score.EstimatedCost,
-			InvalidReasonBreakdown: benchmarkIntMapToAny(invalidReasonBreakdown),
-			RankingMetadata:        map[string]any{},
+			TotalCost:              score.TotalCost,
+			InvalidReasonBreakdown: benchmarkIntMapToAny(score.InvalidReasonBreakdown),
+			FinishedAt:             finishedAt,
 		}
-		if len(latencies) > 0 {
-			p50 := float64(score.LatencyP50MS)
-			p95 := float64(score.LatencyP95MS)
-			snapshot.LatencyP50MS = &p50
-			snapshot.LatencyP95MS = &p95
+		if score.AvgLatencyMS > 0 {
+			avg := score.AvgLatencyMS
+			input.AvgLatencyMS = &avg
 		}
-		if tokenSamples > 0 {
-			avgTokens := score.AvgTotalTokens
-			snapshot.AvgTotalTokens = &avgTokens
+		if score.AvgTotalTokens > 0 {
+			avg := score.AvgTotalTokens
+			input.AvgTotalTokens = &avg
 		}
-		snapshots = append(snapshots, snapshot)
+		scores = append(scores, input)
 	}
 
-	sort.SliceStable(snapshots, func(i, j int) bool {
-		if snapshots[i].OverallScore != snapshots[j].OverallScore {
-			return snapshots[i].OverallScore > snapshots[j].OverallScore
+	sort.SliceStable(scores, func(i, j int) bool {
+		if scores[i].OverallScore != scores[j].OverallScore {
+			return scores[i].OverallScore > scores[j].OverallScore
 		}
-		if snapshots[i].CoverageRate != snapshots[j].CoverageRate {
-			return snapshots[i].CoverageRate > snapshots[j].CoverageRate
-		}
-		return snapshots[i].RunTargetID < snapshots[j].RunTargetID
+		return scores[i].RunTargetID < scores[j].RunTargetID
 	})
-	for i := range snapshots {
-		snapshots[i].RankingMetadata = map[string]any{
-			"rank": i + 1,
-		}
-	}
 
-	return s.repo.SaveScoreSnapshots(ctx, runID, snapshots)
-}
-
-func (s *BenchmarkSnapshotService) getConfidenceThresholds(ctx context.Context) BenchmarkConfidenceThresholds {
-	if s == nil || s.runtimeProvider == nil {
-		return BenchmarkConfidenceThresholds{}
-	}
-	return normalizeBenchmarkRuntime(s.runtimeProvider.GetBenchmarkRuntime(ctx)).ConfidenceThresholds
+	return s.repo.SaveTargetScores(ctx, runID, scores)
 }
 
 func (s *BenchmarkSnapshotService) PublishPublicSnapshot(ctx context.Context, runID int64) error {
@@ -218,76 +170,59 @@ func (s *BenchmarkSnapshotService) PublishPublicSnapshot(ctx context.Context, ru
 	if err != nil {
 		return err
 	}
+	if run.Status != BenchmarkRunStatusCompleted {
+		return infraerrors.Conflict("BENCHMARK_RUN_NOT_COMPLETED", "benchmark run must be completed before publishing")
+	}
 
-	scoreSnapshots, err := s.repo.ListScoreSnapshots(ctx, runID)
+	scores, err := s.repo.ListTargetScores(ctx, runID)
 	if err != nil {
 		return err
 	}
+	if len(scores) == 0 {
+		return infraerrors.Conflict("BENCHMARK_SCORE_SNAPSHOT_MISSING", "benchmark run has no target scores")
+	}
 
-	scoreInputs, err := s.repo.ListRunScoreInputs(ctx, runID)
+	runTargets, err := s.repo.ListRunTargets(ctx, runID)
 	if err != nil {
 		return err
 	}
-
-	runTargets := make(map[int64]*ent.BenchmarkRunTarget)
-	for _, input := range scoreInputs {
-		if input.RunTarget == nil {
-			continue
-		}
-		if _, exists := runTargets[input.RunTarget.ID]; exists {
-			continue
-		}
-		runTargets[input.RunTarget.ID] = input.RunTarget
+	targetMeta := make(map[int64]*ent.BenchmarkRunTarget, len(runTargets))
+	for _, rt := range runTargets {
+		targetMeta[rt.ID] = rt
 	}
 
 	radar := BenchmarkPublicRadar{
-		RankingBasis: benchmarkRankingBasis(run.ConfigSnapshot),
+		RankingBasis: benchmarkRankingBasisValue,
 		LatestRun: &BenchmarkPublicRun{
 			ID:          run.ID,
-			SuiteID:     run.SuiteID,
-			ProfileID:   run.ProfileID,
 			Status:      run.Status,
+			TaskCount:   run.PlannedTaskCount,
 			CompletedAt: run.FinishedAt,
 		},
-		Targets: make([]BenchmarkPublicTarget, 0, len(scoreSnapshots)),
+		Targets: make([]BenchmarkPublicTarget, 0, len(scores)),
 	}
 
-	for index, snapshot := range scoreSnapshots {
-		runTarget := runTargets[snapshot.RunTargetID]
+	for i, score := range scores {
 		target := BenchmarkPublicTarget{
-			Rank:         index + 1,
-			OverallScore: snapshot.OverallScore,
-			Dimensions:   benchmarkAnyMapToFloatMap(snapshot.DimensionScores),
-			ScoreBasis: BenchmarkPublicScoreBasis{
-				PlannedTasks:       snapshot.PlannedTasks,
-				ScoredTasks:        snapshot.ScoredTasks,
-				InvalidTasks:       snapshot.InvalidTasks,
-				CoverageRate:       snapshot.CoverageRate,
-				ConfidenceLevel:    string(snapshot.ConfidenceLevel),
-				InsufficientSample: snapshot.InsufficientSample,
-			},
+			Rank:         i + 1,
+			Model:        score.ModelName,
+			ChannelID:    score.ChannelID,
+			OverallScore: score.OverallScore,
+			PassedCount:  score.PassedCount,
+			TotalCount:   score.TotalCount,
+			Dimensions:   benchmarkAnyMapToFloatMap(score.DimensionScores),
 			Metrics: BenchmarkPublicMetrics{
-				SuccessRate:    snapshot.SuccessRate,
-				LatencyP50MS:   benchmarkCloneFloat64Ptr(snapshot.LatencyP50Ms),
-				LatencyP95MS:   benchmarkCloneFloat64Ptr(snapshot.LatencyP95Ms),
-				AvgTotalTokens: benchmarkCloneFloat64Ptr(snapshot.AvgTotalTokens),
-				EstimatedCost:  snapshot.EstimatedCost,
+				AvgLatencyMS:   benchmarkCloneFloat64Ptr(score.AvgLatencyMs),
+				AvgTotalTokens: benchmarkCloneFloat64Ptr(score.AvgTotalTokens),
+				TotalCost:      score.TotalCost,
 			},
 		}
-		if runTarget != nil {
-			target.Model = runTarget.ModelName
-			target.ChannelID = runTarget.ChannelID
-			target.ChannelName = stringFromPtr(runTarget.ChannelNameSnapshot)
-			target.DisplayName = stringFromPtr(runTarget.DisplayNameSnapshot)
-		}
-		if rank, ok := benchmarkIntFromAny(snapshot.RankingMetadata["rank"]); ok {
-			target.Rank = rank
+		if meta := targetMeta[score.RunTargetID]; meta != nil {
+			target.ChannelName = stringFromPtr(meta.ChannelNameSnapshot)
+			target.DisplayName = stringFromPtr(meta.DisplayNameSnapshot)
 		}
 		radar.Targets = append(radar.Targets, target)
 	}
-	sort.SliceStable(radar.Targets, func(i, j int) bool {
-		return radar.Targets[i].Rank < radar.Targets[j].Rank
-	})
 
 	publishedAt := time.Now().UTC()
 	radar.PublishedAt = &publishedAt
@@ -299,8 +234,6 @@ func (s *BenchmarkSnapshotService) PublishPublicSnapshot(ctx context.Context, ru
 
 	return s.repo.PublishPublicSnapshot(ctx, BenchmarkPublicSnapshotInput{
 		RunID:       run.ID,
-		SuiteID:     run.SuiteID,
-		ProfileID:   run.ProfileID,
 		Snapshot:    payload,
 		PublishedAt: &publishedAt,
 	})
@@ -319,7 +252,6 @@ func (s *BenchmarkSnapshotService) GetPublicRadar(ctx context.Context) (*Benchma
 	if err != nil {
 		return nil, err
 	}
-
 	var radar BenchmarkPublicRadar
 	if err := json.Unmarshal(payload, &radar); err != nil {
 		return nil, err
@@ -331,15 +263,58 @@ func (s *BenchmarkSnapshotService) GetPublicRadar(ctx context.Context) (*Benchma
 	return &radar, nil
 }
 
-func benchmarkRankingBasis(config map[string]any) string {
-	if config == nil {
-		return "ability_score_only"
+// GetTrends returns per-target score history grouped by model+channel, oldest
+// first. days bounds the window; limit caps the rows scanned.
+func (s *BenchmarkSnapshotService) GetTrends(ctx context.Context, days int, limit int) ([]BenchmarkPublicTrend, error) {
+	if days <= 0 {
+		days = 30
 	}
-	value, ok := config["ranking_basis"].(string)
-	if !ok || value == "" {
-		return "ability_score_only"
+	if limit <= 0 {
+		limit = 2000
 	}
-	return value
+	since := time.Now().UTC().AddDate(0, 0, -days)
+	scores, err := s.repo.ListTrendScores(ctx, since, limit)
+	if err != nil {
+		return nil, err
+	}
+	return buildBenchmarkTrends(scores), nil
+}
+
+func buildBenchmarkTrends(scores []*ent.BenchmarkTargetScore) []BenchmarkPublicTrend {
+	type key struct {
+		model     string
+		channelID int64
+	}
+	grouped := make(map[key]*BenchmarkPublicTrend)
+	order := make([]key, 0)
+	for _, score := range scores {
+		k := key{model: score.ModelName, channelID: score.ChannelID}
+		trend, ok := grouped[k]
+		if !ok {
+			trend = &BenchmarkPublicTrend{Model: score.ModelName, ChannelID: score.ChannelID}
+			grouped[k] = trend
+			order = append(order, k)
+		}
+		point := BenchmarkPublicTrendPoint{
+			RunID:        score.RunID,
+			FinishedAt:   score.FinishedAt,
+			OverallScore: score.OverallScore,
+			PassedCount:  score.PassedCount,
+			TotalCount:   score.TotalCount,
+			AvgLatencyMS: benchmarkCloneFloat64Ptr(score.AvgLatencyMs),
+			TotalCost:    score.TotalCost,
+		}
+		trend.Points = append(trend.Points, point)
+	}
+	out := make([]BenchmarkPublicTrend, 0, len(order))
+	for _, k := range order {
+		trend := grouped[k]
+		sort.SliceStable(trend.Points, func(i, j int) bool {
+			return trend.Points[i].FinishedAt.Before(trend.Points[j].FinishedAt)
+		})
+		out = append(out, *trend)
+	}
+	return out
 }
 
 func benchmarkPublicRadarPayload(radar BenchmarkPublicRadar) (map[string]any, error) {
@@ -347,7 +322,6 @@ func benchmarkPublicRadarPayload(radar BenchmarkPublicRadar) (map[string]any, er
 	if err != nil {
 		return nil, err
 	}
-
 	var out map[string]any
 	if err := json.Unmarshal(payload, &out); err != nil {
 		return nil, err
@@ -393,19 +367,6 @@ func benchmarkAnyMapToFloatMap(values map[string]any) map[string]float64 {
 		}
 	}
 	return out
-}
-
-func benchmarkIntFromAny(value any) (int, bool) {
-	switch typed := value.(type) {
-	case int:
-		return typed, true
-	case int64:
-		return int(typed), true
-	case float64:
-		return int(typed), true
-	default:
-		return 0, false
-	}
 }
 
 func benchmarkCloneFloat64Ptr(value *float64) *float64 {

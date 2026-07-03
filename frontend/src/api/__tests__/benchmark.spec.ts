@@ -1,14 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { get, post } = vi.hoisted(() => ({
+const { get, post, put, del } = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
+  put: vi.fn(),
+  del: vi.fn(),
 }))
 
 vi.mock('@/api/client', () => ({
   apiClient: {
     get,
     post,
+    put,
+    delete: del,
   },
 }))
 
@@ -19,9 +23,11 @@ describe('benchmark api', () => {
   beforeEach(() => {
     get.mockReset()
     post.mockReset()
+    put.mockReset()
+    del.mockReset()
   })
 
-  it('calls public radar endpoint and returns targets', async () => {
+  it('calls public radar endpoint and returns targets and trends', async () => {
     const response = {
       ranking_basis: 'ability_score_only' as const,
       latest_run: null,
@@ -31,21 +37,13 @@ describe('benchmark api', () => {
           model: 'gpt-4.1',
           channel_id: 7,
           display_name: 'GPT-4.1',
-          overall_score: 0.91,
-          score_basis: {
-            planned_tasks: 10,
-            scored_tasks: 9,
-            invalid_tasks: 1,
-            coverage_rate: 0.9,
-            confidence_level: 'high',
-            insufficient_sample: false,
-          },
-          metrics: {
-            success_rate: 0.9,
-            estimated_cost: 0.12,
-          },
+          overall_score: 91.2,
+          passed_count: 9,
+          total_count: 10,
+          metrics: { total_cost: 0.12 },
         },
       ],
+      trends: [],
     }
     get.mockResolvedValue({ data: response })
 
@@ -53,98 +51,32 @@ describe('benchmark api', () => {
 
     expect(get).toHaveBeenCalledWith('/public/radar')
     expect(result.targets).toEqual(response.targets)
+    expect(result.trends).toEqual([])
   })
 
   it('lists admin benchmark targets with params', async () => {
-    const response = {
-      items: [],
-      total: 0,
-      page: 2,
-      page_size: 50,
-      pages: 1,
-    }
+    const response = { items: [], total: 0, page: 2, page_size: 50, pages: 1 }
     get.mockResolvedValue({ data: response })
 
-    const result = await adminBenchmarkAPI.listTargets({
-      page: 2,
-      page_size: 50,
-    })
+    const result = await adminBenchmarkAPI.listTargets({ page: 2, page_size: 50 })
 
     expect(get).toHaveBeenCalledWith('/admin/benchmark/targets', {
-      params: {
-        page: 2,
-        page_size: 50,
-      },
+      params: { page: 2, page_size: 50 },
     })
     expect(result).toEqual(response)
   })
 
-  it('creates admin benchmark target with model and channel identifiers', async () => {
-    const payload = {
-      model_name: 'gpt-4.1',
-      channel_id: 7,
-      display_name: 'GPT-4.1',
-      supported_task_types: ['reasoning'],
-    }
-    get.mockResolvedValue({ data: {} })
+  it('creates a benchmark target and defaults enabled to true', async () => {
+    const payload = { model_name: 'gpt-4.1', channel_id: 7, display_name: 'GPT-4.1' }
     post.mockResolvedValue({ data: payload })
 
-    const result = await adminBenchmarkAPI.createTarget(payload)
+    await adminBenchmarkAPI.createTarget(payload)
 
-    expect(post).toHaveBeenCalledWith('/admin/benchmark/targets', {
-      ...payload,
-      enabled: true,
-    })
-    expect(result).toEqual(payload)
+    expect(post).toHaveBeenCalledWith('/admin/benchmark/targets', { ...payload, enabled: true })
   })
 
-  it('defaults enabled resources to enabled when creating them', async () => {
-    const suitePayload = {
-      name: 'Core Radar',
-      slug: 'core-radar',
-    }
-    const taskPayload = {
-      suite_id: 11,
-      title: 'Reasoning sample',
-      type: 'reasoning',
-      prompt: 'Solve it',
-      verifier_type: 'exact_match',
-    }
-    const profilePayload = {
-      suite_id: 11,
-      name: 'Default Profile',
-      target_ids: [1],
-      task_types: ['reasoning'],
-    }
-    post
-      .mockResolvedValueOnce({ data: { id: 1, ...suitePayload } })
-      .mockResolvedValueOnce({ data: { id: 2, ...taskPayload } })
-      .mockResolvedValueOnce({ data: { id: 3, ...profilePayload } })
-
-    await adminBenchmarkAPI.createSuite(suitePayload)
-    await adminBenchmarkAPI.createTask(taskPayload)
-    await adminBenchmarkAPI.createProfile(profilePayload)
-
-    expect(post).toHaveBeenNthCalledWith(1, '/admin/benchmark/suites', {
-      ...suitePayload,
-      enabled: true,
-    })
-    expect(post).toHaveBeenNthCalledWith(2, '/admin/benchmark/tasks', {
-      ...taskPayload,
-      enabled: true,
-    })
-    expect(post).toHaveBeenNthCalledWith(3, '/admin/benchmark/profiles', {
-      ...profilePayload,
-      enabled: true,
-    })
-  })
-
-  it('preserves explicit disabled state when creating enabled resources', async () => {
-    const payload = {
-      model_name: 'gpt-4.1',
-      channel_id: 7,
-      enabled: false,
-    }
+  it('preserves explicit disabled state when creating a target', async () => {
+    const payload = { model_name: 'gpt-4.1', channel_id: 7, enabled: false }
     post.mockResolvedValue({ data: payload })
 
     await adminBenchmarkAPI.createTarget(payload)
@@ -152,108 +84,59 @@ describe('benchmark api', () => {
     expect(post).toHaveBeenCalledWith('/admin/benchmark/targets', payload)
   })
 
-  it('serializes task type array filters as comma strings', async () => {
-    const response = {
-      items: [],
-      total: 0,
-      page: 1,
-      page_size: 20,
-      pages: 1,
+  it('creates a benchmark task and defaults enabled to true', async () => {
+    const payload = {
+      title: 'Reasoning sample',
+      type: 'reasoning',
+      prompt: 'Solve it',
+      verifier_type: 'exact_match',
     }
+    post.mockResolvedValue({ data: { id: 2, ...payload } })
+
+    await adminBenchmarkAPI.createTask(payload)
+
+    expect(post).toHaveBeenCalledWith('/admin/benchmark/tasks', { ...payload, enabled: true })
+  })
+
+  it('serializes task type array filters as comma strings', async () => {
+    const response = { items: [], total: 0, page: 1, page_size: 20, pages: 1 }
     get.mockResolvedValue({ data: response })
 
-    const result = await adminBenchmarkAPI.listTasks({
-      page: 1,
-      page_size: 20,
-      task_types: ['reasoning', 'coding'],
-    })
+    await adminBenchmarkAPI.listTasks({ page: 1, page_size: 20, task_types: ['reasoning', 'coding'] })
 
     expect(get).toHaveBeenCalledWith('/admin/benchmark/tasks', {
-      params: {
-        page: 1,
-        page_size: 20,
-        task_types: 'reasoning,coding',
-      },
+      params: { page: 1, page_size: 20, task_types: 'reasoning,coding' },
     })
-    expect(result).toEqual(response)
   })
 
-  it('lists and creates profiles', async () => {
-    const listResponse = {
-      items: [],
-      total: 0,
-      page: 1,
-      page_size: 20,
-      pages: 1,
-    }
-    const payload = {
-      suite_id: 11,
-      name: 'Default Profile',
-      target_ids: [1, 2],
-      task_types: ['reasoning', 'coding'],
-      task_scale: 'medium' as const,
-    }
-    get.mockResolvedValue({ data: listResponse })
-    post.mockResolvedValue({ data: { id: 3, ...payload } })
-
-    const listed = await adminBenchmarkAPI.listProfiles({ page: 1, page_size: 20 })
-    const created = await adminBenchmarkAPI.createProfile(payload)
-
-    expect(get).toHaveBeenCalledWith('/admin/benchmark/profiles', {
-      params: { page: 1, page_size: 20 },
-    })
-    expect(post).toHaveBeenCalledWith('/admin/benchmark/profiles', {
-      ...payload,
-      enabled: true,
-    })
-    expect(listed).toEqual(listResponse)
-    expect(created).toEqual({ id: 3, ...payload })
-  })
-
-  it('previews a benchmark profile by id', async () => {
-    const payload = {
-      task_types: ['reasoning'],
-      task_scale: 'small' as const,
-      task_count_limit: 5,
-    }
+  it('previews a run by target ids and task count', async () => {
+    const payload = { target_ids: [7, 8], task_count: 5 }
     const response = {
       target_count: 2,
       task_count: 5,
       result_count: 10,
-      task_types: ['reasoning'],
-      task_scale: 'small',
       ranking_basis: 'ability_score_only',
-      estimated_cost: 0,
-      selected_task_ids: [1, 2, 3, 4, 5],
-      selected_target_ids: [7, 8],
+      target_ids: [7, 8],
+      task_ids: [1, 2, 3, 4, 5],
     }
     post.mockResolvedValue({ data: response })
 
-    const result = await adminBenchmarkAPI.previewProfile(5, payload)
+    const result = await adminBenchmarkAPI.previewRun(payload)
 
-    expect(post).toHaveBeenCalledWith('/admin/benchmark/profiles/5/preview', payload)
+    expect(post).toHaveBeenCalledWith('/admin/benchmark/runs/preview', payload)
     expect(result).toEqual(response)
   })
 
   it('creates and publishes runs', async () => {
-    const payload = {
-      profile_id: 5,
-      trigger_type: 'manual',
-      override: {
-        task_types: ['reasoning'],
-      },
-    }
+    const payload = { target_ids: [7], task_count: 10, trigger_type: 'manual', process_immediately: true }
     const run = {
       id: 9,
-      suite_id: 11,
-      profile_id: 5,
       status: 'queued',
       trigger_type: 'manual',
-      task_scale: 'medium',
-      task_types: ['reasoning'],
+      task_count: 10,
       planned_target_count: 1,
-      planned_task_count: 2,
-      planned_result_count: 2,
+      planned_task_count: 10,
+      planned_result_count: 10,
     }
     post
       .mockResolvedValueOnce({ data: run })
@@ -268,89 +151,102 @@ describe('benchmark api', () => {
     expect(published).toEqual({ message: 'ok' })
   })
 
-  it('lists, creates, and triggers schedules', async () => {
-    const listResponse = {
-      items: [],
-      total: 0,
-      page: 1,
-      page_size: 10,
-      pages: 1,
+  it('updates and deletes targets and schedules by id', async () => {
+    const targetPayload = {
+      model_name: 'gpt-4.1',
+      channel_id: 7,
+      display_name: 'GPT-4.1',
+      enabled: false,
+      public_visible: true,
+      sort_order: 10,
     }
+    const schedulePayload = {
+      name: 'Updated schedule',
+      cron_expr: '0 4 * * *',
+      enabled: true,
+      target_ids: [7],
+      task_count: 5,
+    }
+    put
+      .mockResolvedValueOnce({ data: { id: 11, ...targetPayload } })
+      .mockResolvedValueOnce({ data: { id: 8, ...schedulePayload } })
+    del
+      .mockResolvedValueOnce({ data: { message: 'target deleted' } })
+      .mockResolvedValueOnce({ data: { message: 'task deleted' } })
+      .mockResolvedValueOnce({ data: { message: 'schedule deleted' } })
+
+    const updatedTarget = await adminBenchmarkAPI.updateTarget(11, targetPayload)
+    await adminBenchmarkAPI.deleteTarget(11)
+    await adminBenchmarkAPI.deleteTask(21)
+    const updatedSchedule = await adminBenchmarkAPI.updateSchedule(8, schedulePayload)
+    await adminBenchmarkAPI.deleteSchedule(8)
+
+    expect(put).toHaveBeenNthCalledWith(1, '/admin/benchmark/targets/11', targetPayload)
+    expect(del).toHaveBeenNthCalledWith(1, '/admin/benchmark/targets/11')
+    expect(del).toHaveBeenNthCalledWith(2, '/admin/benchmark/tasks/21')
+    expect(put).toHaveBeenNthCalledWith(2, '/admin/benchmark/schedules/8', schedulePayload)
+    expect(del).toHaveBeenNthCalledWith(3, '/admin/benchmark/schedules/8')
+    expect(updatedTarget.enabled).toBe(false)
+    expect(updatedSchedule.name).toBe('Updated schedule')
+  })
+
+  it('runs cancel and processing actions on benchmark runs', async () => {
+    post
+      .mockResolvedValueOnce({ data: { message: 'canceled' } })
+      .mockResolvedValueOnce({ data: { processed: 1 } })
+      .mockResolvedValueOnce({ data: { processed: 3 } })
+
+    await adminBenchmarkAPI.cancelRun(31)
+    await adminBenchmarkAPI.processRun(31)
+    const processedDue = await adminBenchmarkAPI.processDueRuns()
+
+    expect(post).toHaveBeenNthCalledWith(1, '/admin/benchmark/runs/31/cancel')
+    expect(post).toHaveBeenNthCalledWith(2, '/admin/benchmark/runs/31/process')
+    expect(post).toHaveBeenNthCalledWith(3, '/admin/benchmark/runs/process-due')
+    expect(processedDue).toEqual({ processed: 3 })
+  })
+
+  it('lists, creates, and triggers schedules with target ids and task count', async () => {
+    const listResponse = { items: [], total: 0, page: 1, page_size: 10, pages: 1 }
     const payload = {
-      profile_id: 5,
       name: 'Nightly radar',
       cron_expr: '0 3 * * *',
-      enabled: true,
-      metadata: {
-        scope: 'nightly',
-      },
+      target_ids: [7],
+      task_count: 12,
     }
     get.mockResolvedValue({ data: listResponse })
     post
-      .mockResolvedValueOnce({ data: { id: 8, ...payload } })
-      .mockResolvedValueOnce({
-        data: {
-          id: 13,
-          suite_id: 11,
-          profile_id: 5,
-          status: 'queued',
-          trigger_type: 'scheduled',
-          task_scale: 'medium',
-          task_types: ['reasoning'],
-          planned_target_count: 1,
-          planned_task_count: 1,
-          planned_result_count: 1,
-        },
-      })
+      .mockResolvedValueOnce({ data: { id: 8, ...payload, enabled: false } })
+      .mockResolvedValueOnce({ data: { id: 13, status: 'queued', trigger_type: 'scheduled' } })
 
-    const listed = await adminBenchmarkAPI.listSchedules({
-      profile_id: 5,
-      enabled: true,
-      page: 1,
-      page_size: 10,
-    })
-    const created = await adminBenchmarkAPI.createSchedule(payload)
+    await adminBenchmarkAPI.listSchedules({ enabled: true, page: 1, page_size: 10 })
+    await adminBenchmarkAPI.createSchedule(payload)
     const triggered = await adminBenchmarkAPI.triggerSchedule(8)
 
     expect(get).toHaveBeenCalledWith('/admin/benchmark/schedules', {
-      params: {
-        profile_id: 5,
-        enabled: true,
-        page: 1,
-        page_size: 10,
-      },
+      params: { enabled: true, page: 1, page_size: 10 },
     })
     expect(post).toHaveBeenNthCalledWith(1, '/admin/benchmark/schedules', payload)
     expect(post).toHaveBeenNthCalledWith(2, '/admin/benchmark/schedules/8/trigger')
-    expect(listed).toEqual(listResponse)
-    expect(created).toEqual({ id: 8, ...payload })
-    expect(triggered.id).toBe(13)
     expect(triggered.trigger_type).toBe('scheduled')
   })
 
+  it('fetches trends with day/limit params', async () => {
+    get.mockResolvedValue({ data: { trends: [] } })
+
+    await adminBenchmarkAPI.getTrends({ days: 30, limit: 500 })
+
+    expect(get).toHaveBeenCalledWith('/admin/benchmark/trends', { params: { days: 30, limit: 500 } })
+  })
+
   it('serializes run status array filters as comma strings', async () => {
-    const response = {
-      items: [],
-      total: 0,
-      page: 1,
-      page_size: 20,
-      pages: 1,
-    }
+    const response = { items: [], total: 0, page: 1, page_size: 20, pages: 1 }
     get.mockResolvedValue({ data: response })
 
-    const result = await adminBenchmarkAPI.listRuns({
-      page: 1,
-      page_size: 20,
-      status: ['queued', 'running'],
-    })
+    await adminBenchmarkAPI.listRuns({ page: 1, page_size: 20, status: ['queued', 'running'] })
 
     expect(get).toHaveBeenCalledWith('/admin/benchmark/runs', {
-      params: {
-        page: 1,
-        page_size: 20,
-        status: 'queued,running',
-      },
+      params: { page: 1, page_size: 20, status: 'queued,running' },
     })
-    expect(result).toEqual(response)
   })
 })

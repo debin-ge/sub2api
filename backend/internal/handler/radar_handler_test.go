@@ -13,6 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func ptr[T any](v T) *T { return &v }
+
 type radarSnapshotServiceStub struct {
 	getPublicRadarFn func(context.Context) (*service.BenchmarkPublicRadar, error)
 	calls            int
@@ -60,7 +62,7 @@ func TestRadarHandlerReturnsEmptyRadarWhenNoSnapshot(t *testing.T) {
 	router.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusOK, rec.Code)
-	require.JSONEq(t, `{"ranking_basis":"ability_score_only","latest_run":null,"targets":[]}`, rec.Body.String())
+	require.JSONEq(t, `{"ranking_basis":"ability_score_only","latest_run":null,"targets":[],"trends":[]}`, rec.Body.String())
 	require.NotContains(t, rec.Body.String(), `"success"`)
 }
 
@@ -86,10 +88,6 @@ func TestRadarHandlerReturnsEmptyRadarWhenBenchmarkPublicDisabled(t *testing.T) 
 			PublicEnabled:         false,
 			GlobalConcurrency:     service.BenchmarkGlobalConcurrencyDefault,
 			DefaultTimeoutSeconds: service.BenchmarkDefaultTimeoutSecondsDefault,
-			ConfidenceThresholds: service.BenchmarkConfidenceThresholds{
-				MediumCoverage: service.BenchmarkLowConfidenceThresholdDefault,
-				HighCoverage:   service.BenchmarkHighConfidenceThresholdDefault,
-			},
 		},
 	})
 
@@ -99,7 +97,7 @@ func TestRadarHandlerReturnsEmptyRadarWhenBenchmarkPublicDisabled(t *testing.T) 
 	router.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusOK, rec.Code)
-	require.JSONEq(t, `{"ranking_basis":"ability_score_only","latest_run":null,"targets":[]}`, rec.Body.String())
+	require.JSONEq(t, `{"ranking_basis":"ability_score_only","latest_run":null,"targets":[],"trends":[]}`, rec.Body.String())
 }
 
 func TestRadarHandlerSkipsSnapshotLookupWhenBenchmarkPublicDisabled(t *testing.T) {
@@ -120,10 +118,6 @@ func TestRadarHandlerSkipsSnapshotLookupWhenBenchmarkPublicDisabled(t *testing.T
 			PublicEnabled:         false,
 			GlobalConcurrency:     service.BenchmarkGlobalConcurrencyDefault,
 			DefaultTimeoutSeconds: service.BenchmarkDefaultTimeoutSecondsDefault,
-			ConfidenceThresholds: service.BenchmarkConfidenceThresholds{
-				MediumCoverage: service.BenchmarkLowConfidenceThresholdDefault,
-				HighCoverage:   service.BenchmarkHighConfidenceThresholdDefault,
-			},
 		},
 	})
 
@@ -149,9 +143,8 @@ func TestRadarHandlerReturnsLatestPublicSnapshot(t *testing.T) {
 					PublishedAt:  &publishedAt,
 					LatestRun: &service.BenchmarkPublicRun{
 						ID:          42,
-						SuiteID:     7,
-						ProfileID:   9,
 						Status:      service.BenchmarkRunStatusCompleted,
+						TaskCount:   12,
 						CompletedAt: &completedAt,
 					},
 					Targets: []service.BenchmarkPublicTarget{
@@ -162,20 +155,15 @@ func TestRadarHandlerReturnsLatestPublicSnapshot(t *testing.T) {
 							ChannelName:  "openai-prod",
 							DisplayName:  "GPT 4.1",
 							OverallScore: 93.4,
+							PassedCount:  12,
+							TotalCount:   12,
 							Dimensions: map[string]float64{
 								"reasoning": 93.4,
 							},
-							ScoreBasis: service.BenchmarkPublicScoreBasis{
-								PlannedTasks:       12,
-								ScoredTasks:        12,
-								InvalidTasks:       0,
-								CoverageRate:       1,
-								ConfidenceLevel:    service.BenchmarkConfidenceHigh,
-								InsufficientSample: false,
-							},
 							Metrics: service.BenchmarkPublicMetrics{
-								SuccessRate:   1,
-								EstimatedCost: 0.19,
+								AvgLatencyMS:   ptr(120.0),
+								AvgTotalTokens: ptr(500.0),
+								TotalCost:      0.19,
 							},
 						},
 					},
@@ -199,8 +187,7 @@ func TestRadarHandlerReturnsLatestPublicSnapshot(t *testing.T) {
 	latestRun, ok := payload["latest_run"].(map[string]any)
 	require.True(t, ok)
 	require.EqualValues(t, 42, latestRun["id"])
-	require.EqualValues(t, 7, latestRun["suite_id"])
-	require.EqualValues(t, 9, latestRun["profile_id"])
+	require.EqualValues(t, 12, latestRun["task_count"])
 	require.Equal(t, service.BenchmarkRunStatusCompleted, latestRun["status"])
 	require.Equal(t, completedAt.Format(time.RFC3339), latestRun["completed_at"])
 
@@ -234,8 +221,9 @@ func TestRadarHandlerNeverReturnsSensitiveFields(t *testing.T) {
 							DisplayName:  "Claude Sonnet 4.5",
 							OverallScore: 88.8,
 							Metrics: service.BenchmarkPublicMetrics{
-								SuccessRate:   0.9,
-								EstimatedCost: 0.23,
+								AvgLatencyMS:   ptr(200.0),
+								AvgTotalTokens: ptr(600.0),
+								TotalCost:      0.23,
 							},
 						},
 					},

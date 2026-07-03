@@ -12,24 +12,20 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
-	"github.com/Wei-Shaw/sub2api/ent/benchmarkprofile"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkpublicsnapshot"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkrun"
-	"github.com/Wei-Shaw/sub2api/ent/benchmarksuite"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
 )
 
 // BenchmarkPublicSnapshotQuery is the builder for querying BenchmarkPublicSnapshot entities.
 type BenchmarkPublicSnapshotQuery struct {
 	config
-	ctx         *QueryContext
-	order       []benchmarkpublicsnapshot.OrderOption
-	inters      []Interceptor
-	predicates  []predicate.BenchmarkPublicSnapshot
-	withRun     *BenchmarkRunQuery
-	withSuite   *BenchmarkSuiteQuery
-	withProfile *BenchmarkProfileQuery
-	modifiers   []func(*sql.Selector)
+	ctx        *QueryContext
+	order      []benchmarkpublicsnapshot.OrderOption
+	inters     []Interceptor
+	predicates []predicate.BenchmarkPublicSnapshot
+	withRun    *BenchmarkRunQuery
+	modifiers  []func(*sql.Selector)
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -81,50 +77,6 @@ func (_q *BenchmarkPublicSnapshotQuery) QueryRun() *BenchmarkRunQuery {
 			sqlgraph.From(benchmarkpublicsnapshot.Table, benchmarkpublicsnapshot.FieldID, selector),
 			sqlgraph.To(benchmarkrun.Table, benchmarkrun.FieldID),
 			sqlgraph.Edge(sqlgraph.M2O, true, benchmarkpublicsnapshot.RunTable, benchmarkpublicsnapshot.RunColumn),
-		)
-		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
-		return fromU, nil
-	}
-	return query
-}
-
-// QuerySuite chains the current query on the "suite" edge.
-func (_q *BenchmarkPublicSnapshotQuery) QuerySuite() *BenchmarkSuiteQuery {
-	query := (&BenchmarkSuiteClient{config: _q.config}).Query()
-	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
-		if err := _q.prepareQuery(ctx); err != nil {
-			return nil, err
-		}
-		selector := _q.sqlQuery(ctx)
-		if err := selector.Err(); err != nil {
-			return nil, err
-		}
-		step := sqlgraph.NewStep(
-			sqlgraph.From(benchmarkpublicsnapshot.Table, benchmarkpublicsnapshot.FieldID, selector),
-			sqlgraph.To(benchmarksuite.Table, benchmarksuite.FieldID),
-			sqlgraph.Edge(sqlgraph.M2O, true, benchmarkpublicsnapshot.SuiteTable, benchmarkpublicsnapshot.SuiteColumn),
-		)
-		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
-		return fromU, nil
-	}
-	return query
-}
-
-// QueryProfile chains the current query on the "profile" edge.
-func (_q *BenchmarkPublicSnapshotQuery) QueryProfile() *BenchmarkProfileQuery {
-	query := (&BenchmarkProfileClient{config: _q.config}).Query()
-	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
-		if err := _q.prepareQuery(ctx); err != nil {
-			return nil, err
-		}
-		selector := _q.sqlQuery(ctx)
-		if err := selector.Err(); err != nil {
-			return nil, err
-		}
-		step := sqlgraph.NewStep(
-			sqlgraph.From(benchmarkpublicsnapshot.Table, benchmarkpublicsnapshot.FieldID, selector),
-			sqlgraph.To(benchmarkprofile.Table, benchmarkprofile.FieldID),
-			sqlgraph.Edge(sqlgraph.M2O, true, benchmarkpublicsnapshot.ProfileTable, benchmarkpublicsnapshot.ProfileColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
 		return fromU, nil
@@ -319,14 +271,12 @@ func (_q *BenchmarkPublicSnapshotQuery) Clone() *BenchmarkPublicSnapshotQuery {
 		return nil
 	}
 	return &BenchmarkPublicSnapshotQuery{
-		config:      _q.config,
-		ctx:         _q.ctx.Clone(),
-		order:       append([]benchmarkpublicsnapshot.OrderOption{}, _q.order...),
-		inters:      append([]Interceptor{}, _q.inters...),
-		predicates:  append([]predicate.BenchmarkPublicSnapshot{}, _q.predicates...),
-		withRun:     _q.withRun.Clone(),
-		withSuite:   _q.withSuite.Clone(),
-		withProfile: _q.withProfile.Clone(),
+		config:     _q.config,
+		ctx:        _q.ctx.Clone(),
+		order:      append([]benchmarkpublicsnapshot.OrderOption{}, _q.order...),
+		inters:     append([]Interceptor{}, _q.inters...),
+		predicates: append([]predicate.BenchmarkPublicSnapshot{}, _q.predicates...),
+		withRun:    _q.withRun.Clone(),
 		// clone intermediate query.
 		sql:  _q.sql.Clone(),
 		path: _q.path,
@@ -341,28 +291,6 @@ func (_q *BenchmarkPublicSnapshotQuery) WithRun(opts ...func(*BenchmarkRunQuery)
 		opt(query)
 	}
 	_q.withRun = query
-	return _q
-}
-
-// WithSuite tells the query-builder to eager-load the nodes that are connected to
-// the "suite" edge. The optional arguments are used to configure the query builder of the edge.
-func (_q *BenchmarkPublicSnapshotQuery) WithSuite(opts ...func(*BenchmarkSuiteQuery)) *BenchmarkPublicSnapshotQuery {
-	query := (&BenchmarkSuiteClient{config: _q.config}).Query()
-	for _, opt := range opts {
-		opt(query)
-	}
-	_q.withSuite = query
-	return _q
-}
-
-// WithProfile tells the query-builder to eager-load the nodes that are connected to
-// the "profile" edge. The optional arguments are used to configure the query builder of the edge.
-func (_q *BenchmarkPublicSnapshotQuery) WithProfile(opts ...func(*BenchmarkProfileQuery)) *BenchmarkPublicSnapshotQuery {
-	query := (&BenchmarkProfileClient{config: _q.config}).Query()
-	for _, opt := range opts {
-		opt(query)
-	}
-	_q.withProfile = query
 	return _q
 }
 
@@ -444,10 +372,8 @@ func (_q *BenchmarkPublicSnapshotQuery) sqlAll(ctx context.Context, hooks ...que
 	var (
 		nodes       = []*BenchmarkPublicSnapshot{}
 		_spec       = _q.querySpec()
-		loadedTypes = [3]bool{
+		loadedTypes = [1]bool{
 			_q.withRun != nil,
-			_q.withSuite != nil,
-			_q.withProfile != nil,
 		}
 	)
 	_spec.ScanValues = func(columns []string) ([]any, error) {
@@ -477,18 +403,6 @@ func (_q *BenchmarkPublicSnapshotQuery) sqlAll(ctx context.Context, hooks ...que
 			return nil, err
 		}
 	}
-	if query := _q.withSuite; query != nil {
-		if err := _q.loadSuite(ctx, query, nodes, nil,
-			func(n *BenchmarkPublicSnapshot, e *BenchmarkSuite) { n.Edges.Suite = e }); err != nil {
-			return nil, err
-		}
-	}
-	if query := _q.withProfile; query != nil {
-		if err := _q.loadProfile(ctx, query, nodes, nil,
-			func(n *BenchmarkPublicSnapshot, e *BenchmarkProfile) { n.Edges.Profile = e }); err != nil {
-			return nil, err
-		}
-	}
 	return nodes, nil
 }
 
@@ -514,64 +428,6 @@ func (_q *BenchmarkPublicSnapshotQuery) loadRun(ctx context.Context, query *Benc
 		nodes, ok := nodeids[n.ID]
 		if !ok {
 			return fmt.Errorf(`unexpected foreign-key "run_id" returned %v`, n.ID)
-		}
-		for i := range nodes {
-			assign(nodes[i], n)
-		}
-	}
-	return nil
-}
-func (_q *BenchmarkPublicSnapshotQuery) loadSuite(ctx context.Context, query *BenchmarkSuiteQuery, nodes []*BenchmarkPublicSnapshot, init func(*BenchmarkPublicSnapshot), assign func(*BenchmarkPublicSnapshot, *BenchmarkSuite)) error {
-	ids := make([]int64, 0, len(nodes))
-	nodeids := make(map[int64][]*BenchmarkPublicSnapshot)
-	for i := range nodes {
-		fk := nodes[i].SuiteID
-		if _, ok := nodeids[fk]; !ok {
-			ids = append(ids, fk)
-		}
-		nodeids[fk] = append(nodeids[fk], nodes[i])
-	}
-	if len(ids) == 0 {
-		return nil
-	}
-	query.Where(benchmarksuite.IDIn(ids...))
-	neighbors, err := query.All(ctx)
-	if err != nil {
-		return err
-	}
-	for _, n := range neighbors {
-		nodes, ok := nodeids[n.ID]
-		if !ok {
-			return fmt.Errorf(`unexpected foreign-key "suite_id" returned %v`, n.ID)
-		}
-		for i := range nodes {
-			assign(nodes[i], n)
-		}
-	}
-	return nil
-}
-func (_q *BenchmarkPublicSnapshotQuery) loadProfile(ctx context.Context, query *BenchmarkProfileQuery, nodes []*BenchmarkPublicSnapshot, init func(*BenchmarkPublicSnapshot), assign func(*BenchmarkPublicSnapshot, *BenchmarkProfile)) error {
-	ids := make([]int64, 0, len(nodes))
-	nodeids := make(map[int64][]*BenchmarkPublicSnapshot)
-	for i := range nodes {
-		fk := nodes[i].ProfileID
-		if _, ok := nodeids[fk]; !ok {
-			ids = append(ids, fk)
-		}
-		nodeids[fk] = append(nodeids[fk], nodes[i])
-	}
-	if len(ids) == 0 {
-		return nil
-	}
-	query.Where(benchmarkprofile.IDIn(ids...))
-	neighbors, err := query.All(ctx)
-	if err != nil {
-		return err
-	}
-	for _, n := range neighbors {
-		nodes, ok := nodeids[n.ID]
-		if !ok {
-			return fmt.Errorf(`unexpected foreign-key "profile_id" returned %v`, n.ID)
 		}
 		for i := range nodes {
 			assign(nodes[i], n)
@@ -610,12 +466,6 @@ func (_q *BenchmarkPublicSnapshotQuery) querySpec() *sqlgraph.QuerySpec {
 		}
 		if _q.withRun != nil {
 			_spec.Node.AddColumnOnce(benchmarkpublicsnapshot.FieldRunID)
-		}
-		if _q.withSuite != nil {
-			_spec.Node.AddColumnOnce(benchmarkpublicsnapshot.FieldSuiteID)
-		}
-		if _q.withProfile != nil {
-			_spec.Node.AddColumnOnce(benchmarkpublicsnapshot.FieldProfileID)
 		}
 	}
 	if ps := _q.predicates; len(ps) > 0 {

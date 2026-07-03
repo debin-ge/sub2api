@@ -14,7 +14,6 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarkruntask"
-	"github.com/Wei-Shaw/sub2api/ent/benchmarksuite"
 	"github.com/Wei-Shaw/sub2api/ent/benchmarktask"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
 )
@@ -26,7 +25,6 @@ type BenchmarkTaskQuery struct {
 	order        []benchmarktask.OrderOption
 	inters       []Interceptor
 	predicates   []predicate.BenchmarkTask
-	withSuite    *BenchmarkSuiteQuery
 	withRunTasks *BenchmarkRunTaskQuery
 	modifiers    []func(*sql.Selector)
 	// intermediate query (i.e. traversal path).
@@ -63,28 +61,6 @@ func (_q *BenchmarkTaskQuery) Unique(unique bool) *BenchmarkTaskQuery {
 func (_q *BenchmarkTaskQuery) Order(o ...benchmarktask.OrderOption) *BenchmarkTaskQuery {
 	_q.order = append(_q.order, o...)
 	return _q
-}
-
-// QuerySuite chains the current query on the "suite" edge.
-func (_q *BenchmarkTaskQuery) QuerySuite() *BenchmarkSuiteQuery {
-	query := (&BenchmarkSuiteClient{config: _q.config}).Query()
-	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
-		if err := _q.prepareQuery(ctx); err != nil {
-			return nil, err
-		}
-		selector := _q.sqlQuery(ctx)
-		if err := selector.Err(); err != nil {
-			return nil, err
-		}
-		step := sqlgraph.NewStep(
-			sqlgraph.From(benchmarktask.Table, benchmarktask.FieldID, selector),
-			sqlgraph.To(benchmarksuite.Table, benchmarksuite.FieldID),
-			sqlgraph.Edge(sqlgraph.M2O, true, benchmarktask.SuiteTable, benchmarktask.SuiteColumn),
-		)
-		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
-		return fromU, nil
-	}
-	return query
 }
 
 // QueryRunTasks chains the current query on the "run_tasks" edge.
@@ -301,23 +277,11 @@ func (_q *BenchmarkTaskQuery) Clone() *BenchmarkTaskQuery {
 		order:        append([]benchmarktask.OrderOption{}, _q.order...),
 		inters:       append([]Interceptor{}, _q.inters...),
 		predicates:   append([]predicate.BenchmarkTask{}, _q.predicates...),
-		withSuite:    _q.withSuite.Clone(),
 		withRunTasks: _q.withRunTasks.Clone(),
 		// clone intermediate query.
 		sql:  _q.sql.Clone(),
 		path: _q.path,
 	}
-}
-
-// WithSuite tells the query-builder to eager-load the nodes that are connected to
-// the "suite" edge. The optional arguments are used to configure the query builder of the edge.
-func (_q *BenchmarkTaskQuery) WithSuite(opts ...func(*BenchmarkSuiteQuery)) *BenchmarkTaskQuery {
-	query := (&BenchmarkSuiteClient{config: _q.config}).Query()
-	for _, opt := range opts {
-		opt(query)
-	}
-	_q.withSuite = query
-	return _q
 }
 
 // WithRunTasks tells the query-builder to eager-load the nodes that are connected to
@@ -409,8 +373,7 @@ func (_q *BenchmarkTaskQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([
 	var (
 		nodes       = []*BenchmarkTask{}
 		_spec       = _q.querySpec()
-		loadedTypes = [2]bool{
-			_q.withSuite != nil,
+		loadedTypes = [1]bool{
 			_q.withRunTasks != nil,
 		}
 	)
@@ -435,12 +398,6 @@ func (_q *BenchmarkTaskQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([
 	if len(nodes) == 0 {
 		return nodes, nil
 	}
-	if query := _q.withSuite; query != nil {
-		if err := _q.loadSuite(ctx, query, nodes, nil,
-			func(n *BenchmarkTask, e *BenchmarkSuite) { n.Edges.Suite = e }); err != nil {
-			return nil, err
-		}
-	}
 	if query := _q.withRunTasks; query != nil {
 		if err := _q.loadRunTasks(ctx, query, nodes,
 			func(n *BenchmarkTask) { n.Edges.RunTasks = []*BenchmarkRunTask{} },
@@ -451,35 +408,6 @@ func (_q *BenchmarkTaskQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([
 	return nodes, nil
 }
 
-func (_q *BenchmarkTaskQuery) loadSuite(ctx context.Context, query *BenchmarkSuiteQuery, nodes []*BenchmarkTask, init func(*BenchmarkTask), assign func(*BenchmarkTask, *BenchmarkSuite)) error {
-	ids := make([]int64, 0, len(nodes))
-	nodeids := make(map[int64][]*BenchmarkTask)
-	for i := range nodes {
-		fk := nodes[i].SuiteID
-		if _, ok := nodeids[fk]; !ok {
-			ids = append(ids, fk)
-		}
-		nodeids[fk] = append(nodeids[fk], nodes[i])
-	}
-	if len(ids) == 0 {
-		return nil
-	}
-	query.Where(benchmarksuite.IDIn(ids...))
-	neighbors, err := query.All(ctx)
-	if err != nil {
-		return err
-	}
-	for _, n := range neighbors {
-		nodes, ok := nodeids[n.ID]
-		if !ok {
-			return fmt.Errorf(`unexpected foreign-key "suite_id" returned %v`, n.ID)
-		}
-		for i := range nodes {
-			assign(nodes[i], n)
-		}
-	}
-	return nil
-}
 func (_q *BenchmarkTaskQuery) loadRunTasks(ctx context.Context, query *BenchmarkRunTaskQuery, nodes []*BenchmarkTask, init func(*BenchmarkTask), assign func(*BenchmarkTask, *BenchmarkRunTask)) error {
 	fks := make([]driver.Value, 0, len(nodes))
 	nodeids := make(map[int64]*BenchmarkTask)
@@ -538,9 +466,6 @@ func (_q *BenchmarkTaskQuery) querySpec() *sqlgraph.QuerySpec {
 			if fields[i] != benchmarktask.FieldID {
 				_spec.Node.Columns = append(_spec.Node.Columns, fields[i])
 			}
-		}
-		if _q.withSuite != nil {
-			_spec.Node.AddColumnOnce(benchmarktask.FieldSuiteID)
 		}
 	}
 	if ps := _q.predicates; len(ps) > 0 {

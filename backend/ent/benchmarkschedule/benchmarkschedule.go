@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"entgo.io/ent/dialect/sql"
-	"entgo.io/ent/dialect/sql/sqlgraph"
 )
 
 const (
@@ -18,31 +17,22 @@ const (
 	FieldCreatedAt = "created_at"
 	// FieldUpdatedAt holds the string denoting the updated_at field in the database.
 	FieldUpdatedAt = "updated_at"
-	// FieldProfileID holds the string denoting the profile_id field in the database.
-	FieldProfileID = "profile_id"
 	// FieldName holds the string denoting the name field in the database.
 	FieldName = "name"
 	// FieldCronExpr holds the string denoting the cron_expr field in the database.
 	FieldCronExpr = "cron_expr"
 	// FieldEnabled holds the string denoting the enabled field in the database.
 	FieldEnabled = "enabled"
+	// FieldTargetIds holds the string denoting the target_ids field in the database.
+	FieldTargetIds = "target_ids"
+	// FieldTaskCount holds the string denoting the task_count field in the database.
+	FieldTaskCount = "task_count"
 	// FieldLastRunAt holds the string denoting the last_run_at field in the database.
 	FieldLastRunAt = "last_run_at"
 	// FieldNextRunAt holds the string denoting the next_run_at field in the database.
 	FieldNextRunAt = "next_run_at"
-	// FieldMetadata holds the string denoting the metadata field in the database.
-	FieldMetadata = "metadata"
-	// EdgeProfile holds the string denoting the profile edge name in mutations.
-	EdgeProfile = "profile"
 	// Table holds the table name of the benchmarkschedule in the database.
 	Table = "benchmark_schedules"
-	// ProfileTable is the table that holds the profile relation/edge.
-	ProfileTable = "benchmark_schedules"
-	// ProfileInverseTable is the table name for the BenchmarkProfile entity.
-	// It exists in this package in order to avoid circular dependency with the "benchmarkprofile" package.
-	ProfileInverseTable = "benchmark_profiles"
-	// ProfileColumn is the table column denoting the profile relation/edge.
-	ProfileColumn = "profile_id"
 )
 
 // Columns holds all SQL columns for benchmarkschedule fields.
@@ -50,13 +40,13 @@ var Columns = []string{
 	FieldID,
 	FieldCreatedAt,
 	FieldUpdatedAt,
-	FieldProfileID,
 	FieldName,
 	FieldCronExpr,
 	FieldEnabled,
+	FieldTargetIds,
+	FieldTaskCount,
 	FieldLastRunAt,
 	FieldNextRunAt,
-	FieldMetadata,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -82,8 +72,10 @@ var (
 	CronExprValidator func(string) error
 	// DefaultEnabled holds the default value on creation for the "enabled" field.
 	DefaultEnabled bool
-	// DefaultMetadata holds the default value on creation for the "metadata" field.
-	DefaultMetadata func() map[string]interface{}
+	// DefaultTargetIds holds the default value on creation for the "target_ids" field.
+	DefaultTargetIds func() []int64
+	// DefaultTaskCount holds the default value on creation for the "task_count" field.
+	DefaultTaskCount int
 )
 
 // OrderOption defines the ordering options for the BenchmarkSchedule queries.
@@ -104,11 +96,6 @@ func ByUpdatedAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldUpdatedAt, opts...).ToFunc()
 }
 
-// ByProfileID orders the results by the profile_id field.
-func ByProfileID(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldProfileID, opts...).ToFunc()
-}
-
 // ByName orders the results by the name field.
 func ByName(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldName, opts...).ToFunc()
@@ -124,6 +111,11 @@ func ByEnabled(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldEnabled, opts...).ToFunc()
 }
 
+// ByTaskCount orders the results by the task_count field.
+func ByTaskCount(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldTaskCount, opts...).ToFunc()
+}
+
 // ByLastRunAt orders the results by the last_run_at field.
 func ByLastRunAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldLastRunAt, opts...).ToFunc()
@@ -132,18 +124,4 @@ func ByLastRunAt(opts ...sql.OrderTermOption) OrderOption {
 // ByNextRunAt orders the results by the next_run_at field.
 func ByNextRunAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldNextRunAt, opts...).ToFunc()
-}
-
-// ByProfileField orders the results by profile field.
-func ByProfileField(field string, opts ...sql.OrderTermOption) OrderOption {
-	return func(s *sql.Selector) {
-		sqlgraph.OrderByNeighborTerms(s, newProfileStep(), sql.OrderByField(field, opts...))
-	}
-}
-func newProfileStep() *sqlgraph.Step {
-	return sqlgraph.NewStep(
-		sqlgraph.From(Table, FieldID),
-		sqlgraph.To(ProfileInverseTable, FieldID),
-		sqlgraph.Edge(sqlgraph.M2O, true, ProfileTable, ProfileColumn),
-	)
 }

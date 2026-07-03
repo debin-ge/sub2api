@@ -934,8 +934,6 @@ func (s *SettingService) GetBenchmarkRuntime(ctx context.Context) BenchmarkRunti
 		SettingKeyBenchmarkPublicEnabled,
 		SettingKeyBenchmarkGlobalConcurrency,
 		SettingKeyBenchmarkDefaultTimeoutSeconds,
-		SettingKeyBenchmarkLowConfidenceThreshold,
-		SettingKeyBenchmarkHighConfidenceThreshold,
 	})
 	if err != nil {
 		return runtime
@@ -949,12 +947,6 @@ func (s *SettingService) GetBenchmarkRuntime(ctx context.Context) BenchmarkRunti
 	}
 	if timeoutSeconds, err := strconv.Atoi(vals[SettingKeyBenchmarkDefaultTimeoutSeconds]); err == nil && timeoutSeconds > 0 {
 		runtime.DefaultTimeoutSeconds = timeoutSeconds
-	}
-	if lowThreshold, err := strconv.ParseFloat(vals[SettingKeyBenchmarkLowConfidenceThreshold], 64); err == nil && lowThreshold > 0 {
-		runtime.ConfidenceThresholds.MediumCoverage = lowThreshold
-	}
-	if highThreshold, err := strconv.ParseFloat(vals[SettingKeyBenchmarkHighConfidenceThreshold], 64); err == nil && highThreshold > 0 {
-		runtime.ConfidenceThresholds.HighCoverage = highThreshold
 	}
 
 	return runtime
