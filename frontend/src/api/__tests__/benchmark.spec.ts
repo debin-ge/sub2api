@@ -127,6 +127,27 @@ describe('benchmark api', () => {
     expect(result).toEqual(response)
   })
 
+  it('applies standard benchmark tasks', async () => {
+    const response = { created_count: 2, existing_count: 4, enabled_count: 6, tasks: [] }
+    post.mockResolvedValue({ data: response })
+
+    const result = await adminBenchmarkAPI.applyStandardTasks()
+
+    expect(post).toHaveBeenCalledWith('/admin/benchmark/tasks/standard/apply')
+    expect(result).toEqual(response)
+  })
+
+  it('creates a standard run with optional advanced payload', async () => {
+    const payload = { target_ids: [7], task_count: 3, process_immediately: false }
+    const response = { id: 88, status: 'queued', trigger_type: 'manual' }
+    post.mockResolvedValue({ data: response })
+
+    const result = await adminBenchmarkAPI.createStandardRun(payload)
+
+    expect(post).toHaveBeenCalledWith('/admin/benchmark/runs/standard', payload)
+    expect(result).toEqual(response)
+  })
+
   it('creates and publishes runs', async () => {
     const payload = { target_ids: [7], task_count: 10, trigger_type: 'manual', process_immediately: true }
     const run = {

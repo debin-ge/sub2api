@@ -10,12 +10,14 @@ import type {
   BenchmarkRunPreview,
   BenchmarkSchedule,
   BenchmarkScheduleListParams,
+  BenchmarkStandardTaskApplyResponse,
   BenchmarkTarget,
   BenchmarkTargetScore,
   BenchmarkTask,
   BenchmarkTaskListParams,
   CreateBenchmarkRunRequest,
   CreateBenchmarkScheduleRequest,
+  CreateBenchmarkStandardRunRequest,
   CreateBenchmarkTargetRequest,
   CreateBenchmarkTaskRequest,
   UpdateBenchmarkScheduleRequest,
@@ -119,6 +121,13 @@ export async function deleteTask(id: number): Promise<BenchmarkActionResponse> {
   return data
 }
 
+export async function applyStandardTasks(): Promise<BenchmarkStandardTaskApplyResponse> {
+  const { data } = await apiClient.post<BenchmarkStandardTaskApplyResponse>(
+    '/admin/benchmark/tasks/standard/apply',
+  )
+  return data
+}
+
 // ---- Schedules ----
 
 export async function listSchedules(
@@ -197,6 +206,16 @@ export async function createRun(payload: CreateBenchmarkRunRequest): Promise<Ben
   return data
 }
 
+export async function createStandardRun(
+  payload?: CreateBenchmarkStandardRunRequest,
+): Promise<BenchmarkRun> {
+  const { data } = await apiClient.post<BenchmarkRun>(
+    '/admin/benchmark/runs/standard',
+    payload,
+  )
+  return data
+}
+
 export async function getRun(id: number): Promise<BenchmarkRun> {
   const { data } = await apiClient.get<BenchmarkRun>(`/admin/benchmark/runs/${id}`)
   return data
@@ -261,6 +280,7 @@ export const adminBenchmarkAPI = {
   createTask,
   updateTask,
   deleteTask,
+  applyStandardTasks,
   listSchedules,
   getSchedule,
   createSchedule,
@@ -270,6 +290,7 @@ export const adminBenchmarkAPI = {
   previewRun,
   listRuns,
   createRun,
+  createStandardRun,
   getRun,
   listRunResults,
   getRunScores,

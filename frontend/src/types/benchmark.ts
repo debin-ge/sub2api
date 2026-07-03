@@ -110,6 +110,13 @@ export interface UpdateBenchmarkTaskRequest {
   sort_order: number
 }
 
+export interface BenchmarkStandardTaskApplyResponse {
+  created_count: number
+  existing_count: number
+  enabled_count: number
+  tasks: BenchmarkTask[]
+}
+
 // ---- Schedules ----
 
 export interface BenchmarkSchedule {
@@ -174,6 +181,13 @@ export interface CreateBenchmarkRunRequest {
   trigger_type?: string
   created_by?: number | null
   process_immediately?: boolean
+}
+
+export interface CreateBenchmarkStandardRunRequest {
+  target_ids?: number[]
+  task_count?: number
+  process_immediately?: boolean
+  created_by?: number | null
 }
 
 export interface BenchmarkRunPreview {
