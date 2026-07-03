@@ -26,8 +26,10 @@ type benchmarkAdminService interface {
 	GetTask(ctx context.Context, id int64) (*ent.BenchmarkTask, error)
 	UpdateTask(ctx context.Context, id int64, input service.BenchmarkTaskInput) (*ent.BenchmarkTask, error)
 	DeleteTask(ctx context.Context, id int64) error
+	EnsureStandardTasks(ctx context.Context) (*service.BenchmarkStandardTaskApplyResult, error)
 	PreviewRun(ctx context.Context, targetIDs []int64, taskCount int) (*service.BenchmarkRunPreview, error)
 	CreateRun(ctx context.Context, input service.BenchmarkCreateRunRequest) (*ent.BenchmarkRun, error)
+	CreateStandardRun(ctx context.Context, input service.BenchmarkStandardRunRequest) (*ent.BenchmarkRun, error)
 	ListRuns(ctx context.Context, input service.BenchmarkRunListInput) ([]*ent.BenchmarkRun, int, error)
 	GetRun(ctx context.Context, id int64) (*ent.BenchmarkRun, error)
 	CancelRun(ctx context.Context, runID int64, reason string) error
@@ -115,6 +117,13 @@ type benchmarkRunCreateRequest struct {
 	TriggerType        string  `json:"trigger_type"`
 	CreatedBy          *int64  `json:"created_by"`
 	ProcessImmediately bool    `json:"process_immediately"`
+}
+
+type benchmarkStandardRunCreateRequest struct {
+	TargetIDs          []int64 `json:"target_ids"`
+	TaskCount          int     `json:"task_count"`
+	ProcessImmediately *bool   `json:"process_immediately"`
+	CreatedBy          *int64  `json:"created_by"`
 }
 
 type benchmarkRunPreviewRequest struct {
@@ -280,6 +289,15 @@ func (h *BenchmarkHandler) DeleteTask(c *gin.Context) {
 	response.Success(c, gin.H{"message": "ok"})
 }
 
+func (h *BenchmarkHandler) ApplyStandardTasks(c *gin.Context) {
+	result, err := h.benchmarkService.EnsureStandardTasks(c.Request.Context())
+	if err != nil {
+		writeBenchmarkError(c, err)
+		return
+	}
+	response.Success(c, result)
+}
+
 // ---- Runs ----
 
 func (h *BenchmarkHandler) PreviewRun(c *gin.Context) {
@@ -325,23 +343,65 @@ func (h *BenchmarkHandler) CreateRun(c *gin.Context) {
 		return
 	}
 	if req.ProcessImmediately {
-		runID := run.ID
-		go func(processor benchmarkAdminProcessor, runID int64) {
-			log := logger.L().With(
-				zap.String("component", "handler.admin.benchmark"),
-				zap.Int64("run_id", runID),
-			)
-			defer func() {
-				if recovered := recover(); recovered != nil {
-					log.Error("benchmark.process_immediately_panic_recovered", zap.Any("panic", recovered))
-				}
-			}()
-			if err := processBenchmarkRunUntilDone(context.Background(), processor, runID); err != nil {
-				log.Error("benchmark.process_immediately_failed", zap.Error(err))
-			}
-		}(processor, runID)
+		processBenchmarkRunInBackground(processor, run.ID)
 	}
 	response.Success(c, run)
+}
+
+func (h *BenchmarkHandler) CreateStandardRun(c *gin.Context) {
+	var req benchmarkStandardRunCreateRequest
+	if c.Request.ContentLength != 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			response.ErrorFrom(c, infraerrors.BadRequest("VALIDATION_ERROR", err.Error()))
+			return
+		}
+	}
+
+	processImmediately := true
+	if req.ProcessImmediately != nil {
+		processImmediately = *req.ProcessImmediately
+	}
+
+	var processor benchmarkAdminProcessor
+	if processImmediately {
+		processor = h.processor
+		if processor == nil {
+			response.ErrorFrom(c, infraerrors.ServiceUnavailable("BENCHMARK_PROCESSOR_UNAVAILABLE", "benchmark processor unavailable"))
+			return
+		}
+	}
+
+	run, err := h.benchmarkService.CreateStandardRun(c.Request.Context(), service.BenchmarkStandardRunRequest{
+		TargetIDs:          req.TargetIDs,
+		TaskCount:          req.TaskCount,
+		ProcessImmediately: processImmediately,
+		CreatedBy:          req.CreatedBy,
+	})
+	if err != nil {
+		writeBenchmarkError(c, err)
+		return
+	}
+	if processImmediately {
+		processBenchmarkRunInBackground(processor, run.ID)
+	}
+	response.Success(c, run)
+}
+
+func processBenchmarkRunInBackground(processor benchmarkAdminProcessor, runID int64) {
+	go func(processor benchmarkAdminProcessor, runID int64) {
+		log := logger.L().With(
+			zap.String("component", "handler.admin.benchmark"),
+			zap.Int64("run_id", runID),
+		)
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				log.Error("benchmark.process_immediately_panic_recovered", zap.Any("panic", recovered))
+			}
+		}()
+		if err := processBenchmarkRunUntilDone(context.Background(), processor, runID); err != nil {
+			log.Error("benchmark.process_immediately_failed", zap.Error(err))
+		}
+	}(processor, runID)
 }
 
 // processBenchmarkRunUntilDone drives a run through repeated ProcessRun calls
@@ -836,7 +896,8 @@ func isBenchmarkValidationError(err error) bool {
 		"cron expr is required",
 		"task count must not be negative",
 		"no enabled benchmark targets selected",
-		"no enabled benchmark tasks available":
+		"no enabled benchmark tasks available",
+		"no enabled standard benchmark tasks available":
 		return true
 	default:
 		return false

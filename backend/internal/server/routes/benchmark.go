@@ -23,12 +23,14 @@ func registerAdminBenchmarkRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		benchmark.DELETE("/targets/:id", h.Admin.Benchmark.DeleteTarget)
 
 		benchmark.GET("/tasks", h.Admin.Benchmark.ListTasks)
+		benchmark.POST("/tasks/standard/apply", h.Admin.Benchmark.ApplyStandardTasks)
 		benchmark.POST("/tasks", h.Admin.Benchmark.CreateTask)
 		benchmark.GET("/tasks/:id", h.Admin.Benchmark.GetTask)
 		benchmark.PUT("/tasks/:id", h.Admin.Benchmark.UpdateTask)
 		benchmark.DELETE("/tasks/:id", h.Admin.Benchmark.DeleteTask)
 
 		benchmark.POST("/runs/preview", h.Admin.Benchmark.PreviewRun)
+		benchmark.POST("/runs/standard", h.Admin.Benchmark.CreateStandardRun)
 		benchmark.POST("/runs", h.Admin.Benchmark.CreateRun)
 		benchmark.GET("/runs", h.Admin.Benchmark.ListRuns)
 		benchmark.POST("/runs/process-due", h.Admin.Benchmark.ProcessDueRuns)

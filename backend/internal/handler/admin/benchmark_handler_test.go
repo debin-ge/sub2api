@@ -20,53 +20,27 @@ import (
 )
 
 type benchmarkAdminServiceStub struct {
-	listSuitesFn         func(ctx context.Context, input service.BenchmarkListInput) ([]*ent.BenchmarkSuite, int, error)
-	createSuiteFn        func(ctx context.Context, input service.BenchmarkSuiteInput) (*ent.BenchmarkSuite, error)
-	getSuiteFn           func(ctx context.Context, id int64) (*ent.BenchmarkSuite, error)
-	updateSuiteFn        func(ctx context.Context, id int64, input service.BenchmarkSuiteInput) (*ent.BenchmarkSuite, error)
-	deleteSuiteFn        func(ctx context.Context, id int64) error
-	listTargetsFn        func(ctx context.Context, input service.BenchmarkListInput) ([]*ent.BenchmarkTarget, int, error)
-	createTargetFn       func(ctx context.Context, input service.BenchmarkTargetInput) (*ent.BenchmarkTarget, error)
-	getTargetFn          func(ctx context.Context, id int64) (*ent.BenchmarkTarget, error)
-	updateTargetFn       func(ctx context.Context, id int64, input service.BenchmarkTargetInput) (*ent.BenchmarkTarget, error)
-	deleteTargetFn       func(ctx context.Context, id int64) error
-	listTasksFn          func(ctx context.Context, input service.BenchmarkTaskListInput) ([]*ent.BenchmarkTask, int, error)
-	createTaskFn         func(ctx context.Context, input service.BenchmarkTaskInput) (*ent.BenchmarkTask, error)
-	getTaskFn            func(ctx context.Context, id int64) (*ent.BenchmarkTask, error)
-	updateTaskFn         func(ctx context.Context, id int64, input service.BenchmarkTaskInput) (*ent.BenchmarkTask, error)
-	deleteTaskFn         func(ctx context.Context, id int64) error
-	listProfilesFn       func(ctx context.Context, input service.BenchmarkListInput) ([]*ent.BenchmarkProfile, int, error)
-	createProfileFn      func(ctx context.Context, input service.BenchmarkProfileInput) (*ent.BenchmarkProfile, error)
-	getProfileFn         func(ctx context.Context, id int64) (*ent.BenchmarkProfile, error)
-	updateProfileFn      func(ctx context.Context, id int64, input service.BenchmarkProfileInput) (*ent.BenchmarkProfile, error)
-	deleteProfileFn      func(ctx context.Context, id int64) error
-	previewProfileFn     func(ctx context.Context, profileID int64, override service.BenchmarkProfilePreviewInput) (*service.BenchmarkProfilePreview, error)
-	createRunFn          func(ctx context.Context, input service.BenchmarkCreateRunRequest) (*ent.BenchmarkRun, error)
-	listRunsFn           func(ctx context.Context, input service.BenchmarkRunListInput) ([]*ent.BenchmarkRun, int, error)
-	getRunFn             func(ctx context.Context, id int64) (*ent.BenchmarkRun, error)
-	cancelRunFn          func(ctx context.Context, runID int64, reason string) error
-	listRunResultsFn     func(ctx context.Context, runID int64) ([]*ent.BenchmarkResult, error)
-	listScoreSnapshotsFn func(ctx context.Context, runID int64) ([]*ent.BenchmarkScoreSnapshot, error)
-}
-
-func (s *benchmarkAdminServiceStub) ListSuites(ctx context.Context, input service.BenchmarkListInput) ([]*ent.BenchmarkSuite, int, error) {
-	return s.listSuitesFn(ctx, input)
-}
-
-func (s *benchmarkAdminServiceStub) CreateSuite(ctx context.Context, input service.BenchmarkSuiteInput) (*ent.BenchmarkSuite, error) {
-	return s.createSuiteFn(ctx, input)
-}
-
-func (s *benchmarkAdminServiceStub) GetSuite(ctx context.Context, id int64) (*ent.BenchmarkSuite, error) {
-	return s.getSuiteFn(ctx, id)
-}
-
-func (s *benchmarkAdminServiceStub) UpdateSuite(ctx context.Context, id int64, input service.BenchmarkSuiteInput) (*ent.BenchmarkSuite, error) {
-	return s.updateSuiteFn(ctx, id, input)
-}
-
-func (s *benchmarkAdminServiceStub) DeleteSuite(ctx context.Context, id int64) error {
-	return s.deleteSuiteFn(ctx, id)
+	listTargetsFn         func(ctx context.Context, input service.BenchmarkListInput) ([]*ent.BenchmarkTarget, int, error)
+	createTargetFn        func(ctx context.Context, input service.BenchmarkTargetInput) (*ent.BenchmarkTarget, error)
+	getTargetFn           func(ctx context.Context, id int64) (*ent.BenchmarkTarget, error)
+	updateTargetFn        func(ctx context.Context, id int64, input service.BenchmarkTargetInput) (*ent.BenchmarkTarget, error)
+	deleteTargetFn        func(ctx context.Context, id int64) error
+	listTasksFn           func(ctx context.Context, input service.BenchmarkTaskListInput) ([]*ent.BenchmarkTask, int, error)
+	createTaskFn          func(ctx context.Context, input service.BenchmarkTaskInput) (*ent.BenchmarkTask, error)
+	getTaskFn             func(ctx context.Context, id int64) (*ent.BenchmarkTask, error)
+	updateTaskFn          func(ctx context.Context, id int64, input service.BenchmarkTaskInput) (*ent.BenchmarkTask, error)
+	deleteTaskFn          func(ctx context.Context, id int64) error
+	ensureStandardTasksFn func(ctx context.Context) (*service.BenchmarkStandardTaskApplyResult, error)
+	previewRunFn          func(ctx context.Context, targetIDs []int64, taskCount int) (*service.BenchmarkRunPreview, error)
+	createRunFn           func(ctx context.Context, input service.BenchmarkCreateRunRequest) (*ent.BenchmarkRun, error)
+	createStandardRunFn   func(ctx context.Context, input service.BenchmarkStandardRunRequest) (*ent.BenchmarkRun, error)
+	listRunsFn            func(ctx context.Context, input service.BenchmarkRunListInput) ([]*ent.BenchmarkRun, int, error)
+	getRunFn              func(ctx context.Context, id int64) (*ent.BenchmarkRun, error)
+	cancelRunFn           func(ctx context.Context, runID int64, reason string) error
+	listRunTargetsFn      func(ctx context.Context, runID int64) ([]*ent.BenchmarkRunTarget, error)
+	listRunTasksFn        func(ctx context.Context, runID int64) ([]*ent.BenchmarkRunTask, error)
+	listRunResultsFn      func(ctx context.Context, runID int64) ([]*ent.BenchmarkResult, error)
+	listTargetScoresFn    func(ctx context.Context, runID int64) ([]*ent.BenchmarkTargetScore, error)
 }
 
 func (s *benchmarkAdminServiceStub) ListTargets(ctx context.Context, input service.BenchmarkListInput) ([]*ent.BenchmarkTarget, int, error) {
@@ -109,32 +83,20 @@ func (s *benchmarkAdminServiceStub) DeleteTask(ctx context.Context, id int64) er
 	return s.deleteTaskFn(ctx, id)
 }
 
-func (s *benchmarkAdminServiceStub) ListProfiles(ctx context.Context, input service.BenchmarkListInput) ([]*ent.BenchmarkProfile, int, error) {
-	return s.listProfilesFn(ctx, input)
+func (s *benchmarkAdminServiceStub) EnsureStandardTasks(ctx context.Context) (*service.BenchmarkStandardTaskApplyResult, error) {
+	return s.ensureStandardTasksFn(ctx)
 }
 
-func (s *benchmarkAdminServiceStub) CreateProfile(ctx context.Context, input service.BenchmarkProfileInput) (*ent.BenchmarkProfile, error) {
-	return s.createProfileFn(ctx, input)
-}
-
-func (s *benchmarkAdminServiceStub) GetProfile(ctx context.Context, id int64) (*ent.BenchmarkProfile, error) {
-	return s.getProfileFn(ctx, id)
-}
-
-func (s *benchmarkAdminServiceStub) UpdateProfile(ctx context.Context, id int64, input service.BenchmarkProfileInput) (*ent.BenchmarkProfile, error) {
-	return s.updateProfileFn(ctx, id, input)
-}
-
-func (s *benchmarkAdminServiceStub) DeleteProfile(ctx context.Context, id int64) error {
-	return s.deleteProfileFn(ctx, id)
-}
-
-func (s *benchmarkAdminServiceStub) PreviewProfile(ctx context.Context, profileID int64, override service.BenchmarkProfilePreviewInput) (*service.BenchmarkProfilePreview, error) {
-	return s.previewProfileFn(ctx, profileID, override)
+func (s *benchmarkAdminServiceStub) PreviewRun(ctx context.Context, targetIDs []int64, taskCount int) (*service.BenchmarkRunPreview, error) {
+	return s.previewRunFn(ctx, targetIDs, taskCount)
 }
 
 func (s *benchmarkAdminServiceStub) CreateRun(ctx context.Context, input service.BenchmarkCreateRunRequest) (*ent.BenchmarkRun, error) {
 	return s.createRunFn(ctx, input)
+}
+
+func (s *benchmarkAdminServiceStub) CreateStandardRun(ctx context.Context, input service.BenchmarkStandardRunRequest) (*ent.BenchmarkRun, error) {
+	return s.createStandardRunFn(ctx, input)
 }
 
 func (s *benchmarkAdminServiceStub) ListRuns(ctx context.Context, input service.BenchmarkRunListInput) ([]*ent.BenchmarkRun, int, error) {
@@ -149,20 +111,39 @@ func (s *benchmarkAdminServiceStub) CancelRun(ctx context.Context, runID int64, 
 	return s.cancelRunFn(ctx, runID, reason)
 }
 
+func (s *benchmarkAdminServiceStub) ListRunTargets(ctx context.Context, runID int64) ([]*ent.BenchmarkRunTarget, error) {
+	return s.listRunTargetsFn(ctx, runID)
+}
+
+func (s *benchmarkAdminServiceStub) ListRunTasks(ctx context.Context, runID int64) ([]*ent.BenchmarkRunTask, error) {
+	return s.listRunTasksFn(ctx, runID)
+}
+
 func (s *benchmarkAdminServiceStub) ListRunResults(ctx context.Context, runID int64) ([]*ent.BenchmarkResult, error) {
 	return s.listRunResultsFn(ctx, runID)
 }
 
-func (s *benchmarkAdminServiceStub) ListScoreSnapshots(ctx context.Context, runID int64) ([]*ent.BenchmarkScoreSnapshot, error) {
-	return s.listScoreSnapshotsFn(ctx, runID)
+func (s *benchmarkAdminServiceStub) ListTargetScores(ctx context.Context, runID int64) ([]*ent.BenchmarkTargetScore, error) {
+	return s.listTargetScoresFn(ctx, runID)
 }
 
 type benchmarkSnapshotServiceStub struct {
 	publishPublicSnapshotFn func(ctx context.Context, runID int64) error
+	getTrendsFn             func(ctx context.Context, days int, limit int) ([]service.BenchmarkPublicTrend, error)
 }
 
 func (s *benchmarkSnapshotServiceStub) PublishPublicSnapshot(ctx context.Context, runID int64) error {
+	if s.publishPublicSnapshotFn == nil {
+		return nil
+	}
 	return s.publishPublicSnapshotFn(ctx, runID)
+}
+
+func (s *benchmarkSnapshotServiceStub) GetTrends(ctx context.Context, days int, limit int) ([]service.BenchmarkPublicTrend, error) {
+	if s.getTrendsFn == nil {
+		return nil, nil
+	}
+	return s.getTrendsFn(ctx, days, limit)
 }
 
 type benchmarkScheduleAdminServiceStub struct {
@@ -204,6 +185,9 @@ type benchmarkAdminProcessorStub struct {
 }
 
 func (s *benchmarkAdminProcessorStub) ProcessRun(ctx context.Context, runID int64) (int, error) {
+	if s.processRunFn == nil {
+		return 0, nil
+	}
 	return s.processRunFn(ctx, runID)
 }
 
@@ -277,36 +261,30 @@ func newBenchmarkTestRouter(handler *BenchmarkHandler) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 
-	router.GET("/api/v1/admin/benchmark/suites", handler.ListSuites)
-	router.POST("/api/v1/admin/benchmark/suites", handler.CreateSuite)
-	router.GET("/api/v1/admin/benchmark/suites/:id", handler.GetSuite)
-	router.PUT("/api/v1/admin/benchmark/suites/:id", handler.UpdateSuite)
-	router.DELETE("/api/v1/admin/benchmark/suites/:id", handler.DeleteSuite)
 	router.GET("/api/v1/admin/benchmark/targets", handler.ListTargets)
 	router.POST("/api/v1/admin/benchmark/targets", handler.CreateTarget)
 	router.GET("/api/v1/admin/benchmark/targets/:id", handler.GetTarget)
 	router.PUT("/api/v1/admin/benchmark/targets/:id", handler.UpdateTarget)
 	router.DELETE("/api/v1/admin/benchmark/targets/:id", handler.DeleteTarget)
 	router.GET("/api/v1/admin/benchmark/tasks", handler.ListTasks)
+	router.POST("/api/v1/admin/benchmark/tasks/standard/apply", handler.ApplyStandardTasks)
 	router.POST("/api/v1/admin/benchmark/tasks", handler.CreateTask)
 	router.GET("/api/v1/admin/benchmark/tasks/:id", handler.GetTask)
 	router.PUT("/api/v1/admin/benchmark/tasks/:id", handler.UpdateTask)
 	router.DELETE("/api/v1/admin/benchmark/tasks/:id", handler.DeleteTask)
-	router.GET("/api/v1/admin/benchmark/profiles", handler.ListProfiles)
-	router.POST("/api/v1/admin/benchmark/profiles", handler.CreateProfile)
-	router.GET("/api/v1/admin/benchmark/profiles/:id", handler.GetProfile)
-	router.PUT("/api/v1/admin/benchmark/profiles/:id", handler.UpdateProfile)
-	router.DELETE("/api/v1/admin/benchmark/profiles/:id", handler.DeleteProfile)
-	router.POST("/api/v1/admin/benchmark/profiles/:id/preview", handler.PreviewProfile)
+	router.POST("/api/v1/admin/benchmark/runs/preview", handler.PreviewRun)
+	router.POST("/api/v1/admin/benchmark/runs/standard", handler.CreateStandardRun)
 	router.POST("/api/v1/admin/benchmark/runs", handler.CreateRun)
 	router.GET("/api/v1/admin/benchmark/runs", handler.ListRuns)
 	router.POST("/api/v1/admin/benchmark/runs/process-due", handler.ProcessDueRuns)
 	router.GET("/api/v1/admin/benchmark/runs/:id", handler.GetRun)
+	router.GET("/api/v1/admin/benchmark/runs/:id/detail", handler.GetRunDetail)
 	router.GET("/api/v1/admin/benchmark/runs/:id/results", handler.ListRunResults)
 	router.GET("/api/v1/admin/benchmark/runs/:id/scores", handler.ListRunScores)
 	router.POST("/api/v1/admin/benchmark/runs/:id/process", handler.ProcessRun)
 	router.POST("/api/v1/admin/benchmark/runs/:id/publish", handler.PublishRun)
 	router.POST("/api/v1/admin/benchmark/runs/:id/cancel", handler.CancelRun)
+	router.GET("/api/v1/admin/benchmark/trends", handler.GetTrends)
 	router.GET("/api/v1/admin/benchmark/schedules", handler.ListSchedules)
 	router.POST("/api/v1/admin/benchmark/schedules", handler.CreateSchedule)
 	router.GET("/api/v1/admin/benchmark/schedules/:id", handler.GetSchedule)
@@ -387,30 +365,22 @@ func TestBenchmarkHandlerListTargetsPagination(t *testing.T) {
 }
 
 func TestBenchmarkHandlerUpdateTargetMapsRequest(t *testing.T) {
-	perRunBudget := 1.5
-	dailyBudget := 9.25
 	svc := &benchmarkAdminServiceStub{
 		updateTargetFn: func(ctx context.Context, id int64, input service.BenchmarkTargetInput) (*ent.BenchmarkTarget, error) {
 			require.Equal(t, int64(11), id)
 			require.Equal(t, "gpt-4.1-mini", input.ModelName)
 			require.Equal(t, int64(7), input.ChannelID)
 			require.Equal(t, "GPT Mini", input.DisplayName)
-			require.Equal(t, "openai", input.ProviderSnapshot)
 			require.Equal(t, "primary", input.ChannelNameSnapshot)
-			require.Equal(t, []string{"reasoning", "coding"}, input.SupportedTaskTypes)
-			require.Equal(t, 3, input.MaxConcurrency)
-			require.Equal(t, &perRunBudget, input.PerRunBudget)
-			require.Equal(t, &dailyBudget, input.DailyBudget)
 			require.True(t, input.Enabled)
 			require.False(t, input.PublicVisible)
 			require.Equal(t, 4, input.SortOrder)
-			require.Equal(t, map[string]any{"tier": "fast"}, input.Metadata)
 			return &ent.BenchmarkTarget{ID: id, ModelName: input.ModelName, ChannelID: input.ChannelID}, nil
 		},
 	}
 	router := newBenchmarkTestRouter(&BenchmarkHandler{benchmarkService: svc, snapshotService: &benchmarkSnapshotServiceStub{}})
 
-	body := `{"model_name":"gpt-4.1-mini","channel_id":7,"display_name":"GPT Mini","provider_snapshot":"openai","channel_name_snapshot":"primary","supported_task_types":["reasoning","coding"],"max_concurrency":3,"per_run_budget":1.5,"daily_budget":9.25,"enabled":true,"public_visible":false,"sort_order":4,"metadata":{"tier":"fast"}}`
+	body := `{"model_name":"gpt-4.1-mini","channel_id":7,"display_name":"GPT Mini","channel_name_snapshot":"primary","enabled":true,"public_visible":false,"sort_order":4}`
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/benchmark/targets/11", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -422,14 +392,21 @@ func TestBenchmarkHandlerUpdateTargetMapsRequest(t *testing.T) {
 func TestBenchmarkHandlerCreateTaskSuccess(t *testing.T) {
 	svc := &benchmarkAdminServiceStub{
 		createTaskFn: func(ctx context.Context, input service.BenchmarkTaskInput) (*ent.BenchmarkTask, error) {
+			require.Equal(t, "task", input.Title)
 			require.Equal(t, "reasoning", input.Type)
-			require.Equal(t, service.BenchmarkTaskScaleSmall, input.MinScale)
+			require.Equal(t, "easy", input.Difficulty)
+			require.Equal(t, "p", input.Prompt)
+			require.Equal(t, map[string]any{"answer": "42"}, input.ExpectedOutput)
+			require.Equal(t, "exact_match", input.VerifierType)
+			require.True(t, input.PublicPrompt)
+			require.True(t, input.Enabled)
+			require.Equal(t, 3, input.SortOrder)
 			return &ent.BenchmarkTask{ID: 21, Type: input.Type}, nil
 		},
 	}
 	router := newBenchmarkTestRouter(&BenchmarkHandler{benchmarkService: svc, snapshotService: &benchmarkSnapshotServiceStub{}})
 
-	body := `{"suite_id":1,"title":"task","type":"reasoning","prompt":"p","verifier_type":"exact_match","min_scale":"small"}`
+	body := `{"title":"task","type":"reasoning","difficulty":"easy","prompt":"p","expected_output":{"answer":"42"},"verifier_type":"exact_match","public_prompt":true,"enabled":true,"sort_order":3}`
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/benchmark/tasks", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -438,15 +415,15 @@ func TestBenchmarkHandlerCreateTaskSuccess(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 }
 
-func TestBenchmarkHandlerCreateTaskInvalidScaleReturns400(t *testing.T) {
+func TestBenchmarkHandlerCreateTaskEmptyTitleReturns400(t *testing.T) {
 	svc := &benchmarkAdminServiceStub{
 		createTaskFn: func(ctx context.Context, input service.BenchmarkTaskInput) (*ent.BenchmarkTask, error) {
-			return nil, errors.New("unsupported task scale")
+			return nil, errors.New("task title is required")
 		},
 	}
 	router := newBenchmarkTestRouter(&BenchmarkHandler{benchmarkService: svc, snapshotService: &benchmarkSnapshotServiceStub{}})
 
-	body := `{"suite_id":1,"title":"task","type":"reasoning","prompt":"p","verifier_type":"exact_match","min_scale":"giant"}`
+	body := `{"title":"","type":"reasoning","prompt":"p","verifier_type":"exact_match"}`
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/benchmark/tasks", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -456,139 +433,78 @@ func TestBenchmarkHandlerCreateTaskInvalidScaleReturns400(t *testing.T) {
 	require.Contains(t, rec.Body.String(), "VALIDATION_ERROR")
 }
 
-func TestBenchmarkHandlerPreviewProfileReturnsCountsAndRankingBasis(t *testing.T) {
+func TestBenchmarkHandlerApplyStandardTasks(t *testing.T) {
 	svc := &benchmarkAdminServiceStub{
-		previewProfileFn: func(ctx context.Context, profileID int64, override service.BenchmarkProfilePreviewInput) (*service.BenchmarkProfilePreview, error) {
-			require.Equal(t, int64(7), profileID)
-			return &service.BenchmarkProfilePreview{
-				TargetCount:       2,
-				TaskCount:         3,
-				ResultCount:       6,
-				TaskTypes:         []string{"reasoning", "coding"},
-				TaskScale:         service.BenchmarkTaskScaleMedium,
-				RankingBasis:      "ability_score_only",
-				EstimatedCost:     1.25,
-				SelectedTaskIDs:   []int64{101, 102, 103},
-				SelectedTargetIDs: []int64{201, 202},
+		ensureStandardTasksFn: func(ctx context.Context) (*service.BenchmarkStandardTaskApplyResult, error) {
+			return &service.BenchmarkStandardTaskApplyResult{
+				CreatedCount:  2,
+				ExistingCount: 4,
+				EnabledCount:  6,
+				Tasks: []*ent.BenchmarkTask{
+					{ID: 1, Title: "Standard Reasoning - Arithmetic"},
+				},
 			}, nil
 		},
 	}
 	router := newBenchmarkTestRouter(&BenchmarkHandler{benchmarkService: svc, snapshotService: &benchmarkSnapshotServiceStub{}})
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/benchmark/profiles/7/preview", bytes.NewBufferString(`{}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/benchmark/tasks/standard/apply", nil)
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), `"created_count":2`)
+	require.Contains(t, rec.Body.String(), `"existing_count":4`)
+	require.Contains(t, rec.Body.String(), `"enabled_count":6`)
+}
+
+func TestBenchmarkHandlerPreviewRun(t *testing.T) {
+	svc := &benchmarkAdminServiceStub{
+		previewRunFn: func(ctx context.Context, targetIDs []int64, taskCount int) (*service.BenchmarkRunPreview, error) {
+			require.Equal(t, []int64{11, 12}, targetIDs)
+			require.Equal(t, 3, taskCount)
+			return &service.BenchmarkRunPreview{
+				TargetCount:  2,
+				TaskCount:    3,
+				ResultCount:  6,
+				RankingBasis: "fixed_task_set",
+				TargetIDs:    []int64{11, 12},
+				TaskIDs:      []int64{101, 102, 103},
+			}, nil
+		},
+	}
+	router := newBenchmarkTestRouter(&BenchmarkHandler{benchmarkService: svc, snapshotService: &benchmarkSnapshotServiceStub{}})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/benchmark/runs/preview", bytes.NewBufferString(`{"target_ids":[11,12],"task_count":3}`))
 	req.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusOK, rec.Code)
 	var resp benchmarkHTTPResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
-	var preview struct {
-		TargetCount       int      `json:"target_count"`
-		TaskCount         int      `json:"task_count"`
-		ResultCount       int      `json:"result_count"`
-		TaskTypes         []string `json:"task_types"`
-		TaskScale         string   `json:"task_scale"`
-		RankingBasis      string   `json:"ranking_basis"`
-		EstimatedCost     float64  `json:"estimated_cost"`
-		SelectedTaskIDs   []int64  `json:"selected_task_ids"`
-		SelectedTargetIDs []int64  `json:"selected_target_ids"`
-	}
+	var preview service.BenchmarkRunPreview
 	require.NoError(t, json.Unmarshal(resp.Data, &preview))
 	require.Equal(t, 2, preview.TargetCount)
 	require.Equal(t, 3, preview.TaskCount)
 	require.Equal(t, 6, preview.ResultCount)
-	require.Equal(t, []string{"reasoning", "coding"}, preview.TaskTypes)
-	require.Equal(t, service.BenchmarkTaskScaleMedium, preview.TaskScale)
-	require.Equal(t, "ability_score_only", preview.RankingBasis)
-	require.InDelta(t, 1.25, preview.EstimatedCost, 0.000001)
-	require.Equal(t, []int64{101, 102, 103}, preview.SelectedTaskIDs)
-	require.Equal(t, []int64{201, 202}, preview.SelectedTargetIDs)
-
-	var raw map[string]any
-	require.NoError(t, json.Unmarshal(resp.Data, &raw))
-	require.Contains(t, raw, "target_count")
-	require.Contains(t, raw, "task_count")
-	require.Contains(t, raw, "result_count")
-	require.Contains(t, raw, "task_types")
-	require.Contains(t, raw, "task_scale")
-	require.Contains(t, raw, "ranking_basis")
-	require.Contains(t, raw, "estimated_cost")
-	require.Contains(t, raw, "selected_task_ids")
-	require.Contains(t, raw, "selected_target_ids")
-	require.NotContains(t, raw, "TargetCount")
-	require.NotContains(t, raw, "TaskCount")
-	require.NotContains(t, raw, "ResultCount")
-	require.NotContains(t, raw, "RankingBasis")
-}
-
-func TestBenchmarkHandlerPreviewProfileMissingOverrideTargetsReturns400(t *testing.T) {
-	svc := &benchmarkAdminServiceStub{
-		previewProfileFn: func(ctx context.Context, profileID int64, override service.BenchmarkProfilePreviewInput) (*service.BenchmarkProfilePreview, error) {
-			require.Equal(t, int64(7), profileID)
-			require.Equal(t, []int64{999}, override.TargetIDs)
-			return nil, errors.New("benchmark targets missing: [999]")
-		},
-	}
-	router := newBenchmarkTestRouter(&BenchmarkHandler{benchmarkService: svc, snapshotService: &benchmarkSnapshotServiceStub{}})
-
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/benchmark/profiles/7/preview", bytes.NewBufferString(`{"target_ids":[999]}`))
-	req.Header.Set("Content-Type", "application/json")
-	router.ServeHTTP(rec, req)
-
-	require.Equal(t, http.StatusBadRequest, rec.Code)
-	require.Contains(t, rec.Body.String(), "INVALID_TARGET_IDS")
-}
-
-func TestBenchmarkHandlerUpdateProfileMapsRequest(t *testing.T) {
-	taskCountLimit := 8
-	selectionSeed := int64(12345)
-	svc := &benchmarkAdminServiceStub{
-		updateProfileFn: func(ctx context.Context, id int64, input service.BenchmarkProfileInput) (*ent.BenchmarkProfile, error) {
-			require.Equal(t, int64(7), id)
-			require.Equal(t, int64(2), input.SuiteID)
-			require.Equal(t, "smoke profile", input.Name)
-			require.Equal(t, "profile for smoke benchmark", input.Description)
-			require.Equal(t, []int64{11, 12}, input.TargetIDs)
-			require.Equal(t, []string{"reasoning", "coding"}, input.TaskTypes)
-			require.Equal(t, service.BenchmarkTaskScaleCustom, input.TaskScale)
-			require.Equal(t, &taskCountLimit, input.TaskCountLimit)
-			require.Equal(t, map[string]int{"reasoning": 3, "coding": 5}, input.PerTypeLimit)
-			require.Equal(t, []string{"easy", "medium"}, input.DifficultyFilter)
-			require.Equal(t, []string{"math", "code"}, input.TagFilter)
-			require.Equal(t, "weighted", input.SamplingStrategy)
-			require.Equal(t, &selectionSeed, input.SelectionSeed)
-			require.Equal(t, map[string]any{"timeout_ms": float64(30000), "temperature": 0.2}, input.RuntimeConfig)
-			require.Equal(t, map[string]any{"ranking_basis": "ability_score_only", "min_coverage": 0.8}, input.ScoringConfig)
-			require.Equal(t, map[string]any{"owner": "admin", "priority": "high"}, input.Metadata)
-			require.True(t, input.Enabled)
-			return &ent.BenchmarkProfile{ID: id, SuiteID: input.SuiteID, Name: input.Name, Enabled: input.Enabled}, nil
-		},
-	}
-	router := newBenchmarkTestRouter(&BenchmarkHandler{benchmarkService: svc, snapshotService: &benchmarkSnapshotServiceStub{}})
-
-	body := `{"suite_id":2,"name":"smoke profile","description":"profile for smoke benchmark","target_ids":[11,12],"task_types":["reasoning","coding"],"task_scale":"custom","task_count_limit":8,"per_type_limit":{"reasoning":3,"coding":5},"difficulty_filter":["easy","medium"],"tag_filter":["math","code"],"sampling_strategy":"weighted","selection_seed":12345,"runtime_config":{"timeout_ms":30000,"temperature":0.2},"scoring_config":{"ranking_basis":"ability_score_only","min_coverage":0.8},"metadata":{"owner":"admin","priority":"high"},"enabled":true}`
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/benchmark/profiles/7", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
-	router.ServeHTTP(rec, req)
-
-	require.Equal(t, http.StatusOK, rec.Code)
 }
 
 func TestBenchmarkHandlerCreateRun(t *testing.T) {
+	createdBy := int64(99)
 	svc := &benchmarkAdminServiceStub{
 		createRunFn: func(ctx context.Context, input service.BenchmarkCreateRunRequest) (*ent.BenchmarkRun, error) {
-			require.Equal(t, int64(7), input.ProfileID)
-			require.Equal(t, "manual", input.TriggerType)
-			return &ent.BenchmarkRun{ID: 31, ProfileID: input.ProfileID}, nil
+			require.Equal(t, []int64{11, 12}, input.TargetIDs)
+			require.Equal(t, 4, input.TaskCount)
+			require.Equal(t, service.BenchmarkTriggerManual, input.TriggerType)
+			require.Equal(t, &createdBy, input.CreatedBy)
+			return &ent.BenchmarkRun{ID: 31, TriggerType: input.TriggerType, TaskCount: input.TaskCount, CreatedBy: input.CreatedBy}, nil
 		},
 	}
 	router := newBenchmarkTestRouter(&BenchmarkHandler{benchmarkService: svc, snapshotService: &benchmarkSnapshotServiceStub{}})
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/benchmark/runs", bytes.NewBufferString(`{"profile_id":7,"trigger_type":"manual"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/benchmark/runs", bytes.NewBufferString(`{"target_ids":[11,12],"task_count":4,"trigger_type":"manual","created_by":99}`))
 	req.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(rec, req)
 
@@ -600,13 +516,13 @@ func TestBenchmarkHandlerCreateRunProcessImmediatelyRequiresProcessor(t *testing
 	svc := &benchmarkAdminServiceStub{
 		createRunFn: func(ctx context.Context, input service.BenchmarkCreateRunRequest) (*ent.BenchmarkRun, error) {
 			createCalled = true
-			return &ent.BenchmarkRun{ID: 31, ProfileID: input.ProfileID}, nil
+			return &ent.BenchmarkRun{ID: 31}, nil
 		},
 	}
 	router := newBenchmarkTestRouter(&BenchmarkHandler{benchmarkService: svc, snapshotService: &benchmarkSnapshotServiceStub{}})
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/benchmark/runs", bytes.NewBufferString(`{"profile_id":7,"process_immediately":true}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/benchmark/runs", bytes.NewBufferString(`{"target_ids":[7],"task_count":2,"process_immediately":true}`))
 	req.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(rec, req)
 
@@ -619,14 +535,14 @@ func TestBenchmarkHandlerCreateRunProcessImmediatelyTriggersProcessor(t *testing
 	processed := make(chan int64, 1)
 	svc := &benchmarkAdminServiceStub{
 		createRunFn: func(ctx context.Context, input service.BenchmarkCreateRunRequest) (*ent.BenchmarkRun, error) {
-			require.Equal(t, int64(7), input.ProfileID)
-			return &ent.BenchmarkRun{ID: 31, ProfileID: input.ProfileID}, nil
+			require.Equal(t, []int64{7}, input.TargetIDs)
+			return &ent.BenchmarkRun{ID: 31}, nil
 		},
 	}
 	processor := &benchmarkAdminProcessorStub{
 		processRunFn: func(ctx context.Context, runID int64) (int, error) {
 			processed <- runID
-			return 1, nil
+			return 0, nil
 		},
 	}
 	router := newBenchmarkTestRouter(&BenchmarkHandler{
@@ -636,7 +552,7 @@ func TestBenchmarkHandlerCreateRunProcessImmediatelyTriggersProcessor(t *testing
 	})
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/benchmark/runs", bytes.NewBufferString(`{"profile_id":7,"process_immediately":true}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/benchmark/runs", bytes.NewBufferString(`{"target_ids":[7],"process_immediately":true}`))
 	req.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(rec, req)
 
@@ -654,7 +570,7 @@ func TestBenchmarkHandlerCreateRunProcessImmediatelyLogsProcessorError(t *testin
 	processed := make(chan int64, 1)
 	svc := &benchmarkAdminServiceStub{
 		createRunFn: func(ctx context.Context, input service.BenchmarkCreateRunRequest) (*ent.BenchmarkRun, error) {
-			return &ent.BenchmarkRun{ID: 31, ProfileID: input.ProfileID}, nil
+			return &ent.BenchmarkRun{ID: 31}, nil
 		},
 	}
 	processor := &benchmarkAdminProcessorStub{
@@ -670,7 +586,7 @@ func TestBenchmarkHandlerCreateRunProcessImmediatelyLogsProcessorError(t *testin
 	})
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/benchmark/runs", bytes.NewBufferString(`{"profile_id":7,"process_immediately":true}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/benchmark/runs", bytes.NewBufferString(`{"target_ids":[7],"process_immediately":true}`))
 	req.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(rec, req)
 
@@ -691,7 +607,7 @@ func TestBenchmarkHandlerCreateRunProcessImmediatelyRecoversProcessorPanic(t *te
 	processed := make(chan int64, 1)
 	svc := &benchmarkAdminServiceStub{
 		createRunFn: func(ctx context.Context, input service.BenchmarkCreateRunRequest) (*ent.BenchmarkRun, error) {
-			return &ent.BenchmarkRun{ID: 31, ProfileID: input.ProfileID}, nil
+			return &ent.BenchmarkRun{ID: 31}, nil
 		},
 	}
 	processor := &benchmarkAdminProcessorStub{
@@ -707,7 +623,7 @@ func TestBenchmarkHandlerCreateRunProcessImmediatelyRecoversProcessorPanic(t *te
 	})
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/benchmark/runs", bytes.NewBufferString(`{"profile_id":7,"process_immediately":true}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/benchmark/runs", bytes.NewBufferString(`{"target_ids":[7],"process_immediately":true}`))
 	req.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(rec, req)
 
@@ -726,14 +642,14 @@ func TestBenchmarkHandlerCreateRunProcessImmediatelyRecoversProcessorPanic(t *te
 func TestBenchmarkHandlerCreateRunReturns403WhenBenchmarkDisabled(t *testing.T) {
 	svc := &benchmarkAdminServiceStub{
 		createRunFn: func(ctx context.Context, input service.BenchmarkCreateRunRequest) (*ent.BenchmarkRun, error) {
-			require.Equal(t, int64(7), input.ProfileID)
+			require.Equal(t, []int64{7}, input.TargetIDs)
 			return nil, infraerrors.Forbidden("BENCHMARK_DISABLED", "benchmark is disabled")
 		},
 	}
 	router := newBenchmarkTestRouter(&BenchmarkHandler{benchmarkService: svc, snapshotService: &benchmarkSnapshotServiceStub{}})
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/benchmark/runs", bytes.NewBufferString(`{"profile_id":7}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/benchmark/runs", bytes.NewBufferString(`{"target_ids":[7]}`))
 	req.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(rec, req)
 
@@ -741,23 +657,92 @@ func TestBenchmarkHandlerCreateRunReturns403WhenBenchmarkDisabled(t *testing.T) 
 	require.Contains(t, rec.Body.String(), "BENCHMARK_DISABLED")
 }
 
-func TestBenchmarkHandlerCreateRunMissingOverrideTargetsReturns400(t *testing.T) {
+func TestBenchmarkHandlerCreateRunMissingTargetsReturns400(t *testing.T) {
 	svc := &benchmarkAdminServiceStub{
 		createRunFn: func(ctx context.Context, input service.BenchmarkCreateRunRequest) (*ent.BenchmarkRun, error) {
-			require.Equal(t, int64(7), input.ProfileID)
-			require.Equal(t, []int64{999}, input.Override.TargetIDs)
+			require.Equal(t, []int64{999}, input.TargetIDs)
 			return nil, errors.New("benchmark targets missing: [999]")
 		},
 	}
 	router := newBenchmarkTestRouter(&BenchmarkHandler{benchmarkService: svc, snapshotService: &benchmarkSnapshotServiceStub{}})
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/benchmark/runs", bytes.NewBufferString(`{"profile_id":7,"override":{"target_ids":[999]}}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/benchmark/runs", bytes.NewBufferString(`{"target_ids":[999]}`))
 	req.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 	require.Contains(t, rec.Body.String(), "INVALID_TARGET_IDS")
+}
+
+func TestBenchmarkHandlerCreateStandardRunDefaultsToImmediateProcessing(t *testing.T) {
+	processed := make(chan int64, 1)
+	svc := &benchmarkAdminServiceStub{
+		createStandardRunFn: func(ctx context.Context, input service.BenchmarkStandardRunRequest) (*ent.BenchmarkRun, error) {
+			require.True(t, input.ProcessImmediately)
+			require.Empty(t, input.TargetIDs)
+			require.Zero(t, input.TaskCount)
+			return &ent.BenchmarkRun{ID: 41, Status: service.BenchmarkRunStatusQueued, TriggerType: service.BenchmarkTriggerManual}, nil
+		},
+	}
+	processor := &benchmarkAdminProcessorStub{
+		processRunFn: func(ctx context.Context, runID int64) (int, error) {
+			processed <- runID
+			return 0, nil
+		},
+	}
+	router := newBenchmarkTestRouter(&BenchmarkHandler{benchmarkService: svc, snapshotService: &benchmarkSnapshotServiceStub{}, processor: processor})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/benchmark/runs/standard", nil)
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	select {
+	case runID := <-processed:
+		require.Equal(t, int64(41), runID)
+	case <-time.After(time.Second):
+		t.Fatal("processor was not called")
+	}
+}
+
+func TestBenchmarkHandlerCreateStandardRunCanSkipImmediateProcessing(t *testing.T) {
+	createdBy := int64(55)
+	svc := &benchmarkAdminServiceStub{
+		createStandardRunFn: func(ctx context.Context, input service.BenchmarkStandardRunRequest) (*ent.BenchmarkRun, error) {
+			require.False(t, input.ProcessImmediately)
+			require.Equal(t, []int64{11}, input.TargetIDs)
+			require.Equal(t, 2, input.TaskCount)
+			require.Equal(t, &createdBy, input.CreatedBy)
+			return &ent.BenchmarkRun{ID: 42, Status: service.BenchmarkRunStatusQueued, TriggerType: service.BenchmarkTriggerManual}, nil
+		},
+	}
+	router := newBenchmarkTestRouter(&BenchmarkHandler{benchmarkService: svc, snapshotService: &benchmarkSnapshotServiceStub{}})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/benchmark/runs/standard", bytes.NewBufferString(`{"target_ids":[11],"task_count":2,"process_immediately":false,"created_by":55}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestBenchmarkHandlerCreateStandardRunNoStandardTasksReturns400(t *testing.T) {
+	svc := &benchmarkAdminServiceStub{
+		createStandardRunFn: func(ctx context.Context, input service.BenchmarkStandardRunRequest) (*ent.BenchmarkRun, error) {
+			require.False(t, input.ProcessImmediately)
+			return nil, errors.New("no enabled standard benchmark tasks available")
+		},
+	}
+	router := newBenchmarkTestRouter(&BenchmarkHandler{benchmarkService: svc, snapshotService: &benchmarkSnapshotServiceStub{}})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/benchmark/runs/standard", bytes.NewBufferString(`{"process_immediately":false}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Contains(t, rec.Body.String(), "VALIDATION_ERROR")
 }
 
 func TestBenchmarkHandlerListRunResults(t *testing.T) {
@@ -806,13 +791,17 @@ func TestBenchmarkHandlerListRunResults(t *testing.T) {
 func TestBenchmarkHandlerListRunScores(t *testing.T) {
 	displayName := "Run Snapshot Score Model"
 	svc := &benchmarkAdminServiceStub{
-		listScoreSnapshotsFn: func(ctx context.Context, runID int64) ([]*ent.BenchmarkScoreSnapshot, error) {
+		listTargetScoresFn: func(ctx context.Context, runID int64) ([]*ent.BenchmarkTargetScore, error) {
 			require.Equal(t, int64(42), runID)
-			return []*ent.BenchmarkScoreSnapshot{
+			return []*ent.BenchmarkTargetScore{
 				{
-					ID:          1,
-					RunTargetID: 601,
-					Edges: ent.BenchmarkScoreSnapshotEdges{
+					ID:           1,
+					RunID:        runID,
+					RunTargetID:  601,
+					ModelName:    "claude-3-5-sonnet",
+					ChannelID:    8,
+					OverallScore: 0.92,
+					Edges: ent.BenchmarkTargetScoreEdges{
 						RunTarget: &ent.BenchmarkRunTarget{
 							ID:                  601,
 							TargetID:            12,
@@ -837,12 +826,12 @@ func TestBenchmarkHandlerListRunScores(t *testing.T) {
 	var scores []map[string]any
 	require.NoError(t, json.Unmarshal(resp.Data, &scores))
 	require.Len(t, scores, 1)
+	require.EqualValues(t, 601, scores[0]["run_target_id"])
+	require.EqualValues(t, 0.92, scores[0]["overall_score"])
 	edges, ok := scores[0]["edges"].(map[string]any)
 	require.True(t, ok)
 	runTarget, ok := edges["run_target"].(map[string]any)
 	require.True(t, ok)
-	require.EqualValues(t, 601, runTarget["id"])
-	require.EqualValues(t, 12, runTarget["target_id"])
 	require.Equal(t, "Run Snapshot Score Model", runTarget["display_name_snapshot"])
 }
 
@@ -977,10 +966,9 @@ func TestBenchmarkHandlerListSchedules(t *testing.T) {
 		listSchedulesFn: func(ctx context.Context, input service.BenchmarkScheduleListInput) ([]*ent.BenchmarkSchedule, int, error) {
 			require.Equal(t, service.BenchmarkScheduleListInput{
 				BenchmarkListInput: service.BenchmarkListInput{Page: 1, PageSize: 100},
-				ProfileID:          7,
 				Enabled:            &enabled,
 			}, input)
-			return []*ent.BenchmarkSchedule{{ID: 1, ProfileID: 7, Name: "nightly"}}, 1, nil
+			return []*ent.BenchmarkSchedule{{ID: 1, Name: "nightly"}}, 1, nil
 		},
 	}
 	router := newBenchmarkTestRouter(&BenchmarkHandler{
@@ -990,7 +978,7 @@ func TestBenchmarkHandlerListSchedules(t *testing.T) {
 	})
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/benchmark/schedules?page=0&page_size=999&profile_id=7&enabled=true", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/benchmark/schedules?page=0&page_size=999&enabled=true", nil)
 	router.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusOK, rec.Code)
@@ -1006,19 +994,19 @@ func TestBenchmarkHandlerListSchedules(t *testing.T) {
 func TestBenchmarkHandlerCreateSchedule(t *testing.T) {
 	scheduleSvc := &benchmarkScheduleAdminServiceStub{
 		createScheduleFn: func(ctx context.Context, input service.BenchmarkScheduleInput) (*ent.BenchmarkSchedule, error) {
-			require.Equal(t, int64(7), input.ProfileID)
 			require.Equal(t, "nightly", input.Name)
 			require.Equal(t, "0 * * * *", input.CronExpr)
 			require.True(t, input.Enabled)
-			require.Equal(t, map[string]any{"scope": "daily"}, input.Metadata)
+			require.Equal(t, []int64{11, 12}, input.TargetIDs)
+			require.Equal(t, 6, input.TaskCount)
 			require.Nil(t, input.NextRunAt)
 			return &ent.BenchmarkSchedule{
 				ID:        12,
-				ProfileID: input.ProfileID,
 				Name:      input.Name,
 				CronExpr:  input.CronExpr,
 				Enabled:   input.Enabled,
-				Metadata:  input.Metadata,
+				TargetIds: input.TargetIDs,
+				TaskCount: input.TaskCount,
 			}, nil
 		},
 	}
@@ -1028,7 +1016,7 @@ func TestBenchmarkHandlerCreateSchedule(t *testing.T) {
 		snapshotService:  &benchmarkSnapshotServiceStub{},
 	})
 
-	body := `{"profile_id":7,"name":"nightly","cron_expr":"0 * * * *","enabled":true,"metadata":{"scope":"daily"}}`
+	body := `{"name":"nightly","cron_expr":"0 * * * *","enabled":true,"target_ids":[11,12],"task_count":6}`
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/benchmark/schedules", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -1048,19 +1036,19 @@ func TestBenchmarkHandlerUpdateScheduleMapsRequest(t *testing.T) {
 		updateScheduleFn: func(ctx context.Context, id int64, input service.BenchmarkScheduleInput) (*ent.BenchmarkSchedule, error) {
 			called = true
 			require.Equal(t, int64(12), id)
-			require.Equal(t, int64(7), input.ProfileID)
 			require.Equal(t, "weekday smoke", input.Name)
 			require.Equal(t, "15 2 * * 1-5", input.CronExpr)
 			require.False(t, input.Enabled)
-			require.Equal(t, map[string]any{"scope": "weekday", "batch": "smoke"}, input.Metadata)
+			require.Equal(t, []int64{21, 22}, input.TargetIDs)
+			require.Equal(t, 4, input.TaskCount)
 			require.Nil(t, input.NextRunAt)
 			return &ent.BenchmarkSchedule{
 				ID:        id,
-				ProfileID: input.ProfileID,
 				Name:      input.Name,
 				CronExpr:  input.CronExpr,
 				Enabled:   input.Enabled,
-				Metadata:  input.Metadata,
+				TargetIds: input.TargetIDs,
+				TaskCount: input.TaskCount,
 			}, nil
 		},
 	}
@@ -1070,7 +1058,7 @@ func TestBenchmarkHandlerUpdateScheduleMapsRequest(t *testing.T) {
 		snapshotService:  &benchmarkSnapshotServiceStub{},
 	})
 
-	body := `{"profile_id":7,"name":"weekday smoke","cron_expr":"15 2 * * 1-5","enabled":false,"metadata":{"scope":"weekday","batch":"smoke"}}`
+	body := `{"name":"weekday smoke","cron_expr":"15 2 * * 1-5","enabled":false,"target_ids":[21,22],"task_count":4}`
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/benchmark/schedules/12", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -1085,7 +1073,7 @@ func TestBenchmarkHandlerTriggerSchedule(t *testing.T) {
 		triggerScheduleFn: func(ctx context.Context, id int64, now time.Time) (*ent.BenchmarkRun, error) {
 			require.Equal(t, int64(12), id)
 			require.False(t, now.IsZero())
-			return &ent.BenchmarkRun{ID: 52, ProfileID: 7, TriggerType: "scheduled"}, nil
+			return &ent.BenchmarkRun{ID: 52, TriggerType: service.BenchmarkTriggerScheduled}, nil
 		},
 	}
 	router := newBenchmarkTestRouter(&BenchmarkHandler{
@@ -1118,9 +1106,9 @@ func TestBenchmarkHandlerScheduleServiceUnavailableDoesNotPanic(t *testing.T) {
 		body   string
 	}{
 		{method: http.MethodGet, path: "/api/v1/admin/benchmark/schedules"},
-		{method: http.MethodPost, path: "/api/v1/admin/benchmark/schedules", body: `{"profile_id":7,"name":"nightly","cron_expr":"0 * * * *"}`},
+		{method: http.MethodPost, path: "/api/v1/admin/benchmark/schedules", body: `{"name":"nightly","cron_expr":"0 * * * *"}`},
 		{method: http.MethodGet, path: "/api/v1/admin/benchmark/schedules/12"},
-		{method: http.MethodPut, path: "/api/v1/admin/benchmark/schedules/12", body: `{"profile_id":7,"name":"nightly","cron_expr":"0 * * * *"}`},
+		{method: http.MethodPut, path: "/api/v1/admin/benchmark/schedules/12", body: `{"name":"nightly","cron_expr":"0 * * * *"}`},
 		{method: http.MethodDelete, path: "/api/v1/admin/benchmark/schedules/12"},
 		{method: http.MethodPost, path: "/api/v1/admin/benchmark/schedules/12/trigger"},
 	}
