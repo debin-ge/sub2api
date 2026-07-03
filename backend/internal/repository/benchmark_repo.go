@@ -235,6 +235,75 @@ func (r *benchmarkRepository) ListEnabledTasks(ctx context.Context) ([]*dbent.Be
 		All(ctx)
 }
 
+func (r *benchmarkRepository) ListTasksByTitles(ctx context.Context, titles []string) ([]*dbent.BenchmarkTask, error) {
+	return r.listTasksByTitles(ctx, titles, false)
+}
+
+func (r *benchmarkRepository) ListEnabledTasksByTitles(ctx context.Context, titles []string) ([]*dbent.BenchmarkTask, error) {
+	return r.listTasksByTitles(ctx, titles, true)
+}
+
+func (r *benchmarkRepository) listTasksByTitles(ctx context.Context, titles []string, enabledOnly bool) ([]*dbent.BenchmarkTask, error) {
+	orderedTitles := benchmarkOrderedTitles(titles)
+	if len(orderedTitles) == 0 {
+		return []*dbent.BenchmarkTask{}, nil
+	}
+
+	query := clientFromContext(ctx, r.client).BenchmarkTask.Query().
+		Where(benchmarktask.TitleIn(orderedTitles...)).
+		Order(dbent.Asc(benchmarktask.FieldSortOrder), dbent.Asc(benchmarktask.FieldID))
+	if enabledOnly {
+		query = query.Where(benchmarktask.EnabledEQ(true))
+	}
+	rows, err := query.All(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return benchmarkTasksOrderedByTitle(rows, orderedTitles), nil
+}
+
+func benchmarkTasksOrderedByTitle(rows []*dbent.BenchmarkTask, titles []string) []*dbent.BenchmarkTask {
+	orderedTitles := benchmarkOrderedTitles(titles)
+	if len(orderedTitles) == 0 || len(rows) == 0 {
+		return []*dbent.BenchmarkTask{}
+	}
+
+	byTitle := make(map[string]*dbent.BenchmarkTask, len(rows))
+	for _, task := range rows {
+		if task == nil {
+			continue
+		}
+		if _, exists := byTitle[task.Title]; !exists {
+			byTitle[task.Title] = task
+		}
+	}
+	ordered := make([]*dbent.BenchmarkTask, 0, len(orderedTitles))
+	for _, title := range orderedTitles {
+		if task := byTitle[title]; task != nil {
+			ordered = append(ordered, task)
+		}
+	}
+	return ordered
+}
+
+func benchmarkOrderedTitles(titles []string) []string {
+	ordered := make([]string, 0, len(titles))
+	seen := make(map[string]struct{}, len(titles))
+	for _, title := range titles {
+		trimmed := strings.TrimSpace(title)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		ordered = append(ordered, trimmed)
+	}
+	return ordered
+}
+
 // ---- Schedules ----
 
 func (r *benchmarkRepository) ListSchedules(ctx context.Context, input service.BenchmarkScheduleListInput) ([]*dbent.BenchmarkSchedule, int, error) {

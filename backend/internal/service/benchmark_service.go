@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 
 	"github.com/Wei-Shaw/sub2api/ent"
-	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
 
 type BenchmarkRuntime struct {
@@ -30,6 +30,7 @@ type BenchmarkService struct {
 	repo            BenchmarkRepository
 	runtimeProvider benchmarkRuntimeProvider
 	channelResolver benchmarkChannelResolver
+	standardTaskMu  sync.Mutex
 }
 
 func NewBenchmarkService(repo BenchmarkRepository) *BenchmarkService {
@@ -264,7 +265,7 @@ func (s *BenchmarkService) PreviewRun(ctx context.Context, targetIDs []int64, ta
 func (s *BenchmarkService) CreateRun(ctx context.Context, input BenchmarkCreateRunRequest) (*ent.BenchmarkRun, error) {
 	runtime := s.getBenchmarkRuntime(ctx)
 	if !runtime.Enabled {
-		return nil, infraerrors.Forbidden("BENCHMARK_DISABLED", "benchmark is disabled")
+		return nil, infraBenchmarkDisabled()
 	}
 
 	selection, err := s.resolveRunSelection(ctx, input.TargetIDs, input.TaskCount)
@@ -272,6 +273,10 @@ func (s *BenchmarkService) CreateRun(ctx context.Context, input BenchmarkCreateR
 		return nil, err
 	}
 
+	return s.createRunFromSelection(ctx, selection, input)
+}
+
+func (s *BenchmarkService) createRunFromSelection(ctx context.Context, selection *benchmarkRunSelection, input BenchmarkCreateRunRequest) (*ent.BenchmarkRun, error) {
 	triggerType := input.TriggerType
 	if triggerType == "" {
 		triggerType = BenchmarkTriggerManual
@@ -292,6 +297,24 @@ func (s *BenchmarkService) CreateRun(ctx context.Context, input BenchmarkCreateR
 }
 
 func (s *BenchmarkService) resolveRunSelection(ctx context.Context, targetIDs []int64, taskCount int) (*benchmarkRunSelection, error) {
+	targets, err := s.resolveRunTargets(ctx, targetIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	enabledTasks, err := s.repo.ListEnabledTasks(ctx)
+	if err != nil {
+		return nil, err
+	}
+	selectedTasks, err := selectBenchmarkTaskEntities(enabledTasks, taskCount, "no enabled benchmark tasks available")
+	if err != nil {
+		return nil, err
+	}
+
+	return &benchmarkRunSelection{targets: targets, tasks: selectedTasks}, nil
+}
+
+func (s *BenchmarkService) resolveRunTargets(ctx context.Context, targetIDs []int64) ([]*ent.BenchmarkTarget, error) {
 	var targets []*ent.BenchmarkTarget
 	var err error
 	if len(targetIDs) > 0 {
@@ -306,13 +329,15 @@ func (s *BenchmarkService) resolveRunSelection(ctx context.Context, targetIDs []
 	if len(targets) == 0 {
 		return nil, errors.New("no enabled benchmark targets selected")
 	}
+	return targets, nil
+}
 
-	enabledTasks, err := s.repo.ListEnabledTasks(ctx)
-	if err != nil {
-		return nil, err
-	}
+func selectBenchmarkTaskEntities(enabledTasks []*ent.BenchmarkTask, taskCount int, emptyMessage string) ([]*ent.BenchmarkTask, error) {
 	candidates := make([]BenchmarkTaskCandidate, 0, len(enabledTasks))
 	for _, task := range enabledTasks {
+		if task == nil {
+			continue
+		}
 		candidates = append(candidates, BenchmarkTaskCandidate{
 			ID:        task.ID,
 			Type:      task.Type,
@@ -322,11 +347,14 @@ func (s *BenchmarkService) resolveRunSelection(ctx context.Context, targetIDs []
 	}
 	selectedCandidates := SelectBenchmarkTasks(candidates, taskCount)
 	if len(selectedCandidates) == 0 {
-		return nil, errors.New("no enabled benchmark tasks available")
+		return nil, errors.New(emptyMessage)
 	}
 
 	tasksByID := make(map[int64]*ent.BenchmarkTask, len(enabledTasks))
 	for _, task := range enabledTasks {
+		if task == nil {
+			continue
+		}
 		tasksByID[task.ID] = task
 	}
 	selectedTasks := make([]*ent.BenchmarkTask, 0, len(selectedCandidates))
@@ -338,7 +366,7 @@ func (s *BenchmarkService) resolveRunSelection(ctx context.Context, targetIDs []
 		selectedTasks = append(selectedTasks, task)
 	}
 
-	return &benchmarkRunSelection{targets: targets, tasks: selectedTasks}, nil
+	return selectedTasks, nil
 }
 
 func benchmarkEnabledTargets(targets []*ent.BenchmarkTarget) []*ent.BenchmarkTarget {

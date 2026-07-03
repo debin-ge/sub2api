@@ -24,6 +24,8 @@ type BenchmarkRepository interface {
 	DeleteTask(ctx context.Context, id int64) error
 	ListTasks(ctx context.Context, input BenchmarkTaskListInput) ([]*ent.BenchmarkTask, int, error)
 	ListEnabledTasks(ctx context.Context) ([]*ent.BenchmarkTask, error)
+	ListTasksByTitles(ctx context.Context, titles []string) ([]*ent.BenchmarkTask, error)
+	ListEnabledTasksByTitles(ctx context.Context, titles []string) ([]*ent.BenchmarkTask, error)
 
 	// Schedules
 	ListSchedules(ctx context.Context, input BenchmarkScheduleListInput) ([]*ent.BenchmarkSchedule, int, error)
