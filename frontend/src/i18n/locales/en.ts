@@ -218,7 +218,7 @@ export default {
     admin: {
       dashboard: {
         title: 'Radar Overview',
-        description: 'Operational overview for benchmark runs and the latest ranking.',
+        description: 'Standard benchmark run overview with the latest ranking.',
         refresh: 'Refresh',
         latestRun: 'Latest Run',
         noRun: 'No run yet',
@@ -230,9 +230,9 @@ export default {
         profiles: 'Profiles',
         schedules: 'Schedules',
         topTitle: 'Top 5 Ranking',
-        topDescription: 'Sorted by ability score from the latest completed run snapshot.',
+        topDescription: 'Sorted by ability score from the latest completed run.',
         emptyTitle: 'No ranking yet',
-        emptyDescription: 'Wait for a completed run to generate score snapshots.',
+        emptyDescription: 'Wait for a completed run to generate ranking scores.',
         loadError: 'Failed to load radar overview',
         columns: {
           rank: 'Rank',
@@ -292,7 +292,7 @@ export default {
       },
       tasks: {
         title: 'Tasks',
-        description: 'Manage task types, difficulty, prompts, and verifiers.',
+        description: 'Manage the standard task set and advanced custom benchmark tasks.',
         applyStandard: 'Apply Standard Task Set',
         applyStandardSuccess: 'Standard task set applied: {created} created, {existing} existing, {enabled} enabled',
         applyStandardError: 'Failed to apply standard task set',
@@ -418,7 +418,7 @@ export default {
       },
       runs: {
         title: 'Runs',
-        description: 'Create, inspect, and process benchmark runs.',
+        description: 'Create, inspect, and process standard and advanced benchmark runs.',
         refresh: 'Refresh',
         processDue: 'Process Due Tasks',
         process: 'Process',
@@ -462,7 +462,7 @@ export default {
       },
       schedules: {
         title: 'Schedules',
-        description: 'Manage cron schedules for recurring benchmark runs.',
+        description: 'Schedule recurring benchmark runs with cron timing.',
         refresh: 'Refresh',
         create: 'Create Schedule',
         edit: 'Edit',
@@ -524,7 +524,7 @@ export default {
         rankingTitle: 'Ranking',
         rankingDescription: 'Sorted by ability score. Targets with insufficient samples stay visible and marked.',
         emptyScoreTitle: 'No score snapshots yet',
-        emptyScoreDescription: 'Score snapshots are generated after the run is scored.',
+        emptyScoreDescription: 'Scores are generated after the run is scored.',
         resultStatusTitle: 'Result Status Breakdown',
         invalidBreakdownTitle: 'Invalid Reason Breakdown',
         noResults: 'No results yet.',

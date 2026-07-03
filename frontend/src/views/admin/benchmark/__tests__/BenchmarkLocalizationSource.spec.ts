@@ -53,4 +53,20 @@ describe('benchmark localization source coverage', () => {
     expect(tasksSource).toContain("t('benchmark.admin.tasks.fields.sortOrder')")
     expect(tasksSource).toContain("t('benchmark.admin.tasks.columns.actions')")
   })
+
+  it('does not expose stale profile or suite copy in current benchmark admin pages', () => {
+    const currentSources = [
+      readFileSync(resolve(benchmarkDir, 'BenchmarkDashboardView.vue'), 'utf8'),
+      readFileSync(resolve(benchmarkDir, 'BenchmarkTargetsView.vue'), 'utf8'),
+      readFileSync(resolve(benchmarkDir, 'BenchmarkTasksView.vue'), 'utf8'),
+      readFileSync(resolve(benchmarkDir, 'BenchmarkRunsView.vue'), 'utf8'),
+      readFileSync(resolve(benchmarkDir, 'BenchmarkRunDetailView.vue'), 'utf8'),
+      readFileSync(resolve(benchmarkDir, 'BenchmarkSchedulesView.vue'), 'utf8'),
+    ].join('\n')
+
+    expect(currentSources).not.toContain('profile_id')
+    expect(currentSources).not.toContain('suite_id')
+    expect(currentSources).not.toContain('BenchmarkProfile')
+    expect(currentSources).not.toContain('BenchmarkSuite')
+  })
 })

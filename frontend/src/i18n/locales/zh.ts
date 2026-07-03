@@ -218,7 +218,7 @@ export default {
     admin: {
       dashboard: {
         title: '雷达概览',
-        description: '后台 benchmark 运行概览与最新排行榜。',
+        description: '标准 benchmark 运行概览与最新排行榜。',
         refresh: '刷新',
         latestRun: '最新运行',
         noRun: '暂无 run',
@@ -230,9 +230,9 @@ export default {
         profiles: '评测配置',
         schedules: '运行计划',
         topTitle: 'Top 5 排名',
-        topDescription: '基于最新已完成 run 的 score snapshot，按能力分排序。',
+        topDescription: '基于最新已完成 run 的能力分排序。',
         emptyTitle: '暂无排名',
-        emptyDescription: '等待已完成 run 生成 score snapshot。',
+        emptyDescription: '等待已完成 run 生成能力分。',
         loadError: '加载雷达概览失败',
         columns: {
           rank: '排名',
@@ -292,7 +292,7 @@ export default {
       },
       tasks: {
         title: '评测任务',
-        description: '管理任务类型、难度、prompt 与 verifier。',
+        description: '管理标准任务集与高级自定义评测任务。',
         applyStandard: '应用标准任务集',
         applyStandardSuccess: '标准任务集已应用：新增 {created} 个，已有 {existing} 个，启用 {enabled} 个',
         applyStandardError: '应用标准任务集失败',
@@ -418,7 +418,7 @@ export default {
       },
       runs: {
         title: '评测运行',
-        description: '创建、查看和处理 benchmark run。',
+        description: '创建、查看和处理标准与高级 benchmark run。',
         refresh: '刷新',
         processDue: '处理到期任务',
         process: '处理',
@@ -462,7 +462,7 @@ export default {
       },
       schedules: {
         title: '运行计划',
-        description: '管理定时运行 benchmark 的 cron 计划。',
+        description: '管理定期执行的 benchmark run 计划。',
         refresh: '刷新',
         create: '创建计划',
         edit: '编辑',
@@ -524,7 +524,7 @@ export default {
         rankingTitle: '排行榜',
         rankingDescription: '按能力分排序。样本不足 target 会保留标记。',
         emptyScoreTitle: '暂无 score snapshot',
-        emptyScoreDescription: 'Run 完成打分后会生成能力分快照。',
+        emptyScoreDescription: 'Run 完成打分后会生成能力分。',
         resultStatusTitle: '结果状态分布',
         invalidBreakdownTitle: '无效原因分布',
         noResults: '暂无 result。',
