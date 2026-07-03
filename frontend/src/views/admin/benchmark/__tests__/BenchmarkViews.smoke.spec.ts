@@ -1,13 +1,14 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
-const { listTargets, createTarget, listTasks, createTask, listRuns, createRun, listSchedules, createSchedule } = vi.hoisted(() => ({
+const { listTargets, createTarget, listTasks, createTask, listRuns, createRun, createStandardRun, listSchedules, createSchedule } = vi.hoisted(() => ({
   listTargets: vi.fn(),
   createTarget: vi.fn(),
   listTasks: vi.fn(),
   createTask: vi.fn(),
   listRuns: vi.fn(),
   createRun: vi.fn(),
+  createStandardRun: vi.fn(),
   listSchedules: vi.fn(),
   createSchedule: vi.fn(),
 }))
@@ -25,6 +26,7 @@ vi.mock('@/api/admin', () => ({
       deleteTask: vi.fn(),
       listRuns,
       createRun,
+      createStandardRun,
       cancelRun: vi.fn(),
       processRun: vi.fn(),
       processDueRuns: vi.fn(),
@@ -116,25 +118,44 @@ describe('BenchmarkTasksView', () => {
 })
 
 describe('BenchmarkRunsView', () => {
-  it('creates a run with target_ids and task_count', async () => {
+  it('creates a standard run by default and uses advanced target options when selected', async () => {
     const { default: View } = await import('../BenchmarkRunsView.vue')
     listTargets.mockResolvedValue({ ...emptyPage, items: [{ id: 7, model_name: 'gpt-4.1', channel_id: 3, display_name: 'GPT', enabled: true }], total: 1 })
-    createRun.mockResolvedValue({ id: 9, status: 'queued' })
+    createStandardRun.mockResolvedValue({ id: 9, status: 'queued' })
     const wrapper = mount(View, { global: { stubs } })
     await flushPromises()
 
-    await wrapper.find('[data-test="run-task-count"]').setValue('5')
-    await wrapper.find('[data-test="run-target-7"]').setValue(true)
-    await wrapper.find('[data-test="create-run-button"]').trigger('click')
+    await wrapper.find('[data-test="create-standard-run-button"]').trigger('click')
     await flushPromises()
 
-    expect(createRun).toHaveBeenCalledTimes(1)
-    const payload = createRun.mock.calls[0][0]
-    expect(payload.task_count).toBe(5)
-    expect(payload.target_ids).toEqual([7])
-    // simplified: no profile_id / override
-    expect(payload).not.toHaveProperty('profile_id')
-    expect(payload).not.toHaveProperty('override')
+    expect(createStandardRun).toHaveBeenCalledWith(undefined)
+
+    await wrapper.find('[data-test="standard-run-advanced-toggle"]').trigger('click')
+    await wrapper.find('[data-test="run-task-count"]').setValue('5')
+    await wrapper.find('[data-test="run-target-7"]').setValue(true)
+    await wrapper.find('[data-test="run-process-immediately"]').setValue(false)
+    await wrapper.find('[data-test="create-standard-run-button"]').trigger('click')
+    await flushPromises()
+
+    expect(createStandardRun).toHaveBeenCalledTimes(2)
+    expect(createStandardRun.mock.calls.at(-1)?.[0]).toEqual({
+      target_ids: [7],
+      task_count: 5,
+      process_immediately: false,
+    })
+  })
+
+  it('does not submit duplicate standard runs while creation is pending', async () => {
+    const { default: View } = await import('../BenchmarkRunsView.vue')
+    createStandardRun.mockReturnValue(new Promise(() => {}))
+    const wrapper = mount(View, { global: { stubs } })
+    await flushPromises()
+
+    await wrapper.find('[data-test="standard-run-form"]').trigger('submit')
+    await wrapper.find('[data-test="standard-run-form"]').trigger('submit')
+    await flushPromises()
+
+    expect(createStandardRun).toHaveBeenCalledTimes(1)
   })
 })
 

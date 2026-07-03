@@ -20,48 +20,51 @@
 
       <section class="card">
         <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
-          <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('benchmark.admin.runs.createRun') }}</h2>
-          <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('benchmark.admin.runs.createDescription') }}</p>
+          <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('benchmark.admin.runs.standardTitle') }}</h2>
+          <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('benchmark.admin.runs.standardDescription') }}</p>
         </div>
-        <form class="space-y-4 p-6" @submit.prevent="createRun">
-          <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
-            <label class="block">
-              <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('benchmark.admin.runs.fields.taskCount') }}</span>
-              <input v-model.number="taskCount" data-test="run-task-count" type="number" min="1" class="input mt-1" />
-            </label>
-            <label class="block">
-              <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('benchmark.admin.runs.fields.triggerType') }}</span>
-              <input v-model.trim="triggerType" data-test="run-trigger-type" class="input mt-1" />
-            </label>
-            <label class="mt-7 inline-flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
-              <input v-model="processImmediately" data-test="run-process-immediately" type="checkbox" class="rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
-              {{ t('benchmark.admin.runs.fields.processImmediately') }}
-            </label>
+        <form data-test="standard-run-form" class="space-y-4 p-6" @submit.prevent="createStandardRun">
+          <div class="flex flex-wrap items-center gap-3">
+            <button type="submit" data-test="create-standard-run-button" class="btn btn-primary inline-flex items-center gap-2" :disabled="creatingStandardRun" @click.prevent="createStandardRun">
+              <Icon name="play" size="sm" />
+              {{ t('benchmark.admin.runs.createRun') }}
+            </button>
+            <button type="button" data-test="standard-run-advanced-toggle" class="btn btn-secondary" @click="showAdvanced = !showAdvanced">
+              {{ t(showAdvanced ? 'benchmark.admin.runs.hideAdvancedOptions' : 'benchmark.admin.runs.advancedOptions') }}
+            </button>
           </div>
 
-          <div>
-            <p class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('benchmark.admin.runs.fields.targetIds') }}</p>
-            <div class="mt-2 max-h-32 space-y-2 overflow-y-auto rounded-lg border border-gray-100 p-3 dark:border-dark-700">
-              <label v-for="target in targets" :key="target.id" class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
-                <input
-                  v-model="targetIds"
-                  :data-test="`run-target-${target.id}`"
-                  type="checkbox"
-                  :value="target.id"
-                  class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                />
-                <span>{{ targetLabel(target) }}</span>
+          <div v-if="showAdvanced" class="space-y-4">
+            <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <label class="block">
+                <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('benchmark.admin.runs.fields.taskCount') }}</span>
+                <input v-model.number="taskCount" data-test="run-task-count" type="number" min="0" class="input mt-1" />
               </label>
-              <p v-if="targets.length === 0" class="text-sm text-gray-500 dark:text-gray-400">{{ t('benchmark.admin.runs.noTargets') }}</p>
+              <label class="mt-7 inline-flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+                <input v-model="processImmediately" data-test="run-process-immediately" type="checkbox" class="rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
+                {{ t('benchmark.admin.runs.fields.processImmediately') }}
+              </label>
+            </div>
+
+            <div>
+              <p class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('benchmark.admin.runs.fields.targetIds') }}</p>
+              <div class="mt-2 max-h-32 space-y-2 overflow-y-auto rounded-lg border border-gray-100 p-3 dark:border-dark-700">
+                <label v-for="target in targets" :key="target.id" class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
+                  <input
+                    v-model="targetIds"
+                    :data-test="`run-target-${target.id}`"
+                    type="checkbox"
+                    :value="target.id"
+                    class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  />
+                  <span>{{ targetLabel(target) }}</span>
+                </label>
+                <p v-if="targets.length === 0" class="text-sm text-gray-500 dark:text-gray-400">{{ t('benchmark.admin.runs.noTargets') }}</p>
+              </div>
             </div>
           </div>
 
           <p v-if="formError" data-test="run-form-error" class="text-sm text-red-600 dark:text-red-400">{{ formError }}</p>
-
-          <button type="button" data-test="create-run-button" class="btn btn-primary inline-flex items-center gap-2" :disabled="creating" @click="createRun">
-            <Icon name="play" size="sm" />
-            {{ t('benchmark.admin.runs.createRun') }}
-          </button>
         </form>
       </section>
 
@@ -139,7 +142,7 @@ import type {
   BenchmarkRun,
   BenchmarkRunStatus,
   BenchmarkTarget,
-  CreateBenchmarkRunRequest,
+  CreateBenchmarkStandardRunRequest,
 } from '@/types/benchmark'
 import {
   benchmarkRunFallback,
@@ -153,14 +156,14 @@ const { locale, t } = useI18n()
 const runs = ref<BenchmarkRun[]>([])
 const targets = ref<BenchmarkTarget[]>([])
 const loading = ref(false)
-const creating = ref(false)
+const creatingStandardRun = ref(false)
 const processingDue = ref(false)
 const processingRunId = ref<number | null>(null)
 const cancelingRunId = ref<number | null>(null)
 const targetIds = ref<number[]>([])
-const taskCount = ref<number>(10)
-const triggerType = ref('manual')
-const processImmediately = ref(false)
+const taskCount = ref<number | null>(null)
+const processImmediately = ref(true)
+const showAdvanced = ref(false)
 const formError = ref('')
 const pagination = reactive({ page: 1, page_size: 20, total: 0 })
 
@@ -190,32 +193,49 @@ async function reload() {
   }
 }
 
-async function createRun() {
+function normalizedTaskCount(): number | null {
+  const rawTaskCount = taskCount.value as number | string | null | undefined
+  if (rawTaskCount === null || rawTaskCount === undefined || rawTaskCount === '') {
+    return null
+  }
+
+  const normalized = Number(rawTaskCount)
+  return Number.isFinite(normalized) ? normalized : null
+}
+
+async function createStandardRun() {
+  if (creatingStandardRun.value) return
+
   formError.value = ''
-  if (taskCount.value < 1) {
+  const normalized = normalizedTaskCount()
+  if (showAdvanced.value && normalized !== null && normalized < 0) {
     formError.value = t('benchmark.admin.runs.validation.taskCountLimit')
     return
   }
 
-  const payload: CreateBenchmarkRunRequest = {
-    task_count: taskCount.value,
-    trigger_type: triggerType.value || 'manual',
-    process_immediately: processImmediately.value,
-  }
-  if (targetIds.value.length > 0) {
-    payload.target_ids = [...targetIds.value]
+  let payload: CreateBenchmarkStandardRunRequest | undefined
+  if (showAdvanced.value) {
+    payload = {
+      process_immediately: processImmediately.value,
+    }
+    if (targetIds.value.length > 0) {
+      payload.target_ids = [...targetIds.value]
+    }
+    if (normalized !== null && normalized > 0) {
+      payload.task_count = normalized
+    }
   }
 
-  creating.value = true
+  creatingStandardRun.value = true
   try {
-    const created = await adminAPI.benchmark.createRun(payload)
+    const created = await adminAPI.benchmark.createStandardRun(payload)
     runs.value = [created, ...runs.value.filter((run) => run.id !== created.id)]
     pagination.total += 1
     appStore.showSuccess(t('benchmark.admin.runs.createSuccess', { id: created.id }))
   } catch (error) {
     appStore.showError(error instanceof Error ? error.message : t('benchmark.admin.runs.createError'))
   } finally {
-    creating.value = false
+    creatingStandardRun.value = false
   }
 }
 

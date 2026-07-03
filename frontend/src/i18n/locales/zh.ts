@@ -420,7 +420,11 @@ export default {
         processDue: '处理到期任务',
         process: '处理',
         cancel: '取消',
-        createRun: '创建 Run',
+        standardTitle: '使用标准设定运行',
+        standardDescription: '默认测试所有已启用目标，自动应用标准任务集，并立即处理本次运行。',
+        advancedOptions: '高级选项',
+        hideAdvancedOptions: '收起高级选项',
+        createRun: '运行标准雷达测试',
         createDescription: '选择目标模型与任务数量。',
         loadError: '加载评测运行失败',
         createError: '创建评测运行失败',
@@ -436,13 +440,13 @@ export default {
         emptyDescription: '创建第一个 benchmark run。',
         planSummary: '{targets} 个目标 / {tasks} 个任务 / {results} 个结果',
         fields: {
-          taskCount: '任务数',
+          taskCount: '标准任务数',
           triggerType: '触发类型',
           processImmediately: '创建后立即处理',
           targetIds: '目标',
         },
         validation: {
-          taskCountLimit: '任务数必须大于 0',
+          taskCountLimit: '任务数不能为负数',
         },
         columns: {
           run: 'Run',

@@ -420,7 +420,11 @@ export default {
         processDue: 'Process Due Tasks',
         process: 'Process',
         cancel: 'Cancel',
-        createRun: 'Create Run',
+        standardTitle: 'Run with Standard Settings',
+        standardDescription: 'Tests all enabled targets by default, applies the standard task set, and processes the run immediately.',
+        advancedOptions: 'Advanced Options',
+        hideAdvancedOptions: 'Hide Advanced Options',
+        createRun: 'Run Standard Radar Test',
         createDescription: 'Select target models and task count.',
         loadError: 'Failed to load runs',
         createError: 'Failed to create run',
@@ -436,13 +440,13 @@ export default {
         emptyDescription: 'Create the first benchmark run.',
         planSummary: '{targets} targets / {tasks} tasks / {results} results',
         fields: {
-          taskCount: 'Task Count',
+          taskCount: 'Standard Task Count',
           triggerType: 'Trigger Type',
           processImmediately: 'Process immediately after creation',
           targetIds: 'Targets',
         },
         validation: {
-          taskCountLimit: 'Task count must be greater than 0',
+          taskCountLimit: 'Task count must not be negative',
         },
         columns: {
           run: 'Run',
