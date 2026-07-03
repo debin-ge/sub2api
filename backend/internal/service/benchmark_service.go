@@ -248,6 +248,9 @@ func (s *BenchmarkService) ListTargetScores(ctx context.Context, runID int64) ([
 
 // PreviewRun reports the matrix size for a manual run config without creating it.
 func (s *BenchmarkService) PreviewRun(ctx context.Context, targetIDs []int64, taskCount int) (*BenchmarkRunPreview, error) {
+	if err := validateBenchmarkRunTaskCount(taskCount); err != nil {
+		return nil, err
+	}
 	selection, err := s.resolveRunSelection(ctx, targetIDs, taskCount)
 	if err != nil {
 		return nil, err
@@ -267,6 +270,9 @@ func (s *BenchmarkService) CreateRun(ctx context.Context, input BenchmarkCreateR
 	if !runtime.Enabled {
 		return nil, infraBenchmarkDisabled()
 	}
+	if err := validateBenchmarkRunTaskCount(input.TaskCount); err != nil {
+		return nil, err
+	}
 
 	selection, err := s.resolveRunSelection(ctx, input.TargetIDs, input.TaskCount)
 	if err != nil {
@@ -274,6 +280,13 @@ func (s *BenchmarkService) CreateRun(ctx context.Context, input BenchmarkCreateR
 	}
 
 	return s.createRunFromSelection(ctx, selection, input)
+}
+
+func validateBenchmarkRunTaskCount(taskCount int) error {
+	if taskCount < 0 {
+		return errors.New("task count must not be negative")
+	}
+	return nil
 }
 
 func (s *BenchmarkService) createRunFromSelection(ctx context.Context, selection *benchmarkRunSelection, input BenchmarkCreateRunRequest) (*ent.BenchmarkRun, error) {

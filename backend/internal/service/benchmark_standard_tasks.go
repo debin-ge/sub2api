@@ -155,6 +155,9 @@ func (s *BenchmarkService) CreateStandardRun(ctx context.Context, input Benchmar
 	if !runtime.Enabled {
 		return nil, infraBenchmarkDisabled()
 	}
+	if err := validateBenchmarkRunTaskCount(input.TaskCount); err != nil {
+		return nil, err
+	}
 
 	if _, err := s.EnsureStandardTasks(ctx); err != nil {
 		return nil, err

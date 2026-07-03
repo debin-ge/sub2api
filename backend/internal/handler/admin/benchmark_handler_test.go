@@ -745,6 +745,25 @@ func TestBenchmarkHandlerCreateStandardRunNoStandardTasksReturns400(t *testing.T
 	require.Contains(t, rec.Body.String(), "VALIDATION_ERROR")
 }
 
+func TestBenchmarkHandlerCreateStandardRunNegativeTaskCountReturns400(t *testing.T) {
+	svc := &benchmarkAdminServiceStub{
+		createStandardRunFn: func(ctx context.Context, input service.BenchmarkStandardRunRequest) (*ent.BenchmarkRun, error) {
+			require.False(t, input.ProcessImmediately)
+			require.Equal(t, -1, input.TaskCount)
+			return nil, errors.New("task count must not be negative")
+		},
+	}
+	router := newBenchmarkTestRouter(&BenchmarkHandler{benchmarkService: svc, snapshotService: &benchmarkSnapshotServiceStub{}})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/benchmark/runs/standard", bytes.NewBufferString(`{"task_count":-1,"process_immediately":false}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Contains(t, rec.Body.String(), "VALIDATION_ERROR")
+}
+
 func TestBenchmarkHandlerListRunResults(t *testing.T) {
 	displayName := "Run Snapshot Model"
 	svc := &benchmarkAdminServiceStub{

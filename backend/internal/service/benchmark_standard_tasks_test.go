@@ -314,6 +314,47 @@ func TestBenchmarkServiceCreateStandardRunUsesSelectedTargetsAndAllStandardTasks
 	}
 }
 
+func TestBenchmarkServiceCreateStandardRunRejectsNegativeTaskCount(t *testing.T) {
+	t.Parallel()
+
+	repo := newBenchmarkStandardRepoStub()
+	repo.enabledTargets = []*ent.BenchmarkTarget{{ID: 11, ModelName: "model-a", ChannelID: 101, Enabled: true}}
+	svc := NewBenchmarkService(repo)
+
+	_, err := svc.CreateStandardRun(context.Background(), BenchmarkStandardRunRequest{TaskCount: -1})
+	if err == nil || err.Error() != "task count must not be negative" {
+		t.Fatalf("CreateStandardRun error = %v, want task count must not be negative", err)
+	}
+	if len(repo.createdTasks) != 0 {
+		t.Fatalf("created standard tasks despite invalid task_count: %d", len(repo.createdTasks))
+	}
+	if repo.createRunInput != nil {
+		t.Fatal("CreateStandardRun created a run despite invalid task_count")
+	}
+}
+
+func TestBenchmarkServiceCreateRunRejectsNegativeTaskCount(t *testing.T) {
+	t.Parallel()
+
+	svc := NewBenchmarkService(newBenchmarkStandardRepoStub())
+
+	_, err := svc.CreateRun(context.Background(), BenchmarkCreateRunRequest{TaskCount: -1})
+	if err == nil || err.Error() != "task count must not be negative" {
+		t.Fatalf("CreateRun error = %v, want task count must not be negative", err)
+	}
+}
+
+func TestBenchmarkServicePreviewRunRejectsNegativeTaskCount(t *testing.T) {
+	t.Parallel()
+
+	svc := NewBenchmarkService(newBenchmarkStandardRepoStub())
+
+	_, err := svc.PreviewRun(context.Background(), nil, -1)
+	if err == nil || err.Error() != "task count must not be negative" {
+		t.Fatalf("PreviewRun error = %v, want task count must not be negative", err)
+	}
+}
+
 func TestBenchmarkServiceCreateStandardRunReturnsClearErrorWhenStandardTasksDisabled(t *testing.T) {
 	t.Parallel()
 
