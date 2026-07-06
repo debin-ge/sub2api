@@ -63,6 +63,94 @@ func TestToUserSupportedModels_NilAllowedPlatformsKeepsAll(t *testing.T) {
 	require.Len(t, toUserSupportedModels(src, nil), 2)
 }
 
+func TestFilterPublicGroups_DropsExclusiveGroups(t *testing.T) {
+	channels := []service.AvailableChannel{
+		{
+			Name:   "active-public",
+			Status: service.StatusActive,
+			Groups: []service.AvailableGroupRef{
+				{ID: 1, Name: "public-ant", Platform: "anthropic", IsExclusive: false},
+				{ID: 2, Name: "exclusive-ant", Platform: "anthropic", IsExclusive: true},
+			},
+			SupportedModels: []service.SupportedModel{
+				{Name: "claude-sonnet-4-6", Platform: "anthropic"},
+			},
+		},
+		{
+			Name:   "inactive-public",
+			Status: service.StatusDisabled,
+			Groups: []service.AvailableGroupRef{
+				{ID: 3, Name: "public-openai", Platform: "openai", IsExclusive: false},
+			},
+			SupportedModels: []service.SupportedModel{
+				{Name: "gpt-4o", Platform: "openai"},
+			},
+		},
+		{
+			Name:   "exclusive-only",
+			Status: service.StatusActive,
+			Groups: []service.AvailableGroupRef{
+				{ID: 4, Name: "exclusive-openai", Platform: "openai", IsExclusive: true},
+			},
+			SupportedModels: []service.SupportedModel{
+				{Name: "gpt-4o", Platform: "openai"},
+			},
+		},
+	}
+
+	out := buildPublicAvailableChannels(channels)
+	require.Len(t, out, 1)
+	require.Equal(t, "active-public", out[0].Name)
+	require.Len(t, out[0].Platforms, 1)
+	require.Len(t, out[0].Platforms[0].Groups, 1)
+	require.Equal(t, int64(1), out[0].Platforms[0].Groups[0].ID)
+	require.False(t, out[0].Platforms[0].Groups[0].IsExclusive)
+}
+
+func TestPublicAvailableChannel_FieldWhitelist(t *testing.T) {
+	channels := []service.AvailableChannel{
+		{
+			ID:                 99,
+			Name:               "public-channel",
+			Description:        "safe description",
+			Status:             service.StatusActive,
+			BillingModelSource: "admin_override",
+			RestrictModels:     true,
+			Groups: []service.AvailableGroupRef{
+				{ID: 1, Name: "public-ant", Platform: "anthropic", IsExclusive: false},
+			},
+			SupportedModels: []service.SupportedModel{
+				{
+					Name:     "claude-sonnet-4-6",
+					Platform: "anthropic",
+					Pricing: &service.ChannelModelPricing{
+						BillingMode: service.BillingModeToken,
+					},
+				},
+			},
+		},
+	}
+
+	raw, err := json.Marshal(buildPublicAvailableChannels(channels))
+	require.NoError(t, err)
+	body := string(raw)
+	for _, forbidden := range []string{
+		"api_key",
+		"base_url",
+		"priority",
+		"weight",
+		"status",
+		"billing_model_source",
+		"restrict_models",
+		"admin_override",
+	} {
+		require.NotContains(t, body, forbidden)
+	}
+	require.Contains(t, body, `"name":"public-channel"`)
+	require.Contains(t, body, `"platforms"`)
+	require.Contains(t, body, `"supported_models"`)
+}
+
 func TestUserAvailableChannel_FieldWhitelist(t *testing.T) {
 	// 通过序列化 userAvailableChannel 结构体验证响应形状：
 	// 只有 name / description / platforms；不含管理端字段。

@@ -166,6 +166,48 @@ func (h *AvailableChannelHandler) List(c *gin.Context) {
 	response.Success(c, out)
 }
 
+// ListPublic 列出无需认证即可展示的公开「可用渠道」。
+// GET /api/v1/channels/public
+func (h *AvailableChannelHandler) ListPublic(c *gin.Context) {
+	if !h.featureEnabled(c) {
+		response.Success(c, []userAvailableChannel{})
+		return
+	}
+
+	channels, err := h.channelService.ListAvailable(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	c.Header("Cache-Control", "public, max-age=300")
+	response.Success(c, buildPublicAvailableChannels(channels))
+}
+
+func buildPublicAvailableChannels(channels []service.AvailableChannel) []userAvailableChannel {
+	out := make([]userAvailableChannel, 0, len(channels))
+	for _, ch := range channels {
+		if ch.Status != service.StatusActive {
+			continue
+		}
+		visibleGroups := filterPublicGroups(ch.Groups)
+		if len(visibleGroups) == 0 {
+			continue
+		}
+		sections := buildPlatformSections(ch, visibleGroups)
+		sections = filterSectionsWithModels(sections)
+		if len(sections) == 0 {
+			continue
+		}
+		out = append(out, userAvailableChannel{
+			Name:        ch.Name,
+			Description: ch.Description,
+			Platforms:   sections,
+		})
+	}
+	return out
+}
+
 // buildPlatformSections 把一个渠道按 visibleGroups 的平台集合拆成有序的 section 列表：
 // 每个 section 对应一个平台，只包含该平台的 groups 和 supported_models。
 // 输出按 platform 字母序稳定排序，便于前端等效比较与回归测试。
@@ -202,6 +244,17 @@ func buildPlatformSections(
 	return sections
 }
 
+func filterSectionsWithModels(sections []userChannelPlatformSection) []userChannelPlatformSection {
+	out := make([]userChannelPlatformSection, 0, len(sections))
+	for _, section := range sections {
+		if len(section.Groups) == 0 || len(section.SupportedModels) == 0 {
+			continue
+		}
+		out = append(out, section)
+	}
+	return out
+}
+
 // filterUserVisibleGroups 仅保留用户可访问的分组。
 func filterUserVisibleGroups(
 	groups []service.AvailableGroupRef,
@@ -210,6 +263,25 @@ func filterUserVisibleGroups(
 	visible := make([]userAvailableGroup, 0, len(groups))
 	for _, g := range groups {
 		if _, ok := allowed[g.ID]; !ok {
+			continue
+		}
+		visible = append(visible, userAvailableGroup{
+			ID:               g.ID,
+			Name:             g.Name,
+			Platform:         g.Platform,
+			SubscriptionType: g.SubscriptionType,
+			RateMultiplier:   g.RateMultiplier,
+			IsExclusive:      g.IsExclusive,
+		})
+	}
+	return visible
+}
+
+// filterPublicGroups 仅保留公开分组。
+func filterPublicGroups(groups []service.AvailableGroupRef) []userAvailableGroup {
+	visible := make([]userAvailableGroup, 0, len(groups))
+	for _, g := range groups {
+		if g.IsExclusive {
 			continue
 		}
 		visible = append(visible, userAvailableGroup{
