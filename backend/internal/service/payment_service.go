@@ -237,6 +237,8 @@ type RefundResult struct {
 	Success         bool    `json:"success"`
 	Warning         string  `json:"warning,omitempty"`
 	RequireForce    bool    `json:"require_force,omitempty"`
+	ManualRequired  bool    `json:"manual_required,omitempty"`
+	ManualAction    string  `json:"manual_action,omitempty"`
 	BalanceDeducted float64 `json:"balance_deducted,omitempty"`
 	SubDaysDeducted int     `json:"subscription_days_deducted,omitempty"`
 }

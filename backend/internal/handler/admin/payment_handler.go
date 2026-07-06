@@ -143,6 +143,14 @@ type AdminProcessRefundRequest struct {
 	DeductBalance bool    `json:"deduct_balance"`
 }
 
+type AdminConfirmManualRefundRequest struct {
+	Amount           float64 `json:"amount"`
+	Reason           string  `json:"reason"`
+	ExternalRefundID string  `json:"external_refund_id"`
+	Force            bool    `json:"force"`
+	DeductBalance    bool    `json:"deduct_balance"`
+}
+
 // ProcessRefund processes a refund for an order (admin).
 // POST /api/v1/admin/payment/orders/:id/refund
 func (h *PaymentHandler) ProcessRefund(c *gin.Context) {
@@ -168,6 +176,28 @@ func (h *PaymentHandler) ProcessRefund(c *gin.Context) {
 	}
 
 	result, err := h.paymentService.ExecuteRefund(c.Request.Context(), plan)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, result)
+}
+
+// ConfirmManualRefund confirms a manually completed gateway refund locally.
+// POST /api/v1/admin/payment/orders/:id/manual-refund/confirm
+func (h *PaymentHandler) ConfirmManualRefund(c *gin.Context) {
+	orderID, ok := parseIDParam(c, "id")
+	if !ok {
+		return
+	}
+
+	var req AdminConfirmManualRefundRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+
+	result, err := h.paymentService.ConfirmManualRefund(c.Request.Context(), orderID, req.Amount, req.Reason, req.ExternalRefundID, req.Force, req.DeductBalance)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

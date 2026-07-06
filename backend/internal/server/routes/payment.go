@@ -85,6 +85,7 @@ func RegisterPaymentRoutes(
 			adminOrders.POST("/:id/cancel", adminPaymentHandler.CancelOrder)
 			adminOrders.POST("/:id/retry", adminPaymentHandler.RetryFulfillment)
 			adminOrders.POST("/:id/refund", adminPaymentHandler.ProcessRefund)
+			adminOrders.POST("/:id/manual-refund/confirm", adminPaymentHandler.ConfirmManualRefund)
 		}
 
 		// Subscription Plans

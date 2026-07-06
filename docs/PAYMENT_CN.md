@@ -161,7 +161,11 @@ Wise 接入采用 hosted redirect + profile-level webhook subscription + 自动�
 
 Wise 自动创建 webhook subscription 还需要当前 Sub2API 实例的公网 HTTPS 基础地址。请在系统设置中配置 **API 端点地址** 或 **前端基础 URL**，也可以在部署环境中设置 `API_BASE_URL`、`FRONTEND_URL`、`SERVER_FRONTEND_URL`、`SITE_URL`、`BASE_URL` 或 `APP_URL`。系统会向 Wise 注册 `<base-url>/api/v1/payment/webhook/wise`。
 
-v1 仅自动入账 Wise balance / bank transfer 中到账金额等于订单金额的交易。card、Apple Pay、Google Pay 等可能扣除收款手续费的交易不会自动发放余额或订阅，系统会进入人工审核。
+v1 仅自动入账 Wise balance / bank transfer 中到账金额等于订单金额的交易。card、Apple Pay、Google Pay 等可能扣除收款手续费的交易不会自动发放余额或订阅，系统会进入人工审核。Wise 实付币种与订单 / provider 币种不一致时会保留 `currency_mismatch`，不会自动换汇。
+
+Wise 退款为人工流程。管理员发起 Wise 退款时，系统不会把网关退款伪装成成功，而是提示需要先在 Wise 后台人工退款。操作员在 Wise 完成退款后，需要回到 Sub2API 填写 Wise 退款参考并确认，本地才会更新退款状态、按需执行余额 / 订阅扣减，并写入审计日志。
+
+Wise 对账会把明确引用本地订单且 Wise 侧已失败或已取消的 activity 映射为本地失败 / 取消。金额不一致、手续费扣减、元数据不一致、币种不一致仍进入人工审核，不会自动入账。
 
 | 参数 | 说明 | 必填 |
 |------|------|------|
@@ -238,12 +242,14 @@ v1 仅自动入账 Wise balance / bank transfer 中到账金额等于订单金�
 3. Wise 创建订阅时会发送 test notification；系统会快速 ACK，但不会触发对账或订单入账。
 4. 正式 webhook 到达后，系统只在请求内完成快速验签、幂等记录和异步对账触发，然后立即 ACK；完整对账由后台任务查询 Wise statement/activity 完成。
 
+禁用或删除 Wise provider 时，系统会先调用 Wise API 删除远端 webhook subscription。Wise 返回 404/410 时视为已删除；其他 Wise API 错误会阻止本地禁用 / 删除，避免远端继续投递到已禁用 provider 后产生拒签和错误日志。启用状态下 Wise profile/API base 变化时，系统会先创建新 subscription，再删除旧的远端 subscription。
+
 ### 注意事项
 
 - 回调地址必须是 **HTTPS**（Stripe 强制要求，Wise 要求公网 HTTPS，其他服务商强烈推荐）
 - 确保服务器防火墙允许支付平台的回调请求
 - 系统会自动进行签名验证，防止伪造回调
-- 支付成功并通过服务商验签 / 对账后自动完成余额充值；Wise v1 只自动入账到账金额等于订单金额的 Wise balance / bank transfer，手续费扣减、金额不一致或 card / Apple Pay / Google Pay 等交易需要人工审核
+- 支付成功并通过服务商验签 / 对账后自动完成余额充值；Wise v1 只自动入账到账金额等于订单金额的 Wise balance / bank transfer，手续费扣减、金额不一致、币种不一致或 card / Apple Pay / Google Pay 等交易需要人工审核
 
 ---
 

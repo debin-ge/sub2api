@@ -13,6 +13,7 @@ import (
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/ent/paymentproviderinstance"
 	"github.com/Wei-Shaw/sub2api/ent/paymentproviderwebhooksubscription"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
@@ -759,7 +760,7 @@ func TestWiseExpiredOrdersInsideReconcileWindowProtectProviderInstance(t *testin
 	svc := &PaymentConfigService{
 		entClient:     client,
 		encryptionKey: []byte("0123456789abcdef0123456789abcdef"),
-		wiseSubscriptionClientFactory: func(map[string]string) wiseProfileSubscriptionCreator {
+		wiseSubscriptionClientFactory: func(map[string]string) wiseProfileSubscriptionClient {
 			return &wiseSubscriptionCreatorStub{}
 		},
 		webhookBaseURLResolver: func(context.Context) string {
@@ -804,7 +805,7 @@ func TestWiseCancelledOrdersInsideReconcileWindowProtectProviderInstance(t *test
 	svc := &PaymentConfigService{
 		entClient:     client,
 		encryptionKey: []byte("0123456789abcdef0123456789abcdef"),
-		wiseSubscriptionClientFactory: func(map[string]string) wiseProfileSubscriptionCreator {
+		wiseSubscriptionClientFactory: func(map[string]string) wiseProfileSubscriptionClient {
 			return &wiseSubscriptionCreatorStub{}
 		},
 		webhookBaseURLResolver: func(context.Context) string {
@@ -838,7 +839,7 @@ func TestWiseProviderConfigProtectionUsesConfiguredReconcileWindow(t *testing.T)
 	svc := &PaymentConfigService{
 		entClient:     client,
 		encryptionKey: []byte("0123456789abcdef0123456789abcdef"),
-		wiseSubscriptionClientFactory: func(map[string]string) wiseProfileSubscriptionCreator {
+		wiseSubscriptionClientFactory: func(map[string]string) wiseProfileSubscriptionClient {
 			return &wiseSubscriptionCreatorStub{}
 		},
 		webhookBaseURLResolver: func(context.Context) string {
@@ -873,7 +874,7 @@ func TestWiseExpiredOrdersOutsideReconcileWindowDoNotProtectProviderInstance(t *
 	svc := &PaymentConfigService{
 		entClient:     client,
 		encryptionKey: []byte("0123456789abcdef0123456789abcdef"),
-		wiseSubscriptionClientFactory: func(map[string]string) wiseProfileSubscriptionCreator {
+		wiseSubscriptionClientFactory: func(map[string]string) wiseProfileSubscriptionClient {
 			return &wiseSubscriptionCreatorStub{}
 		},
 		webhookBaseURLResolver: func(context.Context) string {
@@ -905,6 +906,79 @@ func TestWiseExpiredOrdersOutsideReconcileWindowDoNotProtectProviderInstance(t *
 
 	err = svc.DeleteProviderInstance(ctx, instance.ID)
 	require.NoError(t, err)
+}
+
+func TestUpdateWiseProviderDisableDeletesRemoteSubscription(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	creator := &wiseSubscriptionCreatorStub{}
+	svc := NewPaymentConfigService(client, &paymentConfigSettingRepoStub{}, nil)
+	svc.wiseSubscriptionClientFactory = func(map[string]string) wiseProfileSubscriptionClient {
+		return creator
+	}
+	svc.webhookBaseURLResolver = func(context.Context) string {
+		return "https://api.example.com"
+	}
+
+	instance, err := svc.CreateProviderInstance(ctx, CreateProviderInstanceRequest{
+		ProviderKey:    payment.TypeWise,
+		Name:           "wise-disable-delete-remote",
+		Config:         validWiseProviderConfigForConfigService(t),
+		SupportedTypes: []string{payment.TypeWise},
+		Enabled:        true,
+	})
+	require.NoError(t, err)
+	err = client.PaymentProviderWebhookSubscription.Update().
+		Where(paymentproviderwebhooksubscription.ProviderInstanceIDEQ(instance.ID)).
+		SetExternalSubscriptionID("sub-disable-123").
+		Exec(ctx)
+	require.NoError(t, err)
+	disabled := false
+
+	saved, err := svc.UpdateProviderInstance(ctx, instance.ID, UpdateProviderInstanceRequest{Enabled: &disabled})
+
+	require.NoError(t, err)
+	require.False(t, saved.Enabled)
+	require.Equal(t, []string{"profile-123:sub-disable-123"}, creator.deleted)
+	sub, err := client.PaymentProviderWebhookSubscription.Query().
+		Where(paymentproviderwebhooksubscription.ProviderInstanceIDEQ(instance.ID)).
+		Only(ctx)
+	require.NoError(t, err)
+	require.Equal(t, wiseWebhookSubscriptionStatusDeleted, sub.Status)
+}
+
+func TestDeleteWiseProviderDeletesRemoteSubscriptionBeforeLocalDelete(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	creator := &wiseSubscriptionCreatorStub{}
+	svc := NewPaymentConfigService(client, &paymentConfigSettingRepoStub{}, nil)
+	svc.wiseSubscriptionClientFactory = func(map[string]string) wiseProfileSubscriptionClient {
+		return creator
+	}
+
+	instance, err := svc.CreateProviderInstance(ctx, CreateProviderInstanceRequest{
+		ProviderKey:    payment.TypeWise,
+		Name:           "wise-delete-remote",
+		Config:         validWiseProviderConfigForConfigService(t),
+		SupportedTypes: []string{payment.TypeWise},
+		Enabled:        false,
+	})
+	require.NoError(t, err)
+	createActiveWiseWebhookSubscriptionForTest(t, ctx, client, instance.ID, "sub-delete-123")
+
+	err = svc.DeleteProviderInstance(ctx, instance.ID)
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"profile-123:sub-delete-123"}, creator.deleted)
+	exists, err := client.PaymentProviderInstance.Query().
+		Where(paymentproviderinstance.IDEQ(instance.ID)).
+		Exist(ctx)
+	require.NoError(t, err)
+	require.False(t, exists)
 }
 
 func createPendingProviderConfigOrder(t *testing.T, ctx context.Context, client *dbent.Client, instance *dbent.PaymentProviderInstance) {

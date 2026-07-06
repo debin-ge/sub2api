@@ -57,18 +57,20 @@ const (
 
 // Payment notification status values.
 const (
-	NotificationStatusSuccess = "success"
-	NotificationStatusPaid    = "paid"
+	NotificationStatusSuccess  = "success"
+	NotificationStatusPaid     = "paid"
+	NotificationStatusVerified = "verified"
 )
 
 // Provider-level status constants returned by provider implementations
 // to the service layer (lowercase, distinct from OrderStatus uppercase constants).
 const (
-	ProviderStatusPending  = "pending"
-	ProviderStatusPaid     = "paid"
-	ProviderStatusSuccess  = "success"
-	ProviderStatusFailed   = "failed"
-	ProviderStatusRefunded = "refunded"
+	ProviderStatusPending   = "pending"
+	ProviderStatusPaid      = "paid"
+	ProviderStatusSuccess   = "success"
+	ProviderStatusFailed    = "failed"
+	ProviderStatusRefunded  = "refunded"
+	ProviderStatusCancelled = "cancelled"
 )
 
 // DefaultLoadBalanceStrategy is the default load-balancing strategy

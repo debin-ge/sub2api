@@ -185,16 +185,25 @@ func (s *PaymentService) HandleWiseWebhookFast(ctx context.Context, rawBody stri
 		if candidate == nil || candidate.provider == nil {
 			continue
 		}
-		if _, err := candidate.provider.VerifyNotification(ctx, rawBody, headers); err != nil {
-			lastErr = err
-			continue
-		}
+			notification, err := candidate.provider.VerifyNotification(ctx, rawBody, headers)
+			if err != nil {
+				lastErr = err
+				continue
+			}
 
-		envelope := wiseWebhookEnvelopeFromBody(rawBody)
-		deliveryID := wiseWebhookHeaderValue(headers, "x-delivery-id")
-		if deliveryID == "" {
-			return nil, fmt.Errorf("wise webhook delivery id is required")
-		}
+			envelope := wiseWebhookEnvelopeFromBody(rawBody)
+			if notification != nil && notification.Metadata != nil {
+				if eventType := strings.TrimSpace(notification.Metadata["event_type"]); eventType != "" {
+					envelope.EventType = eventType
+				}
+			}
+			deliveryID := wiseWebhookHeaderValue(headers, "x-delivery-id")
+			if deliveryID == "" && notification != nil && notification.Metadata != nil {
+				deliveryID = strings.TrimSpace(notification.Metadata["delivery_id"])
+			}
+			if deliveryID == "" {
+				return nil, fmt.Errorf("wise webhook delivery id is required")
+			}
 		testNotification := strings.EqualFold(wiseWebhookHeaderValue(headers, "x-test-notification"), "true")
 		result := &WiseWebhookHandleResult{
 			DeliveryID:       deliveryID,
@@ -708,6 +717,27 @@ func (s *PaymentService) handleWiseQueryOrderResponse(ctx context.Context, order
 			AutoFulfill: false,
 			OrderID:     order.OutTradeNo,
 			Reason:      "empty_provider_response",
+		}, nil
+	}
+
+	if resp.Status == payment.ProviderStatusFailed || resp.Status == payment.ProviderStatusCancelled {
+		reason := strings.TrimSpace(resp.Metadata["reconcile_reason"])
+		if reason == "" {
+			reason = "provider_status_" + strings.TrimSpace(resp.Status)
+		}
+		status := OrderStatusFailed
+		auditAction := "PAYMENT_PROVIDER_FAILED"
+		if resp.Status == payment.ProviderStatusCancelled {
+			status = OrderStatusCancelled
+			auditAction = "PAYMENT_PROVIDER_CANCELLED"
+		}
+		s.markProviderTerminal(ctx, order, payment.TypeWise, resp, status, auditAction)
+		return &WiseWebhookReconcileResult{
+			Matched:     wiseReconcileDecisionReferencesTransaction(strings.TrimSpace(resp.Metadata["reconcile_decision"])),
+			AutoFulfill: false,
+			OrderID:     order.OutTradeNo,
+			TradeNo:     resp.TradeNo,
+			Reason:      reason,
 		}, nil
 	}
 

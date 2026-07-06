@@ -15,6 +15,7 @@ import (
 const (
 	wiseWebhookSubscriptionStatusActive  = "active"
 	wiseWebhookSubscriptionStatusFailed  = "failed"
+	wiseWebhookSubscriptionStatusDeleted = "deleted"
 	wiseWebhookSubscriptionStatusUnknown = "unknown"
 
 	wiseWebhookSubscriptionTrigger         = "balances#credit"
@@ -23,8 +24,9 @@ const (
 	wiseWebhookSubscriptionUnknownURL      = "unknown"
 )
 
-type wiseProfileSubscriptionCreator interface {
+type wiseProfileSubscriptionClient interface {
 	CreateProfileSubscription(ctx context.Context, req provider.WiseProfileSubscriptionRequest) (*provider.WiseProfileSubscriptionResponse, error)
+	DeleteProfileSubscription(ctx context.Context, profileID string, subscriptionID string) error
 }
 
 func (s *PaymentConfigService) ensureWiseWebhookSubscription(ctx context.Context, inst *dbent.PaymentProviderInstance, config map[string]string) error {
@@ -188,6 +190,124 @@ func (s *PaymentConfigService) invalidateWiseWebhookSubscription(ctx context.Con
 		ClearLastError().
 		Save(ctx)
 	return err
+}
+
+func (s *PaymentConfigService) deleteWiseWebhookSubscription(ctx context.Context, inst *dbent.PaymentProviderInstance, config map[string]string) error {
+	if s == nil || s.entClient == nil || inst == nil || inst.ProviderKey != payment.TypeWise {
+		return nil
+	}
+	rows, err := s.entClient.PaymentProviderWebhookSubscription.Query().
+		Where(
+			paymentproviderwebhooksubscription.ProviderInstanceIDEQ(inst.ID),
+			paymentproviderwebhooksubscription.ProviderKeyEQ(payment.TypeWise),
+			paymentproviderwebhooksubscription.TriggerOnEQ(wiseWebhookSubscriptionTrigger),
+			paymentproviderwebhooksubscription.ExternalSubscriptionIDNEQ(""),
+			paymentproviderwebhooksubscription.StatusNEQ(wiseWebhookSubscriptionStatusDeleted),
+		).
+		All(ctx)
+	if err != nil {
+		return fmt.Errorf("wise webhook subscription delete lookup: %w", err)
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+
+	profileID := providerConfigFieldValue(config, "profileId")
+	if strings.TrimSpace(profileID) == "" {
+		return fmt.Errorf("wise webhook subscription delete failed: missing profileId")
+	}
+	clientFactory := s.wiseSubscriptionClientFactory
+	if clientFactory == nil {
+		clientFactory = defaultWiseSubscriptionClientFactory
+	}
+	remoteClient := clientFactory(config)
+	if remoteClient == nil {
+		return fmt.Errorf("wise webhook subscription delete failed: subscription client is required")
+	}
+
+	for _, row := range rows {
+		externalID := strings.TrimSpace(row.ExternalSubscriptionID)
+		if externalID == "" {
+			continue
+		}
+		if err := remoteClient.DeleteProfileSubscription(ctx, profileID, externalID); err != nil {
+			errText := sanitizeWiseWebhookSubscriptionError(err, config)
+			_ = s.entClient.PaymentProviderWebhookSubscription.UpdateOneID(row.ID).
+				SetStatus(wiseWebhookSubscriptionStatusFailed).
+				SetLastError(errText).
+				SetSyncedAt(time.Now()).
+				Exec(ctx)
+			return fmt.Errorf("wise webhook subscription delete failed: %s", errText)
+		}
+		if err := s.entClient.PaymentProviderWebhookSubscription.UpdateOneID(row.ID).
+			SetStatus(wiseWebhookSubscriptionStatusDeleted).
+			ClearLastError().
+			SetSyncedAt(time.Now()).
+			Exec(ctx); err != nil {
+			return fmt.Errorf("wise webhook subscription mark deleted: %w", err)
+		}
+	}
+	return nil
+}
+
+func (s *PaymentConfigService) deleteWiseWebhookSubscriptionIDs(ctx context.Context, inst *dbent.PaymentProviderInstance, config map[string]string, externalIDs []string) error {
+	if s == nil || inst == nil || inst.ProviderKey != payment.TypeWise || len(externalIDs) == 0 {
+		return nil
+	}
+	profileID := providerConfigFieldValue(config, "profileId")
+	if strings.TrimSpace(profileID) == "" {
+		return fmt.Errorf("wise webhook subscription delete failed: missing profileId")
+	}
+	clientFactory := s.wiseSubscriptionClientFactory
+	if clientFactory == nil {
+		clientFactory = defaultWiseSubscriptionClientFactory
+	}
+	remoteClient := clientFactory(config)
+	if remoteClient == nil {
+		return fmt.Errorf("wise webhook subscription delete failed: subscription client is required")
+	}
+
+	seen := make(map[string]struct{}, len(externalIDs))
+	for _, externalID := range externalIDs {
+		externalID = strings.TrimSpace(externalID)
+		if externalID == "" {
+			continue
+		}
+		if _, ok := seen[externalID]; ok {
+			continue
+		}
+		seen[externalID] = struct{}{}
+		if err := remoteClient.DeleteProfileSubscription(ctx, profileID, externalID); err != nil {
+			errText := sanitizeWiseWebhookSubscriptionError(err, config)
+			return fmt.Errorf("wise webhook subscription delete failed: %s", errText)
+		}
+	}
+	return nil
+}
+
+func (s *PaymentConfigService) wiseWebhookSubscriptionExternalIDs(ctx context.Context, providerInstanceID int64) ([]string, error) {
+	if s == nil || s.entClient == nil || providerInstanceID <= 0 {
+		return nil, nil
+	}
+	rows, err := s.entClient.PaymentProviderWebhookSubscription.Query().
+		Where(
+			paymentproviderwebhooksubscription.ProviderInstanceIDEQ(providerInstanceID),
+			paymentproviderwebhooksubscription.ProviderKeyEQ(payment.TypeWise),
+			paymentproviderwebhooksubscription.TriggerOnEQ(wiseWebhookSubscriptionTrigger),
+			paymentproviderwebhooksubscription.ExternalSubscriptionIDNEQ(""),
+			paymentproviderwebhooksubscription.StatusNEQ(wiseWebhookSubscriptionStatusDeleted),
+		).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(rows))
+	for _, row := range rows {
+		if externalID := strings.TrimSpace(row.ExternalSubscriptionID); externalID != "" {
+			ids = append(ids, externalID)
+		}
+	}
+	return ids, nil
 }
 
 func (s *PaymentConfigService) persistWiseWebhookSubscriptionFailure(ctx context.Context, inst *dbent.PaymentProviderInstance, deliveryURL, errText string, config map[string]string) error {

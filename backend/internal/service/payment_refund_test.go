@@ -186,6 +186,60 @@ func TestGwRefundRejectsAlipayMerchantIdentitySnapshotMismatch(t *testing.T) {
 	require.ErrorContains(t, err, "alipay app_id mismatch")
 }
 
+func TestExecuteRefundReturnsManualRequiredForWiseWithoutMarkingRefunded(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	svc := &PaymentService{
+		entClient:    client,
+		loadBalancer: newWebhookProviderTestLoadBalancer(client),
+	}
+	order := createWiseRefundablePaymentOrder(t, ctx, client)
+
+	plan, early, err := svc.PrepareRefund(ctx, order.ID, order.Amount, "manual wise refund", false, false)
+	require.NoError(t, err)
+	require.Nil(t, early)
+
+	result, err := svc.ExecuteRefund(ctx, plan)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, result.Success)
+	require.True(t, result.ManualRequired)
+	require.Equal(t, "complete_refund_in_wise_dashboard_then_confirm_locally", result.ManualAction)
+	require.Contains(t, result.Warning, "manual refund required")
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusRefunding, reloaded.Status)
+	require.True(t, svc.hasAuditLog(ctx, order.ID, "WISE_MANUAL_REFUND_REQUIRED"))
+}
+
+func TestConfirmManualRefundMarksWiseRefundingOrderRefunded(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	svc := &PaymentService{
+		entClient:    client,
+		loadBalancer: newWebhookProviderTestLoadBalancer(client),
+	}
+	order := createWiseRefundablePaymentOrder(t, ctx, client)
+	_, err := client.PaymentOrder.UpdateOneID(order.ID).SetStatus(OrderStatusRefunding).Save(ctx)
+	require.NoError(t, err)
+
+	result, err := svc.ConfirmManualRefund(ctx, order.ID, order.Amount, "confirmed wise refund", "wise-refund-123", false, false)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.Success)
+	require.False(t, result.ManualRequired)
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusRefunded, reloaded.Status)
+	require.InDelta(t, order.Amount, reloaded.RefundAmount, 1e-9)
+	require.Equal(t, "confirmed wise refund", *reloaded.RefundReason)
+	require.True(t, svc.hasAuditLog(ctx, order.ID, "WISE_MANUAL_REFUND_CONFIRMED"))
+}
+
 func TestCalculateGatewayRefundAmountUsesCurrencyPrecision(t *testing.T) {
 	require.InDelta(t, 6.173, calculateGatewayRefundAmount(100, 12.345, 50, "KWD"), 1e-12)
 	require.InDelta(t, 12.345, calculateGatewayRefundAmount(100, 12.345, 100, "KWD"), 1e-12)
@@ -207,4 +261,67 @@ func TestValidateRefundProviderResponseAcceptsPending(t *testing.T) {
 	require.NoError(t, validateRefundProviderResponse(&payment.RefundResponse{Status: payment.ProviderStatusSuccess}))
 	require.Error(t, validateRefundProviderResponse(&payment.RefundResponse{Status: payment.ProviderStatusFailed}))
 	require.Error(t, validateRefundProviderResponse(nil))
+}
+
+func createWiseRefundablePaymentOrder(t *testing.T, ctx context.Context, client *dbent.Client) *dbent.PaymentOrder {
+	t.Helper()
+
+	user, err := client.User.Create().
+		SetEmail("wise-refund@example.com").
+		SetPasswordHash("hash").
+		SetUsername("wise-refund-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	config := map[string]string{
+		"quickPayBaseUrl":    "https://wise.com/pay/business/account",
+		"apiBase":            "https://api.wise.test",
+		"apiToken":           "token-123",
+		"profileId":          "profile-123",
+		"balanceId":          "balance-123",
+		"currency":           "USD",
+		"settlementStrategy": "exact_only",
+	}
+	inst, err := client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeWise).
+		SetName("wise-refund-instance").
+		SetConfig(encryptWebhookProviderConfig(t, config)).
+		SetSupportedTypes(payment.TypeWise).
+		SetEnabled(true).
+		SetRefundEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+
+	instID := strconv.FormatInt(inst.ID, 10)
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(42).
+		SetPayAmount(42).
+		SetFeeRate(0).
+		SetRechargeCode("WISE-REFUND-ORDER").
+		SetOutTradeNo("sub2_wise_refund_order").
+		SetPaymentType(payment.TypeWise).
+		SetPaymentTradeNo("wise-transaction-123").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusCompleted).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetPaidAt(time.Now()).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		SetProviderInstanceID(instID).
+		SetProviderKey(payment.TypeWise).
+		SetProviderSnapshot(map[string]any{
+			"schema_version":       2,
+			"provider_instance_id": instID,
+			"provider_key":         payment.TypeWise,
+			"merchant_id":          "profile-123",
+			"balance_id":           "balance-123",
+			"currency":             "USD",
+			"settlement_strategy":  "exact_only",
+		}).
+		Save(ctx)
+	require.NoError(t, err)
+	return order
 }
