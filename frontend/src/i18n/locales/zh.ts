@@ -1,4 +1,52 @@
 export default {
+  plaza: {
+    title: '模型广场',
+    header: {
+      label: '模型广场',
+      dashboard: '控制台',
+      register: '注册',
+    },
+    hero: {
+      eyebrow: '公开模型目录',
+      title: '模型广场',
+      subtitle: '免登录浏览公开模型，比较人民币参考价格，并查看充值后的价值提升。',
+    },
+    metrics: {
+      models: '模型',
+      platforms: '平台',
+      boost: '充值价值提升',
+    },
+    filters: {
+      search: '搜索模型',
+      searchPlaceholder: '搜索模型名或展示名',
+      platform: '平台',
+      allPlatforms: '全部平台',
+      sort: '排序',
+      sortDefault: '名称',
+      sortInputAsc: '输入价格从低到高',
+      sortInputDesc: '输入价格从高到低',
+    },
+    footer: {
+      scaleNote: 'Token 价格默认按每 100 万 tokens 展示，按次计费会单独标注。',
+      referenceRateDisclaimer: '人民币金额仅基于公开设置估算展示，不影响后端实际计费。',
+      registerCta: '创建账号',
+      rechargeCta: '充值',
+    },
+    empty: {
+      title: '暂无公开模型',
+      subtitle: '发布可用渠道后，公开模型数据会展示在这里。',
+      filteredTitle: '没有匹配的模型',
+      filteredSubtitle: '请尝试其他平台、关键词或排序方式。',
+    },
+    unavailable: {
+      title: '模型广场暂不可用',
+      subtitle: '当前部署未开启公开可用渠道浏览。',
+    },
+    error: {
+      title: '模型广场加载失败',
+      subtitle: '请刷新页面或稍后重试。',
+    },
+  },
   // Home Page
   home: {
     viewDocs: '查看文档',

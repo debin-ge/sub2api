@@ -1,4 +1,52 @@
 export default {
+  plaza: {
+    title: 'Model Plaza',
+    header: {
+      label: 'Model Plaza',
+      dashboard: 'Dashboard',
+      register: 'Register',
+    },
+    hero: {
+      eyebrow: 'Public model catalog',
+      title: 'Model Plaza',
+      subtitle: 'Browse public models, compare reference CNY rates, and see recharge-adjusted value before you sign in.',
+    },
+    metrics: {
+      models: 'Models',
+      platforms: 'Platforms',
+      boost: 'Recharge value boost',
+    },
+    filters: {
+      search: 'Search models',
+      searchPlaceholder: 'Search model or display name',
+      platform: 'Platform',
+      allPlatforms: 'All platforms',
+      sort: 'Sort',
+      sortDefault: 'Name',
+      sortInputAsc: 'Input price low to high',
+      sortInputDesc: 'Input price high to low',
+    },
+    footer: {
+      scaleNote: 'Token prices are displayed per 1M tokens unless otherwise noted.',
+      referenceRateDisclaimer: 'CNY amounts are reference estimates based on public settings and do not change backend billing.',
+      registerCta: 'Create account',
+      rechargeCta: 'Recharge',
+    },
+    empty: {
+      title: 'No public models yet',
+      subtitle: 'Public model data will appear here after available channels are published.',
+      filteredTitle: 'No models match your filters',
+      filteredSubtitle: 'Try another platform, search term, or sort option.',
+    },
+    unavailable: {
+      title: 'Model Plaza is unavailable',
+      subtitle: 'Public available-channel browsing is not enabled for this deployment.',
+    },
+    error: {
+      title: 'Could not load Model Plaza',
+      subtitle: 'Refresh the page or try again later.',
+    },
+  },
   // Home Page
   home: {
     viewDocs: 'View Documentation',
