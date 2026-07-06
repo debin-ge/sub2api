@@ -228,9 +228,9 @@ type SystemSettings struct {
 	AllowUserViewErrorRequests bool
 
 	// Reseller 子站配置
-	ResellerEnabled                bool
-	ResellerUpstreamEndpoint       string
-	ResellerUpstreamAPIKey         string
+	ResellerEnabled                  bool
+	ResellerUpstreamEndpoint         string
+	ResellerUpstreamAPIKey           string
 	ResellerUpstreamAPIKeyConfigured bool
 }
 
@@ -271,19 +271,22 @@ type PublicSettings struct {
 	CustomMenuItems             string // JSON array of custom menu items
 	CustomEndpoints             string // JSON array of custom endpoints
 
-	LinuxDoOAuthEnabled      bool
-	DingTalkOAuthEnabled     bool
-	WeChatOAuthEnabled       bool
-	WeChatOAuthOpenEnabled   bool
-	WeChatOAuthMPEnabled     bool
-	WeChatOAuthMobileEnabled bool
-	BackendModeEnabled       bool
-	PaymentEnabled           bool
-	OIDCOAuthEnabled         bool
-	OIDCOAuthProviderName    string
-	GitHubOAuthEnabled       bool
-	GoogleOAuthEnabled       bool
-	Version                  string
+	LinuxDoOAuthEnabled              bool
+	DingTalkOAuthEnabled             bool
+	WeChatOAuthEnabled               bool
+	WeChatOAuthOpenEnabled           bool
+	WeChatOAuthMPEnabled             bool
+	WeChatOAuthMobileEnabled         bool
+	BackendModeEnabled               bool
+	PaymentEnabled                   bool
+	PaymentBalanceRechargeMultiplier float64
+	PaymentCnyUsdRate                float64
+	PaymentBalanceDisabled           bool
+	OIDCOAuthEnabled                 bool
+	OIDCOAuthProviderName            string
+	GitHubOAuthEnabled               bool
+	GoogleOAuthEnabled               bool
+	Version                          string
 
 	BalanceLowNotifyEnabled     bool
 	AccountQuotaNotifyEnabled   bool

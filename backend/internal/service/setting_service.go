@@ -162,6 +162,7 @@ const openAIQuotaAutoPauseSettingsErrorTTL = 5 * time.Second
 const openAIQuotaAutoPauseSettingsDBTimeout = 5 * time.Second
 
 const openAIQuotaAutoPauseSettingsRefreshKey = "openai_quota_auto_pause_settings"
+const defaultPaymentCnyUsdRate = 6.8
 
 // DefaultSubscriptionGroupReader validates group references used by default subscriptions.
 type DefaultSubscriptionGroupReader interface {
@@ -744,6 +745,9 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyWeChatConnectFrontendRedirectURL,
 		SettingKeyBackendModeEnabled,
 		SettingPaymentEnabled,
+		SettingBalanceRechargeMult,
+		SettingPaymentCnyUsdRate,
+		SettingBalancePayDisabled,
 		SettingKeyOIDCConnectEnabled,
 		SettingKeyOIDCConnectProviderName,
 		SettingKeyGitHubOAuthEnabled,
@@ -808,6 +812,12 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		settings[SettingKeyTableDefaultPageSize],
 		settings[SettingKeyTablePageSizeOptions],
 	)
+	paymentBalanceRechargeMultiplier := normalizeBalanceRechargeMultiplier(
+		pcParseFloat(settings[SettingBalanceRechargeMult], defaultBalanceRechargeMultiplier),
+	)
+	paymentCnyUsdRate := normalizePaymentCnyUsdRate(
+		pcParseFloat(settings[SettingPaymentCnyUsdRate], defaultPaymentCnyUsdRate),
+	)
 	loginAgreementDocuments := parseLoginAgreementDocuments(settings[SettingKeyLoginAgreementDocuments])
 	loginAgreementUpdatedAt := strings.TrimSpace(settings[SettingKeyLoginAgreementUpdatedAt])
 	if loginAgreementUpdatedAt == "" {
@@ -857,6 +867,9 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		WeChatOAuthMobileEnabled:         weChatMobileEnabled,
 		BackendModeEnabled:               settings[SettingKeyBackendModeEnabled] == "true",
 		PaymentEnabled:                   settings[SettingPaymentEnabled] == "true",
+		PaymentBalanceRechargeMultiplier: paymentBalanceRechargeMultiplier,
+		PaymentCnyUsdRate:                paymentCnyUsdRate,
+		PaymentBalanceDisabled:           settings[SettingBalancePayDisabled] == "true",
 		OIDCOAuthEnabled:                 oidcEnabled,
 		OIDCOAuthProviderName:            oidcProviderName,
 		GitHubOAuthEnabled:               gitHubEnabled,
@@ -877,6 +890,13 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 
 		AllowUserViewErrorRequests: settings[SettingKeyAllowUserViewErrorRequests] == "true",
 	}, nil
+}
+
+func normalizePaymentCnyUsdRate(rate float64) float64 {
+	if math.IsNaN(rate) || math.IsInf(rate, 0) || rate <= 0 {
+		return defaultPaymentCnyUsdRate
+	}
+	return rate
 }
 
 // channelMonitorIntervalMin / channelMonitorIntervalMax bound the default interval
@@ -1175,6 +1195,9 @@ type PublicSettingsInjectionPayload struct {
 	GoogleOAuthEnabled               bool                     `json:"google_oauth_enabled"`
 	BackendModeEnabled               bool                     `json:"backend_mode_enabled"`
 	PaymentEnabled                   bool                     `json:"payment_enabled"`
+	PaymentBalanceRechargeMultiplier float64                  `json:"payment_balance_recharge_multiplier"`
+	PaymentCnyUsdRate                float64                  `json:"payment_cny_usd_rate"`
+	PaymentBalanceDisabled           bool                     `json:"payment_balance_disabled"`
 	Version                          string                   `json:"version"`
 	BalanceLowNotifyEnabled          bool                     `json:"balance_low_notify_enabled"`
 	AccountQuotaNotifyEnabled        bool                     `json:"account_quota_notify_enabled"`
@@ -1241,6 +1264,9 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		GoogleOAuthEnabled:               settings.GoogleOAuthEnabled,
 		BackendModeEnabled:               settings.BackendModeEnabled,
 		PaymentEnabled:                   settings.PaymentEnabled,
+		PaymentBalanceRechargeMultiplier: settings.PaymentBalanceRechargeMultiplier,
+		PaymentCnyUsdRate:                settings.PaymentCnyUsdRate,
+		PaymentBalanceDisabled:           settings.PaymentBalanceDisabled,
 		Version:                          s.version,
 		BalanceLowNotifyEnabled:          settings.BalanceLowNotifyEnabled,
 		AccountQuotaNotifyEnabled:        settings.AccountQuotaNotifyEnabled,

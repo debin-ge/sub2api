@@ -104,6 +104,57 @@ func TestSettingService_GetPublicSettings_ExposesAllowUserViewErrorRequests(t *t
 	require.True(t, settings.AllowUserViewErrorRequests)
 }
 
+func TestSettingService_GetPublicSettings_ExposesPlazaPricingDefaults(t *testing.T) {
+	svc := NewSettingService(&settingPublicRepoStub{values: map[string]string{}}, &config.Config{})
+
+	settings, err := svc.GetPublicSettings(context.Background())
+
+	require.NoError(t, err)
+	require.Equal(t, 1.0, settings.PaymentBalanceRechargeMultiplier)
+	require.Equal(t, 6.8, settings.PaymentCnyUsdRate)
+	require.False(t, settings.PaymentBalanceDisabled)
+}
+
+func TestSettingService_GetPublicSettings_ExposesPlazaPricingConfiguredValues(t *testing.T) {
+	svc := NewSettingService(&settingPublicRepoStub{
+		values: map[string]string{
+			SettingBalanceRechargeMult: "1.5",
+			SettingPaymentCnyUsdRate:   "6.9",
+			SettingBalancePayDisabled:  "true",
+		},
+	}, &config.Config{})
+
+	settings, err := svc.GetPublicSettings(context.Background())
+
+	require.NoError(t, err)
+	require.Equal(t, 1.5, settings.PaymentBalanceRechargeMultiplier)
+	require.Equal(t, 6.9, settings.PaymentCnyUsdRate)
+	require.True(t, settings.PaymentBalanceDisabled)
+}
+
+func TestSettingService_GetPublicSettings_ExposesPlazaPricingFallbacksForInvalidValues(t *testing.T) {
+	for name, values := range map[string]map[string]string{
+		"invalid": {
+			SettingBalanceRechargeMult: "not-a-number",
+			SettingPaymentCnyUsdRate:   "not-a-number",
+		},
+		"non-positive": {
+			SettingBalanceRechargeMult: "0",
+			SettingPaymentCnyUsdRate:   "-1",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			svc := NewSettingService(&settingPublicRepoStub{values: values}, &config.Config{})
+
+			settings, err := svc.GetPublicSettings(context.Background())
+
+			require.NoError(t, err)
+			require.Equal(t, 1.0, settings.PaymentBalanceRechargeMultiplier)
+			require.Equal(t, 6.8, settings.PaymentCnyUsdRate)
+		})
+	}
+}
+
 func TestSettingService_GetPublicSettings_ExposesWeChatOAuthModeCapabilities(t *testing.T) {
 	svc := NewSettingService(&settingPublicRepoStub{
 		values: map[string]string{

@@ -82,6 +82,36 @@ func TestSettingHandler_GetPublicSettings_ExposesForceEmailOnThirdPartySignup(t 
 	require.True(t, resp.Data.ForceEmailOnThirdPartySignup)
 }
 
+func TestSettingHandler_GetPublicSettings_ExposesPlazaPricingFields(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := NewSettingHandler(service.NewSettingService(&settingHandlerPublicRepoStub{
+		values: map[string]string{
+			service.SettingBalanceRechargeMult: "1.5",
+			service.SettingPaymentCnyUsdRate:   "6.8",
+			service.SettingBalancePayDisabled:  "true",
+		},
+	}, &config.Config{}), "test-version")
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/settings/public", nil)
+
+	h.GetPublicSettings(c)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var body struct {
+		Data struct {
+			PaymentBalanceRechargeMultiplier float64 `json:"payment_balance_recharge_multiplier"`
+			PaymentCnyUsdRate                float64 `json:"payment_cny_usd_rate"`
+			PaymentBalanceDisabled           bool    `json:"payment_balance_disabled"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &body))
+	require.Equal(t, 1.5, body.Data.PaymentBalanceRechargeMultiplier)
+	require.Equal(t, 6.8, body.Data.PaymentCnyUsdRate)
+	require.True(t, body.Data.PaymentBalanceDisabled)
+}
+
 func TestSettingHandler_GetPublicSettings_ExposesWeChatOAuthModeCapabilities(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	h := NewSettingHandler(service.NewSettingService(&settingHandlerPublicRepoStub{
