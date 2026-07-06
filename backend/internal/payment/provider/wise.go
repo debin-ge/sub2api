@@ -9,16 +9,21 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
+	"math/rand/v2"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	"github.com/shopspring/decimal"
+	"golang.org/x/time/rate"
 )
 
 const (
@@ -35,9 +40,20 @@ const (
 
 	wiseActivityPageSize            = 100
 	wiseMaxAllowedMethodsNoteLength = 500
+
+	wiseHTTPMaxAttempts        = 3
+	wiseHTTPRetryInitialDelay  = 200 * time.Millisecond
+	wiseHTTPRetryMaxDelay      = 3 * time.Second
+	wiseHTTPRetryJitterRatio   = 0.5
+	wiseDefaultAPIRateLimitRPS = 1.0
+	wiseDefaultAPIRateBurst    = 2
 )
 
 type wiseOrderCreatedAtContextKey struct{}
+type wiseQueryNowContextKey struct{}
+type wiseQueryCacheContextKey struct{}
+
+var wiseLimiterCache sync.Map
 
 func WithWiseOrderCreatedAt(ctx context.Context, createdAt time.Time) context.Context {
 	if ctx == nil {
@@ -60,10 +76,106 @@ func WiseOrderCreatedAtFromContext(ctx context.Context) (time.Time, bool) {
 	return createdAt.UTC(), true
 }
 
+type WiseQueryCache struct {
+	mu         sync.Mutex
+	statements map[string][]wiseTransaction
+	activities map[string][]wiseTransaction
+}
+
+func NewWiseQueryCache() *WiseQueryCache {
+	return &WiseQueryCache{
+		statements: make(map[string][]wiseTransaction),
+		activities: make(map[string][]wiseTransaction),
+	}
+}
+
+func WithWiseQueryCache(ctx context.Context, cache *WiseQueryCache) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if cache == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, wiseQueryCacheContextKey{}, cache)
+}
+
+func WithWiseQueryNow(ctx context.Context, now time.Time) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if now.IsZero() {
+		return ctx
+	}
+	return context.WithValue(ctx, wiseQueryNowContextKey{}, now.UTC())
+}
+
+func wiseQueryCacheFromContext(ctx context.Context) *WiseQueryCache {
+	if ctx == nil {
+		return nil
+	}
+	cache, _ := ctx.Value(wiseQueryCacheContextKey{}).(*WiseQueryCache)
+	return cache
+}
+
+func wiseQueryNowFromContext(ctx context.Context) time.Time {
+	if ctx != nil {
+		if now, ok := ctx.Value(wiseQueryNowContextKey{}).(time.Time); ok && !now.IsZero() {
+			return now.UTC()
+		}
+	}
+	return time.Now().UTC()
+}
+
+func (c *WiseQueryCache) getStatement(key string) ([]wiseTransaction, bool) {
+	if c == nil {
+		return nil, false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	transactions, ok := c.statements[key]
+	return cloneWiseTransactions(transactions), ok
+}
+
+func (c *WiseQueryCache) setStatement(key string, transactions []wiseTransaction) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.statements[key] = cloneWiseTransactions(transactions)
+}
+
+func (c *WiseQueryCache) getActivities(key string) ([]wiseTransaction, bool) {
+	if c == nil {
+		return nil, false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	transactions, ok := c.activities[key]
+	return cloneWiseTransactions(transactions), ok
+}
+
+func (c *WiseQueryCache) setActivities(key string, transactions []wiseTransaction) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.activities[key] = cloneWiseTransactions(transactions)
+}
+
+func cloneWiseTransactions(transactions []wiseTransaction) []wiseTransaction {
+	if transactions == nil {
+		return nil
+	}
+	return append([]wiseTransaction(nil), transactions...)
+}
+
 type Wise struct {
 	instanceID string
 	config     map[string]string
 	httpClient *http.Client
+	limiter    *rate.Limiter
 }
 
 func NewWise(instanceID string, config map[string]string) (*Wise, error) {
@@ -127,6 +239,7 @@ func NewWise(instanceID string, config map[string]string) (*Wise, error) {
 		instanceID: instanceID,
 		config:     cfg,
 		httpClient: &http.Client{Timeout: wiseHTTPTimeout},
+		limiter:    sharedWiseRateLimiter(instanceID, cfg),
 	}, nil
 }
 
@@ -628,42 +741,212 @@ func (wiseExactSettlementStrategy) Match(order wiseOrderContext, tx wiseTransact
 	}
 }
 
+type wiseRateLimiterEntry struct {
+	rps     float64
+	burst   int
+	limiter *rate.Limiter
+}
+
+func sharedWiseRateLimiter(instanceID string, cfg map[string]string) *rate.Limiter {
+	rps := wiseDefaultAPIRateLimitRPS
+	if parsed, err := strconv.ParseFloat(strings.TrimSpace(cfg["apiRateLimitRPS"]), 64); err == nil && parsed > 0 {
+		rps = parsed
+	}
+	burst := wiseDefaultAPIRateBurst
+	if parsed, err := strconv.Atoi(strings.TrimSpace(cfg["apiRateLimitBurst"])); err == nil && parsed > 0 {
+		burst = parsed
+	}
+	key := strings.TrimSpace(instanceID)
+	if key == "" {
+		key = "_default"
+	}
+	if value, ok := wiseLimiterCache.Load(key); ok {
+		entry, ok := value.(*wiseRateLimiterEntry)
+		if ok && entry.rps == rps && entry.burst == burst && entry.limiter != nil {
+			return entry.limiter
+		}
+	}
+	entry := &wiseRateLimiterEntry{
+		rps:     rps,
+		burst:   burst,
+		limiter: rate.NewLimiter(rate.Limit(rps), burst),
+	}
+	wiseLimiterCache.Store(key, entry)
+	return entry.limiter
+}
+
+type wiseHTTPError struct {
+	StatusCode    int
+	Summary       string
+	RetryAfter    time.Duration
+	HasRetryAfter bool
+}
+
+func (e *wiseHTTPError) Error() string {
+	if e == nil {
+		return ""
+	}
+	return fmt.Sprintf("wise HTTP %d: %s", e.StatusCode, e.Summary)
+}
+
 func (w *Wise) doJSON(ctx context.Context, method, path string, out any) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	baseURL := strings.TrimRight(w.config["apiBase"], "/")
 	if baseURL == "" {
 		baseURL = wiseDefaultAPIBase
 	}
-	req, err := http.NewRequestWithContext(ctx, method, baseURL+path, nil)
-	if err != nil {
-		return fmt.Errorf("wise build request: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(w.config["apiToken"]))
-	req.Header.Set("Accept", "application/json")
 
 	client := w.httpClient
 	if client == nil {
 		client = &http.Client{Timeout: wiseHTTPTimeout}
 	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("wise request: %w", err)
-	}
-	defer resp.Body.Close()
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, wiseMaxResponseSize))
-	if err != nil {
-		return fmt.Errorf("wise read response: %w", err)
-	}
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return fmt.Errorf("wise HTTP %d: %s", resp.StatusCode, summarizeWiseResponse(body))
-	}
-	if len(strings.TrimSpace(string(body))) == 0 || out == nil {
+	for attempt := 0; attempt < wiseHTTPMaxAttempts; attempt++ {
+		if w.limiter != nil {
+			if err := w.limiter.Wait(ctx); err != nil {
+				return fmt.Errorf("wise rate limit wait: %w", err)
+			}
+		}
+		req, err := http.NewRequestWithContext(ctx, method, baseURL+path, nil)
+		if err != nil {
+			return fmt.Errorf("wise build request: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(w.config["apiToken"]))
+		req.Header.Set("Accept", "application/json")
+
+		resp, err := client.Do(req)
+		if err != nil {
+			if attempt < wiseHTTPMaxAttempts-1 && wiseRequestErrorIsRetryable(ctx, err) {
+				if waitErr := waitWiseRetryDelay(ctx, wiseRetryDelay(attempt, 0, false)); waitErr != nil {
+					return waitErr
+				}
+				continue
+			}
+			return fmt.Errorf("wise request: %w", err)
+		}
+
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, wiseMaxResponseSize))
+		_ = resp.Body.Close()
+		if readErr != nil {
+			return fmt.Errorf("wise read response: %w", readErr)
+		}
+		if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+			retryAfter, hasRetryAfter := wiseParseRetryAfter(resp.Header.Get("Retry-After"), time.Now())
+			httpErr := &wiseHTTPError{
+				StatusCode:    resp.StatusCode,
+				Summary:       summarizeWiseResponse(body),
+				RetryAfter:    retryAfter,
+				HasRetryAfter: hasRetryAfter,
+			}
+			if attempt < wiseHTTPMaxAttempts-1 && wiseHTTPStatusIsRetryable(resp.StatusCode) {
+				if waitErr := waitWiseRetryDelay(ctx, wiseRetryDelay(attempt, httpErr.RetryAfter, httpErr.HasRetryAfter)); waitErr != nil {
+					return waitErr
+				}
+				continue
+			}
+			return httpErr
+		}
+		if len(strings.TrimSpace(string(body))) == 0 || out == nil {
+			return nil
+		}
+		if err := json.Unmarshal(body, out); err != nil {
+			return fmt.Errorf("wise parse response: %w", err)
+		}
 		return nil
 	}
-	if err := json.Unmarshal(body, out); err != nil {
-		return fmt.Errorf("wise parse response: %w", err)
+	return fmt.Errorf("wise request retry exhausted")
+}
+
+func wiseHTTPStatusIsRetryable(statusCode int) bool {
+	if statusCode == http.StatusTooManyRequests || statusCode == http.StatusRequestTimeout {
+		return true
 	}
-	return nil
+	return statusCode >= http.StatusInternalServerError && statusCode <= 599
+}
+
+func wiseRequestErrorIsRetryable(ctx context.Context, err error) bool {
+	if err == nil {
+		return false
+	}
+	if ctx != nil && ctx.Err() != nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) {
+		return false
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr)
+}
+
+func wiseRetryDelay(attempt int, retryAfter time.Duration, hasRetryAfter bool) time.Duration {
+	if hasRetryAfter {
+		if retryAfter < 0 {
+			return 0
+		}
+		if retryAfter > wiseHTTPRetryMaxDelay {
+			return wiseHTTPRetryMaxDelay
+		}
+		return retryAfter
+	}
+	delay := wiseHTTPRetryInitialDelay
+	if attempt > 0 {
+		delay *= time.Duration(1 << attempt)
+	}
+	if delay > wiseHTTPRetryMaxDelay {
+		delay = wiseHTTPRetryMaxDelay
+	}
+	jitter := time.Duration(float64(delay) * wiseHTTPRetryJitterRatio)
+	if jitter <= 0 {
+		return delay
+	}
+	delta := time.Duration(rand.Int64N(int64(2*jitter)+1)) - jitter
+	delay += delta
+	if delay < 0 {
+		return 0
+	}
+	return delay
+}
+
+func waitWiseRetryDelay(ctx context.Context, delay time.Duration) error {
+	if delay <= 0 {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			return nil
+		}
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+func wiseParseRetryAfter(raw string, now time.Time) (time.Duration, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, false
+	}
+	if seconds, err := strconv.Atoi(raw); err == nil {
+		if seconds < 0 {
+			return 0, true
+		}
+		return time.Duration(seconds) * time.Second, true
+	}
+	parsed, err := http.ParseTime(raw)
+	if err != nil {
+		return 0, false
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	return parsed.Sub(now), true
 }
 
 func summarizeWiseResponse(body []byte) string {
@@ -678,14 +961,29 @@ func summarizeWiseResponse(body []byte) string {
 }
 
 func (w *Wise) queryStatement(ctx context.Context) ([]wiseTransaction, error) {
-	now := time.Now().UTC()
+	now := wiseQueryNowFromContext(ctx)
 	profileID := strings.TrimSpace(w.config["profileId"])
 	balanceID := strings.TrimSpace(w.config["balanceId"])
+	intervalStart := wiseQueryWindowStart(ctx, now, w.statementLookback())
+	intervalEnd := now.Add(wiseStatementLookahead)
 	query := url.Values{}
-	query.Set("intervalStart", wiseQueryWindowStart(ctx, now, w.statementLookback()).Format(time.RFC3339))
-	query.Set("intervalEnd", now.Add(wiseStatementLookahead).Format(time.RFC3339))
+	query.Set("intervalStart", intervalStart.Format(time.RFC3339))
+	query.Set("intervalEnd", intervalEnd.Format(time.RFC3339))
 	query.Set("type", "COMPACT")
 	query.Set("currency", w.currency())
+	cacheKey := strings.Join([]string{
+		"statement",
+		profileID,
+		balanceID,
+		w.currency(),
+		intervalStart.Format(time.RFC3339),
+		intervalEnd.Format(time.RFC3339),
+	}, ":")
+	if cache := wiseQueryCacheFromContext(ctx); cache != nil {
+		if transactions, ok := cache.getStatement(cacheKey); ok {
+			return transactions, nil
+		}
+	}
 	path := fmt.Sprintf(
 		"/v1/profiles/%s/balance-statements/%s/statement.json?%s",
 		url.PathEscape(profileID),
@@ -702,17 +1000,34 @@ func (w *Wise) queryStatement(ctx context.Context) ([]wiseTransaction, error) {
 	for _, row := range statement.Transactions {
 		transactions = append(transactions, w.normalizeStatementTransaction(row, profileID, balanceID))
 	}
+	if cache := wiseQueryCacheFromContext(ctx); cache != nil {
+		cache.setStatement(cacheKey, transactions)
+	}
 	return transactions, nil
 }
 
 func (w *Wise) queryActivities(ctx context.Context) ([]wiseTransaction, error) {
-	now := time.Now().UTC()
+	now := wiseQueryNowFromContext(ctx)
 	profileID := strings.TrimSpace(w.config["profileId"])
+	since := wiseQueryWindowStart(ctx, now, w.statementLookback())
+	until := now.Add(wiseStatementLookahead)
 	query := url.Values{}
-	query.Set("since", wiseQueryWindowStart(ctx, now, w.statementLookback()).Format(time.RFC3339))
-	query.Set("until", now.Add(wiseStatementLookahead).Format(time.RFC3339))
+	query.Set("since", since.Format(time.RFC3339))
+	query.Set("until", until.Format(time.RFC3339))
 	query.Set("size", strconv.Itoa(wiseActivityPageSize))
 	query.Set("status", "COMPLETED")
+	cacheKey := strings.Join([]string{
+		"activities",
+		profileID,
+		w.currency(),
+		since.Format(time.RFC3339),
+		until.Format(time.RFC3339),
+	}, ":")
+	if cache := wiseQueryCacheFromContext(ctx); cache != nil {
+		if transactions, ok := cache.getActivities(cacheKey); ok {
+			return transactions, nil
+		}
+	}
 	path := fmt.Sprintf(
 		"/v1/profiles/%s/activities?%s",
 		url.PathEscape(profileID),
@@ -727,6 +1042,9 @@ func (w *Wise) queryActivities(ctx context.Context) ([]wiseTransaction, error) {
 	transactions := make([]wiseTransaction, 0, len(response.Activities))
 	for _, row := range response.Activities {
 		transactions = append(transactions, w.normalizeActivity(row, profileID))
+	}
+	if cache := wiseQueryCacheFromContext(ctx); cache != nil {
+		cache.setActivities(cacheKey, transactions)
 	}
 	return transactions, nil
 }

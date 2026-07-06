@@ -10,7 +10,14 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	"github.com/Wei-Shaw/sub2api/ent/paymentproviderinstance"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
+	paymentprovider "github.com/Wei-Shaw/sub2api/internal/payment/provider"
 )
+
+type paymentWebhookProviderCandidate struct {
+	instanceID int64
+	config     map[string]string
+	provider   payment.Provider
+}
 
 // GetWebhookProvider returns the provider instance that should verify a webhook.
 // It resolves the original provider instance from the order whenever possible and
@@ -117,6 +124,24 @@ func psHasPinnedProviderInstance(order *dbent.PaymentOrder) bool {
 }
 
 func (s *PaymentService) getEnabledWebhookProvidersByKey(ctx context.Context, providerKey string) ([]payment.Provider, error) {
+	candidates, err := s.getEnabledWebhookProviderCandidatesByKey(ctx, providerKey)
+	if err != nil {
+		return nil, err
+	}
+	providers := make([]payment.Provider, 0, len(candidates))
+	for _, candidate := range candidates {
+		if candidate == nil || candidate.provider == nil {
+			continue
+		}
+		providers = append(providers, candidate.provider)
+	}
+	if len(providers) == 0 {
+		return nil, payment.ErrProviderNotFound
+	}
+	return providers, nil
+}
+
+func (s *PaymentService) getEnabledWebhookProviderCandidatesByKey(ctx context.Context, providerKey string) ([]*paymentWebhookProviderCandidate, error) {
 	providerKey = strings.TrimSpace(providerKey)
 	instances, err := s.entClient.PaymentProviderInstance.Query().
 		Where(
@@ -132,17 +157,29 @@ func (s *PaymentService) getEnabledWebhookProvidersByKey(ctx context.Context, pr
 		return nil, payment.ErrProviderNotFound
 	}
 
-	providers := make([]payment.Provider, 0, len(instances))
+	candidates := make([]*paymentWebhookProviderCandidate, 0, len(instances))
 	for _, inst := range instances {
-		prov, provErr := s.createProviderFromInstance(ctx, inst)
+		cfg, cfgErr := s.loadBalancer.GetInstanceConfig(ctx, int64(inst.ID))
+		if cfgErr != nil {
+			slog.Warn("skip webhook provider instance config", "provider", providerKey, "instanceID", inst.ID, "error", cfgErr)
+			continue
+		}
+		if inst.PaymentMode != "" {
+			cfg["paymentMode"] = inst.PaymentMode
+		}
+		prov, provErr := paymentprovider.CreateProvider(inst.ProviderKey, fmt.Sprintf("%d", inst.ID), cfg)
 		if provErr != nil {
 			slog.Warn("skip webhook provider instance", "provider", providerKey, "instanceID", inst.ID, "error", provErr)
 			continue
 		}
-		providers = append(providers, prov)
+		candidates = append(candidates, &paymentWebhookProviderCandidate{
+			instanceID: int64(inst.ID),
+			config:     cfg,
+			provider:   prov,
+		})
 	}
-	if len(providers) == 0 {
+	if len(candidates) == 0 {
 		return nil, payment.ErrProviderNotFound
 	}
-	return providers, nil
+	return candidates, nil
 }

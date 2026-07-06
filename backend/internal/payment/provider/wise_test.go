@@ -137,6 +137,24 @@ func TestNewWiseAllowsMissingWebhookPublicKey(t *testing.T) {
 	require.NotEmpty(t, prov.config["webhookPublicKey"])
 }
 
+func TestNewWiseSharesRateLimiterByInstanceID(t *testing.T) {
+	cfg := validWiseConfig()
+	cfg["apiRateLimitRPS"] = "5"
+	cfg["apiRateLimitBurst"] = "3"
+
+	first, err := NewWise("wise-limiter-shared-test", cfg)
+	require.NoError(t, err)
+	second, err := NewWise("wise-limiter-shared-test", cfg)
+	require.NoError(t, err)
+	require.Same(t, first.limiter, second.limiter)
+
+	changed := cloneStringMap(cfg)
+	changed["apiRateLimitBurst"] = "4"
+	third, err := NewWise("wise-limiter-shared-test", changed)
+	require.NoError(t, err)
+	require.NotSame(t, first.limiter, third.limiter)
+}
+
 func TestNewWiseRejectsInvalidEnvironment(t *testing.T) {
 	t.Parallel()
 
@@ -240,6 +258,8 @@ func validWiseConfig() map[string]string {
 		"currency":           "usd",
 		"webhookPublicKey":   testWisePublicKeyPEM,
 		"settlementStrategy": "exact_only",
+		"apiRateLimitRPS":    "1000",
+		"apiRateLimitBurst":  "1000",
 	}
 }
 
@@ -571,6 +591,43 @@ func TestWiseQueryOrdersFetchesStatementOnceForMultipleOrders(t *testing.T) {
 	require.Equal(t, "wise-ref-2", responses["sub2_wise_batch_002"].Metadata["wise_transaction_id"])
 }
 
+func TestWiseQueryOrdersUsesContextQueryCacheAcrossProviders(t *testing.T) {
+	statement := `{
+		"transactions": [
+			{
+				"type": "CREDIT",
+				"date": "2026-06-12T10:20:30Z",
+				"referenceNumber": "wise-ref-cache-1",
+				"amount": {"value": "12.34", "currency": "USD"},
+				"totalFees": {"value": "0", "currency": "USD"},
+				"details": {
+					"type": "DEPOSIT",
+					"description": "Payment received",
+					"paymentReference": "sub2_wise_cache_001"
+				}
+			}
+		]
+	}`
+	prov, req, cleanup := newWiseStatementTestProvider(t, statement)
+	defer cleanup()
+
+	second, err := NewWise("cache-second", cloneStringMap(prov.config))
+	require.NoError(t, err)
+	second.httpClient = prov.httpClient
+
+	ctx := WithWiseQueryNow(context.Background(), time.Date(2026, 6, 12, 11, 0, 0, 0, time.UTC))
+	ctx = WithWiseQueryCache(ctx, NewWiseQueryCache())
+
+	firstResponses, err := prov.QueryOrders(ctx, []string{"sub2_wise_cache_001"})
+	require.NoError(t, err)
+	require.Equal(t, payment.ProviderStatusPaid, firstResponses["sub2_wise_cache_001"].Status)
+
+	secondResponses, err := second.QueryOrders(ctx, []string{"sub2_wise_cache_001"})
+	require.NoError(t, err)
+	require.Equal(t, payment.ProviderStatusPaid, secondResponses["sub2_wise_cache_001"].Status)
+	require.Equal(t, 1, req.calls)
+}
+
 func TestWiseQueryOrderReturnsPaidWithFeeAndNetAmountMetadata(t *testing.T) {
 	const outTradeNo = "sub2_20260612AbCdEf12"
 	statement := `{
@@ -712,7 +769,7 @@ func TestWiseQueryOrderDoesNotAutoFulfillActivityAfterStatementFailure(t *testin
 	resp, err := prov.QueryOrder(context.Background(), outTradeNo)
 	require.NoError(t, err)
 
-	require.Equal(t, 1, req.statementCalls)
+	require.Equal(t, wiseHTTPMaxAttempts, req.statementCalls)
 	require.Equal(t, 1, req.activityCalls)
 	require.Equal(t, "balance-tx-after-error", resp.TradeNo)
 	require.Equal(t, payment.ProviderStatusPending, resp.Status)
@@ -876,6 +933,51 @@ func TestWiseDoJSONReturnsNon2xxSummary(t *testing.T) {
 	var out wiseStatementResponse
 	err := prov.doJSON(context.Background(), http.MethodGet, "/fail", &out)
 	require.ErrorContains(t, err, "wise HTTP 502: upstream unavailable")
+}
+
+func TestWiseDoJSONRetries502ThenSucceeds(t *testing.T) {
+	prov, calls, cleanup := newWiseDoJSONSequenceTestProvider(t, []wiseDoJSONSequenceResponse{
+		{statusCode: http.StatusBadGateway, body: "bad gateway"},
+		{statusCode: http.StatusOK, body: `{"transactions":[]}`},
+	})
+	defer cleanup()
+
+	var out wiseStatementResponse
+	err := prov.doJSON(context.Background(), http.MethodGet, "/statement.json", &out)
+	require.NoError(t, err)
+	require.Equal(t, 2, *calls)
+	require.Empty(t, out.Transactions)
+}
+
+func TestWiseDoJSONRetries429ThenSucceeds(t *testing.T) {
+	prov, calls, cleanup := newWiseDoJSONSequenceTestProvider(t, []wiseDoJSONSequenceResponse{
+		{
+			statusCode: http.StatusTooManyRequests,
+			body:       "rate limited",
+			headers:    map[string]string{"Retry-After": "0"},
+		},
+		{statusCode: http.StatusOK, body: `{"transactions":[]}`},
+	})
+	defer cleanup()
+
+	var out wiseStatementResponse
+	err := prov.doJSON(context.Background(), http.MethodGet, "/statement.json", &out)
+	require.NoError(t, err)
+	require.Equal(t, 2, *calls)
+	require.Empty(t, out.Transactions)
+}
+
+func TestWiseDoJSONDoesNotRetry400(t *testing.T) {
+	prov, calls, cleanup := newWiseDoJSONSequenceTestProvider(t, []wiseDoJSONSequenceResponse{
+		{statusCode: http.StatusBadRequest, body: "bad request"},
+		{statusCode: http.StatusOK, body: `{"transactions":[]}`},
+	})
+	defer cleanup()
+
+	var out wiseStatementResponse
+	err := prov.doJSON(context.Background(), http.MethodGet, "/statement.json", &out)
+	require.ErrorContains(t, err, "wise HTTP 400: bad request")
+	require.Equal(t, 1, *calls)
 }
 
 func TestWiseDoJSONTruncatesNon2xxSummary(t *testing.T) {
@@ -1182,6 +1284,41 @@ func newWiseDoJSONTestProvider(t *testing.T, statusCode int, body string) (*Wise
 	prov.httpClient = server.Client()
 
 	return prov, server.Close
+}
+
+type wiseDoJSONSequenceResponse struct {
+	statusCode int
+	body       string
+	headers    map[string]string
+}
+
+func newWiseDoJSONSequenceTestProvider(t *testing.T, responses []wiseDoJSONSequenceResponse) (*Wise, *int, func()) {
+	t.Helper()
+
+	calls := 0
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		idx := calls
+		calls++
+		if idx >= len(responses) {
+			idx = len(responses) - 1
+		}
+		resp := responses[idx]
+		for key, value := range resp.headers {
+			w.Header().Set(key, value)
+		}
+		w.WriteHeader(resp.statusCode)
+		_, _ = w.Write([]byte(resp.body))
+	}))
+
+	cfg := validWiseConfig()
+	cfg["apiBase"] = server.URL
+	cfg["apiRateLimitRPS"] = "1000"
+	cfg["apiRateLimitBurst"] = "1000"
+	prov, err := NewWise("sequence", cfg)
+	require.NoError(t, err)
+	prov.httpClient = server.Client()
+
+	return prov, &calls, server.Close
 }
 
 func assertWiseStatementIntervalQuery(t *testing.T, query url.Values) {

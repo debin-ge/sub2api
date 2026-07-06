@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/hex"
 	"fmt"
 	"log/slog"
@@ -16,6 +17,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/paymentproviderinstance"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	"github.com/Wei-Shaw/sub2api/internal/payment/provider"
+	"github.com/google/uuid"
 	"golang.org/x/text/encoding/simplifiedchinese"
 )
 
@@ -287,6 +289,10 @@ type PaymentService struct {
 	resumeService            *PaymentResumeService
 	affiliateService         *AffiliateService
 	notificationEmailService *NotificationEmailService
+	wiseReconcileLockCache   LeaderLockCache
+	wiseReconcileDB          *sql.DB
+	wiseReconcileInstanceID  string
+	wiseReconcileCoordinator *wiseReconcileCoordinator
 }
 
 func NewPaymentService(entClient *dbent.Client, registry *payment.Registry, loadBalancer payment.LoadBalancer, redeemService *RedeemService, subscriptionSvc *SubscriptionService, configService *PaymentConfigService, userRepo UserRepository, groupRepo GroupRepository, affiliateService *AffiliateService) *PaymentService {
@@ -294,7 +300,20 @@ func NewPaymentService(entClient *dbent.Client, registry *payment.Registry, load
 	if configService != nil {
 		settingRepo = configService.settingRepo
 	}
-	svc := &PaymentService{entClient: entClient, registry: registry, loadBalancer: newVisibleMethodLoadBalancer(loadBalancer, configService), redeemService: redeemService, subscriptionSvc: subscriptionSvc, configService: configService, settingRepo: settingRepo, userRepo: userRepo, groupRepo: groupRepo, affiliateService: affiliateService}
+	svc := &PaymentService{
+		entClient:                entClient,
+		registry:                 registry,
+		loadBalancer:             newVisibleMethodLoadBalancer(loadBalancer, configService),
+		redeemService:            redeemService,
+		subscriptionSvc:          subscriptionSvc,
+		configService:            configService,
+		settingRepo:              settingRepo,
+		userRepo:                 userRepo,
+		groupRepo:                groupRepo,
+		affiliateService:         affiliateService,
+		wiseReconcileInstanceID:  uuid.NewString(),
+		wiseReconcileCoordinator: newWiseReconcileCoordinator(wiseReconcileDedupWindow),
+	}
 	svc.resumeService = psNewPaymentResumeService(configService)
 	return svc
 }

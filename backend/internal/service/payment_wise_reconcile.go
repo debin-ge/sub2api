@@ -2,11 +2,13 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
@@ -14,12 +16,21 @@ import (
 	dbpredicate "github.com/Wei-Shaw/sub2api/ent/predicate"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	paymentprovider "github.com/Wei-Shaw/sub2api/internal/payment/provider"
+	"github.com/google/uuid"
+	"golang.org/x/sync/singleflight"
 )
 
 const (
 	pendingWiseReconcileLimit = 100
 	wiseReconcileWindow       = 72 * time.Hour
 	wiseMaxReconcileWindow    = 720 * time.Hour
+	wiseReconcileDedupWindow  = 3 * time.Second
+)
+
+const (
+	wiseReconcileScopeGlobal   = "pending-global"
+	wiseReconcileLeaderLockKey = "payment:wise:reconcile:pending"
+	wiseReconcileLeaderLockTTL = 3 * expiryCheckTimeout
 )
 
 type WiseWebhookReconcileResult struct {
@@ -56,25 +67,106 @@ type wiseReconcileOrderGroup struct {
 	orders   []*dbent.PaymentOrder
 }
 
+type wiseRecentReconcile struct {
+	result     *WiseWebhookReconcileResult
+	finishedAt time.Time
+}
+
+type wiseReconcileCoordinator struct {
+	group  singleflight.Group
+	mu     sync.Mutex
+	recent map[string]wiseRecentReconcile
+	window time.Duration
+}
+
+func newWiseReconcileCoordinator(window time.Duration) *wiseReconcileCoordinator {
+	if window <= 0 {
+		window = wiseReconcileDedupWindow
+	}
+	return &wiseReconcileCoordinator{
+		recent: make(map[string]wiseRecentReconcile),
+		window: window,
+	}
+}
+
+func (c *wiseReconcileCoordinator) recentResult(key string, now time.Time) (*WiseWebhookReconcileResult, bool) {
+	if c == nil {
+		return nil, false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	recent, ok := c.recent[key]
+	if !ok {
+		return nil, false
+	}
+	if now.Sub(recent.finishedAt) > c.window {
+		delete(c.recent, key)
+		return nil, false
+	}
+	return cloneWiseWebhookReconcileResult(recent.result), true
+}
+
+func (c *wiseReconcileCoordinator) rememberResult(key string, result *WiseWebhookReconcileResult, now time.Time) {
+	if c == nil || result == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.recent[key] = wiseRecentReconcile{
+		result:     cloneWiseWebhookReconcileResult(result),
+		finishedAt: now,
+	}
+	for recentKey, recent := range c.recent {
+		if now.Sub(recent.finishedAt) > c.window {
+			delete(c.recent, recentKey)
+		}
+	}
+}
+
+func cloneWiseWebhookReconcileResult(result *WiseWebhookReconcileResult) *WiseWebhookReconcileResult {
+	if result == nil {
+		return nil
+	}
+	cloned := *result
+	if result.Errors != nil {
+		cloned.Errors = append([]string(nil), result.Errors...)
+	}
+	return &cloned
+}
+
+func (s *PaymentService) SetWiseReconcileLock(lockCache LeaderLockCache, db *sql.DB) {
+	if s == nil {
+		return
+	}
+	s.wiseReconcileLockCache = lockCache
+	s.wiseReconcileDB = db
+	if strings.TrimSpace(s.wiseReconcileInstanceID) == "" {
+		s.wiseReconcileInstanceID = uuid.NewString()
+	}
+	if s.wiseReconcileCoordinator == nil {
+		s.wiseReconcileCoordinator = newWiseReconcileCoordinator(wiseReconcileDedupWindow)
+	}
+}
+
 func (s *PaymentService) HandleWiseWebhook(ctx context.Context, rawBody string, headers map[string]string) (*WiseWebhookReconcileResult, error) {
-	providers, err := s.getEnabledWebhookProvidersByKey(ctx, payment.TypeWise)
+	candidates, err := s.getEnabledWebhookProviderCandidatesByKey(ctx, payment.TypeWise)
 	if err != nil {
 		return nil, err
 	}
 
 	var lastErr error
-	for _, prov := range providers {
-		if prov == nil {
+	for _, candidate := range candidates {
+		if candidate == nil || candidate.provider == nil {
 			continue
 		}
-		if _, err := prov.VerifyNotification(ctx, rawBody, headers); err != nil {
+		if _, err := candidate.provider.VerifyNotification(ctx, rawBody, headers); err != nil {
 			lastErr = err
 			continue
 		}
 		if !wiseWebhookEventIsReconcileTrigger(rawBody) {
 			return &WiseWebhookReconcileResult{Reason: "event_ignored_unsupported"}, nil
 		}
-		return s.ReconcilePendingWiseOrders(ctx)
+		return s.reconcilePendingWiseOrdersCoordinated(ctx, wiseWebhookReconcileScope(candidate))
 	}
 	if lastErr != nil {
 		return nil, lastErr
@@ -83,17 +175,17 @@ func (s *PaymentService) HandleWiseWebhook(ctx context.Context, rawBody string, 
 }
 
 func (s *PaymentService) HandleWiseWebhookFast(ctx context.Context, rawBody string, headers map[string]string) (*WiseWebhookHandleResult, error) {
-	providers, err := s.getEnabledWebhookProvidersByKey(ctx, payment.TypeWise)
+	candidates, err := s.getEnabledWebhookProviderCandidatesByKey(ctx, payment.TypeWise)
 	if err != nil {
 		return nil, err
 	}
 
 	var lastErr error
-	for _, prov := range providers {
-		if prov == nil {
+	for _, candidate := range candidates {
+		if candidate == nil || candidate.provider == nil {
 			continue
 		}
-		if _, err := prov.VerifyNotification(ctx, rawBody, headers); err != nil {
+		if _, err := candidate.provider.VerifyNotification(ctx, rawBody, headers); err != nil {
 			lastErr = err
 			continue
 		}
@@ -157,7 +249,7 @@ func (s *PaymentService) HandleWiseWebhookFast(ctx context.Context, rawBody stri
 		}
 		result.Queued = true
 		result.Reason = "queued"
-		go s.runWiseWebhookReconciliation(record.ID)
+		go s.runWiseWebhookReconciliation(record.ID, wiseWebhookReconcileScope(candidate))
 		return result, nil
 	}
 	if lastErr != nil {
@@ -166,11 +258,11 @@ func (s *PaymentService) HandleWiseWebhookFast(ctx context.Context, rawBody stri
 	return nil, fmt.Errorf("no wise webhook provider could verify notification")
 }
 
-func (s *PaymentService) runWiseWebhookReconciliation(deliveryRecordID int) {
+func (s *PaymentService) runWiseWebhookReconciliation(deliveryRecordID int, scope string) {
 	ctx, cancel := context.WithTimeout(context.Background(), expiryCheckTimeout)
 	defer cancel()
 
-	if _, err := s.ReconcilePendingWiseOrders(ctx); err != nil {
+	if _, err := s.reconcilePendingWiseOrdersCoordinated(ctx, scope); err != nil {
 		slog.Error("wise webhook reconciliation failed", "deliveryRecordID", deliveryRecordID, "error", err)
 		_ = s.MarkPaymentWebhookDeliveryStatus(context.Background(), deliveryRecordID, PaymentWebhookDeliveryStatusFailed, err.Error())
 		return
@@ -178,11 +270,91 @@ func (s *PaymentService) runWiseWebhookReconciliation(deliveryRecordID int) {
 	_ = s.MarkPaymentWebhookDeliveryStatus(context.Background(), deliveryRecordID, PaymentWebhookDeliveryStatusProcessed, "")
 }
 
+func wiseWebhookReconcileScope(candidate *paymentWebhookProviderCandidate) string {
+	if candidate == nil {
+		return wiseReconcileScopeGlobal
+	}
+	profileID := strings.TrimSpace(providerConfigFieldValue(candidate.config, "profileId"))
+	balanceID := strings.TrimSpace(providerConfigFieldValue(candidate.config, "balanceId"))
+	if profileID == "" && balanceID == "" && candidate.instanceID <= 0 {
+		return wiseReconcileScopeGlobal
+	}
+	return fmt.Sprintf("instance:%d:profile:%s:balance:%s", candidate.instanceID, profileID, balanceID)
+}
+
 func (s *PaymentService) ReconcilePendingWiseOrders(ctx context.Context) (*WiseWebhookReconcileResult, error) {
+	return s.reconcilePendingWiseOrdersCoordinated(ctx, wiseReconcileScopeGlobal)
+}
+
+func (s *PaymentService) reconcilePendingWiseOrdersCoordinated(ctx context.Context, scope string) (*WiseWebhookReconcileResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	scope = strings.TrimSpace(scope)
+	if scope == "" {
+		scope = wiseReconcileScopeGlobal
+	}
+	coordinator := s.wiseCoordinator()
+	if coordinator == nil {
+		return s.reconcilePendingWiseOrdersCore(ctx)
+	}
+	value, err, _ := coordinator.group.Do(scope, func() (any, error) {
+		now := time.Now()
+		if result, ok := coordinator.recentResult(scope, now); ok {
+			return result, nil
+		}
+		release, ok := s.tryAcquireWiseReconcileLock(ctx)
+		if !ok {
+			return &WiseWebhookReconcileResult{Reason: "reconcile_in_progress"}, nil
+		}
+		defer release()
+		result, err := s.reconcilePendingWiseOrdersCore(ctx)
+		if err == nil {
+			coordinator.rememberResult(scope, result, time.Now())
+		}
+		return result, err
+	})
+	if err != nil {
+		result, _ := value.(*WiseWebhookReconcileResult)
+		return result, err
+	}
+	result, _ := value.(*WiseWebhookReconcileResult)
+	if result == nil {
+		result = &WiseWebhookReconcileResult{Reason: "event_verified_no_pending"}
+	}
+	return result, nil
+}
+
+func (s *PaymentService) wiseCoordinator() *wiseReconcileCoordinator {
+	if s == nil {
+		return nil
+	}
+	s.providerMu.Lock()
+	defer s.providerMu.Unlock()
+	if s.wiseReconcileCoordinator == nil {
+		s.wiseReconcileCoordinator = newWiseReconcileCoordinator(wiseReconcileDedupWindow)
+	}
+	return s.wiseReconcileCoordinator
+}
+
+func (s *PaymentService) tryAcquireWiseReconcileLock(ctx context.Context) (func(), bool) {
+	if s == nil {
+		return func() {}, true
+	}
+	owner := strings.TrimSpace(s.wiseReconcileInstanceID)
+	if owner == "" {
+		owner = uuid.NewString()
+	}
+	return tryAcquireSingletonLeaderLock(ctx, s.wiseReconcileLockCache, s.wiseReconcileDB, wiseReconcileLeaderLockKey, owner, wiseReconcileLeaderLockTTL)
+}
+
+func (s *PaymentService) reconcilePendingWiseOrdersCore(ctx context.Context) (*WiseWebhookReconcileResult, error) {
 	result := &WiseWebhookReconcileResult{
 		Reason: "event_verified_no_pending",
 	}
 	now := time.Now()
+	ctx = paymentprovider.WithWiseQueryNow(ctx, now.UTC())
+	ctx = paymentprovider.WithWiseQueryCache(ctx, paymentprovider.NewWiseQueryCache())
 	orders := make([]*dbent.PaymentOrder, 0, pendingWiseReconcileLimit)
 	var lastID int64
 	for {

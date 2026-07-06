@@ -14,6 +14,10 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -209,6 +213,82 @@ func TestReconcilePendingWiseOrdersBatchesProviderStatementQuery(t *testing.T) {
 	require.Equal(t, 1, provider.batchCalls)
 	require.Equal(t, 0, provider.queryCalls)
 	require.Len(t, provider.lastBatchTradeNos, pendingWiseReconcileLimit+1)
+	require.Equal(t, "event_verified_no_auto_fulfill", result.Reason)
+}
+
+func TestReconcilePendingWiseOrdersCachesWiseStatementAcrossProviderGroups(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+	apiBase, statementCalls := newWiseReconcileHTTPServer(t)
+	_, publicKeyPEM := newWiseReconcileWebhookKey(t)
+	config := validWiseReconcileConfig(publicKeyPEM)
+	config["apiBase"] = apiBase
+	config["apiRateLimitRPS"] = "1000"
+	config["apiRateLimitBurst"] = "1000"
+
+	firstInstance, err := client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeWise).
+		SetName("wise-cache-first").
+		SetConfig(encryptWebhookProviderConfig(t, config)).
+		SetSupportedTypes(payment.TypeWise).
+		SetEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+	secondInstance, err := client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeWise).
+		SetName("wise-cache-second").
+		SetConfig(encryptWebhookProviderConfig(t, config)).
+		SetSupportedTypes(payment.TypeWise).
+		SetEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+
+	user, err := client.User.Create().
+		SetEmail("wise-cache-groups@example.com").
+		SetPasswordHash("hash").
+		SetUsername("wise-cache-groups-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		outTradeNo string
+		instanceID int64
+	}{
+		{outTradeNo: "sub2_wise_cache_group_001", instanceID: firstInstance.ID},
+		{outTradeNo: "sub2_wise_cache_group_002", instanceID: secondInstance.ID},
+	} {
+		_, err := client.PaymentOrder.Create().
+			SetUserID(user.ID).
+			SetUserEmail(user.Email).
+			SetUserName(user.Username).
+			SetAmount(88).
+			SetPayAmount(88).
+			SetFeeRate(0).
+			SetRechargeCode(tc.outTradeNo).
+			SetOutTradeNo(tc.outTradeNo).
+			SetPaymentType(payment.TypeWise).
+			SetPaymentTradeNo("wise-" + tc.outTradeNo).
+			SetOrderType(payment.OrderTypeBalance).
+			SetStatus(OrderStatusPending).
+			SetExpiresAt(time.Now().Add(time.Hour)).
+			SetClientIP("127.0.0.1").
+			SetSrcHost("api.example.com").
+			SetProviderInstanceID(strconv.FormatInt(tc.instanceID, 10)).
+			SetProviderKey(payment.TypeWise).
+			Save(ctx)
+		require.NoError(t, err)
+	}
+
+	svc := &PaymentService{
+		entClient:    client,
+		loadBalancer: newWebhookProviderTestLoadBalancer(client),
+	}
+
+	result, err := svc.ReconcilePendingWiseOrders(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 2, result.Scanned)
+	require.Equal(t, int32(1), statementCalls.Load())
 	require.Equal(t, "event_verified_no_auto_fulfill", result.Reason)
 }
 
@@ -746,6 +826,57 @@ func TestHandleWiseWebhookFastDuplicateDeliveryDoesNotQueue(t *testing.T) {
 	require.Equal(t, "duplicate_delivery", second.Reason)
 }
 
+func TestHandleWiseWebhookFastCoalescesSameBalanceReconciliation(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+	svc, priv, statementCalls := newWiseWebhookFastHTTPTestService(t, ctx, client)
+
+	user, err := client.User.Create().
+		SetEmail("wise-webhook-coalesce@example.com").
+		SetPasswordHash("hash").
+		SetUsername("wise-webhook-coalesce-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	instanceID := strconv.FormatInt(svcTestWiseProviderInstanceID(t, ctx, client), 10)
+	_, err = client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(88).
+		SetPayAmount(88).
+		SetFeeRate(0).
+		SetRechargeCode("WISE-WEBHOOK-COALESCE").
+		SetOutTradeNo("sub2_wise_webhook_coalesce").
+		SetPaymentType(payment.TypeWise).
+		SetPaymentTradeNo("wise-webhook-coalesce").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusPending).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		SetProviderInstanceID(instanceID).
+		SetProviderKey(payment.TypeWise).
+		Save(ctx)
+	require.NoError(t, err)
+
+	rawBody := `{"event_type":"balances#credit","data":{"resource":{"id":"balance-123","profile_id":"profile-123","account_id":"balance-123","type":"balance"}}}`
+	first, err := svc.HandleWiseWebhookFast(ctx, rawBody, signedWiseWebhookFastHeaders(t, priv, rawBody, "delivery-coalesce-1", false))
+	require.NoError(t, err)
+	require.True(t, first.Queued)
+	second, err := svc.HandleWiseWebhookFast(ctx, rawBody, signedWiseWebhookFastHeaders(t, priv, rawBody, "delivery-coalesce-2", false))
+	require.NoError(t, err)
+	require.True(t, second.Queued)
+
+	require.Eventually(t, func() bool {
+		firstDelivery := requireWiseWebhookDelivery(t, ctx, client, "delivery-coalesce-1")
+		secondDelivery := requireWiseWebhookDelivery(t, ctx, client, "delivery-coalesce-2")
+		return firstDelivery.Status == PaymentWebhookDeliveryStatusProcessed &&
+			secondDelivery.Status == PaymentWebhookDeliveryStatusProcessed
+	}, 2*time.Second, 20*time.Millisecond)
+	require.Equal(t, int32(1), statementCalls.Load())
+}
+
 func TestHandleWiseWebhookFastRetriesExistingReceivedDelivery(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentOrderLifecycleTestClient(t)
@@ -856,6 +987,59 @@ func TestReconcilePendingWiseOrdersReturnsErrorWhenProviderQueryFails(t *testing
 	require.NotNil(t, result)
 	require.Equal(t, 1, result.Scanned)
 	require.Equal(t, 1, provider.queryCalls)
+}
+
+func TestReconcilePendingWiseOrdersSkipsWhenWiseLeaderLockHeld(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("wise-lock-held@example.com").
+		SetPasswordHash("hash").
+		SetUsername("wise-lock-held-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	_, err = client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(88).
+		SetPayAmount(88).
+		SetFeeRate(0).
+		SetRechargeCode("WISE-LOCK-HELD").
+		SetOutTradeNo("sub2_wise_lock_held").
+		SetPaymentType(payment.TypeWise).
+		SetPaymentTradeNo("wise-lock-held").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusPending).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	provider := &paymentOrderLifecycleQueryProvider{
+		key: payment.TypeWise,
+		resp: &payment.QueryOrderResponse{
+			TradeNo: "wise-lock-held",
+			Status:  payment.ProviderStatusPending,
+		},
+	}
+	registry := payment.NewRegistry()
+	registry.Register(provider)
+	svc := &PaymentService{
+		entClient:       client,
+		registry:        registry,
+		providersLoaded: true,
+	}
+	svc.SetWiseReconcileLock(&wiseTestLeaderLock{acquired: false}, nil)
+
+	result, err := svc.ReconcilePendingWiseOrders(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "reconcile_in_progress", result.Reason)
+	require.Equal(t, 0, provider.queryCalls)
 }
 
 func TestReconcileWiseOrderByOutTradeNoDoesNotFallbackWhenPinnedProviderMissing(t *testing.T) {
@@ -1532,6 +1716,8 @@ func validWiseReconcileConfig(publicKeyPEM string) map[string]string {
 		"currency":           "USD",
 		"webhookPublicKey":   publicKeyPEM,
 		"settlementStrategy": "exact_only",
+		"apiRateLimitRPS":    "1000",
+		"apiRateLimitBurst":  "1000",
 	}
 }
 
@@ -1711,6 +1897,79 @@ func newWiseWebhookFastTestService(t *testing.T, ctx context.Context, client *db
 		loadBalancer: newWebhookProviderTestLoadBalancer(client),
 	}
 	return svc, priv
+}
+
+func newWiseWebhookFastHTTPTestService(t *testing.T, ctx context.Context, client *dbent.Client) (*PaymentService, *rsa.PrivateKey, *atomic.Int32) {
+	t.Helper()
+
+	priv, publicKeyPEM := newWiseReconcileWebhookKey(t)
+	apiBase, statementCalls := newWiseReconcileHTTPServer(t)
+
+	config := validWiseReconcileConfig(publicKeyPEM)
+	config["apiBase"] = apiBase
+	config["apiRateLimitRPS"] = "1000"
+	config["apiRateLimitBurst"] = "1000"
+	_, err := client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeWise).
+		SetName("wise-webhook-fast-http").
+		SetConfig(encryptWebhookProviderConfig(t, config)).
+		SetSupportedTypes(payment.TypeWise).
+		SetEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+
+	svc := &PaymentService{
+		entClient:    client,
+		loadBalancer: newWebhookProviderTestLoadBalancer(client),
+	}
+	return svc, priv, statementCalls
+}
+
+func newWiseReconcileHTTPServer(t *testing.T) (string, *atomic.Int32) {
+	t.Helper()
+
+	statementCalls := &atomic.Int32{}
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/profiles/profile-123/balance-statements/balance-123/statement.json":
+			statementCalls.Add(1)
+			time.Sleep(150 * time.Millisecond)
+			_, _ = w.Write([]byte(`{"transactions":[]}`))
+		case "/v1/profiles/profile-123/activities":
+			_, _ = w.Write([]byte(`{"activities":[]}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"error":"unexpected path"}`))
+		}
+	}))
+	originalTransport := http.DefaultTransport
+	http.DefaultTransport = server.Client().Transport
+	t.Cleanup(func() {
+		http.DefaultTransport = originalTransport
+		server.Close()
+	})
+	return server.URL, statementCalls
+}
+
+func svcTestWiseProviderInstanceID(t *testing.T, ctx context.Context, client *dbent.Client) int64 {
+	t.Helper()
+
+	inst, err := client.PaymentProviderInstance.Query().Only(ctx)
+	require.NoError(t, err)
+	return inst.ID
+}
+
+type wiseTestLeaderLock struct {
+	acquired bool
+}
+
+func (l *wiseTestLeaderLock) TryAcquireLeaderLock(context.Context, string, string, time.Duration) (bool, error) {
+	return l.acquired, nil
+}
+
+func (l *wiseTestLeaderLock) ReleaseLeaderLock(context.Context, string, string) error {
+	return nil
 }
 
 func signedWiseWebhookFastHeaders(t *testing.T, priv *rsa.PrivateKey, rawBody, deliveryID string, testNotification bool) map[string]string {
