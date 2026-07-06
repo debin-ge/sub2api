@@ -134,7 +134,7 @@ import { usePaymentStore } from '@/stores/payment'
 import { useAppStore } from '@/stores'
 import { paymentAPI } from '@/api/payment'
 import { extractI18nErrorMessage } from '@/utils/apiError'
-import { getPaymentPopupFeatures } from '@/components/payment/providerConfig'
+import { closeRegisteredPaymentPopup, getPaymentPopupFeatures, registerPaymentPopup } from '@/components/payment/providerConfig'
 import { formatPaymentAmount, normalizePaymentCurrency } from '@/components/payment/currency'
 import type { PaymentOrder } from '@/types/payment'
 import Icon from '@/components/icons/Icon.vue'
@@ -235,7 +235,9 @@ function isSuccessStatus(status: string | null | undefined): boolean {
 function reopenPopup() {
   if (props.payUrl) {
     const win = window.open(props.payUrl, 'paymentPopup', getPaymentPopupFeatures())
-    if (!win || win.closed) {
+    if (win && !win.closed) {
+      registerPaymentPopup(win)
+    } else {
       window.location.href = props.payUrl
     }
   }
@@ -244,6 +246,7 @@ function reopenPopup() {
 function setOutcome(next: PaymentOutcome) {
   if (outcome.value === next) return
   outcome.value = next
+  closeRegisteredPaymentPopup()
   emit('settled', next)
 }
 

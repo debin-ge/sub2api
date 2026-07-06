@@ -95,6 +95,26 @@ export function getPaymentPopupFeatures(): string {
   return `width=${width},height=${height},left=${left},top=${top},scrollbars=yes,resizable=yes`
 }
 
+let activePaymentPopup: Window | null = null
+
+export function registerPaymentPopup(win: Window | null | undefined): void {
+  if (!win) return
+  activePaymentPopup = win
+}
+
+export function closeRegisteredPaymentPopup(): void {
+  const popup = activePaymentPopup
+  activePaymentPopup = null
+  if (!popup) return
+  try {
+    if (!popup.closed) {
+      popup.close()
+    }
+  } catch {
+    // Browser policies may deny access to a cross-origin popup handle.
+  }
+}
+
 /** Webhook paths for each provider (relative to origin). */
 export const WEBHOOK_PATHS: Record<string, string> = {
   easypay: '/api/v1/payment/webhook/easypay',

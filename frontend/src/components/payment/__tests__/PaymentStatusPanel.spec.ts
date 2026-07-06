@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { registerPaymentPopup } from '../providerConfig'
 
 const pollOrderStatus = vi.hoisted(() => vi.fn())
 const cancelOrder = vi.hoisted(() => vi.fn())
@@ -207,5 +208,34 @@ describe('PaymentStatusPanel', () => {
     expect(verifyOrder).toHaveBeenCalledWith('sub2_wise_20260612abcd1234')
     expect(wrapper.text()).toContain('payment.result.success')
     expect(wrapper.emitted('success')).toHaveLength(1)
+  })
+
+  it('closes the registered payment popup when Wise payment settles successfully', async () => {
+    const close = vi.fn()
+    registerPaymentPopup({ closed: false, close } as unknown as Window)
+    pollOrderStatus.mockResolvedValue(wiseOrderFactory('COMPLETED'))
+
+    mount(PaymentStatusPanel, {
+      props: {
+        orderId: 42,
+        qrCode: '',
+        payUrl: 'https://wise.com/pay/business/account?amount=88&currency=USD&description=sub2_wise_20260612abcd1234',
+        expiresAt: '2099-01-01T12:30:00Z',
+        paymentType: 'wise',
+        orderType: 'balance',
+        currency: 'USD',
+      },
+      global: {
+        stubs: {
+          Icon: true,
+        },
+      },
+    })
+
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(3000)
+    await flushPromises()
+
+    expect(close).toHaveBeenCalledTimes(1)
   })
 })
