@@ -88,6 +88,7 @@ func (h *BenchmarkHandler) SetProcessor(processor *service.BenchmarkProcessor) {
 
 type benchmarkTargetCreateRequest struct {
 	ModelName           string `json:"model_name"`
+	GroupID             int64  `json:"group_id"`
 	ChannelID           int64  `json:"channel_id"`
 	DisplayName         string `json:"display_name"`
 	ChannelNameSnapshot string `json:"channel_name_snapshot"`
@@ -732,6 +733,7 @@ func (h *BenchmarkHandler) requireScheduleService(c *gin.Context) (benchmarkSche
 func benchmarkTargetInputFromRequest(req benchmarkTargetCreateRequest) service.BenchmarkTargetInput {
 	return service.BenchmarkTargetInput{
 		ModelName:           req.ModelName,
+		GroupID:             req.GroupID,
 		ChannelID:           req.ChannelID,
 		DisplayName:         req.DisplayName,
 		ChannelNameSnapshot: req.ChannelNameSnapshot,
@@ -885,9 +887,20 @@ func writeBenchmarkError(c *gin.Context, err error) {
 }
 
 func isBenchmarkValidationError(err error) bool {
+	message := err.Error()
+	if strings.HasPrefix(message, "benchmark target channel ") ||
+		strings.HasPrefix(message, "benchmark target group ") ||
+		strings.HasPrefix(message, "get benchmark target group ") ||
+		strings.HasPrefix(message, "create benchmark target channel for group ") {
+		return true
+	}
 	switch err.Error() {
 	case "model name is required",
+		"channel id or group id is required",
 		"channel id must be positive",
+		"group id must be positive",
+		"benchmark target channel resolver is required",
+		"benchmark target channel resolver cannot resolve groups",
 		"task title is required",
 		"task type is required",
 		"task prompt is required",

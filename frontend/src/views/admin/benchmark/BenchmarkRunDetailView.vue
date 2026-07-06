@@ -154,7 +154,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
@@ -190,6 +190,7 @@ const publishMessage = ref('')
 const manualRunId = ref<number | null>(null)
 const manualLoadedRunId = ref<number | null>(null)
 let loadSequence = 0
+let pollTimer: number | null = null
 
 const resolvedRunId = computed(() => {
   if (props.runId === undefined || props.runId === null || props.runId === '') return null
@@ -290,6 +291,30 @@ async function load() {
       loading.value = false
     }
   }
+}
+
+function isActiveRunStatus(status?: string | null): boolean {
+  return status === 'queued' || status === 'running'
+}
+
+function stopPolling() {
+  if (pollTimer !== null) {
+    window.clearInterval(pollTimer)
+    pollTimer = null
+  }
+}
+
+function syncPolling() {
+  if (!activeRunId.value || !isActiveRunStatus(run.value?.status)) {
+    stopPolling()
+    return
+  }
+  if (pollTimer !== null) return
+  pollTimer = window.setInterval(() => {
+    if (!loading.value) {
+      void load()
+    }
+  }, 2500)
 }
 
 function loadManualRun() {
@@ -472,6 +497,7 @@ function formatCost(value?: number | null): string {
 
 watch(activeRunId, (runID) => {
   loadSequence += 1
+  stopPolling()
   clearRunState()
   if (runID) {
     load()
@@ -480,9 +506,13 @@ watch(activeRunId, (runID) => {
   }
 })
 
+watch(() => run.value?.status, syncPolling)
+
 onMounted(() => {
   if (activeRunId.value) {
     load()
   }
 })
+
+onUnmounted(stopPolling)
 </script>

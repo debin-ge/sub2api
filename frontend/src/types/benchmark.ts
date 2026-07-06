@@ -37,7 +37,8 @@ export interface BenchmarkTarget {
 
 export interface CreateBenchmarkTargetRequest {
   model_name: string
-  channel_id: number
+  group_id?: number
+  channel_id?: number
   display_name?: string
   channel_name_snapshot?: string
   enabled?: boolean
@@ -47,7 +48,8 @@ export interface CreateBenchmarkTargetRequest {
 
 export interface UpdateBenchmarkTargetRequest {
   model_name: string
-  channel_id: number
+  group_id?: number
+  channel_id?: number
   display_name?: string
   channel_name_snapshot?: string
   enabled: boolean

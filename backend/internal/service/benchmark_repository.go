@@ -90,6 +90,7 @@ type BenchmarkScheduleListInput struct {
 
 type BenchmarkTargetInput struct {
 	ModelName           string
+	GroupID             int64
 	ChannelID           int64
 	DisplayName         string
 	ChannelNameSnapshot string

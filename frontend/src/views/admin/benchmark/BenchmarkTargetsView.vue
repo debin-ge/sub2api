@@ -17,22 +17,75 @@
           <div v-if="formError" class="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-300 xl:col-span-4">
             {{ formError }}
           </div>
-          <label class="block xl:col-span-2">
+          <div class="block xl:col-span-2">
+            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('benchmark.admin.targets.fields.sourceType') }}</span>
+            <div class="mt-1 inline-flex rounded-md border border-gray-200 bg-white p-1 dark:border-dark-600 dark:bg-dark-800">
+              <button
+                type="button"
+                data-test="target-source-subscription"
+                class="rounded px-3 py-1.5 text-sm font-medium"
+                :class="form.source_type === 'subscription' ? 'bg-primary-600 text-white' : 'text-gray-600 dark:text-gray-300'"
+                @click="setSourceType('subscription')"
+              >
+                {{ t('benchmark.admin.targets.source.subscription') }}
+              </button>
+              <button
+                type="button"
+                data-test="target-source-group"
+                class="rounded px-3 py-1.5 text-sm font-medium"
+                :class="form.source_type === 'standard' ? 'bg-primary-600 text-white' : 'text-gray-600 dark:text-gray-300'"
+                @click="setSourceType('standard')"
+              >
+                {{ t('benchmark.admin.targets.source.group') }}
+              </button>
+            </div>
+          </div>
+          <label class="block">
+            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('benchmark.admin.targets.fields.group') }}</span>
+            <select
+              v-model.number="form.group_id"
+              data-test="target-group-select"
+              class="input mt-1"
+              required
+              :disabled="groupsLoading || groupOptions.length === 0"
+              @change="onGroupChange"
+            >
+              <option :value="0" disabled>{{ groupSelectPlaceholder }}</option>
+              <option
+                v-for="group in groupOptions"
+                :key="group.id"
+                :value="group.id"
+              >
+                {{ groupOptionLabel(group) }}
+              </option>
+            </select>
+            <p v-if="groupSelectionHint" data-test="target-group-hint" class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ groupSelectionHint }}
+            </p>
+          </label>
+          <label class="block">
             <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('benchmark.admin.targets.fields.modelName') }}</span>
-            <input v-model.trim="form.model_name" data-test="target-model-name-input" class="input mt-1" required />
+            <select
+              v-model="form.model_name"
+              data-test="target-model-select"
+              class="input mt-1"
+              required
+              :disabled="modelsLoading || modelOptions.length === 0"
+            >
+              <option value="" disabled>{{ modelSelectPlaceholder }}</option>
+              <option v-for="model in modelOptions" :key="model" :value="model">{{ model }}</option>
+            </select>
           </label>
-          <label class="block">
-            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('benchmark.admin.targets.fields.channelId') }}</span>
-            <input v-model.number="form.channel_id" data-test="target-channel-id-input" type="number" min="1" class="input mt-1" required />
-          </label>
-          <label class="block">
+          <label class="block xl:col-span-2">
             <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('benchmark.admin.targets.fields.displayName') }}</span>
             <input v-model.trim="form.display_name" data-test="target-display-name-input" class="input mt-1" />
           </label>
-          <label class="block xl:col-span-2">
+          <div class="block xl:col-span-2">
             <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('benchmark.admin.targets.fields.channelSnapshot') }}</span>
-            <input v-model.trim="form.channel_name_snapshot" data-test="target-channel-snapshot-input" class="input mt-1" :placeholder="t('benchmark.admin.targets.fields.channelSnapshotHint')" />
-          </label>
+            <div data-test="target-channel-snapshot" class="mt-1 min-h-[42px] rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-200">
+              {{ selectedChannelSnapshot || t('benchmark.admin.targets.fields.channelSnapshotHint') }}
+            </div>
+          </div>
           <label class="block">
             <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('benchmark.admin.targets.fields.sortOrder') }}</span>
             <input v-model.number="form.sort_order" data-test="target-sort-order-input" type="number" class="input mt-1" />
@@ -46,7 +99,7 @@
             {{ t('benchmark.admin.targets.fields.publicVisible') }}
           </label>
           <div class="flex flex-wrap gap-2 xl:col-span-2 xl:justify-end">
-            <button type="submit" data-test="target-submit-button" class="btn btn-primary" :disabled="saving">
+            <button type="submit" data-test="target-submit-button" class="btn btn-primary" :disabled="saving || !canSubmitTarget">
               {{ editingTarget ? t('benchmark.admin.targets.update') : t('benchmark.admin.targets.create') }}
             </button>
             <button v-if="editingTarget" type="button" class="btn btn-secondary" :disabled="saving" @click="resetForm">
@@ -117,6 +170,7 @@ import { adminAPI } from '@/api/admin'
 import { useAppStore } from '@/stores/app'
 import type { Column } from '@/components/common/types'
 import type { BenchmarkTarget, CreateBenchmarkTargetRequest, UpdateBenchmarkTargetRequest } from '@/types/benchmark'
+import type { AdminGroup, SubscriptionType } from '@/types'
 import { benchmarkChannelFallback, benchmarkEnabledLabel, benchmarkVisibilityLabel } from '@/components/radar/benchmarkI18n'
 
 const appStore = useAppStore()
@@ -125,7 +179,11 @@ const enabledClass = 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark
 const disabledClass = 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-300'
 
 const targets = ref<BenchmarkTarget[]>([])
+const groups = ref<AdminGroup[]>([])
+const modelOptions = ref<string[]>([])
 const loading = ref(false)
+const groupsLoading = ref(false)
+const modelsLoading = ref(false)
 const saving = ref(false)
 const deletingId = ref<number | null>(null)
 const editingTarget = ref<BenchmarkTarget | null>(null)
@@ -134,6 +192,8 @@ const pagination = reactive({ page: 1, page_size: 20, total: 0 })
 
 type TargetFormState = {
   model_name: string
+  source_type: SubscriptionType
+  group_id: number
   channel_id: number
   display_name: string
   channel_name_snapshot: string
@@ -144,6 +204,8 @@ type TargetFormState = {
 
 const defaultForm = (): TargetFormState => ({
   model_name: '',
+  source_type: 'subscription',
+  group_id: 0,
   channel_id: 0,
   display_name: '',
   channel_name_snapshot: '',
@@ -154,6 +216,34 @@ const defaultForm = (): TargetFormState => ({
 
 const form = reactive<TargetFormState>(defaultForm())
 
+const groupOptions = computed(() => groups.value)
+const selectedGroup = computed(() => groups.value.find((group) => group.id === Number(form.group_id)) || null)
+const selectedChannelSnapshot = computed(() => selectedGroup.value?.name || form.channel_name_snapshot || '')
+const canSubmitTarget = computed(() => {
+  if (saving.value || groupsLoading.value || modelsLoading.value || stringsEmpty(form.model_name)) return false
+  if (Number(form.group_id) > 0) return selectedGroup.value?.platform === 'openai'
+  return Boolean(editingTarget.value && Number(form.channel_id) > 0)
+})
+const groupSelectPlaceholder = computed(() => {
+  if (groupsLoading.value) return t('benchmark.admin.targets.groupLoading')
+  if (groupOptions.value.length === 0) return t('benchmark.admin.targets.noGroups')
+  return t('benchmark.admin.targets.selectGroup')
+})
+const modelSelectPlaceholder = computed(() => {
+  if (modelsLoading.value) return t('benchmark.admin.targets.modelLoading')
+  if (!selectedGroup.value) return t('benchmark.admin.targets.selectGroupFirst')
+  if (modelOptions.value.length === 0) return t('benchmark.admin.targets.noModels')
+  return t('benchmark.admin.targets.selectModel')
+})
+const groupSelectionHint = computed(() => {
+  if (groupsLoading.value) return ''
+  if (!selectedGroup.value) return t('benchmark.admin.targets.groupHint')
+  if (selectedGroup.value.platform !== 'openai') {
+    return t('benchmark.admin.targets.groupUnsupportedPlatform', { platform: selectedGroup.value.platform })
+  }
+  return t('benchmark.admin.targets.groupReady')
+})
+
 const columns = computed<Column[]>(() => [
   { key: 'model_name', label: t('benchmark.admin.targets.columns.model') },
   { key: 'channel', label: t('benchmark.admin.targets.columns.channel') },
@@ -162,7 +252,7 @@ const columns = computed<Column[]>(() => [
   { key: 'actions', label: t('benchmark.admin.targets.columns.actions'), sortable: false },
 ])
 
-async function load() {
+async function loadTargets() {
   loading.value = true
   try {
     const response = await adminAPI.benchmark.listTargets({
@@ -178,10 +268,27 @@ async function load() {
   }
 }
 
+async function loadGroups() {
+  groupsLoading.value = true
+  try {
+    groups.value = await adminAPI.groups.getAll()
+    await ensureSelectedGroup()
+  } catch (error) {
+    appStore.showError(error instanceof Error ? error.message : t('benchmark.admin.targets.groupLoadError'))
+  } finally {
+    groupsLoading.value = false
+  }
+}
+
+async function load() {
+  await Promise.all([loadTargets(), loadGroups()])
+}
+
 function resetForm() {
   Object.assign(form, defaultForm())
   editingTarget.value = null
   formError.value = ''
+  ensureSelectedGroup()
 }
 
 function editTarget(target: BenchmarkTarget) {
@@ -189,6 +296,8 @@ function editTarget(target: BenchmarkTarget) {
   formError.value = ''
   Object.assign(form, {
     model_name: target.model_name,
+    source_type: 'subscription',
+    group_id: 0,
     channel_id: target.channel_id,
     display_name: target.display_name || '',
     channel_name_snapshot: target.channel_name_snapshot || '',
@@ -196,22 +305,90 @@ function editTarget(target: BenchmarkTarget) {
     public_visible: target.public_visible,
     sort_order: target.sort_order,
   })
+  modelOptions.value = target.model_name ? [target.model_name] : []
+}
+
+async function ensureSelectedGroup() {
+  if (editingTarget.value || Number(form.group_id) > 0) {
+    return
+  }
+  form.group_id = preferredGroups(form.source_type)[0]?.id || groupOptions.value[0]?.id || 0
+  await loadModelsForSelectedGroup()
+}
+
+async function setSourceType(sourceType: SubscriptionType) {
+  if (form.source_type === sourceType) return
+  form.source_type = sourceType
+  form.group_id = preferredGroups(sourceType)[0]?.id || groupOptions.value[0]?.id || 0
+  form.model_name = ''
+  modelOptions.value = []
+  await loadModelsForSelectedGroup()
+}
+
+async function onGroupChange() {
+  if (selectedGroup.value?.subscription_type) {
+    form.source_type = selectedGroup.value.subscription_type
+  }
+  form.model_name = ''
+  modelOptions.value = []
+  await loadModelsForSelectedGroup()
+}
+
+async function loadModelsForSelectedGroup() {
+  const group = selectedGroup.value
+  if (!group) return
+  modelsLoading.value = true
+  try {
+    const models = await adminAPI.groups.getModelsListCandidates(group.id, group.platform)
+    modelOptions.value = models || []
+    if (!form.model_name && modelOptions.value.length > 0) {
+      form.model_name = modelOptions.value[0]
+    }
+  } catch (error) {
+    appStore.showError(error instanceof Error ? error.message : t('benchmark.admin.targets.modelLoadError'))
+  } finally {
+    modelsLoading.value = false
+  }
+}
+
+function groupOptionLabel(group: AdminGroup) {
+  const sourceLabel = group.subscription_type === 'subscription'
+    ? t('benchmark.admin.targets.source.subscription')
+    : t('benchmark.admin.targets.source.group')
+  return `${group.name} · ${sourceLabel} (${group.platform})`
+}
+
+function preferredGroups(sourceType: SubscriptionType) {
+  return groupOptions.value.filter((group) => (group.subscription_type || 'standard') === sourceType)
+}
+
+function stringsEmpty(value: string) {
+  return value.trim() === ''
 }
 
 function buildPayload(): UpdateBenchmarkTargetRequest {
-  return {
+  const payload: UpdateBenchmarkTargetRequest = {
     model_name: form.model_name,
-    channel_id: Number(form.channel_id),
     display_name: form.display_name || undefined,
-    channel_name_snapshot: form.channel_name_snapshot || undefined,
+    channel_name_snapshot: selectedChannelSnapshot.value || undefined,
     enabled: form.enabled,
     public_visible: form.public_visible,
     sort_order: Number(form.sort_order || 0),
   }
+  if (Number(form.group_id) > 0) {
+    payload.group_id = Number(form.group_id)
+  } else if (Number(form.channel_id) > 0) {
+    payload.channel_id = Number(form.channel_id)
+  }
+  return payload
 }
 
 async function submitTarget() {
   formError.value = ''
+  if (!canSubmitTarget.value) {
+    formError.value = t('benchmark.admin.targets.groupRequired')
+    return
+  }
   const payload = buildPayload()
 
   saving.value = true
@@ -253,13 +430,13 @@ async function deleteTarget(target: BenchmarkTarget) {
 
 function onPageChange(page: number) {
   pagination.page = page
-  load()
+  loadTargets()
 }
 
 function onPageSizeChange(pageSize: number) {
   pagination.page_size = pageSize
   pagination.page = 1
-  load()
+  loadTargets()
 }
 
 onMounted(load)

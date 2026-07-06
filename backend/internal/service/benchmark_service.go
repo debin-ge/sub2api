@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 
@@ -24,6 +25,13 @@ type benchmarkRuntimeProvider interface {
 // channel record so admins never type it by hand.
 type benchmarkChannelResolver interface {
 	GetByID(ctx context.Context, id int64) (*Channel, error)
+	GetGroupPlatforms(ctx context.Context, groupIDs []int64) (map[int64]string, error)
+}
+
+type benchmarkChannelManager interface {
+	benchmarkChannelResolver
+	GetChannelIDByGroupID(ctx context.Context, groupID int64) (int64, error)
+	Create(ctx context.Context, channel *Channel) error
 }
 
 type BenchmarkService struct {
@@ -128,7 +136,11 @@ func (s *BenchmarkService) CreateTarget(ctx context.Context, input BenchmarkTarg
 	if err := validateBenchmarkTargetInput(input); err != nil {
 		return nil, err
 	}
-	input = s.fillTargetChannelName(ctx, input)
+	var err error
+	input, err = s.prepareTargetInput(ctx, input)
+	if err != nil {
+		return nil, err
+	}
 	return s.repo.CreateTarget(ctx, input)
 }
 
@@ -136,20 +148,121 @@ func validateBenchmarkTargetInput(input BenchmarkTargetInput) error {
 	if strings.TrimSpace(input.ModelName) == "" {
 		return errors.New("model name is required")
 	}
-	if input.ChannelID <= 0 {
+	if input.GroupID < 0 {
+		return errors.New("group id must be positive")
+	}
+	if input.ChannelID < 0 {
 		return errors.New("channel id must be positive")
+	}
+	if input.GroupID == 0 && input.ChannelID == 0 {
+		return errors.New("channel id or group id is required")
 	}
 	return nil
 }
 
-func (s *BenchmarkService) fillTargetChannelName(ctx context.Context, input BenchmarkTargetInput) BenchmarkTargetInput {
-	if strings.TrimSpace(input.ChannelNameSnapshot) != "" || s.channelResolver == nil {
-		return input
+func (s *BenchmarkService) prepareTargetInput(ctx context.Context, input BenchmarkTargetInput) (BenchmarkTargetInput, error) {
+	var err error
+	input, err = s.resolveTargetChannelFromGroup(ctx, input)
+	if err != nil {
+		return input, err
 	}
-	if channel, err := s.channelResolver.GetByID(ctx, input.ChannelID); err == nil && channel != nil && strings.TrimSpace(channel.Name) != "" {
+	channel, err := s.validateBenchmarkTargetChannel(ctx, input.ChannelID)
+	if err != nil {
+		return input, err
+	}
+	if strings.TrimSpace(input.ChannelNameSnapshot) == "" && channel != nil && strings.TrimSpace(channel.Name) != "" {
 		input.ChannelNameSnapshot = channel.Name
 	}
-	return input
+	return input, nil
+}
+
+func (s *BenchmarkService) resolveTargetChannelFromGroup(ctx context.Context, input BenchmarkTargetInput) (BenchmarkTargetInput, error) {
+	if input.GroupID <= 0 {
+		return input, nil
+	}
+	if s.channelResolver == nil {
+		return input, errors.New("benchmark target channel resolver is required")
+	}
+	manager, ok := s.channelResolver.(benchmarkChannelManager)
+	if !ok {
+		return input, errors.New("benchmark target channel resolver cannot resolve groups")
+	}
+
+	platforms, err := s.channelResolver.GetGroupPlatforms(ctx, []int64{input.GroupID})
+	if err != nil {
+		return input, fmt.Errorf("get benchmark target group platform: %w", err)
+	}
+	platform := strings.TrimSpace(platforms[input.GroupID])
+	if platform == "" {
+		return input, fmt.Errorf("benchmark target group %d not found", input.GroupID)
+	}
+	if !strings.EqualFold(platform, PlatformOpenAI) {
+		return input, fmt.Errorf("benchmark target group %d platform %s is not supported by standard radar execution", input.GroupID, platform)
+	}
+
+	channelID, err := manager.GetChannelIDByGroupID(ctx, input.GroupID)
+	if err != nil {
+		return input, fmt.Errorf("get benchmark target group channel: %w", err)
+	}
+	if channelID > 0 {
+		input.ChannelID = channelID
+		return input, nil
+	}
+
+	channel := &Channel{
+		Name:     benchmarkTargetGroupChannelName(input.GroupID, input.ChannelNameSnapshot),
+		Status:   StatusActive,
+		GroupIDs: []int64{input.GroupID},
+	}
+	if err := manager.Create(ctx, channel); err != nil {
+		if channelID, lookupErr := manager.GetChannelIDByGroupID(ctx, input.GroupID); lookupErr == nil && channelID > 0 {
+			input.ChannelID = channelID
+			return input, nil
+		}
+		return input, fmt.Errorf("create benchmark target channel for group %d: %w", input.GroupID, err)
+	}
+	if channel.ID <= 0 {
+		return input, fmt.Errorf("create benchmark target channel for group %d returned empty id", input.GroupID)
+	}
+	input.ChannelID = channel.ID
+	if strings.TrimSpace(input.ChannelNameSnapshot) == "" {
+		input.ChannelNameSnapshot = channel.Name
+	}
+	return input, nil
+}
+
+func benchmarkTargetGroupChannelName(groupID int64, snapshot string) string {
+	base := strings.TrimSpace(snapshot)
+	if base == "" {
+		base = fmt.Sprintf("Group %d", groupID)
+	}
+	return fmt.Sprintf("Benchmark %s #%d", base, groupID)
+}
+
+func (s *BenchmarkService) validateBenchmarkTargetChannel(ctx context.Context, channelID int64) (*Channel, error) {
+	if s.channelResolver == nil {
+		return nil, nil
+	}
+	channel, err := s.channelResolver.GetByID(ctx, channelID)
+	if err != nil {
+		return nil, fmt.Errorf("get benchmark target channel %d: %w", channelID, err)
+	}
+	if channel == nil {
+		return nil, fmt.Errorf("benchmark target channel %d not found", channelID)
+	}
+	if len(channel.GroupIDs) == 0 {
+		return nil, fmt.Errorf("benchmark target channel %d has no groups", channelID)
+	}
+	platforms, err := s.channelResolver.GetGroupPlatforms(ctx, channel.GroupIDs)
+	if err != nil {
+		return nil, fmt.Errorf("get benchmark target channel group platforms: %w", err)
+	}
+	for _, groupID := range channel.GroupIDs {
+		if strings.EqualFold(strings.TrimSpace(platforms[groupID]), PlatformOpenAI) {
+			return channel, nil
+		}
+	}
+	return nil, fmt.Errorf("benchmark target channel %d has no openai-compatible group", channelID)
 }
 
 func (s *BenchmarkService) ListTargets(ctx context.Context, input BenchmarkListInput) ([]*ent.BenchmarkTarget, int, error) {
@@ -164,7 +277,11 @@ func (s *BenchmarkService) UpdateTarget(ctx context.Context, id int64, input Ben
 	if err := validateBenchmarkTargetInput(input); err != nil {
 		return nil, err
 	}
-	input = s.fillTargetChannelName(ctx, input)
+	var err error
+	input, err = s.prepareTargetInput(ctx, input)
+	if err != nil {
+		return nil, err
+	}
 	return s.repo.UpdateTarget(ctx, id, input)
 }
 
@@ -342,7 +459,30 @@ func (s *BenchmarkService) resolveRunTargets(ctx context.Context, targetIDs []in
 	if len(targets) == 0 {
 		return nil, errors.New("no enabled benchmark targets selected")
 	}
+	if err := s.validateBenchmarkRunTargets(ctx, targets); err != nil {
+		return nil, err
+	}
 	return targets, nil
+}
+
+func (s *BenchmarkService) validateBenchmarkRunTargets(ctx context.Context, targets []*ent.BenchmarkTarget) error {
+	if s.channelResolver == nil {
+		return nil
+	}
+	checked := make(map[int64]struct{}, len(targets))
+	for _, target := range targets {
+		if target == nil {
+			continue
+		}
+		if _, ok := checked[target.ChannelID]; ok {
+			continue
+		}
+		if _, err := s.validateBenchmarkTargetChannel(ctx, target.ChannelID); err != nil {
+			return err
+		}
+		checked[target.ChannelID] = struct{}{}
+	}
+	return nil
 }
 
 func selectBenchmarkTaskEntities(enabledTasks []*ent.BenchmarkTask, taskCount int, emptyMessage string) ([]*ent.BenchmarkTask, error) {

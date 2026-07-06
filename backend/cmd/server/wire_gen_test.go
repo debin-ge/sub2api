@@ -81,6 +81,7 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 		nil, // miniMaxRemainsSyncRunner
 		nil, // deepSeekBalanceHealthRunner
 		nil, // channelMonitorRunner
+		nil, // benchmarkRunner
 		nil, // quotaFlusher
 	)
 

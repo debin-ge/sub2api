@@ -87,6 +87,13 @@
           <template #cell-finished_at="{ row }">{{ formatDate(row.finished_at || row.updated_at || row.created_at) }}</template>
           <template #cell-actions="{ row }">
             <div class="flex flex-wrap items-center gap-2">
+              <router-link
+                :to="`/admin/benchmark/runs/${row.id}`"
+                class="btn btn-secondary btn-sm"
+                :data-test="`run-detail-${row.id}`"
+              >
+                {{ t('benchmark.admin.runs.detail') }}
+              </router-link>
               <button
                 v-if="canProcess(row.status)"
                 type="button"
@@ -130,6 +137,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
@@ -151,6 +159,7 @@ import {
 } from '@/components/radar/benchmarkI18n'
 
 const appStore = useAppStore()
+const router = useRouter()
 const { locale, t } = useI18n()
 
 const runs = ref<BenchmarkRun[]>([])
@@ -232,6 +241,7 @@ async function createStandardRun() {
     runs.value = [created, ...runs.value.filter((run) => run.id !== created.id)]
     pagination.total += 1
     appStore.showSuccess(t('benchmark.admin.runs.createSuccess', { id: created.id }))
+    await router.push(`/admin/benchmark/runs/${created.id}`)
   } catch (error) {
     appStore.showError(error instanceof Error ? error.message : t('benchmark.admin.runs.createError'))
   } finally {
