@@ -6,7 +6,9 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
+	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/paymentproviderwebhooksubscription"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	"github.com/Wei-Shaw/sub2api/internal/payment/provider"
@@ -17,6 +19,9 @@ type wiseSubscriptionCreatorStub struct {
 	req   provider.WiseProfileSubscriptionRequest
 	calls int
 	err   error
+
+	deleteErr error
+	deleted   []string
 }
 
 func (s *wiseSubscriptionCreatorStub) CreateProfileSubscription(_ context.Context, req provider.WiseProfileSubscriptionRequest) (*provider.WiseProfileSubscriptionResponse, error) {
@@ -38,6 +43,11 @@ func (s *wiseSubscriptionCreatorStub) CreateProfileSubscription(_ context.Contex
 	}, nil
 }
 
+func (s *wiseSubscriptionCreatorStub) DeleteProfileSubscription(_ context.Context, profileID string, subscriptionID string) error {
+	s.deleted = append(s.deleted, profileID+":"+subscriptionID)
+	return s.deleteErr
+}
+
 func TestEnsureWiseWebhookSubscriptionCreatesRequestAndPersistsActive(t *testing.T) {
 	t.Parallel()
 
@@ -46,7 +56,7 @@ func TestEnsureWiseWebhookSubscriptionCreatesRequestAndPersistsActive(t *testing
 	creator := &wiseSubscriptionCreatorStub{}
 	svc := &PaymentConfigService{
 		entClient: client,
-		wiseSubscriptionClientFactory: func(map[string]string) wiseProfileSubscriptionCreator {
+		wiseSubscriptionClientFactory: func(map[string]string) wiseProfileSubscriptionClient {
 			return creator
 		},
 		webhookBaseURLResolver: func(context.Context) string {
@@ -84,6 +94,43 @@ func TestEnsureWiseWebhookSubscriptionCreatesRequestAndPersistsActive(t *testing
 	require.NotNil(t, sub.SyncedAt)
 }
 
+func TestDeleteWiseWebhookSubscriptionDeletesRemoteAndMarksDeleted(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	creator := &wiseSubscriptionCreatorStub{}
+	svc := &PaymentConfigService{
+		entClient: client,
+		wiseSubscriptionClientFactory: func(map[string]string) wiseProfileSubscriptionClient {
+			return creator
+		},
+	}
+	config := validWiseProviderConfigForConfigService(t)
+	inst, err := client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeWise).
+		SetName("wise").
+		SetConfig("{}").
+		SetSupportedTypes(payment.TypeWise).
+		SetEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+	createActiveWiseWebhookSubscriptionForTest(t, ctx, client, inst.ID, "subscription-delete-123")
+
+	err = svc.deleteWiseWebhookSubscription(ctx, inst, config)
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"profile-123:subscription-delete-123"}, creator.deleted)
+	sub, err := client.PaymentProviderWebhookSubscription.Query().
+		Where(paymentproviderwebhooksubscription.ProviderInstanceIDEQ(inst.ID)).
+		Only(ctx)
+	require.NoError(t, err)
+	require.Equal(t, wiseWebhookSubscriptionStatusDeleted, sub.Status)
+	require.Equal(t, "subscription-delete-123", sub.ExternalSubscriptionID)
+	require.Nil(t, sub.LastError)
+	require.NotNil(t, sub.SyncedAt)
+}
+
 func TestEnsureWiseWebhookSubscriptionDryRunCreatesRemoteButDoesNotPersist(t *testing.T) {
 	t.Parallel()
 
@@ -92,7 +139,7 @@ func TestEnsureWiseWebhookSubscriptionDryRunCreatesRemoteButDoesNotPersist(t *te
 	creator := &wiseSubscriptionCreatorStub{}
 	svc := &PaymentConfigService{
 		entClient: client,
-		wiseSubscriptionClientFactory: func(map[string]string) wiseProfileSubscriptionCreator {
+		wiseSubscriptionClientFactory: func(map[string]string) wiseProfileSubscriptionClient {
 			return creator
 		},
 		webhookBaseURLResolver: func(context.Context) string {
@@ -142,7 +189,7 @@ func TestEnsureWiseWebhookSubscriptionDeliveryURLChangeUpdatesSameRow(t *testing
 	baseURL := "https://api-one.example.com"
 	svc := &PaymentConfigService{
 		entClient: client,
-		wiseSubscriptionClientFactory: func(map[string]string) wiseProfileSubscriptionCreator {
+		wiseSubscriptionClientFactory: func(map[string]string) wiseProfileSubscriptionClient {
 			return creator
 		},
 		webhookBaseURLResolver: func(context.Context) string {
@@ -190,7 +237,7 @@ func TestUpdateProviderInstanceEnabledWiseAPITokenRotationReusesActiveSubscripti
 	client := newPaymentConfigServiceTestClient(t)
 	creator := &wiseSubscriptionCreatorStub{}
 	svc := NewPaymentConfigService(client, &paymentConfigSettingRepoStub{}, nil)
-	svc.wiseSubscriptionClientFactory = func(map[string]string) wiseProfileSubscriptionCreator {
+	svc.wiseSubscriptionClientFactory = func(map[string]string) wiseProfileSubscriptionClient {
 		return creator
 	}
 	svc.webhookBaseURLResolver = func(context.Context) string {
@@ -237,7 +284,7 @@ func TestEnsureWiseWebhookSubscriptionFailurePersistsFailedAndMasksToken(t *test
 	creator := &wiseSubscriptionCreatorStub{err: errors.New("remote rejected token-test")}
 	svc := &PaymentConfigService{
 		entClient: client,
-		wiseSubscriptionClientFactory: func(map[string]string) wiseProfileSubscriptionCreator {
+		wiseSubscriptionClientFactory: func(map[string]string) wiseProfileSubscriptionClient {
 			return creator
 		},
 		webhookBaseURLResolver: func(context.Context) string {
@@ -309,7 +356,7 @@ func TestCreateProviderInstanceEnabledWiseEnsuresWebhookSubscription(t *testing.
 	client := newPaymentConfigServiceTestClient(t)
 	creator := &wiseSubscriptionCreatorStub{}
 	svc := NewPaymentConfigService(client, &paymentConfigSettingRepoStub{}, nil)
-	svc.wiseSubscriptionClientFactory = func(map[string]string) wiseProfileSubscriptionCreator {
+	svc.wiseSubscriptionClientFactory = func(map[string]string) wiseProfileSubscriptionClient {
 		return creator
 	}
 	svc.webhookBaseURLResolver = func(context.Context) string {
@@ -344,7 +391,7 @@ func TestUpdateProviderInstanceDisabledWiseEnableFailureLeavesProviderDisabled(t
 	client := newPaymentConfigServiceTestClient(t)
 	creator := &wiseSubscriptionCreatorStub{err: errors.New("remote rejected token-test")}
 	svc := NewPaymentConfigService(client, &paymentConfigSettingRepoStub{}, nil)
-	svc.wiseSubscriptionClientFactory = func(map[string]string) wiseProfileSubscriptionCreator {
+	svc.wiseSubscriptionClientFactory = func(map[string]string) wiseProfileSubscriptionClient {
 		return creator
 	}
 	svc.webhookBaseURLResolver = func(context.Context) string {
@@ -378,6 +425,22 @@ func TestUpdateProviderInstanceDisabledWiseEnableFailureLeavesProviderDisabled(t
 	require.Equal(t, wiseWebhookSubscriptionStatusFailed, sub.Status)
 }
 
+func createActiveWiseWebhookSubscriptionForTest(t *testing.T, ctx context.Context, client *dbent.Client, instID int64, externalID string) {
+	t.Helper()
+
+	_, err := client.PaymentProviderWebhookSubscription.Create().
+		SetProviderInstanceID(instID).
+		SetProviderKey(payment.TypeWise).
+		SetExternalSubscriptionID(externalID).
+		SetTriggerOn(wiseWebhookSubscriptionTrigger).
+		SetDeliveryVersion(wiseWebhookSubscriptionDeliveryVersion).
+		SetDeliveryURL("https://api.example.com/api/v1/payment/webhook/wise").
+		SetStatus(wiseWebhookSubscriptionStatusActive).
+		SetSyncedAt(time.Now()).
+		Save(ctx)
+	require.NoError(t, err)
+}
+
 func TestUpdateProviderInstanceEnabledWiseProfileChangeSubscriptionFailureKeepsExistingConfig(t *testing.T) {
 	t.Parallel()
 
@@ -385,7 +448,7 @@ func TestUpdateProviderInstanceEnabledWiseProfileChangeSubscriptionFailureKeepsE
 	client := newPaymentConfigServiceTestClient(t)
 	creator := &wiseSubscriptionCreatorStub{}
 	svc := NewPaymentConfigService(client, &paymentConfigSettingRepoStub{}, nil)
-	svc.wiseSubscriptionClientFactory = func(map[string]string) wiseProfileSubscriptionCreator {
+	svc.wiseSubscriptionClientFactory = func(map[string]string) wiseProfileSubscriptionClient {
 		return creator
 	}
 	svc.webhookBaseURLResolver = func(context.Context) string {
@@ -433,14 +496,60 @@ func TestUpdateProviderInstanceEnabledWiseProfileChangeSubscriptionFailureKeepsE
 	require.Nil(t, sub.LastError)
 }
 
-func TestUpdateProviderInstanceDisabledWiseRemoteTargetChangeInvalidatesSubscription(t *testing.T) {
+func TestUpdateProviderInstanceEnabledWiseProfileChangeDeletesOldRemoteSubscription(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
 	client := newPaymentConfigServiceTestClient(t)
 	creator := &wiseSubscriptionCreatorStub{}
 	svc := NewPaymentConfigService(client, &paymentConfigSettingRepoStub{}, nil)
-	svc.wiseSubscriptionClientFactory = func(map[string]string) wiseProfileSubscriptionCreator {
+	svc.wiseSubscriptionClientFactory = func(map[string]string) wiseProfileSubscriptionClient {
+		return creator
+	}
+	svc.webhookBaseURLResolver = func(context.Context) string {
+		return "https://api.example.com"
+	}
+
+	inst, err := svc.CreateProviderInstance(ctx, CreateProviderInstanceRequest{
+		ProviderKey:    payment.TypeWise,
+		Name:           "wise",
+		Config:         validWiseProviderConfigForConfigService(t),
+		SupportedTypes: []string{payment.TypeWise},
+		Enabled:        true,
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, creator.calls)
+	err = client.PaymentProviderWebhookSubscription.Update().
+		Where(paymentproviderwebhooksubscription.ProviderInstanceIDEQ(inst.ID)).
+		SetExternalSubscriptionID("old-subscription-id").
+		Exec(ctx)
+	require.NoError(t, err)
+
+	updated, err := svc.UpdateProviderInstance(ctx, inst.ID, UpdateProviderInstanceRequest{
+		Config: map[string]string{"profileId": "profile-updated"},
+	})
+
+	require.NoError(t, err)
+	require.True(t, updated.Enabled)
+	require.Equal(t, 2, creator.calls)
+	require.Equal(t, "profile-updated", creator.req.ProfileID)
+	require.Equal(t, []string{"profile-123:old-subscription-id"}, creator.deleted)
+	sub, err := client.PaymentProviderWebhookSubscription.Query().
+		Where(paymentproviderwebhooksubscription.ProviderInstanceIDEQ(inst.ID)).
+		Only(ctx)
+	require.NoError(t, err)
+	require.Equal(t, wiseWebhookSubscriptionStatusActive, sub.Status)
+	require.Equal(t, "subscription-123", sub.ExternalSubscriptionID)
+}
+
+func TestUpdateProviderInstanceDisabledWiseRemoteTargetChangeKeepsDeletedSubscription(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	creator := &wiseSubscriptionCreatorStub{}
+	svc := NewPaymentConfigService(client, &paymentConfigSettingRepoStub{}, nil)
+	svc.wiseSubscriptionClientFactory = func(map[string]string) wiseProfileSubscriptionClient {
 		return creator
 	}
 	svc.webhookBaseURLResolver = func(context.Context) string {
@@ -479,8 +588,9 @@ func TestUpdateProviderInstanceDisabledWiseRemoteTargetChangeInvalidatesSubscrip
 		Where(paymentproviderwebhooksubscription.ProviderInstanceIDEQ(inst.ID)).
 		Only(ctx)
 	require.NoError(t, err)
-	require.Equal(t, wiseWebhookSubscriptionStatusUnknown, sub.Status)
-	require.Empty(t, sub.ExternalSubscriptionID)
+	require.Equal(t, wiseWebhookSubscriptionStatusDeleted, sub.Status)
+	require.Equal(t, "old-subscription-id", sub.ExternalSubscriptionID)
+	require.Equal(t, []string{"profile-123:old-subscription-id"}, creator.deleted)
 
 	updated, err = svc.UpdateProviderInstance(ctx, inst.ID, UpdateProviderInstanceRequest{
 		Enabled: boolPtrValue(true),
@@ -505,7 +615,7 @@ func TestUpdateProviderInstanceEnabledWiseUnrelatedFieldsSkipsSubscriptionEnsure
 	client := newPaymentConfigServiceTestClient(t)
 	creator := &wiseSubscriptionCreatorStub{}
 	svc := NewPaymentConfigService(client, &paymentConfigSettingRepoStub{}, nil)
-	svc.wiseSubscriptionClientFactory = func(map[string]string) wiseProfileSubscriptionCreator {
+	svc.wiseSubscriptionClientFactory = func(map[string]string) wiseProfileSubscriptionClient {
 		return creator
 	}
 	svc.webhookBaseURLResolver = func(context.Context) string {
@@ -570,7 +680,7 @@ func TestUpdateProviderInstanceEnabledWiseLocalConfigChangesSkipSubscriptionEnsu
 			client := newPaymentConfigServiceTestClient(t)
 			creator := &wiseSubscriptionCreatorStub{}
 			svc := NewPaymentConfigService(client, &paymentConfigSettingRepoStub{}, nil)
-			svc.wiseSubscriptionClientFactory = func(map[string]string) wiseProfileSubscriptionCreator {
+			svc.wiseSubscriptionClientFactory = func(map[string]string) wiseProfileSubscriptionClient {
 				return creator
 			}
 			svc.webhookBaseURLResolver = func(context.Context) string {
@@ -616,7 +726,7 @@ func TestCreateProviderInstanceEnabledWiseDisablesProviderWhenSubscriptionFails(
 	client := newPaymentConfigServiceTestClient(t)
 	creator := &wiseSubscriptionCreatorStub{err: errors.New("remote rejected token-test")}
 	svc := NewPaymentConfigService(client, &paymentConfigSettingRepoStub{}, nil)
-	svc.wiseSubscriptionClientFactory = func(map[string]string) wiseProfileSubscriptionCreator {
+	svc.wiseSubscriptionClientFactory = func(map[string]string) wiseProfileSubscriptionClient {
 		return creator
 	}
 	svc.webhookBaseURLResolver = func(context.Context) string {

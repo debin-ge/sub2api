@@ -1351,6 +1351,56 @@ func TestHandleWiseQueryOrderResponseWritesAuditForRejectedReferencedTransaction
 	require.Equal(t, "88", detail["net_amount"])
 }
 
+func TestHandleWiseQueryOrderResponseMarksProviderCancelledOrder(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("wise-reconcile-cancelled@example.com").
+		SetPasswordHash("hash").
+		SetUsername("wise-reconcile-cancelled-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(88).
+		SetPayAmount(88).
+		SetFeeRate(0).
+		SetRechargeCode("WISE-RECONCILE-CANCELLED").
+		SetOutTradeNo("sub2_wise_reconcile_cancelled").
+		SetPaymentType(payment.TypeWise).
+		SetPaymentTradeNo("").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusPending).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	svc := &PaymentService{entClient: client}
+	result, err := svc.handleWiseQueryOrderResponse(ctx, order, &payment.QueryOrderResponse{
+		TradeNo: "wise-cancelled-1",
+		Status:  payment.ProviderStatusCancelled,
+		Metadata: map[string]string{
+			"reconcile_reason":    "status_cancelled",
+			"wise_transaction_id": "wise-cancelled-1",
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, result.AutoFulfill)
+	require.Equal(t, "status_cancelled", result.Reason)
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusCancelled, reloaded.Status)
+	require.True(t, svc.hasAuditLog(ctx, order.ID, "PAYMENT_PROVIDER_CANCELLED"))
+}
+
 func TestPaymentOrderExpiryRunOnceReconcilesPendingWiseOrders(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentOrderLifecycleTestClient(t)

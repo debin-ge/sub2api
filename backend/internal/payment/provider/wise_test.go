@@ -45,6 +45,51 @@ func TestCreateProviderWise(t *testing.T) {
 	require.Equal(t, []payment.PaymentType{payment.TypeWise}, prov.SupportedTypes())
 }
 
+func TestWiseMerchantIdentityMetadata(t *testing.T) {
+	t.Parallel()
+
+	prov, err := NewWise("1", validWiseConfig())
+	require.NoError(t, err)
+
+	metadata := prov.MerchantIdentityMetadata()
+
+	require.Equal(t, "profile-123", metadata["profile_id"])
+	require.Equal(t, "profile-123", metadata["merchant_id"])
+	require.Equal(t, "balance-123", metadata["balance_id"])
+	require.Equal(t, "USD", metadata["currency"])
+	require.Equal(t, "exact_only", metadata["settlement_strategy"])
+}
+
+func TestWiseRefundRequiresManualProcessing(t *testing.T) {
+	t.Parallel()
+
+	prov, err := NewWise("1", validWiseConfig())
+	require.NoError(t, err)
+
+	resp, err := prov.Refund(context.Background(), payment.RefundRequest{
+		TradeNo: "wise-tx-1",
+		OrderID: "sub2_wise_refund_001",
+		Amount:  "12.34",
+		Reason:  "customer requested refund",
+	})
+
+	require.Nil(t, resp)
+	require.ErrorIs(t, err, payment.ErrManualRefundRequired)
+	require.ErrorContains(t, err, "wise manual refund required")
+}
+
+func TestWiseCancelPaymentReturnsUnsupportedSentinel(t *testing.T) {
+	t.Parallel()
+
+	prov, err := NewWise("1", validWiseConfig())
+	require.NoError(t, err)
+
+	err = prov.CancelPayment(context.Background(), "sub2_wise_cancel_001")
+
+	require.ErrorIs(t, err, payment.ErrCancelNotSupported)
+	require.ErrorContains(t, err, "wise cancel payment is not supported")
+}
+
 const testWisePublicKeyPEM = `-----BEGIN PUBLIC KEY-----
 MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwj/6fR4W9HutC0Dh9CDk
 gOmqZp3esJwprRXb1p6BV9kPfLQOELutQKiqSgNZW5eSKrYpR4xZJg1Aht2nDHNH
@@ -287,7 +332,16 @@ func TestWiseVerifyNotificationVerifiesRSASignature(t *testing.T) {
 
 	notification, err := prov.VerifyNotification(context.Background(), rawBody, headers)
 	require.NoError(t, err)
-	require.Nil(t, notification)
+	require.NotNil(t, notification)
+	require.Equal(t, payment.NotificationStatusVerified, notification.Status)
+	require.Equal(t, rawBody, notification.RawData)
+	require.Equal(t, "balances#credit", notification.Metadata["event_type"])
+	require.Equal(t, "transfer-123", notification.Metadata["resource_id"])
+	require.Equal(t, "profile-123", notification.Metadata["profile_id"])
+	require.Equal(t, "profile-123", notification.Metadata["merchant_id"])
+	require.Equal(t, "balance-123", notification.Metadata["balance_id"])
+	require.Equal(t, "balance", notification.Metadata["resource_type"])
+	require.Equal(t, "true", notification.Metadata["wise_reconcile_trigger"])
 }
 
 func TestWiseVerifyNotificationAcceptsNumericResourceID(t *testing.T) {
@@ -301,7 +355,13 @@ func TestWiseVerifyNotificationAcceptsNumericResourceID(t *testing.T) {
 
 	notification, err := prov.VerifyNotification(context.Background(), rawBody, headers)
 	require.NoError(t, err)
-	require.Nil(t, notification)
+	require.NotNil(t, notification)
+	require.Equal(t, payment.NotificationStatusVerified, notification.Status)
+	require.Equal(t, "balances#credit", notification.Metadata["event_type"])
+	require.Equal(t, "164653629", notification.Metadata["resource_id"])
+	require.Equal(t, "93254508", notification.Metadata["profile_id"])
+	require.Equal(t, "93254508", notification.Metadata["merchant_id"])
+	require.Equal(t, "164653629", notification.Metadata["balance_id"])
 }
 
 func TestWiseVerifyNotificationRejectsInvalidSignature(t *testing.T) {
@@ -724,7 +784,7 @@ func TestWiseQueryOrderDoesNotAutoFulfillActivityWithoutBalanceProof(t *testing.
 	require.Equal(t, 1, req.statementCalls)
 	require.Equal(t, 1, req.activityCalls)
 	require.Equal(t, "/v1/profiles/profile-123/activities", req.activityPath)
-	require.Equal(t, "COMPLETED", req.activityQuery.Get("status"))
+	require.Empty(t, req.activityQuery.Get("status"))
 	require.Equal(t, "100", req.activityQuery.Get("size"))
 	require.NotEmpty(t, req.activityQuery.Get("since"))
 	require.NotEmpty(t, req.activityQuery.Get("until"))
@@ -745,6 +805,72 @@ func TestWiseQueryOrderDoesNotAutoFulfillActivityWithoutBalanceProof(t *testing.
 	require.Equal(t, "2026-06-12T10:20:30Z", resp.Metadata["occurred_at"])
 	require.Equal(t, "rejected", resp.Metadata["reconcile_decision"])
 	require.Equal(t, "balance_unverified", resp.Metadata["reconcile_reason"])
+}
+
+func TestWiseQueryOrderReturnsCancelledForReferencedCancelledActivity(t *testing.T) {
+	const outTradeNo = "sub2_wise_cancelled_001"
+	statement := `{"transactions":[]}`
+	activities := `{
+		"activities": [
+			{
+				"id": "activity-cancelled-1",
+				"type": "BALANCE_DEPOSIT",
+				"resource": {"type": "BALANCE_TRANSACTION", "id": "balance-tx-cancelled"},
+				"title": "Payment cancelled",
+				"description": "Payment for sub2_wise_cancelled_001",
+				"primaryAmount": "12.34 USD",
+				"status": "CANCELLED",
+				"createdOn": "2026-07-06T01:02:03.000Z"
+			}
+		]
+	}`
+	prov, req, cleanup := newWiseEndpointTestProvider(t, statement, http.StatusOK, activities, http.StatusOK)
+	defer cleanup()
+
+	resp, err := prov.QueryOrder(context.Background(), outTradeNo)
+	require.NoError(t, err)
+
+	require.Equal(t, 1, req.activityCalls)
+	require.Empty(t, req.activityQuery.Get("status"))
+	require.Equal(t, "balance-tx-cancelled", resp.TradeNo)
+	require.Equal(t, payment.ProviderStatusCancelled, resp.Status)
+	require.Equal(t, "status_cancelled", resp.Metadata["reconcile_reason"])
+	require.Equal(t, "rejected", resp.Metadata["reconcile_decision"])
+	require.Equal(t, "balance-tx-cancelled", resp.Metadata["wise_transaction_id"])
+	require.Equal(t, "cancelled", resp.Metadata["transaction_status"])
+}
+
+func TestWiseQueryOrderReturnsFailedForReferencedFailedActivity(t *testing.T) {
+	const outTradeNo = "sub2_wise_failed_001"
+	statement := `{"transactions":[]}`
+	activities := `{
+		"activities": [
+			{
+				"id": "activity-failed-1",
+				"type": "BALANCE_DEPOSIT",
+				"resource": {"type": "BALANCE_TRANSACTION", "id": "balance-tx-failed"},
+				"title": "Payment failed",
+				"description": "Payment for sub2_wise_failed_001",
+				"primaryAmount": "12.34 USD",
+				"status": "FAILED",
+				"createdOn": "2026-07-06T01:02:03.000Z"
+			}
+		]
+	}`
+	prov, req, cleanup := newWiseEndpointTestProvider(t, statement, http.StatusOK, activities, http.StatusOK)
+	defer cleanup()
+
+	resp, err := prov.QueryOrder(context.Background(), outTradeNo)
+	require.NoError(t, err)
+
+	require.Equal(t, 1, req.activityCalls)
+	require.Empty(t, req.activityQuery.Get("status"))
+	require.Equal(t, "balance-tx-failed", resp.TradeNo)
+	require.Equal(t, payment.ProviderStatusFailed, resp.Status)
+	require.Equal(t, "status_failed", resp.Metadata["reconcile_reason"])
+	require.Equal(t, "rejected", resp.Metadata["reconcile_decision"])
+	require.Equal(t, "balance-tx-failed", resp.Metadata["wise_transaction_id"])
+	require.Equal(t, "failed", resp.Metadata["transaction_status"])
 }
 
 func TestWiseQueryOrderDoesNotAutoFulfillActivityAfterStatementFailure(t *testing.T) {
@@ -1563,6 +1689,49 @@ func TestWiseExactSettlementStrategyRejectsMismatchedSettlementFields(t *testing
 			require.False(t, decision.Matched)
 			require.False(t, decision.AutoFulfill)
 			require.Equal(t, tt.wantReason, decision.Reason)
+		})
+	}
+}
+
+func TestWiseSubscriptionClientDeletesProfileSubscription(t *testing.T) {
+	t.Parallel()
+
+	var gotMethod string
+	var gotPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		require.Equal(t, "Bearer token-123", r.Header.Get("Authorization"))
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	client := NewWiseSubscriptionClient(server.URL, "token-123")
+	err := client.DeleteProfileSubscription(context.Background(), "profile-123", "subscription-123")
+
+	require.NoError(t, err)
+	require.Equal(t, http.MethodDelete, gotMethod)
+	require.Equal(t, "/v3/profiles/profile-123/subscriptions/subscription-123", gotPath)
+}
+
+func TestWiseSubscriptionClientDeleteTreatsNotFoundAndGoneAsSuccess(t *testing.T) {
+	t.Parallel()
+
+	for _, status := range []int{http.StatusNotFound, http.StatusGone} {
+		status := status
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			t.Parallel()
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(status)
+				_, _ = w.Write([]byte(`{"error":"not found"}`))
+			}))
+			defer server.Close()
+
+			client := NewWiseSubscriptionClient(server.URL, "token-123")
+			err := client.DeleteProfileSubscription(context.Background(), "profile-123", "missing-subscription")
+
+			require.NoError(t, err)
 		})
 	}
 }

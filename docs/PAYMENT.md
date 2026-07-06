@@ -161,7 +161,11 @@ Wise uses hosted redirect plus profile-level webhook subscription and automatic 
 
 Automatic Wise webhook subscription also requires a public HTTPS base URL for this Sub2API instance. Configure **API Base URL** or **Frontend URL** in system settings, or set one of `API_BASE_URL`, `FRONTEND_URL`, `SERVER_FRONTEND_URL`, `SITE_URL`, `BASE_URL`, or `APP_URL` in the deployment environment. The system registers `<base-url>/api/v1/payment/webhook/wise` with Wise.
 
-In v1, Sub2API auto-fulfills only Wise balance / bank transfer transactions whose settled amount exactly equals the order amount. Card, Apple Pay, Google Pay, and other fee-deducted transactions do not auto-credit balance or subscriptions; they require manual review.
+In v1, Sub2API auto-fulfills only Wise balance / bank transfer transactions whose settled amount exactly equals the order amount. Card, Apple Pay, Google Pay, and other fee-deducted transactions do not auto-credit balance or subscriptions; they require manual review. Payments whose Wise currency differs from the order/provider currency remain `currency_mismatch` and are not converted automatically.
+
+Wise refunds are manual. When an admin starts a Wise refund, Sub2API marks the order as requiring manual Wise dashboard action instead of pretending the gateway refund succeeded. After the operator completes the refund in Wise, they must confirm the manual refund in Sub2API with the Wise refund reference so local refund status, optional balance/subscription deduction, and audit logging happen in one controlled step.
+
+Wise reconciliation maps referenced Wise-side failed or cancelled activity to local failed/cancelled pending orders. Amount mismatch, fee-deducted settlement, metadata mismatch, and currency mismatch still require manual review and do not auto-fulfill.
 
 | Parameter | Description | Required |
 |-----------|-------------|----------|
@@ -238,12 +242,14 @@ Admins do not need to manually create a webhook in the Wise dashboard. When a Wi
 3. Wise sends a test notification when creating the subscription; the system ACKs it quickly, but it does not trigger reconciliation or order fulfillment.
 4. For real webhooks, the request path only performs quick signature verification, idempotent delivery recording, and async reconciliation triggering before ACK. Full reconciliation is handled by background jobs that query Wise statement/activity data.
 
+Disabling or deleting a Wise provider deletes the remote Wise webhook subscription first. If Wise returns 404/410, Sub2API treats the subscription as already removed. Other Wise API errors block the local disable/delete operation so the remote endpoint does not keep sending webhooks to a disabled provider. When a Wise profile/API base changes while enabled, Sub2API creates the new subscription first and then deletes the old remote subscription.
+
 ### Important Notes
 
 - Callback URLs must use **HTTPS** (required by Stripe, public HTTPS required by Wise, strongly recommended for others)
 - Ensure your firewall allows callback requests from payment platforms
 - The system automatically verifies callback signatures to prevent forgery
-- Balance top-up is processed automatically after provider verification / reconciliation passes. Wise v1 auto-fulfills only Wise balance / bank transfer transactions whose settled amount exactly equals the order amount; fee-deducted, amount-mismatched, card, Apple Pay, and Google Pay transactions require manual review
+- Balance top-up is processed automatically after provider verification / reconciliation passes. Wise v1 auto-fulfills only Wise balance / bank transfer transactions whose settled amount exactly equals the order amount; fee-deducted, amount-mismatched, currency-mismatched, card, Apple Pay, and Google Pay transactions require manual review
 
 ---
 

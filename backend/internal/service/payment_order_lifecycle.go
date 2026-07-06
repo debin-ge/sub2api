@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -218,13 +219,68 @@ func (s *PaymentService) checkPaidWithOptions(ctx context.Context, o *dbent.Paym
 		}
 		return checkPaidResultAlreadyPaid
 	}
+	switch resp.Status {
+	case payment.ProviderStatusFailed:
+		s.markProviderTerminal(ctx, o, prov.ProviderKey(), resp, OrderStatusFailed, "PAYMENT_PROVIDER_FAILED")
+		return ""
+	case payment.ProviderStatusCancelled:
+		s.markProviderTerminal(ctx, o, prov.ProviderKey(), resp, OrderStatusCancelled, "PAYMENT_PROVIDER_CANCELLED")
+		return ""
+	}
 	if !opts.cancelIfUnpaid {
 		return ""
 	}
 	if cp, ok := prov.(payment.CancelableProvider); ok {
-		_ = cp.CancelPayment(ctx, queryRef)
+		if err := cp.CancelPayment(ctx, queryRef); err != nil {
+			if errors.Is(err, payment.ErrCancelNotSupported) {
+				s.writeAuditLog(ctx, o.ID, "PAYMENT_CANCEL_UPSTREAM_SKIPPED", prov.ProviderKey(), map[string]any{
+					"queryRef": queryRef,
+					"detail":   err.Error(),
+				})
+			} else {
+				s.writeAuditLog(ctx, o.ID, "PAYMENT_CANCEL_UPSTREAM_FAILED", prov.ProviderKey(), map[string]any{
+					"queryRef": queryRef,
+					"detail":   err.Error(),
+				})
+				slog.Warn("cancel upstream payment failed", "orderID", o.ID, "queryRef", queryRef, "error", err)
+			}
+		}
 	}
 	return ""
+}
+
+func (s *PaymentService) markProviderTerminal(ctx context.Context, o *dbent.PaymentOrder, providerKey string, resp *payment.QueryOrderResponse, status string, auditAction string) {
+	if s == nil || s.entClient == nil || o == nil || resp == nil {
+		return
+	}
+	reason := ""
+	if resp.Metadata != nil {
+		reason = strings.TrimSpace(resp.Metadata["reconcile_reason"])
+	}
+	if reason == "" {
+		reason = "provider_status_" + strings.TrimSpace(resp.Status)
+	}
+	update := s.entClient.PaymentOrder.Update().
+		Where(paymentorder.IDEQ(o.ID), paymentorder.StatusEQ(OrderStatusPending)).
+		SetStatus(status)
+	if status == OrderStatusFailed {
+		now := time.Now()
+		update.SetFailedAt(now).SetFailedReason(reason)
+	}
+	count, err := update.Save(ctx)
+	if err != nil {
+		slog.Warn("mark provider terminal status failed", "orderID", o.ID, "status", status, "error", err)
+		return
+	}
+	if count == 0 {
+		return
+	}
+	s.writeAuditLog(ctx, o.ID, auditAction, providerKey, map[string]any{
+		"tradeNo":  resp.TradeNo,
+		"status":   resp.Status,
+		"reason":   reason,
+		"metadata": resp.Metadata,
+	})
 }
 
 func paymentProviderQueryContext(ctx context.Context, order *dbent.PaymentOrder, prov payment.Provider) context.Context {

@@ -422,8 +422,25 @@ func (s *PaymentConfigService) UpdateProviderInstance(ctx context.Context, id in
 	wiseRemoteTargetConfigChanged := current.ProviderKey == payment.TypeWise &&
 		mergedConfig != nil &&
 		hasWiseSubscriptionRemoteTargetConfigChange(currentConfig, mergedConfig)
+	if current.ProviderKey == payment.TypeWise && !finalEnabled && (current.Enabled || wiseRemoteTargetConfigChanged) {
+		configForDelete := currentConfig
+		if configForDelete == nil {
+			configForDelete, err = s.decryptConfig(current.Config)
+			if err != nil {
+				return nil, fmt.Errorf("decrypt existing config for wise subscription delete: %w", err)
+			}
+		}
+		if err := s.deleteWiseWebhookSubscription(ctx, current, configForDelete); err != nil {
+			return nil, err
+		}
+	}
+	var wiseOldRemoteSubscriptionIDs []string
 	var wisePreSaveSubscriptionResult *wiseWebhookSubscriptionEnsureResult
 	if current.ProviderKey == payment.TypeWise && current.Enabled && finalEnabled && wiseRemoteTargetConfigChanged {
+		wiseOldRemoteSubscriptionIDs, err = s.wiseWebhookSubscriptionExternalIDs(ctx, current.ID)
+		if err != nil {
+			return nil, fmt.Errorf("load old wise webhook subscriptions: %w", err)
+		}
 		wisePreSaveSubscriptionResult, err = s.ensureWiseWebhookSubscriptionDryRun(ctx, current, mergedConfig)
 		if err != nil {
 			return nil, err
@@ -524,9 +541,7 @@ func (s *PaymentConfigService) UpdateProviderInstance(ctx context.Context, id in
 		return nil, err
 	}
 	if saved.ProviderKey == payment.TypeWise && !saved.Enabled && wiseRemoteTargetConfigChanged {
-		if err := s.invalidateWiseWebhookSubscription(ctx, saved.ID); err != nil {
-			return nil, fmt.Errorf("invalidate wise webhook subscription after config change: %w", err)
-		}
+		return saved, nil
 	}
 	if saved.ProviderKey == payment.TypeWise && saved.Enabled {
 		transitionedToEnabled := !current.Enabled
@@ -548,6 +563,11 @@ func (s *PaymentConfigService) UpdateProviderInstance(ctx context.Context, id in
 					return nil, fmt.Errorf("commit provider instance update transaction: %w", err)
 				}
 				tx = nil
+			}
+			if len(wiseOldRemoteSubscriptionIDs) > 0 {
+				if err := s.deleteWiseWebhookSubscriptionIDs(ctx, current, currentConfig, wiseOldRemoteSubscriptionIDs); err != nil {
+					return nil, fmt.Errorf("delete old wise webhook subscription after config change: %w", err)
+				}
 			}
 			return saved, nil
 		}
@@ -652,6 +672,10 @@ func (s *PaymentConfigService) decryptConfig(stored string) (map[string]string, 
 }
 
 func (s *PaymentConfigService) DeleteProviderInstance(ctx context.Context, id int64) error {
+	inst, err := s.entClient.PaymentProviderInstance.Get(ctx, id)
+	if err != nil {
+		return fmt.Errorf("load provider instance: %w", err)
+	}
 	count, err := s.countPendingOrders(ctx, id)
 	if err != nil {
 		return fmt.Errorf("check pending orders: %w", err)
@@ -659,6 +683,15 @@ func (s *PaymentConfigService) DeleteProviderInstance(ctx context.Context, id in
 	if count > 0 {
 		return infraerrors.Conflict("PENDING_ORDERS",
 			fmt.Sprintf("this instance has %d in-progress orders and cannot be deleted — wait for orders to complete or disable the instance first", count))
+	}
+	if inst.ProviderKey == payment.TypeWise {
+		config, err := s.decryptConfig(inst.Config)
+		if err != nil {
+			return fmt.Errorf("decrypt wise provider config for subscription delete: %w", err)
+		}
+		if err := s.deleteWiseWebhookSubscription(ctx, inst, config); err != nil {
+			return err
+		}
 	}
 	return s.entClient.PaymentProviderInstance.DeleteOneID(id).Exec(ctx)
 }

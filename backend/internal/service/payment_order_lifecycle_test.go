@@ -27,6 +27,7 @@ type paymentOrderLifecycleQueryProvider struct {
 	lastCancelTradeNo string
 	queryCalls        int
 	cancelCalls       int
+	cancelErr         error
 	responses         []*payment.QueryOrderResponse
 	resp              *payment.QueryOrderResponse
 }
@@ -83,7 +84,7 @@ func (p *paymentOrderLifecycleQueryProvider) Refund(context.Context, payment.Ref
 func (p *paymentOrderLifecycleQueryProvider) CancelPayment(_ context.Context, tradeNo string) error {
 	p.lastCancelTradeNo = tradeNo
 	p.cancelCalls++
-	return nil
+	return p.cancelErr
 }
 
 func (r *paymentOrderLifecycleRedeemRepo) Create(context.Context, *RedeemCode) error {
@@ -693,6 +694,179 @@ func TestCancelOrderStillClosesUnpaidUpstreamOrder(t *testing.T) {
 	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
 	require.NoError(t, err)
 	require.Equal(t, OrderStatusCancelled, reloaded.Status)
+}
+
+func TestCheckPaidMarksWiseProviderCancelledOrderCancelled(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("wise-provider-cancelled@example.com").
+		SetPasswordHash("hash").
+		SetUsername("wise-provider-cancelled-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(88).
+		SetPayAmount(88).
+		SetFeeRate(0).
+		SetRechargeCode("WISE-PROVIDER-CANCELLED").
+		SetOutTradeNo("sub2_wise_provider_cancelled").
+		SetPaymentType(payment.TypeWise).
+		SetPaymentTradeNo("").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusPending).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	registry := payment.NewRegistry()
+	provider := &paymentOrderLifecycleQueryProvider{
+		key: payment.TypeWise,
+		resp: &payment.QueryOrderResponse{
+			TradeNo: "wise-cancelled-1",
+			Status:  payment.ProviderStatusCancelled,
+			Metadata: map[string]string{
+				"reconcile_reason":    "status_cancelled",
+				"wise_transaction_id": "wise-cancelled-1",
+			},
+		},
+	}
+	registry.Register(provider)
+	svc := &PaymentService{
+		entClient:       client,
+		registry:        registry,
+		providersLoaded: true,
+	}
+
+	result := svc.checkPaid(ctx, order)
+
+	require.Empty(t, result)
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusCancelled, reloaded.Status)
+	require.True(t, svc.hasAuditLog(ctx, order.ID, "PAYMENT_PROVIDER_CANCELLED"))
+}
+
+func TestCheckPaidMarksWiseProviderFailedOrderFailed(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("wise-provider-failed@example.com").
+		SetPasswordHash("hash").
+		SetUsername("wise-provider-failed-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(88).
+		SetPayAmount(88).
+		SetFeeRate(0).
+		SetRechargeCode("WISE-PROVIDER-FAILED").
+		SetOutTradeNo("sub2_wise_provider_failed").
+		SetPaymentType(payment.TypeWise).
+		SetPaymentTradeNo("").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusPending).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	registry := payment.NewRegistry()
+	provider := &paymentOrderLifecycleQueryProvider{
+		key: payment.TypeWise,
+		resp: &payment.QueryOrderResponse{
+			TradeNo: "wise-failed-1",
+			Status:  payment.ProviderStatusFailed,
+			Metadata: map[string]string{
+				"reconcile_reason":    "status_failed",
+				"wise_transaction_id": "wise-failed-1",
+			},
+		},
+	}
+	registry.Register(provider)
+	svc := &PaymentService{
+		entClient:       client,
+		registry:        registry,
+		providersLoaded: true,
+	}
+
+	result := svc.checkPaid(ctx, order)
+
+	require.Empty(t, result)
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusFailed, reloaded.Status)
+	require.NotNil(t, reloaded.FailedAt)
+	require.NotNil(t, reloaded.FailedReason)
+	require.Contains(t, *reloaded.FailedReason, "status_failed")
+	require.True(t, svc.hasAuditLog(ctx, order.ID, "PAYMENT_PROVIDER_FAILED"))
+}
+
+func TestCancelOrderAuditsWiseUnsupportedCancel(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("wise-cancel-unsupported@example.com").
+		SetPasswordHash("hash").
+		SetUsername("wise-cancel-unsupported-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(88).
+		SetPayAmount(88).
+		SetFeeRate(0).
+		SetRechargeCode("WISE-CANCEL-UNSUPPORTED").
+		SetOutTradeNo("sub2_wise_cancel_unsupported").
+		SetPaymentType(payment.TypeWise).
+		SetPaymentTradeNo("").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusPending).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	registry := payment.NewRegistry()
+	provider := &paymentOrderLifecycleQueryProvider{
+		key: payment.TypeWise,
+		resp: &payment.QueryOrderResponse{
+			TradeNo: order.OutTradeNo,
+			Status:  payment.ProviderStatusPending,
+		},
+		cancelErr: payment.ErrCancelNotSupported,
+	}
+	registry.Register(provider)
+	svc := &PaymentService{
+		entClient:       client,
+		registry:        registry,
+		providersLoaded: true,
+	}
+
+	outcome, err := svc.CancelOrder(ctx, order.ID, user.ID)
+
+	require.NoError(t, err)
+	require.Equal(t, checkPaidResultCancelled, outcome)
+	require.Equal(t, 1, provider.cancelCalls)
+	require.True(t, svc.hasAuditLog(ctx, order.ID, "PAYMENT_CANCEL_UPSTREAM_SKIPPED"))
 }
 
 func TestReconcilePendingWxpayOrdersBackfillsPaidOrder(t *testing.T) {

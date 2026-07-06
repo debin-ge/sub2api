@@ -185,7 +185,7 @@ type PaymentConfigService struct {
 	entClient                     *dbent.Client
 	settingRepo                   SettingRepository
 	encryptionKey                 []byte
-	wiseSubscriptionClientFactory func(config map[string]string) wiseProfileSubscriptionCreator
+	wiseSubscriptionClientFactory func(config map[string]string) wiseProfileSubscriptionClient
 	webhookBaseURLResolver        func(ctx context.Context) string
 }
 
@@ -197,7 +197,7 @@ func NewPaymentConfigService(entClient *dbent.Client, settingRepo SettingReposit
 	return svc
 }
 
-func defaultWiseSubscriptionClientFactory(config map[string]string) wiseProfileSubscriptionCreator {
+func defaultWiseSubscriptionClientFactory(config map[string]string) wiseProfileSubscriptionClient {
 	return provider.NewWiseSubscriptionClient(
 		providerConfigFieldValue(config, "apiBase"),
 		providerConfigFieldValue(config, "apiToken"),

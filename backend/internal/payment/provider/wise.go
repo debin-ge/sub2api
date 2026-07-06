@@ -249,6 +249,29 @@ func (w *Wise) SupportedTypes() []payment.PaymentType {
 	return []payment.PaymentType{payment.TypeWise}
 }
 
+func (w *Wise) MerchantIdentityMetadata() map[string]string {
+	if w == nil {
+		return nil
+	}
+	profileID := strings.TrimSpace(w.config["profileId"])
+	balanceID := strings.TrimSpace(w.config["balanceId"])
+	metadata := map[string]string{
+		"currency":            w.currency(),
+		"settlement_strategy": strings.TrimSpace(w.config["settlementStrategy"]),
+	}
+	if metadata["settlement_strategy"] == "" {
+		metadata["settlement_strategy"] = wiseDefaultStrategy
+	}
+	if profileID != "" {
+		metadata["profile_id"] = profileID
+		metadata["merchant_id"] = profileID
+	}
+	if balanceID != "" {
+		metadata["balance_id"] = balanceID
+	}
+	return metadata
+}
+
 func (w *Wise) CreatePayment(ctx context.Context, req payment.CreatePaymentRequest) (*payment.CreatePaymentResponse, error) {
 	_ = ctx
 	orderID := strings.TrimSpace(req.OrderID)
@@ -396,10 +419,7 @@ func (w *Wise) queryOrderFromTransactions(outTradeNo string, transactions []wise
 		if !tx.OccurredAt.IsZero() {
 			paidAt = tx.OccurredAt.UTC().Format(time.RFC3339)
 		}
-		status := payment.ProviderStatusPending
-		if decision.AutoFulfill {
-			status = payment.ProviderStatusPaid
-		}
+			status := wiseProviderStatusForTransaction(tx, decision)
 		tradeNo := strings.TrimSpace(tx.ID)
 		if tradeNo == "" {
 			tradeNo = outTradeNo
@@ -437,7 +457,7 @@ func wisePendingQueryResponse(outTradeNo string, tx wiseTransaction, decision wi
 	}
 	return &payment.QueryOrderResponse{
 		TradeNo:  tradeNo,
-		Status:   payment.ProviderStatusPending,
+		Status:   wiseProviderStatusForTransaction(tx, decision),
 		Amount:   tx.NetAmount.InexactFloat64(),
 		Metadata: metadata,
 	}
@@ -455,11 +475,46 @@ func (w *Wise) VerifyNotification(ctx context.Context, rawBody string, headers m
 	if !wiseWebhookEventSupported(event.EventType) {
 		return nil, nil
 	}
-	return nil, nil
+	metadata := map[string]string{
+		"event_type":             strings.TrimSpace(event.EventType),
+		"wise_reconcile_trigger": "true",
+	}
+	if deliveryID := wiseWebhookDeliveryID(headers); deliveryID != "" {
+		metadata["delivery_id"] = deliveryID
+	}
+	if resourceID := wiseWebhookValueString(event.Data.Resource.ID); resourceID != "" {
+		metadata["resource_id"] = resourceID
+	}
+	if profileID := wiseWebhookValueString(event.Data.Resource.ProfileID); profileID != "" {
+		metadata["profile_id"] = profileID
+		metadata["merchant_id"] = profileID
+	}
+	if accountID := wiseWebhookValueString(event.Data.Resource.AccountID); accountID != "" {
+		metadata["balance_id"] = accountID
+	}
+	if resourceType := strings.TrimSpace(event.Data.Resource.Type); resourceType != "" {
+		metadata["resource_type"] = resourceType
+	}
+	if wiseWebhookIsTestNotification(headers) {
+		metadata["test_notification"] = "true"
+	}
+	return &payment.PaymentNotification{
+		Status:   payment.NotificationStatusVerified,
+		RawData:  rawBody,
+		Metadata: metadata,
+	}, nil
 }
 
 func (w *Wise) Refund(ctx context.Context, req payment.RefundRequest) (*payment.RefundResponse, error) {
-	return nil, fmt.Errorf("wise refund is not supported")
+	_ = ctx
+	tradeNo := strings.TrimSpace(req.TradeNo)
+	orderID := strings.TrimSpace(req.OrderID)
+	return nil, fmt.Errorf("%w: wise manual refund required for order %s transaction %s", payment.ErrManualRefundRequired, orderID, tradeNo)
+}
+
+func (w *Wise) CancelPayment(ctx context.Context, tradeNo string) error {
+	_ = ctx
+	return fmt.Errorf("%w: wise cancel payment is not supported for reference %s", payment.ErrCancelNotSupported, strings.TrimSpace(tradeNo))
 }
 
 func normalizeWiseHTTPSURL(raw, fieldName string) (string, error) {
@@ -493,6 +548,14 @@ func parseWiseWebhookPublicKey(raw string) (*rsa.PublicKey, error) {
 
 type wiseWebhookEnvelope struct {
 	EventType string `json:"event_type"`
+	Data      struct {
+		Resource struct {
+			ID        any    `json:"id"`
+			ProfileID any    `json:"profile_id"`
+			AccountID any    `json:"account_id"`
+			Type      string `json:"type"`
+		} `json:"resource"`
+	} `json:"data"`
 }
 
 func wiseWebhookEventSupported(eventType string) bool {
@@ -501,6 +564,23 @@ func wiseWebhookEventSupported(eventType string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func wiseWebhookValueString(value any) string {
+	switch typed := value.(type) {
+	case string:
+		return strings.TrimSpace(typed)
+	case float64:
+		if typed == float64(int64(typed)) {
+			return strconv.FormatInt(int64(typed), 10)
+		}
+		return strconv.FormatFloat(typed, 'f', -1, 64)
+	default:
+		if value == nil {
+			return ""
+		}
+		return strings.TrimSpace(fmt.Sprint(value))
 	}
 }
 
@@ -696,6 +776,9 @@ type wiseExactSettlementStrategy struct{}
 func (wiseExactSettlementStrategy) Name() string { return wiseDefaultStrategy }
 
 func (wiseExactSettlementStrategy) Match(order wiseOrderContext, tx wiseTransaction) wiseSettlementDecision {
+	if status := wiseProviderTerminalStatus(tx.Status); status != "" {
+		return wiseSettlementDecision{Matched: false, Reason: wiseStatusReason(tx.Status)}
+	}
 	if reason := strings.TrimSpace(tx.RejectReason); reason != "" {
 		return wiseSettlementDecision{Matched: false, Reason: reason}
 	}
@@ -738,6 +821,38 @@ func (wiseExactSettlementStrategy) Match(order wiseOrderContext, tx wiseTransact
 		FeeAmount:   tx.FeeAmount,
 		NetAmount:   tx.NetAmount,
 		Reason:      "exact_match",
+	}
+}
+
+func wiseProviderStatusForTransaction(tx wiseTransaction, decision wiseSettlementDecision) string {
+	if status := wiseProviderTerminalStatus(tx.Status); status != "" {
+		return status
+	}
+	if decision.AutoFulfill {
+		return payment.ProviderStatusPaid
+	}
+	return payment.ProviderStatusPending
+}
+
+func wiseProviderTerminalStatus(status string) string {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "cancelled", "canceled":
+		return payment.ProviderStatusCancelled
+	case "failed", "failure", "rejected":
+		return payment.ProviderStatusFailed
+	default:
+		return ""
+	}
+}
+
+func wiseStatusReason(status string) string {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "cancelled", "canceled":
+		return "status_cancelled"
+	case "failed", "failure", "rejected":
+		return "status_failed"
+	default:
+		return "status_not_completed"
 	}
 }
 
@@ -1015,9 +1130,9 @@ func (w *Wise) queryActivities(ctx context.Context) ([]wiseTransaction, error) {
 	query.Set("since", since.Format(time.RFC3339))
 	query.Set("until", until.Format(time.RFC3339))
 	query.Set("size", strconv.Itoa(wiseActivityPageSize))
-	query.Set("status", "COMPLETED")
 	cacheKey := strings.Join([]string{
 		"activities",
+		"all-status",
 		profileID,
 		w.currency(),
 		since.Format(time.RFC3339),
@@ -1333,4 +1448,8 @@ func wiseIsOrderIDChar(ch byte) bool {
 		ch == '-'
 }
 
-var _ payment.Provider = (*Wise)(nil)
+var (
+	_ payment.Provider                 = (*Wise)(nil)
+	_ payment.CancelableProvider       = (*Wise)(nil)
+	_ payment.MerchantIdentityProvider = (*Wise)(nil)
+)

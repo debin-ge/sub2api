@@ -139,6 +139,62 @@ func (c *WiseSubscriptionClient) CreateProfileSubscription(ctx context.Context, 
 	return &out, nil
 }
 
+func (c *WiseSubscriptionClient) DeleteProfileSubscription(ctx context.Context, profileID string, subscriptionID string) error {
+	if c == nil {
+		return fmt.Errorf("wise subscription delete: nil client")
+	}
+	profileID = strings.TrimSpace(profileID)
+	if profileID == "" {
+		return fmt.Errorf("wise subscription delete: missing profile id")
+	}
+	subscriptionID = strings.TrimSpace(subscriptionID)
+	if subscriptionID == "" {
+		return fmt.Errorf("wise subscription delete: missing subscription id")
+	}
+	apiToken := strings.TrimSpace(c.apiToken)
+	if apiToken == "" {
+		return fmt.Errorf("wise subscription delete: missing API token")
+	}
+
+	apiBase := strings.TrimRight(strings.TrimSpace(c.apiBase), "/")
+	if apiBase == "" {
+		apiBase = wiseDefaultAPIBase
+	}
+	httpReq, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodDelete,
+		apiBase+"/v3/profiles/"+url.PathEscape(profileID)+"/subscriptions/"+url.PathEscape(subscriptionID),
+		nil,
+	)
+	if err != nil {
+		return fmt.Errorf("wise subscription delete build request: %w", err)
+	}
+	httpReq.Header.Set("Authorization", "Bearer "+apiToken)
+	httpReq.Header.Set("Accept", "application/json")
+
+	client := c.httpClient
+	if client == nil {
+		client = &http.Client{Timeout: wiseSubscriptionHTTPTimeout}
+	}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("wise subscription delete request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, wiseMaxResponseSize))
+	if err != nil {
+		return fmt.Errorf("wise subscription delete read response: %w", err)
+	}
+	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusGone {
+		return nil
+	}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return fmt.Errorf("wise subscription delete HTTP %d: %s", resp.StatusCode, maskWiseSecretSummary(responseBody, apiToken))
+	}
+	return nil
+}
+
 func maskWiseSecretSummary(body []byte, secret string) string {
 	summary := summarizeWiseResponse(body)
 	secret = strings.TrimSpace(secret)

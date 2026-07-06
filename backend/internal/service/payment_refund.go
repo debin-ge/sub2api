@@ -199,12 +199,15 @@ func (s *PaymentService) validateRefundRequest(ctx context.Context, oid, uid int
 }
 
 func (s *PaymentService) PrepareRefund(ctx context.Context, oid int64, amt float64, reason string, force, deduct bool) (*RefundPlan, *RefundResult, error) {
+	return s.prepareRefund(ctx, oid, amt, reason, force, deduct, []string{OrderStatusCompleted, OrderStatusRefundRequested, OrderStatusRefundFailed})
+}
+
+func (s *PaymentService) prepareRefund(ctx context.Context, oid int64, amt float64, reason string, force, deduct bool, allowedStatuses []string) (*RefundPlan, *RefundResult, error) {
 	o, err := s.entClient.PaymentOrder.Get(ctx, oid)
 	if err != nil {
 		return nil, nil, infraerrors.NotFound("NOT_FOUND", "order not found")
 	}
-	ok := []string{OrderStatusCompleted, OrderStatusRefundRequested, OrderStatusRefundFailed}
-	if !psSliceContains(ok, o.Status) {
+	if !psSliceContains(allowedStatuses, o.Status) {
 		return nil, nil, infraerrors.BadRequest("INVALID_STATUS", "order status does not allow refund")
 	}
 	// Check provider instance allows admin refund
@@ -281,13 +284,42 @@ func (s *PaymentService) ExecuteRefund(ctx context.Context, p *RefundPlan) (*Ref
 	if c == 0 {
 		return nil, infraerrors.Conflict("CONFLICT", "order status changed")
 	}
+	if err := s.applyRefundDeductions(ctx, p); err != nil {
+		s.restoreStatus(ctx, p)
+		return nil, err
+	}
+	if err := s.gwRefund(ctx, p); err != nil {
+		if errors.Is(err, payment.ErrManualRefundRequired) {
+			s.writeAuditLog(ctx, p.OrderID, "WISE_MANUAL_REFUND_REQUIRED", "admin", map[string]any{
+				"detail":          err.Error(),
+				"refundAmount":    p.RefundAmount,
+				"gatewayAmount":   p.GatewayAmount,
+				"reason":          p.Reason,
+				"balanceDeducted": p.BalanceToDeduct,
+				"subDaysDeducted": p.SubDaysToDeduct,
+			})
+			return &RefundResult{
+				Success:         false,
+				ManualRequired:  true,
+				ManualAction:    "complete_refund_in_wise_dashboard_then_confirm_locally",
+				Warning:         "manual refund required: complete the Wise refund in Wise dashboard, then confirm this refund locally",
+				RequireForce:    false,
+				BalanceDeducted: p.BalanceToDeduct,
+				SubDaysDeducted: p.SubDaysToDeduct,
+			}, nil
+		}
+		return s.handleGwFail(ctx, p, err)
+	}
+	return s.markRefundOk(ctx, p)
+}
+
+func (s *PaymentService) applyRefundDeductions(ctx context.Context, p *RefundPlan) error {
 	if p.DeductionType == payment.DeductionTypeBalance && p.BalanceToDeduct > 0 {
 		// Skip balance deduction on retry if previous attempt already deducted
 		// but failed to roll back (REFUND_ROLLBACK_FAILED in audit log).
 		if !s.hasAuditLog(ctx, p.OrderID, "REFUND_ROLLBACK_FAILED") {
 			if err := s.userRepo.DeductBalance(ctx, p.Order.UserID, p.BalanceToDeduct); err != nil {
-				s.restoreStatus(ctx, p)
-				return nil, fmt.Errorf("deduction: %w", err)
+				return fmt.Errorf("deduction: %w", err)
 			}
 		} else {
 			slog.Warn("skipping balance deduction on retry (previous rollback failed)", "orderID", p.OrderID)
@@ -302,13 +334,11 @@ func (s *PaymentService) ExecuteRefund(ctx context.Context, p *RefundPlan) (*Ref
 					// Deduction would expire the subscription — revoke it entirely
 					slog.Info("subscription deduction would expire, revoking", "orderID", p.OrderID, "subID", p.SubscriptionID, "days", p.SubDaysToDeduct)
 					if revokeErr := s.subscriptionSvc.RevokeSubscription(ctx, p.SubscriptionID); revokeErr != nil {
-						s.restoreStatus(ctx, p)
-						return nil, fmt.Errorf("revoke subscription: %w", revokeErr)
+						return fmt.Errorf("revoke subscription: %w", revokeErr)
 					}
 				} else {
 					// Other errors (DB failure, not found) — abort refund
-					s.restoreStatus(ctx, p)
-					return nil, fmt.Errorf("deduct subscription days: %w", err)
+					return fmt.Errorf("deduct subscription days: %w", err)
 				}
 			}
 		} else {
@@ -316,10 +346,49 @@ func (s *PaymentService) ExecuteRefund(ctx context.Context, p *RefundPlan) (*Ref
 			p.SubDaysToDeduct = 0
 		}
 	}
-	if err := s.gwRefund(ctx, p); err != nil {
-		return s.handleGwFail(ctx, p, err)
+	return nil
+}
+
+func (s *PaymentService) ConfirmManualRefund(ctx context.Context, orderID int64, refundAmount float64, reason string, externalRefundID string, force bool, deduct bool) (*RefundResult, error) {
+	plan, early, err := s.prepareRefund(ctx, orderID, refundAmount, reason, force, deduct, []string{OrderStatusCompleted, OrderStatusRefundRequested, OrderStatusRefundFailed, OrderStatusRefunding})
+	if err != nil {
+		return nil, err
 	}
-	return s.markRefundOk(ctx, p)
+	if early != nil {
+		return early, nil
+	}
+	alreadyRefunding := plan.Order.Status == OrderStatusRefunding
+	if !alreadyRefunding {
+		count, err := s.entClient.PaymentOrder.Update().
+			Where(paymentorder.IDEQ(orderID), paymentorder.StatusIn(OrderStatusCompleted, OrderStatusRefundRequested, OrderStatusRefundFailed)).
+			SetStatus(OrderStatusRefunding).
+			Save(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("lock manual refund: %w", err)
+		}
+		if count == 0 {
+			return nil, infraerrors.Conflict("CONFLICT", "order status changed")
+		}
+	}
+	if err := s.applyRefundDeductions(ctx, plan); err != nil {
+		if !alreadyRefunding {
+			s.restoreStatus(ctx, plan)
+		}
+		return nil, err
+	}
+	result, err := s.markRefundOk(ctx, plan)
+	if err != nil {
+		return nil, err
+	}
+	s.writeAuditLog(ctx, orderID, "WISE_MANUAL_REFUND_CONFIRMED", "admin", map[string]any{
+		"externalRefundID": strings.TrimSpace(externalRefundID),
+		"refundAmount":     plan.RefundAmount,
+		"gatewayAmount":    plan.GatewayAmount,
+		"reason":           plan.Reason,
+		"force":            force,
+		"deductBalance":    deduct,
+	})
+	return result, nil
 }
 
 func (s *PaymentService) gwRefund(ctx context.Context, p *RefundPlan) error {
