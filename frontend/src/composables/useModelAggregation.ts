@@ -52,7 +52,7 @@ function minNullable(a: number | null, b: number | null): number | null {
 
 function extractMinPricing(pricing: UserSupportedModelPricing | null): PlazaMinPricing {
   if (!pricing) return emptyPricing()
-  return {
+  const minPricing = {
     input: pricing.input_price,
     output: pricing.output_price,
     cacheWrite: pricing.cache_write_price,
@@ -60,6 +60,16 @@ function extractMinPricing(pricing: UserSupportedModelPricing | null): PlazaMinP
     imageOutput: pricing.image_output_price,
     perRequest: pricing.per_request_price
   }
+
+  for (const interval of pricing.intervals ?? []) {
+    minPricing.input = minNullable(minPricing.input, interval.input_price)
+    minPricing.output = minNullable(minPricing.output, interval.output_price)
+    minPricing.cacheWrite = minNullable(minPricing.cacheWrite, interval.cache_write_price)
+    minPricing.cacheRead = minNullable(minPricing.cacheRead, interval.cache_read_price)
+    minPricing.perRequest = minNullable(minPricing.perRequest, interval.per_request_price)
+  }
+
+  return minPricing
 }
 
 function mergeMinPricing(a: PlazaMinPricing, b: PlazaMinPricing): PlazaMinPricing {

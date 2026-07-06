@@ -174,4 +174,57 @@ describe('aggregateByPlatformModel', () => {
     expect(ascending[0].models.map((m) => m.model)).toEqual(['cheap', 'expensive', 'missing'])
     expect(descending[0].models.map((m) => m.model)).toEqual(['expensive', 'cheap', 'missing'])
   })
+
+  it('uses interval-only pricing when computing minimum prices and input sorting', () => {
+    const rows: UserAvailableChannel[] = [{
+      name: 'ch',
+      description: '',
+      platforms: [{
+        platform: 'openai',
+        groups: [{ id: 1, name: 'g', platform: 'openai', subscription_type: 'standard', rate_multiplier: 1, is_exclusive: false }],
+        supported_models: [
+          {
+            name: 'tiered-cheap',
+            platform: 'openai',
+            pricing: price(null, null, {
+              intervals: [
+                {
+                  start: 0,
+                  end: 1000,
+                  input_price: 0.000003,
+                  output_price: 0.00002,
+                  cache_write_price: 0.000004,
+                  cache_read_price: 0.000001,
+                  per_request_price: 0.002,
+                },
+                {
+                  start: 1000,
+                  end: null,
+                  input_price: 0.000001,
+                  output_price: 0.00001,
+                  cache_write_price: null,
+                  cache_read_price: 0.0000005,
+                  per_request_price: 0.001,
+                },
+              ],
+            }),
+          },
+          { name: 'flat-expensive', platform: 'openai', pricing: price(0.000002) },
+        ],
+      }],
+    }]
+
+    const ascending = aggregateByPlatformModel(rows, { sort: 'input_asc' })
+    const tiered = ascending[0].models[0]
+
+    expect(ascending[0].models.map((m) => m.model)).toEqual(['tiered-cheap', 'flat-expensive'])
+    expect(tiered.minPricing).toEqual({
+      input: 0.000001,
+      output: 0.00001,
+      cacheWrite: 0.000004,
+      cacheRead: 0.0000005,
+      imageOutput: null,
+      perRequest: 0.001,
+    })
+  })
 })
