@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { aggregateByPlatformModel } from '@/composables/useModelAggregation'
+import { aggregateByPlatformModel, sortAggregatedModels } from '@/composables/useModelAggregation'
 import type { UserAvailableChannel, UserSupportedModelPricing } from '@/api/channels'
 
 const price = (
@@ -50,6 +50,26 @@ describe('aggregateByPlatformModel', () => {
     expect(result[0].models[0].displayName).toBe('claude-sonnet')
     expect(result[0].models[0].minPricing.input).toBe(0.000002)
     expect(result[0].models[0].supportedGroups).toHaveLength(2)
+    expect(result[0].models[0].bestRateMultiplier).toBe(1)
+  })
+
+  it('tracks the lowest valid group multiplier for discount and recharged price display', () => {
+    const rows: UserAvailableChannel[] = [{
+      name: 'ch',
+      description: '',
+      platforms: [{
+        platform: 'anthropic',
+        groups: [
+          { id: 1, name: 'standard', platform: 'anthropic', subscription_type: 'standard', rate_multiplier: 1.2, is_exclusive: false },
+          { id: 2, name: 'discount', platform: 'anthropic', subscription_type: 'standard', rate_multiplier: 0.8, is_exclusive: false }
+        ],
+        supported_models: [{ name: 'claude-sonnet', platform: 'anthropic', pricing: price(0.000003) }]
+      }]
+    }]
+
+    const result = aggregateByPlatformModel(rows)
+
+    expect(result[0].models[0].bestRateMultiplier).toBe(0.8)
   })
 
   it('does not merge same model name across different platforms', () => {
@@ -226,5 +246,33 @@ describe('aggregateByPlatformModel', () => {
       imageOutput: null,
       perRequest: 0.001,
     })
+  })
+
+  it('sorts aggregated models globally without platform grouping taking precedence', () => {
+    const rows: UserAvailableChannel[] = [{
+      name: 'ch',
+      description: '',
+      platforms: [
+        {
+          platform: 'anthropic',
+          groups: [{ id: 1, name: 'ant', platform: 'anthropic', subscription_type: 'standard', rate_multiplier: 1, is_exclusive: false }],
+          supported_models: [{ name: 'z-last', platform: 'anthropic', pricing: price(0.00001) }]
+        },
+        {
+          platform: 'openai',
+          groups: [{ id: 2, name: 'oa', platform: 'openai', subscription_type: 'standard', rate_multiplier: 1, is_exclusive: false }],
+          supported_models: [{ name: 'a-first', platform: 'openai', pricing: price(0.000001) }]
+        }
+      ]
+    }]
+
+    const groupedModels = aggregateByPlatformModel(rows)
+      .flatMap((section) => section.models)
+    const globallySortedModels = sortAggregatedModels(groupedModels, 'input_asc')
+
+    expect(globallySortedModels.map((model) => `${model.platform}:${model.model}`)).toEqual([
+      'openai:a-first',
+      'anthropic:z-last'
+    ])
   })
 })

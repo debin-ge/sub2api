@@ -24,38 +24,44 @@ import (
 var (
 	openAIModelDatePattern     = regexp.MustCompile(`-\d{8}$`)
 	openAIModelBasePattern     = regexp.MustCompile(`^(gpt-\d+(?:\.\d+)?)(?:-|$)`)
-	openAIGPT54FallbackPricing = &LiteLLMModelPricing{
+	// dashVersionSuffixPattern 匹配「非数字字符 + 数字 + '-' + 数字」的位置，
+	// 用于把 dash 分隔的版本号（glm-5-1、kimi-k2-5）改成 dot 分隔的
+	// canonical 形式（glm-5.1、kimi-k2.5）。前置的 (\D) 避免匹配纯数字序列
+	// （如 -20251101 尾缀）。
+	dashVersionSuffixPattern = regexp.MustCompile(`(\D)(\d+)-(\d+)`)
+	openAIGPT54FallbackPricing = &ModelPriceEntry{
 		InputCostPerToken:               2.5e-06, // $2.5 per MTok
 		OutputCostPerToken:              1.5e-05, // $15 per MTok
 		CacheReadInputTokenCost:         2.5e-07, // $0.25 per MTok
 		LongContextInputTokenThreshold:  272000,
 		LongContextInputCostMultiplier:  2.0,
 		LongContextOutputCostMultiplier: 1.5,
-		LiteLLMProvider:                 "openai",
+		PricingCatalogProvider:          "openai",
 		Mode:                            "chat",
 		SupportsPromptCaching:           true,
 	}
-	openAIGPT54MiniFallbackPricing = &LiteLLMModelPricing{
+	openAIGPT54MiniFallbackPricing = &ModelPriceEntry{
 		InputCostPerToken:       7.5e-07,
 		OutputCostPerToken:      4.5e-06,
 		CacheReadInputTokenCost: 7.5e-08,
-		LiteLLMProvider:         "openai",
+		PricingCatalogProvider:  "openai",
 		Mode:                    "chat",
 		SupportsPromptCaching:   true,
 	}
-	openAIGPT54NanoFallbackPricing = &LiteLLMModelPricing{
+	openAIGPT54NanoFallbackPricing = &ModelPriceEntry{
 		InputCostPerToken:       2e-07,
 		OutputCostPerToken:      1.25e-06,
 		CacheReadInputTokenCost: 2e-08,
-		LiteLLMProvider:         "openai",
+		PricingCatalogProvider:  "openai",
 		Mode:                    "chat",
 		SupportsPromptCaching:   true,
 	}
 )
 
-// LiteLLMModelPricing LiteLLM价格数据结构
-// 只保留我们需要的字段，使用指针来处理可能缺失的值
-type LiteLLMModelPricing struct {
+// ModelPriceEntry is one entry from the configured pricing catalog.
+// The catalog schema is compatible with model-price-repo JSON and includes
+// fields such as input_cost_per_token and litellm_provider.
+type ModelPriceEntry struct {
 	InputCostPerToken                   float64 `json:"input_cost_per_token"`
 	InputCostPerTokenPriority           float64 `json:"input_cost_per_token_priority"`
 	OutputCostPerToken                  float64 `json:"output_cost_per_token"`
@@ -68,7 +74,7 @@ type LiteLLMModelPricing struct {
 	LongContextInputCostMultiplier      float64 `json:"long_context_input_cost_multiplier,omitempty"`
 	LongContextOutputCostMultiplier     float64 `json:"long_context_output_cost_multiplier,omitempty"`
 	SupportsServiceTier                 bool    `json:"supports_service_tier"`
-	LiteLLMProvider                     string  `json:"litellm_provider"`
+	PricingCatalogProvider              string  `json:"litellm_provider"`
 	Mode                                string  `json:"mode"`
 	SupportsPromptCaching               bool    `json:"supports_prompt_caching"`
 	OutputCostPerImage                  float64 `json:"output_cost_per_image"`       // 图片生成模型每张图片价格
@@ -81,8 +87,9 @@ type PricingRemoteClient interface {
 	FetchHashText(ctx context.Context, url string) (string, error)
 }
 
-// LiteLLMRawEntry 用于解析原始JSON数据
-type LiteLLMRawEntry struct {
+// RawModelPriceEntry parses raw JSON while preserving whether optional price
+// fields were present.
+type RawModelPriceEntry struct {
 	InputCostPerToken                   *float64 `json:"input_cost_per_token"`
 	InputCostPerTokenPriority           *float64 `json:"input_cost_per_token_priority"`
 	OutputCostPerToken                  *float64 `json:"output_cost_per_token"`
@@ -92,7 +99,7 @@ type LiteLLMRawEntry struct {
 	CacheReadInputTokenCost             *float64 `json:"cache_read_input_token_cost"`
 	CacheReadInputTokenCostPriority     *float64 `json:"cache_read_input_token_cost_priority"`
 	SupportsServiceTier                 bool     `json:"supports_service_tier"`
-	LiteLLMProvider                     string   `json:"litellm_provider"`
+	PricingCatalogProvider              string   `json:"litellm_provider"`
 	Mode                                string   `json:"mode"`
 	SupportsPromptCaching               bool     `json:"supports_prompt_caching"`
 	OutputCostPerImage                  *float64 `json:"output_cost_per_image"`
@@ -104,7 +111,7 @@ type PricingService struct {
 	cfg          *config.Config
 	remoteClient PricingRemoteClient
 	mu           sync.RWMutex
-	pricingData  map[string]*LiteLLMModelPricing
+	pricingData  map[string]*ModelPriceEntry
 	lastUpdated  time.Time
 	localHash    string
 
@@ -118,7 +125,7 @@ func NewPricingService(cfg *config.Config, remoteClient PricingRemoteClient) *Pr
 	s := &PricingService{
 		cfg:          cfg,
 		remoteClient: remoteClient,
-		pricingData:  make(map[string]*LiteLLMModelPricing),
+		pricingData:  make(map[string]*ModelPriceEntry),
 		stopCh:       make(chan struct{}),
 	}
 	return s
@@ -349,14 +356,14 @@ func (s *PricingService) downloadPricingData() error {
 }
 
 // parsePricingData 解析价格数据（处理各种格式）
-func (s *PricingService) parsePricingData(body []byte) (map[string]*LiteLLMModelPricing, error) {
+func (s *PricingService) parsePricingData(body []byte) (map[string]*ModelPriceEntry, error) {
 	// 首先解析为 map[string]json.RawMessage
 	var rawData map[string]json.RawMessage
 	if err := json.Unmarshal(body, &rawData); err != nil {
 		return nil, fmt.Errorf("parse raw JSON: %w", err)
 	}
 
-	result := make(map[string]*LiteLLMModelPricing)
+	result := make(map[string]*ModelPriceEntry)
 	skipped := 0
 
 	for modelName, rawEntry := range rawData {
@@ -366,7 +373,7 @@ func (s *PricingService) parsePricingData(body []byte) (map[string]*LiteLLMModel
 		}
 
 		// 尝试解析每个条目
-		var entry LiteLLMRawEntry
+		var entry RawModelPriceEntry
 		if err := json.Unmarshal(rawEntry, &entry); err != nil {
 			skipped++
 			continue
@@ -377,11 +384,11 @@ func (s *PricingService) parsePricingData(body []byte) (map[string]*LiteLLMModel
 			continue
 		}
 
-		pricing := &LiteLLMModelPricing{
-			LiteLLMProvider:       entry.LiteLLMProvider,
-			Mode:                  entry.Mode,
-			SupportsPromptCaching: entry.SupportsPromptCaching,
-			SupportsServiceTier:   entry.SupportsServiceTier,
+		pricing := &ModelPriceEntry{
+			PricingCatalogProvider: entry.PricingCatalogProvider,
+			Mode:                   entry.Mode,
+			SupportsPromptCaching:  entry.SupportsPromptCaching,
+			SupportsServiceTier:    entry.SupportsServiceTier,
 		}
 
 		if entry.InputCostPerToken != nil {
@@ -523,7 +530,7 @@ func (s *PricingService) validatePricingURL(raw string) (string, error) {
 }
 
 // GetModelPricing 获取模型价格（带模糊匹配）
-func (s *PricingService) GetModelPricing(modelName string) *LiteLLMModelPricing {
+func (s *PricingService) GetModelPricing(modelName string) *ModelPriceEntry {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -546,9 +553,21 @@ func (s *PricingService) GetModelPricing(modelName string) *LiteLLMModelPricing 
 	}
 
 	// 2. 处理常见的模型名称变体
-	// claude-opus-4-5-20251101 -> claude-opus-4.5-20251101
+	// 2a. 定向替换：claude-opus-4-5-20251101 -> claude-opus-4.5-20251101
 	for _, candidate := range lookupCandidates {
 		normalized := strings.ReplaceAll(candidate, "-4-5-", "-4.5-")
+		if pricing, ok := s.pricingData[normalized]; ok {
+			return pricing
+		}
+	}
+	// 2b. 通用 dash → dot 版本号归一化（覆盖 glm-5-1 → glm-5.1、
+	// kimi-k2-5 → kimi-k2.5、minimax-m2-7 → minimax-m2.7 等 dash 版本命名）。
+	// 前置的 \D 限定避免误伤已经是 dot 版本或纯 `-N`（如 -20251101）尾缀的情况。
+	for _, candidate := range lookupCandidates {
+		normalized := normalizeDashVersionSuffix(candidate)
+		if normalized == candidate {
+			continue
+		}
 		if pricing, ok := s.pricingData[normalized]; ok {
 			return pricing
 		}
@@ -608,6 +627,18 @@ func (s *PricingService) buildModelLookupCandidates(modelLower string) []string 
 	return out
 }
 
+// normalizeDashVersionSuffix 把 dash 分隔的版本号改成 dot 分隔的形式，
+// 只影响 `<非数字><digits>-<digits>` 位置，避免误伤 -20251101 之类的日期尾缀。
+//
+//   glm-5-1              -> glm-5.1
+//   kimi-k2-5            -> kimi-k2.5
+//   claude-opus-4-5-...  -> claude-opus-4.5-... （首次匹配即返回，日期段不受影响）
+//   claude-opus-4-8      -> claude-opus-4.8
+//   deepseek-v4          -> deepseek-v4        （无 -digit 尾缀，不变）
+func normalizeDashVersionSuffix(model string) string {
+	return dashVersionSuffixPattern.ReplaceAllString(model, "${1}${2}.${3}")
+}
+
 func normalizeModelNameForPricing(model string) string {
 	// Common Gemini/VertexAI forms:
 	// - models/gemini-2.0-flash-exp
@@ -659,7 +690,7 @@ func (s *PricingService) extractBaseName(model string) string {
 }
 
 // matchByModelFamily 基于模型系列匹配
-func (s *PricingService) matchByModelFamily(model string) *LiteLLMModelPricing {
+func (s *PricingService) matchByModelFamily(model string) *ModelPriceEntry {
 	// modelFamily 定义一个模型系列的匹配和定价查找规则。
 	type modelFamily struct {
 		name    string   // 系列名称
@@ -769,7 +800,7 @@ func (s *PricingService) matchByModelFamily(model string) *LiteLLMModelPricing {
 // 4. gpt-5.3-codex -> gpt-5.2-codex
 // 5. gpt-5.4* -> 业务静态兜底价
 // 6. 最终回退到 DefaultTestModel (gpt-5.1-codex)
-func (s *PricingService) matchOpenAIModel(model string) *LiteLLMModelPricing {
+func (s *PricingService) matchOpenAIModel(model string) *ModelPriceEntry {
 	if strings.HasPrefix(model, "gpt-5.3-codex-spark") {
 		if pricing, ok := s.pricingData["gpt-5.1-codex"]; ok {
 			logger.LegacyPrintf("service.pricing", "[Pricing][SparkBilling] %s -> %s billing", model, "gpt-5.1-codex")
@@ -905,7 +936,8 @@ func (s *PricingService) getHashFilePath() string {
 }
 
 // ListModelNamesByProvider returns all model names in the catalog whose
-// LiteLLMProvider matches the given provider string (case-insensitive).
+// litellm_provider schema field matches the given provider string
+// (case-insensitive).
 // The returned slice is sorted alphabetically.
 func (s *PricingService) ListModelNamesByProvider(provider string) []string {
 	s.mu.RLock()
@@ -914,7 +946,7 @@ func (s *PricingService) ListModelNamesByProvider(provider string) []string {
 	provider = strings.ToLower(strings.TrimSpace(provider))
 	names := make([]string, 0)
 	for name, p := range s.pricingData {
-		if strings.ToLower(p.LiteLLMProvider) == provider {
+		if strings.ToLower(p.PricingCatalogProvider) == provider {
 			names = append(names, name)
 		}
 	}

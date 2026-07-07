@@ -87,7 +87,7 @@ type BillingCache interface {
 	BatchGetUserPlatformQuotaCache(ctx context.Context, keys []UserPlatformQuotaKey) ([]*UserPlatformQuotaCacheEntry, error)
 }
 
-// ModelPricing 模型价格配置（per-token价格，与LiteLLM格式一致）
+// ModelPricing 模型价格配置（per-token价格，与配置化模型价格目录格式一致）
 type ModelPricing struct {
 	InputPricePerToken             float64 // 每token输入价格 (USD)
 	InputPricePerTokenPriority     float64 // priority service tier 下每token输入价格 (USD)
@@ -196,7 +196,7 @@ func NewBillingService(cfg *config.Config, pricingService *PricingService) *Bill
 }
 
 // initFallbackPricing 初始化硬编码回退价格（当动态价格不可用时使用）
-// 价格单位：USD per token（与LiteLLM格式一致）
+// 价格单位：USD per token（与配置化模型价格目录格式一致）
 func (s *BillingService) initFallbackPricing() {
 	// Claude 4.5 Opus
 	s.fallbackPrices["claude-opus-4.5"] = &ModelPricing{
@@ -388,6 +388,17 @@ func (s *BillingService) initFallbackPricing() {
 	}
 }
 
+// GetFallbackPricing 公开访问硬编码回退价（getFallbackPricing 的 public wrapper）。
+// 用于模型广场等展示场景，在配置化 pricing catalog 命中失败时对齐真实计费口径。
+//
+// 注意：返回值中 GLM/DeepSeek/Kimi/MiniMax 系列的单价是官方 CNY 报价通过固定
+// 内部核算汇率换算得到的 USD 数字（见 initFallbackPricing 中 glmCNYPerMillionTokens
+// / deepSeekCNYPerMillionTokens / miniMaxUSDPerMillionTokens），调用方应以「参考单价」
+// 而非精确市场价处理。若模型没有硬编码 fallback，返回 nil。
+func (s *BillingService) GetFallbackPricing(model string) *ModelPricing {
+	return s.getFallbackPricing(model)
+}
+
 // getFallbackPricing 根据模型系列获取回退价格
 func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 	modelLower := strings.ToLower(model)
@@ -473,29 +484,29 @@ func (s *BillingService) GetModelPricing(model string) (*ModelPricing, error) {
 
 	// 1. 优先从动态价格服务获取
 	if s.pricingService != nil {
-		litellmPricing := s.pricingService.GetModelPricing(model)
-		if litellmPricing != nil {
+		catalogEntry := s.pricingService.GetModelPricing(model)
+		if catalogEntry != nil {
 			// 启用 5m/1h 分类计费的条件：
 			// 1. 存在 1h 价格
-			// 2. 1h 价格 > 5m 价格（防止 LiteLLM 数据错误导致少收费）
-			price5m := litellmPricing.CacheCreationInputTokenCost
-			price1h := litellmPricing.CacheCreationInputTokenCostAbove1hr
+			// 2. 1h 价格 > 5m 价格（防止配置化模型价格目录数据错误导致少收费）
+			price5m := catalogEntry.CacheCreationInputTokenCost
+			price1h := catalogEntry.CacheCreationInputTokenCostAbove1hr
 			enableBreakdown := price1h > 0 && price1h > price5m
 			return s.applyModelSpecificPricingPolicy(model, &ModelPricing{
-				InputPricePerToken:             litellmPricing.InputCostPerToken,
-				InputPricePerTokenPriority:     litellmPricing.InputCostPerTokenPriority,
-				OutputPricePerToken:            litellmPricing.OutputCostPerToken,
-				OutputPricePerTokenPriority:    litellmPricing.OutputCostPerTokenPriority,
-				CacheCreationPricePerToken:     litellmPricing.CacheCreationInputTokenCost,
-				CacheReadPricePerToken:         litellmPricing.CacheReadInputTokenCost,
-				CacheReadPricePerTokenPriority: litellmPricing.CacheReadInputTokenCostPriority,
+				InputPricePerToken:             catalogEntry.InputCostPerToken,
+				InputPricePerTokenPriority:     catalogEntry.InputCostPerTokenPriority,
+				OutputPricePerToken:            catalogEntry.OutputCostPerToken,
+				OutputPricePerTokenPriority:    catalogEntry.OutputCostPerTokenPriority,
+				CacheCreationPricePerToken:     catalogEntry.CacheCreationInputTokenCost,
+				CacheReadPricePerToken:         catalogEntry.CacheReadInputTokenCost,
+				CacheReadPricePerTokenPriority: catalogEntry.CacheReadInputTokenCostPriority,
 				CacheCreation5mPrice:           price5m,
 				CacheCreation1hPrice:           price1h,
 				SupportsCacheBreakdown:         enableBreakdown,
-				LongContextInputThreshold:      litellmPricing.LongContextInputTokenThreshold,
-				LongContextInputMultiplier:     litellmPricing.LongContextInputCostMultiplier,
-				LongContextOutputMultiplier:    litellmPricing.LongContextOutputCostMultiplier,
-				ImageOutputPricePerToken:       litellmPricing.OutputCostPerImageToken,
+				LongContextInputThreshold:      catalogEntry.LongContextInputTokenThreshold,
+				LongContextInputMultiplier:     catalogEntry.LongContextInputCostMultiplier,
+				LongContextOutputMultiplier:    catalogEntry.LongContextOutputCostMultiplier,
+				ImageOutputPricePerToken:       catalogEntry.OutputCostPerImageToken,
 			}), nil
 		}
 	}
@@ -511,7 +522,7 @@ func (s *BillingService) GetModelPricing(model string) (*ModelPricing, error) {
 }
 
 // GetModelPricingWithChannel 获取模型定价，渠道配置的价格覆盖默认值
-// 渠道存在时，未配置的图片输出价格归零（不回退到 LiteLLM）
+// 渠道存在时，未配置的图片输出价格归零（不回退到 configured pricing catalog）
 func (s *BillingService) GetModelPricingWithChannel(model string, channelPricing *ChannelModelPricing) (*ModelPricing, error) {
 	pricing, err := s.GetModelPricing(model)
 	if err != nil {
@@ -961,7 +972,7 @@ type ImagePriceConfig struct {
 }
 
 // CalculateImageCost 计算图片生成费用
-// model: 请求的模型名称（用于获取 LiteLLM 默认价格）
+// model: 请求的模型名称（用于获取配置化模型价格目录默认价格）
 // imageSize: 图片尺寸 "1K", "2K", "4K"
 // imageCount: 生成的图片数量
 // groupConfig: 分组配置的价格（可能为 nil，表示使用默认值）
@@ -1011,11 +1022,11 @@ func (s *BillingService) getImageUnitPrice(model string, imageSize string, group
 		}
 	}
 
-	// 回退到 LiteLLM 默认价格
+	// 回退到配置化模型价格目录默认价格
 	return s.getDefaultImagePrice(model, imageSize)
 }
 
-// getDefaultImagePrice 获取 LiteLLM 默认图片价格
+// getDefaultImagePrice 获取配置化模型价格目录默认图片价格。
 func (s *BillingService) getDefaultImagePrice(model string, imageSize string) float64 {
 	basePrice := 0.0
 

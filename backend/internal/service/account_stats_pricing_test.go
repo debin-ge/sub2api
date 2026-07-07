@@ -649,7 +649,7 @@ func TestResolveAccountStatsCost_ApplyPricingToAccountStats_ZeroTotalCost_Return
 	require.Nil(t, result)
 }
 
-func TestResolveAccountStatsCost_FallsBackToLiteLLM(t *testing.T) {
+func TestResolveAccountStatsCost_FallsBackToModelFilePricing(t *testing.T) {
 	channel := &Channel{
 		ID:                         1,
 		Status:                     StatusActive,
@@ -701,7 +701,7 @@ func TestResolveAccountStatsCost_AllMiss_ReturnsNil(t *testing.T) {
 	require.Nil(t, result)
 }
 
-func TestResolveAccountStatsCost_NilBillingService_SkipsLiteLLM(t *testing.T) {
+func TestResolveAccountStatsCost_NilBillingService_SkipsModelFilePricing(t *testing.T) {
 	channel := &Channel{
 		ID:                         1,
 		Status:                     StatusActive,

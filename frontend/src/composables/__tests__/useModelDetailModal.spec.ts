@@ -14,7 +14,10 @@ const model: AggregatedModel = {
     imageOutput: null,
     perRequest: null
   },
-  supportedGroups: []
+  supportedGroups: [],
+  bestRateMultiplier: 1,
+  recentCalls: 0,
+  recentCallWindowSeconds: 0
 }
 
 describe('useModelDetailModal', () => {

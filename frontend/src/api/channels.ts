@@ -44,6 +44,8 @@ export interface UserSupportedModel {
   name: string
   platform: string
   pricing: UserSupportedModelPricing | null
+  recent_call_count?: number
+  recent_call_window_seconds?: number
 }
 
 /**

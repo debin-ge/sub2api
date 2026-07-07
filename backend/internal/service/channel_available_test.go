@@ -112,6 +112,82 @@ func TestListAvailable_InactiveGroupIDSilentlyDropped(t *testing.T) {
 	require.Equal(t, int64(1), out[0].Groups[0].ID)
 }
 
+func TestListAvailable_CarriesGroupModelsListConfig(t *testing.T) {
+	channels := []Channel{{
+		ID:       1,
+		Name:     "chA",
+		Status:   StatusActive,
+		GroupIDs: []int64{1},
+	}}
+	groupRepo := &stubGroupRepoForAvailable{
+		activeGroups: []Group{{
+			ID:       1,
+			Name:     "g1",
+			Platform: "openai",
+			ModelsListConfig: GroupModelsListConfig{
+				Enabled: true,
+				Models:  []string{"group-only-model"},
+			},
+		}},
+	}
+	svc := newAvailableChannelService(channels, groupRepo)
+
+	out, err := svc.ListAvailable(context.Background())
+
+	require.NoError(t, err)
+	require.Len(t, out, 1)
+	require.Len(t, out[0].Groups, 1)
+	require.True(t, out[0].Groups[0].ModelsListConfig.Enabled)
+	require.Equal(t, []string{"group-only-model"}, out[0].Groups[0].ModelsListConfig.Models)
+}
+
+func TestListPublicAvailable_UsesAllActiveGroups(t *testing.T) {
+	channels := []Channel{{
+		ID:       1,
+		Name:     "chA",
+		Status:   StatusActive,
+		GroupIDs: []int64{1},
+	}}
+	groupRepo := &stubGroupRepoForAvailable{
+		activeGroups: []Group{
+			{ID: 1, Name: "bound", Platform: "openai"},
+			{ID: 2, Name: "unbound", Platform: "anthropic"},
+		},
+	}
+	svc := newAvailableChannelService(channels, groupRepo)
+
+	userOut, err := svc.ListAvailable(context.Background())
+	require.NoError(t, err)
+	require.Len(t, userOut, 1)
+	require.Equal(t, []int64{1}, availableGroupIDs(userOut[0].Groups))
+
+	publicOut, err := svc.ListPublicAvailable(context.Background())
+	require.NoError(t, err)
+	require.Len(t, publicOut, 1)
+	require.Equal(t, []int64{1, 2}, availableGroupIDs(publicOut[0].Groups))
+}
+
+func TestListPublicAvailable_SynthesizesCatalogWhenNoChannelsExist(t *testing.T) {
+	groupRepo := &stubGroupRepoForAvailable{
+		activeGroups: []Group{
+			{ID: 1, Name: "public-openai", Platform: "openai"},
+			{ID: 2, Name: "public-deepseek", Platform: "deepseek"},
+		},
+	}
+	svc := newAvailableChannelService(nil, groupRepo)
+
+	userOut, err := svc.ListAvailable(context.Background())
+	require.NoError(t, err)
+	require.Empty(t, userOut)
+
+	publicOut, err := svc.ListPublicAvailable(context.Background())
+	require.NoError(t, err)
+	require.Len(t, publicOut, 1)
+	require.Equal(t, PublicCatalogChannelName, publicOut[0].Name)
+	require.Equal(t, StatusActive, publicOut[0].Status)
+	require.Equal(t, []int64{2, 1}, availableGroupIDs(publicOut[0].Groups))
+}
+
 func TestListAvailable_SortedByName(t *testing.T) {
 	channels := []Channel{
 		{ID: 1, Name: "beta"},
@@ -125,6 +201,14 @@ func TestListAvailable_SortedByName(t *testing.T) {
 	require.Equal(t, "Alpha", out[0].Name)
 	require.Equal(t, "beta", out[1].Name)
 	require.Equal(t, "charlie", out[2].Name)
+}
+
+func availableGroupIDs(groups []AvailableGroupRef) []int64 {
+	ids := make([]int64, 0, len(groups))
+	for _, group := range groups {
+		ids = append(ids, group.ID)
+	}
+	return ids
 }
 
 func TestListAvailable_ListAllErrorPropagates(t *testing.T) {
@@ -201,15 +285,15 @@ func TestPricingNeedsFallback(t *testing.T) {
 	}
 }
 
-func TestSynthesizePricingFromLiteLLM_TokenMode(t *testing.T) {
-	lp := &LiteLLMModelPricing{
+func TestSynthesizePricingFromModelPrice_TokenMode(t *testing.T) {
+	lp := &ModelPriceEntry{
 		Mode:                        "chat",
 		InputCostPerToken:           3e-6,
 		OutputCostPerToken:          1.5e-5,
 		CacheCreationInputTokenCost: 3.75e-6,
 		CacheReadInputTokenCost:     3e-7,
 	}
-	got := synthesizePricingFromLiteLLM(lp, nil)
+	got := synthesizePricingFromModelPrice(lp, nil)
 	require.NotNil(t, got)
 	require.Equal(t, BillingModeToken, got.BillingMode)
 	require.NotNil(t, got.InputPrice)
@@ -217,29 +301,29 @@ func TestSynthesizePricingFromLiteLLM_TokenMode(t *testing.T) {
 	require.NotNil(t, got.CacheReadPrice)
 }
 
-func TestSynthesizePricingFromLiteLLM_ImageGenerationMode(t *testing.T) {
-	// LiteLLM mode=image_generation 且渠道未声明模式时，按 image 合成。
-	lp := &LiteLLMModelPricing{
+func TestSynthesizePricingFromModelPrice_ImageGenerationMode(t *testing.T) {
+	// configured pricing catalog mode=image_generation 且渠道未声明模式时，按 image 合成。
+	lp := &ModelPriceEntry{
 		Mode:                    "image_generation",
 		OutputCostPerImageToken: 4e-5,
 	}
-	got := synthesizePricingFromLiteLLM(lp, nil)
+	got := synthesizePricingFromModelPrice(lp, nil)
 	require.NotNil(t, got)
 	require.Equal(t, BillingModeImage, got.BillingMode)
 	require.Nil(t, got.PerRequestPrice)
 	require.NotNil(t, got.ImageOutputPrice)
 }
 
-func TestSynthesizePricingFromLiteLLM_RespectsExistingChannelMode(t *testing.T) {
-	// admin UI 选了 per_request 但没填价：LiteLLM 数据按 per_request 合成,
-	// 即便 LiteLLM 标的是 chat 模式也尊重渠道选择。
-	lp := &LiteLLMModelPricing{
+func TestSynthesizePricingFromModelPrice_RespectsExistingChannelMode(t *testing.T) {
+	// admin UI 选了 per_request 但没填价：configured pricing catalog 数据按 per_request 合成,
+	// 即便 configured pricing catalog 标的是 chat 模式也尊重渠道选择。
+	lp := &ModelPriceEntry{
 		Mode:               "chat",
 		InputCostPerToken:  5e-6,
 		OutputCostPerImage: 0.04,
 	}
 	existing := &ChannelModelPricing{BillingMode: BillingModePerRequest}
-	got := synthesizePricingFromLiteLLM(lp, existing)
+	got := synthesizePricingFromModelPrice(lp, existing)
 	require.NotNil(t, got)
 	require.Equal(t, BillingModePerRequest, got.BillingMode)
 	require.NotNil(t, got.PerRequestPrice)
@@ -247,7 +331,7 @@ func TestSynthesizePricingFromLiteLLM_RespectsExistingChannelMode(t *testing.T) 
 }
 
 func TestFillGlobalPricingFallback_NilPricing(t *testing.T) {
-	pricingSvc := newStubPricingServiceFromMap(map[string]*LiteLLMModelPricing{
+	pricingSvc := newStubPricingServiceFromMap(map[string]*ModelPriceEntry{
 		"claude-opus-4-5": {Mode: "chat", InputCostPerToken: 5e-6},
 	})
 	svc := &ChannelService{pricingService: pricingSvc}
@@ -261,9 +345,9 @@ func TestFillGlobalPricingFallback_NilPricing(t *testing.T) {
 	require.InDelta(t, 5e-6, *models[0].Pricing.InputPrice, 1e-12)
 }
 
-func TestFillGlobalPricingFallback_EmptyPricingFillsFromLiteLLM(t *testing.T) {
-	// 核心场景：admin UI 建了 pricing 条目（image 模式）但没填价，应走 LiteLLM 兜底。
-	pricingSvc := newStubPricingServiceFromMap(map[string]*LiteLLMModelPricing{
+func TestFillGlobalPricingFallback_EmptyPricingFillsFromConfiguredModelPrice(t *testing.T) {
+	// 核心场景：admin UI 建了 pricing 条目（image 模式）但没填价，应走 configured pricing catalog 兜底。
+	pricingSvc := newStubPricingServiceFromMap(map[string]*ModelPriceEntry{
 		"gpt-image-1": {
 			Mode:                    "image_generation",
 			OutputCostPerImageToken: 4e-5,
@@ -289,9 +373,15 @@ func TestFillGlobalPricingFallback_EmptyPricingFillsFromLiteLLM(t *testing.T) {
 }
 
 func TestFillGlobalPricingFallback_KeepsExistingPrice(t *testing.T) {
-	// 渠道已经填了价格的条目不应被回落覆盖。
-	pricingSvc := newStubPricingServiceFromMap(map[string]*LiteLLMModelPricing{
-		"served-model": {Mode: "chat", InputCostPerToken: 1e-6},
+	// 渠道已经填了价格的条目不应被回落覆盖，但缺失字段仍会用 configured pricing catalog 补齐。
+	pricingSvc := newStubPricingServiceFromMap(map[string]*ModelPriceEntry{
+		"served-model": {
+			Mode:                        "chat",
+			InputCostPerToken:           1e-6,
+			OutputCostPerToken:          2e-6,
+			CacheCreationInputTokenCost: 3e-6,
+			CacheReadInputTokenCost:     4e-7,
+		},
 	})
 	svc := &ChannelService{pricingService: pricingSvc}
 
@@ -304,8 +394,42 @@ func TestFillGlobalPricingFallback_KeepsExistingPrice(t *testing.T) {
 	}
 	svc.fillGlobalPricingFallback(models)
 	require.Same(t, existing, models[0].Pricing)
+	// admin 已设的 InputPrice 不被覆盖
+	require.NotNil(t, models[0].Pricing.InputPrice)
+	require.InDelta(t, 9e-9, *models[0].Pricing.InputPrice, 1e-12)
+	// 缺失字段被 configured pricing catalog 补齐
+	require.NotNil(t, models[0].Pricing.OutputPrice)
+	require.InDelta(t, 2e-6, *models[0].Pricing.OutputPrice, 1e-12)
+	require.NotNil(t, models[0].Pricing.CacheWritePrice)
+	require.InDelta(t, 3e-6, *models[0].Pricing.CacheWritePrice, 1e-12)
+	require.NotNil(t, models[0].Pricing.CacheReadPrice)
+	require.InDelta(t, 4e-7, *models[0].Pricing.CacheReadPrice, 1e-12)
 }
 
-func newStubPricingServiceFromMap(data map[string]*LiteLLMModelPricing) *PricingService {
+func TestEnrichPricingFromModelPrice_FillsOnlyMissingFields(t *testing.T) {
+	// enrich 只填 nil 字段，已有值不动；configured pricing catalog 中 0 不覆盖。
+	existing := &ChannelModelPricing{
+		BillingMode:     BillingModeToken,
+		InputPrice:      testPtrFloat64(1e-6),
+		OutputPrice:     nil,
+		CacheWritePrice: testPtrFloat64(2e-6),
+		CacheReadPrice:  nil,
+	}
+	lp := &ModelPriceEntry{
+		InputCostPerToken:           9e-6,
+		OutputCostPerToken:          8e-6,
+		CacheCreationInputTokenCost: 7e-6,
+		CacheReadInputTokenCost:     6e-7,
+	}
+	enrichPricingFromModelPrice(existing, lp)
+	require.InDelta(t, 1e-6, *existing.InputPrice, 1e-12)
+	require.NotNil(t, existing.OutputPrice)
+	require.InDelta(t, 8e-6, *existing.OutputPrice, 1e-12)
+	require.InDelta(t, 2e-6, *existing.CacheWritePrice, 1e-12)
+	require.NotNil(t, existing.CacheReadPrice)
+	require.InDelta(t, 6e-7, *existing.CacheReadPrice, 1e-12)
+}
+
+func newStubPricingServiceFromMap(data map[string]*ModelPriceEntry) *PricingService {
 	return &PricingService{pricingData: data}
 }

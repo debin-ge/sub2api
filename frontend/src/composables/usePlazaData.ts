@@ -15,15 +15,13 @@ export interface PlazaPricingConfig {
   rate: number
   paymentEnabled: boolean
   balanceDisabled: boolean
-  availableChannelsEnabled: boolean
 }
 
 const defaultPricingConfig = (): PlazaPricingConfig => ({
   multiplier: PLAZA_DEFAULT_MULTIPLIER,
   rate: PLAZA_DEFAULT_CNY_USD_RATE,
   paymentEnabled: false,
-  balanceDisabled: false,
-  availableChannelsEnabled: false
+  balanceDisabled: false
 })
 
 export const channels = ref<UserAvailableChannel[]>([])
@@ -51,8 +49,7 @@ export async function fetchAll(): Promise<void> {
       multiplier: normalizePlazaMultiplier(settings.payment_balance_recharge_multiplier),
       rate: normalizePlazaRate(settings.payment_cny_usd_rate),
       paymentEnabled: settings.payment_enabled === true,
-      balanceDisabled: settings.payment_balance_disabled === true,
-      availableChannelsEnabled: settings.available_channels_enabled === true
+      balanceDisabled: settings.payment_balance_disabled === true
     }
   } catch (err: unknown) {
     if (requestId !== latestRequestId) return

@@ -5,11 +5,11 @@
  *   formatScaled(0.5,        1)        → "$0.5"      // per request
  *   formatScaled(null,       1_000_000) → "-"
  *
- * Uses toPrecision(10) then strips trailing zeros to avoid IEEE 754 display noise.
+ * Rounds to at most six decimal places, then strips trailing zeros.
  */
 export function formatScaled(value: number | null, scale: number): string {
   if (value == null) return '-'
-  return `$${(value * scale).toPrecision(10).replace(/\.?0+$/, '')}`
+  return `$${formatFixedMax(value * scale, 6)}`
 }
 
 export const PLAZA_DEFAULT_MULTIPLIER = 1
@@ -29,10 +29,24 @@ export function normalizePlazaRate(value: number | null | undefined): number {
     : PLAZA_DEFAULT_CNY_USD_RATE
 }
 
+export function normalizeBillingRateMultiplier(value: number | null | undefined): number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? value
+    : 1
+}
+
 function formatCNY(value: number): string {
   if (value > 0 && value < 0.005) return '<¥0.01'
   const formatted = value.toFixed(2).replace(/\.?0+$/, '')
   return `¥${formatted}`
+}
+
+function formatNumber(value: number): string {
+  return value.toFixed(2).replace(/\.?0+$/, '')
+}
+
+function formatFixedMax(value: number, maxFractionDigits: number): string {
+  return value.toFixed(maxFractionDigits).replace(/\.?0+$/, '')
 }
 
 export function formatCNYMarket(
@@ -47,10 +61,13 @@ export function formatCNYMarket(
 export function formatCNYRecharged(
   usd: number | null,
   multiplier: number | null | undefined,
-  scale: number
+  scale: number,
+  billingRateMultiplier?: number | null
 ): string {
   if (usd == null) return '-'
-  return formatCNY((usd / normalizePlazaMultiplier(multiplier)) * scale)
+  return formatCNY(
+    (usd * normalizeBillingRateMultiplier(billingRateMultiplier) / normalizePlazaMultiplier(multiplier)) * scale
+  )
 }
 
 export function computeValueBoost(
@@ -58,4 +75,28 @@ export function computeValueBoost(
   rate: number | null | undefined
 ): number {
   return Number((normalizePlazaMultiplier(multiplier) * normalizePlazaRate(rate)).toFixed(2))
+}
+
+export function computeDiscountFold(
+  multiplier: number | null | undefined,
+  rate: number | null | undefined,
+  billingRateMultiplier?: number | null
+): number {
+  const ratio = normalizeBillingRateMultiplier(billingRateMultiplier) /
+    (normalizePlazaMultiplier(multiplier) * normalizePlazaRate(rate))
+  return Number((ratio * 10).toFixed(2))
+}
+
+export function computeDiscountPercent(
+  multiplier: number | null | undefined,
+  rate: number | null | undefined,
+  billingRateMultiplier?: number | null
+): number {
+  const ratio = normalizeBillingRateMultiplier(billingRateMultiplier) /
+    (normalizePlazaMultiplier(multiplier) * normalizePlazaRate(rate))
+  return Number((ratio * 100).toFixed(2))
+}
+
+export function formatDiscountFold(value: number): string {
+  return formatNumber(value)
 }

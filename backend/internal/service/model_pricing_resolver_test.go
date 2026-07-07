@@ -38,8 +38,8 @@ func TestResolve_NoGroupID(t *testing.T) {
 	require.NotNil(t, resolved.BasePricing)
 	require.InDelta(t, 3e-6, resolved.BasePricing.InputPricePerToken, 1e-12)
 	// BillingService.GetModelPricing uses fallback internally, but resolveBasePricing
-	// reports "litellm" when GetModelPricing succeeds (regardless of internal source)
-	require.Equal(t, "litellm", resolved.Source)
+	// reports "model_price" when GetModelPricing succeeds (regardless of internal source)
+	require.Equal(t, "model_price", resolved.Source)
 }
 
 func TestResolve_UnknownModel(t *testing.T) {
@@ -221,7 +221,7 @@ func TestResolve_WithChannelOverride_TokenFlat(t *testing.T) {
 }
 
 func TestResolve_WithChannelOverride_TokenPartialOverride(t *testing.T) {
-	// Channel only sets InputPrice; OutputPrice should remain from the base (LiteLLM/fallback).
+	// Channel only sets InputPrice; OutputPrice should remain from the base (configured pricing catalog/fallback).
 	r := newResolverWithChannel(t, []ChannelModelPricing{{
 		Platform:    "anthropic",
 		Models:      []string{"claude-sonnet-4"},

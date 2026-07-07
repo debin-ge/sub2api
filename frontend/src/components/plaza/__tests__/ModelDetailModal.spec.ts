@@ -1,8 +1,42 @@
 import { mount } from '@vue/test-utils'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import ModelDetailModal from '@/components/plaza/ModelDetailModal.vue'
 import type { AggregatedModel } from '@/composables/useModelAggregation'
 import type { VueWrapper } from '@vue/test-utils'
+
+const messages: Record<string, string> = {
+  'plaza.modal.close': 'Close',
+  'plaza.modal.fullPricing': 'Full pricing',
+  'plaza.modal.input': 'Input',
+  'plaza.modal.output': 'Output',
+  'plaza.modal.cacheWrite': 'Cache write',
+  'plaza.modal.cacheRead': 'Cache read',
+  'plaza.modal.imageOutput': 'Image output',
+  'plaza.modal.perRequest': 'Per request',
+  'plaza.modal.supportedChannels': 'Channels supporting this model',
+  'plaza.modal.channelsCount': '{n} channels',
+  'plaza.modal.tieredPricing': 'Tiered pricing',
+  'plaza.modal.tierRange': '{min} - {max} tokens',
+  'plaza.modal.tierRangeOpenEnded': '{min}+ tokens',
+  'plaza.card.billingPerToken': 'Pay per token',
+  'plaza.card.discountBadge': '{percent}% of reference',
+  'plaza.card.recentCalls': '{count} calls in 7d',
+  'plaza.price.unitPerMillion': '/1M',
+  'plaza.price.unitPerRequest': '/request',
+}
+
+vi.mock('vue-i18n', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('vue-i18n')>()
+  return {
+    ...actual,
+    useI18n: () => ({
+      t: (key: string, params?: Record<string, unknown>) => {
+        const template = messages[key] ?? key
+        return template.replace(/\{(\w+)\}/g, (_, name) => String(params?.[name] ?? ''))
+      },
+    }),
+  }
+})
 
 const model: AggregatedModel = {
   model: 'gpt-5.5',
@@ -49,10 +83,34 @@ const model: AggregatedModel = {
         cache_read_price: null,
         image_output_price: null,
         per_request_price: null,
-        intervals: []
+        intervals: [
+          {
+            min_tokens: 0,
+            max_tokens: 100000,
+            tier_label: 'Base',
+            input_price: 0.000003,
+            output_price: 0.000012,
+            cache_write_price: 0.000004,
+            cache_read_price: 0.000001,
+            per_request_price: 0.002
+          },
+          {
+            min_tokens: 100001,
+            max_tokens: null,
+            tier_label: 'Long context',
+            input_price: 0.000004,
+            output_price: 0.000016,
+            cache_write_price: 0.000005,
+            cache_read_price: 0.0000015,
+            per_request_price: 0.003
+          }
+        ]
       }
     }
-  ]
+  ],
+  bestRateMultiplier: 1,
+  recentCalls: 0,
+  recentCallWindowSeconds: 0
 }
 
 let wrapper: VueWrapper | null = null
@@ -76,18 +134,31 @@ describe('ModelDetailModal', () => {
     await wrapper.vm.$nextTick()
 
     expect(document.body.textContent).toContain('gpt-5.5')
-    expect(document.body.textContent).toContain('完整定价')
-    expect(document.body.textContent).toContain('输入')
-    expect(document.body.textContent).toContain('输出')
-    expect(document.body.textContent).toContain('缓存写入')
-    expect(document.body.textContent).toContain('缓存读取')
-    expect(document.body.textContent).toContain('图像输出')
-    expect(document.body.textContent).toContain('按次计费')
+    expect(document.body.textContent).toContain('Full pricing')
+    expect(document.body.textContent).toContain('Input')
+    expect(document.body.textContent).toContain('Output')
+    expect(document.body.textContent).toContain('Cache write')
+    expect(document.body.textContent).toContain('Cache read')
+    expect(document.body.textContent).toContain('Image output')
+    expect(document.body.textContent).toContain('Per request')
     expect(document.body.textContent).toContain('$3')
+    expect(document.body.textContent).toContain('9.8% of reference')
     expect(document.body.textContent).toContain('$12')
     expect(document.body.textContent).toContain('$40')
     expect(document.body.textContent).toContain('$0.002')
-    expect(document.body.textContent).toContain('支持该模型的渠道')
+    expect(document.body.textContent).toContain('Channels supporting this model')
+    expect(document.body.textContent).toContain('Tiered pricing')
+    expect(document.body.textContent).toContain('Base')
+    expect(document.body.textContent).toContain('0 - 100,000 tokens')
+    expect(document.body.textContent).toContain('Long context')
+    expect(document.body.textContent).toContain('100,001+ tokens')
+    expect(document.body.textContent).toContain('$4')
+    expect(document.body.textContent).toContain('$16')
+    expect(document.body.textContent).toContain('$5')
+    expect(document.body.textContent).toContain('$1.5')
+    expect(document.body.textContent).toContain('$0.003')
+    expect(document.body.textContent).not.toContain('完整定价')
+    expect(document.body.textContent).not.toContain('支持该模型的渠道')
 
     const bodyText = document.body.textContent ?? ''
     expect(bodyText.indexOf('OpenAI direct')).toBeLessThan(bodyText.indexOf('OpenAI backup'))

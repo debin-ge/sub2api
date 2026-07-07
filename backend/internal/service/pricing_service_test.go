@@ -9,6 +9,60 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestNormalizeDashVersionSuffix(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"glm-5-1", "glm-5.1"},
+		{"kimi-k2-5", "kimi-k2.5"},
+		{"kimi-k2-6", "kimi-k2.6"},
+		{"minimax-m2-7", "minimax-m2.7"},
+		{"claude-opus-4-8", "claude-opus-4.8"},
+		// 首个匹配替换后不再递归；日期段 20251101 内部不含 -N-N 结构，无变化
+		{"claude-opus-4-5-20251101", "claude-opus-4.5-20251101"},
+		// 已是 dot 形式：不变
+		{"glm-5.1", "glm-5.1"},
+		// 无版本号：不变
+		{"deepseek-v4", "deepseek-v4"},
+		// 空字符串：不变
+		{"", ""},
+	}
+	for _, tc := range cases {
+		got := normalizeDashVersionSuffix(tc.in)
+		require.Equal(t, tc.want, got, "input=%q", tc.in)
+	}
+}
+
+func TestGetModelPricing_DashVersionSuffixHitsDotCatalogKeys(t *testing.T) {
+	// Widsurf/OpenCode 用 dash 命名（glm-5-1），catalog 里用 dot 命名（glm-5.1）。
+	// 归一化后应该能命中。
+	svc := NewPricingServiceForTest(map[string]*ModelPriceEntry{
+		"glm-5.1":     {Mode: "chat", InputCostPerToken: 6e-6, OutputCostPerToken: 24e-6},
+		"kimi-k2.5":   {Mode: "chat", InputCostPerToken: 1e-6, OutputCostPerToken: 4e-6},
+		"kimi-k2.6":   {Mode: "chat", InputCostPerToken: 1.5e-6, OutputCostPerToken: 5e-6},
+		"minimax-m2.7": {Mode: "chat", InputCostPerToken: 3e-7, OutputCostPerToken: 1.2e-6},
+	})
+
+	// 查询用 dash 命名
+	glm := svc.GetModelPricing("glm-5-1")
+	require.NotNil(t, glm)
+	require.InDelta(t, 6e-6, glm.InputCostPerToken, 1e-12)
+
+	kimi5 := svc.GetModelPricing("kimi-k2-5")
+	require.NotNil(t, kimi5)
+	require.InDelta(t, 1e-6, kimi5.InputCostPerToken, 1e-12)
+
+	kimi6 := svc.GetModelPricing("kimi-k2-6")
+	require.NotNil(t, kimi6)
+	require.InDelta(t, 1.5e-6, kimi6.InputCostPerToken, 1e-12)
+
+	// 未归一命名（对照）
+	glmDot := svc.GetModelPricing("glm-5.1")
+	require.NotNil(t, glmDot)
+	require.InDelta(t, 6e-6, glmDot.InputCostPerToken, 1e-12)
+}
+
 func TestParsePricingData_ParsesPriorityAndServiceTierFields(t *testing.T) {
 	svc := &PricingService{}
 	body := []byte(`{
@@ -38,11 +92,11 @@ func TestParsePricingData_ParsesPriorityAndServiceTierFields(t *testing.T) {
 }
 
 func TestGetModelPricing_Gpt53CodexSparkUsesGpt51CodexPricing(t *testing.T) {
-	sparkPricing := &LiteLLMModelPricing{InputCostPerToken: 1}
-	gpt53Pricing := &LiteLLMModelPricing{InputCostPerToken: 9}
+	sparkPricing := &ModelPriceEntry{InputCostPerToken: 1}
+	gpt53Pricing := &ModelPriceEntry{InputCostPerToken: 9}
 
 	svc := &PricingService{
-		pricingData: map[string]*LiteLLMModelPricing{
+		pricingData: map[string]*ModelPriceEntry{
 			"gpt-5.1-codex": sparkPricing,
 			"gpt-5.3":       gpt53Pricing,
 		},
@@ -53,10 +107,10 @@ func TestGetModelPricing_Gpt53CodexSparkUsesGpt51CodexPricing(t *testing.T) {
 }
 
 func TestGetModelPricing_Gpt53CodexFallbackStillUsesGpt52Codex(t *testing.T) {
-	gpt52CodexPricing := &LiteLLMModelPricing{InputCostPerToken: 2}
+	gpt52CodexPricing := &ModelPriceEntry{InputCostPerToken: 2}
 
 	svc := &PricingService{
-		pricingData: map[string]*LiteLLMModelPricing{
+		pricingData: map[string]*ModelPriceEntry{
 			"gpt-5.2-codex": gpt52CodexPricing,
 		},
 	}
@@ -69,9 +123,9 @@ func TestGetModelPricing_OpenAIFallbackMatchedLoggedAsInfo(t *testing.T) {
 	logSink, restore := captureStructuredLog(t)
 	defer restore()
 
-	gpt52CodexPricing := &LiteLLMModelPricing{InputCostPerToken: 2}
+	gpt52CodexPricing := &ModelPriceEntry{InputCostPerToken: 2}
 	svc := &PricingService{
-		pricingData: map[string]*LiteLLMModelPricing{
+		pricingData: map[string]*ModelPriceEntry{
 			"gpt-5.2-codex": gpt52CodexPricing,
 		},
 	}
@@ -85,8 +139,8 @@ func TestGetModelPricing_OpenAIFallbackMatchedLoggedAsInfo(t *testing.T) {
 
 func TestGetModelPricing_Gpt54UsesStaticFallbackWhenRemoteMissing(t *testing.T) {
 	svc := &PricingService{
-		pricingData: map[string]*LiteLLMModelPricing{
-			"gpt-5.1-codex": &LiteLLMModelPricing{InputCostPerToken: 1.25e-6},
+		pricingData: map[string]*ModelPriceEntry{
+			"gpt-5.1-codex": &ModelPriceEntry{InputCostPerToken: 1.25e-6},
 		},
 	}
 
@@ -102,7 +156,7 @@ func TestGetModelPricing_Gpt54UsesStaticFallbackWhenRemoteMissing(t *testing.T) 
 
 func TestGetModelPricing_OpenAICompactAliasUsesStaticFallback(t *testing.T) {
 	svc := &PricingService{
-		pricingData: map[string]*LiteLLMModelPricing{
+		pricingData: map[string]*ModelPriceEntry{
 			"gpt-5.1-codex": {InputCostPerToken: 1.25e-6},
 		},
 	}
@@ -131,7 +185,7 @@ func TestDefaultPricingIncludesCodexAutoReview(t *testing.T) {
 
 func TestGetModelPricing_Gpt54MiniUsesDedicatedStaticFallbackWhenRemoteMissing(t *testing.T) {
 	svc := &PricingService{
-		pricingData: map[string]*LiteLLMModelPricing{
+		pricingData: map[string]*ModelPriceEntry{
 			"gpt-5.1-codex": {InputCostPerToken: 1.25e-6},
 		},
 	}
@@ -146,7 +200,7 @@ func TestGetModelPricing_Gpt54MiniUsesDedicatedStaticFallbackWhenRemoteMissing(t
 
 func TestGetModelPricing_Gpt54NanoUsesDedicatedStaticFallbackWhenRemoteMissing(t *testing.T) {
 	svc := &PricingService{
-		pricingData: map[string]*LiteLLMModelPricing{
+		pricingData: map[string]*ModelPriceEntry{
 			"gpt-5.1-codex": {InputCostPerToken: 1.25e-6},
 		},
 	}
@@ -160,11 +214,11 @@ func TestGetModelPricing_Gpt54NanoUsesDedicatedStaticFallbackWhenRemoteMissing(t
 }
 
 func TestGetModelPricing_ImageModelDoesNotFallbackToTextModel(t *testing.T) {
-	imagePricing := &LiteLLMModelPricing{InputCostPerToken: 3}
-	textPricing := &LiteLLMModelPricing{InputCostPerToken: 9}
+	imagePricing := &ModelPriceEntry{InputCostPerToken: 3}
+	textPricing := &ModelPriceEntry{InputCostPerToken: 9}
 
 	svc := &PricingService{
-		pricingData: map[string]*LiteLLMModelPricing{
+		pricingData: map[string]*ModelPriceEntry{
 			"gpt-image-2": imagePricing,
 			"gpt-5.4":     textPricing,
 		},
@@ -241,11 +295,11 @@ func TestParsePricingData_PreservesServiceTierPriorityFields(t *testing.T) {
 
 func TestListModelNamesByProvider_ReturnsMatchingModels(t *testing.T) {
 	svc := &PricingService{
-		pricingData: map[string]*LiteLLMModelPricing{
-			"claude-opus-4-5-20251101": {LiteLLMProvider: "anthropic", InputCostPerToken: 1.5e-5},
-			"claude-sonnet-4-5":        {LiteLLMProvider: "anthropic", InputCostPerToken: 3e-6},
-			"gpt-4o":                   {LiteLLMProvider: "openai", InputCostPerToken: 5e-6},
-			"gemini-2.5-pro":           {LiteLLMProvider: "google", InputCostPerToken: 1.25e-6},
+		pricingData: map[string]*ModelPriceEntry{
+			"claude-opus-4-5-20251101": {PricingCatalogProvider: "anthropic", InputCostPerToken: 1.5e-5},
+			"claude-sonnet-4-5":        {PricingCatalogProvider: "anthropic", InputCostPerToken: 3e-6},
+			"gpt-4o":                   {PricingCatalogProvider: "openai", InputCostPerToken: 5e-6},
+			"gemini-2.5-pro":           {PricingCatalogProvider: "google", InputCostPerToken: 1.25e-6},
 		},
 	}
 
@@ -258,8 +312,8 @@ func TestListModelNamesByProvider_ReturnsMatchingModels(t *testing.T) {
 
 func TestListModelNamesByProvider_CaseInsensitive(t *testing.T) {
 	svc := &PricingService{
-		pricingData: map[string]*LiteLLMModelPricing{
-			"gpt-4o": {LiteLLMProvider: "OpenAI", InputCostPerToken: 5e-6},
+		pricingData: map[string]*ModelPriceEntry{
+			"gpt-4o": {PricingCatalogProvider: "OpenAI", InputCostPerToken: 5e-6},
 		},
 	}
 
@@ -272,8 +326,8 @@ func TestListModelNamesByProvider_CaseInsensitive(t *testing.T) {
 
 func TestListModelNamesByProvider_NoMatch(t *testing.T) {
 	svc := &PricingService{
-		pricingData: map[string]*LiteLLMModelPricing{
-			"gpt-4o": {LiteLLMProvider: "openai", InputCostPerToken: 5e-6},
+		pricingData: map[string]*ModelPriceEntry{
+			"gpt-4o": {PricingCatalogProvider: "openai", InputCostPerToken: 5e-6},
 		},
 	}
 
@@ -284,7 +338,7 @@ func TestListModelNamesByProvider_NoMatch(t *testing.T) {
 
 func TestListModelNamesByProvider_EmptyCatalog(t *testing.T) {
 	svc := &PricingService{
-		pricingData: map[string]*LiteLLMModelPricing{},
+		pricingData: map[string]*ModelPriceEntry{},
 	}
 
 	got := svc.ListModelNamesByProvider("openai")

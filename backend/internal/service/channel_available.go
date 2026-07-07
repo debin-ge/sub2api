@@ -19,6 +19,7 @@ type AvailableGroupRef struct {
 	SubscriptionType string
 	RateMultiplier   float64
 	IsExclusive      bool
+	ModelsListConfig GroupModelsListConfig
 }
 
 // AvailableChannel 可用渠道视图：用于「可用渠道」页面展示渠道基础信息 +
@@ -34,11 +35,13 @@ type AvailableChannel struct {
 	SupportedModels    []SupportedModel
 }
 
+const PublicCatalogChannelName = "Public Model Catalog"
+
 // ListAvailable 返回所有渠道的可用视图：每个渠道附带关联分组信息与支持模型列表。
 //
 // 支持模型通过 (*Channel).SupportedModels() 计算（mapping ∪ pricing 并联）。
-// 对于渠道未配置定价的模型，进一步用 PricingService 的全局 LiteLLM 数据合成
-// 一份展示用定价，让用户看到默认价格而非"未配置"。
+// 对于渠道未配置定价的模型，进一步用 PricingService 从配置化模型价格目录
+// 合成一份展示用定价，让用户看到默认价格而非"未配置"。
 //
 // 关联分组信息通过 groupRepo.ListActive 查询后按 ID 映射；渠道 GroupIDs 中未在活跃列表中
 // 的分组（已停用或删除）会被忽略。
@@ -46,6 +49,32 @@ type AvailableChannel struct {
 // 前置条件：s.groupRepo 必须非 nil（由 wire DI 保证）。直接 nil-deref 用于 fail-fast，
 // 避免静默掩盖注入缺失。
 func (s *ChannelService) ListAvailable(ctx context.Context) ([]AvailableChannel, error) {
+	return s.listAvailable(ctx, availableListOptions{selectGroups: channelBoundGroups})
+}
+
+// ListPublicAvailable 返回公开模型广场使用的可用视图。
+//
+// 与用户侧 ListAvailable 不同，公开模型广场不依赖渠道-分组绑定关系；它把所有活跃分组
+// 按平台参与展示，让渠道模型配置/定价与分组自定义模型列表都能进入匿名目录。
+func (s *ChannelService) ListPublicAvailable(ctx context.Context) ([]AvailableChannel, error) {
+	return s.listAvailable(ctx, availableListOptions{
+		selectGroups:             allActiveGroups,
+		synthesizePublicCatalog:  true,
+		publicCatalogChannelName: PublicCatalogChannelName,
+		publicCatalogDescription: "",
+	})
+}
+
+type availableGroupSelector func(ch *Channel, groupByID map[int64]AvailableGroupRef, allGroups []AvailableGroupRef) []AvailableGroupRef
+
+type availableListOptions struct {
+	selectGroups             availableGroupSelector
+	synthesizePublicCatalog  bool
+	publicCatalogChannelName string
+	publicCatalogDescription string
+}
+
+func (s *ChannelService) listAvailable(ctx context.Context, opts availableListOptions) ([]AvailableChannel, error) {
 	channels, err := s.repo.ListAll(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list channels: %w", err)
@@ -56,27 +85,30 @@ func (s *ChannelService) ListAvailable(ctx context.Context) ([]AvailableChannel,
 		return nil, fmt.Errorf("list active groups: %w", err)
 	}
 	groupByID := make(map[int64]AvailableGroupRef, len(groups))
+	allGroupRefs := make([]AvailableGroupRef, 0, len(groups))
 	for i := range groups {
 		g := groups[i]
-		groupByID[g.ID] = AvailableGroupRef{
+		ref := AvailableGroupRef{
 			ID:               g.ID,
 			Name:             g.Name,
 			Platform:         g.Platform,
 			SubscriptionType: g.SubscriptionType,
 			RateMultiplier:   g.RateMultiplier,
 			IsExclusive:      g.IsExclusive,
+			ModelsListConfig: g.ModelsListConfig,
 		}
+		groupByID[g.ID] = ref
+		allGroupRefs = append(allGroupRefs, ref)
 	}
 
 	out := make([]AvailableChannel, 0, len(channels))
+	hasActiveChannel := false
 	for i := range channels {
 		ch := &channels[i]
-		groups := make([]AvailableGroupRef, 0, len(ch.GroupIDs))
-		for _, gid := range ch.GroupIDs {
-			if ref, ok := groupByID[gid]; ok {
-				groups = append(groups, ref)
-			}
+		if ch.Status == StatusActive {
+			hasActiveChannel = true
 		}
+		groups := opts.selectGroups(ch, groupByID, allGroupRefs)
 		sort.SliceStable(groups, func(i, j int) bool { return groups[i].Name < groups[j].Name })
 
 		ch.normalizeBillingModelSource()
@@ -96,18 +128,49 @@ func (s *ChannelService) ListAvailable(ctx context.Context) ([]AvailableChannel,
 		})
 	}
 
+	if opts.synthesizePublicCatalog && !hasActiveChannel && len(allGroupRefs) > 0 {
+		groups := append([]AvailableGroupRef(nil), allGroupRefs...)
+		sort.SliceStable(groups, func(i, j int) bool { return groups[i].Name < groups[j].Name })
+		out = append(out, AvailableChannel{
+			Name:        opts.publicCatalogChannelName,
+			Description: opts.publicCatalogDescription,
+			Status:      StatusActive,
+			Groups:      groups,
+		})
+	}
+
 	sort.SliceStable(out, func(i, j int) bool {
 		return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
 	})
 	return out, nil
 }
 
-// fillGlobalPricingFallback 对未命中渠道定价的支持模型，从全局 LiteLLM 数据合成一份
-// 展示用定价。仅用于「可用渠道」展示，不影响真实计费链路。
+func channelBoundGroups(ch *Channel, groupByID map[int64]AvailableGroupRef, _ []AvailableGroupRef) []AvailableGroupRef {
+	groups := make([]AvailableGroupRef, 0, len(ch.GroupIDs))
+	for _, gid := range ch.GroupIDs {
+		if ref, ok := groupByID[gid]; ok {
+			groups = append(groups, ref)
+		}
+	}
+	return groups
+}
+
+func allActiveGroups(_ *Channel, _ map[int64]AvailableGroupRef, allGroups []AvailableGroupRef) []AvailableGroupRef {
+	return append([]AvailableGroupRef(nil), allGroups...)
+}
+
+// FillGlobalPricingFallback fills display-only pricing for supported models that
+// do not already carry channel pricing. It does not change real billing rules.
+func (s *ChannelService) FillGlobalPricingFallback(models []SupportedModel) {
+	s.fillGlobalPricingFallback(models)
+}
+
+// fillGlobalPricingFallback 对未命中渠道定价的支持模型，从配置化模型价格目录
+// 合成一份展示用定价。仅用于「可用渠道」展示，不影响真实计费链路。
 //
-// 触发条件：
-//  1. Pricing == nil（渠道完全没声明该模型的定价条目）
-//  2. Pricing 非 nil 但所有价格字段为空（admin UI 建了条目但没填价格）
+// 处理逻辑：
+//  1. Pricing == nil 或价格字段全空：整体合成模型价格目录数据
+//  2. Pricing 有部分字段：仅把缺失字段从模型价格目录补齐（enrich），不覆盖 admin 已设值
 //
 // 当 s.pricingService 为 nil（测试场景），跳过回落。
 func (s *ChannelService) fillGlobalPricingFallback(models []SupportedModel) {
@@ -115,14 +178,38 @@ func (s *ChannelService) fillGlobalPricingFallback(models []SupportedModel) {
 		return
 	}
 	for i := range models {
-		if !pricingNeedsFallback(models[i].Pricing) {
-			continue
-		}
 		lp := s.pricingService.GetModelPricing(models[i].Name)
 		if lp == nil {
 			continue
 		}
-		models[i].Pricing = synthesizePricingFromLiteLLM(lp, models[i].Pricing)
+		if pricingNeedsFallback(models[i].Pricing) {
+			models[i].Pricing = synthesizePricingFromModelPrice(lp, models[i].Pricing)
+			continue
+		}
+		enrichPricingFromModelPrice(models[i].Pricing, lp)
+	}
+}
+
+// enrichPricingFromModelPrice 用配置化模型价格目录补齐渠道定价中缺失的字段（仅展示用）。
+// admin 已设值不覆盖，只填 nil 字段；模型价格目录中零值也当作缺失。不动 intervals。
+func enrichPricingFromModelPrice(existing *ChannelModelPricing, lp *ModelPriceEntry) {
+	if existing == nil || lp == nil {
+		return
+	}
+	if existing.InputPrice == nil {
+		existing.InputPrice = nonZeroPtr(lp.InputCostPerToken)
+	}
+	if existing.OutputPrice == nil {
+		existing.OutputPrice = nonZeroPtr(lp.OutputCostPerToken)
+	}
+	if existing.CacheWritePrice == nil {
+		existing.CacheWritePrice = nonZeroPtr(lp.CacheCreationInputTokenCost)
+	}
+	if existing.CacheReadPrice == nil {
+		existing.CacheReadPrice = nonZeroPtr(lp.CacheReadInputTokenCost)
+	}
+	if existing.ImageOutputPrice == nil {
+		existing.ImageOutputPrice = nonZeroPtr(lp.OutputCostPerImageToken)
 	}
 }
 
@@ -147,17 +234,17 @@ func pricingNeedsFallback(p *ChannelModelPricing) bool {
 	return true
 }
 
-// synthesizePricingFromLiteLLM 把 LiteLLM 的定价数据转成 ChannelModelPricing 形态，
+// synthesizePricingFromModelPrice 把配置化模型价格目录的数据转成 ChannelModelPricing 形态，
 // 仅用于展示。
 //
 // 计费模式优先级：
 //  1. 渠道已选 BillingMode（admin 在 UI 里选了 image / per_request 但没填价的场景，
 //     按选定模式合成对应字段）
-//  2. LiteLLM mode="image_generation" → image
+//  2. 模型价格目录 mode="image_generation" → image
 //  3. 默认 token
 //
-// LiteLLM 中字段 0 视为未配置，不带入展示。
-func synthesizePricingFromLiteLLM(lp *LiteLLMModelPricing, existing *ChannelModelPricing) *ChannelModelPricing {
+// 模型价格目录中字段 0 视为未配置，不带入展示。
+func synthesizePricingFromModelPrice(lp *ModelPriceEntry, existing *ChannelModelPricing) *ChannelModelPricing {
 	if lp == nil {
 		return existing
 	}

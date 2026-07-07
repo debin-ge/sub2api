@@ -77,6 +77,9 @@ type UsageLogRepository interface {
 	GetAccountStatsAggregated(ctx context.Context, accountID int64, startTime, endTime time.Time) (*usagestats.UsageStats, error)
 	GetModelStatsAggregated(ctx context.Context, modelName string, startTime, endTime time.Time) (*usagestats.UsageStats, error)
 	GetDailyStatsAggregated(ctx context.Context, userID int64, startTime, endTime time.Time) ([]map[string]any, error)
+
+	// Public plaza stats
+	GetPublicModelRecentCallCounts(ctx context.Context, since time.Time) (map[string]int64, error)
 }
 
 type accountWindowStatsBatchReader interface {

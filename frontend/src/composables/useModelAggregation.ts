@@ -4,7 +4,7 @@ import type {
   UserSupportedModelPricing
 } from '@/api/channels'
 
-export type PlazaSort = 'default' | 'input_asc' | 'input_desc'
+export type PlazaSort = 'popularity' | 'default' | 'input_asc' | 'input_desc'
 
 export interface PlazaMinPricing {
   input: number | null
@@ -28,6 +28,9 @@ export interface AggregatedModel {
   platform: string
   minPricing: PlazaMinPricing
   supportedGroups: PlazaSupportedGroup[]
+  bestRateMultiplier: number
+  recentCalls: number
+  recentCallWindowSeconds: number
 }
 
 export interface PlazaPlatformSection {
@@ -48,6 +51,17 @@ function minNullable(a: number | null, b: number | null): number | null {
   if (a == null) return b
   if (b == null) return a
   return Math.min(a, b)
+}
+
+function normalizeGroupRateMultiplier(value: number | null | undefined): number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 1
+}
+
+function minGroupRateMultiplier(groups: UserAvailableGroup[]): number {
+  return groups.reduce(
+    (min, group) => Math.min(min, normalizeGroupRateMultiplier(group.rate_multiplier)),
+    1
+  )
 }
 
 function extractMinPricing(pricing: UserSupportedModelPricing | null): PlazaMinPricing {
@@ -83,10 +97,16 @@ function mergeMinPricing(a: PlazaMinPricing, b: PlazaMinPricing): PlazaMinPricin
   }
 }
 
-function sortModels(models: AggregatedModel[], sort: PlazaSort): AggregatedModel[] {
+export function sortAggregatedModels(models: AggregatedModel[], sort: PlazaSort): AggregatedModel[] {
   const copy = [...models]
   if (sort === 'default') {
     return copy.sort((a, b) => a.displayName.localeCompare(b.displayName))
+  }
+  if (sort === 'popularity') {
+    return copy.sort((a, b) => {
+      if (a.recentCalls !== b.recentCalls) return b.recentCalls - a.recentCalls
+      return a.displayName.localeCompare(b.displayName)
+    })
   }
 
   return copy.sort((a, b) => {
@@ -122,6 +142,9 @@ export function aggregateByPlatformModel(
           group,
           pricing: model.pricing
         }))
+        const recentCalls = model.recent_call_count ?? 0
+        const recentCallWindowSeconds = model.recent_call_window_seconds ?? 0
+        const bestRateMultiplier = minGroupRateMultiplier(platformSection.groups)
         const existing = byModel.get(model.name)
 
         if (!existing) {
@@ -130,13 +153,21 @@ export function aggregateByPlatformModel(
             displayName: model.name,
             platform,
             minPricing: extractMinPricing(model.pricing),
-            supportedGroups
+            supportedGroups,
+            bestRateMultiplier,
+            recentCalls,
+            recentCallWindowSeconds
           })
           continue
         }
 
         existing.minPricing = mergeMinPricing(existing.minPricing, extractMinPricing(model.pricing))
         existing.supportedGroups.push(...supportedGroups)
+        existing.bestRateMultiplier = Math.min(existing.bestRateMultiplier, bestRateMultiplier)
+        existing.recentCalls = Math.max(existing.recentCalls, recentCalls)
+        if (recentCallWindowSeconds > existing.recentCallWindowSeconds) {
+          existing.recentCallWindowSeconds = recentCallWindowSeconds
+        }
       }
     }
   }
@@ -145,7 +176,7 @@ export function aggregateByPlatformModel(
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([platform, models]) => ({
       platform,
-      models: sortModels(Array.from(models.values()), options.sort ?? 'default')
+      models: sortAggregatedModels(Array.from(models.values()), options.sort ?? 'default')
     }))
     .filter((section) => section.models.length > 0)
 }

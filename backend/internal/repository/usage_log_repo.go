@@ -4636,3 +4636,46 @@ func setToSlice(set map[int64]struct{}) []int64 {
 	}
 	return out
 }
+
+// GetPublicModelRecentCallCounts 返回 since 时间之后每个模型的调用次数（按 requested_model 归口）。
+// 用于公开模型广场排序。空 requested_model 回落到 model 字段，以覆盖旧数据。
+func (r *usageLogRepository) GetPublicModelRecentCallCounts(
+	ctx context.Context,
+	since time.Time,
+) (map[string]int64, error) {
+	if r == nil || r.sql == nil {
+		return nil, nil
+	}
+	query := `
+		SELECT
+			COALESCE(NULLIF(TRIM(requested_model), ''), model) AS model_key,
+			COUNT(*)::bigint AS call_count
+		FROM usage_logs
+		WHERE created_at >= $1
+		GROUP BY model_key`
+	rows, err := r.sql.QueryContext(ctx, query, since.UTC())
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	out := make(map[string]int64, 128)
+	for rows.Next() {
+		var (
+			modelKey sql.NullString
+			count    int64
+		)
+		if err := rows.Scan(&modelKey, &count); err != nil {
+			return nil, err
+		}
+		key := strings.TrimSpace(modelKey.String)
+		if key == "" {
+			continue
+		}
+		out[key] = count
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}

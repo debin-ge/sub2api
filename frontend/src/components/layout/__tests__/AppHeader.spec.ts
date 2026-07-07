@@ -18,4 +18,9 @@ describe('AppHeader user menu', () => {
     expect(componentSource).toContain('target="_blank"')
     expect(componentSource).not.toContain('docUrl')
   })
+
+  it('opens the model plaza from the header', () => {
+    expect(componentSource).toContain('to="/plaza"')
+    expect(componentSource).toContain("t('plaza.header.label')")
+  })
 })

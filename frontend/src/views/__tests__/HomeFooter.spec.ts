@@ -33,4 +33,11 @@ describe('HomeView footer', () => {
 
     expect(homeSource).not.toContain("{{ t('home.docs') }}")
   })
+
+  it('links to the model plaza from the home header', () => {
+    const homeSource = readSource('views/HomeView.vue')
+
+    expect(homeSource).toContain('to="/plaza"')
+    expect(homeSource).toContain("t('plaza.header.label')")
+  })
 })
