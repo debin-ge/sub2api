@@ -7,17 +7,17 @@ This page lists common {{SITE_NAME}} compatible endpoints. Actual support depend
 Most APIs use Bearer tokens:
 
 ```http
-Authorization: Bearer $YOUR_KEY
+Authorization: Bearer ${API_KEY}
 ```
 
 curl example:
 
 ```bash
-curl "${BASE_URL}v1/models" \
-  -H "Authorization: Bearer $YOUR_KEY"
+curl "{{BASE_URL}}v1/models" \
+  -H "Authorization: Bearer ${API_KEY}"
 ```
 
-Some compatible clients may send keys through `api-key`, `x-api-key`, or SDK-specific fields. Unless your admin says otherwise, prefer `Authorization: Bearer $YOUR_KEY`.
+Some compatible clients may send keys through `api-key`, `x-api-key`, or SDK-specific fields. Unless your admin says otherwise, prefer `Authorization: Bearer ${API_KEY}`.
 
 ## OpenAI Compatible Endpoints
 

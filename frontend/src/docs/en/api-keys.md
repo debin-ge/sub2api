@@ -30,22 +30,21 @@ If you cannot see keys in the dashboard, ask an admin whether your account can c
 These docs use the following environment variables:
 
 ```bash
-export BASE_URL="{{BASE_URL}}"
-export YOUR_KEY="replace-with-your-api-key"
+export API_KEY="replace-with-your-api-key"
 ```
 
 Requests then use:
 
 ```bash
-curl "${BASE_URL}v1/models" \
-  -H "Authorization: Bearer $YOUR_KEY"
+curl "{{BASE_URL}}v1/models" \
+  -H "Authorization: Bearer ${API_KEY}"
 ```
 
 If an SDK expects the Base URL at the `/v1` level, configure a separate value:
 
 ```bash
 export OPENAI_BASE_URL="{{BASE_URL}}v1"
-export OPENAI_API_KEY="$YOUR_KEY"
+export OPENAI_API_KEY="${API_KEY}"
 ```
 
 ## Authorization Header
@@ -53,15 +52,15 @@ export OPENAI_API_KEY="$YOUR_KEY"
 Use Bearer Token authentication by default:
 
 ```http
-Authorization: Bearer $YOUR_KEY
+Authorization: Bearer ${API_KEY}
 ```
 
 Common mistakes:
 
 | Mistake | Problem |
 | --- | --- |
-| `Authorization: $YOUR_KEY` | Missing the `Bearer` prefix. |
-| `Bearer YOUR_KEY` | Sends a literal string instead of reading the environment variable. |
+| `Authorization: ${API_KEY}` | Missing the `Bearer` prefix. |
+| `Bearer API_KEY` | Sends a literal string instead of reading the environment variable. |
 | `Authorization: Bearer` | The key is empty, usually because the environment variable is unset. |
 | Hard-coding the key in browser code | Leaks the key and is not suitable for production. |
 
@@ -70,8 +69,8 @@ Common mistakes:
 Different API Keys in the same deployment may see different model lists. Always query with the key you will use:
 
 ```bash
-curl "${BASE_URL}v1/models" \
-  -H "Authorization: Bearer $YOUR_KEY"
+curl "{{BASE_URL}}v1/models" \
+  -H "Authorization: Bearer ${API_KEY}"
 ```
 
 If an expected model is missing, check:
@@ -109,9 +108,9 @@ If you suspect a key has leaked, disable or reset it first, then inspect access 
 Use this as the smallest key availability check:
 
 ```bash
-test -n "$YOUR_KEY" && \
-curl -i "${BASE_URL}v1/models" \
-  -H "Authorization: Bearer $YOUR_KEY"
+test -n "${API_KEY}" && \
+curl -i "{{BASE_URL}}v1/models" \
+  -H "Authorization: Bearer ${API_KEY}"
 ```
 
 The expected result is `200` with the model list available to the current key. If you receive 401, 403, or an empty list, continue with the troubleshooting page.

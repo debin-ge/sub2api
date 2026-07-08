@@ -179,6 +179,67 @@ describe('DocsView', () => {
     }
   })
 
+  it('renders integration navigation entries for zh locale', async () => {
+    i18n.global.locale.value = 'zh'
+    const wrapper = await mountDocs('/docs')
+
+    for (const label of ['接入总览', '代码接入', '客户端接入', 'CLI 接入', '第三方工具接入']) {
+      expect(wrapper.text()).toContain(label)
+    }
+  })
+
+  it('renders every zh integration page without falling back to not-found', async () => {
+    i18n.global.locale.value = 'zh'
+    for (const slug of [
+      'integration-overview',
+      'integration-code',
+      'integration-clients',
+      'integration-cli',
+      'integration-tools',
+    ]) {
+      const wrapper = await mountDocs(`/docs/${slug}`)
+      expect(wrapper.text()).not.toContain('文档不存在')
+      expect(wrapper.find('.docs-content h1').exists()).toBe(true)
+      wrapper.unmount()
+    }
+  })
+
+  it('renders code tab groups on the zh integration-code page', async () => {
+    i18n.global.locale.value = 'zh'
+    const wrapper = await mountDocs('/docs/integration-code')
+
+    const tabs = wrapper.find('.doc-tabs')
+    expect(tabs.exists()).toBe(true)
+
+    const labels = tabs.findAll('.doc-tab-btn').map((btn) => btn.text())
+    expect(labels).toEqual(['curl', 'Python', 'TypeScript', 'Go'])
+
+    const pythonTab = tabs.findAll('.doc-tab-btn').find((btn) => btn.text() === 'Python')!
+    await pythonTab.trigger('click')
+
+    for (const group of wrapper.findAll('.doc-tabs')) {
+      const active = group.find('.doc-tab-btn.active')
+      if (group.findAll('.doc-tab-btn').some((btn) => btn.text() === 'Python')) {
+        expect(active.text()).toBe('Python')
+      }
+    }
+  })
+
+  it('renders client cards on the zh integration-clients page', async () => {
+    i18n.global.locale.value = 'zh'
+    const wrapper = await mountDocs('/docs/integration-clients')
+
+    const card = wrapper.find('.client-card')
+    expect(card.exists()).toBe(true)
+    expect(wrapper.find('.client-pill').exists()).toBe(true)
+    expect(wrapper.html()).not.toContain('language-client')
+
+    const copyBtn = card.find('.client-copy-btn')
+    expect(copyBtn.exists()).toBe(true)
+    await copyBtn.trigger('click')
+    expect(navigator.clipboard.writeText).toHaveBeenCalled()
+  })
+
   it('injects copy buttons for code blocks', async () => {
     const wrapper = await mountDocs('/docs/quickstart')
     const copyButton = wrapper.find('.copy-btn')

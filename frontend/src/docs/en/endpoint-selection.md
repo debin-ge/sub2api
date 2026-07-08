@@ -30,15 +30,14 @@ Choose endpoints based on your client and request format first, then the model. 
 Command-line examples use the root address:
 
 ```bash
-export BASE_URL="{{BASE_URL}}"
-export YOUR_KEY="replace-with-your-api-key"
+export API_KEY="replace-with-your-api-key"
 ```
 
 curl appends paths like this:
 
 ```bash
-curl "${BASE_URL}v1/models" \
-  -H "Authorization: Bearer $YOUR_KEY"
+curl "{{BASE_URL}}v1/models" \
+  -H "Authorization: Bearer ${API_KEY}"
 ```
 
 SDKs often need a more specific URL:
@@ -108,7 +107,7 @@ Use `/antigravity/...` only when an admin provides an Antigravity compatible ent
 
 | Problem | Confirm |
 | --- | --- |
-| 401 | The header includes `Authorization: Bearer $YOUR_KEY`. |
+| 401 | The header includes `Authorization: Bearer ${API_KEY}`. |
 | 403 | The current key group has permission for the model and endpoint. |
 | 404 | The path exists, Base URL is not duplicated, and the model name is correct. |
 | Model format error | The request body belongs to the selected API family. |

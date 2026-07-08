@@ -39,8 +39,8 @@
 Anthropic 兼容端点如果支持 token 估算，可以尝试：
 
 ```bash
-curl "${BASE_URL}v1/messages/count_tokens" \
-  -H "Authorization: Bearer $YOUR_KEY" \
+curl "{{BASE_URL}}v1/messages/count_tokens" \
+  -H "Authorization: Bearer ${API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "claude-3-5-sonnet-latest",

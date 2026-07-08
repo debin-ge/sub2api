@@ -61,8 +61,21 @@ func TestAdminComplianceStatusRequiresAckWhenMissing(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, status.Required)
 	require.Equal(t, AdminComplianceVersion, status.Version)
-	require.Equal(t, AdminComplianceAckPhraseZH, status.AckPhraseZH)
+	require.Equal(t, defaultAdminComplianceSiteName, status.SiteName)
+	require.Equal(t, adminComplianceAckPhraseZH(defaultAdminComplianceSiteName), status.AckPhraseZH)
 	require.Equal(t, AdminComplianceDocumentPathZH, status.DocumentPathZH)
+}
+
+func TestAdminComplianceStatusUsesConfiguredSiteNameInAckPhrases(t *testing.T) {
+	svc := NewSettingService(&adminComplianceRepoStub{
+		values: map[string]string{SettingKeySiteName: "Acme Gateway"},
+	}, &config.Config{})
+
+	status, err := svc.GetAdminComplianceStatus(context.Background(), 1)
+	require.NoError(t, err)
+	require.Equal(t, "Acme Gateway", status.SiteName)
+	require.Equal(t, "我已阅读、理解并同意 Acme Gateway 部署与运营合规承诺", status.AckPhraseZH)
+	require.Equal(t, "I have read, understood, and agree to the Acme Gateway Deployment and Operation Compliance Commitment", status.AckPhraseEN)
 }
 
 func TestAcceptAdminComplianceRejectsWrongPhrase(t *testing.T) {
@@ -77,6 +90,21 @@ func TestAcceptAdminComplianceRejectsWrongPhrase(t *testing.T) {
 	require.True(t, errors.Is(err, ErrAdminComplianceInvalidPhrase))
 }
 
+func TestAcceptAdminComplianceAcceptsConfiguredSiteNamePhrase(t *testing.T) {
+	repo := &adminComplianceRepoStub{
+		values: map[string]string{SettingKeySiteName: "Acme Gateway"},
+	}
+	svc := NewSettingService(repo, &config.Config{})
+
+	status, err := svc.AcceptAdminCompliance(context.Background(), AdminComplianceAcceptInput{
+		AdminUserID: 42,
+		Language:    "zh-CN",
+		Phrase:      "我已阅读、理解并同意 Acme Gateway 部署与运营合规承诺",
+	})
+	require.NoError(t, err)
+	require.False(t, status.Required)
+}
+
 func TestAcceptAdminCompliancePersistsCurrentVersion(t *testing.T) {
 	repo := &adminComplianceRepoStub{}
 	svc := NewSettingService(repo, &config.Config{})
@@ -84,7 +112,7 @@ func TestAcceptAdminCompliancePersistsCurrentVersion(t *testing.T) {
 	status, err := svc.AcceptAdminCompliance(context.Background(), AdminComplianceAcceptInput{
 		AdminUserID: 42,
 		Language:    "zh-CN",
-		Phrase:      AdminComplianceAckPhraseZH,
+		Phrase:      adminComplianceAckPhraseZH(defaultAdminComplianceSiteName),
 		IPAddress:   "203.0.113.10",
 		UserAgent:   "test-agent",
 	})

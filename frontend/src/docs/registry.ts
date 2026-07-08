@@ -5,8 +5,11 @@ import apiReferenceContent from './zh/api-reference.md?raw'
 import endpointSelectionContent from './zh/endpoint-selection.md?raw'
 import modelsContent from './zh/models.md?raw'
 import billingUsageContent from './zh/billing-usage.md?raw'
-import clientsContent from './zh/clients.md?raw'
-import configurationSnippetsContent from './zh/configuration-snippets.md?raw'
+import integrationOverviewContent from './zh/integration-overview.md?raw'
+import integrationCodeContent from './zh/integration-code.md?raw'
+import integrationClientsContent from './zh/integration-clients.md?raw'
+import integrationCliContent from './zh/integration-cli.md?raw'
+import integrationToolsContent from './zh/integration-tools.md?raw'
 import errorsContent from './zh/errors.md?raw'
 import bestPracticesContent from './zh/best-practices.md?raw'
 import faqContent from './zh/faq.md?raw'
@@ -87,18 +90,39 @@ export const userDocsByLocale: Record<UserDocLocale, UserDocEntry[]> = {
       content: billingUsageContent,
     },
     {
-      slug: 'clients',
-      title: '客户端接入',
-      description: '使用 curl、OpenAI SDK、Claude Code、Gemini 和 Codex 接入 {{SITE_NAME}}。',
+      slug: 'integration-overview',
+      title: '接入总览',
+      description: '完成 Base URL、API Key 和模型的接入前提，并选择合适的接入方式。',
       category: '接入',
-      content: clientsContent,
+      content: integrationOverviewContent,
     },
     {
-      slug: 'configuration-snippets',
-      title: '可复制配置模板',
-      description: '复制常用环境变量、SDK、curl、Claude、Gemini 和安全代理配置。',
+      slug: 'integration-code',
+      title: '代码接入',
+      description: '使用 curl、Python、TypeScript 和 Go 调用 OpenAI、Anthropic 和 Gemini 兼容接口。',
       category: '接入',
-      content: configurationSnippetsContent,
+      content: integrationCodeContent,
+    },
+    {
+      slug: 'integration-clients',
+      title: '客户端接入',
+      description: '配置 Cursor、Claude Code、Codex、Cline、Continue 和 Trae 等 GUI 客户端。',
+      category: '接入',
+      content: integrationClientsContent,
+    },
+    {
+      slug: 'integration-cli',
+      title: 'CLI 接入',
+      description: '通过配置文件和环境变量接入 Codex CLI 和 Claude Code 命令行工具。',
+      category: '接入',
+      content: integrationCliContent,
+    },
+    {
+      slug: 'integration-tools',
+      title: '第三方工具接入',
+      description: '使用 CC-Switch、Cockpit Tools 等工具管理多站点配置和账号切换。',
+      category: '接入',
+      content: integrationToolsContent,
     },
     {
       slug: 'errors',

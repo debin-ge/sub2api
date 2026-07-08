@@ -32,15 +32,15 @@ Model availability is usually determined by these factors:
 Start with:
 
 ```bash
-curl "${BASE_URL}v1/models" \
-  -H "Authorization: Bearer $YOUR_KEY"
+curl "{{BASE_URL}}v1/models" \
+  -H "Authorization: Bearer ${API_KEY}"
 ```
 
 For Gemini native clients, you can also check:
 
 ```bash
-curl "${BASE_URL}v1beta/models" \
-  -H "Authorization: Bearer $YOUR_KEY"
+curl "{{BASE_URL}}v1beta/models" \
+  -H "Authorization: Bearer ${API_KEY}"
 ```
 
 Do not treat example model names in the docs as guaranteed availability. Examples only explain request formats. Production clients should use model names returned by the API or mapping names explicitly provided by an admin.

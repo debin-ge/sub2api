@@ -22,12 +22,16 @@ func AdminComplianceGuard(settingService *service.SettingService) gin.HandlerFun
 			return
 		}
 
-		acknowledged, err := settingService.IsAdminComplianceAcknowledged(c.Request.Context(), subject.UserID)
+		status, err := settingService.GetAdminComplianceStatus(c.Request.Context(), subject.UserID)
 		if err != nil {
 			AbortWithError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Internal server error")
 			return
 		}
-		if acknowledged {
+		if status == nil {
+			AbortWithError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Internal server error")
+			return
+		}
+		if !status.Required {
 			c.Next()
 			return
 		}
@@ -37,10 +41,13 @@ func AdminComplianceGuard(settingService *service.SettingService) gin.HandlerFun
 			"message": "administrator compliance acknowledgement is required",
 			"metadata": gin.H{
 				"version":          service.AdminComplianceVersion,
+				"site_name":        status.SiteName,
 				"document_path_zh": service.AdminComplianceDocumentPathZH,
 				"document_path_en": service.AdminComplianceDocumentPathEN,
 				"document_url_zh":  service.AdminComplianceDocumentURLZH,
 				"document_url_en":  service.AdminComplianceDocumentURLEN,
+				"ack_phrase_zh":    status.AckPhraseZH,
+				"ack_phrase_en":    status.AckPhraseEN,
 			},
 		})
 		c.Abort()

@@ -32,15 +32,15 @@
 推荐先运行：
 
 ```bash
-curl "${BASE_URL}v1/models" \
-  -H "Authorization: Bearer $YOUR_KEY"
+curl "{{BASE_URL}}v1/models" \
+  -H "Authorization: Bearer ${API_KEY}"
 ```
 
 如果你使用 Gemini 原生客户端，也可以检查：
 
 ```bash
-curl "${BASE_URL}v1beta/models" \
-  -H "Authorization: Bearer $YOUR_KEY"
+curl "{{BASE_URL}}v1beta/models" \
+  -H "Authorization: Bearer ${API_KEY}"
 ```
 
 不要把文档中的示例模型名当成保证可用的模型。示例只用于说明请求格式。生产配置中应使用接口返回的模型名，或管理员明确提供的模型映射名。

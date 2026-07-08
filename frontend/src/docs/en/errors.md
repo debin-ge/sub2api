@@ -15,15 +15,15 @@ Use this order:
 Minimal verification command:
 
 ```bash
-curl -i "${BASE_URL}v1/models" \
-  -H "Authorization: Bearer $YOUR_KEY"
+curl -i "{{BASE_URL}}v1/models" \
+  -H "Authorization: Bearer ${API_KEY}"
 ```
 
 ## HTTP Status Codes
 
 | Status | Meaning | Common causes | Recommended action |
 | --- | --- | --- | --- |
-| 401 | Unauthenticated | Missing API Key, wrong format, invalid key, or request header does not use Bearer. | Check `Authorization: Bearer $YOUR_KEY` and confirm the key has not expired or been deleted. |
+| 401 | Unauthenticated | Missing API Key, wrong format, invalid key, or request header does not use Bearer. | Check `Authorization: Bearer ${API_KEY}` and confirm the key has not expired or been deleted. |
 | 403 | No permission | The key is valid, but the group cannot access the model, channel, or endpoint. | Query `/v1/models` and ask an admin to check group, pricing, and model permissions. |
 | 404 | Not found | Missing path, disabled endpoint, wrong model name, or missing mapping. | Check the API family and path, and make sure the model name comes from the current deployment. |
 | 429 | Too many requests | Hit a {{SITE_NAME}}, upstream account, group, or client-side rate limit. | Lower concurrency, add retry backoff, or ask an admin to adjust limits and quotas. |
@@ -34,17 +34,17 @@ curl -i "${BASE_URL}v1/models" \
 First confirm that the API Key is actually sent:
 
 ```bash
-echo "$YOUR_KEY" | wc -c
-curl -i "${BASE_URL}v1/models" \
-  -H "Authorization: Bearer $YOUR_KEY"
+echo "${API_KEY}" | wc -c
+curl -i "{{BASE_URL}}v1/models" \
+  -H "Authorization: Bearer ${API_KEY}"
 ```
 
 Common causes:
 
 | Cause | Action |
 | --- | --- |
-| Environment variable is unset | Run `export YOUR_KEY="..."` again. |
-| Header misses Bearer | Use `Authorization: Bearer $YOUR_KEY`. |
+| Environment variable is unset | Run `export API_KEY="..."` again. |
+| Header misses Bearer | Use `Authorization: Bearer ${API_KEY}`. |
 | Key was deleted or disabled | Check the dashboard or ask an admin. |
 | Wrong environment key | Separate test, staging, and production API Keys. |
 
@@ -86,7 +86,7 @@ Common messages include model not found, model disabled, no available channel, o
 | Pricing mismatch | The admin has not configured pricing or multipliers for the model, so the request is rejected. |
 | Wrong API family | An Anthropic model is called with an OpenAI request body, or a Gemini model is sent to the wrong endpoint. |
 
-Recommended action: call `${BASE_URL}v1/models` first, retry with a model name from the returned list, then ask an admin to inspect groups, channels, and model mappings if it still fails.
+Recommended action: call `{{BASE_URL}}v1/models` first, retry with a model name from the returned list, then ask an admin to inspect groups, channels, and model mappings if it still fails.
 
 ## Unsupported Endpoint
 
@@ -95,9 +95,9 @@ If the response is 404 or explicitly says the endpoint is unsupported, the deplo
 | Check | Example |
 | --- | --- |
 | OpenAI SDK | `baseURL` is usually `{{BASE_URL}}v1`. |
-| Anthropic compatible | Usually requests `${BASE_URL}v1/messages`; avoid duplicated `/v1/v1/messages`. |
-| Gemini native | Use `${BASE_URL}v1beta/models/{model}:generateContent`. |
-| Antigravity | Use `${BASE_URL}antigravity/...` and confirm that the admin enabled it. |
+| Anthropic compatible | Usually requests `{{BASE_URL}}v1/messages`; avoid duplicated `/v1/v1/messages`. |
+| Gemini native | Use `{{BASE_URL}}v1beta/models/{model}:generateContent`. |
+| Antigravity | Use `{{BASE_URL}}antigravity/...` and confirm that the admin enabled it. |
 
 ## Missing Group or Unbound Key
 
@@ -155,8 +155,8 @@ Local or production environment:
 Minimal reproducible curl:
 
 ```bash
-curl -i "${BASE_URL}v1/chat/completions" \
-  -H "Authorization: Bearer $YOUR_KEY" \
+curl -i "{{BASE_URL}}v1/chat/completions" \
+  -H "Authorization: Bearer ${API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gpt-4o-mini",

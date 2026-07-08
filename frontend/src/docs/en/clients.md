@@ -1,21 +1,20 @@
 # Client Integration
 
-This page gives a full integration path for common clients: verify the key and models first, configure an SDK or tool next, then handle streaming, timeouts, and errors. Replace `{{BASE_URL}}` with the address provided by an admin, and pass the API Key through `$YOUR_KEY`.
+This page gives a full integration path for common clients: verify the key and models first, configure an SDK or tool next, then handle streaming, timeouts, and errors. Replace `{{BASE_URL}}` with the address provided by an admin, and pass the API Key through `${API_KEY}`.
 
 ## Before You Configure a Client
 
 Set common environment variables:
 
 ```bash
-export BASE_URL="{{BASE_URL}}"
-export YOUR_KEY="replace-with-your-api-key"
+export API_KEY="replace-with-your-api-key"
 ```
 
 List models with the current key:
 
 ```bash
-curl "${BASE_URL}v1/models" \
-  -H "Authorization: Bearer $YOUR_KEY"
+curl "{{BASE_URL}}v1/models" \
+  -H "Authorization: Bearer ${API_KEY}"
 ```
 
 If this command fails, do not configure the SDK yet. Fix Base URL, API Key, group permission, or network connectivity first.
@@ -25,8 +24,8 @@ If this command fails, do not configure the SDK yet. Fix Base URL, API Key, grou
 Chat Completions:
 
 ```bash
-curl "${BASE_URL}v1/chat/completions" \
-  -H "Authorization: Bearer $YOUR_KEY" \
+curl "{{BASE_URL}}v1/chat/completions" \
+  -H "Authorization: Bearer ${API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gpt-4o-mini",
@@ -39,8 +38,8 @@ curl "${BASE_URL}v1/chat/completions" \
 Streaming Chat Completions:
 
 ```bash
-curl -N "${BASE_URL}v1/chat/completions" \
-  -H "Authorization: Bearer $YOUR_KEY" \
+curl -N "{{BASE_URL}}v1/chat/completions" \
+  -H "Authorization: Bearer ${API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gpt-4o-mini",
@@ -59,7 +58,7 @@ Most OpenAI SDK configurations expect `baseURL` at the `/v1` level:
 
 ```bash
 export OPENAI_BASE_URL="{{BASE_URL}}v1"
-export OPENAI_API_KEY="$YOUR_KEY"
+export OPENAI_API_KEY="${API_KEY}"
 ```
 
 ```ts
@@ -98,7 +97,7 @@ If the environment variable already includes `/v1`, do not append `/v1` again in
 
 ```bash
 export OPENAI_BASE_URL="{{BASE_URL}}v1"
-export OPENAI_API_KEY="$YOUR_KEY"
+export OPENAI_API_KEY="${API_KEY}"
 ```
 
 ```python
@@ -124,13 +123,13 @@ Claude Code or Anthropic compatible clients usually need an Anthropic Base URL a
 
 ```bash
 export ANTHROPIC_BASE_URL="{{BASE_URL}}"
-export ANTHROPIC_AUTH_TOKEN="$YOUR_KEY"
+export ANTHROPIC_AUTH_TOKEN="${API_KEY}"
 ```
 
 Some clients require `ANTHROPIC_API_KEY`:
 
 ```bash
-export ANTHROPIC_API_KEY="$YOUR_KEY"
+export ANTHROPIC_API_KEY="${API_KEY}"
 ```
 
 Then choose a Claude compatible model supported by the current deployment. Model names should come from `/v1/models` or an admin-provided mapping name.
@@ -138,8 +137,8 @@ Then choose a Claude compatible model supported by the current deployment. Model
 ## Anthropic Messages Request
 
 ```bash
-curl "${BASE_URL}v1/messages" \
-  -H "Authorization: Bearer $YOUR_KEY" \
+curl "{{BASE_URL}}v1/messages" \
+  -H "Authorization: Bearer ${API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "claude-3-5-sonnet-latest",
@@ -158,7 +157,7 @@ If an admin provides an Antigravity Claude compatible entry point, point the cli
 
 ```bash
 export ANTHROPIC_BASE_URL="{{BASE_URL}}antigravity"
-export ANTHROPIC_AUTH_TOKEN="$YOUR_KEY"
+export ANTHROPIC_AUTH_TOKEN="${API_KEY}"
 ```
 
 If you see 404 or model unavailable errors, confirm that the deployment has enabled `/antigravity/v1/messages` and that your group has access to the corresponding model.
@@ -168,8 +167,8 @@ If you see 404 or model unavailable errors, confirm that the deployment has enab
 Gemini native clients should use `/v1beta` paths and Gemini request body format. Non-streaming example:
 
 ```bash
-curl "${BASE_URL}v1beta/models/gemini-2.0-flash:generateContent" \
-  -H "Authorization: Bearer $YOUR_KEY" \
+curl "{{BASE_URL}}v1beta/models/gemini-2.0-flash:generateContent" \
+  -H "Authorization: Bearer ${API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
     "contents": [
@@ -185,8 +184,8 @@ curl "${BASE_URL}v1beta/models/gemini-2.0-flash:generateContent" \
 Streaming:
 
 ```bash
-curl -N "${BASE_URL}v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse" \
-  -H "Authorization: Bearer $YOUR_KEY" \
+curl -N "{{BASE_URL}}v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse" \
+  -H "Authorization: Bearer ${API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
     "contents": [
@@ -206,8 +205,8 @@ Gemini native endpoints do not use the OpenAI `messages` format. Use a Gemini mo
 Coding clients that support the Responses API can point to {{SITE_NAME}}'s `/v1/responses`:
 
 ```bash
-curl "${BASE_URL}v1/responses" \
-  -H "Authorization: Bearer $YOUR_KEY" \
+curl "{{BASE_URL}}v1/responses" \
+  -H "Authorization: Bearer ${API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gpt-4.1",
@@ -222,7 +221,7 @@ If the model or Responses API is not enabled in the current deployment, use an a
 | Item | Recommendation |
 | --- | --- |
 | Base URL | Use the root address for curl path joining; OpenAI SDKs usually use `{{BASE_URL}}v1`. |
-| API Key | Use `$YOUR_KEY` or the environment variable required by the client, and do not write keys into source code. |
+| API Key | Use `${API_KEY}` or the environment variable required by the client, and do not write keys into source code. |
 | Model name | Use `/v1/models`, `/v1beta/models`, or admin-provided mapping documentation. |
 | Timeout | Long outputs and streaming requests need longer HTTP, proxy, and load balancer timeouts. |
 | Retry | Use exponential backoff for 429 and 5xx; do not blindly retry 401, 403, or 404. |

@@ -19,9 +19,8 @@ const (
 	AdminComplianceDocumentPathEN = "docs/legal/admin-compliance.en.md"
 	AdminComplianceDocumentURLZH  = "https://github.com/Wei-Shaw/sub2api/blob/main/docs/legal/admin-compliance.zh.md"
 	AdminComplianceDocumentURLEN  = "https://github.com/Wei-Shaw/sub2api/blob/main/docs/legal/admin-compliance.en.md"
-	AdminComplianceAckPhraseZH    = "我已阅读、理解并同意 Sub2API 部署与运营合规承诺"
-	AdminComplianceAckPhraseEN    = "I have read, understood, and agree to the Sub2API Deployment and Operation Compliance Commitment"
 
+	defaultAdminComplianceSiteName           = "Sub2API"
 	settingKeyAdminComplianceAcknowledgement = "admin_compliance_acknowledgement"
 )
 
@@ -50,6 +49,7 @@ type AdminComplianceAcknowledgement struct {
 type AdminComplianceStatus struct {
 	Required        bool                            `json:"required"`
 	Version         string                          `json:"version"`
+	SiteName        string                          `json:"site_name"`
 	DocumentPathZH  string                          `json:"document_path_zh"`
 	DocumentPathEN  string                          `json:"document_path_en"`
 	DocumentURLZH   string                          `json:"document_url_zh"`
@@ -75,11 +75,27 @@ func normalizeAdminComplianceLanguage(raw string) string {
 	return "en"
 }
 
-func expectedAdminCompliancePhrase(language string) string {
-	if normalizeAdminComplianceLanguage(language) == "zh" {
-		return AdminComplianceAckPhraseZH
+func normalizeAdminComplianceSiteName(siteName string) string {
+	siteName = strings.TrimSpace(siteName)
+	if siteName == "" {
+		return defaultAdminComplianceSiteName
 	}
-	return AdminComplianceAckPhraseEN
+	return siteName
+}
+
+func adminComplianceAckPhraseZH(siteName string) string {
+	return "我已阅读、理解并同意 " + normalizeAdminComplianceSiteName(siteName) + " 部署与运营合规承诺"
+}
+
+func adminComplianceAckPhraseEN(siteName string) string {
+	return "I have read, understood, and agree to the " + normalizeAdminComplianceSiteName(siteName) + " Deployment and Operation Compliance Commitment"
+}
+
+func expectedAdminCompliancePhrase(language string, siteName string) string {
+	if normalizeAdminComplianceLanguage(language) == "zh" {
+		return adminComplianceAckPhraseZH(siteName)
+	}
+	return adminComplianceAckPhraseEN(siteName)
 }
 
 func adminComplianceAcknowledgementKey(adminUserID int64) string {
@@ -90,15 +106,20 @@ func adminComplianceAcknowledgementKey(adminUserID int64) string {
 }
 
 func (s *SettingService) GetAdminComplianceStatus(ctx context.Context, adminUserID int64) (*AdminComplianceStatus, error) {
+	siteName := defaultAdminComplianceSiteName
+	if s != nil && s.settingRepo != nil {
+		siteName = s.GetSiteName(ctx)
+	}
 	status := &AdminComplianceStatus{
 		Required:       true,
 		Version:        AdminComplianceVersion,
+		SiteName:       normalizeAdminComplianceSiteName(siteName),
 		DocumentPathZH: AdminComplianceDocumentPathZH,
 		DocumentPathEN: AdminComplianceDocumentPathEN,
 		DocumentURLZH:  AdminComplianceDocumentURLZH,
 		DocumentURLEN:  AdminComplianceDocumentURLEN,
-		AckPhraseZH:    AdminComplianceAckPhraseZH,
-		AckPhraseEN:    AdminComplianceAckPhraseEN,
+		AckPhraseZH:    adminComplianceAckPhraseZH(siteName),
+		AckPhraseEN:    adminComplianceAckPhraseEN(siteName),
 	}
 	if s == nil || s.settingRepo == nil {
 		return status, nil
@@ -136,7 +157,7 @@ func (s *SettingService) AcceptAdminCompliance(ctx context.Context, input AdminC
 		return nil, infraerrors.InternalServer("SETTING_SERVICE_UNAVAILABLE", "setting service is unavailable")
 	}
 	phrase := strings.TrimSpace(input.Phrase)
-	if phrase != expectedAdminCompliancePhrase(input.Language) {
+	if phrase != expectedAdminCompliancePhrase(input.Language, s.GetSiteName(ctx)) {
 		return nil, ErrAdminComplianceInvalidPhrase
 	}
 

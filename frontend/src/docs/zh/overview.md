@@ -31,8 +31,7 @@
 2. 设置环境变量：
 
 ```bash
-export BASE_URL="{{BASE_URL}}"
-export YOUR_KEY="your-api-key"
+export API_KEY="在这里粘贴你的API密钥"
 ```
 
 3. 调用 `/v1/models` 查看当前密钥实际可用的模型列表。
@@ -43,7 +42,7 @@ export YOUR_KEY="your-api-key"
 
 | 步骤 | 建议 |
 | --- | --- |
-| 验证密钥 | 先调用 `${BASE_URL}v1/models`，确认鉴权与模型列表正常。 |
+| 验证密钥 | 先调用 `{{BASE_URL}}v1/models`，确认鉴权与模型列表正常。 |
 | 选择接口 | OpenAI SDK 优先使用 `/v1/chat/completions` 或 `/v1/responses`；Claude 类客户端优先使用 `/v1/messages`；Gemini 原生客户端使用 `/v1beta` 路径。 |
 | 固定模型名 | 使用 `/v1/models` 返回的模型名，或管理员明确提供的映射名。 |
 | 开启流式 | 确认客户端支持流式响应后，再使用 `stream: true` 或 SSE 端点。 |
@@ -54,7 +53,7 @@ export YOUR_KEY="your-api-key"
 | 目标 | 建议阅读 |
 | --- | --- |
 | 第一次调用接口 | 先看快速开始，再看 API Key 与账户。 |
-| 配置具体客户端 | 查看客户端接入和可复制配置模板。 |
+| 接入自己的工具或代码 | 先看接入总览，再按场景选择代码接入、客户端接入、CLI 接入或第三方工具接入。 |
 | 不确定该用哪个接口 | 查看端点选择指南和 API 参考。 |
 | 不确定该用哪个模型 | 查看模型与平台中的选择方法。 |
 | 关注余额和成本 | 查看计费与用量。 |

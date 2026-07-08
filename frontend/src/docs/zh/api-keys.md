@@ -30,22 +30,21 @@ API Key 一般来自管理员或控制台的密钥页面。拿到密钥后，先
 本项目文档统一使用以下环境变量：
 
 ```bash
-export BASE_URL="{{BASE_URL}}"
-export YOUR_KEY="replace-with-your-api-key"
+export API_KEY="在这里粘贴你的API密钥"
 ```
 
 后续请求统一使用：
 
 ```bash
-curl "${BASE_URL}v1/models" \
-  -H "Authorization: Bearer $YOUR_KEY"
+curl "{{BASE_URL}}v1/models" \
+  -H "Authorization: Bearer ${API_KEY}"
 ```
 
 如果某个 SDK 要求 Base URL 指向 `/v1`，可以单独设置：
 
 ```bash
 export OPENAI_BASE_URL="{{BASE_URL}}v1"
-export OPENAI_API_KEY="$YOUR_KEY"
+export OPENAI_API_KEY="${API_KEY}"
 ```
 
 ## 请求头格式
@@ -53,15 +52,15 @@ export OPENAI_API_KEY="$YOUR_KEY"
 推荐使用 Bearer Token：
 
 ```http
-Authorization: Bearer $YOUR_KEY
+Authorization: Bearer ${API_KEY}
 ```
 
 常见错误包括：
 
 | 错误写法 | 问题 |
 | --- | --- |
-| `Authorization: $YOUR_KEY` | 缺少 `Bearer` 前缀。 |
-| `Bearer YOUR_KEY` | 传入了字符串字面量，没有读取环境变量。 |
+| `Authorization: ${API_KEY}` | 缺少 `Bearer` 前缀。 |
+| `Bearer API_KEY` | 传入了字符串字面量，没有读取环境变量。 |
 | `Authorization: Bearer` | 密钥为空，通常是环境变量未设置。 |
 | 在浏览器前端硬编码密钥 | 会泄露密钥，不适合生产使用。 |
 
@@ -70,8 +69,8 @@ Authorization: Bearer $YOUR_KEY
 同一个部署中，不同 API Key 看到的模型列表可能不同。推荐先用当前密钥查询：
 
 ```bash
-curl "${BASE_URL}v1/models" \
-  -H "Authorization: Bearer $YOUR_KEY"
+curl "{{BASE_URL}}v1/models" \
+  -H "Authorization: Bearer ${API_KEY}"
 ```
 
 如果没有看到预期模型，优先检查：
@@ -109,9 +108,9 @@ curl "${BASE_URL}v1/models" \
 把下面命令作为密钥可用性的最小检查：
 
 ```bash
-test -n "$YOUR_KEY" && \
-curl -i "${BASE_URL}v1/models" \
-  -H "Authorization: Bearer $YOUR_KEY"
+test -n "${API_KEY}" && \
+curl -i "{{BASE_URL}}v1/models" \
+  -H "Authorization: Bearer ${API_KEY}"
 ```
 
 预期结果是返回 `200`，并包含当前密钥可访问的模型列表。若返回 401、403 或空列表，请参考错误排查页面继续定位。

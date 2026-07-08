@@ -1,34 +1,29 @@
 # 快速开始
 
-本页演示如何用 {{SITE_NAME}} 完成第一次请求。示例使用占位地址和密钥，请替换为你的部署信息。
-
-```bash
-export BASE_URL="{{BASE_URL}}"
-export YOUR_KEY="your-api-key"
-```
+本页演示如何用 {{SITE_NAME}} 完成第一次请求。
 
 ## 1. 确认 Base URL
 
-Base URL 是你的 {{SITE_NAME}} 部署地址，例如：
+Base URL 是你的 {{SITE_NAME}} 部署地址，示例中已直接写入：
 
 ```text
 {{BASE_URL}}
 ```
 
-后续示例统一使用 `$BASE_URL`。如果你的部署带有反向代理路径，请以管理员提供的完整地址为准。
+如果你的部署带有反向代理路径，请以管理员提供的完整地址为准。
 
 ## 2. 设置 API Key
 
-{{SITE_NAME}} API Key 通常通过 HTTP Bearer 认证传递：
+{{SITE_NAME}} API Key 通过 HTTP Bearer 认证传递：
 
 ```http
-Authorization: Bearer $YOUR_KEY
+Authorization: Bearer ${API_KEY}
 ```
 
-命令行示例统一使用 `$YOUR_KEY`：
+命令行示例统一使用 `${API_KEY}`，先把密钥存入环境变量（引号里换成你的真实密钥）：
 
 ```bash
-export YOUR_KEY="your-api-key"
+export API_KEY="在这里粘贴你的API密钥"
 ```
 
 请不要在前端公开代码、日志或公共仓库中暴露真实密钥。
@@ -38,8 +33,8 @@ export YOUR_KEY="your-api-key"
 先查询 `/v1/models`，确认密钥有效，并查看当前分组实际可用模型。
 
 ```bash
-curl "${BASE_URL}v1/models" \
-  -H "Authorization: Bearer $YOUR_KEY"
+curl "{{BASE_URL}}v1/models" \
+  -H "Authorization: Bearer ${API_KEY}"
 ```
 
 返回结果会随部署配置变化。模型列表取决于 API Key 所属分组、上游账号、模型映射、渠道价格和管理员配置。
@@ -49,8 +44,8 @@ curl "${BASE_URL}v1/models" \
 如果你的客户端使用 OpenAI Chat Completions 格式，可以调用 `/v1/chat/completions`：
 
 ```bash
-curl "${BASE_URL}v1/chat/completions" \
-  -H "Authorization: Bearer $YOUR_KEY" \
+curl "{{BASE_URL}}v1/chat/completions" \
+  -H "Authorization: Bearer ${API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gpt-4o-mini",
@@ -67,8 +62,8 @@ curl "${BASE_URL}v1/chat/completions" \
 如果你的客户端使用 Anthropic Messages 格式，可以调用 `/v1/messages`：
 
 ```bash
-curl "${BASE_URL}v1/messages" \
-  -H "Authorization: Bearer $YOUR_KEY" \
+curl "{{BASE_URL}}v1/messages" \
+  -H "Authorization: Bearer ${API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "claude-3-5-sonnet-latest",
@@ -86,7 +81,7 @@ curl "${BASE_URL}v1/messages" \
 | 检查项 | 说明 |
 | --- | --- |
 | Base URL | 确认没有多余路径、空格或结尾拼写错误。 |
-| API Key | 确认请求头为 `Authorization: Bearer $YOUR_KEY`。 |
+| API Key | 确认请求头为 `Authorization: Bearer ${API_KEY}`。 |
 | 模型名 | 优先使用 `/v1/models` 返回的名称。 |
 | 端点格式 | OpenAI、Anthropic、Gemini 等接口请求体格式不同，不能直接混用。 |
 | 权限配置 | 403、404 或模型不可用通常与分组、渠道或模型映射有关。 |
@@ -96,7 +91,8 @@ curl "${BASE_URL}v1/messages" \
 | 下一步 | 文档 |
 | --- | --- |
 | 需要了解密钥权限和安全 | API Key 与账户。 |
-| 要接入具体 SDK 或命令行工具 | 客户端接入。 |
-| 想直接复制完整配置 | 可复制配置模板。 |
+| 不确定选哪种接入方式 | 接入总览。 |
+| 要用代码调用 API | 代码接入。 |
+| 要配置 IDE 或命令行工具 | 客户端接入、CLI 接入。 |
 | 不确定模型和端点 | 模型与平台、端点选择指南。 |
 | 请求失败 | 错误排查。 |

@@ -39,8 +39,8 @@ When exact estimation is unavailable, reduce uncertainty with these steps:
 If the Anthropic-compatible token counting endpoint is enabled, you can try:
 
 ```bash
-curl "${BASE_URL}v1/messages/count_tokens" \
-  -H "Authorization: Bearer $YOUR_KEY" \
+curl "{{BASE_URL}}v1/messages/count_tokens" \
+  -H "Authorization: Bearer ${API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "claude-3-5-sonnet-latest",

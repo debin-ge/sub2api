@@ -15,15 +15,15 @@
 最小验证命令：
 
 ```bash
-curl -i "${BASE_URL}v1/models" \
-  -H "Authorization: Bearer $YOUR_KEY"
+curl -i "{{BASE_URL}}v1/models" \
+  -H "Authorization: Bearer ${API_KEY}"
 ```
 
 ## HTTP 状态码
 
 | 状态码 | 含义 | 常见原因 | 建议处理 |
 | --- | --- | --- | --- |
-| 401 | 未认证 | API Key 缺失、格式错误、密钥无效或请求头未使用 Bearer。 | 检查 `Authorization: Bearer $YOUR_KEY`，确认密钥未过期或被删除。 |
+| 401 | 未认证 | API Key 缺失、格式错误、密钥无效或请求头未使用 Bearer。 | 检查 `Authorization: Bearer ${API_KEY}`，确认密钥未过期或被删除。 |
 | 403 | 无权限 | 密钥有效，但分组不允许访问该模型、渠道或端点。 | 查询 `/v1/models`，联系管理员检查分组、价格和模型权限。 |
 | 404 | 未找到 | 路径不存在、端点未启用、模型名错误或映射缺失。 | 核对接口族和路径，确认模型名来自当前部署返回结果。 |
 | 429 | 请求过多 | 命中 {{SITE_NAME}}、上游账号、分组或客户端侧速率限制。 | 降低并发，增加重试退避，或联系管理员调整限流和额度。 |
@@ -34,17 +34,17 @@ curl -i "${BASE_URL}v1/models" \
 优先检查 API Key 是否真的发送到请求中：
 
 ```bash
-echo "$YOUR_KEY" | wc -c
-curl -i "${BASE_URL}v1/models" \
-  -H "Authorization: Bearer $YOUR_KEY"
+echo "${API_KEY}" | wc -c
+curl -i "{{BASE_URL}}v1/models" \
+  -H "Authorization: Bearer ${API_KEY}"
 ```
 
 常见原因：
 
 | 原因 | 处理 |
 | --- | --- |
-| 环境变量未设置 | 重新执行 `export YOUR_KEY="..."`。 |
-| 请求头缺少 Bearer | 使用 `Authorization: Bearer $YOUR_KEY`。 |
+| 环境变量未设置 | 重新执行 `export API_KEY="..."`。 |
+| 请求头缺少 Bearer | 使用 `Authorization: Bearer ${API_KEY}`。 |
 | 密钥被删除或禁用 | 登录控制台或联系管理员确认。 |
 | 使用了错误环境的密钥 | 区分测试、预发和生产 API Key。 |
 
@@ -86,7 +86,7 @@ curl -i "${BASE_URL}v1/models" \
 | 价格配置不匹配 | 管理员未为该模型配置价格或倍率，导致请求被拒绝。 |
 | 接口族错误 | 使用 Anthropic 模型调用 OpenAI 请求体，或使用 Gemini 模型调用错误端点。 |
 
-处理建议：先调用 `${BASE_URL}v1/models`，使用返回列表中的模型名重试；仍失败时让管理员检查分组、渠道和模型映射。
+处理建议：先调用 `{{BASE_URL}}v1/models`，使用返回列表中的模型名重试；仍失败时让管理员检查分组、渠道和模型映射。
 
 ## 不支持的端点
 
@@ -95,9 +95,9 @@ curl -i "${BASE_URL}v1/models" \
 | 检查项 | 示例 |
 | --- | --- |
 | OpenAI SDK | `baseURL` 通常应为 `{{BASE_URL}}v1`。 |
-| Anthropic 兼容 | 通常请求 `${BASE_URL}v1/messages`，不要误拼成重复 `/v1/v1/messages`。 |
-| Gemini 原生 | 使用 `${BASE_URL}v1beta/models/{model}:generateContent`。 |
-| Antigravity | 使用 `${BASE_URL}antigravity/...`，并确认管理员已启用。 |
+| Anthropic 兼容 | 通常请求 `{{BASE_URL}}v1/messages`，不要误拼成重复 `/v1/v1/messages`。 |
+| Gemini 原生 | 使用 `{{BASE_URL}}v1beta/models/{model}:generateContent`。 |
+| Antigravity | 使用 `{{BASE_URL}}antigravity/...`，并确认管理员已启用。 |
 
 ## 未分组或密钥未绑定
 
@@ -155,8 +155,8 @@ API Key 标识：仅提供名称或后几位
 可复现的最小 curl：
 
 ```bash
-curl -i "${BASE_URL}v1/chat/completions" \
-  -H "Authorization: Bearer $YOUR_KEY" \
+curl -i "{{BASE_URL}}v1/chat/completions" \
+  -H "Authorization: Bearer ${API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gpt-4o-mini",

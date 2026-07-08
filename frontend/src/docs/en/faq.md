@@ -21,14 +21,14 @@ If your admin provides an address with a path, use that full address and avoid a
 Prefer Bearer tokens:
 
 ```http
-Authorization: Bearer $YOUR_KEY
+Authorization: Bearer ${API_KEY}
 ```
 
 With curl:
 
 ```bash
-curl "${BASE_URL}v1/models" \
-  -H "Authorization: Bearer $YOUR_KEY"
+curl "{{BASE_URL}}v1/models" \
+  -H "Authorization: Bearer ${API_KEY}"
 ```
 
 Some compatible clients may use `api-key`, `x-api-key`, or SDK configuration fields. Unless your admin or client requires another method, use the `Authorization` header.
@@ -77,8 +77,8 @@ A model failure does not necessarily mean {{SITE_NAME}} is unavailable. Common c
 Start with:
 
 ```bash
-curl "${BASE_URL}v1/models" \
-  -H "Authorization: Bearer $YOUR_KEY"
+curl "{{BASE_URL}}v1/models" \
+  -H "Authorization: Bearer ${API_KEY}"
 ```
 
 Then send a minimal request with a returned model name. If the minimal request still fails, provide the status code, request path, model name, and request time to an admin. Do not send the full API Key.

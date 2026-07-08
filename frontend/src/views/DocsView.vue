@@ -101,6 +101,8 @@
               ref="markdownContainer"
               class="docs-content"
               v-html="renderedHtml"
+              @click="onDocsContentClick"
+              @keydown="onDocsContentKeydown"
             ></div>
           </article>
 
@@ -167,6 +169,12 @@ import i18n from '@/i18n'
 import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import { useAppStore, useAuthStore } from '@/stores'
 import { sanitizeUrl } from '@/utils/url'
+import {
+  activateDocTab,
+  enhanceClientCards,
+  groupCodeTabs,
+  renderDocCode,
+} from '@/utils/docsEnhance'
 
 interface DocGroup {
   category: string
@@ -196,6 +204,25 @@ marked.setOptions({
   breaks: true,
   gfm: true,
 })
+marked.use({ renderer: { code: renderDocCode } })
+
+const PREFERRED_TAB_KEY = 'docs-preferred-tab'
+
+function getPreferredDocTab(): string | null {
+  try {
+    return sessionStorage.getItem(PREFERRED_TAB_KEY)
+  } catch {
+    return null
+  }
+}
+
+function setPreferredDocTab(label: string) {
+  try {
+    sessionStorage.setItem(PREFERRED_TAB_KEY, label)
+  } catch {
+    // sessionStorage unavailable — tab sync still works within the page
+  }
+}
 
 const routeSlug = computed(() => {
   const slug = route.params.slug
@@ -238,6 +265,8 @@ const uiText = computed(() => currentLocale.value === 'zh'
       copy: '复制',
       copied: '已复制',
       copyFailed: '复制失败',
+      cardBaseUrl: 'Base URL',
+      cardConfigFile: '配置文件',
     }
   : {
       home: 'Home',
@@ -253,6 +282,8 @@ const uiText = computed(() => currentLocale.value === 'zh'
       copy: 'Copy',
       copied: 'Copied',
       copyFailed: 'Copy failed',
+      cardBaseUrl: 'Base URL',
+      cardConfigFile: 'Config file',
     })
 
 const groupedDocs = computed<DocGroup[]>(() => {
@@ -358,6 +389,13 @@ function renderMarkdown(doc: UserDocEntry | null) {
     }
   })
 
+  enhanceClientCards(template.content, {
+    baseUrl: uiText.value.cardBaseUrl,
+    configFile: uiText.value.cardConfigFile,
+    copy: uiText.value.copy,
+  })
+  groupCodeTabs(template.content, getPreferredDocTab())
+
   tocItems.value = toc
   renderedHtml.value = template.innerHTML
 
@@ -421,6 +459,65 @@ function injectCopyButtons() {
     })
     pre.appendChild(button)
   })
+}
+
+function selectDocTab(label: string) {
+  const container = markdownContainer.value
+  if (!container) return
+  activateDocTab(container, label)
+  setPreferredDocTab(label)
+}
+
+async function copyCardValue(button: HTMLButtonElement) {
+  const value = button.getAttribute('data-copy') ?? ''
+  try {
+    await navigator.clipboard.writeText(value)
+    button.textContent = uiText.value.copied
+  } catch {
+    button.textContent = uiText.value.copyFailed
+  }
+  window.setTimeout(() => {
+    button.textContent = uiText.value.copy
+  }, 1800)
+}
+
+function onDocsContentClick(event: MouseEvent) {
+  const target = event.target as HTMLElement | null
+  if (!target) return
+
+  const tabButton = target.closest<HTMLButtonElement>('.doc-tab-btn')
+  if (tabButton) {
+    const label = tabButton.getAttribute('data-tab')
+    if (label) selectDocTab(label)
+    return
+  }
+
+  const copyButton = target.closest<HTMLButtonElement>('.client-copy-btn')
+  if (copyButton) {
+    void copyCardValue(copyButton)
+  }
+}
+
+function onDocsContentKeydown(event: KeyboardEvent) {
+  if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+  const target = event.target as HTMLElement | null
+  const current = target?.closest<HTMLButtonElement>('.doc-tab-btn')
+  if (!current) return
+
+  const bar = current.closest('.doc-tabs-bar')
+  if (!bar) return
+  const buttons = Array.from(bar.querySelectorAll<HTMLButtonElement>('.doc-tab-btn'))
+  const index = buttons.indexOf(current)
+  if (index === -1) return
+
+  event.preventDefault()
+  const nextIndex = event.key === 'ArrowLeft'
+    ? (index - 1 + buttons.length) % buttons.length
+    : (index + 1) % buttons.length
+  const nextButton = buttons[nextIndex]
+  const label = nextButton.getAttribute('data-tab')
+  if (label) selectDocTab(label)
+  nextButton.focus()
 }
 
 watch(displayDoc, (doc) => {
@@ -532,6 +629,82 @@ onUnmounted(() => {
 
 .docs-content :deep(hr) {
   @apply my-7 border-gray-200 dark:border-dark-700;
+}
+
+/* ── Code tab groups ─────────────────────────────────────────────── */
+
+.docs-content :deep(.doc-tabs) {
+  @apply my-5 overflow-hidden rounded-lg border border-gray-200 dark:border-dark-700;
+}
+
+.docs-content :deep(.doc-tabs-bar) {
+  @apply flex flex-wrap gap-1 border-b border-gray-200 bg-gray-50 px-2 pt-2 dark:border-dark-700 dark:bg-dark-900;
+}
+
+.docs-content :deep(.doc-tab-btn) {
+  @apply rounded-t-md border-b-2 border-transparent px-3 py-1.5 text-sm font-medium text-gray-500 transition hover:text-gray-900 dark:text-dark-300 dark:hover:text-white;
+}
+
+.docs-content :deep(.doc-tab-btn.active) {
+  @apply border-primary-500 text-primary-700 dark:text-primary-300;
+}
+
+.docs-content :deep(.doc-tabs-panels pre) {
+  @apply my-0 rounded-none;
+}
+
+.docs-content :deep(.doc-tabs-panels pre[hidden]) {
+  display: none;
+}
+
+/* ── Client cards ────────────────────────────────────────────────── */
+
+.docs-content :deep(.client-card) {
+  @apply my-6 overflow-hidden rounded-xl bg-white ring-1 ring-gray-200 dark:bg-dark-900 dark:ring-dark-700;
+}
+
+.docs-content :deep(.client-card-head) {
+  @apply border-b border-gray-200 bg-gray-50 px-4 py-3 dark:border-dark-700 dark:bg-dark-800/60;
+}
+
+.docs-content :deep(.client-card-title-row) {
+  @apply flex flex-wrap items-center gap-2;
+}
+
+.docs-content :deep(.client-card-name) {
+  @apply text-base font-semibold text-gray-950 no-underline dark:text-white;
+}
+
+.docs-content :deep(a.client-card-name:hover) {
+  @apply text-primary-700 underline dark:text-primary-300;
+}
+
+.docs-content :deep(.client-pill) {
+  @apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium;
+}
+
+.docs-content :deep(.client-card-meta) {
+  @apply mt-2 space-y-1;
+}
+
+.docs-content :deep(.client-card-meta-row) {
+  @apply flex flex-wrap items-center gap-2 text-sm;
+}
+
+.docs-content :deep(.client-card-meta-label) {
+  @apply w-20 flex-shrink-0 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-dark-400;
+}
+
+.docs-content :deep(.client-card-meta-value) {
+  @apply rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs text-gray-800 dark:bg-dark-800 dark:text-dark-100;
+}
+
+.docs-content :deep(.client-copy-btn) {
+  @apply rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-600 transition hover:bg-gray-100 hover:text-gray-900 dark:border-dark-600 dark:text-dark-300 dark:hover:bg-dark-800 dark:hover:text-white;
+}
+
+.docs-content :deep(.client-card-body) {
+  @apply px-4 py-1;
 }
 
 :deep(.copy-btn) {

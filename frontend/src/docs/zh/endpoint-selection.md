@@ -30,15 +30,14 @@
 通用命令行示例使用根地址：
 
 ```bash
-export BASE_URL="{{BASE_URL}}"
-export YOUR_KEY="replace-with-your-api-key"
+export API_KEY="在这里粘贴你的API密钥"
 ```
 
 curl 拼接路径时使用：
 
 ```bash
-curl "${BASE_URL}v1/models" \
-  -H "Authorization: Bearer $YOUR_KEY"
+curl "{{BASE_URL}}v1/models" \
+  -H "Authorization: Bearer ${API_KEY}"
 ```
 
 SDK 通常要求更具体的地址：
@@ -108,7 +107,7 @@ Gemini 原生示例：
 
 | 问题 | 应该确认 |
 | --- | --- |
-| 返回 401 | 请求头是否包含 `Authorization: Bearer $YOUR_KEY`。 |
+| 返回 401 | 请求头是否包含 `Authorization: Bearer ${API_KEY}`。 |
 | 返回 403 | 当前密钥分组是否有模型和端点权限。 |
 | 返回 404 | 路径是否存在，Base URL 是否重复拼接，模型名是否正确。 |
 | 返回模型格式错误 | 请求体是否属于对应接口族。 |

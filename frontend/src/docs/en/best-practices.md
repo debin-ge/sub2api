@@ -7,7 +7,7 @@ This page is for users integrating {{SITE_NAME}} into business systems. The goal
 | Check | Recommendation |
 | --- | --- |
 | Base URL | Use `{{BASE_URL}}` or the full address provided by an admin. |
-| API Key | Use the `$YOUR_KEY` environment variable and do not write it into source code. |
+| API Key | Use the `${API_KEY}` environment variable and do not write it into source code. |
 | Model list | Call `/v1/models` first to confirm models available to the current key. |
 | Endpoint format | Choose OpenAI, Anthropic, Gemini, or Antigravity format based on the client. |
 | Minimal request | Run one non-streaming minimal request before adding business logic. |
@@ -17,10 +17,9 @@ This page is for users integrating {{SITE_NAME}} into business systems. The goal
 Keep configuration in environment variables or a secure configuration system:
 
 ```bash
-export BASE_URL="{{BASE_URL}}"
-export YOUR_KEY="replace-with-your-api-key"
+export API_KEY="replace-with-your-api-key"
 export OPENAI_BASE_URL="{{BASE_URL}}v1"
-export OPENAI_API_KEY="$YOUR_KEY"
+export OPENAI_API_KEY="${API_KEY}"
 ```
 
 Use different API Keys for test, staging, and production. Log environment name, model name, and request path to simplify debugging.

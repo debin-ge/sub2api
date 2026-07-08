@@ -7,17 +7,17 @@
 大多数接口使用 Bearer Token：
 
 ```http
-Authorization: Bearer $YOUR_KEY
+Authorization: Bearer ${API_KEY}
 ```
 
 curl 示例：
 
 ```bash
-curl "${BASE_URL}v1/models" \
-  -H "Authorization: Bearer $YOUR_KEY"
+curl "{{BASE_URL}}v1/models" \
+  -H "Authorization: Bearer ${API_KEY}"
 ```
 
-部分兼容客户端可能使用 `api-key`、`x-api-key` 或 SDK 内置字段传递密钥。除非管理员特别说明，推荐优先使用 `Authorization: Bearer $YOUR_KEY`。
+部分兼容客户端可能使用 `api-key`、`x-api-key` 或 SDK 内置字段传递密钥。除非管理员特别说明，推荐优先使用 `Authorization: Bearer ${API_KEY}`。
 
 ## OpenAI 兼容端点
 

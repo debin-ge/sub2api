@@ -7,7 +7,7 @@
 | 检查项 | 建议 |
 | --- | --- |
 | Base URL | 使用 `{{BASE_URL}}` 或管理员提供的完整地址。 |
-| API Key | 使用 `$YOUR_KEY` 环境变量，不要写入源码。 |
+| API Key | 使用 `${API_KEY}` 环境变量，不要写入源码。 |
 | 模型列表 | 先调用 `/v1/models` 确认当前密钥可访问模型。 |
 | 端点格式 | 根据客户端选择 OpenAI、Anthropic、Gemini 或 Antigravity 格式。 |
 | 最小请求 | 先跑通一条非流式最小请求，再接入业务逻辑。 |
@@ -17,10 +17,9 @@
 把配置集中放在环境变量或安全配置系统中：
 
 ```bash
-export BASE_URL="{{BASE_URL}}"
-export YOUR_KEY="replace-with-your-api-key"
+export API_KEY="在这里粘贴你的API密钥"
 export OPENAI_BASE_URL="{{BASE_URL}}v1"
-export OPENAI_API_KEY="$YOUR_KEY"
+export OPENAI_API_KEY="${API_KEY}"
 ```
 
 建议测试、预发、生产使用不同 API Key，并在日志中记录环境名称、模型名和请求路径，便于排查。

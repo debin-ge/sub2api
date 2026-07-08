@@ -31,8 +31,7 @@ The features available in a specific deployment depend on its admin configuratio
 2. Set environment variables:
 
 ```bash
-export BASE_URL="{{BASE_URL}}"
-export YOUR_KEY="your-api-key"
+export API_KEY="your-api-key"
 ```
 
 3. Call `/v1/models` to check the models actually available to the current key.
@@ -43,7 +42,7 @@ export YOUR_KEY="your-api-key"
 
 | Step | Recommendation |
 | --- | --- |
-| Verify the key | Call `${BASE_URL}v1/models` first to confirm authentication and model visibility. |
+| Verify the key | Call `{{BASE_URL}}v1/models` first to confirm authentication and model visibility. |
 | Choose an API | OpenAI SDK clients usually use `/v1/chat/completions` or `/v1/responses`; Claude-style clients use `/v1/messages`; Gemini native clients use `/v1beta` paths. |
 | Pin model names | Use model names returned by `/v1/models`, or mapping names explicitly provided by an admin. |
 | Enable streaming | Use `stream: true` or SSE endpoints only after confirming your client supports streaming responses. |

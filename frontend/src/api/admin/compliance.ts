@@ -13,6 +13,7 @@ export interface AdminComplianceAcknowledgement {
 export interface AdminComplianceStatus {
   required: boolean
   version: string
+  site_name: string
   document_path_zh: string
   document_path_en: string
   document_url_zh: string
