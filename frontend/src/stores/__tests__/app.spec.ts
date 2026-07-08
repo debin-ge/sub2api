@@ -249,6 +249,17 @@ describe('useAppStore', () => {
     })
   })
 
+  describe('版本检测', () => {
+    it('不再暴露前端版本检测状态和动作', () => {
+      const store = useAppStore()
+
+      expect('fetchVersion' in store).toBe(false)
+      expect('clearVersionCache' in store).toBe(false)
+      expect('versionLoading' in store).toBe(false)
+      expect('hasUpdate' in store).toBe(false)
+    })
+  })
+
   // --- 公开设置 ---
 
   describe('公开设置加载', () => {

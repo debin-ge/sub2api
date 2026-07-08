@@ -24,8 +24,6 @@
         >
           {{ siteName }}
         </router-link>
-        <!-- Version Badge -->
-        <VersionBadge :version="siteVersion" />
       </div>
     </div>
 
@@ -192,7 +190,6 @@ import { computed, h, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAdminSettingsStore, useAppStore, useAuthStore, useOnboardingStore } from '@/stores'
-import VersionBadge from '@/components/common/VersionBadge.vue'
 import { sanitizeSvg } from '@/utils/sanitize'
 import { FeatureFlags, makeSidebarFlag } from '@/utils/featureFlags'
 
@@ -254,7 +251,6 @@ const expandedGroups = ref<Set<string>>(new Set())
 // Site settings from appStore (cached, no flicker)
 const siteName = computed(() => appStore.siteName)
 const siteLogo = computed(() => appStore.siteLogo)
-const siteVersion = computed(() => appStore.siteVersion)
 const settingsLoaded = computed(() => appStore.publicSettingsLoaded)
 
 // SVG Icon Components
