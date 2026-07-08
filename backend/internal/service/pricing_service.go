@@ -22,13 +22,13 @@ import (
 )
 
 var (
-	openAIModelDatePattern     = regexp.MustCompile(`-\d{8}$`)
-	openAIModelBasePattern     = regexp.MustCompile(`^(gpt-\d+(?:\.\d+)?)(?:-|$)`)
+	openAIModelDatePattern = regexp.MustCompile(`-\d{8}$`)
+	openAIModelBasePattern = regexp.MustCompile(`^(gpt-\d+(?:\.\d+)?)(?:-|$)`)
 	// dashVersionSuffixPattern 匹配「非数字字符 + 数字 + '-' + 数字」的位置，
 	// 用于把 dash 分隔的版本号（glm-5-1、kimi-k2-5）改成 dot 分隔的
 	// canonical 形式（glm-5.1、kimi-k2.5）。前置的 (\D) 避免匹配纯数字序列
 	// （如 -20251101 尾缀）。
-	dashVersionSuffixPattern = regexp.MustCompile(`(\D)(\d+)-(\d+)`)
+	dashVersionSuffixPattern   = regexp.MustCompile(`(\D)(\d+)-(\d+)`)
 	openAIGPT54FallbackPricing = &ModelPriceEntry{
 		InputCostPerToken:               2.5e-06, // $2.5 per MTok
 		OutputCostPerToken:              1.5e-05, // $15 per MTok
@@ -80,6 +80,10 @@ type ModelPriceEntry struct {
 	OutputCostPerImage                  float64 `json:"output_cost_per_image"`       // 图片生成模型每张图片价格
 	OutputCostPerImageToken             float64 `json:"output_cost_per_image_token"` // 图片输出 token 价格
 }
+
+// LiteLLMModelPricing is kept as a compatibility alias for code paths merged
+// from release tags that still use the previous name.
+type LiteLLMModelPricing = ModelPriceEntry
 
 // PricingRemoteClient 远程价格数据获取接口
 type PricingRemoteClient interface {
@@ -630,11 +634,11 @@ func (s *PricingService) buildModelLookupCandidates(modelLower string) []string 
 // normalizeDashVersionSuffix 把 dash 分隔的版本号改成 dot 分隔的形式，
 // 只影响 `<非数字><digits>-<digits>` 位置，避免误伤 -20251101 之类的日期尾缀。
 //
-//   glm-5-1              -> glm-5.1
-//   kimi-k2-5            -> kimi-k2.5
-//   claude-opus-4-5-...  -> claude-opus-4.5-... （首次匹配即返回，日期段不受影响）
-//   claude-opus-4-8      -> claude-opus-4.8
-//   deepseek-v4          -> deepseek-v4        （无 -digit 尾缀，不变）
+//	glm-5-1              -> glm-5.1
+//	kimi-k2-5            -> kimi-k2.5
+//	claude-opus-4-5-...  -> claude-opus-4.5-... （首次匹配即返回，日期段不受影响）
+//	claude-opus-4-8      -> claude-opus-4.8
+//	deepseek-v4          -> deepseek-v4        （无 -digit 尾缀，不变）
 func normalizeDashVersionSuffix(model string) string {
 	return dashVersionSuffixPattern.ReplaceAllString(model, "${1}${2}.${3}")
 }
@@ -827,6 +831,13 @@ func (s *PricingService) matchOpenAIModel(model string) *ModelPriceEntry {
 				Info(fmt.Sprintf("[Pricing] OpenAI fallback matched %s -> %s", model, "gpt-5.2-codex"))
 			return pricing
 		}
+	}
+
+	// GPT-5.6（sol / terra / luna）回退到 GPT-5.4 定价
+	if strings.HasPrefix(model, "gpt-5.6") {
+		logger.With(zap.String("component", "service.pricing")).
+			Info(fmt.Sprintf("[Pricing] OpenAI fallback matched %s -> %s", model, "gpt-5.4(static)"))
+		return openAIGPT54FallbackPricing
 	}
 
 	// GPT-5.5 回退到 GPT-5.4 定价

@@ -510,6 +510,7 @@ var platformToPricingCatalogProvider = map[string]string{
 	service.PlatformOpenAI:      "openai",
 	service.PlatformGemini:      "google",
 	service.PlatformAntigravity: "anthropic",
+	service.PlatformGrok:        "xai",
 }
 
 // SyncPricingModels 返回配置化模型价格目录中指定平台的最新模型列表。

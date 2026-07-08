@@ -22,7 +22,6 @@ const {
   updateProvider,
   createProvider,
   deleteProvider,
-  getUpstreamBalance,
   fetchPublicSettings,
   adminSettingsFetch,
   showError,
@@ -45,7 +44,6 @@ const {
   updateProvider: vi.fn(),
   createProvider: vi.fn(),
   deleteProvider: vi.fn(),
-  getUpstreamBalance: vi.fn(),
   fetchPublicSettings: vi.fn(),
   adminSettingsFetch: vi.fn(),
   showError: vi.fn(),
@@ -80,9 +78,6 @@ vi.mock("@/api", () => ({
       updateProvider,
       createProvider,
       deleteProvider,
-    },
-    reseller: {
-      getUpstreamBalance,
     },
   },
 }));
@@ -166,14 +161,23 @@ vi.mock("vue-i18n", async () => {
     "admin.settings.payment.findProvider": "查看支持的支付方式",
     "admin.settings.openaiExperimentalScheduler.title": "OpenAI 实验调度策略",
     "admin.settings.openaiExperimentalScheduler.description": "默认关闭。开启后仅影响本网关在 OpenAI 账号间的实验性调度选择逻辑，不代表上游 OpenAI 官方能力。",
-    "admin.settings.tabs.reseller": "子站配置",
-    "admin.settings.reseller.title": "子站上游配置",
-    "admin.settings.reseller.description": "用于查看当前子站在上级供应商中的账户余额。",
-    "admin.settings.reseller.testConnection": "测试连接",
-    "admin.settings.reseller.endpoint": "上游 Endpoint",
-    "admin.settings.reseller.upstreamBalance": "上游账户余额",
-    "admin.settings.reseller.localBalanceHint": "该余额属于子站在上级供应商中的账户，不是本地用户余额。",
-    "admin.settings.reseller.status.ok": "已连接",
+    "admin.settings.openaiExperimentalScheduler.stickyWeightedTitle": "粘性加权",
+    "admin.settings.openaiExperimentalScheduler.stickyWeightedDescription": "开启后 previous_response_id 和 session_hash 粘性进入高级调度打分；关闭时仍按旧逻辑硬命中粘性账号。",
+    "admin.settings.openaiExperimentalScheduler.subscriptionPriorityTitle": "订阅优先",
+    "admin.settings.openaiExperimentalScheduler.subscriptionPriorityDescription": "开启后先在 ChatGPT 订阅账号池中按权值选取；订阅池拿不到席位时再回退到非订阅账号池。",
+    "admin.settings.openaiExperimentalScheduler.weightsTitle": "调度权值覆盖",
+    "admin.settings.openaiExperimentalScheduler.weightsDescription": "留空时使用配置/环境变量值；配置未设置时使用内置默认值。页面非空设置优先。",
+    "admin.settings.openaiExperimentalScheduler.defaultPlaceholder": "配置/默认：{value}",
+    "admin.settings.openaiExperimentalScheduler.topKLabel": "TopK",
+    "admin.settings.openaiExperimentalScheduler.priorityWeight": "优先级",
+    "admin.settings.openaiExperimentalScheduler.loadWeight": "负载",
+    "admin.settings.openaiExperimentalScheduler.queueWeight": "排队",
+    "admin.settings.openaiExperimentalScheduler.errorRateWeight": "错误率",
+    "admin.settings.openaiExperimentalScheduler.ttftWeight": "首包延迟",
+    "admin.settings.openaiExperimentalScheduler.resetWeight": "重置窗口",
+    "admin.settings.openaiExperimentalScheduler.quotaHeadroomWeight": "额度余量",
+    "admin.settings.openaiExperimentalScheduler.previousResponseWeight": "previous_response 粘性",
+    "admin.settings.openaiExperimentalScheduler.sessionStickyWeight": "session_hash 粘性",
     "admin.settings.site.uploadImage": "上传图片",
     "admin.settings.site.remove": "移除",
     "admin.settings.platformQuota.platform": "平台",
@@ -391,8 +395,12 @@ const baseSettingsResponse = {
   enable_fingerprint_unification: true,
   enable_metadata_passthrough: false,
   enable_cch_signing: false,
+  enable_claude_oauth_system_prompt_injection: true,
+  claude_oauth_system_prompt: "",
+  claude_oauth_system_prompt_blocks: "",
   enable_anthropic_cache_ttl_1h_injection: false,
   rewrite_message_cache_control: false,
+  enable_client_dateline_normalization: true,
   antigravity_user_agent_version: "",
   openai_codex_user_agent: "",
   payment_enabled: true,
@@ -404,6 +412,7 @@ const baseSettingsResponse = {
   payment_enabled_types: [],
   payment_balance_disabled: false,
   payment_balance_recharge_multiplier: 1,
+  payment_subscription_usd_to_cny_rate: 0,
   payment_recharge_fee_rate: 0,
   payment_load_balance_strategy: "round-robin",
   payment_product_name_prefix: "",
@@ -420,6 +429,28 @@ const baseSettingsResponse = {
   payment_visible_method_alipay_enabled: true,
   payment_visible_method_wxpay_enabled: true,
   openai_advanced_scheduler_enabled: false,
+  openai_advanced_scheduler_sticky_weighted_enabled: false,
+  openai_advanced_scheduler_subscription_priority_enabled: false,
+  openai_advanced_scheduler_lb_top_k: "",
+  openai_advanced_scheduler_weight_priority: "",
+  openai_advanced_scheduler_weight_load: "",
+  openai_advanced_scheduler_weight_queue: "",
+  openai_advanced_scheduler_weight_error_rate: "",
+  openai_advanced_scheduler_weight_ttft: "",
+  openai_advanced_scheduler_weight_reset: "",
+  openai_advanced_scheduler_weight_quota_headroom: "",
+  openai_advanced_scheduler_weight_previous_response: "",
+  openai_advanced_scheduler_weight_session_sticky: "",
+  openai_advanced_scheduler_effective_lb_top_k: "7",
+  openai_advanced_scheduler_effective_weight_priority: "1",
+  openai_advanced_scheduler_effective_weight_load: "1",
+  openai_advanced_scheduler_effective_weight_queue: "0.7",
+  openai_advanced_scheduler_effective_weight_error_rate: "0.8",
+  openai_advanced_scheduler_effective_weight_ttft: "0.5",
+  openai_advanced_scheduler_effective_weight_reset: "0",
+  openai_advanced_scheduler_effective_weight_quota_headroom: "0",
+  openai_advanced_scheduler_effective_weight_previous_response: "5",
+  openai_advanced_scheduler_effective_weight_session_sticky: "3",
   balance_low_notify_enabled: false,
   balance_low_notify_threshold: 0,
   balance_low_notify_recharge_url: "",
@@ -486,14 +517,6 @@ async function openUsersTab(wrapper: ReturnType<typeof mountView>) {
   await flushPromises();
 }
 
-async function openResellerTab(wrapper: ReturnType<typeof mountView>) {
-  const resellerTabButton = wrapper.find("#settings-tab-reseller");
-
-  expect(resellerTabButton.exists()).toBe(true);
-  await resellerTabButton.trigger("click");
-  await flushPromises();
-}
-
 describe("admin SettingsView payment visible method controls", () => {
   beforeEach(() => {
     getSettings.mockReset();
@@ -513,7 +536,6 @@ describe("admin SettingsView payment visible method controls", () => {
     updateProvider.mockReset();
     createProvider.mockReset();
     deleteProvider.mockReset();
-    getUpstreamBalance.mockReset();
     fetchPublicSettings.mockReset();
     adminSettingsFetch.mockReset();
     showError.mockReset();
@@ -570,13 +592,6 @@ describe("admin SettingsView payment visible method controls", () => {
     getProviders.mockResolvedValue({
       data: [],
     });
-    getUpstreamBalance.mockResolvedValue({
-      enabled: false,
-      configured: false,
-      upstream_endpoint: "",
-      status: "disabled",
-      balance: 0,
-    });
     fetchPublicSettings.mockResolvedValue(undefined);
     adminSettingsFetch.mockResolvedValue(undefined);
   });
@@ -591,16 +606,28 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(wrapper.text()).not.toContain("支付来源");
   });
 
-  it("does not render GitHub-hosted payment guidance links", async () => {
+  it("links payment guidance to README sections instead of removed payment docs", async () => {
     const wrapper = mountView();
 
     await flushPromises();
     await openPaymentTab(wrapper);
 
-    const hrefs = wrapper.findAll("a").map((node) => node.attributes("href") ?? "");
-    expect(hrefs.some((href) => href.includes("github.com"))).toBe(false);
-    expect(wrapper.text()).not.toContain("查看支付配置说明");
-    expect(wrapper.text()).not.toContain("查看支持的支付方式");
+    const paymentLinks = wrapper
+      .findAll("a")
+      .filter((node) =>
+        ["查看支付配置说明", "查看支持的支付方式"].includes(node.text()),
+      );
+
+    expect(paymentLinks).toHaveLength(2);
+    expect(paymentLinks[0]?.attributes("href")).toBe(
+      "https://github.com/Wei-Shaw/sub2api/blob/main/docs/PAYMENT_CN.md",
+    );
+    expect(paymentLinks[1]?.attributes("href")).toBe(
+      "https://github.com/Wei-Shaw/sub2api/blob/main/docs/PAYMENT_CN.md#支持的支付方式",
+    );
+    for (const link of paymentLinks) {
+      expect(link.attributes("href")).toContain("docs/PAYMENT");
+    }
   });
 
   it("does not submit legacy visible payment method settings", async () => {
@@ -657,6 +684,42 @@ describe("admin SettingsView payment visible method controls", () => {
         rewrite_message_cache_control: true,
       }),
     );
+  });
+
+  it("submits Claude OAuth system prompt injection gateway settings", async () => {
+    const blocks = `[{"type":"text","text":"custom block","cache_control":true}]`;
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      enable_claude_oauth_system_prompt_injection: false,
+      claude_oauth_system_prompt_blocks: blocks,
+    });
+
+    const wrapper = mountView();
+
+    await flushPromises();
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledTimes(1);
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        enable_claude_oauth_system_prompt_injection: false,
+      }),
+    );
+    const payload = updateSettings.mock.calls[0][0] as {
+      claude_oauth_system_prompt_blocks: string;
+    };
+    expect(JSON.parse(payload.claude_oauth_system_prompt_blocks)).toEqual([
+      {
+        enabled: true,
+        type: "text",
+        text: "custom block",
+        cache_control: {
+          type: "ephemeral",
+          ttl: "5m",
+        },
+      },
+    ]);
   });
 
   it("submits Antigravity user agent version gateway setting", async () => {
@@ -772,26 +835,68 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(paymentHelpImageUpload?.attributes("data-remove-label")).toBe("移除");
   });
 
-  it("shows reseller settings tab and upstream balance without exposing api key", async () => {
-    getUpstreamBalance.mockResolvedValue({
+  it("normalizes null supported_types from API so provider card stays visible", async () => {
+    // Backend returns null for supported_types when the list is empty
+    // (Go nil slice → JSON null). Without normalization, ProviderCard's
+    // isSelected() throws TypeError on null.includes(), causing the card
+    // to vanish from the list.
+    const providerWithNullTypes = {
+      id: 42,
+      provider_key: "easypay",
+      name: "EasyPay",
+      config: {},
+      supported_types: null as unknown as string[],
       enabled: true,
-      configured: true,
-      upstream_endpoint: "https://parent.example.com",
-      status: "ok",
-      balance: 12.34,
-      user_id: 42,
+      payment_mode: "",
+      refund_enabled: false,
+      allow_user_refund: false,
+      limits: "",
+      sort_order: 0,
+    };
+    getProviders.mockReset();
+    getProviders.mockResolvedValue({ data: [providerWithNullTypes] });
+
+    let receivedProviders: Array<Record<string, unknown>> = [];
+    const PaymentProviderListCapture = defineComponent({
+      props: {
+        providers: {
+          type: Array,
+          default: () => [],
+        },
+      },
+      setup(props) {
+        receivedProviders = props.providers as Array<Record<string, unknown>>;
+        return () => h("div", { class: "provider-list-capture" });
+      },
     });
 
-    const wrapper = mountView();
+    const wrapper = mount(SettingsView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          Select: SelectStub,
+          Toggle: ToggleStub,
+          Icon: true,
+          ConfirmDialog: true,
+          PaymentProviderList: PaymentProviderListCapture,
+          PaymentProviderDialog: true,
+          GroupBadge: true,
+          GroupOptionItem: true,
+          ProxySelector: true,
+          ImageUpload: ImageUploadStub,
+          BackupSettings: true,
+        },
+      },
+    });
 
     await flushPromises();
-    await openResellerTab(wrapper);
+    await openPaymentTab(wrapper);
 
-    expect(wrapper.text()).toContain("子站配置");
-    expect(wrapper.text()).toContain("https://parent.example.com");
-    expect(wrapper.text()).toContain("12.34");
-    expect(wrapper.text()).toContain("已连接");
-    expect(wrapper.text()).not.toContain("sk-parent");
+    // The provider should still be in the list
+    expect(receivedProviders.length).toBe(1);
+    // supported_types should be normalized to an empty array, not null
+    expect(Array.isArray(receivedProviders[0].supported_types)).toBe(true);
+    expect(receivedProviders[0].supported_types).toEqual([]);
   });
 });
 
@@ -814,7 +919,6 @@ describe("admin SettingsView wechat connect controls", () => {
     updateProvider.mockReset();
     createProvider.mockReset();
     deleteProvider.mockReset();
-    getUpstreamBalance.mockReset();
     fetchPublicSettings.mockReset();
     adminSettingsFetch.mockReset();
     showError.mockReset();
@@ -874,13 +978,6 @@ describe("admin SettingsView wechat connect controls", () => {
     getProviders.mockResolvedValue({
       data: [],
     });
-    getUpstreamBalance.mockResolvedValue({
-      enabled: false,
-      configured: false,
-      upstream_endpoint: "",
-      status: "disabled",
-      balance: 0,
-    });
     fetchPublicSettings.mockResolvedValue(undefined);
     adminSettingsFetch.mockResolvedValue(undefined);
   });
@@ -925,7 +1022,7 @@ describe("admin SettingsView wechat connect controls", () => {
     ).toBe("/auth/wechat/callback");
   });
 
-  it("renders GitHub OAuth setup guidance without an external developer link", async () => {
+  it("links GitHub OAuth Apps guide to GitHub developer settings", async () => {
     getSettings.mockResolvedValueOnce({
       ...baseSettingsResponse,
       github_oauth_enabled: true,
@@ -936,10 +1033,11 @@ describe("admin SettingsView wechat connect controls", () => {
     await flushPromises();
     await openSecurityTab(wrapper);
 
-    expect(wrapper.text()).toContain("OAuth App");
-    expect(wrapper.find('[data-testid="github-oauth-apps-guide-link"]').exists()).toBe(false);
-    const hrefs = wrapper.findAll("a").map((node) => node.attributes("href") ?? "");
-    expect(hrefs.some((href) => href.includes("github.com/settings/developers"))).toBe(false);
+    const link = wrapper.get('[data-testid="github-oauth-apps-guide-link"]');
+    expect(link.text()).toContain("OAuth Apps");
+    expect(link.attributes("href")).toBe("https://github.com/settings/developers");
+    expect(link.attributes("target")).toBe("_blank");
+    expect(link.attributes("rel")).toContain("noopener");
   });
 
   it("saves WeChat Connect fields using the backend contract and clears the secret after save", async () => {
@@ -1067,7 +1165,6 @@ describe("admin SettingsView platform quota matrix", () => {
     updateProvider.mockReset();
     createProvider.mockReset();
     deleteProvider.mockReset();
-    getUpstreamBalance.mockReset();
     fetchPublicSettings.mockReset();
     adminSettingsFetch.mockReset();
     showError.mockReset();
@@ -1091,16 +1188,9 @@ describe("admin SettingsView platform quota matrix", () => {
     getGroups.mockResolvedValue([]);
     listProxies.mockResolvedValue({ items: [] });
     getProviders.mockResolvedValue({ data: [] });
-    getUpstreamBalance.mockResolvedValue({
-      enabled: false,
-      configured: false,
-      upstream_endpoint: "",
-      status: "disabled",
-      balance: 0,
-    });
   });
 
-  it("从 baseSettings 加载默认平台配额数据并在 Users tab 渲染 4 平台行", async () => {
+  it("从 baseSettings 加载默认平台配额数据并在 Users tab 渲染 5 平台行", async () => {
     const wrapper = mountView();
     await flushPromises();
     await openUsersTab(wrapper);
@@ -1115,7 +1205,7 @@ describe("admin SettingsView platform quota matrix", () => {
     expect(html).toContain("antigravity");
   });
 
-  it("保存时 updateSettings payload 应包含嵌套 default_platform_quotas 对象（含全 4 平台）", async () => {
+  it("保存时 updateSettings payload 应包含嵌套 default_platform_quotas 对象（含全 5 平台）", async () => {
     const wrapper = mountView();
     await flushPromises();
     await openUsersTab(wrapper);
@@ -1131,7 +1221,7 @@ describe("admin SettingsView platform quota matrix", () => {
     // 应携带嵌套对象，而非扁平字段
     expect(payload).toHaveProperty("default_platform_quotas");
     const quotas = payload["default_platform_quotas"] as Record<string, unknown>;
-    const platforms = ["anthropic", "openai", "gemini", "antigravity"];
+    const platforms = ["anthropic", "openai", "gemini", "antigravity", "grok"];
     for (const p of platforms) {
       expect(quotas).toHaveProperty(p);
       const pq = quotas[p] as Record<string, unknown>;
@@ -1145,7 +1235,7 @@ describe("admin SettingsView platform quota matrix", () => {
     expect(payload).not.toHaveProperty("default_platform_quota_openai_weekly");
   });
 
-  it("加载后 form.default_platform_quotas 含全 4 平台，从嵌套 JSON 正确读取数值", async () => {
+  it("加载后 form.default_platform_quotas 含全 5 平台，从嵌套 JSON 正确读取数值", async () => {
     getSettings.mockResolvedValueOnce({
       ...baseSettingsResponse,
       default_platform_quotas: {

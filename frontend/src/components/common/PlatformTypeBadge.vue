@@ -76,12 +76,7 @@ const platformLabel = computed(() => {
   if (props.platform === 'anthropic') return 'Anthropic'
   if (props.platform === 'openai') return 'OpenAI'
   if (props.platform === 'antigravity') return 'Antigravity'
-  if (props.platform === 'minimax') return 'MiniMax'
-  if (props.platform === 'glm') return 'GLM'
-  if (props.platform === 'kimi') return 'Kimi'
-  if (props.platform === 'deepseek') return 'DeepSeek'
-  if (props.platform === 'windsurf') return 'Windsurf'
-  if (props.platform === 'opencode') return 'OpenCode'
+  if (props.platform === 'grok') return 'Grok'
   return 'Gemini'
 })
 
@@ -132,23 +127,8 @@ const platformClass = computed(() => {
   if (props.platform === 'antigravity') {
     return 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
   }
-  if (props.platform === 'minimax') {
-    return 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300'
-  }
-  if (props.platform === 'glm') {
-    return 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400'
-  }
-  if (props.platform === 'kimi') {
-    return 'bg-lime-100 text-lime-700 dark:bg-lime-900/30 dark:text-lime-300'
-  }
-  if (props.platform === 'deepseek') {
-    return 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300'
-  }
-  if (props.platform === 'windsurf') {
-    return 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300'
-  }
-  if (props.platform === 'opencode') {
-    return 'bg-slate-100 text-slate-700 dark:bg-slate-800/60 dark:text-slate-300'
+  if (props.platform === 'grok') {
+    return 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'
   }
   return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
 })
@@ -163,23 +143,8 @@ const typeClass = computed(() => {
   if (props.platform === 'antigravity') {
     return 'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400'
   }
-  if (props.platform === 'minimax') {
-    return 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300'
-  }
-  if (props.platform === 'glm') {
-    return 'bg-rose-100 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400'
-  }
-  if (props.platform === 'kimi') {
-    return 'bg-lime-100 text-lime-700 dark:bg-lime-900/30 dark:text-lime-300'
-  }
-  if (props.platform === 'deepseek') {
-    return 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300'
-  }
-  if (props.platform === 'windsurf') {
-    return 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300'
-  }
-  if (props.platform === 'opencode') {
-    return 'bg-slate-100 text-slate-700 dark:bg-slate-800/60 dark:text-slate-300'
+  if (props.platform === 'grok') {
+    return 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300'
   }
   return 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400'
 })

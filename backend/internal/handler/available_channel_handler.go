@@ -1,11 +1,7 @@
 package handler
 
 import (
-	"context"
-	"log/slog"
 	"sort"
-	"strings"
-	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -13,20 +9,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
-
-// publicRecentCallsWindow 公开模型广场的调用量统计窗口。
-const publicRecentCallsWindow = 7 * 24 * time.Hour
-
-// publicModelStatsProvider 提供公开广场排序所需的近期调用量统计。
-type publicModelStatsProvider interface {
-	GetPublicModelRecentCallCounts(ctx context.Context, since time.Time) (map[string]int64, error)
-}
-
-// billingFallbackProvider 提供硬编码 fallback 定价，用于 pricing catalog 未覆盖时
-// 让广场展示对齐真实计费口径。
-type billingFallbackProvider interface {
-	GetFallbackPricing(model string) *service.ModelPricing
-}
 
 // AvailableChannelHandler 处理用户侧「可用渠道」查询。
 //
@@ -39,12 +21,9 @@ type billingFallbackProvider interface {
 //  4. 字段白名单：仅返回用户需要的字段（省略 BillingModelSource / RestrictModels
 //     / 内部 ID / Status 等管理字段）。
 type AvailableChannelHandler struct {
-	channelService  *service.ChannelService
-	apiKeyService   *service.APIKeyService
-	settingService  *service.SettingService
-	gatewayModels   gatewayModelsProvider
-	modelStats      publicModelStatsProvider
-	billingFallback billingFallbackProvider
+	channelService *service.ChannelService
+	apiKeyService  *service.APIKeyService
+	settingService *service.SettingService
 }
 
 // NewAvailableChannelHandler 创建用户侧可用渠道 handler。
@@ -52,22 +31,12 @@ func NewAvailableChannelHandler(
 	channelService *service.ChannelService,
 	apiKeyService *service.APIKeyService,
 	settingService *service.SettingService,
-	gatewayModels *service.GatewayService,
-	modelStats publicModelStatsProvider,
-	billingFallback billingFallbackProvider,
 ) *AvailableChannelHandler {
 	return &AvailableChannelHandler{
-		channelService:  channelService,
-		apiKeyService:   apiKeyService,
-		settingService:  settingService,
-		gatewayModels:   gatewayModels,
-		modelStats:      modelStats,
-		billingFallback: billingFallback,
+		channelService: channelService,
+		apiKeyService:  apiKeyService,
+		settingService: settingService,
 	}
-}
-
-type gatewayModelsProvider interface {
-	GetAvailableModels(ctx context.Context, groupID *int64, platform string) []string
 }
 
 // featureEnabled 返回 available-channels 开关是否启用。默认关闭（opt-in）。
@@ -81,16 +50,19 @@ func (h *AvailableChannelHandler) featureEnabled(c *gin.Context) bool {
 // userAvailableGroup 用户可见的分组概要（白名单字段）。
 //
 // 前端据此区分专属 vs 公开分组（IsExclusive）、订阅 vs 标准分组（SubscriptionType，
-// 订阅视觉加深），并用 RateMultiplier 作为默认倍率；用户专属倍率前端走
+// 订阅视觉加深），并展示默认倍率与高峰倍率规则；用户专属倍率前端走
 // /groups/rates，和 API 密钥页面保持一致。
 type userAvailableGroup struct {
-	ID               int64                         `json:"id"`
-	Name             string                        `json:"name"`
-	Platform         string                        `json:"platform"`
-	SubscriptionType string                        `json:"subscription_type"`
-	RateMultiplier   float64                       `json:"rate_multiplier"`
-	IsExclusive      bool                          `json:"is_exclusive"`
-	ModelsListConfig service.GroupModelsListConfig `json:"-"`
+	ID                 int64   `json:"id"`
+	Name               string  `json:"name"`
+	Platform           string  `json:"platform"`
+	SubscriptionType   string  `json:"subscription_type"`
+	RateMultiplier     float64 `json:"rate_multiplier"`
+	PeakRateEnabled    bool    `json:"peak_rate_enabled"`
+	PeakStart          string  `json:"peak_start"`
+	PeakEnd            string  `json:"peak_end"`
+	PeakRateMultiplier float64 `json:"peak_rate_multiplier"`
+	IsExclusive        bool    `json:"is_exclusive"`
 }
 
 // userSupportedModelPricing 用户可见的定价字段白名单。
@@ -119,11 +91,9 @@ type userPricingIntervalDTO struct {
 
 // userSupportedModel 用户可见的支持模型条目。
 type userSupportedModel struct {
-	Name             string                     `json:"name"`
-	Platform         string                     `json:"platform"`
-	Pricing          *userSupportedModelPricing `json:"pricing"`
-	RecentCallCount  int64                      `json:"recent_call_count"`
-	RecentCallWindow int64                      `json:"recent_call_window_seconds"`
+	Name     string                     `json:"name"`
+	Platform string                     `json:"platform"`
+	Pricing  *userSupportedModelPricing `json:"pricing"`
 }
 
 // userChannelPlatformSection 单渠道内某个平台的子视图：用户可见的分组 + 该平台
@@ -200,159 +170,33 @@ func (h *AvailableChannelHandler) List(c *gin.Context) {
 	response.Success(c, out)
 }
 
-// ListPublic 列出无需认证即可展示的公开「可用渠道」。
+// ListPublic lists public available channels without requiring authentication.
 // GET /api/v1/channels/public
 func (h *AvailableChannelHandler) ListPublic(c *gin.Context) {
-	channels, err := h.channelService.ListPublicAvailable(c.Request.Context())
+	channels, err := h.channelService.ListAvailable(c.Request.Context())
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
 
-	c.Header("Cache-Control", "public, max-age=300")
-	out := buildPublicAvailableChannels(c.Request.Context(), h.channelService, h.gatewayModels, channels)
-	applyBillingFallbackToChannels(h.billingFallback, out)
-	applyRecentCallCounts(c.Request.Context(), h.modelStats, out)
-	response.Success(c, out)
-}
-
-// applyBillingFallbackToChannels 在 pricing catalog 补齐后再跑一遍：
-// 用 billing_service 的硬编码 fallback 补 pricing 完全为空或存在 nil 字段的模型。
-// 让广场展示口径跟真实计费保持一致（billing 遇到 catalog miss 也走这份 fallback）。
-//
-// provider 为 nil 时直接跳过（测试或 wire 未接入场景）。
-func applyBillingFallbackToChannels(
-	provider billingFallbackProvider,
-	channels []userAvailableChannel,
-) {
-	if provider == nil || len(channels) == 0 {
-		return
-	}
-	for i := range channels {
-		for j := range channels[i].Platforms {
-			models := channels[i].Platforms[j].SupportedModels
-			for k := range models {
-				name := strings.TrimSpace(models[k].Name)
-				if name == "" {
-					continue
-				}
-				mp := provider.GetFallbackPricing(name)
-				if mp == nil {
-					continue
-				}
-				if models[k].Pricing == nil {
-					models[k].Pricing = buildUserPricingFromModelPricing(mp)
-					continue
-				}
-				enrichUserPricingFromModelPricing(models[k].Pricing, mp)
-			}
-			channels[i].Platforms[j].SupportedModels = models
-		}
-	}
-}
-
-// buildUserPricingFromModelPricing 从 billing 的 ModelPricing 合成一个可展示的
-// userSupportedModelPricing（token 计费模式）。仅填非 0 字段。
-func buildUserPricingFromModelPricing(mp *service.ModelPricing) *userSupportedModelPricing {
-	if mp == nil {
-		return nil
-	}
-	return &userSupportedModelPricing{
-		BillingMode:      string(service.BillingModeToken),
-		InputPrice:       nonZeroFloatPtr(mp.InputPricePerToken),
-		OutputPrice:      nonZeroFloatPtr(mp.OutputPricePerToken),
-		CacheWritePrice:  nonZeroFloatPtr(mp.CacheCreationPricePerToken),
-		CacheReadPrice:   nonZeroFloatPtr(mp.CacheReadPricePerToken),
-		ImageOutputPrice: nonZeroFloatPtr(mp.ImageOutputPricePerToken),
-		Intervals:        []userPricingIntervalDTO{},
-	}
-}
-
-// enrichUserPricingFromModelPricing 用 billing fallback 补齐已有 pricing 的 nil 字段
-// （不覆盖已经存在的价格）。
-func enrichUserPricingFromModelPricing(existing *userSupportedModelPricing, mp *service.ModelPricing) {
-	if existing == nil || mp == nil {
-		return
-	}
-	if existing.InputPrice == nil {
-		existing.InputPrice = nonZeroFloatPtr(mp.InputPricePerToken)
-	}
-	if existing.OutputPrice == nil {
-		existing.OutputPrice = nonZeroFloatPtr(mp.OutputPricePerToken)
-	}
-	if existing.CacheWritePrice == nil {
-		existing.CacheWritePrice = nonZeroFloatPtr(mp.CacheCreationPricePerToken)
-	}
-	if existing.CacheReadPrice == nil {
-		existing.CacheReadPrice = nonZeroFloatPtr(mp.CacheReadPricePerToken)
-	}
-	if existing.ImageOutputPrice == nil {
-		existing.ImageOutputPrice = nonZeroFloatPtr(mp.ImageOutputPricePerToken)
-	}
-}
-
-func nonZeroFloatPtr(v float64) *float64 {
-	if v == 0 {
-		return nil
-	}
-	return &v
-}
-
-// applyRecentCallCounts 用近 7 天调用量填充公开广场每个模型的 recent_call_count 字段。
-// 统计查询失败时降级为 0（不阻塞展示），只写警告日志。
-func applyRecentCallCounts(
-	ctx context.Context,
-	stats publicModelStatsProvider,
-	channels []userAvailableChannel,
-) {
-	if stats == nil || len(channels) == 0 {
-		return
-	}
-	since := time.Now().UTC().Add(-publicRecentCallsWindow)
-	counts, err := stats.GetPublicModelRecentCallCounts(ctx, since)
-	if err != nil {
-		slog.Warn("public plaza: recent call counts query failed", "err", err)
-		return
-	}
-	windowSeconds := int64(publicRecentCallsWindow / time.Second)
-	for i := range channels {
-		for j := range channels[i].Platforms {
-			models := channels[i].Platforms[j].SupportedModels
-			for k := range models {
-				name := strings.TrimSpace(models[k].Name)
-				if name == "" {
-					continue
-				}
-				if count, ok := counts[name]; ok {
-					models[k].RecentCallCount = count
-				}
-				models[k].RecentCallWindow = windowSeconds
-			}
-			channels[i].Platforms[j].SupportedModels = models
-		}
-	}
-}
-
-func buildPublicAvailableChannels(
-	ctx context.Context,
-	channelService *service.ChannelService,
-	modelsProvider gatewayModelsProvider,
-	channels []service.AvailableChannel,
-) []userAvailableChannel {
 	out := make([]userAvailableChannel, 0, len(channels))
 	for _, ch := range channels {
-		if ch.Status != service.StatusActive {
-			continue
-		}
-		visibleGroups := filterPublicGroups(ch.Groups)
-		if len(visibleGroups) == 0 {
-			continue
+		visibleGroups := make([]userAvailableGroup, 0, len(ch.Groups))
+		for _, g := range ch.Groups {
+			visibleGroups = append(visibleGroups, userAvailableGroup{
+				ID:                 g.ID,
+				Name:               g.Name,
+				Platform:           g.Platform,
+				SubscriptionType:   g.SubscriptionType,
+				RateMultiplier:     g.RateMultiplier,
+				PeakRateEnabled:    g.PeakRateEnabled,
+				PeakStart:          g.PeakStart,
+				PeakEnd:            g.PeakEnd,
+				PeakRateMultiplier: g.PeakRateMultiplier,
+				IsExclusive:        g.IsExclusive,
+			})
 		}
 		sections := buildPlatformSections(ch, visibleGroups)
-		sections = mergePublicGatewayModels(ctx, modelsProvider, sections)
-		sections = filterRoutingOnlyModels(sections)
-		applyPricingFallbackToSections(channelService, sections)
-		sections = filterSectionsWithModels(sections)
 		if len(sections) == 0 {
 			continue
 		}
@@ -362,75 +206,9 @@ func buildPublicAvailableChannels(
 			Platforms:   sections,
 		})
 	}
-	return out
-}
 
-func mergePublicGatewayModels(
-	ctx context.Context,
-	modelsProvider gatewayModelsProvider,
-	sections []userChannelPlatformSection,
-) []userChannelPlatformSection {
-	for i := range sections {
-		models := publicModelIDsForPlatform(ctx, modelsProvider, sections[i].Platform)
-		sections[i].SupportedModels = mergeNamedSupportedModels(sections[i].SupportedModels, models, sections[i].Platform)
-	}
-	return sections
-}
-
-// plazaRoutingOnlyModelIDs 是公开广场不该展示的平台内部路由型模型标识。
-//
-// 这些「模型」在真实运行时不对应固定的定价，Windsurf/OpenCode 网关会在请求
-// 到达时再选定具体上游模型；把它们摆在广场上让用户以为可以直接消费反而误导。
-// 与其硬塞一个假价，不如直接从公开目录里剔除。
-//
-// 全部小写、原样匹配（不做前缀匹配以避免误伤 arena-* / swe-* 等未来可能的真模型）。
-var plazaRoutingOnlyModelIDs = map[string]struct{}{
-	// Windsurf 动态路由标识
-	"adaptive":     {},
-	"arena-fast":   {},
-	"arena-mixed":  {},
-	"arena-smart":  {},
-	"swe-1-6":      {},
-	"swe-1-6-fast": {},
-	"swe-check":    {},
-	// Windsurf legacy 别名：deepseek-v4 未指定具体变体（catalog 只有 -flash/-pro），
-	// minimax-m2-5 已被 minimax-m2.7 系列替代
-	"deepseek-v4":  {},
-	"minimax-m2-5": {},
-	// OpenCode 兜底路由标识（不是真独立模型）
-	"opencode/big-pickle": {},
-}
-
-// filterRoutingOnlyModels 从各 section 中剔除 plazaRoutingOnlyModelIDs 命中的模型。
-func filterRoutingOnlyModels(sections []userChannelPlatformSection) []userChannelPlatformSection {
-	if len(plazaRoutingOnlyModelIDs) == 0 || len(sections) == 0 {
-		return sections
-	}
-	for i := range sections {
-		src := sections[i].SupportedModels
-		if len(src) == 0 {
-			continue
-		}
-		kept := src[:0]
-		for _, m := range src {
-			key := strings.ToLower(strings.TrimSpace(m.Name))
-			if _, ok := plazaRoutingOnlyModelIDs[key]; ok {
-				continue
-			}
-			kept = append(kept, m)
-		}
-		sections[i].SupportedModels = kept
-	}
-	return sections
-}
-
-func publicModelIDsForPlatform(ctx context.Context, modelsProvider gatewayModelsProvider, platform string) []string {
-	if modelsProvider != nil {
-		if models := modelsProvider.GetAvailableModels(ctx, nil, platform); len(models) > 0 {
-			return models
-		}
-	}
-	return defaultModelIDsForPlatform(platform)
+	c.Header("Cache-Control", "public, max-age=300")
+	response.Success(c, out)
 }
 
 // buildPlatformSections 把一个渠道按 visibleGroups 的平台集合拆成有序的 section 列表：
@@ -461,114 +239,12 @@ func buildPlatformSections(
 	for _, platform := range platforms {
 		platformSet := map[string]struct{}{platform: {}}
 		sections = append(sections, userChannelPlatformSection{
-			Platform: platform,
-			Groups:   groupsByPlatform[platform],
-			SupportedModels: mergeGroupSupportedModels(
-				toUserSupportedModels(ch.SupportedModels, platformSet),
-				groupsByPlatform[platform],
-				platform,
-			),
+			Platform:        platform,
+			Groups:          groupsByPlatform[platform],
+			SupportedModels: toUserSupportedModels(ch.SupportedModels, platformSet),
 		})
 	}
 	return sections
-}
-
-func mergeGroupSupportedModels(
-	channelModels []userSupportedModel,
-	groups []userAvailableGroup,
-	platform string,
-) []userSupportedModel {
-	groupModels := make([]string, 0)
-	for _, group := range groups {
-		if !group.ModelsListConfig.Enabled {
-			continue
-		}
-		groupModels = append(groupModels, group.ModelsListConfig.Models...)
-	}
-	return mergeNamedSupportedModels(channelModels, groupModels, platform)
-}
-
-func mergeNamedSupportedModels(
-	channelModels []userSupportedModel,
-	modelNames []string,
-	platform string,
-) []userSupportedModel {
-	out := make([]userSupportedModel, 0, len(channelModels))
-	seen := make(map[string]struct{}, len(channelModels))
-	add := func(model userSupportedModel) {
-		name := strings.TrimSpace(model.Name)
-		if name == "" {
-			return
-		}
-		key := strings.ToLower(name)
-		if _, ok := seen[key]; ok {
-			return
-		}
-		seen[key] = struct{}{}
-		model.Name = name
-		if model.Platform == "" {
-			model.Platform = platform
-		}
-		out = append(out, model)
-	}
-
-	for _, model := range channelModels {
-		add(model)
-	}
-	for _, name := range modelNames {
-		add(userSupportedModel{Name: name, Platform: platform})
-	}
-
-	sort.SliceStable(out, func(i, j int) bool {
-		return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
-	})
-	return out
-}
-
-func applyPricingFallbackToSections(channelService *service.ChannelService, sections []userChannelPlatformSection) {
-	if channelService == nil {
-		return
-	}
-	for sectionIndex := range sections {
-		modelsNeedingPricing := make([]service.SupportedModel, 0)
-		modelIndexes := make([]int, 0)
-		for modelIndex := range sections[sectionIndex].SupportedModels {
-			model := sections[sectionIndex].SupportedModels[modelIndex]
-			if model.Pricing != nil {
-				continue
-			}
-			platform := model.Platform
-			if platform == "" {
-				platform = sections[sectionIndex].Platform
-			}
-			modelsNeedingPricing = append(modelsNeedingPricing, service.SupportedModel{
-				Name:     model.Name,
-				Platform: platform,
-			})
-			modelIndexes = append(modelIndexes, modelIndex)
-		}
-		if len(modelsNeedingPricing) == 0 {
-			continue
-		}
-		channelService.FillGlobalPricingFallback(modelsNeedingPricing)
-		for i, model := range modelsNeedingPricing {
-			if model.Pricing == nil {
-				continue
-			}
-			sections[sectionIndex].SupportedModels[modelIndexes[i]].Pricing = toUserPricing(model.Pricing)
-		}
-	}
-}
-
-func filterSectionsWithModels(sections []userChannelPlatformSection) []userChannelPlatformSection {
-	out := make([]userChannelPlatformSection, 0, len(sections))
-	for _, section := range sections {
-		if len(section.Groups) == 0 || len(section.SupportedModels) == 0 {
-			continue
-		}
-		out = append(out, section)
-	}
-	return out
 }
 
 // filterUserVisibleGroups 仅保留用户可访问的分组。
@@ -582,33 +258,16 @@ func filterUserVisibleGroups(
 			continue
 		}
 		visible = append(visible, userAvailableGroup{
-			ID:               g.ID,
-			Name:             g.Name,
-			Platform:         g.Platform,
-			SubscriptionType: g.SubscriptionType,
-			RateMultiplier:   g.RateMultiplier,
-			IsExclusive:      g.IsExclusive,
-			ModelsListConfig: g.ModelsListConfig,
-		})
-	}
-	return visible
-}
-
-// filterPublicGroups 仅保留公开分组。
-func filterPublicGroups(groups []service.AvailableGroupRef) []userAvailableGroup {
-	visible := make([]userAvailableGroup, 0, len(groups))
-	for _, g := range groups {
-		if g.IsExclusive {
-			continue
-		}
-		visible = append(visible, userAvailableGroup{
-			ID:               g.ID,
-			Name:             g.Name,
-			Platform:         g.Platform,
-			SubscriptionType: g.SubscriptionType,
-			RateMultiplier:   g.RateMultiplier,
-			IsExclusive:      g.IsExclusive,
-			ModelsListConfig: g.ModelsListConfig,
+			ID:                 g.ID,
+			Name:               g.Name,
+			Platform:           g.Platform,
+			SubscriptionType:   g.SubscriptionType,
+			RateMultiplier:     g.RateMultiplier,
+			PeakRateEnabled:    g.PeakRateEnabled,
+			PeakStart:          g.PeakStart,
+			PeakEnd:            g.PeakEnd,
+			PeakRateMultiplier: g.PeakRateMultiplier,
+			IsExclusive:        g.IsExclusive,
 		})
 	}
 	return visible

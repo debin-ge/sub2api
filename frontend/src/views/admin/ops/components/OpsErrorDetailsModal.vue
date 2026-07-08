@@ -9,8 +9,6 @@ import { opsAPI, type OpsErrorLog } from '@/api/admin/ops'
 interface Props {
   show: boolean
   timeRange: string
-  customStartTime?: string | null
-  customEndTime?: string | null
   platform?: string
   groupId?: number | null
   errorType: 'request' | 'upstream'
@@ -86,6 +84,16 @@ function close() {
   emit('update:show', false)
 }
 
+const sortBy = ref('created_at')
+const sortOrder = ref<'asc' | 'desc'>('desc')
+
+function onSort(nextSortBy: string, nextSortOrder: 'asc' | 'desc') {
+  sortBy.value = nextSortBy
+  sortOrder.value = nextSortOrder
+  page.value = 1
+  void fetchErrorLogs()
+}
+
 async function fetchErrorLogs() {
   if (!props.show) return
 
@@ -94,14 +102,10 @@ async function fetchErrorLogs() {
     const params: Record<string, any> = {
       page: page.value,
       page_size: pageSize.value,
-      view: viewMode.value
-    }
-
-    if (props.timeRange === 'custom' && props.customStartTime && props.customEndTime) {
-      params.start_time = props.customStartTime
-      params.end_time = props.customEndTime
-    } else {
-      params.time_range = props.timeRange === 'custom' ? '1h' : props.timeRange
+      time_range: props.timeRange,
+      view: viewMode.value,
+      sort_by: sortBy.value,
+      sort_order: sortOrder.value
     }
 
     const platform = String(props.platform || '').trim()
@@ -155,7 +159,7 @@ watch(
 )
 
 watch(
-  () => [props.timeRange, props.customStartTime, props.customEndTime, props.platform, props.groupId] as const,
+  () => [props.timeRange, props.platform, props.groupId] as const,
   () => {
     if (!props.show) return
     page.value = 1
@@ -261,6 +265,7 @@ watch(
             :page="page"
             :page-size="pageSize"
             @openErrorDetail="emit('openErrorDetail', $event)"
+            @sort="onSort"
 
             @update:page="page = $event"
             @update:pageSize="pageSize = $event"

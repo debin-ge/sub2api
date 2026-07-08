@@ -53,10 +53,16 @@ func (r *codingPlanAccountTestRepo) List(context.Context, pagination.PaginationP
 func (r *codingPlanAccountTestRepo) ListWithFilters(context.Context, pagination.PaginationParams, string, string, string, string, int64, string) ([]Account, *pagination.PaginationResult, error) {
 	return nil, nil, nil
 }
+func (r *codingPlanAccountTestRepo) ListAllWithFilters(context.Context, string, string, string, string, int64, string) ([]Account, error) {
+	return nil, nil
+}
 func (r *codingPlanAccountTestRepo) ListByGroup(context.Context, int64) ([]Account, error) {
 	return nil, nil
 }
 func (r *codingPlanAccountTestRepo) ListActive(context.Context) ([]Account, error) {
+	return nil, nil
+}
+func (r *codingPlanAccountTestRepo) ListOAuthRefreshCandidates(context.Context) ([]Account, error) {
 	return nil, nil
 }
 func (r *codingPlanAccountTestRepo) ListByPlatform(context.Context, string) ([]Account, error) {
@@ -101,6 +107,9 @@ func (r *codingPlanAccountTestRepo) ListSchedulableUngroupedByPlatform(context.C
 	return nil, nil
 }
 func (r *codingPlanAccountTestRepo) ListSchedulableUngroupedByPlatforms(context.Context, []string) ([]Account, error) {
+	return nil, nil
+}
+func (r *codingPlanAccountTestRepo) ListShadowsByParent(context.Context, int64) ([]*Account, error) {
 	return nil, nil
 }
 func (r *codingPlanAccountTestRepo) SetRateLimited(context.Context, int64, time.Time) error {

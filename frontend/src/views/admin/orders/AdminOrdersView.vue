@@ -35,7 +35,7 @@
               {{ t('payment.admin.retry') }}
             </button>
             <template v-if="row.status === 'REFUND_REQUESTED'">
-              <span v-if="row.refund_amount" class="rounded-full bg-purple-100 px-1.5 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">{{ row.order_type === 'balance' ? '$' : '¥' }}{{ row.refund_amount.toFixed(2) }}</span>
+              <span v-if="row.refund_amount" class="rounded-full bg-purple-100 px-1.5 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">{{ creditedAmountSymbol }}{{ row.refund_amount.toFixed(2) }}</span>
               <button @click="openRefundDialog(row)" class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-purple-600 hover:bg-purple-50 dark:text-purple-400 dark:hover:bg-purple-900/20">
                 <Icon name="check" size="sm" />
                 {{ t('payment.admin.approveRefund') }}
@@ -44,6 +44,10 @@
             <button v-else-if="row.status === 'REFUND_FAILED'" @click="openRefundDialog(row)" class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-purple-600 hover:bg-purple-50 dark:text-purple-400 dark:hover:bg-purple-900/20">
               <Icon name="refresh" size="sm" />
               {{ t('payment.admin.retryRefund') }}
+            </button>
+            <button v-else-if="row.status === 'REFUND_PENDING'" :disabled="refundQueryingIds.has(row.id)" @click="handleQueryRefund(row)" class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-orange-600 hover:bg-orange-50 disabled:opacity-60 dark:text-orange-400 dark:hover:bg-orange-900/20">
+              <Icon name="refresh" size="sm" :class="refundQueryingIds.has(row.id) ? 'animate-spin' : ''" />
+              {{ t('payment.admin.queryRefundStatus') }}
             </button>
             <button v-else-if="row.status === 'COMPLETED' || row.status === 'PARTIALLY_REFUNDED'" @click="openRefundDialog(row)" class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20">
               <Icon name="dollar" size="sm" />
@@ -62,14 +66,14 @@
           <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.orderId') }}</p><p class="font-mono text-sm font-medium text-gray-900 dark:text-white">#{{ selectedOrder.id }}</p></div>
           <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.orderNo') }}</p><p class="text-sm font-medium text-gray-900 dark:text-white">{{ selectedOrder.out_trade_no }}</p></div>
           <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.status') }}</p><OrderStatusBadge :status="selectedOrder.status" /></div>
-          <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.amount') }}</p><p class="text-sm font-medium text-gray-900 dark:text-white">{{ formatOrderAmount(selectedOrder, selectedOrder.amount) }}</p></div>
-          <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.payAmount') }}</p><p class="text-sm font-medium text-gray-900 dark:text-white">{{ formatOrderAmount(selectedOrder, selectedOrder.pay_amount) }}</p></div>
+          <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.amount') }}</p><p class="text-sm font-medium text-gray-900 dark:text-white">{{ creditedAmountSymbol }}{{ selectedOrder.amount.toFixed(2) }}</p></div>
+          <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.payAmount') }}</p><p class="text-sm font-medium text-gray-900 dark:text-white">{{ paymentAmountSymbol(selectedOrder) }}{{ selectedOrder.pay_amount.toFixed(2) }}</p></div>
           <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.paymentMethod') }}</p><p class="text-sm text-gray-700 dark:text-gray-300">{{ t('payment.methods.' + selectedOrder.payment_type, selectedOrder.payment_type) }}</p></div>
           <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.admin.feeRate') }}</p><p class="text-sm text-gray-700 dark:text-gray-300">{{ selectedOrder.fee_rate }}%</p></div>
           <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.createdAt') }}</p><p class="text-sm text-gray-700 dark:text-gray-300">{{ formatDateTime(selectedOrder.created_at) }}</p></div>
           <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.admin.expiresAt') }}</p><p class="text-sm text-gray-700 dark:text-gray-300">{{ formatDateTime(selectedOrder.expires_at) }}</p></div>
           <div v-if="selectedOrder.paid_at"><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.admin.paidAt') }}</p><p class="text-sm text-gray-700 dark:text-gray-300">{{ formatDateTime(selectedOrder.paid_at) }}</p></div>
-          <div v-if="selectedOrder.refund_amount"><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.admin.refundAmount') }}</p><p class="text-sm font-medium text-red-600 dark:text-red-400">{{ formatOrderAmount(selectedOrder, selectedOrder.refund_amount) }}</p></div>
+          <div v-if="selectedOrder.refund_amount"><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.admin.refundAmount') }}</p><p class="text-sm font-medium text-red-600 dark:text-red-400">{{ creditedAmountSymbol }}{{ selectedOrder.refund_amount.toFixed(2) }}</p></div>
           <div v-if="selectedOrder.refund_reason" class="col-span-2"><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.admin.refundReason') }}</p><p class="text-sm text-gray-700 dark:text-gray-300">{{ selectedOrder.refund_reason }}</p></div>
           <!-- Refund request info -->
           <div v-if="selectedOrder.refund_requested_at" class="col-span-2 border-t border-gray-200 pt-3 dark:border-dark-600">
@@ -87,59 +91,6 @@
                 <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.admin.refundRequestReason') }}</p>
                 <p class="text-sm text-gray-700 dark:text-gray-300">{{ selectedOrder.refund_request_reason }}</p>
               </div>
-            </div>
-          </div>
-        </div>
-        <!-- Wise Reconciliation Detail -->
-        <div v-if="wiseReconcileDetail" class="rounded-lg border border-lime-200 bg-lime-50 p-3 dark:border-lime-800/60 dark:bg-lime-950/30">
-          <p class="mb-2 text-xs font-medium text-lime-800 dark:text-lime-200">{{ t('payment.admin.wiseReconcile.title') }}</p>
-          <p v-if="wiseReconcileNeedsManualReview" class="mb-3 rounded-md bg-amber-50 px-2 py-1.5 text-xs text-amber-700 dark:bg-amber-900/30 dark:text-amber-200">
-            {{ t('payment.admin.wiseReconcile.manualReviewWarning') }}
-          </p>
-          <div class="grid grid-cols-2 gap-3 text-xs">
-            <div v-if="wiseDetailText('reconcile_decision') || wiseDetailText('reconcileDecision')">
-              <p class="text-gray-500 dark:text-gray-400">{{ t('payment.admin.wiseReconcile.decision') }}</p>
-              <p class="font-medium text-gray-900 dark:text-white">{{ wiseDetailText('reconcile_decision') || wiseDetailText('reconcileDecision') }}</p>
-            </div>
-            <div v-if="wiseDetailText('reason') || wiseDetailText('reconcile_reason')">
-              <p class="text-gray-500 dark:text-gray-400">{{ t('payment.admin.wiseReconcile.reason') }}</p>
-              <p class="font-medium text-gray-900 dark:text-white">{{ wiseDetailText('reason') || wiseDetailText('reconcile_reason') }}</p>
-            </div>
-            <div v-if="wiseDetailText('wise_transaction_id')">
-              <p class="text-gray-500 dark:text-gray-400">{{ t('payment.admin.wiseReconcile.transactionId') }}</p>
-              <p class="font-mono font-medium text-gray-900 dark:text-white">{{ wiseDetailText('wise_transaction_id') }}</p>
-            </div>
-            <div v-if="wiseDetailText('transaction_status')">
-              <p class="text-gray-500 dark:text-gray-400">{{ t('payment.admin.wiseReconcile.status') }}</p>
-              <p class="font-medium text-gray-900 dark:text-white">{{ wiseDetailText('transaction_status') }}</p>
-            </div>
-            <div v-if="wiseDetailText('gross_amount')">
-              <p class="text-gray-500 dark:text-gray-400">{{ t('payment.admin.wiseReconcile.grossAmount') }}</p>
-              <p class="font-medium text-gray-900 dark:text-white">{{ formatWiseDetailAmount('gross_amount') }}</p>
-            </div>
-            <div v-if="wiseDetailText('fee_amount')">
-              <p class="text-gray-500 dark:text-gray-400">{{ t('payment.admin.wiseReconcile.feeAmount') }}</p>
-              <p class="font-medium text-gray-900 dark:text-white">{{ formatWiseDetailAmount('fee_amount') }}</p>
-            </div>
-            <div v-if="wiseDetailText('net_amount')">
-              <p class="text-gray-500 dark:text-gray-400">{{ t('payment.admin.wiseReconcile.netAmount') }}</p>
-              <p class="font-medium text-gray-900 dark:text-white">{{ formatWiseDetailAmount('net_amount') }}</p>
-            </div>
-            <div v-if="wiseDetailText('currency')">
-              <p class="text-gray-500 dark:text-gray-400">{{ t('payment.admin.wiseReconcile.currency') }}</p>
-              <p class="font-medium text-gray-900 dark:text-white">{{ wiseDetailText('currency') }}</p>
-            </div>
-            <div v-if="wiseDetailText('occurred_at')">
-              <p class="text-gray-500 dark:text-gray-400">{{ t('payment.admin.wiseReconcile.occurredAt') }}</p>
-              <p class="font-medium text-gray-900 dark:text-white">{{ formatDateTime(wiseDetailText('occurred_at')) }}</p>
-            </div>
-            <div v-if="wiseDetailText('reference')" class="col-span-2">
-              <p class="text-gray-500 dark:text-gray-400">{{ t('payment.admin.wiseReconcile.reference') }}</p>
-              <p class="break-all font-mono font-medium text-gray-900 dark:text-white">{{ wiseDetailText('reference') }}</p>
-            </div>
-            <div v-if="wiseDetailText('description')" class="col-span-2">
-              <p class="text-gray-500 dark:text-gray-400">{{ t('payment.admin.wiseReconcile.description') }}</p>
-              <p class="break-all font-medium text-gray-900 dark:text-white">{{ wiseDetailText('description') }}</p>
             </div>
           </div>
         </div>
@@ -180,6 +131,7 @@ import Icon from '@/components/icons/Icon.vue'
 import AdminRefundDialog from '@/components/admin/payment/AdminRefundDialog.vue'
 import OrderStatusBadge from '@/components/payment/OrderStatusBadge.vue'
 import OrderTable from '@/components/payment/OrderTable.vue'
+import { currencySymbol } from '@/components/payment/currency'
 
 interface AuditLog {
   id: number
@@ -201,29 +153,13 @@ const selectedOrder = ref<PaymentOrder | null>(null)
 const showDetailDialog = ref(false)
 const showRefundDialog = ref(false)
 const refundSubmitting = ref(false)
+const refundQueryingIds = ref(new Set<number>())
 const orderAuditLogs = ref<AuditLog[]>([])
+const creditedAmountSymbol = currencySymbol('USD')
 
-const wiseReconcileDetail = computed<Record<string, unknown> | null>(() => {
-  if (selectedOrder.value?.payment_type !== 'wise') return null
-  for (const log of [...orderAuditLogs.value].reverse()) {
-    const detail = parseAuditDetail(log.detail)
-    if (!detail) continue
-    if (
-      log.action.startsWith('PAYMENT_WISE') ||
-      hasDetailKey(detail, 'wise_transaction_id') ||
-      hasDetailKey(detail, 'reconcile_decision') ||
-      hasDetailKey(detail, 'reconcileDecision')
-    ) {
-      return detail
-    }
-  }
-  return null
-})
-
-const wiseReconcileNeedsManualReview = computed(() => {
-  const action = wiseDetailText('reviewAction') || wiseDetailText('reconcile_decision') || wiseDetailText('reconcileDecision')
-  return action === 'manual_review' || action === 'rejected'
-})
+function paymentAmountSymbol(order: PaymentOrder | null | undefined): string {
+  return currencySymbol(order?.currency)
+}
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 function debounceLoadOrders() {
@@ -259,6 +195,7 @@ const statusFilterOptions = computed(() => [
   { value: 'FAILED', label: t('payment.status.failed') },
   { value: 'REFUNDED', label: t('payment.status.refunded') },
   { value: 'REFUND_REQUESTED', label: t('payment.status.refund_requested') },
+  { value: 'REFUND_PENDING', label: t('payment.status.refund_pending') },
   { value: 'REFUND_FAILED', label: t('payment.status.refund_failed') },
 ])
 
@@ -268,7 +205,6 @@ const paymentTypeFilterOptions = computed(() => [
   { value: 'wxpay', label: t('payment.methods.wxpay') },
   { value: 'stripe', label: t('payment.methods.stripe') },
   { value: 'airwallex', label: t('payment.methods.airwallex') },
-  { value: 'wise', label: t('payment.methods.wise') },
 ])
 
 const orderTypeFilterOptions = computed(() => [
@@ -301,54 +237,54 @@ async function handleRetryOrder(order: PaymentOrder) {
 
 function openRefundDialog(order: PaymentOrder) { selectedOrder.value = order; showRefundDialog.value = true }
 
+function isRefundPendingWarning(warning: string | undefined): boolean {
+  return /pending|处理中|待/.test(String(warning || '').toLowerCase())
+}
+
 async function handleRefund(data: { amount: number; reason: string; deduct_balance: boolean; force: boolean }) {
   if (!selectedOrder.value) return
   refundSubmitting.value = true
   try {
-    await adminPaymentAPI.refundOrder(selectedOrder.value.id, { amount: data.amount, reason: data.reason, deduct_balance: data.deduct_balance, force: data.force })
-    appStore.showSuccess(t('payment.admin.refundSuccess')); showRefundDialog.value = false; loadOrders()
+    const res = await adminPaymentAPI.refundOrder(selectedOrder.value.id, { amount: data.amount, reason: data.reason, deduct_balance: data.deduct_balance, force: data.force })
+    if (res.data.success) {
+      appStore.showSuccess(t('payment.admin.refundSuccess'))
+      showRefundDialog.value = false
+      loadOrders()
+      return
+    }
+    if (isRefundPendingWarning(res.data.warning)) {
+      appStore.showSuccess(t('payment.admin.refundPending'))
+      showRefundDialog.value = false
+      loadOrders()
+      return
+    }
+    appStore.showError(res.data.warning || t('common.error'))
   } catch (err: unknown) { appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error'))) }
   finally { refundSubmitting.value = false }
 }
 
-function formatDateTime(dateStr: string): string { return formatOrderDateTime(dateStr) }
-
-function formatOrderAmount(order: PaymentOrder, value: number): string {
-  const currency = String(order.currency || '').trim().toUpperCase()
-  if (currency) return `${currency} ${value.toFixed(2)}`
-  return `${order.order_type === 'balance' ? '$' : '¥'}${value.toFixed(2)}`
-}
-
-function parseAuditDetail(detail: string | null): Record<string, unknown> | null {
-  if (!detail) return null
+async function handleQueryRefund(order: PaymentOrder) {
+  refundQueryingIds.value = new Set(refundQueryingIds.value).add(order.id)
   try {
-    const parsed = JSON.parse(detail) as unknown
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>
+    const res = await adminPaymentAPI.queryRefund(order.id)
+    if (res.data.success) {
+      appStore.showSuccess(t('payment.admin.refundSuccess'))
+    } else if (isRefundPendingWarning(res.data.warning)) {
+      appStore.showSuccess(t('payment.admin.refundPending'))
+    } else {
+      appStore.showError(res.data.warning || t('common.error'))
     }
-  } catch { /* ignore non-JSON detail */ }
-  return null
+    loadOrders()
+  } catch (err: unknown) {
+    appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error')))
+  } finally {
+    const next = new Set(refundQueryingIds.value)
+    next.delete(order.id)
+    refundQueryingIds.value = next
+  }
 }
 
-function hasDetailKey(detail: Record<string, unknown>, key: string): boolean {
-  const value = detail[key]
-  return value !== undefined && value !== null && String(value).trim() !== ''
-}
-
-function wiseDetailText(key: string): string {
-  const value = wiseReconcileDetail.value?.[key]
-  if (value === undefined || value === null) return ''
-  return String(value).trim()
-}
-
-function formatWiseDetailAmount(key: string): string {
-  const raw = wiseDetailText(key)
-  if (!raw) return ''
-  const currency = wiseDetailText('currency') || String(selectedOrder.value?.currency || '').trim().toUpperCase()
-  const numeric = Number(raw)
-  const amount = Number.isFinite(numeric) ? numeric.toFixed(2) : raw
-  return currency ? `${currency} ${amount}` : amount
-}
+function formatDateTime(dateStr: string): string { return formatOrderDateTime(dateStr) }
 
 onMounted(() => loadOrders())
 </script>

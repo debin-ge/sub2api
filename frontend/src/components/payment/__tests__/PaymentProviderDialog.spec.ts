@@ -7,6 +7,12 @@ import type { ProviderInstance } from '@/types/payment'
 
 const messages: Record<string, string> = {
   'admin.settings.payment.providerConfig': 'Credentials',
+  'admin.settings.payment.easypayCustomMethods': 'Custom EasyPay methods',
+  'admin.settings.payment.easypayCustomMethodsHint': 'Add provider-specific EasyPay type values.',
+  'admin.settings.payment.addCustomMethod': 'Add method',
+  'admin.settings.payment.customMethodType': 'Payment type',
+  'admin.settings.payment.customMethodUpstreamType': 'Upstream type',
+  'admin.settings.payment.customMethodDisplayName': 'Display name',
   'admin.settings.payment.paymentGuideTrigger': 'View payment guide',
   'admin.settings.payment.alipayGuideSummary': 'Desktop prefers QR precreate and falls back to cashier; mobile prefers WAP checkout.',
   'admin.settings.payment.wxpayGuideSummary': 'Desktop prefers Native QR; mobile routes to JSAPI or H5 based on browser context.',
@@ -14,15 +20,6 @@ const messages: Record<string, string> = {
   'admin.settings.payment.stripeWebhookHint': 'Configure Stripe webhook.',
   'admin.settings.payment.stripeWebhookApiVersionHint': 'Use Stripe API version {version}.',
   'admin.settings.payment.airwallexWebhookHint': 'Select payment_intent.succeeded and use the latest stable API version.',
-  'admin.settings.payment.wiseWebhookHint': 'Sub2API automatically creates the Wise webhook subscription for this URL.',
-  'admin.settings.payment.wiseGuideSummary': 'Wise uses hosted redirect plus automatic reconciliation.',
-  'admin.settings.payment.wiseWebhookSubscriptionTitle': 'Wise webhook subscription',
-  'admin.settings.payment.wiseWebhookSubscriptionActive': 'Automatically subscribed',
-  'admin.settings.payment.wiseWebhookSubscriptionFailed': 'Subscription failed',
-  'admin.settings.payment.wiseWebhookSubscriptionUnknown': 'Not synced yet',
-  'admin.settings.payment.wiseWebhookSubscriptionId': 'Subscription ID',
-  'admin.settings.payment.wiseWebhookSubscriptionError': 'Error',
-  'admin.settings.payment.wiseWebhookDeliveryUrl': 'Delivery URL',
 }
 
 vi.mock('vue-i18n', () => ({
@@ -62,22 +59,21 @@ function mountDialog(options: { editing?: ProviderInstance | null } = {}) {
       saving: false,
       editing: options.editing ?? null,
       allKeyOptions: [
+        { value: 'easypay', label: 'EasyPay' },
         { value: 'alipay', label: 'Alipay' },
         { value: 'wxpay', label: 'WeChat Pay' },
         { value: 'stripe', label: 'Stripe' },
         { value: 'airwallex', label: 'Airwallex' },
-        { value: 'wise', label: 'Wise' },
       ],
       enabledKeyOptions: [
+        { value: 'easypay', label: 'EasyPay' },
         { value: 'alipay', label: 'Alipay' },
         { value: 'wxpay', label: 'WeChat Pay' },
         { value: 'airwallex', label: 'Airwallex' },
-        { value: 'wise', label: 'Wise' },
       ],
       allPaymentTypes: [
         { value: 'alipay', label: 'Alipay' },
         { value: 'wxpay', label: 'WeChat Pay' },
-        { value: 'wise', label: 'Wise' },
       ],
       redirectLabel: 'Redirect',
     },
@@ -169,73 +165,84 @@ describe('PaymentProviderDialog payment guide', () => {
     expect(payload.config.accountId).toBe('')
   })
 
-  it('does not prefill or resubmit sensitive Wise config values when editing', async () => {
+  it('serializes EasyPay custom methods and adds them to supported_types', async () => {
     const provider = providerFactory({
-      provider_key: 'wise',
-      name: 'Wise',
-      supported_types: ['wise'],
+      provider_key: 'easypay',
+      name: 'EasyPay',
       config: {
-        quickPayBaseUrl: 'https://wise.com/pay/business/account',
-        apiBase: 'https://api.wise.com',
-        apiToken: 'wise-secret-token',
-        profileId: 'profile-123',
-        balanceId: 'balance-123',
-        currency: 'USD',
-        webhookPublicKey: '-----BEGIN PUBLIC KEY-----\npublic\n-----END PUBLIC KEY-----',
-        settlementStrategy: 'exact_only',
+        pid: 'pid-1',
+        apiBase: 'https://pay.example.com',
+        notifyUrl: 'https://example.com/api/v1/payment/webhook/easypay',
+        returnUrl: 'https://example.com/payment/result',
       },
+      supported_types: ['alipay', 'wxpay'],
+      payment_mode: 'qrcode',
     })
     const wrapper = mountDialog({ editing: provider })
 
     ;(wrapper.vm as unknown as { loadProvider: (provider: ProviderInstance) => void }).loadProvider(provider)
     await nextTick()
 
-    const fieldValues = [
-      ...wrapper.findAll('input').map(input => (input.element as HTMLInputElement).value),
-      ...wrapper.findAll('textarea').map(textarea => (textarea.element as HTMLTextAreaElement).value),
-    ]
-    expect(fieldValues).not.toContain('wise-secret-token')
-    expect(fieldValues).toContain('profile-123')
+    await wrapper.find('button.btn-sm').trigger('click')
+    await nextTick()
 
+    const inputs = wrapper.findAll('input[type="text"]')
+    const customTypeInputs = inputs.filter(input => (input.element as HTMLInputElement).placeholder === 'credit_card')
+    const ldcTypeInput = customTypeInputs[0]
+    const upstreamTypeInput = customTypeInputs[1]
+    const displayNameInput = inputs.find(input => (input.element as HTMLInputElement).placeholder === '信用卡')
+    if (!ldcTypeInput || !upstreamTypeInput || !displayNameInput) {
+      throw new Error('custom method inputs not found')
+    }
+
+    await ldcTypeInput.setValue('ldc')
+    await upstreamTypeInput.setValue('epay')
+    await displayNameInput.setValue('LDC')
     await wrapper.find('form').trigger('submit.prevent')
 
-    const payload = wrapper.emitted('save')?.[0]?.[0] as { config: Record<string, string> }
-    expect(payload.config.apiToken).toBeUndefined()
-    expect(payload.config.profileId).toBe('profile-123')
+    const payload = wrapper.emitted('save')?.[0]?.[0] as {
+      config: Record<string, string>
+      supported_types: string[]
+    }
+    expect(payload.config.customMethods).toBe('[{"type":"ldc","upstreamType":"epay","displayName":"LDC"}]')
+    expect(payload.supported_types).toEqual(['alipay', 'wxpay', 'ldc'])
   })
 
-  it.each([
-    ['active', 'Automatically subscribed', undefined],
-    ['failed', 'Subscription failed', 'remote rejected credentials'],
-    ['', 'Not synced yet', undefined],
-  ])('shows Wise webhook subscription %s status while editing', async (status, label, error) => {
+  it('rejects custom EasyPay method types with built-in payment prefixes', async () => {
     const provider = providerFactory({
-      provider_key: 'wise',
-      name: 'Wise',
-      supported_types: ['wise'],
-      webhook_subscription_status: status,
-      webhook_subscription_id: status ? 'subscription-123' : '',
-      webhook_subscription_error: error,
-      webhook_delivery_url: status
-        ? 'https://api.example.com/api/v1/payment/webhook/wise'
-        : '',
+      provider_key: 'easypay',
+      name: 'EasyPay',
+      config: {
+        pid: 'pid-1',
+        apiBase: 'https://pay.example.com',
+        notifyUrl: 'https://example.com/api/v1/payment/webhook/easypay',
+        returnUrl: 'https://example.com/payment/result',
+      },
+      supported_types: ['alipay', 'wxpay'],
+      payment_mode: 'qrcode',
     })
     const wrapper = mountDialog({ editing: provider })
 
     ;(wrapper.vm as unknown as { loadProvider: (provider: ProviderInstance) => void }).loadProvider(provider)
     await nextTick()
 
-    expect(wrapper.text()).toContain('Wise webhook subscription')
-    expect(wrapper.text()).toContain(label)
-    expect(wrapper.text()).toContain(
-      status
-        ? 'https://api.example.com/api/v1/payment/webhook/wise'
-        : '/api/v1/payment/webhook/wise',
-    )
-    expect(wrapper.text()).toContain('Sub2API automatically creates the Wise webhook subscription for this URL.')
-    if (error) {
-      expect(wrapper.text()).toContain('Error')
-      expect(wrapper.text()).toContain(error)
+    await wrapper.find('button.btn-sm').trigger('click')
+    await nextTick()
+
+    const inputs = wrapper.findAll('input[type="text"]')
+    const customTypeInputs = inputs.filter(input => (input.element as HTMLInputElement).placeholder === 'credit_card')
+    const typeInput = customTypeInputs[0]
+    const upstreamTypeInput = customTypeInputs[1]
+    const displayNameInput = inputs.find(input => (input.element as HTMLInputElement).placeholder === '信用卡')
+    if (!typeInput || !upstreamTypeInput || !displayNameInput) {
+      throw new Error('custom method inputs not found')
     }
+
+    await typeInput.setValue('alipay_hk')
+    await upstreamTypeInput.setValue('hkpay')
+    await displayNameInput.setValue('Hong Kong Alipay')
+    await wrapper.find('form').trigger('submit.prevent')
+
+    expect(wrapper.emitted('save')).toBeUndefined()
   })
 })

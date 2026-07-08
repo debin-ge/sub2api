@@ -123,13 +123,13 @@ describe('UseKeyModal', () => {
     expect(codeBlock.text()).not.toContain('"name": "GPT-5.4 Nano"')
   })
 
-  it('renders OpenCode platform with only the OpenCode client config', () => {
+  it('renders Claude Fable 5 OpenCode config with adaptive thinking', async () => {
     const wrapper = mount(UseKeyModal, {
       props: {
         show: true,
-        apiKey: 'sk-opencode',
+        apiKey: 'sk-test',
         baseUrl: 'https://example.com/v1',
-        platform: 'opencode'
+        platform: 'antigravity'
       },
       global: {
         stubs: {
@@ -143,15 +143,25 @@ describe('UseKeyModal', () => {
       }
     })
 
-    const buttons = wrapper.findAll('button').map(button => button.text())
-    expect(buttons.some(text => text.includes('keys.useKeyModal.cliTabs.opencode'))).toBe(true)
-    expect(buttons.some(text => text.includes('keys.useKeyModal.cliTabs.claudeCode'))).toBe(false)
+    const opencodeTab = wrapper.findAll('button').find((button) =>
+      button.text().includes('keys.useKeyModal.cliTabs.opencode')
+    )
 
-    const codeBlock = wrapper.find('pre code')
-    expect(codeBlock.exists()).toBe(true)
-    expect(codeBlock.text()).toContain('"opencode": {')
-    expect(codeBlock.text()).toContain('"name": "OpenCode"')
-    expect(codeBlock.text()).toContain('"npm": "@ai-sdk/openai"')
-    expect(codeBlock.text()).toContain('"baseURL": "https://example.com/v1"')
+    expect(opencodeTab).toBeDefined()
+    await opencodeTab!.trigger('click')
+    await nextTick()
+
+    const claudeConfig = wrapper.findAll('pre code')
+      .map((code) => code.text())
+      .find((content) => content.includes('"antigravity-claude"'))
+
+    expect(claudeConfig).toBeDefined()
+    const parsed = JSON.parse(claudeConfig!)
+    const fable = parsed.provider['antigravity-claude'].models['claude-fable-5']
+
+    expect(fable.name).toBe('Claude Fable 5')
+    expect(fable.limit).toEqual({ context: 1048576, output: 128000 })
+    expect(fable.options.thinking).toEqual({ type: 'adaptive' })
+    expect(fable.options.thinking).not.toHaveProperty('budgetTokens')
   })
 })

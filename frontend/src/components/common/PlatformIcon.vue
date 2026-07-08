@@ -19,29 +19,11 @@
   <svg v-else-if="platform === 'antigravity'" :class="sizeClass" viewBox="0 0 24 24" fill="currentColor">
     <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z" />
   </svg>
-  <!-- MiniMax logo mark -->
-  <svg v-else-if="platform === 'minimax'" :class="sizeClass" viewBox="0 0 24 24" fill="currentColor">
-    <path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h2.8c.5 0 .97.25 1.25.67L12 8.35l2.45-3.68A1.5 1.5 0 0 1 15.7 4h2.8A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5h-2A1.5 1.5 0 0 1 15 18.5v-7.06l-1.76 2.64a1.5 1.5 0 0 1-2.48 0L9 11.44v7.06A1.5 1.5 0 0 1 7.5 20h-2A1.5 1.5 0 0 1 4 18.5v-13z" />
-  </svg>
-  <!-- GLM logo mark -->
-  <svg v-else-if="platform === 'glm'" :class="sizeClass" viewBox="0 0 24 24" fill="currentColor">
-    <path d="M12 3.25 4.5 7.58v8.84L12 20.75l7.5-4.33V7.58L12 3.25Zm0 2.31 5.5 3.17v6.34L12 18.25l-5.5-3.18V8.73L12 5.56Zm-2.7 4.08h5.96v1.78h-3.78v1.33h2.2v1.61h-2.2v.28c0 .86.48 1.18 1.25 1.18.64 0 1.21-.18 1.79-.48l.53 1.53a5.3 5.3 0 0 1-2.55.63c-1.87 0-2.96-.91-2.96-2.75v-4.3H9.3V9.64Z" />
-  </svg>
-  <!-- Kimi logo mark -->
-  <svg v-else-if="platform === 'kimi'" :class="sizeClass" viewBox="0 0 24 24" fill="currentColor">
-    <path d="M5 4h3.2v6.1L13.7 4h4l-5.8 6.4L18.5 20h-4l-4.8-7.1-1.5 1.6V20H5V4z" />
-  </svg>
-  <!-- DeepSeek logo mark -->
-  <svg v-else-if="platform === 'deepseek'" :class="sizeClass" viewBox="0 0 24 24" fill="currentColor">
-    <path d="M5 4h7.4c4.4 0 7.6 3.2 7.6 8s-3.2 8-7.6 8H5V4Zm3.2 2.8v10.4h4.1c2.6 0 4.4-2 4.4-5.2s-1.8-5.2-4.4-5.2H8.2Zm2.1 2.5h2.2c1.4 0 2.3 1 2.3 2.7s-.9 2.7-2.3 2.7h-2.2V9.3Z" />
-  </svg>
-  <!-- Windsurf logo mark -->
-  <svg v-else-if="platform === 'windsurf'" :class="sizeClass" viewBox="0 0 24 24" fill="currentColor">
-    <path d="M3.2 6.2h3.2l2.05 9.1 2.45-9.1h2.2l2.45 9.1 2.05-9.1h3.2L17.25 19h-3.1L12 11.1 9.85 19h-3.1L3.2 6.2Z" />
-  </svg>
-  <!-- OpenCode logo mark -->
-  <svg v-else-if="platform === 'opencode'" :class="sizeClass" viewBox="0 0 24 24" fill="currentColor">
-    <path d="M6.2 4h11.6A2.2 2.2 0 0 1 20 6.2v11.6a2.2 2.2 0 0 1-2.2 2.2H6.2A2.2 2.2 0 0 1 4 17.8V6.2A2.2 2.2 0 0 1 6.2 4Zm1.1 4.1 3.25 3.9-3.25 3.9h2.45L13 12 9.75 8.1H7.3Zm6.1 6.25V16h3.8v-1.65h-3.8Z" />
+  <!-- Grok / xAI logo mark (stylized angular X) -->
+  <svg v-else-if="platform === 'grok'" :class="sizeClass" viewBox="0 0 24 24" fill="currentColor">
+    <path
+      d="M9.27 15.29l7.978-5.897c.391-.29.95-.177 1.137.272.98 2.369.542 5.215-1.41 7.169-1.951 1.954-4.667 2.382-7.149 1.406l-2.711 1.257c3.889 2.661 8.611 2.003 11.562-.953 2.341-2.344 3.066-5.539 2.388-8.42l.006.007c-.983-4.232.242-5.924 2.75-9.383.06-.082.12-.164.179-.248l-3.301 3.305v-.01L9.267 15.292M7.623 16.723c-2.792-2.67-2.31-6.801.071-9.184 1.761-1.763 4.647-2.483 7.166-1.425l2.705-1.25a7.808 7.808 0 00-1.829-1A8.975 8.975 0 005.984 5.83c-2.533 2.536-3.33 6.436-1.962 9.764 1.022 2.487-.653 4.246-2.34 6.022-.599.63-1.199 1.259-1.682 1.925l7.62-6.815"
+    />
   </svg>
   <!-- Fallback: generic platform icon -->
   <svg v-else :class="sizeClass" fill="currentColor" viewBox="0 0 24 24">
