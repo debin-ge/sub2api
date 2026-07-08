@@ -517,10 +517,11 @@ func (s *BillingService) initFallbackPricing() {
 	}
 	// kimi-for-coding 走 Kimi Coding endpoint，按当前 K2.6 coding 档位兜底计费。
 	s.fallbackPrices["kimi-for-coding"] = &ModelPricing{
-		InputPricePerToken:     0.95e-6,
-		OutputPricePerToken:    4e-6,
-		CacheReadPricePerToken: 0.15e-6,
-		SupportsCacheBreakdown: false,
+		InputPricePerToken:         0.95e-6,
+		OutputPricePerToken:        4e-6,
+		CacheCreationPricePerToken: 0.95e-6,
+		CacheReadPricePerToken:     0.16e-6,
+		SupportsCacheBreakdown:     false,
 	}
 	s.fallbackPrices["kimi-k2.5"] = &ModelPricing{
 		InputPricePerToken:     0.60e-6, // $0.60 per MTok
@@ -558,10 +559,11 @@ func (s *BillingService) initFallbackPricing() {
 		SupportsCacheBreakdown: false,
 	}
 	s.fallbackPrices["minimax-m2.7-highspeed"] = &ModelPricing{
-		InputPricePerToken:     0.60e-6,
-		OutputPricePerToken:    2.40e-6,
-		CacheReadPricePerToken: 0.06e-6,
-		SupportsCacheBreakdown: false,
+		InputPricePerToken:         0.30e-6,
+		OutputPricePerToken:        2.40e-6,
+		CacheCreationPricePerToken: 0.375e-6,
+		CacheReadPricePerToken:     0.06e-6,
+		SupportsCacheBreakdown:     false,
 	}
 	s.fallbackPrices["minimax-m2.5"] = &ModelPricing{
 		InputPricePerToken:     0.30e-6,

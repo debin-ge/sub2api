@@ -64,4 +64,12 @@ describe('platformColors', () => {
     expect(platformBadgeClass('opencode')).not.toBe(platformBadgeClass('openai'))
     expect(platformBadgeClass('opencode')).not.toBe(platformBadgeClass('windsurf'))
   })
+
+  it('returns Grok labels and a distinct neutral visual style', () => {
+    expect(platformLabel('grok')).toBe('Grok')
+    expect(platformBadgeClass('grok')).toContain('zinc')
+    expect(platformButtonClass('grok')).toContain('zinc')
+    expect(platformBadgeClass('grok')).not.toBe(platformBadgeClass('openai'))
+    expect(platformBadgeClass('grok')).not.toBe(platformBadgeClass('opencode'))
+  })
 })

@@ -7,14 +7,12 @@ const openaiModels = [
   // GPT-5.2 系列
   'gpt-5.2', 'gpt-5.2-2025-12-11', 'gpt-5.2-chat-latest',
   'gpt-5.2-pro', 'gpt-5.2-pro-2025-12-11',
-  // GPT-5.6 系列
-  'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna',
   // GPT-5.5 系列
   'gpt-5.5',
   // GPT-5.4 系列
   'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.4-2026-03-05',
   // GPT-5.3 / Codex 系列
-  'gpt-5.3-codex-spark', 'codex-auto-review',
+  'gpt-5.3-codex', 'gpt-5.3-codex-spark', 'codex-auto-review',
   'gpt-4o-audio-preview', 'gpt-4o-realtime-preview',
   // GPT Image 系列
   'gpt-image-1', 'gpt-image-1.5', 'gpt-image-2'
@@ -32,9 +30,7 @@ export const claudeModels = [
   'claude-opus-4-6',
   'claude-opus-4-7',
   'claude-opus-4-8',
-  'claude-sonnet-4-6',
-  'claude-sonnet-5',
-  'claude-fable-5'
+  'claude-sonnet-4-6'
 ]
 
 // Google Gemini
@@ -55,7 +51,6 @@ const geminiModels = [
 // 基于官方 API 返回的模型列表，只支持 Claude 4.5+ 和 Gemini 2.5+
 const antigravityModels = [
   // Claude 4.5+ 系列
-  'claude-fable-5',
   'claude-opus-4-6',
   'claude-opus-4-6-thinking',
   'claude-opus-4-7',
@@ -76,7 +71,6 @@ const antigravityModels = [
   'gemini-3-pro-high',
   'gemini-3-pro-low',
   // Gemini 3.1 系列
-  'gemini-3.1-pro',
   'gemini-3.1-pro-high',
   'gemini-3.1-pro-low',
   'gemini-3-pro-image',
@@ -106,8 +100,8 @@ const qwenModels = [
   'qwq-32b', 'qwq-32b-preview'
 ]
 
-// DeepSeek
-const deepseekModels = [
+// DeepSeek public model names kept for generic model suggestions.
+const deepseekProviderModels = [
   'deepseek-chat', 'deepseek-coder', 'deepseek-reasoner',
   'deepseek-v3', 'deepseek-v3-0324',
   'deepseek-r1', 'deepseek-r1-0528',
@@ -135,22 +129,10 @@ const metaModels = [
 
 // xAI Grok
 const xaiModels = [
-  'grok-4.3',
-  'grok-build-0.1',
-  'grok-4.20-0309-reasoning',
-  'grok-4.20-0309-non-reasoning',
-  'grok-4.20-multi-agent-0309',
-  'grok',
-  'grok-latest',
-  'grok-build',
-  'grok-4.20-reasoning',
-  'grok-4.20-non-reasoning',
-  'grok-imagine',
-  'grok-imagine-image-quality',
-  'grok-imagine-image',
-  'grok-imagine-edit',
-  'grok-imagine-video',
-  'grok-imagine-video-1.5'
+  'grok-4', 'grok-4-0709',
+  'grok-3-beta', 'grok-3-mini-beta', 'grok-3-fast-beta',
+  'grok-2', 'grok-2-vision', 'grok-2-image',
+  'grok-beta', 'grok-vision-beta'
 ]
 
 // Cohere
@@ -187,9 +169,120 @@ const doubaoModels = [
 
 // MiniMax
 const minimaxModels = [
+  'MiniMax-M2.7', 'MiniMax-M2.7-highspeed',
   'abab6.5-chat', 'abab6.5s-chat', 'abab6.5s-chat-pro',
   'abab6-chat',
   'abab5.5-chat', 'abab5.5s-chat'
+]
+
+// GLM Coding Plan Gateway
+const glmModels = [
+  'GLM-5.1', 'GLM-4.7', 'GLM-4.5-air'
+]
+
+// Kimi Coding Plan Gateway
+const kimiModels = [
+  'kimi-for-coding'
+]
+
+// DeepSeek Gateway
+const deepseekGatewayModels = [
+  'deepseek-v4-flash', 'deepseek-v4-pro'
+]
+
+// Windsurf reverse proxy gateway
+const windsurfGatewayModels = [
+  'claude-sonnet-4-6',
+  'claude-sonnet-4-6-thinking',
+  'claude-sonnet-4-6-1m',
+  'claude-sonnet-4-6-thinking-1m',
+  'claude-opus-4-7-xhigh',
+  'claude-opus-4-7-xhigh-fast',
+  'claude-opus-4-7-max',
+  'claude-opus-4-7-max-fast',
+  'claude-opus-4-7-high',
+  'claude-opus-4-7-high-fast',
+  'claude-opus-4-7-medium',
+  'claude-opus-4-7-medium-fast',
+  'claude-opus-4-7-low',
+  'claude-opus-4-7-low-fast',
+  'claude-opus-4-6',
+  'claude-opus-4-6-thinking',
+  'claude-opus-4-6-fast',
+  'claude-opus-4-6-thinking-fast',
+  'claude-opus-4-6-1m',
+  'claude-opus-4-6-thinking-1m',
+  'gpt-5-5-high',
+  'gpt-5-5-high-priority',
+  'gpt-5-5-xhigh',
+  'gpt-5-5-xhigh-priority',
+  'gpt-5-5-medium',
+  'gpt-5-5-medium-priority',
+  'gpt-5-5-low',
+  'gpt-5-5-low-priority',
+  'gpt-5-5-none',
+  'gpt-5-5-none-priority',
+  'gpt-5-5-review',
+  'gpt-5-4-high',
+  'gpt-5-4-high-priority',
+  'gpt-5-4-xhigh',
+  'gpt-5-4-xhigh-priority',
+  'gpt-5-4-medium',
+  'gpt-5-4-medium-priority',
+  'gpt-5-4-low',
+  'gpt-5-4-low-priority',
+  'gpt-5-4-none',
+  'gpt-5-4-none-priority',
+  'gpt-5-4-mini-high',
+  'gpt-5-4-mini-xhigh',
+  'gpt-5-4-mini-medium',
+  'gpt-5-4-mini-low',
+  'gpt-5-3-codex-high',
+  'gpt-5-3-codex-high-priority',
+  'gpt-5-3-codex-xhigh',
+  'gpt-5-3-codex-xhigh-priority',
+  'gpt-5-3-codex-medium',
+  'gpt-5-3-codex-medium-priority',
+  'gpt-5-3-codex-low',
+  'gpt-5-3-codex-low-priority',
+  'gpt-5-3-codex-spark-medium',
+  'gemini-3-1-pro-high',
+  'gemini-3-1-pro-low',
+  'deepseek-v4',
+  'glm-5-1',
+  'kimi-k2-6',
+  'kimi-k2-5',
+  'minimax-m2-5',
+  'swe-1-6',
+  'swe-1-6-fast',
+  'swe-check',
+  'adaptive',
+  'arena-smart',
+  'arena-mixed',
+  'arena-fast',
+  'opus-4-7-review',
+  'claude-sonnet-4.6',
+  'claude-sonnet-4.6-thinking',
+  'claude-opus-4.6',
+  'claude-opus-4.6-thinking',
+  'claude-opus-4.6-fast',
+  'claude-opus-4.6-fast-thinking',
+  'gpt-5.4',
+  'gpt-5.4-mini',
+  'gpt-5.3-codex-spark',
+  'gemini-3.1-pro',
+  'glm-5',
+  'minimax-m2.5',
+  'swe-1.6',
+  'swe-1.6-fast',
+  'swe-1.5',
+  'swe-1',
+  'phoenix-alpha'
+]
+
+// OpenCode2API-compatible gateway
+const opencodeGatewayModels = [
+  'opencode/big-pickle', 'opencode/gpt5-nano', 'gpt5-nano'
 ]
 
 // 百度 文心
@@ -229,7 +322,7 @@ const allModelsList: string[] = [
   ...geminiModels,
   ...zhipuModels,
   ...qwenModels,
-  ...deepseekModels,
+  ...deepseekProviderModels,
   ...mistralModels,
   ...metaModels,
   ...xaiModels,
@@ -238,6 +331,11 @@ const allModelsList: string[] = [
   ...moonshotModels,
   ...doubaoModels,
   ...minimaxModels,
+  ...glmModels,
+  ...kimiModels,
+  ...deepseekGatewayModels,
+  ...windsurfGatewayModels,
+  ...opencodeGatewayModels,
   ...baiduModels,
   ...sparkModels,
   ...hunyuanModels,
@@ -252,8 +350,6 @@ export const allModels = allModelsList.map(m => ({ value: m, label: m }))
 // =====================
 
 const anthropicPresetMappings = [
-  { label: 'Fable 5', from: 'claude-fable-5', to: 'claude-fable-5', color: 'bg-rose-100 text-rose-700 hover:bg-rose-200 dark:bg-rose-900/30 dark:text-rose-400' },
-  { label: 'Sonnet 5', from: 'claude-sonnet-5', to: 'claude-sonnet-5', color: 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400' },
   { label: 'Sonnet 4', from: 'claude-sonnet-4-20250514', to: 'claude-sonnet-4-20250514', color: 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-400' },
   { label: 'Sonnet 4.5', from: 'claude-sonnet-4-5-20250929', to: 'claude-sonnet-4-5-20250929', color: 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400' },
   { label: 'Sonnet 4.6', from: 'claude-sonnet-4-6', to: 'claude-sonnet-4-6', color: 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400' },
@@ -274,9 +370,6 @@ const openaiPresetMappings = [
   { label: 'o3', from: 'o3', to: 'o3', color: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400' },
   { label: 'GPT-5.3 Codex Spark', from: 'gpt-5.3-codex-spark', to: 'gpt-5.3-codex-spark', color: 'bg-teal-100 text-teal-700 hover:bg-teal-200 dark:bg-teal-900/30 dark:text-teal-400' },
   { label: 'GPT-5.2', from: 'gpt-5.2', to: 'gpt-5.2', color: 'bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400' },
-  { label: 'GPT-5.6 Sol', from: 'gpt-5.6-sol', to: 'gpt-5.6-sol', color: 'bg-orange-100 text-orange-700 hover:bg-orange-200 dark:bg-orange-900/30 dark:text-orange-400' },
-  { label: 'GPT-5.6 Terra', from: 'gpt-5.6-terra', to: 'gpt-5.6-terra', color: 'bg-lime-100 text-lime-700 hover:bg-lime-200 dark:bg-lime-900/30 dark:text-lime-400' },
-  { label: 'GPT-5.6 Luna', from: 'gpt-5.6-luna', to: 'gpt-5.6-luna', color: 'bg-sky-100 text-sky-700 hover:bg-sky-200 dark:bg-sky-900/30 dark:text-sky-400' },
   { label: 'GPT-5.5', from: 'gpt-5.5', to: 'gpt-5.5', color: 'bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-400' },
   { label: 'GPT-5.4', from: 'gpt-5.4', to: 'gpt-5.4', color: 'bg-rose-100 text-rose-700 hover:bg-rose-200 dark:bg-rose-900/30 dark:text-rose-400' },
   { label: 'Haiku→5.4', from: 'claude-haiku-4-5-20251001', to: 'gpt-5.4', color: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400' },
@@ -293,22 +386,61 @@ const geminiPresetMappings = [
   { label: '3.1 Image', from: 'gemini-3.1-flash-image', to: 'gemini-3.1-flash-image', color: 'bg-sky-100 text-sky-700 hover:bg-sky-200 dark:bg-sky-900/30 dark:text-sky-400' }
 ]
 
-const grokPresetMappings = [
-  { label: 'Grok 4.3', from: 'grok-4.3', to: 'grok-4.3', color: 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800/50 dark:text-slate-300' },
-  { label: 'Grok Latest', from: 'grok-latest', to: 'grok-4.3', color: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400' },
-  { label: 'Build 0.1', from: 'grok-build', to: 'grok-build-0.1', color: 'bg-cyan-100 text-cyan-700 hover:bg-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-400' },
-  { label: '4.20 Reasoning', from: 'grok-4.20-reasoning', to: 'grok-4.20-0309-reasoning', color: 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400' },
-  { label: '4.20 Non Reasoning', from: 'grok-4.20-non-reasoning', to: 'grok-4.20-0309-non-reasoning', color: 'bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-900/30 dark:text-violet-400' },
-  { label: 'Imagine Image', from: 'grok-imagine', to: 'grok-imagine-image-quality', color: 'bg-sky-100 text-sky-700 hover:bg-sky-200 dark:bg-sky-900/30 dark:text-sky-400' },
-  { label: 'Imagine Edit', from: 'grok-imagine-edit', to: 'grok-imagine-edit', color: 'bg-rose-100 text-rose-700 hover:bg-rose-200 dark:bg-rose-900/30 dark:text-rose-400' },
-  { label: 'Imagine Video', from: 'grok-imagine-video-1.5', to: 'grok-imagine-video-1.5', color: 'bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-400' }
+const minimaxPresetMappings = [
+  { label: 'Sonnet→M2.7', from: 'claude-sonnet-4-5', to: 'MiniMax-M2.7', color: 'bg-cyan-100 text-cyan-700 hover:bg-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-300' },
+  { label: 'Haiku→M2.7 highspeed', from: 'claude-haiku-4-5', to: 'MiniMax-M2.7-highspeed', color: 'bg-sky-100 text-sky-700 hover:bg-sky-200 dark:bg-sky-900/30 dark:text-sky-300' },
+  { label: 'M2.7 passthrough', from: 'MiniMax-M2.7', to: 'MiniMax-M2.7', color: 'bg-teal-100 text-teal-700 hover:bg-teal-200 dark:bg-teal-900/30 dark:text-teal-300' }
+]
+
+const glmPresetMappings = [
+  { label: 'Sonnet→GLM-5.1', from: 'claude-sonnet-*', to: 'GLM-5.1', color: 'bg-rose-100 text-rose-700 hover:bg-rose-200 dark:bg-rose-900/30 dark:text-rose-300' },
+  { label: 'Sonnet 4.5→GLM-5.1', from: 'claude-sonnet-4-5', to: 'GLM-5.1', color: 'bg-pink-100 text-pink-700 hover:bg-pink-200 dark:bg-pink-900/30 dark:text-pink-300' },
+  { label: 'Opus→GLM-5.1', from: 'claude-opus-*', to: 'GLM-5.1', color: 'bg-fuchsia-100 text-fuchsia-700 hover:bg-fuchsia-200 dark:bg-fuchsia-900/30 dark:text-fuchsia-300' },
+  { label: 'Opus 4.5→GLM-5.1', from: 'claude-opus-4-5', to: 'GLM-5.1', color: 'bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300' },
+  { label: 'Haiku→GLM-4.5-air', from: 'claude-haiku-*', to: 'GLM-4.5-air', color: 'bg-sky-100 text-sky-700 hover:bg-sky-200 dark:bg-sky-900/30 dark:text-sky-300' },
+  { label: 'Haiku 4.5→GLM-4.5-air', from: 'claude-haiku-4-5', to: 'GLM-4.5-air', color: 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-300' },
+  { label: 'GLM-5.1 passthrough', from: 'GLM-5.1', to: 'GLM-5.1', color: 'bg-rose-100 text-rose-700 hover:bg-rose-200 dark:bg-rose-900/30 dark:text-rose-300' },
+  { label: 'GLM-4.7 passthrough', from: 'GLM-4.7', to: 'GLM-4.7', color: 'bg-pink-100 text-pink-700 hover:bg-pink-200 dark:bg-pink-900/30 dark:text-pink-300' },
+  { label: 'GLM-4.5-air passthrough', from: 'GLM-4.5-air', to: 'GLM-4.5-air', color: 'bg-sky-100 text-sky-700 hover:bg-sky-200 dark:bg-sky-900/30 dark:text-sky-300' }
+]
+
+const kimiPresetMappings = [
+  { label: 'Sonnet→Kimi', from: 'claude-sonnet-*', to: 'kimi-for-coding', color: 'bg-lime-100 text-lime-700 hover:bg-lime-200 dark:bg-lime-900/30 dark:text-lime-300' },
+  { label: 'Sonnet 4.5→Kimi', from: 'claude-sonnet-4-5', to: 'kimi-for-coding', color: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300' },
+  { label: 'Sonnet latest→Kimi', from: 'claude-3-5-sonnet-latest', to: 'kimi-for-coding', color: 'bg-teal-100 text-teal-700 hover:bg-teal-200 dark:bg-teal-900/30 dark:text-teal-300' },
+  { label: 'kimi-for-coding passthrough', from: 'kimi-for-coding', to: 'kimi-for-coding', color: 'bg-lime-100 text-lime-700 hover:bg-lime-200 dark:bg-lime-900/30 dark:text-lime-300' }
+]
+
+const deepseekPresetMappings = [
+  { label: 'chat→v4 flash', from: 'deepseek-chat', to: 'deepseek-v4-flash', color: 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-300' },
+  { label: 'v3→v4 flash', from: 'deepseek-v3', to: 'deepseek-v4-flash', color: 'bg-sky-100 text-sky-700 hover:bg-sky-200 dark:bg-sky-900/30 dark:text-sky-300' },
+  { label: 'reasoner→v4 pro', from: 'deepseek-reasoner', to: 'deepseek-v4-pro', color: 'bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300' },
+  { label: 'r1→v4 pro', from: 'deepseek-r1', to: 'deepseek-v4-pro', color: 'bg-fuchsia-100 text-fuchsia-700 hover:bg-fuchsia-200 dark:bg-fuchsia-900/30 dark:text-fuchsia-300' },
+  { label: 'deepseek-v4-flash passthrough', from: 'deepseek-v4-flash', to: 'deepseek-v4-flash', color: 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-300' },
+  { label: 'deepseek-v4-pro passthrough', from: 'deepseek-v4-pro', to: 'deepseek-v4-pro', color: 'bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-900/30 dark:text-violet-300' }
+]
+
+const windsurfPresetMappings = [
+  { label: 'Sonnet→4.6', from: 'claude-sonnet-*', to: 'claude-sonnet-4-6', color: 'bg-teal-100 text-teal-700 hover:bg-teal-200 dark:bg-teal-900/30 dark:text-teal-300' },
+  { label: 'Sonnet thinking', from: 'claude-sonnet-*-thinking', to: 'claude-sonnet-4-6-thinking', color: 'bg-cyan-100 text-cyan-700 hover:bg-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-300' },
+  { label: 'Opus→4.7 XHigh', from: 'claude-opus-*', to: 'claude-opus-4-7-xhigh', color: 'bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-900/30 dark:text-violet-300' },
+  { label: 'Opus→4.7 Max', from: 'claude-opus-*-thinking', to: 'claude-opus-4-7-max', color: 'bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300' },
+  { label: 'GPT-5.5 high', from: 'gpt-5.5-high', to: 'gpt-5-5-high', color: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300' },
+  { label: 'GPT-5.5 xhigh fast', from: 'gpt-5.5-xhigh-fast', to: 'gpt-5-5-xhigh-priority', color: 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-300' },
+  { label: 'Gemini 3.1 Pro', from: 'gemini-3.1-pro', to: 'gemini-3-1-pro-high', color: 'bg-sky-100 text-sky-700 hover:bg-sky-200 dark:bg-sky-900/30 dark:text-sky-300' },
+  { label: 'SWE-1.6', from: 'swe-1.6', to: 'swe-1-6', color: 'bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-300' }
+]
+
+const opencodePresetMappings = [
+  { label: 'big-pickle passthrough', from: 'opencode/big-pickle', to: 'opencode/big-pickle', color: 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800/60 dark:text-slate-300' },
+  { label: 'gpt5-nano passthrough', from: 'gpt5-nano', to: 'gpt5-nano', color: 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800/60 dark:text-zinc-300' },
+  { label: 'opencode/gpt5-nano passthrough', from: 'opencode/gpt5-nano', to: 'opencode/gpt5-nano', color: 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200 dark:bg-neutral-800/60 dark:text-neutral-300' }
 ]
 
 // Antigravity 预设映射（支持通配符）
 const antigravityPresetMappings = [
   // Claude 通配符映射
   { label: 'Claude→Sonnet', from: 'claude-*', to: 'claude-sonnet-4-5', color: 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-400' },
-  { label: 'Fable 5', from: 'claude-fable-5', to: 'claude-fable-5', color: 'bg-rose-100 text-rose-700 hover:bg-rose-200 dark:bg-rose-900/30 dark:text-rose-400' },
   { label: 'Sonnet→Sonnet', from: 'claude-sonnet-*', to: 'claude-sonnet-4-5', color: 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400' },
   { label: 'Opus→Opus', from: 'claude-opus-*', to: 'claude-opus-4-6-thinking', color: 'bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-400' },
   { label: 'Haiku→Sonnet', from: 'claude-haiku-*', to: 'claude-sonnet-4-5', color: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400' },
@@ -317,21 +449,19 @@ const antigravityPresetMappings = [
   { label: 'Sonnet3.5→4.6', from: 'claude-3-5-sonnet-20241022', to: 'claude-sonnet-4-6', color: 'bg-teal-100 text-teal-700 hover:bg-teal-200 dark:bg-teal-900/30 dark:text-teal-400' },
   { label: 'Opus4.5→4.6', from: 'claude-opus-4-5-20251101', to: 'claude-opus-4-6-thinking', color: 'bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-900/30 dark:text-violet-400' },
   // Gemini 3→3.1 映射
-  { label: '3-Pro-Preview→Pro-Agent', from: 'gemini-3-pro-preview', to: 'gemini-pro-agent', color: 'bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-400' },
-  { label: '3-Pro-High→Pro-Agent', from: 'gemini-3-pro-high', to: 'gemini-pro-agent', color: 'bg-orange-100 text-orange-700 hover:bg-orange-200 dark:bg-orange-900/30 dark:text-orange-400' },
+  { label: '3-Pro-Preview→3.1-Pro-High', from: 'gemini-3-pro-preview', to: 'gemini-3.1-pro-high', color: 'bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-400' },
+  { label: '3-Pro-High→3.1-Pro-High', from: 'gemini-3-pro-high', to: 'gemini-3.1-pro-high', color: 'bg-orange-100 text-orange-700 hover:bg-orange-200 dark:bg-orange-900/30 dark:text-orange-400' },
   { label: '3-Pro-Low→3.1-Pro-Low', from: 'gemini-3-pro-low', to: 'gemini-3.1-pro-low', color: 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-400' },
-  { label: '3.1-Pro→Pro-Agent', from: 'gemini-3.1-pro', to: 'gemini-pro-agent', color: 'bg-orange-100 text-orange-700 hover:bg-orange-200 dark:bg-orange-900/30 dark:text-orange-400' },
-  { label: '3.1-Pro-High→Pro-Agent', from: 'gemini-3.1-pro-high', to: 'gemini-pro-agent', color: 'bg-orange-100 text-orange-700 hover:bg-orange-200 dark:bg-orange-900/30 dark:text-orange-400' },
-  { label: '3.1-Pro-Low passthrough', from: 'gemini-3.1-pro-low', to: 'gemini-3.1-pro-low', color: 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-400' },
-  { label: '3.1-Pro-Preview→Pro-Agent', from: 'gemini-3.1-pro-preview', to: 'gemini-pro-agent', color: 'bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-400' },
+  { label: '3.1-Pro-High透传', from: 'gemini-3.1-pro-high', to: 'gemini-3.1-pro-high', color: 'bg-orange-100 text-orange-700 hover:bg-orange-200 dark:bg-orange-900/30 dark:text-orange-400' },
+  { label: '3.1-Pro-Low透传', from: 'gemini-3.1-pro-low', to: 'gemini-3.1-pro-low', color: 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-400' },
   // Gemini 通配符映射
   { label: 'Gemini 3→Flash', from: 'gemini-3*', to: 'gemini-3-flash', color: 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-400' },
   { label: 'Gemini 2.5→Flash', from: 'gemini-2.5*', to: 'gemini-2.5-flash', color: 'bg-orange-100 text-orange-700 hover:bg-orange-200 dark:bg-orange-900/30 dark:text-orange-400' },
-  { label: '2.5-Flash-Image passthrough', from: 'gemini-2.5-flash-image', to: 'gemini-2.5-flash-image', color: 'bg-sky-100 text-sky-700 hover:bg-sky-200 dark:bg-sky-900/30 dark:text-sky-400' },
-  { label: '3.1-Flash-Image passthrough', from: 'gemini-3.1-flash-image', to: 'gemini-3.1-flash-image', color: 'bg-sky-100 text-sky-700 hover:bg-sky-200 dark:bg-sky-900/30 dark:text-sky-400' },
+  { label: '2.5-Flash-Image透传', from: 'gemini-2.5-flash-image', to: 'gemini-2.5-flash-image', color: 'bg-sky-100 text-sky-700 hover:bg-sky-200 dark:bg-sky-900/30 dark:text-sky-400' },
+  { label: '3.1-Flash-Image透传', from: 'gemini-3.1-flash-image', to: 'gemini-3.1-flash-image', color: 'bg-sky-100 text-sky-700 hover:bg-sky-200 dark:bg-sky-900/30 dark:text-sky-400' },
   { label: '3-Pro-Image→3.1', from: 'gemini-3-pro-image', to: 'gemini-3.1-flash-image', color: 'bg-sky-100 text-sky-700 hover:bg-sky-200 dark:bg-sky-900/30 dark:text-sky-400' },
-  { label: '3-Flash passthrough', from: 'gemini-3-flash', to: 'gemini-3-flash', color: 'bg-lime-100 text-lime-700 hover:bg-lime-200 dark:bg-lime-900/30 dark:text-lime-400' },
-  { label: '2.5-Flash-Lite passthrough', from: 'gemini-2.5-flash-lite', to: 'gemini-2.5-flash-lite', color: 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400' },
+  { label: '3-Flash透传', from: 'gemini-3-flash', to: 'gemini-3-flash', color: 'bg-lime-100 text-lime-700 hover:bg-lime-200 dark:bg-lime-900/30 dark:text-lime-400' },
+  { label: '2.5-Flash-Lite透传', from: 'gemini-2.5-flash-lite', to: 'gemini-2.5-flash-lite', color: 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400' },
   // 精确映射
   { label: 'Sonnet 4.6', from: 'claude-sonnet-4-6', to: 'claude-sonnet-4-6', color: 'bg-cyan-100 text-cyan-700 hover:bg-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-400' },
   { label: 'Sonnet 4.5', from: 'claude-sonnet-4-5', to: 'claude-sonnet-4-5', color: 'bg-cyan-100 text-cyan-700 hover:bg-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-400' },
@@ -343,11 +473,9 @@ const antigravityPresetMappings = [
 
 // Bedrock 预设映射（与后端 DefaultBedrockModelMapping 保持一致）
 const bedrockPresetMappings = [
-  { label: 'Fable 5', from: 'claude-fable-5', to: 'anthropic.claude-fable-5', color: 'bg-rose-100 text-rose-700 hover:bg-rose-200 dark:bg-rose-900/30 dark:text-rose-400' },
   { label: 'Opus 4.6', from: 'claude-opus-4-6', to: 'us.anthropic.claude-opus-4-6-v1', color: 'bg-pink-100 text-pink-700 hover:bg-pink-200 dark:bg-pink-900/30 dark:text-pink-400' },
   { label: 'Opus 4.7', from: 'claude-opus-4-7', to: 'us.anthropic.claude-opus-4-7-v1', color: 'bg-pink-100 text-pink-700 hover:bg-pink-200 dark:bg-pink-900/30 dark:text-pink-400' },
   { label: 'Opus 4.8', from: 'claude-opus-4-8', to: 'us.anthropic.claude-opus-4-8-v1', color: 'bg-pink-100 text-pink-700 hover:bg-pink-200 dark:bg-pink-900/30 dark:text-pink-400' },
-  { label: 'Sonnet 5', from: 'claude-sonnet-5', to: 'us.anthropic.claude-sonnet-5-v1', color: 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400' },
   { label: 'Sonnet 4.6', from: 'claude-sonnet-4-6', to: 'us.anthropic.claude-sonnet-4-6', color: 'bg-cyan-100 text-cyan-700 hover:bg-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-400' },
   { label: 'Opus 4.5', from: 'claude-opus-4-5-thinking', to: 'us.anthropic.claude-opus-4-5-20251101-v1:0', color: 'bg-pink-100 text-pink-700 hover:bg-pink-200 dark:bg-pink-900/30 dark:text-pink-400' },
   { label: 'Sonnet 4.5', from: 'claude-sonnet-4-5', to: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0', color: 'bg-cyan-100 text-cyan-700 hover:bg-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-400' },
@@ -402,7 +530,9 @@ export function getModelsByPlatform(platform: string): string[] {
     case 'antigravity': return antigravityModels
     case 'zhipu': return zhipuModels
     case 'qwen': return qwenModels
-    case 'deepseek': return deepseekModels
+    case 'deepseek': return deepseekGatewayModels
+    case 'windsurf': return windsurfGatewayModels
+    case 'opencode': return opencodeGatewayModels
     case 'mistral': return mistralModels
     case 'meta': return metaModels
     case 'xai':
@@ -412,6 +542,8 @@ export function getModelsByPlatform(platform: string): string[] {
     case 'moonshot': return moonshotModels
     case 'doubao': return doubaoModels
     case 'minimax': return minimaxModels
+    case 'glm': return glmModels
+    case 'kimi': return kimiModels
     case 'baidu': return baiduModels
     case 'spark': return sparkModels
     case 'hunyuan': return hunyuanModels
@@ -424,7 +556,12 @@ export function getModelsByPlatform(platform: string): string[] {
 export function getPresetMappingsByPlatform(platform: string) {
   if (platform === 'openai') return openaiPresetMappings
   if (platform === 'gemini') return geminiPresetMappings
-  if (platform === 'grok' || platform === 'xai') return grokPresetMappings
+  if (platform === 'minimax') return minimaxPresetMappings
+  if (platform === 'glm') return glmPresetMappings
+  if (platform === 'kimi') return kimiPresetMappings
+  if (platform === 'deepseek') return deepseekPresetMappings
+  if (platform === 'windsurf') return windsurfPresetMappings
+  if (platform === 'opencode') return opencodePresetMappings
   if (platform === 'antigravity') return antigravityPresetMappings
   if (platform === 'bedrock') return bedrockPresetMappings
   return anthropicPresetMappings
@@ -503,12 +640,12 @@ export function buildModelMappingObject(
       if (!from || !to) continue
       // 校验通配符格式：* 只能放在末尾
       if (!isValidWildcardPattern(from)) {
-        console.warn(`[buildModelMappingObject] Invalid wildcard pattern, skipped: ${from}`)
+        console.warn(`[buildModelMappingObject] 无效的通配符格式，跳过: ${from}`)
         continue
       }
       // to 不允许包含通配符
       if (to.includes('*')) {
-        console.warn(`[buildModelMappingObject] Target model cannot contain a wildcard, skipped: ${from} -> ${to}`)
+        console.warn(`[buildModelMappingObject] 目标模型不能包含通配符，跳过: ${from} -> ${to}`)
         continue
       }
       mapping[from] = to

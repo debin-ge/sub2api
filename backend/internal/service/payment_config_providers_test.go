@@ -725,6 +725,35 @@ func providerPendingOrderPaymentType(providerKey string) string {
 	}
 }
 
+func validWiseProviderConfigForConfigService(t *testing.T) map[string]string {
+	t.Helper()
+
+	_, publicKeyPEM := newWiseConfigServiceWebhookKey(t)
+	return map[string]string{
+		"quickPayBaseUrl":    "https://wise.com/pay/business/account",
+		"apiBase":            "https://api.wise.com",
+		"apiToken":           "token-test",
+		"profileId":          "profile-123",
+		"balanceId":          "balance-123",
+		"currency":           "USD",
+		"webhookPublicKey":   publicKeyPEM,
+		"settlementStrategy": "exact_only",
+	}
+}
+
+func newWiseConfigServiceWebhookKey(t *testing.T) (*rsa.PrivateKey, string) {
+	t.Helper()
+
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	der, err := x509.MarshalPKIXPublicKey(&priv.PublicKey)
+	require.NoError(t, err)
+	return priv, string(pem.EncodeToMemory(&pem.Block{
+		Type:  "PUBLIC KEY",
+		Bytes: der,
+	}))
+}
+
 func validStripeProviderConfig(t *testing.T) map[string]string {
 	t.Helper()
 

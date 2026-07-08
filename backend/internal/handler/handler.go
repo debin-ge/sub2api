@@ -54,6 +54,12 @@ type Handlers struct {
 	Admin            *AdminHandlers
 	Gateway          *GatewayHandler
 	OpenAIGateway    *OpenAIGatewayHandler
+	MiniMaxGateway   *MiniMaxGatewayHandler
+	GLMGateway       *GLMGatewayHandler
+	KimiGateway      *KimiGatewayHandler
+	DeepSeekGateway  *DeepSeekGatewayHandler
+	WindsurfGateway  *WindsurfGatewayHandler
+	OpenCodeGateway  *OpenCodeGatewayHandler
 	Setting          *SettingHandler
 	Totp             *TotpHandler
 	Payment          *PaymentHandler

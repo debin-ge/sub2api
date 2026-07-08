@@ -324,9 +324,101 @@ func (s *PaymentService) ExecuteRefund(ctx context.Context, p *RefundPlan) (*Ref
 	}
 	resp, err := s.gwRefund(ctx, p)
 	if err != nil {
+		if errors.Is(err, payment.ErrManualRefundRequired) {
+			s.writeAuditLog(ctx, p.OrderID, "WISE_MANUAL_REFUND_REQUIRED", "admin", map[string]any{
+				"detail":          err.Error(),
+				"refundAmount":    p.RefundAmount,
+				"gatewayAmount":   p.GatewayAmount,
+				"reason":          p.Reason,
+				"balanceDeducted": p.BalanceToDeduct,
+				"subDaysDeducted": p.SubDaysToDeduct,
+			})
+			return &RefundResult{
+				Success:         false,
+				ManualRequired:  true,
+				ManualAction:    "complete_refund_in_wise_dashboard_then_confirm_locally",
+				Warning:         "manual refund required: complete the Wise refund in Wise dashboard, then confirm this refund locally",
+				RequireForce:    false,
+				BalanceDeducted: p.BalanceToDeduct,
+				SubDaysDeducted: p.SubDaysToDeduct,
+			}, nil
+		}
 		return s.handleGwFail(ctx, p, err)
 	}
 	return s.finishRefund(ctx, p, resp)
+}
+
+func (s *PaymentService) ConfirmManualRefund(ctx context.Context, orderID int64, refundAmount float64, reason string, externalRefundID string, force bool, deduct bool) (*RefundResult, error) {
+	order, err := s.entClient.PaymentOrder.Get(ctx, orderID)
+	if err != nil {
+		return nil, infraerrors.NotFound("NOT_FOUND", "order not found")
+	}
+
+	allowedStatuses := []string{OrderStatusCompleted, OrderStatusRefundRequested, OrderStatusRefundFailed, OrderStatusRefunding, OrderStatusRefundPending}
+	if !psSliceContains(allowedStatuses, order.Status) {
+		return nil, infraerrors.BadRequest("INVALID_STATUS", "order status does not allow manual refund confirmation")
+	}
+
+	if math.IsNaN(refundAmount) || math.IsInf(refundAmount, 0) {
+		return nil, infraerrors.BadRequest("INVALID_AMOUNT", "invalid refund amount")
+	}
+	if refundAmount <= 0 {
+		if order.RefundAmount > 0 {
+			refundAmount = order.RefundAmount
+		} else {
+			refundAmount = order.Amount
+		}
+	}
+	orderCurrency := PaymentOrderCurrency(order)
+	if refundAmount-order.Amount > paymentAmountToleranceForCurrency(orderCurrency) {
+		return nil, infraerrors.BadRequest("REFUND_AMOUNT_EXCEEDED", "refund amount exceeds recharge")
+	}
+
+	refundReason := strings.TrimSpace(reason)
+	if refundReason == "" && order.RefundReason != nil {
+		refundReason = *order.RefundReason
+	}
+	if refundReason == "" && order.RefundRequestReason != nil {
+		refundReason = *order.RefundRequestReason
+	}
+	if refundReason == "" {
+		refundReason = fmt.Sprintf("refund order:%d", order.ID)
+	}
+
+	plan := &RefundPlan{
+		OrderID:       orderID,
+		Order:         order,
+		RefundAmount:  refundAmount,
+		GatewayAmount: calculateGatewayRefundAmount(order.Amount, order.PayAmount, refundAmount, orderCurrency),
+		Reason:        refundReason,
+		Force:         force,
+		DeductBalance: deduct,
+		DeductionType: payment.DeductionTypeNone,
+	}
+	if deduct {
+		if early := s.prepDeduct(ctx, order, plan, force); early != nil {
+			return early, nil
+		}
+		if err := s.applyRefundFinalDeduction(ctx, plan); err != nil {
+			return nil, err
+		}
+	}
+
+	result, err := s.markRefundOk(ctx, plan)
+	if err != nil {
+		return nil, err
+	}
+	s.writeAuditLog(ctx, orderID, "WISE_MANUAL_REFUND_CONFIRMED", "admin", map[string]any{
+		"externalRefundID": strings.TrimSpace(externalRefundID),
+		"refundAmount":     plan.RefundAmount,
+		"gatewayAmount":    plan.GatewayAmount,
+		"reason":           plan.Reason,
+		"force":            force,
+		"deductBalance":    deduct,
+		"balanceDeducted":  plan.BalanceToDeduct,
+		"subDaysDeducted":  plan.SubDaysToDeduct,
+	})
+	return result, nil
 }
 
 func (s *PaymentService) gwRefund(ctx context.Context, p *RefundPlan) (*payment.RefundResponse, error) {

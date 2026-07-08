@@ -20,9 +20,6 @@
         {{ labelText }}
       </template>
     </span>
-    <span v-if="hasPeakRate" :class="peakRateClass" :title="peakRateTitle">
-      {{ peakRateText }}
-    </span>
   </span>
 </template>
 
@@ -30,8 +27,6 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { SubscriptionType, GroupPlatform } from '@/types'
-import { useAppStore } from '@/stores/app'
-import { formatPeakRateWindow, serverTimezoneLabel } from '@/utils/peak-rate'
 import PlatformIcon from './PlatformIcon.vue'
 
 interface Props {
@@ -40,10 +35,6 @@ interface Props {
   subscriptionType?: SubscriptionType
   rateMultiplier?: number
   userRateMultiplier?: number | null // 用户专属倍率
-  peakRateEnabled?: boolean
-  peakStart?: string
-  peakEnd?: string
-  peakRateMultiplier?: number
   showRate?: boolean
   daysRemaining?: number | null // 剩余天数（订阅类型时使用）
   /**
@@ -59,7 +50,6 @@ const props = withDefaults(defineProps<Props>(), {
   showRate: true,
   daysRemaining: null,
   userRateMultiplier: null,
-  peakRateEnabled: false,
   alwaysShowRate: false
 })
 
@@ -75,28 +65,6 @@ const hasCustomRate = computed(() => {
     props.rateMultiplier !== undefined &&
     props.userRateMultiplier !== props.rateMultiplier
   )
-})
-
-const appStore = useAppStore()
-
-const hasPeakRate = computed(() => {
-  return Boolean(props.showRate && props.peakRateEnabled && props.peakStart && props.peakEnd)
-})
-
-const peakRateText = computed(() => {
-  return formatPeakRateWindow(
-    {
-      peak_rate_enabled: props.peakRateEnabled,
-      peak_start: props.peakStart,
-      peak_end: props.peakEnd,
-      peak_rate_multiplier: props.peakRateMultiplier
-    },
-    serverTimezoneLabel(appStore.cachedPublicSettings?.server_utc_offset)
-  )
-})
-
-const peakRateTitle = computed(() => {
-  return t('common.peakRateTooltip', { window: peakRateText.value })
 })
 
 // 是否显示右侧标签
@@ -156,17 +124,25 @@ const labelClass = computed(() => {
   if (props.platform === 'gemini') {
     return `${base} bg-blue-200/60 text-blue-800 dark:bg-blue-800/40 dark:text-blue-300`
   }
-  if (props.platform === 'antigravity') {
-    return `${base} bg-purple-200/60 text-purple-800 dark:bg-purple-800/40 dark:text-purple-300`
+  if (props.platform === 'minimax') {
+    return `${base} bg-cyan-200/60 text-cyan-800 dark:bg-cyan-800/40 dark:text-cyan-300`
   }
-  if (props.platform === 'grok') {
-    return `${base} bg-zinc-300/70 text-zinc-800 dark:bg-zinc-700/60 dark:text-zinc-200`
+  if (props.platform === 'glm') {
+    return `${base} bg-rose-200/60 text-rose-800 dark:bg-rose-800/40 dark:text-rose-300`
+  }
+  if (props.platform === 'kimi') {
+    return `${base} bg-lime-200/60 text-lime-800 dark:bg-lime-800/40 dark:text-lime-300`
+  }
+  if (props.platform === 'deepseek') {
+    return `${base} bg-indigo-200/60 text-indigo-800 dark:bg-indigo-800/40 dark:text-indigo-300`
+  }
+  if (props.platform === 'windsurf') {
+    return `${base} bg-teal-200/60 text-teal-800 dark:bg-teal-800/40 dark:text-teal-300`
+  }
+  if (props.platform === 'opencode') {
+    return `${base} bg-slate-200/60 text-slate-800 dark:bg-slate-800/50 dark:text-slate-300`
   }
   return `${base} bg-violet-200/60 text-violet-800 dark:bg-violet-800/40 dark:text-violet-300`
-})
-
-const peakRateClass = computed(() => {
-  return 'px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
 })
 
 // Badge color based on platform and subscription type
@@ -187,15 +163,35 @@ const badgeClass = computed(() => {
       ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
       : 'bg-sky-50 text-sky-700 dark:bg-sky-900/20 dark:text-sky-400'
   }
-  if (props.platform === 'antigravity') {
+  if (props.platform === 'minimax') {
     return isSubscription.value
-      ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
-      : 'bg-fuchsia-50 text-fuchsia-700 dark:bg-fuchsia-900/20 dark:text-fuchsia-400'
+      ? 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300'
+      : 'bg-cyan-50 text-cyan-700 dark:bg-cyan-900/20 dark:text-cyan-300'
   }
-  if (props.platform === 'grok') {
+  if (props.platform === 'glm') {
     return isSubscription.value
-      ? 'bg-zinc-200 text-zinc-800 dark:bg-zinc-700 dark:text-zinc-100'
-      : 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200'
+      ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400'
+      : 'bg-rose-50 text-rose-700 dark:bg-rose-900/20 dark:text-rose-400'
+  }
+  if (props.platform === 'kimi') {
+    return isSubscription.value
+      ? 'bg-lime-100 text-lime-700 dark:bg-lime-900/30 dark:text-lime-300'
+      : 'bg-lime-50 text-lime-700 dark:bg-lime-900/20 dark:text-lime-300'
+  }
+  if (props.platform === 'deepseek') {
+    return isSubscription.value
+      ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300'
+      : 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-300'
+  }
+  if (props.platform === 'windsurf') {
+    return isSubscription.value
+      ? 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300'
+      : 'bg-teal-50 text-teal-700 dark:bg-teal-900/20 dark:text-teal-300'
+  }
+  if (props.platform === 'opencode') {
+    return isSubscription.value
+      ? 'bg-slate-100 text-slate-700 dark:bg-slate-800/60 dark:text-slate-300'
+      : 'bg-slate-50 text-slate-700 dark:bg-slate-900/30 dark:text-slate-300'
   }
   // Fallback: original colors
   return isSubscription.value

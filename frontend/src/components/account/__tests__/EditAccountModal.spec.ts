@@ -190,6 +190,27 @@ function buildOpenAISparkShadowAccount() {
   } as any
 }
 
+function buildOpenAIOAuthAccount() {
+  return {
+    ...buildAccount(),
+    id: 6,
+    name: 'OpenAI OAuth',
+    type: 'oauth',
+    credentials: {
+      access_token: 'oauth-access-token',
+      refresh_token: 'oauth-refresh-token',
+      model_mapping: {
+        'gpt-5.2': 'gpt-5.2'
+      }
+    },
+    extra: {
+      codex_cli_only: true,
+      codex_cli_only_allow_app_server: true,
+      codex_cli_only_allowed_clients: ['claude_code']
+    }
+  } as any
+}
+
 function buildVertexAccount() {
   return {
     id: 2,
@@ -690,8 +711,8 @@ describe('EditAccountModal', () => {
     expect(updateAccountMock.mock.calls[0]?.[1]?.extra).not.toHaveProperty('codex_image_generation_bridge')
   })
 
-  it('setup-token account can select and submit OAuth WS mode', async () => {
-    const account = buildOpenAISetupTokenAccount()
+  it('OAuth account can select and submit OAuth WS mode', async () => {
+    const account = buildOpenAIOAuthAccount()
     updateAccountMock.mockReset()
     checkMixedChannelRiskMock.mockReset()
     checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
@@ -705,6 +726,54 @@ describe('EditAccountModal', () => {
     expect(updateAccountMock).toHaveBeenCalledTimes(1)
     expect(updateAccountMock.mock.calls[0]?.[1]?.extra?.openai_oauth_responses_websockets_v2_mode).toBe('http_bridge')
     expect(updateAccountMock.mock.calls[0]?.[1]?.extra?.openai_oauth_responses_websockets_v2_enabled).toBe(true)
+  })
+
+  it('submits OpenAI APIKey header override credentials', async () => {
+    const account = buildAccount()
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+
+    await wrapper.get('[data-testid="edit-header-override-toggle"]').trigger('click')
+    await wrapper.get('[data-testid="edit-header-override-add-row"]').trigger('click')
+    const inputs = wrapper.findAll('input')
+    await inputs
+      .find((input) => input.attributes('placeholder') === 'admin.accounts.headerOverride.namePlaceholder')!
+      .setValue('User-Agent')
+    await inputs
+      .find((input) => input.attributes('placeholder') === 'admin.accounts.headerOverride.valuePlaceholder')!
+      .setValue('sub2api-edit-test')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).toMatchObject({
+      header_override_enabled: true,
+      header_overrides: {
+        'user-agent': 'sub2api-edit-test'
+      }
+    })
+  })
+
+  it('preserves OpenAI OAuth Codex app-server and Claude Code client switches', async () => {
+    const account = buildOpenAIOAuthAccount()
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.extra).toMatchObject({
+      codex_cli_only: true,
+      codex_cli_only_allow_app_server: true,
+      codex_cli_only_allowed_clients: ['claude_code']
+    })
   })
 
   it('allows saving apikey account when backend redacted api_key but credentials_status reports it exists', async () => {

@@ -83,7 +83,10 @@
       </div>
 
       <!-- Base URL (API Key only) -->
-      <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
+      <div
+        v-if="!targetMayIncludeFixedEndpointGateway"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
         <div class="mb-3 flex items-center justify-between">
           <label
             id="bulk-edit-base-url-label"
@@ -115,8 +118,11 @@
         </p>
       </div>
 
-      <!-- Model restriction -->
-      <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
+	      <!-- Model restriction -->
+	      <div
+	        v-if="canEditModelRestriction"
+	        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+	      >
         <div class="mb-3 flex items-center justify-between">
           <label
             id="bulk-edit-model-restriction-label"
@@ -347,7 +353,10 @@
       </div>
 
       <!-- Custom error codes -->
-      <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
+      <div
+        v-if="!targetMayIncludeFixedEndpointGateway"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
         <div class="mb-3 flex items-center justify-between">
           <div>
             <label
@@ -445,7 +454,10 @@
       </div>
 
       <!-- Intercept warmup requests (Anthropic only) -->
-      <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
+      <div
+        v-if="!targetMayIncludeFixedEndpointGateway"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
         <div class="flex items-center justify-between">
           <div class="flex-1 pr-4">
             <label
@@ -511,6 +523,7 @@
         </div>
         <div v-if="enableHeaderOverride" id="bulk-edit-header-override-body" class="mt-3 space-y-3">
           <button
+            id="bulk-edit-header-override-toggle"
             type="button"
             :class="[
               'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
@@ -574,6 +587,7 @@
             </div>
 
             <button
+              id="bulk-edit-header-override-add-row"
               type="button"
               class="w-full rounded-lg border-2 border-dashed border-gray-300 px-4 py-2 text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-dark-500 dark:text-gray-400 dark:hover:border-dark-400 dark:hover:text-gray-300"
               @click="addHeaderOverrideRow"
@@ -903,6 +917,50 @@
               :class="[
                 'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
                 codexCLIOnlyAppServerEnabled ? 'translate-x-5' : 'translate-x-0'
+              ]"
+            />
+          </button>
+        </div>
+      </div>
+
+      <!-- OpenAI OAuth: 额外放行 Claude Code 的 Codex 插件 -->
+      <div v-if="allOpenAIOAuth" class="border-t border-gray-200 pt-4 dark:border-dark-600">
+        <div class="mb-3 flex items-center justify-between">
+          <label
+            id="bulk-edit-openai-codex-allow-claude-code-label"
+            class="input-label mb-0"
+            for="bulk-edit-openai-codex-allow-claude-code-enabled"
+          >
+            {{ t('admin.accounts.openai.codexCLIOnlyAllowClaudeCode') }}
+          </label>
+          <input
+            v-model="enableCodexCLIOnlyAllowClaudeCode"
+            id="bulk-edit-openai-codex-allow-claude-code-enabled"
+            type="checkbox"
+            aria-controls="bulk-edit-openai-codex-allow-claude-code"
+            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+          />
+        </div>
+        <div
+          id="bulk-edit-openai-codex-allow-claude-code"
+          :class="!enableCodexCLIOnlyAllowClaudeCode && 'pointer-events-none opacity-50'"
+        >
+          <p class="mb-3 text-xs text-gray-500 dark:text-gray-400">
+            {{ t('admin.accounts.openai.codexCLIOnlyAllowClaudeCodeDesc') }}
+          </p>
+          <button
+            id="bulk-edit-openai-codex-allow-claude-code-toggle"
+            type="button"
+            :class="[
+              'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
+              codexCLIOnlyAllowClaudeCodeEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+            ]"
+            @click="codexCLIOnlyAllowClaudeCodeEnabled = !codexCLIOnlyAllowClaudeCodeEnabled"
+          >
+            <span
+              :class="[
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                codexCLIOnlyAllowClaudeCodeEnabled ? 'translate-x-5' : 'translate-x-0'
               ]"
             />
           </button>
@@ -1322,50 +1380,88 @@ const targetPreviewCount = computed(() => props.target?.previewCount ?? props.ac
 const targetSelectedPlatforms = computed(() => props.target?.selectedPlatforms ?? props.selectedPlatforms)
 const targetSelectedTypes = computed(() => props.target?.selectedTypes ?? props.selectedTypes)
 const isMixedPlatform = computed(() => targetSelectedPlatforms.value.length > 1)
+const filteredPlatform = computed(() => (
+  targetMode.value === 'filtered' && typeof props.target?.filters?.platform === 'string'
+    ? props.target.filters.platform
+    : ''
+))
+const filteredType = computed(() => (
+  targetMode.value === 'filtered' && typeof props.target?.filters?.type === 'string'
+    ? props.target.filters.type
+    : ''
+))
+const capabilityPlatforms = computed<AccountPlatform[]>(() => (
+  targetMode.value === 'filtered'
+    ? filteredPlatform.value ? [filteredPlatform.value as AccountPlatform] : []
+    : targetSelectedPlatforms.value
+))
+const capabilityTypes = computed<AccountType[]>(() => (
+  targetMode.value === 'filtered'
+    ? filteredType.value ? [filteredType.value as AccountType] : targetSelectedTypes.value
+    : targetSelectedTypes.value
+))
+const targetMayIncludeFixedEndpointGateway = computed(() => {
+  if (targetSelectedPlatforms.value.includes('glm') || targetSelectedPlatforms.value.includes('kimi') || targetSelectedPlatforms.value.includes('deepseek') || targetSelectedPlatforms.value.includes('windsurf') || targetSelectedPlatforms.value.includes('opencode')) {
+    return true
+  }
+  if (targetMode.value !== 'filtered') {
+    return false
+  }
+  return filteredPlatform.value === '' || filteredPlatform.value === 'glm' || filteredPlatform.value === 'kimi' || filteredPlatform.value === 'deepseek' || filteredPlatform.value === 'windsurf' || filteredPlatform.value === 'opencode'
+})
+
+const targetIsFixedEndpointGatewayAPIKeyOnly = computed(() => (
+  capabilityPlatforms.value.length === 1 &&
+  (capabilityPlatforms.value[0] === 'glm' || capabilityPlatforms.value[0] === 'kimi' || capabilityPlatforms.value[0] === 'deepseek' || capabilityPlatforms.value[0] === 'windsurf' || capabilityPlatforms.value[0] === 'opencode') &&
+  capabilityTypes.value.length > 0 &&
+  capabilityTypes.value.every(t => t === 'apikey')
+))
+
+const canEditModelRestriction = computed(() => !targetMayIncludeFixedEndpointGateway.value || targetIsFixedEndpointGatewayAPIKeyOnly.value)
 
 const allOpenAIPassthroughCapable = computed(() => {
   return (
-    targetSelectedPlatforms.value.length === 1 &&
-    targetSelectedPlatforms.value[0] === 'openai' &&
-    targetSelectedTypes.value.length > 0 &&
-    targetSelectedTypes.value.every(t => t === 'oauth' || t === 'setup-token' || t === 'apikey')
+    capabilityPlatforms.value.length === 1 &&
+    capabilityPlatforms.value[0] === 'openai' &&
+    capabilityTypes.value.length > 0 &&
+    capabilityTypes.value.every(t => t === 'oauth' || t === 'apikey')
   )
 })
 
 const allOpenAIOAuth = computed(() => {
   return (
-    targetSelectedPlatforms.value.length === 1 &&
-    targetSelectedPlatforms.value[0] === 'openai' &&
-    targetSelectedTypes.value.length > 0 &&
-    targetSelectedTypes.value.every(t => t === 'oauth' || t === 'setup-token')
+    capabilityPlatforms.value.length === 1 &&
+    capabilityPlatforms.value[0] === 'openai' &&
+    capabilityTypes.value.length > 0 &&
+    capabilityTypes.value.every(t => t === 'oauth')
   )
 })
 
 const allOpenAIAPIKey = computed(() => {
   return (
-    targetSelectedPlatforms.value.length === 1 &&
-    targetSelectedPlatforms.value[0] === 'openai' &&
-    targetSelectedTypes.value.length > 0 &&
-    targetSelectedTypes.value.every(t => t === 'apikey')
+    capabilityPlatforms.value.length === 1 &&
+    capabilityPlatforms.value[0] === 'openai' &&
+    capabilityTypes.value.length > 0 &&
+    capabilityTypes.value.every(t => t === 'apikey')
   )
 })
 
-// 是否全部为 anthropic/openai 平台的 apikey 账号（请求头覆写仅在此条件下显示）
 const allHeaderOverrideCapable = computed(() => {
   return (
-    targetSelectedPlatforms.value.length > 0 &&
-    targetSelectedPlatforms.value.every(p => isHeaderOverridePlatform(p)) &&
-    targetSelectedTypes.value.length > 0 &&
-    targetSelectedTypes.value.every(t => t === 'apikey')
+    capabilityPlatforms.value.length > 0 &&
+    capabilityPlatforms.value.every(p => isHeaderOverridePlatform(p)) &&
+    capabilityTypes.value.length > 0 &&
+    capabilityTypes.value.every(t => t === 'apikey')
   )
 })
 
 // 是否全部为 Anthropic OAuth/SetupToken（RPM 配置仅在此条件下显示）
 const allAnthropicOAuthOrSetupToken = computed(() => {
   return (
-    targetSelectedPlatforms.value.length === 1 &&
-    targetSelectedPlatforms.value[0] === 'anthropic' &&
-    targetSelectedTypes.value.every(t => t === 'oauth' || t === 'setup-token')
+    capabilityPlatforms.value.length === 1 &&
+    capabilityPlatforms.value[0] === 'anthropic' &&
+    capabilityTypes.value.length > 0 &&
+    capabilityTypes.value.every(t => t === 'oauth' || t === 'setup-token')
   )
 })
 
@@ -1409,6 +1505,7 @@ const enableOpenAIWSMode = ref(false)
 const enableOpenAIAPIKeyWSMode = ref(false)
 const enableCodexCLIOnly = ref(false)
 const enableCodexCLIOnlyAppServer = ref(false)
+const enableCodexCLIOnlyAllowClaudeCode = ref(false)
 const enableOpenAICompactMode = ref(false)
 const enableOpenAICompactModelMapping = ref(false)
 const enableRpmLimit = ref(false)
@@ -1437,13 +1534,10 @@ const removeHeaderOverrideRow = (index: number) => {
   headerOverrideRows.value.splice(index, 1)
 }
 
-// 模板仅在所选账号平台唯一时可用：混合 anthropic+openai 选择无法确定用哪套模板，
-// 误填会把另一平台的专有头写进所有所选账号
 const headerOverrideTemplatePlatform = computed(() => {
-  return targetSelectedPlatforms.value.length === 1 ? targetSelectedPlatforms.value[0] : null
+  return capabilityPlatforms.value.length === 1 ? capabilityPlatforms.value[0] : null
 })
 
-// 模板按钮：填入所选平台的标准客户端请求头名称（值留空），跳过已存在的同名行
 const fillHeaderOverrideTemplate = () => {
   const platform = headerOverrideTemplatePlatform.value
   if (!platform) return
@@ -1470,6 +1564,7 @@ const openaiOAuthResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF
 const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const codexCLIOnlyEnabled = ref(false)
 const codexCLIOnlyAppServerEnabled = ref(false)
+const codexCLIOnlyAllowClaudeCodeEnabled = ref(false)
 const openAICompactMode = ref<OpenAICompactMode>('auto')
 const openAICompactModelMappings = ref<ModelMapping[]>([])
 const rpmLimitEnabled = ref(false)
@@ -1654,7 +1749,7 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
     updates.group_ids = groupIds.value
   }
 
-  if (enableBaseUrl.value) {
+  if (!targetMayIncludeFixedEndpointGateway.value && enableBaseUrl.value) {
     const baseUrlValue = baseUrl.value.trim()
     if (baseUrlValue) {
       credentials.base_url = baseUrlValue
@@ -1662,7 +1757,7 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
     }
   }
 
-  if (enableOpenAIPassthrough.value) {
+  if (allOpenAIPassthroughCapable.value && enableOpenAIPassthrough.value) {
     const extra = ensureExtra()
     extra.openai_passthrough = openaiPassthroughEnabled.value
     if (!openaiPassthroughEnabled.value) {
@@ -1670,7 +1765,11 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
     }
   }
 
-  if (enableModelRestriction.value && !isOpenAIModelRestrictionDisabled.value) {
+  if (
+    canEditModelRestriction.value &&
+    enableModelRestriction.value &&
+    !isOpenAIModelRestrictionDisabled.value
+  ) {
     // 统一使用 model_mapping 字段
     if (modelRestrictionMode.value === 'whitelist') {
       // 白名单模式：将模型转换为 model_mapping 格式（key=value）
@@ -1689,19 +1788,18 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
     }
   }
 
-  if (enableCustomErrorCodes.value) {
+  if (!targetMayIncludeFixedEndpointGateway.value && enableCustomErrorCodes.value) {
     credentials.custom_error_codes_enabled = true
     credentials.custom_error_codes = [...selectedErrorCodes.value]
     credentialsChanged = true
   }
 
-  if (enableInterceptWarmup.value) {
+  if (!targetMayIncludeFixedEndpointGateway.value && enableInterceptWarmup.value) {
     credentials.intercept_warmup_requests = interceptWarmupRequests.value
     credentialsChanged = true
   }
 
-  if (enableHeaderOverride.value) {
-    // 后端使用 JSONB || merge 语义：关闭时显式写入 false + 空对象以清除旧配置
+  if (allHeaderOverrideCapable.value && enableHeaderOverride.value) {
     credentials[HEADER_OVERRIDE_ENABLED_CREDENTIAL_KEY] = headerOverrideEnabled.value
     credentials[HEADER_OVERRIDES_CREDENTIAL_KEY] = headerOverrideEnabled.value
       ? buildHeaderOverridesObject(headerOverrideRows.value)
@@ -1709,7 +1807,7 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
     credentialsChanged = true
   }
 
-  if (enableOpenAIWSMode.value) {
+  if (allOpenAIOAuth.value && enableOpenAIWSMode.value) {
     const extra = ensureExtra()
     extra.openai_oauth_responses_websockets_v2_mode = openaiOAuthResponsesWebSocketV2Mode.value
     extra.openai_oauth_responses_websockets_v2_enabled = isOpenAIWSModeEnabled(
@@ -1717,7 +1815,7 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
     )
   }
 
-  if (enableOpenAIAPIKeyWSMode.value) {
+  if (allOpenAIAPIKey.value && enableOpenAIAPIKeyWSMode.value) {
     const extra = ensureExtra()
     extra.openai_apikey_responses_websockets_v2_mode = openaiAPIKeyResponsesWebSocketV2Mode.value
     extra.openai_apikey_responses_websockets_v2_enabled = isOpenAIWSModeEnabled(
@@ -1725,20 +1823,29 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
     )
   }
 
-  if (enableCodexCLIOnly.value) {
+  if (allOpenAIOAuth.value && enableCodexCLIOnly.value) {
     const extra = ensureExtra()
     extra.codex_cli_only = codexCLIOnlyEnabled.value
   }
 
-  // 子开关从属于 codex_cli_only：仅当同一次批量编辑也把父开关设为开启时才写入，
-  // 与 Create/Edit 语义对齐，避免在父开关关闭的账号上写入无意义的孤立字段。
   if (
+    allOpenAIOAuth.value &&
     enableCodexCLIOnlyAppServer.value &&
     enableCodexCLIOnly.value &&
     codexCLIOnlyEnabled.value
   ) {
     const extra = ensureExtra()
     extra.codex_cli_only_allow_app_server = codexCLIOnlyAppServerEnabled.value
+  }
+
+  if (
+    allOpenAIOAuth.value &&
+    enableCodexCLIOnlyAllowClaudeCode.value &&
+    enableCodexCLIOnly.value &&
+    codexCLIOnlyEnabled.value
+  ) {
+    const extra = ensureExtra()
+    extra.codex_cli_only_allowed_clients = codexCLIOnlyAllowClaudeCodeEnabled.value ? ['claude_code'] : []
   }
 
   if (enableOpenAICompactMode.value) {
@@ -1752,7 +1859,7 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
   }
 
   // RPM limit settings (写入 extra 字段)
-  if (enableRpmLimit.value) {
+  if (allAnthropicOAuthOrSetupToken.value && enableRpmLimit.value) {
     const extra = ensureExtra()
     if (rpmLimitEnabled.value && bulkBaseRpm.value != null && bulkBaseRpm.value > 0) {
       extra.base_rpm = bulkBaseRpm.value
@@ -1772,7 +1879,7 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
   }
 
   // UMQ mode（独立于 RPM 保存）
-  if (userMsgQueueMode.value !== null) {
+  if (allAnthropicOAuthOrSetupToken.value && userMsgQueueMode.value !== null) {
     const umqExtra = ensureExtra()
     umqExtra.user_msg_queue_mode = userMsgQueueMode.value  // '' = 清除账号级覆盖
     umqExtra.user_msg_queue_enabled = false  // 清理旧字段（JSONB merge）
@@ -1849,6 +1956,7 @@ const handleSubmit = async () => {
     enableOpenAIAPIKeyWSMode.value ||
     enableCodexCLIOnly.value ||
     enableCodexCLIOnlyAppServer.value ||
+    enableCodexCLIOnlyAllowClaudeCode.value ||
     enableOpenAICompactMode.value ||
     enableOpenAICompactModelMapping.value ||
     enableRpmLimit.value ||
@@ -1860,8 +1968,6 @@ const handleSubmit = async () => {
   }
 
   if (enableHeaderOverride.value && headerOverrideEnabled.value) {
-    // 批量保存对 header_overrides 是整键替换：开启但没有任何有效行会把所选账号的
-    // 既有覆写配置静默清空，必须显式拦截（清空请走关闭开关的路径，有专门提示）
     if (!headerOverrideRows.value.some((row) => row.name.trim())) {
       appStore.showError(t('admin.accounts.headerOverride.bulkEmptyRows'))
       return
@@ -1967,6 +2073,7 @@ watch(
       enableOpenAIAPIKeyWSMode.value = false
       enableCodexCLIOnly.value = false
       enableCodexCLIOnlyAppServer.value = false
+      enableCodexCLIOnlyAllowClaudeCode.value = false
       enableOpenAICompactMode.value = false
       enableOpenAICompactModelMapping.value = false
       enableRpmLimit.value = false
@@ -1993,6 +2100,7 @@ watch(
       openaiAPIKeyResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
       codexCLIOnlyEnabled.value = false
       codexCLIOnlyAppServerEnabled.value = false
+      codexCLIOnlyAllowClaudeCodeEnabled.value = false
       openAICompactMode.value = 'auto'
       openAICompactModelMappings.value = []
       rpmLimitEnabled.value = false

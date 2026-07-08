@@ -8,7 +8,10 @@
 
       <template v-else-if="stats">
         <!-- Row 1: Core Stats -->
-        <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div
+          class="grid grid-cols-2 gap-4"
+          :class="upstreamBalance?.enabled ? 'lg:grid-cols-5' : 'lg:grid-cols-4'"
+        >
           <!-- Total API Keys -->
           <div class="card p-4">
             <div class="flex items-center gap-3">
@@ -89,6 +92,29 @@
                 </p>
                 <p class="text-xs text-gray-500 dark:text-gray-400">
                   {{ t('common.total') }}: {{ formatNumber(stats.total_users) }}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Upstream Account Balance -->
+          <div v-if="upstreamBalance?.enabled" class="card p-4">
+            <div class="flex items-center gap-3">
+              <div class="rounded-lg bg-cyan-100 p-2 dark:bg-cyan-900/30">
+                <Icon name="creditCard" size="md" class="text-cyan-600 dark:text-cyan-400" :stroke-width="2" />
+              </div>
+              <div class="min-w-0">
+                <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                  {{ t('admin.dashboard.upstreamBalance') }}
+                </p>
+                <p class="text-xl font-bold text-gray-900 dark:text-white">
+                  <span v-if="upstreamBalance.status === 'ok'">
+                    ${{ formatCost(upstreamBalance.balance) }}
+                  </span>
+                  <span v-else>--</span>
+                </p>
+                <p class="truncate text-xs text-gray-500 dark:text-gray-400">
+                  {{ upstreamBalanceStatusText }}
                 </p>
               </div>
             </div>
@@ -300,6 +326,7 @@ import { useAppStore } from '@/stores/app'
 
 const { t } = useI18n()
 import { adminAPI } from '@/api/admin'
+import type { ResellerUpstreamBalance } from '@/api/admin/reseller'
 import type {
   DashboardStats,
   TrendDataPoint,
@@ -346,6 +373,7 @@ const chartsLoading = ref(false)
 const userTrendLoading = ref(false)
 const rankingLoading = ref(false)
 const rankingError = ref(false)
+const upstreamBalance = ref<ResellerUpstreamBalance | null>(null)
 
 // Chart data
 const trendData = ref<TrendDataPoint[]>([])
@@ -385,6 +413,25 @@ const granularityOptions = computed(() => [
   { value: 'day', label: t('admin.dashboard.day') },
   { value: 'hour', label: t('admin.dashboard.hour') }
 ])
+
+const upstreamBalanceStatusText = computed(() => {
+  switch (upstreamBalance.value?.status) {
+    case 'ok':
+      return t('admin.dashboard.upstreamBalanceConnected')
+    case 'not_configured':
+      return t('admin.dashboard.upstreamBalanceNotConfigured')
+    case 'auth_failed':
+      return t('admin.dashboard.upstreamBalanceAuthFailed')
+    case 'upstream_unreachable':
+      return t('admin.dashboard.upstreamBalanceUnreachable')
+    case 'invalid_response':
+      return t('admin.dashboard.upstreamBalanceInvalidResponse')
+    case 'upstream_error':
+      return t('admin.dashboard.upstreamBalanceError')
+    default:
+      return t('admin.dashboard.upstreamBalanceDisabled')
+  }
+})
 
 // Dark mode detection
 const isDarkMode = computed(() => {
@@ -682,11 +729,21 @@ const loadUserSpendingRanking = async () => {
   }
 }
 
+const loadUpstreamBalance = async () => {
+  try {
+    upstreamBalance.value = await adminAPI.reseller.getUpstreamBalance()
+  } catch (error) {
+    upstreamBalance.value = null
+    console.error('Error loading upstream balance:', error)
+  }
+}
+
 const loadDashboardStats = async () => {
   await Promise.all([
     loadDashboardSnapshot(true),
     loadUsersTrend(),
-    loadUserSpendingRanking()
+    loadUserSpendingRanking(),
+    loadUpstreamBalance()
   ])
 }
 

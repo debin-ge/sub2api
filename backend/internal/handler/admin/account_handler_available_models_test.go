@@ -32,7 +32,7 @@ func (s *availableModelsAdminService) GetAccount(_ context.Context, id int64) (*
 func setupAvailableModelsRouter(adminSvc service.AdminService) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	handler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	router.GET("/api/v1/admin/accounts/:id/models", handler.GetAvailableModels)
 	return router
 }
@@ -66,7 +66,7 @@ func setupSyncUpstreamModelsRouter(adminSvc service.AdminService, upstream servi
 		&config.Config{Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{Enabled: false}}},
 		nil,
 	)
-	handler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, accountTestSvc, nil, nil, nil, nil, nil)
+	handler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, accountTestSvc, nil, nil, nil, nil, nil, nil)
 	router.POST("/api/v1/admin/accounts/:id/models/sync-upstream", handler.SyncUpstreamModels)
 	return router
 }
@@ -140,6 +140,88 @@ func TestAccountHandlerGetAvailableModels_GrokDefaultsToXAIModelsWithoutMapping(
 	}
 	require.Contains(t, ids, "grok-4.3")
 	require.Contains(t, ids, "grok-build-0.1")
+}
+
+func TestAccountHandlerGetAvailableModels_DomesticPlatformsDoNotFallBackToClaude(t *testing.T) {
+	tests := []struct {
+		name          string
+		platform      string
+		credentials   map[string]any
+		wantContains  string
+		wantForbidden string
+	}{
+		{
+			name:     "glm",
+			platform: service.PlatformGLM,
+			credentials: map[string]any{
+				"model_mapping": map[string]any{"glm-4.5-air": "GLM-4.5-air"},
+			},
+			wantContains:  "GLM-4.5-air",
+			wantForbidden: "claude-fable-5",
+		},
+		{
+			name:          "kimi",
+			platform:      service.PlatformKimi,
+			wantContains:  "kimi-for-coding",
+			wantForbidden: "claude-fable-5",
+		},
+		{
+			name:          "deepseek",
+			platform:      service.PlatformDeepSeek,
+			wantContains:  "deepseek-v4-flash",
+			wantForbidden: "claude-fable-5",
+		},
+		{
+			name:          "windsurf",
+			platform:      service.PlatformWindsurf,
+			wantContains:  "claude-sonnet-4-6",
+			wantForbidden: "claude-fable-5",
+		},
+		{
+			name:          "opencode",
+			platform:      service.PlatformOpenCode,
+			wantContains:  "opencode/big-pickle",
+			wantForbidden: "claude-fable-5",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := &availableModelsAdminService{
+				stubAdminService: newStubAdminService(),
+				account: service.Account{
+					ID:          46,
+					Name:        tt.name + "-apikey",
+					Platform:    tt.platform,
+					Type:        service.AccountTypeAPIKey,
+					Status:      service.StatusActive,
+					Credentials: tt.credentials,
+				},
+			}
+			router := setupAvailableModelsRouter(svc)
+
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/accounts/46/models", nil)
+			router.ServeHTTP(rec, req)
+
+			require.Equal(t, http.StatusOK, rec.Code)
+
+			var resp struct {
+				Data []struct {
+					ID string `json:"id"`
+				} `json:"data"`
+			}
+			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+			require.NotEmpty(t, resp.Data)
+
+			ids := make([]string, 0, len(resp.Data))
+			for _, model := range resp.Data {
+				ids = append(ids, model.ID)
+			}
+			require.Contains(t, ids, tt.wantContains)
+			require.NotContains(t, ids, tt.wantForbidden)
+		})
+	}
 }
 
 func TestAccountHandlerGetAvailableModels_OpenAIOAuthUsesExplicitModelMapping(t *testing.T) {

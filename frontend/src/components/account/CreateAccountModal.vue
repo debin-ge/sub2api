@@ -70,7 +70,7 @@
       <!-- Platform Selection - Segmented Control Style -->
       <div>
         <label class="input-label">{{ t('admin.accounts.platform') }}</label>
-        <div class="mt-2 flex flex-wrap rounded-lg bg-gray-100 p-1 dark:bg-dark-700" data-tour="account-form-platform">
+        <div class="mt-2 grid grid-cols-2 gap-1 rounded-lg bg-gray-100 p-1 dark:bg-dark-700 sm:grid-cols-5 lg:grid-cols-10" data-tour="account-form-platform">
           <button
             type="button"
             @click="form.platform = 'anthropic'"
@@ -149,6 +149,7 @@
           </button>
           <button
             type="button"
+            data-testid="create-platform-grok"
             @click="form.platform = 'grok'"
             :class="[
               'flex flex-1 items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium transition-all',
@@ -159,6 +160,90 @@
           >
             <PlatformIcon platform="grok" size="sm" />
             Grok
+          </button>
+          <button
+            type="button"
+            data-testid="create-platform-minimax"
+            @click="form.platform = 'minimax'"
+            :class="[
+              'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2.5 text-sm font-medium transition-all',
+              form.platform === 'minimax'
+                ? 'bg-white text-cyan-700 shadow-sm dark:bg-dark-600 dark:text-cyan-300'
+                : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
+            ]"
+          >
+            <Icon name="key" size="sm" />
+            MiniMax
+          </button>
+          <button
+            type="button"
+            data-testid="create-platform-glm"
+            @click="form.platform = 'glm'"
+            :class="[
+              'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2.5 text-sm font-medium transition-all',
+              form.platform === 'glm'
+                ? 'bg-white text-rose-600 shadow-sm dark:bg-dark-600 dark:text-rose-400'
+                : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
+            ]"
+          >
+            <Icon name="key" size="sm" />
+            GLM
+          </button>
+          <button
+            type="button"
+            data-testid="create-platform-kimi"
+            @click="form.platform = 'kimi'"
+            :class="[
+              'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2.5 text-sm font-medium transition-all',
+              form.platform === 'kimi'
+                ? 'bg-white text-lime-700 shadow-sm dark:bg-dark-600 dark:text-lime-300'
+                : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
+            ]"
+          >
+            <Icon name="key" size="sm" />
+            Kimi
+          </button>
+          <button
+            type="button"
+            data-testid="create-platform-deepseek"
+            @click="form.platform = 'deepseek'"
+            :class="[
+              'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2.5 text-sm font-medium transition-all',
+              form.platform === 'deepseek'
+                ? 'bg-white text-indigo-700 shadow-sm dark:bg-dark-600 dark:text-indigo-300'
+                : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
+            ]"
+          >
+            <Icon name="key" size="sm" />
+            DeepSeek
+          </button>
+          <button
+            type="button"
+            data-testid="create-platform-windsurf"
+            @click="form.platform = 'windsurf'"
+            :class="[
+              'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2.5 text-sm font-medium transition-all',
+              form.platform === 'windsurf'
+                ? 'bg-white text-teal-700 shadow-sm dark:bg-dark-600 dark:text-teal-300'
+                : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
+            ]"
+          >
+            <Icon name="key" size="sm" />
+            Windsurf
+          </button>
+          <button
+            type="button"
+            data-testid="create-platform-opencode"
+            @click="form.platform = 'opencode'"
+            :class="[
+              'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2.5 text-sm font-medium transition-all',
+              form.platform === 'opencode'
+                ? 'bg-white text-slate-700 shadow-sm dark:bg-dark-600 dark:text-slate-300'
+                : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
+            ]"
+          >
+            <Icon name="key" size="sm" />
+            OpenCode
           </button>
         </div>
       </div>
@@ -352,41 +437,6 @@
         </div>
       </div>
 
-      <!-- Account Type Selection (Grok - OAuth only) -->
-      <div v-if="form.platform === 'grok'">
-        <label class="input-label">{{ t('admin.accounts.accountType') }}</label>
-        <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2" data-tour="account-form-type">
-          <button
-            type="button"
-            @click="accountCategory = 'oauth-based'"
-            :class="[
-              'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
-              accountCategory === 'oauth-based'
-                ? 'border-zinc-800 bg-zinc-50 dark:bg-zinc-900/30'
-                : 'border-gray-200 hover:border-zinc-400 dark:border-dark-600 dark:hover:border-zinc-600'
-            ]"
-          >
-            <div
-              :class="[
-                'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
-                accountCategory === 'oauth-based'
-                  ? 'bg-zinc-900 text-white'
-                  : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-gray-400'
-              ]"
-            >
-              <PlatformIcon platform="grok" size="sm" />
-            </div>
-            <div>
-              <span class="block text-sm font-medium text-gray-900 dark:text-white">OAuth</span>
-              <span class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.types.grokOauth') }}</span>
-            </div>
-          </button>
-        </div>
-        <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
-          {{ t('admin.accounts.oauth.grok.oauthOnlyHint') }}
-        </p>
-      </div>
-
       <!-- Account Type Selection (Gemini) -->
       <div v-if="form.platform === 'gemini'">
         <div class="flex items-center justify-between">
@@ -560,18 +610,18 @@
                   Google One
                 </span>
                 <span class="text-xs text-gray-500 dark:text-gray-400">
-                  {{ t('admin.accounts.gemini.oauthType.googleOneDesc') }}
+                  个人账号，享受 Google One 订阅配额
                 </span>
                 <div class="mt-2 flex flex-wrap gap-1">
                   <span
                     class="rounded bg-purple-100 px-2 py-0.5 text-[10px] font-semibold text-purple-700 dark:bg-purple-900/40 dark:text-purple-300"
                   >
-                    {{ t('admin.accounts.gemini.oauthType.badges.individuals') }}
+                    推荐个人用户
                   </span>
                   <span
                     class="rounded bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
                   >
-                    {{ t('admin.accounts.gemini.oauthType.badges.noGcp') }}
+                    无需 GCP
                   </span>
                 </div>
               </div>
@@ -603,10 +653,10 @@
                   GCP Code Assist
                 </span>
                 <span class="text-xs text-gray-500 dark:text-gray-400">
-                  {{ t('admin.accounts.gemini.oauthType.codeAssistDesc') }}
+                  企业级，需要 GCP 项目
                 </span>
                 <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                  {{ t('admin.accounts.gemini.oauthType.codeAssistRequirement') }}
+                  需要激活 GCP 项目并绑定信用卡
                   <a
                     :href="geminiHelpLinks.gcpProject"
                     class="ml-1 text-blue-600 hover:underline dark:text-blue-400"
@@ -620,12 +670,12 @@
                   <span
                     class="rounded bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
                   >
-                    {{ t('admin.accounts.gemini.oauthType.badges.enterprise') }}
+                    企业用户
                   </span>
                   <span
                     class="rounded bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
                   >
-                    {{ t('admin.accounts.gemini.oauthType.badges.highConcurrency') }}
+                    高并发
                   </span>
                 </div>
               </div>
@@ -648,13 +698,7 @@
               >
                 <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
               </svg>
-              <span>
-                {{
-                  showAdvancedOAuth
-                    ? t('admin.accounts.gemini.oauthType.hideAdvanced')
-                    : t('admin.accounts.gemini.oauthType.showAdvanced')
-                }}
-              </span>
+              <span>{{ showAdvancedOAuth ? '隐藏' : '显示' }}高级选项（自建 OAuth Client）</span>
             </button>
           </div>
 
@@ -770,6 +814,38 @@
         </div>
       </div>
 
+      <!-- Account Type Selection (Grok - OAuth only) -->
+      <div v-if="form.platform === 'grok'">
+        <label class="input-label">{{ t('admin.accounts.accountType') }}</label>
+        <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2" data-tour="account-form-type">
+          <button
+            type="button"
+            @click="accountCategory = 'oauth-based'"
+            :class="[
+              'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
+              accountCategory === 'oauth-based'
+                ? 'border-zinc-700 bg-zinc-50 dark:bg-zinc-900/30'
+                : 'border-gray-200 hover:border-zinc-400 dark:border-dark-600 dark:hover:border-zinc-500'
+            ]"
+          >
+            <div
+              :class="[
+                'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
+                accountCategory === 'oauth-based'
+                  ? 'bg-zinc-900 text-white dark:bg-zinc-200 dark:text-zinc-900'
+                  : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-gray-400'
+              ]"
+            >
+              <PlatformIcon platform="grok" size="sm" />
+            </div>
+            <div>
+              <span class="block text-sm font-medium text-gray-900 dark:text-white">OAuth</span>
+              <span class="text-xs text-gray-500 dark:text-gray-400">Grok / xAI</span>
+            </div>
+          </button>
+        </div>
+      </div>
+
       <!-- Account Type Selection (Antigravity - OAuth or Upstream) -->
       <div v-if="form.platform === 'antigravity'">
         <label class="input-label">{{ t('admin.accounts.accountType') }}</label>
@@ -826,18 +902,6 @@
             </div>
           </button>
         </div>
-      </div>
-
-      <div v-if="form.platform === 'antigravity' && antigravityAccountType === 'oauth'">
-        <label class="input-label">{{ t('admin.accounts.antigravityProjectIdLabel') }}</label>
-        <input
-          v-model="antigravityProjectId"
-          data-testid="antigravity-project-id-input"
-          type="text"
-          class="input font-mono"
-          :placeholder="t('admin.accounts.antigravityProjectIdPlaceholder')"
-        />
-        <p class="input-hint">{{ t('admin.accounts.antigravityProjectIdHint') }}</p>
       </div>
 
       <!-- Upstream config (only for Antigravity upstream type) -->
@@ -1076,39 +1140,234 @@
 
       <!-- API Key input (only for apikey type, excluding Antigravity which has its own fields) -->
       <div v-if="form.type === 'apikey' && form.platform !== 'antigravity'" class="space-y-4">
-        <div>
-          <label class="input-label">{{ t('admin.accounts.baseUrl') }}</label>
-          <input
-            v-model="apiKeyBaseUrl"
-            type="text"
-            class="input"
-            :placeholder="
-              form.platform === 'openai'
-                ? 'https://api.openai.com'
-                : form.platform === 'gemini'
-                  ? 'https://generativelanguage.googleapis.com'
-                  : 'https://api.anthropic.com'
-            "
-          />
-          <p class="input-hint">{{ baseUrlHint }}</p>
-        </div>
-        <div>
-          <label class="input-label">{{ t('admin.accounts.apiKeyRequired') }}</label>
-          <input
-            v-model="apiKeyValue"
-            type="password"
-            required
-            class="input font-mono"
-            :placeholder="
-              form.platform === 'openai'
-                ? 'sk-proj-...'
-                : form.platform === 'gemini'
-                  ? 'AIza...'
-                  : 'sk-ant-...'
-            "
-          />
-          <p class="input-hint">{{ apiKeyHint }}</p>
-        </div>
+        <template v-if="form.platform === 'minimax'">
+          <div>
+            <label class="input-label">Token Plan API Key</label>
+            <input
+              v-model="apiKeyValue"
+              data-testid="minimax-api-key"
+              type="password"
+              required
+              class="input font-mono"
+              placeholder="sk-cp-..."
+            />
+            <p class="input-hint">MiniMax Token Plan bearer key.</p>
+          </div>
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label class="input-label">Anthropic base URL</label>
+              <input
+                v-model="minimaxAnthropicBaseUrl"
+                data-testid="minimax-anthropic-base-url"
+                type="text"
+                class="input font-mono"
+                :placeholder="MINIMAX_ANTHROPIC_BASE_URL"
+              />
+            </div>
+            <div>
+              <label class="input-label">OpenAI base URL</label>
+              <input
+                v-model="minimaxOpenAIBaseUrl"
+                data-testid="minimax-openai-base-url"
+                type="text"
+                class="input font-mono"
+                :placeholder="MINIMAX_OPENAI_BASE_URL"
+              />
+            </div>
+          </div>
+        </template>
+        <template v-else-if="form.platform === 'glm'">
+          <div>
+            <label class="input-label">GLM API Key</label>
+            <input
+              v-model="apiKeyValue"
+              data-testid="glm-api-key"
+              type="password"
+              required
+              class="input font-mono"
+              placeholder="sk-..."
+            />
+            <p class="input-hint">{{ apiKeyHint }}</p>
+          </div>
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label class="input-label">Anthropic base URL</label>
+              <input
+                v-model="glmAnthropicBaseUrl"
+                data-testid="glm-anthropic-base-url"
+                type="text"
+                class="input font-mono"
+                :placeholder="GLM_ANTHROPIC_BASE_URL"
+              />
+            </div>
+            <div>
+              <label class="input-label">OpenAI base URL</label>
+              <input
+                v-model="glmOpenAIBaseUrl"
+                data-testid="glm-openai-base-url"
+                type="text"
+                class="input font-mono"
+                :placeholder="GLM_OPENAI_BASE_URL"
+              />
+            </div>
+          </div>
+        </template>
+        <template v-else-if="form.platform === 'kimi'">
+          <div>
+            <label class="input-label">Kimi API Key</label>
+            <input
+              v-model="apiKeyValue"
+              data-testid="kimi-api-key"
+              type="password"
+              required
+              class="input font-mono"
+              placeholder="sk-..."
+            />
+            <p class="input-hint">{{ apiKeyHint }}</p>
+          </div>
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label class="input-label">Anthropic base URL</label>
+              <input
+                v-model="kimiAnthropicBaseUrl"
+                data-testid="kimi-anthropic-base-url"
+                type="text"
+                class="input font-mono"
+                :placeholder="KIMI_ANTHROPIC_BASE_URL"
+              />
+            </div>
+            <div>
+              <label class="input-label">OpenAI base URL</label>
+              <input
+                v-model="kimiOpenAIBaseUrl"
+                data-testid="kimi-openai-base-url"
+                type="text"
+                class="input font-mono"
+                :placeholder="KIMI_OPENAI_BASE_URL"
+              />
+            </div>
+          </div>
+        </template>
+        <template v-else-if="form.platform === 'deepseek'">
+          <div>
+            <label class="input-label">DeepSeek API Key</label>
+            <input
+              v-model="apiKeyValue"
+              data-testid="deepseek-api-key"
+              type="password"
+              required
+              class="input font-mono"
+              placeholder="sk-..."
+            />
+            <p class="input-hint">{{ apiKeyHint }}</p>
+          </div>
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label class="input-label">Anthropic base URL</label>
+              <input
+                v-model="deepseekAnthropicBaseUrl"
+                data-testid="deepseek-anthropic-base-url"
+                type="text"
+                class="input font-mono"
+                :placeholder="DEEPSEEK_ANTHROPIC_BASE_URL"
+              />
+            </div>
+            <div>
+              <label class="input-label">OpenAI base URL</label>
+              <input
+                v-model="deepseekOpenAIBaseUrl"
+                data-testid="deepseek-openai-base-url"
+                type="text"
+                class="input font-mono"
+                :placeholder="DEEPSEEK_OPENAI_BASE_URL"
+              />
+            </div>
+          </div>
+        </template>
+        <template v-else-if="form.platform === 'windsurf'">
+          <div>
+            <label class="input-label">Windsurf API Key</label>
+            <input
+              v-model="apiKeyValue"
+              data-testid="windsurf-api-key"
+              type="password"
+              required
+              class="input font-mono"
+              placeholder="sk-..."
+            />
+            <p class="input-hint">{{ apiKeyHint }}</p>
+          </div>
+          <div>
+            <label class="input-label">Base URL</label>
+            <input
+              v-model="windsurfBaseUrl"
+              data-testid="windsurf-base-url"
+              type="text"
+              class="input font-mono"
+              :placeholder="WINDSURF_BASE_URL"
+            />
+          </div>
+        </template>
+        <template v-else-if="form.platform === 'opencode'">
+          <div>
+            <label class="input-label">OpenCode API Key</label>
+            <input
+              v-model="apiKeyValue"
+              data-testid="opencode-api-key"
+              type="password"
+              required
+              class="input font-mono"
+              placeholder="sk-..."
+            />
+            <p class="input-hint">{{ apiKeyHint }}</p>
+          </div>
+          <div>
+            <label class="input-label">Base URL</label>
+            <input
+              v-model="opencodeBaseUrl"
+              data-testid="opencode-base-url"
+              type="text"
+              required
+              class="input font-mono"
+              placeholder="http://127.0.0.1:8080"
+            />
+          </div>
+        </template>
+        <template v-else>
+          <div>
+            <label class="input-label">{{ t('admin.accounts.baseUrl') }}</label>
+            <input
+              v-model="apiKeyBaseUrl"
+              type="text"
+              class="input"
+              :placeholder="
+                form.platform === 'openai'
+                  ? 'https://api.openai.com'
+                  : form.platform === 'gemini'
+                    ? 'https://generativelanguage.googleapis.com'
+                    : 'https://api.anthropic.com'
+              "
+            />
+            <p class="input-hint">{{ baseUrlHint }}</p>
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.accounts.apiKeyRequired') }}</label>
+            <input
+              v-model="apiKeyValue"
+              type="password"
+              required
+              class="input font-mono"
+              :placeholder="
+                form.platform === 'openai'
+                  ? 'sk-proj-...'
+                  : form.platform === 'gemini'
+                    ? 'AIza...'
+                    : 'sk-ant-...'
+              "
+            />
+            <p class="input-hint">{{ apiKeyHint }}</p>
+          </div>
+        </template>
 
         <!-- Gemini API Key tier selection -->
         <div v-if="form.platform === 'gemini'">
@@ -1135,7 +1394,7 @@
 
           <template v-else>
             <!-- Mode Toggle -->
-            <div class="mb-4 flex gap-2">
+            <div v-if="form.platform !== 'kimi' && form.platform !== 'deepseek'" class="mb-4 flex gap-2">
               <button
                 type="button"
                 @click="modelRestrictionMode = 'whitelist'"
@@ -1200,7 +1459,7 @@
             </div>
 
             <!-- Mapping Mode -->
-            <div v-else>
+            <div v-else-if="form.platform !== 'kimi' && form.platform !== 'deepseek'">
               <div class="mb-3 rounded-lg bg-purple-50 p-3 dark:bg-purple-900/20">
                 <p class="text-xs text-purple-700 dark:text-purple-400">
                   <svg
@@ -1307,7 +1566,7 @@
         </div>
 
         <!-- Pool Mode Section -->
-        <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
+        <div v-if="!isFixedEndpointGatewayPlatform" class="border-t border-gray-200 pt-4 dark:border-dark-600">
           <div class="mb-3 flex items-center justify-between">
             <div>
               <label class="input-label mb-0">{{ t('admin.accounts.poolMode') }}</label>
@@ -1371,7 +1630,7 @@
         </div>
 
         <!-- Custom Error Codes Section -->
-        <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
+        <div v-if="!isFixedEndpointGatewayPlatform" class="border-t border-gray-200 pt-4 dark:border-dark-600">
           <div class="mb-3 flex items-center justify-between">
             <div>
               <label class="input-label mb-0">{{ t('admin.accounts.customErrorCodes') }}</label>
@@ -1467,6 +1726,8 @@
             </div>
           </div>
         </div>
+
+      </div>
 
         <!-- Header Override Section (anthropic/openai apikey only) -->
         <div
@@ -1571,8 +1832,6 @@
             </p>
           </div>
         </div>
-
-      </div>
 
       <!-- Bedrock credentials (only for Anthropic Bedrock type) -->
       <div v-if="form.platform === 'anthropic' && accountCategory === 'bedrock'" class="space-y-4">
@@ -1886,7 +2145,7 @@
 
       <!-- 配额控制 (非 Anthropic apikey/bedrock) -->
       <div
-        v-else-if="form.type === 'apikey' || form.type === 'bedrock'"
+        v-else-if="!isFixedEndpointGatewayPlatform && (form.type === 'apikey' || form.type === 'bedrock')"
         class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4"
       >
         <div class="mb-3">
@@ -1936,7 +2195,7 @@
         />
       </div>
 
-      <!-- OpenAI OAuth Model Mapping (OAuth 类型没有 apikey 容器，需要独立的模型映射区域) -->
+      <!-- OpenAI/Grok OAuth Model Mapping (OAuth 类型没有 apikey 容器，需要独立的模型映射区域) -->
       <div
         v-if="(form.platform === 'openai' || form.platform === 'grok') && accountCategory === 'oauth-based'"
         class="border-t border-gray-200 pt-4 dark:border-dark-600"
@@ -2073,7 +2332,7 @@
       </div>
 
       <!-- Temp Unschedulable Rules -->
-      <div class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4">
+      <div v-if="!isFixedEndpointGatewayPlatform" class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4">
         <div class="mb-3 flex items-center justify-between">
           <div>
             <label class="input-label mb-0">{{ t('admin.accounts.tempUnschedulable.title') }}</label>
@@ -2635,7 +2894,6 @@
       <div>
         <div class="mb-1 flex items-center gap-2">
           <label class="input-label mb-0">{{ t('admin.accounts.proxy') }}</label>
-          <ProxyAdBanner />
         </div>
         <ProxySelector v-model="form.proxy_id" :proxies="proxies" />
       </div>
@@ -2757,24 +3015,6 @@
         </div>
       </div>
 
-      <div
-        v-if="form.platform === 'anthropic' && accountCategory === 'apikey'"
-        class="border-t border-gray-200 pt-4 dark:border-dark-600"
-      >
-        <div class="flex items-center justify-between gap-4">
-          <div>
-            <label class="input-label mb-0">{{ t('admin.accounts.anthropic.apiKeyAuthScheme') }}</label>
-            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              {{ t('admin.accounts.anthropic.apiKeyAuthSchemeDesc') }}
-            </p>
-          </div>
-          <select v-model="anthropicAPIKeyAuthScheme" class="input w-52 text-sm">
-            <option value="x_api_key">{{ t('admin.accounts.anthropic.apiKeyAuthSchemeXApiKey') }}</option>
-            <option value="authorization_bearer">{{ t('admin.accounts.anthropic.apiKeyAuthSchemeBearer') }}</option>
-          </select>
-        </div>
-      </div>
-
       <!-- Anthropic API Key: Web Search Emulation (hidden when global disabled) -->
       <div
         v-if="form.platform === 'anthropic' && accountCategory === 'apikey' && webSearchGlobalEnabled"
@@ -2845,6 +3085,32 @@
               :class="[
                 'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
                 codexCLIOnlyAppServerEnabled ? 'translate-x-5' : 'translate-x-0'
+              ]"
+            />
+          </button>
+        </div>
+        <div
+          v-if="codexCLIOnlyEnabled"
+          class="mt-4 flex items-center justify-between border-l-2 border-gray-200 pl-4 dark:border-dark-600"
+        >
+          <div>
+            <label class="input-label mb-0">{{ t('admin.accounts.openai.codexCLIOnlyAllowClaudeCode') }}</label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.openai.codexCLIOnlyAllowClaudeCodeDesc') }}
+            </p>
+          </div>
+          <button
+            type="button"
+            @click="codexCLIOnlyAllowClaudeCodeEnabled = !codexCLIOnlyAllowClaudeCodeEnabled"
+            :class="[
+              'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
+              codexCLIOnlyAllowClaudeCodeEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+            ]"
+          >
+            <span
+              :class="[
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                codexCLIOnlyAllowClaudeCodeEnabled ? 'translate-x-5' : 'translate-x-0'
               ]"
             />
           </button>
@@ -3057,7 +3323,6 @@
         :show-session-token-option="false"
         :show-access-token-option="false"
         :show-codex-session-import-option="form.platform === 'openai'"
-        :show-codex-pat-option="form.platform === 'openai'"
         :platform="form.platform"
         :show-project-id="geminiOAuthType === 'code_assist'"
         @generate-url="handleGenerateUrl"
@@ -3066,7 +3331,6 @@
         @validate-mobile-refresh-token="handleOpenAIValidateMobileRT"
         @validate-session-token="handleValidateSessionToken"
         @import-codex-session="handleOpenAIImportCodexSession"
-        @import-codex-pat="handleOpenAIImportCodexPAT"
       />
 
     </div>
@@ -3200,7 +3464,7 @@
                 rel="noreferrer"
                 class="text-sm text-blue-600 hover:underline dark:text-blue-400"
               >
-                {{ t('admin.accounts.gemini.setupGuide.links.countryChange') }}
+                修改归属地
               </a>
               <span class="text-gray-400">·</span>
               <a
@@ -3423,15 +3687,13 @@ import type {
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Select from '@/components/common/Select.vue'
-import PlatformIcon from '@/components/common/PlatformIcon.vue'
 import Icon from '@/components/icons/Icon.vue'
 import ProxySelector from '@/components/common/ProxySelector.vue'
-import ProxyAdBanner from '@/components/common/ProxyAdBanner.vue'
 import GroupSelector from '@/components/common/GroupSelector.vue'
+import PlatformIcon from '@/components/common/PlatformIcon.vue'
 import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.vue'
 import QuotaLimitCard from '@/components/account/QuotaLimitCard.vue'
 import {
-  applyAntigravityProjectID,
   applyHeaderOverride,
   applyInterceptWarmup,
   getHeaderOverrideTemplate,
@@ -3441,7 +3703,19 @@ import {
 } from '@/components/account/credentialsBuilder'
 import { formatDateTimeLocalInput, parseDateTimeLocalInput } from '@/utils/format'
 import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
-import { VERTEX_LOCATION_OPTIONS } from '@/constants/account'
+import {
+  MINIMAX_ANTHROPIC_BASE_URL,
+  MINIMAX_OPENAI_BASE_URL,
+  GLM_ANTHROPIC_BASE_URL,
+  GLM_OPENAI_BASE_URL,
+  KIMI_ANTHROPIC_BASE_URL,
+  KIMI_OPENAI_BASE_URL,
+  DEEPSEEK_ANTHROPIC_BASE_URL,
+  DEEPSEEK_OPENAI_BASE_URL,
+  WINDSURF_BASE_URL,
+  OPENCODE_BASE_URL,
+  VERTEX_LOCATION_OPTIONS
+} from '@/constants/account'
 import {
   OPENAI_WS_MODE_CTX_POOL,
   OPENAI_WS_MODE_OFF,
@@ -3463,7 +3737,6 @@ interface OAuthFlowExposed {
   refreshToken: string
   sessionToken: string
   codexSession: string
-  codexPAT: string
   inputMethod: AuthInputMethod
   reset: () => void
 }
@@ -3490,9 +3763,17 @@ const baseUrlHint = computed(() => {
 const apiKeyHint = computed(() => {
   if (form.platform === 'openai') return t('admin.accounts.openai.apiKeyHint')
   if (form.platform === 'gemini') return t('admin.accounts.gemini.apiKeyHint')
+  if (form.platform === 'glm') return t('admin.accounts.glm.apiKeyHint')
+  if (form.platform === 'kimi') return t('admin.accounts.kimi.apiKeyHint')
+  if (form.platform === 'deepseek') return t('admin.accounts.deepseek.apiKeyHint')
+  if (form.platform === 'windsurf') return t('admin.accounts.windsurf.apiKeyHint')
+  if (form.platform === 'opencode') return t('admin.accounts.opencode.apiKeyHint')
   if (form.platform === 'grok') return t('admin.accounts.grok.apiKeyHint')
   return t('admin.accounts.apiKeyHint')
 })
+
+const isFixedEndpointGatewayPlatformValue = (platform?: string) => platform === 'glm' || platform === 'kimi' || platform === 'deepseek' || platform === 'windsurf' || platform === 'opencode'
+const isFixedEndpointGatewayPlatform = computed(() => isFixedEndpointGatewayPlatformValue(form.platform))
 
 interface Props {
   show: boolean
@@ -3571,6 +3852,16 @@ const accountCategory = ref<'oauth-based' | 'apikey' | 'bedrock' | 'service_acco
 const addMethod = ref<AddMethod>('oauth') // For oauth-based: 'oauth' or 'setup-token'
 const apiKeyBaseUrl = ref('https://api.anthropic.com')
 const apiKeyValue = ref('')
+const minimaxAnthropicBaseUrl = ref(MINIMAX_ANTHROPIC_BASE_URL)
+const minimaxOpenAIBaseUrl = ref(MINIMAX_OPENAI_BASE_URL)
+const glmAnthropicBaseUrl = ref(GLM_ANTHROPIC_BASE_URL)
+const glmOpenAIBaseUrl = ref(GLM_OPENAI_BASE_URL)
+const kimiAnthropicBaseUrl = ref(KIMI_ANTHROPIC_BASE_URL)
+const kimiOpenAIBaseUrl = ref(KIMI_OPENAI_BASE_URL)
+const deepseekAnthropicBaseUrl = ref(DEEPSEEK_ANTHROPIC_BASE_URL)
+const deepseekOpenAIBaseUrl = ref(DEEPSEEK_OPENAI_BASE_URL)
+const windsurfBaseUrl = ref(WINDSURF_BASE_URL)
+const opencodeBaseUrl = ref(OPENCODE_BASE_URL)
 
 const syncPreviewCredentials = computed(() => {
   if (!apiKeyValue.value) return undefined
@@ -3632,7 +3923,6 @@ const removeHeaderOverrideRow = (index: number) => {
   headerOverrideRows.value.splice(index, 1)
 }
 
-// 模板按钮：填入标准客户端请求头名称（值留空），跳过已存在的同名行
 const fillHeaderOverrideTemplate = () => {
   const existing = new Set(
     headerOverrideRows.value.map((row) => row.name.trim().toLowerCase()).filter(Boolean)
@@ -3655,9 +3945,8 @@ const openaiOAuthResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF
 const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const codexCLIOnlyEnabled = ref(false)
 const codexCLIOnlyAppServerEnabled = ref(false)
-type AnthropicAPIKeyAuthScheme = 'x_api_key' | 'authorization_bearer'
+const codexCLIOnlyAllowClaudeCodeEnabled = ref(false)
 const anthropicPassthroughEnabled = ref(false)
-const anthropicAPIKeyAuthScheme = ref<AnthropicAPIKeyAuthScheme>('x_api_key')
 const webSearchEmulationMode = ref('default')
 const webSearchGlobalEnabled = ref(false)
 const {
@@ -3676,7 +3965,6 @@ loadQuotaNotifyGlobal()
 const mixedScheduling = ref(false) // For antigravity accounts: enable mixed scheduling
 const allowOverages = ref(false) // For antigravity accounts: enable AI Credits overages
 const antigravityAccountType = ref<'oauth' | 'upstream'>('oauth') // For antigravity: oauth or upstream
-const antigravityProjectId = ref('')
 const upstreamBaseUrl = ref('') // For upstream type: base URL
 const upstreamApiKey = ref('') // For upstream type: API key
 const antigravityModelRestrictionMode = ref<'whitelist' | 'mapping'>('whitelist')
@@ -4009,6 +4297,34 @@ watch(
 watch(
   [accountCategory, addMethod, antigravityAccountType, () => form.platform],
   ([category, method, agType]) => {
+    if (form.platform === 'minimax') {
+      form.type = 'apikey'
+      return
+    }
+    if (form.platform === 'glm') {
+      form.type = 'apikey'
+      return
+    }
+    if (form.platform === 'kimi') {
+      form.type = 'apikey'
+      return
+    }
+    if (form.platform === 'deepseek') {
+      form.type = 'apikey'
+      return
+    }
+    if (form.platform === 'windsurf') {
+      form.type = 'apikey'
+      return
+    }
+    if (form.platform === 'opencode') {
+      form.type = 'apikey'
+      return
+    }
+    if (form.platform === 'grok') {
+      form.type = 'oauth'
+      return
+    }
     // Antigravity upstream 类型（实际创建为 apikey）
     if (form.platform === 'antigravity' && agType === 'upstream') {
       form.type = 'apikey'
@@ -4022,7 +4338,7 @@ watch(
     if ((form.platform === 'gemini' || form.platform === 'anthropic') && category === 'service_account') {
       form.type = 'service_account' as AccountType
     } else if (category === 'oauth-based') {
-      form.type = form.platform === 'anthropic' ? method as AccountType : 'oauth'
+      form.type = method as AccountType // 'oauth' or 'setup-token'
     } else {
       form.type = 'apikey'
     }
@@ -4040,9 +4356,29 @@ watch(
         ? 'https://api.openai.com'
         : newPlatform === 'gemini'
           ? 'https://generativelanguage.googleapis.com'
-          : newPlatform === 'grok'
-            ? 'https://api.x.ai/v1'
-            : 'https://api.anthropic.com'
+          : newPlatform === 'minimax'
+            ? MINIMAX_ANTHROPIC_BASE_URL
+            : newPlatform === 'glm'
+              ? GLM_ANTHROPIC_BASE_URL
+              : newPlatform === 'kimi'
+                ? KIMI_ANTHROPIC_BASE_URL
+                : newPlatform === 'deepseek'
+                  ? DEEPSEEK_ANTHROPIC_BASE_URL
+                  : newPlatform === 'windsurf'
+                    ? WINDSURF_BASE_URL
+                    : newPlatform === 'opencode'
+                      ? OPENCODE_BASE_URL
+                      : 'https://api.anthropic.com'
+    minimaxAnthropicBaseUrl.value = MINIMAX_ANTHROPIC_BASE_URL
+    minimaxOpenAIBaseUrl.value = MINIMAX_OPENAI_BASE_URL
+    glmAnthropicBaseUrl.value = GLM_ANTHROPIC_BASE_URL
+    glmOpenAIBaseUrl.value = GLM_OPENAI_BASE_URL
+    kimiAnthropicBaseUrl.value = KIMI_ANTHROPIC_BASE_URL
+    kimiOpenAIBaseUrl.value = KIMI_OPENAI_BASE_URL
+    deepseekAnthropicBaseUrl.value = DEEPSEEK_ANTHROPIC_BASE_URL
+    deepseekOpenAIBaseUrl.value = DEEPSEEK_OPENAI_BASE_URL
+    windsurfBaseUrl.value = WINDSURF_BASE_URL
+    opencodeBaseUrl.value = OPENCODE_BASE_URL
     // Clear model-related settings
     allowedModels.value = []
     modelMappings.value = []
@@ -4057,17 +4393,33 @@ watch(
       antigravityAccountType.value = 'oauth'
     } else {
       allowOverages.value = false
-      antigravityProjectId.value = ''
       antigravityWhitelistModels.value = []
       antigravityModelMappings.value = []
       antigravityModelRestrictionMode.value = 'mapping'
     }
+    if (newPlatform === 'minimax') {
+      accountCategory.value = 'apikey'
+    }
+    if (newPlatform === 'glm') {
+      accountCategory.value = 'apikey'
+    }
+    if (newPlatform === 'kimi') {
+      accountCategory.value = 'apikey'
+      modelRestrictionMode.value = 'whitelist'
+    }
+    if (newPlatform === 'deepseek') {
+      accountCategory.value = 'apikey'
+      modelRestrictionMode.value = 'whitelist'
+    }
+    if (newPlatform === 'windsurf') {
+      accountCategory.value = 'apikey'
+    }
+    if (newPlatform === 'opencode') {
+      accountCategory.value = 'apikey'
+      modelRestrictionMode.value = 'whitelist'
+    }
     if (newPlatform === 'grok') {
       accountCategory.value = 'oauth-based'
-      addMethod.value = 'oauth'
-      modelRestrictionMode.value = 'mapping'
-      form.concurrency = 1
-      form.load_factor = null
     }
     if (newPlatform !== 'gemini' && newPlatform !== 'anthropic' && accountCategory.value === 'service_account') {
       accountCategory.value = 'oauth-based'
@@ -4098,16 +4450,12 @@ watch(
       openaiAPIKeyResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
       codexCLIOnlyEnabled.value = false
       codexCLIOnlyAppServerEnabled.value = false
+      codexCLIOnlyAllowClaudeCodeEnabled.value = false
     }
     if (newPlatform !== 'anthropic') {
       anthropicPassthroughEnabled.value = false
-      anthropicAPIKeyAuthScheme.value = 'x_api_key'
       webSearchEmulationMode.value = 'default'
     }
-    // 请求头覆写为平台相关配置（模板/常用头集合不同），切换平台时清空，
-    // 避免上一平台的模板行被提交到新平台账号
-    headerOverrideEnabled.value = false
-    headerOverrideRows.value = []
     // Reset OAuth states
     oauth.resetState()
     openaiOAuth.resetState()
@@ -4124,11 +4472,10 @@ watch(
   ([category, platform]) => {
     if (platform === 'openai' && category !== 'oauth-based') {
       codexCLIOnlyEnabled.value = false
-      codexCLIOnlyAppServerEnabled.value = false
+      codexCLIOnlyAllowClaudeCodeEnabled.value = false
     }
     if (platform !== 'anthropic' || category !== 'apikey') {
       anthropicPassthroughEnabled.value = false
-      anthropicAPIKeyAuthScheme.value = 'x_api_key'
       webSearchEmulationMode.value = 'default'
     }
   }
@@ -4163,6 +4510,20 @@ watch(
   [modelRestrictionMode, () => form.platform],
   ([newMode]) => {
     if (newMode === 'whitelist') {
+      if (form.platform === 'glm') {
+        allowedModels.value = []
+        return
+      }
+      if (form.platform === 'kimi') {
+        modelRestrictionMode.value = 'whitelist'
+        allowedModels.value = []
+        return
+      }
+      if (form.platform === 'deepseek') {
+        modelRestrictionMode.value = 'whitelist'
+        allowedModels.value = []
+        return
+      }
       allowedModels.value = [...getModelsByPlatform(form.platform)]
     }
   }
@@ -4472,6 +4833,16 @@ const resetForm = () => {
   addMethod.value = 'oauth'
   apiKeyBaseUrl.value = 'https://api.anthropic.com'
   apiKeyValue.value = ''
+  minimaxAnthropicBaseUrl.value = MINIMAX_ANTHROPIC_BASE_URL
+  minimaxOpenAIBaseUrl.value = MINIMAX_OPENAI_BASE_URL
+  glmAnthropicBaseUrl.value = GLM_ANTHROPIC_BASE_URL
+  glmOpenAIBaseUrl.value = GLM_OPENAI_BASE_URL
+  kimiAnthropicBaseUrl.value = KIMI_ANTHROPIC_BASE_URL
+  kimiOpenAIBaseUrl.value = KIMI_OPENAI_BASE_URL
+  deepseekAnthropicBaseUrl.value = DEEPSEEK_ANTHROPIC_BASE_URL
+  deepseekOpenAIBaseUrl.value = DEEPSEEK_OPENAI_BASE_URL
+  windsurfBaseUrl.value = WINDSURF_BASE_URL
+  opencodeBaseUrl.value = OPENCODE_BASE_URL
   editQuotaLimit.value = null
   editQuotaDailyLimit.value = null
   editQuotaWeeklyLimit.value = null
@@ -4509,8 +4880,8 @@ const resetForm = () => {
   openaiAPIKeyResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
   codexCLIOnlyEnabled.value = false
   codexCLIOnlyAppServerEnabled.value = false
+  codexCLIOnlyAllowClaudeCodeEnabled.value = false
   anthropicPassthroughEnabled.value = false
-  anthropicAPIKeyAuthScheme.value = 'x_api_key'
   webSearchEmulationMode.value = 'default'
   // Reset quota control state
   windowCostEnabled.value = false
@@ -4533,7 +4904,6 @@ const resetForm = () => {
   customBaseUrl.value = ''
   allowOverages.value = false
   antigravityAccountType.value = 'oauth'
-  antigravityProjectId.value = ''
   upstreamBaseUrl.value = ''
   upstreamApiKey.value = ''
   vertexServiceAccountJson.value = ''
@@ -4590,7 +4960,6 @@ const buildOpenAIExtra = (base?: Record<string, unknown>): Record<string, unknow
   } else {
     delete extra.codex_cli_only
   }
-  delete extra.codex_cli_only_allowed_clients
   if (
     accountCategory.value === 'oauth-based' &&
     codexCLIOnlyEnabled.value &&
@@ -4599,6 +4968,15 @@ const buildOpenAIExtra = (base?: Record<string, unknown>): Record<string, unknow
     extra.codex_cli_only_allow_app_server = true
   } else {
     delete extra.codex_cli_only_allow_app_server
+  }
+  if (
+    accountCategory.value === 'oauth-based' &&
+    codexCLIOnlyEnabled.value &&
+    codexCLIOnlyAllowClaudeCodeEnabled.value
+  ) {
+    extra.codex_cli_only_allowed_clients = ['claude_code']
+  } else {
+    delete extra.codex_cli_only_allowed_clients
   }
   if (openAICompactMode.value !== 'auto') {
     extra.openai_compact_mode = openAICompactMode.value
@@ -4629,11 +5007,6 @@ const buildAnthropicExtra = (base?: Record<string, unknown>): Record<string, unk
     extra.anthropic_passthrough = true
   } else {
     delete extra.anthropic_passthrough
-  }
-  if (anthropicAPIKeyAuthScheme.value === 'authorization_bearer') {
-    extra.anthropic_apikey_auth_scheme = 'authorization_bearer'
-  } else {
-    delete extra.anthropic_apikey_auth_scheme
   }
   if (webSearchEmulationMode.value === 'default') {
     delete extra.web_search_emulation
@@ -4890,10 +5263,45 @@ const handleSubmit = async () => {
         : 'https://api.anthropic.com'
 
   // Build credentials with optional model mapping
-  const credentials: Record<string, unknown> = {
-    base_url: apiKeyBaseUrl.value.trim() || defaultBaseUrl,
-    api_key: apiKeyValue.value.trim()
-  }
+  const credentials: Record<string, unknown> = form.platform === 'minimax'
+    ? {
+        api_key: apiKeyValue.value.trim(),
+        auth_scheme: 'bearer',
+        base_url_anthropic: minimaxAnthropicBaseUrl.value.trim() || MINIMAX_ANTHROPIC_BASE_URL,
+        base_url_openai: minimaxOpenAIBaseUrl.value.trim() || MINIMAX_OPENAI_BASE_URL
+      }
+    : form.platform === 'glm'
+      ? {
+          api_key: apiKeyValue.value.trim(),
+          base_url_anthropic: glmAnthropicBaseUrl.value.trim() || GLM_ANTHROPIC_BASE_URL,
+          base_url_openai: glmOpenAIBaseUrl.value.trim() || GLM_OPENAI_BASE_URL
+        }
+    : form.platform === 'kimi'
+      ? {
+          api_key: apiKeyValue.value.trim(),
+          base_url_anthropic: kimiAnthropicBaseUrl.value.trim() || KIMI_ANTHROPIC_BASE_URL,
+          base_url_openai: kimiOpenAIBaseUrl.value.trim() || KIMI_OPENAI_BASE_URL
+        }
+      : form.platform === 'deepseek'
+        ? {
+            api_key: apiKeyValue.value.trim(),
+            base_url_anthropic: deepseekAnthropicBaseUrl.value.trim() || DEEPSEEK_ANTHROPIC_BASE_URL,
+            base_url_openai: deepseekOpenAIBaseUrl.value.trim() || DEEPSEEK_OPENAI_BASE_URL
+          }
+        : form.platform === 'windsurf'
+          ? {
+              api_key: apiKeyValue.value.trim(),
+              base_url: windsurfBaseUrl.value.trim() || WINDSURF_BASE_URL
+            }
+          : form.platform === 'opencode'
+            ? {
+                api_key: apiKeyValue.value.trim(),
+                base_url: opencodeBaseUrl.value.trim()
+              }
+    : {
+        base_url: apiKeyBaseUrl.value.trim() || defaultBaseUrl,
+        api_key: apiKeyValue.value.trim()
+      }
   if (form.platform === 'gemini') {
     credentials.tier_id = geminiTierAIStudio.value
   }
@@ -4914,7 +5322,7 @@ const handleSubmit = async () => {
   }
 
   // Add pool mode if enabled
-  if (poolModeEnabled.value) {
+  if (!isFixedEndpointGatewayPlatform.value && poolModeEnabled.value) {
     credentials.pool_mode = true
     credentials.pool_mode_retry_count = normalizePoolModeRetryCount(poolModeRetryCount.value)
     const parsedRetryStatusCodes = parsePoolModeRetryStatusCodes(poolModeRetryStatusCodesInput.value)
@@ -4924,12 +5332,11 @@ const handleSubmit = async () => {
   }
 
   // Add custom error codes if enabled
-  if (customErrorCodesEnabled.value) {
+  if (!isFixedEndpointGatewayPlatform.value && customErrorCodesEnabled.value) {
     credentials.custom_error_codes_enabled = true
     credentials.custom_error_codes = [...selectedErrorCodes.value]
   }
 
-  // Add header override if enabled (anthropic/openai apikey only)
   if (isHeaderOverridePlatform(form.platform)) {
     if (headerOverrideEnabled.value) {
       const headerError = validateHeaderOverrideRows(headerOverrideRows.value)
@@ -4941,9 +5348,11 @@ const handleSubmit = async () => {
     applyHeaderOverride(credentials, headerOverrideEnabled.value, headerOverrideRows.value, 'create')
   }
 
-  applyInterceptWarmup(credentials, interceptWarmupRequests.value, 'create')
-  if (!applyTempUnschedConfig(credentials)) {
-    return
+  if (!isFixedEndpointGatewayPlatform.value) {
+    applyInterceptWarmup(credentials, interceptWarmupRequests.value, 'create')
+    if (!applyTempUnschedConfig(credentials)) {
+      return
+    }
   }
 
   form.credentials = credentials
@@ -5010,12 +5419,12 @@ const createAccountAndFinish = async (
   credentials: Record<string, unknown>,
   extra?: Record<string, unknown>
 ) => {
-  if (!applyTempUnschedConfig(credentials)) {
+  if (!isFixedEndpointGatewayPlatformValue(platform) && !applyTempUnschedConfig(credentials)) {
     return
   }
   // Inject quota limits for apikey/bedrock accounts
   let finalExtra = extra
-  if (type === 'apikey' || type === 'bedrock') {
+  if (!isFixedEndpointGatewayPlatformValue(platform) && (type === 'apikey' || type === 'bedrock')) {
     const quotaExtra: Record<string, unknown> = { ...(extra || {}) }
     if (editQuotaLimit.value != null && editQuotaLimit.value > 0) {
       quotaExtra.quota_limit = editQuotaLimit.value
@@ -5056,17 +5465,6 @@ const createAccountAndFinish = async (
       delete credentials.compact_model_mapping
     }
   }
-  if (platform === 'grok') {
-    if (!credentials.base_url) {
-      credentials.base_url = apiKeyBaseUrl.value.trim() || 'https://api.x.ai/v1'
-    }
-    const modelMapping = buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
-    if (modelMapping) {
-      credentials.model_mapping = modelMapping
-    } else {
-      delete credentials.model_mapping
-    }
-  }
   await doCreateAccount({
     name: form.name,
     notes: form.notes,
@@ -5083,95 +5481,6 @@ const createAccountAndFinish = async (
     expires_at: form.expires_at,
     auto_pause_on_expired: autoPauseOnExpired.value
   })
-}
-
-// Grok 手动 RT 批量验证和创建
-const handleGrokValidateRT = async (refreshTokenInput: string) => {
-  if (!refreshTokenInput.trim()) return
-
-  const refreshTokens = refreshTokenInput
-    .split('\n')
-    .map((rt) => rt.trim())
-    .filter((rt) => rt)
-
-  if (refreshTokens.length === 0) {
-    grokOAuth.error.value = t('admin.accounts.oauth.grok.pleaseEnterRefreshToken')
-    return
-  }
-
-  grokOAuth.loading.value = true
-  grokOAuth.error.value = ''
-
-  let successCount = 0
-  let failedCount = 0
-  const errors: string[] = []
-
-  try {
-    for (let i = 0; i < refreshTokens.length; i++) {
-      try {
-        const tokenInfo = await grokOAuth.validateRefreshToken(refreshTokens[i], form.proxy_id)
-        if (!tokenInfo) {
-          failedCount++
-          errors.push(`#${i + 1}: ${grokOAuth.error.value || 'Validation failed'}`)
-          grokOAuth.error.value = ''
-          continue
-        }
-
-        const credentials = grokOAuth.buildCredentials(tokenInfo)
-        const extra = grokOAuth.buildExtraInfo(tokenInfo)
-        const accountName = refreshTokens.length > 1 ? `${form.name || tokenInfo.email || 'Grok OAuth Account'} #${i + 1}` : (form.name || tokenInfo.email || 'Grok OAuth Account')
-
-        const modelMapping = buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
-        if (modelMapping) {
-          credentials.model_mapping = modelMapping
-        }
-        if (!applyTempUnschedConfig(credentials)) {
-          return
-        }
-
-        await adminAPI.accounts.create({
-          name: accountName,
-          notes: form.notes,
-          platform: 'grok',
-          type: 'oauth',
-          credentials,
-          extra,
-          proxy_id: form.proxy_id,
-          concurrency: form.concurrency,
-          load_factor: form.load_factor ?? undefined,
-          priority: form.priority,
-          rate_multiplier: form.rate_multiplier,
-          group_ids: form.group_ids,
-          expires_at: form.expires_at,
-          auto_pause_on_expired: autoPauseOnExpired.value
-        })
-        successCount++
-      } catch (error: any) {
-        failedCount++
-        const errMsg = error.response?.data?.detail || error.message || 'Unknown error'
-        errors.push(`#${i + 1}: ${errMsg}`)
-      }
-    }
-
-    if (successCount > 0 && failedCount === 0) {
-      appStore.showSuccess(
-        refreshTokens.length > 1
-          ? t('admin.accounts.oauth.batchSuccess', { count: successCount })
-          : t('admin.accounts.accountCreated')
-      )
-      emit('created')
-      handleClose()
-    } else if (successCount > 0) {
-      appStore.showWarning(t('admin.accounts.oauth.batchPartialSuccess', { success: successCount, failed: failedCount }))
-      grokOAuth.error.value = errors.join('\n')
-      emit('created')
-    } else {
-      grokOAuth.error.value = errors.join('\n')
-      appStore.showError(t('admin.accounts.oauth.batchFailed'))
-    }
-  } finally {
-    grokOAuth.loading.value = false
-  }
 }
 
 // OpenAI OAuth 授权码兑换
@@ -5363,55 +5672,6 @@ const handleOpenAIImportCodexSession = async (content: string) => {
   }
 }
 
-const handleOpenAIImportCodexPAT = async (accessToken: string) => {
-  const oauthClient = openaiOAuth
-  const trimmed = accessToken.trim()
-  if (!trimmed) {
-    oauthClient.error.value = t('admin.accounts.oauth.openai.codexPatEmpty')
-    return
-  }
-
-  const credentialExtras = buildOpenAICodexImportCredentialExtras()
-  if (credentialExtras === null) {
-    return
-  }
-
-  oauthClient.loading.value = true
-  oauthClient.error.value = ''
-
-  try {
-    const extra = buildOpenAIExtra()
-    await adminAPI.accounts.createOpenAICodexPAT({
-      access_token: trimmed,
-      name: form.name,
-      notes: form.notes || null,
-      proxy_id: form.proxy_id,
-      concurrency: form.concurrency,
-      load_factor: form.load_factor ?? undefined,
-      priority: form.priority,
-      rate_multiplier: form.rate_multiplier,
-      group_ids: form.group_ids,
-      expires_at: form.expires_at,
-      auto_pause_on_expired: autoPauseOnExpired.value,
-      credential_extras: Object.keys(credentialExtras).length > 0 ? credentialExtras : undefined,
-      extra
-    })
-
-    appStore.showSuccess(t('admin.accounts.messages.accountCreated'))
-    emit('created')
-    handleClose()
-  } catch (error: any) {
-    oauthClient.error.value =
-      error.response?.data?.detail ||
-      error.response?.data?.message ||
-      error.message ||
-      t('admin.accounts.oauth.openai.codexPatImportFailed')
-    appStore.showError(oauthClient.error.value)
-  } finally {
-    oauthClient.loading.value = false
-  }
-}
-
 // OpenAI RT 批量验证和创建（共享逻辑）
 const handleOpenAIBatchRT = async (refreshTokenInput: string, clientId?: string) => {
   const oauthClient = openaiOAuth
@@ -5526,6 +5786,89 @@ const handleOpenAIBatchRT = async (refreshTokenInput: string, clientId?: string)
   }
 }
 
+// Grok 手动 RT 批量验证和创建
+const handleGrokValidateRT = async (refreshTokenInput: string) => {
+  if (!refreshTokenInput.trim()) return
+
+  const refreshTokens = refreshTokenInput
+    .split('\n')
+    .map((rt) => rt.trim())
+    .filter((rt) => rt)
+
+  if (refreshTokens.length === 0) {
+    grokOAuth.error.value = t('admin.accounts.oauth.grok.pleaseEnterRefreshToken')
+    return
+  }
+
+  grokOAuth.loading.value = true
+  grokOAuth.error.value = ''
+
+  let successCount = 0
+  let failedCount = 0
+  const errors: string[] = []
+
+  try {
+    for (let i = 0; i < refreshTokens.length; i++) {
+      try {
+        const tokenInfo = await grokOAuth.validateRefreshToken(refreshTokens[i], form.proxy_id)
+        if (!tokenInfo) {
+          failedCount++
+          errors.push(`#${i + 1}: ${grokOAuth.error.value || 'Validation failed'}`)
+          grokOAuth.error.value = ''
+          continue
+        }
+
+        const credentials = grokOAuth.buildCredentials(tokenInfo)
+        const extra = grokOAuth.buildExtraInfo(tokenInfo)
+        const accountName = refreshTokens.length > 1
+          ? `${form.name || tokenInfo.email || 'Grok OAuth Account'} #${i + 1}`
+          : (form.name || tokenInfo.email || 'Grok OAuth Account')
+
+        const modelMapping = buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
+        if (modelMapping) {
+          credentials.model_mapping = modelMapping
+        }
+
+        await doCreateAccount({
+          name: accountName,
+          notes: form.notes,
+          platform: 'grok',
+          type: 'oauth',
+          credentials,
+          extra,
+          proxy_id: form.proxy_id,
+          concurrency: form.concurrency,
+          load_factor: form.load_factor ?? undefined,
+          priority: form.priority,
+          rate_multiplier: form.rate_multiplier,
+          group_ids: form.group_ids,
+          expires_at: form.expires_at,
+          auto_pause_on_expired: autoPauseOnExpired.value
+        })
+        successCount++
+      } catch (err: any) {
+        failedCount++
+        errors.push(`#${i + 1}: ${err.response?.data?.detail || err.message || 'Unknown error'}`)
+      }
+    }
+
+    if (failedCount === 0) {
+      appStore.showSuccess(t('admin.accounts.oauth.batchSuccess', { count: successCount }))
+      emit('created')
+      handleClose()
+    } else if (successCount > 0) {
+      appStore.showWarning(t('admin.accounts.oauth.batchPartialSuccess', { success: successCount, failed: failedCount }))
+      grokOAuth.error.value = errors.join('\n')
+      emit('created')
+    } else {
+      grokOAuth.error.value = errors.join('\n')
+      appStore.showError(t('admin.accounts.oauth.batchFailed'))
+    }
+  } finally {
+    grokOAuth.loading.value = false
+  }
+}
+
 // 手动输入 RT（Codex CLI client_id，默认）
 const handleOpenAIValidateRT = (rt: string) => handleOpenAIBatchRT(rt)
 
@@ -5569,7 +5912,6 @@ const handleAntigravityValidateRT = async (refreshTokenInput: string) => {
         }
 
         const credentials = antigravityOAuth.buildCredentials(tokenInfo)
-        applyAntigravityProjectID(credentials, antigravityProjectId.value, 'create')
         
         // Generate account name with index for batch
         const accountName = refreshTokens.length > 1 ? `${form.name} #${i + 1}` : form.name
@@ -5686,7 +6028,6 @@ const handleAntigravityExchange = async (authCode: string) => {
 		if (!tokenInfo) return
 
 		const credentials = antigravityOAuth.buildCredentials(tokenInfo)
-		applyAntigravityProjectID(credentials, antigravityProjectId.value, 'create')
 		applyInterceptWarmup(credentials, interceptWarmupRequests.value, 'create')
 		// Antigravity 只使用映射模式
 		const antigravityModelMapping = buildModelMappingObject(
@@ -5732,6 +6073,10 @@ const handleGrokExchange = async (authCode: string) => {
     if (!tokenInfo) return
 
     const credentials = grokOAuth.buildCredentials(tokenInfo)
+    const modelMapping = buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
+    if (modelMapping) {
+      credentials.model_mapping = modelMapping
+    }
     const extra = grokOAuth.buildExtraInfo(tokenInfo)
     await createAccountAndFinish('grok', 'oauth', credentials, extra)
   } catch (error: any) {

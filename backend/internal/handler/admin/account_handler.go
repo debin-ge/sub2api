@@ -78,12 +78,8 @@ func NewAccountHandler(
 	sessionLimitCache service.SessionLimitCache,
 	rpmCache service.RPMCache,
 	tokenCacheInvalidator service.TokenCacheInvalidator,
-	minimaxTokenPlanClient ...*service.MiniMaxTokenPlanClient,
+	minimaxTokenPlanClient *service.MiniMaxTokenPlanClient,
 ) *AccountHandler {
-	var minimaxClient *service.MiniMaxTokenPlanClient
-	if len(minimaxTokenPlanClient) > 0 {
-		minimaxClient = minimaxTokenPlanClient[0]
-	}
 	return &AccountHandler{
 		adminService:            adminService,
 		oauthService:            oauthService,
@@ -98,7 +94,7 @@ func NewAccountHandler(
 		sessionLimitCache:       sessionLimitCache,
 		rpmCache:                rpmCache,
 		tokenCacheInvalidator:   tokenCacheInvalidator,
-		minimaxTokenPlanClient:  minimaxClient,
+		minimaxTokenPlanClient:  minimaxTokenPlanClient,
 	}
 }
 
@@ -795,6 +791,10 @@ func (h *AccountHandler) Create(c *gin.Context) {
 	}
 	// base_rpm 输入校验：负值归零，超过 10000 截断
 	sanitizeExtraBaseRPM(req.Extra)
+	if err := validateCreateAccountRequest(req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
 
 	// 确定是否跳过混合渠道检查
 	skipCheck := req.ConfirmMixedChannelRisk != nil && *req.ConfirmMixedChannelRisk
@@ -883,6 +883,16 @@ func (h *AccountHandler) Update(c *gin.Context) {
 	// 确定是否跳过混合渠道检查
 	skipCheck := req.ConfirmMixedChannelRisk != nil && *req.ConfirmMixedChannelRisk
 
+	existingAccount, err := h.adminService.GetAccount(c.Request.Context(), accountID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	if err := validateUpdateAccountRequest(existingAccount, req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
 	account, err := h.adminService.UpdateAccount(c.Request.Context(), accountID, &service.UpdateAccountInput{
 		Name:                  req.Name,
 		Notes:                 req.Notes,
@@ -923,6 +933,64 @@ func (h *AccountHandler) Update(c *gin.Context) {
 	}
 
 	response.Success(c, h.buildAccountResponseWithRuntime(c.Request.Context(), account))
+}
+
+func validateCreateAccountRequest(req CreateAccountRequest) error {
+	if !requiresAPIKeyAccount(req.Platform) {
+		return nil
+	}
+	if req.Type != service.AccountTypeAPIKey {
+		return fmt.Errorf("%s account type must be apikey", req.Platform)
+	}
+	apiKey, _ := req.Credentials["api_key"].(string)
+	if strings.TrimSpace(apiKey) == "" {
+		return fmt.Errorf("%s account api_key is required", req.Platform)
+	}
+	if req.Platform == service.PlatformOpenCode {
+		baseURL, _ := req.Credentials["base_url"].(string)
+		if strings.TrimSpace(baseURL) == "" {
+			return fmt.Errorf("%s account base_url is required", req.Platform)
+		}
+	}
+	return nil
+}
+
+func validateUpdateAccountRequest(account *service.Account, req UpdateAccountRequest) error {
+	if account == nil || !requiresAPIKeyAccount(account.Platform) {
+		return nil
+	}
+	accountType := account.Type
+	if req.Type != "" {
+		accountType = req.Type
+	}
+	if accountType != service.AccountTypeAPIKey {
+		return fmt.Errorf("%s account type must be apikey", account.Platform)
+	}
+
+	credentials := account.Credentials
+	if req.Credentials != nil {
+		credentials = req.Credentials
+	}
+	apiKey, _ := credentials["api_key"].(string)
+	if strings.TrimSpace(apiKey) == "" {
+		return fmt.Errorf("%s account api_key is required", account.Platform)
+	}
+	if account.Platform == service.PlatformOpenCode {
+		baseURL, _ := credentials["base_url"].(string)
+		if strings.TrimSpace(baseURL) == "" {
+			return fmt.Errorf("%s account base_url is required", account.Platform)
+		}
+	}
+	return nil
+}
+
+func requiresAPIKeyAccount(platform string) bool {
+	switch platform {
+	case service.PlatformGLM, service.PlatformKimi, service.PlatformDeepSeek, service.PlatformWindsurf, service.PlatformOpenCode:
+		return true
+	default:
+		return false
+	}
 }
 
 // scheduleOpenAIResponsesProbe 异步触发 OpenAI APIKey 账号的 Responses API 能力探测。
@@ -1619,6 +1687,15 @@ func (h *AccountHandler) BatchCreate(c *gin.Context) {
 
 			// base_rpm 输入校验：负值归零，超过 10000 截断
 			sanitizeExtraBaseRPM(item.Extra)
+			if err := validateCreateAccountRequest(item); err != nil {
+				failed++
+				results = append(results, gin.H{
+					"name":    item.Name,
+					"success": false,
+					"error":   err.Error(),
+				})
+				continue
+			}
 
 			skipCheck := item.ConfirmMixedChannelRisk != nil && *item.ConfirmMixedChannelRisk
 
@@ -2341,6 +2418,54 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 		return
 	}
 
+	// Handle GLM Coding Plan accounts.
+	if account.Platform == service.PlatformGLM {
+		response.Success(c, buildGLMAvailableModels(account.GetModelMapping()))
+		return
+	}
+
+	// Handle Kimi Coding Plan accounts.
+	if account.Platform == service.PlatformKimi {
+		response.Success(c, buildKimiAvailableModels())
+		return
+	}
+
+	// Handle DeepSeek API Key accounts.
+	if account.Platform == service.PlatformDeepSeek {
+		response.Success(c, buildDeepSeekAvailableModels())
+		return
+	}
+
+	// Handle Windsurf reverse proxy API Key accounts.
+	if account.Platform == service.PlatformWindsurf {
+		modelIDs, err := service.FetchWindsurfAvailableModelIDs(c.Request.Context(), account, nil)
+		if err != nil {
+			slog.WarnContext(c.Request.Context(), "windsurf.available_models.fetch_failed",
+				slog.Int64("account_id", account.ID),
+				slog.String("error", err.Error()),
+			)
+			response.Success(c, buildWindsurfAvailableModels())
+			return
+		}
+		response.Success(c, buildWindsurfAvailableModelsFromIDs(modelIDs))
+		return
+	}
+
+	// Handle OpenCode2API-compatible API Key accounts.
+	if account.Platform == service.PlatformOpenCode {
+		modelIDs, err := service.FetchOpenCodeAvailableModelIDs(c.Request.Context(), account, nil)
+		if err != nil {
+			slog.WarnContext(c.Request.Context(), "opencode.available_models.fetch_failed",
+				slog.Int64("account_id", account.ID),
+				slog.String("error", err.Error()),
+			)
+			response.Success(c, buildOpenCodeAvailableModels())
+			return
+		}
+		response.Success(c, buildOpenCodeAvailableModelsFromIDs(modelIDs))
+		return
+	}
+
 	// Handle Grok accounts
 	if account.Platform == service.PlatformGrok {
 		defaultModels := xai.DefaultModels()
@@ -2430,6 +2555,99 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 	}
 
 	response.Success(c, models)
+}
+
+func buildGLMAvailableModels(mapping map[string]string) []claude.Model {
+	modelIDs := service.DefaultGLMModelIDs()
+	if len(mapping) > 0 {
+		modelIDs = make([]string, 0, len(mapping))
+		seen := make(map[string]struct{}, len(mapping))
+		for requestedModel := range mapping {
+			modelID := service.NormalizeGLMModel(strings.TrimSpace(requestedModel))
+			if modelID == "" {
+				continue
+			}
+			if _, exists := seen[modelID]; exists {
+				continue
+			}
+			seen[modelID] = struct{}{}
+			modelIDs = append(modelIDs, modelID)
+		}
+		sort.Strings(modelIDs)
+	}
+
+	models := make([]claude.Model, 0, len(modelIDs))
+	for _, modelID := range modelIDs {
+		models = append(models, claude.Model{
+			ID:          modelID,
+			Type:        "model",
+			DisplayName: modelID,
+			CreatedAt:   "2024-01-01T00:00:00Z",
+		})
+	}
+	return models
+}
+
+func buildKimiAvailableModels() []claude.Model {
+	modelIDs := service.DefaultKimiModelIDs()
+	models := make([]claude.Model, 0, len(modelIDs))
+	for _, modelID := range modelIDs {
+		models = append(models, claude.Model{
+			ID:          modelID,
+			Type:        "model",
+			DisplayName: modelID,
+			CreatedAt:   "2024-01-01T00:00:00Z",
+		})
+	}
+	return models
+}
+
+func buildDeepSeekAvailableModels() []claude.Model {
+	modelIDs := service.DefaultDeepSeekModelIDs()
+	models := make([]claude.Model, 0, len(modelIDs))
+	for _, modelID := range modelIDs {
+		models = append(models, claude.Model{
+			ID:          modelID,
+			Type:        "model",
+			DisplayName: modelID,
+			CreatedAt:   "2024-01-01T00:00:00Z",
+		})
+	}
+	return models
+}
+
+func buildWindsurfAvailableModels() []claude.Model {
+	return buildWindsurfAvailableModelsFromIDs(service.DefaultWindsurfModelIDs())
+}
+
+func buildWindsurfAvailableModelsFromIDs(modelIDs []string) []claude.Model {
+	models := make([]claude.Model, 0, len(modelIDs))
+	for _, modelID := range modelIDs {
+		models = append(models, claude.Model{
+			ID:          modelID,
+			Type:        "model",
+			DisplayName: modelID,
+			CreatedAt:   "2024-01-01T00:00:00Z",
+		})
+	}
+	return models
+}
+
+func buildOpenCodeAvailableModels() []claude.Model {
+	return buildOpenCodeAvailableModelsFromIDs(service.DefaultOpenCodeModelIDs())
+}
+
+func buildOpenCodeAvailableModelsFromIDs(modelIDs []string) []claude.Model {
+	models := make([]claude.Model, 0, len(modelIDs))
+	for _, modelID := range modelIDs {
+		models = append(models, claude.Model{
+			ID:          modelID,
+			Type:        "model",
+			DisplayName: modelID,
+			CreatedAt:   "2024-01-01T00:00:00Z",
+		})
+	}
+	return models
 }
 
 // SyncUpstreamModels handles syncing live supported models from an account's upstream.

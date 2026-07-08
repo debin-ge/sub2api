@@ -85,6 +85,18 @@ func ProvideSystemHandler(updateService *service.UpdateService, lockService *ser
 	return admin.NewSystemHandler(updateService, lockService)
 }
 
+// ProvidePublicModelStatsProvider provides publicModelStatsProvider for plaza feature
+// UsageLogRepository implements this interface via GetPublicModelRecentCallCounts.
+func ProvidePublicModelStatsProvider(repo service.UsageLogRepository) publicModelStatsProvider {
+	return repo
+}
+
+// ProvideBillingFallbackProvider provides billingFallbackProvider for plaza feature
+// BillingService implements this interface via GetFallbackPricing.
+func ProvideBillingFallbackProvider(svc *service.BillingService) billingFallbackProvider {
+	return svc
+}
+
 // ProvideSettingHandler creates SettingHandler with version from BuildInfo
 func ProvideSettingHandler(settingService *service.SettingService, buildInfo BuildInfo, notificationEmailService *service.NotificationEmailService) *SettingHandler {
 	h := NewSettingHandler(settingService, buildInfo.Version)
@@ -112,6 +124,12 @@ func ProvideHandlers(
 	adminHandlers *AdminHandlers,
 	gatewayHandler *GatewayHandler,
 	openaiGatewayHandler *OpenAIGatewayHandler,
+	miniMaxGatewayHandler *MiniMaxGatewayHandler,
+	glmGatewayHandler *GLMGatewayHandler,
+	kimiGatewayHandler *KimiGatewayHandler,
+	deepSeekGatewayHandler *DeepSeekGatewayHandler,
+	windsurfGatewayHandler *WindsurfGatewayHandler,
+	openCodeGatewayHandler *OpenCodeGatewayHandler,
 	settingHandler *SettingHandler,
 	totpHandler *TotpHandler,
 	paymentHandler *PaymentHandler,
@@ -132,6 +150,12 @@ func ProvideHandlers(
 		Admin:            adminHandlers,
 		Gateway:          gatewayHandler,
 		OpenAIGateway:    openaiGatewayHandler,
+		MiniMaxGateway:   miniMaxGatewayHandler,
+		GLMGateway:       glmGatewayHandler,
+		KimiGateway:      kimiGatewayHandler,
+		DeepSeekGateway:  deepSeekGatewayHandler,
+		WindsurfGateway:  windsurfGatewayHandler,
+		OpenCodeGateway:  openCodeGatewayHandler,
 		Setting:          settingHandler,
 		Totp:             totpHandler,
 		Payment:          paymentHandler,
@@ -142,6 +166,10 @@ func ProvideHandlers(
 
 // ProviderSet is the Wire provider set for all handlers
 var ProviderSet = wire.NewSet(
+	// Providers for AvailableChannelHandler plaza interfaces
+	ProvidePublicModelStatsProvider,
+	ProvideBillingFallbackProvider,
+
 	// Top-level handlers
 	NewAuthHandler,
 	NewUserHandler,
@@ -153,6 +181,12 @@ var ProviderSet = wire.NewSet(
 	NewChannelMonitorUserHandler,
 	NewGatewayHandler,
 	NewOpenAIGatewayHandler,
+	NewMiniMaxGatewayHandler,
+	NewGLMGatewayHandler,
+	NewKimiGatewayHandler,
+	NewDeepSeekGatewayHandler,
+	NewWindsurfGatewayHandler,
+	NewOpenCodeGatewayHandler,
 	NewTotpHandler,
 	ProvideSettingHandler,
 	NewPaymentHandler,
@@ -191,6 +225,7 @@ var ProviderSet = wire.NewSet(
 	admin.NewContentModerationHandler,
 	admin.NewPaymentHandler,
 	admin.NewAffiliateHandler,
+	admin.NewResellerHandler,
 	admin.NewComplianceHandler,
 
 	// AdminHandlers and Handlers constructors

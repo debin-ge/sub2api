@@ -107,7 +107,7 @@ describe('BulkEditAccountModal', () => {
     expect(mappingTab).toBeTruthy()
     await mappingTab!.trigger('click')
 
-    expect(wrapper.text()).toContain('3.1-Flash-Image passthrough')
+    expect(wrapper.text()).toContain('3.1-Flash-Image透传')
     expect(wrapper.text()).toContain('3-Pro-Image→3.1')
     expect(wrapper.text()).not.toContain('GPT-5.3 Codex Spark')
   })
@@ -245,6 +245,54 @@ describe('BulkEditAccountModal', () => {
       extra: {
         codex_cli_only: true,
         codex_cli_only_allow_app_server: true
+      }
+    })
+  })
+
+  it('OpenAI OAuth 批量编辑应提交 codex_cli_only_allowed_clients 字段（需同时开启父开关）', async () => {
+    const wrapper = mountModal({
+      selectedPlatforms: ['openai'],
+      selectedTypes: ['oauth']
+    })
+
+    await wrapper.get('#bulk-edit-openai-codex-cli-only-enabled').setValue(true)
+    await wrapper.get('#bulk-edit-openai-codex-cli-only-toggle').trigger('click')
+    await wrapper.get('#bulk-edit-openai-codex-allow-claude-code-enabled').setValue(true)
+    await wrapper.get('#bulk-edit-openai-codex-allow-claude-code-toggle').trigger('click')
+    await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledTimes(1)
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith([1, 2], {
+      extra: {
+        codex_cli_only: true,
+        codex_cli_only_allowed_clients: ['claude_code']
+      }
+    })
+  })
+
+  it('OpenAI API Key 批量编辑应提交请求头覆写配置', async () => {
+    const wrapper = mountModal({
+      selectedPlatforms: ['openai'],
+      selectedTypes: ['apikey']
+    })
+
+    await wrapper.get('#bulk-edit-header-override-enabled').setValue(true)
+    await wrapper.get('#bulk-edit-header-override-toggle').trigger('click')
+    await wrapper.get('#bulk-edit-header-override-add-row').trigger('click')
+    const inputs = wrapper.findAll('input')
+    await inputs.find((input) => input.attributes('placeholder') === 'admin.accounts.headerOverride.namePlaceholder')!.setValue('User-Agent')
+    await inputs.find((input) => input.attributes('placeholder') === 'admin.accounts.headerOverride.valuePlaceholder')!.setValue('sub2api-test')
+    await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledTimes(1)
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith([1, 2], {
+      credentials: {
+        header_override_enabled: true,
+        header_overrides: {
+          'user-agent': 'sub2api-test'
+        }
       }
     })
   })

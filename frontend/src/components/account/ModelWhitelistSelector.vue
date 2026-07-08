@@ -81,9 +81,12 @@
       <button
         type="button"
         @click="fillRelated"
+        :disabled="loadingRelatedModels"
+        data-testid="fill-related-models"
         class="rounded-lg border border-blue-200 px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-900/30"
+        :class="{ 'cursor-not-allowed opacity-60': loadingRelatedModels }"
       >
-        {{ t('admin.accounts.fillRelatedModels') }}
+        {{ loadingRelatedModels ? t('common.loading') + '...' : t('admin.accounts.fillRelatedModels') }}
       </button>
       <button
         v-if="canSyncUpstream"
@@ -104,7 +107,7 @@
     </div>
 
     <!-- Custom Model Input -->
-    <div class="mb-3">
+    <div v-if="allowCustomModelInput" class="mb-3">
       <label class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('admin.accounts.customModelName') }}</label>
       <div class="flex gap-2">
         <input
@@ -144,6 +147,7 @@ const props = defineProps<{
   modelValue: string[]
   platform?: string
   platforms?: string[]
+  loadRelatedModels?: () => Promise<string[]>
   accountId?: number
   syncCredentials?: {
     platform: string
@@ -163,6 +167,8 @@ const showDropdown = ref(false)
 const searchQuery = ref('')
 const customModel = ref('')
 const isComposing = ref(false)
+const loadingRelatedModels = ref(false)
+const syncedModelIDs = ref<string[]>([])
 const isSyncingUpstream = ref(false)
 const normalizedPlatforms = computed(() => {
   const rawPlatforms =
@@ -181,7 +187,19 @@ const normalizedPlatforms = computed(() => {
   )
 })
 
-const upstreamSyncPlatforms = new Set(['anthropic', 'openai', 'gemini', 'antigravity', 'grok'])
+const dedupeModels = (models: string[]) => {
+  const seen = new Set<string>()
+  const result: string[] = []
+  for (const model of models) {
+    const normalized = model.trim()
+    if (!normalized || seen.has(normalized)) continue
+    seen.add(normalized)
+    result.push(normalized)
+  }
+  return result
+}
+
+const upstreamSyncPlatforms = new Set(['anthropic', 'openai', 'gemini', 'antigravity'])
 const canSyncUpstream = computed(() => {
   if (props.accountId) {
     if (normalizedPlatforms.value.length === 0) return true
@@ -193,20 +211,39 @@ const canSyncUpstream = computed(() => {
   return false
 })
 
-const availableOptions = computed(() => {
-  if (normalizedPlatforms.value.length === 0) {
-    return allModels
-  }
-
-  const allowedModels = new Set<string>()
+const staticRelatedModels = () => {
+  const models: string[] = []
   for (const platform of normalizedPlatforms.value) {
     for (const model of getModelsByPlatform(platform)) {
-      allowedModels.add(model)
+      models.push(model)
     }
   }
+  return dedupeModels(models)
+}
 
-  return allModels.filter(model => allowedModels.has(model.value))
+const availableOptions = computed(() => {
+  const optionByValue = new Map(allModels.map(model => [model.value, model]))
+  const optionValues = normalizedPlatforms.value.length === 0
+    ? allModels.map(model => model.value)
+    : staticRelatedModels()
+
+  for (const model of syncedModelIDs.value) {
+    optionValues.push(model)
+  }
+
+  return dedupeModels(optionValues).map(value => optionByValue.get(value) ?? {
+    value,
+    label: value,
+    platform: 'custom'
+  })
 })
+
+const allowCustomModelInput = computed(() => (
+  !(
+    normalizedPlatforms.value.length === 1 &&
+    normalizedPlatforms.value[0] === 'kimi'
+  )
+))
 
 const filteredModels = computed(() => {
   const query = searchQuery.value.toLowerCase().trim()
@@ -234,6 +271,7 @@ const toggleModel = (model: string) => {
 }
 
 const addCustom = () => {
+  if (!allowCustomModelInput.value) return
   const model = customModel.value.trim()
   if (!model) return
   if (props.modelValue.includes(model)) {
@@ -248,13 +286,26 @@ const handleEnter = () => {
   if (!isComposing.value) addCustom()
 }
 
-const fillRelated = () => {
+const fillRelated = async () => {
+  let relatedModels: string[]
+  if (props.loadRelatedModels) {
+    loadingRelatedModels.value = true
+    try {
+      relatedModels = dedupeModels(await props.loadRelatedModels())
+      syncedModelIDs.value = dedupeModels([...syncedModelIDs.value, ...relatedModels])
+    } catch (error: any) {
+      appStore.showError(error?.message || t('admin.accounts.failedToLoadModels'))
+      return
+    } finally {
+      loadingRelatedModels.value = false
+    }
+  } else {
+    relatedModels = staticRelatedModels()
+  }
   const newModels = [...props.modelValue]
-  for (const platform of normalizedPlatforms.value) {
-    for (const model of getModelsByPlatform(platform)) {
-      if (!newModels.includes(model)) {
-        newModels.push(model)
-      }
+  for (const model of relatedModels) {
+    if (!newModels.includes(model)) {
+      newModels.push(model)
     }
   }
   emit('update:modelValue', newModels)

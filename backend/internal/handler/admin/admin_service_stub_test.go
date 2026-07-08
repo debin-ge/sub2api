@@ -388,6 +388,11 @@ func (s *stubAdminService) GetAccount(ctx context.Context, id int64) (*service.A
 	if s.getAccountErr != nil {
 		return nil, s.getAccountErr
 	}
+	for i := range s.accounts {
+		if s.accounts[i].ID == id {
+			return &s.accounts[i], nil
+		}
+	}
 	account := service.Account{ID: id, Name: "account", Status: service.StatusActive}
 	return &account, nil
 }

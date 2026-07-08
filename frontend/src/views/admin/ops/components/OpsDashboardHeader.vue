@@ -112,7 +112,13 @@ const platformOptions = computed(() => [
   { value: 'anthropic', label: 'Anthropic' },
   { value: 'gemini', label: 'Gemini' },
   { value: 'antigravity', label: 'Antigravity' },
-  { value: 'grok', label: 'Grok' }
+  { value: 'grok', label: 'Grok' },
+  { value: 'minimax', label: 'MiniMax' },
+  { value: 'glm', label: 'GLM' },
+  { value: 'kimi', label: 'Kimi' },
+  { value: 'deepseek', label: 'DeepSeek' },
+  { value: 'windsurf', label: 'Windsurf' },
+  { value: 'opencode', label: 'OpenCode' }
 ])
 
 const timeRangeOptions = computed(() => [
@@ -889,7 +895,7 @@ function handleToolbarRefresh() {
 
           <template v-if="props.autoRefreshEnabled && props.autoRefreshCountdown !== undefined">
             <span>·</span>
-            <span>{{ t('admin.ops.autoRefreshRemaining', { seconds: props.autoRefreshCountdown }) }}</span>
+            <span>剩余 {{ props.autoRefreshCountdown }}s</span>
           </template>
         </div>
       </div>

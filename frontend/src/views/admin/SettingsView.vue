@@ -6816,6 +6816,151 @@
           />
         </div>
 
+        <!-- Tab: Reseller -->
+        <div v-show="activeTab === 'reseller'" class="space-y-6">
+          <div class="card">
+            <div
+              class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
+            >
+              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+                {{ t("admin.settings.reseller.title") }}
+              </h2>
+              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                {{ t("admin.settings.reseller.description") }}
+              </p>
+            </div>
+            <div class="space-y-5 p-6">
+              <div
+                class="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-700 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-300"
+              >
+                {{ t("admin.settings.reseller.localBalanceHint") }}
+              </div>
+
+              <div class="flex items-center justify-between gap-4">
+                <div>
+                  <label class="font-medium text-gray-900 dark:text-white">
+                    {{ t("admin.settings.reseller.enabledLabel") }}
+                  </label>
+                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t("admin.settings.reseller.enabledHint") }}
+                  </p>
+                </div>
+                <Toggle v-model="form.reseller_enabled" />
+              </div>
+
+              <div class="grid gap-4 md:grid-cols-2">
+                <div>
+                  <label
+                    for="reseller-upstream-endpoint"
+                    class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
+                  >
+                    {{ t("admin.settings.reseller.endpointLabel") }}
+                  </label>
+                  <input
+                    id="reseller-upstream-endpoint"
+                    v-model="form.reseller_upstream_endpoint"
+                    type="url"
+                    class="input"
+                    :placeholder="t('admin.settings.reseller.endpointPlaceholder')"
+                  />
+                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t("admin.settings.reseller.endpointHint") }}
+                  </p>
+                </div>
+
+                <div>
+                  <label
+                    for="reseller-upstream-api-key"
+                    class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
+                  >
+                    {{ t("admin.settings.reseller.apiKeyLabel") }}
+                  </label>
+                  <input
+                    id="reseller-upstream-api-key"
+                    v-model="form.reseller_upstream_api_key"
+                    type="password"
+                    class="input"
+                    autocomplete="new-password"
+                    :placeholder="
+                      form.reseller_upstream_api_key_configured
+                        ? t('admin.settings.reseller.apiKeyConfigured')
+                        : t('admin.settings.reseller.apiKeyPlaceholder')
+                    "
+                  />
+                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    {{
+                      form.reseller_upstream_api_key_configured
+                        ? t("admin.settings.reseller.apiKeyConfiguredHint")
+                        : t("admin.settings.reseller.apiKeyHint")
+                    }}
+                  </p>
+                </div>
+              </div>
+
+              <div class="flex justify-end">
+                <button
+                  type="button"
+                  class="btn btn-secondary btn-sm"
+                  :disabled="resellerBalanceLoading"
+                  @click="loadResellerBalance"
+                >
+                  <span
+                    v-if="resellerBalanceLoading"
+                    class="mr-2 inline-block h-4 w-4 animate-spin rounded-full border-b-2 border-current"
+                  ></span>
+                  {{ t("admin.settings.reseller.testConnection") }}
+                </button>
+              </div>
+
+              <div class="grid gap-4 md:grid-cols-2">
+                <div>
+                  <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                    {{ t("admin.settings.reseller.mode") }}
+                  </p>
+                  <p class="mt-1 text-sm font-semibold text-gray-900 dark:text-white">
+                    {{ form.reseller_enabled ? t("common.enabled") : t("common.disabled") }}
+                  </p>
+                </div>
+                <div>
+                  <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                    {{ t("admin.settings.reseller.apiKey") }}
+                  </p>
+                  <p class="mt-1 text-sm font-semibold text-gray-900 dark:text-white">
+                    {{
+                      form.reseller_upstream_api_key_configured
+                        ? t("admin.settings.reseller.apiKeyConfigured")
+                        : t("admin.settings.reseller.apiKeyNotConfigured")
+                    }}
+                  </p>
+                </div>
+                <div>
+                  <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                    {{ t("admin.settings.reseller.endpoint") }}
+                  </p>
+                  <p class="mt-1 break-all text-sm text-gray-900 dark:text-white">
+                    {{ form.reseller_upstream_endpoint || "-" }}
+                  </p>
+                </div>
+                <div>
+                  <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                    {{ t("admin.settings.reseller.upstreamBalance") }}
+                  </p>
+                  <p class="mt-1 text-sm font-semibold text-gray-900 dark:text-white">
+                    {{
+                      resellerBalance?.status === "ok"
+                        ? formatResellerBalance(resellerBalance.balance)
+                        : resellerBalanceStatusText
+                    }}
+                  </p>
+                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    {{ resellerBalanceStatusText }}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div v-show="activeTab === 'email'" class="space-y-6">
           <!-- Email disabled hint - show when email_verify_enabled is off -->
           <div v-if="!form.email_verify_enabled" class="card">
@@ -7346,6 +7491,7 @@ import type {
   NotifyEmailEntry,
   Proxy,
 } from "@/types";
+import type { ResellerUpstreamBalance } from "@/api/admin/reseller";
 import type { ProviderInstance } from "@/types/payment";
 import AppLayout from "@/components/layout/AppLayout.vue";
 import Icon from "@/components/icons/Icon.vue";
@@ -7408,6 +7554,7 @@ type SettingsTab =
   | "users"
   | "gateway"
   | "payment"
+  | "reseller"
   | "email"
   | "backup";
 const activeTab = ref<SettingsTab>("general");
@@ -7419,6 +7566,7 @@ const settingsTabs = [
   { key: "users" as SettingsTab, icon: "user" as const },
   { key: "gateway" as SettingsTab, icon: "server" as const },
   { key: "payment" as SettingsTab, icon: "creditCard" as const },
+  { key: "reseller" as SettingsTab, icon: "globe" as const },
   { key: "email" as SettingsTab, icon: "mail" as const },
   { key: "backup" as SettingsTab, icon: "database" as const },
 ];
@@ -7485,6 +7633,26 @@ const testEmailAddress = ref("");
 const registrationEmailSuffixWhitelistTags = ref<string[]>([]);
 const registrationEmailSuffixWhitelistDraft = ref("");
 const tablePageSizeOptionsInput = ref("10, 20, 50, 100");
+const resellerBalance = ref<ResellerUpstreamBalance | null>(null);
+const resellerBalanceLoading = ref(false);
+const resellerBalanceStatusText = computed(() => {
+  switch (resellerBalance.value?.status) {
+    case "ok":
+      return t("admin.settings.reseller.status.ok");
+    case "not_configured":
+      return t("admin.settings.reseller.status.notConfigured");
+    case "auth_failed":
+      return t("admin.settings.reseller.status.authFailed");
+    case "upstream_unreachable":
+      return t("admin.settings.reseller.status.unreachable");
+    case "invalid_response":
+      return t("admin.settings.reseller.status.invalidResponse");
+    case "upstream_error":
+      return t("admin.settings.reseller.status.upstreamError");
+    default:
+      return t("admin.settings.reseller.status.disabled");
+  }
+});
 
 // Admin API Key 状态
 const adminApiKeyLoading = ref(true);
@@ -8482,6 +8650,23 @@ function formatSubscribedAt(ts: number | null): string {
   const m = String(d.getUTCMonth() + 1).padStart(2, "0");
   const day = String(d.getUTCDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+function formatResellerBalance(value: number): string {
+  return Number.isFinite(value) ? value.toFixed(2) : "0.00";
+}
+
+async function loadResellerBalance(): Promise<void> {
+  resellerBalanceLoading.value = true;
+  try {
+    resellerBalance.value = await adminAPI.reseller.getUpstreamBalance();
+  } catch (err: unknown) {
+    appStore.showError(
+      extractI18nErrorMessage(err, t, "common", t("common.error")),
+    );
+  } finally {
+    resellerBalanceLoading.value = false;
+  }
 }
 
 function parseSubscribedAt(dateStr: string): number | null {
@@ -9593,6 +9778,9 @@ async function saveSettings() {
       payment_cancel_rate_limit_window_mode:
         form.payment_cancel_rate_limit_window_mode,
       payment_alipay_force_qrcode: form.payment_alipay_force_qrcode,
+      reseller_enabled: form.reseller_enabled,
+      reseller_upstream_endpoint: form.reseller_upstream_endpoint?.trim() || "",
+      reseller_upstream_api_key: form.reseller_upstream_api_key?.trim() || "",
       openai_advanced_scheduler_enabled: form.openai_advanced_scheduler_enabled,
       openai_advanced_scheduler_sticky_weighted_enabled:
         form.openai_advanced_scheduler_sticky_weighted_enabled,
@@ -10569,6 +10757,7 @@ onMounted(() => {
   loadStreamTimeoutSettings();
   loadRectifierSettings();
   loadBetaPolicySettings();
+  loadResellerBalance();
   loadProviders();
 });
 
