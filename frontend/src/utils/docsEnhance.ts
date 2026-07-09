@@ -1,7 +1,7 @@
 /**
  * Doc rendering enhancements for the user docs center (/docs).
  *
- * Two markdown extensions, both degrading gracefully to plain code blocks:
+ * Markdown extensions, all degrading gracefully to plain markdown output:
  *
  * 1. Code tab groups — fenced blocks whose info string carries `tab=` and
  *    `group=` render as a tabbed widget. Consecutive blocks sharing the same
@@ -15,6 +15,15 @@
  *    endpoint / config-file rows with copy buttons). Content following the
  *    block up to the next heading or client block is wrapped into the card
  *    body.
+ *
+ * 3. Callouts — GitHub-style alert blockquotes (`> [!TIP]`, `> [!WARNING]`,
+ *    …) render as colored callout cards with an icon and localized title.
+ *
+ * 4. Table wrappers — every table is wrapped in a scrollable rounded shell
+ *    so wide tables scroll instead of breaking the layout.
+ *
+ * 5. Step headings — `## 1. Do something` headings render the leading number
+ *    as a step badge.
  */
 
 import type { Tokens } from 'marked'
@@ -59,11 +68,14 @@ export function renderDocCode({ text, lang, escaped }: Tokens.Code): string {
   const code = text.replace(/\n$/, '') + '\n'
   const body = escaped ? code : escapeHtml(code)
   const classAttr = langId ? ` class="language-${escapeHtml(langId)}"` : ''
+  const langAttr = langId && langId !== 'text' && langId !== 'client'
+    ? ` data-lang="${escapeHtml(langId)}"`
+    : ''
   const tabAttrs = tab && group
     ? ` data-tab="${escapeHtml(tab)}" data-group="${escapeHtml(group)}"`
     : ''
 
-  return `<pre${tabAttrs}><code${classAttr}>${body}</code></pre>\n`
+  return `<pre${langAttr}${tabAttrs}><code${classAttr}>${body}</code></pre>\n`
 }
 
 /** Parse the `key: value` lines of a ```client block. Returns null when the
@@ -295,6 +307,120 @@ export function groupCodeTabs(root: ParentNode, preferredTab: string | null): vo
     })
 
     wrapper.append(bar, panels)
+  }
+}
+
+export type DocCalloutType = 'note' | 'tip' | 'important' | 'warning' | 'caution'
+
+export type DocCalloutLabels = Record<DocCalloutType, string>
+
+const CALLOUT_MARKER = /^\s*\[!(note|tip|important|warning|caution)\]\s*/i
+
+/** Static stroke-icon markup per callout type (lucide outlines). */
+const CALLOUT_ICONS: Record<DocCalloutType, string> = {
+  note: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
+  tip: '<path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1.3.5 2.6 1.5 3.5.8.8 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/>',
+  important: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M12 7v2"/><path d="M12 13h.01"/>',
+  warning: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  caution: '<path d="M12 16h.01"/><path d="M12 8v4"/><path d="M15.312 2a2 2 0 0 1 1.414.586l4.688 4.688A2 2 0 0 1 22 8.688v6.624a2 2 0 0 1-.586 1.414l-4.688 4.688a2 2 0 0 1-1.414.586H8.688a2 2 0 0 1-1.414-.586l-4.688-4.688A2 2 0 0 1 2 15.312V8.688a2 2 0 0 1 .586-1.414l4.688-4.688A2 2 0 0 1 8.688 2z"/>',
+}
+
+function stripCalloutMarker(paragraph: Element): void {
+  const first = paragraph.firstChild
+  if (first?.nodeType !== Node.TEXT_NODE) return
+
+  first.textContent = (first.textContent ?? '').replace(CALLOUT_MARKER, '')
+  if (first.textContent) return
+
+  const afterMarker = first.nextSibling
+  first.remove()
+  if (afterMarker?.nodeType === Node.ELEMENT_NODE && (afterMarker as Element).tagName === 'BR') {
+    afterMarker.remove()
+  }
+  const lead = paragraph.firstChild
+  if (lead?.nodeType === Node.TEXT_NODE) {
+    lead.textContent = (lead.textContent ?? '').replace(/^\s+/, '')
+  }
+}
+
+/**
+ * Turn blockquotes whose first paragraph starts with a GitHub alert marker
+ * (`[!TIP]` etc.) into callout cards with an icon and localized title.
+ */
+export function enhanceCallouts(root: ParentNode, labels: DocCalloutLabels): void {
+  const doc = (root as Element).ownerDocument ?? document
+
+  for (const quote of Array.from(root.querySelectorAll('blockquote'))) {
+    const firstParagraph = quote.querySelector(':scope > p')
+    if (!firstParagraph) continue
+
+    const match = (firstParagraph.textContent ?? '').match(CALLOUT_MARKER)
+    if (!match) continue
+    const type = match[1].toLowerCase() as DocCalloutType
+
+    stripCalloutMarker(firstParagraph)
+    if (!firstParagraph.textContent?.trim() && firstParagraph.children.length === 0) {
+      firstParagraph.remove()
+    }
+
+    const callout = doc.createElement('aside')
+    callout.className = `doc-callout doc-callout-${type}`
+
+    const title = doc.createElement('div')
+    title.className = 'doc-callout-title'
+    title.innerHTML =
+      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${CALLOUT_ICONS[type]}</svg>`
+    const label = doc.createElement('span')
+    label.textContent = labels[type]
+    title.appendChild(label)
+
+    const body = doc.createElement('div')
+    body.className = 'doc-callout-body'
+    while (quote.firstChild) {
+      body.appendChild(quote.firstChild)
+    }
+
+    callout.append(title, body)
+    quote.replaceWith(callout)
+  }
+}
+
+/** Wrap each table in a scrollable rounded shell. */
+export function wrapTables(root: ParentNode): void {
+  const doc = (root as Element).ownerDocument ?? document
+
+  for (const table of Array.from(root.querySelectorAll('table'))) {
+    if (table.parentElement?.classList.contains('doc-table-wrap')) continue
+    const wrap = doc.createElement('div')
+    wrap.className = 'doc-table-wrap'
+    table.replaceWith(wrap)
+    wrap.appendChild(table)
+  }
+}
+
+const STEP_HEADING = /^(\d{1,2})[.、．]\s*/
+
+/**
+ * Render the leading number of `## 1. Do something` headings as a step badge.
+ * Runs on the raw text node so appended anchors are untouched.
+ */
+export function enhanceStepHeadings(root: ParentNode): void {
+  const doc = (root as Element).ownerDocument ?? document
+
+  for (const heading of Array.from(root.querySelectorAll('h2'))) {
+    const first = heading.firstChild
+    if (first?.nodeType !== Node.TEXT_NODE) continue
+
+    const text = first.textContent ?? ''
+    const match = text.match(STEP_HEADING)
+    if (!match) continue
+
+    first.textContent = text.slice(match[0].length)
+    const badge = doc.createElement('span')
+    badge.className = 'doc-step-num'
+    badge.setAttribute('aria-hidden', 'true')
+    badge.textContent = match[1]
+    heading.insertBefore(badge, heading.firstChild)
   }
 }
 

@@ -2,7 +2,8 @@
 
 {{SITE_NAME}} is a unified API gateway for multi-model services. It brings model routing, authentication, quotas, groups, and billing configuration from different upstream platforms into one entry point, so applications can integrate through a stable Base URL and API Key.
 
-The features available in a specific deployment depend on its admin configuration, including the user's group, upstream account status, model mappings, channel pricing, quota policy, and enabled endpoints. Do not assume every {{SITE_NAME}} deployment supports every model or API.
+> [!IMPORTANT]
+> The features available in a specific deployment depend on its admin configuration, including the user's group, upstream account status, model mappings, channel pricing, quota policy, and enabled endpoints. Do not assume every {{SITE_NAME}} deployment supports every model or API.
 
 ## Use Cases
 

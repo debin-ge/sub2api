@@ -37,7 +37,8 @@ Some compatible clients may use `api-key`, `x-api-key`, or SDK configuration fie
 
 `/v1/models` returns the model view actually available to the current API Key. Different users or keys may belong to different groups, so the result is affected by group permissions, upstream accounts, model mappings, channel pricing, quotas, and admin settings.
 
-If a model is missing, do not assume it is a frontend display issue. First confirm that the current key's group exposes the model and that an admin has configured an available channel.
+> [!TIP]
+> If a model is missing, do not assume it is a frontend display issue. First confirm that the current key's group exposes the model and that an admin has configured an available channel.
 
 ## Which endpoint should I choose?
 
@@ -51,7 +52,8 @@ If a model is missing, do not assume it is a frontend display issue. First confi
 | Embeddings | `/v1/embeddings` |
 | Image generation or editing | `/v1/images/generations`, `/v1/images/edits` |
 
-The endpoint and request body format must match. Do not send an OpenAI `messages` body directly to a Gemini native endpoint, and do not send a Gemini `contents` body to OpenAI Chat Completions.
+> [!WARNING]
+> The endpoint and request body format must match. Do not send an OpenAI `messages` body directly to a Gemini native endpoint, and do not send a Gemini `contents` body to OpenAI Chat Completions.
 
 ## Why do I get a 404?
 

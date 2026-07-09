@@ -2,11 +2,22 @@ import { describe, expect, it } from 'vitest'
 import { marked } from 'marked'
 import {
   activateDocTab,
+  enhanceCallouts,
   enhanceClientCards,
+  enhanceStepHeadings,
   groupCodeTabs,
   parseClientBlock,
   renderDocCode,
+  wrapTables,
 } from '../docsEnhance'
+
+const CALLOUT_LABELS = {
+  note: 'Note',
+  tip: 'Tip',
+  important: 'Important',
+  warning: 'Warning',
+  caution: 'Caution',
+}
 
 const CARD_LABELS = { baseUrl: 'Base URL', configFile: 'Config file', copy: 'Copy' }
 
@@ -19,9 +30,14 @@ function renderToTemplate(markdown: string): HTMLTemplateElement {
 }
 
 describe('renderDocCode', () => {
-  it('renders a plain fenced block exactly like a standard code block', () => {
+  it('renders a plain fenced block with a language attribute', () => {
     const html = renderDocCode({ type: 'code', raw: '', text: 'echo "hi"', lang: 'bash' })
-    expect(html).toBe('<pre><code class="language-bash">echo &quot;hi&quot;\n</code></pre>\n')
+    expect(html).toBe('<pre data-lang="bash"><code class="language-bash">echo &quot;hi&quot;\n</code></pre>\n')
+  })
+
+  it('omits the language attribute for text blocks', () => {
+    const html = renderDocCode({ type: 'code', raw: '', text: 'plain', lang: 'text' })
+    expect(html).not.toContain('data-lang')
   })
 
   it('renders a block without language', () => {
@@ -143,6 +159,82 @@ describe('groupCodeTabs', () => {
       expect(visible).toHaveLength(1)
       expect(visible[0].getAttribute('data-tab')).toBe('Python')
     }
+  })
+})
+
+describe('enhanceCallouts', () => {
+  it('turns an alert blockquote into a callout with icon and label', () => {
+    const template = renderToTemplate('> [!WARNING]\n> Do not expose keys.\n\nRegular paragraph.')
+    enhanceCallouts(template.content, CALLOUT_LABELS)
+
+    const callout = template.content.querySelector('.doc-callout')
+    expect(callout).not.toBeNull()
+    expect(callout!.classList.contains('doc-callout-warning')).toBe(true)
+    expect(callout!.querySelector('.doc-callout-title')?.textContent).toContain('Warning')
+    expect(callout!.querySelector('.doc-callout-title svg')).not.toBeNull()
+    expect(callout!.querySelector('.doc-callout-body')?.textContent).toContain('Do not expose keys.')
+    expect(callout!.textContent).not.toContain('[!WARNING]')
+    expect(template.content.querySelector('blockquote')).toBeNull()
+  })
+
+  it('supports the marker and content on separate paragraphs', () => {
+    const template = renderToTemplate('> [!TIP]\n>\n> First line.\n>\n> Second line.')
+    enhanceCallouts(template.content, CALLOUT_LABELS)
+
+    const body = template.content.querySelector('.doc-callout-body')
+    expect(body?.textContent).toContain('First line.')
+    expect(body?.textContent).toContain('Second line.')
+    expect(body?.textContent).not.toContain('[!TIP]')
+  })
+
+  it('leaves plain blockquotes untouched', () => {
+    const template = renderToTemplate('> Just a quote.')
+    enhanceCallouts(template.content, CALLOUT_LABELS)
+
+    expect(template.content.querySelector('.doc-callout')).toBeNull()
+    expect(template.content.querySelector('blockquote')?.textContent).toContain('Just a quote.')
+  })
+
+  it('ignores unknown markers', () => {
+    const template = renderToTemplate('> [!DANGER]\n> Unknown type.')
+    enhanceCallouts(template.content, CALLOUT_LABELS)
+
+    expect(template.content.querySelector('.doc-callout')).toBeNull()
+    expect(template.content.querySelector('blockquote')).not.toBeNull()
+  })
+})
+
+describe('wrapTables', () => {
+  it('wraps tables in a scroll shell exactly once', () => {
+    const template = renderToTemplate('| A | B |\n| --- | --- |\n| 1 | 2 |')
+    wrapTables(template.content)
+    wrapTables(template.content)
+
+    const wraps = template.content.querySelectorAll('.doc-table-wrap')
+    expect(wraps).toHaveLength(1)
+    expect(wraps[0].querySelector('table')).not.toBeNull()
+    expect(wraps[0].querySelector('.doc-table-wrap')).toBeNull()
+  })
+})
+
+describe('enhanceStepHeadings', () => {
+  it('converts a leading number into a step badge', () => {
+    const template = renderToTemplate('## 1. Configure the Base URL')
+    enhanceStepHeadings(template.content)
+
+    const heading = template.content.querySelector('h2')!
+    const badge = heading.querySelector('.doc-step-num')
+    expect(badge?.textContent).toBe('1')
+    expect(heading.textContent).toContain('Configure the Base URL')
+    expect(heading.textContent).not.toContain('1.')
+  })
+
+  it('leaves headings without a step number untouched', () => {
+    const template = renderToTemplate('## Next Steps')
+    enhanceStepHeadings(template.content)
+
+    expect(template.content.querySelector('.doc-step-num')).toBeNull()
+    expect(template.content.querySelector('h2')?.textContent).toBe('Next Steps')
   })
 })
 

@@ -37,7 +37,8 @@ curl "{{BASE_URL}}v1/models" \
 
 `/v1/models` 返回的是当前 API Key 实际可用的模型视图。不同用户或密钥可能属于不同分组，因此会受到分组权限、上游账号、模型映射、渠道价格、额度和管理员配置影响。
 
-如果缺少某个模型，请不要假设是前端显示问题。先确认当前密钥所属分组是否开放该模型，以及管理员是否配置了可用渠道。
+> [!TIP]
+> 如果缺少某个模型，请不要假设是前端显示问题。先确认当前密钥所属分组是否开放该模型，以及管理员是否配置了可用渠道。
 
 ## 应该选择哪个端点？
 
@@ -51,7 +52,8 @@ curl "{{BASE_URL}}v1/models" \
 | Embedding | `/v1/embeddings` |
 | 图片生成或编辑 | `/v1/images/generations`、`/v1/images/edits` |
 
-端点和请求体格式需要匹配。不要把 OpenAI `messages` 请求体直接发到 Gemini 原生端点，也不要把 Gemini `contents` 请求体发到 OpenAI Chat Completions 端点。
+> [!WARNING]
+> 端点和请求体格式需要匹配。不要把 OpenAI `messages` 请求体直接发到 Gemini 原生端点，也不要把 Gemini `contents` 请求体发到 OpenAI Chat Completions 端点。
 
 ## 为什么会返回 404？
 

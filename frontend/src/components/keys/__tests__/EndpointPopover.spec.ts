@@ -9,7 +9,6 @@ const messages: Record<string, string> = {
   'keys.endpoints.copied': '已复制',
   'keys.endpoints.copiedHint': '已复制到剪贴板',
   'keys.endpoints.clickToCopy': '点击可复制此端点',
-  'keys.endpoints.speedTest': '测速',
 }
 
 vi.mock('vue-i18n', () => ({
@@ -65,5 +64,17 @@ describe('EndpointPopover', () => {
     expect(copyToClipboard).toHaveBeenCalledWith('https://default.example.com/v1', '已复制')
     expect(wrapper.text()).toContain('已复制到剪贴板')
     expect(wrapper.find('button[aria-label="已复制到剪贴板"]').exists()).toBe(true)
+  })
+
+  it('不渲染外部测速图标链接', () => {
+    const wrapper = mount(EndpointPopover, {
+      props: {
+        apiBaseUrl: 'https://default.example.com/v1',
+        customEndpoints: [],
+      },
+    })
+
+    expect(wrapper.find('a[href*="tcptest.cn"]').exists()).toBe(false)
+    expect(wrapper.find('a[target="_blank"]').exists()).toBe(false)
   })
 })

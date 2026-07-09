@@ -1,6 +1,11 @@
 <template>
   <div class="min-h-screen bg-gray-50 text-gray-900 dark:bg-dark-950 dark:text-white">
     <header class="sticky top-0 z-30 border-b border-gray-200 bg-white/95 backdrop-blur dark:border-dark-800 dark:bg-dark-900/95">
+      <div
+        class="absolute inset-x-0 bottom-0 h-0.5 origin-left bg-primary-500 transition-transform duration-150 dark:bg-primary-400"
+        :style="{ transform: `scaleX(${readingProgress})` }"
+        aria-hidden="true"
+      ></div>
       <div class="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
         <RouterLink to="/home" class="flex min-w-0 items-center gap-3">
           <span class="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-dark-800 dark:ring-dark-700">
@@ -86,10 +91,19 @@
 
           <article v-if="displayDoc" class="min-w-0">
             <header class="mb-8 border-b border-gray-200 pb-6 dark:border-dark-800">
-              <p class="text-sm font-medium text-primary-700 dark:text-primary-300">
-                {{ displayDoc.category }}
-              </p>
-              <h1 class="mt-2 break-words text-3xl font-bold tracking-normal text-gray-950 dark:text-white sm:text-4xl">
+              <div class="flex flex-wrap items-center gap-3">
+                <span class="inline-flex items-center rounded-full bg-primary-50 px-2.5 py-0.5 text-xs font-semibold text-primary-700 ring-1 ring-inset ring-primary-600/15 dark:bg-primary-500/10 dark:text-primary-300 dark:ring-primary-400/20">
+                  {{ displayDoc.category }}
+                </span>
+                <span class="inline-flex items-center gap-1 text-xs text-gray-400 dark:text-dark-400">
+                  <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M12 6v6l4 2" />
+                  </svg>
+                  {{ readingTimeText }}
+                </span>
+              </div>
+              <h1 class="mt-3 break-words text-3xl font-bold tracking-tight text-gray-950 dark:text-white sm:text-4xl">
                 {{ displayDoc.title }}
               </h1>
               <p class="mt-3 max-w-3xl text-base leading-7 text-gray-600 dark:text-dark-300">
@@ -104,6 +118,40 @@
               @click="onDocsContentClick"
               @keydown="onDocsContentKeydown"
             ></div>
+
+            <nav
+              v-if="prevDoc || nextDoc"
+              class="mt-12 grid gap-3 border-t border-gray-200 pt-8 dark:border-dark-800 sm:grid-cols-2"
+              :aria-label="uiText.pagerLabel"
+            >
+              <RouterLink
+                v-if="prevDoc"
+                :to="docPath(prevDoc)"
+                class="group flex flex-col rounded-xl border border-gray-200 bg-white px-5 py-4 transition hover:border-primary-300 hover:shadow-sm dark:border-dark-700 dark:bg-dark-900 dark:hover:border-primary-500/40"
+              >
+                <span class="flex items-center gap-1 text-xs font-medium text-gray-400 transition group-hover:text-primary-600 dark:text-dark-400 dark:group-hover:text-primary-300">
+                  <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
+                  {{ uiText.prevDoc }}
+                </span>
+                <span class="mt-1.5 truncate text-sm font-semibold text-gray-900 transition group-hover:text-primary-700 dark:text-white dark:group-hover:text-primary-300">
+                  {{ resolveDocText(prevDoc.title) }}
+                </span>
+              </RouterLink>
+              <span v-else class="hidden sm:block" aria-hidden="true"></span>
+              <RouterLink
+                v-if="nextDoc"
+                :to="docPath(nextDoc)"
+                class="group flex flex-col items-end rounded-xl border border-gray-200 bg-white px-5 py-4 text-right transition hover:border-primary-300 hover:shadow-sm dark:border-dark-700 dark:bg-dark-900 dark:hover:border-primary-500/40"
+              >
+                <span class="flex items-center gap-1 text-xs font-medium text-gray-400 transition group-hover:text-primary-600 dark:text-dark-400 dark:group-hover:text-primary-300">
+                  {{ uiText.nextDoc }}
+                  <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>
+                </span>
+                <span class="mt-1.5 w-full truncate text-sm font-semibold text-gray-900 transition group-hover:text-primary-700 dark:text-white dark:group-hover:text-primary-300">
+                  {{ resolveDocText(nextDoc.title) }}
+                </span>
+              </RouterLink>
+            </nav>
           </article>
 
           <section
@@ -128,17 +176,17 @@
             <h2 class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-dark-400">
               {{ uiText.pageToc }}
             </h2>
-            <nav v-if="tocItems.length" class="mt-3 space-y-1">
+            <nav v-if="tocItems.length" class="mt-3 border-l border-gray-200 dark:border-dark-700">
               <button
                 v-for="item in tocItems"
                 :key="item.id"
                 type="button"
-                class="block w-full truncate rounded-md py-1.5 pr-2 text-left text-sm transition"
+                class="-ml-px block w-full truncate border-l-2 py-1.5 pr-2 text-left text-[13px] leading-5 transition"
                 :class="[
-                  item.level === 1 ? 'pl-2' : item.level === 2 ? 'pl-4' : item.level === 3 ? 'pl-6' : 'pl-8',
+                  item.level <= 2 ? 'pl-3' : item.level === 3 ? 'pl-6' : 'pl-9',
                   activeHeadingId === item.id
-                    ? 'bg-primary-50 font-medium text-primary-700 dark:bg-primary-500/10 dark:text-primary-300'
-                    : 'text-gray-600 hover:bg-gray-100 hover:text-gray-950 dark:text-dark-300 dark:hover:bg-dark-800 dark:hover:text-white',
+                    ? 'border-primary-500 font-medium text-primary-700 dark:border-primary-400 dark:text-primary-300'
+                    : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-950 dark:text-dark-300 dark:hover:border-dark-500 dark:hover:text-white',
                 ]"
                 @click="scrollToHeading(item.id)"
               >
@@ -146,6 +194,15 @@
               </button>
             </nav>
             <p v-else class="mt-3 text-sm text-gray-500 dark:text-dark-400">{{ uiText.emptyToc }}</p>
+            <button
+              v-if="tocItems.length"
+              type="button"
+              class="mt-5 inline-flex items-center gap-1.5 text-xs font-medium text-gray-400 transition hover:text-gray-900 dark:text-dark-400 dark:hover:text-white"
+              @click="scrollToTop"
+            >
+              <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 15-6-6-6 6" /></svg>
+              {{ uiText.backToTop }}
+            </button>
           </div>
         </aside>
       </div>
@@ -171,9 +228,12 @@ import { useAppStore, useAuthStore } from '@/stores'
 import { sanitizeUrl } from '@/utils/url'
 import {
   activateDocTab,
+  enhanceCallouts,
   enhanceClientCards,
+  enhanceStepHeadings,
   groupCodeTabs,
   renderDocCode,
+  wrapTables,
 } from '@/utils/docsEnhance'
 
 interface DocGroup {
@@ -197,6 +257,7 @@ const tocItems = ref<TocItem[]>([])
 const activeHeadingId = ref('')
 const mobileNavOpen = ref(false)
 const settingsLoading = ref(false)
+const readingProgress = ref(0)
 
 let scrollRafId = 0
 
@@ -267,6 +328,16 @@ const uiText = computed(() => currentLocale.value === 'zh'
       copyFailed: '复制失败',
       cardBaseUrl: 'Base URL',
       cardConfigFile: '配置文件',
+      readingTime: '分钟读完',
+      prevDoc: '上一篇',
+      nextDoc: '下一篇',
+      pagerLabel: '文档翻页',
+      backToTop: '回到顶部',
+      calloutNote: '说明',
+      calloutTip: '提示',
+      calloutImportant: '重要',
+      calloutWarning: '注意',
+      calloutCaution: '警告',
     }
   : {
       home: 'Home',
@@ -284,6 +355,16 @@ const uiText = computed(() => currentLocale.value === 'zh'
       copyFailed: 'Copy failed',
       cardBaseUrl: 'Base URL',
       cardConfigFile: 'Config file',
+      readingTime: 'min read',
+      prevDoc: 'Previous',
+      nextDoc: 'Next',
+      pagerLabel: 'Document pagination',
+      backToTop: 'Back to top',
+      calloutNote: 'Note',
+      calloutTip: 'Tip',
+      calloutImportant: 'Important',
+      calloutWarning: 'Warning',
+      calloutCaution: 'Caution',
     })
 
 const groupedDocs = computed<DocGroup[]>(() => {
@@ -298,6 +379,33 @@ const groupedDocs = computed<DocGroup[]>(() => {
   }
   return Array.from(groups, ([category, docs]) => ({ category, docs }))
 })
+
+const readingTimeText = computed(() => {
+  const content = currentDoc.value?.content ?? ''
+  const prose = content.replace(/```[\s\S]*?```/g, ' ')
+  const cjkChars = (prose.match(/[一-鿿]/g) ?? []).length
+  const words = prose.replace(/[一-鿿]/g, ' ').split(/\s+/).filter(Boolean).length
+  const minutes = Math.max(1, Math.round(cjkChars / 400 + words / 180))
+  return currentLocale.value === 'zh'
+    ? `约 ${minutes} ${uiText.value.readingTime}`
+    : `${minutes} ${uiText.value.readingTime}`
+})
+
+const prevDoc = computed<UserDocEntry | null>(() => {
+  const docs = localeDocs.value
+  const index = docs.findIndex((doc) => doc.slug === activeSlug.value)
+  return index > 0 ? docs[index - 1] : null
+})
+
+const nextDoc = computed<UserDocEntry | null>(() => {
+  const docs = localeDocs.value
+  const index = docs.findIndex((doc) => doc.slug === activeSlug.value)
+  return index >= 0 && index < docs.length - 1 ? docs[index + 1] : null
+})
+
+function docPath(doc: UserDocEntry): string {
+  return doc.slug === defaultUserDocSlug ? '/docs' : `/docs/${doc.slug}`
+}
 
 function generateHeadingId(text: string, index: number): string {
   const base = text
@@ -372,6 +480,13 @@ function renderMarkdown(doc: UserDocEntry | null) {
   const template = document.createElement('template')
   template.innerHTML = resolveDocHtml(sanitized)
 
+  // The article header already renders the doc title; drop a leading H1
+  // that duplicates it so the body starts with the actual content.
+  const leadingHeading = template.content.firstElementChild
+  if (leadingHeading?.tagName === 'H1' && leadingHeading.textContent?.trim() === doc.title.trim()) {
+    leadingHeading.remove()
+  }
+
   const toc: TocItem[] = []
   template.content.querySelectorAll('h1, h2, h3, h4').forEach((heading, index) => {
     const level = Number(heading.tagName.slice(1))
@@ -379,6 +494,13 @@ function renderMarkdown(doc: UserDocEntry | null) {
     const id = generateHeadingId(text, index)
     heading.setAttribute('id', id)
     toc.push({ id, text, level })
+
+    const anchor = document.createElement('a')
+    anchor.className = 'heading-anchor'
+    anchor.href = `#${id}`
+    anchor.setAttribute('aria-label', text)
+    anchor.textContent = '#'
+    heading.appendChild(anchor)
   })
 
   template.content.querySelectorAll('a[href]').forEach((link) => {
@@ -389,12 +511,21 @@ function renderMarkdown(doc: UserDocEntry | null) {
     }
   })
 
+  enhanceCallouts(template.content, {
+    note: uiText.value.calloutNote,
+    tip: uiText.value.calloutTip,
+    important: uiText.value.calloutImportant,
+    warning: uiText.value.calloutWarning,
+    caution: uiText.value.calloutCaution,
+  })
   enhanceClientCards(template.content, {
     baseUrl: uiText.value.cardBaseUrl,
     configFile: uiText.value.cardConfigFile,
     copy: uiText.value.copy,
   })
   groupCodeTabs(template.content, getPreferredDocTab())
+  wrapTables(template.content)
+  enhanceStepHeadings(template.content)
 
   tocItems.value = toc
   renderedHtml.value = template.innerHTML
@@ -410,6 +541,16 @@ function scrollToHeading(id: string) {
   if (!heading) return
   heading.scrollIntoView({ behavior: 'smooth', block: 'start' })
   activeHeadingId.value = id
+}
+
+function scrollToTop() {
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+function updateReadingProgress() {
+  const doc = document.documentElement
+  const scrollable = doc.scrollHeight - window.innerHeight
+  readingProgress.value = scrollable > 0 ? Math.min(1, window.scrollY / scrollable) : 0
 }
 
 function updateActiveHeading() {
@@ -431,6 +572,7 @@ function onWindowScroll() {
   scrollRafId = window.requestAnimationFrame(() => {
     scrollRafId = 0
     updateActiveHeading()
+    updateReadingProgress()
   })
 }
 
@@ -485,6 +627,17 @@ function onDocsContentClick(event: MouseEvent) {
   const target = event.target as HTMLElement | null
   if (!target) return
 
+  const headingAnchor = target.closest<HTMLAnchorElement>('a.heading-anchor')
+  if (headingAnchor) {
+    event.preventDefault()
+    const id = decodeURIComponent(headingAnchor.getAttribute('href')?.slice(1) ?? '')
+    if (id) {
+      scrollToHeading(id)
+      window.history.replaceState(window.history.state, '', `#${id}`)
+    }
+    return
+  }
+
   const tabButton = target.closest<HTMLButtonElement>('.doc-tab-btn')
   if (tabButton) {
     const label = tabButton.getAttribute('data-tab')
@@ -538,6 +691,12 @@ onMounted(async () => {
 
   await nextTick()
   updateActiveHeading()
+  updateReadingProgress()
+
+  const hash = decodeURIComponent(window.location.hash.slice(1))
+  if (hash) {
+    findRenderedHeadingById(hash)?.scrollIntoView({ block: 'start' })
+  }
 })
 
 onUnmounted(() => {
@@ -560,19 +719,39 @@ onUnmounted(() => {
 }
 
 .docs-content :deep(h1) {
-  @apply mb-4 mt-8 scroll-mt-24 border-b border-gray-200 pb-3 text-3xl font-bold dark:border-dark-700;
+  @apply mb-4 mt-10 scroll-mt-24 border-b border-gray-200 pb-3 text-3xl font-bold tracking-tight dark:border-dark-700;
 }
 
 .docs-content :deep(h2) {
-  @apply mb-3 mt-7 scroll-mt-24 text-2xl font-bold;
+  @apply mb-4 mt-10 scroll-mt-24 text-2xl font-bold tracking-tight;
 }
 
 .docs-content :deep(h3) {
-  @apply mb-2 mt-6 scroll-mt-24 text-xl font-semibold;
+  @apply mb-3 mt-7 scroll-mt-24 text-lg font-semibold;
 }
 
 .docs-content :deep(h4) {
-  @apply mb-2 mt-5 scroll-mt-24 text-lg font-semibold;
+  @apply mb-2 mt-6 scroll-mt-24 text-base font-semibold;
+}
+
+.docs-content :deep(> :first-child) {
+  @apply mt-0;
+}
+
+.docs-content :deep(.heading-anchor) {
+  @apply ml-2 align-middle text-base font-normal text-gray-300 no-underline opacity-0 transition hover:text-primary-600 dark:text-dark-500 dark:hover:text-primary-300;
+}
+
+.docs-content :deep(h1:hover .heading-anchor),
+.docs-content :deep(h2:hover .heading-anchor),
+.docs-content :deep(h3:hover .heading-anchor),
+.docs-content :deep(h4:hover .heading-anchor),
+.docs-content :deep(.heading-anchor:focus-visible) {
+  @apply opacity-100;
+}
+
+.docs-content :deep(.doc-step-num) {
+  @apply mr-3 inline-flex h-8 w-8 items-center justify-center rounded-lg bg-primary-600/10 align-[-0.2em] text-base font-bold text-primary-700 ring-1 ring-inset ring-primary-600/20 dark:bg-primary-500/10 dark:text-primary-300 dark:ring-primary-400/25;
 }
 
 .docs-content :deep(p) {
@@ -596,31 +775,56 @@ onUnmounted(() => {
 }
 
 .docs-content :deep(blockquote) {
-  @apply my-5 border-l-4 border-gray-300 pl-4 text-gray-600 dark:border-dark-600 dark:text-dark-300;
+  @apply my-6 rounded-r-lg border-l-2 border-gray-300 bg-gray-50 py-3 pl-4 pr-4 text-gray-600 dark:border-dark-500 dark:bg-dark-900 dark:text-dark-300;
+}
+
+.docs-content :deep(blockquote p:last-child) {
+  @apply mb-0;
 }
 
 .docs-content :deep(code) {
-  @apply rounded bg-gray-100 px-1.5 py-0.5 font-mono text-sm dark:bg-dark-800;
+  @apply rounded-md bg-gray-100 px-1.5 py-0.5 font-mono text-[0.85em] text-gray-800 ring-1 ring-inset ring-gray-200/80 dark:bg-dark-800 dark:text-dark-100 dark:ring-dark-700;
 }
 
 .docs-content :deep(pre) {
-  @apply relative my-5 overflow-x-auto rounded-lg bg-gray-950 p-4 text-gray-100;
+  @apply relative my-6 overflow-x-auto rounded-xl bg-gray-950 p-4 text-[13px] leading-6 text-gray-100 ring-1 ring-white/10;
+}
+
+.docs-content :deep(pre[data-lang]) {
+  @apply pt-10;
+}
+
+.docs-content :deep(pre[data-lang]::before) {
+  content: attr(data-lang);
+  @apply pointer-events-none absolute left-4 top-3 font-mono text-[11px] uppercase tracking-wider text-gray-500;
 }
 
 .docs-content :deep(pre code) {
-  @apply bg-transparent p-0 text-inherit;
+  @apply bg-transparent p-0 text-inherit ring-0;
+}
+
+.docs-content :deep(.doc-table-wrap) {
+  @apply my-6 overflow-x-auto rounded-xl ring-1 ring-gray-200 dark:ring-dark-700;
 }
 
 .docs-content :deep(table) {
-  @apply my-5 block w-full overflow-x-auto border-collapse;
+  @apply m-0 w-full border-collapse text-sm;
 }
 
 .docs-content :deep(th) {
-  @apply border border-gray-300 bg-gray-50 px-3 py-2 text-left font-semibold dark:border-dark-600 dark:bg-dark-800;
+  @apply whitespace-nowrap border-b border-gray-200 bg-gray-50 px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:border-dark-700 dark:bg-dark-800/70 dark:text-dark-300;
 }
 
 .docs-content :deep(td) {
-  @apply border border-gray-300 px-3 py-2 dark:border-dark-600;
+  @apply border-b border-gray-100 px-4 py-2.5 align-top text-gray-700 dark:border-dark-800 dark:text-dark-200;
+}
+
+.docs-content :deep(tbody tr:last-child td) {
+  @apply border-b-0;
+}
+
+.docs-content :deep(tbody tr:hover td) {
+  @apply bg-gray-50/70 dark:bg-dark-800/40;
 }
 
 .docs-content :deep(img) {
@@ -631,10 +835,56 @@ onUnmounted(() => {
   @apply my-7 border-gray-200 dark:border-dark-700;
 }
 
+/* ── Callouts ────────────────────────────────────────────────────── */
+
+.docs-content :deep(.doc-callout) {
+  @apply my-6 rounded-xl border px-4 py-3.5 text-sm leading-6;
+}
+
+.docs-content :deep(.doc-callout-title) {
+  @apply mb-1.5 flex items-center gap-2 text-sm font-semibold;
+}
+
+.docs-content :deep(.doc-callout-title svg) {
+  @apply h-4 w-4 flex-shrink-0;
+}
+
+.docs-content :deep(.doc-callout-body p) {
+  @apply mb-2 text-inherit;
+}
+
+.docs-content :deep(.doc-callout-body > :last-child) {
+  @apply mb-0;
+}
+
+.docs-content :deep(.doc-callout-body li) {
+  @apply text-inherit;
+}
+
+.docs-content :deep(.doc-callout-note) {
+  @apply border-blue-200 bg-blue-50/70 text-blue-900 dark:border-blue-400/25 dark:bg-blue-500/10 dark:text-blue-100;
+}
+
+.docs-content :deep(.doc-callout-tip) {
+  @apply border-emerald-200 bg-emerald-50/70 text-emerald-900 dark:border-emerald-400/25 dark:bg-emerald-500/10 dark:text-emerald-100;
+}
+
+.docs-content :deep(.doc-callout-important) {
+  @apply border-violet-200 bg-violet-50/70 text-violet-900 dark:border-violet-400/25 dark:bg-violet-500/10 dark:text-violet-100;
+}
+
+.docs-content :deep(.doc-callout-warning) {
+  @apply border-amber-200 bg-amber-50/70 text-amber-900 dark:border-amber-400/25 dark:bg-amber-500/10 dark:text-amber-100;
+}
+
+.docs-content :deep(.doc-callout-caution) {
+  @apply border-red-200 bg-red-50/70 text-red-900 dark:border-red-400/25 dark:bg-red-500/10 dark:text-red-100;
+}
+
 /* ── Code tab groups ─────────────────────────────────────────────── */
 
 .docs-content :deep(.doc-tabs) {
-  @apply my-5 overflow-hidden rounded-lg border border-gray-200 dark:border-dark-700;
+  @apply my-6 overflow-hidden rounded-xl border border-gray-200 dark:border-dark-700;
 }
 
 .docs-content :deep(.doc-tabs-bar) {
@@ -650,7 +900,16 @@ onUnmounted(() => {
 }
 
 .docs-content :deep(.doc-tabs-panels pre) {
-  @apply my-0 rounded-none;
+  @apply my-0 rounded-none ring-0;
+}
+
+/* Inside a tab group the active tab already names the language. */
+.docs-content :deep(.doc-tabs-panels pre[data-lang]) {
+  @apply pt-4;
+}
+
+.docs-content :deep(.doc-tabs-panels pre[data-lang]::before) {
+  display: none;
 }
 
 .docs-content :deep(.doc-tabs-panels pre[hidden]) {
@@ -711,21 +970,22 @@ onUnmounted(() => {
   position: absolute;
   top: 8px;
   right: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.15);
-  color: #e2e8f0;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #94a3b8;
   cursor: pointer;
   font-family: inherit;
   font-size: 12px;
   line-height: 1.4;
-  opacity: 0;
+  opacity: 0.75;
   padding: 4px 10px;
-  transition: opacity 0.2s, background 0.2s;
+  transition: opacity 0.2s, background 0.2s, color 0.2s;
 }
 
 :deep(.copy-btn:hover) {
-  background: rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.18);
+  color: #e2e8f0;
 }
 
 .docs-content :deep(pre:hover .copy-btn),

@@ -26,7 +26,8 @@ Authorization: Bearer ${API_KEY}
 export API_KEY="在这里粘贴你的API密钥"
 ```
 
-请不要在前端公开代码、日志或公共仓库中暴露真实密钥。
+> [!WARNING]
+> 请不要在前端公开代码、日志或公共仓库中暴露真实密钥。
 
 ## 3. 查询可用模型
 
@@ -55,7 +56,8 @@ curl "{{BASE_URL}}v1/chat/completions" \
   }'
 ```
 
-如果示例模型不可用，请改用 `/v1/models` 返回的模型名。
+> [!TIP]
+> 如果示例模型不可用，请改用 `/v1/models` 返回的模型名。
 
 ## 5. 第一次 Messages 请求
 

@@ -199,7 +199,7 @@ describe('DocsView', () => {
     ]) {
       const wrapper = await mountDocs(`/docs/${slug}`)
       expect(wrapper.text()).not.toContain('文档不存在')
-      expect(wrapper.find('.docs-content h1').exists()).toBe(true)
+      expect(wrapper.find('article h1').exists()).toBe(true)
       wrapper.unmount()
     }
   })
@@ -248,6 +248,48 @@ describe('DocsView', () => {
     await copyButton.trigger('click')
 
     expect(navigator.clipboard.writeText).toHaveBeenCalled()
+  })
+
+  it('removes the duplicate leading H1 from the rendered body', async () => {
+    const wrapper = await mountDocs('/docs/quickstart')
+
+    expect(wrapper.find('article > header h1').text()).toBe('Quick Start')
+    expect(wrapper.find('.docs-content h1').exists()).toBe(false)
+  })
+
+  it('renders previous/next pagination links', async () => {
+    const wrapper = await mountDocs('/docs/quickstart')
+
+    const pager = wrapper.find('nav[aria-label="Document pagination"]')
+    expect(pager.exists()).toBe(true)
+    expect(pager.text()).toContain('Product Overview')
+    expect(pager.text()).toContain('API Keys and Accounts')
+    expect(pager.find('a[href="/docs"]').exists()).toBe(true)
+    expect(pager.find('a[href="/docs/api-keys"]').exists()).toBe(true)
+  })
+
+  it('renders callouts from alert blockquotes', async () => {
+    const wrapper = await mountDocs('/docs/quickstart')
+
+    const callout = wrapper.find('.doc-callout-warning')
+    expect(callout.exists()).toBe(true)
+    expect(callout.text()).toContain('Warning')
+    expect(callout.text()).not.toContain('[!WARNING]')
+  })
+
+  it('wraps tables and renders step heading badges', async () => {
+    const wrapper = await mountDocs('/docs/quickstart')
+
+    expect(wrapper.find('.doc-table-wrap table').exists()).toBe(true)
+    expect(wrapper.find('.doc-step-num').exists()).toBe(true)
+  })
+
+  it('adds anchor links to section headings', async () => {
+    const wrapper = await mountDocs('/docs/quickstart')
+
+    const anchor = wrapper.find('.docs-content h2 a.heading-anchor')
+    expect(anchor.exists()).toBe(true)
+    expect(anchor.attributes('href')).toMatch(/^#/)
   })
 
   it('does not render script tags from bundled markdown', async () => {

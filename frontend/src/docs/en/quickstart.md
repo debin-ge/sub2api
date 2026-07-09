@@ -26,7 +26,8 @@ The command-line examples use `${API_KEY}`. Store your key in an environment var
 export API_KEY="paste-your-api-key-here"
 ```
 
-Do not expose real keys in frontend code, logs, or public repositories.
+> [!WARNING]
+> Do not expose real keys in frontend code, logs, or public repositories.
 
 ## 3. List Available Models
 

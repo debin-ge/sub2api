@@ -106,6 +106,7 @@ vi.mock("@/composables/useClipboard", () => ({
 
 vi.mock("@/utils/apiError", () => ({
   extractApiErrorMessage: () => "error",
+  extractI18nErrorMessage: () => "error",
 }));
 
 vi.mock("vue-i18n", async () => {
@@ -159,6 +160,7 @@ vi.mock("vue-i18n", async () => {
     "admin.settings.paymentVisibleMethods.sourceRequiredError": "{title} 已启用，请先选择支付来源。",
     "admin.settings.payment.configGuide": "查看支付配置说明",
     "admin.settings.payment.findProvider": "查看支持的支付方式",
+    "payment.methods.wise": "Wise",
     "admin.settings.openaiExperimentalScheduler.title": "OpenAI 实验调度策略",
     "admin.settings.openaiExperimentalScheduler.description": "默认关闭。开启后仅影响本网关在 OpenAI 账号间的实验性调度选择逻辑，不代表上游 OpenAI 官方能力。",
     "admin.settings.openaiExperimentalScheduler.stickyWeightedTitle": "粘性加权",
@@ -606,28 +608,24 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(wrapper.text()).not.toContain("支付来源");
   });
 
-  it("links payment guidance to README sections instead of removed payment docs", async () => {
+  it("shows Wise as an available payment provider type", async () => {
     const wrapper = mountView();
 
     await flushPromises();
     await openPaymentTab(wrapper);
 
-    const paymentLinks = wrapper
-      .findAll("a")
-      .filter((node) =>
-        ["查看支付配置说明", "查看支持的支付方式"].includes(node.text()),
-      );
+    expect(wrapper.text()).toContain("Wise");
+  });
 
-    expect(paymentLinks).toHaveLength(2);
-    expect(paymentLinks[0]?.attributes("href")).toBe(
-      "https://github.com/Wei-Shaw/sub2api/blob/main/docs/PAYMENT_CN.md",
-    );
-    expect(paymentLinks[1]?.attributes("href")).toBe(
-      "https://github.com/Wei-Shaw/sub2api/blob/main/docs/PAYMENT_CN.md#支持的支付方式",
-    );
-    for (const link of paymentLinks) {
-      expect(link.attributes("href")).toContain("docs/PAYMENT");
-    }
+  it("does not render promotional payment provider links", async () => {
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openPaymentTab(wrapper);
+
+    expect(wrapper.text()).not.toContain("查看支持的支付方式");
+    expect(wrapper.text()).not.toContain("正在寻找合适的易支付服务商");
+    expect(wrapper.findAll("a").some((node) => node.attributes("href")?.includes("#支持的支付方式"))).toBe(false);
   });
 
   it("does not submit legacy visible payment method settings", async () => {
