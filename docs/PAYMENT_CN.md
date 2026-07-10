@@ -152,26 +152,29 @@ Sub2API 内置支付系统，支持用户自助充值，无需部署独立的支
 
 #### Google Pay Express Checkout
 
-Google Pay 通过 Stripe Express Checkout Element 展示在 Stripe 支付面板顶部，并作为现有 `card` PaymentIntent 的钱包方式处理。Sub2API 不新增 `google_pay` 后端支付类型，也不保存或传递 Google Pay Merchant ID、Stripe Payment Method Domain ID。
+Google Pay 是每个 Stripe 服务商实例的可选子方式；现有实例和新建实例均默认关闭。管理员必须在服务商对话框中同时启用 Card 与 Google Pay，Sub2API 会拒绝没有 Card 的 Google Pay 配置。订单实际选中的实例是权威来源：后端把 `card + google_pay` 去重映射为一个 `card` PaymentIntent，并把该实例的能力和 Publishable Key 返回给结账页。
 
-启用前请确认：
+Sub2API 开关不能替代 Stripe Dashboard 配置。必须在 Stripe Payment Methods 中启用 Google Pay，把每个生产和预发布主机名（包括各个子域名）注册到匹配 Stripe 账户的 Payment Method Domains，通过受信任 TLS HTTPS 提供结账页面，并在受支持的 Chrome/Android 环境中使用 Google Wallet 内的可用银行卡测试。Google Pay Merchant ID 和 Stripe Payment Method Domain ID 不是 Sub2API 输入，禁止加入配置或日志。`http://localhost + live key` 不能作为真实 Google Pay 验收证据。
 
-1. Stripe Dashboard 的 Payment Methods 中已启用 Google Pay。
-2. Stripe 服务商实例的支持类型包含 `card`。
-3. 所有展示支付面板的生产和预发布域名（包括 `www` 及其他子域）均已在 Stripe Payment Method Domains 中注册。
-4. 支付页面使用受信任的公网 HTTPS 证书。
-5. 当前域名、Publishable Key、Secret Key 和 Webhook Secret 属于同一个 Stripe 环境。
+启用后，Stripe 面板具有四种状态：Stripe 检测可用性时显示禁用状态占位；受支持环境显示 Stripe 真实的 Express Checkout Google Pay 按钮；域名、浏览器或钱包不支持时保留禁用占位和诊断；Element 加载失败时也保留禁用占位和诊断。只有 Stripe 真实 Express Checkout Element 可以点击，禁用占位不能发起支付、Google 登录或自定义钱包流程；在不可用和错误状态下，Payment Element 始终保持可用。
 
-快捷支付区域暂时只允许 Google Pay；Apple Pay、Link、Amazon Pay、PayPal 和 Klarna 不会出现在该区域。Google Pay 不可用或加载失败时，快捷区域和分隔线会静默隐藏，下方 Payment Element 仍可用于银行卡、支付宝、微信支付和 Link。
+Google Pay 与 Payment Element 复用同一个本地订单、PaymentIntent、Stripe/Elements 实例、提交锁和结果页。确认后结果页等待 Webhook，绝不提前发放余额或订阅。验签后的 `payment_intent.succeeded` Webhook 使用 stripe-go 获取 PaymentMethod；`card.wallet.type=google_pay` 会在同一次有条件的已支付状态更新中把现有订单的 `payment_type` 更新为 `google_pay`，重复投递不会重复发放。Provider 身份、查询和退款始终绑定原 Stripe 实例，无需数据库迁移。
 
-Google Pay 与 Payment Element 复用同一个本地订单、PaymentIntent、Stripe/Elements 实例和提交锁。前端成功状态不发放余额或订阅；最终入账始终以验签后的 Stripe `payment_intent.succeeded` Webhook 为准。
+自动化测试只验证 Stripe SDK 边界内的应用行为；不得访问 Stripe Test/Live API、创建真实 PaymentIntent，也不得把自动化结果声称为真实 Google Wallet 交易证据。生产上线前，操作员必须在已注册 HTTPS 主机名、匹配的 Stripe 账户以及真实受支持的 Chrome/Google Wallet 环境中逐项完成并记录以下 11 项：
 
-自动化测试挂载真实 `StripeGooglePayExpress` Vue 子组件，但只验证应用内部行为，不代表真实 Google 钱包或 Stripe 网络已经可用。上线前必须在已注册 HTTPS 域名、已登录 Google 且配置钱包的真实 Chrome/Android 环境中人工确认：
+1. Stripe Dashboard 的 Payment Methods 已启用 Google Pay。
+2. 当前生产或预发布主机名已注册到与配置密钥匹配的 Stripe 账户。
+3. 页面使用公开受信任的 TLS HTTPS 证书。
+4. Chrome 已登录 Google，Google Wallet 中有可用银行卡。
+5. 管理员未对订单所选 Stripe 实例启用 Google Pay 时，不显示 Google Pay 区域。
+6. 管理员启用但环境不支持时，面板显示禁用占位和诊断。
+7. 受支持环境中由 Stripe 渲染真实 Google Pay Express Checkout 按钮。
+8. 钱包取消或失败后仍可使用 Payment Element。
+9. 成功交易在 Stripe 中显示 `card.wallet.type=google_pay`，同时结果页等待 Webhook。
+10. Sub2API 订单显示 Google Pay，余额或订阅只发放一次。
+11. Google Pay 订单可通过原 Stripe 服务商实例退款。
 
-- 只有 Google Pay 出现在快捷支付区域。
-- 钱包取消或失败后仍可使用下方 Payment Element。
-- 成功交易在 Stripe 中显示 `card.wallet.type = google_pay`。
-- Webhook 只触发一次本地入账。
+如果当前不具备上述已注册 HTTPS 与钱包环境，应把清单记录为 `NOT EXECUTED — requires operator on registered HTTPS environment`；localhost、mock、`httptest` 和代码检查均不能使人工验收通过。上线时应先逐实例完成预发布验收，再逐个启用，并监控 Stripe Webhook 重试、PaymentMethod 获取失败、入账延迟和 Google Pay 订单量。回滚时取消该服务商实例中的 `google_pay` 子方式即可停止新入口；已有订单、Payment Element、Webhook 处理和退款继续使用原 Stripe 实例。
 
 ### Wise
 

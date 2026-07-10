@@ -152,26 +152,29 @@ International payment platform supporting multiple payment methods and currencie
 
 #### Google Pay Express Checkout
 
-Google Pay is displayed above the Stripe Payment Element through Stripe's Express Checkout Element and is processed as a wallet on the existing `card` PaymentIntent. Sub2API does not add a `google_pay` backend payment type and does not store or transmit the Google Pay Merchant ID or Stripe Payment Method Domain ID.
+Google Pay is an optional sub-method of each Stripe provider instance. It is off by default for both existing and newly created instances. Enable both Card and Google Pay in the provider dialog; Sub2API rejects Google Pay without Card. The instance selected for the order is authoritative: the backend maps `card + google_pay` to one deduplicated `card` PaymentIntent and returns that instance's capability and publishable key to checkout.
 
-Before enabling it, confirm that:
+The Sub2API switch does not replace Stripe Dashboard setup. Enable Google Pay under Stripe Payment Methods, register every production and staging hostname (including each subdomain) under Payment Method Domains for the matching Stripe account, serve checkout over trusted TLS HTTPS, and test in a supported Chrome/Android environment with a usable card in Google Wallet. Google Pay Merchant ID and Stripe Payment Method Domain ID are not Sub2API inputs and must not be added to its configuration or logs. A live key on `http://localhost` is not valid evidence for real Google Pay acceptance.
+
+When enabled, the Stripe panel has four states. While Stripe checks availability it shows a disabled status placeholder; a supported environment receives Stripe's real Express Checkout Google Pay button; an unsupported domain, browser, or wallet keeps a disabled placeholder and diagnostic; and an Element load failure also keeps a disabled placeholder and diagnostic. Only Stripe's real Express Checkout Element is clickable. The disabled placeholders cannot start payment or a custom wallet flow, and the Payment Element remains available in every unavailable or error state.
+
+Google Pay and the Payment Element reuse the same local order, PaymentIntent, Stripe/Elements instances, submission lock, and result page. After confirmation, the result page waits for the webhook and never grants balance or subscriptions early. A signed `payment_intent.succeeded` webhook retrieves the PaymentMethod with stripe-go. `card.wallet.type=google_pay` updates the existing order's `payment_type` to `google_pay` in the same conditional paid-state update, so duplicate delivery does not fulfill twice. Provider identity, queries, and refunds remain attached to the original Stripe instance. No database migration is required.
+
+Automated tests verify only application behavior at the Stripe SDK boundary; they must not access Stripe Test/Live APIs, create a real PaymentIntent, or be reported as proof of a real Google Wallet transaction. Before production rollout, an operator must complete and record all 11 checks on a registered HTTPS hostname using the matching Stripe account and a real supported Chrome/Google Wallet environment:
 
 1. Google Pay is enabled under Payment Methods in the Stripe Dashboard.
-2. The Stripe provider instance includes `card` in its supported types.
-3. Every production and staging hostname that displays checkout, including `www` and other subdomains, is registered under Stripe Payment Method Domains.
-4. Checkout uses a publicly trusted HTTPS origin.
-5. The hostname, publishable key, secret key and webhook secret belong to the same Stripe environment.
+2. The current production or staging hostname is registered to the Stripe account that matches the configured keys.
+3. The page uses a publicly trusted TLS HTTPS certificate.
+4. Chrome is signed in to Google and Google Wallet has a usable card.
+5. Google Pay is absent when the administrator has not enabled it for the selected Stripe instance.
+6. When enabled in an unsupported environment, the panel shows the disabled placeholder and diagnostic.
+7. In a supported environment, Stripe renders the real Google Pay Express Checkout button.
+8. After wallet cancellation or failure, the Payment Element remains usable.
+9. A successful transaction appears in Stripe with `card.wallet.type=google_pay`, while the result page waits for the webhook.
+10. The Sub2API order displays Google Pay and grants the balance or subscription exactly once.
+11. The Google Pay order can be refunded through the original Stripe provider instance.
 
-The express region currently permits only Google Pay. Apple Pay, Link, Amazon Pay, PayPal and Klarna are disabled in that region. When Google Pay is unavailable or fails to load, the express region and divider are hidden silently while the Payment Element remains available for card, Alipay, WeChat Pay and Link.
-
-Google Pay and the Payment Element reuse the same local order, PaymentIntent, Stripe/Elements instances and submission lock. Frontend success state never grants balance or subscriptions; fulfillment remains authoritative only after the signed Stripe `payment_intent.succeeded` webhook.
-
-Automated tests mount the real `StripeGooglePayExpress` Vue component but verify only application behavior; they do not prove that a real Google wallet or Stripe network is available. Before production rollout, validate manually on a registered HTTPS hostname in a real Chrome/Android environment signed into Google with a configured wallet:
-
-- Only Google Pay appears in the express region.
-- After wallet cancellation or failure, the Payment Element remains usable.
-- A successful charge reports `card.wallet.type = google_pay` in Stripe.
-- The webhook causes exactly one local fulfillment.
+If that registered HTTPS and wallet environment is not available, record the checklist as `NOT EXECUTED — requires operator on registered HTTPS environment`; localhost, mocks, `httptest`, and code inspection cannot pass it. For rollout, enable one validated instance at a time and monitor Stripe webhook retries, PaymentMethod retrieval failures, fulfillment delay, and Google Pay order volume. To roll back, remove `google_pay` from that provider instance to stop new Google Pay entry points; existing orders, the Payment Element, webhook processing, and refunds continue to use their original Stripe instance.
 
 ### Wise
 
