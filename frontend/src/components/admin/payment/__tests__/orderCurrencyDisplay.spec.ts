@@ -4,6 +4,7 @@ import type { PaymentOrder } from '@/types/payment'
 import AdminOrderDetail from '../AdminOrderDetail.vue'
 import AdminOrderTable from '../AdminOrderTable.vue'
 import AdminRefundDialog from '../AdminRefundDialog.vue'
+import PaymentMethodChart from '../PaymentMethodChart.vue'
 import OrderTable from '@/components/payment/OrderTable.vue'
 
 vi.mock('vue-i18n', async () => {
@@ -28,6 +29,15 @@ const DataTableStub = {
       <div v-for="row in data" :key="row.id">
         <slot name="cell-pay_amount" :value="row.pay_amount" :row="row" />
       </div>
+    </div>
+  `,
+}
+
+const SelectOptionsStub = {
+  props: ['options'],
+  template: `
+    <div class="select-options-stub">
+      <span v-for="option in options" :key="option.value" :data-value="option.value">{{ option.label }}</span>
     </div>
   `,
 }
@@ -149,5 +159,42 @@ describe('admin order currency display', () => {
     expect(text).toContain('$108.00')
     expect(text).toContain('¥108.00')
     expect(text).toContain('$100.00')
+  })
+
+  it('shows Google Pay as an order label and filter option', () => {
+    const wrapper = mount(AdminOrderTable, {
+      props: {
+        orders: [orderFactory({ payment_type: 'google_pay' })],
+        loading: false,
+        page: 1,
+        pageSize: 20,
+        total: 1,
+      },
+      global: {
+        stubs: {
+          DataTable: {
+            props: ['data'],
+            template: '<div><slot name="cell-payment_type" value="google_pay" :row="data[0]" /></div>',
+          },
+          Icon: true,
+          Pagination: true,
+          Select: SelectOptionsStub,
+        },
+      },
+    })
+
+    expect(wrapper.text()).toContain('payment.methods.google_pay')
+    expect(wrapper.find('[data-value="google_pay"]').exists()).toBe(true)
+  })
+
+  it('uses the dedicated Google Pay color in the payment method chart', () => {
+    const wrapper = mount(PaymentMethodChart, {
+      props: {
+        methods: [{ type: 'google_pay', amount: 50, count: 2 }],
+      },
+    })
+
+    expect(wrapper.findAll('.bg-sky-500')).toHaveLength(2)
+    expect(wrapper.find('.bg-gray-400').exists()).toBe(false)
   })
 })

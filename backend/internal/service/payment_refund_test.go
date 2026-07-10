@@ -203,6 +203,96 @@ func TestFormatGatewayRefundAmountUsesOrderCurrency(t *testing.T) {
 	require.Equal(t, "12.345", formatGatewayRefundAmount(12.345, order))
 }
 
+func TestGooglePayRefundUsesOriginalStripeInstanceForRefundAndQuery(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	user, err := client.User.Create().
+		SetEmail("google-pay-refund@example.com").
+		SetPasswordHash("hash").
+		SetUsername("google-pay-refund").
+		Save(ctx)
+	require.NoError(t, err)
+	instance, err := client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeStripe).
+		SetName("original-stripe-google-pay").
+		SetConfig("{}").
+		SetSupportedTypes("stripe,google_pay").
+		SetEnabled(true).
+		SetRefundEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+	instanceID := strconv.FormatInt(instance.ID, 10)
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(100).
+		SetPayAmount(100).
+		SetFeeRate(0).
+		SetRechargeCode("GOOGLE-PAY-REFUND").
+		SetOutTradeNo("sub2_google_pay_refund").
+		SetPaymentType(payment.TypeGooglePay).
+		SetPaymentTradeNo("pi_google_pay_refund").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusCompleted).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetPaidAt(time.Now()).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		SetProviderKey(payment.TypeStripe).
+		SetProviderInstanceID(instanceID).
+		SetProviderSnapshot(map[string]any{
+			"schema_version":       2,
+			"provider_instance_id": instanceID,
+			"provider_key":         payment.TypeStripe,
+		}).
+		Save(ctx)
+	require.NoError(t, err)
+
+	providerDouble := &googlePayRefundProviderTestDouble{}
+	originalFactory := createPaymentProviderFromInstance
+	var factoryKeys, factoryInstanceIDs []string
+	createPaymentProviderFromInstance = func(providerKey, gotInstanceID string, _ map[string]string) (payment.Provider, error) {
+		factoryKeys = append(factoryKeys, providerKey)
+		factoryInstanceIDs = append(factoryInstanceIDs, gotInstanceID)
+		return providerDouble, nil
+	}
+	t.Cleanup(func() { createPaymentProviderFromInstance = originalFactory })
+	svc := &PaymentService{entClient: client, loadBalancer: &captureLoadBalancer{}}
+
+	_, err = svc.gwRefund(ctx, &RefundPlan{
+		OrderID:       order.ID,
+		Order:         order,
+		RefundAmount:  100,
+		GatewayAmount: 100,
+		Reason:        "google pay refund",
+	})
+	require.NoError(t, err)
+	require.Len(t, providerDouble.refundRequests, 1)
+	require.Equal(t, order.PaymentTradeNo, providerDouble.refundRequests[0].TradeNo)
+
+	_, err = client.PaymentOrder.UpdateOneID(order.ID).
+		SetStatus(OrderStatusRefundPending).
+		SetRefundAmount(100).
+		SetRefundReason("google pay refund").
+		Save(ctx)
+	require.NoError(t, err)
+	_, err = client.PaymentAuditLog.Create().
+		SetOrderID(strconv.FormatInt(order.ID, 10)).
+		SetAction("REFUND_PENDING").
+		SetOperator("admin").
+		SetDetail(`{"refundID":"re_google_pay","deductionRollbackOK":true}`).
+		Save(ctx)
+	require.NoError(t, err)
+
+	_, err = svc.QueryAndFinalizeRefund(ctx, order.ID)
+	require.NoError(t, err)
+	require.Len(t, providerDouble.queryRequests, 1)
+	require.Equal(t, "re_google_pay", providerDouble.queryRequests[0].RefundID)
+	require.Equal(t, []string{payment.TypeStripe, payment.TypeStripe}, factoryKeys)
+	require.Equal(t, []string{instanceID, instanceID}, factoryInstanceIDs)
+}
+
 func TestValidateRefundProviderResponseAcceptsPending(t *testing.T) {
 	require.NoError(t, validateRefundProviderResponse(&payment.RefundResponse{Status: payment.ProviderStatusPending}))
 	require.NoError(t, validateRefundProviderResponse(&payment.RefundResponse{Status: payment.ProviderStatusSuccess}))
@@ -579,4 +669,20 @@ type refundQueryProviderTestDouble struct {
 
 func (p *refundQueryProviderTestDouble) QueryRefund(context.Context, payment.RefundQueryRequest) (*payment.RefundResponse, error) {
 	return p.refundResponse, nil
+}
+
+type googlePayRefundProviderTestDouble struct {
+	refundProviderTestDouble
+	refundRequests []payment.RefundRequest
+	queryRequests  []payment.RefundQueryRequest
+}
+
+func (p *googlePayRefundProviderTestDouble) Refund(_ context.Context, req payment.RefundRequest) (*payment.RefundResponse, error) {
+	p.refundRequests = append(p.refundRequests, req)
+	return &payment.RefundResponse{RefundID: "re_google_pay", Status: payment.ProviderStatusPending}, nil
+}
+
+func (p *googlePayRefundProviderTestDouble) QueryRefund(_ context.Context, req payment.RefundQueryRequest) (*payment.RefundResponse, error) {
+	p.queryRequests = append(p.queryRequests, req)
+	return &payment.RefundResponse{RefundID: req.RefundID, Status: payment.ProviderStatusPending}, nil
 }

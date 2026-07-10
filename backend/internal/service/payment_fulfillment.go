@@ -131,7 +131,18 @@ func (s *PaymentService) confirmPayment(ctx context.Context, oid int64, tradeNo 
 		}
 		tradeNo = wiseTransactionID
 	}
-	return s.toPaid(ctx, o, tradeNo, paid, pk)
+	actualPaymentType := resolvedNotificationPaymentType(o.PaymentType, pk, metadata)
+	return s.toPaid(ctx, o, tradeNo, paid, pk, actualPaymentType)
+}
+
+func resolvedNotificationPaymentType(currentType string, providerKey string, metadata map[string]string) string {
+	if payment.GetBasePaymentType(providerKey) != payment.TypeStripe {
+		return currentType
+	}
+	if metadata[payment.NotificationMetadataPaymentType] == payment.TypeGooglePay {
+		return payment.TypeGooglePay
+	}
+	return currentType
 }
 
 func paymentAmountToleranceForCurrency(currency string) float64 {
@@ -199,7 +210,7 @@ func expectedNotificationProviderKey(registry *payment.Registry, orderPaymentTyp
 	return strings.TrimSpace(orderPaymentType)
 }
 
-func (s *PaymentService) toPaid(ctx context.Context, o *dbent.PaymentOrder, tradeNo string, paid float64, pk string) error {
+func (s *PaymentService) toPaid(ctx context.Context, o *dbent.PaymentOrder, tradeNo string, paid float64, pk string, actualPaymentType string) error {
 	previousStatus := o.Status
 	now := time.Now()
 	grace := now.Add(-paymentGraceMinutes * time.Minute)
@@ -225,7 +236,7 @@ func (s *PaymentService) toPaid(ctx context.Context, o *dbent.PaymentOrder, trad
 	c, err := s.entClient.PaymentOrder.Update().Where(
 		paymentorder.IDEQ(o.ID),
 		paymentorder.Or(statusRecoveryPredicates...),
-	).SetStatus(OrderStatusPaid).SetPayAmount(paid).SetPaymentTradeNo(tradeNo).SetPaidAt(now).ClearFailedAt().ClearFailedReason().Save(ctx)
+	).SetStatus(OrderStatusPaid).SetPayAmount(paid).SetPaymentTradeNo(tradeNo).SetPaymentType(actualPaymentType).SetPaidAt(now).ClearFailedAt().ClearFailedReason().Save(ctx)
 	if err != nil {
 		if payment.GetBasePaymentType(pk) == payment.TypeWise && isWiseTransactionReuseConstraintError(err) {
 			s.writeAuditLog(ctx, o.ID, "PAYMENT_TRANSACTION_REUSED", pk, map[string]any{

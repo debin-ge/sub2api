@@ -17,6 +17,225 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestHandlePaymentNotificationGooglePayRecordsTypeAndFulfillsBalanceOnce(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	ensurePaymentAuditOrderActionUniqueIndex(t, ctx, client)
+
+	user, err := client.User.Create().
+		SetEmail("google-pay-fulfillment@example.com").
+		SetPasswordHash("hash").
+		SetUsername("google-pay-fulfillment").
+		Save(ctx)
+	require.NoError(t, err)
+	instance, err := client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeStripe).
+		SetName("stripe-google-pay-fulfillment").
+		SetConfig("{}").
+		SetSupportedTypes("stripe,google_pay").
+		SetEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+	instanceID := strconv.FormatInt(instance.ID, 10)
+	snapshot := map[string]any{
+		"schema_version":       2,
+		"provider_instance_id": instanceID,
+		"provider_key":         payment.TypeStripe,
+		"currency":             "USD",
+	}
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(88).
+		SetPayAmount(88).
+		SetFeeRate(0).
+		SetRechargeCode("GOOGLE-PAY-FULFILLMENT").
+		SetOutTradeNo("sub2_google_pay_fulfillment").
+		SetPaymentType(payment.TypeStripe).
+		SetPaymentTradeNo("").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusPending).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		SetProviderKey(payment.TypeStripe).
+		SetProviderInstanceID(instanceID).
+		SetProviderSnapshot(snapshot).
+		Save(ctx)
+	require.NoError(t, err)
+	persistedBefore, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+
+	userRepo := &mockUserRepo{getByIDUser: &User{
+		ID: user.ID, Email: user.Email, Username: user.Username,
+	}}
+	userRepo.updateBalanceFn = func(_ context.Context, id int64, amount float64) error {
+		require.Equal(t, user.ID, id)
+		userRepo.getByIDUser.Balance += amount
+		return nil
+	}
+	redeemRepo := &paymentOrderLifecycleRedeemRepo{codesByCode: map[string]*RedeemCode{
+		order.RechargeCode: {
+			ID: 1, Code: order.RechargeCode, Type: RedeemTypeBalance,
+			Value: order.Amount, Status: StatusUnused,
+		},
+	}}
+	svc := &PaymentService{
+		entClient: client,
+		redeemService: NewRedeemService(
+			redeemRepo, userRepo, nil, nil, nil, client, nil, nil,
+		),
+		userRepo: userRepo,
+	}
+	notification := &payment.PaymentNotification{
+		OrderID: order.OutTradeNo,
+		TradeNo: "pi_google_pay_fulfillment",
+		Amount:  order.PayAmount,
+		Status:  payment.NotificationStatusSuccess,
+		Metadata: map[string]string{
+			payment.NotificationMetadataPaymentType: payment.TypeGooglePay,
+			"currency":                              "USD",
+		},
+	}
+
+	require.NoError(t, svc.HandlePaymentNotification(ctx, notification, payment.TypeStripe))
+	require.NoError(t, svc.HandlePaymentNotification(ctx, notification, payment.TypeStripe))
+
+	updated, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusCompleted, updated.Status)
+	require.Equal(t, payment.TypeGooglePay, updated.PaymentType)
+	require.NotNil(t, updated.ProviderKey)
+	require.Equal(t, payment.TypeStripe, *updated.ProviderKey)
+	require.NotNil(t, updated.ProviderInstanceID)
+	require.Equal(t, instanceID, *updated.ProviderInstanceID)
+	require.Equal(t, persistedBefore.ProviderSnapshot, updated.ProviderSnapshot)
+	require.Equal(t, 88.0, userRepo.getByIDUser.Balance)
+	require.Len(t, redeemRepo.useCalls, 1)
+}
+
+func TestHandlePaymentNotificationGooglePayKeepsStripeCardAndNonStripeProviderTypes(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		providerKey  string
+		metadataType string
+		wantType     string
+	}{
+		{name: "stripe card", providerKey: payment.TypeStripe, metadataType: payment.TypeStripe, wantType: payment.TypeStripe},
+		{name: "forged alipay", providerKey: payment.TypeAlipay, metadataType: payment.TypeGooglePay, wantType: payment.TypeAlipay},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			client := newPaymentConfigServiceTestClient(t)
+			ensurePaymentAuditOrderActionUniqueIndex(t, ctx, client)
+			user, err := client.User.Create().
+				SetEmail("notification-type-" + tc.providerKey + "@example.com").
+				SetPasswordHash("hash").
+				SetUsername("notification-type-" + tc.providerKey).
+				Save(ctx)
+			require.NoError(t, err)
+			order, err := client.PaymentOrder.Create().
+				SetUserID(user.ID).
+				SetUserEmail(user.Email).
+				SetUserName(user.Username).
+				SetAmount(25).
+				SetPayAmount(25).
+				SetFeeRate(0).
+				SetRechargeCode("NOTIFICATION-TYPE-" + tc.providerKey).
+				SetOutTradeNo("sub2_notification_type_" + tc.providerKey).
+				SetPaymentType(tc.providerKey).
+				SetPaymentTradeNo("").
+				SetOrderType(payment.OrderTypeBalance).
+				SetStatus(OrderStatusPending).
+				SetExpiresAt(time.Now().Add(time.Hour)).
+				SetClientIP("127.0.0.1").
+				SetSrcHost("api.example.com").
+				SetProviderKey(tc.providerKey).
+				Save(ctx)
+			require.NoError(t, err)
+			userRepo := &mockUserRepo{getByIDUser: &User{ID: user.ID, Email: user.Email, Username: user.Username}}
+			userRepo.updateBalanceFn = func(_ context.Context, _ int64, amount float64) error {
+				userRepo.getByIDUser.Balance += amount
+				return nil
+			}
+			redeemRepo := &paymentOrderLifecycleRedeemRepo{codesByCode: map[string]*RedeemCode{
+				order.RechargeCode: {ID: 1, Code: order.RechargeCode, Type: RedeemTypeBalance, Value: order.Amount, Status: StatusUnused},
+			}}
+			svc := &PaymentService{
+				entClient: client,
+				redeemService: NewRedeemService(
+					redeemRepo, userRepo, nil, nil, nil, client, nil, nil,
+				),
+				userRepo: userRepo,
+			}
+
+			err = svc.HandlePaymentNotification(ctx, &payment.PaymentNotification{
+				OrderID: order.OutTradeNo,
+				TradeNo: "trade-" + tc.providerKey,
+				Amount:  order.PayAmount,
+				Status:  payment.NotificationStatusSuccess,
+				Metadata: map[string]string{
+					payment.NotificationMetadataPaymentType: tc.metadataType,
+				},
+			}, tc.providerKey)
+			require.NoError(t, err)
+			updated, err := client.PaymentOrder.Get(ctx, order.ID)
+			require.NoError(t, err)
+			require.Equal(t, tc.wantType, updated.PaymentType)
+			require.Equal(t, 25.0, userRepo.getByIDUser.Balance)
+			require.Len(t, redeemRepo.useCalls, 1)
+		})
+	}
+}
+
+func TestHandlePaymentNotificationGooglePayDoesNotChangeUnrecoverableExpiredOrder(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	user, err := client.User.Create().
+		SetEmail("expired-google-pay@example.com").
+		SetPasswordHash("hash").
+		SetUsername("expired-google-pay").
+		Save(ctx)
+	require.NoError(t, err)
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(40).
+		SetPayAmount(40).
+		SetFeeRate(0).
+		SetRechargeCode("EXPIRED-GOOGLE-PAY").
+		SetOutTradeNo("sub2_expired_google_pay").
+		SetPaymentType(payment.TypeStripe).
+		SetPaymentTradeNo("").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusExpired).
+		SetExpiresAt(time.Now().Add(-time.Hour)).
+		SetUpdatedAt(time.Now().Add(-(paymentGraceMinutes + 1) * time.Minute)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		SetProviderKey(payment.TypeStripe).
+		Save(ctx)
+	require.NoError(t, err)
+	svc := &PaymentService{entClient: client}
+
+	err = svc.HandlePaymentNotification(ctx, &payment.PaymentNotification{
+		OrderID: order.OutTradeNo,
+		TradeNo: "pi_expired_google_pay",
+		Amount:  order.PayAmount,
+		Status:  payment.NotificationStatusSuccess,
+		Metadata: map[string]string{
+			payment.NotificationMetadataPaymentType: payment.TypeGooglePay,
+		},
+	}, payment.TypeStripe)
+	require.NoError(t, err)
+	updated, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusExpired, updated.Status)
+	require.Equal(t, payment.TypeStripe, updated.PaymentType)
+}
+
 type paymentFulfillmentTestProvider struct {
 	key            string
 	supportedTypes []payment.PaymentType

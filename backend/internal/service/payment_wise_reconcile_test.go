@@ -707,7 +707,7 @@ func TestWiseToPaidDoesNotRecoverCancelledOrderOutsideConfiguredWindow(t *testin
 	require.NoError(t, err)
 
 	svc := &PaymentService{entClient: client}
-	err = svc.toPaid(ctx, order, "wise-old-cancelled-paid", 88, payment.TypeWise)
+	err = svc.toPaid(ctx, order, "wise-old-cancelled-paid", 88, payment.TypeWise, payment.TypeWise)
 	require.NoError(t, err)
 
 	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
