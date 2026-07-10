@@ -45,6 +45,21 @@
       </div>
       <!-- Stripe Payment Element -->
       <div class="card p-6">
+        <StripeGooglePayExpress
+          v-if="stripeInstance && elementsInstance"
+          :stripe="stripeInstance"
+          :elements="elementsInstance"
+          :return-url="returnUrl"
+          :disabled="submitting"
+          @availability-change="googlePayAvailable = $event"
+          @submitting-change="submitting = $event"
+          @confirmed="handleGooglePayConfirmed"
+        />
+        <div
+          v-if="googlePayAvailable"
+          class="my-5 border-t border-gray-200 dark:border-dark-600"
+          aria-hidden="true"
+        />
         <div ref="stripeMount" class="min-h-[200px]"></div>
         <p v-if="error" class="mt-4 text-sm text-red-600 dark:text-red-400">{{ error }}</p>
         <button class="btn btn-stripe mt-6 w-full py-3 text-base" :disabled="submitting || !ready" @click="handlePay">
@@ -64,7 +79,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted, nextTick } from 'vue'
+import { computed, ref, shallowRef, onMounted, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { extractI18nErrorMessage } from '@/utils/apiError'
@@ -74,6 +89,7 @@ import { getPaymentPopupFeatures } from '@/components/payment/providerConfig'
 import { currencySymbol } from '@/components/payment/currency'
 import type { Stripe, StripeElements } from '@stripe/stripe-js'
 import Icon from '@/components/icons/Icon.vue'
+import StripeGooglePayExpress from '@/components/payment/StripeGooglePayExpress.vue'
 
 // Stripe payment methods that open a popup (redirect or QR code)
 const POPUP_METHODS = new Set(['alipay', 'wechat_pay'])
@@ -105,9 +121,12 @@ const ready = ref(false)
 const selectedType = ref('')
 const creditedAmountSymbol = currencySymbol('USD')
 const paymentAmountSymbol = computed(() => currencySymbol(props.currency))
-
-let stripeInstance: Stripe | null = null
-let elementsInstance: StripeElements | null = null
+const stripeInstance = shallowRef<Stripe | null>(null)
+const elementsInstance = shallowRef<StripeElements | null>(null)
+const googlePayAvailable = ref(false)
+const returnUrl = computed(() => (
+  window.location.origin + '/payment/result?order_id=' + props.orderId + '&status=success'
+))
 
 onMounted(async () => {
   try {
@@ -115,7 +134,7 @@ onMounted(async () => {
     const stripe = await loadStripe(props.publishableKey)
     if (!stripe) { initError.value = t('payment.stripeLoadFailed'); return }
 
-    stripeInstance = stripe
+    stripeInstance.value = stripe
     loading.value = false
     await nextTick()
     if (!stripeMount.value) return
@@ -125,7 +144,7 @@ onMounted(async () => {
       clientSecret: props.clientSecret,
       appearance: { theme: isDark ? 'night' : 'stripe', variables: { borderRadius: '8px' } },
     })
-    elementsInstance = elements
+    elementsInstance.value = elements
     const paymentElement = elements.create('payment', {
       layout: 'tabs',
       paymentMethodOrder: ['alipay', 'wechat_pay', 'card', 'link'],
@@ -143,7 +162,7 @@ onMounted(async () => {
 })
 
 async function handlePay() {
-  if (!stripeInstance || !elementsInstance || submitting.value) return
+  if (!stripeInstance.value || !elementsInstance.value || submitting.value) return
 
   // Alipay / WeChat Pay: open popup for redirect or QR display
   if (POPUP_METHODS.has(selectedType.value)) {
@@ -176,10 +195,10 @@ async function handlePay() {
   submitting.value = true
   error.value = ''
   try {
-    const { error: stripeError } = await stripeInstance.confirmPayment({
-      elements: elementsInstance,
+    const { error: stripeError } = await stripeInstance.value.confirmPayment({
+      elements: elementsInstance.value,
       confirmParams: {
-        return_url: window.location.origin + '/payment/result?order_id=' + props.orderId + '&status=success',
+        return_url: returnUrl.value,
       },
       redirect: 'if_required',
     })
@@ -194,6 +213,11 @@ async function handlePay() {
   } finally {
     submitting.value = false
   }
+}
+
+function handleGooglePayConfirmed() {
+  success.value = true
+  emit('success')
 }
 
 async function handleCancel() {
