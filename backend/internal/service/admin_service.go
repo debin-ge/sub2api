@@ -108,7 +108,7 @@ type AdminService interface {
 	CheckMixedChannelRisk(ctx context.Context, currentAccountID int64, currentAccountPlatform string, groupIDs []int64) error
 	// RevertAccountProxyFallback 将账号的 proxy_id 切回 proxy_fallback_origin_id，并清空 origin 字段。
 	// 若账号不存在返回 ErrAccountNotFound；若账号存在但不在 fallback 状态，返回 ErrAccountNotInFallback。
-	RevertAccountProxyFallback(ctx context.Context, id int64) error
+	RevertAccountProxyFallback(ctx context.Context, id int64) ([]int64, error)
 	// CreateShadow 为指定 OpenAI OAuth 母账号创建 spark 维度影子账号（一母一影）。
 	// 影子账号不持凭据（Credentials 恒为空），透传母账号凭据；继承母账号的 ProxyID。
 	CreateShadow(ctx context.Context, parentID int64, opts ShadowOptions) (*Account, error)
@@ -432,6 +432,12 @@ func wrapAccountMutationError(err error, accountIDs ...int64) error {
 		return err
 	}
 	return &AccountMutationError{Cause: err, MutatedAccountIDs: normalized}
+}
+
+// WithAccountMutationIDs merges persisted account IDs into err while preserving
+// the original error chain and deduplicating any nested mutation receipt.
+func WithAccountMutationIDs(err error, accountIDs ...int64) error {
+	return wrapAccountMutationError(err, accountIDs...)
 }
 
 // AdminUpdateAPIKeyGroupIDResult is the result of AdminUpdateAPIKeyGroupID.
@@ -3004,6 +3010,7 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	if err != nil {
 		return nil, wrapAccountMutationError(err, mutatedIDs...)
 	}
+	updated.setAffectedAccountIDs(mutatedIDs)
 	return updated, nil
 }
 
@@ -3031,6 +3038,7 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 		SuccessIDs: make([]int64, 0, len(input.AccountIDs)),
 		FailedIDs:  make([]int64, 0, len(input.AccountIDs)),
 		Results:    make([]BulkUpdateAccountResult, 0, len(input.AccountIDs)),
+		UpdatedIDs: make([]int64, 0, len(input.AccountIDs)),
 	}
 
 	if len(input.AccountIDs) == 0 {
@@ -3133,7 +3141,7 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	}
 	if input.LoadFactor != nil {
 		if *input.LoadFactor <= 0 {
-			repoUpdates.LoadFactor = nil // 0 或负数表示清除
+			repoUpdates.LoadFactor = input.LoadFactor // 0 或负数表示清除
 		} else if *input.LoadFactor > 10000 {
 			return nil, errors.New("load_factor must be <= 10000")
 		} else {
@@ -3147,11 +3155,14 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 		repoUpdates.Schedulable = input.Schedulable
 	}
 
-	// Run bulk update for column/jsonb fields first.
-	if _, err := s.accountRepo.BulkUpdate(ctx, input.AccountIDs, repoUpdates); err != nil {
-		return nil, err
+	// Run the primary row update only when at least one persisted field changes.
+	hasPrimaryWrite := accountBulkUpdateHasFields(repoUpdates)
+	if hasPrimaryWrite {
+		if _, err := s.accountRepo.BulkUpdate(ctx, input.AccountIDs, repoUpdates); err != nil {
+			return nil, err
+		}
+		result.UpdatedIDs = append(result.UpdatedIDs, input.AccountIDs...)
 	}
-	result.UpdatedIDs = append([]int64(nil), input.AccountIDs...)
 
 	// 将 proxy 变更传播到每个目标账号的 spark 影子账号
 	if repoUpdates.ProxyID != nil {
@@ -3181,6 +3192,9 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 				result.Results = append(result.Results, entry)
 				continue
 			}
+			if !hasPrimaryWrite {
+				result.UpdatedIDs = append(result.UpdatedIDs, accountID)
+			}
 		}
 
 		entry.Success = true
@@ -3190,6 +3204,19 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	}
 
 	return result, nil
+}
+
+func accountBulkUpdateHasFields(update AccountBulkUpdate) bool {
+	return update.Name != nil ||
+		update.ProxyID != nil ||
+		update.Concurrency != nil ||
+		update.Priority != nil ||
+		update.RateMultiplier != nil ||
+		update.LoadFactor != nil ||
+		update.Status != nil ||
+		update.Schedulable != nil ||
+		len(update.Credentials) > 0 ||
+		len(update.Extra) > 0
 }
 
 func (s *adminServiceImpl) resolveBulkUpdateTargetIDs(ctx context.Context, filters *BulkUpdateAccountFilters) ([]int64, error) {
@@ -3310,20 +3337,22 @@ func (s *adminServiceImpl) SetAccountSchedulable(ctx context.Context, id int64, 
 	return updated, nil
 }
 
-func (s *adminServiceImpl) RevertAccountProxyFallback(ctx context.Context, id int64) error {
+func (s *adminServiceImpl) RevertAccountProxyFallback(ctx context.Context, id int64) ([]int64, error) {
 	if err := s.accountRepo.RevertProxyFallback(ctx, id); err != nil {
-		return err
+		return nil, err
 	}
+	mutatedIDs := []int64{id}
 	// 加载回退后的账号以获取实际 ProxyID，再传播到影子账号
 	account, err := s.accountRepo.GetByID(ctx, id)
 	if err != nil {
-		return wrapAccountMutationError(fmt.Errorf("get account after proxy revert: %w", err), id)
+		return nil, wrapAccountMutationError(fmt.Errorf("get account after proxy revert: %w", err), id)
 	}
-	_, err = s.propagateProxyToShadows(ctx, id, account.ProxyID)
+	shadowIDs, err := s.propagateProxyToShadows(ctx, id, account.ProxyID)
+	mutatedIDs = append(mutatedIDs, shadowIDs...)
 	if err != nil {
-		return wrapAccountMutationError(err, id)
+		return nil, wrapAccountMutationError(err, mutatedIDs...)
 	}
-	return nil
+	return mutatedIDs, nil
 }
 
 // CreateShadow 为指定 OpenAI OAuth 母账号创建 spark 维度影子账号（一母一影）。

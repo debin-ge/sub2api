@@ -20,7 +20,9 @@ type accountMutationReceiptRepo struct {
 	deleteErrByID     map[int64]error
 	updatedIDs        []int64
 	deletedIDs        []int64
+	clearErrorErr     error
 	clearRateLimitErr error
+	setSchedulableErr error
 }
 
 func (s *accountMutationReceiptRepo) Create(_ context.Context, account *Account) error {
@@ -60,13 +62,17 @@ func (s *accountMutationReceiptRepo) ListShadowsByParent(_ context.Context, _ in
 	return s.shadows, nil
 }
 
-func (s *accountMutationReceiptRepo) ClearError(context.Context, int64) error { return nil }
+func (s *accountMutationReceiptRepo) ClearError(context.Context, int64) error {
+	return s.clearErrorErr
+}
 
 func (s *accountMutationReceiptRepo) ClearRateLimit(context.Context, int64) error {
 	return s.clearRateLimitErr
 }
 
-func (s *accountMutationReceiptRepo) SetSchedulable(context.Context, int64, bool) error { return nil }
+func (s *accountMutationReceiptRepo) SetSchedulable(context.Context, int64, bool) error {
+	return s.setSchedulableErr
+}
 
 func TestAdminServiceCreateAccount_PostCreateFailureCarriesMutationID(t *testing.T) {
 	bindErr := errors.New("bind failed")
@@ -123,6 +129,28 @@ func TestAdminServiceClearAndSet_PostWriteFailuresCarryMutationID(t *testing.T) 
 	})
 }
 
+func TestAdminServiceClearAndSet_NotFoundDoesNotCarryMutationID(t *testing.T) {
+	t.Run("clear account error", func(t *testing.T) {
+		repo := &accountMutationReceiptRepo{clearErrorErr: ErrAccountNotFound}
+		svc := &adminServiceImpl{accountRepo: repo}
+
+		_, err := svc.ClearAccountError(context.Background(), 40)
+
+		require.ErrorIs(t, err, ErrAccountNotFound)
+		require.Empty(t, AccountMutationIDsFromError(err))
+	})
+
+	t.Run("set schedulable", func(t *testing.T) {
+		repo := &accountMutationReceiptRepo{setSchedulableErr: ErrAccountNotFound}
+		svc := &adminServiceImpl{accountRepo: repo}
+
+		_, err := svc.SetAccountSchedulable(context.Background(), 50, true)
+
+		require.ErrorIs(t, err, ErrAccountNotFound)
+		require.Empty(t, AccountMutationIDsFromError(err))
+	})
+}
+
 func TestAdminServiceDeleteAccount_PartialCascadeFailureCarriesDeletedIDs(t *testing.T) {
 	deleteErr := errors.New("delete failed")
 	repo := &accountMutationReceiptRepo{
@@ -135,4 +163,17 @@ func TestAdminServiceDeleteAccount_PartialCascadeFailureCarriesDeletedIDs(t *tes
 
 	require.ErrorIs(t, err, deleteErr)
 	require.Equal(t, []int64{6}, AccountMutationIDsFromError(err))
+}
+
+func TestWithAccountMutationIDs_MergesDeduplicatesAndClones(t *testing.T) {
+	cause := errors.New("post-write failure")
+	inner := &AccountMutationError{Cause: cause, MutatedAccountIDs: []int64{2, 3}}
+
+	err := WithAccountMutationIDs(inner, 1, 2)
+
+	require.ErrorIs(t, err, cause)
+	require.Equal(t, []int64{1, 2, 3}, AccountMutationIDsFromError(err))
+	ids := AccountMutationIDsFromError(err)
+	ids[0] = 99
+	require.Equal(t, []int64{1, 2, 3}, AccountMutationIDsFromError(err))
 }

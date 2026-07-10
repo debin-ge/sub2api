@@ -151,6 +151,17 @@ func (h *AccountHandler) modelCatalogMutationFailed(ctx context.Context, err err
 	h.modelCatalogAccountsChanged(ctx, service.AccountMutationIDsFromError(err))
 }
 
+func (h *AccountHandler) modelCatalogAccountUpdateSucceeded(ctx context.Context, account *service.Account) {
+	if account == nil {
+		return
+	}
+	if affectedIDs := account.AffectedAccountIDs(); len(affectedIDs) > 0 {
+		h.modelCatalogAccountsChanged(ctx, affectedIDs)
+		return
+	}
+	h.modelCatalogAccountChanged(account)
+}
+
 // CreateAccountRequest represents create account request
 type CreateAccountRequest struct {
 	Name                    string         `json:"name" binding:"required"`
@@ -991,7 +1002,7 @@ func (h *AccountHandler) Update(c *gin.Context) {
 		h.scheduleOpenAIResponsesProbe(account)
 	}
 
-	h.modelCatalogAccountChanged(account)
+	h.modelCatalogAccountUpdateSucceeded(c.Request.Context(), account)
 	response.Success(c, h.buildAccountResponseWithRuntime(c.Request.Context(), account))
 }
 
@@ -1342,7 +1353,9 @@ func (h *AccountHandler) refreshSingleAccount(ctx context.Context, account *serv
 		Credentials: newCredentials,
 	})
 	if err != nil {
-		h.modelCatalogAccountChanged(clearedAccount)
+		if clearedAccount != nil {
+			err = service.WithAccountMutationIDs(err, clearedAccount.ID)
+		}
 		return nil, "", err
 	}
 
@@ -1564,12 +1577,16 @@ func (h *AccountHandler) RevertProxyFallback(c *gin.Context) {
 		response.BadRequest(c, "Invalid account ID")
 		return
 	}
-	if err := h.adminService.RevertAccountProxyFallback(c.Request.Context(), id); err != nil {
+	affectedIDs, err := h.adminService.RevertAccountProxyFallback(c.Request.Context(), id)
+	if err != nil {
 		h.modelCatalogMutationFailed(c.Request.Context(), err)
 		response.ErrorFrom(c, err)
 		return
 	}
-	h.modelCatalogAccountsChanged(c.Request.Context(), []int64{id})
+	if len(affectedIDs) == 0 {
+		affectedIDs = []int64{id}
+	}
+	h.modelCatalogAccountsChanged(c.Request.Context(), affectedIDs)
 	response.Success(c, gin.H{"message": "reverted"})
 }
 
@@ -2039,7 +2056,7 @@ func (h *AccountHandler) BulkUpdate(c *gin.Context) {
 	}
 
 	updatedIDs := result.UpdatedIDs
-	if len(updatedIDs) == 0 {
+	if updatedIDs == nil {
 		updatedIDs = result.SuccessIDs
 	}
 	h.modelCatalogAccountsChanged(ctx, updatedIDs)
@@ -2603,7 +2620,6 @@ func buildGLMAdminModels(modelIDs []string) []claude.Model {
 		seen[modelID] = struct{}{}
 		normalizedIDs = append(normalizedIDs, modelID)
 	}
-	sort.Strings(normalizedIDs)
 	return buildDomesticClaudeShapeAdminModels(normalizedIDs)
 }
 

@@ -602,8 +602,12 @@ func TestUpdateAccount_PropagatesProxyToShadow(t *testing.T) {
 
 	// Update parent's ProxyID.
 	newProxy := int64(42)
-	_, err = svc.UpdateAccount(ctx, parent.ID, &UpdateAccountInput{ProxyID: &newProxy})
+	updated, err := svc.UpdateAccount(ctx, parent.ID, &UpdateAccountInput{ProxyID: &newProxy})
 	require.NoError(t, err)
+	require.Equal(t, []int64{parent.ID, shadowID}, updated.AffectedAccountIDs())
+	affectedIDs := updated.AffectedAccountIDs()
+	affectedIDs[0] = -1
+	require.Equal(t, []int64{parent.ID, shadowID}, updated.AffectedAccountIDs(), "success receipt must be cloned")
 
 	// Shadow must carry the new ProxyID.
 	storedShadow, ok := repo.accounts[shadowID]

@@ -27,6 +27,7 @@ type adminModelCatalogStub struct {
 	groupModels    map[int64][]string
 	invalidatedIDs []int64
 	refreshedIDs   []int64
+	refreshed      []*service.Account
 }
 
 type modelCatalogMutationAdminService struct {
@@ -34,6 +35,7 @@ type modelCatalogMutationAdminService struct {
 	accountsByID      map[int64]*service.Account
 	getAccountErrors  map[int64]error
 	accountsByIDs     []*service.Account
+	accountsByIDsSeq  [][]*service.Account
 	accountsByIDsErr  error
 	createdByName     map[string]*service.Account
 	createErrors      map[string]error
@@ -77,6 +79,11 @@ func (s *modelCatalogMutationAdminService) GetAccount(ctx context.Context, id in
 func (s *modelCatalogMutationAdminService) GetAccountsByIDs(ctx context.Context, ids []int64) ([]*service.Account, error) {
 	if s.accountsByIDsErr != nil {
 		return nil, s.accountsByIDsErr
+	}
+	if len(s.accountsByIDsSeq) > 0 {
+		accounts := s.accountsByIDsSeq[0]
+		s.accountsByIDsSeq = s.accountsByIDsSeq[1:]
+		return accounts, nil
 	}
 	if s.accountsByIDs != nil {
 		return s.accountsByIDs, nil
@@ -147,6 +154,70 @@ type adminAntigravityOAuthServiceStub struct {
 	err       error
 }
 
+type proxyMutationAccountRepo struct {
+	service.AccountRepository
+	accounts        map[int64]*service.Account
+	shadowsByParent map[int64][]int64
+}
+
+func newProxyMutationAccountRepo(accounts ...*service.Account) *proxyMutationAccountRepo {
+	repo := &proxyMutationAccountRepo{
+		accounts:        make(map[int64]*service.Account, len(accounts)),
+		shadowsByParent: make(map[int64][]int64),
+	}
+	for _, account := range accounts {
+		cloned := *account
+		repo.accounts[account.ID] = &cloned
+		if account.ParentAccountID != nil {
+			repo.shadowsByParent[*account.ParentAccountID] = append(repo.shadowsByParent[*account.ParentAccountID], account.ID)
+		}
+	}
+	return repo
+}
+
+func (r *proxyMutationAccountRepo) GetByID(_ context.Context, id int64) (*service.Account, error) {
+	account := r.accounts[id]
+	if account == nil {
+		return nil, service.ErrAccountNotFound
+	}
+	cloned := *account
+	return &cloned, nil
+}
+
+func (r *proxyMutationAccountRepo) GetByIDs(ctx context.Context, ids []int64) ([]*service.Account, error) {
+	accounts := make([]*service.Account, 0, len(ids))
+	for _, id := range ids {
+		account, err := r.GetByID(ctx, id)
+		if err == nil {
+			accounts = append(accounts, account)
+		}
+	}
+	return accounts, nil
+}
+
+func (r *proxyMutationAccountRepo) Update(_ context.Context, account *service.Account) error {
+	cloned := *account
+	r.accounts[account.ID] = &cloned
+	return nil
+}
+
+func (r *proxyMutationAccountRepo) ListShadowsByParent(ctx context.Context, parentID int64) ([]*service.Account, error) {
+	return r.GetByIDs(ctx, r.shadowsByParent[parentID])
+}
+
+func (r *proxyMutationAccountRepo) RevertProxyFallback(_ context.Context, accountID int64) error {
+	account := r.accounts[accountID]
+	if account == nil {
+		return service.ErrAccountNotFound
+	}
+	if account.ProxyFallbackOriginID == nil {
+		return service.ErrAccountNotInFallback
+	}
+	account.ProxyID = account.ProxyFallbackOriginID
+	account.ProxyFallbackOriginID = nil
+	return nil
+}
+
 func (s *adminAntigravityOAuthServiceStub) RefreshAccountToken(context.Context, *service.Account) (*service.AntigravityTokenInfo, error) {
 	return s.tokenInfo, s.err
 }
@@ -205,6 +276,19 @@ func setupAntigravityRefreshMutationRouter(adminSvc service.AdminService, catalo
 	return router
 }
 
+func setupProxyMutationCatalogRouter(repo service.AccountRepository, catalog adminModelCatalog) *gin.Engine {
+	adminSvc := service.NewAdminService(
+		nil, nil, repo, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil,
+	)
+	handler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler.modelCatalog = catalog
+	router := gin.New()
+	router.PUT("/accounts/:id", handler.Update)
+	router.POST("/accounts/:id/revert-proxy-fallback", handler.RevertProxyFallback)
+	return router
+}
+
 func performCatalogJSONRequest(t *testing.T, router http.Handler, method, path string, body any) *httptest.ResponseRecorder {
 	t.Helper()
 	payload, err := json.Marshal(body)
@@ -234,6 +318,12 @@ func (s *adminModelCatalogStub) RefreshAccountAsync(account *service.Account) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.refreshedIDs = append(s.refreshedIDs, account.ID)
+	cloned := *account
+	cloned.Credentials = make(map[string]any, len(account.Credentials))
+	for key, value := range account.Credentials {
+		cloned.Credentials[key] = value
+	}
+	s.refreshed = append(s.refreshed, &cloned)
 }
 
 func requireCatalogMutation(t *testing.T, catalog *adminModelCatalogStub, invalidated, refreshed []int64) {
@@ -242,6 +332,14 @@ func requireCatalogMutation(t *testing.T, catalog *adminModelCatalogStub, invali
 	defer catalog.mu.Unlock()
 	require.ElementsMatch(t, invalidated, catalog.invalidatedIDs)
 	require.ElementsMatch(t, refreshed, catalog.refreshedIDs)
+}
+
+func requireSingleCatalogRefreshCredential(t *testing.T, catalog *adminModelCatalogStub, key string, want any) {
+	t.Helper()
+	catalog.mu.Lock()
+	defer catalog.mu.Unlock()
+	require.Len(t, catalog.refreshed, 1)
+	require.Equal(t, want, catalog.refreshed[0].Credentials[key])
 }
 
 func TestAccountHandlerGetAvailableModels_UsesCatalog(t *testing.T) {
@@ -299,6 +397,19 @@ func TestAdminModelBuilders_PreserveProviderMetadataFallbacksAndOrder(t *testing
 			known,
 		}, models)
 	})
+}
+
+func TestAdminModelBuilders_GLMDefaultOrderPreserved(t *testing.T) {
+	require.Equal(t, []string{"GLM-5.1", "GLM-4.7", "GLM-4.5-air"}, service.DefaultGLMModelIDs())
+
+	models := buildGLMAdminModels([]string{"glm-5.1", "GLM-4.7", "glm-4.5-air", "GLM-5.1"})
+	modelIDs := make([]string, 0, len(models))
+	for _, model := range models {
+		modelIDs = append(modelIDs, model.ID)
+	}
+
+	require.Equal(t, []string{"GLM-5.1", "GLM-4.7", "GLM-4.5-air"}, modelIDs)
+	require.Equal(t, "GLM-5.1", models[0].ID, "newest provider default must remain first")
 }
 
 func TestGroupModelsListCandidates_UsesCatalog(t *testing.T) {
@@ -423,6 +534,51 @@ func TestAccountHandlerUpdate_ModelCatalogMutationFollowsWriteResult(t *testing.
 	})
 }
 
+func TestAccountHandlerUpdate_ModelCatalogIncludesSuccessfulShadows(t *testing.T) {
+	parentID := int64(201)
+	oldProxyID := int64(3)
+	repo := newProxyMutationAccountRepo(
+		&service.Account{
+			ID: parentID, Name: "parent", Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth,
+			Status: service.StatusActive, Schedulable: true, ProxyID: &oldProxyID,
+		},
+		&service.Account{
+			ID: 202, Name: "shadow", Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth,
+			Status: service.StatusActive, Schedulable: true, ParentAccountID: &parentID, QuotaDimension: "spark",
+		},
+	)
+	catalog := &adminModelCatalogStub{}
+	router := setupProxyMutationCatalogRouter(repo, catalog)
+
+	rec := performCatalogJSONRequest(t, router, http.MethodPut, "/accounts/201", map[string]any{"proxy_id": 9})
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	requireCatalogMutation(t, catalog, []int64{201, 202}, []int64{201, 202})
+}
+
+func TestAccountHandlerRevertProxyFallback_ModelCatalogIncludesSuccessfulShadows(t *testing.T) {
+	parentID := int64(211)
+	fallbackProxyID := int64(8)
+	originalProxyID := int64(4)
+	repo := newProxyMutationAccountRepo(
+		&service.Account{
+			ID: parentID, Name: "parent", Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth,
+			Status: service.StatusActive, Schedulable: true, ProxyID: &fallbackProxyID, ProxyFallbackOriginID: &originalProxyID,
+		},
+		&service.Account{
+			ID: 212, Name: "shadow", Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth,
+			Status: service.StatusActive, Schedulable: true, ParentAccountID: &parentID, QuotaDimension: "spark",
+		},
+	)
+	catalog := &adminModelCatalogStub{}
+	router := setupProxyMutationCatalogRouter(repo, catalog)
+
+	rec := performCatalogJSONRequest(t, router, http.MethodPost, "/accounts/211/revert-proxy-fallback", nil)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	requireCatalogMutation(t, catalog, []int64{211, 212}, []int64{211, 212})
+}
+
 func TestAccountHandlerDelete_ModelCatalogMutationFollowsWriteResult(t *testing.T) {
 	t.Run("successful deletion only invalidates", func(t *testing.T) {
 		adminSvc := newModelCatalogMutationAdminService()
@@ -521,6 +677,29 @@ func TestAccountHandlerBulkUpdate_ModelCatalogUsesOnlySuccessfulSurvivors(t *tes
 
 		requireCatalogMutation(t, catalog, nil, nil)
 	})
+}
+
+func TestAccountHandlerBulkUpdate_GroupOnlyCatalogUsesSuccessfulBindings(t *testing.T) {
+	adminSvc := newModelCatalogMutationAdminService()
+	adminSvc.bulkResult = &service.BulkUpdateAccountsResult{
+		Success: 1, Failed: 1,
+		SuccessIDs: []int64{221}, FailedIDs: []int64{222}, UpdatedIDs: []int64{221},
+		Results: []service.BulkUpdateAccountResult{
+			{AccountID: 221, Success: true},
+			{AccountID: 222, Success: false, Error: "bind failed"},
+		},
+	}
+	adminSvc.accountsByIDs = []*service.Account{{ID: 221, Status: service.StatusActive, Schedulable: true}}
+	catalog := &adminModelCatalogStub{}
+	router := setupModelCatalogMutationRouter(adminSvc, nil, catalog)
+
+	rec := performCatalogJSONRequest(t, router, http.MethodPost, "/accounts/bulk-update", map[string]any{
+		"account_ids": []int64{221, 222}, "group_ids": []int64{10},
+	})
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.NotContains(t, rec.Body.String(), "updated_ids")
+	requireCatalogMutation(t, catalog, []int64{221}, []int64{221})
 }
 
 func TestAccountHandlerBatchUpdateCredentials_ModelCatalogUsesSuccessfulResults(t *testing.T) {
@@ -753,6 +932,10 @@ func TestAccountHandlerRefresh_ClearSuccessThenCredentialWriteFailureMutatesCata
 		Status: service.StatusActive, Schedulable: true,
 	}
 	adminSvc.updateErrors[181] = errors.New("credential update failed")
+	adminSvc.accountsByIDs = []*service.Account{{
+		ID: 181, Platform: service.PlatformAntigravity, Type: service.AccountTypeOAuth,
+		Status: service.StatusActive, Schedulable: true,
+	}}
 	catalog := &adminModelCatalogStub{}
 	router := setupAntigravityRefreshMutationRouter(adminSvc, catalog)
 
@@ -763,11 +946,16 @@ func TestAccountHandlerRefresh_ClearSuccessThenCredentialWriteFailureMutatesCata
 
 func TestAccountHandlerBatchRefresh_ClearSuccessThenCredentialWriteFailureMutatesCatalog(t *testing.T) {
 	adminSvc := newModelCatalogMutationAdminService()
-	adminSvc.accountsByIDs = []*service.Account{{
+	initial := []*service.Account{{
 		ID: 182, Platform: service.PlatformAntigravity, Type: service.AccountTypeOAuth,
 		Status: service.StatusError, Schedulable: true, ErrorMessage: "missing_project_id: retry",
 		Credentials: map[string]any{"refresh_token": "old-refresh"},
 	}}
+	current := []*service.Account{{
+		ID: 182, Platform: service.PlatformAntigravity, Type: service.AccountTypeOAuth,
+		Status: service.StatusActive, Schedulable: true,
+	}}
+	adminSvc.accountsByIDsSeq = [][]*service.Account{initial, current}
 	adminSvc.clearedByID[182] = &service.Account{
 		ID: 182, Platform: service.PlatformAntigravity, Type: service.AccountTypeOAuth,
 		Status: service.StatusActive, Schedulable: true,
@@ -782,4 +970,66 @@ func TestAccountHandlerBatchRefresh_ClearSuccessThenCredentialWriteFailureMutate
 
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	requireCatalogMutation(t, catalog, []int64{182}, []int64{182})
+}
+
+func TestAccountHandlerRefresh_ReceiptFailureUsesOneCurrentCatalogRefresh(t *testing.T) {
+	adminSvc := newModelCatalogMutationAdminService()
+	adminSvc.accountsByID[191] = &service.Account{
+		ID: 191, Platform: service.PlatformAntigravity, Type: service.AccountTypeOAuth,
+		Status: service.StatusError, Schedulable: true, ErrorMessage: "missing_project_id: retry",
+		Credentials: map[string]any{"refresh_token": "old-refresh"},
+	}
+	adminSvc.clearedByID[191] = &service.Account{
+		ID: 191, Platform: service.PlatformAntigravity, Type: service.AccountTypeOAuth,
+		Status: service.StatusActive, Schedulable: true,
+		Credentials: map[string]any{"access_token": "cleared-stale"},
+	}
+	adminSvc.updateErrors[191] = &service.AccountMutationError{
+		Cause: errors.New("post-update failure"), MutatedAccountIDs: []int64{191},
+	}
+	adminSvc.accountsByIDs = []*service.Account{{
+		ID: 191, Platform: service.PlatformAntigravity, Type: service.AccountTypeOAuth,
+		Status: service.StatusActive, Schedulable: true,
+		Credentials: map[string]any{"access_token": "persisted-current"},
+	}}
+	catalog := &adminModelCatalogStub{}
+	router := setupAntigravityRefreshMutationRouter(adminSvc, catalog)
+
+	performCatalogJSONRequest(t, router, http.MethodPost, "/accounts/191/refresh", nil)
+
+	requireCatalogMutation(t, catalog, []int64{191}, []int64{191})
+	requireSingleCatalogRefreshCredential(t, catalog, "access_token", "persisted-current")
+}
+
+func TestAccountHandlerBatchRefresh_ReceiptFailureUsesOneCurrentCatalogRefresh(t *testing.T) {
+	adminSvc := newModelCatalogMutationAdminService()
+	initial := []*service.Account{{
+		ID: 192, Platform: service.PlatformAntigravity, Type: service.AccountTypeOAuth,
+		Status: service.StatusError, Schedulable: true, ErrorMessage: "missing_project_id: retry",
+		Credentials: map[string]any{"refresh_token": "old-refresh"},
+	}}
+	current := []*service.Account{{
+		ID: 192, Platform: service.PlatformAntigravity, Type: service.AccountTypeOAuth,
+		Status: service.StatusActive, Schedulable: true,
+		Credentials: map[string]any{"access_token": "persisted-current"},
+	}}
+	adminSvc.accountsByIDsSeq = [][]*service.Account{initial, current}
+	adminSvc.clearedByID[192] = &service.Account{
+		ID: 192, Platform: service.PlatformAntigravity, Type: service.AccountTypeOAuth,
+		Status: service.StatusActive, Schedulable: true,
+		Credentials: map[string]any{"access_token": "cleared-stale"},
+	}
+	adminSvc.updateErrors[192] = &service.AccountMutationError{
+		Cause: errors.New("post-update failure"), MutatedAccountIDs: []int64{192},
+	}
+	catalog := &adminModelCatalogStub{}
+	router := setupAntigravityRefreshMutationRouter(adminSvc, catalog)
+
+	rec := performCatalogJSONRequest(t, router, http.MethodPost, "/accounts/batch-refresh", map[string]any{
+		"account_ids": []int64{192},
+	})
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	requireCatalogMutation(t, catalog, []int64{192}, []int64{192})
+	requireSingleCatalogRefreshCredential(t, catalog, "access_token", "persisted-current")
 }

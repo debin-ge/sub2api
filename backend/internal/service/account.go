@@ -78,6 +78,10 @@ type Account struct {
 	headerOverrideCacheRawPtr         uintptr
 	headerOverrideCacheRawLen         int
 	headerOverrideCacheRawSig         uint64
+
+	// affectedAccountIDs is an in-memory success receipt for service workflows
+	// that persist more than the returned account row. It is never serialized or persisted.
+	affectedAccountIDs []int64
 }
 
 type OpenAIEndpointCapability string
@@ -113,6 +117,33 @@ type TempUnschedulableRule struct {
 
 func (a *Account) IsActive() bool {
 	return a.Status == StatusActive
+}
+
+// AffectedAccountIDs returns a clone of the transient IDs persisted by the operation
+// that returned this account. An empty slice means no multi-account receipt was attached.
+func (a *Account) AffectedAccountIDs() []int64 {
+	if a == nil {
+		return nil
+	}
+	return append([]int64(nil), a.affectedAccountIDs...)
+}
+
+func (a *Account) setAffectedAccountIDs(ids []int64) {
+	if a == nil {
+		return
+	}
+	seen := make(map[int64]struct{}, len(ids))
+	a.affectedAccountIDs = a.affectedAccountIDs[:0]
+	for _, id := range ids {
+		if id <= 0 {
+			continue
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		a.affectedAccountIDs = append(a.affectedAccountIDs, id)
+	}
 }
 
 // BillingRateMultiplier 返回账号计费倍率。
