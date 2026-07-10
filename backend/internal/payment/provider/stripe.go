@@ -18,7 +18,23 @@ import (
 const (
 	stripeEventPaymentSuccess = "payment_intent.succeeded"
 	stripeEventPaymentFailed  = "payment_intent.payment_failed"
+
+	stripeWebhookErrorType               = "stripe_webhook"
+	stripePaymentMethodErrorType         = "stripe_api"
+	stripeWebhookVerifyFailureMessage    = "stripe verify notification failed"
+	stripePaymentMethodFailureMessage    = "stripe retrieve payment method failed"
+	stripeWebhookErrorCodeInvalidPayload = "invalid_payload"
 )
+
+type stripeSafeWebhookError struct {
+	message   string
+	errorType string
+	errorCode string
+}
+
+func (e stripeSafeWebhookError) Error() string            { return e.message }
+func (e stripeSafeWebhookError) WebhookErrorType() string { return e.errorType }
+func (e stripeSafeWebhookError) WebhookErrorCode() string { return e.errorCode }
 
 type stripePaymentMethodRetriever interface {
 	Retrieve(context.Context, string, *stripe.PaymentMethodRetrieveParams) (*stripe.PaymentMethod, error)
@@ -196,17 +212,29 @@ func (s *Stripe) VerifyNotification(ctx context.Context, rawBody string, headers
 
 	webhookSecret := s.config["webhookSecret"]
 	if webhookSecret == "" {
-		return nil, fmt.Errorf("stripe webhookSecret not configured")
+		return nil, stripeSafeWebhookError{
+			message:   stripeWebhookVerifyFailureMessage,
+			errorType: stripeWebhookErrorType,
+			errorCode: "missing_webhook_secret",
+		}
 	}
 
 	sig := headers["stripe-signature"]
 	if sig == "" {
-		return nil, fmt.Errorf("stripe notification missing stripe-signature header")
+		return nil, stripeSafeWebhookError{
+			message:   stripeWebhookVerifyFailureMessage,
+			errorType: stripeWebhookErrorType,
+			errorCode: "missing_signature",
+		}
 	}
 
 	event, err := webhook.ConstructEvent([]byte(rawBody), sig, webhookSecret)
 	if err != nil {
-		return nil, fmt.Errorf("stripe verify notification: %w", err)
+		return nil, stripeSafeWebhookError{
+			message:   stripeWebhookVerifyFailureMessage,
+			errorType: stripeWebhookErrorType,
+			errorCode: stripeWebhookVerificationErrorCode(err),
+		}
 	}
 
 	switch event.Type {
@@ -252,22 +280,35 @@ func (s *Stripe) resolvedPaymentType(ctx context.Context, pi *stripe.PaymentInte
 	if pi.PaymentMethod == nil || strings.TrimSpace(pi.PaymentMethod.ID) == "" {
 		return "", fmt.Errorf("stripe succeeded payment intent missing payment method")
 	}
+	if s.paymentMethods == nil {
+		s.logPaymentMethodLookupFailure(pi, stripePaymentMethodErrorType, "payment_method_retriever_unavailable")
+		return "", stripePaymentMethodFailure("payment_method_retriever_unavailable")
+	}
 
 	method, err := s.paymentMethods.Retrieve(ctx, pi.PaymentMethod.ID, nil)
 	if err != nil {
-		errorType, errorCode := "unknown", ""
+		errorType, errorCode := "unknown", "unknown"
 		var stripeErr *stripe.Error
 		if errors.As(err, &stripeErr) {
 			errorType = string(stripeErr.Type)
 			errorCode = string(stripeErr.Code)
+			if strings.TrimSpace(errorType) == "" {
+				errorType = "unknown"
+			}
+			if strings.TrimSpace(errorCode) == "" {
+				errorCode = "unknown"
+			}
 		}
-		slog.Warn("stripe payment method lookup failed",
-			"orderID", pi.Metadata["orderId"],
-			"providerInstanceID", s.instanceID,
-			"type", errorType,
-			"code", errorCode,
-		)
-		return "", errors.New("stripe retrieve payment method failed")
+		s.logPaymentMethodLookupFailure(pi, errorType, errorCode)
+		return "", stripeSafeWebhookError{
+			message:   stripePaymentMethodFailureMessage,
+			errorType: errorType,
+			errorCode: errorCode,
+		}
+	}
+	if method == nil {
+		s.logPaymentMethodLookupFailure(pi, stripePaymentMethodErrorType, "empty_payment_method")
+		return "", stripePaymentMethodFailure("empty_payment_method")
 	}
 
 	if method.Card != nil && method.Card.Wallet != nil &&
@@ -275,6 +316,38 @@ func (s *Stripe) resolvedPaymentType(ctx context.Context, pi *stripe.PaymentInte
 		return payment.TypeGooglePay, nil
 	}
 	return payment.TypeStripe, nil
+}
+
+func stripePaymentMethodFailure(code string) error {
+	return stripeSafeWebhookError{
+		message:   stripePaymentMethodFailureMessage,
+		errorType: stripePaymentMethodErrorType,
+		errorCode: code,
+	}
+}
+
+func (s *Stripe) logPaymentMethodLookupFailure(pi *stripe.PaymentIntent, errorType, errorCode string) {
+	slog.Warn("stripe payment method lookup failed",
+		"orderID", pi.Metadata["orderId"],
+		"providerInstanceID", s.instanceID,
+		"type", errorType,
+		"code", errorCode,
+	)
+}
+
+func stripeWebhookVerificationErrorCode(err error) string {
+	switch {
+	case errors.Is(err, webhook.ErrInvalidHeader):
+		return "invalid_header"
+	case errors.Is(err, webhook.ErrNoValidSignature):
+		return "invalid_signature"
+	case errors.Is(err, webhook.ErrNotSigned):
+		return "missing_signature"
+	case errors.Is(err, webhook.ErrTooOld):
+		return "signature_expired"
+	default:
+		return stripeWebhookErrorCodeInvalidPayload
+	}
 }
 
 // Refund creates a Stripe refund.

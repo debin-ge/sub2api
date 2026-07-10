@@ -16,6 +16,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -27,10 +28,13 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/enttest"
 	"github.com/Wei-Shaw/sub2api/ent/paymentwebhookdelivery"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
+	paymentprovider "github.com/Wei-Shaw/sub2api/internal/payment/provider"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	stripe "github.com/stripe/stripe-go/v85"
+	stripewebhook "github.com/stripe/stripe-go/v85/webhook"
 	_ "modernc.org/sqlite"
 )
 
@@ -337,6 +341,125 @@ func TestStripeWebhookVerifyFailureBodyIsNeverLogged(t *testing.T) {
 	require.True(t, shouldLogWebhookVerifyFailureBody(payment.TypeWxpay))
 }
 
+func TestStripeWebhookHandlerFailureLogsAreSanitized(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name          string
+		provider      func(t *testing.T) payment.Provider
+		rawBody       string
+		signature     func(rawBody string) string
+		forbidden     []string
+		wantErrorType string
+		wantErrorCode string
+	}{
+		{
+			name: "invalid signature",
+			provider: func(t *testing.T) payment.Provider {
+				t.Helper()
+				provider, err := paymentprovider.NewStripe("stripe-handler-instance", map[string]string{
+					"secretKey":     "sk_test_handler",
+					"webhookSecret": "whsec_handler_expected",
+				})
+				require.NoError(t, err)
+				return provider
+			},
+			rawBody: `{"id":"evt_sensitive","object":"event","data":{"object":{"metadata":{"orderId":"sub2_log_safety"}}},"marker":"must-not-log-invalid-signature-body"}`,
+			signature: func(rawBody string) string {
+				return stripewebhook.GenerateTestSignedPayload(&stripewebhook.UnsignedPayload{
+					Payload: []byte(rawBody),
+					Secret:  "whsec_handler_wrong",
+				}).Header
+			},
+			forbidden: []string{
+				"must-not-log-invalid-signature-body",
+				stripewebhook.ErrNoValidSignature.Error(),
+			},
+			wantErrorType: "stripe_webhook",
+			wantErrorCode: "invalid_signature",
+		},
+		{
+			name: "sdk lookup failure",
+			provider: func(t *testing.T) payment.Provider {
+				t.Helper()
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if r.Method != http.MethodGet {
+						t.Errorf("Stripe SDK Retrieve method = %s, want GET", r.Method)
+					}
+					if r.URL.Path != "/v1/payment_methods/pm_sensitive_123" {
+						t.Errorf("Stripe SDK Retrieve path = %s, want /v1/payment_methods/pm_sensitive_123", r.URL.Path)
+					}
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusPaymentRequired)
+					_, _ = w.Write([]byte(`{"error":{"type":"api_error","code":"api_key_expired","message":"must-not-log-card-payload sdk exploded","payment_method":{"id":"pm_sensitive_123","card":{"wallet":{"type":"google_pay"}}}}}`))
+				}))
+				t.Cleanup(server.Close)
+
+				originalBackend := stripe.GetBackend(stripe.APIBackend)
+				backend := stripe.GetBackendWithConfig(stripe.APIBackend, &stripe.BackendConfig{
+					URL:               stripe.String(server.URL),
+					MaxNetworkRetries: stripe.Int64(0),
+					LeveledLogger:     &stripe.LeveledLogger{Level: stripe.LevelNull},
+				})
+				stripe.SetBackend(stripe.APIBackend, backend)
+				t.Cleanup(func() { stripe.SetBackend(stripe.APIBackend, originalBackend) })
+
+				provider, err := paymentprovider.NewStripe("stripe-handler-instance", map[string]string{
+					"secretKey":     "sk_test_handler",
+					"webhookSecret": "whsec_handler_expected",
+				})
+				require.NoError(t, err)
+				return provider
+			},
+			rawBody: fmt.Sprintf(
+				`{"id":"evt_sdk_sensitive","object":"event","api_version":%q,"type":"payment_intent.succeeded","data":{"object":{"id":"pi_sensitive","object":"payment_intent","amount":1234,"currency":"usd","payment_method":"pm_sensitive_123","metadata":{"orderId":"sub2_log_safety"}}},"marker":"must-not-log-sdk-body"}`,
+				stripe.APIVersion,
+			),
+			signature: func(rawBody string) string {
+				return stripewebhook.GenerateTestSignedPayload(&stripewebhook.UnsignedPayload{
+					Payload: []byte(rawBody),
+					Secret:  "whsec_handler_expected",
+				}).Header
+			},
+			forbidden: []string{
+				"must-not-log-card-payload",
+				"pm_sensitive_123",
+				"sdk exploded",
+				"must-not-log-sdk-body",
+			},
+			wantErrorType: "api_error",
+			wantErrorCode: "api_key_expired",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var logs bytes.Buffer
+			previousLogger := slog.Default()
+			slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
+			t.Cleanup(func() { slog.SetDefault(previousLogger) })
+
+			handler := newStripeWebhookHandlerForTest(t, tt.provider(t))
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/payment/webhook/stripe", bytes.NewBufferString(tt.rawBody))
+			req.Header.Set("Stripe-Signature", tt.signature(tt.rawBody))
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			c.Request = req
+
+			handler.StripeWebhook(c)
+
+			require.Equal(t, http.StatusBadRequest, w.Code)
+			require.Contains(t, w.Body.String(), "verify failed")
+			require.Contains(t, logs.String(), "type="+tt.wantErrorType)
+			require.Contains(t, logs.String(), "code="+tt.wantErrorCode)
+			require.Contains(t, logs.String(), "outTradeNo=sub2_log_safety")
+			for _, forbidden := range tt.forbidden {
+				require.NotContains(t, logs.String(), forbidden)
+			}
+		})
+	}
+}
+
 func TestVerifyNotificationWithProvidersReturnsMatchedProvider(t *testing.T) {
 	firstErr := errors.New("wrong provider")
 	providers := []payment.Provider{
@@ -396,6 +519,16 @@ func newWiseWebhookHandlerTestClient(t *testing.T) *dbent.Client {
 
 func newWiseWebhookHandlerForTest(client *dbent.Client) *PaymentWebhookHandler {
 	registry := payment.NewRegistry()
+	loadBalancer := payment.NewDefaultLoadBalancer(client, []byte(wiseWebhookHandlerTestEncryptionKey))
+	paymentSvc := service.NewPaymentService(client, registry, loadBalancer, nil, nil, nil, nil, nil, nil)
+	return NewPaymentWebhookHandler(paymentSvc, registry)
+}
+
+func newStripeWebhookHandlerForTest(t *testing.T, provider payment.Provider) *PaymentWebhookHandler {
+	t.Helper()
+	client := newWiseWebhookHandlerTestClient(t)
+	registry := payment.NewRegistry()
+	registry.Register(provider)
 	loadBalancer := payment.NewDefaultLoadBalancer(client, []byte(wiseWebhookHandlerTestEncryptionKey))
 	paymentSvc := service.NewPaymentService(client, registry, loadBalancer, nil, nil, nil, nil, nil, nil)
 	return NewPaymentWebhookHandler(paymentSvc, registry)

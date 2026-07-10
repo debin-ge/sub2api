@@ -134,9 +134,51 @@ func TestStripeWebhookInvalidSignatureDoesNotRetrievePaymentMethod(t *testing.T)
 	})
 
 	require.Nil(t, notification)
-	require.Error(t, err)
+	require.EqualError(t, err, "stripe verify notification failed")
+	require.NotContains(t, err.Error(), webhook.ErrNoValidSignature.Error())
+	var safeErr interface {
+		WebhookErrorType() string
+		WebhookErrorCode() string
+	}
+	require.ErrorAs(t, err, &safeErr)
+	require.Equal(t, "stripe_webhook", safeErr.WebhookErrorType())
+	require.Equal(t, "invalid_signature", safeErr.WebhookErrorCode())
 	require.Zero(t, retriever.calls)
 	require.Empty(t, retriever.requestedID)
+}
+
+func TestStripeWebhookNilPaymentMethodRetrieverReturnsRetryableError(t *testing.T) {
+	provider := newStripeWebhookProviderForTest(nil)
+	rawBody, signature := signedStripePaymentIntentEvent(t, stripeEventPaymentSuccess, true)
+
+	var notification *payment.PaymentNotification
+	var err error
+	require.NotPanics(t, func() {
+		notification, err = provider.VerifyNotification(context.Background(), rawBody, map[string]string{
+			"stripe-signature": signature,
+		})
+	})
+
+	require.Nil(t, notification)
+	require.EqualError(t, err, "stripe retrieve payment method failed")
+}
+
+func TestStripeWebhookNilPaymentMethodResultReturnsRetryableError(t *testing.T) {
+	retriever := &fakeStripePaymentMethodRetriever{}
+	provider := newStripeWebhookProviderForTest(retriever)
+	rawBody, signature := signedStripePaymentIntentEvent(t, stripeEventPaymentSuccess, true)
+
+	var notification *payment.PaymentNotification
+	var err error
+	require.NotPanics(t, func() {
+		notification, err = provider.VerifyNotification(context.Background(), rawBody, map[string]string{
+			"stripe-signature": signature,
+		})
+	})
+
+	require.Nil(t, notification)
+	require.EqualError(t, err, "stripe retrieve payment method failed")
+	require.Equal(t, 1, retriever.calls)
 }
 
 func TestStripeWebhookFailedEventDoesNotRetrievePaymentMethod(t *testing.T) {

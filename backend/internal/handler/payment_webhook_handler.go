@@ -129,7 +129,7 @@ func (h *PaymentWebhookHandler) handleNotify(c *gin.Context, providerKey string)
 
 	resolvedProviderKey, notification, err := verifyNotificationWithProviders(c.Request.Context(), providers, rawBody, headers)
 	if err != nil {
-		slog.Error("[Payment Webhook] verify failed", "provider", providerKey, "error", err, "method", c.Request.Method, "bodyLen", len(rawBody))
+		logWebhookVerifyFailure(providerKey, outTradeNo, err, c.Request.Method, len(rawBody))
 		if shouldLogWebhookVerifyFailureBody(providerKey) {
 			truncatedBody := rawBody
 			if len(truncatedBody) > webhookLogTruncateLen {
@@ -209,6 +209,37 @@ func extractOutTradeNo(rawBody, providerKey string) string {
 
 func shouldLogWebhookVerifyFailureBody(providerKey string) bool {
 	return providerKey != payment.TypeStripe
+}
+
+type safeWebhookVerifyError interface {
+	WebhookErrorType() string
+	WebhookErrorCode() string
+}
+
+func logWebhookVerifyFailure(providerKey, outTradeNo string, err error, method string, bodyLen int) {
+	if providerKey != payment.TypeStripe {
+		slog.Error("[Payment Webhook] verify failed", "provider", providerKey, "error", err, "method", method, "bodyLen", bodyLen)
+		return
+	}
+
+	errorType, errorCode := "stripe_webhook", "verification_failed"
+	var safeErr safeWebhookVerifyError
+	if errors.As(err, &safeErr) {
+		if value := strings.TrimSpace(safeErr.WebhookErrorType()); value != "" {
+			errorType = value
+		}
+		if value := strings.TrimSpace(safeErr.WebhookErrorCode()); value != "" {
+			errorCode = value
+		}
+	}
+	slog.Error("[Payment Webhook] verify failed",
+		"provider", providerKey,
+		"outTradeNo", outTradeNo,
+		"type", errorType,
+		"code", errorCode,
+		"method", method,
+		"bodyLen", bodyLen,
+	)
 }
 
 func verifyNotificationWithProviders(ctx context.Context, providers []payment.Provider, rawBody string, headers map[string]string) (string, *payment.PaymentNotification, error) {
