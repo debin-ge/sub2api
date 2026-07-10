@@ -1066,6 +1066,10 @@ func (s *GatewayService) miniMaxOverloadUntil() time.Time {
 }
 
 // GatewayService handles API gateway operations
+type gatewayServiceModelCatalog interface {
+	ListForPlatform(context.Context, *int64, string, bool) ([]string, error)
+}
+
 type GatewayService struct {
 	accountRepo           AccountRepository
 	groupRepo             GroupRepository
@@ -1103,6 +1107,7 @@ type GatewayService struct {
 	tlsFPProfileService   *TLSFingerprintProfileService
 	balanceNotifyService  *BalanceNotifyService
 	userPlatformQuotaRepo UserPlatformQuotaRepository
+	modelCatalog          gatewayServiceModelCatalog
 }
 
 // NewGatewayService creates a new GatewayService
@@ -1134,9 +1139,15 @@ func NewGatewayService(
 	resolver *ModelPricingResolver,
 	balanceNotifyService *BalanceNotifyService,
 	userPlatformQuotaRepo UserPlatformQuotaRepository,
+	catalog *ModelCatalogService,
 ) *GatewayService {
 	userGroupRateTTL := resolveUserGroupRateCacheTTL(cfg)
 	modelsListTTL := resolveModelsListCacheTTL(cfg)
+
+	var modelCatalog gatewayServiceModelCatalog
+	if catalog != nil {
+		modelCatalog = catalog
+	}
 
 	svc := &GatewayService{
 		accountRepo:           accountRepo,
@@ -1170,6 +1181,7 @@ func NewGatewayService(
 		resolver:              resolver,
 		balanceNotifyService:  balanceNotifyService,
 		userPlatformQuotaRepo: userPlatformQuotaRepo,
+		modelCatalog:          modelCatalog,
 	}
 	svc.userGroupRateResolver = newUserGroupRateResolver(
 		userGroupRateRepo,
@@ -11227,6 +11239,12 @@ func (s *GatewayService) validateUpstreamBaseURL(raw string) (string, error) {
 func (s *GatewayService) GetAvailableModels(ctx context.Context, groupID *int64, platform string) []string {
 	if s == nil {
 		return nil
+	}
+	if s.modelCatalog != nil {
+		models, err := s.modelCatalog.ListForPlatform(ctx, groupID, platform, true)
+		if err == nil {
+			return models
+		}
 	}
 	_, hasDomesticCapabilities := GetProviderGatewayCapabilities(platform)
 	cacheKey := modelsListCacheKey(groupID, platform)

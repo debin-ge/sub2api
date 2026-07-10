@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,13 +15,59 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type gatewayRoutesModelCatalogAccountRepo struct {
+	service.AccountRepository
+}
+
+type gatewayRoutesModelCatalogGroupRepo struct {
+	service.GroupRepository
+	group service.Group
+}
+
+func (gatewayRoutesModelCatalogAccountRepo) ListSchedulableByGroupIDAndPlatform(_ context.Context, _ int64, platform string) ([]service.Account, error) {
+	return []service.Account{{
+		ID:          1,
+		Platform:    platform,
+		Type:        service.AccountTypeAPIKey,
+		Status:      service.StatusActive,
+		Schedulable: true,
+	}}, nil
+}
+
+func (gatewayRoutesModelCatalogAccountRepo) ListSchedulableByPlatform(ctx context.Context, platform string) ([]service.Account, error) {
+	return gatewayRoutesModelCatalogAccountRepo{}.ListSchedulableByGroupIDAndPlatform(ctx, 0, platform)
+}
+
+func (r gatewayRoutesModelCatalogGroupRepo) GetByID(_ context.Context, id int64) (*service.Group, error) {
+	if r.group.ID != id {
+		return nil, service.ErrGroupNotFound
+	}
+	group := r.group
+	return &group, nil
+}
+
+func newGatewayRoutesGatewayHandler(platform string) *handler.GatewayHandler {
+	catalog := service.NewModelCatalogService(
+		gatewayRoutesModelCatalogAccountRepo{},
+		gatewayRoutesModelCatalogGroupRepo{group: service.Group{ID: 1, Platform: platform}},
+		nil,
+		nil,
+		config.ModelCatalogConfig{},
+	)
+	return handler.NewGatewayHandler(
+		nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, catalog,
+	)
+}
+
 func newGatewayRoutesTestRouter() *gin.Engine {
 	return newGatewayRoutesTestRouterForPlatform(service.PlatformOpenAI)
 }
 
 func newGatewayRoutesTestRouterForPlatform(platform string) *gin.Engine {
 	return newGatewayRoutesTestRouterForPlatformWithHandlers(platform, &handler.Handlers{
-		Gateway:         &handler.GatewayHandler{},
+		Gateway:         newGatewayRoutesGatewayHandler(platform),
 		OpenAIGateway:   &handler.OpenAIGatewayHandler{},
 		MiniMaxGateway:  &handler.MiniMaxGatewayHandler{},
 		GLMGateway:      &handler.GLMGatewayHandler{},
@@ -49,7 +96,7 @@ func newGatewayRoutesTestRouterForPlatformWithHandlers(platform string, handlers
 			c.Set(string(servermiddleware.ContextKeyAPIKey), &service.APIKey{
 				UserID:  101,
 				GroupID: &groupID,
-				Group:   &service.Group{Platform: platform},
+				Group:   &service.Group{ID: groupID, Platform: platform},
 				User:    &service.User{ID: 101, Status: service.StatusActive, Balance: 12.34},
 			})
 			c.Set(string(servermiddleware.ContextKeyUser), servermiddleware.AuthSubject{UserID: 101, Concurrency: 1})
