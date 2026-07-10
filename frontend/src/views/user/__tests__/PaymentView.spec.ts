@@ -406,6 +406,139 @@ describe('PaymentView payment recovery', () => {
 
     expect(wrapper.find('[data-test="method-selector"]').text()).toBe('ldc')
   })
+
+  it('renders the existing dedicated Stripe order inline in the live purchase flow', async () => {
+    getCheckoutInfo.mockResolvedValue(checkoutInfoFixture({
+      methods: {
+        stripe: {
+          daily_limit: 0,
+          daily_used: 0,
+          daily_remaining: 0,
+          single_min: 0,
+          single_max: 0,
+          fee_rate: 0,
+          available: true,
+          currency: 'USD',
+        },
+      },
+      stripe_publishable_key: 'pk_test_purchase_flow',
+    }))
+    createOrder.mockResolvedValue({
+      order_id: 321,
+      amount: 25,
+      pay_amount: 25.75,
+      fee_rate: 3,
+      expires_at: '2099-01-01T00:10:00.000Z',
+      payment_type: 'stripe',
+      client_secret: 'pi_purchase_secret',
+      currency: 'USD',
+    })
+
+    const wrapper = shallowMount(PaymentView, {
+      global: {
+        stubs: {
+          AppLayout: {
+            template: '<div><slot /></div>',
+          },
+          AmountInput: {
+            template: '<button data-test="set-amount" @click="$emit(\'update:modelValue\', 25)" />',
+          },
+          StripePaymentInline: {
+            name: 'StripePaymentInline',
+            props: ['orderId', 'amount', 'clientSecret', 'orderType', 'publishableKey', 'payAmount', 'currency'],
+            template: '<div data-test="stripe-payment-inline" />',
+          },
+          Teleport: true,
+          Transition: false,
+        },
+      },
+    })
+    await flushPromises()
+
+    await wrapper.get('[data-test="set-amount"]').trigger('click')
+    await wrapper.findAll('button').find(button => button.text().includes('payment.createOrder'))!.trigger('click')
+    await flushPromises()
+
+    const stripePayment = wrapper.getComponent({ name: 'StripePaymentInline' })
+    expect(stripePayment.props()).toMatchObject({
+      orderId: 321,
+      amount: 25,
+      clientSecret: 'pi_purchase_secret',
+      orderType: 'balance',
+      publishableKey: 'pk_test_purchase_flow',
+      payAmount: 25.75,
+      currency: 'USD',
+    })
+    expect(routerResolve).not.toHaveBeenCalledWith(expect.objectContaining({
+      path: '/payment/stripe',
+    }))
+  })
+
+  it('restores an unexpired dedicated Stripe order into the inline payment surface', async () => {
+    getCheckoutInfo.mockResolvedValue(checkoutInfoFixture({
+      methods: {
+        stripe: {
+          daily_limit: 0,
+          daily_used: 0,
+          daily_remaining: 0,
+          single_min: 0,
+          single_max: 0,
+          fee_rate: 0,
+          available: true,
+          currency: 'USD',
+        },
+      },
+      stripe_publishable_key: 'pk_test_restored_order',
+    }))
+    window.localStorage.setItem(PAYMENT_RECOVERY_STORAGE_KEY, JSON.stringify({
+      orderId: 654,
+      amount: 12,
+      qrCode: '',
+      expiresAt: '2099-01-01T00:10:00.000Z',
+      paymentType: 'stripe',
+      payUrl: '',
+      outTradeNo: 'sub2_stripe_654',
+      clientSecret: 'pi_restored_secret',
+      intentId: '',
+      currency: 'USD',
+      countryCode: 'US',
+      paymentEnv: 'test',
+      payAmount: 12.36,
+      orderType: 'subscription',
+      paymentMode: '',
+      resumeToken: '',
+      createdAt: Date.now(),
+    }))
+
+    const wrapper = shallowMount(PaymentView, {
+      global: {
+        stubs: {
+          AppLayout: {
+            template: '<div><slot /></div>',
+          },
+          StripePaymentInline: {
+            name: 'StripePaymentInline',
+            props: ['orderId', 'amount', 'clientSecret', 'orderType', 'publishableKey', 'payAmount', 'currency'],
+            template: '<div data-test="stripe-payment-inline" />',
+          },
+          Teleport: true,
+          Transition: false,
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.getComponent({ name: 'StripePaymentInline' }).props()).toMatchObject({
+      orderId: 654,
+      amount: 12,
+      clientSecret: 'pi_restored_secret',
+      orderType: 'subscription',
+      publishableKey: 'pk_test_restored_order',
+      payAmount: 12.36,
+      currency: 'USD',
+    })
+    expect(createOrder).not.toHaveBeenCalled()
+  })
 })
 
 describe('PaymentView WeChat JSAPI flow', () => {

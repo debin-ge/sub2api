@@ -14,7 +14,21 @@
         </div>
         <!-- Payment in progress (shared by recharge and subscription) -->
         <template v-if="paymentPhase === 'paying'">
+          <StripePaymentInline
+            v-if="paymentState.paymentType === 'stripe' && paymentState.clientSecret"
+            :order-id="paymentState.orderId"
+            :amount="paymentState.amount"
+            :client-secret="paymentState.clientSecret"
+            :order-type="paymentState.orderType || undefined"
+            :publishable-key="checkout.stripe_publishable_key"
+            :pay-amount="paymentState.payAmount"
+            :currency="paymentState.currency"
+            @success="onPaymentSuccess"
+            @done="onPaymentDone"
+            @back="resetPayment"
+          />
           <PaymentStatusPanel
+            v-else
             :order-id="paymentState.orderId"
             :qr-code="paymentState.qrCode"
             :expires-at="paymentState.expiresAt"
@@ -282,6 +296,7 @@ import {
 import { platformAccentBarClass, platformBadgeLightClass, platformBadgeClass, platformTextClass, platformLabel } from '@/utils/platformColors'
 import SubscriptionPlanCard from '@/components/payment/SubscriptionPlanCard.vue'
 import PaymentStatusPanel from '@/components/payment/PaymentStatusPanel.vue'
+import StripePaymentInline from '@/components/payment/StripePaymentInline.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { DEFAULT_PAYMENT_CURRENCY, formatPaymentAmount, normalizePaymentCurrency } from '@/components/payment/currency'
 import type { PaymentMethodOption } from '@/components/payment/PaymentMethodSelector.vue'
@@ -795,7 +810,7 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
     const stripeMethod = visibleMethod === 'stripe'
       ? ''
       : visibleMethod === 'wxpay' ? 'wechat_pay' : 'alipay'
-    const stripeRouteUrl = result.client_secret && visibleMethod !== 'airwallex'
+    const stripeRouteUrl = result.client_secret && visibleMethod !== 'airwallex' && visibleMethod !== 'stripe'
       ? router.resolve({
         path: '/payment/stripe',
         query: {
@@ -848,6 +863,9 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
 
     if (decision.kind === 'stripe_popup') {
       openWindow(decision.paymentState.payUrl)
+      return
+    }
+    if (decision.kind === 'stripe_route' && visibleMethod === 'stripe') {
       return
     }
     if (decision.kind === 'stripe_route') {

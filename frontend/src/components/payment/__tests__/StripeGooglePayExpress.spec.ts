@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import type { Stripe, StripeElements } from '@stripe/stripe-js'
@@ -28,9 +28,10 @@ const elements = {
 } as unknown as StripeElements
 const confirmPayment = vi.fn()
 const stripe = { confirmPayment } as unknown as Stripe
+const mountedWrappers: Array<{ exists: () => boolean; unmount: () => void }> = []
 
 function mountComponent(disabled = false) {
-  return mount(StripeGooglePayExpress, {
+  const wrapper = mount(StripeGooglePayExpress, {
     attachTo: document.body,
     props: {
       stripe,
@@ -39,6 +40,8 @@ function mountComponent(disabled = false) {
       disabled,
     },
   })
+  mountedWrappers.push(wrapper)
+  return wrapper
 }
 
 describe('StripeGooglePayExpress', () => {
@@ -46,6 +49,14 @@ describe('StripeGooglePayExpress', () => {
     handlers.clear()
     vi.clearAllMocks()
     confirmPayment.mockResolvedValue({})
+  })
+
+  afterEach(() => {
+    mountedWrappers.forEach((wrapper) => {
+      if (wrapper.exists()) wrapper.unmount()
+    })
+    mountedWrappers.length = 0
+    vi.restoreAllMocks()
   })
 
   it('creates an Express Checkout Element that only allows Google Pay', () => {
@@ -127,6 +138,14 @@ describe('StripeGooglePayExpress', () => {
     expect(wrapper.emitted('submittingChange')).toBeUndefined()
 
     wrapper.unmount()
+    expect(expressElement.off).toHaveBeenNthCalledWith(1, 'ready', expect.any(Function))
+    expect(expressElement.off).toHaveBeenNthCalledWith(2, 'availablepaymentmethodschange', expect.any(Function))
+    expect(expressElement.off).toHaveBeenNthCalledWith(3, 'confirm', expect.any(Function))
+    expect(expressElement.off).toHaveBeenNthCalledWith(4, 'cancel', expect.any(Function))
+    expect(expressElement.off).toHaveBeenNthCalledWith(5, 'loaderror', expect.any(Function))
+    expect(Math.max(...expressElement.off.mock.invocationCallOrder)).toBeLessThan(
+      expressElement.destroy.mock.invocationCallOrder[0],
+    )
     expect(expressElement.destroy).toHaveBeenCalledOnce()
   })
 
