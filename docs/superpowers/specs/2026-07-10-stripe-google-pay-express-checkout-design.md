@@ -1,7 +1,7 @@
 # Stripe Google Pay Express Checkout 设计
 
 日期：2026-07-10
-状态：原设计及真实 Stripe 自动化补充设计已确认，待书面规格复核
+状态：最终设计已确认，待书面规格复核
 
 ## 背景
 
@@ -27,6 +27,7 @@ Sub2API 已经通过 Stripe PaymentIntent、Stripe Payment Element 和 Webhook �
 - 不改变 Stripe Webhook 的订单入账权威性。
 - 不在本次工作中重构其他支付服务商或无关支付页面。
 - 不要求自动化测试打开 Google Pay 钱包、选择卡片或完成付款；这类操作依赖已登录 Google 且配置钱包的真实 Chrome 用户环境。
+- 不新增 Playwright 或其他外部浏览器测试框架，不由测试脚本调用 Stripe Test Mode 或 Live Mode API。
 
 ## 方案比较
 
@@ -42,14 +43,11 @@ Sub2API 已经通过 Stripe PaymentIntent、Stripe Payment Element 和 Webhook �
 
 该方案符合 Stripe 的延迟创建示例，但需要重构当前“先创建订单和 PaymentIntent，再进入支付面板”的流程。现有架构没有为 Google Pay 单独承担这项复杂度的必要。
 
-### 真实 Stripe 自动化验证方案（采用分层验证）
+### 自动化验证边界（采用行为测试与人工外部验收）
 
-Task 2 和 Task 3 的生产代码始终调用真实 `@stripe/stripe-js`。自动化验证采用两层，避免把“行为测试通过”误当成“真实 Stripe 集成通过”：
+Task 2 和 Task 3 的生产代码始终动态加载真实 `@stripe/stripe-js`，并把真实 Stripe/Elements 实例传给 `StripeGooglePayExpress`。自动化验证使用 Vitest 挂载真实 Vue 子组件，只在 Stripe SDK 边界使用测试替身，以确定性验证共享提交锁、成功状态、错误恢复和支付宝/微信支付分支隔离。
 
-1. Vitest 行为测试挂载真实 `StripeGooglePayExpress` Vue 组件，只在 Stripe SDK 边界使用测试替身，用于确定性验证共享提交锁、成功状态、错误恢复和支付宝/微信支付分支隔离。
-2. Playwright 外部集成测试不模拟 `@stripe/stripe-js`，由 Node 测试进程直接调用 Stripe Test Mode API 创建真实 PaymentIntent，再在真实浏览器中挂载 Task 2 和 Task 3 使用的生产组件。
-
-不采用“只保留 Playwright”的方案，因为本次不自动操作 Google Pay 钱包，外部测试无法稳定触发钱包确认回调，也无法完整替代双向提交锁测试。不采用“启动完整 Sub2API 后端再创建订单”的方案，因为已确认测试脚本可直接调用 Stripe API，完整后端会增加与本功能无关的认证、数据库和订单准备依赖。
+不新增 Playwright 外部测试，也不让自动化脚本创建 Stripe Test Mode 或 Live Mode PaymentIntent。测试替身只能证明应用内部的实例传递和事件处理，不能作为真实 Stripe 网络或钱包可用性的证据。真实 Stripe.js 加载、域名注册、Google 钱包可用性和成功交易来源在已注册 HTTPS 环境中人工验收。
 
 ## 总体架构
 
@@ -169,15 +167,7 @@ Express Checkout Element 与 Payment Element 挂载在同一个 Elements 实例�
 - Google Pay Merchant ID。
 - Stripe Payment Method Domain ID。
 
-支付域名必须与使用当前 Publishable Key 的 Stripe 账户匹配。测试和生产密钥、Webhook Secret 及域名注册状态必须保持环境一致。
-
-真实 Stripe 自动化测试仅从执行环境读取：
-
-- `STRIPE_E2E_SECRET_KEY`：Stripe Test Mode Secret Key，只允许 Node 测试进程读取。
-- `STRIPE_E2E_PUBLISHABLE_KEY`：与 Secret Key 属于同一 Stripe 测试账户的 Publishable Key，可传入浏览器。
-- `STRIPE_E2E_BASE_URL`：可选的浏览器测试地址；未提供时由 Playwright 启动本地 Vite 测试页面。
-
-`STRIPE_E2E_SECRET_KEY` 不得注入 Vite 环境、浏览器上下文、URL、截图、trace 或日志。测试创建的 PaymentIntent 使用 `sub2api_google_pay_e2e` metadata 标记，并在测试结束后由 Node 进程取消仍可取消的 PaymentIntent。缺少两个必需密钥时，显式执行的 Stripe E2E 命令必须在发起浏览器测试前失败并说明缺失变量，不能静默退化为模拟测试。
+支付域名必须与使用当前 Publishable Key 的 Stripe 账户匹配。测试和生产密钥、Webhook Secret 及域名注册状态必须保持环境一致。自动化测试不读取 Stripe Secret Key，不创建外部 PaymentIntent，也不接触 Live Mode 数据。
 
 ## 测试策略
 
@@ -201,17 +191,14 @@ Express Checkout Element 与 Payment Element 挂载在同一个 Elements 实例�
 - Webhook 成功、失败和重复投递测试继续通过。
 - Stripe 退款流程不因 Google Pay 钱包来源发生变化。
 
-### 自动化真实 Stripe 浏览器验证
+### 自动化覆盖范围
 
-- 新增独立 Playwright 命令；该命令不属于默认 Vitest 套件，也不得在缺少 Stripe 测试密钥时假装通过。
-- Node 测试进程使用 `STRIPE_E2E_SECRET_KEY` 直接请求 Stripe Test Mode API，创建 `amount=100`、`currency=usd`、`payment_method_types=[card]` 的 PaymentIntent。
-- 测试专用 Vite 页面导入并挂载真实 `StripePaymentInline` 与 `StripePaymentView` 生产组件；测试页面不进入生产构建入口。
-- Task 3 测试使用真实 Vue Router、Pinia 和页面组件；只对本地订单读取提供最小测试响应，不拦截、不替换 Stripe 域名或 Stripe.js 请求。
-- 浏览器必须真实加载 `https://js.stripe.com`，并成功访问 Stripe Elements Session 等外部接口。
-- 两个页面都必须在同一个真实 Elements 上挂载 Payment Element 和 Express Checkout Element；每次页面挂载只能产生一个对应当前 `client_secret` 的 Elements Session，且两个挂载区域都须出现 Stripe 所有的 iframe。
-- 独立支付页的支付宝和微信支付直连分支不得挂载 Express Checkout Element，继续由确定性行为测试验证。
-- 自动化外部测试不要求 `googlePay.available=true`，也不点击钱包；钱包可用性取决于浏览器登录、钱包、设备和域名条件。
-- “只允许 Google Pay”的精确 `paymentMethods` 参数继续由 Task 1 单元测试证明；真实外部测试证明该配置被真实 Stripe.js 接收并成功建立 Elements 会话，而不是证明当前自动化浏览器拥有可用钱包。
+- `StripeGooglePayExpress` 测试验证仅 Google Pay 为 `auto`、可用性事件、确认、错误、取消、外部锁和销毁。
+- `StripePaymentInline` 与 `StripePaymentView` 测试必须挂载真实 Vue 子组件，验证父子共享同一 Stripe/Elements 引用及同一提交锁。
+- 两个提交方向都必须有并发阻止测试：Google Pay 持锁时普通表单不可提交，普通表单持锁时 Google Pay 不得二次确认。
+- 独立支付页的支付宝和微信支付直连分支不得挂载 Express Checkout Element。
+- 现有后端 Stripe provider、Webhook、入账和退款回归继续运行。
+- 自动化结果不得声称已验证真实 Stripe 网络、Google 钱包可用性或真实支付成功。
 
 ### 人工端到端验收
 
@@ -237,6 +224,6 @@ Express Checkout Element 与 Payment Element 挂载在同一个 Elements 实例�
 - Google Pay 取消或失败后可以重试或切换支付方式。
 - Google Pay Merchant ID 和 Stripe Domain ID 不出现在前端、接口响应、日志或持久化配置中。
 - 现有 Stripe 支付、Webhook、恢复和退款测试均通过。
-- Task 2 和 Task 3 的 Playwright 外部集成测试使用真实 Stripe Test Mode PaymentIntent 和真实 Stripe.js；Stripe 网络请求不得被 mock、route 或本地替代。
-- 无需钱包交互时，外部测试仍须证明两个生产页面成功创建同一真实 Elements 上的 Payment Element 与 Express Checkout Element。
-- Stripe E2E Secret Key 不进入浏览器或任何仓库文件，测试后清理未完成的 PaymentIntent。
+- Task 2 和 Task 3 的生产代码调用真实 `@stripe/stripe-js`；行为测试挂载真实 `StripeGooglePayExpress` Vue 子组件并只替换 SDK 边界。
+- 自动化测试不读取 Stripe Secret Key、不创建 Test/Live Mode PaymentIntent，也不声明完成真实外部 Stripe 验证。
+- 上线前在已注册 HTTPS 环境完成人工钱包验收，并确认成功交易为 `card.wallet.type = google_pay`。
