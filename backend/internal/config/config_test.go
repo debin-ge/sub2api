@@ -17,6 +17,47 @@ func resetViperWithJWTSecret(t *testing.T) {
 	t.Setenv("JWT_SECRET", strings.Repeat("x", 32))
 }
 
+func TestModelCatalogDefaults(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, 300, cfg.ModelCatalog.RefreshIntervalSeconds)
+	require.Equal(t, 10, cfg.ModelCatalog.RequestTimeoutSeconds)
+	require.Equal(t, 86400, cfg.ModelCatalog.StaleTTLSeconds)
+	require.Equal(t, 60, cfg.ModelCatalog.FailureBackoffSeconds)
+	require.Equal(t, 5, cfg.ModelCatalog.MaxConcurrency)
+}
+
+func TestModelCatalogValidation(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*Config)
+		want   string
+	}{
+		{"zero refresh", func(c *Config) { c.ModelCatalog.RefreshIntervalSeconds = 0 }, "refresh_interval_seconds"},
+		{"zero timeout", func(c *Config) { c.ModelCatalog.RequestTimeoutSeconds = 0 }, "request_timeout_seconds"},
+		{"stale below refresh", func(c *Config) { c.ModelCatalog.StaleTTLSeconds = c.ModelCatalog.RefreshIntervalSeconds - 1 }, "stale_ttl_seconds"},
+		{"zero backoff", func(c *Config) { c.ModelCatalog.FailureBackoffSeconds = 0 }, "failure_backoff_seconds"},
+		{"zero concurrency", func(c *Config) { c.ModelCatalog.MaxConcurrency = 0 }, "max_concurrency"},
+		{"excess concurrency", func(c *Config) { c.ModelCatalog.MaxConcurrency = 33 }, "max_concurrency"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := validConfigForTest(t)
+			tt.mutate(cfg)
+			require.ErrorContains(t, cfg.Validate(), tt.want)
+		})
+	}
+}
+
+func validConfigForTest(t *testing.T) *Config {
+	t.Helper()
+	resetViperWithJWTSecret(t)
+	cfg, err := Load()
+	require.NoError(t, err)
+	return cfg
+}
+
 func TestLoadForBootstrapAllowsMissingJWTSecret(t *testing.T) {
 	viper.Reset()
 	t.Setenv("JWT_SECRET", "")

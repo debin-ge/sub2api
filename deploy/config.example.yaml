@@ -1035,6 +1035,27 @@ pricing:
   hash_check_interval_minutes: 10
 
 # =============================================================================
+# Model Catalog Configuration
+# 模型目录配置
+# =============================================================================
+model_catalog:
+  # Background refresh interval (seconds)
+  # 后台刷新间隔（秒）
+  refresh_interval_seconds: 300
+  # Per-account discovery request timeout (seconds)
+  # 单账户发现请求超时（秒）
+  request_timeout_seconds: 10
+  # Maximum age for stale successful results (seconds)
+  # 过期成功结果的最长保留时间（秒）
+  stale_ttl_seconds: 86400
+  # Retry backoff after a discovery failure (seconds)
+  # 发现失败后的重试退避时间（秒）
+  failure_backoff_seconds: 60
+  # Maximum concurrent discovery requests (1-32)
+  # 最大并发发现请求数（1-32）
+  max_concurrency: 5
+
+# =============================================================================
 # Billing Configuration
 # 计费配置
 # =============================================================================
