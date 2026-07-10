@@ -1,14 +1,30 @@
 <template>
   <div
-    v-show="available"
-    data-testid="stripe-google-pay-express"
+    data-testid="stripe-google-pay-state"
     class="space-y-3"
     :aria-busy="confirming"
+    aria-live="polite"
   >
     <div
       ref="mountTarget"
+      v-show="availability === 'available'"
+      data-testid="stripe-google-pay-mount"
       :class="{ 'pointer-events-none opacity-60': disabled || confirming }"
     />
+    <template v-if="availability !== 'available'">
+      <button
+        data-testid="stripe-google-pay-placeholder"
+        type="button"
+        disabled
+        :aria-label="t('payment.googlePayUnavailableLabel')"
+        class="w-full rounded-md bg-black px-4 py-3 font-medium text-white opacity-50"
+      >
+        Google Pay
+      </button>
+      <p class="text-sm text-gray-500 dark:text-gray-400">
+        {{ availability === 'checking' ? t('payment.googlePayChecking') : t('payment.googlePayUnavailable') }}
+      </p>
+    </template>
     <p
       v-if="errorMessage"
       data-testid="stripe-google-pay-error"
@@ -50,7 +66,8 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const mountTarget = ref<HTMLElement | null>(null)
-const available = ref(false)
+type GooglePayAvailability = 'checking' | 'available' | 'unavailable' | 'error'
+const availability = ref<GooglePayAvailability>('checking')
 const confirming = ref(false)
 const errorMessage = ref('')
 let expressCheckoutElement: StripeExpressCheckoutElement | null = null
@@ -66,10 +83,13 @@ const options = {
   },
 } satisfies StripeExpressCheckoutElementOptions
 
-function setAvailable(next: boolean) {
-  if (available.value === next) return
-  available.value = next
-  emit('availabilityChange', next)
+function setAvailability(next: GooglePayAvailability) {
+  const wasAvailable = availability.value === 'available'
+  availability.value = next
+  const isAvailable = next === 'available'
+  if (wasAvailable !== isAvailable) {
+    emit('availabilityChange', isAvailable)
+  }
 }
 
 function setSubmitting(next: boolean) {
@@ -78,13 +98,13 @@ function setSubmitting(next: boolean) {
 }
 
 function handleReady(event: StripeExpressCheckoutElementReadyEvent) {
-  setAvailable(Boolean(event.availablePaymentMethods?.googlePay))
+  setAvailability(event.availablePaymentMethods?.googlePay ? 'available' : 'unavailable')
 }
 
 function handleAvailabilityChange(
   event: StripeExpressCheckoutElementAvailablePaymentMethodsChangeEvent,
 ) {
-  setAvailable(Boolean(event.paymentMethods?.googlePay?.available))
+  setAvailability(event.paymentMethods?.googlePay?.available ? 'available' : 'unavailable')
 }
 
 function handleCancel() {
@@ -98,7 +118,7 @@ function handleLoadError(event: {
     type: event.error.type,
     code: event.error.code,
   })
-  setAvailable(false)
+  setAvailability('error')
 }
 
 async function handleConfirm(event: StripeExpressCheckoutElementConfirmEvent) {

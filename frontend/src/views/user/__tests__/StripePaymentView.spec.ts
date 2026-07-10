@@ -8,7 +8,10 @@ const routeState = vi.hoisted(() => ({
 const routerPush = vi.hoisted(() => vi.fn())
 const getOrder = vi.hoisted(() => vi.fn())
 const paymentStore = vi.hoisted(() => ({
-  config: { stripe_publishable_key: 'pk_test' } as { stripe_publishable_key?: string },
+  config: { stripe_publishable_key: 'pk_test' } as {
+    stripe_publishable_key?: string
+    stripe_google_pay_enabled?: boolean
+  },
   fetchConfig: vi.fn(),
   pollOrderStatus: vi.fn(),
 }))
@@ -72,6 +75,8 @@ vi.mock('@stripe/stripe-js', () => ({
 
 import StripePaymentView from '../StripePaymentView.vue'
 import { formatPaymentAmount } from '@/components/payment/currency'
+import { PAYMENT_RECOVERY_STORAGE_KEY } from '@/components/payment/paymentFlow'
+import type { PaymentRecoverySnapshot } from '@/components/payment/paymentFlow'
 import type { PaymentOrder } from '@/types/payment'
 
 function orderFactory(overrides: Partial<PaymentOrder> = {}): PaymentOrder {
@@ -89,6 +94,31 @@ function orderFactory(overrides: Partial<PaymentOrder> = {}): PaymentOrder {
     created_at: '2026-04-20T12:00:00Z',
     expires_at: '2026-04-20T12:30:00Z',
     refund_amount: 0,
+    ...overrides,
+  }
+}
+
+function recoverySnapshot(
+  overrides: Partial<PaymentRecoverySnapshot> = {},
+): PaymentRecoverySnapshot {
+  return {
+    orderId: 42,
+    amount: 100,
+    qrCode: '',
+    expiresAt: '2099-01-01T00:10:00.000Z',
+    paymentType: 'stripe',
+    payUrl: '',
+    outTradeNo: 'sub2_stripe_42',
+    clientSecret: 'pi_secret_42',
+    intentId: '',
+    currency: 'USD',
+    countryCode: 'US',
+    paymentEnv: 'test',
+    payAmount: 103,
+    orderType: 'balance',
+    paymentMode: '',
+    resumeToken: '',
+    createdAt: Date.now(),
     ...overrides,
   }
 }
@@ -113,7 +143,10 @@ describe('StripePaymentView', () => {
     }
     routerPush.mockReset()
     getOrder.mockReset()
-    paymentStore.config = { stripe_publishable_key: 'pk_test' }
+    paymentStore.config = {
+      stripe_publishable_key: 'pk_test',
+      stripe_google_pay_enabled: false,
+    }
     paymentStore.fetchConfig.mockReset().mockResolvedValue(undefined)
     paymentStore.pollOrderStatus.mockReset()
     loadStripe.mockReset().mockResolvedValue(stripeInstance)
@@ -137,7 +170,7 @@ describe('StripePaymentView', () => {
       return stripeExpressElement
     })
     stripeInstance.elements.mockReset().mockReturnValue(stripeElements)
-    stripeInstance.confirmPayment.mockReset()
+    stripeInstance.confirmPayment.mockReset().mockResolvedValue({})
     stripeInstance.confirmAlipayPayment.mockReset()
     stripeInstance.confirmWechatPayPayment.mockReset()
     window.localStorage.clear()
@@ -158,7 +191,25 @@ describe('StripePaymentView', () => {
     wrapper.unmount()
   })
 
-  it('creates Payment and Express Checkout Elements from one Elements instance', async () => {
+  it('does not create or render Express Checkout or its divider when disabled', async () => {
+    getOrder.mockResolvedValue({ data: orderFactory({ currency: 'USD' }) })
+
+    const wrapper = mountView()
+    await flushPromises()
+    await flushPromises()
+
+    expect(stripeElements.create).toHaveBeenCalledWith('payment', expect.any(Object))
+    expect(stripeElements.create).not.toHaveBeenCalledWith('expressCheckout', expect.anything())
+    expect(wrapper.find('[data-testid="stripe-google-pay-state"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="stripe-google-pay-divider"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('creates Payment and the real Express Checkout child from one Elements instance when enabled', async () => {
+    paymentStore.config = {
+      stripe_publishable_key: 'pk_test',
+      stripe_google_pay_enabled: true,
+    }
     getOrder.mockResolvedValue({ data: orderFactory({ currency: 'USD' }) })
 
     const wrapper = mountView()
@@ -169,7 +220,7 @@ describe('StripePaymentView', () => {
     expect(stripeElements.create).toHaveBeenCalledWith('payment', expect.any(Object))
     expect(stripeElements.create).toHaveBeenCalledWith(
       'expressCheckout',
-      expect.objectContaining({
+      {
         paymentMethods: {
           googlePay: 'auto',
           applePay: 'never',
@@ -178,12 +229,41 @@ describe('StripePaymentView', () => {
           paypal: 'never',
           klarna: 'never',
         },
-      }),
+      },
     )
+    expect(wrapper.get('[data-testid="stripe-google-pay-state"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="stripe-google-pay-divider"]').exists()).toBe(true)
     wrapper.unmount()
   })
 
-  it('destroys the Payment Element and removes its listener on unmount', async () => {
+  it('keeps a restored false capability authoritative over a true Checkout fallback', async () => {
+    paymentStore.config = {
+      stripe_publishable_key: 'pk_checkout',
+      stripe_google_pay_enabled: true,
+    }
+    window.localStorage.setItem(PAYMENT_RECOVERY_STORAGE_KEY, JSON.stringify(recoverySnapshot({
+      stripePublishableKey: 'pk_snapshot',
+      googlePayEnabled: false,
+    })))
+    getOrder.mockResolvedValue({ data: orderFactory({ currency: 'USD' }) })
+
+    const wrapper = mountView()
+    await flushPromises()
+    await flushPromises()
+
+    expect(loadStripe).toHaveBeenCalledWith('pk_snapshot')
+    expect(stripeElements.create).toHaveBeenCalledWith('payment', expect.any(Object))
+    expect(stripeElements.create).not.toHaveBeenCalledWith('expressCheckout', expect.anything())
+    expect(wrapper.find('[data-testid="stripe-google-pay-state"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="stripe-google-pay-divider"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('removes listeners before destroying both Stripe Elements on unmount', async () => {
+    paymentStore.config = {
+      stripe_publishable_key: 'pk_test',
+      stripe_google_pay_enabled: true,
+    }
     getOrder.mockResolvedValue({ data: orderFactory() })
     const wrapper = mountView()
     await flushPromises()
@@ -192,10 +272,26 @@ describe('StripePaymentView', () => {
     wrapper.unmount()
 
     expect(stripePaymentElement.off).toHaveBeenCalledWith('ready', expect.any(Function))
+    expect(Math.max(...stripePaymentElement.off.mock.invocationCallOrder)).toBeLessThan(
+      stripePaymentElement.destroy.mock.invocationCallOrder[0],
+    )
     expect(stripePaymentElement.destroy).toHaveBeenCalledOnce()
+    expect(stripeExpressElement.off).toHaveBeenCalledWith('ready', expect.any(Function))
+    expect(stripeExpressElement.off).toHaveBeenCalledWith('availablepaymentmethodschange', expect.any(Function))
+    expect(stripeExpressElement.off).toHaveBeenCalledWith('confirm', expect.any(Function))
+    expect(stripeExpressElement.off).toHaveBeenCalledWith('cancel', expect.any(Function))
+    expect(stripeExpressElement.off).toHaveBeenCalledWith('loaderror', expect.any(Function))
+    expect(Math.max(...stripeExpressElement.off.mock.invocationCallOrder)).toBeLessThan(
+      stripeExpressElement.destroy.mock.invocationCallOrder[0],
+    )
+    expect(stripeExpressElement.destroy).toHaveBeenCalledOnce()
   })
 
   it('does not let Google Pay confirm while the generic form owns the lock', async () => {
+    paymentStore.config = {
+      stripe_publishable_key: 'pk_test',
+      stripe_google_pay_enabled: true,
+    }
     let resolveCardConfirmation!: (value: object) => void
     stripeInstance.confirmPayment.mockReturnValue(new Promise(resolve => {
       resolveCardConfirmation = resolve
@@ -226,12 +322,16 @@ describe('StripePaymentView', () => {
     wrapper.unmount()
   })
 
-  it('shares submitting state and completes the existing success flow through the real child', async () => {
+  it('does not let the generic form confirm while Google Pay owns the lock', async () => {
     let resolveConfirmation!: (value: object) => void
     stripeInstance.confirmPayment.mockReturnValue(new Promise(resolve => {
       resolveConfirmation = resolve
     }))
     getOrder.mockResolvedValue({ data: orderFactory() })
+    paymentStore.config = {
+      stripe_publishable_key: 'pk_test',
+      stripe_google_pay_enabled: true,
+    }
     const wrapper = mountView()
     await flushPromises()
     await flushPromises()
@@ -242,15 +342,60 @@ describe('StripePaymentView', () => {
     })
     await nextTick()
     expect(wrapper.get('button.btn-stripe').attributes('disabled')).toBeDefined()
+    await wrapper.get('button.btn-stripe').trigger('click')
+    expect(stripeInstance.confirmPayment).toHaveBeenCalledTimes(1)
 
     resolveConfirmation({})
     await confirmPromise
     await flushPromises()
-    expect(wrapper.text()).toContain('payment.stripeSuccessProcessing')
+    wrapper.unmount()
+  })
+
+  it('routes Google Pay confirmation to result polling without local success or clearing recovery', async () => {
+    paymentStore.config = {
+      stripe_publishable_key: 'pk_test',
+      stripe_google_pay_enabled: true,
+    }
+    routeState.query = {
+      order_id: '42',
+      client_secret: 'pi_secret_42',
+      resume_token: 'resume-stripe-42',
+    }
+    const restored = recoverySnapshot({
+      googlePayEnabled: true,
+      resumeToken: 'resume-stripe-42',
+    })
+    window.localStorage.setItem(PAYMENT_RECOVERY_STORAGE_KEY, JSON.stringify(restored))
+    getOrder.mockResolvedValue({ data: orderFactory() })
+
+    const wrapper = mountView()
+    await flushPromises()
+    await flushPromises()
+
+    await expressHandlers.get('confirm')?.({
+      expressPaymentType: 'google_pay',
+      paymentFailed: vi.fn(),
+    })
+    await flushPromises()
+
+    expect(routerPush).toHaveBeenCalledWith({
+      path: '/payment/result',
+      query: {
+        order_id: '42',
+        resume_token: 'resume-stripe-42',
+      },
+    })
+    expect(wrapper.text()).not.toContain('payment.stripeSuccessProcessing')
+    expect(window.localStorage.getItem(PAYMENT_RECOVERY_STORAGE_KEY))
+      .toBe(JSON.stringify(restored))
     wrapper.unmount()
   })
 
   it('does not render Google Pay in the direct Alipay flow', async () => {
+    paymentStore.config = {
+      stripe_publishable_key: 'pk_test',
+      stripe_google_pay_enabled: true,
+    }
     routeState.query = {
       order_id: '42',
       client_secret: 'pi_secret_42',
@@ -263,11 +408,16 @@ describe('StripePaymentView', () => {
     await flushPromises()
 
     expect(stripeElements.create).not.toHaveBeenCalledWith('expressCheckout', expect.anything())
-    expect(wrapper.find('[data-testid="stripe-google-pay-express"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="stripe-google-pay-state"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="stripe-google-pay-divider"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
   it('does not render Google Pay in the direct WeChat Pay flow', async () => {
+    paymentStore.config = {
+      stripe_publishable_key: 'pk_test',
+      stripe_google_pay_enabled: true,
+    }
     routeState.query = {
       order_id: '42',
       client_secret: 'pi_secret_42',
@@ -282,7 +432,8 @@ describe('StripePaymentView', () => {
     await flushPromises()
 
     expect(stripeElements.create).not.toHaveBeenCalledWith('expressCheckout', expect.anything())
-    expect(wrapper.find('[data-testid="stripe-google-pay-express"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="stripe-google-pay-state"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="stripe-google-pay-divider"]').exists()).toBe(false)
     wrapper.unmount()
   })
 })

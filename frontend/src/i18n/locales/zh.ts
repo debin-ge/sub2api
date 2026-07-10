@@ -7366,6 +7366,9 @@ const messages = {
     stripeLoadFailed: '支付组件加载失败，请刷新页面重试',
     stripeMissingParams: '缺少订单ID或支付密钥',
     stripeNotConfigured: 'Stripe 未配置',
+    googlePayChecking: '正在检测 Google Pay 可用性…',
+    googlePayUnavailable: '当前环境无法使用 Google Pay，请检查 HTTPS、Stripe 支付域名和 Google Wallet，或改用其他 Stripe 支付方式。',
+    googlePayUnavailableLabel: 'Google Pay 当前不可用',
     airwallexLoadFailed: 'Airwallex 支付组件加载失败，请刷新页面重试',
     airwallexMissingParams: '缺少 Airwallex 支付参数',
     errors: {

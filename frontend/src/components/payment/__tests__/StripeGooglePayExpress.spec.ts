@@ -75,18 +75,49 @@ describe('StripeGooglePayExpress', () => {
     expect(expressElement.mount).toHaveBeenCalledOnce()
   })
 
-  it('shows only when Google Pay becomes available', async () => {
+  it('shows a disabled checking placeholder while Stripe determines availability', () => {
     const wrapper = mountComponent()
 
-    expect(wrapper.get('[data-testid="stripe-google-pay-express"]').isVisible()).toBe(false)
-    handlers.get('availablepaymentmethodschange')?.({
+    expect(wrapper.get('[data-testid="stripe-google-pay-state"]').text())
+      .toContain('payment.googlePayChecking')
+    expect(wrapper.get('[data-testid="stripe-google-pay-placeholder"]').attributes('disabled'))
+      .toBeDefined()
+    expect(wrapper.get('[data-testid="stripe-google-pay-mount"]').isVisible()).toBe(false)
+  })
+
+  it('shows the real Stripe mount only when ready reports Google Pay available', async () => {
+    const wrapper = mountComponent()
+
+    handlers.get('ready')?.({
       elementType: 'expressCheckout',
-      paymentMethods: { googlePay: { available: true } },
+      availablePaymentMethods: { googlePay: true },
     })
     await nextTick()
 
-    expect(wrapper.get('[data-testid="stripe-google-pay-express"]').isVisible()).toBe(true)
+    expect(wrapper.get('[data-testid="stripe-google-pay-mount"]').isVisible()).toBe(true)
+    expect(wrapper.find('[data-testid="stripe-google-pay-placeholder"]').exists()).toBe(false)
     expect(wrapper.emitted('availabilityChange')).toEqual([[true]])
+  })
+
+  it('shows the disabled unavailable state when Google Pay availability is lost', async () => {
+    const wrapper = mountComponent()
+
+    handlers.get('ready')?.({
+      elementType: 'expressCheckout',
+      availablePaymentMethods: { googlePay: true },
+    })
+    handlers.get('availablepaymentmethodschange')?.({
+      elementType: 'expressCheckout',
+      paymentMethods: { googlePay: { available: false } },
+    })
+    await nextTick()
+
+    expect(wrapper.get('[data-testid="stripe-google-pay-state"]').text())
+      .toContain('payment.googlePayUnavailable')
+    expect(wrapper.get('[data-testid="stripe-google-pay-placeholder"]').attributes('disabled'))
+      .toBeDefined()
+    expect(wrapper.get('[data-testid="stripe-google-pay-mount"]').isVisible()).toBe(false)
+    expect(wrapper.emitted('availabilityChange')).toEqual([[true], [false]])
   })
 
   it('confirms the existing PaymentIntent and shares submitting state', async () => {
@@ -136,6 +167,7 @@ describe('StripeGooglePayExpress', () => {
 
     handlers.get('cancel')?.({ elementType: 'expressCheckout' })
     expect(wrapper.emitted('submittingChange')).toBeUndefined()
+    expect(confirmPayment).not.toHaveBeenCalled()
 
     wrapper.unmount()
     expect(expressElement.off).toHaveBeenNthCalledWith(1, 'ready', expect.any(Function))
@@ -149,7 +181,7 @@ describe('StripeGooglePayExpress', () => {
     expect(expressElement.destroy).toHaveBeenCalledOnce()
   })
 
-  it('hides a failed Element without releasing an external lock and records sanitized diagnostics', async () => {
+  it('shows the disabled error state without releasing an external lock and records sanitized diagnostics', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     const wrapper = mountComponent(true)
 
@@ -159,11 +191,19 @@ describe('StripeGooglePayExpress', () => {
     })
     handlers.get('loaderror')?.({
       elementType: 'expressCheckout',
-      error: { type: 'invalid_request_error', code: 'payment_method_domain_invalid' },
+      error: {
+        type: 'invalid_request_error',
+        code: 'payment_method_domain_invalid',
+        payment_method: { card: 'must-not-log' },
+      },
     })
     await nextTick()
 
-    expect(wrapper.get('[data-testid="stripe-google-pay-express"]').isVisible()).toBe(false)
+    expect(wrapper.get('[data-testid="stripe-google-pay-state"]').text())
+      .toContain('payment.googlePayUnavailable')
+    expect(wrapper.get('[data-testid="stripe-google-pay-placeholder"]').attributes('disabled'))
+      .toBeDefined()
+    expect(wrapper.get('[data-testid="stripe-google-pay-mount"]').isVisible()).toBe(false)
     expect(warn).toHaveBeenCalledWith('[StripeGooglePayExpress] load failed', {
       type: 'invalid_request_error',
       code: 'payment_method_domain_invalid',

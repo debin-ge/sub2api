@@ -69,17 +69,17 @@
         <template v-else-if="showPaymentElement">
           <div class="card p-6">
             <StripeGooglePayExpress
-              v-if="stripeInstance && elementsInstance"
+              v-if="googlePayEnabled && stripeInstance && elementsInstance"
               :stripe="stripeInstance"
               :elements="elementsInstance"
               :return-url="returnUrl"
               :disabled="stripeSubmitting"
-              @availability-change="googlePayAvailable = $event"
               @submitting-change="stripeSubmitting = $event"
               @confirmed="handleGooglePayConfirmed"
             />
             <div
-              v-if="googlePayAvailable"
+              v-if="googlePayEnabled"
+              data-testid="stripe-google-pay-divider"
               class="my-5 border-t border-gray-200 dark:border-dark-600"
               aria-hidden="true"
             />
@@ -118,6 +118,7 @@ import { extractI18nErrorMessage } from '@/utils/apiError'
 import { isMobileDevice } from '@/utils/device'
 import { formatPaymentAmount, normalizePaymentCurrency } from '@/components/payment/currency'
 import { PAYMENT_RECOVERY_STORAGE_KEY, readPaymentRecoverySnapshot } from '@/components/payment/paymentFlow'
+import type { PaymentRecoverySnapshot } from '@/components/payment/paymentFlow'
 import type { PaymentOrder } from '@/types/payment'
 import type { Stripe, StripeElements, StripePaymentElement } from '@stripe/stripe-js'
 import AppLayout from '@/components/layout/AppLayout.vue'
@@ -146,7 +147,7 @@ const redirecting = ref(false)
 const showPaymentElement = ref(false)
 const stripeInstance = shallowRef<Stripe | null>(null)
 const elementsInstance = shallowRef<StripeElements | null>(null)
-const googlePayAvailable = ref(false)
+const googlePayEnabled = ref(false)
 let paymentElement: StripePaymentElement | null = null
 const returnUrl = computed(() => (
   window.location.origin
@@ -162,6 +163,7 @@ onMounted(async () => {
   const clientSecret = String(route.query.client_secret || '')
   const method = String(route.query.method || '')
   const resumeToken = typeof route.query.resume_token === 'string' ? route.query.resume_token : undefined
+  let restored: PaymentRecoverySnapshot | null = null
 
   if (!orderId || !clientSecret) {
     loading.value = false
@@ -171,12 +173,13 @@ onMounted(async () => {
 
   try {
     if (typeof window !== 'undefined') {
-      const restored = readPaymentRecoverySnapshot(
+      const candidate = readPaymentRecoverySnapshot(
         window.localStorage.getItem(PAYMENT_RECOVERY_STORAGE_KEY),
         { resumeToken },
       )
-      if (restored?.orderId === orderId) {
-        currency.value = normalizePaymentCurrency(restored.currency)
+      if (candidate?.orderId === orderId) {
+        restored = candidate
+        currency.value = normalizePaymentCurrency(candidate.currency)
       }
     }
     const res = await paymentAPI.getOrder(orderId)
@@ -186,7 +189,11 @@ onMounted(async () => {
     }
 
     await paymentStore.fetchConfig()
-    const publishableKey = paymentStore.config?.stripe_publishable_key
+    const publishableKey = restored?.stripePublishableKey
+      || paymentStore.config?.stripe_publishable_key
+    googlePayEnabled.value = restored?.googlePayEnabled
+      ?? paymentStore.config?.stripe_google_pay_enabled
+      ?? false
     if (!publishableKey) { initError.value = t('payment.stripeNotConfigured'); return }
 
     const { loadStripe } = await import('@stripe/stripe-js')
@@ -306,9 +313,16 @@ async function handleGenericPay() {
   }
 }
 
-function handleGooglePayConfirmed() {
-  stripeSuccess.value = true
-  scheduleClose()
+async function handleGooglePayConfirmed() {
+  await router.push({
+    path: '/payment/result',
+    query: {
+      order_id: String(route.query.order_id || ''),
+      resume_token: typeof route.query.resume_token === 'string'
+        ? route.query.resume_token
+        : undefined,
+    },
+  })
 }
 
 let pollTimer: ReturnType<typeof setInterval> | null = null

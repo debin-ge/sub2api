@@ -7186,6 +7186,9 @@ const messages = {
     stripeLoadFailed: 'Failed to load payment component. Please refresh and try again.',
     stripeMissingParams: 'Missing order ID or client secret',
     stripeNotConfigured: 'Stripe is not configured',
+    googlePayChecking: 'Checking Google Pay availability…',
+    googlePayUnavailable: 'Google Pay is unavailable in this environment. Check HTTPS, Stripe payment domains, and Google Wallet, or use another Stripe payment method.',
+    googlePayUnavailableLabel: 'Google Pay unavailable',
     airwallexLoadFailed: 'Failed to load Airwallex payment component. Please refresh and try again.',
     airwallexMissingParams: 'Missing Airwallex payment parameters',
     errors: {

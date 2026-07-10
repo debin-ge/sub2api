@@ -54,14 +54,14 @@ vi.mock('@/api/payment', () => ({
   paymentAPI: { cancelOrder: vi.fn() },
 }))
 
-function mountInline() {
+function mountInline(googlePayEnabled = true) {
   return mount(StripePaymentInline, {
     props: {
       orderId: 42,
       amount: 100,
       clientSecret: 'pi_secret_42',
       publishableKey: 'pk_test',
-      googlePayEnabled: false,
+      googlePayEnabled,
       payAmount: 103,
       currency: 'USD',
     },
@@ -82,18 +82,39 @@ describe('StripePaymentInline Google Pay integration', () => {
     vi.restoreAllMocks()
   })
 
-  it('creates Payment and Express Checkout Elements from one Elements instance', async () => {
+  it('does not create or render Express Checkout or its divider when disabled', async () => {
+    const wrapper = mountInline(false)
+    await flushPromises()
+    await nextTick()
+
+    expect(elements.create).toHaveBeenCalledWith('payment', expect.any(Object))
+    expect(elements.create).not.toHaveBeenCalledWith('expressCheckout', expect.anything())
+    expect(wrapper.find('[data-testid="stripe-google-pay-state"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="stripe-google-pay-divider"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('creates Payment and the real Express Checkout child from one Elements instance when enabled', async () => {
     const wrapper = mountInline()
     await flushPromises()
     await nextTick()
 
     expect(stripe.elements).toHaveBeenCalledTimes(1)
     expect(elements.create).toHaveBeenCalledWith('payment', expect.any(Object))
-    expect(elements.create).toHaveBeenCalledWith('expressCheckout', expect.objectContaining({
-      paymentMethods: expect.objectContaining({ googlePay: 'auto' }),
-    }))
+    expect(elements.create).toHaveBeenCalledWith('expressCheckout', {
+      paymentMethods: {
+        googlePay: 'auto',
+        applePay: 'never',
+        link: 'never',
+        amazonPay: 'never',
+        paypal: 'never',
+        klarna: 'never',
+      },
+    })
     expect(paymentElement.mount).toHaveBeenCalledOnce()
     expect(expressElement.mount).toHaveBeenCalledOnce()
+    expect(wrapper.get('[data-testid="stripe-google-pay-state"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="stripe-google-pay-divider"]').exists()).toBe(true)
     wrapper.unmount()
   })
 
@@ -111,6 +132,8 @@ describe('StripePaymentInline Google Pay integration', () => {
     })
     await nextTick()
     expect(wrapper.get('button.btn-stripe').attributes('disabled')).toBeDefined()
+    await wrapper.get('button.btn-stripe').trigger('click')
+    expect(stripe.confirmPayment).toHaveBeenCalledTimes(1)
 
     resolveConfirmation({})
     await confirmPromise
@@ -148,7 +171,7 @@ describe('StripePaymentInline Google Pay integration', () => {
     wrapper.unmount()
   })
 
-  it('destroys the Payment Element and removes its listeners on unmount', async () => {
+  it('removes listeners before destroying both Stripe Elements on unmount', async () => {
     const wrapper = mountInline()
     await flushPromises()
 
@@ -156,7 +179,19 @@ describe('StripePaymentInline Google Pay integration', () => {
 
     expect(paymentElement.off).toHaveBeenCalledWith('ready', expect.any(Function))
     expect(paymentElement.off).toHaveBeenCalledWith('change', expect.any(Function))
+    expect(Math.max(...paymentElement.off.mock.invocationCallOrder)).toBeLessThan(
+      paymentElement.destroy.mock.invocationCallOrder[0],
+    )
     expect(paymentElement.destroy).toHaveBeenCalledOnce()
+    expect(expressElement.off).toHaveBeenCalledWith('ready', expect.any(Function))
+    expect(expressElement.off).toHaveBeenCalledWith('availablepaymentmethodschange', expect.any(Function))
+    expect(expressElement.off).toHaveBeenCalledWith('confirm', expect.any(Function))
+    expect(expressElement.off).toHaveBeenCalledWith('cancel', expect.any(Function))
+    expect(expressElement.off).toHaveBeenCalledWith('loaderror', expect.any(Function))
+    expect(Math.max(...expressElement.off.mock.invocationCallOrder)).toBeLessThan(
+      expressElement.destroy.mock.invocationCallOrder[0],
+    )
+    expect(expressElement.destroy).toHaveBeenCalledOnce()
   })
 
   it('removes a pending popup ready listener on unmount', async () => {

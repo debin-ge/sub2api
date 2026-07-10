@@ -18,17 +18,17 @@
       <!-- Stripe Payment Element -->
       <div class="card p-6">
         <StripeGooglePayExpress
-          v-if="stripeInstance && elementsInstance"
+          v-if="googlePayEnabled && stripeInstance && elementsInstance"
           :stripe="stripeInstance"
           :elements="elementsInstance"
           :return-url="returnUrl"
           :disabled="submitting"
-          @availability-change="googlePayAvailable = $event"
           @submitting-change="submitting = $event"
           @confirmed="handleGooglePayConfirmed"
         />
         <div
-          v-if="googlePayAvailable"
+          v-if="googlePayEnabled"
+          data-testid="stripe-google-pay-divider"
           class="my-5 border-t border-gray-200 dark:border-dark-600"
           aria-hidden="true"
         />
@@ -93,7 +93,6 @@ const selectedType = ref('')
 const paymentAmountSymbol = computed(() => currencySymbol(props.currency))
 const stripeInstance = shallowRef<Stripe | null>(null)
 const elementsInstance = shallowRef<StripeElements | null>(null)
-const googlePayAvailable = ref(false)
 let paymentElement: StripePaymentElement | null = null
 let pendingPopupReadyHandler: ((event: MessageEvent) => void) | null = null
 const returnUrl = computed(() => (
