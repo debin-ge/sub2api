@@ -127,8 +127,15 @@ func (d *UpstreamModelDiscoverer) Discover(ctx context.Context, account *Account
 	}
 	switch account.Platform {
 	case PlatformAntigravity:
-		if account.Type != AccountTypeAPIKey {
+		switch account.Type {
+		case AccountTypeOAuth:
 			return d.fetchAntigravityOAuthUpstreamModels(ctx, account)
+		case AccountTypeAPIKey, AccountTypeUpstream:
+			// Compatible static-key accounts use the configured HTTP upstream below.
+		default:
+			return nil, newUpstreamModelSyncUnsupportedError(
+				fmt.Sprintf("Unsupported Antigravity account type for upstream model sync: %s", account.Type), nil,
+			)
 		}
 	}
 	if d.httpUpstream == nil {
@@ -182,6 +189,8 @@ func (d *UpstreamModelDiscoverer) buildUpstreamModelsRequest(ctx context.Context
 		return d.buildWindsurfUpstreamModelsRequest(ctx, account)
 	case account.Platform == PlatformOpenCode:
 		return d.buildOpenCodeUpstreamModelsRequest(ctx, account)
+	case account.Platform == PlatformAntigravity && account.Type == AccountTypeUpstream:
+		return d.buildAntigravityUpstreamModelsRequest(ctx, account)
 	case account.Platform == PlatformAntigravity:
 		return d.buildAntigravityAPIKeyModelsRequest(ctx, account)
 	case account.IsOpenAI():
@@ -344,6 +353,41 @@ func (d *UpstreamModelDiscoverer) buildAntigravityAPIKeyModelsRequest(ctx contex
 	return req, nil
 }
 
+func (d *UpstreamModelDiscoverer) buildAntigravityUpstreamModelsRequest(ctx context.Context, account *Account) (*http.Request, error) {
+	if account.Type != AccountTypeUpstream {
+		return nil, newUpstreamModelSyncUnsupportedError(
+			fmt.Sprintf("Unsupported Antigravity account type for upstream model sync: %s", account.Type), nil,
+		)
+	}
+	apiKey := strings.TrimSpace(account.GetCredential("api_key"))
+	if apiKey == "" {
+		return nil, newUpstreamModelSyncConfigError("No Antigravity upstream API key is available", nil)
+	}
+
+	baseURL := strings.TrimSpace(account.GetCredential("base_url"))
+	if baseURL == "" {
+		return nil, newUpstreamModelSyncConfigError("Antigravity upstream base URL is required for upstream model sync", nil)
+	}
+	normalizedBaseURL, err := d.validateUpstreamBaseURL(baseURL)
+	if err != nil {
+		return nil, newUpstreamModelSyncConfigError("Invalid Antigravity upstream base URL", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, buildV1ModelsURL(normalizedBaseURL), nil)
+	if err != nil {
+		return nil, newUpstreamModelSyncConfigError("Invalid Antigravity upstream model list URL", err)
+	}
+	for key, value := range claude.DefaultHeaders {
+		req.Header.Set(key, value)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("anthropic-version", "2023-06-01")
+	req.Header.Set("anthropic-beta", claude.APIKeyBetaHeader)
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("x-api-key", apiKey)
+	return req, nil
+}
+
 func (d *UpstreamModelDiscoverer) buildOpenAIUpstreamModelsRequest(ctx context.Context, account *Account) (*http.Request, error) {
 	if account.Type == AccountTypeOAuth {
 		credentialAccount, err := resolveCredentialAccount(ctx, d.accountRepo, account)
@@ -466,6 +510,9 @@ func (d *UpstreamModelDiscoverer) buildGeminiUpstreamModelsRequest(ctx context.C
 }
 
 func (d *UpstreamModelDiscoverer) fetchAntigravityOAuthUpstreamModels(ctx context.Context, account *Account) ([]string, error) {
+	if account == nil || account.Type != AccountTypeOAuth {
+		return nil, newUpstreamModelSyncUnsupportedError("Antigravity Cloud Code model sync requires an OAuth account", nil)
+	}
 	if d.antigravityGatewayService == nil || d.antigravityGatewayService.GetTokenProvider() == nil {
 		return nil, newUpstreamModelSyncConfigError("Antigravity token provider is not configured", nil)
 	}

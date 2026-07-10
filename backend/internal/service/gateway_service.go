@@ -11234,8 +11234,9 @@ func (s *GatewayService) validateUpstreamBaseURL(raw string) (string, error) {
 	return normalized, nil
 }
 
-// GetAvailableModels returns the list of models available for a group
-// It aggregates model_mapping keys from all schedulable accounts in the group
+// GetAvailableModels delegates to the unified model catalog first. Only when the
+// catalog is unavailable or returns an error does it defensively aggregate legacy
+// model mappings and provider defaults from schedulable accounts.
 func (s *GatewayService) GetAvailableModels(ctx context.Context, groupID *int64, platform string) []string {
 	if s == nil {
 		return nil

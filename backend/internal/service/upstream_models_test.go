@@ -11,6 +11,8 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/stretchr/testify/require"
 )
 
@@ -37,6 +39,47 @@ func newOpenAIOAuthDiscovererTest(t *testing.T, body string) (*UpstreamModelDisc
 
 type modelDiscoveryRequestRecorder struct {
 	req *http.Request
+}
+
+type antigravityUpstreamDiscoveryRecorder struct {
+	req                *http.Request
+	proxyURL           string
+	accountID          int64
+	accountConcurrency int
+	profile            *tlsfingerprint.Profile
+	doCalls            int
+	doWithTLSCalls     int
+	resp               *http.Response
+}
+
+func (r *antigravityUpstreamDiscoveryRecorder) Do(
+	req *http.Request,
+	proxyURL string,
+	accountID int64,
+	accountConcurrency int,
+) (*http.Response, error) {
+	r.doCalls++
+	r.req = req
+	r.proxyURL = proxyURL
+	r.accountID = accountID
+	r.accountConcurrency = accountConcurrency
+	return r.resp, nil
+}
+
+func (r *antigravityUpstreamDiscoveryRecorder) DoWithTLS(
+	req *http.Request,
+	proxyURL string,
+	accountID int64,
+	accountConcurrency int,
+	profile *tlsfingerprint.Profile,
+) (*http.Response, error) {
+	r.doWithTLSCalls++
+	r.req = req
+	r.proxyURL = proxyURL
+	r.accountID = accountID
+	r.accountConcurrency = accountConcurrency
+	r.profile = profile
+	return r.resp, nil
 }
 
 func newModelDiscoveryServer(t *testing.T, responseBody string) (*httptest.Server, *modelDiscoveryRequestRecorder) {
@@ -224,6 +267,125 @@ func TestUpstreamModelDiscoverer_OpenAIOAuthUsesConfiguredTokenProvider(t *testi
 	require.NoError(t, err)
 	require.Equal(t, "Bearer refreshed-token", upstream.lastReq.Header.Get("Authorization"))
 	require.Equal(t, "true", upstream.lastReq.Header.Get("x-openai-fedramp"))
+}
+
+func TestUpstreamModelDiscoverer_AntigravityUpstreamUsesConfiguredCompatibleEndpoint(t *testing.T) {
+	proxyID := int64(41)
+	upstream := &antigravityUpstreamDiscoveryRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"data":[{"id":"z-model"},{"id":"a-model"},{"id":"a-model"},{"id":" "}]}`)),
+	}}
+	discoverer := &UpstreamModelDiscoverer{
+		httpUpstream:        upstream,
+		cfg:                 &config.Config{Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{Enabled: true, UpstreamHosts: []string{"models.example.com"}}}},
+		tlsFPProfileService: &TLSFingerprintProfileService{},
+	}
+	account := &Account{
+		ID: 42, Platform: PlatformAntigravity, Type: AccountTypeUpstream, Concurrency: 7,
+		Credentials: map[string]any{
+			"api_key":                    "static-upstream-key",
+			"base_url":                   "https://models.example.com/claude-compatible",
+			credKeyHeaderOverrideEnabled: true,
+			credKeyHeaderOverrides: map[string]any{
+				"authorization": "Bearer replacement-must-not-win",
+				"x-api-key":     "replacement-must-not-win",
+				"x-test-marker": "not-eligible-for-upstream-accounts",
+			},
+		},
+		ProxyID: &proxyID,
+		Proxy:   &Proxy{ID: proxyID, Protocol: "http", Host: "proxy.test", Port: 3128},
+	}
+
+	models, err := discoverer.Discover(context.Background(), account)
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"a-model", "z-model"}, models)
+	require.NotNil(t, upstream.req)
+	require.Equal(t, http.MethodGet, upstream.req.Method)
+	require.Equal(t, "https://models.example.com/claude-compatible/v1/models", upstream.req.URL.String())
+	require.Equal(t, "Bearer static-upstream-key", upstream.req.Header.Get("Authorization"))
+	require.Equal(t, "static-upstream-key", upstream.req.Header.Get("x-api-key"))
+	require.Equal(t, "application/json", upstream.req.Header.Get("Accept"))
+	require.Equal(t, "2023-06-01", upstream.req.Header.Get("anthropic-version"))
+	require.Equal(t, claude.APIKeyBetaHeader, upstream.req.Header.Get("anthropic-beta"))
+	require.Equal(t, claude.DefaultHeaders["User-Agent"], upstream.req.Header.Get("User-Agent"))
+	// Header overrides are deliberately unavailable to AccountTypeUpstream, matching ForwardUpstream.
+	require.Empty(t, upstream.req.Header.Get("x-test-marker"))
+	require.Equal(t, "http://proxy.test:3128", upstream.proxyURL)
+	require.Equal(t, int64(42), upstream.accountID)
+	require.Equal(t, 7, upstream.accountConcurrency)
+	require.Zero(t, upstream.doCalls)
+	require.Equal(t, 1, upstream.doWithTLSCalls)
+	require.Nil(t, upstream.profile)
+}
+
+func TestUpstreamModelDiscoverer_AntigravityUpstreamRejectsDisallowedBaseURL(t *testing.T) {
+	upstream := &antigravityUpstreamDiscoveryRecorder{}
+	discoverer := &UpstreamModelDiscoverer{
+		httpUpstream: upstream,
+		cfg: &config.Config{Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{
+			Enabled: true, UpstreamHosts: []string{"allowed.example.com"}, AllowPrivateHosts: false,
+		}}},
+	}
+
+	_, err := discoverer.Discover(context.Background(), &Account{
+		ID: 43, Platform: PlatformAntigravity, Type: AccountTypeUpstream,
+		Credentials: map[string]any{"api_key": "static-upstream-key", "base_url": "https://127.0.0.1:1/custom"},
+	})
+
+	require.Error(t, err)
+	var syncErr *UpstreamModelSyncError
+	require.True(t, errors.As(err, &syncErr))
+	require.Equal(t, UpstreamModelSyncErrorConfiguration, syncErr.Kind)
+	require.Contains(t, syncErr.SafeMessage(), "Invalid Antigravity upstream base URL")
+	require.NotContains(t, err.Error(), "static-upstream-key")
+	require.Nil(t, upstream.req)
+	require.Zero(t, upstream.doWithTLSCalls)
+}
+
+func TestUpstreamModelDiscoverer_AntigravityUpstreamUsesCommonBodyLimit(t *testing.T) {
+	upstream := &antigravityUpstreamDiscoveryRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(strings.Repeat("x", int(upstreamModelsBodyLimit)+1))),
+	}}
+	discoverer := &UpstreamModelDiscoverer{httpUpstream: upstream, cfg: upstreamModelSyncTestConfig()}
+
+	_, err := discoverer.Discover(context.Background(), &Account{
+		ID: 44, Platform: PlatformAntigravity, Type: AccountTypeUpstream,
+		Credentials: map[string]any{"api_key": "static-upstream-key", "base_url": "https://models.example.com/custom"},
+	})
+
+	require.Error(t, err)
+	var syncErr *UpstreamModelSyncError
+	require.True(t, errors.As(err, &syncErr))
+	require.Equal(t, UpstreamModelSyncErrorUpstream, syncErr.Kind)
+	require.Contains(t, syncErr.SafeMessage(), "too large")
+	require.Equal(t, 1, upstream.doWithTLSCalls)
+}
+
+func TestModelCatalogListForAccount_AntigravityUpstreamUsesRealDiscoverer(t *testing.T) {
+	upstream := &antigravityUpstreamDiscoveryRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"data":[{"id":"catalog-z"},{"id":"catalog-a"},{"id":"catalog-a"}]}`)),
+	}}
+	discoverer := &UpstreamModelDiscoverer{httpUpstream: upstream, cfg: upstreamModelSyncTestConfig()}
+	catalog := NewModelCatalogService(nil, nil, nil, discoverer, config.ModelCatalogConfig{RequestTimeoutSeconds: 10})
+	account := &Account{
+		ID: 45, Platform: PlatformAntigravity, Type: AccountTypeUpstream,
+		Credentials: map[string]any{"api_key": "catalog-key", "base_url": "https://catalog.example.com/provider"},
+	}
+
+	models, err := catalog.ListForAccount(context.Background(), account, true)
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"catalog-a", "catalog-z"}, models)
+	require.Equal(t, "https://catalog.example.com/provider/v1/models", upstream.req.URL.String())
+	require.Equal(t, "Bearer catalog-key", upstream.req.Header.Get("Authorization"))
+	require.Equal(t, "catalog-key", upstream.req.Header.Get("x-api-key"))
+	require.Equal(t, 1, upstream.doWithTLSCalls)
 }
 
 func TestUpstreamModelDiscoverer_ProviderDispatch(t *testing.T) {
