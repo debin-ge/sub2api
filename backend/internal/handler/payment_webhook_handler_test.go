@@ -364,7 +364,7 @@ func TestStripeWebhookHandlerFailureLogsAreSanitized(t *testing.T) {
 				require.NoError(t, err)
 				return provider
 			},
-			rawBody: `{"id":"evt_sensitive","object":"event","data":{"object":{"metadata":{"orderId":"sub2_log_safety"}}},"marker":"must-not-log-invalid-signature-body"}`,
+			rawBody: `{"id":"evt_sensitive","object":"event","data":{"object":{"metadata":{"orderId":"must-not-log-unverified-order-pm_evil_payload"}}},"marker":"must-not-log-invalid-signature-body"}`,
 			signature: func(rawBody string) string {
 				return stripewebhook.GenerateTestSignedPayload(&stripewebhook.UnsignedPayload{
 					Payload: []byte(rawBody),
@@ -373,6 +373,8 @@ func TestStripeWebhookHandlerFailureLogsAreSanitized(t *testing.T) {
 			},
 			forbidden: []string{
 				"must-not-log-invalid-signature-body",
+				"must-not-log-unverified-order-pm_evil_payload",
+				"pm_evil_payload",
 				stripewebhook.ErrNoValidSignature.Error(),
 			},
 			wantErrorType: "stripe_webhook",
@@ -412,7 +414,7 @@ func TestStripeWebhookHandlerFailureLogsAreSanitized(t *testing.T) {
 				return provider
 			},
 			rawBody: fmt.Sprintf(
-				`{"id":"evt_sdk_sensitive","object":"event","api_version":%q,"type":"payment_intent.succeeded","data":{"object":{"id":"pi_sensitive","object":"payment_intent","amount":1234,"currency":"usd","payment_method":"pm_sensitive_123","metadata":{"orderId":"sub2_log_safety"}}},"marker":"must-not-log-sdk-body"}`,
+				`{"id":"evt_sdk_sensitive","object":"event","api_version":%q,"type":"payment_intent.succeeded","data":{"object":{"id":"pi_sensitive","object":"payment_intent","amount":1234,"currency":"usd","payment_method":"pm_sensitive_123","metadata":{"orderId":"sub2_verified_order"}}},"marker":"must-not-log-sdk-body"}`,
 				stripe.APIVersion,
 			),
 			signature: func(rawBody string) string {
@@ -452,11 +454,71 @@ func TestStripeWebhookHandlerFailureLogsAreSanitized(t *testing.T) {
 			require.Contains(t, w.Body.String(), "verify failed")
 			require.Contains(t, logs.String(), "type="+tt.wantErrorType)
 			require.Contains(t, logs.String(), "code="+tt.wantErrorCode)
-			require.Contains(t, logs.String(), "outTradeNo=sub2_log_safety")
-			for _, forbidden := range tt.forbidden {
+			forbiddenValues := append([]string{
+				"outTradeNo=",
+				"provider=stripe",
+				"method=POST",
+				"bodyLen=",
+			}, tt.forbidden...)
+			for _, forbidden := range forbiddenValues {
 				require.NotContains(t, logs.String(), forbidden)
 			}
 		})
+	}
+}
+
+func TestStripeWebhookProviderLookupFailureLogsOnlySafeClassification(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx := context.Background()
+	client := newWiseWebhookHandlerTestClient(t)
+	for i := 1; i <= 2; i++ {
+		_, err := client.PaymentProviderInstance.Create().
+			SetProviderKey(payment.TypeStripe).
+			SetName(fmt.Sprintf("stripe-lookup-%d", i)).
+			SetConfig("unused-encrypted-config").
+			SetSupportedTypes(payment.TypeStripe).
+			SetEnabled(true).
+			Save(ctx)
+		require.NoError(t, err)
+	}
+
+	registry := payment.NewRegistry()
+	loadBalancer := payment.NewDefaultLoadBalancer(client, []byte(wiseWebhookHandlerTestEncryptionKey))
+	paymentSvc := service.NewPaymentService(client, registry, loadBalancer, nil, nil, nil, nil, nil, nil)
+	handler := NewPaymentWebhookHandler(paymentSvc, registry)
+
+	const maliciousOrderID = "must-not-log-provider-lookup-pm_evil_payload"
+	rawBody := fmt.Sprintf(
+		`{"id":"evt_lookup_sensitive","object":"event","data":{"object":{"metadata":{"orderId":%q}}},"marker":"must-not-log-provider-lookup-body"}`,
+		maliciousOrderID,
+	)
+	var logs bytes.Buffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(previousLogger) })
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/payment/webhook/stripe", bytes.NewBufferString(rawBody))
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = req
+
+	handler.StripeWebhook(c)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Contains(t, logs.String(), "type=stripe_webhook")
+	require.Contains(t, logs.String(), "code=provider_lookup_failed")
+	for _, forbidden := range []string{
+		maliciousOrderID,
+		"pm_evil_payload",
+		"must-not-log-provider-lookup-body",
+		"provider=stripe",
+		"outTradeNo=",
+		"error=",
+		"method=",
+		"bodyLen=",
+		"rawBody=",
+	} {
+		require.NotContains(t, logs.String(), forbidden)
 	}
 }
 
