@@ -106,6 +106,7 @@ func TestMiniMaxUsageRecordMetadata(t *testing.T) {
 		nil,
 		nil,
 		nil,
+		nil,
 	)
 	groupID := int64(42)
 	subscriptionID := int64(88)

@@ -216,10 +216,7 @@ func (s *httpUpstreamService) DoWithTLS(req *http.Request, proxyURL string, acco
 	if req != nil && req.URL != nil {
 		targetHost = req.URL.Host
 	}
-	proxyInfo := "direct"
-	if proxyURL != "" {
-		proxyInfo = proxyURL
-	}
+	proxyInfo := proxyURLForLog(proxyURL)
 	slog.Debug("tls_fingerprint_enabled", "account_id", accountID, "target", targetHost, "proxy", proxyInfo, "profile", profile.Name)
 
 	if err := s.validateRequestHost(req); err != nil {
@@ -263,6 +260,7 @@ func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID i
 	if err != nil {
 		return nil, err
 	}
+	proxyInfo := proxyURLForLog(proxyURL)
 	settings := s.resolvePoolSettings(isolation, accountConcurrency)
 	settings = s.applyProfilePoolSettings(settings, upstreamProfile)
 	// TLS 指纹客户端使用独立的缓存键，加 "tls:" 前缀
@@ -280,7 +278,7 @@ func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID i
 			atomic.AddInt64(&entry.inFlight, 1)
 		}
 		s.mu.RUnlock()
-		slog.Debug("tls_fingerprint_reusing_client", "account_id", accountID, "cache_key", cacheKey)
+		slog.Debug("tls_fingerprint_reusing_client", "account_id", accountID, "proxy", proxyInfo)
 		return entry, nil
 	}
 	s.mu.RUnlock()
@@ -294,12 +292,12 @@ func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID i
 				atomic.AddInt64(&entry.inFlight, 1)
 			}
 			s.mu.Unlock()
-			slog.Debug("tls_fingerprint_reusing_client", "account_id", accountID, "cache_key", cacheKey)
+			slog.Debug("tls_fingerprint_reusing_client", "account_id", accountID, "proxy", proxyInfo)
 			return entry, nil
 		}
 		slog.Debug("tls_fingerprint_evicting_stale_client",
 			"account_id", accountID,
-			"cache_key", cacheKey,
+			"proxy", proxyInfo,
 			"proxy_changed", entry.proxyKey != proxyKey,
 			"pool_changed", entry.poolKey != poolKey)
 		s.removeClientLocked(cacheKey, entry)
@@ -317,17 +315,14 @@ func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID i
 	}
 
 	// 创建带 TLS 指纹的 Transport
-	slog.Debug("tls_fingerprint_creating_new_client", "account_id", accountID, "cache_key", cacheKey, "proxy", proxyKey)
+	slog.Debug("tls_fingerprint_creating_new_client", "account_id", accountID, "proxy", proxyInfo)
 	transport, err := buildUpstreamTransportWithTLSFingerprint(settings, parsedProxy, profile)
 	if err != nil {
 		s.mu.Unlock()
 		return nil, fmt.Errorf("build TLS fingerprint transport: %w", err)
 	}
 
-	client := &http.Client{Transport: transport}
-	if s.shouldValidateResolvedIP() {
-		client.CheckRedirect = s.redirectChecker
-	}
+	client := &http.Client{Transport: transport, CheckRedirect: s.redirectChecker}
 
 	entry := &upstreamClientEntry{
 		client:   client,
@@ -377,7 +372,73 @@ func (s *httpUpstreamService) redirectChecker(req *http.Request, via []*http.Req
 	if len(via) >= 10 {
 		return errors.New("stopped after 10 redirects")
 	}
+	if isModelDiscoveryRedirect(req, via) {
+		if err := s.validateModelDiscoveryRedirectURL(req); err != nil {
+			return err
+		}
+		if len(via) == 0 || !sameURLOrigin(via[0].URL, req.URL) {
+			return errors.New("model discovery cross-origin redirect is not allowed")
+		}
+	}
 	return s.validateRequestHost(req)
+}
+
+func isModelDiscoveryRedirect(req *http.Request, via []*http.Request) bool {
+	if req != nil && service.IsHTTPUpstreamModelDiscovery(req.Context()) {
+		return true
+	}
+	return len(via) > 0 && via[0] != nil && service.IsHTTPUpstreamModelDiscovery(via[0].Context())
+}
+
+func (s *httpUpstreamService) validateModelDiscoveryRedirectURL(req *http.Request) error {
+	if req == nil || req.URL == nil {
+		return errors.New("model discovery redirect url is nil")
+	}
+	if s == nil || s.cfg == nil {
+		return errors.New("model discovery redirect config is not available")
+	}
+	safeURL := *req.URL
+	safeURL.User = nil
+	safeURL.RawQuery = ""
+	safeURL.ForceQuery = false
+	safeURL.Fragment = ""
+	policy := s.cfg.Security.URLAllowlist
+	if !policy.Enabled {
+		_, err := urlvalidator.ValidateURLFormat(safeURL.String(), policy.AllowInsecureHTTP)
+		return err
+	}
+	_, err := urlvalidator.ValidateHTTPSURL(safeURL.String(), urlvalidator.ValidationOptions{
+		AllowedHosts:     policy.UpstreamHosts,
+		RequireAllowlist: true,
+		AllowPrivate:     policy.AllowPrivateHosts,
+	})
+	return err
+}
+
+func sameURLOrigin(left, right *url.URL) bool {
+	if left == nil || right == nil {
+		return false
+	}
+	return strings.EqualFold(left.Scheme, right.Scheme) &&
+		strings.EqualFold(left.Hostname(), right.Hostname()) &&
+		effectiveURLPort(left) == effectiveURLPort(right)
+}
+
+func effectiveURLPort(value *url.URL) string {
+	if value == nil {
+		return ""
+	}
+	if port := value.Port(); port != "" {
+		return port
+	}
+	switch strings.ToLower(value.Scheme) {
+	case "http":
+		return "80"
+	case "https":
+		return "443"
+	default:
+		return ""
+	}
 }
 
 // acquireClient 获取或创建客户端，并标记为进行中请求
@@ -476,10 +537,7 @@ func (s *httpUpstreamService) getClientEntry(proxyURL string, accountID int64, a
 		s.mu.Unlock()
 		return nil, fmt.Errorf("build transport: %w", err)
 	}
-	client := &http.Client{Transport: transport}
-	if s.shouldValidateResolvedIP() {
-		client.CheckRedirect = s.redirectChecker
-	}
+	client := &http.Client{Transport: transport, CheckRedirect: s.redirectChecker}
 	entry := &upstreamClientEntry{
 		client:       client,
 		proxyKey:     proxyKey,
@@ -872,7 +930,7 @@ func (s *httpUpstreamService) recordOpenAIHTTP2Failure(profile service.HTTPUpstr
 	activated, until := state.recordFailure(time.Now(), settings.fallbackErrorThreshold, settings.fallbackWindow, settings.fallbackTTL)
 	if activated {
 		slog.Warn("openai_http2_proxy_fallback_activated",
-			"proxy", proxyKey,
+			"proxy", proxyURLForLog(proxyKey),
 			"fallback_until", until.Format(time.RFC3339))
 	}
 }
@@ -990,6 +1048,28 @@ func normalizeProxyURL(raw string) (string, *url.URL, error) {
 		}
 	}
 	return parsed.String(), parsed, nil
+}
+
+func proxyURLForLog(raw string) string {
+	_, parsed, err := proxyurl.Parse(raw)
+	if err != nil {
+		return "configured"
+	}
+	if parsed == nil {
+		return directProxyKey
+	}
+	scheme := strings.ToLower(parsed.Scheme)
+	host := strings.ToLower(parsed.Host)
+	if hostname := parsed.Hostname(); hostname != "" {
+		port := parsed.Port()
+		hostname = strings.ToLower(hostname)
+		if port != "" {
+			host = net.JoinHostPort(hostname, port)
+		} else {
+			host = hostname
+		}
+	}
+	return scheme + "://" + host
 }
 
 // defaultPoolSettings 获取默认连接池配置

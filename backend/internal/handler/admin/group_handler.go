@@ -20,6 +20,7 @@ type GroupHandler struct {
 	adminService         service.AdminService
 	dashboardService     *service.DashboardService
 	groupCapacityService *service.GroupCapacityService
+	modelCatalog         adminModelCatalog
 }
 
 type optionalLimitField struct {
@@ -72,12 +73,16 @@ func (f optionalLimitField) ToServiceInput() *float64 {
 }
 
 // NewGroupHandler creates a new admin group handler
-func NewGroupHandler(adminService service.AdminService, dashboardService *service.DashboardService, groupCapacityService *service.GroupCapacityService) *GroupHandler {
-	return &GroupHandler{
+func NewGroupHandler(adminService service.AdminService, dashboardService *service.DashboardService, groupCapacityService *service.GroupCapacityService, catalog *service.ModelCatalogService) *GroupHandler {
+	handler := &GroupHandler{
 		adminService:         adminService,
 		dashboardService:     dashboardService,
 		groupCapacityService: groupCapacityService,
 	}
+	if catalog != nil {
+		handler.modelCatalog = catalog
+	}
+	return handler
 }
 
 // CreateGroupRequest represents create group request
@@ -263,7 +268,12 @@ func (h *GroupHandler) GetModelsListCandidates(c *gin.Context) {
 		return
 	}
 
-	models, err := h.adminService.GetGroupModelsListCandidates(
+	if h.modelCatalog == nil {
+		response.InternalError(c, "Model catalog is not configured")
+		return
+	}
+
+	models, err := h.modelCatalog.ListGroupCandidates(
 		c.Request.Context(),
 		groupID,
 		c.Query("platform"),

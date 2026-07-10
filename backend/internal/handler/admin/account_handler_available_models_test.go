@@ -29,10 +29,11 @@ func (s *availableModelsAdminService) GetAccount(_ context.Context, id int64) (*
 	return s.stubAdminService.GetAccount(context.Background(), id)
 }
 
-func setupAvailableModelsRouter(adminSvc service.AdminService) *gin.Engine {
+func setupAvailableModelsRouter(adminSvc service.AdminService, catalog adminModelCatalog) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	handler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler.modelCatalog = catalog
 	router.GET("/api/v1/admin/accounts/:id/models", handler.GetAvailableModels)
 	return router
 }
@@ -56,6 +57,8 @@ func (u *syncUpstreamHTTPUpstream) DoWithTLS(req *http.Request, proxyURL string,
 func setupSyncUpstreamModelsRouter(adminSvc service.AdminService, upstream service.HTTPUpstream) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
+	cfg := &config.Config{Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{Enabled: false}}}
+	discoverer := service.NewUpstreamModelDiscoverer(nil, nil, nil, nil, nil, nil, upstream, cfg, nil)
 	accountTestSvc := service.NewAccountTestService(
 		nil,
 		nil,
@@ -63,10 +66,11 @@ func setupSyncUpstreamModelsRouter(adminSvc service.AdminService, upstream servi
 		nil,
 		nil,
 		upstream,
-		&config.Config{Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{Enabled: false}}},
+		cfg,
 		nil,
+		discoverer,
 	)
-	handler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, accountTestSvc, nil, nil, nil, nil, nil, nil)
+	handler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, accountTestSvc, nil, nil, nil, nil, nil, nil, nil)
 	router.POST("/api/v1/admin/accounts/:id/models/sync-upstream", handler.SyncUpstreamModels)
 	return router
 }
@@ -87,7 +91,9 @@ func TestAccountHandlerGetAvailableModels_GrokUsesXAIModels(t *testing.T) {
 			},
 		},
 	}
-	router := setupAvailableModelsRouter(svc)
+	router := setupAvailableModelsRouter(svc, &adminModelCatalogStub{
+		accountModels: map[int64][]string{44: {"grok-4.3"}},
+	})
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/accounts/44/models", nil)
@@ -116,7 +122,9 @@ func TestAccountHandlerGetAvailableModels_GrokDefaultsToXAIModelsWithoutMapping(
 			Status:   service.StatusActive,
 		},
 	}
-	router := setupAvailableModelsRouter(svc)
+	router := setupAvailableModelsRouter(svc, &adminModelCatalogStub{
+		accountModels: map[int64][]string{45: service.DefaultModelCatalogIDs(service.PlatformGrok)},
+	})
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/accounts/45/models", nil)
@@ -147,6 +155,7 @@ func TestAccountHandlerGetAvailableModels_DomesticPlatformsDoNotFallBackToClaude
 		name          string
 		platform      string
 		credentials   map[string]any
+		catalogModels []string
 		wantContains  string
 		wantForbidden string
 	}{
@@ -156,6 +165,7 @@ func TestAccountHandlerGetAvailableModels_DomesticPlatformsDoNotFallBackToClaude
 			credentials: map[string]any{
 				"model_mapping": map[string]any{"glm-4.5-air": "GLM-4.5-air"},
 			},
+			catalogModels: []string{"glm-4.5-air"},
 			wantContains:  "GLM-4.5-air",
 			wantForbidden: "claude-fable-5",
 		},
@@ -198,7 +208,13 @@ func TestAccountHandlerGetAvailableModels_DomesticPlatformsDoNotFallBackToClaude
 					Credentials: tt.credentials,
 				},
 			}
-			router := setupAvailableModelsRouter(svc)
+			catalogModels := tt.catalogModels
+			if catalogModels == nil {
+				catalogModels = []string{tt.wantContains}
+			}
+			router := setupAvailableModelsRouter(svc, &adminModelCatalogStub{
+				accountModels: map[int64][]string{46: catalogModels},
+			})
 
 			rec := httptest.NewRecorder()
 			req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/accounts/46/models", nil)
@@ -240,7 +256,9 @@ func TestAccountHandlerGetAvailableModels_OpenAIOAuthUsesExplicitModelMapping(t 
 			},
 		},
 	}
-	router := setupAvailableModelsRouter(svc)
+	router := setupAvailableModelsRouter(svc, &adminModelCatalogStub{
+		accountModels: map[int64][]string{42: {"gpt-5"}},
+	})
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/accounts/42/models", nil)
@@ -277,7 +295,9 @@ func TestAccountHandlerGetAvailableModels_OpenAIOAuthPassthroughFallsBackToDefau
 			},
 		},
 	}
-	router := setupAvailableModelsRouter(svc)
+	router := setupAvailableModelsRouter(svc, &adminModelCatalogStub{
+		accountModels: map[int64][]string{43: service.DefaultModelCatalogIDs(service.PlatformOpenAI)},
+	})
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/accounts/43/models", nil)
@@ -314,7 +334,9 @@ func TestAccountHandlerGetAvailableModels_OpenAISparkShadowReturnsMappingModels(
 			},
 		},
 	}
-	router := setupAvailableModelsRouter(svc)
+	router := setupAvailableModelsRouter(svc, &adminModelCatalogStub{
+		accountModels: map[int64][]string{44: {"gpt-5.3-codex-spark"}},
+	})
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/accounts/44/models", nil)
@@ -335,6 +357,62 @@ func TestAccountHandlerGetAvailableModels_OpenAISparkShadowReturnsMappingModels(
 	require.ElementsMatch(t, []string{
 		"gpt-5.3-codex-spark",
 	}, ids, "影子可用模型由 model_mapping 派生（非写死）")
+}
+
+func TestAccountHandlerGetAvailableModels_AntigravityPreservesProviderMetadata(t *testing.T) {
+	svc := &availableModelsAdminService{
+		stubAdminService: newStubAdminService(),
+		account: service.Account{
+			ID: 47, Platform: service.PlatformAntigravity, Type: service.AccountTypeOAuth, Status: service.StatusActive,
+		},
+	}
+	router := setupAvailableModelsRouter(svc, &adminModelCatalogStub{
+		accountModels: map[int64][]string{47: {"claude-opus-4-6", "gemini-3-pro-low"}},
+	})
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/admin/accounts/47/models", nil))
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var resp struct {
+		Data []struct {
+			ID          string `json:"id"`
+			DisplayName string `json:"display_name"`
+			CreatedAt   string `json:"created_at"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Equal(t, "Claude Opus 4.6", resp.Data[0].DisplayName)
+	require.Equal(t, "2026-02-05T00:00:00Z", resp.Data[0].CreatedAt)
+	require.Equal(t, "Gemini 3 Pro Low", resp.Data[1].DisplayName)
+	require.Equal(t, "2025-06-01T00:00:00Z", resp.Data[1].CreatedAt)
+}
+
+func TestAccountHandlerGetAvailableModels_DomesticPreservesGenericMetadata(t *testing.T) {
+	svc := &availableModelsAdminService{
+		stubAdminService: newStubAdminService(),
+		account: service.Account{
+			ID: 48, Platform: service.PlatformWindsurf, Type: service.AccountTypeAPIKey, Status: service.StatusActive,
+		},
+	}
+	router := setupAvailableModelsRouter(svc, &adminModelCatalogStub{
+		accountModels: map[int64][]string{48: {"claude-sonnet-4-6"}},
+	})
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/admin/accounts/48/models", nil))
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var resp struct {
+		Data []struct {
+			ID          string `json:"id"`
+			DisplayName string `json:"display_name"`
+			CreatedAt   string `json:"created_at"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Equal(t, "claude-sonnet-4-6", resp.Data[0].DisplayName)
+	require.Equal(t, "2024-01-01T00:00:00Z", resp.Data[0].CreatedAt)
 }
 
 func TestAccountHandlerSyncUpstreamModels_ConfigErrorReturnsBadRequest(t *testing.T) {

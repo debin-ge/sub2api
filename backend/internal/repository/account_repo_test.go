@@ -9,6 +9,7 @@ import (
 	"sync"
 	"testing"
 
+	sqlmock "github.com/DATA-DOG/go-sqlmock"
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	_ "github.com/Wei-Shaw/sub2api/ent/runtime"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -21,6 +22,39 @@ import (
 const parameterLimitTestDriverName = "sub2api_param_limit_test"
 
 var registerParameterLimitTestDriverOnce sync.Once
+
+func TestAccountRepository_ClearError_ZeroRowsReturnsNotFound(t *testing.T) {
+	repo, mock, sideEffects := newZeroAffectedAccountRepo(t)
+	mock.ExpectExec(`UPDATE "accounts"`).WillReturnResult(sqlmock.NewResult(0, 0))
+
+	err := repo.ClearError(context.Background(), 999999)
+
+	require.ErrorIs(t, err, service.ErrAccountNotFound)
+	require.Empty(t, sideEffects.execQueries, "not-found update must not enqueue scheduler outbox work")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestAccountRepository_SetSchedulable_ZeroRowsReturnsNotFound(t *testing.T) {
+	repo, mock, sideEffects := newZeroAffectedAccountRepo(t)
+	mock.ExpectExec(`UPDATE "accounts"`).WillReturnResult(sqlmock.NewResult(0, 0))
+
+	err := repo.SetSchedulable(context.Background(), 999999, false)
+
+	require.ErrorIs(t, err, service.ErrAccountNotFound)
+	require.Empty(t, sideEffects.execQueries, "not-found update must not enqueue scheduler outbox work")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func newZeroAffectedAccountRepo(t *testing.T) (*accountRepository, sqlmock.Sqlmock, *recordingSQLExecutor) {
+	t.Helper()
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	drv := entsql.OpenDB(dialect.Postgres, db)
+	client := dbent.NewClient(dbent.Driver(drv))
+	t.Cleanup(func() { _ = client.Close() })
+	sideEffects := &recordingSQLExecutor{result: rowsAffectedResult(1)}
+	return newAccountRepositoryWithSQL(client, sideEffects, nil), mock, sideEffects
+}
 
 func TestAccountsToService_LargeActiveAccountSetDoesNotExceedPostgresParameterLimit(t *testing.T) {
 	repo := newParameterLimitAccountRepo(t)

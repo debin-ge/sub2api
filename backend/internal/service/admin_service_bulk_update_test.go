@@ -14,25 +14,26 @@ import (
 
 type accountRepoStubForBulkUpdate struct {
 	accountRepoStub
-	bulkUpdateErr    error
-	bulkUpdateIDs    []int64
-	bindGroupErrByID map[int64]error
-	bindGroupsCalls  []int64
-	getByIDsAccounts []*Account
-	getByIDsErr      error
-	getByIDsCalled   bool
-	getByIDsIDs      []int64
-	getByIDAccounts  map[int64]*Account
-	getByIDErrByID   map[int64]error
-	getByIDCalled    []int64
-	listByGroupData  map[int64][]Account
-	listByGroupErr   map[int64]error
-	listData         []Account
-	listResult       *pagination.PaginationResult
-	listErr          error
-	listCalled       bool
-	lastListParams   pagination.PaginationParams
-	lastListFilters  struct {
+	bulkUpdateErr     error
+	bulkUpdateIDs     []int64
+	bulkUpdatePayload AccountBulkUpdate
+	bindGroupErrByID  map[int64]error
+	bindGroupsCalls   []int64
+	getByIDsAccounts  []*Account
+	getByIDsErr       error
+	getByIDsCalled    bool
+	getByIDsIDs       []int64
+	getByIDAccounts   map[int64]*Account
+	getByIDErrByID    map[int64]error
+	getByIDCalled     []int64
+	listByGroupData   map[int64][]Account
+	listByGroupErr    map[int64]error
+	listData          []Account
+	listResult        *pagination.PaginationResult
+	listErr           error
+	listCalled        bool
+	lastListParams    pagination.PaginationParams
+	lastListFilters   struct {
 		platform    string
 		accountType string
 		status      string
@@ -40,10 +41,13 @@ type accountRepoStubForBulkUpdate struct {
 		groupID     int64
 		privacyMode string
 	}
+	shadowsByParent map[int64][]*Account
+	updateErrByID   map[int64]error
 }
 
-func (s *accountRepoStubForBulkUpdate) BulkUpdate(_ context.Context, ids []int64, _ AccountBulkUpdate) (int64, error) {
+func (s *accountRepoStubForBulkUpdate) BulkUpdate(_ context.Context, ids []int64, updates AccountBulkUpdate) (int64, error) {
 	s.bulkUpdateIDs = append([]int64{}, ids...)
+	s.bulkUpdatePayload = updates
 	if s.bulkUpdateErr != nil {
 		return 0, s.bulkUpdateErr
 	}
@@ -56,6 +60,14 @@ func (s *accountRepoStubForBulkUpdate) BindGroups(_ context.Context, accountID i
 		return err
 	}
 	return nil
+}
+
+func (s *accountRepoStubForBulkUpdate) ListShadowsByParent(_ context.Context, parentID int64) ([]*Account, error) {
+	return s.shadowsByParent[parentID], nil
+}
+
+func (s *accountRepoStubForBulkUpdate) Update(_ context.Context, account *Account) error {
+	return s.updateErrByID[account.ID]
 }
 
 func (s *accountRepoStubForBulkUpdate) GetByIDs(_ context.Context, ids []int64) ([]*Account, error) {
@@ -148,6 +160,7 @@ func TestAdminService_BulkUpdateAccounts_PartialFailureIDs(t *testing.T) {
 		AccountIDs:            []int64{1, 2, 3},
 		GroupIDs:              &groupIDs,
 		Schedulable:           &schedulable,
+		Credentials:           map[string]any{"model_mapping": map[string]any{"gpt-new": "gpt-new"}},
 		SkipMixedChannelCheck: true,
 	}
 
@@ -157,7 +170,64 @@ func TestAdminService_BulkUpdateAccounts_PartialFailureIDs(t *testing.T) {
 	require.Equal(t, 1, result.Failed)
 	require.ElementsMatch(t, []int64{1, 3}, result.SuccessIDs)
 	require.ElementsMatch(t, []int64{2}, result.FailedIDs)
+	require.ElementsMatch(t, []int64{1, 2, 3}, result.UpdatedIDs)
 	require.Len(t, result.Results, 3)
+}
+
+func TestAdminService_BulkUpdateAccounts_GroupOnlyTracksSuccessfulBindings(t *testing.T) {
+	repo := &accountRepoStubForBulkUpdate{
+		bindGroupErrByID: map[int64]error{2: errors.New("bind failed")},
+	}
+	svc := &adminServiceImpl{
+		accountRepo: repo,
+		groupRepo:   &groupRepoStubForAdmin{getByID: &Group{ID: 10, Name: "g10"}},
+	}
+	groupIDs := []int64{10}
+
+	result, err := svc.BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
+		AccountIDs: []int64{1, 2, 3}, GroupIDs: &groupIDs, SkipMixedChannelCheck: true,
+	})
+
+	require.NoError(t, err)
+	require.Empty(t, repo.bulkUpdateIDs, "group-only input must skip the no-op primary bulk phase")
+	require.ElementsMatch(t, []int64{1, 3}, result.SuccessIDs)
+	require.ElementsMatch(t, []int64{2}, result.FailedIDs)
+	require.ElementsMatch(t, []int64{1, 3}, result.UpdatedIDs)
+}
+
+func TestAdminService_BulkUpdateAccounts_LoadFactorClearIsPrimaryWrite(t *testing.T) {
+	repo := &accountRepoStubForBulkUpdate{}
+	svc := &adminServiceImpl{accountRepo: repo}
+	clearLoadFactor := 0
+
+	result, err := svc.BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
+		AccountIDs: []int64{1, 2, 3},
+		LoadFactor: &clearLoadFactor,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, []int64{1, 2, 3}, repo.bulkUpdateIDs)
+	require.NotNil(t, repo.bulkUpdatePayload.LoadFactor)
+	require.Zero(t, *repo.bulkUpdatePayload.LoadFactor)
+	require.Equal(t, []int64{1, 2, 3}, result.UpdatedIDs)
+}
+
+func TestAdminService_BulkUpdateAccounts_PostBulkProxyFailureCarriesUpdatedIDs(t *testing.T) {
+	shadowErr := errors.New("shadow update failed")
+	repo := &accountRepoStubForBulkUpdate{
+		shadowsByParent: map[int64][]*Account{1: {{ID: 20}, {ID: 21}}},
+		updateErrByID:   map[int64]error{21: shadowErr},
+	}
+	svc := &adminServiceImpl{accountRepo: repo}
+	proxyID := int64(9)
+
+	result, err := svc.BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
+		AccountIDs: []int64{1, 2}, ProxyID: &proxyID,
+	})
+
+	require.Nil(t, result)
+	require.ErrorIs(t, err, shadowErr)
+	require.ElementsMatch(t, []int64{1, 2, 20}, AccountMutationIDsFromError(err))
 }
 
 func TestAdminService_BulkUpdateAccounts_NilGroupRepoReturnsError(t *testing.T) {

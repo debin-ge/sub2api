@@ -12,6 +12,7 @@ const (
 )
 
 type httpUpstreamProfileContextKey struct{}
+type httpUpstreamModelDiscoveryContextKey struct{}
 
 // WithHTTPUpstreamProfile injects an upstream transport profile into ctx.
 func WithHTTPUpstreamProfile(ctx context.Context, profile HTTPUpstreamProfile) context.Context {
@@ -39,4 +40,22 @@ func HTTPUpstreamProfileFromContext(ctx context.Context) HTTPUpstreamProfile {
 	default:
 		return HTTPUpstreamProfileDefault
 	}
+}
+
+// WithHTTPUpstreamModelDiscovery marks an authenticated model-list request so
+// repository transports can enforce the discovery-specific redirect policy.
+func WithHTTPUpstreamModelDiscovery(ctx context.Context) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, httpUpstreamModelDiscoveryContextKey{}, true)
+}
+
+// IsHTTPUpstreamModelDiscovery reports whether ctx belongs to model discovery.
+func IsHTTPUpstreamModelDiscovery(ctx context.Context) bool {
+	if ctx == nil {
+		return false
+	}
+	marked, _ := ctx.Value(httpUpstreamModelDiscoveryContextKey{}).(bool)
+	return marked
 }

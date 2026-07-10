@@ -79,6 +79,7 @@ type Config struct {
 	Default                 DefaultConfig                 `mapstructure:"default"`
 	RateLimit               RateLimitConfig               `mapstructure:"rate_limit"`
 	Pricing                 PricingConfig                 `mapstructure:"pricing"`
+	ModelCatalog            ModelCatalogConfig            `mapstructure:"model_catalog"`
 	Gateway                 GatewayConfig                 `mapstructure:"gateway"`
 	APIKeyAuth              APIKeyAuthCacheConfig         `mapstructure:"api_key_auth_cache"`
 	SubscriptionCache       SubscriptionCacheConfig       `mapstructure:"subscription_cache"`
@@ -94,6 +95,14 @@ type Config struct {
 	Update                  UpdateConfig                  `mapstructure:"update"`
 	Idempotency             IdempotencyConfig             `mapstructure:"idempotency"`
 	Reseller                ResellerConfig                `mapstructure:"reseller"`
+}
+
+type ModelCatalogConfig struct {
+	RefreshIntervalSeconds int `mapstructure:"refresh_interval_seconds"`
+	RequestTimeoutSeconds  int `mapstructure:"request_timeout_seconds"`
+	StaleTTLSeconds        int `mapstructure:"stale_ttl_seconds"`
+	FailureBackoffSeconds  int `mapstructure:"failure_backoff_seconds"`
+	MaxConcurrency         int `mapstructure:"max_concurrency"`
 }
 
 type LogConfig struct {
@@ -1590,6 +1599,11 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 
 func setDefaults() {
 	viper.SetDefault("run_mode", RunModeStandard)
+	viper.SetDefault("model_catalog.refresh_interval_seconds", 300)
+	viper.SetDefault("model_catalog.request_timeout_seconds", 10)
+	viper.SetDefault("model_catalog.stale_ttl_seconds", 86400)
+	viper.SetDefault("model_catalog.failure_backoff_seconds", 60)
+	viper.SetDefault("model_catalog.max_concurrency", 5)
 
 	// Server
 	viper.SetDefault("server.host", "0.0.0.0")
@@ -2056,6 +2070,22 @@ func setDefaults() {
 }
 
 func (c *Config) Validate() error {
+	if c.ModelCatalog.RefreshIntervalSeconds <= 0 {
+		return fmt.Errorf("model_catalog.refresh_interval_seconds must be positive")
+	}
+	if c.ModelCatalog.RequestTimeoutSeconds <= 0 {
+		return fmt.Errorf("model_catalog.request_timeout_seconds must be positive")
+	}
+	if c.ModelCatalog.StaleTTLSeconds < c.ModelCatalog.RefreshIntervalSeconds {
+		return fmt.Errorf("model_catalog.stale_ttl_seconds must be >= refresh_interval_seconds")
+	}
+	if c.ModelCatalog.FailureBackoffSeconds <= 0 {
+		return fmt.Errorf("model_catalog.failure_backoff_seconds must be positive")
+	}
+	if c.ModelCatalog.MaxConcurrency < 1 || c.ModelCatalog.MaxConcurrency > 32 {
+		return fmt.Errorf("model_catalog.max_concurrency must be between 1-32")
+	}
+
 	jwtSecret := strings.TrimSpace(c.JWT.Secret)
 	if jwtSecret == "" {
 		return fmt.Errorf("jwt.secret is required")

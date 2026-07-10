@@ -693,8 +693,8 @@ func (s *stubAdminService) ReplaceUserGroup(ctx context.Context, userID, oldGrou
 	return &service.ReplaceUserGroupResult{MigratedKeys: 0}, nil
 }
 
-func (s *stubAdminService) RevertAccountProxyFallback(ctx context.Context, id int64) error {
-	return nil
+func (s *stubAdminService) RevertAccountProxyFallback(ctx context.Context, id int64) ([]int64, error) {
+	return []int64{id}, nil
 }
 
 func (s *stubAdminService) CreateShadow(ctx context.Context, parentID int64, opts service.ShadowOptions) (*service.Account, error) {

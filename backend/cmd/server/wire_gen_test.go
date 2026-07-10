@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -9,6 +10,19 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
 )
+
+type cleanupModelCatalogAccountRepoStub struct {
+	service.AccountRepository
+	listCalls chan struct{}
+}
+
+func (s *cleanupModelCatalogAccountRepoStub) ListSchedulable(context.Context) ([]service.Account, error) {
+	select {
+	case s.listCalls <- struct{}{}:
+	default:
+	}
+	return nil, nil
+}
 
 func TestProvideServiceBuildInfo(t *testing.T) {
 	in := handler.BuildInfo{
@@ -48,6 +62,28 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 	idempotencyCleanupSvc := service.NewIdempotencyCleanupService(nil, cfg)
 	schedulerSnapshotSvc := service.NewSchedulerSnapshotService(nil, nil, nil, nil, cfg)
 	opsSystemLogSinkSvc := service.NewOpsSystemLogSink(nil)
+	modelCatalogCfg := config.ModelCatalogConfig{
+		RefreshIntervalSeconds: 300,
+		RequestTimeoutSeconds:  10,
+		StaleTTLSeconds:        86400,
+		FailureBackoffSeconds:  60,
+		MaxConcurrency:         1,
+	}
+	modelCatalogListCalls := make(chan struct{}, 1)
+	modelCatalogSvc := service.NewModelCatalogService(
+		&cleanupModelCatalogAccountRepoStub{listCalls: modelCatalogListCalls},
+		nil,
+		nil,
+		nil,
+		modelCatalogCfg,
+	)
+	modelCatalogRefreshRunner := service.NewModelCatalogRefreshRunner(modelCatalogSvc, modelCatalogCfg)
+	modelCatalogRefreshRunner.Start()
+	select {
+	case <-modelCatalogListCalls:
+	case <-time.After(time.Second):
+		t.Fatal("model catalog runner did not start")
+	}
 
 	cleanup := provideCleanup(
 		nil, // entClient
@@ -82,6 +118,7 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 		nil, // miniMaxRemainsSyncRunner
 		nil, // deepSeekBalanceHealthRunner
 		nil, // channelMonitorRunner
+		modelCatalogRefreshRunner,
 		nil, // quotaFlusher
 	)
 

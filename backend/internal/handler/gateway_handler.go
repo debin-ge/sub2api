@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"math"
 	"net/http"
-	"sort"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -25,6 +24,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -37,6 +37,11 @@ import (
 const gatewayCompatibilityMetricsLogInterval = 1024
 
 var gatewayCompatibilityMetricsLogCounter atomic.Uint64
+
+type gatewayHandlerModelCatalog interface {
+	ListForAPIKey(context.Context, *service.APIKey) ([]string, error)
+	ListForPlatform(context.Context, *int64, string, bool) ([]string, error)
+}
 
 // GatewayHandler handles API gateway requests
 type GatewayHandler struct {
@@ -56,6 +61,7 @@ type GatewayHandler struct {
 	maxAccountSwitchesGemini  int
 	cfg                       *config.Config
 	settingService            *service.SettingService
+	modelCatalog              gatewayHandlerModelCatalog
 }
 
 // NewGatewayHandler creates a new GatewayHandler
@@ -74,6 +80,7 @@ func NewGatewayHandler(
 	userMsgQueueService *service.UserMessageQueueService,
 	cfg *config.Config,
 	settingService *service.SettingService,
+	catalog *service.ModelCatalogService,
 ) *GatewayHandler {
 	pingInterval := time.Duration(0)
 	maxAccountSwitches := 10
@@ -94,6 +101,11 @@ func NewGatewayHandler(
 		umqHelper = NewUserMsgQueueHelper(userMsgQueueService, SSEPingFormatClaude, pingInterval)
 	}
 
+	var modelCatalog gatewayHandlerModelCatalog
+	if catalog != nil {
+		modelCatalog = catalog
+	}
+
 	return &GatewayHandler{
 		gatewayService:            gatewayService,
 		geminiCompatService:       geminiCompatService,
@@ -111,6 +123,7 @@ func NewGatewayHandler(
 		maxAccountSwitchesGemini:  maxAccountSwitchesGemini,
 		cfg:                       cfg,
 		settingService:            settingService,
+		modelCatalog:              modelCatalog,
 	}
 }
 
@@ -988,74 +1001,47 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 
 // Models handles listing available models
 // GET /v1/models
-// Returns models based on account configurations (model_mapping whitelist)
-// Falls back to default models if no whitelist is configured
+// Returns models from the authenticated API key's unified catalog.
 func (h *GatewayHandler) Models(c *gin.Context) {
 	apiKey, _ := middleware2.GetAPIKeyFromContext(c)
+	if h == nil || h.modelCatalog == nil {
+		response.ErrorFrom(c, errors.New("model catalog is unavailable"))
+		return
+	}
 
-	var groupID *int64
 	var platform string
-
 	if apiKey != nil && apiKey.Group != nil {
-		groupID = &apiKey.Group.ID
 		platform = apiKey.Group.Platform
 	}
-	if forcedPlatform, ok := middleware2.GetForcePlatformFromContext(c); ok && strings.TrimSpace(forcedPlatform) != "" {
-		platform = forcedPlatform
-	}
 
-	if _, ok := service.GetProviderGatewayCapabilities(platform); ok {
-		availableModels := service.DefaultDomesticProviderModelIDs(platform)
-		if h.gatewayService != nil {
-			if models := h.gatewayService.GetAvailableModels(c.Request.Context(), groupID, platform); len(models) > 0 {
-				availableModels = models
+	var (
+		models []string
+		err    error
+	)
+	forcedPlatform, forcePlatform := middleware2.GetForcePlatformFromContext(c)
+	forcedPlatform = strings.TrimSpace(forcedPlatform)
+	if forcePlatform && forcedPlatform != "" {
+		platform = forcedPlatform
+		var groupID *int64
+		if apiKey != nil {
+			groupID = apiKey.GroupID
+			if groupID == nil && apiKey.Group != nil {
+				groupID = &apiKey.Group.ID
 			}
 		}
-		if platform == service.PlatformGLM {
-			availableModels = mergeGLMModelIDs(availableModels)
-		}
-		if apiKey != nil && apiKey.Group != nil && apiKey.Group.CustomModelsListEnabled() {
-			availableModels = filterModelsByCustomList(availableModels, service.DefaultDomesticProviderModelIDs(platform), apiKey.Group.ModelsListConfig.Models)
-		}
-		writeModelsList(c, availableModels)
+		models, err = h.modelCatalog.ListForPlatform(c.Request.Context(), groupID, platform, true)
+	} else {
+		models, err = h.modelCatalog.ListForAPIKey(c.Request.Context(), apiKey)
+	}
+	if err != nil {
+		response.ErrorFrom(c, err)
 		return
 	}
-
-	// Get available models from account configurations for the selected group platform.
-	availableModels := h.gatewayService.GetAvailableModels(c.Request.Context(), groupID, platform)
-	if apiKey != nil && apiKey.Group != nil && apiKey.Group.CustomModelsListEnabled() {
-		fallbackModels := defaultModelIDsForPlatform(platform)
-		availableModels = filterModelsByCustomList(customModelsListSource(platform, availableModels, fallbackModels), fallbackModels, apiKey.Group.ModelsListConfig.Models)
-		writeCustomModelsList(c, platform, availableModels)
-		return
-	}
-
-	if len(availableModels) > 0 {
-		writeModelsList(c, availableModels)
-		return
-	}
-
-	// Fallback to default models
 	if platform == service.PlatformOpenAI {
-		c.JSON(http.StatusOK, gin.H{
-			"object": "list",
-			"data":   openai.DefaultModels,
-		})
+		writeOpenAIModelsList(c, models)
 		return
 	}
-
-	if platform == service.PlatformGemini {
-		c.JSON(http.StatusOK, gin.H{
-			"object": "list",
-			"data":   geminicli.DefaultModels,
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"object": "list",
-		"data":   claude.DefaultModels,
-	})
+	writeModelsList(c, models)
 }
 
 func writeModelsList(c *gin.Context, modelIDs []string) {
@@ -1072,41 +1058,6 @@ func writeModelsList(c *gin.Context, modelIDs []string) {
 		"object": "list",
 		"data":   models,
 	})
-}
-
-func mergeGLMModelIDs(availableModels []string) []string {
-	if len(availableModels) == 0 {
-		defaults := service.DefaultGLMModelIDs()
-		return append([]string(nil), defaults...)
-	}
-
-	seen := make(map[string]struct{}, len(availableModels))
-	models := make([]string, 0, len(availableModels))
-	for _, modelID := range availableModels {
-		modelID = strings.TrimSpace(modelID)
-		if modelID == "" {
-			continue
-		}
-		if strings.Contains(modelID, "*") {
-			continue
-		}
-		modelID = service.NormalizeGLMModel(modelID)
-		if _, ok := seen[modelID]; ok {
-			continue
-		}
-		seen[modelID] = struct{}{}
-		models = append(models, modelID)
-	}
-	sort.Strings(models)
-	return models
-}
-
-func writeCustomModelsList(c *gin.Context, platform string, modelIDs []string) {
-	if platform == service.PlatformOpenAI {
-		writeOpenAIModelsList(c, modelIDs)
-		return
-	}
-	writeModelsList(c, modelIDs)
 }
 
 func writeOpenAIModelsList(c *gin.Context, modelIDs []string) {
@@ -1134,64 +1085,6 @@ func writeOpenAIModelsList(c *gin.Context, modelIDs []string) {
 		"object": "list",
 		"data":   models,
 	})
-}
-
-func customModelsListSource(platform string, availableModels, fallbackModels []string) []string {
-	if platform == service.PlatformAnthropic && len(availableModels) > 0 {
-		return mergeModelIDs(availableModels, fallbackModels)
-	}
-	return availableModels
-}
-
-func filterModelsByCustomList(availableModels, fallbackModels, selectedModels []string) []string {
-	if len(selectedModels) == 0 {
-		return availableModels
-	}
-	source := availableModels
-	if len(source) == 0 {
-		source = fallbackModels
-	}
-	if len(source) == 0 {
-		return nil
-	}
-
-	allowed := make([]string, 0, len(source))
-	for _, model := range source {
-		model = strings.TrimSpace(model)
-		if model != "" {
-			allowed = append(allowed, model)
-		}
-	}
-
-	seen := make(map[string]struct{}, len(selectedModels))
-	filtered := make([]string, 0, len(selectedModels))
-	for _, model := range selectedModels {
-		model = strings.TrimSpace(model)
-		if model == "" {
-			continue
-		}
-		if !customModelsListAllowsModel(allowed, model) {
-			continue
-		}
-		if _, ok := seen[model]; ok {
-			continue
-		}
-		seen[model] = struct{}{}
-		filtered = append(filtered, model)
-	}
-	return filtered
-}
-
-func customModelsListAllowsModel(availablePatterns []string, model string) bool {
-	for _, pattern := range availablePatterns {
-		if pattern == model {
-			return true
-		}
-		if strings.HasSuffix(pattern, "*") && strings.HasPrefix(model, strings.TrimSuffix(pattern, "*")) {
-			return true
-		}
-	}
-	return false
 }
 
 func defaultModelIDsForPlatform(platform string) []string {

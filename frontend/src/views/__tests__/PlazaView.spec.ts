@@ -277,6 +277,26 @@ describe('PlazaView', () => {
     expect(wrapper.text()).not.toContain('Model Plaza is unavailable')
   })
 
+  it('renders a newly discovered model without a frontend allowlist', async () => {
+    const channel = createPlazaChannel()
+    channel.platforms[0].supported_models.push({
+      name: 'gpt-live-after-release',
+      pricing: {
+        input_price: 0.2,
+        output_price: 0.8,
+        cache_write_price: null,
+        cache_read_price: null,
+        image_output_price: null,
+        per_request_price: null,
+      },
+    })
+    channels.value = [channel]
+
+    const wrapper = await mountPlaza()
+
+    expect(wrapper.text()).toContain('gpt-live-after-release')
+  })
+
   it('renders search and filters above a four-column card grid', async () => {
     const wrapper = await mountPlaza()
 
