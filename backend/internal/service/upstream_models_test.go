@@ -388,6 +388,52 @@ func TestModelCatalogListForAccount_AntigravityUpstreamUsesRealDiscoverer(t *tes
 	require.Equal(t, 1, upstream.doWithTLSCalls)
 }
 
+func TestModelCatalogListForAccount_AntigravityAPIKeyUsesRealDiscoverer(t *testing.T) {
+	upstream := &antigravityUpstreamDiscoveryRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"data":[{"id":"gateway-z"},{"id":"gateway-a"},{"id":"gateway-a"}]}`)),
+	}}
+	discoverer := &UpstreamModelDiscoverer{httpUpstream: upstream, cfg: upstreamModelSyncTestConfig()}
+	catalog := NewModelCatalogService(nil, nil, nil, discoverer, config.ModelCatalogConfig{RequestTimeoutSeconds: 10})
+	account := &Account{
+		ID: 46, Platform: PlatformAntigravity, Type: AccountTypeAPIKey,
+		Credentials: map[string]any{"api_key": "gateway-key", "base_url": "https://gateway.example.com/antigravity"},
+	}
+
+	models, err := catalog.ListForAccount(context.Background(), account, true)
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"gateway-a", "gateway-z"}, models)
+	require.NotNil(t, upstream.req)
+	require.Equal(t, "https://gateway.example.com/antigravity/v1/models", upstream.req.URL.String())
+	require.Equal(t, "gateway-key", upstream.req.Header.Get("x-api-key"))
+	require.Equal(t, 1, upstream.doWithTLSCalls)
+}
+
+func TestModelCatalogListForAccount_AntigravityAPIKeyFailureUsesConfiguredFallback(t *testing.T) {
+	upstream := &antigravityUpstreamDiscoveryRecorder{resp: &http.Response{
+		StatusCode: http.StatusBadGateway,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"error":"must-not-be-exposed"}`)),
+	}}
+	discoverer := &UpstreamModelDiscoverer{httpUpstream: upstream, cfg: upstreamModelSyncTestConfig()}
+	catalog := NewModelCatalogService(nil, nil, nil, discoverer, config.ModelCatalogConfig{RequestTimeoutSeconds: 10})
+	account := &Account{
+		ID: 47, Platform: PlatformAntigravity, Type: AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key": "gateway-key", "base_url": "https://gateway.example.com/antigravity",
+			"model_mapping": map[string]any{"client-fallback": "upstream-model"},
+		},
+	}
+
+	models, err := catalog.ListForAccount(context.Background(), account, true)
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"client-fallback"}, models)
+	require.Equal(t, 1, upstream.doWithTLSCalls)
+}
+
 func TestUpstreamModelDiscoverer_ProviderDispatch(t *testing.T) {
 	tests := []struct {
 		name string

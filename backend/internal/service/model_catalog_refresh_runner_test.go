@@ -101,6 +101,29 @@ func TestModelCatalogRefreshAllFiltersAccountsAndIsolatesFailures(t *testing.T) 
 	require.Equal(t, int64(1), stats.ByPlatform[PlatformAnthropic].RefreshFailure)
 }
 
+func TestModelCatalogRefreshAllIncludesAntigravityAPIKey(t *testing.T) {
+	account := Account{
+		ID: 7, Platform: PlatformAntigravity, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true,
+		Credentials: map[string]any{"api_key": "gateway-key", "base_url": "https://gateway.example.com/antigravity"},
+	}
+	var calls atomic.Int64
+	catalog := &ModelCatalogService{
+		accountRepo: &refreshRunnerAccountRepoStub{accounts: []Account{account}},
+		discoverer: modelDiscovererFunc(func(_ context.Context, got *Account) ([]string, error) {
+			calls.Add(1)
+			require.Equal(t, account.ID, got.ID)
+			return []string{"gateway-live"}, nil
+		}),
+		cfg:   config.ModelCatalogConfig{RequestTimeoutSeconds: 10, FailureBackoffSeconds: 60, MaxConcurrency: 1},
+		cache: newModelCatalogCache(), refreshSem: make(chan struct{}, 1), now: time.Now,
+	}
+
+	summary := catalog.RefreshAll(context.Background())
+
+	require.Equal(t, int64(1), calls.Load())
+	require.Equal(t, ModelCatalogRefreshPlatformSummary{Scanned: 1, Succeeded: 1}, summary.ByPlatform[PlatformAntigravity])
+}
+
 func TestModelCatalogRefreshRunnerLogsBoundedSanitizedFailure(t *testing.T) {
 	const (
 		responseSecret = "response-body-secret-9fda"
@@ -144,6 +167,26 @@ func TestModelCatalogRefreshRunnerLogsBoundedSanitizedFailure(t *testing.T) {
 	for _, secret := range []string{responseSecret, tokenSecret, proxySecret, "password"} {
 		require.False(t, strings.Contains(logs, secret), "logs contained secret %q: %s", secret, logs)
 	}
+}
+
+func TestModelCatalogRefreshRunnerLogsRuntimeStatsSnapshot(t *testing.T) {
+	resetModelCatalogStatsForTest()
+	recordModelCatalogCache(catalogCacheFresh)
+	recordModelCatalogFallback(PlatformOpenAI, modelCatalogFallbackUpstreamError)
+	var output bytes.Buffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&output, nil)))
+	t.Cleanup(func() { slog.SetDefault(previousLogger) })
+	runner := NewModelCatalogRefreshRunner(&ModelCatalogService{
+		accountRepo: &refreshRunnerAccountRepoStub{}, now: time.Now,
+	}, config.ModelCatalogConfig{})
+
+	runner.runOnce(context.Background())
+
+	logs := output.String()
+	require.Contains(t, logs, `"runtime_stats"`)
+	require.Contains(t, logs, `"CacheFresh":1`)
+	require.Contains(t, logs, `"FallbackByReason"`)
 }
 
 func TestModelCatalogRefreshAllRecordsDuration(t *testing.T) {

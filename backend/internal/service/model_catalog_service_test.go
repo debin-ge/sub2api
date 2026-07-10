@@ -138,6 +138,33 @@ func TestModelCatalogStatsReturnsImmutableSnapshots(t *testing.T) {
 	require.NotContains(t, second.ByPlatform, "injected")
 }
 
+func TestModelCatalogStaticPolicyDoesNotRecordUnsupportedFallback(t *testing.T) {
+	resetModelCatalogStatsForTest()
+	catalog := NewModelCatalogService(nil, nil, nil, nil, config.ModelCatalogConfig{RequestTimeoutSeconds: 10})
+	accounts := []*Account{
+		{
+			ID: 31, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+			Credentials: map[string]any{"model_mapping": map[string]any{"client-model": "upstream-model"}},
+		},
+		{ID: 32, Platform: PlatformAnthropic, Type: AccountTypeBedrock},
+		{ID: 33, Platform: PlatformAnthropic, Type: AccountTypeServiceAccount},
+		{ID: 34, Platform: PlatformGrok, Type: AccountTypeOAuth},
+	}
+
+	for _, account := range accounts {
+		models, err := catalog.ListForAccount(context.Background(), account, true)
+		require.NoError(t, err)
+		require.NotEmpty(t, models)
+	}
+
+	stats := ModelCatalogStats()
+	for platform, platformStats := range stats.ByPlatform {
+		for reason, count := range platformStats.FallbackByReason {
+			require.Zero(t, count, "static policy recorded fallback platform=%s reason=%s", platform, reason)
+		}
+	}
+}
+
 func TestModelCatalogOperationalPathsRecordStats(t *testing.T) {
 	resetModelCatalogStatsForTest()
 	discoverer := modelDiscovererFunc(func(_ context.Context, account *Account) ([]string, error) {
@@ -215,7 +242,7 @@ func TestModelCatalogOperationalPathsRecordCacheStatesAndFallbackReasons(t *test
 	require.Equal(t, int64(2), stats.CacheMiss)
 	require.Equal(t, int64(1), stats.ByPlatform[PlatformOpenAI].FallbackByReason[modelCatalogFallbackExpired])
 	require.Equal(t, int64(1), stats.ByPlatform[PlatformOpenAI].FallbackByReason[modelCatalogFallbackEmpty])
-	require.Equal(t, int64(1), stats.ByPlatform[PlatformGrok].FallbackByReason[modelCatalogFallbackUnsupported])
+	require.Zero(t, stats.ByPlatform[PlatformGrok].FallbackByReason[modelCatalogFallbackUnsupported])
 }
 
 func TestModelCatalogListForAccount(t *testing.T) {

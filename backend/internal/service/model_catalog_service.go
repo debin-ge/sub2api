@@ -271,7 +271,6 @@ func (s *ModelCatalogService) ListForAccount(ctx context.Context, account *Accou
 	defaults := DefaultModelCatalogIDs(account.Platform)
 	fallback := configuredOrDefaultAccountModels(account, defaults)
 	if !accountRequiresLiveCatalog(account) {
-		recordModelCatalogFallback(account.Platform, modelCatalogFallbackUnsupported)
 		return fallback, nil
 	}
 
@@ -680,7 +679,9 @@ func accountRequiresLiveCatalog(account *Account) bool {
 	case PlatformGemini:
 		return geminiOAuthSupportsUpstreamModelDiscovery(account)
 	case PlatformAntigravity:
-		return account.Type == AccountTypeOAuth || account.Type == AccountTypeUpstream
+		return account.Type == AccountTypeOAuth ||
+			account.Type == AccountTypeAPIKey ||
+			account.Type == AccountTypeUpstream
 	case PlatformWindsurf, PlatformOpenCode:
 		return account.Type == AccountTypeAPIKey
 	default:

@@ -149,6 +149,7 @@ func (d *UpstreamModelDiscoverer) discoverHTTP(ctx context.Context, account *Acc
 	if err != nil {
 		return nil, err
 	}
+	req = req.WithContext(WithHTTPUpstreamModelDiscovery(req.Context()))
 
 	proxyURL := upstreamModelsProxyURL(account)
 	resp, err := d.doUpstreamModelsRequest(req, proxyURL, account)

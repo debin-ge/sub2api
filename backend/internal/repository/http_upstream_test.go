@@ -2,9 +2,14 @@ package repository
 
 import (
 	"bytes"
+	"context"
+	"crypto/tls"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -13,6 +18,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/klauspost/compress/zstd"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
@@ -325,6 +331,105 @@ func (s *HTTPUpstreamSuite) TestDo_EmptyProxy_UsesDirect() {
 	defer func() { _ = resp.Body.Close() }()
 	b, _ := io.ReadAll(resp.Body)
 	require.Equal(s.T(), "direct-empty", string(b))
+}
+
+func (s *HTTPUpstreamSuite) TestModelDiscoveryRedirectBlocksCrossOriginAuthentication() {
+	tests := []struct {
+		name          string
+		account       func(baseURL string) *service.Account
+		secretHeaders map[string]string
+	}{
+		{
+			name: "antigravity static authentication",
+			account: func(baseURL string) *service.Account {
+				return &service.Account{
+					ID: 501, Platform: service.PlatformAntigravity, Type: service.AccountTypeUpstream, Concurrency: 1,
+					Credentials: map[string]any{"base_url": baseURL, "api_key": "antigravity-redirect-secret"},
+				}
+			},
+			secretHeaders: map[string]string{
+				"Authorization": "Bearer antigravity-redirect-secret",
+				"x-api-key":     "antigravity-redirect-secret",
+			},
+		},
+		{
+			name: "gemini api key authentication",
+			account: func(baseURL string) *service.Account {
+				return &service.Account{
+					ID: 502, Platform: service.PlatformGemini, Type: service.AccountTypeAPIKey, Concurrency: 1,
+					Credentials: map[string]any{"base_url": baseURL, "api_key": "gemini-redirect-secret"},
+				}
+			},
+			secretHeaders: map[string]string{"x-goog-api-key": "gemini-redirect-secret"},
+		},
+	}
+
+	for _, tt := range tests {
+		s.T().Run(tt.name, func(t *testing.T) {
+			var targetRequests atomic.Int64
+			var targetHeaders http.Header
+			target := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				targetRequests.Add(1)
+				targetHeaders = req.Header.Clone()
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, `{"data":[{"id":"leaked-model"}],"models":[{"name":"models/leaked-model"}]}`)
+			}))
+			t.Cleanup(target.Close)
+
+			allowed := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				http.Redirect(w, req, target.URL+"/stolen-models", http.StatusFound)
+			}))
+			t.Cleanup(allowed.Close)
+			allowedBaseURL := strings.Replace(allowed.URL, "127.0.0.1", "localhost", 1)
+			cfg := &config.Config{Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{
+				Enabled: true, UpstreamHosts: []string{"localhost"}, AllowPrivateHosts: true,
+			}}}
+			upstream := NewHTTPUpstream(cfg)
+			svc := upstream.(*httpUpstreamService)
+			account := tt.account(allowedBaseURL)
+			entry, err := svc.getClientEntry("", account.ID, account.Concurrency, service.HTTPUpstreamProfileDefault, false, false)
+			require.NoError(t, err)
+			entry.client.Transport = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}} // #nosec G402 -- local TLS redirect test only
+			discoverer := service.NewUpstreamModelDiscoverer(nil, nil, nil, nil, nil, nil, upstream, cfg, nil)
+
+			_, err = discoverer.Discover(t.Context(), account)
+
+			assert.Error(t, err)
+			assert.Zero(t, targetRequests.Load(), "cross-origin redirect target must not be contacted")
+			for header, secret := range tt.secretHeaders {
+				assert.NotEqual(t, secret, targetHeaders.Get(header), "redirect target received %s", header)
+			}
+		})
+	}
+}
+
+func (s *HTTPUpstreamSuite) TestDoWithTLSRedactsProxyURLFromLogs() {
+	const (
+		proxyUser   = "tls-proxy-user"
+		proxyPass   = "tls-proxy-password"
+		querySecret = "tls-proxy-query-secret"
+	)
+	rawProxyURL := "http://" + proxyUser + ":" + proxyPass + "@127.0.0.1:1/private?token=" + querySecret
+	var output bytes.Buffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&output, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	s.T().Cleanup(func() { slog.SetDefault(previousLogger) })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://example.com/v1/models", nil)
+	require.NoError(s.T(), err)
+	svc := s.newService()
+
+	_, err = svc.DoWithTLS(req, rawProxyURL, 77, 1, &tlsfingerprint.Profile{Name: "test-profile"})
+
+	require.Error(s.T(), err)
+	logs := output.String()
+	require.Contains(s.T(), logs, "tls_fingerprint_enabled")
+	for _, secret := range []string{proxyUser, proxyPass, querySecret, rawProxyURL} {
+		require.NotContains(s.T(), logs, secret)
+	}
+	require.Contains(s.T(), logs, "http://127.0.0.1:1")
 }
 
 // TestAccountIsolation_DifferentAccounts 测试账户隔离模式

@@ -232,5 +232,9 @@ func (r *ModelCatalogRefreshRunner) runOnce(ctx context.Context) {
 		return
 	}
 	summary := r.service.RefreshAll(ctx)
-	slog.Info("model_catalog_refresh_pass_completed", "by_platform", summary.ByPlatform, "duration", summary.Duration)
+	slog.Info("model_catalog_refresh_pass_completed",
+		"by_platform", summary.ByPlatform,
+		"duration", summary.Duration,
+		"runtime_stats", ModelCatalogStats(),
+	)
 }
