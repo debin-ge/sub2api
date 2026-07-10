@@ -1,7 +1,9 @@
 # Stripe Google Pay Express Checkout 设计
 
 日期：2026-07-10
-状态：最终设计已确认，待书面规格复核
+状态：已被 `2026-07-10-stripe-google-pay-configurable-checkout-design.md` 取代
+
+> 后续确认的产品需求增加了 Stripe 服务商内的 Google Pay 管理开关、不可用占位入口，以及支付完成后在本地订单中标识 Google Pay。新的权威规格见同目录的 `2026-07-10-stripe-google-pay-configurable-checkout-design.md`。
 
 ## 背景
 
