@@ -56,6 +56,8 @@ func (u *syncUpstreamHTTPUpstream) DoWithTLS(req *http.Request, proxyURL string,
 func setupSyncUpstreamModelsRouter(adminSvc service.AdminService, upstream service.HTTPUpstream) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
+	cfg := &config.Config{Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{Enabled: false}}}
+	discoverer := service.NewUpstreamModelDiscoverer(nil, nil, nil, nil, nil, nil, upstream, cfg, nil)
 	accountTestSvc := service.NewAccountTestService(
 		nil,
 		nil,
@@ -63,8 +65,9 @@ func setupSyncUpstreamModelsRouter(adminSvc service.AdminService, upstream servi
 		nil,
 		nil,
 		upstream,
-		&config.Config{Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{Enabled: false}}},
+		cfg,
 		nil,
+		discoverer,
 	)
 	handler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, accountTestSvc, nil, nil, nil, nil, nil, nil)
 	router.POST("/api/v1/admin/accounts/:id/models/sync-upstream", handler.SyncUpstreamModels)
