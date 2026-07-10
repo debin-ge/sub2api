@@ -504,7 +504,8 @@ func TestStripeWebhookProviderLookupFailureLogsOnlySafeClassification(t *testing
 
 	handler.StripeWebhook(c)
 
-	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.Contains(t, w.Body.String(), "verify failed")
 	require.Contains(t, logs.String(), "type=stripe_webhook")
 	require.Contains(t, logs.String(), "code=provider_lookup_failed")
 	for _, forbidden := range []string{
@@ -520,6 +521,107 @@ func TestStripeWebhookProviderLookupFailureLogsOnlySafeClassification(t *testing
 	} {
 		require.NotContains(t, logs.String(), forbidden)
 	}
+}
+
+func TestStripeWebhookUnknownSignedOrderTriesAllInstancesThenAcks(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx := context.Background()
+	client := newWiseWebhookHandlerTestClient(t)
+	for _, suffix := range []string{"first", "matched"} {
+		_, err := client.PaymentProviderInstance.Create().
+			SetProviderKey(payment.TypeStripe).
+			SetName("stripe-unknown-signed-" + suffix).
+			SetConfig(encryptWiseWebhookHandlerConfig(t, map[string]string{
+				"secretKey":     "sk_test_" + suffix,
+				"webhookSecret": "whsec_" + suffix,
+				"currency":      "USD",
+			})).
+			SetSupportedTypes(payment.TypeStripe).
+			SetEnabled(true).
+			Save(ctx)
+		require.NoError(t, err)
+	}
+
+	paymentMethodRequests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paymentMethodRequests++
+		require.Equal(t, http.MethodGet, r.Method)
+		require.Equal(t, "/v1/payment_methods/pm_unknown_signed", r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"pm_unknown_signed","object":"payment_method","type":"card","card":{"wallet":{"type":"google_pay"}}}`))
+	}))
+	t.Cleanup(server.Close)
+	originalBackend := stripe.GetBackend(stripe.APIBackend)
+	stripe.SetBackend(stripe.APIBackend, stripe.GetBackendWithConfig(stripe.APIBackend, &stripe.BackendConfig{
+		URL:               stripe.String(server.URL),
+		MaxNetworkRetries: stripe.Int64(0),
+		LeveledLogger:     &stripe.LeveledLogger{Level: stripe.LevelNull},
+	}))
+	t.Cleanup(func() { stripe.SetBackend(stripe.APIBackend, originalBackend) })
+
+	registry := payment.NewRegistry()
+	loadBalancer := payment.NewDefaultLoadBalancer(client, []byte(wiseWebhookHandlerTestEncryptionKey))
+	paymentSvc := service.NewPaymentService(client, registry, loadBalancer, nil, nil, nil, nil, nil, nil)
+	handler := NewPaymentWebhookHandler(paymentSvc, registry)
+	rawBody := fmt.Sprintf(
+		`{"id":"evt_unknown_signed","object":"event","api_version":%q,"type":"payment_intent.succeeded","data":{"object":{"id":"pi_unknown_signed","object":"payment_intent","amount":8800,"currency":"usd","payment_method":"pm_unknown_signed","metadata":{"orderId":"sub2_unknown_signed"}}}}`,
+		stripe.APIVersion,
+	)
+	signature := stripewebhook.GenerateTestSignedPayload(&stripewebhook.UnsignedPayload{
+		Payload: []byte(rawBody),
+		Secret:  "whsec_matched",
+	}).Header
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/payment/webhook/stripe", bytes.NewBufferString(rawBody))
+	req.Header.Set("Stripe-Signature", signature)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = req
+
+	handler.StripeWebhook(c)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Empty(t, w.Body.String())
+	require.Equal(t, 1, paymentMethodRequests)
+}
+
+func TestStripeWebhookUnknownOrderInvalidSignatureRemainsRetryable(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx := context.Background()
+	client := newWiseWebhookHandlerTestClient(t)
+	for _, suffix := range []string{"a", "b"} {
+		_, err := client.PaymentProviderInstance.Create().
+			SetProviderKey(payment.TypeStripe).
+			SetName("stripe-invalid-signature-" + suffix).
+			SetConfig(encryptWiseWebhookHandlerConfig(t, map[string]string{
+				"secretKey":     "sk_test_" + suffix,
+				"webhookSecret": "whsec_" + suffix,
+				"currency":      "USD",
+			})).
+			SetSupportedTypes(payment.TypeStripe).
+			SetEnabled(true).
+			Save(ctx)
+		require.NoError(t, err)
+	}
+
+	registry := payment.NewRegistry()
+	loadBalancer := payment.NewDefaultLoadBalancer(client, []byte(wiseWebhookHandlerTestEncryptionKey))
+	paymentSvc := service.NewPaymentService(client, registry, loadBalancer, nil, nil, nil, nil, nil, nil)
+	handler := NewPaymentWebhookHandler(paymentSvc, registry)
+	rawBody := `{"id":"evt_unknown_invalid","object":"event","type":"payment_intent.succeeded","data":{"object":{"metadata":{"orderId":"sub2_unknown_invalid"}}}}`
+	signature := stripewebhook.GenerateTestSignedPayload(&stripewebhook.UnsignedPayload{
+		Payload: []byte(rawBody),
+		Secret:  "whsec_wrong",
+	}).Header
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/payment/webhook/stripe", bytes.NewBufferString(rawBody))
+	req.Header.Set("Stripe-Signature", signature)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = req
+
+	handler.StripeWebhook(c)
+
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.Contains(t, w.Body.String(), "verify failed")
 }
 
 func TestVerifyNotificationWithProvidersReturnsMatchedProvider(t *testing.T) {

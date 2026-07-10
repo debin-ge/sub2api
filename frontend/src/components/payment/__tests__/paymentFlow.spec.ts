@@ -458,7 +458,7 @@ describe('readPaymentRecoverySnapshot', () => {
     expect(restored?.googlePayEnabled).toBeUndefined()
   })
 
-  it('rejects malformed Stripe capability fields in recovery snapshots', () => {
+  it('rejects a malformed Stripe publishable key in recovery snapshots', () => {
     const malformed = {
       orderId: 46,
       amount: 18,
@@ -469,6 +469,30 @@ describe('readPaymentRecoverySnapshot', () => {
       outTradeNo: 'sub2_46',
       clientSecret: 'cs_46',
       stripePublishableKey: 42,
+      googlePayEnabled: true,
+      payAmount: 18,
+      orderType: 'balance',
+      paymentMode: '',
+      resumeToken: '',
+      createdAt: Date.UTC(2099, 0, 1, 0, 0, 0),
+    }
+
+    expect(readPaymentRecoverySnapshot(JSON.stringify(malformed), {
+      now: Date.UTC(2099, 0, 1, 0, 1, 0),
+    })).toBeNull()
+  })
+
+  it('rejects a malformed Google Pay capability in recovery snapshots', () => {
+    const malformed = {
+      orderId: 47,
+      amount: 18,
+      qrCode: '',
+      expiresAt: '2099-01-01T00:10:00.000Z',
+      paymentType: 'stripe',
+      payUrl: '',
+      outTradeNo: 'sub2_47',
+      clientSecret: 'cs_47',
+      stripePublishableKey: 'pk_47',
       googlePayEnabled: 'true',
       payAmount: 18,
       orderType: 'balance',

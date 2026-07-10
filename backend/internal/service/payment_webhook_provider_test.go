@@ -78,6 +78,15 @@ func encryptValidWebhookWxpayConfig(t *testing.T, suffix string) string {
 	})
 }
 
+func encryptValidWebhookStripeConfig(t *testing.T, suffix string) string {
+	t.Helper()
+	return encryptWebhookProviderConfig(t, map[string]string{
+		"secretKey":     "sk_test_" + suffix,
+		"webhookSecret": "whsec_" + suffix,
+		"currency":      "USD",
+	})
+}
+
 func TestGetOrderProviderInstanceResolvesUniqueLegacyProviderKey(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentConfigServiceTestClient(t)
@@ -332,6 +341,46 @@ func TestGetWebhookProviderRejectsAmbiguousRegistryFallback(t *testing.T) {
 	require.Len(t, providers, 2)
 }
 
+func TestGetWebhookProvidersStripeUnknownOrderUsesAllEnabledInstances(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	for _, suffix := range []string{"a", "b"} {
+		_, err := client.PaymentProviderInstance.Create().
+			SetProviderKey(payment.TypeStripe).
+			SetName("stripe-unknown-" + suffix).
+			SetConfig(encryptValidWebhookStripeConfig(t, suffix)).
+			SetSupportedTypes(payment.TypeStripe).
+			SetEnabled(true).
+			Save(ctx)
+		require.NoError(t, err)
+	}
+
+	svc := &PaymentService{
+		entClient:    client,
+		loadBalancer: newWebhookProviderTestLoadBalancer(client),
+	}
+
+	for _, outTradeNo := range []string{"sub2_unknown_stripe_order", ""} {
+		providers, err := svc.GetWebhookProviders(ctx, payment.TypeStripe, outTradeNo)
+		require.NoError(t, err)
+		require.Len(t, providers, 2)
+		for _, prov := range providers {
+			require.Equal(t, payment.TypeStripe, prov.ProviderKey())
+		}
+	}
+}
+
+func TestGetWebhookProvidersPropagatesStripeOrderLookupError(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	require.NoError(t, client.Close())
+
+	svc := &PaymentService{entClient: client}
+	_, err := svc.GetWebhookProviders(ctx, payment.TypeStripe, "sub2_lookup_failure")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "query webhook order")
+}
+
 func TestGetWebhookProvidersRejectAmbiguousFallbackForNonWxpay(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentConfigServiceTestClient(t)
@@ -363,17 +412,9 @@ func TestGetWebhookProvidersRejectAmbiguousFallbackForNonWxpay(t *testing.T) {
 	require.Contains(t, err.Error(), "ambiguous")
 }
 
-func TestGetWebhookProviderAllowsSingleInstanceRegistryFallback(t *testing.T) {
+func TestGetWebhookProviderAllowsLegacyRegistryFallbackWithoutInstances(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentConfigServiceTestClient(t)
-	_, err := client.PaymentProviderInstance.Create().
-		SetProviderKey(payment.TypeStripe).
-		SetName("stripe-a").
-		SetConfig("{}").
-		SetSupportedTypes("stripe").
-		SetEnabled(true).
-		Save(ctx)
-	require.NoError(t, err)
 
 	registry := payment.NewRegistry()
 	registry.Register(webhookProviderTestDouble{

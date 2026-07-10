@@ -59,11 +59,13 @@ const (
 
 // Payment notification status values.
 const (
-	NotificationStatusSuccess       = "success"
-	NotificationStatusPaid          = "paid"
-	NotificationStatusVerified      = "verified"
-	NotificationMetadataPaymentType = "payment_type"
+	NotificationStatusSuccess  = "success"
+	NotificationStatusPaid     = "paid"
+	NotificationStatusVerified = "verified"
 )
+
+// Payment notification metadata keys.
+const NotificationMetadataPaymentType = "payment_type"
 
 // Provider-level status constants returned by provider implementations
 // to the service layer (lowercase, distinct from OrderStatus uppercase constants).

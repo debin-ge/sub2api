@@ -166,6 +166,181 @@ func (r *paymentOrderLifecycleRedeemRepo) SumPositiveBalanceByUser(context.Conte
 	panic("unexpected call")
 }
 
+func TestStripePaidQueryDuringVerifyWaitsForWebhookBeforeBalanceFulfillment(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+	ensurePaymentAuditOrderActionUniqueIndex(t, ctx, client)
+
+	user, err := client.User.Create().
+		SetEmail("stripe-verify-webhook-authority@example.com").
+		SetPasswordHash("hash").
+		SetUsername("stripe-verify-webhook-authority").
+		Save(ctx)
+	require.NoError(t, err)
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(88).
+		SetPayAmount(88).
+		SetFeeRate(0).
+		SetRechargeCode("STRIPE-VERIFY-WEBHOOK-AUTHORITY").
+		SetOutTradeNo("sub2_stripe_verify_webhook_authority").
+		SetPaymentType(payment.TypeStripe).
+		SetPaymentTradeNo("pi_stripe_verify_webhook_authority").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusPending).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	userRepo := &mockUserRepo{getByIDUser: &User{
+		ID: user.ID, Email: user.Email, Username: user.Username,
+	}}
+	userRepo.updateBalanceFn = func(_ context.Context, _ int64, amount float64) error {
+		userRepo.getByIDUser.Balance += amount
+		return nil
+	}
+	redeemRepo := &paymentOrderLifecycleRedeemRepo{codesByCode: map[string]*RedeemCode{
+		order.RechargeCode: {
+			ID: 1, Code: order.RechargeCode, Type: RedeemTypeBalance,
+			Value: order.Amount, Status: StatusUnused,
+		},
+	}}
+	registry := payment.NewRegistry()
+	queryProvider := &paymentOrderLifecycleQueryProvider{
+		key: payment.TypeStripe,
+		resp: &payment.QueryOrderResponse{
+			TradeNo: order.PaymentTradeNo,
+			Status:  payment.ProviderStatusPaid,
+			Amount:  order.PayAmount,
+		},
+	}
+	registry.Register(queryProvider)
+	svc := &PaymentService{
+		entClient: client,
+		registry:  registry,
+		redeemService: NewRedeemService(
+			redeemRepo, userRepo, nil, nil, nil, client, nil, nil,
+		),
+		userRepo:        userRepo,
+		providersLoaded: true,
+	}
+
+	verified, err := svc.VerifyOrderByOutTradeNo(ctx, order.OutTradeNo, user.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusPending, verified.Status)
+	require.Equal(t, payment.TypeStripe, verified.PaymentType)
+	require.Equal(t, order.PaymentTradeNo, verified.PaymentTradeNo)
+	require.Zero(t, userRepo.getByIDUser.Balance)
+	require.Empty(t, redeemRepo.useCalls)
+
+	notification := &payment.PaymentNotification{
+		OrderID: order.OutTradeNo,
+		TradeNo: order.PaymentTradeNo,
+		Amount:  order.PayAmount,
+		Status:  payment.NotificationStatusSuccess,
+		Metadata: map[string]string{
+			payment.NotificationMetadataPaymentType: payment.TypeGooglePay,
+		},
+	}
+	require.NoError(t, svc.HandlePaymentNotification(ctx, notification, payment.TypeStripe))
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusCompleted, reloaded.Status)
+	require.Equal(t, payment.TypeGooglePay, reloaded.PaymentType)
+	require.Equal(t, 88.0, userRepo.getByIDUser.Balance)
+	require.Len(t, redeemRepo.useCalls, 1)
+}
+
+func TestStripePaidQueryPreventsCancelButWaitsForWebhookBeforeSubscriptionFulfillment(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+	ensurePaymentAuditOrderActionUniqueIndex(t, ctx, client)
+
+	user, err := client.User.Create().
+		SetEmail("stripe-cancel-webhook-authority@example.com").
+		SetPasswordHash("hash").
+		SetUsername("stripe-cancel-webhook-authority").
+		Save(ctx)
+	require.NoError(t, err)
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(30).
+		SetPayAmount(30).
+		SetFeeRate(0).
+		SetRechargeCode("STRIPE-CANCEL-WEBHOOK-AUTHORITY").
+		SetOutTradeNo("sub2_stripe_cancel_webhook_authority").
+		SetPaymentType(payment.TypeStripe).
+		SetPaymentTradeNo("pi_stripe_cancel_webhook_authority").
+		SetOrderType(payment.OrderTypeSubscription).
+		SetPlanID(99).
+		SetSubscriptionGroupID(7).
+		SetSubscriptionDays(30).
+		SetStatus(OrderStatusPending).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	registry := payment.NewRegistry()
+	queryProvider := &paymentOrderLifecycleQueryProvider{
+		key: payment.TypeStripe,
+		resp: &payment.QueryOrderResponse{
+			TradeNo: order.PaymentTradeNo,
+			Status:  payment.ProviderStatusPaid,
+			Amount:  order.PayAmount,
+		},
+	}
+	registry.Register(queryProvider)
+	groupRepo := &subscriptionGroupRepoStub{group: &Group{
+		ID: 7, Status: payment.EntityStatusActive, SubscriptionType: SubscriptionTypeSubscription,
+	}}
+	subRepo := newSubscriptionUserSubRepoStub()
+	svc := &PaymentService{
+		entClient:       client,
+		registry:        registry,
+		groupRepo:       groupRepo,
+		subscriptionSvc: NewSubscriptionService(groupRepo, subRepo, nil, nil, nil),
+		providersLoaded: true,
+	}
+
+	outcome, err := svc.CancelOrder(ctx, order.ID, user.ID)
+	require.NoError(t, err)
+	require.Equal(t, checkPaidResultAlreadyPaid, outcome)
+	require.Zero(t, queryProvider.cancelCalls)
+	require.Zero(t, subRepo.createCalls)
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusPending, reloaded.Status)
+	require.Equal(t, payment.TypeStripe, reloaded.PaymentType)
+	require.Equal(t, order.PaymentTradeNo, reloaded.PaymentTradeNo)
+
+	notification := &payment.PaymentNotification{
+		OrderID: order.OutTradeNo,
+		TradeNo: order.PaymentTradeNo,
+		Amount:  order.PayAmount,
+		Status:  payment.NotificationStatusSuccess,
+		Metadata: map[string]string{
+			payment.NotificationMetadataPaymentType: payment.TypeGooglePay,
+		},
+	}
+	require.NoError(t, svc.HandlePaymentNotification(ctx, notification, payment.TypeStripe))
+
+	reloaded, err = client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusCompleted, reloaded.Status)
+	require.Equal(t, payment.TypeGooglePay, reloaded.PaymentType)
+	require.Equal(t, 1, subRepo.createCalls)
+}
+
 func TestVerifyOrderByOutTradeNoBackfillsTradeNoFromPaidQuery(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentOrderLifecycleTestClient(t)

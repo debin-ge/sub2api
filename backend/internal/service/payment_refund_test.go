@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -250,14 +251,13 @@ func TestGooglePayRefundUsesOriginalStripeInstanceForRefundAndQuery(t *testing.T
 	require.NoError(t, err)
 
 	providerDouble := &googlePayRefundProviderTestDouble{}
-	originalFactory := createPaymentProviderFromInstance
 	var factoryKeys, factoryInstanceIDs []string
-	createPaymentProviderFromInstance = func(providerKey, gotInstanceID string, _ map[string]string) (payment.Provider, error) {
+	restore := replacePaymentProviderFactoryFuncForTest(t, func(providerKey, gotInstanceID string, _ map[string]string) (payment.Provider, error) {
 		factoryKeys = append(factoryKeys, providerKey)
 		factoryInstanceIDs = append(factoryInstanceIDs, gotInstanceID)
 		return providerDouble, nil
-	}
-	t.Cleanup(func() { createPaymentProviderFromInstance = originalFactory })
+	})
+	defer restore()
 	svc := &PaymentService{entClient: client, loadBalancer: &captureLoadBalancer{}}
 
 	_, err = svc.gwRefund(ctx, &RefundPlan{
@@ -631,13 +631,31 @@ func createPendingRefundOrderForTest(t *testing.T, ctx context.Context, client *
 	return order
 }
 
+var paymentProviderFactoryTestMu sync.Mutex
+
 func replacePaymentProviderFactoryForTest(t *testing.T, prov payment.Provider) func() {
 	t.Helper()
-	original := createPaymentProviderFromInstance
-	createPaymentProviderFromInstance = func(providerKey, instanceID string, config map[string]string) (payment.Provider, error) {
+	return replacePaymentProviderFactoryFuncForTest(t, func(string, string, map[string]string) (payment.Provider, error) {
 		return prov, nil
+	})
+}
+
+func replacePaymentProviderFactoryFuncForTest(t *testing.T, factory func(string, string, map[string]string) (payment.Provider, error)) func() {
+	t.Helper()
+	paymentProviderFactoryTestMu.Lock()
+	original := createPaymentProviderFromInstance
+	createPaymentProviderFromInstance = factory
+	restored := false
+	restore := func() {
+		if restored {
+			return
+		}
+		restored = true
+		createPaymentProviderFromInstance = original
+		paymentProviderFactoryTestMu.Unlock()
 	}
-	return func() { createPaymentProviderFromInstance = original }
+	t.Cleanup(restore)
+	return restore
 }
 
 type refundProviderTestDouble struct{}

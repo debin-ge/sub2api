@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -37,6 +38,7 @@ func (s *PaymentService) GetWebhookProvider(ctx context.Context, providerKey, ou
 // Official WeChat Pay may require multiple candidates because the callback body
 // cannot be bound to a merchant before decryption.
 func (s *PaymentService) GetWebhookProviders(ctx context.Context, providerKey, outTradeNo string) ([]payment.Provider, error) {
+	providerKey = strings.TrimSpace(providerKey)
 	if outTradeNo != "" {
 		order, err := s.entClient.PaymentOrder.Query().Where(paymentorder.OutTradeNo(outTradeNo)).Only(ctx)
 		if err == nil {
@@ -58,7 +60,7 @@ func (s *PaymentService) GetWebhookProviders(ctx context.Context, providerKey, o
 				}
 				return []payment.Provider{prov}, nil
 			}
-			if strings.TrimSpace(providerKey) == payment.TypeWxpay {
+			if providerKey == payment.TypeWxpay {
 				return s.getEnabledWebhookProvidersByKey(ctx, providerKey)
 			}
 			if !s.webhookRegistryFallbackAllowed(ctx, providerKey) {
@@ -71,10 +73,28 @@ func (s *PaymentService) GetWebhookProviders(ctx context.Context, providerKey, o
 			}
 			return []payment.Provider{prov}, nil
 		}
+		if !dbent.IsNotFound(err) {
+			return nil, fmt.Errorf("query webhook order: %w", err)
+		}
 	}
 
-	if strings.TrimSpace(providerKey) == payment.TypeWxpay {
+	if providerKey == payment.TypeWxpay {
 		return s.getEnabledWebhookProvidersByKey(ctx, providerKey)
+	}
+	if providerKey == payment.TypeStripe {
+		providers, err := s.getEnabledStripeWebhookProviders(ctx)
+		if err == nil || !errors.Is(err, payment.ErrProviderNotFound) {
+			return providers, err
+		}
+		if !s.webhookRegistryFallbackAllowed(ctx, providerKey) {
+			return nil, err
+		}
+		s.EnsureProviders(ctx)
+		prov, registryErr := s.registry.GetProviderByKey(providerKey)
+		if registryErr != nil {
+			return nil, registryErr
+		}
+		return []payment.Provider{prov}, nil
 	}
 
 	if !s.webhookRegistryFallbackAllowed(ctx, providerKey) {
@@ -124,10 +144,22 @@ func psHasPinnedProviderInstance(order *dbent.PaymentOrder) bool {
 }
 
 func (s *PaymentService) getEnabledWebhookProvidersByKey(ctx context.Context, providerKey string) ([]payment.Provider, error) {
-	candidates, err := s.getEnabledWebhookProviderCandidatesByKey(ctx, providerKey)
+	candidates, err := s.getEnabledWebhookProviderCandidatesByKeyWithMode(ctx, providerKey, false)
 	if err != nil {
 		return nil, err
 	}
+	return webhookProvidersFromCandidates(candidates)
+}
+
+func (s *PaymentService) getEnabledStripeWebhookProviders(ctx context.Context) ([]payment.Provider, error) {
+	candidates, err := s.getEnabledWebhookProviderCandidatesByKeyWithMode(ctx, payment.TypeStripe, true)
+	if err != nil {
+		return nil, err
+	}
+	return webhookProvidersFromCandidates(candidates)
+}
+
+func webhookProvidersFromCandidates(candidates []*paymentWebhookProviderCandidate) ([]payment.Provider, error) {
 	providers := make([]payment.Provider, 0, len(candidates))
 	for _, candidate := range candidates {
 		if candidate == nil || candidate.provider == nil {
@@ -142,6 +174,10 @@ func (s *PaymentService) getEnabledWebhookProvidersByKey(ctx context.Context, pr
 }
 
 func (s *PaymentService) getEnabledWebhookProviderCandidatesByKey(ctx context.Context, providerKey string) ([]*paymentWebhookProviderCandidate, error) {
+	return s.getEnabledWebhookProviderCandidatesByKeyWithMode(ctx, providerKey, false)
+}
+
+func (s *PaymentService) getEnabledWebhookProviderCandidatesByKeyWithMode(ctx context.Context, providerKey string, strict bool) ([]*paymentWebhookProviderCandidate, error) {
 	providerKey = strings.TrimSpace(providerKey)
 	instances, err := s.entClient.PaymentProviderInstance.Query().
 		Where(
@@ -161,6 +197,9 @@ func (s *PaymentService) getEnabledWebhookProviderCandidatesByKey(ctx context.Co
 	for _, inst := range instances {
 		cfg, cfgErr := s.loadBalancer.GetInstanceConfig(ctx, int64(inst.ID))
 		if cfgErr != nil {
+			if strict {
+				return nil, fmt.Errorf("load webhook provider instance %d config: %w", inst.ID, cfgErr)
+			}
 			slog.Warn("skip webhook provider instance config", "provider", providerKey, "instanceID", inst.ID, "error", cfgErr)
 			continue
 		}
@@ -169,6 +208,9 @@ func (s *PaymentService) getEnabledWebhookProviderCandidatesByKey(ctx context.Co
 		}
 		prov, provErr := paymentprovider.CreateProvider(inst.ProviderKey, fmt.Sprintf("%d", inst.ID), cfg)
 		if provErr != nil {
+			if strict {
+				return nil, fmt.Errorf("create webhook provider instance %d: %w", inst.ID, provErr)
+			}
 			slog.Warn("skip webhook provider instance", "provider", providerKey, "instanceID", inst.ID, "error", provErr)
 			continue
 		}

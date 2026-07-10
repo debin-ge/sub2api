@@ -174,7 +174,7 @@ describe('admin order currency display', () => {
         stubs: {
           DataTable: {
             props: ['data'],
-            template: '<div><slot name="cell-payment_type" value="google_pay" :row="data[0]" /></div>',
+            template: '<div><slot name="cell-payment_type" :value="data[0].payment_type" :row="data[0]" /></div>',
           },
           Icon: true,
           Pagination: true,

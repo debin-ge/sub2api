@@ -114,7 +114,7 @@ func (h *PaymentWebhookHandler) handleNotify(c *gin.Context, providerKey string)
 	providers, err := h.paymentService.GetWebhookProviders(c.Request.Context(), providerKey, outTradeNo)
 	if err != nil {
 		logWebhookProviderLookupFailure(providerKey, outTradeNo, err)
-		if providerKey == payment.TypeWxpay {
+		if providerKey == payment.TypeWxpay || providerKey == payment.TypeStripe {
 			c.String(http.StatusBadRequest, "verify failed")
 			return
 		}

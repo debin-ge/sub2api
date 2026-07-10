@@ -180,6 +180,12 @@ func (s *PaymentService) checkPaidWithOptions(ctx context.Context, o *dbent.Paym
 			}
 			resp = retriedResp
 		}
+		// A Stripe PaymentIntent query can protect a succeeded payment from
+		// cancellation or expiry, but only a verified succeeded webhook may
+		// persist payment data and fulfill the local order.
+		if payment.GetBasePaymentType(prov.ProviderKey()) == payment.TypeStripe {
+			return checkPaidResultAlreadyPaid
+		}
 		if payment.GetBasePaymentType(prov.ProviderKey()) == payment.TypeWise {
 			if !payment.AmountsEqualByMinorUnit(o.PayAmount, resp.Amount, PaymentOrderCurrency(o)) {
 				s.writeAuditLog(ctx, o.ID, "PAYMENT_AMOUNT_MISMATCH", prov.ProviderKey(), map[string]any{
