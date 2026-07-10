@@ -64,6 +64,7 @@ import StripeGooglePayExpress from '@/components/payment/StripeGooglePayExpress.
 
 // Stripe payment methods that open a popup (redirect or QR code)
 const POPUP_METHODS = new Set(['alipay', 'wechat_pay'])
+const POPUP_CLOSE_POLL_INTERVAL_MS = 250
 
 const props = defineProps<{
   orderId: number
@@ -95,6 +96,7 @@ const stripeInstance = shallowRef<Stripe | null>(null)
 const elementsInstance = shallowRef<StripeElements | null>(null)
 let paymentElement: StripePaymentElement | null = null
 let pendingPopupReadyHandler: ((event: MessageEvent) => void) | null = null
+let popupCloseTimer: number | null = null
 const returnUrl = computed(() => (
   window.location.origin + '/payment/result?order_id=' + props.orderId + '&status=success'
 ))
@@ -143,7 +145,13 @@ async function handlePay() {
         amount: String(props.payAmount),
       },
     }).href
+    submitting.value = true
+    error.value = ''
     const popup = window.open(popupUrl, 'paymentPopup', getPaymentPopupFeatures())
+    if (!popup || popup.closed) {
+      releasePopupLock()
+      return
+    }
 
     clearPendingPopupReadyHandler()
     pendingPopupReadyHandler = (event: MessageEvent) => {
@@ -156,6 +164,9 @@ async function handlePay() {
       }, window.location.origin)
     }
     window.addEventListener('message', pendingPopupReadyHandler)
+    popupCloseTimer = window.setInterval(() => {
+      if (popup.closed) releasePopupLock()
+    }, POPUP_CLOSE_POLL_INTERVAL_MS)
 
     emit('redirect', props.orderId, popupUrl)
     return
@@ -202,6 +213,18 @@ function clearPendingPopupReadyHandler() {
   pendingPopupReadyHandler = null
 }
 
+function clearPopupCloseTimer() {
+  if (popupCloseTimer === null) return
+  window.clearInterval(popupCloseTimer)
+  popupCloseTimer = null
+}
+
+function releasePopupLock() {
+  clearPendingPopupReadyHandler()
+  clearPopupCloseTimer()
+  submitting.value = false
+}
+
 async function handleCancel() {
   if (!props.orderId || cancelling.value) return
   cancelling.value = true
@@ -216,7 +239,7 @@ async function handleCancel() {
 }
 
 onBeforeUnmount(() => {
-  clearPendingPopupReadyHandler()
+  releasePopupLock()
   if (!paymentElement) return
   paymentElement.off('ready', handlePaymentReady)
   paymentElement.off('change', handlePaymentChange)

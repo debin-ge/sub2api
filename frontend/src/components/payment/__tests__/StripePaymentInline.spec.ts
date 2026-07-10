@@ -79,6 +79,7 @@ describe('StripePaymentInline Google Pay integration', () => {
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     vi.restoreAllMocks()
   })
 
@@ -171,6 +172,95 @@ describe('StripePaymentInline Google Pay integration', () => {
     wrapper.unmount()
   })
 
+  it('keeps Google Pay locked while a popup method initializes through the real child', async () => {
+    const popup = { closed: false, postMessage: vi.fn() } as unknown as Window
+    vi.spyOn(window, 'open').mockReturnValue(popup)
+    const wrapper = mountInline()
+    await flushPromises()
+
+    paymentElementHandlers.get('change')?.({ value: { type: 'alipay' } })
+    await nextTick()
+    await wrapper.get('button.btn-stripe').trigger('click')
+    await nextTick()
+    window.dispatchEvent(new MessageEvent('message', {
+      data: { type: 'STRIPE_POPUP_READY' },
+      source: popup,
+    }))
+    await nextTick()
+
+    const paymentFailed = vi.fn()
+    await expressHandlers.get('confirm')?.({
+      expressPaymentType: 'google_pay',
+      paymentFailed,
+    })
+
+    expect(popup.postMessage).toHaveBeenCalledWith({
+      type: 'STRIPE_POPUP_INIT',
+      clientSecret: 'pi_secret_42',
+      publishableKey: 'pk_test',
+    }, window.location.origin)
+    expect(stripe.confirmPayment).not.toHaveBeenCalled()
+    expect(paymentFailed).toHaveBeenCalledWith({
+      reason: 'fail',
+      message: 'common.processing',
+    })
+    wrapper.unmount()
+  })
+
+  it('releases the popup lock immediately when the browser blocks window.open', async () => {
+    vi.spyOn(window, 'open').mockReturnValue(null)
+    const addEventListener = vi.spyOn(window, 'addEventListener')
+    const wrapper = mountInline()
+    await flushPromises()
+
+    paymentElementHandlers.get('change')?.({ value: { type: 'wechat_pay' } })
+    await nextTick()
+    await wrapper.get('button.btn-stripe').trigger('click')
+    await nextTick()
+
+    expect(wrapper.get('button.btn-stripe').attributes('disabled')).toBeUndefined()
+    expect(addEventListener).not.toHaveBeenCalledWith('message', expect.any(Function))
+
+    const paymentFailed = vi.fn()
+    await expressHandlers.get('confirm')?.({
+      expressPaymentType: 'google_pay',
+      paymentFailed,
+    })
+    await flushPromises()
+    expect(stripe.confirmPayment).toHaveBeenCalledOnce()
+    expect(paymentFailed).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('releases the popup lock when the popup closes before confirmation', async () => {
+    vi.useFakeTimers()
+    const popup = { closed: false, postMessage: vi.fn() }
+    vi.spyOn(window, 'open').mockReturnValue(popup as unknown as Window)
+    const wrapper = mountInline()
+    await flushPromises()
+
+    paymentElementHandlers.get('change')?.({ value: { type: 'alipay' } })
+    await nextTick()
+    await wrapper.get('button.btn-stripe').trigger('click')
+    await nextTick()
+    expect(wrapper.get('button.btn-stripe').attributes('disabled')).toBeDefined()
+
+    popup.closed = true
+    await vi.advanceTimersByTimeAsync(1000)
+    await nextTick()
+    expect(wrapper.get('button.btn-stripe').attributes('disabled')).toBeUndefined()
+
+    const paymentFailed = vi.fn()
+    await expressHandlers.get('confirm')?.({
+      expressPaymentType: 'google_pay',
+      paymentFailed,
+    })
+    await flushPromises()
+    expect(stripe.confirmPayment).toHaveBeenCalledOnce()
+    expect(paymentFailed).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   it('removes listeners before destroying both Stripe Elements on unmount', async () => {
     const wrapper = mountInline()
     await flushPromises()
@@ -194,10 +284,11 @@ describe('StripePaymentInline Google Pay integration', () => {
     expect(expressElement.destroy).toHaveBeenCalledOnce()
   })
 
-  it('removes a pending popup ready listener on unmount', async () => {
+  it('removes a pending popup ready listener and close timer on unmount', async () => {
     const popup = { closed: false, postMessage: vi.fn() } as unknown as Window
     vi.spyOn(window, 'open').mockReturnValue(popup)
     const removeEventListener = vi.spyOn(window, 'removeEventListener')
+    const clearInterval = vi.spyOn(window, 'clearInterval')
     const wrapper = mountInline()
     await flushPromises()
 
@@ -207,5 +298,6 @@ describe('StripePaymentInline Google Pay integration', () => {
     wrapper.unmount()
 
     expect(removeEventListener).toHaveBeenCalledWith('message', expect.any(Function))
+    expect(clearInterval).toHaveBeenCalledOnce()
   })
 })
