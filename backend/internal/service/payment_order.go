@@ -732,28 +732,39 @@ func classifyCreatePaymentError(req CreateOrderRequest, providerKey string, err 
 }
 
 func buildCreateOrderResponse(order *dbent.PaymentOrder, req CreateOrderRequest, payAmount float64, sel *payment.InstanceSelection, pr *payment.CreatePaymentResponse, resultType payment.CreatePaymentResultType) *CreateOrderResponse {
+	stripePublishableKey, googlePayEnabled := stripeSelectionPublicCapabilities(sel)
 	return &CreateOrderResponse{
-		OrderID:      order.ID,
-		Amount:       order.Amount,
-		PayAmount:    payAmount,
-		FeeRate:      order.FeeRate,
-		Status:       OrderStatusPending,
-		ResultType:   resultType,
-		PaymentType:  req.PaymentType,
-		OutTradeNo:   order.OutTradeNo,
-		PayURL:       pr.PayURL,
-		QRCode:       pr.QRCode,
-		ClientSecret: pr.ClientSecret,
-		IntentID:     pr.IntentID,
-		Currency:     pr.Currency,
-		CountryCode:  pr.CountryCode,
-		PaymentEnv:   pr.PaymentEnv,
-		OAuth:        pr.OAuth,
-		JSAPI:        pr.JSAPI,
-		JSAPIPayload: pr.JSAPI,
-		ExpiresAt:    order.ExpiresAt,
-		PaymentMode:  sel.PaymentMode,
+		OrderID:              order.ID,
+		Amount:               order.Amount,
+		PayAmount:            payAmount,
+		FeeRate:              order.FeeRate,
+		Status:               OrderStatusPending,
+		ResultType:           resultType,
+		PaymentType:          req.PaymentType,
+		OutTradeNo:           order.OutTradeNo,
+		PayURL:               pr.PayURL,
+		QRCode:               pr.QRCode,
+		ClientSecret:         pr.ClientSecret,
+		IntentID:             pr.IntentID,
+		Currency:             pr.Currency,
+		CountryCode:          pr.CountryCode,
+		PaymentEnv:           pr.PaymentEnv,
+		OAuth:                pr.OAuth,
+		JSAPI:                pr.JSAPI,
+		JSAPIPayload:         pr.JSAPI,
+		ExpiresAt:            order.ExpiresAt,
+		PaymentMode:          sel.PaymentMode,
+		StripePublishableKey: stripePublishableKey,
+		GooglePayEnabled:     googlePayEnabled,
 	}
+}
+
+func stripeSelectionPublicCapabilities(sel *payment.InstanceSelection) (string, bool) {
+	if sel == nil || sel.ProviderKey != payment.TypeStripe {
+		return "", false
+	}
+	return sel.Config[payment.ConfigKeyPublishableKey],
+		containsPaymentType(sel.SupportedTypes, payment.TypeGooglePay)
 }
 
 func buildWeChatPaymentOAuthStartURL(req CreateOrderRequest, scope string) (string, error) {

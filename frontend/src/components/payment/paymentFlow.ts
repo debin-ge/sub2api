@@ -40,6 +40,8 @@ export interface PaymentRecoverySnapshot {
   payUrl: string
   outTradeNo: string
   clientSecret: string
+  stripePublishableKey?: string
+  googlePayEnabled?: boolean
   intentId: string
   currency: string
   countryCode: string
@@ -155,6 +157,8 @@ export function decidePaymentLaunch(
     payUrl: result.pay_url || '',
     outTradeNo: result.out_trade_no || '',
     clientSecret: result.client_secret || '',
+    stripePublishableKey: result.stripe_publishable_key,
+    googlePayEnabled: result.google_pay_enabled,
     intentId: result.intent_id || '',
     currency: result.currency || '',
     countryCode: result.country_code || '',
@@ -273,6 +277,8 @@ export function readPaymentRecoverySnapshot(
       || typeof parsed.payUrl !== 'string'
       || (parsed.outTradeNo != null && typeof parsed.outTradeNo !== 'string')
       || typeof parsed.clientSecret !== 'string'
+      || (parsed.stripePublishableKey != null && typeof parsed.stripePublishableKey !== 'string')
+      || (parsed.googlePayEnabled != null && typeof parsed.googlePayEnabled !== 'boolean')
       || (parsed.intentId != null && typeof parsed.intentId !== 'string')
       || (parsed.currency != null && typeof parsed.currency !== 'string')
       || (parsed.countryCode != null && typeof parsed.countryCode !== 'string')
@@ -303,6 +309,8 @@ export function readPaymentRecoverySnapshot(
       payUrl: parsed.payUrl,
       outTradeNo: parsed.outTradeNo || '',
       clientSecret: parsed.clientSecret,
+      stripePublishableKey: parsed.stripePublishableKey,
+      googlePayEnabled: parsed.googlePayEnabled,
       intentId: parsed.intentId || '',
       currency: parsed.currency || '',
       countryCode: parsed.countryCode || '',

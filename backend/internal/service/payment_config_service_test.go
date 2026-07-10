@@ -361,6 +361,36 @@ func TestGetPaymentConfigKeepsStoredEnabledTypes(t *testing.T) {
 	}
 }
 
+func TestGetStripeCheckoutCapabilitiesUsesOneOrderedInstance(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	for _, item := range []struct {
+		name, config, supported string
+		sortOrder               int
+	}{
+		{"primary", `{"publishableKey":"pk_primary"}`, "card", 1},
+		{"secondary", `{"publishableKey":"pk_secondary"}`, "card,google_pay", 2},
+	} {
+		_, err := client.PaymentProviderInstance.Create().
+			SetProviderKey(payment.TypeStripe).
+			SetName(item.name).
+			SetConfig(item.config).
+			SetSupportedTypes(item.supported).
+			SetSortOrder(item.sortOrder).
+			SetEnabled(true).
+			Save(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	svc := &PaymentConfigService{entClient: client}
+	key, enabled := svc.getStripeCheckoutCapabilities(ctx)
+	if key != "pk_primary" || enabled {
+		t.Fatalf("capabilities = (%q, %v), want (pk_primary, false)", key, enabled)
+	}
+}
+
 func TestResolveWebhookBaseURLFallsBackToEnvironment(t *testing.T) {
 	t.Setenv("API_BASE_URL", "")
 	t.Setenv("FRONTEND_URL", "")

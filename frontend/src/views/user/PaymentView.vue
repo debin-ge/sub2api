@@ -20,7 +20,8 @@
             :amount="paymentState.amount"
             :client-secret="paymentState.clientSecret"
             :order-type="paymentState.orderType || undefined"
-            :publishable-key="checkout.stripe_publishable_key"
+            :publishable-key="paymentState.stripePublishableKey || checkout.stripe_publishable_key"
+            :google-pay-enabled="paymentState.googlePayEnabled ?? checkout.stripe_google_pay_enabled"
             :pay-amount="paymentState.payAmount"
             :currency="paymentState.currency"
             @confirmed="onStripePaymentConfirmed"
@@ -512,7 +513,7 @@ function onPaymentSettled() {
 // All checkout data from single API call
 const checkout = ref<CheckoutInfoResponse>({
   methods: {}, global_min: 0, global_max: 0,
-  plans: [], balance_disabled: false, balance_recharge_multiplier: 1, subscription_usd_to_cny_rate: 0, recharge_fee_rate: 0, help_text: '', help_image_url: '', stripe_publishable_key: '',
+  plans: [], balance_disabled: false, balance_recharge_multiplier: 1, subscription_usd_to_cny_rate: 0, recharge_fee_rate: 0, help_text: '', help_image_url: '', stripe_publishable_key: '', stripe_google_pay_enabled: false,
 })
 
 const tabs = computed(() => {

@@ -61,6 +61,7 @@ function mountInline() {
       amount: 100,
       clientSecret: 'pi_secret_42',
       publishableKey: 'pk_test',
+      googlePayEnabled: false,
       payAmount: 103,
       currency: 'USD',
     },

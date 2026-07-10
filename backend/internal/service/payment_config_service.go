@@ -69,6 +69,7 @@ type PaymentConfig struct {
 	HelpImageURL             string  `json:"help_image_url"`
 	HelpText                 string  `json:"help_text"`
 	StripePublishableKey     string  `json:"stripe_publishable_key,omitempty"`
+	StripeGooglePayEnabled   bool    `json:"stripe_google_pay_enabled"`
 
 	// Cancel rate limit settings
 	CancelRateLimitEnabled bool   `json:"cancel_rate_limit_enabled"`
@@ -270,8 +271,8 @@ func (s *PaymentConfigService) GetPaymentConfig(ctx context.Context) (*PaymentCo
 		return nil, fmt.Errorf("get payment config settings: %w", err)
 	}
 	cfg := s.parsePaymentConfig(vals)
-	// Load Stripe publishable key from the first enabled Stripe provider instance
-	cfg.StripePublishableKey = s.getStripePublishableKey(ctx)
+	// Load public Checkout capabilities from one ordered Stripe instance.
+	cfg.StripePublishableKey, cfg.StripeGooglePayEnabled = s.getStripeCheckoutCapabilities(ctx)
 	return cfg, nil
 }
 
@@ -317,24 +318,35 @@ func (s *PaymentConfigService) parsePaymentConfig(vals map[string]string) *Payme
 	return cfg
 }
 
-// getStripePublishableKey finds the publishable key from the first enabled Stripe provider instance.
-func (s *PaymentConfigService) getStripePublishableKey(ctx context.Context) string {
+// getStripeCheckoutCapabilities returns public capabilities from the first ordered enabled Stripe instance.
+func (s *PaymentConfigService) getStripeCheckoutCapabilities(ctx context.Context) (string, bool) {
 	if s.entClient == nil {
-		return ""
+		return "", false
 	}
-	instances, err := s.entClient.PaymentProviderInstance.Query().
+	inst, err := s.entClient.PaymentProviderInstance.Query().
 		Where(
 			paymentproviderinstance.EnabledEQ(true),
 			paymentproviderinstance.ProviderKeyEQ(payment.TypeStripe),
-		).Limit(1).All(ctx)
-	if err != nil || len(instances) == 0 {
-		return ""
+		).
+		Order(paymentproviderinstance.BySortOrder(), paymentproviderinstance.ByID()).
+		First(ctx)
+	if err != nil {
+		return "", false
 	}
-	cfg, err := s.decryptConfig(instances[0].Config)
-	if err != nil || cfg == nil {
-		return ""
+	cfg, err := s.decryptConfig(inst.Config)
+	if err != nil {
+		return "", false
 	}
-	return cfg[payment.ConfigKeyPublishableKey]
+	return cfg[payment.ConfigKeyPublishableKey], containsPaymentType(inst.SupportedTypes, payment.TypeGooglePay)
+}
+
+func containsPaymentType(raw string, target string) bool {
+	for _, value := range splitTypes(raw) {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 // UpdatePaymentConfig updates the payment configuration settings.

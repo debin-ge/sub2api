@@ -39,6 +39,7 @@ export interface PaymentConfig {
   help_image_url: string
   help_text: string
   stripe_publishable_key: string
+  stripe_google_pay_enabled: boolean
 }
 
 export interface MethodLimit {
@@ -74,6 +75,7 @@ export interface CheckoutInfoResponse {
   help_text: string
   help_image_url: string
   stripe_publishable_key: string
+  stripe_google_pay_enabled: boolean
   /** When true, Alipay payments on mobile always show the QR code instead of redirecting */
   alipay_force_qrcode?: boolean
 }
@@ -204,6 +206,8 @@ export interface CreateOrderResult {
   pay_url?: string
   qr_code?: string
   client_secret?: string
+  stripe_publishable_key?: string
+  google_pay_enabled?: boolean
   intent_id?: string
   currency?: string
   country_code?: string

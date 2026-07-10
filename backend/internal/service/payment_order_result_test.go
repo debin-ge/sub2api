@@ -50,6 +50,79 @@ func TestBuildCreateOrderResponseDefaultsToOrderCreated(t *testing.T) {
 	}
 }
 
+func TestBuildCreateOrderResponseUsesSelectedStripeCapabilities(t *testing.T) {
+	t.Parallel()
+
+	order := &dbent.PaymentOrder{
+		ID:         42,
+		Amount:     10,
+		PayAmount:  10,
+		OutTradeNo: "sub2_42",
+		ExpiresAt:  time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC),
+	}
+	sel := &payment.InstanceSelection{
+		InstanceID:     "42",
+		ProviderKey:    payment.TypeStripe,
+		Config:         map[string]string{payment.ConfigKeyPublishableKey: "pk_selected"},
+		SupportedTypes: "card,google_pay",
+	}
+
+	resp := buildCreateOrderResponse(
+		order,
+		CreateOrderRequest{PaymentType: payment.TypeStripe},
+		10,
+		sel,
+		&payment.CreatePaymentResponse{ClientSecret: "pi_secret"},
+		payment.CreatePaymentResultOrderCreated,
+	)
+
+	if resp.StripePublishableKey != "pk_selected" || !resp.GooglePayEnabled {
+		t.Fatalf("Stripe capabilities = (%q, %v)", resp.StripePublishableKey, resp.GooglePayEnabled)
+	}
+}
+
+func TestBuildCreateOrderResponseOmitsGooglePayForCardOnlyStripeSelection(t *testing.T) {
+	t.Parallel()
+
+	resp := buildCreateOrderResponse(
+		&dbent.PaymentOrder{ID: 43, Amount: 10, ExpiresAt: time.Now()},
+		CreateOrderRequest{PaymentType: payment.TypeStripe},
+		10,
+		&payment.InstanceSelection{
+			ProviderKey:    payment.TypeStripe,
+			Config:         map[string]string{payment.ConfigKeyPublishableKey: "pk_card_only"},
+			SupportedTypes: "card",
+		},
+		&payment.CreatePaymentResponse{},
+		payment.CreatePaymentResultOrderCreated,
+	)
+
+	if resp.StripePublishableKey != "pk_card_only" || resp.GooglePayEnabled {
+		t.Fatalf("Stripe capabilities = (%q, %v), want (pk_card_only, false)", resp.StripePublishableKey, resp.GooglePayEnabled)
+	}
+}
+
+func TestBuildCreateOrderResponseOmitsStripeCapabilitiesForOtherProviders(t *testing.T) {
+	t.Parallel()
+
+	resp := buildCreateOrderResponse(
+		&dbent.PaymentOrder{ID: 44, Amount: 10, ExpiresAt: time.Now()},
+		CreateOrderRequest{PaymentType: payment.TypeAlipay},
+		10,
+		&payment.InstanceSelection{
+			ProviderKey:    payment.TypeAlipay,
+			Config:         map[string]string{payment.ConfigKeyPublishableKey: "pk_must_not_leak"},
+			SupportedTypes: "google_pay",
+		},
+		&payment.CreatePaymentResponse{},
+		payment.CreatePaymentResultOrderCreated,
+	)
+
+	if resp.StripePublishableKey != "" || resp.GooglePayEnabled {
+		t.Fatalf("Stripe capabilities = (%q, %v), want empty/false", resp.StripePublishableKey, resp.GooglePayEnabled)
+	}
+}
+
 func TestOrderIDPrefixFromSiteName(t *testing.T) {
 	t.Parallel()
 

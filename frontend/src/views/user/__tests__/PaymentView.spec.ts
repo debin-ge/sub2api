@@ -110,6 +110,7 @@ function checkoutInfoFixture(overrides: Partial<CheckoutInfoResponse> = {}) {
     help_text: '',
     help_image_url: '',
     stripe_publishable_key: '',
+    stripe_google_pay_enabled: false,
   }
 
   return {
@@ -407,7 +408,27 @@ describe('PaymentView payment recovery', () => {
     expect(wrapper.find('[data-test="method-selector"]').text()).toBe('ldc')
   })
 
-  it('renders the existing dedicated Stripe order inline in the live purchase flow', async () => {
+  it.each([
+    {
+      name: 'uses selected true capabilities instead of a false Checkout fallback',
+      checkoutKey: 'pk_checkout_false',
+      checkoutGooglePayEnabled: false,
+      selectedKey: 'pk_selected_true',
+      selectedGooglePayEnabled: true,
+    },
+    {
+      name: 'preserves selected false instead of a true Checkout fallback',
+      checkoutKey: 'pk_checkout_true',
+      checkoutGooglePayEnabled: true,
+      selectedKey: 'pk_selected_false',
+      selectedGooglePayEnabled: false,
+    },
+  ])('$name', async ({
+    checkoutKey,
+    checkoutGooglePayEnabled,
+    selectedKey,
+    selectedGooglePayEnabled,
+  }) => {
     getCheckoutInfo.mockResolvedValue(checkoutInfoFixture({
       methods: {
         stripe: {
@@ -421,7 +442,8 @@ describe('PaymentView payment recovery', () => {
           currency: 'USD',
         },
       },
-      stripe_publishable_key: 'pk_test_purchase_flow',
+      stripe_publishable_key: checkoutKey,
+      stripe_google_pay_enabled: checkoutGooglePayEnabled,
     }))
     createOrder.mockResolvedValue({
       order_id: 321,
@@ -432,6 +454,8 @@ describe('PaymentView payment recovery', () => {
       payment_type: 'stripe',
       client_secret: 'pi_purchase_secret',
       currency: 'USD',
+      stripe_publishable_key: selectedKey,
+      google_pay_enabled: selectedGooglePayEnabled,
     })
 
     const wrapper = shallowMount(PaymentView, {
@@ -445,7 +469,7 @@ describe('PaymentView payment recovery', () => {
           },
           StripePaymentInline: {
             name: 'StripePaymentInline',
-            props: ['orderId', 'amount', 'clientSecret', 'orderType', 'publishableKey', 'payAmount', 'currency'],
+            props: ['orderId', 'amount', 'clientSecret', 'orderType', 'publishableKey', 'googlePayEnabled', 'payAmount', 'currency'],
             template: '<div data-test="stripe-payment-inline" />',
           },
           Teleport: true,
@@ -465,7 +489,8 @@ describe('PaymentView payment recovery', () => {
       amount: 25,
       clientSecret: 'pi_purchase_secret',
       orderType: 'balance',
-      publishableKey: 'pk_test_purchase_flow',
+      publishableKey: selectedKey,
+      googlePayEnabled: selectedGooglePayEnabled,
       payAmount: 25.75,
       currency: 'USD',
     })
@@ -489,6 +514,7 @@ describe('PaymentView payment recovery', () => {
         },
       },
       stripe_publishable_key: 'pk_test_restored_order',
+      stripe_google_pay_enabled: true,
     }))
     window.localStorage.setItem(PAYMENT_RECOVERY_STORAGE_KEY, JSON.stringify({
       orderId: 654,
@@ -518,7 +544,7 @@ describe('PaymentView payment recovery', () => {
           },
           StripePaymentInline: {
             name: 'StripePaymentInline',
-            props: ['orderId', 'amount', 'clientSecret', 'orderType', 'publishableKey', 'payAmount', 'currency'],
+            props: ['orderId', 'amount', 'clientSecret', 'orderType', 'publishableKey', 'googlePayEnabled', 'payAmount', 'currency'],
             template: '<div data-test="stripe-payment-inline" />',
           },
           Teleport: true,
@@ -534,6 +560,7 @@ describe('PaymentView payment recovery', () => {
       clientSecret: 'pi_restored_secret',
       orderType: 'subscription',
       publishableKey: 'pk_test_restored_order',
+      googlePayEnabled: true,
       payAmount: 12.36,
       currency: 'USD',
     })
@@ -582,7 +609,7 @@ describe('PaymentView payment recovery', () => {
           AppLayout: { template: '<div><slot /></div>' },
           StripePaymentInline: {
             name: 'StripePaymentInline',
-            props: ['orderId', 'amount', 'clientSecret', 'orderType', 'publishableKey', 'payAmount', 'currency'],
+            props: ['orderId', 'amount', 'clientSecret', 'orderType', 'publishableKey', 'googlePayEnabled', 'payAmount', 'currency'],
             template: '<div data-test="stripe-payment-inline" />',
           },
           Teleport: true,

@@ -75,6 +75,53 @@ func TestApplyWeChatPaymentResumeClaimsRejectsPaymentTypeMismatch(t *testing.T) 
 	}
 }
 
+func TestCheckoutInfoReturnsStripeGooglePayCapability(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db, err := sql.Open("sqlite", "file:payment_handler_checkout_info_stripe?mode=memory&cache=shared")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	_, err = db.Exec("PRAGMA foreign_keys = ON")
+	require.NoError(t, err)
+
+	drv := entsql.OpenDB(dialect.SQLite, db)
+	client := enttest.NewClient(t, enttest.WithOptions(dbent.Driver(drv)))
+	t.Cleanup(func() { _ = client.Close() })
+
+	_, err = client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeStripe).
+		SetName("Stripe with Google Pay").
+		SetConfig(`{"publishableKey":"pk_checkout"}`).
+		SetSupportedTypes("card,google_pay").
+		SetSortOrder(1).
+		SetEnabled(true).
+		Save(context.Background())
+	require.NoError(t, err)
+
+	configSvc := service.NewPaymentConfigService(
+		client,
+		&settingHandlerPublicRepoStub{values: map[string]string{}},
+		nil,
+	)
+	h := NewPaymentHandler(nil, configSvc, nil)
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/payment/checkout-info", nil)
+
+	h.GetCheckoutInfo(ctx)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var resp struct {
+		Code int            `json:"code"`
+		Data map[string]any `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &resp))
+	require.Equal(t, "pk_checkout", resp.Data["stripe_publishable_key"])
+	require.Equal(t, true, resp.Data["stripe_google_pay_enabled"])
+}
+
 func TestVerifyOrderPublicReturnsLegacyOrderState(t *testing.T) {
 	t.Parallel()
 

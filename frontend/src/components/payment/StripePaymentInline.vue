@@ -71,6 +71,7 @@ const props = defineProps<{
   clientSecret: string
   orderType?: 'balance' | 'subscription'
   publishableKey: string
+  googlePayEnabled: boolean
   payAmount: number
   currency?: string
 }>()

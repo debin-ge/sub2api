@@ -106,6 +106,8 @@ describe('decidePaymentLaunch', () => {
   it('routes Stripe button click to the full Payment Element without a preselected sub-method', () => {
     const decision = decidePaymentLaunch(createOrderResult({
       client_secret: 'cs_test',
+      stripe_publishable_key: 'pk_selected',
+      google_pay_enabled: true,
     }), {
       visibleMethod: 'stripe',
       orderType: 'balance',
@@ -114,6 +116,8 @@ describe('decidePaymentLaunch', () => {
 
     expect(decision.kind).toBe('stripe_route')
     expect(decision.stripeMethod).toBeUndefined()
+    expect(decision.recovery.stripePublishableKey).toBe('pk_selected')
+    expect(decision.recovery.googlePayEnabled).toBe(true)
   })
 
   it('uses Stripe route flow for mobile WeChat client secret', () => {
@@ -450,6 +454,32 @@ describe('readPaymentRecoverySnapshot', () => {
 
     expect(restored?.orderId).toBe(44)
     expect(restored?.outTradeNo).toBe('')
+    expect(restored?.stripePublishableKey).toBeUndefined()
+    expect(restored?.googlePayEnabled).toBeUndefined()
+  })
+
+  it('rejects malformed Stripe capability fields in recovery snapshots', () => {
+    const malformed = {
+      orderId: 46,
+      amount: 18,
+      qrCode: '',
+      expiresAt: '2099-01-01T00:10:00.000Z',
+      paymentType: 'stripe',
+      payUrl: '',
+      outTradeNo: 'sub2_46',
+      clientSecret: 'cs_46',
+      stripePublishableKey: 42,
+      googlePayEnabled: 'true',
+      payAmount: 18,
+      orderType: 'balance',
+      paymentMode: '',
+      resumeToken: '',
+      createdAt: Date.UTC(2099, 0, 1, 0, 0, 0),
+    }
+
+    expect(readPaymentRecoverySnapshot(JSON.stringify(malformed), {
+      now: Date.UTC(2099, 0, 1, 0, 1, 0),
+    })).toBeNull()
   })
 
   it('keeps backward compatibility with snapshots written before Airwallex fields existed', () => {
