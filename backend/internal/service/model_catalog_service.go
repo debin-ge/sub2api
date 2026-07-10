@@ -85,7 +85,7 @@ func accountRequiresLiveCatalog(account *Account) bool {
 		return account.Type == AccountTypeOAuth ||
 			(account.Type == AccountTypeAPIKey && account.IsOpenAIPassthroughEnabled())
 	case PlatformGemini:
-		return account.Type == AccountTypeOAuth && !account.IsGeminiCodeAssist()
+		return geminiOAuthSupportsUpstreamModelDiscovery(account)
 	case PlatformAntigravity:
 		return account.Type == AccountTypeOAuth || account.Type == AccountTypeUpstream
 	case PlatformWindsurf, PlatformOpenCode:

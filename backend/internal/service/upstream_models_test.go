@@ -124,6 +124,29 @@ func TestBuildGeminiModelsURL(t *testing.T) {
 	require.Equal(t, "https://generativelanguage.googleapis.com/v1beta/models", buildGeminiModelsURL("https://generativelanguage.googleapis.com/v1beta/models"))
 }
 
+func TestGeminiOAuthSupportsUpstreamModelDiscovery(t *testing.T) {
+	tests := []struct {
+		name    string
+		account *Account
+		want    bool
+	}{
+		{name: "nil account", account: nil, want: false},
+		{name: "wrong platform", account: &Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth}, want: false},
+		{name: "api key", account: &Account{Platform: PlatformGemini, Type: AccountTypeAPIKey}, want: false},
+		{name: "oauth without project", account: &Account{Platform: PlatformGemini, Type: AccountTypeOAuth}, want: true},
+		{name: "ai studio without project", account: &Account{Platform: PlatformGemini, Type: AccountTypeOAuth, Credentials: map[string]any{"oauth_type": "ai_studio"}}, want: true},
+		{name: "whitespace project", account: &Account{Platform: PlatformGemini, Type: AccountTypeOAuth, Credentials: map[string]any{"project_id": "  "}}, want: true},
+		{name: "google one project", account: &Account{Platform: PlatformGemini, Type: AccountTypeOAuth, Credentials: map[string]any{"oauth_type": "google_one", "project_id": "project-1"}}, want: false},
+		{name: "ai studio project", account: &Account{Platform: PlatformGemini, Type: AccountTypeOAuth, Credentials: map[string]any{"oauth_type": "ai_studio", "project_id": "project-1"}}, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, geminiOAuthSupportsUpstreamModelDiscovery(tt.account))
+		})
+	}
+}
+
 func TestExtractUpstreamModelIDs(t *testing.T) {
 	t.Parallel()
 

@@ -410,6 +410,13 @@ func (d *UpstreamModelDiscoverer) buildOpenAIUpstreamModelsRequest(ctx context.C
 	return req, nil
 }
 
+func geminiOAuthSupportsUpstreamModelDiscovery(account *Account) bool {
+	return account != nil &&
+		account.Platform == PlatformGemini &&
+		account.Type == AccountTypeOAuth &&
+		strings.TrimSpace(account.GetCredential("project_id")) == ""
+}
+
 func (d *UpstreamModelDiscoverer) buildGeminiUpstreamModelsRequest(ctx context.Context, account *Account) (*http.Request, error) {
 	baseURL := account.GetGeminiBaseURL(geminicli.AIStudioBaseURL)
 	if strings.TrimSpace(baseURL) == "" {
@@ -434,7 +441,7 @@ func (d *UpstreamModelDiscoverer) buildGeminiUpstreamModelsRequest(ctx context.C
 		}
 		req.Header.Set("x-goog-api-key", apiKey)
 	case AccountTypeOAuth:
-		if strings.TrimSpace(account.GetCredential("project_id")) != "" {
+		if !geminiOAuthSupportsUpstreamModelDiscovery(account) {
 			return nil, newUpstreamModelSyncUnsupportedError("Gemini Code Assist model listing is not supported by this sync button", nil)
 		}
 		if d.geminiTokenProvider == nil {

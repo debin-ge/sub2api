@@ -190,6 +190,24 @@ func TestModelCatalogStaticallyUnsupportedFormatsUseConfiguredOrDefaultsWithoutD
 			}},
 			want: DefaultModelCatalogIDs(PlatformGemini),
 		},
+		{
+			name: "gemini google one project mapping",
+			account: Account{ID: 29, Platform: PlatformGemini, Type: AccountTypeOAuth, Credentials: map[string]any{
+				"oauth_type":    "google_one",
+				"project_id":    "google-one-project",
+				"model_mapping": map[string]any{"google-one-client": "google-one-upstream"},
+			}},
+			want: []string{"google-one-client"},
+		},
+		{
+			name: "gemini ai studio project whitelist",
+			account: Account{ID: 30, Platform: PlatformGemini, Type: AccountTypeOAuth, Credentials: map[string]any{
+				"oauth_type":      "ai_studio",
+				"project_id":      "ai-studio-project",
+				"model_whitelist": []any{"ai-studio-client"},
+			}},
+			want: []string{"ai-studio-client"},
+		},
 	}
 	waitCases := []struct {
 		name        string
