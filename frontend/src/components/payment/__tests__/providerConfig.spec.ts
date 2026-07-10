@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   PAYMENT_CURRENCY_OPTIONS,
+  PROVIDER_DEFAULT_SUPPORTED_TYPES,
   PROVIDER_CONFIG_FIELDS,
+  PROVIDER_SUPPORTED_TYPES,
   isBuiltInAlipayMethod,
   isBuiltInWxpayMethod,
+  isValidStripeGooglePaySelection,
   parseEasyPayCustomMethods,
   serializeEasyPayCustomMethods,
 } from '@/components/payment/providerConfig'
@@ -55,6 +58,19 @@ describe('PROVIDER_CONFIG_FIELDS.stripe', () => {
     expect(currency?.defaultValue).toBe('CNY')
     expect(currency?.hintKey).toBe('admin.settings.payment.field_paymentCurrencyHint')
     expect(currency?.options).toBe(PAYMENT_CURRENCY_OPTIONS)
+  })
+})
+
+describe('Stripe Google Pay provider configuration', () => {
+  it('offers Google Pay without enabling it by default', () => {
+    expect(PROVIDER_SUPPORTED_TYPES.stripe).toContain('google_pay')
+    expect(PROVIDER_DEFAULT_SUPPORTED_TYPES.stripe).toEqual(['card', 'alipay', 'wxpay', 'link'])
+  })
+
+  it('requires card whenever Google Pay is selected', () => {
+    expect(isValidStripeGooglePaySelection('stripe', ['google_pay'])).toBe(false)
+    expect(isValidStripeGooglePaySelection('stripe', ['card', 'google_pay'])).toBe(true)
+    expect(isValidStripeGooglePaySelection('airwallex', ['google_pay'])).toBe(true)
   })
 })
 

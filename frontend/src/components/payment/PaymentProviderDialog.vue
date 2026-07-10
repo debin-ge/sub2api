@@ -70,6 +70,20 @@
         </div>
       </div>
 
+      <p
+        v-if="form.provider_key === 'stripe'"
+        class="mt-2 text-xs text-gray-500 dark:text-gray-400"
+      >
+        {{ t('admin.settings.payment.googlePaySetupHint') }}
+      </p>
+      <p
+        v-if="stripeGooglePayRequiresCard"
+        role="alert"
+        class="mt-2 text-xs text-red-600 dark:text-red-400"
+      >
+        {{ t('admin.settings.payment.googlePayRequiresCard') }}
+      </p>
+
       <div v-if="form.provider_key === 'easypay'" class="space-y-3 rounded-lg border border-gray-100 p-3 dark:border-dark-700">
         <div class="flex items-center justify-between gap-3">
           <div>
@@ -316,6 +330,7 @@ import type { ProviderInstance } from '@/types/payment'
 import type { EasyPayCustomMethod, TypeOption } from './providerConfig'
 import {
   PROVIDER_CONFIG_FIELDS,
+  PROVIDER_DEFAULT_SUPPORTED_TYPES,
   PROVIDER_SUPPORTED_TYPES,
   PROVIDER_CALLBACK_PATHS,
   WEBHOOK_PATHS,
@@ -324,6 +339,7 @@ import {
   PAYMENT_MODE_REDIRECT,
   STRIPE_SDK_API_VERSION,
   getAvailableTypes,
+  isValidStripeGooglePaySelection,
   extractBaseUrl,
   parseEasyPayCustomMethods,
   serializeEasyPayCustomMethods,
@@ -468,6 +484,10 @@ const availableTypes = computed(() => {
   )
 })
 
+const stripeGooglePayRequiresCard = computed(() =>
+  !isValidStripeGooglePaySelection(form.provider_key, form.supported_types),
+)
+
 const resolvedFields = computed(() => {
   const fields = PROVIDER_CONFIG_FIELDS[form.provider_key] || []
   return fields.map(f => ({
@@ -589,7 +609,7 @@ function removeEasyPayCustomMethod(index: number) {
 }
 
 function onKeyChange() {
-  form.supported_types = [...(PROVIDER_SUPPORTED_TYPES[form.provider_key] || [])]
+  form.supported_types = [...(PROVIDER_DEFAULT_SUPPORTED_TYPES[form.provider_key] || [])]
   form.payment_mode = defaultPaymentMode(form.provider_key)
   clearConfig()
   applyDefaults()
@@ -658,6 +678,10 @@ function handleSave() {
   // Validate required fields
   if (!form.name.trim()) {
     emitValidationError(t('admin.settings.payment.validationNameRequired'))
+    return
+  }
+  if (stripeGooglePayRequiresCard.value) {
+    emitValidationError(t('admin.settings.payment.googlePayRequiresCard'))
     return
   }
   if (form.provider_key === 'easypay') {
@@ -786,7 +810,7 @@ function emitValidationError(msg: string) {
 function reset(defaultKey: string) {
   form.name = ''
   form.provider_key = defaultKey
-  form.supported_types = [...(PROVIDER_SUPPORTED_TYPES[defaultKey] || [])]
+  form.supported_types = [...(PROVIDER_DEFAULT_SUPPORTED_TYPES[defaultKey] || [])]
   form.enabled = true
   form.payment_mode = defaultPaymentMode(defaultKey)
   form.refund_enabled = false

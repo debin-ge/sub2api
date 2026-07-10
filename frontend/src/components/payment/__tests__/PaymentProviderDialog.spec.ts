@@ -20,6 +20,9 @@ const messages: Record<string, string> = {
   'admin.settings.payment.stripeWebhookHint': 'Configure Stripe webhook.',
   'admin.settings.payment.stripeWebhookApiVersionHint': 'Use Stripe API version {version}.',
   'admin.settings.payment.airwallexWebhookHint': 'Select payment_intent.succeeded and use the latest stable API version.',
+  'admin.settings.payment.googlePayRequiresCard': 'Google Pay requires Card',
+  'admin.settings.payment.googlePaySetupHint': 'Configure Stripe Dashboard and HTTPS domains.',
+  'payment.methods.google_pay': 'Google Pay',
 }
 
 vi.mock('vue-i18n', () => ({
@@ -136,6 +139,34 @@ describe('PaymentProviderDialog payment guide', () => {
     expect(wrapper.text()).toContain(messages['admin.settings.payment.stripeWebhookHint'])
     expect(wrapper.text()).toContain(`Use Stripe API version ${STRIPE_SDK_API_VERSION}.`)
     expect(wrapper.text()).toContain('/api/v1/payment/webhook/stripe')
+  })
+
+  it('offers Google Pay but leaves it off for a new Stripe provider', async () => {
+    const wrapper = mountDialog()
+    ;(wrapper.vm as unknown as { reset: (key: string) => void }).reset('stripe')
+    await nextTick()
+
+    const googlePay = wrapper.findAll('button')
+      .find(button => button.text() === 'Google Pay')
+    expect(googlePay).toBeDefined()
+    expect(googlePay!.classes()).not.toContain('bg-primary-500')
+  })
+
+  it('blocks Stripe Google Pay without card', async () => {
+    const provider = providerFactory({
+      provider_key: 'stripe',
+      name: 'Stripe',
+      supported_types: ['google_pay'],
+      config: { publishableKey: 'pk_test_123', currency: 'USD' },
+    })
+    const wrapper = mountDialog({ editing: provider })
+    ;(wrapper.vm as unknown as { loadProvider: (value: ProviderInstance) => void })
+      .loadProvider(provider)
+    await nextTick()
+    await wrapper.find('form').trigger('submit.prevent')
+
+    expect(wrapper.emitted('save')).toBeUndefined()
+    expect(wrapper.text()).toContain('Google Pay requires Card')
   })
 
   it('emits an empty Airwallex accountId when the admin clears it', async () => {

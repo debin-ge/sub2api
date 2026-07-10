@@ -40,9 +40,27 @@ export const PROVIDER_SUPPORTED_TYPES: Record<string, string[]> = {
   easypay: ['alipay', 'wxpay'],
   alipay: ['alipay'],
   wxpay: ['wxpay'],
+  stripe: ['card', 'alipay', 'wxpay', 'link', 'google_pay'],
+  airwallex: ['airwallex'],
+  wise: ['wise'],
+}
+
+export const PROVIDER_DEFAULT_SUPPORTED_TYPES: Record<string, string[]> = {
+  easypay: ['alipay', 'wxpay'],
+  alipay: ['alipay'],
+  wxpay: ['wxpay'],
   stripe: ['card', 'alipay', 'wxpay', 'link'],
   airwallex: ['airwallex'],
   wise: ['wise'],
+}
+
+export function isValidStripeGooglePaySelection(
+  providerKey: string,
+  supportedTypes: string[],
+): boolean {
+  return providerKey !== 'stripe'
+    || !supportedTypes.includes('google_pay')
+    || supportedTypes.includes('card')
 }
 
 /** Available payment modes for EasyPay providers. */
