@@ -539,6 +539,72 @@ describe('PaymentView payment recovery', () => {
     })
     expect(createOrder).not.toHaveBeenCalled()
   })
+
+  it('keeps the recovery snapshot and routes inline confirmation to result polling', async () => {
+    getCheckoutInfo.mockResolvedValue(checkoutInfoFixture({
+      methods: {
+        stripe: {
+          daily_limit: 0,
+          daily_used: 0,
+          daily_remaining: 0,
+          single_min: 0,
+          single_max: 0,
+          fee_rate: 0,
+          available: true,
+          currency: 'USD',
+        },
+      },
+      stripe_publishable_key: 'pk_test_confirmed_order',
+    }))
+    window.localStorage.setItem(PAYMENT_RECOVERY_STORAGE_KEY, JSON.stringify({
+      orderId: 777,
+      amount: 20,
+      qrCode: '',
+      expiresAt: '2099-01-01T00:10:00.000Z',
+      paymentType: 'stripe',
+      payUrl: '',
+      outTradeNo: 'sub2_stripe_777',
+      clientSecret: 'pi_confirmed_secret',
+      intentId: '',
+      currency: 'USD',
+      countryCode: 'US',
+      paymentEnv: 'test',
+      payAmount: 20.6,
+      orderType: 'balance',
+      paymentMode: '',
+      resumeToken: 'resume-stripe-777',
+      createdAt: Date.now(),
+    }))
+
+    const wrapper = shallowMount(PaymentView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          StripePaymentInline: {
+            name: 'StripePaymentInline',
+            props: ['orderId', 'amount', 'clientSecret', 'orderType', 'publishableKey', 'payAmount', 'currency'],
+            template: '<div data-test="stripe-payment-inline" />',
+          },
+          Teleport: true,
+          Transition: false,
+        },
+      },
+    })
+    await flushPromises()
+
+    wrapper.getComponent({ name: 'StripePaymentInline' }).vm.$emit('confirmed')
+    await flushPromises()
+
+    expect(window.localStorage.getItem(PAYMENT_RECOVERY_STORAGE_KEY)).toContain('resume-stripe-777')
+    expect(routerPush).toHaveBeenCalledWith({
+      path: '/payment/result',
+      query: {
+        order_id: '777',
+        out_trade_no: 'sub2_stripe_777',
+        resume_token: 'resume-stripe-777',
+      },
+    })
+  })
 })
 
 describe('PaymentView WeChat JSAPI flow', () => {

@@ -1,14 +1,20 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import StripePaymentInline from '../StripePaymentInline.vue'
 
 const loadStripe = vi.hoisted(() => vi.fn())
+const routerResolve = vi.hoisted(() => vi.fn(() => ({ href: '/payment/stripe-popup?mock=1' })))
+const paymentElementHandlers = vi.hoisted(() => new Map<string, (event?: any) => void>())
 const paymentElement = vi.hoisted(() => ({
   mount: vi.fn(),
+  destroy: vi.fn(),
   on: vi.fn((event: string, callback: (event?: any) => void) => {
+    paymentElementHandlers.set(event, callback)
     if (event === 'ready') callback()
-    if (event === 'change') callback({ value: { type: 'card' } })
+  }),
+  off: vi.fn((event: string) => {
+    paymentElementHandlers.delete(event)
   }),
 }))
 const expressHandlers = vi.hoisted(() => new Map<string, (event: any) => unknown>())
@@ -39,7 +45,7 @@ vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: (key: string) => key }),
 }))
 vi.mock('vue-router', () => ({
-  useRouter: () => ({ resolve: vi.fn(), push: vi.fn() }),
+  useRouter: () => ({ resolve: routerResolve, push: vi.fn() }),
 }))
 vi.mock('@/stores', () => ({
   useAppStore: () => ({ showError: vi.fn() }),
@@ -65,9 +71,14 @@ function mountInline() {
 describe('StripePaymentInline Google Pay integration', () => {
   beforeEach(() => {
     expressHandlers.clear()
+    paymentElementHandlers.clear()
     vi.clearAllMocks()
     loadStripe.mockResolvedValue(stripe)
     stripe.confirmPayment.mockResolvedValue({})
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   it('creates Payment and Express Checkout Elements from one Elements instance', async () => {
@@ -103,8 +114,8 @@ describe('StripePaymentInline Google Pay integration', () => {
     resolveConfirmation({})
     await confirmPromise
     await flushPromises()
-    expect(wrapper.emitted('success')).toEqual([[]])
-    expect(wrapper.text()).toContain('payment.result.success')
+    expect(wrapper.emitted('confirmed')).toEqual([[]])
+    expect(wrapper.text()).not.toContain('payment.result.success')
     wrapper.unmount()
   })
 
@@ -134,5 +145,31 @@ describe('StripePaymentInline Google Pay integration', () => {
     await cardPromise
     await flushPromises()
     wrapper.unmount()
+  })
+
+  it('destroys the Payment Element and removes its listeners on unmount', async () => {
+    const wrapper = mountInline()
+    await flushPromises()
+
+    wrapper.unmount()
+
+    expect(paymentElement.off).toHaveBeenCalledWith('ready', expect.any(Function))
+    expect(paymentElement.off).toHaveBeenCalledWith('change', expect.any(Function))
+    expect(paymentElement.destroy).toHaveBeenCalledOnce()
+  })
+
+  it('removes a pending popup ready listener on unmount', async () => {
+    const popup = { closed: false, postMessage: vi.fn() } as unknown as Window
+    vi.spyOn(window, 'open').mockReturnValue(popup)
+    const removeEventListener = vi.spyOn(window, 'removeEventListener')
+    const wrapper = mountInline()
+    await flushPromises()
+
+    paymentElementHandlers.get('change')?.({ value: { type: 'alipay' } })
+    await nextTick()
+    await wrapper.get('button.btn-stripe').trigger('click')
+    wrapper.unmount()
+
+    expect(removeEventListener).toHaveBeenCalledWith('message', expect.any(Function))
   })
 })

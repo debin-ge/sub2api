@@ -119,7 +119,7 @@ import { isMobileDevice } from '@/utils/device'
 import { formatPaymentAmount, normalizePaymentCurrency } from '@/components/payment/currency'
 import { PAYMENT_RECOVERY_STORAGE_KEY, readPaymentRecoverySnapshot } from '@/components/payment/paymentFlow'
 import type { PaymentOrder } from '@/types/payment'
-import type { Stripe, StripeElements } from '@stripe/stripe-js'
+import type { Stripe, StripeElements, StripePaymentElement } from '@stripe/stripe-js'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
 import StripeGooglePayExpress from '@/components/payment/StripeGooglePayExpress.vue'
@@ -147,6 +147,7 @@ const showPaymentElement = ref(false)
 const stripeInstance = shallowRef<Stripe | null>(null)
 const elementsInstance = shallowRef<StripeElements | null>(null)
 const googlePayAvailable = ref(false)
+let paymentElement: StripePaymentElement | null = null
 const returnUrl = computed(() => (
   window.location.origin
   + '/payment/result?order_id='
@@ -270,12 +271,16 @@ function mountPaymentElement(stripe: Stripe, clientSecret: string) {
     appearance: { theme: isDark ? 'night' : 'stripe', variables: { borderRadius: '8px' } },
   })
   elementsInstance.value = elements
-  const paymentElement = elements.create('payment', {
+  paymentElement = elements.create('payment', {
     layout: 'tabs',
     paymentMethodOrder: ['alipay', 'wechat_pay', 'card', 'link'],
   } as Record<string, unknown>)
   paymentElement.mount('#stripe-payment-element')
-  paymentElement.on('ready', () => { stripeReady.value = true })
+  paymentElement.on('ready', handlePaymentReady)
+}
+
+function handlePaymentReady() {
+  stripeReady.value = true
 }
 
 async function handleGenericPay() {
@@ -336,5 +341,10 @@ function scheduleClose() {
 onUnmounted(() => {
   if (redirectTimer) clearTimeout(redirectTimer)
   if (pollTimer) clearInterval(pollTimer)
+  if (paymentElement) {
+    paymentElement.off('ready', handlePaymentReady)
+    paymentElement.destroy()
+    paymentElement = null
+  }
 })
 </script>

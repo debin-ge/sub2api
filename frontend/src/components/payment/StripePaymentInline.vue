@@ -7,34 +7,6 @@
       <p class="text-sm text-red-600 dark:text-red-400">{{ initError }}</p>
       <button class="btn btn-secondary mt-4" @click="$emit('back')">{{ t('payment.result.backToRecharge') }}</button>
     </div>
-    <!-- Success -->
-    <template v-else-if="success">
-      <div class="card p-6">
-        <div class="flex flex-col items-center space-y-4 py-4">
-          <div class="flex h-16 w-16 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
-            <Icon name="check" size="lg" class="text-green-500" />
-          </div>
-          <p class="text-lg font-bold text-gray-900 dark:text-white">{{ t('payment.result.success') }}</p>
-          <div class="w-full rounded-xl bg-gray-50 p-4 dark:bg-dark-800">
-            <div class="space-y-2 text-sm">
-              <div class="flex justify-between">
-                <span class="text-gray-500 dark:text-gray-400">{{ t('payment.orders.orderId') }}</span>
-                <span class="font-medium text-gray-900 dark:text-white">#{{ orderId }}</span>
-              </div>
-              <div v-if="amount > 0" class="flex justify-between">
-                <span class="text-gray-500 dark:text-gray-400">{{ t('payment.orders.amount') }}</span>
-                <span class="font-medium text-gray-900 dark:text-white">{{ creditedAmountSymbol }}{{ amount.toFixed(2) }}</span>
-              </div>
-              <div class="flex justify-between">
-                <span class="text-gray-500 dark:text-gray-400">{{ t('payment.orders.payAmount') }}</span>
-                <span class="font-medium text-gray-900 dark:text-white">{{ paymentAmountSymbol }}{{ payAmount.toFixed(2) }}</span>
-              </div>
-            </div>
-          </div>
-          <button class="btn btn-primary" @click="$emit('done')">{{ t('common.confirm') }}</button>
-        </div>
-      </div>
-    </template>
     <template v-else>
       <!-- Amount -->
       <div class="card overflow-hidden">
@@ -79,7 +51,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, shallowRef, onMounted, nextTick } from 'vue'
+import { computed, ref, shallowRef, onBeforeUnmount, onMounted, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { extractI18nErrorMessage } from '@/utils/apiError'
@@ -87,8 +59,7 @@ import { paymentAPI } from '@/api/payment'
 import { useAppStore } from '@/stores'
 import { getPaymentPopupFeatures } from '@/components/payment/providerConfig'
 import { currencySymbol } from '@/components/payment/currency'
-import type { Stripe, StripeElements } from '@stripe/stripe-js'
-import Icon from '@/components/icons/Icon.vue'
+import type { Stripe, StripeElements, StripePaymentElement } from '@stripe/stripe-js'
 import StripeGooglePayExpress from '@/components/payment/StripeGooglePayExpress.vue'
 
 // Stripe payment methods that open a popup (redirect or QR code)
@@ -104,7 +75,7 @@ const props = defineProps<{
   currency?: string
 }>()
 
-const emit = defineEmits<{ success: []; done: []; back: []; redirect: [orderId: number, payUrl: string] }>()
+const emit = defineEmits<{ confirmed: []; back: []; redirect: [orderId: number, payUrl: string] }>()
 
 const { t } = useI18n()
 const router = useRouter()
@@ -116,14 +87,14 @@ const initError = ref('')
 const error = ref('')
 const submitting = ref(false)
 const cancelling = ref(false)
-const success = ref(false)
 const ready = ref(false)
 const selectedType = ref('')
-const creditedAmountSymbol = currencySymbol('USD')
 const paymentAmountSymbol = computed(() => currencySymbol(props.currency))
 const stripeInstance = shallowRef<Stripe | null>(null)
 const elementsInstance = shallowRef<StripeElements | null>(null)
 const googlePayAvailable = ref(false)
+let paymentElement: StripePaymentElement | null = null
+let pendingPopupReadyHandler: ((event: MessageEvent) => void) | null = null
 const returnUrl = computed(() => (
   window.location.origin + '/payment/result?order_id=' + props.orderId + '&status=success'
 ))
@@ -145,15 +116,13 @@ onMounted(async () => {
       appearance: { theme: isDark ? 'night' : 'stripe', variables: { borderRadius: '8px' } },
     })
     elementsInstance.value = elements
-    const paymentElement = elements.create('payment', {
+    paymentElement = elements.create('payment', {
       layout: 'tabs',
       paymentMethodOrder: ['alipay', 'wechat_pay', 'card', 'link'],
     } as Record<string, unknown>)
     paymentElement.mount(stripeMount.value)
-    paymentElement.on('ready', () => { ready.value = true })
-    paymentElement.on('change', (event: { value: { type: string } }) => {
-      selectedType.value = event.value.type
-    })
+    paymentElement.on('ready', handlePaymentReady)
+    paymentElement.on('change', handlePaymentChange)
   } catch (err: unknown) {
     initError.value = extractI18nErrorMessage(err, t, 'payment.errors', t('payment.stripeLoadFailed'))
   } finally {
@@ -176,16 +145,17 @@ async function handlePay() {
     }).href
     const popup = window.open(popupUrl, 'paymentPopup', getPaymentPopupFeatures())
 
-    const onReady = (event: MessageEvent) => {
+    clearPendingPopupReadyHandler()
+    pendingPopupReadyHandler = (event: MessageEvent) => {
       if (event.source !== popup || event.data?.type !== 'STRIPE_POPUP_READY') return
-      window.removeEventListener('message', onReady)
+      clearPendingPopupReadyHandler()
       popup?.postMessage({
         type: 'STRIPE_POPUP_INIT',
         clientSecret: props.clientSecret,
         publishableKey: props.publishableKey,
       }, window.location.origin)
     }
-    window.addEventListener('message', onReady)
+    window.addEventListener('message', pendingPopupReadyHandler)
 
     emit('redirect', props.orderId, popupUrl)
     return
@@ -205,8 +175,7 @@ async function handlePay() {
     if (stripeError) {
       error.value = stripeError.message || t('payment.result.failed')
     } else {
-      success.value = true
-      emit('success')
+      emit('confirmed')
     }
   } catch (err: unknown) {
     error.value = extractI18nErrorMessage(err, t, 'payment.errors', t('payment.result.failed'))
@@ -216,8 +185,21 @@ async function handlePay() {
 }
 
 function handleGooglePayConfirmed() {
-  success.value = true
-  emit('success')
+  emit('confirmed')
+}
+
+function handlePaymentReady() {
+  ready.value = true
+}
+
+function handlePaymentChange(event: { value: { type: string } }) {
+  selectedType.value = event.value.type
+}
+
+function clearPendingPopupReadyHandler() {
+  if (!pendingPopupReadyHandler) return
+  window.removeEventListener('message', pendingPopupReadyHandler)
+  pendingPopupReadyHandler = null
 }
 
 async function handleCancel() {
@@ -232,4 +214,13 @@ async function handleCancel() {
     cancelling.value = false
   }
 }
+
+onBeforeUnmount(() => {
+  clearPendingPopupReadyHandler()
+  if (!paymentElement) return
+  paymentElement.off('ready', handlePaymentReady)
+  paymentElement.off('change', handlePaymentChange)
+  paymentElement.destroy()
+  paymentElement = null
+})
 </script>

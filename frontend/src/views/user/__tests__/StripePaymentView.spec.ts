@@ -19,6 +19,8 @@ const stripeElements = vi.hoisted(() => ({
 const stripePaymentElement = vi.hoisted(() => ({
   mount: vi.fn(),
   on: vi.fn(),
+  off: vi.fn(),
+  destroy: vi.fn(),
 }))
 const expressHandlers = vi.hoisted(() => new Map<string, (event: any) => unknown>())
 const stripeExpressElement = vi.hoisted(() => ({
@@ -122,6 +124,8 @@ describe('StripePaymentView', () => {
     stripePaymentElement.on.mockReset().mockImplementation((event: string, callback: () => void) => {
       if (event === 'ready') callback()
     })
+    stripePaymentElement.off.mockReset()
+    stripePaymentElement.destroy.mockReset()
     stripeExpressElement.mount.mockReset()
     stripeExpressElement.destroy.mockReset()
     stripeExpressElement.on.mockReset().mockImplementation((event: string, handler: (event: any) => unknown) => {
@@ -177,6 +181,18 @@ describe('StripePaymentView', () => {
       }),
     )
     wrapper.unmount()
+  })
+
+  it('destroys the Payment Element and removes its listener on unmount', async () => {
+    getOrder.mockResolvedValue({ data: orderFactory() })
+    const wrapper = mountView()
+    await flushPromises()
+    await flushPromises()
+
+    wrapper.unmount()
+
+    expect(stripePaymentElement.off).toHaveBeenCalledWith('ready', expect.any(Function))
+    expect(stripePaymentElement.destroy).toHaveBeenCalledOnce()
   })
 
   it('does not let Google Pay confirm while the generic form owns the lock', async () => {

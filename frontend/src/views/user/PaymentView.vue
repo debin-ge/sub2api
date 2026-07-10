@@ -23,8 +23,7 @@
             :publishable-key="checkout.stripe_publishable_key"
             :pay-amount="paymentState.payAmount"
             :currency="paymentState.currency"
-            @success="onPaymentSuccess"
-            @done="onPaymentDone"
+            @confirmed="onStripePaymentConfirmed"
             @back="resetPayment"
           />
           <PaymentStatusPanel
@@ -500,6 +499,10 @@ function onPaymentSuccess() {
   if (paymentState.value.orderType === 'subscription') {
     subscriptionStore.fetchActiveSubscriptions(true).catch(() => {})
   }
+}
+
+async function onStripePaymentConfirmed() {
+  await redirectToPaymentResult({ ...paymentState.value })
 }
 
 function onPaymentSettled() {
