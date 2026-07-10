@@ -235,6 +235,49 @@ func (s *HTTPUpstreamSuite) TestOpenAIHTTP2ProxyCompatibilityErrorActivatesFallb
 	require.Equal(s.T(), upstreamProtocolModeOpenAIH1Fallback, entry.protocolMode)
 }
 
+func (s *HTTPUpstreamSuite) TestOpenAIHTTP2ProxyFallbackLogRedactsCredentials() {
+	const (
+		proxyUser = "proxy-user"
+		proxyPass = "proxy-password"
+	)
+	rawProxyURL := "http://" + proxyUser + ":" + proxyPass + "@127.0.0.1:18080"
+	s.cfg.Gateway = config.GatewayConfig{
+		OpenAIHTTP2: config.GatewayOpenAIHTTP2Config{
+			Enabled:                   true,
+			AllowProxyFallbackToHTTP1: true,
+			FallbackErrorThreshold:    1,
+			FallbackWindowSeconds:     60,
+			FallbackTTLSeconds:        600,
+		},
+	}
+	var output bytes.Buffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&output, nil)))
+	s.T().Cleanup(func() { slog.SetDefault(previousLogger) })
+
+	svc := s.newService()
+	entry, err := svc.getClientEntry(rawProxyURL, 1, 1, service.HTTPUpstreamProfileOpenAI, false, false)
+	require.NoError(s.T(), err)
+	require.Equal(s.T(), rawProxyURL, entry.proxyKey, "normalized fallback key must retain proxy credentials for isolation")
+	entry.client.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return nil, errors.New("http2: protocol error")
+	})
+	ctx := service.WithHTTPUpstreamProfile(context.Background(), service.HTTPUpstreamProfileOpenAI)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.openai.com/v1/models", nil)
+	require.NoError(s.T(), err)
+
+	_, err = svc.Do(req, rawProxyURL, 1, 1)
+
+	require.Error(s.T(), err)
+	require.True(s.T(), svc.isOpenAIHTTP2FallbackActive(entry.proxyKey))
+	logs := output.String()
+	require.Contains(s.T(), logs, "openai_http2_proxy_fallback_activated")
+	for _, secret := range []string{rawProxyURL, proxyUser, proxyPass} {
+		assert.NotContains(s.T(), logs, secret)
+	}
+	require.Contains(s.T(), logs, "http://127.0.0.1:18080")
+}
+
 // TestNormalizeProxyURL_Canonicalizes 测试代理 URL 规范化
 // 验证等价地址能够映射到同一缓存键
 func (s *HTTPUpstreamSuite) TestNormalizeProxyURL_Canonicalizes() {
