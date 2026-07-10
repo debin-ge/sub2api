@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
+	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -96,18 +97,19 @@ func TestFilterPublicGroups_DropsExclusiveGroups(t *testing.T) {
 				{ID: 4, Name: "exclusive-openai", Platform: "openai", IsExclusive: true},
 			},
 			SupportedModels: []service.SupportedModel{
-				{Name: "gpt-4o", Platform: "openai"},
+				{Name: "gpt-exclusive", Platform: "openai"},
 			},
 		},
 	}
 
-	out := buildPublicAvailableChannels(context.Background(), nil, nil, channels)
+	out := buildPublicAvailableChannels(nil, nil, channels)
 	require.Len(t, out, 1)
 	require.Equal(t, "active-public", out[0].Name)
 	require.Len(t, out[0].Platforms, 1)
 	require.Len(t, out[0].Platforms[0].Groups, 1)
 	require.Equal(t, int64(1), out[0].Platforms[0].Groups[0].ID)
 	require.False(t, out[0].Platforms[0].Groups[0].IsExclusive)
+	require.NotContains(t, supportedModelNames(out[0].Platforms[0].SupportedModels), "gpt-exclusive")
 }
 
 func TestListPublic_IgnoresAvailableChannelsFeatureFlag(t *testing.T) {
@@ -185,7 +187,12 @@ func TestListPublic_UsesAllActivePublicGroupsNotOnlyChannelBindings(t *testing.T
 		nil,
 		nil,
 	)
-	h := &AvailableChannelHandler{channelService: channelSvc}
+	h := &AvailableChannelHandler{
+		channelService: channelSvc,
+		modelCatalog: &stubModelCatalogProvider{public: map[string][]string{
+			service.PlatformOpenAI: {"group-only-model"},
+		}},
+	}
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/channels/public", nil)
@@ -205,20 +212,21 @@ func TestListPublic_UsesAllActivePublicGroupsNotOnlyChannelBindings(t *testing.T
 	require.Contains(t, names, "priced-model")
 }
 
-func TestListPublic_UsesGatewayModelsWhenChannelAndGroupModelsAreEmpty(t *testing.T) {
+func TestListPublic_UsesUnifiedCatalogAndCacheHeader(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	inputPrice := 0.000003
 	channelSvc := service.NewChannelService(
 		&publicChannelRepoStub{
 			channels: []service.Channel{{
-				ID:     1,
-				Name:   "public-channel",
-				Status: service.StatusActive,
+				ID:       1,
+				Name:     "public-channel",
+				Status:   service.StatusActive,
+				GroupIDs: []int64{10},
 			}},
 		},
 		&publicGroupRepoStub{
 			groups: []service.Group{{
-				ID:          1,
+				ID:          10,
 				Name:        "public-openai",
 				Platform:    "openai",
 				IsExclusive: false,
@@ -226,12 +234,62 @@ func TestListPublic_UsesGatewayModelsWhenChannelAndGroupModelsAreEmpty(t *testin
 		},
 		nil,
 		newHandlerTestPricingService(map[string]*service.ModelPriceEntry{
-			"gpt-5.4": {Mode: "chat", InputCostPerToken: inputPrice},
+			"gpt-live-new": {Mode: "chat", InputCostPerToken: inputPrice},
 		}),
+	)
+	catalog := &stubModelCatalogProvider{
+		public: map[string][]string{
+			service.PlatformOpenAI:    {"gpt-live-new"},
+			service.PlatformAnthropic: {"claude-other-platform"},
+		},
+	}
+	h := &AvailableChannelHandler{
+		channelService: channelSvc,
+		modelCatalog:   catalog,
+	}
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/channels/public", nil)
+
+	h.ListPublic(c)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, "public, max-age=60, stale-while-revalidate=300", w.Header().Get("Cache-Control"))
+	require.Equal(t, 1, catalog.publicCalls)
+	var body struct {
+		Data []userAvailableChannel `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	require.Len(t, body.Data, 1)
+	require.Len(t, body.Data[0].Platforms, 1)
+	require.Equal(t, []string{"gpt-live-new"}, supportedModelNames(body.Data[0].Platforms[0].SupportedModels))
+	model := body.Data[0].Platforms[0].SupportedModels[0]
+	require.NotNil(t, model.Pricing)
+	require.NotNil(t, model.Pricing.InputPrice)
+	require.InDelta(t, inputPrice, *model.Pricing.InputPrice, 1e-12)
+}
+
+func TestListPublic_ExcludesExclusiveCatalog(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	channelSvc := service.NewChannelService(
+		&publicChannelRepoStub{channels: []service.Channel{{
+			ID: 1, Name: "public-channel", Status: service.StatusActive,
+		}}},
+		&publicGroupRepoStub{groups: []service.Group{
+			{ID: 10, Name: "public-openai", Platform: service.PlatformOpenAI, IsExclusive: false},
+			{
+				ID: 11, Name: "exclusive-openai", Platform: service.PlatformOpenAI, IsExclusive: true,
+				ModelsListConfig: service.GroupModelsListConfig{Enabled: true, Models: []string{"gpt-exclusive"}},
+			},
+		}},
+		nil,
+		nil,
 	)
 	h := &AvailableChannelHandler{
 		channelService: channelSvc,
-		gatewayModels:  stubGatewayModelsProvider{modelsByPlatform: map[string][]string{"openai": {"gpt-5.4"}}},
+		modelCatalog: &stubModelCatalogProvider{public: map[string][]string{
+			service.PlatformOpenAI: {"gpt-public"},
+		}},
 	}
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -246,10 +304,70 @@ func TestListPublic_UsesGatewayModelsWhenChannelAndGroupModelsAreEmpty(t *testin
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
 	require.Len(t, body.Data, 1)
 	require.Len(t, body.Data[0].Platforms, 1)
-	require.Equal(t, []string{"gpt-5.4"}, supportedModelNames(body.Data[0].Platforms[0].SupportedModels))
+	require.Equal(t, []string{"gpt-public"}, supportedModelNames(body.Data[0].Platforms[0].SupportedModels))
+	require.NotContains(t, supportedModelNames(body.Data[0].Platforms[0].SupportedModels), "gpt-exclusive")
+	require.Len(t, body.Data[0].Platforms[0].Groups, 1)
+	require.Equal(t, int64(10), body.Data[0].Platforms[0].Groups[0].ID)
+}
+
+func TestList_UsesGroupCatalog(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	inputPrice := 0.000004
+	channelSvc := service.NewChannelService(
+		&publicChannelRepoStub{channels: []service.Channel{{
+			ID:       1,
+			Name:     "group-channel",
+			Status:   service.StatusActive,
+			GroupIDs: []int64{20},
+			ModelPricing: []service.ChannelModelPricing{{
+				Platform:   service.PlatformOpenAI,
+				Models:     []string{"channel-exact"},
+				InputPrice: &inputPrice,
+			}},
+		}}},
+		&publicGroupRepoStub{groups: []service.Group{{
+			ID: 20, Name: "visible-openai", Platform: service.PlatformOpenAI, Status: service.StatusActive,
+		}}},
+		nil,
+		nil,
+	)
+	catalog := &stubModelCatalogProvider{
+		public: map[string][]string{service.PlatformOpenAI: {"public-platform-model"}},
+		byGroup: map[int64][]string{
+			20: {"group-live-new"},
+			30: {"other-group-model"},
+		},
+	}
+	h := &AvailableChannelHandler{
+		channelService: channelSvc,
+		apiKeyService: stubAvailableChannelAPIKeyService{groups: []service.Group{{
+			ID: 20, Name: "visible-openai", Platform: service.PlatformOpenAI, Status: service.StatusActive,
+		}}},
+		settingService: stubAvailableChannelSettingService{enabled: true},
+		modelCatalog:   catalog,
+	}
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/channels/available", nil)
+	c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 7})
+
+	h.List(c)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var body struct {
+		Data []userAvailableChannel `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	require.Len(t, body.Data, 1)
+	require.Len(t, body.Data[0].Platforms, 1)
+	names := supportedModelNames(body.Data[0].Platforms[0].SupportedModels)
+	require.Equal(t, []string{"channel-exact", "group-live-new"}, names)
+	require.NotContains(t, names, "public-platform-model")
+	require.NotContains(t, names, "other-group-model")
+	require.Equal(t, map[int64]int{20: 1}, catalog.groupCalls)
 	model := body.Data[0].Platforms[0].SupportedModels[0]
+	require.Equal(t, "channel-exact", model.Name)
 	require.NotNil(t, model.Pricing)
-	require.NotNil(t, model.Pricing.InputPrice)
 	require.InDelta(t, inputPrice, *model.Pricing.InputPrice, 1e-12)
 }
 
@@ -278,7 +396,9 @@ func TestListPublic_UsesBillingFallbackWhenCatalogMisses(t *testing.T) {
 	)
 	h := &AvailableChannelHandler{
 		channelService: channelSvc,
-		gatewayModels:  stubGatewayModelsProvider{modelsByPlatform: map[string][]string{"glm": {"GLM-4.7"}}},
+		modelCatalog: &stubModelCatalogProvider{public: map[string][]string{
+			"glm": {"GLM-4.7"},
+		}},
 		billingFallback: stubBillingFallbackProvider{
 			data: map[string]*service.ModelPricing{
 				"glm-4.7": {
@@ -349,7 +469,9 @@ func TestListPublic_BillingFallbackEnrichesPartialCatalog(t *testing.T) {
 	)
 	h := &AvailableChannelHandler{
 		channelService: channelSvc,
-		gatewayModels:  stubGatewayModelsProvider{modelsByPlatform: map[string][]string{"openai": {"gpt-5.4"}}},
+		modelCatalog: &stubModelCatalogProvider{public: map[string][]string{
+			"openai": {"gpt-5.4"},
+		}},
 		billingFallback: stubBillingFallbackProvider{
 			data: map[string]*service.ModelPricing{
 				"gpt-5.4": {
@@ -403,7 +525,7 @@ func TestListPublic_HidesRoutingOnlyModels(t *testing.T) {
 	)
 	h := &AvailableChannelHandler{
 		channelService: channelSvc,
-		gatewayModels: stubGatewayModelsProvider{modelsByPlatform: map[string][]string{
+		modelCatalog: &stubModelCatalogProvider{public: map[string][]string{
 			"windsurf": {
 				"adaptive",
 				"arena-fast",
@@ -448,7 +570,9 @@ func TestListPublic_RendersModelsFromGroupsAndAccountsWhenNoChannelsExist(t *tes
 	)
 	h := &AvailableChannelHandler{
 		channelService: channelSvc,
-		gatewayModels:  stubGatewayModelsProvider{modelsByPlatform: map[string][]string{"openai": {"gpt-5.4"}}},
+		modelCatalog: &stubModelCatalogProvider{public: map[string][]string{
+			"openai": {"gpt-5.4"},
+		}},
 	}
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -491,7 +615,7 @@ func TestPublicAvailableChannel_FieldWhitelist(t *testing.T) {
 		},
 	}
 
-	raw, err := json.Marshal(buildPublicAvailableChannels(context.Background(), nil, nil, channels))
+	raw, err := json.Marshal(buildPublicAvailableChannels(nil, nil, channels))
 	require.NoError(t, err)
 	body := string(raw)
 	for _, forbidden := range []string{
@@ -605,7 +729,7 @@ func TestBuildPlatformSections_GroupsByPlatform(t *testing.T) {
 	require.Equal(t, "claude-sonnet-4-6", sections[0].SupportedModels[0].Name)
 }
 
-func TestBuildPlatformSections_IncludesGroupModelsListConfig(t *testing.T) {
+func TestMergeGroupCatalogModels_UsesFinalCatalogPerGroup(t *testing.T) {
 	ch := service.AvailableChannel{
 		Name: "ch",
 		SupportedModels: []service.SupportedModel{
@@ -613,27 +737,15 @@ func TestBuildPlatformSections_IncludesGroupModelsListConfig(t *testing.T) {
 		},
 	}
 	visible := []userAvailableGroup{
-		{
-			ID:       1,
-			Name:     "g-openai",
-			Platform: "openai",
-			ModelsListConfig: service.GroupModelsListConfig{
-				Enabled: true,
-				Models:  []string{"group-only-model", "channel-model", "  "},
-			},
-		},
-		{
-			ID:       2,
-			Name:     "g-anthropic",
-			Platform: "anthropic",
-			ModelsListConfig: service.GroupModelsListConfig{
-				Enabled: true,
-				Models:  []string{"claude-from-group"},
-			},
-		},
+		{ID: 1, Name: "g-openai", Platform: "openai"},
+		{ID: 2, Name: "g-anthropic", Platform: "anthropic"},
 	}
 
 	sections := buildPlatformSections(ch, visible)
+	sections = mergeGroupCatalogModels(sections, map[int64][]string{
+		1: {"group-only-model", "channel-model", "  "},
+		2: {"claude-from-group"},
+	})
 
 	require.Len(t, sections, 2)
 	require.Equal(t, "anthropic", sections[0].Platform)
@@ -776,12 +888,40 @@ func (s *publicGroupRepoStub) UpdateSortOrders(context.Context, []service.GroupS
 	return nil
 }
 
-type stubGatewayModelsProvider struct {
-	modelsByPlatform map[string][]string
+type stubModelCatalogProvider struct {
+	public      map[string][]string
+	byGroup     map[int64][]string
+	publicCalls int
+	groupCalls  map[int64]int
 }
 
-func (s stubGatewayModelsProvider) GetAvailableModels(_ context.Context, _ *int64, platform string) []string {
-	return s.modelsByPlatform[platform]
+func (s *stubModelCatalogProvider) ListPublic(context.Context) (map[string][]string, error) {
+	s.publicCalls++
+	return s.public, nil
+}
+
+func (s *stubModelCatalogProvider) ListForGroup(_ context.Context, groupID int64, _ string) ([]string, error) {
+	if s.groupCalls == nil {
+		s.groupCalls = make(map[int64]int)
+	}
+	s.groupCalls[groupID]++
+	return s.byGroup[groupID], nil
+}
+
+type stubAvailableChannelAPIKeyService struct {
+	groups []service.Group
+}
+
+func (s stubAvailableChannelAPIKeyService) GetAvailableGroups(context.Context, int64) ([]service.Group, error) {
+	return s.groups, nil
+}
+
+type stubAvailableChannelSettingService struct {
+	enabled bool
+}
+
+func (s stubAvailableChannelSettingService) GetAvailableChannelsRuntime(context.Context) service.AvailableChannelsRuntime {
+	return service.AvailableChannelsRuntime{Enabled: s.enabled}
 }
 
 func newHandlerTestPricingService(data map[string]*service.ModelPriceEntry) *service.PricingService {

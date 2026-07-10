@@ -280,7 +280,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	paymentWebhookHandler := handler.NewPaymentWebhookHandler(paymentService, registry)
 	publicModelStatsProvider := handler.ProvidePublicModelStatsProvider(usageLogRepository)
 	billingFallbackProvider := handler.ProvideBillingFallbackProvider(billingService)
-	availableChannelHandler := handler.NewAvailableChannelHandler(channelService, apiKeyService, settingService, gatewayService, publicModelStatsProvider, billingFallbackProvider)
+	availableChannelHandler := handler.NewAvailableChannelHandler(channelService, apiKeyService, settingService, modelCatalogService, publicModelStatsProvider, billingFallbackProvider)
 	idempotencyCoordinator := service.ProvideIdempotencyCoordinator(idempotencyRepository, configConfig)
 	idempotencyCleanupService := service.ProvideIdempotencyCleanupService(idempotencyRepository, configConfig)
 	handlers := handler.ProvideHandlers(authHandler, userHandler, apiKeyHandler, usageHandler, redeemHandler, subscriptionHandler, announcementHandler, channelMonitorUserHandler, adminHandlers, gatewayHandler, openAIGatewayHandler, miniMaxGatewayHandler, glmGatewayHandler, kimiGatewayHandler, deepSeekGatewayHandler, windsurfGatewayHandler, openCodeGatewayHandler, handlerSettingHandler, totpHandler, handlerPaymentHandler, paymentWebhookHandler, availableChannelHandler, idempotencyCoordinator, idempotencyCleanupService)

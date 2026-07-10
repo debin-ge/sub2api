@@ -28,6 +28,21 @@ type billingFallbackProvider interface {
 	GetFallbackPricing(model string) *service.ModelPricing
 }
 
+type availableChannelAPIKeyService interface {
+	GetAvailableGroups(context.Context, int64) ([]service.Group, error)
+}
+
+type availableChannelSettingService interface {
+	GetAvailableChannelsRuntime(context.Context) service.AvailableChannelsRuntime
+}
+
+// availableChannelModelCatalog is the narrow catalog surface consumed by the
+// authenticated channel view and the anonymous Model Plaza.
+type availableChannelModelCatalog interface {
+	ListPublic(context.Context) (map[string][]string, error)
+	ListForGroup(context.Context, int64, string) ([]string, error)
+}
+
 // AvailableChannelHandler 处理用户侧「可用渠道」查询。
 //
 // 用户侧接口委托 ChannelService.ListAvailable，并在返回前做三层过滤：
@@ -40,9 +55,9 @@ type billingFallbackProvider interface {
 //     / 内部 ID / Status 等管理字段）。
 type AvailableChannelHandler struct {
 	channelService  *service.ChannelService
-	apiKeyService   *service.APIKeyService
-	settingService  *service.SettingService
-	gatewayModels   gatewayModelsProvider
+	apiKeyService   availableChannelAPIKeyService
+	settingService  availableChannelSettingService
+	modelCatalog    availableChannelModelCatalog
 	modelStats      publicModelStatsProvider
 	billingFallback billingFallbackProvider
 }
@@ -52,22 +67,22 @@ func NewAvailableChannelHandler(
 	channelService *service.ChannelService,
 	apiKeyService *service.APIKeyService,
 	settingService *service.SettingService,
-	gatewayModels *service.GatewayService,
+	modelCatalogService *service.ModelCatalogService,
 	modelStats publicModelStatsProvider,
 	billingFallback billingFallbackProvider,
 ) *AvailableChannelHandler {
+	var modelCatalog availableChannelModelCatalog
+	if modelCatalogService != nil {
+		modelCatalog = modelCatalogService
+	}
 	return &AvailableChannelHandler{
 		channelService:  channelService,
 		apiKeyService:   apiKeyService,
 		settingService:  settingService,
-		gatewayModels:   gatewayModels,
+		modelCatalog:    modelCatalog,
 		modelStats:      modelStats,
 		billingFallback: billingFallback,
 	}
-}
-
-type gatewayModelsProvider interface {
-	GetAvailableModels(ctx context.Context, groupID *int64, platform string) []string
 }
 
 // featureEnabled 返回 available-channels 开关是否启用。默认关闭（opt-in）。
@@ -182,6 +197,8 @@ func (h *AvailableChannelHandler) List(c *gin.Context) {
 	}
 
 	out := make([]userAvailableChannel, 0, len(channels))
+	groupCatalogs := make(map[int64][]string)
+	resolvedGroups := make(map[int64]struct{})
 	for _, ch := range channels {
 		if ch.Status != service.StatusActive {
 			continue
@@ -190,7 +207,12 @@ func (h *AvailableChannelHandler) List(c *gin.Context) {
 		if len(visibleGroups) == 0 {
 			continue
 		}
+		if err := h.resolveGroupCatalogs(c.Request.Context(), visibleGroups, groupCatalogs, resolvedGroups); err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
 		sections := buildPlatformSections(ch, visibleGroups)
+		sections = mergeGroupCatalogModels(sections, groupCatalogs)
 		if len(sections) == 0 {
 			continue
 		}
@@ -213,11 +235,43 @@ func (h *AvailableChannelHandler) ListPublic(c *gin.Context) {
 		return
 	}
 
-	c.Header("Cache-Control", "public, max-age=300")
-	out := buildPublicAvailableChannels(c.Request.Context(), h.channelService, h.gatewayModels, channels)
+	var catalog map[string][]string
+	if h.modelCatalog != nil {
+		catalog, err = h.modelCatalog.ListPublic(c.Request.Context())
+		if err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+	}
+
+	c.Header("Cache-Control", "public, max-age=60, stale-while-revalidate=300")
+	out := buildPublicAvailableChannels(h.channelService, catalog, channels)
 	applyBillingFallbackToChannels(h.billingFallback, out)
 	applyRecentCallCounts(c.Request.Context(), h.modelStats, out)
 	response.Success(c, out)
+}
+
+func (h *AvailableChannelHandler) resolveGroupCatalogs(
+	ctx context.Context,
+	groups []userAvailableGroup,
+	groupCatalogs map[int64][]string,
+	resolvedGroups map[int64]struct{},
+) error {
+	if h.modelCatalog == nil {
+		return nil
+	}
+	for _, group := range groups {
+		if _, ok := resolvedGroups[group.ID]; ok {
+			continue
+		}
+		models, err := h.modelCatalog.ListForGroup(ctx, group.ID, group.Platform)
+		if err != nil {
+			return err
+		}
+		groupCatalogs[group.ID] = models
+		resolvedGroups[group.ID] = struct{}{}
+	}
+	return nil
 }
 
 // applyBillingFallbackToChannels 在 pricing catalog 补齐后再跑一遍：
@@ -329,9 +383,8 @@ func applyRecentCallCounts(
 }
 
 func buildPublicAvailableChannels(
-	ctx context.Context,
 	channelService *service.ChannelService,
-	modelsProvider gatewayModelsProvider,
+	catalog map[string][]string,
 	channels []service.AvailableChannel,
 ) []userAvailableChannel {
 	out := make([]userAvailableChannel, 0, len(channels))
@@ -344,7 +397,7 @@ func buildPublicAvailableChannels(
 			continue
 		}
 		sections := buildPlatformSections(ch, visibleGroups)
-		sections = mergePublicGatewayModels(ctx, modelsProvider, sections)
+		sections = mergePlatformCatalogModels(sections, catalog)
 		sections = filterRoutingOnlyModels(sections)
 		applyPricingFallbackToSections(channelService, sections)
 		sections = filterSectionsWithModels(sections)
@@ -360,14 +413,34 @@ func buildPublicAvailableChannels(
 	return out
 }
 
-func mergePublicGatewayModels(
-	ctx context.Context,
-	modelsProvider gatewayModelsProvider,
+func mergePlatformCatalogModels(
 	sections []userChannelPlatformSection,
+	catalog map[string][]string,
 ) []userChannelPlatformSection {
 	for i := range sections {
-		models := publicModelIDsForPlatform(ctx, modelsProvider, sections[i].Platform)
-		sections[i].SupportedModels = mergeNamedSupportedModels(sections[i].SupportedModels, models, sections[i].Platform)
+		sections[i].SupportedModels = mergeNamedSupportedModels(
+			sections[i].SupportedModels,
+			catalog[sections[i].Platform],
+			sections[i].Platform,
+		)
+	}
+	return sections
+}
+
+func mergeGroupCatalogModels(
+	sections []userChannelPlatformSection,
+	groupCatalogs map[int64][]string,
+) []userChannelPlatformSection {
+	for i := range sections {
+		models := make([]string, 0)
+		for _, group := range sections[i].Groups {
+			models = append(models, groupCatalogs[group.ID]...)
+		}
+		sections[i].SupportedModels = mergeNamedSupportedModels(
+			sections[i].SupportedModels,
+			models,
+			sections[i].Platform,
+		)
 	}
 	return sections
 }
@@ -407,15 +480,6 @@ func filterRoutingOnlyModels(sections []userChannelPlatformSection) []userChanne
 	return sections
 }
 
-func publicModelIDsForPlatform(ctx context.Context, modelsProvider gatewayModelsProvider, platform string) []string {
-	if modelsProvider != nil {
-		if models := modelsProvider.GetAvailableModels(ctx, nil, platform); len(models) > 0 {
-			return models
-		}
-	}
-	return defaultModelIDsForPlatform(platform)
-}
-
 // buildPlatformSections 把一个渠道按 visibleGroups 的平台集合拆成有序的 section 列表：
 // 每个 section 对应一个平台，只包含该平台的 groups 和 supported_models。
 // 输出按 platform 字母序稳定排序，便于前端等效比较与回归测试。
@@ -444,31 +508,12 @@ func buildPlatformSections(
 	for _, platform := range platforms {
 		platformSet := map[string]struct{}{platform: {}}
 		sections = append(sections, userChannelPlatformSection{
-			Platform: platform,
-			Groups:   groupsByPlatform[platform],
-			SupportedModels: mergeGroupSupportedModels(
-				toUserSupportedModels(ch.SupportedModels, platformSet),
-				groupsByPlatform[platform],
-				platform,
-			),
+			Platform:        platform,
+			Groups:          groupsByPlatform[platform],
+			SupportedModels: toUserSupportedModels(ch.SupportedModels, platformSet),
 		})
 	}
 	return sections
-}
-
-func mergeGroupSupportedModels(
-	channelModels []userSupportedModel,
-	groups []userAvailableGroup,
-	platform string,
-) []userSupportedModel {
-	groupModels := make([]string, 0)
-	for _, group := range groups {
-		if !group.ModelsListConfig.Enabled {
-			continue
-		}
-		groupModels = append(groupModels, group.ModelsListConfig.Models...)
-	}
-	return mergeNamedSupportedModels(channelModels, groupModels, platform)
 }
 
 func mergeNamedSupportedModels(
