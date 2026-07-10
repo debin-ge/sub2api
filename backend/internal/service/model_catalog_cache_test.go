@@ -203,10 +203,26 @@ func TestModelCatalogRefreshCancellationWhileWaitingForSemaphoreDoesNotBackOff(t
 }
 
 func TestModelCatalogRefreshSingleflight(t *testing.T) {
+	const callerCount = 20
+	const followerCount = callerCount - 1
+
 	release := make(chan struct{})
+	var releaseOnce sync.Once
 	var calls atomic.Int64
+	var active atomic.Int64
+	var maximum atomic.Int64
+	discoveryStarted := make(chan struct{}, callerCount)
 	discoverer := modelDiscovererFunc(func(ctx context.Context, _ *Account) ([]string, error) {
 		calls.Add(1)
+		current := active.Add(1)
+		defer active.Add(-1)
+		for {
+			observed := maximum.Load()
+			if current <= observed || maximum.CompareAndSwap(observed, current) {
+				break
+			}
+		}
+		discoveryStarted <- struct{}{}
 		select {
 		case <-release:
 			return []string{"model-new"}, nil
@@ -226,26 +242,60 @@ func TestModelCatalogRefreshSingleflight(t *testing.T) {
 		models []string
 		err    error
 	}
-	results := make(chan result, 20)
-	for i := 0; i < 20; i++ {
+	results := make(chan result, callerCount)
+	runRefresh := func() {
+		models, err := catalog.RefreshAccount(context.Background(), account)
+		results <- result{models: models, err: err}
+	}
+	t.Cleanup(func() {
+		releaseOnce.Do(func() { close(release) })
+		wg.Wait()
+	})
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		runRefresh()
+	}()
+	select {
+	case <-discoveryStarted:
+	case <-time.After(time.Second):
+		t.Fatal("leader discovery did not start")
+	}
+
+	startFollowers := make(chan struct{})
+	followersInvoking := make(chan struct{}, followerCount)
+	var followersReady sync.WaitGroup
+	followersReady.Add(followerCount)
+	for i := 0; i < followerCount; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			models, err := catalog.RefreshAccount(context.Background(), account)
-			results <- result{models: models, err: err}
+			followersReady.Done()
+			<-startFollowers
+			followersInvoking <- struct{}{}
+			runRefresh()
 		}()
 	}
-	require.Eventually(t, func() bool { return calls.Load() == 1 }, time.Second, 10*time.Millisecond)
-	close(release)
+	followersReady.Wait()
+	close(startFollowers)
+	for i := 0; i < followerCount; i++ {
+		<-followersInvoking
+	}
+	require.Never(t, func() bool { return maximum.Load() > 1 }, 50*time.Millisecond, time.Millisecond,
+		"overlapping callers must not start a second active discovery")
+	require.Equal(t, int64(1), calls.Load(), "the blocked leader must remain the only discovery before release")
+
+	releaseOnce.Do(func() { close(release) })
 	wg.Wait()
 	close(results)
-	allResults := make([]result, 0, 20)
+	allResults := make([]result, 0, callerCount)
 	for result := range results {
 		require.NoError(t, result.err)
 		require.Equal(t, []string{"model-new"}, result.models)
 		allResults = append(allResults, result)
 	}
-	require.Equal(t, int64(1), calls.Load())
+	require.Len(t, allResults, callerCount)
+	require.Equal(t, int64(1), maximum.Load(), "same-account discoveries must never overlap")
 	allResults[0].models[0] = "mutated"
 	for _, result := range allResults[1:] {
 		require.Equal(t, []string{"model-new"}, result.models, "singleflight callers must receive isolated slices")
@@ -470,6 +520,102 @@ func TestModelCatalogListForAccountMissObeysWaitForLive(t *testing.T) {
 			return ok && calls.Load() == 1 && len(entry.models) == 1 && entry.models[0] == "model-new"
 		}, time.Second, 10*time.Millisecond)
 	})
+}
+
+func TestModelCatalogListForAccountNoWaitUsesConfiguredFallback(t *testing.T) {
+	now := time.Date(2026, 7, 10, 0, 0, 0, 0, time.UTC)
+	cfg := config.ModelCatalogConfig{
+		RefreshIntervalSeconds: 300,
+		RequestTimeoutSeconds:  10,
+		StaleTTLSeconds:        86400,
+		FailureBackoffSeconds:  60,
+		MaxConcurrency:         1,
+	}
+	tests := []struct {
+		name        string
+		accountID   int64
+		credentials map[string]any
+		expired     bool
+		want        []string
+	}{
+		{
+			name:      "cold mapping",
+			accountID: 30,
+			credentials: map[string]any{
+				"model_mapping": map[string]any{"mapped-client": "upstream-model"},
+			},
+			want: []string{"mapped-client"},
+		},
+		{
+			name:      "expired whitelist",
+			accountID: 31,
+			credentials: map[string]any{
+				"model_whitelist": []any{"whitelist-only"},
+			},
+			expired: true,
+			want:    []string{"whitelist-only"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cache := newModelCatalogCache()
+			if tt.expired {
+				cache.storeSuccess(tt.accountID, []string{"expired-live-model"}, now.Add(-25*time.Hour))
+			}
+			started := make(chan struct{})
+			release := make(chan struct{})
+			finished := make(chan struct{})
+			var releaseOnce sync.Once
+			t.Cleanup(func() {
+				releaseOnce.Do(func() { close(release) })
+				select {
+				case <-finished:
+				case <-time.After(time.Second):
+				}
+			})
+			catalog := &ModelCatalogService{
+				discoverer: modelDiscovererFunc(func(ctx context.Context, _ *Account) ([]string, error) {
+					close(started)
+					defer close(finished)
+					select {
+					case <-release:
+						return []string{"discovered-model"}, nil
+					case <-ctx.Done():
+						return nil, ctx.Err()
+					}
+				}),
+				cfg: cfg, cache: cache, refreshSem: make(chan struct{}, 1), now: func() time.Time { return now },
+			}
+			account := &Account{
+				ID: tt.accountID, Platform: PlatformOpenAI, Type: AccountTypeOAuth,
+				Status: StatusActive, Schedulable: true, Credentials: tt.credentials,
+			}
+
+			models, err := catalog.ListForAccount(context.Background(), account, false)
+
+			require.NoError(t, err)
+			require.Equal(t, tt.want, models)
+			select {
+			case <-started:
+			case <-time.After(time.Second):
+				t.Fatal("async discovery did not start")
+			}
+			releaseOnce.Do(func() { close(release) })
+			select {
+			case <-finished:
+			case <-time.After(time.Second):
+				t.Fatal("async discovery did not finish")
+			}
+			require.Eventually(t, func() bool {
+				entry, ok := cache.load(account.ID)
+				catalog.asyncRefreshMu.Lock()
+				asyncRefreshes := len(catalog.asyncRefreshes)
+				catalog.asyncRefreshMu.Unlock()
+				return ok && len(entry.models) == 1 && entry.models[0] == "discovered-model" && asyncRefreshes == 0
+			}, time.Second, 10*time.Millisecond)
+		})
+	}
 }
 
 func TestModelCatalogListForAccountRefreshFailureFallsBack(t *testing.T) {

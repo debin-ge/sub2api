@@ -87,7 +87,7 @@ func (s *ModelCatalogService) ListForAccount(ctx context.Context, account *Accou
 		if s != nil {
 			s.RefreshAccountAsync(account)
 		}
-		return defaults, nil
+		return fallback, nil
 	}
 
 	models, err := s.RefreshAccount(ctx, account)
