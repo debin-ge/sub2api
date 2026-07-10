@@ -311,6 +311,32 @@ func TestExtractOutTradeNoWiseReturnsEmptyBecauseWebhookTriggersReconcile(t *tes
 	require.Empty(t, got)
 }
 
+func TestStripeWebhookExtractOutTradeNoUsesPaymentIntentOrderIDForInstanceRouting(t *testing.T) {
+	rawBody := `{"id":"evt_123","type":"payment_intent.succeeded","data":{"object":{"metadata":{"orderId":"  sub2_selected_42  "}}}}`
+
+	require.Equal(t, "sub2_selected_42", extractOutTradeNo(rawBody, payment.TypeStripe))
+}
+
+func TestStripeWebhookVerifyNotificationErrorPropagatesForRetry(t *testing.T) {
+	providers := []payment.Provider{
+		webhookHandlerProviderStub{
+			key:       payment.TypeStripe,
+			verifyErr: errors.New("stripe retrieve payment method failed"),
+		},
+	}
+
+	providerKey, notification, err := verifyNotificationWithProviders(context.Background(), providers, "{}", nil)
+
+	require.Empty(t, providerKey)
+	require.Nil(t, notification)
+	require.EqualError(t, err, "stripe retrieve payment method failed")
+}
+
+func TestStripeWebhookVerifyFailureBodyIsNeverLogged(t *testing.T) {
+	require.False(t, shouldLogWebhookVerifyFailureBody(payment.TypeStripe))
+	require.True(t, shouldLogWebhookVerifyFailureBody(payment.TypeWxpay))
+}
+
 func TestVerifyNotificationWithProvidersReturnsMatchedProvider(t *testing.T) {
 	firstErr := errors.New("wrong provider")
 	providers := []payment.Provider{

@@ -3,7 +3,9 @@ package provider
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 
@@ -18,14 +20,31 @@ const (
 	stripeEventPaymentFailed  = "payment_intent.payment_failed"
 )
 
+type stripePaymentMethodRetriever interface {
+	Retrieve(context.Context, string, *stripe.PaymentMethodRetrieveParams) (*stripe.PaymentMethod, error)
+}
+
+type stripeSDKPaymentMethodRetriever struct {
+	client *stripe.Client
+}
+
+func (r stripeSDKPaymentMethodRetriever) Retrieve(
+	ctx context.Context,
+	id string,
+	params *stripe.PaymentMethodRetrieveParams,
+) (*stripe.PaymentMethod, error) {
+	return r.client.V1PaymentMethods.Retrieve(ctx, id, params)
+}
+
 // Stripe implements the payment.CancelableProvider interface for Stripe payments.
 type Stripe struct {
 	instanceID string
 	config     map[string]string
 
-	mu          sync.Mutex
-	initialized bool
-	sc          *stripe.Client
+	mu             sync.Mutex
+	initialized    bool
+	sc             *stripe.Client
+	paymentMethods stripePaymentMethodRetriever
 }
 
 // NewStripe creates a new Stripe provider instance.
@@ -50,6 +69,7 @@ func (s *Stripe) ensureInit() {
 	defer s.mu.Unlock()
 	if !s.initialized {
 		s.sc = stripe.NewClient(s.config["secretKey"])
+		s.paymentMethods = stripeSDKPaymentMethodRetriever{client: s.sc}
 		s.initialized = true
 	}
 }
@@ -171,7 +191,7 @@ func (s *Stripe) QueryOrder(ctx context.Context, tradeNo string) (*payment.Query
 }
 
 // VerifyNotification verifies a Stripe webhook event.
-func (s *Stripe) VerifyNotification(_ context.Context, rawBody string, headers map[string]string) (*payment.PaymentNotification, error) {
+func (s *Stripe) VerifyNotification(ctx context.Context, rawBody string, headers map[string]string) (*payment.PaymentNotification, error) {
 	s.ensureInit()
 
 	webhookSecret := s.config["webhookSecret"]
@@ -191,21 +211,31 @@ func (s *Stripe) VerifyNotification(_ context.Context, rawBody string, headers m
 
 	switch event.Type {
 	case stripeEventPaymentSuccess:
-		return parseStripePaymentIntent(&event, payment.ProviderStatusSuccess, rawBody)
+		notification, pi, err := parseStripePaymentIntent(&event, payment.ProviderStatusSuccess, rawBody)
+		if err != nil {
+			return nil, err
+		}
+		resolvedType, err := s.resolvedPaymentType(ctx, pi)
+		if err != nil {
+			return nil, err
+		}
+		notification.Metadata[payment.NotificationMetadataPaymentType] = resolvedType
+		return notification, nil
 	case stripeEventPaymentFailed:
-		return parseStripePaymentIntent(&event, payment.ProviderStatusFailed, rawBody)
+		notification, _, err := parseStripePaymentIntent(&event, payment.ProviderStatusFailed, rawBody)
+		return notification, err
 	}
 
 	return nil, nil
 }
 
-func parseStripePaymentIntent(event *stripe.Event, status string, rawBody string) (*payment.PaymentNotification, error) {
+func parseStripePaymentIntent(event *stripe.Event, status string, rawBody string) (*payment.PaymentNotification, *stripe.PaymentIntent, error) {
 	var pi stripe.PaymentIntent
 	if err := json.Unmarshal(event.Data.Raw, &pi); err != nil {
-		return nil, fmt.Errorf("stripe parse payment_intent: %w", err)
+		return nil, nil, fmt.Errorf("stripe parse payment_intent: %w", err)
 	}
 	currency := stripeIntentCurrency(pi.Currency, payment.DefaultPaymentCurrency)
-	return &payment.PaymentNotification{
+	notification := &payment.PaymentNotification{
 		TradeNo: pi.ID,
 		OrderID: pi.Metadata["orderId"],
 		Amount:  payment.MinorUnitToAmount(pi.Amount, currency),
@@ -214,7 +244,37 @@ func parseStripePaymentIntent(event *stripe.Event, status string, rawBody string
 		Metadata: map[string]string{
 			"currency": currency,
 		},
-	}, nil
+	}
+	return notification, &pi, nil
+}
+
+func (s *Stripe) resolvedPaymentType(ctx context.Context, pi *stripe.PaymentIntent) (string, error) {
+	if pi.PaymentMethod == nil || strings.TrimSpace(pi.PaymentMethod.ID) == "" {
+		return "", fmt.Errorf("stripe succeeded payment intent missing payment method")
+	}
+
+	method, err := s.paymentMethods.Retrieve(ctx, pi.PaymentMethod.ID, nil)
+	if err != nil {
+		errorType, errorCode := "unknown", ""
+		var stripeErr *stripe.Error
+		if errors.As(err, &stripeErr) {
+			errorType = string(stripeErr.Type)
+			errorCode = string(stripeErr.Code)
+		}
+		slog.Warn("stripe payment method lookup failed",
+			"orderID", pi.Metadata["orderId"],
+			"providerInstanceID", s.instanceID,
+			"type", errorType,
+			"code", errorCode,
+		)
+		return "", errors.New("stripe retrieve payment method failed")
+	}
+
+	if method.Card != nil && method.Card.Wallet != nil &&
+		method.Card.Wallet.Type == stripe.PaymentMethodCardWalletTypeGooglePay {
+		return payment.TypeGooglePay, nil
+	}
+	return payment.TypeStripe, nil
 }
 
 // Refund creates a Stripe refund.

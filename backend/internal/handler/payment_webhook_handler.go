@@ -129,12 +129,14 @@ func (h *PaymentWebhookHandler) handleNotify(c *gin.Context, providerKey string)
 
 	resolvedProviderKey, notification, err := verifyNotificationWithProviders(c.Request.Context(), providers, rawBody, headers)
 	if err != nil {
-		truncatedBody := rawBody
-		if len(truncatedBody) > webhookLogTruncateLen {
-			truncatedBody = truncatedBody[:webhookLogTruncateLen] + "...(truncated)"
-		}
 		slog.Error("[Payment Webhook] verify failed", "provider", providerKey, "error", err, "method", c.Request.Method, "bodyLen", len(rawBody))
-		slog.Debug("[Payment Webhook] verify failed body", "provider", providerKey, "rawBody", truncatedBody)
+		if shouldLogWebhookVerifyFailureBody(providerKey) {
+			truncatedBody := rawBody
+			if len(truncatedBody) > webhookLogTruncateLen {
+				truncatedBody = truncatedBody[:webhookLogTruncateLen] + "...(truncated)"
+			}
+			slog.Debug("[Payment Webhook] verify failed body", "provider", providerKey, "rawBody", truncatedBody)
+		}
 		c.String(http.StatusBadRequest, "verify failed")
 		return
 	}
@@ -188,10 +190,25 @@ func extractOutTradeNo(rawBody, providerKey string) string {
 		if err := json.Unmarshal([]byte(rawBody), &payload); err == nil {
 			return strings.TrimSpace(payload.Data.Object.MerchantOrderID)
 		}
+	case payment.TypeStripe:
+		var payload struct {
+			Data struct {
+				Object struct {
+					Metadata map[string]string `json:"metadata"`
+				} `json:"object"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal([]byte(rawBody), &payload); err == nil {
+			return strings.TrimSpace(payload.Data.Object.Metadata["orderId"])
+		}
 	}
-	// For other providers (Stripe, Alipay direct, WxPay direct), the registry
+	// For other providers (Alipay direct, WxPay direct), the registry
 	// typically has only one instance, so no instance lookup is needed.
 	return ""
+}
+
+func shouldLogWebhookVerifyFailureBody(providerKey string) bool {
+	return providerKey != payment.TypeStripe
 }
 
 func verifyNotificationWithProviders(ctx context.Context, providers []payment.Provider, rawBody string, headers map[string]string) (string, *payment.PaymentNotification, error) {
