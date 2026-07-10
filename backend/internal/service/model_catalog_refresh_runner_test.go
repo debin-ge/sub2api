@@ -1,8 +1,11 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -65,6 +68,7 @@ func TestModelCatalogRefreshAllHonorsMaxConcurrency(t *testing.T) {
 }
 
 func TestModelCatalogRefreshAllFiltersAccountsAndIsolatesFailures(t *testing.T) {
+	resetModelCatalogStatsForTest()
 	accounts := []Account{
 		{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true},
 		{ID: 2, Platform: PlatformAnthropic, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true},
@@ -92,6 +96,54 @@ func TestModelCatalogRefreshAllFiltersAccountsAndIsolatesFailures(t *testing.T) 
 	require.Equal(t, int64(3), calls.Load())
 	require.Equal(t, ModelCatalogRefreshPlatformSummary{Scanned: 2, Succeeded: 2}, summary.ByPlatform[PlatformOpenAI])
 	require.Equal(t, ModelCatalogRefreshPlatformSummary{Scanned: 1, Failed: 1}, summary.ByPlatform[PlatformAnthropic])
+	stats := ModelCatalogStats()
+	require.Equal(t, int64(2), stats.ByPlatform[PlatformOpenAI].RefreshSuccess)
+	require.Equal(t, int64(1), stats.ByPlatform[PlatformAnthropic].RefreshFailure)
+}
+
+func TestModelCatalogRefreshRunnerLogsBoundedSanitizedFailure(t *testing.T) {
+	const (
+		responseSecret = "response-body-secret-9fda"
+		tokenSecret    = "token-secret-3cbe"
+		proxySecret    = "proxy-secret-52a1"
+	)
+	var output bytes.Buffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&output, nil)))
+	t.Cleanup(func() { slog.SetDefault(previousLogger) })
+
+	account := Account{
+		ID: 42, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true,
+		Credentials: map[string]any{"access_token": tokenSecret},
+		Proxy:       &Proxy{Protocol: "http", Host: proxySecret, Port: 8080, Username: "user", Password: "password"},
+	}
+	catalog := &ModelCatalogService{
+		accountRepo: &refreshRunnerAccountRepoStub{accounts: []Account{account}},
+		discoverer: modelDiscovererFunc(func(context.Context, *Account) ([]string, error) {
+			return nil, newUpstreamModelSyncUpstreamError(
+				"Upstream model list request failed with HTTP 502",
+				errors.New(responseSecret),
+			)
+		}),
+		cfg:   config.ModelCatalogConfig{RequestTimeoutSeconds: 10, FailureBackoffSeconds: 60, MaxConcurrency: 1},
+		cache: newModelCatalogCache(), refreshSem: make(chan struct{}, 1), now: time.Now,
+	}
+	runner := NewModelCatalogRefreshRunner(catalog, catalog.cfg)
+
+	runner.runOnce(context.Background())
+
+	logs := output.String()
+	require.Contains(t, logs, `"msg":"model_catalog_account_refresh_failed"`)
+	require.Contains(t, logs, `"account_id":42`)
+	require.Contains(t, logs, `"platform":"openai"`)
+	require.Contains(t, logs, `"error_kind":"upstream"`)
+	require.Contains(t, logs, `"http_status":502`)
+	require.Contains(t, logs, `"msg":"model_catalog_refresh_pass_completed"`)
+	require.Contains(t, logs, `"by_platform"`)
+	require.Contains(t, logs, `"duration"`)
+	for _, secret := range []string{responseSecret, tokenSecret, proxySecret, "password"} {
+		require.False(t, strings.Contains(logs, secret), "logs contained secret %q: %s", secret, logs)
+	}
 }
 
 func TestModelCatalogRefreshAllRecordsDuration(t *testing.T) {

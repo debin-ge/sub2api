@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -55,9 +57,10 @@ func (s *ModelCatalogService) RefreshAll(ctx context.Context) (summary ModelCata
 			continue
 		}
 		eligible = append(eligible, account)
-		platformSummary := summary.ByPlatform[account.Platform]
+		platform := normalizeModelCatalogStatsPlatform(account.Platform)
+		platformSummary := summary.ByPlatform[platform]
 		platformSummary.Scanned++
-		summary.ByPlatform[account.Platform] = platformSummary
+		summary.ByPlatform[platform] = platformSummary
 	}
 	if len(eligible) == 0 {
 		return summary
@@ -92,19 +95,23 @@ func (s *ModelCatalogService) RefreshAll(ctx context.Context) (summary ModelCata
 	close(results)
 
 	for result := range results {
-		platformSummary := summary.ByPlatform[result.account.Platform]
+		platform := normalizeModelCatalogStatsPlatform(result.account.Platform)
+		platformSummary := summary.ByPlatform[platform]
 		if result.err == nil {
 			platformSummary.Succeeded++
 		} else {
 			platformSummary.Failed++
-			slog.Warn(
-				"model_catalog_account_refresh_failed",
+			attrs := []any{
 				"account_id", result.account.ID,
-				"platform", result.account.Platform,
+				"platform", platform,
 				"error_kind", modelCatalogRefreshErrorKind(result.err),
-			)
+			}
+			if status, ok := modelCatalogRefreshHTTPStatus(result.err); ok {
+				attrs = append(attrs, "http_status", status)
+			}
+			slog.Warn("model_catalog_account_refresh_failed", attrs...)
 		}
-		summary.ByPlatform[result.account.Platform] = platformSummary
+		summary.ByPlatform[platform] = platformSummary
 	}
 	return summary
 }
@@ -131,6 +138,25 @@ func modelCatalogRefreshErrorKind(err error) string {
 		return "backoff"
 	}
 	return "unknown"
+}
+
+func modelCatalogRefreshHTTPStatus(err error) (int, bool) {
+	var syncErr *UpstreamModelSyncError
+	if !errors.As(err, &syncErr) {
+		return 0, false
+	}
+	fields := strings.Fields(syncErr.SafeMessage())
+	for i := 0; i+1 < len(fields); i++ {
+		if strings.Trim(fields[i], "\t\r\n :;,()[]{}") != "HTTP" {
+			continue
+		}
+		rawStatus := strings.Trim(fields[i+1], "\t\r\n :;,()[]{}")
+		status, parseErr := strconv.Atoi(rawStatus)
+		if parseErr == nil && status >= 100 && status <= 599 {
+			return status, true
+		}
+	}
+	return 0, false
 }
 
 type ModelCatalogRefreshRunner struct {

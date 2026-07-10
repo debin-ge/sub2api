@@ -86,15 +86,15 @@ Each eligible account is resolved separately. The presence of a mapping on one a
 
 1. Request the provider's live model catalog using the account's valid token.
 2. On success, normalize and cache the complete non-empty model list.
-3. On failure, use the last successful cache entry if it is not older than the stale limit.
-4. If no usable cache exists, use the platform's maintained default catalog.
+3. On failure, use the most recent successful cache entry, including an expired entry retained as the final safety fallback after a bounded refresh attempt.
+4. If no previous success exists, use the account's configured restrictions and then the platform's maintained default catalog.
 
 #### API Key with passthrough enabled
 
 1. Request the model-list endpoint derived from the account's effective base URL.
 2. Apply the account API key, proxy, header overrides, TLS behavior, and URL allowlist rules used by normal upstream requests.
 3. On success, normalize and cache the complete non-empty model list.
-4. On failure, use stale cache and then the platform default catalog.
+4. On failure, use the most recent successful cache entry, including a retained expired entry, and then the configured/platform fallback catalog.
 
 #### Upstream account type
 
@@ -238,6 +238,7 @@ Account creation, credential changes, base URL changes, proxy changes, header ov
 
 - Fresh cache: return immediately.
 - Stale cache younger than 24 hours: return immediately and enqueue background refresh.
+- An entry older than 24 hours is a cache miss for refresh scheduling; if that bounded refresh fails, the retained last success still wins before configured restrictions or provider defaults.
 - Cache miss on the admin account page: allow one bounded synchronous discovery.
 - Cache miss on `/v1/models`: allow a bounded discovery, then fall back.
 - Cache miss on the public Model Plaza: return configured/provider fallback immediately and refresh asynchronously.
@@ -393,4 +394,3 @@ Cover:
 6. Migrate `/v1/models` and make the old gateway method a compatibility wrapper.
 7. Migrate the Model Plaza and channel view.
 8. Add observability, configuration validation, and full regression verification.
-

@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -15,6 +16,207 @@ import (
 )
 
 var errModelCatalogRefreshBackoff = errors.New("model catalog refresh suppressed by failure backoff")
+
+const (
+	modelCatalogPlatformUnknown = "unknown"
+
+	modelCatalogFallbackUnsupported   = "unsupported"
+	modelCatalogFallbackUpstreamError = "upstream_error"
+	modelCatalogFallbackEmpty         = "empty"
+	modelCatalogFallbackExpired       = "stale_expired"
+	modelCatalogFallbackOther         = "other"
+)
+
+var modelCatalogPlatforms = [...]string{
+	PlatformAnthropic,
+	PlatformOpenAI,
+	PlatformGemini,
+	PlatformAntigravity,
+	PlatformGrok,
+	PlatformMiniMax,
+	PlatformGLM,
+	PlatformKimi,
+	PlatformDeepSeek,
+	PlatformWindsurf,
+	PlatformOpenCode,
+	modelCatalogPlatformUnknown,
+}
+
+var modelCatalogFallbackReasons = [...]string{
+	modelCatalogFallbackUnsupported,
+	modelCatalogFallbackUpstreamError,
+	modelCatalogFallbackEmpty,
+	modelCatalogFallbackExpired,
+	modelCatalogFallbackOther,
+}
+
+type ModelCatalogPlatformRuntimeStats struct {
+	RefreshSuccess   int64
+	RefreshFailure   int64
+	FallbackByReason map[string]int64
+}
+
+type ModelCatalogRuntimeStats struct {
+	CacheFresh int64
+	CacheStale int64
+	CacheMiss  int64
+	ByPlatform map[string]ModelCatalogPlatformRuntimeStats
+}
+
+type modelCatalogPlatformRuntimeCounters struct {
+	refreshSuccess   int64
+	refreshFailure   int64
+	fallbackByReason map[string]int64
+}
+
+type modelCatalogRuntimeCounters struct {
+	cacheFresh atomic.Int64
+	cacheStale atomic.Int64
+	cacheMiss  atomic.Int64
+	mu         sync.RWMutex
+	byPlatform map[string]*modelCatalogPlatformRuntimeCounters
+}
+
+var modelCatalogCounters = newModelCatalogRuntimeCounters()
+
+func newModelCatalogRuntimeCounters() *modelCatalogRuntimeCounters {
+	counters := &modelCatalogRuntimeCounters{}
+	counters.resetLocked()
+	return counters
+}
+
+func (c *modelCatalogRuntimeCounters) resetLocked() {
+	c.byPlatform = make(map[string]*modelCatalogPlatformRuntimeCounters, len(modelCatalogPlatforms))
+	for _, platform := range modelCatalogPlatforms {
+		fallbackByReason := make(map[string]int64, len(modelCatalogFallbackReasons))
+		for _, reason := range modelCatalogFallbackReasons {
+			fallbackByReason[reason] = 0
+		}
+		c.byPlatform[platform] = &modelCatalogPlatformRuntimeCounters{fallbackByReason: fallbackByReason}
+	}
+}
+
+// ModelCatalogStats returns an immutable snapshot of bounded model-catalog counters.
+func ModelCatalogStats() ModelCatalogRuntimeStats {
+	stats := ModelCatalogRuntimeStats{
+		CacheFresh: modelCatalogCounters.cacheFresh.Load(),
+		CacheStale: modelCatalogCounters.cacheStale.Load(),
+		CacheMiss:  modelCatalogCounters.cacheMiss.Load(),
+		ByPlatform: make(map[string]ModelCatalogPlatformRuntimeStats, len(modelCatalogPlatforms)),
+	}
+	modelCatalogCounters.mu.RLock()
+	defer modelCatalogCounters.mu.RUnlock()
+	for platform, counters := range modelCatalogCounters.byPlatform {
+		fallbackByReason := make(map[string]int64, len(counters.fallbackByReason))
+		for reason, count := range counters.fallbackByReason {
+			fallbackByReason[reason] = count
+		}
+		stats.ByPlatform[platform] = ModelCatalogPlatformRuntimeStats{
+			RefreshSuccess:   counters.refreshSuccess,
+			RefreshFailure:   counters.refreshFailure,
+			FallbackByReason: fallbackByReason,
+		}
+	}
+	return stats
+}
+
+func recordModelCatalogCache(state catalogCacheState) {
+	switch state {
+	case catalogCacheFresh:
+		modelCatalogCounters.cacheFresh.Add(1)
+	case catalogCacheStale:
+		modelCatalogCounters.cacheStale.Add(1)
+	case catalogCacheMiss:
+		modelCatalogCounters.cacheMiss.Add(1)
+	}
+}
+
+func recordModelCatalogRefresh(platform string, succeeded bool) {
+	platform = normalizeModelCatalogStatsPlatform(platform)
+	modelCatalogCounters.mu.Lock()
+	defer modelCatalogCounters.mu.Unlock()
+	counters := modelCatalogCounters.byPlatform[platform]
+	if succeeded {
+		counters.refreshSuccess++
+	} else {
+		counters.refreshFailure++
+	}
+}
+
+func recordModelCatalogFallback(platform, reason string) {
+	platform = normalizeModelCatalogStatsPlatform(platform)
+	reason = normalizeModelCatalogFallbackReason(reason)
+	modelCatalogCounters.mu.Lock()
+	defer modelCatalogCounters.mu.Unlock()
+	modelCatalogCounters.byPlatform[platform].fallbackByReason[reason]++
+}
+
+func normalizeModelCatalogStatsPlatform(platform string) string {
+	platform = strings.TrimSpace(platform)
+	for _, known := range modelCatalogPlatforms[:len(modelCatalogPlatforms)-1] {
+		if platform == known {
+			return known
+		}
+	}
+	return modelCatalogPlatformUnknown
+}
+
+func normalizeModelCatalogFallbackReason(reason string) string {
+	for _, known := range modelCatalogFallbackReasons[:len(modelCatalogFallbackReasons)-1] {
+		if reason == known {
+			return known
+		}
+	}
+	return modelCatalogFallbackOther
+}
+
+func resetModelCatalogStatsForTest() {
+	modelCatalogCounters.cacheFresh.Store(0)
+	modelCatalogCounters.cacheStale.Store(0)
+	modelCatalogCounters.cacheMiss.Store(0)
+	modelCatalogCounters.mu.Lock()
+	modelCatalogCounters.resetLocked()
+	modelCatalogCounters.mu.Unlock()
+}
+
+type modelCatalogFallbackError struct {
+	reason string
+	err    error
+}
+
+func (e *modelCatalogFallbackError) Error() string {
+	if e == nil || e.err == nil {
+		return ""
+	}
+	return e.err.Error()
+}
+
+func (e *modelCatalogFallbackError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.err
+}
+
+func modelCatalogFallbackReasonForError(err error) string {
+	var fallbackErr *modelCatalogFallbackError
+	if errors.As(err, &fallbackErr) {
+		return fallbackErr.reason
+	}
+	var syncErr *UpstreamModelSyncError
+	if errors.As(err, &syncErr) {
+		switch syncErr.Kind {
+		case UpstreamModelSyncErrorUnsupported:
+			return modelCatalogFallbackUnsupported
+		case UpstreamModelSyncErrorUpstream:
+			return modelCatalogFallbackUpstreamError
+		}
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return modelCatalogFallbackUpstreamError
+	}
+	return modelCatalogFallbackOther
+}
 
 type modelCatalogAsyncRefresh struct {
 	_ byte
@@ -69,23 +271,33 @@ func (s *ModelCatalogService) ListForAccount(ctx context.Context, account *Accou
 	defaults := DefaultModelCatalogIDs(account.Platform)
 	fallback := configuredOrDefaultAccountModels(account, defaults)
 	if !accountRequiresLiveCatalog(account) {
+		recordModelCatalogFallback(account.Platform, modelCatalogFallbackUnsupported)
 		return fallback, nil
 	}
 
+	cacheState := catalogCacheMiss
+	var cacheEntry modelCatalogCacheEntry
 	if s != nil && s.cache != nil {
-		entry, state := s.cache.loadState(account.ID, s.currentTime(), s.freshTTL(), s.staleTTL())
-		switch state {
-		case catalogCacheFresh:
-			return entry.models, nil
-		case catalogCacheStale:
-			s.RefreshAccountAsync(account)
-			return entry.models, nil
-		}
+		cacheEntry, cacheState = s.cache.loadState(account.ID, s.currentTime(), s.freshTTL(), s.staleTTL())
 	}
+	recordModelCatalogCache(cacheState)
+	switch cacheState {
+	case catalogCacheFresh:
+		return cacheEntry.models, nil
+	case catalogCacheStale:
+		s.RefreshAccountAsync(account)
+		return cacheEntry.models, nil
+	}
+	expiredCache := len(cacheEntry.models) > 0 && !cacheEntry.fetchedAt.IsZero()
 
 	if !waitForLive {
 		if s != nil {
 			s.RefreshAccountAsync(account)
+		}
+		if expiredCache {
+			recordModelCatalogFallback(account.Platform, modelCatalogFallbackExpired)
+		} else {
+			recordModelCatalogFallback(account.Platform, modelCatalogFallbackOther)
 		}
 		return fallback, nil
 	}
@@ -96,9 +308,15 @@ func (s *ModelCatalogService) ListForAccount(ctx context.Context, account *Accou
 	}
 	if s != nil && s.cache != nil {
 		if entry, ok := s.cache.load(account.ID); ok && len(entry.models) > 0 {
+			if expiredCache {
+				recordModelCatalogFallback(account.Platform, modelCatalogFallbackExpired)
+			} else {
+				recordModelCatalogFallback(account.Platform, modelCatalogFallbackReasonForError(err))
+			}
 			return entry.models, nil
 		}
 	}
+	recordModelCatalogFallback(account.Platform, modelCatalogFallbackReasonForError(err))
 	return fallback, nil
 }
 
@@ -115,6 +333,7 @@ func (s *ModelCatalogService) refreshAccountForGeneration(ctx context.Context, a
 		return configuredOrDefaultAccountModels(account, DefaultModelCatalogIDs(account.Platform)), nil
 	}
 	if s == nil || s.discoverer == nil {
+		recordModelCatalogRefresh(account.Platform, false)
 		return nil, newUpstreamModelSyncConfigError("Account model discoverer is not configured", nil)
 	}
 	if ctx == nil {
@@ -127,6 +346,8 @@ func (s *ModelCatalogService) refreshAccountForGeneration(ctx context.Context, a
 		if s.cache != nil && s.cache.inFailureBackoff(accountID, now, s.failureBackoff()) {
 			return nil, errModelCatalogRefreshBackoff
 		}
+		refreshSucceeded := false
+		defer func() { recordModelCatalogRefresh(account.Platform, refreshSucceeded) }()
 
 		timeoutCtx, cancel := context.WithTimeout(ctx, s.requestTimeout())
 		defer cancel()
@@ -153,7 +374,10 @@ func (s *ModelCatalogService) refreshAccountForGeneration(ctx context.Context, a
 		}
 		models = normalizeCatalogModelIDs(models)
 		if len(models) == 0 {
-			discoverErr = newUpstreamModelSyncUpstreamError("Upstream returned no supported models", nil)
+			discoverErr = &modelCatalogFallbackError{
+				reason: modelCatalogFallbackEmpty,
+				err:    newUpstreamModelSyncUpstreamError("Upstream returned no supported models", nil),
+			}
 			if s.cache != nil {
 				s.cache.storeFailureForGeneration(accountID, s.currentTime(), generation)
 			}
@@ -162,6 +386,7 @@ func (s *ModelCatalogService) refreshAccountForGeneration(ctx context.Context, a
 		if s.cache != nil {
 			s.cache.storeSuccessForGeneration(accountID, models, s.currentTime(), generation)
 		}
+		refreshSucceeded = true
 		return cloneStringSlice(models), nil
 	})
 	if err != nil {

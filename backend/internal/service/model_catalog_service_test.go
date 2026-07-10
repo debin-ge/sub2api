@@ -95,6 +95,129 @@ func (s *modelCatalogChannelRepoStub) GetGroupPlatforms(_ context.Context, _ []i
 	return maps.Clone(s.platforms), nil
 }
 
+func TestModelCatalogStatsLowCardinality(t *testing.T) {
+	resetModelCatalogStatsForTest()
+
+	recordModelCatalogRefresh(PlatformOpenAI, true)
+	recordModelCatalogRefresh("custom-platform-1", true)
+	recordModelCatalogRefresh("custom-platform-2", false)
+	recordModelCatalogCache(catalogCacheFresh)
+	recordModelCatalogCache(catalogCacheStale)
+	recordModelCatalogCache(catalogCacheMiss)
+	recordModelCatalogFallback(PlatformOpenAI, modelCatalogFallbackUpstreamError)
+	recordModelCatalogFallback("custom-platform-3", "custom-reason-1")
+	recordModelCatalogFallback("custom-platform-4", "custom-reason-2")
+
+	stats := ModelCatalogStats()
+	require.Equal(t, int64(1), stats.CacheFresh)
+	require.Equal(t, int64(1), stats.CacheStale)
+	require.Equal(t, int64(1), stats.CacheMiss)
+	require.Len(t, stats.ByPlatform, 12)
+	require.Equal(t, int64(1), stats.ByPlatform[PlatformOpenAI].RefreshSuccess)
+	require.Equal(t, int64(1), stats.ByPlatform[PlatformOpenAI].FallbackByReason[modelCatalogFallbackUpstreamError])
+	require.Equal(t, int64(1), stats.ByPlatform[modelCatalogPlatformUnknown].RefreshSuccess)
+	require.Equal(t, int64(1), stats.ByPlatform[modelCatalogPlatformUnknown].RefreshFailure)
+	require.Equal(t, int64(2), stats.ByPlatform[modelCatalogPlatformUnknown].FallbackByReason[modelCatalogFallbackOther])
+	require.NotContains(t, stats.ByPlatform, "custom-platform-1")
+	require.NotContains(t, stats.ByPlatform, "custom-platform-4")
+}
+
+func TestModelCatalogStatsReturnsImmutableSnapshots(t *testing.T) {
+	resetModelCatalogStatsForTest()
+	recordModelCatalogRefresh(PlatformOpenAI, true)
+	recordModelCatalogFallback(PlatformOpenAI, modelCatalogFallbackEmpty)
+
+	first := ModelCatalogStats()
+	first.ByPlatform[PlatformOpenAI].FallbackByReason[modelCatalogFallbackEmpty] = 99
+	delete(first.ByPlatform, PlatformOpenAI)
+	first.ByPlatform["injected"] = ModelCatalogPlatformRuntimeStats{RefreshSuccess: 99}
+
+	second := ModelCatalogStats()
+	require.Equal(t, int64(1), second.ByPlatform[PlatformOpenAI].RefreshSuccess)
+	require.Equal(t, int64(1), second.ByPlatform[PlatformOpenAI].FallbackByReason[modelCatalogFallbackEmpty])
+	require.NotContains(t, second.ByPlatform, "injected")
+}
+
+func TestModelCatalogOperationalPathsRecordStats(t *testing.T) {
+	resetModelCatalogStatsForTest()
+	discoverer := modelDiscovererFunc(func(_ context.Context, account *Account) ([]string, error) {
+		if account.ID == 1 {
+			return []string{"gpt-live-new"}, nil
+		}
+		return nil, newUpstreamModelSyncUpstreamError("upstream unavailable", errors.New("dial failed"))
+	})
+	catalog := &ModelCatalogService{
+		discoverer: discoverer,
+		cfg: config.ModelCatalogConfig{
+			RefreshIntervalSeconds: 300, RequestTimeoutSeconds: 10,
+			StaleTTLSeconds: 86400, FailureBackoffSeconds: 60, MaxConcurrency: 5,
+		},
+		cache: newModelCatalogCache(), refreshSem: make(chan struct{}, 5), now: time.Now,
+	}
+	for _, account := range []*Account{
+		{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeOAuth},
+		{ID: 2, Platform: PlatformOpenAI, Type: AccountTypeOAuth},
+	} {
+		models, err := catalog.ListForAccount(context.Background(), account, true)
+		require.NoError(t, err)
+		require.NotEmpty(t, models)
+	}
+
+	stats := ModelCatalogStats()
+	require.Equal(t, int64(2), stats.CacheMiss)
+	require.Equal(t, int64(1), stats.ByPlatform[PlatformOpenAI].RefreshSuccess)
+	require.Equal(t, int64(1), stats.ByPlatform[PlatformOpenAI].RefreshFailure)
+	require.Equal(t, int64(1), stats.ByPlatform[PlatformOpenAI].FallbackByReason[modelCatalogFallbackUpstreamError])
+}
+
+func TestModelCatalogOperationalPathsRecordCacheStatesAndFallbackReasons(t *testing.T) {
+	resetModelCatalogStatsForTest()
+	now := time.Date(2026, 7, 11, 0, 0, 0, 0, time.UTC)
+	cache := newModelCatalogCache()
+	cache.storeSuccess(1, []string{"fresh"}, now)
+	cache.storeSuccess(2, []string{"stale"}, now.Add(-10*time.Minute))
+	cache.storeSuccess(3, []string{"expired"}, now.Add(-25*time.Hour))
+	catalog := &ModelCatalogService{
+		discoverer: modelDiscovererFunc(func(_ context.Context, account *Account) ([]string, error) {
+			if account.ID == 4 {
+				return []string{" ", ""}, nil
+			}
+			return []string{"live"}, nil
+		}),
+		cfg: config.ModelCatalogConfig{
+			RefreshIntervalSeconds: 300, RequestTimeoutSeconds: 10,
+			StaleTTLSeconds: 86400, FailureBackoffSeconds: 60, MaxConcurrency: 5,
+		},
+		cache: cache, refreshSem: make(chan struct{}, 5), now: func() time.Time { return now },
+	}
+
+	for _, account := range []*Account{
+		{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeOAuth},
+		{ID: 2, Platform: PlatformOpenAI, Type: AccountTypeOAuth},
+	} {
+		models, err := catalog.ListForAccount(context.Background(), account, true)
+		require.NoError(t, err)
+		require.NotEmpty(t, models)
+	}
+	models, err := catalog.ListForAccount(context.Background(), &Account{ID: 3, Platform: PlatformOpenAI, Type: AccountTypeOAuth}, false)
+	require.NoError(t, err)
+	require.NotEmpty(t, models)
+	models, err = catalog.ListForAccount(context.Background(), &Account{ID: 4, Platform: PlatformOpenAI, Type: AccountTypeOAuth}, true)
+	require.NoError(t, err)
+	require.NotEmpty(t, models)
+	models, err = catalog.ListForAccount(context.Background(), &Account{ID: 5, Platform: PlatformGrok, Type: AccountTypeOAuth}, true)
+	require.NoError(t, err)
+	require.NotEmpty(t, models)
+
+	stats := ModelCatalogStats()
+	require.Equal(t, int64(1), stats.CacheFresh)
+	require.Equal(t, int64(1), stats.CacheStale)
+	require.Equal(t, int64(2), stats.CacheMiss)
+	require.Equal(t, int64(1), stats.ByPlatform[PlatformOpenAI].FallbackByReason[modelCatalogFallbackExpired])
+	require.Equal(t, int64(1), stats.ByPlatform[PlatformOpenAI].FallbackByReason[modelCatalogFallbackEmpty])
+	require.Equal(t, int64(1), stats.ByPlatform[PlatformGrok].FallbackByReason[modelCatalogFallbackUnsupported])
+}
+
 func TestModelCatalogListForAccount(t *testing.T) {
 	tests := []struct {
 		name       string
