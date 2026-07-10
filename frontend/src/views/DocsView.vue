@@ -58,7 +58,99 @@
           class="doc-nav lg:sticky lg:top-24 lg:block lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto"
           :class="{ hidden: !mobileNavOpen }"
         >
-          <nav class="space-y-6 border-b border-gray-200 pb-6 dark:border-dark-800 lg:border-b-0 lg:pb-0">
+          <div class="mb-5">
+            <label :for="docsSearchInputId" class="sr-only">{{ uiText.searchLabel }}</label>
+            <div class="group relative">
+              <svg
+                class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 transition group-focus-within:text-primary-500 dark:text-dark-400 dark:group-focus-within:text-primary-300"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <circle cx="11" cy="11" r="8" />
+                <path d="m21 21-4.3-4.3" />
+              </svg>
+              <input
+                :id="docsSearchInputId"
+                ref="searchInputRef"
+                v-model="searchQuery"
+                type="search"
+                :aria-label="uiText.searchLabel"
+                :placeholder="uiText.searchPlaceholder"
+                class="doc-search-input h-9 w-full rounded-lg border-0 bg-gray-200/60 pl-9 pr-9 text-sm text-gray-900 outline-none ring-1 ring-inset ring-transparent transition duration-150 placeholder:text-gray-400 hover:bg-gray-200/90 focus:bg-white focus:shadow-sm focus:ring-2 focus:ring-primary-500/60 dark:bg-dark-800/80 dark:text-white dark:placeholder:text-dark-400 dark:hover:bg-dark-800 dark:focus:bg-dark-900 dark:focus:ring-primary-400/50"
+                @keydown.escape="searchQuery = ''"
+              />
+              <kbd
+                v-if="!searchQuery"
+                class="pointer-events-none absolute right-2.5 top-1/2 hidden h-5 min-w-[1.25rem] -translate-y-1/2 items-center justify-center rounded border border-gray-300/80 bg-white px-1 font-sans text-[11px] font-medium text-gray-400 transition group-focus-within:opacity-0 dark:border-dark-600 dark:bg-dark-900 dark:text-dark-400 lg:inline-flex"
+                aria-hidden="true"
+              >/</kbd>
+              <button
+                v-if="searchQuery"
+                type="button"
+                class="absolute right-2 top-1/2 inline-flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-gray-400 transition hover:bg-gray-200 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500/30 dark:text-dark-400 dark:hover:bg-dark-700 dark:hover:text-white"
+                :aria-label="uiText.clearSearch"
+                @click="searchQuery = ''"
+              >
+                <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M18 6 6 18" />
+                  <path d="m6 6 12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <section
+            v-if="isSearchingDocs"
+            data-testid="docs-search-results"
+            class="border-b border-gray-200 pb-6 dark:border-dark-800 lg:border-b-0 lg:pb-0"
+          >
+            <p class="px-2 text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-dark-400">
+              {{ searchResults.length }} {{ uiText.searchResults }}
+            </p>
+            <div v-if="searchResults.length" class="mt-2 space-y-1.5">
+              <RouterLink
+                v-for="result in searchResults"
+                :key="result.doc.slug"
+                :to="docPath(result.doc)"
+                class="group block rounded-lg border border-transparent px-2.5 py-2.5 transition hover:border-gray-200 hover:bg-white hover:shadow-sm dark:hover:border-dark-700 dark:hover:bg-dark-900"
+                @click="mobileNavOpen = false"
+              >
+                <span class="flex items-center gap-2">
+                  <span class="min-w-0 flex-1 truncate text-sm font-semibold text-gray-900 transition group-hover:text-primary-700 dark:text-white dark:group-hover:text-primary-300">
+                    {{ resolveDocText(result.doc.title) }}
+                  </span>
+                  <span class="flex-shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500 ring-1 ring-inset ring-gray-200/70 dark:bg-dark-800 dark:text-dark-300 dark:ring-dark-700">
+                    {{ resolveDocText(result.doc.category) }}
+                  </span>
+                </span>
+                <span class="mt-1 block line-clamp-2 text-xs leading-5 text-gray-500 dark:text-dark-300">
+                  <template v-for="(segment, index) in excerptSegments(result.excerpt)" :key="index">
+                    <mark v-if="segment.hit" class="rounded-sm bg-primary-100 px-0.5 font-medium text-primary-800 dark:bg-primary-500/25 dark:text-primary-200">{{ segment.text }}</mark>
+                    <template v-else>{{ segment.text }}</template>
+                  </template>
+                </span>
+              </RouterLink>
+            </div>
+            <div v-else class="mt-4 flex flex-col items-center gap-2 rounded-lg border border-dashed border-gray-200 px-4 py-6 text-center dark:border-dark-700">
+              <svg class="h-5 w-5 text-gray-300 dark:text-dark-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="11" cy="11" r="8" />
+                <path d="m21 21-4.3-4.3" />
+                <path d="M8 11h6" />
+              </svg>
+              <p class="text-sm text-gray-500 dark:text-dark-400">{{ uiText.noSearchResults }}</p>
+            </div>
+          </section>
+
+          <nav
+            v-else
+            data-testid="docs-nav-groups"
+            class="space-y-6 border-b border-gray-200 pb-6 dark:border-dark-800 lg:border-b-0 lg:pb-0"
+          >
             <section v-for="group in groupedDocs" :key="group.category">
               <h2 class="px-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-dark-400">
                 {{ group.category }}
@@ -247,6 +339,12 @@ interface TocItem {
   level: number
 }
 
+interface DocSearchResult {
+  doc: UserDocEntry
+  excerpt: string
+  score: number
+}
+
 const route = useRoute()
 const appStore = useAppStore()
 const authStore = useAuthStore()
@@ -258,6 +356,8 @@ const activeHeadingId = ref('')
 const mobileNavOpen = ref(false)
 const settingsLoading = ref(false)
 const readingProgress = ref(0)
+const searchQuery = ref('')
+const searchInputRef = ref<HTMLInputElement | null>(null)
 
 let scrollRafId = 0
 
@@ -268,6 +368,7 @@ marked.setOptions({
 marked.use({ renderer: { code: renderDocCode } })
 
 const PREFERRED_TAB_KEY = 'docs-preferred-tab'
+const docsSearchInputId = 'docs-search-input'
 
 function getPreferredDocTab(): string | null {
   try {
@@ -333,6 +434,11 @@ const uiText = computed(() => currentLocale.value === 'zh'
       nextDoc: '下一篇',
       pagerLabel: '文档翻页',
       backToTop: '回到顶部',
+      searchLabel: '搜索文档',
+      searchPlaceholder: '搜索文档...',
+      searchResults: '个结果',
+      noSearchResults: '未找到匹配文档',
+      clearSearch: '清空搜索',
       calloutNote: '说明',
       calloutTip: '提示',
       calloutImportant: '重要',
@@ -360,6 +466,11 @@ const uiText = computed(() => currentLocale.value === 'zh'
       nextDoc: 'Next',
       pagerLabel: 'Document pagination',
       backToTop: 'Back to top',
+      searchLabel: 'Search docs',
+      searchPlaceholder: 'Search docs...',
+      searchResults: 'results',
+      noSearchResults: 'No matching docs',
+      clearSearch: 'Clear search',
       calloutNote: 'Note',
       calloutTip: 'Tip',
       calloutImportant: 'Important',
@@ -378,6 +489,37 @@ const groupedDocs = computed<DocGroup[]>(() => {
     }
   }
   return Array.from(groups, ([category, docs]) => ({ category, docs }))
+})
+
+const normalizedSearchQuery = computed(() => normalizeSearchText(searchQuery.value.trim()))
+const isSearchingDocs = computed(() => normalizedSearchQuery.value.length > 0)
+const searchResults = computed<DocSearchResult[]>(() => {
+  const query = normalizedSearchQuery.value
+  if (!query) return []
+
+  return localeDocs.value
+    .map((doc) => {
+      const title = resolveDocText(doc.title)
+      const description = resolveDocText(doc.description)
+      const category = resolveDocText(doc.category)
+      const content = stripMarkdown(resolveDocText(doc.content))
+      const titleMatch = normalizeSearchText(title).includes(query)
+      const descriptionMatch = normalizeSearchText(description).includes(query)
+      const categoryMatch = normalizeSearchText(category).includes(query)
+      const contentMatch = normalizeSearchText(content).includes(query)
+
+      if (!titleMatch && !descriptionMatch && !categoryMatch && !contentMatch) {
+        return null
+      }
+
+      return {
+        doc,
+        excerpt: makeSearchExcerpt(`${description} ${content}`, query),
+        score: titleMatch ? 0 : descriptionMatch ? 1 : categoryMatch ? 2 : 3,
+      }
+    })
+    .filter((result): result is DocSearchResult => result !== null)
+    .sort((a, b) => a.score - b.score || localeDocs.value.indexOf(a.doc) - localeDocs.value.indexOf(b.doc))
 })
 
 const readingTimeText = computed(() => {
@@ -447,6 +589,77 @@ function resolveDocHtml(value: string): string {
     .replace(/\{\{BASE_URL\}\}/g, escapedBaseUrl)
     .replace(/Sub2API/g, escapedSiteName)
     .replace(/https:\/\/tiktoken\.net\//g, escapedBaseUrl)
+}
+
+function normalizeSearchText(value: string): string {
+  return value.toLocaleLowerCase()
+}
+
+function stripMarkdown(value: string): string {
+  return value
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/[#>*_|~-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+interface ExcerptSegment {
+  text: string
+  hit: boolean
+}
+
+/** Split an excerpt into plain/highlighted segments for the current query. */
+function excerptSegments(excerpt: string): ExcerptSegment[] {
+  const query = normalizedSearchQuery.value
+  if (!excerpt) return []
+  if (!query) return [{ text: excerpt, hit: false }]
+
+  const segments: ExcerptSegment[] = []
+  const normalized = normalizeSearchText(excerpt)
+  let cursor = 0
+  let index = normalized.indexOf(query)
+  while (index !== -1) {
+    if (index > cursor) {
+      segments.push({ text: excerpt.slice(cursor, index), hit: false })
+    }
+    segments.push({ text: excerpt.slice(index, index + query.length), hit: true })
+    cursor = index + query.length
+    index = normalized.indexOf(query, cursor)
+  }
+  if (cursor < excerpt.length) {
+    segments.push({ text: excerpt.slice(cursor), hit: false })
+  }
+  return segments
+}
+
+function isTypingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  return target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable
+}
+
+function onGlobalKeydown(event: KeyboardEvent) {
+  if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) return
+  if (isTypingTarget(event.target)) return
+  event.preventDefault()
+  searchInputRef.value?.focus()
+}
+
+function makeSearchExcerpt(value: string, query: string): string {
+  const compact = value.replace(/\s+/g, ' ').trim()
+  if (!compact) return ''
+
+  const index = normalizeSearchText(compact).indexOf(query)
+  if (index === -1) {
+    return compact.length > 120 ? `${compact.slice(0, 120)}...` : compact
+  }
+
+  const start = Math.max(0, index - 36)
+  const end = Math.min(compact.length, index + query.length + 72)
+  const prefix = start > 0 ? '...' : ''
+  const suffix = end < compact.length ? '...' : ''
+  return `${prefix}${compact.slice(start, end)}${suffix}`
 }
 
 function getTextContent(html: string): string {
@@ -679,6 +892,7 @@ watch(displayDoc, (doc) => {
 
 onMounted(async () => {
   window.addEventListener('scroll', onWindowScroll, { passive: true })
+  window.addEventListener('keydown', onGlobalKeydown)
 
   if (!appStore.publicSettingsLoaded) {
     settingsLoading.value = true
@@ -701,6 +915,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.removeEventListener('scroll', onWindowScroll)
+  window.removeEventListener('keydown', onGlobalKeydown)
   if (scrollRafId) {
     window.cancelAnimationFrame(scrollRafId)
   }
@@ -710,6 +925,13 @@ onUnmounted(() => {
 <style scoped>
 .doc-nav {
   scrollbar-width: thin;
+}
+
+/* The custom clear button replaces the native one. */
+.doc-search-input::-webkit-search-cancel-button,
+.doc-search-input::-webkit-search-decoration {
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 .docs-content {

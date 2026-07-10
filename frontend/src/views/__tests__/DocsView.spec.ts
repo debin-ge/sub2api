@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
@@ -169,13 +169,31 @@ describe('DocsView', () => {
       'Endpoint Selection Guide',
       'Models and Platforms',
       'Billing and Usage',
+      'Integration Overview',
+      'Code Integration',
       'Client Integration',
-      'Copy-Ready Configuration Snippets',
+      'CLI Integration',
+      'Third-Party Tools',
       'Troubleshooting',
       'Best Practices',
       'FAQ',
     ]) {
       expect(wrapper.text()).toContain(label)
+    }
+  })
+
+  it('renders every English integration page without falling back to not-found', async () => {
+    for (const slug of [
+      'integration-overview',
+      'integration-code',
+      'integration-clients',
+      'integration-cli',
+      'integration-tools',
+    ]) {
+      const wrapper = await mountDocs(`/docs/${slug}`)
+      expect(wrapper.text()).not.toContain('Document Not Found')
+      expect(wrapper.find('article h1').exists()).toBe(true)
+      wrapper.unmount()
     }
   })
 
@@ -202,6 +220,70 @@ describe('DocsView', () => {
       expect(wrapper.find('article h1').exists()).toBe(true)
       wrapper.unmount()
     }
+  })
+
+  it('does not show sub2api-mobile on the zh third-party tools page', async () => {
+    i18n.global.locale.value = 'zh'
+    const wrapper = await mountDocs('/docs/integration-tools')
+
+    expect(wrapper.text()).toContain('CC-Switch')
+    expect(wrapper.text()).toContain('Cockpit Tools')
+    expect(wrapper.text()).not.toContain('sub2api-mobile')
+    expect(wrapper.html()).not.toContain('github.com/ckken/sub2api-mobile')
+  })
+
+  it('searches zh docs across page body content', async () => {
+    i18n.global.locale.value = 'zh'
+    const wrapper = await mountDocs('/docs')
+
+    await wrapper.find('input[aria-label="搜索文档"]').setValue('CC-Switch')
+
+    const results = wrapper.find('[data-testid="docs-search-results"]')
+    expect(results.exists()).toBe(true)
+    expect(results.text()).toContain('第三方工具接入')
+    expect(results.text()).toContain('CC-Switch')
+    const resultLink = results.find('a[href="/docs/integration-tools"]')
+    expect(resultLink.exists()).toBe(true)
+    expect(wrapper.find('[data-testid="docs-nav-groups"]').exists()).toBe(false)
+
+    await resultLink.trigger('click')
+    await flushPromises()
+    await nextTick()
+    await nextTick()
+
+    expect(wrapper.find('article > header h1').text()).toBe('第三方工具接入')
+  })
+
+  it('highlights the query inside search result excerpts', async () => {
+    i18n.global.locale.value = 'zh'
+    const wrapper = await mountDocs('/docs')
+
+    await wrapper.find('input[aria-label="搜索文档"]').setValue('CC-Switch')
+
+    const marks = wrapper.findAll('[data-testid="docs-search-results"] mark')
+    expect(marks.length).toBeGreaterThan(0)
+    expect(marks.some((mark) => mark.text().toLowerCase() === 'cc-switch')).toBe(true)
+  })
+
+  it('shows an empty state when docs search has no matches', async () => {
+    const wrapper = await mountDocs('/docs')
+
+    await wrapper.find('input[aria-label="Search docs"]').setValue('not-a-real-doc-term')
+
+    expect(wrapper.find('[data-testid="docs-search-results"]').text()).toContain('No matching docs')
+    expect(wrapper.find('[data-testid="docs-nav-groups"]').exists()).toBe(false)
+  })
+
+  it('clears the docs search from the search box action', async () => {
+    const wrapper = await mountDocs('/docs')
+
+    await wrapper.find('input[aria-label="Search docs"]').setValue('models')
+    expect(wrapper.find('[data-testid="docs-search-results"]').exists()).toBe(true)
+
+    await wrapper.find('button[aria-label="Clear search"]').trigger('click')
+
+    expect((wrapper.find('input[aria-label="Search docs"]').element as HTMLInputElement).value).toBe('')
+    expect(wrapper.find('[data-testid="docs-nav-groups"]').exists()).toBe(true)
   })
 
   it('renders code tab groups on the zh integration-code page', async () => {
