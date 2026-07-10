@@ -150,6 +150,29 @@ International payment platform supporting multiple payment methods and currencie
 | **Publishable Key** | Stripe publishable key (`pk_live_...` or `pk_test_...`) | Yes |
 | **Webhook Secret** | Stripe Webhook signing secret (`whsec_...`) | Yes |
 
+#### Google Pay Express Checkout
+
+Google Pay is displayed above the Stripe Payment Element through Stripe's Express Checkout Element and is processed as a wallet on the existing `card` PaymentIntent. Sub2API does not add a `google_pay` backend payment type and does not store or transmit the Google Pay Merchant ID or Stripe Payment Method Domain ID.
+
+Before enabling it, confirm that:
+
+1. Google Pay is enabled under Payment Methods in the Stripe Dashboard.
+2. The Stripe provider instance includes `card` in its supported types.
+3. Every production and staging hostname that displays checkout, including `www` and other subdomains, is registered under Stripe Payment Method Domains.
+4. Checkout uses a publicly trusted HTTPS origin.
+5. The hostname, publishable key, secret key and webhook secret belong to the same Stripe environment.
+
+The express region currently permits only Google Pay. Apple Pay, Link, Amazon Pay, PayPal and Klarna are disabled in that region. When Google Pay is unavailable or fails to load, the express region and divider are hidden silently while the Payment Element remains available for card, Alipay, WeChat Pay and Link.
+
+Google Pay and the Payment Element reuse the same local order, PaymentIntent, Stripe/Elements instances and submission lock. Frontend success state never grants balance or subscriptions; fulfillment remains authoritative only after the signed Stripe `payment_intent.succeeded` webhook.
+
+Automated tests mount the real `StripeGooglePayExpress` Vue component but verify only application behavior; they do not prove that a real Google wallet or Stripe network is available. Before production rollout, validate manually on a registered HTTPS hostname in a real Chrome/Android environment signed into Google with a configured wallet:
+
+- Only Google Pay appears in the express region.
+- After wallet cancellation or failure, the Payment Element remains usable.
+- A successful charge reports `card.wallet.type = google_pay` in Stripe.
+- The webhook causes exactly one local fulfillment.
+
 ### Wise
 
 Wise uses hosted redirect plus profile-level webhook subscription and automatic reconciliation. Sub2API builds a Wise Quick Pay/payment link URL with `amount`, `currency`, and `description=<alphanumeric order reference>`. The Wise description is derived from the local `out_trade_no` by removing non-alphanumeric characters so the hosted page remains compatible with Wise Quick Pay.

@@ -150,6 +150,29 @@ Sub2API 内置支付系统，支持用户自助充值，无需部署独立的支
 | **Publishable Key** | Stripe 可公开密钥（`pk_live_...` 或 `pk_test_...`） | 是 |
 | **Webhook Secret** | Stripe Webhook 签名密钥（`whsec_...`） | 是 |
 
+#### Google Pay Express Checkout
+
+Google Pay 通过 Stripe Express Checkout Element 展示在 Stripe 支付面板顶部，并作为现有 `card` PaymentIntent 的钱包方式处理。Sub2API 不新增 `google_pay` 后端支付类型，也不保存或传递 Google Pay Merchant ID、Stripe Payment Method Domain ID。
+
+启用前请确认：
+
+1. Stripe Dashboard 的 Payment Methods 中已启用 Google Pay。
+2. Stripe 服务商实例的支持类型包含 `card`。
+3. 所有展示支付面板的生产和预发布域名（包括 `www` 及其他子域）均已在 Stripe Payment Method Domains 中注册。
+4. 支付页面使用受信任的公网 HTTPS 证书。
+5. 当前域名、Publishable Key、Secret Key 和 Webhook Secret 属于同一个 Stripe 环境。
+
+快捷支付区域暂时只允许 Google Pay；Apple Pay、Link、Amazon Pay、PayPal 和 Klarna 不会出现在该区域。Google Pay 不可用或加载失败时，快捷区域和分隔线会静默隐藏，下方 Payment Element 仍可用于银行卡、支付宝、微信支付和 Link。
+
+Google Pay 与 Payment Element 复用同一个本地订单、PaymentIntent、Stripe/Elements 实例和提交锁。前端成功状态不发放余额或订阅；最终入账始终以验签后的 Stripe `payment_intent.succeeded` Webhook 为准。
+
+自动化测试挂载真实 `StripeGooglePayExpress` Vue 子组件，但只验证应用内部行为，不代表真实 Google 钱包或 Stripe 网络已经可用。上线前必须在已注册 HTTPS 域名、已登录 Google 且配置钱包的真实 Chrome/Android 环境中人工确认：
+
+- 只有 Google Pay 出现在快捷支付区域。
+- 钱包取消或失败后仍可使用下方 Payment Element。
+- 成功交易在 Stripe 中显示 `card.wallet.type = google_pay`。
+- Webhook 只触发一次本地入账。
+
 ### Wise
 
 Wise 接入采用 hosted redirect + profile-level webhook subscription + 自动对账模式。系统会生成 Wise Quick Pay/payment link 跳转地址，并追加 `amount`、`currency`、`description=纯字母数字订单 reference`。该 Wise description 由本地 `out_trade_no` 去除非字母数字字符后生成，避免 Wise Quick Pay hosted 页面因特殊字符拒绝访问。
