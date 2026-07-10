@@ -85,10 +85,11 @@ func (s *Stripe) currency() string {
 
 // stripePaymentMethodTypes maps our PaymentType to Stripe payment_method_types.
 var stripePaymentMethodTypes = map[string][]string{
-	payment.TypeCard:   {"card"},
-	payment.TypeAlipay: {"alipay"},
-	payment.TypeWxpay:  {"wechat_pay"},
-	payment.TypeLink:   {"link"},
+	payment.TypeCard:      {"card"},
+	payment.TypeAlipay:    {"alipay"},
+	payment.TypeWxpay:     {"wechat_pay"},
+	payment.TypeLink:      {"link"},
+	payment.TypeGooglePay: {"card"},
 }
 
 // CreatePayment creates a Stripe PaymentIntent.
@@ -310,11 +311,16 @@ func resolveStripeMethodTypes(instanceSubMethods string) []string {
 	if instanceSubMethods == "" {
 		return []string{"card"}
 	}
-	var methods []string
-	for _, t := range strings.Split(instanceSubMethods, ",") {
-		t = strings.TrimSpace(t)
-		if mapped, ok := stripePaymentMethodTypes[t]; ok {
-			methods = append(methods, mapped...)
+	methods := make([]string, 0)
+	seen := make(map[string]struct{})
+	for _, paymentType := range strings.Split(instanceSubMethods, ",") {
+		paymentType = strings.TrimSpace(paymentType)
+		for _, method := range stripePaymentMethodTypes[paymentType] {
+			if _, exists := seen[method]; exists {
+				continue
+			}
+			seen[method] = struct{}{}
+			methods = append(methods, method)
 		}
 	}
 	if len(methods) == 0 {

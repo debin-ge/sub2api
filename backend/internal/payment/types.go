@@ -16,6 +16,7 @@ const (
 	TypeStripe       PaymentType = "stripe"
 	TypeCard         PaymentType = "card"
 	TypeLink         PaymentType = "link"
+	TypeGooglePay    PaymentType = "google_pay"
 	TypeEasyPay      PaymentType = "easypay"
 	TypeAirwallex    PaymentType = "airwallex"
 	TypeWise         PaymentType = "wise"
@@ -58,9 +59,10 @@ const (
 
 // Payment notification status values.
 const (
-	NotificationStatusSuccess  = "success"
-	NotificationStatusPaid     = "paid"
-	NotificationStatusVerified = "verified"
+	NotificationStatusSuccess       = "success"
+	NotificationStatusPaid          = "paid"
+	NotificationStatusVerified      = "verified"
+	NotificationMetadataPaymentType = "payment_type"
 )
 
 // Provider-level status constants returned by provider implementations
@@ -91,7 +93,7 @@ func GetBasePaymentType(t string) string {
 		return TypeAirwallex
 	case t == TypeWise:
 		return TypeWise
-	case t == TypeStripe || t == TypeCard || t == TypeLink:
+	case t == TypeStripe || t == TypeCard || t == TypeLink || t == TypeGooglePay:
 		return TypeStripe
 	case len(t) >= len(TypeAlipay) && t[:len(TypeAlipay)] == TypeAlipay:
 		return TypeAlipay

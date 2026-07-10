@@ -45,6 +45,20 @@ func TestValidateProviderRequest(t *testing.T) {
 			wantErr:        false,
 		},
 		{
+			name:           "stripe google pay requires card",
+			providerKey:    payment.TypeStripe,
+			providerName:   "Stripe",
+			supportedTypes: payment.TypeGooglePay,
+			wantErr:        true,
+			errContains:    "google_pay requires card",
+		},
+		{
+			name:           "stripe google pay with card",
+			providerKey:    payment.TypeStripe,
+			providerName:   "Stripe",
+			supportedTypes: payment.TypeCard + "," + payment.TypeGooglePay,
+		},
+		{
 			name:           "valid airwallex provider",
 			providerKey:    payment.TypeAirwallex,
 			providerName:   "Airwallex Provider",
@@ -420,6 +434,35 @@ func TestUpdateProviderInstancePersistsEnabledAndSupportedTypes(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, saved.Enabled)
 	require.Equal(t, "alipay,wxpay", saved.SupportedTypes)
+}
+
+func TestUpdateProviderInstanceRejectsGooglePayWithoutCard(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	svc := &PaymentConfigService{
+		entClient:     client,
+		encryptionKey: []byte("0123456789abcdef0123456789abcdef"),
+	}
+
+	instance, err := svc.CreateProviderInstance(ctx, CreateProviderInstanceRequest{
+		ProviderKey:    payment.TypeStripe,
+		Name:           "Stripe",
+		Config:         validStripeProviderConfig(t),
+		SupportedTypes: []string{payment.TypeCard},
+		Enabled:        false,
+	})
+	require.NoError(t, err)
+
+	_, err = svc.UpdateProviderInstance(ctx, instance.ID, UpdateProviderInstanceRequest{
+		SupportedTypes: []string{payment.TypeGooglePay},
+	})
+	require.ErrorContains(t, err, "google_pay requires card")
+
+	saved, err := client.PaymentProviderInstance.Get(ctx, instance.ID)
+	require.NoError(t, err)
+	require.Equal(t, payment.TypeCard, saved.SupportedTypes)
 }
 
 func TestUpdateProviderInstanceRejectsProtectedConfigChangesWhilePendingOrders(t *testing.T) {

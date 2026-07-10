@@ -241,3 +241,9 @@ func TestWisePaymentTypeBaseType(t *testing.T) {
 	require.Equal(t, TypeWise, GetBasePaymentType(TypeWise))
 	require.Equal(t, "wise_custom", GetBasePaymentType("wise_custom"))
 }
+
+func TestGooglePayPaymentTypeUsesStripeProvider(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, TypeStripe, GetBasePaymentType(TypeGooglePay))
+}

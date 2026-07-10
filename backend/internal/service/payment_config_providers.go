@@ -339,6 +339,15 @@ func validateProviderRequest(providerKey, name, supportedTypes string) error {
 			}
 		}
 	}
+	if providerKey == payment.TypeStripe {
+		selected := make(map[string]bool)
+		for _, supportedType := range splitTypes(supportedTypes) {
+			selected[supportedType] = true
+		}
+		if selected[payment.TypeGooglePay] && !selected[payment.TypeCard] {
+			return infraerrors.BadRequest("VALIDATION_ERROR", "stripe google_pay requires card")
+		}
+	}
 	// supported_types can be empty (provider accepts no payment types until configured)
 	return nil
 }
@@ -431,6 +440,13 @@ func (s *PaymentConfigService) UpdateProviderInstance(ctx context.Context, id in
 	nextSupportedTypes := current.SupportedTypes
 	if req.SupportedTypes != nil {
 		nextSupportedTypes = joinTypes(req.SupportedTypes)
+	}
+	nextName := current.Name
+	if req.Name != nil {
+		nextName = *req.Name
+	}
+	if err := validateProviderRequest(current.ProviderKey, nextName, nextSupportedTypes); err != nil {
+		return nil, err
 	}
 	if err := s.validateVisibleMethodEnablementConflicts(ctx, id, current.ProviderKey, nextSupportedTypes, nextEnabled); err != nil {
 		return nil, err
