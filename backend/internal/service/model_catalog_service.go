@@ -72,6 +72,155 @@ func (s *ModelCatalogService) ListForAccount(ctx context.Context, account *Accou
 	return models, nil
 }
 
+// ListForPlatform returns the union of model IDs exposed by schedulable accounts in scope.
+func (s *ModelCatalogService) ListForPlatform(ctx context.Context, groupID *int64, platform string, waitForLive bool) ([]string, error) {
+	var (
+		accounts []Account
+		err      error
+	)
+	if groupID != nil {
+		accounts, err = s.accountRepo.ListSchedulableByGroupIDAndPlatform(ctx, *groupID, platform)
+	} else {
+		accounts, err = s.accountRepo.ListSchedulableByPlatform(ctx, platform)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return s.listFromAccounts(ctx, accounts, platform, waitForLive)
+}
+
+func (s *ModelCatalogService) listFromAccounts(ctx context.Context, accounts []Account, platform string, waitForLive bool) ([]string, error) {
+	models := make([]string, 0)
+	for i := range accounts {
+		account := &accounts[i]
+		if account.Status != StatusActive || !account.Schedulable || account.Platform != platform {
+			continue
+		}
+		accountModels, err := s.ListForAccount(ctx, account, waitForLive)
+		if err != nil {
+			continue
+		}
+		models = append(models, accountModels...)
+	}
+	return normalizeCatalogModelIDs(models), nil
+}
+
+// ListForGroup returns the final ordered model list exposed by a group.
+func (s *ModelCatalogService) ListForGroup(ctx context.Context, groupID int64, platform string) ([]string, error) {
+	return s.listForGroup(ctx, groupID, platform, true)
+}
+
+// ListGroupCandidates returns all account and channel models available to a group before its custom-list filter.
+func (s *ModelCatalogService) ListGroupCandidates(ctx context.Context, groupID int64, platform string) ([]string, error) {
+	return s.listGroupCandidates(ctx, groupID, platform, true)
+}
+
+func (s *ModelCatalogService) listForGroup(ctx context.Context, groupID int64, platform string, waitForLive bool) ([]string, error) {
+	return s.listForGroupWithMemo(ctx, groupID, platform, waitForLive, make(map[int64][]string))
+}
+
+func (s *ModelCatalogService) resolveAccountOnce(ctx context.Context, memo map[int64][]string, account *Account, waitForLive bool) ([]string, error) {
+	if models, ok := memo[account.ID]; ok {
+		return cloneStringSlice(models), nil
+	}
+	models, err := s.ListForAccount(ctx, account, waitForLive)
+	if err != nil {
+		return nil, err
+	}
+	memo[account.ID] = cloneStringSlice(models)
+	return cloneStringSlice(models), nil
+}
+
+func (s *ModelCatalogService) listForGroupWithMemo(ctx context.Context, groupID int64, platform string, waitForLive bool, memo map[int64][]string) ([]string, error) {
+	candidates, group, err := s.listGroupCandidatesWithMemo(ctx, groupID, platform, waitForLive, memo)
+	if err != nil || group == nil || !group.ModelsListConfig.Enabled {
+		return candidates, err
+	}
+	return ApplyGroupModelsList(candidates, group.ModelsListConfig.Models), nil
+}
+
+func (s *ModelCatalogService) listGroupCandidates(ctx context.Context, groupID int64, platform string, waitForLive bool) ([]string, error) {
+	candidates, _, err := s.listGroupCandidatesWithMemo(ctx, groupID, platform, waitForLive, make(map[int64][]string))
+	return candidates, err
+}
+
+func (s *ModelCatalogService) listGroupCandidatesWithMemo(ctx context.Context, groupID int64, platform string, waitForLive bool, memo map[int64][]string) ([]string, *Group, error) {
+	group, err := s.groupRepo.GetByID(ctx, groupID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if group.Platform != platform {
+		return nil, group, nil
+	}
+	accounts, err := s.accountRepo.ListSchedulableByGroupIDAndPlatform(ctx, groupID, platform)
+	if err != nil {
+		return nil, nil, err
+	}
+	models := make([]string, 0)
+	for i := range accounts {
+		account := &accounts[i]
+		if account.Status != StatusActive || !account.Schedulable || account.Platform != platform {
+			continue
+		}
+		resolved, resolveErr := s.resolveAccountOnce(ctx, memo, account, waitForLive)
+		if resolveErr == nil {
+			models = append(models, resolved...)
+		}
+	}
+	if s.channelService != nil {
+		channel, channelErr := s.channelService.GetChannelForGroup(ctx, groupID)
+		if channelErr != nil {
+			return nil, nil, channelErr
+		}
+		for _, model := range channel.SupportedModels() {
+			if model.Platform == platform {
+				models = append(models, model.Name)
+			}
+		}
+	}
+	return normalizeCatalogModelIDs(models), group, nil
+}
+
+// ListForAPIKey returns the group-scoped catalog for an authenticated API key.
+func (s *ModelCatalogService) ListForAPIKey(ctx context.Context, apiKey *APIKey) ([]string, error) {
+	if apiKey == nil {
+		return nil, newUpstreamModelSyncConfigError("API key is required for model catalog resolution", nil)
+	}
+	if apiKey.Group == nil {
+		if apiKey.GroupID != nil {
+			return nil, newUpstreamModelSyncConfigError("API key group must be loaded for model catalog resolution", nil)
+		}
+		return DefaultModelCatalogIDs(PlatformAnthropic), nil
+	}
+	return s.ListForGroup(ctx, apiKey.Group.ID, apiKey.Group.Platform)
+}
+
+// ListPublic returns catalogs for active non-exclusive groups, unioned by platform.
+func (s *ModelCatalogService) ListPublic(ctx context.Context) (map[string][]string, error) {
+	groups, err := s.groupRepo.ListActive(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[string][]string)
+	memo := make(map[int64][]string)
+	for i := range groups {
+		group := &groups[i]
+		if group.IsExclusive {
+			continue
+		}
+		models, listErr := s.listForGroupWithMemo(ctx, group.ID, group.Platform, false, memo)
+		if listErr != nil {
+			return nil, listErr
+		}
+		result[group.Platform] = append(result[group.Platform], models...)
+	}
+	for platform, models := range result {
+		result[platform] = normalizeCatalogModelIDs(models)
+	}
+	return result, nil
+}
+
 func accountRequiresLiveCatalog(account *Account) bool {
 	if account == nil {
 		return false
