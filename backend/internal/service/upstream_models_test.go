@@ -284,35 +284,43 @@ func TestUpstreamModelDiscoverer_ProviderDispatch(t *testing.T) {
 		{
 			name: "windsurf",
 			run: func(t *testing.T) {
-				server, recorder := newModelDiscoveryServer(t, `{"data":[{"id":"windsurf-new"}]}`)
-				discoverer := &UpstreamModelDiscoverer{}
+				upstream := &httpUpstreamRecorder{resp: &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{"application/json"}},
+					Body:       io.NopCloser(strings.NewReader(`{"data":[{"id":"windsurf-new"}]}`)),
+				}}
+				discoverer := &UpstreamModelDiscoverer{httpUpstream: upstream, cfg: upstreamModelSyncTestConfig()}
 
 				models, err := discoverer.Discover(context.Background(), &Account{
 					ID: 11, Platform: PlatformWindsurf, Type: AccountTypeAPIKey,
-					Credentials: map[string]any{"api_key": "windsurf-key", "base_url": server.URL},
+					Credentials: map[string]any{"api_key": "windsurf-key", "base_url": "https://windsurf.example.com"},
 				})
 
 				require.NoError(t, err)
 				require.Equal(t, []string{"windsurf-new"}, models)
-				require.Equal(t, server.URL+"/v1/models", "http://"+recorder.req.Host+recorder.req.URL.RequestURI())
-				require.Equal(t, "Bearer windsurf-key", recorder.req.Header.Get("Authorization"))
+				require.Equal(t, "https://windsurf.example.com/v1/models", upstream.lastReq.URL.String())
+				require.Equal(t, "Bearer windsurf-key", upstream.lastReq.Header.Get("Authorization"))
 			},
 		},
 		{
 			name: "opencode",
 			run: func(t *testing.T) {
-				server, recorder := newModelDiscoveryServer(t, `{"data":[{"id":"opencode-new"}]}`)
-				discoverer := &UpstreamModelDiscoverer{}
+				upstream := &httpUpstreamRecorder{resp: &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{"application/json"}},
+					Body:       io.NopCloser(strings.NewReader(`{"data":[{"id":"opencode-new"}]}`)),
+				}}
+				discoverer := &UpstreamModelDiscoverer{httpUpstream: upstream, cfg: upstreamModelSyncTestConfig()}
 
 				models, err := discoverer.Discover(context.Background(), &Account{
 					ID: 12, Platform: PlatformOpenCode, Type: AccountTypeAPIKey,
-					Credentials: map[string]any{"api_key": "opencode-key", "base_url": server.URL},
+					Credentials: map[string]any{"api_key": "opencode-key", "base_url": "https://opencode.example.com"},
 				})
 
 				require.NoError(t, err)
 				require.Equal(t, []string{"opencode-new"}, models)
-				require.Equal(t, server.URL+"/v1/models", "http://"+recorder.req.Host+recorder.req.URL.RequestURI())
-				require.Equal(t, "Bearer opencode-key", recorder.req.Header.Get("Authorization"))
+				require.Equal(t, "https://opencode.example.com/v1/models", upstream.lastReq.URL.String())
+				require.Equal(t, "Bearer opencode-key", upstream.lastReq.Header.Get("Authorization"))
 			},
 		},
 		{
@@ -333,6 +341,117 @@ func TestUpstreamModelDiscoverer_ProviderDispatch(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, tt.run)
+	}
+}
+
+func TestUpstreamModelDiscoverer_CompatibleProvidersRejectDisallowedURLs(t *testing.T) {
+	tests := []struct {
+		name     string
+		platform string
+	}{
+		{name: "windsurf", platform: PlatformWindsurf},
+		{name: "opencode", platform: PlatformOpenCode},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			upstream := &httpUpstreamRecorder{}
+			discoverer := &UpstreamModelDiscoverer{
+				httpUpstream: upstream,
+				cfg: &config.Config{Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{
+					Enabled:           true,
+					UpstreamHosts:     []string{"allowed.example.com"},
+					AllowPrivateHosts: false,
+				}}},
+			}
+			account := &Account{
+				ID: 21, Platform: tt.platform, Type: AccountTypeAPIKey,
+				Credentials: map[string]any{"api_key": "provider-key", "base_url": "https://127.0.0.1:1"},
+			}
+
+			_, err := discoverer.Discover(context.Background(), account)
+
+			require.Error(t, err)
+			var syncErr *UpstreamModelSyncError
+			require.True(t, errors.As(err, &syncErr))
+			require.Equal(t, UpstreamModelSyncErrorConfiguration, syncErr.Kind)
+			require.Nil(t, upstream.lastReq)
+		})
+	}
+}
+
+func TestUpstreamModelDiscoverer_CompatibleProvidersUseProxyAndHTTPUpstream(t *testing.T) {
+	tests := []struct {
+		name     string
+		platform string
+		body     string
+		want     []string
+	}{
+		{name: "windsurf", platform: PlatformWindsurf, body: `{"data":[{"id":"windsurf-new"}]}`, want: []string{"windsurf-new"}},
+		{name: "opencode", platform: PlatformOpenCode, body: `{"data":[{"id":"opencode-new"}]}`, want: []string{"opencode-new"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			upstream := &httpUpstreamRecorder{resp: &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(tt.body)),
+			}}
+			cfg := upstreamModelSyncTestConfig()
+			cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+			discoverer := &UpstreamModelDiscoverer{httpUpstream: upstream, cfg: cfg}
+			proxyID := int64(31)
+			account := &Account{
+				ID: 22, Platform: tt.platform, Type: AccountTypeAPIKey,
+				Credentials: map[string]any{"api_key": "provider-key", "base_url": "http://127.0.0.1:1"},
+				ProxyID:     &proxyID,
+				Proxy:       &Proxy{ID: proxyID, Protocol: "http", Host: "proxy.test", Port: 3128},
+			}
+
+			models, err := discoverer.Discover(context.Background(), account)
+
+			require.NoError(t, err)
+			require.Equal(t, tt.want, models)
+			require.Equal(t, "http://127.0.0.1:1/v1/models", upstream.lastReq.URL.String())
+			require.Equal(t, "Bearer provider-key", upstream.lastReq.Header.Get("Authorization"))
+			require.Equal(t, "http://proxy.test:3128", upstream.lastProxyURL)
+		})
+	}
+}
+
+func TestUpstreamModelDiscoverer_CompatibleProvidersUseCommonBodyLimit(t *testing.T) {
+	tests := []struct {
+		name     string
+		platform string
+	}{
+		{name: "windsurf", platform: PlatformWindsurf},
+		{name: "opencode", platform: PlatformOpenCode},
+	}
+	largeBody := strings.Repeat("x", int(upstreamModelsBodyLimit)+1)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			upstream := &httpUpstreamRecorder{resp: &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(largeBody)),
+			}}
+			cfg := upstreamModelSyncTestConfig()
+			cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+			discoverer := &UpstreamModelDiscoverer{httpUpstream: upstream, cfg: cfg}
+
+			_, err := discoverer.Discover(context.Background(), &Account{
+				ID: 23, Platform: tt.platform, Type: AccountTypeAPIKey,
+				Credentials: map[string]any{"api_key": "provider-key", "base_url": "http://127.0.0.1:1"},
+			})
+
+			require.Error(t, err)
+			var syncErr *UpstreamModelSyncError
+			require.True(t, errors.As(err, &syncErr))
+			require.Equal(t, UpstreamModelSyncErrorUpstream, syncErr.Kind)
+			require.Contains(t, syncErr.SafeMessage(), "too large")
+		})
 	}
 }
 

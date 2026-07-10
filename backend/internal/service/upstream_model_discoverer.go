@@ -126,10 +126,6 @@ func (d *UpstreamModelDiscoverer) Discover(ctx context.Context, account *Account
 		return nil, newUpstreamModelSyncConfigError("Account model discoverer is not configured", nil)
 	}
 	switch account.Platform {
-	case PlatformWindsurf:
-		return FetchWindsurfAvailableModelIDs(ctx, account, nil)
-	case PlatformOpenCode:
-		return FetchOpenCodeAvailableModelIDs(ctx, account, nil)
 	case PlatformAntigravity:
 		if account.Type != AccountTypeAPIKey {
 			return d.fetchAntigravityOAuthUpstreamModels(ctx, account)
@@ -169,7 +165,7 @@ func (d *UpstreamModelDiscoverer) discoverHTTP(ctx context.Context, account *Acc
 		)
 	}
 
-	models, err := extractUpstreamModelIDs(body)
+	models, err := parseDiscoveredUpstreamModelIDs(account.Platform, body)
 	if err != nil {
 		return nil, newUpstreamModelSyncUpstreamError("Upstream model list response was not valid JSON", err)
 	}
@@ -182,6 +178,10 @@ func (d *UpstreamModelDiscoverer) discoverHTTP(ctx context.Context, account *Acc
 
 func (d *UpstreamModelDiscoverer) buildUpstreamModelsRequest(ctx context.Context, account *Account) (*http.Request, error) {
 	switch {
+	case account.Platform == PlatformWindsurf:
+		return d.buildWindsurfUpstreamModelsRequest(ctx, account)
+	case account.Platform == PlatformOpenCode:
+		return d.buildOpenCodeUpstreamModelsRequest(ctx, account)
 	case account.Platform == PlatformAntigravity:
 		return d.buildAntigravityAPIKeyModelsRequest(ctx, account)
 	case account.IsOpenAI():
@@ -195,6 +195,44 @@ func (d *UpstreamModelDiscoverer) buildUpstreamModelsRequest(ctx context.Context
 			fmt.Sprintf("Unsupported platform for upstream model sync: %s", account.Platform), nil,
 		)
 	}
+}
+
+func (d *UpstreamModelDiscoverer) buildWindsurfUpstreamModelsRequest(ctx context.Context, account *Account) (*http.Request, error) {
+	apiKey, err := validateWindsurfAccount(account)
+	if err != nil {
+		return nil, newUpstreamModelSyncConfigError("Invalid Windsurf account configuration", err)
+	}
+	modelsURL := strings.TrimRight(account.GetWindsurfBaseURL(), "/") + "/v1/models"
+	validatedURL, err := d.validateUpstreamBaseURL(modelsURL)
+	if err != nil {
+		return nil, newUpstreamModelSyncConfigError("Invalid Windsurf model list URL", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, validatedURL, nil)
+	if err != nil {
+		return nil, newUpstreamModelSyncConfigError("Invalid Windsurf model list URL", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Accept", "application/json")
+	return req, nil
+}
+
+func (d *UpstreamModelDiscoverer) buildOpenCodeUpstreamModelsRequest(ctx context.Context, account *Account) (*http.Request, error) {
+	apiKey, baseURL, err := validateOpenCodeAccount(account)
+	if err != nil {
+		return nil, newUpstreamModelSyncConfigError("Invalid OpenCode account configuration", err)
+	}
+	modelsURL := openCodeEndpointURL(baseURL, "/v1/models")
+	validatedURL, err := d.validateUpstreamBaseURL(modelsURL)
+	if err != nil {
+		return nil, newUpstreamModelSyncConfigError("Invalid OpenCode model list URL", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, validatedURL, nil)
+	if err != nil {
+		return nil, newUpstreamModelSyncConfigError("Invalid OpenCode model list URL", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Accept", "application/json")
+	return req, nil
 }
 
 func (d *UpstreamModelDiscoverer) buildAnthropicUpstreamModelsRequest(ctx context.Context, account *Account) (*http.Request, error) {
@@ -553,6 +591,17 @@ func extractUpstreamModelIDs(body []byte) ([]string, error) {
 	}
 
 	return dedupeAndSortModelIDs(models), nil
+}
+
+func parseDiscoveredUpstreamModelIDs(platform string, body []byte) ([]string, error) {
+	switch platform {
+	case PlatformWindsurf:
+		return parseWindsurfModelListBody(body)
+	case PlatformOpenCode:
+		return parseOpenCodeModelListBody(body)
+	default:
+		return extractUpstreamModelIDs(body)
+	}
 }
 
 func upstreamModelEntryID(entry upstreamModelEntry) string {
