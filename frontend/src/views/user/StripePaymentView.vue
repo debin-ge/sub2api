@@ -68,6 +68,21 @@
         <!-- 无指定方式或未知方式时展示完整 Payment Element -->
         <template v-else-if="showPaymentElement">
           <div class="card p-6">
+            <StripeGooglePayExpress
+              v-if="stripeInstance && elementsInstance"
+              :stripe="stripeInstance"
+              :elements="elementsInstance"
+              :return-url="returnUrl"
+              :disabled="stripeSubmitting"
+              @availability-change="googlePayAvailable = $event"
+              @submitting-change="stripeSubmitting = $event"
+              @confirmed="handleGooglePayConfirmed"
+            />
+            <div
+              v-if="googlePayAvailable"
+              class="my-5 border-t border-gray-200 dark:border-dark-600"
+              aria-hidden="true"
+            />
             <div id="stripe-payment-element" class="min-h-[200px]"></div>
             <p v-if="stripeError" class="mt-4 text-sm text-red-600 dark:text-red-400">{{ stripeError }}</p>
             <button class="btn btn-stripe mt-6 w-full py-3 text-base" :disabled="stripeSubmitting || !stripeReady" @click="handleGenericPay">
@@ -94,7 +109,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, shallowRef, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { usePaymentStore } from '@/stores/payment'
@@ -107,6 +122,7 @@ import type { PaymentOrder } from '@/types/payment'
 import type { Stripe, StripeElements } from '@stripe/stripe-js'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
+import StripeGooglePayExpress from '@/components/payment/StripeGooglePayExpress.vue'
 
 const i18n = useI18n()
 const { t } = i18n
@@ -128,9 +144,16 @@ const currency = ref('CNY')
 const wechatQrUrl = ref('')
 const redirecting = ref(false)
 const showPaymentElement = ref(false)
+const stripeInstance = shallowRef<Stripe | null>(null)
+const elementsInstance = shallowRef<StripeElements | null>(null)
+const googlePayAvailable = ref(false)
+const returnUrl = computed(() => (
+  window.location.origin
+  + '/payment/result?order_id='
+  + String(route.query.order_id || '')
+  + '&status=success'
+))
 
-let stripeInstance: Stripe | null = null
-let elementsInstance: StripeElements | null = null
 let redirectTimer: ReturnType<typeof setTimeout> | null = null
 
 onMounted(async () => {
@@ -169,7 +192,7 @@ onMounted(async () => {
     const stripe = await loadStripe(publishableKey)
     if (!stripe) { initError.value = t('payment.stripeLoadFailed'); return }
 
-    stripeInstance = stripe
+    stripeInstance.value = stripe
     loading.value = false
 
     // 指定方式直接确认，无需渲染完整 Payment Element
@@ -246,7 +269,7 @@ function mountPaymentElement(stripe: Stripe, clientSecret: string) {
     clientSecret,
     appearance: { theme: isDark ? 'night' : 'stripe', variables: { borderRadius: '8px' } },
   })
-  elementsInstance = elements
+  elementsInstance.value = elements
   const paymentElement = elements.create('payment', {
     layout: 'tabs',
     paymentMethodOrder: ['alipay', 'wechat_pay', 'card', 'link'],
@@ -256,15 +279,13 @@ function mountPaymentElement(stripe: Stripe, clientSecret: string) {
 }
 
 async function handleGenericPay() {
-  if (!stripeInstance || !elementsInstance || stripeSubmitting.value) return
+  if (!stripeInstance.value || !elementsInstance.value || stripeSubmitting.value) return
   stripeSubmitting.value = true
   stripeError.value = ''
   try {
-    const { error } = await stripeInstance.confirmPayment({
-      elements: elementsInstance,
-      confirmParams: {
-        return_url: window.location.origin + '/payment/result?order_id=' + route.query.order_id + '&status=success',
-      },
+    const { error } = await stripeInstance.value.confirmPayment({
+      elements: elementsInstance.value,
+      confirmParams: { return_url: returnUrl.value },
       redirect: 'if_required',
     })
     if (error) {
@@ -278,6 +299,11 @@ async function handleGenericPay() {
   } finally {
     stripeSubmitting.value = false
   }
+}
+
+function handleGooglePayConfirmed() {
+  stripeSuccess.value = true
+  scheduleClose()
 }
 
 let pollTimer: ReturnType<typeof setInterval> | null = null

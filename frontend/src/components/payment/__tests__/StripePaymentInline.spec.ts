@@ -107,4 +107,32 @@ describe('StripePaymentInline Google Pay integration', () => {
     expect(wrapper.text()).toContain('payment.result.success')
     wrapper.unmount()
   })
+
+  it('does not let Google Pay confirm while the Payment Element owns the lock', async () => {
+    let resolveCardConfirmation!: (value: object) => void
+    stripe.confirmPayment.mockReturnValue(new Promise(resolve => {
+      resolveCardConfirmation = resolve
+    }))
+    const wrapper = mountInline()
+    await flushPromises()
+
+    const cardPromise = wrapper.get('button.btn-stripe').trigger('click')
+    await nextTick()
+    const paymentFailed = vi.fn()
+    await expressHandlers.get('confirm')?.({
+      expressPaymentType: 'google_pay',
+      paymentFailed,
+    })
+
+    expect(stripe.confirmPayment).toHaveBeenCalledTimes(1)
+    expect(paymentFailed).toHaveBeenCalledWith({
+      reason: 'fail',
+      message: 'common.processing',
+    })
+
+    resolveCardConfirmation({})
+    await cardPromise
+    await flushPromises()
+    wrapper.unmount()
+  })
 })
