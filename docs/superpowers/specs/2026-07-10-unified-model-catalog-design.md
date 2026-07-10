@@ -393,4 +393,3 @@ Cover:
 6. Migrate `/v1/models` and make the old gateway method a compatibility wrapper.
 7. Migrate the Model Plaza and channel view.
 8. Add observability, configuration validation, and full regression verification.
-
