@@ -20,8 +20,11 @@ import apiReferenceContentEn from './en/api-reference.md?raw'
 import endpointSelectionContentEn from './en/endpoint-selection.md?raw'
 import modelsContentEn from './en/models.md?raw'
 import billingUsageContentEn from './en/billing-usage.md?raw'
-import clientsContentEn from './en/clients.md?raw'
-import configurationSnippetsContentEn from './en/configuration-snippets.md?raw'
+import integrationOverviewContentEn from './en/integration-overview.md?raw'
+import integrationCodeContentEn from './en/integration-code.md?raw'
+import integrationClientsContentEn from './en/integration-clients.md?raw'
+import integrationCliContentEn from './en/integration-cli.md?raw'
+import integrationToolsContentEn from './en/integration-tools.md?raw'
 import errorsContentEn from './en/errors.md?raw'
 import bestPracticesContentEn from './en/best-practices.md?raw'
 import faqContentEn from './en/faq.md?raw'
@@ -197,18 +200,39 @@ export const userDocsByLocale: Record<UserDocLocale, UserDocEntry[]> = {
       content: billingUsageContentEn,
     },
     {
-      slug: 'clients',
-      title: 'Client Integration',
-      description: 'Connect to {{SITE_NAME}} with curl, the OpenAI SDK, Claude Code, Gemini, and Codex.',
+      slug: 'integration-overview',
+      title: 'Integration Overview',
+      description: 'Prepare the Base URL, API Key, and model name, then choose the right integration path.',
       category: 'Integration',
-      content: clientsContentEn,
+      content: integrationOverviewContentEn,
     },
     {
-      slug: 'configuration-snippets',
-      title: 'Copy-Ready Configuration Snippets',
-      description: 'Copy environment, SDK, curl, Claude, Gemini, and safe proxy configuration templates.',
+      slug: 'integration-code',
+      title: 'Code Integration',
+      description: 'Call OpenAI, Anthropic, Gemini, and Antigravity-compatible APIs from curl, Python, TypeScript, and Go.',
       category: 'Integration',
-      content: configurationSnippetsContentEn,
+      content: integrationCodeContentEn,
+    },
+    {
+      slug: 'integration-clients',
+      title: 'Client Integration',
+      description: 'Configure Cursor, Claude Code, Codex, Cline, Continue, Trae, and other GUI clients.',
+      category: 'Integration',
+      content: integrationClientsContentEn,
+    },
+    {
+      slug: 'integration-cli',
+      title: 'CLI Integration',
+      description: 'Connect Codex CLI and Claude Code through config files and environment variables.',
+      category: 'Integration',
+      content: integrationCliContentEn,
+    },
+    {
+      slug: 'integration-tools',
+      title: 'Third-Party Tools',
+      description: 'Use CC-Switch, Cockpit Tools, and similar tools to manage multi-site configurations and account switching.',
+      category: 'Integration',
+      content: integrationToolsContentEn,
     },
     {
       slug: 'errors',

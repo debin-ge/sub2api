@@ -2,7 +2,7 @@
 
 当你需要在多个站点、多个密钥或多个 AI 工具之间频繁切换时，手工反复改配置文件既麻烦又容易出错。本页介绍几款能替你管理这些配置的工具。
 
-> 以下工具（除 sub2api-mobile 外）均为独立的开源社区项目，不是 {{SITE_NAME}} 官方产品。安装使用前请自行审查其源码、权限和数据存储方式。
+> 以下工具均为独立的开源社区项目，不是 {{SITE_NAME}} 官方产品。安装使用前请自行审查其源码、权限和数据存储方式。
 
 ## 接入前提
 
@@ -67,18 +67,6 @@ homepage: https://github.com/jlcodes99/cockpit-tools
 3. 涉及自定义服务地址的工具，填写本页开头的 Base URL 和你的 API Key，字段含义与 [客户端接入](/docs/integration-clients)、[CLI 接入](/docs/integration-cli) 中对应工具的说明一致。
 
 > 该工具功能较多且更新频繁，具体操作以其仓库 README 为准。
-
-## sub2api-mobile
-
-```client
-name: sub2api-mobile
-logo: openai
-homepage: https://github.com/ckken/sub2api-mobile
-```
-
-**它是什么**：Sub2API 生态中的移动端管理应用（基于 Expo + React Native，支持 iOS / Android / Web），提供用户管理、账号管理、监控看板和多后端切换等功能。
-
-**注意**：它是给**平台管理员/运营者**用的管理工具，不是调用 API 的客户端。普通用户接入 API 请使用本节之外的其他页面。
 
 ## 密钥安全提示
 
