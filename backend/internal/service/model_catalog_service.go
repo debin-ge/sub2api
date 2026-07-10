@@ -3,12 +3,22 @@ package service
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"golang.org/x/sync/singleflight"
 )
+
+var errModelCatalogRefreshBackoff = errors.New("model catalog refresh suppressed by failure backoff")
+
+type modelCatalogAsyncRefresh struct {
+	_ byte
+}
 
 // ModelCatalogService resolves the model catalog exposed by an account.
 type ModelCatalogService struct {
@@ -17,6 +27,11 @@ type ModelCatalogService struct {
 	channelService *ChannelService
 	discoverer     ModelDiscoverer
 	cfg            config.ModelCatalogConfig
+	cache          *modelCatalogCache
+	refreshGroup   singleflight.Group
+	refreshSem     chan struct{}
+	asyncRefreshMu sync.Mutex
+	asyncRefreshes map[int64]*modelCatalogAsyncRefresh
 	now            func() time.Time
 }
 
@@ -28,12 +43,19 @@ func NewModelCatalogService(
 	discoverer ModelDiscoverer,
 	cfg config.ModelCatalogConfig,
 ) *ModelCatalogService {
+	maxConcurrency := cfg.MaxConcurrency
+	if maxConcurrency <= 0 {
+		maxConcurrency = 5
+	}
 	return &ModelCatalogService{
 		accountRepo:    accountRepo,
 		groupRepo:      groupRepo,
 		channelService: channelService,
 		discoverer:     discoverer,
 		cfg:            cfg,
+		cache:          newModelCatalogCache(),
+		refreshSem:     make(chan struct{}, maxConcurrency),
+		asyncRefreshes: make(map[int64]*modelCatalogAsyncRefresh),
 		now:            time.Now,
 	}
 }
@@ -45,31 +67,216 @@ func (s *ModelCatalogService) ListForAccount(ctx context.Context, account *Accou
 	}
 
 	defaults := DefaultModelCatalogIDs(account.Platform)
+	fallback := configuredOrDefaultAccountModels(account, defaults)
 	if !accountRequiresLiveCatalog(account) {
-		return configuredOrDefaultAccountModels(account, defaults), nil
+		return fallback, nil
 	}
+
+	if s != nil && s.cache != nil {
+		entry, state := s.cache.loadState(account.ID, s.currentTime(), s.freshTTL(), s.staleTTL())
+		switch state {
+		case catalogCacheFresh:
+			return entry.models, nil
+		case catalogCacheStale:
+			s.RefreshAccountAsync(account)
+			return entry.models, nil
+		}
+	}
+
 	if !waitForLive {
+		if s != nil {
+			s.RefreshAccountAsync(account)
+		}
 		return defaults, nil
+	}
+
+	models, err := s.RefreshAccount(ctx, account)
+	if err == nil {
+		return models, nil
+	}
+	if s != nil && s.cache != nil {
+		if entry, ok := s.cache.load(account.ID); ok && len(entry.models) > 0 {
+			return entry.models, nil
+		}
+	}
+	return fallback, nil
+}
+
+// RefreshAccount refreshes and caches one account's live model catalog.
+func (s *ModelCatalogService) RefreshAccount(ctx context.Context, account *Account) ([]string, error) {
+	if account == nil {
+		return nil, newUpstreamModelSyncConfigError("Account is required for model catalog refresh", nil)
+	}
+	return s.refreshAccountForGeneration(ctx, account, s.cacheGeneration(account.ID))
+}
+
+func (s *ModelCatalogService) refreshAccountForGeneration(ctx context.Context, account *Account, generation uint64) ([]string, error) {
+	if !accountRequiresLiveCatalog(account) {
+		return configuredOrDefaultAccountModels(account, DefaultModelCatalogIDs(account.Platform)), nil
 	}
 	if s == nil || s.discoverer == nil {
 		return nil, newUpstreamModelSyncConfigError("Account model discoverer is not configured", nil)
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
-	timeoutCtx, cancel := context.WithTimeout(ctx, time.Duration(s.cfg.RequestTimeoutSeconds)*time.Second)
-	defer cancel()
-	models, err := s.discoverer.Discover(timeoutCtx, account)
-	if err != nil {
-		var syncErr *UpstreamModelSyncError
-		if errors.As(err, &syncErr) && syncErr.Kind == UpstreamModelSyncErrorUnsupported {
-			return configuredOrDefaultAccountModels(account, defaults), nil
+	accountID := account.ID
+	value, err, _ := s.refreshGroup.Do(modelCatalogRefreshKey(accountID, generation), func() (any, error) {
+		now := s.currentTime()
+		if s.cache != nil && s.cache.inFailureBackoff(accountID, now, s.failureBackoff()) {
+			return nil, errModelCatalogRefreshBackoff
 		}
+
+		timeoutCtx, cancel := context.WithTimeout(ctx, s.requestTimeout())
+		defer cancel()
+		if s.refreshSem != nil {
+			select {
+			case s.refreshSem <- struct{}{}:
+				defer func() { <-s.refreshSem }()
+			case <-timeoutCtx.Done():
+				refreshErr := timeoutCtx.Err()
+				if errors.Is(refreshErr, context.DeadlineExceeded) && s.cache != nil {
+					s.cache.storeFailureForGeneration(accountID, s.currentTime(), generation)
+				}
+				return nil, refreshErr
+			}
+		}
+
+		models, discoverErr := s.discoverer.Discover(timeoutCtx, account)
+		if discoverErr != nil {
+			callerCanceled := errors.Is(discoverErr, context.Canceled) || errors.Is(timeoutCtx.Err(), context.Canceled)
+			if s.cache != nil && !callerCanceled {
+				s.cache.storeFailureForGeneration(accountID, s.currentTime(), generation)
+			}
+			return nil, discoverErr
+		}
+		models = normalizeCatalogModelIDs(models)
+		if len(models) == 0 {
+			discoverErr = newUpstreamModelSyncUpstreamError("Upstream returned no supported models", nil)
+			if s.cache != nil {
+				s.cache.storeFailureForGeneration(accountID, s.currentTime(), generation)
+			}
+			return nil, discoverErr
+		}
+		if s.cache != nil {
+			s.cache.storeSuccessForGeneration(accountID, models, s.currentTime(), generation)
+		}
+		return cloneStringSlice(models), nil
+	})
+	if err != nil {
 		return nil, err
 	}
-	models = normalizeCatalogModelIDs(models)
-	if len(models) == 0 {
-		return nil, newUpstreamModelSyncUpstreamError("Upstream returned no supported models", nil)
+	models, _ := value.([]string)
+	return cloneStringSlice(models), nil
+}
+
+// RefreshAccountAsync schedules a best-effort refresh for an eligible account.
+func (s *ModelCatalogService) RefreshAccountAsync(account *Account) {
+	if s == nil || account == nil || account.Status != StatusActive || !account.Schedulable || !accountRequiresLiveCatalog(account) {
+		return
 	}
-	return models, nil
+	admission, generation, admitted := s.beginAsyncRefresh(account.ID)
+	if !admitted {
+		return
+	}
+	snapshot := *account
+	go func() {
+		defer s.finishAsyncRefresh(snapshot.ID, admission)
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				slog.Error("model_catalog_async_refresh_panic", "account_id", snapshot.ID, "recover", recovered)
+			}
+		}()
+		_, _ = s.refreshAccountForGeneration(context.Background(), &snapshot, generation)
+	}()
+}
+
+// InvalidateAccount removes one account's cached model catalog.
+func (s *ModelCatalogService) InvalidateAccount(accountID int64) {
+	if s == nil || accountID <= 0 {
+		return
+	}
+	s.asyncRefreshMu.Lock()
+	oldGeneration := uint64(0)
+	if s.cache != nil {
+		oldGeneration = s.cache.invalidate(accountID)
+	}
+	s.refreshGroup.Forget(modelCatalogRefreshKey(accountID, oldGeneration))
+	delete(s.asyncRefreshes, accountID)
+	s.asyncRefreshMu.Unlock()
+}
+
+func (s *ModelCatalogService) beginAsyncRefresh(accountID int64) (*modelCatalogAsyncRefresh, uint64, bool) {
+	s.asyncRefreshMu.Lock()
+	defer s.asyncRefreshMu.Unlock()
+	if _, exists := s.asyncRefreshes[accountID]; exists {
+		return nil, 0, false
+	}
+	if s.asyncRefreshes == nil {
+		s.asyncRefreshes = make(map[int64]*modelCatalogAsyncRefresh)
+	}
+	admission := &modelCatalogAsyncRefresh{}
+	s.asyncRefreshes[accountID] = admission
+	return admission, s.cacheGeneration(accountID), true
+}
+
+func (s *ModelCatalogService) finishAsyncRefresh(accountID int64, admission *modelCatalogAsyncRefresh) {
+	s.asyncRefreshMu.Lock()
+	defer s.asyncRefreshMu.Unlock()
+	if s.asyncRefreshes[accountID] == admission {
+		delete(s.asyncRefreshes, accountID)
+	}
+}
+
+func (s *ModelCatalogService) cacheGeneration(accountID int64) uint64 {
+	if s == nil || s.cache == nil {
+		return 0
+	}
+	return s.cache.generation(accountID)
+}
+
+func modelCatalogRefreshKey(accountID int64, generation uint64) string {
+	accountKey := strconv.FormatInt(accountID, 10)
+	if generation == 0 {
+		return accountKey
+	}
+	return accountKey + ":" + strconv.FormatUint(generation, 10)
+}
+
+func (s *ModelCatalogService) currentTime() time.Time {
+	if s != nil && s.now != nil {
+		return s.now()
+	}
+	return time.Now()
+}
+
+func (s *ModelCatalogService) freshTTL() time.Duration {
+	if s != nil && s.cfg.RefreshIntervalSeconds > 0 {
+		return time.Duration(s.cfg.RefreshIntervalSeconds) * time.Second
+	}
+	return 5 * time.Minute
+}
+
+func (s *ModelCatalogService) staleTTL() time.Duration {
+	if s != nil && s.cfg.StaleTTLSeconds > 0 {
+		return time.Duration(s.cfg.StaleTTLSeconds) * time.Second
+	}
+	return 24 * time.Hour
+}
+
+func (s *ModelCatalogService) failureBackoff() time.Duration {
+	if s != nil && s.cfg.FailureBackoffSeconds > 0 {
+		return time.Duration(s.cfg.FailureBackoffSeconds) * time.Second
+	}
+	return time.Minute
+}
+
+func (s *ModelCatalogService) requestTimeout() time.Duration {
+	if s != nil && s.cfg.RequestTimeoutSeconds > 0 {
+		return time.Duration(s.cfg.RequestTimeoutSeconds) * time.Second
+	}
+	return 10 * time.Second
 }
 
 // ListForPlatform returns the union of model IDs exposed by schedulable accounts in scope.

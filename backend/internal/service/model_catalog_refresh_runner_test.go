@@ -1,0 +1,201 @@
+package service
+
+import (
+	"context"
+	"errors"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/stretchr/testify/require"
+)
+
+type refreshRunnerAccountRepoStub struct {
+	AccountRepository
+	accounts  []Account
+	listCalls chan struct{}
+}
+
+func (r *refreshRunnerAccountRepoStub) ListSchedulable(context.Context) ([]Account, error) {
+	if r.listCalls != nil {
+		select {
+		case r.listCalls <- struct{}{}:
+		default:
+		}
+	}
+	return append([]Account(nil), r.accounts...), nil
+}
+
+func TestModelCatalogRefreshAllHonorsMaxConcurrency(t *testing.T) {
+	release := make(chan struct{})
+	var active atomic.Int64
+	var maximum atomic.Int64
+	discoverer := modelDiscovererFunc(func(ctx context.Context, _ *Account) ([]string, error) {
+		current := active.Add(1)
+		defer active.Add(-1)
+		for {
+			observed := maximum.Load()
+			if current <= observed || maximum.CompareAndSwap(observed, current) {
+				break
+			}
+		}
+		select {
+		case <-release:
+			return []string{"model-new"}, nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	})
+	accounts := make([]Account, 8)
+	for i := range accounts {
+		accounts[i] = Account{ID: int64(i + 1), Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true}
+	}
+	catalog := &ModelCatalogService{
+		accountRepo: &refreshRunnerAccountRepoStub{accounts: accounts}, discoverer: discoverer,
+		cfg:   config.ModelCatalogConfig{RequestTimeoutSeconds: 10, FailureBackoffSeconds: 60, MaxConcurrency: 3},
+		cache: newModelCatalogCache(), refreshSem: make(chan struct{}, 3), now: time.Now,
+	}
+	done := make(chan struct{})
+	go func() { catalog.RefreshAll(context.Background()); close(done) }()
+	require.Eventually(t, func() bool { return maximum.Load() == 3 }, time.Second, 10*time.Millisecond)
+	close(release)
+	<-done
+	require.LessOrEqual(t, maximum.Load(), int64(3))
+}
+
+func TestModelCatalogRefreshAllFiltersAccountsAndIsolatesFailures(t *testing.T) {
+	accounts := []Account{
+		{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true},
+		{ID: 2, Platform: PlatformAnthropic, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true},
+		{ID: 3, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true},
+		{ID: 4, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true},
+		{ID: 5, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusDisabled, Schedulable: true},
+		{ID: 6, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: false},
+	}
+	var calls atomic.Int64
+	catalog := &ModelCatalogService{
+		accountRepo: &refreshRunnerAccountRepoStub{accounts: accounts},
+		discoverer: modelDiscovererFunc(func(_ context.Context, account *Account) ([]string, error) {
+			calls.Add(1)
+			if account.ID == 2 {
+				return nil, errors.New("account failure")
+			}
+			return []string{"model-new"}, nil
+		}),
+		cfg:   config.ModelCatalogConfig{RequestTimeoutSeconds: 10, FailureBackoffSeconds: 60, MaxConcurrency: 2},
+		cache: newModelCatalogCache(), refreshSem: make(chan struct{}, 2), now: time.Now,
+	}
+
+	summary := catalog.RefreshAll(context.Background())
+
+	require.Equal(t, int64(3), calls.Load())
+	require.Equal(t, ModelCatalogRefreshPlatformSummary{Scanned: 2, Succeeded: 2}, summary.ByPlatform[PlatformOpenAI])
+	require.Equal(t, ModelCatalogRefreshPlatformSummary{Scanned: 1, Failed: 1}, summary.ByPlatform[PlatformAnthropic])
+}
+
+func TestModelCatalogRefreshAllRecordsDuration(t *testing.T) {
+	startedAt := time.Date(2026, 7, 10, 0, 0, 0, 0, time.UTC)
+	var clockCalls atomic.Int64
+	catalog := &ModelCatalogService{
+		accountRepo: &refreshRunnerAccountRepoStub{},
+		now: func() time.Time {
+			if clockCalls.Add(1) == 1 {
+				return startedAt
+			}
+			return startedAt.Add(2 * time.Second)
+		},
+	}
+
+	summary := catalog.RefreshAll(context.Background())
+
+	require.Equal(t, 2*time.Second, summary.Duration)
+}
+
+func TestModelCatalogRefreshRunnerStartsImmediatelyAndStops(t *testing.T) {
+	listCalls := make(chan struct{}, 1)
+	repo := &refreshRunnerAccountRepoStub{listCalls: listCalls}
+	cfg := config.ModelCatalogConfig{RefreshIntervalSeconds: 300, RequestTimeoutSeconds: 10, FailureBackoffSeconds: 60, MaxConcurrency: 2}
+	catalog := &ModelCatalogService{accountRepo: repo, cfg: cfg, cache: newModelCatalogCache(), refreshSem: make(chan struct{}, 2), now: time.Now}
+	runner := NewModelCatalogRefreshRunner(catalog, cfg)
+	runner.Start()
+	select {
+	case <-listCalls:
+	case <-time.After(time.Second):
+		t.Fatal("initial refresh scan did not start")
+	}
+	stopped := make(chan struct{})
+	go func() { runner.Stop(); close(stopped) }()
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("runner did not stop")
+	}
+}
+
+func TestModelCatalogRefreshRunnerStopWaitsForInFlightPass(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	repo := &refreshRunnerAccountRepoStub{accounts: []Account{{
+		ID: 1, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true,
+	}}}
+	cfg := config.ModelCatalogConfig{RefreshIntervalSeconds: 300, RequestTimeoutSeconds: 10, FailureBackoffSeconds: 60, MaxConcurrency: 1}
+	catalog := &ModelCatalogService{
+		accountRepo: repo,
+		discoverer: modelDiscovererFunc(func(context.Context, *Account) ([]string, error) {
+			close(started)
+			<-release
+			return []string{"model-new"}, nil
+		}),
+		cfg: cfg, cache: newModelCatalogCache(), refreshSem: make(chan struct{}, 1), now: time.Now,
+	}
+	runner := NewModelCatalogRefreshRunner(catalog, cfg)
+	runner.Start()
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("initial refresh did not start")
+	}
+
+	stopped := make(chan struct{})
+	go func() { runner.Stop(); close(stopped) }()
+	select {
+	case <-stopped:
+		t.Fatal("runner stopped before its in-flight pass exited")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(release)
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("runner did not stop after its in-flight pass exited")
+	}
+}
+
+func TestProvideModelCatalogConfig(t *testing.T) {
+	want := config.ModelCatalogConfig{
+		RefreshIntervalSeconds: 300,
+		RequestTimeoutSeconds:  10,
+		StaleTTLSeconds:        86400,
+		FailureBackoffSeconds:  60,
+		MaxConcurrency:         5,
+	}
+
+	require.Equal(t, want, ProvideModelCatalogConfig(&config.Config{ModelCatalog: want}))
+}
+
+func TestProvideModelCatalogRefreshRunnerStartsImmediately(t *testing.T) {
+	listCalls := make(chan struct{}, 1)
+	repo := &refreshRunnerAccountRepoStub{listCalls: listCalls}
+	cfg := config.ModelCatalogConfig{RefreshIntervalSeconds: 300, RequestTimeoutSeconds: 10, FailureBackoffSeconds: 60, MaxConcurrency: 2}
+	catalog := &ModelCatalogService{accountRepo: repo, cfg: cfg, cache: newModelCatalogCache(), refreshSem: make(chan struct{}, 2), now: time.Now}
+
+	runner := ProvideModelCatalogRefreshRunner(catalog, cfg)
+	t.Cleanup(runner.Stop)
+
+	select {
+	case <-listCalls:
+	case <-time.After(time.Second):
+		t.Fatal("provided runner did not start its initial refresh scan")
+	}
+}

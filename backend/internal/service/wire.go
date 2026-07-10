@@ -77,6 +77,21 @@ func ProvideDeepSeekBalanceHealthRunner(svc *DeepSeekBalanceHealthService, cfg *
 	return r
 }
 
+// ProvideModelCatalogConfig exposes the validated model-catalog configuration to Wire.
+func ProvideModelCatalogConfig(cfg *config.Config) config.ModelCatalogConfig {
+	if cfg == nil {
+		return config.ModelCatalogConfig{}
+	}
+	return cfg.ModelCatalog
+}
+
+// ProvideModelCatalogRefreshRunner creates and starts the model-catalog refresh runner.
+func ProvideModelCatalogRefreshRunner(svc *ModelCatalogService, cfg config.ModelCatalogConfig) *ModelCatalogRefreshRunner {
+	r := NewModelCatalogRefreshRunner(svc, cfg)
+	r.Start()
+	return r
+}
+
 // ProvideGLMGatewayService creates the GLM Coding Plan gateway service.
 func ProvideGLMGatewayService(cfg *config.Config) *GLMGatewayService {
 	return NewGLMGatewayServiceWithTimeout(nil, compileResponseHeaderFilter(cfg), compatibleGatewayUpstreamTimeoutFromConfig(cfg))
@@ -659,6 +674,10 @@ var ProviderSet = wire.NewSet(
 	ProvideClaudeTokenProvider,
 	NewAntigravityGatewayService,
 	NewUpstreamModelDiscoverer,
+	wire.Bind(new(ModelDiscoverer), new(*UpstreamModelDiscoverer)),
+	ProvideModelCatalogConfig,
+	NewModelCatalogService,
+	ProvideModelCatalogRefreshRunner,
 	ProvideRateLimitService,
 	NewAccountUsageService,
 	NewAccountTestService,

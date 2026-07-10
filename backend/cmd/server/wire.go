@@ -102,6 +102,7 @@ func provideCleanup(
 	miniMaxRemainsSyncRunner *service.MiniMaxRemainsSyncRunner,
 	deepSeekBalanceHealthRunner *service.DeepSeekBalanceHealthRunner,
 	channelMonitorRunner *service.ChannelMonitorRunner,
+	modelCatalogRefreshRunner *service.ModelCatalogRefreshRunner,
 	quotaFlusher *service.UserPlatformQuotaUsageFlusher,
 ) func() {
 	return func() {
@@ -270,6 +271,12 @@ func provideCleanup(
 			{"ChannelMonitorRunner", func() error {
 				if channelMonitorRunner != nil {
 					channelMonitorRunner.Stop()
+				}
+				return nil
+			}},
+			{"ModelCatalogRefreshRunner", func() error {
+				if modelCatalogRefreshRunner != nil {
+					modelCatalogRefreshRunner.Stop()
 				}
 				return nil
 			}},

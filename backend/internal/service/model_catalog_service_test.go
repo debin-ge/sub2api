@@ -368,7 +368,7 @@ func TestModelCatalogLiveDiscoveryUsesTimeoutAndNormalizes(t *testing.T) {
 	require.Equal(t, []string{"GPT-A", "gpt-b"}, got)
 }
 
-func TestModelCatalogEmptyLiveResultIsUpstreamError(t *testing.T) {
+func TestModelCatalogEmptyLiveResultFallsBackToProviderDefaults(t *testing.T) {
 	account := &Account{ID: 18, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
 	catalog := NewModelCatalogService(nil, nil, nil, modelDiscovererFunc(func(context.Context, *Account) ([]string, error) {
 		return []string{" ", ""}, nil
@@ -376,13 +376,11 @@ func TestModelCatalogEmptyLiveResultIsUpstreamError(t *testing.T) {
 
 	got, err := catalog.ListForAccount(context.Background(), account, true)
 
-	require.Nil(t, got)
-	var syncErr *UpstreamModelSyncError
-	require.ErrorAs(t, err, &syncErr)
-	require.Equal(t, UpstreamModelSyncErrorUpstream, syncErr.Kind)
+	require.NoError(t, err)
+	require.Equal(t, DefaultModelCatalogIDs(PlatformOpenAI), got)
 }
 
-func TestModelCatalogPropagatesNonUnsupportedLiveDiscoveryError(t *testing.T) {
+func TestModelCatalogNonUnsupportedLiveDiscoveryErrorFallsBackToProviderDefaults(t *testing.T) {
 	wantErr := &UpstreamModelSyncError{
 		Kind:    UpstreamModelSyncErrorUpstream,
 		Message: "discovery failed",
@@ -395,8 +393,8 @@ func TestModelCatalogPropagatesNonUnsupportedLiveDiscoveryError(t *testing.T) {
 
 	got, err := catalog.ListForAccount(context.Background(), account, true)
 
-	require.Nil(t, got)
-	require.ErrorIs(t, err, wantErr)
+	require.NoError(t, err)
+	require.Equal(t, DefaultModelCatalogIDs(PlatformOpenAI), got)
 }
 
 func TestModelCatalogMixedAccountsUnionsLiveAndRestricted(t *testing.T) {
