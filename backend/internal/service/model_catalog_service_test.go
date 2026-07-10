@@ -133,10 +133,13 @@ func TestModelCatalogLivePolicies(t *testing.T) {
 		account Account
 	}{
 		{name: "setup token", account: Account{ID: 11, Platform: PlatformAnthropic, Type: AccountTypeSetupToken}},
-		{name: "upstream", account: Account{ID: 12, Platform: PlatformOpenAI, Type: AccountTypeUpstream}},
+		{name: "antigravity upstream", account: Account{ID: 12, Platform: PlatformAntigravity, Type: AccountTypeUpstream}},
 		{name: "anthropic passthrough", account: Account{ID: 13, Platform: PlatformAnthropic, Type: AccountTypeAPIKey, Extra: map[string]any{"anthropic_passthrough": true}}},
 		{name: "windsurf", account: Account{ID: 14, Platform: PlatformWindsurf, Type: AccountTypeAPIKey}},
 		{name: "opencode", account: Account{ID: 15, Platform: PlatformOpenCode, Type: AccountTypeAPIKey}},
+		{name: "anthropic oauth", account: Account{ID: 20, Platform: PlatformAnthropic, Type: AccountTypeOAuth}},
+		{name: "antigravity oauth", account: Account{ID: 21, Platform: PlatformAntigravity, Type: AccountTypeOAuth}},
+		{name: "gemini ai studio oauth", account: Account{ID: 22, Platform: PlatformGemini, Type: AccountTypeOAuth, Credentials: map[string]any{"oauth_type": "ai_studio"}}},
 	}
 
 	for _, tt := range tests {
@@ -148,6 +151,110 @@ func TestModelCatalogLivePolicies(t *testing.T) {
 
 			require.NoError(t, err)
 			require.Equal(t, []string{"live-model"}, got)
+			require.Equal(t, 1, discoverer.calls[tt.account.ID])
+		})
+	}
+}
+
+func TestModelCatalogStaticallyUnsupportedFormatsUseConfiguredOrDefaultsWithoutDiscovery(t *testing.T) {
+	tests := []struct {
+		name    string
+		account Account
+		want    []string
+	}{
+		{
+			name: "grok oauth mapping",
+			account: Account{ID: 23, Platform: PlatformGrok, Type: AccountTypeOAuth, Credentials: map[string]any{
+				"model_mapping": map[string]any{"grok-client": "grok-upstream"},
+			}},
+			want: []string{"grok-client"},
+		},
+		{
+			name:    "grok oauth defaults",
+			account: Account{ID: 24, Platform: PlatformGrok, Type: AccountTypeOAuth},
+			want:    DefaultModelCatalogIDs(PlatformGrok),
+		},
+		{
+			name: "gemini code assist whitelist",
+			account: Account{ID: 25, Platform: PlatformGemini, Type: AccountTypeOAuth, Credentials: map[string]any{
+				"project_id":      "code-assist-project",
+				"model_whitelist": []any{"gemini-client"},
+			}},
+			want: []string{"gemini-client"},
+		},
+		{
+			name: "gemini code assist defaults",
+			account: Account{ID: 26, Platform: PlatformGemini, Type: AccountTypeOAuth, Credentials: map[string]any{
+				"oauth_type": "code_assist",
+				"project_id": "code-assist-project",
+			}},
+			want: DefaultModelCatalogIDs(PlatformGemini),
+		},
+	}
+	waitCases := []struct {
+		name        string
+		waitForLive bool
+	}{
+		{name: "wait for live", waitForLive: true},
+		{name: "no wait", waitForLive: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, waitCase := range waitCases {
+				t.Run(waitCase.name, func(t *testing.T) {
+					discoverer := &recordingModelDiscoverer{
+						models: map[int64][]string{tt.account.ID: {"unexpected-live-model"}},
+						errs:   map[int64]error{},
+					}
+					catalog := NewModelCatalogService(nil, nil, nil, discoverer, config.ModelCatalogConfig{RequestTimeoutSeconds: 10})
+
+					got, err := catalog.ListForAccount(context.Background(), &tt.account, waitCase.waitForLive)
+
+					require.NoError(t, err)
+					require.Equal(t, tt.want, got)
+					require.Zero(t, discoverer.calls[tt.account.ID])
+				})
+			}
+		})
+	}
+}
+
+func TestModelCatalogUnsupportedDiscoveryErrorFallsBackToConfiguredOrDefaults(t *testing.T) {
+	tests := []struct {
+		name    string
+		account Account
+		want    []string
+	}{
+		{
+			name: "configured mapping",
+			account: Account{ID: 27, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Credentials: map[string]any{
+				"model_mapping": map[string]any{"client-model": "upstream-model"},
+			}},
+			want: []string{"client-model"},
+		},
+		{
+			name:    "provider defaults",
+			account: Account{ID: 28, Platform: PlatformOpenAI, Type: AccountTypeOAuth},
+			want:    DefaultModelCatalogIDs(PlatformOpenAI),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			discoverer := &recordingModelDiscoverer{
+				models: map[int64][]string{},
+				errs: map[int64]error{tt.account.ID: &UpstreamModelSyncError{
+					Kind:    UpstreamModelSyncErrorUnsupported,
+					Message: "unsupported live model format",
+				}},
+			}
+			catalog := NewModelCatalogService(nil, nil, nil, discoverer, config.ModelCatalogConfig{RequestTimeoutSeconds: 10})
+
+			got, err := catalog.ListForAccount(context.Background(), &tt.account, true)
+
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
 			require.Equal(t, 1, discoverer.calls[tt.account.ID])
 		})
 	}
@@ -196,8 +303,12 @@ func TestModelCatalogEmptyLiveResultIsUpstreamError(t *testing.T) {
 	require.Equal(t, UpstreamModelSyncErrorUpstream, syncErr.Kind)
 }
 
-func TestModelCatalogPropagatesLiveDiscoveryError(t *testing.T) {
-	wantErr := errors.New("discovery failed")
+func TestModelCatalogPropagatesNonUnsupportedLiveDiscoveryError(t *testing.T) {
+	wantErr := &UpstreamModelSyncError{
+		Kind:    UpstreamModelSyncErrorUpstream,
+		Message: "discovery failed",
+		Err:     errors.New("upstream detail"),
+	}
 	account := &Account{ID: 19, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
 	catalog := NewModelCatalogService(nil, nil, nil, modelDiscovererFunc(func(context.Context, *Account) ([]string, error) {
 		return nil, wantErr

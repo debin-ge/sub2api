@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"strings"
 	"time"
@@ -45,11 +46,7 @@ func (s *ModelCatalogService) ListForAccount(ctx context.Context, account *Accou
 
 	defaults := DefaultModelCatalogIDs(account.Platform)
 	if !accountRequiresLiveCatalog(account) {
-		patterns := configuredAccountModelPatterns(account)
-		if len(patterns) == 0 {
-			return defaults, nil
-		}
-		return expandModelPatterns(patterns, defaults), nil
+		return configuredOrDefaultAccountModels(account, defaults), nil
 	}
 	if !waitForLive {
 		return defaults, nil
@@ -62,6 +59,10 @@ func (s *ModelCatalogService) ListForAccount(ctx context.Context, account *Accou
 	defer cancel()
 	models, err := s.discoverer.Discover(timeoutCtx, account)
 	if err != nil {
+		var syncErr *UpstreamModelSyncError
+		if errors.As(err, &syncErr) && syncErr.Kind == UpstreamModelSyncErrorUnsupported {
+			return configuredOrDefaultAccountModels(account, defaults), nil
+		}
 		return nil, err
 	}
 	models = normalizeCatalogModelIDs(models)
@@ -75,17 +76,31 @@ func accountRequiresLiveCatalog(account *Account) bool {
 	if account == nil {
 		return false
 	}
-	switch account.Type {
-	case AccountTypeOAuth, AccountTypeSetupToken, AccountTypeUpstream:
-		return true
-	case AccountTypeAPIKey:
-		if account.IsOpenAIPassthroughEnabled() || account.IsAnthropicAPIKeyPassthroughEnabled() {
-			return true
-		}
-		return account.Platform == PlatformWindsurf || account.Platform == PlatformOpenCode
+	switch account.Platform {
+	case PlatformAnthropic:
+		return account.Type == AccountTypeOAuth ||
+			account.Type == AccountTypeSetupToken ||
+			(account.Type == AccountTypeAPIKey && account.IsAnthropicAPIKeyPassthroughEnabled())
+	case PlatformOpenAI:
+		return account.Type == AccountTypeOAuth ||
+			(account.Type == AccountTypeAPIKey && account.IsOpenAIPassthroughEnabled())
+	case PlatformGemini:
+		return account.Type == AccountTypeOAuth && !account.IsGeminiCodeAssist()
+	case PlatformAntigravity:
+		return account.Type == AccountTypeOAuth || account.Type == AccountTypeUpstream
+	case PlatformWindsurf, PlatformOpenCode:
+		return account.Type == AccountTypeAPIKey
 	default:
 		return false
 	}
+}
+
+func configuredOrDefaultAccountModels(account *Account, defaults []string) []string {
+	patterns := configuredAccountModelPatterns(account)
+	if len(patterns) == 0 {
+		return defaults
+	}
+	return expandModelPatterns(patterns, defaults)
 }
 
 func configuredAccountModelPatterns(account *Account) []string {
