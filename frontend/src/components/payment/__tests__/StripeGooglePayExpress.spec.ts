@@ -120,19 +120,19 @@ describe('StripeGooglePayExpress', () => {
     expect(wrapper.emitted('submittingChange')).toEqual([[true], [false]])
   })
 
-  it('clears submitting state on cancel and destroys the Stripe Element', () => {
-    const wrapper = mountComponent()
+  it('does not release an externally owned submitting lock on cancel and destroys the Stripe Element', () => {
+    const wrapper = mountComponent(true)
 
     handlers.get('cancel')?.({ elementType: 'expressCheckout' })
-    expect(wrapper.emitted('submittingChange')).toEqual([[false]])
+    expect(wrapper.emitted('submittingChange')).toBeUndefined()
 
     wrapper.unmount()
     expect(expressElement.destroy).toHaveBeenCalledOnce()
   })
 
-  it('hides a failed Element and records only sanitized diagnostics', async () => {
+  it('hides a failed Element without releasing an external lock and records sanitized diagnostics', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-    const wrapper = mountComponent()
+    const wrapper = mountComponent(true)
 
     handlers.get('availablepaymentmethodschange')?.({
       elementType: 'expressCheckout',
@@ -149,6 +149,7 @@ describe('StripeGooglePayExpress', () => {
       type: 'invalid_request_error',
       code: 'payment_method_domain_invalid',
     })
+    expect(wrapper.emitted('submittingChange')).toBeUndefined()
     warn.mockRestore()
   })
 })

@@ -88,7 +88,7 @@ function handleAvailabilityChange(
 }
 
 function handleCancel() {
-  setSubmitting(false)
+  // Only handleConfirm acquires this component's submitting lock.
 }
 
 function handleLoadError(event: {
@@ -99,7 +99,6 @@ function handleLoadError(event: {
     code: event.error.code,
   })
   setAvailable(false)
-  setSubmitting(false)
 }
 
 async function handleConfirm(event: StripeExpressCheckoutElementConfirmEvent) {
