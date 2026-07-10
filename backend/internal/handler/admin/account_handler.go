@@ -45,13 +45,25 @@ func NewOAuthHandler(oauthService *service.OAuthService) *OAuthHandler {
 	}
 }
 
+type adminModelCatalog interface {
+	ListForAccount(context.Context, *service.Account, bool) ([]string, error)
+	ListGroupCandidates(context.Context, int64, string) ([]string, error)
+	InvalidateAccount(int64)
+	RefreshAccountAsync(*service.Account)
+}
+
+type adminAntigravityOAuthService interface {
+	RefreshAccountToken(context.Context, *service.Account) (*service.AntigravityTokenInfo, error)
+	BuildAccountCredentials(*service.AntigravityTokenInfo) map[string]any
+}
+
 // AccountHandler handles admin account management
 type AccountHandler struct {
 	adminService            service.AdminService
 	oauthService            *service.OAuthService
 	openaiOAuthService      *service.OpenAIOAuthService
 	geminiOAuthService      *service.GeminiOAuthService
-	antigravityOAuthService *service.AntigravityOAuthService
+	antigravityOAuthService adminAntigravityOAuthService
 	rateLimitService        *service.RateLimitService
 	accountUsageService     *service.AccountUsageService
 	accountTestService      *service.AccountTestService
@@ -61,6 +73,7 @@ type AccountHandler struct {
 	rpmCache                service.RPMCache
 	tokenCacheInvalidator   service.TokenCacheInvalidator
 	minimaxTokenPlanClient  *service.MiniMaxTokenPlanClient
+	modelCatalog            adminModelCatalog
 }
 
 // NewAccountHandler creates a new admin account handler
@@ -79,23 +92,63 @@ func NewAccountHandler(
 	rpmCache service.RPMCache,
 	tokenCacheInvalidator service.TokenCacheInvalidator,
 	minimaxTokenPlanClient *service.MiniMaxTokenPlanClient,
+	catalog *service.ModelCatalogService,
 ) *AccountHandler {
-	return &AccountHandler{
-		adminService:            adminService,
-		oauthService:            oauthService,
-		openaiOAuthService:      openaiOAuthService,
-		geminiOAuthService:      geminiOAuthService,
-		antigravityOAuthService: antigravityOAuthService,
-		rateLimitService:        rateLimitService,
-		accountUsageService:     accountUsageService,
-		accountTestService:      accountTestService,
-		concurrencyService:      concurrencyService,
-		crsSyncService:          crsSyncService,
-		sessionLimitCache:       sessionLimitCache,
-		rpmCache:                rpmCache,
-		tokenCacheInvalidator:   tokenCacheInvalidator,
-		minimaxTokenPlanClient:  minimaxTokenPlanClient,
+	handler := &AccountHandler{
+		adminService:           adminService,
+		oauthService:           oauthService,
+		openaiOAuthService:     openaiOAuthService,
+		geminiOAuthService:     geminiOAuthService,
+		rateLimitService:       rateLimitService,
+		accountUsageService:    accountUsageService,
+		accountTestService:     accountTestService,
+		concurrencyService:     concurrencyService,
+		crsSyncService:         crsSyncService,
+		sessionLimitCache:      sessionLimitCache,
+		rpmCache:               rpmCache,
+		tokenCacheInvalidator:  tokenCacheInvalidator,
+		minimaxTokenPlanClient: minimaxTokenPlanClient,
 	}
+	if antigravityOAuthService != nil {
+		handler.antigravityOAuthService = antigravityOAuthService
+	}
+	if catalog != nil {
+		handler.modelCatalog = catalog
+	}
+	return handler
+}
+
+func (h *AccountHandler) modelCatalogAccountChanged(account *service.Account) {
+	if h.modelCatalog == nil || account == nil {
+		return
+	}
+	h.modelCatalog.InvalidateAccount(account.ID)
+	if account.Status == service.StatusActive && account.Schedulable {
+		h.modelCatalog.RefreshAccountAsync(account)
+	}
+}
+
+func (h *AccountHandler) modelCatalogAccountsChanged(ctx context.Context, accountIDs []int64) {
+	if h.modelCatalog == nil || len(accountIDs) == 0 {
+		return
+	}
+	for _, id := range accountIDs {
+		h.modelCatalog.InvalidateAccount(id)
+	}
+	accounts, err := h.adminService.GetAccountsByIDs(ctx, accountIDs)
+	if err != nil {
+		slog.Warn("model_catalog_reload_after_account_change_failed", "count", len(accountIDs), "error", err)
+		return
+	}
+	for _, account := range accounts {
+		if account != nil && account.Status == service.StatusActive && account.Schedulable {
+			h.modelCatalog.RefreshAccountAsync(account)
+		}
+	}
+}
+
+func (h *AccountHandler) modelCatalogMutationFailed(ctx context.Context, err error) {
+	h.modelCatalogAccountsChanged(ctx, service.AccountMutationIDsFromError(err))
 }
 
 // CreateAccountRequest represents create account request
@@ -832,6 +885,10 @@ func (h *AccountHandler) Create(c *gin.Context) {
 		return h.buildAccountResponseWithRuntime(ctx, account), nil
 	})
 	if err != nil {
+		if createdAccount != nil {
+			h.modelCatalogAccountChanged(createdAccount)
+		}
+		h.modelCatalogMutationFailed(c.Request.Context(), err)
 		// 检查是否为混合渠道错误
 		var mixedErr *service.MixedChannelError
 		if errors.As(err, &mixedErr) {
@@ -853,6 +910,7 @@ func (h *AccountHandler) Create(c *gin.Context) {
 	if result != nil && result.Replayed {
 		c.Header("X-Idempotency-Replayed", "true")
 	}
+	h.modelCatalogAccountChanged(createdAccount)
 	// OpenAI APIKey 账号创建后异步探测上游 /v1/responses 能力。
 	// 探测失败不影响账号创建响应。
 	h.scheduleOpenAIResponsesProbe(createdAccount)
@@ -911,6 +969,7 @@ func (h *AccountHandler) Update(c *gin.Context) {
 		SkipMixedChannelCheck: skipCheck,
 	})
 	if err != nil {
+		h.modelCatalogMutationFailed(c.Request.Context(), err)
 		// 检查是否为混合渠道错误
 		var mixedErr *service.MixedChannelError
 		if errors.As(err, &mixedErr) {
@@ -932,6 +991,7 @@ func (h *AccountHandler) Update(c *gin.Context) {
 		h.scheduleOpenAIResponsesProbe(account)
 	}
 
+	h.modelCatalogAccountChanged(account)
 	response.Success(c, h.buildAccountResponseWithRuntime(c.Request.Context(), account))
 }
 
@@ -1028,8 +1088,12 @@ func (h *AccountHandler) Delete(c *gin.Context) {
 
 	err = h.adminService.DeleteAccount(c.Request.Context(), accountID)
 	if err != nil {
+		h.modelCatalogMutationFailed(c.Request.Context(), err)
 		response.ErrorFrom(c, err)
 		return
+	}
+	if h.modelCatalog != nil {
+		h.modelCatalog.InvalidateAccount(accountID)
 	}
 
 	response.Success(c, gin.H{"message": "Account deleted successfully"})
@@ -1179,6 +1243,7 @@ func (h *AccountHandler) refreshSingleAccount(ctx context.Context, account *serv
 	}
 
 	var newCredentials map[string]any
+	var clearedAccount *service.Account
 
 	if account.IsOpenAI() {
 		tokenInfo, err := h.openaiOAuthService.RefreshAccountToken(ctx, account)
@@ -1242,8 +1307,9 @@ func (h *AccountHandler) refreshSingleAccount(ctx context.Context, account *serv
 
 		// 成功获取到 project_id，如果之前是 missing_project_id 错误则清除
 		if account.Status == service.StatusError && strings.Contains(account.ErrorMessage, "missing_project_id:") {
-			if _, clearErr := h.adminService.ClearAccountError(ctx, account.ID); clearErr != nil {
-				return nil, "", fmt.Errorf("failed to clear account error: %w", clearErr)
+			clearedAccount, err = h.adminService.ClearAccountError(ctx, account.ID)
+			if err != nil {
+				return nil, "", fmt.Errorf("failed to clear account error: %w", err)
 			}
 		}
 	} else {
@@ -1276,6 +1342,7 @@ func (h *AccountHandler) refreshSingleAccount(ctx context.Context, account *serv
 		Credentials: newCredentials,
 	})
 	if err != nil {
+		h.modelCatalogAccountChanged(clearedAccount)
 		return nil, "", err
 	}
 
@@ -1312,9 +1379,11 @@ func (h *AccountHandler) Refresh(c *gin.Context) {
 
 	updatedAccount, warning, err := h.refreshSingleAccount(c.Request.Context(), account)
 	if err != nil {
+		h.modelCatalogMutationFailed(c.Request.Context(), err)
 		response.ErrorFrom(c, err)
 		return
 	}
+	h.modelCatalogAccountChanged(updatedAccount)
 
 	if warning == "missing_project_id_temporary" {
 		response.Success(c, gin.H{
@@ -1378,6 +1447,7 @@ func (h *AccountHandler) ApplyOAuthCredentials(c *gin.Context) {
 		Credentials: req.Credentials,
 	})
 	if err != nil {
+		h.modelCatalogMutationFailed(ctx, err)
 		response.ErrorFrom(c, err)
 		return
 	}
@@ -1400,7 +1470,10 @@ func (h *AccountHandler) ApplyOAuthCredentials(c *gin.Context) {
 		}
 	}
 
+	catalogChangeHandledByClearFailure := false
 	if cleared, clearErr := h.adminService.ClearAccountError(ctx, accountID); clearErr != nil {
+		h.modelCatalogMutationFailed(ctx, clearErr)
+		catalogChangeHandledByClearFailure = len(service.AccountMutationIDsFromError(clearErr)) > 0
 		slog.Warn("apply_oauth_credentials.clear_error_failed",
 			"account_id", accountID,
 			"err", clearErr,
@@ -1418,6 +1491,9 @@ func (h *AccountHandler) ApplyOAuthCredentials(c *gin.Context) {
 		}
 	}
 
+	if !catalogChangeHandledByClearFailure {
+		h.modelCatalogAccountChanged(updatedAccount)
+	}
 	response.Success(c, h.buildAccountResponseWithRuntime(ctx, updatedAccount))
 }
 
@@ -1463,6 +1539,7 @@ func (h *AccountHandler) ClearError(c *gin.Context) {
 
 	account, err := h.adminService.ClearAccountError(c.Request.Context(), accountID)
 	if err != nil {
+		h.modelCatalogMutationFailed(c.Request.Context(), err)
 		response.ErrorFrom(c, err)
 		return
 	}
@@ -1475,6 +1552,7 @@ func (h *AccountHandler) ClearError(c *gin.Context) {
 		}
 	}
 
+	h.modelCatalogAccountChanged(account)
 	response.Success(c, h.buildAccountResponseWithRuntime(c.Request.Context(), account))
 }
 
@@ -1487,9 +1565,11 @@ func (h *AccountHandler) RevertProxyFallback(c *gin.Context) {
 		return
 	}
 	if err := h.adminService.RevertAccountProxyFallback(c.Request.Context(), id); err != nil {
+		h.modelCatalogMutationFailed(c.Request.Context(), err)
 		response.ErrorFrom(c, err)
 		return
 	}
+	h.modelCatalogAccountsChanged(c.Request.Context(), []int64{id})
 	response.Success(c, gin.H{"message": "reverted"})
 }
 
@@ -1524,6 +1604,7 @@ func (h *AccountHandler) BatchClearError(c *gin.Context) {
 		g.Go(func() error {
 			account, err := h.adminService.ClearAccountError(gctx, accountID)
 			if err != nil {
+				h.modelCatalogMutationFailed(gctx, err)
 				mu.Lock()
 				failedCount++
 				errors = append(errors, gin.H{
@@ -1533,6 +1614,7 @@ func (h *AccountHandler) BatchClearError(c *gin.Context) {
 				mu.Unlock()
 				return nil
 			}
+			h.modelCatalogAccountChanged(account)
 
 			// 清除错误后，同时清除 token 缓存
 			if h.tokenCacheInvalidator != nil && account.IsOAuth() {
@@ -1619,7 +1701,10 @@ func (h *AccountHandler) BatchRefresh(c *gin.Context) {
 			continue
 		}
 		g.Go(func() error {
-			_, warning, err := h.refreshSingleAccount(gctx, acc)
+			updatedAccount, warning, err := h.refreshSingleAccount(gctx, acc)
+			if err != nil {
+				h.modelCatalogMutationFailed(gctx, err)
+			}
 			mu.Lock()
 			if err != nil {
 				failedCount++
@@ -1628,6 +1713,7 @@ func (h *AccountHandler) BatchRefresh(c *gin.Context) {
 					"error":      err.Error(),
 				})
 			} else {
+				h.modelCatalogAccountChanged(updatedAccount)
 				successCount++
 				if warning != "" {
 					warnings = append(warnings, gin.H{
@@ -1716,6 +1802,7 @@ func (h *AccountHandler) BatchCreate(c *gin.Context) {
 				SkipMixedChannelCheck: skipCheck,
 			})
 			if err != nil {
+				h.modelCatalogMutationFailed(ctx, err)
 				failed++
 				results = append(results, gin.H{
 					"name":    item.Name,
@@ -1724,6 +1811,7 @@ func (h *AccountHandler) BatchCreate(c *gin.Context) {
 				})
 				continue
 			}
+			h.modelCatalogAccountChanged(account)
 			// 收集需要异步设置隐私的 OAuth 账号
 			if account.Type == service.AccountTypeOAuth {
 				switch account.Platform {
@@ -1844,7 +1932,9 @@ func (h *AccountHandler) BatchUpdateCredentials(c *gin.Context) {
 	results := make([]gin.H, 0, len(updates))
 	for _, u := range updates {
 		updateInput := &service.UpdateAccountInput{Credentials: u.Credentials}
-		if _, err := h.adminService.UpdateAccount(ctx, u.ID, updateInput); err != nil {
+		account, err := h.adminService.UpdateAccount(ctx, u.ID, updateInput)
+		if err != nil {
+			h.modelCatalogMutationFailed(ctx, err)
 			failed++
 			failedIDs = append(failedIDs, u.ID)
 			results = append(results, gin.H{
@@ -1854,6 +1944,7 @@ func (h *AccountHandler) BatchUpdateCredentials(c *gin.Context) {
 			})
 			continue
 		}
+		h.modelCatalogAccountChanged(account)
 		success++
 		successIDs = append(successIDs, u.ID)
 		results = append(results, gin.H{
@@ -1910,7 +2001,8 @@ func (h *AccountHandler) BulkUpdate(c *gin.Context) {
 		return
 	}
 
-	result, err := h.adminService.BulkUpdateAccounts(c.Request.Context(), &service.BulkUpdateAccountsInput{
+	ctx := c.Request.Context()
+	result, err := h.adminService.BulkUpdateAccounts(ctx, &service.BulkUpdateAccountsInput{
 		AccountIDs:            req.AccountIDs,
 		Filters:               toServiceBulkUpdateAccountFilters(req.Filters),
 		Name:                  req.Name,
@@ -1927,6 +2019,7 @@ func (h *AccountHandler) BulkUpdate(c *gin.Context) {
 		SkipMixedChannelCheck: skipCheck,
 	})
 	if err != nil {
+		h.modelCatalogMutationFailed(ctx, err)
 		var mixedErr *service.MixedChannelError
 		if errors.As(err, &mixedErr) {
 			c.JSON(409, gin.H{
@@ -1945,6 +2038,11 @@ func (h *AccountHandler) BulkUpdate(c *gin.Context) {
 		return
 	}
 
+	updatedIDs := result.UpdatedIDs
+	if len(updatedIDs) == 0 {
+		updatedIDs = result.SuccessIDs
+	}
+	h.modelCatalogAccountsChanged(ctx, updatedIDs)
 	response.Success(c, result)
 }
 
@@ -2313,10 +2411,12 @@ func (h *AccountHandler) SetSchedulable(c *gin.Context) {
 
 	account, err := h.adminService.SetAccountSchedulable(c.Request.Context(), accountID, req.Schedulable)
 	if err != nil {
+		h.modelCatalogMutationFailed(c.Request.Context(), err)
 		response.ErrorFrom(c, err)
 		return
 	}
 
+	h.modelCatalogAccountChanged(account)
 	response.Success(c, h.buildAccountResponseWithRuntime(c.Request.Context(), account))
 }
 
@@ -2334,248 +2434,149 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 		response.NotFound(c, "Account not found")
 		return
 	}
-
-	// Handle OpenAI accounts
-	if account.IsOpenAI() {
-		// OpenAI 自动透传会绕过常规模型改写，测试/模型列表也应回落到默认模型集。
-		if account.IsOpenAIPassthroughEnabled() {
-			response.Success(c, openai.DefaultModels)
-			return
-		}
-
-		mapping := account.GetModelMapping()
-		if len(mapping) == 0 {
-			response.Success(c, openai.DefaultModels)
-			return
-		}
-
-		// Return mapped models
-		var models []openai.Model
-		for requestedModel := range mapping {
-			var found bool
-			for _, dm := range openai.DefaultModels {
-				if dm.ID == requestedModel {
-					models = append(models, dm)
-					found = true
-					break
-				}
-			}
-			if !found {
-				models = append(models, openai.Model{
-					ID:          requestedModel,
-					Object:      "model",
-					Type:        "model",
-					DisplayName: requestedModel,
-				})
-			}
-		}
-		response.Success(c, models)
+	if h.modelCatalog == nil {
+		response.InternalError(c, "Model catalog is not configured")
 		return
 	}
 
-	// Handle Gemini accounts
-	if account.IsGemini() {
-		// For OAuth accounts: return default Gemini models
-		if account.IsOAuth() {
-			response.Success(c, geminicli.DefaultModels)
-			return
-		}
-
-		// For API Key accounts: return models based on model_mapping
-		mapping := account.GetModelMapping()
-		if len(mapping) == 0 {
-			response.Success(c, geminicli.DefaultModels)
-			return
-		}
-
-		var models []geminicli.Model
-		for requestedModel := range mapping {
-			var found bool
-			for _, dm := range geminicli.DefaultModels {
-				if dm.ID == requestedModel {
-					models = append(models, dm)
-					found = true
-					break
-				}
-			}
-			if !found {
-				models = append(models, geminicli.Model{
-					ID:          requestedModel,
-					Type:        "model",
-					DisplayName: requestedModel,
-					CreatedAt:   "",
-				})
-			}
-		}
-		response.Success(c, models)
+	modelIDs, err := h.modelCatalog.ListForAccount(c.Request.Context(), account, true)
+	if err != nil {
+		response.ErrorFrom(c, err)
 		return
 	}
 
-	// Handle Antigravity accounts: return Claude + Gemini models
-	if account.Platform == service.PlatformAntigravity {
-		// 直接复用 antigravity.DefaultModels()，与 /v1/models 端点保持同步
-		response.Success(c, antigravity.DefaultModels())
-		return
+	switch account.Platform {
+	case service.PlatformOpenAI:
+		response.Success(c, buildOpenAIAdminModels(modelIDs))
+	case service.PlatformGemini:
+		response.Success(c, buildGeminiAdminModels(modelIDs))
+	case service.PlatformGrok:
+		response.Success(c, buildGrokAdminModels(modelIDs))
+	case service.PlatformAntigravity:
+		response.Success(c, buildAntigravityAdminModels(modelIDs))
+	case service.PlatformGLM:
+		response.Success(c, buildGLMAdminModels(modelIDs))
+	case service.PlatformKimi, service.PlatformDeepSeek, service.PlatformWindsurf, service.PlatformOpenCode:
+		response.Success(c, buildDomesticClaudeShapeAdminModels(modelIDs))
+	default:
+		response.Success(c, buildClaudeShapeAdminModels(modelIDs))
 	}
-
-	// Handle GLM Coding Plan accounts.
-	if account.Platform == service.PlatformGLM {
-		response.Success(c, buildGLMAvailableModels(account.GetModelMapping()))
-		return
-	}
-
-	// Handle Kimi Coding Plan accounts.
-	if account.Platform == service.PlatformKimi {
-		response.Success(c, buildKimiAvailableModels())
-		return
-	}
-
-	// Handle DeepSeek API Key accounts.
-	if account.Platform == service.PlatformDeepSeek {
-		response.Success(c, buildDeepSeekAvailableModels())
-		return
-	}
-
-	// Handle Windsurf reverse proxy API Key accounts.
-	if account.Platform == service.PlatformWindsurf {
-		modelIDs, err := service.FetchWindsurfAvailableModelIDs(c.Request.Context(), account, nil)
-		if err != nil {
-			slog.WarnContext(c.Request.Context(), "windsurf.available_models.fetch_failed",
-				slog.Int64("account_id", account.ID),
-				slog.String("error", err.Error()),
-			)
-			response.Success(c, buildWindsurfAvailableModels())
-			return
-		}
-		response.Success(c, buildWindsurfAvailableModelsFromIDs(modelIDs))
-		return
-	}
-
-	// Handle OpenCode2API-compatible API Key accounts.
-	if account.Platform == service.PlatformOpenCode {
-		modelIDs, err := service.FetchOpenCodeAvailableModelIDs(c.Request.Context(), account, nil)
-		if err != nil {
-			slog.WarnContext(c.Request.Context(), "opencode.available_models.fetch_failed",
-				slog.Int64("account_id", account.ID),
-				slog.String("error", err.Error()),
-			)
-			response.Success(c, buildOpenCodeAvailableModels())
-			return
-		}
-		response.Success(c, buildOpenCodeAvailableModelsFromIDs(modelIDs))
-		return
-	}
-
-	// Handle Grok accounts
-	if account.Platform == service.PlatformGrok {
-		defaultModels := xai.DefaultModels()
-
-		hasExplicitMapping := false
-		switch rawMapping := account.Credentials["model_mapping"].(type) {
-		case map[string]any:
-			hasExplicitMapping = len(rawMapping) > 0
-		case map[string]string:
-			hasExplicitMapping = len(rawMapping) > 0
-		}
-		if !hasExplicitMapping {
-			response.Success(c, defaultModels)
-			return
-		}
-
-		mapping := account.GetModelMapping()
-		if len(mapping) == 0 {
-			response.Success(c, defaultModels)
-			return
-		}
-
-		defaultByID := make(map[string]xai.Model, len(defaultModels))
-		for _, model := range defaultModels {
-			defaultByID[model.ID] = model
-		}
-
-		requestedModels := make([]string, 0, len(mapping))
-		for requestedModel := range mapping {
-			requestedModels = append(requestedModels, requestedModel)
-		}
-		sort.Strings(requestedModels)
-
-		var models []xai.Model
-		for _, requestedModel := range requestedModels {
-			if defaultModel, found := defaultByID[requestedModel]; found {
-				models = append(models, defaultModel)
-				continue
-			}
-			models = append(models, xai.Model{
-				ID:          requestedModel,
-				Object:      "model",
-				OwnedBy:     "xai",
-				DisplayName: requestedModel,
-			})
-		}
-		response.Success(c, models)
-		return
-	}
-
-	// Handle Claude/Anthropic accounts
-	// For OAuth and Setup-Token accounts: return default models
-	if account.IsOAuth() {
-		response.Success(c, claude.DefaultModels)
-		return
-	}
-
-	// For API Key accounts: return models based on model_mapping
-	mapping := account.GetModelMapping()
-	if len(mapping) == 0 {
-		// No mapping configured, return default models
-		response.Success(c, claude.DefaultModels)
-		return
-	}
-
-	// Return mapped models (keys of the mapping are the available model IDs)
-	var models []claude.Model
-	for requestedModel := range mapping {
-		// Try to find display info from default models
-		var found bool
-		for _, dm := range claude.DefaultModels {
-			if dm.ID == requestedModel {
-				models = append(models, dm)
-				found = true
-				break
-			}
-		}
-		// If not found in defaults, create a basic entry
-		if !found {
-			models = append(models, claude.Model{
-				ID:          requestedModel,
-				Type:        "model",
-				DisplayName: requestedModel,
-				CreatedAt:   "",
-			})
-		}
-	}
-
-	response.Success(c, models)
+	return
 }
 
-func buildGLMAvailableModels(mapping map[string]string) []claude.Model {
-	modelIDs := service.DefaultGLMModelIDs()
-	if len(mapping) > 0 {
-		modelIDs = make([]string, 0, len(mapping))
-		seen := make(map[string]struct{}, len(mapping))
-		for requestedModel := range mapping {
-			modelID := service.NormalizeGLMModel(strings.TrimSpace(requestedModel))
-			if modelID == "" {
-				continue
-			}
-			if _, exists := seen[modelID]; exists {
-				continue
-			}
-			seen[modelID] = struct{}{}
-			modelIDs = append(modelIDs, modelID)
-		}
-		sort.Strings(modelIDs)
+func buildOpenAIAdminModels(modelIDs []string) []openai.Model {
+	defaultByID := make(map[string]openai.Model, len(openai.DefaultModels))
+	for _, model := range openai.DefaultModels {
+		defaultByID[model.ID] = model
 	}
+	models := make([]openai.Model, 0, len(modelIDs))
+	for _, modelID := range modelIDs {
+		if model, ok := defaultByID[modelID]; ok {
+			models = append(models, model)
+			continue
+		}
+		models = append(models, openai.Model{
+			ID:          modelID,
+			Object:      "model",
+			Type:        "model",
+			DisplayName: modelID,
+		})
+	}
+	return models
+}
 
+func buildGeminiAdminModels(modelIDs []string) []geminicli.Model {
+	defaultByID := make(map[string]geminicli.Model, len(geminicli.DefaultModels))
+	for _, model := range geminicli.DefaultModels {
+		defaultByID[model.ID] = model
+	}
+	models := make([]geminicli.Model, 0, len(modelIDs))
+	for _, modelID := range modelIDs {
+		if model, ok := defaultByID[modelID]; ok {
+			models = append(models, model)
+			continue
+		}
+		models = append(models, geminicli.Model{
+			ID:          modelID,
+			Type:        "model",
+			DisplayName: modelID,
+			CreatedAt:   "",
+		})
+	}
+	return models
+}
+
+func buildGrokAdminModels(modelIDs []string) []xai.Model {
+	defaultModels := xai.DefaultModels()
+	defaultByID := make(map[string]xai.Model, len(defaultModels))
+	for _, model := range defaultModels {
+		defaultByID[model.ID] = model
+	}
+	models := make([]xai.Model, 0, len(modelIDs))
+	for _, modelID := range modelIDs {
+		if model, ok := defaultByID[modelID]; ok {
+			models = append(models, model)
+			continue
+		}
+		models = append(models, xai.Model{
+			ID:          modelID,
+			Object:      "model",
+			OwnedBy:     "xai",
+			DisplayName: modelID,
+		})
+	}
+	return models
+}
+
+func buildClaudeShapeAdminModels(modelIDs []string) []claude.Model {
+	defaultByID := make(map[string]claude.Model, len(claude.DefaultModels))
+	for _, model := range claude.DefaultModels {
+		defaultByID[model.ID] = model
+	}
+	models := make([]claude.Model, 0, len(modelIDs))
+	for _, modelID := range modelIDs {
+		if model, ok := defaultByID[modelID]; ok {
+			models = append(models, model)
+			continue
+		}
+		models = append(models, claude.Model{
+			ID:          modelID,
+			Type:        "model",
+			DisplayName: modelID,
+			CreatedAt:   "",
+		})
+	}
+	return models
+}
+
+func buildAntigravityAdminModels(modelIDs []string) []claude.Model {
+	defaultModels := antigravity.DefaultModels()
+	defaultByID := make(map[string]claude.Model, len(defaultModels))
+	for _, model := range defaultModels {
+		defaultByID[model.ID] = claude.Model{
+			ID:          model.ID,
+			Type:        model.Type,
+			DisplayName: model.DisplayName,
+			CreatedAt:   model.CreatedAt,
+		}
+	}
+	models := make([]claude.Model, 0, len(modelIDs))
+	for _, modelID := range modelIDs {
+		if model, ok := defaultByID[modelID]; ok {
+			models = append(models, model)
+			continue
+		}
+		models = append(models, claude.Model{
+			ID:          modelID,
+			Type:        "model",
+			DisplayName: modelID,
+			CreatedAt:   "",
+		})
+	}
+	return models
+}
+
+func buildDomesticClaudeShapeAdminModels(modelIDs []string) []claude.Model {
 	models := make([]claude.Model, 0, len(modelIDs))
 	for _, modelID := range modelIDs {
 		models = append(models, claude.Model{
@@ -2588,66 +2589,22 @@ func buildGLMAvailableModels(mapping map[string]string) []claude.Model {
 	return models
 }
 
-func buildKimiAvailableModels() []claude.Model {
-	modelIDs := service.DefaultKimiModelIDs()
-	models := make([]claude.Model, 0, len(modelIDs))
+func buildGLMAdminModels(modelIDs []string) []claude.Model {
+	normalizedIDs := make([]string, 0, len(modelIDs))
+	seen := make(map[string]struct{}, len(modelIDs))
 	for _, modelID := range modelIDs {
-		models = append(models, claude.Model{
-			ID:          modelID,
-			Type:        "model",
-			DisplayName: modelID,
-			CreatedAt:   "2024-01-01T00:00:00Z",
-		})
+		modelID = service.NormalizeGLMModel(strings.TrimSpace(modelID))
+		if modelID == "" {
+			continue
+		}
+		if _, exists := seen[modelID]; exists {
+			continue
+		}
+		seen[modelID] = struct{}{}
+		normalizedIDs = append(normalizedIDs, modelID)
 	}
-	return models
-}
-
-func buildDeepSeekAvailableModels() []claude.Model {
-	modelIDs := service.DefaultDeepSeekModelIDs()
-	models := make([]claude.Model, 0, len(modelIDs))
-	for _, modelID := range modelIDs {
-		models = append(models, claude.Model{
-			ID:          modelID,
-			Type:        "model",
-			DisplayName: modelID,
-			CreatedAt:   "2024-01-01T00:00:00Z",
-		})
-	}
-	return models
-}
-
-func buildWindsurfAvailableModels() []claude.Model {
-	return buildWindsurfAvailableModelsFromIDs(service.DefaultWindsurfModelIDs())
-}
-
-func buildWindsurfAvailableModelsFromIDs(modelIDs []string) []claude.Model {
-	models := make([]claude.Model, 0, len(modelIDs))
-	for _, modelID := range modelIDs {
-		models = append(models, claude.Model{
-			ID:          modelID,
-			Type:        "model",
-			DisplayName: modelID,
-			CreatedAt:   "2024-01-01T00:00:00Z",
-		})
-	}
-	return models
-}
-
-func buildOpenCodeAvailableModels() []claude.Model {
-	return buildOpenCodeAvailableModelsFromIDs(service.DefaultOpenCodeModelIDs())
-}
-
-func buildOpenCodeAvailableModelsFromIDs(modelIDs []string) []claude.Model {
-	models := make([]claude.Model, 0, len(modelIDs))
-	for _, modelID := range modelIDs {
-		models = append(models, claude.Model{
-			ID:          modelID,
-			Type:        "model",
-			DisplayName: modelID,
-			CreatedAt:   "2024-01-01T00:00:00Z",
-		})
-	}
-	return models
+	sort.Strings(normalizedIDs)
+	return buildDomesticClaudeShapeAdminModels(normalizedIDs)
 }
 
 // SyncUpstreamModels handles syncing live supported models from an account's upstream.

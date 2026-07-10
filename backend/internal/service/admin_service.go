@@ -380,6 +380,60 @@ type BulkUpdateAccountResult struct {
 	Error     string `json:"error,omitempty"`
 }
 
+// AccountMutationError reports account rows that were persisted before a later step failed.
+// It unwraps to Cause so existing HTTP status and application-error classification are preserved.
+type AccountMutationError struct {
+	Cause             error
+	MutatedAccountIDs []int64
+}
+
+func (e *AccountMutationError) Error() string {
+	if e == nil || e.Cause == nil {
+		return "account mutation failed"
+	}
+	return e.Cause.Error()
+}
+
+func (e *AccountMutationError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Cause
+}
+
+// AccountMutationIDsFromError returns a clone of persisted account IDs carried by err.
+func AccountMutationIDsFromError(err error) []int64 {
+	var mutationErr *AccountMutationError
+	if !errors.As(err, &mutationErr) || mutationErr == nil {
+		return nil
+	}
+	return append([]int64(nil), mutationErr.MutatedAccountIDs...)
+}
+
+func wrapAccountMutationError(err error, accountIDs ...int64) error {
+	if err == nil {
+		return nil
+	}
+	merged := append([]int64(nil), accountIDs...)
+	merged = append(merged, AccountMutationIDsFromError(err)...)
+	seen := make(map[int64]struct{}, len(merged))
+	normalized := make([]int64, 0, len(merged))
+	for _, id := range merged {
+		if id <= 0 {
+			continue
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		normalized = append(normalized, id)
+	}
+	if len(normalized) == 0 {
+		return err
+	}
+	return &AccountMutationError{Cause: err, MutatedAccountIDs: normalized}
+}
+
 // AdminUpdateAPIKeyGroupIDResult is the result of AdminUpdateAPIKeyGroupID.
 type AdminUpdateAPIKeyGroupIDResult struct {
 	APIKey                 *APIKey
@@ -416,6 +470,7 @@ type BulkUpdateAccountsResult struct {
 	SuccessIDs []int64                   `json:"success_ids"`
 	FailedIDs  []int64                   `json:"failed_ids"`
 	Results    []BulkUpdateAccountResult `json:"results"`
+	UpdatedIDs []int64                   `json:"-"`
 }
 
 type CreateProxyInput struct {
@@ -2745,7 +2800,7 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 	// 绑定分组
 	if len(groupIDs) > 0 {
 		if err := s.accountRepo.BindGroups(ctx, account.ID, groupIDs); err != nil {
-			return nil, err
+			return nil, wrapAccountMutationError(err, account.ID)
 		}
 	}
 
@@ -2925,26 +2980,29 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	if err := s.accountRepo.Update(ctx, account); err != nil {
 		return nil, err
 	}
+	mutatedIDs := []int64{id}
 
 	// 将 proxy 变更传播到 spark 影子账号（同步；Update 内部已触发调度快照）。
 	// 影子自身 proxy 不可独立编辑(见上),故对影子的更新不触发传播。
 	if input.ProxyID != nil && !account.IsCredentialShadow() {
-		if err := s.propagateProxyToShadows(ctx, id, account.ProxyID); err != nil {
-			return nil, err
+		shadowIDs, err := s.propagateProxyToShadows(ctx, id, account.ProxyID)
+		mutatedIDs = append(mutatedIDs, shadowIDs...)
+		if err != nil {
+			return nil, wrapAccountMutationError(err, mutatedIDs...)
 		}
 	}
 
 	// 绑定分组
 	if input.GroupIDs != nil {
 		if err := s.accountRepo.BindGroups(ctx, account.ID, *input.GroupIDs); err != nil {
-			return nil, err
+			return nil, wrapAccountMutationError(err, mutatedIDs...)
 		}
 	}
 
 	// 重新查询以确保返回完整数据（包括正确的 Proxy 关联对象）
 	updated, err := s.accountRepo.GetByID(ctx, id)
 	if err != nil {
-		return nil, err
+		return nil, wrapAccountMutationError(err, mutatedIDs...)
 	}
 	return updated, nil
 }
@@ -3093,6 +3151,7 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	if _, err := s.accountRepo.BulkUpdate(ctx, input.AccountIDs, repoUpdates); err != nil {
 		return nil, err
 	}
+	result.UpdatedIDs = append([]int64(nil), input.AccountIDs...)
 
 	// 将 proxy 变更传播到每个目标账号的 spark 影子账号
 	if repoUpdates.ProxyID != nil {
@@ -3101,8 +3160,10 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 			effectiveProxyID = repoUpdates.ProxyID
 		}
 		for _, accountID := range input.AccountIDs {
-			if err := s.propagateProxyToShadows(ctx, accountID, effectiveProxyID); err != nil {
-				return nil, err
+			shadowIDs, err := s.propagateProxyToShadows(ctx, accountID, effectiveProxyID)
+			result.UpdatedIDs = append(result.UpdatedIDs, shadowIDs...)
+			if err != nil {
+				return nil, wrapAccountMutationError(err, result.UpdatedIDs...)
 			}
 		}
 	}
@@ -3186,13 +3247,15 @@ func (s *adminServiceImpl) DeleteAccount(ctx context.Context, id int64) error {
 	if err != nil {
 		return fmt.Errorf("list spark shadows for cascade delete: %w", err)
 	}
+	deletedIDs := make([]int64, 0, len(shadows))
 	for _, shadow := range shadows {
 		if err := s.accountRepo.Delete(ctx, shadow.ID); err != nil {
-			return fmt.Errorf("cascade delete spark shadow %d: %w", shadow.ID, err)
+			return wrapAccountMutationError(fmt.Errorf("cascade delete spark shadow %d: %w", shadow.ID, err), deletedIDs...)
 		}
+		deletedIDs = append(deletedIDs, shadow.ID)
 	}
 	if err := s.accountRepo.Delete(ctx, id); err != nil {
-		return err
+		return wrapAccountMutationError(err, deletedIDs...)
 	}
 	return nil
 }
@@ -3211,21 +3274,25 @@ func (s *adminServiceImpl) ClearAccountError(ctx context.Context, id int64) (*Ac
 		return nil, err
 	}
 	if err := s.accountRepo.ClearRateLimit(ctx, id); err != nil {
-		return nil, err
+		return nil, wrapAccountMutationError(err, id)
 	}
 	if err := s.accountRepo.ClearAntigravityQuotaScopes(ctx, id); err != nil {
-		return nil, err
+		return nil, wrapAccountMutationError(err, id)
 	}
 	if err := s.accountRepo.ClearModelRateLimits(ctx, id); err != nil {
-		return nil, err
+		return nil, wrapAccountMutationError(err, id)
 	}
 	if err := s.accountRepo.ClearTempUnschedulable(ctx, id); err != nil {
-		return nil, err
+		return nil, wrapAccountMutationError(err, id)
 	}
 	if s.runtimeBlocker != nil {
 		s.runtimeBlocker.ClearAccountSchedulingBlock(id)
 	}
-	return s.accountRepo.GetByID(ctx, id)
+	account, err := s.accountRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, wrapAccountMutationError(err, id)
+	}
+	return account, nil
 }
 
 func (s *adminServiceImpl) SetAccountError(ctx context.Context, id int64, errorMsg string) error {
@@ -3238,7 +3305,7 @@ func (s *adminServiceImpl) SetAccountSchedulable(ctx context.Context, id int64, 
 	}
 	updated, err := s.accountRepo.GetByID(ctx, id)
 	if err != nil {
-		return nil, err
+		return nil, wrapAccountMutationError(err, id)
 	}
 	return updated, nil
 }
@@ -3250,9 +3317,13 @@ func (s *adminServiceImpl) RevertAccountProxyFallback(ctx context.Context, id in
 	// 加载回退后的账号以获取实际 ProxyID，再传播到影子账号
 	account, err := s.accountRepo.GetByID(ctx, id)
 	if err != nil {
-		return fmt.Errorf("get account after proxy revert: %w", err)
+		return wrapAccountMutationError(fmt.Errorf("get account after proxy revert: %w", err), id)
 	}
-	return s.propagateProxyToShadows(ctx, id, account.ProxyID)
+	_, err = s.propagateProxyToShadows(ctx, id, account.ProxyID)
+	if err != nil {
+		return wrapAccountMutationError(err, id)
+	}
+	return nil
 }
 
 // CreateShadow 为指定 OpenAI OAuth 母账号创建 spark 维度影子账号（一母一影）。
@@ -3378,25 +3449,27 @@ func (s *adminServiceImpl) CreateShadow(ctx context.Context, parentID int64, opt
 // It is called synchronously so that proxy changes are immediately consistent;
 // accountRepo.Update triggers the scheduler outbox + cache propagation internally.
 // Calling this for a non-parent account is a harmless no-op.
-func (s *adminServiceImpl) propagateProxyToShadows(ctx context.Context, parentID int64, proxyID *int64) error {
+func (s *adminServiceImpl) propagateProxyToShadows(ctx context.Context, parentID int64, proxyID *int64) ([]int64, error) {
 	return propagateAccountProxyToShadows(ctx, s.accountRepo, parentID, proxyID)
 }
 
 // propagateAccountProxyToShadows 把母账号的 proxy 同步到其所有 spark 影子(影子 proxy 恒继承母账号)。
 // 供 AdminService 编辑路径与 CRS 同步路径共用——后者改动母账号 proxy 后必须同样传播,否则影子保留
 // 旧 proxy 出现出站漂移(外审第8轮)。
-func propagateAccountProxyToShadows(ctx context.Context, repo AccountRepository, parentID int64, proxyID *int64) error {
+func propagateAccountProxyToShadows(ctx context.Context, repo AccountRepository, parentID int64, proxyID *int64) ([]int64, error) {
 	shadows, err := repo.ListShadowsByParent(ctx, parentID)
 	if err != nil {
-		return fmt.Errorf("list spark shadows for proxy propagation: %w", err)
+		return nil, fmt.Errorf("list spark shadows for proxy propagation: %w", err)
 	}
+	updatedIDs := make([]int64, 0, len(shadows))
 	for _, shadow := range shadows {
 		shadow.ProxyID = proxyID
 		if err := repo.Update(ctx, shadow); err != nil {
-			return fmt.Errorf("update spark shadow %d proxy: %w", shadow.ID, err)
+			return updatedIDs, wrapAccountMutationError(fmt.Errorf("update spark shadow %d proxy: %w", shadow.ID, err), updatedIDs...)
 		}
+		updatedIDs = append(updatedIDs, shadow.ID)
 	}
-	return nil
+	return updatedIDs, nil
 }
 
 // Proxy management implementations

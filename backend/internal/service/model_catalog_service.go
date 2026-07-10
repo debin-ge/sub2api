@@ -352,9 +352,21 @@ func (s *ModelCatalogService) listGroupCandidates(ctx context.Context, groupID i
 }
 
 func (s *ModelCatalogService) listGroupCandidatesWithMemo(ctx context.Context, groupID int64, platform string, waitForLive bool, memo map[int64][]string) ([]string, *Group, error) {
+	platform = strings.TrimSpace(platform)
+	if groupID <= 0 {
+		if platform == "" {
+			platform = PlatformAnthropic
+		}
+		models, err := s.ListForPlatform(ctx, nil, platform, waitForLive)
+		return models, nil, err
+	}
+
 	group, err := s.groupRepo.GetByID(ctx, groupID)
 	if err != nil {
 		return nil, nil, err
+	}
+	if platform == "" {
+		platform = group.Platform
 	}
 	if group.Platform != platform {
 		return nil, group, nil

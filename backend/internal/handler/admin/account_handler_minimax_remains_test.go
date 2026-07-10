@@ -69,7 +69,7 @@ func TestAccountHandlerSyncMiniMaxRemainsUpdatesExtra(t *testing.T) {
 		},
 	}
 	client := service.NewMiniMaxTokenPlanClient(srv.URL, srv.Client())
-	h := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, client)
+	h := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, client, nil)
 	router := gin.New()
 	router.POST("/api/v1/admin/accounts/:id/minimax/remains-sync", h.SyncMiniMaxRemains)
 
@@ -113,7 +113,7 @@ func TestAccountHandlerCheckDeepSeekBalanceUpdatesExtra(t *testing.T) {
 			Extra: map[string]any{"future_field": "keep"},
 		},
 	}
-	h := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	h := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	router := gin.New()
 	router.POST("/api/v1/admin/accounts/:id/deepseek/balance-check", h.CheckDeepSeekBalance)
 

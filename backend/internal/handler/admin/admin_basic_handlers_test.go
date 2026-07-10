@@ -18,7 +18,10 @@ func setupAdminRouter() (*gin.Engine, *stubAdminService) {
 	adminSvc := newStubAdminService()
 
 	userHandler := NewUserHandler(adminSvc, nil, nil, nil)
-	groupHandler := NewGroupHandler(adminSvc, nil, nil)
+	groupHandler := NewGroupHandler(adminSvc, nil, nil, nil)
+	groupHandler.modelCatalog = &adminModelCatalogStub{
+		groupModels: map[int64][]string{0: service.DefaultModelCatalogIDs(service.PlatformOpenAI)},
+	}
 	proxyHandler := NewProxyHandler(adminSvc)
 	redeemHandler := NewRedeemHandler(adminSvc, nil)
 
@@ -325,7 +328,7 @@ func TestAccountHandlerCreateAcceptsGLMAPIKey(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	adminSvc := newStubAdminService()
-	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	router.POST("/api/v1/admin/accounts", accountHandler.Create)
 
 	body, err := json.Marshal(map[string]any{
@@ -351,7 +354,7 @@ func TestAccountHandlerCreateAcceptsKimiAPIKey(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	adminSvc := newStubAdminService()
-	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	router.POST("/api/v1/admin/accounts", accountHandler.Create)
 
 	body, err := json.Marshal(map[string]any{
@@ -377,7 +380,7 @@ func TestAccountHandlerCreateAcceptsDeepSeekAPIKey(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	adminSvc := newStubAdminService()
-	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	router.POST("/api/v1/admin/accounts", accountHandler.Create)
 
 	body, err := json.Marshal(map[string]any{
@@ -403,7 +406,7 @@ func TestAccountHandlerCreateAcceptsWindsurfAPIKey(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	adminSvc := newStubAdminService()
-	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	router.POST("/api/v1/admin/accounts", accountHandler.Create)
 
 	body, err := json.Marshal(map[string]any{
@@ -429,7 +432,7 @@ func TestAccountHandlerCreateRejectsDeepSeekWithoutAPIKey(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	adminSvc := newStubAdminService()
-	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	router.POST("/api/v1/admin/accounts", accountHandler.Create)
 
 	body, err := json.Marshal(map[string]any{
@@ -454,7 +457,7 @@ func TestAccountHandlerCreateRejectsWindsurfWithoutAPIKey(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	adminSvc := newStubAdminService()
-	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	router.POST("/api/v1/admin/accounts", accountHandler.Create)
 
 	body, err := json.Marshal(map[string]any{
@@ -479,7 +482,7 @@ func TestAccountHandlerCreateRejectsKimiWithoutAPIKey(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	adminSvc := newStubAdminService()
-	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	router.POST("/api/v1/admin/accounts", accountHandler.Create)
 
 	body, err := json.Marshal(map[string]any{
@@ -504,7 +507,7 @@ func TestAccountHandlerCreateRejectsGLMWithoutAPIKey(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	adminSvc := newStubAdminService()
-	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	router.POST("/api/v1/admin/accounts", accountHandler.Create)
 
 	body, err := json.Marshal(map[string]any{
@@ -529,7 +532,7 @@ func TestAccountHandlerBatchCreateValidatesGLMAccounts(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	adminSvc := newStubAdminService()
-	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	router.POST("/api/v1/admin/accounts/batch", accountHandler.BatchCreate)
 
 	body, err := json.Marshal(map[string]any{
@@ -586,7 +589,7 @@ func TestAccountHandlerUpdateRejectsGLMInvalidType(t *testing.T) {
 	adminSvc.accounts = []service.Account{
 		{ID: 3, Name: "glm", Platform: service.PlatformGLM, Type: service.AccountTypeAPIKey, Credentials: map[string]any{"api_key": "sk-glm"}, Status: service.StatusActive},
 	}
-	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	router.PUT("/api/v1/admin/accounts/:id", accountHandler.Update)
 
 	body, err := json.Marshal(map[string]any{
@@ -610,7 +613,7 @@ func TestAccountHandlerUpdateRejectsGLMMissingAPIKey(t *testing.T) {
 	adminSvc.accounts = []service.Account{
 		{ID: 3, Name: "glm", Platform: service.PlatformGLM, Type: service.AccountTypeAPIKey, Credentials: map[string]any{"api_key": "sk-glm"}, Status: service.StatusActive},
 	}
-	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	router.PUT("/api/v1/admin/accounts/:id", accountHandler.Update)
 
 	body, err := json.Marshal(map[string]any{
@@ -636,7 +639,7 @@ func TestAccountHandlerUpdateRejectsInvalidExistingGLMOnOrdinaryField(t *testing
 	adminSvc.accounts = []service.Account{
 		{ID: 3, Name: "glm", Platform: service.PlatformGLM, Type: service.AccountTypeAPIKey, Credentials: map[string]any{"api_key": " "}, Status: service.StatusActive},
 	}
-	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	router.PUT("/api/v1/admin/accounts/:id", accountHandler.Update)
 
 	body, err := json.Marshal(map[string]any{
@@ -660,7 +663,7 @@ func TestAccountHandlerUpdateAllowsValidExistingGLMOnOrdinaryField(t *testing.T)
 	adminSvc.accounts = []service.Account{
 		{ID: 3, Name: "glm", Platform: service.PlatformGLM, Type: service.AccountTypeAPIKey, Credentials: map[string]any{"api_key": "sk-glm"}, Status: service.StatusActive},
 	}
-	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	router.PUT("/api/v1/admin/accounts/:id", accountHandler.Update)
 
 	body, err := json.Marshal(map[string]any{
@@ -681,7 +684,7 @@ func TestAccountHandlerUpdatePreservesGetAccountErrorMapping(t *testing.T) {
 	router := gin.New()
 	adminSvc := newStubAdminService()
 	adminSvc.getAccountErr = service.ErrAccountNotFound
-	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	router.PUT("/api/v1/admin/accounts/:id", accountHandler.Update)
 
 	body, err := json.Marshal(map[string]any{

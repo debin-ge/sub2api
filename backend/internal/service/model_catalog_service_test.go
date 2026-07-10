@@ -511,6 +511,45 @@ func TestModelCatalogGroupConfigAndCandidates(t *testing.T) {
 	require.Equal(t, []string{"priced-d", "gpt-b"}, final)
 }
 
+func TestModelCatalogGroupCandidatesSupportsCreateFlowAndInferredPlatform(t *testing.T) {
+	group := Group{ID: 20, Platform: PlatformOpenAI, Status: StatusActive}
+	account := Account{
+		ID: 2, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true,
+		Credentials: map[string]any{"model_mapping": map[string]any{"group-model": "upstream-group"}},
+	}
+	platformAccount := Account{
+		ID: 3, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true,
+		Credentials: map[string]any{"model_mapping": map[string]any{"platform-model": "upstream-platform"}},
+	}
+	defaultPlatformAccount := Account{
+		ID: 4, Platform: PlatformAnthropic, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true,
+		Credentials: map[string]any{"model_mapping": map[string]any{"anthropic-model": "upstream-anthropic"}},
+	}
+	catalog := &ModelCatalogService{
+		accountRepo: &modelCatalogAccountRepoStub{
+			byGroup: map[int64][]Account{20: {account}},
+			all:     []Account{platformAccount, defaultPlatformAccount},
+		},
+		groupRepo: &modelCatalogGroupRepoStub{groups: []Group{group}},
+	}
+
+	createModels, err := catalog.ListGroupCandidates(context.Background(), 0, PlatformOpenAI)
+	require.NoError(t, err)
+	require.Equal(t, []string{"platform-model"}, createModels)
+
+	emptyModels, err := catalog.ListGroupCandidates(context.Background(), 0, PlatformGemini)
+	require.NoError(t, err)
+	require.Empty(t, emptyModels)
+
+	defaultCreateModels, err := catalog.ListGroupCandidates(context.Background(), 0, "")
+	require.NoError(t, err)
+	require.Equal(t, []string{"anthropic-model"}, defaultCreateModels)
+
+	inferredModels, err := catalog.ListGroupCandidates(context.Background(), 20, "")
+	require.NoError(t, err)
+	require.Equal(t, []string{"group-model"}, inferredModels)
+}
+
 func TestModelCatalogPlatformScopeDoesNotInjectDefaultsWithoutAccounts(t *testing.T) {
 	groupID := int64(20)
 	groupAccount := Account{ID: 2, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true,

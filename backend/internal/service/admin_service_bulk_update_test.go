@@ -40,6 +40,8 @@ type accountRepoStubForBulkUpdate struct {
 		groupID     int64
 		privacyMode string
 	}
+	shadowsByParent map[int64][]*Account
+	updateErrByID   map[int64]error
 }
 
 func (s *accountRepoStubForBulkUpdate) BulkUpdate(_ context.Context, ids []int64, _ AccountBulkUpdate) (int64, error) {
@@ -56,6 +58,14 @@ func (s *accountRepoStubForBulkUpdate) BindGroups(_ context.Context, accountID i
 		return err
 	}
 	return nil
+}
+
+func (s *accountRepoStubForBulkUpdate) ListShadowsByParent(_ context.Context, parentID int64) ([]*Account, error) {
+	return s.shadowsByParent[parentID], nil
+}
+
+func (s *accountRepoStubForBulkUpdate) Update(_ context.Context, account *Account) error {
+	return s.updateErrByID[account.ID]
 }
 
 func (s *accountRepoStubForBulkUpdate) GetByIDs(_ context.Context, ids []int64) ([]*Account, error) {
@@ -148,6 +158,7 @@ func TestAdminService_BulkUpdateAccounts_PartialFailureIDs(t *testing.T) {
 		AccountIDs:            []int64{1, 2, 3},
 		GroupIDs:              &groupIDs,
 		Schedulable:           &schedulable,
+		Credentials:           map[string]any{"model_mapping": map[string]any{"gpt-new": "gpt-new"}},
 		SkipMixedChannelCheck: true,
 	}
 
@@ -157,7 +168,26 @@ func TestAdminService_BulkUpdateAccounts_PartialFailureIDs(t *testing.T) {
 	require.Equal(t, 1, result.Failed)
 	require.ElementsMatch(t, []int64{1, 3}, result.SuccessIDs)
 	require.ElementsMatch(t, []int64{2}, result.FailedIDs)
+	require.ElementsMatch(t, []int64{1, 2, 3}, result.UpdatedIDs)
 	require.Len(t, result.Results, 3)
+}
+
+func TestAdminService_BulkUpdateAccounts_PostBulkProxyFailureCarriesUpdatedIDs(t *testing.T) {
+	shadowErr := errors.New("shadow update failed")
+	repo := &accountRepoStubForBulkUpdate{
+		shadowsByParent: map[int64][]*Account{1: {{ID: 20}, {ID: 21}}},
+		updateErrByID:   map[int64]error{21: shadowErr},
+	}
+	svc := &adminServiceImpl{accountRepo: repo}
+	proxyID := int64(9)
+
+	result, err := svc.BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
+		AccountIDs: []int64{1, 2}, ProxyID: &proxyID,
+	})
+
+	require.Nil(t, result)
+	require.ErrorIs(t, err, shadowErr)
+	require.ElementsMatch(t, []int64{1, 2, 20}, AccountMutationIDsFromError(err))
 }
 
 func TestAdminService_BulkUpdateAccounts_NilGroupRepoReturnsError(t *testing.T) {
