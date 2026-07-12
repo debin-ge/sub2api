@@ -607,6 +607,39 @@ func TestModelCatalogPublicScope(t *testing.T) {
 	require.Empty(t, discoverer.calls)
 }
 
+func TestModelCatalogPublicAntigravityAPIKeyUsesConfiguredRestrictionDespiteLiveCache(t *testing.T) {
+	now := time.Date(2026, 7, 12, 0, 0, 0, 0, time.UTC)
+	group := Group{ID: 40, Platform: PlatformAntigravity, Status: StatusActive}
+	restrictedAPIKey := Account{
+		ID: 41, Platform: PlatformAntigravity, Type: AccountTypeAPIKey,
+		Status: StatusActive, Schedulable: true,
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{"client-visible": "gateway-target"},
+		},
+	}
+	liveOAuth := Account{
+		ID: 42, Platform: PlatformAntigravity, Type: AccountTypeOAuth,
+		Status: StatusActive, Schedulable: true,
+	}
+	discoverer := &recordingModelDiscoverer{models: map[int64][]string{}, errs: map[int64]error{}}
+	catalog := NewModelCatalogService(
+		&modelCatalogAccountRepoStub{byGroup: map[int64][]Account{40: {restrictedAPIKey, liveOAuth}}},
+		&modelCatalogGroupRepoStub{groups: []Group{group}},
+		nil,
+		discoverer,
+		config.ModelCatalogConfig{RefreshIntervalSeconds: 300, RequestTimeoutSeconds: 10},
+	)
+	catalog.now = func() time.Time { return now }
+	catalog.cache.storeSuccess(restrictedAPIKey.ID, []string{"api-key-cached-live"}, now)
+	catalog.cache.storeSuccess(liveOAuth.ID, []string{"oauth-live"}, now)
+
+	models, err := catalog.ListPublic(context.Background())
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"client-visible", "oauth-live"}, models[PlatformAntigravity])
+	require.Empty(t, discoverer.calls)
+}
+
 func TestModelCatalogRequestMemoResolvesAccountOnce(t *testing.T) {
 	discoverer := &recordingModelDiscoverer{
 		models: map[int64][]string{1: {"gpt-public"}},

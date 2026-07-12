@@ -680,7 +680,6 @@ func accountRequiresLiveCatalog(account *Account) bool {
 		return geminiOAuthSupportsUpstreamModelDiscovery(account)
 	case PlatformAntigravity:
 		return account.Type == AccountTypeOAuth ||
-			account.Type == AccountTypeAPIKey ||
 			account.Type == AccountTypeUpstream
 	case PlatformWindsurf, PlatformOpenCode:
 		return account.Type == AccountTypeAPIKey
