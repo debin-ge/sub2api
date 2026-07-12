@@ -101,17 +101,21 @@ func TestModelCatalogRefreshAllFiltersAccountsAndIsolatesFailures(t *testing.T) 
 	require.Equal(t, int64(1), stats.ByPlatform[PlatformAnthropic].RefreshFailure)
 }
 
-func TestModelCatalogRefreshAllIncludesAntigravityAPIKey(t *testing.T) {
+func TestModelCatalogRefreshAllExcludesAntigravityAPIKey(t *testing.T) {
 	account := Account{
-		ID: 7, Platform: PlatformAntigravity, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true,
-		Credentials: map[string]any{"api_key": "gateway-key", "base_url": "https://gateway.example.com/antigravity"},
+		ID: 7, Platform: PlatformAntigravity, Type: AccountTypeAPIKey,
+		Status: StatusActive, Schedulable: true,
+		Credentials: map[string]any{
+			"api_key":       "gateway-key",
+			"base_url":      "https://gateway.example.com/antigravity",
+			"model_mapping": map[string]any{"client-model": "gateway-model"},
+		},
 	}
 	var calls atomic.Int64
 	catalog := &ModelCatalogService{
 		accountRepo: &refreshRunnerAccountRepoStub{accounts: []Account{account}},
-		discoverer: modelDiscovererFunc(func(_ context.Context, got *Account) ([]string, error) {
+		discoverer: modelDiscovererFunc(func(context.Context, *Account) ([]string, error) {
 			calls.Add(1)
-			require.Equal(t, account.ID, got.ID)
 			return []string{"gateway-live"}, nil
 		}),
 		cfg:   config.ModelCatalogConfig{RequestTimeoutSeconds: 10, FailureBackoffSeconds: 60, MaxConcurrency: 1},
@@ -120,8 +124,8 @@ func TestModelCatalogRefreshAllIncludesAntigravityAPIKey(t *testing.T) {
 
 	summary := catalog.RefreshAll(context.Background())
 
-	require.Equal(t, int64(1), calls.Load())
-	require.Equal(t, ModelCatalogRefreshPlatformSummary{Scanned: 1, Succeeded: 1}, summary.ByPlatform[PlatformAntigravity])
+	require.Zero(t, calls.Load())
+	require.NotContains(t, summary.ByPlatform, PlatformAntigravity)
 }
 
 func TestModelCatalogRefreshRunnerLogsBoundedSanitizedFailure(t *testing.T) {

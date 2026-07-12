@@ -388,50 +388,54 @@ func TestModelCatalogListForAccount_AntigravityUpstreamUsesRealDiscoverer(t *tes
 	require.Equal(t, 1, upstream.doWithTLSCalls)
 }
 
-func TestModelCatalogListForAccount_AntigravityAPIKeyUsesRealDiscoverer(t *testing.T) {
+func TestModelCatalogListForAccount_AntigravityAPIKeyUsesConfiguredMappingWithoutDiscovery(t *testing.T) {
 	upstream := &antigravityUpstreamDiscoveryRecorder{resp: &http.Response{
 		StatusCode: http.StatusOK,
 		Header:     http.Header{"Content-Type": []string{"application/json"}},
-		Body:       io.NopCloser(strings.NewReader(`{"data":[{"id":"gateway-z"},{"id":"gateway-a"},{"id":"gateway-a"}]}`)),
+		Body:       io.NopCloser(strings.NewReader(`{"data":[{"id":"gateway-live"}]}`)),
 	}}
 	discoverer := &UpstreamModelDiscoverer{httpUpstream: upstream, cfg: upstreamModelSyncTestConfig()}
 	catalog := NewModelCatalogService(nil, nil, nil, discoverer, config.ModelCatalogConfig{RequestTimeoutSeconds: 10})
 	account := &Account{
 		ID: 46, Platform: PlatformAntigravity, Type: AccountTypeAPIKey,
-		Credentials: map[string]any{"api_key": "gateway-key", "base_url": "https://gateway.example.com/antigravity"},
-	}
-
-	models, err := catalog.ListForAccount(context.Background(), account, true)
-
-	require.NoError(t, err)
-	require.Equal(t, []string{"gateway-a", "gateway-z"}, models)
-	require.NotNil(t, upstream.req)
-	require.Equal(t, "https://gateway.example.com/antigravity/v1/models", upstream.req.URL.String())
-	require.Equal(t, "gateway-key", upstream.req.Header.Get("x-api-key"))
-	require.Equal(t, 1, upstream.doWithTLSCalls)
-}
-
-func TestModelCatalogListForAccount_AntigravityAPIKeyFailureUsesConfiguredFallback(t *testing.T) {
-	upstream := &antigravityUpstreamDiscoveryRecorder{resp: &http.Response{
-		StatusCode: http.StatusBadGateway,
-		Header:     http.Header{"Content-Type": []string{"application/json"}},
-		Body:       io.NopCloser(strings.NewReader(`{"error":"must-not-be-exposed"}`)),
-	}}
-	discoverer := &UpstreamModelDiscoverer{httpUpstream: upstream, cfg: upstreamModelSyncTestConfig()}
-	catalog := NewModelCatalogService(nil, nil, nil, discoverer, config.ModelCatalogConfig{RequestTimeoutSeconds: 10})
-	account := &Account{
-		ID: 47, Platform: PlatformAntigravity, Type: AccountTypeAPIKey,
 		Credentials: map[string]any{
 			"api_key": "gateway-key", "base_url": "https://gateway.example.com/antigravity",
-			"model_mapping": map[string]any{"client-fallback": "upstream-model"},
+			"model_mapping": map[string]any{
+				"client-b": "gateway-b",
+				"client-a": "gateway-a",
+			},
 		},
 	}
 
 	models, err := catalog.ListForAccount(context.Background(), account, true)
 
 	require.NoError(t, err)
-	require.Equal(t, []string{"client-fallback"}, models)
-	require.Equal(t, 1, upstream.doWithTLSCalls)
+	require.Equal(t, []string{"client-a", "client-b"}, models)
+	require.Nil(t, upstream.req)
+	require.Zero(t, upstream.doCalls)
+	require.Zero(t, upstream.doWithTLSCalls)
+}
+
+func TestModelCatalogListForAccount_AntigravityAPIKeyLegacyWhitelistIgnoresFreshLiveCache(t *testing.T) {
+	discoverer := &recordingModelDiscoverer{
+		models: map[int64][]string{47: {"unexpected-live"}},
+		errs:   map[int64]error{},
+	}
+	catalog := NewModelCatalogService(nil, nil, nil, discoverer, config.ModelCatalogConfig{RequestTimeoutSeconds: 10})
+	catalog.cache.storeSuccess(47, []string{"cached-live"}, catalog.currentTime())
+	account := &Account{
+		ID: 47, Platform: PlatformAntigravity, Type: AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key": "gateway-key", "base_url": "https://gateway.example.com/antigravity",
+			"model_whitelist": []any{"legacy-b", "legacy-a"},
+		},
+	}
+
+	models, err := catalog.ListForAccount(context.Background(), account, true)
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"legacy-a", "legacy-b"}, models)
+	require.Zero(t, discoverer.calls[account.ID])
 }
 
 func TestUpstreamModelDiscoverer_ProviderDispatch(t *testing.T) {
