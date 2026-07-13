@@ -279,7 +279,7 @@ func setupAntigravityRefreshMutationRouter(adminSvc service.AdminService, catalo
 func setupProxyMutationCatalogRouter(repo service.AccountRepository, catalog adminModelCatalog) *gin.Engine {
 	adminSvc := service.NewAdminService(
 		nil, nil, repo, nil, nil, nil, nil, nil, nil,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 	)
 	handler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	handler.modelCatalog = catalog

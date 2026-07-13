@@ -647,6 +647,7 @@ type adminServiceImpl struct {
 	userSubRepo          UserSubscriptionRepository
 	privacyClientFactory PrivacyClientFactory
 	runtimeBlocker       AccountRuntimeBlocker
+	apiKeyService        *APIKeyService
 }
 
 type userGroupRateBatchReader interface {
@@ -673,6 +674,7 @@ func NewAdminService(
 	userSubRepo UserSubscriptionRepository,
 	privacyClientFactory PrivacyClientFactory,
 	runtimeBlocker AccountRuntimeBlocker,
+	apiKeyService *APIKeyService,
 ) AdminService {
 	return &adminServiceImpl{
 		userRepo:             userRepo,
@@ -693,6 +695,7 @@ func NewAdminService(
 		userSubRepo:          userSubRepo,
 		privacyClientFactory: privacyClientFactory,
 		runtimeBlocker:       runtimeBlocker,
+		apiKeyService:        apiKeyService,
 	}
 }
 
@@ -809,6 +812,8 @@ func (s *adminServiceImpl) CreateUser(ctx context.Context, input *CreateUserInpu
 		return nil, err
 	}
 	s.assignDefaultSubscriptions(ctx, user.ID)
+	// 异步为新用户创建所有公开分组的默认 API Keys
+	s.createDefaultAPIKeysAsync(user.ID)
 	return user, nil
 }
 
