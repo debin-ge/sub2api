@@ -1394,7 +1394,7 @@
 
           <template v-else>
             <!-- Mode Toggle -->
-            <div v-if="form.platform !== 'kimi' && form.platform !== 'deepseek'" class="mb-4 flex gap-2">
+            <div class="mb-4 flex gap-2">
               <button
                 type="button"
                 @click="modelRestrictionMode = 'whitelist'"
@@ -1459,7 +1459,7 @@
             </div>
 
             <!-- Mapping Mode -->
-            <div v-else-if="form.platform !== 'kimi' && form.platform !== 'deepseek'">
+            <div v-else>
               <div class="mb-3 rounded-lg bg-purple-50 p-3 dark:bg-purple-900/20">
                 <p class="text-xs text-purple-700 dark:text-purple-400">
                   <svg
@@ -3865,10 +3865,26 @@ const opencodeBaseUrl = ref(OPENCODE_BASE_URL)
 
 const syncPreviewCredentials = computed(() => {
   if (!apiKeyValue.value) return undefined
+
+  let baseUrl = apiKeyBaseUrl.value || undefined
+  switch (form.platform) {
+    case 'minimax':
+      baseUrl = minimaxOpenAIBaseUrl.value
+      break
+    case 'glm':
+      baseUrl = glmOpenAIBaseUrl.value
+      break
+    case 'kimi':
+      baseUrl = kimiOpenAIBaseUrl.value
+      break
+    case 'deepseek':
+      baseUrl = deepseekOpenAIBaseUrl.value
+      break
+  }
   return {
     platform: form.platform,
     type: form.type,
-    base_url: apiKeyBaseUrl.value || undefined,
+    base_url: baseUrl,
     api_key: apiKeyValue.value
   }
 })
@@ -4510,17 +4526,11 @@ watch(
   [modelRestrictionMode, () => form.platform],
   ([newMode]) => {
     if (newMode === 'whitelist') {
-      if (form.platform === 'glm') {
+      if (form.platform === 'minimax' || form.platform === 'glm') {
         allowedModels.value = []
         return
       }
-      if (form.platform === 'kimi') {
-        modelRestrictionMode.value = 'whitelist'
-        allowedModels.value = []
-        return
-      }
-      if (form.platform === 'deepseek') {
-        modelRestrictionMode.value = 'whitelist'
+      if (form.platform === 'kimi' || form.platform === 'deepseek') {
         allowedModels.value = []
         return
       }

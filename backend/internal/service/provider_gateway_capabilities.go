@@ -1,11 +1,15 @@
 package service
 
+import "strings"
+
 type ProviderGatewayCapabilities struct {
-	Platform          string
-	DefaultModelIDs   []string
-	PublicModelIDs    []string
-	SupportedModelIDs []string
-	AliasRules        []ModelAliasRule
+	Platform                   string
+	DefaultModelIDs            []string
+	PublicModelIDs             []string
+	SupportedModelIDs          []string
+	AliasRules                 []ModelAliasRule
+	AllowUnknownModels         bool
+	SupportsLiveModelDiscovery bool
 }
 
 // windsurfOfficialModelIDs is the static fallback catalog used when the
@@ -111,10 +115,13 @@ var opencodeDefaultModelIDs = []string{
 
 var domesticProviderCapabilities = map[string]ProviderGatewayCapabilities{
 	PlatformMiniMax: {
-		Platform:        PlatformMiniMax,
-		DefaultModelIDs: []string{"MiniMax-M2.7", "MiniMax-M2.7-highspeed"},
-		PublicModelIDs:  []string{"MiniMax-M2.7", "MiniMax-M2.7-highspeed"},
+		Platform:                   PlatformMiniMax,
+		DefaultModelIDs:            []string{"MiniMax-M3", "MiniMax-M2.7", "MiniMax-M2.7-highspeed"},
+		PublicModelIDs:             []string{"MiniMax-M3", "MiniMax-M2.7", "MiniMax-M2.7-highspeed"},
+		AllowUnknownModels:         true,
+		SupportsLiveModelDiscovery: true,
 		SupportedModelIDs: []string{
+			"MiniMax-M3",
 			"MiniMax-M2.7",
 			"MiniMax-M2.7-highspeed",
 			"abab6.5-chat",
@@ -132,10 +139,12 @@ var domesticProviderCapabilities = map[string]ProviderGatewayCapabilities{
 		},
 	},
 	PlatformGLM: {
-		Platform:          PlatformGLM,
-		DefaultModelIDs:   []string{"GLM-5.1", "GLM-4.7", "GLM-4.5-air"},
-		PublicModelIDs:    []string{"GLM-5.1", "GLM-4.7", "GLM-4.5-air"},
-		SupportedModelIDs: []string{"GLM-5.1", "GLM-4.7", "GLM-4.5-air"},
+		Platform:                   PlatformGLM,
+		DefaultModelIDs:            []string{"GLM-5.1", "GLM-4.7", "GLM-4.5-air"},
+		PublicModelIDs:             []string{"GLM-5.1", "GLM-4.7", "GLM-4.5-air"},
+		SupportedModelIDs:          []string{"GLM-5.1", "GLM-4.7", "GLM-4.5-air"},
+		AllowUnknownModels:         true,
+		SupportsLiveModelDiscovery: true,
 		AliasRules: []ModelAliasRule{
 			{AliasPattern: "claude-sonnet-*", TargetModel: "GLM-5.1"},
 			{AliasPattern: "claude-opus-*", TargetModel: "GLM-5.1"},
@@ -143,10 +152,12 @@ var domesticProviderCapabilities = map[string]ProviderGatewayCapabilities{
 		},
 	},
 	PlatformKimi: {
-		Platform:          PlatformKimi,
-		DefaultModelIDs:   []string{"kimi-for-coding"},
-		PublicModelIDs:    []string{"kimi-for-coding"},
-		SupportedModelIDs: []string{"kimi-for-coding"},
+		Platform:                   PlatformKimi,
+		DefaultModelIDs:            []string{"kimi-for-coding"},
+		PublicModelIDs:             []string{"kimi-for-coding"},
+		SupportedModelIDs:          []string{"kimi-for-coding"},
+		AllowUnknownModels:         true,
+		SupportsLiveModelDiscovery: true,
 		AliasRules: []ModelAliasRule{
 			{AliasPattern: "claude-sonnet-4-5", TargetModel: "kimi-for-coding"},
 			{AliasPattern: "claude-3-5-sonnet-latest", TargetModel: "kimi-for-coding"},
@@ -154,10 +165,12 @@ var domesticProviderCapabilities = map[string]ProviderGatewayCapabilities{
 		},
 	},
 	PlatformDeepSeek: {
-		Platform:          PlatformDeepSeek,
-		DefaultModelIDs:   []string{"deepseek-v4-flash", "deepseek-v4-pro"},
-		PublicModelIDs:    []string{"deepseek-v4-flash", "deepseek-v4-pro"},
-		SupportedModelIDs: []string{"deepseek-v4-flash", "deepseek-v4-pro"},
+		Platform:                   PlatformDeepSeek,
+		DefaultModelIDs:            []string{"deepseek-v4-flash", "deepseek-v4-pro"},
+		PublicModelIDs:             []string{"deepseek-v4-flash", "deepseek-v4-pro"},
+		SupportedModelIDs:          []string{"deepseek-v4-flash", "deepseek-v4-pro"},
+		AllowUnknownModels:         true,
+		SupportsLiveModelDiscovery: true,
 		AliasRules: []ModelAliasRule{
 			{AliasPattern: "deepseek-chat", TargetModel: "deepseek-v4-flash"},
 			{AliasPattern: "deepseek-v3", TargetModel: "deepseek-v4-flash"},
@@ -226,12 +239,24 @@ func providerSupportsUpstreamModel(platform, model string) bool {
 	if !ok {
 		return false
 	}
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return false
+	}
+	if caps.AllowUnknownModels {
+		return true
+	}
 	for _, supported := range caps.SupportedModelIDs {
 		if model == supported {
 			return true
 		}
 	}
 	return false
+}
+
+func providerSupportsLiveModelDiscovery(platform string) bool {
+	caps, ok := domesticProviderCapabilities[platform]
+	return ok && caps.SupportsLiveModelDiscovery
 }
 
 func cloneModelAliasRules(src []ModelAliasRule) []ModelAliasRule {

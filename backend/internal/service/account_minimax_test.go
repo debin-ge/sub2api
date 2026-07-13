@@ -51,28 +51,48 @@ func TestAccountMiniMaxDefaultBaseURLs(t *testing.T) {
 	}
 }
 
-func TestAccountMiniMaxOfficialModelsPassThroughWhenMappingConfigured(t *testing.T) {
+func TestAccountMiniMaxExplicitMappingRestrictsModelsAndAllowsNewTargets(t *testing.T) {
 	acc := &Account{
 		Platform: PlatformMiniMax,
 		Type:     AccountTypeAPIKey,
 		Credentials: map[string]any{
 			"api_key": "sk-cp-test",
 			"model_mapping": map[string]any{
-				"claude-sonnet-4-5": "MiniMax-M2.7",
+				"MiniMax-M3": "MiniMax-M3",
 			},
 		},
 	}
 
 	svc := &GatewayService{}
 
-	if !svc.isModelSupportedByAccount(acc, "MiniMax-M2.7-highspeed") {
-		t.Fatalf("expected MiniMax official model to be schedulable")
+	if !svc.isModelSupportedByAccount(acc, "MiniMax-M3") {
+		t.Fatalf("expected explicitly configured MiniMax-M3 to be schedulable")
 	}
-	if got := acc.GetMiniMaxMappedModel("MiniMax-M2.7-highspeed"); got != "MiniMax-M2.7-highspeed" {
-		t.Fatalf("mapped official model = %q", got)
+	if got := acc.GetMiniMaxMappedModel("MiniMax-M3"); got != "MiniMax-M3" {
+		t.Fatalf("mapped MiniMax-M3 model = %q", got)
+	}
+	if svc.isModelSupportedByAccount(acc, "MiniMax-M2.7-highspeed") {
+		t.Fatalf("expected unconfigured model to remain unsupported when mapping is configured")
 	}
 	if svc.isModelSupportedByAccount(acc, "unknown-model") {
 		t.Fatalf("expected unknown model to remain unsupported when mapping is configured")
+	}
+}
+
+func TestAccountMiniMaxWithoutMappingAllowsFutureModels(t *testing.T) {
+	acc := &Account{
+		Platform:    PlatformMiniMax,
+		Type:        AccountTypeAPIKey,
+		Credentials: map[string]any{"api_key": "sk-cp-test"},
+	}
+
+	for _, model := range []string{"MiniMax-M3", "MiniMax-future"} {
+		if !acc.IsMiniMaxModelSupported(model) {
+			t.Fatalf("expected future model %q to pass through", model)
+		}
+		if got := acc.GetMiniMaxMappedModel(model); got != model {
+			t.Fatalf("GetMiniMaxMappedModel(%q) = %q, want passthrough", model, got)
+		}
 	}
 }
 

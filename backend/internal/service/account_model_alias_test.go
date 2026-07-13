@@ -42,7 +42,7 @@ func TestResolveAccountProviderModelFallsBackToProviderAlias(t *testing.T) {
 	}
 }
 
-func TestResolveAccountProviderModelRejectsUnsupportedMappingTarget(t *testing.T) {
+func TestResolveAccountProviderModelAllowsUnknownTargetForFlexibleProvider(t *testing.T) {
 	acc := &Account{
 		Platform: PlatformDeepSeek,
 		Credentials: map[string]any{
@@ -52,8 +52,22 @@ func TestResolveAccountProviderModelRejectsUnsupportedMappingTarget(t *testing.T
 		},
 	}
 
-	if got, ok := ResolveAccountProviderModel(acc, "deepseek-chat"); ok {
-		t.Fatalf("unexpected unsupported mapping match: %#v", got)
+	got, ok := ResolveAccountProviderModel(acc, "deepseek-chat")
+	if !ok || got.UpstreamModel != "unsupported-upstream" {
+		t.Fatalf("expected runtime mapping target, got %#v, %v", got, ok)
+	}
+}
+
+func TestResolveAccountProviderModelExplicitMappingDoesNotFallBackToDefaults(t *testing.T) {
+	acc := &Account{
+		Platform: PlatformKimi,
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{"custom": "kimi-next"},
+		},
+	}
+
+	if got, ok := ResolveAccountProviderModel(acc, "claude-sonnet-4-5"); ok {
+		t.Fatalf("explicit account restriction unexpectedly fell back to provider alias: %#v", got)
 	}
 }
 

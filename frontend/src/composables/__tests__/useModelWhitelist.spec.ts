@@ -56,11 +56,12 @@ describe('useModelWhitelist', () => {
     expect(models.indexOf('gemini-2.5-flash-image')).toBeLessThan(models.indexOf('gemini-2.5-flash'))
   })
 
-  it('minimax 模型列表包含 Token Plan M2.7 模型', () => {
+  it('minimax 模型列表包含 Token Plan M3 和 M2.7 模型', () => {
     const models = getModelsByPlatform('minimax')
 
     expect(models).toContain('MiniMax-M2.7')
     expect(models).toContain('MiniMax-M2.7-highspeed')
+    expect(models).toContain('MiniMax-M3')
   })
 
   it('glm 模型列表仅包含 Coding Plan MVP 模型', () => {

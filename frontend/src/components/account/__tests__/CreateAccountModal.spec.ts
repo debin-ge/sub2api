@@ -75,6 +75,10 @@ const ModelWhitelistSelectorStub = defineComponent({
     platform: {
       type: String,
       default: ''
+    },
+    syncCredentials: {
+      type: Object,
+      default: undefined
     }
   },
   emits: ['update:modelValue'],
@@ -160,6 +164,12 @@ describe('CreateAccountModal', () => {
     await wrapper.get('[data-tour="account-form-name"]').setValue('MiniMax Token Plan')
     await wrapper.get('[data-testid="create-platform-minimax"]').trigger('click')
     await wrapper.get('[data-testid="minimax-api-key"]').setValue('sk-cp-test')
+    expect(wrapper.findComponent(ModelWhitelistSelectorStub).props('syncCredentials')).toEqual({
+      platform: 'minimax',
+      type: 'apikey',
+      base_url: 'https://api.minimax.io/v1',
+      api_key: 'sk-cp-test'
+    })
     await wrapper.get('form#create-account-form').trigger('submit.prevent')
     await flushPromises()
 
@@ -177,6 +187,7 @@ describe('CreateAccountModal', () => {
       })
     }))
     expect(payload.credentials.base_url).toBeUndefined()
+    expect(payload.credentials.model_mapping).toBeUndefined()
     expect(checkMixedChannelRiskMock).not.toHaveBeenCalled()
   })
 
@@ -233,7 +244,7 @@ describe('CreateAccountModal', () => {
     expect(checkMixedChannelRiskMock).not.toHaveBeenCalled()
   })
 
-  it('submits Kimi API key credentials with editable base URLs and no Claude aliases', async () => {
+  it('submits Kimi API key credentials with an explicit custom model mapping', async () => {
     createAccountMock.mockReset()
     checkMixedChannelRiskMock.mockReset()
     createAccountMock.mockResolvedValue({ id: 3 })
@@ -258,8 +269,14 @@ describe('CreateAccountModal', () => {
     await wrapper.get('[data-testid="kimi-api-key"]').setValue('sk-kimi-test')
     await wrapper.get('[data-testid="kimi-anthropic-base-url"]').setValue('https://custom.example/kimi/anthropic')
     await wrapper.get('[data-testid="kimi-openai-base-url"]').setValue('https://custom.example/kimi/openai')
-    await wrapper.get('[data-testid="select-models"]').trigger('click')
-    expect(wrapper.get('[data-testid="model-whitelist-value"]').text()).toBe('kimi-for-coding')
+    const mappingModeButton = wrapper.findAll('button').find((button) => button.text().includes('admin.accounts.modelMapping'))
+    expect(mappingModeButton).toBeDefined()
+    await mappingModeButton!.trigger('click')
+    const addMappingButton = wrapper.findAll('button').find((button) => button.text().includes('admin.accounts.addMapping'))
+    expect(addMappingButton).toBeDefined()
+    await addMappingButton!.trigger('click')
+    await wrapper.get('input[placeholder="admin.accounts.requestModel"]').setValue('kimi-latest')
+    await wrapper.get('input[placeholder="admin.accounts.actualModel"]').setValue('kimi-future-model')
     await wrapper.get('form#create-account-form').trigger('submit.prevent')
     await flushPromises()
 
@@ -274,17 +291,16 @@ describe('CreateAccountModal', () => {
         base_url_anthropic: 'https://custom.example/kimi/anthropic',
         base_url_openai: 'https://custom.example/kimi/openai',
         model_mapping: {
-          'kimi-for-coding': 'kimi-for-coding'
+          'kimi-latest': 'kimi-future-model'
         }
       })
     }))
     expect(Object.keys(payload.credentials).sort()).toEqual(['api_key', 'base_url_anthropic', 'base_url_openai', 'model_mapping'])
     expect(payload.credentials.base_url).toBeUndefined()
-    expect(payload.credentials.model_mapping['claude-sonnet-4-5']).toBeUndefined()
     expect(checkMixedChannelRiskMock).not.toHaveBeenCalled()
   })
 
-  it('submits DeepSeek API key credentials with editable base URLs and no legacy aliases', async () => {
+  it('submits DeepSeek API key credentials with an explicit custom model mapping', async () => {
     createAccountMock.mockReset()
     checkMixedChannelRiskMock.mockReset()
     createAccountMock.mockResolvedValue({ id: 4 })
@@ -309,8 +325,14 @@ describe('CreateAccountModal', () => {
     await wrapper.get('[data-testid="deepseek-api-key"]').setValue('sk-deepseek-test')
     await wrapper.get('[data-testid="deepseek-anthropic-base-url"]').setValue('https://custom.example/deepseek/anthropic')
     await wrapper.get('[data-testid="deepseek-openai-base-url"]').setValue('https://custom.example/deepseek/openai')
-    await wrapper.get('[data-testid="select-models"]').trigger('click')
-    expect(wrapper.get('[data-testid="model-whitelist-value"]').text()).toBe('deepseek-v4-pro')
+    const mappingModeButton = wrapper.findAll('button').find((button) => button.text().includes('admin.accounts.modelMapping'))
+    expect(mappingModeButton).toBeDefined()
+    await mappingModeButton!.trigger('click')
+    const addMappingButton = wrapper.findAll('button').find((button) => button.text().includes('admin.accounts.addMapping'))
+    expect(addMappingButton).toBeDefined()
+    await addMappingButton!.trigger('click')
+    await wrapper.get('input[placeholder="admin.accounts.requestModel"]').setValue('deepseek-latest')
+    await wrapper.get('input[placeholder="admin.accounts.actualModel"]').setValue('deepseek-future-model')
     await wrapper.get('form#create-account-form').trigger('submit.prevent')
     await flushPromises()
 
@@ -325,14 +347,12 @@ describe('CreateAccountModal', () => {
         base_url_anthropic: 'https://custom.example/deepseek/anthropic',
         base_url_openai: 'https://custom.example/deepseek/openai',
         model_mapping: {
-          'deepseek-v4-pro': 'deepseek-v4-pro'
+          'deepseek-latest': 'deepseek-future-model'
         }
       })
     }))
     expect(Object.keys(payload.credentials).sort()).toEqual(['api_key', 'base_url_anthropic', 'base_url_openai', 'model_mapping'])
     expect(payload.credentials.base_url).toBeUndefined()
-    expect(payload.credentials.model_mapping['deepseek-chat']).toBeUndefined()
-    expect(payload.credentials.model_mapping['deepseek-reasoner']).toBeUndefined()
     expect(checkMixedChannelRiskMock).not.toHaveBeenCalled()
   })
 

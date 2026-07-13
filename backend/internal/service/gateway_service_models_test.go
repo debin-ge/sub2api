@@ -63,7 +63,7 @@ func TestGatewayServiceGetAvailableModelsDomesticDefaultsWhenNoAccounts(t *testi
 
 	models := svc.GetAvailableModels(context.Background(), nil, PlatformMiniMax)
 
-	assertStringSlicesEqual(t, models, []string{"MiniMax-M2.7", "MiniMax-M2.7-highspeed"})
+	assertStringSlicesEqual(t, models, []string{"MiniMax-M2.7", "MiniMax-M2.7-highspeed", "MiniMax-M3"})
 }
 
 func TestGatewayServiceGetAvailableModelsDomesticMergesAccountMappings(t *testing.T) {
@@ -99,6 +99,8 @@ func TestGatewayServiceGetAvailableModelsDomesticMergesAccountMappings(t *testin
 	assertStringSlicesEqual(t, models, []string{
 		"MiniMax-M2.7",
 		"MiniMax-M2.7-highspeed",
+		"MiniMax-M3",
+		"bad-target",
 		"custom-haiku",
 		"custom-sonnet",
 	})

@@ -256,6 +256,11 @@ func TestModelCatalogListForAccount(t *testing.T) {
 	}{
 		{name: "oauth live", account: Account{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeOAuth}, liveModels: []string{"gpt-new"}, want: []string{"gpt-new"}, wantCalls: 1},
 		{name: "apikey passthrough live", account: Account{ID: 2, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Extra: map[string]any{"openai_passthrough": true}}, liveModels: []string{"gpt-new"}, want: []string{"gpt-new"}, wantCalls: 1},
+		{name: "minimax api key live", account: Account{ID: 20, Platform: PlatformMiniMax, Type: AccountTypeAPIKey}, liveModels: []string{"MiniMax-next"}, want: []string{"MiniMax-next"}, wantCalls: 1},
+		{name: "glm api key live", account: Account{ID: 21, Platform: PlatformGLM, Type: AccountTypeAPIKey}, liveModels: []string{"GLM-next"}, want: []string{"GLM-next"}, wantCalls: 1},
+		{name: "kimi api key live", account: Account{ID: 22, Platform: PlatformKimi, Type: AccountTypeAPIKey}, liveModels: []string{"kimi-next"}, want: []string{"kimi-next"}, wantCalls: 1},
+		{name: "deepseek api key live", account: Account{ID: 23, Platform: PlatformDeepSeek, Type: AccountTypeAPIKey}, liveModels: []string{"deepseek-next"}, want: []string{"deepseek-next"}, wantCalls: 1},
+		{name: "minimax explicit mapping uses configured sources", account: Account{ID: 24, Platform: PlatformMiniMax, Type: AccountTypeAPIKey, Credentials: map[string]any{"model_mapping": map[string]any{"client-minimax": "MiniMax-next"}}}, want: []string{"client-minimax"}},
 		{name: "apikey mapping sources", account: Account{ID: 3, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"model_mapping": map[string]any{"alias-b": "upstream-b", "alias-a": "upstream-a"}}}, want: []string{"alias-a", "alias-b"}},
 		{name: "legacy whitelist", account: Account{ID: 4, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"model_whitelist": []any{"gpt-5.5"}}}, want: []string{"gpt-5.5"}},
 	}

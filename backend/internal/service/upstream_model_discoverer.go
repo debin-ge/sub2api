@@ -194,6 +194,8 @@ func (d *UpstreamModelDiscoverer) buildUpstreamModelsRequest(ctx context.Context
 		return d.buildAntigravityUpstreamModelsRequest(ctx, account)
 	case account.Platform == PlatformAntigravity:
 		return d.buildAntigravityAPIKeyModelsRequest(ctx, account)
+	case providerSupportsLiveModelDiscovery(account.Platform):
+		return d.buildDomesticCompatibleUpstreamModelsRequest(ctx, account)
 	case account.IsOpenAI():
 		return d.buildOpenAIUpstreamModelsRequest(ctx, account)
 	case account.IsGemini():
@@ -205,6 +207,45 @@ func (d *UpstreamModelDiscoverer) buildUpstreamModelsRequest(ctx context.Context
 			fmt.Sprintf("Unsupported platform for upstream model sync: %s", account.Platform), nil,
 		)
 	}
+}
+
+func (d *UpstreamModelDiscoverer) buildDomesticCompatibleUpstreamModelsRequest(ctx context.Context, account *Account) (*http.Request, error) {
+	if account == nil || account.Type != AccountTypeAPIKey || !providerSupportsLiveModelDiscovery(account.Platform) {
+		return nil, newUpstreamModelSyncUnsupportedError("Unsupported compatible provider account for upstream model sync", nil)
+	}
+
+	var apiKey, baseURL string
+	switch account.Platform {
+	case PlatformMiniMax:
+		apiKey, baseURL = account.GetMiniMaxAPIKey(), account.GetMiniMaxOpenAIBaseURL()
+	case PlatformGLM:
+		apiKey, baseURL = account.GetGLMAPIKey(), account.GetGLMOpenAIBaseURL()
+	case PlatformKimi:
+		apiKey, baseURL = account.GetKimiAPIKey(), account.GetKimiOpenAIBaseURL()
+	case PlatformDeepSeek:
+		apiKey, baseURL = account.GetDeepSeekAPIKey(), account.GetDeepSeekOpenAIBaseURL()
+	default:
+		return nil, newUpstreamModelSyncUnsupportedError(
+			fmt.Sprintf("Unsupported compatible provider for upstream model sync: %s", account.Platform), nil,
+		)
+	}
+	if strings.TrimSpace(apiKey) == "" {
+		return nil, newUpstreamModelSyncConfigError("No compatible provider API key is available", nil)
+	}
+
+	validatedBaseURL, err := d.validateUpstreamBaseURL(baseURL)
+	if err != nil {
+		return nil, newUpstreamModelSyncConfigError("Invalid compatible provider model list URL", err)
+	}
+	modelsURL := strings.TrimRight(validatedBaseURL, "/") + "/models"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, modelsURL, nil)
+	if err != nil {
+		return nil, newUpstreamModelSyncConfigError("Invalid compatible provider model list URL", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(apiKey))
+	account.ApplyHeaderOverrides(req.Header)
+	return req, nil
 }
 
 func (d *UpstreamModelDiscoverer) buildWindsurfUpstreamModelsRequest(ctx context.Context, account *Account) (*http.Request, error) {

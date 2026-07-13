@@ -177,7 +177,7 @@ func TestKimiGatewayServiceForwardMessagesPreservesAnthropicVersion(t *testing.T
 	}
 }
 
-func TestKimiGatewayServiceRejectsNonKimiModelBeforeForwarding(t *testing.T) {
+func TestKimiGatewayServiceRejectsModelOutsideExplicitMappingBeforeForwarding(t *testing.T) {
 	forwarded := false
 	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		forwarded = true
@@ -187,7 +187,9 @@ func TestKimiGatewayServiceRejectsNonKimiModelBeforeForwarding(t *testing.T) {
 	c, _ := newKimiGatewayTestContext("/v1/messages")
 	body := []byte(`{"model":"claude-haiku-4-5","messages":[{"role":"user","content":"hello"}]}`)
 
-	_, err := svc.ForwardMessages(context.Background(), c, kimiGatewayTestAccount(), body, "req-unsupported")
+	account := kimiGatewayTestAccount()
+	account.Credentials["model_mapping"] = map[string]any{"kimi-for-coding": "kimi-for-coding"}
+	_, err := svc.ForwardMessages(context.Background(), c, account, body, "req-unsupported")
 
 	if err == nil {
 		t.Fatalf("expected unsupported model error")

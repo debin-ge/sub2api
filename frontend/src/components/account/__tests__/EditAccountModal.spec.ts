@@ -73,6 +73,18 @@ const ModelWhitelistSelectorStub = defineComponent({
     modelValue: {
       type: Array,
       default: () => []
+    },
+    platform: {
+      type: String,
+      default: ''
+    },
+    accountId: {
+      type: Number,
+      default: undefined
+    },
+    syncCredentials: {
+      type: Object,
+      default: undefined
     }
   },
   emits: ['update:modelValue'],
@@ -323,6 +335,41 @@ function mountModal(account = buildAccount()) {
 describe('EditAccountModal', () => {
   beforeEach(() => {
     authIsSimpleMode.value = true
+  })
+
+  it('passes the current MiniMax OpenAI endpoint to live model sync', async () => {
+    const account = buildAccount()
+    account.id = 42
+    account.platform = 'minimax'
+    account.name = 'MiniMax Key'
+    account.credentials = {
+      api_key: 'stored-key',
+      base_url_anthropic: 'https://api.minimaxi.com/anthropic',
+      base_url_openai: 'https://api.minimaxi.com/v1',
+      model_mapping: {
+        'MiniMax-M3': 'MiniMax-M3'
+      }
+    }
+    const wrapper = mountModal(account)
+    const selector = wrapper.findComponent(ModelWhitelistSelectorStub)
+
+    expect(selector.props('accountId')).toBe(42)
+    expect(selector.props('syncCredentials')).toEqual({
+      platform: 'minimax',
+      type: 'apikey',
+      base_url: 'https://api.minimaxi.com/v1',
+      api_key: undefined
+    })
+
+    await wrapper.get('[data-testid="minimax-openai-base-url"]').setValue('https://gateway.example/minimax/v1')
+    await wrapper.get('[data-testid="minimax-api-key"]').setValue('replacement-key')
+
+    expect(selector.props('syncCredentials')).toEqual({
+      platform: 'minimax',
+      type: 'apikey',
+      base_url: 'https://gateway.example/minimax/v1',
+      api_key: 'replacement-key'
+    })
   })
 
   it('reopening the same account rehydrates the OpenAI whitelist from props', async () => {

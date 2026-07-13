@@ -28,6 +28,15 @@ func TestModelCatalogDefaults(t *testing.T) {
 	require.Equal(t, 5, cfg.ModelCatalog.MaxConcurrency)
 }
 
+func TestDomesticProviderHostsAreInDefaultUpstreamAllowlist(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	cfg, err := Load()
+	require.NoError(t, err)
+	for _, host := range []string{"api.minimax.io", "api.minimaxi.com", "open.bigmodel.cn", "api.kimi.com", "api.deepseek.com"} {
+		require.Contains(t, cfg.Security.URLAllowlist.UpstreamHosts, host)
+	}
+}
+
 func TestModelCatalogValidation(t *testing.T) {
 	tests := []struct {
 		name   string

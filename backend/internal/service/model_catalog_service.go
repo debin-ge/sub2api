@@ -684,7 +684,9 @@ func accountRequiresLiveCatalog(account *Account) bool {
 	case PlatformWindsurf, PlatformOpenCode:
 		return account.Type == AccountTypeAPIKey
 	default:
-		return false
+		return account.Type == AccountTypeAPIKey &&
+			providerSupportsLiveModelDiscovery(account.Platform) &&
+			len(account.GetModelMapping()) == 0
 	}
 }
 

@@ -2,7 +2,7 @@ package service
 
 import "testing"
 
-func TestAccountDeepSeekHelpersUseEditableEndpointsAndOfficialModels(t *testing.T) {
+func TestAccountDeepSeekHelpersUseEditableEndpointsAndAllowFutureModels(t *testing.T) {
 	acc := &Account{
 		Platform: PlatformDeepSeek,
 		Type:     AccountTypeAPIKey,
@@ -11,9 +11,6 @@ func TestAccountDeepSeekHelpersUseEditableEndpointsAndOfficialModels(t *testing.
 			"base_url":           "https://proxy.example",
 			"base_url_anthropic": " https://proxy.example/anthropic/ ",
 			"base_url_openai":    " https://proxy.example/openai/ ",
-			"model_mapping": map[string]any{
-				"claude-sonnet-4-5": "deepseek-v4-pro",
-			},
 		},
 	}
 
@@ -36,24 +33,42 @@ func TestAccountDeepSeekHelpersUseEditableEndpointsAndOfficialModels(t *testing.
 		t.Fatalf("default deepseek models = %#v", got)
 	}
 
-	for _, model := range []string{"deepseek-v4-flash", " deepseek-v4-pro ", "deepseek-chat", "deepseek-v3", "deepseek-reasoner", "deepseek-r1", "claude-sonnet-4-5"} {
+	for _, model := range []string{"deepseek-v4-flash", " deepseek-v4-pro ", "deepseek-chat", "deepseek-v3", "deepseek-reasoner", "deepseek-r1", "deepseek-next"} {
 		if !acc.IsDeepSeekModelSupported(model) {
 			t.Fatalf("model %q should be supported", model)
 		}
-	}
-	for _, model := range []string{"gpt-5.4", "kimi-for-coding"} {
-		if acc.IsDeepSeekModelSupported(model) {
-			t.Fatalf("model %q should not be supported", model)
-		}
-	}
-	if got := acc.GetDeepSeekMappedModel("claude-sonnet-4-5"); got != "deepseek-v4-pro" {
-		t.Fatalf("GetDeepSeekMappedModel(claude-sonnet-4-5) = %q", got)
 	}
 	if got := acc.GetDeepSeekMappedModel("deepseek-chat"); got != "deepseek-v4-flash" {
 		t.Fatalf("GetDeepSeekMappedModel(deepseek-chat) = %q", got)
 	}
 	if got := acc.GetDeepSeekMappedModel("deepseek-reasoner"); got != "deepseek-v4-pro" {
 		t.Fatalf("GetDeepSeekMappedModel(deepseek-reasoner) = %q", got)
+	}
+	if got := acc.GetDeepSeekMappedModel("deepseek-next"); got != "deepseek-next" {
+		t.Fatalf("GetDeepSeekMappedModel(deepseek-next) = %q", got)
+	}
+}
+
+func TestAccountDeepSeekExplicitMappingRestrictsAndAllowsUnknownTarget(t *testing.T) {
+	acc := &Account{
+		Platform: PlatformDeepSeek,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key": "sk-deepseek-test",
+			"model_mapping": map[string]any{
+				"claude-sonnet-4-5": "deepseek-next",
+			},
+		},
+	}
+
+	if !acc.IsDeepSeekModelSupported("claude-sonnet-4-5") {
+		t.Fatal("expected configured model to be supported")
+	}
+	if got := acc.GetDeepSeekMappedModel("claude-sonnet-4-5"); got != "deepseek-next" {
+		t.Fatalf("GetDeepSeekMappedModel(claude-sonnet-4-5) = %q", got)
+	}
+	if acc.IsDeepSeekModelSupported("deepseek-v4-pro") {
+		t.Fatal("expected explicit mapping to restrict unconfigured models")
 	}
 }
 

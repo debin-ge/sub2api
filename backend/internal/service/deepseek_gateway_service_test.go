@@ -296,7 +296,7 @@ func TestDeepSeekGatewayServiceForwardResponsesBuildsChatRequestAndWritesRespons
 	}
 }
 
-func TestDeepSeekGatewayServiceRejectsUnsupportedModelsBeforeForwarding(t *testing.T) {
+func TestDeepSeekGatewayServiceRejectsModelsOutsideExplicitMappingBeforeForwarding(t *testing.T) {
 	tests := []string{"claude-sonnet-4-5-haiku", "gpt-5.4", "deepseek-v4-flashy"}
 	for _, model := range tests {
 		t.Run(model, func(t *testing.T) {
@@ -309,7 +309,9 @@ func TestDeepSeekGatewayServiceRejectsUnsupportedModelsBeforeForwarding(t *testi
 			c, _ := newDeepSeekGatewayTestContext("/v1/messages")
 			body := []byte(`{"model":` + deepSeekTestQuote(model) + `,"messages":[{"role":"user","content":"hello"}]}`)
 
-			_, err := svc.ForwardMessages(context.Background(), c, deepSeekGatewayTestAccount(), body, "req-unsupported")
+			account := deepSeekGatewayTestAccount()
+			account.Credentials["model_mapping"] = map[string]any{"deepseek-v4-pro": "deepseek-v4-pro"}
+			_, err := svc.ForwardMessages(context.Background(), c, account, body, "req-unsupported")
 			if err == nil {
 				t.Fatalf("expected unsupported model error")
 			}

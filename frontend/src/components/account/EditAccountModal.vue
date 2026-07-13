@@ -297,7 +297,7 @@
 
           <template v-else>
             <!-- Mode Toggle -->
-            <div v-if="account.platform !== 'kimi' && account.platform !== 'deepseek'" class="mb-4 flex gap-2">
+            <div class="mb-4 flex gap-2">
               <button
                 type="button"
                 @click="modelRestrictionMode = 'whitelist'"
@@ -352,7 +352,7 @@
 
             <!-- Whitelist Mode -->
             <div v-if="modelRestrictionMode === 'whitelist'">
-              <ModelWhitelistSelector v-model="allowedModels" :platform="account?.platform || 'anthropic'" :account-id="account?.id" :load-related-models="loadAccountAvailableModelIDs" />
+              <ModelWhitelistSelector v-model="allowedModels" :platform="account?.platform || 'anthropic'" :account-id="account?.id" :sync-credentials="editSyncCredentials" :load-related-models="loadAccountAvailableModelIDs" />
               <p class="text-xs text-gray-500 dark:text-gray-400">
                 {{ t('admin.accounts.selectedModels', { count: allowedModels.length }) }}
                 <span v-if="allowedModels.length === 0 && modelMappings.length === 0">{{
@@ -362,7 +362,7 @@
             </div>
 
             <!-- Mapping Mode -->
-            <div v-else-if="account.platform !== 'kimi' && account.platform !== 'deepseek'">
+            <div v-else>
               <div class="mb-3 rounded-lg bg-purple-50 p-3 dark:bg-purple-900/20">
                 <p class="text-xs text-purple-700 dark:text-purple-400">
                   <svg
@@ -2786,7 +2786,6 @@ import {
 } from '@/utils/openaiWsMode'
 import {
   getPresetMappingsByPlatform,
-  getModelsByPlatform,
   commonErrorCodes,
   buildModelMappingObject,
   splitModelMappingObject,
@@ -2851,6 +2850,46 @@ const editDeepSeekAnthropicBaseUrl = ref(DEEPSEEK_ANTHROPIC_BASE_URL)
 const editDeepSeekOpenAIBaseUrl = ref(DEEPSEEK_OPENAI_BASE_URL)
 const editWindsurfBaseUrl = ref(WINDSURF_BASE_URL)
 const editOpenCodeBaseUrl = ref(OPENCODE_BASE_URL)
+const editSyncCredentials = computed(() => {
+  const account = props.account
+  if (!account || account.type !== 'apikey') return undefined
+
+  let baseUrl: string | undefined
+  switch (account.platform) {
+    case 'minimax':
+      baseUrl = editMiniMaxOpenAIBaseUrl.value
+      break
+    case 'glm':
+      baseUrl = editGLMOpenAIBaseUrl.value
+      break
+    case 'kimi':
+      baseUrl = editKimiOpenAIBaseUrl.value
+      break
+    case 'deepseek':
+      baseUrl = editDeepSeekOpenAIBaseUrl.value
+      break
+    case 'windsurf':
+      baseUrl = editWindsurfBaseUrl.value
+      break
+    case 'opencode':
+      baseUrl = editOpenCodeBaseUrl.value
+      break
+    case 'anthropic':
+    case 'openai':
+    case 'gemini':
+      baseUrl = editBaseUrl.value
+      break
+    default:
+      return undefined
+  }
+
+  return {
+    platform: account.platform,
+    type: account.type,
+    base_url: baseUrl?.trim() || undefined,
+    api_key: editApiKey.value.trim() || undefined
+  }
+})
 // Bedrock credentials
 const editBedrockAccessKeyId = ref('')
 const editBedrockSecretAccessKey = ref('')
@@ -3326,29 +3365,7 @@ const normalizePoolModeRetryCount = (value: number) => {
   return normalized
 }
 
-const loadModelRestrictionFromMapping = (rawMapping?: Record<string, unknown>, platform = props.account?.platform) => {
-  const entries = Object.entries(rawMapping ?? {})
-    .filter((entry): entry is [string, string] => typeof entry[1] === 'string')
-
-  if (platform === 'kimi') {
-    modelRestrictionMode.value = 'whitelist'
-    allowedModels.value = entries
-      .map(([from]) => from)
-      .filter((model) => model === 'kimi-for-coding')
-    modelMappings.value = []
-    return
-  }
-
-  if (platform === 'deepseek') {
-    const deepseekModels = new Set(getModelsByPlatform('deepseek'))
-    modelRestrictionMode.value = 'whitelist'
-    allowedModels.value = entries
-      .map(([from]) => from)
-      .filter((model) => deepseekModels.has(model))
-    modelMappings.value = []
-    return
-  }
-
+const loadModelRestrictionFromMapping = (rawMapping?: Record<string, unknown>) => {
   const parsed = splitModelMappingObject(rawMapping)
   allowedModels.value = parsed.allowedModels
   modelMappings.value = parsed.modelMappings
@@ -3608,7 +3625,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     }
 
     // Load model mappings and detect mode
-    loadModelRestrictionFromMapping(credentials.model_mapping as Record<string, unknown> | undefined, newAccount.platform)
+    loadModelRestrictionFromMapping(credentials.model_mapping as Record<string, unknown> | undefined)
 
     // Load pool mode
     poolModeEnabled.value = credentials.pool_mode === true

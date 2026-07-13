@@ -39,15 +39,57 @@ func setupAvailableModelsRouter(adminSvc service.AdminService, catalog adminMode
 }
 
 type syncUpstreamHTTPUpstream struct {
-	resp *http.Response
-	err  error
+	resp    *http.Response
+	err     error
+	lastReq *http.Request
 }
 
 func (u *syncUpstreamHTTPUpstream) Do(req *http.Request, proxyURL string, accountID int64, accountConcurrency int) (*http.Response, error) {
+	u.lastReq = req
 	if u.err != nil {
 		return nil, u.err
 	}
 	return u.resp, nil
+}
+
+func TestAccountHandlerSyncUpstreamModels_UsesLiveDomesticEndpointAndEditOverrides(t *testing.T) {
+	svc := &availableModelsAdminService{
+		stubAdminService: newStubAdminService(),
+		account: service.Account{
+			ID:       46,
+			Name:     "minimax-edit-sync",
+			Platform: service.PlatformMiniMax,
+			Type:     service.AccountTypeAPIKey,
+			Status:   service.StatusActive,
+			Credentials: map[string]any{
+				"api_key":         "stored-minimax-key",
+				"base_url_openai": "https://old.example/v1",
+			},
+		},
+	}
+	upstream := &syncUpstreamHTTPUpstream{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"object":"list","data":[{"id":"MiniMax-M3"},{"id":"MiniMax-next"}]}`)),
+	}}
+	router := setupSyncUpstreamModelsRouter(svc, upstream)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/admin/accounts/46/models/sync-upstream",
+		strings.NewReader(`{"base_url":"https://api.minimaxi.com/v1"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.NotNil(t, upstream.lastReq)
+	require.Equal(t, "https://api.minimaxi.com/v1/models", upstream.lastReq.URL.String())
+	require.Equal(t, "Bearer stored-minimax-key", upstream.lastReq.Header.Get("Authorization"))
+	require.Contains(t, rec.Body.String(), "MiniMax-M3")
+	require.Contains(t, rec.Body.String(), "MiniMax-next")
+	require.Equal(t, "https://old.example/v1", svc.account.Credentials["base_url_openai"])
 }
 
 func (u *syncUpstreamHTTPUpstream) DoWithTLS(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {

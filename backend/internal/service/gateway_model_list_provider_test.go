@@ -30,6 +30,8 @@ func TestGatewayModelListProviderDefaultsAndAccountMappings(t *testing.T) {
 	assertStringSlicesEqual(t, models, []string{
 		"MiniMax-M2.7",
 		"MiniMax-M2.7-highspeed",
+		"MiniMax-M3",
+		"bad-target",
 		"custom-haiku",
 		"custom-sonnet",
 	})

@@ -169,7 +169,7 @@ const doubaoModels = [
 
 // MiniMax
 const minimaxModels = [
-  'MiniMax-M2.7', 'MiniMax-M2.7-highspeed',
+  'MiniMax-M3', 'MiniMax-M2.7', 'MiniMax-M2.7-highspeed',
   'abab6.5-chat', 'abab6.5s-chat', 'abab6.5s-chat-pro',
   'abab6-chat',
   'abab5.5-chat', 'abab5.5s-chat'
@@ -387,6 +387,7 @@ const geminiPresetMappings = [
 ]
 
 const minimaxPresetMappings = [
+  { label: 'M3 passthrough', from: 'MiniMax-M3', to: 'MiniMax-M3', color: 'bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-900/30 dark:text-violet-300' },
   { label: 'Sonnet→M2.7', from: 'claude-sonnet-4-5', to: 'MiniMax-M2.7', color: 'bg-cyan-100 text-cyan-700 hover:bg-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-300' },
   { label: 'Haiku→M2.7 highspeed', from: 'claude-haiku-4-5', to: 'MiniMax-M2.7-highspeed', color: 'bg-sky-100 text-sky-700 hover:bg-sky-200 dark:bg-sky-900/30 dark:text-sky-300' },
   { label: 'M2.7 passthrough', from: 'MiniMax-M2.7', to: 'MiniMax-M2.7', color: 'bg-teal-100 text-teal-700 hover:bg-teal-200 dark:bg-teal-900/30 dark:text-teal-300' }

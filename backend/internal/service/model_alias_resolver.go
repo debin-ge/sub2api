@@ -52,7 +52,8 @@ func ResolveAccountProviderModel(account *Account, requested string) (ModelAlias
 	if trimmed == "" {
 		return ModelAliasResolution{}, false
 	}
-	if mapped, pattern, ok := resolveAccountMappingWithPattern(account.GetModelMapping(), trimmed); ok {
+	mapping := account.GetModelMapping()
+	if mapped, pattern, ok := resolveAccountMappingWithPattern(mapping, trimmed); ok {
 		mapped = strings.TrimSpace(mapped)
 		if !providerSupportsUpstreamModel(account.Platform, mapped) {
 			return ModelAliasResolution{}, false
@@ -64,6 +65,11 @@ func ResolveAccountProviderModel(account *Account, requested string) (ModelAlias
 			Source:         ModelAliasSourceAccountMapping,
 			MatchedPattern: pattern,
 		}, true
+	}
+	// An explicit account mapping is also an allow-list. Falling through to
+	// provider defaults here would make a configured restriction ineffective.
+	if len(mapping) > 0 {
+		return ModelAliasResolution{}, false
 	}
 	return ResolveProviderModelAlias(account.Platform, trimmed)
 }

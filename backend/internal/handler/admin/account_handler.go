@@ -2638,12 +2638,41 @@ func (h *AccountHandler) SyncUpstreamModels(c *gin.Context) {
 		return
 	}
 
+	var req struct {
+		BaseURL string `json:"base_url"`
+		APIKey  string `json:"api_key"`
+	}
+	if c.Request.ContentLength != 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			response.BadRequest(c, "Invalid request: "+err.Error())
+			return
+		}
+	}
+
+	// Work on a copy so unsaved connection fields from the edit form can be
+	// tested against the live upstream without mutating the stored account.
+	syncAccount := *account
+	syncAccount.Credentials = make(map[string]any, len(account.Credentials)+2)
+	for key, value := range account.Credentials {
+		syncAccount.Credentials[key] = value
+	}
+	if apiKey := strings.TrimSpace(req.APIKey); apiKey != "" {
+		syncAccount.Credentials["api_key"] = apiKey
+	}
+	if baseURL := strings.TrimSpace(req.BaseURL); baseURL != "" {
+		syncAccount.Credentials["base_url"] = baseURL
+		switch syncAccount.Platform {
+		case service.PlatformMiniMax, service.PlatformGLM, service.PlatformKimi, service.PlatformDeepSeek:
+			syncAccount.Credentials["base_url_openai"] = baseURL
+		}
+	}
+
 	if h.accountTestService == nil {
 		response.InternalError(c, "Account test service is not configured")
 		return
 	}
 
-	models, err := h.accountTestService.FetchUpstreamSupportedModels(c.Request.Context(), account)
+	models, err := h.accountTestService.FetchUpstreamSupportedModels(c.Request.Context(), &syncAccount)
 	if err != nil {
 		var syncErr *service.UpstreamModelSyncError
 		if errors.As(err, &syncErr) {
@@ -2683,8 +2712,9 @@ func (h *AccountHandler) SyncUpstreamModelsPreview(c *gin.Context) {
 		Platform: req.Platform,
 		Type:     req.Type,
 		Credentials: map[string]any{
-			"api_key":  req.APIKey,
-			"base_url": req.BaseURL,
+			"api_key":         req.APIKey,
+			"base_url":        req.BaseURL,
+			"base_url_openai": req.BaseURL,
 		},
 	}
 

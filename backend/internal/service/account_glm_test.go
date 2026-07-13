@@ -80,7 +80,7 @@ func TestAccountGLMHelpersDefaultEndpoints(t *testing.T) {
 	}
 }
 
-func TestAccountGLMModelMappingAndNormalization(t *testing.T) {
+func TestAccountGLMModelMappingHonorsExplicitMappings(t *testing.T) {
 	acc := &Account{
 		Platform: PlatformGLM,
 		Type:     AccountTypeAPIKey,
@@ -100,15 +100,15 @@ func TestAccountGLMModelMappingAndNormalization(t *testing.T) {
 		model string
 		want  string
 	}{
-		{name: "sonnet default", model: "claude-sonnet-4-5", want: "GLM-5.1"},
-		{name: "opus default", model: "claude-opus-4-5", want: "GLM-5.1"},
-		{name: "haiku default", model: "claude-haiku-4-5", want: "GLM-4.5-air"},
-		{name: "glm 5.1 lower", model: " glm-5.1 ", want: "GLM-5.1"},
-		{name: "glm 4.7 lower", model: "glm-4.7", want: "GLM-4.7"},
-		{name: "glm 4.5 air lower", model: "glm-4.5-air", want: "GLM-4.5-air"},
-		{name: "glm 5.1 canonical ignores explicit mapping", model: "GLM-5.1", want: "GLM-5.1"},
-		{name: "glm 4.7 canonical ignores explicit mapping", model: "GLM-4.7", want: "GLM-4.7"},
-		{name: "glm 4.5 air canonical ignores explicit mapping", model: "GLM-4.5-air", want: "GLM-4.5-air"},
+		{name: "unconfigured sonnet remains unchanged", model: "claude-sonnet-4-5", want: "claude-sonnet-4-5"},
+		{name: "unconfigured opus remains unchanged", model: "claude-opus-4-5", want: "claude-opus-4-5"},
+		{name: "unconfigured haiku remains unchanged", model: "claude-haiku-4-5", want: "claude-haiku-4-5"},
+		{name: "glm 5.1 lower uses canonical mapping", model: " glm-5.1 ", want: "GLM-overridden"},
+		{name: "glm 4.7 lower uses canonical mapping", model: "glm-4.7", want: "GLM-overridden"},
+		{name: "glm 4.5 air lower uses canonical mapping", model: "glm-4.5-air", want: "GLM-overridden"},
+		{name: "glm 5.1 canonical honors explicit mapping", model: "GLM-5.1", want: "GLM-overridden"},
+		{name: "glm 4.7 canonical honors explicit mapping", model: "GLM-4.7", want: "GLM-overridden"},
+		{name: "glm 4.5 air canonical honors explicit mapping", model: "GLM-4.5-air", want: "GLM-overridden"},
 		{name: "explicit mapping", model: "custom-model", want: "GLM-5.1"},
 		{name: "unknown passthrough trimmed", model: "  other-model  ", want: "other-model"},
 	}
@@ -194,16 +194,16 @@ func TestAccountGLMModelSupport(t *testing.T) {
 		{name: "claude alias without mapping", account: withoutMapping, model: "claude-sonnet-4-5", want: true},
 		{name: "official canonical without mapping", account: withoutMapping, model: "GLM-5.1", want: true},
 		{name: "official lowercase without mapping", account: withoutMapping, model: "glm-5.1", want: true},
-		{name: "unknown without mapping", account: withoutMapping, model: "gpt-4o", want: false},
-		{name: "random without mapping", account: withoutMapping, model: "random-model", want: false},
+		{name: "unknown without mapping", account: withoutMapping, model: "gpt-4o", want: true},
+		{name: "random without mapping", account: withoutMapping, model: "random-model", want: true},
 		{name: "custom with explicit mapping", account: withMapping, model: "custom-model", want: true},
 		{name: "official whitelist allows selected canonical", account: withOfficialWhitelist, model: "GLM-4.7", want: true},
 		{name: "official whitelist allows selected lowercase", account: withOfficialWhitelist, model: "glm-4.7", want: true},
 		{name: "official whitelist rejects unselected official", account: withOfficialWhitelist, model: "GLM-5.1", want: false},
 		{name: "official whitelist rejects unselected claude default alias", account: withOfficialWhitelist, model: "claude-sonnet-4-5", want: false},
 		{name: "claude alias mapping allows matching claude model", account: withClaudeAliasMapping, model: "claude-sonnet-4-5", want: true},
-		{name: "custom alias rejects unofficial mapped target", account: withUnofficialMapping, model: "custom-model", want: false},
-		{name: "custom whitelist rejects unofficial passthrough target", account: withUnofficialMapping, model: "custom-whitelist", want: false},
+		{name: "custom alias allows runtime mapped target", account: withUnofficialMapping, model: "custom-model", want: true},
+		{name: "custom whitelist allows runtime passthrough target", account: withUnofficialMapping, model: "custom-whitelist", want: true},
 	}
 
 	for _, tc := range cases {
@@ -261,7 +261,7 @@ func TestGatewayService_SelectAccountForModelWithPlatform_GLMScheduling(t *testi
 	}
 }
 
-func TestAccountGLMGetMappedModelRejectsUnofficialTargets(t *testing.T) {
+func TestAccountGLMGetMappedModelAllowsRuntimeTargets(t *testing.T) {
 	acc := &Account{
 		Platform: PlatformGLM,
 		Type:     AccountTypeAPIKey,
@@ -274,8 +274,8 @@ func TestAccountGLMGetMappedModelRejectsUnofficialTargets(t *testing.T) {
 		},
 	}
 
-	if got := acc.GetGLMMappedModel("custom-model"); got != "custom-model" {
-		t.Fatalf("GetGLMMappedModel(custom-model) = %q, want original model", got)
+	if got := acc.GetGLMMappedModel("custom-model"); got != "GLM-custom" {
+		t.Fatalf("GetGLMMappedModel(custom-model) = %q, want configured target", got)
 	}
 	if got := acc.GetGLMMappedModel("custom-whitelist"); got != "custom-whitelist" {
 		t.Fatalf("GetGLMMappedModel(custom-whitelist) = %q, want original model", got)

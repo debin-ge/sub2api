@@ -93,6 +93,7 @@
         type="button"
         @click="syncUpstreamModels"
         :disabled="isSyncingUpstream"
+        data-testid="sync-upstream-models"
         class="rounded-lg border border-emerald-200 px-3 py-1.5 text-sm text-emerald-600 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-900/30"
       >
         {{ isSyncingUpstream ? t('admin.accounts.syncUpstreamModelsLoading') : t('admin.accounts.syncUpstreamModels') }}
@@ -136,7 +137,7 @@ import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { accountsAPI } from '@/api/admin/accounts'
-import type { SyncUpstreamPreviewParams } from '@/api/admin/accounts'
+import type { SyncUpstreamAccountOverrides, SyncUpstreamPreviewParams } from '@/api/admin/accounts'
 import ModelIcon from '@/components/common/ModelIcon.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { allModels, getModelsByPlatform } from '@/composables/useModelWhitelist'
@@ -153,7 +154,7 @@ const props = defineProps<{
     platform: string
     type: string
     base_url?: string
-    api_key: string
+    api_key?: string
   }
 }>()
 
@@ -199,7 +200,10 @@ const dedupeModels = (models: string[]) => {
   return result
 }
 
-const upstreamSyncPlatforms = new Set(['anthropic', 'openai', 'gemini', 'antigravity'])
+const upstreamSyncPlatforms = new Set([
+  'anthropic', 'openai', 'gemini', 'antigravity',
+  'minimax', 'glm', 'kimi', 'deepseek'
+])
 const canSyncUpstream = computed(() => {
   if (props.accountId) {
     if (normalizedPlatforms.value.length === 0) return true
@@ -319,8 +323,13 @@ const syncUpstreamModels = async () => {
   try {
     let result
     if (props.accountId) {
-      result = await accountsAPI.syncUpstreamModels(props.accountId)
+      const overrides: SyncUpstreamAccountOverrides = {
+        base_url: props.syncCredentials?.base_url,
+        api_key: props.syncCredentials?.api_key
+      }
+      result = await accountsAPI.syncUpstreamModels(props.accountId, overrides)
     } else if (props.syncCredentials) {
+      if (!props.syncCredentials.api_key) return
       result = await accountsAPI.syncUpstreamModelsPreview(props.syncCredentials as SyncUpstreamPreviewParams)
     } else {
       return

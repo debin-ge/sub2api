@@ -1231,34 +1231,23 @@ func (a *Account) IsMiniMaxTokenPlan() bool {
 	return strings.TrimSpace(a.GetCredential("api_key")) != ""
 }
 
-var miniMaxOfficialTextModels = map[string]struct{}{
-	"MiniMax-M2.7":           {},
-	"MiniMax-M2.7-highspeed": {},
-	"abab6.5-chat":           {},
-	"abab6.5s-chat":          {},
-	"abab6.5s-chat-pro":      {},
-	"abab6-chat":             {},
-	"abab5.5-chat":           {},
-	"abab5.5s-chat":          {},
-}
-
-func isMiniMaxOfficialTextModel(model string) bool {
-	_, ok := miniMaxOfficialTextModels[strings.TrimSpace(model)]
-	return ok
-}
-
 func (a *Account) IsMiniMaxModelSupported(requestedModel string) bool {
-	if a == nil || a.Platform != PlatformMiniMax {
+	return isFlexibleProviderModelSupported(a, PlatformMiniMax, requestedModel)
+}
+
+// isFlexibleProviderModelSupported mirrors OpenAI account semantics for
+// compatible domestic gateways: without an explicit mapping every non-empty
+// model is passed through; with a mapping, its keys become the account allow-list.
+func isFlexibleProviderModelSupported(account *Account, platform, requestedModel string) bool {
+	trimmed := strings.TrimSpace(requestedModel)
+	if account == nil || account.Platform != platform || trimmed == "" {
 		return false
 	}
-	trimmed := strings.TrimSpace(requestedModel)
-	if isMiniMaxOfficialTextModel(trimmed) {
+	if len(account.GetModelMapping()) == 0 {
 		return true
 	}
-	if _, ok := ResolveAccountProviderModel(a, trimmed); ok {
-		return true
-	}
-	return false
+	_, ok := ResolveAccountProviderModel(account, trimmed)
+	return ok
 }
 
 func (a *Account) GetMiniMaxAPIKey() string {
@@ -1371,11 +1360,6 @@ func isOfficialGLMModel(model string) bool {
 	return false
 }
 
-func normalizeOfficialGLMModel(model string) (string, bool) {
-	normalized := NormalizeGLMModel(model)
-	return normalized, isOfficialGLMModel(normalized)
-}
-
 func mapDefaultGLMModel(model string) (string, bool) {
 	trimmed := strings.TrimSpace(model)
 	if trimmed == "" {
@@ -1406,51 +1390,35 @@ func (a *Account) GetGLMMappedModel(model string) string {
 		return trimmed
 	}
 
+	if mapped, ok := ResolveAccountProviderModel(a, trimmed); ok {
+		return NormalizeGLMModel(mapped.UpstreamModel)
+	}
 	normalized := NormalizeGLMModel(trimmed)
-	if isOfficialGLMModel(normalized) {
-		if mappingSupportsRequestedModel(mapping, normalized) {
-			return normalized
+	if normalized != trimmed {
+		if mapped, ok := ResolveAccountProviderModel(a, normalized); ok {
+			return NormalizeGLMModel(mapped.UpstreamModel)
 		}
-		return normalized
-	}
-
-	if mapped, matched := a.ResolveMappedModel(trimmed); matched && strings.TrimSpace(mapped) != "" {
-		if official, ok := normalizeOfficialGLMModel(mapped); ok {
-			return official
-		}
-		return trimmed
-	}
-	if mapped, ok := mapDefaultGLMModel(trimmed); ok && mappingSupportsRequestedModel(mapping, mapped) {
-		return mapped
 	}
 	return trimmed
 }
 
 func (a *Account) IsGLMModelSupported(model string) bool {
 	trimmed := strings.TrimSpace(model)
-	if trimmed == "" {
-		return true
-	}
-	if a == nil || a.Platform != PlatformGLM {
+	if trimmed == "" || a == nil || a.Platform != PlatformGLM {
 		return false
 	}
 
 	mapping := a.GetModelMapping()
 	if len(mapping) == 0 {
-		_, ok := mapDefaultGLMModel(trimmed)
-		return ok
+		return true
 	}
-
+	if _, ok := ResolveAccountProviderModel(a, trimmed); ok {
+		return true
+	}
 	normalized := NormalizeGLMModel(trimmed)
-	if isOfficialGLMModel(normalized) {
-		return mappingSupportsRequestedModel(mapping, normalized)
-	}
-	if mapped, matched := a.ResolveMappedModel(trimmed); matched && strings.TrimSpace(mapped) != "" {
-		_, ok := normalizeOfficialGLMModel(mapped)
+	if normalized != trimmed {
+		_, ok := ResolveAccountProviderModel(a, normalized)
 		return ok
-	}
-	if mapped, ok := mapDefaultGLMModel(trimmed); ok {
-		return mappingSupportsRequestedModel(mapping, mapped)
 	}
 	return false
 }
@@ -1514,15 +1482,7 @@ func (a *Account) GetKimiMappedModel(model string) string {
 }
 
 func (a *Account) IsKimiModelSupported(model string) bool {
-	trimmed := strings.TrimSpace(model)
-	if a == nil || a.Platform != PlatformKimi || trimmed == "" {
-		return false
-	}
-	if providerSupportsUpstreamModel(PlatformKimi, trimmed) {
-		return true
-	}
-	_, ok := ResolveAccountProviderModel(a, trimmed)
-	return ok
+	return isFlexibleProviderModelSupported(a, PlatformKimi, model)
 }
 
 func (a *Account) IsDeepSeek() bool {
@@ -1584,15 +1544,7 @@ func (a *Account) GetDeepSeekMappedModel(model string) string {
 }
 
 func (a *Account) IsDeepSeekModelSupported(model string) bool {
-	trimmed := strings.TrimSpace(model)
-	if a == nil || a.Platform != PlatformDeepSeek || trimmed == "" {
-		return false
-	}
-	if providerSupportsUpstreamModel(PlatformDeepSeek, trimmed) {
-		return true
-	}
-	_, ok := ResolveAccountProviderModel(a, trimmed)
-	return ok
+	return isFlexibleProviderModelSupported(a, PlatformDeepSeek, model)
 }
 
 func (a *Account) IsWindsurf() bool {

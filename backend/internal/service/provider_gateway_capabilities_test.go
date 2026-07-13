@@ -7,7 +7,7 @@ func TestProviderGatewayCapabilitiesDomesticDefaults(t *testing.T) {
 		platform string
 		models   []string
 	}{
-		{platform: PlatformMiniMax, models: []string{"MiniMax-M2.7", "MiniMax-M2.7-highspeed"}},
+		{platform: PlatformMiniMax, models: []string{"MiniMax-M3", "MiniMax-M2.7", "MiniMax-M2.7-highspeed"}},
 		{platform: PlatformGLM, models: []string{"GLM-5.1", "GLM-4.7", "GLM-4.5-air"}},
 		{platform: PlatformKimi, models: []string{"kimi-for-coding"}},
 		{platform: PlatformDeepSeek, models: []string{"deepseek-v4-flash", "deepseek-v4-pro"}},
@@ -44,16 +44,27 @@ func TestProviderGatewayCapabilitiesDomesticDefaults(t *testing.T) {
 
 func TestDefaultDomesticProviderModelIDsReturnsClone(t *testing.T) {
 	models := DefaultDomesticProviderModelIDs(PlatformMiniMax)
-	assertStringSlicesEqual(t, models, []string{"MiniMax-M2.7", "MiniMax-M2.7-highspeed"})
+	assertStringSlicesEqual(t, models, []string{"MiniMax-M3", "MiniMax-M2.7", "MiniMax-M2.7-highspeed"})
 
 	models[0] = "mutated"
 
 	again := DefaultDomesticProviderModelIDs(PlatformMiniMax)
-	assertStringSlicesEqual(t, again, []string{"MiniMax-M2.7", "MiniMax-M2.7-highspeed"})
+	assertStringSlicesEqual(t, again, []string{"MiniMax-M3", "MiniMax-M2.7", "MiniMax-M2.7-highspeed"})
 }
 
 func TestDefaultMiniMaxModelIDs(t *testing.T) {
-	assertStringSlicesEqual(t, DefaultMiniMaxModelIDs(), []string{"MiniMax-M2.7", "MiniMax-M2.7-highspeed"})
+	assertStringSlicesEqual(t, DefaultMiniMaxModelIDs(), []string{"MiniMax-M3", "MiniMax-M2.7", "MiniMax-M2.7-highspeed"})
+}
+
+func TestFlexibleDomesticProvidersAllowUnknownModelsAndLiveDiscovery(t *testing.T) {
+	for _, platform := range []string{PlatformMiniMax, PlatformGLM, PlatformKimi, PlatformDeepSeek} {
+		if !providerSupportsUpstreamModel(platform, "provider-future-model") {
+			t.Fatalf("platform %q should allow future upstream models", platform)
+		}
+		if !providerSupportsLiveModelDiscovery(platform) {
+			t.Fatalf("platform %q should support live model discovery", platform)
+		}
+	}
 }
 
 func assertStringSlicesEqual(t *testing.T, got, want []string) {

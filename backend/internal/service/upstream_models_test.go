@@ -579,6 +579,44 @@ func TestUpstreamModelDiscoverer_ProviderDispatch(t *testing.T) {
 	}
 }
 
+func TestUpstreamModelDiscoverer_DomesticCompatibleProviders(t *testing.T) {
+	tests := []struct {
+		platform string
+		baseURL  string
+		wantURL  string
+	}{
+		{platform: PlatformMiniMax, baseURL: "https://gateway.example/minimax/v1", wantURL: "https://gateway.example/minimax/v1/models"},
+		{platform: PlatformGLM, baseURL: "https://gateway.example/glm/v4", wantURL: "https://gateway.example/glm/v4/models"},
+		{platform: PlatformKimi, baseURL: "https://gateway.example/kimi/v1", wantURL: "https://gateway.example/kimi/v1/models"},
+		{platform: PlatformDeepSeek, baseURL: "https://gateway.example/deepseek", wantURL: "https://gateway.example/deepseek/models"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.platform, func(t *testing.T) {
+			upstream := &httpUpstreamRecorder{resp: &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(`{"data":[{"id":"provider-next"}]}`)),
+			}}
+			discoverer := &UpstreamModelDiscoverer{httpUpstream: upstream, cfg: upstreamModelSyncTestConfig()}
+			account := &Account{
+				ID: 30, Platform: tt.platform, Type: AccountTypeAPIKey,
+				Credentials: map[string]any{
+					"api_key":         "provider-key",
+					"base_url_openai": tt.baseURL,
+				},
+			}
+
+			models, err := discoverer.Discover(context.Background(), account)
+
+			require.NoError(t, err)
+			require.Equal(t, []string{"provider-next"}, models)
+			require.Equal(t, tt.wantURL, upstream.lastReq.URL.String())
+			require.Equal(t, "Bearer provider-key", upstream.lastReq.Header.Get("Authorization"))
+		})
+	}
+}
+
 func TestUpstreamModelDiscoverer_CompatibleProvidersRejectDisallowedURLs(t *testing.T) {
 	tests := []struct {
 		name     string
