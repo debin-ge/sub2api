@@ -140,4 +140,8 @@ docs/*
 frontend/coverage/
 aicodex
 output/
-.github/
+
+# Session Recovery CI build artifacts (built by GitHub Actions)
+tools/session-recovery/bin/*
+session-recovery-binaries/*
+!session-recovery-binaries/.gitkeep
