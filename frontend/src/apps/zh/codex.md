@@ -23,15 +23,32 @@ npm install -g @openai/codex
 
 打开 `~/.codex/config.toml`（Windows：`%USERPROFILE%\.codex\config.toml`），不存在就手动新建，写入：
 
-```toml
-model_provider = "sub2api"
-model = "gpt-5.5"
+```toml download=config.toml
+# ================================================================
+#  ~/.codex/config.toml · 由 {{SITE_NAME}} 生成
+#  ① 本文件不含密钥。使用前在终端执行（务必先做）：
+#        export API_KEY="在此粘贴 sk- 开头的密钥"
+#     （Windows PowerShell:  $env:API_KEY="..."）
+#  ② 把下面 model 换成 {{BASE_URL}}v1/models 里实际开放的模型名。
+# ================================================================
 
-[model_providers.sub2api]
-name = "{{SITE_NAME}}"
+model_provider = "{{SITE_NAME}}"
+model = "gpt-5.5"                     # ← 改成 /v1/models 里的真实模型名
+model_reasoning_effort = "medium"     # minimal | low | medium | high | xhigh
+
+# 智能体行为（可选；新手保持默认即可）
+approval_policy = "on-request"        # untrusted | on-request | never
+sandbox_mode   = "workspace-write"    # read-only | workspace-write | danger-full-access
+
+[model_providers."{{SITE_NAME}}"]
+name     = "{{SITE_NAME}}"
 base_url = "{{BASE_URL}}v1"
-env_key = "API_KEY"
-wire_api = "responses"
+env_key  = "API_KEY"                  # Codex 从此环境变量读取密钥
+wire_api = "responses"                # 固定 responses
+# 弱网 / 长响应时可调大以下项
+request_max_retries    = 4
+stream_max_retries     = 5
+stream_idle_timeout_ms = 300000
 ```
 
 - `model` 从 `/v1/models` 返回的 GPT/Codex 类模型名里挑。

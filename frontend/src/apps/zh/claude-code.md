@@ -23,8 +23,9 @@ npm install -g @anthropic-ai/claude-code
 
 打开 `~/.claude/settings.json`（Windows：`%USERPROFILE%\.claude\settings.json`），不存在就手动新建：
 
-```json
+```json download=settings.json
 {
+  "_note": "由 {{SITE_NAME}} 生成 · Base URL 已填好，把 ANTHROPIC_AUTH_TOKEN 换成你的 sk- 密钥即可（JSON 不支持注释，本行仅作说明，Claude Code 会忽略）",
   "env": {
     "ANTHROPIC_BASE_URL": "{{BASE_URL}}",
     "ANTHROPIC_AUTH_TOKEN": "在此粘贴 sk- 开头的密钥"

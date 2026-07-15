@@ -399,6 +399,98 @@ describe('DocsView', () => {
     expect(navigator.clipboard.writeText).toHaveBeenCalled()
   })
 
+  it('offers config file downloads on /apps/claude-code with the resolved base URL', async () => {
+    appState.cachedPublicSettings = {
+      site_name: 'Acme AI',
+      site_logo: '',
+      api_base_url: 'https://api.acme.test/',
+    }
+    appState.siteName = 'Acme AI'
+    appState.apiBaseUrl = 'https://api.acme.test/'
+
+    const createObjectURL = vi.fn(() => 'blob:mock-url')
+    const revokeObjectURL = vi.fn()
+    Object.assign(URL, { createObjectURL, revokeObjectURL })
+    // jsdom's Blob lacks .text(); stub it to capture the serialized contents.
+    const blobContents: string[] = []
+    class CaptureBlob {
+      constructor(parts: string[]) {
+        blobContents.push(parts.join(''))
+      }
+    }
+    vi.stubGlobal('Blob', CaptureBlob)
+    let downloadedName = ''
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(function (this: HTMLAnchorElement) {
+        if (this.download) downloadedName = this.download
+      })
+
+    const wrapper = await mountDocs('/apps/claude-code')
+
+    // The client card surfaces a prominent download button in its config-file row.
+    const cardDownload = wrapper.find('.client-card .client-download-btn')
+    expect(cardDownload.exists()).toBe(true)
+    expect(cardDownload.attributes('data-download-name')).toBe('settings.json')
+
+    // The step-2 config code block also carries an inline download button.
+    const blockDownload = wrapper.find('pre[data-download-name="settings.json"] .download-btn')
+    expect(blockDownload.exists()).toBe(true)
+
+    await blockDownload.trigger('click')
+
+    expect(createObjectURL).toHaveBeenCalledTimes(1)
+    expect(downloadedName).toBe('settings.json')
+    expect(blobContents[0]).toContain('https://api.acme.test/')
+    expect(blobContents[0]).not.toContain('{{BASE_URL}}')
+
+    clickSpy.mockRestore()
+    vi.unstubAllGlobals()
+  })
+
+  it('does not offer downloads for GUI-only apps like /apps/cursor', async () => {
+    const wrapper = await mountDocs('/apps/cursor')
+
+    expect(wrapper.find('.client-card').exists()).toBe(true)
+    expect(wrapper.find('.download-btn').exists()).toBe(false)
+    expect(wrapper.find('.client-download-btn').exists()).toBe(false)
+  })
+
+  it('brands the Codex config download with the configured site name as the provider id', async () => {
+    appState.cachedPublicSettings = {
+      site_name: 'Acme AI',
+      site_logo: '',
+      api_base_url: 'https://api.acme.test/',
+    }
+    appState.siteName = 'Acme AI'
+    appState.apiBaseUrl = 'https://api.acme.test/'
+
+    Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:mock-url'), revokeObjectURL: vi.fn() })
+    const blobContents: string[] = []
+    class CaptureBlob {
+      constructor(parts: string[]) {
+        blobContents.push(parts.join(''))
+      }
+    }
+    vi.stubGlobal('Blob', CaptureBlob)
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+
+    const wrapper = await mountDocs('/apps/codex')
+    await wrapper.find('pre[data-download-name="config.toml"] .download-btn').trigger('click')
+
+    const config = blobContents[0]
+    expect(config).toContain('model_provider = "Acme AI"')
+    expect(config).toContain('[model_providers."Acme AI"]')
+    expect(config).toContain('sandbox_mode')
+    expect(config).toContain('workspace-write')
+    expect(config).toContain('https://api.acme.test/v1')
+    // the generic placeholder provider id must be gone
+    expect(config).not.toContain('tiktoken')
+
+    clickSpy.mockRestore()
+    vi.unstubAllGlobals()
+  })
+
   it('renders code tab groups on /apps/code', async () => {
     const wrapper = await mountDocs('/apps/code')
 

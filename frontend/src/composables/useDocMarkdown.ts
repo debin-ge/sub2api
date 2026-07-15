@@ -24,6 +24,7 @@ export interface DocMarkdownUiText {
   copy: string
   copied: string
   copyFailed: string
+  downloadConfig: string
   cardBaseUrl: string
   cardConfigFile: string
   readingTime: string
@@ -207,6 +208,7 @@ export function useDocMarkdown(options: UseDocMarkdownOptions) {
       baseUrl: uiText.value.cardBaseUrl,
       configFile: uiText.value.cardConfigFile,
       copy: uiText.value.copy,
+      download: uiText.value.downloadConfig,
     })
     groupCodeTabs(template.content, getPreferredDocTab())
     wrapTables(template.content)
@@ -261,12 +263,40 @@ export function useDocMarkdown(options: UseDocMarkdownOptions) {
     })
   }
 
+  function triggerConfigDownload(filename: string, text: string) {
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = filename
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 0)
+  }
+
   function injectCopyButtons() {
     const container = markdownContainer.value
     if (!container) return
 
     container.querySelectorAll('pre').forEach((pre) => {
-      if (pre.querySelector('.copy-btn')) return
+      if (pre.querySelector('.pre-actions')) return
+
+      const actions = document.createElement('div')
+      actions.className = 'pre-actions'
+
+      const downloadName = pre.getAttribute('data-download-name')
+      if (downloadName) {
+        const downloadBtn = document.createElement('button')
+        downloadBtn.type = 'button'
+        downloadBtn.className = 'download-btn'
+        downloadBtn.textContent = uiText.value.downloadConfig
+        downloadBtn.addEventListener('click', () => {
+          const code = pre.querySelector('code')?.textContent ?? getTextContent(pre.innerHTML)
+          triggerConfigDownload(downloadName, code)
+        })
+        actions.appendChild(downloadBtn)
+      }
 
       const button = document.createElement('button')
       button.type = 'button'
@@ -284,7 +314,9 @@ export function useDocMarkdown(options: UseDocMarkdownOptions) {
           button.textContent = uiText.value.copy
         }, 1800)
       })
-      pre.appendChild(button)
+      actions.appendChild(button)
+
+      pre.appendChild(actions)
     })
   }
 
@@ -333,6 +365,20 @@ export function useDocMarkdown(options: UseDocMarkdownOptions) {
     const copyButton = target.closest<HTMLButtonElement>('.client-copy-btn')
     if (copyButton) {
       void copyCardValue(copyButton)
+      return
+    }
+
+    const downloadButton = target.closest<HTMLButtonElement>('.client-download-btn')
+    if (downloadButton) {
+      const name = downloadButton.getAttribute('data-download-name') ?? ''
+      const container = markdownContainer.value
+      const block = name && container
+        ? container.querySelector(`pre[data-download-name="${CSS.escape(name)}"] code`)
+        : null
+      const text = block?.textContent ?? ''
+      if (name && text) {
+        triggerConfigDownload(name, text)
+      }
     }
   }
 

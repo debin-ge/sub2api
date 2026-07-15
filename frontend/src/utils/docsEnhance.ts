@@ -34,6 +34,7 @@ export interface DocCardLabels {
   baseUrl: string
   configFile: string
   copy: string
+  download: string
 }
 
 export interface ClientCardInfo {
@@ -56,14 +57,16 @@ function escapeHtml(value: string): string {
 
 /**
  * Custom marked renderer for fenced code blocks. Mirrors marked's default
- * output, but additionally parses `tab=` / `group=` from the full info string
- * into data attributes so the DOM stage can build tab groups.
+ * output, but additionally parses `tab=` / `group=` / `download=` from the full
+ * info string into data attributes so the DOM stage can build tab groups and
+ * wire config-file download buttons.
  */
 export function renderDocCode({ text, lang, escaped }: Tokens.Code): string {
   const info = (lang || '').trim()
   const langId = info.match(/^\S*/)?.[0] ?? ''
   const tab = info.match(/(?:^|\s)tab=(\S+)/)?.[1] ?? ''
   const group = info.match(/(?:^|\s)group=(\S+)/)?.[1] ?? ''
+  const download = info.match(/(?:^|\s)download=(\S+)/)?.[1] ?? ''
 
   const code = text.replace(/\n$/, '') + '\n'
   const body = escaped ? code : escapeHtml(code)
@@ -74,8 +77,17 @@ export function renderDocCode({ text, lang, escaped }: Tokens.Code): string {
   const tabAttrs = tab && group
     ? ` data-tab="${escapeHtml(tab)}" data-group="${escapeHtml(group)}"`
     : ''
+  const downloadAttr = download
+    ? ` data-download-name="${escapeHtml(sanitizeDownloadName(download))}"`
+    : ''
 
-  return `<pre${langAttr}${tabAttrs}><code${classAttr}>${body}</code></pre>\n`
+  return `<pre${langAttr}${tabAttrs}${downloadAttr}><code${classAttr}>${body}</code></pre>\n`
+}
+
+/** Reduce a `download=` value to a safe bare filename (strip any path). */
+export function sanitizeDownloadName(value: string): string {
+  const base = value.split(/[\\/]/).pop() ?? ''
+  return base.replace(/[^\w.\-]/g, '') || 'config.txt'
 }
 
 /** Parse the `key: value` lines of a ```client block. Returns null when the
@@ -149,6 +161,20 @@ function createMetaRow(doc: Document, label: string, value: string, copyLabel: s
 }
 
 /**
+ * Find the first downloadable config block (`pre[data-download-name]`) that
+ * appears after `afterEl` in document order. Used to associate a client card
+ * with the config file shown further down its page.
+ */
+function findDownloadBlockAfter(root: ParentNode, afterEl: Element): Element | null {
+  for (const candidate of Array.from(root.querySelectorAll('pre[data-download-name]'))) {
+    if (afterEl.compareDocumentPosition(candidate) & Node.DOCUMENT_POSITION_FOLLOWING) {
+      return candidate
+    }
+  }
+  return null
+}
+
+/**
  * Replace each ```client block with a card and pull the content that follows
  * (until the next heading or client block) into the card body.
  */
@@ -204,7 +230,18 @@ export function enhanceClientCards(root: ParentNode, labels: DocCardLabels): voi
         meta.appendChild(createMetaRow(doc, labels.baseUrl, info.endpoint, labels.copy))
       }
       if (info.config) {
-        meta.appendChild(createMetaRow(doc, labels.configFile, info.config, labels.copy))
+        const configRow = createMetaRow(doc, labels.configFile, info.config, labels.copy)
+        const downloadBlock = findDownloadBlockAfter(root, pre)
+        const downloadName = downloadBlock?.getAttribute('data-download-name') ?? ''
+        if (downloadName) {
+          const downloadBtn = doc.createElement('button')
+          downloadBtn.type = 'button'
+          downloadBtn.className = 'client-download-btn'
+          downloadBtn.textContent = labels.download
+          downloadBtn.setAttribute('data-download-name', downloadName)
+          configRow.appendChild(downloadBtn)
+        }
+        meta.appendChild(configRow)
       }
       head.appendChild(meta)
     }

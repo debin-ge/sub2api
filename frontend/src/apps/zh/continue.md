@@ -21,11 +21,16 @@ VS Code 扩展市场搜 `Continue`，点击 Install。首次打开 Continue 面�
 
 在 `models:` 列表加入一项（YAML 对缩进敏感，请保持两空格缩进）：
 
-```yaml
+```yaml download=config.yaml
+# ================================================================
+#  ~/.continue/config.yaml · 由 {{SITE_NAME}} 生成
+#  把下方 apiKey 换成你的 sk- 密钥即可（Base URL 已自动填好）。
+#  model 请改成 {{BASE_URL}}v1/models 里开放的模型名。
+# ================================================================
 models:
   - name: {{SITE_NAME}} GPT
     provider: openai
-    model: gpt-4o-mini
+    model: gpt-5.5
     apiBase: {{BASE_URL}}v1
     apiKey: 在此粘贴 sk- 开头的密钥
     roles:

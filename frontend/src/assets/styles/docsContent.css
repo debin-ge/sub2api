@@ -249,8 +249,13 @@
   @apply rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs text-gray-800 dark:bg-dark-800 dark:text-dark-100;
 }
 
-.docs-content .client-copy-btn {
+.docs-content .client-copy-btn,
+.docs-content .client-download-btn {
   @apply rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-600 transition hover:bg-gray-100 hover:text-gray-900 dark:border-dark-600 dark:text-dark-300 dark:hover:bg-dark-800 dark:hover:text-white;
+}
+
+.docs-content .client-download-btn {
+  @apply border-primary-300 text-primary-600 hover:bg-primary-50 hover:text-primary-700 dark:border-primary-500/40 dark:text-primary-300 dark:hover:bg-primary-500/10 dark:hover:text-primary-200;
 }
 
 .docs-content .client-card-body {
@@ -283,12 +288,19 @@
   @apply mt-3;
 }
 
-/* ── Inline copy button on <pre> ─────────────────────────────────── */
+/* ── Inline action buttons on <pre> ──────────────────────────────── */
 
-.docs-content pre .copy-btn {
+.docs-content pre .pre-actions {
   position: absolute;
   top: 8px;
   right: 8px;
+  display: flex;
+  gap: 6px;
+}
+
+.docs-content pre .copy-btn,
+.docs-content pre .download-btn {
+  position: static;
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.08);
@@ -302,12 +314,26 @@
   transition: opacity 0.2s, background 0.2s, color 0.2s;
 }
 
-.docs-content pre .copy-btn:hover {
+.docs-content pre .copy-btn:hover,
+.docs-content pre .download-btn:hover {
   background: rgba(255, 255, 255, 0.18);
   color: #e2e8f0;
 }
 
+/* The download button is the primary action — keep it always visible. */
+.docs-content pre .download-btn {
+  opacity: 1;
+  border-color: rgba(99, 102, 241, 0.5);
+  color: #c7d2fe;
+}
+
+.docs-content pre .download-btn:hover {
+  background: rgba(99, 102, 241, 0.25);
+  color: #e0e7ff;
+}
+
 .docs-content pre:hover .copy-btn,
-.docs-content pre .copy-btn:focus-visible {
+.docs-content pre .copy-btn:focus-visible,
+.docs-content pre .download-btn:focus-visible {
   opacity: 1;
 }

@@ -19,7 +19,7 @@ const CALLOUT_LABELS = {
   caution: 'Caution',
 }
 
-const CARD_LABELS = { baseUrl: 'Base URL', configFile: 'Config file', copy: 'Copy' }
+const CARD_LABELS = { baseUrl: 'Base URL', configFile: 'Config file', copy: 'Copy', download: 'Download config file' }
 
 function renderToTemplate(markdown: string): HTMLTemplateElement {
   marked.setOptions({ breaks: true, gfm: true })
@@ -61,6 +61,17 @@ describe('renderDocCode', () => {
     const html = renderDocCode({ type: 'code', raw: '', text: '<script>alert(1)</script>', lang: 'bash' })
     expect(html).not.toContain('<script>')
     expect(html).toContain('&lt;script&gt;')
+  })
+
+  it('adds a download name attribute alongside the language', () => {
+    const html = renderDocCode({ type: 'code', raw: '', text: '{}', lang: 'json download=settings.json' })
+    expect(html).toContain('data-lang="json"')
+    expect(html).toContain('data-download-name="settings.json"')
+  })
+
+  it('strips path segments from the download name', () => {
+    const html = renderDocCode({ type: 'code', raw: '', text: '{}', lang: 'json download=../../etc/passwd' })
+    expect(html).toContain('data-download-name="passwd"')
   })
 })
 
@@ -306,5 +317,42 @@ describe('enhanceClientCards', () => {
     enhanceClientCards(template.content, CARD_LABELS)
     expect(template.content.querySelector('.client-card')).toBeNull()
     expect(template.content.querySelector('code.language-client')).not.toBeNull()
+  })
+
+  it('adds a download button to the config row when a download block follows', () => {
+    const template = renderToTemplate([
+      '```client',
+      'name: Claude Code',
+      'protocols: [anthropic]',
+      'endpoint: https://api.example.com/',
+      'config: ~/.claude/settings.json',
+      '```',
+      '',
+      '## Configure',
+      '',
+      '```json download=settings.json',
+      '{ "env": {} }',
+      '```',
+    ].join('\n'))
+    enhanceClientCards(template.content, CARD_LABELS)
+
+    const downloadBtn = template.content.querySelector<HTMLButtonElement>('.client-download-btn')
+    expect(downloadBtn).not.toBeNull()
+    expect(downloadBtn!.textContent).toBe('Download config file')
+    expect(downloadBtn!.getAttribute('data-download-name')).toBe('settings.json')
+    // it lives in the config-file row, not the endpoint row
+    expect(downloadBtn!.closest('.client-card-meta-row')?.textContent).toContain('~/.claude/settings.json')
+  })
+
+  it('omits the download button when there is no download block', () => {
+    const template = renderToTemplate([
+      '```client',
+      'name: Cursor',
+      'protocols: [openai]',
+      'config: ~/.cursor/config.json',
+      '```',
+    ].join('\n'))
+    enhanceClientCards(template.content, CARD_LABELS)
+    expect(template.content.querySelector('.client-download-btn')).toBeNull()
   })
 })
