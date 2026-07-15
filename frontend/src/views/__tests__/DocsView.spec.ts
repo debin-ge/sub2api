@@ -397,6 +397,11 @@ describe('DocsView', () => {
     expect(copyBtn.exists()).toBe(true)
     await copyBtn.trigger('click')
     expect(navigator.clipboard.writeText).toHaveBeenCalled()
+
+    // The CLI-vs-desktop IMPORTANT callout renders and sits outside the client card.
+    const callout = wrapper.find('.doc-callout-important')
+    expect(callout.exists()).toBe(true)
+    expect(callout.element.closest('.client-card')).toBeNull()
   })
 
   it('offers config file downloads on /apps/claude-code with the resolved base URL', async () => {
@@ -443,6 +448,52 @@ describe('DocsView', () => {
     expect(downloadedName).toBe('settings.json')
     expect(blobContents[0]).toContain('https://api.acme.test/')
     expect(blobContents[0]).not.toContain('{{BASE_URL}}')
+
+    clickSpy.mockRestore()
+    vi.unstubAllGlobals()
+  })
+
+  it('offers a downloadable Claude Desktop 3P profile with the resolved base URL', async () => {
+    appState.cachedPublicSettings = {
+      site_name: 'Acme AI',
+      site_logo: '',
+      api_base_url: 'https://api.acme.test/',
+    }
+    appState.siteName = 'Acme AI'
+    appState.apiBaseUrl = 'https://api.acme.test/'
+
+    Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:mock-url'), revokeObjectURL: vi.fn() })
+    const blobContents: string[] = []
+    class CaptureBlob {
+      constructor(parts: string[]) {
+        blobContents.push(parts.join(''))
+      }
+    }
+    vi.stubGlobal('Blob', CaptureBlob)
+    let downloadedName = ''
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(function (this: HTMLAnchorElement) {
+        if (this.download) downloadedName = this.download
+      })
+
+    const wrapper = await mountDocs('/apps/claude-code')
+
+    // The desktop 3P profile is a distinct download from the CLI settings.json.
+    const profileBtn = wrapper.find(
+      'pre[data-download-name="2f9a7b10-0000-4000-8000-00000000c001.json"] .download-btn',
+    )
+    expect(profileBtn.exists()).toBe(true)
+    // And the paired _meta.json.
+    expect(wrapper.find('pre[data-download-name="_meta.json"] .download-btn').exists()).toBe(true)
+
+    await profileBtn.trigger('click')
+
+    expect(downloadedName).toBe('2f9a7b10-0000-4000-8000-00000000c001.json')
+    const profile = blobContents[0]
+    expect(profile).toContain('"inferenceGatewayBaseUrl": "https://api.acme.test/"')
+    expect(profile).toContain('"inferenceGatewayAuthScheme": "bearer"')
+    expect(profile).not.toContain('{{BASE_URL}}')
 
     clickSpy.mockRestore()
     vi.unstubAllGlobals()

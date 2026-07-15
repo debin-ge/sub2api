@@ -1,6 +1,9 @@
 # Claude Code
 
-> Anthropic's official CLI. The same `~/.claude/settings.json` is also read by the VS Code / JetBrains plugins — configure once, use everywhere.
+> Anthropic's official tooling comes in three surfaces — **CLI / terminal**, **VS Code / JetBrains plugins**, and the **desktop app** — and each is configured in a different place with different fields. Pick the one you use.
+
+> [!IMPORTANT]
+> **The CLI and the desktop app do not share config.** The CLI reads `~/.claude/settings.json`; the desktop app reads a separate "third-party inference (3P)" configuration. The `settings.json` you download below **only applies to the CLI**.
 
 ```client
 name: Claude Code
@@ -11,7 +14,7 @@ config: ~/.claude/settings.json
 homepage: https://docs.claude.com/claude-code
 ```
 
-## 1. Install
+## 1. Install (CLI)
 
 ```bash
 npm install -g @anthropic-ai/claude-code
@@ -19,7 +22,7 @@ npm install -g @anthropic-ai/claude-code
 
 **Verify**: `claude --version` prints a version.
 
-## 2. Configure
+## 2. Configure (CLI / terminal)
 
 Open `~/.claude/settings.json` (Windows: `%USERPROFILE%\.claude\settings.json`); create it if missing:
 
@@ -36,7 +39,7 @@ Open `~/.claude/settings.json` (Windows: `%USERPROFILE%\.claude\settings.json`);
 - `ANTHROPIC_BASE_URL` — **no** trailing `v1`.
 - `ANTHROPIC_AUTH_TOKEN` — paste the real key (config files do not expand environment variables).
 
-## 3. Verify
+## 3. Verify (CLI)
 
 Open a fresh terminal window:
 
@@ -46,18 +49,101 @@ claude "Introduce yourself in one sentence."
 
 A reply means success. On the first run, if a login prompt appears, pick "Use API Key" — do not go through OAuth.
 
-<details>
-<summary>Troubleshooting</summary>
+## VS Code / JetBrains plugins
 
-- **401** — key incomplete or wrong field name (must be `ANTHROPIC_AUTH_TOKEN`).
-- **Still hits the official endpoint** — JSON not saved or malformed; fully quit `claude` and relaunch.
-- **Model error** — ask an admin to confirm your group has Claude-compatible models enabled.
-- More codes: [Troubleshooting](/docs/errors).
+The plugins **do not** read the login config from `~/.claude/settings.json`. Set `claudeCode.environmentVariables` in your **VS Code user settings** (Command Palette → `Preferences: Open User Settings (JSON)`):
+
+```json
+{
+  "claudeCode.environmentVariables": [
+    { "name": "ANTHROPIC_BASE_URL", "value": "{{BASE_URL}}" },
+    { "name": "ANTHROPIC_AUTH_TOKEN", "value": "paste your sk- key here" }
+  ]
+}
+```
+
+Fully **quit and relaunch** the IDE for it to take effect. JetBrains IDEs (IDEA / PyCharm, etc.) are the same — set the identical environment variables in their Claude Code plugin settings.
+
+## Desktop app (Claude Desktop · third-party inference)
+
+The desktop app uses Claude Desktop's built-in "third-party inference (3P)", which is **unrelated to the `settings.json` above** and currently supports only the Anthropic Messages protocol.
+
+**Method A (recommended) · in-app**
+
+Open Claude Desktop → **Developer → Configure third-party inference**, and fill in:
+
+| Field | Value |
+| --- | --- |
+| Provider / type | Gateway (custom) |
+| Base URL | `{{BASE_URL}}` |
+| API Key | your `sk-` key |
+| Auth scheme | `Bearer` |
+
+Save and the app switches into 3P mode. This route is validated by the app and adapts across versions — the safest option.
+
+> Prefer not to do it by hand? The listed [CC-Switch](/apps/cc-switch) and [Cockpit Tools](/apps/cockpit-tools) can **write the desktop app's third-party config for you in one click** — easiest for newcomers.
+
+<details>
+<summary>Method B (advanced / offline): place the profile files by hand</summary>
+
+Claude Desktop's 3P config directory (create it if missing):
+
+- **macOS**: `~/Library/Application Support/Claude-3p/configLibrary/`
+- **Windows**: `%LOCALAPPDATA%\Claude-3p\configLibrary\`
+
+**① Add the profile**, keeping the filename as this UUID (i.e. `configLibrary/2f9a7b10-…-00000000c001.json`):
+
+```json download=2f9a7b10-0000-4000-8000-00000000c001.json
+{
+  "coworkEgressAllowedHosts": ["*"],
+  "disableDeploymentModeChooser": true,
+  "inferenceProvider": "gateway",
+  "inferenceGatewayBaseUrl": "{{BASE_URL}}",
+  "inferenceGatewayApiKey": "paste your sk- key here",
+  "inferenceGatewayAuthScheme": "bearer",
+  "inferenceModels": [
+    { "name": "claude-opus-4-8", "supports1m": true },
+    "claude-sonnet-4-6",
+    "claude-haiku-4-5"
+  ]
+}
+```
+
+**② Add `_meta.json`** in the same folder (`appliedId` must match the filename above):
+
+```json download=_meta.json
+{
+  "appliedId": "2f9a7b10-0000-4000-8000-00000000c001",
+  "entries": [
+    { "id": "2f9a7b10-0000-4000-8000-00000000c001", "name": "{{SITE_NAME}}" }
+  ]
+}
+```
+
+**③ Enable 3P mode**: add `"deploymentMode": "3p"` to `Claude-3p/claude_desktop_config.json` (create it as `{ "deploymentMode": "3p" }` if absent). Then fully **quit and relaunch** the app.
+
+> ⚠️ Claude Desktop (≈1.126+) validates the 3P config strictly — **one invalid field rejects the whole provider**. The names in `inferenceModels` must match what your site actually serves at `{{BASE_URL}}v1/models`; if unsure, trim it to a single working model, or just use Method A.
 
 </details>
 
 <details>
-<summary>Antigravity / project overrides / env vars / Nginx proxy</summary>
+<summary>Troubleshooting</summary>
+
+**CLI**
+- **401** — key incomplete or wrong field name (must be `ANTHROPIC_AUTH_TOKEN`).
+- **Still hits the official endpoint** — JSON not saved or malformed; fully quit `claude` and relaunch.
+- **Model error** — ask an admin to confirm your group has Claude-compatible models enabled.
+
+**Desktop app**
+- **Edited settings.json but nothing changed** — the desktop app doesn't read it; it uses the 3P profile above.
+- **Still errors after saving / model list empty** — a model name in the profile was rejected; trim `inferenceModels` or reconfigure via Method A (the Developer window).
+
+More codes: [Troubleshooting](/docs/errors).
+
+</details>
+
+<details>
+<summary>Antigravity / project overrides / env vars / Nginx proxy (CLI)</summary>
 
 **Antigravity channel**: append `antigravity` to the Base URL:
 
