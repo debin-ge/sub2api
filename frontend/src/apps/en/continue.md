@@ -1,0 +1,60 @@
+# Continue
+
+> VS Code / JetBrains AI plugin. Model configuration is maintained through a config file.
+
+```client
+name: Continue
+logo: openai
+protocols: [openai, anthropic]
+endpoint: {{BASE_URL}}v1
+config: ~/.continue/config.yaml
+homepage: https://continue.dev
+```
+
+## 1. Install
+
+Search `Continue` in the VS Code marketplace, click Install. Opening the Continue panel once creates the config directory.
+
+## 2. Configure
+
+Open `~/.continue/config.yaml` (Windows: `%USERPROFILE%\.continue\config.yaml`) — fastest way is the gear icon in the Continue panel → click the config filename.
+
+Add an entry under `models:` (YAML is indentation-sensitive, keep the two-space indent):
+
+```yaml
+models:
+  - name: {{SITE_NAME}} GPT
+    provider: openai
+    model: gpt-4o-mini
+    apiBase: {{BASE_URL}}v1
+    apiKey: paste your sk- key here
+    roles:
+      - chat
+```
+
+- Replace `apiKey` with the real key (config files do not expand environment variables).
+- For a Claude model, add another entry with `provider: anthropic`, `apiBase: {{BASE_URL}}` (**no** `v1`), and a Claude model name.
+
+## 3. Verify
+
+Continue auto-reloads on save. Open the panel, pick `{{SITE_NAME}} GPT` in the model dropdown, send "hello". A reply means success.
+
+<details>
+<summary>Troubleshooting</summary>
+
+- **Panel shows YAML error** — indentation or colon issue; diff against the example.
+- **401 / 404** — Base URL suffix must match the provider (openai=with `v1`, anthropic=without).
+- **Doesn't reload** — command palette (`Cmd/Ctrl + Shift + P`) → `Developer: Reload Window`.
+
+</details>
+
+<details>
+<summary>Legacy config.json format</summary>
+
+Older Continue versions use `~/.continue/config.json`. If your directory only has `config.json`, add this to the `"models": []` array:
+
+```json
+{ "title": "...", "provider": "openai", "model": "...", "apiBase": "...", "apiKey": "..." }
+```
+
+</details>

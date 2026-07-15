@@ -1,0 +1,82 @@
+# Claude Code
+
+> Anthropic's official CLI. The same `~/.claude/settings.json` is also read by the VS Code / JetBrains plugins — configure once, use everywhere.
+
+```client
+name: Claude Code
+logo: anthropic
+protocols: [anthropic]
+endpoint: {{BASE_URL}}
+config: ~/.claude/settings.json
+homepage: https://docs.claude.com/claude-code
+```
+
+## 1. Install
+
+```bash
+npm install -g @anthropic-ai/claude-code
+```
+
+**Verify**: `claude --version` prints a version.
+
+## 2. Configure
+
+Open `~/.claude/settings.json` (Windows: `%USERPROFILE%\.claude\settings.json`); create it if missing:
+
+```json
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "{{BASE_URL}}",
+    "ANTHROPIC_AUTH_TOKEN": "paste your sk- key here"
+  }
+}
+```
+
+- `ANTHROPIC_BASE_URL` — **no** trailing `v1`.
+- `ANTHROPIC_AUTH_TOKEN` — paste the real key (config files do not expand environment variables).
+
+## 3. Verify
+
+Open a fresh terminal window:
+
+```bash
+claude "Introduce yourself in one sentence."
+```
+
+A reply means success. On the first run, if a login prompt appears, pick "Use API Key" — do not go through OAuth.
+
+<details>
+<summary>Troubleshooting</summary>
+
+- **401** — key incomplete or wrong field name (must be `ANTHROPIC_AUTH_TOKEN`).
+- **Still hits the official endpoint** — JSON not saved or malformed; fully quit `claude` and relaunch.
+- **Model error** — ask an admin to confirm your group has Claude-compatible models enabled.
+- More codes: [Troubleshooting](/docs/errors).
+
+</details>
+
+<details>
+<summary>Antigravity / project overrides / env vars / Nginx proxy</summary>
+
+**Antigravity channel**: append `antigravity` to the Base URL:
+
+```json
+{ "env": { "ANTHROPIC_BASE_URL": "{{BASE_URL}}antigravity", "ANTHROPIC_AUTH_TOKEN": "..." } }
+```
+
+Anthropic and Antigravity channels **cannot share a session context**.
+
+**Project-level override**: create `.claude/settings.json` in the project root (same shape); it takes precedence over the user-level file.
+
+**Environment variables** (temporary, no file changes):
+
+```bash
+export ANTHROPIC_BASE_URL="{{BASE_URL}}"
+export ANTHROPIC_AUTH_TOKEN="paste your key here"
+# Some compatible clients require ANTHROPIC_API_KEY instead:
+export ANTHROPIC_API_KEY="paste your key here"
+```
+
+**Nginx reverse proxy**: the admin must add `underscores_in_headers on;` to the `http` block, otherwise multi-account sticky sessions break.
+
+</details>

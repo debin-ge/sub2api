@@ -92,9 +92,7 @@ If the deployment has not enabled the Anthropic compatible endpoint or model map
 | Next step | Document |
 | --- | --- |
 | Understand key permissions and security | API Keys and Accounts. |
-| Choose the right integration path | Integration Overview. |
-| Write your own API code | Code Integration. |
-| Configure an IDE or GUI client | Client Integration. |
-| Configure terminal AI tools | CLI Integration. |
+| Connect your tool | [Apps](/apps) — pick Claude Code / Cursor / Codex / … |
+| Write your own API code | [Code samples](/apps/code). |
 | Choose models and endpoints | Models and Platforms, Endpoint Selection Guide. |
 | Fix failed requests | Troubleshooting. |

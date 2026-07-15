@@ -7,6 +7,8 @@ const messages = {
     title: 'Model Plaza',
     header: {
       label: 'Model Plaza',
+      home: 'Home',
+      docs: 'Docs',
       dashboard: 'Dashboard',
       register: 'Register',
     },
@@ -105,6 +107,8 @@ const messages = {
   home: {
     viewDocs: 'View Documentation',
     docs: 'Docs',
+    apps: 'Apps',
+    viewApps: 'View Apps integration',
     switchToLight: 'Switch to Light Mode',
     switchToDark: 'Switch to Dark Mode',
     dashboard: 'Dashboard',
@@ -533,6 +537,7 @@ const messages = {
     mySubscriptions: 'My Subscriptions',
     buySubscription: 'Recharge / Subscription',
     docs: 'Docs',
+    apps: 'Apps',
     myOrders: 'My Orders',
     orderManagement: 'Orders',
     paymentDashboard: 'Payment Dashboard',

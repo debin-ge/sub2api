@@ -60,6 +60,26 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/apps',
+    name: 'Apps',
+    component: () => import('@/views/DocsView.vue'),
+    meta: {
+      requiresAuth: false,
+      title: 'Apps',
+      titleKey: 'nav.apps'
+    }
+  },
+  {
+    path: '/apps/:slug',
+    name: 'AppDetail',
+    component: () => import('@/views/DocsView.vue'),
+    meta: {
+      requiresAuth: false,
+      title: 'Apps',
+      titleKey: 'nav.apps'
+    }
+  },
+  {
     path: '/plaza',
     name: 'ModelPlaza',
     component: () => import('@/views/PlazaView.vue'),
@@ -720,7 +740,7 @@ let authInitialized = false
 const navigationLoading = useNavigationLoadingState()
 // 延迟初始化预加载，传入 router 实例
 let routePrefetch: ReturnType<typeof useRoutePrefetch> | null = null
-const BACKEND_MODE_ALLOWED_PATHS = ['/login', '/key-usage', '/docs', '/plaza', '/setup', '/payment/result', '/payment/airwallex', '/legal']
+const BACKEND_MODE_ALLOWED_PATHS = ['/login', '/key-usage', '/docs', '/apps', '/plaza', '/setup', '/payment/result', '/payment/airwallex', '/legal']
 const BACKEND_MODE_CALLBACK_PATHS = [
   '/auth/callback',
   '/auth/linuxdo/callback',
