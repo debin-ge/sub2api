@@ -1494,6 +1494,70 @@
                 </div>
                 <Toggle v-model="form.invitation_code_enabled" />
               </div>
+
+              <!-- Registration Rate Limit -->
+              <div class="border-t border-gray-100 pt-4 dark:border-dark-700">
+                <label class="font-medium text-gray-900 dark:text-white">{{
+                  t("admin.settings.registration.rateLimit")
+                }}</label>
+                <p class="mb-3 text-sm text-gray-500 dark:text-gray-400">
+                  {{ t("admin.settings.registration.rateLimitHint") }}
+                </p>
+                <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <label
+                      class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                    >
+                      {{ t("admin.settings.registration.rateLimitPerIp") }}
+                    </label>
+                    <input
+                      v-model.number="form.registration_rate_limit_per_ip"
+                      type="number"
+                      min="1"
+                      class="input"
+                    />
+                  </div>
+                  <div>
+                    <label
+                      class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                    >
+                      {{ t("admin.settings.registration.rateLimitWindowIp") }}
+                    </label>
+                    <input
+                      v-model.number="form.registration_rate_limit_window_ip"
+                      type="number"
+                      min="1"
+                      class="input"
+                    />
+                  </div>
+                  <div>
+                    <label
+                      class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                    >
+                      {{ t("admin.settings.registration.rateLimitPerEmail") }}
+                    </label>
+                    <input
+                      v-model.number="form.registration_rate_limit_per_email"
+                      type="number"
+                      min="1"
+                      class="input"
+                    />
+                  </div>
+                  <div>
+                    <label
+                      class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                    >
+                      {{ t("admin.settings.registration.rateLimitWindowEmail") }}
+                    </label>
+                    <input
+                      v-model.number="form.registration_rate_limit_window_email"
+                      type="number"
+                      min="1"
+                      class="input"
+                    />
+                  </div>
+                </div>
+              </div>
               <!-- Password Reset - Only show when email verification is enabled -->
               <div
                 v-if="form.email_verify_enabled"
@@ -8173,6 +8237,10 @@ const form = reactive<SettingsForm>({
   registration_email_suffix_whitelist: [],
   promo_code_enabled: true,
   invitation_code_enabled: false,
+  registration_rate_limit_per_ip: 10,
+  registration_rate_limit_window_ip: 3600,
+  registration_rate_limit_per_email: 5,
+  registration_rate_limit_window_email: 3600,
   password_reset_enabled: false,
   totp_enabled: false,
   totp_encryption_key_configured: false,
@@ -9547,6 +9615,11 @@ async function saveSettings() {
         ),
       promo_code_enabled: form.promo_code_enabled,
       invitation_code_enabled: form.invitation_code_enabled,
+      registration_rate_limit_per_ip: form.registration_rate_limit_per_ip,
+      registration_rate_limit_window_ip: form.registration_rate_limit_window_ip,
+      registration_rate_limit_per_email: form.registration_rate_limit_per_email,
+      registration_rate_limit_window_email:
+        form.registration_rate_limit_window_email,
       password_reset_enabled: form.password_reset_enabled,
       totp_enabled: form.totp_enabled,
       login_agreement_enabled: form.login_agreement_enabled,

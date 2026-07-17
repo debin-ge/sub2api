@@ -372,6 +372,10 @@ export interface SystemSettings {
   password_reset_enabled: boolean;
   frontend_url: string;
   invitation_code_enabled: boolean;
+  registration_rate_limit_per_ip: number; // 每IP注册请求数上限
+  registration_rate_limit_window_ip: number; // 每IP速率限制时间窗口（秒）
+  registration_rate_limit_per_email: number; // 每邮箱域名注册请求数上限
+  registration_rate_limit_window_email: number; // 每邮箱域名速率限制时间窗口（秒）
   totp_enabled: boolean; // TOTP 双因素认证
   totp_encryption_key_configured: boolean; // TOTP 加密密钥是否已配置
   login_agreement_enabled: boolean;
@@ -676,6 +680,10 @@ export interface UpdateSettingsRequest {
   password_reset_enabled?: boolean;
   frontend_url?: string;
   invitation_code_enabled?: boolean;
+  registration_rate_limit_per_ip?: number;
+  registration_rate_limit_window_ip?: number;
+  registration_rate_limit_per_email?: number;
+  registration_rate_limit_window_email?: number;
   totp_enabled?: boolean; // TOTP 双因素认证
   login_agreement_enabled?: boolean;
   login_agreement_mode?: "modal" | "checkbox" | string;

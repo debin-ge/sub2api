@@ -1997,6 +1997,12 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyPasswordResetEnabled] = strconv.FormatBool(settings.PasswordResetEnabled)
 	updates[SettingKeyFrontendURL] = settings.FrontendURL
 	updates[SettingKeyInvitationCodeEnabled] = strconv.FormatBool(settings.InvitationCodeEnabled)
+
+	// 注册速率限制设置（<=0 时回退到默认值，避免误设为无效值导致限流失效）
+	updates[SettingKeyRegistrationRateLimitPerIP] = strconv.Itoa(normalizeRateLimitValue(settings.RegistrationRateLimitPerIP, RegistrationRateLimitPerIPDefault))
+	updates[SettingKeyRegistrationRateLimitWindowIP] = strconv.Itoa(normalizeRateLimitValue(settings.RegistrationRateLimitWindowIP, RegistrationRateLimitWindowIPDefault))
+	updates[SettingKeyRegistrationRateLimitPerEmail] = strconv.Itoa(normalizeRateLimitValue(settings.RegistrationRateLimitPerEmail, RegistrationRateLimitPerEmailDefault))
+	updates[SettingKeyRegistrationRateLimitWindowEmail] = strconv.Itoa(normalizeRateLimitValue(settings.RegistrationRateLimitWindowEmail, RegistrationRateLimitWindowEmailDefault))
 	updates[SettingKeyTotpEnabled] = strconv.FormatBool(settings.TotpEnabled)
 	settings.LoginAgreementMode = normalizeLoginAgreementMode(settings.LoginAgreementMode)
 	settings.LoginAgreementUpdatedAt = strings.TrimSpace(settings.LoginAgreementUpdatedAt)
@@ -2883,6 +2889,75 @@ func (s *SettingService) GetAffiliateRebatePerInviteeCap(ctx context.Context) fl
 	return cap
 }
 
+// normalizeRateLimitValue 将 <=0 的速率限制值归一化为默认值。
+func normalizeRateLimitValue(value, defaultValue int) int {
+	if value <= 0 {
+		return defaultValue
+	}
+	return value
+}
+
+// parseIntOrDefault 解析字符串为整数，失败或 <=0 时返回默认值。
+func parseIntOrDefault(raw string, defaultValue int) int {
+	v, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || v <= 0 {
+		return defaultValue
+	}
+	return v
+}
+
+// GetRegistrationRateLimitPerIP 获取每IP注册速率限制（请求数/时间窗口）
+func (s *SettingService) GetRegistrationRateLimitPerIP(ctx context.Context) int {
+	raw, err := s.settingRepo.GetValue(ctx, SettingKeyRegistrationRateLimitPerIP)
+	if err != nil {
+		return RegistrationRateLimitPerIPDefault
+	}
+	limit, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || limit <= 0 {
+		return RegistrationRateLimitPerIPDefault
+	}
+	return limit
+}
+
+// GetRegistrationRateLimitWindowIP 获取每IP速率限制时间窗口（秒）
+func (s *SettingService) GetRegistrationRateLimitWindowIP(ctx context.Context) int {
+	raw, err := s.settingRepo.GetValue(ctx, SettingKeyRegistrationRateLimitWindowIP)
+	if err != nil {
+		return RegistrationRateLimitWindowIPDefault
+	}
+	window, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || window <= 0 {
+		return RegistrationRateLimitWindowIPDefault
+	}
+	return window
+}
+
+// GetRegistrationRateLimitPerEmail 获取每邮箱域名注册速率限制（请求数/时间窗口）
+func (s *SettingService) GetRegistrationRateLimitPerEmail(ctx context.Context) int {
+	raw, err := s.settingRepo.GetValue(ctx, SettingKeyRegistrationRateLimitPerEmail)
+	if err != nil {
+		return RegistrationRateLimitPerEmailDefault
+	}
+	limit, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || limit <= 0 {
+		return RegistrationRateLimitPerEmailDefault
+	}
+	return limit
+}
+
+// GetRegistrationRateLimitWindowEmail 获取每邮箱域名速率限制时间窗口（秒）
+func (s *SettingService) GetRegistrationRateLimitWindowEmail(ctx context.Context) int {
+	raw, err := s.settingRepo.GetValue(ctx, SettingKeyRegistrationRateLimitWindowEmail)
+	if err != nil {
+		return RegistrationRateLimitWindowEmailDefault
+	}
+	window, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || window <= 0 {
+		return RegistrationRateLimitWindowEmailDefault
+	}
+	return window
+}
+
 // IsPasswordResetEnabled 检查是否启用密码重置功能
 // 要求：必须同时开启邮件验证
 func (s *SettingService) IsPasswordResetEnabled(ctx context.Context) bool {
@@ -3315,6 +3390,10 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		PasswordResetEnabled:             emailVerifyEnabled && settings[SettingKeyPasswordResetEnabled] == "true",
 		FrontendURL:                      settings[SettingKeyFrontendURL],
 		InvitationCodeEnabled:            settings[SettingKeyInvitationCodeEnabled] == "true",
+		RegistrationRateLimitPerIP:       parseIntOrDefault(settings[SettingKeyRegistrationRateLimitPerIP], RegistrationRateLimitPerIPDefault),
+		RegistrationRateLimitWindowIP:    parseIntOrDefault(settings[SettingKeyRegistrationRateLimitWindowIP], RegistrationRateLimitWindowIPDefault),
+		RegistrationRateLimitPerEmail:    parseIntOrDefault(settings[SettingKeyRegistrationRateLimitPerEmail], RegistrationRateLimitPerEmailDefault),
+		RegistrationRateLimitWindowEmail: parseIntOrDefault(settings[SettingKeyRegistrationRateLimitWindowEmail], RegistrationRateLimitWindowEmailDefault),
 		TotpEnabled:                      settings[SettingKeyTotpEnabled] == "true",
 		LoginAgreementEnabled:            settings[SettingKeyLoginAgreementEnabled] == "true",
 		LoginAgreementMode:               normalizeLoginAgreementMode(settings[SettingKeyLoginAgreementMode]),

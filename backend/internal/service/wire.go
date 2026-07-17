@@ -40,6 +40,14 @@ func ProvideEmailQueueService(emailService *EmailService) *EmailQueueService {
 	return NewEmailQueueService(emailService, 3)
 }
 
+// ProvideDisposableEmailService creates DisposableEmailService and starts the
+// background blacklist refresh (initial load on startup + daily refresh).
+func ProvideDisposableEmailService(redisClient *redis.Client) *DisposableEmailService {
+	svc := NewDisposableEmailService(redisClient)
+	svc.StartBackgroundRefresh()
+	return svc
+}
+
 // ProvideOAuthRefreshAPI creates OAuthRefreshAPI with the default lock TTL.
 func ProvideOAuthRefreshAPI(accountRepo AccountRepository, tokenCache GeminiTokenCache) *OAuthRefreshAPI {
 	return NewOAuthRefreshAPI(accountRepo, tokenCache)
@@ -695,6 +703,7 @@ var ProviderSet = wire.NewSet(
 	NewNotificationEmailService,
 	ProvideEmailQueueService,
 	NewTurnstileService,
+	ProvideDisposableEmailService,
 	NewSubscriptionService,
 	wire.Bind(new(DefaultSubscriptionAssigner), new(*SubscriptionService)),
 	ProvideConcurrencyService,

@@ -28,6 +28,8 @@ var (
 	ErrUserNotActive           = infraerrors.Forbidden("USER_NOT_ACTIVE", "user is not active")
 	ErrEmailExists             = infraerrors.Conflict("EMAIL_EXISTS", "email already exists")
 	ErrEmailReserved           = infraerrors.BadRequest("EMAIL_RESERVED", "email is reserved")
+	ErrEmailLocalPartInvalid   = infraerrors.BadRequest("EMAIL_LOCAL_PART_INVALID", "email address with plus sign (+) or dot (.) in local part is not allowed")
+	ErrDisposableEmailNotAllowed = infraerrors.BadRequest("DISPOSABLE_EMAIL_NOT_ALLOWED", "temporary or disposable email addresses are not allowed")
 	ErrInvalidToken            = infraerrors.Unauthorized("INVALID_TOKEN", "invalid token")
 	ErrTokenExpired            = infraerrors.Unauthorized("TOKEN_EXPIRED", "token has expired")
 	ErrAccessTokenExpired      = infraerrors.Unauthorized("ACCESS_TOKEN_EXPIRED", "access token has expired")
@@ -73,6 +75,7 @@ type AuthService struct {
 	emailQueueService     *EmailQueueService
 	promoService          *PromoService
 	affiliateService      *AffiliateService
+	disposableEmailService *DisposableEmailService
 	defaultSubAssigner    DefaultSubscriptionAssigner
 	userPlatformQuotaRepo UserPlatformQuotaRepository
 	apiKeyService         *APIKeyService
@@ -109,6 +112,7 @@ func NewAuthService(
 	promoService *PromoService,
 	defaultSubAssigner DefaultSubscriptionAssigner,
 	affiliateService *AffiliateService,
+	disposableEmailService *DisposableEmailService,
 	userPlatformQuotaRepo UserPlatformQuotaRepository,
 	apiKeyService *APIKeyService,
 	groupRepo GroupRepository,
@@ -125,6 +129,7 @@ func NewAuthService(
 		emailQueueService:     emailQueueService,
 		promoService:          promoService,
 		affiliateService:      affiliateService,
+		disposableEmailService: disposableEmailService,
 		defaultSubAssigner:    defaultSubAssigner,
 		userPlatformQuotaRepo: userPlatformQuotaRepo,
 		apiKeyService:         apiKeyService,
@@ -231,6 +236,20 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 	// 防止用户注册 LinuxDo OAuth 合成邮箱，避免第三方登录与本地账号发生碰撞。
 	if isReservedEmail(email) {
 		return "", nil, ErrEmailReserved
+	}
+	// 验证邮箱本地部分，拒绝包含加号或点号的邮箱（防止薅羊毛）
+	if err := ValidateEmailLocalPart(email); err != nil {
+		return "", nil, ErrEmailLocalPartInvalid
+	}
+	// 检查是否为临时邮箱（防止批量注册薅羊毛）
+	if s.disposableEmailService != nil {
+		isDisposable, err := s.disposableEmailService.IsDisposableEmail(ctx, email)
+		if err != nil {
+			// 记录错误但不阻止注册（fail-open）
+			logger.LegacyPrintf("service.auth", "[Auth] Failed to check disposable email: %v", err)
+		} else if isDisposable {
+			return "", nil, ErrDisposableEmailNotAllowed
+		}
 	}
 	if err := s.validateRegistrationEmailPolicy(ctx, email); err != nil {
 		return "", nil, err
@@ -371,6 +390,19 @@ func (s *AuthService) SendVerifyCode(ctx context.Context, email string, locale .
 	if isReservedEmail(email) {
 		return ErrEmailReserved
 	}
+	// 验证邮箱本地部分，拒绝包含加号或点号的邮箱（防止薅羊毛）
+	if err := ValidateEmailLocalPart(email); err != nil {
+		return ErrEmailLocalPartInvalid
+	}
+	// 检查是否为临时邮箱（防止批量注册薅羊毛）
+	if s.disposableEmailService != nil {
+		isDisposable, err := s.disposableEmailService.IsDisposableEmail(ctx, email)
+		if err != nil {
+			logger.LegacyPrintf("service.auth", "[Auth] Failed to check disposable email: %v", err)
+		} else if isDisposable {
+			return ErrDisposableEmailNotAllowed
+		}
+	}
 	if err := s.validateRegistrationEmailPolicy(ctx, email); err != nil {
 		return err
 	}
@@ -411,6 +443,19 @@ func (s *AuthService) SendVerifyCodeAsync(ctx context.Context, email string, loc
 
 	if isReservedEmail(email) {
 		return nil, ErrEmailReserved
+	}
+	// 验证邮箱本地部分，拒绝包含加号或点号的邮箱（防止薅羊毛）
+	if err := ValidateEmailLocalPart(email); err != nil {
+		return nil, ErrEmailLocalPartInvalid
+	}
+	// 检查是否为临时邮箱（防止批量注册薅羊毛）
+	if s.disposableEmailService != nil {
+		isDisposable, err := s.disposableEmailService.IsDisposableEmail(ctx, email)
+		if err != nil {
+			logger.LegacyPrintf("service.auth", "[Auth] Failed to check disposable email: %v", err)
+		} else if isDisposable {
+			return nil, ErrDisposableEmailNotAllowed
+		}
 	}
 	if err := s.validateRegistrationEmailPolicy(ctx, email); err != nil {
 		return nil, err

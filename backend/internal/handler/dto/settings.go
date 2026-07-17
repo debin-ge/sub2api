@@ -34,6 +34,10 @@ type SystemSettings struct {
 	PasswordResetEnabled             bool                     `json:"password_reset_enabled"`
 	FrontendURL                      string                   `json:"frontend_url"`
 	InvitationCodeEnabled            bool                     `json:"invitation_code_enabled"`
+	RegistrationRateLimitPerIP       int                      `json:"registration_rate_limit_per_ip"`       // 每IP注册请求数上限
+	RegistrationRateLimitWindowIP    int                      `json:"registration_rate_limit_window_ip"`    // 每IP速率限制时间窗口（秒）
+	RegistrationRateLimitPerEmail    int                      `json:"registration_rate_limit_per_email"`    // 每邮箱域名注册请求数上限
+	RegistrationRateLimitWindowEmail int                      `json:"registration_rate_limit_window_email"` // 每邮箱域名速率限制时间窗口（秒）
 	TotpEnabled                      bool                     `json:"totp_enabled"`                   // TOTP 双因素认证
 	TotpEncryptionKeyConfigured      bool                     `json:"totp_encryption_key_configured"` // TOTP 加密密钥是否已配置
 	LoginAgreementEnabled            bool                     `json:"login_agreement_enabled"`

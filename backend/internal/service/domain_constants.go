@@ -35,6 +35,14 @@ const (
 	AffiliateRebatePerInviteeCapDefault = 0.0   // 0 = 无上限
 )
 
+// Registration rate limit settings
+const (
+	RegistrationRateLimitPerIPDefault       = 10   // 每IP每小时10次注册请求
+	RegistrationRateLimitWindowIPDefault    = 3600 // 1小时（秒）
+	RegistrationRateLimitPerEmailDefault    = 5    // 每邮箱域名每小时5次注册请求
+	RegistrationRateLimitWindowEmailDefault = 3600 // 1小时（秒）
+)
+
 // Platform constants
 const (
 	PlatformAnthropic   = domain.PlatformAnthropic
@@ -139,6 +147,13 @@ const (
 	SettingKeyPasswordResetEnabled             = "password_reset_enabled"              // 是否启用忘记密码功能（需要先开启邮件验证）
 	SettingKeyFrontendURL                      = "frontend_url"                        // 前端基础URL，用于生成邮件中的重置密码链接
 	SettingKeyInvitationCodeEnabled            = "invitation_code_enabled"             // 是否启用邀请码注册
+
+	// 注册速率限制设置
+	SettingKeyRegistrationRateLimitPerIP       = "registration_rate_limit_per_ip"       // 每IP注册速率限制（请求数/时间窗口，默认10）
+	SettingKeyRegistrationRateLimitWindowIP    = "registration_rate_limit_window_ip"    // 每IP速率限制时间窗口（秒，默认3600）
+	SettingKeyRegistrationRateLimitPerEmail    = "registration_rate_limit_per_email"    // 每邮箱域名注册速率限制（默认5）
+	SettingKeyRegistrationRateLimitWindowEmail = "registration_rate_limit_window_email" // 每邮箱域名速率限制时间窗口（秒，默认3600）
+
 	SettingKeyAffiliateEnabled                 = "affiliate_enabled"                   // 邀请返利功能总开关
 	SettingKeyAffiliateRebateRate              = "affiliate_rebate_rate"               // 邀请返利比例（百分比，0-100）
 	SettingKeyAffiliateRebateFreezeHours       = "affiliate_rebate_freeze_hours"       // 返利冻结期（小时，0=不冻结）
