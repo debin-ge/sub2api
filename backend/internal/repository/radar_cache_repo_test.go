@@ -405,6 +405,11 @@ func TestRadarCacheRepositorySourcePayloadMappingsTTLAndMiss(t *testing.T) {
 		{name: "LMArena", source: service.RadarSourceLMArena, key: "radar:degradation:lmarena", value: []byte(`{"rows":[]}`)},
 		{name: "Claude status", source: service.RadarSourceStatusClaude, key: "radar:health:claude", value: []byte(`{"ok":true}`)},
 		{name: "OpenAI status", source: service.RadarSourceStatusOpenAI, key: "radar:health:openai", value: []byte(`{"ok":true}`)},
+		{name: "Windsurf status", source: service.RadarSourceStatusWindsurf, key: "radar:health:windsurf", value: []byte(`{"ok":true}`)},
+		{name: "DeepSeek status", source: service.RadarSourceStatusDeepSeek, key: "radar:health:deepseek", value: []byte(`{"ok":true}`)},
+		{name: "Kimi status", source: service.RadarSourceStatusKimi, key: "radar:health:kimi", value: []byte(`{"ok":true}`)},
+		{name: "MiniMax global status", source: service.RadarSourceStatusMiniMaxGlobal, key: "radar:health:minimax:global", value: []byte(`{"ok":true}`)},
+		{name: "MiniMax China status", source: service.RadarSourceStatusMiniMaxChina, key: "radar:health:minimax:china", value: []byte(`{"ok":true}`)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -189,7 +189,9 @@ func (c *RadarAdminController) sourceStaleThreshold(source RadarSourceKey) time.
 		return c.aaModelsStaleThreshold
 	case RadarSourceLMArena:
 		return c.lmarenaStaleThreshold
-	case RadarSourceStatusClaude, RadarSourceStatusOpenAI:
+	case RadarSourceStatusClaude, RadarSourceStatusOpenAI,
+		RadarSourceStatusWindsurf, RadarSourceStatusDeepSeek, RadarSourceStatusKimi,
+		RadarSourceStatusMiniMaxGlobal, RadarSourceStatusMiniMaxChina:
 		return c.healthStaleThreshold
 	default:
 		if isRadarAAPerformanceRunnerSource(source) {

@@ -37,6 +37,10 @@ const (
 	ServiceKeyClaudeCode ServiceKey = "claude_code"
 	ServiceKeyCodexWeb   ServiceKey = "codex_web"
 	ServiceKeyOpenAIAPI  ServiceKey = "openai_api"
+	ServiceKeyWindsurf   ServiceKey = "windsurf"
+	ServiceKeyDeepSeek   ServiceKey = "deepseek"
+	ServiceKeyKimi       ServiceKey = "kimi"
+	ServiceKeyMiniMax    ServiceKey = "minimax"
 )
 
 // RadarServiceDescriptor pairs a stable service key with its public name.
@@ -128,17 +132,26 @@ type RadarIncidentDTO struct {
 	ResolvedAt *time.Time `json:"resolved_at"`
 }
 
+// ServiceHealthHistoryDayDTO summarizes official incidents affecting one
+// service on a UTC calendar day. Incidents is always a non-nil slice.
+type ServiceHealthHistoryDayDTO struct {
+	Date      string             `json:"date"`
+	Status    ServiceStatus      `json:"status"`
+	Incidents []RadarIncidentDTO `json:"incidents"`
+}
+
 // ServiceHealthDTO describes the current health of a public service.
 type ServiceHealthDTO struct {
-	ServiceKey      ServiceKey        `json:"service_key"`
-	Name            string            `json:"name"`
-	Status          ServiceStatus     `json:"status"`
-	StatusIndicator StatusIndicator   `json:"status_indicator"`
-	Uptime90d       *float64          `json:"uptime_90d"`
-	LastIncident    *RadarIncidentDTO `json:"last_incident"`
-	LastUpdatedAt   *time.Time        `json:"last_updated_at"`
-	SourceURL       string            `json:"source_url"`
-	Stale           bool              `json:"stale"`
+	ServiceKey      ServiceKey                   `json:"service_key"`
+	Name            string                       `json:"name"`
+	Status          ServiceStatus                `json:"status"`
+	StatusIndicator StatusIndicator              `json:"status_indicator"`
+	Uptime90d       *float64                     `json:"uptime_90d"`
+	LastIncident    *RadarIncidentDTO            `json:"last_incident"`
+	LastUpdatedAt   *time.Time                   `json:"last_updated_at"`
+	History30d      []ServiceHealthHistoryDayDTO `json:"history_30d"`
+	SourceURL       string                       `json:"source_url"`
+	Stale           bool                         `json:"stale"`
 }
 
 // WindowStatsDTO contains aggregate quota statistics for one time window.

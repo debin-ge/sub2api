@@ -5,12 +5,25 @@ import type {
   LMArenaDTO,
   QuotaTrendDTO,
   ServiceHealthDTO,
+  ServiceHealthHistoryDayDTO,
   ServiceKey,
   ServiceStatus,
   WindowStatsDTO,
 } from '@/types/radar'
 
 export const now = '2026-07-13T08:00:00.000Z'
+
+export function serviceHistory(
+  overrides: Readonly<Record<string, Partial<ServiceHealthHistoryDayDTO>>> = {}
+): ServiceHealthHistoryDayDTO[] {
+  const end = new Date('2026-07-13T00:00:00.000Z')
+  return Array.from({ length: 30 }, (_, index) => {
+    const date = new Date(end)
+    date.setUTCDate(end.getUTCDate() - (29 - index))
+    const key = date.toISOString().slice(0, 10)
+    return { date: key, status: 'operational', incidents: [], ...overrides[key] }
+  })
+}
 
 export function windowStats(overrides: Partial<WindowStatsDTO> = {}): WindowStatsDTO {
   return {
@@ -78,6 +91,7 @@ export function service(
     uptime_90d: null,
     last_incident: null,
     last_updated_at: now,
+    history_30d: serviceHistory(),
     source_url: 'https://status.claude.com',
     stale: false,
   }

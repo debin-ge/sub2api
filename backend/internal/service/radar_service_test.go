@@ -302,6 +302,8 @@ func TestRadarServiceGetServiceHealthLocalizesFailureAndDeepClonesCache(t *testi
 	require.NotNil(t, got[0].LastIncident)
 	require.Equal(t, "Elevated latency", got[0].LastIncident.Name)
 	require.NotNil(t, got[0].LastIncident.ResolvedAt)
+	require.Len(t, got[0].History30d, 30)
+	require.NotEmpty(t, got[0].History30d[len(got[0].History30d)-1].Incidents)
 	require.Equal(t, ServiceStatusOperational, got[1].Status)
 	require.False(t, got[1].Stale)
 	for _, card := range got[2:] {
@@ -314,6 +316,7 @@ func TestRadarServiceGetServiceHealthLocalizesFailureAndDeepClonesCache(t *testi
 	got[0].LastUpdatedAt = nil
 	got[0].LastIncident.Name = "caller mutation"
 	*got[0].LastIncident.ResolvedAt = time.Time{}
+	got[0].History30d[len(got[0].History30d)-1].Incidents[0].Name = "caller history mutation"
 
 	again, err := service.GetServiceHealth(context.Background())
 	require.NoError(t, err)
@@ -321,6 +324,7 @@ func TestRadarServiceGetServiceHealthLocalizesFailureAndDeepClonesCache(t *testi
 	require.NotNil(t, again[0].LastUpdatedAt)
 	require.Equal(t, "Elevated latency", again[0].LastIncident.Name)
 	require.False(t, again[0].LastIncident.ResolvedAt.IsZero())
+	require.Equal(t, "Elevated latency", again[0].History30d[len(again[0].History30d)-1].Incidents[0].Name)
 	require.Equal(t, 1, repo.payloadCallCount(RadarSourceStatusClaude))
 	require.Equal(t, 1, repo.payloadCallCount(RadarSourceStatusOpenAI))
 	require.Equal(t, 1, repo.metaCallCount())
@@ -351,6 +355,37 @@ func TestRadarServiceGetServiceHealthAlwaysReturnsFourUnknownCards(t *testing.T)
 	require.Equal(t, 1, repo.metaCallCount())
 	require.Equal(t, 1, repo.payloadCallCount(RadarSourceStatusClaude))
 	require.Equal(t, 1, repo.payloadCallCount(RadarSourceStatusOpenAI))
+}
+
+func TestRadarServiceGetServiceHealthIncludesOfficialPlatformsAndUsesMiniMaxChinaOnly(t *testing.T) {
+	now := time.Date(2026, 7, 16, 8, 0, 0, 0, time.UTC)
+	repo := newRadarServiceTestRepo()
+	repo.payloads[RadarSourceStatusClaude] = radarServiceClaudeStatusPayload(now)
+	repo.payloads[RadarSourceStatusOpenAI] = radarServiceOpenAIStatusPayload(now)
+	repo.payloads[RadarSourceStatusWindsurf] = radarServicePlatformStatusPayload(now, "Windsurf", "Cascade", "operational")
+	repo.payloads[RadarSourceStatusDeepSeek] = radarServicePlatformStatusPayload(now, "DeepSeek", "API 服务 (API Service)", "degraded_performance")
+	repo.payloads[RadarSourceStatusKimi] = radarServicePlatformStatusPayload(now, "Kimi", "Open API", "partial_outage")
+	repo.payloads[RadarSourceStatusMiniMaxGlobal] = radarServicePlatformStatusPayload(now, "MiniMax Global", "Large Language Models (LLM)", "major_outage")
+	repo.payloads[RadarSourceStatusMiniMaxChina] = radarServicePlatformStatusPayload(now, "MiniMax China", "大语言模型LLM", "operational")
+	for _, source := range statuspageRadarSources() {
+		repo.metas[source] = radarServiceSuccessfulMeta(now)
+	}
+	service := mustNewRadarServiceForTest(t, radarServiceTestConfig(), repo, &radarServiceTestClock{now: now})
+
+	got, err := service.GetServiceHealth(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, []ServiceKey{
+		ServiceKeyClaudeAPI, ServiceKeyClaudeCode, ServiceKeyCodexWeb, ServiceKeyOpenAIAPI,
+		ServiceKeyWindsurf, ServiceKeyDeepSeek, ServiceKeyKimi, ServiceKeyMiniMax,
+	}, radarServiceHealthKeys(got))
+	require.Equal(t, ServiceStatusOperational, got[4].Status)
+	require.Equal(t, ServiceStatusDegradedPerformance, got[5].Status)
+	require.Equal(t, ServiceStatusPartialOutage, got[6].Status)
+	require.Equal(t, ServiceStatusOperational, got[7].Status)
+	require.Zero(t, repo.payloadCallCount(RadarSourceStatusMiniMaxGlobal), "the international source must not be read when the China source exists")
+	for _, card := range got {
+		require.False(t, card.Stale)
+	}
 }
 
 func TestRadarServiceGetServiceHealthMissingComponentIsUnknownButSourceFresh(t *testing.T) {
@@ -557,8 +592,10 @@ func TestRadarServiceSingleflightCoalescesColdAndExpiredLoads(t *testing.T) {
 
 			results[0][0].Name = "caller mutation"
 			results[0][0].LastIncident.Name = "caller mutation"
+			results[0][0].History30d[len(results[0][0].History30d)-1].Incidents[0].Name = "caller history mutation"
 			require.Equal(t, "Claude API", results[1][0].Name)
 			require.Equal(t, "Elevated latency", results[1][0].LastIncident.Name)
+			require.Equal(t, "Elevated latency", results[1][0].History30d[len(results[1][0].History30d)-1].Incidents[0].Name)
 		})
 	}
 }
@@ -1313,6 +1350,10 @@ func TestRadarServiceGetDataSourcesStableSafeStatesAndDeepClone(t *testing.T) {
 		"lmarena",
 		"status_claude",
 		"status_openai",
+		"status_windsurf",
+		"status_deepseek",
+		"status_kimi",
+		"status_minimax_china",
 		"quota_aggregator",
 	}, radarServiceSourceKeys(got))
 	require.Equal(t, []string{
@@ -1322,9 +1363,13 @@ func TestRadarServiceGetDataSourcesStableSafeStatesAndDeepClone(t *testing.T) {
 		"https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset",
 		"https://status.claude.com",
 		"https://status.openai.com",
+		"https://status.windsurf.com",
+		"https://status.deepseek.com",
+		"https://status.moonshot.cn",
+		"https://status.minimaxi.com",
 		"",
 	}, radarServiceSourceURLs(got))
-	require.Equal(t, []string{"6h", "24h", "24h", "24h", "30m", "30m", "15m"}, radarServiceSourceIntervals(got))
+	require.Equal(t, []string{"6h", "24h", "24h", "24h", "30m", "30m", "30m", "30m", "30m", "30m", "15m"}, radarServiceSourceIntervals(got))
 
 	require.Equal(t, DataSourceStateHealthy, got[0].State)
 	require.True(t, got[0].IsHealthy)
@@ -1341,8 +1386,8 @@ func TestRadarServiceGetDataSourcesStableSafeStatesAndDeepClone(t *testing.T) {
 	require.Equal(t, DataSourceStateNeverAttempted, got[4].State)
 	require.Equal(t, DataSourceStateHealthy, got[5].State)
 	require.True(t, got[5].IsHealthy)
-	require.Equal(t, "Sub2API Aggregated Usage", got[6].Name)
-	require.Equal(t, DataSourceStateNeverAttempted, got[6].State)
+	require.Equal(t, "Sub2API Aggregated Usage", got[len(got)-1].Name)
+	require.Equal(t, DataSourceStateNeverAttempted, got[len(got)-1].State)
 	require.Nil(t, got[6].HTTPStatus)
 
 	for _, source := range got {
@@ -1454,7 +1499,7 @@ func TestRadarServiceGetDataSourcesOperationalErrorIsSafeAndNotCached(t *testing
 	repo.mu.Unlock()
 	got, err := service.GetDataSources(context.Background())
 	require.NoError(t, err)
-	require.Len(t, got, 7)
+	require.Len(t, got, 11)
 	require.Equal(t, 2, repo.metaCallCount())
 }
 
@@ -1521,7 +1566,7 @@ func TestRadarServiceGetDataSourcesQuotaAggregatorStateErrorIsSafeAndNotCached(t
 
 	got, err := service.GetDataSources(context.Background())
 	require.NoError(t, err)
-	require.Len(t, got, 7)
+	require.Len(t, got, 11)
 	aggregator := got[len(got)-1]
 	require.Equal(t, DataSourceStateFailed, aggregator.State)
 	require.False(t, aggregator.IsHealthy)
@@ -1624,6 +1669,7 @@ func TestRadarServiceConcurrentCachedResultsAreIndependent(t *testing.T) {
 				}
 				health[0].Name = "mutated"
 				health[0].LastIncident.Name = "mutated"
+				health[0].History30d[len(health[0].History30d)-1].Incidents[0].Name = "mutated"
 
 				latest, err := service.GetDegradationLatest(context.Background())
 				if err != nil {
@@ -1666,6 +1712,7 @@ func TestRadarServiceConcurrentCachedResultsAreIndependent(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "Claude API", health[0].Name)
 	require.Equal(t, "Elevated latency", health[0].LastIncident.Name)
+	require.Equal(t, "Elevated latency", health[0].History30d[len(health[0].History30d)-1].Incidents[0].Name)
 	latest, err := service.GetDegradationLatest(context.Background())
 	require.NoError(t, err)
 	require.NotZero(t, *latest.Models[0].IntelligenceIndex)
@@ -1895,4 +1942,15 @@ func radarServiceOpenAIStatusPayload(now time.Time) []byte {
 		],
 		"incidents":[]
 	}`, updated, created, updated, created, updated))
+}
+
+func radarServicePlatformStatusPayload(now time.Time, page, component, status string) []byte {
+	created := now.AddDate(-1, 0, 0).UTC().Format(time.RFC3339Nano)
+	updated := now.Add(-time.Minute).UTC().Format(time.RFC3339Nano)
+	return []byte(fmt.Sprintf(`{
+		"page":{"id":"platform-page","name":%q,"url":"https://untrusted.example","updated_at":%q},
+		"status":{"indicator":"none","description":"status"},
+		"components":[{"id":"platform-component","name":%q,"status":%q,"created_at":%q,"updated_at":%q,"group":false}],
+		"incidents":[]
+	}`, page, updated, component, status, created, updated))
 }

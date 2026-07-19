@@ -13,12 +13,16 @@ func TestRadarDomainEnumValues(t *testing.T) {
 	t.Parallel()
 
 	require.Equal(t, []ServiceKey{
-		"claude_api", "claude_code", "codex_web", "openai_api",
+		"claude_api", "claude_code", "codex_web", "openai_api", "windsurf", "deepseek", "kimi", "minimax",
 	}, []ServiceKey{
 		ServiceKeyClaudeAPI,
 		ServiceKeyClaudeCode,
 		ServiceKeyCodexWeb,
 		ServiceKeyOpenAIAPI,
+		ServiceKeyWindsurf,
+		ServiceKeyDeepSeek,
+		ServiceKeyKimi,
+		ServiceKeyMiniMax,
 	})
 
 	require.Equal(t, []ServiceStatus{
@@ -166,6 +170,13 @@ func TestRadarDomainJSONKeysUseSnakeCase(t *testing.T) {
 			want: []string{"created_at", "impact", "name", "resolved_at", "status"},
 		},
 		{
+			name: "service health history day",
+			got: ServiceHealthHistoryDayDTO{
+				Date: "2026-07-12", Status: ServiceStatusDegradedPerformance, Incidents: []RadarIncidentDTO{},
+			},
+			want: []string{"date", "incidents", "status"},
+		},
+		{
 			name: "service health",
 			got: ServiceHealthDTO{
 				ServiceKey:      ServiceKeyOpenAIAPI,
@@ -178,7 +189,7 @@ func TestRadarDomainJSONKeysUseSnakeCase(t *testing.T) {
 				SourceURL:       "https://status.openai.com",
 				Stale:           false,
 			},
-			want: []string{"last_incident", "last_updated_at", "name", "service_key", "source_url", "stale", "status", "status_indicator", "uptime_90d"},
+			want: []string{"history_30d", "last_incident", "last_updated_at", "name", "service_key", "source_url", "stale", "status", "status_indicator", "uptime_90d"},
 		},
 		{
 			name: "window stats",

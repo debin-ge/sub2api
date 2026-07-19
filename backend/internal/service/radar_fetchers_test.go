@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -24,6 +25,10 @@ func TestNewRadarFetchersWithoutAAKeySkipsAllAARequests(t *testing.T) {
 		RadarSourceLMArena,
 		RadarSourceStatusClaude,
 		RadarSourceStatusOpenAI,
+		RadarSourceStatusWindsurf,
+		RadarSourceStatusKimi,
+		RadarSourceStatusMiniMaxChina,
+		RadarSourceStatusDeepSeek,
 	}, radarFetcherSources(fetchers))
 	requireUniqueRadarFetcherSources(t, fetchers)
 }
@@ -51,6 +56,10 @@ func TestNewRadarFetchersWithAAKeyUsesStableConfiguredOrder(t *testing.T) {
 		RadarSourceLMArena,
 		RadarSourceStatusClaude,
 		RadarSourceStatusOpenAI,
+		RadarSourceStatusWindsurf,
+		RadarSourceStatusKimi,
+		RadarSourceStatusMiniMaxChina,
+		RadarSourceStatusDeepSeek,
 	}, radarFetcherSources(fetchers))
 	requireUniqueRadarFetcherSources(t, fetchers)
 }
@@ -71,6 +80,10 @@ func TestNewRadarFetchersWithAAKeyAndNoSlugsStillIncludesModels(t *testing.T) {
 		RadarSourceLMArena,
 		RadarSourceStatusClaude,
 		RadarSourceStatusOpenAI,
+		RadarSourceStatusWindsurf,
+		RadarSourceStatusKimi,
+		RadarSourceStatusMiniMaxChina,
+		RadarSourceStatusDeepSeek,
 	}, radarFetcherSources(fetchers))
 }
 
@@ -140,8 +153,11 @@ func TestNewRadarFetchersEndpointsHeadersAndIntervalsWithoutLiveNetwork(t *testi
 	cfg.Radar.LMArenaURL = "https://datasets-server.huggingface.co/filter"
 
 	requests := make(map[string]*http.Request)
+	var requestsMu sync.Mutex
 	client := radarDoerFunc(func(req *http.Request) (*http.Response, error) {
+		requestsMu.Lock()
 		requests[req.URL.String()] = req.Clone(req.Context())
+		requestsMu.Unlock()
 		var payload string
 		switch {
 		case req.URL.String() == artificialAnalysisModelsURL:
@@ -152,8 +168,20 @@ func TestNewRadarFetchersEndpointsHeadersAndIntervalsWithoutLiveNetwork(t *testi
 			offset, err := strconv.Atoi(req.URL.Query().Get("offset"))
 			require.NoError(t, err)
 			payload = hfLMArenaPage(t, offset, 1, hfLMArenaPageOptions{})
-		case req.URL.Host == "status.claude.com", req.URL.Host == "status.openai.com":
-			payload = `{"page":{"id":"p","name":"Status","url":"https://payload.example","updated_at":"2026-07-10T10:00:00Z"},"status":{"indicator":"none","description":"OK"},"components":[]}`
+		case req.URL.String() == openAIStatuspageFeedURL:
+			payload = `<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"><id>https://status.openai.com/</id><title>OpenAI status</title><updated>2026-07-10T10:00:00Z</updated><generator>incident.io</generator></feed>`
+		case req.URL.String() == miniMaxChinaLLMHistoryURL:
+			payload = `<div data-react-class="HistoryIndex" data-react-props="{&quot;components&quot;:[{&quot;id&quot;:&quot;vwp8mgy34fck&quot;,&quot;name&quot;:&quot;大语言模型LLM&quot;}],&quot;months&quot;:[{&quot;name&quot;:&quot;July&quot;,&quot;year&quot;:2026,&quot;days&quot;:31,&quot;incidents&quot;:[]}],&quot;component_filter&quot;:[&quot;vwp8mgy34fck&quot;],&quot;start_time&quot;:&quot;2026-05-01T00:00:00+08:00&quot;,&quot;end_time&quot;:&quot;2026-07-31T23:59:59+08:00&quot;}"></div>`
+		case req.URL.Host == "status.claude.com", req.URL.Host == "status.openai.com",
+			req.URL.Host == "status.windsurf.com", req.URL.Host == "status.moonshot.cn",
+			req.URL.Host == "status.minimaxi.com":
+			if req.URL.EscapedPath() == "/api/v2/incidents.json" {
+				payload = `{"page":{"id":"p","name":"Status","url":"https://payload.example","updated_at":"2026-07-10T10:00:00Z"},"incidents":[]}`
+			} else {
+				payload = `{"page":{"id":"p","name":"Status","url":"https://payload.example","updated_at":"2026-07-10T10:00:00Z"},"status":{"indicator":"none","description":"OK"},"components":[]}`
+			}
+		case req.URL.Host == "statuspage.flashcat.cloud":
+			payload = string(deepSeekStatusHTML(t, `{"initialData":{"page":{"page_id":6410630422455,"name":"DeepSeek","custom_domain":"status.deepseek.com","components":[{"component_id":"api","name":"API 服务 (API Service)","available_since_seconds":1706745600}]},"active_changes":[]},"initialDataUpdatedAt":1784165568367}`))
 		default:
 			t.Fatalf("unexpected endpoint %s", req.URL.Redacted())
 		}
@@ -177,7 +205,7 @@ func TestNewRadarFetchersEndpointsHeadersAndIntervalsWithoutLiveNetwork(t *testi
 		require.NoError(t, err, "source %s", fetcher.Source())
 	}
 
-	require.Len(t, requests, len(fetchers))
+	require.Len(t, requests, len(fetchers)+7)
 	for endpoint, req := range requests {
 		require.Equal(t, http.MethodGet, req.Method)
 		if strings.Contains(endpoint, "artificialanalysis.ai") {
@@ -191,6 +219,12 @@ func TestNewRadarFetchersEndpointsHeadersAndIntervalsWithoutLiveNetwork(t *testi
 	require.True(t, hasRadarFetcherRequestHost(requests, "datasets-server.huggingface.co"))
 	require.Contains(t, requests, claudeStatuspageAPIURL)
 	require.Contains(t, requests, openAIStatuspageAPIURL)
+	require.Contains(t, requests, windsurfStatuspageAPIURL)
+	require.Contains(t, requests, kimiStatuspageAPIURL)
+	require.Contains(t, requests, miniMaxChinaStatuspageAPIURL)
+	require.Contains(t, requests, openAIStatuspageFeedURL)
+	require.Contains(t, requests, miniMaxChinaLLMHistoryURL)
+	require.Contains(t, requests, deepSeekStatusDataURL)
 }
 
 func radarFetcherTestCatalog() *radarLMArenaCatalogStub {

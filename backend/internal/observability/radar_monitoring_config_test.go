@@ -69,7 +69,7 @@ func TestRadarAlertRulesCoverLaunchTargetsAndParseAsYAML(t *testing.T) {
 	require.Contains(t, alerts["RadarLatestSuccessVisibilityBelowTarget"], "< 1")
 	require.Contains(t, alerts["RadarAPIP95AboveTarget"], "> 0.1")
 	stale := alerts["RadarSourceDataStale"]
-	require.Contains(t, stale, `source=~"status_claude|status_openai"`)
+	require.Contains(t, stale, `source=~"status_.*"`)
 	require.Contains(t, stale, "> 3600")
 	require.Contains(t, stale, `source="aa"`)
 	require.Contains(t, stale, "> 43200")

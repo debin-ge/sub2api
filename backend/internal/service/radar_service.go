@@ -181,8 +181,9 @@ func newRadarService(
 	}, nil
 }
 
-// GetServiceHealth returns the four canonical service cards. A broken source
-// degrades only its two cards; cancellation and deadlines remain observable.
+// GetServiceHealth returns the historical canonical cards plus platform health
+// cards backed by official sources. A broken source degrades only the services
+// it owns; cancellation and deadlines remain observable.
 func (s *RadarService) GetServiceHealth(ctx context.Context) ([]ServiceHealthDTO, error) {
 	key := radarServiceCacheKey{method: "service_health"}
 	value, err := s.cached(ctx, key, func(loadCtx context.Context, now time.Time) (any, bool, *time.Time, error) {
@@ -196,32 +197,37 @@ func (s *RadarService) GetServiceHealth(ctx context.Context) ([]ServiceHealthDTO
 			cacheable = false
 		}
 
-		claudeCards, claudeUsable, claudeCacheable, err := s.readStatuspageCards(loadCtx, RadarSourceStatusClaude)
-		if err != nil {
-			return nil, false, nil, err
-		}
-		openAICards, openAIUsable, openAICacheable, err := s.readStatuspageCards(loadCtx, RadarSourceStatusOpenAI)
-		if err != nil {
-			return nil, false, nil, err
+		sources := statuspageRadarSources()
+		groups := make([][]ServiceHealthDTO, 0, len(sources))
+		usable := make(map[RadarSourceKey]bool, len(sources))
+		for _, source := range sources {
+			group, sourceUsable, sourceCacheable, readErr := s.readStatuspageCards(loadCtx, source)
+			if readErr != nil {
+				return nil, false, nil, readErr
+			}
+			groups = append(groups, group)
+			usable[source] = sourceUsable
+			cacheable = cacheable && sourceCacheable
 		}
 
 		now = s.clock.Now().UTC()
-		cards := MergeStatuspageServiceHealth(claudeCards, openAICards)
-		claudeMeta, claudeMetaOK := metas[RadarSourceStatusClaude]
-		openAIMeta, openAIMetaOK := metas[RadarSourceStatusOpenAI]
-		claudeStale, claudeDeadline := radarSourceFreshness(now, s.healthStaleThreshold, claudeMeta, claudeMetaOK, claudeUsable)
-		openAIStale, openAIDeadline := radarSourceFreshness(now, s.healthStaleThreshold, openAIMeta, openAIMetaOK, openAIUsable)
+		cards := MergeStatuspageServiceHealth(groups...)
+		staleBySource := make(map[RadarSourceKey]bool, len(sources))
+		var earliestDeadline *time.Time
+		for _, source := range sources {
+			meta, metaOK := metas[source]
+			stale, deadline := radarSourceFreshness(now, s.healthStaleThreshold, meta, metaOK, usable[source])
+			staleBySource[source] = stale
+			earliestDeadline = radarServiceEarliestDeadline(earliestDeadline, deadline)
+		}
 		for index := range cards {
-			switch cards[index].ServiceKey {
-			case ServiceKeyClaudeAPI, ServiceKeyClaudeCode:
-				cards[index].Stale = claudeStale
-			default:
-				cards[index].Stale = openAIStale
+			for _, source := range statuspageSourcesForServiceKey(cards[index].ServiceKey) {
+				cards[index].Stale = cards[index].Stale || staleBySource[source]
 			}
 		}
 		return cards,
-			cacheable && claudeCacheable && openAICacheable,
-			radarServiceEarliestDeadline(claudeDeadline, openAIDeadline),
+			cacheable,
+			earliestDeadline,
 			nil
 	}, func(value any) any {
 		return cloneRadarServiceHealth(value.([]ServiceHealthDTO))
@@ -804,7 +810,7 @@ type radarServiceDataSourceSpec struct {
 }
 
 func (s *RadarService) dataSourceSpecs() []radarServiceDataSourceSpec {
-	result := make([]radarServiceDataSourceSpec, 0, len(s.modelSlugs)+4)
+	result := make([]radarServiceDataSourceSpec, 0, len(s.modelSlugs)+9)
 	result = append(result, radarServiceDataSourceSpec{
 		source:     RadarSourceAA,
 		name:       "Artificial Analysis",
@@ -848,6 +854,38 @@ func (s *RadarService) dataSourceSpecs() []radarServiceDataSourceSpec {
 			source:     RadarSourceStatusOpenAI,
 			name:       "OpenAI Status",
 			url:        openAIStatuspagePublicURL,
+			interval:   s.statuspageInterval,
+			threshold:  s.healthStaleThreshold,
+			configured: true,
+		},
+		radarServiceDataSourceSpec{
+			source:     RadarSourceStatusWindsurf,
+			name:       "Windsurf Status",
+			url:        windsurfStatuspagePublicURL,
+			interval:   s.statuspageInterval,
+			threshold:  s.healthStaleThreshold,
+			configured: true,
+		},
+		radarServiceDataSourceSpec{
+			source:     RadarSourceStatusDeepSeek,
+			name:       "DeepSeek Status",
+			url:        deepSeekStatuspagePublicURL,
+			interval:   s.statuspageInterval,
+			threshold:  s.healthStaleThreshold,
+			configured: true,
+		},
+		radarServiceDataSourceSpec{
+			source:     RadarSourceStatusKimi,
+			name:       "Kimi Status",
+			url:        kimiStatuspagePublicURL,
+			interval:   s.statuspageInterval,
+			threshold:  s.healthStaleThreshold,
+			configured: true,
+		},
+		radarServiceDataSourceSpec{
+			source:     RadarSourceStatusMiniMaxChina,
+			name:       "MiniMax China Status",
+			url:        miniMaxChinaStatuspagePublicURL,
 			interval:   s.statuspageInterval,
 			threshold:  s.healthStaleThreshold,
 			configured: true,

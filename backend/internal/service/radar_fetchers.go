@@ -38,7 +38,7 @@ func newRadarFetchers(
 		return nil, &RadarFetcherConfigError{Field: "public_model_catalog"}
 	}
 
-	fetchers := make([]RadarFetcher, 0, 4+len(cfg.Radar.ArtificialAnalysisModelSlugs))
+	fetchers := make([]RadarFetcher, 0, 8+len(cfg.Radar.ArtificialAnalysisModelSlugs))
 	if strings.TrimSpace(cfg.Radar.ArtificialAnalysisAPIKey) != "" {
 		allowedSlugs, err := normalizeArtificialAnalysisAllowedSlugs(cfg.Radar.ArtificialAnalysisModelSlugs)
 		if err != nil {
@@ -80,6 +80,24 @@ func newRadarFetchers(
 		return nil, err
 	}
 	fetchers = append(fetchers, openAIFetcher)
+
+	for _, source := range []RadarSourceKey{
+		RadarSourceStatusWindsurf,
+		RadarSourceStatusKimi,
+		RadarSourceStatusMiniMaxChina,
+	} {
+		fetcher, err := NewStatuspageFetcher(cfg, source, client)
+		if err != nil {
+			return nil, err
+		}
+		fetchers = append(fetchers, fetcher)
+	}
+
+	deepSeekFetcher, err := NewDeepSeekStatusFetcher(cfg, client)
+	if err != nil {
+		return nil, err
+	}
+	fetchers = append(fetchers, deepSeekFetcher)
 
 	seen := make(map[RadarSourceKey]struct{}, len(fetchers))
 	for _, fetcher := range fetchers {

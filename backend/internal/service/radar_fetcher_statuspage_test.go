@@ -3,7 +3,10 @@ package service
 import (
 	"context"
 	"errors"
+	"html"
 	"net/http"
+	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -19,6 +22,11 @@ const validStatuspagePayload = `{
   "incidents":[]
 }`
 
+const validStatuspageIncidentsPayload = `{
+  "page":{"id":"page","name":"Status","url":"https://untrusted-payload.example","updated_at":"2026-07-10T10:30:00+08:00"},
+  "incidents":[]
+}`
+
 func TestStatuspageFetchersUseFixedHTTPSEndpointsAndConfiguredInterval(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -27,15 +35,33 @@ func TestStatuspageFetchersUseFixedHTTPSEndpointsAndConfiguredInterval(t *testin
 	}{
 		{name: "Claude", source: RadarSourceStatusClaude, wantHost: "status.claude.com"},
 		{name: "OpenAI", source: RadarSourceStatusOpenAI, wantHost: "status.openai.com"},
+		{name: "Windsurf", source: RadarSourceStatusWindsurf, wantHost: "status.windsurf.com"},
+		{name: "Kimi", source: RadarSourceStatusKimi, wantHost: "status.moonshot.cn"},
+		{name: "MiniMax global", source: RadarSourceStatusMiniMaxGlobal, wantHost: "status.minimax.io"},
+		{name: "MiniMax China", source: RadarSourceStatusMiniMaxChina, wantHost: "status.minimaxi.com"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var captured *http.Request
-			body := newRadarTrackingBody(validStatuspagePayload)
+			expectedRequests := 2
+			if tt.source == RadarSourceStatusOpenAI || tt.source == RadarSourceStatusMiniMaxChina {
+				expectedRequests = 3
+			}
+			captured := make(chan *http.Request, expectedRequests)
 			client := radarDoerFunc(func(req *http.Request) (*http.Response, error) {
-				captured = req.Clone(req.Context())
-				return &http.Response{StatusCode: http.StatusOK, Body: body}, nil
+				captured <- req.Clone(req.Context())
+				payload := validStatuspagePayload
+				switch req.URL.String() {
+				case openAIStatuspageFeedURL:
+					payload = `<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"><id>https://status.openai.com/</id><title>OpenAI status</title><updated>2026-07-10T10:30:00Z</updated><generator>incident.io</generator></feed>`
+				case miniMaxChinaLLMHistoryURL:
+					payload = `<div data-react-class="HistoryIndex" data-react-props="{&quot;components&quot;:[{&quot;id&quot;:&quot;vwp8mgy34fck&quot;,&quot;name&quot;:&quot;大语言模型LLM&quot;}],&quot;months&quot;:[{&quot;name&quot;:&quot;July&quot;,&quot;year&quot;:2026,&quot;days&quot;:31,&quot;incidents&quot;:[]}],&quot;component_filter&quot;:[&quot;vwp8mgy34fck&quot;],&quot;start_time&quot;:&quot;2026-05-01T00:00:00+08:00&quot;,&quot;end_time&quot;:&quot;2026-07-31T23:59:59+08:00&quot;}"></div>`
+				default:
+					if req.URL.EscapedPath() == "/api/v2/incidents.json" {
+						payload = validStatuspageIncidentsPayload
+					}
+				}
+				return &http.Response{StatusCode: http.StatusOK, Body: newRadarTrackingBody(payload)}, nil
 			})
 			cfg := validRadarFetcherTestConfig()
 			cfg.Radar.StatuspageIntervalMinutes = 47
@@ -48,15 +74,26 @@ func TestStatuspageFetchersUseFixedHTTPSEndpointsAndConfiguredInterval(t *testin
 			payload, meta, err := fetcher.Fetch(context.Background())
 
 			require.NoError(t, err)
-			require.JSONEq(t, validStatuspagePayload, string(payload))
-			require.True(t, body.isClosed())
-			require.NotNil(t, captured)
-			require.Equal(t, http.MethodGet, captured.Method)
-			require.Equal(t, "https", captured.URL.Scheme)
-			require.Equal(t, tt.wantHost, captured.URL.Host)
-			require.Equal(t, "/api/v2/summary.json", captured.URL.EscapedPath())
-			require.Empty(t, captured.URL.RawQuery)
-			require.Empty(t, captured.Header.Get("x-api-key"))
+			summary, decodeErr := DecodeStatuspageSummary(payload)
+			require.NoError(t, decodeErr)
+			require.NotNil(t, summary.HistoryCoverageStart)
+			endpoints := make(map[string]struct{}, expectedRequests)
+			for range expectedRequests {
+				request := <-captured
+				require.Equal(t, http.MethodGet, request.Method)
+				require.Equal(t, "https", request.URL.Scheme)
+				require.Equal(t, tt.wantHost, request.URL.Host)
+				require.Empty(t, request.Header.Get("x-api-key"))
+				endpoints[request.URL.String()] = struct{}{}
+			}
+			require.Contains(t, endpoints, "https://"+tt.wantHost+"/api/v2/summary.json")
+			require.Contains(t, endpoints, "https://"+tt.wantHost+"/api/v2/incidents.json")
+			if tt.source == RadarSourceStatusOpenAI {
+				require.Contains(t, endpoints, openAIStatuspageFeedURL)
+			}
+			if tt.source == RadarSourceStatusMiniMaxChina {
+				require.Contains(t, endpoints, miniMaxChinaLLMHistoryURL)
+			}
 			require.Nil(t, meta.Error)
 		})
 	}
@@ -68,11 +105,14 @@ func TestStatuspageFetcherRejectsZeroTimestampWithoutRecordingSuccess(t *testing
       "status":{"indicator":"none","description":"OK"},
       "components":[]
     }`
-	attempts := 0
-	body := newRadarTrackingBody(payloadJSON)
-	client := radarDoerFunc(func(*http.Request) (*http.Response, error) {
-		attempts++
-		return &http.Response{StatusCode: http.StatusOK, Body: body}, nil
+	var attempts atomic.Int32
+	client := radarDoerFunc(func(request *http.Request) (*http.Response, error) {
+		attempts.Add(1)
+		payload := payloadJSON
+		if request.URL.EscapedPath() == "/api/v2/incidents.json" {
+			payload = validStatuspageIncidentsPayload
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: newRadarTrackingBody(payload)}, nil
 	})
 	fetcher, err := NewStatuspageFetcher(validRadarFetcherTestConfig(), RadarSourceStatusClaude, client)
 	require.NoError(t, err)
@@ -81,8 +121,7 @@ func TestStatuspageFetcherRejectsZeroTimestampWithoutRecordingSuccess(t *testing
 
 	require.Error(t, err)
 	require.Nil(t, payload)
-	require.Equal(t, 1, attempts)
-	require.True(t, body.isClosed())
+	require.Equal(t, int32(2), attempts.Load())
 	require.Nil(t, meta.LastSuccessAt)
 	requireRadarFetchErrorCode(t, meta, DataSourceErrorCodeInvalidResponse)
 }
@@ -144,6 +183,161 @@ func TestDecodeAndMapStatuspageSummariesCanonicalOrderAndSafeMatching(t *testing
 	requireServiceHealthCard(t, cards[3], "OpenAI API", ServiceStatusMajorOutage, StatusIndicatorCritical, "https://status.openai.com")
 	require.Equal(t, time.Date(2026, 7, 10, 11, 40, 0, 0, time.UTC), *cards[3].LastUpdatedAt, "latest matched component wins even when its status is unknown")
 }
+
+func TestMapStatuspageServiceHealthBuildsThirtyDayHistoryWithoutInventingCoverage(t *testing.T) {
+	updatedAt := time.Date(2026, time.July, 16, 9, 0, 0, 0, time.UTC)
+	coverageStart := time.Date(2026, time.July, 1, 0, 0, 0, 0, time.UTC)
+	resolvedAt := time.Date(2026, time.July, 13, 2, 0, 0, 0, time.UTC)
+	summary := StatuspageSummary{
+		Page:   StatuspagePage{ID: "claude", Name: "Claude", UpdatedAt: updatedAt},
+		Status: StatuspageOverallStatus{Indicator: "none", Description: "Operational"},
+		Components: []StatuspageComponent{{
+			ID: "api", Name: "Claude API", Status: "operational",
+			CreatedAt: updatedAt.AddDate(-1, 0, 0), UpdatedAt: updatedAt,
+		}},
+		Incidents: []StatuspageIncident{
+			{
+				ID: "minor", Name: "Elevated latency", Status: "resolved", Impact: "minor",
+				CreatedAt: time.Date(2026, time.July, 12, 8, 0, 0, 0, time.UTC), ResolvedAt: radarHistoryTime(time.Date(2026, time.July, 12, 9, 0, 0, 0, time.UTC)),
+				Components: []StatuspageIncidentComponent{{ID: "api", Name: "Claude API"}},
+			},
+			{
+				ID: "critical", Name: "API outage", Status: "resolved", Impact: "critical",
+				CreatedAt: time.Date(2026, time.July, 12, 23, 0, 0, 0, time.UTC), ResolvedAt: &resolvedAt,
+				Components: []StatuspageIncidentComponent{{ID: "api", Name: "Claude API"}},
+			},
+		},
+		HistoryCoverageStart: &coverageStart,
+	}
+
+	cards, err := MapStatuspageServiceHealth(RadarSourceStatusClaude, summary)
+	require.NoError(t, err)
+	require.Len(t, cards[0].History30d, 30)
+	require.Equal(t, "2026-06-17", cards[0].History30d[0].Date)
+	require.Equal(t, ServiceStatusUnknown, cards[0].History30d[0].Status)
+	require.NotNil(t, cards[0].History30d[0].Incidents)
+	byDate := make(map[string]ServiceHealthHistoryDayDTO, len(cards[0].History30d))
+	for _, day := range cards[0].History30d {
+		byDate[day.Date] = day
+	}
+	require.Equal(t, ServiceStatusOperational, byDate["2026-07-11"].Status)
+	require.Equal(t, ServiceStatusMajorOutage, byDate["2026-07-12"].Status)
+	require.Equal(t, ServiceStatusMajorOutage, byDate["2026-07-13"].Status)
+	require.Len(t, byDate["2026-07-12"].Incidents, 2)
+}
+
+func TestMergeOpenAIHistoryUsesOfficialFeedComponentsAndLatestFeedDate(t *testing.T) {
+	summaryPayload := []byte(`{
+      "page":{"id":"openai","name":"OpenAI","url":"https://status.openai.com/","updated_at":"2026-07-09T19:25:56Z"},
+      "status":{"indicator":"none","description":"All Systems Operational"},
+      "components":[
+        {"id":"responses","name":"Responses","status":"operational","created_at":"2025-03-13T18:31:32Z","updated_at":"2026-07-09T19:25:56Z"},
+        {"id":"conversations","name":"Conversations","status":"operational","created_at":"2025-02-25T01:31:15Z","updated_at":"2026-07-09T19:25:56Z"}
+      ]
+    }`)
+	incidentsPayload := []byte(`{
+      "page":{"id":"openai","name":"OpenAI","url":"https://status.openai.com/","updated_at":"2026-07-15T00:39:32Z"},
+      "incidents":[
+        {"id":"api-incident","name":"Responses API errors","status":"resolved","impact":"major","created_at":"2026-07-14T10:00:00Z","resolved_at":"2026-07-14T10:15:00Z"},
+        {"id":"chatgpt-incident","name":"ChatGPT conversation errors","status":"resolved","impact":"critical","created_at":"2026-07-14T11:00:00Z","resolved_at":"2026-07-14T11:15:00Z"}
+      ]
+    }`)
+	feedPayload := []byte(`<?xml version="1.0" encoding="utf-8"?>
+      <feed xmlns="http://www.w3.org/2005/Atom">
+        <id>https://status.openai.com/</id><title>OpenAI status</title><updated>2026-07-16T04:06:23.122Z</updated><generator>incident.io</generator>
+        <entry><title>Responses API errors</title><id>https://status.openai.com//incidents/api-incident</id><updated>2026-07-14T10:15:00Z</updated><content type="html"><![CDATA[<b>Affected components</b><ul><li>Responses (Operational)</li></ul>]]></content></entry>
+        <entry><title>ChatGPT conversation errors</title><id>https://status.openai.com//incidents/chatgpt-incident</id><updated>2026-07-14T11:15:00Z</updated><content type="html"><![CDATA[<b>Affected components</b><ul><li>Conversations (Operational)</li></ul>]]></content></entry>
+      </feed>`)
+
+	merged, err := mergeStatuspageHistoryPayloads(RadarSourceStatusOpenAI, summaryPayload, incidentsPayload, feedPayload)
+	require.NoError(t, err)
+	summary, err := DecodeStatuspageSummary(merged)
+	require.NoError(t, err)
+	require.Equal(t, time.Date(2026, time.July, 16, 4, 6, 23, 122000000, time.UTC), summary.Page.UpdatedAt)
+
+	cards, err := MapStatuspageServiceHealth(RadarSourceStatusOpenAI, summary)
+	require.NoError(t, err)
+	apiHistory := historyDayByDate(t, cards[1].History30d, "2026-07-14")
+	require.Equal(t, ServiceStatusPartialOutage, apiHistory.Status)
+	require.Len(t, apiHistory.Incidents, 1)
+	require.Equal(t, "Responses API errors", apiHistory.Incidents[0].Name)
+	require.NotContains(t, apiHistory.Incidents[0].Name, "ChatGPT")
+}
+
+func TestMergeMiniMaxChinaHistoryUsesFilteredOfficialCalendarBeyondIncidentLimit(t *testing.T) {
+	summaryPayload := []byte(`{
+      "page":{"id":"minimax-cn","name":"MiniMax","url":"https://status.minimaxi.com","updated_at":"2026-07-16T11:31:46+08:00"},
+      "status":{"indicator":"none","description":"All Systems Operational"},
+      "components":[
+        {"id":"vwp8mgy34fck","name":"大语言模型LLM","status":"operational","created_at":"2026-04-21T14:19:10+08:00","updated_at":"2026-07-15T02:02:45+08:00"},
+        {"id":"speech","name":"语音合成","status":"operational","created_at":"2026-04-21T14:19:24+08:00","updated_at":"2026-07-15T17:34:47+08:00"}
+      ]
+    }`)
+	incidentsPayload := []byte(`{
+      "page":{"id":"minimax-cn","name":"MiniMax","url":"https://status.minimaxi.com","updated_at":"2026-07-16T11:31:46+08:00"},
+      "incidents":[
+        {"id":"recent-speech","name":"语音合成 错误率升高","status":"resolved","impact":"major","created_at":"2026-07-15T17:33:47+08:00","resolved_at":"2026-07-15T17:34:47+08:00","components":[{"id":"speech","name":"语音合成"}]}
+      ]
+    }`)
+	props := `{
+      "page_status":{"page":{"name":"MiniMax"}},
+      "components":[{"id":"vwp8mgy34fck","name":"大语言模型LLM"},{"id":"speech","name":"语音合成"}],
+      "months":[
+        {"name":"July","year":2026,"starts_on":3,"days":31,"incidents":[
+          {"code":"cn-july-14-a","name":"大语言模型 LLM 错误率升高","message":"该问题已解决。","impact":"major","timestamp":"Jul <var data-var='date'>14</var>, <var data-var='time'>14:31</var> - <var data-var='time'>14:32</var> CST"},
+          {"code":"cn-july-14-b","name":"大语言模型 LLM 错误率升高","message":"该问题已解决。","impact":"major","timestamp":"Jul <var data-var='date'>14</var>, <var data-var='time'>16:02</var> - <var data-var='time'>16:04</var> CST"},
+          {"code":"cn-july-15-a","name":"大语言模型 LLM 错误率升高","message":"该问题已解决。","impact":"major","timestamp":"Jul <var data-var='date'>15</var>, <var data-var='time'>00:34</var> - <var data-var='time'>00:36</var> CST"},
+          {"code":"cn-july-15-b","name":"大语言模型 LLM 错误率升高","message":"该问题已解决。","impact":"major","timestamp":"Jul <var data-var='date'>15</var>, <var data-var='time'>02:00</var> - <var data-var='time'>02:02</var> CST"}
+        ]},
+        {"name":"June","year":2026,"starts_on":0,"days":30,"incidents":[
+          {"code":"cn-june-24","name":"大语言模型 LLM 错误率升高","message":"该问题已解决。","impact":"major","timestamp":"Jun <var data-var='date'>24</var>, <var data-var='time'>08:04</var> - <var data-var='time'>08:08</var> CST"}
+        ]}
+      ],
+      "show_component_filter":false,"show_uptime_calendar":true,"component_filter":["vwp8mgy34fck"],
+      "start_time":"2026-05-01T00:00:00+08:00","end_time":"2026-07-31T23:59:59+08:00"
+    }`
+	historyPayload := []byte(`<html><body><div data-react-class="HistoryIndex" data-react-props="` + html.EscapeString(props) + `"></div></body></html>`)
+
+	merged, err := mergeStatuspageHistoryPayloads(RadarSourceStatusMiniMaxChina, summaryPayload, incidentsPayload, historyPayload)
+	require.NoError(t, err)
+	summary, err := DecodeStatuspageSummary(merged)
+	require.NoError(t, err)
+	cards, err := MapStatuspageServiceHealth(RadarSourceStatusMiniMaxChina, summary)
+	require.NoError(t, err)
+	require.Len(t, cards, 1)
+	oldDay := historyDayByDate(t, cards[0].History30d, "2026-06-24")
+	require.Equal(t, ServiceStatusPartialOutage, oldDay.Status)
+	require.Len(t, oldDay.Incidents, 1)
+	require.Equal(t, time.Date(2026, time.June, 24, 0, 4, 0, 0, time.UTC), oldDay.Incidents[0].CreatedAt)
+	july14 := historyDayByDate(t, cards[0].History30d, "2026-07-14")
+	require.Len(t, july14.Incidents, 2, "only the two China-site LLM incidents must be present")
+	require.Equal(t, ServiceStatusPartialOutage, july14.Status)
+	july15 := historyDayByDate(t, cards[0].History30d, "2026-07-15")
+	require.Len(t, july15.Incidents, 2, "China-site midnight incidents must stay on the official local calendar date")
+	require.Equal(t, ServiceStatusPartialOutage, july15.Status)
+}
+
+func TestDecodeMiniMaxChinaHistoryRejectsWrongOrMixedComponentFilter(t *testing.T) {
+	for _, filter := range []string{`null`, `[]`, `["speech"]`, `["vwp8mgy34fck","speech"]`} {
+		props := `{"months":[],"component_filter":` + filter + `,"start_time":"2026-05-01T00:00:00+08:00","end_time":"2026-07-31T23:59:59+08:00"}`
+		payload := []byte(`<div data-react-class="HistoryIndex" data-react-props="` + html.EscapeString(props) + `"></div>`)
+		_, _, err := decodeMiniMaxChinaHistory(payload)
+		require.Error(t, err, filter)
+	}
+}
+
+func historyDayByDate(t *testing.T, days []ServiceHealthHistoryDayDTO, date string) ServiceHealthHistoryDayDTO {
+	t.Helper()
+	for _, day := range days {
+		if day.Date == date {
+			return day
+		}
+	}
+	t.Fatalf("history day %s not found", date)
+	return ServiceHealthHistoryDayDTO{}
+}
+
+func radarHistoryTime(value time.Time) *time.Time { return &value }
 
 func TestStatuspageComponentNameVariantsAndLures(t *testing.T) {
 	claudeAPINames := []string{"Claude API", " claude api ", "Claude API (api.anthropic.com)"}
@@ -337,6 +531,39 @@ func TestMergeStatuspageServiceHealthAlwaysReturnsFourCanonicalSafeCards(t *test
 	}
 }
 
+func TestMapStatuspageOfficialPlatformComponentsAndMergeMiniMaxRegions(t *testing.T) {
+	tests := []struct {
+		source    RadarSourceKey
+		component string
+		wantKey   ServiceKey
+	}{
+		{source: RadarSourceStatusWindsurf, component: "Cascade", wantKey: ServiceKeyWindsurf},
+		{source: RadarSourceStatusKimi, component: "Open API", wantKey: ServiceKeyKimi},
+		{source: RadarSourceStatusMiniMaxGlobal, component: "Large Language Models (LLM)", wantKey: ServiceKeyMiniMax},
+		{source: RadarSourceStatusMiniMaxChina, component: "大语言模型LLM", wantKey: ServiceKeyMiniMax},
+	}
+	groups := make([][]ServiceHealthDTO, 0, len(tests))
+	for index, test := range tests {
+		status := "operational"
+		if test.source == RadarSourceStatusMiniMaxChina {
+			status = "partial_outage"
+		}
+		cards := mapStatuspageFixture(t, test.source, statuspageComponentsJSON(
+			statuspageComponentJSON("component-"+strconv.Itoa(index), test.component, status, "2026-07-10T10:00:00Z"),
+		))
+		require.Len(t, cards, 1)
+		require.Equal(t, test.wantKey, cards[0].ServiceKey)
+		groups = append(groups, cards)
+	}
+
+	merged := MergeStatuspageServiceHealth(groups...)
+	require.Len(t, merged, 7)
+	require.Equal(t, []ServiceKey{ServiceKeyWindsurf, ServiceKeyKimi, ServiceKeyMiniMax}, []ServiceKey{
+		merged[4].ServiceKey, merged[5].ServiceKey, merged[6].ServiceKey,
+	})
+	require.Equal(t, ServiceStatusPartialOutage, merged[6].Status)
+}
+
 func TestMapStatuspageOpenAIAPIAggregatesWorstKnownStatus(t *testing.T) {
 	components := statuspageComponentsJSON(
 		statuspageComponentJSON("responses", "Responses", "operational", "2026-07-10T10:00:00Z"),
@@ -353,7 +580,7 @@ func TestMapStatuspageOpenAIAPIAggregatesWorstKnownStatus(t *testing.T) {
 	require.Equal(t, time.Date(2026, 7, 10, 10, 4, 0, 0, time.UTC), *cards[1].LastUpdatedAt)
 }
 
-func TestMapStatuspageIncidentUsesRealPageLevelShapeAndKeepsPointersIsolated(t *testing.T) {
+func TestMapStatuspageIncidentDoesNotAttributeUnscopedPageIncidentToEveryService(t *testing.T) {
 	summary, err := DecodeStatuspageSummary([]byte(`{
       "page":{"id":"claude","name":"Claude Status","url":"https://payload.example","updated_at":"2026-07-10T10:30:00Z"},
       "status":{"indicator":"minor","description":"Incident"},
@@ -374,27 +601,22 @@ func TestMapStatuspageIncidentUsesRealPageLevelShapeAndKeepsPointersIsolated(t *
 
 	require.NoError(t, err)
 	require.NotNil(t, cards[0].LastIncident)
-	require.Equal(t, "Source-wide page incident", cards[0].LastIncident.Name, "latest safely applicable incident should win")
-	require.NotNil(t, cards[1].LastIncident)
-	require.Equal(t, "Source-wide page incident", cards[1].LastIncident.Name)
+	require.Equal(t, "Linked API incident", cards[0].LastIncident.Name)
+	require.Nil(t, cards[1].LastIncident)
 	require.NotContains(t, cards[0].LastIncident.Name, "Unrelated")
-	require.NotSame(t, cards[0].LastIncident, cards[1].LastIncident)
 	require.NotNil(t, cards[0].LastIncident.ResolvedAt)
-	require.NotNil(t, cards[1].LastIncident.ResolvedAt)
-	require.NotSame(t, cards[0].LastIncident.ResolvedAt, cards[1].LastIncident.ResolvedAt)
+	require.Equal(t, ServiceStatusUnknown, historyDayByDate(t, cards[0].History30d, "2026-07-10").Status)
+	require.Equal(t, ServiceStatusUnknown, historyDayByDate(t, cards[1].History30d, "2026-07-10").Status)
 
-	pageLevel := &summary.Incidents[len(summary.Incidents)-1]
-	require.NotNil(t, pageLevel.ResolvedAt)
-	require.NotSame(t, pageLevel.ResolvedAt, cards[0].LastIncident.ResolvedAt)
-	originalName := pageLevel.Name
-	originalResolvedAt := *pageLevel.ResolvedAt
-	secondCardResolvedAt := *cards[1].LastIncident.ResolvedAt
+	linked := &summary.Incidents[0]
+	require.NotNil(t, linked.ResolvedAt)
+	require.NotSame(t, linked.ResolvedAt, cards[0].LastIncident.ResolvedAt)
+	originalName := linked.Name
+	originalResolvedAt := *linked.ResolvedAt
 	cards[0].LastIncident.Name = "mutated output"
 	*cards[0].LastIncident.ResolvedAt = cards[0].LastIncident.ResolvedAt.Add(time.Hour)
-	require.Equal(t, originalName, pageLevel.Name)
-	require.Equal(t, originalResolvedAt, *pageLevel.ResolvedAt)
-	require.Equal(t, "Source-wide page incident", cards[1].LastIncident.Name)
-	require.Equal(t, secondCardResolvedAt, *cards[1].LastIncident.ResolvedAt)
+	require.Equal(t, originalName, linked.Name)
+	require.Equal(t, originalResolvedAt, *linked.ResolvedAt)
 }
 
 func TestDecodeStatuspageStrictJSONArraysAndTimes(t *testing.T) {

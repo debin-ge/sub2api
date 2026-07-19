@@ -50,7 +50,7 @@
             <template #empty>
               {{ t('radar.health.empty', 'No added model platforms are currently available.') }}
             </template>
-            <ServiceHealthGrid :services="healthData" :platforms="catalogPlatforms" />
+            <ServiceHealthGrid :services="healthData" :platforms="healthPlatforms" />
           </RadarSectionState>
         </section>
 
@@ -143,6 +143,7 @@ import type {
   DegradationMetric,
   DegradationTrendDTO,
   QuotaTrendDTO,
+  ServiceHealthDTO,
 } from '@/types/radar'
 import { radarCatalogPlatforms } from '@/utils/radarCatalog'
 
@@ -157,20 +158,35 @@ const catalogLoading = ref(true)
 const catalogError = ref<'load_failed' | null>(null)
 let catalogController: AbortController | null = null
 
+const supportedHealthPlatforms = new Set(['anthropic', 'openai', 'windsurf', 'deepseek', 'kimi', 'minimax'])
+const healthPlatformOrder = ['anthropic', 'deepseek', 'kimi', 'minimax', 'openai', 'windsurf'] as const
+
 const healthData = computed(() => radar.health.data.value)
 const quotaData = computed(() => radar.quotaLatest.data.value)
 const degradationData = computed(() => radar.degradationLatest.data.value)
 const lmarenaData = computed(() => radar.lmarena.data.value)
 const sourcesData = computed(() => radar.sources.data.value)
-const catalogPlatforms = computed(() => radarCatalogPlatforms(catalogChannels.value))
+const catalogPlatforms = computed(() => radarCatalogPlatforms(catalogChannels.value)
+  .filter((platform) => supportedHealthPlatforms.has(platform)))
+const responseHealthPlatforms = computed(() => {
+  const platforms = new Set((healthData.value ?? [])
+    .map((service) => healthPlatformForService(service))
+    .filter((platform): platform is string => platform !== null))
+  return healthPlatformOrder.filter((platform) => platforms.has(platform))
+})
+const healthPlatforms = computed(() => (
+  !catalogLoading.value && catalogError.value === null
+    ? catalogPlatforms.value
+    : responseHealthPlatforms.value
+))
 
 const initialLoading = computed(() => (
   !radar.hasCompletedRefresh.value && !radar.hasAnySuccess.value
 ))
-const healthHasContent = computed(() => catalogPlatforms.value.length > 0)
-const healthEmpty = computed(() => !catalogLoading.value && catalogError.value === null && catalogPlatforms.value.length === 0)
-const healthLoading = computed(() => radar.health.loading.value || catalogLoading.value)
-const healthError = computed(() => radar.health.error.value ?? catalogError.value)
+const healthHasContent = computed(() => Boolean(healthData.value?.length && healthPlatforms.value.length))
+const healthEmpty = computed(() => radar.health.hasSucceeded.value && !healthHasContent.value)
+const healthLoading = computed(() => radar.health.loading.value)
+const healthError = computed(() => radar.health.error.value)
 const lmarenaLoading = computed(() => radar.lmarena.loading.value)
 const lmarenaError = computed(() => radar.lmarena.error.value)
 const quotaHasContent = computed(() => Boolean(quotaData.value?.buckets.length))
@@ -239,6 +255,24 @@ function openBucketDetail(bucket: BucketSnapshotDTO): void {
 
 function closeBucketDetail(): void {
   detailModalOpen.value = false
+}
+
+function healthPlatformForService(service: ServiceHealthDTO): string | null {
+  switch (service.service_key) {
+    case 'claude_api':
+    case 'claude_code':
+      return 'anthropic'
+    case 'openai_api':
+    case 'codex_web':
+      return 'openai'
+    case 'windsurf':
+    case 'deepseek':
+    case 'kimi':
+    case 'minimax':
+      return service.service_key
+    default:
+      return null
+  }
 }
 
 function requestDegradationTrend(

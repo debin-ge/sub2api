@@ -3,7 +3,7 @@ groups:
     interval: 30s
     rules:
       - alert: RadarSourceSustainedFailure
-        expr: (sum by (job, source) (increase(radar_fetch_failure_total{source=~"status_claude|status_openai"}[2h])) >= 2 unless on (job, source) sum by (job, source) (increase(radar_fetch_success_total{source=~"status_claude|status_openai"}[2h])) > 0) or (sum by (job, source) (increase(radar_fetch_failure_total{source="aa"}[18h])) >= 2 unless on (job, source) sum by (job, source) (increase(radar_fetch_success_total{source="aa"}[18h])) > 0) or (sum by (job, source) (increase(radar_fetch_failure_total{source=~"aa_performance|lmarena"}[3d])) >= 2 unless on (job, source) sum by (job, source) (increase(radar_fetch_success_total{source=~"aa_performance|lmarena"}[3d])) > 0)
+        expr: (sum by (job, source) (increase(radar_fetch_failure_total{source=~"status_.*"}[2h])) >= 2 unless on (job, source) sum by (job, source) (increase(radar_fetch_success_total{source=~"status_.*"}[2h])) > 0) or (sum by (job, source) (increase(radar_fetch_failure_total{source="aa"}[18h])) >= 2 unless on (job, source) sum by (job, source) (increase(radar_fetch_success_total{source="aa"}[18h])) > 0) or (sum by (job, source) (increase(radar_fetch_failure_total{source=~"aa_performance|lmarena"}[3d])) >= 2 unless on (job, source) sum by (job, source) (increase(radar_fetch_success_total{source=~"aa_performance|lmarena"}[3d])) > 0)
         for: 5m
         labels:
           severity: warning
@@ -12,7 +12,7 @@ groups:
           runbook: "deploy/monitoring/radar-runbook.md#radarsourcesustainedfailure"
 
       - alert: RadarSourceDataStale
-        expr: max by (job, source) (radar_source_age_seconds) < 0 or min by (job, source) (radar_source_age_seconds{source=~"status_claude|status_openai"} >= 0) > 3600 or min by (job, source) (radar_source_age_seconds{source="aa"} >= 0) > 43200 or min by (job, source) (radar_source_age_seconds{source=~"aa_performance|lmarena"} >= 0) > 172800
+        expr: max by (job, source) (radar_source_age_seconds) < 0 or min by (job, source) (radar_source_age_seconds{source=~"status_.*"} >= 0) > 3600 or min by (job, source) (radar_source_age_seconds{source="aa"} >= 0) > 43200 or min by (job, source) (radar_source_age_seconds{source=~"aa_performance|lmarena"} >= 0) > 172800
         for: 15m
         labels:
           severity: critical
@@ -21,7 +21,7 @@ groups:
           runbook: "deploy/monitoring/radar-runbook.md#radarsourcedatastale"
 
       - alert: RadarLatestSuccessVisibilityBelowTarget
-        expr: ((count by (job) (min by (job, source) (radar_source_age_seconds{source=~"status_claude|status_openai"} >= 0) <= 3600) or on (job) (0 * count by (job) (count by (job, source) (radar_source_age_seconds)))) + (count by (job) (min by (job, source) (radar_source_age_seconds{source="aa"} >= 0) <= 43200) or on (job) (0 * count by (job) (count by (job, source) (radar_source_age_seconds)))) + (count by (job) (min by (job, source) (radar_source_age_seconds{source=~"aa_performance|lmarena"} >= 0) <= 172800) or on (job) (0 * count by (job) (count by (job, source) (radar_source_age_seconds))))) / clamp_min(count by (job) (count by (job, source) (radar_source_age_seconds)), 1) < 1
+        expr: ((count by (job) (min by (job, source) (radar_source_age_seconds{source=~"status_.*"} >= 0) <= 3600) or on (job) (0 * count by (job) (count by (job, source) (radar_source_age_seconds)))) + (count by (job) (min by (job, source) (radar_source_age_seconds{source="aa"} >= 0) <= 43200) or on (job) (0 * count by (job) (count by (job, source) (radar_source_age_seconds)))) + (count by (job) (min by (job, source) (radar_source_age_seconds{source=~"aa_performance|lmarena"} >= 0) <= 172800) or on (job) (0 * count by (job) (count by (job, source) (radar_source_age_seconds))))) / clamp_min(count by (job) (count by (job, source) (radar_source_age_seconds)), 1) < 1
         for: 15m
         labels:
           severity: critical

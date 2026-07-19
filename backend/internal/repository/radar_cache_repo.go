@@ -26,6 +26,11 @@ const (
 	radarLMArenaSourceKey        = "radar:degradation:lmarena"
 	radarClaudeHealthKey         = "radar:health:claude"
 	radarOpenAIHealthKey         = "radar:health:openai"
+	radarWindsurfHealthKey       = "radar:health:windsurf"
+	radarDeepSeekHealthKey       = "radar:health:deepseek"
+	radarKimiHealthKey           = "radar:health:kimi"
+	radarMiniMaxGlobalHealthKey  = "radar:health:minimax:global"
+	radarMiniMaxChinaHealthKey   = "radar:health:minimax:china"
 	radarSourceMetaKey           = "radar:meta:sources"
 	radarSourceVersionKey        = "radar:meta:source_versions"
 	radarSourceCadenceKey        = "radar:meta:source_cadence"
@@ -724,6 +729,11 @@ func NewRadarCacheRepository(rdb *redis.Client, cfg *config.Config) (service.Rad
 		service.RadarSourceLMArena,
 		service.RadarSourceStatusClaude,
 		service.RadarSourceStatusOpenAI,
+		service.RadarSourceStatusWindsurf,
+		service.RadarSourceStatusDeepSeek,
+		service.RadarSourceStatusKimi,
+		service.RadarSourceStatusMiniMaxGlobal,
+		service.RadarSourceStatusMiniMaxChina,
 	}
 	for _, model := range cfg.Radar.ArtificialAnalysisModelSlugs {
 		source, err := service.RadarAAPerformanceSource(model)
@@ -1275,7 +1285,10 @@ func radarMetricsCacheFamily(source service.RadarSourceKey) string {
 		return "aa"
 	case service.RadarSourceLMArena:
 		return "lmarena"
-	case service.RadarSourceStatusClaude, service.RadarSourceStatusOpenAI:
+	case service.RadarSourceStatusClaude, service.RadarSourceStatusOpenAI,
+		service.RadarSourceStatusWindsurf, service.RadarSourceStatusDeepSeek,
+		service.RadarSourceStatusKimi, service.RadarSourceStatusMiniMaxGlobal,
+		service.RadarSourceStatusMiniMaxChina:
 		return "service_health"
 	default:
 		if strings.HasPrefix(string(source), "aa_perf:") {
@@ -1789,6 +1802,16 @@ func radarSourceRedisKey(source service.RadarSourceKey) (string, error) {
 		return radarClaudeHealthKey, nil
 	case service.RadarSourceStatusOpenAI:
 		return radarOpenAIHealthKey, nil
+	case service.RadarSourceStatusWindsurf:
+		return radarWindsurfHealthKey, nil
+	case service.RadarSourceStatusDeepSeek:
+		return radarDeepSeekHealthKey, nil
+	case service.RadarSourceStatusKimi:
+		return radarKimiHealthKey, nil
+	case service.RadarSourceStatusMiniMaxGlobal:
+		return radarMiniMaxGlobalHealthKey, nil
+	case service.RadarSourceStatusMiniMaxChina:
+		return radarMiniMaxChinaHealthKey, nil
 	}
 
 	const performancePrefix = "aa_perf:"

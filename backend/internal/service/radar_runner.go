@@ -604,7 +604,9 @@ func isNilRadarFetcher(fetcher RadarFetcher) bool {
 
 func isCanonicalRadarRunnerSource(source RadarSourceKey) bool {
 	switch source {
-	case RadarSourceAA, RadarSourceLMArena, RadarSourceStatusClaude, RadarSourceStatusOpenAI:
+	case RadarSourceAA, RadarSourceLMArena, RadarSourceStatusClaude, RadarSourceStatusOpenAI,
+		RadarSourceStatusWindsurf, RadarSourceStatusDeepSeek, RadarSourceStatusKimi,
+		RadarSourceStatusMiniMaxGlobal, RadarSourceStatusMiniMaxChina:
 		return true
 	}
 	const prefix = "aa_perf:"

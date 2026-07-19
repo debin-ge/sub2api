@@ -1,5 +1,13 @@
-/** Stable identifiers for the four public service-health cards. */
-export type ServiceKey = 'claude_api' | 'claude_code' | 'codex_web' | 'openai_api'
+/** Stable identifiers for public service-health cards. */
+export type ServiceKey =
+  | 'claude_api'
+  | 'claude_code'
+  | 'codex_web'
+  | 'openai_api'
+  | 'windsurf'
+  | 'deepseek'
+  | 'kimi'
+  | 'minimax'
 
 export type ServiceStatus =
   | 'operational'
@@ -41,6 +49,12 @@ export interface RadarIncidentDTO {
   resolved_at: RadarTimestamp | null
 }
 
+export interface ServiceHealthHistoryDayDTO {
+  date: string
+  status: ServiceStatus
+  incidents: RadarIncidentDTO[]
+}
+
 export interface ServiceHealthDTO {
   service_key: ServiceKey
   name: string
@@ -49,6 +63,7 @@ export interface ServiceHealthDTO {
   uptime_90d: number | null
   last_incident: RadarIncidentDTO | null
   last_updated_at: RadarTimestamp | null
+  history_30d: ServiceHealthHistoryDayDTO[]
   source_url: string
   stale: boolean
 }

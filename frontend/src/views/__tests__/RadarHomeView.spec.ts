@@ -143,7 +143,7 @@ const RadarHeroStub = defineComponent({
 const ServiceHealthGridStub = defineComponent({
   name: 'ServiceHealthGrid',
   props: ['services', 'platforms'],
-  template: '<div data-testid="health-grid">{{ platforms?.length ?? 0 }}</div>',
+  template: '<div data-testid="health-grid" :data-platforms="platforms?.join(\',\') ?? \'\'">{{ platforms?.length ?? 0 }}</div>',
 })
 
 const QuotaBucketGridStub = defineComponent({
@@ -282,6 +282,21 @@ describe('RadarHomeView', () => {
     expect(wrapper.getComponent(RadarHeroStub).props()).not.toHaveProperty('stale')
     expect(wrapper.find('[data-testid="radar-section-retry"]').exists()).toBe(false)
     expect(radar.refresh).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps service health visible when the public catalog request fails', async () => {
+    getPublicChannelsMock.mockRejectedValueOnce(new Error('catalog unavailable'))
+    const radar = makeRadar({
+      health: resource([service('openai_api'), service('deepseek')]),
+    })
+
+    const wrapper = mountView(radar)
+    await flushPromises()
+
+    const grid = wrapper.get('[data-testid="health-grid"]')
+    expect(grid.attributes('data-platforms')).toBe('deepseek,openai')
+    expect(grid.text()).toBe('2')
+    expect(wrapper.text()).not.toContain('Unable to load this section')
   })
 
   it('does not render the data-source footer', () => {

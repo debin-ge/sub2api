@@ -24,10 +24,15 @@ var (
 type RadarSourceKey string
 
 const (
-	RadarSourceAA           RadarSourceKey = "aa"
-	RadarSourceLMArena      RadarSourceKey = "lmarena"
-	RadarSourceStatusClaude RadarSourceKey = "status_claude"
-	RadarSourceStatusOpenAI RadarSourceKey = "status_openai"
+	RadarSourceAA                  RadarSourceKey = "aa"
+	RadarSourceLMArena             RadarSourceKey = "lmarena"
+	RadarSourceStatusClaude        RadarSourceKey = "status_claude"
+	RadarSourceStatusOpenAI        RadarSourceKey = "status_openai"
+	RadarSourceStatusWindsurf      RadarSourceKey = "status_windsurf"
+	RadarSourceStatusDeepSeek      RadarSourceKey = "status_deepseek"
+	RadarSourceStatusKimi          RadarSourceKey = "status_kimi"
+	RadarSourceStatusMiniMaxGlobal RadarSourceKey = "status_minimax_global"
+	RadarSourceStatusMiniMaxChina  RadarSourceKey = "status_minimax_china"
 )
 
 // RadarAAPerformanceSource returns the canonical source key for one Artificial

@@ -58,7 +58,7 @@ func NewRadarHandler(cfg *config.Config, radarService service.RadarPublicService
 	}, nil
 }
 
-// GetServiceHealth returns the four canonical public service health cards.
+// GetServiceHealth returns supported public service health and 30-day history.
 func (h *RadarHandler) GetServiceHealth(c *gin.Context) {
 	if !radarHasNoQuery(c) {
 		writeRadarError(c, service.ErrInvalidRadarQuery)

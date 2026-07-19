@@ -216,10 +216,16 @@ func NewRadarMetrics(registerer prometheus.Registerer) (*RadarMetrics, error) {
 // domains; creating a child does not increment a counter or observe a
 // histogram, so event and duration totals remain exact zeroes.
 func (m *RadarMetrics) initializeZeroSeries() {
-	m.fetchSuccess.WithLabelValues("status_claude")
-	m.fetchFailure.WithLabelValues("status_claude", "network_error")
-	m.fetchDuration.WithLabelValues("status_claude")
-	m.fetchHTTPResponses.WithLabelValues("status_claude", "none")
+	for _, source := range []string{
+		"status_claude", "status_openai", "status_windsurf", "status_deepseek",
+		"status_kimi", "status_minimax_global", "status_minimax_china",
+	} {
+		m.fetchSuccess.WithLabelValues(source)
+		m.fetchFailure.WithLabelValues(source, "network_error")
+		m.fetchDuration.WithLabelValues(source)
+		m.fetchHTTPResponses.WithLabelValues(source, "none")
+		m.sourceLastSuccess[source] = time.Time{}
+	}
 	m.aggregatorBuckets.WithLabelValues().Set(0)
 	m.aggregatorRuns.WithLabelValues("success", "none")
 	m.aggregatorSkipped.WithLabelValues("usage_read_error")
@@ -228,7 +234,6 @@ func (m *RadarMetrics) initializeZeroSeries() {
 	m.httpDuration.WithLabelValues("/api/v1/public/radar/service-health")
 	m.redisOperations.WithLabelValues("list_meta", "read", "success")
 	m.cacheMemory.WithLabelValues("metadata").Set(0)
-	m.sourceLastSuccess["status_claude"] = time.Time{}
 }
 
 // MetricsHandler exposes a Prometheus gatherer without request/body logging.
@@ -433,7 +438,8 @@ func nonNegativeSeconds(duration time.Duration) float64 {
 
 func normalizeSource(source string) string {
 	switch source {
-	case "aa", "lmarena", "status_claude", "status_openai":
+	case "aa", "lmarena", "status_claude", "status_openai", "status_windsurf", "status_deepseek",
+		"status_kimi", "status_minimax_global", "status_minimax_china":
 		return source
 	}
 	if strings.HasPrefix(source, "aa_perf:") || source == "aa_performance" {

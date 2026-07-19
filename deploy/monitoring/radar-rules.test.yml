@@ -34,7 +34,7 @@ tests:
             value: 100
           - labels: '{source="status_openai"}'
             value: 5000
-      - expr: 'max by (source) (radar_source_age_seconds) < 0 or min by (source) (radar_source_age_seconds{source=~"status_claude|status_openai"} >= 0) > 3600'
+      - expr: 'max by (source) (radar_source_age_seconds) < 0 or min by (source) (radar_source_age_seconds{source=~"status_.*"} >= 0) > 3600'
         eval_time: 0m
         exp_samples:
           - labels: '{source="status_openai"}'

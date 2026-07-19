@@ -22,6 +22,7 @@ import type {
   RadarPlatform,
   ServiceKey,
   ServiceHealthDTO,
+  ServiceHealthHistoryDayDTO,
   ServiceStatus,
   StatusIndicator,
   WindowStatsDTO,
@@ -43,6 +44,8 @@ export type RadarContractAssertions = [
   Expect<Equal<ServiceHealthDTO['uptime_90d'], number | null>>,
   Expect<Equal<ServiceHealthDTO['last_incident'], RadarIncidentDTO | null>>,
   Expect<Equal<ServiceHealthDTO['last_updated_at'], string | null>>,
+  Expect<Equal<ServiceHealthDTO['history_30d'], ServiceHealthHistoryDayDTO[]>>,
+  Expect<Equal<ServiceHealthHistoryDayDTO['incidents'], RadarIncidentDTO[]>>,
   Expect<Equal<WindowStatsDTO['inferred_limit_usd'], number | null>>,
   Expect<Equal<WindowStatsDTO['inferred_stdev'], number | null>>,
   Expect<Equal<IsOptional<WindowStatsDTO, 'inference_reject_reason'>, true>>,
@@ -80,7 +83,19 @@ export type RadarContractAssertions = [
   Expect<Equal<DataSourceMetaDTO['http_status'], number | null>>,
   Expect<Equal<IsOptional<DataSourceMetaDTO, 'error'>, true>>,
   Expect<Equal<DataSourceMetaDTO['error'], DataSourceErrorCode | undefined>>,
-  Expect<Equal<ServiceKey, 'claude_api' | 'claude_code' | 'codex_web' | 'openai_api'>>,
+  Expect<
+    Equal<
+      ServiceKey,
+      | 'claude_api'
+      | 'claude_code'
+      | 'codex_web'
+      | 'openai_api'
+      | 'windsurf'
+      | 'deepseek'
+      | 'kimi'
+      | 'minimax'
+    >
+  >,
   Expect<
     Equal<
       ServiceStatus,
