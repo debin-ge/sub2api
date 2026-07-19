@@ -2,6 +2,8 @@
 package response
 
 import (
+	"context"
+	"errors"
 	"log"
 	"math"
 	"net/http"
@@ -85,6 +87,12 @@ func ErrorFrom(c *gin.Context, err error) bool {
 	}
 
 	statusCode, status := infraerrors.ToHTTP(err)
+	if errors.Is(err, context.Canceled) {
+		// A browser navigation/abort is expected request lifecycle behavior,
+		// not a server failure. Avoid emitting a misleading production ERROR.
+		statusCode = 499
+		status = infraerrors.Status{Code: 499, Message: "context canceled"}
+	}
 
 	// Log internal errors with full details for debugging
 	if statusCode >= 500 && c.Request != nil {

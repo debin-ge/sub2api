@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"regexp"
 	"sort"
 	"strings"
@@ -31,6 +32,13 @@ const (
 	miniMaxGlobalIncidentsURL        = "https://status.minimax.io/api/v2/incidents.json"
 	miniMaxChinaIncidentsURL         = "https://status.minimaxi.com/api/v2/incidents.json"
 	openAIStatuspageFeedURL          = "https://status.openai.com/feed.atom"
+	openAIStatusSummaryURL           = "https://status.openai.com/proxy/openai-1"
+	openAIComponentImpactsURL        = "https://status.openai.com/proxy/openai-1/component_impacts"
+	claudeAPIHistoryURL              = "https://status.claude.com/history?filter=k8w3r06qmzrp"
+	claudeCodeHistoryURL             = "https://status.claude.com/history?filter=yyzkbfz2thpt"
+	windsurfHistoryURL               = "https://status.windsurf.com/history?filter=8q19cygxvshj,r5wf1ykd7y1m"
+	kimiHistoryURL                   = "https://status.moonshot.cn/history?filter=8psr5dfdld0s,8rkd3yj051gl,lk7q3z0fcylp,p1j9ttb7jwhp,rf64wcbxt3r2,wmn9wzv84k1v,x0zsqgy57b75,z2zfp65lvb2z"
+	miniMaxGlobalLLMHistoryURL       = "https://status.minimax.io/history?filter=pr0d8qr59svt"
 	miniMaxChinaLLMHistoryURL        = "https://status.minimaxi.com/history?filter=vwp8mgy34fck"
 	claudeStatuspagePublicURL        = "https://status.claude.com"
 	openAIStatuspagePublicURL        = "https://status.openai.com"
@@ -54,7 +62,7 @@ const (
 
 var errInvalidStatuspageResponse = errors.New("invalid Statuspage response")
 
-var miniMaxHistoryTimestampPattern = regexp.MustCompile(`^([A-Z][a-z]{2}) <var data-var='date'>([0-9]{1,2})</var>, <var data-var='time'>([0-9]{2}:[0-9]{2})</var> - <var data-var='time'>([0-9]{2}:[0-9]{2})</var> CST$`)
+var statuspageHistoryTimestampPattern = regexp.MustCompile(`^([A-Z][a-z]{2}) <var data-var='date'>([0-9]{1,2})</var>, <var data-var='time'>([0-9]{2}:[0-9]{2})</var> - (?:(?:([A-Z][a-z]{2}) <var data-var='date'>([0-9]{1,2})</var>, )?)<var data-var='time'>([0-9]{2}:[0-9]{2})</var> (UTC|CST)$`)
 
 var (
 	claudeAPIStatuspageAliases = map[string]struct{}{
@@ -183,6 +191,36 @@ func statuspageIncidentsURL(source RadarSourceKey) (string, bool) {
 	}
 }
 
+func statuspageCalendarSpecs(source RadarSourceKey) []statuspageCalendarSpec {
+	switch source {
+	case RadarSourceStatusClaude:
+		return []statuspageCalendarSpec{
+			{serviceKey: ServiceKeyClaudeAPI, endpoint: claudeAPIHistoryURL, componentIDs: []string{"k8w3r06qmzrp"}},
+			{serviceKey: ServiceKeyClaudeCode, endpoint: claudeCodeHistoryURL, componentIDs: []string{"yyzkbfz2thpt"}},
+		}
+	case RadarSourceStatusWindsurf:
+		return []statuspageCalendarSpec{{
+			serviceKey: ServiceKeyWindsurf, endpoint: windsurfHistoryURL,
+			componentIDs: []string{"8q19cygxvshj", "r5wf1ykd7y1m"},
+		}}
+	case RadarSourceStatusKimi:
+		return []statuspageCalendarSpec{{
+			serviceKey: ServiceKeyKimi, endpoint: kimiHistoryURL,
+			componentIDs: []string{"8psr5dfdld0s", "8rkd3yj051gl", "lk7q3z0fcylp", "p1j9ttb7jwhp", "rf64wcbxt3r2", "wmn9wzv84k1v", "x0zsqgy57b75", "z2zfp65lvb2z"},
+		}}
+	case RadarSourceStatusMiniMaxGlobal:
+		return []statuspageCalendarSpec{{
+			serviceKey: ServiceKeyMiniMax, endpoint: miniMaxGlobalLLMHistoryURL, componentIDs: []string{"pr0d8qr59svt"},
+		}}
+	case RadarSourceStatusMiniMaxChina:
+		return []statuspageCalendarSpec{{
+			serviceKey: ServiceKeyMiniMax, endpoint: miniMaxChinaLLMHistoryURL, componentIDs: []string{miniMaxChinaLLMComponentID},
+		}}
+	default:
+		return nil
+	}
+}
+
 func statuspageSourcesForServiceKey(serviceKey ServiceKey) []RadarSourceKey {
 	switch serviceKey {
 	case ServiceKeyClaudeAPI, ServiceKeyClaudeCode:
@@ -210,6 +248,8 @@ type StatuspageSummary struct {
 	Components           []StatuspageComponent
 	Incidents            []StatuspageIncident
 	HistoryCoverageStart *time.Time
+	ComponentImpacts     []StatuspageComponentImpact
+	ComponentHistory     []StatuspageIncident
 }
 
 type StatuspagePage struct {
@@ -248,12 +288,27 @@ type StatuspageIncidentComponent struct {
 	Name string
 }
 
+type StatuspageComponentImpact struct {
+	ID              string
+	ComponentID     string
+	ComponentName   string
+	ComponentGroups []string
+	IncidentID      string
+	IncidentName    string
+	IncidentStatus  string
+	StartAt         time.Time
+	EndAt           *time.Time
+	Status          ServiceStatus
+}
+
 type statuspageSummaryWire struct {
 	Page                      *statuspagePageWire        `json:"page"`
 	Status                    *statuspageOverallWire     `json:"status"`
 	Components                *[]statuspageComponentWire `json:"components"`
 	Incidents                 []statuspageIncidentWire   `json:"incidents"`
 	RadarHistoryCoverageStart *string                    `json:"radar_history_coverage_start,omitempty"`
+	RadarComponentImpacts     *[]statuspageImpactWire    `json:"radar_component_impacts,omitempty"`
+	RadarComponentHistory     *[]statuspageIncidentWire  `json:"radar_component_history,omitempty"`
 }
 
 type statuspageIncidentsWire struct {
@@ -297,12 +352,114 @@ type statuspageIncidentComponentWire struct {
 	Name string `json:"name"`
 }
 
+type statuspageImpactWire struct {
+	ID              string   `json:"id"`
+	ComponentID     string   `json:"component_id"`
+	ComponentName   string   `json:"component_name,omitempty"`
+	ComponentGroups []string `json:"component_groups,omitempty"`
+	IncidentID      string   `json:"status_page_incident_id"`
+	IncidentName    string   `json:"incident_name"`
+	IncidentStatus  string   `json:"incident_status"`
+	StartAt         string   `json:"start_at"`
+	EndAt           *string  `json:"end_at,omitempty"`
+	Status          string   `json:"status"`
+}
+
+type openAIComponentImpactsWire struct {
+	ComponentImpacts   *[]statuspageImpactWire        `json:"component_impacts"`
+	IncidentLinks      *[]openAIComponentIncidentLink `json:"incident_links"`
+	RadarCoverageStart *string                        `json:"radar_coverage_start,omitempty"`
+	RadarCoverageEnd   *string                        `json:"radar_coverage_end,omitempty"`
+}
+
+type openAIComponentIncidentLink struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Status      string `json:"status"`
+	PublishedAt string `json:"published_at"`
+}
+
+type openAIStatusSummaryEnvelopeWire struct {
+	Summary *openAIStatusSummaryWire `json:"summary"`
+}
+
+type openAIStatusSummaryWire struct {
+	Components *[]openAIStatusComponentWire `json:"components"`
+	Structure  *openAIStatusStructureWire   `json:"structure"`
+}
+
+type openAIStatusComponentWire struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type openAIStatusStructureWire struct {
+	Items *[]openAIStatusStructureItemWire `json:"items"`
+}
+
+type openAIStatusStructureItemWire struct {
+	Group     *openAIStatusGroupWire          `json:"group"`
+	Component *openAIStatusGroupComponentWire `json:"component"`
+}
+
+type openAIStatusGroupWire struct {
+	ID         string                            `json:"id"`
+	Name       string                            `json:"name"`
+	Components *[]openAIStatusGroupComponentWire `json:"components"`
+}
+
+type openAIStatusGroupComponentWire struct {
+	ComponentID string `json:"component_id"`
+	Name        string `json:"name"`
+}
+
+type openAIStatusCatalogComponent struct {
+	Name   string
+	Groups []string
+}
+
+type statuspageCalendarBundleWire struct {
+	CoverageStart string                   `json:"coverage_start"`
+	CoverageEnd   string                   `json:"coverage_end"`
+	Incidents     []statuspageIncidentWire `json:"incidents"`
+}
+
+type statuspageCalendarBundle struct {
+	CoverageStart time.Time
+	CoverageEnd   time.Time
+	Incidents     []statuspageIncidentWire
+}
+
+type statuspageCalendarSpec struct {
+	serviceKey   ServiceKey
+	endpoint     string
+	componentIDs []string
+}
+
 type statuspageHistoryFetcher struct {
 	source    RadarSourceKey
 	interval  time.Duration
 	summary   RadarFetcher
 	incidents RadarFetcher
 	auxiliary RadarFetcher
+	timeline  RadarFetcher
+	catalog   RadarFetcher
+	calendar  RadarFetcher
+}
+
+type openAIComponentImpactsFetcher struct {
+	interval         time.Duration
+	client           RadarHTTPDoer
+	maxResponseBytes int64
+	now              func() time.Time
+}
+
+type statuspageCalendarFetcher struct {
+	source           RadarSourceKey
+	interval         time.Duration
+	client           RadarHTTPDoer
+	maxResponseBytes int64
+	specs            []statuspageCalendarSpec
 }
 
 // NewStatuspageFetcher constructs one of the allowlisted Statuspage JSON
@@ -354,6 +511,9 @@ func NewStatuspageFetcher(cfg *config.Config, source RadarSourceKey, client Rada
 		return nil, err
 	}
 	var auxiliary RadarFetcher
+	var timeline RadarFetcher
+	var catalog RadarFetcher
+	var calendar RadarFetcher
 	switch source {
 	case RadarSourceStatusOpenAI:
 		auxiliary, err = newRadarHTTPFetcher(radarHTTPFetcherOptions{
@@ -364,12 +524,14 @@ func NewStatuspageFetcher(cfg *config.Config, source RadarSourceKey, client Rada
 				return err
 			},
 		})
-	case RadarSourceStatusMiniMaxChina:
-		auxiliary, err = newRadarHTTPFetcher(radarHTTPFetcherOptions{
-			source: source, interval: interval, client: client, endpoint: miniMaxChinaLLMHistoryURL,
+		timeline = &openAIComponentImpactsFetcher{
+			interval: interval, client: client, maxResponseBytes: cfg.Radar.ExternalResponseMaxBytes, now: time.Now,
+		}
+		catalog, err = newRadarHTTPFetcher(radarHTTPFetcherOptions{
+			source: source, interval: interval, client: client, endpoint: openAIStatusSummaryURL,
 			maxResponseBytes: cfg.Radar.ExternalResponseMaxBytes,
 			validate: func(payload []byte) error {
-				_, _, err := decodeMiniMaxChinaHistory(payload)
+				_, err := decodeOpenAIStatusCatalog(payload)
 				return err
 			},
 		})
@@ -377,9 +539,143 @@ func NewStatuspageFetcher(cfg *config.Config, source RadarSourceKey, client Rada
 	if err != nil {
 		return nil, err
 	}
+	if specs := statuspageCalendarSpecs(source); len(specs) > 0 {
+		calendar = &statuspageCalendarFetcher{
+			source: source, interval: interval, client: client,
+			maxResponseBytes: cfg.Radar.ExternalResponseMaxBytes, specs: specs,
+		}
+	}
 	return &statuspageHistoryFetcher{
-		source: source, interval: interval, summary: summary, incidents: incidents, auxiliary: auxiliary,
+		source: source, interval: interval, summary: summary, incidents: incidents, auxiliary: auxiliary, timeline: timeline, catalog: catalog, calendar: calendar,
 	}, nil
+}
+
+func (f *openAIComponentImpactsFetcher) Source() RadarSourceKey { return RadarSourceStatusOpenAI }
+
+func (f *openAIComponentImpactsFetcher) Interval() time.Duration { return f.interval }
+
+func (f *openAIComponentImpactsFetcher) Fetch(ctx context.Context) ([]byte, SourceFetchMeta, error) {
+	now := time.Now().UTC()
+	if f.now != nil {
+		now = f.now().UTC()
+	}
+	start := utcDayStart(now).AddDate(0, 0, -(serviceHealthHistoryDays - 1))
+	end := utcDayStart(now).AddDate(0, 0, 1)
+	endpoint, err := url.Parse(openAIComponentImpactsURL)
+	if err != nil {
+		return nil, SourceFetchMeta{}, &RadarFetcherConfigError{Field: "openai_component_impacts_url"}
+	}
+	query := endpoint.Query()
+	query.Set("start_at", start.Format(time.RFC3339Nano))
+	query.Set("end_at", end.Format(time.RFC3339Nano))
+	endpoint.RawQuery = query.Encode()
+	fetcher, err := newRadarHTTPFetcher(radarHTTPFetcherOptions{
+		source: RadarSourceStatusOpenAI, interval: f.interval, client: f.client, endpoint: endpoint.String(),
+		maxResponseBytes: f.maxResponseBytes,
+		validate: func(payload []byte) error {
+			_, err := decodeOpenAIComponentImpacts(payload, nil)
+			return err
+		},
+	})
+	if err != nil {
+		return nil, SourceFetchMeta{}, err
+	}
+	payload, meta, err := fetcher.Fetch(ctx)
+	if err != nil {
+		return nil, meta, err
+	}
+	var wire openAIComponentImpactsWire
+	if !decodeStatuspageJSON(payload, &wire) {
+		return radarFetchFailure(meta, DataSourceErrorCodeInvalidResponse, nil)
+	}
+	coverageStart := start.Format(time.RFC3339Nano)
+	coverageEnd := end.Format(time.RFC3339Nano)
+	wire.RadarCoverageStart = &coverageStart
+	wire.RadarCoverageEnd = &coverageEnd
+	normalized, err := json.Marshal(wire)
+	if err != nil {
+		return radarFetchFailure(meta, DataSourceErrorCodeInvalidResponse, nil)
+	}
+	return normalized, meta, nil
+}
+
+func (f *statuspageCalendarFetcher) Source() RadarSourceKey { return f.source }
+
+func (f *statuspageCalendarFetcher) Interval() time.Duration { return f.interval }
+
+func (f *statuspageCalendarFetcher) Fetch(ctx context.Context) ([]byte, SourceFetchMeta, error) {
+	if len(f.specs) == 0 {
+		return nil, SourceFetchMeta{}, &RadarFetcherConfigError{Field: "statuspage_calendar"}
+	}
+	type result struct {
+		incidents     []StatuspageIncident
+		coverageStart time.Time
+		coverageEnd   time.Time
+		meta          SourceFetchMeta
+		err           error
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	results := make(chan result, len(f.specs))
+	for _, spec := range f.specs {
+		spec := spec
+		go func() {
+			fetcher, err := newRadarHTTPFetcher(radarHTTPFetcherOptions{
+				source: f.source, interval: f.interval, client: f.client, endpoint: spec.endpoint,
+				maxResponseBytes: f.maxResponseBytes,
+				validate: func(payload []byte) error {
+					_, _, _, err := decodeStatuspageCalendarHistory(payload, f.source, spec.serviceKey, spec.componentIDs)
+					return err
+				},
+			})
+			if err != nil {
+				results <- result{err: err}
+				return
+			}
+			payload, meta, err := fetcher.Fetch(ctx)
+			if err != nil {
+				results <- result{meta: meta, err: err}
+				return
+			}
+			incidents, coverageStart, coverageEnd, err := decodeStatuspageCalendarHistory(payload, f.source, spec.serviceKey, spec.componentIDs)
+			results <- result{incidents: incidents, coverageStart: coverageStart, coverageEnd: coverageEnd, meta: meta, err: err}
+		}()
+	}
+	var meta SourceFetchMeta
+	var coverageStart time.Time
+	var coverageEnd time.Time
+	incidents := make([]StatuspageIncident, 0)
+	for range f.specs {
+		result := <-results
+		if result.err != nil {
+			cancel()
+			return nil, result.meta, result.err
+		}
+		if meta.LastAttemptAt.IsZero() || result.meta.LastAttemptAt.After(meta.LastAttemptAt) {
+			meta = result.meta
+		}
+		if coverageStart.IsZero() || result.coverageStart.After(coverageStart) {
+			coverageStart = result.coverageStart
+		}
+		if coverageEnd.IsZero() || result.coverageEnd.Before(coverageEnd) {
+			coverageEnd = result.coverageEnd
+		}
+		var err error
+		incidents, err = mergeStatuspageCalendarIncidents(incidents, result.incidents)
+		if err != nil {
+			return radarFetchFailure(meta, DataSourceErrorCodeInvalidResponse, nil)
+		}
+	}
+	bundle := statuspageCalendarBundleWire{
+		CoverageStart: coverageStart.UTC().Format(time.RFC3339Nano),
+		CoverageEnd:   coverageEnd.UTC().Format(time.RFC3339Nano),
+		Incidents:     encodeStatuspageIncidents(incidents),
+	}
+	payload, err := json.Marshal(bundle)
+	if err != nil {
+		return radarFetchFailure(meta, DataSourceErrorCodeInvalidResponse, nil)
+	}
+	return payload, meta, nil
 }
 
 func (f *statuspageHistoryFetcher) Source() RadarSourceKey { return f.source }
@@ -400,6 +696,9 @@ func (f *statuspageHistoryFetcher) Fetch(ctx context.Context) ([]byte, SourceFet
 	summaryResult := make(chan result, 1)
 	incidentResult := make(chan result, 1)
 	auxiliaryResult := make(chan result, 1)
+	timelineResult := make(chan result, 1)
+	catalogResult := make(chan result, 1)
+	calendarResult := make(chan result, 1)
 	go func() {
 		payload, meta, err := f.summary.Fetch(ctx)
 		summaryResult <- result{payload: payload, meta: meta, err: err}
@@ -412,6 +711,24 @@ func (f *statuspageHistoryFetcher) Fetch(ctx context.Context) ([]byte, SourceFet
 		go func() {
 			payload, meta, err := f.auxiliary.Fetch(ctx)
 			auxiliaryResult <- result{payload: payload, meta: meta, err: err}
+		}()
+	}
+	if f.timeline != nil {
+		go func() {
+			payload, meta, err := f.timeline.Fetch(ctx)
+			timelineResult <- result{payload: payload, meta: meta, err: err}
+		}()
+	}
+	if f.catalog != nil {
+		go func() {
+			payload, meta, err := f.catalog.Fetch(ctx)
+			catalogResult <- result{payload: payload, meta: meta, err: err}
+		}()
+	}
+	if f.calendar != nil {
+		go func() {
+			payload, meta, err := f.calendar.Fetch(ctx)
+			calendarResult <- result{payload: payload, meta: meta, err: err}
 		}()
 	}
 	summary := <-summaryResult
@@ -432,7 +749,28 @@ func (f *statuspageHistoryFetcher) Fetch(ctx context.Context) ([]byte, SourceFet
 			return nil, auxiliary.meta, auxiliary.err
 		}
 	}
-	merged, err := mergeStatuspageHistoryPayloads(f.source, summary.payload, incidents.payload, auxiliary.payload)
+	var timeline result
+	if f.timeline != nil {
+		timeline = <-timelineResult
+		if timeline.err != nil {
+			return nil, timeline.meta, timeline.err
+		}
+	}
+	var catalog result
+	if f.catalog != nil {
+		catalog = <-catalogResult
+		if catalog.err != nil {
+			return nil, catalog.meta, catalog.err
+		}
+	}
+	var calendar result
+	if f.calendar != nil {
+		calendar = <-calendarResult
+		if calendar.err != nil {
+			return nil, calendar.meta, calendar.err
+		}
+	}
+	merged, err := mergeStatuspageHistoryPayloads(f.source, summary.payload, incidents.payload, auxiliary.payload, timeline.payload, catalog.payload, calendar.payload)
 	if err != nil {
 		return radarFetchFailure(summary.meta, DataSourceErrorCodeInvalidResponse, nil)
 	}
@@ -494,6 +832,38 @@ func DecodeStatuspageSummary(payload []byte) (StatuspageSummary, error) {
 		}
 		coverageStart = &parsed
 	}
+	var componentImpacts []StatuspageComponentImpact
+	if wire.RadarComponentImpacts != nil {
+		componentImpacts = make([]StatuspageComponentImpact, 0, len(*wire.RadarComponentImpacts))
+		seenImpactIDs := make(map[string]struct{}, len(*wire.RadarComponentImpacts))
+		for _, impactWire := range *wire.RadarComponentImpacts {
+			impact, err := decodeStatuspageImpact(impactWire)
+			if err != nil {
+				return StatuspageSummary{}, errInvalidStatuspageResponse
+			}
+			if _, duplicate := seenImpactIDs[impact.ID]; duplicate {
+				return StatuspageSummary{}, errInvalidStatuspageResponse
+			}
+			seenImpactIDs[impact.ID] = struct{}{}
+			componentImpacts = append(componentImpacts, impact)
+		}
+	}
+	var componentHistory []StatuspageIncident
+	if wire.RadarComponentHistory != nil {
+		componentHistory = make([]StatuspageIncident, 0, len(*wire.RadarComponentHistory))
+		seenHistoryIDs := make(map[string]struct{}, len(*wire.RadarComponentHistory))
+		for _, incidentWire := range *wire.RadarComponentHistory {
+			incident, err := decodeStatuspageIncident(incidentWire)
+			if err != nil || len(incident.Components) == 0 {
+				return StatuspageSummary{}, errInvalidStatuspageResponse
+			}
+			if _, duplicate := seenHistoryIDs[incident.ID]; duplicate {
+				return StatuspageSummary{}, errInvalidStatuspageResponse
+			}
+			seenHistoryIDs[incident.ID] = struct{}{}
+			componentHistory = append(componentHistory, incident)
+		}
+	}
 
 	return StatuspageSummary{
 		Page: StatuspagePage{
@@ -509,6 +879,53 @@ func DecodeStatuspageSummary(payload []byte) (StatuspageSummary, error) {
 		Components:           components,
 		Incidents:            incidents,
 		HistoryCoverageStart: coverageStart,
+		ComponentImpacts:     componentImpacts,
+		ComponentHistory:     componentHistory,
+	}, nil
+}
+
+func decodeStatuspageImpact(wire statuspageImpactWire) (StatuspageComponentImpact, error) {
+	wire.ID = strings.TrimSpace(wire.ID)
+	wire.ComponentID = strings.TrimSpace(wire.ComponentID)
+	wire.ComponentName = strings.TrimSpace(wire.ComponentName)
+	wire.IncidentID = strings.TrimSpace(wire.IncidentID)
+	wire.IncidentName = strings.TrimSpace(wire.IncidentName)
+	wire.IncidentStatus = strings.TrimSpace(wire.IncidentStatus)
+	status := normalizeStatuspageImpactStatus(wire.Status)
+	if wire.ID == "" || wire.ComponentID == "" || wire.ComponentName == "" || wire.IncidentID == "" || wire.IncidentName == "" ||
+		wire.IncidentStatus == "" || status == ServiceStatusUnknown {
+		return StatuspageComponentImpact{}, errInvalidStatuspageResponse
+	}
+	groups := make([]string, 0, len(wire.ComponentGroups))
+	seenGroups := make(map[string]struct{}, len(wire.ComponentGroups))
+	for _, rawGroup := range wire.ComponentGroups {
+		group := strings.TrimSpace(rawGroup)
+		normalized := strings.ToLower(group)
+		if group == "" {
+			return StatuspageComponentImpact{}, errInvalidStatuspageResponse
+		}
+		if _, duplicate := seenGroups[normalized]; duplicate {
+			return StatuspageComponentImpact{}, errInvalidStatuspageResponse
+		}
+		seenGroups[normalized] = struct{}{}
+		groups = append(groups, group)
+	}
+	startAt, err := parseStatuspageTimestamp(wire.StartAt)
+	if err != nil {
+		return StatuspageComponentImpact{}, errInvalidStatuspageResponse
+	}
+	var endAt *time.Time
+	if wire.EndAt != nil {
+		parsed, err := parseStatuspageTimestamp(*wire.EndAt)
+		if err != nil || parsed.Before(startAt) {
+			return StatuspageComponentImpact{}, errInvalidStatuspageResponse
+		}
+		endAt = &parsed
+	}
+	return StatuspageComponentImpact{
+		ID: wire.ID, ComponentID: wire.ComponentID, ComponentName: wire.ComponentName, ComponentGroups: groups, IncidentID: wire.IncidentID,
+		IncidentName: wire.IncidentName, IncidentStatus: wire.IncidentStatus,
+		StartAt: startAt, EndAt: endAt, Status: status,
 	}, nil
 }
 
@@ -541,7 +958,7 @@ func decodeStatuspageIncidents(payload []byte) (StatuspagePage, []StatuspageInci
 	}, incidents, nil
 }
 
-func mergeStatuspageHistoryPayloads(source RadarSourceKey, summaryPayload, incidentsPayload, auxiliaryPayload []byte) ([]byte, error) {
+func mergeStatuspageHistoryPayloads(source RadarSourceKey, summaryPayload, incidentsPayload, auxiliaryPayload, timelinePayload, catalogPayload, calendarPayload []byte) ([]byte, error) {
 	var summaryWire statuspageSummaryWire
 	if !decodeStatuspageJSON(summaryPayload, &summaryWire) {
 		return nil, errInvalidStatuspageResponse
@@ -561,8 +978,12 @@ func mergeStatuspageHistoryPayloads(source RadarSourceKey, summaryPayload, incid
 	coverageLimit := statuspageIncidentHistoryLimit
 	coverageItemCount := len(incidents)
 	var explicitCoverageStart *time.Time
+	authoritativeCoverage := false
 	switch source {
 	case RadarSourceStatusOpenAI:
+		if len(calendarPayload) != 0 {
+			return nil, errInvalidStatuspageResponse
+		}
 		feed, feedErr := decodeOpenAIStatusFeed(auxiliaryPayload)
 		if feedErr != nil {
 			return nil, errInvalidStatuspageResponse
@@ -574,21 +995,37 @@ func mergeStatuspageHistoryPayloads(source RadarSourceKey, summaryPayload, incid
 		if err != nil {
 			return nil, errInvalidStatuspageResponse
 		}
+		catalog, catalogErr := decodeOpenAIStatusCatalog(catalogPayload)
+		if catalogErr != nil {
+			return nil, errInvalidStatuspageResponse
+		}
+		componentImpacts, impactsErr := decodeOpenAIComponentImpacts(timelinePayload, catalog)
+		if impactsErr != nil {
+			return nil, errInvalidStatuspageResponse
+		}
+		impactCoverageStart, impactCoverageEnd, coverageErr := decodeOpenAIComponentImpactCoverage(timelinePayload)
+		if coverageErr != nil {
+			return nil, errInvalidStatuspageResponse
+		}
+		coverageLastInstant := impactCoverageEnd.Add(-time.Nanosecond)
+		if coverageLastInstant.After(effectiveUpdatedAt) {
+			effectiveUpdatedAt = coverageLastInstant
+		}
+		explicitCoverageStart = &impactCoverageStart
+		summaryWire.RadarComponentImpacts = &componentImpacts
 		coverageLimit = openAIIncidentHistoryLimit
-	case RadarSourceStatusMiniMaxChina:
-		historyIncidents, historyStart, historyErr := decodeMiniMaxChinaHistory(auxiliaryPayload)
-		if historyErr != nil {
+		authoritativeCoverage = true
+	case RadarSourceStatusClaude, RadarSourceStatusWindsurf, RadarSourceStatusKimi, RadarSourceStatusMiniMaxGlobal, RadarSourceStatusMiniMaxChina:
+		if len(auxiliaryPayload) != 0 || len(timelinePayload) != 0 || len(catalogPayload) != 0 {
 			return nil, errInvalidStatuspageResponse
 		}
-		incidents, err = mergeStatuspageIncidents(incidents, historyIncidents)
-		if err != nil {
+		calendar, calendarErr := decodeStatuspageCalendarBundle(calendarPayload)
+		if calendarErr != nil || calendar.CoverageEnd.Before(effectiveUpdatedAt) {
 			return nil, errInvalidStatuspageResponse
 		}
-		explicitCoverageStart = &historyStart
-	case RadarSourceStatusClaude, RadarSourceStatusWindsurf, RadarSourceStatusKimi, RadarSourceStatusMiniMaxGlobal:
-		if len(auxiliaryPayload) != 0 {
-			return nil, errInvalidStatuspageResponse
-		}
+		explicitCoverageStart = &calendar.CoverageStart
+		summaryWire.RadarComponentHistory = &calendar.Incidents
+		authoritativeCoverage = true
 	default:
 		return nil, &RadarFetcherConfigError{Field: "statuspage_source"}
 	}
@@ -596,7 +1033,15 @@ func mergeStatuspageHistoryPayloads(source RadarSourceKey, summaryPayload, incid
 	summaryWire.Page.UpdatedAt = effectiveUpdatedAt.Format(time.RFC3339Nano)
 	windowStart := statuspageDayStart(source, effectiveUpdatedAt).AddDate(0, 0, -(serviceHealthHistoryDays - 1))
 	coverageStart := windowStart
-	if explicitCoverageStart != nil {
+	if authoritativeCoverage {
+		if explicitCoverageStart == nil {
+			return nil, errInvalidStatuspageResponse
+		}
+		coverageStart = statuspageDayStart(source, *explicitCoverageStart)
+		if coverageStart.Before(windowStart) {
+			coverageStart = windowStart
+		}
+	} else if explicitCoverageStart != nil {
 		coverageStart = statuspageDayStart(source, *explicitCoverageStart)
 		if coverageStart.Before(windowStart) {
 			coverageStart = windowStart
@@ -623,6 +1068,181 @@ func mergeStatuspageHistoryPayloads(source RadarSourceKey, summaryPayload, incid
 		return nil, errInvalidStatuspageResponse
 	}
 	return merged, nil
+}
+
+func decodeOpenAIComponentImpacts(payload []byte, catalog map[string]openAIStatusCatalogComponent) ([]statuspageImpactWire, error) {
+	var wire openAIComponentImpactsWire
+	if !decodeStatuspageJSON(payload, &wire) || wire.ComponentImpacts == nil || wire.IncidentLinks == nil ||
+		len(*wire.ComponentImpacts) > statuspageHistoryMaxIncidents*64 || len(*wire.IncidentLinks) > statuspageHistoryMaxIncidents {
+		return nil, errInvalidStatuspageResponse
+	}
+	links := make(map[string]openAIComponentIncidentLink, len(*wire.IncidentLinks))
+	for _, link := range *wire.IncidentLinks {
+		link.ID = strings.TrimSpace(link.ID)
+		link.Name = strings.TrimSpace(link.Name)
+		link.Status = strings.TrimSpace(link.Status)
+		if link.ID == "" || link.Name == "" || link.Status == "" {
+			return nil, errInvalidStatuspageResponse
+		}
+		if _, err := parseStatuspageTimestamp(link.PublishedAt); err != nil {
+			return nil, errInvalidStatuspageResponse
+		}
+		if _, duplicate := links[link.ID]; duplicate {
+			return nil, errInvalidStatuspageResponse
+		}
+		links[link.ID] = link
+	}
+	result := make([]statuspageImpactWire, 0, len(*wire.ComponentImpacts))
+	seen := make(map[string]struct{}, len(*wire.ComponentImpacts))
+	for _, impact := range *wire.ComponentImpacts {
+		impact.ID = strings.TrimSpace(impact.ID)
+		impact.ComponentID = strings.TrimSpace(impact.ComponentID)
+		impact.IncidentID = strings.TrimSpace(impact.IncidentID)
+		if impact.ID == "" || impact.ComponentID == "" || impact.IncidentID == "" ||
+			normalizeStatuspageImpactStatus(impact.Status) == ServiceStatusUnknown {
+			return nil, errInvalidStatuspageResponse
+		}
+		startAt, err := parseStatuspageTimestamp(impact.StartAt)
+		if err != nil {
+			return nil, errInvalidStatuspageResponse
+		}
+		if impact.EndAt != nil {
+			endAt, err := parseStatuspageTimestamp(*impact.EndAt)
+			if err != nil || endAt.Before(startAt) {
+				return nil, errInvalidStatuspageResponse
+			}
+			formatted := endAt.Format(time.RFC3339Nano)
+			impact.EndAt = &formatted
+		}
+		link, ok := links[impact.IncidentID]
+		if !ok {
+			return nil, errInvalidStatuspageResponse
+		}
+		if catalog != nil {
+			component, ok := catalog[normalizeStatuspageComponentID(impact.ComponentID)]
+			if !ok {
+				// Silently dropping an impact whose component is no longer present in
+				// the legacy summary would produce a false operational day. Require
+				// the authoritative Incident.io catalog to classify every impact.
+				return nil, errInvalidStatuspageResponse
+			}
+			impact.ComponentName = component.Name
+			impact.ComponentGroups = append([]string(nil), component.Groups...)
+		}
+		if _, duplicate := seen[impact.ID]; duplicate {
+			return nil, errInvalidStatuspageResponse
+		}
+		seen[impact.ID] = struct{}{}
+		impact.IncidentName = link.Name
+		impact.IncidentStatus = link.Status
+		impact.StartAt = startAt.Format(time.RFC3339Nano)
+		impact.Status = string(normalizeStatuspageImpactStatus(impact.Status))
+		result = append(result, impact)
+	}
+	sort.Slice(result, func(left, right int) bool {
+		if result[left].StartAt != result[right].StartAt {
+			return result[left].StartAt < result[right].StartAt
+		}
+		return result[left].ID < result[right].ID
+	})
+	return result, nil
+}
+
+func decodeOpenAIComponentImpactCoverage(payload []byte) (time.Time, time.Time, error) {
+	var wire openAIComponentImpactsWire
+	if !decodeStatuspageJSON(payload, &wire) || wire.RadarCoverageStart == nil || wire.RadarCoverageEnd == nil {
+		return time.Time{}, time.Time{}, errInvalidStatuspageResponse
+	}
+	start, err := parseStatuspageTimestamp(*wire.RadarCoverageStart)
+	if err != nil {
+		return time.Time{}, time.Time{}, errInvalidStatuspageResponse
+	}
+	end, err := parseStatuspageTimestamp(*wire.RadarCoverageEnd)
+	if err != nil || !end.After(start) || end.Sub(start) != serviceHealthHistoryDays*24*time.Hour ||
+		!start.Equal(utcDayStart(start)) || !end.Equal(utcDayStart(end)) {
+		return time.Time{}, time.Time{}, errInvalidStatuspageResponse
+	}
+	return start, end, nil
+}
+
+func decodeOpenAIStatusCatalog(payload []byte) (map[string]openAIStatusCatalogComponent, error) {
+	var envelope openAIStatusSummaryEnvelopeWire
+	if !decodeStatuspageJSON(payload, &envelope) || envelope.Summary == nil || envelope.Summary.Components == nil ||
+		envelope.Summary.Structure == nil || envelope.Summary.Structure.Items == nil ||
+		len(*envelope.Summary.Components) == 0 || len(*envelope.Summary.Components) > statuspageHistoryMaxIncidents ||
+		len(*envelope.Summary.Structure.Items) > statuspageHistoryMaxIncidents {
+		return nil, errInvalidStatuspageResponse
+	}
+	catalog := make(map[string]openAIStatusCatalogComponent, len(*envelope.Summary.Components))
+	for _, wire := range *envelope.Summary.Components {
+		id := normalizeStatuspageComponentID(wire.ID)
+		name := strings.TrimSpace(wire.Name)
+		if id == "" || name == "" {
+			return nil, errInvalidStatuspageResponse
+		}
+		if _, duplicate := catalog[id]; duplicate {
+			return nil, errInvalidStatuspageResponse
+		}
+		catalog[id] = openAIStatusCatalogComponent{Name: name, Groups: make([]string, 0, 1)}
+	}
+	seenGroupIDs := make(map[string]struct{}, len(*envelope.Summary.Structure.Items))
+	for _, item := range *envelope.Summary.Structure.Items {
+		if (item.Group == nil) == (item.Component == nil) {
+			return nil, errInvalidStatuspageResponse
+		}
+		if item.Component != nil {
+			componentID := normalizeStatuspageComponentID(item.Component.ComponentID)
+			componentName := strings.TrimSpace(item.Component.Name)
+			component, ok := catalog[componentID]
+			if componentID == "" || componentName == "" || !ok || component.Name != componentName {
+				return nil, errInvalidStatuspageResponse
+			}
+			continue
+		}
+		if item.Group.Components == nil {
+			return nil, errInvalidStatuspageResponse
+		}
+		groupID := normalizeStatuspageComponentID(item.Group.ID)
+		groupName := strings.TrimSpace(item.Group.Name)
+		if groupID == "" || groupName == "" || len(*item.Group.Components) > statuspageHistoryMaxIncidents {
+			return nil, errInvalidStatuspageResponse
+		}
+		if _, duplicate := seenGroupIDs[groupID]; duplicate {
+			return nil, errInvalidStatuspageResponse
+		}
+		seenGroupIDs[groupID] = struct{}{}
+		seenComponentIDs := make(map[string]struct{}, len(*item.Group.Components))
+		for _, groupComponent := range *item.Group.Components {
+			componentID := normalizeStatuspageComponentID(groupComponent.ComponentID)
+			componentName := strings.TrimSpace(groupComponent.Name)
+			component, ok := catalog[componentID]
+			if componentID == "" || componentName == "" || !ok || component.Name != componentName {
+				return nil, errInvalidStatuspageResponse
+			}
+			if _, duplicate := seenComponentIDs[componentID]; duplicate {
+				return nil, errInvalidStatuspageResponse
+			}
+			seenComponentIDs[componentID] = struct{}{}
+			component.Groups = append(component.Groups, groupName)
+			catalog[componentID] = component
+		}
+	}
+	return catalog, nil
+}
+
+func normalizeStatuspageImpactStatus(raw string) ServiceStatus {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "full_outage", string(ServiceStatusMajorOutage):
+		return ServiceStatusMajorOutage
+	case string(ServiceStatusPartialOutage):
+		return ServiceStatusPartialOutage
+	case string(ServiceStatusDegradedPerformance):
+		return ServiceStatusDegradedPerformance
+	case "maintenance", string(ServiceStatusUnderMaintenance):
+		return ServiceStatusUnderMaintenance
+	default:
+		return ServiceStatusUnknown
+	}
 }
 
 type openAIStatusFeed struct {
@@ -781,37 +1401,43 @@ func bindOpenAIStatusFeedComponents(incidents []StatuspageIncident, feed openAIS
 	return result, nil
 }
 
-type miniMaxHistoryProps struct {
-	Components      []miniMaxHistoryComponent `json:"components"`
-	Months          []miniMaxHistoryMonth     `json:"months"`
-	ComponentFilter []string                  `json:"component_filter"`
-	StartTime       string                    `json:"start_time"`
-	EndTime         string                    `json:"end_time"`
+type statuspageHistoryProps struct {
+	Components      []statuspageHistoryComponent `json:"components"`
+	Months          []statuspageHistoryMonth     `json:"months"`
+	ComponentFilter []string                     `json:"component_filter"`
+	StartTime       string                       `json:"start_time"`
+	EndTime         string                       `json:"end_time"`
 }
 
-type miniMaxHistoryComponent struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+type statuspageHistoryComponent struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Group bool   `json:"group"`
 }
 
-type miniMaxHistoryMonth struct {
-	Name      string                   `json:"name"`
-	Year      int                      `json:"year"`
-	Days      int                      `json:"days"`
-	Incidents []miniMaxHistoryIncident `json:"incidents"`
+type statuspageHistoryMonth struct {
+	Name      string                      `json:"name"`
+	Year      int                         `json:"year"`
+	Days      int                         `json:"days"`
+	Incidents []statuspageHistoryIncident `json:"incidents"`
 }
 
-type miniMaxHistoryIncident struct {
+type statuspageHistoryIncident struct {
 	Code      string `json:"code"`
 	Name      string `json:"name"`
 	Impact    string `json:"impact"`
 	Timestamp string `json:"timestamp"`
 }
 
-func decodeMiniMaxChinaHistory(payload []byte) ([]StatuspageIncident, time.Time, error) {
+func decodeStatuspageCalendarHistory(
+	payload []byte,
+	source RadarSourceKey,
+	serviceKey ServiceKey,
+	expectedComponentIDs []string,
+) ([]StatuspageIncident, time.Time, time.Time, error) {
 	document, err := html.Parse(bytes.NewReader(payload))
 	if err != nil {
-		return nil, time.Time{}, errInvalidStatuspageResponse
+		return nil, time.Time{}, time.Time{}, errInvalidStatuspageResponse
 	}
 	var propsValue string
 	matchCount := 0
@@ -839,91 +1465,306 @@ func decodeMiniMaxChinaHistory(payload []byte) ([]StatuspageIncident, time.Time,
 	}
 	visit(document)
 	if matchCount != 1 || len(propsValue) > 2*1024*1024 {
-		return nil, time.Time{}, errInvalidStatuspageResponse
+		return nil, time.Time{}, time.Time{}, errInvalidStatuspageResponse
 	}
-	var props miniMaxHistoryProps
-	if !decodeStatuspageJSON([]byte(propsValue), &props) || len(props.Components) == 0 || len(props.Components) > 64 || len(props.ComponentFilter) != 1 ||
-		props.ComponentFilter[0] != miniMaxChinaLLMComponentID || len(props.Months) == 0 || len(props.Months) > statuspageHistoryMaxMonths {
-		return nil, time.Time{}, errInvalidStatuspageResponse
+	var props statuspageHistoryProps
+	if !decodeStatuspageJSON([]byte(propsValue), &props) || len(props.Components) == 0 || len(props.Components) > statuspageHistoryMaxIncidents ||
+		len(expectedComponentIDs) == 0 || len(props.Months) == 0 || len(props.Months) > statuspageHistoryMaxMonths {
+		return nil, time.Time{}, time.Time{}, errInvalidStatuspageResponse
 	}
-	foundComponent := false
+	expectedIDs, ok := normalizedStatuspageIDSet(expectedComponentIDs)
+	if !ok || !equalStatuspageIDSets(expectedIDs, props.ComponentFilter) {
+		return nil, time.Time{}, time.Time{}, errInvalidStatuspageResponse
+	}
+	componentNames := make(map[string]string, len(props.Components))
+	matchedIDs := make(map[string]struct{}, len(expectedIDs))
 	for _, component := range props.Components {
-		if component.ID == miniMaxChinaLLMComponentID && component.Name == miniMaxChinaLLMComponentName {
-			foundComponent = true
+		id := normalizeStatuspageComponentID(component.ID)
+		name := strings.TrimSpace(component.Name)
+		if id == "" || name == "" {
+			return nil, time.Time{}, time.Time{}, errInvalidStatuspageResponse
+		}
+		if _, duplicate := componentNames[id]; duplicate {
+			return nil, time.Time{}, time.Time{}, errInvalidStatuspageResponse
+		}
+		componentNames[id] = name
+		if !component.Group && statuspageComponentMatches(source, serviceKey, name) {
+			matchedIDs[id] = struct{}{}
 		}
 	}
-	if !foundComponent {
-		return nil, time.Time{}, errInvalidStatuspageResponse
+	if len(matchedIDs) != len(expectedIDs) {
+		return nil, time.Time{}, time.Time{}, errInvalidStatuspageResponse
 	}
+	components := make([]StatuspageIncidentComponent, 0, len(expectedIDs))
+	for id := range expectedIDs {
+		name, exists := componentNames[id]
+		if !exists {
+			return nil, time.Time{}, time.Time{}, errInvalidStatuspageResponse
+		}
+		if _, matched := matchedIDs[id]; !matched {
+			return nil, time.Time{}, time.Time{}, errInvalidStatuspageResponse
+		}
+		components = append(components, StatuspageIncidentComponent{ID: id, Name: name})
+	}
+	sort.Slice(components, func(left, right int) bool { return components[left].ID < components[right].ID })
 	startValue, err := time.Parse(time.RFC3339Nano, props.StartTime)
 	if err != nil || startValue.IsZero() {
-		return nil, time.Time{}, errInvalidStatuspageResponse
+		return nil, time.Time{}, time.Time{}, errInvalidStatuspageResponse
 	}
 	endValue, err := time.Parse(time.RFC3339Nano, props.EndTime)
 	if err != nil || endValue.IsZero() || !endValue.After(startValue) {
-		return nil, time.Time{}, errInvalidStatuspageResponse
+		return nil, time.Time{}, time.Time{}, errInvalidStatuspageResponse
 	}
+	location := statuspageHistoryLocation(source)
 	_, startOffset := startValue.Zone()
 	_, endOffset := endValue.Zone()
-	if startOffset != 8*60*60 || endOffset != 8*60*60 {
-		return nil, time.Time{}, errInvalidStatuspageResponse
+	_, expectedStartOffset := startValue.In(location).Zone()
+	_, expectedEndOffset := endValue.In(location).Zone()
+	if startOffset != expectedStartOffset || endOffset != expectedEndOffset || endValue.Sub(startValue) < serviceHealthHistoryDays*24*time.Hour {
+		return nil, time.Time{}, time.Time{}, errInvalidStatuspageResponse
 	}
 	start := startValue.UTC()
 	end := endValue.UTC()
 	incidents := make([]StatuspageIncident, 0)
 	seen := make(map[string]struct{})
+	seenMonths := make(map[string]struct{}, len(props.Months))
 	for _, month := range props.Months {
-		if month.Year < 2020 || month.Year > 2100 || month.Days < 28 || month.Days > 31 {
-			return nil, time.Time{}, errInvalidStatuspageResponse
+		monthNumber, ok := statuspageMonthByName(month.Name)
+		if !ok || month.Year < 2020 || month.Year > 2100 || month.Days != daysInStatuspageMonth(month.Year, monthNumber) {
+			return nil, time.Time{}, time.Time{}, errInvalidStatuspageResponse
 		}
+		monthKey := fmt.Sprintf("%04d-%02d", month.Year, monthNumber)
+		if _, duplicate := seenMonths[monthKey]; duplicate {
+			return nil, time.Time{}, time.Time{}, errInvalidStatuspageResponse
+		}
+		seenMonths[monthKey] = struct{}{}
 		for _, incident := range month.Incidents {
 			if len(incidents) >= statuspageHistoryMaxIncidents || strings.TrimSpace(incident.Code) == "" || len(incident.Code) > 128 ||
 				strings.ContainsAny(incident.Code, "/?#\\\x00\r\n\t ") ||
 				strings.TrimSpace(incident.Name) == "" || serviceStatusForIncidentImpact(incident.Impact) == ServiceStatusUnknown {
-				return nil, time.Time{}, errInvalidStatuspageResponse
+				return nil, time.Time{}, time.Time{}, errInvalidStatuspageResponse
 			}
 			if _, duplicate := seen[incident.Code]; duplicate {
-				return nil, time.Time{}, errInvalidStatuspageResponse
+				return nil, time.Time{}, time.Time{}, errInvalidStatuspageResponse
 			}
-			createdAt, resolvedAt, err := parseMiniMaxHistoryTimestamp(month, incident.Timestamp)
-			if err != nil || createdAt.Before(start) || resolvedAt.After(end) {
-				return nil, time.Time{}, errInvalidStatuspageResponse
+			createdAt, resolvedAt, err := parseStatuspageHistoryTimestamp(month, incident.Timestamp, location, startValue, endValue)
+			if err != nil {
+				return nil, time.Time{}, time.Time{}, errInvalidStatuspageResponse
 			}
 			seen[incident.Code] = struct{}{}
 			incidents = append(incidents, StatuspageIncident{
 				ID: incident.Code, Name: strings.TrimSpace(incident.Name), Status: "resolved", Impact: strings.TrimSpace(incident.Impact),
 				CreatedAt: createdAt, ResolvedAt: &resolvedAt,
-				Components: []StatuspageIncidentComponent{{ID: miniMaxChinaLLMComponentID, Name: miniMaxChinaLLMComponentName}},
+				Components: append([]StatuspageIncidentComponent(nil), components...),
 			})
 		}
 	}
-	return incidents, start, nil
+	sort.Slice(incidents, func(left, right int) bool {
+		if incidents[left].CreatedAt.Equal(incidents[right].CreatedAt) {
+			return incidents[left].ID < incidents[right].ID
+		}
+		return incidents[left].CreatedAt.After(incidents[right].CreatedAt)
+	})
+	return incidents, start, end, nil
 }
 
-func parseMiniMaxHistoryTimestamp(month miniMaxHistoryMonth, raw string) (time.Time, time.Time, error) {
-	matches := miniMaxHistoryTimestampPattern.FindStringSubmatch(strings.TrimSpace(raw))
-	if len(matches) != 5 || !strings.EqualFold(matches[1], miniMaxMonthAbbreviation(month.Name)) {
+func parseStatuspageHistoryTimestamp(
+	month statuspageHistoryMonth,
+	raw string,
+	location *time.Location,
+	coverageStart time.Time,
+	coverageEnd time.Time,
+) (time.Time, time.Time, error) {
+	matches := statuspageHistoryTimestampPattern.FindStringSubmatch(strings.TrimSpace(raw))
+	if len(matches) != 8 {
 		return time.Time{}, time.Time{}, errInvalidStatuspageResponse
 	}
-	location := time.FixedZone("CST", 8*60*60)
-	createdAt, err := time.ParseInLocation("Jan 2 2006 15:04", fmt.Sprintf("%s %s %d %s", matches[1], matches[2], month.Year, matches[3]), location)
-	if err != nil || createdAt.Month().String() != month.Name {
+	expectedZone := "UTC"
+	if _, offset := coverageStart.In(location).Zone(); offset == 8*60*60 {
+		expectedZone = "CST"
+	}
+	if matches[7] != expectedZone {
 		return time.Time{}, time.Time{}, errInvalidStatuspageResponse
 	}
-	resolvedAt, err := time.ParseInLocation("Jan 2 2006 15:04", fmt.Sprintf("%s %s %d %s", matches[1], matches[2], month.Year, matches[4]), location)
-	if err != nil || resolvedAt.Before(createdAt) {
+	startMonth, ok := statuspageMonthByAbbreviation(matches[1])
+	if !ok {
 		return time.Time{}, time.Time{}, errInvalidStatuspageResponse
 	}
-	return createdAt.UTC(), resolvedAt.UTC(), nil
-}
-
-func miniMaxMonthAbbreviation(name string) string {
-	for _, month := range []time.Month{time.January, time.February, time.March, time.April, time.May, time.June, time.July, time.August, time.September, time.October, time.November, time.December} {
-		if month.String() == name {
-			return month.String()[:3]
+	endMonth := startMonth
+	endDay := matches[2]
+	if matches[4] != "" {
+		endMonth, ok = statuspageMonthByAbbreviation(matches[4])
+		if !ok {
+			return time.Time{}, time.Time{}, errInvalidStatuspageResponse
+		}
+		endDay = matches[5]
+	}
+	calendarMonth, ok := statuspageMonthByName(month.Name)
+	if !ok {
+		return time.Time{}, time.Time{}, errInvalidStatuspageResponse
+	}
+	calendarStart := time.Date(month.Year, calendarMonth, 1, 0, 0, 0, 0, location)
+	calendarEnd := calendarStart.AddDate(0, 1, 0)
+	type candidate struct{ start, end time.Time }
+	candidates := make([]candidate, 0, 1)
+	firstYear := coverageStart.In(location).Year() - 1
+	lastYear := coverageEnd.In(location).Year() + 1
+	for startYear := firstYear; startYear <= lastYear; startYear++ {
+		createdAt, err := time.ParseInLocation("2006 Jan 2 15:04", fmt.Sprintf("%d %s %s %s", startYear, matches[1], matches[2], matches[3]), location)
+		if err != nil || createdAt.Month() != startMonth {
+			continue
+		}
+		for endYear := startYear; endYear <= startYear+1; endYear++ {
+			resolvedAt, err := time.ParseInLocation("2006 Jan 2 15:04", fmt.Sprintf("%d %s %s %s", endYear, endMonth.String()[:3], endDay, matches[6]), location)
+			if err != nil || resolvedAt.Month() != endMonth || resolvedAt.Before(createdAt) || resolvedAt.Sub(createdAt) > 180*24*time.Hour {
+				continue
+			}
+			if !createdAt.Before(calendarEnd) || !resolvedAt.After(calendarStart) || createdAt.After(coverageEnd) || resolvedAt.Before(coverageStart) {
+				continue
+			}
+			candidates = append(candidates, candidate{start: createdAt, end: resolvedAt})
 		}
 	}
-	return ""
+	if len(candidates) != 1 {
+		return time.Time{}, time.Time{}, errInvalidStatuspageResponse
+	}
+	return candidates[0].start.UTC(), candidates[0].end.UTC(), nil
+}
+
+func statuspageMonthByName(name string) (time.Month, bool) {
+	for _, month := range []time.Month{time.January, time.February, time.March, time.April, time.May, time.June, time.July, time.August, time.September, time.October, time.November, time.December} {
+		if month.String() == name {
+			return month, true
+		}
+	}
+	return 0, false
+}
+
+func statuspageMonthByAbbreviation(value string) (time.Month, bool) {
+	for _, month := range []time.Month{time.January, time.February, time.March, time.April, time.May, time.June, time.July, time.August, time.September, time.October, time.November, time.December} {
+		if month.String()[:3] == value {
+			return month, true
+		}
+	}
+	return 0, false
+}
+
+func daysInStatuspageMonth(year int, month time.Month) int {
+	return time.Date(year, month+1, 0, 0, 0, 0, 0, time.UTC).Day()
+}
+
+func normalizedStatuspageIDSet(ids []string) (map[string]struct{}, bool) {
+	result := make(map[string]struct{}, len(ids))
+	for _, rawID := range ids {
+		id := normalizeStatuspageComponentID(rawID)
+		if id == "" {
+			return nil, false
+		}
+		if _, duplicate := result[id]; duplicate {
+			return nil, false
+		}
+		result[id] = struct{}{}
+	}
+	return result, true
+}
+
+func equalStatuspageIDSets(expected map[string]struct{}, actual []string) bool {
+	actualSet, ok := normalizedStatuspageIDSet(actual)
+	if !ok || len(actualSet) != len(expected) {
+		return false
+	}
+	for id := range expected {
+		if _, exists := actualSet[id]; !exists {
+			return false
+		}
+	}
+	return true
+}
+
+func decodeStatuspageCalendarBundle(payload []byte) (statuspageCalendarBundle, error) {
+	var wire statuspageCalendarBundleWire
+	if !decodeStatuspageJSON(payload, &wire) || len(wire.Incidents) > statuspageHistoryMaxIncidents*4 {
+		return statuspageCalendarBundle{}, errInvalidStatuspageResponse
+	}
+	coverageStart, err := parseStatuspageTimestamp(wire.CoverageStart)
+	if err != nil {
+		return statuspageCalendarBundle{}, errInvalidStatuspageResponse
+	}
+	coverageEnd, err := parseStatuspageTimestamp(wire.CoverageEnd)
+	if err != nil || !coverageEnd.After(coverageStart) || coverageEnd.Sub(coverageStart) < serviceHealthHistoryDays*24*time.Hour {
+		return statuspageCalendarBundle{}, errInvalidStatuspageResponse
+	}
+	incidents := make([]StatuspageIncident, 0, len(wire.Incidents))
+	seen := make(map[string]struct{}, len(wire.Incidents))
+	for _, incidentWire := range wire.Incidents {
+		incident, err := decodeStatuspageIncident(incidentWire)
+		if err != nil || len(incident.Components) == 0 {
+			return statuspageCalendarBundle{}, errInvalidStatuspageResponse
+		}
+		if _, duplicate := seen[incident.ID]; duplicate {
+			return statuspageCalendarBundle{}, errInvalidStatuspageResponse
+		}
+		seen[incident.ID] = struct{}{}
+		incidents = append(incidents, incident)
+	}
+	return statuspageCalendarBundle{
+		CoverageStart: coverageStart,
+		CoverageEnd:   coverageEnd,
+		Incidents:     encodeStatuspageIncidents(incidents),
+	}, nil
+}
+
+func mergeStatuspageCalendarIncidents(left, right []StatuspageIncident) ([]StatuspageIncident, error) {
+	result := append([]StatuspageIncident(nil), left...)
+	byID := make(map[string]int, len(left)+len(right))
+	for index, incident := range result {
+		byID[incident.ID] = index
+	}
+	for _, candidate := range right {
+		index, duplicate := byID[candidate.ID]
+		if !duplicate {
+			byID[candidate.ID] = len(result)
+			result = append(result, candidate)
+			continue
+		}
+		current := result[index]
+		if current.Name != candidate.Name || current.Status != candidate.Status || current.Impact != candidate.Impact ||
+			!current.CreatedAt.Equal(candidate.CreatedAt) || !equalStatuspageOptionalTime(current.ResolvedAt, candidate.ResolvedAt) {
+			return nil, errInvalidStatuspageResponse
+		}
+		components := make(map[string]string, len(current.Components)+len(candidate.Components))
+		for _, component := range append(current.Components, candidate.Components...) {
+			id := normalizeStatuspageComponentID(component.ID)
+			name := strings.TrimSpace(component.Name)
+			if id == "" || name == "" {
+				return nil, errInvalidStatuspageResponse
+			}
+			if existing, exists := components[id]; exists && existing != name {
+				return nil, errInvalidStatuspageResponse
+			}
+			components[id] = name
+		}
+		current.Components = make([]StatuspageIncidentComponent, 0, len(components))
+		for id, name := range components {
+			current.Components = append(current.Components, StatuspageIncidentComponent{ID: id, Name: name})
+		}
+		sort.Slice(current.Components, func(left, right int) bool { return current.Components[left].ID < current.Components[right].ID })
+		result[index] = current
+	}
+	sort.Slice(result, func(left, right int) bool {
+		if result[left].CreatedAt.Equal(result[right].CreatedAt) {
+			return result[left].ID < result[right].ID
+		}
+		return result[left].CreatedAt.After(result[right].CreatedAt)
+	})
+	return result, nil
+}
+
+func equalStatuspageOptionalTime(left, right *time.Time) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return left.Equal(*right)
 }
 
 func mergeStatuspageIncidents(primary, supplemental []StatuspageIncident) ([]StatuspageIncident, error) {
@@ -1379,6 +2220,9 @@ func statuspageHistoryForService(
 	components []StatuspageComponent,
 	summary StatuspageSummary,
 ) []ServiceHealthHistoryDayDTO {
+	if source == RadarSourceStatusOpenAI && summary.ComponentImpacts != nil {
+		return statuspageImpactHistoryForService(source, serviceKey, components, summary)
+	}
 	endDay := statuspageDayStart(source, summary.Page.UpdatedAt)
 	startDay := endDay.AddDate(0, 0, -(serviceHealthHistoryDays - 1))
 	coverageStart := endDay.AddDate(0, 0, 1)
@@ -1392,11 +2236,19 @@ func statuspageHistoryForService(
 	for _, component := range components {
 		matchedIDs[normalizeStatuspageComponentID(component.ID)] = struct{}{}
 	}
-	relevant := make([]StatuspageIncident, 0, len(summary.Incidents))
+	historyIncidents := summary.Incidents
+	allowAmbiguous := true
+	if summary.ComponentHistory != nil {
+		historyIncidents = summary.ComponentHistory
+		allowAmbiguous = false
+	}
+	relevant := make([]StatuspageIncident, 0, len(historyIncidents))
 	ambiguous := make([]StatuspageIncident, 0)
-	for _, incident := range summary.Incidents {
+	for _, incident := range historyIncidents {
 		if len(incident.Components) == 0 {
-			ambiguous = append(ambiguous, incident)
+			if allowAmbiguous {
+				ambiguous = append(ambiguous, incident)
+			}
 			continue
 		}
 		if !statuspageIncidentMatches(source, serviceKey, matchedIDs, incident.Components) {
@@ -1453,6 +2305,105 @@ func statuspageHistoryForService(
 		})
 	}
 	return days
+}
+
+func statuspageImpactHistoryForService(
+	source RadarSourceKey,
+	serviceKey ServiceKey,
+	components []StatuspageComponent,
+	summary StatuspageSummary,
+) []ServiceHealthHistoryDayDTO {
+	endDay := statuspageDayStart(source, summary.Page.UpdatedAt)
+	startDay := endDay.AddDate(0, 0, -(serviceHealthHistoryDays - 1))
+	coverageStart := endDay.AddDate(0, 0, 1)
+	if summary.HistoryCoverageStart != nil {
+		coverageStart = statuspageDayStart(source, *summary.HistoryCoverageStart)
+		if coverageStart.Before(startDay) {
+			coverageStart = startDay
+		}
+	}
+	matchedIDs := make(map[string]struct{}, len(components))
+	for _, component := range components {
+		matchedIDs[normalizeStatuspageComponentID(component.ID)] = struct{}{}
+	}
+	relevant := make([]StatuspageComponentImpact, 0)
+	for _, impact := range summary.ComponentImpacts {
+		_, matchedCurrentComponent := matchedIDs[normalizeStatuspageComponentID(impact.ComponentID)]
+		matchedHistoricalName := statuspageComponentMatches(source, serviceKey, impact.ComponentName)
+		matchedOfficialGroup := serviceKey == ServiceKeyOpenAIAPI && containsStatuspageGroup(impact.ComponentGroups, "APIs")
+		if matchedCurrentComponent || matchedHistoricalName || matchedOfficialGroup {
+			relevant = append(relevant, impact)
+		}
+	}
+	days := make([]ServiceHealthHistoryDayDTO, 0, serviceHealthHistoryDays)
+	for offset := 0; offset < serviceHealthHistoryDays; offset++ {
+		dayStart := startDay.AddDate(0, 0, offset)
+		dayEnd := dayStart.AddDate(0, 0, 1)
+		status := ServiceStatusOperational
+		if dayStart.Before(coverageStart) {
+			status = ServiceStatusUnknown
+		}
+		incidentsByID := make(map[string]RadarIncidentDTO)
+		for _, impact := range relevant {
+			impactEnd := summary.Page.UpdatedAt
+			if impact.EndAt != nil {
+				impactEnd = *impact.EndAt
+			}
+			if !impact.StartAt.Before(dayEnd) || !impactEnd.After(dayStart) {
+				continue
+			}
+			if serviceStatusSeverity(impact.Status) > serviceStatusSeverity(status) {
+				status = impact.Status
+			}
+			createdAt := impact.StartAt.UTC()
+			var resolvedAt *time.Time
+			if impact.EndAt != nil {
+				value := impact.EndAt.UTC()
+				resolvedAt = &value
+			}
+			candidate := RadarIncidentDTO{
+				Name: impact.IncidentName, Status: impact.IncidentStatus, Impact: incidentImpactForServiceStatus(impact.Status),
+				CreatedAt: createdAt, ResolvedAt: resolvedAt,
+			}
+			current, exists := incidentsByID[impact.IncidentID]
+			if !exists || serviceStatusSeverity(impact.Status) > serviceStatusSeverity(serviceStatusForIncidentImpact(current.Impact)) {
+				incidentsByID[impact.IncidentID] = candidate
+			}
+		}
+		incidents := make([]RadarIncidentDTO, 0, len(incidentsByID))
+		for _, incident := range incidentsByID {
+			incidents = append(incidents, incident)
+		}
+		sort.Slice(incidents, func(left, right int) bool { return incidents[left].CreatedAt.After(incidents[right].CreatedAt) })
+		days = append(days, ServiceHealthHistoryDayDTO{
+			Date: dayStart.Format(time.DateOnly), Status: status, Incidents: incidents,
+		})
+	}
+	return days
+}
+
+func containsStatuspageGroup(groups []string, expected string) bool {
+	for _, group := range groups {
+		if strings.EqualFold(strings.TrimSpace(group), expected) {
+			return true
+		}
+	}
+	return false
+}
+
+func incidentImpactForServiceStatus(status ServiceStatus) string {
+	switch status {
+	case ServiceStatusMajorOutage:
+		return "critical"
+	case ServiceStatusPartialOutage:
+		return "major"
+	case ServiceStatusDegradedPerformance:
+		return "minor"
+	case ServiceStatusUnderMaintenance:
+		return "maintenance"
+	default:
+		return "none"
+	}
 }
 
 func serviceStatusForIncidentImpact(impact string) ServiceStatus {

@@ -183,9 +183,11 @@ type radarQuotaBucketIdentity struct {
 }
 
 type radarQuotaBucketAccount struct {
-	accountID int64
-	usage     *UsageInfo
-	identity  radarQuotaBucketIdentity
+	accountID     int64
+	contributorID int64
+	usage         *UsageInfo
+	identity      radarQuotaBucketIdentity
+	isShadow      bool
 }
 
 // RunOnce preserves the original error-only entry point for callers that do
@@ -224,10 +226,17 @@ func (a *RadarQuotaAggregator) runOnce(ctx context.Context, report *RadarQuotaAg
 
 	readAt := a.now().UTC()
 	capturedAt := readAt.Truncate(time.Millisecond)
-	byAccountID := make(map[int64]radarQuotaBucketAccount)
+	accountsByID := make(map[int64]*Account, len(accounts))
+	for i := range accounts {
+		if accounts[i].ID > 0 {
+			accountsByID[accounts[i].ID] = &accounts[i]
+		}
+	}
+	byContributorID := make(map[int64]radarQuotaBucketAccount)
 	for i := range accounts {
 		account := &accounts[i]
-		if !isRadarQuotaCandidate(account) {
+		identityAccount, contributorID, ok := resolveRadarQuotaCandidate(account, accountsByID)
+		if !ok {
 			continue
 		}
 		if report != nil {
@@ -249,32 +258,40 @@ func (a *RadarQuotaAggregator) runOnce(ctx context.Context, report *RadarQuotaAg
 			radarQuotaReportSkippedAccount(report, radarQuotaSkipInvalidWindow)
 			continue
 		}
-		identity, ok := buildRadarQuotaBucketIdentity(account, usage)
+		identity, ok := buildRadarQuotaBucketIdentity(identityAccount, usage)
 		if !ok {
 			radarQuotaReportSkippedAccount(report, radarQuotaSkipInvalidBucket)
 			continue
 		}
-		if _, duplicate := byAccountID[account.ID]; duplicate {
+		candidate := radarQuotaBucketAccount{
+			accountID:     account.ID,
+			contributorID: contributorID,
+			usage:         usage,
+			identity:      identity,
+			isShadow:      account.IsShadow(),
+		}
+		if existing, duplicate := byContributorID[contributorID]; duplicate {
 			radarQuotaReportSkippedAccount(report, radarQuotaSkipDuplicate)
+			if preferRadarQuotaCandidate(candidate, existing) {
+				byContributorID[contributorID] = candidate
+			}
 			continue
 		}
-		byAccountID[account.ID] = radarQuotaBucketAccount{
-			accountID: account.ID,
-			usage:     usage,
-			identity:  identity,
-		}
+		byContributorID[contributorID] = candidate
 	}
 	if report != nil {
-		report.UsableAccountCount = len(byAccountID)
+		report.UsableAccountCount = len(byContributorID)
 	}
 
-	if len(byAccountID) == 0 {
+	if len(byContributorID) == 0 {
 		return nil
 	}
 
-	accountIDs := make([]int64, 0, len(byAccountID))
-	for accountID := range byAccountID {
-		accountIDs = append(accountIDs, accountID)
+	accountIDs := make([]int64, 0, len(byContributorID))
+	selectedByAccountID := make(map[int64]radarQuotaBucketAccount, len(byContributorID))
+	for _, account := range byContributorID {
+		accountIDs = append(accountIDs, account.accountID)
+		selectedByAccountID[account.accountID] = account
 	}
 	sort.Slice(accountIDs, func(i, j int) bool { return accountIDs[i] < accountIDs[j] })
 
@@ -309,7 +326,7 @@ func (a *RadarQuotaAggregator) runOnce(ctx context.Context, report *RadarQuotaAg
 
 	buckets := make(map[string][]radarQuotaBucketAccount)
 	for _, accountID := range accountIDs {
-		account := byAccountID[accountID]
+		account := selectedByAccountID[accountID]
 		buckets[account.identity.bucketKey] = append(buckets[account.identity.bucketKey], account)
 	}
 
@@ -447,6 +464,37 @@ func isRadarQuotaCandidate(account *Account) bool {
 	}
 	return account.Platform == PlatformAntigravity &&
 		(account.Type == AccountTypeOAuth || account.Type == AccountTypeUpstream)
+}
+
+// resolveRadarQuotaCandidate maps a Spark shadow's passive quota snapshot back
+// to its credential-owning parent. The parent remains the privacy contributor
+// and plan identity, while batch usage statistics are read from the shadow row
+// that actually handled the Spark traffic. This also prevents a parent and its
+// shadow from being counted twice.
+func resolveRadarQuotaCandidate(account *Account, accountsByID map[int64]*Account) (*Account, int64, bool) {
+	if isRadarQuotaCandidate(account) {
+		return account, account.ID, true
+	}
+	if account == nil || account.ID <= 0 || !account.IsShadow() || !account.IsOpenAIOAuth() ||
+		account.QuotaDimensionOrDefault() != QuotaDimensionSpark || account.ParentAccountID == nil {
+		return nil, 0, false
+	}
+	parent := accountsByID[*account.ParentAccountID]
+	if !isRadarQuotaCandidate(parent) || !parent.IsOpenAIOAuth() {
+		return nil, 0, false
+	}
+	return parent, parent.ID, true
+}
+
+func preferRadarQuotaCandidate(candidate, existing radarQuotaBucketAccount) bool {
+	if candidate.isShadow != existing.isShadow {
+		return !candidate.isShadow
+	}
+	if candidate.usage != nil && candidate.usage.UpdatedAt != nil &&
+		(existing.usage == nil || existing.usage.UpdatedAt == nil || candidate.usage.UpdatedAt.After(*existing.usage.UpdatedAt)) {
+		return true
+	}
+	return candidate.accountID < existing.accountID
 }
 
 func radarQuotaUsageHasValidWindow(usage *UsageInfo) bool {
@@ -764,7 +812,11 @@ func aggregateRadarModelBreakdown(
 			if totals.contributors == nil {
 				totals.contributors = make(map[int64]struct{})
 			}
-			totals.contributors[account.accountID] = struct{}{}
+			contributorID := account.contributorID
+			if contributorID <= 0 {
+				contributorID = account.accountID
+			}
+			totals.contributors[contributorID] = struct{}{}
 			if validCost {
 				totals.avgCost = finiteRadarAdd(totals.avgCost, stats.AccountCost/denominator)
 			}

@@ -80,6 +80,25 @@ func TestDecodeDeepSeekStatusPageMapsOfficialThirtyDayHistory(t *testing.T) {
 	require.Equal(t, "DeepSeek API unavailable", incidentDay.Incidents[0].Name)
 }
 
+func TestDecodeDeepSeekStatusPageRejectsUnmappedHistoricalComponent(t *testing.T) {
+	var current any
+	require.NoError(t, json.Unmarshal([]byte(`{
+      "initialData":{"page":{"page_id":6410630422455,"name":"DeepSeek","custom_domain":"status.deepseek.com","components":[
+        {"component_id":"api","name":"API 服务 (API Service)","available_since_seconds":1706745600}
+      ]},"active_changes":[]},"initialDataUpdatedAt":1784165568367
+    }`), &current))
+	history := map[string]any{"initialData": map[string]any{
+		"component_impacts": []map[string]any{{
+			"component_id": "removed-api", "change_id": int64(99),
+			"start_at_seconds": int64(1783843200), "end_at_seconds": int64(1783846800), "status": "full_outage",
+		}},
+		"linked_changes": []map[string]any{{"id": int64(99), "type": "incident", "title": "Historical outage"}},
+	}}
+
+	_, err := DecodeDeepSeekStatusPage(deepSeekStatusHTMLNodes(t, current, history))
+	require.Error(t, err)
+}
+
 func TestDecodeDeepSeekStatusPageFindsPropsAfterOtherFlightRecords(t *testing.T) {
 	props := `{
       "initialData":{"page":{"page_id":6410630422455,"name":"DeepSeek","custom_domain":"status.deepseek.com","components":[

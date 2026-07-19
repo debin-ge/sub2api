@@ -3,6 +3,7 @@
 package response
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -172,6 +173,16 @@ func TestErrorFrom(t *testing.T) {
 				Code:    http.StatusConflict,
 				Message: "conflict",
 				Reason:  "CONFLICT",
+			},
+		},
+		{
+			name:         "client_canceled_is_not_a_server_error",
+			err:          context.Canceled,
+			wantWritten:  true,
+			wantHTTPCode: 499,
+			wantBody: Response{
+				Code:    499,
+				Message: "context canceled",
 			},
 		},
 		{

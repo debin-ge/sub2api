@@ -170,15 +170,20 @@ func TestNewRadarFetchersEndpointsHeadersAndIntervalsWithoutLiveNetwork(t *testi
 			payload = hfLMArenaPage(t, offset, 1, hfLMArenaPageOptions{})
 		case req.URL.String() == openAIStatuspageFeedURL:
 			payload = `<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"><id>https://status.openai.com/</id><title>OpenAI status</title><updated>2026-07-10T10:00:00Z</updated><generator>incident.io</generator></feed>`
-		case req.URL.String() == miniMaxChinaLLMHistoryURL:
-			payload = `<div data-react-class="HistoryIndex" data-react-props="{&quot;components&quot;:[{&quot;id&quot;:&quot;vwp8mgy34fck&quot;,&quot;name&quot;:&quot;大语言模型LLM&quot;}],&quot;months&quot;:[{&quot;name&quot;:&quot;July&quot;,&quot;year&quot;:2026,&quot;days&quot;:31,&quot;incidents&quot;:[]}],&quot;component_filter&quot;:[&quot;vwp8mgy34fck&quot;],&quot;start_time&quot;:&quot;2026-05-01T00:00:00+08:00&quot;,&quot;end_time&quot;:&quot;2026-07-31T23:59:59+08:00&quot;}"></div>`
+		case strings.HasPrefix(req.URL.String(), openAIComponentImpactsURL+"?"):
+			payload = `{"component_impacts":[],"incident_links":[],"component_uptimes":[]}`
+		case req.URL.String() == openAIStatusSummaryURL:
+			payload = `{"summary":{"components":[{"id":"responses","name":"Responses"}],"structure":{"items":[{"group":{"id":"apis","name":"APIs","components":[{"component_id":"responses","name":"Responses"}]}}]}}}`
 		case req.URL.Host == "status.claude.com", req.URL.Host == "status.openai.com",
 			req.URL.Host == "status.windsurf.com", req.URL.Host == "status.moonshot.cn",
 			req.URL.Host == "status.minimaxi.com":
-			if req.URL.EscapedPath() == "/api/v2/incidents.json" {
+			source := radarStatuspageSourceForHost(t, req.URL.Host)
+			if req.URL.EscapedPath() == "/history" {
+				payload = statuspageCalendarFixture(t, source, req.URL.Query().Get("filter"))
+			} else if req.URL.EscapedPath() == "/api/v2/incidents.json" {
 				payload = `{"page":{"id":"p","name":"Status","url":"https://payload.example","updated_at":"2026-07-10T10:00:00Z"},"incidents":[]}`
 			} else {
-				payload = `{"page":{"id":"p","name":"Status","url":"https://payload.example","updated_at":"2026-07-10T10:00:00Z"},"status":{"indicator":"none","description":"OK"},"components":[]}`
+				payload = strings.Replace(statuspageSummaryFixture(t, source), `"id":"page"`, `"id":"p"`, 1)
 			}
 		case req.URL.Host == "statuspage.flashcat.cloud":
 			payload = string(deepSeekStatusHTML(t, `{"initialData":{"page":{"page_id":6410630422455,"name":"DeepSeek","custom_domain":"status.deepseek.com","components":[{"component_id":"api","name":"API 服务 (API Service)","available_since_seconds":1706745600}]},"active_changes":[]},"initialDataUpdatedAt":1784165568367}`))
@@ -205,7 +210,7 @@ func TestNewRadarFetchersEndpointsHeadersAndIntervalsWithoutLiveNetwork(t *testi
 		require.NoError(t, err, "source %s", fetcher.Source())
 	}
 
-	require.Len(t, requests, len(fetchers)+7)
+	require.Len(t, requests, len(fetchers)+13)
 	for endpoint, req := range requests {
 		require.Equal(t, http.MethodGet, req.Method)
 		if strings.Contains(endpoint, "artificialanalysis.ai") {
@@ -223,8 +228,33 @@ func TestNewRadarFetchersEndpointsHeadersAndIntervalsWithoutLiveNetwork(t *testi
 	require.Contains(t, requests, kimiStatuspageAPIURL)
 	require.Contains(t, requests, miniMaxChinaStatuspageAPIURL)
 	require.Contains(t, requests, openAIStatuspageFeedURL)
+	require.Contains(t, requests, openAIStatusSummaryURL)
+	require.True(t, hasRadarFetcherRequestPath(requests, "/proxy/openai-1/component_impacts"))
+	require.Contains(t, requests, claudeAPIHistoryURL)
+	require.Contains(t, requests, claudeCodeHistoryURL)
+	require.Contains(t, requests, windsurfHistoryURL)
+	require.Contains(t, requests, kimiHistoryURL)
 	require.Contains(t, requests, miniMaxChinaLLMHistoryURL)
 	require.Contains(t, requests, deepSeekStatusDataURL)
+}
+
+func radarStatuspageSourceForHost(t *testing.T, host string) RadarSourceKey {
+	t.Helper()
+	switch host {
+	case "status.claude.com":
+		return RadarSourceStatusClaude
+	case "status.openai.com":
+		return RadarSourceStatusOpenAI
+	case "status.windsurf.com":
+		return RadarSourceStatusWindsurf
+	case "status.moonshot.cn":
+		return RadarSourceStatusKimi
+	case "status.minimaxi.com":
+		return RadarSourceStatusMiniMaxChina
+	default:
+		t.Fatalf("unknown statuspage host %s", host)
+		return ""
+	}
 }
 
 func radarFetcherTestCatalog() *radarLMArenaCatalogStub {
@@ -236,6 +266,15 @@ func radarFetcherTestCatalog() *radarLMArenaCatalogStub {
 func hasRadarFetcherRequestHost(requests map[string]*http.Request, host string) bool {
 	for _, request := range requests {
 		if request.URL.Hostname() == host {
+			return true
+		}
+	}
+	return false
+}
+
+func hasRadarFetcherRequestPath(requests map[string]*http.Request, path string) bool {
+	for _, request := range requests {
+		if request.URL.Path == path {
 			return true
 		}
 	}

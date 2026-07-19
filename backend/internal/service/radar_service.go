@@ -221,9 +221,15 @@ func (s *RadarService) GetServiceHealth(ctx context.Context) ([]ServiceHealthDTO
 			earliestDeadline = radarServiceEarliestDeadline(earliestDeadline, deadline)
 		}
 		for index := range cards {
-			for _, source := range statuspageSourcesForServiceKey(cards[index].ServiceKey) {
+			cardSources := statuspageSourcesForServiceKey(cards[index].ServiceKey)
+			for _, source := range cardSources {
 				cards[index].Stale = cards[index].Stale || staleBySource[source]
 			}
+			// Component updated_at means "the component last changed state" and
+			// can legitimately remain unchanged for months. The card's public
+			// "Updated" field describes Radar source freshness, so use the most
+			// recent successful collection time instead.
+			cards[index].LastUpdatedAt = latestRadarSourceSuccess(metas, cardSources)
 		}
 		return cards,
 			cacheable,
@@ -1195,6 +1201,21 @@ func radarSourceFreshness(
 	return false, &deadline
 }
 
+func latestRadarSourceSuccess(metas map[RadarSourceKey]SourceFetchMeta, sources []RadarSourceKey) *time.Time {
+	var latest *time.Time
+	for _, source := range sources {
+		meta, ok := metas[source]
+		if !ok || meta.LastSuccessAt == nil || meta.LastSuccessAt.IsZero() {
+			continue
+		}
+		candidate := meta.LastSuccessAt.UTC()
+		if latest == nil || candidate.After(*latest) {
+			latest = &candidate
+		}
+	}
+	return latest
+}
+
 func radarServiceEarliestDeadline(deadlines ...*time.Time) *time.Time {
 	var earliest *time.Time
 	for _, deadline := range deadlines {
@@ -1267,10 +1288,7 @@ func cloneRadarServiceModelWindowStats(input *ModelWindowStatsDTO) *ModelWindowS
 }
 
 func cloneRadarServiceModelBreakdown(input []ModelCostBreakdownDTO) []ModelCostBreakdownDTO {
-	if input == nil {
-		return nil
-	}
-	return append([]ModelCostBreakdownDTO(nil), input...)
+	return append(make([]ModelCostBreakdownDTO, 0, len(input)), input...)
 }
 
 func cloneRadarServiceQuotaTrend(input *QuotaTrendDTO) *QuotaTrendDTO {

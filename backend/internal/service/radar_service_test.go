@@ -306,6 +306,8 @@ func TestRadarServiceGetServiceHealthLocalizesFailureAndDeepClonesCache(t *testi
 	require.NotEmpty(t, got[0].History30d[len(got[0].History30d)-1].Incidents)
 	require.Equal(t, ServiceStatusOperational, got[1].Status)
 	require.False(t, got[1].Stale)
+	require.Equal(t, now, *got[0].LastUpdatedAt, "card freshness must use the latest successful collection, not component updated_at")
+	require.Equal(t, now, *got[1].LastUpdatedAt)
 	for _, card := range got[2:] {
 		require.Equal(t, ServiceStatusUnknown, card.Status)
 		require.True(t, card.Stale)

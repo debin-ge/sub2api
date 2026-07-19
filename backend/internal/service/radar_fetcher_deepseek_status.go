@@ -269,7 +269,10 @@ func decodeDeepSeekStatusPage(payload []byte) ([]byte, error) {
 				}
 			}
 			if componentName == "" {
-				continue
+				// Dropping an impact for a removed/renamed component would turn a
+				// real outage into a false operational day. Treat catalog drift as
+				// an invalid source response until it can be classified safely.
+				return nil, errInvalidDeepSeekStatusResponse
 			}
 			if _, ok := linkedTitles[impact.ChangeID]; !ok {
 				return nil, errInvalidDeepSeekStatusResponse

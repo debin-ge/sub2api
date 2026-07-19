@@ -142,6 +142,27 @@ describe('QuotaBucketDetailModal', () => {
     expect(document.body.textContent).toContain('No trend data')
   })
 
+  it('treats legacy null breakdown and trend arrays as empty', async () => {
+    const item = bucket()
+    const trend = quotaTrend()
+    // Historical Go snapshots encoded nil slices as JSON null even though the
+    // current TypeScript contract exposes arrays.
+    item.model_breakdown_5h = null as unknown as typeof item.model_breakdown_5h
+    trend.data_points = null as unknown as typeof trend.data_points
+
+    expect(() => {
+      wrapper = mount(QuotaBucketDetailModal, {
+        attachTo: document.body,
+        props: { show: true, bucket: item, trend },
+        global: { stubs: { Icon: true } },
+      })
+    }).not.toThrow()
+    await wrapper!.vm.$nextTick()
+
+    expect(document.body.textContent).toContain('No model breakdown data')
+    expect(document.body.textContent).toContain('No trend data')
+  })
+
   it('never renders Anthropic model utilization for another platform', async () => {
     wrapper = mount(QuotaBucketDetailModal, {
       attachTo: document.body,

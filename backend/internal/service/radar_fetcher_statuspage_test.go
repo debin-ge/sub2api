@@ -2,10 +2,13 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"html"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -27,6 +30,85 @@ const validStatuspageIncidentsPayload = `{
   "incidents":[]
 }`
 
+type statuspageFixtureComponent struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+func statuspageFixtureComponents(source RadarSourceKey) []statuspageFixtureComponent {
+	switch source {
+	case RadarSourceStatusClaude:
+		return []statuspageFixtureComponent{{ID: "k8w3r06qmzrp", Name: "Claude API (api.anthropic.com)"}, {ID: "yyzkbfz2thpt", Name: "Claude Code"}}
+	case RadarSourceStatusOpenAI:
+		return []statuspageFixtureComponent{{ID: "responses", Name: "Responses"}}
+	case RadarSourceStatusWindsurf:
+		return []statuspageFixtureComponent{{ID: "8q19cygxvshj", Name: "Windsurf Tab"}, {ID: "r5wf1ykd7y1m", Name: "Cascade"}}
+	case RadarSourceStatusKimi:
+		return []statuspageFixtureComponent{
+			{ID: "8psr5dfdld0s", Name: "Open API"}, {ID: "8rkd3yj051gl", Name: "Vision Model"},
+			{ID: "lk7q3z0fcylp", Name: "Thinking Model"}, {ID: "p1j9ttb7jwhp", Name: "Text Model"},
+			{ID: "rf64wcbxt3r2", Name: "API Service"}, {ID: "wmn9wzv84k1v", Name: "Research Model"},
+			{ID: "x0zsqgy57b75", Name: "Model"}, {ID: "z2zfp65lvb2z", Name: "K2 Model"},
+		}
+	case RadarSourceStatusMiniMaxGlobal:
+		return []statuspageFixtureComponent{{ID: "pr0d8qr59svt", Name: "Large Language Models (LLM)"}}
+	case RadarSourceStatusMiniMaxChina:
+		return []statuspageFixtureComponent{{ID: miniMaxChinaLLMComponentID, Name: miniMaxChinaLLMComponentName}}
+	default:
+		return nil
+	}
+}
+
+func statuspageSummaryFixture(t *testing.T, source RadarSourceKey) string {
+	t.Helper()
+	components := statuspageFixtureComponents(source)
+	wires := make([]map[string]any, 0, len(components))
+	for _, component := range components {
+		wires = append(wires, map[string]any{
+			"id": component.ID, "name": component.Name, "status": "operational", "group": false,
+			"created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-07-10T10:00:00Z",
+		})
+	}
+	payload, err := json.Marshal(map[string]any{
+		"page":       map[string]any{"id": "page", "name": "Status", "url": "https://payload.example", "updated_at": "2026-07-10T10:30:00Z"},
+		"status":     map[string]any{"indicator": "none", "description": "All Systems Operational"},
+		"components": wires,
+	})
+	require.NoError(t, err)
+	return string(payload)
+}
+
+func statuspageCalendarFixture(t *testing.T, source RadarSourceKey, filter string, julyIncidents ...map[string]any) string {
+	t.Helper()
+	names := make(map[string]string)
+	for _, component := range statuspageFixtureComponents(source) {
+		names[component.ID] = component.Name
+	}
+	ids := strings.Split(filter, ",")
+	components := make([]map[string]any, 0, len(ids))
+	for _, id := range ids {
+		name, ok := names[id]
+		require.True(t, ok, "unknown fixture component %s", id)
+		components = append(components, map[string]any{"id": id, "name": name, "group": false})
+	}
+	start := "2026-06-01T00:00:00Z"
+	end := "2026-07-31T23:59:59Z"
+	if source == RadarSourceStatusKimi || source == RadarSourceStatusMiniMaxChina {
+		start = "2026-06-01T00:00:00+08:00"
+		end = "2026-07-31T23:59:59+08:00"
+	}
+	props, err := json.Marshal(map[string]any{
+		"components": components,
+		"months": []map[string]any{
+			{"name": "July", "year": 2026, "days": 31, "incidents": julyIncidents},
+			{"name": "June", "year": 2026, "days": 30, "incidents": []any{}},
+		},
+		"component_filter": ids, "start_time": start, "end_time": end,
+	})
+	require.NoError(t, err)
+	return `<div data-react-class="HistoryIndex" data-react-props="` + html.EscapeString(string(props)) + `"></div>`
+}
+
 func TestStatuspageFetchersUseFixedHTTPSEndpointsAndConfiguredInterval(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -43,19 +125,25 @@ func TestStatuspageFetchersUseFixedHTTPSEndpointsAndConfiguredInterval(t *testin
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			expectedRequests := 2
-			if tt.source == RadarSourceStatusOpenAI || tt.source == RadarSourceStatusMiniMaxChina {
-				expectedRequests = 3
+			expectedRequests := 3
+			if tt.source == RadarSourceStatusClaude {
+				expectedRequests = 4
+			} else if tt.source == RadarSourceStatusOpenAI {
+				expectedRequests = 5
 			}
 			captured := make(chan *http.Request, expectedRequests)
 			client := radarDoerFunc(func(req *http.Request) (*http.Response, error) {
 				captured <- req.Clone(req.Context())
-				payload := validStatuspagePayload
-				switch req.URL.String() {
-				case openAIStatuspageFeedURL:
+				payload := statuspageSummaryFixture(t, tt.source)
+				switch {
+				case req.URL.String() == openAIStatuspageFeedURL:
 					payload = `<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"><id>https://status.openai.com/</id><title>OpenAI status</title><updated>2026-07-10T10:30:00Z</updated><generator>incident.io</generator></feed>`
-				case miniMaxChinaLLMHistoryURL:
-					payload = `<div data-react-class="HistoryIndex" data-react-props="{&quot;components&quot;:[{&quot;id&quot;:&quot;vwp8mgy34fck&quot;,&quot;name&quot;:&quot;大语言模型LLM&quot;}],&quot;months&quot;:[{&quot;name&quot;:&quot;July&quot;,&quot;year&quot;:2026,&quot;days&quot;:31,&quot;incidents&quot;:[]}],&quot;component_filter&quot;:[&quot;vwp8mgy34fck&quot;],&quot;start_time&quot;:&quot;2026-05-01T00:00:00+08:00&quot;,&quot;end_time&quot;:&quot;2026-07-31T23:59:59+08:00&quot;}"></div>`
+				case strings.HasPrefix(req.URL.String(), openAIComponentImpactsURL):
+					payload = `{"component_impacts":[],"incident_links":[],"component_uptimes":[]}`
+				case req.URL.String() == openAIStatusSummaryURL:
+					payload = `{"summary":{"components":[{"id":"responses","name":"Responses"}],"structure":{"items":[{"group":{"id":"apis","name":"APIs","components":[{"component_id":"responses","name":"Responses"}]}}]}}}`
+				case req.URL.EscapedPath() == "/history":
+					payload = statuspageCalendarFixture(t, tt.source, req.URL.Query().Get("filter"))
 				default:
 					if req.URL.EscapedPath() == "/api/v2/incidents.json" {
 						payload = validStatuspageIncidentsPayload
@@ -90,9 +178,26 @@ func TestStatuspageFetchersUseFixedHTTPSEndpointsAndConfiguredInterval(t *testin
 			require.Contains(t, endpoints, "https://"+tt.wantHost+"/api/v2/incidents.json")
 			if tt.source == RadarSourceStatusOpenAI {
 				require.Contains(t, endpoints, openAIStatuspageFeedURL)
+				require.Contains(t, endpoints, openAIStatusSummaryURL)
+				foundTimeline := false
+				for endpoint := range endpoints {
+					if strings.HasPrefix(endpoint, openAIComponentImpactsURL+"?") {
+						foundTimeline = true
+						requestURL, parseErr := url.Parse(endpoint)
+						require.NoError(t, parseErr)
+						start, startErr := time.Parse(time.RFC3339Nano, requestURL.Query().Get("start_at"))
+						end, endErr := time.Parse(time.RFC3339Nano, requestURL.Query().Get("end_at"))
+						require.NoError(t, startErr)
+						require.NoError(t, endErr)
+						require.Equal(t, serviceHealthHistoryDays, int(end.Sub(start).Hours()/24))
+					}
+				}
+				require.True(t, foundTimeline)
 			}
-			if tt.source == RadarSourceStatusMiniMaxChina {
-				require.Contains(t, endpoints, miniMaxChinaLLMHistoryURL)
+			if tt.source != RadarSourceStatusOpenAI {
+				for _, spec := range statuspageCalendarSpecs(tt.source) {
+					require.Contains(t, endpoints, spec.endpoint)
+				}
 			}
 			require.Nil(t, meta.Error)
 		})
@@ -121,7 +226,8 @@ func TestStatuspageFetcherRejectsZeroTimestampWithoutRecordingSuccess(t *testing
 
 	require.Error(t, err)
 	require.Nil(t, payload)
-	require.Equal(t, int32(2), attempts.Load())
+	require.GreaterOrEqual(t, attempts.Load(), int32(2))
+	require.LessOrEqual(t, attempts.Load(), int32(4))
 	require.Nil(t, meta.LastSuccessAt)
 	requireRadarFetchErrorCode(t, meta, DataSourceErrorCodeInvalidResponse)
 }
@@ -239,7 +345,9 @@ func TestMergeOpenAIHistoryUsesOfficialFeedComponentsAndLatestFeedDate(t *testin
       "page":{"id":"openai","name":"OpenAI","url":"https://status.openai.com/","updated_at":"2026-07-15T00:39:32Z"},
       "incidents":[
         {"id":"api-incident","name":"Responses API errors","status":"resolved","impact":"major","created_at":"2026-07-14T10:00:00Z","resolved_at":"2026-07-14T10:15:00Z"},
-        {"id":"chatgpt-incident","name":"ChatGPT conversation errors","status":"resolved","impact":"critical","created_at":"2026-07-14T11:00:00Z","resolved_at":"2026-07-14T11:15:00Z"}
+        {"id":"chatgpt-incident","name":"ChatGPT conversation errors","status":"resolved","impact":"critical","created_at":"2026-07-14T11:00:00Z","resolved_at":"2026-07-14T11:15:00Z"},
+        {"id":"unscoped-july-9","name":"Users are experiencing elevated errors when selecting models","status":"resolved","impact":"none","created_at":"2026-07-09T19:44:14Z","resolved_at":"2026-07-09T20:42:57Z"},
+        {"id":"unscoped-july-10","name":"OpenAI website and Help Center content may be unavailable","status":"resolved","impact":"none","created_at":"2026-07-10T21:13:30Z","resolved_at":"2026-07-10T23:07:39Z"}
       ]
     }`)
 	feedPayload := []byte(`<?xml version="1.0" encoding="utf-8"?>
@@ -247,13 +355,43 @@ func TestMergeOpenAIHistoryUsesOfficialFeedComponentsAndLatestFeedDate(t *testin
         <id>https://status.openai.com/</id><title>OpenAI status</title><updated>2026-07-16T04:06:23.122Z</updated><generator>incident.io</generator>
         <entry><title>Responses API errors</title><id>https://status.openai.com//incidents/api-incident</id><updated>2026-07-14T10:15:00Z</updated><content type="html"><![CDATA[<b>Affected components</b><ul><li>Responses (Operational)</li></ul>]]></content></entry>
         <entry><title>ChatGPT conversation errors</title><id>https://status.openai.com//incidents/chatgpt-incident</id><updated>2026-07-14T11:15:00Z</updated><content type="html"><![CDATA[<b>Affected components</b><ul><li>Conversations (Operational)</li></ul>]]></content></entry>
+		<entry><title>Users are experiencing elevated errors when selecting models</title><id>https://status.openai.com//incidents/unscoped-july-9</id><updated>2026-07-09T20:42:57Z</updated><content type="html"><![CDATA[<b>Status: Resolved</b>]]></content></entry>
+		<entry><title>OpenAI website and Help Center content may be unavailable</title><id>https://status.openai.com//incidents/unscoped-july-10</id><updated>2026-07-10T23:07:39Z</updated><content type="html"><![CDATA[<b>Status: Resolved</b>]]></content></entry>
       </feed>`)
+	componentImpactsPayload := []byte(`{
+	  "radar_coverage_start":"2026-06-17T00:00:00Z",
+	  "radar_coverage_end":"2026-07-17T00:00:00Z",
+      "component_impacts":[
+        {"id":"impact-api","component_id":"responses","status_page_incident_id":"api-incident","start_at":"2026-07-14T10:00:00Z","end_at":"2026-07-14T10:15:00Z","status":"partial_outage"},
+        {"id":"impact-historical-sora","component_id":"historical-sora","status_page_incident_id":"sora-incident","start_at":"2026-07-11T06:35:19Z","end_at":"2026-07-11T07:03:51Z","status":"full_outage"}
+      ],
+      "incident_links":[
+        {"id":"api-incident","name":"Responses API errors","status":"resolved","published_at":"2026-07-14T10:00:00Z"},
+        {"id":"sora-incident","name":"Elevated Errors for Sora API","status":"resolved","published_at":"2026-07-11T06:35:19Z"},
+        {"id":"unscoped-july-9","name":"Users are experiencing elevated errors when selecting models","status":"resolved","published_at":"2026-07-09T19:44:14Z"},
+        {"id":"unscoped-july-10","name":"OpenAI website and Help Center content may be unavailable","status":"resolved","published_at":"2026-07-10T21:13:30Z"}
+      ]
+    }`)
+	catalogPayload := []byte(`{
+      "summary":{
+        "components":[
+          {"id":"responses","name":"Responses"},
+          {"id":"historical-sora","name":"Sora"}
+        ],
+        "structure":{"items":[
+          {"group":{"id":"apis","name":"APIs","components":[
+            {"component_id":"responses","name":"Responses"},
+            {"component_id":"historical-sora","name":"Sora"}
+          ]}}
+        ]}
+      }
+    }`)
 
-	merged, err := mergeStatuspageHistoryPayloads(RadarSourceStatusOpenAI, summaryPayload, incidentsPayload, feedPayload)
+	merged, err := mergeStatuspageHistoryPayloads(RadarSourceStatusOpenAI, summaryPayload, incidentsPayload, feedPayload, componentImpactsPayload, catalogPayload, nil)
 	require.NoError(t, err)
 	summary, err := DecodeStatuspageSummary(merged)
 	require.NoError(t, err)
-	require.Equal(t, time.Date(2026, time.July, 16, 4, 6, 23, 122000000, time.UTC), summary.Page.UpdatedAt)
+	require.Equal(t, time.Date(2026, time.July, 16, 23, 59, 59, 999999999, time.UTC), summary.Page.UpdatedAt)
 
 	cards, err := MapStatuspageServiceHealth(RadarSourceStatusOpenAI, summary)
 	require.NoError(t, err)
@@ -262,6 +400,18 @@ func TestMergeOpenAIHistoryUsesOfficialFeedComponentsAndLatestFeedDate(t *testin
 	require.Len(t, apiHistory.Incidents, 1)
 	require.Equal(t, "Responses API errors", apiHistory.Incidents[0].Name)
 	require.NotContains(t, apiHistory.Incidents[0].Name, "ChatGPT")
+	historicalAPIHistory := historyDayByDate(t, cards[1].History30d, "2026-07-11")
+	require.Equal(t, ServiceStatusMajorOutage, historicalAPIHistory.Status)
+	require.Len(t, historicalAPIHistory.Incidents, 1)
+	require.Equal(t, "Elevated Errors for Sora API", historicalAPIHistory.Incidents[0].Name)
+	require.Equal(t, ServiceStatusOperational, historyDayByDate(t, cards[0].History30d, "2026-07-11").Status)
+	for _, date := range []string{"2026-07-09", "2026-07-10"} {
+		for _, card := range cards {
+			day := historyDayByDate(t, card.History30d, date)
+			require.Equal(t, ServiceStatusOperational, day.Status, date)
+			require.Empty(t, day.Incidents, date)
+		}
+	}
 }
 
 func TestMergeMiniMaxChinaHistoryUsesFilteredOfficialCalendarBeyondIncidentLimit(t *testing.T) {
@@ -297,8 +447,17 @@ func TestMergeMiniMaxChinaHistoryUsesFilteredOfficialCalendarBeyondIncidentLimit
       "start_time":"2026-05-01T00:00:00+08:00","end_time":"2026-07-31T23:59:59+08:00"
     }`
 	historyPayload := []byte(`<html><body><div data-react-class="HistoryIndex" data-react-props="` + html.EscapeString(props) + `"></div></body></html>`)
+	historyIncidents, coverageStart, coverageEnd, err := decodeStatuspageCalendarHistory(
+		historyPayload, RadarSourceStatusMiniMaxChina, ServiceKeyMiniMax, []string{miniMaxChinaLLMComponentID},
+	)
+	require.NoError(t, err)
+	calendarPayload, err := json.Marshal(statuspageCalendarBundleWire{
+		CoverageStart: coverageStart.Format(time.RFC3339Nano), CoverageEnd: coverageEnd.Format(time.RFC3339Nano),
+		Incidents: encodeStatuspageIncidents(historyIncidents),
+	})
+	require.NoError(t, err)
 
-	merged, err := mergeStatuspageHistoryPayloads(RadarSourceStatusMiniMaxChina, summaryPayload, incidentsPayload, historyPayload)
+	merged, err := mergeStatuspageHistoryPayloads(RadarSourceStatusMiniMaxChina, summaryPayload, incidentsPayload, nil, nil, nil, calendarPayload)
 	require.NoError(t, err)
 	summary, err := DecodeStatuspageSummary(merged)
 	require.NoError(t, err)
@@ -317,11 +476,80 @@ func TestMergeMiniMaxChinaHistoryUsesFilteredOfficialCalendarBeyondIncidentLimit
 	require.Equal(t, ServiceStatusPartialOutage, july15.Status)
 }
 
-func TestDecodeMiniMaxChinaHistoryRejectsWrongOrMixedComponentFilter(t *testing.T) {
+func TestKimiCalendarHistoryUsesFilteredTruthInsteadOfUnscopedIncidents(t *testing.T) {
+	summaryPayload := []byte(strings.Replace(
+		statuspageSummaryFixture(t, RadarSourceStatusKimi),
+		"2026-07-10T10:30:00Z", "2026-07-19T10:30:00+08:00", 1,
+	))
+	incidentsPayload := []byte(`{
+      "page":{"id":"page","name":"Status","url":"https://payload.example","updated_at":"2026-07-19T10:30:00+08:00"},
+      "incidents":[
+        {"id":"unscoped-agentic","name":"Agentic 模型错误报警","status":"resolved","impact":"major","created_at":"2026-07-12T11:29:16+08:00","resolved_at":"2026-07-12T13:05:26+08:00","components":[]}
+      ]
+    }`)
+	spec := statuspageCalendarSpecs(RadarSourceStatusKimi)[0]
+	historyPayload := []byte(statuspageCalendarFixture(t, RadarSourceStatusKimi, strings.Join(spec.componentIDs, ","), map[string]any{
+		"code": "kimi-api-july-13", "name": "API Service 错误率升高", "impact": "major",
+		"timestamp": "Jul <var data-var='date'>13</var>, <var data-var='time'>09:11</var> - <var data-var='time'>09:35</var> CST",
+	}))
+	historyIncidents, coverageStart, coverageEnd, err := decodeStatuspageCalendarHistory(
+		historyPayload, RadarSourceStatusKimi, ServiceKeyKimi, spec.componentIDs,
+	)
+	require.NoError(t, err)
+	calendarPayload, err := json.Marshal(statuspageCalendarBundleWire{
+		CoverageStart: coverageStart.Format(time.RFC3339Nano), CoverageEnd: coverageEnd.Format(time.RFC3339Nano),
+		Incidents: encodeStatuspageIncidents(historyIncidents),
+	})
+	require.NoError(t, err)
+
+	merged, err := mergeStatuspageHistoryPayloads(
+		RadarSourceStatusKimi, summaryPayload, incidentsPayload, nil, nil, nil, calendarPayload,
+	)
+	require.NoError(t, err)
+	summary, err := DecodeStatuspageSummary(merged)
+	require.NoError(t, err)
+	cards, err := MapStatuspageServiceHealth(RadarSourceStatusKimi, summary)
+	require.NoError(t, err)
+	require.Len(t, cards, 1)
+	july12 := historyDayByDate(t, cards[0].History30d, "2026-07-12")
+	require.Equal(t, ServiceStatusOperational, july12.Status)
+	require.Empty(t, july12.Incidents)
+	july13 := historyDayByDate(t, cards[0].History30d, "2026-07-13")
+	require.Equal(t, ServiceStatusPartialOutage, july13.Status)
+	require.Len(t, july13.Incidents, 1)
+	require.Equal(t, "API Service 错误率升高", july13.Incidents[0].Name)
+}
+
+func TestStatuspageCalendarHistoryParsesCrossDayAndCrossMonthIncidents(t *testing.T) {
+	payload := []byte(statuspageCalendarFixture(t, RadarSourceStatusClaude, "k8w3r06qmzrp",
+		map[string]any{
+			"code": "cross-month", "name": "Long-running API incident", "impact": "critical",
+			"timestamp": "Jun <var data-var='date'>13</var>, <var data-var='time'>00:50</var> - Jul <var data-var='date'>1</var>, <var data-var='time'>19:26</var> UTC",
+		},
+		map[string]any{
+			"code": "cross-day", "name": "Overnight API incident", "impact": "minor",
+			"timestamp": "Jul <var data-var='date'>3</var>, <var data-var='time'>23:42</var> - Jul <var data-var='date'>4</var>, <var data-var='time'>00:20</var> UTC",
+		},
+	))
+
+	incidents, _, _, err := decodeStatuspageCalendarHistory(
+		payload, RadarSourceStatusClaude, ServiceKeyClaudeAPI, []string{"k8w3r06qmzrp"},
+	)
+	require.NoError(t, err)
+	require.Len(t, incidents, 2)
+	require.Equal(t, time.Date(2026, time.July, 3, 23, 42, 0, 0, time.UTC), incidents[0].CreatedAt)
+	require.Equal(t, time.Date(2026, time.July, 4, 0, 20, 0, 0, time.UTC), *incidents[0].ResolvedAt)
+	require.Equal(t, time.Date(2026, time.June, 13, 0, 50, 0, 0, time.UTC), incidents[1].CreatedAt)
+	require.Equal(t, time.Date(2026, time.July, 1, 19, 26, 0, 0, time.UTC), *incidents[1].ResolvedAt)
+}
+
+func TestDecodeStatuspageCalendarHistoryRejectsWrongOrMixedComponentFilter(t *testing.T) {
 	for _, filter := range []string{`null`, `[]`, `["speech"]`, `["vwp8mgy34fck","speech"]`} {
 		props := `{"months":[],"component_filter":` + filter + `,"start_time":"2026-05-01T00:00:00+08:00","end_time":"2026-07-31T23:59:59+08:00"}`
 		payload := []byte(`<div data-react-class="HistoryIndex" data-react-props="` + html.EscapeString(props) + `"></div>`)
-		_, _, err := decodeMiniMaxChinaHistory(payload)
+		_, _, _, err := decodeStatuspageCalendarHistory(
+			payload, RadarSourceStatusMiniMaxChina, ServiceKeyMiniMax, []string{miniMaxChinaLLMComponentID},
+		)
 		require.Error(t, err, filter)
 	}
 }
@@ -584,6 +812,7 @@ func TestMapStatuspageIncidentDoesNotAttributeUnscopedPageIncidentToEveryService
 	summary, err := DecodeStatuspageSummary([]byte(`{
       "page":{"id":"claude","name":"Claude Status","url":"https://payload.example","updated_at":"2026-07-10T10:30:00Z"},
       "status":{"indicator":"minor","description":"Incident"},
+      "radar_history_coverage_start":"2026-06-11T00:00:00Z",
       "components":[
         {"id":"api","name":"Claude API","status":"degraded_performance","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-07-10T10:00:00Z"},
         {"id":"code","name":"Claude Code","status":"operational","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-07-10T10:00:00Z"}

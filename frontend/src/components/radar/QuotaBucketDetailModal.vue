@@ -257,7 +257,10 @@ const selectedStats = computed<WindowStatsDTO | null>(() => {
 })
 const selectedBreakdown = computed<readonly ModelCostBreakdownDTO[]>(() => {
   if (!props.bucket) return []
-  return selectedWindow.value === '5h' ? props.bucket.model_breakdown_5h : props.bucket.model_breakdown_7d
+  // Older cached Radar snapshots may contain JSON null for an empty Go slice.
+  // Keep the public dialog compatible with those snapshots while the backend
+  // normalizes newly served responses to arrays.
+  return (selectedWindow.value === '5h' ? props.bucket.model_breakdown_5h : props.bucket.model_breakdown_7d) ?? []
 })
 const summaryStats = computed(() => {
   const stats = selectedStats.value
@@ -275,7 +278,7 @@ const selectedWindowLabel = computed(() => selectedWindow.value === '5h'
   : t('radar.quota.sevenDayUtilization', '7-day utilization'))
 const trendData = computed(() => {
   if (!props.trend) return []
-  return props.trend.data_points.flatMap((point) => {
+  return (props.trend.data_points ?? []).flatMap((point) => {
     const value = selectedWindow.value === '5h'
       ? point.five_hour?.avg_utilization
       : point.seven_day?.avg_utilization

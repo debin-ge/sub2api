@@ -523,6 +523,44 @@ func TestRadarQuotaAggregatorRunOnceSelectionBatchingAndAggregation(t *testing.T
 	}
 }
 
+func TestRadarQuotaAggregatorUsesOpenAISparkShadowSnapshotsOncePerParent(t *testing.T) {
+	now := time.Date(2026, time.July, 19, 11, 0, 0, 0, time.UTC)
+	parents := []Account{
+		radarQuotaOpenAIAccount(1, "pro"),
+		radarQuotaOpenAIAccount(2, "pro"),
+		radarQuotaOpenAIAccount(3, "pro"),
+	}
+	parent1, parent2, parent3 := int64(1), int64(2), int64(3)
+	accounts := &radarQuotaAccountListerFake{accounts: []Account{
+		parents[0],
+		{ID: 101, Platform: PlatformOpenAI, Type: AccountTypeOAuth, ParentAccountID: &parent1, QuotaDimension: QuotaDimensionSpark},
+		{ID: 102, Platform: PlatformOpenAI, Type: AccountTypeOAuth, ParentAccountID: &parent2, QuotaDimension: QuotaDimensionSpark},
+		parents[1],
+		{ID: 103, Platform: PlatformOpenAI, Type: AccountTypeOAuth, ParentAccountID: &parent3, QuotaDimension: QuotaDimensionSpark},
+		parents[2],
+	}}
+	usage := &radarQuotaUsageReaderFake{snapshots: map[int64]*UsageInfo{
+		1:   {FiveHour: radarQuotaProgress(10)},
+		101: {FiveHour: radarQuotaProgress(99)}, // same subscription: parent wins
+		102: {FiveHour: radarQuotaProgress(20)}, // parent has no passive snapshot
+		103: {FiveHour: radarQuotaProgress(30)},
+	}}
+	batch := &radarQuotaBatchReaderFake{}
+	cache := &radarQuotaCacheFake{}
+	aggregator := newRadarQuotaTestAggregator(t, accounts, usage, batch, cache, radarQuotaTestConfig(), func() time.Time { return now })
+
+	require.NoError(t, aggregator.RunOnce(context.Background()))
+	require.Len(t, cache.writes, 1)
+	snapshot := cache.writes[0]
+	require.Equal(t, "openai/pro", snapshot.BucketKey)
+	require.Equal(t, 3, snapshot.AccountsCount, "a parent and its Spark shadow must be one privacy contributor")
+	require.NotNil(t, snapshot.FiveHour)
+	require.InDelta(t, 20, snapshot.FiveHour.AvgUtilization, 1e-12)
+	require.Equal(t, []int64{1, 102, 103}, batch.windowCalls[0].accountIDs)
+	require.Equal(t, []int64{1, 102, 103}, batch.breakdownCalls[0].accountIDs)
+	require.NoError(t, ValidateRadarBucketSnapshot(snapshot))
+}
+
 func TestRadarQuotaAggregatorRunOnceFailurePrivacyAndDeterminism(t *testing.T) {
 	now := time.Date(2026, time.July, 13, 0, 0, 0, 0, time.UTC)
 

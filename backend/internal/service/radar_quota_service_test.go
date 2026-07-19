@@ -160,6 +160,8 @@ func TestRadarServiceGetQuotaBucketsLatestSortsFreshnessAndDeepClones(t *testing
 	repo := newRadarQuotaServiceTestRepo()
 	repo.keys = []string{"openai/pro", "anthropic/zeta", "anthropic/alpha"}
 	repo.latest["openai/pro"] = radarQuotaSnapshot("openai/pro", "OpenAI Pro", now.Add(-time.Minute))
+	repo.latest["openai/pro"].ModelBreakdown5h = nil
+	repo.latest["openai/pro"].ModelBreakdown7d = nil
 	repo.latest["anthropic/zeta"] = radarQuotaSnapshot("anthropic/zeta", "Claude Zeta", now.Add(-3*time.Minute))
 	repo.latest["anthropic/alpha"] = radarQuotaSnapshot("anthropic/alpha", "Claude Alpha", now.Add(-2*time.Minute))
 	repo.latest["anthropic/alpha"].FiveHour = &WindowStatsDTO{
@@ -190,6 +192,8 @@ func TestRadarServiceGetQuotaBucketsLatestSortsFreshnessAndDeepClones(t *testing
 	require.False(t, got.Stale)
 	for _, bucket := range got.Buckets {
 		require.False(t, bucket.Stale)
+		require.NotNil(t, bucket.ModelBreakdown5h)
+		require.NotNil(t, bucket.ModelBreakdown7d)
 	}
 
 	got.Buckets[0].BucketKey = "caller/mutation"
