@@ -101,10 +101,11 @@ func registerRoutes(
 	redisClient *redis.Client,
 ) {
 	// 通用路由（健康检查、状态等）
-	routes.RegisterCommonRoutes(r)
+	routes.RegisterCommonRoutes(r, cfg)
 
 	// API v1
 	v1 := r.Group("/api/v1")
+	registerPublicRoutes(v1, h)
 
 	// 注册各模块路由
 	routes.RegisterAuthRoutes(v1, h, jwtAuth, redisClient, settingService)
@@ -114,4 +115,10 @@ func registerRoutes(
 	routes.RegisterPaymentRoutes(v1, h.Payment, h.PaymentWebhook, h.Admin.Payment, jwtAuth, adminAuth, settingService)
 
 	handler.RegisterPageRoutes(v1, cfg.Pricing.DataDir, gin.HandlerFunc(jwtAuth), gin.HandlerFunc(adminAuth), settingService)
+}
+
+// registerPublicRoutes keeps public APIs on the unprotected v1 group. Auth,
+// admin, and API-key middleware are attached only by sibling route groups.
+func registerPublicRoutes(v1 *gin.RouterGroup, h *handler.Handlers) {
+	routes.RegisterRadarRoutes(v1, h.Radar)
 }

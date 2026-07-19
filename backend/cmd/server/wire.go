@@ -28,6 +28,20 @@ type Application struct {
 	Cleanup func()
 }
 
+type cleanupFactory func(radarRunner *service.RadarRunner) func()
+
+type radarFetchersConstructor func(cfg *config.Config) ([]service.RadarFetcher, error)
+
+type radarQuotaAggregatorConstructor func() (*service.RadarQuotaAggregator, error)
+
+type radarRunnerConstructor func(
+	cfg *config.Config,
+	repo service.RadarCacheRepository,
+	fetchers []service.RadarFetcher,
+	quotaAggregator *service.RadarQuotaAggregator,
+	runtimeGate service.RadarRuntimeSettingReader,
+) (*service.RadarRunner, error)
+
 func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	wire.Build(
 		// Infrastructure layer ProviderSets
@@ -51,9 +65,13 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 
 		// Cleanup function provider
 		provideCleanup,
+		provideRadarQuotaAggregatorConstructor,
+		provideRadarFetchersConstructor,
+		provideRadarRuntimeSettingReader,
 
-		// Application struct
-		wire.Struct(new(Application), "Server", "Cleanup"),
+		// Final application provider. Radar remains the final fallible constructor
+		// so failures can roll back all previously started dependencies.
+		provideApplication,
 	)
 	return nil, nil
 }
@@ -67,6 +85,89 @@ func provideServiceBuildInfo(buildInfo handler.BuildInfo) service.BuildInfo {
 		Version:   buildInfo.Version,
 		BuildType: buildInfo.BuildType,
 	}
+}
+
+func provideRadarQuotaAggregatorConstructor(
+	accountRepo service.AccountRepository,
+	usageReader service.RadarUsageSnapshotReader,
+	batchReader service.RadarQuotaBatchReader,
+	cacheRepo service.RadarCacheRepository,
+	cfg *config.Config,
+) radarQuotaAggregatorConstructor {
+	return func() (*service.RadarQuotaAggregator, error) {
+		return service.ProvideRadarQuotaAggregator(accountRepo, usageReader, batchReader, cacheRepo, cfg)
+	}
+}
+
+func provideRadarRuntimeSettingReader(settingService *service.SettingService) service.RadarRuntimeSettingReader {
+	return settingService
+}
+
+func provideRadarFetchersConstructor(modelCatalog *service.ModelCatalogService) radarFetchersConstructor {
+	return func(cfg *config.Config) ([]service.RadarFetcher, error) {
+		return service.NewRadarFetchers(cfg, modelCatalog)
+	}
+}
+
+func provideApplication(
+	httpServer *http.Server,
+	cfg *config.Config,
+	radarRepo service.RadarCacheRepository,
+	runtimeGate service.RadarRuntimeSettingReader,
+	radarAdminController *service.RadarAdminController,
+	newCleanup cleanupFactory,
+	newQuotaAggregator radarQuotaAggregatorConstructor,
+	newFetchers radarFetchersConstructor,
+) (*Application, error) {
+	return provideApplicationWithRadarConstructors(
+		httpServer,
+		cfg,
+		radarRepo,
+		runtimeGate,
+		radarAdminController,
+		newCleanup,
+		newQuotaAggregator,
+		newFetchers,
+		service.NewRadarRunner,
+	)
+}
+
+func provideApplicationWithRadarConstructors(
+	httpServer *http.Server,
+	cfg *config.Config,
+	radarRepo service.RadarCacheRepository,
+	runtimeGate service.RadarRuntimeSettingReader,
+	radarAdminController *service.RadarAdminController,
+	newCleanup cleanupFactory,
+	newQuotaAggregator radarQuotaAggregatorConstructor,
+	newFetchers radarFetchersConstructor,
+	newRunner radarRunnerConstructor,
+) (*Application, error) {
+	quotaAggregator, err := newQuotaAggregator()
+	if err != nil {
+		newCleanup(nil)()
+		return nil, err
+	}
+
+	fetchers, err := newFetchers(cfg)
+	if err != nil {
+		newCleanup(nil)()
+		return nil, err
+	}
+
+	radarRunner, err := newRunner(cfg, radarRepo, fetchers, quotaAggregator, runtimeGate)
+	if err != nil {
+		newCleanup(nil)()
+		return nil, err
+	}
+
+	cleanup := newCleanup(radarRunner)
+	if err := radarAdminController.BindRunner(radarRunner); err != nil {
+		cleanup()
+		return nil, err
+	}
+	radarRunner.Start()
+	return &Application{Server: httpServer, Cleanup: cleanup}, nil
 }
 
 func provideCleanup(
@@ -104,6 +205,84 @@ func provideCleanup(
 	channelMonitorRunner *service.ChannelMonitorRunner,
 	modelCatalogRefreshRunner *service.ModelCatalogRefreshRunner,
 	quotaFlusher *service.UserPlatformQuotaUsageFlusher,
+) cleanupFactory {
+	return func(radarRunner *service.RadarRunner) func() {
+		return provideFinalCleanup(
+			entClient,
+			rdb,
+			opsMetricsCollector,
+			opsAggregation,
+			opsAlertEvaluator,
+			opsCleanup,
+			opsScheduledReport,
+			opsSystemLogSink,
+			schedulerSnapshot,
+			tokenRefresh,
+			accountExpiry,
+			proxyExpiry,
+			subscriptionExpiry,
+			usageCleanup,
+			idempotencyCleanup,
+			pricing,
+			emailQueue,
+			billingCache,
+			usageRecordWorkerPool,
+			subscriptionService,
+			oauth,
+			openaiOAuth,
+			geminiOAuth,
+			antigravityOAuth,
+			grokOAuth,
+			openAIGateway,
+			scheduledTestRunner,
+			backupSvc,
+			paymentOrderExpiry,
+			miniMaxRemainsSyncRunner,
+			deepSeekBalanceHealthRunner,
+			channelMonitorRunner,
+			modelCatalogRefreshRunner,
+			quotaFlusher,
+			radarRunner,
+		)
+	}
+}
+
+func provideFinalCleanup(
+	entClient *ent.Client,
+	rdb *redis.Client,
+	opsMetricsCollector *service.OpsMetricsCollector,
+	opsAggregation *service.OpsAggregationService,
+	opsAlertEvaluator *service.OpsAlertEvaluatorService,
+	opsCleanup *service.OpsCleanupService,
+	opsScheduledReport *service.OpsScheduledReportService,
+	opsSystemLogSink *service.OpsSystemLogSink,
+	schedulerSnapshot *service.SchedulerSnapshotService,
+	tokenRefresh *service.TokenRefreshService,
+	accountExpiry *service.AccountExpiryService,
+	proxyExpiry *service.ProxyExpiryService,
+	subscriptionExpiry *service.SubscriptionExpiryService,
+	usageCleanup *service.UsageCleanupService,
+	idempotencyCleanup *service.IdempotencyCleanupService,
+	pricing *service.PricingService,
+	emailQueue *service.EmailQueueService,
+	billingCache *service.BillingCacheService,
+	usageRecordWorkerPool *service.UsageRecordWorkerPool,
+	subscriptionService *service.SubscriptionService,
+	oauth *service.OAuthService,
+	openaiOAuth *service.OpenAIOAuthService,
+	geminiOAuth *service.GeminiOAuthService,
+	antigravityOAuth *service.AntigravityOAuthService,
+	grokOAuth *service.GrokOAuthService,
+	openAIGateway *service.OpenAIGatewayService,
+	scheduledTestRunner *service.ScheduledTestRunnerService,
+	backupSvc *service.BackupService,
+	paymentOrderExpiry *service.PaymentOrderExpiryService,
+	miniMaxRemainsSyncRunner *service.MiniMaxRemainsSyncRunner,
+	deepSeekBalanceHealthRunner *service.DeepSeekBalanceHealthRunner,
+	channelMonitorRunner *service.ChannelMonitorRunner,
+	modelCatalogRefreshRunner *service.ModelCatalogRefreshRunner,
+	quotaFlusher *service.UserPlatformQuotaUsageFlusher,
+	radarRunner *service.RadarRunner,
 ) func() {
 	return func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -285,6 +464,12 @@ func provideCleanup(
 					quotaFlusher.Stop()
 				}
 				return nil
+			}},
+			{"RadarRunner", func() error {
+				if radarRunner == nil {
+					return nil
+				}
+				return radarRunner.Stop(ctx)
 			}},
 		}
 

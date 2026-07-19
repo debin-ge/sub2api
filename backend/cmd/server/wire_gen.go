@@ -188,7 +188,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	grokQuotaFetcher := service.NewGrokQuotaFetcher()
 	openAIQuotaService := service.ProvideOpenAIQuotaService(accountRepository, proxyRepository, openAITokenProvider, privacyClientFactory)
 	usageCache := service.NewUsageCache()
-	accountUsageService := service.NewAccountUsageService(accountRepository, usageLogRepository, claudeUsageFetcher, geminiQuotaService, antigravityQuotaFetcher, grokQuotaFetcher, openAIQuotaService, usageCache, identityCache, tlsFingerprintProfileService)
+	accountUsageService := service.ProvideAccountUsageService(accountRepository, usageLogRepository, claudeUsageFetcher, geminiQuotaService, antigravityQuotaFetcher, grokQuotaFetcher, openAIQuotaService, usageCache, identityCache, tlsFingerprintProfileService, configConfig)
 	accountTestService := service.NewAccountTestService(accountRepository, geminiTokenProvider, claudeTokenProvider, grokTokenProvider, antigravityGatewayService, httpUpstream, configConfig, tlsFingerprintProfileService, upstreamModelDiscoverer)
 	crsSyncService := service.NewCRSSyncService(accountRepository, proxyRepository, oAuthService, openAIOAuthService, geminiOAuthService, configConfig)
 	miniMaxTokenPlanClient := service.ProvideMiniMaxTokenPlanClient()
@@ -255,7 +255,16 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	resellerBalanceClient := service.ProvideResellerBalanceClient()
 	resellerHandler := admin.NewResellerHandler(configConfig, settingService, resellerBalanceClient)
 	complianceHandler := admin.NewComplianceHandler(settingService)
-	adminHandlers := handler.ProvideAdminHandlers(dashboardHandler, adminUserHandler, groupHandler, accountHandler, adminAnnouncementHandler, dataManagementHandler, backupHandler, oAuthHandler, openAIOAuthHandler, geminiOAuthHandler, antigravityOAuthHandler, grokOAuthHandler, proxyHandler, adminRedeemHandler, promoHandler, settingHandler, opsHandler, systemHandler, adminSubscriptionHandler, adminUsageHandler, userAttributeHandler, errorPassthroughHandler, tlsFingerprintProfileHandler, adminAPIKeyHandler, scheduledTestHandler, channelHandler, channelMonitorHandler, channelMonitorRequestTemplateHandler, contentModerationHandler, paymentHandler, affiliateHandler, resellerHandler, complianceHandler)
+	radarCacheRepository, err := repository.NewRadarCacheRepository(redisClient, configConfig)
+	if err != nil {
+		return nil, err
+	}
+	radarAdminController, err := service.NewRadarAdminController(configConfig, radarCacheRepository, settingService)
+	if err != nil {
+		return nil, err
+	}
+	radarHandler := admin.NewRadarHandler(radarAdminController)
+	adminHandlers := handler.ProvideAdminHandlers(dashboardHandler, adminUserHandler, groupHandler, accountHandler, adminAnnouncementHandler, dataManagementHandler, backupHandler, oAuthHandler, openAIOAuthHandler, geminiOAuthHandler, antigravityOAuthHandler, grokOAuthHandler, proxyHandler, adminRedeemHandler, promoHandler, settingHandler, opsHandler, systemHandler, adminSubscriptionHandler, adminUsageHandler, userAttributeHandler, errorPassthroughHandler, tlsFingerprintProfileHandler, adminAPIKeyHandler, scheduledTestHandler, channelHandler, channelMonitorHandler, channelMonitorRequestTemplateHandler, contentModerationHandler, paymentHandler, affiliateHandler, resellerHandler, complianceHandler, radarHandler)
 	usageRecordWorkerPool := service.NewUsageRecordWorkerPool(configConfig)
 	userMsgQueueCache := repository.NewUserMsgQueueCache(redisClient)
 	userMessageQueueService := service.ProvideUserMessageQueueService(userMsgQueueCache, rpmCache, configConfig)
@@ -282,14 +291,23 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	publicModelStatsProvider := handler.ProvidePublicModelStatsProvider(usageLogRepository)
 	billingFallbackProvider := handler.ProvideBillingFallbackProvider(billingService)
 	availableChannelHandler := handler.NewAvailableChannelHandler(channelService, apiKeyService, settingService, modelCatalogService, publicModelStatsProvider, billingFallbackProvider)
+	radarService, err := service.NewRadarService(configConfig, radarCacheRepository)
+	if err != nil {
+		return nil, err
+	}
+	handlerRadarHandler, err := handler.NewRadarHandler(configConfig, radarService)
+	if err != nil {
+		return nil, err
+	}
 	idempotencyCoordinator := service.ProvideIdempotencyCoordinator(idempotencyRepository, configConfig)
 	idempotencyCleanupService := service.ProvideIdempotencyCleanupService(idempotencyRepository, configConfig)
-	handlers := handler.ProvideHandlers(authHandler, userHandler, apiKeyHandler, usageHandler, redeemHandler, subscriptionHandler, announcementHandler, channelMonitorUserHandler, adminHandlers, gatewayHandler, openAIGatewayHandler, miniMaxGatewayHandler, glmGatewayHandler, kimiGatewayHandler, deepSeekGatewayHandler, windsurfGatewayHandler, openCodeGatewayHandler, handlerSettingHandler, totpHandler, handlerPaymentHandler, paymentWebhookHandler, availableChannelHandler, idempotencyCoordinator, idempotencyCleanupService)
+	handlers := handler.ProvideHandlers(authHandler, userHandler, apiKeyHandler, usageHandler, redeemHandler, subscriptionHandler, announcementHandler, channelMonitorUserHandler, adminHandlers, gatewayHandler, openAIGatewayHandler, miniMaxGatewayHandler, glmGatewayHandler, kimiGatewayHandler, deepSeekGatewayHandler, windsurfGatewayHandler, openCodeGatewayHandler, handlerSettingHandler, totpHandler, handlerPaymentHandler, paymentWebhookHandler, availableChannelHandler, handlerRadarHandler, idempotencyCoordinator, idempotencyCleanupService)
 	jwtAuthMiddleware := middleware.NewJWTAuthMiddleware(authService, userService)
 	adminAuthMiddleware := middleware.NewAdminAuthMiddleware(authService, userService, settingService)
 	apiKeyAuthMiddleware := middleware.NewAPIKeyAuthMiddleware(apiKeyService, subscriptionService, configConfig)
 	engine := server.ProvideRouter(configConfig, handlers, jwtAuthMiddleware, adminAuthMiddleware, apiKeyAuthMiddleware, apiKeyService, subscriptionService, opsService, settingService, redisClient)
 	httpServer := server.ProvideHTTPServer(configConfig, engine)
+	radarRuntimeSettingReader := provideRadarRuntimeSettingReader(settingService)
 	opsMetricsCollector := service.ProvideOpsMetricsCollector(opsRepository, settingRepository, accountRepository, concurrencyService, db, redisClient, configConfig)
 	opsAggregationService := service.ProvideOpsAggregationService(opsRepository, settingRepository, db, redisClient, configConfig)
 	opsAlertEvaluatorService := service.ProvideOpsAlertEvaluatorService(opsService, opsRepository, emailService, redisClient, configConfig, proxyRepository)
@@ -309,10 +327,12 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	channelMonitorRunner := service.ProvideChannelMonitorRunner(channelMonitorService, settingService)
 	modelCatalogRefreshRunner := service.ProvideModelCatalogRefreshRunner(modelCatalogService, modelCatalogConfig)
 	userPlatformQuotaUsageFlusher := service.ProvideUserPlatformQuotaUsageFlusher(configConfig, billingCache, serviceUserPlatformQuotaRepository, timingWheelService)
-	v := provideCleanup(client, redisClient, opsMetricsCollector, opsAggregationService, opsAlertEvaluatorService, opsCleanupService, opsScheduledReportService, opsSystemLogSink, schedulerSnapshotService, tokenRefreshService, accountExpiryService, proxyExpiryService, subscriptionExpiryService, usageCleanupService, idempotencyCleanupService, pricingService, emailQueueService, billingCacheService, usageRecordWorkerPool, subscriptionService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, grokOAuthService, openAIGatewayService, scheduledTestRunnerService, backupService, paymentOrderExpiryService, miniMaxRemainsSyncRunner, deepSeekBalanceHealthRunner, channelMonitorRunner, modelCatalogRefreshRunner, userPlatformQuotaUsageFlusher)
-	application := &Application{
-		Server:  httpServer,
-		Cleanup: v,
+	mainCleanupFactory := provideCleanup(client, redisClient, opsMetricsCollector, opsAggregationService, opsAlertEvaluatorService, opsCleanupService, opsScheduledReportService, opsSystemLogSink, schedulerSnapshotService, tokenRefreshService, accountExpiryService, proxyExpiryService, subscriptionExpiryService, usageCleanupService, idempotencyCleanupService, pricingService, emailQueueService, billingCacheService, usageRecordWorkerPool, subscriptionService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, grokOAuthService, openAIGatewayService, scheduledTestRunnerService, backupService, paymentOrderExpiryService, miniMaxRemainsSyncRunner, deepSeekBalanceHealthRunner, channelMonitorRunner, modelCatalogRefreshRunner, userPlatformQuotaUsageFlusher)
+	mainRadarQuotaAggregatorConstructor := provideRadarQuotaAggregatorConstructor(accountRepository, accountUsageService, usageLogRepository, radarCacheRepository, configConfig)
+	mainRadarFetchersConstructor := provideRadarFetchersConstructor(modelCatalogService)
+	application, err := provideApplication(httpServer, configConfig, radarCacheRepository, radarRuntimeSettingReader, radarAdminController, mainCleanupFactory, mainRadarQuotaAggregatorConstructor, mainRadarFetchersConstructor)
+	if err != nil {
+		return nil, err
 	}
 	return application, nil
 }
@@ -324,6 +344,20 @@ type Application struct {
 	Cleanup func()
 }
 
+type cleanupFactory func(radarRunner *service.RadarRunner) func()
+
+type radarFetchersConstructor func(cfg *config.Config) ([]service.RadarFetcher, error)
+
+type radarQuotaAggregatorConstructor func() (*service.RadarQuotaAggregator, error)
+
+type radarRunnerConstructor func(
+	cfg *config.Config,
+	repo service.RadarCacheRepository,
+	fetchers []service.RadarFetcher,
+	quotaAggregator *service.RadarQuotaAggregator,
+	runtimeGate service.RadarRuntimeSettingReader,
+) (*service.RadarRunner, error)
+
 func providePrivacyClientFactory() service.PrivacyClientFactory {
 	return repository.CreatePrivacyReqClient
 }
@@ -333,6 +367,88 @@ func provideServiceBuildInfo(buildInfo handler.BuildInfo) service.BuildInfo {
 		Version:   buildInfo.Version,
 		BuildType: buildInfo.BuildType,
 	}
+}
+
+func provideRadarQuotaAggregatorConstructor(
+	accountRepo service.AccountRepository,
+	usageReader service.RadarUsageSnapshotReader,
+	batchReader service.RadarQuotaBatchReader,
+	cacheRepo service.RadarCacheRepository,
+	cfg *config.Config,
+) radarQuotaAggregatorConstructor {
+	return func() (*service.RadarQuotaAggregator, error) {
+		return service.ProvideRadarQuotaAggregator(accountRepo, usageReader, batchReader, cacheRepo, cfg)
+	}
+}
+
+func provideRadarRuntimeSettingReader(settingService *service.SettingService) service.RadarRuntimeSettingReader {
+	return settingService
+}
+
+func provideRadarFetchersConstructor(modelCatalog *service.ModelCatalogService) radarFetchersConstructor {
+	return func(cfg *config.Config) ([]service.RadarFetcher, error) {
+		return service.NewRadarFetchers(cfg, modelCatalog)
+	}
+}
+
+func provideApplication(
+	httpServer *http.Server,
+	cfg *config.Config,
+	radarRepo service.RadarCacheRepository,
+	runtimeGate service.RadarRuntimeSettingReader,
+	radarAdminController *service.RadarAdminController,
+	newCleanup cleanupFactory,
+	newQuotaAggregator radarQuotaAggregatorConstructor,
+	newFetchers radarFetchersConstructor,
+) (*Application, error) {
+	return provideApplicationWithRadarConstructors(
+		httpServer,
+		cfg,
+		radarRepo,
+		runtimeGate,
+		radarAdminController,
+		newCleanup,
+		newQuotaAggregator,
+		newFetchers, service.NewRadarRunner,
+	)
+}
+
+func provideApplicationWithRadarConstructors(
+	httpServer *http.Server,
+	cfg *config.Config,
+	radarRepo service.RadarCacheRepository,
+	runtimeGate service.RadarRuntimeSettingReader,
+	radarAdminController *service.RadarAdminController,
+	newCleanup cleanupFactory,
+	newQuotaAggregator radarQuotaAggregatorConstructor,
+	newFetchers radarFetchersConstructor,
+	newRunner radarRunnerConstructor,
+) (*Application, error) {
+	quotaAggregator, err := newQuotaAggregator()
+	if err != nil {
+		newCleanup(nil)()
+		return nil, err
+	}
+
+	fetchers, err := newFetchers(cfg)
+	if err != nil {
+		newCleanup(nil)()
+		return nil, err
+	}
+
+	radarRunner, err := newRunner(cfg, radarRepo, fetchers, quotaAggregator, runtimeGate)
+	if err != nil {
+		newCleanup(nil)()
+		return nil, err
+	}
+
+	cleanup := newCleanup(radarRunner)
+	if err := radarAdminController.BindRunner(radarRunner); err != nil {
+		cleanup()
+		return nil, err
+	}
+	radarRunner.Start()
+	return &Application{Server: httpServer, Cleanup: cleanup}, nil
 }
 
 func provideCleanup(
@@ -370,6 +486,84 @@ func provideCleanup(
 	channelMonitorRunner *service.ChannelMonitorRunner,
 	modelCatalogRefreshRunner *service.ModelCatalogRefreshRunner,
 	quotaFlusher *service.UserPlatformQuotaUsageFlusher,
+) cleanupFactory {
+	return func(radarRunner *service.RadarRunner) func() {
+		return provideFinalCleanup(
+			entClient,
+			rdb,
+			opsMetricsCollector,
+			opsAggregation,
+			opsAlertEvaluator,
+			opsCleanup,
+			opsScheduledReport,
+			opsSystemLogSink,
+			schedulerSnapshot,
+			tokenRefresh,
+			accountExpiry,
+			proxyExpiry,
+			subscriptionExpiry,
+			usageCleanup,
+			idempotencyCleanup,
+			pricing,
+			emailQueue,
+			billingCache,
+			usageRecordWorkerPool,
+			subscriptionService,
+			oauth,
+			openaiOAuth,
+			geminiOAuth,
+			antigravityOAuth,
+			grokOAuth,
+			openAIGateway,
+			scheduledTestRunner,
+			backupSvc,
+			paymentOrderExpiry,
+			miniMaxRemainsSyncRunner,
+			deepSeekBalanceHealthRunner,
+			channelMonitorRunner,
+			modelCatalogRefreshRunner,
+			quotaFlusher,
+			radarRunner,
+		)
+	}
+}
+
+func provideFinalCleanup(
+	entClient *ent.Client,
+	rdb *redis.Client,
+	opsMetricsCollector *service.OpsMetricsCollector,
+	opsAggregation *service.OpsAggregationService,
+	opsAlertEvaluator *service.OpsAlertEvaluatorService,
+	opsCleanup *service.OpsCleanupService,
+	opsScheduledReport *service.OpsScheduledReportService,
+	opsSystemLogSink *service.OpsSystemLogSink,
+	schedulerSnapshot *service.SchedulerSnapshotService,
+	tokenRefresh *service.TokenRefreshService,
+	accountExpiry *service.AccountExpiryService,
+	proxyExpiry *service.ProxyExpiryService,
+	subscriptionExpiry *service.SubscriptionExpiryService,
+	usageCleanup *service.UsageCleanupService,
+	idempotencyCleanup *service.IdempotencyCleanupService,
+	pricing *service.PricingService,
+	emailQueue *service.EmailQueueService,
+	billingCache *service.BillingCacheService,
+	usageRecordWorkerPool *service.UsageRecordWorkerPool,
+	subscriptionService *service.SubscriptionService,
+	oauth *service.OAuthService,
+	openaiOAuth *service.OpenAIOAuthService,
+	geminiOAuth *service.GeminiOAuthService,
+	antigravityOAuth *service.AntigravityOAuthService,
+	grokOAuth *service.GrokOAuthService,
+	openAIGateway *service.OpenAIGatewayService,
+	scheduledTestRunner *service.ScheduledTestRunnerService,
+	backupSvc *service.BackupService,
+	paymentOrderExpiry *service.PaymentOrderExpiryService,
+	miniMaxRemainsSyncRunner *service.MiniMaxRemainsSyncRunner,
+	deepSeekBalanceHealthRunner *service.DeepSeekBalanceHealthRunner,
+	channelMonitorRunner *service.ChannelMonitorRunner,
+	modelCatalogRefreshRunner *service.ModelCatalogRefreshRunner,
+	quotaFlusher *service.UserPlatformQuotaUsageFlusher,
+	radarRunner *service.RadarRunner,
 ) func() {
 	return func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -550,6 +744,12 @@ func provideCleanup(
 					quotaFlusher.Stop()
 				}
 				return nil
+			}},
+			{"RadarRunner", func() error {
+				if radarRunner == nil {
+					return nil
+				}
+				return radarRunner.Stop(ctx)
 			}},
 		}
 

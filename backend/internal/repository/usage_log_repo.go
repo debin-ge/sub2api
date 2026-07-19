@@ -226,6 +226,11 @@ type usageLogRepository struct {
 	bestEffortRecent    *gocache.Cache
 }
 
+var (
+	_ service.UsageLogRepository    = (*usageLogRepository)(nil)
+	_ service.RadarQuotaBatchReader = (*usageLogRepository)(nil)
+)
+
 const (
 	usageLogCreateBatchMaxSize  = 64
 	usageLogCreateBatchWindow   = 3 * time.Millisecond
@@ -288,7 +293,7 @@ const (
 	usageLogCreateStateCanceled
 )
 
-func NewUsageLogRepository(client *dbent.Client, sqlDB *sql.DB) service.UsageLogRepository {
+func NewUsageLogRepository(client *dbent.Client, sqlDB *sql.DB) *usageLogRepository {
 	return newUsageLogRepositoryWithSQL(client, sqlDB)
 }
 
@@ -2189,7 +2194,7 @@ func (r *usageLogRepository) GetAccountWindowStatsBatch(ctx context.Context, acc
 		SELECT
 			account_id,
 			COUNT(*) as requests,
-			COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0) as tokens,
+			COALESCE(SUM(input_tokens::bigint + output_tokens::bigint + cache_creation_tokens::bigint + cache_read_tokens::bigint), 0) as tokens,
 			COALESCE(SUM(COALESCE(account_stats_cost, total_cost) * COALESCE(account_rate_multiplier, 1)), 0) as cost,
 			COALESCE(SUM(total_cost), 0) as standard_cost,
 			COALESCE(SUM(actual_cost), 0) as user_cost
@@ -2227,6 +2232,57 @@ func (r *usageLogRepository) GetAccountWindowStatsBatch(ctx context.Context, acc
 			result[accountID] = &usagestats.AccountStats{}
 		}
 	}
+	return result, nil
+}
+
+// GetAccountModelBreakdownBatch groups account-window usage by the raw
+// usage_logs.model value. Account cost and zero-cost row semantics deliberately
+// match GetAccountWindowStats.
+func (r *usageLogRepository) GetAccountModelBreakdownBatch(ctx context.Context, accountIDs []int64, startTime time.Time) (map[int64]map[string]service.ModelCostStats, error) {
+	result := make(map[int64]map[string]service.ModelCostStats)
+	normalizedAccountIDs := normalizePositiveInt64IDs(accountIDs)
+	if len(normalizedAccountIDs) == 0 {
+		return result, nil
+	}
+
+	query := `
+		SELECT
+			account_id,
+			model,
+			COUNT(*) as requests,
+			COALESCE(SUM(input_tokens::bigint + output_tokens::bigint + cache_creation_tokens::bigint + cache_read_tokens::bigint), 0) as tokens,
+			COALESCE(SUM(COALESCE(account_stats_cost, total_cost) * COALESCE(account_rate_multiplier, 1)), 0) as account_cost
+		FROM usage_logs
+		WHERE account_id = ANY($1) AND created_at >= $2
+		GROUP BY account_id, model
+	`
+	rows, err := r.sql.QueryContext(ctx, query, pq.Array(normalizedAccountIDs), startTime)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var (
+			accountID int64
+			model     string
+			stats     service.ModelCostStats
+		)
+		if err := rows.Scan(&accountID, &model, &stats.Requests, &stats.Tokens, &stats.AccountCost); err != nil {
+			return nil, err
+		}
+		if result[accountID] == nil {
+			result[accountID] = make(map[string]service.ModelCostStats)
+		}
+		result[accountID][model] = stats
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+
 	return result, nil
 }
 

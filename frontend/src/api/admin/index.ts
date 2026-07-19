@@ -33,6 +33,7 @@ import affiliatesAPI from './affiliates'
 import riskControlAPI from './riskControl'
 import adminComplianceAPI from './compliance'
 import resellerAPI from './reseller'
+import radarAdminAPI from './radar'
 
 /**
  * Unified admin API object for convenient access
@@ -67,7 +68,8 @@ export const adminAPI = {
   affiliates: affiliatesAPI,
   riskControl: riskControlAPI,
   compliance: adminComplianceAPI,
-  reseller: resellerAPI
+  reseller: resellerAPI,
+  radar: radarAdminAPI
 }
 
 export {
@@ -100,7 +102,8 @@ export {
   affiliatesAPI,
   riskControlAPI,
   adminComplianceAPI,
-  resellerAPI
+  resellerAPI,
+  radarAdminAPI
 }
 
 export default adminAPI
@@ -111,3 +114,11 @@ export type { ErrorPassthroughRule, CreateRuleRequest, UpdateRuleRequest } from 
 export type { BackupAgentHealth, DataManagementConfig } from './dataManagement'
 export type { TLSFingerprintProfile, CreateProfileRequest, UpdateProfileRequest } from './tlsFingerprintProfile'
 export type { ContentModerationConfig, ContentModerationLog, ModerationMode } from './riskControl'
+export type {
+  RadarAdminRefreshResult,
+  RadarAdminSafeError,
+  RadarAdminSettings,
+  RadarAdminSourceStatus,
+  RadarAdminState,
+  RadarAdminStatus,
+} from './radar'

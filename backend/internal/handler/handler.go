@@ -39,6 +39,7 @@ type AdminHandlers struct {
 	Affiliate              *admin.AffiliateHandler
 	Reseller               *admin.ResellerHandler
 	Compliance             *admin.ComplianceHandler
+	Radar                  *admin.RadarHandler
 }
 
 // Handlers contains all HTTP handlers
@@ -65,6 +66,7 @@ type Handlers struct {
 	Payment          *PaymentHandler
 	PaymentWebhook   *PaymentWebhookHandler
 	AvailableChannel *AvailableChannelHandler
+	Radar            *RadarHandler
 }
 
 // BuildInfo contains build-time information

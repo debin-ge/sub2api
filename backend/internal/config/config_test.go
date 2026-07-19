@@ -59,6 +59,324 @@ func TestModelCatalogValidation(t *testing.T) {
 	}
 }
 
+func TestRadarDefaults(t *testing.T) {
+	resetViperWithJWTSecret(t)
+
+	cfg, err := Load()
+
+	require.NoError(t, err)
+	require.True(t, cfg.Radar.Enabled)
+	require.Empty(t, cfg.Radar.MetricsBearerToken)
+	require.Equal(t, 15, cfg.Radar.QuotaAggregatorIntervalMin)
+	require.Equal(t, 7, cfg.Radar.QuotaHistoryRetentionDays)
+	require.Equal(t, 3, cfg.Radar.SampleSizeWarnBelow)
+	require.Equal(t, 2, cfg.Radar.PublicMinBucketAccounts)
+	require.Equal(t, 5.0, cfg.Radar.InferMinUtilization)
+	require.Equal(t, 0.3, cfg.Radar.InferMaxStdevRatio)
+	require.Empty(t, cfg.Radar.ArtificialAnalysisAPIKey)
+	require.Empty(t, cfg.Radar.ArtificialAnalysisModelSlugs)
+	require.Equal(t, 10, cfg.Radar.ExternalRequestTimeoutSeconds)
+	require.Equal(t, int64(10*1024*1024), cfg.Radar.ExternalResponseMaxBytes)
+	require.Equal(t, 6*60, cfg.Radar.ArtificialAnalysisModelsIntervalMinutes)
+	require.Equal(t, 24*60, cfg.Radar.ArtificialAnalysisPerformanceIntervalMinutes)
+	require.Equal(t, 24*60, cfg.Radar.LMArenaIntervalMinutes)
+	require.Equal(t, 30, cfg.Radar.StatuspageIntervalMinutes)
+	require.Equal(t, 7, cfg.Radar.SourceHardRetentionDays)
+	require.Equal(t, 30, cfg.Radar.QuotaStaleThresholdMinutes)
+	require.Equal(t, 60, cfg.Radar.HealthStaleThresholdMinutes)
+	require.Equal(t, 12*60, cfg.Radar.ArtificialAnalysisModelsStaleThresholdMinutes)
+	require.Equal(t, 48*60, cfg.Radar.ArtificialAnalysisPerformanceStaleThresholdMinutes)
+	require.Equal(t, 48*60, cfg.Radar.LMArenaStaleThresholdMinutes)
+	require.Equal(t, "https://datasets-server.huggingface.co/filter", cfg.Radar.LMArenaURL)
+}
+
+func TestRadarNormalizesArtificialAnalysisConfig(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	viper.Set("radar.artificial_analysis_api_key", "  aa-secret  ")
+	viper.Set("radar.artificial_analysis_model_slugs", []string{"  model-one  ", "", "   ", "model-two"})
+
+	cfg, err := Load()
+
+	require.NoError(t, err)
+	require.Equal(t, "aa-secret", cfg.Radar.ArtificialAnalysisAPIKey)
+	require.Equal(t, []string{"model-one", "model-two"}, cfg.Radar.ArtificialAnalysisModelSlugs)
+}
+
+func TestIsValidRadarModelSlug(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		valid bool
+	}{
+		{name: "single lowercase", value: "a", valid: true},
+		{name: "single digit", value: "7", valid: true},
+		{name: "allowed separators", value: "model.v1_alpha-beta", valid: true},
+		{name: "max bytes", value: strings.Repeat("a", 128), valid: true},
+		{name: "blank", value: "", valid: false},
+		{name: "path traversal", value: "../secret", valid: false},
+		{name: "uppercase", value: "Model-v1", valid: false},
+		{name: "leading punctuation", value: ".model", valid: false},
+		{name: "space", value: "model secret", valid: false},
+		{name: "too long", value: strings.Repeat("a", 129), valid: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.valid, IsValidRadarModelSlug(tt.value))
+		})
+	}
+}
+
+func TestRadarValidationRejectsUnsafeModelSlugsWithoutLeakingValues(t *testing.T) {
+	unsafeSlugs := []string{
+		"../secret",
+		"Uppercase-secret",
+		".leading-secret",
+		" \t ",
+		strings.Repeat("s", 129),
+	}
+
+	for _, unsafeSlug := range unsafeSlugs {
+		cfg := validConfigForTest(t)
+		cfg.Radar.ArtificialAnalysisModelSlugs = []string{"safe-model", unsafeSlug}
+
+		err := cfg.Validate()
+
+		require.EqualError(t, err, "radar.artificial_analysis_model_slugs contains an invalid value")
+		require.NotContains(t, err.Error(), unsafeSlug)
+	}
+}
+
+func TestRadarValidationAllowsCanonicalAndDuplicateModelSlugs(t *testing.T) {
+	cfg := validConfigForTest(t)
+	cfg.Radar.ArtificialAnalysisModelSlugs = []string{
+		"model.v1_alpha-beta",
+		strings.Repeat("a", 128),
+		"model.v1_alpha-beta",
+	}
+
+	require.NoError(t, cfg.Validate())
+}
+
+func TestLoadRejectsUnsafeRadarModelSlugWithoutReturningConfigOrValue(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	unsafeSlug := "../load-secret-model"
+	viper.Set("radar.artificial_analysis_model_slugs", []string{"safe-model", unsafeSlug})
+
+	cfg, err := Load()
+
+	require.Nil(t, cfg)
+	require.EqualError(t, err, "validate config error: radar.artificial_analysis_model_slugs contains an invalid value")
+	require.NotContains(t, err.Error(), unsafeSlug)
+}
+
+func TestRadarExplicitDisableIsHonored(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	t.Setenv("RADAR_ENABLED", "false")
+
+	cfg, err := Load()
+
+	require.NoError(t, err)
+	require.False(t, cfg.Radar.Enabled)
+}
+
+func TestRadarMetricsBearerTokenLoadsFromEnvironmentAndIsTrimmed(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	t.Setenv("RADAR_METRICS_BEARER_TOKEN", "  secret-from-store  ")
+
+	cfg, err := Load()
+
+	require.NoError(t, err)
+	require.Equal(t, "secret-from-store", cfg.Radar.MetricsBearerToken)
+}
+
+func TestRadarValidation(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*Config)
+		want   string
+	}{
+		{"zero aggregator interval", func(c *Config) { c.Radar.QuotaAggregatorIntervalMin = 0 }, "quota_aggregator_interval_min"},
+		{"zero quota retention", func(c *Config) { c.Radar.QuotaHistoryRetentionDays = 0 }, "quota_history_retention_days"},
+		{"sample warning below one", func(c *Config) { c.Radar.SampleSizeWarnBelow = 0 }, "sample_size_warn_below"},
+		{"public bucket below two", func(c *Config) { c.Radar.PublicMinBucketAccounts = 1 }, "public_min_bucket_accounts"},
+		{"public bucket above warning threshold", func(c *Config) { c.Radar.PublicMinBucketAccounts = c.Radar.SampleSizeWarnBelow + 1 }, "public_min_bucket_accounts"},
+		{"zero inference utilization", func(c *Config) { c.Radar.InferMinUtilization = 0 }, "infer_min_utilization"},
+		{"excess inference utilization", func(c *Config) { c.Radar.InferMinUtilization = 100.1 }, "infer_min_utilization"},
+		{"zero inference deviation ratio", func(c *Config) { c.Radar.InferMaxStdevRatio = 0 }, "infer_max_stdev_ratio"},
+		{"excess inference deviation ratio", func(c *Config) { c.Radar.InferMaxStdevRatio = 1.1 }, "infer_max_stdev_ratio"},
+		{"zero request timeout", func(c *Config) { c.Radar.ExternalRequestTimeoutSeconds = 0 }, "external_request_timeout_seconds"},
+		{"zero response limit", func(c *Config) { c.Radar.ExternalResponseMaxBytes = 0 }, "external_response_max_bytes"},
+		{"zero AA models interval", func(c *Config) { c.Radar.ArtificialAnalysisModelsIntervalMinutes = 0 }, "artificial_analysis_models_interval_minutes"},
+		{"zero AA performance interval", func(c *Config) { c.Radar.ArtificialAnalysisPerformanceIntervalMinutes = 0 }, "artificial_analysis_performance_interval_minutes"},
+		{"zero LMArena interval", func(c *Config) { c.Radar.LMArenaIntervalMinutes = 0 }, "lmarena_interval_minutes"},
+		{"zero Statuspage interval", func(c *Config) { c.Radar.StatuspageIntervalMinutes = 0 }, "statuspage_interval_minutes"},
+		{"zero hard retention", func(c *Config) { c.Radar.SourceHardRetentionDays = 0 }, "source_hard_retention_days"},
+		{"zero quota stale threshold", func(c *Config) { c.Radar.QuotaStaleThresholdMinutes = 0 }, "quota_stale_threshold_minutes"},
+		{"zero health stale threshold", func(c *Config) { c.Radar.HealthStaleThresholdMinutes = 0 }, "health_stale_threshold_minutes"},
+		{"zero AA models stale threshold", func(c *Config) { c.Radar.ArtificialAnalysisModelsStaleThresholdMinutes = 0 }, "artificial_analysis_models_stale_threshold_minutes"},
+		{"zero AA performance stale threshold", func(c *Config) { c.Radar.ArtificialAnalysisPerformanceStaleThresholdMinutes = 0 }, "artificial_analysis_performance_stale_threshold_minutes"},
+		{"zero LMArena stale threshold", func(c *Config) { c.Radar.LMArenaStaleThresholdMinutes = 0 }, "lmarena_stale_threshold_minutes"},
+		{"hard retention below stale threshold", func(c *Config) { c.Radar.SourceHardRetentionDays = 1 }, "source_hard_retention_days"},
+		{"empty LMArena URL", func(c *Config) { c.Radar.LMArenaURL = "" }, "lmarena_url"},
+		{"invalid LMArena URL", func(c *Config) { c.Radar.LMArenaURL = "://bad-url" }, "lmarena_url"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := validConfigForTest(t)
+			tt.mutate(cfg)
+			require.ErrorContains(t, cfg.Validate(), tt.want)
+		})
+	}
+}
+
+func TestRadarValidationRejectsUntrustedLMArenaEndpointsWithOrWithoutProxy(t *testing.T) {
+	tests := []string{
+		"http://datasets-server.huggingface.co/filter",
+		"https://127.0.0.1/filter",
+		"https://10.0.0.1/filter",
+		"https://[::1]/filter",
+		"https://user:secret@datasets-server.huggingface.co/filter",
+		"https://example.com/filter",
+		"https://datasets-server.huggingface.co:8443/filter",
+		"https://datasets-server.huggingface.co/filter#fragment",
+		"https://datasets-server.huggingface.co/filter?dataset=attacker/dataset",
+	}
+	for _, endpoint := range tests {
+		for _, proxyURL := range []string{"", "http://127.0.0.1:8080"} {
+			cfg := validConfigForTest(t)
+			cfg.Radar.LMArenaURL = endpoint
+			cfg.Update.ProxyURL = proxyURL
+			err := cfg.Validate()
+			require.ErrorContains(t, err, "radar.lmarena_url")
+			require.NotContains(t, err.Error(), "secret")
+		}
+	}
+}
+
+func TestRadarValidationAllowsCanonicalLMArenaEndpoint(t *testing.T) {
+	cfg := validConfigForTest(t)
+	cfg.Radar.LMArenaURL = "https://datasets-server.huggingface.co/filter"
+	require.NoError(t, cfg.Validate())
+}
+
+func TestRadarValidationAllowsSafeBoundaries(t *testing.T) {
+	cfg := validConfigForTest(t)
+	cfg.Radar.SampleSizeWarnBelow = 2
+	cfg.Radar.PublicMinBucketAccounts = 2
+	cfg.Radar.SourceHardRetentionDays = 2
+
+	require.NoError(t, cfg.Validate())
+}
+
+func TestRadarValidationAllowsHardMaximumBoundaries(t *testing.T) {
+	cfg := validConfigForTest(t)
+	cfg.Radar.QuotaAggregatorIntervalMin = 1440
+	cfg.Radar.QuotaHistoryRetentionDays = 30
+	cfg.Radar.ExternalRequestTimeoutSeconds = 120
+	cfg.Radar.ExternalResponseMaxBytes = int64(100 * 1024 * 1024)
+	cfg.Radar.ArtificialAnalysisModelsIntervalMinutes = 10080
+	cfg.Radar.ArtificialAnalysisPerformanceIntervalMinutes = 10080
+	cfg.Radar.LMArenaIntervalMinutes = 10080
+	cfg.Radar.StatuspageIntervalMinutes = 10080
+	cfg.Radar.SourceHardRetentionDays = 30
+	cfg.Radar.QuotaStaleThresholdMinutes = 30 * 1440
+	cfg.Radar.HealthStaleThresholdMinutes = 30 * 1440
+	cfg.Radar.ArtificialAnalysisModelsStaleThresholdMinutes = 30 * 1440
+	cfg.Radar.ArtificialAnalysisPerformanceStaleThresholdMinutes = 30 * 1440
+	cfg.Radar.LMArenaStaleThresholdMinutes = 30 * 1440
+
+	require.NoError(t, cfg.Validate())
+}
+
+func TestRadarValidationRejectsValuesAboveHardMaximums(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*Config)
+		want   string
+	}{
+		{"aggregator interval", func(c *Config) { c.Radar.QuotaAggregatorIntervalMin = 1441 }, "quota_aggregator_interval_min"},
+		{"quota retention", func(c *Config) { c.Radar.QuotaHistoryRetentionDays = 31 }, "quota_history_retention_days"},
+		{"request timeout", func(c *Config) { c.Radar.ExternalRequestTimeoutSeconds = 121 }, "external_request_timeout_seconds"},
+		{"response limit", func(c *Config) { c.Radar.ExternalResponseMaxBytes = int64(100*1024*1024) + 1 }, "external_response_max_bytes"},
+		{"AA models interval", func(c *Config) { c.Radar.ArtificialAnalysisModelsIntervalMinutes = 10081 }, "artificial_analysis_models_interval_minutes"},
+		{"AA performance interval", func(c *Config) { c.Radar.ArtificialAnalysisPerformanceIntervalMinutes = 10081 }, "artificial_analysis_performance_interval_minutes"},
+		{"LMArena interval", func(c *Config) { c.Radar.LMArenaIntervalMinutes = 10081 }, "lmarena_interval_minutes"},
+		{"Statuspage interval", func(c *Config) { c.Radar.StatuspageIntervalMinutes = 10081 }, "statuspage_interval_minutes"},
+		{"source hard retention", func(c *Config) { c.Radar.SourceHardRetentionDays = 31 }, "source_hard_retention_days"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := validConfigForTest(t)
+			tt.mutate(cfg)
+			require.ErrorContains(t, cfg.Validate(), tt.want)
+		})
+	}
+}
+
+func TestRadarValidationRejectsStaleThresholdAboveRetention(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*Config)
+		want   string
+	}{
+		{"quota", func(c *Config) { c.Radar.QuotaStaleThresholdMinutes = c.Radar.SourceHardRetentionDays*1440 + 1 }, "quota_stale_threshold_minutes"},
+		{"health", func(c *Config) { c.Radar.HealthStaleThresholdMinutes = c.Radar.SourceHardRetentionDays*1440 + 1 }, "health_stale_threshold_minutes"},
+		{"AA models", func(c *Config) {
+			c.Radar.ArtificialAnalysisModelsStaleThresholdMinutes = c.Radar.SourceHardRetentionDays*1440 + 1
+		}, "artificial_analysis_models_stale_threshold_minutes"},
+		{"AA performance", func(c *Config) {
+			c.Radar.ArtificialAnalysisPerformanceStaleThresholdMinutes = c.Radar.SourceHardRetentionDays*1440 + 1
+		}, "artificial_analysis_performance_stale_threshold_minutes"},
+		{"LMArena", func(c *Config) { c.Radar.LMArenaStaleThresholdMinutes = c.Radar.SourceHardRetentionDays*1440 + 1 }, "lmarena_stale_threshold_minutes"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := validConfigForTest(t)
+			tt.mutate(cfg)
+			require.ErrorContains(t, cfg.Validate(), tt.want)
+		})
+	}
+}
+
+func TestRadarValidationRejectsStaleThresholdBelowProducerCadence(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*Config)
+		want   string
+	}{
+		{"quota", func(c *Config) { c.Radar.QuotaStaleThresholdMinutes = c.Radar.QuotaAggregatorIntervalMin - 1 }, "quota_stale_threshold_minutes"},
+		{"health", func(c *Config) { c.Radar.HealthStaleThresholdMinutes = c.Radar.StatuspageIntervalMinutes - 1 }, "health_stale_threshold_minutes"},
+		{"AA models", func(c *Config) {
+			c.Radar.ArtificialAnalysisModelsStaleThresholdMinutes = c.Radar.ArtificialAnalysisModelsIntervalMinutes - 1
+		}, "artificial_analysis_models_stale_threshold_minutes"},
+		{"AA performance", func(c *Config) {
+			c.Radar.ArtificialAnalysisPerformanceStaleThresholdMinutes = c.Radar.ArtificialAnalysisPerformanceIntervalMinutes - 1
+		}, "artificial_analysis_performance_stale_threshold_minutes"},
+		{"LMArena", func(c *Config) { c.Radar.LMArenaStaleThresholdMinutes = c.Radar.LMArenaIntervalMinutes - 1 }, "lmarena_stale_threshold_minutes"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := validConfigForTest(t)
+			tt.mutate(cfg)
+			require.ErrorContains(t, cfg.Validate(), tt.want)
+		})
+	}
+}
+
+func TestRadarDisabledStillRejectsUnsafeConfig(t *testing.T) {
+	cfg := validConfigForTest(t)
+	cfg.Radar.Enabled = false
+	cfg.Radar.ExternalResponseMaxBytes = 0
+
+	// Disabled only stops jobs; structural validation keeps runtime re-enablement safe.
+	require.ErrorContains(t, cfg.Validate(), "radar.external_response_max_bytes")
+}
+
 func validConfigForTest(t *testing.T) *Config {
 	t.Helper()
 	resetViperWithJWTSecret(t)

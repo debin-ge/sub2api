@@ -31,6 +31,16 @@ const routes: RouteRecordRaw[] = [
 
   // ==================== Public Routes ====================
   {
+    path: '/',
+    name: 'RadarHome',
+    component: () => import('@/views/public/RadarHomeView.vue'),
+    meta: {
+      requiresAuth: false,
+      title: 'Model Radar',
+      titleKey: 'radar.pageTitle'
+    }
+  },
+  {
     path: '/home',
     name: 'Home',
     component: () => import('@/views/HomeView.vue'),
@@ -227,10 +237,6 @@ const routes: RouteRecordRaw[] = [
   },
 
   // ==================== User Routes ====================
-  {
-    path: '/',
-    redirect: '/home'
-  },
   {
     path: '/dashboard',
     name: 'Dashboard',
@@ -740,7 +746,7 @@ let authInitialized = false
 const navigationLoading = useNavigationLoadingState()
 // 延迟初始化预加载，传入 router 实例
 let routePrefetch: ReturnType<typeof useRoutePrefetch> | null = null
-const BACKEND_MODE_ALLOWED_PATHS = ['/login', '/key-usage', '/docs', '/apps', '/plaza', '/setup', '/payment/result', '/payment/airwallex', '/legal']
+const BACKEND_MODE_ALLOWED_PATHS = ['/', '/login', '/key-usage', '/docs', '/apps', '/plaza', '/setup', '/payment/result', '/payment/airwallex', '/legal']
 const BACKEND_MODE_CALLBACK_PATHS = [
   '/auth/callback',
   '/auth/linuxdo/callback',
@@ -752,8 +758,10 @@ const BACKEND_MODE_CALLBACK_PATHS = [
 ]
 const BACKEND_MODE_PENDING_AUTH_PATHS = ['/register', '/email-verify']
 
-function isBackendModePublicRouteAllowed(path: string, hasPendingAuthSession: boolean): boolean {
-  if (BACKEND_MODE_ALLOWED_PATHS.some((allowedPath) => path === allowedPath || path.startsWith(`${allowedPath}/`))) {
+export function isBackendModePublicRouteAllowed(path: string, hasPendingAuthSession: boolean): boolean {
+  if (BACKEND_MODE_ALLOWED_PATHS.some((allowedPath) =>
+    path === allowedPath || (allowedPath !== '/' && path.startsWith(`${allowedPath}/`))
+  )) {
     return true
   }
 

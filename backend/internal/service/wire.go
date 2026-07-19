@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
@@ -203,6 +204,54 @@ func ProvideOpenAIQuotaService(
 	privacyClientFactory PrivacyClientFactory,
 ) *OpenAIQuotaService {
 	return NewOpenAIQuotaService(accountRepo, proxyRepo, tokenProvider, privacyClientFactory)
+}
+
+// ProvideAccountUsageService injects Radar's validated hard-retention policy
+// while NewAccountUsageService remains source-compatible for existing callers.
+func ProvideAccountUsageService(
+	accountRepo AccountRepository,
+	usageLogRepo UsageLogRepository,
+	usageFetcher ClaudeUsageFetcher,
+	geminiQuotaService *GeminiQuotaService,
+	antigravityQuotaFetcher *AntigravityQuotaFetcher,
+	grokQuotaFetcher *GrokQuotaFetcher,
+	openAIQuotaService *OpenAIQuotaService,
+	cache *UsageCache,
+	identityCache IdentityCache,
+	tlsFPProfileService *TLSFingerprintProfileService,
+	cfg *config.Config,
+) *AccountUsageService {
+	svc := NewAccountUsageService(
+		accountRepo,
+		usageLogRepo,
+		usageFetcher,
+		geminiQuotaService,
+		antigravityQuotaFetcher,
+		grokQuotaFetcher,
+		openAIQuotaService,
+		cache,
+		identityCache,
+		tlsFPProfileService,
+	)
+	if cfg != nil && cfg.Radar.SourceHardRetentionDays > 0 {
+		svc.radarSnapshotHardRetention = time.Duration(cfg.Radar.SourceHardRetentionDays) * 24 * time.Hour
+	}
+	return svc
+}
+
+// ProvideRadarQuotaAggregator statically constructs the single quota
+// aggregator instance consumed by RadarRunner through the server lifecycle.
+func ProvideRadarQuotaAggregator(
+	accountRepo AccountRepository,
+	usageReader RadarUsageSnapshotReader,
+	batchReader RadarQuotaBatchReader,
+	cacheRepo RadarCacheRepository,
+	cfg *config.Config,
+) (*RadarQuotaAggregator, error) {
+	if cfg == nil {
+		return nil, errors.New("radar quota aggregator requires config")
+	}
+	return NewRadarQuotaAggregator(accountRepo, usageReader, batchReader, cacheRepo, &cfg.Radar)
 }
 
 func ProvideGrokQuotaService(
@@ -627,6 +676,7 @@ func ProvideAPIKeyService(
 
 // ProviderSet is the Wire provider set for all services
 var ProviderSet = wire.NewSet(
+	NewRadarAdminController,
 	// Core services
 	NewAuthService,
 	NewUserService,
@@ -686,8 +736,12 @@ var ProviderSet = wire.NewSet(
 	ProvideModelCatalogConfig,
 	NewModelCatalogService,
 	ProvideModelCatalogRefreshRunner,
+	NewRadarService,
+	wire.Bind(new(RadarPublicService), new(*RadarService)),
 	ProvideRateLimitService,
-	NewAccountUsageService,
+	ProvideAccountUsageService,
+	wire.Bind(new(RadarUsageSnapshotReader), new(*AccountUsageService)),
+	ProvideRadarQuotaAggregator,
 	NewAccountTestService,
 	ProvideSettingService,
 	NewDataManagementService,

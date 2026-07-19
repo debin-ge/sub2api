@@ -23,6 +23,8 @@ func RegisterAdminRoutes(
 		// 部署与运营合规确认
 		registerAdminComplianceRoutes(admin, h)
 
+		registerAdminRadarRoutes(admin, h)
+
 		// 仪表盘
 		registerDashboardRoutes(admin, h)
 
@@ -109,6 +111,15 @@ func RegisterAdminRoutes(
 
 		// 邀请返利（专属用户管理）
 		registerAffiliateRoutes(admin, h)
+	}
+}
+
+func registerAdminRadarRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	radar := admin.Group("/radar")
+	{
+		radar.GET("/status", h.Admin.Radar.GetStatus)
+		radar.PUT("/settings", h.Admin.Radar.UpdateSettings)
+		radar.POST("/refresh", h.Admin.Radar.Refresh)
 	}
 }
 

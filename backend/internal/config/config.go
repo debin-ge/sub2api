@@ -4,6 +4,7 @@ package config
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -58,6 +59,18 @@ const (
 // 可通过 gateway.upstream_response_read_max_bytes 配置项覆盖。
 const DefaultUpstreamResponseReadMaxBytes int64 = 128 * 1024 * 1024
 
+// Radar safety limits bound time.Duration conversions, retained data, and
+// memory allocated while reading external responses.
+const (
+	radarMinutesPerDay                    = 24 * 60
+	radarMaxQuotaAggregatorIntervalMin    = radarMinutesPerDay
+	radarMaxQuotaHistoryRetentionDays     = 30
+	radarMaxExternalRequestTimeoutSeconds = 120
+	radarMaxExternalResponseBytes         = int64(100 * 1024 * 1024)
+	radarMaxSourceIntervalMinutes         = 7 * radarMinutesPerDay
+	radarMaxSourceHardRetentionDays       = 30
+)
+
 type Config struct {
 	Server                  ServerConfig                  `mapstructure:"server"`
 	Log                     LogConfig                     `mapstructure:"log"`
@@ -80,6 +93,7 @@ type Config struct {
 	RateLimit               RateLimitConfig               `mapstructure:"rate_limit"`
 	Pricing                 PricingConfig                 `mapstructure:"pricing"`
 	ModelCatalog            ModelCatalogConfig            `mapstructure:"model_catalog"`
+	Radar                   RadarConfig                   `mapstructure:"radar"`
 	Gateway                 GatewayConfig                 `mapstructure:"gateway"`
 	APIKeyAuth              APIKeyAuthCacheConfig         `mapstructure:"api_key_auth_cache"`
 	SubscriptionCache       SubscriptionCacheConfig       `mapstructure:"subscription_cache"`
@@ -103,6 +117,33 @@ type ModelCatalogConfig struct {
 	StaleTTLSeconds        int `mapstructure:"stale_ttl_seconds"`
 	FailureBackoffSeconds  int `mapstructure:"failure_backoff_seconds"`
 	MaxConcurrency         int `mapstructure:"max_concurrency"`
+}
+
+// RadarConfig controls public Model Radar aggregation and external data sources.
+type RadarConfig struct {
+	Enabled                                            bool     `mapstructure:"enabled"`
+	MetricsBearerToken                                 string   `mapstructure:"metrics_bearer_token"`
+	QuotaAggregatorIntervalMin                         int      `mapstructure:"quota_aggregator_interval_min"`
+	QuotaHistoryRetentionDays                          int      `mapstructure:"quota_history_retention_days"`
+	SampleSizeWarnBelow                                int      `mapstructure:"sample_size_warn_below"`
+	PublicMinBucketAccounts                            int      `mapstructure:"public_min_bucket_accounts"`
+	InferMinUtilization                                float64  `mapstructure:"infer_min_utilization"`
+	InferMaxStdevRatio                                 float64  `mapstructure:"infer_max_stdev_ratio"`
+	ArtificialAnalysisAPIKey                           string   `mapstructure:"artificial_analysis_api_key"`
+	ArtificialAnalysisModelSlugs                       []string `mapstructure:"artificial_analysis_model_slugs"`
+	ExternalRequestTimeoutSeconds                      int      `mapstructure:"external_request_timeout_seconds"`
+	ExternalResponseMaxBytes                           int64    `mapstructure:"external_response_max_bytes"`
+	ArtificialAnalysisModelsIntervalMinutes            int      `mapstructure:"artificial_analysis_models_interval_minutes"`
+	ArtificialAnalysisPerformanceIntervalMinutes       int      `mapstructure:"artificial_analysis_performance_interval_minutes"`
+	LMArenaIntervalMinutes                             int      `mapstructure:"lmarena_interval_minutes"`
+	StatuspageIntervalMinutes                          int      `mapstructure:"statuspage_interval_minutes"`
+	SourceHardRetentionDays                            int      `mapstructure:"source_hard_retention_days"`
+	QuotaStaleThresholdMinutes                         int      `mapstructure:"quota_stale_threshold_minutes"`
+	HealthStaleThresholdMinutes                        int      `mapstructure:"health_stale_threshold_minutes"`
+	ArtificialAnalysisModelsStaleThresholdMinutes      int      `mapstructure:"artificial_analysis_models_stale_threshold_minutes"`
+	ArtificialAnalysisPerformanceStaleThresholdMinutes int      `mapstructure:"artificial_analysis_performance_stale_threshold_minutes"`
+	LMArenaStaleThresholdMinutes                       int      `mapstructure:"lmarena_stale_threshold_minutes"`
+	LMArenaURL                                         string   `mapstructure:"lmarena_url"`
 }
 
 type LogConfig struct {
@@ -1526,6 +1567,10 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 	cfg.Log.Output.FilePath = strings.TrimSpace(cfg.Log.Output.FilePath)
 	cfg.Reseller.UpstreamEndpoint = strings.TrimRight(strings.TrimSpace(cfg.Reseller.UpstreamEndpoint), "/")
 	cfg.Reseller.UpstreamAPIKey = strings.TrimSpace(cfg.Reseller.UpstreamAPIKey)
+	cfg.Radar.ArtificialAnalysisAPIKey = strings.TrimSpace(cfg.Radar.ArtificialAnalysisAPIKey)
+	cfg.Radar.MetricsBearerToken = strings.TrimSpace(cfg.Radar.MetricsBearerToken)
+	cfg.Radar.ArtificialAnalysisModelSlugs = normalizeStringSlice(cfg.Radar.ArtificialAnalysisModelSlugs)
+	cfg.Radar.LMArenaURL = strings.TrimSpace(cfg.Radar.LMArenaURL)
 	cfg.Gateway.ForcedCodexInstructionsTemplateFile = strings.TrimSpace(cfg.Gateway.ForcedCodexInstructionsTemplateFile)
 	if cfg.Gateway.ForcedCodexInstructionsTemplateFile != "" {
 		content, err := os.ReadFile(cfg.Gateway.ForcedCodexInstructionsTemplateFile)
@@ -1604,6 +1649,29 @@ func setDefaults() {
 	viper.SetDefault("model_catalog.stale_ttl_seconds", 86400)
 	viper.SetDefault("model_catalog.failure_backoff_seconds", 60)
 	viper.SetDefault("model_catalog.max_concurrency", 5)
+	viper.SetDefault("radar.enabled", true)
+	viper.SetDefault("radar.metrics_bearer_token", "")
+	viper.SetDefault("radar.quota_aggregator_interval_min", 15)
+	viper.SetDefault("radar.quota_history_retention_days", 7)
+	viper.SetDefault("radar.sample_size_warn_below", 3)
+	viper.SetDefault("radar.public_min_bucket_accounts", 2)
+	viper.SetDefault("radar.infer_min_utilization", 5.0)
+	viper.SetDefault("radar.infer_max_stdev_ratio", 0.3)
+	viper.SetDefault("radar.artificial_analysis_api_key", "")
+	viper.SetDefault("radar.artificial_analysis_model_slugs", []string{})
+	viper.SetDefault("radar.external_request_timeout_seconds", 10)
+	viper.SetDefault("radar.external_response_max_bytes", int64(10*1024*1024))
+	viper.SetDefault("radar.artificial_analysis_models_interval_minutes", 6*60)
+	viper.SetDefault("radar.artificial_analysis_performance_interval_minutes", 24*60)
+	viper.SetDefault("radar.lmarena_interval_minutes", 24*60)
+	viper.SetDefault("radar.statuspage_interval_minutes", 30)
+	viper.SetDefault("radar.source_hard_retention_days", 7)
+	viper.SetDefault("radar.quota_stale_threshold_minutes", 30)
+	viper.SetDefault("radar.health_stale_threshold_minutes", 60)
+	viper.SetDefault("radar.artificial_analysis_models_stale_threshold_minutes", 12*60)
+	viper.SetDefault("radar.artificial_analysis_performance_stale_threshold_minutes", 48*60)
+	viper.SetDefault("radar.lmarena_stale_threshold_minutes", 48*60)
+	viper.SetDefault("radar.lmarena_url", "https://datasets-server.huggingface.co/filter")
 
 	// Server
 	viper.SetDefault("server.host", "0.0.0.0")
@@ -2071,6 +2139,115 @@ func setDefaults() {
 
 }
 
+// IsValidRadarModelSlug reports whether value is safe for use as a canonical
+// Radar model identifier and Redis key component. Length is measured in bytes.
+func IsValidRadarModelSlug(value string) bool {
+	if len(value) == 0 || len(value) > 128 || !isRadarSlugLowerAlphaNumeric(value[0]) {
+		return false
+	}
+	for i := 1; i < len(value); i++ {
+		if !isRadarSlugLowerAlphaNumeric(value[i]) && value[i] != '.' && value[i] != '_' && value[i] != '-' {
+			return false
+		}
+	}
+	return true
+}
+
+func isRadarSlugLowerAlphaNumeric(value byte) bool {
+	return value >= 'a' && value <= 'z' || value >= '0' && value <= '9'
+}
+
+// Validate rejects unsafe Radar limits and inconsistent retention settings.
+func (c RadarConfig) Validate() error {
+	// Enabled controls job scheduling only. Validate the complete structure even
+	// while disabled so a later runtime re-enable cannot activate unsafe values.
+	for _, configuredSlug := range c.ArtificialAnalysisModelSlugs {
+		if !IsValidRadarModelSlug(strings.TrimSpace(configuredSlug)) {
+			return fmt.Errorf("radar.artificial_analysis_model_slugs contains an invalid value")
+		}
+	}
+	if c.QuotaAggregatorIntervalMin <= 0 || c.QuotaAggregatorIntervalMin > radarMaxQuotaAggregatorIntervalMin {
+		return fmt.Errorf("radar.quota_aggregator_interval_min must be between 1 and %d", radarMaxQuotaAggregatorIntervalMin)
+	}
+	if c.QuotaHistoryRetentionDays <= 0 || c.QuotaHistoryRetentionDays > radarMaxQuotaHistoryRetentionDays {
+		return fmt.Errorf("radar.quota_history_retention_days must be between 1 and %d", radarMaxQuotaHistoryRetentionDays)
+	}
+	if c.SampleSizeWarnBelow < 1 {
+		return fmt.Errorf("radar.sample_size_warn_below must be at least 1")
+	}
+	if c.PublicMinBucketAccounts < 2 || c.PublicMinBucketAccounts > c.SampleSizeWarnBelow {
+		return fmt.Errorf("radar.public_min_bucket_accounts must be between 2 and sample_size_warn_below")
+	}
+	if !(c.InferMinUtilization > 0 && c.InferMinUtilization <= 100) {
+		return fmt.Errorf("radar.infer_min_utilization must be greater than 0 and at most 100")
+	}
+	if !(c.InferMaxStdevRatio > 0 && c.InferMaxStdevRatio <= 1) {
+		return fmt.Errorf("radar.infer_max_stdev_ratio must be greater than 0 and at most 1")
+	}
+	if c.ExternalRequestTimeoutSeconds <= 0 || c.ExternalRequestTimeoutSeconds > radarMaxExternalRequestTimeoutSeconds {
+		return fmt.Errorf("radar.external_request_timeout_seconds must be between 1 and %d", radarMaxExternalRequestTimeoutSeconds)
+	}
+	if c.ExternalResponseMaxBytes <= 0 || c.ExternalResponseMaxBytes > radarMaxExternalResponseBytes {
+		return fmt.Errorf("radar.external_response_max_bytes must be between 1 and %d", radarMaxExternalResponseBytes)
+	}
+	if c.ArtificialAnalysisModelsIntervalMinutes <= 0 || c.ArtificialAnalysisModelsIntervalMinutes > radarMaxSourceIntervalMinutes {
+		return fmt.Errorf("radar.artificial_analysis_models_interval_minutes must be between 1 and %d", radarMaxSourceIntervalMinutes)
+	}
+	if c.ArtificialAnalysisPerformanceIntervalMinutes <= 0 || c.ArtificialAnalysisPerformanceIntervalMinutes > radarMaxSourceIntervalMinutes {
+		return fmt.Errorf("radar.artificial_analysis_performance_interval_minutes must be between 1 and %d", radarMaxSourceIntervalMinutes)
+	}
+	if c.LMArenaIntervalMinutes <= 0 || c.LMArenaIntervalMinutes > radarMaxSourceIntervalMinutes {
+		return fmt.Errorf("radar.lmarena_interval_minutes must be between 1 and %d", radarMaxSourceIntervalMinutes)
+	}
+	if c.StatuspageIntervalMinutes <= 0 || c.StatuspageIntervalMinutes > radarMaxSourceIntervalMinutes {
+		return fmt.Errorf("radar.statuspage_interval_minutes must be between 1 and %d", radarMaxSourceIntervalMinutes)
+	}
+	if c.SourceHardRetentionDays <= 0 || c.SourceHardRetentionDays > radarMaxSourceHardRetentionDays {
+		return fmt.Errorf("radar.source_hard_retention_days must be between 1 and %d", radarMaxSourceHardRetentionDays)
+	}
+	staleThresholds := []struct {
+		name    string
+		minutes int
+		cadence int
+	}{
+		{"quota_stale_threshold_minutes", c.QuotaStaleThresholdMinutes, c.QuotaAggregatorIntervalMin},
+		{"health_stale_threshold_minutes", c.HealthStaleThresholdMinutes, c.StatuspageIntervalMinutes},
+		{"artificial_analysis_models_stale_threshold_minutes", c.ArtificialAnalysisModelsStaleThresholdMinutes, c.ArtificialAnalysisModelsIntervalMinutes},
+		{"artificial_analysis_performance_stale_threshold_minutes", c.ArtificialAnalysisPerformanceStaleThresholdMinutes, c.ArtificialAnalysisPerformanceIntervalMinutes},
+		{"lmarena_stale_threshold_minutes", c.LMArenaStaleThresholdMinutes, c.LMArenaIntervalMinutes},
+	}
+	retentionWindowMinutes := c.SourceHardRetentionDays * radarMinutesPerDay
+	for _, threshold := range staleThresholds {
+		if threshold.minutes <= 0 {
+			return fmt.Errorf("radar.%s must be positive", threshold.name)
+		}
+		if threshold.minutes > retentionWindowMinutes {
+			return fmt.Errorf("radar.%s must not exceed source_hard_retention_days (%d minutes)", threshold.name, retentionWindowMinutes)
+		}
+		if threshold.minutes < threshold.cadence {
+			return fmt.Errorf("radar.%s must be at least its producer cadence (%d minutes)", threshold.name, threshold.cadence)
+		}
+	}
+	if err := validateRadarLMArenaURL(c.LMArenaURL); err != nil {
+		return errors.New("radar.lmarena_url is invalid")
+	}
+	return nil
+}
+
+func validateRadarLMArenaURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.Hostname() != "datasets-server.huggingface.co" || u.User != nil || u.Fragment != "" {
+		return errors.New("untrusted endpoint")
+	}
+	if port := u.Port(); port != "" && port != "443" {
+		return errors.New("untrusted endpoint")
+	}
+	if u.Path != "/filter" || u.RawPath != "" || u.ForceQuery || u.RawQuery != "" {
+		return errors.New("untrusted endpoint")
+	}
+	return nil
+}
+
 func (c *Config) Validate() error {
 	if c.ModelCatalog.RefreshIntervalSeconds <= 0 {
 		return fmt.Errorf("model_catalog.refresh_interval_seconds must be positive")
@@ -2086,6 +2263,9 @@ func (c *Config) Validate() error {
 	}
 	if c.ModelCatalog.MaxConcurrency < 1 || c.ModelCatalog.MaxConcurrency > 32 {
 		return fmt.Errorf("model_catalog.max_concurrency must be between 1-32")
+	}
+	if err := c.Radar.Validate(); err != nil {
+		return err
 	}
 
 	jwtSecret := strings.TrimSpace(c.JWT.Secret)

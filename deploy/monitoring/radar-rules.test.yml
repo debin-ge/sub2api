@@ -1,0 +1,289 @@
+rule_files:
+  - radar-alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'radar_source_age_seconds{source="status_claude",instance="fresh"}'
+        values: '100'
+      - series: 'radar_source_age_seconds{source="status_claude",instance="lagging"}'
+        values: '5000'
+      - series: 'radar_source_age_seconds{source="status_openai",instance="a"}'
+        values: '5000'
+      - series: 'radar_source_age_seconds{source="status_openai",instance="b"}'
+        values: '5100'
+      - series: 'radar_aggregator_bucket_count{instance="old"}'
+        values: '10'
+      - series: 'radar_aggregator_bucket_count{instance="synced"}'
+        values: '1'
+      - series: 'radar_cache_memory_bytes{cache="quota_bucket",instance="a"}'
+        values: '40000000'
+      - series: 'radar_cache_memory_bytes{cache="quota_bucket",instance="b"}'
+        values: '40000000'
+      - series: 'radar_cache_memory_bytes{cache="aa",instance="a"}'
+        values: '10000000'
+      - series: 'radar_cache_memory_bytes{cache="aa",instance="b"}'
+        values: '10000000'
+    promql_expr_test:
+      - expr: 'min by (source) (radar_source_age_seconds >= 0)'
+        eval_time: 0m
+        exp_samples:
+          - labels: '{source="status_claude"}'
+            value: 100
+          - labels: '{source="status_openai"}'
+            value: 5000
+      - expr: 'max by (source) (radar_source_age_seconds) < 0 or min by (source) (radar_source_age_seconds{source=~"status_claude|status_openai"} >= 0) > 3600'
+        eval_time: 0m
+        exp_samples:
+          - labels: '{source="status_openai"}'
+            value: 5000
+      - expr: 'min(radar_aggregator_bucket_count)'
+        eval_time: 0m
+        exp_samples:
+          - labels: '{}'
+            value: 1
+      - expr: 'sum(max by (cache) (radar_cache_memory_bytes))'
+        eval_time: 0m
+        exp_samples:
+          - labels: '{}'
+            value: 50000000
+
+  - interval: 1m
+    input_series:
+      - series: 'radar_aggregator_bucket_count{job="radar-a",instance="original"}'
+        values: '10x1439 4x30'
+      - series: 'radar_aggregator_bucket_count{job="radar-a",instance="new-replica"}'
+        values: '_x1439 4x30'
+    alert_rule_test:
+      - eval_time: 24h16m
+        alertname: RadarBucketCountAnomalousDrop
+        exp_alerts:
+          - exp_labels:
+              job: radar-a
+              severity: critical
+            exp_annotations:
+              summary: "Published Radar quota bucket count dropped abnormally"
+              runbook: "deploy/monitoring/radar-runbook.md#radarbucketcountanomalousdrop"
+
+  - interval: 1m
+    input_series:
+      - series: 'radar_aggregator_bucket_count{job="radar-a",instance="original"}'
+        values: '10x1439 6x30'
+      - series: 'radar_aggregator_bucket_count{job="radar-a",instance="new-replica"}'
+        values: '_x1439 6x30'
+    alert_rule_test:
+      - eval_time: 24h16m
+        alertname: RadarBucketCountAnomalousDrop
+        exp_alerts: []
+
+  - interval: 1m
+    input_series:
+      - series: 'radar_aggregator_bucket_count{job="radar-a",instance="original"}'
+        values: '10x1439 10x30'
+      - series: 'radar_aggregator_bucket_count{job="radar-a",instance="duplicate"}'
+        values: '20x1439 12x30'
+      - series: 'radar_aggregator_bucket_count{job="radar-a",instance="new-replica"}'
+        values: '_x1439 10x30'
+    alert_rule_test:
+      - eval_time: 24h16m
+        alertname: RadarBucketCountAnomalousDrop
+        exp_alerts: []
+
+  - interval: 1m
+    input_series:
+      - series: 'radar_aggregator_last_run_timestamp_seconds{job="radar-a",instance="only"}'
+        values: '0x10'
+      - series: 'radar_aggregator_interval_seconds{job="radar-a",instance="only"}'
+        values: '900x10'
+      - series: 'radar_enabled{job="radar-a",instance="only"}'
+        values: '1x10'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: RadarAggregatorNoRecentRun
+        exp_alerts:
+          - exp_labels:
+              job: radar-a
+              severity: critical
+            exp_annotations:
+              summary: "Radar quota aggregation has not completed recently"
+              runbook: "deploy/monitoring/radar-runbook.md#radaraggregatornorecentrun"
+
+  - interval: 1m
+    input_series:
+      - series: 'radar_aggregator_last_run_timestamp_seconds{job="radar-a",instance="running"}'
+        values: '0+60x60'
+      - series: 'radar_aggregator_last_run_timestamp_seconds{job="radar-a",instance="restarted"}'
+        values: '0x60'
+      - series: 'radar_aggregator_interval_seconds{job="radar-a",instance="running"}'
+        values: '900x60'
+      - series: 'radar_aggregator_interval_seconds{job="radar-a",instance="restarted"}'
+        values: '900x60'
+      - series: 'radar_enabled{job="radar-a",instance="running"}'
+        values: '1x60'
+      - series: 'radar_enabled{job="radar-a",instance="restarted"}'
+        values: '1x60'
+    alert_rule_test:
+      - eval_time: 60m
+        alertname: RadarAggregatorNoRecentRun
+        exp_alerts: []
+
+  - interval: 1m
+    input_series:
+      - series: 'radar_aggregator_last_run_timestamp_seconds{job="radar-a",instance="old"}'
+        values: '1000x60'
+      - series: 'radar_aggregator_interval_seconds{job="radar-a",instance="old"}'
+        values: '900x60'
+      - series: 'radar_aggregator_last_run_timestamp_seconds{job="radar-b",instance="healthy"}'
+        values: '0+60x60'
+      - series: 'radar_aggregator_interval_seconds{job="radar-b",instance="healthy"}'
+        values: '900x60'
+      - series: 'radar_enabled{job="radar-a",instance="old"}'
+        values: '1x60'
+      - series: 'radar_enabled{job="radar-b",instance="healthy"}'
+        values: '1x60'
+    alert_rule_test:
+      - eval_time: 60m
+        alertname: RadarAggregatorNoRecentRun
+        exp_alerts:
+          - exp_labels:
+              job: radar-a
+              severity: critical
+            exp_annotations:
+              summary: "Radar quota aggregation has not completed recently"
+              runbook: "deploy/monitoring/radar-runbook.md#radaraggregatornorecentrun"
+
+  - interval: 1m
+    input_series:
+      - series: 'radar_source_age_seconds{job="radar-a",source="status_claude",instance="a"}'
+        values: '5000x20'
+      - series: 'radar_source_age_seconds{job="radar-b",source="status_claude",instance="b"}'
+        values: '100x20'
+      - series: 'radar_fetch_failure_total{job="radar-a",source="status_claude",instance="a",reason="network_error"}'
+        values: '0+1x20'
+      - series: 'radar_fetch_failure_total{job="radar-b",source="status_claude",instance="b",reason="network_error"}'
+        values: '0+1x20'
+      - series: 'radar_fetch_success_total{job="radar-b",source="status_claude",instance="b"}'
+        values: '0+1x20'
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: RadarSourceDataStale
+        exp_alerts:
+          - exp_labels:
+              job: radar-a
+              source: status_claude
+              severity: critical
+            exp_annotations:
+              summary: "Model Radar source has no recent successful data"
+              runbook: "deploy/monitoring/radar-runbook.md#radarsourcedatastale"
+      - eval_time: 10m
+        alertname: RadarSourceSustainedFailure
+        exp_alerts:
+          - exp_labels:
+              job: radar-a
+              source: status_claude
+              severity: warning
+            exp_annotations:
+              summary: "Model Radar source is repeatedly failing"
+              runbook: "deploy/monitoring/radar-runbook.md#radarsourcesustainedfailure"
+
+  - interval: 1m
+    input_series:
+      - series: 'radar_cache_memory_bytes{job="radar-a",cache="quota_bucket",instance="a1"}'
+        values: '40000000'
+      - series: 'radar_cache_memory_bytes{job="radar-a",cache="quota_bucket",instance="a2"}'
+        values: '40000000'
+      - series: 'radar_cache_memory_bytes{job="radar-a",cache="aa",instance="a1"}'
+        values: '10000000'
+      - series: 'radar_cache_memory_bytes{job="radar-b",cache="quota_bucket",instance="b1"}'
+        values: '20000000'
+    promql_expr_test:
+      - expr: 'sum by (job) (max by (job, cache) (radar_cache_memory_bytes))'
+        eval_time: 0m
+        exp_samples:
+          - labels: '{job="radar-a"}'
+            value: 50000000
+          - labels: '{job="radar-b"}'
+            value: 20000000
+
+  - interval: 1m
+    input_series:
+      - series: 'radar_source_age_seconds{job="radar-a",source="status_claude",instance="a"}'
+        values: '100x20'
+      - series: 'radar_source_age_seconds{job="radar-a",source="status_openai",instance="a"}'
+        values: '100x20'
+      - series: 'radar_source_age_seconds{job="radar-a",source="aa",instance="a"}'
+        values: '-1x20'
+      - series: 'radar_source_age_seconds{job="radar-a",source="aa_performance",instance="a"}'
+        values: '100x20'
+      - series: 'radar_source_age_seconds{job="radar-a",source="lmarena",instance="a"}'
+        values: '100x20'
+      - series: 'radar_source_age_seconds{job="radar-b",source="status_claude",instance="b"}'
+        values: '100x20'
+      - series: 'radar_source_age_seconds{job="radar-b",source="status_openai",instance="b"}'
+        values: '100x20'
+      - series: 'radar_source_age_seconds{job="radar-b",source="aa",instance="b"}'
+        values: '100x20'
+      - series: 'radar_source_age_seconds{job="radar-b",source="aa_performance",instance="b"}'
+        values: '100x20'
+      - series: 'radar_source_age_seconds{job="radar-b",source="lmarena",instance="b"}'
+        values: '100x20'
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: RadarLatestSuccessVisibilityBelowTarget
+        exp_alerts:
+          - exp_labels:
+              job: radar-a
+              severity: critical
+              target: "100_percent"
+            exp_annotations:
+              summary: "Not every Radar source exposes recent successful data"
+              runbook: "deploy/monitoring/radar-runbook.md#radarlatestsuccessvisibilitybelowtarget"
+
+  - interval: 1m
+    input_series:
+      - series: 'radar_aggregator_runs_total{job="radar-a",instance="a",result="failure",reason="aggregation_error"}'
+        values: '0+1x20'
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: RadarQuotaSnapshotSuccessBelowTarget
+        exp_alerts:
+          - exp_labels:
+              job: radar-a
+              severity: critical
+              target: "99_percent"
+            exp_annotations:
+              summary: "Radar quota snapshot success rate is below 99%"
+              runbook: "deploy/monitoring/radar-runbook.md#radarquotasnapshotsuccessbelowtarget"
+
+  - interval: 1m
+    input_series:
+      - series: 'radar_http_requests_total{job="radar-a",instance="a",route="/api/v1/public/radar/service-health",status="2xx"}'
+        values: '0+10x20'
+    promql_expr_test:
+      - expr: '1 - (sum by (job) (rate(radar_http_requests_total{route=~"/api/v1/public/radar/(service-health|quota-buckets/latest|degradation/latest|lmarena|sources)",status="5xx"}[30m])) or on (job) (0 * sum by (job) (rate(radar_http_requests_total{route=~"/api/v1/public/radar/(service-health|quota-buckets/latest|degradation/latest|lmarena|sources)"}[30m])))) / clamp_min(sum by (job) (rate(radar_http_requests_total{route=~"/api/v1/public/radar/(service-health|quota-buckets/latest|degradation/latest|lmarena|sources)"}[30m])), 0.000001)'
+        eval_time: 16m
+        exp_samples:
+          - labels: '{job="radar-a"}'
+            value: 1
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: RadarCoreAvailabilityBelowTarget
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: RadarAPI5xxRateHigh
+        exp_alerts: []
+
+  - interval: 1m
+    input_series:
+      - series: 'radar_aggregator_last_run_timestamp_seconds{job="radar-disabled",instance="only"}'
+        values: '0x10'
+      - series: 'radar_aggregator_interval_seconds{job="radar-disabled",instance="only"}'
+        values: '900x10'
+      - series: 'radar_enabled{job="radar-disabled",instance="only"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: RadarAggregatorNoRecentRun
+        exp_alerts: []

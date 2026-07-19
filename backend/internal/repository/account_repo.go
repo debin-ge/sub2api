@@ -59,6 +59,7 @@ var schedulerNeutralExtraKeyPrefixes = []string{
 	"deepseek_balance_",
 	"minimax_",
 	"passive_usage_",
+	"radar_antigravity_",
 }
 
 var schedulerNeutralExtraKeys = map[string]struct{}{

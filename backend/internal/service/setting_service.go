@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -217,6 +218,22 @@ type SettingService struct {
 	// instance owns its own cache, no shared package-level state.
 	openAIQuotaAutoPauseSettingsCache atomic.Value // *cachedOpenAIQuotaAutoPauseSettings
 	openAIQuotaAutoPauseSettingsSF    singleflight.Group
+
+	// Radar runtime state is instance-local so separate application/test
+	// instances cannot leak values into each other. The mutex protects the
+	// in-flight read and generation; repository I/O is never performed while it
+	// is held. The atomic LKG uses 0 for unknown, 1 for false, and 2 for true.
+	radarEnabledMu         sync.Mutex
+	radarEnabledWriteMu    sync.Mutex
+	radarEnabledRead       *radarEnabledReadFlight
+	radarEnabledGeneration uint64
+	radarEnabledLKG        atomic.Uint32
+}
+
+type radarEnabledReadFlight struct {
+	generation uint64
+	done       chan struct{}
+	completed  bool
 }
 
 // DefaultPlatformQuotaSetting 单 platform 三档限额（nil = 沿用上层；0 = 显式禁用；>0 = 上限）
@@ -665,6 +682,128 @@ func NewSettingService(settingRepo SettingRepository, cfg *config.Config) *Setti
 		settingRepo: settingRepo,
 		cfg:         cfg,
 	}
+}
+
+const (
+	radarEnabledFalse uint32 = 1
+	radarEnabledTrue  uint32 = 2
+)
+
+// IsRadarEnabled resolves the effective runtime switch on every call. A
+// missing row inherits the static config without materializing a database row.
+// Canonical stored values are deliberately limited to the exact strings
+// "true" and "false". Storage failures and malformed values use this service
+// instance's last-known-good value; before any good value they fail closed.
+func (s *SettingService) IsRadarEnabled(ctx context.Context) bool {
+	if s == nil || s.settingRepo == nil {
+		return s.radarEnabledLastKnownGoodOrFalse()
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if ctx.Err() != nil {
+		return s.radarEnabledLastKnownGoodOrFalse()
+	}
+
+	s.radarEnabledMu.Lock()
+	if flight := s.radarEnabledRead; flight != nil {
+		done := flight.done
+		s.radarEnabledMu.Unlock()
+		select {
+		case <-done:
+			return s.radarEnabledLastKnownGoodOrFalse()
+		case <-ctx.Done():
+			return s.radarEnabledLastKnownGoodOrFalse()
+		}
+	}
+	flight := &radarEnabledReadFlight{
+		generation: s.radarEnabledGeneration,
+		done:       make(chan struct{}),
+	}
+	s.radarEnabledRead = flight
+	s.radarEnabledMu.Unlock()
+
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyRadarEnabled)
+	var (
+		resolved    bool
+		shouldStore bool
+	)
+	if err != nil {
+		if errors.Is(err, ErrSettingNotFound) {
+			resolved = s.cfg != nil && s.cfg.Radar.Enabled
+			shouldStore = true
+		} else {
+			slog.Debug("failed to read radar runtime setting", "class", "storage_error")
+		}
+	} else {
+		switch value {
+		case "true":
+			resolved = true
+			shouldStore = true
+		case "false":
+			resolved = false
+			shouldStore = true
+		default:
+			slog.Debug("invalid radar runtime setting", "class", "invalid_value")
+		}
+	}
+
+	s.radarEnabledMu.Lock()
+	if shouldStore && flight.generation == s.radarEnabledGeneration {
+		s.storeRadarEnabledLastKnownGood(resolved)
+	}
+	if s.radarEnabledRead == flight {
+		s.radarEnabledRead = nil
+	}
+	if !flight.completed {
+		flight.completed = true
+		close(flight.done)
+	}
+	s.radarEnabledMu.Unlock()
+
+	return s.radarEnabledLastKnownGoodOrFalse()
+}
+
+// SetRadarEnabled persists a canonical value. The LKG changes only after the
+// repository confirms the write, making a failed update invisible to runner
+// decisions in this process.
+func (s *SettingService) SetRadarEnabled(ctx context.Context, enabled bool) error {
+	if s == nil || s.settingRepo == nil {
+		return errors.New("radar runtime setting repository is unavailable")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	s.radarEnabledWriteMu.Lock()
+	defer s.radarEnabledWriteMu.Unlock()
+	if err := s.settingRepo.Set(ctx, SettingKeyRadarEnabled, strconv.FormatBool(enabled)); err != nil {
+		return fmt.Errorf("set radar runtime setting: %w", err)
+	}
+
+	s.radarEnabledMu.Lock()
+	s.radarEnabledGeneration++
+	s.storeRadarEnabledLastKnownGood(enabled)
+	if flight := s.radarEnabledRead; flight != nil && !flight.completed {
+		flight.completed = true
+		close(flight.done)
+	}
+	s.radarEnabledMu.Unlock()
+	return nil
+}
+
+func (s *SettingService) storeRadarEnabledLastKnownGood(enabled bool) {
+	if s == nil {
+		return
+	}
+	state := radarEnabledFalse
+	if enabled {
+		state = radarEnabledTrue
+	}
+	s.radarEnabledLKG.Store(state)
+}
+
+func (s *SettingService) radarEnabledLastKnownGoodOrFalse() bool {
+	return s != nil && s.radarEnabledLKG.Load() == radarEnabledTrue
 }
 
 // SetDefaultSubscriptionGroupReader injects an optional group reader for default subscription validation.

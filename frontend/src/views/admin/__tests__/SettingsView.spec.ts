@@ -26,6 +26,9 @@ const {
   adminSettingsFetch,
   showError,
   showSuccess,
+  getRadarAdminStatus,
+  updateRadarAdminSettings,
+  triggerRadarAdminRefresh,
 } = vi.hoisted(() => ({
   getSettings: vi.fn(),
   updateSettings: vi.fn(),
@@ -48,6 +51,9 @@ const {
   adminSettingsFetch: vi.fn(),
   showError: vi.fn(),
   showSuccess: vi.fn(),
+  getRadarAdminStatus: vi.fn(),
+  updateRadarAdminSettings: vi.fn(),
+  triggerRadarAdminRefresh: vi.fn(),
 }));
 
 const localeRef = vi.hoisted(() => ({ value: "zh-CN" }));
@@ -79,6 +85,17 @@ vi.mock("@/api", () => ({
       createProvider,
       deleteProvider,
     },
+  },
+}));
+
+vi.mock("@/api/admin/radar", () => ({
+  getRadarAdminStatus,
+  updateRadarAdminSettings,
+  triggerRadarAdminRefresh,
+  default: {
+    getStatus: getRadarAdminStatus,
+    updateSettings: updateRadarAdminSettings,
+    triggerRefresh: triggerRadarAdminRefresh,
   },
 }));
 
@@ -468,7 +485,7 @@ const baseSettingsResponse = {
   },
 };
 
-function mountView() {
+function mountView(stubRadar = true) {
   return mount(SettingsView, {
     global: {
       stubs: {
@@ -484,6 +501,9 @@ function mountView() {
         ProxySelector: true,
         ImageUpload: ImageUploadStub,
         BackupSettings: true,
+        RadarSettingsCard: stubRadar
+          ? { template: '<section data-testid="radar-settings-card-stub" />' }
+          : false,
       },
     },
   });
@@ -519,6 +539,16 @@ async function openUsersTab(wrapper: ReturnType<typeof mountView>) {
   await flushPromises();
 }
 
+async function openFeaturesTab(wrapper: ReturnType<typeof mountView>) {
+  const featuresTabButton = wrapper
+    .findAll("button")
+    .find((node) => node.text().includes("admin.settings.tabs.features"));
+
+  expect(featuresTabButton).toBeDefined();
+  await featuresTabButton?.trigger("click");
+  await flushPromises();
+}
+
 describe("admin SettingsView payment visible method controls", () => {
   beforeEach(() => {
     getSettings.mockReset();
@@ -542,6 +572,9 @@ describe("admin SettingsView payment visible method controls", () => {
     adminSettingsFetch.mockReset();
     showError.mockReset();
     showSuccess.mockReset();
+    getRadarAdminStatus.mockReset();
+    updateRadarAdminSettings.mockReset();
+    triggerRadarAdminRefresh.mockReset();
     localeRef.value = "zh-CN";
 
     getSettings.mockResolvedValue({ ...baseSettingsResponse });
@@ -596,6 +629,23 @@ describe("admin SettingsView payment visible method controls", () => {
     });
     fetchPublicSettings.mockResolvedValue(undefined);
     adminSettingsFetch.mockResolvedValue(undefined);
+    getRadarAdminStatus.mockRejectedValue(new Error("radar unavailable"));
+  });
+
+  it("contains a Radar request failure in Features while keeping the main save flow independent", async () => {
+    getRadarAdminStatus.mockRejectedValueOnce(new Error("redis://secret@internal"));
+    const wrapper = mountView(false);
+
+    await flushPromises();
+    await openFeaturesTab(wrapper);
+
+    expect(wrapper.find('[data-testid="radar-retry"]').exists()).toBe(true);
+    expect(wrapper.text()).not.toContain("redis://secret@internal");
+
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledTimes(1);
   });
 
   it("does not render legacy visible payment method controls", async () => {
@@ -790,6 +840,7 @@ describe("admin SettingsView payment visible method controls", () => {
           ProxySelector: true,
           ImageUpload: ImageUploadStub,
           BackupSettings: true,
+          RadarSettingsCard: true,
         },
       },
     });
@@ -883,6 +934,7 @@ describe("admin SettingsView payment visible method controls", () => {
           ProxySelector: true,
           ImageUpload: ImageUploadStub,
           BackupSettings: true,
+          RadarSettingsCard: true,
         },
       },
     });

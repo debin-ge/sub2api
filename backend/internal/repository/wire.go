@@ -76,6 +76,8 @@ var ProviderSet = wire.NewSet(
 	NewAnnouncementRepository,
 	NewAnnouncementReadRepository,
 	NewUsageLogRepository,
+	wire.Bind(new(service.UsageLogRepository), new(*usageLogRepository)),
+	wire.Bind(new(service.RadarQuotaBatchReader), new(*usageLogRepository)),
 	NewUsageBillingRepository,
 	NewIdempotencyRepository,
 	NewUsageCleanupRepository,
@@ -125,6 +127,7 @@ var ProviderSet = wire.NewSet(
 	NewErrorPassthroughCache,
 	NewTLSFingerprintProfileCache,
 	NewContentModerationHashCache,
+	NewRadarCacheRepository,
 
 	// Encryptors
 	NewAESEncryptor,

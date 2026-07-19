@@ -1,6 +1,11 @@
 package urlvalidator
 
-import "testing"
+import (
+	"context"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
 
 func TestValidateURLFormat(t *testing.T) {
 	if _, err := ValidateURLFormat("", false); err == nil {
@@ -72,4 +77,13 @@ func TestValidateHTTPURL(t *testing.T) {
 	if _, err := ValidateHTTPURL("https://localhost", false, ValidationOptions{AllowPrivate: false}); err == nil {
 		t.Fatalf("expected localhost to be blocked when allow_private_hosts is false")
 	}
+}
+
+func TestValidateResolvedIPContextHonorsCallerCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := ValidateResolvedIPContext(ctx, "caller-cancellation-test.invalid")
+
+	require.ErrorIs(t, err, context.Canceled)
 }

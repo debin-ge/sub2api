@@ -16,6 +16,7 @@
 package httpclient
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -55,9 +56,6 @@ type Options struct {
 
 // sharedClients 存储按配置参数缓存的 http.Client 实例
 var sharedClients sync.Map
-
-// 允许测试替换校验函数，生产默认指向真实实现。
-var validateResolvedIP = urlvalidator.ValidateResolvedIP
 
 // GetClient 返回共享的 HTTP 客户端实例
 // 性能优化：相同配置复用同一客户端，避免重复创建 Transport
@@ -156,15 +154,17 @@ func buildClientKey(opts Options) string {
 }
 
 type validatedTransport struct {
-	base           http.RoundTripper
-	validatedHosts sync.Map // map[string]time.Time, value 为过期时间
-	now            func() time.Time
+	base               http.RoundTripper
+	validatedHosts     sync.Map // map[string]time.Time, value 为过期时间
+	now                func() time.Time
+	validateResolvedIP func(context.Context, string) error
 }
 
 func newValidatedTransport(base http.RoundTripper) *validatedTransport {
 	return &validatedTransport{
-		base: base,
-		now:  time.Now,
+		base:               base,
+		now:                time.Now,
+		validateResolvedIP: urlvalidator.ValidateResolvedIPContext,
 	}
 }
 
@@ -189,7 +189,13 @@ func (t *validatedTransport) isValidatedHost(host string, now time.Time) bool {
 }
 
 func (t *validatedTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if t == nil || t.base == nil {
+		return nil, fmt.Errorf("validated transport base is nil")
+	}
 	if req != nil && req.URL != nil {
+		if err := req.Context().Err(); err != nil {
+			return nil, err
+		}
 		host := strings.ToLower(strings.TrimSpace(req.URL.Hostname()))
 		if host != "" {
 			now := time.Now()
@@ -197,15 +203,20 @@ func (t *validatedTransport) RoundTrip(req *http.Request) (*http.Response, error
 				now = t.now()
 			}
 			if !t.isValidatedHost(host, now) {
-				if err := validateResolvedIP(host); err != nil {
+				if t.validateResolvedIP == nil {
+					return nil, fmt.Errorf("resolved IP validator is nil")
+				}
+				if err := t.validateResolvedIP(req.Context(), host); err != nil {
 					return nil, err
 				}
 				t.validatedHosts.Store(host, now.Add(validatedHostTTL))
 			}
 		}
 	}
-	if t == nil || t.base == nil {
-		return nil, fmt.Errorf("validated transport base is nil")
+	if req != nil {
+		if err := req.Context().Err(); err != nil {
+			return nil, err
+		}
 	}
 	return t.base.RoundTrip(req)
 }
