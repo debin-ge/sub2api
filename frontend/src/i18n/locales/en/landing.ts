@@ -109,7 +109,7 @@ export default {
       button: 'Sign Up Free'
     },
     footer: {
-      allRightsReserved: 'TikToken is owned by Jerrywell Pte. Ltd.'
+      allRightsReserved: 'net is owned by Jerrywell Pte. Ltd.'
     }
   },
 

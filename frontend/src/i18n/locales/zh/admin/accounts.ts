@@ -1022,7 +1022,7 @@ export default {
           authCodeHint: '支持完整 callback URL、查询字符串或裸 code。',
           refreshTokenAuth: '手动输入 RT',
           refreshTokenDesc: '输入已有的 xAI refresh token，支持批量输入（每行一个）。',
-          refreshTokenPlaceholder: '粘贴您的 xAI refresh token...\n支持多个，每行一个',
+          refreshTokenPlaceholder: '粘贴您的 xAI Refresh Token...\n支持多个，每行一个',
           ssoCookieAuth: 'SSO Cookie 导入',
           ssoCookieDesc: '每行粘贴一个 Grok Web SSO key，系统会自动走 xAI Device Flow 并转换为 Grok Build OAuth 凭据。',
           ssoCookieLabel: 'Grok Web SSO Key',
