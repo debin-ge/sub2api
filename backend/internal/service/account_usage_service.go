@@ -869,10 +869,12 @@ func parseRadarUTCTime(value any) (time.Time, bool) {
 	if err != nil {
 		return time.Time{}, false
 	}
-	_, offset := parsed.Zone()
-	if offset != 0 {
-		return time.Time{}, false
-	}
+	// Older Codex snapshot writers formatted time.Now() directly. On hosts whose
+	// local timezone is not UTC (for example Asia/Shanghai), that persisted a
+	// perfectly valid RFC3339 value such as 2026-07-20T10:00:00+08:00. Radar
+	// previously rejected those rows even though the account page could read
+	// them, which made every OpenAI quota bucket disappear. Accept any explicit
+	// RFC3339 offset and normalize it before applying freshness checks.
 	return parsed.UTC(), true
 }
 

@@ -9,6 +9,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -20,6 +21,9 @@ const (
 	artificialAnalysisPerformanceURL = "https://artificialanalysis.ai/api/v2/language/models"
 	artificialAnalysisWindow         = "90d"
 	artificialAnalysisInterval       = "daily"
+	// The overview renders at most six radar series. When operators configure
+	// only an AA key, keep the automatic response bounded to that same size.
+	artificialAnalysisAutoModelLimit = 6
 )
 
 var (
@@ -199,9 +203,11 @@ func mapArtificialAnalysisModel(model ArtificialAnalysisModel) (DegradationModel
 	}, nil
 }
 
-// MapArtificialAnalysisModels maps only the configured AA models to public
-// degradation DTOs. Configuration order is authoritative and stable even when
-// the upstream response order changes. Optional metrics remain nil.
+// MapArtificialAnalysisModels maps configured AA models to public degradation
+// DTOs. Configuration order is authoritative when an allowlist is present. An
+// empty allowlist selects a bounded, deterministic set of the strongest models
+// that actually contain index data, so configuring only the API key cannot
+// silently produce an empty overview. Optional metrics remain nil.
 func MapArtificialAnalysisModels(models []ArtificialAnalysisModel, allowedSlugs []string) ([]DegradationModelDTO, error) {
 	if err := validateArtificialAnalysisModels(models); err != nil {
 		return nil, errInvalidArtificialAnalysisModelsResponse
@@ -209,6 +215,9 @@ func MapArtificialAnalysisModels(models []ArtificialAnalysisModel, allowedSlugs 
 	canonicalAllowedSlugs, err := normalizeArtificialAnalysisAllowedSlugs(allowedSlugs)
 	if err != nil {
 		return nil, err
+	}
+	if len(canonicalAllowedSlugs) == 0 {
+		return mapAutomaticArtificialAnalysisModels(models)
 	}
 	modelsBySlug := make(map[string]ArtificialAnalysisModel, len(models))
 	for _, model := range models {
@@ -228,6 +237,68 @@ func MapArtificialAnalysisModels(models []ArtificialAnalysisModel, allowedSlugs 
 		result = append(result, mapped)
 	}
 	return result, nil
+}
+
+func mapAutomaticArtificialAnalysisModels(models []ArtificialAnalysisModel) ([]DegradationModelDTO, error) {
+	candidates := make([]ArtificialAnalysisModel, 0, len(models))
+	for _, model := range models {
+		if model.IntelligenceIndex == nil && model.CodingIndex == nil && model.AgenticIndex == nil {
+			continue
+		}
+		candidates = append(candidates, model)
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		leftScore := artificialAnalysisModelIndexScore(candidates[i])
+		rightScore := artificialAnalysisModelIndexScore(candidates[j])
+		if leftScore != rightScore {
+			return leftScore > rightScore
+		}
+		leftRelease := artificialAnalysisModelReleaseTime(candidates[i])
+		rightRelease := artificialAnalysisModelReleaseTime(candidates[j])
+		if !leftRelease.Equal(rightRelease) {
+			return leftRelease.After(rightRelease)
+		}
+		return candidates[i].Slug < candidates[j].Slug
+	})
+	if len(candidates) > artificialAnalysisAutoModelLimit {
+		candidates = candidates[:artificialAnalysisAutoModelLimit]
+	}
+
+	result := make([]DegradationModelDTO, 0, len(candidates))
+	for _, model := range candidates {
+		mapped, err := mapArtificialAnalysisModel(model)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, mapped)
+	}
+	return result, nil
+}
+
+func artificialAnalysisModelIndexScore(model ArtificialAnalysisModel) float64 {
+	var total float64
+	var count int
+	for _, value := range []*float64{model.IntelligenceIndex, model.CodingIndex, model.AgenticIndex} {
+		if value != nil {
+			total += *value
+			count++
+		}
+	}
+	if count == 0 {
+		return 0
+	}
+	return total / float64(count)
+}
+
+func artificialAnalysisModelReleaseTime(model ArtificialAnalysisModel) time.Time {
+	if model.ReleasedAt == "" {
+		return time.Time{}
+	}
+	if parsed, err := time.Parse("2006-01-02", model.ReleasedAt); err == nil {
+		return parsed.UTC()
+	}
+	parsed, _ := time.Parse(time.RFC3339Nano, model.ReleasedAt)
+	return parsed.UTC()
 }
 
 func normalizeArtificialAnalysisAllowedSlugs(configuredSlugs []string) ([]string, error) {

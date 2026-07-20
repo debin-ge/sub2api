@@ -77,7 +77,7 @@
         {{ t('radar.degradation.empty', 'Waiting for benchmark data') }}
       </p>
 
-      <section v-if="allModels.length > 0" class="mt-8 border-t border-gray-200 pt-6 dark:border-dark-800">
+      <section v-if="trendModels.length > 0" class="mt-8 border-t border-gray-200 pt-6 dark:border-dark-800">
         <div class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h3 class="text-base font-semibold text-gray-950 dark:text-white">
@@ -92,7 +92,7 @@
                 data-testid="model-select"
                 class="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-dark-700 dark:bg-dark-800 dark:text-white"
               >
-                <option v-for="model in allModels" :key="model.slug" :value="model.slug">{{ model.name }}</option>
+                <option v-for="model in trendModels" :key="model.slug" :value="model.slug">{{ model.name }}</option>
               </select>
             </label>
             <label class="text-xs font-medium text-gray-600 dark:text-gray-300">
@@ -300,6 +300,7 @@ const metrics = computed(() => [
 ])
 const allModels = computed(() => props.latest?.models ?? [])
 const radarModels = computed(() => allModels.value.slice(0, 6))
+const trendModels = computed(() => props.latest?.trend_available ? allModels.value : [])
 const leaderboard = computed(() => [...(props.lmarena?.leaderboard ?? [])].sort((left, right) => left.rank - right.rank))
 const matchingTrend = computed(() => {
   if (!props.trend || props.trend.model_slug !== selectedModel.value || props.trend.metric !== selectedMetric.value) return null
@@ -395,7 +396,7 @@ const lineOptions = computed(() => {
   }
 })
 
-watch(allModels, (models) => {
+watch(trendModels, (models) => {
   if (!models.some((model) => model.slug === selectedModel.value)) selectedModel.value = models[0]?.slug ?? ''
 }, { immediate: true })
 watch([selectedModel, selectedMetric], ([model, metric]) => {

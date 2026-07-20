@@ -500,8 +500,9 @@ func (s *RadarService) GetDegradationLatest(ctx context.Context) (*DegradationLa
 		now = s.clock.Now().UTC()
 		arenaMeta, arenaMetaOK := metas[RadarSourceLMArena]
 		result := &DegradationLatestDTO{
-			Models:      models,
-			LMArenaTop5: topFive,
+			Models:         models,
+			LMArenaTop5:    topFive,
+			TrendAvailable: s.aaConfigured && len(s.modelSlugs) > 0,
 			SourcesLastUpdated: map[string]*time.Time{
 				"aa":      nil,
 				"lmarena": radarServiceMetaLastSuccess(arenaMeta, arenaMetaOK),
@@ -1326,6 +1327,7 @@ func cloneRadarServiceDegradationLatest(input *DegradationLatestDTO) *Degradatio
 		Models:             cloneRadarServiceDegradationModels(input.Models),
 		LMArenaTop5:        cloneRadarServiceLMArenaEntries(input.LMArenaTop5),
 		SourcesLastUpdated: cloneRadarServiceTimeMap(input.SourcesLastUpdated),
+		TrendAvailable:     input.TrendAvailable,
 		Stale:              input.Stale,
 	}
 }

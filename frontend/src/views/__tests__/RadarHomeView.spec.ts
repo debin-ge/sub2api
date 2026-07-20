@@ -326,6 +326,7 @@ describe('RadarHomeView', () => {
         models: [],
         lmarena_top5: [],
         sources_last_updated: {},
+        trend_available: false,
         stale: false,
       }),
       lmarena: resource({ leaderboard: [], total_votes: null, last_updated_at: null, fetched_at: now, stale: false }),

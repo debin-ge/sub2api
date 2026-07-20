@@ -164,6 +164,7 @@ export interface DegradationLatestDTO {
   models: DegradationModelDTO[]
   lmarena_top5: LMArenaEntryDTO[]
   sources_last_updated: Record<string, RadarTimestamp | null>
+  trend_available: boolean
   stale: boolean
 }
 

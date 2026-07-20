@@ -30,6 +30,14 @@ func TestCodexSnapshotBaseTime(t *testing.T) {
 		}
 	})
 
+	t.Run("valid offset is normalized to UTC", func(t *testing.T) {
+		got := codexSnapshotBaseTime(&OpenAICodexUsageSnapshot{UpdatedAt: "2026-02-16T18:00:00+08:00"}, fallback)
+		want := time.Date(2026, 2, 16, 10, 0, 0, 0, time.UTC)
+		if !got.Equal(want) || got.Location() != time.UTC {
+			t.Fatalf("got %v in %v, want %v in UTC", got, got.Location(), want)
+		}
+	})
+
 	t.Run("invalid updatedAt uses fallback", func(t *testing.T) {
 		got := codexSnapshotBaseTime(&OpenAICodexUsageSnapshot{UpdatedAt: "invalid"}, fallback)
 		if !got.Equal(fallback) {
@@ -101,6 +109,27 @@ func TestBuildCodexUsageExtraUpdates_UsesSnapshotUpdatedAt(t *testing.T) {
 	}
 	if got := updates["codex_7d_reset_at"]; got != "2026-02-17T10:00:00Z" {
 		t.Fatalf("codex_7d_reset_at = %v, want %s", got, "2026-02-17T10:00:00Z")
+	}
+}
+
+func TestBuildCodexUsageExtraUpdates_NormalizesOffsetTimestampsToUTC(t *testing.T) {
+	used := 12.0
+	reset := 3600
+	window := 300
+	snapshot := &OpenAICodexUsageSnapshot{
+		PrimaryUsedPercent:       &used,
+		PrimaryResetAfterSeconds: &reset,
+		PrimaryWindowMinutes:     &window,
+		UpdatedAt:                "2026-02-16T18:00:00+08:00",
+	}
+
+	updates := buildCodexUsageExtraUpdates(snapshot, time.Now())
+
+	if got := updates["codex_usage_updated_at"]; got != "2026-02-16T10:00:00Z" {
+		t.Fatalf("codex_usage_updated_at = %v, want UTC timestamp", got)
+	}
+	if got := updates["codex_5h_reset_at"]; got != "2026-02-16T11:00:00Z" {
+		t.Fatalf("codex_5h_reset_at = %v, want UTC timestamp", got)
 	}
 }
 

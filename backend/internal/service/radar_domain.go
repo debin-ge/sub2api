@@ -261,6 +261,7 @@ type DegradationLatestDTO struct {
 	Models             []DegradationModelDTO `json:"models"`
 	LMArenaTop5        []LMArenaEntryDTO     `json:"lmarena_top5"`
 	SourcesLastUpdated map[string]*time.Time `json:"sources_last_updated"`
+	TrendAvailable     bool                  `json:"trend_available"`
 	Stale              bool                  `json:"stale"`
 }
 

@@ -145,7 +145,7 @@ func TestMapArtificialAnalysisModelsFiltersInConfiguredOrderWithoutMutatingInput
 	require.Equal(t, float64(33), *models[2].IntelligenceIndex, "mapped metric pointers must not alias decoded input")
 }
 
-func TestMapArtificialAnalysisModelsEmptyAllowlistReturnsEmptyNonNilSlice(t *testing.T) {
+func TestMapArtificialAnalysisModelsEmptyAllowlistSelectsIndexedModels(t *testing.T) {
 	models, err := DecodeArtificialAnalysisModels([]byte(validAAModelsPayload))
 	require.NoError(t, err)
 
@@ -153,7 +153,43 @@ func TestMapArtificialAnalysisModelsEmptyAllowlistReturnsEmptyNonNilSlice(t *tes
 
 	require.NoError(t, err)
 	require.NotNil(t, dtos)
-	require.Empty(t, dtos)
+	require.Equal(t, []string{"claude-sonnet-4"}, []string{dtos[0].Slug})
+}
+
+func TestMapArtificialAnalysisModelsAutomaticSelectionIsBoundedAndStable(t *testing.T) {
+	type candidate struct {
+		slug     string
+		score    float64
+		released string
+	}
+	input := []candidate{
+		{slug: "low", score: 70, released: "2026-01-08"},
+		{slug: "top", score: 99, released: "2026-01-01"},
+		{slug: "tie-old", score: 90, released: "2026-01-01"},
+		{slug: "mid-low", score: 75, released: "2026-01-07"},
+		{slug: "high", score: 95, released: "2026-01-02"},
+		{slug: "mid", score: 85, released: "2026-01-05"},
+		{slug: "tie-new", score: 90, released: "2026-02-01"},
+		{slug: "sixth", score: 80, released: "2026-01-06"},
+	}
+	models := make([]ArtificialAnalysisModel, 0, len(input)+1)
+	for _, item := range input {
+		score := item.score
+		models = append(models, ArtificialAnalysisModel{
+			Slug: item.slug, Name: item.slug, ReleasedAt: item.released,
+			IntelligenceIndex: &score, CodingIndex: &score, AgenticIndex: &score,
+		})
+	}
+	models = append(models, ArtificialAnalysisModel{Slug: "no-index", Name: "No index"})
+	original := append([]ArtificialAnalysisModel(nil), models...)
+
+	dtos, err := MapArtificialAnalysisModels(models, []string{})
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"top", "high", "tie-new", "tie-old", "mid", "sixth"}, []string{
+		dtos[0].Slug, dtos[1].Slug, dtos[2].Slug, dtos[3].Slug, dtos[4].Slug, dtos[5].Slug,
+	})
+	require.Equal(t, original, models, "automatic selection must not reorder or mutate the decoded payload")
 }
 
 func TestMapArtificialAnalysisModelsRejectsUnsafeAllowlistWithoutLeakingValue(t *testing.T) {

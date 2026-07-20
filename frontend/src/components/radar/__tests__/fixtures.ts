@@ -124,6 +124,7 @@ export const degradationLatest: DegradationLatestDTO = {
   ],
   lmarena_top5: [],
   sources_last_updated: { aa: now },
+  trend_available: true,
   stale: false,
 }
 

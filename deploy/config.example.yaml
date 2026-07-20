@@ -1078,7 +1078,8 @@ radar:
   infer_max_stdev_ratio: 0.3
   # Optional secret. Empty disables Artificial Analysis fetching.
   artificial_analysis_api_key: ""
-  # Keep empty until valid live Artificial Analysis model slugs are configured.
+  # Empty automatically shows the six strongest indexed models in the overview.
+  # Configure explicit live slugs to additionally collect 90-day trend data.
   artificial_analysis_model_slugs: []
   # External request timeout (1-120 seconds) and response cap (1-104857600 bytes).
   external_request_timeout_seconds: 10

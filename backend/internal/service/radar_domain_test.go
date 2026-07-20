@@ -287,7 +287,7 @@ func TestRadarDomainJSONKeysUseSnakeCase(t *testing.T) {
 				SourcesLastUpdated: map[string]*time.Time{"lmarena": &now},
 				Stale:              false,
 			},
-			want: []string{"lmarena_top5", "models", "sources_last_updated", "stale"},
+			want: []string{"lmarena_top5", "models", "sources_last_updated", "stale", "trend_available"},
 		},
 		{
 			name: "metric point",

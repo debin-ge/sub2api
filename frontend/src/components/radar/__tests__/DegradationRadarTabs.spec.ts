@@ -74,6 +74,20 @@ describe('DegradationRadarTabs', () => {
     expect(wrapper.emitted('request-trend')?.at(-1)).toEqual(['model-a', 'agentic_index', 90])
   })
 
+  it('renders automatically selected overview models without requesting unavailable trends', async () => {
+    const wrapper = mount(DegradationRadarTabs, {
+      props: {
+        latest: { ...degradationLatest, trend_available: false },
+        lmarena,
+      },
+    })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.findComponent({ name: 'RadarChart' }).exists()).toBe(true)
+    expect(wrapper.find('[data-testid="model-select"]').exists()).toBe(false)
+    expect(wrapper.emitted('request-trend')).toBeUndefined()
+  })
+
   it('recomputes chart colors when the root dark class changes', async () => {
     let callback: MutationCallback | null = null
     const observe = vi.fn()

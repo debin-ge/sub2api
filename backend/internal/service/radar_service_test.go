@@ -954,6 +954,7 @@ func TestRadarServiceGetDegradationLatestCombinesSourcesAndDeepClones(t *testing
 	require.Equal(t, []string{"aa", "lmarena"}, radarServiceSortedMapKeys(got.SourcesLastUpdated))
 	require.NotNil(t, got.SourcesLastUpdated["aa"])
 	require.NotNil(t, got.SourcesLastUpdated["lmarena"])
+	require.True(t, got.TrendAvailable)
 
 	*got.Models[0].IntelligenceIndex = 0
 	*got.Models[0].LastUpdatedAt = time.Time{}
@@ -975,6 +976,24 @@ func TestRadarServiceGetDegradationLatestCombinesSourcesAndDeepClones(t *testing
 	require.Equal(t, 1, repo.payloadCallCount(RadarSourceAA))
 	require.Equal(t, 1, repo.payloadCallCount(RadarSourceLMArena))
 	require.Equal(t, 1, repo.metaCallCount())
+}
+
+func TestRadarServiceGetDegradationLatestAutomaticallySelectsOverviewWithoutTrendFetchers(t *testing.T) {
+	now := time.Date(2026, 7, 13, 8, 0, 0, 0, time.UTC)
+	cfg := radarServiceTestConfig()
+	cfg.Radar.ArtificialAnalysisModelSlugs = nil
+	repo := newRadarServiceTestRepo()
+	repo.payloads[RadarSourceAA] = radarServiceAAModelsPayload(now)
+	repo.payloads[RadarSourceLMArena] = radarServiceLMArenaPayload(now, 1)
+	repo.metas[RadarSourceAA] = radarServiceSuccessfulMeta(now)
+	repo.metas[RadarSourceLMArena] = radarServiceSuccessfulMeta(now)
+	service := mustNewRadarServiceForTest(t, cfg, repo, &radarServiceTestClock{now: now})
+
+	got, err := service.GetDegradationLatest(context.Background())
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"model-a", "model-b", "model-c"}, radarServiceModelSlugs(got.Models))
+	require.False(t, got.TrendAvailable, "automatic overview models have no statically scheduled performance fetchers")
 }
 
 func TestRadarServiceGetDegradationLatestLocallyDegradesEachSource(t *testing.T) {

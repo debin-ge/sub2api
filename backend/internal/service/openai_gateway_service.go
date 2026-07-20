@@ -6759,22 +6759,22 @@ func ParseCodexRateLimitHeaders(headers http.Header) *OpenAICodexUsageSnapshot {
 		return nil
 	}
 
-	snapshot.UpdatedAt = time.Now().Format(time.RFC3339)
+	snapshot.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	return snapshot
 }
 
 func codexSnapshotBaseTime(snapshot *OpenAICodexUsageSnapshot, fallback time.Time) time.Time {
 	if snapshot == nil {
-		return fallback
+		return fallback.UTC()
 	}
 	if snapshot.UpdatedAt == "" {
-		return fallback
+		return fallback.UTC()
 	}
 	base, err := time.Parse(time.RFC3339, snapshot.UpdatedAt)
 	if err != nil {
-		return fallback
+		return fallback.UTC()
 	}
-	return base
+	return base.UTC()
 }
 
 func codexResetAtRFC3339(base time.Time, resetAfterSeconds *int) *string {
@@ -6785,7 +6785,7 @@ func codexResetAtRFC3339(base time.Time, resetAfterSeconds *int) *string {
 	if sec < 0 {
 		sec = 0
 	}
-	resetAt := base.Add(time.Duration(sec) * time.Second).Format(time.RFC3339)
+	resetAt := base.UTC().Add(time.Duration(sec) * time.Second).Format(time.RFC3339)
 	return &resetAt
 }
 

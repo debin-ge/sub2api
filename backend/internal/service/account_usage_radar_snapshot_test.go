@@ -398,7 +398,6 @@ func TestAccountUsageService_GetRadarUsageSnapshot_RejectsUnavailableSnapshots(t
 		{name: "nil account", account: nil},
 		{name: "missing sampled_at", account: openAIAccount(nil)},
 		{name: "corrupt sampled_at", account: openAIAccount("not-a-time")},
-		{name: "non UTC sampled_at", account: openAIAccount("2026-07-13T15:59:00+08:00")},
 		{name: "future sampled_at", account: openAIAccount(now.Add(time.Second).Format(time.RFC3339))},
 		{name: "stale sampled_at", account: openAIAccount(now.Add(-7*24*time.Hour - time.Second).Format(time.RFC3339))},
 		{name: "unsupported platform", account: &Account{Platform: PlatformGemini, Type: AccountTypeOAuth, Extra: map[string]any{"codex_usage_updated_at": validSample}}},
@@ -417,6 +416,25 @@ func TestAccountUsageService_GetRadarUsageSnapshot_RejectsUnavailableSnapshots(t
 			require.NotContains(t, err.Error(), "must-not-leak")
 		})
 	}
+}
+
+func TestAccountUsageService_GetRadarUsageSnapshot_NormalizesRFC3339Offsets(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 7, 13, 8, 0, 0, 0, time.UTC)
+	svc := newRadarSnapshotTestService(now, 7*24*time.Hour)
+	account := &Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth, Extra: map[string]any{
+		"codex_usage_updated_at": "2026-07-13T15:59:00+08:00",
+		"codex_5h_used_percent":  10.0,
+		"codex_5h_reset_at":      "2026-07-13T18:00:00+08:00",
+	}}
+
+	got, err := svc.GetRadarUsageSnapshot(context.Background(), account)
+
+	require.NoError(t, err)
+	require.Equal(t, time.Date(2026, 7, 13, 7, 59, 0, 0, time.UTC), *got.UpdatedAt)
+	require.Equal(t, time.Date(2026, 7, 13, 10, 0, 0, 0, time.UTC), *got.FiveHour.ResetsAt)
+	require.Equal(t, 2*60*60, got.FiveHour.RemainingSeconds)
 }
 
 func TestAccountUsageService_GetRadarUsageSnapshot_PropagatesContextErrors(t *testing.T) {
