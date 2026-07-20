@@ -78,11 +78,11 @@
             </div>
 
             <p
-              v-if="selectedStats && bucket.accounts_count < sampleSizeWarnBelow"
+              v-if="selectedStats && selectedStats.sample_size < sampleSizeWarnBelow"
               class="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-amber-700 dark:text-amber-300"
             >
               <Icon name="exclamationTriangle" size="sm" aria-hidden="true" />
-              {{ t('radar.quota.smallSample', 'Small sample') }}: n={{ formatNumber(bucket.accounts_count) }}
+              {{ t('radar.quota.smallSample', 'Small sample') }}: n={{ formatNumber(selectedStats.sample_size) }}
             </p>
 
             <section

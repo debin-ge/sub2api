@@ -1,7 +1,7 @@
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import QuotaBucketDetailModal from '@/components/radar/QuotaBucketDetailModal.vue'
-import { bucket, quotaTrend } from './fixtures'
+import { bucket, quotaTrend, windowStats } from './fixtures'
 
 const { localeMock } = vi.hoisted(() => ({ localeMock: { value: 'en' } }))
 
@@ -95,20 +95,20 @@ describe('QuotaBucketDetailModal', () => {
     expect(wrapper.emitted('close')).toHaveLength(1)
   })
 
-  it.each(['en', 'zh'])('locale-formats large sample counts in %s', async (locale) => {
+  it.each(['en', 'zh'])('locale-formats large inference sample counts in %s', async (locale) => {
     localeMock.value = locale
-    const accountsCount = 12_345
+	const sampleSize = 12_345
     wrapper = mount(QuotaBucketDetailModal, {
       attachTo: document.body,
       props: {
         show: true,
-        bucket: bucket({ accounts_count: accountsCount }),
+		bucket: bucket({ five_hour: windowStats({ sample_size: sampleSize }) }),
         sampleSizeWarnBelow: 20_000,
       },
       global: { stubs: { Icon: true } },
     })
     await wrapper.vm.$nextTick()
-    const formatted = new Intl.NumberFormat(locale).format(accountsCount)
+	const formatted = new Intl.NumberFormat(locale).format(sampleSize)
 
     expect(document.body.textContent).toContain(`n=${formatted}`)
     expect(document.body.textContent).not.toContain('n=12345')
@@ -230,13 +230,14 @@ describe('QuotaBucketDetailModal', () => {
 
   it('selects seven-day details and trend when five-hour data is unavailable', async () => {
     const item = bucket({
-      bucket_key: 'openai/pro',
-      platform: 'openai',
-      plan_tier: 'pro',
-      display_name: 'ChatGPT Pro',
+	  bucket_key: 'openai/pro_20x',
+	  platform: 'openai',
+	  plan_tier: 'pro_20x',
+	  display_name: 'ChatGPT Pro 20x',
       accounts_count: 1,
-      privacy_threshold: 1,
-      five_hour: null,
+	  privacy_threshold: 1,
+	  five_hour: null,
+	  seven_day: windowStats({ avg_utilization: 35, sample_size: 1 }),
     })
     const trend = quotaTrend(item.bucket_key)
     trend.data_points = trend.data_points.map((point, index) => ({
@@ -251,8 +252,9 @@ describe('QuotaBucketDetailModal', () => {
     })
     await wrapper.vm.$nextTick()
 
-    expect(document.body.querySelector('[data-window="5h"]')?.getAttribute('disabled')).not.toBeNull()
-    expect(document.body.querySelector('[data-window="7d"]')?.getAttribute('aria-selected')).toBe('true')
+	  expect(document.body.querySelector('[data-window="5h"]')?.getAttribute('disabled')).not.toBeNull()
+	  expect(document.body.querySelector('[data-window="7d"]')?.getAttribute('aria-selected')).toBe('true')
+	  expect(document.body.textContent).toContain('Small sample: n=1')
     expect(document.body.querySelector('[data-testid="quota-modal-trend-summary"]')?.textContent).toContain('7-day utilization')
   })
 })

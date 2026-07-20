@@ -158,24 +158,27 @@ func TestRadarServiceGetQuotaBucketsLatestSortsFreshnessAndDeepClones(t *testing
 	stdev := 12.0
 	reason := InferenceRejectReasonHighDispersion
 	repo := newRadarQuotaServiceTestRepo()
-	repo.keys = []string{"openai/pro", "anthropic/zeta", "anthropic/alpha"}
-	repo.latest["openai/pro"] = radarQuotaSnapshot("openai/pro", "OpenAI Pro", now.Add(-time.Minute))
-	repo.latest["openai/pro"].ModelBreakdown5h = nil
-	repo.latest["openai/pro"].ModelBreakdown7d = nil
-	repo.latest["anthropic/zeta"] = radarQuotaSnapshot("anthropic/zeta", "Claude Zeta", now.Add(-3*time.Minute))
-	repo.latest["anthropic/alpha"] = radarQuotaSnapshot("anthropic/alpha", "Claude Alpha", now.Add(-2*time.Minute))
-	repo.latest["anthropic/alpha"].FiveHour = &WindowStatsDTO{
+	repo.keys = []string{
+		"openai/pro_20x", "anthropic/pro", "anthropic/max_20x",
+		"openai/unknown", "anthropic/team", "antigravity/ultra",
+	}
+	repo.latest["openai/pro_20x"] = radarQuotaSnapshot("openai/pro_20x", "ChatGPT Pro 20x", now.Add(-time.Minute))
+	repo.latest["openai/pro_20x"].ModelBreakdown5h = nil
+	repo.latest["openai/pro_20x"].ModelBreakdown7d = nil
+	repo.latest["anthropic/pro"] = radarQuotaSnapshot("anthropic/pro", "Claude Pro", now.Add(-3*time.Minute))
+	repo.latest["anthropic/max_20x"] = radarQuotaSnapshot("anthropic/max_20x", "Claude Max 20x", now.Add(-2*time.Minute))
+	repo.latest["anthropic/max_20x"].FiveHour = &WindowStatsDTO{
 		AvgUtilization:        42,
 		InferredLimitUSD:      &limit,
 		InferredStdev:         &stdev,
 		InferenceRejectReason: &reason,
 		ContributorsCount:     3,
 	}
-	repo.latest["anthropic/alpha"].SevenDay = &WindowStatsDTO{AvgUtilization: 21, InferredLimitUSD: &limit, ContributorsCount: 3}
-	repo.latest["anthropic/alpha"].SevenDaySonnet = &ModelWindowStatsDTO{Model: "claude-sonnet", AvgUtilization: 31, SampleSize: 3}
-	repo.latest["anthropic/alpha"].SevenDayFable = &ModelWindowStatsDTO{Model: "claude-fable", AvgUtilization: 11, SampleSize: 3}
-	repo.latest["anthropic/alpha"].ModelBreakdown5h = []ModelCostBreakdownDTO{{Model: "other", AvgCost: 4, ContributorsCount: 3}}
-	repo.latest["anthropic/alpha"].ModelBreakdown7d = []ModelCostBreakdownDTO{{Model: "other", AvgCost: 7, ContributorsCount: 3}}
+	repo.latest["anthropic/max_20x"].SevenDay = &WindowStatsDTO{AvgUtilization: 21, InferredLimitUSD: &limit, ContributorsCount: 3}
+	repo.latest["anthropic/max_20x"].SevenDaySonnet = &ModelWindowStatsDTO{Model: "claude-sonnet", AvgUtilization: 31, SampleSize: 3}
+	repo.latest["anthropic/max_20x"].SevenDayFable = &ModelWindowStatsDTO{Model: "claude-fable", AvgUtilization: 11, SampleSize: 3}
+	repo.latest["anthropic/max_20x"].ModelBreakdown5h = []ModelCostBreakdownDTO{{Model: "other", AvgCost: 4, ContributorsCount: 3}}
+	repo.latest["anthropic/max_20x"].ModelBreakdown7d = []ModelCostBreakdownDTO{{Model: "other", AvgCost: 7, ContributorsCount: 3}}
 
 	cfg := radarServiceTestConfig()
 	cfg.Radar.SampleSizeWarnBelow = 4
@@ -186,7 +189,7 @@ func TestRadarServiceGetQuotaBucketsLatestSortsFreshnessAndDeepClones(t *testing
 
 	got, err := service.GetQuotaBucketsLatest(context.Background())
 	require.NoError(t, err)
-	require.Equal(t, []string{"anthropic/alpha", "anthropic/zeta", "openai/pro"}, radarQuotaBucketKeys(got.Buckets))
+	require.Equal(t, []string{"anthropic/max_20x", "anthropic/pro", "openai/pro_20x"}, radarQuotaBucketKeys(got.Buckets))
 	require.Equal(t, now.Add(-time.Minute), *got.LastAggregatedAt)
 	require.Equal(t, 4, got.SampleSizeWarnBelow)
 	require.False(t, got.Stale)
@@ -209,7 +212,7 @@ func TestRadarServiceGetQuotaBucketsLatestSortsFreshnessAndDeepClones(t *testing
 
 	again, err := service.GetQuotaBucketsLatest(context.Background())
 	require.NoError(t, err)
-	require.Equal(t, "anthropic/alpha", again.Buckets[0].BucketKey)
+	require.Equal(t, "anthropic/max_20x", again.Buckets[0].BucketKey)
 	require.Equal(t, 900.0, *again.Buckets[0].FiveHour.InferredLimitUSD)
 	require.Equal(t, 12.0, *again.Buckets[0].FiveHour.InferredStdev)
 	require.Equal(t, InferenceRejectReasonHighDispersion, *again.Buckets[0].FiveHour.InferenceRejectReason)
@@ -243,14 +246,14 @@ func TestRadarServiceGetQuotaBucketsLatestEmptyMissAndSafeErrors(t *testing.T) {
 
 	t.Run("list to latest miss race is skipped", func(t *testing.T) {
 		repo := newRadarQuotaServiceTestRepo()
-		repo.keys = []string{"anthropic/gone", "openai/pro"}
-		repo.latestErrs["anthropic/gone"] = ErrRadarCacheMiss
-		repo.latest["openai/pro"] = radarQuotaSnapshot("openai/pro", "OpenAI Pro", now)
+		repo.keys = []string{"anthropic/max_5x", "openai/pro_20x"}
+		repo.latestErrs["anthropic/max_5x"] = ErrRadarCacheMiss
+		repo.latest["openai/pro_20x"] = radarQuotaSnapshot("openai/pro_20x", "ChatGPT Pro 20x", now)
 		service := mustNewRadarQuotaServiceForTest(t, repo, &radarServiceTestClock{now: now}, time.Minute)
 
 		got, err := service.GetQuotaBucketsLatest(context.Background())
 		require.NoError(t, err)
-		require.Equal(t, []string{"openai/pro"}, radarQuotaBucketKeys(got.Buckets))
+		require.Equal(t, []string{"openai/pro_20x"}, radarQuotaBucketKeys(got.Buckets))
 	})
 
 	for _, tt := range []struct {
@@ -280,36 +283,62 @@ func TestRadarServiceGetQuotaBucketsLatestEmptyMissAndSafeErrors(t *testing.T) {
 func TestRadarServiceQuotaReadDefenseSkipsInvalidSnapshotsLocally(t *testing.T) {
 	now := time.Date(2026, time.July, 14, 8, 0, 0, 0, time.UTC)
 
+	t.Run("latest preserves the singleton 20x Pro publication exception", func(t *testing.T) {
+		repo := newRadarQuotaServiceTestRepo()
+		repo.keys = []string{"openai/pro_20x", "openai/plus"}
+		pro := radarQuotaSnapshot("openai/pro_20x", "ChatGPT Pro 20x", now)
+		pro.AccountsCount = 1
+		pro.PrivacyThreshold = 1
+		pro.FiveHour.ContributorsCount = 1
+		pro.SevenDay.ContributorsCount = 1
+		plus := radarQuotaSnapshot("openai/plus", "ChatGPT Plus", now)
+		plus.AccountsCount = 1
+		plus.PrivacyThreshold = 1
+		plus.FiveHour.ContributorsCount = 1
+		plus.SevenDay.ContributorsCount = 1
+		repo.latest["openai/pro_20x"] = pro
+		repo.latest["openai/plus"] = plus
+		service := mustNewRadarQuotaServiceForTest(t, repo, &radarServiceTestClock{now: now}, time.Minute)
+
+		got, err := service.GetQuotaBucketsLatest(context.Background())
+		require.NoError(t, err)
+		require.Equal(t, []string{"openai/pro_20x"}, radarQuotaBucketKeys(got.Buckets))
+	})
+
 	t.Run("latest retains valid buckets and malformed-only is empty", func(t *testing.T) {
 		repo := newRadarQuotaServiceTestRepo()
-		repo.keys = []string{"anthropic/bad", "openai/pro"}
-		invalid := radarQuotaSnapshot("anthropic/bad", "bad", now)
+		repo.keys = []string{"anthropic/max_5x", "openai/pro_20x"}
+		invalid := radarQuotaSnapshot("anthropic/max_5x", "bad", now)
 		invalid.PrivacyThreshold = 0
-		repo.latest["anthropic/bad"] = invalid
-		repo.latest["openai/pro"] = radarQuotaSnapshot("openai/pro", "OpenAI Pro", now)
+		repo.latest["anthropic/max_5x"] = invalid
+		repo.latest["openai/pro_20x"] = radarQuotaSnapshot("openai/pro_20x", "ChatGPT Pro 20x", now)
 		service := mustNewRadarQuotaServiceForTest(t, repo, &radarServiceTestClock{now: now}, time.Minute)
 		got, err := service.GetQuotaBucketsLatest(context.Background())
 		require.NoError(t, err)
-		require.Equal(t, []string{"openai/pro"}, radarQuotaBucketKeys(got.Buckets))
+		require.Equal(t, []string{"openai/pro_20x"}, radarQuotaBucketKeys(got.Buckets))
 
 		repoOnlyBad := newRadarQuotaServiceTestRepo()
-		repoOnlyBad.keys = []string{"anthropic/bad"}
-		repoOnlyBad.latest["anthropic/bad"] = invalid
+		repoOnlyBad.keys = []string{"anthropic/max_5x"}
+		repoOnlyBad.latest["anthropic/max_5x"] = invalid
 		serviceOnlyBad := mustNewRadarQuotaServiceForTest(t, repoOnlyBad, &radarServiceTestClock{now: now}, time.Minute)
 		empty, err := serviceOnlyBad.GetQuotaBucketsLatest(context.Background())
 		require.NoError(t, err)
 		require.Empty(t, empty.Buckets)
 	})
 
-	t.Run("latest skips bucket mismatch", func(t *testing.T) {
+	t.Run("latest skips bucket and identity mismatches and canonicalizes display", func(t *testing.T) {
 		repo := newRadarQuotaServiceTestRepo()
-		repo.keys = []string{"anthropic/pro", "openai/pro"}
-		repo.latest["anthropic/pro"] = radarQuotaSnapshot("openai/pro", "mismatch", now)
-		repo.latest["openai/pro"] = radarQuotaSnapshot("openai/pro", "OpenAI Pro", now)
+		repo.keys = []string{"anthropic/pro", "anthropic/max_5x", "openai/pro_20x"}
+		repo.latest["anthropic/pro"] = radarQuotaSnapshot("openai/pro_20x", "mismatch", now)
+		identityMismatch := radarQuotaSnapshot("anthropic/max_5x", "mismatch", now)
+		identityMismatch.Platform = PlatformOpenAI
+		repo.latest["anthropic/max_5x"] = identityMismatch
+		repo.latest["openai/pro_20x"] = radarQuotaSnapshot("openai/pro_20x", "untrusted display", now)
 		service := mustNewRadarQuotaServiceForTest(t, repo, &radarServiceTestClock{now: now}, time.Minute)
 		got, err := service.GetQuotaBucketsLatest(context.Background())
 		require.NoError(t, err)
-		require.Equal(t, []string{"openai/pro"}, radarQuotaBucketKeys(got.Buckets))
+		require.Equal(t, []string{"openai/pro_20x"}, radarQuotaBucketKeys(got.Buckets))
+		require.Equal(t, "ChatGPT Pro 20x", got.Buckets[0].DisplayName)
 	})
 
 	t.Run("trend skips invalid threshold mismatch and retains good point", func(t *testing.T) {
@@ -317,7 +346,7 @@ func TestRadarServiceQuotaReadDefenseSkipsInvalidSnapshotsLocally(t *testing.T) 
 		repo.keys = []string{"anthropic/pro"}
 		invalid := radarQuotaSnapshot("anthropic/pro", "bad", now.Add(-3*time.Minute))
 		invalid.PrivacyThreshold = 0
-		mismatch := radarQuotaSnapshot("openai/pro", "mismatch", now.Add(-2*time.Minute))
+		mismatch := radarQuotaSnapshot("openai/pro_20x", "mismatch", now.Add(-2*time.Minute))
 		good := radarQuotaSnapshot("anthropic/pro", "good", now.Add(-time.Minute))
 		repo.trends["anthropic/pro"] = []BucketSnapshotDTO{*invalid, *mismatch, *good}
 		service := mustNewRadarQuotaServiceForTest(t, repo, &radarServiceTestClock{now: now}, time.Minute)
@@ -409,7 +438,7 @@ func TestRadarServiceGetQuotaBucketsTrendValidatesBeforeRepositoryRead(t *testin
 	}
 }
 
-func TestRadarServiceQuotaTrendUnknownBucketsDoNotGrowCacheOrReadTrends(t *testing.T) {
+func TestRadarServiceQuotaTrendUnsupportedBucketsAreRejectedBeforeRepositoryRead(t *testing.T) {
 	now := time.Date(2026, time.July, 13, 8, 0, 0, 0, time.UTC)
 	repo := newRadarQuotaServiceTestRepo()
 	service := mustNewRadarQuotaServiceForTest(t, repo, &radarServiceTestClock{now: now}, time.Minute)
@@ -420,17 +449,13 @@ func TestRadarServiceQuotaTrendUnknownBucketsDoNotGrowCacheOrReadTrends(t *testi
 			bucket := fmt.Sprintf("anthropic/tier%d", index)
 			days := index%7 + 1
 			got, err := service.GetQuotaBucketsTrend(context.Background(), bucket, days)
-			require.NoError(t, err, "pass=%d bucket=%s", pass, bucket)
-			require.Equal(t, bucket, got.BucketKey)
-			require.Equal(t, days, got.Days)
-			require.NotNil(t, got.DataPoints)
-			require.Empty(t, got.DataPoints)
-			require.True(t, got.Stale)
+			require.Nil(t, got, "pass=%d bucket=%s", pass, bucket)
+			require.ErrorIs(t, err, ErrInvalidRadarQuery)
 		}
 	}
 
 	listCalls, _, trendCalls := repo.quotaCallCounts()
-	require.Equal(t, bucketCount*2, listCalls, "unknown buckets must be revalidated instead of cached")
+	require.Zero(t, listCalls, "unsupported plans must be rejected before reading the index")
 	require.Zero(t, trendCalls, "unknown buckets must not select arbitrary Redis trend keys")
 	service.cacheMu.RLock()
 	cacheSize := len(service.cache)
@@ -598,9 +623,9 @@ func TestRadarServiceQuotaTrendCacheKeyIsolationFreshnessDeadlineAndSingleflight
 
 	t.Run("cache key includes bucket and days", func(t *testing.T) {
 		repo := newRadarQuotaServiceTestRepo()
-		repo.keys = []string{"anthropic/pro", "openai/pro"}
+		repo.keys = []string{"anthropic/pro", "openai/pro_20x"}
 		repo.trends["anthropic/pro"] = []BucketSnapshotDTO{*radarQuotaSnapshot("anthropic/pro", "Claude Pro", now)}
-		repo.trends["openai/pro"] = []BucketSnapshotDTO{*radarQuotaSnapshot("openai/pro", "OpenAI Pro", now)}
+		repo.trends["openai/pro_20x"] = []BucketSnapshotDTO{*radarQuotaSnapshot("openai/pro_20x", "ChatGPT Pro 20x", now)}
 		service := mustNewRadarQuotaServiceForTest(t, repo, &radarServiceTestClock{now: now}, time.Minute)
 		queries := []struct {
 			bucket string
@@ -608,7 +633,7 @@ func TestRadarServiceQuotaTrendCacheKeyIsolationFreshnessDeadlineAndSingleflight
 		}{
 			{bucket: "anthropic/pro", days: 1},
 			{bucket: "anthropic/pro", days: 7},
-			{bucket: "openai/pro", days: 1},
+			{bucket: "openai/pro_20x", days: 1},
 		}
 		for _, query := range queries {
 			for range 2 {
@@ -627,7 +652,7 @@ func TestRadarServiceQuotaTrendCacheKeyIsolationFreshnessDeadlineAndSingleflight
 		require.Equal(t, "anthropic/pro", calls[0].bucket)
 		require.Equal(t, now.AddDate(0, 0, -1), calls[0].since)
 		require.Equal(t, now.AddDate(0, 0, -7), calls[1].since)
-		require.Equal(t, "openai/pro", calls[2].bucket)
+		require.Equal(t, "openai/pro_20x", calls[2].bucket)
 		listCalls, _, _ := repo.quotaCallCounts()
 		require.Equal(t, 3, listCalls)
 	})

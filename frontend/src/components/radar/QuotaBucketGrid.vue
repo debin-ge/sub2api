@@ -26,10 +26,10 @@
       </div>
 
       <p
-        v-if="bucket.accounts_count < sampleSizeWarnBelow"
+        v-if="primaryWindowStats(bucket) && primaryWindowSampleSize(bucket) < sampleSizeWarnBelow"
         class="mt-3 text-xs font-semibold text-amber-700 dark:text-amber-300"
       >
-        ⚠ {{ t('radar.quota.smallSample', 'Small sample') }}: n={{ formatNumber(bucket.accounts_count) }}
+        ⚠ {{ t('radar.quota.smallSample', 'Small sample') }}: n={{ formatNumber(primaryWindowSampleSize(bucket)) }}
       </p>
 
       <div v-if="primaryWindowStats(bucket)" class="mt-6">
@@ -294,6 +294,10 @@ function primaryWindowUtilization(bucket: BucketSnapshotDTO): number {
 
 function primaryWindowLimit(bucket: BucketSnapshotDTO): number | null {
   return primaryWindowStats(bucket)?.inferred_limit_usd ?? null
+}
+
+function primaryWindowSampleSize(bucket: BucketSnapshotDTO): number {
+  return primaryWindowStats(bucket)?.sample_size ?? 0
 }
 
 function primaryWindowStdev(bucket: BucketSnapshotDTO): number | null {

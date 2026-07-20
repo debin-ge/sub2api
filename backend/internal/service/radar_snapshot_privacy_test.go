@@ -47,7 +47,7 @@ func TestValidateRadarBucketSnapshotFailsClosedOnPrivacyMetadata(t *testing.T) {
 
 func TestValidateRadarBucketSnapshotAllowsOnlySingletonChatGPTProException(t *testing.T) {
 	pro := BucketSnapshotDTO{
-		BucketKey: "openai/pro", Platform: PlatformOpenAI, PlanTier: "pro", DisplayName: "ChatGPT Pro",
+		BucketKey: "openai/pro_20x", Platform: PlatformOpenAI, PlanTier: "pro_20x", DisplayName: "ChatGPT Pro 20x",
 		PrivacyThreshold: 1, AccountsCount: 1, CapturedAt: time.Now().UTC(),
 		SevenDay: &WindowStatsDTO{ContributorsCount: 1, SampleSize: 1},
 	}

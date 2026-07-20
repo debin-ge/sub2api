@@ -16,10 +16,18 @@ import (
 
 const (
 	defaultRadarPublicMinBucketAccounts = 2
+
+	radarQuotaAnthropicPlanPro    = "pro"
+	radarQuotaAnthropicPlanMax5x  = "max_5x"
+	radarQuotaAnthropicPlanMax20x = "max_20x"
+	radarQuotaOpenAIPlanPlus      = "plus"
+	radarQuotaOpenAIPlanPro5x     = "pro_5x"
+	radarQuotaOpenAIPlanPro20x    = "pro_20x"
+
 	// ChatGPT Pro is a comparatively rare paid tier. Keep the general privacy
 	// floor at two, but allow its anonymous plan card to be published from one
 	// contributor so a real 20x Pro account is not hidden behind Plus accounts.
-	radarQuotaOpenAIProMinBucketAccounts = 1
+	radarQuotaOpenAIPro20xMinBucketAccounts = 1
 )
 
 // ErrRadarQuotaAggregation is intentionally safe to surface to a background
@@ -398,7 +406,11 @@ func isRadarQuotaBucketPublic(accountCount, minAccounts int) bool {
 }
 
 func radarQuotaBucketMinAccounts(identity radarQuotaBucketIdentity, accountCount, configured int) int {
-	if identity.platform == PlatformOpenAI && identity.planTier == "pro" && accountCount > 0 && accountCount < configured {
+	return radarQuotaPlanMinAccounts(identity.platform, identity.planTier, accountCount, configured)
+}
+
+func radarQuotaPlanMinAccounts(platform, planTier string, accountCount, configured int) int {
+	if platform == PlatformOpenAI && planTier == radarQuotaOpenAIPlanPro20x && accountCount > 0 && accountCount < configured {
 		return accountCount
 	}
 	return configured
@@ -471,15 +483,8 @@ func isRadarQuotaCandidate(account *Account) bool {
 	if account == nil || account.ID <= 0 || account.IsShadow() {
 		return false
 	}
-	if account.IsAnthropicOAuthOrSetupToken() {
-		return true
-	}
-	if account.IsOpenAIOAuth() {
-		planType := strings.ToLower(strings.TrimSpace(account.GetCredential("plan_type")))
-		return planType != "free" && planType != "abnormal"
-	}
-	return account.Platform == PlatformAntigravity &&
-		(account.Type == AccountTypeOAuth || account.Type == AccountTypeUpstream)
+	_, _, ok := radarQuotaPlanTierForAccount(account)
+	return ok
 }
 
 // resolveRadarQuotaCandidate maps a Spark shadow's passive quota snapshot back
@@ -535,50 +540,8 @@ func buildRadarQuotaBucketIdentity(account *Account, usage *UsageInfo) (radarQuo
 	if account == nil || usage == nil {
 		return radarQuotaBucketIdentity{}, false
 	}
-
-	var platform, rawTier, fallback string
-	switch {
-	case account.IsAnthropicOAuthOrSetupToken():
-		platform = PlatformAnthropic
-		fallback = "generic"
-		if account.Extra != nil {
-			if raw, exists := account.Extra["plan_slug"]; exists && raw != nil {
-				value, ok := raw.(string)
-				if !ok {
-					return radarQuotaBucketIdentity{}, false
-				}
-				rawTier = value
-			}
-		}
-	case account.IsOpenAIOAuth():
-		platform = PlatformOpenAI
-		fallback = "unknown"
-		if account.Credentials != nil {
-			if raw, exists := account.Credentials["plan_type"]; exists && raw != nil {
-				value, ok := raw.(string)
-				if !ok {
-					return radarQuotaBucketIdentity{}, false
-				}
-				rawTier = value
-			}
-		}
-	case account.Platform == PlatformAntigravity &&
-		(account.Type == AccountTypeOAuth || account.Type == AccountTypeUpstream):
-		platform = PlatformAntigravity
-		fallback = "basic"
-		rawTier = usage.SubscriptionTier
-	default:
-		return radarQuotaBucketIdentity{}, false
-	}
-
-	planTier := strings.ToLower(strings.TrimSpace(rawTier))
-	if platform == PlatformOpenAI {
-		planTier = normalizeRadarOpenAIPlanTier(planTier)
-	}
-	if planTier == "" {
-		planTier = fallback
-	}
-	if !isSafeRadarQuotaPlanTier(planTier) {
+	platform, planTier, ok := radarQuotaPlanTierForAccount(account)
+	if !ok {
 		return radarQuotaBucketIdentity{}, false
 	}
 	return radarQuotaBucketIdentity{
@@ -589,60 +552,111 @@ func buildRadarQuotaBucketIdentity(account *Account, usage *UsageInfo) (radarQuo
 	}, true
 }
 
-func normalizeRadarOpenAIPlanTier(planTier string) string {
-	switch planTier {
-	case "chatgpt_plus", "chatgptplus":
-		return "plus"
-	case "chatgpt_pro", "chatgptpro", "20x_pro", "20xpro":
-		return "pro"
-	default:
-		return planTier
+func radarQuotaPlanTierForAccount(account *Account) (string, string, bool) {
+	if account == nil {
+		return "", "", false
 	}
-}
 
-func isSafeRadarQuotaPlanTier(value string) bool {
-	if len(value) == 0 || len(value) > 64 || !isRadarQuotaLowerAlphaNumeric(value[0]) {
-		return false
-	}
-	for i := 1; i < len(value); i++ {
-		if !isRadarQuotaLowerAlphaNumeric(value[i]) && value[i] != '.' && value[i] != '_' && value[i] != '-' {
-			return false
+	var platform string
+	var raw any
+	var exists bool
+	switch {
+	case account.IsAnthropicOAuthOrSetupToken():
+		platform = PlatformAnthropic
+		if account.Extra != nil {
+			raw, exists = account.Extra["plan_slug"]
 		}
+	case account.IsOpenAIOAuth():
+		platform = PlatformOpenAI
+		if account.Credentials != nil {
+			raw, exists = account.Credentials["plan_type"]
+		}
+	default:
+		return "", "", false
 	}
-	return true
-}
+	if !exists || raw == nil {
+		return "", "", false
+	}
+	rawTier, ok := raw.(string)
+	if !ok {
+		return "", "", false
+	}
 
-func isRadarQuotaLowerAlphaNumeric(value byte) bool {
-	return value >= 'a' && value <= 'z' || value >= '0' && value <= '9'
-}
-
-func radarQuotaDisplayName(platform, planTier string) string {
+	var planTier string
 	switch platform {
 	case PlatformAnthropic:
-		return "Claude " + radarQuotaHumanizeTier(planTier)
+		planTier = normalizeRadarAnthropicPlanTier(rawTier)
 	case PlatformOpenAI:
-		if planTier == "unknown" {
-			return "ChatGPT"
-		}
-		return "ChatGPT " + radarQuotaHumanizeTier(planTier)
-	case PlatformAntigravity:
-		return "Antigravity " + radarQuotaHumanizeTier(planTier)
+		planTier = normalizeRadarOpenAIPlanTier(rawTier)
+	}
+	if !isSupportedRadarQuotaPlanTier(platform, planTier) {
+		return "", "", false
+	}
+	return platform, planTier, true
+}
+
+func normalizeRadarAnthropicPlanTier(planTier string) string {
+	switch strings.ToLower(strings.TrimSpace(planTier)) {
+	case "pro", "claude_pro", "claudepro":
+		return radarQuotaAnthropicPlanPro
+	case "max_5x", "max5x", "5x_max", "5xmax", "claude_max_5x":
+		return radarQuotaAnthropicPlanMax5x
+	case "max_20x", "max20x", "20x_max", "20xmax", "claude_max_20x":
+		return radarQuotaAnthropicPlanMax20x
 	default:
 		return ""
 	}
 }
 
-func radarQuotaHumanizeTier(planTier string) string {
-	words := strings.FieldsFunc(planTier, func(r rune) bool {
-		return r == '_' || r == '-' || r == '.'
-	})
-	for i, word := range words {
-		if word == "" {
-			continue
-		}
-		words[i] = strings.ToUpper(word[:1]) + word[1:]
+func normalizeRadarOpenAIPlanTier(planTier string) string {
+	switch strings.ToLower(strings.TrimSpace(planTier)) {
+	case "chatgpt_plus", "chatgptplus":
+		return radarQuotaOpenAIPlanPlus
+	case "plus":
+		return radarQuotaOpenAIPlanPlus
+	case "5x_pro", "5xpro", "pro_5x", "pro5x", "chatgpt_pro_5x", "chatgpt_5x_pro":
+		return radarQuotaOpenAIPlanPro5x
+	case "pro", "chatgpt_pro", "chatgptpro", "20x_pro", "20xpro", "pro_20x", "pro20x", "chatgpt_pro_20x", "chatgpt_20x_pro":
+		// OpenAI currently reports the personal 20x subscription simply as
+		// plan_type=pro. Explicit 5x aliases remain separate when supplied.
+		return radarQuotaOpenAIPlanPro20x
+	default:
+		return ""
 	}
-	return strings.Join(words, " ")
+}
+
+func isSupportedRadarQuotaPlanTier(platform, planTier string) bool {
+	switch platform {
+	case PlatformAnthropic:
+		return planTier == radarQuotaAnthropicPlanPro ||
+			planTier == radarQuotaAnthropicPlanMax5x ||
+			planTier == radarQuotaAnthropicPlanMax20x
+	case PlatformOpenAI:
+		return planTier == radarQuotaOpenAIPlanPlus ||
+			planTier == radarQuotaOpenAIPlanPro5x ||
+			planTier == radarQuotaOpenAIPlanPro20x
+	default:
+		return false
+	}
+}
+
+func radarQuotaDisplayName(platform, planTier string) string {
+	switch {
+	case platform == PlatformAnthropic && planTier == radarQuotaAnthropicPlanPro:
+		return "Claude Pro"
+	case platform == PlatformAnthropic && planTier == radarQuotaAnthropicPlanMax5x:
+		return "Claude Max 5x"
+	case platform == PlatformAnthropic && planTier == radarQuotaAnthropicPlanMax20x:
+		return "Claude Max 20x"
+	case platform == PlatformOpenAI && planTier == radarQuotaOpenAIPlanPlus:
+		return "ChatGPT Plus"
+	case platform == PlatformOpenAI && planTier == radarQuotaOpenAIPlanPro5x:
+		return "ChatGPT Pro 5x"
+	case platform == PlatformOpenAI && planTier == radarQuotaOpenAIPlanPro20x:
+		return "ChatGPT Pro 20x"
+	default:
+		return ""
+	}
 }
 
 type radarQuotaInferenceSample struct {
@@ -673,7 +687,7 @@ func inferLimit(samples []radarQuotaInferenceSample, minUtilization, maxStdevRat
 	}
 
 	result := radarQuotaInferenceResult{sampleSize: len(candidates)}
-	if len(candidates) < 2 {
+	if len(candidates) == 0 {
 		result.rejectReason = radarInferenceReason(InferenceRejectReasonInsufficientSamples)
 		return result
 	}
@@ -759,11 +773,6 @@ func aggregateRadarQuotaWindow(
 	}
 
 	inference := inferLimit(inferenceSamples, cfg.InferMinUtilization, cfg.InferMaxStdevRatio)
-	if inference.sampleSize < cfg.PublicMinBucketAccounts {
-		inference.limit = nil
-		inference.stdev = nil
-		inference.rejectReason = radarInferenceReason(InferenceRejectReasonInsufficientSamples)
-	}
 	return &WindowStatsDTO{
 		AvgUtilization:        avgUtilization,
 		MinUtilization:        minUtilization,

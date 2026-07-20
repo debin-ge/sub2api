@@ -291,8 +291,12 @@ func (s *RadarService) GetQuotaBucketsLatest(ctx context.Context) (*QuotaRadarLa
 		}
 		deadlines := make([]*time.Time, 0, len(bucketKeys))
 		for _, bucketKey := range bucketKeys {
-			if _, _, err := ParseRadarBucketKey(bucketKey); err != nil {
+			platform, planTier, err := ParseRadarBucketKey(bucketKey)
+			if err != nil {
 				return nil, false, nil, ErrRadarUnavailable
+			}
+			if !isSupportedRadarQuotaPlanTier(platform, planTier) {
+				continue
 			}
 			snapshot, err := s.repo.GetLatestBucket(loadCtx, bucketKey)
 			if contextErr := radarServiceContextError(loadCtx, err); contextErr != nil {
@@ -304,14 +308,18 @@ func (s *RadarService) GetQuotaBucketsLatest(ctx context.Context) (*QuotaRadarLa
 			if err != nil {
 				return nil, false, nil, ErrRadarUnavailable
 			}
-			if snapshot == nil || snapshot.BucketKey != bucketKey || ValidateRadarBucketSnapshot(*snapshot) != nil {
+			if snapshot == nil || snapshot.BucketKey != bucketKey ||
+				snapshot.Platform != platform || snapshot.PlanTier != planTier ||
+				ValidateRadarBucketSnapshot(*snapshot) != nil {
 				continue
 			}
-			if snapshot.PrivacyThreshold < s.publicMinBucketAccounts {
+			minimumAccounts := radarQuotaPlanMinAccounts(platform, planTier, snapshot.AccountsCount, s.publicMinBucketAccounts)
+			if snapshot.PrivacyThreshold < minimumAccounts {
 				continue
 			}
 
 			mapped := *snapshot
+			mapped.DisplayName = radarQuotaDisplayName(platform, planTier)
 			mapped.CapturedAt = snapshot.CapturedAt.UTC()
 			var deadline *time.Time
 			mapped.Stale, deadline = radarQuotaFreshness(now, s.quotaStaleThreshold, mapped.CapturedAt)
@@ -355,7 +363,8 @@ func (s *RadarService) GetQuotaBucketsLatest(ctx context.Context) (*QuotaRadarLa
 // service validates canonical syntax before repository access and requires an
 // active index membership before selecting the bucket's Redis trend key.
 func (s *RadarService) GetQuotaBucketsTrend(ctx context.Context, bucketKey string, days int) (*QuotaTrendDTO, error) {
-	if _, _, err := ParseRadarBucketKey(bucketKey); err != nil || days < 1 || days > 7 {
+	platform, planTier, err := ParseRadarBucketKey(bucketKey)
+	if err != nil || !isSupportedRadarQuotaPlanTier(platform, planTier) || days < 1 || days > 7 {
 		return nil, ErrInvalidRadarQuery
 	}
 
@@ -401,10 +410,12 @@ func (s *RadarService) GetQuotaBucketsTrend(ctx context.Context, bucketKey strin
 		var latestCapturedAt *time.Time
 		for index := range snapshots {
 			snapshot := snapshots[index]
-			if snapshot.BucketKey != bucketKey || ValidateRadarBucketSnapshot(snapshot) != nil {
+			if snapshot.BucketKey != bucketKey || snapshot.Platform != platform || snapshot.PlanTier != planTier ||
+				ValidateRadarBucketSnapshot(snapshot) != nil {
 				continue
 			}
-			if snapshot.PrivacyThreshold < s.publicMinBucketAccounts {
+			minimumAccounts := radarQuotaPlanMinAccounts(platform, planTier, snapshot.AccountsCount, s.publicMinBucketAccounts)
+			if snapshot.PrivacyThreshold < minimumAccounts {
 				continue
 			}
 			timestamp := snapshot.CapturedAt.UTC()

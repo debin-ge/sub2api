@@ -271,7 +271,10 @@ func TestRadarQuotaAggregatorConstructorAndInference(t *testing.T) {
 			{utilization: 4.99, cost: 4.99},
 			{utilization: 5.00, cost: 5.00},
 		}, 5, 0.3)
-		assertRejected(t, result, InferenceRejectReasonInsufficientSamples, 1)
+		require.Equal(t, 1, result.sampleSize)
+		require.Nil(t, result.rejectReason)
+		require.InDelta(t, 100, *result.limit, 1e-12)
+		require.InDelta(t, 0, *result.stdev, 1e-12)
 
 		result = inferLimit([]radarQuotaInferenceSample{
 			{utilization: 5.00, cost: 5.00},
@@ -283,7 +286,13 @@ func TestRadarQuotaAggregatorConstructorAndInference(t *testing.T) {
 		require.InDelta(t, 0, *result.stdev, 1e-12)
 
 		result = inferLimit([]radarQuotaInferenceSample{{utilization: 10, cost: 10}}, 5, 0.3)
-		assertRejected(t, result, InferenceRejectReasonInsufficientSamples, 1)
+		require.Equal(t, 1, result.sampleSize)
+		require.Nil(t, result.rejectReason)
+		require.InDelta(t, 100, *result.limit, 1e-12)
+		require.InDelta(t, 0, *result.stdev, 1e-12)
+
+		result = inferLimit([]radarQuotaInferenceSample{{utilization: 4.99, cost: 4.99}}, 5, 0.3)
+		assertRejected(t, result, InferenceRejectReasonInsufficientSamples, 0)
 
 		result = inferLimit([]radarQuotaInferenceSample{
 			{utilization: 100, cost: 70},
@@ -329,46 +338,71 @@ func TestRadarQuotaAggregatorConstructorAndInference(t *testing.T) {
 			wantOK  bool
 		}{
 			{
-				name:    "anthropic known display",
+				name:    "anthropic Pro",
+				account: radarQuotaAnthropicAccount(1, " Claude_Pro "),
+				usage:   &UsageInfo{},
+				want:    radarQuotaBucketIdentity{"anthropic/pro", "anthropic", "pro", "Claude Pro"},
+				wantOK:  true,
+			},
+			{
+				name:    "anthropic 5x Max alias",
+				account: radarQuotaAnthropicAccount(1, "5xMax"),
+				usage:   &UsageInfo{},
+				want:    radarQuotaBucketIdentity{"anthropic/max_5x", "anthropic", "max_5x", "Claude Max 5x"},
+				wantOK:  true,
+			},
+			{
+				name:    "anthropic 20x Max",
 				account: radarQuotaAnthropicAccount(1, " Max_20X "),
 				usage:   &UsageInfo{},
 				want:    radarQuotaBucketIdentity{"anthropic/max_20x", "anthropic", "max_20x", "Claude Max 20x"},
 				wantOK:  true,
 			},
 			{
-				name:    "anthropic empty defaults generic",
-				account: radarQuotaAnthropicAccount(1, " "),
+				name:    "openai Plus alias",
+				account: radarQuotaOpenAIAccount(1, "ChatGPT_Plus"),
 				usage:   &UsageInfo{},
-				want:    radarQuotaBucketIdentity{"anthropic/generic", "anthropic", "generic", "Claude Generic"},
+				want:    radarQuotaBucketIdentity{"openai/plus", "openai", "plus", "ChatGPT Plus"},
 				wantOK:  true,
 			},
 			{
-				name:    "openai empty defaults unknown",
-				account: Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth},
+				name:    "openai 5x Pro alias",
+				account: radarQuotaOpenAIAccount(1, "5xPro"),
 				usage:   &UsageInfo{},
-				want:    radarQuotaBucketIdentity{"openai/unknown", "openai", "unknown", "ChatGPT"},
+				want:    radarQuotaBucketIdentity{"openai/pro_5x", "openai", "pro_5x", "ChatGPT Pro 5x"},
 				wantOK:  true,
 			},
 			{
 				name:    "openai 20x Pro alias",
 				account: radarQuotaOpenAIAccount(1, "20xPro"),
 				usage:   &UsageInfo{},
-				want:    radarQuotaBucketIdentity{"openai/pro", "openai", "pro", "ChatGPT Pro"},
+				want:    radarQuotaBucketIdentity{"openai/pro_20x", "openai", "pro_20x", "ChatGPT Pro 20x"},
 				wantOK:  true,
 			},
 			{
-				name:    "antigravity uses passive canonical tier not credential",
+				name:    "upstream plain Pro is canonical 20x Pro",
+				account: radarQuotaOpenAIAccount(1, "pro"),
+				usage:   &UsageInfo{},
+				want:    radarQuotaBucketIdentity{"openai/pro_20x", "openai", "pro_20x", "ChatGPT Pro 20x"},
+				wantOK:  true,
+			},
+			{
+				name:    "anthropic empty is not a supported plan",
+				account: radarQuotaAnthropicAccount(1, " "),
+				usage:   &UsageInfo{},
+				wantOK:  false,
+			},
+			{
+				name:    "openai empty is not a supported plan",
+				account: Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth},
+				usage:   &UsageInfo{},
+				wantOK:  false,
+			},
+			{
+				name:    "antigravity is not a quota radar platform",
 				account: Account{Platform: PlatformAntigravity, Type: AccountTypeOAuth, Credentials: map[string]any{"plan_type": "secret"}},
 				usage:   &UsageInfo{SubscriptionTier: " ULTRA "},
-				want:    radarQuotaBucketIdentity{"antigravity/ultra", "antigravity", "ultra", "Antigravity Ultra"},
-				wantOK:  true,
-			},
-			{
-				name:    "antigravity empty defaults basic",
-				account: radarQuotaAntigravityAccount(1, AccountTypeUpstream),
-				usage:   &UsageInfo{},
-				want:    radarQuotaBucketIdentity{"antigravity/basic", "antigravity", "basic", "Antigravity Basic"},
-				wantOK:  true,
+				wantOK:  false,
 			},
 			{
 				name:    "slash is invalid and must not become generic",
@@ -474,23 +508,22 @@ func TestRadarQuotaAggregatorRunOnceSelectionBatchingAndAggregation(t *testing.T
 		seenIDs[i] = account.ID
 		require.Same(t, &accounts.accounts[i], account, "Reader must receive the original &accounts[i]")
 	}
-	require.Equal(t, []int64{1, 2, 3, 4, 5, 6}, seenIDs)
+	require.Equal(t, []int64{1, 2, 3, 4}, seenIDs)
 
 	require.Len(t, batch.windowCalls, 2)
 	require.Len(t, batch.breakdownCalls, 2)
 	for _, call := range append(append([]radarQuotaBatchCall{}, batch.windowCalls...), batch.breakdownCalls...) {
-		require.Equal(t, []int64{1, 2, 3, 4, 5, 6}, call.accountIDs)
+		require.Equal(t, []int64{1, 2, 3, 4}, call.accountIDs)
 	}
 	require.Equal(t, now.UTC().Add(-5*time.Hour), batch.windowCalls[0].startTime)
 	require.Equal(t, now.UTC().Add(-7*24*time.Hour), batch.windowCalls[1].startTime)
 	require.Equal(t, now.UTC().Add(-5*time.Hour), batch.breakdownCalls[0].startTime)
 	require.Equal(t, now.UTC().Add(-7*24*time.Hour), batch.breakdownCalls[1].startTime)
 
-	require.Len(t, cache.writes, 3)
-	require.Equal(t, []string{"anthropic/max_20x", "antigravity/ultra", "openai/pro"}, []string{
+	require.Len(t, cache.writes, 2)
+	require.Equal(t, []string{"anthropic/max_20x", "openai/pro_20x"}, []string{
 		cache.writes[0].BucketKey,
 		cache.writes[1].BucketKey,
-		cache.writes[2].BucketKey,
 	})
 	wantCapturedAt := now.UTC().Truncate(time.Millisecond)
 	for _, snapshot := range cache.writes {
@@ -507,7 +540,9 @@ func TestRadarQuotaAggregatorRunOnceSelectionBatchingAndAggregation(t *testing.T
 	require.InDelta(t, 20, anthropic.FiveHour.MaxUtilization, 1e-12)
 	require.InDelta(t, 12, anthropic.FiveHour.AvgCost, 1e-12)
 	require.Equal(t, 1, anthropic.FiveHour.SampleSize)
-	require.Equal(t, InferenceRejectReasonInsufficientSamples, *anthropic.FiveHour.InferenceRejectReason)
+	require.Nil(t, anthropic.FiveHour.InferenceRejectReason)
+	require.InDelta(t, 100, *anthropic.FiveHour.InferredLimitUSD, 1e-12)
+	require.InDelta(t, 0, *anthropic.FiveHour.InferredStdev, 1e-12)
 	require.Nil(t, anthropic.SevenDay, "a one-account 7d window must not be public")
 	require.Equal(t, &ModelWindowStatsDTO{Model: "claude-sonnet", AvgUtilization: 20, SampleSize: 2}, anthropic.SevenDaySonnet)
 	require.Nil(t, anthropic.SevenDayFable, "a one-account Fable window must not be public")
@@ -515,9 +550,8 @@ func TestRadarQuotaAggregatorRunOnceSelectionBatchingAndAggregation(t *testing.T
 	require.NotNil(t, anthropic.ModelBreakdown7d)
 	require.Empty(t, anthropic.ModelBreakdown7d, "a one-account private model must not be public")
 
-	require.Equal(t, "Antigravity Ultra", cache.writes[1].DisplayName)
 	require.Nil(t, cache.writes[1].SevenDay)
-	require.Equal(t, "ChatGPT Pro", cache.writes[2].DisplayName)
+	require.Equal(t, "ChatGPT Pro 20x", cache.writes[1].DisplayName)
 	for _, snapshot := range cache.writes {
 		require.Equal(t, 2, snapshot.PrivacyThreshold)
 		require.NoError(t, ValidateRadarBucketSnapshot(snapshot))
@@ -528,6 +562,68 @@ func TestRadarQuotaAggregatorRunOnceSelectionBatchingAndAggregation(t *testing.T
 	for _, forbidden := range []string{"account_id", "account_ids", "credentials", "user_id", "email"} {
 		require.NotContains(t, string(encoded), forbidden)
 	}
+}
+
+func TestRadarQuotaAggregatorPublishesOnlySupportedAccountPlanIntersection(t *testing.T) {
+	now := time.Date(2026, time.July, 20, 13, 0, 0, 0, time.UTC)
+	accounts := &radarQuotaAccountListerFake{accounts: []Account{
+		radarQuotaAnthropicAccount(1, "pro"),
+		radarQuotaAnthropicAccount(2, "claude_pro"),
+		radarQuotaAnthropicAccount(3, "max_5x"),
+		radarQuotaAnthropicAccount(4, "5xMax"),
+		radarQuotaAnthropicAccount(5, "max_20x"),
+		radarQuotaAnthropicAccount(6, "20xMax"),
+		radarQuotaOpenAIAccount(7, "plus"),
+		radarQuotaOpenAIAccount(8, "chatgpt_plus"),
+		radarQuotaOpenAIAccount(9, "pro_5x"),
+		radarQuotaOpenAIAccount(10, "5xPro"),
+		radarQuotaOpenAIAccount(11, "pro"),
+		radarQuotaOpenAIAccount(12, "20xPro"),
+		radarQuotaAnthropicAccount(13, "team"),
+		radarQuotaOpenAIAccount(14, "team"),
+		radarQuotaAntigravityAccount(15, AccountTypeOAuth),
+	}}
+	usage := &radarQuotaUsageReaderFake{snapshots: make(map[int64]*UsageInfo)}
+	for id := int64(1); id <= 15; id++ {
+		usage.snapshots[id] = &UsageInfo{SevenDay: radarQuotaProgress(10)}
+	}
+	batch := &radarQuotaBatchReaderFake{}
+	cache := &radarQuotaCacheFake{}
+	aggregator := newRadarQuotaTestAggregator(t, accounts, usage, batch, cache, radarQuotaTestConfig(), func() time.Time { return now })
+
+	require.NoError(t, aggregator.RunOnce(context.Background()))
+	require.Len(t, usage.seen, 12, "unsupported platforms and plans must not be queried")
+	require.Equal(t, []int64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}, batch.windowCalls[0].accountIDs)
+	require.Equal(t, []string{
+		"anthropic/max_20x",
+		"anthropic/max_5x",
+		"anthropic/pro",
+		"openai/plus",
+		"openai/pro_20x",
+		"openai/pro_5x",
+	}, []string{
+		cache.writes[0].BucketKey,
+		cache.writes[1].BucketKey,
+		cache.writes[2].BucketKey,
+		cache.writes[3].BucketKey,
+		cache.writes[4].BucketKey,
+		cache.writes[5].BucketKey,
+	})
+	require.Equal(t, []string{
+		"Claude Max 20x",
+		"Claude Max 5x",
+		"Claude Pro",
+		"ChatGPT Plus",
+		"ChatGPT Pro 20x",
+		"ChatGPT Pro 5x",
+	}, []string{
+		cache.writes[0].DisplayName,
+		cache.writes[1].DisplayName,
+		cache.writes[2].DisplayName,
+		cache.writes[3].DisplayName,
+		cache.writes[4].DisplayName,
+		cache.writes[5].DisplayName,
+	})
 }
 
 func TestRadarQuotaAggregatorPublishesSingleChatGPTProWithSevenDayOnly(t *testing.T) {
@@ -554,14 +650,18 @@ func TestRadarQuotaAggregatorPublishesSingleChatGPTProWithSevenDayOnly(t *testin
 	require.Equal(t, 1, report.PrivacyFilteredBucketCount, "a single Plus account keeps the general two-account floor")
 	require.Len(t, cache.writes, 1)
 	snapshot := cache.writes[0]
-	require.Equal(t, "openai/pro", snapshot.BucketKey)
-	require.Equal(t, "ChatGPT Pro", snapshot.DisplayName)
+	require.Equal(t, "openai/pro_20x", snapshot.BucketKey)
+	require.Equal(t, "ChatGPT Pro 20x", snapshot.DisplayName)
 	require.Equal(t, 1, snapshot.AccountsCount)
 	require.Equal(t, 1, snapshot.PrivacyThreshold)
 	require.Nil(t, snapshot.FiveHour)
 	require.NotNil(t, snapshot.SevenDay)
 	require.Equal(t, 1, snapshot.SevenDay.ContributorsCount)
+	require.Equal(t, 1, snapshot.SevenDay.SampleSize)
 	require.InDelta(t, 24, snapshot.SevenDay.AvgUtilization, 1e-12)
+	require.InDelta(t, 50, *snapshot.SevenDay.InferredLimitUSD, 1e-12)
+	require.InDelta(t, 0, *snapshot.SevenDay.InferredStdev, 1e-12)
+	require.Nil(t, snapshot.SevenDay.InferenceRejectReason)
 	require.NoError(t, ValidateRadarBucketSnapshot(snapshot))
 }
 
@@ -594,7 +694,7 @@ func TestRadarQuotaAggregatorUsesOpenAISparkShadowSnapshotsOncePerParent(t *test
 	require.NoError(t, aggregator.RunOnce(context.Background()))
 	require.Len(t, cache.writes, 1)
 	snapshot := cache.writes[0]
-	require.Equal(t, "openai/pro", snapshot.BucketKey)
+	require.Equal(t, "openai/pro_20x", snapshot.BucketKey)
 	require.Equal(t, 3, snapshot.AccountsCount, "a parent and its Spark shadow must be one privacy contributor")
 	require.NotNil(t, snapshot.FiveHour)
 	require.InDelta(t, 20, snapshot.FiveHour.AvgUtilization, 1e-12)
@@ -655,12 +755,12 @@ func TestRadarQuotaAggregatorRunOnceFailurePrivacyAndDeterminism(t *testing.T) {
 		aggregator := newRadarQuotaTestAggregator(t, accounts, usage, batch, cache, radarQuotaTestConfig(), func() time.Time { return now })
 
 		require.NoError(t, aggregator.RunOnce(context.Background()))
-		require.Len(t, usage.seen, 4)
+		require.Len(t, usage.seen, 3)
 		require.Equal(t, []int64{3}, batch.windowCalls[0].accountIDs)
 		require.Empty(t, cache.writes, "one valid account is below the privacy threshold")
 	})
 
-	t.Run("mixed plan tiers remain separate buckets", func(t *testing.T) {
+	t.Run("unsupported plan tiers are excluded from supported buckets", func(t *testing.T) {
 		accounts := &radarQuotaAccountListerFake{accounts: []Account{
 			radarQuotaAnthropicAccount(1, "max_20x"),
 			radarQuotaAnthropicAccount(2, "max_20x"),
@@ -678,10 +778,9 @@ func TestRadarQuotaAggregatorRunOnceFailurePrivacyAndDeterminism(t *testing.T) {
 		aggregator := newRadarQuotaTestAggregator(t, accounts, usage, batch, cache, radarQuotaTestConfig(), func() time.Time { return now })
 
 		require.NoError(t, aggregator.RunOnce(context.Background()))
-		require.Equal(t, []string{"anthropic/max_20x", "anthropic/team"}, []string{
-			cache.writes[0].BucketKey,
-			cache.writes[1].BucketKey,
-		})
+		require.Len(t, cache.writes, 1)
+		require.Equal(t, "anthropic/max_20x", cache.writes[0].BucketKey)
+		require.Len(t, usage.seen, 2)
 	})
 
 	t.Run("duplicate successful account ids are queried and counted once", func(t *testing.T) {
@@ -770,7 +869,7 @@ func TestRadarQuotaAggregatorRunOnceFailurePrivacyAndDeterminism(t *testing.T) {
 		require.Nil(t, cache.writes[0].SevenDay)
 	})
 
-	t.Run("window inference obeys configured k anonymity above the mathematical minimum", func(t *testing.T) {
+	t.Run("window inference sample size is independent from publication anonymity", func(t *testing.T) {
 		accounts := &radarQuotaAccountListerFake{accounts: []Account{
 			radarQuotaAnthropicAccount(1, "max_20x"),
 			radarQuotaAnthropicAccount(2, "max_20x"),
@@ -795,9 +894,9 @@ func TestRadarQuotaAggregatorRunOnceFailurePrivacyAndDeterminism(t *testing.T) {
 		window := cache.writes[0].FiveHour
 		require.NotNil(t, window)
 		require.Equal(t, 2, window.SampleSize)
-		require.Nil(t, window.InferredLimitUSD)
-		require.Nil(t, window.InferredStdev)
-		require.Equal(t, InferenceRejectReasonInsufficientSamples, *window.InferenceRejectReason)
+		require.InDelta(t, 100, *window.InferredLimitUSD, 1e-12)
+		require.InDelta(t, 0, *window.InferredStdev, 1e-12)
+		require.Nil(t, window.InferenceRejectReason)
 	})
 
 	t.Run("per-window and per-model k anonymity prevents raw label disclosure", func(t *testing.T) {
@@ -858,7 +957,7 @@ func TestRadarQuotaAggregatorRunOnceFailurePrivacyAndDeterminism(t *testing.T) {
 		}
 	})
 
-	t.Run("openai oauth with empty plan reaches unknown while free and abnormal stay excluded", func(t *testing.T) {
+	t.Run("openai unsupported plans never reach quota collection or publication", func(t *testing.T) {
 		parentID := int64(99)
 		accounts := &radarQuotaAccountListerFake{accounts: []Account{
 			radarQuotaOpenAIAccount(1, ""),
@@ -877,17 +976,10 @@ func TestRadarQuotaAggregatorRunOnceFailurePrivacyAndDeterminism(t *testing.T) {
 		aggregator := newRadarQuotaTestAggregator(t, accounts, usage, batch, cache, radarQuotaTestConfig(), func() time.Time { return now })
 
 		require.NoError(t, aggregator.RunOnce(context.Background()))
-		seenIDs := make([]int64, 0, len(usage.seen))
-		for _, account := range usage.seen {
-			seenIDs = append(seenIDs, account.ID)
-		}
-		require.Equal(t, []int64{1, 2}, seenIDs)
-		require.Equal(t, []int64{1, 2}, batch.windowCalls[0].accountIDs)
-		require.Len(t, cache.writes, 1)
-		require.Equal(t, "openai/unknown", cache.writes[0].BucketKey)
-		require.Equal(t, "unknown", cache.writes[0].PlanTier)
-		require.Equal(t, "ChatGPT", cache.writes[0].DisplayName)
-		require.Equal(t, 2, cache.writes[0].AccountsCount)
+		require.Empty(t, usage.seen)
+		require.Empty(t, batch.windowCalls)
+		require.Empty(t, batch.breakdownCalls)
+		require.Empty(t, cache.writes)
 	})
 
 	t.Run("reader cancellation and deadline stop immediately", func(t *testing.T) {
@@ -968,31 +1060,26 @@ func TestRadarQuotaAggregatorRunOnceFailurePrivacyAndDeterminism(t *testing.T) {
 		accounts := &radarQuotaAccountListerFake{accounts: []Account{
 			radarQuotaOpenAIAccount(1, "pro"),
 			radarQuotaOpenAIAccount(2, "pro"),
-			radarQuotaAntigravityAccount(3, AccountTypeOAuth),
-			radarQuotaAntigravityAccount(4, AccountTypeUpstream),
 			radarQuotaAnthropicAccount(5, "max_20x"),
 			radarQuotaAnthropicAccount(6, "max_20x"),
 		}}
 		usage := &radarQuotaUsageReaderFake{snapshots: map[int64]*UsageInfo{
 			1: {FiveHour: radarQuotaProgress(10)}, 2: {FiveHour: radarQuotaProgress(10)},
-			3: {FiveHour: radarQuotaProgress(10), SubscriptionTier: "pro"},
-			4: {FiveHour: radarQuotaProgress(10), SubscriptionTier: "pro"},
 			5: {FiveHour: radarQuotaProgress(10)}, 6: {FiveHour: radarQuotaProgress(10)},
 		}}
 		batch := &radarQuotaBatchReaderFake{}
 		cache := &radarQuotaCacheFake{errors: map[string]error{
 			"anthropic/max_20x": errors.New("redis private address one"),
-			"openai/pro":        errors.New("redis private address two"),
+			"openai/pro_20x":    errors.New("redis private address two"),
 		}}
 		aggregator := newRadarQuotaTestAggregator(t, accounts, usage, batch, cache, radarQuotaTestConfig(), func() time.Time { return now })
 
 		err := aggregator.RunOnce(context.Background())
 		require.ErrorIs(t, err, ErrRadarQuotaAggregation)
 		require.NotContains(t, err.Error(), "private address")
-		require.Equal(t, []string{"anthropic/max_20x", "antigravity/pro", "openai/pro"}, []string{
+		require.Equal(t, []string{"anthropic/max_20x", "openai/pro_20x"}, []string{
 			cache.writes[0].BucketKey,
 			cache.writes[1].BucketKey,
-			cache.writes[2].BucketKey,
 		})
 	})
 
@@ -1001,15 +1088,11 @@ func TestRadarQuotaAggregatorRunOnceFailurePrivacyAndDeterminism(t *testing.T) {
 			accounts := &radarQuotaAccountListerFake{accounts: []Account{
 				radarQuotaOpenAIAccount(1, "pro"),
 				radarQuotaOpenAIAccount(2, "pro"),
-				radarQuotaAntigravityAccount(3, AccountTypeOAuth),
-				radarQuotaAntigravityAccount(4, AccountTypeUpstream),
 				radarQuotaAnthropicAccount(5, "max_20x"),
 				radarQuotaAnthropicAccount(6, "max_20x"),
 			}}
 			usage := &radarQuotaUsageReaderFake{snapshots: map[int64]*UsageInfo{
 				1: {FiveHour: radarQuotaProgress(10)}, 2: {FiveHour: radarQuotaProgress(10)},
-				3: {FiveHour: radarQuotaProgress(10), SubscriptionTier: "pro"},
-				4: {FiveHour: radarQuotaProgress(10), SubscriptionTier: "pro"},
 				5: {FiveHour: radarQuotaProgress(10)}, 6: {FiveHour: radarQuotaProgress(10)},
 			}}
 			batch := &radarQuotaBatchReaderFake{}
@@ -1067,8 +1150,8 @@ func TestRadarQuotaAggregatorRunOnceFailurePrivacyAndDeterminism(t *testing.T) {
 func TestRadarQuotaAggregatorRunOnceWithReportProvidesOnlyLowCardinalityCounts(t *testing.T) {
 	now := time.Date(2026, time.July, 13, 10, 0, 0, 0, time.UTC)
 	accounts := &radarQuotaAccountListerFake{accounts: []Account{
-		radarQuotaAnthropicAccount(1, "max"),
-		radarQuotaAnthropicAccount(2, "max"),
+		radarQuotaAnthropicAccount(1, "max_20x"),
+		radarQuotaAnthropicAccount(2, "max_20x"),
 		radarQuotaAnthropicAccount(3, "solo"),
 		radarQuotaOpenAIAccount(4, "pro"),
 		radarQuotaOpenAIAccount(5, "pro"),
@@ -1098,17 +1181,15 @@ func TestRadarQuotaAggregatorRunOnceWithReportProvidesOnlyLowCardinalityCounts(t
 	report, err := aggregator.RunOnceWithReport(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, 7, report.ScannedAccountCount)
-	require.Equal(t, 6, report.CandidateAccountCount)
-	require.Equal(t, 3, report.UsableAccountCount)
+	require.Equal(t, 4, report.CandidateAccountCount)
+	require.Equal(t, 2, report.UsableAccountCount)
 	require.Equal(t, 1, report.BucketCount)
-	require.Equal(t, 4, report.SkippedAccountCount)
-	require.Equal(t, 1, report.PrivacyFilteredBucketCount)
+	require.Equal(t, 2, report.SkippedAccountCount)
+	require.Equal(t, 0, report.PrivacyFilteredBucketCount)
 	require.Empty(t, report.InferenceRejectCounts)
 	require.Equal(t, map[string]int{
 		radarQuotaSkipUsageReadError: 1,
 		radarQuotaSkipInvalidWindow:  1,
-		radarQuotaSkipInvalidBucket:  1,
-		"privacy_threshold":          1,
 	}, report.SkippedAccountCounts)
 	require.Equal(t, map[RadarQuotaInferenceMetric]int{
 		{Bucket: PlatformAnthropic, Result: "success"}: 1,
@@ -1121,8 +1202,8 @@ func TestRadarQuotaAggregatorRunOnceWithReportProvidesOnlyLowCardinalityCounts(t
 
 func TestRadarQuotaAggregatorRunOnceWithReportCountsCanonicalInferenceReasons(t *testing.T) {
 	accounts := &radarQuotaAccountListerFake{accounts: []Account{
-		radarQuotaAnthropicAccount(1, "max"),
-		radarQuotaAnthropicAccount(2, "max"),
+		radarQuotaAnthropicAccount(1, "max_20x"),
+		radarQuotaAnthropicAccount(2, "max_20x"),
 	}}
 	usage := &radarQuotaUsageReaderFake{snapshots: map[int64]*UsageInfo{
 		1: {FiveHour: radarQuotaProgress(5)},
