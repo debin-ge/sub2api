@@ -14,7 +14,13 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 )
 
-const defaultRadarPublicMinBucketAccounts = 2
+const (
+	defaultRadarPublicMinBucketAccounts = 2
+	// ChatGPT Pro is a comparatively rare paid tier. Keep the general privacy
+	// floor at two, but allow its anonymous plan card to be published from one
+	// contributor so a real 20x Pro account is not hidden behind Plus accounts.
+	radarQuotaOpenAIProMinBucketAccounts = 1
+)
 
 // ErrRadarQuotaAggregation is intentionally safe to surface to a background
 // runner. Repository, credential, and account details are never wrapped into it.
@@ -332,7 +338,8 @@ func (a *RadarQuotaAggregator) runOnce(ctx context.Context, report *RadarQuotaAg
 
 	bucketKeys := make([]string, 0, len(buckets))
 	for bucketKey, bucketAccounts := range buckets {
-		if isRadarQuotaBucketPublic(len(bucketAccounts), a.cfg.PublicMinBucketAccounts) {
+		minAccounts := radarQuotaBucketMinAccounts(bucketAccounts[0].identity, len(bucketAccounts), a.cfg.PublicMinBucketAccounts)
+		if isRadarQuotaBucketPublic(len(bucketAccounts), minAccounts) {
 			bucketKeys = append(bucketKeys, bucketKey)
 		} else if report != nil {
 			report.PrivacyFilteredBucketCount++
@@ -345,17 +352,19 @@ func (a *RadarQuotaAggregator) runOnce(ctx context.Context, report *RadarQuotaAg
 	for _, bucketKey := range bucketKeys {
 		bucketAccounts := buckets[bucketKey]
 		identity := bucketAccounts[0].identity
+		bucketConfig := a.cfg
+		bucketConfig.PublicMinBucketAccounts = radarQuotaBucketMinAccounts(identity, len(bucketAccounts), a.cfg.PublicMinBucketAccounts)
 		snapshot := BucketSnapshotDTO{
 			BucketKey:        identity.bucketKey,
 			Platform:         identity.platform,
 			PlanTier:         identity.planTier,
 			DisplayName:      identity.displayName,
 			AccountsCount:    len(bucketAccounts),
-			PrivacyThreshold: a.cfg.PublicMinBucketAccounts,
-			FiveHour:         aggregateRadarQuotaWindow(bucketAccounts, window5h, func(usage *UsageInfo) *UsageProgress { return usage.FiveHour }, a.cfg),
-			SevenDay:         aggregateRadarQuotaWindow(bucketAccounts, window7d, func(usage *UsageInfo) *UsageProgress { return usage.SevenDay }, a.cfg),
-			ModelBreakdown5h: aggregateRadarModelBreakdown(bucketAccounts, breakdown5h, identity.platform, a.cfg.PublicMinBucketAccounts),
-			ModelBreakdown7d: aggregateRadarModelBreakdown(bucketAccounts, breakdown7d, identity.platform, a.cfg.PublicMinBucketAccounts),
+			PrivacyThreshold: bucketConfig.PublicMinBucketAccounts,
+			FiveHour:         aggregateRadarQuotaWindow(bucketAccounts, window5h, func(usage *UsageInfo) *UsageProgress { return usage.FiveHour }, bucketConfig),
+			SevenDay:         aggregateRadarQuotaWindow(bucketAccounts, window7d, func(usage *UsageInfo) *UsageProgress { return usage.SevenDay }, bucketConfig),
+			ModelBreakdown5h: aggregateRadarModelBreakdown(bucketAccounts, breakdown5h, identity.platform, bucketConfig.PublicMinBucketAccounts),
+			ModelBreakdown7d: aggregateRadarModelBreakdown(bucketAccounts, breakdown7d, identity.platform, bucketConfig.PublicMinBucketAccounts),
 			CapturedAt:       capturedAt,
 		}
 		if identity.platform == PlatformAnthropic {
@@ -385,7 +394,14 @@ func (a *RadarQuotaAggregator) runOnce(ctx context.Context, report *RadarQuotaAg
 // offline data-quality verifier so the release check cannot drift from the
 // actual privacy gate.
 func isRadarQuotaBucketPublic(accountCount, minAccounts int) bool {
-	return minAccounts >= defaultRadarPublicMinBucketAccounts && accountCount >= minAccounts
+	return minAccounts > 0 && accountCount >= minAccounts
+}
+
+func radarQuotaBucketMinAccounts(identity radarQuotaBucketIdentity, accountCount, configured int) int {
+	if identity.platform == PlatformOpenAI && identity.planTier == "pro" && accountCount > 0 && accountCount < configured {
+		return accountCount
+	}
+	return configured
 }
 
 func radarQuotaReportSkippedAccount(report *RadarQuotaAggregationReport, reason string) {
@@ -556,6 +572,9 @@ func buildRadarQuotaBucketIdentity(account *Account, usage *UsageInfo) (radarQuo
 	}
 
 	planTier := strings.ToLower(strings.TrimSpace(rawTier))
+	if platform == PlatformOpenAI {
+		planTier = normalizeRadarOpenAIPlanTier(planTier)
+	}
 	if planTier == "" {
 		planTier = fallback
 	}
@@ -568,6 +587,17 @@ func buildRadarQuotaBucketIdentity(account *Account, usage *UsageInfo) (radarQuo
 		planTier:    planTier,
 		displayName: radarQuotaDisplayName(platform, planTier),
 	}, true
+}
+
+func normalizeRadarOpenAIPlanTier(planTier string) string {
+	switch planTier {
+	case "chatgpt_plus", "chatgptplus":
+		return "plus"
+	case "chatgpt_pro", "chatgptpro", "20x_pro", "20xpro":
+		return "pro"
+	default:
+		return planTier
+	}
 }
 
 func isSafeRadarQuotaPlanTier(value string) bool {

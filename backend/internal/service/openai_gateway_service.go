@@ -6823,6 +6823,10 @@ func buildCodexUsageExtraUpdates(snapshot *OpenAICodexUsageSnapshot, fallbackNow
 
 	// 归一化到 5h/7d 规范字段
 	if normalized := snapshot.Normalize(); normalized != nil {
+		if normalized.Used5hPercent != nil || normalized.Used7dPercent != nil {
+			updates[openAICodex5hAvailableExtraKey] = normalized.Used5hPercent != nil
+			updates[openAICodex7dAvailableExtraKey] = normalized.Used7dPercent != nil
+		}
 		if normalized.Used5hPercent != nil {
 			updates["codex_5h_used_percent"] = *normalized.Used5hPercent
 		}

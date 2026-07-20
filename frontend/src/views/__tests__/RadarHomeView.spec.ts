@@ -354,7 +354,7 @@ describe('RadarHomeView', () => {
       })]),
     }))
     expect(completed.text()).toContain('No publishable quota data')
-    expect(completed.text()).toContain('At least 2 supported subscription accounts')
+    expect(completed.text()).toContain('configured minimum sample')
 
     const failed = mountView(makeRadar({
       quotaLatest: emptyQuota,

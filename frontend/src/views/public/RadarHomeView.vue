@@ -213,7 +213,7 @@ const quotaEmptyMessage = computed(() => {
   ) {
     return t(
       'radar.quota.emptyNoPublishable',
-      'No publishable quota data. At least 2 supported subscription accounts on the same plan with recent passive quota snapshots are required.'
+      'No publishable quota data. Supported plan buckets require recent passive quota snapshots and their configured minimum sample.'
     )
   }
   return t(

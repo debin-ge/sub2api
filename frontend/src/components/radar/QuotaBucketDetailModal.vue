@@ -164,37 +164,6 @@
                 {{ t('radar.quota.trendMinimum', 'Minimum') }}: {{ formatPercent(trendSummary.minimum) }}.
                 {{ t('radar.quota.trendMaximum', 'Maximum') }}: {{ formatPercent(trendSummary.maximum) }}.
               </p>
-              <button
-                v-if="trendData.length > 0"
-                data-testid="quota-modal-trend-toggle"
-                type="button"
-                :aria-expanded="showFullTrendData"
-                aria-controls="quota-modal-trend-data"
-                class="mt-3 rounded-lg px-3 py-2 text-sm font-semibold text-primary-600 hover:bg-primary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:text-primary-400 dark:hover:bg-primary-950/30"
-                @click="showFullTrendData = !showFullTrendData"
-              >
-                {{ showFullTrendData ? t('radar.quota.hideTrendData', 'Hide full trend data') : t('radar.quota.showTrendData', 'Show full trend data') }}
-              </button>
-              <div
-                v-if="showFullTrendData && trendData.length > 0"
-                class="mt-3 max-h-72 max-w-full overflow-auto rounded-xl border border-gray-200 dark:border-dark-800"
-              >
-                <table id="quota-modal-trend-data" data-testid="quota-modal-trend-data" class="w-full table-fixed text-xs">
-                  <caption class="sr-only">{{ t('radar.quota.trend', 'Trend') }}</caption>
-                  <thead class="sticky top-0 bg-gray-50 text-left text-gray-500 dark:bg-dark-800 dark:text-gray-400">
-                    <tr>
-                      <th scope="col" class="w-2/3 px-3 py-2">{{ t('radar.common.date', 'Date') }}</th>
-                      <th scope="col" class="w-1/3 px-3 py-2 text-right">{{ selectedWindowLabel }}</th>
-                    </tr>
-                  </thead>
-                  <tbody class="divide-y divide-gray-100 dark:divide-dark-800">
-                    <tr v-for="point in trendData" :key="point.timestamp">
-                      <td class="break-words px-3 py-2"><time :datetime="point.timestamp">{{ formatDate(point.timestamp) }}</time></td>
-                      <td class="px-3 py-2 text-right tabular-nums">{{ formatPercent(point.value) }}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
               <p v-if="!trendLoading && !trendError && trendData.length === 0" class="mt-3 rounded-xl border border-dashed border-gray-300 p-6 text-center text-sm text-gray-500 dark:border-dark-700 dark:text-gray-400">
                 {{ t('radar.quota.noTrend', 'No trend data') }}
               </p>
@@ -242,7 +211,6 @@ const { t, locale } = useI18n()
 const dialogRef = ref<HTMLElement | null>(null)
 const closeButtonRef = ref<HTMLButtonElement | null>(null)
 const selectedWindow = ref<QuotaWindow>('5h')
-const showFullTrendData = ref(false)
 let returnFocusTo: HTMLElement | null = null
 let previousBodyOverflow = ''
 let bodyLocked = false
@@ -306,15 +274,13 @@ const percentFormatter = computed(() => new Intl.NumberFormat(locale.value, { ma
 const dateTimeFormatter = computed(() => new Intl.DateTimeFormat(locale.value, { dateStyle: 'medium', timeStyle: 'short' }))
 const usdFormatter = computed(() => new Intl.NumberFormat(locale.value, { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }))
 
-watch(() => props.bucket, (bucket, previousBucket) => {
-  if (bucket?.bucket_key !== previousBucket?.bucket_key) showFullTrendData.value = false
+watch(() => props.bucket, (bucket) => {
   chooseAvailableWindow()
   if (props.show && bucket && !bodyLocked) openDialog()
   else if (!bucket && bodyLocked) closeDialog()
 })
 watch(() => props.show, (show) => {
   if (show && props.bucket) {
-    showFullTrendData.value = false
     openDialog()
   }
   else closeDialog()

@@ -1070,7 +1070,8 @@ radar:
   # Quota aggregation cadence (1-1440 minutes) and history retention (1-30 days).
   quota_aggregator_interval_min: 15
   quota_history_retention_days: 7
-  # Privacy thresholds for warnings and public aggregate buckets.
+  # Privacy thresholds for warnings and public aggregate buckets. ChatGPT Pro
+  # uses its available contributor count so a singleton 20x plan remains visible.
   sample_size_warn_below: 3
   public_min_bucket_accounts: 2
   # Utilization and dispersion limits used for reset-time inference.

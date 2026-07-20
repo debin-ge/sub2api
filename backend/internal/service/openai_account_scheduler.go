@@ -2154,7 +2154,7 @@ func openAIQuotaHeadroomFactor(account *Account, now time.Time) float64 {
 	}
 
 	factor := 1 - clamp01(primaryUsedPercent/100)
-	if secondaryUsedPercent, ok := resolveAccountExtraNumber(account.Extra, "codex_secondary_used_percent", "codex_5h_used_percent"); ok &&
+	if secondaryUsedPercent, ok := resolveAccountExtraNumber(account.Extra, "codex_secondary_used_percent", "codex_5h_used_percent"); !codexWindowMarkedUnavailable(account.Extra, openAICodex5hAvailableExtraKey) && ok &&
 		!openAIQuotaWindowResetAny(account.Extra, now, "secondary", "5h") {
 		secondaryRemaining := 1 - clamp01(secondaryUsedPercent/100)
 		if secondaryRemaining < openAIQuotaHeadroomSecondaryLowRemain {

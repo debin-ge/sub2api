@@ -3,7 +3,7 @@
     v-if="!buckets || buckets.length === 0"
     class="rounded-2xl border border-dashed border-gray-300 p-10 text-center text-sm text-gray-500 dark:border-dark-700 dark:text-gray-400"
   >
-    {{ t('radar.quota.emptyNoPublishable', 'No publishable quota data. At least 2 supported subscription accounts on the same plan with recent passive quota snapshots are required.') }}
+    {{ t('radar.quota.emptyNoPublishable', 'No publishable quota data. Supported plan buckets require recent passive quota snapshots and their configured minimum sample.') }}
   </div>
 
   <div v-else ref="gridRef" class="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
@@ -32,21 +32,21 @@
         ⚠ {{ t('radar.quota.smallSample', 'Small sample') }}: n={{ formatNumber(bucket.accounts_count) }}
       </p>
 
-      <div v-if="bucket.five_hour" class="mt-6">
+      <div v-if="primaryWindowStats(bucket)" class="mt-6">
         <div class="flex items-end justify-between gap-3">
           <div>
-            <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('radar.quota.fiveHourUtilization', '5-hour utilization') }}</p>
+            <p class="text-sm text-gray-500 dark:text-gray-400">{{ primaryWindowLabel(bucket) }}</p>
             <p class="mt-1 text-3xl font-bold tabular-nums text-gray-950 dark:text-white">
-              {{ formatPercent(bucket.five_hour.avg_utilization) }}
+              {{ formatPercent(primaryWindowUtilization(bucket)) }}
             </p>
           </div>
         </div>
         <div class="mt-3 h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-dark-800">
           <div
-            :data-utilization-level="utilizationLevel(bucket.five_hour.avg_utilization)"
+            :data-utilization-level="utilizationLevel(primaryWindowUtilization(bucket))"
             class="h-full rounded-full transition-all"
-            :class="utilizationClass(bucket.five_hour.avg_utilization)"
-            :style="{ width: `${clampedPercent(bucket.five_hour.avg_utilization)}%` }"
+            :class="utilizationClass(primaryWindowUtilization(bucket))"
+            :style="{ width: `${clampedPercent(primaryWindowUtilization(bucket))}%` }"
           />
         </div>
 
@@ -54,14 +54,14 @@
           <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
             {{ t('radar.quota.inferredLimit', 'Inferred limit') }}
           </p>
-          <p v-if="bucket.five_hour.inferred_limit_usd !== null" class="mt-1 font-semibold text-gray-950 dark:text-white">
-            {{ formatUSD(bucket.five_hour.inferred_limit_usd) }}
-            <span v-if="bucket.five_hour.inferred_stdev !== null" class="font-normal text-gray-500 dark:text-gray-400">
-              ± {{ formatUSD(bucket.five_hour.inferred_stdev) }}
+          <p v-if="primaryWindowLimit(bucket) !== null" class="mt-1 font-semibold text-gray-950 dark:text-white">
+            {{ formatUSD(primaryWindowLimit(bucket) ?? 0) }}
+            <span v-if="primaryWindowStdev(bucket) !== null" class="font-normal text-gray-500 dark:text-gray-400">
+              ± {{ formatUSD(primaryWindowStdev(bucket) ?? 0) }}
             </span>
           </p>
           <p v-else class="mt-1 text-sm text-gray-600 dark:text-gray-300">
-            {{ inferenceMessage(bucket.five_hour.inference_reject_reason) }}
+            {{ inferenceMessage(primaryWindowInferenceReason(bucket)) }}
           </p>
         </div>
       </div>
@@ -71,7 +71,7 @@
 
       <div class="mt-5 border-t border-gray-100 pt-4 dark:border-dark-800">
         <div class="mb-2 flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
-          <span>{{ t('radar.quota.sevenDayTrend', '7-day 5-hour utilization trend') }}</span>
+          <span>{{ trendTitle(bucket) }}</span>
         </div>
         <p v-if="trendLoading[bucket.bucket_key]" role="status" aria-live="polite" class="py-1 text-center text-xs text-gray-500 dark:text-gray-400">
           {{ t('radar.trend.loading', 'Loading trend') }}
@@ -103,7 +103,7 @@
           class="sr-only"
         >
           {{ t('radar.quota.sparklineLabel', 'Quota utilization trend') }}.
-          {{ t('radar.quota.fiveHourUtilization', '5-hour utilization') }}.
+          {{ trendWindowLabel(trendSummary(bucket.bucket_key)!.window) }}.
           {{ t('radar.quota.trendRange', 'Range') }}:
           {{ formatDateTime(trendSummary(bucket.bucket_key)!.startTimestamp) }} –
           {{ formatDateTime(trendSummary(bucket.bucket_key)!.endTimestamp) }}.
@@ -147,6 +147,7 @@ import type {
   InferenceRejectReason,
   QuotaTrendDTO,
   RadarPlatform,
+  WindowStatsDTO,
 } from '@/types/radar'
 
 const props = withDefaults(defineProps<{
@@ -174,6 +175,7 @@ let trendObserver: IntersectionObserver | null = null
 
 interface SparklineSummary {
   points: string | null
+  window: '5h' | '7d'
   count: number
   startTimestamp: string
   endTimestamp: string
@@ -194,8 +196,15 @@ const trendSummaries = computed(() => {
   const summaries = new Map<string, SparklineSummary>()
   for (const [bucketKey, trend] of Object.entries(props.trends)) {
     if (!trend) continue
-    const data = trend.data_points.flatMap((point) => {
+    const hasFiveHourData = trend.data_points.some((point) => {
       const value = point.five_hour?.avg_utilization
+      return value !== undefined && Number.isFinite(value)
+    })
+    const window = hasFiveHourData ? '5h' : '7d'
+    const data = trend.data_points.flatMap((point) => {
+      const value = window === '5h'
+        ? point.five_hour?.avg_utilization
+        : point.seven_day?.avg_utilization
       return value !== undefined && Number.isFinite(value)
         ? [{ timestamp: point.timestamp, value }]
         : []
@@ -214,6 +223,7 @@ const trendSummaries = computed(() => {
         }).join(' ')
     summaries.set(bucketKey, {
       points,
+      window,
       count: data.length,
       startTimestamp: data[0].timestamp,
       endTimestamp: data[data.length - 1].timestamp,
@@ -272,6 +282,45 @@ function utilizationLevel(value: number): 'low' | 'moderate' | 'high' | 'critica
   if (value < 60) return 'moderate'
   if (value < 80) return 'high'
   return 'critical'
+}
+
+function primaryWindowStats(bucket: BucketSnapshotDTO): WindowStatsDTO | null {
+  return bucket.five_hour ?? bucket.seven_day
+}
+
+function primaryWindowUtilization(bucket: BucketSnapshotDTO): number {
+  return primaryWindowStats(bucket)?.avg_utilization ?? 0
+}
+
+function primaryWindowLimit(bucket: BucketSnapshotDTO): number | null {
+  return primaryWindowStats(bucket)?.inferred_limit_usd ?? null
+}
+
+function primaryWindowStdev(bucket: BucketSnapshotDTO): number | null {
+  return primaryWindowStats(bucket)?.inferred_stdev ?? null
+}
+
+function primaryWindowInferenceReason(bucket: BucketSnapshotDTO): InferenceRejectReason | undefined {
+  return primaryWindowStats(bucket)?.inference_reject_reason
+}
+
+function primaryWindowLabel(bucket: BucketSnapshotDTO): string {
+  return bucket.five_hour
+    ? t('radar.quota.fiveHourUtilization', '5-hour utilization')
+    : t('radar.quota.sevenDayUtilization', '7-day utilization')
+}
+
+function trendWindowLabel(window: '5h' | '7d'): string {
+  return window === '5h'
+    ? t('radar.quota.fiveHourUtilization', '5-hour utilization')
+    : t('radar.quota.sevenDayUtilization', '7-day utilization')
+}
+
+function trendTitle(bucket: BucketSnapshotDTO): string {
+  const window = trendSummary(bucket.bucket_key)?.window ?? (bucket.five_hour ? '5h' : '7d')
+  return window === '5h'
+    ? t('radar.quota.sevenDayTrend', '7-day 5-hour utilization trend')
+    : t('radar.quota.sevenDayQuotaTrend', '7-day quota utilization trend')
 }
 
 function utilizationClass(value: number): string {

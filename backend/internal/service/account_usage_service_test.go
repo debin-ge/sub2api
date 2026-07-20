@@ -66,6 +66,24 @@ func TestShouldRefreshOpenAICodexSnapshot(t *testing.T) {
 	}
 }
 
+func TestShouldRefreshOpenAICodexSnapshot_AcceptsSevenDayOnlyPolicy(t *testing.T) {
+	t.Parallel()
+	now := time.Now()
+	account := &Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+		Extra: map[string]any{
+			openAICodex5hAvailableExtraKey: false,
+			openAICodex7dAvailableExtraKey: true,
+		},
+	}
+	usage := &UsageInfo{SevenDay: &UsageProgress{Utilization: 24}}
+
+	if shouldRefreshOpenAICodexSnapshot(account, usage, now) {
+		t.Fatal("a declared seven-day-only snapshot must not be treated as structurally incomplete")
+	}
+}
+
 // TestShouldRefreshOpenAICodexSnapshot_SparkShadowIgnoresWSv2 外审第9轮 P1:spark 影子用量走
 // QueryUsage(/wham/usage,与 WSv2 无关),staleness 不得被 WSv2 门控,否则首刷后窗口永久冻结。
 func TestShouldRefreshOpenAICodexSnapshot_SparkShadowIgnoresWSv2(t *testing.T) {
@@ -239,6 +257,17 @@ func TestBuildCodexUsageProgressFromExtra_ZerosExpiredWindow(t *testing.T) {
 		}
 		if progress.Utilization != 42.0 {
 			t.Fatalf("expected Utilization=42, got %v", progress.Utilization)
+		}
+	})
+
+	t.Run("explicitly unavailable 5h ignores a legacy persisted value", func(t *testing.T) {
+		extra := map[string]any{
+			openAICodex5hAvailableExtraKey: false,
+			"codex_5h_used_percent":        42.0,
+			"codex_5h_reset_at":            now.Add(2 * time.Hour).Format(time.RFC3339),
+		}
+		if progress := buildCodexUsageProgressFromExtra(extra, "5h", now); progress != nil {
+			t.Fatalf("expected unavailable 5h window to stay nil, got %#v", progress)
 		}
 	})
 

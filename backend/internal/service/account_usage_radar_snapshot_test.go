@@ -437,6 +437,27 @@ func TestAccountUsageService_GetRadarUsageSnapshot_NormalizesRFC3339Offsets(t *t
 	require.Equal(t, 2*60*60, got.FiveHour.RemainingSeconds)
 }
 
+func TestAccountUsageService_GetRadarUsageSnapshot_UsesSevenDayWhenFiveHourIsUnavailable(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 7, 20, 8, 0, 0, 0, time.UTC)
+	account := &Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth, Extra: map[string]any{
+		"codex_usage_updated_at":       now.Add(-time.Minute).Format(time.RFC3339),
+		openAICodex5hAvailableExtraKey: false,
+		openAICodex7dAvailableExtraKey: true,
+		"codex_5h_used_percent":        81.0,
+		"codex_7d_used_percent":        24.0,
+		"codex_7d_reset_at":            now.Add(4 * 24 * time.Hour).Format(time.RFC3339),
+	}}
+
+	got, err := newRadarSnapshotTestService(now, 7*24*time.Hour).GetRadarUsageSnapshot(context.Background(), account)
+
+	require.NoError(t, err)
+	require.Nil(t, got.FiveHour, "legacy 5h data must not survive an explicit upstream removal")
+	require.NotNil(t, got.SevenDay)
+	require.Equal(t, 24.0, got.SevenDay.Utilization)
+}
+
 func TestAccountUsageService_GetRadarUsageSnapshot_PropagatesContextErrors(t *testing.T) {
 	t.Parallel()
 

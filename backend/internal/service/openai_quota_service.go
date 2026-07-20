@@ -481,6 +481,10 @@ func buildCodexSparkWindowExtraUpdates(usage *OpenAIQuotaUsage, now time.Time) m
 
 	now = now.UTC()
 	updates := make(map[string]any)
+	if normalized.Used5hPercent != nil || normalized.Used7dPercent != nil {
+		updates[openAICodex5hAvailableExtraKey] = normalized.Used5hPercent != nil
+		updates[openAICodex7dAvailableExtraKey] = normalized.Used7dPercent != nil
+	}
 	if normalized.Used5hPercent != nil {
 		updates["codex_5h_used_percent"] = *normalized.Used5hPercent
 	}

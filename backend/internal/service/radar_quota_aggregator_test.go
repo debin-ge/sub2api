@@ -350,6 +350,13 @@ func TestRadarQuotaAggregatorConstructorAndInference(t *testing.T) {
 				wantOK:  true,
 			},
 			{
+				name:    "openai 20x Pro alias",
+				account: radarQuotaOpenAIAccount(1, "20xPro"),
+				usage:   &UsageInfo{},
+				want:    radarQuotaBucketIdentity{"openai/pro", "openai", "pro", "ChatGPT Pro"},
+				wantOK:  true,
+			},
+			{
 				name:    "antigravity uses passive canonical tier not credential",
 				account: Account{Platform: PlatformAntigravity, Type: AccountTypeOAuth, Credentials: map[string]any{"plan_type": "secret"}},
 				usage:   &UsageInfo{SubscriptionTier: " ULTRA "},
@@ -521,6 +528,41 @@ func TestRadarQuotaAggregatorRunOnceSelectionBatchingAndAggregation(t *testing.T
 	for _, forbidden := range []string{"account_id", "account_ids", "credentials", "user_id", "email"} {
 		require.NotContains(t, string(encoded), forbidden)
 	}
+}
+
+func TestRadarQuotaAggregatorPublishesSingleChatGPTProWithSevenDayOnly(t *testing.T) {
+	now := time.Date(2026, time.July, 20, 12, 0, 0, 0, time.UTC)
+	accounts := &radarQuotaAccountListerFake{accounts: []Account{
+		radarQuotaOpenAIAccount(1, "20xPro"),
+		radarQuotaOpenAIAccount(2, "plus"),
+	}}
+	usage := &radarQuotaUsageReaderFake{snapshots: map[int64]*UsageInfo{
+		1: {SevenDay: radarQuotaProgress(24)},
+		2: {SevenDay: radarQuotaProgress(35)},
+	}}
+	batch := &radarQuotaBatchReaderFake{windowResults: []map[int64]*usagestats.AccountStats{
+		{},
+		{1: {Cost: 12}, 2: {Cost: 18}},
+	}}
+	cache := &radarQuotaCacheFake{}
+	aggregator := newRadarQuotaTestAggregator(t, accounts, usage, batch, cache, radarQuotaTestConfig(), func() time.Time { return now })
+
+	report, err := aggregator.RunOnceWithReport(context.Background())
+
+	require.NoError(t, err)
+	require.Equal(t, 1, report.BucketCount)
+	require.Equal(t, 1, report.PrivacyFilteredBucketCount, "a single Plus account keeps the general two-account floor")
+	require.Len(t, cache.writes, 1)
+	snapshot := cache.writes[0]
+	require.Equal(t, "openai/pro", snapshot.BucketKey)
+	require.Equal(t, "ChatGPT Pro", snapshot.DisplayName)
+	require.Equal(t, 1, snapshot.AccountsCount)
+	require.Equal(t, 1, snapshot.PrivacyThreshold)
+	require.Nil(t, snapshot.FiveHour)
+	require.NotNil(t, snapshot.SevenDay)
+	require.Equal(t, 1, snapshot.SevenDay.ContributorsCount)
+	require.InDelta(t, 24, snapshot.SevenDay.AvgUtilization, 1e-12)
+	require.NoError(t, ValidateRadarBucketSnapshot(snapshot))
 }
 
 func TestRadarQuotaAggregatorUsesOpenAISparkShadowSnapshotsOncePerParent(t *testing.T) {

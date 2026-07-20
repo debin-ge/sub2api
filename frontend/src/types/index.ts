@@ -1057,10 +1057,12 @@ export interface CodexUsageSnapshot {
   codex_primary_over_secondary_percent?: number // Overflow ratio
 
   // Canonical fields (normalized by backend, use these preferentially)
+  codex_5h_available?: boolean // False when the upstream policy omits the 5-hour window
   codex_5h_used_percent?: number // 5-hour window usage percentage
   codex_5h_reset_after_seconds?: number // Seconds until 5h window reset
   codex_5h_reset_at?: string // 5-hour window absolute reset time (RFC3339)
   codex_5h_window_minutes?: number // 5h window in minutes (should be ~300)
+  codex_7d_available?: boolean // False when the upstream response omits the 7-day window
   codex_7d_used_percent?: number // 7-day window usage percentage
   codex_7d_reset_after_seconds?: number // Seconds until 7d window reset
   codex_7d_reset_at?: string // 7-day window absolute reset time (RFC3339)

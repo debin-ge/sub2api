@@ -133,6 +133,33 @@ func TestBuildCodexUsageExtraUpdates_NormalizesOffsetTimestampsToUTC(t *testing.
 	}
 }
 
+func TestBuildCodexUsageExtraUpdates_MarksMissingFiveHourWindowUnavailable(t *testing.T) {
+	used := 24.0
+	reset := 86400
+	window := 10080
+	snapshot := &OpenAICodexUsageSnapshot{
+		PrimaryUsedPercent:       &used,
+		PrimaryResetAfterSeconds: &reset,
+		PrimaryWindowMinutes:     &window,
+		UpdatedAt:                "2026-07-20T10:00:00Z",
+	}
+
+	updates := buildCodexUsageExtraUpdates(snapshot, time.Now())
+
+	if got := updates[openAICodex5hAvailableExtraKey]; got != false {
+		t.Fatalf("%s = %v, want false", openAICodex5hAvailableExtraKey, got)
+	}
+	if got := updates[openAICodex7dAvailableExtraKey]; got != true {
+		t.Fatalf("%s = %v, want true", openAICodex7dAvailableExtraKey, got)
+	}
+	if _, exists := updates["codex_5h_used_percent"]; exists {
+		t.Fatalf("unexpected 5h utilization in seven-day-only snapshot")
+	}
+	if got := updates["codex_7d_used_percent"]; got != used {
+		t.Fatalf("codex_7d_used_percent = %v, want %v", got, used)
+	}
+}
+
 // TestBuildCodexUsageExtraUpdates_FreshAccountUsedPercentNotInverted_Issue2994 locks in the
 // canonical "used %" semantics for the 5h window. A fresh account reports a tiny
 // secondary-used-percent (~1%); the stored codex_5h_used_percent must equal that value

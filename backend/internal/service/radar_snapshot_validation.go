@@ -15,7 +15,14 @@ var ErrInvalidRadarBucketSnapshot = errors.New("invalid radar bucket snapshot")
 // otherwise publishable contributors.
 func ValidateRadarBucketSnapshot(snapshot BucketSnapshotDTO) error {
 	threshold := snapshot.PrivacyThreshold
-	if threshold < defaultRadarPublicMinBucketAccounts || snapshot.AccountsCount < threshold {
+	minimumThreshold := defaultRadarPublicMinBucketAccounts
+	if snapshot.Platform == PlatformOpenAI && normalizeRadarOpenAIPlanTier(snapshot.PlanTier) == "pro" {
+		minimumThreshold = radarQuotaOpenAIProMinBucketAccounts
+		if threshold == radarQuotaOpenAIProMinBucketAccounts && snapshot.AccountsCount != 1 {
+			return ErrInvalidRadarBucketSnapshot
+		}
+	}
+	if threshold < minimumThreshold || snapshot.AccountsCount < threshold {
 		return ErrInvalidRadarBucketSnapshot
 	}
 	for _, window := range []*WindowStatsDTO{snapshot.FiveHour, snapshot.SevenDay} {

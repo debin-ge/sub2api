@@ -49,8 +49,9 @@ describe('QuotaBucketDetailModal', () => {
     expect(accessibleTrend.textContent).toMatch(/2026|Jul/)
     expect(accessibleTrend.closest('[aria-live]')).toBeNull()
     expect(document.body.querySelector('[data-testid="quota-modal-trend-data"]')).toBeNull()
+    expect(document.body.querySelector('[data-testid="quota-modal-trend-toggle"]')).toBeNull()
 
-    const lastFocusable = document.body.querySelector<HTMLButtonElement>('[data-testid="quota-modal-trend-toggle"]')!
+    const lastFocusable = document.body.querySelector<HTMLButtonElement>('[data-window="5h"]')!
     lastFocusable.focus()
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }))
     expect(document.activeElement).toBe(close)
@@ -188,7 +189,7 @@ describe('QuotaBucketDetailModal', () => {
     expect(document.body.textContent).not.toContain('should-not-render')
   })
 
-  it('downsamples 672 visual points and mounts the full table only on demand', async () => {
+  it('downsamples 672 visual points without rendering the full trend control or table', async () => {
     const item = bucket()
     const trend = quotaTrend(item.bucket_key)
     const start = Date.parse('2026-07-06T08:00:00.000Z')
@@ -224,37 +225,34 @@ describe('QuotaBucketDetailModal', () => {
     expect(summary?.textContent).toContain('Minimum: 0%')
     expect(summary?.textContent).toContain('Maximum: 99%')
     expect(document.body.querySelectorAll('[data-testid="quota-modal-trend-data"] tbody tr')).toHaveLength(0)
+    expect(document.body.querySelector('[data-testid="quota-modal-trend-toggle"]')).toBeNull()
+  })
 
-    const toggle = document.body.querySelector<HTMLButtonElement>('[data-testid="quota-modal-trend-toggle"]')!
-    expect(toggle.tagName).toBe('BUTTON')
-    expect(toggle.getAttribute('aria-expanded')).toBe('false')
-    toggle.click()
-    await wrapper.vm.$nextTick()
-    expect(document.body.querySelectorAll('[data-testid="quota-modal-trend-data"] tbody tr')).toHaveLength(672)
-    expect(toggle.getAttribute('aria-expanded')).toBe('true')
-
-    toggle.click()
-    await wrapper.vm.$nextTick()
-    expect(document.body.querySelectorAll('[data-testid="quota-modal-trend-data"] tbody tr')).toHaveLength(0)
-    expect(toggle.getAttribute('aria-expanded')).toBe('false')
-
-    toggle.click()
-    await wrapper.vm.$nextTick()
-    const otherBucket = bucket({
+  it('selects seven-day details and trend when five-hour data is unavailable', async () => {
+    const item = bucket({
       bucket_key: 'openai/pro',
       platform: 'openai',
       plan_tier: 'pro',
-      display_name: 'OpenAI Pro',
+      display_name: 'ChatGPT Pro',
+      accounts_count: 1,
+      privacy_threshold: 1,
+      five_hour: null,
     })
-    await wrapper.setProps({ bucket: otherBucket, trend: quotaTrend(otherBucket.bucket_key) })
-    const otherToggle = document.body.querySelector<HTMLButtonElement>('[data-testid="quota-modal-trend-toggle"]')!
-    expect(otherToggle.getAttribute('aria-expanded')).toBe('false')
-    expect(document.body.querySelectorAll('[data-testid="quota-modal-trend-data"] tbody tr')).toHaveLength(0)
-
-    otherToggle.click()
+    const trend = quotaTrend(item.bucket_key)
+    trend.data_points = trend.data_points.map((point, index) => ({
+      ...point,
+      five_hour: null,
+      seven_day: { avg_utilization: 20 + index * 10, avg_cost: 0, inferred_limit_usd: null, sample_size: 1 },
+    }))
+    wrapper = mount(QuotaBucketDetailModal, {
+      attachTo: document.body,
+      props: { show: true, bucket: item, trend },
+      global: { stubs: { Icon: true } },
+    })
     await wrapper.vm.$nextTick()
-    await wrapper.setProps({ show: false })
-    await wrapper.setProps({ show: true })
-    expect(document.body.querySelector<HTMLButtonElement>('[data-testid="quota-modal-trend-toggle"]')?.getAttribute('aria-expanded')).toBe('false')
+
+    expect(document.body.querySelector('[data-window="5h"]')?.getAttribute('disabled')).not.toBeNull()
+    expect(document.body.querySelector('[data-window="7d"]')?.getAttribute('aria-selected')).toBe('true')
+    expect(document.body.querySelector('[data-testid="quota-modal-trend-summary"]')?.textContent).toContain('7-day utilization')
   })
 })

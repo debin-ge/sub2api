@@ -44,3 +44,22 @@ func TestValidateRadarBucketSnapshotFailsClosedOnPrivacyMetadata(t *testing.T) {
 	require.Less(t, snapshot.FiveHour.SampleSize, snapshot.PrivacyThreshold,
 		"inference sample size is intentionally distinct from contributor count")
 }
+
+func TestValidateRadarBucketSnapshotAllowsOnlySingletonChatGPTProException(t *testing.T) {
+	pro := BucketSnapshotDTO{
+		BucketKey: "openai/pro", Platform: PlatformOpenAI, PlanTier: "pro", DisplayName: "ChatGPT Pro",
+		PrivacyThreshold: 1, AccountsCount: 1, CapturedAt: time.Now().UTC(),
+		SevenDay: &WindowStatsDTO{ContributorsCount: 1, SampleSize: 1},
+	}
+	require.NoError(t, ValidateRadarBucketSnapshot(pro))
+	overbroad := pro
+	overbroad.AccountsCount = 2
+	overbroad.SevenDay = &WindowStatsDTO{ContributorsCount: 2, SampleSize: 2}
+	require.ErrorIs(t, ValidateRadarBucketSnapshot(overbroad), ErrInvalidRadarBucketSnapshot)
+
+	plus := pro
+	plus.BucketKey = "openai/plus"
+	plus.PlanTier = "plus"
+	plus.DisplayName = "ChatGPT Plus"
+	require.ErrorIs(t, ValidateRadarBucketSnapshot(plus), ErrInvalidRadarBucketSnapshot)
+}

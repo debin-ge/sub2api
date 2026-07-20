@@ -107,6 +107,8 @@ func TestBuildCodexSparkWindowExtraUpdates_ContainsCodexKeys(t *testing.T) {
 	// 必须含有 codex_5h_* 和 codex_7d_* 键
 	require.Contains(t, updates, "codex_5h_used_percent")
 	require.Contains(t, updates, "codex_7d_used_percent")
+	require.Equal(t, true, updates[openAICodex5hAvailableExtraKey])
+	require.Equal(t, true, updates[openAICodex7dAvailableExtraKey])
 
 	// 任何键不得含有 codex_spark_ 前缀（Method Z 已禁止）
 	for k := range updates {
@@ -117,6 +119,23 @@ func TestBuildCodexSparkWindowExtraUpdates_ContainsCodexKeys(t *testing.T) {
 	// 数值验证（primary=5h, secondary=7d）
 	require.InDelta(t, 0.42, updates["codex_5h_used_percent"], 1e-9)
 	require.InDelta(t, 0.15, updates["codex_7d_used_percent"], 1e-9)
+}
+
+func TestBuildCodexSparkWindowExtraUpdates_MarksMissingFiveHourUnavailable(t *testing.T) {
+	now := time.Date(2026, 7, 20, 10, 0, 0, 0, time.UTC)
+	usage := &OpenAIQuotaUsage{AdditionalRateLimits: []OpenAIAdditionalRateLimit{{
+		MeteredFeature: "codex_bengalfox",
+		RateLimit: &OpenAIRateLimit{PrimaryWindow: &OpenAIRateLimitWindow{
+			UsedPercent: 24, LimitWindowSeconds: 604800, ResetAfterSeconds: 86400,
+		}},
+	}}}
+
+	updates := buildCodexSparkWindowExtraUpdates(usage, now)
+
+	require.Equal(t, false, updates[openAICodex5hAvailableExtraKey])
+	require.Equal(t, true, updates[openAICodex7dAvailableExtraKey])
+	require.NotContains(t, updates, "codex_5h_used_percent")
+	require.Equal(t, 24.0, updates["codex_7d_used_percent"])
 }
 
 // TestBuildCodexSparkWindowExtraUpdates_NilUsage 验证 nil usage 返回 nil。
