@@ -369,21 +369,21 @@ func TestRadarQuotaAggregatorConstructorAndInference(t *testing.T) {
 				name:    "openai 5x Pro alias",
 				account: radarQuotaOpenAIAccount(1, "5xPro"),
 				usage:   &UsageInfo{},
-				want:    radarQuotaBucketIdentity{"openai/pro_5x", "openai", "pro_5x", "ChatGPT Pro 5x"},
+				want:    radarQuotaBucketIdentity{"openai/pro", "openai", "pro", "ChatGPT Pro"},
 				wantOK:  true,
 			},
 			{
 				name:    "openai 20x Pro alias",
 				account: radarQuotaOpenAIAccount(1, "20xPro"),
 				usage:   &UsageInfo{},
-				want:    radarQuotaBucketIdentity{"openai/pro_20x", "openai", "pro_20x", "ChatGPT Pro 20x"},
+				want:    radarQuotaBucketIdentity{"openai/pro", "openai", "pro", "ChatGPT Pro"},
 				wantOK:  true,
 			},
 			{
-				name:    "upstream plain Pro is canonical 20x Pro",
+				name:    "upstream plain Pro remains conservative Pro",
 				account: radarQuotaOpenAIAccount(1, "pro"),
 				usage:   &UsageInfo{},
-				want:    radarQuotaBucketIdentity{"openai/pro_20x", "openai", "pro_20x", "ChatGPT Pro 20x"},
+				want:    radarQuotaBucketIdentity{"openai/pro", "openai", "pro", "ChatGPT Pro"},
 				wantOK:  true,
 			},
 			{
@@ -521,7 +521,7 @@ func TestRadarQuotaAggregatorRunOnceSelectionBatchingAndAggregation(t *testing.T
 	require.Equal(t, now.UTC().Add(-7*24*time.Hour), batch.breakdownCalls[1].startTime)
 
 	require.Len(t, cache.writes, 2)
-	require.Equal(t, []string{"anthropic/max_20x", "openai/pro_20x"}, []string{
+	require.Equal(t, []string{"anthropic/max_20x", "openai/pro"}, []string{
 		cache.writes[0].BucketKey,
 		cache.writes[1].BucketKey,
 	})
@@ -551,7 +551,7 @@ func TestRadarQuotaAggregatorRunOnceSelectionBatchingAndAggregation(t *testing.T
 	require.Empty(t, anthropic.ModelBreakdown7d, "a one-account private model must not be public")
 
 	require.Nil(t, cache.writes[1].SevenDay)
-	require.Equal(t, "ChatGPT Pro 20x", cache.writes[1].DisplayName)
+	require.Equal(t, "ChatGPT Pro", cache.writes[1].DisplayName)
 	for _, snapshot := range cache.writes {
 		require.Equal(t, 2, snapshot.PrivacyThreshold)
 		require.NoError(t, ValidateRadarBucketSnapshot(snapshot))
@@ -594,35 +594,32 @@ func TestRadarQuotaAggregatorPublishesOnlySupportedAccountPlanIntersection(t *te
 	require.NoError(t, aggregator.RunOnce(context.Background()))
 	require.Len(t, usage.seen, 12, "unsupported platforms and plans must not be queried")
 	require.Equal(t, []int64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}, batch.windowCalls[0].accountIDs)
+	require.Len(t, cache.writes, 5, "all OpenAI Pro aliases must share one conservative bucket")
 	require.Equal(t, []string{
 		"anthropic/max_20x",
 		"anthropic/max_5x",
 		"anthropic/pro",
 		"openai/plus",
-		"openai/pro_20x",
-		"openai/pro_5x",
+		"openai/pro",
 	}, []string{
 		cache.writes[0].BucketKey,
 		cache.writes[1].BucketKey,
 		cache.writes[2].BucketKey,
 		cache.writes[3].BucketKey,
 		cache.writes[4].BucketKey,
-		cache.writes[5].BucketKey,
 	})
 	require.Equal(t, []string{
 		"Claude Max 20x",
 		"Claude Max 5x",
 		"Claude Pro",
 		"ChatGPT Plus",
-		"ChatGPT Pro 20x",
-		"ChatGPT Pro 5x",
+		"ChatGPT Pro",
 	}, []string{
 		cache.writes[0].DisplayName,
 		cache.writes[1].DisplayName,
 		cache.writes[2].DisplayName,
 		cache.writes[3].DisplayName,
 		cache.writes[4].DisplayName,
-		cache.writes[5].DisplayName,
 	})
 }
 
@@ -650,8 +647,8 @@ func TestRadarQuotaAggregatorPublishesSingleChatGPTProWithSevenDayOnly(t *testin
 	require.Equal(t, 1, report.PrivacyFilteredBucketCount, "a single Plus account keeps the general two-account floor")
 	require.Len(t, cache.writes, 1)
 	snapshot := cache.writes[0]
-	require.Equal(t, "openai/pro_20x", snapshot.BucketKey)
-	require.Equal(t, "ChatGPT Pro 20x", snapshot.DisplayName)
+	require.Equal(t, "openai/pro", snapshot.BucketKey)
+	require.Equal(t, "ChatGPT Pro", snapshot.DisplayName)
 	require.Equal(t, 1, snapshot.AccountsCount)
 	require.Equal(t, 1, snapshot.PrivacyThreshold)
 	require.Nil(t, snapshot.FiveHour)
@@ -694,7 +691,7 @@ func TestRadarQuotaAggregatorUsesOpenAISparkShadowSnapshotsOncePerParent(t *test
 	require.NoError(t, aggregator.RunOnce(context.Background()))
 	require.Len(t, cache.writes, 1)
 	snapshot := cache.writes[0]
-	require.Equal(t, "openai/pro_20x", snapshot.BucketKey)
+	require.Equal(t, "openai/pro", snapshot.BucketKey)
 	require.Equal(t, 3, snapshot.AccountsCount, "a parent and its Spark shadow must be one privacy contributor")
 	require.NotNil(t, snapshot.FiveHour)
 	require.InDelta(t, 20, snapshot.FiveHour.AvgUtilization, 1e-12)
@@ -1070,14 +1067,14 @@ func TestRadarQuotaAggregatorRunOnceFailurePrivacyAndDeterminism(t *testing.T) {
 		batch := &radarQuotaBatchReaderFake{}
 		cache := &radarQuotaCacheFake{errors: map[string]error{
 			"anthropic/max_20x": errors.New("redis private address one"),
-			"openai/pro_20x":    errors.New("redis private address two"),
+			"openai/pro":        errors.New("redis private address two"),
 		}}
 		aggregator := newRadarQuotaTestAggregator(t, accounts, usage, batch, cache, radarQuotaTestConfig(), func() time.Time { return now })
 
 		err := aggregator.RunOnce(context.Background())
 		require.ErrorIs(t, err, ErrRadarQuotaAggregation)
 		require.NotContains(t, err.Error(), "private address")
-		require.Equal(t, []string{"anthropic/max_20x", "openai/pro_20x"}, []string{
+		require.Equal(t, []string{"anthropic/max_20x", "openai/pro"}, []string{
 			cache.writes[0].BucketKey,
 			cache.writes[1].BucketKey,
 		})

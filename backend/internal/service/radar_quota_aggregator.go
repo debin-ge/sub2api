@@ -21,13 +21,12 @@ const (
 	radarQuotaAnthropicPlanMax5x  = "max_5x"
 	radarQuotaAnthropicPlanMax20x = "max_20x"
 	radarQuotaOpenAIPlanPlus      = "plus"
-	radarQuotaOpenAIPlanPro5x     = "pro_5x"
-	radarQuotaOpenAIPlanPro20x    = "pro_20x"
+	radarQuotaOpenAIPlanPro       = "pro"
 
 	// ChatGPT Pro is a comparatively rare paid tier. Keep the general privacy
 	// floor at two, but allow its anonymous plan card to be published from one
-	// contributor so a real 20x Pro account is not hidden behind Plus accounts.
-	radarQuotaOpenAIPro20xMinBucketAccounts = 1
+	// contributor so a real Pro account is not hidden behind Plus accounts.
+	radarQuotaOpenAIProMinBucketAccounts = 1
 )
 
 // ErrRadarQuotaAggregation is intentionally safe to surface to a background
@@ -410,7 +409,7 @@ func radarQuotaBucketMinAccounts(identity radarQuotaBucketIdentity, accountCount
 }
 
 func radarQuotaPlanMinAccounts(platform, planTier string, accountCount, configured int) int {
-	if platform == PlatformOpenAI && planTier == radarQuotaOpenAIPlanPro20x && accountCount > 0 && accountCount < configured {
+	if platform == PlatformOpenAI && planTier == radarQuotaOpenAIPlanPro && accountCount > 0 && accountCount < configured {
 		return accountCount
 	}
 	return configured
@@ -610,16 +609,14 @@ func normalizeRadarAnthropicPlanTier(planTier string) string {
 
 func normalizeRadarOpenAIPlanTier(planTier string) string {
 	switch strings.ToLower(strings.TrimSpace(planTier)) {
-	case "chatgpt_plus", "chatgptplus":
+	case "plus", "chatgpt_plus", "chatgptplus":
 		return radarQuotaOpenAIPlanPlus
-	case "plus":
-		return radarQuotaOpenAIPlanPlus
-	case "5x_pro", "5xpro", "pro_5x", "pro5x", "chatgpt_pro_5x", "chatgpt_5x_pro":
-		return radarQuotaOpenAIPlanPro5x
-	case "pro", "chatgpt_pro", "chatgptpro", "20x_pro", "20xpro", "pro_20x", "pro20x", "chatgpt_pro_20x", "chatgpt_20x_pro":
-		// OpenAI currently reports the personal 20x subscription simply as
-		// plan_type=pro. Explicit 5x aliases remain separate when supplied.
-		return radarQuotaOpenAIPlanPro20x
+	case "pro", "chatgpt_pro", "chatgptpro",
+		"5x_pro", "5xpro", "pro_5x", "pro5x", "pro-5x", "chatgpt_pro_5x", "chatgpt_5x_pro",
+		"20x_pro", "20xpro", "pro_20x", "pro20x", "pro-20x", "chatgpt_pro_20x", "chatgpt_20x_pro":
+		// No authoritative account field currently distinguishes Pro 5x from
+		// Pro 20x. Collapse every known Pro alias into the conservative Pro tier.
+		return radarQuotaOpenAIPlanPro
 	default:
 		return ""
 	}
@@ -633,8 +630,7 @@ func isSupportedRadarQuotaPlanTier(platform, planTier string) bool {
 			planTier == radarQuotaAnthropicPlanMax20x
 	case PlatformOpenAI:
 		return planTier == radarQuotaOpenAIPlanPlus ||
-			planTier == radarQuotaOpenAIPlanPro5x ||
-			planTier == radarQuotaOpenAIPlanPro20x
+			planTier == radarQuotaOpenAIPlanPro
 	default:
 		return false
 	}
@@ -650,10 +646,8 @@ func radarQuotaDisplayName(platform, planTier string) string {
 		return "Claude Max 20x"
 	case platform == PlatformOpenAI && planTier == radarQuotaOpenAIPlanPlus:
 		return "ChatGPT Plus"
-	case platform == PlatformOpenAI && planTier == radarQuotaOpenAIPlanPro5x:
-		return "ChatGPT Pro 5x"
-	case platform == PlatformOpenAI && planTier == radarQuotaOpenAIPlanPro20x:
-		return "ChatGPT Pro 20x"
+	case platform == PlatformOpenAI && planTier == radarQuotaOpenAIPlanPro:
+		return "ChatGPT Pro"
 	default:
 		return ""
 	}

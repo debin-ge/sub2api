@@ -16,9 +16,9 @@ var ErrInvalidRadarBucketSnapshot = errors.New("invalid radar bucket snapshot")
 func ValidateRadarBucketSnapshot(snapshot BucketSnapshotDTO) error {
 	threshold := snapshot.PrivacyThreshold
 	minimumThreshold := defaultRadarPublicMinBucketAccounts
-	if snapshot.Platform == PlatformOpenAI && normalizeRadarOpenAIPlanTier(snapshot.PlanTier) == radarQuotaOpenAIPlanPro20x {
-		minimumThreshold = radarQuotaOpenAIPro20xMinBucketAccounts
-		if threshold == radarQuotaOpenAIPro20xMinBucketAccounts && snapshot.AccountsCount != 1 {
+	if snapshot.Platform == PlatformOpenAI && normalizeRadarOpenAIPlanTier(snapshot.PlanTier) == radarQuotaOpenAIPlanPro {
+		minimumThreshold = radarQuotaOpenAIProMinBucketAccounts
+		if threshold == radarQuotaOpenAIProMinBucketAccounts && snapshot.AccountsCount != 1 {
 			return ErrInvalidRadarBucketSnapshot
 		}
 	}

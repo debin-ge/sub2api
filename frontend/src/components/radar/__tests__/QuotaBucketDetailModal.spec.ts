@@ -230,14 +230,14 @@ describe('QuotaBucketDetailModal', () => {
 
   it('selects seven-day details and trend when five-hour data is unavailable', async () => {
     const item = bucket({
-	  bucket_key: 'openai/pro_20x',
-	  platform: 'openai',
-	  plan_tier: 'pro_20x',
-	  display_name: 'ChatGPT Pro 20x',
+      bucket_key: 'openai/pro',
+      platform: 'openai',
+      plan_tier: 'pro',
+      display_name: 'ChatGPT Pro',
       accounts_count: 1,
-	  privacy_threshold: 1,
-	  five_hour: null,
-	  seven_day: windowStats({ avg_utilization: 35, sample_size: 1 }),
+      privacy_threshold: 1,
+      five_hour: null,
+      seven_day: windowStats({ avg_utilization: 35, sample_size: 1 }),
     })
     const trend = quotaTrend(item.bucket_key)
     trend.data_points = trend.data_points.map((point, index) => ({

@@ -59,10 +59,10 @@ describe('QuotaBucketGrid', () => {
 
   it('shows window, inference, sample, and trend states without stale warnings or fake zeroes', () => {
     const noWindow = bucket({
-      bucket_key: 'openai/pro_20x',
+      bucket_key: 'openai/pro',
       platform: 'openai',
-	  plan_tier: 'pro_20x',
-	  display_name: 'ChatGPT Pro 20x',
+      plan_tier: 'pro',
+      display_name: 'ChatGPT Pro',
       accounts_count: 2,
       five_hour: null,
       seven_day: null,
@@ -134,14 +134,14 @@ describe('QuotaBucketGrid', () => {
 
   it('falls back to seven-day utilization and trend when OpenAI has no five-hour window', () => {
     const item = bucket({
-	  bucket_key: 'openai/pro_20x',
+      bucket_key: 'openai/pro',
       platform: 'openai',
-	  plan_tier: 'pro_20x',
-	  display_name: 'ChatGPT Pro 20x',
+      plan_tier: 'pro',
+      display_name: 'ChatGPT Pro',
       accounts_count: 1,
       privacy_threshold: 1,
       five_hour: null,
-	  seven_day: windowStats({ avg_utilization: 24, sample_size: 1 }),
+      seven_day: windowStats({ avg_utilization: 24, sample_size: 1 }),
     })
     const trend = quotaTrend(item.bucket_key)
     trend.data_points = trend.data_points.map((point, index) => ({
@@ -154,12 +154,12 @@ describe('QuotaBucketGrid', () => {
       props: { buckets: [item], trends: { [item.bucket_key]: trend } },
     })
 
-	  expect(wrapper.text()).toContain('7-day utilization')
-	  expect(wrapper.text()).toContain('24%')
-	  expect(wrapper.text()).toContain('Small sample: n=1')
+    expect(wrapper.text()).toContain('7-day utilization')
+    expect(wrapper.text()).toContain('24%')
+    expect(wrapper.text()).toContain('Small sample: n=1')
     expect(wrapper.text()).toContain('7-day quota utilization trend')
-	  expect(wrapper.find('[data-testid="quota-sparkline-openai/pro_20x"]').exists()).toBe(true)
-	  const summary = wrapper.get('[data-testid="quota-sparkline-data-openai/pro_20x"]')
+    expect(wrapper.find('[data-testid="quota-sparkline-openai/pro"]').exists()).toBe(true)
+    const summary = wrapper.get('[data-testid="quota-sparkline-data-openai/pro"]')
     expect(summary.text()).toContain('7-day utilization')
     expect(summary.text()).toContain('Latest: 30%')
     expect(wrapper.text()).not.toContain('No data for this window')
@@ -217,10 +217,10 @@ describe('QuotaBucketGrid', () => {
     })
     const first = bucket()
     const second = bucket({
-	  bucket_key: 'openai/pro_20x',
-	  platform: 'openai',
-	  plan_tier: 'pro_20x',
-	  display_name: 'ChatGPT Pro 20x',
+      bucket_key: 'openai/pro',
+      platform: 'openai',
+      plan_tier: 'pro',
+      display_name: 'ChatGPT Pro',
     })
     const wrapper = mount(QuotaBucketGrid, { props: { buckets: [first, second] } })
     await nextTick()
