@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
+import en from '@/i18n/locales/en'
+import zh from '@/i18n/locales/zh'
 
 const root = resolve(__dirname, '../..')
 
@@ -19,13 +21,10 @@ describe('HomeView supported providers', () => {
   })
 
   it('defines localized labels for the domestic providers', () => {
-    const zhSource = readSource('i18n/locales/zh.ts')
-    const enSource = readSource('i18n/locales/en.ts')
-
-    for (const source of [zhSource, enSource]) {
-      expect(source).toContain("minimax: 'MiniMax'")
-      expect(source).toContain("glm: 'GLM'")
-      expect(source).toContain("kimi: 'Kimi'")
+    for (const locale of [zh, en]) {
+      expect(locale.home.providers.minimax).toBe('MiniMax')
+      expect(locale.home.providers.glm).toBe('GLM')
+      expect(locale.home.providers.kimi).toBe('Kimi')
     }
   })
 })

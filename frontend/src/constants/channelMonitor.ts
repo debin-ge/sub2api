@@ -18,6 +18,10 @@ export const PROVIDER_KIMI: Provider = 'kimi'
 export const PROVIDER_DEEPSEEK: Provider = 'deepseek'
 export const PROVIDER_WINDSURF: Provider = 'windsurf'
 export const PROVIDER_OPENCODE: Provider = 'opencode'
+export const PROVIDER_GROK: Provider = 'grok'
+
+export const DEFAULT_GROK_ENDPOINT = 'https://api.x.ai'
+export const DEFAULT_GROK_MODEL = 'grok-4.5'
 
 export const API_MODE_CHAT_COMPLETIONS: APIMode = 'chat_completions'
 export const API_MODE_RESPONSES: APIMode = 'responses'
@@ -32,6 +36,7 @@ export const PROVIDERS: readonly Provider[] = [
   PROVIDER_DEEPSEEK,
   PROVIDER_WINDSURF,
   PROVIDER_OPENCODE,
+  PROVIDER_GROK,
 ]
 
 export const API_MODES: readonly APIMode[] = [

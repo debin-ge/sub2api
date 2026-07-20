@@ -274,6 +274,10 @@ func cleanupWithRadarTestDependencies(rdb *redis.Client, radarRunner *service.Ra
 		nil, // opsCleanup
 		nil, // opsScheduledReport
 		nil, // opsSystemLogSink
+		nil, // opsService
+		nil, // opsIngressReject
+		nil, // apiKeyService
+		nil, // authCacheInvalidationWorker
 		nil, // schedulerSnapshot
 		tokenRefreshSvc,
 		service.NewAccountExpiryService(nil, time.Second),
@@ -281,6 +285,8 @@ func cleanupWithRadarTestDependencies(rdb *redis.Client, radarRunner *service.Ra
 		service.NewSubscriptionExpiryService(nil, time.Second),
 		nil, // usageCleanup
 		nil, // idempotencyCleanup
+		nil, // batchImageCleanup
+		nil, // batchImageWorker
 		service.NewPricingService(cfg, nil),
 		service.NewEmailQueueService(nil, 1),
 		service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil),
@@ -300,6 +306,9 @@ func cleanupWithRadarTestDependencies(rdb *redis.Client, radarRunner *service.Ra
 		nil, // channelMonitorRunner
 		nil, // modelCatalogRefreshRunner
 		nil, // quotaFlusher
+		nil, // upstreamBillingProbe
+		nil, // auditLog
+		nil, // promptAudit
 	)(radarRunner)
 }
 
@@ -391,6 +400,10 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 		&service.OpsCleanupService{},
 		&service.OpsScheduledReportService{},
 		opsSystemLogSinkSvc,
+		nil, // opsService
+		nil, // opsIngressRejectAggregator
+		nil, // apiKeyService
+		nil, // authCacheInvalidationWorker
 		schedulerSnapshotSvc,
 		tokenRefreshSvc,
 		accountExpirySvc,
@@ -398,6 +411,8 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 		subscriptionExpirySvc,
 		&service.UsageCleanupService{},
 		idempotencyCleanupSvc,
+		&service.BatchImageCleanupService{},
+		nil, // batchImageWorker
 		pricingSvc,
 		emailQueueSvc,
 		billingCacheSvc,
@@ -417,6 +432,9 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 		nil, // channelMonitorRunner
 		modelCatalogRefreshRunner,
 		nil, // quotaFlusher
+		nil, // upstreamBillingProbe
+		nil, // auditLog
+		nil, // promptAudit
 	)(nil)
 
 	require.NotPanics(t, func() {
@@ -510,7 +528,7 @@ func TestProvideApplicationRollsBackWhenRunnerBudgetIsIncompatible(t *testing.T)
 	repo := &cleanupRadarRepositoryStub{}
 	probe := &applicationCleanupProbe{}
 
-	app, err := provideApplication(&http.Server{}, cfg, repo, cleanupRadarRuntimeGate(true), cleanupRadarAdminController(t, cfg, repo), probe.factory(), cleanupRadarAggregatorFactory(t, cfg, repo), cleanupRadarFetchersConstructor())
+	app, err := provideApplication(&http.Server{}, nil, cfg, repo, cleanupRadarRuntimeGate(true), cleanupRadarAdminController(t, cfg, repo), probe.factory(), cleanupRadarAggregatorFactory(t, cfg, repo), cleanupRadarFetchersConstructor())
 
 	require.Error(t, err)
 	require.Nil(t, app)
@@ -528,7 +546,8 @@ func TestProvideApplicationRollsBackAggregatorConstructionFailure(t *testing.T) 
 	var runnerConstructorCalls atomic.Int32
 
 	app, err := provideApplicationWithRadarConstructors(
-		&http.Server{},
+		&http.Server{}, nil,
+
 		cfg,
 		repo,
 		cleanupRadarRuntimeGate(true),
@@ -550,8 +569,7 @@ func TestProvideApplicationRollsBackAggregatorConstructionFailure(t *testing.T) 
 		) (*service.RadarRunner, error) {
 			runnerConstructorCalls.Add(1)
 			return nil, nil
-		},
-	)
+		})
 
 	require.Error(t, err)
 	require.Nil(t, app)
@@ -571,7 +589,7 @@ func TestProvideApplicationRollsBackFetcherFailureWhileDisabled(t *testing.T) {
 	repo := &cleanupRadarRepositoryStub{}
 	probe := &applicationCleanupProbe{}
 
-	app, err := provideApplication(&http.Server{}, cfg, repo, cleanupRadarRuntimeGate(false), cleanupRadarAdminController(t, cfg, repo), probe.factory(), cleanupRadarAggregatorFactory(t, cfg, repo), cleanupRadarFetchersConstructor())
+	app, err := provideApplication(&http.Server{}, nil, cfg, repo, cleanupRadarRuntimeGate(false), cleanupRadarAdminController(t, cfg, repo), probe.factory(), cleanupRadarAggregatorFactory(t, cfg, repo), cleanupRadarFetchersConstructor())
 
 	require.Error(t, err)
 	require.Nil(t, app)
@@ -590,7 +608,7 @@ func TestProvideApplicationDisabledSucceedsWithoutScheduling(t *testing.T) {
 	probe := &applicationCleanupProbe{}
 	httpServer := &http.Server{}
 
-	app, err := provideApplication(httpServer, cfg, repo, cleanupRadarRuntimeGate(false), cleanupRadarAdminController(t, cfg, repo), probe.factory(), cleanupRadarAggregatorFactory(t, cfg, repo), cleanupRadarFetchersConstructor())
+	app, err := provideApplication(httpServer, nil, cfg, repo, cleanupRadarRuntimeGate(false), cleanupRadarAdminController(t, cfg, repo), probe.factory(), cleanupRadarAggregatorFactory(t, cfg, repo), cleanupRadarFetchersConstructor())
 
 	require.NoError(t, err)
 	require.NotNil(t, app)
@@ -621,7 +639,8 @@ func TestProvideApplicationStartsEnabledRunnerAfterAllFallibleConstruction(t *te
 	var runnerConstructorCalls atomic.Int32
 
 	app, err := provideApplicationWithRadarConstructors(
-		httpServer,
+		httpServer, nil,
+
 		cfg,
 		repo,
 		cleanupRadarRuntimeGate(true),
@@ -645,8 +664,8 @@ func TestProvideApplicationStartsEnabledRunnerAfterAllFallibleConstruction(t *te
 			require.Same(t, aggregator, gotAggregator)
 			require.Equal(t, cleanupRadarRuntimeGate(true), gotRuntimeGate)
 			return service.NewRadarRunner(gotCfg, gotRepo, fetchers, gotAggregator, gotRuntimeGate)
-		},
-	)
+		})
+
 	require.NoError(t, err)
 	require.NotNil(t, app)
 	require.Same(t, httpServer, app.Server)

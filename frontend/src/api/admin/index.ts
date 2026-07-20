@@ -34,6 +34,7 @@ import riskControlAPI from './riskControl'
 import adminComplianceAPI from './compliance'
 import resellerAPI from './reseller'
 import radarAdminAPI from './radar'
+import auditAPI from './audit'
 
 /**
  * Unified admin API object for convenient access
@@ -69,7 +70,8 @@ export const adminAPI = {
   riskControl: riskControlAPI,
   compliance: adminComplianceAPI,
   reseller: resellerAPI,
-  radar: radarAdminAPI
+  radar: radarAdminAPI,
+  audit: auditAPI
 }
 
 export {
@@ -103,12 +105,14 @@ export {
   riskControlAPI,
   adminComplianceAPI,
   resellerAPI,
-  radarAdminAPI
+  radarAdminAPI,
+  auditAPI
 }
 
 export default adminAPI
 
 // Re-export types used by components
+export type { AuditLog, AuditLogQuery, AuditLogListResponse } from './audit'
 export type { BalanceHistoryItem } from './users'
 export type { ErrorPassthroughRule, CreateRuleRequest, UpdateRuleRequest } from './errorPassthrough'
 export type { BackupAgentHealth, DataManagementConfig } from './dataManagement'

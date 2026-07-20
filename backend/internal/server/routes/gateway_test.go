@@ -57,7 +57,7 @@ func newGatewayRoutesGatewayHandler(platform string) *handler.GatewayHandler {
 	return handler.NewGatewayHandler(
 		nil, nil, nil, nil, nil,
 		nil, nil, nil, nil, nil,
-		nil, nil, nil, nil, catalog,
+		nil, nil, nil, nil, nil, catalog,
 	)
 }
 

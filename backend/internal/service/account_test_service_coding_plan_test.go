@@ -109,6 +109,9 @@ func (r *codingPlanAccountTestRepo) ListSchedulableUngroupedByPlatform(context.C
 func (r *codingPlanAccountTestRepo) ListSchedulableUngroupedByPlatforms(context.Context, []string) ([]Account, error) {
 	return nil, nil
 }
+func (r *codingPlanAccountTestRepo) ListModelAvailabilityCandidates(context.Context, *int64, []string, bool) ([]Account, error) {
+	return nil, nil
+}
 func (r *codingPlanAccountTestRepo) ListShadowsByParent(context.Context, int64) ([]*Account, error) {
 	return nil, nil
 }

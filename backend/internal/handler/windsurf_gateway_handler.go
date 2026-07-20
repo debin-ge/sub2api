@@ -243,7 +243,7 @@ func (h *WindsurfGatewayHandler) Messages(c *gin.Context) {
 					h.handleWindsurfUpstreamDegradation(c.Request.Context(), account, failoverErr)
 				}
 				if mapping.Retryable {
-					failoverAction := fs.HandleFailoverError(c.Request.Context(), h.windsurfTempUnscheduler(), account.ID, account.Platform, failoverErr)
+					failoverAction := fs.HandleFailoverError(c.Request.Context(), h.windsurfTempUnscheduler(), account.ID, account.Platform, account.GetPoolModeRetryCount(), failoverErr)
 					switch failoverAction {
 					case FailoverContinue:
 						continue
@@ -449,7 +449,7 @@ func (h *WindsurfGatewayHandler) ChatCompletions(c *gin.Context) {
 					h.handleWindsurfUpstreamDegradation(c.Request.Context(), account, failoverErr)
 				}
 				if mapping.Retryable {
-					failoverAction := fs.HandleFailoverError(c.Request.Context(), h.windsurfTempUnscheduler(), account.ID, account.Platform, failoverErr)
+					failoverAction := fs.HandleFailoverError(c.Request.Context(), h.windsurfTempUnscheduler(), account.ID, account.Platform, account.GetPoolModeRetryCount(), failoverErr)
 					switch failoverAction {
 					case FailoverContinue:
 						continue
@@ -669,7 +669,7 @@ func (h *WindsurfGatewayHandler) Responses(c *gin.Context) {
 					h.handleWindsurfUpstreamDegradation(c.Request.Context(), account, failoverErr)
 				}
 				if mapping.Retryable {
-					failoverAction := fs.HandleFailoverError(c.Request.Context(), h.windsurfTempUnscheduler(), account.ID, account.Platform, failoverErr)
+					failoverAction := fs.HandleFailoverError(c.Request.Context(), h.windsurfTempUnscheduler(), account.ID, account.Platform, account.GetPoolModeRetryCount(), failoverErr)
 					switch failoverAction {
 					case FailoverContinue:
 						continue

@@ -13,10 +13,10 @@ describe('AppHeader user menu', () => {
     expect(componentSource).not.toContain("t('nav.github')")
   })
 
-  it('opens the built-in docs page from the header', () => {
-    expect(componentSource).toContain('href="/docs"')
+  it('opens the sanitized configured docs page from the header', () => {
+    expect(componentSource).toContain(':href="docUrl"')
     expect(componentSource).toContain('target="_blank"')
-    expect(componentSource).not.toContain('docUrl')
+    expect(componentSource).toContain('computed(() => sanitizeUrl(appStore.docUrl))')
   })
 
   it('opens the model plaza from the header', () => {

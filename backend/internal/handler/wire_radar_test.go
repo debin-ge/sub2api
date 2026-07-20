@@ -32,6 +32,8 @@ func TestProvideHandlersIncludesRadarHandler(t *testing.T) {
 		nil, // paymentWebhookHandler
 		nil, // availableChannelHandler
 		radar,
+		nil, // asyncImageHandler
+		nil, // batchImageHandler
 		nil, // idempotencyCoordinator
 		nil, // idempotencyCleanupService
 	)

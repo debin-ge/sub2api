@@ -539,12 +539,14 @@ func TestNewRadarHTTPClientEnablesResolvedIPValidationOnlyForDirectConnections(t
 		cfg.Radar.ExternalRequestTimeoutSeconds = 37
 		radarClient, err := NewRadarHTTPClient(cfg)
 		require.NoError(t, err)
-		_, plainTransport := radarClient.Transport.(*http.Transport)
-		require.False(t, plainTransport, "direct Radar traffic must retain resolved-IP validation")
 
 		pooledClient, err := httpclient.GetClient(radarHTTPClientTestOptions(cfg, true))
 		require.NoError(t, err)
 		require.Same(t, pooledClient.Transport, radarClient.Transport)
+		unvalidatedClient, err := httpclient.GetClient(radarHTTPClientTestOptions(cfg, false))
+		require.NoError(t, err)
+		require.NotSame(t, unvalidatedClient.Transport, radarClient.Transport,
+			"direct Radar traffic must retain resolved-IP validation")
 	})
 
 	proxies := []struct {
@@ -562,12 +564,14 @@ func TestNewRadarHTTPClientEnablesResolvedIPValidationOnlyForDirectConnections(t
 			cfg.Radar.ExternalRequestTimeoutSeconds = tt.timeout
 			radarClient, err := NewRadarHTTPClient(cfg)
 			require.NoError(t, err)
-			_, plainTransport := radarClient.Transport.(*http.Transport)
-			require.True(t, plainTransport, "proxy traffic must not perform local target DNS pre-validation")
 
 			pooledClient, err := httpclient.GetClient(radarHTTPClientTestOptions(cfg, false))
 			require.NoError(t, err)
 			require.Same(t, pooledClient.Transport, radarClient.Transport)
+			validatedClient, err := httpclient.GetClient(radarHTTPClientTestOptions(cfg, true))
+			require.NoError(t, err)
+			require.NotSame(t, validatedClient.Transport, radarClient.Transport,
+				"proxy traffic must not perform local target DNS pre-validation")
 		})
 	}
 }

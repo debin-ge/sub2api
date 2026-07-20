@@ -194,6 +194,8 @@ func (d *UpstreamModelDiscoverer) buildUpstreamModelsRequest(ctx context.Context
 		return d.buildAntigravityUpstreamModelsRequest(ctx, account)
 	case account.Platform == PlatformAntigravity:
 		return d.buildAntigravityAPIKeyModelsRequest(ctx, account)
+	case account.IsGrok():
+		return d.buildGrokUpstreamModelsRequest(ctx, account)
 	case providerSupportsLiveModelDiscovery(account.Platform):
 		return d.buildDomesticCompatibleUpstreamModelsRequest(ctx, account)
 	case account.IsOpenAI():
@@ -207,6 +209,35 @@ func (d *UpstreamModelDiscoverer) buildUpstreamModelsRequest(ctx context.Context
 			fmt.Sprintf("Unsupported platform for upstream model sync: %s", account.Platform), nil,
 		)
 	}
+}
+
+func (d *UpstreamModelDiscoverer) buildGrokUpstreamModelsRequest(ctx context.Context, account *Account) (*http.Request, error) {
+	if account == nil || account.Type != AccountTypeAPIKey {
+		return nil, newUpstreamModelSyncUnsupportedError(
+			fmt.Sprintf("Unsupported Grok account type for upstream model sync: %s", account.Type), nil,
+		)
+	}
+	apiKey := strings.TrimSpace(account.GetCredential("api_key"))
+	if apiKey == "" {
+		return nil, newUpstreamModelSyncConfigError("No Grok API key is available", nil)
+	}
+
+	baseURL := strings.TrimSpace(account.GetCredential("base_url"))
+	if baseURL == "" {
+		baseURL = "https://api.x.ai"
+	}
+	normalizedBaseURL, err := d.validateUpstreamBaseURL(baseURL)
+	if err != nil {
+		return nil, newUpstreamModelSyncConfigError("Invalid Grok base URL", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, buildOpenAIModelsURL(normalizedBaseURL), nil)
+	if err != nil {
+		return nil, newUpstreamModelSyncConfigError("Invalid Grok model list URL", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	account.ApplyHeaderOverrides(req.Header)
+	return req, nil
 }
 
 func (d *UpstreamModelDiscoverer) buildDomesticCompatibleUpstreamModelsRequest(ctx context.Context, account *Account) (*http.Request, error) {

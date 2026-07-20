@@ -80,6 +80,8 @@ func TestRegisterRoutesWiresSevenUnauthenticatedRadarGETs(t *testing.T) {
 		nil,
 		nil,
 		nil,
+		nil,
+		nil,
 		cfg,
 		nil,
 	)

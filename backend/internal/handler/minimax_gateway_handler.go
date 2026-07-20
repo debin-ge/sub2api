@@ -239,7 +239,7 @@ func (h *MiniMaxGatewayHandler) Messages(c *gin.Context) {
 				mapping := service.MapMiniMaxUpstreamStatus(failoverErr.StatusCode)
 				if mapping.Retryable {
 					h.handleMiniMaxUpstreamDegradation(c.Request.Context(), account, failoverErr)
-					failoverAction := fs.HandleFailoverError(c.Request.Context(), h.miniMaxTempUnscheduler(), account.ID, account.Platform, failoverErr)
+					failoverAction := fs.HandleFailoverError(c.Request.Context(), h.miniMaxTempUnscheduler(), account.ID, account.Platform, account.GetPoolModeRetryCount(), failoverErr)
 					switch failoverAction {
 					case FailoverContinue:
 						continue
@@ -442,7 +442,7 @@ func (h *MiniMaxGatewayHandler) ChatCompletions(c *gin.Context) {
 				mapping := service.MapMiniMaxUpstreamStatus(failoverErr.StatusCode)
 				if mapping.Retryable {
 					h.handleMiniMaxUpstreamDegradation(c.Request.Context(), account, failoverErr)
-					failoverAction := fs.HandleFailoverError(c.Request.Context(), h.miniMaxTempUnscheduler(), account.ID, account.Platform, failoverErr)
+					failoverAction := fs.HandleFailoverError(c.Request.Context(), h.miniMaxTempUnscheduler(), account.ID, account.Platform, account.GetPoolModeRetryCount(), failoverErr)
 					switch failoverAction {
 					case FailoverContinue:
 						continue
@@ -659,7 +659,7 @@ func (h *MiniMaxGatewayHandler) Responses(c *gin.Context) {
 				mapping := service.MapMiniMaxUpstreamStatus(failoverErr.StatusCode)
 				if mapping.Retryable {
 					h.handleMiniMaxUpstreamDegradation(c.Request.Context(), account, failoverErr)
-					failoverAction := fs.HandleFailoverError(c.Request.Context(), h.miniMaxTempUnscheduler(), account.ID, account.Platform, failoverErr)
+					failoverAction := fs.HandleFailoverError(c.Request.Context(), h.miniMaxTempUnscheduler(), account.ID, account.Platform, account.GetPoolModeRetryCount(), failoverErr)
 					switch failoverAction {
 					case FailoverContinue:
 						continue

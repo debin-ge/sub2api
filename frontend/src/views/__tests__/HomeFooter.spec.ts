@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
+import en from '@/i18n/locales/en'
+import zh from '@/i18n/locales/zh'
 
 const root = resolve(__dirname, '../..')
 
@@ -20,11 +22,8 @@ describe('HomeView footer', () => {
   })
 
   it('defines the footer notice in both locales', () => {
-    const zhSource = readSource('i18n/locales/zh.ts')
-    const enSource = readSource('i18n/locales/en.ts')
-
-    for (const source of [zhSource, enSource]) {
-      expect(source).toContain("allRightsReserved: 'TikToken is owned by Jerrywell Pte. Ltd.'")
+    for (const locale of [zh, en]) {
+      expect(locale.home.footer.allRightsReserved).toBe('TikToken is owned by Jerrywell Pte. Ltd.')
     }
   })
 

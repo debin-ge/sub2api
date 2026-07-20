@@ -17,6 +17,29 @@ describe('AppSidebar custom SVG styles', () => {
   })
 })
 
+describe('AppSidebar scroll position persistence', () => {
+  it('binds a template ref to the sidebar nav element', () => {
+    expect(componentSource).toContain('ref="sidebarNavRef"')
+    expect(componentSource).toContain('sidebar-nav')
+  })
+
+  it('declares sidebarNavRef in script setup', () => {
+    expect(componentSource).toContain("const sidebarNavRef = ref<HTMLElement | null>(null)")
+  })
+
+  it('saves scroll position on beforeUnmount', () => {
+    expect(componentSource).toContain('onBeforeUnmount')
+    expect(componentSource).toContain('appStore.sidebarScrollTop')
+    expect(componentSource).toContain('sidebarNavRef.value.scrollTop')
+  })
+
+  it('restores scroll position on mount', () => {
+    expect(componentSource).toContain('onMounted')
+    expect(componentSource).toContain('appStore.sidebarScrollTop')
+    expect(componentSource).toContain('nextTick')
+  })
+})
+
 describe('AppSidebar header styles', () => {
   it('does not render the version badge in the brand header', () => {
     expect(componentSource).not.toContain('<VersionBadge')

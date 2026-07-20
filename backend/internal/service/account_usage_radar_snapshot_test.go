@@ -98,7 +98,7 @@ func TestNewAccountUsageService_DoesNotStoreTypedNilQuotaDependencies(t *testing
 	t.Parallel()
 
 	repo := &radarConstructorAccountRepo{accounts: map[int64]*Account{}}
-	svc := NewAccountUsageService(repo, nil, nil, nil, nil, nil, nil, NewUsageCache(), nil, nil)
+	svc := NewAccountUsageService(repo, nil, nil, nil, nil, nil, nil, nil, NewUsageCache(), nil, nil)
 	if svc.antigravityQuotaFetcher != nil {
 		t.Fatal("nil *AntigravityQuotaFetcher must produce a nil interface")
 	}
@@ -835,7 +835,7 @@ func TestProvideAccountUsageService_UsesConfiguredRadarHardRetention(t *testing.
 	t.Parallel()
 
 	cfg := &config.Config{Radar: config.RadarConfig{SourceHardRetentionDays: 11}}
-	svc := ProvideAccountUsageService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, cfg)
+	svc := ProvideAccountUsageService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, cfg)
 	require.Equal(t, 11*24*time.Hour, svc.radarSnapshotHardRetention)
 	require.NotNil(t, svc.radarNow)
 	var reader RadarUsageSnapshotReader = svc

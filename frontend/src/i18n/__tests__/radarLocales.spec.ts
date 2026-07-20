@@ -179,22 +179,13 @@ describe('Model Radar locale contract', () => {
 
   it('defines the nested namespace before patching and never patches radar through missingMessages', () => {
     for (const locale of ['en', 'zh']) {
-      const path = join(process.cwd(), 'src', 'i18n', 'locales', `${locale}.ts`)
+      const path = join(process.cwd(), 'src', 'i18n', 'locales', locale, 'local.ts')
       const source = readFileSync(path, 'utf8')
-      const messagesStart = source.indexOf('const messages = {')
-      const missingStart = source.indexOf('const missingMessages:')
-      const patcherStart = source.indexOf('function applyMissingLocaleMessages', missingStart)
 
-      expect(messagesStart, `${locale}: messages object must exist`).toBeGreaterThanOrEqual(0)
-      expect(missingStart, `${locale}: missingMessages block must exist`).toBeGreaterThan(messagesStart)
-      expect(patcherStart, `${locale}: locale patcher must follow missingMessages`).toBeGreaterThan(missingStart)
-
-      const messagesBeforePatches = source.slice(messagesStart, missingStart)
-      const missingMessagesSource = source.slice(missingStart, patcherStart)
-      expect(messagesBeforePatches, `${locale}: radar must be defined in the real messages tree`)
-        .toMatch(/\n {2}radar:\s*{/)
-      expect(missingMessagesSource, `${locale}: radar must not be supplied by flat patches`)
-        .not.toMatch(/['"`]radar\./)
+      expect(source, `${locale}: radar must be defined in the additive locale tree`)
+        .toMatch(/\n {2}"radar":\s*{/)
+      expect(source, `${locale}: radar must not be supplied by a legacy flat patcher`)
+        .not.toContain('missingMessages')
     }
   })
 })

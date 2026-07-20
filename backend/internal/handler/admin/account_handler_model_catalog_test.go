@@ -160,6 +160,10 @@ type proxyMutationAccountRepo struct {
 	shadowsByParent map[int64][]int64
 }
 
+func (r *proxyMutationAccountRepo) CreateWithAccountGroups(_ context.Context, _ *service.Account, _ []service.AccountGroup) error {
+	return errors.New("unexpected CreateWithAccountGroups call")
+}
+
 func newProxyMutationAccountRepo(accounts ...*service.Account) *proxyMutationAccountRepo {
 	repo := &proxyMutationAccountRepo{
 		accounts:        make(map[int64]*service.Account, len(accounts)),
@@ -248,7 +252,7 @@ func (s *adminClaudeOAuthClientStub) RefreshToken(_ context.Context, refreshToke
 
 func setupModelCatalogMutationRouter(adminSvc service.AdminService, oauthSvc *service.OAuthService, catalog adminModelCatalog) *gin.Engine {
 	gin.SetMode(gin.TestMode)
-	handler := NewAccountHandler(adminSvc, oauthSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler := NewAccountHandler(adminSvc, oauthSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	handler.modelCatalog = catalog
 	router := gin.New()
 	router.POST("/accounts", handler.Create)
@@ -265,7 +269,7 @@ func setupModelCatalogMutationRouter(adminSvc service.AdminService, oauthSvc *se
 }
 
 func setupAntigravityRefreshMutationRouter(adminSvc service.AdminService, catalog adminModelCatalog) *gin.Engine {
-	handler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	handler.antigravityOAuthService = &adminAntigravityOAuthServiceStub{tokenInfo: &service.AntigravityTokenInfo{
 		AccessToken: "new-access", RefreshToken: "new-refresh", ProjectID: "project-1",
 	}}
@@ -276,12 +280,12 @@ func setupAntigravityRefreshMutationRouter(adminSvc service.AdminService, catalo
 	return router
 }
 
-func setupProxyMutationCatalogRouter(repo service.AccountRepository, catalog adminModelCatalog) *gin.Engine {
+func setupProxyMutationCatalogRouter(repo service.AdminAccountRepository, catalog adminModelCatalog) *gin.Engine {
 	adminSvc := service.NewAdminService(
 		nil, nil, repo, nil, nil, nil, nil, nil, nil,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 	)
-	handler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	handler.modelCatalog = catalog
 	router := gin.New()
 	router.PUT("/accounts/:id", handler.Update)
@@ -466,7 +470,7 @@ func TestAccountHandlerModelCatalogMutationFailed_UsesPersistedMutationIDs(t *te
 }
 
 func TestAdminHandlerConstructors_NilCatalogKeepsNilInterface(t *testing.T) {
-	accountHandler := NewAccountHandler(newStubAdminService(), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	accountHandler := NewAccountHandler(newStubAdminService(), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	groupHandler := NewGroupHandler(newStubAdminService(), nil, nil, nil)
 
 	require.True(t, accountHandler.modelCatalog == nil)

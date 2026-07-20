@@ -47,6 +47,8 @@ const (
 
 	// providerOpenAIPath OpenAI Chat Completions 路径。
 	providerOpenAIPath = "/v1/chat/completions"
+	// providerGrokPath Grok OpenAI-compatible Chat Completions 路径。
+	providerGrokPath = "/v1/chat/completions"
 	// providerOpenAIResponsesPath OpenAI Responses API 路径。
 	providerOpenAIResponsesPath = "/v1/responses"
 	// providerAnthropicPath Anthropic Messages 路径。
@@ -66,16 +68,20 @@ const (
 	// providerOpenCodeChatPath OpenCode2API-compatible Chat Completions 路径。
 	providerOpenCodeChatPath = "/v1/chat/completions"
 
-	// MonitorProviderOpenAI / Anthropic / Gemini / 国内供应商 provider 字符串常量（也是 ent enum 的实际值）。
+	// MonitorProviderOpenAI / Anthropic / Gemini / Grok / 国内供应商 provider 字符串常量（也是 ent enum 的实际值）。
 	MonitorProviderOpenAI    = "openai"
 	MonitorProviderAnthropic = "anthropic"
 	MonitorProviderGemini    = "gemini"
+	MonitorProviderGrok      = "grok"
 	MonitorProviderMiniMax   = "minimax"
 	MonitorProviderGLM       = "glm"
 	MonitorProviderKimi      = "kimi"
 	MonitorProviderDeepSeek  = "deepseek"
 	MonitorProviderWindsurf  = "windsurf"
 	MonitorProviderOpenCode  = "opencode"
+
+	// MonitorDefaultGrokModel 是新增 Grok 监控未显式指定模型时使用的轻量测活模型。
+	MonitorDefaultGrokModel = "grok-4.5"
 
 	// MonitorStatusOperational 等监控状态字符串常量（与 ent enum 一致）。
 	MonitorStatusOperational = "operational"
@@ -130,13 +136,13 @@ var (
 		"CHANNEL_MONITOR_NOT_FOUND", "channel monitor not found",
 	)
 	ErrChannelMonitorInvalidProvider = infraerrors.BadRequest(
-		"CHANNEL_MONITOR_INVALID_PROVIDER", "provider must be one of openai/anthropic/gemini/minimax/glm/kimi/deepseek/windsurf/opencode",
+		"CHANNEL_MONITOR_INVALID_PROVIDER", "provider must be one of openai/anthropic/gemini/grok/minimax/glm/kimi/deepseek/windsurf/opencode",
 	)
 	ErrChannelMonitorInvalidAPIMode = infraerrors.BadRequest(
 		"CHANNEL_MONITOR_INVALID_API_MODE", "api_mode must be chat_completions or responses; responses is only supported for openai",
 	)
 	ErrChannelMonitorInvalidRequestBody = infraerrors.BadRequest(
-		"CHANNEL_MONITOR_INVALID_REQUEST_BODY", "openai replace-mode body_override must include non-empty messages for chat_completions or non-empty instructions and input for responses",
+		"CHANNEL_MONITOR_INVALID_REQUEST_BODY", "openai-compatible replace-mode body_override must include non-empty messages for chat_completions or non-empty instructions and input for responses",
 	)
 	ErrChannelMonitorInvalidInterval = infraerrors.BadRequest(
 		"CHANNEL_MONITOR_INVALID_INTERVAL", "interval_seconds must be in [15, 3600]",

@@ -26,7 +26,7 @@ func NewChannelMonitorRequestTemplateHandler(templateService *service.ChannelMon
 
 type channelMonitorTemplateCreateRequest struct {
 	Name             string            `json:"name" binding:"required,max=100"`
-	Provider         string            `json:"provider" binding:"required,oneof=openai anthropic gemini minimax glm kimi deepseek windsurf opencode"`
+	Provider         string            `json:"provider" binding:"required,oneof=openai anthropic gemini grok minimax glm kimi deepseek windsurf opencode"`
 	APIMode          string            `json:"api_mode" binding:"omitempty,oneof=chat_completions responses"`
 	Description      string            `json:"description" binding:"max=500"`
 	ExtraHeaders     map[string]string `json:"extra_headers"`

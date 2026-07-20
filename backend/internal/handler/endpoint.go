@@ -19,9 +19,16 @@ const (
 	EndpointMessages          = "/v1/messages"
 	EndpointChatCompletions   = "/v1/chat/completions"
 	EndpointEmbeddings        = "/v1/embeddings"
+	EndpointAlphaSearch       = "/v1/alpha/search"
 	EndpointResponses         = "/v1/responses"
+	EndpointResponsesCompact  = "/v1/responses/compact"
 	EndpointImagesGenerations = "/v1/images/generations"
 	EndpointImagesEdits       = "/v1/images/edits"
+	EndpointImageTasks        = "/v1/images/tasks"
+	EndpointVideosGenerations = "/v1/videos/generations"
+	EndpointVideosEdits       = "/v1/videos/edits"
+	EndpointVideosExtensions  = "/v1/videos/extensions"
+	EndpointVideos            = "/v1/videos"
 	EndpointGeminiModels      = "/v1beta/models"
 )
 
@@ -46,6 +53,8 @@ func NormalizeInboundEndpoint(path string) string {
 	switch {
 	case strings.Contains(path, EndpointEmbeddings):
 		return EndpointEmbeddings
+	case strings.Contains(path, EndpointAlphaSearch) || isBareOrSubpathOf(strings.TrimRight(path, "/"), "/alpha/search") || isBareOrSubpathOf(strings.TrimRight(path, "/"), "/backend-api/codex/alpha/search"):
+		return EndpointAlphaSearch
 	case strings.Contains(path, EndpointChatCompletions):
 		return EndpointChatCompletions
 	case strings.Contains(path, EndpointMessages):
@@ -54,7 +63,19 @@ func NormalizeInboundEndpoint(path string) string {
 		return EndpointImagesGenerations
 	case strings.Contains(path, EndpointImagesEdits) || strings.Contains(path, "/images/edits"):
 		return EndpointImagesEdits
-	case containsEndpointPath(path, EndpointResponses) || containsEndpointPath(path, "/responses"):
+	case strings.Contains(path, EndpointImageTasks) || strings.Contains(path, "/images/tasks/"):
+		return EndpointImageTasks
+	case strings.Contains(path, EndpointVideosGenerations) || strings.Contains(path, "/videos/generations"):
+		return EndpointVideosGenerations
+	case strings.Contains(path, EndpointVideosEdits) || strings.Contains(path, "/videos/edits"):
+		return EndpointVideosEdits
+	case strings.Contains(path, EndpointVideosExtensions) || strings.Contains(path, "/videos/extensions"):
+		return EndpointVideosExtensions
+	case strings.Contains(path, EndpointVideos) || strings.Contains(path, "/videos/"):
+		return EndpointVideos
+	case strings.Contains(path, EndpointResponsesCompact) || isResponsesCompactAliasPath(path):
+		return EndpointResponsesCompact
+	case containsEndpointPath(path, EndpointResponses) || isResponsesRootAliasPath(path):
 		return EndpointResponses
 	case strings.Contains(path, EndpointGeminiModels):
 		return EndpointGeminiModels
@@ -77,12 +98,42 @@ func containsEndpointPath(path, endpoint string) bool {
 	}
 }
 
+// isResponsesCompactAliasPath reports whether path is a bare Responses
+// compact route or the equivalent Codex direct route. Keep this check before
+// the root Responses alias because the latter is a prefix of compact.
+func isResponsesCompactAliasPath(path string) bool {
+	trimmed := strings.TrimRight(strings.TrimSpace(path), "/")
+	if trimmed == "" {
+		return false
+	}
+	return isBareOrSubpathOf(trimmed, "/responses/compact") ||
+		isBareOrSubpathOf(trimmed, "/backend-api/codex/responses/compact")
+}
+
+// isResponsesRootAliasPath recognizes only the intentionally exposed bare
+// and Codex direct aliases, avoiding false positives such as /foo/responses.
+func isResponsesRootAliasPath(path string) bool {
+	trimmed := strings.TrimRight(strings.TrimSpace(path), "/")
+	if trimmed == "" {
+		return false
+	}
+	return isBareOrSubpathOf(trimmed, "/responses") ||
+		isBareOrSubpathOf(trimmed, "/backend-api/codex/responses")
+}
+
+func isBareOrSubpathOf(path, root string) bool {
+	return path == root || strings.HasPrefix(path, root+"/")
+}
+
 // DeriveUpstreamEndpoint determines the upstream endpoint from the
 // account platform and the normalized inbound endpoint.
 //
 // Platform-specific rules:
-//   - OpenAI always forwards to /v1/responses (with optional subpath
-//     such as /v1/responses/compact preserved from the raw URL).
+//   - OpenAI and Grok text compatibility routes forward to /v1/responses
+//     (with optional subpath such as /v1/responses/compact preserved from
+//     the raw URL); native endpoints such as embeddings and alpha search
+//     retain their paths. Grok raw Chat requests override this through the
+//     forwarding result consumed by resolveOpenAIUpstreamEndpoint.
 //   - Anthropic  → /v1/messages
 //   - Gemini     → /v1beta/models
 //   - Antigravity → /v1/messages (Claude) or gemini (Gemini)
@@ -92,8 +143,8 @@ func DeriveUpstreamEndpoint(inbound, rawRequestPath, platform string) string {
 	inbound = strings.TrimSpace(inbound)
 
 	switch platform {
-	case service.PlatformOpenAI:
-		if inbound == EndpointEmbeddings || inbound == EndpointImagesGenerations || inbound == EndpointImagesEdits {
+	case service.PlatformOpenAI, service.PlatformGrok:
+		if inbound == EndpointEmbeddings || inbound == EndpointAlphaSearch || inbound == EndpointImagesGenerations || inbound == EndpointImagesEdits || inbound == EndpointVideosGenerations || inbound == EndpointVideosEdits || inbound == EndpointVideosExtensions || inbound == EndpointVideos {
 			return inbound
 		}
 		// OpenAI forwards everything to the Responses API.
@@ -120,6 +171,8 @@ func DeriveUpstreamEndpoint(inbound, rawRequestPath, platform string) string {
 		switch inbound {
 		case EndpointMessages, EndpointChatCompletions:
 			return inbound
+		case EndpointResponsesCompact:
+			return EndpointResponses
 		default:
 			return inbound
 		}
@@ -128,6 +181,8 @@ func DeriveUpstreamEndpoint(inbound, rawRequestPath, platform string) string {
 		switch inbound {
 		case EndpointMessages, EndpointChatCompletions:
 			return inbound
+		case EndpointResponsesCompact:
+			return EndpointResponses
 		default:
 			return inbound
 		}
@@ -136,6 +191,8 @@ func DeriveUpstreamEndpoint(inbound, rawRequestPath, platform string) string {
 		switch inbound {
 		case EndpointMessages, EndpointChatCompletions:
 			return inbound
+		case EndpointResponsesCompact:
+			return EndpointResponses
 		default:
 			return inbound
 		}
@@ -144,6 +201,8 @@ func DeriveUpstreamEndpoint(inbound, rawRequestPath, platform string) string {
 		switch inbound {
 		case EndpointMessages, EndpointChatCompletions:
 			return inbound
+		case EndpointResponsesCompact:
+			return EndpointResponses
 		default:
 			return inbound
 		}
@@ -152,6 +211,8 @@ func DeriveUpstreamEndpoint(inbound, rawRequestPath, platform string) string {
 		switch inbound {
 		case EndpointMessages, EndpointChatCompletions:
 			return inbound
+		case EndpointResponsesCompact:
+			return EndpointResponses
 		default:
 			return inbound
 		}

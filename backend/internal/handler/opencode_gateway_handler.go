@@ -295,7 +295,7 @@ func (h *OpenCodeGatewayHandler) forwardBody(
 					h.handleOpenCodeUpstreamDegradation(c.Request.Context(), account, failoverErr)
 				}
 				if mapping.Retryable {
-					failoverAction := fs.HandleFailoverError(c.Request.Context(), h.openCodeTempUnscheduler(), account.ID, account.Platform, failoverErr)
+					failoverAction := fs.HandleFailoverError(c.Request.Context(), h.openCodeTempUnscheduler(), account.ID, account.Platform, account.GetPoolModeRetryCount(), failoverErr)
 					switch failoverAction {
 					case FailoverContinue:
 						continue
