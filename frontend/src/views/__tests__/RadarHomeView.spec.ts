@@ -32,6 +32,12 @@ const { getPublicChannelsMock } = vi.hoisted(() => ({
   getPublicChannelsMock: vi.fn(),
 }))
 const { localeMock } = vi.hoisted(() => ({ localeMock: { value: 'en' } }))
+const { useAppStoreMock } = vi.hoisted(() => ({
+  useAppStoreMock: vi.fn(() => ({
+    cachedPublicSettings: { site_name: 'TikToken' },
+    siteName: 'Sub2API',
+  })),
+}))
 
 vi.mock('@/composables/usePublicRadar', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/composables/usePublicRadar')>()
@@ -45,13 +51,22 @@ vi.mock('@/api/channels', () => ({
   default: { getPublic: getPublicChannelsMock },
 }))
 
+vi.mock('@/stores', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/stores')>(),
+  useAppStore: useAppStoreMock,
+}))
+
 vi.mock('vue-i18n', async (importOriginal) => {
   const actual = await importOriginal<typeof import('vue-i18n')>()
   return {
     ...actual,
     useI18n: () => ({
       locale: localeMock,
-      t: (_key: string, fallback?: string) => fallback ?? _key,
+      t: (key: string, fallback?: string) => (
+        key === 'home.footer.allRightsReserved'
+          ? 'net is owned by Jerrywell Pte. Ltd.'
+          : fallback ?? key
+      ),
     }),
   }
 })
@@ -303,6 +318,14 @@ describe('RadarHomeView', () => {
     const wrapper = mountView(makeRadar())
     expect(wrapper.find('[data-testid="sources"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="disclaimer"]').exists()).toBe(false)
+  })
+
+  it('renders the same localized copyright footer as the home page', () => {
+    const wrapper = mountView(makeRadar())
+
+    expect(wrapper.get('[data-testid="radar-footer"]').text()).toBe(
+      `© ${new Date().getFullYear()} TikToken.net is owned by Jerrywell Pte. Ltd.`,
+    )
   })
 
   it('renders complete content and successful empty payloads without zero-value flashes', async () => {

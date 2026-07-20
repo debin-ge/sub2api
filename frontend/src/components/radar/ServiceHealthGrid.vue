@@ -1,4 +1,22 @@
 <template>
+  <div
+    data-testid="service-history-legend"
+    class="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-gray-500 dark:text-gray-400"
+  >
+    <span class="font-medium text-gray-700 dark:text-gray-200">
+      {{ t('radar.health.statusLegend', 'Status key') }}
+    </span>
+    <span
+      v-for="legend in historyLegend"
+      :key="legend.status"
+      :data-history-legend-status="legend.status"
+      class="inline-flex items-center gap-1.5"
+    >
+      <span class="h-2.5 w-2.5 rounded-sm" :class="legend.barClass" aria-hidden="true" />
+      {{ legend.label }}
+    </span>
+  </div>
+
   <div class="grid gap-5 lg:grid-cols-2">
     <article
       v-for="item in normalizedServices"
@@ -64,9 +82,18 @@
         data-testid="service-incident"
         class="mt-4 rounded-lg bg-gray-50 p-3 text-sm dark:bg-dark-800"
       >
-        <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-          {{ t('radar.health.lastIncident', 'Latest incident') }}
-        </p>
+        <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+          <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+            {{ t('radar.health.lastIncident', 'Latest incident') }}
+          </p>
+          <time
+            data-testid="service-incident-time"
+            :datetime="item.last_incident.created_at"
+            class="text-xs text-gray-500 dark:text-gray-400"
+          >
+            {{ formatDate(item.last_incident.created_at) }}
+          </time>
+        </div>
         <p class="mt-1 text-gray-800 dark:text-gray-100">{{ item.last_incident.name }}</p>
       </div>
 
@@ -142,13 +169,6 @@
               : t('radar.health.noIncidents', 'No incidents reported for this day.') }}
           </p>
         </div>
-      </div>
-
-      <div class="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-[11px] text-gray-500 dark:text-gray-400" aria-hidden="true">
-        <span v-for="legend in historyLegend" :key="legend.status" class="inline-flex items-center gap-1.5">
-          <span class="h-2.5 w-2.5 rounded-sm" :class="legend.barClass" />
-          {{ legend.label }}
-        </span>
       </div>
     </article>
   </div>
@@ -270,6 +290,29 @@ function mergeHistory(candidates: readonly ServiceHealthDTO[]): ServiceHealthHis
   return history
 }
 
+function latestIncidentFromRecentHistory(
+  history: readonly ServiceHealthHistoryDayDTO[],
+  days = 7
+): RadarIncidentDTO | null {
+  const uniqueIncidents = new Map<string, RadarIncidentDTO>()
+  const recentDays = [...history]
+    .filter((day) => parseHistoryDate(day.date) !== null)
+    .sort((left, right) => right.date.localeCompare(left.date))
+    .slice(0, days)
+
+  for (const day of recentDays) {
+    for (const incident of day.incidents) {
+      if (!Number.isFinite(new Date(incident.created_at).getTime())) continue
+      const key = `${incident.created_at}\u0000${incident.name}`
+      if (!uniqueIncidents.has(key)) uniqueIncidents.set(key, incident)
+    }
+  }
+
+  return [...uniqueIncidents.values()]
+    .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime())[0]
+    ?? null
+}
+
 const normalizedServices = computed(() => {
   const byKey = new Map((props.services ?? []).map((item) => [item.service_key, item]))
   const seen = new Set<string>()
@@ -293,18 +336,15 @@ const normalizedServices = computed(() => {
       .filter((value): value is string => value !== null)
       .sort()
       .at(-1) ?? null
-    const latestIncident = candidates
-      .map((item) => item.last_incident)
-      .filter((item): item is RadarIncidentDTO => item !== null)
-      .sort((left, right) => right.created_at.localeCompare(left.created_at))[0] ?? null
+    const history = mergeHistory(candidates)
     return {
       ...worst,
       service_key: platform,
       name: platformLabel(platform),
-      last_incident: latestIncident,
+      last_incident: latestIncidentFromRecentHistory(history),
       last_updated_at: latestUpdated,
       source_url: worst.source_url || candidates.find((item) => item.source_url)?.source_url || '',
-      history_30d: mergeHistory(candidates),
+      history_30d: history,
       stale: candidates.some((item) => item.stale),
     }
   })

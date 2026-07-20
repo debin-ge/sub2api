@@ -55,6 +55,31 @@ describe('ServiceHealthGrid', () => {
     expect(card.find('[data-testid="status-icon"]').exists()).toBe(true)
   })
 
+  it('renders one shared history status legend above all service cards', () => {
+    const wrapper = mount(ServiceHealthGrid, {
+      props: {
+        services: [service('deepseek'), service('openai_api')],
+        platforms: ['deepseek', 'openai'],
+      },
+      global: { stubs: { Icon: true } },
+    })
+
+    const legends = wrapper.findAll('[data-testid="service-history-legend"]')
+    expect(legends).toHaveLength(1)
+    expect(legends[0].text()).toContain('Status key')
+    expect(legends[0].findAll('[data-history-legend-status]')).toHaveLength(5)
+    for (const label of [
+      'Operational',
+      'Degraded performance',
+      'Partial outage',
+      'Major outage',
+      'Status unknown',
+    ]) {
+      expect(legends[0].text()).toContain(label)
+    }
+    expect(wrapper.findAll('[data-service-key]')).toHaveLength(2)
+  })
+
   it('shows a 30-day strip and opens official incident details by hover, focus, or click', async () => {
     const item = service('claude_api')
     item.stale = true
@@ -109,6 +134,69 @@ describe('ServiceHealthGrid', () => {
     })
 
     expect(wrapper.get('[data-service-key="openai"]').text()).toContain('Partial outage')
+  })
+
+  it('shows the latest incident from the most recent seven history days', () => {
+    const item = service('deepseek')
+    item.last_incident = {
+      name: 'Older upstream latest incident',
+      status: 'resolved',
+      impact: 'minor',
+      created_at: '2026-07-05T08:00:00.000Z',
+      resolved_at: '2026-07-05T09:00:00.000Z',
+    }
+    item.history_30d = serviceHistory({
+      '2026-07-10': {
+        incidents: [{
+          name: 'Earlier recent incident',
+          status: 'resolved',
+          impact: 'minor',
+          created_at: '2026-07-10T08:00:00.000Z',
+          resolved_at: '2026-07-10T09:00:00.000Z',
+        }],
+      },
+      '2026-07-12': {
+        incidents: [{
+          name: 'Latest recent incident',
+          status: 'resolved',
+          impact: 'minor',
+          created_at: '2026-07-12T08:00:00.000Z',
+          resolved_at: '2026-07-12T09:00:00.000Z',
+        }],
+      },
+    })
+    const wrapper = mount(ServiceHealthGrid, {
+      props: { services: [item], platforms: ['deepseek'] },
+      global: { stubs: { Icon: true } },
+    })
+
+    const incident = wrapper.get('[data-testid="service-incident"]')
+    const incidentTime = incident.get('[data-testid="service-incident-time"]')
+    expect(incident.text()).toContain('Latest recent incident')
+    expect(incident.text()).not.toContain('Earlier recent incident')
+    expect(incident.text()).not.toContain('Older upstream latest incident')
+    expect(incidentTime.attributes('datetime')).toBe('2026-07-12T08:00:00.000Z')
+    expect(incidentTime.text()).toMatch(/Jul 12, 2026/)
+  })
+
+  it('hides the latest incident when the recent seven history days contain none', () => {
+    const item = service('deepseek')
+    item.last_incident = {
+      name: 'Older incident',
+      status: 'resolved',
+      impact: 'minor',
+      created_at: '2026-07-06T08:00:00.000Z',
+      resolved_at: '2026-07-06T09:00:00.000Z',
+    }
+    item.history_30d = serviceHistory({
+      '2026-07-06': { incidents: [item.last_incident] },
+    })
+    const wrapper = mount(ServiceHealthGrid, {
+      props: { services: [item], platforms: ['deepseek'] },
+      global: { stubs: { Icon: true } },
+    })
+
+    expect(wrapper.find('[data-testid="service-incident"]').exists()).toBe(false)
   })
 
   it('merges multi-service platform history using the worst daily state', () => {

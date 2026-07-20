@@ -48,6 +48,7 @@ const messages = {
       source: 'Source',
       history30d: '30-day history',
       dailyStatus: 'Daily status',
+      statusLegend: 'Status key',
       incidents30d: 'incidents',
       incidents: 'incidents',
       closeHistory: 'Close history details',

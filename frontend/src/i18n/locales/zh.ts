@@ -48,6 +48,7 @@ const messages = {
       source: '数据源',
       history30d: '近 30 天历史',
       dailyStatus: '每日状态',
+      statusLegend: '状态标识',
       incidents30d: '起事件',
       incidents: '起事件',
       closeHistory: '关闭历史详情',

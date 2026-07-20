@@ -1,5 +1,5 @@
 <template>
-  <div class="min-h-screen bg-gray-50 dark:bg-dark-950">
+  <div class="flex min-h-screen flex-col bg-gray-50 dark:bg-dark-950">
     <RadarPageHeader />
 
     <div
@@ -7,7 +7,7 @@
       data-testid="radar-initial-loading"
       role="status"
       aria-live="polite"
-      class="mx-auto flex max-w-7xl items-center justify-center gap-3 px-4 py-24 text-gray-600 dark:text-gray-300"
+      class="mx-auto flex w-full max-w-7xl flex-1 items-center justify-center gap-3 px-4 py-24 text-gray-600 dark:text-gray-300"
     >
       <Icon name="refresh" size="md" class="animate-spin motion-reduce:animate-none" aria-hidden="true" />
       {{ t('radar.state.loading', 'Loading radar data') }}
@@ -16,7 +16,7 @@
     <div
       v-else-if="radar.allInitialFailed.value"
       data-testid="radar-all-failed"
-      class="mx-auto max-w-2xl px-4 py-20 text-center"
+      class="mx-auto w-full max-w-2xl flex-1 px-4 py-20 text-center"
     >
       <h1 class="text-2xl font-bold text-gray-950 dark:text-white">
         {{ t('radar.error.title', 'Unable to load radar data') }}
@@ -31,7 +31,7 @@
         :last-fetched-at="radar.lastFetchedAt.value"
       />
 
-      <main class="mx-auto max-w-7xl space-y-12 px-4 py-8 sm:px-6 lg:px-8">
+      <main class="mx-auto w-full max-w-7xl flex-1 space-y-12 px-4 py-8 sm:px-6 lg:px-8">
         <section id="health" class="scroll-mt-44 sm:scroll-mt-32" aria-labelledby="radar-health-heading">
           <div class="mb-5">
             <h2 id="radar-health-heading" class="text-2xl font-bold text-gray-950 dark:text-white">
@@ -110,6 +110,19 @@
       </main>
     </template>
 
+    <footer
+      data-testid="radar-footer"
+      class="border-t border-gray-200/50 px-6 py-8 dark:border-dark-800/50"
+    >
+      <div
+        class="mx-auto flex max-w-6xl flex-col items-center justify-center gap-4 text-center sm:flex-row sm:text-left"
+      >
+        <p class="text-sm text-gray-500 dark:text-dark-400">
+          &copy; {{ currentYear }} {{ siteName }}.{{ t('home.footer.allRightsReserved') }}
+        </p>
+      </div>
+    </footer>
+
     <QuotaBucketDetailModal
       :show="detailModalOpen"
       :bucket="selectedBucket"
@@ -133,6 +146,7 @@ import RadarHero from '@/components/radar/RadarHero.vue'
 import RadarPageHeader from '@/components/radar/RadarPageHeader.vue'
 import RadarSectionState from '@/components/radar/RadarSectionState.vue'
 import ServiceHealthGrid from '@/components/radar/ServiceHealthGrid.vue'
+import { useAppStore } from '@/stores'
 import userChannelsAPI, { type UserAvailableChannel } from '@/api/channels'
 import {
   usePublicRadar,
@@ -148,6 +162,7 @@ import type {
 import { radarCatalogPlatforms } from '@/utils/radarCatalog'
 
 const { t } = useI18n()
+const appStore = useAppStore()
 const radar = usePublicRadar()
 const detailModalOpen = ref(false)
 const selectedBucket = shallowRef<BucketSnapshotDTO | null>(null)
@@ -161,6 +176,8 @@ let catalogController: AbortController | null = null
 const supportedHealthPlatforms = new Set(['anthropic', 'openai', 'windsurf', 'deepseek', 'kimi', 'minimax'])
 const healthPlatformOrder = ['anthropic', 'deepseek', 'kimi', 'minimax', 'openai', 'windsurf'] as const
 
+const siteName = computed(() => appStore.cachedPublicSettings?.site_name || appStore.siteName || 'Sub2API')
+const currentYear = computed(() => new Date().getFullYear())
 const healthData = computed(() => radar.health.data.value)
 const quotaData = computed(() => radar.quotaLatest.data.value)
 const degradationData = computed(() => radar.degradationLatest.data.value)
