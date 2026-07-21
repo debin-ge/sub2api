@@ -645,6 +645,68 @@ func TestModelCatalogPublicAntigravityAPIKeyUsesConfiguredRestrictionDespiteLive
 	require.Empty(t, discoverer.calls)
 }
 
+func TestModelCatalogListPublicPassiveNeverStartsUpstreamDiscovery(t *testing.T) {
+	now := time.Date(2026, 7, 16, 0, 0, 0, 0, time.UTC)
+	group := Group{ID: 50, Platform: PlatformOpenAI, Status: StatusActive}
+	account := Account{
+		ID: 51, Platform: PlatformOpenAI, Type: AccountTypeOAuth,
+		Status: StatusActive, Schedulable: true,
+	}
+	discoveryStarted := make(chan struct{}, 1)
+	discoverer := modelDiscovererFunc(func(context.Context, *Account) ([]string, error) {
+		discoveryStarted <- struct{}{}
+		return []string{"must-not-be-used"}, nil
+	})
+	catalog := NewModelCatalogService(
+		&modelCatalogAccountRepoStub{byGroup: map[int64][]Account{50: {account}}},
+		&modelCatalogGroupRepoStub{groups: []Group{group}},
+		nil,
+		discoverer,
+		config.ModelCatalogConfig{RefreshIntervalSeconds: 300, RequestTimeoutSeconds: 10, StaleTTLSeconds: 86400},
+	)
+	catalog.now = func() time.Time { return now }
+
+	models, err := catalog.ListPublicPassive(context.Background())
+
+	require.NoError(t, err)
+	require.Equal(t, normalizeCatalogModelIDs(DefaultModelCatalogIDs(PlatformOpenAI)), models[PlatformOpenAI])
+	select {
+	case <-discoveryStarted:
+		t.Fatal("passive public catalog started upstream model discovery")
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+func TestModelCatalogListPublicPassiveUsesCachedModelsAndExcludesExclusiveGroups(t *testing.T) {
+	now := time.Date(2026, 7, 16, 0, 0, 0, 0, time.UTC)
+	groups := []Group{
+		{ID: 60, Platform: PlatformOpenAI, Status: StatusActive},
+		{ID: 61, Platform: PlatformOpenAI, Status: StatusActive, IsExclusive: true},
+	}
+	publicAccount := Account{ID: 62, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true}
+	exclusiveAccount := Account{ID: 63, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true}
+	discoverer := &recordingModelDiscoverer{models: map[int64][]string{}, errs: map[int64]error{}}
+	catalog := NewModelCatalogService(
+		&modelCatalogAccountRepoStub{byGroup: map[int64][]Account{
+			60: {publicAccount},
+			61: {exclusiveAccount},
+		}},
+		&modelCatalogGroupRepoStub{groups: groups},
+		nil,
+		discoverer,
+		config.ModelCatalogConfig{RefreshIntervalSeconds: 300, RequestTimeoutSeconds: 10, StaleTTLSeconds: 86400},
+	)
+	catalog.now = func() time.Time { return now }
+	catalog.cache.storeSuccess(publicAccount.ID, []string{"gpt-5.5", "gpt-5.5-high"}, now.Add(-48*time.Hour))
+	catalog.cache.storeSuccess(exclusiveAccount.ID, []string{"exclusive-model"}, now)
+
+	models, err := catalog.ListPublicPassive(context.Background())
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"gpt-5.5", "gpt-5.5-high"}, models[PlatformOpenAI])
+	require.Empty(t, discoverer.calls)
+}
+
 func TestModelCatalogRequestMemoResolvesAccountOnce(t *testing.T) {
 	discoverer := &recordingModelDiscoverer{
 		models: map[int64][]string{1: {"gpt-public"}},

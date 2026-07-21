@@ -1,6 +1,7 @@
 package httpclient
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -19,11 +20,8 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 func TestValidatedTransport_CacheHostValidation(t *testing.T) {
-	originalValidate := validateResolvedIP
-	defer func() { validateResolvedIP = originalValidate }()
-
 	var validateCalls int32
-	validateResolvedIP = func(host string) error {
+	validate := func(_ context.Context, host string) error {
 		atomic.AddInt32(&validateCalls, 1)
 		require.Equal(t, "api.openai.com", host)
 		return nil
@@ -42,6 +40,7 @@ func TestValidatedTransport_CacheHostValidation(t *testing.T) {
 	now := time.Unix(1730000000, 0)
 	transport := newValidatedTransport(base)
 	transport.now = func() time.Time { return now }
+	transport.validateResolvedIP = validate
 
 	req, err := http.NewRequest(http.MethodGet, "https://api.openai.com/v1/responses", nil)
 	require.NoError(t, err)
@@ -56,11 +55,8 @@ func TestValidatedTransport_CacheHostValidation(t *testing.T) {
 }
 
 func TestValidatedTransport_ExpiredCacheTriggersRevalidation(t *testing.T) {
-	originalValidate := validateResolvedIP
-	defer func() { validateResolvedIP = originalValidate }()
-
 	var validateCalls int32
-	validateResolvedIP = func(_ string) error {
+	validate := func(context.Context, string) error {
 		atomic.AddInt32(&validateCalls, 1)
 		return nil
 	}
@@ -76,6 +72,7 @@ func TestValidatedTransport_ExpiredCacheTriggersRevalidation(t *testing.T) {
 	now := time.Unix(1730001000, 0)
 	transport := newValidatedTransport(base)
 	transport.now = func() time.Time { return now }
+	transport.validateResolvedIP = validate
 
 	req, err := http.NewRequest(http.MethodGet, "https://api.openai.com/v1/responses", nil)
 	require.NoError(t, err)
@@ -91,11 +88,8 @@ func TestValidatedTransport_ExpiredCacheTriggersRevalidation(t *testing.T) {
 }
 
 func TestValidatedTransport_ValidationErrorStopsRoundTrip(t *testing.T) {
-	originalValidate := validateResolvedIP
-	defer func() { validateResolvedIP = originalValidate }()
-
 	expectedErr := errors.New("dns rebinding rejected")
-	validateResolvedIP = func(_ string) error {
+	validate := func(context.Context, string) error {
 		return expectedErr
 	}
 
@@ -106,10 +100,42 @@ func TestValidatedTransport_ValidationErrorStopsRoundTrip(t *testing.T) {
 	})
 
 	transport := newValidatedTransport(base)
+	transport.validateResolvedIP = validate
 	req, err := http.NewRequest(http.MethodGet, "https://api.openai.com/v1/responses", nil)
 	require.NoError(t, err)
 
 	_, err = transport.RoundTrip(req)
 	require.ErrorIs(t, err, expectedErr)
+	require.Equal(t, int32(0), atomic.LoadInt32(&baseCalls))
+}
+
+func TestValidatedTransport_RequestCancellationStopsDNSAndBaseRoundTrip(t *testing.T) {
+	validationStarted := make(chan struct{})
+	validate := func(ctx context.Context, _ string) error {
+		close(validationStarted)
+		<-ctx.Done()
+		return ctx.Err()
+	}
+
+	var baseCalls int32
+	base := roundTripFunc(func(_ *http.Request) (*http.Response, error) {
+		atomic.AddInt32(&baseCalls, 1)
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{}`))}, nil
+	})
+	transport := newValidatedTransport(base)
+	transport.validateResolvedIP = validate
+	ctx, cancel := context.WithCancel(context.Background())
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.openai.com/v1/responses", nil)
+	require.NoError(t, err)
+	result := make(chan error, 1)
+	go func() {
+		_, roundTripErr := transport.RoundTrip(req)
+		result <- roundTripErr
+	}()
+
+	<-validationStarted
+	cancel()
+
+	require.ErrorIs(t, <-result, context.Canceled)
 	require.Equal(t, int32(0), atomic.LoadInt32(&baseCalls))
 }

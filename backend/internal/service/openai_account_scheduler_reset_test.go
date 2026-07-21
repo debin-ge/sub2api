@@ -138,6 +138,22 @@ func TestOpenAIQuotaHeadroomFactor_SecondaryLowHeadroomDiscountsPrimary(t *testi
 	require.InDelta(t, 0.4, openAIQuotaHeadroomFactor(account, now), 0.0001)
 }
 
+func TestOpenAIQuotaHeadroomFactor_IgnoresRemovedFiveHourWindow(t *testing.T) {
+	now := time.Date(2026, 7, 20, 10, 0, 0, 0, time.UTC)
+	account := &Account{
+		Extra: map[string]any{
+			"codex_primary_used_percent":   20.0,
+			"codex_primary_reset_at":       now.Add(24 * time.Hour).Format(time.RFC3339),
+			"codex_secondary_used_percent": 95.0,
+			"codex_secondary_reset_at":     now.Add(time.Hour).Format(time.RFC3339),
+			"codex_usage_updated_at":       now.Add(-time.Minute).Format(time.RFC3339),
+			openAICodex5hAvailableExtraKey: false,
+		},
+	}
+
+	require.InDelta(t, 0.8, openAIQuotaHeadroomFactor(account, now), 0.0001)
+}
+
 func TestBuildOpenAIAccountLoadPlan_QuotaHeadroomPrefersHigher7dRemaining(t *testing.T) {
 	now := time.Now()
 	filtered := []*Account{

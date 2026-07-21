@@ -15,6 +15,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/handler"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	"github.com/Wei-Shaw/sub2api/internal/repository"
+	"github.com/Wei-Shaw/sub2api/internal/securityaudit"
 	"github.com/Wei-Shaw/sub2api/internal/server"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -24,9 +25,24 @@ import (
 )
 
 type Application struct {
-	Server  *http.Server
-	Cleanup func()
+	Server      *http.Server
+	PromptAudit *securityaudit.PromptService
+	Cleanup     func()
 }
+
+type cleanupFactory func(radarRunner *service.RadarRunner) func()
+
+type radarFetchersConstructor func(cfg *config.Config) ([]service.RadarFetcher, error)
+
+type radarQuotaAggregatorConstructor func() (*service.RadarQuotaAggregator, error)
+
+type radarRunnerConstructor func(
+	cfg *config.Config,
+	repo service.RadarCacheRepository,
+	fetchers []service.RadarFetcher,
+	quotaAggregator *service.RadarQuotaAggregator,
+	runtimeGate service.RadarRuntimeSettingReader,
+) (*service.RadarRunner, error)
 
 func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	wire.Build(
@@ -36,6 +52,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 		// Business layer ProviderSets
 		repository.ProviderSet,
 		service.ProviderSet,
+		securityaudit.ProviderSet,
 		payment.ProviderSet,
 		middleware.ProviderSet,
 		handler.ProviderSet,
@@ -51,9 +68,13 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 
 		// Cleanup function provider
 		provideCleanup,
+		provideRadarQuotaAggregatorConstructor,
+		provideRadarFetchersConstructor,
+		provideRadarRuntimeSettingReader,
 
-		// Application struct
-		wire.Struct(new(Application), "Server", "Cleanup"),
+		// Final application provider. Radar remains the final fallible constructor
+		// so failures can roll back all previously started dependencies.
+		provideApplication,
 	)
 	return nil, nil
 }
@@ -69,6 +90,92 @@ func provideServiceBuildInfo(buildInfo handler.BuildInfo) service.BuildInfo {
 	}
 }
 
+func provideRadarQuotaAggregatorConstructor(
+	accountRepo service.AccountRepository,
+	usageReader service.RadarUsageSnapshotReader,
+	batchReader service.RadarQuotaBatchReader,
+	cacheRepo service.RadarCacheRepository,
+	cfg *config.Config,
+) radarQuotaAggregatorConstructor {
+	return func() (*service.RadarQuotaAggregator, error) {
+		return service.ProvideRadarQuotaAggregator(accountRepo, usageReader, batchReader, cacheRepo, cfg)
+	}
+}
+
+func provideRadarRuntimeSettingReader(settingService *service.SettingService) service.RadarRuntimeSettingReader {
+	return settingService
+}
+
+func provideRadarFetchersConstructor(modelCatalog *service.ModelCatalogService) radarFetchersConstructor {
+	return func(cfg *config.Config) ([]service.RadarFetcher, error) {
+		return service.NewRadarFetchers(cfg, modelCatalog)
+	}
+}
+
+func provideApplication(
+	httpServer *http.Server,
+	promptAudit *securityaudit.PromptService,
+	cfg *config.Config,
+	radarRepo service.RadarCacheRepository,
+	runtimeGate service.RadarRuntimeSettingReader,
+	radarAdminController *service.RadarAdminController,
+	newCleanup cleanupFactory,
+	newQuotaAggregator radarQuotaAggregatorConstructor,
+	newFetchers radarFetchersConstructor,
+) (*Application, error) {
+	return provideApplicationWithRadarConstructors(
+		httpServer,
+		promptAudit,
+		cfg,
+		radarRepo,
+		runtimeGate,
+		radarAdminController,
+		newCleanup,
+		newQuotaAggregator,
+		newFetchers,
+		service.NewRadarRunner,
+	)
+}
+
+func provideApplicationWithRadarConstructors(
+	httpServer *http.Server,
+	promptAudit *securityaudit.PromptService,
+	cfg *config.Config,
+	radarRepo service.RadarCacheRepository,
+	runtimeGate service.RadarRuntimeSettingReader,
+	radarAdminController *service.RadarAdminController,
+	newCleanup cleanupFactory,
+	newQuotaAggregator radarQuotaAggregatorConstructor,
+	newFetchers radarFetchersConstructor,
+	newRunner radarRunnerConstructor,
+) (*Application, error) {
+	quotaAggregator, err := newQuotaAggregator()
+	if err != nil {
+		newCleanup(nil)()
+		return nil, err
+	}
+
+	fetchers, err := newFetchers(cfg)
+	if err != nil {
+		newCleanup(nil)()
+		return nil, err
+	}
+
+	radarRunner, err := newRunner(cfg, radarRepo, fetchers, quotaAggregator, runtimeGate)
+	if err != nil {
+		newCleanup(nil)()
+		return nil, err
+	}
+
+	cleanup := newCleanup(radarRunner)
+	if err := radarAdminController.BindRunner(radarRunner); err != nil {
+		cleanup()
+		return nil, err
+	}
+	radarRunner.Start()
+	return &Application{Server: httpServer, PromptAudit: promptAudit, Cleanup: cleanup}, nil
+}
+
 func provideCleanup(
 	entClient *ent.Client,
 	rdb *redis.Client,
@@ -78,6 +185,10 @@ func provideCleanup(
 	opsCleanup *service.OpsCleanupService,
 	opsScheduledReport *service.OpsScheduledReportService,
 	opsSystemLogSink *service.OpsSystemLogSink,
+	opsService *service.OpsService,
+	opsIngressReject *service.OpsIngressRejectAggregator,
+	apiKeyService *service.APIKeyService,
+	authCacheInvalidationWorker *service.AuthCacheInvalidationWorker,
 	schedulerSnapshot *service.SchedulerSnapshotService,
 	tokenRefresh *service.TokenRefreshService,
 	accountExpiry *service.AccountExpiryService,
@@ -85,6 +196,8 @@ func provideCleanup(
 	subscriptionExpiry *service.SubscriptionExpiryService,
 	usageCleanup *service.UsageCleanupService,
 	idempotencyCleanup *service.IdempotencyCleanupService,
+	batchImageCleanup *service.BatchImageCleanupService,
+	batchImageWorker *service.BatchImageWorkerRuntime,
 	pricing *service.PricingService,
 	emailQueue *service.EmailQueueService,
 	billingCache *service.BillingCacheService,
@@ -104,6 +217,105 @@ func provideCleanup(
 	channelMonitorRunner *service.ChannelMonitorRunner,
 	modelCatalogRefreshRunner *service.ModelCatalogRefreshRunner,
 	quotaFlusher *service.UserPlatformQuotaUsageFlusher,
+	upstreamBillingProbe *service.UpstreamBillingProbeService,
+	auditLog *service.AuditLogService,
+	promptAudit *securityaudit.PromptService,
+) cleanupFactory {
+	return func(radarRunner *service.RadarRunner) func() {
+		return provideFinalCleanup(
+			entClient,
+			rdb,
+			opsMetricsCollector,
+			opsAggregation,
+			opsAlertEvaluator,
+			opsCleanup,
+			opsScheduledReport,
+			opsSystemLogSink,
+			opsService,
+			opsIngressReject,
+			apiKeyService,
+			authCacheInvalidationWorker,
+			schedulerSnapshot,
+			tokenRefresh,
+			accountExpiry,
+			proxyExpiry,
+			subscriptionExpiry,
+			usageCleanup,
+			idempotencyCleanup,
+			batchImageCleanup,
+			batchImageWorker,
+			pricing,
+			emailQueue,
+			billingCache,
+			usageRecordWorkerPool,
+			subscriptionService,
+			oauth,
+			openaiOAuth,
+			geminiOAuth,
+			antigravityOAuth,
+			grokOAuth,
+			openAIGateway,
+			scheduledTestRunner,
+			backupSvc,
+			paymentOrderExpiry,
+			miniMaxRemainsSyncRunner,
+			deepSeekBalanceHealthRunner,
+			channelMonitorRunner,
+			modelCatalogRefreshRunner,
+			quotaFlusher,
+			upstreamBillingProbe,
+			auditLog,
+			promptAudit,
+			radarRunner,
+		)
+	}
+}
+
+func provideFinalCleanup(
+	entClient *ent.Client,
+	rdb *redis.Client,
+	opsMetricsCollector *service.OpsMetricsCollector,
+	opsAggregation *service.OpsAggregationService,
+	opsAlertEvaluator *service.OpsAlertEvaluatorService,
+	opsCleanup *service.OpsCleanupService,
+	opsScheduledReport *service.OpsScheduledReportService,
+	opsSystemLogSink *service.OpsSystemLogSink,
+	opsService *service.OpsService,
+	opsIngressReject *service.OpsIngressRejectAggregator,
+	apiKeyService *service.APIKeyService,
+	authCacheInvalidationWorker *service.AuthCacheInvalidationWorker,
+	schedulerSnapshot *service.SchedulerSnapshotService,
+	tokenRefresh *service.TokenRefreshService,
+	accountExpiry *service.AccountExpiryService,
+	proxyExpiry *service.ProxyExpiryService,
+	subscriptionExpiry *service.SubscriptionExpiryService,
+	usageCleanup *service.UsageCleanupService,
+	idempotencyCleanup *service.IdempotencyCleanupService,
+	batchImageCleanup *service.BatchImageCleanupService,
+	batchImageWorker *service.BatchImageWorkerRuntime,
+	pricing *service.PricingService,
+	emailQueue *service.EmailQueueService,
+	billingCache *service.BillingCacheService,
+	usageRecordWorkerPool *service.UsageRecordWorkerPool,
+	subscriptionService *service.SubscriptionService,
+	oauth *service.OAuthService,
+	openaiOAuth *service.OpenAIOAuthService,
+	geminiOAuth *service.GeminiOAuthService,
+	antigravityOAuth *service.AntigravityOAuthService,
+	grokOAuth *service.GrokOAuthService,
+	openAIGateway *service.OpenAIGatewayService,
+	scheduledTestRunner *service.ScheduledTestRunnerService,
+	backupSvc *service.BackupService,
+	paymentOrderExpiry *service.PaymentOrderExpiryService,
+	miniMaxRemainsSyncRunner *service.MiniMaxRemainsSyncRunner,
+	deepSeekBalanceHealthRunner *service.DeepSeekBalanceHealthRunner,
+	channelMonitorRunner *service.ChannelMonitorRunner,
+	modelCatalogRefreshRunner *service.ModelCatalogRefreshRunner,
+	quotaFlusher *service.UserPlatformQuotaUsageFlusher,
+	upstreamBillingProbe *service.UpstreamBillingProbeService,
+	auditLog *service.AuditLogService,
+	promptAudit *securityaudit.PromptService,
+	radarRunner *service.RadarRunner,
 ) func() {
 	return func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -116,6 +328,36 @@ func provideCleanup(
 
 		// 应用层清理步骤可并行执行，基础设施资源（Redis/Ent）最后按顺序关闭。
 		parallelSteps := []cleanupStep{
+			{"OpsIngressRejectAggregator", func() error {
+				if opsIngressReject != nil {
+					opsIngressReject.Stop()
+				}
+				return nil
+			}},
+			{"AuthCacheInvalidationWorker", func() error {
+				if authCacheInvalidationWorker != nil {
+					authCacheInvalidationWorker.Stop()
+				}
+				return nil
+			}},
+			{"AuthCacheInvalidationSubscriber", func() error {
+				if apiKeyService != nil {
+					apiKeyService.StopAuthCacheInvalidationSubscriber()
+				}
+				return nil
+			}},
+			{"OpsRuntimeSettingsRefresh", func() error {
+				if opsService != nil {
+					opsService.StopRuntimeSettingsRefresh()
+				}
+				return nil
+			}},
+			{"PromptAuditService", func() error {
+				if promptAudit != nil {
+					return promptAudit.Shutdown(ctx)
+				}
+				return nil
+			}},
 			{"OpsScheduledReportService", func() error {
 				if opsScheduledReport != nil {
 					opsScheduledReport.Stop()
@@ -131,6 +373,12 @@ func provideCleanup(
 			{"OpsSystemLogSink", func() error {
 				if opsSystemLogSink != nil {
 					opsSystemLogSink.Stop()
+				}
+				return nil
+			}},
+			{"AuditLogService", func() error {
+				if auditLog != nil {
+					auditLog.Stop()
 				}
 				return nil
 			}},
@@ -167,6 +415,18 @@ func provideCleanup(
 			{"IdempotencyCleanupService", func() error {
 				if idempotencyCleanup != nil {
 					idempotencyCleanup.Stop()
+				}
+				return nil
+			}},
+			{"BatchImageCleanupService", func() error {
+				if batchImageCleanup != nil {
+					batchImageCleanup.Stop()
+				}
+				return nil
+			}},
+			{"BatchImageWorkerRuntime", func() error {
+				if batchImageWorker != nil {
+					batchImageWorker.Stop()
 				}
 				return nil
 			}},
@@ -283,6 +543,18 @@ func provideCleanup(
 			{"UserPlatformQuotaUsageFlusher", func() error {
 				if quotaFlusher != nil {
 					quotaFlusher.Stop()
+				}
+				return nil
+			}},
+			{"RadarRunner", func() error {
+				if radarRunner == nil {
+					return nil
+				}
+				return radarRunner.Stop(ctx)
+			}},
+			{"UpstreamBillingProbeService", func() error {
+				if upstreamBillingProbe != nil {
+					upstreamBillingProbe.Stop()
 				}
 				return nil
 			}},

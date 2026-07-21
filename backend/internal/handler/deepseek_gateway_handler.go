@@ -256,7 +256,7 @@ func (h *DeepSeekGatewayHandler) Messages(c *gin.Context) {
 					h.handleDeepSeekUpstreamDegradation(c.Request.Context(), account, failoverErr)
 				}
 				if mapping.Retryable {
-					failoverAction := fs.HandleFailoverError(c.Request.Context(), h.deepseekTempUnscheduler(), account.ID, account.Platform, failoverErr)
+					failoverAction := fs.HandleFailoverError(c.Request.Context(), h.deepseekTempUnscheduler(), account.ID, account.Platform, account.GetPoolModeRetryCount(), failoverErr)
 					switch failoverAction {
 					case FailoverContinue:
 						continue
@@ -466,7 +466,7 @@ func (h *DeepSeekGatewayHandler) ChatCompletions(c *gin.Context) {
 					h.handleDeepSeekUpstreamDegradation(c.Request.Context(), account, failoverErr)
 				}
 				if mapping.Retryable {
-					failoverAction := fs.HandleFailoverError(c.Request.Context(), h.deepseekTempUnscheduler(), account.ID, account.Platform, failoverErr)
+					failoverAction := fs.HandleFailoverError(c.Request.Context(), h.deepseekTempUnscheduler(), account.ID, account.Platform, account.GetPoolModeRetryCount(), failoverErr)
 					switch failoverAction {
 					case FailoverContinue:
 						continue
@@ -686,7 +686,7 @@ func (h *DeepSeekGatewayHandler) Responses(c *gin.Context) {
 					h.handleDeepSeekUpstreamDegradation(c.Request.Context(), account, failoverErr)
 				}
 				if mapping.Retryable {
-					failoverAction := fs.HandleFailoverError(c.Request.Context(), h.deepseekTempUnscheduler(), account.ID, account.Platform, failoverErr)
+					failoverAction := fs.HandleFailoverError(c.Request.Context(), h.deepseekTempUnscheduler(), account.ID, account.Platform, account.GetPoolModeRetryCount(), failoverErr)
 					switch failoverAction {
 					case FailoverContinue:
 						continue

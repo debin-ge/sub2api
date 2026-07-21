@@ -1,0 +1,72 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "id": 1, "type": "stat", "title": "Core availability (30m)",
+      "gridPos": {"h": 5, "w": 6, "x": 0, "y": 0},
+      "fieldConfig": {"defaults": {"unit": "percentunit", "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 0.995}]}}, "overrides": []},
+      "targets": [{"refId": "A", "expr": "1 - (sum by (job) (rate(radar_http_requests_total{job=~\"$job\",route=~\"/api/v1/public/radar/(service-health|quota-buckets/latest|degradation/latest|lmarena|sources)\",status=\"5xx\"}[30m])) or on (job) (0 * sum by (job) (rate(radar_http_requests_total{job=~\"$job\",route=~\"/api/v1/public/radar/(service-health|quota-buckets/latest|degradation/latest|lmarena|sources)\"}[30m])))) / clamp_min(sum by (job) (rate(radar_http_requests_total{job=~\"$job\",route=~\"/api/v1/public/radar/(service-health|quota-buckets/latest|degradation/latest|lmarena|sources)\"}[30m])), 0.000001)", "legendFormat": "{{job}}"}]
+    },
+    {
+      "id": 2, "type": "stat", "title": "Quota snapshot success (1h)",
+      "gridPos": {"h": 5, "w": 6, "x": 6, "y": 0},
+      "fieldConfig": {"defaults": {"unit": "percentunit", "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 0.99}]}}, "overrides": []},
+      "targets": [{"refId": "A", "expr": "(sum by (job) (rate(radar_aggregator_runs_total{job=~\"$job\",result=\"success\"}[1h])) or on (job) (0 * sum by (job) (rate(radar_aggregator_runs_total{job=~\"$job\"}[1h])))) / clamp_min(sum by (job) (rate(radar_aggregator_runs_total{job=~\"$job\"}[1h])), 0.000001)", "legendFormat": "{{job}}"}]
+    },
+    {
+      "id": 3, "type": "stat", "title": "Latest success visible", "gridPos": {"h": 5, "w": 6, "x": 12, "y": 0},
+      "fieldConfig": {"defaults": {"unit": "percentunit", "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}}, "overrides": []},
+      "targets": [{"refId": "A", "expr": "((count by (job) (min by (job, source) (radar_source_age_seconds{job=~\"$job\",source=~\"status_.*\"} >= 0) <= 3600) or on (job) (0 * count by (job) (count by (job, source) (radar_source_age_seconds{job=~\"$job\"})))) + (count by (job) (min by (job, source) (radar_source_age_seconds{job=~\"$job\",source=\"aa\"} >= 0) <= 43200) or on (job) (0 * count by (job) (count by (job, source) (radar_source_age_seconds{job=~\"$job\"})))) + (count by (job) (min by (job, source) (radar_source_age_seconds{job=~\"$job\",source=~\"aa_performance|lmarena\"} >= 0) <= 172800) or on (job) (0 * count by (job) (count by (job, source) (radar_source_age_seconds{job=~\"$job\"}))))) / clamp_min(count by (job) (count by (job, source) (radar_source_age_seconds{job=~\"$job\"})), 1)", "legendFormat": "{{job}}"}]
+    },
+    {
+      "id": 4, "type": "stat", "title": "Radar API p95", "gridPos": {"h": 5, "w": 6, "x": 18, "y": 0},
+      "fieldConfig": {"defaults": {"unit": "s", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 0.1}]}}, "overrides": []},
+      "targets": [{"refId": "A", "expr": "histogram_quantile(0.95, sum by (job, le) (rate(radar_http_request_duration_seconds_bucket{job=~\"$job\"}[10m])))", "legendFormat": "{{job}}"}]
+    },
+    {
+      "id": 5, "type": "timeseries", "title": "Source age", "gridPos": {"h": 8, "w": 12, "x": 0, "y": 5},
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "targets": [{"refId": "A", "expr": "min by (job, source) (radar_source_age_seconds{job=~\"$job\"} >= 0) or max by (job, source) (radar_source_age_seconds{job=~\"$job\"}) < 0", "legendFormat": "{{job}} {{source}}"}]
+    },
+    {
+      "id": 6, "type": "timeseries", "title": "Fetch outcomes", "gridPos": {"h": 8, "w": 12, "x": 12, "y": 5},
+      "targets": [
+        {"refId": "A", "expr": "sum by (job, source) (rate(radar_fetch_success_total{job=~\"$job\"}[15m]))", "legendFormat": "{{job}} {{source}} success"},
+        {"refId": "B", "expr": "sum by (job, source, reason) (rate(radar_fetch_failure_total{job=~\"$job\"}[15m]))", "legendFormat": "{{job}} {{source}} {{reason}}"}
+      ]
+    },
+    {
+      "id": 7, "type": "timeseries", "title": "Aggregation duration and buckets", "gridPos": {"h": 8, "w": 8, "x": 0, "y": 13},
+      "targets": [
+        {"refId": "A", "expr": "histogram_quantile(0.95, sum by (job, le) (rate(radar_aggregator_duration_seconds_bucket{job=~\"$job\"}[15m])))", "legendFormat": "{{job}} duration p95"},
+        {"refId": "B", "expr": "min by (job) (radar_aggregator_bucket_count{job=~\"$job\"})", "legendFormat": "{{job}} buckets"},
+        {"refId": "C", "expr": "avg_over_time((min by (job) (radar_aggregator_bucket_count{job=~\"$job\"}))[24h:30s])", "legendFormat": "{{job}} 24h baseline"},
+        {"refId": "D", "expr": "time() - max by (job) (radar_aggregator_last_run_timestamp_seconds{job=~\"$job\"})", "legendFormat": "{{job}} seconds since run"}
+      ]
+    },
+    {
+      "id": 8, "type": "timeseries", "title": "Redis errors", "gridPos": {"h": 8, "w": 8, "x": 8, "y": 13},
+      "targets": [{"refId": "A", "expr": "sum by (job, access, operation) (rate(radar_redis_operations_total{job=~\"$job\",result=\"error\"}[10m]))", "legendFormat": "{{job}} {{access}} {{operation}}"}]
+    },
+    {
+      "id": 9, "type": "timeseries", "title": "Radar Redis memory", "gridPos": {"h": 8, "w": 8, "x": 16, "y": 13},
+      "fieldConfig": {"defaults": {"unit": "bytes"}, "overrides": []},
+      "targets": [{"refId": "A", "expr": "max by (job, cache) (radar_cache_memory_bytes{job=~\"$job\"})", "legendFormat": "{{job}} {{cache}}"}]
+    },
+    {
+      "id": 10, "type": "timeseries", "title": "Inference outcomes", "gridPos": {"h": 8, "w": 24, "x": 0, "y": 21},
+      "targets": [{"refId": "A", "expr": "sum by (job, bucket, result, reason) (rate(radar_inference_total{job=~\"$job\"}[1h]))", "legendFormat": "{{job}} {{bucket}} {{result}} {{reason}}"}]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["model-radar", "sub2api"],
+  "templating": {"list": [{"name": "job", "label": "Prometheus job", "type": "query", "query": "label_values(radar_aggregator_interval_seconds, job)", "includeAll": true, "multi": true, "allValue": ".*", "refresh": 1}]},
+  "time": {"from": "now-24h", "to": "now"},
+  "timezone": "browser",
+  "title": "Sub2API Model Radar",
+  "uid": "sub2api-model-radar",
+  "version": 1
+}

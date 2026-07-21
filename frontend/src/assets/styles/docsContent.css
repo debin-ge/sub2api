@@ -1,0 +1,339 @@
+/*
+ * Shared styles for markdown-rendered documentation content.
+ * Consumed by DocsView (/docs) and AppsView (/apps).
+ */
+
+.docs-content {
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+  color: inherit;
+}
+
+.docs-content h1 {
+  @apply mb-4 mt-10 scroll-mt-24 border-b border-gray-200 pb-3 text-3xl font-bold tracking-tight dark:border-dark-700;
+}
+
+.docs-content h2 {
+  @apply mb-4 mt-10 scroll-mt-24 text-2xl font-bold tracking-tight;
+}
+
+.docs-content h3 {
+  @apply mb-3 mt-7 scroll-mt-24 text-lg font-semibold;
+}
+
+.docs-content h4 {
+  @apply mb-2 mt-6 scroll-mt-24 text-base font-semibold;
+}
+
+.docs-content > :first-child {
+  @apply mt-0;
+}
+
+.docs-content .heading-anchor {
+  @apply ml-2 align-middle text-base font-normal text-gray-300 no-underline opacity-0 transition hover:text-primary-600 dark:text-dark-500 dark:hover:text-primary-300;
+}
+
+.docs-content h1:hover .heading-anchor,
+.docs-content h2:hover .heading-anchor,
+.docs-content h3:hover .heading-anchor,
+.docs-content h4:hover .heading-anchor,
+.docs-content .heading-anchor:focus-visible {
+  @apply opacity-100;
+}
+
+.docs-content .doc-step-num {
+  @apply mr-3 inline-flex h-8 w-8 items-center justify-center rounded-lg bg-primary-600/10 align-[-0.2em] text-base font-bold text-primary-700 ring-1 ring-inset ring-primary-600/20 dark:bg-primary-500/10 dark:text-primary-300 dark:ring-primary-400/25;
+}
+
+.docs-content p {
+  @apply mb-4 text-gray-700 dark:text-dark-200;
+}
+
+.docs-content a {
+  @apply text-primary-600 underline underline-offset-4 hover:text-primary-700 dark:text-primary-300 dark:hover:text-primary-200;
+}
+
+.docs-content ul {
+  @apply mb-4 list-disc pl-6;
+}
+
+.docs-content ol {
+  @apply mb-4 list-decimal pl-6;
+}
+
+.docs-content li {
+  @apply mb-1 text-gray-700 dark:text-dark-200;
+}
+
+.docs-content blockquote {
+  @apply my-6 rounded-r-lg border-l-2 border-gray-300 bg-gray-50 py-3 pl-4 pr-4 text-gray-600 dark:border-dark-500 dark:bg-dark-900 dark:text-dark-300;
+}
+
+.docs-content blockquote p:last-child {
+  @apply mb-0;
+}
+
+.docs-content code {
+  @apply rounded-md bg-gray-100 px-1.5 py-0.5 font-mono text-[0.85em] text-gray-800 ring-1 ring-inset ring-gray-200/80 dark:bg-dark-800 dark:text-dark-100 dark:ring-dark-700;
+}
+
+.docs-content pre {
+  @apply relative my-6 overflow-x-auto rounded-xl bg-gray-950 p-4 text-[13px] leading-6 text-gray-100 ring-1 ring-white/10;
+}
+
+.docs-content pre[data-lang] {
+  @apply pt-10;
+}
+
+.docs-content pre[data-lang]::before {
+  content: attr(data-lang);
+  @apply pointer-events-none absolute left-4 top-3 font-mono text-[11px] uppercase tracking-wider text-gray-500;
+}
+
+.docs-content pre code {
+  @apply bg-transparent p-0 text-inherit ring-0;
+}
+
+.docs-content .doc-table-wrap {
+  @apply my-6 overflow-x-auto rounded-xl ring-1 ring-gray-200 dark:ring-dark-700;
+}
+
+.docs-content table {
+  @apply m-0 w-full border-collapse text-sm;
+}
+
+.docs-content th {
+  @apply whitespace-nowrap border-b border-gray-200 bg-gray-50 px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:border-dark-700 dark:bg-dark-800/70 dark:text-dark-300;
+}
+
+.docs-content td {
+  @apply border-b border-gray-100 px-4 py-2.5 align-top text-gray-700 dark:border-dark-800 dark:text-dark-200;
+}
+
+.docs-content tbody tr:last-child td {
+  @apply border-b-0;
+}
+
+.docs-content tbody tr:hover td {
+  @apply bg-gray-50/70 dark:bg-dark-800/40;
+}
+
+.docs-content img {
+  @apply my-5 h-auto max-w-full rounded-lg;
+}
+
+.docs-content hr {
+  @apply my-7 border-gray-200 dark:border-dark-700;
+}
+
+/* ── Callouts ────────────────────────────────────────────────────── */
+
+.docs-content .doc-callout {
+  @apply my-6 rounded-xl border px-4 py-3.5 text-sm leading-6;
+}
+
+.docs-content .doc-callout-title {
+  @apply mb-1.5 flex items-center gap-2 text-sm font-semibold;
+}
+
+.docs-content .doc-callout-title svg {
+  @apply h-4 w-4 flex-shrink-0;
+}
+
+.docs-content .doc-callout-body p {
+  @apply mb-2 text-inherit;
+}
+
+.docs-content .doc-callout-body > :last-child {
+  @apply mb-0;
+}
+
+.docs-content .doc-callout-body li {
+  @apply text-inherit;
+}
+
+.docs-content .doc-callout-note {
+  @apply border-blue-200 bg-blue-50/70 text-blue-900 dark:border-blue-400/25 dark:bg-blue-500/10 dark:text-blue-100;
+}
+
+.docs-content .doc-callout-tip {
+  @apply border-emerald-200 bg-emerald-50/70 text-emerald-900 dark:border-emerald-400/25 dark:bg-emerald-500/10 dark:text-emerald-100;
+}
+
+.docs-content .doc-callout-important {
+  @apply border-violet-200 bg-violet-50/70 text-violet-900 dark:border-violet-400/25 dark:bg-violet-500/10 dark:text-violet-100;
+}
+
+.docs-content .doc-callout-warning {
+  @apply border-amber-200 bg-amber-50/70 text-amber-900 dark:border-amber-400/25 dark:bg-amber-500/10 dark:text-amber-100;
+}
+
+.docs-content .doc-callout-caution {
+  @apply border-red-200 bg-red-50/70 text-red-900 dark:border-red-400/25 dark:bg-red-500/10 dark:text-red-100;
+}
+
+/* ── Code tab groups ─────────────────────────────────────────────── */
+
+.docs-content .doc-tabs {
+  @apply my-6 overflow-hidden rounded-xl border border-gray-200 dark:border-dark-700;
+}
+
+.docs-content .doc-tabs-bar {
+  @apply flex flex-wrap gap-1 border-b border-gray-200 bg-gray-50 px-2 pt-2 dark:border-dark-700 dark:bg-dark-900;
+}
+
+.docs-content .doc-tab-btn {
+  @apply rounded-t-md border-b-2 border-transparent px-3 py-1.5 text-sm font-medium text-gray-500 transition hover:text-gray-900 dark:text-dark-300 dark:hover:text-white;
+}
+
+.docs-content .doc-tab-btn.active {
+  @apply border-primary-500 text-primary-700 dark:text-primary-300;
+}
+
+.docs-content .doc-tabs-panels pre {
+  @apply my-0 rounded-none ring-0;
+}
+
+/* Inside a tab group the active tab already names the language. */
+.docs-content .doc-tabs-panels pre[data-lang] {
+  @apply pt-4;
+}
+
+.docs-content .doc-tabs-panels pre[data-lang]::before {
+  display: none;
+}
+
+.docs-content .doc-tabs-panels pre[hidden] {
+  display: none;
+}
+
+/* ── Client cards ────────────────────────────────────────────────── */
+
+.docs-content .client-card {
+  @apply my-6 overflow-hidden rounded-xl bg-white ring-1 ring-gray-200 dark:bg-dark-900 dark:ring-dark-700;
+}
+
+.docs-content .client-card-head {
+  @apply border-b border-gray-200 bg-gray-50 px-4 py-3 dark:border-dark-700 dark:bg-dark-800/60;
+}
+
+.docs-content .client-card-title-row {
+  @apply flex flex-wrap items-center gap-2;
+}
+
+.docs-content .client-card-name {
+  @apply text-base font-semibold text-gray-950 no-underline dark:text-white;
+}
+
+.docs-content a.client-card-name:hover {
+  @apply text-primary-700 underline dark:text-primary-300;
+}
+
+.docs-content .client-pill {
+  @apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium;
+}
+
+.docs-content .client-card-meta {
+  @apply mt-2 space-y-1;
+}
+
+.docs-content .client-card-meta-row {
+  @apply flex flex-wrap items-center gap-2 text-sm;
+}
+
+.docs-content .client-card-meta-label {
+  @apply w-20 flex-shrink-0 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-dark-400;
+}
+
+.docs-content .client-card-meta-value {
+  @apply rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs text-gray-800 dark:bg-dark-800 dark:text-dark-100;
+}
+
+.docs-content .client-copy-btn,
+.docs-content .client-download-btn {
+  @apply rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-600 transition hover:bg-gray-100 hover:text-gray-900 dark:border-dark-600 dark:text-dark-300 dark:hover:bg-dark-800 dark:hover:text-white;
+}
+
+.docs-content .client-download-btn {
+  @apply border-primary-300 text-primary-600 hover:bg-primary-50 hover:text-primary-700 dark:border-primary-500/40 dark:text-primary-300 dark:hover:bg-primary-500/10 dark:hover:text-primary-200;
+}
+
+.docs-content .client-card-body {
+  @apply px-4 py-1;
+}
+
+/* ── Collapsible details ────────────────────────────────────────── */
+
+.docs-content details {
+  @apply my-4 rounded-xl border border-gray-200 bg-gray-50/60 px-4 py-2 dark:border-dark-700 dark:bg-dark-900/60;
+}
+
+.docs-content summary {
+  @apply cursor-pointer py-1 text-sm font-semibold text-gray-900 dark:text-white;
+}
+
+.docs-content summary::marker {
+  @apply text-gray-400 dark:text-dark-400;
+}
+
+.docs-content details[open] {
+  @apply pb-3;
+}
+
+.docs-content details[open] > summary {
+  @apply mb-2 border-b border-gray-200 pb-2 dark:border-dark-700;
+}
+
+.docs-content details > *:not(summary) {
+  @apply mt-3;
+}
+
+/* ── Inline action buttons on <pre> ──────────────────────────────── */
+
+.docs-content pre .pre-actions {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 6px;
+}
+
+.docs-content pre .copy-btn,
+.docs-content pre .download-btn {
+  position: static;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #94a3b8;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  opacity: 0.75;
+  padding: 4px 10px;
+  transition: opacity 0.2s, background 0.2s, color 0.2s;
+}
+
+.docs-content pre .copy-btn:hover,
+.docs-content pre .download-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+  color: #e2e8f0;
+}
+
+/* The download button is the primary action — keep it always visible. */
+.docs-content pre .download-btn {
+  opacity: 1;
+  border-color: rgba(99, 102, 241, 0.5);
+  color: #c7d2fe;
+}
+
+.docs-content pre .download-btn:hover {
+  background: rgba(99, 102, 241, 0.25);
+  color: #e0e7ff;
+}
+
+.docs-content pre:hover .copy-btn,
+.docs-content pre .copy-btn:focus-visible,
+.docs-content pre .download-btn:focus-visible {
+  opacity: 1;
+}

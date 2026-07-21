@@ -664,6 +664,94 @@ func (s *ModelCatalogService) ListPublic(ctx context.Context) (map[string][]stri
 	return result, nil
 }
 
+// ListPublicPassive returns the public model catalog without starting live
+// upstream discovery. Radar background jobs use this path so a leaderboard
+// refresh can never trigger account network traffic. Existing cached catalogs
+// remain usable even after their normal request-path stale TTL; cache misses
+// fall back to the same configured/default model policy used elsewhere.
+func (s *ModelCatalogService) ListPublicPassive(ctx context.Context) (map[string][]string, error) {
+	groups, err := s.groupRepo.ListActive(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[string][]string)
+	memo := make(map[int64][]string)
+	for i := range groups {
+		group := &groups[i]
+		if group.IsExclusive {
+			continue
+		}
+		models, listErr := s.listForGroupPassive(ctx, group, memo)
+		if listErr != nil {
+			return nil, listErr
+		}
+		result[group.Platform] = append(result[group.Platform], models...)
+	}
+	for platform, models := range result {
+		result[platform] = normalizeCatalogModelIDs(models)
+	}
+	return result, nil
+}
+
+func (s *ModelCatalogService) listForGroupPassive(
+	ctx context.Context,
+	group *Group,
+	memo map[int64][]string,
+) ([]string, error) {
+	if group == nil {
+		return nil, nil
+	}
+	accounts, err := s.accountRepo.ListSchedulableByGroupIDAndPlatform(ctx, group.ID, group.Platform)
+	if err != nil {
+		return nil, err
+	}
+	candidates := make([]string, 0)
+	for i := range accounts {
+		account := &accounts[i]
+		if account.Status != StatusActive || !account.Schedulable || account.Platform != group.Platform {
+			continue
+		}
+		models, ok := memo[account.ID]
+		if !ok {
+			models = s.listForAccountPassive(account)
+			memo[account.ID] = cloneStringSlice(models)
+		}
+		candidates = append(candidates, models...)
+	}
+	if s.channelService != nil {
+		channel, channelErr := s.channelService.GetChannelForGroup(ctx, group.ID)
+		if channelErr != nil {
+			return nil, channelErr
+		}
+		for _, model := range channel.SupportedModels() {
+			if model.Platform == group.Platform {
+				candidates = append(candidates, model.Name)
+			}
+		}
+	}
+	candidates = normalizeCatalogModelIDs(candidates)
+	if !group.ModelsListConfig.Enabled {
+		return candidates, nil
+	}
+	return ApplyGroupModelsList(candidates, group.ModelsListConfig.Models), nil
+}
+
+func (s *ModelCatalogService) listForAccountPassive(account *Account) []string {
+	if account == nil {
+		return nil
+	}
+	defaults := DefaultModelCatalogIDs(account.Platform)
+	fallback := configuredOrDefaultAccountModels(account, defaults)
+	if !accountRequiresLiveCatalog(account) || s == nil || s.cache == nil {
+		return fallback
+	}
+	if entry, ok := s.cache.load(account.ID); ok && len(entry.models) > 0 {
+		return normalizeCatalogModelIDs(entry.models)
+	}
+	return fallback
+}
+
 func accountRequiresLiveCatalog(account *Account) bool {
 	if account == nil {
 		return false

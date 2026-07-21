@@ -1,6 +1,6 @@
 <template>
   <div class="min-h-screen bg-gray-50 text-gray-900 dark:bg-dark-950 dark:text-white">
-    <PlazaHeader />
+    <SiteHeader current="plaza" />
     <main>
       <PlazaHero
         :model-count="modelCount"
@@ -75,7 +75,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import PlazaHeader from '@/components/plaza/PlazaHeader.vue'
+import SiteHeader from '@/components/common/SiteHeader.vue'
 import PlazaHero from '@/components/plaza/PlazaHero.vue'
 import PlazaFilters, { type PlazaFilterState, type PlazaPlatformEntry } from '@/components/plaza/PlazaFilters.vue'
 import PlazaInfoBanner from '@/components/plaza/PlazaInfoBanner.vue'

@@ -1,9 +1,12 @@
 package config
 
 import (
+	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -59,12 +62,554 @@ func TestModelCatalogValidation(t *testing.T) {
 	}
 }
 
+func TestRadarDefaults(t *testing.T) {
+	resetViperWithJWTSecret(t)
+
+	cfg, err := Load()
+
+	require.NoError(t, err)
+	require.True(t, cfg.Radar.Enabled)
+	require.Empty(t, cfg.Radar.MetricsBearerToken)
+	require.Equal(t, 15, cfg.Radar.QuotaAggregatorIntervalMin)
+	require.Equal(t, 7, cfg.Radar.QuotaHistoryRetentionDays)
+	require.Equal(t, 3, cfg.Radar.SampleSizeWarnBelow)
+	require.Equal(t, 2, cfg.Radar.PublicMinBucketAccounts)
+	require.Equal(t, 5.0, cfg.Radar.InferMinUtilization)
+	require.Equal(t, 0.3, cfg.Radar.InferMaxStdevRatio)
+	require.Empty(t, cfg.Radar.ArtificialAnalysisAPIKey)
+	require.Empty(t, cfg.Radar.ArtificialAnalysisModelSlugs)
+	require.Equal(t, 10, cfg.Radar.ExternalRequestTimeoutSeconds)
+	require.Equal(t, int64(10*1024*1024), cfg.Radar.ExternalResponseMaxBytes)
+	require.Equal(t, 6*60, cfg.Radar.ArtificialAnalysisModelsIntervalMinutes)
+	require.Equal(t, 24*60, cfg.Radar.ArtificialAnalysisPerformanceIntervalMinutes)
+	require.Equal(t, 24*60, cfg.Radar.LMArenaIntervalMinutes)
+	require.Equal(t, 30, cfg.Radar.StatuspageIntervalMinutes)
+	require.Equal(t, 7, cfg.Radar.SourceHardRetentionDays)
+	require.Equal(t, 30, cfg.Radar.QuotaStaleThresholdMinutes)
+	require.Equal(t, 60, cfg.Radar.HealthStaleThresholdMinutes)
+	require.Equal(t, 12*60, cfg.Radar.ArtificialAnalysisModelsStaleThresholdMinutes)
+	require.Equal(t, 48*60, cfg.Radar.ArtificialAnalysisPerformanceStaleThresholdMinutes)
+	require.Equal(t, 48*60, cfg.Radar.LMArenaStaleThresholdMinutes)
+	require.Equal(t, "https://datasets-server.huggingface.co/filter", cfg.Radar.LMArenaURL)
+}
+
+func TestRadarNormalizesArtificialAnalysisConfig(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	viper.Set("radar.artificial_analysis_api_key", "  aa-secret  ")
+	viper.Set("radar.artificial_analysis_model_slugs", []string{"  model-one  ", "", "   ", "model-two"})
+
+	cfg, err := Load()
+
+	require.NoError(t, err)
+	require.Equal(t, "aa-secret", cfg.Radar.ArtificialAnalysisAPIKey)
+	require.Equal(t, []string{"model-one", "model-two"}, cfg.Radar.ArtificialAnalysisModelSlugs)
+}
+
+func TestIsValidRadarModelSlug(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		valid bool
+	}{
+		{name: "single lowercase", value: "a", valid: true},
+		{name: "single digit", value: "7", valid: true},
+		{name: "allowed separators", value: "model.v1_alpha-beta", valid: true},
+		{name: "max bytes", value: strings.Repeat("a", 128), valid: true},
+		{name: "blank", value: "", valid: false},
+		{name: "path traversal", value: "../secret", valid: false},
+		{name: "uppercase", value: "Model-v1", valid: false},
+		{name: "leading punctuation", value: ".model", valid: false},
+		{name: "space", value: "model secret", valid: false},
+		{name: "too long", value: strings.Repeat("a", 129), valid: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.valid, IsValidRadarModelSlug(tt.value))
+		})
+	}
+}
+
+func TestRadarValidationRejectsUnsafeModelSlugsWithoutLeakingValues(t *testing.T) {
+	unsafeSlugs := []string{
+		"../secret",
+		"Uppercase-secret",
+		".leading-secret",
+		" \t ",
+		strings.Repeat("s", 129),
+	}
+
+	for _, unsafeSlug := range unsafeSlugs {
+		cfg := validConfigForTest(t)
+		cfg.Radar.ArtificialAnalysisModelSlugs = []string{"safe-model", unsafeSlug}
+
+		err := cfg.Validate()
+
+		require.EqualError(t, err, "radar.artificial_analysis_model_slugs contains an invalid value")
+		require.NotContains(t, err.Error(), unsafeSlug)
+	}
+}
+
+func TestRadarValidationAllowsCanonicalAndDuplicateModelSlugs(t *testing.T) {
+	cfg := validConfigForTest(t)
+	cfg.Radar.ArtificialAnalysisModelSlugs = []string{
+		"model.v1_alpha-beta",
+		strings.Repeat("a", 128),
+		"model.v1_alpha-beta",
+	}
+
+	require.NoError(t, cfg.Validate())
+}
+
+func TestLoadRejectsUnsafeRadarModelSlugWithoutReturningConfigOrValue(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	unsafeSlug := "../load-secret-model"
+	viper.Set("radar.artificial_analysis_model_slugs", []string{"safe-model", unsafeSlug})
+
+	cfg, err := Load()
+
+	require.Nil(t, cfg)
+	require.EqualError(t, err, "validate config error: radar.artificial_analysis_model_slugs contains an invalid value")
+	require.NotContains(t, err.Error(), unsafeSlug)
+}
+
+func TestRadarExplicitDisableIsHonored(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	t.Setenv("RADAR_ENABLED", "false")
+
+	cfg, err := Load()
+
+	require.NoError(t, err)
+	require.False(t, cfg.Radar.Enabled)
+}
+
+func TestRadarMetricsBearerTokenLoadsFromEnvironmentAndIsTrimmed(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	t.Setenv("RADAR_METRICS_BEARER_TOKEN", "  secret-from-store  ")
+
+	cfg, err := Load()
+
+	require.NoError(t, err)
+	require.Equal(t, "secret-from-store", cfg.Radar.MetricsBearerToken)
+}
+
+func TestRadarValidation(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*Config)
+		want   string
+	}{
+		{"zero aggregator interval", func(c *Config) { c.Radar.QuotaAggregatorIntervalMin = 0 }, "quota_aggregator_interval_min"},
+		{"zero quota retention", func(c *Config) { c.Radar.QuotaHistoryRetentionDays = 0 }, "quota_history_retention_days"},
+		{"sample warning below one", func(c *Config) { c.Radar.SampleSizeWarnBelow = 0 }, "sample_size_warn_below"},
+		{"public bucket below two", func(c *Config) { c.Radar.PublicMinBucketAccounts = 1 }, "public_min_bucket_accounts"},
+		{"public bucket above warning threshold", func(c *Config) { c.Radar.PublicMinBucketAccounts = c.Radar.SampleSizeWarnBelow + 1 }, "public_min_bucket_accounts"},
+		{"zero inference utilization", func(c *Config) { c.Radar.InferMinUtilization = 0 }, "infer_min_utilization"},
+		{"excess inference utilization", func(c *Config) { c.Radar.InferMinUtilization = 100.1 }, "infer_min_utilization"},
+		{"zero inference deviation ratio", func(c *Config) { c.Radar.InferMaxStdevRatio = 0 }, "infer_max_stdev_ratio"},
+		{"excess inference deviation ratio", func(c *Config) { c.Radar.InferMaxStdevRatio = 1.1 }, "infer_max_stdev_ratio"},
+		{"zero request timeout", func(c *Config) { c.Radar.ExternalRequestTimeoutSeconds = 0 }, "external_request_timeout_seconds"},
+		{"zero response limit", func(c *Config) { c.Radar.ExternalResponseMaxBytes = 0 }, "external_response_max_bytes"},
+		{"zero AA models interval", func(c *Config) { c.Radar.ArtificialAnalysisModelsIntervalMinutes = 0 }, "artificial_analysis_models_interval_minutes"},
+		{"zero AA performance interval", func(c *Config) { c.Radar.ArtificialAnalysisPerformanceIntervalMinutes = 0 }, "artificial_analysis_performance_interval_minutes"},
+		{"zero LMArena interval", func(c *Config) { c.Radar.LMArenaIntervalMinutes = 0 }, "lmarena_interval_minutes"},
+		{"zero Statuspage interval", func(c *Config) { c.Radar.StatuspageIntervalMinutes = 0 }, "statuspage_interval_minutes"},
+		{"zero hard retention", func(c *Config) { c.Radar.SourceHardRetentionDays = 0 }, "source_hard_retention_days"},
+		{"zero quota stale threshold", func(c *Config) { c.Radar.QuotaStaleThresholdMinutes = 0 }, "quota_stale_threshold_minutes"},
+		{"zero health stale threshold", func(c *Config) { c.Radar.HealthStaleThresholdMinutes = 0 }, "health_stale_threshold_minutes"},
+		{"zero AA models stale threshold", func(c *Config) { c.Radar.ArtificialAnalysisModelsStaleThresholdMinutes = 0 }, "artificial_analysis_models_stale_threshold_minutes"},
+		{"zero AA performance stale threshold", func(c *Config) { c.Radar.ArtificialAnalysisPerformanceStaleThresholdMinutes = 0 }, "artificial_analysis_performance_stale_threshold_minutes"},
+		{"zero LMArena stale threshold", func(c *Config) { c.Radar.LMArenaStaleThresholdMinutes = 0 }, "lmarena_stale_threshold_minutes"},
+		{"hard retention below stale threshold", func(c *Config) { c.Radar.SourceHardRetentionDays = 1 }, "source_hard_retention_days"},
+		{"empty LMArena URL", func(c *Config) { c.Radar.LMArenaURL = "" }, "lmarena_url"},
+		{"invalid LMArena URL", func(c *Config) { c.Radar.LMArenaURL = "://bad-url" }, "lmarena_url"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := validConfigForTest(t)
+			tt.mutate(cfg)
+			require.ErrorContains(t, cfg.Validate(), tt.want)
+		})
+	}
+}
+
+func TestRadarValidationRejectsUntrustedLMArenaEndpointsWithOrWithoutProxy(t *testing.T) {
+	tests := []string{
+		"http://datasets-server.huggingface.co/filter",
+		"https://127.0.0.1/filter",
+		"https://10.0.0.1/filter",
+		"https://[::1]/filter",
+		"https://user:secret@datasets-server.huggingface.co/filter",
+		"https://example.com/filter",
+		"https://datasets-server.huggingface.co:8443/filter",
+		"https://datasets-server.huggingface.co/filter#fragment",
+		"https://datasets-server.huggingface.co/filter?dataset=attacker/dataset",
+	}
+	for _, endpoint := range tests {
+		for _, proxyURL := range []string{"", "http://127.0.0.1:8080"} {
+			cfg := validConfigForTest(t)
+			cfg.Radar.LMArenaURL = endpoint
+			cfg.Update.ProxyURL = proxyURL
+			err := cfg.Validate()
+			require.ErrorContains(t, err, "radar.lmarena_url")
+			require.NotContains(t, err.Error(), "secret")
+		}
+	}
+}
+
+func TestRadarValidationAllowsCanonicalLMArenaEndpoint(t *testing.T) {
+	cfg := validConfigForTest(t)
+	cfg.Radar.LMArenaURL = "https://datasets-server.huggingface.co/filter"
+	require.NoError(t, cfg.Validate())
+}
+
+func TestRadarValidationAllowsSafeBoundaries(t *testing.T) {
+	cfg := validConfigForTest(t)
+	cfg.Radar.SampleSizeWarnBelow = 2
+	cfg.Radar.PublicMinBucketAccounts = 2
+	cfg.Radar.SourceHardRetentionDays = 2
+
+	require.NoError(t, cfg.Validate())
+}
+
+func TestRadarValidationAllowsHardMaximumBoundaries(t *testing.T) {
+	cfg := validConfigForTest(t)
+	cfg.Radar.QuotaAggregatorIntervalMin = 1440
+	cfg.Radar.QuotaHistoryRetentionDays = 30
+	cfg.Radar.ExternalRequestTimeoutSeconds = 120
+	cfg.Radar.ExternalResponseMaxBytes = int64(100 * 1024 * 1024)
+	cfg.Radar.ArtificialAnalysisModelsIntervalMinutes = 10080
+	cfg.Radar.ArtificialAnalysisPerformanceIntervalMinutes = 10080
+	cfg.Radar.LMArenaIntervalMinutes = 10080
+	cfg.Radar.StatuspageIntervalMinutes = 10080
+	cfg.Radar.SourceHardRetentionDays = 30
+	cfg.Radar.QuotaStaleThresholdMinutes = 30 * 1440
+	cfg.Radar.HealthStaleThresholdMinutes = 30 * 1440
+	cfg.Radar.ArtificialAnalysisModelsStaleThresholdMinutes = 30 * 1440
+	cfg.Radar.ArtificialAnalysisPerformanceStaleThresholdMinutes = 30 * 1440
+	cfg.Radar.LMArenaStaleThresholdMinutes = 30 * 1440
+
+	require.NoError(t, cfg.Validate())
+}
+
+func TestRadarValidationRejectsValuesAboveHardMaximums(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*Config)
+		want   string
+	}{
+		{"aggregator interval", func(c *Config) { c.Radar.QuotaAggregatorIntervalMin = 1441 }, "quota_aggregator_interval_min"},
+		{"quota retention", func(c *Config) { c.Radar.QuotaHistoryRetentionDays = 31 }, "quota_history_retention_days"},
+		{"request timeout", func(c *Config) { c.Radar.ExternalRequestTimeoutSeconds = 121 }, "external_request_timeout_seconds"},
+		{"response limit", func(c *Config) { c.Radar.ExternalResponseMaxBytes = int64(100*1024*1024) + 1 }, "external_response_max_bytes"},
+		{"AA models interval", func(c *Config) { c.Radar.ArtificialAnalysisModelsIntervalMinutes = 10081 }, "artificial_analysis_models_interval_minutes"},
+		{"AA performance interval", func(c *Config) { c.Radar.ArtificialAnalysisPerformanceIntervalMinutes = 10081 }, "artificial_analysis_performance_interval_minutes"},
+		{"LMArena interval", func(c *Config) { c.Radar.LMArenaIntervalMinutes = 10081 }, "lmarena_interval_minutes"},
+		{"Statuspage interval", func(c *Config) { c.Radar.StatuspageIntervalMinutes = 10081 }, "statuspage_interval_minutes"},
+		{"source hard retention", func(c *Config) { c.Radar.SourceHardRetentionDays = 31 }, "source_hard_retention_days"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := validConfigForTest(t)
+			tt.mutate(cfg)
+			require.ErrorContains(t, cfg.Validate(), tt.want)
+		})
+	}
+}
+
+func TestRadarValidationRejectsStaleThresholdAboveRetention(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*Config)
+		want   string
+	}{
+		{"quota", func(c *Config) { c.Radar.QuotaStaleThresholdMinutes = c.Radar.SourceHardRetentionDays*1440 + 1 }, "quota_stale_threshold_minutes"},
+		{"health", func(c *Config) { c.Radar.HealthStaleThresholdMinutes = c.Radar.SourceHardRetentionDays*1440 + 1 }, "health_stale_threshold_minutes"},
+		{"AA models", func(c *Config) {
+			c.Radar.ArtificialAnalysisModelsStaleThresholdMinutes = c.Radar.SourceHardRetentionDays*1440 + 1
+		}, "artificial_analysis_models_stale_threshold_minutes"},
+		{"AA performance", func(c *Config) {
+			c.Radar.ArtificialAnalysisPerformanceStaleThresholdMinutes = c.Radar.SourceHardRetentionDays*1440 + 1
+		}, "artificial_analysis_performance_stale_threshold_minutes"},
+		{"LMArena", func(c *Config) { c.Radar.LMArenaStaleThresholdMinutes = c.Radar.SourceHardRetentionDays*1440 + 1 }, "lmarena_stale_threshold_minutes"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := validConfigForTest(t)
+			tt.mutate(cfg)
+			require.ErrorContains(t, cfg.Validate(), tt.want)
+		})
+	}
+}
+
+func TestRadarValidationRejectsStaleThresholdBelowProducerCadence(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*Config)
+		want   string
+	}{
+		{"quota", func(c *Config) { c.Radar.QuotaStaleThresholdMinutes = c.Radar.QuotaAggregatorIntervalMin - 1 }, "quota_stale_threshold_minutes"},
+		{"health", func(c *Config) { c.Radar.HealthStaleThresholdMinutes = c.Radar.StatuspageIntervalMinutes - 1 }, "health_stale_threshold_minutes"},
+		{"AA models", func(c *Config) {
+			c.Radar.ArtificialAnalysisModelsStaleThresholdMinutes = c.Radar.ArtificialAnalysisModelsIntervalMinutes - 1
+		}, "artificial_analysis_models_stale_threshold_minutes"},
+		{"AA performance", func(c *Config) {
+			c.Radar.ArtificialAnalysisPerformanceStaleThresholdMinutes = c.Radar.ArtificialAnalysisPerformanceIntervalMinutes - 1
+		}, "artificial_analysis_performance_stale_threshold_minutes"},
+		{"LMArena", func(c *Config) { c.Radar.LMArenaStaleThresholdMinutes = c.Radar.LMArenaIntervalMinutes - 1 }, "lmarena_stale_threshold_minutes"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := validConfigForTest(t)
+			tt.mutate(cfg)
+			require.ErrorContains(t, cfg.Validate(), tt.want)
+		})
+	}
+}
+
+func TestRadarDisabledStillRejectsUnsafeConfig(t *testing.T) {
+	cfg := validConfigForTest(t)
+	cfg.Radar.Enabled = false
+	cfg.Radar.ExternalResponseMaxBytes = 0
+
+	// Disabled only stops jobs; structural validation keeps runtime re-enablement safe.
+	require.ErrorContains(t, cfg.Validate(), "radar.external_response_max_bytes")
+}
+
 func validConfigForTest(t *testing.T) *Config {
 	t.Helper()
 	resetViperWithJWTSecret(t)
 	cfg, err := Load()
 	require.NoError(t, err)
 	return cfg
+}
+
+func TestLoadServerTimingConfig(t *testing.T) {
+	t.Run("disabled by default", func(t *testing.T) {
+		resetViperWithJWTSecret(t)
+		cfg, err := Load()
+		require.NoError(t, err)
+		require.False(t, cfg.Server.EnableServerTiming)
+	})
+
+	t.Run("enabled by exact environment variable", func(t *testing.T) {
+		resetViperWithJWTSecret(t)
+		t.Setenv("ENABLE_SERVER_TIMING", "true")
+		cfg, err := Load()
+		require.NoError(t, err)
+		require.True(t, cfg.Server.EnableServerTiming)
+	})
+}
+
+func TestLoadHTTPIngressSafetyDefaults(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, 10, cfg.Server.ReadHeaderTimeout)
+	require.Equal(t, 64*1024, cfg.Server.MaxHeaderBytes)
+	require.Empty(t, cfg.Server.TrustedProxies)
+	require.False(t, cfg.Server.TrustedProxiesConfigured)
+	require.True(t, cfg.TrustForwardedIPForAPIKeyACL())
+	require.Equal(t, int64(32*1024*1024), cfg.Gateway.TextMaxBodySize)
+	require.True(t, cfg.APIKeyAuth.InvalidAbuse.Enabled)
+	require.Equal(t, 120, cfg.APIKeyAuth.InvalidAbuse.Threshold)
+	require.Equal(t, 16384, cfg.APIKeyAuth.InvalidAbuse.Capacity)
+}
+
+func TestNormalizeForwardedClientIPHeaders(t *testing.T) {
+	headers, err := NormalizeForwardedClientIPHeaders([]string{
+		" x-cdn-client-ip ",
+		"X-CDN-CLIENT-IP",
+		"true-client-ip",
+	})
+	require.NoError(t, err)
+	require.Equal(t, []string{"X-Cdn-Client-Ip", "True-Client-Ip"}, headers)
+
+	_, err = NormalizeForwardedClientIPHeaders([]string{"X Invalid"})
+	require.ErrorContains(t, err, "invalid HTTP header field name")
+}
+
+func TestNormalizeForwardedClientIPHeadersLimit(t *testing.T) {
+	headers := make([]string, 0, MaxForwardedClientIPHeaders+1)
+	for i := 0; i <= MaxForwardedClientIPHeaders; i++ {
+		headers = append(headers, fmt.Sprintf("X-CDN-IP-%d", i))
+	}
+
+	_, err := NormalizeForwardedClientIPHeaders(headers)
+	require.ErrorContains(t, err, "at most 16 unique names")
+}
+
+func TestLoadForwardedClientIPHeadersNormalizesAndSnapshots(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	viper.Set("security.forwarded_client_ip_headers", []string{" x-cdn-ip ", "X-CDN-IP", "true-client-ip"})
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	snapshot := cfg.ForwardedClientIPSettings()
+	require.Equal(t, []string{"X-Cdn-Ip", "True-Client-Ip"}, snapshot.Headers)
+
+	snapshot.Headers[0] = "X-Mutated"
+	require.Equal(t, []string{"X-Cdn-Ip", "True-Client-Ip"}, cfg.ForwardedClientIPSettings().Headers)
+}
+
+func TestForwardedClientIPSettingsConcurrentPublication(t *testing.T) {
+	cfg := &Config{}
+	cfg.SetForwardedClientIPSettings(true, []string{"X-Public-A"})
+
+	const iterations = 2000
+	start := make(chan struct{})
+	errCh := make(chan error, 8)
+	var wg sync.WaitGroup
+
+	for _, settings := range []ForwardedClientIPSettings{
+		{TrustForwardedIP: true, Headers: []string{"X-Public-A"}},
+		{TrustForwardedIP: false, Headers: []string{"X-Public-B"}},
+	} {
+		settings := settings
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			for i := 0; i < iterations; i++ {
+				cfg.SetForwardedClientIPSettings(settings.TrustForwardedIP, settings.Headers)
+			}
+		}()
+	}
+
+	for i := 0; i < cap(errCh); i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			for j := 0; j < iterations; j++ {
+				snapshot := cfg.ForwardedClientIPSettings()
+				validA := snapshot.TrustForwardedIP && len(snapshot.Headers) == 1 && snapshot.Headers[0] == "X-Public-A"
+				validB := !snapshot.TrustForwardedIP && len(snapshot.Headers) == 1 && snapshot.Headers[0] == "X-Public-B"
+				if !validA && !validB {
+					errCh <- fmt.Errorf("observed inconsistent forwarded IP settings: %+v", snapshot)
+					return
+				}
+			}
+		}()
+	}
+
+	close(start)
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		require.NoError(t, err)
+	}
+}
+
+func TestLoadForwardedClientIPHeadersFromEnvironment(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	t.Setenv("SECURITY_FORWARDED_CLIENT_IP_HEADERS", " x-cdn-ip , X-CDN-IP, true-client-ip ")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, []string{"X-Cdn-Ip", "True-Client-Ip"}, cfg.ForwardedClientIPSettings().Headers)
+}
+
+func TestLoadExplicitEmptyForwardedClientIPHeadersFromEnvironment(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	viper.Set("security.forwarded_client_ip_headers", []string{"X-Yaml-IP"})
+	t.Setenv("SECURITY_FORWARDED_CLIENT_IP_HEADERS", "")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Empty(t, cfg.ForwardedClientIPSettings().Headers)
+}
+
+func TestLoadRejectsInvalidForwardedClientIPHeaderFromEnvironment(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	t.Setenv("SECURITY_FORWARDED_CLIENT_IP_HEADERS", "X-Valid-IP, X Invalid")
+
+	_, err := Load()
+	require.ErrorContains(t, err, "security.forwarded_client_ip_headers")
+}
+
+func TestLoadRejectsInvalidForwardedClientIPHeader(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	viper.Set("security.forwarded_client_ip_headers", []string{"X Invalid"})
+
+	_, err := Load()
+	require.ErrorContains(t, err, "security.forwarded_client_ip_headers")
+}
+
+func TestLoadExplicitEmptyTrustedProxiesEnablesConfiguredMode(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	viper.Set("server.trusted_proxies", []string{})
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Empty(t, cfg.Server.TrustedProxies)
+	require.True(t, cfg.Server.TrustedProxiesConfigured)
+}
+
+func TestLoadExplicitTrustedProxiesEnablesConfiguredMode(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	viper.Set("server.trusted_proxies", []string{"127.0.0.1/32"})
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, []string{"127.0.0.1/32"}, cfg.Server.TrustedProxies)
+	require.True(t, cfg.Server.TrustedProxiesConfigured)
+}
+
+func TestLoadTrustedProxiesFromEnvironment(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	t.Setenv("SERVER_TRUSTED_PROXIES", "127.0.0.1/32, ::1/128")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, []string{"127.0.0.1/32", "::1/128"}, cfg.Server.TrustedProxies)
+	require.True(t, cfg.Server.TrustedProxiesConfigured)
+}
+
+func TestLoadExplicitEmptyTrustedProxiesFromEnvironment(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	t.Setenv("SERVER_TRUSTED_PROXIES", "")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Empty(t, cfg.Server.TrustedProxies)
+	require.True(t, cfg.Server.TrustedProxiesConfigured)
+}
+
+func TestLoadTrustedProxiesPresenceFromYAML(t *testing.T) {
+	tests := []struct {
+		name       string
+		yaml       string
+		want       []string
+		configured bool
+	}{
+		{name: "absent", yaml: "server:\n  mode: debug\n", configured: false},
+		{name: "explicit empty", yaml: "server:\n  trusted_proxies: []\n", want: []string{}, configured: true},
+		{
+			name:       "populated",
+			yaml:       "server:\n  trusted_proxies:\n    - 127.0.0.1/32\n    - ::1/128\n",
+			want:       []string{"127.0.0.1/32", "::1/128"},
+			configured: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			resetViperWithJWTSecret(t)
+			configDir := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte(test.yaml), 0o600))
+			t.Setenv("DATA_DIR", configDir)
+
+			cfg, err := Load()
+			require.NoError(t, err)
+			require.Equal(t, test.want, cfg.Server.TrustedProxies)
+			require.Equal(t, test.configured, cfg.Server.TrustedProxiesConfigured)
+		})
+	}
 }
 
 func TestLoadForBootstrapAllowsMissingJWTSecret(t *testing.T) {
@@ -188,6 +733,34 @@ func TestConfigResellerRejectsInvalidEndpoint(t *testing.T) {
 	require.ErrorContains(t, cfg.Validate(), "reseller.upstream_endpoint")
 }
 
+func TestLoadDefaultOpenAIFirstOutputTimeoutsDisabled(t *testing.T) {
+	resetViperWithJWTSecret(t)
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Zero(t, cfg.Gateway.OpenAIFirstOutputTimeoutSeconds)
+	require.Zero(t, cfg.Gateway.OpenAIHighEffortFirstOutputTimeoutSeconds)
+}
+
+func TestLoadOpenAIFirstOutputTimeoutsFromEnv(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	t.Setenv("GATEWAY_OPENAI_FIRST_OUTPUT_TIMEOUT_SECONDS", "90")
+	t.Setenv("GATEWAY_OPENAI_HIGH_EFFORT_FIRST_OUTPUT_TIMEOUT_SECONDS", "240")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, 90, cfg.Gateway.OpenAIFirstOutputTimeoutSeconds)
+	require.Equal(t, 240, cfg.Gateway.OpenAIHighEffortFirstOutputTimeoutSeconds)
+}
+
+func TestValidateOpenAIFirstOutputTimeoutMinimum(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	cfg, err := Load()
+	require.NoError(t, err)
+	cfg.Gateway.OpenAIFirstOutputTimeoutSeconds = 30
+	require.NoError(t, cfg.Validate())
+}
+
 func TestLoadDefaultOpenAIWSConfig(t *testing.T) {
 	resetViperWithJWTSecret(t)
 
@@ -277,6 +850,9 @@ func TestLoadDefaultOpenAIWSConfig(t *testing.T) {
 	if cfg.Gateway.OpenAIWS.SchedulerScoreWeights.QuotaHeadroom != 0 {
 		t.Fatalf("Gateway.OpenAIWS.SchedulerScoreWeights.QuotaHeadroom = %v, want 0", cfg.Gateway.OpenAIWS.SchedulerScoreWeights.QuotaHeadroom)
 	}
+	if cfg.Gateway.OpenAIWS.SchedulerScoreWeights.UpstreamCost != 0 {
+		t.Fatalf("Gateway.OpenAIWS.SchedulerScoreWeights.UpstreamCost = %v, want 0", cfg.Gateway.OpenAIWS.SchedulerScoreWeights.UpstreamCost)
+	}
 	if !cfg.Gateway.OpenAIWS.StoreDisabledForceNewConn {
 		t.Fatalf("Gateway.OpenAIWS.StoreDisabledForceNewConn = false, want true")
 	}
@@ -289,6 +865,28 @@ func TestLoadDefaultOpenAIWSConfig(t *testing.T) {
 	if cfg.Gateway.OpenAIWS.IngressModeDefault != "ctx_pool" {
 		t.Fatalf("Gateway.OpenAIWS.IngressModeDefault = %q, want %q", cfg.Gateway.OpenAIWS.IngressModeDefault, "ctx_pool")
 	}
+	if cfg.Gateway.OpenAIWS.ClientFirstMessageTimeoutSeconds != DefaultOpenAIWSClientFirstMessageTimeoutSeconds {
+		t.Fatalf(
+			"Gateway.OpenAIWS.ClientFirstMessageTimeoutSeconds = %d, want %d",
+			cfg.Gateway.OpenAIWS.ClientFirstMessageTimeoutSeconds,
+			DefaultOpenAIWSClientFirstMessageTimeoutSeconds,
+		)
+	}
+	if cfg.Gateway.OpenAIWS.IngressInterTurnIdleTimeoutSeconds != 300 {
+		t.Fatalf("Gateway.OpenAIWS.IngressInterTurnIdleTimeoutSeconds = %d, want 300", cfg.Gateway.OpenAIWS.IngressInterTurnIdleTimeoutSeconds)
+	}
+	if cfg.Gateway.OpenAIWS.MaxIngressConnectionsPerAPIKey != 64 {
+		t.Fatalf("Gateway.OpenAIWS.MaxIngressConnectionsPerAPIKey = %d, want 64", cfg.Gateway.OpenAIWS.MaxIngressConnectionsPerAPIKey)
+	}
+}
+
+func TestLoadOpenAIWSClientFirstMessageTimeoutFromEnv(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	t.Setenv("GATEWAY_OPENAI_WS_CLIENT_FIRST_MESSAGE_TIMEOUT_SECONDS", "120")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, 120, cfg.Gateway.OpenAIWS.ClientFirstMessageTimeoutSeconds)
 }
 
 func TestLoadDefaultOpenAICompactModel(t *testing.T) {
@@ -341,6 +939,15 @@ func TestLoadOpenAIResponseHeaderTimeoutFromEnv(t *testing.T) {
 	cfg, err := Load()
 	require.NoError(t, err)
 	require.Equal(t, 1800, cfg.Gateway.OpenAIResponseHeaderTimeout)
+}
+
+func TestLoadImageNonstreamKeepaliveFromEnv(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	t.Setenv("GATEWAY_IMAGE_NONSTREAM_KEEPALIVE_INTERVAL", "15")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, 15, cfg.Gateway.ImageNonstreamKeepaliveInterval)
 }
 
 func TestLoadOpenAIWSStickyTTLCompatibility(t *testing.T) {
@@ -502,6 +1109,14 @@ func TestLoadDefaultIdempotencyConfig(t *testing.T) {
 	if cfg.Idempotency.SystemOperationTTLSeconds != 3600 {
 		t.Fatalf("Idempotency.SystemOperationTTLSeconds = %d, want 3600", cfg.Idempotency.SystemOperationTTLSeconds)
 	}
+}
+
+func TestLoadDefaultBatchImageQueueDisabled(t *testing.T) {
+	resetViperWithJWTSecret(t)
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.False(t, cfg.BatchImage.QueueEnabled)
 }
 
 func TestLoadIdempotencyConfigFromEnv(t *testing.T) {
@@ -1332,6 +1947,51 @@ func TestValidateConfigErrors(t *testing.T) {
 		wantErr string
 	}{
 		{
+			name:    "server read header timeout",
+			mutate:  func(c *Config) { c.Server.ReadHeaderTimeout = 0 },
+			wantErr: "server.read_header_timeout",
+		},
+		{
+			name:    "server max header bytes too small",
+			mutate:  func(c *Config) { c.Server.MaxHeaderBytes = 4096 },
+			wantErr: "server.max_header_bytes",
+		},
+		{
+			name:    "server max request body size",
+			mutate:  func(c *Config) { c.Server.MaxRequestBodySize = -1 },
+			wantErr: "server.max_request_body_size",
+		},
+		{
+			name: "h2c zero concurrent streams",
+			mutate: func(c *Config) {
+				c.Server.H2C.Enabled = true
+				c.Server.H2C.MaxConcurrentStreams = 0
+			},
+			wantErr: "server.h2c.max_concurrent_streams",
+		},
+		{
+			name: "h2c oversized read frame",
+			mutate: func(c *Config) {
+				c.Server.H2C.Enabled = true
+				c.Server.H2C.MaxReadFrameSize = 16 * 1024 * 1024
+			},
+			wantErr: "server.h2c.max_read_frame_size",
+		},
+		{
+			name: "invalid auth abuse threshold too small",
+			mutate: func(c *Config) {
+				c.APIKeyAuth.InvalidAbuse.Threshold = 9
+			},
+			wantErr: "api_key_auth_cache.invalid_abuse.threshold",
+		},
+		{
+			name: "invalid auth abuse capacity too small",
+			mutate: func(c *Config) {
+				c.APIKeyAuth.InvalidAbuse.Capacity = 255
+			},
+			wantErr: "api_key_auth_cache.invalid_abuse.capacity",
+		},
+		{
 			name:    "jwt secret required",
 			mutate:  func(c *Config) { c.JWT.Secret = "" },
 			wantErr: "jwt.secret is required",
@@ -1533,6 +2193,11 @@ func TestValidateConfigErrors(t *testing.T) {
 			wantErr: "gateway.max_body_size",
 		},
 		{
+			name:    "gateway text body exceeds media body",
+			mutate:  func(c *Config) { c.Gateway.TextMaxBodySize = c.Gateway.MaxBodySize + 1 },
+			wantErr: "gateway.text_max_body_size",
+		},
+		{
 			name:    "gateway response header timeout",
 			mutate:  func(c *Config) { c.Gateway.ResponseHeaderTimeout = -1 },
 			wantErr: "gateway.response_header_timeout",
@@ -1541,6 +2206,16 @@ func TestValidateConfigErrors(t *testing.T) {
 			name:    "gateway openai response header timeout",
 			mutate:  func(c *Config) { c.Gateway.OpenAIResponseHeaderTimeout = -1 },
 			wantErr: "gateway.openai_response_header_timeout",
+		},
+		{
+			name:    "gateway openai first output timeout below minimum",
+			mutate:  func(c *Config) { c.Gateway.OpenAIFirstOutputTimeoutSeconds = 29 },
+			wantErr: "gateway.openai_first_output_timeout_seconds",
+		},
+		{
+			name:    "gateway openai high effort first output timeout too large",
+			mutate:  func(c *Config) { c.Gateway.OpenAIHighEffortFirstOutputTimeoutSeconds = 1801 },
+			wantErr: "gateway.openai_high_effort_first_output_timeout_seconds",
 		},
 		{
 			name:    "gateway max idle conns",
@@ -1636,6 +2311,16 @@ func TestValidateConfigErrors(t *testing.T) {
 			name:    "gateway image stream keepalive negative",
 			mutate:  func(c *Config) { c.Gateway.ImageStreamKeepaliveInterval = -1 },
 			wantErr: "gateway.image_stream_keepalive_interval must be non-negative",
+		},
+		{
+			name:    "gateway image nonstream keepalive range",
+			mutate:  func(c *Config) { c.Gateway.ImageNonstreamKeepaliveInterval = 4 },
+			wantErr: "gateway.image_nonstream_keepalive_interval",
+		},
+		{
+			name:    "gateway image nonstream keepalive negative",
+			mutate:  func(c *Config) { c.Gateway.ImageNonstreamKeepaliveInterval = -1 },
+			wantErr: "gateway.image_nonstream_keepalive_interval must be non-negative",
 		},
 		{
 			name:    "gateway image stream data interval range",
@@ -1872,6 +2557,26 @@ func TestValidateConfig_OpenAIWSRules(t *testing.T) {
 			wantErr: "gateway.openai_ws.max_conns_per_account",
 		},
 		{
+			name:    "client_first_message_timeout_seconds 必须为正数",
+			mutate:  func(c *Config) { c.Gateway.OpenAIWS.ClientFirstMessageTimeoutSeconds = 0 },
+			wantErr: "gateway.openai_ws.client_first_message_timeout_seconds",
+		},
+		{
+			name:    "client_first_message_timeout_seconds 不能为负数",
+			mutate:  func(c *Config) { c.Gateway.OpenAIWS.ClientFirstMessageTimeoutSeconds = -1 },
+			wantErr: "gateway.openai_ws.client_first_message_timeout_seconds",
+		},
+		{
+			name:    "ingress_inter_turn_idle_timeout_seconds 不能为负数",
+			mutate:  func(c *Config) { c.Gateway.OpenAIWS.IngressInterTurnIdleTimeoutSeconds = -1 },
+			wantErr: "gateway.openai_ws.ingress_inter_turn_idle_timeout_seconds",
+		},
+		{
+			name:    "max_ingress_connections_per_api_key 不能为负数",
+			mutate:  func(c *Config) { c.Gateway.OpenAIWS.MaxIngressConnectionsPerAPIKey = -1 },
+			wantErr: "gateway.openai_ws.max_ingress_connections_per_api_key",
+		},
+		{
 			name:    "min_idle_per_account 不能为负数",
 			mutate:  func(c *Config) { c.Gateway.OpenAIWS.MinIdlePerAccount = -1 },
 			wantErr: "gateway.openai_ws.min_idle_per_account",
@@ -1982,6 +2687,42 @@ func TestValidateConfig_OpenAIWSRules(t *testing.T) {
 			wantErr: "gateway.openai_ws.scheduler_score_weights.* must be non-negative",
 		},
 		{
+			name:    "scheduler_score_weights upstream_cost 不能为负数",
+			mutate:  func(c *Config) { c.Gateway.OpenAIWS.SchedulerScoreWeights.UpstreamCost = -0.1 },
+			wantErr: "gateway.openai_ws.scheduler_score_weights.* must be non-negative",
+		},
+		{
+			name:    "scheduler_score_weights reset 不能为负数",
+			mutate:  func(c *Config) { c.Gateway.OpenAIWS.SchedulerScoreWeights.Reset = -0.1 },
+			wantErr: "gateway.openai_ws.scheduler_score_weights.* must be non-negative",
+		},
+		{
+			name:    "scheduler_score_weights 不能为 NaN",
+			mutate:  func(c *Config) { c.Gateway.OpenAIWS.SchedulerScoreWeights.PreviousResponse = math.NaN() },
+			wantErr: "gateway.openai_ws.scheduler_score_weights.* must be non-negative and finite",
+		},
+		{
+			name:    "scheduler_score_weights 不能为 Inf",
+			mutate:  func(c *Config) { c.Gateway.OpenAIWS.SchedulerScoreWeights.UpstreamCost = math.Inf(1) },
+			wantErr: "gateway.openai_ws.scheduler_score_weights.* must be non-negative and finite",
+		},
+		{
+			name: "scheduler_score_weights 总和不能溢出",
+			mutate: func(c *Config) {
+				c.Gateway.OpenAIWS.SchedulerScoreWeights.Priority = math.MaxFloat64
+				c.Gateway.OpenAIWS.SchedulerScoreWeights.Load = math.MaxFloat64
+			},
+			wantErr: "gateway.openai_ws.scheduler_score_weights base-weight sum must be finite",
+		},
+		{
+			name: "scheduler_score_weights 含 sticky 总和不能溢出",
+			mutate: func(c *Config) {
+				c.Gateway.OpenAIWS.SchedulerScoreWeights.Priority = math.MaxFloat64
+				c.Gateway.OpenAIWS.SchedulerScoreWeights.PreviousResponse = math.MaxFloat64
+			},
+			wantErr: "gateway.openai_ws.scheduler_score_weights total-weight sum must be finite",
+		},
+		{
 			name: "scheduler_score_weights 不能全为 0",
 			mutate: func(c *Config) {
 				c.Gateway.OpenAIWS.SchedulerScoreWeights.Priority = 0
@@ -2029,6 +2770,30 @@ func TestValidateConfig_OpenAIWSRules(t *testing.T) {
 		cfg.Gateway.OpenAIWS.SchedulerScoreWeights.ErrorRate = 0
 		cfg.Gateway.OpenAIWS.SchedulerScoreWeights.TTFT = 0
 		cfg.Gateway.OpenAIWS.SchedulerScoreWeights.QuotaHeadroom = 0.1
+
+		require.NoError(t, cfg.Validate())
+	})
+
+	t.Run("upstream_cost 可作为唯一有效调度权重", func(t *testing.T) {
+		cfg := buildValid(t)
+		cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Priority = 0
+		cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Load = 0
+		cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Queue = 0
+		cfg.Gateway.OpenAIWS.SchedulerScoreWeights.ErrorRate = 0
+		cfg.Gateway.OpenAIWS.SchedulerScoreWeights.TTFT = 0
+		cfg.Gateway.OpenAIWS.SchedulerScoreWeights.UpstreamCost = 0.1
+
+		require.NoError(t, cfg.Validate())
+	})
+
+	t.Run("reset 可作为唯一有效调度权重", func(t *testing.T) {
+		cfg := buildValid(t)
+		cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Priority = 0
+		cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Load = 0
+		cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Queue = 0
+		cfg.Gateway.OpenAIWS.SchedulerScoreWeights.ErrorRate = 0
+		cfg.Gateway.OpenAIWS.SchedulerScoreWeights.TTFT = 0
+		cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Reset = 0.1
 
 		require.NoError(t, cfg.Validate())
 	})
@@ -2194,6 +2959,9 @@ func TestLoad_DefaultGatewayImageStreamConfig(t *testing.T) {
 	}
 	if cfg.Gateway.ImageStreamKeepaliveInterval != 10 {
 		t.Fatalf("image_stream_keepalive_interval = %d, want 10", cfg.Gateway.ImageStreamKeepaliveInterval)
+	}
+	if cfg.Gateway.ImageNonstreamKeepaliveInterval != 0 {
+		t.Fatalf("image_nonstream_keepalive_interval = %d, want 0", cfg.Gateway.ImageNonstreamKeepaliveInterval)
 	}
 	if cfg.Gateway.ImageConcurrency.Enabled {
 		t.Fatalf("image_concurrency.enabled = true, want false")

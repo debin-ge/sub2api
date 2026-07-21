@@ -22,6 +22,7 @@ func TestRegisterPaymentRoutesIncludesWiseWebhook(t *testing.T) {
 		middleware.JWTAuthMiddleware(func(c *gin.Context) { c.Next() }),
 		middleware.AdminAuthMiddleware(func(c *gin.Context) { c.Next() }),
 		nil,
+		nil,
 	)
 
 	for _, route := range router.Routes() {

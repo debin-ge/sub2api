@@ -1,0 +1,124 @@
+groups:
+  - name: model-radar
+    interval: 30s
+    rules:
+      - alert: RadarSourceSustainedFailure
+        expr: (sum by (job, source) (increase(radar_fetch_failure_total{source=~"status_.*"}[2h])) >= 2 unless on (job, source) sum by (job, source) (increase(radar_fetch_success_total{source=~"status_.*"}[2h])) > 0) or (sum by (job, source) (increase(radar_fetch_failure_total{source="aa"}[18h])) >= 2 unless on (job, source) sum by (job, source) (increase(radar_fetch_success_total{source="aa"}[18h])) > 0) or (sum by (job, source) (increase(radar_fetch_failure_total{source=~"aa_performance|lmarena"}[3d])) >= 2 unless on (job, source) sum by (job, source) (increase(radar_fetch_success_total{source=~"aa_performance|lmarena"}[3d])) > 0)
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Model Radar source is repeatedly failing"
+          runbook: "deploy/monitoring/radar-runbook.md#radarsourcesustainedfailure"
+
+      - alert: RadarSourceDataStale
+        expr: max by (job, source) (radar_source_age_seconds) < 0 or min by (job, source) (radar_source_age_seconds{source=~"status_.*"} >= 0) > 3600 or min by (job, source) (radar_source_age_seconds{source="aa"} >= 0) > 43200 or min by (job, source) (radar_source_age_seconds{source=~"aa_performance|lmarena"} >= 0) > 172800
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Model Radar source has no recent successful data"
+          runbook: "deploy/monitoring/radar-runbook.md#radarsourcedatastale"
+
+      - alert: RadarLatestSuccessVisibilityBelowTarget
+        expr: ((count by (job) (min by (job, source) (radar_source_age_seconds{source=~"status_.*"} >= 0) <= 3600) or on (job) (0 * count by (job) (count by (job, source) (radar_source_age_seconds)))) + (count by (job) (min by (job, source) (radar_source_age_seconds{source="aa"} >= 0) <= 43200) or on (job) (0 * count by (job) (count by (job, source) (radar_source_age_seconds)))) + (count by (job) (min by (job, source) (radar_source_age_seconds{source=~"aa_performance|lmarena"} >= 0) <= 172800) or on (job) (0 * count by (job) (count by (job, source) (radar_source_age_seconds))))) / clamp_min(count by (job) (count by (job, source) (radar_source_age_seconds)), 1) < 1
+        for: 15m
+        labels:
+          severity: critical
+          target: "100_percent"
+        annotations:
+          summary: "Not every Radar source exposes recent successful data"
+          runbook: "deploy/monitoring/radar-runbook.md#radarlatestsuccessvisibilitybelowtarget"
+
+      - alert: RadarAggregatorP95Slow
+        expr: histogram_quantile(0.95, sum by (job, le) (rate(radar_aggregator_duration_seconds_bucket[15m]))) > 60
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Radar quota aggregation p95 exceeds 60 seconds"
+          runbook: "deploy/monitoring/radar-runbook.md#radaraggregatorp95slow"
+
+      - alert: RadarAggregatorFailure
+        expr: sum by (job) (increase(radar_aggregator_runs_total{result="failure"}[15m])) > 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Radar quota aggregation failed"
+          runbook: "deploy/monitoring/radar-runbook.md#radaraggregatorfailure"
+
+      - alert: RadarAggregatorNoRecentRun
+        expr: (max by (job) (radar_aggregator_last_run_timestamp_seconds) == 0 or time() - max by (job) (radar_aggregator_last_run_timestamp_seconds) > 2 * max by (job) (radar_aggregator_interval_seconds)) and on (job) max by (job) (radar_enabled) == 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Radar quota aggregation has not completed recently"
+          runbook: "deploy/monitoring/radar-runbook.md#radaraggregatornorecentrun"
+
+      - alert: RadarBucketCountAnomalousDrop
+        expr: min by (job) (radar_aggregator_bucket_count) < 1 or min by (job) (radar_aggregator_bucket_count) < 0.5 * avg_over_time((min by (job) (radar_aggregator_bucket_count))[24h:30s])
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Published Radar quota bucket count dropped abnormally"
+          runbook: "deploy/monitoring/radar-runbook.md#radarbucketcountanomalousdrop"
+
+      - alert: RadarQuotaSnapshotSuccessBelowTarget
+        expr: (sum by (job) (rate(radar_aggregator_runs_total{result="success"}[1h])) or on (job) (0 * sum by (job) (rate(radar_aggregator_runs_total[1h])))) / clamp_min(sum by (job) (rate(radar_aggregator_runs_total[1h])), 0.000001) < 0.99 and sum by (job) (rate(radar_aggregator_runs_total[1h])) > 0
+        for: 15m
+        labels:
+          severity: critical
+          target: "99_percent"
+        annotations:
+          summary: "Radar quota snapshot success rate is below 99%"
+          runbook: "deploy/monitoring/radar-runbook.md#radarquotasnapshotsuccessbelowtarget"
+
+      - alert: RadarCoreAvailabilityBelowTarget
+        expr: (1 - (sum by (job) (rate(radar_http_requests_total{route=~"/api/v1/public/radar/(service-health|quota-buckets/latest|degradation/latest|lmarena|sources)",status="5xx"}[30m])) or on (job) (0 * sum by (job) (rate(radar_http_requests_total{route=~"/api/v1/public/radar/(service-health|quota-buckets/latest|degradation/latest|lmarena|sources)"}[30m])))) / clamp_min(sum by (job) (rate(radar_http_requests_total{route=~"/api/v1/public/radar/(service-health|quota-buckets/latest|degradation/latest|lmarena|sources)"}[30m])), 0.000001)) < 0.995 and sum by (job) (rate(radar_http_requests_total{route=~"/api/v1/public/radar/(service-health|quota-buckets/latest|degradation/latest|lmarena|sources)"}[30m])) > 0
+        for: 15m
+        labels:
+          severity: critical
+          target: "99_5_percent"
+        annotations:
+          summary: "Public Radar core-module availability is below 99.5%"
+          runbook: "deploy/monitoring/radar-runbook.md#radarcoreavailabilitybelowtarget"
+
+      - alert: RadarAPI5xxRateHigh
+        expr: (sum by (job) (rate(radar_http_requests_total{status="5xx"}[10m])) or on (job) (0 * sum by (job) (rate(radar_http_requests_total[10m])))) / clamp_min(sum by (job) (rate(radar_http_requests_total[10m])), 0.000001) > 0.005 and sum by (job) (rate(radar_http_requests_total[10m])) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Radar API 5xx rate exceeds 0.5%"
+          runbook: "deploy/monitoring/radar-runbook.md#radarapi5xxratehigh"
+
+      - alert: RadarAPIP95AboveTarget
+        expr: histogram_quantile(0.95, sum by (job, le) (rate(radar_http_request_duration_seconds_bucket[10m]))) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+          target: "100_milliseconds"
+        annotations:
+          summary: "Radar cached API p95 exceeds 100ms"
+          runbook: "deploy/monitoring/radar-runbook.md#radarapip95abovetarget"
+
+      - alert: RadarRedisErrors
+        expr: sum by (job, access, operation) (increase(radar_redis_operations_total{result="error"}[10m])) > 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Radar Redis operation is failing"
+          runbook: "deploy/monitoring/radar-runbook.md#radarrediserrors"
+
+      - alert: RadarCacheMemoryHigh
+        expr: sum by (job) (max by (job, cache) (radar_cache_memory_bytes)) > 67108864
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Observed serialized Radar cache payloads exceed 64MiB"
+          runbook: "deploy/monitoring/radar-runbook.md#radarcachememoryhigh"

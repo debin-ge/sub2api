@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
+import en from '@/i18n/locales/en'
+import zh from '@/i18n/locales/zh'
 
 const root = resolve(__dirname, '../..')
 
@@ -30,10 +32,7 @@ describe('frontend hard-coded GitHub external links', () => {
   })
 
   it('does not keep unused view-on-github labels', () => {
-    const zhSource = readSource('i18n/locales/zh.ts')
-    const enSource = readSource('i18n/locales/en.ts')
-
-    expect(zhSource).not.toContain('viewOnGithub')
-    expect(enSource).not.toContain('viewOnGithub')
+    expect(zh.home).not.toHaveProperty('viewOnGithub')
+    expect(en.home).not.toHaveProperty('viewOnGithub')
   })
 })

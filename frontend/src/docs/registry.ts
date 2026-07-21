@@ -5,11 +5,6 @@ import apiReferenceContent from './zh/api-reference.md?raw'
 import endpointSelectionContent from './zh/endpoint-selection.md?raw'
 import modelsContent from './zh/models.md?raw'
 import billingUsageContent from './zh/billing-usage.md?raw'
-import integrationOverviewContent from './zh/integration-overview.md?raw'
-import integrationCodeContent from './zh/integration-code.md?raw'
-import integrationClientsContent from './zh/integration-clients.md?raw'
-import integrationCliContent from './zh/integration-cli.md?raw'
-import integrationToolsContent from './zh/integration-tools.md?raw'
 import errorsContent from './zh/errors.md?raw'
 import bestPracticesContent from './zh/best-practices.md?raw'
 import faqContent from './zh/faq.md?raw'
@@ -20,11 +15,6 @@ import apiReferenceContentEn from './en/api-reference.md?raw'
 import endpointSelectionContentEn from './en/endpoint-selection.md?raw'
 import modelsContentEn from './en/models.md?raw'
 import billingUsageContentEn from './en/billing-usage.md?raw'
-import integrationOverviewContentEn from './en/integration-overview.md?raw'
-import integrationCodeContentEn from './en/integration-code.md?raw'
-import integrationClientsContentEn from './en/integration-clients.md?raw'
-import integrationCliContentEn from './en/integration-cli.md?raw'
-import integrationToolsContentEn from './en/integration-tools.md?raw'
 import errorsContentEn from './en/errors.md?raw'
 import bestPracticesContentEn from './en/best-practices.md?raw'
 import faqContentEn from './en/faq.md?raw'
@@ -91,41 +81,6 @@ export const userDocsByLocale: Record<UserDocLocale, UserDocEntry[]> = {
       description: '理解用量来源、价格影响因素、成本控制和异常对账方式。',
       category: '配置',
       content: billingUsageContent,
-    },
-    {
-      slug: 'integration-overview',
-      title: '接入总览',
-      description: '完成 Base URL、API Key 和模型的接入前提，并选择合适的接入方式。',
-      category: '接入',
-      content: integrationOverviewContent,
-    },
-    {
-      slug: 'integration-code',
-      title: '代码接入',
-      description: '使用 curl、Python、TypeScript 和 Go 调用 OpenAI、Anthropic 和 Gemini 兼容接口。',
-      category: '接入',
-      content: integrationCodeContent,
-    },
-    {
-      slug: 'integration-clients',
-      title: '客户端接入',
-      description: '配置 Cursor、Claude Code、Codex、Cline、Continue 和 Trae 等 GUI 客户端。',
-      category: '接入',
-      content: integrationClientsContent,
-    },
-    {
-      slug: 'integration-cli',
-      title: 'CLI 接入',
-      description: '通过配置文件和环境变量接入 Codex CLI 和 Claude Code 命令行工具。',
-      category: '接入',
-      content: integrationCliContent,
-    },
-    {
-      slug: 'integration-tools',
-      title: '第三方工具接入',
-      description: '使用 CC-Switch、Cockpit Tools 等工具管理多站点配置和账号切换。',
-      category: '接入',
-      content: integrationToolsContent,
     },
     {
       slug: 'errors',
@@ -198,41 +153,6 @@ export const userDocsByLocale: Record<UserDocLocale, UserDocEntry[]> = {
       description: 'Understand usage sources, pricing factors, cost control, and anomaly reconciliation.',
       category: 'Configuration',
       content: billingUsageContentEn,
-    },
-    {
-      slug: 'integration-overview',
-      title: 'Integration Overview',
-      description: 'Prepare the Base URL, API Key, and model name, then choose the right integration path.',
-      category: 'Integration',
-      content: integrationOverviewContentEn,
-    },
-    {
-      slug: 'integration-code',
-      title: 'Code Integration',
-      description: 'Call OpenAI, Anthropic, Gemini, and Antigravity-compatible APIs from curl, Python, TypeScript, and Go.',
-      category: 'Integration',
-      content: integrationCodeContentEn,
-    },
-    {
-      slug: 'integration-clients',
-      title: 'Client Integration',
-      description: 'Configure Cursor, Claude Code, Codex, Cline, Continue, Trae, and other GUI clients.',
-      category: 'Integration',
-      content: integrationClientsContentEn,
-    },
-    {
-      slug: 'integration-cli',
-      title: 'CLI Integration',
-      description: 'Connect Codex CLI and Claude Code through config files and environment variables.',
-      category: 'Integration',
-      content: integrationCliContentEn,
-    },
-    {
-      slug: 'integration-tools',
-      title: 'Third-Party Tools',
-      description: 'Use CC-Switch, Cockpit Tools, and similar tools to manage multi-site configurations and account switching.',
-      category: 'Integration',
-      content: integrationToolsContentEn,
     },
     {
       slug: 'errors',

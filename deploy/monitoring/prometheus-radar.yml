@@ -1,0 +1,14 @@
+scrape_configs:
+  - job_name: sub2api-radar
+    metrics_path: /metrics
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/secrets/sub2api-radar-metrics-token
+    static_configs:
+      - targets:
+          - sub2api:8080
+
+rule_files:
+  - radar-alerts.yml

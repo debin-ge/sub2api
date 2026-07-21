@@ -4,14 +4,16 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vue-tsc -b && vite build",
-    "preview": "vite preview",
+    "dev": "vite --config vite.config.ts",
+    "build": "vue-tsc -b && vite build --config vite.config.ts && node build-tools/assert-entry-privacy.mjs",
+    "preview": "vite preview --config vite.config.ts",
     "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts --fix",
     "lint:check": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts",
     "typecheck": "vue-tsc --noEmit",
+    "typecheck:radar": "tsc -p tsconfig.radar-types.json",
     "test": "vitest",
-    "test:run": "vitest run",
+    "test:run": "vitest run && node --test build-tools/assert-entry-privacy.test.mjs",
+    "test:build-tools": "node --test build-tools/assert-entry-privacy.test.mjs",
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
@@ -36,6 +38,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@intlify/message-compiler": "9.14.5",
     "@types/dompurify": "^3.0.5",
     "@types/file-saver": "^2.0.7",
     "@types/mdx": "^2.0.13",

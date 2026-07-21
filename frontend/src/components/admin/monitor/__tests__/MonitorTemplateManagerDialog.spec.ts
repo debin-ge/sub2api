@@ -1,6 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import MonitorTemplateManagerDialog from '../MonitorTemplateManagerDialog.vue'
+import { PROVIDERS } from '@/constants/channelMonitor'
 
 vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
@@ -53,6 +54,7 @@ describe('MonitorTemplateManagerDialog', () => {
       'monitorCommon.providers.anthropic',
       'monitorCommon.providers.openai',
       'monitorCommon.providers.gemini',
+      'monitorCommon.providers.grok',
       'monitorCommon.providers.minimax',
       'monitorCommon.providers.glm',
       'monitorCommon.providers.kimi',
@@ -60,6 +62,6 @@ describe('MonitorTemplateManagerDialog', () => {
       'monitorCommon.providers.windsurf',
       'monitorCommon.providers.opencode'
     ]))
-    expect(labels).toHaveLength(9)
+    expect(labels).toHaveLength(PROVIDERS.length)
   })
 })

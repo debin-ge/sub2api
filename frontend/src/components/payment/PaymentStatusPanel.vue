@@ -87,6 +87,9 @@
           <button v-if="payUrl" class="btn btn-secondary text-sm" @click="reopenPopup">
             {{ t('payment.qr.openPayWindow') }}
           </button>
+          <button v-if="isWise" class="btn btn-secondary text-sm" @click="pollStatus">
+            {{ t('payment.qr.refreshStatus') }}
+          </button>
         </div>
       </div>
       <div class="card p-4 text-center">
@@ -108,6 +111,9 @@
           <button v-if="payUrl" class="btn btn-secondary text-sm" @click="reopenPopup">
             {{ t('payment.qr.openPayWindow') }}
           </button>
+          <button v-if="isWise" class="btn btn-secondary text-sm" @click="pollStatus">
+            {{ t('payment.qr.refreshStatus') }}
+          </button>
         </div>
       </div>
       <div class="card p-4 text-center">
@@ -128,7 +134,13 @@ import { usePaymentStore } from '@/stores/payment'
 import { useAppStore } from '@/stores'
 import { paymentAPI } from '@/api/payment'
 import { extractI18nErrorMessage } from '@/utils/apiError'
-import { getPaymentPopupFeatures, isBuiltInAlipayMethod, isBuiltInWxpayMethod } from '@/components/payment/providerConfig'
+import {
+  closeRegisteredPaymentPopup,
+  getPaymentPopupFeatures,
+  isBuiltInAlipayMethod,
+  isBuiltInWxpayMethod,
+  registerPaymentPopup,
+} from '@/components/payment/providerConfig'
 import { currencySymbol, formatPaymentAmount, normalizePaymentCurrency } from '@/components/payment/currency'
 import type { PaymentOrder } from '@/types/payment'
 import Icon from '@/components/icons/Icon.vue'
@@ -185,6 +197,7 @@ const VERIFY_RETRY_MAX_ATTEMPTS = 6
 
 const isAlipay = computed(() => isBuiltInAlipayMethod(props.paymentType))
 const isWxpay = computed(() => isBuiltInWxpayMethod(props.paymentType))
+const isWise = computed(() => String(props.paymentType || '').trim().toLowerCase() === 'wise')
 
 const qrBorderClass = computed(() => {
   if (isAlipay.value) return 'border-[#00AEEF] bg-blue-50 dark:border-[#00AEEF]/70 dark:bg-blue-950/20'
@@ -235,6 +248,8 @@ function reopenPopup() {
     const win = window.open(props.payUrl, 'paymentPopup', getPaymentPopupFeatures())
     if (!win || win.closed) {
       window.location.href = props.payUrl
+    } else {
+      registerPaymentPopup(win)
     }
   }
 }
@@ -242,6 +257,7 @@ function reopenPopup() {
 function setOutcome(next: PaymentOutcome) {
   if (outcome.value === next) return
   outcome.value = next
+  closeRegisteredPaymentPopup()
   emit('settled', next)
 }
 
@@ -255,7 +271,7 @@ async function renderQR() {
 }
 
 async function tryRecoverPendingOrder(order: PaymentOrder): Promise<PaymentOrder> {
-  if (!isWxpay.value) return order
+  if (!isWxpay.value && !isWise.value) return order
   const outTradeNo = String(order.out_trade_no || '').trim()
   if (!outTradeNo) return order
   const normalizedStatus = String(order.status || '').trim().toUpperCase()
@@ -275,22 +291,33 @@ async function tryRecoverPendingOrder(order: PaymentOrder): Promise<PaymentOrder
   }
 }
 
+let pollInFlight = false
 async function pollStatus() {
   if (!props.orderId || outcome.value) return
-  let order = await paymentStore.pollOrderStatus(props.orderId)
-  if (!order) return
-  order = await tryRecoverPendingOrder(order)
-  if (isSuccessStatus(order.status)) {
-    cleanup()
-    paidOrder.value = order
-    setOutcome('success')
-    emit('success')
-  } else if (order.status === 'CANCELLED') {
-    cleanup()
-    setOutcome('cancelled')
-  } else if (order.status === 'EXPIRED' || order.status === 'FAILED') {
-    cleanup()
-    setOutcome('expired')
+  // 防重入：接口（含 verifyOrder 二次确认）响应慢于 3 秒轮询间隔时避免并发重叠请求。
+  if (pollInFlight) return
+  pollInFlight = true
+  try {
+    let order = await paymentStore.pollOrderStatus(props.orderId)
+    if (!order) return
+    // 已进入终态则不再处理迟到的响应。
+    if (outcome.value) return
+    order = await tryRecoverPendingOrder(order)
+    if (outcome.value) return
+    if (isSuccessStatus(order.status)) {
+      cleanup()
+      paidOrder.value = order
+      setOutcome('success')
+      emit('success')
+    } else if (order.status === 'CANCELLED') {
+      cleanup()
+      setOutcome('cancelled')
+    } else if (order.status === 'EXPIRED' || order.status === 'FAILED') {
+      cleanup()
+      setOutcome('expired')
+    }
+  } finally {
+    pollInFlight = false
   }
 }
 
@@ -322,6 +349,7 @@ function handleDone() { cleanup(); emit('done') }
 function cleanup() {
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
   if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null }
+  closeRegisteredPaymentPopup()
 }
 
 // Initialize on mount

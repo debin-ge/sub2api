@@ -30,6 +30,14 @@ func TestCodexSnapshotBaseTime(t *testing.T) {
 		}
 	})
 
+	t.Run("valid offset is normalized to UTC", func(t *testing.T) {
+		got := codexSnapshotBaseTime(&OpenAICodexUsageSnapshot{UpdatedAt: "2026-02-16T18:00:00+08:00"}, fallback)
+		want := time.Date(2026, 2, 16, 10, 0, 0, 0, time.UTC)
+		if !got.Equal(want) || got.Location() != time.UTC {
+			t.Fatalf("got %v in %v, want %v in UTC", got, got.Location(), want)
+		}
+	})
+
 	t.Run("invalid updatedAt uses fallback", func(t *testing.T) {
 		got := codexSnapshotBaseTime(&OpenAICodexUsageSnapshot{UpdatedAt: "invalid"}, fallback)
 		if !got.Equal(fallback) {
@@ -101,6 +109,54 @@ func TestBuildCodexUsageExtraUpdates_UsesSnapshotUpdatedAt(t *testing.T) {
 	}
 	if got := updates["codex_7d_reset_at"]; got != "2026-02-17T10:00:00Z" {
 		t.Fatalf("codex_7d_reset_at = %v, want %s", got, "2026-02-17T10:00:00Z")
+	}
+}
+
+func TestBuildCodexUsageExtraUpdates_NormalizesOffsetTimestampsToUTC(t *testing.T) {
+	used := 12.0
+	reset := 3600
+	window := 300
+	snapshot := &OpenAICodexUsageSnapshot{
+		PrimaryUsedPercent:       &used,
+		PrimaryResetAfterSeconds: &reset,
+		PrimaryWindowMinutes:     &window,
+		UpdatedAt:                "2026-02-16T18:00:00+08:00",
+	}
+
+	updates := buildCodexUsageExtraUpdates(snapshot, time.Now())
+
+	if got := updates["codex_usage_updated_at"]; got != "2026-02-16T10:00:00Z" {
+		t.Fatalf("codex_usage_updated_at = %v, want UTC timestamp", got)
+	}
+	if got := updates["codex_5h_reset_at"]; got != "2026-02-16T11:00:00Z" {
+		t.Fatalf("codex_5h_reset_at = %v, want UTC timestamp", got)
+	}
+}
+
+func TestBuildCodexUsageExtraUpdates_MarksMissingFiveHourWindowUnavailable(t *testing.T) {
+	used := 24.0
+	reset := 86400
+	window := 10080
+	snapshot := &OpenAICodexUsageSnapshot{
+		PrimaryUsedPercent:       &used,
+		PrimaryResetAfterSeconds: &reset,
+		PrimaryWindowMinutes:     &window,
+		UpdatedAt:                "2026-07-20T10:00:00Z",
+	}
+
+	updates := buildCodexUsageExtraUpdates(snapshot, time.Now())
+
+	if got := updates[openAICodex5hAvailableExtraKey]; got != false {
+		t.Fatalf("%s = %v, want false", openAICodex5hAvailableExtraKey, got)
+	}
+	if got := updates[openAICodex7dAvailableExtraKey]; got != true {
+		t.Fatalf("%s = %v, want true", openAICodex7dAvailableExtraKey, got)
+	}
+	if _, exists := updates["codex_5h_used_percent"]; exists {
+		t.Fatalf("unexpected 5h utilization in seven-day-only snapshot")
+	}
+	if got := updates["codex_7d_used_percent"]; got != used {
+		t.Fatalf("codex_7d_used_percent = %v, want %v", got, used)
 	}
 }
 

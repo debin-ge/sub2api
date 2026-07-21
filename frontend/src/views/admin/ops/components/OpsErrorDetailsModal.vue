@@ -9,6 +9,8 @@ import { opsAPI, type OpsErrorLog } from '@/api/admin/ops'
 interface Props {
   show: boolean
   timeRange: string
+  customStartTime?: string | null
+  customEndTime?: string | null
   platform?: string
   groupId?: number | null
   errorType: 'request' | 'upstream'
@@ -72,6 +74,7 @@ const phaseSelectOptions = computed(() => {
     { value: '', label: t('common.all') },
     { value: 'request', label: t('admin.ops.errorDetails.phase.request') || 'request' },
     { value: 'auth', label: t('admin.ops.errorDetails.phase.auth') || 'auth' },
+    { value: 'account_auth', label: t('admin.ops.errorDetails.phase.account_auth') || 'account_auth' },
     { value: 'routing', label: t('admin.ops.errorDetails.phase.routing') || 'routing' },
     { value: 'upstream', label: t('admin.ops.errorDetails.phase.upstream') || 'upstream' },
     { value: 'network', label: t('admin.ops.errorDetails.phase.network') || 'network' },
@@ -102,10 +105,16 @@ async function fetchErrorLogs() {
     const params: Record<string, any> = {
       page: page.value,
       page_size: pageSize.value,
-      time_range: props.timeRange,
       view: viewMode.value,
       sort_by: sortBy.value,
       sort_order: sortOrder.value
+    }
+
+    if (props.timeRange === 'custom' && props.customStartTime && props.customEndTime) {
+      params.start_time = props.customStartTime
+      params.end_time = props.customEndTime
+    } else {
+      params.time_range = props.timeRange === 'custom' ? '1h' : props.timeRange
     }
 
     const platform = String(props.platform || '').trim()
@@ -159,7 +168,7 @@ watch(
 )
 
 watch(
-  () => [props.timeRange, props.platform, props.groupId] as const,
+  () => [props.timeRange, props.customStartTime, props.customEndTime, props.platform, props.groupId] as const,
   () => {
     if (!props.show) return
     page.value = 1

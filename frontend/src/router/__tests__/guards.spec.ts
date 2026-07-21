@@ -84,7 +84,7 @@ function simulateGuard(
       return authState.isAdmin ? '/admin/dashboard' : '/dashboard'
     }
     if (authState.backendModeEnabled && !authState.isAuthenticated) {
-      const allowed = ['/login', '/key-usage', '/docs', '/setup', '/payment/result', '/plaza']
+      const allowed = ['/login', '/key-usage', '/docs', '/apps', '/setup', '/payment/result', '/plaza']
       const callbackPaths = [
         '/auth/callback',
         '/auth/linuxdo/callback',
@@ -133,7 +133,7 @@ function simulateGuard(
     if (authState.isAuthenticated && authState.isAdmin) {
       return null
     }
-    const allowed = ['/login', '/key-usage', '/docs', '/setup', '/payment/result', '/plaza']
+    const allowed = ['/login', '/key-usage', '/docs', '/apps', '/setup', '/payment/result', '/plaza']
     const callbackPaths = [
       '/auth/callback',
       '/auth/linuxdo/callback',
@@ -197,6 +197,16 @@ describe('路由守卫逻辑', () => {
 
     it('访问 /docs/quickstart 文档详情允许通过', () => {
       const redirect = simulateGuard('/docs/quickstart', { requiresAuth: false }, authState)
+      expect(redirect).toBeNull()
+    })
+
+    it('访问 /apps 应用集成页面允许通过', () => {
+      const redirect = simulateGuard('/apps', { requiresAuth: false }, authState)
+      expect(redirect).toBeNull()
+    })
+
+    it('访问 /apps/claude-code 应用详情允许通过', () => {
+      const redirect = simulateGuard('/apps/claude-code', { requiresAuth: false }, authState)
       expect(redirect).toBeNull()
     })
   })
@@ -415,6 +425,30 @@ describe('路由守卫逻辑', () => {
         hasPendingAuthSession: false,
       }
       const redirect = simulateGuard('/plaza', { requiresAuth: false }, authState)
+      expect(redirect).toBeNull()
+    })
+
+    it('unauthenticated: /apps is allowed', () => {
+      const authState: MockAuthState = {
+        isAuthenticated: false,
+        isAdmin: false,
+        isSimpleMode: false,
+        backendModeEnabled: true,
+        hasPendingAuthSession: false,
+      }
+      const redirect = simulateGuard('/apps', { requiresAuth: false }, authState)
+      expect(redirect).toBeNull()
+    })
+
+    it('unauthenticated: /apps detail pages are allowed', () => {
+      const authState: MockAuthState = {
+        isAuthenticated: false,
+        isAdmin: false,
+        isSimpleMode: false,
+        backendModeEnabled: true,
+        hasPendingAuthSession: false,
+      }
+      const redirect = simulateGuard('/apps/claude-code', { requiresAuth: false }, authState)
       expect(redirect).toBeNull()
     })
 

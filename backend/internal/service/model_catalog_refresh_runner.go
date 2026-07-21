@@ -104,6 +104,7 @@ func (s *ModelCatalogService) RefreshAll(ctx context.Context) (summary ModelCata
 			attrs := []any{
 				"account_id", result.account.ID,
 				"platform", platform,
+				"account_type", result.account.Type,
 				"error_kind", modelCatalogRefreshErrorKind(result.err),
 			}
 			if status, ok := modelCatalogRefreshHTTPStatus(result.err); ok {

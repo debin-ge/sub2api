@@ -163,6 +163,7 @@ func TestModelCatalogRefreshRunnerLogsBoundedSanitizedFailure(t *testing.T) {
 	require.Contains(t, logs, `"msg":"model_catalog_account_refresh_failed"`)
 	require.Contains(t, logs, `"account_id":42`)
 	require.Contains(t, logs, `"platform":"openai"`)
+	require.Contains(t, logs, `"account_type":"oauth"`)
 	require.Contains(t, logs, `"error_kind":"upstream"`)
 	require.Contains(t, logs, `"http_status":502`)
 	require.Contains(t, logs, `"msg":"model_catalog_refresh_pass_completed"`)

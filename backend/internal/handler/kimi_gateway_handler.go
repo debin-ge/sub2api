@@ -247,7 +247,7 @@ func (h *KimiGatewayHandler) Messages(c *gin.Context) {
 					h.handleKimiUpstreamDegradation(c.Request.Context(), account, failoverErr)
 				}
 				if mapping.Retryable {
-					failoverAction := fs.HandleFailoverError(c.Request.Context(), h.kimiTempUnscheduler(), account.ID, account.Platform, failoverErr)
+					failoverAction := fs.HandleFailoverError(c.Request.Context(), h.kimiTempUnscheduler(), account.ID, account.Platform, account.GetPoolModeRetryCount(), failoverErr)
 					switch failoverAction {
 					case FailoverContinue:
 						continue
@@ -457,7 +457,7 @@ func (h *KimiGatewayHandler) ChatCompletions(c *gin.Context) {
 					h.handleKimiUpstreamDegradation(c.Request.Context(), account, failoverErr)
 				}
 				if mapping.Retryable {
-					failoverAction := fs.HandleFailoverError(c.Request.Context(), h.kimiTempUnscheduler(), account.ID, account.Platform, failoverErr)
+					failoverAction := fs.HandleFailoverError(c.Request.Context(), h.kimiTempUnscheduler(), account.ID, account.Platform, account.GetPoolModeRetryCount(), failoverErr)
 					switch failoverAction {
 					case FailoverContinue:
 						continue
@@ -681,7 +681,7 @@ func (h *KimiGatewayHandler) Responses(c *gin.Context) {
 					h.handleKimiUpstreamDegradation(c.Request.Context(), account, failoverErr)
 				}
 				if mapping.Retryable {
-					failoverAction := fs.HandleFailoverError(c.Request.Context(), h.kimiTempUnscheduler(), account.ID, account.Platform, failoverErr)
+					failoverAction := fs.HandleFailoverError(c.Request.Context(), h.kimiTempUnscheduler(), account.ID, account.Platform, account.GetPoolModeRetryCount(), failoverErr)
 					switch failoverAction {
 					case FailoverContinue:
 						continue

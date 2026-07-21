@@ -110,7 +110,19 @@ func ValidateHTTPSURL(raw string, opts ValidationOptions) (string, error) {
 func ValidateResolvedIP(host string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	return ValidateResolvedIPContext(ctx, host)
+}
 
+// ValidateResolvedIPContext validates resolved addresses while honoring the
+// caller's request cancellation and deadline. ValidateResolvedIP remains the
+// compatibility wrapper for callers without a context.
+func ValidateResolvedIPContext(ctx context.Context, host string) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("dns resolution failed: %w", err)
+	}
 	ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
 	if err != nil {
 		return fmt.Errorf("dns resolution failed: %w", err)

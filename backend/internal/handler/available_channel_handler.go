@@ -119,6 +119,7 @@ type userSupportedModelPricing struct {
 	OutputPrice      *float64                 `json:"output_price"`
 	CacheWritePrice  *float64                 `json:"cache_write_price"`
 	CacheReadPrice   *float64                 `json:"cache_read_price"`
+	ImageInputPrice  *float64                 `json:"image_input_price"`
 	ImageOutputPrice *float64                 `json:"image_output_price"`
 	PerRequestPrice  *float64                 `json:"per_request_price"`
 	Intervals        []userPricingIntervalDTO `json:"intervals"`
@@ -445,21 +446,8 @@ func mergeGroupCatalogModels(
 	return sections
 }
 
-var plazaRoutingOnlyModelIDs = map[string]struct{}{
-	"adaptive":            {},
-	"arena-fast":          {},
-	"arena-mixed":         {},
-	"arena-smart":         {},
-	"swe-1-6":             {},
-	"swe-1-6-fast":        {},
-	"swe-check":           {},
-	"deepseek-v4":         {},
-	"minimax-m2-5":        {},
-	"opencode/big-pickle": {},
-}
-
 func filterRoutingOnlyModels(sections []userChannelPlatformSection) []userChannelPlatformSection {
-	if len(plazaRoutingOnlyModelIDs) == 0 || len(sections) == 0 {
+	if len(sections) == 0 {
 		return sections
 	}
 	for i := range sections {
@@ -469,8 +457,7 @@ func filterRoutingOnlyModels(sections []userChannelPlatformSection) []userChanne
 		}
 		kept := src[:0]
 		for _, m := range src {
-			key := strings.ToLower(strings.TrimSpace(m.Name))
-			if _, ok := plazaRoutingOnlyModelIDs[key]; ok {
+			if service.IsPublicCatalogRoutingOnlyModelID(m.Name) {
 				continue
 			}
 			kept = append(kept, m)
@@ -702,6 +689,7 @@ func toUserPricing(p *service.ChannelModelPricing) *userSupportedModelPricing {
 		OutputPrice:      p.OutputPrice,
 		CacheWritePrice:  p.CacheWritePrice,
 		CacheReadPrice:   p.CacheReadPrice,
+		ImageInputPrice:  p.ImageInputPrice,
 		ImageOutputPrice: p.ImageOutputPrice,
 		PerRequestPrice:  p.PerRequestPrice,
 		Intervals:        intervals,

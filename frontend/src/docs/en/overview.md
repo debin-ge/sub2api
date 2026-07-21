@@ -54,11 +54,8 @@ export API_KEY="your-api-key"
 | Goal | Read |
 | --- | --- |
 | Make your first API call | Start with Quick Start, then API Keys and Accounts. |
-| Choose an integration path | Start with Integration Overview. |
-| Write your own app or script | Read Code Integration. |
-| Configure a GUI client or IDE | Read Client Integration. |
-| Configure terminal AI tools | Read CLI Integration. |
-| Manage multiple sites or keys | Read Third-Party Tools. |
+| Connect your tool (Claude Code, Cursor, Codex, …) | Open [Apps](/apps) and pick the tool. |
+| Write your own app or script | See [Code samples](/apps/code). |
 | Choose the right API endpoint | Read Endpoint Selection Guide and API Reference. |
 | Choose the right model | Read the selection method in Models and Platforms. |
 | Understand balance and cost | Read Billing and Usage. |

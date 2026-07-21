@@ -103,7 +103,17 @@
                 <span class="text-xs font-medium text-gray-700 dark:text-gray-300">{{ log.action }}</span>
                 <span class="text-xs text-gray-400">{{ formatDateTime(log.created_at) }}</span>
               </div>
-              <div v-if="log.detail" class="mt-1 break-all text-xs text-gray-500 dark:text-gray-400">{{ log.detail }}</div>
+              <div v-if="log.wiseReconciliation" class="mt-2 space-y-1 text-xs text-gray-600 dark:text-gray-300">
+                <p class="font-semibold text-gray-800 dark:text-gray-100">{{ t('payment.admin.wiseReconcile.title') }}</p>
+                <p v-if="log.wiseReconciliation.manualReview" class="font-medium text-amber-600 dark:text-amber-400">
+                  {{ t('payment.admin.wiseReconcile.manualReviewWarning') }}
+                </p>
+                <p>{{ log.wiseReconciliation.transactionId }}</p>
+                <p>{{ log.wiseReconciliation.reason }} · {{ log.wiseReconciliation.decision }}</p>
+                <p>{{ log.wiseReconciliation.netAmount }} · {{ log.wiseReconciliation.grossAmount }} · {{ log.wiseReconciliation.feeAmount }}</p>
+                <p class="break-words">{{ log.wiseReconciliation.description }}</p>
+              </div>
+              <div v-else-if="log.detail" class="mt-1 break-all text-xs text-gray-500 dark:text-gray-400">{{ log.detail }}</div>
               <div v-if="log.operator" class="mt-1 text-xs text-gray-400">{{ t('payment.admin.operator') }}: {{ log.operator }}</div>
             </div>
           </div>
@@ -139,6 +149,18 @@ interface AuditLog {
   detail: string | null
   operator: string | null
   created_at: string
+  wiseReconciliation?: WiseReconciliationDetail | null
+}
+
+interface WiseReconciliationDetail {
+  transactionId: string
+  reason: string
+  decision: string
+  netAmount: string
+  grossAmount: string
+  feeAmount: string
+  description: string
+  manualReview: boolean
 }
 
 const { t } = useI18n()
@@ -159,6 +181,30 @@ const creditedAmountSymbol = currencySymbol('USD')
 
 function paymentAmountSymbol(order: PaymentOrder | null | undefined): string {
   return currencySymbol(order?.currency)
+}
+
+function parseWiseReconciliation(log: AuditLog): WiseReconciliationDetail | null {
+  if (!log.action.startsWith('PAYMENT_WISE_RECONCILE_') || !log.detail) return null
+  try {
+    const detail = JSON.parse(log.detail) as Record<string, unknown>
+    const currency = String(detail.currency || '').trim().toUpperCase()
+    const amount = (field: string) => {
+      const value = String(detail[field] ?? '').trim()
+      return currency && value ? `${currency} ${value}` : value
+    }
+    return {
+      transactionId: String(detail.wise_transaction_id || '').trim(),
+      reason: String(detail.reason || '').trim(),
+      decision: String(detail.reconcile_decision || detail.reviewAction || '').trim(),
+      netAmount: amount('net_amount'),
+      grossAmount: amount('gross_amount'),
+      feeAmount: amount('fee_amount'),
+      description: String(detail.description || '').trim(),
+      manualReview: detail.reconcile_decision === 'manual_review' || detail.reviewAction === 'manual_review',
+    }
+  } catch {
+    return null
+  }
 }
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
@@ -221,7 +267,11 @@ async function showOrderDetail(order: PaymentOrder) {
     const res = await adminPaymentAPI.getOrder(order.id)
     const data = res.data as unknown as Record<string, unknown>
     if (data.order) selectedOrder.value = data.order as PaymentOrder
-    orderAuditLogs.value = ((data.auditLogs || data.audit_logs || []) as unknown) as AuditLog[]
+    const auditLogs = ((data.auditLogs || data.audit_logs || []) as unknown) as AuditLog[]
+    orderAuditLogs.value = auditLogs.map(log => ({
+      ...log,
+      wiseReconciliation: parseWiseReconciliation(log),
+    }))
   } catch (_err: unknown) { /* keep cached order data */ }
 }
 

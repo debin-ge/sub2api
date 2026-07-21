@@ -143,7 +143,10 @@ func newOAuthEmailFlowAuthService(
 		nil,
 		nil,
 		nil,
+		nil,       // disposableEmailService
 		quotaRepo, // 替换原来的 nil
+		nil,       // apiKeyService
+		nil,       // groupRepo
 	)
 }
 
