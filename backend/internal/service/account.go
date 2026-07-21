@@ -2255,7 +2255,8 @@ func (a *Account) ResolveOpenAIResponsesWebSocketV2Mode(defaultMode string) stri
 		return OpenAIWSIngressModeOff, true
 	}
 
-	if a.IsOpenAIOAuth() {
+	// setup-token 与 oauth 共用 oauth 前缀键（前端对两类账号统一写 openai_oauth_* 字段）
+	if a.IsOAuth() {
 		if mode, ok := resolveModeString("openai_oauth_responses_websockets_v2_mode"); ok {
 			return mode
 		}
@@ -2355,11 +2356,11 @@ func (a *Account) GetWebSearchEmulationMode() string {
 	}
 }
 
-// IsCodexCLIOnlyEnabled 返回 OpenAI OAuth 账号是否启用"仅允许 Codex 官方客户端"。
+// IsCodexCLIOnlyEnabled 返回 OpenAI OAuth/SetupToken 账号是否启用"仅允许 Codex 官方客户端"。
 // 字段：accounts.extra.codex_cli_only。
 // 字段缺失或类型不正确时，按 false（关闭）处理。
 func (a *Account) IsCodexCLIOnlyEnabled() bool {
-	if a == nil || !a.IsOpenAIOAuth() || a.Extra == nil {
+	if a == nil || !a.IsOpenAI() || !a.IsOAuth() || a.Extra == nil {
 		return false
 	}
 	enabled, ok := a.Extra["codex_cli_only"].(bool)

@@ -1665,9 +1665,9 @@
         <p class="input-hint">{{ t('admin.accounts.expiresAtHint') }}</p>
       </div>
 
-      <!-- OpenAI 自动透传开关（OAuth/API Key） -->
+      <!-- OpenAI 自动透传开关（OAuth/SetupToken/API Key） -->
       <div
-        v-if="account?.platform === 'openai' && (account?.type === 'oauth' || account?.type === 'apikey')"
+        v-if="account?.platform === 'openai' && (account?.type === 'oauth' || account?.type === 'setup-token' || account?.type === 'apikey')"
         class="border-t border-gray-200 pt-4 dark:border-dark-600"
       >
         <div class="flex items-center justify-between">
@@ -1757,7 +1757,7 @@
 
       <!-- OpenAI WS Mode 三态（off/ctx_pool/passthrough） -->
       <div
-        v-if="account?.platform === 'openai' && (account?.type === 'oauth' || account?.type === 'apikey')"
+        v-if="account?.platform === 'openai' && (account?.type === 'oauth' || account?.type === 'setup-token' || account?.type === 'apikey')"
         class="border-t border-gray-200 pt-4 dark:border-dark-600"
       >
         <div class="flex items-center justify-between">
@@ -2040,7 +2040,7 @@
       </div>
 
       <div
-        v-if="account?.platform === 'openai' && account?.type === 'oauth'"
+        v-if="account?.platform === 'openai' && (account?.type === 'oauth' || account?.type === 'setup-token')"
         class="border-t border-gray-200 pt-4 dark:border-dark-600"
       >
         <div class="flex items-center justify-between">
@@ -3556,7 +3556,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
 	autoPause7dDisabled.value = extra?.auto_pause_7d_disabled === true
 	upstreamBillingAutoProbeEnabled.value = extra?.upstream_billing_probe_enabled === true
 
-  // Load OpenAI passthrough toggle (OpenAI OAuth/API Key)
+  // Load OpenAI passthrough toggle (OpenAI OAuth/SetupToken/API Key)
   openaiPassthroughEnabled.value = false
   openAILongContextBillingEnabled.value = false
   editPlanType.value = ''
@@ -3572,7 +3572,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   codexImageToolMode.value = 'inherit'
   anthropicPassthroughEnabled.value = false
   webSearchEmulationMode.value = 'default'
-  if (newAccount.platform === 'openai' && (newAccount.type === 'oauth' || newAccount.type === 'apikey')) {
+  if (newAccount.platform === 'openai' && (newAccount.type === 'oauth' || newAccount.type === 'setup-token' || newAccount.type === 'apikey')) {
     openaiPassthroughEnabled.value = extra?.openai_passthrough === true || extra?.openai_oauth_passthrough === true
     const longContextBillingValue = extra?.openai_long_context_billing_enabled
     openAILongContextBillingEnabled.value = longContextBillingValue === true
@@ -3612,7 +3612,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
       fallbackEnabledKeys: ['responses_websockets_v2_enabled', 'openai_ws_enabled'],
       defaultMode: OPENAI_WS_MODE_OFF
     })
-    if (newAccount.type === 'oauth') {
+    if (newAccount.type === 'oauth' || newAccount.type === 'setup-token') {
       codexCLIOnlyEnabled.value = extra?.codex_cli_only === true
       codexCLIOnlyAppServerEnabled.value = extra?.codex_cli_only_allow_app_server === true
       codexCLIOnlyAllowClaudeCodeEnabled.value =
@@ -4920,12 +4920,12 @@ const handleSubmit = async () => {
       updatePayload.extra = newExtra
     }
 
-    // For OpenAI OAuth/API Key accounts, handle passthrough mode in extra
-	if (props.account.platform === 'openai' && (props.account.type === 'oauth' || props.account.type === 'apikey')) {
+    // For OpenAI OAuth/SetupToken/API Key accounts, handle passthrough mode in extra
+	if (props.account.platform === 'openai' && (props.account.type === 'oauth' || props.account.type === 'setup-token' || props.account.type === 'apikey')) {
 		const currentExtra = (props.account.extra as Record<string, unknown>) || {}
 		const newExtra: Record<string, unknown> = { ...currentExtra }
       const hadCodexCLIOnlyEnabled = currentExtra.codex_cli_only === true
-      if (props.account.type === 'oauth') {
+      if (props.account.type === 'oauth' || props.account.type === 'setup-token') {
         newExtra.openai_oauth_responses_websockets_v2_mode = openaiOAuthResponsesWebSocketV2Mode.value
         newExtra.openai_oauth_responses_websockets_v2_enabled = isOpenAIWSModeEnabled(openaiOAuthResponsesWebSocketV2Mode.value)
       } else if (props.account.type === 'apikey') {
@@ -4995,7 +4995,7 @@ const handleSubmit = async () => {
           delete newExtra.codex_image_generation_explicit_tool_policy
       }
 
-      if (props.account.type === 'oauth') {
+      if (props.account.type === 'oauth' || props.account.type === 'setup-token') {
         if (codexCLIOnlyEnabled.value) {
           newExtra.codex_cli_only = true
         } else if (hadCodexCLIOnlyEnabled) {

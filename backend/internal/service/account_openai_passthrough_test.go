@@ -114,6 +114,17 @@ func TestAccount_IsCodexCLIOnlyEnabled(t *testing.T) {
 		require.False(t, account.IsCodexCLIOnlyEnabled())
 	})
 
+	t.Run("SetupToken 账号与 OAuth 同语义", func(t *testing.T) {
+		account := &Account{
+			Platform: PlatformOpenAI,
+			Type:     AccountTypeSetupToken,
+			Extra: map[string]any{
+				"codex_cli_only": true,
+			},
+		}
+		require.True(t, account.IsCodexCLIOnlyEnabled())
+	})
+
 	t.Run("非 OAuth 账号始终关闭", func(t *testing.T) {
 		apiKeyAccount := &Account{
 			Platform: PlatformOpenAI,
@@ -233,6 +244,17 @@ func TestAccount_ResolveOpenAIResponsesWebSocketV2Mode(t *testing.T) {
 		account := &Account{
 			Platform: PlatformOpenAI,
 			Type:     AccountTypeOAuth,
+			Extra: map[string]any{
+				"openai_oauth_responses_websockets_v2_mode": OpenAIWSIngressModeHTTPBridge,
+			},
+		}
+		require.Equal(t, OpenAIWSIngressModeHTTPBridge, account.ResolveOpenAIResponsesWebSocketV2Mode(OpenAIWSIngressModeCtxPool))
+	})
+
+	t.Run("setup-token honors oauth mode field", func(t *testing.T) {
+		account := &Account{
+			Platform: PlatformOpenAI,
+			Type:     AccountTypeSetupToken,
 			Extra: map[string]any{
 				"openai_oauth_responses_websockets_v2_mode": OpenAIWSIngressModeHTTPBridge,
 			},
