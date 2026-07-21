@@ -246,7 +246,7 @@ func handleProviderResponsesAnthropicBufferedStreamingResponse(
 				mergeAnthropicUsage(&usage, *event.Usage)
 			}
 			if event.Delta != nil && event.Delta.StopReason != "" && finalResp != nil {
-				finalResp.StopReason = event.Delta.StopReason
+				finalResp.StopReason = apicompat.AnthropicStopReasonPtr(event.Delta.StopReason)
 			}
 		}
 		if event.Type == "content_block_start" && event.ContentBlock != nil && finalResp != nil {

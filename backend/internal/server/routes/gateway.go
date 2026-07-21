@@ -35,6 +35,28 @@ func RegisterGatewayRoutes(
 	isOpenAIGatewayPlatform := func(c *gin.Context) bool {
 		return getGroupPlatform(c) == service.PlatformOpenAI
 	}
+	countTokensHandler := func(c *gin.Context) {
+		switch getGroupPlatform(c) {
+		case service.PlatformOpenAI:
+			h.OpenAIGateway.CountTokens(c)
+		case service.PlatformGrok:
+			h.OpenAIGateway.GrokCountTokens(c)
+		case service.PlatformMiniMax:
+			writeMiniMaxUnsupported(c, h)
+		case service.PlatformGLM:
+			writeGLMUnsupported(c, h)
+		case service.PlatformKimi:
+			writeKimiUnsupported(c, h)
+		case service.PlatformDeepSeek:
+			writeDeepSeekUnsupported(c, h)
+		case service.PlatformWindsurf:
+			writeWindsurfUnsupported(c, h)
+		case service.PlatformOpenCode:
+			writeOpenCodeUnsupported(c, h)
+		default:
+			h.Gateway.CountTokens(c)
+		}
+	}
 	modelsHandler := func(c *gin.Context) {
 		if getGroupPlatform(c) == service.PlatformOpenCode {
 			writeOpenCodeModels(c, h)
@@ -216,50 +238,12 @@ func RegisterGatewayRoutes(
 			}
 			h.Gateway.Messages(c)
 		})
-		// OpenAI uses the Anthropic-compatible count-tokens bridge. Grok is
-		// Responses-compatible but does not expose token counting.
-		gateway.POST("/messages/count_tokens", func(c *gin.Context) {
-			if getGroupPlatform(c) == service.PlatformOpenAI {
-				h.OpenAIGateway.CountTokens(c)
-				return
-			}
-			if getGroupPlatform(c) == service.PlatformGrok {
-				service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
-				c.JSON(http.StatusNotFound, gin.H{
-					"type": "error",
-					"error": gin.H{
-						"type":    "not_found_error",
-						"message": "Token counting is not supported for this platform",
-					},
-				})
-				return
-			}
-			if getGroupPlatform(c) == service.PlatformMiniMax {
-				writeMiniMaxUnsupported(c, h)
-				return
-			}
-			if getGroupPlatform(c) == service.PlatformGLM {
-				writeGLMUnsupported(c, h)
-				return
-			}
-			if getGroupPlatform(c) == service.PlatformKimi {
-				writeKimiUnsupported(c, h)
-				return
-			}
-			if getGroupPlatform(c) == service.PlatformDeepSeek {
-				writeDeepSeekUnsupported(c, h)
-				return
-			}
-			if getGroupPlatform(c) == service.PlatformWindsurf {
-				writeWindsurfUnsupported(c, h)
-				return
-			}
-			if getGroupPlatform(c) == service.PlatformOpenCode {
-				writeOpenCodeUnsupported(c, h)
-				return
-			}
-			h.Gateway.CountTokens(c)
-		})
+		// /v1/messages/count_tokens: OpenAI bridges upstream, Grok estimates
+		// locally, while fork-specific providers keep their explicit capability gates.
+		gateway.POST("/messages/count_tokens", countTokensHandler)
+		// Codex CLI / Codex app refresh their model picker from the provider's
+		// /models endpoint with a client_version query and expect the ChatGPT
+		// Codex manifest format; other clients keep the OpenAI-style list.
 		gateway.GET("/models", modelsHandler)
 		gateway.GET("/balance", h.Gateway.Balance)
 		gateway.GET("/usage", func(c *gin.Context) {
@@ -531,6 +515,7 @@ func RegisterGatewayRoutes(
 		h.OpenAIGateway.ResponsesWebSocket(c)
 	})
 	r.GET("/models", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, modelsHandler)
+	r.POST("/messages/count_tokens", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, countTokensHandler)
 	codexDirect := r.Group("/backend-api/codex")
 	codexDirect.Use(bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic)
 	{

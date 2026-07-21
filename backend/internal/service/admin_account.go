@@ -1197,7 +1197,7 @@ func (s *adminServiceImpl) RefreshAccountCredentials(ctx context.Context, id int
 
 func (s *adminServiceImpl) ClearAccountError(ctx context.Context, id int64) (*Account, error) {
 	if err := s.accountRepo.ClearError(ctx, id); err != nil {
-		return nil, wrapAccountMutationError(err, id)
+		return nil, err
 	}
 	if err := s.accountRepo.ClearRateLimit(ctx, id); err != nil {
 		return nil, wrapAccountMutationError(err, id)
@@ -1227,11 +1227,11 @@ func (s *adminServiceImpl) SetAccountError(ctx context.Context, id int64, errorM
 
 func (s *adminServiceImpl) SetAccountSchedulable(ctx context.Context, id int64, schedulable bool) (*Account, error) {
 	if err := s.accountRepo.SetSchedulable(ctx, id, schedulable); err != nil {
-		return nil, wrapAccountMutationError(err, id)
+		return nil, err
 	}
 	updated, err := s.accountRepo.GetByID(ctx, id)
 	if err != nil {
-		return nil, err
+		return nil, wrapAccountMutationError(err, id)
 	}
 	return updated, nil
 }

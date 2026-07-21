@@ -55,7 +55,10 @@ func newAuthServiceForRegisterTurnstileTest(settings map[string]string, verifier
 		nil, // promoService
 		nil, // defaultSubAssigner
 		nil, // affiliateService
+		nil, // disposableEmailService
 		nil, // userPlatformQuotaRepo
+		nil, // apiKeyService
+		nil, // groupRepo
 	)
 }
 

@@ -171,7 +171,7 @@ func TestAccountTestService_OpenAIAPIKeyAzureIgnoresStaleUnsupportedProbe(t *tes
 }
 
 func TestProbeOpenAIAPIKeyResponsesSupport_AzureUsesAPIKeyHeader(t *testing.T) {
-	resp := newJSONResponse(http.StatusOK, `{"status":"completed"}`)
+	resp := newJSONResponse(http.StatusOK, `{"status":"completed","output":[{"type":"function_call","name":"probe_ping"}]}`)
 	upstream := &queuedHTTPUpstream{responses: []*http.Response{resp}}
 	account := &Account{
 		ID:          92,

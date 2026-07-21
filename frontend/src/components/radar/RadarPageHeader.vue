@@ -3,7 +3,7 @@
     <div class="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
       <router-link to="/" class="flex min-w-0 items-center gap-3">
         <img
-          :src="siteLogo || '/logo.png'"
+          :src="siteLogo || '/logo.svg'"
           alt=""
           class="h-8 w-8 shrink-0 rounded-md object-contain"
         />
