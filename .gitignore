@@ -145,7 +145,5 @@ frontend/coverage/
 aicodex
 output/
 
-# Session Recovery CI build artifacts (built by GitHub Actions)
+# Session Recovery 本地构建产物
 tools/session-recovery/bin/*
-session-recovery-binaries/*
-!session-recovery-binaries/.gitkeep

@@ -146,13 +146,6 @@ WORKDIR /app
 COPY --from=backend-builder --chown=sub2api:sub2api /app/sub2api /app/sub2api
 COPY --from=backend-builder --chown=sub2api:sub2api /app/backend/resources /app/resources
 
-# Copy session-recovery binaries (only for CI builds with pre-built binaries)
-# The TARGETARCH variable is automatically provided by Docker buildx
-# For local builds, create a dummy session-recovery-binaries/.gitkeep file to avoid build errors
-ARG TARGETARCH
-RUN mkdir -p /app/tools/session-recovery-binaries
-COPY --chown=sub2api:sub2api session-recovery-binaries/ /app/tools/session-recovery-binaries/
-
 # Create data directory
 RUN mkdir -p /app/data && chown sub2api:sub2api /app/data
 

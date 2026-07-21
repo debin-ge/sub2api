@@ -76,24 +76,3 @@ jobs:
       # 完整构建（vue-tsc -b + vite build + 入口隐私断言），与 Docker 构建同路径
       - name: Build
         run: pnpm --dir frontend run build
-
-  session-recovery:
-    name: Session Recovery (build)
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    defaults:
-      run:
-        working-directory: tools/session-recovery
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
-
-      - name: Set up Go
-        uses: actions/setup-go@v7
-        with:
-          go-version-file: tools/session-recovery/go.mod
-          cache-dependency-path: tools/session-recovery/go.sum
-
-      # 提前暴露编译问题，避免 tag 发布时 docker-ghcr.yml 才发现挂掉
-      - name: Build
-        run: go build ./...
