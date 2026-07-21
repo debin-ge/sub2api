@@ -19,8 +19,6 @@ import (
 
 const upstreamModelsBodyLimit int64 = 8 << 20
 
-const openAICodexModelsURL = "https://chatgpt.com/backend-api/codex/models"
-
 // ModelDiscoverer fetches the live model catalog available to an account.
 type ModelDiscoverer interface {
 	Discover(ctx context.Context, account *Account) ([]string, error)
@@ -481,7 +479,11 @@ func (d *UpstreamModelDiscoverer) buildOpenAIUpstreamModelsRequest(ctx context.C
 			return nil, newUpstreamModelSyncConfigError("No OpenAI access token is available", nil)
 		}
 
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, openAICodexModelsURL, nil)
+		modelsURL, err := buildCodexModelsManifestURL(chatgptCodexModelsURL, false, codexCLIVersion)
+		if err != nil {
+			return nil, newUpstreamModelSyncConfigError("Invalid OpenAI Codex model list URL", err)
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, modelsURL.String(), nil)
 		if err != nil {
 			return nil, newUpstreamModelSyncConfigError("Invalid OpenAI Codex model list URL", err)
 		}
@@ -491,9 +493,13 @@ func (d *UpstreamModelDiscoverer) buildOpenAIUpstreamModelsRequest(ctx context.C
 		req.Header.Set("Authorization", "Bearer "+accessToken)
 		req.Header.Set("User-Agent", codexCLIUserAgent)
 		req.Header.Set("Version", codexCLIVersion)
-		req.Header.Set("originator", "Codex Desktop")
+		req.Header.Set("originator", "codex_cli_rs")
 		setOpenAIChatGPTAccountHeaders(req.Header, credentialAccount)
 		account.ApplyHeaderOverrides(req.Header)
+		// Keep model discovery on the same authenticated Codex client contract
+		// as the public manifest route. ChatGPT rejects a missing client_version
+		// and mismatched originator/User-Agent identity before returning models.
+		enforceCodexIdentityHeaders(req.Header)
 		return req, nil
 	}
 

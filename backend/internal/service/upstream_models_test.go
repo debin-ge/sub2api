@@ -241,11 +241,12 @@ func TestUpstreamModelDiscoverer_OpenAIOAuthUsesCodexCatalog(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"gpt-image-new", "gpt-new"}, models)
 	require.Equal(t, "/backend-api/codex/models", upstream.lastReq.URL.Path)
+	require.Equal(t, codexCLIVersion, upstream.lastReq.URL.Query().Get("client_version"))
 	require.Equal(t, "Bearer token", upstream.lastReq.Header.Get("Authorization"))
 	require.Equal(t, "acct-1", upstream.lastReq.Header.Get("chatgpt-account-id"))
 	require.Equal(t, codexCLIUserAgent, upstream.lastReq.Header.Get("User-Agent"))
 	require.Equal(t, codexCLIVersion, upstream.lastReq.Header.Get("Version"))
-	require.Equal(t, "Codex Desktop", upstream.lastReq.Header.Get("originator"))
+	require.Equal(t, "codex_cli_rs", upstream.lastReq.Header.Get("originator"))
 }
 
 func TestUpstreamModelDiscoverer_OpenAIOAuthUsesConfiguredTokenProvider(t *testing.T) {

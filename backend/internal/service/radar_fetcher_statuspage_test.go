@@ -543,6 +543,68 @@ func TestStatuspageCalendarHistoryParsesCrossDayAndCrossMonthIncidents(t *testin
 	require.Equal(t, time.Date(2026, time.July, 1, 19, 26, 0, 0, time.UTC), *incidents[1].ResolvedAt)
 }
 
+func TestStatuspageCalendarHistoryParsesOpenIncident(t *testing.T) {
+	payload := []byte(statuspageCalendarFixture(t, RadarSourceStatusClaude, "k8w3r06qmzrp",
+		map[string]any{
+			"code": "open-incident", "name": "Elevated errors for Claude", "impact": "minor",
+			"timestamp": "Jul <var data-var='date'>20</var>, <var data-var='time'>14:41</var> UTC",
+		},
+	))
+
+	incidents, _, _, err := decodeStatuspageCalendarHistory(
+		payload, RadarSourceStatusClaude, ServiceKeyClaudeAPI, []string{"k8w3r06qmzrp"},
+	)
+	require.NoError(t, err)
+	require.Len(t, incidents, 1)
+	require.Equal(t, "investigating", incidents[0].Status)
+	require.Equal(t, time.Date(2026, time.July, 20, 14, 41, 0, 0, time.UTC), incidents[0].CreatedAt)
+	require.Nil(t, incidents[0].ResolvedAt)
+}
+
+func TestMergeStatuspageHistoryReconcilesOpenCalendarIncident(t *testing.T) {
+	summaryPayload := []byte(strings.Replace(
+		statuspageSummaryFixture(t, RadarSourceStatusClaude),
+		"2026-07-10T10:30:00Z", "2026-07-20T15:00:00Z", 1,
+	))
+	incidentsPayload := []byte(`{
+      "page":{"id":"page","name":"Status","url":"https://payload.example","updated_at":"2026-07-20T15:00:00Z"},
+      "incidents":[
+        {"id":"open-incident","name":"Elevated errors for Claude","status":"identified","impact":"minor","created_at":"2026-07-20T14:41:12.517Z","resolved_at":null,"components":[{"id":"k8w3r06qmzrp","name":"Claude API (api.anthropic.com)"}]}
+      ]
+    }`)
+	historyPayload := []byte(statuspageCalendarFixture(t, RadarSourceStatusClaude, "k8w3r06qmzrp", map[string]any{
+		"code": "open-incident", "name": "Elevated errors for Claude", "impact": "minor",
+		"timestamp": "Jul <var data-var='date'>20</var>, <var data-var='time'>14:41</var> UTC",
+	}))
+	historyIncidents, coverageStart, coverageEnd, err := decodeStatuspageCalendarHistory(
+		historyPayload, RadarSourceStatusClaude, ServiceKeyClaudeAPI, []string{"k8w3r06qmzrp"},
+	)
+	require.NoError(t, err)
+	calendarPayload, err := json.Marshal(statuspageCalendarBundleWire{
+		CoverageStart: coverageStart.Format(time.RFC3339Nano), CoverageEnd: coverageEnd.Format(time.RFC3339Nano),
+		Incidents: encodeStatuspageIncidents(historyIncidents),
+	})
+	require.NoError(t, err)
+
+	merged, err := mergeStatuspageHistoryPayloads(
+		RadarSourceStatusClaude, summaryPayload, incidentsPayload, nil, nil, nil, calendarPayload,
+	)
+	require.NoError(t, err)
+	summary, err := DecodeStatuspageSummary(merged)
+	require.NoError(t, err)
+	require.Len(t, summary.ComponentHistory, 1)
+	require.Equal(t, "identified", summary.ComponentHistory[0].Status)
+	require.Equal(t, time.Date(2026, time.July, 20, 14, 41, 12, 517000000, time.UTC), summary.ComponentHistory[0].CreatedAt)
+	require.Nil(t, summary.ComponentHistory[0].ResolvedAt)
+
+	cards, err := MapStatuspageServiceHealth(RadarSourceStatusClaude, summary)
+	require.NoError(t, err)
+	apiDay := historyDayByDate(t, cards[0].History30d, "2026-07-20")
+	require.Equal(t, ServiceStatusDegradedPerformance, apiDay.Status)
+	require.Len(t, apiDay.Incidents, 1)
+	require.Equal(t, "identified", apiDay.Incidents[0].Status)
+}
+
 func TestDecodeStatuspageCalendarHistoryRejectsWrongOrMixedComponentFilter(t *testing.T) {
 	for _, filter := range []string{`null`, `[]`, `["speech"]`, `["vwp8mgy34fck","speech"]`} {
 		props := `{"months":[],"component_filter":` + filter + `,"start_time":"2026-05-01T00:00:00+08:00","end_time":"2026-07-31T23:59:59+08:00"}`

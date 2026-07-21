@@ -62,7 +62,10 @@ const (
 
 var errInvalidStatuspageResponse = errors.New("invalid Statuspage response")
 
-var statuspageHistoryTimestampPattern = regexp.MustCompile(`^([A-Z][a-z]{2}) <var data-var='date'>([0-9]{1,2})</var>, <var data-var='time'>([0-9]{2}:[0-9]{2})</var> - (?:(?:([A-Z][a-z]{2}) <var data-var='date'>([0-9]{1,2})</var>, )?)<var data-var='time'>([0-9]{2}:[0-9]{2})</var> (UTC|CST)$`)
+var (
+	statuspageHistoryTimestampPattern     = regexp.MustCompile(`^([A-Z][a-z]{2}) <var data-var='date'>([0-9]{1,2})</var>, <var data-var='time'>([0-9]{2}:[0-9]{2})</var> - (?:(?:([A-Z][a-z]{2}) <var data-var='date'>([0-9]{1,2})</var>, )?)<var data-var='time'>([0-9]{2}:[0-9]{2})</var> (UTC|CST)$`)
+	statuspageHistoryOpenTimestampPattern = regexp.MustCompile(`^([A-Z][a-z]{2}) <var data-var='date'>([0-9]{1,2})</var>, <var data-var='time'>([0-9]{2}:[0-9]{2})</var> (UTC|CST)$`)
+)
 
 var (
 	claudeAPIStatuspageAliases = map[string]struct{}{
@@ -1023,6 +1026,10 @@ func mergeStatuspageHistoryPayloads(source RadarSourceKey, summaryPayload, incid
 		if calendarErr != nil || calendar.CoverageEnd.Before(effectiveUpdatedAt) {
 			return nil, errInvalidStatuspageResponse
 		}
+		calendar, calendarErr = reconcileOpenStatuspageCalendarIncidents(calendar, incidents)
+		if calendarErr != nil {
+			return nil, errInvalidStatuspageResponse
+		}
 		explicitCoverageStart = &calendar.CoverageStart
 		summaryWire.RadarComponentHistory = &calendar.Incidents
 		authoritativeCoverage = true
@@ -1551,10 +1558,17 @@ func decodeStatuspageCalendarHistory(
 			if err != nil {
 				return nil, time.Time{}, time.Time{}, errInvalidStatuspageResponse
 			}
+			status := "resolved"
+			if resolvedAt == nil {
+				// Statuspage renders an active incident with only its start time.
+				// The exact upstream state is reconciled with incidents.json after
+				// the independently fetched calendar bundles are merged.
+				status = "investigating"
+			}
 			seen[incident.Code] = struct{}{}
 			incidents = append(incidents, StatuspageIncident{
-				ID: incident.Code, Name: strings.TrimSpace(incident.Name), Status: "resolved", Impact: strings.TrimSpace(incident.Impact),
-				CreatedAt: createdAt, ResolvedAt: &resolvedAt,
+				ID: incident.Code, Name: strings.TrimSpace(incident.Name), Status: status, Impact: strings.TrimSpace(incident.Impact),
+				CreatedAt: createdAt, ResolvedAt: resolvedAt,
 				Components: append([]StatuspageIncidentComponent(nil), components...),
 			})
 		}
@@ -1574,34 +1588,43 @@ func parseStatuspageHistoryTimestamp(
 	location *time.Location,
 	coverageStart time.Time,
 	coverageEnd time.Time,
-) (time.Time, time.Time, error) {
-	matches := statuspageHistoryTimestampPattern.FindStringSubmatch(strings.TrimSpace(raw))
-	if len(matches) != 8 {
-		return time.Time{}, time.Time{}, errInvalidStatuspageResponse
+) (time.Time, *time.Time, error) {
+	raw = strings.TrimSpace(raw)
+	matches := statuspageHistoryTimestampPattern.FindStringSubmatch(raw)
+	openMatches := statuspageHistoryOpenTimestampPattern.FindStringSubmatch(raw)
+	if len(matches) != 8 && len(openMatches) != 5 {
+		return time.Time{}, nil, errInvalidStatuspageResponse
 	}
 	expectedZone := "UTC"
 	if _, offset := coverageStart.In(location).Zone(); offset == 8*60*60 {
 		expectedZone = "CST"
 	}
-	if matches[7] != expectedZone {
-		return time.Time{}, time.Time{}, errInvalidStatuspageResponse
+	zone := ""
+	if len(matches) == 8 {
+		zone = matches[7]
+	} else {
+		zone = openMatches[4]
+		matches = []string{"", openMatches[1], openMatches[2], openMatches[3], "", "", "", zone}
+	}
+	if zone != expectedZone {
+		return time.Time{}, nil, errInvalidStatuspageResponse
 	}
 	startMonth, ok := statuspageMonthByAbbreviation(matches[1])
 	if !ok {
-		return time.Time{}, time.Time{}, errInvalidStatuspageResponse
+		return time.Time{}, nil, errInvalidStatuspageResponse
 	}
 	endMonth := startMonth
 	endDay := matches[2]
 	if matches[4] != "" {
 		endMonth, ok = statuspageMonthByAbbreviation(matches[4])
 		if !ok {
-			return time.Time{}, time.Time{}, errInvalidStatuspageResponse
+			return time.Time{}, nil, errInvalidStatuspageResponse
 		}
 		endDay = matches[5]
 	}
 	calendarMonth, ok := statuspageMonthByName(month.Name)
 	if !ok {
-		return time.Time{}, time.Time{}, errInvalidStatuspageResponse
+		return time.Time{}, nil, errInvalidStatuspageResponse
 	}
 	calendarStart := time.Date(month.Year, calendarMonth, 1, 0, 0, 0, 0, location)
 	calendarEnd := calendarStart.AddDate(0, 1, 0)
@@ -1612,6 +1635,13 @@ func parseStatuspageHistoryTimestamp(
 	for startYear := firstYear; startYear <= lastYear; startYear++ {
 		createdAt, err := time.ParseInLocation("2006 Jan 2 15:04", fmt.Sprintf("%d %s %s %s", startYear, matches[1], matches[2], matches[3]), location)
 		if err != nil || createdAt.Month() != startMonth {
+			continue
+		}
+		if len(openMatches) == 5 {
+			if !createdAt.Before(calendarEnd) || createdAt.Before(calendarStart) || createdAt.Before(coverageStart) || createdAt.After(coverageEnd) {
+				continue
+			}
+			candidates = append(candidates, candidate{start: createdAt})
 			continue
 		}
 		for endYear := startYear; endYear <= startYear+1; endYear++ {
@@ -1626,9 +1656,14 @@ func parseStatuspageHistoryTimestamp(
 		}
 	}
 	if len(candidates) != 1 {
-		return time.Time{}, time.Time{}, errInvalidStatuspageResponse
+		return time.Time{}, nil, errInvalidStatuspageResponse
 	}
-	return candidates[0].start.UTC(), candidates[0].end.UTC(), nil
+	createdAt := candidates[0].start.UTC()
+	if len(openMatches) == 5 {
+		return createdAt, nil, nil
+	}
+	resolvedAt := candidates[0].end.UTC()
+	return createdAt, &resolvedAt, nil
 }
 
 func statuspageMonthByName(name string) (time.Month, bool) {
@@ -1712,6 +1747,42 @@ func decodeStatuspageCalendarBundle(payload []byte) (statuspageCalendarBundle, e
 		CoverageEnd:   coverageEnd,
 		Incidents:     encodeStatuspageIncidents(incidents),
 	}, nil
+}
+
+// reconcileOpenStatuspageCalendarIncidents replaces the calendar parser's
+// provisional state for active incidents with the precise incidents.json
+// state. Statuspage's HistoryIndex only exposes the start minute while an
+// incident is open, so the companion JSON endpoint remains authoritative for
+// its status and second-precision creation time.
+func reconcileOpenStatuspageCalendarIncidents(
+	calendar statuspageCalendarBundle,
+	current []StatuspageIncident,
+) (statuspageCalendarBundle, error) {
+	currentByID := make(map[string]StatuspageIncident, len(current))
+	for _, incident := range current {
+		currentByID[incident.ID] = incident
+	}
+	for index := range calendar.Incidents {
+		wire := &calendar.Incidents[index]
+		if wire.ResolvedAt != nil {
+			continue
+		}
+		incident, ok := currentByID[strings.TrimSpace(wire.ID)]
+		if !ok || strings.TrimSpace(wire.Name) != incident.Name || strings.TrimSpace(wire.Impact) != incident.Impact {
+			return statuspageCalendarBundle{}, errInvalidStatuspageResponse
+		}
+		calendarCreatedAt, err := parseStatuspageTimestamp(wire.CreatedAt)
+		if err != nil || !calendarCreatedAt.Truncate(time.Minute).Equal(incident.CreatedAt.UTC().Truncate(time.Minute)) {
+			return statuspageCalendarBundle{}, errInvalidStatuspageResponse
+		}
+		wire.Status = incident.Status
+		wire.CreatedAt = incident.CreatedAt.UTC().Format(time.RFC3339Nano)
+		if incident.ResolvedAt != nil {
+			resolvedAt := incident.ResolvedAt.UTC().Format(time.RFC3339Nano)
+			wire.ResolvedAt = &resolvedAt
+		}
+	}
+	return calendar, nil
 }
 
 func mergeStatuspageCalendarIncidents(left, right []StatuspageIncident) ([]StatuspageIncident, error) {
