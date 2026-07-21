@@ -70,7 +70,10 @@ func writeRawRadarSnapshot(t *testing.T, rdb *redis.Client, snapshot service.Buc
 
 func TestRadarCacheAndPublicServiceFailClosedOnInjectedPrivacyMetadata(t *testing.T) {
 	ctx := context.Background()
-	now := time.Date(2026, time.July, 14, 6, 0, 0, 0, time.UTC)
+	// 基准时间必须锚定真实时钟：本测试经由 service.NewRadarService 断言趋势数据，
+	// 其 7 天窗口由服务内部的 real clock 计算（公开 API 无时钟注入口），
+	// 固定日期会在快照滑出窗口后让测试整体过期失败。
+	now := time.Now().UTC().Truncate(time.Millisecond)
 
 	t.Run("repository skips malformed stored variants on latest and trend", func(t *testing.T) {
 		variants := []struct {
