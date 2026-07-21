@@ -181,12 +181,12 @@ func canonicalRadarLMArenaModelID(value string) string {
 	for _, r := range value {
 		if r == '.' || r == '_' || r == '-' || unicode.IsSpace(r) {
 			if !lastWasSeparator {
-				builder.WriteByte('-')
+				_ = builder.WriteByte('-')
 				lastWasSeparator = true
 			}
 			continue
 		}
-		builder.WriteRune(r)
+		_, _ = builder.WriteRune(r)
 		lastWasSeparator = false
 	}
 	return strings.TrimSuffix(builder.String(), "-")

@@ -756,9 +756,10 @@ func TestRadarRunnerManualRefreshBudgetCoversQueuedScheduledAndManualAAWaves(t *
 	remainingScheduled := 0
 	remainingManual := 0
 	for _, event := range remainingStarts {
-		if event.call == 1 {
+		switch event.call {
+		case 1:
 			remainingScheduled++
-		} else if event.call == 2 {
+		case 2:
 			remainingManual++
 		}
 	}

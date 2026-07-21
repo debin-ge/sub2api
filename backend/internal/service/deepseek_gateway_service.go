@@ -321,15 +321,6 @@ func validateDeepSeekModelPayload(body []byte, account *Account) (map[string]any
 	return payload, model, account.GetDeepSeekMappedModel(model), nil
 }
 
-func isOfficialDeepSeekModel(model string) bool {
-	for _, supported := range DefaultDeepSeekModelIDs() {
-		if model == supported {
-			return true
-		}
-	}
-	return false
-}
-
 func rejectDeepSeekAnthropicUnsupportedContent(body []byte) error {
 	payload, err := decodeGLMPayload(body)
 	if err != nil {

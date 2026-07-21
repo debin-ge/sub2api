@@ -186,7 +186,7 @@ func newRadarService(
 // it owns; cancellation and deadlines remain observable.
 func (s *RadarService) GetServiceHealth(ctx context.Context) ([]ServiceHealthDTO, error) {
 	key := radarServiceCacheKey{method: "service_health"}
-	value, err := s.cached(ctx, key, func(loadCtx context.Context, now time.Time) (any, bool, *time.Time, error) {
+	value, err := s.cached(ctx, key, func(loadCtx context.Context, _ time.Time) (any, bool, *time.Time, error) {
 		cacheable := true
 		metas, err := s.repo.ListSourceMeta(loadCtx)
 		if contextErr := radarServiceContextError(loadCtx, err); contextErr != nil {
@@ -210,7 +210,7 @@ func (s *RadarService) GetServiceHealth(ctx context.Context) ([]ServiceHealthDTO
 			cacheable = cacheable && sourceCacheable
 		}
 
-		now = s.clock.Now().UTC()
+		now := s.clock.Now().UTC()
 		cards := MergeStatuspageServiceHealth(groups...)
 		staleBySource := make(map[RadarSourceKey]bool, len(sources))
 		var earliestDeadline *time.Time
@@ -236,12 +236,20 @@ func (s *RadarService) GetServiceHealth(ctx context.Context) ([]ServiceHealthDTO
 			earliestDeadline,
 			nil
 	}, func(value any) any {
-		return cloneRadarServiceHealth(value.([]ServiceHealthDTO))
+		v, ok := value.([]ServiceHealthDTO)
+		if !ok {
+			return value
+		}
+		return cloneRadarServiceHealth(v)
 	})
 	if err != nil {
 		return nil, err
 	}
-	return value.([]ServiceHealthDTO), nil
+	result, ok := value.([]ServiceHealthDTO)
+	if !ok {
+		return nil, ErrRadarUnavailable
+	}
+	return result, nil
 }
 
 func (s *RadarService) readStatuspageCards(
@@ -351,12 +359,20 @@ func (s *RadarService) GetQuotaBucketsLatest(ctx context.Context) (*QuotaRadarLa
 		}
 		return result, true, radarServiceEarliestDeadline(deadlines...), nil
 	}, func(value any) any {
-		return cloneRadarServiceQuotaLatest(value.(*QuotaRadarLatestDTO))
+		v, ok := value.(*QuotaRadarLatestDTO)
+		if !ok {
+			return value
+		}
+		return cloneRadarServiceQuotaLatest(v)
 	})
 	if err != nil {
 		return nil, err
 	}
-	return value.(*QuotaRadarLatestDTO), nil
+	result, ok := value.(*QuotaRadarLatestDTO)
+	if !ok {
+		return nil, ErrRadarUnavailable
+	}
+	return result, nil
 }
 
 // GetQuotaBucketsTrend returns one validated bucket's cached history. The
@@ -438,12 +454,20 @@ func (s *RadarService) GetQuotaBucketsTrend(ctx context.Context, bucketKey strin
 		}
 		return result, len(result.DataPoints) > 0, freshnessDeadline, nil
 	}, func(value any) any {
-		return cloneRadarServiceQuotaTrend(value.(*QuotaTrendDTO))
+		v, ok := value.(*QuotaTrendDTO)
+		if !ok {
+			return value
+		}
+		return cloneRadarServiceQuotaTrend(v)
 	})
 	if err != nil {
 		return nil, err
 	}
-	return value.(*QuotaTrendDTO), nil
+	result, ok := value.(*QuotaTrendDTO)
+	if !ok {
+		return nil, ErrRadarUnavailable
+	}
+	return result, nil
 }
 
 func radarQuotaFreshness(now time.Time, threshold time.Duration, capturedAt time.Time) (bool, *time.Time) {
@@ -475,7 +499,7 @@ func radarQuotaTrendWindow(window *WindowStatsDTO) *QuotaTrendWindowDTO {
 // models and the LMArena top five.
 func (s *RadarService) GetDegradationLatest(ctx context.Context) (*DegradationLatestDTO, error) {
 	key := radarServiceCacheKey{method: "degradation_latest"}
-	value, err := s.cached(ctx, key, func(loadCtx context.Context, now time.Time) (any, bool, *time.Time, error) {
+	value, err := s.cached(ctx, key, func(loadCtx context.Context, _ time.Time) (any, bool, *time.Time, error) {
 		cacheable := true
 		metas, err := s.repo.ListSourceMeta(loadCtx)
 		if contextErr := radarServiceContextError(loadCtx, err); contextErr != nil {
@@ -508,7 +532,7 @@ func (s *RadarService) GetDegradationLatest(ctx context.Context) (*DegradationLa
 		}
 		topFive := cloneRadarServiceLMArenaEntries(arena.Leaderboard[:topCount])
 
-		now = s.clock.Now().UTC()
+		now := s.clock.Now().UTC()
 		arenaMeta, arenaMetaOK := metas[RadarSourceLMArena]
 		result := &DegradationLatestDTO{
 			Models:         models,
@@ -533,12 +557,20 @@ func (s *RadarService) GetDegradationLatest(ctx context.Context) (*DegradationLa
 			radarServiceEarliestDeadline(aaDeadline, arenaDeadline),
 			nil
 	}, func(value any) any {
-		return cloneRadarServiceDegradationLatest(value.(*DegradationLatestDTO))
+		v, ok := value.(*DegradationLatestDTO)
+		if !ok {
+			return value
+		}
+		return cloneRadarServiceDegradationLatest(v)
 	})
 	if err != nil {
 		return nil, err
 	}
-	return value.(*DegradationLatestDTO), nil
+	result, ok := value.(*DegradationLatestDTO)
+	if !ok {
+		return nil, ErrRadarUnavailable
+	}
+	return result, nil
 }
 
 // GetDegradationTrend returns one configured model metric's daily series.
@@ -564,7 +596,7 @@ func (s *RadarService) GetDegradationTrend(
 		metric: metric,
 		days:   days,
 	}
-	value, err := s.cached(ctx, key, func(loadCtx context.Context, now time.Time) (any, bool, *time.Time, error) {
+	value, err := s.cached(ctx, key, func(loadCtx context.Context, _ time.Time) (any, bool, *time.Time, error) {
 		metas, err := s.repo.ListSourceMeta(loadCtx)
 		if contextErr := radarServiceContextError(loadCtx, err); contextErr != nil {
 			return nil, false, nil, contextErr
@@ -595,7 +627,7 @@ func (s *RadarService) GetDegradationTrend(
 		if err != nil {
 			return nil, false, nil, ErrRadarUnavailable
 		}
-		now = s.clock.Now().UTC()
+		now := s.clock.Now().UTC()
 		points, err := radarServiceMetricPoints(performance, metric, now, days)
 		if err != nil {
 			return nil, false, nil, ErrRadarUnavailable
@@ -609,18 +641,26 @@ func (s *RadarService) GetDegradationTrend(
 			Stale:      stale,
 		}, true, deadline, nil
 	}, func(value any) any {
-		return cloneRadarServiceDegradationTrend(value.(*DegradationTrendDTO))
+		v, ok := value.(*DegradationTrendDTO)
+		if !ok {
+			return value
+		}
+		return cloneRadarServiceDegradationTrend(v)
 	})
 	if err != nil {
 		return nil, err
 	}
-	return value.(*DegradationTrendDTO), nil
+	result, ok := value.(*DegradationTrendDTO)
+	if !ok {
+		return nil, ErrRadarUnavailable
+	}
+	return result, nil
 }
 
 // GetLMArena returns the complete cached public leaderboard.
 func (s *RadarService) GetLMArena(ctx context.Context) (*LMArenaDTO, error) {
 	key := radarServiceCacheKey{method: "lmarena"}
-	value, err := s.cached(ctx, key, func(loadCtx context.Context, now time.Time) (any, bool, *time.Time, error) {
+	value, err := s.cached(ctx, key, func(loadCtx context.Context, _ time.Time) (any, bool, *time.Time, error) {
 		metas, err := s.repo.ListSourceMeta(loadCtx)
 		if contextErr := radarServiceContextError(loadCtx, err); contextErr != nil {
 			return nil, false, nil, contextErr
@@ -652,23 +692,31 @@ func (s *RadarService) GetLMArena(ctx context.Context) (*LMArenaDTO, error) {
 		if err != nil {
 			return nil, false, nil, ErrRadarUnavailable
 		}
-		now = s.clock.Now().UTC()
+		now := s.clock.Now().UTC()
 		stale, freshnessDeadline := radarSourceFreshness(now, s.lmarenaStaleThreshold, meta, metaOK, true)
 		mapped.Stale = stale
 		return &mapped, true, freshnessDeadline, nil
 	}, func(value any) any {
-		return cloneRadarServiceLMArena(value.(*LMArenaDTO))
+		v, ok := value.(*LMArenaDTO)
+		if !ok {
+			return value
+		}
+		return cloneRadarServiceLMArena(v)
 	})
 	if err != nil {
 		return nil, err
 	}
-	return value.(*LMArenaDTO), nil
+	result, ok := value.(*LMArenaDTO)
+	if !ok {
+		return nil, ErrRadarUnavailable
+	}
+	return result, nil
 }
 
 // GetDataSources returns safe public metadata for configured sources.
 func (s *RadarService) GetDataSources(ctx context.Context) ([]DataSourceMetaDTO, error) {
 	key := radarServiceCacheKey{method: "data_sources"}
-	value, err := s.cached(ctx, key, func(loadCtx context.Context, now time.Time) (any, bool, *time.Time, error) {
+	value, err := s.cached(ctx, key, func(loadCtx context.Context, _ time.Time) (any, bool, *time.Time, error) {
 		metas, err := s.repo.ListSourceMeta(loadCtx)
 		if contextErr := radarServiceContextError(loadCtx, err); contextErr != nil {
 			return nil, false, nil, contextErr
@@ -681,7 +729,7 @@ func (s *RadarService) GetDataSources(ctx context.Context) ([]DataSourceMetaDTO,
 			return nil, false, nil, contextErr
 		}
 
-		now = s.clock.Now().UTC()
+		now := s.clock.Now().UTC()
 		specs := s.dataSourceSpecs()
 		result := make([]DataSourceMetaDTO, 0, len(specs)+1)
 		deadlines := make([]*time.Time, 0, len(specs)+1)
@@ -714,12 +762,20 @@ func (s *RadarService) GetDataSources(ctx context.Context) ([]DataSourceMetaDTO,
 		deadlines = append(deadlines, deadline)
 		return result, cacheable, radarServiceEarliestDeadline(deadlines...), nil
 	}, func(value any) any {
-		return cloneRadarServiceDataSources(value.([]DataSourceMetaDTO))
+		v, ok := value.([]DataSourceMetaDTO)
+		if !ok {
+			return value
+		}
+		return cloneRadarServiceDataSources(v)
 	})
 	if err != nil {
 		return nil, err
 	}
-	return value.([]DataSourceMetaDTO), nil
+	result, ok := value.([]DataSourceMetaDTO)
+	if !ok {
+		return nil, ErrRadarUnavailable
+	}
+	return result, nil
 }
 
 func (s *RadarService) readArtificialAnalysisModels(ctx context.Context) ([]DegradationModelDTO, bool, bool, error) {

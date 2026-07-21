@@ -9,29 +9,44 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
-	"github.com/redis/go-redis/v9"
 )
 
 const (
 	// 开源临时邮箱黑名单 GitHub 地址
 	disposableEmailDomainsURL = "https://raw.githubusercontent.com/disposable/disposable-email-domains/master/domains.txt"
 
-	// Redis key for disposable email domains
-	redisKeyDisposableDomains = "disposable_email:domains"
+	// TTL for the blacklist cache (7 days)
+	disposableDomainsCacheTTL = 7 * 24 * time.Hour
 
-	// TTL for the blacklist in Redis (7 days)
-	disposableDomainsRedisTTL = 7 * 24 * time.Hour
+	// 刷新黑名单时分布式锁的过期时间（避免死锁）
+	disposableRefreshLockTTL = 10 * time.Minute
 )
+
+// DisposableEmailCache 临时邮箱黑名单的存储操作，由 repository 层基于 Redis 实现。
+type DisposableEmailCache interface {
+	// ReplaceDomains 用新的域名集合替换黑名单并设置过期时间
+	ReplaceDomains(ctx context.Context, domains []string, ttl time.Duration) error
+	// IsDisposableDomain 判断域名是否在黑名单中
+	IsDisposableDomain(ctx context.Context, domain string) (bool, error)
+	// DomainCount 返回黑名单中的域名数量
+	DomainCount(ctx context.Context) (int64, error)
+	// DomainsTTL 返回黑名单的剩余过期时间
+	DomainsTTL(ctx context.Context) (time.Duration, error)
+	// AcquireRefreshLock 尝试获取刷新黑名单的分布式锁
+	AcquireRefreshLock(ctx context.Context, ttl time.Duration) (bool, error)
+	// ReleaseRefreshLock 释放刷新锁
+	ReleaseRefreshLock(ctx context.Context)
+}
 
 // DisposableEmailService 临时邮箱检测服务
 type DisposableEmailService struct {
-	redis *redis.Client
+	cache DisposableEmailCache
 }
 
 // NewDisposableEmailService 创建临时邮箱检测服务
-func NewDisposableEmailService(redisClient *redis.Client) *DisposableEmailService {
+func NewDisposableEmailService(cache DisposableEmailCache) *DisposableEmailService {
 	return &DisposableEmailService{
-		redis: redisClient,
+		cache: cache,
 	}
 }
 
@@ -43,7 +58,7 @@ func (s *DisposableEmailService) LoadBlacklistToRedis(ctx context.Context) (int,
 	if err != nil {
 		return 0, fmt.Errorf("failed to download blacklist: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return 0, fmt.Errorf("failed to download blacklist: HTTP %d", resp.StatusCode)
@@ -72,36 +87,7 @@ func (s *DisposableEmailService) LoadBlacklistToRedis(ctx context.Context) (int,
 		return 0, fmt.Errorf("no domains found in blacklist")
 	}
 
-	// 使用 Redis Pipeline 批量写入
-	pipe := s.redis.Pipeline()
-
-	// 删除旧数据
-	pipe.Del(ctx, redisKeyDisposableDomains)
-
-	// 批量添加到 Redis Set
-	// 分批处理，每次1000个，避免单次命令过大
-	batchSize := 1000
-	for i := 0; i < len(domains); i += batchSize {
-		end := i + batchSize
-		if end > len(domains) {
-			end = len(domains)
-		}
-		batch := domains[i:end]
-
-		// 将 []string 转换为 []interface{}
-		members := make([]interface{}, len(batch))
-		for j, domain := range batch {
-			members[j] = domain
-		}
-
-		pipe.SAdd(ctx, redisKeyDisposableDomains, members...)
-	}
-
-	// 设置过期时间
-	pipe.Expire(ctx, redisKeyDisposableDomains, disposableDomainsRedisTTL)
-
-	// 执行 Pipeline
-	if _, err := pipe.Exec(ctx); err != nil {
+	if err := s.cache.ReplaceDomains(ctx, domains, disposableDomainsCacheTTL); err != nil {
 		return 0, fmt.Errorf("failed to save blacklist to Redis: %w", err)
 	}
 
@@ -118,8 +104,8 @@ func (s *DisposableEmailService) IsDisposableEmail(ctx context.Context, email st
 
 	domain := strings.ToLower(strings.TrimSpace(parts[1]))
 
-	// 检查 Redis Set 中是否存在该域名
-	exists, err := s.redis.SIsMember(ctx, redisKeyDisposableDomains, domain).Result()
+	// 检查黑名单中是否存在该域名
+	exists, err := s.cache.IsDisposableDomain(ctx, domain)
 	if err != nil {
 		// 如果 Redis 出错，fail-open（不阻止注册）
 		return false, nil
@@ -130,26 +116,18 @@ func (s *DisposableEmailService) IsDisposableEmail(ctx context.Context, email st
 
 // GetBlacklistCount 获取黑名单中的域名数量
 func (s *DisposableEmailService) GetBlacklistCount(ctx context.Context) (int64, error) {
-	count, err := s.redis.SCard(ctx, redisKeyDisposableDomains).Result()
-	if err != nil {
-		return 0, err
-	}
-	return count, nil
+	return s.cache.DomainCount(ctx)
 }
 
 // GetBlacklistTTL 获取黑名单的剩余过期时间
 func (s *DisposableEmailService) GetBlacklistTTL(ctx context.Context) (time.Duration, error) {
-	ttl, err := s.redis.TTL(ctx, redisKeyDisposableDomains).Result()
-	if err != nil {
-		return 0, err
-	}
-	return ttl, nil
+	return s.cache.DomainsTTL(ctx)
 }
 
 // StartBackgroundRefresh 启动后台任务：启动时加载黑名单，并每天刷新一次。
 // 使用 Redis 分布式锁避免多实例重复下载。
 func (s *DisposableEmailService) StartBackgroundRefresh() {
-	if s == nil || s.redis == nil {
+	if s == nil || s.cache == nil {
 		return
 	}
 	go func() {
@@ -179,14 +157,13 @@ func (s *DisposableEmailService) refreshIfNeeded() {
 		return
 	}
 
-	// 尝试获取分布式锁（10分钟过期，避免死锁）
-	lockKey := redisKeyDisposableDomains + ":refresh_lock"
-	acquired, err := s.redis.SetNX(ctx, lockKey, "1", 10*time.Minute).Result()
+	// 尝试获取分布式锁（避免多实例同时下载）
+	acquired, err := s.cache.AcquireRefreshLock(ctx, disposableRefreshLockTTL)
 	if err != nil || !acquired {
 		// 未获取到锁，其他实例正在刷新
 		return
 	}
-	defer s.redis.Del(ctx, lockKey)
+	defer s.cache.ReleaseRefreshLock(ctx)
 
 	count, err := s.LoadBlacklistToRedis(ctx)
 	if err != nil {

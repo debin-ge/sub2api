@@ -17,16 +17,16 @@ import (
 
 // ConfigurableRateLimiter 可配置的速率限制器
 type ConfigurableRateLimiter struct {
-	redis          *redis.Client
-	settingService *service.SettingService
+	redis           *redis.Client
+	settingService  *service.SettingService
 	baseRateLimiter *RateLimiter
 }
 
 // NewConfigurableRateLimiter 创建可配置的速率限制器
 func NewConfigurableRateLimiter(redis *redis.Client, settingService *service.SettingService) *ConfigurableRateLimiter {
 	return &ConfigurableRateLimiter{
-		redis:          redis,
-		settingService: settingService,
+		redis:           redis,
+		settingService:  settingService,
 		baseRateLimiter: NewRateLimiter(redis),
 	}
 }

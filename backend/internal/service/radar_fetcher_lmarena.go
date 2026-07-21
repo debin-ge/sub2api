@@ -336,10 +336,10 @@ func lmarenaHFFeatureSignature(features []lmarenaHFFeatureWire) (string, error) 
 	sort.Strings(keys)
 	var signature strings.Builder
 	for _, key := range keys {
-		signature.WriteString(key)
-		signature.WriteByte('=')
-		signature.WriteString(seen[key])
-		signature.WriteByte(';')
+		_, _ = signature.WriteString(key)
+		_ = signature.WriteByte('=')
+		_, _ = signature.WriteString(seen[key])
+		_ = signature.WriteByte(';')
 	}
 	return signature.String(), nil
 }

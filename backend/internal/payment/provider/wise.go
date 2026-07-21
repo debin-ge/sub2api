@@ -419,7 +419,7 @@ func (w *Wise) queryOrderFromTransactions(outTradeNo string, transactions []wise
 		if !tx.OccurredAt.IsZero() {
 			paidAt = tx.OccurredAt.UTC().Format(time.RFC3339)
 		}
-			status := wiseProviderStatusForTransaction(tx, decision)
+		status := wiseProviderStatusForTransaction(tx, decision)
 		tradeNo := strings.TrimSpace(tx.ID)
 		if tradeNo == "" {
 			tradeNo = outTradeNo
@@ -764,11 +764,6 @@ type wiseSettlementDecision struct {
 	NetAmount   decimal.Decimal
 	Reason      string
 	Metadata    map[string]string
-}
-
-type wiseSettlementStrategy interface {
-	Name() string
-	Match(order wiseOrderContext, tx wiseTransaction) wiseSettlementDecision
 }
 
 type wiseExactSettlementStrategy struct{}
@@ -1317,7 +1312,7 @@ func stripWiseActivityMarkup(raw string) string {
 			inTag = false
 		default:
 			if !inTag {
-				b.WriteRune(r)
+				_, _ = b.WriteRune(r)
 			}
 		}
 	}
@@ -1412,7 +1407,7 @@ func wiseSafePaymentReference(outTradeNo string) string {
 		if ch >= 'a' && ch <= 'z' ||
 			ch >= 'A' && ch <= 'Z' ||
 			ch >= '0' && ch <= '9' {
-			b.WriteRune(ch)
+			_, _ = b.WriteRune(ch)
 		}
 	}
 	return b.String()

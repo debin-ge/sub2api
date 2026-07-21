@@ -2572,7 +2572,6 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 	default:
 		response.Success(c, buildClaudeShapeAdminModels(modelIDs))
 	}
-	return
 }
 
 func buildOpenAIAdminModels(modelIDs []string) []openai.Model {

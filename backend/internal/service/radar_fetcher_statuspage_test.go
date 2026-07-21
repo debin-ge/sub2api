@@ -126,9 +126,10 @@ func TestStatuspageFetchersUseFixedHTTPSEndpointsAndConfiguredInterval(t *testin
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			expectedRequests := 3
-			if tt.source == RadarSourceStatusClaude {
+			switch tt.source {
+			case RadarSourceStatusClaude:
 				expectedRequests = 4
-			} else if tt.source == RadarSourceStatusOpenAI {
+			case RadarSourceStatusOpenAI:
 				expectedRequests = 5
 			}
 			captured := make(chan *http.Request, expectedRequests)

@@ -1141,7 +1141,7 @@ func (k oidcJWK) publicKey() (any, error) {
 		if err != nil {
 			return nil, fmt.Errorf("decode ec y: %w", err)
 		}
-		if !curve.IsOnCurve(x, y) {
+		if !curve.IsOnCurve(x, y) { //nolint:staticcheck // SA1019: 迁移 crypto/ecdh 需单独评估与测试，当前保持 JWK 解析行为不变
 			return nil, errors.New("ec point is not on curve")
 		}
 		return &ecdsa.PublicKey{Curve: curve, X: x, Y: y}, nil

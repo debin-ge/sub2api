@@ -185,25 +185,25 @@ func (s *PaymentService) HandleWiseWebhookFast(ctx context.Context, rawBody stri
 		if candidate == nil || candidate.provider == nil {
 			continue
 		}
-			notification, err := candidate.provider.VerifyNotification(ctx, rawBody, headers)
-			if err != nil {
-				lastErr = err
-				continue
-			}
+		notification, err := candidate.provider.VerifyNotification(ctx, rawBody, headers)
+		if err != nil {
+			lastErr = err
+			continue
+		}
 
-			envelope := wiseWebhookEnvelopeFromBody(rawBody)
-			if notification != nil && notification.Metadata != nil {
-				if eventType := strings.TrimSpace(notification.Metadata["event_type"]); eventType != "" {
-					envelope.EventType = eventType
-				}
+		envelope := wiseWebhookEnvelopeFromBody(rawBody)
+		if notification != nil && notification.Metadata != nil {
+			if eventType := strings.TrimSpace(notification.Metadata["event_type"]); eventType != "" {
+				envelope.EventType = eventType
 			}
-			deliveryID := wiseWebhookHeaderValue(headers, "x-delivery-id")
-			if deliveryID == "" && notification != nil && notification.Metadata != nil {
-				deliveryID = strings.TrimSpace(notification.Metadata["delivery_id"])
-			}
-			if deliveryID == "" {
-				return nil, fmt.Errorf("wise webhook delivery id is required")
-			}
+		}
+		deliveryID := wiseWebhookHeaderValue(headers, "x-delivery-id")
+		if deliveryID == "" && notification != nil && notification.Metadata != nil {
+			deliveryID = strings.TrimSpace(notification.Metadata["delivery_id"])
+		}
+		if deliveryID == "" {
+			return nil, fmt.Errorf("wise webhook delivery id is required")
+		}
 		testNotification := strings.EqualFold(wiseWebhookHeaderValue(headers, "x-test-notification"), "true")
 		result := &WiseWebhookHandleResult{
 			DeliveryID:       deliveryID,
@@ -665,10 +665,6 @@ func (s *PaymentService) mergeWiseReconcileResult(aggregate *WiseWebhookReconcil
 			aggregate.TradeNo = orderResult.TradeNo
 		}
 	}
-}
-
-func wiseReconcileCutoff(now time.Time) time.Time {
-	return now.Add(-wiseReconcileWindow)
 }
 
 func (s *PaymentService) ReconcileWiseOrderByOutTradeNo(ctx context.Context, outTradeNo string) (*WiseWebhookReconcileResult, error) {

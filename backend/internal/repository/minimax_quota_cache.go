@@ -201,7 +201,7 @@ func (c *minimaxQuotaCache) ReserveTextRequest(ctx context.Context, accountID in
 		return false, 0, err
 	}
 
-	values, ok := result.([]interface{})
+	values, ok := result.([]any)
 	if !ok || len(values) != 2 {
 		return false, 0, fmt.Errorf("unexpected minimax quota reserve result: %T", result)
 	}
@@ -255,7 +255,7 @@ func (c *minimaxQuotaCache) CalibrateTextRequests(ctx context.Context, accountID
 	if err != nil {
 		return 0, 0, 0, err
 	}
-	values, ok := result.([]interface{})
+	values, ok := result.([]any)
 	if !ok || len(values) != 3 {
 		return 0, 0, 0, fmt.Errorf("unexpected minimax quota calibrate result: %T", result)
 	}
@@ -299,7 +299,7 @@ func validateMiniMaxQuotaWindowSeconds(windowSeconds int64) error {
 	return nil
 }
 
-func redisInt64(value interface{}) (int64, error) {
+func redisInt64(value any) (int64, error) {
 	switch v := value.(type) {
 	case int64:
 		return v, nil

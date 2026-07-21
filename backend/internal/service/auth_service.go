@@ -24,27 +24,27 @@ import (
 )
 
 var (
-	ErrInvalidCredentials      = infraerrors.Unauthorized("INVALID_CREDENTIALS", "invalid email or password")
-	ErrUserNotActive           = infraerrors.Forbidden("USER_NOT_ACTIVE", "user is not active")
-	ErrEmailExists             = infraerrors.Conflict("EMAIL_EXISTS", "email already exists")
-	ErrEmailReserved           = infraerrors.BadRequest("EMAIL_RESERVED", "email is reserved")
-	ErrEmailLocalPartInvalid   = infraerrors.BadRequest("EMAIL_LOCAL_PART_INVALID", "email address with plus sign (+) or dot (.) in local part is not allowed")
+	ErrInvalidCredentials        = infraerrors.Unauthorized("INVALID_CREDENTIALS", "invalid email or password")
+	ErrUserNotActive             = infraerrors.Forbidden("USER_NOT_ACTIVE", "user is not active")
+	ErrEmailExists               = infraerrors.Conflict("EMAIL_EXISTS", "email already exists")
+	ErrEmailReserved             = infraerrors.BadRequest("EMAIL_RESERVED", "email is reserved")
+	ErrEmailLocalPartInvalid     = infraerrors.BadRequest("EMAIL_LOCAL_PART_INVALID", "email address with plus sign (+) or dot (.) in local part is not allowed")
 	ErrDisposableEmailNotAllowed = infraerrors.BadRequest("DISPOSABLE_EMAIL_NOT_ALLOWED", "temporary or disposable email addresses are not allowed")
-	ErrInvalidToken            = infraerrors.Unauthorized("INVALID_TOKEN", "invalid token")
-	ErrTokenExpired            = infraerrors.Unauthorized("TOKEN_EXPIRED", "token has expired")
-	ErrAccessTokenExpired      = infraerrors.Unauthorized("ACCESS_TOKEN_EXPIRED", "access token has expired")
-	ErrTokenTooLarge           = infraerrors.BadRequest("TOKEN_TOO_LARGE", "token too large")
-	ErrTokenRevoked            = infraerrors.Unauthorized("TOKEN_REVOKED", "token has been revoked")
-	ErrRefreshTokenInvalid     = infraerrors.Unauthorized("REFRESH_TOKEN_INVALID", "invalid refresh token")
-	ErrRefreshTokenExpired     = infraerrors.Unauthorized("REFRESH_TOKEN_EXPIRED", "refresh token has expired")
-	ErrRefreshTokenReused      = infraerrors.Unauthorized("REFRESH_TOKEN_REUSED", "refresh token has been reused")
-	ErrEmailVerifyRequired     = infraerrors.BadRequest("EMAIL_VERIFY_REQUIRED", "email verification is required")
-	ErrEmailSuffixNotAllowed   = infraerrors.BadRequest("EMAIL_SUFFIX_NOT_ALLOWED", "email suffix is not allowed")
-	ErrRegDisabled             = infraerrors.Forbidden("REGISTRATION_DISABLED", "registration is currently disabled")
-	ErrServiceUnavailable      = infraerrors.ServiceUnavailable("SERVICE_UNAVAILABLE", "service temporarily unavailable")
-	ErrInvitationCodeRequired  = infraerrors.BadRequest("INVITATION_CODE_REQUIRED", "invitation code is required")
-	ErrInvitationCodeInvalid   = infraerrors.BadRequest("INVITATION_CODE_INVALID", "invalid or used invitation code")
-	ErrOAuthInvitationRequired = infraerrors.Forbidden("OAUTH_INVITATION_REQUIRED", "invitation code required to complete oauth registration")
+	ErrInvalidToken              = infraerrors.Unauthorized("INVALID_TOKEN", "invalid token")
+	ErrTokenExpired              = infraerrors.Unauthorized("TOKEN_EXPIRED", "token has expired")
+	ErrAccessTokenExpired        = infraerrors.Unauthorized("ACCESS_TOKEN_EXPIRED", "access token has expired")
+	ErrTokenTooLarge             = infraerrors.BadRequest("TOKEN_TOO_LARGE", "token too large")
+	ErrTokenRevoked              = infraerrors.Unauthorized("TOKEN_REVOKED", "token has been revoked")
+	ErrRefreshTokenInvalid       = infraerrors.Unauthorized("REFRESH_TOKEN_INVALID", "invalid refresh token")
+	ErrRefreshTokenExpired       = infraerrors.Unauthorized("REFRESH_TOKEN_EXPIRED", "refresh token has expired")
+	ErrRefreshTokenReused        = infraerrors.Unauthorized("REFRESH_TOKEN_REUSED", "refresh token has been reused")
+	ErrEmailVerifyRequired       = infraerrors.BadRequest("EMAIL_VERIFY_REQUIRED", "email verification is required")
+	ErrEmailSuffixNotAllowed     = infraerrors.BadRequest("EMAIL_SUFFIX_NOT_ALLOWED", "email suffix is not allowed")
+	ErrRegDisabled               = infraerrors.Forbidden("REGISTRATION_DISABLED", "registration is currently disabled")
+	ErrServiceUnavailable        = infraerrors.ServiceUnavailable("SERVICE_UNAVAILABLE", "service temporarily unavailable")
+	ErrInvitationCodeRequired    = infraerrors.BadRequest("INVITATION_CODE_REQUIRED", "invitation code is required")
+	ErrInvitationCodeInvalid     = infraerrors.BadRequest("INVITATION_CODE_INVALID", "invalid or used invitation code")
+	ErrOAuthInvitationRequired   = infraerrors.Forbidden("OAUTH_INVITATION_REQUIRED", "invitation code required to complete oauth registration")
 )
 
 // maxTokenLength 限制 token 大小，避免超长 header 触发解析时的异常内存分配。
@@ -68,22 +68,22 @@ type JWTClaims struct {
 
 // AuthService 认证服务
 type AuthService struct {
-	entClient             *dbent.Client
-	userRepo              UserRepository
-	redeemRepo            RedeemCodeRepository
-	refreshTokenCache     RefreshTokenCache
-	cfg                   *config.Config
-	settingService        *SettingService
-	emailService          *EmailService
-	turnstileService      *TurnstileService
-	emailQueueService     *EmailQueueService
-	promoService          *PromoService
-	affiliateService      *AffiliateService
+	entClient              *dbent.Client
+	userRepo               UserRepository
+	redeemRepo             RedeemCodeRepository
+	refreshTokenCache      RefreshTokenCache
+	cfg                    *config.Config
+	settingService         *SettingService
+	emailService           *EmailService
+	turnstileService       *TurnstileService
+	emailQueueService      *EmailQueueService
+	promoService           *PromoService
+	affiliateService       *AffiliateService
 	disposableEmailService *DisposableEmailService
-	defaultSubAssigner    DefaultSubscriptionAssigner
-	userPlatformQuotaRepo UserPlatformQuotaRepository
-	apiKeyService         *APIKeyService
-	groupRepo             GroupRepository
+	defaultSubAssigner     DefaultSubscriptionAssigner
+	userPlatformQuotaRepo  UserPlatformQuotaRepository
+	apiKeyService          *APIKeyService
+	groupRepo              GroupRepository
 }
 
 type registrationInvitationResolution struct {
@@ -122,22 +122,22 @@ func NewAuthService(
 	groupRepo GroupRepository,
 ) *AuthService {
 	return &AuthService{
-		entClient:             entClient,
-		userRepo:              userRepo,
-		redeemRepo:            redeemRepo,
-		refreshTokenCache:     refreshTokenCache,
-		cfg:                   cfg,
-		settingService:        settingService,
-		emailService:          emailService,
-		turnstileService:      turnstileService,
-		emailQueueService:     emailQueueService,
-		promoService:          promoService,
-		affiliateService:      affiliateService,
+		entClient:              entClient,
+		userRepo:               userRepo,
+		redeemRepo:             redeemRepo,
+		refreshTokenCache:      refreshTokenCache,
+		cfg:                    cfg,
+		settingService:         settingService,
+		emailService:           emailService,
+		turnstileService:       turnstileService,
+		emailQueueService:      emailQueueService,
+		promoService:           promoService,
+		affiliateService:       affiliateService,
 		disposableEmailService: disposableEmailService,
-		defaultSubAssigner:    defaultSubAssigner,
-		userPlatformQuotaRepo: userPlatformQuotaRepo,
-		apiKeyService:         apiKeyService,
-		groupRepo:             groupRepo,
+		defaultSubAssigner:     defaultSubAssigner,
+		userPlatformQuotaRepo:  userPlatformQuotaRepo,
+		apiKeyService:          apiKeyService,
+		groupRepo:              groupRepo,
 	}
 }
 

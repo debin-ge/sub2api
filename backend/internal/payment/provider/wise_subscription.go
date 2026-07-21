@@ -122,7 +122,7 @@ func (c *WiseSubscriptionClient) CreateProfileSubscription(ctx context.Context, 
 	if err != nil {
 		return nil, fmt.Errorf("wise subscription request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, wiseMaxResponseSize))
 	if err != nil {
@@ -180,7 +180,7 @@ func (c *WiseSubscriptionClient) DeleteProfileSubscription(ctx context.Context, 
 	if err != nil {
 		return fmt.Errorf("wise subscription delete request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, wiseMaxResponseSize))
 	if err != nil {

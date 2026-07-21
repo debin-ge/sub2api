@@ -39,9 +39,9 @@ func TestGetModelPricing_DashVersionSuffixHitsDotCatalogKeys(t *testing.T) {
 	// Widsurf/OpenCode 用 dash 命名（glm-5-1），catalog 里用 dot 命名（glm-5.1）。
 	// 归一化后应该能命中。
 	svc := NewPricingServiceForTest(map[string]*ModelPriceEntry{
-		"glm-5.1":     {Mode: "chat", InputCostPerToken: 6e-6, OutputCostPerToken: 24e-6},
-		"kimi-k2.5":   {Mode: "chat", InputCostPerToken: 1e-6, OutputCostPerToken: 4e-6},
-		"kimi-k2.6":   {Mode: "chat", InputCostPerToken: 1.5e-6, OutputCostPerToken: 5e-6},
+		"glm-5.1":      {Mode: "chat", InputCostPerToken: 6e-6, OutputCostPerToken: 24e-6},
+		"kimi-k2.5":    {Mode: "chat", InputCostPerToken: 1e-6, OutputCostPerToken: 4e-6},
+		"kimi-k2.6":    {Mode: "chat", InputCostPerToken: 1.5e-6, OutputCostPerToken: 5e-6},
 		"minimax-m2.7": {Mode: "chat", InputCostPerToken: 3e-7, OutputCostPerToken: 1.2e-6},
 	})
 

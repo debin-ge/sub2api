@@ -82,10 +82,10 @@ func orderIDPrefixFromSiteName(siteName string) string {
 		case ch >= 'a' && ch <= 'z',
 			ch >= 'A' && ch <= 'Z',
 			ch >= '0' && ch <= '9':
-			b.WriteRune(ch)
+			_, _ = b.WriteRune(ch)
 		default:
 			if initial, ok := chinesePinyinInitial(ch); ok {
-				b.WriteByte(initial)
+				_ = b.WriteByte(initial)
 			}
 		}
 	}

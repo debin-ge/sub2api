@@ -175,23 +175,6 @@ func (s *PaymentConfigService) hasReusableWiseWebhookSubscription(ctx context.Co
 	return true, nil
 }
 
-func (s *PaymentConfigService) invalidateWiseWebhookSubscription(ctx context.Context, providerInstanceID int64) error {
-	if s == nil || s.entClient == nil || providerInstanceID <= 0 {
-		return nil
-	}
-	_, err := s.entClient.PaymentProviderWebhookSubscription.Update().
-		Where(
-			paymentproviderwebhooksubscription.ProviderInstanceIDEQ(providerInstanceID),
-			paymentproviderwebhooksubscription.ProviderKeyEQ(payment.TypeWise),
-			paymentproviderwebhooksubscription.TriggerOnEQ(wiseWebhookSubscriptionTrigger),
-		).
-		SetStatus(wiseWebhookSubscriptionStatusUnknown).
-		SetExternalSubscriptionID("").
-		ClearLastError().
-		Save(ctx)
-	return err
-}
-
 func (s *PaymentConfigService) deleteWiseWebhookSubscription(ctx context.Context, inst *dbent.PaymentProviderInstance, config map[string]string) error {
 	if s == nil || s.entClient == nil || inst == nil || inst.ProviderKey != payment.TypeWise {
 		return nil

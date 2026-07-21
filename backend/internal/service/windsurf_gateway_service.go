@@ -321,15 +321,6 @@ func validateWindsurfModelPayload(body []byte, account *Account) (map[string]any
 	return payload, model, account.GetWindsurfMappedModel(model), nil
 }
 
-func isOfficialWindsurfModel(model string) bool {
-	for _, supported := range DefaultWindsurfModelIDs() {
-		if model == supported {
-			return true
-		}
-	}
-	return false
-}
-
 func rejectWindsurfAnthropicUnsupportedContent(body []byte) error {
 	payload, err := decodeGLMPayload(body)
 	if err != nil {

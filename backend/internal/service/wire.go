@@ -44,8 +44,8 @@ func ProvideEmailQueueService(emailService *EmailService) *EmailQueueService {
 
 // ProvideDisposableEmailService creates DisposableEmailService and starts the
 // background blacklist refresh (initial load on startup + daily refresh).
-func ProvideDisposableEmailService(redisClient *redis.Client) *DisposableEmailService {
-	svc := NewDisposableEmailService(redisClient)
+func ProvideDisposableEmailService(cache DisposableEmailCache) *DisposableEmailService {
+	svc := NewDisposableEmailService(cache)
 	svc.StartBackgroundRefresh()
 	return svc
 }

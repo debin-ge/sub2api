@@ -94,10 +94,6 @@ func NewGLMGatewayServiceWithTimeout(httpClient *http.Client, responseHeaderFilt
 	}
 }
 
-func newDefaultGLMHTTPClient() *http.Client {
-	return newDefaultGLMHTTPClientWithTimeout(glmUpstreamHeaderTimeout)
-}
-
 func newDefaultGLMHTTPClientWithTimeout(upstreamTimeout time.Duration) *http.Client {
 	return newDefaultCompatibleGatewayHTTPClient(upstreamTimeout)
 }

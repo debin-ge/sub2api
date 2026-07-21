@@ -527,6 +527,9 @@ func NewStatuspageFetcher(cfg *config.Config, source RadarSourceKey, client Rada
 				return err
 			},
 		})
+		if err != nil {
+			return nil, err
+		}
 		timeline = &openAIComponentImpactsFetcher{
 			interval: interval, client: client, maxResponseBytes: cfg.Radar.ExternalResponseMaxBytes, now: time.Now,
 		}
@@ -978,10 +981,7 @@ func mergeStatuspageHistoryPayloads(source RadarSourceKey, summaryPayload, incid
 	if historyPage.UpdatedAt.After(effectiveUpdatedAt) {
 		effectiveUpdatedAt = historyPage.UpdatedAt
 	}
-	coverageLimit := statuspageIncidentHistoryLimit
-	coverageItemCount := len(incidents)
 	var explicitCoverageStart *time.Time
-	authoritativeCoverage := false
 	switch source {
 	case RadarSourceStatusOpenAI:
 		if len(calendarPayload) != 0 {
@@ -1016,8 +1016,6 @@ func mergeStatuspageHistoryPayloads(source RadarSourceKey, summaryPayload, incid
 		}
 		explicitCoverageStart = &impactCoverageStart
 		summaryWire.RadarComponentImpacts = &componentImpacts
-		coverageLimit = openAIIncidentHistoryLimit
-		authoritativeCoverage = true
 	case RadarSourceStatusClaude, RadarSourceStatusWindsurf, RadarSourceStatusKimi, RadarSourceStatusMiniMaxGlobal, RadarSourceStatusMiniMaxChina:
 		if len(auxiliaryPayload) != 0 || len(timelinePayload) != 0 || len(catalogPayload) != 0 {
 			return nil, errInvalidStatuspageResponse
@@ -1032,38 +1030,17 @@ func mergeStatuspageHistoryPayloads(source RadarSourceKey, summaryPayload, incid
 		}
 		explicitCoverageStart = &calendar.CoverageStart
 		summaryWire.RadarComponentHistory = &calendar.Incidents
-		authoritativeCoverage = true
 	default:
 		return nil, &RadarFetcherConfigError{Field: "statuspage_source"}
 	}
 	summaryWire.Incidents = encodeStatuspageIncidents(incidents)
 	summaryWire.Page.UpdatedAt = effectiveUpdatedAt.Format(time.RFC3339Nano)
 	windowStart := statuspageDayStart(source, effectiveUpdatedAt).AddDate(0, 0, -(serviceHealthHistoryDays - 1))
-	coverageStart := windowStart
-	if authoritativeCoverage {
-		if explicitCoverageStart == nil {
-			return nil, errInvalidStatuspageResponse
-		}
-		coverageStart = statuspageDayStart(source, *explicitCoverageStart)
-		if coverageStart.Before(windowStart) {
-			coverageStart = windowStart
-		}
-	} else if explicitCoverageStart != nil {
-		coverageStart = statuspageDayStart(source, *explicitCoverageStart)
-		if coverageStart.Before(windowStart) {
-			coverageStart = windowStart
-		}
-	} else if coverageItemCount >= coverageLimit {
-		oldest := effectiveUpdatedAt
-		for _, incident := range incidents {
-			if incident.CreatedAt.Before(oldest) {
-				oldest = incident.CreatedAt
-			}
-		}
-		oldestDay := statuspageDayStart(source, oldest)
-		if oldestDay.After(coverageStart) {
-			coverageStart = oldestDay
-		}
+	// switch 的每个 source 分支要么设置 explicitCoverageStart，要么直接返回错误，
+	// 运行到这里必然非 nil。
+	coverageStart := statuspageDayStart(source, *explicitCoverageStart)
+	if coverageStart.Before(windowStart) {
+		coverageStart = windowStart
 	}
 	formattedCoverage := coverageStart.Format(time.RFC3339)
 	summaryWire.RadarHistoryCoverageStart = &formattedCoverage
@@ -1380,7 +1357,7 @@ func statuspageHTMLText(node *html.Node) string {
 	var visit func(*html.Node)
 	visit = func(current *html.Node) {
 		if current.Type == html.TextNode {
-			builder.WriteString(current.Data)
+			_, _ = builder.WriteString(current.Data)
 		}
 		for child := current.FirstChild; child != nil; child = child.NextSibling {
 			visit(child)
@@ -1838,26 +1815,6 @@ func equalStatuspageOptionalTime(left, right *time.Time) bool {
 	return left.Equal(*right)
 }
 
-func mergeStatuspageIncidents(primary, supplemental []StatuspageIncident) ([]StatuspageIncident, error) {
-	result := append([]StatuspageIncident(nil), primary...)
-	byID := make(map[string]StatuspageIncident, len(primary)+len(supplemental))
-	for _, incident := range primary {
-		byID[incident.ID] = incident
-	}
-	for _, incident := range supplemental {
-		if existing, duplicate := byID[incident.ID]; duplicate {
-			if existing.Name != incident.Name {
-				return nil, errInvalidStatuspageResponse
-			}
-			continue
-		}
-		byID[incident.ID] = incident
-		result = append(result, incident)
-	}
-	sort.Slice(result, func(left, right int) bool { return result[left].CreatedAt.After(result[right].CreatedAt) })
-	return result, nil
-}
-
 func encodeStatuspageIncidents(incidents []StatuspageIncident) []statuspageIncidentWire {
 	result := make([]statuspageIncidentWire, 0, len(incidents))
 	for _, incident := range incidents {
@@ -1871,7 +1828,7 @@ func encodeStatuspageIncidents(incidents []StatuspageIncident) []statuspageIncid
 			wire.ResolvedAt = &value
 		}
 		for _, component := range incident.Components {
-			wire.Components = append(wire.Components, statuspageIncidentComponentWire{ID: component.ID, Name: component.Name})
+			wire.Components = append(wire.Components, statuspageIncidentComponentWire(component))
 		}
 		result = append(result, wire)
 	}

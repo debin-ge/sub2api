@@ -647,7 +647,7 @@ func TestAccountUsageService_AntigravitySuccessPersistsMinimalRadarSnapshot(t *t
 	}
 	repo.mu.Lock()
 	require.False(t, repo.deadline.IsZero(), "persistence context must have a deadline")
-	require.LessOrEqual(t, repo.deadline.Sub(time.Now()), time.Second)
+	require.LessOrEqual(t, time.Until(repo.deadline), time.Second)
 	repo.mu.Unlock()
 
 	passive, err := svc.GetRadarUsageSnapshot(context.Background(), account)

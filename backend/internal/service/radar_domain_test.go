@@ -137,6 +137,7 @@ func TestCanonicalRadarServicesReturnsIndependentRegistry(t *testing.T) {
 	first[0].Key = ServiceKeyOpenAIAPI
 	first[0].Name = "mutated"
 	first = append(first, RadarServiceDescriptor{Key: ServiceKey("extra"), Name: "Extra"})
+	require.Len(t, first, len(want)+1)
 
 	require.Equal(t, want, CanonicalRadarServices())
 }

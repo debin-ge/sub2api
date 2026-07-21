@@ -53,10 +53,10 @@ func Do(client *http.Client, req *http.Request) (*http.Response, error) {
 		client = http.DefaultClient
 	}
 	if req == nil || !Active(req.Context()) {
-		return client.Do(req)
+		return client.Do(req) //nolint:gosec // G704: 内部埋点封装，请求 URL 由调用方构造并经上层校验
 	}
 	startedAt := time.Now()
-	response, err := client.Do(req)
+	response, err := client.Do(req) //nolint:gosec // G704: 内部埋点封装，请求 URL 由调用方构造并经上层校验
 	RecordDependency(req.Context(), dependencyModule(req), startedAt, time.Now())
 	return response, err
 }
