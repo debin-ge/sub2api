@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -179,12 +180,37 @@ func runMainServer() {
 
 	log.Println("Shutting down server...")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	timeout := shutdownTimeout()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
+	log.Printf("Draining in-flight requests (timeout %s)...", timeout)
 	if err := app.Server.Shutdown(ctx); err != nil {
-		log.Fatalf("Server forced to shutdown: %v", err)
+		// 超时仅代表仍有连接未自然结束，不是致命错误；必须以 0 码退出，
+		// 否则 restart: unless-stopped 会把每次发布都记成一次异常重启。
+		log.Printf("WARNING: shutdown timed out with connections still open: %v", err)
 	}
 
 	log.Println("Server exited")
+}
+
+// defaultShutdownTimeout 是优雅关闭的默认等待窗口。作为流式网关，
+// 5 秒的历史默认值会截断所有在途 SSE 流，因此基线上调至 30 秒；
+// 蓝绿部署场景应通过 SERVER_SHUTDOWN_TIMEOUT_SECONDS 配置为
+// ≥ GATEWAY_IMAGE_STREAM_DATA_INTERVAL_TIMEOUT + 余量。
+const defaultShutdownTimeout = 30 * time.Second
+
+// shutdownTimeout 读取 SERVER_SHUTDOWN_TIMEOUT_SECONDS（正整数秒），
+// 未设置或非法时回落到默认值。
+func shutdownTimeout() time.Duration {
+	v := strings.TrimSpace(os.Getenv("SERVER_SHUTDOWN_TIMEOUT_SECONDS"))
+	if v == "" {
+		return defaultShutdownTimeout
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		log.Printf("WARNING: invalid SERVER_SHUTDOWN_TIMEOUT_SECONDS=%q, falling back to %s", v, defaultShutdownTimeout)
+		return defaultShutdownTimeout
+	}
+	return time.Duration(n) * time.Second
 }
