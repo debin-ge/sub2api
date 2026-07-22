@@ -690,6 +690,34 @@ func TestRecoverStaleRecords(t *testing.T) {
 	require.Contains(t, r2.RestoreError, "server restart")
 }
 
+// 蓝绿并存窗口内，新实例启动时不得把另一个存活实例正在执行的备份误标为
+// failed：操作超时窗口（backupStaleRecoveryAge）内的 running 记录必须保留。
+func TestRecoverStaleRecordsKeepsRecentRunning(t *testing.T) {
+	repo := newMockSettingRepo()
+	svc := newTestBackupService(repo, &mockDumper{}, newMockObjectStore())
+
+	_ = svc.saveRecord(context.Background(), &BackupRecord{
+		ID:        "live-1",
+		Status:    "running",
+		Progress:  "dumping",
+		StartedAt: time.Now().Add(-5 * time.Minute).Format(time.RFC3339),
+	})
+	// StartedAt 缺失/损坏的 running 记录视为孤儿，仍应回收
+	_ = svc.saveRecord(context.Background(), &BackupRecord{
+		ID:     "broken-1",
+		Status: "running",
+	})
+
+	svc.recoverStaleRecords()
+
+	live, _ := svc.GetBackupRecord(context.Background(), "live-1")
+	require.Equal(t, "running", live.Status)
+	require.Equal(t, "dumping", live.Progress)
+
+	broken, _ := svc.GetBackupRecord(context.Background(), "broken-1")
+	require.Equal(t, "failed", broken.Status)
+}
+
 func TestGracefulShutdown(t *testing.T) {
 	repo := newMockSettingRepo()
 	seedS3Config(t, repo)

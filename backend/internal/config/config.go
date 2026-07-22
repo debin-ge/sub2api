@@ -1397,6 +1397,11 @@ type GatewaySchedulingConfig struct {
 	// 过期槽位清理周期（0 表示禁用）
 	SlotCleanupInterval time.Duration `mapstructure:"slot_cleanup_interval"`
 
+	// 蓝绿/多实例部署时置 true：跳过启动时按进程前缀清理并发槽位。
+	// 该清理会把其他存活实例的活跃槽位一并清空，导致并存窗口内并发限制失效；
+	// 跳过后，崩溃进程的残留槽位仍由周期清理（slot_cleanup_interval）与 key TTL 收敛。
+	StartupSlotCleanupDisabled bool `mapstructure:"startup_slot_cleanup_disabled"`
+
 	// 受控回源配置
 	DbFallbackEnabled bool `mapstructure:"db_fallback_enabled"`
 	// 受控回源超时（秒），0 表示不额外收紧超时
@@ -2402,6 +2407,7 @@ func setDefaults() {
 	viper.SetDefault("gateway.scheduling.snapshot_mget_chunk_size", 128)
 	viper.SetDefault("gateway.scheduling.snapshot_write_chunk_size", 256)
 	viper.SetDefault("gateway.scheduling.slot_cleanup_interval", 30*time.Second)
+	viper.SetDefault("gateway.scheduling.startup_slot_cleanup_disabled", false)
 	viper.SetDefault("gateway.scheduling.db_fallback_enabled", true)
 	viper.SetDefault("gateway.scheduling.db_fallback_timeout_seconds", 0)
 	viper.SetDefault("gateway.scheduling.db_fallback_max_qps", 0)

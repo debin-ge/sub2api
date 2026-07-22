@@ -191,6 +191,12 @@ func (s *BackupService) Start() {
 	}
 }
 
+// backupStaleRecoveryAge 是启动恢复判定 running 记录已成孤儿的最小年龄。
+// 备份操作自身的超时是 30 分钟（CreateBackup/restore 的 ctx），超过它仍是
+// running 的记录必然已中断；阈值再加余量。低于该年龄的 running 记录可能
+// 属于另一个仍在运行的实例（蓝绿并存窗口），不得误标为 failed。
+const backupStaleRecoveryAge = 35 * time.Minute
+
 // recoverStaleRecords 启动时将孤立的 running 记录标记为 failed
 func (s *BackupService) recoverStaleRecords() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -202,6 +208,11 @@ func (s *BackupService) recoverStaleRecords() {
 	}
 	for i := range records {
 		if records[i].Status == "running" {
+			if startedAt, err := time.Parse(time.RFC3339, records[i].StartedAt); err == nil &&
+				time.Since(startedAt) < backupStaleRecoveryAge {
+				logger.LegacyPrintf("service.backup", "[Backup] running record %s within operation window, skip recovery (may belong to a live instance)", records[i].ID)
+				continue
+			}
 			records[i].Status = "failed"
 			records[i].ErrorMsg = "interrupted by server restart"
 			records[i].Progress = ""
