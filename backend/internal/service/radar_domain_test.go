@@ -59,14 +59,6 @@ func TestRadarDomainEnumValues(t *testing.T) {
 		InferenceRejectReasonInvalidMean,
 	})
 
-	require.Equal(t, []DegradationMetric{
-		"intelligence_index", "coding_index", "agentic_index",
-	}, []DegradationMetric{
-		DegradationMetricIntelligenceIndex,
-		DegradationMetricCodingIndex,
-		DegradationMetricAgenticIndex,
-	})
-
 	require.Equal(t, []DataSourceState{
 		"not_configured", "never_attempted", "healthy", "failed",
 	}, []DataSourceState{
@@ -273,7 +265,7 @@ func TestRadarDomainJSONKeysUseSnakeCase(t *testing.T) {
 				PriceOutputPer1M:  &value,
 				LastUpdatedAt:     &now,
 			},
-			want: []string{"agentic_index", "coding_index", "intelligence_index", "last_updated_at", "name", "price_input_per_1m", "price_output_per_1m", "slug", "vendor"},
+			want: []string{"agentic_index", "catalog_matches", "coding_index", "intelligence_index", "last_updated_at", "name", "price_input_per_1m", "price_output_per_1m", "slug", "vendor"},
 		},
 		{
 			name: "lmarena entry",
@@ -288,17 +280,7 @@ func TestRadarDomainJSONKeysUseSnakeCase(t *testing.T) {
 				SourcesLastUpdated: map[string]*time.Time{"lmarena": &now},
 				Stale:              false,
 			},
-			want: []string{"lmarena_top5", "models", "sources_last_updated", "stale", "trend_available"},
-		},
-		{
-			name: "metric point",
-			got:  MetricPointDTO{Date: "2026-07-12", Value: 1},
-			want: []string{"date", "value"},
-		},
-		{
-			name: "degradation trend",
-			got:  DegradationTrendDTO{ModelSlug: "claude-sonnet", Metric: DegradationMetricCodingIndex, Days: 30, DataPoints: []MetricPointDTO{}, Stale: false},
-			want: []string{"data_points", "days", "metric", "model_slug", "stale"},
+			want: []string{"available_models", "default_model_slugs", "intelligence_index_version", "lmarena_top5", "models", "sources_last_updated", "stale"},
 		},
 		{
 			name: "lmarena",
@@ -454,15 +436,16 @@ func TestRadarDomainJSONPreservesNullsAndEmptyCollections(t *testing.T) {
 
 	degradation := marshalRadarObject(t, DegradationLatestDTO{
 		Models:             []DegradationModelDTO{},
+		AvailableModels:    []DegradationModelDTO{},
+		DefaultModelSlugs:  []string{},
 		LMArenaTop5:        []LMArenaEntryDTO{},
 		SourcesLastUpdated: map[string]*time.Time{},
 	})
 	require.Equal(t, []any{}, degradation["models"])
+	require.Equal(t, []any{}, degradation["available_models"])
+	require.Equal(t, []any{}, degradation["default_model_slugs"])
 	require.Equal(t, []any{}, degradation["lmarena_top5"])
 	require.Equal(t, map[string]any{}, degradation["sources_last_updated"])
-
-	degradationTrend := marshalRadarObject(t, DegradationTrendDTO{DataPoints: []MetricPointDTO{}})
-	require.Equal(t, []any{}, degradationTrend["data_points"])
 
 	lmarena := marshalRadarObject(t, LMArenaDTO{Leaderboard: []LMArenaEntryDTO{}})
 	require.Equal(t, []any{}, lmarena["leaderboard"])

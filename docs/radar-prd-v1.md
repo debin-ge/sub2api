@@ -597,16 +597,13 @@ Artificial Analysis 提供以下指标：
 | GET | `/api/v1/public/radar/service-health` | 受支持服务的当前状态与 30 天历史 | 5 分钟 |
 | GET | `/api/v1/public/radar/quota-buckets/latest` | 所有额度桶最新快照 | 5 分钟 |
 | GET | `/api/v1/public/radar/quota-buckets/trend` | 单桶 1–7 天趋势 | 10 分钟 |
-| GET | `/api/v1/public/radar/degradation/latest` | 三维指数与 Elo Top 5 | 1 小时 |
-| GET | `/api/v1/public/radar/degradation/trend` | 单模型单指标趋势 | 1 小时 |
-| GET | `/api/v1/public/radar/lmarena` | LMArena 完整排名 | 1 小时 |
+| GET | `/api/v1/public/radar/degradation/latest` | AA 三指标与模型广场交集、Elo Top 5 | 5 分钟 |
+| GET | `/api/v1/public/radar/lmarena` | LMArena 完整排名 | 5 分钟 |
 | GET | `/api/v1/public/radar/sources` | 数据源元信息 | 10 分钟 |
 
 ### 10.2 查询约束
 
 - `quota-buckets/trend`：`bucket` 必填，`days` 范围 1–7，默认 7；
-- `degradation/trend`：`model`、`metric` 必填，`days` 范围 1–90，默认 90；
-- `metric` 仅允许 `intelligence_index`、`coding_index`、`agentic_index`；
 - 非法参数返回明确的 4xx 错误，不得回退到任意默认模型或桶；
 - 所有成功数据使用统一响应包装，字段使用 `snake_case`；
 - 时间字段使用 ISO 8601 UTC；缺失值使用 `null` 或省略，不使用不明确的零值替代。

@@ -235,7 +235,6 @@ const sourceLabelKeys: Readonly<Record<string, string>> = {
   status_openai: 'admin.settings.features.radar.sources.status_openai',
   quota_aggregator: 'admin.settings.features.radar.sources.quota_aggregator',
 }
-const aaPerformanceSourcePrefix = 'aa_perf:'
 
 const allSources = computed(() => {
   if (!status.value) return []
@@ -243,12 +242,6 @@ const allSources = computed(() => {
 })
 
 function sourceLabel(key: string): string {
-  if (key.startsWith(aaPerformanceSourcePrefix)) {
-    const slug = key.slice(aaPerformanceSourcePrefix.length)
-    if (slug) {
-      return `${t('admin.settings.features.radar.sources.aa_performance')} · ${slug}`
-    }
-  }
   const labelKey = sourceLabelKeys[key]
   return labelKey ? t(labelKey) : key
 }

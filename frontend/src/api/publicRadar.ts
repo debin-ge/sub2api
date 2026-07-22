@@ -2,8 +2,6 @@ import { apiClient } from './client'
 import type {
   DataSourceMetaDTO,
   DegradationLatestDTO,
-  DegradationMetric,
-  DegradationTrendDTO,
   LMArenaDTO,
   QuotaRadarLatestDTO,
   QuotaTrendDTO,
@@ -30,25 +28,6 @@ function serializeQuotaTrendParams(params: Record<string, unknown>): string {
 
   if (typeof bucket === 'string') {
     query.set('bucket', bucket)
-  }
-  if (typeof days === 'number' || typeof days === 'string') {
-    query.set('days', String(days))
-  }
-
-  return query.toString()
-}
-
-function serializeDegradationTrendParams(params: Record<string, unknown>): string {
-  const query = new URLSearchParams()
-  const model = params.model
-  const metric = params.metric
-  const days = params.days
-
-  if (typeof model === 'string') {
-    query.set('model', model)
-  }
-  if (typeof metric === 'string') {
-    query.set('metric', metric)
   }
   if (typeof days === 'number' || typeof days === 'string') {
     query.set('days', String(days))
@@ -103,23 +82,6 @@ export async function getDegradationLatest(
     {
       params: {},
       paramsSerializer: serializeNoQueryParams,
-      signal: options?.signal,
-    }
-  )
-  return data
-}
-
-export async function getDegradationTrend(
-  model: string,
-  metric: DegradationMetric,
-  days = 90,
-  options?: PublicRadarRequestOptions
-): Promise<DegradationTrendDTO> {
-  const { data } = await apiClient.get<DegradationTrendDTO>(
-    `${PUBLIC_RADAR_PATH}/degradation/trend`,
-    {
-      params: { model, metric, days },
-      paramsSerializer: serializeDegradationTrendParams,
       signal: options?.signal,
     }
   )

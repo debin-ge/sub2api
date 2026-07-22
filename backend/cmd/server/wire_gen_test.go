@@ -195,26 +195,24 @@ func (c *cleanupCloseTrackingConn) Close() error {
 
 func cleanupRadarConfig() *config.Config {
 	return &config.Config{Radar: config.RadarConfig{
-		Enabled:                                            true,
-		QuotaAggregatorIntervalMin:                         15,
-		QuotaHistoryRetentionDays:                          7,
-		SampleSizeWarnBelow:                                3,
-		PublicMinBucketAccounts:                            2,
-		InferMinUtilization:                                5,
-		InferMaxStdevRatio:                                 0.3,
-		ExternalRequestTimeoutSeconds:                      10,
-		ExternalResponseMaxBytes:                           1024 * 1024,
-		ArtificialAnalysisModelsIntervalMinutes:            360,
-		ArtificialAnalysisPerformanceIntervalMinutes:       1440,
-		LMArenaIntervalMinutes:                             1440,
-		StatuspageIntervalMinutes:                          30,
-		SourceHardRetentionDays:                            7,
-		QuotaStaleThresholdMinutes:                         30,
-		HealthStaleThresholdMinutes:                        60,
-		ArtificialAnalysisModelsStaleThresholdMinutes:      720,
-		ArtificialAnalysisPerformanceStaleThresholdMinutes: 2880,
-		LMArenaStaleThresholdMinutes:                       2880,
-		LMArenaURL:                                         "https://datasets-server.huggingface.co/filter",
+		Enabled:                                       true,
+		QuotaAggregatorIntervalMin:                    15,
+		QuotaHistoryRetentionDays:                     7,
+		SampleSizeWarnBelow:                           3,
+		PublicMinBucketAccounts:                       2,
+		InferMinUtilization:                           5,
+		InferMaxStdevRatio:                            0.3,
+		ExternalRequestTimeoutSeconds:                 10,
+		ExternalResponseMaxBytes:                      1024 * 1024,
+		ArtificialAnalysisModelsIntervalMinutes:       360,
+		LMArenaIntervalMinutes:                        1440,
+		StatuspageIntervalMinutes:                     30,
+		SourceHardRetentionDays:                       7,
+		QuotaStaleThresholdMinutes:                    30,
+		HealthStaleThresholdMinutes:                   60,
+		ArtificialAnalysisModelsStaleThresholdMinutes: 720,
+		LMArenaStaleThresholdMinutes:                  2880,
+		LMArenaURL:                                    "https://datasets-server.huggingface.co/filter",
 	}}
 }
 
@@ -695,7 +693,6 @@ func TestValidatedConfigFrontloadsRadarRepositoryServiceAndHandlerConditions(t *
 	viper.Reset()
 	t.Cleanup(viper.Reset)
 	t.Setenv("JWT_SECRET", strings.Repeat("x", 32))
-	viper.Set("radar.artificial_analysis_model_slugs", []string{"model.v1_alpha-beta"})
 
 	cfg, err := config.Load()
 	require.NoError(t, err)
@@ -711,11 +708,4 @@ func TestValidatedConfigFrontloadsRadarRepositoryServiceAndHandlerConditions(t *
 	require.NoError(t, err)
 	require.NotNil(t, radarHandler)
 
-	viper.Reset()
-	unsafeSlug := "../late-secret-model"
-	viper.Set("radar.artificial_analysis_model_slugs", []string{unsafeSlug})
-	unsafeCfg, err := config.Load()
-	require.Nil(t, unsafeCfg)
-	require.ErrorContains(t, err, "radar.artificial_analysis_model_slugs")
-	require.NotContains(t, err.Error(), unsafeSlug)
 }

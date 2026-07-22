@@ -269,14 +269,6 @@ func TestNewRadarServiceValidatesDependenciesAndCopiesConfig(t *testing.T) {
 	_, err = NewRadarService(invalid, repo)
 	require.EqualError(t, err, "radar service requires valid radar config")
 
-	invalidSlug := radarServiceTestConfig()
-	invalidSlug.Radar.ArtificialAnalysisModelSlugs = []string{"safe-model", "../secret"}
-	_, err = NewRadarService(invalidSlug, repo)
-	require.EqualError(t, err, "radar service requires valid radar config")
-	require.NotContains(t, err.Error(), "../secret")
-
-	cfg.Radar.ArtificialAnalysisModelSlugs[0] = "mutated-after-construction"
-	require.Equal(t, []string{"model-a", "model-b"}, service.modelSlugs)
 }
 
 func TestRadarServiceGetServiceHealthLocalizesFailureAndDeepClonesCache(t *testing.T) {
@@ -831,25 +823,6 @@ func TestRadarServiceFreshnessDeadlineExpiresCacheBeforeTTL(t *testing.T) {
 		require.Equal(t, 2, repo.metaCallCount())
 	})
 
-	t.Run("degradation trend", func(t *testing.T) {
-		clock := &radarServiceTestClock{now: now}
-		repo := newRadarServiceTestRepo()
-		source, err := RadarAAPerformanceSource("model-a")
-		require.NoError(t, err)
-		repo.payloads[source] = radarServiceAAPerformancePayload("model-a")
-		repo.metas[source] = radarServiceSuccessfulMeta(now.Add(-48*time.Hour + time.Second))
-		service := mustNewRadarServiceForTest(t, radarServiceTestConfig(), repo, clock)
-
-		fresh, err := service.GetDegradationTrend(context.Background(), "model-a", DegradationMetricIntelligenceIndex, 7)
-		require.NoError(t, err)
-		require.False(t, fresh.Stale)
-		clock.Advance(time.Second)
-		stale, err := service.GetDegradationTrend(context.Background(), "model-a", DegradationMetricIntelligenceIndex, 7)
-		require.NoError(t, err)
-		require.True(t, stale.Stale)
-		require.Equal(t, 2, repo.metaCallCount())
-	})
-
 	t.Run("lmarena", func(t *testing.T) {
 		clock := &radarServiceTestClock{now: now}
 		repo := newRadarServiceTestRepo()
@@ -875,13 +848,13 @@ func TestRadarServiceFreshnessDeadlineExpiresCacheBeforeTTL(t *testing.T) {
 
 		fresh, err := service.GetDataSources(context.Background())
 		require.NoError(t, err)
-		require.False(t, fresh[3].Stale)
-		require.True(t, fresh[3].IsHealthy)
+		require.False(t, fresh[1].Stale)
+		require.True(t, fresh[1].IsHealthy)
 		clock.Advance(time.Second)
 		stale, err := service.GetDataSources(context.Background())
 		require.NoError(t, err)
-		require.True(t, stale[3].Stale)
-		require.False(t, stale[3].IsHealthy)
+		require.True(t, stale[1].Stale)
+		require.False(t, stale[1].IsHealthy)
 		require.Equal(t, 2, repo.metaCallCount())
 	})
 
@@ -924,8 +897,6 @@ func TestRadarServiceContextCancellationStopsReads(t *testing.T) {
 	require.ErrorIs(t, err, context.Canceled)
 	_, err = service.GetDegradationLatest(ctx)
 	require.ErrorIs(t, err, context.Canceled)
-	_, err = service.GetDegradationTrend(ctx, "model-a", DegradationMetricIntelligenceIndex, 7)
-	require.ErrorIs(t, err, context.Canceled)
 	_, err = service.GetLMArena(ctx)
 	require.ErrorIs(t, err, context.Canceled)
 	_, err = service.GetDataSources(ctx)
@@ -946,7 +917,7 @@ func TestRadarServiceGetDegradationLatestCombinesSourcesAndDeepClones(t *testing
 	got, err := service.GetDegradationLatest(context.Background())
 	require.NoError(t, err)
 	require.False(t, got.Stale)
-	require.Equal(t, []string{"model-a", "model-b"}, radarServiceModelSlugs(got.Models))
+	require.Equal(t, []string{"model-a", "model-b", "model-c"}, radarServiceModelSlugs(got.Models))
 	require.Len(t, got.LMArenaTop5, 5)
 	require.Equal(t, 1, got.LMArenaTop5[0].Rank)
 	require.NotNil(t, got.Models)
@@ -954,7 +925,6 @@ func TestRadarServiceGetDegradationLatestCombinesSourcesAndDeepClones(t *testing
 	require.Equal(t, []string{"aa", "lmarena"}, radarServiceSortedMapKeys(got.SourcesLastUpdated))
 	require.NotNil(t, got.SourcesLastUpdated["aa"])
 	require.NotNil(t, got.SourcesLastUpdated["lmarena"])
-	require.True(t, got.TrendAvailable)
 
 	*got.Models[0].IntelligenceIndex = 0
 	*got.Models[0].LastUpdatedAt = time.Time{}
@@ -966,7 +936,7 @@ func TestRadarServiceGetDegradationLatestCombinesSourcesAndDeepClones(t *testing
 
 	again, err := service.GetDegradationLatest(context.Background())
 	require.NoError(t, err)
-	require.Len(t, again.Models, 2)
+	require.Len(t, again.Models, 3)
 	require.NotZero(t, *again.Models[0].IntelligenceIndex)
 	require.False(t, again.Models[0].LastUpdatedAt.IsZero())
 	require.NotEqual(t, "caller mutation", *again.LMArenaTop5[0].Vendor)
@@ -981,7 +951,6 @@ func TestRadarServiceGetDegradationLatestCombinesSourcesAndDeepClones(t *testing
 func TestRadarServiceGetDegradationLatestAutomaticallySelectsOverviewWithoutTrendFetchers(t *testing.T) {
 	now := time.Date(2026, 7, 13, 8, 0, 0, 0, time.UTC)
 	cfg := radarServiceTestConfig()
-	cfg.Radar.ArtificialAnalysisModelSlugs = nil
 	repo := newRadarServiceTestRepo()
 	repo.payloads[RadarSourceAA] = radarServiceAAModelsPayload(now)
 	repo.payloads[RadarSourceLMArena] = radarServiceLMArenaPayload(now, 1)
@@ -993,7 +962,73 @@ func TestRadarServiceGetDegradationLatestAutomaticallySelectsOverviewWithoutTren
 
 	require.NoError(t, err)
 	require.Equal(t, []string{"model-a", "model-b", "model-c"}, radarServiceModelSlugs(got.Models))
-	require.False(t, got.TrendAvailable, "automatic overview models have no statically scheduled performance fetchers")
+}
+
+func TestRadarServiceGetDegradationLatestIntersectsCatalogAndBuildsStableTopSix(t *testing.T) {
+	now := time.Date(2026, 7, 13, 8, 0, 0, 0, time.UTC)
+	repo := newRadarServiceTestRepo()
+	repo.payloads[RadarSourceAA] = radarServiceVersionedAAModelsPayload(8)
+	repo.payloads[RadarSourceLMArena] = radarServiceLMArenaPayload(now, 1)
+	repo.metas[RadarSourceAA] = radarServiceSuccessfulMeta(now)
+	repo.metas[RadarSourceLMArena] = radarServiceSuccessfulMeta(now)
+	catalogModels := make([]string, 0, 9)
+	for index := 1; index <= 8; index++ {
+		catalogModels = append(catalogModels, fmt.Sprintf("model-%02d-high", index))
+	}
+	catalogModels = append(catalogModels, "model-01-low")
+	catalog := &radarLMArenaCatalogStub{models: map[string][]string{"openai": catalogModels}}
+	service, err := newRadarService(radarServiceTestConfig(), repo, radarServiceOptions{
+		clock: &radarServiceTestClock{now: now}, cacheTTL: time.Minute, catalog: catalog,
+	})
+	require.NoError(t, err)
+
+	got, err := service.GetDegradationLatest(context.Background())
+
+	require.NoError(t, err)
+	require.False(t, got.Stale)
+	require.Len(t, got.AvailableModels, 8)
+	require.Len(t, got.Models, 6)
+	require.Equal(t, []string{
+		"model-01", "model-02", "model-03", "model-04", "model-05", "model-06",
+	}, got.DefaultModelSlugs)
+	require.Equal(t, got.DefaultModelSlugs, radarServiceModelSlugs(got.Models))
+	require.Equal(t, 4.1, *got.IntelligenceIndexVersion)
+	require.Equal(t, "AA Model 01", got.Models[0].Name)
+	require.Equal(t, []DegradationCatalogMatchDTO{
+		{Platform: "openai", ModelID: "model-01-high"},
+		{Platform: "openai", ModelID: "model-01-low"},
+	}, got.Models[0].CatalogMatches)
+	require.Equal(t, 1, catalog.calls)
+}
+
+func TestRadarServiceGetDegradationLatestCatalogFailureReturnsEmptyStaleAndIsNotCached(t *testing.T) {
+	now := time.Date(2026, 7, 13, 8, 0, 0, 0, time.UTC)
+	repo := newRadarServiceTestRepo()
+	repo.payloads[RadarSourceAA] = radarServiceAAModelsPayload(now)
+	repo.payloads[RadarSourceLMArena] = radarServiceLMArenaPayload(now, 1)
+	repo.metas[RadarSourceAA] = radarServiceSuccessfulMeta(now)
+	repo.metas[RadarSourceLMArena] = radarServiceSuccessfulMeta(now)
+	catalog := &radarLMArenaCatalogStub{err: errors.New("catalog unavailable")}
+	service, err := newRadarService(radarServiceTestConfig(), repo, radarServiceOptions{
+		clock: &radarServiceTestClock{now: now}, cacheTTL: time.Minute, catalog: catalog,
+	})
+	require.NoError(t, err)
+
+	degraded, err := service.GetDegradationLatest(context.Background())
+	require.NoError(t, err)
+	require.Empty(t, degraded.Models)
+	require.Empty(t, degraded.AvailableModels)
+	require.Empty(t, degraded.DefaultModelSlugs)
+	require.True(t, degraded.Stale)
+
+	catalog.err = nil
+	catalog.models = map[string][]string{"openai": {"model-a", "model-b", "model-c"}}
+	recovered, err := service.GetDegradationLatest(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, []string{"model-a", "model-b", "model-c"}, radarServiceModelSlugs(recovered.AvailableModels))
+	require.False(t, recovered.Stale)
+	require.Equal(t, 2, catalog.calls, "catalog failure responses must not enter the service cache")
+	require.Equal(t, 2, repo.payloadCallCount(RadarSourceAA))
 }
 
 func TestRadarServiceGetDegradationLatestLocallyDegradesEachSource(t *testing.T) {
@@ -1005,11 +1040,11 @@ func TestRadarServiceGetDegradationLatestLocallyDegradesEachSource(t *testing.T)
 		wantModels    int
 		wantArenaTop5 int
 	}{
-		{name: "aa only", aaPayload: radarServiceAAModelsPayload(now), wantModels: 2},
+		{name: "aa only", aaPayload: radarServiceAAModelsPayload(now), wantModels: 3},
 		{name: "lmarena only", arenaPayload: radarServiceLMArenaPayload(now, 6), wantArenaTop5: 5},
 		{name: "both missing"},
 		{name: "aa corrupt", aaPayload: []byte(`{"data":"raw-secret"}`), arenaPayload: radarServiceLMArenaPayload(now, 6), wantArenaTop5: 5},
-		{name: "lmarena corrupt", aaPayload: radarServiceAAModelsPayload(now), arenaPayload: []byte(`{"meta":"raw-secret"}`), wantModels: 2},
+		{name: "lmarena corrupt", aaPayload: radarServiceAAModelsPayload(now), arenaPayload: []byte(`{"meta":"raw-secret"}`), wantModels: 3},
 	}
 
 	for _, test := range tests {
@@ -1058,7 +1093,7 @@ func TestRadarServiceGetDegradationLatestRetainsPayloadAfterLatestFetchFailure(t
 
 	got, err := service.GetDegradationLatest(context.Background())
 	require.NoError(t, err)
-	require.Len(t, got.Models, 2)
+	require.Len(t, got.Models, 3)
 	require.Len(t, got.LMArenaTop5, 2)
 	require.True(t, got.Stale)
 	require.Equal(t, repo.metas[RadarSourceAA].LastSuccessAt.UTC(), got.SourcesLastUpdated["aa"].UTC())
@@ -1088,7 +1123,7 @@ func TestRadarServiceGetDegradationLatestPartialFailuresAreNotCached(t *testing.
 			require.Len(t, first.LMArenaTop5, 2)
 			require.True(t, first.Stale)
 			if fault == "meta operational" {
-				require.Len(t, first.Models, 2)
+				require.Len(t, first.Models, 3)
 			} else {
 				require.Empty(t, first.Models)
 			}
@@ -1101,7 +1136,7 @@ func TestRadarServiceGetDegradationLatestPartialFailuresAreNotCached(t *testing.
 
 			recovered, err := service.GetDegradationLatest(context.Background())
 			require.NoError(t, err)
-			require.Len(t, recovered.Models, 2)
+			require.Len(t, recovered.Models, 3)
 			require.Len(t, recovered.LMArenaTop5, 2)
 			require.False(t, recovered.Stale)
 			require.Equal(t, 2, repo.metaCallCount())
@@ -1109,164 +1144,6 @@ func TestRadarServiceGetDegradationLatestPartialFailuresAreNotCached(t *testing.
 			require.Equal(t, 2, repo.payloadCallCount(RadarSourceLMArena))
 		})
 	}
-}
-
-func TestRadarServiceGetDegradationTrendMapsAllMetricsAndCalendarWindow(t *testing.T) {
-	now := time.Date(2026, 7, 13, 23, 45, 0, 0, time.UTC)
-	tests := []struct {
-		metric    DegradationMetric
-		wantDates []string
-		want      []float64
-	}{
-		{metric: DegradationMetricIntelligenceIndex, wantDates: []string{"2026-07-11", "2026-07-12", "2026-07-13"}, want: []float64{81, 82, 83}},
-		{metric: DegradationMetricCodingIndex, wantDates: []string{"2026-07-11", "2026-07-13"}, want: []float64{71, 73}},
-		{metric: DegradationMetricAgenticIndex, wantDates: []string{"2026-07-11", "2026-07-12", "2026-07-13"}, want: []float64{61, 62, 63}},
-	}
-
-	for _, test := range tests {
-		t.Run(string(test.metric), func(t *testing.T) {
-			repo := newRadarServiceTestRepo()
-			source, err := RadarAAPerformanceSource("model-a")
-			require.NoError(t, err)
-			repo.payloads[source] = radarServiceAAPerformancePayload("model-a")
-			repo.metas[source] = radarServiceSuccessfulMeta(now)
-			service := mustNewRadarServiceForTest(t, radarServiceTestConfig(), repo, &radarServiceTestClock{now: now})
-
-			got, err := service.GetDegradationTrend(context.Background(), " model-a ", test.metric, 3)
-			require.NoError(t, err)
-			require.Equal(t, "model-a", got.ModelSlug)
-			require.Equal(t, test.metric, got.Metric)
-			require.Equal(t, 3, got.Days)
-			require.False(t, got.Stale)
-			require.Equal(t, test.wantDates, radarServiceMetricDates(got.DataPoints))
-			require.Equal(t, test.want, radarServiceMetricValues(got.DataPoints))
-		})
-	}
-}
-
-func TestRadarServiceGetDegradationTrendMissIsEmptyAndStale(t *testing.T) {
-	now := time.Date(2026, 7, 13, 8, 0, 0, 0, time.UTC)
-	service := mustNewRadarServiceForTest(
-		t,
-		radarServiceTestConfig(),
-		newRadarServiceTestRepo(),
-		&radarServiceTestClock{now: now},
-	)
-
-	got, err := service.GetDegradationTrend(context.Background(), "model-a", DegradationMetricIntelligenceIndex, 90)
-	require.NoError(t, err)
-	require.Equal(t, "model-a", got.ModelSlug)
-	require.Equal(t, DegradationMetricIntelligenceIndex, got.Metric)
-	require.Equal(t, 90, got.Days)
-	require.NotNil(t, got.DataPoints)
-	require.Empty(t, got.DataPoints)
-	require.True(t, got.Stale)
-}
-
-func TestRadarServiceGetDegradationTrendValidatesBeforeRepositoryRead(t *testing.T) {
-	now := time.Date(2026, 7, 13, 8, 0, 0, 0, time.UTC)
-	tests := []struct {
-		name   string
-		model  string
-		metric DegradationMetric
-		days   int
-	}{
-		{name: "unconfigured model", model: "unconfigured-super-secret", metric: DegradationMetricIntelligenceIndex, days: 7},
-		{name: "unsafe model", model: "../model-a", metric: DegradationMetricIntelligenceIndex, days: 7},
-		{name: "invalid metric", model: "model-a", metric: DegradationMetric("raw-secret-metric"), days: 7},
-		{name: "zero days", model: "model-a", metric: DegradationMetricIntelligenceIndex, days: 0},
-		{name: "too many days", model: "model-a", metric: DegradationMetricIntelligenceIndex, days: 91},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			repo := newRadarServiceTestRepo()
-			service := mustNewRadarServiceForTest(t, radarServiceTestConfig(), repo, &radarServiceTestClock{now: now})
-
-			_, err := service.GetDegradationTrend(context.Background(), test.model, test.metric, test.days)
-			require.ErrorIs(t, err, ErrInvalidRadarQuery)
-			require.Equal(t, ErrInvalidRadarQuery.Error(), err.Error())
-			require.NotContains(t, err.Error(), "secret")
-			require.Zero(t, repo.metaCallCount())
-		})
-	}
-}
-
-func TestRadarServiceGetDegradationTrendOperationalAndCorruptErrorsAreSafeAndNotCached(t *testing.T) {
-	now := time.Date(2026, 7, 13, 8, 0, 0, 0, time.UTC)
-	source, err := RadarAAPerformanceSource("model-a")
-	require.NoError(t, err)
-	tests := []struct {
-		name       string
-		payload    []byte
-		payloadErr error
-		metaErr    error
-	}{
-		{name: "payload operational", payloadErr: errors.New("redis://user:password@secret.internal/key/model-a")},
-		{name: "metadata operational", payload: radarServiceAAPerformancePayload("model-a"), metaErr: errors.New("redis raw secret")},
-		{name: "corrupt payload", payload: []byte(`{"model_slug":"model-a","data_points":"raw-secret"}`)},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			repo := newRadarServiceTestRepo()
-			if test.payload != nil {
-				repo.payloads[source] = test.payload
-			}
-			repo.payloadErrs[source] = test.payloadErr
-			repo.metaErr = test.metaErr
-			repo.metas[source] = radarServiceSuccessfulMeta(now)
-			service := mustNewRadarServiceForTest(t, radarServiceTestConfig(), repo, &radarServiceTestClock{now: now})
-
-			_, err := service.GetDegradationTrend(context.Background(), "model-a", DegradationMetricIntelligenceIndex, 7)
-			require.ErrorIs(t, err, ErrRadarUnavailable)
-			require.Equal(t, ErrRadarUnavailable.Error(), err.Error())
-			require.NotContains(t, err.Error(), "model-a")
-			require.NotContains(t, err.Error(), "secret")
-
-			repo.mu.Lock()
-			repo.payloadErrs[source] = nil
-			repo.metaErr = nil
-			repo.payloads[source] = radarServiceAAPerformancePayload("model-a")
-			repo.mu.Unlock()
-			got, retryErr := service.GetDegradationTrend(context.Background(), "model-a", DegradationMetricIntelligenceIndex, 7)
-			require.NoError(t, retryErr)
-			require.NotEmpty(t, got.DataPoints)
-		})
-	}
-}
-
-func TestRadarServiceCacheKeyIncludesEveryTrendParameter(t *testing.T) {
-	now := time.Date(2026, 7, 13, 8, 0, 0, 0, time.UTC)
-	repo := newRadarServiceTestRepo()
-	sourceA, err := RadarAAPerformanceSource("model-a")
-	require.NoError(t, err)
-	sourceB, err := RadarAAPerformanceSource("model-b")
-	require.NoError(t, err)
-	repo.payloads[sourceA] = radarServiceAAPerformancePayload("model-a")
-	repo.payloads[sourceB] = radarServiceAAPerformancePayload("model-b")
-	repo.metas[sourceA] = radarServiceSuccessfulMeta(now)
-	repo.metas[sourceB] = radarServiceSuccessfulMeta(now)
-	service := mustNewRadarServiceForTest(t, radarServiceTestConfig(), repo, &radarServiceTestClock{now: now})
-
-	queries := []struct {
-		model  string
-		metric DegradationMetric
-		days   int
-	}{
-		{model: "model-a", metric: DegradationMetricIntelligenceIndex, days: 7},
-		{model: " model-a ", metric: DegradationMetricIntelligenceIndex, days: 7},
-		{model: "model-a", metric: DegradationMetricCodingIndex, days: 7},
-		{model: "model-a", metric: DegradationMetricIntelligenceIndex, days: 8},
-		{model: "model-b", metric: DegradationMetricIntelligenceIndex, days: 7},
-	}
-	for _, query := range queries {
-		_, err := service.GetDegradationTrend(context.Background(), query.model, query.metric, query.days)
-		require.NoError(t, err)
-	}
-	require.Equal(t, 3, repo.payloadCallCount(sourceA))
-	require.Equal(t, 1, repo.payloadCallCount(sourceB))
-	require.Equal(t, 4, repo.metaCallCount())
 }
 
 func TestRadarServiceGetLMArenaMissSuccessStaleAndDeepClone(t *testing.T) {
@@ -1350,24 +1227,19 @@ func TestRadarServiceGetLMArenaOperationalAndCorruptErrorsAreSafeAndNotCached(t 
 func TestRadarServiceGetDataSourcesStableSafeStatesAndDeepClone(t *testing.T) {
 	now := time.Date(2026, 7, 13, 8, 0, 0, 0, time.FixedZone("CST", 8*60*60))
 	repo := newRadarServiceTestRepo()
-	sourceA, err := RadarAAPerformanceSource("model-a")
-	require.NoError(t, err)
 	repo.metas[RadarSourceAA] = radarServiceSuccessfulMeta(now)
-	repo.metas[sourceA] = radarServiceFailedMeta(now)
 	repo.metas[RadarSourceLMArena] = radarServiceSuccessfulMeta(now.Add(-49 * time.Hour))
-	repo.metas[RadarSourceStatusOpenAI] = radarServiceSuccessfulMeta(now)
+	repo.metas[RadarSourceStatusClaude] = radarServiceFailedMeta(now)
 	unknownCode := DataSourceErrorCode("raw-secret-error")
-	meta := repo.metas[sourceA]
+	meta := repo.metas[RadarSourceStatusClaude]
 	meta.Error = &unknownCode
-	repo.metas[sourceA] = meta
+	repo.metas[RadarSourceStatusClaude] = meta
 	service := mustNewRadarServiceForTest(t, radarServiceTestConfig(), repo, &radarServiceTestClock{now: now})
 
 	got, err := service.GetDataSources(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, []string{
 		"aa",
-		"aa_perf:model-a",
-		"aa_perf:model-b",
 		"lmarena",
 		"status_claude",
 		"status_openai",
@@ -1379,8 +1251,6 @@ func TestRadarServiceGetDataSourcesStableSafeStatesAndDeepClone(t *testing.T) {
 	}, radarServiceSourceKeys(got))
 	require.Equal(t, []string{
 		"https://artificialanalysis.ai",
-		"https://artificialanalysis.ai",
-		"https://artificialanalysis.ai",
 		"https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset",
 		"https://status.claude.com",
 		"https://status.openai.com",
@@ -1390,26 +1260,19 @@ func TestRadarServiceGetDataSourcesStableSafeStatesAndDeepClone(t *testing.T) {
 		"https://status.minimaxi.com",
 		"",
 	}, radarServiceSourceURLs(got))
-	require.Equal(t, []string{"6h", "24h", "24h", "24h", "30m", "30m", "30m", "30m", "30m", "30m", "15m"}, radarServiceSourceIntervals(got))
+	require.Equal(t, []string{"6h", "24h", "30m", "30m", "30m", "30m", "30m", "30m", "15m"}, radarServiceSourceIntervals(got))
 
 	require.Equal(t, DataSourceStateHealthy, got[0].State)
 	require.True(t, got[0].IsHealthy)
 	require.False(t, got[0].Stale)
-	require.Equal(t, DataSourceStateFailed, got[1].State)
-	require.False(t, got[1].IsHealthy)
+	require.Equal(t, DataSourceStateHealthy, got[1].State)
 	require.True(t, got[1].Stale)
-	require.Equal(t, DataSourceErrorCodeInvalidResponse, *got[1].Error)
-	require.Equal(t, DataSourceStateNeverAttempted, got[2].State)
+	require.Equal(t, DataSourceStateFailed, got[2].State)
 	require.True(t, got[2].Stale)
-	require.Equal(t, DataSourceStateHealthy, got[3].State)
-	require.True(t, got[3].Stale)
-	require.False(t, got[3].IsHealthy)
-	require.Equal(t, DataSourceStateNeverAttempted, got[4].State)
-	require.Equal(t, DataSourceStateHealthy, got[5].State)
-	require.True(t, got[5].IsHealthy)
+	require.Equal(t, DataSourceErrorCodeInvalidResponse, *got[2].Error)
 	require.Equal(t, "Sub2API Aggregated Usage", got[len(got)-1].Name)
 	require.Equal(t, DataSourceStateNeverAttempted, got[len(got)-1].State)
-	require.Nil(t, got[6].HTTPStatus)
+	require.Nil(t, got[3].HTTPStatus)
 
 	for _, source := range got {
 		require.NotContains(t, source.URL, "fetch.secret")
@@ -1423,14 +1286,14 @@ func TestRadarServiceGetDataSourcesStableSafeStatesAndDeepClone(t *testing.T) {
 	*got[0].LastSuccessAt = time.Time{}
 	*got[0].NextFireAt = time.Time{}
 	*got[0].HTTPStatus = 0
-	*got[1].Error = DataSourceErrorCodeUnauthorized
+	*got[2].Error = DataSourceErrorCodeUnauthorized
 	again, err := service.GetDataSources(context.Background())
 	require.NoError(t, err)
 	require.False(t, again[0].LastAttemptAt.IsZero())
 	require.False(t, again[0].LastSuccessAt.IsZero())
 	require.False(t, again[0].NextFireAt.IsZero())
 	require.NotZero(t, *again[0].HTTPStatus)
-	require.Equal(t, DataSourceErrorCodeInvalidResponse, *again[1].Error)
+	require.Equal(t, DataSourceErrorCodeInvalidResponse, *again[2].Error)
 	require.Zero(t, repo.writeCalls)
 }
 
@@ -1439,28 +1302,20 @@ func TestRadarServiceGetDataSourcesAAWithoutKeyIsNotConfigured(t *testing.T) {
 	cfg := radarServiceTestConfig()
 	cfg.Radar.ArtificialAnalysisAPIKey = ""
 	repo := newRadarServiceTestRepo()
-	performanceA, err := RadarAAPerformanceSource("model-a")
-	require.NoError(t, err)
-	performanceB, err := RadarAAPerformanceSource("model-b")
-	require.NoError(t, err)
 	repo.metas[RadarSourceAA] = radarServiceFailedMeta(now)
-	repo.metas[performanceA] = radarServiceSuccessfulMeta(now)
-	repo.metas[performanceB] = radarServiceFailedMeta(now)
 	service := mustNewRadarServiceForTest(t, cfg, repo, &radarServiceTestClock{now: now})
 
 	got, err := service.GetDataSources(context.Background())
 	require.NoError(t, err)
-	for _, source := range got[:3] {
-		require.Equal(t, DataSourceStateNotConfigured, source.State)
-		require.False(t, source.IsHealthy)
-		require.False(t, source.Stale)
-		require.Nil(t, source.LastAttemptAt)
-		require.Nil(t, source.LastSuccessAt)
-		require.Nil(t, source.NextFireAt)
-		require.Nil(t, source.HTTPStatus)
-		require.Nil(t, source.Error)
-	}
-	for _, source := range got[3:] {
+	require.Equal(t, DataSourceStateNotConfigured, got[0].State)
+	require.False(t, got[0].IsHealthy)
+	require.False(t, got[0].Stale)
+	require.Nil(t, got[0].LastAttemptAt)
+	require.Nil(t, got[0].LastSuccessAt)
+	require.Nil(t, got[0].NextFireAt)
+	require.Nil(t, got[0].HTTPStatus)
+	require.Nil(t, got[0].Error)
+	for _, source := range got[1:] {
 		require.Equal(t, DataSourceStateNeverAttempted, source.State)
 	}
 	got[0].State = DataSourceStateHealthy
@@ -1478,14 +1333,10 @@ func TestRadarServiceDegradationLatestIgnoresAAWhenSourceIsNotConfigured(t *test
 	cfg := radarServiceTestConfig()
 	cfg.Radar.ArtificialAnalysisAPIKey = "   "
 	repo := newRadarServiceTestRepo()
-	performanceSource, err := RadarAAPerformanceSource("model-a")
-	require.NoError(t, err)
 	repo.payloads[RadarSourceAA] = radarServiceAAModelsPayload(now)
 	repo.payloads[RadarSourceLMArena] = radarServiceLMArenaPayload(now, 2)
-	repo.payloads[performanceSource] = radarServiceAAPerformancePayload("model-a")
 	repo.metas[RadarSourceAA] = radarServiceSuccessfulMeta(now)
 	repo.metas[RadarSourceLMArena] = radarServiceSuccessfulMeta(now)
-	repo.metas[performanceSource] = radarServiceSuccessfulMeta(now)
 	service := mustNewRadarServiceForTest(t, cfg, repo, &radarServiceTestClock{now: now})
 
 	latest, err := service.GetDegradationLatest(context.Background())
@@ -1498,10 +1349,6 @@ func TestRadarServiceDegradationLatestIgnoresAAWhenSourceIsNotConfigured(t *test
 	require.False(t, latest.Stale)
 	require.Zero(t, repo.payloadCallCount(RadarSourceAA))
 	require.Equal(t, 1, repo.payloadCallCount(RadarSourceLMArena))
-	trend, err := service.GetDegradationTrend(context.Background(), "model-a", DegradationMetricIntelligenceIndex, 7)
-	require.NoError(t, err)
-	require.NotEmpty(t, trend.DataPoints)
-	require.True(t, trend.Stale)
 }
 
 func TestRadarServiceGetDataSourcesOperationalErrorIsSafeAndNotCached(t *testing.T) {
@@ -1520,7 +1367,7 @@ func TestRadarServiceGetDataSourcesOperationalErrorIsSafeAndNotCached(t *testing
 	repo.mu.Unlock()
 	got, err := service.GetDataSources(context.Background())
 	require.NoError(t, err)
-	require.Len(t, got, 11)
+	require.Len(t, got, 9)
 	require.Equal(t, 2, repo.metaCallCount())
 }
 
@@ -1587,7 +1434,7 @@ func TestRadarServiceGetDataSourcesQuotaAggregatorStateErrorIsSafeAndNotCached(t
 
 	got, err := service.GetDataSources(context.Background())
 	require.NoError(t, err)
-	require.Len(t, got, 11)
+	require.Len(t, got, 9)
 	aggregator := got[len(got)-1]
 	require.Equal(t, DataSourceStateFailed, aggregator.State)
 	require.False(t, aggregator.IsHealthy)
@@ -1627,7 +1474,7 @@ func TestRadarServiceGetDataSourcesInvalidQuotaAggregatorStateDegradesOnlyItsRow
 
 	got, err := service.GetDataSources(context.Background())
 	require.NoError(t, err)
-	require.Equal(t, DataSourceStateHealthy, got[3].State)
+	require.Equal(t, DataSourceStateHealthy, got[1].State)
 	require.Equal(t, DataSourceStateFailed, got[len(got)-1].State)
 	require.True(t, got[len(got)-1].Stale)
 	require.Equal(t, DataSourceErrorCodeAggregation, *got[len(got)-1].Error)
@@ -1646,28 +1493,22 @@ func TestRadarServiceGetDataSourcesQuotaAggregatorContextErrorRemainsTerminal(t 
 func TestRadarServiceConcurrentCachedResultsAreIndependent(t *testing.T) {
 	now := time.Date(2026, 7, 13, 8, 0, 0, 0, time.UTC)
 	repo := newRadarServiceTestRepo()
-	source, err := RadarAAPerformanceSource("model-a")
-	require.NoError(t, err)
 	repo.payloads[RadarSourceStatusClaude] = radarServiceClaudeStatusPayload(now)
 	repo.payloads[RadarSourceStatusOpenAI] = radarServiceOpenAIStatusPayload(now)
 	repo.payloads[RadarSourceAA] = radarServiceAAModelsPayload(now)
 	repo.payloads[RadarSourceLMArena] = radarServiceLMArenaPayload(now, 6)
-	repo.payloads[source] = radarServiceAAPerformancePayload("model-a")
 	for _, key := range []RadarSourceKey{
 		RadarSourceStatusClaude,
 		RadarSourceStatusOpenAI,
 		RadarSourceAA,
 		RadarSourceLMArena,
-		source,
 	} {
 		repo.metas[key] = radarServiceSuccessfulMeta(now)
 	}
 	service := mustNewRadarServiceForTest(t, radarServiceTestConfig(), repo, &radarServiceTestClock{now: now})
-	_, err = service.GetServiceHealth(context.Background())
+	_, err := service.GetServiceHealth(context.Background())
 	require.NoError(t, err)
 	_, err = service.GetDegradationLatest(context.Background())
-	require.NoError(t, err)
-	_, err = service.GetDegradationTrend(context.Background(), "model-a", DegradationMetricIntelligenceIndex, 7)
 	require.NoError(t, err)
 	_, err = service.GetLMArena(context.Background())
 	require.NoError(t, err)
@@ -1699,13 +1540,6 @@ func TestRadarServiceConcurrentCachedResultsAreIndependent(t *testing.T) {
 				}
 				*latest.Models[0].IntelligenceIndex = 0
 				latest.SourcesLastUpdated["aa"] = nil
-
-				trend, err := service.GetDegradationTrend(context.Background(), "model-a", DegradationMetricIntelligenceIndex, 7)
-				if err != nil {
-					errCh <- err
-					return
-				}
-				trend.DataPoints[0].Value = 0
 
 				arena, err := service.GetLMArena(context.Background())
 				if err != nil {
@@ -1757,28 +1591,25 @@ func mustNewRadarServiceForTest(
 
 func radarServiceTestConfig() *config.Config {
 	return &config.Config{Radar: config.RadarConfig{
-		Enabled:                                            true,
-		QuotaAggregatorIntervalMin:                         15,
-		QuotaHistoryRetentionDays:                          7,
-		SampleSizeWarnBelow:                                3,
-		PublicMinBucketAccounts:                            1,
-		InferMinUtilization:                                5,
-		InferMaxStdevRatio:                                 0.3,
-		ArtificialAnalysisAPIKey:                           "super-secret-aa-key",
-		ArtificialAnalysisModelSlugs:                       []string{"model-a", "model-b"},
-		ExternalRequestTimeoutSeconds:                      10,
-		ExternalResponseMaxBytes:                           10 * 1024 * 1024,
-		ArtificialAnalysisModelsIntervalMinutes:            6 * 60,
-		ArtificialAnalysisPerformanceIntervalMinutes:       24 * 60,
-		LMArenaIntervalMinutes:                             24 * 60,
-		StatuspageIntervalMinutes:                          30,
-		SourceHardRetentionDays:                            7,
-		QuotaStaleThresholdMinutes:                         30,
-		HealthStaleThresholdMinutes:                        60,
-		ArtificialAnalysisModelsStaleThresholdMinutes:      12 * 60,
-		ArtificialAnalysisPerformanceStaleThresholdMinutes: 48 * 60,
-		LMArenaStaleThresholdMinutes:                       48 * 60,
-		LMArenaURL:                                         "https://datasets-server.huggingface.co/filter",
+		Enabled:                                       true,
+		QuotaAggregatorIntervalMin:                    15,
+		QuotaHistoryRetentionDays:                     7,
+		SampleSizeWarnBelow:                           3,
+		PublicMinBucketAccounts:                       1,
+		InferMinUtilization:                           5,
+		InferMaxStdevRatio:                            0.3,
+		ArtificialAnalysisAPIKey:                      "super-secret-aa-key",
+		ExternalRequestTimeoutSeconds:                 10,
+		ExternalResponseMaxBytes:                      10 * 1024 * 1024,
+		ArtificialAnalysisModelsIntervalMinutes:       6 * 60,
+		LMArenaIntervalMinutes:                        24 * 60,
+		StatuspageIntervalMinutes:                     30,
+		SourceHardRetentionDays:                       7,
+		QuotaStaleThresholdMinutes:                    30,
+		HealthStaleThresholdMinutes:                   60,
+		ArtificialAnalysisModelsStaleThresholdMinutes: 12 * 60,
+		LMArenaStaleThresholdMinutes:                  48 * 60,
+		LMArenaURL:                                    "https://datasets-server.huggingface.co/filter",
 	}}
 }
 
@@ -1833,22 +1664,6 @@ func radarServiceSortedMapKeys(values map[string]*time.Time) []string {
 	return result
 }
 
-func radarServiceMetricDates(points []MetricPointDTO) []string {
-	result := make([]string, len(points))
-	for index := range points {
-		result[index] = points[index].Date
-	}
-	return result
-}
-
-func radarServiceMetricValues(points []MetricPointDTO) []float64 {
-	result := make([]float64, len(points))
-	for index := range points {
-		result[index] = points[index].Value
-	}
-	return result
-}
-
 func radarServiceSourceKeys(sources []DataSourceMetaDTO) []string {
 	result := make([]string, len(sources))
 	for index := range sources {
@@ -1884,19 +1699,19 @@ func radarServiceAAModelsPayload(now time.Time) []byte {
 	}`, updated, updated, updated))
 }
 
-func radarServiceAAPerformancePayload(model string) []byte {
-	return []byte(fmt.Sprintf(`{
-		"model_slug":%q,
-		"window":"90d",
-		"interval":"daily",
-		"data_points":[
-			{"date":"2026-07-14","intelligence_index":84,"coding_index":74,"agentic_index":64},
-			{"date":"2026-07-13","intelligence_index":83,"coding_index":73,"agentic_index":63},
-			{"date":"2026-07-10","intelligence_index":80,"coding_index":70,"agentic_index":60},
-			{"date":"2026-07-12","intelligence_index":82,"coding_index":null,"agentic_index":62},
-			{"date":"2026-07-11","intelligence_index":81,"coding_index":71,"agentic_index":61}
-		]
-	}`, model))
+func radarServiceVersionedAAModelsPayload(count int) []byte {
+	models := make([]string, 0, count)
+	for index := 1; index <= count; index++ {
+		score := 100 - index
+		models = append(models, fmt.Sprintf(
+			`{"slug":"model-%02d","name":"AA Model %02d","creator":"Vendor","intelligence_index":%d,"coding_index":%d,"agentic_index":%d}`,
+			index, index, score, score, score,
+		))
+	}
+	return []byte(fmt.Sprintf(
+		`{"intelligence_index_version":4.1,"data":[%s]}`,
+		strings.Join(models, ","),
+	))
 }
 
 func radarServiceLMArenaPayload(now time.Time, count int) []byte {

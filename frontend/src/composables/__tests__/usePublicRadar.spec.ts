@@ -8,8 +8,6 @@ import {
 import type {
   DataSourceMetaDTO,
   DegradationLatestDTO,
-  DegradationMetric,
-  DegradationTrendDTO,
   LMArenaDTO,
   QuotaRadarLatestDTO,
   QuotaTrendDTO,
@@ -38,7 +36,6 @@ function createAPI(overrides: Partial<PublicRadarAPI> = {}): PublicRadarAPI {
     getQuotaBucketsLatest: vi.fn().mockResolvedValue(quota),
     getQuotaBucketsTrend: vi.fn().mockResolvedValue({ data_points: [] }),
     getDegradationLatest: vi.fn().mockResolvedValue(degradation),
-    getDegradationTrend: vi.fn().mockResolvedValue({ data_points: [] }),
     getLMArena: vi.fn().mockResolvedValue(lmarena),
     getDataSources: vi.fn().mockResolvedValue(sources),
     ...overrides,
@@ -372,36 +369,6 @@ describe('usePublicRadar trend cache', () => {
     expect(state.error.value).toBeNull()
   })
 
-  it('keys degradation trends by model+metric+days and gives each key independent state', async () => {
-    const pending = deferred<DegradationTrendDTO>()
-    const secondValue = { model_slug: 'opus', metric: 'coding_index', days: 30 } as DegradationTrendDTO
-    const getDegradationTrend = vi
-      .fn()
-      .mockImplementationOnce(() => pending.promise)
-      .mockResolvedValueOnce(secondValue)
-    const radar = usePublicRadar({ api: createAPI({ getDegradationTrend }) })
-
-    const first = radar.loadDegradationTrend('opus', 'coding_index', 90)
-    const duplicate = radar.loadDegradationTrend('opus', 'coding_index', 90)
-    const second = radar.loadDegradationTrend('opus', 'coding_index', 30)
-
-    expect(duplicate).toBe(first)
-    expect(getDegradationTrend).toHaveBeenCalledTimes(2)
-    expect(getDegradationTrend).toHaveBeenNthCalledWith(
-      1,
-      'opus',
-      'coding_index' satisfies DegradationMetric,
-      90,
-      expect.objectContaining({ signal: expect.any(AbortSignal) })
-    )
-    expect(radar.getDegradationTrendState('opus', 'coding_index', 90).loading.value).toBe(true)
-    await second
-    expect(radar.getDegradationTrendState('opus', 'coding_index', 30).data.value).toBe(secondValue)
-
-    pending.resolve({ model_slug: 'opus', metric: 'coding_index', days: 90 } as DegradationTrendDTO)
-    await first
-  })
-
   it('documents force as a cache bypass while still deduplicating an active request', async () => {
     const firstValue = { bucket_key: 'pro', days: 7, stale: true } as QuotaTrendDTO
     const secondValue = { bucket_key: 'pro', days: 7, stale: false } as QuotaTrendDTO
@@ -428,35 +395,27 @@ describe('usePublicRadar lifecycle', () => {
   it('aborts core and trend requests and never writes asynchronous results after dispose', async () => {
     const core = deferred<ServiceHealthDTO[]>()
     const quotaTrend = deferred<QuotaTrendDTO>()
-    const degradationTrend = deferred<DegradationTrendDTO>()
     const getServiceHealth = vi.fn(() => core.promise)
     const getQuotaBucketsTrend = vi.fn(() => quotaTrend.promise)
-    const getDegradationTrend = vi.fn(() => degradationTrend.promise)
     const radar = usePublicRadar({
-      api: createAPI({ getServiceHealth, getQuotaBucketsTrend, getDegradationTrend }),
+      api: createAPI({ getServiceHealth, getQuotaBucketsTrend }),
     })
 
     const refresh = radar.refresh()
     const quotaTrendLoad = radar.loadQuotaTrend('pro', 7)
-    const degradationTrendLoad = radar.loadDegradationTrend('opus', 'coding_index', 90)
     const quotaState = radar.getQuotaTrendState('pro', 7)
-    const degradationState = radar.getDegradationTrendState('opus', 'coding_index', 90)
     const coreSignal = vi.mocked(getServiceHealth).mock.calls[0][0]?.signal
     const quotaTrendSignal = vi.mocked(getQuotaBucketsTrend).mock.calls[0][2]?.signal
-    const degradationTrendSignal = vi.mocked(getDegradationTrend).mock.calls[0][3]?.signal
     radar.dispose()
 
     expect(coreSignal?.aborted).toBe(true)
     expect(quotaTrendSignal?.aborted).toBe(true)
-    expect(degradationTrendSignal?.aborted).toBe(true)
 
     core.resolve(health)
     quotaTrend.resolve({ bucket_key: 'pro' } as QuotaTrendDTO)
-    degradationTrend.resolve({ model_slug: 'opus' } as DegradationTrendDTO)
-    const [refreshResult, quotaResult, degradationResult] = await Promise.allSettled([
+    const [refreshResult, quotaResult] = await Promise.allSettled([
       refresh,
       quotaTrendLoad,
-      degradationTrendLoad,
     ])
     expect(refreshResult.status).toBe('fulfilled')
     expect(quotaResult).toEqual(
@@ -465,20 +424,10 @@ describe('usePublicRadar lifecycle', () => {
         reason: expect.objectContaining({ code: 'disposed' }),
       })
     )
-    expect(degradationResult).toEqual(
-      expect.objectContaining({
-        status: 'rejected',
-        reason: expect.objectContaining({ code: 'disposed' }),
-      })
-    )
     expect(radar.health.data.value).toBeNull()
     expect(radar.health.hasSucceeded.value).toBe(false)
     expect(quotaState.data.value).toBeNull()
-    expect(degradationState.data.value).toBeNull()
     expect(radar.getQuotaTrendState('pro', 7)).not.toBe(quotaState)
-    expect(radar.getDegradationTrendState('opus', 'coding_index', 90)).not.toBe(
-      degradationState
-    )
     expect(radar.lastFetchedAt.value).toBeNull()
 
     await expect(radar.loadQuotaTrend('pro', 7)).rejects.toEqual(
@@ -489,7 +438,6 @@ describe('usePublicRadar lifecycle', () => {
       })
     )
     expect(getQuotaBucketsTrend).toHaveBeenCalledTimes(1)
-    expect(getDegradationTrend).toHaveBeenCalledTimes(1)
   })
 
   it('automatically disposes when its active Vue effect scope stops', async () => {

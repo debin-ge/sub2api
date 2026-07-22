@@ -60,7 +60,6 @@ describe('admin Radar locale contract', () => {
         'sources.status_claude',
         'sources.status_openai',
         'sources.quota_aggregator',
-        'sources.aa_performance',
         'refresh.triggered',
         'refresh.coalesced',
       ]) {

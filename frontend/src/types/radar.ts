@@ -148,6 +148,10 @@ export interface DegradationModelDTO {
   price_input_per_1m: number | null
   price_output_per_1m: number | null
   last_updated_at: RadarTimestamp | null
+  catalog_matches: Array<{
+    model_id: string
+    platform: string
+  }>
 }
 
 export interface LMArenaEntryDTO {
@@ -162,22 +166,11 @@ export interface LMArenaEntryDTO {
 
 export interface DegradationLatestDTO {
   models: DegradationModelDTO[]
+  available_models: DegradationModelDTO[]
+  default_model_slugs: string[]
+  intelligence_index_version: number | null
   lmarena_top5: LMArenaEntryDTO[]
   sources_last_updated: Record<string, RadarTimestamp | null>
-  trend_available: boolean
-  stale: boolean
-}
-
-export interface MetricPointDTO {
-  date: string
-  value: number
-}
-
-export interface DegradationTrendDTO {
-  model_slug: string
-  metric: DegradationMetric
-  days: number
-  data_points: MetricPointDTO[]
   stale: boolean
 }
 

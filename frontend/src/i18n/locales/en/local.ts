@@ -116,7 +116,7 @@ export default {
     },
     "degradation": {
       "title": "Benchmark radar",
-      "subtitle": "Public model indices, historical changes, and model leaderboard rankings; they do not prove server-side model degradation.",
+      "subtitle": "Current Artificial Analysis indices intersected with Model Plaza, plus model leaderboard rankings.",
       "tabs": "Benchmark views",
       "overview": "Index overview",
       "lmarena": "Model leaderboard",
@@ -124,18 +124,25 @@ export default {
       "error": "Unable to load benchmark data",
       "radarLabel": "Model benchmark comparison radar chart",
       "empty": "Waiting for benchmark data",
-      "trendTitle": "90-day model trend",
-      "sourceUpdated": "Updated",
-      "model": "Model",
-      "metric": "Metric",
+      "emptyIntersection": "No complete Artificial Analysis models currently match the Model Plaza catalog.",
+      "stale": "Data may be outdated",
+      "indexVersion": "Intelligence Index version",
+      "projectFetchedAt": "Project fetched at",
+      "officialSource": "Artificial Analysis official source",
+      "selectModels": "Select models",
+      "searchModels": "Search AA or Model Plaza models",
+      "selectionLimit": "Compare up to 10 models",
+      "removeModel": "Remove model",
+      "noSearchResults": "No matching models",
       "intelligence": "Intelligence index",
       "intelligenceShort": "Intelligence",
+      "intelligenceDescription": "Composite performance across broad reasoning and knowledge evaluations.",
       "coding": "Coding index",
       "codingShort": "Coding",
+      "codingDescription": "Performance on software-development and code-generation evaluations.",
       "agentic": "Agentic index",
       "agenticShort": "Agentic",
-      "noTrend": "No trend data",
-      "trendStale": "Trend data may be outdated"
+      "agenticDescription": "Performance on multi-step agent and tool-use evaluations."
     },
     "lmarena": {
       "loading": "Loading model leaderboard",
@@ -487,7 +494,6 @@ export default {
             "lmarena": "LMArena",
             "status_claude": "Claude Statuspage",
             "status_openai": "OpenAI Statuspage",
-            "aa_performance": "Artificial Analysis Performance",
             "quota_aggregator": "Sub2API Aggregated Usage"
           },
           "errors": {

@@ -18,8 +18,8 @@ func NewRadarFetchers(cfg *config.Config, catalog RadarPublicModelCatalog) ([]Ra
 }
 
 // newRadarFetchers is the injectable assembly seam used by unit tests. Without
-// an AA key, both AA models and performance sources are deliberately omitted so
-// no unauthenticated request can be scheduled.
+// an AA key, the official Free snapshot source is deliberately omitted so no
+// unauthenticated request can be scheduled.
 func newRadarFetchers(
 	cfg *config.Config,
 	client RadarHTTPDoer,
@@ -38,25 +38,13 @@ func newRadarFetchers(
 		return nil, &RadarFetcherConfigError{Field: "public_model_catalog"}
 	}
 
-	fetchers := make([]RadarFetcher, 0, 8+len(cfg.Radar.ArtificialAnalysisModelSlugs))
+	fetchers := make([]RadarFetcher, 0, 9)
 	if strings.TrimSpace(cfg.Radar.ArtificialAnalysisAPIKey) != "" {
-		allowedSlugs, err := normalizeArtificialAnalysisAllowedSlugs(cfg.Radar.ArtificialAnalysisModelSlugs)
-		if err != nil {
-			return nil, err
-		}
-
 		modelsFetcher, err := NewArtificialAnalysisModelsFetcher(cfg, client)
 		if err != nil {
 			return nil, err
 		}
 		fetchers = append(fetchers, modelsFetcher)
-		for _, slug := range allowedSlugs {
-			performanceFetcher, err := NewArtificialAnalysisPerformanceFetcher(cfg, slug, client)
-			if err != nil {
-				return nil, err
-			}
-			fetchers = append(fetchers, performanceFetcher)
-		}
 	}
 
 	lmarenaSourceFetcher, err := NewLMArenaFetcher(cfg, client)

@@ -735,14 +735,6 @@ func NewRadarCacheRepository(rdb *redis.Client, cfg *config.Config) (service.Rad
 		service.RadarSourceStatusMiniMaxGlobal,
 		service.RadarSourceStatusMiniMaxChina,
 	}
-	for _, model := range cfg.Radar.ArtificialAnalysisModelSlugs {
-		source, err := service.RadarAAPerformanceSource(model)
-		if err != nil {
-			return nil, errors.New("radar cache repository requires valid AA model slug")
-		}
-		metricsSources = append(metricsSources, source)
-	}
-
 	return &radarCacheRepository{
 		rdb:                       rdb,
 		quotaHistoryRetention:     time.Duration(cfg.Radar.QuotaHistoryRetentionDays) * 24 * time.Hour,
@@ -1291,9 +1283,6 @@ func radarMetricsCacheFamily(source service.RadarSourceKey) string {
 		service.RadarSourceStatusMiniMaxChina:
 		return "service_health"
 	default:
-		if strings.HasPrefix(string(source), "aa_perf:") {
-			return "aa_performance"
-		}
 		return "other"
 	}
 }
@@ -1318,7 +1307,7 @@ func parseRadarMetricsLedgerField(field string) (string, bool) {
 
 func normalizeRadarMetricsCacheFamily(family string) string {
 	switch family {
-	case "quota_bucket", "aa", "aa_performance", "lmarena", "service_health", "metadata":
+	case "quota_bucket", "aa", "lmarena", "service_health", "metadata":
 		return family
 	default:
 		return ""

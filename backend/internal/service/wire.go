@@ -845,7 +845,7 @@ var ProviderSet = wire.NewSet(
 	ProvideModelCatalogConfig,
 	NewModelCatalogService,
 	ProvideModelCatalogRefreshRunner,
-	NewRadarService,
+	ProvideRadarService,
 	wire.Bind(new(RadarPublicService), new(*RadarService)),
 	ProvideRateLimitService,
 	ProvideAccountUsageService,

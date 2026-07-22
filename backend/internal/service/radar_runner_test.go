@@ -5,8 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
+	"net/http"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -814,7 +814,6 @@ func TestRadarRunnerSuccessUsesAtomicCommitWithSafeIndependentMeta(t *testing.T)
 	cfg.Radar.QuotaStaleThresholdMinutes = 30
 	cfg.Radar.HealthStaleThresholdMinutes = 60
 	cfg.Radar.ArtificialAnalysisModelsStaleThresholdMinutes = 720
-	cfg.Radar.ArtificialAnalysisPerformanceStaleThresholdMinutes = 2880
 	cfg.Radar.LMArenaStaleThresholdMinutes = 2880
 	repo := newRadarRunnerTestRepository()
 	location := time.FixedZone("unsafe-local", 8*60*60)
@@ -940,6 +939,41 @@ func TestRadarRunnerFailureUpdatesOnlySafeMetaAndPreservesOldPayload(t *testing.
 	require.NotContains(t, string(encoded), rawSecret)
 }
 
+func TestRadarRunnerRejectsEmptyAAPageAndPreservesOldSnapshot(t *testing.T) {
+	cfg := validRadarFetcherTestConfig()
+	repo := newRadarRunnerTestRepository()
+	oldSuccess := time.Date(2026, 7, 12, 3, 4, 5, 0, time.UTC)
+	repo.payloads[RadarSourceAA] = []byte(validAAModelsPayload)
+	repo.metas[RadarSourceAA] = SourceFetchMeta{LastAttemptAt: oldSuccess, LastSuccessAt: &oldSuccess}
+
+	emptyPayload := `{"tier":"free","intelligence_index_version":4.1,"pagination":{"page":1,"page_size":200,"total_pages":1,"has_more":false},"data":[]}`
+	client := radarDoerFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK, Body: newRadarTrackingBody(emptyPayload), ContentLength: int64(len(emptyPayload)),
+		}, nil
+	})
+	fetcher, err := NewArtificialAnalysisModelsFetcher(cfg, client)
+	require.NoError(t, err)
+	setRadarFetcherSleep(t, fetcher, func(context.Context, time.Duration) error { return nil })
+	runner := newRadarRunnerForTest(t, cfg, repo, radarRunnerOptions{fetchBudget: time.Second}, fetcher)
+
+	runner.Start()
+	waitRadarRunnerRepoEvent(t, repo, "commit_failure", RadarSourceAA)
+	waitRadarRunnerRepoEvent(t, repo, "release", RadarSourceAA)
+
+	repo.mu.Lock()
+	storedPayload := append([]byte(nil), repo.payloads[RadarSourceAA]...)
+	storedMeta := cloneRadarRunnerTestMeta(repo.metas[RadarSourceAA])
+	commits := append([]radarRunnerCommitCall(nil), repo.commitCalls...)
+	repo.mu.Unlock()
+	require.Equal(t, []byte(validAAModelsPayload), storedPayload)
+	require.Empty(t, commits)
+	require.NotNil(t, storedMeta.LastSuccessAt)
+	require.Equal(t, oldSuccess, storedMeta.LastSuccessAt.UTC())
+	require.NotNil(t, storedMeta.Error)
+	require.Equal(t, DataSourceErrorCodeInvalidResponse, *storedMeta.Error)
+}
+
 func TestRadarRunnerFetchDeadlinePersistsFailureWithIndependentBoundedContext(t *testing.T) {
 	cfg := validRadarFetcherTestConfig()
 	repo := newRadarRunnerTestRepository()
@@ -1013,87 +1047,8 @@ func TestRadarRunnerOneSourceFailureDoesNotBlockOthers(t *testing.T) {
 	require.Equal(t, int32(1), successful.calls.Load())
 }
 
-func TestRadarRunnerAAPerformanceConcurrencyIsBounded(t *testing.T) {
+func TestRadarRunnerShutdownCancelsLongTimers(t *testing.T) {
 	cfg := validRadarFetcherTestConfig()
-	repo := newRadarRunnerTestRepository()
-	var current atomic.Int32
-	var maximum atomic.Int32
-	started := make(chan struct{}, 10)
-	finished := make(chan struct{}, 10)
-	release := make(chan struct{})
-	fetchers := make([]RadarFetcher, 0, 10)
-	for i := 0; i < 10; i++ {
-		source, err := RadarAAPerformanceSource(fmt.Sprintf("model-%d", i))
-		require.NoError(t, err)
-		fetchers = append(fetchers, &radarRunnerTestFetcher{source: source, interval: time.Hour, fn: func(context.Context) ([]byte, SourceFetchMeta, error) {
-			active := current.Add(1)
-			for {
-				observed := maximum.Load()
-				if active <= observed || maximum.CompareAndSwap(observed, active) {
-					break
-				}
-			}
-			started <- struct{}{}
-			<-release
-			current.Add(-1)
-			finished <- struct{}{}
-			now := time.Now().UTC()
-			return []byte(`{}`), SourceFetchMeta{LastAttemptAt: now, LastSuccessAt: &now}, nil
-		}})
-	}
-	runner := newRadarRunnerForTest(t, cfg, repo, radarRunnerOptions{fetchBudget: 10 * time.Second}, fetchers...)
-	runner.Start()
-	for i := 0; i < 3; i++ {
-		waitRadarRunnerSignal(t, started, "initial AA performance fetch")
-	}
-	select {
-	case <-started:
-		t.Fatal("more than three AA performance fetches started concurrently")
-	case <-time.After(30 * time.Millisecond):
-	}
-	close(release)
-	for i := 0; i < 10; i++ {
-		waitRadarRunnerSignal(t, finished, "all AA performance fetches")
-	}
-	require.Equal(t, int32(3), maximum.Load())
-}
-
-func TestRadarRunnerShutdownCancelsSemaphoreWaitersAndLongTimers(t *testing.T) {
-	cfg := validRadarFetcherTestConfig()
-	repo := newRadarRunnerTestRepository()
-	started := make(chan struct{}, 4)
-	unblock := make(chan struct{})
-	fetchers := make([]RadarFetcher, 0, 4)
-	for i := 0; i < 4; i++ {
-		source, err := RadarAAPerformanceSource(fmt.Sprintf("waiting-%d", i))
-		require.NoError(t, err)
-		fetchers = append(fetchers, &radarRunnerTestFetcher{source: source, interval: time.Hour, fn: func(context.Context) ([]byte, SourceFetchMeta, error) {
-			started <- struct{}{}
-			<-unblock
-			now := time.Now().UTC()
-			return nil, SourceFetchMeta{LastAttemptAt: now}, context.Canceled
-		}})
-	}
-	runner := newRadarRunnerForTest(t, cfg, repo, radarRunnerOptions{
-		fetchBudget:     10 * time.Second,
-		shutdownTimeout: 20 * time.Millisecond,
-	}, fetchers...)
-	runner.Start()
-	for i := 0; i < 3; i++ {
-		waitRadarRunnerSignal(t, started, "occupied AA performance slot")
-	}
-	require.ErrorIs(t, runner.Stop(context.Background()), context.DeadlineExceeded)
-	select {
-	case <-started:
-		t.Fatal("AA performance waiter entered Fetch after shutdown")
-	case <-time.After(20 * time.Millisecond):
-	}
-	close(unblock)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	require.NoError(t, runner.Stop(ctx))
-
-	// A source already waiting on a long interval must also stop immediately.
 	repo2 := newRadarRunnerTestRepository()
 	fast := &radarRunnerTestFetcher{source: RadarSourceLMArena, interval: time.Hour}
 	runner2 := newRadarRunnerForTest(t, cfg, repo2, radarRunnerOptions{}, fast)
@@ -1388,6 +1343,13 @@ func TestNewRadarRunnerRejectsInvalidDependenciesDuplicatesAndUnsafeIntervals(t 
 			fetchers: []RadarFetcher{&radarRunnerTestFetcher{source: RadarSourceKey("unsafe/source"), interval: time.Minute}},
 			options:  radarRunnerOptions{fetchBudget: 5 * time.Millisecond},
 		},
+		{
+			name:     "removed AA performance source",
+			cfg:      cfg,
+			repo:     repo,
+			fetchers: []RadarFetcher{&radarRunnerTestFetcher{source: RadarSourceKey("aa_perf:model-a"), interval: time.Minute}},
+			options:  radarRunnerOptions{fetchBudget: 5 * time.Millisecond},
+		},
 		{name: "negative manual timeout", cfg: cfg, repo: repo, fetchers: []RadarFetcher{valid}, options: radarRunnerOptions{manualRefreshTimeout: -time.Second}},
 		{name: "overflowing manual lock TTL", cfg: cfg, repo: repo, fetchers: []RadarFetcher{valid}, options: radarRunnerOptions{manualRefreshTimeout: time.Duration(1<<63 - 1)}},
 	}
@@ -1404,16 +1366,14 @@ func TestRadarRunnerManualRefreshBudgetCoversEveryLaneQuotaAndCleanup(t *testing
 	persistence := 2 * time.Second
 	cleanup := 3 * time.Second
 	quota := 20 * time.Second
-	got, ok := radarRunnerManualRefreshBudget(11, 7, 3, fetchBudget, persistence, cleanup, quota)
+	got, ok := radarRunnerManualRefreshBudget(11, fetchBudget, persistence, cleanup, quota)
 	require.True(t, ok)
-	// Source lane = 2*fetch + persistence + cleanup = 25s. Seven AA
-	// performance sources require three scheduled waves plus three manual
-	// waves = 150s. Then a full
-	// quota timeout + persistence + cleanup (25s) and the explicit 1s safety margin.
-	require.Equal(t, 176*time.Second, got)
+	// Concurrent source lane = 2*fetch + persistence + cleanup = 25s. Then a
+	// full quota timeout + persistence + cleanup (25s) and the 1s safety margin.
+	require.Equal(t, 51*time.Second, got)
 	ttl, ok := radarRunnerManualRefreshLockTTL(got, cleanup)
 	require.True(t, ok)
-	require.Equal(t, 183*time.Second, ttl)
+	require.Equal(t, 58*time.Second, ttl)
 
 	_, ok = radarRunnerManualRefreshLockTTL(time.Duration(1<<63-1)-time.Second, time.Second)
 	require.False(t, ok, "overflow must fail closed")

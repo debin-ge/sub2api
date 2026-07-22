@@ -5,7 +5,6 @@ import { apiClient } from '@/api/client'
 import {
   getDataSources,
   getDegradationLatest,
-  getDegradationTrend,
   getLMArena,
   getQuotaBucketsLatest,
   getQuotaBucketsTrend,
@@ -168,13 +167,6 @@ describe('public radar api with the real Axios client', () => {
       name: 'degradation latest',
       request: (signal: AbortSignal) => getDegradationLatest({ signal }),
       expectedURL: '/api/v1/public/radar/degradation/latest',
-    },
-    {
-      name: 'degradation trend',
-      request: (signal: AbortSignal) =>
-        getDegradationTrend('claude-sonnet-5', 'coding_index', 90, { signal }),
-      expectedURL:
-        '/api/v1/public/radar/degradation/trend?model=claude-sonnet-5&metric=coding_index&days=90',
     },
     {
       name: 'LMArena',

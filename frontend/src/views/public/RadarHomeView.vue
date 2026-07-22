@@ -91,7 +91,7 @@
               {{ t('radar.degradation.title', 'Benchmark radar') }}
             </h2>
             <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">
-              {{ t('radar.degradation.subtitle', 'Public model indices, trends, and model leaderboard rankings.') }}
+              {{ t('radar.degradation.subtitle', 'Current Artificial Analysis indices and model leaderboard rankings.') }}
             </p>
           </div>
           <DegradationRadarTabs
@@ -101,10 +101,6 @@
             :lmarena="lmarenaData"
             :lmarena-loading="lmarenaLoading"
             :lmarena-error="lmarenaError"
-            :trend="activeDegradationTrend"
-            :trend-loading="activeDegradationTrendState?.loading.value ?? false"
-            :trend-error="activeDegradationTrendState?.error.value ?? null"
-            @request-trend="requestDegradationTrend"
           />
         </section>
       </main>
@@ -154,8 +150,6 @@ import {
 } from '@/composables/usePublicRadar'
 import type {
   BucketSnapshotDTO,
-  DegradationMetric,
-  DegradationTrendDTO,
   QuotaTrendDTO,
   ServiceHealthDTO,
 } from '@/types/radar'
@@ -167,7 +161,6 @@ const radar = usePublicRadar()
 const detailModalOpen = ref(false)
 const selectedBucket = shallowRef<BucketSnapshotDTO | null>(null)
 const quotaTrendStates = shallowReactive(new Map<string, RadarResourceState<QuotaTrendDTO>>())
-const activeDegradationTrendState = shallowRef<RadarResourceState<DegradationTrendDTO> | null>(null)
 const catalogChannels = shallowRef<UserAvailableChannel[]>([])
 const catalogLoading = ref(true)
 const catalogError = ref<'load_failed' | null>(null)
@@ -245,9 +238,6 @@ const activeQuotaTrendState = computed(() => (
     : null
 ))
 const activeQuotaTrend = computed(() => activeQuotaTrendState.value?.data.value ?? null)
-const activeDegradationTrend = computed(() => (
-  activeDegradationTrendState.value?.data.value ?? null
-))
 const quotaTrends = computed<Readonly<Record<string, QuotaTrendDTO | null>>>(() => {
   const trends: Record<string, QuotaTrendDTO | null> = {}
   for (const [bucketKey, state] of quotaTrendStates) trends[bucketKey] = state.data.value
@@ -290,16 +280,6 @@ function healthPlatformForService(service: ServiceHealthDTO): string | null {
     default:
       return null
   }
-}
-
-function requestDegradationTrend(
-  model: string,
-  metric: DegradationMetric,
-  days: 90
-): void {
-  const state = radar.getDegradationTrendState(model, metric, days)
-  activeDegradationTrendState.value = state
-  void radar.loadDegradationTrend(model, metric, days).catch(() => undefined)
 }
 
 function ensureQuotaTrend(bucketKey: string): void {

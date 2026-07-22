@@ -48,13 +48,12 @@ func validPublicRadarServiceConfig(minAccounts int) *config.Config {
 		SampleSizeWarnBelow: 3, PublicMinBucketAccounts: minAccounts,
 		InferMinUtilization: 5, InferMaxStdevRatio: 0.3,
 		ExternalRequestTimeoutSeconds: 10, ExternalResponseMaxBytes: 1024 * 1024,
-		ArtificialAnalysisModelsIntervalMinutes: 360, ArtificialAnalysisPerformanceIntervalMinutes: 1440,
-		LMArenaIntervalMinutes: 1440, StatuspageIntervalMinutes: 30, SourceHardRetentionDays: 7,
+		ArtificialAnalysisModelsIntervalMinutes: 360,
+		LMArenaIntervalMinutes:                  1440, StatuspageIntervalMinutes: 30, SourceHardRetentionDays: 7,
 		QuotaStaleThresholdMinutes: 30, HealthStaleThresholdMinutes: 60,
-		ArtificialAnalysisModelsStaleThresholdMinutes:      720,
-		ArtificialAnalysisPerformanceStaleThresholdMinutes: 2880,
-		LMArenaStaleThresholdMinutes:                       2880,
-		LMArenaURL:                                         "https://datasets-server.huggingface.co/filter",
+		ArtificialAnalysisModelsStaleThresholdMinutes: 720,
+		LMArenaStaleThresholdMinutes:                  2880,
+		LMArenaURL:                                    "https://datasets-server.huggingface.co/filter",
 	}}
 }
 
@@ -1390,7 +1389,6 @@ func TestRadarCacheRepositoryRejectsUnsafeKeys(t *testing.T) {
 
 	invalidModels := []string{
 		"",
-		"Claude-4",
 		"../claude",
 		"claude:4",
 		"claude/4",
@@ -1401,10 +1399,11 @@ func TestRadarCacheRepositoryRejectsUnsafeKeys(t *testing.T) {
 		_, err := service.RadarAAPerformanceSource(modelSlug)
 		require.ErrorIs(t, err, service.ErrInvalidRadarCacheKey)
 	}
-	validModel := strings.Repeat("a", 128)
-	source, err := service.RadarAAPerformanceSource(validModel)
-	require.NoError(t, err)
-	require.Equal(t, service.RadarSourceKey("aa_perf:"+validModel), source)
+	for _, validModel := range []string{strings.Repeat("a", 128), "QwQ-32B-Preview"} {
+		source, err := service.RadarAAPerformanceSource(validModel)
+		require.NoError(t, err)
+		require.Equal(t, service.RadarSourceKey("aa_perf:"+validModel), source)
+	}
 
 	invalidTasks := []string{
 		"",
@@ -1414,7 +1413,6 @@ func TestRadarCacheRepositoryRejectsUnsafeKeys(t *testing.T) {
 		"quota task",
 		"quota.task",
 		"aa_perf:../../escape",
-		"aa_perf:Claude-4.1",
 		strings.Repeat("a", 129),
 	}
 	for _, task := range invalidTasks {

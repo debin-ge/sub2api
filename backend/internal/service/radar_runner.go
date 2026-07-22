@@ -16,16 +16,15 @@ import (
 )
 
 const (
-	radarRunnerDefaultAAPerformanceConcurrency = 3
-	radarRunnerFetchValidationMargin           = time.Second
-	radarRunnerDefaultPersistenceTimeout       = 2 * time.Second
-	radarRunnerDefaultCleanupTimeout           = 2 * time.Second
-	radarRunnerDefaultShutdownTimeout          = 10 * time.Second
-	radarRunnerDefaultMetricsSyncInterval      = 30 * time.Second
-	radarRunnerDefaultRuntimeGateTimeout       = 2 * time.Second
-	radarQuotaAggregatorTask                   = "quota_aggregator"
-	radarManualRefreshTask                     = "manual_refresh"
-	radarManualRefreshSafetyMargin             = time.Second
+	radarRunnerFetchValidationMargin      = time.Second
+	radarRunnerDefaultPersistenceTimeout  = 2 * time.Second
+	radarRunnerDefaultCleanupTimeout      = 2 * time.Second
+	radarRunnerDefaultShutdownTimeout     = 10 * time.Second
+	radarRunnerDefaultMetricsSyncInterval = 30 * time.Second
+	radarRunnerDefaultRuntimeGateTimeout  = 2 * time.Second
+	radarQuotaAggregatorTask              = "quota_aggregator"
+	radarManualRefreshTask                = "manual_refresh"
+	radarManualRefreshSafetyMargin        = time.Second
 )
 
 // radarRunnerTimer and radarRunnerClock keep scheduling deterministic in unit
@@ -58,20 +57,19 @@ func (t *realRadarRunnerTimer) Stop() bool          { return t.timer.Stop() }
 // zero value through NewRadarRunner, which derives its execution budget from
 // the configured HTTP timeout and generates a unique lock owner.
 type radarRunnerOptions struct {
-	clock                    radarRunnerClock
-	owner                    string
-	fetchBudget              time.Duration
-	quotaInterval            time.Duration
-	quotaTimeout             time.Duration
-	skipQuotaScheduler       bool
-	persistenceTimeout       time.Duration
-	cleanupTimeout           time.Duration
-	shutdownTimeout          time.Duration
-	aaPerformanceConcurrency int
-	logger                   *slog.Logger
-	metrics                  *observability.RadarMetrics
-	metricsSyncInterval      time.Duration
-	runtimeGate              RadarRuntimeSettingReader
+	clock               radarRunnerClock
+	owner               string
+	fetchBudget         time.Duration
+	quotaInterval       time.Duration
+	quotaTimeout        time.Duration
+	skipQuotaScheduler  bool
+	persistenceTimeout  time.Duration
+	cleanupTimeout      time.Duration
+	shutdownTimeout     time.Duration
+	logger              *slog.Logger
+	metrics             *observability.RadarMetrics
+	metricsSyncInterval time.Duration
+	runtimeGate         RadarRuntimeSettingReader
 	// Test seam only. Production leaves this zero and derives a complete batch
 	// budget from the configured task graph below.
 	manualRefreshTimeout time.Duration
@@ -105,14 +103,8 @@ type radarAggregatorMetricsStateWriter interface {
 	CommitRadarAggregatorRun(context.Context, RadarAggregatorRunState) (bool, error)
 }
 
-type radarManualSourceTask struct {
-	fetcher RadarFetcher
-	source  RadarSourceKey
-}
-
-// RadarRunner independently schedules each external Radar source. A source has
-// exactly one serial loop, while Artificial Analysis performance sources share
-// a bounded local semaphore before taking their distributed source locks.
+// RadarRunner independently schedules each external Radar source. Each source
+// has exactly one serial loop and its own distributed source lock.
 type RadarRunner struct {
 	repo            RadarCacheRepository
 	cadenceRepo     RadarSourceCadenceRepository
@@ -134,7 +126,6 @@ type RadarRunner struct {
 	intervals            map[RadarSourceKey]time.Duration
 	sources              []RadarSourceKey
 	clock                radarRunnerClock
-	aaPerfSlots          chan struct{}
 	logger               *slog.Logger
 	metrics              *observability.RadarMetrics
 	metricsSyncInterval  time.Duration
@@ -249,12 +240,6 @@ func newRadarRunner(
 	if options.shutdownTimeout <= 0 {
 		return nil, errors.New("radar runner shutdown timeout must be positive")
 	}
-	if options.aaPerformanceConcurrency == 0 {
-		options.aaPerformanceConcurrency = radarRunnerDefaultAAPerformanceConcurrency
-	}
-	if options.aaPerformanceConcurrency <= 0 {
-		return nil, errors.New("radar runner AA performance concurrency must be positive")
-	}
 	if options.logger == nil {
 		options.logger = slog.Default()
 	}
@@ -295,7 +280,6 @@ func newRadarRunner(
 	intervals := make(map[RadarSourceKey]time.Duration, len(fetchers))
 	sources := make([]RadarSourceKey, len(fetchers))
 	fetcherCopy := make([]RadarFetcher, len(fetchers))
-	aaPerformanceSourceCount := 0
 	for i, fetcher := range fetchers {
 		if isNilRadarFetcher(fetcher) {
 			return nil, errors.New("radar runner contains nil fetcher")
@@ -318,9 +302,6 @@ func newRadarRunner(
 		intervals[source] = interval
 		sources[i] = source
 		fetcherCopy[i] = fetcher
-		if isRadarAAPerformanceRunnerSource(source) {
-			aaPerformanceSourceCount++
-		}
 	}
 	cadenceRepo, ok := repo.(RadarSourceCadenceRepository)
 	if !ok || isNilRadarSourceCadenceRepository(cadenceRepo) {
@@ -330,8 +311,6 @@ func newRadarRunner(
 		var valid bool
 		options.manualRefreshTimeout, valid = radarRunnerManualRefreshBudget(
 			len(fetchers),
-			aaPerformanceSourceCount,
-			options.aaPerformanceConcurrency,
 			options.fetchBudget,
 			options.persistenceTimeout,
 			options.cleanupTimeout,
@@ -368,7 +347,6 @@ func newRadarRunner(
 		intervals:            intervals,
 		sources:              sources,
 		clock:                options.clock,
-		aaPerfSlots:          make(chan struct{}, options.aaPerformanceConcurrency),
 		logger:               options.logger,
 		metrics:              options.metrics,
 		metricsSyncInterval:  options.metricsSyncInterval,
@@ -402,28 +380,17 @@ func radarRunnerDurationSum(left, right time.Duration) (time.Duration, bool) {
 	return left + right, true
 }
 
-func radarRunnerDurationMultiply(value time.Duration, count int) (time.Duration, bool) {
-	if value <= 0 || count <= 0 || value > time.Duration(1<<63-1)/time.Duration(count) {
-		return 0, false
-	}
-	return value * time.Duration(count), true
-}
-
 // radarRunnerManualRefreshBudget proves that every concurrently dispatched
 // source lane can consume its lock-acquisition and execution budgets before a
-// full quota attempt begins. AA performance sources share the production
-// semaphore, so their waves are included explicitly rather than hidden behind
-// a fixed wall-clock guess.
+// full quota attempt begins.
 func radarRunnerManualRefreshBudget(
 	sourceCount int,
-	aaPerformanceSourceCount int,
-	aaPerformanceConcurrency int,
 	fetchBudget time.Duration,
 	persistenceTimeout time.Duration,
 	cleanupTimeout time.Duration,
 	quotaTimeout time.Duration,
 ) (time.Duration, bool) {
-	if sourceCount <= 0 || aaPerformanceSourceCount < 0 || aaPerformanceSourceCount > sourceCount || aaPerformanceConcurrency <= 0 {
+	if sourceCount <= 0 {
 		return 0, false
 	}
 	sourceLane, ok := radarRunnerDurationSum(fetchBudget, fetchBudget)
@@ -438,30 +405,7 @@ func radarRunnerManualRefreshBudget(
 	if !ok {
 		return 0, false
 	}
-	sourcePhase := time.Duration(0)
-	if sourceCount > aaPerformanceSourceCount {
-		sourcePhase = sourceLane
-	}
-	if aaPerformanceSourceCount > 0 {
-		// Every scheduled AA task may already be queued ahead of the matching
-		// manual tasks. Reserve one complete scheduled set plus one complete
-		// manual set so quota still receives its full phase in the worst case.
-		waves := aaPerformanceSourceCount / aaPerformanceConcurrency
-		if aaPerformanceSourceCount%aaPerformanceConcurrency != 0 {
-			waves++
-		}
-		if waves > int(^uint(0)>>1)/2 {
-			return 0, false
-		}
-		waves *= 2
-		aaPhase, valid := radarRunnerDurationMultiply(sourceLane, waves)
-		if !valid {
-			return 0, false
-		}
-		if aaPhase > sourcePhase {
-			sourcePhase = aaPhase
-		}
-	}
+	sourcePhase := sourceLane
 	quotaPhase, ok := radarRunnerDurationSum(quotaTimeout, persistenceTimeout)
 	if !ok {
 		return 0, false
@@ -609,17 +553,7 @@ func isCanonicalRadarRunnerSource(source RadarSourceKey) bool {
 		RadarSourceStatusMiniMaxGlobal, RadarSourceStatusMiniMaxChina:
 		return true
 	}
-	const prefix = "aa_perf:"
-	raw := string(source)
-	if !strings.HasPrefix(raw, prefix) {
-		return false
-	}
-	canonical, err := RadarAAPerformanceSource(strings.TrimPrefix(raw, prefix))
-	return err == nil && canonical == source
-}
-
-func isRadarAAPerformanceRunnerSource(source RadarSourceKey) bool {
-	return strings.HasPrefix(string(source), "aa_perf:")
+	return false
 }
 
 // Start is idempotent. Scheduler loops always remain alive so a runtime switch
@@ -859,31 +793,7 @@ func (r *RadarRunner) runFetcher(
 			return
 		}
 
-		hasAAPerformanceSlot := false
-		if isRadarAAPerformanceRunnerSource(source) {
-			// Do not occupy a scarce AA slot while disabled. Once a waiter gets
-			// a slot, fetchOnce performs the mandatory second gate check before
-			// any distributed lock or external request.
-			if !r.runtimeEnabled(ctx) {
-				now := r.clock.Now().UTC()
-				r.advanceSourceNextFire(ctx, source, now.Add(interval))
-				if !r.waitForNextFire(ctx, interval) {
-					return
-				}
-				continue
-			}
-			select {
-			case r.aaPerfSlots <- struct{}{}:
-				hasAAPerformanceSlot = true
-			case <-ctx.Done():
-				return
-			}
-		}
-
 		if ctx.Err() != nil {
-			if hasAAPerformanceSlot {
-				<-r.aaPerfSlots
-			}
 			return
 		}
 
@@ -891,9 +801,6 @@ func (r *RadarRunner) runFetcher(
 		timer := r.clock.NewTimer(interval)
 		cadence := r.advanceSourceNextFire(ctx, source, nextFireAt)
 		r.fetchOnceWithCadence(ctx, fetcher, source, cadence)
-		if hasAAPerformanceSlot {
-			<-r.aaPerfSlots
-		}
 
 		if timer == nil {
 			return
@@ -905,20 +812,6 @@ func (r *RadarRunner) runFetcher(
 		case <-timer.C():
 		}
 		timer.Stop()
-	}
-}
-
-func (r *RadarRunner) waitForNextFire(ctx context.Context, interval time.Duration) bool {
-	timer := r.clock.NewTimer(interval)
-	if timer == nil {
-		return false
-	}
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return false
-	case <-timer.C():
-		return true
 	}
 }
 
@@ -1093,38 +986,13 @@ func (r *RadarRunner) TriggerManualRefresh() (bool, []string, error) {
 		defer cancel()
 		defer r.releaseManualRefreshLock(lockToken)
 		var sourceWG sync.WaitGroup
-		aaTasks := make([]radarManualSourceTask, 0)
 		for i, fetcher := range r.fetchers {
 			source := r.sources[i]
-			if isRadarAAPerformanceRunnerSource(source) {
-				aaTasks = append(aaTasks, radarManualSourceTask{fetcher: fetcher, source: source})
-				continue
-			}
 			sourceWG.Add(1)
 			go func(fetcher RadarFetcher, source RadarSourceKey) {
 				defer sourceWG.Done()
-				r.runManualSource(refreshCtx, fetcher, source, false)
+				r.runManualSource(refreshCtx, fetcher, source)
 			}(fetcher, source)
-		}
-		if len(aaTasks) > 0 {
-			jobs := make(chan radarManualSourceTask, len(aaTasks))
-			for _, task := range aaTasks {
-				jobs <- task
-			}
-			close(jobs)
-			workerCount := cap(r.aaPerfSlots)
-			if workerCount > len(aaTasks) {
-				workerCount = len(aaTasks)
-			}
-			for i := 0; i < workerCount; i++ {
-				sourceWG.Add(1)
-				go func() {
-					defer sourceWG.Done()
-					for task := range jobs {
-						r.runManualSource(refreshCtx, task.fetcher, task.source, true)
-					}
-				}()
-			}
 		}
 		sourceWG.Wait()
 		// The derived lifecycle budget reserves a complete quota phase after all
@@ -1135,15 +1003,7 @@ func (r *RadarRunner) TriggerManualRefresh() (bool, []string, error) {
 	return true, tasks, nil
 }
 
-func (r *RadarRunner) runManualSource(ctx context.Context, fetcher RadarFetcher, source RadarSourceKey, needsAAPerformanceSlot bool) {
-	if needsAAPerformanceSlot {
-		select {
-		case r.aaPerfSlots <- struct{}{}:
-			defer func() { <-r.aaPerfSlots }()
-		case <-ctx.Done():
-			return
-		}
-	}
+func (r *RadarRunner) runManualSource(ctx context.Context, fetcher RadarFetcher, source RadarSourceKey) {
 	cadence := r.sourceAuthoritativeCadence(ctx, source)
 	if cadence.NextFireAt.IsZero() || cadence.Version == "" {
 		return
@@ -1357,9 +1217,6 @@ func (r *RadarRunner) logOperationFailure(source RadarSourceKey, operation, safe
 }
 
 func radarRunnerSafeSource(source RadarSourceKey) string {
-	if strings.HasPrefix(string(source), "aa_perf:") {
-		return "aa_performance"
-	}
 	if isCanonicalRadarRunnerSource(source) {
 		return string(source)
 	}

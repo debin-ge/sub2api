@@ -40,7 +40,6 @@ type RadarPublicService interface {
 	GetQuotaBucketsLatest(ctx context.Context) (*QuotaRadarLatestDTO, error)
 	GetQuotaBucketsTrend(ctx context.Context, bucketKey string, days int) (*QuotaTrendDTO, error)
 	GetDegradationLatest(ctx context.Context) (*DegradationLatestDTO, error)
-	GetDegradationTrend(ctx context.Context, model string, metric DegradationMetric, days int) (*DegradationTrendDTO, error)
 	GetLMArena(ctx context.Context) (*LMArenaDTO, error)
 	GetDataSources(ctx context.Context) ([]DataSourceMetaDTO, error)
 }
@@ -59,13 +58,12 @@ type radarServiceOptions struct {
 	loadTimeout     time.Duration
 	afterFlightJoin func(radarServiceCacheKey)
 	afterLoad       func(radarServiceCacheKey)
+	catalog         RadarPublicModelCatalog
 }
 
 type radarServiceCacheKey struct {
 	method string
-	model  string
 	bucket string
-	metric DegradationMetric
 	days   int
 }
 
@@ -79,21 +77,19 @@ type radarServiceCacheEntry struct {
 type RadarService struct {
 	repo                  RadarCacheRepository
 	aggregatorStateReader radarAggregatorStateReader
+	catalog               RadarPublicModelCatalog
 
-	aaConfigured                bool
-	modelSlugs                  []string
-	sampleSizeWarnBelow         int
-	publicMinBucketAccounts     int
-	quotaStaleThreshold         time.Duration
-	healthStaleThreshold        time.Duration
-	aaModelsStaleThreshold      time.Duration
-	aaPerformanceStaleThreshold time.Duration
-	lmarenaStaleThreshold       time.Duration
-	aaModelsInterval            time.Duration
-	aaPerformanceInterval       time.Duration
-	lmarenaInterval             time.Duration
-	statuspageInterval          time.Duration
-	quotaAggregatorInterval     time.Duration
+	aaConfigured            bool
+	sampleSizeWarnBelow     int
+	publicMinBucketAccounts int
+	quotaStaleThreshold     time.Duration
+	healthStaleThreshold    time.Duration
+	aaModelsStaleThreshold  time.Duration
+	lmarenaStaleThreshold   time.Duration
+	aaModelsInterval        time.Duration
+	lmarenaInterval         time.Duration
+	statuspageInterval      time.Duration
+	quotaAggregatorInterval time.Duration
 
 	clock       radarServiceClock
 	cacheTTL    time.Duration
@@ -117,6 +113,13 @@ func NewRadarService(cfg *config.Config, repo RadarCacheRepository) (*RadarServi
 	return newRadarService(cfg, repo, radarServiceOptions{})
 }
 
+// ProvideRadarService is the production provider. Keeping NewRadarService's
+// two-argument form avoids forcing repository-only callers to construct the
+// public catalog dependency.
+func ProvideRadarService(cfg *config.Config, repo RadarCacheRepository, catalog *ModelCatalogService) (*RadarService, error) {
+	return newRadarService(cfg, repo, radarServiceOptions{catalog: catalog})
+}
+
 func newRadarService(
 	cfg *config.Config,
 	repo RadarCacheRepository,
@@ -133,10 +136,6 @@ func newRadarService(
 		return nil, errors.New("radar service requires aggregator state reader")
 	}
 	if err := cfg.Radar.Validate(); err != nil {
-		return nil, errors.New("radar service requires valid radar config")
-	}
-	modelSlugs, err := normalizeArtificialAnalysisAllowedSlugs(cfg.Radar.ArtificialAnalysisModelSlugs)
-	if err != nil {
 		return nil, errors.New("radar service requires valid radar config")
 	}
 	if options.clock == nil {
@@ -156,28 +155,26 @@ func newRadarService(
 	}
 
 	return &RadarService{
-		repo:                        repo,
-		aggregatorStateReader:       aggregatorStateReader,
-		aaConfigured:                strings.TrimSpace(cfg.Radar.ArtificialAnalysisAPIKey) != "",
-		modelSlugs:                  append([]string(nil), modelSlugs...),
-		sampleSizeWarnBelow:         cfg.Radar.SampleSizeWarnBelow,
-		publicMinBucketAccounts:     cfg.Radar.PublicMinBucketAccounts,
-		quotaStaleThreshold:         time.Duration(cfg.Radar.QuotaStaleThresholdMinutes) * time.Minute,
-		healthStaleThreshold:        time.Duration(cfg.Radar.HealthStaleThresholdMinutes) * time.Minute,
-		aaModelsStaleThreshold:      time.Duration(cfg.Radar.ArtificialAnalysisModelsStaleThresholdMinutes) * time.Minute,
-		aaPerformanceStaleThreshold: time.Duration(cfg.Radar.ArtificialAnalysisPerformanceStaleThresholdMinutes) * time.Minute,
-		lmarenaStaleThreshold:       time.Duration(cfg.Radar.LMArenaStaleThresholdMinutes) * time.Minute,
-		aaModelsInterval:            time.Duration(cfg.Radar.ArtificialAnalysisModelsIntervalMinutes) * time.Minute,
-		aaPerformanceInterval:       time.Duration(cfg.Radar.ArtificialAnalysisPerformanceIntervalMinutes) * time.Minute,
-		lmarenaInterval:             time.Duration(cfg.Radar.LMArenaIntervalMinutes) * time.Minute,
-		statuspageInterval:          time.Duration(cfg.Radar.StatuspageIntervalMinutes) * time.Minute,
-		quotaAggregatorInterval:     time.Duration(cfg.Radar.QuotaAggregatorIntervalMin) * time.Minute,
-		clock:                       options.clock,
-		cacheTTL:                    options.cacheTTL,
-		loadTimeout:                 options.loadTimeout,
-		cache:                       make(map[radarServiceCacheKey]*radarServiceCacheEntry),
-		afterFlightJoin:             options.afterFlightJoin,
-		afterLoad:                   options.afterLoad,
+		repo:                    repo,
+		aggregatorStateReader:   aggregatorStateReader,
+		catalog:                 options.catalog,
+		aaConfigured:            strings.TrimSpace(cfg.Radar.ArtificialAnalysisAPIKey) != "",
+		sampleSizeWarnBelow:     cfg.Radar.SampleSizeWarnBelow,
+		publicMinBucketAccounts: cfg.Radar.PublicMinBucketAccounts,
+		quotaStaleThreshold:     time.Duration(cfg.Radar.QuotaStaleThresholdMinutes) * time.Minute,
+		healthStaleThreshold:    time.Duration(cfg.Radar.HealthStaleThresholdMinutes) * time.Minute,
+		aaModelsStaleThreshold:  time.Duration(cfg.Radar.ArtificialAnalysisModelsStaleThresholdMinutes) * time.Minute,
+		lmarenaStaleThreshold:   time.Duration(cfg.Radar.LMArenaStaleThresholdMinutes) * time.Minute,
+		aaModelsInterval:        time.Duration(cfg.Radar.ArtificialAnalysisModelsIntervalMinutes) * time.Minute,
+		lmarenaInterval:         time.Duration(cfg.Radar.LMArenaIntervalMinutes) * time.Minute,
+		statuspageInterval:      time.Duration(cfg.Radar.StatuspageIntervalMinutes) * time.Minute,
+		quotaAggregatorInterval: time.Duration(cfg.Radar.QuotaAggregatorIntervalMin) * time.Minute,
+		clock:                   options.clock,
+		cacheTTL:                options.cacheTTL,
+		loadTimeout:             options.loadTimeout,
+		cache:                   make(map[radarServiceCacheKey]*radarServiceCacheEntry),
+		afterFlightJoin:         options.afterFlightJoin,
+		afterLoad:               options.afterLoad,
 	}, nil
 }
 
@@ -508,13 +505,14 @@ func (s *RadarService) GetDegradationLatest(ctx context.Context) (*DegradationLa
 			cacheable = false
 		}
 
-		models := make([]DegradationModelDTO, 0)
+		availableModels := make([]DegradationModelDTO, 0)
+		var intelligenceIndexVersion *float64
 		aaUsable := false
 		aaCacheable := true
 		var aaMeta SourceFetchMeta
 		var aaMetaOK bool
 		if s.aaConfigured {
-			models, aaUsable, aaCacheable, err = s.readArtificialAnalysisModels(loadCtx)
+			availableModels, intelligenceIndexVersion, aaUsable, aaCacheable, err = s.readArtificialAnalysisModels(loadCtx)
 			if err != nil {
 				return nil, false, nil, err
 			}
@@ -532,10 +530,18 @@ func (s *RadarService) GetDegradationLatest(ctx context.Context) (*DegradationLa
 
 		now := s.clock.Now().UTC()
 		arenaMeta, arenaMetaOK := metas[RadarSourceLMArena]
+		defaultCount := min(len(availableModels), artificialAnalysisAutoModelLimit)
+		defaultModels := cloneRadarServiceDegradationModels(availableModels[:defaultCount])
+		defaultSlugs := make([]string, defaultCount)
+		for i := range defaultModels {
+			defaultSlugs[i] = defaultModels[i].Slug
+		}
 		result := &DegradationLatestDTO{
-			Models:         models,
-			LMArenaTop5:    topFive,
-			TrendAvailable: s.aaConfigured && len(s.modelSlugs) > 0,
+			Models:                   defaultModels,
+			AvailableModels:          cloneRadarServiceDegradationModels(availableModels),
+			DefaultModelSlugs:        defaultSlugs,
+			IntelligenceIndexVersion: cloneRadarFloat(intelligenceIndexVersion),
+			LMArenaTop5:              topFive,
 			SourcesLastUpdated: map[string]*time.Time{
 				"aa":      nil,
 				"lmarena": radarServiceMetaLastSuccess(arenaMeta, arenaMetaOK),
@@ -565,90 +571,6 @@ func (s *RadarService) GetDegradationLatest(ctx context.Context) (*DegradationLa
 		return nil, err
 	}
 	result, ok := value.(*DegradationLatestDTO)
-	if !ok {
-		return nil, ErrRadarUnavailable
-	}
-	return result, nil
-}
-
-// GetDegradationTrend returns one configured model metric's daily series.
-func (s *RadarService) GetDegradationTrend(
-	ctx context.Context,
-	model string,
-	metric DegradationMetric,
-	days int,
-) (*DegradationTrendDTO, error) {
-	model = strings.TrimSpace(model)
-	if !isSafeRadarModelSlug(model) || !containsArtificialAnalysisSlug(s.modelSlugs, model) ||
-		!isSupportedDegradationMetric(metric) || days < 1 || days > 90 {
-		return nil, ErrInvalidRadarQuery
-	}
-	source, err := RadarAAPerformanceSource(model)
-	if err != nil {
-		return nil, ErrInvalidRadarQuery
-	}
-
-	key := radarServiceCacheKey{
-		method: "degradation_trend",
-		model:  model,
-		metric: metric,
-		days:   days,
-	}
-	value, err := s.cached(ctx, key, func(loadCtx context.Context, _ time.Time) (any, bool, *time.Time, error) {
-		metas, err := s.repo.ListSourceMeta(loadCtx)
-		if contextErr := radarServiceContextError(loadCtx, err); contextErr != nil {
-			return nil, false, nil, contextErr
-		}
-		if err != nil {
-			return nil, false, nil, ErrRadarUnavailable
-		}
-		meta, metaOK := metas[source]
-
-		payload, err := s.repo.GetSourcePayload(loadCtx, source)
-		if contextErr := radarServiceContextError(loadCtx, err); contextErr != nil {
-			return nil, false, nil, contextErr
-		}
-		if errors.Is(err, ErrRadarCacheMiss) {
-			return &DegradationTrendDTO{
-				ModelSlug:  model,
-				Metric:     metric,
-				Days:       days,
-				DataPoints: make([]MetricPointDTO, 0),
-				Stale:      true,
-			}, true, nil, nil
-		}
-		if err != nil {
-			return nil, false, nil, ErrRadarUnavailable
-		}
-
-		performance, err := DecodeArtificialAnalysisPerformance(payload, model)
-		if err != nil {
-			return nil, false, nil, ErrRadarUnavailable
-		}
-		now := s.clock.Now().UTC()
-		points, err := radarServiceMetricPoints(performance, metric, now, days)
-		if err != nil {
-			return nil, false, nil, ErrRadarUnavailable
-		}
-		stale, deadline := radarSourceFreshness(now, s.aaPerformanceStaleThreshold, meta, metaOK, s.aaConfigured)
-		return &DegradationTrendDTO{
-			ModelSlug:  model,
-			Metric:     metric,
-			Days:       days,
-			DataPoints: points,
-			Stale:      stale,
-		}, true, deadline, nil
-	}, func(value any) any {
-		v, ok := value.(*DegradationTrendDTO)
-		if !ok {
-			return value
-		}
-		return cloneRadarServiceDegradationTrend(v)
-	})
-	if err != nil {
-		return nil, err
-	}
-	result, ok := value.(*DegradationTrendDTO)
 	if !ok {
 		return nil, ErrRadarUnavailable
 	}
@@ -776,26 +698,38 @@ func (s *RadarService) GetDataSources(ctx context.Context) ([]DataSourceMetaDTO,
 	return result, nil
 }
 
-func (s *RadarService) readArtificialAnalysisModels(ctx context.Context) ([]DegradationModelDTO, bool, bool, error) {
+func (s *RadarService) readArtificialAnalysisModels(ctx context.Context) ([]DegradationModelDTO, *float64, bool, bool, error) {
 	payload, err := s.repo.GetSourcePayload(ctx, RadarSourceAA)
 	if contextErr := radarServiceContextError(ctx, err); contextErr != nil {
-		return nil, false, false, contextErr
+		return nil, nil, false, false, contextErr
 	}
 	if errors.Is(err, ErrRadarCacheMiss) {
-		return make([]DegradationModelDTO, 0), false, true, nil
+		return make([]DegradationModelDTO, 0), nil, false, true, nil
 	}
 	if err != nil {
-		return make([]DegradationModelDTO, 0), false, false, nil
+		return make([]DegradationModelDTO, 0), nil, false, false, nil
 	}
-	models, err := DecodeArtificialAnalysisModels(payload)
+	models, version, err := DecodeArtificialAnalysisSnapshot(payload)
 	if err != nil {
-		return make([]DegradationModelDTO, 0), false, false, nil
+		return make([]DegradationModelDTO, 0), nil, false, false, nil
 	}
-	mapped, err := MapArtificialAnalysisModels(models, s.modelSlugs)
+	var mapped []DegradationModelDTO
+	if !isNilRadarPublicModelCatalog(s.catalog) {
+		byPlatform, catalogErr := s.catalog.ListPublicPassive(ctx)
+		if contextErr := radarServiceContextError(ctx, catalogErr); contextErr != nil {
+			return nil, nil, false, false, contextErr
+		}
+		if catalogErr != nil {
+			return make([]DegradationModelDTO, 0), version, false, false, nil
+		}
+		mapped, err = MatchArtificialAnalysisCatalog(models, byPlatform)
+	} else {
+		mapped, err = MapArtificialAnalysisModels(models)
+	}
 	if err != nil {
-		return make([]DegradationModelDTO, 0), false, false, nil
+		return make([]DegradationModelDTO, 0), version, false, false, nil
 	}
-	return mapped, true, true, nil
+	return mapped, version, true, true, nil
 }
 
 func (s *RadarService) readLMArenaLocally(ctx context.Context) (LMArenaDTO, bool, bool, error) {
@@ -820,58 +754,6 @@ func (s *RadarService) readLMArenaLocally(ctx context.Context) (LMArenaDTO, bool
 	return mapped, true, true, nil
 }
 
-func isSupportedDegradationMetric(metric DegradationMetric) bool {
-	switch metric {
-	case DegradationMetricIntelligenceIndex,
-		DegradationMetricCodingIndex,
-		DegradationMetricAgenticIndex:
-		return true
-	default:
-		return false
-	}
-}
-
-func radarServiceMetricPoints(
-	performance ArtificialAnalysisPerformance,
-	metric DegradationMetric,
-	now time.Time,
-	days int,
-) ([]MetricPointDTO, error) {
-	year, month, day := now.UTC().Date()
-	today := time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
-	firstDay := today.AddDate(0, 0, -(days - 1))
-	result := make([]MetricPointDTO, 0, len(performance.DataPoints))
-	for _, point := range performance.DataPoints {
-		pointDate, err := time.Parse("2006-01-02", point.Date)
-		if err != nil {
-			return nil, ErrRadarUnavailable
-		}
-		if pointDate.Before(firstDay) || pointDate.After(today) {
-			continue
-		}
-
-		var value *float64
-		switch metric {
-		case DegradationMetricIntelligenceIndex:
-			value = point.IntelligenceIndex
-		case DegradationMetricCodingIndex:
-			value = point.CodingIndex
-		case DegradationMetricAgenticIndex:
-			value = point.AgenticIndex
-		default:
-			return nil, ErrInvalidRadarQuery
-		}
-		if value == nil {
-			continue
-		}
-		result = append(result, MetricPointDTO{Date: point.Date, Value: *value})
-	}
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].Date < result[j].Date
-	})
-	return result, nil
-}
-
 type radarServiceDataSourceSpec struct {
 	source     RadarSourceKey
 	name       string
@@ -882,7 +764,7 @@ type radarServiceDataSourceSpec struct {
 }
 
 func (s *RadarService) dataSourceSpecs() []radarServiceDataSourceSpec {
-	result := make([]radarServiceDataSourceSpec, 0, len(s.modelSlugs)+9)
+	result := make([]radarServiceDataSourceSpec, 0, 9)
 	result = append(result, radarServiceDataSourceSpec{
 		source:     RadarSourceAA,
 		name:       "Artificial Analysis",
@@ -891,20 +773,6 @@ func (s *RadarService) dataSourceSpecs() []radarServiceDataSourceSpec {
 		threshold:  s.aaModelsStaleThreshold,
 		configured: s.aaConfigured,
 	})
-	for _, slug := range s.modelSlugs {
-		source, err := RadarAAPerformanceSource(slug)
-		if err != nil {
-			continue
-		}
-		result = append(result, radarServiceDataSourceSpec{
-			source:     source,
-			name:       fmt.Sprintf("Artificial Analysis Performance (%s)", slug),
-			url:        radarServiceArtificialAnalysisPublicURL,
-			interval:   s.aaPerformanceInterval,
-			threshold:  s.aaPerformanceStaleThreshold,
-			configured: s.aaConfigured,
-		})
-	}
 	result = append(result,
 		radarServiceDataSourceSpec{
 			source:     RadarSourceLMArena,
@@ -1230,7 +1098,7 @@ func (s *RadarService) deleteCacheEntryIfCurrent(key radarServiceCacheKey, obser
 }
 
 func (key radarServiceCacheKey) singleflightKey() string {
-	return fmt.Sprintf("%s\x00%s\x00%s\x00%s\x00%d", key.method, key.model, key.bucket, key.metric, key.days)
+	return fmt.Sprintf("%s\x00%s\x00%d", key.method, key.bucket, key.days)
 }
 
 func radarServiceContextError(ctx context.Context, err error) error {
@@ -1389,11 +1257,13 @@ func cloneRadarServiceDegradationLatest(input *DegradationLatestDTO) *Degradatio
 		return nil
 	}
 	return &DegradationLatestDTO{
-		Models:             cloneRadarServiceDegradationModels(input.Models),
-		LMArenaTop5:        cloneRadarServiceLMArenaEntries(input.LMArenaTop5),
-		SourcesLastUpdated: cloneRadarServiceTimeMap(input.SourcesLastUpdated),
-		TrendAvailable:     input.TrendAvailable,
-		Stale:              input.Stale,
+		Models:                   cloneRadarServiceDegradationModels(input.Models),
+		AvailableModels:          cloneRadarServiceDegradationModels(input.AvailableModels),
+		DefaultModelSlugs:        append([]string(nil), input.DefaultModelSlugs...),
+		IntelligenceIndexVersion: cloneRadarFloat(input.IntelligenceIndexVersion),
+		LMArenaTop5:              cloneRadarServiceLMArenaEntries(input.LMArenaTop5),
+		SourcesLastUpdated:       cloneRadarServiceTimeMap(input.SourcesLastUpdated),
+		Stale:                    input.Stale,
 	}
 }
 
@@ -1407,6 +1277,7 @@ func cloneRadarServiceDegradationModels(input []DegradationModelDTO) []Degradati
 		result[index].PriceInputPer1M = cloneRadarFloat(input[index].PriceInputPer1M)
 		result[index].PriceOutputPer1M = cloneRadarFloat(input[index].PriceOutputPer1M)
 		result[index].LastUpdatedAt = radarServiceTimePointerFromPointer(input[index].LastUpdatedAt)
+		result[index].CatalogMatches = append([]DegradationCatalogMatchDTO(nil), input[index].CatalogMatches...)
 	}
 	return result
 }
@@ -1422,18 +1293,6 @@ func cloneRadarServiceLMArenaEntries(input []LMArenaEntryDTO) []LMArenaEntryDTO 
 		result[index].Votes = cloneRadarInt64(input[index].Votes)
 	}
 	return result
-}
-
-func cloneRadarServiceDegradationTrend(input *DegradationTrendDTO) *DegradationTrendDTO {
-	if input == nil {
-		return nil
-	}
-	result := *input
-	result.DataPoints = append([]MetricPointDTO(nil), input.DataPoints...)
-	if result.DataPoints == nil {
-		result.DataPoints = make([]MetricPointDTO, 0)
-	}
-	return &result
 }
 
 func cloneRadarServiceLMArena(input *LMArenaDTO) *LMArenaDTO {

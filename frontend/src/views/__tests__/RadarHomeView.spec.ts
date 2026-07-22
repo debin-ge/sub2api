@@ -9,7 +9,6 @@ import type {
 import type {
   DataSourceMetaDTO,
   DegradationLatestDTO,
-  DegradationTrendDTO,
   LMArenaDTO,
   QuotaRadarLatestDTO,
   QuotaTrendDTO,
@@ -97,7 +96,6 @@ interface RadarFixtureOptions {
   hasCompletedRefresh?: boolean
   refresh?: ReturnType<typeof vi.fn>
   quotaTrendState?: RadarResourceState<QuotaTrendDTO>
-  degradationTrendState?: RadarResourceState<DegradationTrendDTO>
 }
 
 function makeRadar(options: RadarFixtureOptions = {}): UsePublicRadarReturn {
@@ -116,8 +114,6 @@ function makeRadar(options: RadarFixtureOptions = {}): UsePublicRadarReturn {
   const quotaTrendState = options.quotaTrendState ?? resource<QuotaTrendDTO>(null, {
     hasSucceeded: false,
   })
-  const degradationTrendState = options.degradationTrendState
-    ?? resource<DegradationTrendDTO>(null, { hasSucceeded: false })
 
   return {
     health,
@@ -137,14 +133,6 @@ function makeRadar(options: RadarFixtureOptions = {}): UsePublicRadarReturn {
     refresh: options.refresh ?? vi.fn().mockResolvedValue(undefined),
     getQuotaTrendState: vi.fn(() => quotaTrendState),
     loadQuotaTrend: vi.fn().mockResolvedValue(quotaTrend()),
-    getDegradationTrendState: vi.fn(() => degradationTrendState),
-    loadDegradationTrend: vi.fn().mockResolvedValue({
-      model_slug: 'model-a',
-      metric: 'intelligence_index',
-      days: 90,
-      data_points: [],
-      stale: false,
-    }),
     dispose: vi.fn(),
   }
 }
@@ -184,12 +172,8 @@ const DegradationStub = defineComponent({
     'lmarena',
     'lmarenaLoading',
     'lmarenaError',
-    'trend',
-    'trendLoading',
-    'trendError',
   ],
-  emits: ['request-trend'],
-  template: '<div data-testid="degradation"><button data-testid="request-trend" @click="$emit(\'request-trend\', \'model-a\', \'coding_index\', 90)">trend</button></div>',
+  template: '<div data-testid="degradation" />',
 })
 
 const stubs: Record<string, Component> = {
@@ -347,9 +331,11 @@ describe('RadarHomeView', () => {
       }),
       degradationLatest: resource({
         models: [],
+        available_models: [],
+        default_model_slugs: [],
+        intelligence_index_version: null,
         lmarena_top5: [],
         sources_last_updated: {},
-        trend_available: false,
         stale: false,
       }),
       lmarena: resource({ leaderboard: [], total_votes: null, last_updated_at: null, fetched_at: now, stale: false }),
@@ -427,17 +413,7 @@ describe('RadarHomeView', () => {
       sample_size_warn_below: 3,
       stale: false,
     })
-    const degradationState = resource<DegradationTrendDTO>({
-      model_slug: 'model-a',
-      metric: 'coding_index',
-      days: 90,
-      data_points: [{ date: '2026-07-13', value: 88 }],
-      stale: false,
-    })
-    const radar = makeRadar({
-      quotaLatest: quotaLatestState,
-      degradationTrendState: degradationState,
-    })
+    const radar = makeRadar({ quotaLatest: quotaLatestState })
     const attempts: Record<string, number> = {}
     vi.mocked(radar.getQuotaTrendState).mockImplementation((bucketKey) => quotaStates[bucketKey])
     vi.mocked(radar.loadQuotaTrend).mockImplementation((bucketKey) => {
@@ -541,10 +517,6 @@ describe('RadarHomeView', () => {
       bucket: null,
     })
 
-    await wrapper.get('[data-testid="request-trend"]').trigger('click')
-    expect(radar.getDegradationTrendState).toHaveBeenCalledWith('model-a', 'coding_index', 90)
-    expect(radar.loadDegradationTrend).toHaveBeenCalledWith('model-a', 'coding_index', 90)
-    expect(wrapper.getComponent(DegradationStub).props('trend')).toEqual(degradationState.data.value)
   })
 
   it('passes the backend-filtered leaderboard through without waiting for or filtering by the catalog', async () => {

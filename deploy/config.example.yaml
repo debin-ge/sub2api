@@ -1172,15 +1172,11 @@ radar:
   infer_max_stdev_ratio: 0.3
   # Optional secret. Empty disables Artificial Analysis fetching.
   artificial_analysis_api_key: ""
-  # Empty automatically shows the six strongest indexed models in the overview.
-  # Configure explicit live slugs to additionally collect 90-day trend data.
-  artificial_analysis_model_slugs: []
   # External request timeout (1-120 seconds) and response cap (1-104857600 bytes).
   external_request_timeout_seconds: 10
   external_response_max_bytes: 10485760
   # Source refresh intervals (1-10080 minutes).
   artificial_analysis_models_interval_minutes: 360
-  artificial_analysis_performance_interval_minutes: 1440
   lmarena_interval_minutes: 1440
   statuspage_interval_minutes: 30
   # Hard retention is 1-30 days. Each stale threshold must be between its
@@ -1189,7 +1185,6 @@ radar:
   quota_stale_threshold_minutes: 30
   health_stale_threshold_minutes: 60
   artificial_analysis_models_stale_threshold_minutes: 720
-  artificial_analysis_performance_stale_threshold_minutes: 2880
   lmarena_stale_threshold_minutes: 2880
   # Pinned trusted official Arena dataset endpoint (HTTPS, Hugging Face datasets
   # server, port 443). Dataset/config/filter/order/paging are fixed in code. Other

@@ -69,16 +69,15 @@ type radarAdminAggregatorStateReader interface {
 }
 
 type RadarAdminController struct {
-	repo                        RadarCacheRepository
-	aggregatorRepo              radarAdminAggregatorStateReader
-	settings                    *SettingService
-	logger                      *slog.Logger
-	now                         func() time.Time
-	healthStaleThreshold        time.Duration
-	aaModelsStaleThreshold      time.Duration
-	aaPerformanceStaleThreshold time.Duration
-	lmarenaStaleThreshold       time.Duration
-	quotaStaleThreshold         time.Duration
+	repo                   RadarCacheRepository
+	aggregatorRepo         radarAdminAggregatorStateReader
+	settings               *SettingService
+	logger                 *slog.Logger
+	now                    func() time.Time
+	healthStaleThreshold   time.Duration
+	aaModelsStaleThreshold time.Duration
+	lmarenaStaleThreshold  time.Duration
+	quotaStaleThreshold    time.Duration
 
 	mu     sync.RWMutex
 	runner *RadarRunner
@@ -100,16 +99,15 @@ func newRadarAdminController(cfg *config.Config, repo RadarCacheRepository, sett
 		return nil, errors.New("radar admin controller requires aggregator state reader")
 	}
 	return &RadarAdminController{
-		repo:                        repo,
-		aggregatorRepo:              aggregatorRepo,
-		settings:                    settings,
-		logger:                      logger,
-		now:                         time.Now,
-		healthStaleThreshold:        time.Duration(cfg.Radar.HealthStaleThresholdMinutes) * time.Minute,
-		aaModelsStaleThreshold:      time.Duration(cfg.Radar.ArtificialAnalysisModelsStaleThresholdMinutes) * time.Minute,
-		aaPerformanceStaleThreshold: time.Duration(cfg.Radar.ArtificialAnalysisPerformanceStaleThresholdMinutes) * time.Minute,
-		lmarenaStaleThreshold:       time.Duration(cfg.Radar.LMArenaStaleThresholdMinutes) * time.Minute,
-		quotaStaleThreshold:         time.Duration(cfg.Radar.QuotaStaleThresholdMinutes) * time.Minute,
+		repo:                   repo,
+		aggregatorRepo:         aggregatorRepo,
+		settings:               settings,
+		logger:                 logger,
+		now:                    time.Now,
+		healthStaleThreshold:   time.Duration(cfg.Radar.HealthStaleThresholdMinutes) * time.Minute,
+		aaModelsStaleThreshold: time.Duration(cfg.Radar.ArtificialAnalysisModelsStaleThresholdMinutes) * time.Minute,
+		lmarenaStaleThreshold:  time.Duration(cfg.Radar.LMArenaStaleThresholdMinutes) * time.Minute,
+		quotaStaleThreshold:    time.Duration(cfg.Radar.QuotaStaleThresholdMinutes) * time.Minute,
 	}, nil
 }
 
@@ -194,9 +192,6 @@ func (c *RadarAdminController) sourceStaleThreshold(source RadarSourceKey) time.
 		RadarSourceStatusMiniMaxGlobal, RadarSourceStatusMiniMaxChina:
 		return c.healthStaleThreshold
 	default:
-		if isRadarAAPerformanceRunnerSource(source) {
-			return c.aaPerformanceStaleThreshold
-		}
 		return 0
 	}
 }

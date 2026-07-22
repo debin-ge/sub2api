@@ -126,29 +126,26 @@ type ModelCatalogConfig struct {
 
 // RadarConfig controls public Model Radar aggregation and external data sources.
 type RadarConfig struct {
-	Enabled                                            bool     `mapstructure:"enabled"`
-	MetricsBearerToken                                 string   `mapstructure:"metrics_bearer_token"`
-	QuotaAggregatorIntervalMin                         int      `mapstructure:"quota_aggregator_interval_min"`
-	QuotaHistoryRetentionDays                          int      `mapstructure:"quota_history_retention_days"`
-	SampleSizeWarnBelow                                int      `mapstructure:"sample_size_warn_below"`
-	PublicMinBucketAccounts                            int      `mapstructure:"public_min_bucket_accounts"`
-	InferMinUtilization                                float64  `mapstructure:"infer_min_utilization"`
-	InferMaxStdevRatio                                 float64  `mapstructure:"infer_max_stdev_ratio"`
-	ArtificialAnalysisAPIKey                           string   `mapstructure:"artificial_analysis_api_key"`
-	ArtificialAnalysisModelSlugs                       []string `mapstructure:"artificial_analysis_model_slugs"`
-	ExternalRequestTimeoutSeconds                      int      `mapstructure:"external_request_timeout_seconds"`
-	ExternalResponseMaxBytes                           int64    `mapstructure:"external_response_max_bytes"`
-	ArtificialAnalysisModelsIntervalMinutes            int      `mapstructure:"artificial_analysis_models_interval_minutes"`
-	ArtificialAnalysisPerformanceIntervalMinutes       int      `mapstructure:"artificial_analysis_performance_interval_minutes"`
-	LMArenaIntervalMinutes                             int      `mapstructure:"lmarena_interval_minutes"`
-	StatuspageIntervalMinutes                          int      `mapstructure:"statuspage_interval_minutes"`
-	SourceHardRetentionDays                            int      `mapstructure:"source_hard_retention_days"`
-	QuotaStaleThresholdMinutes                         int      `mapstructure:"quota_stale_threshold_minutes"`
-	HealthStaleThresholdMinutes                        int      `mapstructure:"health_stale_threshold_minutes"`
-	ArtificialAnalysisModelsStaleThresholdMinutes      int      `mapstructure:"artificial_analysis_models_stale_threshold_minutes"`
-	ArtificialAnalysisPerformanceStaleThresholdMinutes int      `mapstructure:"artificial_analysis_performance_stale_threshold_minutes"`
-	LMArenaStaleThresholdMinutes                       int      `mapstructure:"lmarena_stale_threshold_minutes"`
-	LMArenaURL                                         string   `mapstructure:"lmarena_url"`
+	Enabled                                       bool    `mapstructure:"enabled"`
+	MetricsBearerToken                            string  `mapstructure:"metrics_bearer_token"`
+	QuotaAggregatorIntervalMin                    int     `mapstructure:"quota_aggregator_interval_min"`
+	QuotaHistoryRetentionDays                     int     `mapstructure:"quota_history_retention_days"`
+	SampleSizeWarnBelow                           int     `mapstructure:"sample_size_warn_below"`
+	PublicMinBucketAccounts                       int     `mapstructure:"public_min_bucket_accounts"`
+	InferMinUtilization                           float64 `mapstructure:"infer_min_utilization"`
+	InferMaxStdevRatio                            float64 `mapstructure:"infer_max_stdev_ratio"`
+	ArtificialAnalysisAPIKey                      string  `mapstructure:"artificial_analysis_api_key"`
+	ExternalRequestTimeoutSeconds                 int     `mapstructure:"external_request_timeout_seconds"`
+	ExternalResponseMaxBytes                      int64   `mapstructure:"external_response_max_bytes"`
+	ArtificialAnalysisModelsIntervalMinutes       int     `mapstructure:"artificial_analysis_models_interval_minutes"`
+	LMArenaIntervalMinutes                        int     `mapstructure:"lmarena_interval_minutes"`
+	StatuspageIntervalMinutes                     int     `mapstructure:"statuspage_interval_minutes"`
+	SourceHardRetentionDays                       int     `mapstructure:"source_hard_retention_days"`
+	QuotaStaleThresholdMinutes                    int     `mapstructure:"quota_stale_threshold_minutes"`
+	HealthStaleThresholdMinutes                   int     `mapstructure:"health_stale_threshold_minutes"`
+	ArtificialAnalysisModelsStaleThresholdMinutes int     `mapstructure:"artificial_analysis_models_stale_threshold_minutes"`
+	LMArenaStaleThresholdMinutes                  int     `mapstructure:"lmarena_stale_threshold_minutes"`
+	LMArenaURL                                    string  `mapstructure:"lmarena_url"`
 }
 
 type LogConfig struct {
@@ -1826,7 +1823,6 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 	cfg.Reseller.UpstreamAPIKey = strings.TrimSpace(cfg.Reseller.UpstreamAPIKey)
 	cfg.Radar.ArtificialAnalysisAPIKey = strings.TrimSpace(cfg.Radar.ArtificialAnalysisAPIKey)
 	cfg.Radar.MetricsBearerToken = strings.TrimSpace(cfg.Radar.MetricsBearerToken)
-	cfg.Radar.ArtificialAnalysisModelSlugs = normalizeStringSlice(cfg.Radar.ArtificialAnalysisModelSlugs)
 	cfg.Radar.LMArenaURL = strings.TrimSpace(cfg.Radar.LMArenaURL)
 	cfg.Gateway.ForcedCodexInstructionsTemplateFile = strings.TrimSpace(cfg.Gateway.ForcedCodexInstructionsTemplateFile)
 	if cfg.Gateway.ForcedCodexInstructionsTemplateFile != "" {
@@ -1915,18 +1911,15 @@ func setDefaults() {
 	viper.SetDefault("radar.infer_min_utilization", 5.0)
 	viper.SetDefault("radar.infer_max_stdev_ratio", 0.3)
 	viper.SetDefault("radar.artificial_analysis_api_key", "")
-	viper.SetDefault("radar.artificial_analysis_model_slugs", []string{})
 	viper.SetDefault("radar.external_request_timeout_seconds", 10)
 	viper.SetDefault("radar.external_response_max_bytes", int64(10*1024*1024))
 	viper.SetDefault("radar.artificial_analysis_models_interval_minutes", 6*60)
-	viper.SetDefault("radar.artificial_analysis_performance_interval_minutes", 24*60)
 	viper.SetDefault("radar.lmarena_interval_minutes", 24*60)
 	viper.SetDefault("radar.statuspage_interval_minutes", 30)
 	viper.SetDefault("radar.source_hard_retention_days", 7)
 	viper.SetDefault("radar.quota_stale_threshold_minutes", 30)
 	viper.SetDefault("radar.health_stale_threshold_minutes", 60)
 	viper.SetDefault("radar.artificial_analysis_models_stale_threshold_minutes", 12*60)
-	viper.SetDefault("radar.artificial_analysis_performance_stale_threshold_minutes", 48*60)
 	viper.SetDefault("radar.lmarena_stale_threshold_minutes", 48*60)
 	viper.SetDefault("radar.lmarena_url", "https://datasets-server.huggingface.co/filter")
 
@@ -2563,33 +2556,30 @@ func setEnvReachableDefaults() {
 	viper.SetDefault("dingtalk_connect.sync_corp_email_attr_name", "")
 }
 
-// IsValidRadarModelSlug reports whether value is safe for use as a canonical
-// Radar model identifier and Redis key component. Length is measured in bytes.
+// IsValidRadarModelSlug reports whether value is safe for use as a Radar model
+// identifier and Redis key component. Artificial Analysis slugs are
+// case-sensitive and may contain uppercase ASCII letters. Length is measured
+// in bytes.
 func IsValidRadarModelSlug(value string) bool {
-	if len(value) == 0 || len(value) > 128 || !isRadarSlugLowerAlphaNumeric(value[0]) {
+	if len(value) == 0 || len(value) > 128 || !isRadarSlugAlphaNumeric(value[0]) {
 		return false
 	}
 	for i := 1; i < len(value); i++ {
-		if !isRadarSlugLowerAlphaNumeric(value[i]) && value[i] != '.' && value[i] != '_' && value[i] != '-' {
+		if !isRadarSlugAlphaNumeric(value[i]) && value[i] != '.' && value[i] != '_' && value[i] != '-' {
 			return false
 		}
 	}
 	return true
 }
 
-func isRadarSlugLowerAlphaNumeric(value byte) bool {
-	return value >= 'a' && value <= 'z' || value >= '0' && value <= '9'
+func isRadarSlugAlphaNumeric(value byte) bool {
+	return value >= 'a' && value <= 'z' || value >= 'A' && value <= 'Z' || value >= '0' && value <= '9'
 }
 
 // Validate rejects unsafe Radar limits and inconsistent retention settings.
 func (c RadarConfig) Validate() error {
 	// Enabled controls job scheduling only. Validate the complete structure even
 	// while disabled so a later runtime re-enable cannot activate unsafe values.
-	for _, configuredSlug := range c.ArtificialAnalysisModelSlugs {
-		if !IsValidRadarModelSlug(strings.TrimSpace(configuredSlug)) {
-			return fmt.Errorf("radar.artificial_analysis_model_slugs contains an invalid value")
-		}
-	}
 	if c.QuotaAggregatorIntervalMin <= 0 || c.QuotaAggregatorIntervalMin > radarMaxQuotaAggregatorIntervalMin {
 		return fmt.Errorf("radar.quota_aggregator_interval_min must be between 1 and %d", radarMaxQuotaAggregatorIntervalMin)
 	}
@@ -2617,9 +2607,6 @@ func (c RadarConfig) Validate() error {
 	if c.ArtificialAnalysisModelsIntervalMinutes <= 0 || c.ArtificialAnalysisModelsIntervalMinutes > radarMaxSourceIntervalMinutes {
 		return fmt.Errorf("radar.artificial_analysis_models_interval_minutes must be between 1 and %d", radarMaxSourceIntervalMinutes)
 	}
-	if c.ArtificialAnalysisPerformanceIntervalMinutes <= 0 || c.ArtificialAnalysisPerformanceIntervalMinutes > radarMaxSourceIntervalMinutes {
-		return fmt.Errorf("radar.artificial_analysis_performance_interval_minutes must be between 1 and %d", radarMaxSourceIntervalMinutes)
-	}
 	if c.LMArenaIntervalMinutes <= 0 || c.LMArenaIntervalMinutes > radarMaxSourceIntervalMinutes {
 		return fmt.Errorf("radar.lmarena_interval_minutes must be between 1 and %d", radarMaxSourceIntervalMinutes)
 	}
@@ -2637,7 +2624,6 @@ func (c RadarConfig) Validate() error {
 		{"quota_stale_threshold_minutes", c.QuotaStaleThresholdMinutes, c.QuotaAggregatorIntervalMin},
 		{"health_stale_threshold_minutes", c.HealthStaleThresholdMinutes, c.StatuspageIntervalMinutes},
 		{"artificial_analysis_models_stale_threshold_minutes", c.ArtificialAnalysisModelsStaleThresholdMinutes, c.ArtificialAnalysisModelsIntervalMinutes},
-		{"artificial_analysis_performance_stale_threshold_minutes", c.ArtificialAnalysisPerformanceStaleThresholdMinutes, c.ArtificialAnalysisPerformanceIntervalMinutes},
 		{"lmarena_stale_threshold_minutes", c.LMArenaStaleThresholdMinutes, c.LMArenaIntervalMinutes},
 	}
 	retentionWindowMinutes := c.SourceHardRetentionDays * radarMinutesPerDay

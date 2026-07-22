@@ -116,7 +116,7 @@ export default {
     },
     "degradation": {
       "title": "降智雷达",
-      "subtitle": "展示公开模型评测指数、历史变化和模型榜单排名，不代表已证明模型发生服务端降级。",
+      "subtitle": "展示 Artificial Analysis 与模型广场交集模型的当前指标，以及模型榜单排名。",
       "tabs": "模型评测视图",
       "overview": "指数概览",
       "lmarena": "模型榜单",
@@ -124,18 +124,25 @@ export default {
       "error": "评测数据加载失败",
       "radarLabel": "模型评测指标对比雷达图",
       "empty": "等待评测数据",
-      "trendTitle": "单模型 90 天趋势",
-      "sourceUpdated": "更新时间",
-      "model": "模型",
-      "metric": "指标",
+      "emptyIntersection": "暂无三项指标完整且能与模型广场匹配的 Artificial Analysis 模型。",
+      "stale": "数据可能已过期",
+      "indexVersion": "Intelligence Index 版本",
+      "projectFetchedAt": "项目获取时间",
+      "officialSource": "Artificial Analysis 官方来源",
+      "selectModels": "选择模型",
+      "searchModels": "搜索 AA 或模型广场模型",
+      "selectionLimit": "最多同时比较 10 个模型",
+      "removeModel": "移除模型",
+      "noSearchResults": "没有匹配的模型",
       "intelligence": "智能指数",
       "intelligenceShort": "智能",
+      "intelligenceDescription": "综合衡量模型在广泛推理与知识评测中的表现。",
       "coding": "编码指数",
       "codingShort": "编码",
+      "codingDescription": "衡量模型在软件开发与代码生成评测中的表现。",
       "agentic": "代理指数",
       "agenticShort": "代理",
-      "noTrend": "暂无趋势数据",
-      "trendStale": "趋势数据可能已过期"
+      "agenticDescription": "衡量模型在多步骤智能体与工具使用评测中的表现。"
     },
     "lmarena": {
       "loading": "模型榜单加载中",
@@ -487,7 +494,6 @@ export default {
             "lmarena": "LMArena",
             "status_claude": "Claude 状态页",
             "status_openai": "OpenAI 状态页",
-            "aa_performance": "Artificial Analysis 性能",
             "quota_aggregator": "Sub2API 聚合用量"
           },
           "errors": {

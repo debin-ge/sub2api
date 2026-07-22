@@ -138,67 +138,6 @@ func TestRadarRunnerDisableDoesNotCancelInFlightWork(t *testing.T) {
 	}
 }
 
-func TestRadarRunnerAAPerformanceRechecksGateAfterWaitingForSlot(t *testing.T) {
-	cfg := validRadarFetcherTestConfig()
-	gate := newRadarRuntimeGateStub(true)
-	repo := newRadarRunnerTestRepository()
-	started := make(chan struct{})
-	release := make(chan struct{})
-	firstSource, err := RadarAAPerformanceSource("model-a")
-	require.NoError(t, err)
-	secondSource, err := RadarAAPerformanceSource("model-b")
-	require.NoError(t, err)
-	newFetcher := func(source RadarSourceKey) *radarRunnerTestFetcher {
-		return &radarRunnerTestFetcher{source: source, interval: time.Hour, fn: func(ctx context.Context) ([]byte, SourceFetchMeta, error) {
-			select {
-			case started <- struct{}{}:
-			default:
-			}
-			select {
-			case <-release:
-			case <-ctx.Done():
-				return nil, SourceFetchMeta{}, ctx.Err()
-			}
-			now := time.Now().UTC()
-			return []byte(`{}`), SourceFetchMeta{LastAttemptAt: now, LastSuccessAt: &now}, nil
-		}}
-	}
-	first := newFetcher(firstSource)
-	second := newFetcher(secondSource)
-	runner := newRadarRunnerForTest(t, cfg, repo, radarRunnerOptions{
-		runtimeGate: gate, aaPerformanceConcurrency: 1, fetchBudget: time.Second,
-	}, first, second)
-	// Exercise only the two source loops so the call ordering is exact:
-	// constructor, both pre-slot gates, then the slot holder's second gate.
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	runner.wg.Add(2)
-	go runner.runFetcher(ctx, first, firstSource, first.interval)
-	go runner.runFetcher(ctx, second, secondSource, second.interval)
-	waitRadarRunnerSignal(t, started, "first AA performance fetch")
-	require.Eventually(t, func() bool { return gate.calls.Load() >= 4 }, time.Second, time.Millisecond,
-		"constructor, both pre-slot checks, and the slot holder's post-slot check must occur")
-
-	gate.enabled.Store(false)
-	close(release)
-	require.Eventually(t, func() bool {
-		_, _, commits, _, _ := repo.snapshot()
-		return len(commits) == 1
-	}, time.Second, time.Millisecond, "the slot holder must commit before its waiter proceeds")
-	require.Eventually(t, func() bool { return first.calls.Load()+second.calls.Load() == 1 }, time.Second, time.Millisecond)
-	time.Sleep(20 * time.Millisecond)
-	require.Equal(t, int32(1), first.calls.Load()+second.calls.Load(), "the waiter must recheck the gate before taking a lock or fetching")
-	locks, _, _, _, _ := repo.snapshot()
-	require.Len(t, locks, 1)
-	cancel()
-	waitDone := make(chan struct{})
-	go func() {
-		runner.wg.Wait()
-		close(waitDone)
-	}()
-	waitRadarRunnerSignal(t, waitDone, "AA runtime test source loops to stop")
-}
-
 func TestRadarRunnerManualOnceCanExplicitlyBypassRuntimeGate(t *testing.T) {
 	cfg := validRadarFetcherTestConfig()
 	gate := newRadarRuntimeGateStub(false)
@@ -236,17 +175,16 @@ func TestRadarRunnerMetricsUseEffectiveRuntimeValue(t *testing.T) {
 			cfg.Radar.Enabled = tt.staticEnabled
 			gate := newRadarRuntimeGateStub(tt.runtime)
 			repo := newRadarRunnerTestRepository()
-			source, err := RadarAAPerformanceSource("runtime-metrics-model")
-			require.NoError(t, err)
+			source := RadarSourceAA
 			fetcher := &radarRunnerTestFetcher{source: source, interval: time.Hour}
 			_ = newRadarRunnerForTest(t, cfg, repo, radarRunnerOptions{metrics: metrics, runtimeGate: gate}, fetcher)
 
 			body := scrapeRadarMetricsForTest(t, registry)
 			require.Contains(t, body, tt.wantGauge)
 			if tt.wantSource {
-				require.Contains(t, body, `radar_source_age_seconds{source="aa_performance"}`)
+				require.Contains(t, body, `radar_source_age_seconds{source="aa"}`)
 			} else {
-				require.NotContains(t, body, `radar_source_age_seconds{source="aa_performance"}`)
+				require.NotContains(t, body, `radar_source_age_seconds{source="aa"}`)
 			}
 		})
 	}
@@ -279,8 +217,7 @@ func TestRadarRunnerRuntimeTransitionUpdatesGaugeAndRegistersConfiguredSources(t
 	gate := newRadarRuntimeGateStub(false)
 	clock := newRadarRunnerControllableClock(time.Now().UTC())
 	repo := newRadarRunnerTestRepository()
-	source, err := RadarAAPerformanceSource("transition-model")
-	require.NoError(t, err)
+	source := RadarSourceAA
 	fetcher := &radarRunnerTestFetcher{source: source, interval: time.Hour}
 	runner := newRadarRunnerForTest(t, cfg, repo, radarRunnerOptions{
 		clock: clock, metrics: metrics, runtimeGate: gate,
@@ -290,12 +227,12 @@ func TestRadarRunnerRuntimeTransitionUpdatesGaugeAndRegistersConfiguredSources(t
 	firstTimer := waitRadarRunnerTimer(t, clock, time.Hour)
 	before := scrapeRadarMetricsForTest(t, registry)
 	require.Contains(t, before, "radar_enabled 0")
-	require.NotContains(t, before, `radar_source_age_seconds{source="aa_performance"}`)
+	require.NotContains(t, before, `radar_source_age_seconds{source="aa"}`)
 
 	gate.enabled.Store(true)
 	firstTimer.fire(time.Now())
 	waitRadarRunnerRepoEvent(t, repo, "commit", source)
 	after := scrapeRadarMetricsForTest(t, registry)
 	require.Contains(t, after, "radar_enabled 1")
-	require.Contains(t, after, `radar_source_age_seconds{source="aa_performance"}`)
+	require.Contains(t, after, `radar_source_age_seconds{source="aa"}`)
 }
