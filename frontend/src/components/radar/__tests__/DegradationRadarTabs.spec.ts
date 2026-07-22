@@ -15,19 +15,19 @@ vi.mock('vue-i18n', async (importOriginal) => {
 
 vi.mock('chart.js', () => ({
   Chart: { register: vi.fn() },
+  BarController: {},
+  BarElement: {},
+  CategoryScale: {},
   Legend: {},
-  LineElement: {},
-  PointElement: {},
-  RadarController: {},
-  RadialLinearScale: {},
+  LinearScale: {},
   Tooltip: {},
 }))
 
 vi.mock('vue-chartjs', () => ({
-  Radar: defineComponent({
-    name: 'RadarChart',
+  Bar: defineComponent({
+    name: 'BenchmarkBarChart',
     props: { data: { type: Object, required: true }, options: { type: Object, required: true } },
-    setup: () => () => h('div', { 'data-testid': 'radar-chart' }),
+    setup: () => () => h('div', { 'data-testid': 'benchmark-chart' }),
   }),
 }))
 
@@ -75,7 +75,7 @@ describe('DegradationRadarTabs', () => {
     const wrapper = mount(DegradationRadarTabs, { props: { latest: degradationLatest, lmarena }, global: radarGlobal })
     await flushPromises()
 
-    const radar = wrapper.findComponent({ name: 'RadarChart' })
+    const radar = wrapper.findComponent({ name: 'BenchmarkBarChart' })
     const data = radar.props('data') as { datasets: Array<{ label: string; data: number[] }> }
     expect(data.datasets).toHaveLength(6)
     expect(data.datasets[0]).toEqual(expect.objectContaining({
@@ -96,7 +96,7 @@ describe('DegradationRadarTabs', () => {
     const wrapper = mount(DegradationRadarTabs, { props: { latest: degradationLatest, lmarena }, global: radarGlobal })
     await flushPromises()
 
-    const data = wrapper.findComponent({ name: 'RadarChart' }).props('data') as {
+    const data = wrapper.findComponent({ name: 'BenchmarkBarChart' }).props('data') as {
       datasets: Array<{ label: string }>
     }
     expect(data.datasets.map((item) => item.label)).toEqual(['Model 7', 'Model A'])
@@ -105,7 +105,7 @@ describe('DegradationRadarTabs', () => {
 
     await router.replace('/radar?view=full&models=model-2,model-3')
     await flushPromises()
-    const updated = wrapper.findComponent({ name: 'RadarChart' }).props('data') as {
+    const updated = wrapper.findComponent({ name: 'BenchmarkBarChart' }).props('data') as {
       datasets: Array<{ label: string }>
     }
     expect(updated.datasets.map((item) => item.label)).toEqual(['Model 2', 'Model 3'])
@@ -122,7 +122,7 @@ describe('DegradationRadarTabs', () => {
     await wrapper.setProps({ latest: degradationLatest })
     await flushPromises()
 
-    const data = wrapper.findComponent({ name: 'RadarChart' }).props('data') as {
+    const data = wrapper.findComponent({ name: 'BenchmarkBarChart' }).props('data') as {
       datasets: Array<{ label: string }>
     }
     expect(data.datasets.map((item) => item.label)).toEqual(['Model 7', 'Model A'])
@@ -146,7 +146,7 @@ describe('DegradationRadarTabs', () => {
     for (const index of [6, 7, 8, 9]) await options[index].trigger('change')
     await flushPromises()
 
-    const data = wrapper.findComponent({ name: 'RadarChart' }).props('data') as { datasets: unknown[] }
+    const data = wrapper.findComponent({ name: 'BenchmarkBarChart' }).props('data') as { datasets: unknown[] }
     expect(data.datasets).toHaveLength(10)
     expect(options[10].attributes('disabled')).toBeDefined()
     expect(String(router.currentRoute.value.query.models).split(',')).toEqual([
@@ -161,7 +161,7 @@ describe('DegradationRadarTabs', () => {
     const wrapper = mount(DegradationRadarTabs, { props: { latest: degradationLatest, lmarena }, global: radarGlobal })
     await flushPromises()
 
-    expect(wrapper.findComponent({ name: 'RadarChart' }).props('data')).toEqual(
+    expect(wrapper.findComponent({ name: 'BenchmarkBarChart' }).props('data')).toEqual(
       expect.objectContaining({ datasets: expect.arrayContaining([expect.objectContaining({ label: 'Model A' })]) })
     )
     const selected = wrapper.findAll('[data-testid="selected-models"] button')
@@ -184,17 +184,17 @@ describe('DegradationRadarTabs', () => {
     })
     const wrapper = mount(DegradationRadarTabs, { props: { latest: degradationLatest, lmarena }, global: radarGlobal })
     await flushPromises()
-    const before = wrapper.findComponent({ name: 'RadarChart' }).props('options') as {
-      scales: { r: { grid: { color: string } } }
+    const before = wrapper.findComponent({ name: 'BenchmarkBarChart' }).props('options') as {
+      scales: { y: { grid: { color: string } } }
     }
 
     document.documentElement.classList.add('dark')
     callback?.([], {} as MutationObserver)
     await wrapper.vm.$nextTick()
-    const after = wrapper.findComponent({ name: 'RadarChart' }).props('options') as {
-      scales: { r: { grid: { color: string } } }
+    const after = wrapper.findComponent({ name: 'BenchmarkBarChart' }).props('options') as {
+      scales: { y: { grid: { color: string } } }
     }
-    expect(after.scales.r.grid.color).not.toBe(before.scales.r.grid.color)
+    expect(after.scales.y.grid.color).not.toBe(before.scales.y.grid.color)
     expect(observe).toHaveBeenCalledWith(document.documentElement, { attributes: true, attributeFilter: ['class'] })
     wrapper.unmount()
     expect(disconnect).toHaveBeenCalled()

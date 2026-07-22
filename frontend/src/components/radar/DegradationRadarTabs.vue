@@ -65,163 +65,243 @@
 
       <div
         v-if="latest"
-        class="grid gap-3 rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm dark:border-dark-800 dark:bg-dark-800/40 sm:grid-cols-3"
+        class="flex flex-col gap-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm dark:border-dark-800 dark:bg-dark-800/40 sm:flex-row sm:items-center sm:justify-between"
       >
-        <div>
-          <p class="text-xs text-gray-500 dark:text-gray-400">
-            {{ t('radar.degradation.indexVersion', 'Intelligence Index version') }}
-          </p>
-          <p data-testid="aa-index-version" class="mt-1 font-semibold text-gray-900 dark:text-white">
-            {{ latest.intelligence_index_version ?? '—' }}
-          </p>
+        <div class="flex flex-wrap items-center gap-x-6 gap-y-2">
+          <div class="flex items-center gap-2">
+            <Icon name="badge" size="sm" class="shrink-0 text-gray-400 dark:text-gray-500" aria-hidden="true" />
+            <span class="text-xs text-gray-500 dark:text-gray-400">
+              {{ t('radar.degradation.indexVersion', 'Intelligence Index version') }}
+            </span>
+            <span data-testid="aa-index-version" class="font-semibold text-gray-900 dark:text-white">
+              {{ latest.intelligence_index_version ?? '—' }}
+            </span>
+          </div>
+          <div class="flex items-center gap-2">
+            <Icon name="clock" size="sm" class="shrink-0 text-gray-400 dark:text-gray-500" aria-hidden="true" />
+            <span class="text-xs text-gray-500 dark:text-gray-400">
+              {{ t('radar.degradation.projectFetchedAt', 'Project fetched at') }}
+            </span>
+            <span data-testid="aa-fetched-at" class="font-semibold text-gray-900 dark:text-white">
+              {{ aaFetchedAt ? formatDate(aaFetchedAt) : '—' }}
+            </span>
+          </div>
         </div>
-        <div>
-          <p class="text-xs text-gray-500 dark:text-gray-400">
-            {{ t('radar.degradation.projectFetchedAt', 'Project fetched at') }}
-          </p>
-          <p data-testid="aa-fetched-at" class="mt-1 font-semibold text-gray-900 dark:text-white">
-            {{ aaFetchedAt ? formatDate(aaFetchedAt) : '—' }}
-          </p>
-        </div>
-        <div class="sm:text-right">
-          <a
-            href="https://artificialanalysis.ai"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="font-semibold text-primary-600 hover:underline dark:text-primary-400"
-          >
-            {{ t('radar.degradation.officialSource', 'Artificial Analysis official source') }}
-          </a>
-        </div>
+        <a
+          href="https://artificialanalysis.ai"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="inline-flex shrink-0 items-center gap-1.5 text-sm font-semibold text-primary-600 hover:underline dark:text-primary-400"
+        >
+          {{ t('radar.degradation.officialSource', 'Artificial Analysis official source') }}
+          <Icon name="externalLink" size="sm" aria-hidden="true" />
+        </a>
       </div>
 
       <dl class="grid gap-3 sm:grid-cols-3">
         <div
           v-for="metric in metrics"
           :key="metric.key"
-          class="rounded-xl border border-gray-200 p-3 dark:border-dark-800"
+          class="flex items-start gap-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-dark-800 dark:bg-dark-900"
         >
-          <dt class="text-sm font-semibold text-gray-900 dark:text-white">{{ metric.label }}</dt>
-          <dd class="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{{ metric.description }}</dd>
+          <span
+            class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
+            :class="metric.iconClass"
+            aria-hidden="true"
+          >
+            <Icon :name="metric.icon" size="sm" />
+          </span>
+          <div class="min-w-0">
+            <dt class="text-sm font-semibold text-gray-900 dark:text-white">{{ metric.label }}</dt>
+            <dd class="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{{ metric.description }}</dd>
+          </div>
         </div>
       </dl>
 
       <div v-if="allModels.length > 0" class="space-y-6">
-        <section class="rounded-xl border border-gray-200 p-4 dark:border-dark-800" aria-labelledby="aa-model-selector-heading">
-          <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <label class="block min-w-0 flex-1" for="aa-model-search">
-              <span id="aa-model-selector-heading" class="text-sm font-semibold text-gray-900 dark:text-white">
-                {{ t('radar.degradation.selectModels', 'Select models') }}
+        <div class="grid gap-6 lg:grid-cols-[minmax(0,7fr)_minmax(20rem,5fr)]">
+          <div class="flex flex-col rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-dark-800 dark:bg-dark-900">
+            <div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+              <h3 class="font-semibold text-gray-950 dark:text-white">
+                {{ t('radar.degradation.chartTitle', 'Benchmark comparison') }}
+              </h3>
+              <span class="text-xs text-gray-500 dark:text-gray-400">
+                {{ t('radar.degradation.scaleHint', 'All indices use a 0–100 scale') }}
               </span>
-              <span class="ml-2 text-xs text-gray-500 dark:text-gray-400">
+            </div>
+            <div class="flex flex-1 items-center">
+              <div
+                class="relative h-72 w-full sm:h-80"
+                role="img"
+                :aria-label="t('radar.degradation.radarLabel', 'Model benchmark comparison chart')"
+              >
+                <Bar :data="chartData" :options="chartOptions" />
+              </div>
+            </div>
+            <ul class="mt-2 flex flex-wrap justify-center gap-x-4 gap-y-1.5">
+              <li
+                v-for="(model, index) in radarModels"
+                :key="model.slug"
+                class="flex max-w-[15rem] items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300"
+              >
+                <span
+                  class="h-2.5 w-2.5 shrink-0 rounded-full"
+                  :style="{ backgroundColor: modelColor(index) }"
+                  aria-hidden="true"
+                ></span>
+                <span class="truncate" :title="model.name">{{ model.name }}</span>
+              </li>
+            </ul>
+          </div>
+
+          <section
+            class="flex flex-col rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-dark-800 dark:bg-dark-900"
+            aria-labelledby="aa-model-selector-heading"
+          >
+            <div class="flex items-baseline justify-between gap-3">
+              <h3 id="aa-model-selector-heading" class="font-semibold text-gray-950 dark:text-white">
+                {{ t('radar.degradation.selectModels', 'Select models') }}
+              </h3>
+              <span class="text-xs tabular-nums text-gray-500 dark:text-gray-400">
                 {{ selectedModelSlugs.length }}/{{ maxSelectedModels }}
               </span>
+            </div>
+
+            <div class="relative mt-3">
+              <Icon
+                name="search"
+                size="sm"
+                class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500"
+                aria-hidden="true"
+              />
               <input
                 id="aa-model-search"
                 v-model="modelSearch"
                 data-testid="model-search"
                 type="search"
+                :aria-label="t('radar.degradation.searchModels', 'Search AA or Model Plaza models')"
                 :placeholder="t('radar.degradation.searchModels', 'Search AA or Model Plaza models')"
-                class="mt-2 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-dark-700 dark:bg-dark-800 dark:text-white"
+                class="block w-full rounded-lg border border-gray-300 bg-white py-2 pl-9 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-dark-700 dark:bg-dark-800 dark:text-white"
               />
-            </label>
-            <p class="text-xs text-gray-500 dark:text-gray-400">
+            </div>
+
+            <div data-testid="selected-models" class="mt-3 flex flex-wrap gap-1.5">
+              <span
+                v-for="(model, index) in radarModels"
+                :key="model.slug"
+                class="inline-flex max-w-full items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 py-1 pl-2.5 pr-1 text-xs font-medium text-gray-700 dark:border-dark-700 dark:bg-dark-800 dark:text-gray-200"
+              >
+                <span
+                  class="h-2 w-2 shrink-0 rounded-full"
+                  :style="{ backgroundColor: modelColor(index) }"
+                  aria-hidden="true"
+                ></span>
+                <span class="truncate" :title="model.name">{{ model.name }}</span>
+                <button
+                  type="button"
+                  :disabled="selectedModelSlugs.length <= 1"
+                  :aria-label="`${t('radar.degradation.removeModel', 'Remove model')}: ${model.name}`"
+                  class="flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-gray-400 hover:bg-gray-200 hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-dark-600 dark:hover:text-gray-200"
+                  @click="removeModel(model.slug)"
+                >
+                  ×
+                </button>
+              </span>
+            </div>
+
+            <ul
+              data-testid="model-options"
+              class="mt-3 max-h-[17.5rem] flex-1 space-y-0.5 overflow-y-auto rounded-lg border border-gray-200 p-1 dark:border-dark-700"
+            >
+              <li v-for="model in filteredModels" :key="model.slug">
+                <label class="flex cursor-pointer items-start gap-2.5 rounded-md px-2.5 py-2 hover:bg-gray-50 dark:hover:bg-dark-800/70">
+                  <input
+                    type="checkbox"
+                    :value="model.slug"
+                    :checked="selectedModelSlugs.includes(model.slug)"
+                    :disabled="modelOptionDisabled(model.slug)"
+                    class="mt-0.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-600 dark:bg-dark-800"
+                    @change="toggleModel(model.slug)"
+                  />
+                  <span class="min-w-0">
+                    <span class="block truncate text-sm font-medium text-gray-900 dark:text-white" :title="model.name">
+                      {{ model.name }}
+                    </span>
+                    <span class="block truncate text-xs text-gray-500 dark:text-gray-400" :title="model.slug">
+                      {{ model.slug }}
+                    </span>
+                    <span
+                      v-if="catalogMatches(model).length"
+                      class="mt-0.5 block truncate text-xs text-gray-400 dark:text-gray-500"
+                      :title="catalogMatchSummary(model)"
+                    >
+                      {{ catalogMatchSummary(model) }}
+                    </span>
+                  </span>
+                </label>
+              </li>
+              <li v-if="filteredModels.length === 0" class="px-3 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                {{ t('radar.degradation.noSearchResults', 'No matching models') }}
+              </li>
+            </ul>
+
+            <p class="mt-2 text-xs text-gray-400 dark:text-gray-500">
               {{ t('radar.degradation.selectionLimit', 'Compare up to 10 models') }}
             </p>
-          </div>
+          </section>
+        </div>
 
-          <div data-testid="selected-models" class="mt-3 flex flex-wrap gap-2">
-            <span
-              v-for="model in radarModels"
-              :key="model.slug"
-              class="inline-flex max-w-full items-center gap-1 rounded-full bg-primary-50 px-2.5 py-1 text-xs font-medium text-primary-800 dark:bg-primary-950/40 dark:text-primary-200"
-            >
-              <span class="truncate">{{ model.name }}</span>
-              <button
-                type="button"
-                :disabled="selectedModelSlugs.length <= 1"
-                :aria-label="`${t('radar.degradation.removeModel', 'Remove model')}: ${model.name}`"
-                class="rounded-full px-1 hover:bg-primary-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-primary-900/60"
-                @click="removeModel(model.slug)"
-              >
-                ×
-              </button>
-            </span>
-          </div>
-
-          <ul
-            data-testid="model-options"
-            class="mt-3 max-h-64 space-y-1 overflow-y-auto rounded-lg border border-gray-200 p-1 dark:border-dark-700"
+        <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <article
+            v-for="(model, index) in radarModels"
+            :key="model.slug"
+            class="flex flex-col rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-dark-800 dark:bg-dark-900"
           >
-            <li v-for="model in filteredModels" :key="model.slug">
-              <label class="flex cursor-pointer items-start gap-3 rounded-md px-3 py-2 hover:bg-gray-50 dark:hover:bg-dark-800/70">
-                <input
-                  type="checkbox"
-                  :value="model.slug"
-                  :checked="selectedModelSlugs.includes(model.slug)"
-                  :disabled="modelOptionDisabled(model.slug)"
-                  class="mt-1 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-600 dark:bg-dark-800"
-                  @change="toggleModel(model.slug)"
-                />
-                <span class="min-w-0">
-                  <span class="block text-sm font-medium text-gray-900 dark:text-white">{{ model.name }}</span>
-                  <span class="block break-all text-xs text-gray-500 dark:text-gray-400">{{ model.slug }}</span>
-                  <span v-if="catalogMatches(model).length" class="mt-1 block text-xs text-gray-500 dark:text-gray-400">
-                    {{ catalogMatchSummary(model) }}
-                  </span>
-                </span>
-              </label>
-            </li>
-            <li v-if="filteredModels.length === 0" class="px-3 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
-              {{ t('radar.degradation.noSearchResults', 'No matching models') }}
-            </li>
-          </ul>
-        </section>
-
-        <div class="grid gap-8 xl:grid-cols-[minmax(0,1.25fr)_minmax(18rem,0.75fr)]">
-          <div class="min-w-0">
-            <div
-              class="h-[26rem]"
-              role="img"
-              :aria-label="t('radar.degradation.radarLabel', 'Model benchmark comparison radar chart')"
-            >
-              <Radar :data="radarData" :options="radarOptions" />
+            <div class="flex items-start gap-2.5">
+              <span
+                class="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full"
+                :style="{ backgroundColor: modelColor(index) }"
+                aria-hidden="true"
+              ></span>
+              <div class="min-w-0">
+                <h3 class="truncate font-semibold text-gray-950 dark:text-white" :title="model.name">
+                  {{ model.name }}
+                </h3>
+                <p class="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400" :title="`${model.vendor || '—'} · ${model.slug}`">
+                  {{ model.vendor || '—' }} · {{ model.slug }}
+                </p>
+              </div>
             </div>
-          </div>
-
-          <div class="space-y-3">
-            <article
-              v-for="model in radarModels"
-              :key="model.slug"
-              class="rounded-xl border border-gray-200 p-4 dark:border-dark-800"
-            >
-              <h3 class="font-semibold text-gray-950 dark:text-white">{{ model.name }}</h3>
-              <p class="break-all text-xs text-gray-500 dark:text-gray-400">
-                {{ model.vendor || '—' }} · {{ model.slug }}
-              </p>
-              <dl class="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
-                <div
-                  v-for="metric in metrics"
-                  :key="metric.key"
-                  class="rounded-lg bg-gray-50 p-2 dark:bg-dark-800/70"
-                >
-                  <dt class="truncate text-gray-500 dark:text-gray-400">{{ metric.shortLabel }}</dt>
-                  <dd class="mt-1 font-semibold text-gray-900 dark:text-white">
+            <dl class="mt-4 flex-1 space-y-2.5">
+              <div v-for="metric in metrics" :key="metric.key">
+                <div class="flex items-baseline justify-between gap-2 text-xs">
+                  <dt class="text-gray-500 dark:text-gray-400">{{ metric.shortLabel }}</dt>
+                  <dd class="font-semibold tabular-nums text-gray-900 dark:text-white">
                     {{ metricValue(model, metric.key) ?? '—' }}
                   </dd>
                 </div>
-              </dl>
-              <div v-if="catalogMatches(model).length" class="mt-3 flex flex-wrap gap-1.5">
-                <span
-                  v-for="match in catalogMatches(model)"
-                  :key="`${match.platform}:${match.model_id}`"
-                  class="max-w-full break-all rounded-md bg-gray-100 px-2 py-1 text-[11px] text-gray-600 dark:bg-dark-800 dark:text-gray-300"
-                >
-                  {{ match.platform }} / {{ match.model_id }}
-                </span>
+                <div class="mt-1 h-1.5 overflow-hidden rounded-full bg-gray-100 dark:bg-dark-800">
+                  <div
+                    class="h-full rounded-full"
+                    :style="{ width: metricBarWidth(model, metric.key), backgroundColor: modelColor(index) }"
+                  ></div>
+                </div>
               </div>
-            </article>
-          </div>
+            </dl>
+            <div
+              v-if="catalogMatches(model).length"
+              class="mt-4 flex flex-wrap gap-1.5 border-t border-gray-100 pt-3 dark:border-dark-800"
+            >
+              <span
+                v-for="match in catalogMatches(model)"
+                :key="`${match.platform}:${match.model_id}`"
+                class="max-w-full truncate rounded-md bg-gray-50 px-2 py-0.5 text-[11px] text-gray-500 dark:bg-dark-800 dark:text-gray-400"
+                :title="`${match.platform} / ${match.model_id}`"
+              >
+                {{ match.platform }} / {{ match.model_id }}
+              </span>
+            </div>
+          </article>
         </div>
       </div>
       <p
@@ -314,19 +394,19 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import {
+  BarController,
+  BarElement,
+  CategoryScale,
   Chart as ChartJS,
   Legend,
-  LineElement,
-  PointElement,
-  RadarController,
-  RadialLinearScale,
+  LinearScale,
   Tooltip,
 } from 'chart.js'
-import { Radar } from 'vue-chartjs'
+import { Bar } from 'vue-chartjs'
 import Icon from '@/components/icons/Icon.vue'
 import type { DegradationLatestDTO, DegradationMetric, DegradationModelDTO, LMArenaDTO } from '@/types/radar'
 
-ChartJS.register(Legend, LineElement, PointElement, RadarController, RadialLinearScale, Tooltip)
+ChartJS.register(BarController, BarElement, CategoryScale, Legend, LinearScale, Tooltip)
 
 type DegradationTab = 'overview' | 'lmarena'
 
@@ -368,18 +448,24 @@ const metrics = computed(() => [
     label: t('radar.degradation.intelligence', 'Intelligence index'),
     shortLabel: t('radar.degradation.intelligenceShort', 'Intelligence'),
     description: t('radar.degradation.intelligenceDescription', 'Composite performance across broad reasoning and knowledge evaluations.'),
+    icon: 'sparkles' as const,
+    iconClass: 'bg-violet-50 text-violet-600 dark:bg-violet-950/40 dark:text-violet-300',
   },
   {
     key: 'coding_index' as const,
     label: t('radar.degradation.coding', 'Coding index'),
     shortLabel: t('radar.degradation.codingShort', 'Coding'),
     description: t('radar.degradation.codingDescription', 'Performance on software-development and code-generation evaluations.'),
+    icon: 'terminal' as const,
+    iconClass: 'bg-sky-50 text-sky-600 dark:bg-sky-950/40 dark:text-sky-300',
   },
   {
     key: 'agentic_index' as const,
     label: t('radar.degradation.agentic', 'Agentic index'),
     shortLabel: t('radar.degradation.agenticShort', 'Agentic'),
     description: t('radar.degradation.agenticDescription', 'Performance on multi-step agent and tool-use evaluations.'),
+    icon: 'cpu' as const,
+    iconClass: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-300',
   },
 ])
 const allModels = computed<DegradationModelDTO[]>(() => {
@@ -405,50 +491,60 @@ const leaderboard = computed(() => [...(props.lmarena?.leaderboard ?? [])].sort(
 const aaFetchedAt = computed(() => props.latest?.sources_last_updated?.aa ?? null)
 
 const palette = [
-  { border: '#2563eb', fill: 'rgba(37, 99, 235, 0.12)' },
-  { border: '#9333ea', fill: 'rgba(147, 51, 234, 0.12)' },
-  { border: '#059669', fill: 'rgba(5, 150, 105, 0.12)' },
-  { border: '#ea580c', fill: 'rgba(234, 88, 12, 0.12)' },
-  { border: '#db2777', fill: 'rgba(219, 39, 119, 0.12)' },
-  { border: '#0891b2', fill: 'rgba(8, 145, 178, 0.12)' },
-  { border: '#4f46e5', fill: 'rgba(79, 70, 229, 0.12)' },
-  { border: '#65a30d', fill: 'rgba(101, 163, 13, 0.12)' },
-  { border: '#c026d3', fill: 'rgba(192, 38, 211, 0.12)' },
-  { border: '#dc2626', fill: 'rgba(220, 38, 38, 0.12)' },
+  '#2563eb',
+  '#9333ea',
+  '#059669',
+  '#ea580c',
+  '#db2777',
+  '#0891b2',
+  '#4f46e5',
+  '#65a30d',
+  '#c026d3',
+  '#dc2626',
 ]
 
-const radarData = computed(() => ({
+const chartData = computed(() => ({
   labels: metrics.value.map((metric) => metric.shortLabel),
   datasets: radarModels.value.map((model, index) => ({
     label: model.name,
     data: metrics.value.map((metric) => metricValue(model, metric.key)),
-    borderColor: palette[index].border,
-    backgroundColor: palette[index].fill,
-    pointBackgroundColor: palette[index].border,
-    spanGaps: false,
+    backgroundColor: modelColor(index),
+    hoverBackgroundColor: modelColor(index),
+    borderRadius: 4,
+    borderSkipped: 'bottom' as const,
+    maxBarThickness: 22,
+    categoryPercentage: 0.72,
+    barPercentage: 0.86,
   })),
 }))
-const radarOptions = computed(() => {
+const chartOptions = computed(() => {
   const textColor = isDark.value ? '#d1d5db' : '#374151'
+  const mutedTextColor = isDark.value ? '#94a3b8' : '#9ca3af'
   const gridColor = isDark.value ? 'rgba(148, 163, 184, 0.28)' : 'rgba(107, 114, 128, 0.22)'
   return {
     responsive: true,
     maintainAspectRatio: false,
     animation: false as const,
     scales: {
-      r: {
+      x: {
+        grid: { display: false },
+        border: { color: gridColor },
+        ticks: { color: textColor, font: { size: 13, weight: 600 } },
+      },
+      y: {
         beginAtZero: true,
-        suggestedMin: 0,
         suggestedMax: 100,
         grid: { color: gridColor },
-        angleLines: { color: gridColor },
-        pointLabels: { color: textColor },
-        ticks: { color: textColor, backdropColor: 'transparent' },
+        border: { display: false },
+        ticks: { color: mutedTextColor, stepSize: 25, font: { size: 10 } },
       },
     },
     plugins: {
-      legend: { labels: { color: textColor } },
+      legend: { display: false },
       tooltip: {
+        padding: 10,
+        cornerRadius: 8,
+        boxPadding: 4,
         callbacks: {
           label: (context: { dataset: { label?: string }; raw: unknown }) => {
             const value = typeof context.raw === 'number' ? context.raw : '—'
@@ -562,6 +658,16 @@ function catalogMatches(model: DegradationModelDTO): DegradationModelDTO['catalo
 
 function metricValue(model: DegradationModelDTO, metric: DegradationMetric): number | null {
   return model[metric]
+}
+
+function modelColor(index: number): string {
+  return palette[index % palette.length]
+}
+
+function metricBarWidth(model: DegradationModelDTO, metric: DegradationMetric): string {
+  const value = metricValue(model, metric)
+  if (value === null) return '0%'
+  return `${Math.min(100, Math.max(0, value))}%`
 }
 
 function activateTab(tab: DegradationTab): void {
