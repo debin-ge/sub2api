@@ -321,8 +321,7 @@ func (s *RadarService) GetQuotaBucketsLatest(ctx context.Context) (*QuotaRadarLa
 				ValidateRadarBucketSnapshot(*snapshot) != nil {
 				continue
 			}
-			minimumAccounts := radarQuotaPlanMinAccounts(platform, planTier, snapshot.AccountsCount, s.publicMinBucketAccounts)
-			if snapshot.PrivacyThreshold < minimumAccounts {
+			if snapshot.PrivacyThreshold < s.publicMinBucketAccounts {
 				continue
 			}
 
@@ -430,8 +429,7 @@ func (s *RadarService) GetQuotaBucketsTrend(ctx context.Context, bucketKey strin
 				ValidateRadarBucketSnapshot(snapshot) != nil {
 				continue
 			}
-			minimumAccounts := radarQuotaPlanMinAccounts(platform, planTier, snapshot.AccountsCount, s.publicMinBucketAccounts)
-			if snapshot.PrivacyThreshold < minimumAccounts {
+			if snapshot.PrivacyThreshold < s.publicMinBucketAccounts {
 				continue
 			}
 			timestamp := snapshot.CapturedAt.UTC()

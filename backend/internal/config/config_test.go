@@ -73,7 +73,7 @@ func TestRadarDefaults(t *testing.T) {
 	require.Equal(t, 15, cfg.Radar.QuotaAggregatorIntervalMin)
 	require.Equal(t, 7, cfg.Radar.QuotaHistoryRetentionDays)
 	require.Equal(t, 3, cfg.Radar.SampleSizeWarnBelow)
-	require.Equal(t, 2, cfg.Radar.PublicMinBucketAccounts)
+	require.Equal(t, 1, cfg.Radar.PublicMinBucketAccounts)
 	require.Equal(t, 5.0, cfg.Radar.InferMinUtilization)
 	require.Equal(t, 0.3, cfg.Radar.InferMaxStdevRatio)
 	require.Empty(t, cfg.Radar.ArtificialAnalysisAPIKey)
@@ -202,7 +202,7 @@ func TestRadarValidation(t *testing.T) {
 		{"zero aggregator interval", func(c *Config) { c.Radar.QuotaAggregatorIntervalMin = 0 }, "quota_aggregator_interval_min"},
 		{"zero quota retention", func(c *Config) { c.Radar.QuotaHistoryRetentionDays = 0 }, "quota_history_retention_days"},
 		{"sample warning below one", func(c *Config) { c.Radar.SampleSizeWarnBelow = 0 }, "sample_size_warn_below"},
-		{"public bucket below two", func(c *Config) { c.Radar.PublicMinBucketAccounts = 1 }, "public_min_bucket_accounts"},
+		{"public bucket below one", func(c *Config) { c.Radar.PublicMinBucketAccounts = 0 }, "public_min_bucket_accounts"},
 		{"public bucket above warning threshold", func(c *Config) { c.Radar.PublicMinBucketAccounts = c.Radar.SampleSizeWarnBelow + 1 }, "public_min_bucket_accounts"},
 		{"zero inference utilization", func(c *Config) { c.Radar.InferMinUtilization = 0 }, "infer_min_utilization"},
 		{"excess inference utilization", func(c *Config) { c.Radar.InferMinUtilization = 100.1 }, "infer_min_utilization"},

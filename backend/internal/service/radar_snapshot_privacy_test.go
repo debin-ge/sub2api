@@ -45,21 +45,35 @@ func TestValidateRadarBucketSnapshotFailsClosedOnPrivacyMetadata(t *testing.T) {
 		"inference sample size is intentionally distinct from contributor count")
 }
 
-func TestValidateRadarBucketSnapshotAllowsOnlySingletonChatGPTProException(t *testing.T) {
-	pro := BucketSnapshotDTO{
-		BucketKey: "openai/pro", Platform: PlatformOpenAI, PlanTier: "pro", DisplayName: "ChatGPT Pro",
-		PrivacyThreshold: 1, AccountsCount: 1, CapturedAt: time.Now().UTC(),
-		SevenDay: &WindowStatsDTO{ContributorsCount: 1, SampleSize: 1},
+func TestValidateRadarBucketSnapshotAllowsSingleAccountBucketsUniformly(t *testing.T) {
+	singles := []BucketSnapshotDTO{
+		{
+			BucketKey: "openai/pro", Platform: PlatformOpenAI, PlanTier: "pro", DisplayName: "ChatGPT Pro",
+			PrivacyThreshold: 1, AccountsCount: 1, CapturedAt: time.Now().UTC(),
+			SevenDay: &WindowStatsDTO{ContributorsCount: 1, SampleSize: 1},
+		},
+		{
+			BucketKey: "openai/plus", Platform: PlatformOpenAI, PlanTier: "plus", DisplayName: "ChatGPT Plus",
+			PrivacyThreshold: 1, AccountsCount: 1, CapturedAt: time.Now().UTC(),
+			SevenDay: &WindowStatsDTO{ContributorsCount: 1, SampleSize: 1},
+		},
+		{
+			BucketKey: "anthropic/pro", Platform: PlatformAnthropic, PlanTier: "pro", DisplayName: "Claude Pro",
+			PrivacyThreshold: 1, AccountsCount: 1, CapturedAt: time.Now().UTC(),
+			SevenDay: &WindowStatsDTO{ContributorsCount: 1, SampleSize: 1},
+		},
 	}
-	require.NoError(t, ValidateRadarBucketSnapshot(pro))
-	overbroad := pro
-	overbroad.AccountsCount = 2
+	for _, snapshot := range singles {
+		require.NoError(t, ValidateRadarBucketSnapshot(snapshot), snapshot.BucketKey)
+	}
+
+	// A missing/zero privacy threshold still fails closed even for a lone account.
+	missingThreshold := singles[0]
+	missingThreshold.PrivacyThreshold = 0
+	require.ErrorIs(t, ValidateRadarBucketSnapshot(missingThreshold), ErrInvalidRadarBucketSnapshot)
+
+	// Contributor counts may never exceed the bucket's account count.
+	overbroad := singles[0]
 	overbroad.SevenDay = &WindowStatsDTO{ContributorsCount: 2, SampleSize: 2}
 	require.ErrorIs(t, ValidateRadarBucketSnapshot(overbroad), ErrInvalidRadarBucketSnapshot)
-
-	plus := pro
-	plus.BucketKey = "openai/plus"
-	plus.PlanTier = "plus"
-	plus.DisplayName = "ChatGPT Plus"
-	require.ErrorIs(t, ValidateRadarBucketSnapshot(plus), ErrInvalidRadarBucketSnapshot)
 }

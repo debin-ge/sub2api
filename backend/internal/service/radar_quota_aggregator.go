@@ -15,18 +15,13 @@ import (
 )
 
 const (
-	defaultRadarPublicMinBucketAccounts = 2
+	defaultRadarPublicMinBucketAccounts = 1
 
 	radarQuotaAnthropicPlanPro    = "pro"
 	radarQuotaAnthropicPlanMax5x  = "max_5x"
 	radarQuotaAnthropicPlanMax20x = "max_20x"
 	radarQuotaOpenAIPlanPlus      = "plus"
 	radarQuotaOpenAIPlanPro       = "pro"
-
-	// ChatGPT Pro is a comparatively rare paid tier. Keep the general privacy
-	// floor at two, but allow its anonymous plan card to be published from one
-	// contributor so a real Pro account is not hidden behind Plus accounts.
-	radarQuotaOpenAIProMinBucketAccounts = 1
 )
 
 // ErrRadarQuotaAggregation is intentionally safe to surface to a background
@@ -154,7 +149,7 @@ func newRadarQuotaAggregator(
 		copiedConfig.PublicMinBucketAccounts = defaultRadarPublicMinBucketAccounts
 	}
 	if copiedConfig.PublicMinBucketAccounts < defaultRadarPublicMinBucketAccounts {
-		return nil, errors.New("radar quota public bucket minimum must be at least two")
+		return nil, errors.New("radar quota public bucket minimum must be at least one")
 	}
 	if !isFinite(copiedConfig.InferMinUtilization) ||
 		copiedConfig.InferMinUtilization <= 0 || copiedConfig.InferMinUtilization > 100 {
@@ -345,7 +340,7 @@ func (a *RadarQuotaAggregator) runOnce(ctx context.Context, report *RadarQuotaAg
 
 	bucketKeys := make([]string, 0, len(buckets))
 	for bucketKey, bucketAccounts := range buckets {
-		minAccounts := radarQuotaBucketMinAccounts(bucketAccounts[0].identity, len(bucketAccounts), a.cfg.PublicMinBucketAccounts)
+		minAccounts := a.cfg.PublicMinBucketAccounts
 		if isRadarQuotaBucketPublic(len(bucketAccounts), minAccounts) {
 			bucketKeys = append(bucketKeys, bucketKey)
 		} else if report != nil {
@@ -360,7 +355,6 @@ func (a *RadarQuotaAggregator) runOnce(ctx context.Context, report *RadarQuotaAg
 		bucketAccounts := buckets[bucketKey]
 		identity := bucketAccounts[0].identity
 		bucketConfig := a.cfg
-		bucketConfig.PublicMinBucketAccounts = radarQuotaBucketMinAccounts(identity, len(bucketAccounts), a.cfg.PublicMinBucketAccounts)
 		snapshot := BucketSnapshotDTO{
 			BucketKey:        identity.bucketKey,
 			Platform:         identity.platform,
@@ -402,17 +396,6 @@ func (a *RadarQuotaAggregator) runOnce(ctx context.Context, report *RadarQuotaAg
 // actual privacy gate.
 func isRadarQuotaBucketPublic(accountCount, minAccounts int) bool {
 	return minAccounts > 0 && accountCount >= minAccounts
-}
-
-func radarQuotaBucketMinAccounts(identity radarQuotaBucketIdentity, accountCount, configured int) int {
-	return radarQuotaPlanMinAccounts(identity.platform, identity.planTier, accountCount, configured)
-}
-
-func radarQuotaPlanMinAccounts(platform, planTier string, accountCount, configured int) int {
-	if platform == PlatformOpenAI && planTier == radarQuotaOpenAIPlanPro && accountCount > 0 && accountCount < configured {
-		return accountCount
-	}
-	return configured
 }
 
 func radarQuotaReportSkippedAccount(report *RadarQuotaAggregationReport, reason string) {

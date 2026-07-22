@@ -1761,7 +1761,7 @@ func radarServiceTestConfig() *config.Config {
 		QuotaAggregatorIntervalMin:                         15,
 		QuotaHistoryRetentionDays:                          7,
 		SampleSizeWarnBelow:                                3,
-		PublicMinBucketAccounts:                            2,
+		PublicMinBucketAccounts:                            1,
 		InferMinUtilization:                                5,
 		InferMaxStdevRatio:                                 0.3,
 		ArtificialAnalysisAPIKey:                           "super-secret-aa-key",

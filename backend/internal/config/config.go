@@ -1911,7 +1911,7 @@ func setDefaults() {
 	viper.SetDefault("radar.quota_aggregator_interval_min", 15)
 	viper.SetDefault("radar.quota_history_retention_days", 7)
 	viper.SetDefault("radar.sample_size_warn_below", 3)
-	viper.SetDefault("radar.public_min_bucket_accounts", 2)
+	viper.SetDefault("radar.public_min_bucket_accounts", 1)
 	viper.SetDefault("radar.infer_min_utilization", 5.0)
 	viper.SetDefault("radar.infer_max_stdev_ratio", 0.3)
 	viper.SetDefault("radar.artificial_analysis_api_key", "")
@@ -2599,8 +2599,8 @@ func (c RadarConfig) Validate() error {
 	if c.SampleSizeWarnBelow < 1 {
 		return fmt.Errorf("radar.sample_size_warn_below must be at least 1")
 	}
-	if c.PublicMinBucketAccounts < 2 || c.PublicMinBucketAccounts > c.SampleSizeWarnBelow {
-		return fmt.Errorf("radar.public_min_bucket_accounts must be between 2 and sample_size_warn_below")
+	if c.PublicMinBucketAccounts < 1 || c.PublicMinBucketAccounts > c.SampleSizeWarnBelow {
+		return fmt.Errorf("radar.public_min_bucket_accounts must be between 1 and sample_size_warn_below")
 	}
 	if !(c.InferMinUtilization > 0 && c.InferMinUtilization <= 100) {
 		return fmt.Errorf("radar.infer_min_utilization must be greater than 0 and at most 100")

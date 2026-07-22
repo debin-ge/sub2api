@@ -221,7 +221,6 @@ func TestRadarQuotaAggregatorConstructorAndInference(t *testing.T) {
 			name   string
 			mutate func(*config.RadarConfig)
 		}{
-			{"privacy below two", func(cfg *config.RadarConfig) { cfg.PublicMinBucketAccounts = 1 }},
 			{"utilization zero", func(cfg *config.RadarConfig) { cfg.InferMinUtilization = 0 }},
 			{"utilization above one hundred", func(cfg *config.RadarConfig) { cfg.InferMinUtilization = 100.1 }},
 			{"utilization nonfinite", func(cfg *config.RadarConfig) { cfg.InferMinUtilization = math.NaN() }},
@@ -242,12 +241,12 @@ func TestRadarQuotaAggregatorConstructorAndInference(t *testing.T) {
 		cfg.PublicMinBucketAccounts = 0
 		aggregator, err := NewRadarQuotaAggregator(accounts, usage, batch, cache, cfg)
 		require.NoError(t, err)
-		require.Equal(t, 2, aggregator.cfg.PublicMinBucketAccounts)
+		require.Equal(t, 1, aggregator.cfg.PublicMinBucketAccounts)
 
 		cfg.PublicMinBucketAccounts = 99
 		cfg.InferMinUtilization = 99
 		cfg.InferMaxStdevRatio = 0.99
-		require.Equal(t, 2, aggregator.cfg.PublicMinBucketAccounts)
+		require.Equal(t, 1, aggregator.cfg.PublicMinBucketAccounts)
 		require.Equal(t, 5.0, aggregator.cfg.InferMinUtilization)
 		require.Equal(t, 0.3, aggregator.cfg.InferMaxStdevRatio)
 	})
@@ -623,28 +622,28 @@ func TestRadarQuotaAggregatorPublishesOnlySupportedAccountPlanIntersection(t *te
 	})
 }
 
-func TestRadarQuotaAggregatorPublishesSingleChatGPTProWithSevenDayOnly(t *testing.T) {
+func TestRadarQuotaAggregatorPublishesSingleAccountBucketWithSevenDayOnly(t *testing.T) {
 	now := time.Date(2026, time.July, 20, 12, 0, 0, 0, time.UTC)
 	accounts := &radarQuotaAccountListerFake{accounts: []Account{
 		radarQuotaOpenAIAccount(1, "20xPro"),
-		radarQuotaOpenAIAccount(2, "plus"),
 	}}
 	usage := &radarQuotaUsageReaderFake{snapshots: map[int64]*UsageInfo{
 		1: {SevenDay: radarQuotaProgress(24)},
-		2: {SevenDay: radarQuotaProgress(35)},
 	}}
 	batch := &radarQuotaBatchReaderFake{windowResults: []map[int64]*usagestats.AccountStats{
 		{},
-		{1: {Cost: 12}, 2: {Cost: 18}},
+		{1: {Cost: 12}},
 	}}
 	cache := &radarQuotaCacheFake{}
-	aggregator := newRadarQuotaTestAggregator(t, accounts, usage, batch, cache, radarQuotaTestConfig(), func() time.Time { return now })
+	cfg := radarQuotaTestConfig()
+	cfg.PublicMinBucketAccounts = 1
+	aggregator := newRadarQuotaTestAggregator(t, accounts, usage, batch, cache, cfg, func() time.Time { return now })
 
 	report, err := aggregator.RunOnceWithReport(context.Background())
 
 	require.NoError(t, err)
 	require.Equal(t, 1, report.BucketCount)
-	require.Equal(t, 1, report.PrivacyFilteredBucketCount, "a single Plus account keeps the general two-account floor")
+	require.Equal(t, 0, report.PrivacyFilteredBucketCount, "a lone account publishes under the single-account floor")
 	require.Len(t, cache.writes, 1)
 	snapshot := cache.writes[0]
 	require.Equal(t, "openai/pro", snapshot.BucketKey)

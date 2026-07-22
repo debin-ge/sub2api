@@ -283,7 +283,7 @@ func TestRadarServiceGetQuotaBucketsLatestEmptyMissAndSafeErrors(t *testing.T) {
 func TestRadarServiceQuotaReadDefenseSkipsInvalidSnapshotsLocally(t *testing.T) {
 	now := time.Date(2026, time.July, 14, 8, 0, 0, 0, time.UTC)
 
-	t.Run("latest preserves the singleton Pro publication exception", func(t *testing.T) {
+	t.Run("latest publishes single-account buckets uniformly", func(t *testing.T) {
 		repo := newRadarQuotaServiceTestRepo()
 		repo.keys = []string{"openai/pro", "openai/plus"}
 		pro := radarQuotaSnapshot("openai/pro", "ChatGPT Pro", now)
@@ -302,7 +302,7 @@ func TestRadarServiceQuotaReadDefenseSkipsInvalidSnapshotsLocally(t *testing.T) 
 
 		got, err := service.GetQuotaBucketsLatest(context.Background())
 		require.NoError(t, err)
-		require.Equal(t, []string{"openai/pro"}, radarQuotaBucketKeys(got.Buckets))
+		require.Equal(t, []string{"openai/plus", "openai/pro"}, radarQuotaBucketKeys(got.Buckets))
 	})
 
 	t.Run("latest retains valid buckets and malformed-only is empty", func(t *testing.T) {
