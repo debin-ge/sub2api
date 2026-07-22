@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# s2a-teardown <slug> <slot> —— 排空定时器的回收执行体（由 systemd-run 或
+# 降级的后台 sleep 调用；也可人工执行以立即回收指定 slot）。
+#
+# 安全闸：绝不回收当前生效 slot（以 nginx upstream 文件为准）。即使回滚时
+# 定时器取消失败,本闸也能防止误杀线上容器（FR-4.3 的第二道防线）。
+
+set -euo pipefail
+# shellcheck source=../lib/common.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/common.sh"
+
+[ $# -eq 2 ] || die "用法: s2a-teardown <slug> <slot>"
+SLUG="$1"
+SLOT="$2"
+
+require_cmd docker jq
+load_sites
+slug_exists "$SLUG" || die "清单中不存在 stack: $SLUG"
+
+PORT_BASE=$(site_attr "$SLUG" port_base)
+SLOT_PORT=$(port_for_slot "$PORT_BASE" "$SLOT")
+
+CUR_PORT=$(current_port_from_upstream "$SLUG") || die "upstream 文件缺失,拒绝回收"
+if [ "$CUR_PORT" = "$SLOT_PORT" ]; then
+    die "拒绝回收: $SLUG 的 $SLOT($SLOT_PORT) 是当前生效 slot（nginx upstream 指向它）"
+fi
+
+TAG=$(state_get "$SLUG" prev_tag || true)
+[ -n "$TAG" ] || TAG=unknown
+
+log "回收 $SLUG 的旧 slot ${SLOT}:${SLOT_PORT}（容器停止仍会等待剩余在途请求,最长 stop_grace_period）..."
+app_compose "$SLUG" "$SLOT" "$SLOT_PORT" "$TAG" down --remove-orphans
+rm -f "$(drain_pid_file "$SLUG" "$SLOT")"
+log "旧 slot ${SLOT} 已回收"
