@@ -46,6 +46,42 @@ ALTER TABLE usage_logs ADD COLUMN IF NOT EXISTS example_column VARCHAR(100);
 
 > ⚠️ Do **not** place executable "Down" SQL in the same file. The runner does not parse goose Up/Down sections and will execute all SQL statements in the file.
 
+## Expand-Contract（蓝绿发布兼容性，硬约束）
+
+迁移在**每次容器启动时自动执行**（`internal/repository/ent.go` 创建 Ent client 时调用
+`applyMigrationsFS`，受 PG Advisory Lock 与 SHA256 校验和保护）。蓝绿发布下，新 slot
+一启动就把 schema 升级到版本 N，而旧 slot（版本 N-1 的代码）仍在服务同一个数据库，
+并存窗口最短数十秒、最长等于排空时长（默认 960 秒）。
+
+**因此每个版本的迁移必须与上一个应用版本兼容：**
+
+| 操作 | 允许 | 正确做法 |
+|---|---|---|
+| `ADD COLUMN`（可空或有默认值） | ✅ | 直接添加 |
+| `ADD COLUMN NOT NULL` 无默认值 | ❌ | 拆两步：先可空 → 回填 → 下个版本加约束 |
+| `DROP COLUMN` / `DROP TABLE` | ❌ | 版本 K 停止读写 → 版本 K+1 才删除 |
+| `RENAME COLUMN` | ❌ | 加新列 → 双写 → 回填 → 停用旧列 → 下版本删除 |
+| `ALTER COLUMN ... TYPE` | ❌ | 加新列 → 双写 → 切换读 → 删除旧列 |
+| `CREATE INDEX` | ⚠️ | 大表必须 `CONCURRENTLY`，且必须放在 `_notx.sql`（见上文） |
+
+**回滚约束**：蓝绿回滚只把流量切回旧 slot，**不撤销已应用的迁移**。旧代码必须能在
+新 schema 上正常运行——这正是 expand-contract 保证的。**破坏该规则的版本不能使用
+蓝绿发布，必须安排停机窗口。**
+
+**CI 门禁**：`backend/scripts/check-migration-gate.sh`（CI 的 migration-gate job）会拦截：
+
+1. 修改/删除/重命名已存在的迁移文件（不可豁免，与运行时 SHA256 校验一致）；
+2. 新增迁移中的破坏性 DDL（`DROP COLUMN` / `DROP TABLE` / `RENAME` /
+   `ALTER COLUMN ... TYPE`）——确需如此时给 PR 打 `breaking-migration` 标签并重跑
+   该 job，同时该版本必须走停机发布；
+3. `CONCURRENTLY` 出现在非 `_notx.sql` 文件中（不可豁免，运行时必然报错）。
+
+本地自查：
+
+```bash
+backend/scripts/check-migration-gate.sh origin/main
+```
+
 ## Important Rules
 
 ### ⚠️ Immutability Principle

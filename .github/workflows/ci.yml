@@ -44,6 +44,36 @@ jobs:
           version: latest
           working-directory: backend
 
+  # 迁移门禁：保证 backend/migrations/ 变更满足蓝绿发布的 expand-contract 纪律
+  # （规则见 backend/migrations/README.md）。破坏性迁移需给 PR 打 breaking-migration
+  # 标签后重跑本 job（标签实时查询，Re-run 即可生效）。
+  migration-gate:
+    name: Migration gate (expand-contract)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          # 需要完整历史以计算与 base 的 merge-base diff
+          fetch-depth: 0
+
+      - name: Check migration changes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          allow=""
+          if gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json labels --jq '.labels[].name' | grep -qx 'breaking-migration'; then
+            allow="--allow-breaking"
+          fi
+          backend/scripts/check-migration-gate.sh "$BASE_SHA" $allow
+
   frontend:
     name: Frontend (lint + typecheck + test + build)
     runs-on: ubuntu-latest
