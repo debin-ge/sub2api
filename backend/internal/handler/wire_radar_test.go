@@ -32,10 +32,11 @@ func TestProvideHandlersIncludesRadarHandler(t *testing.T) {
 		nil, // paymentWebhookHandler
 		nil, // availableChannelHandler
 		radar,
-		nil, // asyncImageHandler
-		nil, // batchImageHandler
-		nil, // idempotencyCoordinator
-		nil, // idempotencyCleanupService
+		nil,         // asyncImageHandler
+		nil,         // batchImageHandler
+		BuildInfo{}, // buildInfo
+		nil,         // idempotencyCoordinator
+		nil,         // idempotencyCleanupService
 	)
 
 	require.Same(t, radar, handlers.Radar)

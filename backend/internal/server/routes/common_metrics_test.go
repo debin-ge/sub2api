@@ -15,7 +15,7 @@ import (
 func TestCommonRoutesMetricsAreClosedByDefault(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	RegisterCommonRoutes(router, &config.Config{})
+	RegisterCommonRoutes(router, &config.Config{}, "")
 	observability.DefaultRadarMetrics().RecordFetchFailure("status_claude", "network_error", 0, time.Millisecond)
 
 	for _, remoteAddr := range []string{"127.0.0.1:43123", "172.18.0.25:43123", "100.64.0.1:43123", "[fd00::1]:43123", "203.0.113.10:43123"} {
@@ -31,7 +31,7 @@ func TestCommonRoutesMetricsAreClosedByDefault(t *testing.T) {
 func TestCommonRoutesMetricsRequireBearerTokenRegardlessOfPeer(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	RegisterCommonRoutes(router, &config.Config{Radar: config.RadarConfig{MetricsBearerToken: "test-secret"}})
+	RegisterCommonRoutes(router, &config.Config{Radar: config.RadarConfig{MetricsBearerToken: "test-secret"}}, "")
 
 	for _, tt := range []struct {
 		name       string

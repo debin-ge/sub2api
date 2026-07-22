@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -11,8 +12,9 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// RegisterCommonRoutes 注册通用路由（健康检查、状态等）
-func RegisterCommonRoutes(r *gin.Engine, cfg *config.Config) {
+// RegisterCommonRoutes 注册通用路由（健康检查、状态等）。
+// version 为构建版本号，用于蓝绿发布时校验实际运行的镜像。
+func RegisterCommonRoutes(r *gin.Engine, cfg *config.Config, version string) {
 	// Initialize Radar collectors before exposing the process gatherer.
 	observability.DefaultRadarMetrics()
 	token := ""
@@ -21,9 +23,15 @@ func RegisterCommonRoutes(r *gin.Engine, cfg *config.Config) {
 	}
 	r.GET("/metrics", gin.WrapH(metricsBearerOnly(token, observability.MetricsHandler(nil))))
 
-	// 健康检查
+	// 健康检查。version/slot 供蓝绿发布脚本校验「起来的确实是预期镜像」：
+	// slot 由部署编排通过 APP_SLOT 注入（blue/green），非蓝绿部署时为空串。
+	slot := os.Getenv("APP_SLOT")
 	r.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+		c.JSON(http.StatusOK, gin.H{
+			"status":  "ok",
+			"version": version,
+			"slot":    slot,
+		})
 	})
 
 	// Claude Code 遥测日志（忽略，直接返回200）

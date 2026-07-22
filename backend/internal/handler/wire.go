@@ -206,10 +206,12 @@ func ProvideHandlers(
 	radarHandler *RadarHandler,
 	asyncImageHandler *AsyncImageHandler,
 	batchImageHandler *BatchImageHandler,
+	buildInfo BuildInfo,
 	_ *service.IdempotencyCoordinator,
 	_ *service.IdempotencyCleanupService,
 ) *Handlers {
 	return &Handlers{
+		BuildInfo:        buildInfo,
 		Auth:             authHandler,
 		User:             userHandler,
 		APIKey:           apiKeyHandler,
