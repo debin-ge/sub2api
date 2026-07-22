@@ -228,7 +228,7 @@ describe('QuotaBucketDetailModal', () => {
     expect(document.body.querySelector('[data-testid="quota-modal-trend-toggle"]')).toBeNull()
   })
 
-  it('selects seven-day details and trend when five-hour data is unavailable', async () => {
+	it('shows only seven-day details for OpenAI even when legacy five-hour data exists', async () => {
     const item = bucket({
       bucket_key: 'openai/pro',
       platform: 'openai',
@@ -236,14 +236,13 @@ describe('QuotaBucketDetailModal', () => {
       display_name: 'ChatGPT Pro',
       accounts_count: 1,
       privacy_threshold: 1,
-      five_hour: null,
+		five_hour: windowStats({ avg_utilization: 99 }),
       seven_day: windowStats({ avg_utilization: 35, sample_size: 1 }),
     })
     const trend = quotaTrend(item.bucket_key)
-    trend.data_points = trend.data_points.map((point, index) => ({
-      ...point,
-      five_hour: null,
-      seven_day: { avg_utilization: 20 + index * 10, avg_cost: 0, inferred_limit_usd: null, sample_size: 1 },
+	trend.data_points = trend.data_points.map((point, index) => ({
+		...point,
+		seven_day: { avg_utilization: 20 + index * 10, avg_cost: 0, inferred_limit_usd: null, sample_size: 1 },
     }))
     wrapper = mount(QuotaBucketDetailModal, {
       attachTo: document.body,
@@ -252,7 +251,7 @@ describe('QuotaBucketDetailModal', () => {
     })
     await wrapper.vm.$nextTick()
 
-	  expect(document.body.querySelector('[data-window="5h"]')?.getAttribute('disabled')).not.toBeNull()
+	  expect(document.body.querySelector('[data-window="5h"]')).toBeNull()
 	  expect(document.body.querySelector('[data-window="7d"]')?.getAttribute('aria-selected')).toBe('true')
 	  expect(document.body.textContent).toContain('Small sample: n=1')
     expect(document.body.querySelector('[data-testid="quota-modal-trend-summary"]')?.textContent).toContain('7-day utilization')

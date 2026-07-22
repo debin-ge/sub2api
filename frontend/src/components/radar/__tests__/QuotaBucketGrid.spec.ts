@@ -27,9 +27,9 @@ describe('QuotaBucketGrid', () => {
     const levels = ['low', 'moderate', 'high', 'critical']
     const wrapper = mount(QuotaBucketGrid, {
       props: {
-        buckets: values.map((value, index) => bucket({
-          bucket_key: `openai/tier-${index}`,
-          platform: 'openai',
+		buckets: values.map((value, index) => bucket({
+			bucket_key: `anthropic/tier-${index}`,
+			platform: 'anthropic',
           plan_tier: `tier-${index}`,
           display_name: `Tier ${index}`,
           five_hour: windowStats({ avg_utilization: value }),
@@ -90,12 +90,13 @@ describe('QuotaBucketGrid', () => {
         inference_reject_reason: 'high_dispersion',
       }),
     })
-    const invalid = bucket({
-      bucket_key: 'openai/team',
+	const invalid = bucket({
+		bucket_key: 'openai/team',
       platform: 'openai',
       plan_tier: 'team',
       display_name: 'Team',
-      five_hour: windowStats({
+		five_hour: null,
+		seven_day: windowStats({
         inferred_limit_usd: null,
         inferred_stdev: null,
         inference_reject_reason: 'invalid_mean',
@@ -132,7 +133,7 @@ describe('QuotaBucketGrid', () => {
     expect(wrapper.text()).not.toContain('$0')
   })
 
-  it('falls back to seven-day utilization and trend when OpenAI has no five-hour window', () => {
+	it('always uses seven-day utilization and trend for OpenAI, including legacy five-hour cache data', () => {
     const item = bucket({
       bucket_key: 'openai/pro',
       platform: 'openai',
@@ -140,14 +141,13 @@ describe('QuotaBucketGrid', () => {
       display_name: 'ChatGPT Pro',
       accounts_count: 1,
       privacy_threshold: 1,
-      five_hour: null,
+		five_hour: windowStats({ avg_utilization: 99 }),
       seven_day: windowStats({ avg_utilization: 24, sample_size: 1 }),
     })
     const trend = quotaTrend(item.bucket_key)
-    trend.data_points = trend.data_points.map((point, index) => ({
-      ...point,
-      five_hour: null,
-      seven_day: windowStats({ avg_utilization: 20 + index * 10 }),
+	trend.data_points = trend.data_points.map((point, index) => ({
+		...point,
+		seven_day: windowStats({ avg_utilization: 20 + index * 10 }),
     }))
 
     const wrapper = mount(QuotaBucketGrid, {

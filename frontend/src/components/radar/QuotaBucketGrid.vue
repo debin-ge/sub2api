@@ -192,11 +192,14 @@ const usdFormatter = computed(() => new Intl.NumberFormat(locale.value, {
   currency: 'USD',
   maximumFractionDigits: 0,
 }))
+const platformByBucketKey = computed(() => new Map(
+  (props.buckets ?? []).map((bucket) => [bucket.bucket_key, bucket.platform] as const),
+))
 const trendSummaries = computed(() => {
-  const summaries = new Map<string, SparklineSummary>()
-  for (const [bucketKey, trend] of Object.entries(props.trends)) {
-    if (!trend) continue
-    const hasFiveHourData = trend.data_points.some((point) => {
+	const summaries = new Map<string, SparklineSummary>()
+	for (const [bucketKey, trend] of Object.entries(props.trends)) {
+		if (!trend) continue
+		const hasFiveHourData = platformByBucketKey.value.get(bucketKey) !== 'openai' && trend.data_points.some((point) => {
       const value = point.five_hour?.avg_utilization
       return value !== undefined && Number.isFinite(value)
     })
@@ -285,7 +288,8 @@ function utilizationLevel(value: number): 'low' | 'moderate' | 'high' | 'critica
 }
 
 function primaryWindowStats(bucket: BucketSnapshotDTO): WindowStatsDTO | null {
-  return bucket.five_hour ?? bucket.seven_day
+	if (bucket.platform === 'openai') return bucket.seven_day
+	return bucket.five_hour ?? bucket.seven_day
 }
 
 function primaryWindowUtilization(bucket: BucketSnapshotDTO): number {
@@ -309,7 +313,7 @@ function primaryWindowInferenceReason(bucket: BucketSnapshotDTO): InferenceRejec
 }
 
 function primaryWindowLabel(bucket: BucketSnapshotDTO): string {
-  return bucket.five_hour
+	return bucket.platform !== 'openai' && bucket.five_hour
     ? t('radar.quota.fiveHourUtilization', '5-hour utilization')
     : t('radar.quota.sevenDayUtilization', '7-day utilization')
 }
@@ -321,7 +325,7 @@ function trendWindowLabel(window: '5h' | '7d'): string {
 }
 
 function trendTitle(bucket: BucketSnapshotDTO): string {
-  const window = trendSummary(bucket.bucket_key)?.window ?? (bucket.five_hour ? '5h' : '7d')
+	const window = trendSummary(bucket.bucket_key)?.window ?? (bucket.platform !== 'openai' && bucket.five_hour ? '5h' : '7d')
   return window === '5h'
     ? t('radar.quota.sevenDayTrend', '7-day 5-hour utilization trend')
     : t('radar.quota.sevenDayQuotaTrend', '7-day quota utilization trend')

@@ -118,6 +118,13 @@ func (*cleanupRadarAggregatorDependencies) GetAccountModelBreakdownBatch(
 	return nil, nil
 }
 
+func (*cleanupRadarAggregatorDependencies) GetAccountModelBreakdownByWindowBatch(
+	context.Context,
+	[]service.RadarQuotaAccountWindow,
+) (map[int64]map[string]service.ModelCostStats, error) {
+	return nil, nil
+}
+
 func (r *cleanupRadarRepositoryStub) TryLock(context.Context, string, string, time.Duration) (bool, error) {
 	r.lockCalls.Add(1)
 	return true, nil

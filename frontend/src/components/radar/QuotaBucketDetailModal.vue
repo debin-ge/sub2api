@@ -215,20 +215,27 @@ let returnFocusTo: HTMLElement | null = null
 let previousBodyOverflow = ''
 let bodyLocked = false
 
-const windowOptions = computed(() => [
-  { key: '5h' as const, label: t('radar.quota.window5h', '5 hours'), available: Boolean(props.bucket?.five_hour) },
-  { key: '7d' as const, label: t('radar.quota.window7d', '7 days'), available: Boolean(props.bucket?.seven_day) },
-])
+const windowOptions = computed(() => {
+	const options = [
+		{ key: '5h' as const, label: t('radar.quota.window5h', '5 hours'), available: Boolean(props.bucket?.five_hour) },
+		{ key: '7d' as const, label: t('radar.quota.window7d', '7 days'), available: Boolean(props.bucket?.seven_day) },
+	]
+	return props.bucket?.platform === 'openai'
+		? options.filter((option) => option.key === '7d')
+		: options
+})
 const selectedStats = computed<WindowStatsDTO | null>(() => {
-  if (!props.bucket) return null
-  return selectedWindow.value === '5h' ? props.bucket.five_hour : props.bucket.seven_day
+	if (!props.bucket) return null
+	if (props.bucket.platform === 'openai') return props.bucket.seven_day
+	return selectedWindow.value === '5h' ? props.bucket.five_hour : props.bucket.seven_day
 })
 const selectedBreakdown = computed<readonly ModelCostBreakdownDTO[]>(() => {
-  if (!props.bucket) return []
+	if (!props.bucket) return []
   // Older cached Radar snapshots may contain JSON null for an empty Go slice.
   // Keep the public dialog compatible with those snapshots while the backend
   // normalizes newly served responses to arrays.
-  return (selectedWindow.value === '5h' ? props.bucket.model_breakdown_5h : props.bucket.model_breakdown_7d) ?? []
+	if (props.bucket.platform === 'openai') return props.bucket.model_breakdown_7d ?? []
+	return (selectedWindow.value === '5h' ? props.bucket.model_breakdown_5h : props.bucket.model_breakdown_7d) ?? []
 })
 const summaryStats = computed(() => {
   const stats = selectedStats.value
@@ -287,6 +294,10 @@ watch(() => props.show, (show) => {
 }, { immediate: true })
 
 function chooseAvailableWindow(): void {
+	if (props.bucket?.platform === 'openai') {
+		selectedWindow.value = '7d'
+		return
+	}
   const selectedIsAvailable = selectedWindow.value === '5h'
     ? Boolean(props.bucket?.five_hour)
     : Boolean(props.bucket?.seven_day)
