@@ -17,8 +17,10 @@ services:
   # ===========================================================================
   sub2api:
     image: sub2api:latest
-    container_name: sub2api
     restart: unless-stopped
+    # 优雅关闭窗口：必须 ≥ SERVER_SHUTDOWN_TIMEOUT_SECONDS，否则应用还在
+    # 排空在途请求时就会被 Docker SIGKILL。两者绑定同一个变量。
+    stop_grace_period: ${SERVER_SHUTDOWN_TIMEOUT_SECONDS:-30}s
     ulimits:
       nofile:
         soft: 100000
@@ -47,6 +49,8 @@ services:
       - SERVER_HOST=0.0.0.0
       - SERVER_PORT=8080
       - SERVER_MODE=${SERVER_MODE:-release}
+      # Graceful-shutdown drain window in seconds (see stop_grace_period above)
+      - SERVER_SHUTDOWN_TIMEOUT_SECONDS=${SERVER_SHUTDOWN_TIMEOUT_SECONDS:-30}
       - ENABLE_SERVER_TIMING=${ENABLE_SERVER_TIMING:-false}
       - RUN_MODE=${RUN_MODE:-standard}
       - UPDATE_GITHUB_TOKEN=${UPDATE_GITHUB_TOKEN:-}
@@ -197,7 +201,6 @@ services:
   # ===========================================================================
   postgres:
     image: postgres:18-alpine
-    container_name: sub2api-postgres
     restart: unless-stopped
     ulimits:
       nofile:
@@ -243,7 +246,6 @@ services:
   # ===========================================================================
   redis:
     image: redis:8-alpine
-    container_name: sub2api-redis
     restart: unless-stopped
     ulimits:
       nofile:
