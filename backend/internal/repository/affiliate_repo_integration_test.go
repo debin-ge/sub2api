@@ -278,6 +278,78 @@ WHERE action = 'registration_reward'
 		"registration-reward invitees must count as rebated invitees")
 }
 
+func TestAffiliateRepository_ListAffiliateInviteRecords_UsesInviterCumulativeRebate(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+	repo := NewAffiliateRepository(client, integrationDB)
+
+	inviter := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("cumulative-rebate-inviter-%d@example.com", time.Now().UnixNano()),
+		PasswordHash: "hash",
+		Role:         service.RoleUser,
+		Status:       service.StatusActive,
+	})
+	firstInvitee := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("cumulative-rebate-invitee-a-%d@example.com", time.Now().UnixNano()+1),
+		PasswordHash: "hash",
+		Role:         service.RoleUser,
+		Status:       service.StatusActive,
+	})
+	secondInvitee := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("cumulative-rebate-invitee-b-%d@example.com", time.Now().UnixNano()+2),
+		PasswordHash: "hash",
+		Role:         service.RoleUser,
+		Status:       service.StatusActive,
+	})
+	inviterAffiliate, err := repo.EnsureUserAffiliate(txCtx, inviter.ID)
+	require.NoError(t, err)
+
+	firstReward, err := repo.BindInviterAndGrantRegistrationReward(
+		txCtx,
+		firstInvitee.ID,
+		inviterAffiliate.AffCode,
+		10,
+		0,
+	)
+	require.NoError(t, err)
+	require.True(t, firstReward.RewardApplied)
+
+	secondReward, err := repo.BindInviterAndGrantRegistrationReward(
+		txCtx,
+		secondInvitee.ID,
+		inviterAffiliate.AffCode,
+		20,
+		0,
+	)
+	require.NoError(t, err)
+	require.True(t, secondReward.RewardApplied)
+
+	accrued, err := repo.AccrueQuota(txCtx, inviter.ID, firstInvitee.ID, 5, 0, nil)
+	require.NoError(t, err)
+	require.True(t, accrued)
+
+	records, total, err := repo.ListAffiliateInviteRecords(txCtx, service.AffiliateRecordFilter{
+		Search:   inviter.Email,
+		Page:     1,
+		PageSize: 10,
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 2, total)
+	require.Len(t, records, 2)
+
+	expectedRegistrationRewards := map[int64]float64{
+		firstInvitee.ID:  10,
+		secondInvitee.ID: 20,
+	}
+	for _, record := range records {
+		require.InDelta(t, expectedRegistrationRewards[record.InviteeID], record.RegistrationRewardAmount, 1e-9)
+		require.InDelta(t, 35, record.TotalRebate, 1e-9,
+			"every invite row must show the inviter's cumulative rebate across all invitees")
+	}
+}
+
 func TestAffiliateRepository_BindInviterAndGrantRegistrationReward_FrozenAndZero(t *testing.T) {
 	ctx := context.Background()
 	tx := testEntTx(t)

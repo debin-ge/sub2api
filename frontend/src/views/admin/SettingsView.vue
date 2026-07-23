@@ -1459,14 +1459,12 @@
                       <input
                         v-model="registrationEmailSuffixBlacklistDraft"
                         type="text"
+                        data-testid="registration-email-suffix-blacklist-input"
                         class="w-full bg-transparent text-sm font-mono text-gray-900 outline-none placeholder:text-gray-400 dark:text-white dark:placeholder:text-gray-500"
                         :placeholder="
                           t(
                             'admin.settings.registration.emailSuffixBlacklistPlaceholder',
                           )
-                        "
-                        @input="
-                          handleRegistrationEmailSuffixBlacklistDraftInput
                         "
                         @keydown="
                           handleRegistrationEmailSuffixBlacklistDraftKeydown
@@ -9283,13 +9281,6 @@ function commitRegistrationEmailSuffixBlacklistDraft() {
     registrationEmailSuffixBlacklistDraft.value,
   );
   registrationEmailSuffixBlacklistDraft.value = "";
-}
-
-function handleRegistrationEmailSuffixBlacklistDraftInput() {
-  registrationEmailSuffixBlacklistDraft.value =
-    normalizeRegistrationEmailSuffixDomain(
-      registrationEmailSuffixBlacklistDraft.value,
-    );
 }
 
 function handleRegistrationEmailSuffixBlacklistDraftKeydown(

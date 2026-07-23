@@ -384,7 +384,7 @@ export default {
     },
 
     affiliates: {
-      invitesDescription: 'View site-wide inviter and invitee relationships',
+      invitesDescription: 'View site-wide invitation relationships and each inviter’s cumulative rebates',
       rebatesDescription: 'View recharge orders that generated affiliate rebates',
       transfersDescription: 'View affiliate quota transfers into account balance',
       errors: {

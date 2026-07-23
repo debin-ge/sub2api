@@ -855,6 +855,40 @@ describe("admin SettingsView payment visible method controls", () => {
     );
   });
 
+  it("allows typing @ and * in the registration email domain blacklist", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+    await openSecurityTab(wrapper);
+
+    const input = wrapper.get(
+      '[data-testid="registration-email-suffix-blacklist-input"]',
+    );
+
+    await input.setValue("@");
+    expect((input.element as HTMLInputElement).value).toBe("@");
+    await input.setValue("@Example.com");
+    expect((input.element as HTMLInputElement).value).toBe("@Example.com");
+    await input.trigger("keydown", { key: "Enter" });
+
+    await input.setValue("*");
+    expect((input.element as HTMLInputElement).value).toBe("*");
+    await input.setValue("*.EDU.CN");
+    expect((input.element as HTMLInputElement).value).toBe("*.EDU.CN");
+    await input.trigger("keydown", { key: "Enter" });
+
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        registration_email_suffix_blacklist: [
+          "@example.com",
+          "*.edu.cn",
+        ],
+      }),
+    );
+  });
+
   it("submits affiliate registration and admin recharge reward settings", async () => {
     getSettings.mockResolvedValueOnce({
       ...baseSettingsResponse,

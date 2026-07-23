@@ -554,7 +554,7 @@ SELECT ua.inviter_id,
        COALESCE(invitee.username, ''),
        COALESCE(inviter_aff.aff_code, ''),
        COALESCE(SUM(ual.amount) FILTER (WHERE ual.action = 'registration_reward'), 0)::double precision AS registration_reward_amount,
-       COALESCE(SUM(ual.amount), 0)::double precision AS total_rebate,
+       inviter_aff.aff_history_quota::double precision AS total_rebate,
        ua.created_at
 FROM user_affiliates ua
 JOIN users invitee ON invitee.id = ua.user_id
@@ -565,7 +565,7 @@ LEFT JOIN user_affiliate_ledger ual
       AND ual.source_user_id = ua.user_id
       AND ual.action IN ('accrue', 'registration_reward')
 `+where+`
-GROUP BY ua.inviter_id, inviter.email, inviter.username, ua.user_id, invitee.email, invitee.username, inviter_aff.aff_code, ua.created_at
+GROUP BY ua.inviter_id, inviter.email, inviter.username, ua.user_id, invitee.email, invitee.username, inviter_aff.aff_code, inviter_aff.aff_history_quota, ua.created_at
 `+orderBy+`
 LIMIT $`+fmt.Sprint(len(args)-1)+` OFFSET $`+fmt.Sprint(len(args)), args...)
 	if err != nil {
