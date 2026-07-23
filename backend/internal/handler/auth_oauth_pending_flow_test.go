@@ -1374,7 +1374,7 @@ func TestCreateOIDCOAuthAccountExistingEmailNormalizesLegacySpacingAndCase(t *te
 	require.Equal(t, "owner@example.com", storedSession.ResolvedEmail)
 }
 
-func TestCreateOIDCOAuthAccountRejectsEmailOutsideRegistrationSuffixWhitelist(t *testing.T) {
+func TestCreateOIDCOAuthAccountRejectsEmailInsideRegistrationSuffixBlacklist(t *testing.T) {
 	handler, client := newOAuthPendingFlowTestHandlerWithDependencies(t, oauthPendingFlowTestHandlerOptions{
 		emailVerifyEnabled: true,
 		emailCache: &oauthPendingFlowEmailCacheStub{
@@ -1387,18 +1387,18 @@ func TestCreateOIDCOAuthAccountRejectsEmailOutsideRegistrationSuffixWhitelist(t 
 			},
 		},
 		settingValues: map[string]string{
-			service.SettingKeyRegistrationEmailSuffixWhitelist: `["@qq.com"]`,
+			service.SettingKeyRegistrationEmailSuffixBlacklist: `["@gmail.com"]`,
 		},
 	})
 	ctx := context.Background()
 
 	session, err := client.PendingAuthSession.Create().
-		SetSessionToken("suffix-whitelist-session-token").
+		SetSessionToken("suffix-blacklist-session-token").
 		SetIntent("login").
 		SetProviderType("oidc").
 		SetProviderKey("https://issuer.example").
-		SetProviderSubject("oidc-suffix-whitelist-123").
-		SetBrowserSessionKey("suffix-whitelist-browser-session-key").
+		SetProviderSubject("oidc-suffix-blacklist-123").
+		SetBrowserSessionKey("suffix-blacklist-browser-session-key").
 		SetUpstreamIdentityClaims(map[string]any{
 			"username": "oidc_user",
 		}).
@@ -1412,7 +1412,7 @@ func TestCreateOIDCOAuthAccountRejectsEmailOutsideRegistrationSuffixWhitelist(t 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/oauth/oidc/create-account", body)
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(&http.Cookie{Name: oauthPendingSessionCookieName, Value: encodeCookieValue(session.SessionToken)})
-	req.AddCookie(&http.Cookie{Name: oauthPendingBrowserCookieName, Value: encodeCookieValue("suffix-whitelist-browser-session-key")})
+	req.AddCookie(&http.Cookie{Name: oauthPendingBrowserCookieName, Value: encodeCookieValue("suffix-blacklist-browser-session-key")})
 	ginCtx.Request = req
 
 	handler.CreateOIDCOAuthAccount(ginCtx)
@@ -2446,7 +2446,7 @@ CREATE TABLE IF NOT EXISTS user_affiliates (
 		service.SettingKeyRegistrationEnabled:              "true",
 		service.SettingKeyInvitationCodeEnabled:            boolSettingValue(options.invitationEnabled),
 		service.SettingKeyEmailVerifyEnabled:               boolSettingValue(options.emailVerifyEnabled),
-		service.SettingKeyRegistrationEmailSuffixWhitelist: "[]",
+		service.SettingKeyRegistrationEmailSuffixBlacklist: "[]",
 	}
 	for key, value := range options.settingValues {
 		settingValues[key] = value

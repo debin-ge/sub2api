@@ -144,6 +144,7 @@ func (h *AuthHandler) DingTalkOAuthStart(c *gin.Context) {
 	intent := normalizeOAuthIntent(c.Query("intent"))
 	setDingTalkCookie(c, dingTalkOAuthIntentCookieName, encodeCookieValue(intent), dingTalkOAuthCookieMaxAgeSec, secureCookie)
 	captureOAuthPromoCode(c, secureCookie)
+	captureOAuthAffiliateCode(c, secureCookie)
 
 	setOAuthPendingBrowserCookie(c, browserSessionKey, secureCookie)
 	clearOAuthPendingSessionCookie(c, secureCookie)
@@ -781,21 +782,26 @@ func (h *AuthHandler) CompleteDingTalkOAuthRegistration(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	tokenPair, user, err := h.authService.LoginOrRegisterOAuthWithTokenPairAndPromoCode(
+	affiliateCode := strings.TrimSpace(req.AffCode)
+	if affiliateCode == "" {
+		affiliateCode = pendingOAuthAffiliateCode(session)
+	}
+	tokenPair, user, err := registerAndCompletePendingOAuthAccount(
 		c.Request.Context(),
+		client,
+		h.authService,
+		h.userService,
+		session,
+		decision,
 		email,
 		username,
 		req.InvitationCode,
-		req.AffCode,
+		affiliateCode,
 		pendingOAuthPromoCode(session),
 		"dingtalk",
 	)
 	if err != nil {
 		response.ErrorFrom(c, err)
-		return
-	}
-	if err := applyPendingOAuthAdoptionAndConsumeSession(c.Request.Context(), client, h.authService, h.userService, session, decision, user.ID); err != nil {
-		respondPendingOAuthBindingApplyError(c, err)
 		return
 	}
 	// 新用户注册完成后执行身份同步（user_id 现在已知）。

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"math"
 	"net/http"
 	"strings"
 
@@ -20,13 +21,14 @@ import (
 // UpdateSettingsRequest 更新设置请求
 type UpdateSettingsRequest struct {
 	// 注册设置
-	RegistrationEnabled              bool     `json:"registration_enabled"`
-	EmailVerifyEnabled               bool     `json:"email_verify_enabled"`
-	RegistrationEmailSuffixWhitelist []string `json:"registration_email_suffix_whitelist"`
-	PromoCodeEnabled                 bool     `json:"promo_code_enabled"`
-	PasswordResetEnabled             bool     `json:"password_reset_enabled"`
-	FrontendURL                      string   `json:"frontend_url"`
-	InvitationCodeEnabled            bool     `json:"invitation_code_enabled"`
+	RegistrationEnabled              bool      `json:"registration_enabled"`
+	EmailVerifyEnabled               bool      `json:"email_verify_enabled"`
+	RegistrationEmailSuffixBlacklist *[]string `json:"registration_email_suffix_blacklist"`
+	PromoCodeEnabled                 bool      `json:"promo_code_enabled"`
+	PasswordResetEnabled             bool      `json:"password_reset_enabled"`
+	FrontendURL                      string    `json:"frontend_url"`
+	InvitationCodeEnabled            bool      `json:"invitation_code_enabled"`
+	InvitationCodeRequired           *bool     `json:"invitation_code_required"`
 	// 注册速率限制（防止薅羊毛批量注册）
 	RegistrationRateLimitPerIP             int                          `json:"registration_rate_limit_per_ip"`
 	RegistrationRateLimitWindowIP          int                          `json:"registration_rate_limit_window_ip"`
@@ -161,6 +163,7 @@ type UpdateSettingsRequest struct {
 	AffiliateRebateFreezeHours                *int                              `json:"affiliate_rebate_freeze_hours"`
 	AffiliateRebateDurationDays               *int                              `json:"affiliate_rebate_duration_days"`
 	AffiliateRebatePerInviteeCap              *float64                          `json:"affiliate_rebate_per_invitee_cap"`
+	AffiliateRegistrationReward               *float64                          `json:"affiliate_registration_reward_amount"`
 	AdminRechargeRebateEnabled                *bool                             `json:"affiliate_admin_recharge_enabled"`
 	DefaultUserRPMLimit                       int                               `json:"default_user_rpm_limit"`
 	DefaultSubscriptions                      []dto.DefaultSubscriptionSetting  `json:"default_subscriptions"`
@@ -417,6 +420,10 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	if req.ForwardedClientIPHeaders != nil {
 		forwardedClientIPHeaders = append([]string(nil), (*req.ForwardedClientIPHeaders)...)
 	}
+	registrationEmailSuffixBlacklist := append([]string(nil), previousSettings.RegistrationEmailSuffixBlacklist...)
+	if req.RegistrationEmailSuffixBlacklist != nil {
+		registrationEmailSuffixBlacklist = append([]string(nil), (*req.RegistrationEmailSuffixBlacklist)...)
+	}
 
 	// 开启敏感操作 step-up 门控属自锁风险操作：仅允许本人已启用 TOTP 的管理员会话开启，
 	// 否则开启后操作者立即被挡在所有敏感操作之外。仅在 false→true 的开启瞬间校验，
@@ -479,9 +486,25 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	if affiliateRebatePerInviteeCap < 0 {
 		affiliateRebatePerInviteeCap = service.AffiliateRebatePerInviteeCapDefault
 	}
+	affiliateRegistrationReward := previousSettings.AffiliateRegistrationReward
+	if req.AffiliateRegistrationReward != nil {
+		affiliateRegistrationReward = *req.AffiliateRegistrationReward
+	}
+	if math.IsNaN(affiliateRegistrationReward) || math.IsInf(affiliateRegistrationReward, 0) || affiliateRegistrationReward < 0 {
+		response.BadRequest(c, "affiliate registration reward amount must be a finite non-negative number")
+		return
+	}
+	if affiliateRegistrationReward > service.AffiliateRegistrationRewardAmountMax {
+		response.BadRequest(c, "affiliate registration reward amount exceeds supported range")
+		return
+	}
 	adminRechargeRebateEnabled := previousSettings.AdminRechargeRebateEnabled
 	if req.AdminRechargeRebateEnabled != nil {
 		adminRechargeRebateEnabled = *req.AdminRechargeRebateEnabled
+	}
+	invitationCodeRequired := previousSettings.InvitationCodeRequired
+	if req.InvitationCodeRequired != nil {
+		invitationCodeRequired = *req.InvitationCodeRequired
 	}
 	// 通用表格配置：兼容旧客户端未传字段时保留当前值。
 	if req.TableDefaultPageSize <= 0 {
@@ -1257,11 +1280,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 
 		RegistrationEnabled:                    req.RegistrationEnabled,
 		EmailVerifyEnabled:                     req.EmailVerifyEnabled,
-		RegistrationEmailSuffixWhitelist:       req.RegistrationEmailSuffixWhitelist,
+		RegistrationEmailSuffixBlacklist:       registrationEmailSuffixBlacklist,
 		PromoCodeEnabled:                       req.PromoCodeEnabled,
 		PasswordResetEnabled:                   req.PasswordResetEnabled,
 		FrontendURL:                            req.FrontendURL,
 		InvitationCodeEnabled:                  req.InvitationCodeEnabled,
+		InvitationCodeRequired:                 invitationCodeRequired,
 		RegistrationRateLimitPerIP:             req.RegistrationRateLimitPerIP,
 		RegistrationRateLimitWindowIP:          req.RegistrationRateLimitWindowIP,
 		RegistrationRateLimitPerEmail:          req.RegistrationRateLimitPerEmail,
@@ -1381,6 +1405,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		AffiliateRebateFreezeHours:             affiliateRebateFreezeHours,
 		AffiliateRebateDurationDays:            affiliateRebateDurationDays,
 		AffiliateRebatePerInviteeCap:           affiliateRebatePerInviteeCap,
+		AffiliateRegistrationReward:            affiliateRegistrationReward,
 		AdminRechargeRebateEnabled:             adminRechargeRebateEnabled,
 		DefaultUserRPMLimit:                    req.DefaultUserRPMLimit,
 		DefaultSubscriptions:                   defaultSubscriptions,
@@ -1813,11 +1838,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	payload := dto.SystemSettings{
 		RegistrationEnabled:                                    updatedSettings.RegistrationEnabled,
 		EmailVerifyEnabled:                                     updatedSettings.EmailVerifyEnabled,
-		RegistrationEmailSuffixWhitelist:                       updatedSettings.RegistrationEmailSuffixWhitelist,
+		RegistrationEmailSuffixBlacklist:                       updatedSettings.RegistrationEmailSuffixBlacklist,
 		PromoCodeEnabled:                                       updatedSettings.PromoCodeEnabled,
 		PasswordResetEnabled:                                   updatedSettings.PasswordResetEnabled,
 		FrontendURL:                                            updatedSettings.FrontendURL,
 		InvitationCodeEnabled:                                  updatedSettings.InvitationCodeEnabled,
+		InvitationCodeRequired:                                 updatedSettings.InvitationCodeRequired,
 		RegistrationRateLimitPerIP:                             updatedSettings.RegistrationRateLimitPerIP,
 		RegistrationRateLimitWindowIP:                          updatedSettings.RegistrationRateLimitWindowIP,
 		RegistrationRateLimitPerEmail:                          updatedSettings.RegistrationRateLimitPerEmail,
@@ -1933,6 +1959,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		AffiliateRebateFreezeHours:                             updatedSettings.AffiliateRebateFreezeHours,
 		AffiliateRebateDurationDays:                            updatedSettings.AffiliateRebateDurationDays,
 		AffiliateRebatePerInviteeCap:                           updatedSettings.AffiliateRebatePerInviteeCap,
+		AffiliateRegistrationReward:                            updatedSettings.AffiliateRegistrationReward,
 		AdminRechargeRebateEnabled:                             updatedSettings.AdminRechargeRebateEnabled,
 		DefaultUserRPMLimit:                                    updatedSettings.DefaultUserRPMLimit,
 		DefaultSubscriptions:                                   updatedDefaultSubscriptions,

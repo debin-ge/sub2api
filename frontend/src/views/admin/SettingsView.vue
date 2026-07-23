@@ -1417,14 +1417,14 @@
                 <Toggle v-model="form.email_verify_enabled" />
               </div>
 
-              <!-- Email Suffix Whitelist -->
+              <!-- Email Suffix Blacklist -->
               <div class="border-t border-gray-100 pt-4 dark:border-dark-700">
                 <label class="font-medium text-gray-900 dark:text-white">{{
-                  t("admin.settings.registration.emailSuffixWhitelist")
+                  t("admin.settings.registration.emailSuffixBlacklist")
                 }}</label>
                 <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
                   {{
-                    t("admin.settings.registration.emailSuffixWhitelistHint")
+                    t("admin.settings.registration.emailSuffixBlacklistHint")
                   }}
                 </p>
                 <div
@@ -1432,7 +1432,7 @@
                 >
                   <div class="flex flex-wrap items-center gap-2">
                     <span
-                      v-for="suffix in registrationEmailSuffixWhitelistTags"
+                      v-for="suffix in registrationEmailSuffixBlacklistTags"
                       :key="suffix"
                       class="inline-flex items-center gap-1 rounded bg-gray-100 px-2 py-1 text-xs font-mono text-gray-700 dark:bg-dark-600 dark:text-gray-200"
                     >
@@ -1441,7 +1441,7 @@
                         type="button"
                         class="rounded-full text-gray-500 hover:bg-gray-200 hover:text-gray-700 dark:text-gray-300 dark:hover:bg-dark-500 dark:hover:text-white"
                         @click="
-                          removeRegistrationEmailSuffixWhitelistTag(suffix)
+                          removeRegistrationEmailSuffixBlacklistTag(suffix)
                         "
                       >
                         <Icon
@@ -1457,22 +1457,22 @@
                       class="flex min-w-[220px] flex-1 items-center gap-1 rounded border border-transparent px-2 py-1 focus-within:border-primary-300 dark:focus-within:border-primary-700"
                     >
                       <input
-                        v-model="registrationEmailSuffixWhitelistDraft"
+                        v-model="registrationEmailSuffixBlacklistDraft"
                         type="text"
                         class="w-full bg-transparent text-sm font-mono text-gray-900 outline-none placeholder:text-gray-400 dark:text-white dark:placeholder:text-gray-500"
                         :placeholder="
                           t(
-                            'admin.settings.registration.emailSuffixWhitelistPlaceholder',
+                            'admin.settings.registration.emailSuffixBlacklistPlaceholder',
                           )
                         "
                         @input="
-                          handleRegistrationEmailSuffixWhitelistDraftInput
+                          handleRegistrationEmailSuffixBlacklistDraftInput
                         "
                         @keydown="
-                          handleRegistrationEmailSuffixWhitelistDraftKeydown
+                          handleRegistrationEmailSuffixBlacklistDraftKeydown
                         "
-                        @blur="commitRegistrationEmailSuffixWhitelistDraft"
-                        @paste="handleRegistrationEmailSuffixWhitelistPaste"
+                        @blur="commitRegistrationEmailSuffixBlacklistDraft"
+                        @paste="handleRegistrationEmailSuffixBlacklistPaste"
                       />
                     </div>
                   </div>
@@ -1480,7 +1480,7 @@
                 <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
                   {{
                     t(
-                      "admin.settings.registration.emailSuffixWhitelistInputHint",
+                      "admin.settings.registration.emailSuffixBlacklistInputHint",
                     )
                   }}
                 </p>
@@ -1514,6 +1514,26 @@
                   </p>
                 </div>
                 <Toggle v-model="form.invitation_code_enabled" />
+              </div>
+
+              <!-- Invitation Code Required -->
+              <div
+                v-if="form.invitation_code_enabled"
+                class="flex items-center justify-between border-t border-gray-100 pt-4 dark:border-dark-700"
+              >
+                <div>
+                  <label class="font-medium text-gray-900 dark:text-white">{{
+                    t("admin.settings.registration.invitationCodeRequired")
+                  }}</label>
+                  <p class="text-sm text-gray-500 dark:text-gray-400">
+                    {{
+                      t(
+                        "admin.settings.registration.invitationCodeRequiredHint",
+                      )
+                    }}
+                  </p>
+                </div>
+                <Toggle v-model="form.invitation_code_required" />
               </div>
 
               <!-- Registration Rate Limit -->
@@ -6342,6 +6362,23 @@
 
               <div>
                 <label class="input-label">
+                  {{ t('admin.settings.features.affiliate.registrationReward') }}
+                </label>
+                <input
+                  v-model.number="form.affiliate_registration_reward_amount"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max="999999999999.9998"
+                  class="input"
+                />
+                <p class="mt-1 text-xs text-gray-400">
+                  {{ t('admin.settings.features.affiliate.registrationRewardHint') }}
+                </p>
+              </div>
+
+              <div>
+                <label class="input-label">
                   {{ t('admin.settings.features.affiliate.freezeHours') }}
                 </label>
                 <input
@@ -7908,7 +7945,7 @@ import {
   isRegistrationEmailSuffixDomainValid,
   normalizeRegistrationEmailSuffixDomain,
   normalizeRegistrationEmailSuffixDomains,
-  parseRegistrationEmailSuffixWhitelistInput,
+  parseRegistrationEmailSuffixBlacklistInput,
 } from "@/utils/registrationEmailPolicy";
 import {
   parseFingerprintSignalsToRows,
@@ -8014,8 +8051,8 @@ const testingSmtp = ref(false);
 const sendingTestEmail = ref(false);
 const smtpPasswordManuallyEdited = ref(false);
 const testEmailAddress = ref("");
-const registrationEmailSuffixWhitelistTags = ref<string[]>([]);
-const registrationEmailSuffixWhitelistDraft = ref("");
+const registrationEmailSuffixBlacklistTags = ref<string[]>([]);
+const registrationEmailSuffixBlacklistDraft = ref("");
 const forwardedClientIpHeaderDraft = ref("");
 const tablePageSizeOptionsInput = ref("10, 20, 50, 100");
 const resellerBalance = ref<ResellerUpstreamBalance | null>(null);
@@ -8593,9 +8630,10 @@ type SettingsForm = Omit<
 const form = reactive<SettingsForm>({
   registration_enabled: true,
   email_verify_enabled: false,
-  registration_email_suffix_whitelist: [],
+  registration_email_suffix_blacklist: [],
   promo_code_enabled: true,
   invitation_code_enabled: false,
+  invitation_code_required: true,
   registration_rate_limit_per_ip: 10,
   registration_rate_limit_window_ip: 3600,
   registration_rate_limit_per_email: 5,
@@ -8618,6 +8656,7 @@ const form = reactive<SettingsForm>({
   affiliate_rebate_freeze_hours: 0,
   affiliate_rebate_duration_days: 0,
   affiliate_rebate_per_invitee_cap: 0,
+  affiliate_registration_reward_amount: 0,
   affiliate_admin_recharge_enabled: false,
   default_concurrency: 1,
   default_subscriptions: [],
@@ -9207,7 +9246,7 @@ const defaultSubscriptionGroupOptions = computed<
   })),
 );
 
-const registrationEmailSuffixWhitelistSeparatorKeys = new Set([
+const registrationEmailSuffixBlacklistSeparatorKeys = new Set([
   " ",
   ",",
   "，",
@@ -9215,75 +9254,75 @@ const registrationEmailSuffixWhitelistSeparatorKeys = new Set([
   "Tab",
 ]);
 
-function removeRegistrationEmailSuffixWhitelistTag(suffix: string) {
-  registrationEmailSuffixWhitelistTags.value =
-    registrationEmailSuffixWhitelistTags.value.filter(
+function removeRegistrationEmailSuffixBlacklistTag(suffix: string) {
+  registrationEmailSuffixBlacklistTags.value =
+    registrationEmailSuffixBlacklistTags.value.filter(
       (item) => item !== suffix,
     );
 }
 
-function addRegistrationEmailSuffixWhitelistTag(raw: string) {
+function addRegistrationEmailSuffixBlacklistTag(raw: string) {
   const suffix = normalizeRegistrationEmailSuffixDomain(raw);
   if (
     !isRegistrationEmailSuffixDomainValid(suffix) ||
-    registrationEmailSuffixWhitelistTags.value.includes(suffix)
+    registrationEmailSuffixBlacklistTags.value.includes(suffix)
   ) {
     return;
   }
-  registrationEmailSuffixWhitelistTags.value = [
-    ...registrationEmailSuffixWhitelistTags.value,
+  registrationEmailSuffixBlacklistTags.value = [
+    ...registrationEmailSuffixBlacklistTags.value,
     suffix,
   ];
 }
 
-function commitRegistrationEmailSuffixWhitelistDraft() {
-  if (!registrationEmailSuffixWhitelistDraft.value) {
+function commitRegistrationEmailSuffixBlacklistDraft() {
+  if (!registrationEmailSuffixBlacklistDraft.value) {
     return;
   }
-  addRegistrationEmailSuffixWhitelistTag(
-    registrationEmailSuffixWhitelistDraft.value,
+  addRegistrationEmailSuffixBlacklistTag(
+    registrationEmailSuffixBlacklistDraft.value,
   );
-  registrationEmailSuffixWhitelistDraft.value = "";
+  registrationEmailSuffixBlacklistDraft.value = "";
 }
 
-function handleRegistrationEmailSuffixWhitelistDraftInput() {
-  registrationEmailSuffixWhitelistDraft.value =
+function handleRegistrationEmailSuffixBlacklistDraftInput() {
+  registrationEmailSuffixBlacklistDraft.value =
     normalizeRegistrationEmailSuffixDomain(
-      registrationEmailSuffixWhitelistDraft.value,
+      registrationEmailSuffixBlacklistDraft.value,
     );
 }
 
-function handleRegistrationEmailSuffixWhitelistDraftKeydown(
+function handleRegistrationEmailSuffixBlacklistDraftKeydown(
   event: KeyboardEvent,
 ) {
   if (event.isComposing) {
     return;
   }
 
-  if (registrationEmailSuffixWhitelistSeparatorKeys.has(event.key)) {
+  if (registrationEmailSuffixBlacklistSeparatorKeys.has(event.key)) {
     event.preventDefault();
-    commitRegistrationEmailSuffixWhitelistDraft();
+    commitRegistrationEmailSuffixBlacklistDraft();
     return;
   }
 
   if (
     event.key === "Backspace" &&
-    !registrationEmailSuffixWhitelistDraft.value &&
-    registrationEmailSuffixWhitelistTags.value.length > 0
+    !registrationEmailSuffixBlacklistDraft.value &&
+    registrationEmailSuffixBlacklistTags.value.length > 0
   ) {
-    registrationEmailSuffixWhitelistTags.value.pop();
+    registrationEmailSuffixBlacklistTags.value.pop();
   }
 }
 
-function handleRegistrationEmailSuffixWhitelistPaste(event: ClipboardEvent) {
+function handleRegistrationEmailSuffixBlacklistPaste(event: ClipboardEvent) {
   const text = event.clipboardData?.getData("text") || "";
   if (!text.trim()) {
     return;
   }
   event.preventDefault();
-  const tokens = parseRegistrationEmailSuffixWhitelistInput(text);
+  const tokens = parseRegistrationEmailSuffixBlacklistInput(text);
   for (const token of tokens) {
-    addRegistrationEmailSuffixWhitelistTag(token);
+    addRegistrationEmailSuffixBlacklistTag(token);
   }
 }
 
@@ -9802,9 +9841,9 @@ async function loadSettings() {
     form.default_subscriptions = normalizeDefaultSubscriptionSettings(
       settings.default_subscriptions,
     );
-    registrationEmailSuffixWhitelistTags.value =
+    registrationEmailSuffixBlacklistTags.value =
       normalizeRegistrationEmailSuffixDomains(
-        settings.registration_email_suffix_whitelist,
+        settings.registration_email_suffix_blacklist,
       );
     form.forwarded_client_ip_headers = normalizeForwardedClientIpHeaders(
       settings.forwarded_client_ip_headers,
@@ -9815,7 +9854,7 @@ async function loadSettings() {
         ? settings.table_page_size_options
         : [10, 20, 50, 100],
     );
-    registrationEmailSuffixWhitelistDraft.value = "";
+    registrationEmailSuffixBlacklistDraft.value = "";
     form.smtp_password = "";
     smtpPasswordManuallyEdited.value = false;
     form.turnstile_secret_key = "";
@@ -10100,6 +10139,19 @@ async function saveSettings() {
       );
       return;
     }
+    const affiliateRegistrationRewardAmount = Number(
+      form.affiliate_registration_reward_amount,
+    );
+    if (
+      !Number.isFinite(affiliateRegistrationRewardAmount) ||
+      affiliateRegistrationRewardAmount < 0 ||
+      affiliateRegistrationRewardAmount > 999999999999.9998
+    ) {
+      appStore.showError(
+        t("admin.settings.features.affiliate.registrationRewardInvalid"),
+      );
+      return;
+    }
     // Validate URL fields — novalidate disables browser-native checks, so we validate here
     const isValidHttpUrl = (url: string): boolean => {
       if (!url) return true;
@@ -10130,12 +10182,13 @@ async function saveSettings() {
     const payload: UpdateSettingsRequest = {
       registration_enabled: form.registration_enabled,
       email_verify_enabled: form.email_verify_enabled,
-      registration_email_suffix_whitelist:
-        registrationEmailSuffixWhitelistTags.value.map((suffix) =>
+      registration_email_suffix_blacklist:
+        registrationEmailSuffixBlacklistTags.value.map((suffix) =>
           suffix.startsWith("*.") ? suffix : `@${suffix}`,
         ),
       promo_code_enabled: form.promo_code_enabled,
       invitation_code_enabled: form.invitation_code_enabled,
+      invitation_code_required: form.invitation_code_required,
       registration_rate_limit_per_ip: form.registration_rate_limit_per_ip,
       registration_rate_limit_window_ip: form.registration_rate_limit_window_ip,
       registration_rate_limit_per_email: form.registration_rate_limit_per_email,
@@ -10166,6 +10219,8 @@ async function saveSettings() {
       affiliate_rebate_freeze_hours: Math.max(0, Math.min(720, Number(form.affiliate_rebate_freeze_hours) || 0)),
       affiliate_rebate_duration_days: Math.max(0, Math.min(3650, Math.floor(Number(form.affiliate_rebate_duration_days) || 0))),
       affiliate_rebate_per_invitee_cap: Math.max(0, Number(form.affiliate_rebate_per_invitee_cap) || 0),
+      affiliate_registration_reward_amount:
+        affiliateRegistrationRewardAmount,
       affiliate_admin_recharge_enabled: form.affiliate_admin_recharge_enabled,
       default_concurrency: form.default_concurrency,
       default_subscriptions: normalizedDefaultSubscriptions,
@@ -10461,9 +10516,9 @@ async function saveSettings() {
     }
     Object.assign(authSourceDefaults, buildAuthSourceDefaultsState(updated));
     form.default_platform_quotas = normalizePlatformQuotasMap(updated.default_platform_quotas);
-    registrationEmailSuffixWhitelistTags.value =
+    registrationEmailSuffixBlacklistTags.value =
       normalizeRegistrationEmailSuffixDomains(
-        updated.registration_email_suffix_whitelist,
+        updated.registration_email_suffix_blacklist,
       );
     form.forwarded_client_ip_headers = normalizeForwardedClientIpHeaders(
       updated.forwarded_client_ip_headers,
@@ -10474,7 +10529,7 @@ async function saveSettings() {
         ? updated.table_page_size_options
         : [10, 20, 50, 100],
     );
-    registrationEmailSuffixWhitelistDraft.value = "";
+    registrationEmailSuffixBlacklistDraft.value = "";
     form.smtp_password = "";
     smtpPasswordManuallyEdited.value = false;
     form.turnstile_secret_key = "";

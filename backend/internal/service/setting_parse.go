@@ -62,8 +62,9 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyRegistrationRateLimitPerEmailDomain:       strconv.Itoa(RegistrationRateLimitPerEmailDomainDefault),
 		SettingKeyRegistrationRateLimitWindowEmailDomain:    strconv.Itoa(RegistrationRateLimitWindowEmailDomainDefault),
 		SettingKeyEmailVerifyEnabled:                        "false",
-		SettingKeyRegistrationEmailSuffixWhitelist:          "[]",
+		SettingKeyRegistrationEmailSuffixBlacklist:          "[]",
 		SettingKeyPromoCodeEnabled:                          "true", // 默认启用优惠码功能
+		SettingKeyInvitationCodeRequired:                    "true",
 		SettingKeyLoginAgreementEnabled:                     "false",
 		SettingKeyLoginAgreementMode:                        defaultLoginAgreementMode,
 		SettingKeyLoginAgreementUpdatedAt:                   defaultLoginAgreementDate,
@@ -133,6 +134,7 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyAffiliateRebateFreezeHours:                strconv.Itoa(AffiliateRebateFreezeHoursDefault),
 		SettingKeyAffiliateRebateDurationDays:               strconv.Itoa(AffiliateRebateDurationDaysDefault),
 		SettingKeyAffiliateRebatePerInviteeCap:              strconv.FormatFloat(AffiliateRebatePerInviteeCapDefault, 'f', 2, 64),
+		SettingKeyAffiliateRegistrationRewardAmount:         strconv.FormatFloat(AffiliateRegistrationRewardAmountDefault, 'f', 8, 64),
 		SettingKeyDefaultUserRPMLimit:                       "0",
 		SettingPaymentCnyUsdRate:                            strconv.FormatFloat(defaultPaymentCnyUsdRate, 'f', -1, 64),
 		SettingKeyResellerEnabled:                           "false",
@@ -309,11 +311,12 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		RegistrationRateLimitPerEmailDomain:    parseIntOrDefault(settings[SettingKeyRegistrationRateLimitPerEmailDomain], RegistrationRateLimitPerEmailDomainDefault),
 		RegistrationRateLimitWindowEmailDomain: parseIntOrDefault(settings[SettingKeyRegistrationRateLimitWindowEmailDomain], RegistrationRateLimitWindowEmailDomainDefault),
 		EmailVerifyEnabled:                     emailVerifyEnabled,
-		RegistrationEmailSuffixWhitelist:       ParseRegistrationEmailSuffixWhitelist(settings[SettingKeyRegistrationEmailSuffixWhitelist]),
+		RegistrationEmailSuffixBlacklist:       ParseRegistrationEmailSuffixBlacklist(settings[SettingKeyRegistrationEmailSuffixBlacklist]),
 		PromoCodeEnabled:                       settings[SettingKeyPromoCodeEnabled] != "false", // 默认启用
 		PasswordResetEnabled:                   emailVerifyEnabled && settings[SettingKeyPasswordResetEnabled] == "true",
 		FrontendURL:                            settings[SettingKeyFrontendURL],
 		InvitationCodeEnabled:                  settings[SettingKeyInvitationCodeEnabled] == "true",
+		InvitationCodeRequired:                 settings[SettingKeyInvitationCodeRequired] != "false",
 		TotpEnabled:                            settings[SettingKeyTotpEnabled] == "true",
 		SessionBindingEnabled:                  settings[SettingKeySessionBindingEnabled] == "true", // 默认关闭
 		StepUpEnabled:                          settings[SettingKeyStepUpEnabled] == "true",         // 默认关闭
@@ -394,6 +397,14 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	}
 	if perInviteeCap, err := strconv.ParseFloat(settings[SettingKeyAffiliateRebatePerInviteeCap], 64); err == nil && perInviteeCap >= 0 {
 		result.AffiliateRebatePerInviteeCap = perInviteeCap
+	}
+	// TrimSpace to stay consistent with GetAffiliateRegistrationRewardAmount; a
+	// manually-edited value with surrounding whitespace must resolve identically
+	// on both paths rather than silently falling back to the default here.
+	if reward, err := strconv.ParseFloat(strings.TrimSpace(settings[SettingKeyAffiliateRegistrationRewardAmount]), 64); err == nil {
+		result.AffiliateRegistrationReward = normalizeAffiliateRegistrationReward(reward)
+	} else {
+		result.AffiliateRegistrationReward = AffiliateRegistrationRewardAmountDefault
 	}
 	result.AdminRechargeRebateEnabled = settings[SettingKeyAffiliateAdminRechargeEnabled] == "true"
 	result.DefaultSubscriptions = parseDefaultSubscriptions(settings[SettingKeyDefaultSubscriptions])
@@ -944,6 +955,20 @@ func clampAffiliateRebateRate(value float64) float64 {
 		return AffiliateRebateRateMax
 	}
 	return value
+}
+
+func normalizeAffiliateRegistrationReward(value float64) float64 {
+	if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 {
+		return AffiliateRegistrationRewardAmountDefault
+	}
+	if value > AffiliateRegistrationRewardAmountMax {
+		return AffiliateRegistrationRewardAmountMax
+	}
+	rounded := roundTo(value, 8)
+	if rounded > AffiliateRegistrationRewardAmountMax {
+		return AffiliateRegistrationRewardAmountMax
+	}
+	return rounded
 }
 
 func isFalseSettingValue(value string) bool {

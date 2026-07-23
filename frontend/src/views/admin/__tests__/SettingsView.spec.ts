@@ -353,14 +353,16 @@ const ImageUploadStub = defineComponent({
 const baseSettingsResponse = {
   registration_enabled: true,
   email_verify_enabled: false,
-  registration_email_suffix_whitelist: [],
+  registration_email_suffix_blacklist: [],
   promo_code_enabled: true,
   invitation_code_enabled: false,
+  invitation_code_required: true,
   password_reset_enabled: false,
   totp_enabled: false,
   totp_encryption_key_configured: false,
   default_balance: 0,
   default_concurrency: 1,
+  affiliate_registration_reward_amount: 0,
   default_subscriptions: [],
   site_name: "Sub2API",
   site_logo: "",
@@ -800,10 +802,64 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(payload).not.toHaveProperty("payment_visible_method_wxpay_enabled");
   });
 
-  it("submits the admin recharge affiliate rebate setting", async () => {
+  it("loads and saves the optional invitation-code setting", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      invitation_code_enabled: true,
+      invitation_code_required: false,
+    });
+
+    const wrapper = mountView();
+    await flushPromises();
+
+    expect(wrapper.text()).toContain(
+      "admin.settings.registration.invitationCodeRequired",
+    );
+
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        invitation_code_enabled: true,
+        invitation_code_required: false,
+      }),
+    );
+  });
+
+  it("loads and saves the registration email domain blacklist", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      registration_email_suffix_blacklist: ["@nimail.cn", "*.edu.cn"],
+    });
+
+    const wrapper = mountView();
+    await flushPromises();
+
+    expect(wrapper.text()).toContain(
+      "admin.settings.registration.emailSuffixBlacklist",
+    );
+    expect(wrapper.text()).toContain("nimail.cn");
+    expect(wrapper.text()).toContain("*.edu.cn");
+
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        registration_email_suffix_blacklist: [
+          "@nimail.cn",
+          "*.edu.cn",
+        ],
+      }),
+    );
+  });
+
+  it("submits affiliate registration and admin recharge reward settings", async () => {
     getSettings.mockResolvedValueOnce({
       ...baseSettingsResponse,
       affiliate_enabled: true,
+      affiliate_registration_reward_amount: 12.3456789,
       affiliate_admin_recharge_enabled: true,
     });
 
@@ -816,8 +872,28 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(updateSettings).toHaveBeenCalledTimes(1);
     expect(updateSettings).toHaveBeenCalledWith(
       expect.objectContaining({
+        affiliate_registration_reward_amount: 12.3456789,
         affiliate_admin_recharge_enabled: true,
       }),
+    );
+  });
+
+  it("rejects an invalid affiliate registration reward amount", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      affiliate_enabled: true,
+      affiliate_registration_reward_amount: -1,
+    });
+
+    const wrapper = mountView();
+
+    await flushPromises();
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).not.toHaveBeenCalled();
+    expect(showError).toHaveBeenCalledWith(
+      "admin.settings.features.affiliate.registrationRewardInvalid",
     );
   });
 

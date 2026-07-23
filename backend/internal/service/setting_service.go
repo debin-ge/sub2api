@@ -558,7 +558,7 @@ func (s *SettingService) SetVersion(version string) {
 // system block switch, legacy custom expansion prompt, and configurable blocks JSON.
 // Empty values mean use the built-in Claude Code default blocks.
 // IsEmailVerifyEnabled 检查是否开启邮件验证
-// GetRegistrationEmailSuffixWhitelist returns normalized registration email suffix whitelist.
+// GetRegistrationEmailSuffixBlacklist returns the normalized registration email suffix blacklist.
 // IsPromoCodeEnabled 检查是否启用优惠码功能
 // IsInvitationCodeEnabled 检查是否启用邀请码注册功能
 // GetCustomMenuItemsRaw returns the raw JSON string of custom_menu_items setting.

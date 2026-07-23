@@ -14,11 +14,12 @@ func firstNonEmpty(values ...string) string {
 type SystemSettings struct {
 	RegistrationEnabled              bool
 	EmailVerifyEnabled               bool
-	RegistrationEmailSuffixWhitelist []string
+	RegistrationEmailSuffixBlacklist []string
 	PromoCodeEnabled                 bool
 	PasswordResetEnabled             bool
 	FrontendURL                      string
 	InvitationCodeEnabled            bool
+	InvitationCodeRequired           bool
 	TotpEnabled                      bool // TOTP 双因素认证
 	SessionBindingEnabled            bool // 会话 IP/UA 绑定（变更即失效）
 	StepUpEnabled                    bool // 敏感操作 step-up 2FA 门控
@@ -165,6 +166,7 @@ type SystemSettings struct {
 	AffiliateRebateFreezeHours   int
 	AffiliateRebateDurationDays  int
 	AffiliateRebatePerInviteeCap float64
+	AffiliateRegistrationReward  float64
 	AdminRechargeRebateEnabled   bool
 	DefaultUserRPMLimit          int
 	DefaultSubscriptions         []DefaultSubscriptionSetting
@@ -294,10 +296,11 @@ type PublicSettings struct {
 	RegistrationEnabled              bool
 	EmailVerifyEnabled               bool
 	ForceEmailOnThirdPartySignup     bool
-	RegistrationEmailSuffixWhitelist []string
+	RegistrationEmailSuffixBlacklist []string
 	PromoCodeEnabled                 bool
 	PasswordResetEnabled             bool
 	InvitationCodeEnabled            bool
+	InvitationCodeRequired           bool
 	TotpEnabled                      bool // TOTP 双因素认证
 	LoginAgreementEnabled            bool
 	LoginAgreementMode               string

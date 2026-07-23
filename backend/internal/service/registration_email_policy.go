@@ -20,37 +20,37 @@ func RegistrationEmailSuffix(email string) string {
 	return "@" + domain
 }
 
-// IsRegistrationEmailSuffixAllowed checks whether an email is allowed by suffix whitelist.
-// Empty whitelist means allow all.
-func IsRegistrationEmailSuffixAllowed(email string, whitelist []string) bool {
-	if len(whitelist) == 0 {
-		return true
+// IsRegistrationEmailSuffixBlocked checks whether an email matches the suffix blacklist.
+// Empty blacklist means no domain is blocked.
+func IsRegistrationEmailSuffixBlocked(email string, blacklist []string) bool {
+	if len(blacklist) == 0 {
+		return false
 	}
 	_, domain, ok := splitEmailForPolicy(email)
 	if !ok {
 		return false
 	}
 	suffix := "@" + domain
-	for _, allowed := range whitelist {
-		allowed = strings.ToLower(strings.TrimSpace(allowed))
-		if strings.HasPrefix(allowed, "@") && suffix == allowed {
+	for _, blocked := range blacklist {
+		blocked = strings.ToLower(strings.TrimSpace(blocked))
+		if strings.HasPrefix(blocked, "@") && suffix == blocked {
 			return true
 		}
-		if strings.HasPrefix(allowed, "*.") && registrationEmailDomainMatchesWildcard(domain, allowed) {
+		if strings.HasPrefix(blocked, "*.") && registrationEmailDomainMatchesWildcard(domain, blocked) {
 			return true
 		}
 	}
 	return false
 }
 
-// NormalizeRegistrationEmailSuffixWhitelist normalizes and validates suffix whitelist items.
-func NormalizeRegistrationEmailSuffixWhitelist(raw []string) ([]string, error) {
-	return normalizeRegistrationEmailSuffixWhitelist(raw, true)
+// NormalizeRegistrationEmailSuffixBlacklist normalizes and validates suffix blacklist items.
+func NormalizeRegistrationEmailSuffixBlacklist(raw []string) ([]string, error) {
+	return normalizeRegistrationEmailSuffixBlacklist(raw, true)
 }
 
-// ParseRegistrationEmailSuffixWhitelist parses persisted JSON into normalized suffixes.
+// ParseRegistrationEmailSuffixBlacklist parses persisted JSON into normalized suffixes.
 // Invalid entries are ignored to keep old misconfigurations from breaking runtime reads.
-func ParseRegistrationEmailSuffixWhitelist(raw string) []string {
+func ParseRegistrationEmailSuffixBlacklist(raw string) []string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return []string{}
@@ -59,14 +59,14 @@ func ParseRegistrationEmailSuffixWhitelist(raw string) []string {
 	if err := json.Unmarshal([]byte(raw), &items); err != nil {
 		return []string{}
 	}
-	normalized, _ := normalizeRegistrationEmailSuffixWhitelist(items, false)
+	normalized, _ := normalizeRegistrationEmailSuffixBlacklist(items, false)
 	if len(normalized) == 0 {
 		return []string{}
 	}
 	return normalized
 }
 
-func normalizeRegistrationEmailSuffixWhitelist(raw []string, strict bool) ([]string, error) {
+func normalizeRegistrationEmailSuffixBlacklist(raw []string, strict bool) ([]string, error) {
 	if len(raw) == 0 {
 		return nil, nil
 	}
@@ -132,8 +132,8 @@ func isValidRegistrationEmailDomain(domain string) bool {
 		registrationEmailDomainPattern.MatchString(domain)
 }
 
-func registrationEmailDomainMatchesWildcard(domain string, allowed string) bool {
-	base := strings.TrimPrefix(allowed, "*.")
+func registrationEmailDomainMatchesWildcard(domain string, blocked string) bool {
+	base := strings.TrimPrefix(blocked, "*.")
 	if !isValidRegistrationEmailDomain(base) {
 		return false
 	}

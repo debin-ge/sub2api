@@ -47,26 +47,22 @@ func (r *userRepository) Create(ctx context.Context, userIn *service.User) error
 		return nil
 	}
 
-	// 统一使用 ent 的事务：保证用户与允许分组的更新原子化，
-	// 并避免基于 *sql.Tx 手动构造 ent client 导致的 ExecQuerier 断言错误。
-	tx, err := r.client.Tx(ctx)
-	if err != nil && !errors.Is(err, dbent.ErrTxStarted) {
-		return err
-	}
-
+	// Reuse an outer Ent transaction when registration coordinates user
+	// creation with invitation consumption and affiliate rewards.
+	var tx *dbent.Tx
 	var txClient *dbent.Client
 	txCtx := ctx
-	if err == nil {
+	if existingTx := dbent.TxFromContext(ctx); existingTx != nil {
+		txClient = existingTx.Client()
+	} else {
+		var err error
+		tx, err = r.client.Tx(ctx)
+		if err != nil {
+			return err
+		}
 		defer func() { _ = tx.Rollback() }()
 		txClient = tx.Client()
 		txCtx = dbent.NewTxContext(ctx, tx)
-	} else {
-		// 已处于外部事务中（ErrTxStarted），复用当前事务 client 并由调用方负责提交/回滚。
-		if existingTx := dbent.TxFromContext(ctx); existingTx != nil {
-			txClient = existingTx.Client()
-		} else {
-			txClient = r.client
-		}
 	}
 
 	releaseEmailLock, err := lockRepositoryScopedKeys(

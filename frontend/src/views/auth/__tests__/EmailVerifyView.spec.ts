@@ -118,7 +118,7 @@ describe('EmailVerifyView', () => {
       turnstile_enabled: false,
       turnstile_site_key: '',
       site_name: 'Sub2API',
-      registration_email_suffix_whitelist: [],
+      registration_email_suffix_blacklist: [],
     })
     sendVerifyCodeMock.mockResolvedValue({ countdown: 60 })
     sendPendingOAuthVerifyCodeMock.mockResolvedValue({ countdown: 60 })
@@ -160,7 +160,7 @@ describe('EmailVerifyView', () => {
     expect(sendVerifyCodeMock).not.toHaveBeenCalled()
   })
 
-  it('skips the registration email suffix whitelist for pending oauth verification', async () => {
+  it('skips the registration email suffix blacklist for pending oauth verification', async () => {
     authStoreState.pendingAuthSession = {
       token: 'pending-token-2',
       token_field: 'pending_auth_token',
@@ -171,7 +171,7 @@ describe('EmailVerifyView', () => {
       turnstile_enabled: false,
       turnstile_site_key: '',
       site_name: 'Sub2API',
-      registration_email_suffix_whitelist: ['allowed.com'],
+      registration_email_suffix_blacklist: ['@example.com'],
     })
     sessionStorage.setItem(
       'register_data',
@@ -212,7 +212,7 @@ describe('EmailVerifyView', () => {
       turnstile_enabled: false,
       turnstile_site_key: '',
       site_name: 'Sub2API',
-      registration_email_suffix_whitelist: ['allowed.com'],
+      registration_email_suffix_blacklist: ['@example.com'],
     })
     sessionStorage.setItem(
       'register_data',
@@ -254,7 +254,7 @@ describe('EmailVerifyView', () => {
       turnstile_enabled: false,
       turnstile_site_key: '',
       site_name: 'Sub2API',
-      registration_email_suffix_whitelist: ['allowed.com'],
+      registration_email_suffix_blacklist: ['@example.com'],
     })
     sendPendingOAuthVerifyCodeMock.mockResolvedValue({
       auth_result: 'pending_session',
@@ -368,7 +368,7 @@ describe('EmailVerifyView', () => {
       turnstile_enabled: false,
       turnstile_site_key: '',
       site_name: 'Sub2API',
-      registration_email_suffix_whitelist: ['allowed.com'],
+      registration_email_suffix_blacklist: ['@example.com'],
     })
     sessionStorage.setItem(
       'register_data',

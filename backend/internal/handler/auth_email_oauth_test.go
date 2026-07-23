@@ -82,6 +82,41 @@ func TestEmailOAuthCallbackRequiresPendingRegistrationWhenInvitationEnabled(t *t
 	require.NotEmpty(t, findSetCookieValue(recorder.Result().Cookies(), oauthPendingBrowserCookieName))
 }
 
+func TestEmailOAuthCallbackMarksInvitationOptionalWhenConfigured(t *testing.T) {
+	handler, client := newOAuthPendingFlowTestHandlerWithDependencies(t, oauthPendingFlowTestHandlerOptions{
+		invitationEnabled: true,
+		settingValues: map[string]string{
+			service.SettingKeyInvitationCodeRequired: "false",
+		},
+	})
+	t.Cleanup(func() { _ = client.Close() })
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/auth/oauth/github/callback", nil)
+
+	handler.emailOAuthCallbackWithProfile(c, "github", config.EmailOAuthProviderConfig{
+		Enabled:             true,
+		ClientID:            "github-client",
+		ClientSecret:        "github-secret",
+		RedirectURL:         "https://app.example/api/v1/auth/oauth/github/callback",
+		FrontendRedirectURL: "/auth/oauth/callback",
+	}, "/auth/oauth/callback", "/dashboard", &emailOAuthProfile{
+		Subject:       "github-optional-invitation",
+		Email:         "optional-invitation@example.com",
+		EmailVerified: true,
+		Username:      "optional-invitation",
+	})
+
+	require.Equal(t, http.StatusFound, recorder.Code)
+	session, err := client.PendingAuthSession.Query().Only(context.Background())
+	require.NoError(t, err)
+	completion, ok := readCompletionResponse(session.LocalFlowState)
+	require.True(t, ok)
+	require.Equal(t, "registration_completion_required", completion["error"])
+	require.Equal(t, false, completion["invitation_required"])
+}
+
 func TestEmailOAuthCallbackExistingEmailLogsInWhenInvitationEnabled(t *testing.T) {
 	handler, client := newOAuthPendingFlowTestHandler(t, true)
 	ctx := context.Background()
@@ -389,6 +424,23 @@ func (r *oauthEmailAffiliateRepoStub) GetAffiliateByCode(_ context.Context, code
 func (r *oauthEmailAffiliateRepoStub) BindInviter(_ context.Context, userID, inviterID int64) (bool, error) {
 	r.bindCalls = append(r.bindCalls, oauthEmailAffiliateBindCall{userID: userID, inviterID: inviterID})
 	return true, nil
+}
+
+func (r *oauthEmailAffiliateRepoStub) BindInviterAndGrantRegistrationReward(
+	ctx context.Context,
+	userID int64,
+	code string,
+	_ float64,
+	_ int,
+) (*service.AffiliateRegistrationRewardResult, error) {
+	summary, err := r.GetAffiliateByCode(ctx, code)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := r.BindInviter(ctx, userID, summary.UserID); err != nil {
+		return nil, err
+	}
+	return &service.AffiliateRegistrationRewardResult{InviterID: summary.UserID, Bound: true}, nil
 }
 
 func (r *oauthEmailAffiliateRepoStub) AccrueQuota(context.Context, int64, int64, float64, int, *int64) (bool, error) {

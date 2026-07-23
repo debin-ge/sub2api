@@ -58,20 +58,37 @@
     <p v-else-if="emailVerifyEnabled" class="text-xs text-gray-500 dark:text-dark-400">
       {{ t('auth.verificationCodeHint') }}
     </p>
-    <input
-      v-if="invitationCodeEnabled"
-      v-model="invitationCode"
-      :data-testid="`${testIdPrefix}-create-account-invitation-code`"
-      type="text"
-      class="input w-full"
-      :placeholder="t('auth.invitationCodePlaceholder')"
-      :disabled="isSubmitting"
-    />
+    <div v-if="invitationCodeEnabled" class="space-y-1">
+      <label class="input-label">
+        {{ t('auth.invitationCodeLabel') }}
+        <span
+          v-if="!invitationCodeMandatory"
+          class="ml-1 text-xs font-normal text-gray-400 dark:text-dark-500"
+        >
+          ({{ t('common.optional') }})
+        </span>
+      </label>
+      <input
+        v-model="invitationCode"
+        :data-testid="`${testIdPrefix}-create-account-invitation-code`"
+        type="text"
+        :required="invitationCodeMandatory"
+        class="input w-full"
+        :placeholder="t('auth.invitationCodePlaceholder')"
+        :disabled="isSubmitting"
+      />
+      <p
+        v-if="invitationSatisfiedByAffiliate"
+        class="text-xs text-green-600 dark:text-green-400"
+      >
+        {{ t('auth.invitationSatisfiedByAffiliate') }}
+      </p>
+    </div>
     <button
       :data-testid="`${testIdPrefix}-create-account-submit`"
       type="button"
       class="btn btn-primary w-full"
-      :disabled="isSubmitting || !email.trim() || password.length < 6 || (invitationCodeEnabled && !invitationCode.trim())"
+      :disabled="isSubmitting || !email.trim() || password.length < 6 || (invitationCodeMandatory && !invitationCode.trim())"
       @click="handleSubmit"
     >
       {{ isSubmitting ? t('common.processing') : t('auth.createAccount') }}
@@ -88,10 +105,11 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import TurnstileWidget from '@/components/TurnstileWidget.vue'
 import { getPublicSettings, sendPendingOAuthVerifyCode } from '@/api/auth'
+import { loadOAuthAffiliateCode } from '@/utils/oauthAffiliate'
 import { useAppStore } from '@/stores'
 
 export type PendingOAuthCreateAccountPayload = {
@@ -125,7 +143,21 @@ const sendCodeError = ref('')
 const sendCodeSuccess = ref(false)
 const countdown = ref(0)
 const invitationCodeEnabled = ref(false)
+const invitationCodeRequired = ref(true)
+const affiliateEnabled = ref(false)
+const hasStoredAffiliateCode = ref(false)
 const emailVerifyEnabled = ref(true)
+
+// A referral code captured during the OAuth /start hop is attached to the
+// create-account request by the callback view and accepted by the backend as
+// satisfying the invitation gate, so it must relax the required-invitation
+// constraint here — otherwise referred users are dead-ended on a disabled button.
+const invitationSatisfiedByAffiliate = computed(
+  () => affiliateEnabled.value && hasStoredAffiliateCode.value
+)
+const invitationCodeMandatory = computed(
+  () => invitationCodeRequired.value && !invitationSatisfiedByAffiliate.value
+)
 const turnstileEnabled = ref(false)
 const turnstileSiteKey = ref('')
 const turnstileToken = ref('')
@@ -258,14 +290,20 @@ function emitSwitchToBind() {
 }
 
 onMounted(async () => {
+  hasStoredAffiliateCode.value = Boolean(loadOAuthAffiliateCode())
   try {
     const settings = await getPublicSettings()
     invitationCodeEnabled.value = settings.invitation_code_enabled === true
+    invitationCodeRequired.value =
+      invitationCodeEnabled.value && settings.invitation_code_required !== false
+    affiliateEnabled.value = settings.affiliate_enabled === true
     emailVerifyEnabled.value = settings.email_verify_enabled !== false
     turnstileEnabled.value = settings.turnstile_enabled === true
     turnstileSiteKey.value = settings.turnstile_site_key || ''
   } catch {
     invitationCodeEnabled.value = false
+    invitationCodeRequired.value = false
+    affiliateEnabled.value = false
     emailVerifyEnabled.value = true
     turnstileEnabled.value = false
     turnstileSiteKey.value = ''

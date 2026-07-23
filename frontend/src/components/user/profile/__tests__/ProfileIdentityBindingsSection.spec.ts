@@ -237,7 +237,7 @@ describe('ProfileIdentityBindingsSection', () => {
       registration_enabled: false,
       email_verify_enabled: false,
       force_email_on_third_party_signup: false,
-      registration_email_suffix_whitelist: [],
+      registration_email_suffix_blacklist: [],
       promo_code_enabled: true,
       password_reset_enabled: false,
       invitation_code_enabled: false,
