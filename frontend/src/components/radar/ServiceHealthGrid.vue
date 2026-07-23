@@ -52,20 +52,6 @@
           <dt class="font-medium">{{ t('radar.health.uptime', '90-day uptime') }}</dt>
           <dd class="mt-0.5 font-semibold text-gray-900 dark:text-white">{{ formatPercent(item.uptime_90d) }}</dd>
         </div>
-        <div v-if="item.source_url" data-testid="service-source" class="sm:col-span-2">
-          <dt class="sr-only">{{ t('radar.health.source', 'Source') }}</dt>
-          <dd>
-            <a
-              :href="item.source_url"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="inline-flex items-center gap-1 font-medium text-primary-600 hover:text-primary-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:text-primary-400 dark:hover:text-primary-300"
-            >
-              {{ t('radar.health.source', 'Source') }}
-              <Icon name="externalLink" size="xs" aria-hidden="true" />
-            </a>
-          </dd>
-        </div>
       </dl>
 
       <p

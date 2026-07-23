@@ -65,37 +65,17 @@
 
       <div
         v-if="latest"
-        class="flex flex-col gap-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm dark:border-dark-800 dark:bg-dark-800/40 sm:flex-row sm:items-center sm:justify-between"
+        class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm dark:border-dark-800 dark:bg-dark-800/40"
       >
-        <div class="flex flex-wrap items-center gap-x-6 gap-y-2">
-          <div class="flex items-center gap-2">
-            <Icon name="badge" size="sm" class="shrink-0 text-gray-400 dark:text-gray-500" aria-hidden="true" />
-            <span class="text-xs text-gray-500 dark:text-gray-400">
-              {{ t('radar.degradation.indexVersion', 'Intelligence Index version') }}
-            </span>
-            <span data-testid="aa-index-version" class="font-semibold text-gray-900 dark:text-white">
-              {{ latest.intelligence_index_version ?? '—' }}
-            </span>
-          </div>
-          <div class="flex items-center gap-2">
-            <Icon name="clock" size="sm" class="shrink-0 text-gray-400 dark:text-gray-500" aria-hidden="true" />
-            <span class="text-xs text-gray-500 dark:text-gray-400">
-              {{ t('radar.degradation.projectFetchedAt', 'Project fetched at') }}
-            </span>
-            <span data-testid="aa-fetched-at" class="font-semibold text-gray-900 dark:text-white">
-              {{ aaFetchedAt ? formatDate(aaFetchedAt) : '—' }}
-            </span>
-          </div>
+        <div class="flex items-center gap-2">
+          <Icon name="clock" size="sm" class="shrink-0 text-gray-400 dark:text-gray-500" aria-hidden="true" />
+          <span class="text-xs text-gray-500 dark:text-gray-400">
+            {{ t('radar.degradation.projectFetchedAt', 'Project fetched at') }}
+          </span>
+          <span data-testid="aa-fetched-at" class="font-semibold text-gray-900 dark:text-white">
+            {{ aaFetchedAt ? formatDate(aaFetchedAt) : '—' }}
+          </span>
         </div>
-        <a
-          href="https://artificialanalysis.ai"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="inline-flex shrink-0 items-center gap-1.5 text-sm font-semibold text-primary-600 hover:underline dark:text-primary-400"
-        >
-          {{ t('radar.degradation.officialSource', 'Artificial Analysis official source') }}
-          <Icon name="externalLink" size="sm" aria-hidden="true" />
-        </a>
       </div>
 
       <dl class="grid gap-3 sm:grid-cols-3">
