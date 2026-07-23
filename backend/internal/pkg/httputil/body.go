@@ -2,10 +2,10 @@ package httputil
 
 import (
 	"bytes"
+	"compress/flate"
 	"compress/gzip"
 	"compress/zlib"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -49,20 +49,35 @@ func ReadRequestBodyWithPrealloc(req *http.Request) ([]byte, error) {
 	raw := buf.Bytes()
 
 	enc := strings.ToLower(strings.TrimSpace(req.Header.Get("Content-Encoding")))
-	if enc == "" || enc == "identity" {
+	if enc == "" || enc == "identity" || len(raw) == 0 {
 		return raw, nil
 	}
 
 	decoded, err := decompressRequestBody(enc, raw)
 	if err != nil {
-		return nil, fmt.Errorf("decode Content-Encoding %q: %w", enc, err)
+		// Lenient fallback: the Content-Encoding header declared a compression
+		// scheme, but the bytes don't actually match it. Real-world causes:
+		// a fronting proxy already decompressed the body but left the header,
+		// a client mislabels an uncompressed body, or the encoding is one we
+		// don't support (e.g. br / combined values). Rather than reject with a
+		// 400, treat the body as-is and let downstream JSON validation decide.
+		// Strip the now-inaccurate encoding metadata so the request stays
+		// consistent for any upstream forwarding.
+		clearRequestEncoding(req, len(raw))
+		return raw, nil
 	}
 
+	clearRequestEncoding(req, len(decoded))
+	return decoded, nil
+}
+
+// clearRequestEncoding removes stale Content-Encoding/Content-Length metadata
+// after the body has been materialized (decoded or accepted as-is) so the
+// in-memory request accurately reflects the plaintext bytes.
+func clearRequestEncoding(req *http.Request, contentLen int) {
 	req.Header.Del("Content-Encoding")
 	req.Header.Del("Content-Length")
-	req.ContentLength = int64(len(decoded))
-
-	return decoded, nil
+	req.ContentLength = int64(contentLen)
 }
 
 // ReadLenientJSONRequestBodyWithPrealloc reads a request body and normalizes
@@ -78,29 +93,53 @@ func ReadLenientJSONRequestBodyWithPrealloc(req *http.Request, maxNormalizedByte
 func decompressRequestBody(encoding string, raw []byte) ([]byte, error) {
 	switch encoding {
 	case "zstd":
-		dec, err := zstd.NewReader(bytes.NewReader(raw))
-		if err != nil {
-			return nil, err
-		}
-		defer dec.Close()
-		return io.ReadAll(io.LimitReader(dec, maxDecompressedBodySize))
+		return decodeZstd(raw)
 	case "gzip", "x-gzip":
-		gr, err := gzip.NewReader(bytes.NewReader(raw))
-		if err != nil {
-			return nil, err
-		}
-		defer func() { _ = gr.Close() }()
-		return io.ReadAll(io.LimitReader(gr, maxDecompressedBodySize))
+		return decodeGzip(raw)
 	case "deflate":
-		zr, err := zlib.NewReader(bytes.NewReader(raw))
-		if err != nil {
-			return nil, err
+		// Content-Encoding: deflate is ambiguous. RFC 1950 (zlib-wrapped) is the
+		// standard, but some clients send raw RFC 1951 DEFLATE. Try zlib first,
+		// then fall back to raw flate so both variants decode.
+		if decoded, err := decodeZlib(raw); err == nil {
+			return decoded, nil
 		}
-		defer func() { _ = zr.Close() }()
-		return io.ReadAll(io.LimitReader(zr, maxDecompressedBodySize))
+		return decodeFlate(raw)
 	default:
 		return nil, errors.New("unsupported Content-Encoding")
 	}
+}
+
+func decodeZstd(raw []byte) ([]byte, error) {
+	dec, err := zstd.NewReader(bytes.NewReader(raw))
+	if err != nil {
+		return nil, err
+	}
+	defer dec.Close()
+	return io.ReadAll(io.LimitReader(dec, maxDecompressedBodySize))
+}
+
+func decodeGzip(raw []byte) ([]byte, error) {
+	gr, err := gzip.NewReader(bytes.NewReader(raw))
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = gr.Close() }()
+	return io.ReadAll(io.LimitReader(gr, maxDecompressedBodySize))
+}
+
+func decodeZlib(raw []byte) ([]byte, error) {
+	zr, err := zlib.NewReader(bytes.NewReader(raw))
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = zr.Close() }()
+	return io.ReadAll(io.LimitReader(zr, maxDecompressedBodySize))
+}
+
+func decodeFlate(raw []byte) ([]byte, error) {
+	fr := flate.NewReader(bytes.NewReader(raw))
+	defer func() { _ = fr.Close() }()
+	return io.ReadAll(io.LimitReader(fr, maxDecompressedBodySize))
 }
 
 // NormalizeLenientJSONRequestBody escapes raw control bytes that broken
