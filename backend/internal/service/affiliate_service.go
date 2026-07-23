@@ -165,7 +165,7 @@ type AffiliateInviteRecord struct {
 	InviteeUsername          string    `json:"invitee_username"`
 	AffCode                  string    `json:"aff_code"`
 	RegistrationRewardAmount float64   `json:"registration_reward_amount"`
-	TotalRebate              float64   `json:"total_rebate"` // 邀请人的历史累计返利（全部被邀请人）
+	TotalRebate              float64   `json:"total_rebate"` // 同一邀请人按邀请时间计算的运行累计返利
 	CreatedAt                time.Time `json:"created_at"`
 }
 

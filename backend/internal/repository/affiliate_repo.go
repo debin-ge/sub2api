@@ -540,8 +540,8 @@ JOIN user_affiliates inviter_aff ON inviter_aff.user_id = ua.inviter_id
 		"inviter":                    "inviter.email",
 		"invitee":                    "invitee.email",
 		"aff_code":                   "inviter_aff.aff_code",
-		"registration_reward_amount": "registration_reward_amount",
-		"total_rebate":               "total_rebate",
+		"registration_reward_amount": "rebate_totals.registration_reward_amount",
+		"total_rebate":               "rebate_totals.total_rebate",
 		"created_at":                 "ua.created_at",
 	}, "ua.created_at")
 	args = append(args, filter.PageSize, (filter.Page-1)*filter.PageSize)
@@ -553,19 +553,40 @@ SELECT ua.inviter_id,
        COALESCE(invitee.email, ''),
        COALESCE(invitee.username, ''),
        COALESCE(inviter_aff.aff_code, ''),
-       COALESCE(SUM(ual.amount) FILTER (WHERE ual.action = 'registration_reward'), 0)::double precision AS registration_reward_amount,
-       inviter_aff.aff_history_quota::double precision AS total_rebate,
+       COALESCE(rebate_totals.registration_reward_amount, 0)::double precision,
+       COALESCE(rebate_totals.total_rebate, 0)::double precision,
        ua.created_at
 FROM user_affiliates ua
 JOIN users invitee ON invitee.id = ua.user_id
 JOIN users inviter ON inviter.id = ua.inviter_id
 JOIN user_affiliates inviter_aff ON inviter_aff.user_id = ua.inviter_id
-LEFT JOIN user_affiliate_ledger ual
-       ON ual.user_id = ua.inviter_id
-      AND ual.source_user_id = ua.user_id
-      AND ual.action IN ('accrue', 'registration_reward')
+LEFT JOIN (
+    SELECT invitee_totals.inviter_id,
+           invitee_totals.invitee_id,
+           invitee_totals.registration_reward_amount,
+           SUM(invitee_totals.invitee_total_rebate) OVER (
+               PARTITION BY invitee_totals.inviter_id
+               ORDER BY invitee_totals.invited_at ASC, invitee_totals.invitee_id ASC
+               ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+           ) AS total_rebate
+    FROM (
+        SELECT invitee_aff.inviter_id,
+               invitee_aff.user_id AS invitee_id,
+               invitee_aff.created_at AS invited_at,
+               COALESCE(SUM(ledger.amount) FILTER (WHERE ledger.action = 'registration_reward'), 0)::double precision AS registration_reward_amount,
+               COALESCE(SUM(ledger.amount), 0)::double precision AS invitee_total_rebate
+        FROM user_affiliates invitee_aff
+        LEFT JOIN user_affiliate_ledger ledger
+               ON ledger.user_id = invitee_aff.inviter_id
+              AND ledger.source_user_id = invitee_aff.user_id
+              AND ledger.action IN ('accrue', 'registration_reward')
+        WHERE invitee_aff.inviter_id IS NOT NULL
+        GROUP BY invitee_aff.inviter_id, invitee_aff.user_id, invitee_aff.created_at
+    ) invitee_totals
+) rebate_totals
+       ON rebate_totals.inviter_id = ua.inviter_id
+      AND rebate_totals.invitee_id = ua.user_id
 `+where+`
-GROUP BY ua.inviter_id, inviter.email, inviter.username, ua.user_id, invitee.email, invitee.username, inviter_aff.aff_code, inviter_aff.aff_history_quota, ua.created_at
 `+orderBy+`
 LIMIT $`+fmt.Sprint(len(args)-1)+` OFFSET $`+fmt.Sprint(len(args)), args...)
 	if err != nil {

@@ -278,7 +278,7 @@ WHERE action = 'registration_reward'
 		"registration-reward invitees must count as rebated invitees")
 }
 
-func TestAffiliateRepository_ListAffiliateInviteRecords_UsesInviterCumulativeRebate(t *testing.T) {
+func TestAffiliateRepository_ListAffiliateInviteRecords_UsesInvitationTimeRunningTotal(t *testing.T) {
 	ctx := context.Background()
 	tx := testEntTx(t)
 	txCtx := dbent.NewTxContext(ctx, tx)
@@ -339,15 +339,31 @@ func TestAffiliateRepository_ListAffiliateInviteRecords_UsesInviterCumulativeReb
 	require.EqualValues(t, 2, total)
 	require.Len(t, records, 2)
 
-	expectedRegistrationRewards := map[int64]float64{
-		firstInvitee.ID:  10,
-		secondInvitee.ID: 20,
+	expected := map[int64]struct {
+		registrationReward float64
+		totalRebate        float64
+	}{
+		firstInvitee.ID:  {registrationReward: 10, totalRebate: 15},
+		secondInvitee.ID: {registrationReward: 20, totalRebate: 35},
 	}
 	for _, record := range records {
-		require.InDelta(t, expectedRegistrationRewards[record.InviteeID], record.RegistrationRewardAmount, 1e-9)
-		require.InDelta(t, 35, record.TotalRebate, 1e-9,
-			"every invite row must show the inviter's cumulative rebate across all invitees")
+		want, ok := expected[record.InviteeID]
+		require.True(t, ok, "unexpected invitee %d", record.InviteeID)
+		require.InDelta(t, want.registrationReward, record.RegistrationRewardAmount, 1e-9)
+		require.InDelta(t, want.totalRebate, record.TotalRebate, 1e-9,
+			"invite rows must accumulate rebates in invitation-time order")
 	}
+
+	filteredRecords, filteredTotal, err := repo.ListAffiliateInviteRecords(txCtx, service.AffiliateRecordFilter{
+		Search:   secondInvitee.Email,
+		Page:     1,
+		PageSize: 10,
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 1, filteredTotal)
+	require.Len(t, filteredRecords, 1)
+	require.InDelta(t, 35, filteredRecords[0].TotalRebate, 1e-9,
+		"filtering must not truncate the earlier invitations included in the running total")
 }
 
 func TestAffiliateRepository_BindInviterAndGrantRegistrationReward_FrozenAndZero(t *testing.T) {
