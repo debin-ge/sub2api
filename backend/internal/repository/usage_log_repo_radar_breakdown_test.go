@@ -15,6 +15,7 @@ import (
 )
 
 var _ service.AccountModelBreakdownBatchReader = (*usageLogRepository)(nil)
+var _ service.RadarQuotaBatchReader = (*usageLogRepository)(nil)
 
 const accountModelBreakdownSQL = `
 	SELECT
@@ -29,6 +30,26 @@ const accountModelBreakdownSQL = `
 `
 
 var accountModelBreakdownColumns = []string{"account_id", "model", "requests", "tokens", "account_cost"}
+
+const accountModelBreakdownByWindowSQL = `
+	WITH quota_windows AS (
+		SELECT *
+		FROM UNNEST($1::bigint[], $2::timestamptz[], $3::timestamptz[])
+			AS quota_window(account_id, start_at, end_at)
+	)
+	SELECT
+		usage_logs.account_id,
+		usage_logs.model,
+		COUNT(*) as requests,
+		COALESCE(SUM(usage_logs.input_tokens::bigint + usage_logs.output_tokens::bigint + usage_logs.cache_creation_tokens::bigint + usage_logs.cache_read_tokens::bigint), 0) as tokens,
+		COALESCE(SUM(COALESCE(usage_logs.account_stats_cost, usage_logs.total_cost) * COALESCE(usage_logs.account_rate_multiplier, 1)), 0) as account_cost
+	FROM quota_windows
+	JOIN usage_logs
+		ON usage_logs.account_id = quota_windows.account_id
+		AND usage_logs.created_at >= quota_windows.start_at
+		AND usage_logs.created_at < quota_windows.end_at
+	GROUP BY usage_logs.account_id, usage_logs.model
+`
 
 func expectAccountModelBreakdownQuery(mock sqlmock.Sqlmock, accountIDs []int64, startTime time.Time) *sqlmock.ExpectedQuery {
 	return mock.ExpectQuery(regexp.QuoteMeta(accountModelBreakdownSQL)).
@@ -219,5 +240,56 @@ func TestUsageLogRepositoryGetAccountModelBreakdownBatchKeepsScanErrorWhenCloseA
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "not-an-account-id")
 	require.False(t, strings.Contains(err.Error(), closeErr.Error()), "scan error is the primary error")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestUsageLogRepositoryGetAccountModelBreakdownByWindowBatchUsesExactAccountPeriods(t *testing.T) {
+	db, mock := newSQLMock(t)
+	repo := newUsageLogRepositoryWithSQL(nil, db)
+	zone := time.FixedZone("test", 8*60*60)
+	start7 := time.Date(2026, time.July, 15, 1, 0, 0, 0, zone)
+	end7 := start7.Add(72 * time.Hour)
+	start11 := start7.Add(-48 * time.Hour)
+	end11 := start7.Add(24 * time.Hour)
+
+	mock.ExpectQuery(regexp.QuoteMeta(accountModelBreakdownByWindowSQL)).
+		WithArgs(
+			pq.Array([]int64{7, 11}),
+			pq.Array([]time.Time{start7.UTC(), start11.UTC()}),
+			pq.Array([]time.Time{end7.UTC(), end11.UTC()}),
+		).
+		WillReturnRows(sqlmock.NewRows(accountModelBreakdownColumns).
+			AddRow(int64(7), "gpt-a", int64(2), int64(20), 3.5).
+			AddRow(int64(11), "gpt-b", int64(4), int64(40), 7.5)).
+		RowsWillBeClosed()
+
+	got, err := repo.GetAccountModelBreakdownByWindowBatch(context.Background(), []service.RadarQuotaAccountWindow{
+		{AccountID: 11, StartAt: start11, EndAt: end11},
+		{AccountID: 0, StartAt: start7, EndAt: end7},
+		{AccountID: 7, StartAt: start7, EndAt: end7},
+		{AccountID: 7, StartAt: start7.Add(-time.Hour), EndAt: end7},
+		{AccountID: 99, StartAt: end7, EndAt: start7},
+	})
+
+	require.NoError(t, err)
+	require.InDelta(t, 3.5, got[7]["gpt-a"].AccountCost, 0)
+	require.InDelta(t, 7.5, got[11]["gpt-b"].AccountCost, 0)
+	require.Len(t, got, 2)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestUsageLogRepositoryGetAccountModelBreakdownByWindowBatchSkipsInvalidInput(t *testing.T) {
+	db, mock := newSQLMock(t)
+	repo := newUsageLogRepositoryWithSQL(nil, db)
+	now := time.Now()
+
+	got, err := repo.GetAccountModelBreakdownByWindowBatch(context.Background(), []service.RadarQuotaAccountWindow{
+		{AccountID: 0, StartAt: now.Add(-time.Hour), EndAt: now},
+		{AccountID: 1, StartAt: now, EndAt: now},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	require.Empty(t, got)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
