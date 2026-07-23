@@ -519,11 +519,13 @@ export default {
       },
       "registration": {
         "rateLimit": "Registration Rate Limit",
-        "rateLimitHint": "Limit registration frequency per IP and per email domain to prevent bulk sign-up abuse",
+        "rateLimitHint": "Limit registration/verification-code frequency per IP, per email address, and per email domain to prevent bulk sign-up abuse. The domain-level limit is a high-threshold backstop; do not set it too low or it will affect normal users",
         "rateLimitPerIp": "Max registrations per IP",
         "rateLimitWindowIp": "Per-IP time window (seconds)",
-        "rateLimitPerEmail": "Max registrations per email domain",
-        "rateLimitWindowEmail": "Per-email-domain time window (seconds)"
+        "rateLimitPerEmail": "Max requests per email address",
+        "rateLimitWindowEmail": "Per-email-address time window (seconds)",
+        "rateLimitPerEmailDomain": "Max requests per email domain (anti-bulk)",
+        "rateLimitWindowEmailDomain": "Per-email-domain time window (seconds)"
       },
       "gatewayForwarding": {
         "openaiAllowClaudeCodeCodexPlugin": "Allow using the Codex plugin in Claude Code",

@@ -31,8 +31,11 @@ type SystemSettings struct {
 	// 注册速率限制（防止薅羊毛批量注册）
 	RegistrationRateLimitPerIP       int // 每IP注册请求数上限
 	RegistrationRateLimitWindowIP    int // 每IP速率限制时间窗口（秒）
-	RegistrationRateLimitPerEmail    int // 每邮箱域名注册请求数上限
-	RegistrationRateLimitWindowEmail int // 每邮箱域名速率限制时间窗口（秒）
+	RegistrationRateLimitPerEmail    int // 每邮箱地址请求数上限
+	RegistrationRateLimitWindowEmail int // 每邮箱地址速率限制时间窗口（秒）
+	// 域名级为高阈值兜底，仅用于对抗批量注册攻击
+	RegistrationRateLimitPerEmailDomain    int // 每邮箱域名请求数上限
+	RegistrationRateLimitWindowEmailDomain int // 每邮箱域名速率限制时间窗口（秒）
 
 	SMTPHost               string
 	SMTPPort               int

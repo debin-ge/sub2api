@@ -28,18 +28,20 @@ type UpdateSettingsRequest struct {
 	FrontendURL                      string   `json:"frontend_url"`
 	InvitationCodeEnabled            bool     `json:"invitation_code_enabled"`
 	// 注册速率限制（防止薅羊毛批量注册）
-	RegistrationRateLimitPerIP       int                          `json:"registration_rate_limit_per_ip"`
-	RegistrationRateLimitWindowIP    int                          `json:"registration_rate_limit_window_ip"`
-	RegistrationRateLimitPerEmail    int                          `json:"registration_rate_limit_per_email"`
-	RegistrationRateLimitWindowEmail int                          `json:"registration_rate_limit_window_email"`
-	TotpEnabled                      bool                         `json:"totp_enabled"`             // TOTP 双因素认证
-	SessionBindingEnabled            *bool                        `json:"session_binding_enabled"`  // 会话 IP/UA 绑定（省略=保持现值）
-	StepUpEnabled                    *bool                        `json:"step_up_enabled"`          // 敏感操作 step-up 2FA（省略=保持现值）
-	AuditLogRetentionDays            int                          `json:"audit_log_retention_days"` // 审计日志保留天数
-	LoginAgreementEnabled            bool                         `json:"login_agreement_enabled"`
-	LoginAgreementMode               string                       `json:"login_agreement_mode"`
-	LoginAgreementUpdatedAt          string                       `json:"login_agreement_updated_at"`
-	LoginAgreementDocuments          []dto.LoginAgreementDocument `json:"login_agreement_documents"`
+	RegistrationRateLimitPerIP             int                          `json:"registration_rate_limit_per_ip"`
+	RegistrationRateLimitWindowIP          int                          `json:"registration_rate_limit_window_ip"`
+	RegistrationRateLimitPerEmail          int                          `json:"registration_rate_limit_per_email"`
+	RegistrationRateLimitWindowEmail       int                          `json:"registration_rate_limit_window_email"`
+	RegistrationRateLimitPerEmailDomain    int                          `json:"registration_rate_limit_per_email_domain"`
+	RegistrationRateLimitWindowEmailDomain int                          `json:"registration_rate_limit_window_email_domain"`
+	TotpEnabled                            bool                         `json:"totp_enabled"`             // TOTP 双因素认证
+	SessionBindingEnabled                  *bool                        `json:"session_binding_enabled"`  // 会话 IP/UA 绑定（省略=保持现值）
+	StepUpEnabled                          *bool                        `json:"step_up_enabled"`          // 敏感操作 step-up 2FA（省略=保持现值）
+	AuditLogRetentionDays                  int                          `json:"audit_log_retention_days"` // 审计日志保留天数
+	LoginAgreementEnabled                  bool                         `json:"login_agreement_enabled"`
+	LoginAgreementMode                     string                       `json:"login_agreement_mode"`
+	LoginAgreementUpdatedAt                string                       `json:"login_agreement_updated_at"`
+	LoginAgreementDocuments                []dto.LoginAgreementDocument `json:"login_agreement_documents"`
 
 	// 邮件服务设置
 	SMTPHost     string `json:"smtp_host"`
@@ -1253,35 +1255,37 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		// 系统全局 platform quota 默认值（整体替换语义）
 		DefaultPlatformQuotas: req.DefaultPlatformQuotas,
 
-		RegistrationEnabled:              req.RegistrationEnabled,
-		EmailVerifyEnabled:               req.EmailVerifyEnabled,
-		RegistrationEmailSuffixWhitelist: req.RegistrationEmailSuffixWhitelist,
-		PromoCodeEnabled:                 req.PromoCodeEnabled,
-		PasswordResetEnabled:             req.PasswordResetEnabled,
-		FrontendURL:                      req.FrontendURL,
-		InvitationCodeEnabled:            req.InvitationCodeEnabled,
-		RegistrationRateLimitPerIP:       req.RegistrationRateLimitPerIP,
-		RegistrationRateLimitWindowIP:    req.RegistrationRateLimitWindowIP,
-		RegistrationRateLimitPerEmail:    req.RegistrationRateLimitPerEmail,
-		RegistrationRateLimitWindowEmail: req.RegistrationRateLimitWindowEmail,
-		TotpEnabled:                      req.TotpEnabled,
-		SessionBindingEnabled:            sessionBindingEnabled,
-		StepUpEnabled:                    stepUpEnabled,
-		AuditLogRetentionDays:            req.AuditLogRetentionDays,
-		LoginAgreementEnabled:            req.LoginAgreementEnabled,
-		LoginAgreementMode:               loginAgreementMode,
-		LoginAgreementUpdatedAt:          loginAgreementUpdatedAt,
-		LoginAgreementDocuments:          loginAgreementDocuments,
-		SMTPHost:                         req.SMTPHost,
-		SMTPPort:                         req.SMTPPort,
-		SMTPUsername:                     req.SMTPUsername,
-		SMTPPassword:                     req.SMTPPassword,
-		SMTPFrom:                         req.SMTPFrom,
-		SMTPFromName:                     req.SMTPFromName,
-		SMTPUseTLS:                       req.SMTPUseTLS,
-		TurnstileEnabled:                 req.TurnstileEnabled,
-		TurnstileSiteKey:                 req.TurnstileSiteKey,
-		TurnstileSecretKey:               req.TurnstileSecretKey,
+		RegistrationEnabled:                    req.RegistrationEnabled,
+		EmailVerifyEnabled:                     req.EmailVerifyEnabled,
+		RegistrationEmailSuffixWhitelist:       req.RegistrationEmailSuffixWhitelist,
+		PromoCodeEnabled:                       req.PromoCodeEnabled,
+		PasswordResetEnabled:                   req.PasswordResetEnabled,
+		FrontendURL:                            req.FrontendURL,
+		InvitationCodeEnabled:                  req.InvitationCodeEnabled,
+		RegistrationRateLimitPerIP:             req.RegistrationRateLimitPerIP,
+		RegistrationRateLimitWindowIP:          req.RegistrationRateLimitWindowIP,
+		RegistrationRateLimitPerEmail:          req.RegistrationRateLimitPerEmail,
+		RegistrationRateLimitWindowEmail:       req.RegistrationRateLimitWindowEmail,
+		RegistrationRateLimitPerEmailDomain:    req.RegistrationRateLimitPerEmailDomain,
+		RegistrationRateLimitWindowEmailDomain: req.RegistrationRateLimitWindowEmailDomain,
+		TotpEnabled:                            req.TotpEnabled,
+		SessionBindingEnabled:                  sessionBindingEnabled,
+		StepUpEnabled:                          stepUpEnabled,
+		AuditLogRetentionDays:                  req.AuditLogRetentionDays,
+		LoginAgreementEnabled:                  req.LoginAgreementEnabled,
+		LoginAgreementMode:                     loginAgreementMode,
+		LoginAgreementUpdatedAt:                loginAgreementUpdatedAt,
+		LoginAgreementDocuments:                loginAgreementDocuments,
+		SMTPHost:                               req.SMTPHost,
+		SMTPPort:                               req.SMTPPort,
+		SMTPUsername:                           req.SMTPUsername,
+		SMTPPassword:                           req.SMTPPassword,
+		SMTPFrom:                               req.SMTPFrom,
+		SMTPFromName:                           req.SMTPFromName,
+		SMTPUseTLS:                             req.SMTPUseTLS,
+		TurnstileEnabled:                       req.TurnstileEnabled,
+		TurnstileSiteKey:                       req.TurnstileSiteKey,
+		TurnstileSecretKey:                     req.TurnstileSecretKey,
 		APIKeyACLTrustForwardedIP: func() bool {
 			if req.APIKeyACLTrustForwardedIP != nil {
 				return *req.APIKeyACLTrustForwardedIP
@@ -1818,6 +1822,8 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		RegistrationRateLimitWindowIP:                          updatedSettings.RegistrationRateLimitWindowIP,
 		RegistrationRateLimitPerEmail:                          updatedSettings.RegistrationRateLimitPerEmail,
 		RegistrationRateLimitWindowEmail:                       updatedSettings.RegistrationRateLimitWindowEmail,
+		RegistrationRateLimitPerEmailDomain:                    updatedSettings.RegistrationRateLimitPerEmailDomain,
+		RegistrationRateLimitWindowEmailDomain:                 updatedSettings.RegistrationRateLimitWindowEmailDomain,
 		TotpEnabled:                                            updatedSettings.TotpEnabled,
 		TotpEncryptionKeyConfigured:                            h.settingService.IsTotpEncryptionKeyConfigured(),
 		SessionBindingEnabled:                                  updatedSettings.SessionBindingEnabled,

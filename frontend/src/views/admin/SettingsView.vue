@@ -1577,6 +1577,38 @@
                       class="input"
                     />
                   </div>
+                  <div>
+                    <label
+                      class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                    >
+                      {{
+                        t("admin.settings.registration.rateLimitPerEmailDomain")
+                      }}
+                    </label>
+                    <input
+                      v-model.number="form.registration_rate_limit_per_email_domain"
+                      type="number"
+                      min="1"
+                      class="input"
+                    />
+                  </div>
+                  <div>
+                    <label
+                      class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                    >
+                      {{
+                        t(
+                          "admin.settings.registration.rateLimitWindowEmailDomain",
+                        )
+                      }}
+                    </label>
+                    <input
+                      v-model.number="form.registration_rate_limit_window_email_domain"
+                      type="number"
+                      min="1"
+                      class="input"
+                    />
+                  </div>
                 </div>
               </div>
               <!-- Password Reset - Only show when email verification is enabled -->
@@ -8568,6 +8600,8 @@ const form = reactive<SettingsForm>({
   registration_rate_limit_window_ip: 3600,
   registration_rate_limit_per_email: 5,
   registration_rate_limit_window_email: 3600,
+  registration_rate_limit_per_email_domain: 500,
+  registration_rate_limit_window_email_domain: 3600,
   password_reset_enabled: false,
   totp_enabled: false,
   totp_encryption_key_configured: false,
@@ -10107,6 +10141,10 @@ async function saveSettings() {
       registration_rate_limit_per_email: form.registration_rate_limit_per_email,
       registration_rate_limit_window_email:
         form.registration_rate_limit_window_email,
+      registration_rate_limit_per_email_domain:
+        form.registration_rate_limit_per_email_domain,
+      registration_rate_limit_window_email_domain:
+        form.registration_rate_limit_window_email_domain,
       password_reset_enabled: form.password_reset_enabled,
       totp_enabled: form.totp_enabled,
       session_binding_enabled: form.session_binding_enabled,

@@ -136,6 +136,8 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		RegistrationRateLimitWindowIP:                          settings.RegistrationRateLimitWindowIP,
 		RegistrationRateLimitPerEmail:                          settings.RegistrationRateLimitPerEmail,
 		RegistrationRateLimitWindowEmail:                       settings.RegistrationRateLimitWindowEmail,
+		RegistrationRateLimitPerEmailDomain:                    settings.RegistrationRateLimitPerEmailDomain,
+		RegistrationRateLimitWindowEmailDomain:                 settings.RegistrationRateLimitWindowEmailDomain,
 		TotpEnabled:                                            settings.TotpEnabled,
 		TotpEncryptionKeyConfigured:                            h.settingService.IsTotpEncryptionKeyConfigured(),
 		SessionBindingEnabled:                                  settings.SessionBindingEnabled,

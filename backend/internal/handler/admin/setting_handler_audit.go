@@ -65,6 +65,12 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if before.RegistrationRateLimitWindowEmail != after.RegistrationRateLimitWindowEmail {
 		changed = append(changed, "registration_rate_limit_window_email")
 	}
+	if before.RegistrationRateLimitPerEmailDomain != after.RegistrationRateLimitPerEmailDomain {
+		changed = append(changed, "registration_rate_limit_per_email_domain")
+	}
+	if before.RegistrationRateLimitWindowEmailDomain != after.RegistrationRateLimitWindowEmailDomain {
+		changed = append(changed, "registration_rate_limit_window_email_domain")
+	}
 	if before.TotpEnabled != after.TotpEnabled {
 		changed = append(changed, "totp_enabled")
 	}

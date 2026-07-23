@@ -130,6 +130,8 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyRegistrationRateLimitWindowIP] = strconv.Itoa(normalizeRateLimitValue(settings.RegistrationRateLimitWindowIP, RegistrationRateLimitWindowIPDefault))
 	updates[SettingKeyRegistrationRateLimitPerEmail] = strconv.Itoa(normalizeRateLimitValue(settings.RegistrationRateLimitPerEmail, RegistrationRateLimitPerEmailDefault))
 	updates[SettingKeyRegistrationRateLimitWindowEmail] = strconv.Itoa(normalizeRateLimitValue(settings.RegistrationRateLimitWindowEmail, RegistrationRateLimitWindowEmailDefault))
+	updates[SettingKeyRegistrationRateLimitPerEmailDomain] = strconv.Itoa(normalizeRateLimitValue(settings.RegistrationRateLimitPerEmailDomain, RegistrationRateLimitPerEmailDomainDefault))
+	updates[SettingKeyRegistrationRateLimitWindowEmailDomain] = strconv.Itoa(normalizeRateLimitValue(settings.RegistrationRateLimitWindowEmailDomain, RegistrationRateLimitWindowEmailDomainDefault))
 	updates[SettingKeyTotpEnabled] = strconv.FormatBool(settings.TotpEnabled)
 	updates[SettingKeySessionBindingEnabled] = strconv.FormatBool(settings.SessionBindingEnabled)
 	updates[SettingKeyStepUpEnabled] = strconv.FormatBool(settings.StepUpEnabled)

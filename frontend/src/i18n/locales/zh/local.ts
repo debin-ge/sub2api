@@ -519,11 +519,13 @@ export default {
       },
       "registration": {
         "rateLimit": "注册速率限制",
-        "rateLimitHint": "限制单个 IP 和单个邮箱域名的注册频率，防止批量注册薅羊毛",
+        "rateLimitHint": "限制单个 IP、单个邮箱地址及邮箱域名的注册/验证码频率，防止批量注册薅羊毛。域名级为高阈值兜底，请勿设置过低以免误伤正常用户",
         "rateLimitPerIp": "每 IP 注册次数上限",
         "rateLimitWindowIp": "每 IP 时间窗口（秒）",
-        "rateLimitPerEmail": "每邮箱域名注册次数上限",
-        "rateLimitWindowEmail": "每邮箱域名时间窗口（秒）"
+        "rateLimitPerEmail": "每邮箱地址次数上限",
+        "rateLimitWindowEmail": "每邮箱地址时间窗口（秒）",
+        "rateLimitPerEmailDomain": "每邮箱域名次数上限（反批量）",
+        "rateLimitWindowEmailDomain": "每邮箱域名时间窗口（秒）"
       },
       "gatewayForwarding": {
         "openaiAllowClaudeCodeCodexPlugin": "允许在 Claude Code 中使用 Codex 插件",

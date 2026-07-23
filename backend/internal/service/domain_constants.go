@@ -38,10 +38,12 @@ const (
 
 // Registration rate limit settings
 const (
-	RegistrationRateLimitPerIPDefault       = 10   // 每IP每小时10次注册请求
-	RegistrationRateLimitWindowIPDefault    = 3600 // 1小时（秒）
-	RegistrationRateLimitPerEmailDefault    = 5    // 每邮箱域名每小时5次注册请求
-	RegistrationRateLimitWindowEmailDefault = 3600 // 1小时（秒）
+	RegistrationRateLimitPerIPDefault             = 10   // 每IP每小时10次注册请求
+	RegistrationRateLimitWindowIPDefault          = 3600 // 1小时（秒）
+	RegistrationRateLimitPerEmailDefault          = 5    // 每邮箱地址每小时5次请求
+	RegistrationRateLimitWindowEmailDefault       = 3600 // 1小时（秒）
+	RegistrationRateLimitPerEmailDomainDefault    = 500  // 每邮箱域名每小时500次请求（高阈值，仅用于对抗批量攻击）
+	RegistrationRateLimitWindowEmailDomainDefault = 3600 // 1小时（秒）
 )
 
 // Platform constants
@@ -152,8 +154,11 @@ const (
 	// 注册速率限制设置
 	SettingKeyRegistrationRateLimitPerIP       = "registration_rate_limit_per_ip"       // 每IP注册速率限制（请求数/时间窗口，默认10）
 	SettingKeyRegistrationRateLimitWindowIP    = "registration_rate_limit_window_ip"    // 每IP速率限制时间窗口（秒，默认3600）
-	SettingKeyRegistrationRateLimitPerEmail    = "registration_rate_limit_per_email"    // 每邮箱域名注册速率限制（默认5）
-	SettingKeyRegistrationRateLimitWindowEmail = "registration_rate_limit_window_email" // 每邮箱域名速率限制时间窗口（秒，默认3600）
+	SettingKeyRegistrationRateLimitPerEmail    = "registration_rate_limit_per_email"    // 每邮箱地址速率限制（默认5）
+	SettingKeyRegistrationRateLimitWindowEmail = "registration_rate_limit_window_email" // 每邮箱地址速率限制时间窗口（秒，默认3600）
+	// 域名级限流为高阈值兜底，仅用于对抗批量注册攻击，不应影响正常用户
+	SettingKeyRegistrationRateLimitPerEmailDomain    = "registration_rate_limit_per_email_domain"    // 每邮箱域名速率限制（默认500）
+	SettingKeyRegistrationRateLimitWindowEmailDomain = "registration_rate_limit_window_email_domain" // 每邮箱域名速率限制时间窗口（秒，默认3600）
 
 	SettingKeyAffiliateEnabled              = "affiliate_enabled"                // 邀请返利功能总开关
 	SettingKeyAffiliateRebateRate           = "affiliate_rebate_rate"            // 邀请返利比例（百分比，0-100）

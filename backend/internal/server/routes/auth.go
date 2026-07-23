@@ -24,7 +24,11 @@ func RegisterAuthRoutes(
 	// 创建速率限制器
 	rateLimiter := middleware.NewRateLimiter(redisClient)
 	// 创建可配置速率限制器
-	configurableRateLimiter := middleware.NewConfigurableRateLimiter(redisClient, settingService)
+	// 注意：settingService 为 nil 时必须传字面量 nil，避免 typed-nil 装入接口后绕过中间件内的 nil 判断
+	configurableRateLimiter := middleware.NewConfigurableRateLimiter(redisClient, nil)
+	if settingService != nil {
+		configurableRateLimiter = middleware.NewConfigurableRateLimiter(redisClient, settingService)
+	}
 
 	// 公开接口
 	auth := v1.Group("/auth")
@@ -33,7 +37,7 @@ func RegisterAuthRoutes(
 	auth.Use(gin.HandlerFunc(auditLog))
 	{
 		// 注册/登录/2FA/验证码发送均属于高风险入口，增加服务端兜底限流（Redis 故障时 fail-close）
-		// 注册接口：先经过基础IP兜底限流（每分钟5次），再经过可配置的多层限流（IP + 邮箱域名，可在系统设置中配置）
+		// 注册接口：先经过基础IP兜底限流（每分钟5次），再经过可配置的多层限流（IP + 邮箱域名高阈值 + 邮箱地址，可在系统设置中配置）
 		auth.POST("/register",
 			rateLimiter.LimitWithOptions("auth-register", 5, time.Minute, middleware.RateLimitOptions{
 				FailureMode: middleware.RateLimitFailClose,
@@ -47,7 +51,7 @@ func RegisterAuthRoutes(
 		auth.POST("/login/2fa", rateLimiter.LimitWithOptions("auth-login-2fa", 20, time.Minute, middleware.RateLimitOptions{
 			FailureMode: middleware.RateLimitFailClose,
 		}), h.Auth.Login2FA)
-		// 发送验证码接口：基础IP兜底限流 + 可配置的邮箱域名限流
+		// 发送验证码接口：基础IP兜底限流 + 可配置的邮箱限流（域名高阈值 + 单地址）
 		auth.POST("/send-verify-code",
 			rateLimiter.LimitWithOptions("auth-send-verify-code", 5, time.Minute, middleware.RateLimitOptions{
 				FailureMode: middleware.RateLimitFailClose,
@@ -121,6 +125,7 @@ func RegisterAuthRoutes(
 			rateLimiter.LimitWithOptions("oauth-pending-send-verify-code", 5, time.Minute, middleware.RateLimitOptions{
 				FailureMode: middleware.RateLimitFailClose,
 			}),
+			configurableRateLimiter.SendVerifyCodeRateLimit(),
 			h.Auth.SendPendingOAuthVerifyCode,
 		)
 		auth.POST("/oauth/pending/create-account",

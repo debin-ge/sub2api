@@ -615,7 +615,7 @@ func (s *SettingService) GetRegistrationRateLimitWindowIP(ctx context.Context) i
 	return window
 }
 
-// GetRegistrationRateLimitPerEmail 获取每邮箱域名注册速率限制（请求数/时间窗口）
+// GetRegistrationRateLimitPerEmail 获取每邮箱地址速率限制（请求数/时间窗口）
 func (s *SettingService) GetRegistrationRateLimitPerEmail(ctx context.Context) int {
 	raw, err := s.settingRepo.GetValue(ctx, SettingKeyRegistrationRateLimitPerEmail)
 	if err != nil {
@@ -628,7 +628,7 @@ func (s *SettingService) GetRegistrationRateLimitPerEmail(ctx context.Context) i
 	return limit
 }
 
-// GetRegistrationRateLimitWindowEmail 获取每邮箱域名速率限制时间窗口（秒）
+// GetRegistrationRateLimitWindowEmail 获取每邮箱地址速率限制时间窗口（秒）
 func (s *SettingService) GetRegistrationRateLimitWindowEmail(ctx context.Context) int {
 	raw, err := s.settingRepo.GetValue(ctx, SettingKeyRegistrationRateLimitWindowEmail)
 	if err != nil {
@@ -637,6 +637,32 @@ func (s *SettingService) GetRegistrationRateLimitWindowEmail(ctx context.Context
 	window, err := strconv.Atoi(strings.TrimSpace(raw))
 	if err != nil || window <= 0 {
 		return RegistrationRateLimitWindowEmailDefault
+	}
+	return window
+}
+
+// GetRegistrationRateLimitPerEmailDomain 获取每邮箱域名速率限制（高阈值，仅用于对抗批量注册攻击）
+func (s *SettingService) GetRegistrationRateLimitPerEmailDomain(ctx context.Context) int {
+	raw, err := s.settingRepo.GetValue(ctx, SettingKeyRegistrationRateLimitPerEmailDomain)
+	if err != nil {
+		return RegistrationRateLimitPerEmailDomainDefault
+	}
+	limit, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || limit <= 0 {
+		return RegistrationRateLimitPerEmailDomainDefault
+	}
+	return limit
+}
+
+// GetRegistrationRateLimitWindowEmailDomain 获取每邮箱域名速率限制时间窗口（秒）
+func (s *SettingService) GetRegistrationRateLimitWindowEmailDomain(ctx context.Context) int {
+	raw, err := s.settingRepo.GetValue(ctx, SettingKeyRegistrationRateLimitWindowEmailDomain)
+	if err != nil {
+		return RegistrationRateLimitWindowEmailDomainDefault
+	}
+	window, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || window <= 0 {
+		return RegistrationRateLimitWindowEmailDomainDefault
 	}
 	return window
 }
