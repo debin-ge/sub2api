@@ -60,7 +60,7 @@ function buildPublicSettings(overrides: Partial<WeChatPublicSettings> = {}): WeC
     registration_enabled: true,
     email_verify_enabled: false,
     force_email_on_third_party_signup: false,
-    registration_email_suffix_whitelist: [],
+    registration_email_suffix_blacklist: [],
     promo_code_enabled: true,
     password_reset_enabled: false,
     invitation_code_enabled: false,
@@ -113,6 +113,8 @@ describe('WechatOAuthSection', () => {
       configurable: true,
       value: 'Mozilla/5.0',
     })
+    window.localStorage.clear()
+    window.sessionStorage.clear()
   })
 
   afterEach(() => {
@@ -137,6 +139,27 @@ describe('WechatOAuthSection', () => {
     expect(locationState.current.href).toContain(
       '/api/v1/auth/oauth/wechat/start?mode=open&redirect=%2Fbilling%3Fplan%3Dpro'
     )
+  })
+
+  it('passes the affiliate code to the OAuth start endpoint and session storage', async () => {
+    routeState.query = { redirect: '/dashboard', aff: 'AFF123' }
+    seedPublicSettings({
+      wechat_oauth_open_enabled: true,
+      wechat_oauth_mp_enabled: false,
+    })
+    const wrapper = mount(WechatOAuthSection, {
+      props: {
+        affCode: 'AFF123',
+      },
+      global: {
+        plugins: [pinia],
+      },
+    })
+
+    await wrapper.get('button').trigger('click')
+
+    expect(locationState.current.href).toContain('aff_code=AFF123')
+    expect(window.sessionStorage.getItem('oauth_aff_code')).toBe('AFF123')
   })
 
   it('uses mp mode inside the WeChat browser when mp mode is configured', async () => {

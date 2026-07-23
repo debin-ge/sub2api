@@ -27,7 +27,10 @@
       </div>
 
       <!-- Registration Form -->
-      <form v-else @submit.prevent="handleRegister" class="space-y-5">
+      <!-- novalidate: browser constraint validation would block the affiliate-code-only
+           path (empty invitation input) before validateForm's invitation-or-affiliate
+           logic runs; validateForm is the single source of truth. -->
+      <form v-else novalidate @submit.prevent="handleRegister" class="space-y-5">
         <!-- Email Input -->
         <div>
           <label for="email" class="input-label">
@@ -91,6 +94,12 @@
         <div v-if="invitationCodeEnabled">
           <label for="invitation_code" class="input-label">
             {{ t('auth.invitationCodeLabel') }}
+            <span
+              v-if="!invitationCodeRequired"
+              class="ml-1 text-xs font-normal text-gray-400 dark:text-dark-500"
+            >
+              ({{ t('common.optional') }})
+            </span>
           </label>
           <div class="relative">
             <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5">
@@ -100,6 +109,7 @@
               id="invitation_code"
               v-model="formData.invitation_code"
               type="text"
+              :required="invitationCodeRequired"
               :disabled="registrationActionDisabled"
               class="input pl-11 pr-10"
               :class="{
@@ -132,6 +142,88 @@
               </span>
             </div>
           </transition>
+        </div>
+
+        <!-- Affiliate Referral Code Input (Optional) -->
+        <div v-if="affiliateEnabled">
+          <label for="aff_code" class="input-label">
+            {{ t('auth.affiliateCodeLabel') }}
+            <span class="ml-1 text-xs font-normal text-gray-400 dark:text-dark-500">
+              ({{ t('common.optional') }})
+            </span>
+          </label>
+          <div class="relative">
+            <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5">
+              <Icon
+                name="userPlus"
+                size="md"
+                :class="affiliateValidation.valid ? 'text-green-500' : 'text-gray-400 dark:text-dark-500'"
+              />
+            </div>
+            <input
+              id="aff_code"
+              v-model="formData.aff_code"
+              type="text"
+              autocomplete="off"
+              :disabled="registrationActionDisabled"
+              class="input pl-11 pr-10"
+              :class="{
+                'border-green-500 focus:border-green-500 focus:ring-green-500': affiliateValidation.valid,
+                'border-red-500 focus:border-red-500 focus:ring-red-500':
+                  fallbackAffiliateCodeRelevant && (affiliateValidation.invalid || errors.aff_code)
+              }"
+              :placeholder="t('auth.affiliateCodePlaceholder')"
+              @input="handleAffiliateCodeInput"
+            />
+            <div
+              v-if="affiliateValidating"
+              class="absolute inset-y-0 right-0 flex items-center pr-3.5"
+            >
+              <svg class="h-4 w-4 animate-spin text-gray-400" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+            </div>
+            <div
+              v-else-if="affiliateValidation.valid"
+              class="absolute inset-y-0 right-0 flex items-center pr-3.5"
+            >
+              <Icon name="checkCircle" size="md" class="text-green-500" />
+            </div>
+            <div
+              v-else-if="
+                fallbackAffiliateCodeRelevant && (affiliateValidation.invalid || errors.aff_code)
+              "
+              class="absolute inset-y-0 right-0 flex items-center pr-3.5"
+            >
+              <Icon name="exclamationCircle" size="md" class="text-red-500" />
+            </div>
+          </div>
+          <transition name="fade">
+            <div
+              v-if="affiliateValidation.valid"
+              class="mt-2 flex items-center gap-2 rounded-lg bg-green-50 px-3 py-2 dark:bg-green-900/20"
+            >
+              <Icon name="checkCircle" size="sm" class="text-green-600 dark:text-green-400" />
+              <span class="text-sm text-green-700 dark:text-green-400">
+                {{ t('auth.affiliateCodeValid') }}
+              </span>
+            </div>
+          </transition>
+          <p
+            v-if="
+              fallbackAffiliateCodeRelevant && (affiliateValidation.invalid || errors.aff_code)
+            "
+            class="mt-2 text-sm text-red-600 dark:text-red-400"
+          >
+            {{ errors.aff_code || affiliateValidation.message }}
+          </p>
+          <p
+            v-else-if="fallbackAffiliateCodeRelevant && affiliateValidation.unavailable"
+            class="mt-2 text-sm text-amber-600 dark:text-amber-400"
+          >
+            {{ affiliateValidation.message }}
+          </p>
         </div>
 
         <!-- Promo Code Input (Optional) -->
@@ -208,7 +300,7 @@
         <!-- Submit Button -->
         <button
           type="submit"
-          :disabled="registrationActionDisabled || (turnstileEnabled && !turnstileToken)"
+          :disabled="registrationSubmitDisabled || (turnstileEnabled && !turnstileToken)"
           class="btn btn-primary w-full"
         >
           <svg
@@ -253,7 +345,7 @@
         </div>
 
         <EmailOAuthButtons
-          :disabled="registrationActionDisabled"
+          :disabled="registrationSubmitDisabled"
           :aff-code="formData.aff_code"
           :github-enabled="githubOAuthEnabled"
           :google-enabled="googleOAuthEnabled"
@@ -262,19 +354,19 @@
 
         <LinuxDoOAuthSection
           v-if="linuxdoOAuthEnabled"
-          :disabled="registrationActionDisabled"
+          :disabled="registrationSubmitDisabled"
           :aff-code="formData.aff_code"
           :show-divider="false"
         />
         <WechatOAuthSection
           v-if="wechatOAuthEnabled"
-          :disabled="registrationActionDisabled"
+          :disabled="registrationSubmitDisabled"
           :aff-code="formData.aff_code"
           :show-divider="false"
         />
         <OidcOAuthSection
           v-if="oidcOAuthEnabled"
-          :disabled="registrationActionDisabled"
+          :disabled="registrationSubmitDisabled"
           :provider-name="oidcOAuthProviderName"
           :aff-code="formData.aff_code"
           :show-divider="false"
@@ -288,6 +380,7 @@
         {{ t('auth.alreadyHaveAccount') }}
         <router-link
           to="/login"
+          @click="cancelAffiliateReferral"
           class="font-medium text-primary-600 transition-colors hover:text-primary-500 dark:text-primary-400 dark:hover:text-primary-300"
         >
           {{ t('auth.signIn') }}
@@ -313,23 +406,24 @@ import { useAuthStore, useAppStore } from '@/stores'
 import {
   getPublicSettings,
   isWeChatWebOAuthEnabled,
+  validateAffiliateCode,
   validatePromoCode,
   validateInvitationCode
 } from '@/api/auth'
 import { buildAuthErrorMessage } from '@/utils/authError'
 import {
-  formatRegistrationEmailSuffixWhitelistForMessage,
-  isRegistrationEmailSuffixAllowed,
-  normalizeRegistrationEmailSuffixWhitelist
+  isRegistrationEmailSuffixBlocked,
+  normalizeRegistrationEmailSuffixBlacklist
 } from '@/utils/registrationEmailPolicy'
 import {
   clearAffiliateReferralCode,
   loadAffiliateReferralCode,
-  resolveAffiliateReferralCode
+  resolveAffiliateReferralCode,
+  storeAffiliateReferralCode
 } from '@/utils/oauthAffiliate'
 import type { LoginAgreementDocument } from '@/types'
 
-const { t, locale } = useI18n()
+const { t } = useI18n()
 const LOGIN_AGREEMENT_STORAGE_KEY = 'sub2api_login_agreement_consent'
 
 // ==================== Router & Stores ====================
@@ -351,6 +445,8 @@ const registrationEnabled = ref<boolean>(true)
 const emailVerifyEnabled = ref<boolean>(false)
 const promoCodeEnabled = ref<boolean>(true)
 const invitationCodeEnabled = ref<boolean>(false)
+const invitationCodeRequired = ref<boolean>(true)
+const affiliateEnabled = ref<boolean>(false)
 const turnstileEnabled = ref<boolean>(false)
 const turnstileSiteKey = ref<string>('')
 const siteName = ref<string>('Sub2API')
@@ -360,7 +456,7 @@ const oidcOAuthEnabled = ref<boolean>(false)
 const oidcOAuthProviderName = ref<string>('OIDC')
 const githubOAuthEnabled = ref<boolean>(false)
 const googleOAuthEnabled = ref<boolean>(false)
-const registrationEmailSuffixWhitelist = ref<string[]>([])
+const registrationEmailSuffixBlacklist = ref<string[]>([])
 const loginAgreementEnabled = ref<boolean>(false)
 const loginAgreementMode = ref<'modal' | 'checkbox' | string>('modal')
 const loginAgreementUpdatedAt = ref<string>('')
@@ -388,9 +484,25 @@ const invitationValidating = ref<boolean>(false)
 const invitationValidation = reactive({
   valid: false,
   invalid: false,
+  affiliate: false,
   message: ''
 })
 let invitationValidateTimeout: ReturnType<typeof setTimeout> | null = null
+let invitationValidationSequence = 0
+
+// Affiliate code validation
+const affiliateValidating = ref<boolean>(false)
+const affiliateValidation = reactive({
+  valid: false,
+  invalid: false,
+  // Set when validation could not complete (rate limit / network), as opposed to a
+  // code that was checked and rejected. This state must not block submission — the
+  // backend re-validates and is the final arbiter.
+  unavailable: false,
+  message: ''
+})
+let affiliateValidateTimeout: ReturnType<typeof setTimeout> | null = null
+let affiliateValidationSequence = 0
 
 const formData = reactive({
   email: '',
@@ -404,7 +516,8 @@ const errors = reactive({
   email: '',
   password: '',
   turnstile: '',
-  invitation_code: ''
+  invitation_code: '',
+  aff_code: ''
 })
 
 const validationToastMessage = computed(() =>
@@ -412,6 +525,10 @@ const validationToastMessage = computed(() =>
   errors.password ||
   (invitationValidation.invalid ? invitationValidation.message : '') ||
   errors.invitation_code ||
+  errors.aff_code ||
+  (fallbackAffiliateCodeRelevant.value && affiliateValidation.invalid
+    ? affiliateValidation.message
+    : '') ||
   (promoValidation.invalid ? promoValidation.message : '') ||
   errors.turnstile ||
   ''
@@ -432,6 +549,27 @@ const agreementGateActive = computed(
 
 const registrationActionDisabled = computed(
   () => isLoading.value || !settingsLoaded.value || agreementGateActive.value
+)
+
+const fallbackAffiliateCodeRelevant = computed(
+  () => !(invitationCodeEnabled.value && invitationValidation.valid && invitationValidation.affiliate)
+)
+
+const affiliateValidationBlocksSubmission = computed(() => {
+  if (!affiliateEnabled.value || !fallbackAffiliateCodeRelevant.value) {
+    return false
+  }
+  // A code that could not be validated (rate limit / network) must not lock the
+  // user out — let the backend re-validate on submit.
+  if (affiliateValidation.unavailable) {
+    return false
+  }
+  const code = formData.aff_code.trim()
+  return Boolean(code) && (affiliateValidating.value || !affiliateValidation.valid)
+})
+
+const registrationSubmitDisabled = computed(
+  () => registrationActionDisabled.value || affiliateValidationBlocksSubmission.value
 )
 
 watch(validationToastMessage, (value, previousValue) => {
@@ -459,6 +597,9 @@ onMounted(async () => {
     emailVerifyEnabled.value = settings.email_verify_enabled
     promoCodeEnabled.value = settings.promo_code_enabled
     invitationCodeEnabled.value = settings.invitation_code_enabled
+    invitationCodeRequired.value =
+      invitationCodeEnabled.value && settings.invitation_code_required !== false
+    affiliateEnabled.value = settings.affiliate_enabled
     turnstileEnabled.value = settings.turnstile_enabled
     turnstileSiteKey.value = settings.turnstile_site_key || ''
     siteName.value = settings.site_name || 'Sub2API'
@@ -468,8 +609,8 @@ onMounted(async () => {
     oidcOAuthProviderName.value = settings.oidc_oauth_provider_name || 'OIDC'
     githubOAuthEnabled.value = settings.github_oauth_enabled
     googleOAuthEnabled.value = settings.google_oauth_enabled
-    registrationEmailSuffixWhitelist.value = normalizeRegistrationEmailSuffixWhitelist(
-      settings.registration_email_suffix_whitelist || []
+    registrationEmailSuffixBlacklist.value = normalizeRegistrationEmailSuffixBlacklist(
+      settings.registration_email_suffix_blacklist || []
     )
     applyLoginAgreementSettings(settings)
 
@@ -482,11 +623,19 @@ onMounted(async () => {
         await validatePromoCodeDebounced(promoParam)
       }
     }
-    syncAffiliateReferralCode()
+    const affiliateCode = syncAffiliateReferralCode()
+    if (affiliateEnabled.value && affiliateCode) {
+      await validateAffiliateCodeDebounced(affiliateCode)
+    }
   } catch (error) {
     console.error('Failed to load public settings:', error)
     loginAgreementEnabled.value = false
     agreementAccepted.value = true
+    // Fail open on the invitation gate: the finally block still marks the form
+    // submittable, so leaving invitationCodeRequired=true here would dead-end
+    // registration with no invitation field rendered. Mirrors the pending-OAuth form.
+    invitationCodeEnabled.value = false
+    invitationCodeRequired.value = false
   } finally {
     settingsLoaded.value = true
   }
@@ -495,7 +644,10 @@ onMounted(async () => {
 watch(
   () => [route.query.aff, route.query.aff_code],
   () => {
-    syncAffiliateReferralCode()
+    const code = syncAffiliateReferralCode()
+    if (settingsLoaded.value && affiliateEnabled.value && code) {
+      handleAffiliateCodeInput()
+    }
   }
 )
 
@@ -506,6 +658,10 @@ onUnmounted(() => {
   if (invitationValidateTimeout) {
     clearTimeout(invitationValidateTimeout)
   }
+  if (affiliateValidateTimeout) {
+    clearTimeout(affiliateValidateTimeout)
+  }
+  affiliateValidationSequence += 1
 })
 
 // ==================== Login Agreement ====================
@@ -649,8 +805,11 @@ function handleInvitationCodeInput(): void {
   const code = formData.invitation_code.trim()
 
   // Clear previous validation
+  invitationValidationSequence += 1
+  invitationValidating.value = false
   invitationValidation.valid = false
   invitationValidation.invalid = false
+  invitationValidation.affiliate = false
   invitationValidation.message = ''
   errors.invitation_code = ''
 
@@ -669,26 +828,53 @@ function handleInvitationCodeInput(): void {
 }
 
 async function validateInvitationCodeDebounced(code: string): Promise<void> {
+  const sequence = ++invitationValidationSequence
   invitationValidating.value = true
 
   try {
     const result = await validateInvitationCode(code)
+    if (sequence !== invitationValidationSequence || code !== formData.invitation_code.trim()) {
+      return
+    }
 
     if (result.valid) {
       invitationValidation.valid = true
       invitationValidation.invalid = false
       invitationValidation.message = ''
+      invitationValidation.affiliate = false
+      if (affiliateEnabled.value) {
+        try {
+          const affiliateResult = await validateAffiliateCode(code)
+          if (
+            sequence === invitationValidationSequence &&
+            code === formData.invitation_code.trim()
+          ) {
+            invitationValidation.affiliate = affiliateResult.valid
+          }
+        } catch {
+          if (sequence === invitationValidationSequence) {
+            invitationValidation.affiliate = false
+          }
+        }
+      }
     } else {
       invitationValidation.valid = false
       invitationValidation.invalid = true
+      invitationValidation.affiliate = false
       invitationValidation.message = getInvitationErrorMessage(result.error_code)
     }
   } catch {
+    if (sequence !== invitationValidationSequence) {
+      return
+    }
     invitationValidation.valid = false
     invitationValidation.invalid = true
+    invitationValidation.affiliate = false
     invitationValidation.message = t('auth.invitationCodeInvalid')
   } finally {
-    invitationValidating.value = false
+    if (sequence === invitationValidationSequence) {
+      invitationValidating.value = false
+    }
   }
 }
 
@@ -705,6 +891,109 @@ function getInvitationErrorMessage(errorCode?: string): string {
     default:
       return t('auth.invitationCodeInvalid')
   }
+}
+
+// ==================== Affiliate Code Validation ====================
+
+function resetAffiliateValidation(): void {
+  affiliateValidation.valid = false
+  affiliateValidation.invalid = false
+  affiliateValidation.unavailable = false
+  affiliateValidation.message = ''
+  errors.aff_code = ''
+}
+
+function handleAffiliateCodeInput(): void {
+  const code = formData.aff_code.trim()
+
+  affiliateValidationSequence += 1
+  resetAffiliateValidation()
+  if (affiliateValidateTimeout) {
+    clearTimeout(affiliateValidateTimeout)
+    affiliateValidateTimeout = null
+  }
+
+  if (!code) {
+    affiliateValidating.value = false
+    clearAffiliateReferralCode()
+    return
+  }
+
+  // Persist only once the code validates (see validateAffiliateCodeDebounced) so
+  // arbitrary keystrokes are not written to localStorage for 30 days and later
+  // carried into OAuth start URLs.
+  affiliateValidateTimeout = setTimeout(() => {
+    void validateAffiliateCodeDebounced(code)
+  }, 500)
+}
+
+async function validateAffiliateCodeDebounced(code: string): Promise<boolean> {
+  const normalizedCode = code.trim()
+  if (!normalizedCode || !affiliateEnabled.value) {
+    return false
+  }
+
+  const sequence = ++affiliateValidationSequence
+  affiliateValidating.value = true
+  resetAffiliateValidation()
+
+  try {
+    const result = await validateAffiliateCode(normalizedCode)
+    if (sequence !== affiliateValidationSequence || normalizedCode !== formData.aff_code.trim()) {
+      return false
+    }
+    if (result.valid) {
+      affiliateValidation.valid = true
+      storeAffiliateReferralCode(normalizedCode)
+      return true
+    }
+    affiliateValidation.invalid = true
+    affiliateValidation.message = getAffiliateErrorMessage(result.error_code)
+    // Drop a code that failed validation so it is not carried into a later OAuth
+    // start URL (login page) or reused after the 30-day TTL.
+    clearAffiliateReferralCode()
+    return false
+  } catch (error) {
+    console.error('Failed to validate affiliate code:', error)
+    if (sequence !== affiliateValidationSequence) {
+      return false
+    }
+    // Validation could not complete (e.g. the endpoint's rate limit returned 429).
+    // Treat it as "unavailable", not "invalid": do not block submission or clear the
+    // stored code — the backend re-validates on submit and is the final arbiter.
+    affiliateValidation.unavailable = true
+    affiliateValidation.message = t('auth.affiliateCodeServiceUnavailable')
+    return false
+  } finally {
+    if (sequence === affiliateValidationSequence) {
+      affiliateValidating.value = false
+    }
+  }
+}
+
+function getAffiliateErrorMessage(errorCode?: string): string {
+  switch (errorCode) {
+    case 'AFFILIATE_DISABLED':
+      return t('auth.affiliateCodeDisabled')
+    case 'SERVICE_UNAVAILABLE':
+      return t('auth.affiliateCodeServiceUnavailable')
+    default:
+      return t('auth.affiliateCodeInvalid')
+  }
+}
+
+function cancelAffiliateReferral(event?: MouseEvent): void {
+  // Vue Router does not navigate on modified/non-primary clicks (cmd/ctrl/shift/alt
+  // or middle-click open-in-new-tab), but it still invokes this listener. Skip the
+  // reset in that case so opening the login page in a new tab does not silently wipe
+  // the referral in the tab the user is still registering in.
+  if (event && (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0)) {
+    return
+  }
+  formData.aff_code = ''
+  affiliateValidationSequence += 1
+  resetAffiliateValidation()
+  clearAffiliateReferralCode()
 }
 
 // ==================== Turnstile Handlers ====================
@@ -732,19 +1021,7 @@ function validateEmail(email: string): boolean {
 }
 
 function buildEmailSuffixNotAllowedMessage(): string {
-  const normalizedWhitelist = normalizeRegistrationEmailSuffixWhitelist(
-    registrationEmailSuffixWhitelist.value
-  )
-  if (normalizedWhitelist.length === 0) {
-    return t('auth.emailSuffixNotAllowed')
-  }
-  const separator = String(locale.value || '').toLowerCase().startsWith('zh') ? '、' : ', '
-  return t('auth.emailSuffixNotAllowedWithAllowed', {
-    suffixes: formatRegistrationEmailSuffixWhitelistForMessage(normalizedWhitelist, {
-      separator,
-      more: (count) => t('auth.emailSuffixAllowedMore', { count })
-    })
-  })
+  return t('auth.emailSuffixNotAllowed')
 }
 
 function validateForm(): boolean {
@@ -753,6 +1030,7 @@ function validateForm(): boolean {
   errors.password = ''
   errors.turnstile = ''
   errors.invitation_code = ''
+  errors.aff_code = ''
 
   let isValid = true
 
@@ -772,7 +1050,7 @@ function validateForm(): boolean {
     errors.email = t('auth.invalidEmail')
     isValid = false
   } else if (
-    !isRegistrationEmailSuffixAllowed(formData.email, registrationEmailSuffixWhitelist.value)
+    isRegistrationEmailSuffixBlocked(formData.email, registrationEmailSuffixBlacklist.value)
   ) {
     errors.email = buildEmailSuffixNotAllowedMessage()
     isValid = false
@@ -788,8 +1066,10 @@ function validateForm(): boolean {
   }
 
   // Invitation code validation (required when enabled)
-  if (invitationCodeEnabled.value) {
-    if (!formData.invitation_code.trim()) {
+  if (invitationCodeRequired.value) {
+    const hasInvitationCode = Boolean(formData.invitation_code.trim())
+    const hasAffiliateCode = affiliateEnabled.value && Boolean(formData.aff_code.trim())
+    if (!hasInvitationCode && !hasAffiliateCode) {
       errors.invitation_code = t('auth.invitationCodeRequired')
       isValid = false
     }
@@ -829,16 +1109,19 @@ async function handleRegister(): Promise<void> {
     }
   }
 
-  // Check invitation code validation status (if enabled and code provided)
-  if (invitationCodeEnabled.value) {
+  // Validate the explicit invitation first because an affiliate code supplied
+  // there takes precedence over the fallback aff_code.
+  if (invitationCodeEnabled.value && formData.invitation_code.trim()) {
     // If still validating, wait
     if (invitationValidating.value) {
       errorMessage.value = t('auth.invitationCodeValidating')
+      errors.invitation_code = errorMessage.value
       return
     }
     // If invitation code is invalid, block submission
     if (invitationValidation.invalid) {
       errorMessage.value = t('auth.invitationCodeInvalidCannotRegister')
+      errors.invitation_code = errorMessage.value
       return
     }
     // If invitation code is required but not validated yet
@@ -848,9 +1131,39 @@ async function handleRegister(): Promise<void> {
       await validateInvitationCodeDebounced(formData.invitation_code.trim())
       if (!invitationValidation.valid) {
         errorMessage.value = t('auth.invitationCodeInvalidCannotRegister')
+        errors.invitation_code = errorMessage.value
         return
       }
     }
+  }
+
+  const affiliateCode = formData.aff_code.trim()
+  if (
+    affiliateEnabled.value &&
+    affiliateCode &&
+    fallbackAffiliateCodeRelevant.value
+  ) {
+    if (affiliateValidating.value) {
+      errors.aff_code = t('auth.affiliateCodeValidating')
+      return
+    }
+    if (!affiliateValidation.valid) {
+      const valid = await validateAffiliateCodeDebounced(affiliateCode)
+      if (!valid) {
+        errors.aff_code =
+          affiliateValidation.message || t('auth.affiliateCodeInvalidCannotRegister')
+        return
+      }
+    }
+  }
+
+  if (
+    invitationCodeRequired.value &&
+    !formData.invitation_code.trim() &&
+    (!affiliateCode || !affiliateValidation.valid)
+  ) {
+    errors.invitation_code = t('auth.invitationCodeRequired')
+    return
   }
 
   isLoading.value = true

@@ -367,11 +367,12 @@ export interface SystemSettings {
   // Registration settings
   registration_enabled: boolean;
   email_verify_enabled: boolean;
-  registration_email_suffix_whitelist: string[];
+  registration_email_suffix_blacklist: string[];
   promo_code_enabled: boolean;
   password_reset_enabled: boolean;
   frontend_url: string;
   invitation_code_enabled: boolean;
+  invitation_code_required: boolean;
   registration_rate_limit_per_ip: number; // 每IP注册请求数上限
   registration_rate_limit_window_ip: number; // 每IP速率限制时间窗口（秒）
   registration_rate_limit_per_email: number; // 每邮箱地址请求数上限
@@ -393,6 +394,7 @@ export interface SystemSettings {
   affiliate_rebate_freeze_hours: number;
   affiliate_rebate_duration_days: number;
   affiliate_rebate_per_invitee_cap: number;
+  affiliate_registration_reward_amount: number;
   affiliate_admin_recharge_enabled: boolean;
   default_concurrency: number;
   default_user_rpm_limit: number;
@@ -686,11 +688,12 @@ export interface SystemSettings {
 export interface UpdateSettingsRequest {
   registration_enabled?: boolean;
   email_verify_enabled?: boolean;
-  registration_email_suffix_whitelist?: string[];
+  registration_email_suffix_blacklist?: string[];
   promo_code_enabled?: boolean;
   password_reset_enabled?: boolean;
   frontend_url?: string;
   invitation_code_enabled?: boolean;
+  invitation_code_required?: boolean;
   registration_rate_limit_per_ip?: number;
   registration_rate_limit_window_ip?: number;
   registration_rate_limit_per_email?: number;
@@ -710,6 +713,7 @@ export interface UpdateSettingsRequest {
   affiliate_rebate_freeze_hours?: number;
   affiliate_rebate_duration_days?: number;
   affiliate_rebate_per_invitee_cap?: number;
+  affiliate_registration_reward_amount?: number;
   affiliate_admin_recharge_enabled?: boolean;
   default_concurrency?: number;
   default_user_rpm_limit?: number;

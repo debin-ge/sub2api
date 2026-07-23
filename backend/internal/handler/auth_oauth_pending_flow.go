@@ -33,11 +33,13 @@ const (
 	oauthPendingSessionCookiePath = "/api/v1/auth/oauth"
 	oauthPendingSessionCookieName = "oauth_pending_session"
 	oauthPromoCodeCookieName      = "oauth_promo_code"
+	oauthAffiliateCodeCookieName  = "oauth_affiliate_code"
 	oauthPendingCookieMaxAgeSec   = 10 * 60
 	oauthPendingChoiceStep        = "choose_account_action_required"
 
 	oauthCompletionResponseKey = "completion_response"
 	oauthPromoCodeStateKey     = "promo_code"
+	oauthAffiliateCodeStateKey = "aff_code"
 )
 
 var pendingOAuthCreateAccountPreCommitHook func(context.Context, *dbent.PendingAuthSession) error
@@ -129,6 +131,7 @@ func clearOAuthPendingBrowserCookie(c *gin.Context, secure bool) {
 		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
 	})
+	clearOAuthAffiliateCodeCookie(c, secure)
 }
 
 func readOAuthPendingBrowserCookie(c *gin.Context) (string, error) {
@@ -203,11 +206,61 @@ func readOAuthPromoCode(c *gin.Context) string {
 	return strings.TrimSpace(promoCode)
 }
 
+func captureOAuthAffiliateCode(c *gin.Context, secure bool) {
+	affiliateCode := strings.TrimSpace(firstNonEmpty(c.Query("aff_code"), c.Query("aff")))
+	// A code longer than the maximum can never validate at registration, so drop it
+	// here rather than persisting an attacker-controlled multi-KB value into the
+	// cookie (sent on every /oauth request) and the pending session state.
+	if affiliateCode == "" || len(affiliateCode) > service.AffiliateCodeMaxLength {
+		clearOAuthAffiliateCodeCookie(c, secure)
+		return
+	}
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     oauthAffiliateCodeCookieName,
+		Value:    encodeCookieValue(affiliateCode),
+		Path:     oauthPendingBrowserCookiePath,
+		MaxAge:   oauthPendingCookieMaxAgeSec,
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+func clearOAuthAffiliateCodeCookie(c *gin.Context, secure bool) {
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     oauthAffiliateCodeCookieName,
+		Value:    "",
+		Path:     oauthPendingBrowserCookiePath,
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+func readOAuthAffiliateCode(c *gin.Context) string {
+	if c == nil {
+		return ""
+	}
+	affiliateCode, err := readCookieDecoded(c, oauthAffiliateCodeCookieName)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(affiliateCode)
+}
+
 func pendingOAuthPromoCode(session *dbent.PendingAuthSession) string {
 	if session == nil {
 		return ""
 	}
 	return pendingSessionStringValue(session.LocalFlowState, oauthPromoCodeStateKey)
+}
+
+func pendingOAuthAffiliateCode(session *dbent.PendingAuthSession) string {
+	if session == nil {
+		return ""
+	}
+	return pendingSessionStringValue(session.LocalFlowState, oauthAffiliateCodeStateKey)
 }
 
 func redirectToFrontendCallback(c *gin.Context, frontendCallback string) {
@@ -237,6 +290,9 @@ func (h *AuthHandler) createOAuthPendingSession(c *gin.Context, payload oauthPen
 	}
 	if promoCode := readOAuthPromoCode(c); promoCode != "" {
 		localFlowState[oauthPromoCodeStateKey] = promoCode
+	}
+	if affiliateCode := readOAuthAffiliateCode(c); affiliateCode != "" {
+		localFlowState[oauthAffiliateCodeStateKey] = affiliateCode
 	}
 
 	session, err := svc.CreatePendingSession(c.Request.Context(), service.CreatePendingAuthSessionInput{
@@ -1306,36 +1362,121 @@ func consumePendingOAuthBrowserSessionTx(
 	return nil
 }
 
-func applyPendingOAuthAdoptionAndConsumeSession(
+func registerAndCompletePendingOAuthAccount(
 	ctx context.Context,
 	client *dbent.Client,
 	authService *service.AuthService,
 	userService *service.UserService,
 	session *dbent.PendingAuthSession,
 	decision *dbent.IdentityAdoptionDecision,
-	userID int64,
-) error {
-	if client == nil {
-		return infraerrors.ServiceUnavailable("PENDING_AUTH_NOT_READY", "pending auth service is not ready")
-	}
-	if session == nil || userID <= 0 {
-		return infraerrors.BadRequest("PENDING_AUTH_SESSION_INVALID", "pending auth registration context is invalid")
+	email string,
+	username string,
+	invitationCode string,
+	affiliateCode string,
+	promoCode string,
+	signupSource string,
+) (*service.TokenPair, *service.User, error) {
+	if client == nil || authService == nil || session == nil {
+		return nil, nil, infraerrors.ServiceUnavailable("PENDING_AUTH_NOT_READY", "pending auth service is not ready")
 	}
 
 	tx, err := client.Tx(ctx)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
-
 	txCtx := dbent.NewTxContext(ctx, tx)
-	if err := applyPendingOAuthAdoption(txCtx, client, authService, userService, session, decision, &userID); err != nil {
-		return err
+
+	tokenPair, user, created, err := authService.LoginOrRegisterOAuthWithTokenPairInTransaction(
+		txCtx,
+		email,
+		username,
+		invitationCode,
+		affiliateCode,
+		promoCode,
+		signupSource,
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	if user == nil || user.ID <= 0 {
+		return nil, nil, infraerrors.InternalServer("PENDING_AUTH_ACCOUNT_CREATE_FAILED", "failed to create pending oauth account")
+	}
+	if err := applyPendingOAuthAdoption(txCtx, client, authService, userService, session, decision, &user.ID); err != nil {
+		return nil, nil, err
 	}
 	if err := consumePendingOAuthBrowserSessionTx(txCtx, tx, session); err != nil {
-		return err
+		return nil, nil, err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return nil, nil, err
+	}
+
+	if created {
+		user = authService.FinalizeOAuthRegistrationPostCommit(ctx, user, signupSource, promoCode)
+	}
+	return tokenPair, user, nil
+}
+
+func registerAndBindImmediateOAuthAccount(
+	ctx context.Context,
+	client *dbent.Client,
+	authService *service.AuthService,
+	userService *service.UserService,
+	session *dbent.PendingAuthSession,
+	email string,
+	username string,
+	affiliateCode string,
+	promoCode string,
+	signupSource string,
+) (*service.TokenPair, *service.User, error) {
+	if client == nil || authService == nil || session == nil {
+		return nil, nil, infraerrors.ServiceUnavailable("PENDING_AUTH_NOT_READY", "pending auth service is not ready")
+	}
+
+	tx, err := client.Tx(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	txCtx := dbent.NewTxContext(ctx, tx)
+
+	tokenPair, user, created, err := authService.LoginOrRegisterOAuthWithTokenPairInTransaction(
+		txCtx,
+		email,
+		username,
+		"",
+		affiliateCode,
+		promoCode,
+		signupSource,
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	if user == nil || user.ID <= 0 {
+		return nil, nil, infraerrors.InternalServer("OAUTH_ACCOUNT_CREATE_FAILED", "failed to create oauth account")
+	}
+	if err := applyPendingOAuthBinding(
+		txCtx,
+		client,
+		authService,
+		userService,
+		session,
+		nil,
+		&user.ID,
+		true,
+		false,
+	); err != nil {
+		return nil, nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, nil, err
+	}
+
+	if created {
+		user = authService.FinalizeOAuthRegistrationPostCommit(ctx, user, signupSource, promoCode)
+	}
+	return tokenPair, user, nil
 }
 
 func applyPendingOAuthAdoption(
@@ -1498,6 +1639,7 @@ func clearOAuthLogoutCookies(c *gin.Context) {
 	clearOAuthPendingSessionCookie(c, secureCookie)
 	clearOAuthPendingBrowserCookie(c, secureCookie)
 	clearOAuthBindAccessTokenCookie(c, secureCookie)
+	clearOAuthAffiliateCodeCookie(c, secureCookie)
 
 	clearCookie(c, linuxDoOAuthStateCookieName, secureCookie)
 	clearCookie(c, linuxDoOAuthVerifierCookie, secureCookie)
@@ -1754,6 +1896,10 @@ func (h *AuthHandler) createPendingOAuthAccount(c *gin.Context, provider string)
 		response.ErrorFrom(c, err)
 		return
 	}
+	affiliateCode := strings.TrimSpace(req.AffCode)
+	if affiliateCode == "" {
+		affiliateCode = pendingOAuthAffiliateCode(session)
+	}
 
 	tokenPair, user, err := h.authService.RegisterOAuthEmailAccount(
 		c.Request.Context(),
@@ -1761,6 +1907,7 @@ func (h *AuthHandler) createPendingOAuthAccount(c *gin.Context, provider string)
 		req.Password,
 		strings.TrimSpace(req.VerifyCode),
 		strings.TrimSpace(req.InvitationCode),
+		affiliateCode,
 		strings.TrimSpace(session.ProviderType),
 	)
 	if err != nil {
@@ -1835,7 +1982,7 @@ func (h *AuthHandler) createPendingOAuthAccount(c *gin.Context, provider string)
 		user,
 		strings.TrimSpace(req.InvitationCode),
 		strings.TrimSpace(session.ProviderType),
-		strings.TrimSpace(req.AffCode),
+		affiliateCode,
 	); err != nil {
 		_ = tx.Rollback()
 		if rollbackCreatedUser(err) {
@@ -1874,7 +2021,12 @@ func (h *AuthHandler) createPendingOAuthAccount(c *gin.Context, provider string)
 		return
 	}
 
-	h.authService.ApplyOAuthSignupPromoCode(c.Request.Context(), user.ID, pendingOAuthPromoCode(session))
+	user = h.authService.FinalizeOAuthRegistrationPostCommit(
+		c.Request.Context(),
+		user,
+		strings.TrimSpace(session.ProviderType),
+		pendingOAuthPromoCode(session),
+	)
 	h.authService.RecordSuccessfulLogin(c.Request.Context(), user.ID)
 	// createPendingOAuthAccount = 注册新账户，需要把钉钉昵称同步到 users.username 作为初始值
 	h.maybeSyncDingTalkAfterRegistration(c.Request.Context(), session, user.ID)

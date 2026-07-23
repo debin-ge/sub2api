@@ -400,6 +400,7 @@ export default {
         user: '用户',
         affCode: '邀请码',
         order: '订单',
+        registrationReward: '注册奖励',
         totalRebate: '累计返利',
         orderAmount: '充值金额',
         payAmount: '支付金额',

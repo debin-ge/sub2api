@@ -145,6 +145,8 @@ export interface UserAffiliateDetail {
   aff_history_quota: number
   /** 当前用户作为邀请人时实际生效的返利比例（专属覆盖全局）。0-100。 */
   effective_rebate_rate_percent: number
+  /** 新用户使用当前邀请码注册后，邀请人获得的固定奖励。 */
+  effective_registration_reward_amount: number
   invitees: AffiliateInvitee[]
 }
 
@@ -191,10 +193,11 @@ export interface PublicSettings {
   registration_enabled: boolean
   email_verify_enabled: boolean
   force_email_on_third_party_signup: boolean
-  registration_email_suffix_whitelist: string[]
+  registration_email_suffix_blacklist: string[]
   promo_code_enabled: boolean
   password_reset_enabled: boolean
   invitation_code_enabled: boolean
+  invitation_code_required?: boolean
   login_agreement_enabled?: boolean
   login_agreement_mode?: 'modal' | 'checkbox' | string
   login_agreement_updated_at?: string

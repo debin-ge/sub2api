@@ -89,6 +89,7 @@ func (s *AuthService) RegisterOAuthEmailAccount(
 	password string,
 	verifyCode string,
 	invitationCode string,
+	affiliateCode string,
 	signupSource string,
 ) (*TokenPair, *User, error) {
 	if s == nil {
@@ -111,7 +112,7 @@ func (s *AuthService) RegisterOAuthEmailAccount(
 		return nil, nil, err
 	}
 
-	if _, err := s.validateOAuthRegistrationInvitation(ctx, invitationCode); err != nil {
+	if _, _, err := s.resolveRegistrationSignupCodes(ctx, invitationCode, affiliateCode); err != nil {
 		slog.Error("oauth email register: invitation failed", "email", email, "error", err.Error())
 		return nil, nil, err
 	}
@@ -166,6 +167,7 @@ func (s *AuthService) RegisterVerifiedOAuthEmailAccount(
 	email string,
 	password string,
 	invitationCode string,
+	affiliateCode string,
 	signupSource string,
 ) (*TokenPair, *User, error) {
 	if s == nil {
@@ -191,7 +193,7 @@ func (s *AuthService) RegisterVerifiedOAuthEmailAccount(
 	if strings.TrimSpace(password) == "" {
 		return nil, nil, infraerrors.BadRequest("PASSWORD_REQUIRED", "password is required")
 	}
-	if _, err := s.validateOAuthRegistrationInvitation(ctx, invitationCode); err != nil {
+	if _, _, err := s.resolveRegistrationSignupCodes(ctx, invitationCode, affiliateCode); err != nil {
 		return nil, nil, err
 	}
 
@@ -240,8 +242,8 @@ func (s *AuthService) RegisterVerifiedOAuthEmailAccount(
 	return tokenPair, user, nil
 }
 
-// FinalizeOAuthEmailAccount applies invitation usage and normal signup bootstrap
-// only after the pending OAuth flow has fully reached its last reversible step.
+// FinalizeOAuthEmailAccount applies only critical invitation/referral state.
+// Callers run normal signup bootstrap after this transaction commits.
 func (s *AuthService) FinalizeOAuthEmailAccount(
 	ctx context.Context,
 	user *User,
@@ -254,7 +256,7 @@ func (s *AuthService) FinalizeOAuthEmailAccount(
 	}
 
 	signupSource = normalizeOAuthSignupSource(signupSource)
-	invitation, err := s.validateOAuthRegistrationInvitation(ctx, invitationCode)
+	invitation, selectedAffiliateCode, err := s.resolveRegistrationSignupCodes(ctx, invitationCode, affiliateCode)
 	if err != nil {
 		return err
 	}
@@ -265,11 +267,9 @@ func (s *AuthService) FinalizeOAuthEmailAccount(
 	}
 
 	s.updateOAuthSignupSource(ctx, user.ID, signupSource)
-	grantPlan := s.resolveSignupGrantPlan(ctx, signupSource)
-	s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
-	// snapshot user × platform quota（fail-open）
-	_ = s.snapshotPlatformQuotaDefaults(ctx, user.ID, &grantPlan)
-	s.bindOAuthAffiliate(ctx, user.ID, registrationAffiliateCode(invitation, affiliateCode))
+	if err := s.bindOAuthAffiliate(ctx, user.ID, selectedAffiliateCode); err != nil {
+		return err
+	}
 	return nil
 }
 

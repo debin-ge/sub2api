@@ -48,19 +48,67 @@ func (s *settingPublicRepoStub) Delete(ctx context.Context, key string) error {
 	panic("unexpected Delete call")
 }
 
-func TestSettingService_GetPublicSettings_ExposesRegistrationEmailSuffixWhitelist(t *testing.T) {
+func TestSettingService_GetPublicSettings_ExposesRegistrationEmailSuffixBlacklist(t *testing.T) {
 	repo := &settingPublicRepoStub{
 		values: map[string]string{
 			SettingKeyRegistrationEnabled:              "true",
 			SettingKeyEmailVerifyEnabled:               "true",
-			SettingKeyRegistrationEmailSuffixWhitelist: `["@EXAMPLE.com"," @foo.bar ","*.EDU.CN","@invalid_domain",""]`,
+			SettingKeyRegistrationEmailSuffixBlacklist: `["@EXAMPLE.com"," @foo.bar ","*.EDU.CN","@invalid_domain",""]`,
 		},
 	}
 	svc := NewSettingService(repo, &config.Config{})
 
 	settings, err := svc.GetPublicSettings(context.Background())
 	require.NoError(t, err)
-	require.Equal(t, []string{"@example.com", "@foo.bar", "*.edu.cn"}, settings.RegistrationEmailSuffixWhitelist)
+	require.Equal(t, []string{"@example.com", "@foo.bar", "*.edu.cn"}, settings.RegistrationEmailSuffixBlacklist)
+}
+
+func TestSettingService_GetPublicSettings_DoesNotReinterpretLegacyWhitelistAsBlacklist(t *testing.T) {
+	repo := &settingPublicRepoStub{
+		values: map[string]string{
+			"registration_email_suffix_whitelist": `["@trusted.example.com"]`,
+		},
+	}
+	svc := NewSettingService(repo, &config.Config{})
+
+	settings, err := svc.GetPublicSettings(context.Background())
+
+	require.NoError(t, err)
+	require.Empty(t, settings.RegistrationEmailSuffixBlacklist)
+}
+
+func TestSettingService_GetPublicSettings_ExposesInvitationCodeRequirement(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		values map[string]string
+		want   bool
+	}{
+		{
+			name: "missing setting defaults to required for compatibility",
+			values: map[string]string{
+				SettingKeyInvitationCodeEnabled: "true",
+			},
+			want: true,
+		},
+		{
+			name: "explicit optional setting",
+			values: map[string]string{
+				SettingKeyInvitationCodeEnabled:  "true",
+				SettingKeyInvitationCodeRequired: "false",
+			},
+			want: false,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := NewSettingService(&settingPublicRepoStub{values: tt.values}, &config.Config{})
+
+			settings, err := svc.GetPublicSettings(context.Background())
+
+			require.NoError(t, err)
+			require.True(t, settings.InvitationCodeEnabled)
+			require.Equal(t, tt.want, settings.InvitationCodeRequired)
+		})
+	}
 }
 
 func TestSettingService_GetPublicSettings_ExposesTablePreferences(t *testing.T) {

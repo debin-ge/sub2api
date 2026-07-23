@@ -157,6 +157,64 @@ func TestUpdateSettingsOmittedSecuritySwitchesKeepDisabled(t *testing.T) {
 	require.Equal(t, "false", repo.values[service.SettingKeySessionBindingEnabled])
 }
 
+func TestUpdateSettingsInvitationCodeRequiredPreservesOmittedValue(t *testing.T) {
+	h, repo := newStepUpSwitchTestHandler(t, map[string]string{
+		service.SettingKeyInvitationCodeEnabled:  "true",
+		service.SettingKeyInvitationCodeRequired: "false",
+	})
+
+	rec := doUpdateSettings(t, h, map[string]any{
+		"registration_enabled":    true,
+		"invitation_code_enabled": true,
+	}, nil)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.Equal(t, "false", repo.values[service.SettingKeyInvitationCodeRequired])
+	require.Contains(t, rec.Body.String(), `"invitation_code_required":false`)
+}
+
+func TestUpdateSettingsInvitationCodeRequiredPersistsExplicitValue(t *testing.T) {
+	h, repo := newStepUpSwitchTestHandler(t, map[string]string{
+		service.SettingKeyInvitationCodeEnabled:  "true",
+		service.SettingKeyInvitationCodeRequired: "true",
+	})
+
+	rec := doUpdateSettings(t, h, map[string]any{
+		"registration_enabled":     true,
+		"invitation_code_enabled":  true,
+		"invitation_code_required": false,
+	}, nil)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.Equal(t, "false", repo.values[service.SettingKeyInvitationCodeRequired])
+}
+
+func TestUpdateSettingsRegistrationEmailSuffixBlacklistPreservesOmittedValue(t *testing.T) {
+	h, repo := newStepUpSwitchTestHandler(t, map[string]string{
+		service.SettingKeyRegistrationEmailSuffixBlacklist: `["@nimail.cn","*.edu.cn"]`,
+	})
+
+	rec := doUpdateSettings(t, h, map[string]any{"registration_enabled": true}, nil)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.JSONEq(t, `["@nimail.cn","*.edu.cn"]`, repo.values[service.SettingKeyRegistrationEmailSuffixBlacklist])
+	require.Contains(t, rec.Body.String(), `"registration_email_suffix_blacklist":["@nimail.cn","*.edu.cn"]`)
+}
+
+func TestUpdateSettingsRegistrationEmailSuffixBlacklistCanBeCleared(t *testing.T) {
+	h, repo := newStepUpSwitchTestHandler(t, map[string]string{
+		service.SettingKeyRegistrationEmailSuffixBlacklist: `["@nimail.cn"]`,
+	})
+
+	rec := doUpdateSettings(t, h, map[string]any{
+		"registration_enabled":                true,
+		"registration_email_suffix_blacklist": []string{},
+	}, nil)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.JSONEq(t, `[]`, repo.values[service.SettingKeyRegistrationEmailSuffixBlacklist])
+}
+
 func TestUpdateSettingsForwardedClientIPHeadersOmittedPreservesAndEmptyClears(t *testing.T) {
 	h, repo := newStepUpSwitchTestHandler(t, map[string]string{
 		service.SettingKeyForwardedClientIPHeaders: `["X-Cdn-Ip","True-Client-Ip"]`,
@@ -194,6 +252,43 @@ func TestUpdateSettingsMalformedForwardedClientIPHeadersRemainFailClosedWhenOmit
 	require.Empty(t, runtimeSettings.Headers)
 	require.Contains(t, rec.Body.String(), `"api_key_acl_trust_forwarded_ip":false`)
 	require.Contains(t, rec.Body.String(), `"forwarded_client_ip_headers":[]`)
+}
+
+func TestUpdateSettingsAffiliateRegistrationRewardPreservesOmittedValue(t *testing.T) {
+	h, repo := newStepUpSwitchTestHandler(t, map[string]string{
+		service.SettingKeyAffiliateRegistrationRewardAmount: "12.50000000",
+	})
+
+	rec := doUpdateSettings(t, h, map[string]any{"registration_enabled": true}, nil)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.Equal(t, "12.50000000", repo.values[service.SettingKeyAffiliateRegistrationRewardAmount])
+}
+
+func TestUpdateSettingsAffiliateRegistrationRewardRejectsInvalidValue(t *testing.T) {
+	for _, value := range []float64{-0.01, service.AffiliateRegistrationRewardAmountMax + 1} {
+		h, repo := newStepUpSwitchTestHandler(t, map[string]string{
+			service.SettingKeyAffiliateRegistrationRewardAmount: "9.00000000",
+		})
+
+		rec := doUpdateSettings(t, h, map[string]any{
+			"affiliate_registration_reward_amount": value,
+		}, nil)
+
+		require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+		require.Equal(t, "9.00000000", repo.values[service.SettingKeyAffiliateRegistrationRewardAmount])
+	}
+}
+
+func TestUpdateSettingsAffiliateRegistrationRewardRoundsToEightDecimals(t *testing.T) {
+	h, repo := newStepUpSwitchTestHandler(t, nil)
+
+	rec := doUpdateSettings(t, h, map[string]any{
+		"affiliate_registration_reward_amount": 10.123456789,
+	}, nil)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.Equal(t, "10.12345679", repo.values[service.SettingKeyAffiliateRegistrationRewardAmount])
 }
 
 func TestUpdateSettingsRejectsInvalidForwardedClientIPHeader(t *testing.T) {

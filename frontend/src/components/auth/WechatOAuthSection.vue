@@ -86,11 +86,14 @@ function startLogin(): void {
     return
   }
   const redirectTo = (route.query.redirect as string) || '/dashboard'
-  storeOAuthAffiliateCode(resolveAffiliateReferralCode(props.affCode, route.query.aff, route.query.aff_code))
+  const affiliateCode = resolveAffiliateReferralCode(props.affCode, route.query.aff, route.query.aff_code)
+  storeOAuthAffiliateCode(affiliateCode)
   const apiBase = (import.meta.env.VITE_API_BASE_URL as string | undefined) || '/api/v1'
   const normalized = apiBase.replace(/\/$/, '')
   const mode = resolvedStart.value.mode
-  const startURL = `${normalized}/auth/oauth/wechat/start?mode=${mode}&redirect=${encodeURIComponent(redirectTo)}`
+  const params = new URLSearchParams({ mode, redirect: redirectTo })
+  if (affiliateCode) params.set('aff_code', affiliateCode)
+  const startURL = `${normalized}/auth/oauth/wechat/start?${params.toString()}`
   window.location.href = startURL
 }
 </script>

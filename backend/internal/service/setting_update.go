@@ -55,14 +55,14 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	if err := s.validateDefaultSubscriptionGroups(ctx, settings.DefaultSubscriptions); err != nil {
 		return nil, err
 	}
-	normalizedWhitelist, err := NormalizeRegistrationEmailSuffixWhitelist(settings.RegistrationEmailSuffixWhitelist)
+	normalizedBlacklist, err := NormalizeRegistrationEmailSuffixBlacklist(settings.RegistrationEmailSuffixBlacklist)
 	if err != nil {
-		return nil, infraerrors.BadRequest("INVALID_REGISTRATION_EMAIL_SUFFIX_WHITELIST", err.Error())
+		return nil, infraerrors.BadRequest("INVALID_REGISTRATION_EMAIL_SUFFIX_BLACKLIST", err.Error())
 	}
-	if normalizedWhitelist == nil {
-		normalizedWhitelist = []string{}
+	if normalizedBlacklist == nil {
+		normalizedBlacklist = []string{}
 	}
-	settings.RegistrationEmailSuffixWhitelist = normalizedWhitelist
+	settings.RegistrationEmailSuffixBlacklist = normalizedBlacklist
 	normalizedForwardedClientIPHeaders, err := config.NormalizeForwardedClientIPHeaders(settings.ForwardedClientIPHeaders)
 	if err != nil {
 		return nil, infraerrors.BadRequest("INVALID_FORWARDED_CLIENT_IP_HEADERS", err.Error())
@@ -117,15 +117,16 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	// 注册设置
 	updates[SettingKeyRegistrationEnabled] = strconv.FormatBool(settings.RegistrationEnabled)
 	updates[SettingKeyEmailVerifyEnabled] = strconv.FormatBool(settings.EmailVerifyEnabled)
-	registrationEmailSuffixWhitelistJSON, err := json.Marshal(settings.RegistrationEmailSuffixWhitelist)
+	registrationEmailSuffixBlacklistJSON, err := json.Marshal(settings.RegistrationEmailSuffixBlacklist)
 	if err != nil {
-		return nil, fmt.Errorf("marshal registration email suffix whitelist: %w", err)
+		return nil, fmt.Errorf("marshal registration email suffix blacklist: %w", err)
 	}
-	updates[SettingKeyRegistrationEmailSuffixWhitelist] = string(registrationEmailSuffixWhitelistJSON)
+	updates[SettingKeyRegistrationEmailSuffixBlacklist] = string(registrationEmailSuffixBlacklistJSON)
 	updates[SettingKeyPromoCodeEnabled] = strconv.FormatBool(settings.PromoCodeEnabled)
 	updates[SettingKeyPasswordResetEnabled] = strconv.FormatBool(settings.PasswordResetEnabled)
 	updates[SettingKeyFrontendURL] = settings.FrontendURL
 	updates[SettingKeyInvitationCodeEnabled] = strconv.FormatBool(settings.InvitationCodeEnabled)
+	updates[SettingKeyInvitationCodeRequired] = strconv.FormatBool(settings.InvitationCodeRequired)
 	updates[SettingKeyRegistrationRateLimitPerIP] = strconv.Itoa(normalizeRateLimitValue(settings.RegistrationRateLimitPerIP, RegistrationRateLimitPerIPDefault))
 	updates[SettingKeyRegistrationRateLimitWindowIP] = strconv.Itoa(normalizeRateLimitValue(settings.RegistrationRateLimitWindowIP, RegistrationRateLimitWindowIPDefault))
 	updates[SettingKeyRegistrationRateLimitPerEmail] = strconv.Itoa(normalizeRateLimitValue(settings.RegistrationRateLimitPerEmail, RegistrationRateLimitPerEmailDefault))
@@ -317,6 +318,8 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 		settings.AffiliateRebatePerInviteeCap = AffiliateRebatePerInviteeCapDefault
 	}
 	updates[SettingKeyAffiliateRebatePerInviteeCap] = strconv.FormatFloat(settings.AffiliateRebatePerInviteeCap, 'f', 8, 64)
+	settings.AffiliateRegistrationReward = normalizeAffiliateRegistrationReward(settings.AffiliateRegistrationReward)
+	updates[SettingKeyAffiliateRegistrationRewardAmount] = strconv.FormatFloat(settings.AffiliateRegistrationReward, 'f', 8, 64)
 	updates[SettingKeyAffiliateAdminRechargeEnabled] = strconv.FormatBool(settings.AdminRechargeRebateEnabled)
 	updates[SettingKeyDefaultUserRPMLimit] = strconv.Itoa(settings.DefaultUserRPMLimit)
 

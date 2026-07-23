@@ -553,6 +553,36 @@ func (h *AuthHandler) ValidateInvitationCode(c *gin.Context) {
 	})
 }
 
+// ValidateAffiliateCode validates a reusable user-owned referral code without
+// disclosing any inviter identity.
+// POST /api/v1/auth/validate-affiliate-code
+func (h *AuthHandler) ValidateAffiliateCode(c *gin.Context) {
+	var req ValidateInvitationCodeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+
+	err := h.authService.ValidateAffiliateRegistrationCode(c.Request.Context(), req.Code)
+	if err == nil {
+		response.Success(c, ValidateInvitationCodeResponse{Valid: true})
+		return
+	}
+	if errors.Is(err, service.ErrServiceUnavailable) {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	errorCode := "AFFILIATE_CODE_INVALID"
+	if errors.Is(err, service.ErrAffiliateDisabled) {
+		errorCode = "AFFILIATE_DISABLED"
+	}
+	response.Success(c, ValidateInvitationCodeResponse{
+		Valid:     false,
+		ErrorCode: errorCode,
+	})
+}
+
 // ForgotPasswordRequest 忘记密码请求
 type ForgotPasswordRequest struct {
 	Email          string `json:"email" binding:"required,email"`

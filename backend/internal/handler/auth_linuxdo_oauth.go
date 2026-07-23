@@ -111,6 +111,7 @@ func (h *AuthHandler) LinuxDoOAuthStart(c *gin.Context) {
 	intent := normalizeOAuthIntent(c.Query("intent"))
 	setCookie(c, linuxDoOAuthIntentCookieName, encodeCookieValue(intent), linuxDoOAuthCookieMaxAgeSec, secureCookie)
 	captureOAuthPromoCode(c, secureCookie)
+	captureOAuthAffiliateCode(c, secureCookie)
 	setOAuthPendingBrowserCookie(c, browserSessionKey, secureCookie)
 	clearOAuthPendingSessionCookie(c, secureCookie)
 	if intent == oauthIntentBindCurrentUser {
@@ -331,37 +332,26 @@ func (h *AuthHandler) LinuxDoOAuthCallback(c *gin.Context) {
 			redirectOAuthError(c, frontendCallback, "session_error", infraerrors.Reason(err), infraerrors.Message(err))
 			return
 		}
-		tokenPair, user, err := h.authService.LoginOrRegisterOAuthWithTokenPairAndPromoCode(
+		tokenPair, user, err := registerAndBindImmediateOAuthAccount(
 			c.Request.Context(),
+			h.entClient(),
+			h.authService,
+			h.userService,
+			&dbent.PendingAuthSession{
+				Intent:                 oauthIntentLogin,
+				ProviderType:           identityKey.ProviderType,
+				ProviderKey:            identityKey.ProviderKey,
+				ProviderSubject:        identityKey.ProviderSubject,
+				ResolvedEmail:          email,
+				UpstreamIdentityClaims: upstreamClaims,
+			},
 			email,
 			username,
-			"",
-			"",
+			readOAuthAffiliateCode(c),
 			readOAuthPromoCode(c),
 			"linuxdo",
 		)
 		if err == nil {
-			if err := applyPendingOAuthBinding(
-				c.Request.Context(),
-				h.entClient(),
-				h.authService,
-				h.userService,
-				&dbent.PendingAuthSession{
-					Intent:                 oauthIntentLogin,
-					ProviderType:           identityKey.ProviderType,
-					ProviderKey:            identityKey.ProviderKey,
-					ProviderSubject:        identityKey.ProviderSubject,
-					ResolvedEmail:          email,
-					UpstreamIdentityClaims: upstreamClaims,
-				},
-				nil,
-				&user.ID,
-				true,
-				false,
-			); err != nil {
-				redirectOAuthError(c, frontendCallback, "session_error", "failed to bind oauth identity", "")
-				return
-			}
 			h.authService.RecordSuccessfulLogin(c.Request.Context(), user.ID)
 			clearOAuthPendingSessionCookie(c, secureCookie)
 			clearOAuthPendingBrowserCookie(c, secureCookie)
@@ -584,21 +574,26 @@ func (h *AuthHandler) CompleteLinuxDoOAuthRegistration(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	tokenPair, user, err := h.authService.LoginOrRegisterOAuthWithTokenPairAndPromoCode(
+	affiliateCode := strings.TrimSpace(req.AffCode)
+	if affiliateCode == "" {
+		affiliateCode = pendingOAuthAffiliateCode(session)
+	}
+	tokenPair, user, err := registerAndCompletePendingOAuthAccount(
 		c.Request.Context(),
+		client,
+		h.authService,
+		h.userService,
+		session,
+		decision,
 		email,
 		username,
 		req.InvitationCode,
-		req.AffCode,
+		affiliateCode,
 		pendingOAuthPromoCode(session),
 		"linuxdo",
 	)
 	if err != nil {
 		response.ErrorFrom(c, err)
-		return
-	}
-	if err := applyPendingOAuthAdoptionAndConsumeSession(c.Request.Context(), client, h.authService, h.userService, session, decision, user.ID); err != nil {
-		respondPendingOAuthBindingApplyError(c, err)
 		return
 	}
 	h.authService.RecordSuccessfulLogin(c.Request.Context(), user.ID)
