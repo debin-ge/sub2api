@@ -63,7 +63,7 @@ export default {
     },
     "quota": {
       "title": "额度雷达",
-      "subtitle": "按平台和套餐展示匿名额度聚合数据。",
+      "subtitle": "按套餐展示 5H / 7D 额度上限与样本数。",
       "emptyPending": "暂无额度数据。服务启动后会立即执行聚合，请稍后重试。",
       "emptyNoPublishable": "暂无可公开的额度数据。套餐桶需要近期被动额度快照，并满足对应的最小样本要求。",
       "emptyFailed": "额度聚合暂时不可用，请稍后重试。",
@@ -73,7 +73,7 @@ export default {
       "smallSample": "样本量较小",
       "fiveHourUtilization": "5 小时利用率",
       "sevenDayUtilization": "7 天利用率",
-      "inferredLimit": "反推上限",
+      "inferredLimit": "额度上限",
       "inference": {
         "insufficient": "样本不足",
         "dispersed": "数据离散度过高",

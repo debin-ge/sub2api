@@ -63,7 +63,7 @@ export default {
     },
     "quota": {
       "title": "Quota radar",
-      "subtitle": "Anonymous quota aggregates by platform and plan.",
+      "subtitle": "5H and 7D quota limits with sample sizes by plan.",
       "emptyPending": "No quota data yet. Aggregation runs after service startup; try again shortly.",
       "emptyNoPublishable": "No publishable quota data. Supported plan buckets require recent passive quota snapshots and their configured minimum sample.",
       "emptyFailed": "Quota aggregation is temporarily unavailable. Please try again later.",
@@ -73,7 +73,7 @@ export default {
       "smallSample": "Small sample",
       "fiveHourUtilization": "5-hour utilization",
       "sevenDayUtilization": "7-day utilization",
-      "inferredLimit": "Inferred limit",
+      "inferredLimit": "Quota limit",
       "inference": {
         "insufficient": "Insufficient samples",
         "dispersed": "Data is too dispersed",

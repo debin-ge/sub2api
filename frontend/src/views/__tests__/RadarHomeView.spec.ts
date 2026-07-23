@@ -151,16 +151,8 @@ const ServiceHealthGridStub = defineComponent({
 
 const QuotaBucketGridStub = defineComponent({
   name: 'QuotaBucketGrid',
-  props: ['buckets', 'sampleSizeWarnBelow', 'trends', 'trendLoading', 'trendErrors'],
-  emits: ['select', 'requestTrend'],
-  template: '<div data-testid="quota-grid"><template v-for="(bucket, index) in buckets" :key="bucket.bucket_key"><button :data-testid="`load-bucket-${index}`" @click="$emit(\'requestTrend\', bucket.bucket_key)">load trend</button><button :data-testid="`select-bucket-${index}`" @click="$emit(\'select\', bucket)">detail</button></template></div>',
-})
-
-const QuotaModalStub = defineComponent({
-  name: 'QuotaBucketDetailModal',
-  props: ['show', 'bucket', 'trend', 'trendLoading', 'trendError', 'sampleSizeWarnBelow'],
-  emits: ['close'],
-  template: '<div data-testid="quota-modal" :data-open="String(show)"><button data-testid="close-modal" @click="$emit(\'close\')">close</button></div>',
+  props: ['buckets'],
+  template: '<div data-testid="quota-grid" />',
 })
 
 const DegradationStub = defineComponent({
@@ -181,7 +173,6 @@ const stubs: Record<string, Component> = {
   RadarHero: RadarHeroStub,
   ServiceHealthGrid: ServiceHealthGridStub,
   QuotaBucketGrid: QuotaBucketGridStub,
-  QuotaBucketDetailModal: QuotaModalStub,
   DegradationRadarTabs: DegradationStub,
   Icon: true,
 }
@@ -388,135 +379,17 @@ describe('RadarHomeView', () => {
     }
   })
 
-  it('loads quota trends on grid demand, retries failures, and reuses bucket state in the modal', async () => {
-    const firstBucket = bucket()
-    const secondBucket = bucket({
-      bucket_key: 'openai/pro',
-      platform: 'openai',
-      plan_tier: 'pro',
-      display_name: 'OpenAI Pro',
-    })
-    const thirdBucket = bucket({
-      bucket_key: 'antigravity/ultra',
-      platform: 'antigravity',
-      plan_tier: 'ultra',
-      display_name: 'Antigravity Ultra',
-    })
-    const quotaStates: Record<string, RadarResourceState<QuotaTrendDTO>> = {
-      [firstBucket.bucket_key]: resource<QuotaTrendDTO>(null, { hasSucceeded: false }),
-      [secondBucket.bucket_key]: resource<QuotaTrendDTO>(null, { hasSucceeded: false }),
-      [thirdBucket.bucket_key]: resource<QuotaTrendDTO>(null, { hasSucceeded: false }),
-    }
-    const quotaLatestState = resource<QuotaRadarLatestDTO>({
-      buckets: [firstBucket, secondBucket],
-      last_aggregated_at: now,
-      sample_size_warn_below: 3,
-      stale: false,
-    })
-    const radar = makeRadar({ quotaLatest: quotaLatestState })
-    const attempts: Record<string, number> = {}
-    vi.mocked(radar.getQuotaTrendState).mockImplementation((bucketKey) => quotaStates[bucketKey])
-    vi.mocked(radar.loadQuotaTrend).mockImplementation((bucketKey) => {
-      attempts[bucketKey] = (attempts[bucketKey] ?? 0) + 1
-      const state = quotaStates[bucketKey]
-      if (bucketKey === secondBucket.bucket_key && attempts[bucketKey] === 1) {
-        state.error.value = 'load_failed'
-        return Promise.reject(new Error('upstream failed'))
-      }
-      const trend = quotaTrend(bucketKey)
-      state.data.value = trend
-      state.error.value = null
-      state.hasSucceeded.value = true
-      return Promise.resolve(trend)
-    })
+  it('renders quota buckets without requesting trends or mounting a details modal', async () => {
+    const radar = makeRadar()
     const wrapper = mountView(radar)
     await flushPromises()
 
-    expect(attempts).toEqual({})
-    await wrapper.get('[data-testid="load-bucket-0"]').trigger('click')
-    await wrapper.get('[data-testid="load-bucket-1"]').trigger('click')
-    await flushPromises()
-    expect(attempts).toEqual({
-      [firstBucket.bucket_key]: 1,
-      [secondBucket.bucket_key]: 1,
+    expect(wrapper.getComponent(QuotaBucketGridStub).props()).toEqual({
+      buckets: radar.quotaLatest.data.value?.buckets,
     })
-    expect(wrapper.getComponent(QuotaBucketGridStub).props('trends')).toMatchObject({
-      [firstBucket.bucket_key]: quotaStates[firstBucket.bucket_key].data.value,
-      [secondBucket.bucket_key]: null,
-    })
-    expect(wrapper.getComponent(QuotaBucketGridStub).props('trendErrors')).toMatchObject({
-      [secondBucket.bucket_key]: 'load_failed',
-    })
-    expect(wrapper.getComponent(QuotaBucketGridStub).props('trendLoading')).toMatchObject({
-      [firstBucket.bucket_key]: false,
-      [secondBucket.bucket_key]: false,
-    })
-
-    quotaLatestState.data.value = {
-      ...quotaLatestState.data.value!,
-      buckets: [firstBucket, secondBucket, thirdBucket],
-    }
-    await nextTick()
-    await flushPromises()
-    expect(attempts).toEqual({
-      [firstBucket.bucket_key]: 1,
-      [secondBucket.bucket_key]: 1,
-    })
-    await wrapper.get('[data-testid="load-bucket-1"]').trigger('click')
-    await wrapper.get('[data-testid="load-bucket-2"]').trigger('click')
-    await flushPromises()
-    expect(attempts).toEqual({
-      [firstBucket.bucket_key]: 1,
-      [secondBucket.bucket_key]: 2,
-      [thirdBucket.bucket_key]: 1,
-    })
-    expect(wrapper.getComponent(QuotaBucketGridStub).props('trends')).toMatchObject({
-      [firstBucket.bucket_key]: quotaStates[firstBucket.bucket_key].data.value,
-      [secondBucket.bucket_key]: quotaStates[secondBucket.bucket_key].data.value,
-      [thirdBucket.bucket_key]: quotaStates[thirdBucket.bucket_key].data.value,
-    })
-
-    quotaStates[secondBucket.bucket_key].data.value = null
-    quotaStates[secondBucket.bucket_key].hasSucceeded.value = false
-    quotaStates[secondBucket.bucket_key].error.value = 'load_failed'
-    await wrapper.get('[data-testid="select-bucket-1"]').trigger('click')
-    await flushPromises()
-    expect(attempts[secondBucket.bucket_key]).toBe(3)
-    expect(wrapper.getComponent(QuotaModalStub).props()).toMatchObject({
-      show: true,
-      bucket: expect.objectContaining({ bucket_key: secondBucket.bucket_key }),
-      trend: quotaStates[secondBucket.bucket_key].data.value,
-    })
-
-    const refreshedSecondBucket = {
-      ...secondBucket,
-      display_name: 'OpenAI Pro (refreshed)',
-    }
-    quotaLatestState.data.value = {
-      ...quotaLatestState.data.value!,
-      buckets: [firstBucket, refreshedSecondBucket],
-    }
-    await nextTick()
-    expect(wrapper.getComponent(QuotaBucketGridStub).props('trends'))
-      .not.toHaveProperty(thirdBucket.bucket_key)
-    expect(wrapper.getComponent(QuotaModalStub).props()).toMatchObject({
-      show: true,
-      bucket: expect.objectContaining({
-        bucket_key: secondBucket.bucket_key,
-        display_name: 'OpenAI Pro (refreshed)',
-      }),
-    })
-
-    quotaLatestState.data.value = {
-      ...quotaLatestState.data.value,
-      buckets: [firstBucket],
-    }
-    await nextTick()
-    expect(wrapper.getComponent(QuotaModalStub).props()).toMatchObject({
-      show: false,
-      bucket: null,
-    })
-
+    expect(radar.getQuotaTrendState).not.toHaveBeenCalled()
+    expect(radar.loadQuotaTrend).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="quota-modal"]').exists()).toBe(false)
   })
 
   it('passes the backend-filtered leaderboard through without waiting for or filtering by the catalog', async () => {
