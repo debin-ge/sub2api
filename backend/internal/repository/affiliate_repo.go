@@ -123,8 +123,7 @@ func (r *affiliateRepository) BindInviterAndGrantRegistrationReward(
 ) (*service.AffiliateRegistrationRewardResult, error) {
 	result := &service.AffiliateRegistrationRewardResult{}
 	err := r.withTx(ctx, func(txCtx context.Context, txClient *dbent.Client) error {
-		invitee, err := ensureUserAffiliateWithClient(txCtx, txClient, inviteeUserID)
-		if err != nil {
+		if _, err := ensureUserAffiliateWithClient(txCtx, txClient, inviteeUserID); err != nil {
 			return err
 		}
 		inviter, err := queryAffiliateByCode(txCtx, txClient, affiliateCode)
@@ -165,7 +164,7 @@ FOR UPDATE`, inviteeUserID, inviter.UserID)
 
 		// Reload after locking: a concurrent request may have bound the user
 		// while this transaction was waiting.
-		invitee, err = queryAffiliateByUserID(txCtx, txClient, inviteeUserID)
+		invitee, err := queryAffiliateByUserID(txCtx, txClient, inviteeUserID)
 		if err != nil {
 			return err
 		}
