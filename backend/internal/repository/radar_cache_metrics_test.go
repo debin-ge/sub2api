@@ -148,10 +148,8 @@ func TestRadarCacheMemoryRefreshHydratesCurrentFamilyTotals(t *testing.T) {
 	} {
 		require.NoError(t, repo.AppendBucketSnapshot(ctx, snapshot))
 	}
-	perfA, _ := service.RadarAAPerformanceSource("model-a")
-	perfB, _ := service.RadarAAPerformanceSource("model-b")
 	for source, payload := range map[service.RadarSourceKey][]byte{
-		service.RadarSourceAA: []byte("aa-payload"), perfA: []byte("perf-a"), perfB: []byte("performance-b"),
+		service.RadarSourceAA: []byte("aa-payload"),
 	} {
 		require.NoError(t, repo.SetSourcePayload(ctx, source, payload, time.Hour))
 		now := base
@@ -179,12 +177,8 @@ func TestRadarCacheMemoryRefreshHydratesCurrentFamilyTotals(t *testing.T) {
 	wantQuota := quotaUsageA + quotaUsageB
 	require.Contains(t, body, fmt.Sprintf(`radar_cache_memory_bytes{cache="quota_bucket"} %d`, wantQuota))
 	aaUsage, _ := rdb.MemoryUsage(ctx, radarAASourceKey).Result()
-	perfAUsage, _ := rdb.MemoryUsage(ctx, radarAAPerfKeyPrefix+"model-a").Result()
-	perfBUsage, _ := rdb.MemoryUsage(ctx, radarAAPerfKeyPrefix+"model-b").Result()
 	require.Contains(t, body, fmt.Sprintf(`radar_cache_memory_bytes{cache="aa"} %d`, aaUsage))
-	require.Contains(t, body, fmt.Sprintf(`radar_cache_memory_bytes{cache="aa_performance"} %d`, perfAUsage+perfBUsage))
 	require.Regexp(t, `radar_cache_memory_bytes\{cache="metadata"\} [1-9][0-9]*`, body)
-	require.NotContains(t, body, "model-a")
 }
 
 func TestRadarLatestHotPathNeverScansQuotaHistoryForMetrics(t *testing.T) {

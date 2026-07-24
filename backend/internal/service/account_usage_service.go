@@ -101,6 +101,15 @@ type AccountModelBreakdownBatchReader interface {
 	GetAccountModelBreakdownBatch(ctx context.Context, accountIDs []int64, startTime time.Time) (map[int64]map[string]ModelCostStats, error)
 }
 
+// RadarQuotaAccountWindow identifies one account's exact provider quota
+// period. OpenAI weekly periods are account-specific, so a single rolling
+// start time cannot represent them without mixing usage from adjacent weeks.
+type RadarQuotaAccountWindow struct {
+	AccountID int64
+	StartAt   time.Time
+	EndAt     time.Time
+}
+
 type accountWindowStatsBatchReader interface {
 	GetAccountWindowStatsBatch(ctx context.Context, accountIDs []int64, startTime time.Time) (map[int64]*usagestats.AccountStats, error)
 }
@@ -110,6 +119,7 @@ type accountWindowStatsBatchReader interface {
 type RadarQuotaBatchReader interface {
 	AccountModelBreakdownBatchReader
 	GetAccountWindowStatsBatch(ctx context.Context, accountIDs []int64, startTime time.Time) (map[int64]*usagestats.AccountStats, error)
+	GetAccountModelBreakdownByWindowBatch(ctx context.Context, windows []RadarQuotaAccountWindow) (map[int64]map[string]ModelCostStats, error)
 }
 
 // apiUsageCache 缓存从 Anthropic API 获取的使用率数据（utilization, resets_at）

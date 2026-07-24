@@ -384,7 +384,7 @@ export default {
     },
 
     affiliates: {
-      invitesDescription: '查看全站邀请关系和被邀请用户累计返利',
+      invitesDescription: '查看全站邀请关系和按邀请时间计算的累计返利',
       rebatesDescription: '查看每一笔产生返利的充值订单',
       transfersDescription: '查看返利额度转入账户余额的提取流水',
       errors: {
@@ -400,6 +400,7 @@ export default {
         user: '用户',
         affCode: '邀请码',
         order: '订单',
+        registrationReward: '注册奖励',
         totalRebate: '累计返利',
         orderAmount: '充值金额',
         payAmount: '支付金额',

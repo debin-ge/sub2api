@@ -14,7 +14,7 @@ vi.mock('vue-i18n', async (importOriginal) => {
 })
 
 describe('ServiceHealthGrid', () => {
-  it('renders only supported added platforms and keeps official metadata', () => {
+  it('renders only supported added platforms without source links', () => {
     const wrapper = mount(ServiceHealthGrid, {
       props: {
         services: [service('openai_api')],
@@ -29,8 +29,9 @@ describe('ServiceHealthGrid', () => {
     expect(cards[0].text()).toContain('Status unknown')
     expect(cards[1].text()).toContain('Operational')
     expect(wrapper.text()).not.toContain('untrusted upstream name')
-    expect(wrapper.text()).toContain('Source')
-    expect(wrapper.get('[data-testid="service-source"] a').attributes('href')).toBe('https://status.claude.com')
+    expect(wrapper.text()).not.toContain('Source')
+    expect(wrapper.find('[data-testid="service-source"]').exists()).toBe(false)
+    expect(wrapper.find('a[href="https://status.claude.com"]').exists()).toBe(false)
     expect(wrapper.findAll('[data-testid="service-updated"]')).toHaveLength(1)
     expect(wrapper.find('[data-testid="service-uptime"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="service-incident"]').exists()).toBe(false)

@@ -2,13 +2,13 @@ package service
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"math"
 	"net/http"
-	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -17,23 +17,19 @@ import (
 )
 
 const (
-	artificialAnalysisModelsURL      = "https://artificialanalysis.ai/api/v2/data/llms/models"
-	artificialAnalysisPerformanceURL = "https://artificialanalysis.ai/api/v2/language/models"
-	artificialAnalysisWindow         = "90d"
-	artificialAnalysisInterval       = "daily"
+	artificialAnalysisModelsURL = "https://artificialanalysis.ai/api/v2/language/models/free"
 	// The overview renders at most six radar series. When operators configure
 	// only an AA key, keep the automatic response bounded to that same size.
 	artificialAnalysisAutoModelLimit = 6
+	artificialAnalysisMaxPages       = 20
 )
 
-var (
-	errInvalidArtificialAnalysisModelsResponse      = errors.New("invalid Artificial Analysis models response")
-	errInvalidArtificialAnalysisPerformanceResponse = errors.New("invalid Artificial Analysis performance response")
-)
+var errInvalidArtificialAnalysisModelsResponse = errors.New("invalid Artificial Analysis models response")
 
-// ArtificialAnalysisModel is one validated model record returned by the
-// Artificial Analysis models endpoint. released_at is a date or RFC3339;
-// last_updated_at is RFC3339 and is normalized when mapped to public DTOs.
+// ArtificialAnalysisModel is the normalized representation of one validated
+// model record returned by the Artificial Analysis models endpoint. The
+// decoder accepts both the current nested v2 response and the legacy flat
+// response so already-cached payloads remain readable.
 type ArtificialAnalysisModel struct {
 	Slug              string   `json:"slug"`
 	Name              string   `json:"name"`
@@ -47,31 +43,51 @@ type ArtificialAnalysisModel struct {
 	LastUpdatedAt     string   `json:"last_updated_at"`
 }
 
-// ArtificialAnalysisPerformancePoint is one validated daily metric record.
-type ArtificialAnalysisPerformancePoint struct {
-	Date              string   `json:"date"`
+type artificialAnalysisModelsEnvelope struct {
+	Data                     *[]artificialAnalysisModelWire    `json:"data"`
+	IntelligenceIndexVersion *float64                          `json:"intelligence_index_version,omitempty"`
+	Tier                     string                            `json:"tier,omitempty"`
+	Pagination               *artificialAnalysisPaginationWire `json:"pagination,omitempty"`
+}
+
+type artificialAnalysisPaginationWire struct {
+	Page       int  `json:"page"`
+	PageSize   int  `json:"page_size"`
+	TotalPages int  `json:"total_pages"`
+	HasMore    bool `json:"has_more"`
+}
+
+type artificialAnalysisModelWire struct {
+	Slug              string   `json:"slug"`
+	Name              string   `json:"name"`
+	Creator           string   `json:"creator"`
+	ReleasedAt        string   `json:"released_at"`
 	IntelligenceIndex *float64 `json:"intelligence_index"`
 	CodingIndex       *float64 `json:"coding_index"`
 	AgenticIndex      *float64 `json:"agentic_index"`
+	PriceInputPer1M   *float64 `json:"price_input_per_1m"`
+	PriceOutputPer1M  *float64 `json:"price_output_per_1m"`
+	LastUpdatedAt     string   `json:"last_updated_at"`
+
+	ReleaseDate  string                              `json:"release_date"`
+	ModelCreator *artificialAnalysisModelCreatorWire `json:"model_creator"`
+	Evaluations  *artificialAnalysisEvaluationsWire  `json:"evaluations"`
+	Pricing      *artificialAnalysisPricingWire      `json:"pricing"`
 }
 
-// ArtificialAnalysisPerformance is one validated 90-day daily series.
-type ArtificialAnalysisPerformance struct {
-	ModelSlug  string                               `json:"model_slug"`
-	Window     string                               `json:"window"`
-	Interval   string                               `json:"interval"`
-	DataPoints []ArtificialAnalysisPerformancePoint `json:"data_points"`
+type artificialAnalysisModelCreatorWire struct {
+	Name string `json:"name"`
 }
 
-type artificialAnalysisModelsEnvelope struct {
-	Data *[]ArtificialAnalysisModel `json:"data"`
+type artificialAnalysisEvaluationsWire struct {
+	IntelligenceIndex *float64 `json:"artificial_analysis_intelligence_index"`
+	CodingIndex       *float64 `json:"artificial_analysis_coding_index"`
+	AgenticIndex      *float64 `json:"artificial_analysis_agentic_index"`
 }
 
-type artificialAnalysisPerformanceWire struct {
-	ModelSlug  string                                `json:"model_slug"`
-	Window     string                                `json:"window"`
-	Interval   string                                `json:"interval"`
-	DataPoints *[]ArtificialAnalysisPerformancePoint `json:"data_points"`
+type artificialAnalysisPricingWire struct {
+	PriceInputPer1M  *float64 `json:"price_1m_input_tokens"`
+	PriceOutputPer1M *float64 `json:"price_1m_output_tokens"`
 }
 
 // NewArtificialAnalysisModelsFetcher constructs the AA models source. An
@@ -85,62 +101,119 @@ func NewArtificialAnalysisModelsFetcher(cfg *config.Config, client RadarHTTPDoer
 
 	headers := make(http.Header)
 	headers.Set("x-api-key", apiKey)
-	return newRadarHTTPFetcher(radarHTTPFetcherOptions{
-		source:           RadarSourceAA,
+	return &artificialAnalysisModelsFetcher{
 		interval:         time.Duration(cfg.Radar.ArtificialAnalysisModelsIntervalMinutes) * time.Minute,
 		client:           client,
-		endpoint:         artificialAnalysisModelsURL,
 		headers:          headers,
 		maxResponseBytes: cfg.Radar.ExternalResponseMaxBytes,
-		validate: func(payload []byte) error {
-			_, err := DecodeArtificialAnalysisModels(payload)
-			return err
-		},
-	})
+		sleep:            radarSleepWithContext,
+		now:              time.Now,
+	}, nil
 }
 
-// NewArtificialAnalysisPerformanceFetcher constructs one AA daily performance
-// source. The normalized slug must be present in the configured allowlist and
-// is validated before it is escaped into the fixed trusted endpoint.
-func NewArtificialAnalysisPerformanceFetcher(cfg *config.Config, modelSlug string, client RadarHTTPDoer) (RadarFetcher, error) {
-	canonicalModelSlug := strings.TrimSpace(modelSlug)
-	source, err := RadarAAPerformanceSource(canonicalModelSlug)
-	if err != nil {
-		return nil, err
-	}
-	apiKey, err := validateArtificialAnalysisFetcherConfig(cfg, client)
-	if err != nil {
-		return nil, err
-	}
-	allowedSlugs, err := normalizeArtificialAnalysisAllowedSlugs(cfg.Radar.ArtificialAnalysisModelSlugs)
-	if err != nil {
-		return nil, err
-	}
-	if !containsArtificialAnalysisSlug(allowedSlugs, canonicalModelSlug) {
-		return nil, &RadarFetcherConfigError{Field: "radar.artificial_analysis_model_slugs"}
-	}
+// artificialAnalysisModelsFetcher reads every page from the documented Free
+// endpoint and returns one normalized snapshot only after the complete batch
+// has validated. The runner therefore never replaces a good Redis snapshot
+// with a partial page set.
+type artificialAnalysisModelsFetcher struct {
+	interval         time.Duration
+	client           RadarHTTPDoer
+	headers          http.Header
+	maxResponseBytes int64
+	sleep            RadarSleepFunc
+	now              func() time.Time
+}
 
-	headers := make(http.Header)
-	headers.Set("x-api-key", apiKey)
-	endpoint := fmt.Sprintf(
-		"%s/%s/performance?window=%s&interval=%s",
-		artificialAnalysisPerformanceURL,
-		url.PathEscape(canonicalModelSlug),
-		artificialAnalysisWindow,
-		artificialAnalysisInterval,
-	)
-	return newRadarHTTPFetcher(radarHTTPFetcherOptions{
-		source:           source,
-		interval:         time.Duration(cfg.Radar.ArtificialAnalysisPerformanceIntervalMinutes) * time.Minute,
-		client:           client,
-		endpoint:         endpoint,
-		headers:          headers,
-		maxResponseBytes: cfg.Radar.ExternalResponseMaxBytes,
-		validate: func(payload []byte) error {
-			_, err := DecodeArtificialAnalysisPerformance(payload, canonicalModelSlug)
-			return err
-		},
-	})
+func (f *artificialAnalysisModelsFetcher) Source() RadarSourceKey  { return RadarSourceAA }
+func (f *artificialAnalysisModelsFetcher) Interval() time.Duration { return f.interval }
+
+func (f *artificialAnalysisModelsFetcher) Fetch(ctx context.Context) ([]byte, SourceFetchMeta, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	var combined artificialAnalysisModelsEnvelope
+	allModels := make([]artificialAnalysisModelWire, 0, 600)
+	var latestMeta SourceFetchMeta
+	expectedTotalPages := 0
+	var aggregateResponseBytes int64
+	for page := 1; ; page++ {
+		endpoint := fmt.Sprintf("%s?page=%d", artificialAnalysisModelsURL, page)
+		pageFetcher, err := newRadarHTTPFetcher(radarHTTPFetcherOptions{
+			source: RadarSourceAA, interval: f.interval, client: f.client,
+			endpoint: endpoint, headers: f.headers, maxResponseBytes: f.maxResponseBytes,
+			sleep: f.sleep, now: f.now,
+			validate: func(payload []byte) error {
+				_, decodeErr := decodeArtificialAnalysisModelsPage(payload, page)
+				return decodeErr
+			},
+		})
+		if err != nil {
+			return radarFetchFailure(latestMeta, DataSourceErrorCodeInvalidResponse, nil)
+		}
+		payload, meta, err := pageFetcher.Fetch(ctx)
+		latestMeta = meta
+		if err != nil {
+			return nil, meta, err
+		}
+		if int64(len(payload)) > f.maxResponseBytes-aggregateResponseBytes {
+			return radarFetchFailure(meta, DataSourceErrorCodeInvalidResponse, nil)
+		}
+		aggregateResponseBytes += int64(len(payload))
+		envelope, err := decodeArtificialAnalysisModelsPage(payload, page)
+		if err != nil {
+			return radarFetchFailure(meta, DataSourceErrorCodeInvalidResponse, nil)
+		}
+		if page == 1 {
+			combined.IntelligenceIndexVersion = envelope.IntelligenceIndexVersion
+			combined.Tier = envelope.Tier
+			expectedTotalPages = envelope.Pagination.TotalPages
+		} else if !sameArtificialAnalysisSnapshot(envelope, combined, expectedTotalPages) {
+			return radarFetchFailure(meta, DataSourceErrorCodeInvalidResponse, nil)
+		}
+		allModels = append(allModels, (*envelope.Data)...)
+		if !envelope.Pagination.HasMore {
+			break
+		}
+	}
+	combined.Data = &allModels
+	combined.Pagination = &artificialAnalysisPaginationWire{
+		Page: 1, PageSize: len(allModels), TotalPages: 1, HasMore: false,
+	}
+	payload, err := json.Marshal(combined)
+	if err != nil || int64(len(payload)) > f.maxResponseBytes {
+		return radarFetchFailure(latestMeta, DataSourceErrorCodeInvalidResponse, nil)
+	}
+	if _, err := DecodeArtificialAnalysisModels(payload); err != nil {
+		return radarFetchFailure(latestMeta, DataSourceErrorCodeInvalidResponse, nil)
+	}
+	return payload, latestMeta, nil
+}
+
+func decodeArtificialAnalysisModelsPage(payload []byte, expectedPage int) (artificialAnalysisModelsEnvelope, error) {
+	var envelope artificialAnalysisModelsEnvelope
+	if !decodeArtificialAnalysisJSON(payload, &envelope) || envelope.Data == nil || envelope.Pagination == nil ||
+		envelope.Tier != "free" || envelope.IntelligenceIndexVersion == nil ||
+		envelope.Pagination.Page != expectedPage || envelope.Pagination.PageSize < 1 ||
+		envelope.Pagination.TotalPages < 1 || envelope.Pagination.TotalPages > artificialAnalysisMaxPages ||
+		expectedPage > envelope.Pagination.TotalPages ||
+		envelope.Pagination.HasMore != (expectedPage < envelope.Pagination.TotalPages) ||
+		len(*envelope.Data) == 0 || len(*envelope.Data) > envelope.Pagination.PageSize {
+		return artificialAnalysisModelsEnvelope{}, errInvalidArtificialAnalysisModelsResponse
+	}
+	models := make([]ArtificialAnalysisModel, len(*envelope.Data))
+	for i, wire := range *envelope.Data {
+		models[i] = normalizeArtificialAnalysisModel(wire)
+	}
+	if err := validateArtificialAnalysisModels(models); err != nil {
+		return artificialAnalysisModelsEnvelope{}, errInvalidArtificialAnalysisModelsResponse
+	}
+	return envelope, nil
+}
+
+func sameArtificialAnalysisSnapshot(page, first artificialAnalysisModelsEnvelope, totalPages int) bool {
+	return page.Tier == first.Tier && page.IntelligenceIndexVersion != nil &&
+		first.IntelligenceIndexVersion != nil && *page.IntelligenceIndexVersion == *first.IntelligenceIndexVersion &&
+		page.Pagination != nil && page.Pagination.TotalPages == totalPages
 }
 
 func validateArtificialAnalysisFetcherConfig(cfg *config.Config, client RadarHTTPDoer) (string, error) {
@@ -150,9 +223,6 @@ func validateArtificialAnalysisFetcherConfig(cfg *config.Config, client RadarHTT
 	apiKey := strings.TrimSpace(cfg.Radar.ArtificialAnalysisAPIKey)
 	if apiKey == "" {
 		return "", &RadarFetcherConfigError{Field: "radar.artificial_analysis_api_key"}
-	}
-	if _, err := normalizeArtificialAnalysisAllowedSlugs(cfg.Radar.ArtificialAnalysisModelSlugs); err != nil {
-		return "", err
 	}
 	if err := cfg.Radar.Validate(); err != nil {
 		return "", &RadarFetcherConfigError{Field: "radar"}
@@ -167,18 +237,60 @@ func validateArtificialAnalysisFetcherConfig(cfg *config.Config, client RadarHTT
 // wrapper. It rejects ambiguous duplicate slugs and never includes payload
 // contents in returned errors.
 func DecodeArtificialAnalysisModels(payload []byte) ([]ArtificialAnalysisModel, error) {
+	models, _, err := DecodeArtificialAnalysisSnapshot(payload)
+	return models, err
+}
+
+// DecodeArtificialAnalysisSnapshot also exposes the documented index version.
+// Legacy cached payloads remain readable and simply report a nil version.
+func DecodeArtificialAnalysisSnapshot(payload []byte) ([]ArtificialAnalysisModel, *float64, error) {
 	var envelope artificialAnalysisModelsEnvelope
 	if !decodeArtificialAnalysisJSON(payload, &envelope) || envelope.Data == nil {
-		return nil, errInvalidArtificialAnalysisModelsResponse
+		return nil, nil, errInvalidArtificialAnalysisModelsResponse
 	}
-	models := *envelope.Data
+	wires := *envelope.Data
+	models := make([]ArtificialAnalysisModel, len(wires))
+	for index, wire := range wires {
+		models[index] = normalizeArtificialAnalysisModel(wire)
+	}
 	if err := validateArtificialAnalysisModels(models); err != nil {
-		return nil, errInvalidArtificialAnalysisModelsResponse
+		return nil, nil, errInvalidArtificialAnalysisModelsResponse
 	}
 
 	result := make([]ArtificialAnalysisModel, len(models))
 	copy(result, models)
-	return result, nil
+	return result, cloneRadarFloat(envelope.IntelligenceIndexVersion), nil
+}
+
+func normalizeArtificialAnalysisModel(wire artificialAnalysisModelWire) ArtificialAnalysisModel {
+	model := ArtificialAnalysisModel{
+		Slug:              wire.Slug,
+		Name:              wire.Name,
+		Creator:           wire.Creator,
+		ReleasedAt:        wire.ReleasedAt,
+		IntelligenceIndex: wire.IntelligenceIndex,
+		CodingIndex:       wire.CodingIndex,
+		AgenticIndex:      wire.AgenticIndex,
+		PriceInputPer1M:   wire.PriceInputPer1M,
+		PriceOutputPer1M:  wire.PriceOutputPer1M,
+		LastUpdatedAt:     wire.LastUpdatedAt,
+	}
+	if wire.ReleaseDate != "" {
+		model.ReleasedAt = wire.ReleaseDate
+	}
+	if wire.ModelCreator != nil {
+		model.Creator = wire.ModelCreator.Name
+	}
+	if wire.Evaluations != nil {
+		model.IntelligenceIndex = wire.Evaluations.IntelligenceIndex
+		model.CodingIndex = wire.Evaluations.CodingIndex
+		model.AgenticIndex = wire.Evaluations.AgenticIndex
+	}
+	if wire.Pricing != nil {
+		model.PriceInputPer1M = wire.Pricing.PriceInputPer1M
+		model.PriceOutputPer1M = wire.Pricing.PriceOutputPer1M
+	}
+	return model
 }
 
 func mapArtificialAnalysisModel(model ArtificialAnalysisModel) (DegradationModelDTO, error) {
@@ -200,49 +312,24 @@ func mapArtificialAnalysisModel(model ArtificialAnalysisModel) (DegradationModel
 		PriceInputPer1M:   cloneRadarFloat(model.PriceInputPer1M),
 		PriceOutputPer1M:  cloneRadarFloat(model.PriceOutputPer1M),
 		LastUpdatedAt:     lastUpdatedAt,
+		CatalogMatches:    make([]DegradationCatalogMatchDTO, 0),
 	}, nil
 }
 
-// MapArtificialAnalysisModels maps configured AA models to public degradation
-// DTOs. Configuration order is authoritative when an allowlist is present. An
-// empty allowlist selects a bounded, deterministic set of the strongest models
-// that actually contain index data, so configuring only the API key cannot
-// silently produce an empty overview. Optional metrics remain nil.
-func MapArtificialAnalysisModels(models []ArtificialAnalysisModel, allowedSlugs []string) ([]DegradationModelDTO, error) {
+// MapArtificialAnalysisModels provides the bounded legacy fallback used only
+// when no public catalog dependency is available. Production responses use
+// MatchArtificialAnalysisCatalog instead.
+func MapArtificialAnalysisModels(models []ArtificialAnalysisModel) ([]DegradationModelDTO, error) {
 	if err := validateArtificialAnalysisModels(models); err != nil {
 		return nil, errInvalidArtificialAnalysisModelsResponse
 	}
-	canonicalAllowedSlugs, err := normalizeArtificialAnalysisAllowedSlugs(allowedSlugs)
-	if err != nil {
-		return nil, err
-	}
-	if len(canonicalAllowedSlugs) == 0 {
-		return mapAutomaticArtificialAnalysisModels(models)
-	}
-	modelsBySlug := make(map[string]ArtificialAnalysisModel, len(models))
-	for _, model := range models {
-		modelsBySlug[model.Slug] = model
-	}
-
-	result := make([]DegradationModelDTO, 0, len(canonicalAllowedSlugs))
-	for _, slug := range canonicalAllowedSlugs {
-		model, present := modelsBySlug[slug]
-		if !present {
-			continue
-		}
-		mapped, err := mapArtificialAnalysisModel(model)
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, mapped)
-	}
-	return result, nil
+	return mapAutomaticArtificialAnalysisModels(models)
 }
 
 func mapAutomaticArtificialAnalysisModels(models []ArtificialAnalysisModel) ([]DegradationModelDTO, error) {
 	candidates := make([]ArtificialAnalysisModel, 0, len(models))
 	for _, model := range models {
-		if model.IntelligenceIndex == nil && model.CodingIndex == nil && model.AgenticIndex == nil {
+		if model.IntelligenceIndex == nil || model.CodingIndex == nil || model.AgenticIndex == nil {
 			continue
 		}
 		candidates = append(candidates, model)
@@ -299,74 +386,6 @@ func artificialAnalysisModelReleaseTime(model ArtificialAnalysisModel) time.Time
 	}
 	parsed, _ := time.Parse(time.RFC3339Nano, model.ReleasedAt)
 	return parsed.UTC()
-}
-
-func normalizeArtificialAnalysisAllowedSlugs(configuredSlugs []string) ([]string, error) {
-	result := make([]string, 0, len(configuredSlugs))
-	seen := make(map[string]struct{}, len(configuredSlugs))
-	for _, configuredSlug := range configuredSlugs {
-		canonicalSlug := strings.TrimSpace(configuredSlug)
-		if _, err := RadarAAPerformanceSource(canonicalSlug); err != nil {
-			return nil, &RadarFetcherConfigError{Field: "radar.artificial_analysis_model_slugs"}
-		}
-		if _, duplicate := seen[canonicalSlug]; duplicate {
-			continue
-		}
-		seen[canonicalSlug] = struct{}{}
-		result = append(result, canonicalSlug)
-	}
-	return result, nil
-}
-
-func containsArtificialAnalysisSlug(slugs []string, target string) bool {
-	for _, slug := range slugs {
-		if slug == target {
-			return true
-		}
-	}
-	return false
-}
-
-// DecodeArtificialAnalysisPerformance parses and validates a model's fixed
-// 90-day daily response. The payload slug must match the configured source.
-func DecodeArtificialAnalysisPerformance(payload []byte, expectedModelSlug string) (ArtificialAnalysisPerformance, error) {
-	if !isSafeRadarModelSlug(expectedModelSlug) {
-		return ArtificialAnalysisPerformance{}, errInvalidArtificialAnalysisPerformanceResponse
-	}
-
-	var wire artificialAnalysisPerformanceWire
-	if !decodeArtificialAnalysisJSON(payload, &wire) || wire.DataPoints == nil {
-		return ArtificialAnalysisPerformance{}, errInvalidArtificialAnalysisPerformanceResponse
-	}
-	if wire.ModelSlug != expectedModelSlug || wire.Window != artificialAnalysisWindow || wire.Interval != artificialAnalysisInterval {
-		return ArtificialAnalysisPerformance{}, errInvalidArtificialAnalysisPerformanceResponse
-	}
-
-	points := *wire.DataPoints
-	seenDates := make(map[string]struct{}, len(points))
-	for _, point := range points {
-		if !validArtificialAnalysisDate(point.Date) {
-			return ArtificialAnalysisPerformance{}, errInvalidArtificialAnalysisPerformanceResponse
-		}
-		if _, duplicate := seenDates[point.Date]; duplicate {
-			return ArtificialAnalysisPerformance{}, errInvalidArtificialAnalysisPerformanceResponse
-		}
-		seenDates[point.Date] = struct{}{}
-		if !validArtificialAnalysisIndex(point.IntelligenceIndex) ||
-			!validArtificialAnalysisIndex(point.CodingIndex) ||
-			!validArtificialAnalysisIndex(point.AgenticIndex) {
-			return ArtificialAnalysisPerformance{}, errInvalidArtificialAnalysisPerformanceResponse
-		}
-	}
-
-	resultPoints := make([]ArtificialAnalysisPerformancePoint, len(points))
-	copy(resultPoints, points)
-	return ArtificialAnalysisPerformance{
-		ModelSlug:  wire.ModelSlug,
-		Window:     wire.Window,
-		Interval:   wire.Interval,
-		DataPoints: resultPoints,
-	}, nil
 }
 
 func decodeArtificialAnalysisJSON(payload []byte, destination any) bool {

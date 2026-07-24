@@ -11,7 +11,6 @@ vi.mock('@/api/client', () => ({
 import {
   getDataSources,
   getDegradationLatest,
-  getDegradationTrend,
   getLMArena,
   getQuotaBucketsLatest,
   getQuotaBucketsTrend,
@@ -107,55 +106,6 @@ describe('public radar api', () => {
 
     expect(get).toHaveBeenCalledWith('/public/radar/quota-buckets/trend', {
       params: { bucket: 'openai/pro', days: 3 },
-      paramsSerializer: expect.any(Function),
-      signal: controller.signal,
-    })
-    expect(options).toEqual({ signal: controller.signal })
-  })
-
-  it('GETs the degradation trend with the default ninety-day query', async () => {
-    const payload = { model_slug: 'claude-sonnet-4' }
-    get.mockResolvedValueOnce({ data: payload })
-
-    const result = await getDegradationTrend('claude-sonnet-4', 'coding_index')
-
-    expect(get).toHaveBeenCalledWith('/public/radar/degradation/trend', {
-      params: {
-        model: 'claude-sonnet-4',
-        metric: 'coding_index',
-        days: 90,
-      },
-      paramsSerializer: expect.any(Function),
-      signal: undefined,
-    })
-    const config = get.mock.calls[0][1] as {
-      paramsSerializer: (params: Record<string, unknown>) => string
-    }
-    expect(
-      config.paramsSerializer({
-        model: 'claude-sonnet-4',
-        metric: 'coding_index',
-        days: 90,
-        timezone: 'Asia/Shanghai',
-        evil: 'must-not-leak',
-      })
-    ).toBe('model=claude-sonnet-4&metric=coding_index&days=90')
-    expect(result).toBe(payload)
-  })
-
-  it('GETs the degradation trend with explicit days and forwards AbortSignal', async () => {
-    const controller = new AbortController()
-    const options = Object.freeze({ signal: controller.signal })
-    get.mockResolvedValueOnce({ data: { days: 30 } })
-
-    await getDegradationTrend('gpt-5', 'agentic_index', 30, options)
-
-    expect(get).toHaveBeenCalledWith('/public/radar/degradation/trend', {
-      params: {
-        model: 'gpt-5',
-        metric: 'agentic_index',
-        days: 30,
-      },
       paramsSerializer: expect.any(Function),
       signal: controller.signal,
     })

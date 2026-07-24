@@ -18,7 +18,6 @@ func RegisterRadarRoutes(v1 *gin.RouterGroup, radarHandler *handler.RadarHandler
 		publicRadar.GET("/quota-buckets/latest", radarHandler.GetQuotaBucketsLatest)
 		publicRadar.GET("/quota-buckets/trend", radarHandler.GetQuotaBucketsTrend)
 		publicRadar.GET("/degradation/latest", radarHandler.GetDegradationLatest)
-		publicRadar.GET("/degradation/trend", radarHandler.GetDegradationTrend)
 		publicRadar.GET("/lmarena", radarHandler.GetLMArena)
 		publicRadar.GET("/sources", radarHandler.GetDataSources)
 	}

@@ -281,9 +281,9 @@ Anthropic 和 OpenAI 卡片分别聚合其 API、Claude Code/Codex Web 等受支
 
 - 用户友好的套餐名称；
 - 桶内账号数量；
-- 5 小时平均利用率；
+- Anthropic 展示 5 小时平均利用率，OpenAI 暂时仅展示 7 天平均利用率；
 - 利用率进度条；
-- 5 小时反推上限及标准差；
+- 当前展示窗口的反推上限及标准差；
 - 7 天利用率 Sparkline；
 - “查看详情”入口。
 
@@ -320,6 +320,14 @@ Anthropic 和 OpenAI 卡片分别聚合其 API、Claude Code/Codex Web 等受支
 ```text
 候选上限（USD） = 窗口消费金额（USD） ÷（利用率 ÷ 100）
 ```
+
+OpenAI 周窗口不得使用滚动 7 天消费代替实际额度周期。聚合器必须先读取账号本次每周限制的下一次重置时间，以 `下次重置时间 - 7 天` 作为本周期起点，并统计该起点至本次聚合时刻的模型与消费。单模型校验公式为：
+
+```text
+单模型候选上限（USD） = 模型消费金额 ÷（模型消费占账号总消费比例 × 账号周消耗比例）
+```
+
+同一账号先计算每个模型的候选上限，再对模型候选上限取算术平均，得到一个账号候选上限；同一套餐桶内再对各账号候选上限取算术平均。模型数和账号数均不得作为加权系数。
 
 #### 有效样本
 
@@ -597,16 +605,13 @@ Artificial Analysis 提供以下指标：
 | GET | `/api/v1/public/radar/service-health` | 受支持服务的当前状态与 30 天历史 | 5 分钟 |
 | GET | `/api/v1/public/radar/quota-buckets/latest` | 所有额度桶最新快照 | 5 分钟 |
 | GET | `/api/v1/public/radar/quota-buckets/trend` | 单桶 1–7 天趋势 | 10 分钟 |
-| GET | `/api/v1/public/radar/degradation/latest` | 三维指数与 Elo Top 5 | 1 小时 |
-| GET | `/api/v1/public/radar/degradation/trend` | 单模型单指标趋势 | 1 小时 |
-| GET | `/api/v1/public/radar/lmarena` | LMArena 完整排名 | 1 小时 |
+| GET | `/api/v1/public/radar/degradation/latest` | AA 三指标与模型广场交集、Elo Top 5 | 5 分钟 |
+| GET | `/api/v1/public/radar/lmarena` | LMArena 完整排名 | 5 分钟 |
 | GET | `/api/v1/public/radar/sources` | 数据源元信息 | 10 分钟 |
 
 ### 10.2 查询约束
 
 - `quota-buckets/trend`：`bucket` 必填，`days` 范围 1–7，默认 7；
-- `degradation/trend`：`model`、`metric` 必填，`days` 范围 1–90，默认 90；
-- `metric` 仅允许 `intelligence_index`、`coding_index`、`agentic_index`；
 - 非法参数返回明确的 4xx 错误，不得回退到任意默认模型或桶；
 - 所有成功数据使用统一响应包装，字段使用 `snake_case`；
 - 时间字段使用 ISO 8601 UTC；缺失值使用 `null` 或省略，不使用不明确的零值替代。

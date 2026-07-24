@@ -6,49 +6,139 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"strings"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 )
 
+// registrationRateLimitSettings 注册/验证码限流所需的设置读取接口
+// （*service.SettingService 天然满足；抽象为接口便于单元测试）
+type registrationRateLimitSettings interface {
+	GetRegistrationRateLimitPerIP(ctx context.Context) int
+	GetRegistrationRateLimitWindowIP(ctx context.Context) int
+	GetRegistrationRateLimitPerEmail(ctx context.Context) int
+	GetRegistrationRateLimitWindowEmail(ctx context.Context) int
+	GetRegistrationRateLimitPerEmailDomain(ctx context.Context) int
+	GetRegistrationRateLimitWindowEmailDomain(ctx context.Context) int
+}
+
 // ConfigurableRateLimiter 可配置的速率限制器
 type ConfigurableRateLimiter struct {
-	redis           *redis.Client
-	settingService  *service.SettingService
-	baseRateLimiter *RateLimiter
+	redis          *redis.Client
+	settingService registrationRateLimitSettings
 }
 
 // NewConfigurableRateLimiter 创建可配置的速率限制器
-func NewConfigurableRateLimiter(redis *redis.Client, settingService *service.SettingService) *ConfigurableRateLimiter {
+func NewConfigurableRateLimiter(redis *redis.Client, settingService registrationRateLimitSettings) *ConfigurableRateLimiter {
 	return &ConfigurableRateLimiter{
-		redis:           redis,
-		settingService:  settingService,
-		baseRateLimiter: NewRateLimiter(redis),
+		redis:          redis,
+		settingService: settingService,
 	}
+}
+
+// checkAndIncrScript 单 key 限流：先检查是否已达上限，未达才计数（被拒绝的请求不计数），
+// 仅在 key 首次创建或 TTL 丢失时设置过期时间（避免窗口被不断顺延）。
+// 返回 {allowed(0/1)}
+var checkAndIncrScript = redis.NewScript(`
+local current = tonumber(redis.call('GET', KEYS[1]) or '0')
+if current >= tonumber(ARGV[2]) then
+  if redis.call('PTTL', KEYS[1]) == -1 then redis.call('PEXPIRE', KEYS[1], ARGV[1]) end
+  return 0
+end
+current = redis.call('INCR', KEYS[1])
+if current == 1 or redis.call('PTTL', KEYS[1]) == -1 then
+  redis.call('PEXPIRE', KEYS[1], ARGV[1])
+end
+return 1
+`)
+
+// emailRateLimitScript 邮箱两层限流（域名 + 地址）原子检查：
+// 任一层已达上限则拒绝且两层都不计数；两层都未达上限才同时计数。
+// KEYS[1]=域名 key，KEYS[2]=地址 key
+// ARGV[1]=域名窗口(ms) ARGV[2]=域名上限 ARGV[3]=地址窗口(ms) ARGV[4]=地址上限
+// 返回 {allowed(0/1), blockedLayer("domain"/"email"/"")}
+var emailRateLimitScript = redis.NewScript(`
+local dcur = tonumber(redis.call('GET', KEYS[1]) or '0')
+if dcur >= tonumber(ARGV[2]) then
+  if redis.call('PTTL', KEYS[1]) == -1 then redis.call('PEXPIRE', KEYS[1], ARGV[1]) end
+  return {0, 'domain'}
+end
+local ecur = tonumber(redis.call('GET', KEYS[2]) or '0')
+if ecur >= tonumber(ARGV[4]) then
+  if redis.call('PTTL', KEYS[2]) == -1 then redis.call('PEXPIRE', KEYS[2], ARGV[3]) end
+  return {0, 'email'}
+end
+local d = redis.call('INCR', KEYS[1])
+if d == 1 or redis.call('PTTL', KEYS[1]) == -1 then redis.call('PEXPIRE', KEYS[1], ARGV[1]) end
+local e = redis.call('INCR', KEYS[2])
+if e == 1 or redis.call('PTTL', KEYS[2]) == -1 then redis.call('PEXPIRE', KEYS[2], ARGV[3]) end
+return {1, ''}
+`)
+
+// checkAndIncrRun 允许测试覆写单 key 限流脚本执行逻辑
+var checkAndIncrRun = func(ctx context.Context, client *redis.Client, key string, windowMillis int64, limit int) (bool, error) {
+	allowed, err := checkAndIncrScript.Run(ctx, client, []string{key}, windowMillis, limit).Int64()
+	if err != nil {
+		return false, err
+	}
+	return allowed == 1, nil
+}
+
+// emailRateLimitRun 允许测试覆写邮箱两层限流脚本执行逻辑
+// 返回 blockedLayer：""（放行）/ "domain" / "email"
+var emailRateLimitRun = func(ctx context.Context, client *redis.Client, domainKey, emailKey string, domainWindowMillis int64, domainLimit int, emailWindowMillis int64, emailLimit int) (string, error) {
+	values, err := emailRateLimitScript.Run(ctx, client,
+		[]string{domainKey, emailKey},
+		domainWindowMillis, domainLimit, emailWindowMillis, emailLimit,
+	).Slice()
+	if err != nil {
+		return "", err
+	}
+	if len(values) < 2 {
+		return "", fmt.Errorf("email rate limit script returned %d values", len(values))
+	}
+	allowed, err := parseInt64(values[0])
+	if err != nil {
+		return "", err
+	}
+	if allowed == 1 {
+		return "", nil
+	}
+	layer, ok := values[1].(string)
+	if !ok {
+		return "", fmt.Errorf("unexpected blocked layer type %T", values[1])
+	}
+	return layer, nil
 }
 
 // RegistrationRateLimit 注册接口的多层速率限制
 // 1. 基于IP的速率限制
-// 2. 基于邮箱域名的速率限制
+// 2. 基于邮箱的两层速率限制（域名高阈值反批量 + 单地址低阈值）
 func (crl *ConfigurableRateLimiter) RegistrationRateLimit() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if crl.settingService == nil {
+			c.Next()
+			return
+		}
 		ctx := c.Request.Context()
 
-		// 获取配置
+		// 1. IP 速率限制
 		ipLimit := crl.settingService.GetRegistrationRateLimitPerIP(ctx)
 		ipWindow := crl.settingService.GetRegistrationRateLimitWindowIP(ctx)
-		emailLimit := crl.settingService.GetRegistrationRateLimitPerEmail(ctx)
-		emailWindow := crl.settingService.GetRegistrationRateLimitWindowEmail(ctx)
-
-		// 1. IP 速率限制
 		clientIP := getClientIP(c)
 		ipKey := fmt.Sprintf("rate:registration:ip:%s", clientIP)
 
-		if !crl.checkRateLimit(ctx, ipKey, ipLimit, time.Duration(ipWindow)*time.Second) {
+		allowed, err := checkAndIncrRun(ctx, crl.redis, ipKey, windowTTLMillis(time.Duration(ipWindow)*time.Second), ipLimit)
+		if err != nil {
+			// Redis 故障时采用 fail-close 策略（拒绝请求）
+			log.Printf("[RateLimit] redis error: key=%s mode=fail-close err=%v", ipKey, err)
+			allowed = false
+		}
+		if !allowed {
 			c.JSON(429, gin.H{
 				"error": "注册请求过于频繁，请稍后再试",
 				"code":  "RATE_LIMIT_EXCEEDED_IP",
@@ -57,57 +147,78 @@ func (crl *ConfigurableRateLimiter) RegistrationRateLimit() gin.HandlerFunc {
 			return
 		}
 
-		// 2. 邮箱域名速率限制（从请求体中提取，不消费请求体）
-		email := peekEmailFromBody(c)
-		if email != "" {
-			emailDomain := extractEmailDomain(email)
-			if emailDomain != "" {
-				emailKey := fmt.Sprintf("rate:registration:email:%s", emailDomain)
-
-				if !crl.checkRateLimit(ctx, emailKey, emailLimit, time.Duration(emailWindow)*time.Second) {
-					c.JSON(429, gin.H{
-						"error": "该邮箱域名注册请求过于频繁，请稍后再试",
-						"code":  "RATE_LIMIT_EXCEEDED_EMAIL_DOMAIN",
-					})
-					c.Abort()
-					return
-				}
-			}
+		// 2. 邮箱域名 + 邮箱地址两层速率限制
+		if !crl.checkEmailRateLimit(c, "registration") {
+			return
 		}
 
 		c.Next()
 	}
 }
 
-// SendVerifyCodeRateLimit 发送验证码接口的速率限制
+// SendVerifyCodeRateLimit 发送验证码接口的速率限制（邮箱域名 + 邮箱地址两层）
 func (crl *ConfigurableRateLimiter) SendVerifyCodeRateLimit() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		ctx := c.Request.Context()
-
-		// 获取配置
-		emailLimit := crl.settingService.GetRegistrationRateLimitPerEmail(ctx)
-		emailWindow := crl.settingService.GetRegistrationRateLimitWindowEmail(ctx)
-
-		// 邮箱域名速率限制（从请求体中提取，不消费请求体）
-		email := peekEmailFromBody(c)
-		if email != "" {
-			emailDomain := extractEmailDomain(email)
-			if emailDomain != "" {
-				emailKey := fmt.Sprintf("rate:verify-code:email:%s", emailDomain)
-
-				if !crl.checkRateLimit(ctx, emailKey, emailLimit, time.Duration(emailWindow)*time.Second) {
-					c.JSON(429, gin.H{
-						"error": "该邮箱域名验证码请求过于频繁，请稍后再试",
-						"code":  "RATE_LIMIT_EXCEEDED_EMAIL_DOMAIN",
-					})
-					c.Abort()
-					return
-				}
-			}
+		if crl.settingService == nil {
+			c.Next()
+			return
 		}
-
+		if !crl.checkEmailRateLimit(c, "verify-code") {
+			return
+		}
 		c.Next()
 	}
+}
+
+// checkEmailRateLimit 对请求体中的邮箱执行两层限流（域名高阈值 + 地址低阈值）。
+// 返回 false 表示已写入 429 响应并 Abort。
+func (crl *ConfigurableRateLimiter) checkEmailRateLimit(c *gin.Context, scope string) bool {
+	email := normalizeEmailAddress(peekEmailFromBody(c))
+	if email == "" {
+		return true
+	}
+	emailDomain := extractEmailDomain(email)
+	if emailDomain == "" {
+		return true
+	}
+
+	ctx := c.Request.Context()
+	emailLimit := crl.settingService.GetRegistrationRateLimitPerEmail(ctx)
+	emailWindow := crl.settingService.GetRegistrationRateLimitWindowEmail(ctx)
+	domainLimit := crl.settingService.GetRegistrationRateLimitPerEmailDomain(ctx)
+	domainWindow := crl.settingService.GetRegistrationRateLimitWindowEmailDomain(ctx)
+
+	domainKey := fmt.Sprintf("rate:%s:email-domain:%s", scope, emailDomain)
+	emailKey := fmt.Sprintf("rate:%s:email:%s", scope, email)
+
+	blockedLayer, err := emailRateLimitRun(ctx, crl.redis,
+		domainKey, emailKey,
+		windowTTLMillis(time.Duration(domainWindow)*time.Second), domainLimit,
+		windowTTLMillis(time.Duration(emailWindow)*time.Second), emailLimit,
+	)
+	if err != nil {
+		// Redis 故障时采用 fail-close 策略（拒绝请求）
+		log.Printf("[RateLimit] redis error: key=%s mode=fail-close err=%v", emailKey, err)
+		blockedLayer = "email"
+	}
+
+	switch blockedLayer {
+	case "domain":
+		c.JSON(429, gin.H{
+			"error": "该邮箱域名请求过于频繁，请稍后再试",
+			"code":  "RATE_LIMIT_EXCEEDED_EMAIL_DOMAIN",
+		})
+		c.Abort()
+		return false
+	case "email":
+		c.JSON(429, gin.H{
+			"error": "该邮箱请求过于频繁，请稍后再试",
+			"code":  "RATE_LIMIT_EXCEEDED_EMAIL",
+		})
+		c.Abort()
+		return false
+	}
+	return true
 }
 
 // peekEmailFromBody 从请求体中读取 email 字段，同时恢复请求体供后续处理器使用。
@@ -134,23 +245,6 @@ func peekEmailFromBody(c *gin.Context) string {
 		return ""
 	}
 	return strings.TrimSpace(req.Email)
-}
-
-// checkRateLimit 检查速率限制
-func (crl *ConfigurableRateLimiter) checkRateLimit(ctx context.Context, key string, limit int, window time.Duration) bool {
-	// 使用 Redis INCR + EXPIRE 实现滑动窗口
-	pipe := crl.redis.Pipeline()
-	incr := pipe.Incr(ctx, key)
-	pipe.Expire(ctx, key, window)
-	_, err := pipe.Exec(ctx)
-
-	if err != nil {
-		// Redis 故障时采用 fail-close 策略（拒绝请求）
-		return false
-	}
-
-	count := incr.Val()
-	return count <= int64(limit)
 }
 
 // getClientIP 获取客户端真实IP
@@ -182,6 +276,11 @@ func getClientIP(c *gin.Context) string {
 		return c.Request.RemoteAddr
 	}
 	return ip
+}
+
+// normalizeEmailAddress 归一化邮箱地址（小写+去空格），与用户表唯一性检查口径一致
+func normalizeEmailAddress(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
 }
 
 // extractEmailDomain 提取邮箱域名

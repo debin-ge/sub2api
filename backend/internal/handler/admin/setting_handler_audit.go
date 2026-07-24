@@ -38,14 +38,17 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if before.EmailVerifyEnabled != after.EmailVerifyEnabled {
 		changed = append(changed, "email_verify_enabled")
 	}
-	if !equalStringSlice(before.RegistrationEmailSuffixWhitelist, after.RegistrationEmailSuffixWhitelist) {
-		changed = append(changed, "registration_email_suffix_whitelist")
+	if !equalStringSlice(before.RegistrationEmailSuffixBlacklist, after.RegistrationEmailSuffixBlacklist) {
+		changed = append(changed, "registration_email_suffix_blacklist")
 	}
 	if before.PromoCodeEnabled != after.PromoCodeEnabled {
 		changed = append(changed, "promo_code_enabled")
 	}
 	if before.InvitationCodeEnabled != after.InvitationCodeEnabled {
 		changed = append(changed, "invitation_code_enabled")
+	}
+	if before.InvitationCodeRequired != after.InvitationCodeRequired {
+		changed = append(changed, "invitation_code_required")
 	}
 	if before.PasswordResetEnabled != after.PasswordResetEnabled {
 		changed = append(changed, "password_reset_enabled")
@@ -64,6 +67,12 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.RegistrationRateLimitWindowEmail != after.RegistrationRateLimitWindowEmail {
 		changed = append(changed, "registration_rate_limit_window_email")
+	}
+	if before.RegistrationRateLimitPerEmailDomain != after.RegistrationRateLimitPerEmailDomain {
+		changed = append(changed, "registration_rate_limit_per_email_domain")
+	}
+	if before.RegistrationRateLimitWindowEmailDomain != after.RegistrationRateLimitWindowEmailDomain {
+		changed = append(changed, "registration_rate_limit_window_email_domain")
 	}
 	if before.TotpEnabled != after.TotpEnabled {
 		changed = append(changed, "totp_enabled")
@@ -328,6 +337,9 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.AffiliateRebatePerInviteeCap != after.AffiliateRebatePerInviteeCap {
 		changed = append(changed, "affiliate_rebate_per_invitee_cap")
+	}
+	if before.AffiliateRegistrationReward != after.AffiliateRegistrationReward {
+		changed = append(changed, "affiliate_registration_reward_amount")
 	}
 	if before.AdminRechargeRebateEnabled != after.AdminRechargeRebateEnabled {
 		changed = append(changed, "affiliate_admin_recharge_enabled")

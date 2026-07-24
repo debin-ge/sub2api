@@ -1,12 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
-  formatRegistrationEmailSuffixWhitelistForMessage,
-  isRegistrationEmailSuffixAllowed,
+  isRegistrationEmailSuffixBlocked,
   isRegistrationEmailSuffixDomainValid,
   normalizeRegistrationEmailSuffixDomain,
   normalizeRegistrationEmailSuffixDomains,
-  normalizeRegistrationEmailSuffixWhitelist,
-  parseRegistrationEmailSuffixWhitelistInput
+  normalizeRegistrationEmailSuffixBlacklist,
+  parseRegistrationEmailSuffixBlacklistInput
 } from '@/utils/registrationEmailPolicy'
 
 describe('registrationEmailPolicy utils', () => {
@@ -31,32 +30,32 @@ describe('registrationEmailPolicy utils', () => {
     ).toEqual(['example.com', 'foo.bar', '*.edu.cn'])
   })
 
-  it('parseRegistrationEmailSuffixWhitelistInput supports separators and deduplicates', () => {
+  it('parseRegistrationEmailSuffixBlacklistInput supports separators and deduplicates', () => {
     const input = '\n  @example.com,example.com，@foo.bar\t@FOO.bar *.EDU.CN  '
-    expect(parseRegistrationEmailSuffixWhitelistInput(input)).toEqual([
+    expect(parseRegistrationEmailSuffixBlacklistInput(input)).toEqual([
       'example.com',
       'foo.bar',
       '*.edu.cn'
     ])
   })
 
-  it('parseRegistrationEmailSuffixWhitelistInput drops tokens containing invalid chars', () => {
+  it('parseRegistrationEmailSuffixBlacklistInput drops tokens containing invalid chars', () => {
     const input = '@exa!mple.com, @foo.bar, @bad#token.com, @ok-domain.com'
-    expect(parseRegistrationEmailSuffixWhitelistInput(input)).toEqual(['foo.bar', 'ok-domain.com'])
+    expect(parseRegistrationEmailSuffixBlacklistInput(input)).toEqual(['foo.bar', 'ok-domain.com'])
   })
 
-  it('parseRegistrationEmailSuffixWhitelistInput drops structurally invalid domains', () => {
+  it('parseRegistrationEmailSuffixBlacklistInput drops structurally invalid domains', () => {
     const input = '@-bad.com, @foo..bar.com, @foo.bar, @xn--ok.com, *., *, *.@, *.foo'
-    expect(parseRegistrationEmailSuffixWhitelistInput(input)).toEqual(['foo.bar', 'xn--ok.com'])
+    expect(parseRegistrationEmailSuffixBlacklistInput(input)).toEqual(['foo.bar', 'xn--ok.com'])
   })
 
-  it('parseRegistrationEmailSuffixWhitelistInput returns empty list for blank input', () => {
-    expect(parseRegistrationEmailSuffixWhitelistInput('   \n \n')).toEqual([])
+  it('parseRegistrationEmailSuffixBlacklistInput returns empty list for blank input', () => {
+    expect(parseRegistrationEmailSuffixBlacklistInput('   \n \n')).toEqual([])
   })
 
-  it('normalizeRegistrationEmailSuffixWhitelist returns canonical @domain list', () => {
+  it('normalizeRegistrationEmailSuffixBlacklist returns canonical @domain list', () => {
     expect(
-      normalizeRegistrationEmailSuffixWhitelist([
+      normalizeRegistrationEmailSuffixBlacklist([
         '@Example.com',
         'foo.bar',
         '',
@@ -79,43 +78,28 @@ describe('registrationEmailPolicy utils', () => {
     expect(isRegistrationEmailSuffixDomainValid('*.@')).toBe(false)
   })
 
-  it('isRegistrationEmailSuffixAllowed allows any email when whitelist is empty', () => {
-    expect(isRegistrationEmailSuffixAllowed('user@example.com', [])).toBe(true)
+  it('isRegistrationEmailSuffixBlocked allows any email when blacklist is empty', () => {
+    expect(isRegistrationEmailSuffixBlocked('user@example.com', [])).toBe(false)
   })
 
-  it('isRegistrationEmailSuffixAllowed applies exact suffix matching', () => {
-    expect(isRegistrationEmailSuffixAllowed('user@example.com', ['@example.com'])).toBe(true)
-    expect(isRegistrationEmailSuffixAllowed('user@sub.example.com', ['@example.com'])).toBe(false)
-    expect(isRegistrationEmailSuffixAllowed('user@qq.com', ['@qq.com'])).toBe(true)
-    expect(isRegistrationEmailSuffixAllowed('user@sub.qq.com', ['@qq.com'])).toBe(false)
+  it('isRegistrationEmailSuffixBlocked applies exact suffix matching', () => {
+    expect(isRegistrationEmailSuffixBlocked('user@example.com', ['@example.com'])).toBe(true)
+    expect(isRegistrationEmailSuffixBlocked('user@sub.example.com', ['@example.com'])).toBe(false)
+    expect(isRegistrationEmailSuffixBlocked('user@qq.com', ['@qq.com'])).toBe(true)
+    expect(isRegistrationEmailSuffixBlocked('user@sub.qq.com', ['@qq.com'])).toBe(false)
   })
 
-  it('isRegistrationEmailSuffixAllowed applies wildcard suffix matching', () => {
-    expect(isRegistrationEmailSuffixAllowed('student@cs.edu.cn', ['*.edu.cn'])).toBe(true)
-    expect(isRegistrationEmailSuffixAllowed('student@edu.cn', ['*.edu.cn'])).toBe(true)
-    expect(isRegistrationEmailSuffixAllowed('student@foo.cn', ['*.edu.cn'])).toBe(false)
+  it('isRegistrationEmailSuffixBlocked applies wildcard suffix matching', () => {
+    expect(isRegistrationEmailSuffixBlocked('student@cs.edu.cn', ['*.edu.cn'])).toBe(true)
+    expect(isRegistrationEmailSuffixBlocked('student@edu.cn', ['*.edu.cn'])).toBe(true)
+    expect(isRegistrationEmailSuffixBlocked('student@foo.cn', ['*.edu.cn'])).toBe(false)
   })
 
-  it('isRegistrationEmailSuffixAllowed supports mixed exact and wildcard entries', () => {
-    const whitelist = ['@a.com', '*.b.cn']
-    expect(isRegistrationEmailSuffixAllowed('user@a.com', whitelist)).toBe(true)
-    expect(isRegistrationEmailSuffixAllowed('user@school.b.cn', whitelist)).toBe(true)
-    expect(isRegistrationEmailSuffixAllowed('user@b.cn', whitelist)).toBe(true)
-    expect(isRegistrationEmailSuffixAllowed('user@c.cn', whitelist)).toBe(false)
-  })
-
-  it('formatRegistrationEmailSuffixWhitelistForMessage lists up to five entries', () => {
-    expect(
-      formatRegistrationEmailSuffixWhitelistForMessage(
-        ['@a.com', '@b.com', '@c.com', '@d.com', '@e.com'],
-        { separator: ', ', more: (count) => `and ${count} more` }
-      )
-    ).toBe('@a.com, @b.com, @c.com, @d.com, @e.com')
-    expect(
-      formatRegistrationEmailSuffixWhitelistForMessage(
-        ['@a.com', '@b.com', '@c.com', '@d.com', '@e.com', '*.edu.cn', '@f.com'],
-        { separator: ', ', more: (count) => `and ${count} more` }
-      )
-    ).toBe('@a.com, @b.com, @c.com, @d.com, @e.com, and 2 more')
+  it('isRegistrationEmailSuffixBlocked supports mixed exact and wildcard entries', () => {
+    const blacklist = ['@a.com', '*.b.cn']
+    expect(isRegistrationEmailSuffixBlocked('user@a.com', blacklist)).toBe(true)
+    expect(isRegistrationEmailSuffixBlocked('user@school.b.cn', blacklist)).toBe(true)
+    expect(isRegistrationEmailSuffixBlocked('user@b.cn', blacklist)).toBe(true)
+    expect(isRegistrationEmailSuffixBlocked('user@c.cn', blacklist)).toBe(false)
   })
 })

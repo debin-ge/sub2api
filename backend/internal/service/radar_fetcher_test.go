@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const validAAModelsPayload = `{"data":[{"slug":"claude-sonnet-4","name":"Claude Sonnet 4","creator":"Anthropic","released_at":"2026-05-22","intelligence_index":94.2,"coding_index":89.5,"agentic_index":91.8,"price_input_per_1m":3,"price_output_per_1m":15,"last_updated_at":"2026-07-10T06:00:00Z"}]}`
+const validAAModelsPayload = `{"tier":"free","intelligence_index_version":4.1,"pagination":{"page":1,"page_size":200,"total_pages":1,"has_more":false},"data":[{"slug":"claude-sonnet-4","name":"Claude Sonnet 4","release_date":"2026-05-22","model_creator":{"name":"Anthropic"},"evaluations":{"artificial_analysis_intelligence_index":94.2,"artificial_analysis_coding_index":89.5,"artificial_analysis_agentic_index":84.1},"pricing":{"price_1m_input_tokens":3,"price_1m_output_tokens":15}}]}`
 
 type radarDoerFunc func(*http.Request) (*http.Response, error)
 
@@ -74,28 +74,25 @@ func (b *radarTrackingBody) isClosed() bool {
 
 func validRadarFetcherTestConfig() *config.Config {
 	return &config.Config{Radar: config.RadarConfig{
-		Enabled:                                            true,
-		QuotaAggregatorIntervalMin:                         15,
-		QuotaHistoryRetentionDays:                          7,
-		SampleSizeWarnBelow:                                3,
-		PublicMinBucketAccounts:                            2,
-		InferMinUtilization:                                5,
-		InferMaxStdevRatio:                                 0.3,
-		ArtificialAnalysisAPIKey:                           "test-aa-api-key",
-		ArtificialAnalysisModelSlugs:                       []string{"claude-sonnet-4"},
-		ExternalRequestTimeoutSeconds:                      10,
-		ExternalResponseMaxBytes:                           1024 * 1024,
-		ArtificialAnalysisModelsIntervalMinutes:            360,
-		ArtificialAnalysisPerformanceIntervalMinutes:       1440,
-		LMArenaIntervalMinutes:                             1440,
-		StatuspageIntervalMinutes:                          30,
-		SourceHardRetentionDays:                            7,
-		QuotaStaleThresholdMinutes:                         30,
-		HealthStaleThresholdMinutes:                        60,
-		ArtificialAnalysisModelsStaleThresholdMinutes:      720,
-		ArtificialAnalysisPerformanceStaleThresholdMinutes: 2880,
-		LMArenaStaleThresholdMinutes:                       2880,
-		LMArenaURL:                                         "https://datasets-server.huggingface.co/filter",
+		Enabled:                                       true,
+		QuotaAggregatorIntervalMin:                    15,
+		QuotaHistoryRetentionDays:                     7,
+		SampleSizeWarnBelow:                           3,
+		PublicMinBucketAccounts:                       2,
+		InferMinUtilization:                           5,
+		InferMaxStdevRatio:                            0.3,
+		ArtificialAnalysisAPIKey:                      "test-aa-api-key",
+		ExternalRequestTimeoutSeconds:                 10,
+		ExternalResponseMaxBytes:                      1024 * 1024,
+		ArtificialAnalysisModelsIntervalMinutes:       360,
+		LMArenaIntervalMinutes:                        1440,
+		StatuspageIntervalMinutes:                     30,
+		SourceHardRetentionDays:                       7,
+		QuotaStaleThresholdMinutes:                    30,
+		HealthStaleThresholdMinutes:                   60,
+		ArtificialAnalysisModelsStaleThresholdMinutes: 720,
+		LMArenaStaleThresholdMinutes:                  2880,
+		LMArenaURL:                                    "https://datasets-server.huggingface.co/filter",
 	}}
 }
 
@@ -120,9 +117,14 @@ func requireRadarFetchErrorCode(t *testing.T, meta SourceFetchMeta, want DataSou
 
 func setRadarFetcherSleep(t *testing.T, fetcher RadarFetcher, sleep RadarSleepFunc) {
 	t.Helper()
-	implementation, ok := fetcher.(*radarHTTPFetcher)
-	require.True(t, ok)
-	implementation.sleep = sleep
+	switch implementation := fetcher.(type) {
+	case *radarHTTPFetcher:
+		implementation.sleep = sleep
+	case *artificialAnalysisModelsFetcher:
+		implementation.sleep = sleep
+	default:
+		require.FailNow(t, "fetcher does not expose a test sleep seam")
+	}
 }
 
 func TestRadarHTTPFetcherDoesNotRetryClientFailures(t *testing.T) {
@@ -197,7 +199,10 @@ func TestRadarHTTPFetcherRetriesServerFailuresThenSucceeds(t *testing.T) {
 	payload, meta, err := fetcher.Fetch(context.Background())
 
 	require.NoError(t, err)
-	require.JSONEq(t, validAAModelsPayload, string(payload))
+	models, decodeErr := DecodeArtificialAnalysisModels(payload)
+	require.NoError(t, decodeErr)
+	require.Len(t, models, 1)
+	require.Equal(t, "claude-sonnet-4", models[0].Slug)
 	require.Equal(t, 3, attempts)
 	require.Equal(t, []time.Duration{time.Second, 2 * time.Second}, backoffs)
 	require.Len(t, bodies, 3)

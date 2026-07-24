@@ -98,17 +98,21 @@ export function service(
 }
 
 export const degradationLatest: DegradationLatestDTO = {
-  models: [
+  available_models: [
     {
       slug: 'model-a',
       name: 'Model A',
       vendor: 'Vendor A',
       intelligence_index: 91,
-      coding_index: null,
+      coding_index: 82,
       agentic_index: 73,
       price_input_per_1m: null,
       price_output_per_1m: null,
       last_updated_at: now,
+      catalog_matches: [
+        { platform: 'openai', model_id: 'model-a-high' },
+        { platform: 'openai', model_id: 'model-a-low' },
+      ],
     },
     ...Array.from({ length: 6 }, (_, index) => ({
       slug: `model-${index + 2}`,
@@ -120,13 +124,18 @@ export const degradationLatest: DegradationLatestDTO = {
       price_input_per_1m: null,
       price_output_per_1m: null,
       last_updated_at: now,
+      catalog_matches: [{ platform: 'openai', model_id: `model-${index + 2}` }],
     })),
   ],
+  models: [],
+  default_model_slugs: ['model-a', 'model-2', 'model-3', 'model-4', 'model-5', 'model-6'],
+  intelligence_index_version: 4.1,
   lmarena_top5: [],
   sources_last_updated: { aa: now },
-  trend_available: true,
   stale: false,
 }
+
+degradationLatest.models = degradationLatest.available_models.slice(0, 6)
 
 export const lmarena: LMArenaDTO = {
   leaderboard: [

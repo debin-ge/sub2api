@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -239,6 +240,100 @@ func (r *usageLogRepository) GetAccountModelBreakdownBatch(ctx context.Context, 
 	}
 
 	return result, nil
+}
+
+// GetAccountModelBreakdownByWindowBatch aggregates every account inside its
+// own exact quota period. This is used for OpenAI weekly limits, whose current
+// period starts seven days before that account's reported next reset time.
+func (r *usageLogRepository) GetAccountModelBreakdownByWindowBatch(
+	ctx context.Context,
+	windows []service.RadarQuotaAccountWindow,
+) (map[int64]map[string]service.ModelCostStats, error) {
+	result := make(map[int64]map[string]service.ModelCostStats)
+	normalized := normalizeRadarQuotaAccountWindows(windows)
+	if len(normalized) == 0 {
+		return result, nil
+	}
+
+	accountIDs := make([]int64, len(normalized))
+	startTimes := make([]time.Time, len(normalized))
+	endTimes := make([]time.Time, len(normalized))
+	for i, window := range normalized {
+		accountIDs[i] = window.AccountID
+		startTimes[i] = window.StartAt
+		endTimes[i] = window.EndAt
+	}
+
+	query := `
+		WITH quota_windows AS (
+			SELECT *
+			FROM UNNEST($1::bigint[], $2::timestamptz[], $3::timestamptz[])
+				AS quota_window(account_id, start_at, end_at)
+		)
+		SELECT
+			usage_logs.account_id,
+			usage_logs.model,
+			COUNT(*) as requests,
+			COALESCE(SUM(usage_logs.input_tokens::bigint + usage_logs.output_tokens::bigint + usage_logs.cache_creation_tokens::bigint + usage_logs.cache_read_tokens::bigint), 0) as tokens,
+			COALESCE(SUM(COALESCE(usage_logs.account_stats_cost, usage_logs.total_cost) * COALESCE(usage_logs.account_rate_multiplier, 1)), 0) as account_cost
+		FROM quota_windows
+		JOIN usage_logs
+			ON usage_logs.account_id = quota_windows.account_id
+			AND usage_logs.created_at >= quota_windows.start_at
+			AND usage_logs.created_at < quota_windows.end_at
+		GROUP BY usage_logs.account_id, usage_logs.model
+	`
+	rows, err := r.sql.QueryContext(ctx, query, pq.Array(accountIDs), pq.Array(startTimes), pq.Array(endTimes))
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var (
+			accountID int64
+			model     string
+			stats     service.ModelCostStats
+		)
+		if err := rows.Scan(&accountID, &model, &stats.Requests, &stats.Tokens, &stats.AccountCost); err != nil {
+			return nil, err
+		}
+		if result[accountID] == nil {
+			result[accountID] = make(map[string]service.ModelCostStats)
+		}
+		result[accountID][model] = stats
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func normalizeRadarQuotaAccountWindows(windows []service.RadarQuotaAccountWindow) []service.RadarQuotaAccountWindow {
+	byAccountID := make(map[int64]service.RadarQuotaAccountWindow, len(windows))
+	for _, window := range windows {
+		startAt := window.StartAt.UTC()
+		endAt := window.EndAt.UTC()
+		if window.AccountID <= 0 || !startAt.Before(endAt) {
+			continue
+		}
+		if _, exists := byAccountID[window.AccountID]; exists {
+			continue
+		}
+		window.StartAt = startAt
+		window.EndAt = endAt
+		byAccountID[window.AccountID] = window
+	}
+
+	normalized := make([]service.RadarQuotaAccountWindow, 0, len(byAccountID))
+	for _, window := range byAccountID {
+		normalized = append(normalized, window)
+	}
+	sort.Slice(normalized, func(i, j int) bool { return normalized[i].AccountID < normalized[j].AccountID })
+	return normalized
 }
 
 // GetGeminiUsageTotalsBatch 批量聚合 Gemini 账号在窗口内的 Pro/Flash 请求与用量。

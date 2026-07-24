@@ -189,6 +189,7 @@ func TestRegisterOAuthEmailAccountRollsBackCreatedUserWhenTokenPairGenerationFai
 		"secret-123",
 		"246810",
 		"INVITE123",
+		"",
 		"oidc",
 	)
 
@@ -229,6 +230,7 @@ func TestRegisterOAuthEmailAccountSetsNormalizedSignupSourceOnCreatedUser(t *tes
 		"fresh@example.com",
 		"secret-123",
 		"246810",
+		"",
 		"",
 		" OIDC ",
 	)
@@ -290,6 +292,7 @@ func TestRegisterOAuthEmailAccountKeepsGitHubAndGoogleSignupSource(t *testing.T)
 				"secret-123",
 				"246810",
 				"",
+				"",
 				tt.signupSource,
 			)
 
@@ -329,6 +332,7 @@ func TestRegisterOAuthEmailAccountFallsBackUnknownSignupSourceToEmail(t *testing
 		"fallback@example.com",
 		"secret-123",
 		"246810",
+		"",
 		"",
 		"unknown-provider",
 	)
@@ -401,7 +405,7 @@ func TestRollbackOAuthEmailAccountCreationPropagatesDeleteError(t *testing.T) {
 	require.Contains(t, err.Error(), "delete created oauth user")
 }
 
-func TestFinalizeOAuthEmailAccount_SnapshotsPlatformQuotaDefaults(t *testing.T) {
+func TestFinalizeOAuthRegistrationPostCommit_SnapshotsPlatformQuotaDefaults(t *testing.T) {
 	userRepo := &userRepoStub{nextID: 99}
 	quotaRepo := &userPlatformQuotaRepoStub{}
 
@@ -435,8 +439,9 @@ func TestFinalizeOAuthEmailAccount_SnapshotsPlatformQuotaDefaults(t *testing.T) 
 	)
 
 	require.NoError(t, err)
+	authService.FinalizeOAuthRegistrationPostCommit(context.Background(), user, "oidc", "")
 
-	require.Len(t, quotaRepo.bulkInsertCalls, 1, "snapshotPlatformQuotaDefaults must call BulkInsertInitial once on successful OAuth signup")
+	require.Len(t, quotaRepo.bulkInsertCalls, 1, "post-commit finalization must call BulkInsertInitial once on successful OAuth signup")
 
 	records := quotaRepo.bulkInsertCalls[0]
 	var anthropicRecord *UserPlatformQuotaRecord

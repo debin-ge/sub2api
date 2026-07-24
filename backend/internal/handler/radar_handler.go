@@ -7,7 +7,6 @@ import (
 	"net/url"
 	"reflect"
 	"strconv"
-	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
@@ -19,22 +18,18 @@ const (
 	radarHealthCacheControl      = "public, max-age=300"
 	radarQuotaLatestCacheControl = "public, max-age=300"
 	radarQuotaTrendCacheControl  = "public, max-age=600"
-	radarDegradationCacheControl = "public, max-age=3600"
+	radarDegradationCacheControl = "public, max-age=300"
 	radarSourcesCacheControl     = "public, max-age=600"
-	radarDefaultTrendDays        = 90
-	radarMaxTrendDays            = 90
 	radarDefaultQuotaTrendDays   = 7
 	radarMaxQuotaTrendDays       = 7
 )
 
 // RadarHandler exposes the read-only public Model Radar endpoints.
 type RadarHandler struct {
-	radarService      service.RadarPublicService
-	allowedModelSlugs map[string]struct{}
+	radarService service.RadarPublicService
 }
 
-// NewRadarHandler constructs the public Radar handler and snapshots the model
-// allowlist so later config mutation cannot change request validation.
+// NewRadarHandler constructs the public Radar handler.
 func NewRadarHandler(cfg *config.Config, radarService service.RadarPublicService) (*RadarHandler, error) {
 	if cfg == nil {
 		return nil, errors.New("radar handler requires config")
@@ -43,19 +38,7 @@ func NewRadarHandler(cfg *config.Config, radarService service.RadarPublicService
 		return nil, errors.New("radar handler requires service")
 	}
 
-	allowedModelSlugs := make(map[string]struct{}, len(cfg.Radar.ArtificialAnalysisModelSlugs))
-	for _, configuredSlug := range cfg.Radar.ArtificialAnalysisModelSlugs {
-		slug := strings.TrimSpace(configuredSlug)
-		if _, err := service.RadarAAPerformanceSource(slug); err != nil {
-			return nil, errors.New("radar handler requires valid model allowlist")
-		}
-		allowedModelSlugs[slug] = struct{}{}
-	}
-
-	return &RadarHandler{
-		radarService:      radarService,
-		allowedModelSlugs: allowedModelSlugs,
-	}, nil
+	return &RadarHandler{radarService: radarService}, nil
 }
 
 // GetServiceHealth returns supported public service health and 30-day history.
@@ -112,23 +95,11 @@ func (h *RadarHandler) GetDegradationLatest(c *gin.Context) {
 		writeRadarError(c, err)
 		return
 	}
-	writeRadarSuccess(c, radarDegradationCacheControl, data)
-}
-
-// GetDegradationTrend returns one allowlisted model metric trend.
-func (h *RadarHandler) GetDegradationTrend(c *gin.Context) {
-	model, metric, days, ok := h.parseDegradationTrendQuery(c)
-	if !ok {
-		writeRadarError(c, service.ErrInvalidRadarQuery)
-		return
+	cacheControl := radarDegradationCacheControl
+	if data != nil && data.Stale && len(data.AvailableModels) == 0 {
+		cacheControl = "no-store"
 	}
-
-	data, err := h.radarService.GetDegradationTrend(c.Request.Context(), model, metric, days)
-	if err != nil {
-		writeRadarError(c, err)
-		return
-	}
-	writeRadarSuccess(c, radarDegradationCacheControl, data)
+	writeRadarSuccess(c, cacheControl, data)
 }
 
 // GetLMArena returns the complete public LMArena snapshot.
@@ -157,54 +128,6 @@ func (h *RadarHandler) GetDataSources(c *gin.Context) {
 		return
 	}
 	writeRadarSuccess(c, radarSourcesCacheControl, data)
-}
-
-func (h *RadarHandler) parseDegradationTrendQuery(c *gin.Context) (string, service.DegradationMetric, int, bool) {
-	query, err := url.ParseQuery(c.Request.URL.RawQuery)
-	if err != nil || len(query) < 2 || len(query) > 3 {
-		return "", "", 0, false
-	}
-	for key := range query {
-		if key != "model" && key != "metric" && key != "days" {
-			return "", "", 0, false
-		}
-	}
-	modelValues, modelPresent := query["model"]
-	metricValues, metricPresent := query["metric"]
-	if !modelPresent || len(modelValues) != 1 || !metricPresent || len(metricValues) != 1 {
-		return "", "", 0, false
-	}
-
-	model := modelValues[0]
-	if model == "" || model != strings.TrimSpace(model) || len(model) > 128 {
-		return "", "", 0, false
-	}
-	if _, allowed := h.allowedModelSlugs[model]; !allowed {
-		return "", "", 0, false
-	}
-
-	metric := service.DegradationMetric(metricValues[0])
-	switch metric {
-	case service.DegradationMetricIntelligenceIndex,
-		service.DegradationMetricCodingIndex,
-		service.DegradationMetricAgenticIndex:
-	default:
-		return "", "", 0, false
-	}
-
-	days := radarDefaultTrendDays
-	if daysValues, present := query["days"]; present {
-		if len(daysValues) != 1 {
-			return "", "", 0, false
-		}
-		parsedDays, ok := parseRadarDecimalDays(daysValues[0], radarMaxTrendDays)
-		if !ok {
-			return "", "", 0, false
-		}
-		days = parsedDays
-	}
-
-	return model, metric, days, true
 }
 
 func radarHasNoQuery(c *gin.Context) bool {

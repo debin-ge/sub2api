@@ -43,7 +43,6 @@ export default {
       "updated": "更新时间",
       "uptime": "90 天可用率",
       "lastIncident": "最近事故",
-      "source": "数据源",
       "history30d": "近 30 天历史",
       "dailyStatus": "每日状态",
       "statusLegend": "状态标识",
@@ -64,7 +63,7 @@ export default {
     },
     "quota": {
       "title": "额度雷达",
-      "subtitle": "按平台和套餐展示匿名额度聚合数据。",
+      "subtitle": "按套餐展示 5H / 7D 额度上限与样本数。",
       "emptyPending": "暂无额度数据。服务启动后会立即执行聚合，请稍后重试。",
       "emptyNoPublishable": "暂无可公开的额度数据。套餐桶需要近期被动额度快照，并满足对应的最小样本要求。",
       "emptyFailed": "额度聚合暂时不可用，请稍后重试。",
@@ -74,7 +73,7 @@ export default {
       "smallSample": "样本量较小",
       "fiveHourUtilization": "5 小时利用率",
       "sevenDayUtilization": "7 天利用率",
-      "inferredLimit": "反推上限",
+      "inferredLimit": "额度上限",
       "inference": {
         "insufficient": "样本不足",
         "dispersed": "数据离散度过高",
@@ -116,26 +115,33 @@ export default {
     },
     "degradation": {
       "title": "降智雷达",
-      "subtitle": "展示公开模型评测指数、历史变化和模型榜单排名，不代表已证明模型发生服务端降级。",
+      "subtitle": "展示 Artificial Analysis 与模型广场交集模型的当前指标，以及模型榜单排名。",
       "tabs": "模型评测视图",
       "overview": "指数概览",
       "lmarena": "模型榜单",
       "loading": "评测数据加载中",
       "error": "评测数据加载失败",
-      "radarLabel": "模型评测指标对比雷达图",
+      "chartTitle": "指标对比",
+      "scaleHint": "各项指数均为 0–100 分制",
+      "radarLabel": "模型评测指标对比图表",
       "empty": "等待评测数据",
-      "trendTitle": "单模型 90 天趋势",
-      "sourceUpdated": "更新时间",
-      "model": "模型",
-      "metric": "指标",
+      "emptyIntersection": "暂无三项指标完整且能与模型广场匹配的 Artificial Analysis 模型。",
+      "stale": "数据可能已过期",
+      "projectFetchedAt": "项目获取时间",
+      "selectModels": "选择模型",
+      "searchModels": "搜索 AA 或模型广场模型",
+      "selectionLimit": "最多同时比较 10 个模型",
+      "removeModel": "移除模型",
+      "noSearchResults": "没有匹配的模型",
       "intelligence": "智能指数",
       "intelligenceShort": "智能",
+      "intelligenceDescription": "综合衡量模型在广泛推理与知识评测中的表现。",
       "coding": "编码指数",
       "codingShort": "编码",
+      "codingDescription": "衡量模型在软件开发与代码生成评测中的表现。",
       "agentic": "代理指数",
       "agenticShort": "代理",
-      "noTrend": "暂无趋势数据",
-      "trendStale": "趋势数据可能已过期"
+      "agenticDescription": "衡量模型在多步骤智能体与工具使用评测中的表现。"
     },
     "lmarena": {
       "loading": "模型榜单加载中",
@@ -487,7 +493,6 @@ export default {
             "lmarena": "LMArena",
             "status_claude": "Claude 状态页",
             "status_openai": "OpenAI 状态页",
-            "aa_performance": "Artificial Analysis 性能",
             "quota_aggregator": "Sub2API 聚合用量"
           },
           "errors": {
@@ -511,11 +516,13 @@ export default {
       },
       "registration": {
         "rateLimit": "注册速率限制",
-        "rateLimitHint": "限制单个 IP 和单个邮箱域名的注册频率，防止批量注册薅羊毛",
+        "rateLimitHint": "限制单个 IP、单个邮箱地址及邮箱域名的注册/验证码频率，防止批量注册薅羊毛。域名级为高阈值兜底，请勿设置过低以免误伤正常用户",
         "rateLimitPerIp": "每 IP 注册次数上限",
         "rateLimitWindowIp": "每 IP 时间窗口（秒）",
-        "rateLimitPerEmail": "每邮箱域名注册次数上限",
-        "rateLimitWindowEmail": "每邮箱域名时间窗口（秒）"
+        "rateLimitPerEmail": "每邮箱地址次数上限",
+        "rateLimitWindowEmail": "每邮箱地址时间窗口（秒）",
+        "rateLimitPerEmailDomain": "每邮箱域名次数上限（反批量）",
+        "rateLimitWindowEmailDomain": "每邮箱域名时间窗口（秒）"
       },
       "gatewayForwarding": {
         "openaiAllowClaudeCodeCodexPlugin": "允许在 Claude Code 中使用 Codex 插件",

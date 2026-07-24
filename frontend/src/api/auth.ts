@@ -506,6 +506,22 @@ export async function validateInvitationCode(code: string): Promise<ValidateInvi
   return data
 }
 
+export interface ValidateAffiliateCodeResponse {
+  valid: boolean
+  error_code?: 'AFFILIATE_DISABLED' | 'AFFILIATE_CODE_INVALID' | 'SERVICE_UNAVAILABLE' | string
+}
+
+/**
+ * Validate a reusable user referral code without exposing inviter details.
+ */
+export async function validateAffiliateCode(code: string): Promise<ValidateAffiliateCodeResponse> {
+  const { data } = await apiClient.post<ValidateAffiliateCodeResponse>(
+    '/auth/validate-affiliate-code',
+    { code }
+  )
+  return data
+}
+
 /**
  * Forgot password request
  */
@@ -677,6 +693,7 @@ export const authAPI = {
   sendPendingOAuthVerifyCode,
   validatePromoCode,
   validateInvitationCode,
+  validateAffiliateCode,
   forgotPassword,
   resetPassword,
   refreshToken,

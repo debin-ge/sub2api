@@ -73,7 +73,7 @@ func TestRadarAlertRulesCoverLaunchTargetsAndParseAsYAML(t *testing.T) {
 	require.Contains(t, stale, "> 3600")
 	require.Contains(t, stale, `source="aa"`)
 	require.Contains(t, stale, "> 43200")
-	require.Contains(t, stale, `source=~"aa_performance|lmarena"`)
+	require.Contains(t, stale, `source="lmarena"`)
 	require.Contains(t, stale, "> 172800")
 	failures := alerts["RadarSourceSustainedFailure"]
 	require.Contains(t, failures, `[2h]`)

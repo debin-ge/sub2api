@@ -313,7 +313,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	publicModelStatsProvider := handler.ProvidePublicModelStatsProvider(usageLogRepository)
 	billingFallbackProvider := handler.ProvideBillingFallbackProvider(billingService)
 	availableChannelHandler := handler.NewAvailableChannelHandler(channelService, apiKeyService, settingService, modelCatalogService, publicModelStatsProvider, billingFallbackProvider)
-	radarService, err := service.NewRadarService(configConfig, radarCacheRepository)
+	radarService, err := service.ProvideRadarService(configConfig, radarCacheRepository, modelCatalogService)
 	if err != nil {
 		return nil, err
 	}

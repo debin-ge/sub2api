@@ -13,8 +13,6 @@ import type { PublicRadarRequestOptions } from '@/api/publicRadar'
 import type {
   DataSourceMetaDTO,
   DegradationLatestDTO,
-  DegradationMetric,
-  DegradationTrendDTO,
   LMArenaDTO,
   QuotaRadarLatestDTO,
   QuotaTrendDTO,
@@ -44,12 +42,6 @@ export interface PublicRadarAPI {
     options?: PublicRadarRequestOptions
   ): Promise<QuotaTrendDTO>
   getDegradationLatest(options?: PublicRadarRequestOptions): Promise<DegradationLatestDTO>
-  getDegradationTrend(
-    model: string,
-    metric: DegradationMetric,
-    days?: number,
-    options?: PublicRadarRequestOptions
-  ): Promise<DegradationTrendDTO>
   getLMArena(options?: PublicRadarRequestOptions): Promise<LMArenaDTO>
   getDataSources(options?: PublicRadarRequestOptions): Promise<DataSourceMetaDTO[]>
 }
@@ -96,17 +88,6 @@ export interface UsePublicRadarReturn {
     days?: number,
     options?: PublicRadarTrendLoadOptions
   ): Promise<QuotaTrendDTO>
-  getDegradationTrendState(
-    model: string,
-    metric: DegradationMetric,
-    days?: number
-  ): RadarResourceState<DegradationTrendDTO>
-  loadDegradationTrend(
-    model: string,
-    metric: DegradationMetric,
-    days?: number,
-    options?: PublicRadarTrendLoadOptions
-  ): Promise<DegradationTrendDTO>
   dispose(): void
 }
 
@@ -139,10 +120,6 @@ function quotaTrendKey(bucketKey: string, days: number): string {
   return JSON.stringify([bucketKey, days])
 }
 
-function degradationTrendKey(model: string, metric: DegradationMetric, days: number): string {
-  return JSON.stringify([model, metric, days])
-}
-
 export function usePublicRadar(options: UsePublicRadarOptions = {}): UsePublicRadarReturn {
   const api = options.api ?? defaultPublicRadarAPI
   const clock = options.clock ?? (() => new Date())
@@ -163,7 +140,6 @@ export function usePublicRadar(options: UsePublicRadarOptions = {}): UsePublicRa
   )
 
   const quotaTrends = new Map<string, InternalTrendState<QuotaTrendDTO>>()
-  const degradationTrends = new Map<string, InternalTrendState<DegradationTrendDTO>>()
 
   let disposed = false
   let refreshGeneration = 0
@@ -375,31 +351,6 @@ export function usePublicRadar(options: UsePublicRadarOptions = {}): UsePublicRa
     )
   }
 
-  function getDegradationTrendState(
-    model: string,
-    metric: DegradationMetric,
-    days = 90
-  ): RadarResourceState<DegradationTrendDTO> {
-    return ensureTrendState(degradationTrends, degradationTrendKey(model, metric, days))
-  }
-
-  function loadDegradationTrend(
-    model: string,
-    metric: DegradationMetric,
-    days = 90,
-    options?: PublicRadarTrendLoadOptions
-  ): Promise<DegradationTrendDTO> {
-    const state = ensureTrendState(
-      degradationTrends,
-      degradationTrendKey(model, metric, days)
-    )
-    return loadTrend(
-      state,
-      (requestOptions) => api.getDegradationTrend(model, metric, days, requestOptions),
-      options
-    )
-  }
-
   function dispose(): void {
     if (disposed) return
     disposed = true
@@ -411,14 +362,13 @@ export function usePublicRadar(options: UsePublicRadarOptions = {}): UsePublicRa
     for (const state of coreStates) {
       state.loading.value = false
     }
-    for (const state of [...quotaTrends.values(), ...degradationTrends.values()]) {
+    for (const state of quotaTrends.values()) {
       state.controller?.abort()
       state.controller = null
       state.inFlight = null
       state.loading.value = false
     }
     quotaTrends.clear()
-    degradationTrends.clear()
   }
 
   if (getCurrentScope()) {
@@ -439,8 +389,6 @@ export function usePublicRadar(options: UsePublicRadarOptions = {}): UsePublicRa
     refresh,
     getQuotaTrendState,
     loadQuotaTrend,
-    getDegradationTrendState,
-    loadDegradationTrend,
     dispose,
   }
 }

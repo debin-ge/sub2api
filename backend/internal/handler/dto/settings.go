@@ -27,26 +27,29 @@ type CustomEndpoint struct {
 
 // SystemSettings represents the admin settings API response payload.
 type SystemSettings struct {
-	RegistrationEnabled              bool                     `json:"registration_enabled"`
-	EmailVerifyEnabled               bool                     `json:"email_verify_enabled"`
-	RegistrationEmailSuffixWhitelist []string                 `json:"registration_email_suffix_whitelist"`
-	PromoCodeEnabled                 bool                     `json:"promo_code_enabled"`
-	PasswordResetEnabled             bool                     `json:"password_reset_enabled"`
-	FrontendURL                      string                   `json:"frontend_url"`
-	InvitationCodeEnabled            bool                     `json:"invitation_code_enabled"`
-	RegistrationRateLimitPerIP       int                      `json:"registration_rate_limit_per_ip"`       // 每IP注册请求数上限
-	RegistrationRateLimitWindowIP    int                      `json:"registration_rate_limit_window_ip"`    // 每IP速率限制时间窗口（秒）
-	RegistrationRateLimitPerEmail    int                      `json:"registration_rate_limit_per_email"`    // 每邮箱域名注册请求数上限
-	RegistrationRateLimitWindowEmail int                      `json:"registration_rate_limit_window_email"` // 每邮箱域名速率限制时间窗口（秒）
-	TotpEnabled                      bool                     `json:"totp_enabled"`                         // TOTP 双因素认证
-	TotpEncryptionKeyConfigured      bool                     `json:"totp_encryption_key_configured"`       // TOTP 加密密钥是否已配置
-	SessionBindingEnabled            bool                     `json:"session_binding_enabled"`              // 会话 IP/UA 绑定
-	StepUpEnabled                    bool                     `json:"step_up_enabled"`                      // 敏感操作 step-up 2FA
-	AuditLogRetentionDays            int                      `json:"audit_log_retention_days"`             // 审计日志保留天数
-	LoginAgreementEnabled            bool                     `json:"login_agreement_enabled"`
-	LoginAgreementMode               string                   `json:"login_agreement_mode"`
-	LoginAgreementUpdatedAt          string                   `json:"login_agreement_updated_at"`
-	LoginAgreementDocuments          []LoginAgreementDocument `json:"login_agreement_documents"`
+	RegistrationEnabled                    bool                     `json:"registration_enabled"`
+	EmailVerifyEnabled                     bool                     `json:"email_verify_enabled"`
+	RegistrationEmailSuffixBlacklist       []string                 `json:"registration_email_suffix_blacklist"`
+	PromoCodeEnabled                       bool                     `json:"promo_code_enabled"`
+	PasswordResetEnabled                   bool                     `json:"password_reset_enabled"`
+	FrontendURL                            string                   `json:"frontend_url"`
+	InvitationCodeEnabled                  bool                     `json:"invitation_code_enabled"`
+	InvitationCodeRequired                 bool                     `json:"invitation_code_required"`
+	RegistrationRateLimitPerIP             int                      `json:"registration_rate_limit_per_ip"`              // 每IP注册请求数上限
+	RegistrationRateLimitWindowIP          int                      `json:"registration_rate_limit_window_ip"`           // 每IP速率限制时间窗口（秒）
+	RegistrationRateLimitPerEmail          int                      `json:"registration_rate_limit_per_email"`           // 每邮箱地址请求数上限
+	RegistrationRateLimitWindowEmail       int                      `json:"registration_rate_limit_window_email"`        // 每邮箱地址速率限制时间窗口（秒）
+	RegistrationRateLimitPerEmailDomain    int                      `json:"registration_rate_limit_per_email_domain"`    // 每邮箱域名请求数上限（高阈值反批量）
+	RegistrationRateLimitWindowEmailDomain int                      `json:"registration_rate_limit_window_email_domain"` // 每邮箱域名速率限制时间窗口（秒）
+	TotpEnabled                            bool                     `json:"totp_enabled"`                                // TOTP 双因素认证
+	TotpEncryptionKeyConfigured            bool                     `json:"totp_encryption_key_configured"`              // TOTP 加密密钥是否已配置
+	SessionBindingEnabled                  bool                     `json:"session_binding_enabled"`                     // 会话 IP/UA 绑定
+	StepUpEnabled                          bool                     `json:"step_up_enabled"`                             // 敏感操作 step-up 2FA
+	AuditLogRetentionDays                  int                      `json:"audit_log_retention_days"`                    // 审计日志保留天数
+	LoginAgreementEnabled                  bool                     `json:"login_agreement_enabled"`
+	LoginAgreementMode                     string                   `json:"login_agreement_mode"`
+	LoginAgreementUpdatedAt                string                   `json:"login_agreement_updated_at"`
+	LoginAgreementDocuments                []LoginAgreementDocument `json:"login_agreement_documents"`
 
 	SMTPHost               string `json:"smtp_host"`
 	SMTPPort               int    `json:"smtp_port"`
@@ -156,6 +159,7 @@ type SystemSettings struct {
 	AffiliateRebateFreezeHours   int                          `json:"affiliate_rebate_freeze_hours"`
 	AffiliateRebateDurationDays  int                          `json:"affiliate_rebate_duration_days"`
 	AffiliateRebatePerInviteeCap float64                      `json:"affiliate_rebate_per_invitee_cap"`
+	AffiliateRegistrationReward  float64                      `json:"affiliate_registration_reward_amount"`
 	AdminRechargeRebateEnabled   bool                         `json:"affiliate_admin_recharge_enabled"`
 	DefaultUserRPMLimit          int                          `json:"default_user_rpm_limit"`
 	DefaultSubscriptions         []DefaultSubscriptionSetting `json:"default_subscriptions"`
@@ -322,10 +326,11 @@ type PublicSettings struct {
 	RegistrationEnabled              bool                     `json:"registration_enabled"`
 	EmailVerifyEnabled               bool                     `json:"email_verify_enabled"`
 	ForceEmailOnThirdPartySignup     bool                     `json:"force_email_on_third_party_signup"`
-	RegistrationEmailSuffixWhitelist []string                 `json:"registration_email_suffix_whitelist"`
+	RegistrationEmailSuffixBlacklist []string                 `json:"registration_email_suffix_blacklist"`
 	PromoCodeEnabled                 bool                     `json:"promo_code_enabled"`
 	PasswordResetEnabled             bool                     `json:"password_reset_enabled"`
 	InvitationCodeEnabled            bool                     `json:"invitation_code_enabled"`
+	InvitationCodeRequired           bool                     `json:"invitation_code_required"`
 	TotpEnabled                      bool                     `json:"totp_enabled"` // TOTP 双因素认证
 	LoginAgreementEnabled            bool                     `json:"login_agreement_enabled"`
 	LoginAgreementMode               string                   `json:"login_agreement_mode"`

@@ -47,10 +47,13 @@ const providerInitial = computed(() => normalizedProviderName.value.charAt(0).to
 
 function startLogin(): void {
   const redirectTo = (route.query.redirect as string) || '/dashboard'
-  storeOAuthAffiliateCode(resolveAffiliateReferralCode(props.affCode, route.query.aff, route.query.aff_code))
+  const affiliateCode = resolveAffiliateReferralCode(props.affCode, route.query.aff, route.query.aff_code)
+  storeOAuthAffiliateCode(affiliateCode)
   const apiBase = (import.meta.env.VITE_API_BASE_URL as string | undefined) || '/api/v1'
   const normalized = apiBase.replace(/\/$/, '')
-  const startURL = `${normalized}/auth/oauth/oidc/start?redirect=${encodeURIComponent(redirectTo)}`
+  const params = new URLSearchParams({ redirect: redirectTo })
+  if (affiliateCode) params.set('aff_code', affiliateCode)
+  const startURL = `${normalized}/auth/oauth/oidc/start?${params.toString()}`
   window.location.href = startURL
 }
 </script>

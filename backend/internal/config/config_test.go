@@ -73,36 +73,31 @@ func TestRadarDefaults(t *testing.T) {
 	require.Equal(t, 15, cfg.Radar.QuotaAggregatorIntervalMin)
 	require.Equal(t, 7, cfg.Radar.QuotaHistoryRetentionDays)
 	require.Equal(t, 3, cfg.Radar.SampleSizeWarnBelow)
-	require.Equal(t, 2, cfg.Radar.PublicMinBucketAccounts)
+	require.Equal(t, 1, cfg.Radar.PublicMinBucketAccounts)
 	require.Equal(t, 5.0, cfg.Radar.InferMinUtilization)
 	require.Equal(t, 0.3, cfg.Radar.InferMaxStdevRatio)
 	require.Empty(t, cfg.Radar.ArtificialAnalysisAPIKey)
-	require.Empty(t, cfg.Radar.ArtificialAnalysisModelSlugs)
 	require.Equal(t, 10, cfg.Radar.ExternalRequestTimeoutSeconds)
 	require.Equal(t, int64(10*1024*1024), cfg.Radar.ExternalResponseMaxBytes)
 	require.Equal(t, 6*60, cfg.Radar.ArtificialAnalysisModelsIntervalMinutes)
-	require.Equal(t, 24*60, cfg.Radar.ArtificialAnalysisPerformanceIntervalMinutes)
 	require.Equal(t, 24*60, cfg.Radar.LMArenaIntervalMinutes)
 	require.Equal(t, 30, cfg.Radar.StatuspageIntervalMinutes)
 	require.Equal(t, 7, cfg.Radar.SourceHardRetentionDays)
 	require.Equal(t, 30, cfg.Radar.QuotaStaleThresholdMinutes)
 	require.Equal(t, 60, cfg.Radar.HealthStaleThresholdMinutes)
 	require.Equal(t, 12*60, cfg.Radar.ArtificialAnalysisModelsStaleThresholdMinutes)
-	require.Equal(t, 48*60, cfg.Radar.ArtificialAnalysisPerformanceStaleThresholdMinutes)
 	require.Equal(t, 48*60, cfg.Radar.LMArenaStaleThresholdMinutes)
 	require.Equal(t, "https://datasets-server.huggingface.co/filter", cfg.Radar.LMArenaURL)
 }
 
-func TestRadarNormalizesArtificialAnalysisConfig(t *testing.T) {
+func TestRadarNormalizesArtificialAnalysisAPIKey(t *testing.T) {
 	resetViperWithJWTSecret(t)
 	viper.Set("radar.artificial_analysis_api_key", "  aa-secret  ")
-	viper.Set("radar.artificial_analysis_model_slugs", []string{"  model-one  ", "", "   ", "model-two"})
 
 	cfg, err := Load()
 
 	require.NoError(t, err)
 	require.Equal(t, "aa-secret", cfg.Radar.ArtificialAnalysisAPIKey)
-	require.Equal(t, []string{"model-one", "model-two"}, cfg.Radar.ArtificialAnalysisModelSlugs)
 }
 
 func TestIsValidRadarModelSlug(t *testing.T) {
@@ -117,7 +112,7 @@ func TestIsValidRadarModelSlug(t *testing.T) {
 		{name: "max bytes", value: strings.Repeat("a", 128), valid: true},
 		{name: "blank", value: "", valid: false},
 		{name: "path traversal", value: "../secret", valid: false},
-		{name: "uppercase", value: "Model-v1", valid: false},
+		{name: "uppercase provider slug", value: "QwQ-32B-Preview", valid: true},
 		{name: "leading punctuation", value: ".model", valid: false},
 		{name: "space", value: "model secret", valid: false},
 		{name: "too long", value: strings.Repeat("a", 129), valid: false},
@@ -128,49 +123,6 @@ func TestIsValidRadarModelSlug(t *testing.T) {
 			require.Equal(t, tt.valid, IsValidRadarModelSlug(tt.value))
 		})
 	}
-}
-
-func TestRadarValidationRejectsUnsafeModelSlugsWithoutLeakingValues(t *testing.T) {
-	unsafeSlugs := []string{
-		"../secret",
-		"Uppercase-secret",
-		".leading-secret",
-		" \t ",
-		strings.Repeat("s", 129),
-	}
-
-	for _, unsafeSlug := range unsafeSlugs {
-		cfg := validConfigForTest(t)
-		cfg.Radar.ArtificialAnalysisModelSlugs = []string{"safe-model", unsafeSlug}
-
-		err := cfg.Validate()
-
-		require.EqualError(t, err, "radar.artificial_analysis_model_slugs contains an invalid value")
-		require.NotContains(t, err.Error(), unsafeSlug)
-	}
-}
-
-func TestRadarValidationAllowsCanonicalAndDuplicateModelSlugs(t *testing.T) {
-	cfg := validConfigForTest(t)
-	cfg.Radar.ArtificialAnalysisModelSlugs = []string{
-		"model.v1_alpha-beta",
-		strings.Repeat("a", 128),
-		"model.v1_alpha-beta",
-	}
-
-	require.NoError(t, cfg.Validate())
-}
-
-func TestLoadRejectsUnsafeRadarModelSlugWithoutReturningConfigOrValue(t *testing.T) {
-	resetViperWithJWTSecret(t)
-	unsafeSlug := "../load-secret-model"
-	viper.Set("radar.artificial_analysis_model_slugs", []string{"safe-model", unsafeSlug})
-
-	cfg, err := Load()
-
-	require.Nil(t, cfg)
-	require.EqualError(t, err, "validate config error: radar.artificial_analysis_model_slugs contains an invalid value")
-	require.NotContains(t, err.Error(), unsafeSlug)
 }
 
 func TestRadarExplicitDisableIsHonored(t *testing.T) {
@@ -202,7 +154,7 @@ func TestRadarValidation(t *testing.T) {
 		{"zero aggregator interval", func(c *Config) { c.Radar.QuotaAggregatorIntervalMin = 0 }, "quota_aggregator_interval_min"},
 		{"zero quota retention", func(c *Config) { c.Radar.QuotaHistoryRetentionDays = 0 }, "quota_history_retention_days"},
 		{"sample warning below one", func(c *Config) { c.Radar.SampleSizeWarnBelow = 0 }, "sample_size_warn_below"},
-		{"public bucket below two", func(c *Config) { c.Radar.PublicMinBucketAccounts = 1 }, "public_min_bucket_accounts"},
+		{"public bucket below one", func(c *Config) { c.Radar.PublicMinBucketAccounts = 0 }, "public_min_bucket_accounts"},
 		{"public bucket above warning threshold", func(c *Config) { c.Radar.PublicMinBucketAccounts = c.Radar.SampleSizeWarnBelow + 1 }, "public_min_bucket_accounts"},
 		{"zero inference utilization", func(c *Config) { c.Radar.InferMinUtilization = 0 }, "infer_min_utilization"},
 		{"excess inference utilization", func(c *Config) { c.Radar.InferMinUtilization = 100.1 }, "infer_min_utilization"},
@@ -211,14 +163,12 @@ func TestRadarValidation(t *testing.T) {
 		{"zero request timeout", func(c *Config) { c.Radar.ExternalRequestTimeoutSeconds = 0 }, "external_request_timeout_seconds"},
 		{"zero response limit", func(c *Config) { c.Radar.ExternalResponseMaxBytes = 0 }, "external_response_max_bytes"},
 		{"zero AA models interval", func(c *Config) { c.Radar.ArtificialAnalysisModelsIntervalMinutes = 0 }, "artificial_analysis_models_interval_minutes"},
-		{"zero AA performance interval", func(c *Config) { c.Radar.ArtificialAnalysisPerformanceIntervalMinutes = 0 }, "artificial_analysis_performance_interval_minutes"},
 		{"zero LMArena interval", func(c *Config) { c.Radar.LMArenaIntervalMinutes = 0 }, "lmarena_interval_minutes"},
 		{"zero Statuspage interval", func(c *Config) { c.Radar.StatuspageIntervalMinutes = 0 }, "statuspage_interval_minutes"},
 		{"zero hard retention", func(c *Config) { c.Radar.SourceHardRetentionDays = 0 }, "source_hard_retention_days"},
 		{"zero quota stale threshold", func(c *Config) { c.Radar.QuotaStaleThresholdMinutes = 0 }, "quota_stale_threshold_minutes"},
 		{"zero health stale threshold", func(c *Config) { c.Radar.HealthStaleThresholdMinutes = 0 }, "health_stale_threshold_minutes"},
 		{"zero AA models stale threshold", func(c *Config) { c.Radar.ArtificialAnalysisModelsStaleThresholdMinutes = 0 }, "artificial_analysis_models_stale_threshold_minutes"},
-		{"zero AA performance stale threshold", func(c *Config) { c.Radar.ArtificialAnalysisPerformanceStaleThresholdMinutes = 0 }, "artificial_analysis_performance_stale_threshold_minutes"},
 		{"zero LMArena stale threshold", func(c *Config) { c.Radar.LMArenaStaleThresholdMinutes = 0 }, "lmarena_stale_threshold_minutes"},
 		{"hard retention below stale threshold", func(c *Config) { c.Radar.SourceHardRetentionDays = 1 }, "source_hard_retention_days"},
 		{"empty LMArena URL", func(c *Config) { c.Radar.LMArenaURL = "" }, "lmarena_url"},
@@ -280,14 +230,12 @@ func TestRadarValidationAllowsHardMaximumBoundaries(t *testing.T) {
 	cfg.Radar.ExternalRequestTimeoutSeconds = 120
 	cfg.Radar.ExternalResponseMaxBytes = int64(100 * 1024 * 1024)
 	cfg.Radar.ArtificialAnalysisModelsIntervalMinutes = 10080
-	cfg.Radar.ArtificialAnalysisPerformanceIntervalMinutes = 10080
 	cfg.Radar.LMArenaIntervalMinutes = 10080
 	cfg.Radar.StatuspageIntervalMinutes = 10080
 	cfg.Radar.SourceHardRetentionDays = 30
 	cfg.Radar.QuotaStaleThresholdMinutes = 30 * 1440
 	cfg.Radar.HealthStaleThresholdMinutes = 30 * 1440
 	cfg.Radar.ArtificialAnalysisModelsStaleThresholdMinutes = 30 * 1440
-	cfg.Radar.ArtificialAnalysisPerformanceStaleThresholdMinutes = 30 * 1440
 	cfg.Radar.LMArenaStaleThresholdMinutes = 30 * 1440
 
 	require.NoError(t, cfg.Validate())
@@ -304,7 +252,6 @@ func TestRadarValidationRejectsValuesAboveHardMaximums(t *testing.T) {
 		{"request timeout", func(c *Config) { c.Radar.ExternalRequestTimeoutSeconds = 121 }, "external_request_timeout_seconds"},
 		{"response limit", func(c *Config) { c.Radar.ExternalResponseMaxBytes = int64(100*1024*1024) + 1 }, "external_response_max_bytes"},
 		{"AA models interval", func(c *Config) { c.Radar.ArtificialAnalysisModelsIntervalMinutes = 10081 }, "artificial_analysis_models_interval_minutes"},
-		{"AA performance interval", func(c *Config) { c.Radar.ArtificialAnalysisPerformanceIntervalMinutes = 10081 }, "artificial_analysis_performance_interval_minutes"},
 		{"LMArena interval", func(c *Config) { c.Radar.LMArenaIntervalMinutes = 10081 }, "lmarena_interval_minutes"},
 		{"Statuspage interval", func(c *Config) { c.Radar.StatuspageIntervalMinutes = 10081 }, "statuspage_interval_minutes"},
 		{"source hard retention", func(c *Config) { c.Radar.SourceHardRetentionDays = 31 }, "source_hard_retention_days"},
@@ -330,9 +277,6 @@ func TestRadarValidationRejectsStaleThresholdAboveRetention(t *testing.T) {
 		{"AA models", func(c *Config) {
 			c.Radar.ArtificialAnalysisModelsStaleThresholdMinutes = c.Radar.SourceHardRetentionDays*1440 + 1
 		}, "artificial_analysis_models_stale_threshold_minutes"},
-		{"AA performance", func(c *Config) {
-			c.Radar.ArtificialAnalysisPerformanceStaleThresholdMinutes = c.Radar.SourceHardRetentionDays*1440 + 1
-		}, "artificial_analysis_performance_stale_threshold_minutes"},
 		{"LMArena", func(c *Config) { c.Radar.LMArenaStaleThresholdMinutes = c.Radar.SourceHardRetentionDays*1440 + 1 }, "lmarena_stale_threshold_minutes"},
 	}
 
@@ -356,9 +300,6 @@ func TestRadarValidationRejectsStaleThresholdBelowProducerCadence(t *testing.T) 
 		{"AA models", func(c *Config) {
 			c.Radar.ArtificialAnalysisModelsStaleThresholdMinutes = c.Radar.ArtificialAnalysisModelsIntervalMinutes - 1
 		}, "artificial_analysis_models_stale_threshold_minutes"},
-		{"AA performance", func(c *Config) {
-			c.Radar.ArtificialAnalysisPerformanceStaleThresholdMinutes = c.Radar.ArtificialAnalysisPerformanceIntervalMinutes - 1
-		}, "artificial_analysis_performance_stale_threshold_minutes"},
 		{"LMArena", func(c *Config) { c.Radar.LMArenaStaleThresholdMinutes = c.Radar.LMArenaIntervalMinutes - 1 }, "lmarena_stale_threshold_minutes"},
 	}
 

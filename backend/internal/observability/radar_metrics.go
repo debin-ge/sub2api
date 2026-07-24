@@ -424,7 +424,7 @@ func (m *RadarMetrics) ReplaceCacheMemoryEntries(cache string, entries map[strin
 
 // SetCacheMemoryTotals applies a shared Redis snapshot to this process.
 func (m *RadarMetrics) SetCacheMemoryTotals(totals map[string]int) {
-	for _, cache := range []string{"quota_bucket", "aa", "aa_performance", "lmarena", "service_health", "metadata"} {
+	for _, cache := range []string{"quota_bucket", "aa", "lmarena", "service_health", "metadata"} {
 		m.ReplaceCacheMemoryEntries(cache, map[string]int{"shared": totals[cache]})
 	}
 }
@@ -441,9 +441,6 @@ func normalizeSource(source string) string {
 	case "aa", "lmarena", "status_claude", "status_openai", "status_windsurf", "status_deepseek",
 		"status_kimi", "status_minimax_global", "status_minimax_china":
 		return source
-	}
-	if strings.HasPrefix(source, "aa_perf:") || source == "aa_performance" {
-		return "aa_performance"
 	}
 	return "other"
 }
@@ -520,7 +517,6 @@ func normalizeRoute(route string) string {
 		"/api/v1/public/radar/quota-buckets/latest",
 		"/api/v1/public/radar/quota-buckets/trend",
 		"/api/v1/public/radar/degradation/latest",
-		"/api/v1/public/radar/degradation/trend",
 		"/api/v1/public/radar/lmarena",
 		"/api/v1/public/radar/sources":
 		return route
@@ -549,7 +545,7 @@ func normalizeRedisAccess(access string) string {
 
 func normalizeCache(cache string) string {
 	switch cache {
-	case "quota_bucket", "aa", "aa_performance", "lmarena", "service_health", "metadata":
+	case "quota_bucket", "aa", "lmarena", "service_health", "metadata":
 		return cache
 	default:
 		return "other"

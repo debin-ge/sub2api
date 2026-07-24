@@ -17,6 +17,7 @@ var (
 	ErrAffiliateCodeTaken       = infraerrors.Conflict("AFFILIATE_CODE_TAKEN", "affiliate code already in use")
 	ErrAffiliateAlreadyBound    = infraerrors.Conflict("AFFILIATE_ALREADY_BOUND", "affiliate inviter already bound")
 	ErrAffiliateQuotaEmpty      = infraerrors.BadRequest("AFFILIATE_QUOTA_EMPTY", "no affiliate quota available to transfer")
+	ErrAffiliateDisabled        = infraerrors.BadRequest("AFFILIATE_DISABLED", "affiliate feature is disabled")
 )
 
 const (
@@ -90,14 +91,25 @@ type AffiliateDetail struct {
 	// EffectiveRebateRatePercent 是当前用户作为邀请人时实际生效的返利比例：
 	// 优先用户自己的专属比例（aff_rebate_rate_percent），否则回退到全局比例。
 	// 用于在用户的 /affiliate 页面直观展示「分享后能拿到多少」。
-	EffectiveRebateRatePercent float64            `json:"effective_rebate_rate_percent"`
-	Invitees                   []AffiliateInvitee `json:"invitees"`
+	EffectiveRebateRatePercent float64 `json:"effective_rebate_rate_percent"`
+	// EffectiveRegistrationRewardAmount is the current fixed reward for a
+	// newly-created invitee. Historical rewards keep their ledger snapshot.
+	EffectiveRegistrationRewardAmount float64            `json:"effective_registration_reward_amount"`
+	Invitees                          []AffiliateInvitee `json:"invitees"`
+}
+
+type AffiliateRegistrationRewardResult struct {
+	InviterID     int64   `json:"inviter_id"`
+	Bound         bool    `json:"bound"`
+	RewardApplied bool    `json:"reward_applied"`
+	RewardAmount  float64 `json:"reward_amount"`
 }
 
 type AffiliateRepository interface {
 	EnsureUserAffiliate(ctx context.Context, userID int64) (*AffiliateSummary, error)
 	GetAffiliateByCode(ctx context.Context, code string) (*AffiliateSummary, error)
 	BindInviter(ctx context.Context, userID, inviterID int64) (bool, error)
+	BindInviterAndGrantRegistrationReward(ctx context.Context, inviteeUserID int64, affiliateCode string, rewardAmount float64, freezeHours int) (*AffiliateRegistrationRewardResult, error)
 	AccrueQuota(ctx context.Context, inviterID, inviteeUserID int64, amount float64, freezeHours int, sourceOrderID *int64) (bool, error)
 	GetAccruedRebateFromInvitee(ctx context.Context, inviterID, inviteeUserID int64) (float64, error)
 	ThawFrozenQuota(ctx context.Context, userID int64) (float64, error)
@@ -145,15 +157,16 @@ type AffiliateRecordFilter struct {
 }
 
 type AffiliateInviteRecord struct {
-	InviterID       int64     `json:"inviter_id"`
-	InviterEmail    string    `json:"inviter_email"`
-	InviterUsername string    `json:"inviter_username"`
-	InviteeID       int64     `json:"invitee_id"`
-	InviteeEmail    string    `json:"invitee_email"`
-	InviteeUsername string    `json:"invitee_username"`
-	AffCode         string    `json:"aff_code"`
-	TotalRebate     float64   `json:"total_rebate"`
-	CreatedAt       time.Time `json:"created_at"`
+	InviterID                int64     `json:"inviter_id"`
+	InviterEmail             string    `json:"inviter_email"`
+	InviterUsername          string    `json:"inviter_username"`
+	InviteeID                int64     `json:"invitee_id"`
+	InviteeEmail             string    `json:"invitee_email"`
+	InviteeUsername          string    `json:"invitee_username"`
+	AffCode                  string    `json:"aff_code"`
+	RegistrationRewardAmount float64   `json:"registration_reward_amount"`
+	TotalRebate              float64   `json:"total_rebate"` // 同一邀请人按邀请时间计算的运行累计返利
+	CreatedAt                time.Time `json:"created_at"`
 }
 
 type AffiliateRebateRecord struct {
@@ -254,16 +267,91 @@ func (s *AffiliateService) GetAffiliateDetail(ctx context.Context, userID int64)
 		return nil, err
 	}
 	return &AffiliateDetail{
-		UserID:                     summary.UserID,
-		AffCode:                    summary.AffCode,
-		InviterID:                  summary.InviterID,
-		AffCount:                   summary.AffCount,
-		AffQuota:                   summary.AffQuota,
-		AffFrozenQuota:             summary.AffFrozenQuota,
-		AffHistoryQuota:            summary.AffHistoryQuota,
-		EffectiveRebateRatePercent: s.resolveRebateRatePercent(ctx, summary),
-		Invitees:                   invitees,
+		UserID:                            summary.UserID,
+		AffCode:                           summary.AffCode,
+		InviterID:                         summary.InviterID,
+		AffCount:                          summary.AffCount,
+		AffQuota:                          summary.AffQuota,
+		AffFrozenQuota:                    summary.AffFrozenQuota,
+		AffHistoryQuota:                   summary.AffHistoryQuota,
+		EffectiveRebateRatePercent:        s.resolveRebateRatePercent(ctx, summary),
+		EffectiveRegistrationRewardAmount: s.registrationRewardAmount(ctx),
+		Invitees:                          invitees,
 	}, nil
+}
+
+func (s *AffiliateService) ValidateAffiliateRegistrationCode(ctx context.Context, rawCode string) error {
+	if s == nil || !s.IsEnabled(ctx) {
+		return ErrAffiliateDisabled
+	}
+	code := strings.ToUpper(strings.TrimSpace(rawCode))
+	if code == "" || !isValidAffiliateCodeFormat(code) {
+		return ErrAffiliateCodeInvalid
+	}
+	if s.repo == nil {
+		return infraerrors.ServiceUnavailable("SERVICE_UNAVAILABLE", "affiliate service unavailable")
+	}
+	summary, err := s.repo.GetAffiliateByCode(ctx, code)
+	if err != nil {
+		if errors.Is(err, ErrAffiliateProfileNotFound) {
+			return ErrAffiliateCodeInvalid
+		}
+		return infraerrors.ServiceUnavailable(
+			"SERVICE_UNAVAILABLE",
+			"affiliate service unavailable",
+		).WithCause(err)
+	}
+	if summary == nil || summary.UserID <= 0 {
+		return ErrAffiliateCodeInvalid
+	}
+	return nil
+}
+
+func (s *AffiliateService) BindInviterAndGrantRegistrationReward(ctx context.Context, userID int64, rawCode string) (*AffiliateRegistrationRewardResult, error) {
+	code := strings.ToUpper(strings.TrimSpace(rawCode))
+	if code == "" || !s.IsEnabled(ctx) {
+		return &AffiliateRegistrationRewardResult{}, nil
+	}
+	if userID <= 0 {
+		return nil, infraerrors.BadRequest("INVALID_USER", "invalid user")
+	}
+	if err := s.ValidateAffiliateRegistrationCode(ctx, code); err != nil {
+		return nil, err
+	}
+
+	rewardAmount := s.registrationRewardAmount(ctx)
+	freezeHours := 0
+	if s.settingService != nil {
+		freezeHours = s.settingService.GetAffiliateRebateFreezeHours(ctx)
+	}
+	result, err := s.repo.BindInviterAndGrantRegistrationReward(ctx, userID, code, rewardAmount, freezeHours)
+	if err != nil {
+		if errors.Is(err, ErrAffiliateCodeInvalid) || errors.Is(err, ErrAffiliateAlreadyBound) {
+			return nil, err
+		}
+		return nil, infraerrors.ServiceUnavailable(
+			"SERVICE_UNAVAILABLE",
+			"affiliate service unavailable",
+		).WithCause(err)
+	}
+	if result != nil && result.RewardApplied {
+		logger.LegacyPrintf(
+			"service.affiliate",
+			"[Affiliate] registration reward applied inviter_id=%d invitee_id=%d amount=%.8f freeze_hours=%d",
+			result.InviterID,
+			userID,
+			result.RewardAmount,
+			freezeHours,
+		)
+	}
+	return result, nil
+}
+
+func (s *AffiliateService) registrationRewardAmount(ctx context.Context) float64 {
+	if s == nil || s.settingService == nil || !s.IsEnabled(ctx) {
+		return AffiliateRegistrationRewardAmountDefault
+	}
+	return s.settingService.GetAffiliateRegistrationRewardAmount(ctx)
 }
 
 func (s *AffiliateService) BindInviterByCode(ctx context.Context, userID int64, rawCode string) error {

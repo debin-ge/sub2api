@@ -144,6 +144,7 @@ func (h *AuthHandler) OIDCOAuthStart(c *gin.Context) {
 	intent := normalizeOAuthIntent(c.Query("intent"))
 	oidcSetCookie(c, oidcOAuthIntentCookieName, encodeCookieValue(intent), oidcOAuthCookieMaxAgeSec, secureCookie)
 	captureOAuthPromoCode(c, secureCookie)
+	captureOAuthAffiliateCode(c, secureCookie)
 	setOAuthPendingBrowserCookie(c, browserSessionKey, secureCookie)
 	clearOAuthPendingSessionCookie(c, secureCookie)
 	if intent == oauthIntentBindCurrentUser {
@@ -687,21 +688,26 @@ func (h *AuthHandler) CompleteOIDCOAuthRegistration(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	tokenPair, user, err := h.authService.LoginOrRegisterOAuthWithTokenPairAndPromoCode(
+	affiliateCode := strings.TrimSpace(req.AffCode)
+	if affiliateCode == "" {
+		affiliateCode = pendingOAuthAffiliateCode(session)
+	}
+	tokenPair, user, err := registerAndCompletePendingOAuthAccount(
 		c.Request.Context(),
+		client,
+		h.authService,
+		h.userService,
+		session,
+		decision,
 		email,
 		username,
 		req.InvitationCode,
-		req.AffCode,
+		affiliateCode,
 		pendingOAuthPromoCode(session),
 		"oidc",
 	)
 	if err != nil {
 		response.ErrorFrom(c, err)
-		return
-	}
-	if err := applyPendingOAuthAdoptionAndConsumeSession(c.Request.Context(), client, h.authService, h.userService, session, decision, user.ID); err != nil {
-		respondPendingOAuthBindingApplyError(c, err)
 		return
 	}
 	h.authService.RecordSuccessfulLogin(c.Request.Context(), user.ID)
@@ -1237,7 +1243,7 @@ func (h *AuthHandler) tryOIDCVerifiedEmailFastPath(
 	if h.isForceEmailOnThirdPartySignup(ctx) {
 		return false
 	}
-	if h.settingSvc.IsInvitationCodeEnabled(ctx) {
+	if h.settingSvc.IsInvitationCodeRequired(ctx) {
 		return false
 	}
 	if err := h.ensureBackendModeAllowsNewUserLogin(ctx); err != nil {
@@ -1272,7 +1278,7 @@ func (h *AuthHandler) tryOIDCVerifiedEmailFastPath(
 		ctx,
 		input,
 		"",
-		"",
+		readOAuthAffiliateCode(c),
 		readOAuthPromoCode(c),
 	)
 	if err != nil {

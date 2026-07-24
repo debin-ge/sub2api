@@ -43,7 +43,6 @@ export default {
       "updated": "Updated",
       "uptime": "90-day uptime",
       "lastIncident": "Latest incident",
-      "source": "Source",
       "history30d": "30-day history",
       "dailyStatus": "Daily status",
       "statusLegend": "Status key",
@@ -64,7 +63,7 @@ export default {
     },
     "quota": {
       "title": "Quota radar",
-      "subtitle": "Anonymous quota aggregates by platform and plan.",
+      "subtitle": "5H and 7D quota limits with sample sizes by plan.",
       "emptyPending": "No quota data yet. Aggregation runs after service startup; try again shortly.",
       "emptyNoPublishable": "No publishable quota data. Supported plan buckets require recent passive quota snapshots and their configured minimum sample.",
       "emptyFailed": "Quota aggregation is temporarily unavailable. Please try again later.",
@@ -74,7 +73,7 @@ export default {
       "smallSample": "Small sample",
       "fiveHourUtilization": "5-hour utilization",
       "sevenDayUtilization": "7-day utilization",
-      "inferredLimit": "Inferred limit",
+      "inferredLimit": "Quota limit",
       "inference": {
         "insufficient": "Insufficient samples",
         "dispersed": "Data is too dispersed",
@@ -116,26 +115,33 @@ export default {
     },
     "degradation": {
       "title": "Benchmark radar",
-      "subtitle": "Public model indices, historical changes, and model leaderboard rankings; they do not prove server-side model degradation.",
+      "subtitle": "Current Artificial Analysis indices intersected with Model Plaza, plus model leaderboard rankings.",
       "tabs": "Benchmark views",
       "overview": "Index overview",
       "lmarena": "Model leaderboard",
       "loading": "Loading benchmark data",
       "error": "Unable to load benchmark data",
-      "radarLabel": "Model benchmark comparison radar chart",
+      "chartTitle": "Benchmark comparison",
+      "scaleHint": "All indices use a 0–100 scale",
+      "radarLabel": "Model benchmark comparison chart",
       "empty": "Waiting for benchmark data",
-      "trendTitle": "90-day model trend",
-      "sourceUpdated": "Updated",
-      "model": "Model",
-      "metric": "Metric",
+      "emptyIntersection": "No complete Artificial Analysis models currently match the Model Plaza catalog.",
+      "stale": "Data may be outdated",
+      "projectFetchedAt": "Project fetched at",
+      "selectModels": "Select models",
+      "searchModels": "Search AA or Model Plaza models",
+      "selectionLimit": "Compare up to 10 models",
+      "removeModel": "Remove model",
+      "noSearchResults": "No matching models",
       "intelligence": "Intelligence index",
       "intelligenceShort": "Intelligence",
+      "intelligenceDescription": "Composite performance across broad reasoning and knowledge evaluations.",
       "coding": "Coding index",
       "codingShort": "Coding",
+      "codingDescription": "Performance on software-development and code-generation evaluations.",
       "agentic": "Agentic index",
       "agenticShort": "Agentic",
-      "noTrend": "No trend data",
-      "trendStale": "Trend data may be outdated"
+      "agenticDescription": "Performance on multi-step agent and tool-use evaluations."
     },
     "lmarena": {
       "loading": "Loading model leaderboard",
@@ -487,7 +493,6 @@ export default {
             "lmarena": "LMArena",
             "status_claude": "Claude Statuspage",
             "status_openai": "OpenAI Statuspage",
-            "aa_performance": "Artificial Analysis Performance",
             "quota_aggregator": "Sub2API Aggregated Usage"
           },
           "errors": {
@@ -511,11 +516,13 @@ export default {
       },
       "registration": {
         "rateLimit": "Registration Rate Limit",
-        "rateLimitHint": "Limit registration frequency per IP and per email domain to prevent bulk sign-up abuse",
+        "rateLimitHint": "Limit registration/verification-code frequency per IP, per email address, and per email domain to prevent bulk sign-up abuse. The domain-level limit is a high-threshold backstop; do not set it too low or it will affect normal users",
         "rateLimitPerIp": "Max registrations per IP",
         "rateLimitWindowIp": "Per-IP time window (seconds)",
-        "rateLimitPerEmail": "Max registrations per email domain",
-        "rateLimitWindowEmail": "Per-email-domain time window (seconds)"
+        "rateLimitPerEmail": "Max requests per email address",
+        "rateLimitWindowEmail": "Per-email-address time window (seconds)",
+        "rateLimitPerEmailDomain": "Max requests per email domain (anti-bulk)",
+        "rateLimitWindowEmailDomain": "Per-email-domain time window (seconds)"
       },
       "gatewayForwarding": {
         "openaiAllowClaudeCodeCodexPlugin": "Allow using the Codex plugin in Claude Code",

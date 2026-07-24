@@ -73,7 +73,7 @@ func TestRadarMetricsExposeRequiredLowCardinalityContract(t *testing.T) {
 	metrics, err := NewRadarMetrics(registry)
 	require.NoError(t, err)
 
-	metrics.RecordFetchSuccess("aa_perf:secret-model", 200, 25*time.Millisecond, time.Now().Add(-2*time.Second))
+	metrics.RecordFetchSuccess("aa", 200, 25*time.Millisecond, time.Now().Add(-2*time.Second))
 	metrics.RecordFetchFailure("attacker-controlled", "credential=secret", 599, 10*time.Millisecond)
 	metrics.RecordAggregator("success", "", 30*time.Millisecond, 4)
 	metrics.RecordAggregatorCompletion(time.Now(), true, 4)
@@ -114,7 +114,7 @@ func TestRadarMetricsExposeRequiredLowCardinalityContract(t *testing.T) {
 		require.Contains(t, body, metricName)
 	}
 
-	require.Contains(t, body, `source="aa_performance"`)
+	require.Contains(t, body, `source="aa"`)
 	require.Contains(t, body, `source="other"`)
 	require.Contains(t, body, `reason="other"`)
 	require.Contains(t, body, `bucket="openai"`)
@@ -127,32 +127,6 @@ func TestRadarMetricsExposeRequiredLowCardinalityContract(t *testing.T) {
 	require.NotContains(t, body, "private-plan")
 	require.NotContains(t, body, "radar:quota:bucket:private")
 	require.False(t, strings.Contains(body, "private\""))
-}
-
-func TestRadarSourceAgeUsesOldestRegisteredCanonicalSourceAndHydrates(t *testing.T) {
-	registry := prometheus.NewRegistry()
-	metrics, err := NewRadarMetrics(registry)
-	require.NoError(t, err)
-	now := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
-	metrics.now = func() time.Time { return now }
-
-	metrics.RegisterSource("aa_perf:model-a")
-	metrics.RegisterSource("aa_perf:model-b")
-	metrics.HydrateSourceSuccess("aa_perf:model-a", now.Add(-2*time.Hour))
-	body := scrapeRegistry(t, registry)
-	require.Contains(t, body, `radar_source_age_seconds{source="aa_performance"} -1`)
-
-	metrics.HydrateSourceSuccess("aa_perf:model-b", now.Add(-5*time.Hour))
-	body = scrapeRegistry(t, registry)
-	require.Contains(t, body, `radar_source_age_seconds{source="aa_performance"} 18000`)
-
-	metrics.RecordFetchFailure("aa_perf:model-b", "network_error", 0, time.Second)
-	metrics.RecordFetchSuccess("aa_perf:model-a", 200, time.Second, now)
-	body = scrapeRegistry(t, registry)
-	require.Contains(t, body, `radar_source_age_seconds{source="aa_performance"} 18000`, "failure and a newer sibling must not hide the oldest model")
-	now = now.Add(time.Hour)
-	body = scrapeRegistry(t, registry)
-	require.Contains(t, body, `radar_source_age_seconds{source="aa_performance"} 21600`, "age must advance at collection time")
 }
 
 func TestRadarCacheMemorySumsPrivateEntriesWithinFixedFamily(t *testing.T) {

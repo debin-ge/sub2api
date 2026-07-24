@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"io"
 	"net/http"
 	"strconv"
@@ -16,7 +15,6 @@ import (
 func TestNewRadarFetchersWithoutAAKeySkipsAllAARequests(t *testing.T) {
 	cfg := validRadarFetcherTestConfig()
 	cfg.Radar.ArtificialAnalysisAPIKey = " \t "
-	cfg.Radar.ArtificialAnalysisModelSlugs = []string{"ignored-without-key"}
 
 	fetchers, err := NewRadarFetchers(cfg, radarFetcherTestCatalog())
 
@@ -33,26 +31,19 @@ func TestNewRadarFetchersWithoutAAKeySkipsAllAARequests(t *testing.T) {
 	requireUniqueRadarFetcherSources(t, fetchers)
 }
 
-func TestNewRadarFetchersWithAAKeyUsesStableConfiguredOrder(t *testing.T) {
+func TestNewRadarFetchersWithAAKeyUsesStableSourceOrder(t *testing.T) {
 	client := radarDoerFunc(func(*http.Request) (*http.Response, error) {
 		t.Fatal("constructor must not access the network")
 		return nil, nil
 	})
 	cfg := validRadarFetcherTestConfig()
 	cfg.Radar.ArtificialAnalysisAPIKey = " configured-key "
-	cfg.Radar.ArtificialAnalysisModelSlugs = []string{"model-b", "model-a", "model-b"}
 
 	fetchers, err := newRadarFetchers(cfg, client, radarFetcherTestCatalog())
 
 	require.NoError(t, err)
-	modelBSource, err := RadarAAPerformanceSource("model-b")
-	require.NoError(t, err)
-	modelASource, err := RadarAAPerformanceSource("model-a")
-	require.NoError(t, err)
 	require.Equal(t, []RadarSourceKey{
 		RadarSourceAA,
-		modelBSource,
-		modelASource,
 		RadarSourceLMArena,
 		RadarSourceStatusClaude,
 		RadarSourceStatusOpenAI,
@@ -64,13 +55,12 @@ func TestNewRadarFetchersWithAAKeyUsesStableConfiguredOrder(t *testing.T) {
 	requireUniqueRadarFetcherSources(t, fetchers)
 }
 
-func TestNewRadarFetchersWithAAKeyAndNoSlugsStillIncludesModels(t *testing.T) {
+func TestNewRadarFetchersWithAAKeyIncludesModels(t *testing.T) {
 	client := radarDoerFunc(func(*http.Request) (*http.Response, error) {
 		t.Fatal("constructor must not access the network")
 		return nil, nil
 	})
 	cfg := validRadarFetcherTestConfig()
-	cfg.Radar.ArtificialAnalysisModelSlugs = nil
 
 	fetchers, err := newRadarFetchers(cfg, client, radarFetcherTestCatalog())
 
@@ -119,21 +109,6 @@ func TestNewRadarFetchersConstructionIsAtomicAndSanitized(t *testing.T) {
 		require.Nil(t, fetchers)
 	})
 
-	t.Run("invalid later AA slug returns no partial slice", func(t *testing.T) {
-		cfg := validRadarFetcherTestConfig()
-		cfg.Radar.ArtificialAnalysisAPIKey = "assembly-secret-key"
-		cfg.Radar.ArtificialAnalysisModelSlugs = []string{"valid-model", "../sensitive-model"}
-
-		fetchers, err := newRadarFetchers(cfg, client, radarFetcherTestCatalog())
-
-		require.Error(t, err)
-		require.Nil(t, fetchers)
-		require.NotContains(t, err.Error(), cfg.Radar.ArtificialAnalysisAPIKey)
-		require.NotContains(t, err.Error(), "sensitive-model")
-		var configErr *RadarFetcherConfigError
-		require.True(t, errors.As(err, &configErr))
-	})
-
 	t.Run("invalid configured URL returns no partial slice", func(t *testing.T) {
 		cfg := validRadarFetcherTestConfig()
 		cfg.Radar.LMArenaURL = "https://user:url-secret@example.test/#fragment"
@@ -149,7 +124,6 @@ func TestNewRadarFetchersConstructionIsAtomicAndSanitized(t *testing.T) {
 func TestNewRadarFetchersEndpointsHeadersAndIntervalsWithoutLiveNetwork(t *testing.T) {
 	cfg := validRadarFetcherTestConfig()
 	cfg.Radar.ArtificialAnalysisAPIKey = "assembly-api-key"
-	cfg.Radar.ArtificialAnalysisModelSlugs = []string{"model-a"}
 	cfg.Radar.LMArenaURL = "https://datasets-server.huggingface.co/filter"
 
 	requests := make(map[string]*http.Request)
@@ -160,10 +134,8 @@ func TestNewRadarFetchersEndpointsHeadersAndIntervalsWithoutLiveNetwork(t *testi
 		requestsMu.Unlock()
 		var payload string
 		switch {
-		case req.URL.String() == artificialAnalysisModelsURL:
-			payload = `{"data":[]}`
-		case strings.Contains(req.URL.Path, "/model-a/performance"):
-			payload = `{"model_slug":"model-a","window":"90d","interval":"daily","data_points":[]}`
+		case req.URL.String() == artificialAnalysisModelsURL+"?page=1":
+			payload = validAAModelsPayload
 		case req.URL.Host == "datasets-server.huggingface.co":
 			offset, err := strconv.Atoi(req.URL.Query().Get("offset"))
 			require.NoError(t, err)
@@ -219,8 +191,7 @@ func TestNewRadarFetchersEndpointsHeadersAndIntervalsWithoutLiveNetwork(t *testi
 			require.Empty(t, req.Header.Get("x-api-key"))
 		}
 	}
-	require.Contains(t, requests, artificialAnalysisModelsURL)
-	require.Contains(t, requests, artificialAnalysisPerformanceURL+"/model-a/performance?window=90d&interval=daily")
+	require.Contains(t, requests, artificialAnalysisModelsURL+"?page=1")
 	require.True(t, hasRadarFetcherRequestHost(requests, "datasets-server.huggingface.co"))
 	require.Contains(t, requests, claudeStatuspageAPIURL)
 	require.Contains(t, requests, openAIStatuspageAPIURL)

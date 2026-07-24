@@ -50,7 +50,7 @@ func newEmailOAuthAutoAuthService(
 	)
 }
 
-func TestEmailOAuthAuto_SnapshotsPlatformQuotaDefaults(t *testing.T) {
+func TestEmailOAuthAuto_FinalizationSnapshotsPlatformQuotaDefaults(t *testing.T) {
 	userRepo := &userRepoStub{nextID: 88}
 	quotaRepo := &userPlatformQuotaRepoStub{}
 
@@ -74,8 +74,16 @@ func TestEmailOAuthAuto_SnapshotsPlatformQuotaDefaults(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, user)
 	require.Equal(t, int64(88), user.ID)
+	require.NoError(t, svc.FinalizeOAuthEmailAccount(
+		context.Background(),
+		user,
+		"",
+		"github",
+		"",
+	))
+	svc.FinalizeOAuthRegistrationPostCommit(context.Background(), user, "github", "")
 
-	require.Len(t, quotaRepo.bulkInsertCalls, 1, "createEmailOAuthUser must snapshot platform quotas via BulkInsertInitial")
+	require.Len(t, quotaRepo.bulkInsertCalls, 1, "post-commit finalization must snapshot platform quotas via BulkInsertInitial")
 
 	records := quotaRepo.bulkInsertCalls[0]
 	var geminiRecord *UserPlatformQuotaRecord

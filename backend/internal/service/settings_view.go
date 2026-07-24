@@ -14,11 +14,12 @@ func firstNonEmpty(values ...string) string {
 type SystemSettings struct {
 	RegistrationEnabled              bool
 	EmailVerifyEnabled               bool
-	RegistrationEmailSuffixWhitelist []string
+	RegistrationEmailSuffixBlacklist []string
 	PromoCodeEnabled                 bool
 	PasswordResetEnabled             bool
 	FrontendURL                      string
 	InvitationCodeEnabled            bool
+	InvitationCodeRequired           bool
 	TotpEnabled                      bool // TOTP 双因素认证
 	SessionBindingEnabled            bool // 会话 IP/UA 绑定（变更即失效）
 	StepUpEnabled                    bool // 敏感操作 step-up 2FA 门控
@@ -31,8 +32,11 @@ type SystemSettings struct {
 	// 注册速率限制（防止薅羊毛批量注册）
 	RegistrationRateLimitPerIP       int // 每IP注册请求数上限
 	RegistrationRateLimitWindowIP    int // 每IP速率限制时间窗口（秒）
-	RegistrationRateLimitPerEmail    int // 每邮箱域名注册请求数上限
-	RegistrationRateLimitWindowEmail int // 每邮箱域名速率限制时间窗口（秒）
+	RegistrationRateLimitPerEmail    int // 每邮箱地址请求数上限
+	RegistrationRateLimitWindowEmail int // 每邮箱地址速率限制时间窗口（秒）
+	// 域名级为高阈值兜底，仅用于对抗批量注册攻击
+	RegistrationRateLimitPerEmailDomain    int // 每邮箱域名请求数上限
+	RegistrationRateLimitWindowEmailDomain int // 每邮箱域名速率限制时间窗口（秒）
 
 	SMTPHost               string
 	SMTPPort               int
@@ -162,6 +166,7 @@ type SystemSettings struct {
 	AffiliateRebateFreezeHours   int
 	AffiliateRebateDurationDays  int
 	AffiliateRebatePerInviteeCap float64
+	AffiliateRegistrationReward  float64
 	AdminRechargeRebateEnabled   bool
 	DefaultUserRPMLimit          int
 	DefaultSubscriptions         []DefaultSubscriptionSetting
@@ -291,10 +296,11 @@ type PublicSettings struct {
 	RegistrationEnabled              bool
 	EmailVerifyEnabled               bool
 	ForceEmailOnThirdPartySignup     bool
-	RegistrationEmailSuffixWhitelist []string
+	RegistrationEmailSuffixBlacklist []string
 	PromoCodeEnabled                 bool
 	PasswordResetEnabled             bool
 	InvitationCodeEnabled            bool
+	InvitationCodeRequired           bool
 	TotpEnabled                      bool // TOTP 双因素认证
 	LoginAgreementEnabled            bool
 	LoginAgreementMode               string

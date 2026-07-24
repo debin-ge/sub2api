@@ -138,11 +138,11 @@ describe('radar supporting components', () => {
   })
 
   it('lets long source metadata shrink and wrap without hiding any source details', () => {
-    const longName = 'Artificial Analysis Performance (claude-sonnet-5)'
+    const longName = 'Artificial Analysis models with a deliberately long source label'
     const wrapper = mount(DataSourceFooter, {
       props: {
         sources: [source({
-          key: 'aa_perf:claude-sonnet-5',
+          key: 'aa',
           name: longName,
           next_fire_at: '2026-07-13T14:00:00.000Z',
         })],

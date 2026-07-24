@@ -81,6 +81,13 @@ type affiliateRepoStub struct {
 		userID    int64
 		inviterID int64
 	}
+	registrationRewardCalls []struct {
+		userID      int64
+		code        string
+		reward      float64
+		freezeHours int
+	}
+	registrationRewardErr error
 }
 
 func (s *affiliateRepoStub) EnsureUserAffiliate(ctx context.Context, userID int64) (*AffiliateSummary, error) {
@@ -103,6 +110,43 @@ func (s *affiliateRepoStub) BindInviter(ctx context.Context, userID, inviterID i
 		inviterID int64
 	}{userID: userID, inviterID: inviterID})
 	return true, nil
+}
+
+func (s *affiliateRepoStub) BindInviterAndGrantRegistrationReward(
+	ctx context.Context,
+	userID int64,
+	code string,
+	reward float64,
+	freezeHours int,
+) (*AffiliateRegistrationRewardResult, error) {
+	if s.registrationRewardErr != nil {
+		return nil, s.registrationRewardErr
+	}
+	owner, ok := s.codeOwners[strings.ToUpper(strings.TrimSpace(code))]
+	if !ok {
+		return nil, ErrAffiliateCodeInvalid
+	}
+	s.registrationRewardCalls = append(s.registrationRewardCalls, struct {
+		userID      int64
+		code        string
+		reward      float64
+		freezeHours int
+	}{
+		userID:      userID,
+		code:        strings.ToUpper(strings.TrimSpace(code)),
+		reward:      reward,
+		freezeHours: freezeHours,
+	})
+	_, err := s.BindInviter(ctx, userID, owner)
+	if err != nil {
+		return nil, err
+	}
+	return &AffiliateRegistrationRewardResult{
+		InviterID:     owner,
+		Bound:         true,
+		RewardApplied: reward > 0,
+		RewardAmount:  reward,
+	}, nil
 }
 
 func (s *affiliateRepoStub) AccrueQuota(context.Context, int64, int64, float64, int, *int64) (bool, error) {
@@ -480,45 +524,56 @@ func TestAuthService_Register_EmailSuffixNotAllowed(t *testing.T) {
 	repo := &userRepoStub{}
 	service := newAuthService(repo, map[string]string{
 		SettingKeyRegistrationEnabled:              "true",
-		SettingKeyRegistrationEmailSuffixWhitelist: `["@example.com","@company.com"]`,
+		SettingKeyRegistrationEmailSuffixBlacklist: `["@example.com","@company.com"]`,
 	}, nil, nil)
 
-	_, _, err := service.Register(context.Background(), "user@other.com", "password")
+	_, _, err := service.Register(context.Background(), "user@example.com", "password")
 	require.ErrorIs(t, err, ErrEmailSuffixNotAllowed)
 	appErr := infraerrors.FromError(err)
-	require.Contains(t, appErr.Message, "@example.com")
-	require.Contains(t, appErr.Message, "@company.com")
 	require.Equal(t, "EMAIL_SUFFIX_NOT_ALLOWED", appErr.Reason)
-	require.Equal(t, "2", appErr.Metadata["allowed_suffix_count"])
-	require.Equal(t, "@example.com,@company.com", appErr.Metadata["allowed_suffixes"])
+	require.NotContains(t, appErr.Message, "@example.com")
+	require.Empty(t, appErr.Metadata)
 }
 
 func TestAuthService_Register_EmailSuffixAllowed(t *testing.T) {
 	repo := &userRepoStub{nextID: 8}
 	service := newAuthService(repo, map[string]string{
 		SettingKeyRegistrationEnabled:              "true",
-		SettingKeyRegistrationEmailSuffixWhitelist: `["example.com"]`,
+		SettingKeyRegistrationEmailSuffixBlacklist: `["example.com"]`,
 	}, nil, nil)
 
-	_, user, err := service.Register(context.Background(), "user@example.com", "password")
+	_, user, err := service.Register(context.Background(), "user@other.com", "password")
 	require.NoError(t, err)
 	require.NotNil(t, user)
 	require.Equal(t, int64(8), user.ID)
+}
+
+func TestAuthService_Register_LegacyEmailSuffixWhitelistIsNotReinterpreted(t *testing.T) {
+	repo := &userRepoStub{nextID: 9}
+	service := newAuthService(repo, map[string]string{
+		SettingKeyRegistrationEnabled:         "true",
+		"registration_email_suffix_whitelist": `["@trusted.example.com"]`,
+	}, nil, nil)
+
+	_, user, err := service.Register(context.Background(), "user@other.com", "password")
+
+	require.NoError(t, err)
+	require.NotNil(t, user)
+	require.Equal(t, int64(9), user.ID)
 }
 
 func TestAuthService_SendVerifyCode_EmailSuffixNotAllowed(t *testing.T) {
 	repo := &userRepoStub{}
 	service := newAuthService(repo, map[string]string{
 		SettingKeyRegistrationEnabled:              "true",
-		SettingKeyRegistrationEmailSuffixWhitelist: `["@example.com","@company.com"]`,
+		SettingKeyRegistrationEmailSuffixBlacklist: `["@example.com","@company.com"]`,
 	}, nil, nil)
 
-	err := service.SendVerifyCode(context.Background(), "user@other.com")
+	err := service.SendVerifyCode(context.Background(), "user@company.com")
 	require.ErrorIs(t, err, ErrEmailSuffixNotAllowed)
 	appErr := infraerrors.FromError(err)
-	require.Contains(t, appErr.Message, "@example.com")
-	require.Contains(t, appErr.Message, "@company.com")
-	require.Equal(t, "2", appErr.Metadata["allowed_suffix_count"])
+	require.Equal(t, "EMAIL_SUFFIX_NOT_ALLOWED", appErr.Reason)
+	require.Empty(t, appErr.Metadata)
 }
 
 func TestAuthService_Register_CreateError(t *testing.T) {
@@ -585,11 +640,206 @@ func TestAuthService_Register_AffiliateCodeSatisfiesInvitationRequirement(t *tes
 	require.NotNil(t, user)
 	require.Equal(t, int64(100), user.ID)
 	require.Empty(t, redeemRepo.useCalls)
-	require.Equal(t, []int64{100, 100}, affiliateRepo.ensureUserIDs)
+	require.Empty(t, affiliateRepo.ensureUserIDs)
+	require.Equal(t, []struct {
+		userID      int64
+		code        string
+		reward      float64
+		freezeHours int
+	}{{
+		userID:      100,
+		code:        "AFF123",
+		reward:      0,
+		freezeHours: 0,
+	}}, affiliateRepo.registrationRewardCalls)
 	require.Equal(t, []struct {
 		userID    int64
 		inviterID int64
 	}{{userID: 100, inviterID: 7}}, affiliateRepo.bindCalls)
+}
+
+func TestAuthService_Register_OptionalInvitationCodeMayBeEmpty(t *testing.T) {
+	repo := &userRepoStub{nextID: 103}
+	authService := newAuthService(repo, map[string]string{
+		SettingKeyRegistrationEnabled:                 "true",
+		SettingKeyInvitationCodeEnabled:               "true",
+		SettingKeyInvitationCodeRequired:              "false",
+		SettingKeyAuthSourceDefaultEmailGrantOnSignup: "false",
+	}, nil, nil)
+
+	token, user, err := authService.RegisterWithVerification(
+		context.Background(),
+		"optional-invitation@test.com",
+		"password",
+		"",
+		"",
+		"",
+		"",
+	)
+
+	require.NoError(t, err)
+	require.NotEmpty(t, token)
+	require.NotNil(t, user)
+	require.Len(t, repo.created, 1)
+}
+
+func TestAuthService_Register_OptionalInvitationCodeStillValidatesSuppliedCode(t *testing.T) {
+	repo := &userRepoStub{nextID: 104}
+	authService := newAuthService(repo, map[string]string{
+		SettingKeyRegistrationEnabled:    "true",
+		SettingKeyInvitationCodeEnabled:  "true",
+		SettingKeyInvitationCodeRequired: "false",
+		SettingKeyAffiliateEnabled:       "true",
+	}, nil, nil)
+	authService.redeemRepo = &redeemCodeRepoStub{codesByCode: map[string]*RedeemCode{}}
+	authService.affiliateService = NewAffiliateService(
+		&affiliateRepoStub{codeOwners: map[string]int64{}},
+		authService.settingService,
+		nil,
+		nil,
+	)
+
+	_, _, err := authService.RegisterWithVerification(
+		context.Background(),
+		"invalid-optional-invitation@test.com",
+		"password",
+		"",
+		"",
+		"UNKNOWN",
+		"",
+	)
+
+	require.ErrorIs(t, err, ErrInvitationCodeInvalid)
+	require.Empty(t, repo.created)
+}
+
+func TestAuthService_Register_OptionalOneTimeInvitationStillConsumed(t *testing.T) {
+	repo := &userRepoStub{nextID: 105}
+	authService := newAuthService(repo, map[string]string{
+		SettingKeyRegistrationEnabled:                 "true",
+		SettingKeyInvitationCodeEnabled:               "true",
+		SettingKeyInvitationCodeRequired:              "false",
+		SettingKeyAuthSourceDefaultEmailGrantOnSignup: "false",
+	}, nil, nil)
+	redeemRepo := &redeemCodeRepoStub{
+		codesByCode: map[string]*RedeemCode{
+			"OPTIONAL1": {
+				ID:     13,
+				Code:   "OPTIONAL1",
+				Type:   RedeemTypeInvitation,
+				Status: StatusUnused,
+			},
+		},
+	}
+	authService.redeemRepo = redeemRepo
+
+	_, user, err := authService.RegisterWithVerification(
+		context.Background(),
+		"optional-redeem@test.com",
+		"password",
+		"",
+		"",
+		"OPTIONAL1",
+		"",
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, user)
+	require.Equal(t, []struct {
+		id     int64
+		userID int64
+	}{{id: 13, userID: 105}}, redeemRepo.useCalls)
+}
+
+func TestAuthService_ResolveRegistrationSignupCodes_InvitationAffiliateTakesPrecedence(t *testing.T) {
+	authService := newAuthService(&userRepoStub{}, map[string]string{
+		SettingKeyRegistrationEnabled: "true",
+		SettingKeyAffiliateEnabled:    "true",
+	}, nil, nil)
+	affiliateRepo := &affiliateRepoStub{codeOwners: map[string]int64{
+		"PRIMARY":  7,
+		"FALLBACK": 8,
+	}}
+	authService.affiliateService = NewAffiliateService(
+		affiliateRepo,
+		authService.settingService,
+		nil,
+		nil,
+	)
+
+	invitation, selected, err := authService.resolveRegistrationSignupCodes(
+		context.Background(),
+		" primary ",
+		"fallback",
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, invitation)
+	require.Equal(t, "PRIMARY", invitation.affiliateCode)
+	require.Equal(t, "PRIMARY", selected)
+}
+
+func TestAuthService_ResolveRegistrationSignupCodes_OneTimeInvitationUsesAffiliateFallback(t *testing.T) {
+	authService := newAuthService(&userRepoStub{}, map[string]string{
+		SettingKeyRegistrationEnabled:   "true",
+		SettingKeyInvitationCodeEnabled: "true",
+		SettingKeyAffiliateEnabled:      "true",
+	}, nil, nil)
+	authService.redeemRepo = &redeemCodeRepoStub{
+		codesByCode: map[string]*RedeemCode{
+			"INVITE1": {
+				ID:     12,
+				Code:   "INVITE1",
+				Type:   RedeemTypeInvitation,
+				Status: StatusUnused,
+			},
+		},
+	}
+	authService.affiliateService = NewAffiliateService(
+		&affiliateRepoStub{codeOwners: map[string]int64{"AFF123": 7}},
+		authService.settingService,
+		nil,
+		nil,
+	)
+
+	invitation, selected, err := authService.resolveRegistrationSignupCodes(
+		context.Background(),
+		"INVITE1",
+		"aff123",
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, invitation)
+	require.NotNil(t, invitation.redeemCode)
+	require.Equal(t, int64(12), invitation.redeemCode.ID)
+	require.Equal(t, "AFF123", selected)
+}
+
+func TestAuthService_Register_InvalidAffiliateCodeDoesNotCreateUser(t *testing.T) {
+	repo := &userRepoStub{nextID: 102}
+	authService := newAuthService(repo, map[string]string{
+		SettingKeyRegistrationEnabled: "true",
+		SettingKeyAffiliateEnabled:    "true",
+	}, nil, nil)
+	authService.affiliateService = NewAffiliateService(
+		&affiliateRepoStub{codeOwners: map[string]int64{}},
+		authService.settingService,
+		nil,
+		nil,
+	)
+
+	_, _, err := authService.RegisterWithVerification(
+		context.Background(),
+		"invalid-affiliate@test.com",
+		"password",
+		"",
+		"",
+		"",
+		"UNKNOWN",
+	)
+
+	require.ErrorIs(t, err, ErrAffiliateCodeInvalid)
+	require.Empty(t, repo.created)
 }
 
 func TestAuthService_Register_InvitationRedeemCodeStillConsumesOnce(t *testing.T) {
@@ -883,6 +1133,8 @@ func TestAuthService_LoginOrRegisterOAuthWithTokenPair_ExistingUserDoesNotGrantA
 	assigner := &defaultSubscriptionAssignerStub{}
 	service := newAuthService(repo, map[string]string{
 		SettingKeyRegistrationEnabled:                   "true",
+		SettingKeyAffiliateEnabled:                      "true",
+		SettingKeyAffiliateRegistrationRewardAmount:     "10",
 		SettingKeyAuthSourceDefaultLinuxDoBalance:       "21.75",
 		SettingKeyAuthSourceDefaultLinuxDoConcurrency:   "9",
 		SettingKeyAuthSourceDefaultLinuxDoSubscriptions: `[{"group_id":22,"validity_days":14}]`,
@@ -890,8 +1142,10 @@ func TestAuthService_LoginOrRegisterOAuthWithTokenPair_ExistingUserDoesNotGrantA
 	}, nil, nil)
 	service.defaultSubAssigner = assigner
 	service.refreshTokenCache = &refreshTokenCacheStub{}
+	affiliateRepo := &affiliateRepoStub{codeOwners: map[string]int64{"AFF123": 7}}
+	service.affiliateService = NewAffiliateService(affiliateRepo, service.settingService, nil, nil)
 
-	tokenPair, user, err := service.LoginOrRegisterOAuthWithTokenPair(context.Background(), existing.Email, "linuxdo_user", "", "", "linuxdo")
+	tokenPair, user, err := service.LoginOrRegisterOAuthWithTokenPair(context.Background(), existing.Email, "linuxdo_user", "", "AFF123", "linuxdo")
 	require.NoError(t, err)
 	require.NotNil(t, tokenPair)
 	require.Equal(t, existing.ID, user.ID)
@@ -899,6 +1153,7 @@ func TestAuthService_LoginOrRegisterOAuthWithTokenPair_ExistingUserDoesNotGrantA
 	require.Equal(t, 1, user.Concurrency)
 	require.Empty(t, repo.created)
 	require.Empty(t, assigner.calls)
+	require.Empty(t, affiliateRepo.registrationRewardCalls)
 }
 
 // newAuthServiceWithDingTalkCfg 构建一个含完整 DingTalk config 的 AuthService，

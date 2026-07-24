@@ -76,6 +76,10 @@ func (r *paymentFulfillmentAffiliateRepoStub) BindInviter(context.Context, int64
 	panic("unexpected BindInviter call")
 }
 
+func (r *paymentFulfillmentAffiliateRepoStub) BindInviterAndGrantRegistrationReward(context.Context, int64, string, float64, int) (*AffiliateRegistrationRewardResult, error) {
+	panic("unexpected BindInviterAndGrantRegistrationReward call")
+}
+
 func (r *paymentFulfillmentAffiliateRepoStub) AccrueQuota(_ context.Context, inviterID, inviteeUserID int64, amount float64, freezeHours int, sourceOrderID *int64) (bool, error) {
 	var sourceCopy *int64
 	if sourceOrderID != nil {

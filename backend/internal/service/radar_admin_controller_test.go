@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"sync"
 	"sync/atomic"
@@ -104,15 +103,12 @@ func TestRadarAdminStatusMapsOnlyCurrentFailureAndReadsEffectiveSetting(t *testi
 
 func TestRadarAdminStatusUsesAuthoritativePerSourceStaleThresholds(t *testing.T) {
 	cfg := validRadarFetcherTestConfig()
-	performance, err := RadarAAPerformanceSource("model-a")
-	require.NoError(t, err)
 	tests := []struct {
 		name      string
 		source    RadarSourceKey
 		threshold time.Duration
 	}{
 		{"aa models", RadarSourceAA, time.Duration(cfg.Radar.ArtificialAnalysisModelsStaleThresholdMinutes) * time.Minute},
-		{"aa performance", performance, time.Duration(cfg.Radar.ArtificialAnalysisPerformanceStaleThresholdMinutes) * time.Minute},
 		{"lmarena", RadarSourceLMArena, time.Duration(cfg.Radar.LMArenaStaleThresholdMinutes) * time.Minute},
 		{"claude health", RadarSourceStatusClaude, time.Duration(cfg.Radar.HealthStaleThresholdMinutes) * time.Minute},
 		{"openai health", RadarSourceStatusOpenAI, time.Duration(cfg.Radar.HealthStaleThresholdMinutes) * time.Minute},
@@ -323,64 +319,6 @@ func TestRadarAdminManualRefreshDispatchesAllSourcesBeforeAggregator(t *testing.
 	case <-time.After(time.Second):
 		t.Fatal("aggregator was not attempted after all source tasks converged")
 	}
-}
-
-func TestRadarAdminManualRefreshBoundsAAWorkersAndAttemptsEveryTask(t *testing.T) {
-	cfg := validRadarFetcherTestConfig()
-	repo := newRadarRunnerTestRepository()
-	release := make(chan struct{})
-	var active atomic.Int32
-	var maximum atomic.Int32
-	var calls atomic.Int32
-	fetchers := make([]RadarFetcher, 0, 7)
-	for i := 0; i < 7; i++ {
-		source, err := RadarAAPerformanceSource(fmt.Sprintf("model-%d", i))
-		require.NoError(t, err)
-		fetchers = append(fetchers, &radarRunnerTestFetcher{source: source, interval: time.Hour, fn: func(ctx context.Context) ([]byte, SourceFetchMeta, error) {
-			current := active.Add(1)
-			for {
-				seen := maximum.Load()
-				if current <= seen || maximum.CompareAndSwap(seen, current) {
-					break
-				}
-			}
-			calls.Add(1)
-			select {
-			case <-release:
-			case <-ctx.Done():
-			}
-			active.Add(-1)
-			attempt := time.Now().UTC()
-			return []byte(`{}`), SourceFetchMeta{LastAttemptAt: attempt, LastSuccessAt: &attempt}, nil
-		}})
-	}
-	aggregated := make(chan struct{}, 1)
-	aggregator := &radarRunnerQuotaAggregatorFake{fn: func(context.Context) (RadarQuotaAggregationReport, error) {
-		aggregated <- struct{}{}
-		return RadarQuotaAggregationReport{}, nil
-	}}
-	runner := newRadarRunnerWithQuotaForTest(t, cfg, repo, aggregator, radarRunnerOptions{
-		runtimeGate:        staticRadarRuntimeSettingReader(false),
-		skipQuotaScheduler: true,
-		fetchBudget:        time.Second,
-	}, fetchers...)
-	controller, err := NewRadarAdminController(cfg, repo, NewSettingService(&radarRuntimeSettingRepo{values: []string{"false"}}, cfg))
-	require.NoError(t, err)
-	require.NoError(t, controller.BindRunner(runner))
-	runner.Start()
-	waitRadarRunnerAuthoritativeCadences(t, repo, runner.sources)
-	_, err = controller.TriggerRefresh(RadarAdminAuditContext{AdminUserID: 9})
-	require.NoError(t, err)
-	require.Eventually(t, func() bool { return calls.Load() == 3 }, time.Second, time.Millisecond)
-	require.Equal(t, int32(3), maximum.Load())
-	close(release)
-	select {
-	case <-aggregated:
-	case <-time.After(time.Second):
-		t.Fatal("aggregator was not attempted after every AA task")
-	}
-	require.Equal(t, int32(7), calls.Load())
-	require.LessOrEqual(t, maximum.Load(), int32(radarRunnerDefaultAAPerformanceConcurrency))
 }
 
 func TestRadarAdminManualRefreshUsesGenerationTokenAndSafeBatchTTL(t *testing.T) {
@@ -620,163 +558,6 @@ func TestRadarAdminManualRefreshCommitUsesCadenceAdvancedByScheduledTimer(t *tes
 			}
 		})
 	}
-}
-
-func TestRadarRunnerManualRefreshBudgetCoversQueuedScheduledAndManualAAWaves(t *testing.T) {
-	cfg := validRadarFetcherTestConfig()
-	repo := newRadarRunnerTestRepository()
-	gate := newRadarRuntimeGateStub(true)
-	base := time.Date(2026, 7, 15, 7, 0, 0, 0, time.UTC)
-	clock := newRadarRunnerControllableClock(base)
-	type startEvent struct {
-		source RadarSourceKey
-		call   int32
-	}
-	starts := make(chan startEvent, 32)
-	release := make(chan struct{}, 32)
-	const sourceCount = 7
-	const concurrency = 3
-	fetchers := make([]RadarFetcher, 0, sourceCount)
-	counters := make([]*atomic.Int32, 0, sourceCount)
-	for i := 0; i < sourceCount; i++ {
-		source, err := RadarAAPerformanceSource(fmt.Sprintf("model-%d", i))
-		require.NoError(t, err)
-		counter := &atomic.Int32{}
-		counters = append(counters, counter)
-		fetchers = append(fetchers, &radarRunnerTestFetcher{
-			source:   source,
-			interval: time.Hour,
-			fn: func(ctx context.Context) ([]byte, SourceFetchMeta, error) {
-				call := counter.Add(1)
-				starts <- startEvent{source: source, call: call}
-				select {
-				case <-release:
-				case <-ctx.Done():
-					return nil, SourceFetchMeta{}, ctx.Err()
-				}
-				attempt := base.Add(time.Duration(call) * time.Minute)
-				return []byte(`{}`), SourceFetchMeta{LastAttemptAt: attempt, LastSuccessAt: &attempt}, nil
-			},
-		})
-	}
-	quotaRemaining := make(chan time.Duration, 1)
-	aggregator := &radarRunnerQuotaAggregatorFake{fn: func(ctx context.Context) (RadarQuotaAggregationReport, error) {
-		deadline, ok := ctx.Deadline()
-		if !ok {
-			quotaRemaining <- 0
-		} else {
-			quotaRemaining <- time.Until(deadline)
-		}
-		return RadarQuotaAggregationReport{}, nil
-	}}
-	runner := newRadarRunnerWithQuotaForTest(t, cfg, repo, aggregator, radarRunnerOptions{
-		clock:                    clock,
-		runtimeGate:              gate,
-		aaPerformanceConcurrency: concurrency,
-		fetchBudget:              2 * time.Second,
-		persistenceTimeout:       50 * time.Millisecond,
-		cleanupTimeout:           50 * time.Millisecond,
-		quotaTimeout:             500 * time.Millisecond,
-		skipQuotaScheduler:       true,
-	}, fetchers...)
-	wantBudget, ok := radarRunnerManualRefreshBudget(
-		sourceCount,
-		sourceCount,
-		concurrency,
-		2*time.Second,
-		50*time.Millisecond,
-		50*time.Millisecond,
-		500*time.Millisecond,
-	)
-	require.True(t, ok)
-	require.Equal(t, wantBudget, runner.manualRefreshTimeout)
-	for _, fetcher := range fetchers {
-		cadence, err := repo.AdvanceSourceNextFire(context.Background(), fetcher.Source(), base.Add(time.Hour))
-		require.NoError(t, err)
-		runner.setSourceCadence(fetcher.Source(), cadence)
-	}
-
-	gate.calls.Store(0)
-	runner.lifecycleMu.Lock()
-	runner.started = true
-	runner.lifecycleMu.Unlock()
-	scheduledCtx, cancelScheduled := context.WithCancel(runner.ctx)
-	for _, fetcher := range fetchers {
-		runner.wg.Add(1)
-		go runner.runFetcher(scheduledCtx, fetcher, fetcher.Source(), time.Hour)
-	}
-	readStarts := func(count int) []startEvent {
-		t.Helper()
-		result := make([]startEvent, 0, count)
-		for len(result) < count {
-			select {
-			case event := <-starts:
-				result = append(result, event)
-			case <-time.After(2 * time.Second):
-				t.Fatalf("timed out after %d/%d AA starts", len(result), count)
-			}
-		}
-		return result
-	}
-	releaseActive := func(count int) {
-		t.Helper()
-		for i := 0; i < count; i++ {
-			select {
-			case release <- struct{}{}:
-			case <-time.After(2 * time.Second):
-				t.Fatalf("timed out releasing AA source %d/%d", i, count)
-			}
-		}
-	}
-
-	firstWave := readStarts(concurrency)
-	for _, event := range firstWave {
-		require.Equal(t, int32(1), event.call)
-	}
-	require.Eventually(t, func() bool {
-		return gate.calls.Load() >= sourceCount+concurrency
-	}, time.Second, time.Millisecond, "all scheduled AA waiters must queue before manual refresh")
-
-	triggered, tasks, err := runner.TriggerManualRefresh()
-	require.NoError(t, err)
-	require.True(t, triggered)
-	require.Len(t, tasks, sourceCount+1)
-	go func() {
-		runner.wg.Wait()
-		runner.closeDone()
-	}()
-
-	releaseActive(concurrency)
-	secondWave := readStarts(concurrency)
-	for _, event := range secondWave {
-		require.Equal(t, int32(1), event.call, "scheduled waiters queued first must consume the second wave")
-	}
-	releaseActive(2 * sourceCount)
-	remainingStarts := readStarts(2*sourceCount - 2*concurrency)
-	remainingScheduled := 0
-	remainingManual := 0
-	for _, event := range remainingStarts {
-		switch event.call {
-		case 1:
-			remainingScheduled++
-		case 2:
-			remainingManual++
-		}
-	}
-	require.Equal(t, 1, remainingScheduled, "all seven scheduled AA tasks must be attempted")
-	require.Equal(t, sourceCount, remainingManual, "all seven manual AA tasks must be attempted")
-
-	select {
-	case remaining := <-quotaRemaining:
-		require.Greater(t, remaining, 400*time.Millisecond, "quota must receive its complete timeout phase")
-	case <-time.After(2 * time.Second):
-		t.Fatal("quota phase was not attempted after all manual sources")
-	}
-	for index, counter := range counters {
-		require.Equalf(t, int32(2), counter.Load(), "AA source %d must be attempted once scheduled and once manually", index)
-	}
-	require.Equal(t, int32(2*sourceCount), gate.calls.Load(), "scheduled attempts must check the runtime gate before and after the shared semaphore while manual attempts bypass it")
-	cancelScheduled()
 }
 
 func TestRadarAdminManualRefreshCoalescesAcrossReplicasAndStopCancelsWork(t *testing.T) {

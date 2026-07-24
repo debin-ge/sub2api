@@ -92,15 +92,6 @@ const (
 	InferenceRejectReasonInvalidMean         InferenceRejectReason = "invalid_mean"
 )
 
-// DegradationMetric identifies a model quality metric in trend responses.
-type DegradationMetric string
-
-const (
-	DegradationMetricIntelligenceIndex DegradationMetric = "intelligence_index"
-	DegradationMetricCodingIndex       DegradationMetric = "coding_index"
-	DegradationMetricAgenticIndex      DegradationMetric = "agentic_index"
-)
-
 // DataSourceState is the public lifecycle state of a radar data source.
 type DataSourceState string
 
@@ -233,16 +224,22 @@ type QuotaTrendDTO struct {
 }
 
 // DegradationModelDTO contains quality and price metrics for one model.
+type DegradationCatalogMatchDTO struct {
+	ModelID  string `json:"model_id"`
+	Platform string `json:"platform"`
+}
+
 type DegradationModelDTO struct {
-	Slug              string     `json:"slug"`
-	Name              string     `json:"name"`
-	Vendor            string     `json:"vendor"`
-	IntelligenceIndex *float64   `json:"intelligence_index"`
-	CodingIndex       *float64   `json:"coding_index"`
-	AgenticIndex      *float64   `json:"agentic_index"`
-	PriceInputPer1M   *float64   `json:"price_input_per_1m"`
-	PriceOutputPer1M  *float64   `json:"price_output_per_1m"`
-	LastUpdatedAt     *time.Time `json:"last_updated_at"`
+	Slug              string                       `json:"slug"`
+	Name              string                       `json:"name"`
+	Vendor            string                       `json:"vendor"`
+	IntelligenceIndex *float64                     `json:"intelligence_index"`
+	CodingIndex       *float64                     `json:"coding_index"`
+	AgenticIndex      *float64                     `json:"agentic_index"`
+	PriceInputPer1M   *float64                     `json:"price_input_per_1m"`
+	PriceOutputPer1M  *float64                     `json:"price_output_per_1m"`
+	LastUpdatedAt     *time.Time                   `json:"last_updated_at"`
+	CatalogMatches    []DegradationCatalogMatchDTO `json:"catalog_matches"`
 }
 
 // LMArenaEntryDTO is one public LMArena leaderboard entry.
@@ -258,26 +255,13 @@ type LMArenaEntryDTO struct {
 
 // DegradationLatestDTO is the latest public model degradation snapshot.
 type DegradationLatestDTO struct {
-	Models             []DegradationModelDTO `json:"models"`
-	LMArenaTop5        []LMArenaEntryDTO     `json:"lmarena_top5"`
-	SourcesLastUpdated map[string]*time.Time `json:"sources_last_updated"`
-	TrendAvailable     bool                  `json:"trend_available"`
-	Stale              bool                  `json:"stale"`
-}
-
-// MetricPointDTO contains one dated model metric value.
-type MetricPointDTO struct {
-	Date  string  `json:"date"`
-	Value float64 `json:"value"`
-}
-
-// DegradationTrendDTO is a model metric's public trend series.
-type DegradationTrendDTO struct {
-	ModelSlug  string            `json:"model_slug"`
-	Metric     DegradationMetric `json:"metric"`
-	Days       int               `json:"days"`
-	DataPoints []MetricPointDTO  `json:"data_points"`
-	Stale      bool              `json:"stale"`
+	Models                   []DegradationModelDTO `json:"models"`
+	AvailableModels          []DegradationModelDTO `json:"available_models"`
+	DefaultModelSlugs        []string              `json:"default_model_slugs"`
+	IntelligenceIndexVersion *float64              `json:"intelligence_index_version"`
+	LMArenaTop5              []LMArenaEntryDTO     `json:"lmarena_top5"`
+	SourcesLastUpdated       map[string]*time.Time `json:"sources_last_updated"`
+	Stale                    bool                  `json:"stale"`
 }
 
 // LMArenaDTO is the public LMArena leaderboard snapshot.

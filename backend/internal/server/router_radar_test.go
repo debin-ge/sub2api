@@ -35,10 +35,6 @@ func (*routerRadarServiceStub) GetDegradationLatest(context.Context) (*service.D
 	return &service.DegradationLatestDTO{}, nil
 }
 
-func (*routerRadarServiceStub) GetDegradationTrend(context.Context, string, service.DegradationMetric, int) (*service.DegradationTrendDTO, error) {
-	return &service.DegradationTrendDTO{}, nil
-}
-
 func (*routerRadarServiceStub) GetLMArena(context.Context) (*service.LMArenaDTO, error) {
 	return &service.LMArenaDTO{}, nil
 }
@@ -47,12 +43,10 @@ func (*routerRadarServiceStub) GetDataSources(context.Context) ([]service.DataSo
 	return []service.DataSourceMetaDTO{}, nil
 }
 
-func TestRegisterRoutesWiresSevenUnauthenticatedRadarGETs(t *testing.T) {
+func TestRegisterRoutesWiresSixUnauthenticatedRadarGETs(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	cfg := &config.Config{Radar: config.RadarConfig{
-		ArtificialAnalysisModelSlugs: []string{"model-a"},
-	}}
+	cfg := &config.Config{}
 	cfg.Pricing.DataDir = t.TempDir()
 	cfg.Gateway.MaxBodySize = 1024 * 1024
 	radarHandler, err := handler.NewRadarHandler(
@@ -95,7 +89,6 @@ func TestRegisterRoutesWiresSevenUnauthenticatedRadarGETs(t *testing.T) {
 	sort.Strings(got)
 	require.Equal(t, []string{
 		"GET /api/v1/public/radar/degradation/latest",
-		"GET /api/v1/public/radar/degradation/trend",
 		"GET /api/v1/public/radar/lmarena",
 		"GET /api/v1/public/radar/quota-buckets/latest",
 		"GET /api/v1/public/radar/quota-buckets/trend",
@@ -123,7 +116,6 @@ func TestRegisterRoutesWiresSevenUnauthenticatedRadarGETs(t *testing.T) {
 		"/api/v1/public/radar/quota-buckets/latest",
 		"/api/v1/public/radar/quota-buckets/trend?bucket=anthropic%2Fpro",
 		"/api/v1/public/radar/degradation/latest",
-		"/api/v1/public/radar/degradation/trend?model=model-a&metric=coding_index",
 		"/api/v1/public/radar/lmarena",
 		"/api/v1/public/radar/sources",
 	}

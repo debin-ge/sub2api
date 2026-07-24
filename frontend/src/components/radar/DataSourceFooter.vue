@@ -95,7 +95,7 @@ function formatInterval(value: string): string {
 }
 
 function sourceLink(key: string): string | null {
-  if (key === 'aa' || key.startsWith('aa_perf:')) return 'https://artificialanalysis.ai'
+  if (key === 'aa') return 'https://artificialanalysis.ai'
   if (key === 'lmarena') return 'https://arena.ai/leaderboard/text'
   if (key === 'status_claude') return 'https://status.claude.com'
   if (key === 'status_openai') return 'https://status.openai.com'

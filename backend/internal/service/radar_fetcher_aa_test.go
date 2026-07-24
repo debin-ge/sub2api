@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -29,13 +30,14 @@ func TestRadarModelSlugValidationMatchesConfigContract(t *testing.T) {
 
 func TestArtificialAnalysisModelsFetcherSuccessAndExactRequest(t *testing.T) {
 	var captured *http.Request
-	body := newRadarTrackingBody(validAAModelsPayload)
+	payloadJSON := `{"tier":"free","intelligence_index_version":4.1,"pagination":{"page":1,"page_size":200,"total_pages":1,"has_more":false},"data":[{"slug":"claude-sonnet-4","name":"Claude Sonnet 4","release_date":"2026-05-22","model_creator":{"name":"Anthropic"},"evaluations":{"artificial_analysis_intelligence_index":90,"artificial_analysis_coding_index":80,"artificial_analysis_agentic_index":70}}]}`
+	body := newRadarTrackingBody(payloadJSON)
 	client := radarDoerFunc(func(req *http.Request) (*http.Response, error) {
 		captured = req.Clone(req.Context())
 		return &http.Response{
 			StatusCode:    http.StatusOK,
 			Body:          body,
-			ContentLength: int64(len(validAAModelsPayload)),
+			ContentLength: int64(len(payloadJSON)),
 		}, nil
 	})
 	cfg := validRadarFetcherTestConfig()
@@ -47,14 +49,16 @@ func TestArtificialAnalysisModelsFetcherSuccessAndExactRequest(t *testing.T) {
 	payload, meta, err := fetcher.Fetch(context.Background())
 
 	require.NoError(t, err)
-	require.JSONEq(t, validAAModelsPayload, string(payload))
+	models, decodeErr := DecodeArtificialAnalysisModels(payload)
+	require.NoError(t, decodeErr)
+	require.Len(t, models, 1)
 	require.True(t, body.isClosed())
 	require.NotNil(t, captured)
 	require.Equal(t, http.MethodGet, captured.Method)
 	require.Equal(t, "https", captured.URL.Scheme)
 	require.Equal(t, "artificialanalysis.ai", captured.URL.Host)
-	require.Equal(t, "/api/v2/data/llms/models", captured.URL.EscapedPath())
-	require.Empty(t, captured.URL.RawQuery)
+	require.Equal(t, "/api/v2/language/models/free", captured.URL.EscapedPath())
+	require.Equal(t, "page=1", captured.URL.RawQuery)
 	require.Equal(t, cfg.Radar.ArtificialAnalysisAPIKey, captured.Header.Get("x-api-key"))
 	require.Nil(t, meta.Error)
 	require.NotNil(t, meta.LastSuccessAt)
@@ -64,37 +68,201 @@ func TestArtificialAnalysisModelsFetcherSuccessAndExactRequest(t *testing.T) {
 	require.Equal(t, http.StatusOK, *meta.HTTPStatus)
 }
 
-func TestArtificialAnalysisPerformanceFetcherSuccessAndExactRequest(t *testing.T) {
-	const payloadJSON = `{"model_slug":"claude-4.1_opus","window":"90d","interval":"daily","data_points":[{"date":"2026-04-12","intelligence_index":92.1,"coding_index":88.5,"agentic_index":90.2}]}`
-	var captured *http.Request
-	body := newRadarTrackingBody(payloadJSON)
+func TestArtificialAnalysisModelsFetcherMergesAllPagesInOrder(t *testing.T) {
+	requestedPages := make([]string, 0, 3)
 	client := radarDoerFunc(func(req *http.Request) (*http.Response, error) {
-		captured = req.Clone(req.Context())
-		return &http.Response{StatusCode: http.StatusOK, Body: body}, nil
+		page := req.URL.Query().Get("page")
+		requestedPages = append(requestedPages, page)
+		payloads := map[string]string{
+			"1": aaModelsPagePayload(1, 3, true, 4.1, "model-a"),
+			"2": aaModelsPagePayload(2, 3, true, 4.1, "model-b"),
+			"3": aaModelsPagePayload(3, 3, false, 4.1, "model-c"),
+		}
+		payload := payloads[page]
+		return &http.Response{
+			StatusCode: http.StatusOK, Body: newRadarTrackingBody(payload), ContentLength: int64(len(payload)),
+		}, nil
 	})
-	cfg := validRadarFetcherTestConfig()
-	cfg.Radar.ArtificialAnalysisModelSlugs = []string{"another-model", " claude-4.1_opus "}
-	fetcher, err := NewArtificialAnalysisPerformanceFetcher(cfg, " claude-4.1_opus ", client)
+	fetcher, err := NewArtificialAnalysisModelsFetcher(validRadarFetcherTestConfig(), client)
 	require.NoError(t, err)
-	wantSource, err := RadarAAPerformanceSource("claude-4.1_opus")
+
+	payload, _, err := fetcher.Fetch(context.Background())
+
 	require.NoError(t, err)
-	require.Equal(t, wantSource, fetcher.Source())
-	require.Equal(t, 1440*time.Minute, fetcher.Interval())
+	require.Equal(t, []string{"1", "2", "3"}, requestedPages)
+	models, version, err := DecodeArtificialAnalysisSnapshot(payload)
+	require.NoError(t, err)
+	require.Equal(t, 4.1, *version)
+	require.Equal(t, []string{"model-a", "model-b", "model-c"}, []string{
+		models[0].Slug, models[1].Slug, models[2].Slug,
+	})
+}
+
+func TestArtificialAnalysisModelsFetcherRejectsEmptyPage(t *testing.T) {
+	payloadJSON := `{"tier":"free","intelligence_index_version":4.1,"pagination":{"page":1,"page_size":200,"total_pages":1,"has_more":false},"data":[]}`
+	client := radarDoerFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK, Body: newRadarTrackingBody(payloadJSON), ContentLength: int64(len(payloadJSON)),
+		}, nil
+	})
+	fetcher, err := NewArtificialAnalysisModelsFetcher(validRadarFetcherTestConfig(), client)
+	require.NoError(t, err)
+	setRadarFetcherSleep(t, fetcher, func(context.Context, time.Duration) error { return nil })
 
 	payload, meta, err := fetcher.Fetch(context.Background())
 
-	require.NoError(t, err)
-	require.JSONEq(t, payloadJSON, string(payload))
-	require.True(t, body.isClosed())
-	require.Equal(t, "https", captured.URL.Scheme)
-	require.Equal(t, "artificialanalysis.ai", captured.URL.Host)
-	require.Equal(t, "/api/v2/language/models/claude-4.1_opus/performance", captured.URL.EscapedPath())
-	require.Equal(t, "window=90d&interval=daily", captured.URL.RawQuery)
-	require.Equal(t, cfg.Radar.ArtificialAnalysisAPIKey, captured.Header.Get("x-api-key"))
-	require.Nil(t, meta.Error)
+	require.Error(t, err)
+	require.Nil(t, payload)
+	require.NotNil(t, meta.Error)
+	require.Equal(t, DataSourceErrorCodeInvalidResponse, *meta.Error)
 }
 
-func TestArtificialAnalysisModelsDecodeAndMapPreservesMissingMetricsAndNormalizesUTC(t *testing.T) {
+func TestArtificialAnalysisModelsFetcherRejectsPaginationInconsistencies(t *testing.T) {
+	tests := []struct {
+		name  string
+		pages map[string]string
+	}{
+		{
+			name: "version changes",
+			pages: map[string]string{
+				"1": aaModelsPagePayload(1, 2, true, 4.1, "model-a"),
+				"2": aaModelsPagePayload(2, 2, false, 4.2, "model-b"),
+			},
+		},
+		{
+			name: "total pages changes",
+			pages: map[string]string{
+				"1": aaModelsPagePayload(1, 2, true, 4.1, "model-a"),
+				"2": aaModelsPagePayload(2, 3, true, 4.1, "model-b"),
+			},
+		},
+		{
+			name: "response page is not requested page",
+			pages: map[string]string{
+				"1": aaModelsPagePayload(1, 2, true, 4.1, "model-a"),
+				"2": aaModelsPagePayload(1, 2, true, 4.1, "model-b"),
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := radarDoerFunc(func(req *http.Request) (*http.Response, error) {
+				payload := tt.pages[req.URL.Query().Get("page")]
+				return &http.Response{
+					StatusCode: http.StatusOK, Body: newRadarTrackingBody(payload), ContentLength: int64(len(payload)),
+				}, nil
+			})
+			fetcher, err := NewArtificialAnalysisModelsFetcher(validRadarFetcherTestConfig(), client)
+			require.NoError(t, err)
+
+			payload, meta, err := fetcher.Fetch(context.Background())
+
+			require.Error(t, err)
+			require.Nil(t, payload)
+			require.NotNil(t, meta.Error)
+			require.Equal(t, DataSourceErrorCodeInvalidResponse, *meta.Error)
+		})
+	}
+}
+
+func TestArtificialAnalysisModelsFetcherDoesNotReturnPartialPayload(t *testing.T) {
+	requestedPages := make([]string, 0, 2)
+	client := radarDoerFunc(func(req *http.Request) (*http.Response, error) {
+		page := req.URL.Query().Get("page")
+		requestedPages = append(requestedPages, page)
+		payload := aaModelsPagePayload(1, 2, true, 4.1, "model-a")
+		if page == "2" {
+			payload = `{"tier":"free","pagination":`
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK, Body: newRadarTrackingBody(payload), ContentLength: int64(len(payload)),
+		}, nil
+	})
+	fetcher, err := NewArtificialAnalysisModelsFetcher(validRadarFetcherTestConfig(), client)
+	require.NoError(t, err)
+
+	payload, meta, err := fetcher.Fetch(context.Background())
+
+	require.Error(t, err)
+	require.Nil(t, payload)
+	require.Equal(t, []string{"1", "2"}, requestedPages)
+	require.NotNil(t, meta.Error)
+	require.Equal(t, DataSourceErrorCodeInvalidResponse, *meta.Error)
+}
+
+func TestArtificialAnalysisModelsFetcherRejectsCrossPageDuplicateSlug(t *testing.T) {
+	client := radarDoerFunc(func(req *http.Request) (*http.Response, error) {
+		page := req.URL.Query().Get("page")
+		payload := aaModelsPagePayload(1, 2, true, 4.1, "duplicate")
+		if page == "2" {
+			payload = aaModelsPagePayload(2, 2, false, 4.1, "duplicate")
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK, Body: newRadarTrackingBody(payload), ContentLength: int64(len(payload)),
+		}, nil
+	})
+	fetcher, err := NewArtificialAnalysisModelsFetcher(validRadarFetcherTestConfig(), client)
+	require.NoError(t, err)
+
+	payload, meta, err := fetcher.Fetch(context.Background())
+
+	require.Error(t, err)
+	require.Nil(t, payload)
+	require.NotNil(t, meta.Error)
+	require.Equal(t, DataSourceErrorCodeInvalidResponse, *meta.Error)
+}
+
+func TestArtificialAnalysisModelsFetcherEnforcesPageAndAggregateLimits(t *testing.T) {
+	t.Run("page limit", func(t *testing.T) {
+		payload := aaModelsPagePayload(1, artificialAnalysisMaxPages+1, true, 4.1, "model-a")
+		client := radarDoerFunc(func(*http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK, Body: newRadarTrackingBody(payload), ContentLength: int64(len(payload)),
+			}, nil
+		})
+		fetcher, err := NewArtificialAnalysisModelsFetcher(validRadarFetcherTestConfig(), client)
+		require.NoError(t, err)
+
+		result, meta, err := fetcher.Fetch(context.Background())
+
+		require.Error(t, err)
+		require.Nil(t, result)
+		require.Equal(t, DataSourceErrorCodeInvalidResponse, *meta.Error)
+	})
+
+	t.Run("aggregate response limit", func(t *testing.T) {
+		first := aaModelsPagePayload(1, 2, true, 4.1, "model-a")
+		second := aaModelsPagePayload(2, 2, false, 4.1, "model-b")
+		cfg := validRadarFetcherTestConfig()
+		cfg.Radar.ExternalResponseMaxBytes = int64(max(len(first), len(second)) + 32)
+		client := radarDoerFunc(func(req *http.Request) (*http.Response, error) {
+			payload := first
+			if req.URL.Query().Get("page") == "2" {
+				payload = second
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK, Body: newRadarTrackingBody(payload), ContentLength: int64(len(payload)),
+			}, nil
+		})
+		fetcher, err := NewArtificialAnalysisModelsFetcher(cfg, client)
+		require.NoError(t, err)
+
+		result, meta, err := fetcher.Fetch(context.Background())
+
+		require.Error(t, err)
+		require.Nil(t, result)
+		require.Equal(t, DataSourceErrorCodeInvalidResponse, *meta.Error)
+	})
+}
+
+func aaModelsPagePayload(page, totalPages int, hasMore bool, version float64, slug string) string {
+	return fmt.Sprintf(
+		`{"tier":"free","intelligence_index_version":%.1f,"pagination":{"page":%d,"page_size":1,"total_pages":%d,"has_more":%t},"data":[{"slug":%q,"name":%q,"release_date":"2026-07-01","model_creator":{"name":"Vendor"},"evaluations":{"artificial_analysis_intelligence_index":90,"artificial_analysis_coding_index":80,"artificial_analysis_agentic_index":70}}]}`,
+		version, page, totalPages, hasMore, slug, "AA "+slug,
+	)
+}
+
+func TestArtificialAnalysisModelsDecodePreservesMissingMetricsAndMapExcludesIncompleteModel(t *testing.T) {
 	payload := []byte(`{"data":[{"slug":"claude-sonnet-4","name":"Claude Sonnet 4","creator":"","released_at":"2026-05-22T08:00:00+08:00","last_updated_at":"2026-07-10T14:00:00+08:00"}]}`)
 
 	models, err := DecodeArtificialAnalysisModels(payload)
@@ -106,50 +274,42 @@ func TestArtificialAnalysisModelsDecodeAndMapPreservesMissingMetricsAndNormalize
 	require.Nil(t, models[0].PriceInputPer1M)
 	require.Nil(t, models[0].PriceOutputPer1M)
 
-	dtos, err := MapArtificialAnalysisModels(models, []string{"claude-sonnet-4"})
+	dtos, err := MapArtificialAnalysisModels(models)
 	require.NoError(t, err)
-	require.Len(t, dtos, 1)
-	require.Empty(t, dtos[0].Vendor)
-	require.Nil(t, dtos[0].IntelligenceIndex)
-	require.Nil(t, dtos[0].CodingIndex)
-	require.Nil(t, dtos[0].AgenticIndex)
-	require.Nil(t, dtos[0].PriceInputPer1M)
-	require.Nil(t, dtos[0].PriceOutputPer1M)
-	require.NotNil(t, dtos[0].LastUpdatedAt)
-	require.Equal(t, time.Date(2026, 7, 10, 6, 0, 0, 0, time.UTC), *dtos[0].LastUpdatedAt)
-	require.Equal(t, time.UTC, dtos[0].LastUpdatedAt.Location())
+	require.Empty(t, dtos)
 }
 
-func TestMapArtificialAnalysisModelsFiltersInConfiguredOrderWithoutMutatingInputs(t *testing.T) {
-	models, err := DecodeArtificialAnalysisModels([]byte(`{"data":[
-		{"slug":"unconfigured-model","name":"Unconfigured","intelligence_index":11},
-		{"slug":"model-a","name":"Model A","intelligence_index":22},
-		{"slug":"model-b","name":"Model B","intelligence_index":33}
-	]}`))
+func TestArtificialAnalysisModelsDecodeAndMapCurrentV2Response(t *testing.T) {
+	payload := []byte(`{"status":200,"prompt_options":{"parallel_queries":1,"prompt_length":1000},"data":[{
+		"id":"model-id","name":"QwQ 32B Preview","slug":"QwQ-32B-Preview","release_date":"2025-03-01",
+		"model_creator":{"id":"creator-id","name":"Alibaba","slug":"alibaba"},
+		"evaluations":{"artificial_analysis_intelligence_index":20.1,"artificial_analysis_coding_index":30.2,"artificial_analysis_math_index":40.3},
+		"pricing":{"price_1m_blended_3_to_1":0.4,"price_1m_input_tokens":0.2,"price_1m_output_tokens":1.0},
+		"median_output_tokens_per_second":100
+	}]}`)
+
+	models, err := DecodeArtificialAnalysisModels(payload)
 	require.NoError(t, err)
-	originalModels := make([]ArtificialAnalysisModel, len(models))
-	copy(originalModels, models)
-	allowedSlugs := []string{" model-b ", "model-a", "model-b", "missing-model"}
-	originalAllowedSlugs := append([]string(nil), allowedSlugs...)
+	require.Len(t, models, 1)
+	require.Equal(t, "QwQ-32B-Preview", models[0].Slug)
+	require.Equal(t, "Alibaba", models[0].Creator)
+	require.Equal(t, "2025-03-01", models[0].ReleasedAt)
+	require.Equal(t, 20.1, *models[0].IntelligenceIndex)
+	require.Equal(t, 30.2, *models[0].CodingIndex)
+	require.Nil(t, models[0].AgenticIndex, "AA v2 does not currently expose an agentic index")
+	require.Equal(t, 0.2, *models[0].PriceInputPer1M)
+	require.Equal(t, 1.0, *models[0].PriceOutputPer1M)
 
-	dtos, err := MapArtificialAnalysisModels(models, allowedSlugs)
-
+	dtos, err := MapArtificialAnalysisModels(models)
 	require.NoError(t, err)
-	require.Equal(t, []string{"model-b", "model-a"}, []string{dtos[0].Slug, dtos[1].Slug}, "configured order must win over upstream order")
-	require.Equal(t, float64(33), *dtos[0].IntelligenceIndex)
-	require.Equal(t, float64(22), *dtos[1].IntelligenceIndex)
-	require.Equal(t, originalModels, models)
-	require.Equal(t, originalAllowedSlugs, allowedSlugs)
-
-	*dtos[0].IntelligenceIndex = 99
-	require.Equal(t, float64(33), *models[2].IntelligenceIndex, "mapped metric pointers must not alias decoded input")
+	require.Empty(t, dtos)
 }
 
-func TestMapArtificialAnalysisModelsEmptyAllowlistSelectsIndexedModels(t *testing.T) {
+func TestMapArtificialAnalysisModelsSelectsIndexedModels(t *testing.T) {
 	models, err := DecodeArtificialAnalysisModels([]byte(validAAModelsPayload))
 	require.NoError(t, err)
 
-	dtos, err := MapArtificialAnalysisModels(models, nil)
+	dtos, err := MapArtificialAnalysisModels(models)
 
 	require.NoError(t, err)
 	require.NotNil(t, dtos)
@@ -183,28 +343,13 @@ func TestMapArtificialAnalysisModelsAutomaticSelectionIsBoundedAndStable(t *test
 	models = append(models, ArtificialAnalysisModel{Slug: "no-index", Name: "No index"})
 	original := append([]ArtificialAnalysisModel(nil), models...)
 
-	dtos, err := MapArtificialAnalysisModels(models, []string{})
+	dtos, err := MapArtificialAnalysisModels(models)
 
 	require.NoError(t, err)
 	require.Equal(t, []string{"top", "high", "tie-new", "tie-old", "mid", "sixth"}, []string{
 		dtos[0].Slug, dtos[1].Slug, dtos[2].Slug, dtos[3].Slug, dtos[4].Slug, dtos[5].Slug,
 	})
 	require.Equal(t, original, models, "automatic selection must not reorder or mutate the decoded payload")
-}
-
-func TestMapArtificialAnalysisModelsRejectsUnsafeAllowlistWithoutLeakingValue(t *testing.T) {
-	models, err := DecodeArtificialAnalysisModels([]byte(validAAModelsPayload))
-	require.NoError(t, err)
-	const unsafeSlug = "../sensitive-configured-model"
-
-	dtos, err := MapArtificialAnalysisModels(models, []string{unsafeSlug})
-
-	require.Error(t, err)
-	require.Nil(t, dtos)
-	var configErr *RadarFetcherConfigError
-	require.True(t, errors.As(err, &configErr))
-	require.Equal(t, "radar.artificial_analysis_model_slugs", configErr.Field)
-	require.NotContains(t, err.Error(), unsafeSlug)
 }
 
 func TestDecodeArtificialAnalysisModelsRejectsMalformedOrAmbiguousData(t *testing.T) {
@@ -262,69 +407,6 @@ func TestDecodeArtificialAnalysisModelsAcceptsBoundaryValues(t *testing.T) {
 	require.Equal(t, float64(0), *models[0].PriceInputPer1M)
 }
 
-func TestDecodeArtificialAnalysisPerformancePreservesOptionalMetrics(t *testing.T) {
-	payload, err := DecodeArtificialAnalysisPerformance([]byte(`{"model_slug":"model","window":"90d","interval":"daily","data_points":[{"date":"2026-04-12"}]}`), "model")
-	require.NoError(t, err)
-	require.Equal(t, "model", payload.ModelSlug)
-	require.Len(t, payload.DataPoints, 1)
-	require.Nil(t, payload.DataPoints[0].IntelligenceIndex)
-	require.Nil(t, payload.DataPoints[0].CodingIndex)
-	require.Nil(t, payload.DataPoints[0].AgenticIndex)
-}
-
-func TestDecodeArtificialAnalysisPerformanceRejectsMalformedOrAmbiguousData(t *testing.T) {
-	tests := []struct {
-		name         string
-		expectedSlug string
-		payload      string
-	}{
-		{name: "malformed JSON", expectedSlug: "model", payload: `{"model_slug":`},
-		{name: "trailing JSON", expectedSlug: "model", payload: `{"model_slug":"model","window":"90d","interval":"daily","data_points":[]} {}`},
-		{name: "unsafe expected slug", expectedSlug: "../model", payload: `{"model_slug":"../model","window":"90d","interval":"daily","data_points":[]}`},
-		{name: "slug mismatch", expectedSlug: "model", payload: `{"model_slug":"other","window":"90d","interval":"daily","data_points":[]}`},
-		{name: "wrong window", expectedSlug: "model", payload: `{"model_slug":"model","window":"30d","interval":"daily","data_points":[]}`},
-		{name: "wrong interval", expectedSlug: "model", payload: `{"model_slug":"model","window":"90d","interval":"weekly","data_points":[]}`},
-		{name: "missing data points", expectedSlug: "model", payload: `{"model_slug":"model","window":"90d","interval":"daily"}`},
-		{name: "null data points", expectedSlug: "model", payload: `{"model_slug":"model","window":"90d","interval":"daily","data_points":null}`},
-		{name: "bad date format", expectedSlug: "model", payload: `{"model_slug":"model","window":"90d","interval":"daily","data_points":[{"date":"2026-4-2"}]}`},
-		{name: "impossible date", expectedSlug: "model", payload: `{"model_slug":"model","window":"90d","interval":"daily","data_points":[{"date":"2026-02-30"}]}`},
-		{name: "duplicate date", expectedSlug: "model", payload: `{"model_slug":"model","window":"90d","interval":"daily","data_points":[{"date":"2026-04-12"},{"date":"2026-04-12"}]}`},
-		{name: "negative index", expectedSlug: "model", payload: `{"model_slug":"model","window":"90d","interval":"daily","data_points":[{"date":"2026-04-12","intelligence_index":-1}]}`},
-		{name: "index above one hundred", expectedSlug: "model", payload: `{"model_slug":"model","window":"90d","interval":"daily","data_points":[{"date":"2026-04-12","coding_index":101}]}`},
-		{name: "non finite numeric overflow", expectedSlug: "model", payload: `{"model_slug":"model","window":"90d","interval":"daily","data_points":[{"date":"2026-04-12","agentic_index":1e309}]}`},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			payload, err := DecodeArtificialAnalysisPerformance([]byte(tt.payload), tt.expectedSlug)
-			require.Error(t, err)
-			require.Zero(t, payload)
-			require.NotContains(t, err.Error(), tt.payload)
-		})
-	}
-}
-
-func TestArtificialAnalysisPerformanceFetcherRejectsMismatchedResponseWithoutRetry(t *testing.T) {
-	attempts := 0
-	body := newRadarTrackingBody(`{"model_slug":"different","window":"90d","interval":"daily","data_points":[]}`)
-	client := radarDoerFunc(func(*http.Request) (*http.Response, error) {
-		attempts++
-		return &http.Response{StatusCode: http.StatusOK, Body: body}, nil
-	})
-	cfg := validRadarFetcherTestConfig()
-	cfg.Radar.ArtificialAnalysisModelSlugs = []string{"model"}
-	fetcher, err := NewArtificialAnalysisPerformanceFetcher(cfg, "model", client)
-	require.NoError(t, err)
-
-	payload, meta, err := fetcher.Fetch(context.Background())
-
-	require.Error(t, err)
-	require.Nil(t, payload)
-	require.Equal(t, 1, attempts)
-	require.True(t, body.isClosed())
-	requireRadarFetchErrorCode(t, meta, DataSourceErrorCodeInvalidResponse)
-}
-
 func TestArtificialAnalysisFetcherConstructorsRejectInvalidConfiguration(t *testing.T) {
 	client := radarDoerFunc(func(*http.Request) (*http.Response, error) {
 		t.Fatal("HTTP client must not be called")
@@ -369,44 +451,4 @@ func TestArtificialAnalysisFetcherConstructorsRejectInvalidConfiguration(t *test
 		require.True(t, errors.As(err, &configErr))
 	})
 
-	for _, slug := range []string{"", "../escape", "model/escape", "UPPER", " model/escape ", "model%2fescape"} {
-		t.Run("invalid performance slug "+slug, func(t *testing.T) {
-			fetcher, err := NewArtificialAnalysisPerformanceFetcher(validRadarFetcherTestConfig(), slug, client)
-			require.Error(t, err)
-			require.Nil(t, fetcher)
-			require.ErrorIs(t, err, ErrInvalidRadarCacheKey)
-		})
-	}
-
-	t.Run("safe but unconfigured performance slug", func(t *testing.T) {
-		cfg := validRadarFetcherTestConfig()
-		cfg.Radar.ArtificialAnalysisAPIKey = "secret-key-must-not-leak"
-		cfg.Radar.ArtificialAnalysisModelSlugs = []string{"configured-model"}
-		const unconfiguredSlug = "lexically-safe-but-unconfigured"
-
-		fetcher, err := NewArtificialAnalysisPerformanceFetcher(cfg, unconfiguredSlug, client)
-
-		require.Error(t, err)
-		require.Nil(t, fetcher)
-		var configErr *RadarFetcherConfigError
-		require.True(t, errors.As(err, &configErr))
-		require.Equal(t, "radar.artificial_analysis_model_slugs", configErr.Field)
-		require.NotContains(t, err.Error(), unconfiguredSlug)
-		require.NotContains(t, err.Error(), cfg.Radar.ArtificialAnalysisAPIKey)
-	})
-
-	t.Run("unsafe configured performance slug", func(t *testing.T) {
-		cfg := validRadarFetcherTestConfig()
-		const unsafeConfiguredSlug = "../sensitive-config-value"
-		cfg.Radar.ArtificialAnalysisModelSlugs = []string{"model", unsafeConfiguredSlug}
-
-		fetcher, err := NewArtificialAnalysisPerformanceFetcher(cfg, "model", client)
-
-		require.Error(t, err)
-		require.Nil(t, fetcher)
-		var configErr *RadarFetcherConfigError
-		require.True(t, errors.As(err, &configErr))
-		require.Equal(t, "radar.artificial_analysis_model_slugs", configErr.Field)
-		require.NotContains(t, err.Error(), unsafeConfiguredSlug)
-	})
 }

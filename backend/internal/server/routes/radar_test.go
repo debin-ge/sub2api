@@ -55,13 +55,6 @@ func (s *radarRoutesService) GetDegradationLatest(ctx context.Context) (*service
 	return &service.DegradationLatestDTO{Models: make([]service.DegradationModelDTO, 0), LMArenaTop5: make([]service.LMArenaEntryDTO, 0), SourcesLastUpdated: map[string]*time.Time{}}, s.verifyPublicContext(ctx)
 }
 
-func (s *radarRoutesService) GetDegradationTrend(ctx context.Context, model string, metric service.DegradationMetric, days int) (*service.DegradationTrendDTO, error) {
-	if model != "model-a" || metric != service.DegradationMetricCodingIndex || days != 90 {
-		return nil, errors.New("unexpected validated trend arguments")
-	}
-	return &service.DegradationTrendDTO{ModelSlug: model, Metric: metric, Days: days, DataPoints: make([]service.MetricPointDTO, 0)}, s.verifyPublicContext(ctx)
-}
-
 func (s *radarRoutesService) GetLMArena(ctx context.Context) (*service.LMArenaDTO, error) {
 	return &service.LMArenaDTO{Leaderboard: make([]service.LMArenaEntryDTO, 0)}, s.verifyPublicContext(ctx)
 }
@@ -92,15 +85,13 @@ func newRadarRoutesTestRouter(t *testing.T) (*gin.Engine, *radarRoutesService, *
 	authenticated.GET("/probe", func(c *gin.Context) { c.Status(http.StatusNoContent) })
 
 	radarService := &radarRoutesService{}
-	radarHandler, err := handler.NewRadarHandler(&config.Config{Radar: config.RadarConfig{
-		ArtificialAnalysisModelSlugs: []string{"model-a"},
-	}}, radarService)
+	radarHandler, err := handler.NewRadarHandler(&config.Config{}, radarService)
 	require.NoError(t, err)
 	RegisterRadarRoutes(v1, radarHandler)
 	return router, radarService, &authCalls
 }
 
-func TestRegisterRadarRoutesRegistersSevenPublicGETEndpoints(t *testing.T) {
+func TestRegisterRadarRoutesRegistersSixPublicGETEndpoints(t *testing.T) {
 	router, _, _ := newRadarRoutesTestRouter(t)
 
 	var got []string
@@ -112,7 +103,6 @@ func TestRegisterRadarRoutesRegistersSevenPublicGETEndpoints(t *testing.T) {
 	sort.Strings(got)
 	require.Equal(t, []string{
 		"GET /api/v1/public/radar/degradation/latest",
-		"GET /api/v1/public/radar/degradation/trend",
 		"GET /api/v1/public/radar/lmarena",
 		"GET /api/v1/public/radar/quota-buckets/latest",
 		"GET /api/v1/public/radar/quota-buckets/trend",
@@ -134,7 +124,6 @@ func TestRadarRoutesAreReachableWithoutAuthAndDoNotInheritAuthMiddleware(t *test
 		"/api/v1/public/radar/quota-buckets/latest",
 		"/api/v1/public/radar/quota-buckets/trend?bucket=anthropic%2Fpro",
 		"/api/v1/public/radar/degradation/latest",
-		"/api/v1/public/radar/degradation/trend?model=model-a&metric=coding_index",
 		"/api/v1/public/radar/lmarena",
 		"/api/v1/public/radar/sources",
 	}
@@ -144,7 +133,7 @@ func TestRadarRoutesAreReachableWithoutAuthAndDoNotInheritAuthMiddleware(t *test
 		require.Equal(t, http.StatusOK, w.Code, "path=%s body=%s", path, w.Body.String())
 	}
 
-	require.Equal(t, int32(7), radarService.calls.Load())
+	require.Equal(t, int32(6), radarService.calls.Load())
 	require.Equal(t, int32(1), authCalls.Load(), "public Radar requests must not execute auth middleware")
 }
 
@@ -168,6 +157,9 @@ func TestRadarRoutesRejectPostAndUnknownPaths(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/public/radar/unknown", nil))
+	require.Equal(t, http.StatusNotFound, w.Code)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/public/radar/degradation/trend", nil))
 	require.Equal(t, http.StatusNotFound, w.Code)
 	require.Zero(t, radarService.calls.Load())
 }

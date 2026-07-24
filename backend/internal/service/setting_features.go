@@ -32,13 +32,13 @@ func (s *SettingService) IsEmailVerifyEnabled(ctx context.Context) bool {
 	return value == "true"
 }
 
-// GetRegistrationEmailSuffixWhitelist returns normalized registration email suffix whitelist.
-func (s *SettingService) GetRegistrationEmailSuffixWhitelist(ctx context.Context) []string {
-	value, err := s.settingRepo.GetValue(ctx, SettingKeyRegistrationEmailSuffixWhitelist)
+// GetRegistrationEmailSuffixBlacklist returns the normalized registration email suffix blacklist.
+func (s *SettingService) GetRegistrationEmailSuffixBlacklist(ctx context.Context) []string {
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyRegistrationEmailSuffixBlacklist)
 	if err != nil {
 		return []string{}
 	}
-	return ParseRegistrationEmailSuffixWhitelist(value)
+	return ParseRegistrationEmailSuffixBlacklist(value)
 }
 
 // IsPromoCodeEnabled 检查是否启用优惠码功能
@@ -57,6 +57,19 @@ func (s *SettingService) IsInvitationCodeEnabled(ctx context.Context) bool {
 		return false // 默认关闭
 	}
 	return value == "true"
+}
+
+// IsInvitationCodeRequired 检查注册时是否必须填写邀请码。
+// 缺失配置时默认必填，以兼容历史上“启用即必填”的行为。
+func (s *SettingService) IsInvitationCodeRequired(ctx context.Context) bool {
+	if !s.IsInvitationCodeEnabled(ctx) {
+		return false
+	}
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyInvitationCodeRequired)
+	if err != nil {
+		return true
+	}
+	return value != "false"
 }
 
 // GetCustomMenuItemsRaw returns the raw JSON string of custom_menu_items setting.
@@ -148,6 +161,20 @@ func (s *SettingService) GetAffiliateRebatePerInviteeCap(ctx context.Context) fl
 		return AffiliateRebatePerInviteeCapDefault
 	}
 	return cap
+}
+
+// GetAffiliateRegistrationRewardAmount returns the fixed reward granted to an
+// inviter when a newly-created user binds their referral code.
+func (s *SettingService) GetAffiliateRegistrationRewardAmount(ctx context.Context) float64 {
+	raw, err := s.settingRepo.GetValue(ctx, SettingKeyAffiliateRegistrationRewardAmount)
+	if err != nil {
+		return AffiliateRegistrationRewardAmountDefault
+	}
+	reward, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+	if err != nil {
+		return AffiliateRegistrationRewardAmountDefault
+	}
+	return normalizeAffiliateRegistrationReward(reward)
 }
 
 // IsPasswordResetEnabled 检查是否启用密码重置功能

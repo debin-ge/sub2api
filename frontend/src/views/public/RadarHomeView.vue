@@ -60,7 +60,7 @@
               {{ t('radar.quota.title', 'Quota radar') }}
             </h2>
             <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">
-              {{ t('radar.quota.subtitle', 'Anonymous quota aggregates by platform and plan.') }}
+              {{ t('radar.quota.subtitle', '5H and 7D quota limits with sample sizes by plan.') }}
             </p>
           </div>
           <RadarSectionState
@@ -75,12 +75,6 @@
             <QuotaBucketGrid
               v-if="quotaData"
               :buckets="quotaData.buckets"
-              :sample-size-warn-below="quotaData.sample_size_warn_below"
-              :trends="quotaTrends"
-              :trend-loading="quotaTrendLoading"
-              :trend-errors="quotaTrendErrors"
-              @select="openBucketDetail"
-              @request-trend="ensureQuotaTrend"
             />
           </RadarSectionState>
         </section>
@@ -91,7 +85,7 @@
               {{ t('radar.degradation.title', 'Benchmark radar') }}
             </h2>
             <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">
-              {{ t('radar.degradation.subtitle', 'Public model indices, trends, and model leaderboard rankings.') }}
+              {{ t('radar.degradation.subtitle', 'Current Artificial Analysis indices and model leaderboard rankings.') }}
             </p>
           </div>
           <DegradationRadarTabs
@@ -101,10 +95,6 @@
             :lmarena="lmarenaData"
             :lmarena-loading="lmarenaLoading"
             :lmarena-error="lmarenaError"
-            :trend="activeDegradationTrend"
-            :trend-loading="activeDegradationTrendState?.loading.value ?? false"
-            :trend-error="activeDegradationTrendState?.error.value ?? null"
-            @request-trend="requestDegradationTrend"
           />
         </section>
       </main>
@@ -123,24 +113,14 @@
       </div>
     </footer>
 
-    <QuotaBucketDetailModal
-      :show="detailModalOpen"
-      :bucket="selectedBucket"
-      :trend="activeQuotaTrend"
-      :trend-loading="activeQuotaTrendState?.loading.value ?? false"
-      :trend-error="activeQuotaTrendState?.error.value ?? null"
-      :sample-size-warn-below="quotaData?.sample_size_warn_below ?? 3"
-      @close="closeBucketDetail"
-    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, shallowReactive, shallowRef, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import DegradationRadarTabs from '@/components/radar/DegradationRadarTabs.vue'
-import QuotaBucketDetailModal from '@/components/radar/QuotaBucketDetailModal.vue'
 import QuotaBucketGrid from '@/components/radar/QuotaBucketGrid.vue'
 import RadarHero from '@/components/radar/RadarHero.vue'
 import RadarPageHeader from '@/components/radar/RadarPageHeader.vue'
@@ -150,13 +130,8 @@ import { useAppStore } from '@/stores'
 import userChannelsAPI, { type UserAvailableChannel } from '@/api/channels'
 import {
   usePublicRadar,
-  type RadarResourceState,
 } from '@/composables/usePublicRadar'
 import type {
-  BucketSnapshotDTO,
-  DegradationMetric,
-  DegradationTrendDTO,
-  QuotaTrendDTO,
   ServiceHealthDTO,
 } from '@/types/radar'
 import { radarCatalogPlatforms } from '@/utils/radarCatalog'
@@ -164,10 +139,6 @@ import { radarCatalogPlatforms } from '@/utils/radarCatalog'
 const { t } = useI18n()
 const appStore = useAppStore()
 const radar = usePublicRadar()
-const detailModalOpen = ref(false)
-const selectedBucket = shallowRef<BucketSnapshotDTO | null>(null)
-const quotaTrendStates = shallowReactive(new Map<string, RadarResourceState<QuotaTrendDTO>>())
-const activeDegradationTrendState = shallowRef<RadarResourceState<DegradationTrendDTO> | null>(null)
 const catalogChannels = shallowRef<UserAvailableChannel[]>([])
 const catalogLoading = ref(true)
 const catalogError = ref<'load_failed' | null>(null)
@@ -239,41 +210,6 @@ const quotaEmptyMessage = computed(() => {
   )
 })
 
-const activeQuotaTrendState = computed(() => (
-  selectedBucket.value
-    ? quotaTrendStates.get(selectedBucket.value.bucket_key) ?? null
-    : null
-))
-const activeQuotaTrend = computed(() => activeQuotaTrendState.value?.data.value ?? null)
-const activeDegradationTrend = computed(() => (
-  activeDegradationTrendState.value?.data.value ?? null
-))
-const quotaTrends = computed<Readonly<Record<string, QuotaTrendDTO | null>>>(() => {
-  const trends: Record<string, QuotaTrendDTO | null> = {}
-  for (const [bucketKey, state] of quotaTrendStates) trends[bucketKey] = state.data.value
-  return trends
-})
-const quotaTrendLoading = computed<Readonly<Record<string, boolean>>>(() => {
-  const loading: Record<string, boolean> = {}
-  for (const [bucketKey, state] of quotaTrendStates) loading[bucketKey] = state.loading.value
-  return loading
-})
-const quotaTrendErrors = computed<Readonly<Record<string, string | null>>>(() => {
-  const errors: Record<string, string | null> = {}
-  for (const [bucketKey, state] of quotaTrendStates) errors[bucketKey] = state.error.value
-  return errors
-})
-
-function openBucketDetail(bucket: BucketSnapshotDTO): void {
-  selectedBucket.value = bucket
-  detailModalOpen.value = true
-  ensureQuotaTrend(bucket.bucket_key)
-}
-
-function closeBucketDetail(): void {
-  detailModalOpen.value = false
-}
-
 function healthPlatformForService(service: ServiceHealthDTO): string | null {
   switch (service.service_key) {
     case 'claude_api':
@@ -291,46 +227,6 @@ function healthPlatformForService(service: ServiceHealthDTO): string | null {
       return null
   }
 }
-
-function requestDegradationTrend(
-  model: string,
-  metric: DegradationMetric,
-  days: 90
-): void {
-  const state = radar.getDegradationTrendState(model, metric, days)
-  activeDegradationTrendState.value = state
-  void radar.loadDegradationTrend(model, metric, days).catch(() => undefined)
-}
-
-function ensureQuotaTrend(bucketKey: string): void {
-  let state = quotaTrendStates.get(bucketKey)
-  if (!state) {
-    state = radar.getQuotaTrendState(bucketKey, 7)
-    quotaTrendStates.set(bucketKey, state)
-  }
-  if (state.loading.value || (state.hasSucceeded.value && state.data.value !== null)) return
-  void radar.loadQuotaTrend(bucketKey, 7).catch(() => undefined)
-}
-
-watch(quotaData, (latest) => {
-  const buckets = latest?.buckets ?? []
-  const bucketsByKey = new Map(buckets.map((bucket) => [bucket.bucket_key, bucket]))
-
-  for (const bucketKey of quotaTrendStates.keys()) {
-    if (!bucketsByKey.has(bucketKey)) quotaTrendStates.delete(bucketKey)
-  }
-
-  if (selectedBucket.value) {
-    const refreshedBucket = bucketsByKey.get(selectedBucket.value.bucket_key)
-    if (refreshedBucket) {
-      selectedBucket.value = refreshedBucket
-    } else {
-      detailModalOpen.value = false
-      selectedBucket.value = null
-    }
-  }
-
-}, { immediate: true })
 
 onMounted(() => {
   const controller = new AbortController()

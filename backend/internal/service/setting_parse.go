@@ -59,9 +59,12 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyRegistrationRateLimitWindowIP:             strconv.Itoa(RegistrationRateLimitWindowIPDefault),
 		SettingKeyRegistrationRateLimitPerEmail:             strconv.Itoa(RegistrationRateLimitPerEmailDefault),
 		SettingKeyRegistrationRateLimitWindowEmail:          strconv.Itoa(RegistrationRateLimitWindowEmailDefault),
+		SettingKeyRegistrationRateLimitPerEmailDomain:       strconv.Itoa(RegistrationRateLimitPerEmailDomainDefault),
+		SettingKeyRegistrationRateLimitWindowEmailDomain:    strconv.Itoa(RegistrationRateLimitWindowEmailDomainDefault),
 		SettingKeyEmailVerifyEnabled:                        "false",
-		SettingKeyRegistrationEmailSuffixWhitelist:          "[]",
+		SettingKeyRegistrationEmailSuffixBlacklist:          "[]",
 		SettingKeyPromoCodeEnabled:                          "true", // 默认启用优惠码功能
+		SettingKeyInvitationCodeRequired:                    "true",
 		SettingKeyLoginAgreementEnabled:                     "false",
 		SettingKeyLoginAgreementMode:                        defaultLoginAgreementMode,
 		SettingKeyLoginAgreementUpdatedAt:                   defaultLoginAgreementDate,
@@ -131,6 +134,7 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyAffiliateRebateFreezeHours:                strconv.Itoa(AffiliateRebateFreezeHoursDefault),
 		SettingKeyAffiliateRebateDurationDays:               strconv.Itoa(AffiliateRebateDurationDaysDefault),
 		SettingKeyAffiliateRebatePerInviteeCap:              strconv.FormatFloat(AffiliateRebatePerInviteeCapDefault, 'f', 2, 64),
+		SettingKeyAffiliateRegistrationRewardAmount:         strconv.FormatFloat(AffiliateRegistrationRewardAmountDefault, 'f', 8, 64),
 		SettingKeyDefaultUserRPMLimit:                       "0",
 		SettingPaymentCnyUsdRate:                            strconv.FormatFloat(defaultPaymentCnyUsdRate, 'f', -1, 64),
 		SettingKeyResellerEnabled:                           "false",
@@ -299,49 +303,52 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		}
 	}
 	result := &SystemSettings{
-		RegistrationEnabled:              settings[SettingKeyRegistrationEnabled] == "true",
-		RegistrationRateLimitPerIP:       parseIntOrDefault(settings[SettingKeyRegistrationRateLimitPerIP], RegistrationRateLimitPerIPDefault),
-		RegistrationRateLimitWindowIP:    parseIntOrDefault(settings[SettingKeyRegistrationRateLimitWindowIP], RegistrationRateLimitWindowIPDefault),
-		RegistrationRateLimitPerEmail:    parseIntOrDefault(settings[SettingKeyRegistrationRateLimitPerEmail], RegistrationRateLimitPerEmailDefault),
-		RegistrationRateLimitWindowEmail: parseIntOrDefault(settings[SettingKeyRegistrationRateLimitWindowEmail], RegistrationRateLimitWindowEmailDefault),
-		EmailVerifyEnabled:               emailVerifyEnabled,
-		RegistrationEmailSuffixWhitelist: ParseRegistrationEmailSuffixWhitelist(settings[SettingKeyRegistrationEmailSuffixWhitelist]),
-		PromoCodeEnabled:                 settings[SettingKeyPromoCodeEnabled] != "false", // 默认启用
-		PasswordResetEnabled:             emailVerifyEnabled && settings[SettingKeyPasswordResetEnabled] == "true",
-		FrontendURL:                      settings[SettingKeyFrontendURL],
-		InvitationCodeEnabled:            settings[SettingKeyInvitationCodeEnabled] == "true",
-		TotpEnabled:                      settings[SettingKeyTotpEnabled] == "true",
-		SessionBindingEnabled:            settings[SettingKeySessionBindingEnabled] == "true", // 默认关闭
-		StepUpEnabled:                    settings[SettingKeyStepUpEnabled] == "true",         // 默认关闭
-		AuditLogRetentionDays:            parseAuditLogRetentionDays(settings[SettingKeyAuditLogRetentionDays]),
-		LoginAgreementEnabled:            settings[SettingKeyLoginAgreementEnabled] == "true",
-		LoginAgreementMode:               normalizeLoginAgreementMode(settings[SettingKeyLoginAgreementMode]),
-		LoginAgreementUpdatedAt:          loginAgreementUpdatedAt,
-		LoginAgreementDocuments:          loginAgreementDocuments,
-		SMTPHost:                         settings[SettingKeySMTPHost],
-		SMTPUsername:                     settings[SettingKeySMTPUsername],
-		SMTPFrom:                         settings[SettingKeySMTPFrom],
-		SMTPFromName:                     settings[SettingKeySMTPFromName],
-		SMTPUseTLS:                       settings[SettingKeySMTPUseTLS] == "true",
-		SMTPPasswordConfigured:           settings[SettingKeySMTPPassword] != "",
-		TurnstileEnabled:                 settings[SettingKeyTurnstileEnabled] == "true",
-		TurnstileSiteKey:                 settings[SettingKeyTurnstileSiteKey],
-		TurnstileSecretKeyConfigured:     settings[SettingKeyTurnstileSecretKey] != "",
-		APIKeyACLTrustForwardedIP:        apiKeyACLTrustForwardedIP,
-		ForwardedClientIPHeaders:         forwardedClientIPHeaders,
-		SiteName:                         s.getStringOrDefault(settings, SettingKeySiteName, "Sub2API"),
-		SiteLogo:                         settings[SettingKeySiteLogo],
-		SiteSubtitle:                     s.getStringOrDefault(settings, SettingKeySiteSubtitle, "Subscription to API Conversion Platform"),
-		APIBaseURL:                       settings[SettingKeyAPIBaseURL],
-		ContactInfo:                      settings[SettingKeyContactInfo],
-		DocURL:                           settings[SettingKeyDocURL],
-		HomeContent:                      settings[SettingKeyHomeContent],
-		HideCcsImportButton:              settings[SettingKeyHideCcsImportButton] == "true",
-		PurchaseSubscriptionEnabled:      settings[SettingKeyPurchaseSubscriptionEnabled] == "true",
-		PurchaseSubscriptionURL:          strings.TrimSpace(settings[SettingKeyPurchaseSubscriptionURL]),
-		CustomMenuItems:                  settings[SettingKeyCustomMenuItems],
-		CustomEndpoints:                  settings[SettingKeyCustomEndpoints],
-		BackendModeEnabled:               settings[SettingKeyBackendModeEnabled] == "true",
+		RegistrationEnabled:                    settings[SettingKeyRegistrationEnabled] == "true",
+		RegistrationRateLimitPerIP:             parseIntOrDefault(settings[SettingKeyRegistrationRateLimitPerIP], RegistrationRateLimitPerIPDefault),
+		RegistrationRateLimitWindowIP:          parseIntOrDefault(settings[SettingKeyRegistrationRateLimitWindowIP], RegistrationRateLimitWindowIPDefault),
+		RegistrationRateLimitPerEmail:          parseIntOrDefault(settings[SettingKeyRegistrationRateLimitPerEmail], RegistrationRateLimitPerEmailDefault),
+		RegistrationRateLimitWindowEmail:       parseIntOrDefault(settings[SettingKeyRegistrationRateLimitWindowEmail], RegistrationRateLimitWindowEmailDefault),
+		RegistrationRateLimitPerEmailDomain:    parseIntOrDefault(settings[SettingKeyRegistrationRateLimitPerEmailDomain], RegistrationRateLimitPerEmailDomainDefault),
+		RegistrationRateLimitWindowEmailDomain: parseIntOrDefault(settings[SettingKeyRegistrationRateLimitWindowEmailDomain], RegistrationRateLimitWindowEmailDomainDefault),
+		EmailVerifyEnabled:                     emailVerifyEnabled,
+		RegistrationEmailSuffixBlacklist:       ParseRegistrationEmailSuffixBlacklist(settings[SettingKeyRegistrationEmailSuffixBlacklist]),
+		PromoCodeEnabled:                       settings[SettingKeyPromoCodeEnabled] != "false", // 默认启用
+		PasswordResetEnabled:                   emailVerifyEnabled && settings[SettingKeyPasswordResetEnabled] == "true",
+		FrontendURL:                            settings[SettingKeyFrontendURL],
+		InvitationCodeEnabled:                  settings[SettingKeyInvitationCodeEnabled] == "true",
+		InvitationCodeRequired:                 settings[SettingKeyInvitationCodeRequired] != "false",
+		TotpEnabled:                            settings[SettingKeyTotpEnabled] == "true",
+		SessionBindingEnabled:                  settings[SettingKeySessionBindingEnabled] == "true", // 默认关闭
+		StepUpEnabled:                          settings[SettingKeyStepUpEnabled] == "true",         // 默认关闭
+		AuditLogRetentionDays:                  parseAuditLogRetentionDays(settings[SettingKeyAuditLogRetentionDays]),
+		LoginAgreementEnabled:                  settings[SettingKeyLoginAgreementEnabled] == "true",
+		LoginAgreementMode:                     normalizeLoginAgreementMode(settings[SettingKeyLoginAgreementMode]),
+		LoginAgreementUpdatedAt:                loginAgreementUpdatedAt,
+		LoginAgreementDocuments:                loginAgreementDocuments,
+		SMTPHost:                               settings[SettingKeySMTPHost],
+		SMTPUsername:                           settings[SettingKeySMTPUsername],
+		SMTPFrom:                               settings[SettingKeySMTPFrom],
+		SMTPFromName:                           settings[SettingKeySMTPFromName],
+		SMTPUseTLS:                             settings[SettingKeySMTPUseTLS] == "true",
+		SMTPPasswordConfigured:                 settings[SettingKeySMTPPassword] != "",
+		TurnstileEnabled:                       settings[SettingKeyTurnstileEnabled] == "true",
+		TurnstileSiteKey:                       settings[SettingKeyTurnstileSiteKey],
+		TurnstileSecretKeyConfigured:           settings[SettingKeyTurnstileSecretKey] != "",
+		APIKeyACLTrustForwardedIP:              apiKeyACLTrustForwardedIP,
+		ForwardedClientIPHeaders:               forwardedClientIPHeaders,
+		SiteName:                               s.getStringOrDefault(settings, SettingKeySiteName, "Sub2API"),
+		SiteLogo:                               settings[SettingKeySiteLogo],
+		SiteSubtitle:                           s.getStringOrDefault(settings, SettingKeySiteSubtitle, "Subscription to API Conversion Platform"),
+		APIBaseURL:                             settings[SettingKeyAPIBaseURL],
+		ContactInfo:                            settings[SettingKeyContactInfo],
+		DocURL:                                 settings[SettingKeyDocURL],
+		HomeContent:                            settings[SettingKeyHomeContent],
+		HideCcsImportButton:                    settings[SettingKeyHideCcsImportButton] == "true",
+		PurchaseSubscriptionEnabled:            settings[SettingKeyPurchaseSubscriptionEnabled] == "true",
+		PurchaseSubscriptionURL:                strings.TrimSpace(settings[SettingKeyPurchaseSubscriptionURL]),
+		CustomMenuItems:                        settings[SettingKeyCustomMenuItems],
+		CustomEndpoints:                        settings[SettingKeyCustomEndpoints],
+		BackendModeEnabled:                     settings[SettingKeyBackendModeEnabled] == "true",
 	}
 	result.TableDefaultPageSize, result.TablePageSizeOptions = parseTablePreferences(
 		settings[SettingKeyTableDefaultPageSize],
@@ -390,6 +397,14 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	}
 	if perInviteeCap, err := strconv.ParseFloat(settings[SettingKeyAffiliateRebatePerInviteeCap], 64); err == nil && perInviteeCap >= 0 {
 		result.AffiliateRebatePerInviteeCap = perInviteeCap
+	}
+	// TrimSpace to stay consistent with GetAffiliateRegistrationRewardAmount; a
+	// manually-edited value with surrounding whitespace must resolve identically
+	// on both paths rather than silently falling back to the default here.
+	if reward, err := strconv.ParseFloat(strings.TrimSpace(settings[SettingKeyAffiliateRegistrationRewardAmount]), 64); err == nil {
+		result.AffiliateRegistrationReward = normalizeAffiliateRegistrationReward(reward)
+	} else {
+		result.AffiliateRegistrationReward = AffiliateRegistrationRewardAmountDefault
 	}
 	result.AdminRechargeRebateEnabled = settings[SettingKeyAffiliateAdminRechargeEnabled] == "true"
 	result.DefaultSubscriptions = parseDefaultSubscriptions(settings[SettingKeyDefaultSubscriptions])
@@ -940,6 +955,20 @@ func clampAffiliateRebateRate(value float64) float64 {
 		return AffiliateRebateRateMax
 	}
 	return value
+}
+
+func normalizeAffiliateRegistrationReward(value float64) float64 {
+	if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 {
+		return AffiliateRegistrationRewardAmountDefault
+	}
+	if value > AffiliateRegistrationRewardAmountMax {
+		return AffiliateRegistrationRewardAmountMax
+	}
+	rounded := roundTo(value, 8)
+	if rounded > AffiliateRegistrationRewardAmountMax {
+		return AffiliateRegistrationRewardAmountMax
+	}
+	return rounded
 }
 
 func isFalseSettingValue(value string) bool {

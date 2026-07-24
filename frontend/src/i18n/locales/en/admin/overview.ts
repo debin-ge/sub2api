@@ -384,7 +384,7 @@ export default {
     },
 
     affiliates: {
-      invitesDescription: 'View site-wide inviter and invitee relationships',
+      invitesDescription: 'View site-wide invitation relationships and cumulative rebates by invitation time',
       rebatesDescription: 'View recharge orders that generated affiliate rebates',
       transfersDescription: 'View affiliate quota transfers into account balance',
       errors: {
@@ -400,6 +400,7 @@ export default {
         user: 'User',
         affCode: 'Invite Code',
         order: 'Order',
+        registrationReward: 'Registration Reward',
         totalRebate: 'Total Rebate',
         orderAmount: 'Top-up Amount',
         payAmount: 'Paid Amount',

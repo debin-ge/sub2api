@@ -40,6 +40,7 @@ describe('PendingOAuthCreateAccountForm', () => {
     sendPendingOAuthVerifyCode.mockReset()
     getPublicSettings.mockReset()
     showError.mockReset()
+    sessionStorage.clear()
     getPublicSettings.mockResolvedValue({
       turnstile_enabled: false,
       turnstile_site_key: ''
@@ -147,6 +148,101 @@ describe('PendingOAuthCreateAccountForm', () => {
           password: 'secret-123',
           verifyCode: '246810',
           invitationCode: 'INVITE123'
+        }
+      ]
+    ])
+  })
+
+  it('lets a stored referral code satisfy the required invitation gate', async () => {
+    // A referral code captured during the OAuth /start hop lives in sessionStorage
+    // and is attached to the create-account request; the backend accepts it in
+    // place of an invitation code, so the button must not stay disabled.
+    sessionStorage.setItem('oauth_aff_code', 'AFF123')
+    getPublicSettings.mockResolvedValue({
+      invitation_code_enabled: true,
+      invitation_code_required: true,
+      affiliate_enabled: true,
+      email_verify_enabled: false,
+      turnstile_enabled: false,
+      turnstile_site_key: ''
+    })
+
+    const wrapper = mount(PendingOAuthCreateAccountForm, {
+      props: {
+        providerName: 'LinuxDo',
+        testIdPrefix: 'linuxdo',
+        initialEmail: 'referred@example.com',
+        isSubmitting: false
+      }
+    })
+
+    await flushPromises()
+    await wrapper.get('[data-testid="linuxdo-create-account-password"]').setValue('secret-123')
+    const submit = wrapper.get('[data-testid="linuxdo-create-account-submit"]')
+
+    expect(wrapper.text()).toContain('auth.invitationSatisfiedByAffiliate')
+    expect(submit.attributes('disabled')).toBeUndefined()
+  })
+
+  it('still requires an invitation code when required and no referral code is stored', async () => {
+    getPublicSettings.mockResolvedValue({
+      invitation_code_enabled: true,
+      invitation_code_required: true,
+      affiliate_enabled: true,
+      email_verify_enabled: false,
+      turnstile_enabled: false,
+      turnstile_site_key: ''
+    })
+
+    const wrapper = mount(PendingOAuthCreateAccountForm, {
+      props: {
+        providerName: 'LinuxDo',
+        testIdPrefix: 'linuxdo',
+        initialEmail: 'referred@example.com',
+        isSubmitting: false
+      }
+    })
+
+    await flushPromises()
+    await wrapper.get('[data-testid="linuxdo-create-account-password"]').setValue('secret-123')
+    const submit = wrapper.get('[data-testid="linuxdo-create-account-submit"]')
+
+    expect(submit.attributes('disabled')).toBeDefined()
+  })
+
+  it('allows an empty invitation code when invitation signup is optional', async () => {
+    getPublicSettings.mockResolvedValue({
+      invitation_code_enabled: true,
+      invitation_code_required: false,
+      email_verify_enabled: false,
+      turnstile_enabled: false,
+      turnstile_site_key: ''
+    })
+
+    const wrapper = mount(PendingOAuthCreateAccountForm, {
+      props: {
+        providerName: 'LinuxDo',
+        testIdPrefix: 'linuxdo',
+        initialEmail: 'optional@example.com',
+        isSubmitting: false
+      }
+    })
+
+    await flushPromises()
+    await wrapper.get('[data-testid="linuxdo-create-account-password"]').setValue('secret-123')
+    const submit = wrapper.get('[data-testid="linuxdo-create-account-submit"]')
+
+    expect(wrapper.text()).toContain('common.optional')
+    expect(submit.attributes('disabled')).toBeUndefined()
+
+    await submit.trigger('click')
+    expect(wrapper.emitted('submit')).toEqual([
+      [
+        {
+          email: 'optional@example.com',
+          password: 'secret-123',
+          verifyCode: '',
+          invitationCode: undefined
         }
       ]
     ])

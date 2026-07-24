@@ -79,17 +79,6 @@ const baseStatus: RadarAdminStatus = {
       http_status: null,
       error: null,
     },
-    {
-      key: 'aa_perf:gpt-5.2_code',
-      status: 'healthy',
-      stale: false,
-      last_attempt_at: '2026-07-15T02:00:00Z',
-      last_success_at: '2026-07-15T02:00:00Z',
-      last_failure_at: null,
-      next_fire_at: '2026-07-15T08:00:00Z',
-      http_status: 200,
-      error: null,
-    },
   ],
   aggregator: {
     key: 'quota_aggregator',
@@ -163,7 +152,7 @@ describe('RadarSettingsCard', () => {
     expect(neverAttempted.text()).toContain('admin.settings.features.radar.status.never_attempted')
   })
 
-  it('labels every real source key and formats dynamic AA performance slugs as text', async () => {
+  it('labels every real source key', async () => {
     const wrapper = mount(RadarSettingsCard)
     await flushPromises()
 
@@ -183,20 +172,14 @@ describe('RadarSettingsCard', () => {
       'admin.settings.features.radar.sources.quota_aggregator',
     )
 
-    const performance = wrapper.get('[data-testid="radar-source-aa_perf:gpt-5.2_code"]')
-    expect(performance.text()).toContain('admin.settings.features.radar.sources.aa_performance')
-    expect(performance.text()).toContain('gpt-5.2_code')
-    expect(performance.text()).not.toContain(
-      'admin.settings.features.radar.sources.aa_perf:gpt-5.2_code',
-    )
   })
 
-  it('renders an unexpected AA performance slug as escaped text, never as markup', async () => {
+  it('renders an unexpected source key as escaped text, never as markup', async () => {
     const payload = structuredClone(baseStatus)
     payload.sources = [
       {
         ...payload.sources[1],
-        key: 'aa_perf:<img src=x onerror=alert(1)>',
+        key: 'unexpected:<img src=x onerror=alert(1)>',
       },
     ]
     getRadarAdminStatus.mockResolvedValueOnce(payload)
@@ -205,8 +188,7 @@ describe('RadarSettingsCard', () => {
     await flushPromises()
 
     expect(wrapper.find('img').exists()).toBe(false)
-    expect(wrapper.text()).toContain('admin.settings.features.radar.sources.aa_performance')
-    expect(wrapper.text()).toContain('<img src=x onerror=alert(1)>')
+    expect(wrapper.text()).toContain('unexpected:<img src=x onerror=alert(1)>')
   })
 
   it('contains load errors locally and supports retry without affecting the parent form', async () => {
