@@ -56,9 +56,9 @@ export default {
           freezeHoursDesc: 'New rebates will be frozen for this period before becoming available for withdrawal. 0 = no freeze.',
           durationDays: 'Rebate Duration (days)',
           durationDaysDesc: 'Rebate relationship expires after this many days since invitee registration. 0 = permanent.',
-          perInviteeCap: 'Per-Invitee Rebate Cap',
+          perInviteeCap: 'Inviter Total Rebate Cap',
           perInviteeCapDesc:
-            'Maximum combined registration reward and recharge rebate from a single invitee. 0 = no limit.',
+            'Maximum combined registration rewards and recharge rebates an inviter can receive across all invitees. 0 = no limit.',
           customUsers: {
             title: 'Per-User Overrides',
             description: 'Set a custom invite code or exclusive rebate rate for specific users. Lists only users that have an override applied.',

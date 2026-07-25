@@ -37,7 +37,7 @@ func TestAffiliateService_BindInviterAndGrantRegistrationReward_UsesSettingsSnap
 	require.Equal(t, int64(42), repo.registrationRewardCalls[0].userID)
 	require.Equal(t, "AFF123", repo.registrationRewardCalls[0].code)
 	require.InDelta(t, 10.12345679, repo.registrationRewardCalls[0].reward, 1e-9)
-	require.InDelta(t, 25.5, repo.registrationRewardCalls[0].perUserCap, 1e-9)
+	require.InDelta(t, 25.5, repo.registrationRewardCalls[0].inviterTotalCap, 1e-9)
 	require.Equal(t, 24, repo.registrationRewardCalls[0].freezeHours)
 }
 
@@ -58,15 +58,25 @@ func TestAffiliateService_BindInviterAndGrantRegistrationReward_ZeroStillBinds(t
 	require.Zero(t, repo.registrationRewardCalls[0].reward)
 }
 
-func TestAffiliateService_EffectiveRegistrationRewardAmount_RespectsPerInviteeCap(t *testing.T) {
+func TestAffiliateService_EffectiveRegistrationRewardAmount_UsesInviterRemainingCap(t *testing.T) {
 	settingService := NewSettingService(&settingRepoStub{values: map[string]string{
 		SettingKeyAffiliateEnabled:                  "true",
 		SettingKeyAffiliateRegistrationRewardAmount: "10",
-		SettingKeyAffiliateRebatePerInviteeCap:      "6.5",
+		SettingKeyAffiliateRebatePerInviteeCap:      "10",
 	}}, &config.Config{})
-	svc := NewAffiliateService(&affiliateRepoStub{}, settingService, nil, nil)
+	repo := &affiliateRepoStub{
+		totalRebateByInviter: map[int64]float64{7: 6},
+	}
+	svc := NewAffiliateService(repo, settingService, nil, nil)
 
-	require.InDelta(t, 6.5, svc.effectiveRegistrationRewardAmount(context.Background()), 1e-9)
+	amount, err := svc.effectiveRegistrationRewardAmount(context.Background(), 7)
+	require.NoError(t, err)
+	require.InDelta(t, 4, amount, 1e-9)
+
+	repo.totalRebateByInviter[7] = 10
+	amount, err = svc.effectiveRegistrationRewardAmount(context.Background(), 7)
+	require.NoError(t, err)
+	require.Zero(t, amount)
 }
 
 func TestAffiliateService_RegistrationRewardDisabledAndDatabaseFailure(t *testing.T) {
@@ -93,7 +103,7 @@ func TestAffiliateService_RegistrationRewardDisabledAndDatabaseFailure(t *testin
 	require.Equal(t, "SERVICE_UNAVAILABLE", infraerrors.Reason(err))
 }
 
-func TestAffiliateService_AccrueInviteRebate_RegistrationRewardConsumesPerInviteeCap(t *testing.T) {
+func TestAffiliateService_AccrueInviteRebate_RegistrationRewardConsumesInviterTotalCap(t *testing.T) {
 	inviterID := int64(7)
 	cappedAmount := 2.0
 	repo := &paymentFulfillmentAffiliateRepoStub{
@@ -123,7 +133,7 @@ func TestAffiliateService_AccrueInviteRebate_RegistrationRewardConsumesPerInvite
 	require.InDelta(t, 2, rebate, 1e-9)
 	require.Len(t, repo.accrueCalls, 1)
 	require.InDelta(t, 4, repo.accrueCalls[0].amount, 1e-9)
-	require.InDelta(t, 10, repo.accrueCalls[0].perInviteeCap, 1e-9)
+	require.InDelta(t, 10, repo.accrueCalls[0].inviterTotalCap, 1e-9)
 }
 
 func TestAuthService_BindOAuthAffiliateWithoutCodeRemainsLazy(t *testing.T) {

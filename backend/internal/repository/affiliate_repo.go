@@ -120,7 +120,7 @@ func (r *affiliateRepository) BindInviterAndGrantRegistrationReward(
 	inviteeUserID int64,
 	affiliateCode string,
 	rewardAmount float64,
-	perInviteeCap float64,
+	inviterTotalCap float64,
 	freezeHours int,
 ) (*service.AffiliateRegistrationRewardResult, error) {
 	result := &service.AffiliateRegistrationRewardResult{}
@@ -178,9 +178,8 @@ WHERE user_id = $2
 			txCtx,
 			txClient,
 			inviter.UserID,
-			inviteeUserID,
 			rewardAmount,
-			perInviteeCap,
+			inviterTotalCap,
 		)
 		if err != nil {
 			return err
@@ -245,10 +244,10 @@ VALUES ($1, 'registration_reward', $2, $3, NOW(), NOW())`,
 	return result, nil
 }
 
-// lockAffiliateRewardRows serializes all cap decisions for an inviter/invitee
-// pair. Every reward path must acquire these rows in the same deterministic
-// order before reading the ledger, otherwise concurrent transactions can both
-// observe the same remaining cap.
+// lockAffiliateRewardRows serializes all cap decisions for an inviter. Every
+// reward path locks the inviter row as well as the source invitee row in the
+// same deterministic order. Locking the shared inviter row ensures rewards
+// from different invitees cannot concurrently consume the same remaining cap.
 func lockAffiliateRewardRows(
 	ctx context.Context,
 	client *dbent.Client,
@@ -296,27 +295,26 @@ func capAffiliateRewardAmount(
 	ctx context.Context,
 	client *dbent.Client,
 	inviterID int64,
-	inviteeUserID int64,
 	rewardAmount float64,
-	perInviteeCap float64,
+	inviterTotalCap float64,
 ) (float64, error) {
 	if rewardAmount <= 0 ||
 		math.IsNaN(rewardAmount) ||
 		math.IsInf(rewardAmount, 0) {
 		return 0, nil
 	}
-	if perInviteeCap <= 0 ||
-		math.IsNaN(perInviteeCap) ||
-		math.IsInf(perInviteeCap, 0) {
+	if inviterTotalCap <= 0 ||
+		math.IsNaN(inviterTotalCap) ||
+		math.IsInf(inviterTotalCap, 0) {
 		return rewardAmount, nil
 	}
 
-	existing, err := queryAffiliateCapEligibleTotal(ctx, client, inviterID, inviteeUserID)
+	existing, err := queryAffiliateInviterCapEligibleTotal(ctx, client, inviterID)
 	if err != nil {
 		return 0, err
 	}
 
-	remaining := perInviteeCap - existing
+	remaining := inviterTotalCap - existing
 	if remaining <= 0 {
 		return 0, nil
 	}
@@ -331,7 +329,7 @@ func (r *affiliateRepository) AccrueQuota(
 	inviterID int64,
 	inviteeUserID int64,
 	amount float64,
-	perInviteeCap float64,
+	inviterTotalCap float64,
 	freezeHours int,
 	sourceOrderID *int64,
 ) (float64, error) {
@@ -350,9 +348,8 @@ func (r *affiliateRepository) AccrueQuota(
 			txCtx,
 			txClient,
 			inviterID,
-			inviteeUserID,
 			amount,
-			perInviteeCap,
+			inviterTotalCap,
 		)
 		if err != nil {
 			return err
@@ -403,20 +400,37 @@ VALUES ($1, 'accrue', $2, $3, $4, NOW(), NOW())`, inviterID, appliedAmount, invi
 
 func (r *affiliateRepository) GetAccruedRebateFromInvitee(ctx context.Context, inviterID, inviteeUserID int64) (float64, error) {
 	client := clientFromContext(ctx, r.client)
-	return queryAffiliateCapEligibleTotal(ctx, client, inviterID, inviteeUserID)
-}
-
-func queryAffiliateCapEligibleTotal(
-	ctx context.Context,
-	client *dbent.Client,
-	inviterID int64,
-	inviteeUserID int64,
-) (float64, error) {
 	rows, err := client.QueryContext(ctx,
 		`SELECT COALESCE(SUM(amount), 0)::double precision FROM user_affiliate_ledger WHERE user_id = $1 AND source_user_id = $2 AND action IN ('accrue', 'registration_reward')`,
 		inviterID, inviteeUserID)
 	if err != nil {
-		return 0, fmt.Errorf("query cap-eligible rebate from invitee: %w", err)
+		return 0, fmt.Errorf("query rebate from invitee: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var total float64
+	if rows.Next() {
+		if err := rows.Scan(&total); err != nil {
+			return 0, err
+		}
+	}
+	return total, rows.Close()
+}
+
+func (r *affiliateRepository) GetTotalRebateForInviter(ctx context.Context, inviterID int64) (float64, error) {
+	client := clientFromContext(ctx, r.client)
+	return queryAffiliateInviterCapEligibleTotal(ctx, client, inviterID)
+}
+
+func queryAffiliateInviterCapEligibleTotal(
+	ctx context.Context,
+	client *dbent.Client,
+	inviterID int64,
+) (float64, error) {
+	rows, err := client.QueryContext(ctx,
+		`SELECT COALESCE(SUM(amount), 0)::double precision FROM user_affiliate_ledger WHERE user_id = $1 AND action IN ('accrue', 'registration_reward')`,
+		inviterID)
+	if err != nil {
+		return 0, fmt.Errorf("query cap-eligible rebate for inviter: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 	var total float64

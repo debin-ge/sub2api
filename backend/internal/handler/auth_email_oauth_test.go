@@ -452,6 +452,10 @@ func (r *oauthEmailAffiliateRepoStub) GetAccruedRebateFromInvitee(context.Contex
 	panic("unexpected GetAccruedRebateFromInvitee call")
 }
 
+func (r *oauthEmailAffiliateRepoStub) GetTotalRebateForInviter(context.Context, int64) (float64, error) {
+	return 0, nil
+}
+
 func (r *oauthEmailAffiliateRepoStub) ThawFrozenQuota(context.Context, int64) (float64, error) {
 	panic("unexpected ThawFrozenQuota call")
 }

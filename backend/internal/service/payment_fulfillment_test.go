@@ -42,12 +42,12 @@ func (p paymentFulfillmentTestProvider) Refund(ctx context.Context, req payment.
 }
 
 type paymentFulfillmentAffiliateAccrueCall struct {
-	inviterID     int64
-	inviteeUserID int64
-	amount        float64
-	perInviteeCap float64
-	freezeHours   int
-	sourceOrderID *int64
+	inviterID       int64
+	inviteeUserID   int64
+	amount          float64
+	inviterTotalCap float64
+	freezeHours     int
+	sourceOrderID   *int64
 }
 
 type paymentFulfillmentAffiliateRepoStub struct {
@@ -82,19 +82,19 @@ func (r *paymentFulfillmentAffiliateRepoStub) BindInviterAndGrantRegistrationRew
 	panic("unexpected BindInviterAndGrantRegistrationReward call")
 }
 
-func (r *paymentFulfillmentAffiliateRepoStub) AccrueQuota(_ context.Context, inviterID, inviteeUserID int64, amount float64, perInviteeCap float64, freezeHours int, sourceOrderID *int64) (float64, error) {
+func (r *paymentFulfillmentAffiliateRepoStub) AccrueQuota(_ context.Context, inviterID, inviteeUserID int64, amount float64, inviterTotalCap float64, freezeHours int, sourceOrderID *int64) (float64, error) {
 	var sourceCopy *int64
 	if sourceOrderID != nil {
 		v := *sourceOrderID
 		sourceCopy = &v
 	}
 	r.accrueCalls = append(r.accrueCalls, paymentFulfillmentAffiliateAccrueCall{
-		inviterID:     inviterID,
-		inviteeUserID: inviteeUserID,
-		amount:        amount,
-		perInviteeCap: perInviteeCap,
-		freezeHours:   freezeHours,
-		sourceOrderID: sourceCopy,
+		inviterID:       inviterID,
+		inviteeUserID:   inviteeUserID,
+		amount:          amount,
+		inviterTotalCap: inviterTotalCap,
+		freezeHours:     freezeHours,
+		sourceOrderID:   sourceCopy,
 	})
 	if r.accrueAppliedAmount != nil {
 		return *r.accrueAppliedAmount, nil
@@ -103,6 +103,10 @@ func (r *paymentFulfillmentAffiliateRepoStub) AccrueQuota(_ context.Context, inv
 }
 
 func (r *paymentFulfillmentAffiliateRepoStub) GetAccruedRebateFromInvitee(context.Context, int64, int64) (float64, error) {
+	return 0, nil
+}
+
+func (r *paymentFulfillmentAffiliateRepoStub) GetTotalRebateForInviter(context.Context, int64) (float64, error) {
 	return 0, nil
 }
 

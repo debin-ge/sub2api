@@ -22,16 +22,21 @@ func TestAffiliateRegistrationRewardMigrationIsIdempotentAndInviteeUnique(t *tes
 }
 
 func TestRegistrationEmailBlacklistMigrationWarnsOnLegacyWhitelist(t *testing.T) {
-	content, err := FS.ReadFile("186_registration_email_suffix_blacklist.sql")
+	seedContent, err := FS.ReadFile("186_registration_email_suffix_blacklist.sql")
 	require.NoError(t, err)
 
-	sql := strings.Join(strings.Fields(string(content)), " ")
+	seedSQL := strings.Join(strings.Fields(string(seedContent)), " ")
 	// Seeds the new blacklist without copying legacy values (inverted semantics).
-	require.Contains(t, sql, "INSERT INTO settings (key, value, updated_at)")
-	require.Contains(t, sql, "'registration_email_suffix_blacklist', '[]'")
-	require.NotContains(t, sql, "UPDATE settings SET value")
+	require.Contains(t, seedSQL, "INSERT INTO settings (key, value, updated_at)")
+	require.Contains(t, seedSQL, "'registration_email_suffix_blacklist', '[]'")
+	require.NotContains(t, seedSQL, "UPDATE settings SET value")
+
+	warningContent, err := FS.ReadFile("187_registration_email_suffix_blacklist_legacy_warning.sql")
+	require.NoError(t, err)
+	warningSQL := strings.Join(strings.Fields(string(warningContent)), " ")
 	// Breaking-change guard: a non-empty legacy whitelist must raise a warning so
 	// operators learn the registration restriction has stopped being enforced.
-	require.Contains(t, sql, "registration_email_suffix_whitelist")
-	require.Contains(t, sql, "RAISE WARNING")
+	require.Contains(t, warningSQL, "registration_email_suffix_whitelist")
+	require.Contains(t, warningSQL, "RAISE WARNING")
+	require.NotContains(t, warningSQL, "UPDATE settings")
 }
