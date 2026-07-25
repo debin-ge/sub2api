@@ -1,6 +1,6 @@
 # Sub2API 蓝绿部署（Nginx + Docker 多站点零停机发布）
 
-本目录是多站点蓝绿部署的全部工具：4 份模板 + 1 份 nginx snippet + 6 个脚本 +
+本目录是多站点蓝绿部署的全部工具：5 份模板 + 1 份 nginx snippet + 6 个脚本 +
 清单示例。设计文档见仓库根 `blue-green-deploy-design.v1.md` 与
 `blue-green-deploy-prd.md`。
 
@@ -15,7 +15,7 @@
 
 ## 依赖
 
-服务器需具备（`s2a-*` 启动时自检）：
+服务器需具备。`s2a-init` 会在创建任何目录、network 或容器前统一检查完整工具链：
 
 | 依赖 | 说明 |
 |---|---|
@@ -26,10 +26,14 @@
 | yq (mikefarah v4) 或 python3+PyYAML | 二选一，YAML → JSON |
 | systemd-run（可选） | 排空定时器；缺失时自动降级为后台 sleep 子进程 + pid 文件 |
 
+除只读的 `s2a-status` 外，所有会修改 Docker/nginx/部署状态的命令都要求 root；
+权限不足时会在入口立即退出。本文统一从部署根目录直接执行 `sudo ./bin/s2a-*`，
+不建立命令软链接。
+
 ## 服务器目录布局
 
 ```
-/srv/sub2api/
+/srv/sites/
 ├── registry/
 │   ├── sites.yaml                  # ★ 唯一真相源（复制 sites.example.yaml 修改）
 │   └── envs/<slug>.env             # 每站点密钥，chmod 600，不入 git
@@ -47,9 +51,10 @@
 
 ```
 /etc/nginx/
-├── nginx.conf                      # 见下方「首次引导」需加两行 include
+├── nginx.conf                      # 首次引导只加 1 个 http include + 1 个 main 参数
 ├── snippets/sub2api-proxy.conf     # s2a-render 安装，SSE 透传参数
 └── sub2api/
+    ├── http.conf                   # map + upstream/site include，s2a-render 管理
     ├── upstreams/<slug>.conf       # ★ 部署时唯一被改写的文件（单行 server）
     └── sites/<slug>.conf           # 渲染一次，之后不动
 ```
@@ -57,20 +62,32 @@
 ## 首次引导（每台服务器一次）
 
 ```bash
-# 1. 目录与文件
-mkdir -p /srv/sub2api/{registry/envs,stacks}
-rsync -a deploy/blue-green/bin deploy/blue-green/lib \
-        deploy/blue-green/templates deploy/blue-green/snippets /srv/sub2api/
-cp deploy/blue-green/sites.example.yaml /srv/sub2api/registry/sites.yaml
-ln -s /srv/sub2api/bin/s2a-* /usr/local/bin/   # 可选
+# 1. 把部署包作为一个整体复制到服务器
+sudo mkdir -p /srv/sites
+sudo rsync -a deploy/blue-green/ /srv/sites/
+sudo cp deploy/.env.example /srv/sites/env.example
+cd /srv/sites
+sudo mkdir -p registry/envs stacks
+sudo cp sites.example.yaml registry/sites.yaml
 
-# 2. nginx.conf 的 http {} 内加：
+# 2. nginx.conf 的 http {} 内只加一行（后续新增站点不再修改）：
+#      include /etc/nginx/sub2api/*.conf;
+#    如果已使用旧版的以下两行，请用上面一行替换，三行不能并存：
 #      include /etc/nginx/sub2api/upstreams/*.conf;
 #      include /etc/nginx/sub2api/sites/*.conf;
 #    main 上下文（http {} 外）加：
 #      worker_shutdown_timeout 1200s;   # 旧 worker 保留在途 SSE，但不无限期堆积
-nginx -t && nginx -s reload
+# 此处只校验，不要单独 reload；下面的 s2a-render 生成 http.conf 后会统一 reload。
+sudo nginx -t
 ```
+
+`s2a-render` 会生成 `/etc/nginx/sub2api/http.conf`，其中统一维护 WebSocket
+`map` 与 upstream/site include；代理头、SSE/WebSocket、TLS session 等公共参数也
+由仓库模板管理。日常只需要修改 `registry/sites.yaml` 和
+`registry/envs/<slug>.env`。
+
+`s2a-init` 还会确认上述 `http.conf` 已被 nginx 实际加载，并检查
+`worker_shutdown_timeout`；遗漏任一项都会在启动数据容器前给出明确错误。
 
 `worker_shutdown_timeout` 必须显式设置：nginx 默认不设置意味着旧 worker 永不强制
 退出，频繁 reload 会堆积进程；1200s > 900s（流上限）+ 余量。
@@ -78,32 +95,36 @@ nginx -t && nginx -s reload
 ## 新增一个站点
 
 ```bash
+# 以下命令均在部署根目录执行
+cd /srv/sites
+
 # 1. 清单登记（分配一个未使用的 port_base 区间，每站点占 10 个端口）
-vim /srv/sub2api/registry/sites.yaml
+sudo vim registry/sites.yaml
 
 # 2. 密钥
-cp deploy/.env.example /srv/sub2api/registry/envs/site3-prod.env
-chmod 600 /srv/sub2api/registry/envs/site3-prod.env
+sudo cp env.example registry/envs/site3-prod.env
+sudo chmod 600 registry/envs/site3-prod.env
 openssl rand -hex 32   # 依次填 POSTGRES_PASSWORD / JWT_SECRET / TOTP_ENCRYPTION_KEY
-vim /srv/sub2api/registry/envs/site3-prod.env
+sudo vim registry/envs/site3-prod.env
 
 # 3. 证书
 certbot certonly --webroot -w /var/www/certbot -d api.site3.com
 # certbot 续期 deploy-hook 里需有 nginx -s reload
 
 # 4. 渲染 + 初始化 + 首次部署
-s2a-render                    # 校验冲突 → 生成产物 → nginx -t && reload
-s2a-init   site3-prod         # network / 目录 / env 软链 / 数据层启动
-s2a-deploy site3-prod v1.4.2  # 首次部署（无旧 slot，跳过排空）
+sudo ./bin/s2a-render                    # 校验冲突 → 生成产物 → nginx -t && reload
+sudo ./bin/s2a-init   site3-prod         # 依赖预检 → network / 目录 / 数据层启动
+sudo ./bin/s2a-deploy site3-prod v1.4.2  # 首次部署（无旧 slot，跳过排空）
 
 # 5. 确认
-s2a-status site3-prod
+./bin/s2a-status site3-prod
 ```
 
 ## 日常发布
 
 ```bash
-s2a-deploy api-prod v1.4.3
+cd /srv/sites
+sudo ./bin/s2a-deploy api-prod v1.4.3
 ```
 
 流程：读取当前 slot（以 nginx upstream 文件为准）→ 数据层健康确认 → 拉起闲置
@@ -120,7 +141,8 @@ slot（此时容器启动会自动执行 DB 迁移，受 PG advisory lock 保护
 ## 回滚
 
 ```bash
-s2a-rollback api-prod
+cd /srv/sites
+sudo ./bin/s2a-rollback api-prod
 ```
 
 - **快速路径**（排空窗口内，旧容器还在且健康）：仅改回 upstream + reload，秒级。
@@ -134,8 +156,9 @@ s2a-rollback api-prod
 ## 状态查询
 
 ```bash
-s2a-status            # 全部 stack
-s2a-status api-prod   # 单个
+cd /srv/sites
+./bin/s2a-status            # 全部 stack；用户需有 Docker daemon 读取权限
+./bin/s2a-status api-prod   # 单个
 ```
 
 输出每个 stack 的：nginx upstream 实际指向（真相）、STATE 记录（不一致时高亮
@@ -147,13 +170,13 @@ s2a-status api-prod   # 单个
 | 症状 | 处理 |
 |---|---|
 | 健康门禁超时 | 脚本已自动回收新 slot，流量未切换。看输出的容器日志定位（多半是迁移失败或配置校验失败） |
-| 切完流量后新版本报错 | `s2a-rollback <slug>`——排空窗口内秒级回退 |
-| 排空窗口已过才发现问题 | `s2a-rollback` 自动降级为以 prev_tag 重新发布，分钟级 |
+| 切完流量后新版本报错 | `sudo ./bin/s2a-rollback <slug>`——排空窗口内秒级回退 |
+| 排空窗口已过才发现问题 | `sudo ./bin/s2a-rollback <slug>` 自动降级为以 prev_tag 重新发布，分钟级 |
 | `nginx -t` 失败 | 脚本已还原 `<slug>.conf.bak`，不会 reload 坏配置 |
 | 迁移卡住 | 检查僵尸容器持有 advisory lock：`SELECT * FROM pg_locks WHERE locktype='advisory'` |
-| 不确定哪个 slot 在服务 | `s2a-status`——以 nginx upstream 文件为准，STATE 仅作记录 |
-| 排空期内需要再次发布 | 直接执行 `s2a-deploy`。脚本会取消目标 slot 的回收定时器并接管；若目标 slot 仍有在途流，会明确提示需等待其排空（最长 drain_seconds） |
-| 两个 slot 都在跑但都不该跑 | `s2a-teardown <slug> <slot>` 手动回收指定 slot（有安全闸：拒绝回收当前生效 slot） |
+| 不确定哪个 slot 在服务 | `./bin/s2a-status`——以 nginx upstream 文件为准，STATE 仅作记录 |
+| 排空期内需要再次发布 | 直接执行 `sudo ./bin/s2a-deploy`。脚本会取消目标 slot 的回收定时器并接管；若目标 slot 仍有在途流，会明确提示需等待其排空（最长 drain_seconds） |
+| 两个 slot 都在跑但都不该跑 | `sudo ./bin/s2a-teardown <slug> <slot>` 手动回收指定 slot（有安全闸：拒绝回收当前生效 slot） |
 | 磁盘被容器日志撑满 | 模板已配 json-file max-size 50m × max-file 5（每容器上限 250MB） |
 
 ## 测试

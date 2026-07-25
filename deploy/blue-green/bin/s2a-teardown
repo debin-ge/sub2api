@@ -13,7 +13,9 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/common.sh"
 SLUG="$1"
 SLOT="$2"
 
-require_cmd docker jq
+require_root
+require_cmd jq
+require_docker_access
 load_sites
 slug_exists "$SLUG" || die "清单中不存在 stack: $SLUG"
 

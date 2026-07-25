@@ -19,7 +19,16 @@ echo "nginx $*" >> "$MOCK_LOG"
 if [ "$1" = "-t" ] && [ -f "$MOCK_FLAGS/nginx-t-fail" ]; then exit 1; fi
 exit 0
 EOF
-chmod +x "$TEMP_DIR/bin/nginx"
+
+cat > "$TEMP_DIR/bin/id" <<'EOF'
+#!/bin/bash
+if [ "$1" = "-u" ]; then
+    [ -f "$MOCK_FLAGS/non-root" ] && echo 1000 || echo 0
+    exit 0
+fi
+exec /usr/bin/id "$@"
+EOF
+chmod +x "$TEMP_DIR/bin/nginx" "$TEMP_DIR/bin/id"
 export PATH="$TEMP_DIR/bin:$PATH"
 
 # 每个用例独立的 S2A 环境
@@ -94,6 +103,7 @@ for f in "$S2A_ROOT/stacks/api-prod/compose.data.yml" \
     "$S2A_NGINX_DIR/sites/api-staging.conf" \
     "$S2A_NGINX_DIR/upstreams/api-prod.conf" \
     "$S2A_NGINX_DIR/upstreams/api-staging.conf" \
+    "$S2A_NGINX_DIR/http.conf" \
     "$S2A_NGINX_SNIPPET_DIR/sub2api-proxy.conf"; do
     [ -f "$f" ] || fail "缺少渲染产物: $f"
 done
@@ -105,6 +115,13 @@ grep -q "upstream api_prod" "$S2A_NGINX_DIR/upstreams/api-prod.conf" \
     || fail "upstream 名应做 - → _ 转换"
 grep -q "server_name api.example.com" "$S2A_NGINX_DIR/sites/api-prod.conf" \
     || fail "site conf 缺少域名"
+grep -q "map \$http_upgrade \$s2a_connection_upgrade" "$S2A_NGINX_DIR/http.conf" \
+    || fail "http.conf 缺少 WebSocket map"
+grep -q "$S2A_NGINX_DIR/upstreams/\*.conf" "$S2A_NGINX_DIR/http.conf" \
+    || fail "http.conf 缺少 upstream include"
+grep -q 'proxy_set_header Upgrade[[:space:]]*\$http_upgrade' \
+    "$S2A_NGINX_SNIPPET_DIR/sub2api-proxy.conf" \
+    || fail "公共 proxy snippet 缺少 WebSocket Upgrade"
 echo "ok: upstream/site 内容正确"
 
 app_yml="$S2A_ROOT/stacks/api-prod/compose.app.yml"
@@ -116,7 +133,12 @@ grep -q 'SERVER_SHUTDOWN_TIMEOUT_SECONDS=960' "$app_yml" || fail "SHUTDOWN 超�
 grep -q '${SLOT:?SLOT is required}' "$app_yml" || fail "SLOT 应保留为运行期变量"
 grep -q 'stop_grace_period: 60s' "$S2A_ROOT/stacks/api-staging/compose.app.yml" \
     || fail "staging 的 drain_seconds 覆盖未生效"
-for var in SLUG IMAGE_REPO DRAIN_SECONDS TZ DOMAIN TLS_CERT PROXY_READ_TIMEOUT; do
+site_conf="$S2A_NGINX_DIR/sites/api-prod.conf"
+grep -q 'proxy_connect_timeout 10s' "$site_conf" || fail "connect timeout 默认值未渲染"
+grep -q 'proxy_send_timeout 960s' "$site_conf" || fail "send timeout 默认值未渲染"
+grep -q 'proxy_read_timeout 960s' "$site_conf" || fail "read timeout 默认值未渲染"
+grep -q 'ssl_session_tickets off' "$site_conf" || fail "TLS session tickets 应默认关闭"
+for var in SLUG IMAGE_REPO DRAIN_SECONDS TZ DOMAIN TLS_CERT NGINX_SNIPPET_DIR PROXY_CONNECT_TIMEOUT PROXY_SEND_TIMEOUT PROXY_READ_TIMEOUT; do
     if grep -q "\${${var}}" "$app_yml" "$S2A_NGINX_DIR/sites/api-prod.conf" 2>/dev/null; then
         fail "渲染期变量 \${$var} 未被解析"
     fi
@@ -227,5 +249,30 @@ if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; 
 else
     echo "skip: docker 不可用,跳过 compose config 真实校验"
 fi
+
+# ── 9. 部署包根目录自动识别：不设置 S2A_ROOT，从当前目录执行 ./bin ──────
+bundle="$TEMP_DIR/bundle"
+mkdir -p "$bundle/registry/envs"
+cp -R "$ROOT_DIR/deploy/blue-green/bin" "$bundle/bin"
+cp -R "$ROOT_DIR/deploy/blue-green/lib" "$bundle/lib"
+cp -R "$ROOT_DIR/deploy/blue-green/templates" "$bundle/templates"
+cp -R "$ROOT_DIR/deploy/blue-green/snippets" "$bundle/snippets"
+cat > "$bundle/registry/sites.yaml" <<EOF
+defaults: { tz: UTC }
+stacks:
+  - slug: cwd-test
+    domain: cwd.example.com
+    port_base: 18100
+    image_tag: v1.0.0
+    tls: { cert: $TEMP_DIR/tls/cert.pem, key: $TEMP_DIR/tls/key.pem }
+EOF
+unset S2A_ROOT
+export S2A_NGINX_DIR="$TEMP_DIR/nginx-cwd/sub2api"
+export S2A_NGINX_SNIPPET_DIR="$TEMP_DIR/nginx-cwd/snippets"
+(cd "$bundle" && ./bin/s2a-render > "$TEMP_DIR/out" 2>&1) \
+    || fail "从部署根目录直接执行 ./bin/s2a-render 应成功"
+[ -f "$bundle/stacks/cwd-test/compose.app.yml" ] \
+    || fail "未自动识别部署包根目录"
+echo "ok: 当前目录直接执行且自动识别部署根目录"
 
 echo "bluegreen-render-test: all passed"

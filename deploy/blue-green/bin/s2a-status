@@ -8,7 +8,8 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/common.sh"
 
 [ $# -le 1 ] || die "用法: s2a-status [slug]"
 
-require_cmd docker curl jq
+require_cmd curl jq
+require_docker_access
 load_sites
 
 show_stack() {
@@ -26,7 +27,7 @@ show_stack() {
     else
         cur_port=""
         cur_slot=""
-        printf '  生效(nginx upstream): 未初始化(未执行 s2a-render?)\n'
+        printf '  生效(nginx upstream): 未初始化(未执行 sudo ./bin/s2a-render?)\n'
     fi
 
     local state_slot state_tag

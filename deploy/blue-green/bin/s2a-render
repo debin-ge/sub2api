@@ -6,7 +6,7 @@
 #   2. 对每个 stack 渲染 stacks/<slug>/compose.{data,app}.yml 与
 #      /etc/nginx/sub2api/sites/<slug>.conf
 #   3. upstreams/<slug>.conf 不存在时初始化为 blue（存在则绝不改写，FR-5.4）
-#   4. 安装公共 snippet
+#   4. 安装公共 http 配置与 proxy snippet
 #   5. nginx -t 通过才 reload
 #
 # 幂等：可随时重跑，不影响运行中的容器。
@@ -15,6 +15,7 @@ set -euo pipefail
 # shellcheck source=../lib/common.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/common.sh"
 
+require_root
 require_cmd jq curl
 command -v docker >/dev/null 2>&1 || warn "docker 不可用,渲染可继续,部署前需安装"
 command -v nginx >/dev/null 2>&1 || die "nginx 不可用,无法校验与加载配置"
@@ -48,7 +49,7 @@ while IFS= read -r slug; do
     domain=$(site_attr "$slug" domain)
     [ -n "$domain" ] || { warn "$slug 缺少 domain"; fail=1; }
     case "$seen_domains" in
-        *" $domain "*) warn "域名重复: $domain（$slug）"; fail=1 ;;
+        *" $domain "*) warn "域名重复: ${domain}（${slug}）"; fail=1 ;;
     esac
     seen_domains="$seen_domains $domain "
 
@@ -79,7 +80,7 @@ $slug:$range_start:$range_end"
     [ -z "$tls_cert" ] || [ -f "$tls_cert" ] || { warn "$slug TLS 证书不存在: $tls_cert"; fail=1; }
     [ -z "$tls_key" ] || [ -f "$tls_key" ] || { warn "$slug TLS 私钥不存在: $tls_key"; fail=1; }
 
-    [ -f "$ENVS_DIR/$slug.env" ] || warn "$slug 的密钥文件缺失: $ENVS_DIR/$slug.env（s2a-init 前需就位）"
+    [ -f "$ENVS_DIR/$slug.env" ] || warn "$slug 的密钥文件缺失: ${ENVS_DIR}/${slug}.env（s2a-init 前需就位）"
 done <<EOF_SLUGS
 $slugs
 EOF_SLUGS
@@ -92,6 +93,11 @@ log "校验通过"
 # ---------------------------------------------------------------------------
 mkdir -p "$NGINX_UPSTREAMS_DIR" "$NGINX_SITES_DIR" "$NGINX_SNIPPET_DIR"
 
+# nginx.conf 的 http {} 只需 include 一次本目录下的 *.conf；map、upstream 与
+# site include 均由此托管文件统一维护，避免每新增站点再改 nginx.conf。
+render_template "$TEMPLATES_DIR/nginx-http.conf.tmpl" \
+    "NGINX_S2A_DIR=$NGINX_S2A_DIR" > "$NGINX_S2A_DIR/http.conf"
+
 while IFS= read -r slug; do
     stack_dir="$STACKS_DIR/$slug"
     mkdir -p "$stack_dir"
@@ -103,6 +109,8 @@ while IFS= read -r slug; do
     drain_seconds=$(site_attr "$slug" drain_seconds 960)
     tz=$(site_attr "$slug" tz Asia/Shanghai)
     client_max_body_size=$(site_attr "$slug" client_max_body_size 32m)
+    proxy_connect_timeout=$(site_attr "$slug" proxy_connect_timeout 10s)
+    proxy_send_timeout=$(site_attr "$slug" proxy_send_timeout 960s)
     proxy_read_timeout=$(site_attr "$slug" proxy_read_timeout 960s)
     tls_cert=$(site_path_attr "$slug" '.tls.cert')
     tls_key=$(site_path_attr "$slug" '.tls.key')
@@ -123,7 +131,10 @@ while IFS= read -r slug; do
         "SLUG_US=$(slug_us "$slug")" \
         "TLS_CERT=$tls_cert" \
         "TLS_KEY=$tls_key" \
+        "NGINX_SNIPPET_DIR=$NGINX_SNIPPET_DIR" \
         "CLIENT_MAX_BODY_SIZE=$client_max_body_size" \
+        "PROXY_CONNECT_TIMEOUT=$proxy_connect_timeout" \
+        "PROXY_SEND_TIMEOUT=$proxy_send_timeout" \
         "PROXY_READ_TIMEOUT=$proxy_read_timeout" > "$NGINX_SITES_DIR/$slug.conf"
 
     upstream_conf=$(upstream_conf_path "$slug")

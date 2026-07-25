@@ -31,6 +31,9 @@ if [ "$1" = "compose" ]; then
     done
     cmd="${1:-}"
     case "$cmd" in
+        version)
+            [ -f "$MOCK_FLAGS/compose-version-fail" ] && exit 1
+            exit 0 ;;
         up)
             if [ -f "$MOCK_FLAGS/up-fail-$proj" ]; then exit 1; fi
             touch "$MOCK_STATE/running-$proj"
@@ -48,6 +51,9 @@ if [ "$1" = "compose" ]; then
     exit 0
 fi
 case "$1" in
+    info)
+        [ -f "$MOCK_FLAGS/docker-info-fail" ] && exit 1
+        exit 0 ;;
     network)
         name="$3"
         case "$2" in
@@ -58,6 +64,15 @@ case "$1" in
     ps) exit 0 ;;
 esac
 exit 0
+EOF
+
+cat > "$TEMP_DIR/bin/id" <<'EOF'
+#!/bin/bash
+if [ "$1" = "-u" ]; then
+    [ -f "$MOCK_FLAGS/non-root" ] && echo 1000 || echo 0
+    exit 0
+fi
+exec /usr/bin/id "$@"
 EOF
 
 cat > "$TEMP_DIR/bin/curl" <<'EOF'
@@ -74,6 +89,10 @@ cat > "$TEMP_DIR/bin/nginx" <<'EOF'
 #!/bin/bash
 echo "nginx $*" >> "$MOCK_LOG"
 if [ "$1" = "-t" ] && [ -f "$MOCK_FLAGS/nginx-t-fail" ]; then exit 1; fi
+if [ "$1" = "-T" ]; then
+    [ -f "$MOCK_FLAGS/nginx-include-missing" ] || printf '%s\n' '# s2a-managed-http-config'
+    printf '%s\n' 'worker_shutdown_timeout 1200s;'
+fi
 exit 0
 EOF
 
@@ -167,8 +186,25 @@ assert_state() { # assert_state <key> <value>
 }
 
 # ── S0: render + init ────────────────────────────────────────────────────
+touch "$MOCK_FLAGS/non-root"
+run_fail "写操作权限预检" "权限不足" "$BG_BIN/s2a-render"
+rm -f "$MOCK_FLAGS/non-root"
+
 run_ok "render" "$BG_BIN/s2a-render"
+
+touch "$MOCK_FLAGS/docker-info-fail"
+run_fail "init Docker daemon 依赖预检" "无法访问 Docker daemon" "$BG_BIN/s2a-init" "$SLUG"
+rm -f "$MOCK_FLAGS/docker-info-fail"
+
+touch "$MOCK_FLAGS/nginx-include-missing"
+run_fail "init nginx include 预检" "nginx 未加载" "$BG_BIN/s2a-init" "$SLUG"
+rm -f "$MOCK_FLAGS/nginx-include-missing"
+: > "$MOCK_LOG"
 run_ok "init" "$BG_BIN/s2a-init" "$SLUG"
+grep -q "docker compose version" "$MOCK_LOG" || fail "init 应检查 docker compose v2"
+grep -q "docker info" "$MOCK_LOG" || fail "init 应检查 Docker daemon 权限"
+grep -q "nginx -t" "$MOCK_LOG" || fail "init 应执行 nginx -t 预检"
+grep -q "nginx -T" "$MOCK_LOG" || fail "init 应检查 nginx 是否加载蓝绿公共配置"
 [ -f "$MOCK_STATE/net-$SLUG-net" ] || fail "init 应创建 network"
 [ -f "$MOCK_STATE/running-$SLUG-data" ] || fail "init 应拉起数据层"
 [ -L "$S2A_ROOT/stacks/$SLUG/.env" ] || fail "init 应创建 .env 软链"

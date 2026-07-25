@@ -13,7 +13,9 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/common.sh"
 [ $# -eq 1 ] || die "用法: s2a-rollback <slug>"
 SLUG="$1"
 
-require_cmd docker curl jq
+require_root
+require_cmd curl jq
+require_docker_access
 command -v nginx >/dev/null 2>&1 || die "nginx 不可用"
 load_sites
 slug_exists "$SLUG" || die "清单中不存在 stack: $SLUG"

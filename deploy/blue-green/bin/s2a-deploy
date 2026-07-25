@@ -16,13 +16,16 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/common.sh"
 SLUG="$1"
 TAG="${2:-}"
 
-require_cmd docker curl jq
+require_root
+require_cmd curl jq
+require_docker_access
 command -v nginx >/dev/null 2>&1 || die "nginx 不可用"
 load_sites
 slug_exists "$SLUG" || die "清单中不存在 stack: $SLUG"
 
 STACK_DIR="$STACKS_DIR/$SLUG"
-[ -f "$STACK_DIR/compose.app.yml" ] || die "缺少渲染产物,先执行 s2a-render && s2a-init $SLUG"
+[ -f "$STACK_DIR/compose.app.yml" ] \
+    || die "缺少渲染产物,先执行 sudo ./bin/s2a-render && sudo ./bin/s2a-init $SLUG"
 acquire_stack_lock "$SLUG"
 
 PORT_BASE=$(site_attr "$SLUG" port_base)
@@ -36,9 +39,9 @@ UPSTREAM_CONF=$(upstream_conf_path "$SLUG")
 
 # ── 1. 读取当前状态（D1：以 nginx upstream 文件为准） ──────────────────────
 CUR_PORT=$(current_port_from_upstream "$SLUG") \
-    || die "upstream 文件不存在: $UPSTREAM_CONF（先执行 s2a-render）"
+    || die "upstream 文件不存在: ${UPSTREAM_CONF}（先执行 sudo ./bin/s2a-render）"
 CUR_SLOT=$(slot_for_port "$PORT_BASE" "$CUR_PORT") \
-    || die "upstream 端口 $CUR_PORT 不在 $SLUG 的区间内（port_base=$PORT_BASE）,请人工核查"
+    || die "upstream 端口 $CUR_PORT 不在 $SLUG 的区间内（port_base=${PORT_BASE}）,请人工核查"
 
 CUR_TAG=$(state_get "$SLUG" tag || true)
 [ -n "$CUR_TAG" ] || CUR_TAG=$(sed -n 's/.*tag=\([^ ]*\).*/\1/p' "$UPSTREAM_CONF" | head -1)
@@ -152,4 +155,4 @@ else
 fi
 
 log "发布成功: $SLUG 当前生效 ${NEW_SLOT}:${NEW_PORT} tag=${TAG}"
-[ "$FIRST_DEPLOY" = true ] || log "如需回退: s2a-rollback $SLUG（排空窗口内秒级生效;注意回滚不撤销已应用的数据库迁移）"
+[ "$FIRST_DEPLOY" = true ] || log "如需回退: sudo ./bin/s2a-rollback ${SLUG}（排空窗口内秒级生效;注意回滚不撤销已应用的数据库迁移）"

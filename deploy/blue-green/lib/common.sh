@@ -2,11 +2,16 @@
 # s2a-* 脚本的公共库。由 bin/ 下各脚本 source，不直接执行。
 #
 # 可通过环境变量覆盖的路径（测试与非标准布局用）：
-#   S2A_ROOT                默认 /srv/sub2api
+#   S2A_ROOT                默认自动取本部署包根目录（lib/ 的上一级）
 #   S2A_NGINX_DIR           默认 /etc/nginx/sub2api
 #   S2A_NGINX_SNIPPET_DIR   默认 /etc/nginx/snippets
 
-S2A_ROOT="${S2A_ROOT:-/srv/sub2api}"
+# 默认根目录跟随部署包位置，使运维只需进入部署目录后执行
+#   sudo ./bin/s2a-<command>
+# 无需建立 /usr/local/bin 软链接，也无需额外导出 S2A_ROOT。
+_s2a_lib_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+_s2a_bundle_dir=$(cd "$_s2a_lib_dir/.." && pwd)
+S2A_ROOT="${S2A_ROOT:-$_s2a_bundle_dir}"
 REGISTRY_FILE="$S2A_ROOT/registry/sites.yaml"
 ENVS_DIR="$S2A_ROOT/registry/envs"
 STACKS_DIR="$S2A_ROOT/stacks"
@@ -17,7 +22,6 @@ NGINX_SNIPPET_DIR="${S2A_NGINX_SNIPPET_DIR:-/etc/nginx/snippets}"
 
 # 模板/snippet 优先取 $S2A_ROOT 下的部署副本，缺失时回退到脚本所在仓库副本，
 # 使脚本既可 rsync 到服务器运行，也可直接从仓库 checkout 运行。
-_s2a_lib_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 if [ -d "$S2A_ROOT/templates" ]; then
     TEMPLATES_DIR="$S2A_ROOT/templates"
 else
@@ -39,7 +43,70 @@ require_cmd() {
     for cmd in "$@"; do
         command -v "$cmd" >/dev/null 2>&1 || missing="$missing $cmd"
     done
-    [ -z "$missing" ] || die "缺少依赖:$missing（安装后重试）"
+    [ -z "$missing" ] || die "缺少依赖:${missing}（安装后重试）"
+}
+
+# 改写 nginx 配置、操作 Docker 与写入部署目录都属于特权操作。统一要求 root，
+# 避免流程执行到一半才因权限不足中断。只读的 s2a-status 不调用本检查。
+require_root() {
+    local uid
+    uid=$(id -u)
+    [ "$uid" -eq 0 ] || die "权限不足: 请进入 $S2A_ROOT 后使用 sudo ./bin/$(basename "$0") 执行"
+}
+
+require_docker_access() {
+    require_cmd docker
+    docker compose version >/dev/null 2>&1 \
+        || die "docker compose v2 不可用（请安装 Docker Compose v2）"
+    docker info >/dev/null 2>&1 \
+        || die "无法访问 Docker daemon（请确认 Docker 已启动且当前用户有权限）"
+}
+
+has_yq_v4() {
+    command -v yq >/dev/null 2>&1 \
+        && yq --version 2>/dev/null | grep -qi 'mikefarah'
+}
+
+find_yaml_python() {
+    local py
+    for py in python3 /usr/bin/python3; do
+        if command -v "$py" >/dev/null 2>&1 \
+            && "$py" -c 'import yaml' >/dev/null 2>&1; then
+            printf '%s' "$py"
+            return 0
+        fi
+    done
+    return 1
+}
+
+require_yaml_parser() {
+    if has_yq_v4; then
+        return 0
+    fi
+    find_yaml_python >/dev/null \
+        || die "解析 sites.yaml 需要 yq(v4) 或 python3+PyYAML,均未找到"
+}
+
+# s2a-init 是服务器首次接入的统一预检入口。这里一次性检查完整工具链，后续发布
+# 不会再在中途才发现 Docker daemon、Compose、nginx 或 YAML 解析器不可用。
+check_init_dependencies() {
+    local nginx_dump
+    log "初始化依赖检查..."
+    require_cmd nginx curl jq
+    require_docker_access
+    require_yaml_parser
+    nginx -t >/dev/null 2>&1 \
+        || die "nginx -t 未通过（请先修复 nginx 配置）"
+    nginx_dump=$(nginx -T 2>&1) \
+        || die "无法读取 nginx 完整配置（nginx -T 失败）"
+    grep -Fq 's2a-managed-http-config' <<< "$nginx_dump" \
+        || die "nginx 未加载 $NGINX_S2A_DIR/http.conf；请在 http {} 内添加 include $NGINX_S2A_DIR/*.conf;"
+    grep -Eq '^[[:space:]]*worker_shutdown_timeout[[:space:]]+[0-9]+[smh]?;' <<< "$nginx_dump" \
+        || die "nginx 缺少 worker_shutdown_timeout；请在 main 上下文设置 worker_shutdown_timeout 1200s;"
+    if ! command -v systemd-run >/dev/null 2>&1; then
+        warn "systemd-run 不可用,排空回收将使用后台 sleep 降级模式"
+    fi
+    log "依赖检查通过: Docker/Compose、nginx 蓝绿 include、curl、jq、YAML 解析器均可用"
 }
 
 # ---------------------------------------------------------------------------
@@ -52,18 +119,12 @@ SITES_JSON=""
 load_sites() {
     [ -f "$REGISTRY_FILE" ] || die "清单不存在: $REGISTRY_FILE"
     require_cmd jq
-    if command -v yq >/dev/null 2>&1; then
+    if has_yq_v4; then
         SITES_JSON=$(yq -o=json eval '.' "$REGISTRY_FILE")
     else
         # PATH 里的 python3 可能没有 PyYAML（如 Homebrew 版），逐个候选探测
-        local py found_py=""
-        for py in python3 /usr/bin/python3; do
-            if command -v "$py" >/dev/null 2>&1 \
-                && "$py" -c 'import yaml' >/dev/null 2>&1; then
-                found_py="$py"
-                break
-            fi
-        done
+        local found_py=""
+        found_py=$(find_yaml_python || true)
         [ -n "$found_py" ] || die "解析 sites.yaml 需要 yq(v4) 或 python3+PyYAML,均未找到"
         SITES_JSON=$("$found_py" -c '
 import json, sys, yaml

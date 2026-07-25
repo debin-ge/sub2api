@@ -9,19 +9,20 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/common.sh"
 [ $# -eq 1 ] || die "用法: s2a-init <slug>"
 SLUG="$1"
 
-require_cmd docker jq
+require_root
+check_init_dependencies
 load_sites
-slug_exists "$SLUG" || die "清单中不存在 stack: $SLUG（先在 $REGISTRY_FILE 登记并 s2a-render）"
+slug_exists "$SLUG" || die "清单中不存在 stack: ${SLUG}（先在 $REGISTRY_FILE 登记并执行 sudo ./bin/s2a-render）"
 
 STACK_DIR="$STACKS_DIR/$SLUG"
 ENV_FILE="$ENVS_DIR/$SLUG.env"
 
 # 1. 渲染产物必须先就位
 [ -f "$STACK_DIR/compose.data.yml" ] && [ -f "$STACK_DIR/compose.app.yml" ] \
-    || die "缺少渲染产物,先执行 s2a-render"
+    || die "缺少渲染产物,先执行 sudo ./bin/s2a-render"
 
 # 2. 密钥 env（FR-5.2：权限必须 600）
-[ -f "$ENV_FILE" ] || die "密钥文件不存在: $ENV_FILE（参考 deploy/.env.example 填写后 chmod 600）"
+[ -f "$ENV_FILE" ] || die "密钥文件不存在: ${ENV_FILE}（参考 env.example 填写后 chmod 600）"
 perms=$(stat -f '%Lp' "$ENV_FILE" 2>/dev/null || stat -c '%a' "$ENV_FILE" 2>/dev/null)
 if [ "$perms" != "600" ]; then
     warn "$ENV_FILE 权限为 $perms,收紧为 600"
@@ -42,4 +43,4 @@ fi
 log "启动数据层（postgres/redis）..."
 data_compose "$SLUG" up -d --wait
 
-log "stack $SLUG 初始化完成。首次部署: s2a-deploy $SLUG [tag]"
+log "stack $SLUG 初始化完成。首次部署: sudo ./bin/s2a-deploy $SLUG [tag]"
