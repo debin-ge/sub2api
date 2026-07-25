@@ -57,7 +57,8 @@ export default {
           durationDays: 'Rebate Duration (days)',
           durationDaysDesc: 'Rebate relationship expires after this many days since invitee registration. 0 = permanent.',
           perInviteeCap: 'Per-Invitee Rebate Cap',
-          perInviteeCapDesc: 'Maximum total rebate from a single invitee. 0 = no limit.',
+          perInviteeCapDesc:
+            'Maximum combined registration reward and recharge rebate from a single invitee. 0 = no limit.',
           customUsers: {
             title: 'Per-User Overrides',
             description: 'Set a custom invite code or exclusive rebate rate for specific users. Lists only users that have an override applied.',

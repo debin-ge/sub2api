@@ -431,6 +431,7 @@ func (r *oauthEmailAffiliateRepoStub) BindInviterAndGrantRegistrationReward(
 	userID int64,
 	code string,
 	_ float64,
+	_ float64,
 	_ int,
 ) (*service.AffiliateRegistrationRewardResult, error) {
 	summary, err := r.GetAffiliateByCode(ctx, code)
@@ -443,7 +444,7 @@ func (r *oauthEmailAffiliateRepoStub) BindInviterAndGrantRegistrationReward(
 	return &service.AffiliateRegistrationRewardResult{InviterID: summary.UserID, Bound: true}, nil
 }
 
-func (r *oauthEmailAffiliateRepoStub) AccrueQuota(context.Context, int64, int64, float64, int, *int64) (bool, error) {
+func (r *oauthEmailAffiliateRepoStub) AccrueQuota(context.Context, int64, int64, float64, float64, int, *int64) (float64, error) {
 	panic("unexpected AccrueQuota call")
 }
 

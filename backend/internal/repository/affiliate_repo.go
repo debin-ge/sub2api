@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -119,6 +120,7 @@ func (r *affiliateRepository) BindInviterAndGrantRegistrationReward(
 	inviteeUserID int64,
 	affiliateCode string,
 	rewardAmount float64,
+	perInviteeCap float64,
 	freezeHours int,
 ) (*service.AffiliateRegistrationRewardResult, error) {
 	result := &service.AffiliateRegistrationRewardResult{}
@@ -140,25 +142,7 @@ func (r *affiliateRepository) BindInviterAndGrantRegistrationReward(
 			return err
 		}
 
-		// Serialize all binding/reward decisions for these affiliate rows. The
-		// deterministic ordering prevents reciprocal registrations deadlocking.
-		rows, err := txClient.QueryContext(txCtx, `
-SELECT user_id
-FROM user_affiliates
-WHERE user_id IN ($1, $2)
-ORDER BY user_id
-FOR UPDATE`, inviteeUserID, inviter.UserID)
-		if err != nil {
-			return fmt.Errorf("lock affiliate registration rows: %w", err)
-		}
-		for rows.Next() {
-			var ignored int64
-			if err := rows.Scan(&ignored); err != nil {
-				_ = rows.Close()
-				return err
-			}
-		}
-		if err := rows.Close(); err != nil {
+		if err := lockAffiliateRewardRows(txCtx, txClient, inviter.UserID, inviteeUserID); err != nil {
 			return err
 		}
 
@@ -190,22 +174,34 @@ WHERE user_id = $2
 			return service.ErrAffiliateAlreadyBound
 		}
 
-		if rewardAmount > 0 && freezeHours > 0 {
+		effectiveRewardAmount, err := capAffiliateRewardAmount(
+			txCtx,
+			txClient,
+			inviter.UserID,
+			inviteeUserID,
+			rewardAmount,
+			perInviteeCap,
+		)
+		if err != nil {
+			return err
+		}
+
+		if effectiveRewardAmount > 0 && freezeHours > 0 {
 			_, err = txClient.ExecContext(txCtx, `
 UPDATE user_affiliates
 SET aff_count = aff_count + 1,
     aff_frozen_quota = aff_frozen_quota + $1,
     aff_history_quota = aff_history_quota + $1,
     updated_at = NOW()
-WHERE user_id = $2`, rewardAmount, inviter.UserID)
-		} else if rewardAmount > 0 {
+WHERE user_id = $2`, effectiveRewardAmount, inviter.UserID)
+		} else if effectiveRewardAmount > 0 {
 			_, err = txClient.ExecContext(txCtx, `
 UPDATE user_affiliates
 SET aff_count = aff_count + 1,
     aff_quota = aff_quota + $1,
     aff_history_quota = aff_history_quota + $1,
     updated_at = NOW()
-WHERE user_id = $2`, rewardAmount, inviter.UserID)
+WHERE user_id = $2`, effectiveRewardAmount, inviter.UserID)
 		} else {
 			_, err = txClient.ExecContext(txCtx, `
 UPDATE user_affiliates
@@ -218,7 +214,7 @@ WHERE user_id = $1`, inviter.UserID)
 		}
 
 		result.Bound = true
-		if rewardAmount <= 0 {
+		if effectiveRewardAmount <= 0 {
 			return nil
 		}
 		if freezeHours > 0 {
@@ -227,20 +223,20 @@ INSERT INTO user_affiliate_ledger (
     user_id, action, amount, source_user_id, frozen_until, created_at, updated_at
 )
 VALUES ($1, 'registration_reward', $2, $3, NOW() + make_interval(hours => $4), NOW(), NOW())`,
-				inviter.UserID, rewardAmount, inviteeUserID, freezeHours)
+				inviter.UserID, effectiveRewardAmount, inviteeUserID, freezeHours)
 		} else {
 			_, err = txClient.ExecContext(txCtx, `
 INSERT INTO user_affiliate_ledger (
     user_id, action, amount, source_user_id, created_at, updated_at
 )
 VALUES ($1, 'registration_reward', $2, $3, NOW(), NOW())`,
-				inviter.UserID, rewardAmount, inviteeUserID)
+				inviter.UserID, effectiveRewardAmount, inviteeUserID)
 		}
 		if err != nil {
 			return fmt.Errorf("insert affiliate registration reward ledger: %w", err)
 		}
 		result.RewardApplied = true
-		result.RewardAmount = rewardAmount
+		result.RewardAmount = effectiveRewardAmount
 		return nil
 	})
 	if err != nil {
@@ -249,13 +245,122 @@ VALUES ($1, 'registration_reward', $2, $3, NOW(), NOW())`,
 	return result, nil
 }
 
-func (r *affiliateRepository) AccrueQuota(ctx context.Context, inviterID, inviteeUserID int64, amount float64, freezeHours int, sourceOrderID *int64) (bool, error) {
-	if amount <= 0 {
-		return false, nil
+// lockAffiliateRewardRows serializes all cap decisions for an inviter/invitee
+// pair. Every reward path must acquire these rows in the same deterministic
+// order before reading the ledger, otherwise concurrent transactions can both
+// observe the same remaining cap.
+func lockAffiliateRewardRows(
+	ctx context.Context,
+	client *dbent.Client,
+	inviterID int64,
+	inviteeUserID int64,
+) error {
+	if inviterID <= 0 || inviteeUserID <= 0 || inviterID == inviteeUserID {
+		return fmt.Errorf("lock affiliate reward rows: invalid inviter/invitee pair")
 	}
 
-	var applied bool
+	rows, err := client.QueryContext(ctx, `
+SELECT user_id
+FROM user_affiliates
+WHERE user_id IN ($1, $2)
+ORDER BY user_id
+FOR UPDATE`, inviterID, inviteeUserID)
+	if err != nil {
+		return fmt.Errorf("lock affiliate reward rows: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	locked := 0
+	for rows.Next() {
+		var ignored int64
+		if err := rows.Scan(&ignored); err != nil {
+			return err
+		}
+		locked++
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if locked != 2 {
+		return fmt.Errorf("lock affiliate reward rows: expected 2 rows, got %d", locked)
+	}
+	return nil
+}
+
+// capAffiliateRewardAmount must be called while lockAffiliateRewardRows is
+// held in the same transaction.
+func capAffiliateRewardAmount(
+	ctx context.Context,
+	client *dbent.Client,
+	inviterID int64,
+	inviteeUserID int64,
+	rewardAmount float64,
+	perInviteeCap float64,
+) (float64, error) {
+	if rewardAmount <= 0 ||
+		math.IsNaN(rewardAmount) ||
+		math.IsInf(rewardAmount, 0) {
+		return 0, nil
+	}
+	if perInviteeCap <= 0 ||
+		math.IsNaN(perInviteeCap) ||
+		math.IsInf(perInviteeCap, 0) {
+		return rewardAmount, nil
+	}
+
+	existing, err := queryAffiliateCapEligibleTotal(ctx, client, inviterID, inviteeUserID)
+	if err != nil {
+		return 0, err
+	}
+
+	remaining := perInviteeCap - existing
+	if remaining <= 0 {
+		return 0, nil
+	}
+	if rewardAmount > remaining {
+		return math.Round(remaining*1e8) / 1e8, nil
+	}
+	return rewardAmount, nil
+}
+
+func (r *affiliateRepository) AccrueQuota(
+	ctx context.Context,
+	inviterID int64,
+	inviteeUserID int64,
+	amount float64,
+	perInviteeCap float64,
+	freezeHours int,
+	sourceOrderID *int64,
+) (float64, error) {
+	if amount <= 0 || math.IsNaN(amount) || math.IsInf(amount, 0) {
+		return 0, nil
+	}
+
+	var appliedAmount float64
 	err := r.withTx(ctx, func(txCtx context.Context, txClient *dbent.Client) error {
+		if err := lockAffiliateRewardRows(txCtx, txClient, inviterID, inviteeUserID); err != nil {
+			return err
+		}
+
+		var err error
+		appliedAmount, err = capAffiliateRewardAmount(
+			txCtx,
+			txClient,
+			inviterID,
+			inviteeUserID,
+			amount,
+			perInviteeCap,
+		)
+		if err != nil {
+			return err
+		}
+		if appliedAmount <= 0 {
+			return nil
+		}
+
 		// freezeHours > 0: add to frozen quota; == 0: add to available quota directly
 		var updateSQL string
 		if freezeHours > 0 {
@@ -263,13 +368,13 @@ func (r *affiliateRepository) AccrueQuota(ctx context.Context, inviterID, invite
 		} else {
 			updateSQL = "UPDATE user_affiliates SET aff_quota = aff_quota + $1, aff_history_quota = aff_history_quota + $1, updated_at = NOW() WHERE user_id = $2"
 		}
-		res, err := txClient.ExecContext(txCtx, updateSQL, amount, inviterID)
+		res, err := txClient.ExecContext(txCtx, updateSQL, appliedAmount, inviterID)
 		if err != nil {
 			return err
 		}
 		affected, _ := res.RowsAffected()
 		if affected == 0 {
-			applied = false
+			appliedAmount = 0
 			return nil
 		}
 
@@ -277,33 +382,41 @@ func (r *affiliateRepository) AccrueQuota(ctx context.Context, inviterID, invite
 			if _, err = txClient.ExecContext(txCtx, `
 INSERT INTO user_affiliate_ledger (user_id, action, amount, source_user_id, source_order_id, frozen_until, created_at, updated_at)
 VALUES ($1, 'accrue', $2, $3, $4, NOW() + make_interval(hours => $5), NOW(), NOW())`,
-				inviterID, amount, inviteeUserID, nullableInt64Arg(sourceOrderID), freezeHours); err != nil {
+				inviterID, appliedAmount, inviteeUserID, nullableInt64Arg(sourceOrderID), freezeHours); err != nil {
 				return fmt.Errorf("insert affiliate accrue ledger: %w", err)
 			}
 		} else {
 			if _, err = txClient.ExecContext(txCtx, `
 INSERT INTO user_affiliate_ledger (user_id, action, amount, source_user_id, source_order_id, created_at, updated_at)
-VALUES ($1, 'accrue', $2, $3, $4, NOW(), NOW())`, inviterID, amount, inviteeUserID, nullableInt64Arg(sourceOrderID)); err != nil {
+VALUES ($1, 'accrue', $2, $3, $4, NOW(), NOW())`, inviterID, appliedAmount, inviteeUserID, nullableInt64Arg(sourceOrderID)); err != nil {
 				return fmt.Errorf("insert affiliate accrue ledger: %w", err)
 			}
 		}
 
-		applied = true
 		return nil
 	})
 	if err != nil {
-		return false, err
+		return 0, err
 	}
-	return applied, nil
+	return appliedAmount, nil
 }
 
 func (r *affiliateRepository) GetAccruedRebateFromInvitee(ctx context.Context, inviterID, inviteeUserID int64) (float64, error) {
 	client := clientFromContext(ctx, r.client)
+	return queryAffiliateCapEligibleTotal(ctx, client, inviterID, inviteeUserID)
+}
+
+func queryAffiliateCapEligibleTotal(
+	ctx context.Context,
+	client *dbent.Client,
+	inviterID int64,
+	inviteeUserID int64,
+) (float64, error) {
 	rows, err := client.QueryContext(ctx,
-		`SELECT COALESCE(SUM(amount), 0)::double precision FROM user_affiliate_ledger WHERE user_id = $1 AND source_user_id = $2 AND action = 'accrue'`,
+		`SELECT COALESCE(SUM(amount), 0)::double precision FROM user_affiliate_ledger WHERE user_id = $1 AND source_user_id = $2 AND action IN ('accrue', 'registration_reward')`,
 		inviterID, inviteeUserID)
 	if err != nil {
-		return 0, fmt.Errorf("query accrued rebate from invitee: %w", err)
+		return 0, fmt.Errorf("query cap-eligible rebate from invitee: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 	var total float64

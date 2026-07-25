@@ -85,6 +85,7 @@ type affiliateRepoStub struct {
 		userID      int64
 		code        string
 		reward      float64
+		perUserCap  float64
 		freezeHours int
 	}
 	registrationRewardErr error
@@ -117,6 +118,7 @@ func (s *affiliateRepoStub) BindInviterAndGrantRegistrationReward(
 	userID int64,
 	code string,
 	reward float64,
+	perUserCap float64,
 	freezeHours int,
 ) (*AffiliateRegistrationRewardResult, error) {
 	if s.registrationRewardErr != nil {
@@ -130,11 +132,13 @@ func (s *affiliateRepoStub) BindInviterAndGrantRegistrationReward(
 		userID      int64
 		code        string
 		reward      float64
+		perUserCap  float64
 		freezeHours int
 	}{
 		userID:      userID,
 		code:        strings.ToUpper(strings.TrimSpace(code)),
 		reward:      reward,
+		perUserCap:  perUserCap,
 		freezeHours: freezeHours,
 	})
 	_, err := s.BindInviter(ctx, userID, owner)
@@ -149,7 +153,7 @@ func (s *affiliateRepoStub) BindInviterAndGrantRegistrationReward(
 	}, nil
 }
 
-func (s *affiliateRepoStub) AccrueQuota(context.Context, int64, int64, float64, int, *int64) (bool, error) {
+func (s *affiliateRepoStub) AccrueQuota(context.Context, int64, int64, float64, float64, int, *int64) (float64, error) {
 	panic("unexpected AccrueQuota call")
 }
 

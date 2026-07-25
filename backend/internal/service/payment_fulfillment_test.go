@@ -45,14 +45,16 @@ type paymentFulfillmentAffiliateAccrueCall struct {
 	inviterID     int64
 	inviteeUserID int64
 	amount        float64
+	perInviteeCap float64
 	freezeHours   int
 	sourceOrderID *int64
 }
 
 type paymentFulfillmentAffiliateRepoStub struct {
-	inviteeSummary *AffiliateSummary
-	inviterSummary *AffiliateSummary
-	accrueCalls    []paymentFulfillmentAffiliateAccrueCall
+	inviteeSummary      *AffiliateSummary
+	inviterSummary      *AffiliateSummary
+	accrueAppliedAmount *float64
+	accrueCalls         []paymentFulfillmentAffiliateAccrueCall
 }
 
 func (r *paymentFulfillmentAffiliateRepoStub) EnsureUserAffiliate(_ context.Context, userID int64) (*AffiliateSummary, error) {
@@ -76,11 +78,11 @@ func (r *paymentFulfillmentAffiliateRepoStub) BindInviter(context.Context, int64
 	panic("unexpected BindInviter call")
 }
 
-func (r *paymentFulfillmentAffiliateRepoStub) BindInviterAndGrantRegistrationReward(context.Context, int64, string, float64, int) (*AffiliateRegistrationRewardResult, error) {
+func (r *paymentFulfillmentAffiliateRepoStub) BindInviterAndGrantRegistrationReward(context.Context, int64, string, float64, float64, int) (*AffiliateRegistrationRewardResult, error) {
 	panic("unexpected BindInviterAndGrantRegistrationReward call")
 }
 
-func (r *paymentFulfillmentAffiliateRepoStub) AccrueQuota(_ context.Context, inviterID, inviteeUserID int64, amount float64, freezeHours int, sourceOrderID *int64) (bool, error) {
+func (r *paymentFulfillmentAffiliateRepoStub) AccrueQuota(_ context.Context, inviterID, inviteeUserID int64, amount float64, perInviteeCap float64, freezeHours int, sourceOrderID *int64) (float64, error) {
 	var sourceCopy *int64
 	if sourceOrderID != nil {
 		v := *sourceOrderID
@@ -90,10 +92,14 @@ func (r *paymentFulfillmentAffiliateRepoStub) AccrueQuota(_ context.Context, inv
 		inviterID:     inviterID,
 		inviteeUserID: inviteeUserID,
 		amount:        amount,
+		perInviteeCap: perInviteeCap,
 		freezeHours:   freezeHours,
 		sourceOrderID: sourceCopy,
 	})
-	return true, nil
+	if r.accrueAppliedAmount != nil {
+		return *r.accrueAppliedAmount, nil
+	}
+	return amount, nil
 }
 
 func (r *paymentFulfillmentAffiliateRepoStub) GetAccruedRebateFromInvitee(context.Context, int64, int64) (float64, error) {
