@@ -134,13 +134,9 @@ func (h *KimiGatewayHandler) Messages(c *gin.Context) {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
 		return
 	}
-	reqModel := parsedReq.Model
+	reqModel := strings.TrimSpace(parsedReq.Model)
 	if reqModel == "" {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "model is required")
-		return
-	}
-	if reqModel != "kimi-for-coding" {
-		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Kimi gateway only supports model kimi-for-coding")
 		return
 	}
 	parsedReq.Model = reqModel
@@ -343,13 +339,9 @@ func (h *KimiGatewayHandler) ChatCompletions(c *gin.Context) {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
 		return
 	}
-	reqModel := parsedReq.Model
+	reqModel := strings.TrimSpace(parsedReq.Model)
 	if reqModel == "" {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "model is required")
-		return
-	}
-	if reqModel != "kimi-for-coding" {
-		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Kimi gateway only supports model kimi-for-coding")
 		return
 	}
 	parsedReq.Model = reqModel
@@ -553,13 +545,9 @@ func (h *KimiGatewayHandler) Responses(c *gin.Context) {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
 		return
 	}
-	reqModel := parsedReq.Model
+	reqModel := strings.TrimSpace(parsedReq.Model)
 	if reqModel == "" {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "model is required")
-		return
-	}
-	if reqModel != "kimi-for-coding" {
-		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Kimi gateway only supports model kimi-for-coding")
 		return
 	}
 	parsedReq.Model = reqModel

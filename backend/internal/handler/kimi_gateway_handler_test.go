@@ -356,21 +356,25 @@ func TestKimiGatewayHandlerResponsesSuccessForwardsAndRecordsUsage(t *testing.T)
 	require.Equal(t, 1, billing.calls)
 }
 
-func TestKimiGatewayHandlerResponsesRejectsNonKimiModel(t *testing.T) {
+func TestKimiGatewayHandlerResponsesAllowsK3Model(t *testing.T) {
 	forwarder := &fakeKimiForwarder{}
+	account := kimiTestAccount(101)
+	gateway := &fakeKimiGatewayService{
+		selections: []*service.AccountSelectionResult{{Account: account, Acquired: true}},
+	}
 	h := &KimiGatewayHandler{
 		kimiService:         forwarder,
-		gatewayService:      &fakeKimiGatewayService{},
+		gatewayService:      gateway,
 		concurrencyHelper:   &fakeKimiConcurrencyController{allowWait: true},
 		billingCacheService: &fakeKimiBillingChecker{},
 	}
-	c, rec, _ := newKimiHandlerTestContextForPath(t, "/v1/responses", service.PlatformKimi, `{"model":"claude-sonnet-4-5","input":"hello"}`)
+	c, rec, _ := newKimiHandlerTestContextForPath(t, "/v1/responses", service.PlatformKimi, `{"model":"K3","input":"hello"}`)
 
 	h.Responses(c)
 
-	require.Equal(t, http.StatusBadRequest, rec.Code)
-	require.Contains(t, rec.Body.String(), "Kimi gateway only supports model kimi-for-coding")
-	require.Equal(t, 0, forwarder.responsesCalled)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, 1, forwarder.responsesCalled)
+	require.Equal(t, "K3", gateway.selectedModel)
 }
 
 func TestKimiGatewayHandlerResponsesRejectsPreviousResponseIDBeforeForwarding(t *testing.T) {
@@ -426,38 +430,46 @@ func TestKimiGatewayHandlerMessagesRequiresModel(t *testing.T) {
 	require.Contains(t, rec.Body.String(), "model is required")
 }
 
-func TestKimiGatewayHandlerMessagesRejectsNonKimiModel(t *testing.T) {
+func TestKimiGatewayHandlerMessagesAllowsK3Model(t *testing.T) {
 	forwarder := &fakeKimiForwarder{}
+	account := kimiTestAccount(101)
+	gateway := &fakeKimiGatewayService{
+		selections: []*service.AccountSelectionResult{{Account: account, Acquired: true}},
+	}
 	h := &KimiGatewayHandler{
 		kimiService:         forwarder,
-		gatewayService:      &fakeKimiGatewayService{},
+		gatewayService:      gateway,
 		concurrencyHelper:   &fakeKimiConcurrencyController{allowWait: true},
 		billingCacheService: &fakeKimiBillingChecker{},
 	}
-	c, rec, _ := newKimiHandlerTestContext(t, service.PlatformKimi, `{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"hello"}]}`)
+	c, rec, _ := newKimiHandlerTestContext(t, service.PlatformKimi, `{"model":"K3","messages":[{"role":"user","content":"hello"}]}`)
 
 	h.Messages(c)
 
-	require.Equal(t, http.StatusBadRequest, rec.Code)
-	require.Contains(t, rec.Body.String(), "Kimi gateway only supports model kimi-for-coding")
-	require.Equal(t, 0, forwarder.messagesCalled)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, 1, forwarder.messagesCalled)
+	require.Equal(t, "K3", gateway.selectedModel)
 }
 
-func TestKimiGatewayHandlerChatCompletionsRejectsNonExactKimiModel(t *testing.T) {
+func TestKimiGatewayHandlerChatCompletionsAllowsK3ModelAndTrimsWhitespace(t *testing.T) {
 	forwarder := &fakeKimiForwarder{}
+	account := kimiTestAccount(101)
+	gateway := &fakeKimiGatewayService{
+		selections: []*service.AccountSelectionResult{{Account: account, Acquired: true}},
+	}
 	h := &KimiGatewayHandler{
 		kimiService:         forwarder,
-		gatewayService:      &fakeKimiGatewayService{},
+		gatewayService:      gateway,
 		concurrencyHelper:   &fakeKimiConcurrencyController{allowWait: true},
 		billingCacheService: &fakeKimiBillingChecker{},
 	}
-	c, rec, _ := newKimiHandlerTestContextForPath(t, "/v1/chat/completions", service.PlatformKimi, `{"model":" kimi-for-coding ","messages":[{"role":"user","content":"hello"}]}`)
+	c, rec, _ := newKimiHandlerTestContextForPath(t, "/v1/chat/completions", service.PlatformKimi, `{"model":" K3 ","messages":[{"role":"user","content":"hello"}]}`)
 
 	h.ChatCompletions(c)
 
-	require.Equal(t, http.StatusBadRequest, rec.Code)
-	require.Contains(t, rec.Body.String(), "Kimi gateway only supports model kimi-for-coding")
-	require.Equal(t, 0, forwarder.chatCalled)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, 1, forwarder.chatCalled)
+	require.Equal(t, "K3", gateway.selectedModel)
 }
 
 func TestKimiGatewayHandlerMessagesSelectionFailureReturnsServiceUnavailable(t *testing.T) {

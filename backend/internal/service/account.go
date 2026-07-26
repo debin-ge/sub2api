@@ -1632,15 +1632,7 @@ func (a *Account) GetWindsurfMappedModel(model string) string {
 }
 
 func (a *Account) IsWindsurfModelSupported(model string) bool {
-	trimmed := strings.TrimSpace(model)
-	if a == nil || a.Platform != PlatformWindsurf || trimmed == "" {
-		return false
-	}
-	if providerSupportsUpstreamModel(PlatformWindsurf, trimmed) {
-		return true
-	}
-	_, ok := ResolveAccountProviderModel(a, trimmed)
-	return ok
+	return isFlexibleProviderModelSupported(a, PlatformWindsurf, model)
 }
 
 func (a *Account) IsOpenCode() bool {
@@ -1687,15 +1679,7 @@ func (a *Account) GetOpenCodeMappedModel(model string) string {
 }
 
 func (a *Account) IsOpenCodeModelSupported(model string) bool {
-	trimmed := strings.TrimSpace(model)
-	if a == nil || a.Platform != PlatformOpenCode || trimmed == "" {
-		return false
-	}
-	if providerSupportsUpstreamModel(PlatformOpenCode, trimmed) {
-		return true
-	}
-	_, ok := ResolveAccountProviderModel(a, trimmed)
-	return ok
+	return isFlexibleProviderModelSupported(a, PlatformOpenCode, model)
 }
 
 func (a *Account) IsOpenAIOAuth() bool {

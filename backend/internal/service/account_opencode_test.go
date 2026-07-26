@@ -29,14 +29,14 @@ func TestAccountOpenCodeHelpersUseAPIKeyBaseURLAndMappedModels(t *testing.T) {
 	}
 	assertStringSlicesEqual(t, DefaultOpenCodeModelIDs(), []string{"opencode/big-pickle", "opencode/gpt5-nano", "gpt5-nano"})
 
-	for _, model := range []string{"opencode/big-pickle", "opencode/gpt5-nano", "gpt5-nano", "gpt-5"} {
+	for _, model := range []string{"gpt-5"} {
 		if !acc.IsOpenCodeModelSupported(model) {
 			t.Fatalf("model %q should be supported", model)
 		}
 	}
-	for _, model := range []string{"deepseek-chat", "claude-sonnet-4-6"} {
+	for _, model := range []string{"opencode/big-pickle", "opencode/gpt5-nano", "opencode-next"} {
 		if acc.IsOpenCodeModelSupported(model) {
-			t.Fatalf("model %q should not be supported", model)
+			t.Fatalf("explicit model mapping should reject unconfigured model %q", model)
 		}
 	}
 	if got := acc.GetOpenCodeMappedModel("gpt-5"); got != "opencode/gpt5-nano" {
@@ -56,6 +56,11 @@ func TestAccountOpenCodeRequiresConfiguredBaseURL(t *testing.T) {
 
 	if got := acc.GetOpenCodeBaseURL(); got != "" {
 		t.Fatalf("base url = %q, want empty", got)
+	}
+	for _, model := range []string{"opencode/gpt5-nano", "opencode-next"} {
+		if !acc.IsOpenCodeModelSupported(model) {
+			t.Fatalf("unrestricted account should pass through model %q", model)
+		}
 	}
 }
 

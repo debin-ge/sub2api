@@ -121,6 +121,24 @@ func TestRewriteKimiModelAcceptsClaudeAlias(t *testing.T) {
 	}
 }
 
+func TestRewriteKimiModelPassesThroughK3ForUnrestrictedAccount(t *testing.T) {
+	body := []byte(`{"model":"K3","messages":[{"role":"user","content":"hello"}]}`)
+
+	rewritten, originalModel, upstreamModel, err := rewriteKimiModel(body, kimiGatewayTestAccount())
+	if err != nil {
+		t.Fatalf("rewriteKimiModel error = %v", err)
+	}
+	if originalModel != "K3" {
+		t.Fatalf("originalModel = %q", originalModel)
+	}
+	if upstreamModel != "K3" {
+		t.Fatalf("upstreamModel = %q", upstreamModel)
+	}
+	if got := gjson.GetBytes(rewritten, "model").String(); got != "K3" {
+		t.Fatalf("rewritten model = %q body=%s", got, string(rewritten))
+	}
+}
+
 func TestKimiGatewayServiceForwardMessagesDefaultsMissingAnthropicFields(t *testing.T) {
 	var captured *http.Request
 	var capturedBody []byte

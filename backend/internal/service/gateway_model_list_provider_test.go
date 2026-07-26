@@ -79,8 +79,9 @@ func TestGatewayModelListProviderWindsurfDefaultsAndAccountMappings(t *testing.T
 		"swe-1-6",
 		"claude-3-5-sonnet-latest",
 		"opus",
+		"bad-target",
 	})
-	mustNotContainStrings(t, models, []string{"swe-grep", "swe-1-mini", "wildcard-*", "bad-target"})
+	mustNotContainStrings(t, models, []string{"swe-grep", "swe-1-mini", "wildcard-*"})
 }
 
 func TestGatewayModelListProviderOpenCodeDefaultsAndAccountMappings(t *testing.T) {
@@ -101,6 +102,7 @@ func TestGatewayModelListProviderOpenCodeDefaultsAndAccountMappings(t *testing.T
 
 	models := provider.ModelsForProvider(PlatformOpenCode, accounts)
 	assertStringSlicesEqual(t, models, []string{
+		"bad-target",
 		"fast",
 		"gpt-5",
 		"gpt5-nano",

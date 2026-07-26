@@ -769,8 +769,6 @@ func accountRequiresLiveCatalog(account *Account) bool {
 	case PlatformAntigravity:
 		return account.Type == AccountTypeOAuth ||
 			account.Type == AccountTypeUpstream
-	case PlatformWindsurf, PlatformOpenCode:
-		return account.Type == AccountTypeAPIKey
 	default:
 		return account.Type == AccountTypeAPIKey &&
 			providerSupportsLiveModelDiscovery(account.Platform) &&

@@ -57,7 +57,7 @@ func TestDefaultMiniMaxModelIDs(t *testing.T) {
 }
 
 func TestFlexibleDomesticProvidersAllowUnknownModelsAndLiveDiscovery(t *testing.T) {
-	for _, platform := range []string{PlatformMiniMax, PlatformGLM, PlatformKimi, PlatformDeepSeek} {
+	for _, platform := range []string{PlatformMiniMax, PlatformGLM, PlatformKimi, PlatformDeepSeek, PlatformWindsurf, PlatformOpenCode} {
 		if !providerSupportsUpstreamModel(platform, "provider-future-model") {
 			t.Fatalf("platform %q should allow future upstream models", platform)
 		}

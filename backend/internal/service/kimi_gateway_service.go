@@ -303,7 +303,7 @@ func validateKimiModelPayload(body []byte, account *Account) (map[string]any, st
 		return nil, "", "", fmt.Errorf("kimi request model is required")
 	}
 	if account == nil || !account.IsKimiModelSupported(model) {
-		return nil, "", "", &KimiUnsupportedContentError{Message: "Kimi gateway only supports model kimi-for-coding"}
+		return nil, "", "", &KimiUnsupportedContentError{Message: fmt.Sprintf("Kimi account does not support model %s", model)}
 	}
 	return payload, model, account.GetKimiMappedModel(model), nil
 }
