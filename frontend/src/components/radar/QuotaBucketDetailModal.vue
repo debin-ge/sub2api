@@ -78,11 +78,11 @@
             </div>
 
             <p
-              v-if="selectedStats && selectedStats.sample_size < sampleSizeWarnBelow"
+              v-if="sampleWarning"
               class="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-amber-700 dark:text-amber-300"
             >
               <Icon name="exclamationTriangle" size="sm" aria-hidden="true" />
-              {{ t('radar.quota.smallSample', 'Small sample') }}: n={{ formatNumber(selectedStats.sample_size) }}
+              {{ sampleWarning }}
             </p>
 
             <section
@@ -244,9 +244,20 @@ const summaryStats = computed(() => {
     { label: t('radar.quota.averageUtilization', 'Average utilization'), value: formatPercent(stats.avg_utilization) },
     { label: t('radar.quota.range', 'Utilization range'), value: `${formatPercent(stats.min_utilization)} – ${formatPercent(stats.max_utilization)}` },
     { label: t('radar.quota.averageCost', 'Average cost'), value: formatUSD(stats.avg_cost) },
-    { label: t('radar.quota.inferredLimit', 'Inferred limit'), value: formatInference(stats) },
+    { label: t('radar.quota.inferredLimit', 'Estimated API-equivalent value'), value: formatInference(stats) },
     { label: t('radar.quota.sampleSize', 'Sample size'), value: formatNumber(stats.sample_size) },
   ]
+})
+const sampleWarning = computed(() => {
+  const stats = selectedStats.value
+  if (!stats) return ''
+  if (stats.inference_confidence === 'low') {
+    return `${t('radar.quota.singleSampleLowConfidence', 'Single-sample estimate · Low confidence')}: n=${formatNumber(stats.sample_size)}`
+  }
+  if (stats.sample_size < props.sampleSizeWarnBelow) {
+    return `${t('radar.quota.smallSample', 'Small sample')}: n=${formatNumber(stats.sample_size)}`
+  }
+  return ''
 })
 const selectedWindowLabel = computed(() => selectedWindow.value === '5h'
   ? t('radar.quota.fiveHourUtilization', '5-hour utilization')
@@ -401,6 +412,8 @@ function formatInference(stats: WindowStatsDTO): string {
     switch (stats.inference_reject_reason) {
       case 'insufficient_samples': return t('radar.quota.inference.insufficient', 'Insufficient samples')
       case 'high_dispersion': return t('radar.quota.inference.dispersed', 'Data is too dispersed')
+      case 'invalid_mean': return t('radar.quota.inference.invalid', 'Invalid aggregate')
+      case 'unknown_plan': return t('radar.quota.inference.unknownPlan', 'Plan is unknown; estimation is unavailable')
       default: return t('radar.quota.inference.unavailable', 'No trusted result')
     }
   }

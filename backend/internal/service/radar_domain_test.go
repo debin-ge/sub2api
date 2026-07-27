@@ -52,11 +52,18 @@ func TestRadarDomainEnumValues(t *testing.T) {
 	})
 
 	require.Equal(t, []InferenceRejectReason{
-		"insufficient_samples", "high_dispersion", "invalid_mean",
+		"insufficient_samples", "high_dispersion", "invalid_mean", "unknown_plan",
 	}, []InferenceRejectReason{
 		InferenceRejectReasonInsufficientSamples,
 		InferenceRejectReasonHighDispersion,
 		InferenceRejectReasonInvalidMean,
+		InferenceRejectReasonUnknownPlan,
+	})
+
+	require.Equal(t, []InferenceConfidence{"low", "medium", "high"}, []InferenceConfidence{
+		InferenceConfidenceLow,
+		InferenceConfidenceMedium,
+		InferenceConfidenceHigh,
 	})
 
 	require.Equal(t, []DataSourceState{
@@ -194,9 +201,10 @@ func TestRadarDomainJSONKeysUseSnakeCase(t *testing.T) {
 				InferredLimitUSD:      &value,
 				InferredStdev:         &value,
 				SampleSize:            3,
+				InferenceConfidence:   InferenceConfidenceHigh,
 				InferenceRejectReason: &reason,
 			},
-			want: []string{"avg_cost", "avg_utilization", "contributors_count", "inference_reject_reason", "inferred_limit_usd", "inferred_stdev", "max_utilization", "min_utilization", "sample_size"},
+			want: []string{"avg_cost", "avg_utilization", "contributors_count", "inference_confidence", "inference_reject_reason", "inferred_limit_usd", "inferred_stdev", "max_utilization", "min_utilization", "sample_size"},
 		},
 		{
 			name: "model window stats",
@@ -211,21 +219,22 @@ func TestRadarDomainJSONKeysUseSnakeCase(t *testing.T) {
 		{
 			name: "bucket snapshot",
 			got: BucketSnapshotDTO{
-				BucketKey:        "anthropic:pro",
-				Platform:         "anthropic",
-				PlanTier:         "pro",
-				DisplayName:      "Anthropic Pro",
-				AccountsCount:    3,
-				FiveHour:         &WindowStatsDTO{},
-				SevenDay:         &WindowStatsDTO{},
-				SevenDaySonnet:   &ModelWindowStatsDTO{},
-				SevenDayFable:    &ModelWindowStatsDTO{},
-				ModelBreakdown5h: []ModelCostBreakdownDTO{},
-				ModelBreakdown7d: []ModelCostBreakdownDTO{},
-				CapturedAt:       now,
-				Stale:            false,
+				CalculationVersion: 2,
+				BucketKey:          "anthropic:pro",
+				Platform:           "anthropic",
+				PlanTier:           "pro",
+				DisplayName:        "Anthropic Pro",
+				AccountsCount:      3,
+				FiveHour:           &WindowStatsDTO{},
+				SevenDay:           &WindowStatsDTO{},
+				SevenDaySonnet:     &ModelWindowStatsDTO{},
+				SevenDayFable:      &ModelWindowStatsDTO{},
+				ModelBreakdown5h:   []ModelCostBreakdownDTO{},
+				ModelBreakdown7d:   []ModelCostBreakdownDTO{},
+				CapturedAt:         now,
+				Stale:              false,
 			},
-			want: []string{"accounts_count", "bucket_key", "captured_at", "display_name", "five_hour", "model_breakdown_5h", "model_breakdown_7d", "plan_tier", "platform", "privacy_threshold", "seven_day", "seven_day_fable", "seven_day_sonnet", "stale"},
+			want: []string{"accounts_count", "bucket_key", "calculation_version", "captured_at", "display_name", "five_hour", "model_breakdown_5h", "model_breakdown_7d", "plan_tier", "platform", "privacy_threshold", "seven_day", "seven_day_fable", "seven_day_sonnet", "stale"},
 		},
 		{
 			name: "quota latest",
@@ -239,8 +248,8 @@ func TestRadarDomainJSONKeysUseSnakeCase(t *testing.T) {
 		},
 		{
 			name: "quota trend window",
-			got:  QuotaTrendWindowDTO{AvgUtilization: 1, AvgCost: 2, InferredLimitUSD: &value, SampleSize: 3},
-			want: []string{"avg_cost", "avg_utilization", "inferred_limit_usd", "sample_size"},
+			got:  QuotaTrendWindowDTO{AvgUtilization: 1, AvgCost: 2, InferredLimitUSD: &value, SampleSize: 3, InferenceConfidence: InferenceConfidenceHigh},
+			want: []string{"avg_cost", "avg_utilization", "inference_confidence", "inferred_limit_usd", "sample_size"},
 		},
 		{
 			name: "quota trend point",
@@ -406,10 +415,12 @@ func TestRadarDomainJSONPreservesNullsAndEmptyCollections(t *testing.T) {
 	require.Contains(t, window, "inferred_stdev")
 	require.Nil(t, window["inferred_stdev"])
 	require.NotContains(t, window, "inference_reject_reason")
+	require.NotContains(t, window, "inference_confidence")
 
 	trendWindow := marshalRadarObject(t, QuotaTrendWindowDTO{})
 	require.Contains(t, trendWindow, "inferred_limit_usd")
 	require.Nil(t, trendWindow["inferred_limit_usd"])
+	require.NotContains(t, trendWindow, "inference_confidence")
 
 	trendPoint := marshalRadarObject(t, QuotaTrendPointDTO{})
 	require.Nil(t, trendPoint["five_hour"])

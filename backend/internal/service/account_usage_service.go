@@ -102,8 +102,8 @@ type AccountModelBreakdownBatchReader interface {
 }
 
 // RadarQuotaAccountWindow identifies one account's exact provider quota
-// period. OpenAI weekly periods are account-specific, so a single rolling
-// start time cannot represent them without mixing usage from adjacent weeks.
+// period. Provider reset times are account-specific, so a single rolling
+// start time cannot represent them without mixing usage from adjacent periods.
 type RadarQuotaAccountWindow struct {
 	AccountID int64
 	StartAt   time.Time
@@ -117,8 +117,6 @@ type accountWindowStatsBatchReader interface {
 // RadarQuotaBatchReader is the complete narrow SQL contract required by Radar
 // quota aggregation. It deliberately remains separate from UsageLogRepository.
 type RadarQuotaBatchReader interface {
-	AccountModelBreakdownBatchReader
-	GetAccountWindowStatsBatch(ctx context.Context, accountIDs []int64, startTime time.Time) (map[int64]*usagestats.AccountStats, error)
 	GetAccountModelBreakdownByWindowBatch(ctx context.Context, windows []RadarQuotaAccountWindow) (map[int64]map[string]ModelCostStats, error)
 }
 

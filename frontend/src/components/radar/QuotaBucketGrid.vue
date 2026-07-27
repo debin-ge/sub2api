@@ -33,10 +33,22 @@
           <dl class="mt-3 space-y-3">
             <div>
               <dt class="text-xs text-gray-500 dark:text-gray-400">
-                {{ t('radar.quota.inferredLimit', 'Quota limit') }}
+                {{ t('radar.quota.inferredLimit', 'Estimated API-equivalent value') }}
               </dt>
               <dd class="mt-0.5 text-lg font-bold tabular-nums text-gray-950 dark:text-white">
                 {{ formatLimit(window.stats) }}
+                <span
+                  v-if="window.stats?.inference_confidence === 'low'"
+                  class="mt-1 block text-xs font-medium text-amber-700 dark:text-amber-300"
+                >
+                  {{ t('radar.quota.singleSampleLowConfidence', 'Single-sample estimate · Low confidence') }}
+                </span>
+                <span
+                  v-else-if="window.stats?.inference_reject_reason === 'unknown_plan'"
+                  class="mt-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
+                >
+                  {{ t('radar.quota.inference.unknownPlan', 'Plan is unknown; estimation is unavailable') }}
+                </span>
               </dd>
             </div>
             <div>

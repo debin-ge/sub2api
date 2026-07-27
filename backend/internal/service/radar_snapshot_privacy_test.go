@@ -9,7 +9,8 @@ import (
 
 func validPrivacySnapshot() BucketSnapshotDTO {
 	return BucketSnapshotDTO{
-		BucketKey: "anthropic/pro", Platform: "anthropic", PlanTier: "pro", DisplayName: "Claude Pro",
+		CalculationVersion: radarQuotaCalculationVersion,
+		BucketKey:          "anthropic/pro", Platform: "anthropic", PlanTier: "pro", DisplayName: "Claude Pro",
 		PrivacyThreshold: 3, AccountsCount: 3, CapturedAt: time.Now().UTC(),
 		FiveHour:         &WindowStatsDTO{ContributorsCount: 3, SampleSize: 1},
 		SevenDay:         &WindowStatsDTO{ContributorsCount: 3, SampleSize: 2},
@@ -48,17 +49,20 @@ func TestValidateRadarBucketSnapshotFailsClosedOnPrivacyMetadata(t *testing.T) {
 func TestValidateRadarBucketSnapshotAllowsSingleAccountBucketsUniformly(t *testing.T) {
 	singles := []BucketSnapshotDTO{
 		{
-			BucketKey: "openai/pro", Platform: PlatformOpenAI, PlanTier: "pro", DisplayName: "ChatGPT Pro",
+			CalculationVersion: radarQuotaCalculationVersion,
+			BucketKey:          "openai/pro", Platform: PlatformOpenAI, PlanTier: "pro", DisplayName: "ChatGPT Pro",
 			PrivacyThreshold: 1, AccountsCount: 1, CapturedAt: time.Now().UTC(),
 			SevenDay: &WindowStatsDTO{ContributorsCount: 1, SampleSize: 1},
 		},
 		{
-			BucketKey: "openai/plus", Platform: PlatformOpenAI, PlanTier: "plus", DisplayName: "ChatGPT Plus",
+			CalculationVersion: radarQuotaCalculationVersion,
+			BucketKey:          "openai/plus", Platform: PlatformOpenAI, PlanTier: "plus", DisplayName: "ChatGPT Plus",
 			PrivacyThreshold: 1, AccountsCount: 1, CapturedAt: time.Now().UTC(),
 			SevenDay: &WindowStatsDTO{ContributorsCount: 1, SampleSize: 1},
 		},
 		{
-			BucketKey: "anthropic/pro", Platform: PlatformAnthropic, PlanTier: "pro", DisplayName: "Claude Pro",
+			CalculationVersion: radarQuotaCalculationVersion,
+			BucketKey:          "anthropic/pro", Platform: PlatformAnthropic, PlanTier: "pro", DisplayName: "Claude Pro",
 			PrivacyThreshold: 1, AccountsCount: 1, CapturedAt: time.Now().UTC(),
 			SevenDay: &WindowStatsDTO{ContributorsCount: 1, SampleSize: 1},
 		},
@@ -76,4 +80,10 @@ func TestValidateRadarBucketSnapshotAllowsSingleAccountBucketsUniformly(t *testi
 	overbroad := singles[0]
 	overbroad.SevenDay = &WindowStatsDTO{ContributorsCount: 2, SampleSize: 2}
 	require.ErrorIs(t, ValidateRadarBucketSnapshot(overbroad), ErrInvalidRadarBucketSnapshot)
+}
+
+func TestValidateRadarBucketSnapshotRejectsOldCalculationVersion(t *testing.T) {
+	snapshot := validPrivacySnapshot()
+	snapshot.CalculationVersion = radarQuotaCalculationVersion - 1
+	require.ErrorIs(t, ValidateRadarBucketSnapshot(snapshot), ErrInvalidRadarBucketSnapshot)
 }

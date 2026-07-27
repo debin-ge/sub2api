@@ -1084,6 +1084,7 @@ func radarQuotaAggregationLogArgs(report RadarQuotaAggregationReport, startedAt 
 		"inference_reject_insufficient_samples", report.InferenceRejectCounts[InferenceRejectReasonInsufficientSamples],
 		"inference_reject_high_dispersion", report.InferenceRejectCounts[InferenceRejectReasonHighDispersion],
 		"inference_reject_invalid_mean", report.InferenceRejectCounts[InferenceRejectReasonInvalidMean],
+		"inference_reject_unknown_plan", report.InferenceRejectCounts[InferenceRejectReasonUnknownPlan],
 	}
 }
 

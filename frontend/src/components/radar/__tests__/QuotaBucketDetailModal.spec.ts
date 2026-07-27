@@ -237,7 +237,7 @@ describe('QuotaBucketDetailModal', () => {
       accounts_count: 1,
       privacy_threshold: 1,
 		five_hour: windowStats({ avg_utilization: 99 }),
-      seven_day: windowStats({ avg_utilization: 35, sample_size: 1 }),
+      seven_day: windowStats({ avg_utilization: 35, sample_size: 1, inferred_stdev: null, inference_confidence: 'low' }),
     })
     const trend = quotaTrend(item.bucket_key)
 	trend.data_points = trend.data_points.map((point, index) => ({
@@ -253,7 +253,32 @@ describe('QuotaBucketDetailModal', () => {
 
 	  expect(document.body.querySelector('[data-window="5h"]')).toBeNull()
 	  expect(document.body.querySelector('[data-window="7d"]')?.getAttribute('aria-selected')).toBe('true')
-	  expect(document.body.textContent).toContain('Small sample: n=1')
+	  expect(document.body.textContent).toContain('Single-sample estimate · Low confidence: n=1')
     expect(document.body.querySelector('[data-testid="quota-modal-trend-summary"]')?.textContent).toContain('7-day utilization')
+  })
+
+  it('explains that an unknown Claude plan cannot produce an estimate', async () => {
+    wrapper = mount(QuotaBucketDetailModal, {
+      attachTo: document.body,
+      props: {
+        show: true,
+        bucket: bucket({
+          bucket_key: 'anthropic/generic',
+          plan_tier: 'generic',
+          display_name: 'Claude Subscription',
+          five_hour: windowStats({
+            inferred_limit_usd: null,
+            inferred_stdev: null,
+            inference_confidence: undefined,
+            inference_reject_reason: 'unknown_plan',
+          }),
+        }),
+      },
+      global: { stubs: { Icon: true } },
+    })
+    await wrapper.vm.$nextTick()
+
+    expect(document.body.textContent).toContain('Estimated API-equivalent value')
+    expect(document.body.textContent).toContain('Plan is unknown; estimation is unavailable')
   })
 })

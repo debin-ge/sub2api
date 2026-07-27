@@ -79,6 +79,7 @@ func TestRadarCacheAndPublicServiceFailClosedOnInjectedPrivacyMetadata(t *testin
 			name   string
 			mutate func(*service.BucketSnapshotDTO)
 		}{
+			{"old calculation version", func(s *service.BucketSnapshotDTO) { s.CalculationVersion = 1 }},
 			{"missing threshold", func(s *service.BucketSnapshotDTO) { s.PrivacyThreshold = 0 }},
 			{"single account", func(s *service.BucketSnapshotDTO) { s.AccountsCount = 1 }},
 			{"window contributors", func(s *service.BucketSnapshotDTO) { s.FiveHour = &service.WindowStatsDTO{ContributorsCount: 1} }},
@@ -203,15 +204,16 @@ func TestNewRadarCacheRepositoryRejectsInvalidDependenciesAndConfig(t *testing.T
 func testRadarSnapshot(bucketKey string, capturedAt time.Time) service.BucketSnapshotDTO {
 	platform, planTier, _ := strings.Cut(bucketKey, "/")
 	return service.BucketSnapshotDTO{
-		BucketKey:        bucketKey,
-		Platform:         platform,
-		PlanTier:         planTier,
-		DisplayName:      bucketKey,
-		AccountsCount:    3,
-		PrivacyThreshold: 2,
-		ModelBreakdown5h: []service.ModelCostBreakdownDTO{},
-		ModelBreakdown7d: []service.ModelCostBreakdownDTO{},
-		CapturedAt:       capturedAt,
+		CalculationVersion: 2,
+		BucketKey:          bucketKey,
+		Platform:           platform,
+		PlanTier:           planTier,
+		DisplayName:        bucketKey,
+		AccountsCount:      3,
+		PrivacyThreshold:   2,
+		ModelBreakdown5h:   []service.ModelCostBreakdownDTO{},
+		ModelBreakdown7d:   []service.ModelCostBreakdownDTO{},
+		CapturedAt:         capturedAt,
 	}
 }
 

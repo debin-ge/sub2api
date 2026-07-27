@@ -243,8 +243,9 @@ func (r *usageLogRepository) GetAccountModelBreakdownBatch(ctx context.Context, 
 }
 
 // GetAccountModelBreakdownByWindowBatch aggregates every account inside its
-// own exact quota period. This is used for OpenAI weekly limits, whose current
-// period starts seven days before that account's reported next reset time.
+// own provider reset-bound quota period, ending at the passive snapshot's
+// sampled_at timestamp. Radar uses the provider-equivalent cost without the
+// account billing multiplier.
 func (r *usageLogRepository) GetAccountModelBreakdownByWindowBatch(
 	ctx context.Context,
 	windows []service.RadarQuotaAccountWindow,
@@ -275,7 +276,7 @@ func (r *usageLogRepository) GetAccountModelBreakdownByWindowBatch(
 			usage_logs.model,
 			COUNT(*) as requests,
 			COALESCE(SUM(usage_logs.input_tokens::bigint + usage_logs.output_tokens::bigint + usage_logs.cache_creation_tokens::bigint + usage_logs.cache_read_tokens::bigint), 0) as tokens,
-			COALESCE(SUM(COALESCE(usage_logs.account_stats_cost, usage_logs.total_cost) * COALESCE(usage_logs.account_rate_multiplier, 1)), 0) as account_cost
+			COALESCE(SUM(COALESCE(usage_logs.account_stats_cost, usage_logs.total_cost)), 0) as account_cost
 		FROM quota_windows
 		JOIN usage_logs
 			ON usage_logs.account_id = quota_windows.account_id

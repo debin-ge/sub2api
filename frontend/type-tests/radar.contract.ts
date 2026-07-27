@@ -7,6 +7,7 @@ import type {
   DegradationMetric,
   DegradationModelDTO,
   InferenceRejectReason,
+  InferenceConfidence,
   LMArenaDTO,
   LMArenaEntryDTO,
   ModelCostBreakdownDTO,
@@ -46,16 +47,20 @@ export type RadarContractAssertions = [
   Expect<Equal<ServiceHealthHistoryDayDTO['incidents'], RadarIncidentDTO[]>>,
   Expect<Equal<WindowStatsDTO['inferred_limit_usd'], number | null>>,
   Expect<Equal<WindowStatsDTO['inferred_stdev'], number | null>>,
+  Expect<Equal<IsOptional<WindowStatsDTO, 'inference_confidence'>, true>>,
+  Expect<Equal<WindowStatsDTO['inference_confidence'], InferenceConfidence | undefined>>,
   Expect<Equal<IsOptional<WindowStatsDTO, 'inference_reject_reason'>, true>>,
   Expect<
     Equal<WindowStatsDTO['inference_reject_reason'], InferenceRejectReason | undefined>
   >,
   Expect<Equal<BucketSnapshotDTO['five_hour'], WindowStatsDTO | null>>,
+  Expect<Equal<BucketSnapshotDTO['calculation_version'], number>>,
   Expect<Equal<BucketSnapshotDTO['seven_day'], WindowStatsDTO | null>>,
   Expect<Equal<BucketSnapshotDTO['seven_day_sonnet'], ModelWindowStatsDTO | null>>,
   Expect<Equal<BucketSnapshotDTO['seven_day_fable'], ModelWindowStatsDTO | null>>,
   Expect<Equal<QuotaRadarLatestDTO['last_aggregated_at'], string | null>>,
   Expect<Equal<QuotaTrendWindowDTO['inferred_limit_usd'], number | null>>,
+  Expect<Equal<QuotaTrendWindowDTO['inference_confidence'], InferenceConfidence | undefined>>,
   Expect<Equal<QuotaTrendPointDTO['five_hour'], QuotaTrendWindowDTO | null>>,
   Expect<Equal<QuotaTrendPointDTO['seven_day'], QuotaTrendWindowDTO | null>>,
   Expect<Equal<DegradationModelDTO['intelligence_index'], number | null>>,
@@ -109,9 +114,10 @@ export type RadarContractAssertions = [
   Expect<
     Equal<
       InferenceRejectReason,
-      'insufficient_samples' | 'high_dispersion' | 'invalid_mean'
+      'insufficient_samples' | 'high_dispersion' | 'invalid_mean' | 'unknown_plan'
     >
   >,
+  Expect<Equal<InferenceConfidence, 'low' | 'medium' | 'high'>>,
   Expect<Equal<RadarPlatform, 'anthropic' | 'openai' | 'antigravity'>>,
   Expect<
     Equal<DegradationMetric, 'intelligence_index' | 'coding_index' | 'agentic_index'>

@@ -14,6 +14,9 @@ var ErrInvalidRadarBucketSnapshot = errors.New("invalid radar bucket snapshot")
 // contributor count because the inference filter can legitimately reject
 // otherwise publishable contributors.
 func ValidateRadarBucketSnapshot(snapshot BucketSnapshotDTO) error {
+	if snapshot.CalculationVersion != radarQuotaCalculationVersion {
+		return ErrInvalidRadarBucketSnapshot
+	}
 	threshold := snapshot.PrivacyThreshold
 	if threshold < defaultRadarPublicMinBucketAccounts || snapshot.AccountsCount < threshold {
 		return ErrInvalidRadarBucketSnapshot

@@ -1549,6 +1549,7 @@ func TestRadarRunnerQuotaRunUsesIndependentLockBudgetAndSafeLowCardinalityLogs(t
 						InferenceRejectReasonInsufficientSamples: 5,
 						InferenceRejectReasonHighDispersion:      6,
 						InferenceRejectReasonInvalidMean:         7,
+						InferenceRejectReasonUnknownPlan:         8,
 					},
 				}, testCase.aggregatorError
 			}}
@@ -1599,6 +1600,7 @@ func TestRadarRunnerQuotaRunUsesIndependentLockBudgetAndSafeLowCardinalityLogs(t
 				require.Contains(t, logged, `"inference_reject_insufficient_samples":5`)
 				require.Contains(t, logged, `"inference_reject_high_dispersion":6`)
 				require.Contains(t, logged, `"inference_reject_invalid_mean":7`)
+				require.Contains(t, logged, `"inference_reject_unknown_plan":8`)
 			}
 			require.NotContains(t, logged, privateFailure)
 			require.NotContains(t, logged, "secret-model")

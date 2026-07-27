@@ -483,10 +483,11 @@ func radarQuotaTrendWindow(window *WindowStatsDTO) *QuotaTrendWindowDTO {
 		return nil
 	}
 	return &QuotaTrendWindowDTO{
-		AvgUtilization:   window.AvgUtilization,
-		AvgCost:          window.AvgCost,
-		InferredLimitUSD: cloneRadarFloat(window.InferredLimitUSD),
-		SampleSize:       window.SampleSize,
+		AvgUtilization:      window.AvgUtilization,
+		AvgCost:             window.AvgCost,
+		InferredLimitUSD:    cloneRadarFloat(window.InferredLimitUSD),
+		SampleSize:          window.SampleSize,
+		InferenceConfidence: window.InferenceConfidence,
 	}
 }
 

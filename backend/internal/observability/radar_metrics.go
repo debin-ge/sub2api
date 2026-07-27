@@ -494,7 +494,7 @@ func normalizeInferenceReason(reason, result string) string {
 		return "none"
 	}
 	switch reason {
-	case "insufficient_samples", "high_dispersion", "invalid_mean":
+	case "insufficient_samples", "high_dispersion", "invalid_mean", "unknown_plan":
 		return reason
 	default:
 		return "other"

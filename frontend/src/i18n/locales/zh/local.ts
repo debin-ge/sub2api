@@ -63,7 +63,7 @@ export default {
     },
     "quota": {
       "title": "额度雷达",
-      "subtitle": "按套餐展示 5H / 7D 额度上限与样本数。",
+      "subtitle": "按套餐展示 5H / 7D API 等值金额估算与样本数。",
       "emptyPending": "暂无额度数据。服务启动后会立即执行聚合，请稍后重试。",
       "emptyNoPublishable": "暂无可公开的额度数据。套餐桶需要近期被动额度快照，并满足对应的最小样本要求。",
       "emptyFailed": "额度聚合暂时不可用，请稍后重试。",
@@ -71,13 +71,15 @@ export default {
       "accounts": "账号数",
       "snapshotStale": "额度快照可能已过期",
       "smallSample": "样本量较小",
+      "singleSampleLowConfidence": "单样本估算 · 低置信度",
       "fiveHourUtilization": "5 小时利用率",
       "sevenDayUtilization": "7 天利用率",
-      "inferredLimit": "额度上限",
+      "inferredLimit": "API 等值金额估算",
       "inference": {
         "insufficient": "样本不足",
         "dispersed": "数据离散度过高",
         "invalid": "聚合结果无效",
+        "unknownPlan": "套餐未知，暂不提供估算",
         "unavailable": "暂无可信结果"
       },
       "noWindow": "当前额度窗口暂无数据",
@@ -178,7 +180,7 @@ export default {
         "aggregation": "用量聚合失败",
         "generic": "数据源不可用"
       },
-      "disclaimer": "数据聚合自站内匿名统计与公开第三方来源。模型评测结果受评测方法影响；额度反推为统计估算，不代表厂商官方承诺，不应作为关键业务决策的唯一依据。"
+      "disclaimer": "数据聚合自站内匿名统计与公开第三方来源。模型评测结果受评测方法影响；API 等值金额为统计估算，并非厂商官方额度上限或承诺，不应作为关键业务决策的唯一依据。"
     }
   },
   "plaza": {

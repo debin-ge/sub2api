@@ -19,7 +19,7 @@ describe('QuotaBucketGrid', () => {
     expect(wrapper.text()).toContain('No publishable quota data')
   })
 
-  it('shows only the 5H and 7D quota limits and sample sizes for each plan', () => {
+  it('shows only the 5H and 7D API-equivalent estimates and sample sizes for each plan', () => {
     const item = bucket({
       five_hour: windowStats({
         inferred_limit_usd: 100.25,
@@ -39,7 +39,7 @@ describe('QuotaBucketGrid', () => {
     expect(wrapper.text()).toContain('Anthropic')
     expect(wrapper.text()).toContain('Claude Max 20x')
     expect(fiveHour.text()).toContain('5H')
-    expect(fiveHour.text()).toContain('Quota limit')
+    expect(fiveHour.text()).toContain('Estimated API-equivalent value')
     expect(fiveHour.text()).toContain('$100.25')
     expect(fiveHour.text()).toContain('Sample size')
     expect(fiveHour.text()).toContain('4')
@@ -85,5 +85,47 @@ describe('QuotaBucketGrid', () => {
     expect(fiveHour.text()).toContain('2')
     expect(sevenDay.text().match(/—/g)).toHaveLength(2)
     expect(wrapper.text()).not.toContain('$0')
+  })
+
+  it('labels a published singleton estimate as low confidence', () => {
+    const wrapper = mount(QuotaBucketGrid, {
+      props: {
+        buckets: [bucket({
+          five_hour: windowStats({
+            inferred_limit_usd: 80,
+            inferred_stdev: null,
+            sample_size: 1,
+            inference_confidence: 'low',
+          }),
+        })],
+      },
+    })
+
+    const fiveHour = wrapper.get('[data-testid="quota-window-anthropic/max_20x-5h"]')
+    expect(fiveHour.text()).toContain('$80')
+    expect(fiveHour.text()).toContain('Single-sample estimate · Low confidence')
+    expect(fiveHour.text()).not.toContain('±')
+  })
+
+  it('explains an unavailable estimate for an unknown Claude plan', () => {
+    const wrapper = mount(QuotaBucketGrid, {
+      props: {
+        buckets: [bucket({
+          bucket_key: 'anthropic/generic',
+          plan_tier: 'generic',
+          display_name: 'Claude Subscription',
+          five_hour: windowStats({
+            inferred_limit_usd: null,
+            inferred_stdev: null,
+            inference_confidence: undefined,
+            inference_reject_reason: 'unknown_plan',
+          }),
+        })],
+      },
+    })
+
+    const fiveHour = wrapper.get('[data-testid="quota-window-anthropic/generic-5h"]')
+    expect(fiveHour.text()).toContain('—')
+    expect(fiveHour.text()).toContain('Plan is unknown; estimation is unavailable')
   })
 })

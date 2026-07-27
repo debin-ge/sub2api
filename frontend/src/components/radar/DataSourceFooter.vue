@@ -68,7 +68,7 @@
       </p>
 
       <p class="mt-8 max-w-5xl text-sm leading-6 text-gray-600 dark:text-gray-400">
-        {{ t('radar.sources.disclaimer', 'Data is aggregated from anonymous on-site statistics and public third-party sources. Model benchmark results depend on evaluation methodology; inferred quota limits are statistical estimates, not official vendor commitments, and should not be the sole basis for critical business decisions.') }}
+        {{ t('radar.sources.disclaimer', 'Data is aggregated from anonymous on-site statistics and public third-party sources. Model benchmark results depend on evaluation methodology; API-equivalent values are statistical estimates, not official vendor quota limits or commitments, and should not be the sole basis for critical business decisions.') }}
       </p>
     </div>
   </footer>

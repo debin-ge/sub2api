@@ -472,8 +472,8 @@ func TestRadarServiceGetQuotaBucketsTrendMapsSortsUsesUTCAnchorAndDeepClones(t *
 	repo := newRadarQuotaServiceTestRepo()
 	repo.keys = []string{"anthropic/pro"}
 	newer := radarQuotaSnapshot("anthropic/pro", "Claude Pro", utcNow.Add(-time.Minute))
-	newer.FiveHour = &WindowStatsDTO{AvgUtilization: 40, AvgCost: 5, InferredLimitUSD: &limit5h, SampleSize: 4, ContributorsCount: 3}
-	newer.SevenDay = &WindowStatsDTO{AvgUtilization: 60, AvgCost: 7, InferredLimitUSD: &limit7d, SampleSize: 6, ContributorsCount: 3}
+	newer.FiveHour = &WindowStatsDTO{AvgUtilization: 40, AvgCost: 5, InferredLimitUSD: &limit5h, SampleSize: 4, ContributorsCount: 3, InferenceConfidence: InferenceConfidenceHigh}
+	newer.SevenDay = &WindowStatsDTO{AvgUtilization: 60, AvgCost: 7, InferredLimitUSD: &limit7d, SampleSize: 6, ContributorsCount: 3, InferenceConfidence: InferenceConfidenceHigh}
 	older := radarQuotaSnapshot("anthropic/pro", "Claude Pro", utcNow.Add(-time.Hour))
 	older.FiveHour = &WindowStatsDTO{AvgUtilization: 20, AvgCost: 2, SampleSize: 2, ContributorsCount: 3}
 	older.SevenDay = &WindowStatsDTO{AvgUtilization: 30, AvgCost: 3, SampleSize: 3, ContributorsCount: 3}
@@ -490,10 +490,12 @@ func TestRadarServiceGetQuotaBucketsTrendMapsSortsUsesUTCAnchorAndDeepClones(t *
 	require.Equal(t, 5.0, got.DataPoints[1].FiveHour.AvgCost)
 	require.Equal(t, 500.0, *got.DataPoints[1].FiveHour.InferredLimitUSD)
 	require.Equal(t, 4, got.DataPoints[1].FiveHour.SampleSize)
+	require.Equal(t, InferenceConfidenceHigh, got.DataPoints[1].FiveHour.InferenceConfidence)
 	require.Equal(t, 60.0, got.DataPoints[1].SevenDay.AvgUtilization)
 	require.Equal(t, 7.0, got.DataPoints[1].SevenDay.AvgCost)
 	require.Equal(t, 700.0, *got.DataPoints[1].SevenDay.InferredLimitUSD)
 	require.Equal(t, 6, got.DataPoints[1].SevenDay.SampleSize)
+	require.Equal(t, InferenceConfidenceHigh, got.DataPoints[1].SevenDay.InferenceConfidence)
 	calls := repo.snapshotTrendCalls()
 	require.Equal(t, []radarQuotaTrendCall{{
 		bucket: "anthropic/pro",
@@ -868,17 +870,18 @@ func radarQuotaServiceCacheSize(service *RadarService) int {
 func radarQuotaSnapshot(bucket, displayName string, capturedAt time.Time) *BucketSnapshotDTO {
 	platform, tier, _ := strings.Cut(bucket, "/")
 	return &BucketSnapshotDTO{
-		BucketKey:        bucket,
-		Platform:         platform,
-		PlanTier:         tier,
-		DisplayName:      displayName,
-		AccountsCount:    3,
-		PrivacyThreshold: 2,
-		FiveHour:         &WindowStatsDTO{ContributorsCount: 3},
-		SevenDay:         &WindowStatsDTO{ContributorsCount: 3},
-		ModelBreakdown5h: make([]ModelCostBreakdownDTO, 0),
-		ModelBreakdown7d: make([]ModelCostBreakdownDTO, 0),
-		CapturedAt:       capturedAt,
+		CalculationVersion: radarQuotaCalculationVersion,
+		BucketKey:          bucket,
+		Platform:           platform,
+		PlanTier:           tier,
+		DisplayName:        displayName,
+		AccountsCount:      3,
+		PrivacyThreshold:   2,
+		FiveHour:           &WindowStatsDTO{ContributorsCount: 3},
+		SevenDay:           &WindowStatsDTO{ContributorsCount: 3},
+		ModelBreakdown5h:   make([]ModelCostBreakdownDTO, 0),
+		ModelBreakdown7d:   make([]ModelCostBreakdownDTO, 0),
+		CapturedAt:         capturedAt,
 	}
 }
 

@@ -63,7 +63,7 @@ export default {
     },
     "quota": {
       "title": "Quota radar",
-      "subtitle": "5H and 7D quota limits with sample sizes by plan.",
+      "subtitle": "5H and 7D API-equivalent value estimates with sample sizes by plan.",
       "emptyPending": "No quota data yet. Aggregation runs after service startup; try again shortly.",
       "emptyNoPublishable": "No publishable quota data. Supported plan buckets require recent passive quota snapshots and their configured minimum sample.",
       "emptyFailed": "Quota aggregation is temporarily unavailable. Please try again later.",
@@ -71,13 +71,15 @@ export default {
       "accounts": "Accounts",
       "snapshotStale": "Snapshot data may be outdated",
       "smallSample": "Small sample",
+      "singleSampleLowConfidence": "Single-sample estimate · Low confidence",
       "fiveHourUtilization": "5-hour utilization",
       "sevenDayUtilization": "7-day utilization",
-      "inferredLimit": "Quota limit",
+      "inferredLimit": "Estimated API-equivalent value",
       "inference": {
         "insufficient": "Insufficient samples",
         "dispersed": "Data is too dispersed",
         "invalid": "Invalid aggregate",
+        "unknownPlan": "Plan is unknown; estimation is unavailable",
         "unavailable": "No trusted result"
       },
       "noWindow": "No data for this quota window",
@@ -178,7 +180,7 @@ export default {
         "aggregation": "Usage aggregation failed",
         "generic": "Source unavailable"
       },
-      "disclaimer": "Data is aggregated from anonymous on-site statistics and public third-party sources. Model benchmark results depend on evaluation methodology; inferred quota limits are statistical estimates, not official vendor commitments, and should not be the sole basis for critical business decisions."
+      "disclaimer": "Data is aggregated from anonymous on-site statistics and public third-party sources. Model benchmark results depend on evaluation methodology; API-equivalent values are statistical estimates, not official vendor quota limits or commitments, and should not be the sole basis for critical business decisions."
     }
   },
   "plaza": {

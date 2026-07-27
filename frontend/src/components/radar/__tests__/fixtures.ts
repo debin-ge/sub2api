@@ -35,12 +35,14 @@ export function windowStats(overrides: Partial<WindowStatsDTO> = {}): WindowStat
     inferred_stdev: 5,
     sample_size: 4,
     contributors_count: 4,
+    inference_confidence: 'high',
     ...overrides,
   }
 }
 
 export function bucket(overrides: Partial<BucketSnapshotDTO> = {}): BucketSnapshotDTO {
   return {
+    calculation_version: 2,
     bucket_key: 'anthropic/max_20x',
     platform: 'anthropic',
     plan_tier: 'max_20x',
@@ -66,12 +68,12 @@ export function quotaTrend(bucketKey = 'anthropic/max_20x'): QuotaTrendDTO {
     data_points: [
       {
         timestamp: '2026-07-12T08:00:00.000Z',
-        five_hour: { avg_utilization: 20, avg_cost: 4, inferred_limit_usd: 20, sample_size: 3 },
+        five_hour: { avg_utilization: 20, avg_cost: 4, inferred_limit_usd: 20, sample_size: 3, inference_confidence: 'high' },
         seven_day: null,
       },
       {
         timestamp: now,
-        five_hour: { avg_utilization: 60, avg_cost: 12, inferred_limit_usd: 20, sample_size: 3 },
+        five_hour: { avg_utilization: 60, avg_cost: 12, inferred_limit_usd: 20, sample_size: 3, inference_confidence: 'high' },
         seven_day: null,
       },
     ],

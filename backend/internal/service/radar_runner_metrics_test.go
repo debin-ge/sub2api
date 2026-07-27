@@ -48,6 +48,7 @@ func TestRadarRunnerRecordsFetchAndAggregationMetricsFromExecutionPaths(t *testi
 		SkippedAccountCounts: map[string]int{radarQuotaSkipInvalidWindow: 3, "privacy_threshold": 2},
 		InferenceCounts: map[RadarQuotaInferenceMetric]int{
 			{Bucket: PlatformAnthropic, Result: "success"}:                                            2,
+			{Bucket: PlatformAnthropic, Result: "rejected", Reason: InferenceRejectReasonUnknownPlan}: 1,
 			{Bucket: PlatformOpenAI, Result: "rejected", Reason: InferenceRejectReasonHighDispersion}: 1,
 		},
 	}
@@ -72,6 +73,7 @@ func TestRadarRunnerRecordsFetchAndAggregationMetricsFromExecutionPaths(t *testi
 	require.Contains(t, body, `radar_aggregator_skipped_accounts_total{reason="invalid_window"} 3`)
 	require.Contains(t, body, `radar_aggregator_skipped_accounts_total{reason="privacy_threshold"} 2`)
 	require.Contains(t, body, `radar_inference_total{bucket="anthropic",reason="none",result="success"} 2`)
+	require.Contains(t, body, `radar_inference_total{bucket="anthropic",reason="unknown_plan",result="rejected"} 1`)
 	require.Contains(t, body, `radar_inference_total{bucket="openai",reason="high_dispersion",result="rejected"} 1`)
 }
 

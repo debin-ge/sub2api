@@ -23,6 +23,9 @@ export type InferenceRejectReason =
   | 'insufficient_samples'
   | 'high_dispersion'
   | 'invalid_mean'
+  | 'unknown_plan'
+
+export type InferenceConfidence = 'low' | 'medium' | 'high'
 
 export type RadarPlatform = 'anthropic' | 'openai' | 'antigravity'
 
@@ -77,6 +80,7 @@ export interface WindowStatsDTO {
   inferred_stdev: number | null
   sample_size: number
   contributors_count: number
+  inference_confidence?: InferenceConfidence
   inference_reject_reason?: InferenceRejectReason
 }
 
@@ -95,6 +99,7 @@ export interface ModelCostBreakdownDTO {
 }
 
 export interface BucketSnapshotDTO {
+  calculation_version: number
   bucket_key: string
   platform: RadarPlatform
   plan_tier: string
@@ -123,6 +128,7 @@ export interface QuotaTrendWindowDTO {
   avg_cost: number
   inferred_limit_usd: number | null
   sample_size: number
+  inference_confidence?: InferenceConfidence
 }
 
 export interface QuotaTrendPointDTO {

@@ -16,6 +16,8 @@ import (
 
 const (
 	defaultRadarPublicMinBucketAccounts = 1
+	radarQuotaCalculationVersion        = 2
+	defaultRadarInferenceSnapshotMaxAge = 30 * time.Minute
 
 	radarQuotaAnthropicPlanGeneric = "generic"
 	radarQuotaAnthropicPlanPro     = "pro"
@@ -79,6 +81,7 @@ type radarQuotaAggregatorConfig struct {
 	PublicMinBucketAccounts int
 	InferMinUtilization     float64
 	InferMaxStdevRatio      float64
+	InferenceSnapshotMaxAge time.Duration
 }
 
 // RadarQuotaAggregator creates privacy-gated, account-free quota bucket DTOs
@@ -145,12 +148,16 @@ func newRadarQuotaAggregator(
 		PublicMinBucketAccounts: cfg.PublicMinBucketAccounts,
 		InferMinUtilization:     cfg.InferMinUtilization,
 		InferMaxStdevRatio:      cfg.InferMaxStdevRatio,
+		InferenceSnapshotMaxAge: time.Duration(cfg.QuotaStaleThresholdMinutes) * time.Minute,
 	}
 	if copiedConfig.PublicMinBucketAccounts == 0 {
 		copiedConfig.PublicMinBucketAccounts = defaultRadarPublicMinBucketAccounts
 	}
 	if copiedConfig.PublicMinBucketAccounts < defaultRadarPublicMinBucketAccounts {
 		return nil, errors.New("radar quota public bucket minimum must be at least one")
+	}
+	if copiedConfig.InferenceSnapshotMaxAge <= 0 {
+		copiedConfig.InferenceSnapshotMaxAge = defaultRadarInferenceSnapshotMaxAge
 	}
 	if !isFinite(copiedConfig.InferMinUtilization) ||
 		copiedConfig.InferMinUtilization <= 0 || copiedConfig.InferMinUtilization > 100 {
@@ -308,52 +315,47 @@ func (a *RadarQuotaAggregator) runOnce(ctx context.Context, report *RadarQuotaAg
 	window7d := make(map[int64]*usagestats.AccountStats)
 	breakdown5h := make(map[int64]map[string]ModelCostStats)
 	breakdown7d := make(map[int64]map[string]ModelCostStats)
-	openAIWeeklyLimits := make(map[int64]*float64)
 
-	anthropicAccountIDs := make([]int64, 0, len(accountIDs))
+	anthropicFiveHourWindows := make([]RadarQuotaAccountWindow, 0, len(accountIDs))
+	anthropicSevenDayWindows := make([]RadarQuotaAccountWindow, 0, len(accountIDs))
 	openAIWindows := make([]RadarQuotaAccountWindow, 0, len(accountIDs))
 	for _, accountID := range accountIDs {
 		account := selectedByAccountID[accountID]
 		switch account.identity.platform {
 		case PlatformAnthropic:
-			anthropicAccountIDs = append(anthropicAccountIDs, accountID)
+			if window, ok := radarQuotaExactAccountWindow(account, account.usage.FiveHour, 5*time.Hour, readAt, a.cfg.InferenceSnapshotMaxAge); ok {
+				anthropicFiveHourWindows = append(anthropicFiveHourWindows, window)
+			}
+			if window, ok := radarQuotaExactAccountWindow(account, account.usage.SevenDay, 7*24*time.Hour, readAt, a.cfg.InferenceSnapshotMaxAge); ok {
+				anthropicSevenDayWindows = append(anthropicSevenDayWindows, window)
+			}
 		case PlatformOpenAI:
-			window, ok := radarOpenAIWeeklyAccountWindow(account, readAt)
+			window, ok := radarQuotaExactAccountWindow(account, account.usage.SevenDay, 7*24*time.Hour, readAt, a.cfg.InferenceSnapshotMaxAge)
 			if ok {
 				openAIWindows = append(openAIWindows, window)
 			}
 		}
 	}
 
-	if len(anthropicAccountIDs) > 0 {
-		window5h, err = a.batchReader.GetAccountWindowStatsBatch(ctx, anthropicAccountIDs, readAt.Add(-5*time.Hour))
+	if len(anthropicFiveHourWindows) > 0 {
+		breakdown5h, err = a.batchReader.GetAccountModelBreakdownByWindowBatch(ctx, anthropicFiveHourWindows)
 		if err != nil {
 			return radarQuotaBatchError(ctx, err)
 		}
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		window7d, err = a.batchReader.GetAccountWindowStatsBatch(ctx, anthropicAccountIDs, readAt.Add(-7*24*time.Hour))
+		window5h = buildRadarWindowStatsFromBreakdown(anthropicFiveHourWindows, breakdown5h)
+	}
+	if len(anthropicSevenDayWindows) > 0 {
+		breakdown7d, err = a.batchReader.GetAccountModelBreakdownByWindowBatch(ctx, anthropicSevenDayWindows)
 		if err != nil {
 			return radarQuotaBatchError(ctx, err)
 		}
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		breakdown5h, err = a.batchReader.GetAccountModelBreakdownBatch(ctx, anthropicAccountIDs, readAt.Add(-5*time.Hour))
-		if err != nil {
-			return radarQuotaBatchError(ctx, err)
-		}
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		breakdown7d, err = a.batchReader.GetAccountModelBreakdownBatch(ctx, anthropicAccountIDs, readAt.Add(-7*24*time.Hour))
-		if err != nil {
-			return radarQuotaBatchError(ctx, err)
-		}
-		if err := ctx.Err(); err != nil {
-			return err
-		}
+		window7d = buildRadarWindowStatsFromBreakdown(anthropicSevenDayWindows, breakdown7d)
 	}
 
 	if len(openAIWindows) > 0 {
@@ -367,12 +369,9 @@ func (a *RadarQuotaAggregator) runOnce(ctx context.Context, report *RadarQuotaAg
 		for accountID, models := range openAIBreakdown {
 			breakdown7d[accountID] = models
 		}
-		openAIStats, inferredLimits := buildOpenAIWeeklyInferenceInputs(openAIWindows, selectedByAccountID, openAIBreakdown)
+		openAIStats := buildRadarWindowStatsFromBreakdown(openAIWindows, openAIBreakdown)
 		for accountID, stats := range openAIStats {
 			window7d[accountID] = stats
-		}
-		for accountID, limit := range inferredLimits {
-			openAIWeeklyLimits[accountID] = limit
 		}
 	}
 
@@ -400,20 +399,25 @@ func (a *RadarQuotaAggregator) runOnce(ctx context.Context, report *RadarQuotaAg
 		identity := bucketAccounts[0].identity
 		bucketConfig := a.cfg
 		snapshot := BucketSnapshotDTO{
-			BucketKey:        identity.bucketKey,
-			Platform:         identity.platform,
-			PlanTier:         identity.planTier,
-			DisplayName:      identity.displayName,
-			AccountsCount:    len(bucketAccounts),
-			PrivacyThreshold: bucketConfig.PublicMinBucketAccounts,
-			ModelBreakdown5h: make([]ModelCostBreakdownDTO, 0),
-			ModelBreakdown7d: aggregateRadarModelBreakdown(bucketAccounts, breakdown7d, identity.platform, bucketConfig.PublicMinBucketAccounts),
-			CapturedAt:       capturedAt,
+			CalculationVersion: radarQuotaCalculationVersion,
+			BucketKey:          identity.bucketKey,
+			Platform:           identity.platform,
+			PlanTier:           identity.planTier,
+			DisplayName:        identity.displayName,
+			AccountsCount:      len(bucketAccounts),
+			PrivacyThreshold:   bucketConfig.PublicMinBucketAccounts,
+			ModelBreakdown5h:   make([]ModelCostBreakdownDTO, 0),
+			ModelBreakdown7d:   aggregateRadarModelBreakdown(bucketAccounts, breakdown7d, identity.platform, bucketConfig.PublicMinBucketAccounts),
+			CapturedAt:         capturedAt,
 		}
 		switch identity.platform {
 		case PlatformAnthropic:
 			snapshot.FiveHour = aggregateRadarQuotaWindow(bucketAccounts, window5h, func(usage *UsageInfo) *UsageProgress { return usage.FiveHour }, bucketConfig)
 			snapshot.SevenDay = aggregateRadarQuotaWindow(bucketAccounts, window7d, func(usage *UsageInfo) *UsageProgress { return usage.SevenDay }, bucketConfig)
+			if identity.planTier == radarQuotaAnthropicPlanGeneric {
+				rejectRadarQuotaInference(snapshot.FiveHour, InferenceRejectReasonUnknownPlan)
+				rejectRadarQuotaInference(snapshot.SevenDay, InferenceRejectReasonUnknownPlan)
+			}
 			snapshot.ModelBreakdown5h = aggregateRadarModelBreakdown(bucketAccounts, breakdown5h, identity.platform, bucketConfig.PublicMinBucketAccounts)
 			snapshot.SevenDaySonnet = aggregateRadarModelWindow(bucketAccounts, "claude-sonnet", a.cfg.PublicMinBucketAccounts, func(usage *UsageInfo) *UsageProgress {
 				return usage.SevenDaySonnet
@@ -422,16 +426,9 @@ func (a *RadarQuotaAggregator) runOnce(ctx context.Context, report *RadarQuotaAg
 				return usage.SevenDayFable
 			})
 		case PlatformOpenAI:
-			// OpenAI currently exposes only the weekly quota in Radar. Its
-			// inference candidates come from each account's exact reset-bound
-			// period and the per-model cost/share formula.
-			snapshot.SevenDay = aggregateRadarQuotaWindowWithLimits(
-				bucketAccounts,
-				window7d,
-				func(usage *UsageInfo) *UsageProgress { return usage.SevenDay },
-				openAIWeeklyLimits,
-				bucketConfig,
-			)
+			// OpenAI currently exposes only the weekly quota in Radar. Cost is
+			// summed over the reset-bound period ending exactly at sampled_at.
+			snapshot.SevenDay = aggregateRadarQuotaWindow(bucketAccounts, window7d, func(usage *UsageInfo) *UsageProgress { return usage.SevenDay }, bucketConfig)
 		}
 		if err := a.cacheWriter.AppendBucketSnapshot(ctx, snapshot); err != nil {
 			if terminal := radarQuotaContextError(ctx, err); terminal != nil {
@@ -493,7 +490,7 @@ func radarQuotaReportPublishedBucket(report *RadarQuotaAggregationReport, snapsh
 
 func radarQuotaReportInferenceReject(report *RadarQuotaAggregationReport, reason InferenceRejectReason) {
 	if report.InferenceRejectCounts == nil {
-		report.InferenceRejectCounts = make(map[InferenceRejectReason]int, 3)
+		report.InferenceRejectCounts = make(map[InferenceRejectReason]int, 4)
 	}
 	report.InferenceRejectCounts[reason]++
 }
@@ -588,17 +585,26 @@ func radarQuotaUsageProgressValid(progress *UsageProgress) bool {
 		progress.Utilization >= 0 && progress.Utilization <= 100
 }
 
-func radarOpenAIWeeklyAccountWindow(account radarQuotaBucketAccount, readAt time.Time) (RadarQuotaAccountWindow, bool) {
-	if account.identity.platform != PlatformOpenAI || account.usage == nil || account.usage.SevenDay == nil ||
-		account.usage.SevenDay.ResetsAt == nil {
+func radarQuotaExactAccountWindow(
+	account radarQuotaBucketAccount,
+	progress *UsageProgress,
+	duration time.Duration,
+	readAt time.Time,
+	maxSnapshotAge time.Duration,
+) (RadarQuotaAccountWindow, bool) {
+	if account.accountID <= 0 || account.usage == nil || account.usage.UpdatedAt == nil ||
+		!radarQuotaUsageProgressValid(progress) || progress.ResetsAt == nil || duration <= 0 || maxSnapshotAge <= 0 {
 		return RadarQuotaAccountWindow{}, false
 	}
-	resetAt := account.usage.SevenDay.ResetsAt.UTC()
-	startAt := resetAt.Add(-7 * 24 * time.Hour)
-	if account.accountID <= 0 || !readAt.Before(resetAt) || resetAt.After(readAt.Add(7*24*time.Hour)) || !startAt.Before(readAt) {
+	readAt = readAt.UTC()
+	sampledAt := account.usage.UpdatedAt.UTC()
+	resetAt := progress.ResetsAt.UTC()
+	startAt := resetAt.Add(-duration)
+	if sampledAt.After(readAt) || readAt.Sub(sampledAt) > maxSnapshotAge || !readAt.Before(resetAt) ||
+		!startAt.Before(sampledAt) || !sampledAt.Before(resetAt) {
 		return RadarQuotaAccountWindow{}, false
 	}
-	return RadarQuotaAccountWindow{AccountID: account.accountID, StartAt: startAt, EndAt: readAt}, true
+	return RadarQuotaAccountWindow{AccountID: account.accountID, StartAt: startAt, EndAt: sampledAt}, true
 }
 
 func buildRadarQuotaBucketIdentity(account *Account, usage *UsageInfo) (radarQuotaBucketIdentity, bool) {
@@ -729,15 +735,15 @@ func radarQuotaDisplayName(platform, planTier string) string {
 }
 
 type radarQuotaInferenceSample struct {
-	utilization   float64
-	cost          float64
-	inferredLimit *float64
+	utilization float64
+	cost        float64
 }
 
 type radarQuotaInferenceResult struct {
 	limit        *float64
 	stdev        *float64
 	sampleSize   int
+	confidence   InferenceConfidence
 	rejectReason *InferenceRejectReason
 }
 
@@ -750,12 +756,10 @@ func inferLimit(samples []radarQuotaInferenceSample, minUtilization, maxStdevRat
 			continue
 		}
 		candidate := math.NaN()
-		if sample.inferredLimit != nil {
-			candidate = *sample.inferredLimit
-		} else if isFinite(sample.cost) && sample.cost >= 0 {
+		if isFinite(sample.cost) && sample.cost > 0 {
 			candidate = sample.cost / (sample.utilization / 100)
 		}
-		if isFinite(candidate) && candidate >= 0 {
+		if isFinite(candidate) && candidate > 0 {
 			candidates = append(candidates, candidate)
 		}
 	}
@@ -772,6 +776,13 @@ func inferLimit(samples []radarQuotaInferenceSample, minUtilization, maxStdevRat
 	}
 	if !isFinite(mean) || mean <= 0 {
 		result.rejectReason = radarInferenceReason(InferenceRejectReasonInvalidMean)
+		return result
+	}
+	if len(candidates) == 1 {
+		// Dispersion is undefined for a singleton. Keep the point estimate, but
+		// do not manufacture a misleading zero standard deviation.
+		result.limit = &mean
+		result.confidence = InferenceConfidenceLow
 		return result
 	}
 
@@ -795,6 +806,11 @@ func inferLimit(samples []radarQuotaInferenceSample, minUtilization, maxStdevRat
 	}
 	result.limit = &mean
 	result.stdev = &stdev
+	if len(candidates) == 2 {
+		result.confidence = InferenceConfidenceMedium
+	} else {
+		result.confidence = InferenceConfidenceHigh
+	}
 	return result
 }
 
@@ -802,21 +818,11 @@ func radarInferenceReason(reason InferenceRejectReason) *InferenceRejectReason {
 	return &reason
 }
 
-// buildOpenAIWeeklyInferenceInputs reconstructs one inference candidate per
-// account from that account's exact weekly model breakdown. For each model:
-//
-//	model limit = model cost / (model cost share * account weekly utilization)
-//
-// Model limits are averaged arithmetically into one account-level candidate.
-// The bucket-level inferLimit then averages those account candidates, so model
-// count never turns into extra account weight.
-func buildOpenAIWeeklyInferenceInputs(
+func buildRadarWindowStatsFromBreakdown(
 	windows []RadarQuotaAccountWindow,
-	accountsByID map[int64]radarQuotaBucketAccount,
 	breakdownByAccount map[int64]map[string]ModelCostStats,
-) (map[int64]*usagestats.AccountStats, map[int64]*float64) {
+) map[int64]*usagestats.AccountStats {
 	statsByAccount := make(map[int64]*usagestats.AccountStats, len(windows))
-	limitsByAccount := make(map[int64]*float64, len(windows))
 	for _, window := range windows {
 		stats := &usagestats.AccountStats{}
 		models := breakdownByAccount[window.AccountID]
@@ -828,56 +834,14 @@ func buildOpenAIWeeklyInferenceInputs(
 			}
 		}
 		statsByAccount[window.AccountID] = stats
-
-		account, exists := accountsByID[window.AccountID]
-		if !exists || account.usage == nil || account.usage.SevenDay == nil ||
-			!isFinite(account.usage.SevenDay.Utilization) || account.usage.SevenDay.Utilization <= 0 || stats.Cost <= 0 {
-			continue
-		}
-		weeklyUtilization := account.usage.SevenDay.Utilization / 100
-		modelLimitTotal := 0.0
-		modelLimitCount := 0
-		for _, modelStats := range models {
-			if !isFinite(modelStats.AccountCost) || modelStats.AccountCost <= 0 {
-				continue
-			}
-			modelShare := modelStats.AccountCost / stats.Cost
-			denominator := modelShare * weeklyUtilization
-			if !isFinite(modelShare) || denominator <= 0 || !isFinite(denominator) {
-				continue
-			}
-			modelLimit := modelStats.AccountCost / denominator
-			if !isFinite(modelLimit) || modelLimit < 0 {
-				continue
-			}
-			modelLimitTotal = finiteRadarAdd(modelLimitTotal, modelLimit)
-			modelLimitCount++
-		}
-		if modelLimitCount == 0 {
-			continue
-		}
-		limit := modelLimitTotal / float64(modelLimitCount)
-		if isFinite(limit) && limit >= 0 {
-			limitsByAccount[window.AccountID] = &limit
-		}
 	}
-	return statsByAccount, limitsByAccount
+	return statsByAccount
 }
 
 func aggregateRadarQuotaWindow(
 	accounts []radarQuotaBucketAccount,
 	statsByAccount map[int64]*usagestats.AccountStats,
 	window func(*UsageInfo) *UsageProgress,
-	cfg radarQuotaAggregatorConfig,
-) *WindowStatsDTO {
-	return aggregateRadarQuotaWindowWithLimits(accounts, statsByAccount, window, nil, cfg)
-}
-
-func aggregateRadarQuotaWindowWithLimits(
-	accounts []radarQuotaBucketAccount,
-	statsByAccount map[int64]*usagestats.AccountStats,
-	window func(*UsageInfo) *UsageProgress,
-	inferredLimitsByAccount map[int64]*float64,
 	cfg radarQuotaAggregatorConfig,
 ) *WindowStatsDTO {
 	utilizations := make([]float64, 0, len(accounts))
@@ -897,9 +861,8 @@ func aggregateRadarQuotaWindowWithLimits(
 		utilizations = append(utilizations, progress.Utilization)
 		costs = append(costs, cost)
 		inferenceSamples = append(inferenceSamples, radarQuotaInferenceSample{
-			utilization:   progress.Utilization,
-			cost:          inferenceCost,
-			inferredLimit: inferredLimitsByAccount[account.accountID],
+			utilization: progress.Utilization,
+			cost:        inferenceCost,
 		})
 	}
 	if len(utilizations) == 0 {
@@ -932,8 +895,19 @@ func aggregateRadarQuotaWindowWithLimits(
 		InferredStdev:         inference.stdev,
 		SampleSize:            inference.sampleSize,
 		ContributorsCount:     len(utilizations),
+		InferenceConfidence:   inference.confidence,
 		InferenceRejectReason: inference.rejectReason,
 	}
+}
+
+func rejectRadarQuotaInference(window *WindowStatsDTO, reason InferenceRejectReason) {
+	if window == nil {
+		return
+	}
+	window.InferredLimitUSD = nil
+	window.InferredStdev = nil
+	window.InferenceConfidence = ""
+	window.InferenceRejectReason = radarInferenceReason(reason)
 }
 
 func aggregateRadarModelWindow(

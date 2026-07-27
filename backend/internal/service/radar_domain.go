@@ -83,13 +83,25 @@ const (
 	StatusIndicatorUnknown  StatusIndicator = "unknown"
 )
 
-// InferenceRejectReason explains why a quota limit could not be inferred.
+// InferenceRejectReason explains why an API-equivalent value could not be inferred.
 type InferenceRejectReason string
 
 const (
 	InferenceRejectReasonInsufficientSamples InferenceRejectReason = "insufficient_samples"
 	InferenceRejectReasonHighDispersion      InferenceRejectReason = "high_dispersion"
 	InferenceRejectReasonInvalidMean         InferenceRejectReason = "invalid_mean"
+	InferenceRejectReasonUnknownPlan         InferenceRejectReason = "unknown_plan"
+)
+
+// InferenceConfidence communicates how much independent account evidence
+// supports an inferred API-equivalent quota value. A singleton estimate is
+// intentionally low confidence even though it remains publishable.
+type InferenceConfidence string
+
+const (
+	InferenceConfidenceLow    InferenceConfidence = "low"
+	InferenceConfidenceMedium InferenceConfidence = "medium"
+	InferenceConfidenceHigh   InferenceConfidence = "high"
 )
 
 // DataSourceState is the public lifecycle state of a radar data source.
@@ -155,6 +167,7 @@ type WindowStatsDTO struct {
 	InferredStdev         *float64               `json:"inferred_stdev"`
 	SampleSize            int                    `json:"sample_size"`
 	ContributorsCount     int                    `json:"contributors_count"`
+	InferenceConfidence   InferenceConfidence    `json:"inference_confidence,omitempty"`
 	InferenceRejectReason *InferenceRejectReason `json:"inference_reject_reason,omitempty"`
 }
 
@@ -176,20 +189,21 @@ type ModelCostBreakdownDTO struct {
 
 // BucketSnapshotDTO contains the latest public aggregate for one quota bucket.
 type BucketSnapshotDTO struct {
-	BucketKey        string                  `json:"bucket_key"`
-	Platform         string                  `json:"platform"`
-	PlanTier         string                  `json:"plan_tier"`
-	DisplayName      string                  `json:"display_name"`
-	AccountsCount    int                     `json:"accounts_count"`
-	PrivacyThreshold int                     `json:"privacy_threshold"`
-	FiveHour         *WindowStatsDTO         `json:"five_hour"`
-	SevenDay         *WindowStatsDTO         `json:"seven_day"`
-	SevenDaySonnet   *ModelWindowStatsDTO    `json:"seven_day_sonnet"`
-	SevenDayFable    *ModelWindowStatsDTO    `json:"seven_day_fable"`
-	ModelBreakdown5h []ModelCostBreakdownDTO `json:"model_breakdown_5h"`
-	ModelBreakdown7d []ModelCostBreakdownDTO `json:"model_breakdown_7d"`
-	CapturedAt       time.Time               `json:"captured_at"`
-	Stale            bool                    `json:"stale"`
+	CalculationVersion int                     `json:"calculation_version"`
+	BucketKey          string                  `json:"bucket_key"`
+	Platform           string                  `json:"platform"`
+	PlanTier           string                  `json:"plan_tier"`
+	DisplayName        string                  `json:"display_name"`
+	AccountsCount      int                     `json:"accounts_count"`
+	PrivacyThreshold   int                     `json:"privacy_threshold"`
+	FiveHour           *WindowStatsDTO         `json:"five_hour"`
+	SevenDay           *WindowStatsDTO         `json:"seven_day"`
+	SevenDaySonnet     *ModelWindowStatsDTO    `json:"seven_day_sonnet"`
+	SevenDayFable      *ModelWindowStatsDTO    `json:"seven_day_fable"`
+	ModelBreakdown5h   []ModelCostBreakdownDTO `json:"model_breakdown_5h"`
+	ModelBreakdown7d   []ModelCostBreakdownDTO `json:"model_breakdown_7d"`
+	CapturedAt         time.Time               `json:"captured_at"`
+	Stale              bool                    `json:"stale"`
 }
 
 // QuotaRadarLatestDTO is the latest public quota radar snapshot.
@@ -202,10 +216,11 @@ type QuotaRadarLatestDTO struct {
 
 // QuotaTrendWindowDTO contains one window's aggregate values at a trend point.
 type QuotaTrendWindowDTO struct {
-	AvgUtilization   float64  `json:"avg_utilization"`
-	AvgCost          float64  `json:"avg_cost"`
-	InferredLimitUSD *float64 `json:"inferred_limit_usd"`
-	SampleSize       int      `json:"sample_size"`
+	AvgUtilization      float64             `json:"avg_utilization"`
+	AvgCost             float64             `json:"avg_cost"`
+	InferredLimitUSD    *float64            `json:"inferred_limit_usd"`
+	SampleSize          int                 `json:"sample_size"`
+	InferenceConfidence InferenceConfidence `json:"inference_confidence,omitempty"`
 }
 
 // QuotaTrendPointDTO contains quota window aggregates captured at one time.

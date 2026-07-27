@@ -42,7 +42,7 @@ const accountModelBreakdownByWindowSQL = `
 		usage_logs.model,
 		COUNT(*) as requests,
 		COALESCE(SUM(usage_logs.input_tokens::bigint + usage_logs.output_tokens::bigint + usage_logs.cache_creation_tokens::bigint + usage_logs.cache_read_tokens::bigint), 0) as tokens,
-		COALESCE(SUM(COALESCE(usage_logs.account_stats_cost, usage_logs.total_cost) * COALESCE(usage_logs.account_rate_multiplier, 1)), 0) as account_cost
+		COALESCE(SUM(COALESCE(usage_logs.account_stats_cost, usage_logs.total_cost)), 0) as account_cost
 	FROM quota_windows
 	JOIN usage_logs
 		ON usage_logs.account_id = quota_windows.account_id
