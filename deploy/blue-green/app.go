@@ -18,6 +18,7 @@ type app struct {
 	nginxSites      string
 	nginxSnippetDir string
 	executable      string
+	runtimeConfig   string
 	stdout          io.Writer
 	stderr          io.Writer
 	euid            func() int
@@ -26,6 +27,10 @@ type app struct {
 }
 
 func newApp(root, nginxDir, nginxSnippetDir string, stdout, stderr io.Writer) (*app, error) {
+	return newAppWithConfig("", root, nginxDir, nginxSnippetDir, stdout, stderr)
+}
+
+func newAppWithConfig(configFile, root, nginxDir, nginxSnippetDir string, stdout, stderr io.Writer) (*app, error) {
 	executable, err := os.Executable()
 	if err != nil {
 		return nil, fmt.Errorf("定位当前可执行文件: %w", err)
@@ -35,28 +40,21 @@ func newApp(root, nginxDir, nginxSnippetDir string, stdout, stderr io.Writer) (*
 		return nil, fmt.Errorf("解析可执行文件路径: %w", err)
 	}
 
-	if root == "" {
-		root = os.Getenv("S2A_ROOT")
+	environmentRoot := os.Getenv("BGDEPLOY_ROOT")
+	settings, configPath, err := resolveRuntimeSettings(executable, configFile, firstString(root, environmentRoot))
+	if err != nil {
+		return nil, err
 	}
-	if root == "" {
-		root = filepath.Dir(executable)
-	}
+	root = firstString(root, environmentRoot, settings.Root, filepath.Dir(executable))
 	root, err = filepath.Abs(root)
 	if err != nil {
 		return nil, fmt.Errorf("解析部署根目录: %w", err)
 	}
 
-	if nginxDir == "" {
-		nginxDir = os.Getenv("S2A_NGINX_DIR")
-	}
-	if nginxDir == "" {
-		nginxDir = "/etc/nginx/sub2api"
-	}
-	if nginxSnippetDir == "" {
-		nginxSnippetDir = os.Getenv("S2A_NGINX_SNIPPET_DIR")
-	}
-	if nginxSnippetDir == "" {
-		nginxSnippetDir = "/etc/nginx/snippets"
+	nginxDir = firstString(nginxDir, os.Getenv("BGDEPLOY_NGINX_DIR"), settings.NginxDir, "/etc/nginx/blue-green")
+	nginxSnippetDir = firstString(nginxSnippetDir, os.Getenv("BGDEPLOY_NGINX_SNIPPET_DIR"), settings.NginxSnippetDir, "/etc/nginx/snippets")
+	if !filepath.IsAbs(nginxDir) || !filepath.IsAbs(nginxSnippetDir) {
+		return nil, fmt.Errorf("nginx_dir 和 nginx_snippet_dir 必须使用绝对路径")
 	}
 
 	return &app{
@@ -69,6 +67,7 @@ func newApp(root, nginxDir, nginxSnippetDir string, stdout, stderr io.Writer) (*
 		nginxSites:      filepath.Join(nginxDir, "sites"),
 		nginxSnippetDir: filepath.Clean(nginxSnippetDir),
 		executable:      executable,
+		runtimeConfig:   configPath,
 		stdout:          stdout,
 		stderr:          stderr,
 		euid:            os.Geteuid,
@@ -89,7 +88,7 @@ func (a *app) checkRoot() error {
 	if !a.requireRoot || a.euid() == 0 {
 		return nil
 	}
-	return fmt.Errorf("权限不足: 请进入 %s 后使用 sudo ./s2a 执行", a.root)
+	return fmt.Errorf("权限不足: 请进入 %s 后使用 sudo ./bgdeploy 执行", a.root)
 }
 
 func (a *app) stackDir(slug string) string {

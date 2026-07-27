@@ -41,7 +41,7 @@ func (a *app) showStatus(ctx context.Context, site resolvedSite) error {
 		}
 		fmt.Fprintf(a.stdout, "  生效(nginx upstream): %s:%d\n", currentSlot, currentPort)
 	} else {
-		fmt.Fprintln(a.stdout, "  生效(nginx upstream): 未初始化（未执行 sudo ./s2a render？）")
+		fmt.Fprintln(a.stdout, "  生效(nginx upstream): 未初始化（未执行 sudo ./bgdeploy render？）")
 	}
 
 	state, stateErr := a.readState(site.Slug)

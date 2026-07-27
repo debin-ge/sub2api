@@ -23,7 +23,7 @@ func (a *app) initStack(ctx context.Context, slug string) error {
 	stackDir := a.stackDir(slug)
 	for _, name := range []string{"compose.data.yml", "compose.app.yml"} {
 		if _, err := os.Stat(filepath.Join(stackDir, name)); err != nil {
-			return fmt.Errorf("缺少渲染产物 %s；先执行 sudo ./s2a render", filepath.Join(stackDir, name))
+			return fmt.Errorf("缺少渲染产物 %s；先执行 sudo ./bgdeploy render", filepath.Join(stackDir, name))
 		}
 	}
 
@@ -80,6 +80,6 @@ func (a *app) initStack(ctx context.Context, slug string) error {
 	if _, err := a.dataCompose(ctx, true, slug, "up", "-d", "--wait"); err != nil {
 		return fmt.Errorf("数据层未能进入 healthy 状态: %w", err)
 	}
-	a.log("stack %s 初始化完成；首次部署: sudo ./s2a deploy %s [tag]", slug, slug)
+	a.log("stack %s 初始化完成；首次部署: sudo ./bgdeploy deploy %s [tag]", slug, slug)
 	return nil
 }

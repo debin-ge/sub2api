@@ -34,7 +34,7 @@ func (a *app) render(ctx context.Context) error {
 	}
 
 	httpConfig, err := renderAsset("templates/nginx-http.conf.tmpl", map[string]string{
-		"NGINX_S2A_DIR": a.nginxDir,
+		"NGINX_BG_DIR": a.nginxDir,
 	})
 	if err != nil {
 		return err
@@ -52,11 +52,11 @@ func (a *app) render(ctx context.Context) error {
 		}
 	}
 
-	snippet, err := readAsset("snippets/sub2api-proxy.conf")
+	snippet, err := readAsset("snippets/blue-green-proxy.conf")
 	if err != nil {
 		return err
 	}
-	snippetPath := filepath.Join(a.nginxSnippetDir, "sub2api-proxy.conf")
+	snippetPath := filepath.Join(a.nginxSnippetDir, "blue-green-proxy.conf")
 	if existing, readErr := os.ReadFile(snippetPath); readErr == nil && !bytes.Equal(existing, snippet) {
 		a.warn("覆盖已漂移的 %s（以内置版本为准）", snippetPath)
 	}

@@ -22,7 +22,7 @@ func (a *app) deploy(ctx context.Context, slug, requestedTag string) error {
 		return err
 	}
 	if _, err := os.Stat(filepath.Join(a.stackDir(slug), "compose.app.yml")); err != nil {
-		return fmt.Errorf("缺少渲染产物；先执行 sudo ./s2a render && sudo ./s2a init %s", slug)
+		return fmt.Errorf("缺少渲染产物；先执行 sudo ./bgdeploy render && sudo ./bgdeploy init %s", slug)
 	}
 	tag := firstString(requestedTag, site.ImageTag)
 	if tag == "" {
@@ -40,7 +40,7 @@ func (a *app) deploy(ctx context.Context, slug, requestedTag string) error {
 
 	currentPort, upstreamTag, err := a.readCurrentUpstream(slug)
 	if err != nil {
-		return fmt.Errorf("%w（先执行 sudo ./s2a render）", err)
+		return fmt.Errorf("%w（先执行 sudo ./bgdeploy render）", err)
 	}
 	currentSlot, err := slotForPort(site.PortBase, currentPort)
 	if err != nil {
@@ -148,14 +148,14 @@ func (a *app) deploy(ctx context.Context, slug, requestedTag string) error {
 		a.log("首次部署完成，无旧 slot 需要排空")
 	} else {
 		if err := a.scheduleTeardown(ctx, slug, currentSlot, site.DrainSeconds); err != nil {
-			return fmt.Errorf("发布已成功且流量在 %s:%d，但旧 slot %s 的自动回收任务创建失败，请稍后执行 sudo ./s2a teardown %s %s: %w",
+			return fmt.Errorf("发布已成功且流量在 %s:%d，但旧 slot %s 的自动回收任务创建失败，请稍后执行 sudo ./bgdeploy teardown %s %s: %w",
 				newSlot, newPort, currentSlot, slug, currentSlot, err)
 		}
 		a.log("旧 slot %s 停止接收新请求，将在 %ds 后自动回收", currentSlot, site.DrainSeconds)
 	}
 	a.log("发布成功: %s 当前生效 %s:%d tag=%s", slug, newSlot, newPort, tag)
 	if !firstDeploy {
-		a.log("如需回退: sudo ./s2a rollback %s（回滚不撤销数据库迁移）", slug)
+		a.log("如需回退: sudo ./bgdeploy rollback %s（回滚不撤销数据库迁移）", slug)
 	}
 	return nil
 }

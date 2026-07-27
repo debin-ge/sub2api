@@ -1,4 +1,4 @@
-module github.com/Wei-Shaw/sub2api/deploy/blue-green
+module blue-green-deploy
 
 go 1.22
 

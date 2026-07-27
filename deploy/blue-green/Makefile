@@ -10,15 +10,15 @@ test:
 	go test ./...
 
 build:
-	CGO_ENABLED=0 go build -trimpath -ldflags="$(LDFLAGS)" -o $(DIST_DIR)/s2a .
+	CGO_ENABLED=0 go build -trimpath -ldflags="$(LDFLAGS)" -o $(DIST_DIR)/bgdeploy .
 
 build-linux-amd64:
 	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath \
-		-ldflags="$(LDFLAGS)" -o $(DIST_DIR)/s2a-linux-amd64 .
+		-ldflags="$(LDFLAGS)" -o $(DIST_DIR)/bgdeploy-linux-amd64 .
 
 build-linux-arm64:
 	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath \
-		-ldflags="$(LDFLAGS)" -o $(DIST_DIR)/s2a-linux-arm64 .
+		-ldflags="$(LDFLAGS)" -o $(DIST_DIR)/bgdeploy-linux-arm64 .
 
 release: test build-linux-amd64 build-linux-arm64
 

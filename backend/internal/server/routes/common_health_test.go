@@ -12,7 +12,7 @@ import (
 )
 
 // /health 的 version/slot 字段是蓝绿发布脚本的版本校验依据（FR-8.1），
-// 字段名或语义变更需同步 deploy/blue-green 的 s2a deploy 健康门禁。
+// 字段名或语义变更需同步 deploy/blue-green 的 bgdeploy deploy 健康门禁。
 func TestHealthEndpointReportsVersionAndSlot(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	t.Setenv("APP_SLOT", "green")

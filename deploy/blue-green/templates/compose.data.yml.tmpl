@@ -1,4 +1,4 @@
-# 由 ./s2a render 生成——请勿手工编辑
+# 由 ./bgdeploy render 生成——请勿手工编辑
 # 数据层常驻，不参与蓝绿轮换；发布过程中本文件的容器不重启。
 #
 # 渲染期替换：${SLUG} ${TZ}；其余 ${VAR} 保留给 docker compose 运行期从
@@ -25,9 +25,9 @@ services:
       # postgres:18-alpine 默认 PGDATA 不在挂载卷内，必须显式指定，
       # 否则 down/up 后触发 initdb 重新初始化导致数据丢失。
       - PGDATA=/var/lib/postgresql/data
-      - POSTGRES_USER=${POSTGRES_USER:-sub2api}
+      - POSTGRES_USER=${POSTGRES_USER:-app}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
-      - POSTGRES_DB=${POSTGRES_DB:-sub2api}
+      - POSTGRES_DB=${POSTGRES_DB:-app}
       - TZ=${TZ}
     networks:
       - stack
@@ -35,7 +35,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "pg_isready -U ${POSTGRES_USER:-sub2api} -d ${POSTGRES_DB:-sub2api}",
+          "pg_isready -U ${POSTGRES_USER:-app} -d ${POSTGRES_DB:-app}",
         ]
       interval: 10s
       timeout: 5s
@@ -84,4 +84,4 @@ services:
 networks:
   stack:
     name: ${SLUG}-net
-    external: true # 由 ./s2a init 预先创建
+    external: true # 由 ./bgdeploy init 预先创建

@@ -107,8 +107,20 @@ func (a *app) bootstrap() error {
 	if err != nil {
 		return err
 	}
+	runtimeConfig, err := renderAsset("runtime.example.yaml", map[string]string{
+		"DEPLOY_ROOT":       a.root,
+		"NGINX_DIR":         a.nginxDir,
+		"NGINX_SNIPPET_DIR": a.nginxSnippetDir,
+	})
+	if err != nil {
+		return err
+	}
 
 	createdSites, err := writeIfMissing(a.registryFile, sites, 0o644)
+	if err != nil {
+		return err
+	}
+	createdRuntime, err := writeIfMissing(a.runtimeConfig, runtimeConfig, 0o644)
 	if err != nil {
 		return err
 	}
@@ -127,6 +139,11 @@ func (a *app) bootstrap() error {
 		a.log("已创建 %s", envExample)
 	} else {
 		a.log("保留已有 %s", envExample)
+	}
+	if createdRuntime {
+		a.log("已创建 %s", a.runtimeConfig)
+	} else {
+		a.log("保留已有 %s", a.runtimeConfig)
 	}
 	a.log("初始化目录完成；下一步只需编辑 registry/sites.yaml 和 registry/envs/<slug>.env")
 	return nil

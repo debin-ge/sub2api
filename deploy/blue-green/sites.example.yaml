@@ -1,16 +1,16 @@
-# Sub2API 多站点清单 —— 所有站点配置的单一真相源（D1）。
-# 部署包默认放在 /srv/sites；复制到 registry/sites.yaml 后按需修改。
+# 多站点蓝绿部署清单——所有站点配置的单一真相源。
+# 部署包默认放在 /srv/blue-green；由 bootstrap 创建后按需修改。
 #
 # 端口分配规则（FR-5.6）：每个 stack 占用 port_base ~ port_base+9 共 10 个端口，
 #   blue = port_base，green = port_base+1，其余预留（调试用 pg/redis 暴露等）。
-#   ./s2a render 会校验各 stack 的端口区间互不重叠。
+#   ./bgdeploy render 会校验各 stack 的端口区间互不重叠。
 #
 # 密钥（POSTGRES_PASSWORD / JWT_SECRET / TOTP_ENCRYPTION_KEY / OAuth secret 等）
 # 一律不进本文件，放在 registry/envs/<slug>.env（chmod 600），结构沿用
 # deploy/.env.example。
 
 defaults:
-  image_repo: weishaw/sub2api
+  image_repo: registry.example.com/application
   bind_host: 127.0.0.1 # 应用端口只绑回环，禁止绕过 nginx 直连
   drain_seconds: 960 # 900（流上限）+ 60（余量）；与应用优雅关闭窗口绑定
   health_timeout_seconds: 300 # 健康门禁总超时，需覆盖 DB 迁移时间（上限 10 分钟）

@@ -123,7 +123,7 @@ func resolveSite(defaults siteDefaults, site siteConfig) resolvedSite {
 		Domain:                site.Domain,
 		PortBase:              site.PortBase,
 		ImageTag:              site.ImageTag,
-		ImageRepo:             firstString(site.ImageRepo, defaults.ImageRepo, "weishaw/sub2api"),
+		ImageRepo:             firstString(site.ImageRepo, defaults.ImageRepo),
 		BindHost:              firstString(site.BindHost, defaults.BindHost, "127.0.0.1"),
 		DrainSeconds:          firstInt(site.DrainSeconds, defaults.DrainSeconds, 960),
 		HealthTimeoutSeconds:  firstInt(site.HealthTimeoutSeconds, defaults.HealthTimeoutSeconds, 300),
@@ -196,6 +196,9 @@ func validateSites(sites []resolvedSite) error {
 		}
 		ranges = append(ranges, current)
 
+		if site.ImageRepo == "" {
+			return fmt.Errorf("%s 缺少 image_repo", site.Slug)
+		}
 		if !imageRepoPattern.MatchString(site.ImageRepo) {
 			return fmt.Errorf("%s 的 image_repo 非法: %q", site.Slug, site.ImageRepo)
 		}

@@ -111,14 +111,14 @@ func (a *app) checkDependencies(ctx context.Context) error {
 	if err != nil {
 		return errors.New("无法读取 nginx 完整配置（nginx -T 失败）")
 	}
-	if !strings.Contains(dump, "s2a-managed-http-config") {
+	if !strings.Contains(dump, "blue-green-managed-http-config") {
 		return fmt.Errorf("nginx 未加载 %s；请在 http {} 内添加 include %s/*.conf;", filepath.Join(a.nginxDir, "http.conf"), a.nginxDir)
 	}
 	if !workerShutdownPattern.MatchString(dump) {
 		return errors.New("nginx 缺少 worker_shutdown_timeout；请在 main 上下文设置 worker_shutdown_timeout 1200s;")
 	}
 	if !commandAvailable("systemd-run") {
-		a.warn("systemd-run 不可用，排空回收将使用 s2a 后台子进程")
+		a.warn("systemd-run 不可用，排空回收将使用 bgdeploy 后台子进程")
 	}
 	a.log("依赖检查通过: Docker/Compose、nginx 与蓝绿配置均可用")
 	return nil

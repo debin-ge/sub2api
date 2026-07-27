@@ -23,8 +23,9 @@ func main() {
 }
 
 func runCLI(ctx context.Context, args []string, stdout, stderr io.Writer) error {
-	fs := flag.NewFlagSet("s2a", flag.ContinueOnError)
+	fs := flag.NewFlagSet("bgdeploy", flag.ContinueOnError)
 	fs.SetOutput(stderr)
+	configFile := fs.String("config", "", "主机级运行配置文件（默认 runtime.yaml）")
 	root := fs.String("root", "", "部署根目录（默认取可执行文件所在目录）")
 	nginxDir := fs.String("nginx-dir", "", "nginx 蓝绿配置目录")
 	nginxSnippetDir := fs.String("nginx-snippet-dir", "", "nginx snippet 目录")
@@ -43,11 +44,11 @@ func runCLI(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 		return nil
 	}
 	if command == "version" {
-		fmt.Fprintf(stdout, "s2a %s\n", Version)
+		fmt.Fprintf(stdout, "bgdeploy %s\n", Version)
 		return nil
 	}
 
-	app, err := newApp(*root, *nginxDir, *nginxSnippetDir, stdout, stderr)
+	app, err := newAppWithConfig(*configFile, *root, *nginxDir, *nginxSnippetDir, stdout, stderr)
 	if err != nil {
 		return err
 	}
@@ -121,15 +122,15 @@ func runCLI(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 }
 
 func usageError(usage string) error {
-	return fmt.Errorf("用法: s2a %s", usage)
+	return fmt.Errorf("用法: bgdeploy %s", usage)
 }
 
 func printUsage(w io.Writer) {
 	fmt.Fprintln(w, strings.TrimSpace(`
-Sub2API 蓝绿部署 CLI
+通用蓝绿部署 CLI
 
 用法:
-  s2a [全局参数] <命令> [参数]
+  bgdeploy [全局参数] <命令> [参数]
 
 命令:
   bootstrap                         创建 registry、stacks 与示例配置
@@ -143,16 +144,26 @@ Sub2API 蓝绿部署 CLI
   version                           输出版本
 
 全局参数:
+  --config <path>                   主机级运行配置文件
   --root <path>                     部署根目录
-  --nginx-dir <path>                默认 /etc/nginx/sub2api
+  --nginx-dir <path>                默认 /etc/nginx/blue-green
   --nginx-snippet-dir <path>        默认 /etc/nginx/snippets
 
+环境变量:
+  BGDEPLOY_CONFIG
+  BGDEPLOY_ROOT
+  BGDEPLOY_NGINX_DIR
+  BGDEPLOY_NGINX_SNIPPET_DIR
+
+优先级:
+  命令行参数 > 环境变量 > runtime.yaml > 内置默认值
+
 典型操作:
-  sudo ./s2a bootstrap
-  sudo ./s2a render
-  sudo ./s2a init api-staging
-  sudo ./s2a deploy api-staging v1.6.8
-  ./s2a status api-staging
-  sudo ./s2a rollback api-staging
+  sudo ./bgdeploy bootstrap
+  sudo ./bgdeploy render
+  sudo ./bgdeploy init api-staging
+  sudo ./bgdeploy deploy api-staging v1.6.8
+  ./bgdeploy status api-staging
+  sudo ./bgdeploy rollback api-staging
 `))
 }

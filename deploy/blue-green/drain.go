@@ -12,7 +12,7 @@ import (
 )
 
 func drainUnit(slug, slot string) string {
-	return "s2a-drain-" + slug + "-" + slot
+	return "bgdeploy-drain-" + slug + "-" + slot
 }
 
 func (a *app) scheduleTeardown(ctx context.Context, slug, slot string, seconds int) error {
@@ -117,7 +117,7 @@ func (a *app) teardownPending(ctx context.Context, slug, slot string) string {
 	}
 	pid, err := strconv.Atoi(strings.TrimSpace(string(content)))
 	if err == nil && pid > 1 && syscall.Kill(pid, 0) == nil {
-		return fmt.Sprintf("pid=%d（s2a 后台排空进程）", pid)
+		return fmt.Sprintf("pid=%d（bgdeploy 后台排空进程）", pid)
 	}
 	return ""
 }

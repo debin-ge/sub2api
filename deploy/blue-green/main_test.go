@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -42,7 +43,7 @@ func newTestEnvironment(t *testing.T) *testEnvironment {
 	logFile := filepath.Join(temp, "commands.log")
 	writeExecutable(t, filepath.Join(binDir, "docker"), `#!/bin/bash
 set -eu
-printf 'docker %s\n' "$*" >> "$S2A_TEST_LOG"
+printf 'docker %s\n' "$*" >> "$BG_TEST_LOG"
 if [ "${1:-}" = compose ]; then
   shift
   project=""
@@ -56,24 +57,24 @@ if [ "${1:-}" = compose ]; then
   command="${1:-}"
   case "$command" in
     version) exit 0 ;;
-    up) touch "$S2A_TEST_STATE/running-$project"; exit 0 ;;
+    up) touch "$BG_TEST_STATE/running-$project"; exit 0 ;;
     ps)
-      [ ! -f "$S2A_TEST_STATE/running-$project" ] || printf 'cid-%s\n' "$project"
+      [ ! -f "$BG_TEST_STATE/running-$project" ] || printf 'cid-%s\n' "$project"
       exit 0 ;;
-    down) rm -f "$S2A_TEST_STATE/running-$project"; exit 0 ;;
+    down) rm -f "$BG_TEST_STATE/running-$project"; exit 0 ;;
     logs) printf 'fake logs for %s\n' "$project"; exit 0 ;;
   esac
   exit 0
 fi
 case "${1:-}" in
   info)
-    [ ! -f "$S2A_TEST_FLAGS/docker-info-fail" ]
+    [ ! -f "$BG_TEST_FLAGS/docker-info-fail" ]
     ;;
   network)
     name="${3:-}"
     case "${2:-}" in
-      inspect) [ -f "$S2A_TEST_STATE/network-$name" ] ;;
-      create) touch "$S2A_TEST_STATE/network-$name" ;;
+      inspect) [ -f "$BG_TEST_STATE/network-$name" ] ;;
+      create) touch "$BG_TEST_STATE/network-$name" ;;
     esac
     ;;
   ps)
@@ -81,52 +82,56 @@ case "${1:-}" in
     while [ "$#" -gt 0 ]; do
       if [ "$1" = --filter ]; then project="${2##*=}"; shift 2; else shift; fi
     done
-    [ ! -f "$S2A_TEST_STATE/running-$project" ] || printf 'Up 1 minute (fake/image:latest)\n'
+    [ ! -f "$BG_TEST_STATE/running-$project" ] || printf 'Up 1 minute (fake/image:latest)\n'
     ;;
 esac
 `)
 	writeExecutable(t, filepath.Join(binDir, "nginx"), `#!/bin/bash
 set -eu
-printf 'nginx %s\n' "$*" >> "$S2A_TEST_LOG"
-if [ "${1:-}" = -t ] && [ -f "$S2A_TEST_FLAGS/nginx-test-fail" ]; then exit 1; fi
+printf 'nginx %s\n' "$*" >> "$BG_TEST_LOG"
+if [ "${1:-}" = -t ] && [ -f "$BG_TEST_FLAGS/nginx-test-fail" ]; then exit 1; fi
 if [ "${1:-}" = -T ]; then
-  [ -f "$S2A_TEST_FLAGS/nginx-include-missing" ] || printf '# s2a-managed-http-config\n'
+  [ -f "$BG_TEST_FLAGS/nginx-include-missing" ] || printf '# blue-green-managed-http-config\n'
   printf 'worker_shutdown_timeout 1200s;\n'
 fi
 `)
 	writeExecutable(t, filepath.Join(binDir, "systemd-run"), `#!/bin/bash
 set -eu
-printf 'systemd-run %s\n' "$*" >> "$S2A_TEST_LOG"
+printf 'systemd-run %s\n' "$*" >> "$BG_TEST_LOG"
 unit=""
 for value in "$@"; do case "$value" in --unit=*) unit="${value#--unit=}" ;; esac; done
-touch "$S2A_TEST_STATE/timer-$unit"
+touch "$BG_TEST_STATE/timer-$unit"
 `)
 	writeExecutable(t, filepath.Join(binDir, "systemctl"), `#!/bin/bash
 set -eu
-printf 'systemctl %s\n' "$*" >> "$S2A_TEST_LOG"
+printf 'systemctl %s\n' "$*" >> "$BG_TEST_LOG"
 case "${1:-}" in
   stop)
     unit="${2%.timer}"; unit="${unit%.service}"
-    if [ -f "$S2A_TEST_STATE/timer-$unit" ]; then
-      rm -f "$S2A_TEST_STATE/timer-$unit"
+    if [ -f "$BG_TEST_STATE/timer-$unit" ]; then
+      rm -f "$BG_TEST_STATE/timer-$unit"
       exit 0
     fi
     exit 1
     ;;
   list-timers)
-    for file in "$S2A_TEST_STATE"/timer-*; do
+    for file in "$BG_TEST_STATE"/timer-*; do
       [ ! -f "$file" ] || printf '%s.timer fake-pending\n' "${file##*/timer-}"
     done
     ;;
 esac
 `)
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("S2A_TEST_STATE", stateDir)
-	t.Setenv("S2A_TEST_FLAGS", flagsDir)
-	t.Setenv("S2A_TEST_LOG", logFile)
+	t.Setenv("BG_TEST_STATE", stateDir)
+	t.Setenv("BG_TEST_FLAGS", flagsDir)
+	t.Setenv("BG_TEST_LOG", logFile)
+	t.Setenv("BGDEPLOY_CONFIG", "")
+	t.Setenv("BGDEPLOY_ROOT", "")
+	t.Setenv("BGDEPLOY_NGINX_DIR", "")
+	t.Setenv("BGDEPLOY_NGINX_SNIPPET_DIR", "")
 
 	root := filepath.Join(temp, "srv")
-	nginxDir := filepath.Join(temp, "nginx", "sub2api")
+	nginxDir := filepath.Join(temp, "nginx", "blue-green")
 	snippetDir := filepath.Join(temp, "nginx", "snippets")
 	certFile := filepath.Join(temp, "tls", "cert.pem")
 	keyFile := filepath.Join(temp, "tls", "key.pem")
@@ -167,7 +172,7 @@ func (environment *testEnvironment) writeSites(t *testing.T, portBase int) {
 		t.Fatal(err)
 	}
 	content := fmt.Sprintf(`defaults:
-  image_repo: weishaw/sub2api
+  image_repo: registry.example.com/application
   bind_host: 127.0.0.1
   drain_seconds: 60
   health_timeout_seconds: 2
@@ -210,10 +215,42 @@ func TestBootstrapDoesNotOverwriteConfiguration(t *testing.T) {
 		filepath.Join(environment.root, "registry", "envs"),
 		filepath.Join(environment.root, "stacks"),
 		filepath.Join(environment.root, "env.example"),
+		filepath.Join(environment.root, "runtime.yaml"),
 	} {
 		if _, err := os.Stat(path); err != nil {
 			t.Errorf("bootstrap did not create %s: %v", path, err)
 		}
+	}
+}
+
+func TestRuntimeConfigurationPrecedence(t *testing.T) {
+	temp := t.TempDir()
+	configPath := filepath.Join(temp, "runtime.yaml")
+	configRoot := filepath.Join(temp, "from-config")
+	configNginx := filepath.Join(temp, "nginx-from-config")
+	configSnippet := filepath.Join(temp, "snippet-from-config")
+	content := fmt.Sprintf("root: %s\nnginx_dir: %s\nnginx_snippet_dir: %s\n", configRoot, configNginx, configSnippet)
+	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	environmentRoot := filepath.Join(temp, "from-environment")
+	flagRoot := filepath.Join(temp, "from-flag")
+	environmentSnippet := filepath.Join(temp, "snippet-from-environment")
+	t.Setenv("BGDEPLOY_ROOT", environmentRoot)
+	t.Setenv("BGDEPLOY_NGINX_SNIPPET_DIR", environmentSnippet)
+
+	configured, err := newAppWithConfig(configPath, flagRoot, "", "", io.Discard, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if configured.root != flagRoot {
+		t.Fatalf("root = %s, want flag value %s", configured.root, flagRoot)
+	}
+	if configured.nginxDir != configNginx {
+		t.Fatalf("nginxDir = %s, want config value %s", configured.nginxDir, configNginx)
+	}
+	if configured.nginxSnippetDir != environmentSnippet {
+		t.Fatalf("nginxSnippetDir = %s, want environment value %s", configured.nginxSnippetDir, environmentSnippet)
 	}
 }
 
@@ -245,7 +282,7 @@ func TestRenderAndInitUseEmbeddedAssets(t *testing.T) {
 		filepath.Join(environment.nginxDir, "http.conf"),
 		filepath.Join(environment.nginxDir, "sites", "api-test.conf"),
 		filepath.Join(environment.nginxDir, "upstreams", "api-test.conf"),
-		filepath.Join(environment.snippetDir, "sub2api-proxy.conf"),
+		filepath.Join(environment.snippetDir, "blue-green-proxy.conf"),
 	}
 	for _, path := range expected {
 		if _, err := os.Stat(path); err != nil {

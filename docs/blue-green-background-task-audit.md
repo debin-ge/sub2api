@@ -164,7 +164,7 @@ S3 同 key 后写覆盖先写）；`backup_records` 台账为 settings 单 key J
 
 **建议修复**：Redis SETNX（TTL ≥ 35min）包住 `runScheduledBackup`/
 `CreateBackup`；台账 RMW 纳入同一锁；长期将台账迁为 DB 行级表。
-**过渡规避**：发布窗口避开备份 cron 时段（`./s2a status` 前置检查亦可人工确认）。
+**过渡规避**：发布窗口避开备份 cron 时段（`./bgdeploy status` 前置检查亦可人工确认）。
 
 ## 5. 知情项（有条件安全，无需改动）
 
