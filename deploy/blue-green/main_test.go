@@ -326,6 +326,44 @@ func TestCurrentDirectoryDefaults(t *testing.T) {
 	}
 }
 
+func TestHelpIncludesCompleteOperationsGuide(t *testing.T) {
+	for _, args := range [][]string{
+		{"--help"},
+		{"-h"},
+		{"help"},
+		{"deploy", "--help"},
+	} {
+		t.Run(strings.Join(args, "_"), func(t *testing.T) {
+			stdout := new(bytes.Buffer)
+			stderr := new(bytes.Buffer)
+			if err := runCLI(context.Background(), args, stdout, stderr); err != nil {
+				t.Fatalf("runCLI(%v): %v", args, err)
+			}
+			if stderr.Len() != 0 {
+				t.Fatalf("runCLI(%v) stderr = %q", args, stderr)
+			}
+			help := stdout.String()
+			for _, required := range []string{
+				"bgdeploy [全局参数] <命令> [参数]",
+				"bootstrap",
+				"deploy <slug> [image-tag]",
+				"teardown <slug> <blue|green>",
+				"registry/sites.yaml",
+				"envs/<slug>.env",
+				"worker_shutdown_timeout 1200s;",
+				"首次安装:",
+				"日常蓝绿发布:",
+				"失败与安全行为:",
+				"命令行参数 > BGDEPLOY_* 环境变量 > runtime.yaml > 内置默认值",
+			} {
+				if !strings.Contains(help, required) {
+					t.Errorf("runCLI(%v) help missing %q", args, required)
+				}
+			}
+		})
+	}
+}
+
 func TestRuntimeConfigurationPrecedence(t *testing.T) {
 	temp := t.TempDir()
 	configPath := filepath.Join(temp, "runtime.yaml")

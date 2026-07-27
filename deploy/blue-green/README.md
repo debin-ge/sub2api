@@ -333,6 +333,14 @@ teardown <slug> <blue|green>
 version
 ```
 
+可执行文件内置了完整操作教程、配置说明、首次安装、日常发布、回滚和排查命令：
+
+```bash
+./bgdeploy --help
+./bgdeploy help
+./bgdeploy deploy --help
+```
+
 状态查询不要求 root，但执行用户必须有读取 Docker daemon 的权限：
 
 ```bash

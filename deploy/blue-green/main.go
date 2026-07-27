@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -29,7 +28,13 @@ func runCLI(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	root := fs.String("root", "", "部署根目录（默认当前工作目录）")
 	nginxDir := fs.String("nginx-dir", "", "nginx 蓝绿配置目录")
 	nginxSnippetDir := fs.String("nginx-snippet-dir", "", "nginx snippet 目录")
+	fs.Usage = func() {}
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			printUsage(stdout)
+			return nil
+		}
+		printUsage(stderr)
 		return err
 	}
 
@@ -40,6 +45,13 @@ func runCLI(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	}
 	command, commandArgs := rest[0], rest[1:]
 	if command == "help" || command == "-h" || command == "--help" {
+		if len(commandArgs) != 0 {
+			return usageError("help")
+		}
+		printUsage(stdout)
+		return nil
+	}
+	if len(commandArgs) == 1 && (commandArgs[0] == "-h" || commandArgs[0] == "--help") {
 		printUsage(stdout)
 		return nil
 	}
@@ -123,47 +135,4 @@ func runCLI(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 
 func usageError(usage string) error {
 	return fmt.Errorf("用法: bgdeploy %s", usage)
-}
-
-func printUsage(w io.Writer) {
-	fmt.Fprintln(w, strings.TrimSpace(`
-通用蓝绿部署 CLI
-
-用法:
-  bgdeploy [全局参数] <命令> [参数]
-
-命令:
-  bootstrap                         创建 runtime、registry、envs、stacks
-  check                             检查权限、Docker/Compose 与 nginx 接入
-  render                            从 sites.yaml 渲染 compose/nginx 配置
-  init <slug>                       初始化 network 与 PostgreSQL/Redis
-  deploy <slug> [image-tag]         蓝绿发布
-  rollback <slug>                   快速或降级回滚
-  status [slug]                     查询全部或指定站点状态
-  teardown <slug> <blue|green>      安全回收非生效 slot
-  version                           输出版本
-
-全局参数:
-  --config <path>                   默认 ./runtime.yaml
-  --root <path>                     默认当前工作目录
-  --nginx-dir <path>                默认 /etc/nginx/sites
-  --nginx-snippet-dir <path>        默认 /etc/nginx/sites/snippets
-
-环境变量:
-  BGDEPLOY_CONFIG
-  BGDEPLOY_ROOT
-  BGDEPLOY_NGINX_DIR
-  BGDEPLOY_NGINX_SNIPPET_DIR
-
-优先级:
-  命令行参数 > 环境变量 > runtime.yaml > 内置默认值
-
-典型操作:
-  sudo ./bgdeploy bootstrap
-  sudo ./bgdeploy render
-  sudo ./bgdeploy init api-staging
-  sudo ./bgdeploy deploy api-staging v1.6.8
-  ./bgdeploy status api-staging
-  sudo ./bgdeploy rollback api-staging
-`))
 }
