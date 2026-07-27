@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode"
 )
 
 type testEnvironment struct {
@@ -344,20 +345,25 @@ func TestHelpIncludesCompleteOperationsGuide(t *testing.T) {
 			}
 			help := stdout.String()
 			for _, required := range []string{
-				"bgdeploy [全局参数] <命令> [参数]",
+				"bgdeploy [global options] <command> [arguments]",
 				"bootstrap",
 				"deploy <slug> [image-tag]",
 				"teardown <slug> <blue|green>",
 				"registry/sites.yaml",
 				"envs/<slug>.env",
 				"worker_shutdown_timeout 1200s;",
-				"首次安装:",
-				"日常蓝绿发布:",
-				"失败与安全行为:",
-				"命令行参数 > BGDEPLOY_* 环境变量 > runtime.yaml > 内置默认值",
+				"First-time setup:",
+				"Routine blue-green release:",
+				"Failure and safety behavior:",
+				"command-line options > BGDEPLOY_* environment variables > runtime.yaml >",
 			} {
 				if !strings.Contains(help, required) {
 					t.Errorf("runCLI(%v) help missing %q", args, required)
+				}
+			}
+			for _, character := range help {
+				if unicode.Is(unicode.Han, character) {
+					t.Fatalf("runCLI(%v) help contains Chinese character %q", args, character)
 				}
 			}
 		})

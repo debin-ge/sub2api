@@ -333,7 +333,8 @@ teardown <slug> <blue|green>
 version
 ```
 
-可执行文件内置了完整操作教程、配置说明、首次安装、日常发布、回滚和排查命令：
+The executable includes an English operations guide covering configuration, initial setup,
+routine releases, rollback, and troubleshooting:
 
 ```bash
 ./bgdeploy --help
