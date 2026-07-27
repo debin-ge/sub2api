@@ -23,7 +23,7 @@ func RegisterCommonRoutes(r *gin.Engine, cfg *config.Config, version string) {
 	}
 	r.GET("/metrics", gin.WrapH(metricsBearerOnly(token, observability.MetricsHandler(nil))))
 
-	// 健康检查。version/slot 供蓝绿发布脚本校验「起来的确实是预期镜像」：
+	// 健康检查。version/slot 供蓝绿部署 CLI 校验「起来的确实是预期镜像」：
 	// slot 由部署编排通过 APP_SLOT 注入（blue/green），非蓝绿部署时为空串。
 	slot := os.Getenv("APP_SLOT")
 	r.GET("/health", func(c *gin.Context) {

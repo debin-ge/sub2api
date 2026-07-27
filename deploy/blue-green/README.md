@@ -1,201 +1,292 @@
-# Sub2API 蓝绿部署（Nginx + Docker 多站点零停机发布）
+# Sub2API 蓝绿部署 CLI
 
-本目录是多站点蓝绿部署的全部工具：5 份模板 + 1 份 nginx snippet + 6 个脚本 +
-清单示例。设计文档见仓库根 `blue-green-deploy-design.v1.md` 与
-`blue-green-deploy-prd.md`。
+`s2a` 是一个原生 Go 单文件部署工具。YAML 解析、模板、Nginx snippet 和 HTTP
+健康探测均已编译进二进制；服务器不再需要复制 `bin/`、`lib/`、`templates/`
+或 `snippets/`，也不依赖 Bash、curl、jq、yq、Python/PyYAML。
 
-核心思路：
-
-- 流量切换 = 改写 nginx upstream 单行 + `nginx -s reload`（旧 worker 保留在途
-  SSE 连接直至自然结束）；
-- 蓝绿只发生在应用容器层（blue/green 两个 compose project 轮换），postgres/redis
-  常驻不参与；
-- 所有站点的 compose 与 nginx 产物由一份 `sites.yaml` 清单 + 模板渲染，新增站点
-  不手写任何配置文件。
-
-## 依赖
-
-服务器需具备。`s2a-init` 会在创建任何目录、network 或容器前统一检查完整工具链：
-
-| 依赖 | 说明 |
-|---|---|
-| docker + docker compose v2 | 容器运行时 |
-| nginx（宿主机） | 反代 + 流量切换，脚本需有 `nginx -t` / `-s reload` 权限（通常 root） |
-| curl | 健康门禁探测 |
-| jq | 解析 sites.yaml（转 JSON 后查询）与 /health 响应 |
-| yq (mikefarah v4) 或 python3+PyYAML | 二选一，YAML → JSON |
-| systemd-run（可选） | 排空定时器；缺失时自动降级为后台 sleep 子进程 + pid 文件 |
-
-除只读的 `s2a-status` 外，所有会修改 Docker/nginx/部署状态的命令都要求 root；
-权限不足时会在入口立即退出。本文统一从部署根目录直接执行 `sudo ./bin/s2a-*`，
-不建立命令软链接。
-
-## 服务器目录布局
-
-```
-/srv/sites/
-├── registry/
-│   ├── sites.yaml                  # ★ 唯一真相源（复制 sites.example.yaml 修改）
-│   └── envs/<slug>.env             # 每站点密钥，chmod 600，不入 git
-├── templates/                      # rsync 自本目录 templates/
-├── snippets/                       # rsync 自本目录 snippets/
-├── bin/                            # rsync 自本目录 bin/ 与 lib/
-├── lib/
-└── stacks/<slug>/                  # 渲染产物 + 数据目录（s2a-render/init 生成）
-    ├── compose.data.yml  compose.app.yml
-    ├── .env -> ../../registry/envs/<slug>.env
-    ├── STATE                       # 辅助记录；真相永远是 nginx upstream 文件
-    ├── data/                       # /app/data，蓝绿共享（config.yaml + .installed）
-    ├── postgres_data/  redis_data/
-```
-
-```
-/etc/nginx/
-├── nginx.conf                      # 首次引导只加 1 个 http include + 1 个 main 参数
-├── snippets/sub2api-proxy.conf     # s2a-render 安装，SSE 透传参数
-└── sub2api/
-    ├── http.conf                   # map + upstream/site include，s2a-render 管理
-    ├── upstreams/<slug>.conf       # ★ 部署时唯一被改写的文件（单行 server）
-    └── sites/<slug>.conf           # 渲染一次，之后不动
-```
-
-## 首次引导（每台服务器一次）
+除状态查询外，所有写操作必须使用 root 权限，并直接在部署目录执行：
 
 ```bash
-# 1. 把部署包作为一个整体复制到服务器
-sudo mkdir -p /srv/sites
-sudo rsync -a deploy/blue-green/ /srv/sites/
-sudo cp deploy/.env.example /srv/sites/env.example
 cd /srv/sites
-sudo mkdir -p registry/envs stacks
-sudo cp sites.example.yaml registry/sites.yaml
+sudo ./s2a <command>
+```
 
-# 2. nginx.conf 的 http {} 内只加一行（后续新增站点不再修改）：
-#      include /etc/nginx/sub2api/*.conf;
-#    如果已使用旧版的以下两行，请用上面一行替换，三行不能并存：
-#      include /etc/nginx/sub2api/upstreams/*.conf;
-#      include /etc/nginx/sub2api/sites/*.conf;
-#    main 上下文（http {} 外）加：
-#      worker_shutdown_timeout 1200s;   # 旧 worker 保留在途 SSE，但不无限期堆积
-# 此处只校验，不要单独 reload；下面的 s2a-render 生成 http.conf 后会统一 reload。
+## 服务器依赖
+
+只需要：
+
+- Docker Engine，且 daemon 可访问；
+- Docker Compose v2（`docker compose`）；
+- 宿主机 Nginx；
+- `systemd-run`（可选）。不存在时，`s2a` 会启动自身的后台子进程执行排空回收。
+
+`sudo ./s2a check` 和 `sudo ./s2a init <slug>` 会在改变 Docker 状态前检查：
+
+- 当前是否为 root；
+- `docker compose version`；
+- `docker info`；
+- `nginx -t`；
+- `nginx -T` 是否已加载 `s2a-managed-http-config`；
+- main 上下文是否配置 `worker_shutdown_timeout`。
+
+## 构建二进制
+
+需要 Go 1.22 或更高版本。在源码目录运行：
+
+```bash
+cd deploy/blue-green
+
+make test
+make build                 # 当前操作系统/架构，产物 dist/s2a
+make release               # Linux amd64 + arm64
+```
+
+Linux 发布产物：
+
+```text
+dist/s2a-linux-amd64
+dist/s2a-linux-arm64
+```
+
+二进制通过 `-trimpath`、`CGO_ENABLED=0` 构建，不依赖服务器上的 Go 或 libc 动态库。
+
+## 一次性安装
+
+以 Linux amd64 为例：
+
+```bash
+sudo mkdir -p /srv/sites
+sudo cp dist/s2a-linux-amd64 /srv/sites/s2a
+sudo chmod 755 /srv/sites/s2a
+cd /srv/sites
+
+sudo ./s2a bootstrap
+```
+
+`bootstrap` 不覆盖已有配置，会创建：
+
+```text
+/srv/sites/
+├── s2a
+├── env.example
+├── registry/
+│   ├── sites.yaml
+│   └── envs/
+└── stacks/
+```
+
+日常只需要编辑两类文件：
+
+```text
+registry/sites.yaml
+registry/envs/<slug>.env
+```
+
+`stacks/`、Compose 文件、Nginx 配置、STATE 和排空 PID 均由 `s2a` 管理，不应手工修改。
+
+## Nginx 一次性接入
+
+在 `/etc/nginx/nginx.conf` 的 main 上下文（`events {}` / `http {}` 外）加入：
+
+```nginx
+worker_shutdown_timeout 1200s;
+```
+
+在 `http {}` 内加入：
+
+```nginx
+include /etc/nginx/sub2api/*.conf;
+```
+
+不要再同时 include `sub2api/upstreams/*.conf` 或 `sub2api/sites/*.conf`，这两个 include
+由 `s2a` 生成的 `http.conf` 统一维护，否则会出现重复配置。
+
+`worker_shutdown_timeout` 应大于最长流式响应时间。默认值 1200 秒覆盖应用默认的
+900 秒流上限和额外排空余量，避免多次 reload 后旧 worker 无限堆积。
+
+首次执行 `render` 前，`http.conf` 尚不存在，此时可先检查 Nginx 配置语法；完整接入
+检查由后续的 `init` 执行：
+
+```bash
 sudo nginx -t
 ```
 
-`s2a-render` 会生成 `/etc/nginx/sub2api/http.conf`，其中统一维护 WebSocket
-`map` 与 upstream/site include；代理头、SSE/WebSocket、TLS session 等公共参数也
-由仓库模板管理。日常只需要修改 `registry/sites.yaml` 和
-`registry/envs/<slug>.env`。
+## 站点配置
 
-`s2a-init` 还会确认上述 `http.conf` 已被 nginx 实际加载，并检查
-`worker_shutdown_timeout`；遗漏任一项都会在启动数据容器前给出明确错误。
+`registry/sites.yaml` 是非密钥配置的唯一真相源：
 
-`worker_shutdown_timeout` 必须显式设置：nginx 默认不设置意味着旧 worker 永不强制
-退出，频繁 reload 会堆积进程；1200s > 900s（流上限）+ 余量。
+```yaml
+defaults:
+  image_repo: weishaw/sub2api
+  bind_host: 127.0.0.1
+  drain_seconds: 960
+  health_timeout_seconds: 300
+  health_interval_seconds: 3
+  client_max_body_size: 32m
+  proxy_connect_timeout: 10s
+  proxy_send_timeout: 960s
+  proxy_read_timeout: 960s
+  tz: Asia/Shanghai
 
-## 新增一个站点
+stacks:
+  - slug: api-staging
+    domain: staging.example.com
+    port_base: 18080
+    image_tag: v1.4.2
+    tls:
+      cert: /etc/letsencrypt/live/staging.example.com/fullchain.pem
+      key: /etc/letsencrypt/live/staging.example.com/privkey.pem
+```
+
+参数说明：
+
+| 参数 | 必填 | 说明 |
+|---|---:|---|
+| `slug` | 是 | 站点标识，仅允许小写字母、数字和连字符 |
+| `domain` | 是 | Nginx `server_name` |
+| `port_base` | 是 | blue 使用此端口，green 使用 `port_base+1`；每个站点预留 10 个端口 |
+| `image_tag` | 否 | 未在 deploy 命令传 tag 时使用 |
+| `image_repo` | 否 | 镜像仓库，默认 `weishaw/sub2api` |
+| `bind_host` | 否 | 宿主机监听地址，默认 `127.0.0.1` |
+| `drain_seconds` | 否 | 切流后的旧实例排空时间，也用于应用优雅关闭 |
+| `health_timeout_seconds` | 否 | 新实例健康门禁总超时，应覆盖数据库迁移时间 |
+| `health_interval_seconds` | 否 | 健康探测间隔 |
+| `client_max_body_size` | 否 | Nginx 请求体上限 |
+| `proxy_*_timeout` | 否 | Nginx 上游连接、发送和读取超时 |
+| `tz` | 否 | 容器时区 |
+| `tls.cert` / `tls.key` | 是 | 已存在且 Nginx 可读取的证书与私钥绝对路径 |
+
+`s2a render` 会在写文件前检查 slug/域名重复、每站点 10 端口区间重叠、端口范围和
+TLS 文件。已存在的 upstream 文件不会被 render 覆盖，当前流量方向始终以该文件为准。
+
+每个站点的密钥：
 
 ```bash
-# 以下命令均在部署根目录执行
+sudo cp env.example registry/envs/api-staging.env
+sudo chmod 600 registry/envs/api-staging.env
+sudo vim registry/envs/api-staging.env
+```
+
+`init` 会自动将权限收紧为 `0600`，并在生成的 stack 内创建 `.env` 软链接。
+
+## 首次部署
+
+```bash
 cd /srv/sites
 
-# 1. 清单登记（分配一个未使用的 port_base 区间，每站点占 10 个端口）
-sudo vim registry/sites.yaml
-
-# 2. 密钥
-sudo cp env.example registry/envs/site3-prod.env
-sudo chmod 600 registry/envs/site3-prod.env
-openssl rand -hex 32   # 依次填 POSTGRES_PASSWORD / JWT_SECRET / TOTP_ENCRYPTION_KEY
-sudo vim registry/envs/site3-prod.env
-
-# 3. 证书
-certbot certonly --webroot -w /var/www/certbot -d api.site3.com
-# certbot 续期 deploy-hook 里需有 nginx -s reload
-
-# 4. 渲染 + 初始化 + 首次部署
-sudo ./bin/s2a-render                    # 校验冲突 → 生成产物 → nginx -t && reload
-sudo ./bin/s2a-init   site3-prod         # 依赖预检 → network / 目录 / 数据层启动
-sudo ./bin/s2a-deploy site3-prod v1.4.2  # 首次部署（无旧 slot，跳过排空）
-
-# 5. 确认
-./bin/s2a-status site3-prod
+sudo ./s2a render
+sudo ./s2a init api-staging
+sudo ./s2a deploy api-staging v1.4.2
+./s2a status api-staging
 ```
+
+`render` 会生成 Compose/Nginx 配置、安装公共 proxy snippet、执行 `nginx -t` 后
+reload。`init` 会执行完整依赖检查、创建共享目录和 external network，然后启动
+PostgreSQL/Redis 并等待健康。
+
+首次 deploy 会在 upstream 当前指向的 blue slot 原地启动，不创建无意义的排空任务。
 
 ## 日常发布
 
 ```bash
-cd /srv/sites
-sudo ./bin/s2a-deploy api-prod v1.4.3
+sudo ./s2a deploy api-staging v1.4.3
 ```
 
-流程：读取当前 slot（以 nginx upstream 文件为准）→ 数据层健康确认 → 拉起闲置
-slot（此时容器启动会自动执行 DB 迁移，受 PG advisory lock 保护）→ 健康门禁
-（默认 3s 间隔 / 300s 超时，需覆盖迁移时间）→ /health 的 version/slot 校验 →
-改写 upstream + `nginx -t` + reload → 旧 slot 进入排空期（默认 960s）后自动回收。
+流程：
 
-- 门禁失败：自动打印新 slot 最近 200 行日志并回收，**nginx 配置未被触碰，线上
-  无影响**；
-- `nginx -t` 失败：自动还原 upstream 备份，不执行 reload；
-- 命令在流量切换后立即返回，排空与回收由 systemd 定时器（或降级的后台进程）
-  异步执行。
+1. 从 Nginx upstream 读取当前 slot；
+2. 对同一 stack 加操作锁，并清理已退出进程留下的死锁；
+3. 确认数据层健康；
+4. 拉起另一 slot，并由应用执行数据库迁移；
+5. 使用内置 HTTP 客户端轮询 `/health`；
+6. 强制校验响应中的 `slot` 和 `version`；版本号 tag 还会做等值校验；
+7. 备份并原子改写 upstream，`nginx -t` 成功后 reload；
+8. 写入 STATE，异步排空旧 slot。
 
-## 回滚
+健康门禁或身份校验失败会输出新容器日志、回收新 slot，并保持 upstream 不变。
+`nginx -t` 或 reload 失败会还原 upstream 备份，不切换线上流量。
+
+## 回滚和回收
 
 ```bash
-cd /srv/sites
-sudo ./bin/s2a-rollback api-prod
+sudo ./s2a rollback api-staging
 ```
 
-- **快速路径**（排空窗口内，旧容器还在且健康）：仅改回 upstream + reload，秒级。
-  会先取消旧 slot 的排空定时器，防止切回后被定时任务销毁；
-- **降级路径**（旧容器已回收）：以 `prev_tag` 重新执行完整发布，分钟级，命令会
-  明确提示耗时差异；
-- **回滚不撤销已应用的数据库迁移**。旧代码必须能在新 schema 上运行——这由
-  expand-contract 迁移纪律保证（见 `backend/migrations/README.md`）。破坏该纪律
-  的版本不能用蓝绿发布，必须安排停机窗口。
+- 排空窗口内，旧 slot 仍运行、健康且身份正确时，仅切回 upstream，走快速路径；
+- 旧 slot 已回收或不健康时，用 STATE 的 `prev_tag` 重新执行完整发布；
+- 回滚不会撤销已执行的数据库迁移，旧代码必须兼容新 schema。
 
-## 状态查询
+手工回收：
 
 ```bash
-cd /srv/sites
-./bin/s2a-status            # 全部 stack；用户需有 Docker daemon 读取权限
-./bin/s2a-status api-prod   # 单个
+sudo ./s2a teardown api-staging green
 ```
 
-输出每个 stack 的：nginx upstream 实际指向（真相）、STATE 记录（不一致时高亮
-告警）、两个 slot 的容器状态 / `/health` 探测（含 version、slot）、待执行的排空
-定时器。
+teardown 会再次读取 Nginx upstream，拒绝回收当前生效 slot。即使排空任务未能在
+回滚时取消，该安全闸也能避免误杀线上实例。
 
-## 排障
-
-| 症状 | 处理 |
-|---|---|
-| 健康门禁超时 | 脚本已自动回收新 slot，流量未切换。看输出的容器日志定位（多半是迁移失败或配置校验失败） |
-| 切完流量后新版本报错 | `sudo ./bin/s2a-rollback <slug>`——排空窗口内秒级回退 |
-| 排空窗口已过才发现问题 | `sudo ./bin/s2a-rollback <slug>` 自动降级为以 prev_tag 重新发布，分钟级 |
-| `nginx -t` 失败 | 脚本已还原 `<slug>.conf.bak`，不会 reload 坏配置 |
-| 迁移卡住 | 检查僵尸容器持有 advisory lock：`SELECT * FROM pg_locks WHERE locktype='advisory'` |
-| 不确定哪个 slot 在服务 | `./bin/s2a-status`——以 nginx upstream 文件为准，STATE 仅作记录 |
-| 排空期内需要再次发布 | 直接执行 `sudo ./bin/s2a-deploy`。脚本会取消目标 slot 的回收定时器并接管；若目标 slot 仍有在途流，会明确提示需等待其排空（最长 drain_seconds） |
-| 两个 slot 都在跑但都不该跑 | `sudo ./bin/s2a-teardown <slug> <slot>` 手动回收指定 slot（有安全闸：拒绝回收当前生效 slot） |
-| 磁盘被容器日志撑满 | 模板已配 json-file max-size 50m × max-file 5（每容器上限 250MB） |
-
-## 测试
-
-仓库内 `deploy/tests/`：
+## 状态与命令
 
 ```bash
-deploy/tests/bluegreen-render-test.sh        # 渲染幂等性 / 端口冲突 / 域名重复 / 证书缺失拦截
-deploy/tests/bluegreen-deploy-dryrun-test.sh # mock docker/nginx/curl 验证 deploy/rollback 分支
+./s2a status
+./s2a status api-staging
+sudo ./s2a check
+./s2a version
 ```
 
-## 注意事项
+完整命令：
 
-- **迁移纪律（expand-contract）**：蓝绿并存窗口内新旧版本共享同一数据库，迁移
-  必须与上一版本兼容，CI 有 migration-gate 门禁拦截破坏性 DDL，详见
-  `backend/migrations/README.md`；
-- **并存窗口副作用**：进程内并发闸（`GATEWAY_IMAGE_CONCURRENCY_*`）在窗口内实际
-  并发为配置值 2 倍；后台任务双实例并发安全性详见
-  `docs/blue-green-background-task-audit.md`；
-- 应用端口只绑定 127.0.0.1（`bind_host`），不对公网暴露；
-- `drain_seconds` 与应用的 `SERVER_SHUTDOWN_TIMEOUT_SECONDS`、compose 的
-  `stop_grace_period` 绑定同一值，模板已处理，不要手工拆开配置。
+```text
+bootstrap
+check
+render
+init <slug>
+deploy <slug> [image-tag]
+rollback <slug>
+status [slug]
+teardown <slug> <blue|green>
+version
+```
+
+可选全局参数必须写在命令前：
+
+```bash
+sudo ./s2a \
+  --root /srv/sites \
+  --nginx-dir /etc/nginx/sub2api \
+  --nginx-snippet-dir /etc/nginx/snippets \
+  render
+```
+
+默认根目录是 `s2a` 二进制所在目录。也可通过 `S2A_ROOT`、
+`S2A_NGINX_DIR`、`S2A_NGINX_SNIPPET_DIR` 覆盖。
+
+`status` 不要求 root，但执行用户必须有读取 Docker daemon 的权限。输出会同时显示
+Nginx 实际方向、STATE、两个 slot 的容器/健康状态和待回收任务；两类状态不一致时
+始终以 Nginx upstream 为准。
+
+## 更新部署工具
+
+只需替换单个文件，配置和运行数据不变：
+
+```bash
+sudo cp s2a-linux-amd64 /srv/sites/s2a.new
+sudo chmod 755 /srv/sites/s2a.new
+/srv/sites/s2a.new version
+sudo mv /srv/sites/s2a.new /srv/sites/s2a
+```
+
+不要在排空后台子进程使用期间删除旧二进制 inode；使用上述同目录原子替换方式时，
+已启动进程不受影响，后续任务使用新版本。
+
+## 开发测试
+
+```bash
+cd deploy/blue-green
+go test -race ./...
+make release
+```
+
+Go 测试使用假的 Docker/Nginx/systemd 命令和本地 HTTP 服务，覆盖内嵌资源渲染、
+依赖预检、初始化、首次发布、blue→green、快速回滚、Nginx 校验失败还原和 teardown
+安全闸。数据库迁移规则仍由仓库的 `deploy/tests/migration-gate-test.sh` 单独验证。

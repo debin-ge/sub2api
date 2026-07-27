@@ -1,9 +1,9 @@
-# 渲染自 templates/compose.app.yml.tmpl —— 请勿手工编辑（s2a-render 会覆盖）
-# 同一份渲染产物由 s2a-deploy 以不同的 SLOT / APP_PORT / IMAGE_TAG 环境变量
+# 由 ./s2a render 生成——请勿手工编辑
+# 同一份渲染产物由 ./s2a deploy 以不同的 SLOT / APP_PORT / IMAGE_TAG 环境变量
 # 运行两次（blue / green），project 名由 -p ${SLUG}-<slot> 指定。
 #
 # 渲染期替换：${SLUG} ${IMAGE_REPO} ${BIND_HOST} ${DRAIN_SECONDS} ${TZ}
-# 运行期插值（s2a-deploy 传入）：${SLOT} ${APP_PORT} ${IMAGE_TAG}
+# 运行期插值（./s2a deploy 传入）：${SLOT} ${APP_PORT} ${IMAGE_TAG}
 # 运行期插值（stack .env 提供）：${POSTGRES_*} ${REDIS_PASSWORD} 等
 
 services:
@@ -63,7 +63,7 @@ services:
       timeout: 10s
       retries: 3
       # 首次启动含 DB 迁移，可能远超常规启动时长；流量切换由
-      # s2a-deploy 的健康门禁把关，此处仅影响 docker 的健康展示
+      # ./s2a deploy 的健康门禁把关，此处仅影响 docker 的健康展示
       start_period: 60s
     logging:
       driver: json-file

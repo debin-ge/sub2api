@@ -3,7 +3,7 @@
 # 在 nginx.conf 的 http {} 内只需一次性添加：
 #   include ${NGINX_S2A_DIR}/*.conf;
 #
-# 本文件由 s2a-render 管理，请勿手工编辑。
+# 本文件由 ./s2a render 管理，请勿手工编辑。
 
 # 同时兼容 WebSocket Upgrade 与普通 HTTP upstream keepalive：普通请求变量为空，
 # nginx 不会向 upstream 发送 Connection 头；WebSocket 请求则发送 upgrade。
