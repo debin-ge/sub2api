@@ -171,7 +171,9 @@ include /etc/nginx/sites/*.conf;
 
 `render` 会先执行 `nginx -t` 和 `nginx -T` 检测以上两项一次性配置。缺少
 `worker_shutdown_timeout` 或 `include /etc/nginx/sites/*.conf;` 时会立即中断，
-在终端打印需要添加的完整配置，并且不会生成任何 stack 或 Nginx 文件。
+在终端打印需要添加的完整配置，并且不会生成任何 stack 或 Nginx 文件。若
+`nginx -t` 的错误明确来自工具管理目录中的旧渲染产物，`render` 会先重新生成，
+再执行完整检查；修复后的配置仍未通过时不会 reload。
 
 首次执行 `render` 前 `http.conf` 尚不存在，可以先检查 Nginx 基础配置：
 
@@ -267,7 +269,9 @@ sudo ./bgdeploy deploy api-staging v1.4.2
 ```
 
 `render` 会生成 Compose/Nginx 配置、安装公共 proxy snippet、执行 `nginx -t` 后
-reload。`init` 会执行完整依赖检查、创建共享目录和 external network，然后启动
+reload。工具会通过 `nginx -v` 自动选择 HTTP/2 写法：Nginx 1.25.1 及以上使用
+`http2 on;`，更早版本或无法识别版本时使用 `listen ... ssl http2` 兼容语法。
+`init` 会执行完整依赖检查、创建共享目录和 external network，然后启动
 PostgreSQL/Redis 并等待健康。
 
 首次 deploy 会在 upstream 当前指向的 blue slot 原地启动，不创建排空任务。

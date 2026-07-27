@@ -89,7 +89,24 @@ esac
 	writeExecutable(t, filepath.Join(binDir, "nginx"), `#!/bin/bash
 set -eu
 printf 'nginx %s\n' "$*" >> "$BG_TEST_LOG"
+if [ "${1:-}" = -v ]; then
+  if [ -f "$BG_TEST_FLAGS/nginx-modern-version" ]; then
+    printf 'nginx version: nginx/1.25.3\n' >&2
+  else
+    printf 'nginx version: nginx/1.24.0\n' >&2
+  fi
+  exit 0
+fi
 if [ "${1:-}" = -t ] && [ -f "$BG_TEST_FLAGS/nginx-test-fail" ]; then exit 1; fi
+if [ "${1:-}" = -t ] && [ -f "$BG_TEST_FLAGS/nginx-managed-http2-fail" ]; then
+  for file in "$BG_TEST_NGINX_DIR"/servers/*.conf; do
+    [ -f "$file" ] || continue
+    if grep -q '^[[:space:]]*http2 on;' "$file"; then
+      printf 'nginx: [emerg] unknown directive "http2" in %s:18\n' "$file" >&2
+      exit 1
+    fi
+  done
+fi
 if [ "${1:-}" = -T ]; then
   [ -f "$BG_TEST_FLAGS/nginx-base-include-missing" ] || printf 'include %s/*.conf;\n' "$BG_TEST_NGINX_DIR"
   [ -f "$BG_TEST_FLAGS/nginx-include-missing" ] || printf '# blue-green-managed-http-config\n'
@@ -425,6 +442,103 @@ func TestRenderAndInitUseEmbeddedAssets(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(environment.stateDir, "network-api-test-net")); err != nil {
 		t.Fatalf("network was not created: %v", err)
+	}
+}
+
+func TestRenderSelectsHTTP2SyntaxForNginxVersion(t *testing.T) {
+	tests := []struct {
+		name      string
+		modern    bool
+		want      string
+		doNotWant string
+	}{
+		{
+			name:      "legacy",
+			want:      "listen 443 ssl http2;",
+			doNotWant: "http2 on;",
+		},
+		{
+			name:      "modern",
+			modern:    true,
+			want:      "listen 443 ssl;\n    listen [::]:443 ssl;\n    http2 on;",
+			doNotWant: "listen 443 ssl http2;",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			environment := newTestEnvironment(t)
+			environment.writeSites(t, 28085)
+			if test.modern {
+				if err := os.WriteFile(filepath.Join(environment.flagsDir, "nginx-modern-version"), nil, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := environment.app.render(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			content, err := os.ReadFile(filepath.Join(environment.nginxDir, "servers", "api-test.conf"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(content), test.want) {
+				t.Fatalf("rendered site does not contain %q:\n%s", test.want, content)
+			}
+			if strings.Contains(string(content), test.doNotWant) {
+				t.Fatalf("rendered site unexpectedly contains %q:\n%s", test.doNotWant, content)
+			}
+		})
+	}
+}
+
+func TestRenderRepairsManagedHTTP2SyntaxBeforeNginxTest(t *testing.T) {
+	environment := newTestEnvironment(t)
+	environment.writeSites(t, 28086)
+	if err := os.MkdirAll(environment.app.nginxSites, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sitePath := filepath.Join(environment.app.nginxSites, "api-test.conf")
+	if err := os.WriteFile(sitePath, []byte("server {\n    http2 on;\n}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(environment.flagsDir, "nginx-managed-http2-fail"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := environment.app.render(context.Background()); err != nil {
+		t.Fatalf("render did not repair managed config: %v", err)
+	}
+	content, err := os.ReadFile(sitePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(content), "listen 443 ssl http2;") || strings.Contains(string(content), "http2 on;") {
+		t.Fatalf("managed config was not converted to legacy HTTP/2 syntax:\n%s", content)
+	}
+	if !strings.Contains(environment.stderr.String(), "将尝试重新渲染修复") {
+		t.Fatalf("repair warning missing: %s", environment.stderr)
+	}
+}
+
+func TestParseNginxVersion(t *testing.T) {
+	for _, test := range []struct {
+		output string
+		want   [3]int
+		ok     bool
+	}{
+		{output: "nginx version: nginx/1.18.0", want: [3]int{1, 18, 0}, ok: true},
+		{output: "nginx version: openresty/1.21.4.1", want: [3]int{1, 21, 4}, ok: true},
+		{output: "unknown", ok: false},
+	} {
+		actual, ok := parseNginxVersion(test.output)
+		if ok != test.ok || actual != test.want {
+			t.Errorf("parseNginxVersion(%q) = %v, %v; want %v, %v", test.output, actual, ok, test.want, test.ok)
+		}
+	}
+	if versionAtLeast([3]int{1, 25, 0}, [3]int{1, 25, 1}) {
+		t.Error("Nginx 1.25.0 must use legacy HTTP/2 syntax")
+	}
+	if !versionAtLeast([3]int{1, 25, 1}, [3]int{1, 25, 1}) {
+		t.Error("Nginx 1.25.1 must support the standalone HTTP/2 directive")
 	}
 }
 

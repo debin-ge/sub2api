@@ -6,8 +6,17 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 )
+
+var nginxVersionPattern = regexp.MustCompile(`/([0-9]+)\.([0-9]+)\.([0-9]+)`)
+
+type http2Syntax struct {
+	listenSuffix string
+	directive    string
+}
 
 func slugUnderscore(slug string) string {
 	return strings.ReplaceAll(slug, "-", "_")
@@ -21,7 +30,10 @@ func (a *app) render(ctx context.Context) error {
 		return err
 	}
 	if err := a.checkNginxIntegration(ctx, false); err != nil {
-		return err
+		if !a.isManagedNginxConfigError(err) {
+			return err
+		}
+		a.warn("检测到部署工具管理的 Nginx 配置无效，将尝试重新渲染修复: %v", err)
 	}
 
 	sites, err := a.loadSites()
@@ -29,6 +41,7 @@ func (a *app) render(ctx context.Context) error {
 		return err
 	}
 	a.log("清单校验通过: %s", a.registryFile)
+	http2 := a.detectHTTP2Syntax(ctx)
 
 	for _, dir := range []string{a.stacksDir, a.nginxDir, a.nginxUpstreams, a.nginxSites, a.nginxSnippetDir} {
 		if err := ensureDir(dir, 0o755); err != nil {
@@ -47,7 +60,7 @@ func (a *app) render(ctx context.Context) error {
 	}
 
 	for _, site := range sortedSites(sites) {
-		if err := a.renderSite(site); err != nil {
+		if err := a.renderSite(site, http2); err != nil {
 			return err
 		}
 		if _, err := os.Stat(filepath.Join(a.envsDir, site.Slug+".env")); err != nil {
@@ -67,7 +80,7 @@ func (a *app) render(ctx context.Context) error {
 		return err
 	}
 
-	if err := a.runAttached(ctx, nil, "nginx", "-t"); err != nil {
+	if err := a.checkNginxIntegration(ctx, false); err != nil {
 		return errorsWithMessage(err, "nginx -t 校验失败，未执行 reload；请检查 nginx.conf include 与渲染产物")
 	}
 	if err := a.runAttached(ctx, nil, "nginx", "-s", "reload"); err != nil {
@@ -77,7 +90,7 @@ func (a *app) render(ctx context.Context) error {
 	return nil
 }
 
-func (a *app) renderSite(site resolvedSite) error {
+func (a *app) renderSite(site resolvedSite, http2 http2Syntax) error {
 	stackDir := a.stackDir(site.Slug)
 	if err := ensureDir(stackDir, 0o755); err != nil {
 		return err
@@ -111,6 +124,8 @@ func (a *app) renderSite(site resolvedSite) error {
 		"PROXY_CONNECT_TIMEOUT": site.ProxyConnectTimeout,
 		"PROXY_SEND_TIMEOUT":    site.ProxySendTimeout,
 		"PROXY_READ_TIMEOUT":    site.ProxyReadTimeout,
+		"HTTP2_LISTEN_SUFFIX":   http2.listenSuffix,
+		"HTTP2_DIRECTIVE":       http2.directive,
 	})
 	if err != nil {
 		return err
@@ -139,6 +154,51 @@ func (a *app) renderSite(site resolvedSite) error {
 	}
 	a.log("%s: compose + nginx site 渲染完成", site.Slug)
 	return nil
+}
+
+func (a *app) detectHTTP2Syntax(ctx context.Context) http2Syntax {
+	legacy := http2Syntax{listenSuffix: " http2"}
+	output, err := a.runCombinedCapture(ctx, nil, "nginx", "-v")
+	if err != nil {
+		a.warn("无法检测 Nginx 版本，将使用兼容语法 listen ... ssl http2: %v", err)
+		return legacy
+	}
+	version, ok := parseNginxVersion(output)
+	if !ok {
+		a.warn("无法从 %q 识别 Nginx 版本，将使用兼容语法 listen ... ssl http2", strings.TrimSpace(output))
+		return legacy
+	}
+	if versionAtLeast(version, [3]int{1, 25, 1}) {
+		a.log("检测到 Nginx %d.%d.%d，使用 http2 on 语法", version[0], version[1], version[2])
+		return http2Syntax{directive: "    http2 on;\n"}
+	}
+	a.log("检测到 Nginx %d.%d.%d，使用 listen ... ssl http2 兼容语法", version[0], version[1], version[2])
+	return legacy
+}
+
+func parseNginxVersion(output string) ([3]int, bool) {
+	match := nginxVersionPattern.FindStringSubmatch(output)
+	if match == nil {
+		return [3]int{}, false
+	}
+	var version [3]int
+	for index := range version {
+		value, err := strconv.Atoi(match[index+1])
+		if err != nil {
+			return [3]int{}, false
+		}
+		version[index] = value
+	}
+	return version, true
+}
+
+func versionAtLeast(actual, minimum [3]int) bool {
+	for index := range actual {
+		if actual[index] != minimum[index] {
+			return actual[index] > minimum[index]
+		}
+	}
+	return true
 }
 
 func errorsWithMessage(err error, message string) error {

@@ -13,10 +13,9 @@ server {
 }
 
 server {
-    listen 443 ssl;
-    listen [::]:443 ssl;
-    http2 on;
-    server_name ${DOMAIN};
+    listen 443 ssl${HTTP2_LISTEN_SUFFIX};
+    listen [::]:443 ssl${HTTP2_LISTEN_SUFFIX};
+${HTTP2_DIRECTIVE}    server_name ${DOMAIN};
 
     ssl_certificate     ${TLS_CERT};
     ssl_certificate_key ${TLS_KEY};

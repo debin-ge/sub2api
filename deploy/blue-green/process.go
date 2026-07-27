@@ -63,6 +63,20 @@ func (a *app) runCapture(ctx context.Context, extraEnv map[string]string, name s
 	return stdout.String(), nil
 }
 
+func (a *app) runCombinedCapture(ctx context.Context, extraEnv map[string]string, name string, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Env = envList(extraEnv)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		message := strings.TrimSpace(string(output))
+		if message != "" {
+			return string(output), fmt.Errorf("执行 %s %s: %w: %s", name, strings.Join(args, " "), err, message)
+		}
+		return string(output), fmt.Errorf("执行 %s %s: %w", name, strings.Join(args, " "), err)
+	}
+	return string(output), nil
+}
+
 func (a *app) requireCommands(names ...string) error {
 	var missing []string
 	for _, name := range names {
@@ -116,7 +130,7 @@ func (a *app) checkDependencies(ctx context.Context) error {
 
 func (a *app) checkNginxIntegration(ctx context.Context, requireManagedConfig bool) error {
 	if _, err := a.runCapture(ctx, nil, "nginx", "-t"); err != nil {
-		return errors.New("nginx -t 未通过（请先修复 nginx 配置）")
+		return &nginxConfigTestError{err: err}
 	}
 	dump, err := a.runCapture(ctx, nil, "nginx", "-T")
 	if err != nil {
@@ -135,4 +149,31 @@ func (a *app) checkNginxIntegration(ctx context.Context, requireManagedConfig bo
 		return fmt.Errorf("nginx 未加载 %s；一次性 include 已存在，请先执行 sudo ./bgdeploy render", filepath.Join(a.nginxDir, "http.conf"))
 	}
 	return nil
+}
+
+type nginxConfigTestError struct {
+	err error
+}
+
+func (e *nginxConfigTestError) Error() string {
+	return fmt.Sprintf("nginx -t 未通过（请先修复 nginx 配置）: %v", e.err)
+}
+
+func (e *nginxConfigTestError) Unwrap() error {
+	return e.err
+}
+
+func (a *app) isManagedNginxConfigError(err error) bool {
+	var configErr *nginxConfigTestError
+	if !errors.As(err, &configErr) {
+		return false
+	}
+	message := configErr.Error()
+	for _, dir := range []string{a.nginxDir, a.nginxSnippetDir} {
+		prefix := filepath.Clean(dir) + string(os.PathSeparator)
+		if strings.Contains(message, prefix) {
+			return true
+		}
+	}
+	return false
 }
