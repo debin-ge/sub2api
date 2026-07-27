@@ -57,11 +57,23 @@ if [ "${1:-}" = compose ]; then
   command="${1:-}"
   case "$command" in
     version) exit 0 ;;
-    up) touch "$BG_TEST_STATE/running-$project"; exit 0 ;;
+    up)
+      touch "$BG_TEST_STATE/running-$project"
+      if [ -n "${SLOT:-}" ]; then
+        printf '%s\n' "$SLOT" > "$BG_TEST_STATE/container-slot-$project"
+        printf 'registry.example.com/application:%s\n' "${IMAGE_TAG:-}" > "$BG_TEST_STATE/container-image-$project"
+      fi
+      exit 0
+      ;;
     ps)
       [ ! -f "$BG_TEST_STATE/running-$project" ] || printf 'cid-%s\n' "$project"
       exit 0 ;;
-    down) rm -f "$BG_TEST_STATE/running-$project"; exit 0 ;;
+    down)
+      rm -f "$BG_TEST_STATE/running-$project" \
+        "$BG_TEST_STATE/container-slot-$project" \
+        "$BG_TEST_STATE/container-image-$project"
+      exit 0
+      ;;
     logs) printf 'fake logs for %s\n' "$project"; exit 0 ;;
   esac
   exit 0
@@ -69,6 +81,15 @@ fi
 case "${1:-}" in
   info)
     [ ! -f "$BG_TEST_FLAGS/docker-info-fail" ]
+    ;;
+  inspect)
+    container_id="${!#}"
+    project="${container_id#cid-}"
+    slot="$(cat "$BG_TEST_STATE/container-slot-$project")"
+    image="$(cat "$BG_TEST_STATE/container-image-$project")"
+    [ ! -f "$BG_TEST_FLAGS/docker-inspect-slot-mismatch" ] || slot="wrong-slot"
+    [ ! -f "$BG_TEST_FLAGS/docker-inspect-image-mismatch" ] || image="registry.example.com/application:wrong-tag"
+    printf '{"Image":"%s","Env":["APP_SLOT=%s"]}\n' "$image" "$slot"
     ;;
   network)
     name="${3:-}"
@@ -542,6 +563,33 @@ func TestParseNginxVersion(t *testing.T) {
 	}
 }
 
+func TestDeployAcceptsLegacyHealthUsingContainerMetadata(t *testing.T) {
+	blueListener, greenListener, portBase := listenOnConsecutivePorts(t)
+	var blueBody atomic.Value
+	blueBody.Store(`{"status":"ok"}`)
+	serveHealth(t, blueListener, &blueBody)
+	_ = greenListener
+
+	environment := newTestEnvironment(t)
+	environment.writeSites(t, portBase)
+	environment.writeValidEnvironment(t, 0o600)
+	if err := environment.app.render(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := environment.app.initStack(context.Background(), "api-test"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := environment.app.deploy(context.Background(), "api-test", "1.6.7"); err != nil {
+		t.Fatalf("legacy image deploy: %v\nstdout=%s\nstderr=%s", err, environment.stdout, environment.stderr)
+	}
+	assertUpstreamPort(t, environment.app.upstreamPath("api-test"), portBase)
+	if !strings.Contains(environment.stderr.String(), "兼容旧版健康接口") ||
+		!strings.Contains(environment.stderr.String(), "已通过 Docker 元数据确认") {
+		t.Fatalf("legacy compatibility warning missing: %s", environment.stderr)
+	}
+}
+
 func TestRenderRejectsMissingNginxOneTimeConfiguration(t *testing.T) {
 	environment := newTestEnvironment(t)
 	environment.writeSites(t, 28090)
@@ -637,11 +685,17 @@ func TestDeployRollbackAndSafetyGates(t *testing.T) {
 	assertUpstreamPort(t, environment.app.upstreamPath("api-test"), portBase)
 
 	greenBody.Store(`{"status":"ok","version":"1.2.0"}`)
+	if err := os.WriteFile(filepath.Join(environment.flagsDir, "docker-inspect-slot-mismatch"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	err = environment.app.deploy(context.Background(), "api-test", "v1.2.0")
 	if err == nil || !strings.Contains(err.Error(), "未返回 slot") {
 		t.Fatalf("deploy error = %v, want missing slot failure", err)
 	}
 	assertUpstreamPort(t, environment.app.upstreamPath("api-test"), portBase)
+	if err := os.Remove(filepath.Join(environment.flagsDir, "docker-inspect-slot-mismatch")); err != nil {
+		t.Fatal(err)
+	}
 
 	greenBody.Store(`{"status":"ok","version":"1.2.0","slot":"green"}`)
 	if err := os.WriteFile(filepath.Join(environment.flagsDir, "nginx-test-fail"), nil, 0o600); err != nil {

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 func (a *app) deploy(ctx context.Context, slug, requestedTag string) error {
@@ -96,7 +95,11 @@ func (a *app) deploy(ctx context.Context, slug, requestedTag string) error {
 	failBeforeSwitch := func(reason error) error {
 		a.warn("发布失败: %v", reason)
 		a.warn("补偿动作: 已尝试回收新 slot %s", newSlot)
-		a.warn("线上影响: 无——流量仍在 %s:%d", currentSlot, currentPort)
+		if firstDeploy {
+			a.warn("首次部署未完成: upstream 仍指向 %s:%d，但目标容器已回收，站点尚不可用", currentSlot, currentPort)
+		} else {
+			a.warn("线上影响: 无——流量仍在 %s:%d", currentSlot, currentPort)
+		}
 		return reason
 	}
 
@@ -115,23 +118,11 @@ func (a *app) deploy(ctx context.Context, slug, requestedTag string) error {
 		recoverNewSlot()
 		return failBeforeSwitch(err)
 	}
-	if strings.TrimSpace(health.Slot) == "" {
+	if err := a.validateHealthIdentity(ctx, site, newSlot, newPort, tag, health); err != nil {
 		recoverNewSlot()
-		return failBeforeSwitch(errors.New("slot 校验失败: /health 未返回 slot"))
+		return failBeforeSwitch(err)
 	}
-	if health.Slot != newSlot {
-		recoverNewSlot()
-		return failBeforeSwitch(fmt.Errorf("slot 校验失败: /health 返回 slot=%s，预期 %s", health.Slot, newSlot))
-	}
-	if strings.TrimSpace(health.Version) == "" {
-		recoverNewSlot()
-		return failBeforeSwitch(errors.New("版本校验失败: /health 未返回 version"))
-	}
-	if versionTagPattern.MatchString(tag) && strings.TrimPrefix(health.Version, "v") != strings.TrimPrefix(tag, "v") {
-		recoverNewSlot()
-		return failBeforeSwitch(fmt.Errorf("版本校验失败: /health 返回 version=%s，预期 %s", health.Version, tag))
-	}
-	if !versionTagPattern.MatchString(tag) {
+	if health.Version != "" && !versionTagPattern.MatchString(tag) {
 		a.log("运行版本: %s（tag %q 非版本号格式，跳过等值校验）", health.Version, tag)
 	}
 	a.log("健康门禁通过")

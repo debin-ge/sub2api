@@ -288,13 +288,18 @@ sudo ./bgdeploy deploy api-staging v1.4.3
 2. 对同一 stack 加操作锁，并清理已退出进程留下的死锁；
 3. 确认数据层健康；
 4. 拉起另一 slot，并由应用执行数据库迁移；
-5. 使用内置 HTTP 客户端轮询 `/health`；
-6. 强制校验响应中的 `slot` 和 `version`；
+5. 使用内置 HTTP 客户端轮询 `/health` 并要求 `status=ok`；
+6. 校验响应中的 `slot` 和 `version`；对于尚未返回这两个字段的旧版镜像，自动通过
+   Docker 元数据复核容器的 `APP_SLOT` 和完整镜像标签；
 7. 备份并原子改写 upstream，`nginx -t` 成功后 reload；
 8. 写入 STATE，异步排空旧 slot。
 
 健康门禁或身份校验失败会输出新容器日志、回收新 slot，并保持 upstream 不变。
 `nginx -t` 或 reload 失败会还原 upstream 备份，不切换线上流量。
+
+新版本应用的 `/health` 固定返回 `status`、`version`、`slot`，并设置
+`Cache-Control: no-store`。蓝绿环境的 `APP_SLOT` 仅允许 `blue` 或 `green`；非法值
+返回 HTTP 503，避免配置错误的实例进入流量。
 
 ## 回滚和回收
 

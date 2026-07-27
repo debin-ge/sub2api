@@ -12,6 +12,14 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+const unknownBuildVersion = "unknown"
+
+type healthPayload struct {
+	Status  string `json:"status"`
+	Version string `json:"version"`
+	Slot    string `json:"slot"`
+}
+
 // RegisterCommonRoutes 注册通用路由（健康检查、状态等）。
 // version 为构建版本号，用于蓝绿发布时校验实际运行的镜像。
 func RegisterCommonRoutes(r *gin.Engine, cfg *config.Config, version string) {
@@ -23,16 +31,9 @@ func RegisterCommonRoutes(r *gin.Engine, cfg *config.Config, version string) {
 	}
 	r.GET("/metrics", gin.WrapH(metricsBearerOnly(token, observability.MetricsHandler(nil))))
 
-	// 健康检查。version/slot 供蓝绿部署 CLI 校验「起来的确实是预期镜像」：
-	// slot 由部署编排通过 APP_SLOT 注入（blue/green），非蓝绿部署时为空串。
-	slot := os.Getenv("APP_SLOT")
-	r.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{
-			"status":  "ok",
-			"version": version,
-			"slot":    slot,
-		})
-	})
+	// version/slot 是蓝绿部署身份门禁的稳定契约。APP_SLOT 未配置表示非蓝绿部署；
+	// 一旦配置，只接受 blue/green，避免拼写错误的实例被 Docker 判定为健康。
+	r.GET("/health", healthHandler(version, os.Getenv("APP_SLOT")))
 
 	// Claude Code 遥测日志（忽略，直接返回200）
 	r.POST("/api/event_logging/batch", func(c *gin.Context) {
@@ -50,6 +51,30 @@ func RegisterCommonRoutes(r *gin.Engine, cfg *config.Config, version string) {
 			},
 		})
 	})
+}
+
+func healthHandler(version, slot string) gin.HandlerFunc {
+	version = strings.TrimSpace(version)
+	if version == "" {
+		version = unknownBuildVersion
+	}
+	slot = strings.ToLower(strings.TrimSpace(slot))
+	validSlot := slot == "" || slot == "blue" || slot == "green"
+
+	return func(c *gin.Context) {
+		c.Header("Cache-Control", "no-store, max-age=0")
+		status := "ok"
+		statusCode := http.StatusOK
+		if !validSlot {
+			status = "error"
+			statusCode = http.StatusServiceUnavailable
+		}
+		c.JSON(statusCode, healthPayload{
+			Status:  status,
+			Version: version,
+			Slot:    slot,
+		})
+	}
 }
 
 func metricsBearerOnly(expected string, next http.Handler) http.Handler {
