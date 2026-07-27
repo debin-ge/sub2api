@@ -31,8 +31,8 @@ func RegisterCommonRoutes(r *gin.Engine, cfg *config.Config, version string) {
 	}
 	r.GET("/metrics", gin.WrapH(metricsBearerOnly(token, observability.MetricsHandler(nil))))
 
-	// version/slot 是蓝绿部署身份门禁的稳定契约。APP_SLOT 未配置表示非蓝绿部署；
-	// 一旦配置，只接受 blue/green，避免拼写错误的实例被 Docker 判定为健康。
+	// version/slot 是外部发布编排的稳定身份契约。APP_SLOT 未配置表示普通部署；
+	// 一旦配置，只接受 blue/green，避免拼写错误的实例被判定为健康。
 	r.GET("/health", healthHandler(version, os.Getenv("APP_SLOT")))
 
 	// Claude Code 遥测日志（忽略，直接返回200）

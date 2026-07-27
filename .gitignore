@@ -137,7 +137,6 @@ docs/*
 !docs/ADMIN_PAYMENT_INTEGRATION_API.md
 !docs/radar-prd-v1.md
 !docs/ASYNC_IMAGE_TASKS.md
-!docs/blue-green-background-task-audit.md
 !docs/legal/
 !docs/legal/*.md
 .serena/

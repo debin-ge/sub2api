@@ -11,8 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// /health 的 version/slot 字段是蓝绿发布脚本的版本校验依据（FR-8.1），
-// 字段名或语义变更需同步 deploy/blue-green 的 bgdeploy deploy 健康门禁。
+// /health 的 version/slot 字段是外部发布工具的版本校验依据，
+// 字段名或语义变更需同步发布工具的健康门禁。
 func TestHealthEndpointReportsVersionAndSlot(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	t.Setenv("APP_SLOT", " GREEN ")
