@@ -39,20 +39,28 @@ func newAppWithConfig(configFile, root, nginxDir, nginxSnippetDir string, stdout
 	if err != nil {
 		return nil, fmt.Errorf("解析可执行文件路径: %w", err)
 	}
+	workingDirectory, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("读取当前工作目录: %w", err)
+	}
+	workingDirectory, err = filepath.Abs(workingDirectory)
+	if err != nil {
+		return nil, fmt.Errorf("解析当前工作目录: %w", err)
+	}
 
 	environmentRoot := os.Getenv("BGDEPLOY_ROOT")
-	settings, configPath, err := resolveRuntimeSettings(executable, configFile, firstString(root, environmentRoot))
+	settings, configPath, err := resolveRuntimeSettings(configFile, workingDirectory)
 	if err != nil {
 		return nil, err
 	}
-	root = firstString(root, environmentRoot, settings.Root, filepath.Dir(executable))
+	root = firstString(root, environmentRoot, settings.Root, workingDirectory)
 	root, err = filepath.Abs(root)
 	if err != nil {
 		return nil, fmt.Errorf("解析部署根目录: %w", err)
 	}
 
-	nginxDir = firstString(nginxDir, os.Getenv("BGDEPLOY_NGINX_DIR"), settings.NginxDir, "/etc/nginx/blue-green")
-	nginxSnippetDir = firstString(nginxSnippetDir, os.Getenv("BGDEPLOY_NGINX_SNIPPET_DIR"), settings.NginxSnippetDir, "/etc/nginx/snippets")
+	nginxDir = firstString(nginxDir, os.Getenv("BGDEPLOY_NGINX_DIR"), settings.NginxDir, "/etc/nginx/sites")
+	nginxSnippetDir = firstString(nginxSnippetDir, os.Getenv("BGDEPLOY_NGINX_SNIPPET_DIR"), settings.NginxSnippetDir, "/etc/nginx/sites/snippets")
 	if !filepath.IsAbs(nginxDir) || !filepath.IsAbs(nginxSnippetDir) {
 		return nil, fmt.Errorf("nginx_dir 和 nginx_snippet_dir 必须使用绝对路径")
 	}
@@ -64,7 +72,7 @@ func newAppWithConfig(configFile, root, nginxDir, nginxSnippetDir string, stdout
 		stacksDir:       filepath.Join(root, "stacks"),
 		nginxDir:        filepath.Clean(nginxDir),
 		nginxUpstreams:  filepath.Join(nginxDir, "upstreams"),
-		nginxSites:      filepath.Join(nginxDir, "sites"),
+		nginxSites:      filepath.Join(nginxDir, "servers"),
 		nginxSnippetDir: filepath.Clean(nginxSnippetDir),
 		executable:      executable,
 		runtimeConfig:   configPath,

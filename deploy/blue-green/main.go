@@ -25,8 +25,8 @@ func main() {
 func runCLI(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("bgdeploy", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	configFile := fs.String("config", "", "主机级运行配置文件（默认 runtime.yaml）")
-	root := fs.String("root", "", "部署根目录（默认取可执行文件所在目录）")
+	configFile := fs.String("config", "", "主机级运行配置文件（默认当前目录/runtime.yaml）")
+	root := fs.String("root", "", "部署根目录（默认当前工作目录）")
 	nginxDir := fs.String("nginx-dir", "", "nginx 蓝绿配置目录")
 	nginxSnippetDir := fs.String("nginx-snippet-dir", "", "nginx snippet 目录")
 	if err := fs.Parse(args); err != nil {
@@ -144,10 +144,10 @@ func printUsage(w io.Writer) {
   version                           输出版本
 
 全局参数:
-  --config <path>                   主机级运行配置文件
-  --root <path>                     部署根目录
-  --nginx-dir <path>                默认 /etc/nginx/blue-green
-  --nginx-snippet-dir <path>        默认 /etc/nginx/snippets
+  --config <path>                   默认 ./runtime.yaml
+  --root <path>                     默认当前工作目录
+  --nginx-dir <path>                默认 /etc/nginx/sites
+  --nginx-snippet-dir <path>        默认 /etc/nginx/sites/snippets
 
 环境变量:
   BGDEPLOY_CONFIG

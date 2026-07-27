@@ -89,15 +89,15 @@ registry/envs/<slug>.env
 
 ## 可执行文件运行配置
 
-工具会默认读取可执行文件同目录的 `runtime.yaml`。通过 `--root` 或
-`BGDEPLOY_ROOT` 指定部署根目录时，则默认读取该目录下的 `runtime.yaml`。
+工具默认读取当前工作目录的 `./runtime.yaml`，部署根目录也默认是启动命令时的
+当前工作目录（`pwd`）。因此应先进入部署目录，再执行 `./bgdeploy`。
 
 完整配置：
 
 ```yaml
 root: /srv/blue-green
-nginx_dir: /etc/nginx/blue-green
-nginx_snippet_dir: /etc/nginx/snippets
+nginx_dir: /etc/nginx/sites
+nginx_snippet_dir: /etc/nginx/sites/snippets
 ```
 
 所有路径必须是绝对路径。该文件不包含站点信息和密钥。
@@ -130,7 +130,7 @@ nginx_snippet_dir: /etc/nginx/snippets
 
 ```bash
 sudo BGDEPLOY_ROOT=/srv/blue-green \
-  BGDEPLOY_NGINX_DIR=/etc/nginx/blue-green \
+  BGDEPLOY_NGINX_DIR=/etc/nginx/sites \
   ./bgdeploy render
 
 sudo ./bgdeploy \
@@ -141,9 +141,10 @@ sudo ./bgdeploy \
 内置默认值：
 
 ```text
-root                 可执行文件所在目录
-nginx_dir            /etc/nginx/blue-green
-nginx_snippet_dir    /etc/nginx/snippets
+root                 当前工作目录（pwd）
+BGDEPLOY_CONFIG      当前工作目录的 ./runtime.yaml
+nginx_dir            /etc/nginx/sites
+nginx_snippet_dir    /etc/nginx/sites/snippets
 ```
 
 ## Nginx 一次性接入
@@ -157,14 +158,19 @@ worker_shutdown_timeout 1200s;
 在 `http {}` 内加入：
 
 ```nginx
-include /etc/nginx/blue-green/*.conf;
+include /etc/nginx/sites/*.conf;
 ```
 
-不要再同时 include `blue-green/upstreams/*.conf` 或 `blue-green/sites/*.conf`。这两个
-include 由生成的 `http.conf` 统一维护，否则会产生重复配置。
+不要再同时 include `/etc/nginx/sites/upstreams/*.conf` 或
+`/etc/nginx/sites/servers/*.conf`。这两个 include 由生成的 `http.conf` 统一维护，
+否则会产生重复配置。
 
 `worker_shutdown_timeout` 应大于最长流式响应时间。默认建议值 1200 秒，可覆盖应用
 默认 900 秒流上限及额外排空余量，避免多次 reload 后旧 worker 无限堆积。
+
+`render` 会先执行 `nginx -t` 和 `nginx -T` 检测以上两项一次性配置。缺少
+`worker_shutdown_timeout` 或 `include /etc/nginx/sites/*.conf;` 时会立即中断，
+在终端打印需要添加的完整配置，并且不会生成任何 stack 或 Nginx 文件。
 
 首次执行 `render` 前 `http.conf` 尚不存在，可以先检查 Nginx 基础配置：
 

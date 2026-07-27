@@ -20,6 +20,9 @@ func (a *app) render(ctx context.Context) error {
 	if err := a.requireCommands("nginx"); err != nil {
 		return err
 	}
+	if err := a.checkNginxIntegration(ctx, false); err != nil {
+		return err
+	}
 
 	sites, err := a.loadSites()
 	if err != nil {

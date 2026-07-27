@@ -104,6 +104,17 @@ func (a *app) checkDependencies(ctx context.Context) error {
 		return err
 	}
 	a.log("检查 nginx 配置接入...")
+	if err := a.checkNginxIntegration(ctx, true); err != nil {
+		return err
+	}
+	if !commandAvailable("systemd-run") {
+		a.warn("systemd-run 不可用，排空回收将使用 bgdeploy 后台子进程")
+	}
+	a.log("依赖检查通过: Docker/Compose、nginx 与蓝绿配置均可用")
+	return nil
+}
+
+func (a *app) checkNginxIntegration(ctx context.Context, requireManagedConfig bool) error {
 	if _, err := a.runCapture(ctx, nil, "nginx", "-t"); err != nil {
 		return errors.New("nginx -t 未通过（请先修复 nginx 配置）")
 	}
@@ -111,15 +122,17 @@ func (a *app) checkDependencies(ctx context.Context) error {
 	if err != nil {
 		return errors.New("无法读取 nginx 完整配置（nginx -T 失败）")
 	}
-	if !strings.Contains(dump, "blue-green-managed-http-config") {
-		return fmt.Errorf("nginx 未加载 %s；请在 http {} 内添加 include %s/*.conf;", filepath.Join(a.nginxDir, "http.conf"), a.nginxDir)
+	includeTarget := filepath.Join(a.nginxDir, "*.conf")
+	includePattern := regexp.MustCompile(`(?m)^\s*include\s+["']?` + regexp.QuoteMeta(includeTarget) + `["']?\s*;`)
+	if !workerShutdownPattern.MatchString(dump) || !includePattern.MatchString(dump) {
+		return fmt.Errorf(`nginx 一次性配置不完整，操作已中断。
+请在 nginx.conf 的 main 上下文加入:
+  worker_shutdown_timeout 1200s;
+并在 http {} 上下文加入:
+  include %s;`, includeTarget)
 	}
-	if !workerShutdownPattern.MatchString(dump) {
-		return errors.New("nginx 缺少 worker_shutdown_timeout；请在 main 上下文设置 worker_shutdown_timeout 1200s;")
+	if requireManagedConfig && !strings.Contains(dump, "blue-green-managed-http-config") {
+		return fmt.Errorf("nginx 未加载 %s；一次性 include 已存在，请先执行 sudo ./bgdeploy render", filepath.Join(a.nginxDir, "http.conf"))
 	}
-	if !commandAvailable("systemd-run") {
-		a.warn("systemd-run 不可用，排空回收将使用 bgdeploy 后台子进程")
-	}
-	a.log("依赖检查通过: Docker/Compose、nginx 与蓝绿配置均可用")
 	return nil
 }

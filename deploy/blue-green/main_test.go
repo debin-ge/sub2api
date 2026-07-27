@@ -91,8 +91,9 @@ set -eu
 printf 'nginx %s\n' "$*" >> "$BG_TEST_LOG"
 if [ "${1:-}" = -t ] && [ -f "$BG_TEST_FLAGS/nginx-test-fail" ]; then exit 1; fi
 if [ "${1:-}" = -T ]; then
+  [ -f "$BG_TEST_FLAGS/nginx-base-include-missing" ] || printf 'include %s/*.conf;\n' "$BG_TEST_NGINX_DIR"
   [ -f "$BG_TEST_FLAGS/nginx-include-missing" ] || printf '# blue-green-managed-http-config\n'
-  printf 'worker_shutdown_timeout 1200s;\n'
+  [ -f "$BG_TEST_FLAGS/nginx-worker-missing" ] || printf 'worker_shutdown_timeout 1200s;\n'
 fi
 `)
 	writeExecutable(t, filepath.Join(binDir, "systemd-run"), `#!/bin/bash
@@ -133,6 +134,7 @@ esac
 	root := filepath.Join(temp, "srv")
 	nginxDir := filepath.Join(temp, "nginx", "blue-green")
 	snippetDir := filepath.Join(temp, "nginx", "snippets")
+	t.Setenv("BG_TEST_NGINX_DIR", nginxDir)
 	certFile := filepath.Join(temp, "tls", "cert.pem")
 	keyFile := filepath.Join(temp, "tls", "key.pem")
 	if err := os.MkdirAll(filepath.Dir(certFile), 0o755); err != nil {
@@ -151,6 +153,7 @@ esac
 	}
 	testApp.euid = func() int { return 0 }
 	testApp.now = func() time.Time { return time.Date(2026, 7, 26, 12, 0, 0, 0, time.UTC) }
+	testApp.runtimeConfig = filepath.Join(root, "runtime.yaml")
 	return &testEnvironment{
 		root: root, nginxDir: nginxDir, snippetDir: snippetDir,
 		stateDir: stateDir, flagsDir: flagsDir, logFile: logFile,
@@ -223,6 +226,47 @@ func TestBootstrapDoesNotOverwriteConfiguration(t *testing.T) {
 	}
 }
 
+func TestCurrentDirectoryDefaults(t *testing.T) {
+	temp := t.TempDir()
+	previousDirectory, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(temp); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := os.Chdir(previousDirectory); err != nil {
+			t.Errorf("restore working directory: %v", err)
+		}
+	}()
+	t.Setenv("BGDEPLOY_CONFIG", "")
+	t.Setenv("BGDEPLOY_ROOT", "")
+	t.Setenv("BGDEPLOY_NGINX_DIR", "")
+	t.Setenv("BGDEPLOY_NGINX_SNIPPET_DIR", "")
+	currentDirectory, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	configured, err := newApp("", "", "", io.Discard, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if configured.root != currentDirectory {
+		t.Fatalf("root = %s, want current directory %s", configured.root, currentDirectory)
+	}
+	if configured.runtimeConfig != filepath.Join(currentDirectory, "runtime.yaml") {
+		t.Fatalf("runtimeConfig = %s", configured.runtimeConfig)
+	}
+	if configured.nginxDir != "/etc/nginx/sites" {
+		t.Fatalf("nginxDir = %s", configured.nginxDir)
+	}
+	if configured.nginxSnippetDir != "/etc/nginx/sites/snippets" {
+		t.Fatalf("nginxSnippetDir = %s", configured.nginxSnippetDir)
+	}
+}
+
 func TestRuntimeConfigurationPrecedence(t *testing.T) {
 	temp := t.TempDir()
 	configPath := filepath.Join(temp, "runtime.yaml")
@@ -280,7 +324,7 @@ func TestRenderAndInitUseEmbeddedAssets(t *testing.T) {
 		filepath.Join(environment.root, "stacks", "api-test", "compose.data.yml"),
 		filepath.Join(environment.root, "stacks", "api-test", "compose.app.yml"),
 		filepath.Join(environment.nginxDir, "http.conf"),
-		filepath.Join(environment.nginxDir, "sites", "api-test.conf"),
+		filepath.Join(environment.nginxDir, "servers", "api-test.conf"),
 		filepath.Join(environment.nginxDir, "upstreams", "api-test.conf"),
 		filepath.Join(environment.snippetDir, "blue-green-proxy.conf"),
 	}
@@ -325,9 +369,43 @@ func TestRenderAndInitUseEmbeddedAssets(t *testing.T) {
 	}
 }
 
-func TestInitChecksDependenciesBeforeMutation(t *testing.T) {
+func TestRenderRejectsMissingNginxOneTimeConfiguration(t *testing.T) {
+	environment := newTestEnvironment(t)
+	environment.writeSites(t, 28090)
+	if err := os.WriteFile(filepath.Join(environment.flagsDir, "nginx-base-include-missing"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := environment.app.render(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "nginx 一次性配置不完整") {
+		t.Fatalf("render error = %v, want nginx one-time configuration failure", err)
+	}
+	requiredInclude := "include " + filepath.Join(environment.nginxDir, "*.conf") + ";"
+	if !strings.Contains(err.Error(), requiredInclude) {
+		t.Fatalf("render error does not contain %q: %v", requiredInclude, err)
+	}
+	if _, statErr := os.Stat(environment.app.stacksDir); !os.IsNotExist(statErr) {
+		t.Fatalf("render mutated files before nginx integration check: %v", statErr)
+	}
+}
+
+func TestRenderRejectsMissingWorkerShutdownTimeout(t *testing.T) {
 	environment := newTestEnvironment(t)
 	environment.writeSites(t, 28100)
+	if err := os.WriteFile(filepath.Join(environment.flagsDir, "nginx-worker-missing"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := environment.app.render(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "worker_shutdown_timeout 1200s;") {
+		t.Fatalf("render error = %v, want worker shutdown configuration prompt", err)
+	}
+	if _, statErr := os.Stat(environment.app.stacksDir); !os.IsNotExist(statErr) {
+		t.Fatalf("render mutated files before nginx integration check: %v", statErr)
+	}
+}
+
+func TestInitChecksDependenciesBeforeMutation(t *testing.T) {
+	environment := newTestEnvironment(t)
+	environment.writeSites(t, 28110)
 	if err := environment.app.render(context.Background()); err != nil {
 		t.Fatal(err)
 	}

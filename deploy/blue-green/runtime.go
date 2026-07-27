@@ -17,12 +17,11 @@ type runtimeSettings struct {
 	NginxSnippetDir string `yaml:"nginx_snippet_dir"`
 }
 
-func resolveRuntimeSettings(executable, requestedConfig, rootHint string) (runtimeSettings, string, error) {
+func resolveRuntimeSettings(requestedConfig, workingDirectory string) (runtimeSettings, string, error) {
 	configPath := firstString(requestedConfig, os.Getenv("BGDEPLOY_CONFIG"))
 	explicit := configPath != ""
 	if configPath == "" {
-		configRoot := firstString(rootHint, filepath.Dir(executable))
-		configPath = filepath.Join(configRoot, "runtime.yaml")
+		configPath = filepath.Join(workingDirectory, "runtime.yaml")
 	}
 	absoluteConfig, err := filepath.Abs(configPath)
 	if err != nil {

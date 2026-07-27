@@ -13,4 +13,4 @@ map $http_upgrade $bg_connection_upgrade {
 }
 
 include ${NGINX_BG_DIR}/upstreams/*.conf;
-include ${NGINX_BG_DIR}/sites/*.conf;
+include ${NGINX_BG_DIR}/servers/*.conf;

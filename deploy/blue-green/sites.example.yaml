@@ -1,5 +1,5 @@
 # 多站点蓝绿部署清单——所有站点配置的单一真相源。
-# 部署包默认放在 /srv/blue-green；由 bootstrap 创建后按需修改。
+# 在目标部署目录执行 bootstrap；该目录由执行时的 pwd 决定。
 #
 # 端口分配规则（FR-5.6）：每个 stack 占用 port_base ~ port_base+9 共 10 个端口，
 #   blue = port_base，green = port_base+1，其余预留（调试用 pg/redis 暴露等）。
