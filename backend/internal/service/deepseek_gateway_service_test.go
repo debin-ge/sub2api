@@ -135,6 +135,24 @@ func TestRewriteDeepSeekModelAcceptsCompatibilityAliases(t *testing.T) {
 	}
 }
 
+func TestRewriteDeepSeekModelPassesThroughDynamicallyDiscoveredModel(t *testing.T) {
+	body := []byte(`{"model":"deepseek-next","messages":[{"role":"user","content":"hello"}]}`)
+
+	rewritten, originalModel, upstreamModel, err := rewriteDeepSeekModel(body, deepSeekGatewayTestAccount())
+	if err != nil {
+		t.Fatalf("rewriteDeepSeekModel error = %v", err)
+	}
+	if originalModel != "deepseek-next" {
+		t.Fatalf("originalModel = %q", originalModel)
+	}
+	if upstreamModel != "deepseek-next" {
+		t.Fatalf("upstreamModel = %q", upstreamModel)
+	}
+	if got := gjson.GetBytes(rewritten, "model").String(); got != "deepseek-next" {
+		t.Fatalf("rewritten model = %q body=%s", got, string(rewritten))
+	}
+}
+
 func TestDeepSeekGatewayServiceForwardMessagesPreservesAnthropicHeaders(t *testing.T) {
 	var captured *http.Request
 	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {

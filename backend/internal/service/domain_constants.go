@@ -32,7 +32,7 @@ const (
 	AffiliateRebateFreezeHoursMax            = 720   // 最大 30 天
 	AffiliateRebateDurationDaysDefault       = 0     // 0 = 永久有效
 	AffiliateRebateDurationDaysMax           = 3650  // ~10 年
-	AffiliateRebatePerInviteeCapDefault      = 0.0   // 0 = 无上限
+	AffiliateRebatePerInviteeCapDefault      = 0.0   // 邀请人累计返利上限；0 = 无上限（名称保留用于 API 兼容）
 	AffiliateRegistrationRewardAmountDefault = 0.0   // 0 = 关闭注册邀请奖励
 	// DECIMAL(20,8) 最多容纳 12 位整数。该值是小于 10^12 的安全
 	// float64 边界，格式化为 8 位小数后仍可由 DECIMAL(20,8) 表达。
@@ -169,7 +169,7 @@ const (
 	SettingKeyAffiliateRebateRate               = "affiliate_rebate_rate"                // 邀请返利比例（百分比，0-100）
 	SettingKeyAffiliateRebateFreezeHours        = "affiliate_rebate_freeze_hours"        // 返利冻结期（小时，0=不冻结）
 	SettingKeyAffiliateRebateDurationDays       = "affiliate_rebate_duration_days"       // 返利有效期（天，0=永久）
-	SettingKeyAffiliateRebatePerInviteeCap      = "affiliate_rebate_per_invitee_cap"     // 单人返利上限（0=无上限）
+	SettingKeyAffiliateRebatePerInviteeCap      = "affiliate_rebate_per_invitee_cap"     // 邀请人累计返利上限（0=无上限；键名保留用于兼容）
 	SettingKeyAffiliateRegistrationRewardAmount = "affiliate_registration_reward_amount" // 注册后给予邀请人的固定奖励（0=关闭）
 	SettingKeyAffiliateAdminRechargeEnabled     = "affiliate_admin_recharge_enabled"     // 管理员充值是否产生返利
 	SettingKeyRiskControlEnabled                = "risk_control_enabled"                 // 是否启用风控中心入口与审计链路

@@ -316,7 +316,7 @@ func validateDeepSeekModelPayload(body []byte, account *Account) (map[string]any
 		return nil, "", "", fmt.Errorf("deepseek request model is required")
 	}
 	if account == nil || !account.IsDeepSeekModelSupported(model) {
-		return nil, "", "", &DeepSeekUnsupportedContentError{Message: "DeepSeek gateway only supports deepseek-v4-flash and deepseek-v4-pro"}
+		return nil, "", "", &DeepSeekUnsupportedContentError{Message: fmt.Sprintf("DeepSeek account does not support model %s", model)}
 	}
 	return payload, model, account.GetDeepSeekMappedModel(model), nil
 }

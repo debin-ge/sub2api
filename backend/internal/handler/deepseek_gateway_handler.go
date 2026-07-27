@@ -95,15 +95,6 @@ func NewDeepSeekGatewayHandler(
 	}
 }
 
-func isDeepSeekGatewayModel(model string) bool {
-	for _, defaultModel := range service.DefaultDeepSeekModelIDs() {
-		if model == defaultModel {
-			return true
-		}
-	}
-	return false
-}
-
 // Messages handles DeepSeek API Key POST /v1/messages requests.
 func (h *DeepSeekGatewayHandler) Messages(c *gin.Context) {
 	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
@@ -143,13 +134,9 @@ func (h *DeepSeekGatewayHandler) Messages(c *gin.Context) {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
 		return
 	}
-	reqModel := parsedReq.Model
+	reqModel := strings.TrimSpace(parsedReq.Model)
 	if reqModel == "" {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "model is required")
-		return
-	}
-	if !isDeepSeekGatewayModel(reqModel) {
-		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "DeepSeek gateway only supports deepseek-v4-flash and deepseek-v4-pro")
 		return
 	}
 	parsedReq.Model = reqModel
@@ -352,13 +339,9 @@ func (h *DeepSeekGatewayHandler) ChatCompletions(c *gin.Context) {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
 		return
 	}
-	reqModel := parsedReq.Model
+	reqModel := strings.TrimSpace(parsedReq.Model)
 	if reqModel == "" {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "model is required")
-		return
-	}
-	if !isDeepSeekGatewayModel(reqModel) {
-		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "DeepSeek gateway only supports deepseek-v4-flash and deepseek-v4-pro")
 		return
 	}
 	parsedReq.Model = reqModel

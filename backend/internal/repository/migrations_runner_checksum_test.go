@@ -161,4 +161,13 @@ func TestIsMigrationChecksumCompatible(t *testing.T) {
 		)
 		require.False(t, ok)
 	})
+
+	t.Run("186误加入告警后的checksum兼容已发布原始迁移", func(t *testing.T) {
+		ok := isMigrationChecksumCompatible(
+			"186_registration_email_suffix_blacklist.sql",
+			"13371a7c85985afa557c8e9679c596c1af119558274145831dc8b484865f6f29",
+			"4aa7cd53e2d7d6e9a4895f232a9f92b0ffc82662de03ae00ecee1e549f7f063d",
+		)
+		require.True(t, ok)
+	})
 }

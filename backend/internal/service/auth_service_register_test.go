@@ -75,17 +75,19 @@ type defaultSubscriptionAssignerStub struct {
 type refreshTokenCacheStub struct{}
 
 type affiliateRepoStub struct {
-	codeOwners    map[string]int64
-	ensureUserIDs []int64
-	bindCalls     []struct {
+	codeOwners           map[string]int64
+	totalRebateByInviter map[int64]float64
+	ensureUserIDs        []int64
+	bindCalls            []struct {
 		userID    int64
 		inviterID int64
 	}
 	registrationRewardCalls []struct {
-		userID      int64
-		code        string
-		reward      float64
-		freezeHours int
+		userID          int64
+		code            string
+		reward          float64
+		inviterTotalCap float64
+		freezeHours     int
 	}
 	registrationRewardErr error
 }
@@ -117,6 +119,7 @@ func (s *affiliateRepoStub) BindInviterAndGrantRegistrationReward(
 	userID int64,
 	code string,
 	reward float64,
+	inviterTotalCap float64,
 	freezeHours int,
 ) (*AffiliateRegistrationRewardResult, error) {
 	if s.registrationRewardErr != nil {
@@ -127,15 +130,17 @@ func (s *affiliateRepoStub) BindInviterAndGrantRegistrationReward(
 		return nil, ErrAffiliateCodeInvalid
 	}
 	s.registrationRewardCalls = append(s.registrationRewardCalls, struct {
-		userID      int64
-		code        string
-		reward      float64
-		freezeHours int
+		userID          int64
+		code            string
+		reward          float64
+		inviterTotalCap float64
+		freezeHours     int
 	}{
-		userID:      userID,
-		code:        strings.ToUpper(strings.TrimSpace(code)),
-		reward:      reward,
-		freezeHours: freezeHours,
+		userID:          userID,
+		code:            strings.ToUpper(strings.TrimSpace(code)),
+		reward:          reward,
+		inviterTotalCap: inviterTotalCap,
+		freezeHours:     freezeHours,
 	})
 	_, err := s.BindInviter(ctx, userID, owner)
 	if err != nil {
@@ -149,12 +154,16 @@ func (s *affiliateRepoStub) BindInviterAndGrantRegistrationReward(
 	}, nil
 }
 
-func (s *affiliateRepoStub) AccrueQuota(context.Context, int64, int64, float64, int, *int64) (bool, error) {
+func (s *affiliateRepoStub) AccrueQuota(context.Context, int64, int64, float64, float64, int, *int64) (float64, error) {
 	panic("unexpected AccrueQuota call")
 }
 
 func (s *affiliateRepoStub) GetAccruedRebateFromInvitee(context.Context, int64, int64) (float64, error) {
 	panic("unexpected GetAccruedRebateFromInvitee call")
+}
+
+func (s *affiliateRepoStub) GetTotalRebateForInviter(_ context.Context, inviterID int64) (float64, error) {
+	return s.totalRebateByInviter[inviterID], nil
 }
 
 func (s *affiliateRepoStub) ThawFrozenQuota(context.Context, int64) (float64, error) {

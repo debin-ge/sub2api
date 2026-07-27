@@ -570,7 +570,8 @@ func (s *SettingService) SetVersion(version string) {
 // 返回 0 表示不冻结（向后兼容）。
 // GetAffiliateRebateDurationDays 返回返利有效期（天）。
 // 返回 0 表示永久有效。
-// GetAffiliateRebatePerInviteeCap 返回单人返利上限。
+// GetAffiliateRebatePerInviteeCap 返回邀请人跨全部受邀用户的累计返利上限。
+// 方法名和配置键为兼容既有客户端而保留。
 // 返回 0 表示无上限。
 // normalizeRateLimitValue 将 <=0 的速率限制值归一化为默认值。
 func normalizeRateLimitValue(value, defaultValue int) int {

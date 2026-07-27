@@ -179,16 +179,20 @@ var domesticProviderCapabilities = map[string]ProviderGatewayCapabilities{
 		},
 	},
 	PlatformWindsurf: {
-		Platform:          PlatformWindsurf,
-		DefaultModelIDs:   windsurfOfficialModelIDs,
-		PublicModelIDs:    windsurfOfficialModelIDs,
-		SupportedModelIDs: mergeProviderModelIDs(windsurfOfficialModelIDs, windsurfLegacyModelIDs),
+		Platform:                   PlatformWindsurf,
+		DefaultModelIDs:            windsurfOfficialModelIDs,
+		PublicModelIDs:             windsurfOfficialModelIDs,
+		SupportedModelIDs:          mergeProviderModelIDs(windsurfOfficialModelIDs, windsurfLegacyModelIDs),
+		AllowUnknownModels:         true,
+		SupportsLiveModelDiscovery: true,
 	},
 	PlatformOpenCode: {
-		Platform:          PlatformOpenCode,
-		DefaultModelIDs:   opencodeDefaultModelIDs,
-		PublicModelIDs:    opencodeDefaultModelIDs,
-		SupportedModelIDs: opencodeDefaultModelIDs,
+		Platform:                   PlatformOpenCode,
+		DefaultModelIDs:            opencodeDefaultModelIDs,
+		PublicModelIDs:             opencodeDefaultModelIDs,
+		SupportedModelIDs:          opencodeDefaultModelIDs,
+		AllowUnknownModels:         true,
+		SupportsLiveModelDiscovery: true,
 	},
 }
 

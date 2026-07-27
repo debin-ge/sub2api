@@ -146,9 +146,9 @@ func TestAffiliateRepository_AccrueQuota_ReusesOuterTransaction(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, bound, "invitee must bind to inviter")
 
-	applied, err := repo.AccrueQuota(txCtx, inviter.ID, invitee.ID, 3.5, 0, nil)
+	applied, err := repo.AccrueQuota(txCtx, inviter.ID, invitee.ID, 3.5, 0, 0, nil)
 	require.NoError(t, err)
-	require.True(t, applied, "AccrueQuota must report applied=true")
+	require.InDelta(t, 3.5, applied, 1e-9, "AccrueQuota must report the applied amount")
 
 	// Visible inside the outer tx.
 	innerQuota := querySingleFloat(t, txCtx, client,
@@ -199,6 +199,7 @@ func TestAffiliateRepository_BindInviterAndGrantRegistrationReward_Idempotent(t 
 		inviterAffiliate.AffCode,
 		10,
 		0,
+		0,
 	)
 	require.NoError(t, err)
 	require.True(t, first.Bound)
@@ -210,6 +211,7 @@ func TestAffiliateRepository_BindInviterAndGrantRegistrationReward_Idempotent(t 
 		invitee.ID,
 		inviterAffiliate.AffCode,
 		10,
+		0,
 		0,
 	)
 	require.NoError(t, err)
@@ -243,7 +245,8 @@ WHERE action = 'registration_reward'
 
 	rechargeAccrued, err := repo.GetAccruedRebateFromInvitee(txCtx, inviter.ID, invitee.ID)
 	require.NoError(t, err)
-	require.Zero(t, rechargeAccrued, "registration rewards must not consume the per-invitee recharge rebate cap")
+	require.InDelta(t, 10, rechargeAccrued, 1e-9,
+		"registration rewards must be included in the inviter's shared rebate total")
 
 	invitees, err := repo.ListInvitees(txCtx, inviter.ID, 10)
 	require.NoError(t, err)
@@ -278,7 +281,7 @@ WHERE action = 'registration_reward'
 		"registration-reward invitees must count as rebated invitees")
 }
 
-func TestAffiliateRepository_ListAffiliateInviteRecords_UsesInvitationTimeRunningTotal(t *testing.T) {
+func TestAffiliateRepository_BindInviterAndGrantRegistrationReward_RespectsInviterTotalCap(t *testing.T) {
 	ctx := context.Background()
 	tx := testEntTx(t)
 	txCtx := dbent.NewTxContext(ctx, tx)
@@ -286,49 +289,77 @@ func TestAffiliateRepository_ListAffiliateInviteRecords_UsesInvitationTimeRunnin
 	repo := NewAffiliateRepository(client, integrationDB)
 
 	inviter := mustCreateUser(t, client, &service.User{
-		Email:        fmt.Sprintf("cumulative-rebate-inviter-%d@example.com", time.Now().UnixNano()),
+		Email:        fmt.Sprintf("registration-reward-cap-inviter-%d@example.com", time.Now().UnixNano()),
 		PasswordHash: "hash",
 		Role:         service.RoleUser,
 		Status:       service.StatusActive,
 	})
-	firstInvitee := mustCreateUser(t, client, &service.User{
-		Email:        fmt.Sprintf("cumulative-rebate-invitee-a-%d@example.com", time.Now().UnixNano()+1),
-		PasswordHash: "hash",
-		Role:         service.RoleUser,
-		Status:       service.StatusActive,
-	})
-	secondInvitee := mustCreateUser(t, client, &service.User{
-		Email:        fmt.Sprintf("cumulative-rebate-invitee-b-%d@example.com", time.Now().UnixNano()+2),
-		PasswordHash: "hash",
-		Role:         service.RoleUser,
-		Status:       service.StatusActive,
-	})
+	invitees := make([]*service.User, 0, 3)
+	for i := range 3 {
+		invitees = append(invitees, mustCreateUser(t, client, &service.User{
+			Email:        fmt.Sprintf("registration-reward-cap-invitee-%d-%d@example.com", i, time.Now().UnixNano()),
+			PasswordHash: "hash",
+			Role:         service.RoleUser,
+			Status:       service.StatusActive,
+		}))
+	}
 	inviterAffiliate, err := repo.EnsureUserAffiliate(txCtx, inviter.ID)
 	require.NoError(t, err)
 
-	firstReward, err := repo.BindInviterAndGrantRegistrationReward(
+	first, err := repo.BindInviterAndGrantRegistrationReward(
 		txCtx,
-		firstInvitee.ID,
+		invitees[0].ID,
 		inviterAffiliate.AffCode,
+		6,
 		10,
 		0,
 	)
 	require.NoError(t, err)
-	require.True(t, firstReward.RewardApplied)
+	require.True(t, first.Bound)
+	require.True(t, first.RewardApplied)
+	require.InDelta(t, 6, first.RewardAmount, 1e-9)
 
-	secondReward, err := repo.BindInviterAndGrantRegistrationReward(
+	second, err := repo.BindInviterAndGrantRegistrationReward(
 		txCtx,
-		secondInvitee.ID,
+		invitees[1].ID,
 		inviterAffiliate.AffCode,
-		20,
+		6,
+		10,
 		0,
 	)
 	require.NoError(t, err)
-	require.True(t, secondReward.RewardApplied)
+	require.True(t, second.Bound)
+	require.True(t, second.RewardApplied)
+	require.InDelta(t, 4, second.RewardAmount, 1e-9)
 
-	accrued, err := repo.AccrueQuota(txCtx, inviter.ID, firstInvitee.ID, 5, 0, nil)
+	third, err := repo.BindInviterAndGrantRegistrationReward(
+		txCtx,
+		invitees[2].ID,
+		inviterAffiliate.AffCode,
+		6,
+		10,
+		0,
+	)
 	require.NoError(t, err)
-	require.True(t, accrued)
+	require.True(t, third.Bound, "the invite relationship must still bind after the cap is reached")
+	require.False(t, third.RewardApplied)
+	require.Zero(t, third.RewardAmount)
+
+	require.Equal(t, 3, querySingleInt(t, txCtx, client,
+		"SELECT aff_count FROM user_affiliates WHERE user_id = $1", inviter.ID))
+	require.InDelta(t, 10, querySingleFloat(t, txCtx, client,
+		"SELECT aff_quota::double precision FROM user_affiliates WHERE user_id = $1", inviter.ID), 1e-9)
+	require.InDelta(t, 10, querySingleFloat(t, txCtx, client,
+		"SELECT aff_history_quota::double precision FROM user_affiliates WHERE user_id = $1", inviter.ID), 1e-9)
+	require.Equal(t, 2, querySingleInt(t, txCtx, client, `
+SELECT COUNT(*)
+FROM user_affiliate_ledger
+WHERE action = 'registration_reward'
+  AND user_id = $1`, inviter.ID))
+
+	capEligibleTotal, err := repo.GetTotalRebateForInviter(txCtx, inviter.ID)
+	require.NoError(t, err)
+	require.InDelta(t, 10, capEligibleTotal, 1e-9)
 
 	records, total, err := repo.ListAffiliateInviteRecords(txCtx, service.AffiliateRecordFilter{
 		Search:   inviter.Email,
@@ -336,33 +367,236 @@ func TestAffiliateRepository_ListAffiliateInviteRecords_UsesInvitationTimeRunnin
 		PageSize: 10,
 	})
 	require.NoError(t, err)
-	require.EqualValues(t, 2, total)
-	require.Len(t, records, 2)
+	require.EqualValues(t, 3, total)
+	require.Len(t, records, 3)
 
 	expected := map[int64]struct {
 		registrationReward float64
 		totalRebate        float64
 	}{
-		firstInvitee.ID:  {registrationReward: 10, totalRebate: 15},
-		secondInvitee.ID: {registrationReward: 20, totalRebate: 35},
+		invitees[0].ID: {registrationReward: 6, totalRebate: 6},
+		invitees[1].ID: {registrationReward: 4, totalRebate: 10},
+		invitees[2].ID: {registrationReward: 0, totalRebate: 10},
 	}
 	for _, record := range records {
 		want, ok := expected[record.InviteeID]
 		require.True(t, ok, "unexpected invitee %d", record.InviteeID)
 		require.InDelta(t, want.registrationReward, record.RegistrationRewardAmount, 1e-9)
 		require.InDelta(t, want.totalRebate, record.TotalRebate, 1e-9,
-			"invite rows must accumulate rebates in invitation-time order")
+			"invite record totals must stop increasing once the inviter cap is reached")
+	}
+}
+
+func TestAffiliateRepository_AccrueQuota_ConcurrentInviteesRespectInviterTotalCap(t *testing.T) {
+	ctx := context.Background()
+	repo := NewAffiliateRepository(integrationEntClient, integrationDB)
+	inviter := mustCreateUser(t, integrationEntClient, &service.User{
+		Email:        fmt.Sprintf("concurrent-cap-inviter-%d@example.com", time.Now().UnixNano()),
+		PasswordHash: "hash",
+		Role:         service.RoleUser,
+		Status:       service.StatusActive,
+	})
+	invitees := make([]*service.User, 0, 3)
+	for i := range 3 {
+		invitees = append(invitees, mustCreateUser(t, integrationEntClient, &service.User{
+			Email:        fmt.Sprintf("concurrent-cap-invitee-%d-%d@example.com", i, time.Now().UnixNano()),
+			PasswordHash: "hash",
+			Role:         service.RoleUser,
+			Status:       service.StatusActive,
+		}))
+	}
+	t.Cleanup(func() {
+		_, _ = integrationEntClient.ExecContext(
+			context.Background(),
+			"DELETE FROM users WHERE id IN ($1, $2, $3, $4)",
+			invitees[0].ID,
+			invitees[1].ID,
+			invitees[2].ID,
+			inviter.ID,
+		)
+	})
+
+	inviterAffiliate, err := repo.EnsureUserAffiliate(ctx, inviter.ID)
+	require.NoError(t, err)
+	registrationResult, err := repo.BindInviterAndGrantRegistrationReward(
+		ctx,
+		invitees[0].ID,
+		inviterAffiliate.AffCode,
+		6,
+		10,
+		0,
+	)
+	require.NoError(t, err)
+	require.InDelta(t, 6, registrationResult.RewardAmount, 1e-9)
+	for _, invitee := range invitees[1:] {
+		result, bindErr := repo.BindInviterAndGrantRegistrationReward(
+			ctx,
+			invitee.ID,
+			inviterAffiliate.AffCode,
+			0,
+			10,
+			0,
+		)
+		require.NoError(t, bindErr)
+		require.True(t, result.Bound)
+	}
+
+	type accrueResult struct {
+		amount float64
+		err    error
+	}
+	results := make(chan accrueResult, 2)
+	var start sync.WaitGroup
+	start.Add(1)
+	for _, invitee := range invitees[1:] {
+		inviteeID := invitee.ID
+		go func() {
+			start.Wait()
+			amount, err := repo.AccrueQuota(
+				ctx,
+				inviter.ID,
+				inviteeID,
+				3,
+				10,
+				0,
+				nil,
+			)
+			results <- accrueResult{amount: amount, err: err}
+		}()
+	}
+	start.Done()
+
+	var concurrentTotal float64
+	for range 2 {
+		result := <-results
+		require.NoError(t, result.err)
+		concurrentTotal += result.amount
+	}
+	require.InDelta(t, 4, concurrentTotal, 1e-9,
+		"concurrent recharge rebates may only consume the cap remaining after registration")
+	require.InDelta(t, 10, querySingleFloat(t, ctx, integrationEntClient,
+		"SELECT aff_quota::double precision FROM user_affiliates WHERE user_id = $1", inviter.ID), 1e-9)
+	require.InDelta(t, 10, querySingleFloat(t, ctx, integrationEntClient,
+		"SELECT aff_history_quota::double precision FROM user_affiliates WHERE user_id = $1", inviter.ID), 1e-9)
+	require.InDelta(t, 4, querySingleFloat(t, ctx, integrationEntClient, `
+SELECT COALESCE(SUM(amount), 0)::double precision
+FROM user_affiliate_ledger
+WHERE action = 'accrue'
+  AND user_id = $1`, inviter.ID), 1e-9)
+
+	capEligibleTotal, err := repo.GetTotalRebateForInviter(ctx, inviter.ID)
+	require.NoError(t, err)
+	require.InDelta(t, 10, capEligibleTotal, 1e-9)
+}
+
+func TestAffiliateRepository_ListAffiliateInviteRecords_UsesInvitationTimeRunningTotal(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+	repo := NewAffiliateRepository(client, integrationDB)
+
+	marker := fmt.Sprintf("running-total-%d", time.Now().UnixNano())
+	createUser := func(label string) *service.User {
+		return mustCreateUser(t, client, &service.User{
+			Email:        fmt.Sprintf("%s-%s@example.com", marker, label),
+			PasswordHash: "hash",
+			Role:         service.RoleUser,
+			Status:       service.StatusActive,
+		})
+	}
+
+	firstInviter := createUser("inviter-a")
+	firstInvitees := []*service.User{
+		createUser("invitee-a1"),
+		createUser("invitee-a2"),
+		createUser("invitee-a3"),
+	}
+	secondInviter := createUser("inviter-b")
+	secondInvitees := []*service.User{
+		createUser("invitee-b1"),
+		createUser("invitee-b2"),
+	}
+
+	firstInviterAffiliate, err := repo.EnsureUserAffiliate(txCtx, firstInviter.ID)
+	require.NoError(t, err)
+	secondInviterAffiliate, err := repo.EnsureUserAffiliate(txCtx, secondInviter.ID)
+	require.NoError(t, err)
+
+	bindReward := func(inviteeID int64, affiliateCode string, reward float64) *service.AffiliateRegistrationRewardResult {
+		result, bindErr := repo.BindInviterAndGrantRegistrationReward(
+			txCtx,
+			inviteeID,
+			affiliateCode,
+			reward,
+			50,
+			0,
+		)
+		require.NoError(t, bindErr)
+		require.True(t, result.Bound)
+		return result
+	}
+
+	require.InDelta(t, 30, bindReward(firstInvitees[0].ID, firstInviterAffiliate.AffCode, 30).RewardAmount, 1e-9)
+	require.InDelta(t, 20, bindReward(firstInvitees[1].ID, firstInviterAffiliate.AffCode, 20).RewardAmount, 1e-9)
+	require.Zero(t, bindReward(firstInvitees[2].ID, firstInviterAffiliate.AffCode, 20).RewardAmount)
+	require.InDelta(t, 30, bindReward(secondInvitees[0].ID, secondInviterAffiliate.AffCode, 30).RewardAmount, 1e-9)
+	require.InDelta(t, 20, bindReward(secondInvitees[1].ID, secondInviterAffiliate.AffCode, 20).RewardAmount, 1e-9)
+
+	baseTime := time.Now().Add(-time.Hour).UTC()
+	invitationOrder := []*service.User{
+		firstInvitees[0],
+		firstInvitees[1],
+		firstInvitees[2],
+		secondInvitees[0],
+		secondInvitees[1],
+	}
+	for index, invitee := range invitationOrder {
+		_, err = client.ExecContext(
+			txCtx,
+			"UPDATE user_affiliates SET created_at = $1 WHERE user_id = $2",
+			baseTime.Add(time.Duration(index)*time.Minute),
+			invitee.ID,
+		)
+		require.NoError(t, err)
+	}
+
+	records, total, err := repo.ListAffiliateInviteRecords(txCtx, service.AffiliateRecordFilter{
+		Search:   marker,
+		Page:     1,
+		PageSize: 10,
+		SortBy:   "created_at",
+		SortDesc: true,
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 5, total)
+	require.Len(t, records, 5)
+
+	expectedInviteeIDs := []int64{
+		secondInvitees[1].ID,
+		secondInvitees[0].ID,
+		firstInvitees[2].ID,
+		firstInvitees[1].ID,
+		firstInvitees[0].ID,
+	}
+	expectedRegistrationRewards := []float64{20, 30, 0, 20, 30}
+	expectedRunningTotals := []float64{50, 30, 50, 50, 30}
+	for index, record := range records {
+		require.Equal(t, expectedInviteeIDs[index], record.InviteeID)
+		require.InDelta(t, expectedRegistrationRewards[index], record.RegistrationRewardAmount, 1e-9)
+		require.InDelta(t, expectedRunningTotals[index], record.TotalRebate, 1e-9,
+			"each inviter must have an independent invitation-time running total")
 	}
 
 	filteredRecords, filteredTotal, err := repo.ListAffiliateInviteRecords(txCtx, service.AffiliateRecordFilter{
-		Search:   secondInvitee.Email,
+		Search:   secondInvitees[1].Email,
 		Page:     1,
 		PageSize: 10,
 	})
 	require.NoError(t, err)
 	require.EqualValues(t, 1, filteredTotal)
 	require.Len(t, filteredRecords, 1)
-	require.InDelta(t, 35, filteredRecords[0].TotalRebate, 1e-9,
+	require.InDelta(t, 50, filteredRecords[0].TotalRebate, 1e-9,
 		"filtering must not truncate the earlier invitations included in the running total")
 }
 
@@ -399,6 +633,7 @@ func TestAffiliateRepository_BindInviterAndGrantRegistrationReward_FrozenAndZero
 		frozenInvitee.ID,
 		inviterAffiliate.AffCode,
 		7.25,
+		0,
 		24,
 	)
 	require.NoError(t, err)
@@ -408,6 +643,7 @@ func TestAffiliateRepository_BindInviterAndGrantRegistrationReward_FrozenAndZero
 		txCtx,
 		zeroInvitee.ID,
 		inviterAffiliate.AffCode,
+		0,
 		0,
 		24,
 	)
@@ -447,6 +683,7 @@ FROM user_affiliate_ledger
 		selfAffiliate.AffCode,
 		7.25,
 		0,
+		0,
 	)
 	require.ErrorIs(t, err, service.ErrAffiliateCodeInvalid)
 
@@ -463,6 +700,7 @@ FROM user_affiliate_ledger
 		zeroInvitee.ID,
 		otherAffiliate.AffCode,
 		7.25,
+		0,
 		0,
 	)
 	require.ErrorIs(t, err, service.ErrAffiliateAlreadyBound)
@@ -504,6 +742,7 @@ func TestAffiliateRepository_BindInviterAndGrantRegistrationReward_RejectsInacti
 			invitee.ID,
 			inviterAffiliate.AffCode,
 			10,
+			0,
 			0,
 		)
 		require.ErrorIs(t, err, service.ErrAffiliateCodeInvalid)
@@ -575,6 +814,7 @@ func TestAffiliateRepository_BindInviterAndGrantRegistrationReward_ConcurrentOnc
 				invitee.ID,
 				inviterAffiliate.AffCode,
 				3.5,
+				0,
 				0,
 			)
 			results <- callResult{result: result, err: err}

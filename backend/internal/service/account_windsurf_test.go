@@ -32,24 +32,14 @@ func TestAccountWindsurfHelpersUseSingleBaseURLAndMappedModels(t *testing.T) {
 		t.Fatalf("default windsurf models = %#v", got)
 	}
 
-	for _, model := range []string{
-		"claude-sonnet-4-6",
-		"claude-opus-4-7-xhigh",
-		"gpt-5-5-xhigh-priority",
-		"claude-sonnet-4.6",
-		" claude-opus-4.6 ",
-		"gpt-5.4",
-		"swe-1.6",
-		"claude-3-5-sonnet-latest",
-		"opus",
-	} {
+	for _, model := range []string{"claude-3-5-sonnet-latest", "opus"} {
 		if !acc.IsWindsurfModelSupported(model) {
 			t.Fatalf("model %q should be supported", model)
 		}
 	}
-	for _, model := range []string{"swe-1-mini", "swe-grep", "deepseek-chat", "kimi-for-coding"} {
+	for _, model := range []string{"claude-sonnet-4-6", "gpt-5.4", "windsurf-next"} {
 		if acc.IsWindsurfModelSupported(model) {
-			t.Fatalf("model %q should not be supported", model)
+			t.Fatalf("explicit model mapping should reject unconfigured model %q", model)
 		}
 	}
 	if got := acc.GetWindsurfMappedModel("claude-3-5-sonnet-latest"); got != "claude-sonnet-4.6" {
@@ -72,6 +62,11 @@ func TestAccountWindsurfHelpersDefaultBaseURL(t *testing.T) {
 
 	if got := acc.GetWindsurfBaseURL(); got != "https://tik.frontech.dev:3003" {
 		t.Fatalf("base url = %q", got)
+	}
+	for _, model := range []string{"claude-sonnet-4-6", "windsurf-next"} {
+		if !acc.IsWindsurfModelSupported(model) {
+			t.Fatalf("unrestricted account should pass through model %q", model)
+		}
 	}
 }
 

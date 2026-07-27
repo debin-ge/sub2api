@@ -260,7 +260,11 @@ func TestModelCatalogListForAccount(t *testing.T) {
 		{name: "glm api key live", account: Account{ID: 21, Platform: PlatformGLM, Type: AccountTypeAPIKey}, liveModels: []string{"GLM-next"}, want: []string{"GLM-next"}, wantCalls: 1},
 		{name: "kimi api key live", account: Account{ID: 22, Platform: PlatformKimi, Type: AccountTypeAPIKey}, liveModels: []string{"kimi-next"}, want: []string{"kimi-next"}, wantCalls: 1},
 		{name: "deepseek api key live", account: Account{ID: 23, Platform: PlatformDeepSeek, Type: AccountTypeAPIKey}, liveModels: []string{"deepseek-next"}, want: []string{"deepseek-next"}, wantCalls: 1},
+		{name: "windsurf api key live", account: Account{ID: 25, Platform: PlatformWindsurf, Type: AccountTypeAPIKey}, liveModels: []string{"windsurf-next"}, want: []string{"windsurf-next"}, wantCalls: 1},
+		{name: "opencode api key live", account: Account{ID: 26, Platform: PlatformOpenCode, Type: AccountTypeAPIKey}, liveModels: []string{"opencode-next"}, want: []string{"opencode-next"}, wantCalls: 1},
 		{name: "minimax explicit mapping uses configured sources", account: Account{ID: 24, Platform: PlatformMiniMax, Type: AccountTypeAPIKey, Credentials: map[string]any{"model_mapping": map[string]any{"client-minimax": "MiniMax-next"}}}, want: []string{"client-minimax"}},
+		{name: "windsurf explicit mapping disables live discovery", account: Account{ID: 27, Platform: PlatformWindsurf, Type: AccountTypeAPIKey, Credentials: map[string]any{"model_mapping": map[string]any{"client-windsurf": "windsurf-next"}}}, want: []string{"client-windsurf"}},
+		{name: "opencode explicit mapping disables live discovery", account: Account{ID: 28, Platform: PlatformOpenCode, Type: AccountTypeAPIKey, Credentials: map[string]any{"model_mapping": map[string]any{"client-opencode": "opencode-next"}}}, want: []string{"client-opencode"}},
 		{name: "apikey mapping sources", account: Account{ID: 3, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"model_mapping": map[string]any{"alias-b": "upstream-b", "alias-a": "upstream-a"}}}, want: []string{"alias-a", "alias-b"}},
 		{name: "legacy whitelist", account: Account{ID: 4, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"model_whitelist": []any{"gpt-5.5"}}}, want: []string{"gpt-5.5"}},
 	}

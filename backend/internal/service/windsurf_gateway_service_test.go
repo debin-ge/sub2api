@@ -37,8 +37,26 @@ func windsurfGatewayTestAccount() *Account {
 			"base_url": "https://proxy.example/windsurf/",
 			"model_mapping": map[string]any{
 				"claude-3-5-sonnet-latest": "claude-sonnet-4.6",
+				"claude-opus-4.6":          "claude-opus-4.6",
 			},
 		},
+	}
+}
+
+func TestRewriteWindsurfModelPassesThroughDynamicallyDiscoveredModel(t *testing.T) {
+	account := windsurfGatewayTestAccount()
+	delete(account.Credentials, "model_mapping")
+	body := []byte(`{"model":"windsurf-next","messages":[{"role":"user","content":"hello"}]}`)
+
+	rewritten, originalModel, upstreamModel, err := rewriteWindsurfModel(body, account)
+	if err != nil {
+		t.Fatalf("rewriteWindsurfModel error = %v", err)
+	}
+	if originalModel != "windsurf-next" || upstreamModel != "windsurf-next" {
+		t.Fatalf("model metadata = original %q upstream %q", originalModel, upstreamModel)
+	}
+	if got := gjson.GetBytes(rewritten, "model").String(); got != "windsurf-next" {
+		t.Fatalf("rewritten model = %q body=%s", got, string(rewritten))
 	}
 }
 

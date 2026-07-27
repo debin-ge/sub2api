@@ -35,9 +35,27 @@ func openCodeGatewayTestAccount() *Account {
 			"api_key":  "sk-opencode-test",
 			"base_url": "https://opencode2api.example/base",
 			"model_mapping": map[string]any{
-				"gpt-5": "opencode/gpt5-nano",
+				"gpt-5":               "opencode/gpt5-nano",
+				"opencode/big-pickle": "opencode/big-pickle",
 			},
 		},
+	}
+}
+
+func TestRewriteOpenCodeModelPassesThroughDynamicallyDiscoveredModel(t *testing.T) {
+	account := openCodeGatewayTestAccount()
+	delete(account.Credentials, "model_mapping")
+	body := []byte(`{"model":"opencode-next","messages":[{"role":"user","content":"hello"}]}`)
+
+	rewritten, originalModel, upstreamModel, err := rewriteOpenCodeModel(body, account)
+	if err != nil {
+		t.Fatalf("rewriteOpenCodeModel error = %v", err)
+	}
+	if originalModel != "opencode-next" || upstreamModel != "opencode-next" {
+		t.Fatalf("model metadata = original %q upstream %q", originalModel, upstreamModel)
+	}
+	if got := gjson.GetBytes(rewritten, "model").String(); got != "opencode-next" {
+		t.Fatalf("rewritten model = %q body=%s", got, string(rewritten))
 	}
 }
 
