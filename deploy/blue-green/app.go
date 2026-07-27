@@ -68,7 +68,7 @@ func newAppWithConfig(configFile, root, nginxDir, nginxSnippetDir string, stdout
 	return &app{
 		root:            filepath.Clean(root),
 		registryFile:    filepath.Join(root, "registry", "sites.yaml"),
-		envsDir:         filepath.Join(root, "registry", "envs"),
+		envsDir:         filepath.Join(root, "envs"),
 		stacksDir:       filepath.Join(root, "stacks"),
 		nginxDir:        filepath.Clean(nginxDir),
 		nginxUpstreams:  filepath.Join(nginxDir, "upstreams"),

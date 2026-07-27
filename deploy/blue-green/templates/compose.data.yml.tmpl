@@ -2,7 +2,7 @@
 # 数据层常驻，不参与蓝绿轮换；发布过程中本文件的容器不重启。
 #
 # 渲染期替换：${SLUG} ${TZ}；其余 ${VAR} 保留给 docker compose 运行期从
-# 本目录 .env（软链至 registry/envs/<slug>.env）插值。
+# 本目录 .env（软链至部署根目录 envs/<slug>.env）插值。
 name: ${SLUG}-data
 
 services:

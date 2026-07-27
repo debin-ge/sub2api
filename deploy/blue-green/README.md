@@ -72,8 +72,9 @@ sudo ./bgdeploy bootstrap
 ├── runtime.yaml
 ├── env.example
 ├── registry/
-│   ├── sites.yaml
-│   └── envs/
+│   └── sites.yaml
+├── envs/
+│   └── <slug>.env
 └── stacks/
 ```
 
@@ -81,7 +82,7 @@ sudo ./bgdeploy bootstrap
 
 ```text
 registry/sites.yaml
-registry/envs/<slug>.env
+envs/<slug>.env
 ```
 
 `runtime.yaml` 只保存主机级路径，通常在首次安装时确认一次即可。`stacks/`、Compose
@@ -229,12 +230,30 @@ stacks:
 每个站点的应用环境变量：
 
 ```bash
-sudo cp env.example registry/envs/api-staging.env
-sudo chmod 600 registry/envs/api-staging.env
-sudo vim registry/envs/api-staging.env
+sudo cp env.example envs/api-staging.env
+sudo chmod 600 envs/api-staging.env
+sudo vim envs/api-staging.env
 ```
 
-`init` 会自动将权限收紧为 `0600`，并在生成的 stack 内创建 `.env` 软链接。
+`init` 和每次 `deploy` 都会在改变容器状态前检查：
+
+- `envs/<slug>.env` 存在且是普通文件，不接受目录或软链接；
+- 文件权限严格为 `0600`；
+- `POSTGRES_PASSWORD`、`REDIS_PASSWORD`、`JWT_SECRET`、
+  `TOTP_ENCRYPTION_KEY`、`ADMIN_EMAIL`、`ADMIN_PASSWORD` 全部存在且非空；
+- 上述参数已经修改，不得继续使用 `env.example` 中的示例值；
+- stack 内的 `.env` 软链接指向当前部署根目录下正确的站点环境文件。
+
+任一检查失败都会中断并显示具体文件、参数或修复命令。`init` 检查通过后会在生成的
+stack 中创建 `.env` 软链接。
+
+从旧目录布局升级时，先复制环境文件并重新初始化软链接：
+
+```bash
+sudo mkdir -p envs
+sudo install -m 600 <原环境文件> envs/api-staging.env
+sudo ./bgdeploy init api-staging
+```
 
 ## 首次部署
 

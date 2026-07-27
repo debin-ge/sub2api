@@ -28,16 +28,10 @@ func (a *app) initStack(ctx context.Context, slug string) error {
 	}
 
 	envFile := filepath.Join(a.envsDir, slug+".env")
-	info, err := os.Stat(envFile)
-	if err != nil {
-		return fmt.Errorf("密钥文件不存在: %s（参考 env.example 填写）", envFile)
+	if err := a.validateSiteEnvironment(slug); err != nil {
+		return err
 	}
-	if info.Mode().Perm() != 0o600 {
-		a.warn("%s 权限为 %03o，收紧为 600", envFile, info.Mode().Perm())
-		if err := os.Chmod(envFile, 0o600); err != nil {
-			return fmt.Errorf("收紧密钥文件权限: %w", err)
-		}
-	}
+	a.log("环境变量检查通过: %s", envFile)
 
 	envLink := filepath.Join(stackDir, ".env")
 	if linkInfo, linkErr := os.Lstat(envLink); linkErr == nil {

@@ -133,7 +133,7 @@ func printUsage(w io.Writer) {
   bgdeploy [全局参数] <命令> [参数]
 
 命令:
-  bootstrap                         创建 registry、stacks 与示例配置
+  bootstrap                         创建 runtime、registry、envs、stacks
   check                             检查权限、Docker/Compose 与 nginx 接入
   render                            从 sites.yaml 渲染 compose/nginx 配置
   init <slug>                       初始化 network 与 PostgreSQL/Redis

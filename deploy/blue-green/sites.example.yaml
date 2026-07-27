@@ -6,8 +6,7 @@
 #   ./bgdeploy render 会校验各 stack 的端口区间互不重叠。
 #
 # 密钥（POSTGRES_PASSWORD / JWT_SECRET / TOTP_ENCRYPTION_KEY / OAuth secret 等）
-# 一律不进本文件，放在 registry/envs/<slug>.env（chmod 600），结构沿用
-# deploy/.env.example。
+# 一律不进本文件，放在 envs/<slug>.env（chmod 600）。
 
 defaults:
   image_repo: registry.example.com/application

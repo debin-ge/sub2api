@@ -171,8 +171,10 @@ func writeExecutable(t *testing.T, path, content string) {
 
 func (environment *testEnvironment) writeSites(t *testing.T, portBase int) {
 	t.Helper()
-	if err := os.MkdirAll(filepath.Join(environment.root, "registry", "envs"), 0o755); err != nil {
-		t.Fatal(err)
+	for _, dir := range []string{filepath.Join(environment.root, "registry"), environment.app.envsDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
 	content := fmt.Sprintf(`defaults:
   image_repo: registry.example.com/application
@@ -195,6 +197,25 @@ stacks:
 	}
 }
 
+func (environment *testEnvironment) writeValidEnvironment(t *testing.T, mode os.FileMode) string {
+	t.Helper()
+	if err := os.MkdirAll(environment.app.envsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(environment.app.envsDir, "api-test.env")
+	content := `POSTGRES_PASSWORD=postgres-test-secret
+REDIS_PASSWORD=redis-test-secret
+JWT_SECRET=fixed-jwt-test-secret
+TOTP_ENCRYPTION_KEY=fixed-totp-test-key
+ADMIN_EMAIL=admin@test.invalid
+ADMIN_PASSWORD=admin-test-password
+`
+	if err := os.WriteFile(path, []byte(content), mode); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
 func TestBootstrapDoesNotOverwriteConfiguration(t *testing.T) {
 	environment := newTestEnvironment(t)
 	if err := environment.app.bootstrap(); err != nil {
@@ -215,7 +236,7 @@ func TestBootstrapDoesNotOverwriteConfiguration(t *testing.T) {
 		t.Fatalf("bootstrap overwrote sites.yaml: %q", content)
 	}
 	for _, path := range []string{
-		filepath.Join(environment.root, "registry", "envs"),
+		filepath.Join(environment.root, "envs"),
 		filepath.Join(environment.root, "stacks"),
 		filepath.Join(environment.root, "env.example"),
 		filepath.Join(environment.root, "runtime.yaml"),
@@ -310,13 +331,42 @@ func TestWriteCommandsRequireRoot(t *testing.T) {
 	}
 }
 
+func TestEnvironmentValidationRejectsExamplesAndMissingKeys(t *testing.T) {
+	environment := newTestEnvironment(t)
+	if err := os.MkdirAll(environment.app.envsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(environment.app.envsDir, "api-test.env")
+	example, err := readAsset("env.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, example, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err = environment.app.validateSiteEnvironment("api-test")
+	if err == nil || !strings.Contains(err.Error(), "仍是示例值") {
+		t.Fatalf("validation error = %v, want unchanged example failure", err)
+	}
+
+	if err := os.WriteFile(path, []byte("POSTGRES_PASSWORD=changed\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err = environment.app.validateSiteEnvironment("api-test")
+	if err == nil || !strings.Contains(err.Error(), "缺少必要参数: REDIS_PASSWORD") {
+		t.Fatalf("validation error = %v, want missing required key failure", err)
+	}
+
+	environment.writeValidEnvironment(t, 0o600)
+	if err := environment.app.validateSiteEnvironment("api-test"); err != nil {
+		t.Fatalf("valid environment rejected: %v", err)
+	}
+}
+
 func TestRenderAndInitUseEmbeddedAssets(t *testing.T) {
 	environment := newTestEnvironment(t)
 	environment.writeSites(t, 28080)
-	envPath := filepath.Join(environment.root, "registry", "envs", "api-test.env")
-	if err := os.WriteFile(envPath, []byte("POSTGRES_PASSWORD=test\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	envPath := environment.writeValidEnvironment(t, 0o644)
 	if err := environment.app.render(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -346,6 +396,15 @@ func TestRenderAndInitUseEmbeddedAssets(t *testing.T) {
 		t.Fatalf("render overwrote active upstream: %s", upstream)
 	}
 
+	if err := environment.app.initStack(context.Background(), "api-test"); err == nil || !strings.Contains(err.Error(), "权限必须为 0600") {
+		t.Fatalf("init error = %v, want environment permission failure", err)
+	}
+	if _, err := os.Stat(filepath.Join(environment.stateDir, "network-api-test-net")); !os.IsNotExist(err) {
+		t.Fatalf("init created network before environment validation: %v", err)
+	}
+	if err := os.Chmod(envPath, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if err := environment.app.initStack(context.Background(), "api-test"); err != nil {
 		t.Fatal(err)
 	}
@@ -432,11 +491,11 @@ func TestDeployRollbackAndSafetyGates(t *testing.T) {
 
 	environment := newTestEnvironment(t)
 	environment.writeSites(t, portBase)
-	envPath := filepath.Join(environment.root, "registry", "envs", "api-test.env")
-	if err := os.WriteFile(envPath, []byte("POSTGRES_PASSWORD=test\n"), 0o600); err != nil {
+	environment.writeValidEnvironment(t, 0o600)
+	if err := environment.app.render(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if err := environment.app.render(context.Background()); err != nil {
+	if err := environment.app.initStack(context.Background(), "api-test"); err != nil {
 		t.Fatal(err)
 	}
 

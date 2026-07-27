@@ -145,6 +145,6 @@ func (a *app) bootstrap() error {
 	} else {
 		a.log("保留已有 %s", a.runtimeConfig)
 	}
-	a.log("初始化目录完成；下一步只需编辑 registry/sites.yaml 和 registry/envs/<slug>.env")
+	a.log("初始化目录完成；下一步只需编辑 registry/sites.yaml 和 envs/<slug>.env")
 	return nil
 }

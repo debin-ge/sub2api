@@ -24,6 +24,13 @@ func (a *app) deploy(ctx context.Context, slug, requestedTag string) error {
 	if _, err := os.Stat(filepath.Join(a.stackDir(slug), "compose.app.yml")); err != nil {
 		return fmt.Errorf("缺少渲染产物；先执行 sudo ./bgdeploy render && sudo ./bgdeploy init %s", slug)
 	}
+	if err := a.validateSiteEnvironment(slug); err != nil {
+		return err
+	}
+	if err := a.validateStackEnvironmentLink(slug); err != nil {
+		return err
+	}
+	a.log("环境变量检查通过: %s", filepath.Join(a.envsDir, slug+".env"))
 	tag := firstString(requestedTag, site.ImageTag)
 	if tag == "" {
 		return errors.New("未指定 image-tag 且 sites.yaml 中无默认 image_tag")
