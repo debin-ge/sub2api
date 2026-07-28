@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, shallowMount } from '@vue/test-utils'
 
 const routeState = vi.hoisted(() => ({
@@ -6,6 +6,7 @@ const routeState = vi.hoisted(() => ({
 }))
 const routerPush = vi.hoisted(() => vi.fn())
 const getOrder = vi.hoisted(() => vi.fn())
+const verifyOrder = vi.hoisted(() => vi.fn())
 const paymentStore = vi.hoisted(() => ({
   config: { stripe_publishable_key: 'pk_test' } as { stripe_publishable_key?: string },
   fetchConfig: vi.fn(),
@@ -53,6 +54,7 @@ vi.mock('@/stores/payment', () => ({
 vi.mock('@/api/payment', () => ({
   paymentAPI: {
     getOrder,
+    verifyOrder,
   },
 }))
 
@@ -102,6 +104,7 @@ describe('StripePaymentView', () => {
     }
     routerPush.mockReset()
     getOrder.mockReset()
+    verifyOrder.mockReset()
     paymentStore.config = { stripe_publishable_key: 'pk_test' }
     paymentStore.fetchConfig.mockReset().mockResolvedValue(undefined)
     paymentStore.pollOrderStatus.mockReset()
@@ -118,6 +121,10 @@ describe('StripePaymentView', () => {
     window.localStorage.clear()
   })
 
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('本地恢复快照缺失时使用订单接口返回的 Stripe 币种展示金额', async () => {
     getOrder.mockResolvedValue({
       data: orderFactory({ currency: 'HKD', pay_amount: 103 }),
@@ -130,5 +137,75 @@ describe('StripePaymentView', () => {
     expect(getOrder).toHaveBeenCalledWith(42)
     expect(loadStripe).toHaveBeenCalledWith('pk_test')
     expect(wrapper.text()).toContain(formatPaymentAmount(103, 'HKD', 'zh-CN'))
+  })
+
+  it('Stripe 跳转返回链接保留签名恢复令牌和订单号', async () => {
+    routeState.query = {
+      order_id: '42',
+      client_secret: 'pi_secret_42',
+      method: 'alipay',
+      resume_token: 'resume-stripe-42',
+    }
+    getOrder.mockResolvedValue({
+      data: orderFactory({
+        out_trade_no: 'sub2_stripe_return_42',
+      }),
+    })
+    stripeInstance.confirmAlipayPayment.mockResolvedValue({})
+
+    mountView()
+    await flushPromises()
+    await flushPromises()
+
+    expect(stripeInstance.confirmAlipayPayment).toHaveBeenCalledTimes(1)
+    const [, options] = stripeInstance.confirmAlipayPayment.mock.calls[0] as [
+      string,
+      { return_url: string },
+    ]
+    const returnUrl = new URL(options.return_url)
+    expect(returnUrl.pathname).toBe('/payment/result')
+    expect(returnUrl.searchParams.get('order_id')).toBe('42')
+    expect(returnUrl.searchParams.get('resume_token')).toBe('resume-stripe-42')
+    expect(returnUrl.searchParams.get('out_trade_no')).toBe('sub2_stripe_return_42')
+  })
+
+  it('微信扫码后主动核验返回 RECHARGING 时及时显示成功', async () => {
+    vi.useFakeTimers()
+    routeState.query = {
+      order_id: '42',
+      client_secret: 'pi_secret_42',
+      method: 'wechat_pay',
+    }
+    getOrder.mockResolvedValue({
+      data: orderFactory(),
+    })
+    stripeInstance.confirmWechatPayPayment.mockResolvedValue({
+      paymentIntent: {
+        status: 'requires_action',
+        next_action: {
+          wechat_pay_display_qr_code: {
+            image_data_url: 'data:image/png;base64,wechat-qr',
+          },
+        },
+      },
+    })
+    paymentStore.pollOrderStatus.mockResolvedValue(orderFactory())
+    verifyOrder.mockResolvedValue({
+      data: orderFactory({ status: 'RECHARGING' }),
+    })
+
+    const wrapper = mountView()
+    await flushPromises()
+    await flushPromises()
+
+    expect(wrapper.find('img[alt="WeChat Pay QR"]').exists()).toBe(true)
+
+    await vi.advanceTimersByTimeAsync(3000)
+    await flushPromises()
+
+    expect(paymentStore.pollOrderStatus).toHaveBeenCalledWith(42)
+    expect(verifyOrder).toHaveBeenCalledWith('sub2_stripe_42')
+    expect(verifyOrder).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('payment.result.success')
   })
 })

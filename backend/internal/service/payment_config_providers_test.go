@@ -114,6 +114,115 @@ func TestValidateProviderRequest(t *testing.T) {
 	}
 }
 
+func TestCreateEnabledStripeProviderRequiresCompleteConfig(t *testing.T) {
+	t.Parallel()
+
+	for _, missingKey := range []string{"secretKey", payment.ConfigKeyPublishableKey, "webhookSecret"} {
+		missingKey := missingKey
+		t.Run(missingKey, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := context.Background()
+			client := newPaymentConfigServiceTestClient(t)
+			svc := &PaymentConfigService{
+				entClient:     client,
+				encryptionKey: []byte("0123456789abcdef0123456789abcdef"),
+			}
+			config := validStripeProviderConfig(t)
+			config[missingKey] = " "
+
+			instance, err := svc.CreateProviderInstance(ctx, CreateProviderInstanceRequest{
+				ProviderKey:    payment.TypeStripe,
+				Name:           "incomplete-stripe",
+				Config:         config,
+				SupportedTypes: []string{payment.TypeStripe},
+				Enabled:        true,
+			})
+			require.Nil(t, instance)
+			require.Error(t, err)
+			require.Equal(t, "STRIPE_CONFIG_MISSING_KEY", infraerrors.Reason(err))
+			require.Equal(t, missingKey, infraerrors.FromError(err).Metadata["key"])
+		})
+	}
+}
+
+func TestEnableStripeProviderValidatesMergedDraftConfig(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	svc := &PaymentConfigService{
+		entClient:     client,
+		encryptionKey: []byte("0123456789abcdef0123456789abcdef"),
+	}
+	instance, err := svc.CreateProviderInstance(ctx, CreateProviderInstanceRequest{
+		ProviderKey: payment.TypeStripe,
+		Name:        "stripe-draft",
+		Config: map[string]string{
+			"secretKey": "sk_test_draft",
+			"currency":  "CNY",
+		},
+		SupportedTypes: []string{payment.TypeStripe},
+		Enabled:        false,
+	})
+	require.NoError(t, err)
+
+	enabled, err := svc.UpdateProviderInstance(ctx, instance.ID, UpdateProviderInstanceRequest{
+		Enabled: boolPtrValue(true),
+	})
+	require.Nil(t, enabled)
+	require.Error(t, err)
+	require.Equal(t, payment.ConfigKeyPublishableKey, infraerrors.FromError(err).Metadata["key"])
+
+	enabled, err = svc.UpdateProviderInstance(ctx, instance.ID, UpdateProviderInstanceRequest{
+		Config: map[string]string{
+			"publishableKey": "pk_test_draft",
+			"webhookSecret":  "whsec_test_draft",
+		},
+		Enabled: boolPtrValue(true),
+	})
+	require.NoError(t, err)
+	require.NotNil(t, enabled)
+	require.True(t, enabled.Enabled)
+}
+
+func TestUpdateEnabledStripeProviderPreservesMaskedSecretsBeforeValidation(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	svc := &PaymentConfigService{
+		entClient:     client,
+		encryptionKey: []byte("0123456789abcdef0123456789abcdef"),
+	}
+	instance, err := svc.CreateProviderInstance(ctx, CreateProviderInstanceRequest{
+		ProviderKey:    payment.TypeStripe,
+		Name:           "stripe-merge",
+		Config:         validStripeProviderConfig(t),
+		SupportedTypes: []string{payment.TypeStripe},
+		Enabled:        true,
+	})
+	require.NoError(t, err)
+
+	updated, err := svc.UpdateProviderInstance(ctx, instance.ID, UpdateProviderInstanceRequest{
+		Config: map[string]string{
+			"secretKey":      "",
+			"publishableKey": "pk_test_updated",
+			"webhookSecret":  "",
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+
+	saved, err := client.PaymentProviderInstance.Get(ctx, instance.ID)
+	require.NoError(t, err)
+	config, err := svc.decryptConfig(saved.Config)
+	require.NoError(t, err)
+	require.Equal(t, "sk_test_123", config["secretKey"])
+	require.Equal(t, "pk_test_updated", config["publishableKey"])
+	require.Equal(t, "whsec-test", config["webhookSecret"])
+}
+
 func TestValidateEasyPayCustomMethods(t *testing.T) {
 	t.Parallel()
 

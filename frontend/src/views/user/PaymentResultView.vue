@@ -108,7 +108,7 @@ import {
 } from '@/components/payment/paymentFlow'
 import { usePaymentStore } from '@/stores/payment'
 import { paymentAPI } from '@/api/payment'
-import type { PublicOrderVerifyResult } from '@/api/payment'
+import type { PublicOrderResult, PublicOrderVerifyResult } from '@/api/payment'
 import type { OrderStatus, PaymentOrder } from '@/types/payment'
 import { formatPaymentAmount, normalizePaymentCurrency } from '@/components/payment/currency'
 import { normalizePaymentMethodForDisplay, paymentMethodI18nKey } from './paymentUx'
@@ -119,7 +119,8 @@ const route = useRoute()
 const router = useRouter()
 const paymentStore = usePaymentStore()
 
-type ResolvedOrder = PaymentOrder | PublicOrderVerifyResult
+type DetailedResolvedOrder = PaymentOrder | PublicOrderResult
+type ResolvedOrder = DetailedResolvedOrder | PublicOrderVerifyResult
 
 const order = ref<ResolvedOrder | null>(null)
 const loading = ref(true)
@@ -136,10 +137,22 @@ const returnInfo = ref<ReturnInfo | null>(null)
 const SUCCESS_STATUSES = new Set(['COMPLETED', 'PAID', 'RECHARGING'])
 const PENDING_STATUSES = new Set(['PENDING', 'CREATED', 'WAITING', 'PROCESSING'])
 const STATUS_REFRESH_INTERVAL_MS = 2000
-const STATUS_REFRESH_MAX_ATTEMPTS = 15
+const STATUS_REFRESH_BACKOFF_INTERVAL_MS = 10000
+const STATUS_REFRESH_FAST_ATTEMPTS = 15
+const STRIPE_STATUS_REFRESH_FAST_ATTEMPTS = 150
+const STRIPE_VERIFY_INTERVAL_MS = 15000
+const STRIPE_VERIFY_MAX_ATTEMPTS = 20
+
+type StatusRefreshOrder = () => Promise<ResolvedOrder | null>
 
 let statusRefreshTimer: ReturnType<typeof setTimeout> | null = null
 const refreshAttempts = ref(0)
+let upstreamRecoveryAttempts = 0
+let lastUpstreamRecoveryAt: number | null = null
+let activeStatusRefresh: StatusRefreshOrder | null = null
+let resolveStatusRefreshInterval: (() => number) | null = null
+let statusRefreshInFlight = false
+let statusRefreshStopped = false
 
 /** 充值金额 = pay_amount / (1 + fee_rate/100)，fee_rate=0 时等于 pay_amount */
 const baseAmount = computed(() => {
@@ -199,15 +212,15 @@ function setResolvedOrder(nextOrder: ResolvedOrder | null): void {
   }
 }
 
-function hasOrderId(nextOrder: ResolvedOrder | null): nextOrder is PaymentOrder {
+function hasOrderId(nextOrder: ResolvedOrder | null): nextOrder is DetailedResolvedOrder {
   return !!nextOrder && 'id' in nextOrder && typeof nextOrder.id === 'number'
 }
 
-function hasAmountFields(nextOrder: ResolvedOrder | null): nextOrder is PaymentOrder {
+function hasAmountFields(nextOrder: ResolvedOrder | null): nextOrder is DetailedResolvedOrder {
   return !!nextOrder && 'pay_amount' in nextOrder && typeof nextOrder.pay_amount === 'number' && 'amount' in nextOrder && typeof nextOrder.amount === 'number'
 }
 
-function hasPaymentType(nextOrder: ResolvedOrder | null): nextOrder is PaymentOrder {
+function hasPaymentType(nextOrder: ResolvedOrder | null): nextOrder is DetailedResolvedOrder {
   return !!nextOrder && 'payment_type' in nextOrder && typeof nextOrder.payment_type === 'string' && nextOrder.payment_type.trim() !== ''
 }
 
@@ -284,6 +297,40 @@ async function resolveOrderFromResumeToken(resumeToken: string): Promise<Resolve
   }
 }
 
+interface ResumeTokenResolution {
+  order: ResolvedOrder | null
+  attempted: boolean
+}
+
+function canAttemptUpstreamRecovery(now = Date.now()): boolean {
+  return upstreamRecoveryAttempts < STRIPE_VERIFY_MAX_ATTEMPTS
+    && (
+      lastUpstreamRecoveryAt === null
+      || now - lastUpstreamRecoveryAt >= STRIPE_VERIFY_INTERVAL_MS
+    )
+}
+
+function recordUpstreamRecoveryAttempt(now = Date.now()): void {
+  lastUpstreamRecoveryAt = now
+  upstreamRecoveryAttempts += 1
+}
+
+async function resolveOrderFromResumeTokenThrottled(
+  resumeToken: string,
+  force = false,
+): Promise<ResumeTokenResolution> {
+  const now = Date.now()
+  if (!force && !canAttemptUpstreamRecovery(now)) {
+    return { order: null, attempted: false }
+  }
+
+  recordUpstreamRecoveryAttempt(now)
+  return {
+    order: await resolveOrderFromResumeToken(resumeToken),
+    attempted: true,
+  }
+}
+
 async function resolveOrderFromOutTradeNo(outTradeNo: string): Promise<ResolvedOrder | null> {
   try {
     const result = await paymentAPI.verifyOrder(outTradeNo)
@@ -295,6 +342,50 @@ async function resolveOrderFromOutTradeNo(outTradeNo: string): Promise<ResolvedO
     } catch (_innerErr: unknown) {
       return null
     }
+  }
+}
+
+function isStripePaymentContext(
+  currentOrder: ResolvedOrder | null,
+  fallbackPaymentType: string,
+): boolean {
+  const orderPaymentType = hasPaymentType(currentOrder)
+    ? normalizedOrderPaymentType(currentOrder.payment_type)
+    : ''
+  const providerKey = hasOrderId(currentOrder)
+    ? String(currentOrder.provider_key || '').trim().toLowerCase()
+    : ''
+  const recoveryPaymentType = normalizedOrderPaymentType(fallbackPaymentType)
+  return providerKey === 'stripe'
+    || orderPaymentType === 'stripe'
+    || recoveryPaymentType === 'stripe'
+}
+
+async function tryRecoverPendingStripeOrder(
+  currentOrder: ResolvedOrder | null,
+  fallbackOutTradeNo: string,
+  fallbackPaymentType: string,
+): Promise<ResolvedOrder | null> {
+  if (!currentOrder || !isPendingStatus(currentOrder.status)) return currentOrder
+
+  if (!isStripePaymentContext(currentOrder, fallbackPaymentType)) {
+    return currentOrder
+  }
+
+  const outTradeNo = String(currentOrder.out_trade_no || fallbackOutTradeNo || '').trim()
+  if (!outTradeNo) return currentOrder
+
+  const now = Date.now()
+  if (!canAttemptUpstreamRecovery(now)) {
+    return currentOrder
+  }
+
+  recordUpstreamRecoveryAttempt(now)
+  try {
+    const result = await paymentAPI.verifyOrder(outTradeNo)
+    return result.data || currentOrder
+  } catch {
+    return currentOrder
   }
 }
 
@@ -317,32 +408,100 @@ function clearRecoverySnapshotForTerminalStatus(status: string | null | undefine
   }
 }
 
-function scheduleStatusRefresh(refreshOrder: (() => Promise<ResolvedOrder | null>) | null): void {
+function scheduleStatusRefresh(): void {
   clearStatusRefreshTimer()
-  if (!refreshOrder || !isPending.value || refreshAttempts.value >= STATUS_REFRESH_MAX_ATTEMPTS) {
+  if (
+    statusRefreshStopped
+    || !activeStatusRefresh
+    || !isPending.value
+    || document.visibilityState === 'hidden'
+  ) {
     return
   }
 
-  statusRefreshTimer = setTimeout(async () => {
+  const interval = resolveStatusRefreshInterval?.() ?? STATUS_REFRESH_INTERVAL_MS
+  statusRefreshTimer = setTimeout(() => {
+    statusRefreshTimer = null
+    void refreshPendingOrder()
+  }, interval)
+}
+
+async function refreshPendingOrder(): Promise<void> {
+  if (
+    statusRefreshStopped
+    || statusRefreshInFlight
+    || !activeStatusRefresh
+    || !isPending.value
+  ) {
+    return
+  }
+
+  statusRefreshInFlight = true
+  try {
     refreshAttempts.value += 1
-    const refreshedOrder = await refreshOrder()
+    const refreshedOrder = await activeStatusRefresh()
     if (refreshedOrder) {
       setResolvedOrder(refreshedOrder)
       clearRecoverySnapshotForTerminalStatus(refreshedOrder.status)
     }
-
+  } catch {
+    // A transient request failure must not permanently stop status refreshes.
+  } finally {
+    statusRefreshInFlight = false
     if (isPendingStatus(order.value?.status)) {
-      scheduleStatusRefresh(refreshOrder)
+      scheduleStatusRefresh()
     }
-  }, STATUS_REFRESH_INTERVAL_MS)
+  }
+}
+
+function startStatusRefresh(
+  refreshOrder: StatusRefreshOrder,
+  resolveInterval: () => number,
+): void {
+  activeStatusRefresh = refreshOrder
+  resolveStatusRefreshInterval = resolveInterval
+  scheduleStatusRefresh()
+}
+
+function requestImmediateStatusRefresh(forceUpstreamRecovery = false): void {
+  if (
+    statusRefreshStopped
+    || statusRefreshInFlight
+    || !activeStatusRefresh
+    || !isPending.value
+  ) {
+    return
+  }
+  if (forceUpstreamRecovery && upstreamRecoveryAttempts < STRIPE_VERIFY_MAX_ATTEMPTS) {
+    lastUpstreamRecoveryAt = null
+  }
+  clearStatusRefreshTimer()
+  void refreshPendingOrder()
+}
+
+function handleVisibilityChange(): void {
+  if (document.visibilityState === 'visible') {
+    requestImmediateStatusRefresh(true)
+  } else {
+    clearStatusRefreshTimer()
+  }
+}
+
+function handleWindowFocus(): void {
+  requestImmediateStatusRefresh()
 }
 
 onMounted(async () => {
-  const resumeToken = readRouteQueryString('resume_token')
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+  window.addEventListener('focus', handleWindowFocus)
+
+  let resumeToken = readRouteQueryString('resume_token')
   const routeOrderId = Number(readRouteQueryString('order_id')) || 0
   let outTradeNo = readRouteQueryString('out_trade_no')
   let orderId = 0
   let resumeTokenLookupFailed = false
+  let initialResumeResolutionSucceeded = false
+  let recoveryPaymentType = ''
 
   const restored = restoreRecoverySnapshot({
     resumeToken,
@@ -355,16 +514,24 @@ onMounted(async () => {
   if (restored?.currency) {
     currency.value = normalizePaymentCurrency(restored.currency)
   }
+  if (restored?.paymentType) {
+    recoveryPaymentType = restored.paymentType
+  }
+  if (!resumeToken && restored?.resumeToken) {
+    resumeToken = restored.resumeToken
+  }
   if (!outTradeNo && restored?.outTradeNo) {
     outTradeNo = restored.outTradeNo
   }
 
   if (resumeToken) {
-    const resolvedOrder = await resolveOrderFromResumeToken(resumeToken)
+    const resumeResolution = await resolveOrderFromResumeTokenThrottled(resumeToken, true)
+    const resolvedOrder = resumeResolution.order
     if (resolvedOrder) {
+      initialResumeResolutionSucceeded = true
       setResolvedOrder(resolvedOrder)
       if (!orderId) {
-        orderId = hasOrderId(resolvedOrder) ? resolvedOrder.id : 0
+        orderId = hasOrderId(resolvedOrder) ? resolvedOrder.id : routeOrderId
       }
     } else if (routeOrderId > 0) {
       resumeTokenLookupFailed = true
@@ -397,6 +564,20 @@ onMounted(async () => {
     }
   }
 
+  if (isPendingStatus(order.value?.status) && !initialResumeResolutionSucceeded) {
+    const recoveredOrder = await tryRecoverPendingStripeOrder(
+      order.value,
+      outTradeNo,
+      recoveryPaymentType,
+    )
+    if (recoveredOrder) {
+      setResolvedOrder(recoveredOrder)
+      if (!orderId) {
+        orderId = hasOrderId(recoveredOrder) ? recoveredOrder.id : 0
+      }
+    }
+  }
+
   if (!order.value && !orderId && outTradeNo && hasLegacyFallbackContext) {
     returnInfo.value = {
       outTradeNo,
@@ -407,30 +588,68 @@ onMounted(async () => {
   }
 
   const refreshOrder = async (): Promise<ResolvedOrder | null> => {
-    if (resumeToken) {
-      const resolvedOrder = await resolveOrderFromResumeToken(resumeToken)
-      if (resolvedOrder) {
-        return resolvedOrder
-      }
-    }
+    let refreshedOrder: ResolvedOrder | null = null
+    let resumeResolutionSucceeded = false
 
     if (orderId) {
       try {
-        return await paymentStore.pollOrderStatus(orderId)
+        refreshedOrder = await paymentStore.pollOrderStatus(orderId)
       } catch (_err: unknown) {
-        // Fall through to legacy public verification when order polling is unavailable.
+        // Fall through to the throttled signed recovery lookup when available.
       }
     }
 
-    if (shouldUsePublicOutTradeNo) {
-      return await resolveOrderFromOutTradeNo(outTradeNo)
+    const stripeContext = isStripePaymentContext(
+      refreshedOrder || order.value,
+      recoveryPaymentType,
+    )
+    const shouldUseSignedRecovery = !!resumeToken
+      && (
+        !refreshedOrder
+        || (stripeContext && isPendingStatus(refreshedOrder.status))
+      )
+
+    if (shouldUseSignedRecovery) {
+      if (stripeContext) {
+        const resumeResolution = await resolveOrderFromResumeTokenThrottled(resumeToken)
+        if (resumeResolution.order) {
+          refreshedOrder = resumeResolution.order
+          resumeResolutionSucceeded = true
+        }
+      } else {
+        const resolvedOrder = await resolveOrderFromResumeToken(resumeToken)
+        if (resolvedOrder) {
+          refreshedOrder = resolvedOrder
+          resumeResolutionSucceeded = true
+        }
+      }
     }
 
-    return null
+    if (!refreshedOrder && !resumeToken && shouldUsePublicOutTradeNo) {
+      refreshedOrder = await resolveOrderFromOutTradeNo(outTradeNo)
+    }
+
+    if (resumeResolutionSucceeded) {
+      return refreshedOrder
+    }
+
+    return await tryRecoverPendingStripeOrder(
+      refreshedOrder,
+      outTradeNo,
+      recoveryPaymentType,
+    )
   }
 
   if (isPendingStatus(order.value?.status)) {
-    scheduleStatusRefresh(refreshOrder)
+    const resolveRefreshInterval = () => {
+      const fastAttempts = isStripePaymentContext(order.value, recoveryPaymentType)
+        ? STRIPE_STATUS_REFRESH_FAST_ATTEMPTS
+        : STATUS_REFRESH_FAST_ATTEMPTS
+      return refreshAttempts.value < fastAttempts
+        ? STATUS_REFRESH_INTERVAL_MS
+        : STATUS_REFRESH_BACKOFF_INTERVAL_MS
+    }
+    startStatusRefresh(refreshOrder, resolveRefreshInterval)
   } else if (order.value) {
     clearRecoverySnapshotForTerminalStatus(order.value.status)
   } else if (returnInfo.value) {
@@ -440,6 +659,11 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  statusRefreshStopped = true
+  activeStatusRefresh = null
+  resolveStatusRefreshInterval = null
   clearStatusRefreshTimer()
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
+  window.removeEventListener('focus', handleWindowFocus)
 })
 </script>

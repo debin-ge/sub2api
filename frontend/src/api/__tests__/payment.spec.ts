@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { get, post } = vi.hoisted(() => ({
   get: vi.fn(),
@@ -20,6 +20,20 @@ describe('payment api', () => {
     post.mockReset()
     get.mockResolvedValue({ data: {} })
     post.mockResolvedValue({ data: {} })
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('cache-busts order status reads so polling cannot reuse a stale pending response', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1777777777000)
+
+    await paymentAPI.getOrder(42)
+
+    expect(get).toHaveBeenCalledWith('/payment/orders/42', {
+      params: { _ts: 1777777777000 },
+    })
   })
 
   it('keeps legacy public out_trade_no verification for upgrade compatibility', async () => {

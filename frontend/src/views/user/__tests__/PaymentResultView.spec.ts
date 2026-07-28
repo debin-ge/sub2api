@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+
+enableAutoUnmount(afterEach)
 
 const routeState = vi.hoisted(() => ({
   query: {} as Record<string, unknown>,
@@ -96,6 +98,7 @@ describe('PaymentResultView', () => {
 
   afterEach(() => {
     vi.useRealTimers()
+    vi.restoreAllMocks()
   })
 
   it('renders a pending state instead of a failure state when the restored order is still pending', async () => {
@@ -196,7 +199,7 @@ describe('PaymentResultView', () => {
     expect(window.localStorage.getItem(PAYMENT_RECOVERY_STORAGE_KEY)).toBeNull()
   })
 
-  it('refreshes a pending resume-token result until the order becomes paid', async () => {
+  it('uses authenticated local polling after the initial resume-token recovery', async () => {
     vi.useFakeTimers()
     routeState.query = {
       resume_token: 'resume-77',
@@ -205,13 +208,10 @@ describe('PaymentResultView', () => {
       PAYMENT_RECOVERY_STORAGE_KEY,
       JSON.stringify(recoverySnapshotFactory('resume-77')),
     )
-    resolveOrderPublicByResumeToken
-      .mockResolvedValueOnce({
-        data: orderFactory('PENDING'),
-      })
-      .mockResolvedValueOnce({
-        data: orderFactory('PAID'),
-      })
+    resolveOrderPublicByResumeToken.mockResolvedValueOnce({
+      data: orderFactory('PENDING'),
+    })
+    pollOrderStatus.mockResolvedValueOnce(orderFactory('PAID'))
 
     const wrapper = mount(PaymentResultView, {
       global: {
@@ -230,10 +230,50 @@ describe('PaymentResultView', () => {
     await vi.advanceTimersByTimeAsync(2000)
     await flushPromises()
 
-    expect(resolveOrderPublicByResumeToken).toHaveBeenCalledTimes(2)
+    expect(resolveOrderPublicByResumeToken).toHaveBeenCalledTimes(1)
+    expect(pollOrderStatus).toHaveBeenCalledTimes(1)
+    expect(pollOrderStatus).toHaveBeenCalledWith(42)
     expect(wrapper.text()).toContain('payment.result.success')
     expect(wrapper.text()).not.toContain('payment.result.failed')
     expect(window.localStorage.getItem(PAYMENT_RECOVERY_STORAGE_KEY)).toBeNull()
+  })
+
+  it('keeps two-second resume-token fallback for a non-Stripe order when local polling is unavailable', async () => {
+    vi.useFakeTimers()
+    routeState.query = {
+      resume_token: 'resume-non-stripe-fallback',
+    }
+    window.localStorage.setItem(
+      PAYMENT_RECOVERY_STORAGE_KEY,
+      JSON.stringify(recoverySnapshotFactory('resume-non-stripe-fallback')),
+    )
+    resolveOrderPublicByResumeToken
+      .mockResolvedValueOnce({
+        data: orderFactory('PENDING'),
+      })
+      .mockResolvedValueOnce({
+        data: orderFactory('PAID'),
+      })
+    pollOrderStatus.mockRejectedValue(new Error('auth unavailable'))
+
+    const wrapper = mount(PaymentResultView, {
+      global: {
+        stubs: {
+          OrderStatusBadge: true,
+        },
+      },
+    })
+
+    await flushPromises()
+    expect(resolveOrderPublicByResumeToken).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(2000)
+    await flushPromises()
+
+    expect(pollOrderStatus).toHaveBeenCalledWith(42)
+    expect(resolveOrderPublicByResumeToken).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).toContain('payment.result.success')
+    wrapper.unmount()
   })
 
   it('falls back to order_id polling when resume-token recovery fails', async () => {
@@ -269,6 +309,359 @@ describe('PaymentResultView', () => {
     expect(verifyOrderPublic).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('payment.result.success')
     expect(window.localStorage.getItem(PAYMENT_RECOVERY_STORAGE_KEY)).toBeNull()
+  })
+
+  it('restores the signed resume token from local recovery state after a Stripe return', async () => {
+    routeState.query = {
+      order_id: '42',
+      status: 'success',
+    }
+    window.localStorage.setItem(
+      PAYMENT_RECOVERY_STORAGE_KEY,
+      JSON.stringify({
+        ...recoverySnapshotFactory('resume-from-snapshot'),
+        paymentType: 'stripe',
+        outTradeNo: 'sub2_stripe_snapshot_42',
+      }),
+    )
+    resolveOrderPublicByResumeToken.mockResolvedValueOnce({
+      data: {
+        ...orderFactory('COMPLETED'),
+        payment_type: 'stripe',
+        out_trade_no: 'sub2_stripe_snapshot_42',
+      },
+    })
+
+    const wrapper = mount(PaymentResultView, {
+      global: {
+        stubs: {
+          OrderStatusBadge: true,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(resolveOrderPublicByResumeToken).toHaveBeenCalledWith('resume-from-snapshot')
+    expect(pollOrderStatus).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('payment.result.success')
+  })
+
+  it('actively verifies a pending Stripe order resolved through order_id', async () => {
+    routeState.query = {
+      order_id: '42',
+      status: 'success',
+    }
+    pollOrderStatus.mockResolvedValueOnce({
+      ...orderFactory('PENDING'),
+      payment_type: 'stripe',
+      out_trade_no: 'sub2_stripe_result_42',
+    })
+    verifyOrder.mockResolvedValueOnce({
+      data: {
+        ...orderFactory('COMPLETED'),
+        payment_type: 'stripe',
+        out_trade_no: 'sub2_stripe_result_42',
+      },
+    })
+
+    const wrapper = mount(PaymentResultView, {
+      global: {
+        stubs: {
+          OrderStatusBadge: true,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(pollOrderStatus).toHaveBeenCalledWith(42)
+    expect(verifyOrder).toHaveBeenCalledTimes(1)
+    expect(verifyOrder).toHaveBeenCalledWith('sub2_stripe_result_42')
+    expect(wrapper.text()).toContain('payment.result.success')
+  })
+
+  it('uses provider_key to verify a Stripe-backed wxpay order resolved through order_id', async () => {
+    routeState.query = {
+      order_id: '42',
+      status: 'success',
+    }
+    pollOrderStatus.mockResolvedValueOnce({
+      ...orderFactory('PENDING'),
+      payment_type: 'wxpay',
+      provider_key: 'stripe',
+      out_trade_no: 'sub2_stripe_wxpay_result_42',
+    })
+    verifyOrder.mockResolvedValueOnce({
+      data: {
+        ...orderFactory('COMPLETED'),
+        payment_type: 'wxpay',
+        provider_key: 'stripe',
+        out_trade_no: 'sub2_stripe_wxpay_result_42',
+      },
+    })
+
+    const wrapper = mount(PaymentResultView, {
+      global: {
+        stubs: {
+          OrderStatusBadge: true,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(pollOrderStatus).toHaveBeenCalledWith(42)
+    expect(verifyOrder).toHaveBeenCalledTimes(1)
+    expect(verifyOrder).toHaveBeenCalledWith('sub2_stripe_wxpay_result_42')
+    expect(wrapper.text()).toContain('payment.result.success')
+  })
+
+  it('shows success when Stripe completes after the old five-minute polling cutoff', async () => {
+    vi.useFakeTimers()
+    routeState.query = {
+      order_id: '42',
+      status: 'success',
+    }
+    const pendingStripeOrder = {
+      ...orderFactory('PENDING'),
+      payment_type: 'stripe',
+      out_trade_no: 'sub2_stripe_long_refresh_42',
+    }
+    let localStatusReads = 0
+    pollOrderStatus.mockImplementation(async () => {
+      localStatusReads += 1
+      return localStatusReads >= 152
+        ? { ...pendingStripeOrder, status: 'COMPLETED' }
+        : pendingStripeOrder
+    })
+    verifyOrder.mockResolvedValue({
+      data: pendingStripeOrder,
+    })
+
+    const wrapper = mount(PaymentResultView, {
+      global: {
+        stubs: {
+          OrderStatusBadge: true,
+        },
+      },
+    })
+
+    await flushPromises()
+    expect(pollOrderStatus).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(298000)
+    await flushPromises()
+
+    expect(pollOrderStatus).toHaveBeenCalledTimes(150)
+    expect(verifyOrder.mock.calls.length).toBeLessThanOrEqual(20)
+
+    await vi.advanceTimersByTimeAsync(14000)
+    await flushPromises()
+
+    expect(pollOrderStatus).toHaveBeenCalledTimes(152)
+    expect(wrapper.text()).toContain('payment.result.success')
+    wrapper.unmount()
+  })
+
+  it('keeps two-second local polling while limiting resume and verify upstream recovery calls', async () => {
+    vi.useFakeTimers()
+    routeState.query = {
+      resume_token: 'resume-stripe-long',
+      order_id: '42',
+      status: 'success',
+    }
+    window.localStorage.setItem(
+      PAYMENT_RECOVERY_STORAGE_KEY,
+      JSON.stringify({
+        ...recoverySnapshotFactory('resume-stripe-long'),
+        paymentType: 'stripe',
+        outTradeNo: 'sub2_stripe_resume_long_42',
+      }),
+    )
+    const pendingStripeOrder = {
+      ...orderFactory('PENDING'),
+      payment_type: 'stripe',
+      out_trade_no: 'sub2_stripe_resume_long_42',
+    }
+    resolveOrderPublicByResumeToken.mockResolvedValue({
+      data: pendingStripeOrder,
+    })
+    pollOrderStatus.mockResolvedValue(pendingStripeOrder)
+    verifyOrder.mockResolvedValue({
+      data: pendingStripeOrder,
+    })
+
+    const wrapper = mount(PaymentResultView, {
+      global: {
+        stubs: {
+          OrderStatusBadge: true,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(resolveOrderPublicByResumeToken).toHaveBeenCalledTimes(1)
+    expect(verifyOrder).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(298000)
+    await flushPromises()
+
+    expect(pollOrderStatus).toHaveBeenCalledTimes(149)
+    expect(resolveOrderPublicByResumeToken.mock.calls.length).toBeGreaterThan(1)
+    expect(resolveOrderPublicByResumeToken.mock.calls.length + verifyOrder.mock.calls.length)
+      .toBeLessThanOrEqual(20)
+
+    await vi.advanceTimersByTimeAsync(16000)
+    await flushPromises()
+
+    expect(pollOrderStatus).toHaveBeenCalledTimes(151)
+    wrapper.unmount()
+  })
+
+  it('uses signed provider_key to throttle unauthenticated Stripe-backed wxpay recovery', async () => {
+    vi.useFakeTimers()
+    routeState.query = {
+      resume_token: 'resume-stripe-fallback',
+      order_id: '42',
+      status: 'success',
+    }
+    window.localStorage.setItem(
+      PAYMENT_RECOVERY_STORAGE_KEY,
+      JSON.stringify({
+        ...recoverySnapshotFactory('resume-stripe-fallback'),
+        paymentType: 'wxpay',
+        outTradeNo: 'sub2_stripe_resume_fallback_42',
+      }),
+    )
+    const pendingStripeOrder = {
+      ...orderFactory('PENDING'),
+      payment_type: 'wxpay',
+      provider_key: 'stripe',
+      out_trade_no: 'sub2_stripe_resume_fallback_42',
+    }
+    resolveOrderPublicByResumeToken.mockResolvedValue({
+      data: pendingStripeOrder,
+    })
+    pollOrderStatus.mockRejectedValue(new Error('auth unavailable'))
+
+    const wrapper = mount(PaymentResultView, {
+      global: {
+        stubs: {
+          OrderStatusBadge: true,
+        },
+      },
+    })
+
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(14000)
+    await flushPromises()
+
+    expect(pollOrderStatus).toHaveBeenCalledTimes(7)
+    expect(resolveOrderPublicByResumeToken).toHaveBeenCalledTimes(1)
+    expect(verifyOrder).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(2000)
+    await flushPromises()
+
+    expect(pollOrderStatus).toHaveBeenCalledTimes(8)
+    expect(resolveOrderPublicByResumeToken).toHaveBeenCalledTimes(2)
+    expect(verifyOrder).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('backs off instead of permanently stopping a non-Stripe pending refresh', async () => {
+    vi.useFakeTimers()
+    routeState.query = {
+      order_id: '42',
+      status: 'success',
+    }
+    let lookupCount = 0
+    pollOrderStatus.mockImplementation(async () => {
+      lookupCount += 1
+      return orderFactory(lookupCount >= 17 ? 'COMPLETED' : 'PENDING')
+    })
+
+    const wrapper = mount(PaymentResultView, {
+      global: {
+        stubs: {
+          OrderStatusBadge: true,
+        },
+      },
+    })
+
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(32000)
+    await flushPromises()
+
+    expect(pollOrderStatus).toHaveBeenCalledTimes(16)
+    expect(verifyOrder).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('payment.result.processing')
+
+    await vi.advanceTimersByTimeAsync(8000)
+    await flushPromises()
+
+    expect(pollOrderStatus).toHaveBeenCalledTimes(17)
+    expect(wrapper.text()).toContain('payment.result.success')
+    wrapper.unmount()
+  })
+
+  it('pauses while hidden and refreshes immediately when the result page becomes visible', async () => {
+    vi.useFakeTimers()
+    routeState.query = {
+      order_id: '42',
+      status: 'success',
+    }
+    let visibilityState: DocumentVisibilityState = 'visible'
+    vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibilityState)
+
+    const pendingStripeOrder = {
+      ...orderFactory('PENDING'),
+      payment_type: 'stripe',
+      out_trade_no: 'sub2_stripe_visibility_42',
+    }
+    let upstreamStatus = 'PENDING'
+    pollOrderStatus.mockResolvedValue(pendingStripeOrder)
+    verifyOrder
+      .mockRejectedValueOnce(new Error('temporary network failure'))
+      .mockImplementation(async () => ({
+        data: {
+          ...pendingStripeOrder,
+          status: upstreamStatus,
+        },
+      }))
+
+    const wrapper = mount(PaymentResultView, {
+      global: {
+        stubs: {
+          OrderStatusBadge: true,
+        },
+      },
+    })
+
+    await flushPromises()
+    expect(wrapper.text()).toContain('payment.result.processing')
+    expect(pollOrderStatus).toHaveBeenCalledTimes(1)
+    expect(verifyOrder).toHaveBeenCalledTimes(1)
+
+    visibilityState = 'hidden'
+    document.dispatchEvent(new Event('visibilitychange'))
+    await vi.advanceTimersByTimeAsync(360000)
+    await flushPromises()
+
+    expect(pollOrderStatus).toHaveBeenCalledTimes(1)
+    expect(verifyOrder).toHaveBeenCalledTimes(1)
+
+    upstreamStatus = 'COMPLETED'
+    visibilityState = 'visible'
+    document.dispatchEvent(new Event('visibilitychange'))
+    await flushPromises()
+
+    expect(pollOrderStatus).toHaveBeenCalledTimes(2)
+    expect(verifyOrder).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).toContain('payment.result.success')
+    wrapper.unmount()
   })
 
   it('falls back to public out_trade_no verification when resume_token recovery fails in legacy return flows', async () => {

@@ -56,9 +56,10 @@
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
+import { paymentAPI } from '@/api/payment'
 import { extractI18nErrorMessage } from '@/utils/apiError'
 import { isMobileDevice } from '@/utils/device'
-import { buildApiUrl } from '@/api/client'
+import type { PaymentOrder } from '@/types/payment'
 
 interface StripeWithWechatPay {
   confirmWechatPayPayment(clientSecret: string, options: Record<string, unknown>): Promise<{ error?: { message?: string }; paymentIntent?: { status: string } }>
@@ -86,8 +87,21 @@ const hint = ref(t('payment.stripePopup.redirecting'))
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let initTimeoutTimer: ReturnType<typeof setTimeout> | null = null
 let messageHandler: ((event: MessageEvent) => void) | null = null
+let pollInFlight = false
+let verifyAttempts = 0
+let lastVerifyAt: number | null = null
+
+const STRIPE_VERIFY_INTERVAL_MS = 15000
+const STRIPE_VERIFY_MAX_ATTEMPTS = 20
 
 function closeWindow() { window.close() }
+
+function stopPolling() {
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+}
 
 function clearInitTimeout() {
   if (initTimeoutTimer) {
@@ -123,13 +137,36 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
+  stopPolling()
   clearInitTimeout()
   if (messageHandler) {
     window.removeEventListener('message', messageHandler)
     messageHandler = null
   }
 })
+
+async function tryRecoverPendingOrder(currentOrder: PaymentOrder): Promise<PaymentOrder> {
+  const status = String(currentOrder.status || '').trim().toUpperCase()
+  const outTradeNo = String(currentOrder.out_trade_no || '').trim()
+  if (status !== 'PENDING' || !outTradeNo) return currentOrder
+
+  const now = Date.now()
+  if (
+    verifyAttempts >= STRIPE_VERIFY_MAX_ATTEMPTS
+    || (lastVerifyAt !== null && now - lastVerifyAt < STRIPE_VERIFY_INTERVAL_MS)
+  ) {
+    return currentOrder
+  }
+
+  lastVerifyAt = now
+  verifyAttempts += 1
+  try {
+    const result = await paymentAPI.verifyOrder(outTradeNo)
+    return result.data || currentOrder
+  } catch {
+    return currentOrder
+  }
+}
 
 async function initStripe(clientSecret: string, publishableKey: string) {
   if (!clientSecret || !publishableKey) {
@@ -169,29 +206,30 @@ async function initStripe(clientSecret: string, publishableKey: string) {
 }
 
 function startPolling() {
-  let inFlight = false
+  const numericOrderId = Number(orderId)
+  if (!numericOrderId) return
+  stopPolling()
+  verifyAttempts = 0
+  lastVerifyAt = null
   pollTimer = setInterval(async () => {
     // 防重入：接口响应慢于轮询间隔时避免并发重叠请求。
-    if (inFlight) return
-    inFlight = true
+    if (pollInFlight) return
+    pollInFlight = true
     try {
-      // access token 存储在 localStorage 的 'auth_token' 键下（见 api/client.ts），
-      // 之前误读 'token' 导致轮询请求不带认证、永远 401，支付成功无法被检测到。
-      const token = localStorage.getItem('auth_token') || ''
-      const res = await fetch(buildApiUrl(`/payment/orders/${orderId}`), {
-        headers: token ? { Authorization: 'Bearer ' + token } : {},
-        credentials: 'include',
-      })
-      if (!res.ok) return
-      const data = await res.json()
-      const status = data?.data?.status
-      if (status === 'COMPLETED' || status === 'PAID') {
-        if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
+      const result = await paymentAPI.getOrder(numericOrderId)
+      let currentOrder = result.data
+      currentOrder = await tryRecoverPendingOrder(currentOrder)
+      if (
+        currentOrder.status === 'COMPLETED'
+        || currentOrder.status === 'PAID'
+        || currentOrder.status === 'RECHARGING'
+      ) {
+        stopPolling()
         success.value = true
         setTimeout(closeWindow, 2000)
       }
     } catch { /* ignore */ } finally {
-      inFlight = false
+      pollInFlight = false
     }
   }, 3000)
 }

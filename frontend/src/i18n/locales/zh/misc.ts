@@ -446,6 +446,7 @@ export default {
       NO_AVAILABLE_INSTANCE: '暂无可用的支付通道',
       PAYMENT_PROVIDER_MISCONFIGURED: '支付通道配置错误，请联系管理员',
       WXPAY_CONFIG_MISSING_KEY: '微信支付配置缺少必填项：{key}',
+      STRIPE_CONFIG_MISSING_KEY: 'Stripe 配置缺少必填项：{key}',
       WXPAY_CONFIG_INVALID_KEY_LENGTH: '微信支付 {key} 长度错误，应为 {expected} 字节（实际 {actual}）',
       WXPAY_CONFIG_INVALID_KEY: '微信支付 {key} 格式错误，请确认复制了完整的 PEM 内容',
       PENDING_ORDERS: '该服务商有未完成的订单，请等待订单完成后再操作',

@@ -128,6 +128,12 @@ const currency = ref('CNY')
 const wechatQrUrl = ref('')
 const redirecting = ref(false)
 const showPaymentElement = ref(false)
+const resultResumeToken = ref(
+  typeof route.query.resume_token === 'string' ? route.query.resume_token : '',
+)
+const resultOutTradeNo = ref(
+  typeof route.query.out_trade_no === 'string' ? route.query.out_trade_no : '',
+)
 
 let stripeInstance: Stripe | null = null
 let elementsInstance: StripeElements | null = null
@@ -137,7 +143,7 @@ onMounted(async () => {
   const orderId = Number(route.query.order_id)
   const clientSecret = String(route.query.client_secret || '')
   const method = String(route.query.method || '')
-  const resumeToken = typeof route.query.resume_token === 'string' ? route.query.resume_token : undefined
+  const resumeToken = resultResumeToken.value || undefined
 
   if (!orderId || !clientSecret) {
     loading.value = false
@@ -153,10 +159,19 @@ onMounted(async () => {
       )
       if (restored?.orderId === orderId) {
         currency.value = normalizePaymentCurrency(restored.currency)
+        if (!resultResumeToken.value) {
+          resultResumeToken.value = restored.resumeToken
+        }
+        if (!resultOutTradeNo.value) {
+          resultOutTradeNo.value = restored.outTradeNo
+        }
       }
     }
     const res = await paymentAPI.getOrder(orderId)
     order.value = res.data
+    if (!resultOutTradeNo.value) {
+      resultOutTradeNo.value = String(res.data.out_trade_no || '').trim()
+    }
     if (res.data.currency) {
       currency.value = normalizePaymentCurrency(res.data.currency)
     }
@@ -203,9 +218,31 @@ function formatGatewayAmount(value: number): string {
   return formatPaymentAmount(value, currency.value, localeCode.value)
 }
 
+function buildPaymentResultQuery(orderId: number | string): Record<string, string> {
+  const query: Record<string, string> = {
+    order_id: String(orderId),
+    status: 'success',
+  }
+  if (resultResumeToken.value) {
+    query.resume_token = resultResumeToken.value
+  }
+  if (resultOutTradeNo.value) {
+    query.out_trade_no = resultOutTradeNo.value
+  }
+  return query
+}
+
+function buildPaymentResultUrl(orderId: number | string): string {
+  const url = new URL('/payment/result', window.location.origin)
+  Object.entries(buildPaymentResultQuery(orderId)).forEach(([key, value]) => {
+    url.searchParams.set(key, value)
+  })
+  return url.toString()
+}
+
 async function confirmAlipay(stripe: Stripe, clientSecret: string, orderId: number) {
   redirecting.value = true
-  const returnUrl = window.location.origin + '/payment/result?order_id=' + orderId + '&status=success'
+  const returnUrl = buildPaymentResultUrl(orderId)
   const { error } = await stripe.confirmAlipayPayment(clientSecret, { return_url: returnUrl })
   if (error) {
     redirecting.value = false
@@ -263,7 +300,7 @@ async function handleGenericPay() {
     const { error } = await stripeInstance.confirmPayment({
       elements: elementsInstance,
       confirmParams: {
-        return_url: window.location.origin + '/payment/result?order_id=' + route.query.order_id + '&status=success',
+        return_url: buildPaymentResultUrl(String(route.query.order_id || '')),
       },
       redirect: 'if_required',
     })
@@ -281,18 +318,74 @@ async function handleGenericPay() {
 }
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
+let pollInFlight = false
+let verifyAttempts = 0
+let lastVerifyAt: number | null = null
+
+const STRIPE_VERIFY_INTERVAL_MS = 15000
+const STRIPE_VERIFY_MAX_ATTEMPTS = 20
+
+function stopPolling() {
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+}
+
+async function tryRecoverPendingOrder(currentOrder: PaymentOrder): Promise<PaymentOrder> {
+  const status = String(currentOrder.status || '').trim().toUpperCase()
+  const outTradeNo = String(currentOrder.out_trade_no || '').trim()
+  if (status !== 'PENDING' || !outTradeNo) return currentOrder
+
+  const now = Date.now()
+  if (
+    verifyAttempts >= STRIPE_VERIFY_MAX_ATTEMPTS
+    || (lastVerifyAt !== null && now - lastVerifyAt < STRIPE_VERIFY_INTERVAL_MS)
+  ) {
+    return currentOrder
+  }
+
+  lastVerifyAt = now
+  verifyAttempts += 1
+  try {
+    const result = await paymentAPI.verifyOrder(outTradeNo)
+    return result.data || currentOrder
+  } catch {
+    return currentOrder
+  }
+}
 
 function startPolling() {
   const orderId = Number(route.query.order_id)
   if (!orderId) return
+  stopPolling()
+  verifyAttempts = 0
+  lastVerifyAt = null
   pollTimer = setInterval(async () => {
-    const o = await paymentStore.pollOrderStatus(orderId)
-    if (!o) return
-    if (o.status === 'COMPLETED' || o.status === 'PAID') {
-      if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
-      stripeSuccess.value = true
-      wechatQrUrl.value = ''
-      scheduleClose()
+    if (pollInFlight) return
+    pollInFlight = true
+    try {
+      let currentOrder = await paymentStore.pollOrderStatus(orderId)
+      if (!currentOrder) return
+      currentOrder = await tryRecoverPendingOrder(currentOrder)
+      order.value = currentOrder
+      if (currentOrder.currency) {
+        currency.value = normalizePaymentCurrency(currentOrder.currency)
+      }
+      if (
+        currentOrder.status === 'COMPLETED'
+        || currentOrder.status === 'PAID'
+        || currentOrder.status === 'RECHARGING'
+      ) {
+        stopPolling()
+        stripeSuccess.value = true
+        wechatQrUrl.value = ''
+        scheduleClose()
+      }
+    } catch {
+      // 网络抖动时保留二维码并继续下一轮本地状态检查。
+    } finally {
+      pollInFlight = false
     }
   }, 3000)
 }
@@ -302,13 +395,16 @@ function scheduleClose() {
     redirectTimer = setTimeout(() => { window.close() }, 2000)
   } else {
     redirectTimer = setTimeout(() => {
-      router.push({ path: '/payment/result', query: { order_id: String(route.query.order_id || ''), status: 'success' } })
+      router.push({
+        path: '/payment/result',
+        query: buildPaymentResultQuery(String(route.query.order_id || '')),
+      })
     }, 2000)
   }
 }
 
 onUnmounted(() => {
   if (redirectTimer) clearTimeout(redirectTimer)
-  if (pollTimer) clearInterval(pollTimer)
+  stopPolling()
 })
 </script>

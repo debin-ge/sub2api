@@ -9,12 +9,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/enttest"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
+	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -23,6 +25,13 @@ import (
 	entsql "entgo.io/ent/dialect/sql"
 	_ "modernc.org/sqlite"
 )
+
+func requirePaymentOrderNoStoreHeaders(t *testing.T, recorder *httptest.ResponseRecorder) {
+	t.Helper()
+	require.Equal(t, paymentOrderStatusCacheControl, recorder.Header().Get("Cache-Control"))
+	require.Equal(t, "no-cache", recorder.Header().Get("Pragma"))
+	require.Equal(t, "0", recorder.Header().Get("Expires"))
+}
 
 func TestApplyWeChatPaymentResumeClaims(t *testing.T) {
 	t.Parallel()
@@ -133,6 +142,7 @@ func TestVerifyOrderPublicReturnsLegacyOrderState(t *testing.T) {
 	h.VerifyOrderPublic(ctx)
 
 	require.Equal(t, http.StatusOK, recorder.Code)
+	requirePaymentOrderNoStoreHeaders(t, recorder)
 
 	var resp struct {
 		Code int            `json:"code"`
@@ -233,6 +243,7 @@ func TestResolveOrderPublicByResumeTokenReturnsFrontendContractFields(t *testing
 	h.ResolveOrderPublicByResumeToken(ctx)
 
 	require.Equal(t, http.StatusOK, recorder.Code)
+	requirePaymentOrderNoStoreHeaders(t, recorder)
 
 	var resp struct {
 		Code int            `json:"code"`
@@ -252,6 +263,82 @@ func TestResolveOrderPublicByResumeTokenReturnsFrontendContractFields(t *testing
 	require.Contains(t, resp.Data, "created_at")
 	require.Contains(t, resp.Data, "expires_at")
 	require.Contains(t, resp.Data, "refund_amount")
+}
+
+func TestAuthenticatedPaymentOrderStatusHandlersDisableCaching(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db, err := sql.Open("sqlite", "file:payment_handler_authenticated_status_cache?mode=memory&cache=shared")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	_, err = db.Exec("PRAGMA foreign_keys = ON")
+	require.NoError(t, err)
+
+	drv := entsql.OpenDB(dialect.SQLite, db)
+	client := enttest.NewClient(t, enttest.WithOptions(dbent.Driver(drv)))
+	t.Cleanup(func() { _ = client.Close() })
+
+	user, err := client.User.Create().
+		SetEmail("payment-status-cache@example.com").
+		SetPasswordHash("hash").
+		SetUsername("payment-status-cache-user").
+		Save(context.Background())
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(10).
+		SetPayAmount(10).
+		SetFeeRate(0).
+		SetRechargeCode("PAYMENT-STATUS-CACHE").
+		SetOutTradeNo("payment-status-cache-order").
+		SetPaymentType(payment.TypeStripe).
+		SetPaymentTradeNo("pi_payment_status_cache").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(service.OrderStatusCompleted).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetPaidAt(time.Now()).
+		SetCompletedAt(time.Now()).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(context.Background())
+	require.NoError(t, err)
+
+	paymentSvc := service.NewPaymentService(client, payment.NewRegistry(), nil, nil, nil, nil, nil, nil, nil)
+	h := NewPaymentHandler(paymentSvc, nil)
+
+	t.Run("get order", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(recorder)
+		ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/payment/orders/"+strconv.FormatInt(order.ID, 10), nil)
+		ctx.Params = gin.Params{{Key: "id", Value: strconv.FormatInt(order.ID, 10)}}
+		ctx.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: user.ID})
+
+		h.GetOrder(ctx)
+
+		require.Equal(t, http.StatusOK, recorder.Code)
+		requirePaymentOrderNoStoreHeaders(t, recorder)
+	})
+
+	t.Run("verify order", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(recorder)
+		ctx.Request = httptest.NewRequest(
+			http.MethodPost,
+			"/api/v1/payment/orders/verify",
+			bytes.NewBufferString(`{"out_trade_no":"payment-status-cache-order"}`),
+		)
+		ctx.Request.Header.Set("Content-Type", "application/json")
+		ctx.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: user.ID})
+
+		h.VerifyOrder(ctx)
+
+		require.Equal(t, http.StatusOK, recorder.Code)
+		requirePaymentOrderNoStoreHeaders(t, recorder)
+	})
 }
 
 func TestResolveOrderPublicByResumeTokenReturnsBadRequestForMismatchedToken(t *testing.T) {

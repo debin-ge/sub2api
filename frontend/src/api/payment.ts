@@ -23,6 +23,29 @@ export interface PublicOrderVerifyResult {
   expires_at: string
 }
 
+export interface PublicOrderResult {
+  id: number
+  out_trade_no: string
+  amount: number
+  pay_amount: number
+  fee_rate: number
+  currency: string
+  payment_type: string
+  provider_key?: string
+  order_type: string
+  status: string
+  created_at: string
+  expires_at: string
+  paid_at?: string
+  completed_at?: string
+  refund_amount: number
+  refund_reason?: string
+  refund_requested_at?: string
+  refund_requested_by?: string
+  refund_request_reason?: string
+  plan_id?: number
+}
+
 export const paymentAPI = {
   /** Get payment configuration (enabled types, limits, etc.) */
   getConfig() {
@@ -56,7 +79,12 @@ export const paymentAPI = {
 
   /** Get a specific order by ID */
   getOrder(id: number) {
-    return apiClient.get<PaymentOrder>(`/payment/orders/${id}`)
+    // Order state changes asynchronously after a provider callback. A unique
+    // query value prevents browsers or an intermediary proxy from replaying a
+    // cached PENDING response during polling.
+    return apiClient.get<PaymentOrder>(`/payment/orders/${id}`, {
+      params: { _ts: Date.now() },
+    })
   },
 
   /** Cancel a pending order */
@@ -76,7 +104,7 @@ export const paymentAPI = {
 
   /** Resolve an order from a signed resume token without auth */
   resolveOrderPublicByResumeToken(resumeToken: string) {
-    return apiClient.post<PublicOrderVerifyResult>('/payment/public/orders/resolve', { resume_token: resumeToken })
+    return apiClient.post<PublicOrderResult>('/payment/public/orders/resolve', { resume_token: resumeToken })
   },
 
   /** Request a refund for a completed order */

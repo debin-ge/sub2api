@@ -22,6 +22,14 @@ type PaymentHandler struct {
 	configService  *service.PaymentConfigService
 }
 
+const paymentOrderStatusCacheControl = "private, no-store, max-age=0"
+
+func setPaymentOrderStatusNoStore(c *gin.Context) {
+	c.Header("Cache-Control", paymentOrderStatusCacheControl)
+	c.Header("Pragma", "no-cache")
+	c.Header("Expires", "0")
+}
+
 // NewPaymentHandler creates a new PaymentHandler.
 func NewPaymentHandler(paymentService *service.PaymentService, configService *service.PaymentConfigService) *PaymentHandler {
 	return &PaymentHandler{
@@ -325,6 +333,7 @@ func applyWeChatPaymentResumeClaims(req *CreateOrderRequest, claims *service.WeC
 // GetMyOrders returns the authenticated user's orders.
 // GET /api/v1/payment/orders/my
 func (h *PaymentHandler) GetMyOrders(c *gin.Context) {
+	setPaymentOrderStatusNoStore(c)
 	subject, ok := requireAuth(c)
 	if !ok {
 		return
@@ -348,6 +357,7 @@ func (h *PaymentHandler) GetMyOrders(c *gin.Context) {
 // GetOrder returns a single order for the authenticated user.
 // GET /api/v1/payment/orders/:id
 func (h *PaymentHandler) GetOrder(c *gin.Context) {
+	setPaymentOrderStatusNoStore(c)
 	subject, ok := requireAuth(c)
 	if !ok {
 		return
@@ -444,6 +454,7 @@ type ResolveOrderByResumeTokenRequest struct {
 // if payment was made, and processes it if so.
 // POST /api/v1/payment/orders/verify
 func (h *PaymentHandler) VerifyOrder(c *gin.Context) {
+	setPaymentOrderStatusNoStore(c)
 	subject, ok := requireAuth(c)
 	if !ok {
 		return
@@ -486,6 +497,7 @@ type PublicOrderResult struct {
 	RefundRequestedBy   *string    `json:"refund_requested_by,omitempty"`
 	RefundRequestReason *string    `json:"refund_request_reason,omitempty"`
 	PlanID              *int64     `json:"plan_id,omitempty"`
+	ProviderKey         *string    `json:"provider_key,omitempty"`
 }
 
 // PublicOrderVerifyResult is returned by the legacy anonymous out_trade_no
@@ -521,6 +533,7 @@ func buildPublicOrderResult(order *dbent.PaymentOrder) PublicOrderResult {
 		RefundRequestedBy:   order.RefundRequestedBy,
 		RefundRequestReason: order.RefundRequestReason,
 		PlanID:              order.PlanID,
+		ProviderKey:         order.ProviderKey,
 	}
 }
 
@@ -556,6 +569,7 @@ func publicOrderStatusPaid(status string) bool {
 // a compatibility path for older result pages and staggered deploys.
 // POST /api/v1/payment/public/orders/verify
 func (h *PaymentHandler) VerifyOrderPublic(c *gin.Context) {
+	setPaymentOrderStatusNoStore(c)
 	var req VerifyOrderRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
@@ -573,6 +587,7 @@ func (h *PaymentHandler) VerifyOrderPublic(c *gin.Context) {
 // ResolveOrderPublicByResumeToken resolves a payment order from a signed resume token.
 // POST /api/v1/payment/public/orders/resolve
 func (h *PaymentHandler) ResolveOrderPublicByResumeToken(c *gin.Context) {
+	setPaymentOrderStatusNoStore(c)
 	var req ResolveOrderByResumeTokenRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
@@ -631,6 +646,7 @@ type PaymentOrderResult struct {
 	RefundRequestReason *string    `json:"refund_request_reason,omitempty"`
 	PlanID              *int64     `json:"plan_id,omitempty"`
 	ProviderInstanceID  *string    `json:"provider_instance_id,omitempty"`
+	ProviderKey         *string    `json:"provider_key,omitempty"`
 }
 
 func sanitizePaymentOrdersForResponse(orders []*dbent.PaymentOrder) []PaymentOrderResult {
@@ -669,6 +685,7 @@ func sanitizePaymentOrderForResponse(order *dbent.PaymentOrder) *PaymentOrderRes
 		RefundRequestReason: order.RefundRequestReason,
 		PlanID:              order.PlanID,
 		ProviderInstanceID:  order.ProviderInstanceID,
+		ProviderKey:         order.ProviderKey,
 	}
 }
 

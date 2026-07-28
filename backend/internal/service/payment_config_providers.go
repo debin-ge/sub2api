@@ -28,6 +28,14 @@ import (
 // Only validates enabled instances — a disabled instance may be a half-filled
 // draft the admin will complete later.
 func (s *PaymentConfigService) validateProviderConfig(providerKey string, config map[string]string) error {
+	if providerKey == payment.TypeStripe {
+		for _, key := range []string{"secretKey", payment.ConfigKeyPublishableKey, "webhookSecret"} {
+			if strings.TrimSpace(providerConfigFieldValue(config, key)) == "" {
+				return infraerrors.BadRequest("STRIPE_CONFIG_MISSING_KEY", "missing_required_key").
+					WithMetadata(map[string]string{"key": key})
+			}
+		}
+	}
 	_, err := provider.CreateProvider(providerKey, "_validate_", config)
 	return err
 }

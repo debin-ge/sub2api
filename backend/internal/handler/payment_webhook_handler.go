@@ -114,8 +114,15 @@ func (h *PaymentWebhookHandler) handleNotify(c *gin.Context, providerKey string)
 	providers, err := h.paymentService.GetWebhookProviders(c.Request.Context(), providerKey, outTradeNo)
 	if err != nil {
 		slog.Warn("[Payment Webhook] provider not found", "provider", providerKey, "outTradeNo", outTradeNo, "error", err)
-		if providerKey == payment.TypeWxpay {
+		switch providerKey {
+		case payment.TypeWxpay:
 			c.String(http.StatusBadRequest, "verify failed")
+			return
+		case payment.TypeStripe:
+			// Stripe retries non-2xx deliveries. A provider-resolution failure
+			// is usually transient (or an instance/configuration mismatch), so
+			// acknowledging it would permanently discard a valid payment event.
+			c.String(http.StatusInternalServerError, "provider unavailable")
 			return
 		}
 		writeSuccessResponse(c, providerKey)
@@ -188,8 +195,19 @@ func extractOutTradeNo(rawBody, providerKey string) string {
 		if err := json.Unmarshal([]byte(rawBody), &payload); err == nil {
 			return strings.TrimSpace(payload.Data.Object.MerchantOrderID)
 		}
+	case payment.TypeStripe:
+		var payload struct {
+			Data struct {
+				Object struct {
+					Metadata map[string]string `json:"metadata"`
+				} `json:"object"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal([]byte(rawBody), &payload); err == nil {
+			return strings.TrimSpace(payload.Data.Object.Metadata["orderId"])
+		}
 	}
-	// For other providers (Stripe, Alipay direct, WxPay direct), the registry
+	// For other providers (Alipay direct and WxPay direct), the registry
 	// typically has only one instance, so no instance lookup is needed.
 	return ""
 }

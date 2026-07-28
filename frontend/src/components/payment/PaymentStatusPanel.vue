@@ -194,10 +194,12 @@ let lastVerifyAt = 0
 
 const VERIFY_RETRY_INTERVAL_MS = 15000
 const VERIFY_RETRY_MAX_ATTEMPTS = 6
+const STRIPE_VERIFY_RETRY_MAX_ATTEMPTS = 20
 
 const isAlipay = computed(() => isBuiltInAlipayMethod(props.paymentType))
 const isWxpay = computed(() => isBuiltInWxpayMethod(props.paymentType))
 const isWise = computed(() => String(props.paymentType || '').trim().toLowerCase() === 'wise')
+const isStripe = computed(() => String(props.paymentType || '').trim().toLowerCase() === 'stripe')
 
 const qrBorderClass = computed(() => {
   if (isAlipay.value) return 'border-[#00AEEF] bg-blue-50 dark:border-[#00AEEF]/70 dark:bg-blue-950/20'
@@ -271,13 +273,16 @@ async function renderQR() {
 }
 
 async function tryRecoverPendingOrder(order: PaymentOrder): Promise<PaymentOrder> {
-  if (!isWxpay.value && !isWise.value) return order
+  if (!isWxpay.value && !isWise.value && !isStripe.value) return order
   const outTradeNo = String(order.out_trade_no || '').trim()
   if (!outTradeNo) return order
   const normalizedStatus = String(order.status || '').trim().toUpperCase()
   if (normalizedStatus !== 'PENDING') return order
   const now = Date.now()
-  if (verifyAttempts >= VERIFY_RETRY_MAX_ATTEMPTS || now - lastVerifyAt < VERIFY_RETRY_INTERVAL_MS) {
+  const maxAttempts = isStripe.value
+    ? STRIPE_VERIFY_RETRY_MAX_ATTEMPTS
+    : VERIFY_RETRY_MAX_ATTEMPTS
+  if (verifyAttempts >= maxAttempts || now - lastVerifyAt < VERIFY_RETRY_INTERVAL_MS) {
     return order
   }
 

@@ -16,7 +16,31 @@ import (
 const (
 	stripeEventPaymentSuccess = "payment_intent.succeeded"
 	stripeEventPaymentFailed  = "payment_intent.payment_failed"
+	stripeObjectEvent         = "event"
+	stripeObjectPaymentIntent = "payment_intent"
 )
+
+// stripeWebhookEvent intentionally models only the stable fields needed to
+// reconcile an order. Stripe webhook endpoints may use an older API version
+// than stripe-go's release train; validating the signature first and decoding
+// this narrow schema avoids unsafe full-SDK-object deserialization across API
+// versions.
+type stripeWebhookEvent struct {
+	Object     string `json:"object"`
+	APIVersion string `json:"api_version"`
+	Type       string `json:"type"`
+	Data       struct {
+		Object stripeWebhookPaymentIntent `json:"object"`
+	} `json:"data"`
+}
+
+type stripeWebhookPaymentIntent struct {
+	ID       string            `json:"id"`
+	Object   string            `json:"object"`
+	Amount   int64             `json:"amount"`
+	Currency string            `json:"currency"`
+	Metadata map[string]string `json:"metadata"`
+}
 
 // Stripe implements the payment.CancelableProvider interface for Stripe payments.
 type Stripe struct {
@@ -171,8 +195,6 @@ func (s *Stripe) QueryOrder(ctx context.Context, tradeNo string) (*payment.Query
 
 // VerifyNotification verifies a Stripe webhook event.
 func (s *Stripe) VerifyNotification(_ context.Context, rawBody string, headers map[string]string) (*payment.PaymentNotification, error) {
-	s.ensureInit()
-
 	webhookSecret := s.config["webhookSecret"]
 	if webhookSecret == "" {
 		return nil, fmt.Errorf("stripe webhookSecret not configured")
@@ -183,9 +205,17 @@ func (s *Stripe) VerifyNotification(_ context.Context, rawBody string, headers m
 		return nil, fmt.Errorf("stripe notification missing stripe-signature header")
 	}
 
-	event, err := webhook.ConstructEvent([]byte(rawBody), sig, webhookSecret)
-	if err != nil {
+	payload := []byte(rawBody)
+	if err := webhook.ValidatePayload(payload, sig, webhookSecret); err != nil {
 		return nil, fmt.Errorf("stripe verify notification: %w", err)
+	}
+
+	var event stripeWebhookEvent
+	if err := json.Unmarshal(payload, &event); err != nil {
+		return nil, fmt.Errorf("stripe parse webhook event: %w", err)
+	}
+	if event.Object != stripeObjectEvent {
+		return nil, fmt.Errorf("stripe webhook object must be %q", stripeObjectEvent)
 	}
 
 	switch event.Type {
@@ -198,15 +228,19 @@ func (s *Stripe) VerifyNotification(_ context.Context, rawBody string, headers m
 	return nil, nil
 }
 
-func parseStripePaymentIntent(event *stripe.Event, status string, rawBody string) (*payment.PaymentNotification, error) {
-	var pi stripe.PaymentIntent
-	if err := json.Unmarshal(event.Data.Raw, &pi); err != nil {
-		return nil, fmt.Errorf("stripe parse payment_intent: %w", err)
+func parseStripePaymentIntent(event *stripeWebhookEvent, status string, rawBody string) (*payment.PaymentNotification, error) {
+	pi := event.Data.Object
+	orderID := strings.TrimSpace(pi.Metadata["orderId"])
+	if strings.TrimSpace(pi.ID) == "" || orderID == "" {
+		return nil, fmt.Errorf("stripe webhook missing payment_intent id or metadata.orderId")
 	}
-	currency := stripeIntentCurrency(pi.Currency, payment.DefaultPaymentCurrency)
+	if pi.Object != stripeObjectPaymentIntent {
+		return nil, fmt.Errorf("stripe webhook data.object must be %q", stripeObjectPaymentIntent)
+	}
+	currency := stripeIntentCurrency(stripe.Currency(pi.Currency), payment.DefaultPaymentCurrency)
 	return &payment.PaymentNotification{
 		TradeNo: pi.ID,
-		OrderID: pi.Metadata["orderId"],
+		OrderID: orderID,
 		Amount:  payment.MinorUnitToAmount(pi.Amount, currency),
 		Status:  status,
 		RawData: rawBody,

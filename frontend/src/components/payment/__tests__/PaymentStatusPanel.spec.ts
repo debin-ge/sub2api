@@ -67,6 +67,12 @@ const wiseOrderFactory = (status: string) => ({
   currency: 'USD',
 })
 
+const stripeOrderFactory = (status: string) => ({
+  ...orderFactory(status),
+  payment_type: 'stripe',
+  out_trade_no: 'sub2_stripe_20260727abcd1234',
+})
+
 describe('PaymentStatusPanel', () => {
   beforeEach(() => {
     vi.useFakeTimers()
@@ -191,6 +197,37 @@ describe('PaymentStatusPanel', () => {
     expect(verifyOrder).toHaveBeenCalledWith('sub2_20260420abcd1234')
     expect(wrapper.text()).toContain('payment.result.success')
     expect(wrapper.emitted('success')).toHaveLength(1)
+  })
+
+  it('actively verifies a pending Stripe order without calling upstream on every local poll', async () => {
+    pollOrderStatus.mockResolvedValue(stripeOrderFactory('PENDING'))
+    verifyOrder.mockResolvedValue({
+      data: stripeOrderFactory('PENDING'),
+    })
+
+    mount(PaymentStatusPanel, {
+      props: {
+        orderId: 42,
+        qrCode: '',
+        payUrl: 'https://checkout.stripe.com/pay/session/42',
+        expiresAt: '2099-01-01T12:30:00Z',
+        paymentType: 'stripe',
+        orderType: 'balance',
+      },
+      global: {
+        stubs: {
+          Icon: true,
+        },
+      },
+    })
+
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(12000)
+    await flushPromises()
+
+    expect(pollOrderStatus).toHaveBeenCalledTimes(4)
+    expect(verifyOrder).toHaveBeenCalledTimes(1)
+    expect(verifyOrder).toHaveBeenCalledWith('sub2_stripe_20260727abcd1234')
   })
 
   it('lets Wise users manually refresh status after paying in the hosted page', async () => {

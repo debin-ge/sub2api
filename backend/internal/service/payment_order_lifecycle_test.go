@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"database/sql"
+	"strconv"
 	"testing"
 	"time"
 
@@ -24,10 +25,12 @@ type paymentOrderLifecycleQueryProvider struct {
 	key               string
 	lastQueryContext  context.Context
 	lastQueryTradeNo  string
+	queryTradeNos     []string
 	lastCancelTradeNo string
 	queryCalls        int
 	cancelCalls       int
 	cancelErr         error
+	queryFn           func(context.Context, string) (*payment.QueryOrderResponse, error)
 	responses         []*payment.QueryOrderResponse
 	resp              *payment.QueryOrderResponse
 }
@@ -62,7 +65,11 @@ func (p *paymentOrderLifecycleQueryProvider) CreatePayment(context.Context, paym
 func (p *paymentOrderLifecycleQueryProvider) QueryOrder(ctx context.Context, tradeNo string) (*payment.QueryOrderResponse, error) {
 	p.lastQueryContext = ctx
 	p.lastQueryTradeNo = tradeNo
+	p.queryTradeNos = append(p.queryTradeNos, tradeNo)
 	p.queryCalls++
+	if p.queryFn != nil {
+		return p.queryFn(ctx, tradeNo)
+	}
 	if len(p.responses) > 0 {
 		resp := p.responses[0]
 		if len(p.responses) > 1 {
@@ -639,6 +646,70 @@ func TestVerifyOrderByOutTradeNoDoesNotCancelUnpaidUpstreamOrder(t *testing.T) {
 	require.Equal(t, OrderStatusPending, reloaded.Status)
 }
 
+func TestVerifyOrderByOutTradeNoReloadsAfterPendingQueryObservesConcurrentCompletion(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("checkpaid-concurrent-completion@example.com").
+		SetPasswordHash("hash").
+		SetUsername("checkpaid-concurrent-completion-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(88).
+		SetPayAmount(88).
+		SetFeeRate(0).
+		SetRechargeCode("CHECKPAID-CONCURRENT-COMPLETION").
+		SetOutTradeNo("sub2_checkpaid_concurrent_completion").
+		SetPaymentType(payment.TypeAlipay).
+		SetPaymentTradeNo("").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusPending).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	completedAt := time.Now()
+	registry := payment.NewRegistry()
+	provider := &paymentOrderLifecycleQueryProvider{
+		queryFn: func(context.Context, string) (*payment.QueryOrderResponse, error) {
+			// Simulate a webhook committing completion while this request's
+			// upstream query still reports pending. The service must not return
+			// the PaymentOrder object loaded before the provider call.
+			_, updateErr := client.PaymentOrder.UpdateOneID(order.ID).
+				SetStatus(OrderStatusCompleted).
+				SetCompletedAt(completedAt).
+				Save(ctx)
+			require.NoError(t, updateErr)
+			return &payment.QueryOrderResponse{
+				TradeNo: order.OutTradeNo,
+				Status:  payment.ProviderStatusPending,
+			}, nil
+		},
+	}
+	registry.Register(provider)
+	svc := &PaymentService{
+		entClient:       client,
+		registry:        registry,
+		providersLoaded: true,
+	}
+
+	got, err := svc.VerifyOrderByOutTradeNo(ctx, order.OutTradeNo, user.ID)
+
+	require.NoError(t, err)
+	require.Equal(t, 1, provider.queryCalls)
+	require.Equal(t, OrderStatusCompleted, got.Status)
+	require.NotNil(t, got.CompletedAt)
+	require.WithinDuration(t, completedAt, *got.CompletedAt, time.Second)
+}
+
 func TestCancelOrderStillClosesUnpaidUpstreamOrder(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentOrderLifecycleTestClient(t)
@@ -969,6 +1040,312 @@ func TestReconcilePendingWxpayOrdersBackfillsPaidOrder(t *testing.T) {
 	require.Equal(t, "wxpay-upstream-trade-123", reloaded.PaymentTradeNo)
 	require.Equal(t, 50.0, userRepo.getByIDUser.Balance)
 	require.Len(t, redeemRepo.useCalls, 1)
+}
+
+func TestPaymentOrderExpiryRunOnceReconcilesLegacyStripeWxpayPaymentIntentBeforeExpiry(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("stripe-reconcile@example.com").
+		SetPasswordHash("hash").
+		SetUsername("stripe-reconcile-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	instance, err := client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeStripe).
+		SetName("stripe-reconcile-provider").
+		SetConfig(encryptWebhookProviderConfig(t, map[string]string{
+			"secretKey": "sk_test_stripe_reconcile",
+			"currency":  "USD",
+		})).
+		SetSupportedTypes("stripe,wxpay").
+		SetEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+	instanceID := strconv.FormatInt(instance.ID, 10)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(10).
+		SetPayAmount(10).
+		SetFeeRate(0).
+		SetRechargeCode("STRIPE-RECONCILE").
+		SetOutTradeNo("sub2_stripe_reconcile").
+		SetPaymentType(payment.TypeWxpay).
+		SetPaymentTradeNo("pi_stripe_reconcile_paid").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusPending).
+		SetExpiresAt(time.Now().Add(10 * time.Minute)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	userRepo := &mockUserRepo{
+		getByIDUser: &User{
+			ID:       user.ID,
+			Email:    user.Email,
+			Username: user.Username,
+			Balance:  0,
+		},
+	}
+	userRepo.updateBalanceFn = func(ctx context.Context, id int64, amount float64) error {
+		require.Equal(t, user.ID, id)
+		if userRepo.getByIDUser != nil {
+			userRepo.getByIDUser.Balance += amount
+		}
+		return nil
+	}
+	redeemRepo := &paymentOrderLifecycleRedeemRepo{
+		codesByCode: map[string]*RedeemCode{
+			order.RechargeCode: {
+				ID:     1,
+				Code:   order.RechargeCode,
+				Type:   RedeemTypeBalance,
+				Value:  order.Amount,
+				Status: StatusUnused,
+			},
+		},
+	}
+	redeemService := NewRedeemService(
+		redeemRepo,
+		userRepo,
+		nil,
+		nil,
+		nil,
+		client,
+		nil,
+		nil,
+	)
+	provider := &paymentOrderLifecycleQueryProvider{
+		key: payment.TypeStripe,
+		resp: &payment.QueryOrderResponse{
+			TradeNo: "pi_stripe_reconcile_paid",
+			Status:  payment.ProviderStatusPaid,
+			Amount:  10,
+			Metadata: map[string]string{
+				"currency": "USD",
+			},
+		},
+	}
+	restoreProviderFactory := replacePaymentProviderFactoryForTest(t, provider)
+	t.Cleanup(restoreProviderFactory)
+
+	paymentSvc := &PaymentService{
+		entClient:       client,
+		loadBalancer:    newWebhookProviderTestLoadBalancer(client),
+		redeemService:   redeemService,
+		userRepo:        userRepo,
+		providersLoaded: true,
+	}
+	expirySvc := NewPaymentOrderExpiryService(paymentSvc, time.Minute)
+
+	expirySvc.runOnce()
+
+	require.Equal(t, 1, provider.queryCalls)
+	require.Equal(t, order.PaymentTradeNo, provider.lastQueryTradeNo)
+	require.Zero(t, provider.cancelCalls)
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusCompleted, reloaded.Status)
+	require.Equal(t, payment.TypeWxpay, reloaded.PaymentType)
+	require.Equal(t, payment.TypeStripe, psStringValue(reloaded.ProviderKey))
+	require.Equal(t, instanceID, psStringValue(reloaded.ProviderInstanceID))
+	require.NotNil(t, reloaded.PaidAt)
+	require.True(t, reloaded.PaidAt.Before(order.ExpiresAt))
+	require.Equal(t, 10.0, userRepo.getByIDUser.Balance)
+	require.Len(t, redeemRepo.useCalls, 1)
+
+	// A later sweep must not query or fulfill the already completed order again.
+	expirySvc.runOnce()
+	require.Equal(t, 1, provider.queryCalls)
+	require.Equal(t, 10.0, userRepo.getByIDUser.Balance)
+	require.Len(t, redeemRepo.useCalls, 1)
+}
+
+func TestReconcilePendingStripeOrdersFiltersCandidatesAndCapsEachSweep(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+	now := time.Now()
+
+	user, err := client.User.Create().
+		SetEmail("stripe-reconcile-filter@example.com").
+		SetPasswordHash("hash").
+		SetUsername("stripe-reconcile-filter-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	instance, err := client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeStripe).
+		SetName("stripe-reconcile-filter-provider").
+		SetConfig(encryptWebhookProviderConfig(t, map[string]string{
+			"secretKey": "sk_test_stripe_reconcile_filter",
+			"currency":  "USD",
+		})).
+		SetSupportedTypes("stripe,wxpay").
+		SetEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+	instanceID := strconv.FormatInt(instance.ID, 10)
+
+	createOrder := func(suffix, status, paymentType, providerKey, tradeNo string, createdAt, expiresAt time.Time) {
+		t.Helper()
+		builder := client.PaymentOrder.Create().
+			SetUserID(user.ID).
+			SetUserEmail(user.Email).
+			SetUserName(user.Username).
+			SetAmount(10).
+			SetPayAmount(10).
+			SetFeeRate(0).
+			SetRechargeCode("STRIPE-FILTER-" + suffix).
+			SetOutTradeNo("sub2_stripe_filter_" + suffix).
+			SetPaymentType(paymentType).
+			SetPaymentTradeNo(tradeNo).
+			SetOrderType(payment.OrderTypeBalance).
+			SetStatus(status).
+			SetExpiresAt(expiresAt).
+			SetClientIP("127.0.0.1").
+			SetSrcHost("api.example.com").
+			SetCreatedAt(createdAt)
+		if providerKey == payment.TypeStripe {
+			builder.
+				SetProviderKey(providerKey).
+				SetProviderInstanceID(instanceID).
+				SetProviderSnapshot(map[string]any{
+					"schema_version":       2,
+					"provider_instance_id": instanceID,
+					"provider_key":         payment.TypeStripe,
+					"currency":             "USD",
+				})
+		} else if providerKey != "" {
+			builder.SetProviderKey(providerKey)
+		}
+		_, createErr := builder.Save(ctx)
+		require.NoError(t, createErr)
+	}
+
+	fixedTradeNos := make([]string, 0, pendingStripeReconcileLimit+2)
+	for i := 0; i < pendingStripeReconcileLimit+2; i++ {
+		suffix := strconv.Itoa(i)
+		tradeNo := "pi_stripe_filter_" + suffix
+		createOrder(
+			suffix,
+			OrderStatusPending,
+			payment.TypeStripe,
+			payment.TypeStripe,
+			tradeNo,
+			now.Add(-time.Duration(i+1)*time.Minute),
+			now.Add(time.Hour),
+		)
+		fixedTradeNos = append(fixedTradeNos, tradeNo)
+	}
+
+	// A migration-era Stripe order can have no provider_key, and payment_type
+	// can be the selected sub-method. The pi_ reference safely identifies it as
+	// Stripe and resolves the unique Stripe instance.
+	createOrder("legacy_wxpay", OrderStatusPending, payment.TypeWxpay, "", "pi_stripe_filter_legacy_wxpay", now, now.Add(time.Hour))
+	createOrder("expired", OrderStatusPending, payment.TypeStripe, payment.TypeStripe, "pi_stripe_filter_expired", now, now.Add(-time.Minute))
+	createOrder("completed", OrderStatusCompleted, payment.TypeStripe, payment.TypeStripe, "pi_stripe_filter_completed", now, now.Add(time.Hour))
+	createOrder("missing_pi", OrderStatusPending, payment.TypeStripe, payment.TypeStripe, "", now, now.Add(time.Hour))
+	createOrder("wrong_reference", OrderStatusPending, payment.TypeStripe, payment.TypeStripe, "ch_stripe_filter", now, now.Add(time.Hour))
+	createOrder("official_wxpay", OrderStatusPending, payment.TypeWxpay, payment.TypeWxpay, "pi_not_a_stripe_order", now, now.Add(time.Hour))
+
+	provider := &paymentOrderLifecycleQueryProvider{
+		key: payment.TypeStripe,
+		resp: &payment.QueryOrderResponse{
+			Status: payment.ProviderStatusPending,
+		},
+	}
+	restoreProviderFactory := replacePaymentProviderFactoryForTest(t, provider)
+	t.Cleanup(restoreProviderFactory)
+	svc := &PaymentService{
+		entClient:       client,
+		loadBalancer:    newWebhookProviderTestLoadBalancer(client),
+		providersLoaded: true,
+	}
+
+	recovered, err := svc.ReconcilePendingStripeOrders(ctx)
+
+	require.NoError(t, err)
+	require.Zero(t, recovered)
+	require.Equal(t, pendingStripeReconcileLimit, provider.queryCalls)
+	expectedTradeNos := append([]string{"pi_stripe_filter_legacy_wxpay"}, fixedTradeNos[:pendingStripeReconcileLimit-1]...)
+	require.Equal(t, expectedTradeNos, provider.queryTradeNos)
+	require.Zero(t, provider.cancelCalls)
+}
+
+func TestReconcilePendingStripeOrdersDoesNotPinAmbiguousLegacyStripeInstance(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("stripe-reconcile-ambiguous@example.com").
+		SetPasswordHash("hash").
+		SetUsername("stripe-reconcile-ambiguous-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	for i := 0; i < 2; i++ {
+		_, err = client.PaymentProviderInstance.Create().
+			SetProviderKey(payment.TypeStripe).
+			SetName("stripe-reconcile-ambiguous-" + strconv.Itoa(i)).
+			SetConfig(encryptWebhookProviderConfig(t, map[string]string{
+				"secretKey": "sk_test_stripe_reconcile_ambiguous_" + strconv.Itoa(i),
+				"currency":  "USD",
+			})).
+			SetSupportedTypes("stripe,wxpay").
+			SetEnabled(true).
+			Save(ctx)
+		require.NoError(t, err)
+	}
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(10).
+		SetPayAmount(10).
+		SetFeeRate(0).
+		SetRechargeCode("STRIPE-AMBIGUOUS").
+		SetOutTradeNo("sub2_stripe_ambiguous").
+		SetPaymentType(payment.TypeWxpay).
+		SetPaymentTradeNo("pi_stripe_ambiguous").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusPending).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	provider := &paymentOrderLifecycleQueryProvider{
+		key: payment.TypeStripe,
+		resp: &payment.QueryOrderResponse{
+			Status: payment.ProviderStatusPending,
+		},
+	}
+	restoreProviderFactory := replacePaymentProviderFactoryForTest(t, provider)
+	t.Cleanup(restoreProviderFactory)
+	svc := &PaymentService{
+		entClient:       client,
+		loadBalancer:    newWebhookProviderTestLoadBalancer(client),
+		providersLoaded: true,
+	}
+
+	recovered, err := svc.ReconcilePendingStripeOrders(ctx)
+
+	require.NoError(t, err)
+	require.Zero(t, recovered)
+	require.Zero(t, provider.queryCalls)
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusPending, reloaded.Status)
+	require.Nil(t, reloaded.ProviderKey)
+	require.Nil(t, reloaded.ProviderInstanceID)
 }
 
 func TestVerifyOrderByOutTradeNoUsesOutTradeNoWhenPaymentTradeNoAlreadyExistsForAlipay(t *testing.T) {

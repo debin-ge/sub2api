@@ -30,6 +30,11 @@ const (
 	checkPaidResultCancelled   = "cancelled"
 
 	pendingWxpayReconcileLimit = 20
+	// Stripe PaymentIntents are normally confirmed within the order lifetime.
+	// Keep the proactive sweep intentionally small and recent so a missed
+	// webhook is recovered without turning the minute job into an unbounded
+	// Stripe API scan.
+	pendingStripeReconcileLimit = 20
 )
 
 type checkPaidOptions struct {
@@ -382,13 +387,13 @@ func (s *PaymentService) VerifyOrderByOutTradeNo(ctx context.Context, outTradeNo
 	}
 	// Only verify orders that are still pending or recently expired
 	if o.Status == OrderStatusPending || o.Status == OrderStatusExpired {
-		result := s.reconcilePaid(ctx, o)
-		if result == checkPaidResultAlreadyPaid {
-			// Reload order to get updated status
-			o, err = s.entClient.PaymentOrder.Get(ctx, o.ID)
-			if err != nil {
-				return nil, fmt.Errorf("reload order: %w", err)
-			}
+		_ = s.reconcilePaid(ctx, o)
+		// Always reload after the upstream attempt. A webhook or another
+		// reconciliation worker may have advanced the order while QueryOrder
+		// returned pending or this worker lost the fulfillment lease.
+		o, err = s.entClient.PaymentOrder.Get(ctx, o.ID)
+		if err != nil {
+			return nil, fmt.Errorf("reload order: %w", err)
 		}
 	}
 	return o, nil
@@ -423,6 +428,114 @@ func (s *PaymentService) ReconcilePendingWxpayOrders(ctx context.Context) (int, 
 		}
 	}
 	return recovered, nil
+}
+
+// ReconcilePendingStripeOrders actively checks the most recent unexpired
+// Stripe PaymentIntents. Current orders are pinned to their original provider
+// instance by reconcilePaid/getOrderProvider. The legacy branch is limited to
+// Stripe-supported payment types without a provider key. In both cases, the
+// pi_ filter guarantees Stripe is queried with a persisted PaymentIntent ID
+// instead of an internal order ID.
+func (s *PaymentService) ReconcilePendingStripeOrders(ctx context.Context) (int, error) {
+	now := time.Now()
+	orders, err := s.entClient.PaymentOrder.Query().
+		Where(
+			paymentorder.StatusEQ(OrderStatusPending),
+			paymentorder.ExpiresAtGT(now),
+			paymentorder.PaymentTradeNoHasPrefix("pi_"),
+			paymentorder.Or(
+				paymentorder.ProviderKeyEQ(payment.TypeStripe),
+				paymentorder.And(
+					paymentorder.Or(
+						paymentorder.ProviderKeyIsNil(),
+						paymentorder.ProviderKeyEQ(""),
+					),
+					paymentorder.PaymentTypeIn(
+						payment.TypeStripe,
+						payment.TypeCard,
+						payment.TypeLink,
+						payment.TypeAlipay,
+						payment.TypeWxpay,
+					),
+				),
+			),
+		).
+		Order(dbent.Desc(paymentorder.FieldCreatedAt)).
+		Limit(pendingStripeReconcileLimit).
+		All(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("query pending stripe orders: %w", err)
+	}
+
+	recovered := 0
+	for _, order := range orders {
+		reconcileOrder := order
+		if strings.TrimSpace(psStringValue(order.ProviderKey)) == "" {
+			reconcileOrder = s.pinLegacyStripeOrderProvider(ctx, order)
+			if reconcileOrder == nil {
+				continue
+			}
+		}
+		if s.reconcilePaid(ctx, reconcileOrder) == checkPaidResultAlreadyPaid {
+			recovered++
+		}
+	}
+	return recovered, nil
+}
+
+// pinLegacyStripeOrderProvider repairs a migration-era order only when its
+// Stripe instance is unambiguous. Persisting both columns is required because
+// payment fulfillment reloads the order from the database, and future sweeps
+// must keep using the same historical provider instance.
+func (s *PaymentService) pinLegacyStripeOrderProvider(ctx context.Context, order *dbent.PaymentOrder) *dbent.PaymentOrder {
+	if s == nil || s.entClient == nil || order == nil {
+		return nil
+	}
+
+	stripeProviderKey := payment.TypeStripe
+	resolveOrder := *order
+	resolveOrder.ProviderKey = &stripeProviderKey
+	resolveOrder.PaymentType = payment.TypeStripe
+	instance, err := s.getOrderProviderInstance(ctx, &resolveOrder)
+	if err != nil {
+		slog.Warn("resolve legacy stripe order provider failed", "orderID", order.ID, "error", err)
+		return nil
+	}
+	if instance == nil || !strings.EqualFold(strings.TrimSpace(instance.ProviderKey), payment.TypeStripe) {
+		return nil
+	}
+
+	instanceID := strconv.FormatInt(int64(instance.ID), 10)
+	updated, err := s.entClient.PaymentOrder.Update().
+		Where(
+			paymentorder.IDEQ(order.ID),
+			paymentorder.StatusEQ(OrderStatusPending),
+			paymentorder.PaymentTradeNoHasPrefix("pi_"),
+			paymentorder.Or(
+				paymentorder.ProviderKeyIsNil(),
+				paymentorder.ProviderKeyEQ(""),
+			),
+		).
+		SetProviderKey(payment.TypeStripe).
+		SetProviderInstanceID(instanceID).
+		Save(ctx)
+	if err != nil {
+		slog.Warn("pin legacy stripe order provider failed", "orderID", order.ID, "error", err)
+		return nil
+	}
+	if updated == 0 {
+		return nil
+	}
+
+	pinnedOrder := *order
+	pinnedOrder.ProviderKey = &stripeProviderKey
+	pinnedOrder.ProviderInstanceID = &instanceID
+	// Keep the persisted payment_type unchanged, but use Stripe for this
+	// in-flight resolution so the PaymentIntent cannot be routed to an
+	// official alipay/wxpay provider.
+	pinnedOrder.PaymentType = payment.TypeStripe
+	slog.Info("pinned legacy stripe order provider", "orderID", order.ID, "providerInstanceID", instanceID)
+	return &pinnedOrder
 }
 
 // VerifyOrderPublic returns the currently persisted public order state without

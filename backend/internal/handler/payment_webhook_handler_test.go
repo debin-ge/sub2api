@@ -18,8 +18,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
@@ -31,6 +33,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	stripewebhook "github.com/stripe/stripe-go/v85/webhook"
 	_ "modernc.org/sqlite"
 )
 
@@ -297,6 +300,18 @@ func TestExtractOutTradeNo(t *testing.T) {
 			rawBody:     `{"name":"payment_intent.succeeded","data":{"object":{"merchant_order_id":"sub2_awx_123"}}}`,
 			want:        "sub2_awx_123",
 		},
+		{
+			name:        "stripe payment intent metadata",
+			providerKey: payment.TypeStripe,
+			rawBody:     `{"type":"payment_intent.succeeded","data":{"object":{"id":"pi_123","metadata":{"orderId":"  sub2_stripe_123  "}}}}`,
+			want:        "sub2_stripe_123",
+		},
+		{
+			name:        "stripe malformed payload",
+			providerKey: payment.TypeStripe,
+			rawBody:     `{"type":`,
+			want:        "",
+		},
 	}
 
 	for _, tt := range tests {
@@ -304,6 +319,71 @@ func TestExtractOutTradeNo(t *testing.T) {
 			assert.Equal(t, tt.want, extractOutTradeNo(tt.rawBody, tt.providerKey))
 		})
 	}
+}
+
+func TestStripeWebhookProviderResolutionFailureReturnsRetryableError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	client := newWiseWebhookHandlerTestClient(t)
+	handler := newWiseWebhookHandlerForTest(client)
+	rawBody := `{"object":"event","type":"payment_intent.succeeded","data":{"object":{"metadata":{"orderId":"sub2_missing_stripe_order"}}}}`
+	req := httptest.NewRequest(http.MethodPost, "/stripe", bytes.NewBufferString(rawBody))
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = req
+
+	handler.StripeWebhook(c)
+
+	require.Equal(t, http.StatusInternalServerError, w.Code)
+	require.Contains(t, w.Body.String(), "provider unavailable")
+}
+
+func TestStripeWebhookRoutesPinnedOrderToMatchingInstance(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	ctx := context.Background()
+	client := newWiseWebhookHandlerTestClient(t)
+	first := createStripeWebhookHandlerProvider(t, ctx, client, "stripe-first", "whsec_first")
+	target := createStripeWebhookHandlerProvider(t, ctx, client, "stripe-target", "whsec_target")
+	require.NotEqual(t, first.ID, target.ID)
+
+	user, err := client.User.Create().
+		SetEmail("stripe-webhook@example.com").
+		SetPasswordHash("hash").
+		SetUsername("stripe-webhook").
+		Save(ctx)
+	require.NoError(t, err)
+	outTradeNo := "sub2_stripe_pinned_order"
+	_, err = client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(10).
+		SetPayAmount(10).
+		SetFeeRate(0).
+		SetRechargeCode("STRIPE-WEBHOOK").
+		SetOutTradeNo(outTradeNo).
+		SetPaymentType(payment.TypeStripe).
+		SetPaymentTradeNo("pi_pinned").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(payment.OrderStatusPending).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		SetProviderInstanceID(strconv.FormatInt(target.ID, 10)).
+		Save(ctx)
+	require.NoError(t, err)
+
+	handler := newWiseWebhookHandlerForTest(client)
+	rawBody := `{"id":"evt_route","object":"event","api_version":"2020-08-27","type":"customer.updated","data":{"object":{"metadata":{"orderId":"` + outTradeNo + `"}}}}`
+
+	wrongSecretResponse := postStripeWebhookHandlerRequest(t, handler, rawBody, "whsec_first")
+	require.Equal(t, http.StatusBadRequest, wrongSecretResponse.Code)
+	require.Contains(t, wrongSecretResponse.Body.String(), "verify failed")
+
+	targetResponse := postStripeWebhookHandlerRequest(t, handler, rawBody, "whsec_target")
+	require.Equal(t, http.StatusOK, targetResponse.Code)
+	require.Empty(t, targetResponse.Body.String())
 }
 
 func TestExtractOutTradeNoWiseReturnsEmptyBecauseWebhookTriggersReconcile(t *testing.T) {
@@ -400,6 +480,26 @@ func createWiseWebhookHandlerProvider(t *testing.T, ctx context.Context, client 
 	return priv
 }
 
+func createStripeWebhookHandlerProvider(t *testing.T, ctx context.Context, client *dbent.Client, name, webhookSecret string) *dbent.PaymentProviderInstance {
+	t.Helper()
+
+	encryptedConfig := encryptWiseWebhookHandlerConfig(t, map[string]string{
+		"secretKey":      "sk_test_" + name,
+		"publishableKey": "pk_test_" + name,
+		"webhookSecret":  webhookSecret,
+		"currency":       "CNY",
+	})
+	instance, err := client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeStripe).
+		SetName(name).
+		SetConfig(encryptedConfig).
+		SetSupportedTypes(payment.TypeStripe).
+		SetEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+	return instance
+}
+
 func postWiseWebhookHandlerRequest(t *testing.T, handler *PaymentWebhookHandler, priv *rsa.PrivateKey, rawBody, signBody, deliveryID string, testNotification bool) *httptest.ResponseRecorder {
 	t.Helper()
 
@@ -416,6 +516,23 @@ func postWiseWebhookHandlerRequest(t *testing.T, handler *PaymentWebhookHandler,
 	c, _ := gin.CreateTestContext(w)
 	c.Request = req
 	handler.WiseWebhook(c)
+	return w
+}
+
+func postStripeWebhookHandlerRequest(t *testing.T, handler *PaymentWebhookHandler, rawBody, webhookSecret string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	signed := stripewebhook.GenerateTestSignedPayload(&stripewebhook.UnsignedPayload{
+		Payload:   []byte(rawBody),
+		Secret:    webhookSecret,
+		Timestamp: time.Now(),
+	})
+	req := httptest.NewRequest(http.MethodPost, "/stripe", bytes.NewBufferString(rawBody))
+	req.Header.Set("Stripe-Signature", signed.Header)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = req
+	handler.StripeWebhook(c)
 	return w
 }
 
