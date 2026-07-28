@@ -50,13 +50,25 @@ func TestValidateRadarBucketSnapshotAllowsSingleAccountBucketsUniformly(t *testi
 	singles := []BucketSnapshotDTO{
 		{
 			CalculationVersion: radarQuotaCalculationVersion,
-			BucketKey:          "openai/pro", Platform: PlatformOpenAI, PlanTier: "pro", DisplayName: "ChatGPT Pro",
+			BucketKey:          "openai/pro_5x", Platform: PlatformOpenAI, PlanTier: "pro_5x", DisplayName: "ChatGPT Pro 5x",
+			PrivacyThreshold: 1, AccountsCount: 1, CapturedAt: time.Now().UTC(),
+			SevenDay: &WindowStatsDTO{ContributorsCount: 1, SampleSize: 1},
+		},
+		{
+			CalculationVersion: radarQuotaCalculationVersion,
+			BucketKey:          "openai/pro_20x", Platform: PlatformOpenAI, PlanTier: "pro_20x", DisplayName: "ChatGPT Pro 20x",
 			PrivacyThreshold: 1, AccountsCount: 1, CapturedAt: time.Now().UTC(),
 			SevenDay: &WindowStatsDTO{ContributorsCount: 1, SampleSize: 1},
 		},
 		{
 			CalculationVersion: radarQuotaCalculationVersion,
 			BucketKey:          "openai/plus", Platform: PlatformOpenAI, PlanTier: "plus", DisplayName: "ChatGPT Plus",
+			PrivacyThreshold: 1, AccountsCount: 1, CapturedAt: time.Now().UTC(),
+			SevenDay: &WindowStatsDTO{ContributorsCount: 1, SampleSize: 1},
+		},
+		{
+			CalculationVersion: radarQuotaCalculationVersion,
+			BucketKey:          "anthropic/generic", Platform: PlatformAnthropic, PlanTier: "generic", DisplayName: "Claude Subscription",
 			PrivacyThreshold: 1, AccountsCount: 1, CapturedAt: time.Now().UTC(),
 			SevenDay: &WindowStatsDTO{ContributorsCount: 1, SampleSize: 1},
 		},

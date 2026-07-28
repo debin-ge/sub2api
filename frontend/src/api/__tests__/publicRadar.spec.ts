@@ -102,10 +102,10 @@ describe('public radar api', () => {
     const options = Object.freeze({ signal: controller.signal })
     get.mockResolvedValueOnce({ data: { days: 3 } })
 
-    await getQuotaBucketsTrend('openai/pro', 3, options)
+    await getQuotaBucketsTrend('openai/pro_20x', 3, options)
 
     expect(get).toHaveBeenCalledWith('/public/radar/quota-buckets/trend', {
-      params: { bucket: 'openai/pro', days: 3 },
+      params: { bucket: 'openai/pro_20x', days: 3 },
       paramsSerializer: expect.any(Function),
       signal: controller.signal,
     })

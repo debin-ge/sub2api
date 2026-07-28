@@ -170,10 +170,10 @@ describe('QuotaBucketDetailModal', () => {
       props: {
         show: true,
         bucket: bucket({
-          bucket_key: 'openai/pro',
+          bucket_key: 'openai/pro_5x',
           platform: 'openai',
-          plan_tier: 'pro',
-          display_name: 'OpenAI Pro',
+          plan_tier: 'pro_5x',
+          display_name: 'ChatGPT Pro 5x',
           seven_day_sonnet: { model: 'should-not-render', avg_utilization: 51, sample_size: 4 },
           seven_day_fable: { model: 'should-not-render', avg_utilization: 22, sample_size: 4 },
         }),
@@ -230,10 +230,10 @@ describe('QuotaBucketDetailModal', () => {
 
 	it('shows only seven-day details for OpenAI even when legacy five-hour data exists', async () => {
     const item = bucket({
-      bucket_key: 'openai/pro',
+      bucket_key: 'openai/pro_20x',
       platform: 'openai',
-      plan_tier: 'pro',
-      display_name: 'ChatGPT Pro',
+      plan_tier: 'pro_20x',
+      display_name: 'ChatGPT Pro 20x',
       accounts_count: 1,
       privacy_threshold: 1,
 		five_hour: windowStats({ avg_utilization: 99 }),
@@ -257,7 +257,7 @@ describe('QuotaBucketDetailModal', () => {
     expect(document.body.querySelector('[data-testid="quota-modal-trend-summary"]')?.textContent).toContain('7-day utilization')
   })
 
-  it('explains that an unknown Claude plan cannot produce an estimate', async () => {
+  it('renders a low-confidence singleton estimate for the generic Claude plan', async () => {
     wrapper = mount(QuotaBucketDetailModal, {
       attachTo: document.body,
       props: {
@@ -267,10 +267,11 @@ describe('QuotaBucketDetailModal', () => {
           plan_tier: 'generic',
           display_name: 'Claude Subscription',
           five_hour: windowStats({
-            inferred_limit_usd: null,
+            inferred_limit_usd: 80,
             inferred_stdev: null,
-            inference_confidence: undefined,
-            inference_reject_reason: 'unknown_plan',
+            sample_size: 1,
+            inference_confidence: 'low',
+            inference_reject_reason: undefined,
           }),
         }),
       },
@@ -279,6 +280,8 @@ describe('QuotaBucketDetailModal', () => {
     await wrapper.vm.$nextTick()
 
     expect(document.body.textContent).toContain('Estimated API-equivalent value')
-    expect(document.body.textContent).toContain('Plan is unknown; estimation is unavailable')
+    expect(document.body.textContent).toContain('$80')
+    expect(document.body.textContent).toContain('Single-sample estimate · Low confidence: n=1')
+    expect(document.body.textContent).not.toContain('Plan is unknown; estimation is unavailable')
   })
 })

@@ -42,7 +42,7 @@ export function windowStats(overrides: Partial<WindowStatsDTO> = {}): WindowStat
 
 export function bucket(overrides: Partial<BucketSnapshotDTO> = {}): BucketSnapshotDTO {
   return {
-    calculation_version: 2,
+    calculation_version: 3,
     bucket_key: 'anthropic/max_20x',
     platform: 'anthropic',
     plan_tier: 'max_20x',

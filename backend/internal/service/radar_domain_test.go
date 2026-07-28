@@ -219,7 +219,7 @@ func TestRadarDomainJSONKeysUseSnakeCase(t *testing.T) {
 		{
 			name: "bucket snapshot",
 			got: BucketSnapshotDTO{
-				CalculationVersion: 2,
+				CalculationVersion: radarQuotaCalculationVersion,
 				BucketKey:          "anthropic:pro",
 				Platform:           "anthropic",
 				PlanTier:           "pro",

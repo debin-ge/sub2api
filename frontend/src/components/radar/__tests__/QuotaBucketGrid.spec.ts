@@ -87,10 +87,13 @@ describe('QuotaBucketGrid', () => {
     expect(wrapper.text()).not.toContain('$0')
   })
 
-  it('labels a published singleton estimate as low confidence', () => {
+  it('labels a published generic Claude singleton estimate as low confidence', () => {
     const wrapper = mount(QuotaBucketGrid, {
       props: {
         buckets: [bucket({
+          bucket_key: 'anthropic/generic',
+          plan_tier: 'generic',
+          display_name: 'Claude Subscription',
           five_hour: windowStats({
             inferred_limit_usd: 80,
             inferred_stdev: null,
@@ -101,13 +104,13 @@ describe('QuotaBucketGrid', () => {
       },
     })
 
-    const fiveHour = wrapper.get('[data-testid="quota-window-anthropic/max_20x-5h"]')
+    const fiveHour = wrapper.get('[data-testid="quota-window-anthropic/generic-5h"]')
     expect(fiveHour.text()).toContain('$80')
     expect(fiveHour.text()).toContain('Single-sample estimate · Low confidence')
     expect(fiveHour.text()).not.toContain('±')
   })
 
-  it('explains an unavailable estimate for an unknown Claude plan', () => {
+  it('explains an unavailable estimate from a legacy unknown-plan snapshot', () => {
     const wrapper = mount(QuotaBucketGrid, {
       props: {
         buckets: [bucket({

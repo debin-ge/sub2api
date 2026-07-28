@@ -127,7 +127,7 @@ func TestRadarCacheAndPublicServiceFailClosedOnInjectedPrivacyMetadata(t *testin
 		old.PrivacyThreshold = 2
 		compliantTrend := testRadarSnapshot("anthropic/pro", now.Add(-time.Minute))
 		compliantTrend.PrivacyThreshold = 3
-		other := testRadarSnapshot("openai/pro", now)
+		other := testRadarSnapshot("openai/pro_20x", now)
 		other.PrivacyThreshold = 3
 		writeRawRadarSnapshot(t, rdb, old)
 		writeRawRadarSnapshot(t, rdb, compliantTrend)
@@ -137,7 +137,7 @@ func TestRadarCacheAndPublicServiceFailClosedOnInjectedPrivacyMetadata(t *testin
 		require.NoError(t, err)
 		latest, err := publicService.GetQuotaBucketsLatest(ctx)
 		require.NoError(t, err)
-		require.Equal(t, []string{"anthropic/pro", "openai/pro"}, []string{latest.Buckets[0].BucketKey, latest.Buckets[1].BucketKey})
+		require.Equal(t, []string{"anthropic/pro", "openai/pro_20x"}, []string{latest.Buckets[0].BucketKey, latest.Buckets[1].BucketKey})
 		trend, err := publicService.GetQuotaBucketsTrend(ctx, "anthropic/pro", 7)
 		require.NoError(t, err)
 		require.Len(t, trend.DataPoints, 1)
@@ -153,7 +153,7 @@ func TestRadarCacheAndPublicServiceFailClosedOnInjectedPrivacyMetadata(t *testin
 		require.NoError(t, err)
 		old := testRadarSnapshot("anthropic/pro", now)
 		old.AccountsCount, old.PrivacyThreshold = 2, 2
-		compliant := testRadarSnapshot("openai/pro", now)
+		compliant := testRadarSnapshot("openai/pro_20x", now)
 		compliant.PrivacyThreshold = 3
 		writeRawRadarSnapshot(t, rdb, old)
 		writeRawRadarSnapshot(t, rdb, compliant)
@@ -162,7 +162,7 @@ func TestRadarCacheAndPublicServiceFailClosedOnInjectedPrivacyMetadata(t *testin
 		latest, err := publicService.GetQuotaBucketsLatest(ctx)
 		require.NoError(t, err)
 		require.Len(t, latest.Buckets, 1)
-		require.Equal(t, "openai/pro", latest.Buckets[0].BucketKey)
+		require.Equal(t, "openai/pro_20x", latest.Buckets[0].BucketKey)
 	})
 }
 
@@ -204,7 +204,7 @@ func TestNewRadarCacheRepositoryRejectsInvalidDependenciesAndConfig(t *testing.T
 func testRadarSnapshot(bucketKey string, capturedAt time.Time) service.BucketSnapshotDTO {
 	platform, planTier, _ := strings.Cut(bucketKey, "/")
 	return service.BucketSnapshotDTO{
-		CalculationVersion: 2,
+		CalculationVersion: 3,
 		BucketKey:          bucketKey,
 		Platform:           platform,
 		PlanTier:           planTier,
@@ -1382,11 +1382,11 @@ func TestRadarCacheRepositoryRejectsUnsafeKeys(t *testing.T) {
 		})
 	}
 
-	mismatch := testRadarSnapshot("openai/pro", capturedAt)
+	mismatch := testRadarSnapshot("openai/pro_20x", capturedAt)
 	mismatch.PlanTier = "team"
 	require.ErrorIs(t, repo.AppendBucketSnapshot(ctx, mismatch), service.ErrInvalidRadarCacheKey)
 
-	zeroCapturedAt := testRadarSnapshot("openai/pro", time.Time{})
+	zeroCapturedAt := testRadarSnapshot("openai/pro_20x", time.Time{})
 	require.Error(t, repo.AppendBucketSnapshot(ctx, zeroCapturedAt))
 
 	invalidModels := []string{
@@ -1577,7 +1577,7 @@ func TestRadarCacheRepositoryPreservesNilAndEmptyCollections(t *testing.T) {
 	emptyCollections := testRadarSnapshot("anthropic/pro", capturedAt)
 	emptyCollections.ModelBreakdown5h = []service.ModelCostBreakdownDTO{}
 	emptyCollections.ModelBreakdown7d = []service.ModelCostBreakdownDTO{}
-	nilCollections := testRadarSnapshot("openai/pro", capturedAt)
+	nilCollections := testRadarSnapshot("openai/pro_20x", capturedAt)
 	nilCollections.ModelBreakdown5h = nil
 	nilCollections.ModelBreakdown7d = nil
 
@@ -1591,7 +1591,7 @@ func TestRadarCacheRepositoryPreservesNilAndEmptyCollections(t *testing.T) {
 	require.Empty(t, gotEmpty.ModelBreakdown5h)
 	require.Empty(t, gotEmpty.ModelBreakdown7d)
 
-	gotNil, err := repo.GetLatestBucket(ctx, "openai/pro")
+	gotNil, err := repo.GetLatestBucket(ctx, "openai/pro_20x")
 	require.NoError(t, err)
 	require.Nil(t, gotNil.ModelBreakdown5h)
 	require.Nil(t, gotNil.ModelBreakdown7d)

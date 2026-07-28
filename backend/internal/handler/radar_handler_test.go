@@ -306,7 +306,7 @@ func TestRadarHandlerQuotaTrendAcceptsEncodedSlashAndDayBoundaries(t *testing.T)
 		wantDays int
 	}{
 		{name: "encoded slash default", query: "?bucket=anthropic%2Fmax_20x", bucket: "anthropic/max_20x", wantDays: 7},
-		{name: "literal slash minimum", query: "?bucket=openai/pro&days=1", bucket: "openai/pro", wantDays: 1},
+		{name: "literal slash minimum", query: "?bucket=openai/pro_20x&days=1", bucket: "openai/pro_20x", wantDays: 1},
 		{name: "maximum", query: "?bucket=antigravity/ultra&days=7", bucket: "antigravity/ultra", wantDays: 7},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

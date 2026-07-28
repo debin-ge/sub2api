@@ -16,7 +16,7 @@ import (
 
 const (
 	defaultRadarPublicMinBucketAccounts = 1
-	radarQuotaCalculationVersion        = 2
+	radarQuotaCalculationVersion        = 3
 	defaultRadarInferenceSnapshotMaxAge = 30 * time.Minute
 
 	radarQuotaAnthropicPlanGeneric = "generic"
@@ -24,7 +24,8 @@ const (
 	radarQuotaAnthropicPlanMax5x   = "max_5x"
 	radarQuotaAnthropicPlanMax20x  = "max_20x"
 	radarQuotaOpenAIPlanPlus       = "plus"
-	radarQuotaOpenAIPlanPro        = "pro"
+	radarQuotaOpenAIPlanPro5x      = "pro_5x"
+	radarQuotaOpenAIPlanPro20x     = "pro_20x"
 )
 
 // ErrRadarQuotaAggregation is intentionally safe to surface to a background
@@ -414,10 +415,6 @@ func (a *RadarQuotaAggregator) runOnce(ctx context.Context, report *RadarQuotaAg
 		case PlatformAnthropic:
 			snapshot.FiveHour = aggregateRadarQuotaWindow(bucketAccounts, window5h, func(usage *UsageInfo) *UsageProgress { return usage.FiveHour }, bucketConfig)
 			snapshot.SevenDay = aggregateRadarQuotaWindow(bucketAccounts, window7d, func(usage *UsageInfo) *UsageProgress { return usage.SevenDay }, bucketConfig)
-			if identity.planTier == radarQuotaAnthropicPlanGeneric {
-				rejectRadarQuotaInference(snapshot.FiveHour, InferenceRejectReasonUnknownPlan)
-				rejectRadarQuotaInference(snapshot.SevenDay, InferenceRejectReasonUnknownPlan)
-			}
 			snapshot.ModelBreakdown5h = aggregateRadarModelBreakdown(bucketAccounts, breakdown5h, identity.platform, bucketConfig.PublicMinBucketAccounts)
 			snapshot.SevenDaySonnet = aggregateRadarModelWindow(bucketAccounts, "claude-sonnet", a.cfg.PublicMinBucketAccounts, func(usage *UsageInfo) *UsageProgress {
 				return usage.SevenDaySonnet
@@ -689,12 +686,14 @@ func normalizeRadarOpenAIPlanTier(planTier string) string {
 	switch strings.ToLower(strings.TrimSpace(planTier)) {
 	case "plus", "chatgpt_plus", "chatgptplus":
 		return radarQuotaOpenAIPlanPlus
+	case "prolite",
+		"5x_pro", "5xpro", "pro_5x", "pro5x", "pro-5x", "chatgpt_pro_5x", "chatgpt_5x_pro":
+		return radarQuotaOpenAIPlanPro5x
 	case "pro", "chatgpt_pro", "chatgptpro",
-		"5x_pro", "5xpro", "pro_5x", "pro5x", "pro-5x", "chatgpt_pro_5x", "chatgpt_5x_pro",
 		"20x_pro", "20xpro", "pro_20x", "pro20x", "pro-20x", "chatgpt_pro_20x", "chatgpt_20x_pro":
-		// No authoritative account field currently distinguishes Pro 5x from
-		// Pro 20x. Collapse every known Pro alias into the conservative Pro tier.
-		return radarQuotaOpenAIPlanPro
+		// OpenAI reports the standard personal Pro subscription as plan_type=pro.
+		// Keep it in the canonical 20x tier alongside explicit 20x aliases.
+		return radarQuotaOpenAIPlanPro20x
 	default:
 		return ""
 	}
@@ -709,7 +708,8 @@ func isSupportedRadarQuotaPlanTier(platform, planTier string) bool {
 			planTier == radarQuotaAnthropicPlanMax20x
 	case PlatformOpenAI:
 		return planTier == radarQuotaOpenAIPlanPlus ||
-			planTier == radarQuotaOpenAIPlanPro
+			planTier == radarQuotaOpenAIPlanPro5x ||
+			planTier == radarQuotaOpenAIPlanPro20x
 	default:
 		return false
 	}
@@ -727,8 +727,10 @@ func radarQuotaDisplayName(platform, planTier string) string {
 		return "Claude Max 20x"
 	case platform == PlatformOpenAI && planTier == radarQuotaOpenAIPlanPlus:
 		return "ChatGPT Plus"
-	case platform == PlatformOpenAI && planTier == radarQuotaOpenAIPlanPro:
-		return "ChatGPT Pro"
+	case platform == PlatformOpenAI && planTier == radarQuotaOpenAIPlanPro5x:
+		return "ChatGPT Pro 5x"
+	case platform == PlatformOpenAI && planTier == radarQuotaOpenAIPlanPro20x:
+		return "ChatGPT Pro 20x"
 	default:
 		return ""
 	}
@@ -898,16 +900,6 @@ func aggregateRadarQuotaWindow(
 		InferenceConfidence:   inference.confidence,
 		InferenceRejectReason: inference.rejectReason,
 	}
-}
-
-func rejectRadarQuotaInference(window *WindowStatsDTO, reason InferenceRejectReason) {
-	if window == nil {
-		return
-	}
-	window.InferredLimitUSD = nil
-	window.InferredStdev = nil
-	window.InferenceConfidence = ""
-	window.InferenceRejectReason = radarInferenceReason(reason)
 }
 
 func aggregateRadarModelWindow(
