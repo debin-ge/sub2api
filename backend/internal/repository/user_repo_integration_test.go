@@ -324,6 +324,20 @@ func (s *UserRepoSuite) TestListWithFilters_Search() {
 	s.Require().Contains(users[0].Email, "alice")
 }
 
+func (s *UserRepoSuite) TestListWithFilters_UserID() {
+	target := s.mustCreateUser(&service.User{Email: "target@test.com"})
+	s.mustCreateUser(&service.User{Email: "other@test.com"})
+
+	users, _, err := s.repo.ListWithFilters(
+		s.ctx,
+		pagination.PaginationParams{Page: 1, PageSize: 10},
+		service.UserListFilters{UserID: target.ID},
+	)
+	s.Require().NoError(err)
+	s.Require().Len(users, 1)
+	s.Require().Equal(target.ID, users[0].ID)
+}
+
 func (s *UserRepoSuite) TestListWithFilters_SearchByUsername() {
 	s.mustCreateUser(&service.User{Email: "u1@test.com", Username: "JohnDoe"})
 	s.mustCreateUser(&service.User{Email: "u2@test.com", Username: "JaneSmith"})

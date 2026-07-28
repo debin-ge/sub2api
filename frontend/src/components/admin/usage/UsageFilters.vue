@@ -310,12 +310,13 @@ const emitChange = () => emit('change')
 const debounceUserSearch = () => {
   if (userSearchTimeout) clearTimeout(userSearchTimeout)
   userSearchTimeout = setTimeout(async () => {
-    if (!userKeyword.value) {
+    const keyword = userKeyword.value.trim()
+    if (!keyword) {
       userResults.value = []
       return
     }
     try {
-      const results = await adminAPI.usage.searchUsers(userKeyword.value)
+      const results = await adminAPI.usage.searchUsers(keyword)
       userResults.value = results.sort((a, b) => Number(a.deleted) - Number(b.deleted))
     } catch {
       userResults.value = []

@@ -51,3 +51,33 @@ func TestAdminUserList_ParsesAPIKeyGroupID(t *testing.T) {
 		})
 	}
 }
+
+func TestAdminUserList_ParsesUserID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cases := []struct {
+		name  string
+		query string
+		want  int64
+	}{
+		{"valid id", "?user_id=42", 42},
+		{"missing", "", 0},
+		{"zero ignored", "?user_id=0", 0},
+		{"negative ignored", "?user_id=-3", 0},
+		{"non-numeric ignored", "?user_id=abc", 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			stub := &listUsersFilterStub{AdminService: newStubAdminService()}
+			r := gin.New()
+			h := NewUserHandler(stub, nil, nil, nil, nil, nil, nil)
+			r.GET("/admin/users", h.List)
+
+			w := httptest.NewRecorder()
+			req, _ := http.NewRequest(http.MethodGet, "/admin/users"+tc.query, nil)
+			r.ServeHTTP(w, req)
+
+			require.Equal(t, http.StatusOK, w.Code)
+			require.Equal(t, tc.want, stub.captured.UserID)
+		})
+	}
+}

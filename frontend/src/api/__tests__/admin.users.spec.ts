@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { post } = vi.hoisted(() => ({
+const { get, post } = vi.hoisted(() => ({
+  get: vi.fn(),
   post: vi.fn(),
 }))
 
 vi.mock('@/api/client', () => ({
   apiClient: {
+    get,
     post,
   },
 }))
@@ -13,6 +15,7 @@ vi.mock('@/api/client', () => ({
 import {
   batchUpdateLimits,
   bindUserAuthIdentity,
+  list as listUsers,
   type AdminBindAuthIdentityRequest,
   type AdminBoundAuthIdentity,
   type BatchUpdateUserLimitsRequest,
@@ -146,5 +149,32 @@ describe('admin users api auth identity binding', () => {
     expect(result).toEqual({ affected: 2 })
     expect(batchRequestContractExact).toBe(true)
     expect(batchResponseContractExact).toBe(true)
+  })
+})
+
+describe('admin users API list filters', () => {
+  beforeEach(() => {
+    get.mockReset()
+  })
+
+  it('sends user_id as an exact list filter', async () => {
+    get.mockResolvedValue({
+      data: {
+        items: [],
+        total: 0,
+        page: 1,
+        page_size: 20,
+        pages: 0,
+      },
+    })
+
+    await listUsers(1, 20, { user_id: 42 })
+
+    expect(get).toHaveBeenCalledWith(
+      '/admin/users',
+      expect.objectContaining({
+        params: expect.objectContaining({ user_id: 42 }),
+      })
+    )
   })
 })

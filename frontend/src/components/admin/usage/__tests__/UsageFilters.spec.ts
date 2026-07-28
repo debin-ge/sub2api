@@ -163,6 +163,35 @@ describe('UsageFilters — user search dropdown', () => {
     // (the component uses toRef so modelValue is mutated in place and 'change' is emitted)
     expect(wrapper.props('modelValue').user_id).toBe(1)
   })
+
+  it('trims surrounding whitespace before searching users', async () => {
+    mockSearchUsers.mockResolvedValue([
+      { id: 1, email: 'active@test.com', deleted: false },
+    ])
+
+    const wrapper = mountFilters()
+    const input = wrapper.find('input[type="text"]')
+    await input.trigger('focus')
+    await input.setValue('  active@test.com  ')
+
+    vi.advanceTimersByTime(300)
+    await flushPromises()
+
+    expect(mockSearchUsers).toHaveBeenCalledTimes(1)
+    expect(mockSearchUsers).toHaveBeenCalledWith('active@test.com')
+    expect(wrapper.text()).toContain('active@test.com')
+  })
+
+  it('does not search when the user keyword contains only whitespace', async () => {
+    const wrapper = mountFilters()
+    const input = wrapper.find('input[type="text"]')
+    await input.setValue('   ')
+
+    vi.advanceTimersByTime(300)
+    await flushPromises()
+
+    expect(mockSearchUsers).not.toHaveBeenCalled()
+  })
 })
 
 describe('UsageFilters — model options come from prop (no dup request)', () => {

@@ -117,6 +117,7 @@ type BindUserAuthIdentityChannelRequest struct {
 //   - status: filter by user status
 //   - role: filter by user role
 //   - search: search in email, username
+//   - user_id: filter by exact user ID
 //   - attr[{id}]: filter by custom attribute value, e.g. attr[1]=company
 //   - group_name: fuzzy filter by allowed group name
 //   - api_key_group_id: filter by the exact group bound to the user's API keys
@@ -130,10 +131,18 @@ func (h *UserHandler) List(c *gin.Context) {
 		search = string(runes[:100])
 	}
 
+	var userID int64
+	if raw := strings.TrimSpace(c.Query("user_id")); raw != "" {
+		if id, parseErr := strconv.ParseInt(raw, 10, 64); parseErr == nil && id > 0 {
+			userID = id
+		}
+	}
+
 	filters := service.UserListFilters{
 		Status:     c.Query("status"),
 		Role:       c.Query("role"),
 		Search:     search,
+		UserID:     userID,
 		GroupName:  strings.TrimSpace(c.Query("group_name")),
 		Attributes: parseAttributeFilters(c),
 	}

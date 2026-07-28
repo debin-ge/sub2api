@@ -22,6 +22,26 @@
               />
             </div>
 
+            <!-- Exact User ID Search -->
+            <div class="relative w-full md:w-40">
+              <Icon
+                name="search"
+                size="md"
+                class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+              />
+              <input
+                v-model="userIdQuery"
+                data-test="user-id-search"
+                type="number"
+                min="1"
+                step="1"
+                inputmode="numeric"
+                :placeholder="t('admin.users.searchUserId')"
+                class="input pl-10"
+                @input="handleSearch"
+              />
+            </div>
+
             <!-- Role Filter (visible when enabled) -->
             <div v-if="visibleFilters.has('role')" class="w-full sm:w-32">
               <Select
@@ -1023,6 +1043,7 @@ const columns = computed<Column[]>(() =>
 const users = ref<AdminUser[]>([])
 const loading = ref(false)
 const searchQuery = ref('')
+const userIdQuery = ref('')
 const USER_SORT_STORAGE_KEY = 'admin-users-table-sort'
 const loadInitialSortState = (): { sort_by: string; sort_order: 'asc' | 'desc' } => {
   const fallback = { sort_by: 'created_at', sort_order: 'desc' as 'asc' | 'desc' }
@@ -1582,6 +1603,7 @@ const loadUsers = async () => {
         role: filters.role as any,
         status: filters.status as any,
         search: searchQuery.value || undefined,
+        user_id: userIdQuery.value ? Number(userIdQuery.value) : undefined,
         group_name: filters.group || undefined,
         api_key_group_id: filters.apiKeyGroup ?? undefined,
         attributes: Object.keys(attrFilters).length > 0 ? attrFilters : undefined,

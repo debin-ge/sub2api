@@ -68,6 +68,7 @@ type UserListFilters struct {
 	Status    string // User status filter
 	Role      string // User role filter
 	Search    string // Search in email, username
+	UserID    int64  // Exact user ID filter; 0 means no filter
 	GroupName string // Filter by allowed group name (fuzzy match)
 	// APIKeyGroupID filters users who own at least one non-soft-deleted API key
 	// bound to this group (api_keys.group_id). 0 = no filter. Covers all three

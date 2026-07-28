@@ -59,7 +59,7 @@ export interface BatchUpdateUserLimitsResponse {
  * List all users with pagination
  * @param page - Page number (default: 1)
  * @param pageSize - Items per page (default: 20)
- * @param filters - Optional filters (status, role, search, attributes)
+ * @param filters - Optional filters (status, role, search, user ID, attributes)
  * @param options - Optional request options (signal)
  * @returns Paginated list of users
  */
@@ -70,6 +70,7 @@ export async function list(
     status?: 'active' | 'disabled'
     role?: 'admin' | 'user'
     search?: string
+    user_id?: number
     group_name?: string         // fuzzy filter by allowed group name
     api_key_group_id?: number   // filter users by the group their API keys are bound to
     attributes?: Record<number, string>  // attributeId -> value
@@ -88,6 +89,7 @@ export async function list(
     status: filters?.status,
     role: filters?.role,
     search: filters?.search,
+    user_id: filters?.user_id,
     group_name: filters?.group_name,
     api_key_group_id: filters?.api_key_group_id,
     include_subscriptions: filters?.include_subscriptions,
