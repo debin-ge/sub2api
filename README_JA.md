@@ -42,6 +42,7 @@ Sub2API は、AI 製品のサブスクリプションから API クォータを�
 - **レート制限** - 設定可能なリクエスト数およびトークンレート制限
 - **内蔵決済システム** - EasyPay、Alipay、WeChat Pay、Stripe に対応。ユーザーのセルフサービスチャージが可能で、別途決済サービスのデプロイは不要（[設定ガイド](docs/PAYMENT.md)）
 - **管理ダッシュボード** - 監視・管理のための Web インターフェース
+- **複合グループ** - 公開モデルを具体的なプロバイダーへ解決する管理者向けルーティング層（[運用ガイド](docs/COMPOSITE_GROUPS.md)）
 - **外部システム連携** - 外部システム（チケット管理など）を iframe 経由で管理ダッシュボードに埋め込み可能
 
 ## エコシステム
@@ -51,6 +52,7 @@ Sub2API を拡張・統合するコミュニティプロジェクト:
 | プロジェクト | 説明 | 機能 |
 |---------|-------------|----------|
 | ~~[Sub2ApiPay](https://github.com/touwaeriol/sub2apipay)~~ | ~~セルフサービス決済システム~~ | **内蔵済み** — 決済機能は Sub2API に統合されました。別途デプロイは不要です。[決済設定ガイド](docs/PAYMENT.md)をご参照ください |
+| [sub2api-mobile](https://github.com/ckken/sub2api-mobile) | モバイル管理コンソール | ユーザー管理、アカウント管理、監視ダッシュボード、マルチバックエンド切り替えが可能なクロスプラットフォームアプリ（iOS/Android/Web）。Expo + React Native で構築 |
 
 ## 技術スタック
 
@@ -386,6 +388,7 @@ database:
 redis:
   host: "localhost"
   port: 6379
+  username: ""
   password: ""
 
 jwt:

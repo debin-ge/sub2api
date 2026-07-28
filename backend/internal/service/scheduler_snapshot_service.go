@@ -820,7 +820,7 @@ func schedulerBucketsForGroup(groupID int64) []SchedulerBucket {
 }
 
 func schedulerCanonicalBuckets(groupID int64) []SchedulerBucket {
-	buckets := make([]SchedulerBucket, 0, 12)
+	buckets := make([]SchedulerBucket, 0, len(schedulerSnapshotPlatforms())*2+2)
 	for _, platform := range schedulerSnapshotPlatforms() {
 		buckets = append(buckets,
 			SchedulerBucket{GroupID: groupID, Platform: platform, Mode: SchedulerModeSingle},
@@ -838,7 +838,7 @@ func (s *SchedulerSnapshotService) rebuildByGroupIDs(ctx context.Context, groupI
 	if len(groupIDs) == 0 {
 		return nil
 	}
-	buckets := make([]SchedulerBucket, 0, len(groupIDs)*12)
+	buckets := make([]SchedulerBucket, 0, len(groupIDs)*(len(schedulerSnapshotPlatforms())*2+2))
 	for _, platform := range schedulerSnapshotPlatforms() {
 		buckets = append(buckets, s.bucketsForPlatform(platform, groupIDs, seen)...)
 	}
@@ -993,7 +993,7 @@ func (s *SchedulerSnapshotService) setRebuildSnapshot(
 		return err
 	}
 	if queries.remaining[key] > 1 {
-		// 必须保存 writeAccounts 实际接受的有序 ID，不能从原账号切片重新推导；
+		// 必须保存实际成功编码并写入的有序 ID，不能从原账号切片重新推导；
 		// 否则不可编码账号会只出现在后续桶中，破坏两个快照的成员一致性。
 		// 返回切片由当前批次独占，直接接管可避免 10k 账号场景再次复制。
 		queries.snapshotAccountIDs[key] = accountIDs

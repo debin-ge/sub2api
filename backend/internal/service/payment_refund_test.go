@@ -464,11 +464,14 @@ func TestConfirmManualRefundMarksRefundedAndDeductsLocally(t *testing.T) {
 	var deducted float64
 	svc := &PaymentService{
 		entClient: client,
-		userRepo: &mockUserRepo{deductBalanceFn: func(ctx context.Context, id int64, amount float64) error {
-			require.Equal(t, user.ID, id)
-			deducted += amount
-			return nil
-		}},
+		userRepo: &manualRefundUserRepo{
+			user: &User{ID: user.ID, Balance: 500},
+			deductBalanceFn: func(ctx context.Context, id int64, amount float64) error {
+				require.Equal(t, user.ID, id)
+				deducted += amount
+				return nil
+			},
+		},
 	}
 
 	result, err := svc.ConfirmManualRefund(ctx, order.ID, 50, "manual completed", "wise-refund-1", true, true)

@@ -218,6 +218,7 @@ func provideCleanup(
 	modelCatalogRefreshRunner *service.ModelCatalogRefreshRunner,
 	quotaFlusher *service.UserPlatformQuotaUsageFlusher,
 	upstreamBillingProbe *service.UpstreamBillingProbeService,
+	ollamaCloudUsage *service.OllamaCloudUsageService,
 	auditLog *service.AuditLogService,
 	promptAudit *securityaudit.PromptService,
 ) cleanupFactory {
@@ -264,6 +265,7 @@ func provideCleanup(
 			modelCatalogRefreshRunner,
 			quotaFlusher,
 			upstreamBillingProbe,
+			ollamaCloudUsage,
 			auditLog,
 			promptAudit,
 			radarRunner,
@@ -313,6 +315,7 @@ func provideFinalCleanup(
 	modelCatalogRefreshRunner *service.ModelCatalogRefreshRunner,
 	quotaFlusher *service.UserPlatformQuotaUsageFlusher,
 	upstreamBillingProbe *service.UpstreamBillingProbeService,
+	ollamaCloudUsage *service.OllamaCloudUsageService,
 	auditLog *service.AuditLogService,
 	promptAudit *securityaudit.PromptService,
 	radarRunner *service.RadarRunner,
@@ -555,6 +558,12 @@ func provideFinalCleanup(
 			{"UpstreamBillingProbeService", func() error {
 				if upstreamBillingProbe != nil {
 					upstreamBillingProbe.Stop()
+				}
+				return nil
+			}},
+			{"OllamaCloudUsageService", func() error {
+				if ollamaCloudUsage != nil {
+					ollamaCloudUsage.Stop()
 				}
 				return nil
 			}},

@@ -182,6 +182,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 	body = parsedReq.Body.Bytes()
 	reqModel := parsedReq.Model
 	reqStream := parsedReq.Stream
+	ensureCompositeTargetPlatform(c, apiKey, reqModel)
 	reqLog = reqLog.With(zap.String("model", reqModel), zap.Bool("stream", reqStream))
 
 	// 解析渠道级模型映射
@@ -212,6 +213,10 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 	// 验证 model 必填
 	if reqModel == "" {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "model is required")
+		return
+	}
+	if !compositeTargetPlatformResolved(c, apiKey, reqModel) {
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Model is not supported by composite groups")
 		return
 	}
 
@@ -272,10 +277,12 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 		zap.String("metadata_user_id_raw", parsedReq.MetadataUserID),
 	)
 
-	// 获取平台：优先使用强制平台（/antigravity 路由，中间件已设置 request.Context），否则使用分组平台
+	// 获取平台：优先使用强制平台（/antigravity 路由），其次使用 composite 解析出的目标平台，否则使用分组平台
 	platform := ""
 	if forcePlatform, ok := middleware2.GetForcePlatformFromContext(c); ok {
 		platform = forcePlatform
+	} else if resolvedPlatform, ok := service.ResolvedTargetPlatformFromContext(c.Request.Context()); ok {
+		platform = resolvedPlatform
 	} else if apiKey.Group != nil {
 		platform = apiKey.Group.Platform
 	}
@@ -541,6 +548,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			// ForceCacheBilling 提前拍成标量，避免 worker 闭包保活 failover 状态里的响应体。
 			forceCacheBilling := fs.ForceCacheBilling
 			quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
+			sessionID := service.ExtractClientSessionID(c)
 			h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
 				if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
 					Result:             result,
@@ -553,10 +561,11 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 					UpstreamEndpoint:   upstreamEndpoint,
 					UserAgent:          userAgent,
 					IPAddress:          clientIP,
+					SessionID:          sessionID,
 					RequestPayloadHash: requestPayloadHash,
 					ForceCacheBilling:  forceCacheBilling,
 					APIKeyService:      h.apiKeyService,
-					ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
+					ChannelUsageFields: clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel),
 				}); err != nil {
 					logger.L().With(
 						zap.String("component", "handler.gateway.messages"),
@@ -810,6 +819,9 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			if fs.SwitchCount > 0 {
 				requestCtx = service.WithAccountSwitchCount(requestCtx, fs.SwitchCount, h.metadataBridgeEnabled())
 			}
+			if fs.ForceCacheBilling {
+				requestCtx = service.WithForceCacheBilling(requestCtx)
+			}
 			// 记录 Forward 前已写入字节数，Forward 后若增加则说明 SSE 内容已发，禁止 failover
 			writerSizeBeforeForward := c.Writer.Size()
 			if account.Platform == service.PlatformAntigravity && account.Type != service.AccountTypeAPIKey {
@@ -973,6 +985,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			// ForceCacheBilling 提前拍成标量，避免 worker 闭包保活 failover 状态里的响应体。
 			forceCacheBilling := fs.ForceCacheBilling
 			quotaPlatform := service.QuotaPlatform(c.Request.Context(), currentAPIKey)
+			sessionID := service.ExtractClientSessionID(c)
 			h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
 				if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
 					Result:             result,
@@ -985,10 +998,11 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 					UpstreamEndpoint:   upstreamEndpoint,
 					UserAgent:          userAgent,
 					IPAddress:          clientIP,
+					SessionID:          sessionID,
 					RequestPayloadHash: requestPayloadHash,
 					ForceCacheBilling:  forceCacheBilling,
 					APIKeyService:      h.apiKeyService,
-					ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
+					ChannelUsageFields: clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel),
 				}); err != nil {
 					logger.L().With(
 						zap.String("component", "handler.gateway.messages"),
@@ -1787,6 +1801,7 @@ func (h *GatewayHandler) CountTokens(c *gin.Context) {
 	body = parsedReq.Body.Bytes()
 	// count_tokens 走 messages 严格校验时，复用已解析请求，避免二次反序列化。
 	SetClaudeCodeClientContext(c, body, parsedReq)
+	ensureCompositeTargetPlatform(c, apiKey, parsedReq.Model)
 	reqLog = reqLog.With(zap.String("model", parsedReq.Model), zap.Bool("stream", parsedReq.Stream))
 	// 在请求上下文中记录 thinking 状态，供 Antigravity 最终模型 key 推导/模型维度限流使用
 	c.Request = c.Request.WithContext(service.WithThinkingEnabled(c.Request.Context(), parsedReq.ThinkingEnabled, h.metadataBridgeEnabled()))
@@ -1794,6 +1809,10 @@ func (h *GatewayHandler) CountTokens(c *gin.Context) {
 	// 验证 model 必填
 	if parsedReq.Model == "" {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "model is required")
+		return
+	}
+	if !compositeTargetPlatformResolved(c, apiKey, parsedReq.Model) {
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Model is not supported by composite groups")
 		return
 	}
 

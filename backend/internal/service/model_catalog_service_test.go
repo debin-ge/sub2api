@@ -112,7 +112,7 @@ func TestModelCatalogStatsLowCardinality(t *testing.T) {
 	require.Equal(t, int64(1), stats.CacheFresh)
 	require.Equal(t, int64(1), stats.CacheStale)
 	require.Equal(t, int64(1), stats.CacheMiss)
-	require.Len(t, stats.ByPlatform, 12)
+	require.Len(t, stats.ByPlatform, len(modelCatalogPlatforms))
 	require.Equal(t, int64(1), stats.ByPlatform[PlatformOpenAI].RefreshSuccess)
 	require.Equal(t, int64(1), stats.ByPlatform[PlatformOpenAI].FallbackByReason[modelCatalogFallbackUpstreamError])
 	require.Equal(t, int64(1), stats.ByPlatform[modelCatalogPlatformUnknown].RefreshSuccess)

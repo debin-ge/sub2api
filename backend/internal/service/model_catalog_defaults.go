@@ -29,6 +29,11 @@ func DefaultModelCatalogIDs(platform string) []string {
 		}
 	case PlatformGrok:
 		ids = xai.DefaultModelIDs()
+	case PlatformComposite:
+		for _, concretePlatform := range compositeModelCatalogPlatforms {
+			ids = append(ids, DefaultModelCatalogIDs(concretePlatform)...)
+		}
+		ids = normalizeCatalogModelIDs(ids)
 	default:
 		ids = DefaultDomesticProviderModelIDs(platform)
 	}

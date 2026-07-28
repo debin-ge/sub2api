@@ -210,30 +210,76 @@ func (d *UpstreamModelDiscoverer) buildUpstreamModelsRequest(ctx context.Context
 }
 
 func (d *UpstreamModelDiscoverer) buildGrokUpstreamModelsRequest(ctx context.Context, account *Account) (*http.Request, error) {
-	if account == nil || account.Type != AccountTypeAPIKey {
+	if account == nil {
+		return nil, newUpstreamModelSyncConfigError("Account is required", nil)
+	}
+
+	var (
+		authToken         string
+		normalizedBaseURL string
+		isOAuth           = account.IsGrokOAuth()
+	)
+	switch account.Type {
+	case AccountTypeAPIKey:
+		authToken = strings.TrimSpace(account.GetCredential("api_key"))
+		if authToken == "" {
+			return nil, newUpstreamModelSyncConfigError("No Grok API key is available", nil)
+		}
+
+		baseURL := strings.TrimSpace(account.GetCredential("base_url"))
+		if baseURL == "" {
+			baseURL = "https://api.x.ai"
+		}
+		validatedBaseURL, err := d.validateUpstreamBaseURL(baseURL)
+		if err != nil {
+			return nil, newUpstreamModelSyncConfigError("Invalid Grok base URL", err)
+		}
+		normalizedBaseURL = validatedBaseURL
+	case AccountTypeOAuth:
+		if d.grokTokenProvider == nil {
+			return nil, newUpstreamModelSyncConfigError("Grok token provider is not configured", nil)
+		}
+		accessToken, err := d.grokTokenProvider.GetAccessTokenForManualTest(ctx, account)
+		if err != nil {
+			return nil, newUpstreamModelSyncUpstreamError("Failed to get Grok access token", err)
+		}
+		authToken = strings.TrimSpace(accessToken)
+		if authToken == "" {
+			return nil, newUpstreamModelSyncConfigError("No Grok access token is available", nil)
+		}
+
+		validator, err := grokBaseURLValidator(account, d.cfg)
+		if err != nil {
+			return nil, newUpstreamModelSyncConfigError("Invalid Grok base URL", err)
+		}
+		validatedBaseURL, err := validator(account.GetGrokBaseURL())
+		if err != nil {
+			return nil, newUpstreamModelSyncConfigError("Invalid Grok base URL", err)
+		}
+		normalizedBaseURL = validatedBaseURL
+	default:
 		return nil, newUpstreamModelSyncUnsupportedError(
 			fmt.Sprintf("Unsupported Grok account type for upstream model sync: %s", account.Type), nil,
 		)
 	}
-	apiKey := strings.TrimSpace(account.GetCredential("api_key"))
-	if apiKey == "" {
-		return nil, newUpstreamModelSyncConfigError("No Grok API key is available", nil)
-	}
 
-	baseURL := strings.TrimSpace(account.GetCredential("base_url"))
-	if baseURL == "" {
-		baseURL = "https://api.x.ai"
-	}
-	normalizedBaseURL, err := d.validateUpstreamBaseURL(baseURL)
-	if err != nil {
-		return nil, newUpstreamModelSyncConfigError("Invalid Grok base URL", err)
-	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, buildOpenAIModelsURL(normalizedBaseURL), nil)
 	if err != nil {
 		return nil, newUpstreamModelSyncConfigError("Invalid Grok model list URL", err)
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	if isOAuth {
+		applyGrokCLIHeaders(req.Header)
+		if isGrokCLIProxyTarget(req.URL.String()) {
+			if userID := strings.TrimSpace(account.GetCredential("sub")); userID != "" {
+				req.Header.Set("X-UserID", userID)
+			}
+			if email := strings.TrimSpace(account.GetCredential("email")); email != "" {
+				req.Header.Set("X-Email", email)
+			}
+		}
+	}
 	account.ApplyHeaderOverrides(req.Header)
 	return req, nil
 }
@@ -683,12 +729,32 @@ func buildGeminiModelsURL(base string) string {
 }
 
 type upstreamModelEntry struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Slug string `json:"slug"`
+	ID           string          `json:"id"`
+	Model        string          `json:"model"`
+	ModelID      string          `json:"modelId"`
+	ModelIDSnake string          `json:"model_id"`
+	Name         string          `json:"name"`
+	Slug         string          `json:"slug"`
+	Meta         json.RawMessage `json:"_meta"`
+}
+
+type upstreamModelEntryMetadata struct {
+	ID           string `json:"id"`
+	Model        string `json:"model"`
+	ModelID      string `json:"modelId"`
+	ModelIDSnake string `json:"model_id"`
+	Name         string `json:"name"`
 }
 
 func extractUpstreamModelIDs(body []byte) ([]string, error) {
+	return extractUpstreamModelIDsWithSelector(body, upstreamModelEntryID)
+}
+
+func extractGrokUpstreamModelIDs(body []byte) ([]string, error) {
+	return extractUpstreamModelIDsWithSelector(body, grokUpstreamModelEntryID)
+}
+
+func extractUpstreamModelIDsWithSelector(body []byte, selectID func(upstreamModelEntry) string) ([]string, error) {
 	var response struct {
 		Data   []upstreamModelEntry `json:"data"`
 		Models []upstreamModelEntry `json:"models"`
@@ -701,24 +767,24 @@ func extractUpstreamModelIDs(body []byte) ([]string, error) {
 
 		models := make([]string, 0, len(arrayResponse))
 		for _, entry := range arrayResponse {
-			models = append(models, upstreamModelEntryID(entry))
+			models = append(models, selectID(entry))
 		}
 		return dedupeAndSortModelIDs(models), nil
 	}
 
 	models := make([]string, 0, len(response.Data)+len(response.Models))
 	for _, entry := range response.Data {
-		models = append(models, upstreamModelEntryID(entry))
+		models = append(models, selectID(entry))
 	}
 	for _, entry := range response.Models {
-		models = append(models, upstreamModelEntryID(entry))
+		models = append(models, selectID(entry))
 	}
 
 	if len(models) == 0 {
 		var arrayResponse []upstreamModelEntry
 		if err := json.Unmarshal(body, &arrayResponse); err == nil {
 			for _, entry := range arrayResponse {
-				models = append(models, upstreamModelEntryID(entry))
+				models = append(models, selectID(entry))
 			}
 		}
 	}
@@ -732,6 +798,8 @@ func parseDiscoveredUpstreamModelIDs(platform string, body []byte) ([]string, er
 		return parseWindsurfModelListBody(body)
 	case PlatformOpenCode:
 		return parseOpenCodeModelListBody(body)
+	case PlatformGrok:
+		return extractGrokUpstreamModelIDs(body)
 	default:
 		return extractUpstreamModelIDs(body)
 	}
@@ -746,6 +814,37 @@ func upstreamModelEntryID(entry upstreamModelEntry) string {
 		modelID = strings.TrimSpace(entry.Slug)
 	}
 	return strings.TrimPrefix(modelID, "models/")
+}
+
+func grokUpstreamModelEntryID(entry upstreamModelEntry) string {
+	candidates := []string{
+		entry.Model,
+		entry.ModelID,
+		entry.ModelIDSnake,
+		entry.ID,
+	}
+	if len(entry.Meta) > 0 {
+		var meta upstreamModelEntryMetadata
+		if err := json.Unmarshal(entry.Meta, &meta); err == nil {
+			candidates = append(candidates,
+				meta.Model,
+				meta.ModelID,
+				meta.ModelIDSnake,
+				meta.ID,
+				meta.Name,
+			)
+		}
+	}
+	// `name` is a display label in the Grok catalog, so keep it as the final
+	// compatibility fallback rather than preferring it over protocol model IDs.
+	candidates = append(candidates, entry.Name, entry.Slug)
+	for _, candidate := range candidates {
+		modelID := strings.TrimSpace(candidate)
+		if modelID != "" {
+			return strings.TrimPrefix(modelID, "models/")
+		}
+	}
+	return ""
 }
 
 func dedupeAndSortModelIDs(models []string) []string {

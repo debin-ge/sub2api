@@ -1257,10 +1257,10 @@ func TestGatewayService_isModelSupportedByAccount(t *testing.T) {
 			expected: true,
 		},
 		{
-			name:     "DeepSeek平台-拒绝Claude alias",
+			name:     "DeepSeek平台-无显式映射时透传未来模型",
 			account:  &Account{Platform: PlatformDeepSeek, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "sk-deepseek"}},
 			model:    "claude-sonnet-4-5",
-			expected: false,
+			expected: true,
 		},
 		{
 			name:     "Windsurf平台-支持默认模型",
@@ -1282,10 +1282,10 @@ func TestGatewayService_isModelSupportedByAccount(t *testing.T) {
 			expected: true,
 		},
 		{
-			name:     "Windsurf平台-拒绝未默认暴露检索模型",
+			name:     "Windsurf平台-无显式映射时透传动态发现模型",
 			account:  &Account{Platform: PlatformWindsurf, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "sk-windsurf"}},
 			model:    "swe-grep",
-			expected: false,
+			expected: true,
 		},
 	}
 

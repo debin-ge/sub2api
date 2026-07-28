@@ -39,7 +39,16 @@ var modelCatalogPlatforms = [...]string{
 	PlatformDeepSeek,
 	PlatformWindsurf,
 	PlatformOpenCode,
+	PlatformComposite,
 	modelCatalogPlatformUnknown,
+}
+
+var compositeModelCatalogPlatforms = [...]string{
+	PlatformAnthropic,
+	PlatformGemini,
+	PlatformOpenAI,
+	PlatformAntigravity,
+	PlatformGrok,
 }
 
 var modelCatalogFallbackReasons = [...]string{
@@ -595,6 +604,16 @@ func (s *ModelCatalogService) listGroupCandidatesWithMemo(ctx context.Context, g
 	if group.Platform != platform {
 		return nil, group, nil
 	}
+	if platform == PlatformComposite {
+		models, err := s.listCompositeGroupCandidates(ctx, groupID, waitForLive, memo)
+		if err != nil {
+			return nil, nil, err
+		}
+		if len(models) == 0 {
+			models = DefaultModelCatalogIDs(PlatformComposite)
+		}
+		return models, group, nil
+	}
 	accounts, err := s.accountRepo.ListSchedulableByGroupIDAndPlatform(ctx, groupID, platform)
 	if err != nil {
 		return nil, nil, err
@@ -622,6 +641,52 @@ func (s *ModelCatalogService) listGroupCandidatesWithMemo(ctx context.Context, g
 		}
 	}
 	return normalizeCatalogModelIDs(models), group, nil
+}
+
+func (s *ModelCatalogService) listCompositeGroupCandidates(
+	ctx context.Context,
+	groupID int64,
+	waitForLive bool,
+	memo map[int64][]string,
+) ([]string, error) {
+	accounts, err := s.accountRepo.ListSchedulableByGroupID(ctx, groupID)
+	if err != nil {
+		return nil, err
+	}
+
+	models := make([]string, 0)
+	for i := range accounts {
+		account := &accounts[i]
+		if account.Status != StatusActive || !account.Schedulable || !isCompositeCatalogPlatform(account.Platform) {
+			continue
+		}
+		resolved, resolveErr := s.resolveAccountOnce(ctx, memo, account, waitForLive)
+		if resolveErr == nil {
+			models = append(models, resolved...)
+		}
+	}
+
+	if s.channelService != nil {
+		channel, channelErr := s.channelService.GetChannelForGroup(ctx, groupID)
+		if channelErr != nil {
+			return nil, channelErr
+		}
+		for _, model := range channel.SupportedModels() {
+			if isCompositeCatalogPlatform(model.Platform) {
+				models = append(models, model.Name)
+			}
+		}
+	}
+	return normalizeCatalogModelIDs(models), nil
+}
+
+func isCompositeCatalogPlatform(platform string) bool {
+	for _, candidate := range compositeModelCatalogPlatforms {
+		if platform == candidate {
+			return true
+		}
+	}
+	return false
 }
 
 // ListForAPIKey returns the group-scoped catalog for an authenticated API key.

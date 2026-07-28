@@ -101,6 +101,10 @@ func (s *gatewayModelsAccountRepoStub) ListSchedulableByGroupID(ctx context.Cont
 	}
 	out := make([]service.Account, len(accounts))
 	copy(out, accounts)
+	for i := range out {
+		out[i].Status = service.StatusActive
+		out[i].Schedulable = true
+	}
 	return out, nil
 }
 
@@ -238,6 +242,14 @@ func TestGatewayModels_ReturnsCatalogError(t *testing.T) {
 	require.Equal(t, http.StatusInternalServerError, rec.Code)
 	require.Equal(t, 1, stub.apiKeyCalls)
 	require.Zero(t, stub.platformCalls)
+}
+
+func TestDefaultModelIDsForCompositeIncludesAntigravityDefaults(t *testing.T) {
+	antigravityIDs := service.DefaultModelCatalogIDs(service.PlatformAntigravity)
+	require.NotEmpty(t, antigravityIDs)
+
+	compositeIDs := service.DefaultModelCatalogIDs(service.PlatformComposite)
+	require.Contains(t, compositeIDs, antigravityIDs[0])
 }
 
 func TestGatewayModels_GeminiGroupFallsBackToGeminiModels(t *testing.T) {
@@ -454,6 +466,106 @@ func TestGatewayModels_CustomModelsListFiltersAndOrdersMappedModels(t *testing.T
 	var got gatewayModelsResponseForTest
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
 	require.Equal(t, []string{"gpt-5.5", "gpt-5.4"}, modelIDsForTest(got.Data))
+}
+
+func TestGatewayModels_CompositeCustomModelsListFiltersAcrossConcretePlatforms(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	groupID := int64(33)
+	h := newGatewayModelsHandlerForTest(
+		&gatewayModelsAccountRepoStub{
+			byGroup: map[int64][]service.Account{
+				groupID: {
+					{
+						ID:       1,
+						Platform: service.PlatformOpenAI,
+						Credentials: map[string]any{
+							"model_mapping": map[string]any{
+								"gpt-5.4": "gpt-5.4",
+								"gpt-5.5": "gpt-5.5",
+							},
+						},
+					},
+					{
+						ID:       2,
+						Platform: service.PlatformGemini,
+						Credentials: map[string]any{
+							"model_mapping": map[string]any{
+								"gemini-2.5-flash": "gemini-2.5-flash",
+							},
+						},
+					},
+					{
+						ID:       3,
+						Platform: service.PlatformAntigravity,
+						Credentials: map[string]any{
+							"model_mapping": map[string]any{
+								"ag-custom-model": "ag-custom-model",
+							},
+						},
+					},
+				},
+			},
+		},
+	)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
+		Group: &service.Group{
+			ID:       groupID,
+			Platform: service.PlatformComposite,
+			ModelsListConfig: service.GroupModelsListConfig{
+				Enabled: true,
+				Models:  []string{"gemini-2.5-flash", "missing-model", "ag-custom-model", "gpt-5.5"},
+			},
+		},
+	})
+
+	h.Models(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var got gatewayModelsResponseForTest
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Equal(t, []string{"gemini-2.5-flash", "ag-custom-model", "gpt-5.5"}, modelIDsForTest(got.Data))
+}
+
+func TestGatewayModels_CompositeUnmappedAccountsFallbackToLinkedPlatformsOnly(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	groupID := int64(34)
+	h := newGatewayModelsHandlerForTest(
+		&gatewayModelsAccountRepoStub{
+			byGroup: map[int64][]service.Account{
+				groupID: {
+					{ID: 1, Platform: service.PlatformOpenAI},
+					{ID: 2, Platform: service.PlatformGrok},
+				},
+			},
+		},
+	)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
+		Group: &service.Group{ID: groupID, Platform: service.PlatformComposite},
+	})
+
+	h.Models(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var got gatewayModelsResponseForTest
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+
+	ids := modelIDsForTest(got.Data)
+	require.Contains(t, ids, "gpt-5.5")
+	require.Contains(t, ids, "grok-4.3")
+	require.NotContains(t, ids, "claude-sonnet-4-6")
+	require.NotContains(t, ids, "gemini-2.5-flash")
 }
 
 func TestGatewayModels_CustomModelsListKeepsConcreteModelAllowedByWildcardMapping(t *testing.T) {

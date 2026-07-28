@@ -509,6 +509,30 @@ func TestAuthService_Register_EmailExists(t *testing.T) {
 	require.ErrorIs(t, err, ErrEmailExists)
 }
 
+func TestAuthService_Register_AliasFormRejectedBeforeDedup(t *testing.T) {
+	repo := &userRepoStub{aliasExists: true}
+	service := newAuthService(repo, map[string]string{
+		SettingKeyRegistrationEnabled: "true",
+	}, nil, nil)
+
+	_, _, err := service.Register(context.Background(), "some.one+bulk294@gmail.com", "password")
+	require.ErrorIs(t, err, ErrEmailLocalPartInvalid)
+	require.Empty(t, repo.created)
+}
+
+func TestAuthService_Register_UsesAliasGuardedCreate(t *testing.T) {
+	// 注册必须走带别名兜底的创建路径：服务层前置查重与写入之间存在竞态窗口。
+	repo := &userRepoStub{nextID: 91}
+	service := newAuthService(repo, map[string]string{
+		SettingKeyRegistrationEnabled: "true",
+	}, nil, nil)
+
+	_, user, err := service.Register(context.Background(), "newuser@gmail.com", "password")
+	require.NoError(t, err)
+	require.NotNil(t, user)
+	require.Equal(t, 1, repo.guardedCreates)
+}
+
 func TestAuthService_Register_CheckEmailError(t *testing.T) {
 	repo := &userRepoStub{existsErr: errors.New("db down")}
 	service := newAuthService(repo, map[string]string{
@@ -651,15 +675,17 @@ func TestAuthService_Register_AffiliateCodeSatisfiesInvitationRequirement(t *tes
 	require.Empty(t, redeemRepo.useCalls)
 	require.Empty(t, affiliateRepo.ensureUserIDs)
 	require.Equal(t, []struct {
-		userID      int64
-		code        string
-		reward      float64
-		freezeHours int
+		userID          int64
+		code            string
+		reward          float64
+		inviterTotalCap float64
+		freezeHours     int
 	}{{
-		userID:      100,
-		code:        "AFF123",
-		reward:      0,
-		freezeHours: 0,
+		userID:          100,
+		code:            "AFF123",
+		reward:          0,
+		inviterTotalCap: 0,
+		freezeHours:     0,
 	}}, affiliateRepo.registrationRewardCalls)
 	require.Equal(t, []struct {
 		userID    int64

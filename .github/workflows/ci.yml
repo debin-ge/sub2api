@@ -24,6 +24,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
+      - name: Validate Caddy streaming configuration
+        working-directory: .
+        run: /bin/sh deploy/test-caddyfile-cache.sh
+
       - name: Set up Go
         uses: actions/setup-go@v7
         with:

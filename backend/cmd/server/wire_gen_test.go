@@ -312,6 +312,7 @@ func cleanupWithRadarTestDependencies(rdb *redis.Client, radarRunner *service.Ra
 		nil, // modelCatalogRefreshRunner
 		nil, // quotaFlusher
 		nil, // upstreamBillingProbe
+		nil, // ollamaCloudUsage
 		nil, // auditLog
 		nil, // promptAudit
 	)(radarRunner)
@@ -438,6 +439,7 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 		modelCatalogRefreshRunner,
 		nil, // quotaFlusher
 		nil, // upstreamBillingProbe
+		nil, // ollamaCloudUsage
 		nil, // auditLog
 		nil, // promptAudit
 	)(nil)

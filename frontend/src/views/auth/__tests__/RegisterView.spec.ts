@@ -96,7 +96,7 @@ function mountRegisterView() {
       stubs: {
         AuthLayout: { template: '<div><slot /><slot name="footer" /></div>' },
         Icon: true,
-        TurnstileWidget: true,
+        TurnstileWidget: { template: '<div data-testid="turnstile-widget" />' },
         LoginAgreementPrompt: true,
         EmailOAuthButtons: true,
         LinuxDoOAuthSection: true,
@@ -284,5 +284,39 @@ describe('RegisterView affiliate referral code', () => {
 
     await wrapper.get('#aff_code').setValue('TYPING')
     expect(localStorage.getItem('affiliate_referral_code')).toBeNull()
+  })
+
+  it('keeps the optional affiliate invitation field before Turnstile', async () => {
+    getPublicSettingsMock.mockResolvedValue(
+      publicSettings({
+        turnstile_enabled: true,
+        turnstile_site_key: 'site-key'
+      })
+    )
+
+    const wrapper = mountRegisterView()
+    await flushPromises()
+
+    const invitationField = wrapper.get('[data-testid="affiliate-invitation-field"]')
+    const turnstile = wrapper.get('[data-testid="registration-turnstile"]')
+
+    expect(invitationField.get('input').attributes('id')).toBe('aff_code')
+    expect(invitationField.text()).toContain('common.optional')
+    expect(
+      invitationField.element.compareDocumentPosition(turnstile.element) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+  })
+
+  it('keeps invitation and affiliate referral codes as distinct fields when both are enabled', async () => {
+    getPublicSettingsMock.mockResolvedValue(
+      publicSettings({ invitation_code_enabled: true })
+    )
+
+    const wrapper = mountRegisterView()
+    await flushPromises()
+
+    expect(wrapper.get('#invitation_code').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="affiliate-invitation-field"] #aff_code').exists()).toBe(true)
   })
 })

@@ -23,6 +23,7 @@ func TestRegisterPaymentRoutesIncludesWiseWebhook(t *testing.T) {
 		middleware.AdminAuthMiddleware(func(c *gin.Context) { c.Next() }),
 		nil,
 		nil,
+		nil,
 	)
 
 	for _, route := range router.Routes() {

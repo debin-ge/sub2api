@@ -63,6 +63,7 @@ const (
 	PlatformDeepSeek    = domain.PlatformDeepSeek
 	PlatformWindsurf    = domain.PlatformWindsurf
 	PlatformOpenCode    = domain.PlatformOpenCode
+	PlatformComposite   = domain.PlatformComposite
 )
 
 // AllowedQuotaPlatforms 是允许设置 user × platform quota 的平台列表（单一权威来源）。
@@ -208,6 +209,9 @@ const (
 
 	// 敏感操作 step-up 2FA 设置
 	SettingKeyStepUpEnabled = "step_up_enabled" // 敏感操作（导出/备份/S3配置/提升管理员等）要求 step-up 2FA，默认关闭
+
+	// 面板 API 限流设置（JSON：PanelRateLimitSettings）
+	SettingKeyPanelRateLimitSettings = "panel_rate_limit_settings"
 
 	// 操作审计日志设置
 	SettingKeyAuditLogRetentionDays = "audit_log_retention_days" // 审计日志保留天数（<=0 永久保留），默认 180
@@ -415,6 +419,9 @@ const (
 	// SettingKeyUpstreamBillingProbeSettings stores the global enable switch and interval
 	// for probing remote Sub2API API-key billing metadata.
 	SettingKeyUpstreamBillingProbeSettings = "upstream_billing_probe_settings"
+
+	// SettingKeyOllamaCloudUsageSettings stores the opt-in global runner switch and interval.
+	SettingKeyOllamaCloudUsageSettings = "ollama_cloud_usage_settings"
 
 	// =========================
 	// Overload Cooldown (529)

@@ -50,7 +50,8 @@ func TestKimiRecordUsageUsesFallbackPricing(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, usageRepo.lastLog)
 	require.Equal(t, "kimi-for-coding", usageRepo.lastLog.Model)
-	require.Nil(t, usageRepo.lastLog.UpstreamModel)
+	require.NotNil(t, usageRepo.lastLog.UpstreamModel)
+	require.Equal(t, "kimi-for-coding", *usageRepo.lastLog.UpstreamModel)
 	require.InDelta(t, 6.06, usageRepo.lastLog.ActualCost, 1e-12)
 	require.InDelta(t, 6.06, userRepo.lastAmount, 1e-12)
 }

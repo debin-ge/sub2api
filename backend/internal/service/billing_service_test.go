@@ -622,39 +622,35 @@ func TestGetFallbackPricing_FamilyMatching(t *testing.T) {
 		{
 			name:              "deepseek v4 pro",
 			model:             "deepseek-v4-pro",
-			expectedInput:     4.35e-7,
-			expectedOutput:    floatPtr(8.7e-7),
-			expectedCacheRead: floatPtr(3.625e-9),
+			expectedInput:     3.0 / 7.2 / 1_000_000,
+			expectedOutput:    floatPtr(6.0 / 7.2 / 1_000_000),
+			expectedCacheRead: floatPtr(0.025 / 7.2 / 1_000_000),
 		},
 		{
 			name:              "deepseek v4 flash",
 			model:             "deepseek-v4-flash",
-			expectedInput:     1.4e-7,
-			expectedOutput:    floatPtr(2.8e-7),
-			expectedCacheRead: floatPtr(2.8e-9),
+			expectedInput:     1.0 / 7.2 / 1_000_000,
+			expectedOutput:    floatPtr(2.0 / 7.2 / 1_000_000),
+			expectedCacheRead: floatPtr(0.02 / 7.2 / 1_000_000),
 		},
 		{
-			name:              "deepseek chat alias → flash",
-			model:             "deepseek-chat",
-			expectedInput:     1.4e-7,
-			expectedOutput:    floatPtr(2.8e-7),
-			expectedCacheRead: floatPtr(2.8e-9),
+			name:             "deepseek chat requires resolved upstream model",
+			model:            "deepseek-chat",
+			expectNilPricing: true,
 		},
 		{
-			name:              "deepseek reasoner alias → flash",
-			model:             "deepseek-reasoner",
-			expectedInput:     1.4e-7,
-			expectedOutput:    floatPtr(2.8e-7),
-			expectedCacheRead: floatPtr(2.8e-9),
+			name:             "deepseek reasoner requires resolved upstream model",
+			model:            "deepseek-reasoner",
+			expectNilPricing: true,
 		},
 
-		// ---- 智谱 GLM（z.ai USD 口径）----
+		// ---- 智谱 GLM（中国区 CNY 经固定核算汇率换算）----
 		{
 			name:              "glm 5.1 flagship",
 			model:             "glm-5.1",
-			expectedInput:     1.4e-6,
-			expectedOutput:    floatPtr(4.4e-6),
-			expectedCacheRead: floatPtr(0.26e-6),
+			expectedInput:     6.0 / 7.2 / 1_000_000,
+			expectedOutput:    floatPtr(24.0 / 7.2 / 1_000_000),
+			expectedCacheRead: floatPtr(1.3 / 7.2 / 1_000_000),
 		},
 		{
 			name:              "glm 5 base",
@@ -673,9 +669,9 @@ func TestGetFallbackPricing_FamilyMatching(t *testing.T) {
 		{
 			name:              "glm 4.7",
 			model:             "glm-4.7",
-			expectedInput:     0.6e-6,
-			expectedOutput:    floatPtr(2.2e-6),
-			expectedCacheRead: floatPtr(0.11e-6),
+			expectedInput:     2.0 / 7.2 / 1_000_000,
+			expectedOutput:    floatPtr(8.0 / 7.2 / 1_000_000),
+			expectedCacheRead: floatPtr(0.4 / 7.2 / 1_000_000),
 		},
 		{
 			name:              "glm 4.6",
@@ -701,9 +697,9 @@ func TestGetFallbackPricing_FamilyMatching(t *testing.T) {
 		{
 			name:              "glm 4.5-air lightweight",
 			model:             "glm-4.5-air",
-			expectedInput:     0.2e-6,
-			expectedOutput:    floatPtr(1.1e-6),
-			expectedCacheRead: floatPtr(0.03e-6),
+			expectedInput:     0.8 / 7.2 / 1_000_000,
+			expectedOutput:    floatPtr(2.0 / 7.2 / 1_000_000),
+			expectedCacheRead: floatPtr(0.16 / 7.2 / 1_000_000),
 		},
 		{
 			name:              "glm 4.7-flashx",
@@ -736,16 +732,16 @@ func TestGetFallbackPricing_FamilyMatching(t *testing.T) {
 		{
 			name:              "glm 5.1 vs glm 5 ordering (verbatim 5.1)",
 			model:             "glm-5.1",
-			expectedInput:     1.4e-6, // = glm-5.1 价格
-			expectedOutput:    floatPtr(4.4e-6),
-			expectedCacheRead: floatPtr(0.26e-6),
+			expectedInput:     6.0 / 7.2 / 1_000_000,
+			expectedOutput:    floatPtr(24.0 / 7.2 / 1_000_000),
+			expectedCacheRead: floatPtr(1.3 / 7.2 / 1_000_000),
 		},
 		{
 			name:              "glm 4.5-air vs glm 4.5 ordering",
 			model:             "glm-4.5-air",
-			expectedInput:     0.2e-6, // = glm-4.5-air 价格（不是 glm-4.5 的 0.6e-6）
-			expectedOutput:    floatPtr(1.1e-6),
-			expectedCacheRead: floatPtr(0.03e-6),
+			expectedInput:     0.8 / 7.2 / 1_000_000,
+			expectedOutput:    floatPtr(2.0 / 7.2 / 1_000_000),
+			expectedCacheRead: floatPtr(0.16 / 7.2 / 1_000_000),
 		},
 
 		// ---- 月之暗面 Kimi ----
@@ -761,7 +757,7 @@ func TestGetFallbackPricing_FamilyMatching(t *testing.T) {
 			model:             "kimi-for-coding",
 			expectedInput:     0.95e-6,
 			expectedOutput:    floatPtr(4e-6),
-			expectedCacheRead: floatPtr(0.15e-6),
+			expectedCacheRead: floatPtr(0.16e-6),
 		},
 		{
 			name:              "kimi k2.5",
@@ -825,7 +821,7 @@ func TestGetFallbackPricing_FamilyMatching(t *testing.T) {
 		{
 			name:              "minimax m2.7 highspeed",
 			model:             "minimax-m2.7-highspeed",
-			expectedInput:     0.60e-6,
+			expectedInput:     0.30e-6,
 			expectedOutput:    floatPtr(2.40e-6),
 			expectedCacheRead: floatPtr(0.06e-6),
 		},
@@ -970,8 +966,8 @@ func TestComputeTokenBreakdown_GptImage2ImageEditIssue4386(t *testing.T) {
 
 	cost := svc.computeTokenBreakdown(pricing, tokens, 1.0, "", false)
 
-	wantTextInput := float64(19) * 5e-6    // 0.000095
-	wantImageInput := float64(352) * 8e-6  // 0.002816
+	wantTextInput := float64(19) * 5e-6     // 0.000095
+	wantImageInput := float64(352) * 8e-6   // 0.002816
 	wantImageOutput := float64(439) * 30e-6 // 0.013170
 	require.InDelta(t, wantTextInput, cost.InputCost, 1e-15, "InputCost 仅含文本输入")
 	require.InDelta(t, wantImageInput, cost.ImageInputCost, 1e-15, "图片输入按 $8/1M 独立计费")

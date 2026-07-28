@@ -32,9 +32,12 @@ const (
 	EndpointGeminiModels      = "/v1beta/models"
 )
 
+const EndpointAntigravityGenerateContent = "/v1internal:streamGenerateContent"
+
 // gin.Context keys used by the middleware and helpers below.
 const (
-	ctxKeyInboundEndpoint = "_gateway_inbound_endpoint"
+	ctxKeyInboundEndpoint        = "_gateway_inbound_endpoint"
+	ctxKeyActualUpstreamEndpoint = "_gateway_actual_upstream_endpoint"
 )
 
 // ──────────────────────────────────────────────────────────
@@ -252,9 +255,12 @@ func responsesSubpathSuffix(rawPath string) string {
 // Apply this middleware to all gateway route groups.
 func InboundEndpointMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		path := c.FullPath()
-		if path == "" && c.Request != nil && c.Request.URL != nil {
+		path := ""
+		if c.Request != nil && c.Request.URL != nil {
 			path = c.Request.URL.Path
+		}
+		if path == "" {
+			path = c.FullPath()
 		}
 		c.Set(ctxKeyInboundEndpoint, NormalizeInboundEndpoint(path))
 		c.Next()
@@ -268,7 +274,8 @@ func InboundEndpointMiddleware() gin.HandlerFunc {
 
 // GetInboundEndpoint returns the canonical inbound endpoint stored by
 // InboundEndpointMiddleware. If the middleware did not run (e.g. in
-// tests), it falls back to normalizing c.FullPath() on the fly.
+// tests), it falls back to normalizing c.Request.URL.Path on the fly
+// before c.FullPath(), which may collapse wildcard subpaths.
 func GetInboundEndpoint(c *gin.Context) string {
 	if v, ok := c.Get(ctxKeyInboundEndpoint); ok {
 		if s, ok := v.(string); ok && s != "" {
@@ -278,9 +285,11 @@ func GetInboundEndpoint(c *gin.Context) string {
 	// Fallback: normalize on the fly.
 	path := ""
 	if c != nil {
-		path = c.FullPath()
-		if path == "" && c.Request != nil && c.Request.URL != nil {
+		if c.Request != nil && c.Request.URL != nil {
 			path = c.Request.URL.Path
+		}
+		if path == "" {
+			path = c.FullPath()
 		}
 	}
 	return NormalizeInboundEndpoint(path)
@@ -290,6 +299,13 @@ func GetInboundEndpoint(c *gin.Context) string {
 // and the account platform. Handlers call this after scheduling an
 // account, passing account.Platform.
 func GetUpstreamEndpoint(c *gin.Context, platform string) string {
+	if c != nil {
+		if value, ok := c.Get(ctxKeyActualUpstreamEndpoint); ok {
+			if endpoint, ok := value.(string); ok && endpoint != "" {
+				return endpoint
+			}
+		}
+	}
 	inbound := GetInboundEndpoint(c)
 	rawPath := ""
 	if c != nil && c.Request != nil && c.Request.URL != nil {
@@ -321,4 +337,16 @@ func providerResponsesBridgeEndpoint(platform string) (string, bool) {
 	default:
 		return "", false
 	}
+}
+
+func setActualUpstreamEndpoint(c *gin.Context, endpoint string) {
+	if c != nil {
+		c.Set(ctxKeyActualUpstreamEndpoint, strings.TrimSpace(endpoint))
+	}
+}
+
+func shouldUseAntigravityCompat(account *service.Account) bool {
+	return account != nil &&
+		account.Platform == service.PlatformAntigravity &&
+		account.Type == service.AccountTypeOAuth
 }

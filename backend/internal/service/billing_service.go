@@ -271,6 +271,11 @@ func (s *BillingService) initFallbackPricing() {
 	// Claude 4.7 Opus (暂与4.6同价，待官方定价更新)
 	s.fallbackPrices["claude-opus-4.7"] = s.fallbackPrices["claude-opus-4.6"]
 
+	// Claude 4.8 Opus / Claude Opus 5（官方同价：$5 输入 / $25 输出 per MTok）。
+	// 缺少这两条时 getFallbackPricing 会掉到 claude-3-opus（$15/$75），造成 3 倍超收。
+	s.fallbackPrices["claude-opus-4.8"] = s.fallbackPrices["claude-opus-4.7"]
+	s.fallbackPrices["claude-opus-5"] = s.fallbackPrices["claude-opus-4.8"]
+
 	// Gemini 3.1 Pro
 	s.fallbackPrices["gemini-3.1-pro"] = &ModelPricing{
 		InputPricePerToken:         2e-6,   // $2 per MTok
@@ -280,72 +285,15 @@ func (s *BillingService) initFallbackPricing() {
 		SupportsCacheBreakdown:     false,
 	}
 
-	// MiniMax M2.7 官方文本模型价格。
-	s.fallbackPrices["minimax-m2.7"] = &ModelPricing{
-		InputPricePerToken:         miniMaxUSDPerMillionTokens(0.3),
-		OutputPricePerToken:        miniMaxUSDPerMillionTokens(1.2),
-		CacheCreationPricePerToken: miniMaxUSDPerMillionTokens(0.375),
-		CacheReadPricePerToken:     miniMaxUSDPerMillionTokens(0.06),
-		SupportsCacheBreakdown:     false,
-	}
-	s.fallbackPrices["minimax-m2.7-highspeed"] = &ModelPricing{
-		InputPricePerToken:         miniMaxUSDPerMillionTokens(0.3),
-		OutputPricePerToken:        miniMaxUSDPerMillionTokens(2.4),
-		CacheCreationPricePerToken: miniMaxUSDPerMillionTokens(0.375),
-		CacheReadPricePerToken:     miniMaxUSDPerMillionTokens(0.06),
-		SupportsCacheBreakdown:     false,
-	}
-
-	// GLM Coding Plan 中国区官方端点价格。官方价格为 CNY/百万 tokens；
-	// 当前系统内部余额/额度统一按 USD 口径记录，MVP 采用固定核算汇率换算。
-	s.fallbackPrices["glm-5.1"] = &ModelPricing{
-		InputPricePerToken:         glmCNYPerMillionTokens(6),
-		OutputPricePerToken:        glmCNYPerMillionTokens(24),
-		CacheCreationPricePerToken: 0,
-		CacheReadPricePerToken:     glmCNYPerMillionTokens(1.3),
-		SupportsCacheBreakdown:     false,
-	}
-	s.fallbackPrices["glm-4.7"] = &ModelPricing{
-		InputPricePerToken:         glmCNYPerMillionTokens(2),
-		OutputPricePerToken:        glmCNYPerMillionTokens(8),
-		CacheCreationPricePerToken: 0,
-		CacheReadPricePerToken:     glmCNYPerMillionTokens(0.4),
-		SupportsCacheBreakdown:     false,
-	}
-	s.fallbackPrices["glm-4.5-air"] = &ModelPricing{
-		InputPricePerToken:         glmCNYPerMillionTokens(0.8),
-		OutputPricePerToken:        glmCNYPerMillionTokens(2),
-		CacheCreationPricePerToken: 0,
-		CacheReadPricePerToken:     glmCNYPerMillionTokens(0.16),
-		SupportsCacheBreakdown:     false,
-	}
-
-	// Kimi Code stable model ID. Use public Kimi K2.6 API pricing as the
-	// internal fallback until the remote pricing repo carries kimi-for-coding.
-	s.fallbackPrices["kimi-for-coding"] = &ModelPricing{
-		InputPricePerToken:         0.95 / 1_000_000,
-		OutputPricePerToken:        4.0 / 1_000_000,
-		CacheCreationPricePerToken: 0.95 / 1_000_000,
-		CacheReadPricePerToken:     0.16 / 1_000_000,
-		SupportsCacheBreakdown:     false,
-	}
-
-	// DeepSeek official API pricing. Official prices are CNY per million
-	// tokens; fallback accounting converts them to USD/token using the same
-	// fixed rate as other China-region provider fallbacks.
-	s.fallbackPrices["deepseek-v4-flash"] = &ModelPricing{
-		InputPricePerToken:         deepSeekCNYPerMillionTokens(1),
-		OutputPricePerToken:        deepSeekCNYPerMillionTokens(2),
-		CacheCreationPricePerToken: 0,
-		CacheReadPricePerToken:     deepSeekCNYPerMillionTokens(0.02),
-		SupportsCacheBreakdown:     false,
-	}
-	s.fallbackPrices["deepseek-v4-pro"] = &ModelPricing{
-		InputPricePerToken:         deepSeekCNYPerMillionTokens(3),
-		OutputPricePerToken:        deepSeekCNYPerMillionTokens(6),
-		CacheCreationPricePerToken: 0,
-		CacheReadPricePerToken:     deepSeekCNYPerMillionTokens(0.025),
-		SupportsCacheBreakdown:     false,
+	// Gemini 3.6 Flash (Google AI pricing: $1.50 input / $7.50 output /
+	// $0.15 cached input per MTok). Antigravity's -high/-low/-medium/-tiered
+	// aliases are matched below so unavailable remote pricing never records
+	// token-bearing requests at $0.
+	s.fallbackPrices["gemini-3.6-flash"] = &ModelPricing{
+		InputPricePerToken:     1.5e-6,
+		OutputPricePerToken:    7.5e-6,
+		CacheReadPricePerToken: 0.15e-6,
+		SupportsCacheBreakdown: false,
 	}
 
 	// OpenAI GPT-5.4（业务指定价格）
@@ -449,30 +397,31 @@ func (s *BillingService) initFallbackPricing() {
 	// ============================================================
 
 	// ---- DeepSeek V4 系列 ----
-	// Source: https://api-docs.deepseek.com/quick_start/pricing
-	// （deepseek-chat / deepseek-reasoner 为 deepseek-v4-flash 的兼容别名，2026/07/24 弃用）
+	// 中国区官方价格为 CNY/百万 tokens；系统内部按固定核算汇率换算为 USD/token。
 	s.fallbackPrices["deepseek-v4-pro"] = &ModelPricing{
-		InputPricePerToken:     4.35e-7,  // $0.435 per MTok (cache miss)
-		OutputPricePerToken:    8.7e-7,   // $0.87 per MTok
-		CacheReadPricePerToken: 3.625e-9, // $0.003625 per MTok (cache hit)
-		SupportsCacheBreakdown: false,
+		InputPricePerToken:         deepSeekCNYPerMillionTokens(3),
+		OutputPricePerToken:        deepSeekCNYPerMillionTokens(6),
+		CacheCreationPricePerToken: 0,
+		CacheReadPricePerToken:     deepSeekCNYPerMillionTokens(0.025),
+		SupportsCacheBreakdown:     false,
 	}
 	s.fallbackPrices["deepseek-v4-flash"] = &ModelPricing{
-		InputPricePerToken:     1.4e-7, // $0.14 per MTok (cache miss)
-		OutputPricePerToken:    2.8e-7, // $0.28 per MTok
-		CacheReadPricePerToken: 2.8e-9, // $0.0028 per MTok (cache hit)
-		SupportsCacheBreakdown: false,
+		InputPricePerToken:         deepSeekCNYPerMillionTokens(1),
+		OutputPricePerToken:        deepSeekCNYPerMillionTokens(2),
+		CacheCreationPricePerToken: 0,
+		CacheReadPricePerToken:     deepSeekCNYPerMillionTokens(0.02),
+		SupportsCacheBreakdown:     false,
 	}
 
 	// ---- 智谱 GLM（Z.AI）----
-	// Source: https://docs.z.ai/guides/overview/pricing (USD per 1M tokens)
-	// 注意：CacheReadPricePerToken 即"缓存命中"价格，CacheCreationPricePerToken 留空（智谱未公开写入价，按 0 处理）。
-	// GLM-4.6 与 GLM-4.5 在 z.ai 国际版上定价一致；GLM-4.5 国内按 ¥0.8/¥2，汇率换算后约 $0.112/$0.28，与国际版 $0.6/$2.2 不同，本分支采用国际版 USD 口径与现有 Claude/GPT 一致。
+	// Coding Plan 中国区官方端点价格为 CNY/百万 tokens；系统内部按固定核算汇率换算。
+	// CacheReadPricePerToken 是缓存命中价；官方未公开缓存写入价，按 0 处理。
 	s.fallbackPrices["glm-5.1"] = &ModelPricing{
-		InputPricePerToken:     1.4e-6, // $1.40 per MTok
-		OutputPricePerToken:    4.4e-6, // $4.40 per MTok
-		CacheReadPricePerToken: 0.26e-6,
-		SupportsCacheBreakdown: false,
+		InputPricePerToken:         glmCNYPerMillionTokens(6),
+		OutputPricePerToken:        glmCNYPerMillionTokens(24),
+		CacheCreationPricePerToken: 0,
+		CacheReadPricePerToken:     glmCNYPerMillionTokens(1.3),
+		SupportsCacheBreakdown:     false,
 	}
 	s.fallbackPrices["glm-5"] = &ModelPricing{
 		InputPricePerToken:     1e-6, // $1.00 per MTok
@@ -487,10 +436,11 @@ func (s *BillingService) initFallbackPricing() {
 		SupportsCacheBreakdown: false,
 	}
 	s.fallbackPrices["glm-4.7"] = &ModelPricing{
-		InputPricePerToken:     0.6e-6, // $0.60 per MTok
-		OutputPricePerToken:    2.2e-6,
-		CacheReadPricePerToken: 0.11e-6,
-		SupportsCacheBreakdown: false,
+		InputPricePerToken:         glmCNYPerMillionTokens(2),
+		OutputPricePerToken:        glmCNYPerMillionTokens(8),
+		CacheCreationPricePerToken: 0,
+		CacheReadPricePerToken:     glmCNYPerMillionTokens(0.4),
+		SupportsCacheBreakdown:     false,
 	}
 	s.fallbackPrices["glm-4.7-flashx"] = &ModelPricing{
 		InputPricePerToken:     0.07e-6, // $0.07 per MTok
@@ -517,10 +467,11 @@ func (s *BillingService) initFallbackPricing() {
 		SupportsCacheBreakdown: false,
 	}
 	s.fallbackPrices["glm-4.5-air"] = &ModelPricing{
-		InputPricePerToken:     0.2e-6, // $0.20 per MTok
-		OutputPricePerToken:    1.1e-6,
-		CacheReadPricePerToken: 0.03e-6,
-		SupportsCacheBreakdown: false,
+		InputPricePerToken:         glmCNYPerMillionTokens(0.8),
+		OutputPricePerToken:        glmCNYPerMillionTokens(2),
+		CacheCreationPricePerToken: 0,
+		CacheReadPricePerToken:     glmCNYPerMillionTokens(0.16),
+		SupportsCacheBreakdown:     false,
 	}
 	s.fallbackPrices["glm-4.5-airx"] = &ModelPricing{
 		InputPricePerToken:     1.1e-6,
@@ -594,16 +545,17 @@ func (s *BillingService) initFallbackPricing() {
 		SupportsCacheBreakdown: false,
 	}
 	s.fallbackPrices["minimax-m2.7"] = &ModelPricing{
-		InputPricePerToken:     0.30e-6, // $0.30 per MTok
-		OutputPricePerToken:    1.20e-6,
-		CacheReadPricePerToken: 0.06e-6,
-		SupportsCacheBreakdown: false,
+		InputPricePerToken:         miniMaxUSDPerMillionTokens(0.30),
+		OutputPricePerToken:        miniMaxUSDPerMillionTokens(1.20),
+		CacheCreationPricePerToken: miniMaxUSDPerMillionTokens(0.375),
+		CacheReadPricePerToken:     miniMaxUSDPerMillionTokens(0.06),
+		SupportsCacheBreakdown:     false,
 	}
 	s.fallbackPrices["minimax-m2.7-highspeed"] = &ModelPricing{
-		InputPricePerToken:         0.30e-6,
-		OutputPricePerToken:        2.40e-6,
-		CacheCreationPricePerToken: 0.375e-6,
-		CacheReadPricePerToken:     0.06e-6,
+		InputPricePerToken:         miniMaxUSDPerMillionTokens(0.30),
+		OutputPricePerToken:        miniMaxUSDPerMillionTokens(2.40),
+		CacheCreationPricePerToken: miniMaxUSDPerMillionTokens(0.375),
+		CacheReadPricePerToken:     miniMaxUSDPerMillionTokens(0.06),
 		SupportsCacheBreakdown:     false,
 	}
 	s.fallbackPrices["minimax-m2.5"] = &ModelPricing{
@@ -688,6 +640,13 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 
 	// 按模型系列匹配
 	if strings.Contains(modelLower, "opus") {
+		// "opus-5" 必须先判：不能用裸 "5" 匹配，否则 claude-opus-4-5 会被误判。
+		if strings.Contains(modelLower, "opus-5") || strings.Contains(modelLower, "opus5") {
+			return s.fallbackPrices["claude-opus-5"]
+		}
+		if strings.Contains(modelLower, "4.8") || strings.Contains(modelLower, "4-8") {
+			return s.fallbackPrices["claude-opus-4.8"]
+		}
 		if strings.Contains(modelLower, "4.7") || strings.Contains(modelLower, "4-7") {
 			return s.fallbackPrices["claude-opus-4.7"]
 		}
@@ -718,19 +677,18 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 	if strings.Contains(modelLower, "gemini-3.1-pro") || strings.Contains(modelLower, "gemini-3-1-pro") {
 		return s.fallbackPrices["gemini-3.1-pro"]
 	}
+	if strings.Contains(modelLower, "gemini-3.6-flash") || strings.Contains(modelLower, "gemini-3-6-flash") {
+		return s.fallbackPrices["gemini-3.6-flash"]
+	}
 
-	// DeepSeek V4 系列：仅匹配已知 V4 Pro/Flash 与官方兼容别名
-	// （deepseek-chat / deepseek-reasoner → V4 Flash），未知 deepseek-* 型号不回退，避免误计价。
+	// DeepSeek V4 系列：仅匹配已知 V4 Pro/Flash。兼容别名应先由账号映射解析
+	// 成真实上游模型再计费；这里不直接猜测，避免自定义映射被错误套价。
 	if strings.Contains(modelLower, "deepseek-v4-flash") {
 		return s.fallbackPrices["deepseek-v4-flash"]
 	}
 	if strings.Contains(modelLower, "deepseek-v4-pro") {
 		return s.fallbackPrices["deepseek-v4-pro"]
 	}
-	if strings.Contains(modelLower, "deepseek-chat") || strings.Contains(modelLower, "deepseek-reasoner") {
-		return s.fallbackPrices["deepseek-v4-flash"]
-	}
-
 	// ---- 国产 LLM 兜底匹配 ----
 	// 匹配策略：长 key 优先（具体模型 → 系列 / 厂商），未知型号不回退以避免误计价。
 	// 与 DeepSeek 一样采用"白名单"语义：未在本表命中的国产模型 alias 一律不返回兜底价。

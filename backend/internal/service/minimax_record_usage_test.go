@@ -42,6 +42,7 @@ func newMiniMaxGatewayRecordUsageServiceForTest(usageRepo UsageLogRepository, us
 		nil,
 		nil,
 		nil,
+		nil,
 	)
 }
 

@@ -42,6 +42,7 @@ Sub2API is an AI API gateway platform designed to distribute and manage API quot
 - **Rate Limiting** - Configurable request and token rate limits
 - **Built-in Payment System** - Supports EasyPay, Alipay, WeChat Pay, and Stripe for user self-service top-up, no separate payment service needed ([Configuration Guide](docs/PAYMENT.md))
 - **Admin Dashboard** - Web interface for monitoring and management
+- **Composite Groups** - Admin routing layer that resolves requested models to concrete providers for multi-provider groups ([Operator Guide](docs/COMPOSITE_GROUPS.md))
 - **External System Integration** - Embed external systems (e.g. ticketing) via iframe to extend the admin dashboard
 
 ## Ecosystem
@@ -51,6 +52,7 @@ Community projects that extend or integrate with Sub2API:
 | Project | Description | Features |
 |---------|-------------|----------|
 | ~~[Sub2ApiPay](https://github.com/touwaeriol/sub2apipay)~~ | ~~Self-service payment system~~ | **Now Built-in** — Payment is now integrated into Sub2API, no separate deployment needed. See [Payment Configuration Guide](docs/PAYMENT.md) |
+| [sub2api-mobile](https://github.com/ckken/sub2api-mobile) | Mobile admin console | Cross-platform app (iOS/Android/Web) for user management, account management, monitoring dashboard, and multi-backend switching; built with Expo + React Native |
 
 ## Tech Stack
 
@@ -386,6 +388,7 @@ database:
 redis:
   host: "localhost"
   port: 6379
+  username: ""
   password: ""
 
 jwt:
