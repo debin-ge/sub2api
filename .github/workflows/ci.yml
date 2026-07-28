@@ -37,8 +37,16 @@ jobs:
       - name: Build
         run: go build ./...
 
-      - name: Test
+      # 默认 tag：不带构建标签的测试（对齐 backend/Makefile 的 test 目标）
+      - name: Test (default tags)
         run: go test ./...
+
+      # unit tag：仓库内 350+ 个测试文件带 //go:build unit，默认 tag 下不会被编译。
+      # 缺这一步等于整套单元测试在 CI 里从不执行——v0.1.166 合并时 GLM 兜底价被
+      # 静默改动 25~75% 却「测试全绿」，就是因为断言和实现都没被跑到。
+      # 对齐 backend/Makefile 的 test-unit 目标。
+      - name: Test (unit tags)
+        run: go test -tags=unit ./...
 
       # 与 backend/Makefile 的 test 目标对齐（go test + golangci-lint）
       # backend/.golangci.yml 为 v2 配置，需使用 action@v8+（v9 起运行于 Node 24）
