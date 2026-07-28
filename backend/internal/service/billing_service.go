@@ -114,15 +114,13 @@ const (
 	openAIGPT54LongContextInputThreshold   = 272000
 	openAIGPT54LongContextInputMultiplier  = 2.0
 	openAIGPT54LongContextOutputMultiplier = 1.5
-	glmCNYToUSDAccountingRate              = 1.0 / 7.2
+	// deepSeekCNYToUSDAccountingRate 是内部固定核算汇率，不是实时汇率。
+	// 仅用于把 DeepSeek 的 CNY 官方报价折算成系统统一的 USD 计费口径。
+	deepSeekCNYToUSDAccountingRate = 1.0 / 7.2
 )
 
-func glmCNYPerMillionTokens(cny float64) float64 {
-	return cny * glmCNYToUSDAccountingRate / 1_000_000
-}
-
 func deepSeekCNYPerMillionTokens(cny float64) float64 {
-	return cny * glmCNYToUSDAccountingRate / 1_000_000
+	return cny * deepSeekCNYToUSDAccountingRate / 1_000_000
 }
 
 func miniMaxUSDPerMillionTokens(usd float64) float64 {
@@ -414,14 +412,18 @@ func (s *BillingService) initFallbackPricing() {
 	}
 
 	// ---- 智谱 GLM（Z.AI）----
-	// Coding Plan 中国区官方端点价格为 CNY/百万 tokens；系统内部按固定核算汇率换算。
-	// CacheReadPricePerToken 是缓存命中价；官方未公开缓存写入价，按 0 处理。
+	// Source: https://docs.z.ai/guides/overview/pricing (USD per 1M tokens)
+	// CacheReadPricePerToken 即「缓存命中」价；官方未公开缓存写入价，按 0 处理。
+	//
+	// 【合并守则】本分支统一采用 z.ai 国际版 USD 口径，与既有 Claude/GPT 对齐；
+	// 不要改回「中国区 CNY ÷ 核算汇率」口径。GLM-4.5 国内价 ¥0.8/¥2 换算后约
+	// $0.11/$0.28，与国际版 $0.6/$2.2 相差数倍，混用会让同一张价表自相矛盾
+	// （v0.1.166 合并曾因重复键误回退到 CNY 口径，GLM 计费被下调 25~75%）。
 	s.fallbackPrices["glm-5.1"] = &ModelPricing{
-		InputPricePerToken:         glmCNYPerMillionTokens(6),
-		OutputPricePerToken:        glmCNYPerMillionTokens(24),
-		CacheCreationPricePerToken: 0,
-		CacheReadPricePerToken:     glmCNYPerMillionTokens(1.3),
-		SupportsCacheBreakdown:     false,
+		InputPricePerToken:     1.4e-6, // $1.40 per MTok
+		OutputPricePerToken:    4.4e-6, // $4.40 per MTok
+		CacheReadPricePerToken: 0.26e-6,
+		SupportsCacheBreakdown: false,
 	}
 	s.fallbackPrices["glm-5"] = &ModelPricing{
 		InputPricePerToken:     1e-6, // $1.00 per MTok
@@ -436,11 +438,10 @@ func (s *BillingService) initFallbackPricing() {
 		SupportsCacheBreakdown: false,
 	}
 	s.fallbackPrices["glm-4.7"] = &ModelPricing{
-		InputPricePerToken:         glmCNYPerMillionTokens(2),
-		OutputPricePerToken:        glmCNYPerMillionTokens(8),
-		CacheCreationPricePerToken: 0,
-		CacheReadPricePerToken:     glmCNYPerMillionTokens(0.4),
-		SupportsCacheBreakdown:     false,
+		InputPricePerToken:     0.6e-6, // $0.60 per MTok
+		OutputPricePerToken:    2.2e-6,
+		CacheReadPricePerToken: 0.11e-6,
+		SupportsCacheBreakdown: false,
 	}
 	s.fallbackPrices["glm-4.7-flashx"] = &ModelPricing{
 		InputPricePerToken:     0.07e-6, // $0.07 per MTok
@@ -467,11 +468,10 @@ func (s *BillingService) initFallbackPricing() {
 		SupportsCacheBreakdown: false,
 	}
 	s.fallbackPrices["glm-4.5-air"] = &ModelPricing{
-		InputPricePerToken:         glmCNYPerMillionTokens(0.8),
-		OutputPricePerToken:        glmCNYPerMillionTokens(2),
-		CacheCreationPricePerToken: 0,
-		CacheReadPricePerToken:     glmCNYPerMillionTokens(0.16),
-		SupportsCacheBreakdown:     false,
+		InputPricePerToken:     0.2e-6, // $0.20 per MTok
+		OutputPricePerToken:    1.1e-6,
+		CacheReadPricePerToken: 0.03e-6,
+		SupportsCacheBreakdown: false,
 	}
 	s.fallbackPrices["glm-4.5-airx"] = &ModelPricing{
 		InputPricePerToken:     1.1e-6,
@@ -620,10 +620,10 @@ func (s *BillingService) initFallbackPricing() {
 // GetFallbackPricing 公开访问硬编码回退价（getFallbackPricing 的 public wrapper）。
 // 用于模型广场等展示场景，在配置化 pricing catalog 命中失败时对齐真实计费口径。
 //
-// 注意：返回值中 GLM/DeepSeek/Kimi/MiniMax 系列的单价是官方 CNY 报价通过固定
-// 内部核算汇率换算得到的 USD 数字（见 initFallbackPricing 中 glmCNYPerMillionTokens
-// / deepSeekCNYPerMillionTokens / miniMaxUSDPerMillionTokens），调用方应以「参考单价」
-// 而非精确市场价处理。若模型没有硬编码 fallback，返回 nil。
+// 注意：返回值中 DeepSeek 系列的单价是官方 CNY 报价通过固定内部核算汇率换算得到的
+// USD 数字（见 initFallbackPricing 中 deepSeekCNYPerMillionTokens）；GLM 采用 z.ai
+// 国际版 USD 报价，Kimi/MiniMax 采用官方 USD 报价。调用方应以「参考单价」而非精确
+// 市场价处理。若模型没有硬编码 fallback，返回 nil。
 func (s *BillingService) GetFallbackPricing(model string) *ModelPricing {
 	return s.getFallbackPricing(model)
 }

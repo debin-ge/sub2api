@@ -6,6 +6,8 @@ import (
 	"bytes"
 	"log"
 	"math"
+	"os"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -31,6 +33,32 @@ func captureStdLog(t *testing.T) *bytes.Buffer {
 
 func newTestBillingService() *BillingService {
 	return NewBillingService(&config.Config{}, nil)
+}
+
+// initFallbackPricing 是一长串 map 赋值，同一个 model key 写两次不会报错，
+// 后写的那条会静默覆盖先写的那条。这类重复键极难在 review 中发现：代码里读到的
+// 价格和实际生效的价格可能是两个不同的值。
+//
+// v0.1.166 合并上游时就踩过这个坑——分支里 8 个 key 各有两份定义，合并去重时
+// 保留了「读起来在前、实际不生效」的那一份，GLM 系列计费被静默下调 25~75%。
+// 这条守卫确保每个 model key 只有唯一定义，让「读到的」等于「生效的」。
+func TestInitFallbackPricing_NoDuplicateKeys(t *testing.T) {
+	src, err := os.ReadFile("billing_service.go")
+	require.NoError(t, err)
+
+	re := regexp.MustCompile(`s\.fallbackPrices\["([^"]+)"\] = &ModelPricing\{`)
+	matches := re.FindAllStringSubmatch(string(src), -1)
+	require.NotEmpty(t, matches, "未匹配到任何 fallbackPrices 定义，正则可能已与源码脱节")
+
+	count := make(map[string]int, len(matches))
+	for _, m := range matches {
+		count[m[1]]++
+	}
+	for model, n := range count {
+		require.Equalf(t, 1, n,
+			"fallbackPrices[%q] 被定义了 %d 次：Go map 后写覆盖先写，"+
+				"重复定义会让生效价格与代码阅读顺序不一致，请合并成唯一一条", model, n)
+	}
 }
 
 func TestCalculateCost_BasicComputation(t *testing.T) {
@@ -253,23 +281,24 @@ func TestGetModelPricing_GLMFallback(t *testing.T) {
 		expectedOutput    float64
 		expectedCacheRead float64
 	}{
+		// GLM 采用 z.ai 国际版 USD 报价，不走 CNY 核算汇率（见 billing_service.go 合并守则）。
 		{
 			model:             "glm-5.1",
-			expectedInput:     6.0 / 7.2 / 1_000_000,
-			expectedOutput:    24.0 / 7.2 / 1_000_000,
-			expectedCacheRead: 1.3 / 7.2 / 1_000_000,
+			expectedInput:     1.4e-6,
+			expectedOutput:    4.4e-6,
+			expectedCacheRead: 0.26e-6,
 		},
 		{
 			model:             "GLM-4.7",
-			expectedInput:     2.0 / 7.2 / 1_000_000,
-			expectedOutput:    8.0 / 7.2 / 1_000_000,
-			expectedCacheRead: 0.4 / 7.2 / 1_000_000,
+			expectedInput:     0.6e-6,
+			expectedOutput:    2.2e-6,
+			expectedCacheRead: 0.11e-6,
 		},
 		{
 			model:             "GLM-4.5-air",
-			expectedInput:     0.8 / 7.2 / 1_000_000,
-			expectedOutput:    2.0 / 7.2 / 1_000_000,
-			expectedCacheRead: 0.16 / 7.2 / 1_000_000,
+			expectedInput:     0.2e-6,
+			expectedOutput:    1.1e-6,
+			expectedCacheRead: 0.03e-6,
 		},
 	}
 
@@ -396,10 +425,11 @@ func TestCalculateCost_GLMFallback(t *testing.T) {
 	}, 1.0)
 	require.NoError(t, err)
 
-	expectedTotal := (6.0 + 24.0 + 1.3) / 7.2
-	require.InDelta(t, 6.0/7.2, cost.InputCost, 1e-10)
-	require.InDelta(t, 24.0/7.2, cost.OutputCost, 1e-10)
-	require.InDelta(t, 1.3/7.2, cost.CacheReadCost, 1e-10)
+	// 每档 1M tokens，单价为 z.ai 国际版 USD 报价（$1.40 / $4.40 / $0.26 per MTok）。
+	expectedTotal := 1.4 + 4.4 + 0.26
+	require.InDelta(t, 1.4, cost.InputCost, 1e-10)
+	require.InDelta(t, 4.4, cost.OutputCost, 1e-10)
+	require.InDelta(t, 0.26, cost.CacheReadCost, 1e-10)
 	require.InDelta(t, expectedTotal, cost.TotalCost, 1e-10)
 	require.InDelta(t, expectedTotal, cost.ActualCost, 1e-10)
 }
@@ -644,13 +674,13 @@ func TestGetFallbackPricing_FamilyMatching(t *testing.T) {
 			expectNilPricing: true,
 		},
 
-		// ---- 智谱 GLM（中国区 CNY 经固定核算汇率换算）----
+		// ---- 智谱 GLM（z.ai 国际版 USD 报价，整表统一口径）----
 		{
 			name:              "glm 5.1 flagship",
 			model:             "glm-5.1",
-			expectedInput:     6.0 / 7.2 / 1_000_000,
-			expectedOutput:    floatPtr(24.0 / 7.2 / 1_000_000),
-			expectedCacheRead: floatPtr(1.3 / 7.2 / 1_000_000),
+			expectedInput:     1.4e-6,
+			expectedOutput:    floatPtr(4.4e-6),
+			expectedCacheRead: floatPtr(0.26e-6),
 		},
 		{
 			name:              "glm 5 base",
@@ -669,9 +699,9 @@ func TestGetFallbackPricing_FamilyMatching(t *testing.T) {
 		{
 			name:              "glm 4.7",
 			model:             "glm-4.7",
-			expectedInput:     2.0 / 7.2 / 1_000_000,
-			expectedOutput:    floatPtr(8.0 / 7.2 / 1_000_000),
-			expectedCacheRead: floatPtr(0.4 / 7.2 / 1_000_000),
+			expectedInput:     0.6e-6,
+			expectedOutput:    floatPtr(2.2e-6),
+			expectedCacheRead: floatPtr(0.11e-6),
 		},
 		{
 			name:              "glm 4.6",
@@ -697,9 +727,9 @@ func TestGetFallbackPricing_FamilyMatching(t *testing.T) {
 		{
 			name:              "glm 4.5-air lightweight",
 			model:             "glm-4.5-air",
-			expectedInput:     0.8 / 7.2 / 1_000_000,
-			expectedOutput:    floatPtr(2.0 / 7.2 / 1_000_000),
-			expectedCacheRead: floatPtr(0.16 / 7.2 / 1_000_000),
+			expectedInput:     0.2e-6,
+			expectedOutput:    floatPtr(1.1e-6),
+			expectedCacheRead: floatPtr(0.03e-6),
 		},
 		{
 			name:              "glm 4.7-flashx",
@@ -732,16 +762,16 @@ func TestGetFallbackPricing_FamilyMatching(t *testing.T) {
 		{
 			name:              "glm 5.1 vs glm 5 ordering (verbatim 5.1)",
 			model:             "glm-5.1",
-			expectedInput:     6.0 / 7.2 / 1_000_000,
-			expectedOutput:    floatPtr(24.0 / 7.2 / 1_000_000),
-			expectedCacheRead: floatPtr(1.3 / 7.2 / 1_000_000),
+			expectedInput:     1.4e-6,
+			expectedOutput:    floatPtr(4.4e-6),
+			expectedCacheRead: floatPtr(0.26e-6),
 		},
 		{
 			name:              "glm 4.5-air vs glm 4.5 ordering",
 			model:             "glm-4.5-air",
-			expectedInput:     0.8 / 7.2 / 1_000_000,
-			expectedOutput:    floatPtr(2.0 / 7.2 / 1_000_000),
-			expectedCacheRead: floatPtr(0.16 / 7.2 / 1_000_000),
+			expectedInput:     0.2e-6,
+			expectedOutput:    floatPtr(1.1e-6),
+			expectedCacheRead: floatPtr(0.03e-6),
 		},
 
 		// ---- 月之暗面 Kimi ----

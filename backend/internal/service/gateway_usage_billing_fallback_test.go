@@ -59,6 +59,27 @@ func TestBillableModelWithFallback(t *testing.T) {
 		svc.billableModelWithFallback(ctx, apiKey, "", "claude-sonnet-4"))
 }
 
+// v0.1.166 合并移除了 getFallbackPricing 里 deepseek-chat / deepseek-reasoner →
+// v4-flash 的兼容别名兜底（旧映射还把 reasoner 错按 flash 的便宜档计价）。
+// 移除本身是对的：别名在 GetDeepSeekMappedModel 阶段就已解析成真实上游模型，
+// 且这里的通用兜底会接住漏网的裸别名。本用例把这层保护固化下来——否则一旦
+// UpstreamModel 传递链断掉，DeepSeek 流量会静默走到 ErrModelPricingUnavailable。
+func TestBillableModelWithFallback_DeepSeekCompatAliasFallsBackToUpstreamModel(t *testing.T) {
+	svc := &GatewayService{billingService: NewBillingService(&config.Config{}, nil)}
+	apiKey := &APIKey{}
+	ctx := context.Background()
+
+	// 前提：裸别名本身查不到价（与 TestGetFallbackPricing_DeepSeekCompatNamesDoNotAlias 对应）
+	require.False(t, svc.hasResolvableTokenPricing(ctx, "deepseek-chat", apiKey))
+	require.False(t, svc.hasResolvableTokenPricing(ctx, "deepseek-reasoner", apiKey))
+
+	// 别名 + 已解析的上游模型 → 按上游模型计费，不会漏计
+	require.Equal(t, "deepseek-v4-flash",
+		svc.billableModelWithFallback(ctx, apiKey, "deepseek-chat", "deepseek-v4-flash", "deepseek-chat"))
+	require.Equal(t, "deepseek-v4-pro",
+		svc.billableModelWithFallback(ctx, apiKey, "deepseek-reasoner", "deepseek-v4-pro", "deepseek-reasoner"))
+}
+
 func TestHasResolvableTokenPricing(t *testing.T) {
 	svc := &GatewayService{billingService: NewBillingService(&config.Config{}, nil)}
 	apiKey := &APIKey{}
