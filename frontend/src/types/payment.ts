@@ -44,6 +44,8 @@ export interface PaymentConfig {
 export interface MethodLimit {
   currency?: string
   display_name?: string
+  /** Provider sub-methods shown inside an aggregated payment option (for example Stripe card/wxpay). */
+  supported_types?: string[]
   daily_limit: number
   daily_used: number
   daily_remaining: number

@@ -200,6 +200,42 @@ func TestPcGroupByPaymentType(t *testing.T) {
 	})
 }
 
+func TestPcAggregateStripeSupportedTypes(t *testing.T) {
+	t.Parallel()
+
+	t.Run("returns configured Stripe methods in user-facing order", func(t *testing.T) {
+		t.Parallel()
+		stripe := makeInstance(1, payment.TypeStripe, "alipay,card,wxpay", "")
+
+		require.Equal(
+			t,
+			[]string{payment.TypeCard, payment.TypeWxpay, payment.TypeAlipay},
+			pcAggregateStripeSupportedTypes(payment.TypeStripe, []*dbent.PaymentProviderInstance{stripe}),
+		)
+	})
+
+	t.Run("defaults empty Stripe methods to card", func(t *testing.T) {
+		t.Parallel()
+		stripe := makeInstance(1, payment.TypeStripe, "", "")
+
+		require.Equal(
+			t,
+			[]string{payment.TypeCard},
+			pcAggregateStripeSupportedTypes(payment.TypeStripe, []*dbent.PaymentProviderInstance{stripe}),
+		)
+	})
+
+	t.Run("does not attach sub-methods to other payment providers", func(t *testing.T) {
+		t.Parallel()
+		easypay := makeInstance(1, payment.TypeEasyPay, "alipay,wxpay", "")
+
+		require.Nil(
+			t,
+			pcAggregateStripeSupportedTypes(payment.TypeAlipay, []*dbent.PaymentProviderInstance{easypay}),
+		)
+	})
+}
+
 func TestPcAggregateMethodCurrency(t *testing.T) {
 	t.Parallel()
 
@@ -220,6 +256,28 @@ func TestPcAggregateMethodCurrency(t *testing.T) {
 	currency, ok = svc.pcAggregateMethodCurrency([]*dbent.PaymentProviderInstance{easypay})
 	require.True(t, ok)
 	require.Equal(t, payment.DefaultPaymentCurrency, currency)
+}
+
+func TestGetAvailableMethodLimitsIncludesStripeSupportedTypes(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+
+	_, err := client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeStripe).
+		SetName("Stripe Card and WeChat").
+		SetConfig(`{"currency":"CNY"}`).
+		SetSupportedTypes("card,wxpay").
+		SetEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+
+	svc := &PaymentConfigService{entClient: client}
+	resp, err := svc.GetAvailableMethodLimits(ctx)
+	require.NoError(t, err)
+
+	stripeLimits, ok := resp.Methods[payment.TypeStripe]
+	require.True(t, ok)
+	require.Equal(t, []string{payment.TypeCard, payment.TypeWxpay}, stripeLimits.SupportedTypes)
 }
 
 func TestGetAvailableMethodLimitsOmitsMixedCurrencyMethod(t *testing.T) {

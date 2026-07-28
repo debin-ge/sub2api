@@ -10,7 +10,7 @@
         type="button"
         :disabled="!method.available"
         :class="[
-          'relative flex h-[60px] flex-col items-center justify-center rounded-lg border px-3 transition-all sm:flex-1',
+          'relative flex min-h-[60px] flex-col items-center justify-center rounded-lg border px-3 py-2.5 transition-all sm:flex-1',
           !method.available
             ? 'cursor-not-allowed border-gray-200 bg-gray-50 opacity-50 dark:border-dark-700 dark:bg-dark-800/50'
             : selected === method.type
@@ -31,6 +31,21 @@
             </span>
           </span>
         </span>
+        <span
+          v-if="stripeSubMethods(method).length > 0"
+          data-testid="stripe-sub-methods"
+          class="mt-1.5 flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1 text-[11px] font-medium leading-none text-gray-500 dark:text-gray-400"
+        >
+          <span
+            v-for="subMethod in stripeSubMethods(method)"
+            :key="subMethod"
+            :data-testid="`stripe-sub-method-${subMethod}`"
+            class="inline-flex items-center gap-1 whitespace-nowrap"
+          >
+            <img :src="stripeSubMethodIcon(subMethod)" alt="" class="h-3.5 w-3.5 object-contain" />
+            <span>{{ stripeSubMethodLabel(subMethod) }}</span>
+          </span>
+        </span>
       </button>
     </div>
   </div>
@@ -49,6 +64,7 @@ import paymentIcon from '@/assets/icons/payment.svg'
 export interface PaymentMethodOption {
   type: string
   display_name?: string
+  supported_types?: string[]
   fee_rate: number
   available: boolean
 }
@@ -72,6 +88,8 @@ const METHOD_ICONS: Record<string, string> = {
   credit_card: paymentIcon,
 }
 
+const STRIPE_SUB_METHOD_ORDER = ['card', 'wxpay', 'alipay', 'link'] as const
+
 const sortedMethods = computed(() => {
   const order: readonly string[] = METHOD_ORDER
   return [...props.methods].sort((a, b) => {
@@ -90,6 +108,36 @@ function methodIcon(type: string): string {
 
 function methodLabel(method: PaymentMethodOption): string {
   return method.display_name || t(`payment.methods.${method.type}`, method.type)
+}
+
+function normalizeStripeSubMethod(type: string): string {
+  const normalized = type.trim().toLowerCase()
+  if (normalized === 'wechat_pay') return 'wxpay'
+  if (normalized === 'credit_card') return 'card'
+  return normalized
+}
+
+function stripeSubMethods(method: PaymentMethodOption): string[] {
+  if (method.type !== 'stripe' || !Array.isArray(method.supported_types)) return []
+
+  const uniqueMethods = new Set(
+    method.supported_types
+      .map(normalizeStripeSubMethod)
+      .filter(Boolean),
+  )
+  return [...uniqueMethods].sort((a, b) => {
+    const ai = STRIPE_SUB_METHOD_ORDER.indexOf(a as typeof STRIPE_SUB_METHOD_ORDER[number])
+    const bi = STRIPE_SUB_METHOD_ORDER.indexOf(b as typeof STRIPE_SUB_METHOD_ORDER[number])
+    return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi)
+  })
+}
+
+function stripeSubMethodIcon(type: string): string {
+  return methodIcon(type)
+}
+
+function stripeSubMethodLabel(type: string): string {
+  return t(`payment.methods.${type}`, type)
 }
 
 function methodSelectedClass(type: string): string {

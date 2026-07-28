@@ -33,6 +33,7 @@ func (s *PaymentConfigService) GetAvailableMethodLimits(ctx context.Context) (*M
 		}
 		ml := pcAggregateMethodLimits(pt, insts)
 		ml.DisplayName = s.pcAggregateMethodDisplayName(pt, insts)
+		ml.SupportedTypes = pcAggregateStripeSupportedTypes(pt, insts)
 		ml.Currency = currency
 		resp.Methods[ml.PaymentType] = ml
 	}
@@ -75,6 +76,43 @@ func (s *PaymentConfigService) pcApplyEnabledVisibleMethodInstances(ctx context.
 	return filtered
 }
 
+// pcAggregateStripeSupportedTypes returns the user-facing sub-methods enabled
+// across the available Stripe instances. The fallback mirrors Stripe payment
+// creation, which defaults an empty or unrecognized configuration to card.
+func pcAggregateStripeSupportedTypes(pt string, instances []*dbent.PaymentProviderInstance) []string {
+	if pt != payment.TypeStripe {
+		return nil
+	}
+
+	supported := make(map[string]struct{}, 4)
+	for _, inst := range instances {
+		instanceHasRecognizedType := false
+		for _, supportedType := range splitTypes(inst.SupportedTypes) {
+			switch strings.ToLower(supportedType) {
+			case payment.TypeCard, payment.TypeWxpay, payment.TypeAlipay, payment.TypeLink:
+				supported[strings.ToLower(supportedType)] = struct{}{}
+				instanceHasRecognizedType = true
+			}
+		}
+		if !instanceHasRecognizedType {
+			supported[payment.TypeCard] = struct{}{}
+		}
+	}
+
+	result := make([]string, 0, len(supported))
+	for _, supportedType := range []string{
+		payment.TypeCard,
+		payment.TypeWxpay,
+		payment.TypeAlipay,
+		payment.TypeLink,
+	} {
+		if _, ok := supported[supportedType]; ok {
+			result = append(result, supportedType)
+		}
+	}
+	return result
+}
+
 // GetMethodLimits returns per-payment-type limits from enabled provider instances.
 func (s *PaymentConfigService) GetMethodLimits(ctx context.Context, types []string) ([]MethodLimits, error) {
 	instances, err := s.entClient.PaymentProviderInstance.Query().
@@ -96,6 +134,7 @@ func (s *PaymentConfigService) GetMethodLimits(ctx context.Context, types []stri
 		}
 		ml := pcAggregateMethodLimits(pt, matching)
 		ml.DisplayName = s.pcAggregateMethodDisplayName(pt, matching)
+		ml.SupportedTypes = pcAggregateStripeSupportedTypes(pt, matching)
 		ml.Currency = currency
 		result = append(result, ml)
 	}
