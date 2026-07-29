@@ -47,6 +47,10 @@ func TestNormalizeEmailForAliasDedupKeepsDistinctInboxes(t *testing.T) {
 		NormalizeEmailForAliasDedup("alice@gmail.com"),
 		NormalizeEmailForAliasDedup("bob@gmail.com"),
 	)
+	require.NotEqual(t,
+		NormalizeEmailForAliasDedup("first.last@qq.com"),
+		NormalizeEmailForAliasDedup("firstlast@qq.com"),
+	)
 }
 
 func TestEmailAliasDedupProbes(t *testing.T) {

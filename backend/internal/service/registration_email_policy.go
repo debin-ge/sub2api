@@ -140,8 +140,8 @@ func registrationEmailDomainMatchesWildcard(domain string, blocked string) bool 
 	return domain == base || strings.HasSuffix(domain, "."+base)
 }
 
-// ValidateEmailLocalPart 验证邮箱本地部分（@符号前），拒绝包含加号或点号的邮箱
-// 这可以防止 Gmail plus addressing 和 dot variations 薅羊毛攻击
+// ValidateEmailLocalPart 验证邮箱本地部分（@符号前），拒绝包含加号的邮箱。
+// Gmail 点号变体由注册别名归一化和创建时的别名保护处理，合法点号邮箱保持可用。
 func ValidateEmailLocalPart(email string) error {
 	local, _, ok := splitEmailForPolicy(email)
 	if !ok {
@@ -151,11 +151,6 @@ func ValidateEmailLocalPart(email string) error {
 	// 检查本地部分是否包含加号（plus addressing）
 	if strings.Contains(local, "+") {
 		return fmt.Errorf("email address with plus sign (+) is not allowed")
-	}
-
-	// 检查本地部分是否包含点号（Gmail dot variations）
-	if strings.Contains(local, ".") {
-		return fmt.Errorf("email address with dot (.) in local part is not allowed")
 	}
 
 	return nil
