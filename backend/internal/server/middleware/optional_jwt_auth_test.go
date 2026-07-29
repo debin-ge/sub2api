@@ -24,7 +24,10 @@ func newOptionalJWTTestEnv(users map[int64]*service.User) (*gin.Engine, *service
 	cfg.JWT.AccessTokenExpireMinutes = 60
 
 	userRepo := &stubJWTUserRepo{users: users}
-	authSvc := service.NewAuthService(nil, userRepo, nil, nil, cfg, nil, nil, nil, nil, nil, nil, nil, nil)
+	// 尾部三个依赖（userPlatformQuotaRepo / apiKeyService / groupRepo）是本分支在
+	// NewAuthService 上的扩展，仅注册与默认 API Key 下发路径才会用到，且使用点均有
+	// nil 保护。本用例只走 JWT 校验，与其余依赖一样传 nil 即可。
+	authSvc := service.NewAuthService(nil, userRepo, nil, nil, cfg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	userSvc := service.NewUserService(userRepo, nil, nil, nil)
 	mw := NewOptionalJWTAuthMiddleware(authSvc, userSvc, nil, nil)
 
