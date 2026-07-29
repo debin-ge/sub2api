@@ -1,8 +1,9 @@
-import { describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
 import ModelWhitelistSelector from '../ModelWhitelistSelector.vue'
 
-const { syncUpstreamModelsMock, syncUpstreamModelsPreviewMock } = vi.hoisted(() => ({
+const { copyToClipboard, syncUpstreamModelsMock, syncUpstreamModelsPreviewMock } = vi.hoisted(() => ({
+  copyToClipboard: vi.fn().mockResolvedValue(true),
   syncUpstreamModelsMock: vi.fn(),
   syncUpstreamModelsPreviewMock: vi.fn()
 }))
@@ -20,7 +21,10 @@ vi.mock('vue-i18n', async () => {
   return {
     ...actual,
     useI18n: () => ({
-      t: (key: string, params?: Record<string, unknown>) => params?.count !== undefined ? `${key}:${params.count}` : key
+      t: (key: string, params?: Record<string, unknown>) => {
+        if (key === 'common.copy') return '复制'
+        return params?.count !== undefined ? `${key}:${params.count}` : key
+      }
     })
   }
 })
@@ -33,7 +37,44 @@ vi.mock('@/stores/app', () => ({
   })
 }))
 
+vi.mock('@/composables/useClipboard', () => ({
+  useClipboard: () => ({
+    copyToClipboard
+  })
+}))
+
+function mountSelector() {
+  return mount(ModelWhitelistSelector, {
+    props: {
+      modelValue: [],
+      platform: 'openai'
+    },
+    global: {
+      stubs: {
+        Icon: true,
+        ModelIcon: true
+      }
+    }
+  })
+}
+
+function findModelRow(wrapper: ReturnType<typeof mountSelector>, modelId: string) {
+  const row = wrapper
+    .findAll('[data-testid="model-option"]')
+    .find(candidate => candidate.text().includes(modelId))
+
+  if (!row) {
+    throw new Error(`Model row not found: ${modelId}`)
+  }
+
+  return row
+}
+
 describe('ModelWhitelistSelector', () => {
+  beforeEach(() => {
+    copyToClipboard.mockClear()
+  })
+
   it('fills latest models from async loader and exposes them as options', async () => {
     const loadRelatedModels = vi.fn().mockResolvedValue(['opencode/gpt5-high', 'opencode/new-model'])
     const wrapper = mount(ModelWhitelistSelector, {
@@ -119,5 +160,31 @@ describe('ModelWhitelistSelector', () => {
     })
     expect(syncUpstreamModelsPreviewMock).not.toHaveBeenCalled()
     expect(wrapper.emitted('update:modelValue')?.[0]?.[0]).toEqual(['MiniMax-M3', 'MiniMax-future'])
+  })
+
+  it('copies a model ID without selecting the model', async () => {
+    const wrapper = mountSelector()
+    await wrapper.get('div.cursor-pointer').trigger('click')
+
+    const row = findModelRow(wrapper, 'gpt-5.6-sol')
+    const copyButton = row.get('[data-testid="copy-model-id"]')
+    expect(copyButton.attributes('aria-label')).toBe('复制 gpt-5.6-sol')
+
+    await copyButton.trigger('click')
+    await flushPromises()
+
+    expect(copyToClipboard).toHaveBeenCalledWith('gpt-5.6-sol')
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+  })
+
+  it('keeps the existing model selection behavior', async () => {
+    const wrapper = mountSelector()
+    await wrapper.get('div.cursor-pointer').trigger('click')
+
+    const row = findModelRow(wrapper, 'gpt-5.6-sol')
+    await row.get('[data-testid="select-model"]').trigger('click')
+
+    expect(wrapper.emitted('update:modelValue')).toEqual([[['gpt-5.6-sol']]])
+    expect(copyToClipboard).not.toHaveBeenCalled()
   })
 })

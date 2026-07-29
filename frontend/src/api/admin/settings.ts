@@ -381,6 +381,10 @@ export interface SystemSettings {
   registration_rate_limit_window_email_domain: number; // 每邮箱域名速率限制时间窗口（秒）
   totp_enabled: boolean; // TOTP 双因素认证
   totp_encryption_key_configured: boolean; // TOTP 加密密钥是否已配置
+  passkey_enabled: boolean;
+  passkey_configured: boolean;
+  passkey_rp_id: string;
+  passkey_rp_origins: string[];
   session_binding_enabled: boolean; // 会话 IP/UA 绑定
   step_up_enabled: boolean; // 敏感操作 step-up 2FA
   audit_log_retention_days: number; // 审计日志保留天数
@@ -671,6 +675,11 @@ export interface SystemSettings {
   // Available Channels feature switch
   available_channels_enabled: boolean;
 
+  // Model Plaza feature switches + description
+  model_plaza_enabled: boolean;
+  model_plaza_require_auth: boolean;
+  model_plaza_description: string;
+
   // Affiliate (邀请返利) feature switch
   affiliate_enabled: boolean;
 
@@ -702,6 +711,7 @@ export interface UpdateSettingsRequest {
   registration_rate_limit_per_email_domain?: number;
   registration_rate_limit_window_email_domain?: number;
   totp_enabled?: boolean; // TOTP 双因素认证
+  passkey_enabled?: boolean;
   session_binding_enabled?: boolean; // 会话 IP/UA 绑定
   step_up_enabled?: boolean; // 敏感操作 step-up 2FA
   audit_log_retention_days?: number; // 审计日志保留天数
@@ -953,6 +963,11 @@ export interface UpdateSettingsRequest {
 
   // Available Channels feature switch
   available_channels_enabled?: boolean;
+
+  // Model Plaza feature switches + description
+  model_plaza_enabled?: boolean;
+  model_plaza_require_auth?: boolean;
+  model_plaza_description?: string;
 
   // Affiliate (邀请返利) feature switch
   affiliate_enabled?: boolean;

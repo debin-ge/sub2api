@@ -28,10 +28,12 @@ func TestProvideHandlersIncludesRadarHandler(t *testing.T) {
 		nil, // openCodeGatewayHandler
 		nil, // settingHandler
 		nil, // totpHandler
+		nil, // passkeyHandler
 		nil, // paymentHandler
 		nil, // paymentWebhookHandler
 		nil, // availableChannelHandler
 		radar,
+		nil,         // modelPlazaHandler
 		nil,         // asyncImageHandler
 		nil,         // batchImageHandler
 		BuildInfo{}, // buildInfo

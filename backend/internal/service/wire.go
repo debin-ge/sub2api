@@ -784,6 +784,7 @@ var ProviderSet = wire.NewSet(
 	NewRadarAdminController,
 	// Core services
 	NewAuthService,
+	NewPasskeyService,
 	NewUserService,
 	ProvideAPIKeyService,
 	ProvideAPIKeyAuthCacheInvalidator,
