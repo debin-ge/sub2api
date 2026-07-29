@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -658,30 +659,90 @@ func TestAccountHandlerUpdateRejectsGLMInvalidType(t *testing.T) {
 	require.Contains(t, rec.Body.String(), "apikey")
 }
 
-func TestAccountHandlerUpdateRejectsGLMMissingAPIKey(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	router := gin.New()
-	adminSvc := newStubAdminService()
-	adminSvc.accounts = []service.Account{
-		{ID: 3, Name: "glm", Platform: service.PlatformGLM, Type: service.AccountTypeAPIKey, Credentials: map[string]any{"api_key": "sk-glm"}, Status: service.StatusActive},
-	}
-	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
-	router.PUT("/api/v1/admin/accounts/:id", accountHandler.Update)
-
-	body, err := json.Marshal(map[string]any{
-		"credentials": map[string]any{
-			"model_mapping": map[string]any{"custom-model": "GLM-custom"},
+func TestAccountHandlerUpdateKeepsExistingAPIKeyWhenCredentialsOmitIt(t *testing.T) {
+	tests := []struct {
+		platform            string
+		existingCredentials map[string]any
+		updateCredentials   map[string]any
+	}{
+		{
+			platform:            service.PlatformGLM,
+			existingCredentials: map[string]any{"api_key": "sk-glm"},
+			updateCredentials:   map[string]any{"base_url_openai": "https://open.bigmodel.cn/api/paas/v4"},
 		},
+		{
+			platform:            service.PlatformKimi,
+			existingCredentials: map[string]any{"api_key": "sk-kimi"},
+			updateCredentials:   map[string]any{"base_url_openai": "https://api.moonshot.cn/v1"},
+		},
+		{
+			platform:            service.PlatformDeepSeek,
+			existingCredentials: map[string]any{"api_key": "sk-deepseek"},
+			updateCredentials:   map[string]any{"base_url_openai": "https://api.deepseek.com"},
+		},
+		{
+			platform:            service.PlatformWindsurf,
+			existingCredentials: map[string]any{"api_key": "sk-windsurf"},
+			updateCredentials:   map[string]any{"base_url": "https://server.codeium.com"},
+		},
+		{
+			platform: service.PlatformOpenCode,
+			existingCredentials: map[string]any{
+				"api_key":  "sk-opencode",
+				"base_url": "https://opencode.example.com",
+			},
+			updateCredentials: map[string]any{"base_url": "https://new-opencode.example.com"},
+		},
+	}
+
+	for i, tt := range tests {
+		t.Run(tt.platform, func(t *testing.T) {
+			gin.SetMode(gin.TestMode)
+			router := gin.New()
+			adminSvc := newStubAdminService()
+			accountID := int64(i + 1)
+			adminSvc.accounts = []service.Account{
+				{
+					ID:          accountID,
+					Name:        tt.platform,
+					Platform:    tt.platform,
+					Type:        service.AccountTypeAPIKey,
+					Credentials: tt.existingCredentials,
+					Status:      service.StatusActive,
+				},
+			}
+			accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+			router.PUT("/api/v1/admin/accounts/:id", accountHandler.Update)
+
+			body, err := json.Marshal(map[string]any{"credentials": tt.updateCredentials})
+			require.NoError(t, err)
+
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/accounts/"+strconv.FormatInt(accountID, 10), bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			router.ServeHTTP(rec, req)
+
+			require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+			require.Equal(t, 1, adminSvc.updateAccountCalls)
+		})
+	}
+}
+
+func TestAccountHandlerUpdateRejectsExplicitlyEmptyAPIKey(t *testing.T) {
+	account := &service.Account{
+		ID:          3,
+		Name:        "glm",
+		Platform:    service.PlatformGLM,
+		Type:        service.AccountTypeAPIKey,
+		Credentials: map[string]any{"api_key": "sk-glm"},
+		Status:      service.StatusActive,
+	}
+
+	err := validateUpdateAccountRequest(account, UpdateAccountRequest{
+		Credentials: map[string]any{"api_key": " "},
 	})
-	require.NoError(t, err)
 
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/accounts/3", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	router.ServeHTTP(rec, req)
-
-	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
-	require.Contains(t, rec.Body.String(), "api_key")
+	require.ErrorContains(t, err, "api_key")
 }
 
 func TestAccountHandlerUpdateRejectsInvalidExistingGLMOnOrdinaryField(t *testing.T) {

@@ -1136,8 +1136,11 @@ func validateUpdateAccountRequest(account *service.Account, req UpdateAccountReq
 	}
 
 	credentials := account.Credentials
-	if req.Credentials != nil {
-		credentials = req.Credentials
+	if len(req.Credentials) > 0 {
+		// 更新账号时前端不会回传已脱敏的 API Key。校验必须与服务层的
+		// MergePreservingSensitiveCreds 语义一致：本次未提供敏感字段时保留原值，
+		// 显式提供空值时仍应拒绝，避免把已有凭据清空。
+		credentials = service.MergePreservingSensitiveCreds(account.Credentials, req.Credentials)
 	}
 	apiKey, _ := credentials["api_key"].(string)
 	if strings.TrimSpace(apiKey) == "" {
