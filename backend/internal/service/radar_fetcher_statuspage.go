@@ -341,18 +341,23 @@ type statuspageComponentWire struct {
 }
 
 type statuspageIncidentWire struct {
-	ID         string                            `json:"id"`
-	Name       string                            `json:"name"`
-	Status     string                            `json:"status"`
-	Impact     string                            `json:"impact"`
-	CreatedAt  string                            `json:"created_at"`
-	ResolvedAt *string                           `json:"resolved_at"`
-	Components []statuspageIncidentComponentWire `json:"components"`
+	ID              string                            `json:"id"`
+	Name            string                            `json:"name"`
+	Status          string                            `json:"status"`
+	Impact          string                            `json:"impact"`
+	CreatedAt       string                            `json:"created_at"`
+	ResolvedAt      *string                           `json:"resolved_at"`
+	Components      []statuspageIncidentComponentWire `json:"components"`
+	IncidentUpdates []statuspageIncidentUpdateWire    `json:"incident_updates,omitempty"`
 }
 
 type statuspageIncidentComponentWire struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+}
+
+type statuspageIncidentUpdateWire struct {
+	DisplayAt string `json:"display_at"`
 }
 
 type statuspageImpactWire struct {
@@ -2014,8 +2019,14 @@ func decodeStatuspageIncident(wire statuspageIncidentWire) (StatuspageIncident, 
 	var resolvedAt *time.Time
 	if wire.ResolvedAt != nil {
 		parsed, err := parseStatuspageTimestamp(*wire.ResolvedAt)
-		if err != nil || parsed.Before(createdAt) {
+		if err != nil {
 			return StatuspageIncident{}, errInvalidStatuspageResponse
+		}
+		if parsed.Before(createdAt) {
+			createdAt, err = normalizeBackdatedStatuspageIncidentStart(createdAt, parsed, wire.IncidentUpdates)
+			if err != nil {
+				return StatuspageIncident{}, errInvalidStatuspageResponse
+			}
 		}
 		resolvedAt = &parsed
 	}
@@ -2037,6 +2048,30 @@ func decodeStatuspageIncident(wire statuspageIncidentWire) (StatuspageIncident, 
 		ResolvedAt: resolvedAt,
 		Components: components,
 	}, nil
+}
+
+func normalizeBackdatedStatuspageIncidentStart(
+	createdAt time.Time,
+	resolvedAt time.Time,
+	updates []statuspageIncidentUpdateWire,
+) (time.Time, error) {
+	// Incident.io permits operators to backdate the public timeline while the
+	// incident record keeps its later creation timestamp. In that case,
+	// display_at is the authoritative effective start of the incident.
+	effectiveStart := createdAt
+	for _, update := range updates {
+		displayAt, err := parseStatuspageTimestamp(update.DisplayAt)
+		if err != nil {
+			return time.Time{}, errInvalidStatuspageResponse
+		}
+		if displayAt.Before(effectiveStart) {
+			effectiveStart = displayAt
+		}
+	}
+	if resolvedAt.Before(effectiveStart) {
+		return time.Time{}, errInvalidStatuspageResponse
+	}
+	return effectiveStart, nil
 }
 
 func validateStatuspageSummary(summary StatuspageSummary) error {

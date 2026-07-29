@@ -960,6 +960,7 @@ func TestDecodeStatuspageStrictJSONArraysAndTimes(t *testing.T) {
 		{name: "zero incident created time", payload: statuspagePayloadWithComponents(`[]`)[:len(statuspagePayloadWithComponents(`[]`))-1] + `,"incidents":[{"id":"i","name":"Incident","status":"resolved","impact":"minor","created_at":"0001-01-01T00:00:00Z"}]}`},
 		{name: "bad incident resolved time", payload: statuspagePayloadWithComponents(`[]`)[:len(statuspagePayloadWithComponents(`[]`))-1] + `,"incidents":[{"id":"i","name":"Incident","status":"resolved","impact":"minor","created_at":"2026-07-10T10:00:00Z","resolved_at":"bad"}]}`},
 		{name: "zero incident resolved time", payload: statuspagePayloadWithComponents(`[]`)[:len(statuspagePayloadWithComponents(`[]`))-1] + `,"incidents":[{"id":"i","name":"Incident","status":"resolved","impact":"minor","created_at":"2026-07-10T10:00:00Z","resolved_at":"0001-01-01T00:00:00Z"}]}`},
+		{name: "incident resolved before creation without backdated timeline", payload: statuspagePayloadWithComponents(`[]`)[:len(statuspagePayloadWithComponents(`[]`))-1] + `,"incidents":[{"id":"i","name":"Incident","status":"resolved","impact":"minor","created_at":"2026-07-10T10:00:00Z","resolved_at":"2026-07-10T09:00:00Z"}]}`},
 	}
 	for _, tt := range rejected {
 		t.Run(tt.name, func(t *testing.T) {
@@ -969,6 +970,27 @@ func TestDecodeStatuspageStrictJSONArraysAndTimes(t *testing.T) {
 			require.NotContains(t, err.Error(), tt.payload)
 		})
 	}
+}
+
+func TestDecodeStatuspageIncidentUsesBackdatedPublicTimeline(t *testing.T) {
+	payload := []byte(`{
+      "page":{"id":"openai","name":"OpenAI","url":"https://status.openai.com/","updated_at":"2026-07-27T20:52:18Z"},
+      "incidents":[{
+        "id":"incident","name":"Backdated incident","status":"resolved","impact":"minor",
+        "created_at":"2026-07-27T18:06:39Z","resolved_at":"2026-07-27T17:30:00Z",
+        "incident_updates":[
+          {"status":"resolved","display_at":"2026-07-27T17:30:00Z"},
+          {"status":"investigating","display_at":"2026-07-27T15:30:00Z"}
+        ]
+      }]
+    }`)
+
+	_, incidents, err := decodeStatuspageIncidents(payload)
+
+	require.NoError(t, err)
+	require.Len(t, incidents, 1)
+	require.Equal(t, time.Date(2026, time.July, 27, 15, 30, 0, 0, time.UTC), incidents[0].CreatedAt)
+	require.Equal(t, time.Date(2026, time.July, 27, 17, 30, 0, 0, time.UTC), *incidents[0].ResolvedAt)
 }
 
 func TestStatuspageConstructorsRejectUnsupportedSourceAndInvalidConfig(t *testing.T) {
