@@ -148,7 +148,7 @@ func (s *FrontendServer) serveIndexHTML(c *gin.Context) {
 
 	// Check cache first
 	cached := s.cache.Get()
-	if cached != nil {
+	if cached != nil && !cached.Stale {
 		// Check If-None-Match for 304 response
 		if match := c.GetHeader("If-None-Match"); match == cached.ETag {
 			c.Status(http.StatusNotModified)
@@ -166,28 +166,30 @@ func (s *FrontendServer) serveIndexHTML(c *gin.Context) {
 		return
 	}
 
-	// Cache miss - fetch settings and render
+	// Cache miss or stale cache - fetch settings and render. Capture the
+	// generation first so another invalidation cannot be overwritten by this
+	// in-flight refresh.
+	settingsVersion := s.cache.Version()
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
 	defer cancel()
 
 	settings, err := s.settings.GetPublicSettingsForInjection(ctx)
 	if err != nil {
-		// Fallback: serve without injection
-		c.Data(http.StatusOK, "text/html; charset=utf-8", s.baseHTML)
-		c.Abort()
+		s.serveFallbackHTML(c, nonce)
 		return
 	}
 
 	settingsJSON, err := json.Marshal(settings)
 	if err != nil {
-		// Fallback: serve without injection
-		c.Data(http.StatusOK, "text/html; charset=utf-8", s.baseHTML)
-		c.Abort()
+		s.serveFallbackHTML(c, nonce)
 		return
 	}
 
 	rendered := s.injectSettings(settingsJSON)
-	s.cache.Set(rendered, settingsJSON)
+	if !s.cache.SetIfVersion(rendered, settingsJSON, settingsVersion) {
+		s.serveFallbackHTML(c, nonce)
+		return
+	}
 
 	// Replace nonce placeholder with actual nonce before serving
 	content := replaceNoncePlaceholder(rendered, nonce)
@@ -199,6 +201,32 @@ func (s *FrontendServer) serveIndexHTML(c *gin.Context) {
 	c.Header("Cache-Control", "no-cache")
 	c.Data(http.StatusOK, "text/html; charset=utf-8", content)
 	c.Abort()
+}
+
+// serveFallbackHTML serves the last successfully branded HTML when available.
+// It intentionally omits ETag so a stale entry can never produce a false 304.
+func (s *FrontendServer) serveFallbackHTML(c *gin.Context, nonce string) {
+	content := s.baseHTML
+	if cached := s.cache.Get(); cached != nil {
+		content = cached.Content
+		if cached.Stale {
+			content = markInjectedSettingsStale(content)
+		}
+	}
+	content = replaceNoncePlaceholder(content, nonce)
+
+	c.Header("Cache-Control", "no-cache")
+	c.Data(http.StatusOK, "text/html; charset=utf-8", content)
+	c.Abort()
+}
+
+// markInjectedSettingsStale tells the frontend that the injected last-known-good
+// settings should be refreshed before the app mounts. The existing branding
+// remains available immediately, so a slow refresh never falls back to Sub2API.
+func markInjectedSettingsStale(html []byte) []byte {
+	headClose := []byte("</head>")
+	script := []byte(`<script nonce="` + NonceHTMLPlaceholder + `">window.__APP_CONFIG_STALE__=true;</script>`)
+	return bytes.Replace(html, headClose, append(script, headClose...), 1)
 }
 
 func (s *FrontendServer) injectSettings(settingsJSON []byte) []byte {
@@ -226,7 +254,11 @@ func injectSiteFavicon(html, settingsJSON []byte) []byte {
 		return html
 	}
 
-	logoURL := safeImageURL(cfg.SiteLogo)
+	rawLogoURL := strings.TrimSpace(cfg.SiteLogo)
+	logoURL := "/logo.svg"
+	if rawLogoURL != "" {
+		logoURL = safeImageURL(rawLogoURL)
+	}
 	if logoURL == "" {
 		return html
 	}

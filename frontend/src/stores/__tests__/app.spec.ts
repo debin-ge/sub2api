@@ -78,6 +78,7 @@ describe('useAppStore', () => {
     vi.mocked(getPublicSettings).mockReset()
     // 清除 window.__APP_CONFIG__
     delete (window as any).__APP_CONFIG__
+    delete (window as any).__APP_CONFIG_STALE__
   })
 
   afterEach(() => {
@@ -385,6 +386,22 @@ describe('useAppStore', () => {
       expect(getPublicSettings).toHaveBeenCalledTimes(2)
     })
 
+    it('stale 注入标记会让普通调用持续绕过缓存直到刷新成功', async () => {
+      const initial = createPublicSettings({ site_name: 'Old Site' })
+      ;(window as any).__APP_CONFIG__ = initial
+      ;(window as any).__APP_CONFIG_STALE__ = true
+      const updated = createPublicSettings({ site_name: 'Updated Site' })
+      vi.mocked(getPublicSettings).mockResolvedValue(updated)
+
+      const store = useAppStore()
+      expect(store.initFromInjectedConfig()).toBe(true)
+      await expect(store.fetchPublicSettings()).resolves.toEqual(updated)
+
+      expect(getPublicSettings).toHaveBeenCalledOnce()
+      expect(store.siteName).toBe('Updated Site')
+      expect((window as any).__APP_CONFIG_STALE__).toBeUndefined()
+    })
+
     it('并发请求失败时所有调用得到 null，且不会标记设置已加载', async () => {
       const deferred = createDeferred<PublicSettings>()
       vi.mocked(getPublicSettings).mockReturnValue(deferred.promise)
@@ -446,6 +463,7 @@ describe('useAppStore', () => {
     })
 
     it('fetchPublicSettings(force) 会同步更新运行时注入配置', async () => {
+      (window as any).__APP_CONFIG_STALE__ = true
       vi.mocked(getPublicSettings).mockResolvedValue({
         registration_enabled: false,
         email_verify_enabled: false,
@@ -480,6 +498,7 @@ describe('useAppStore', () => {
 
       expect((window as any).__APP_CONFIG__.table_default_page_size).toBe(1000)
       expect((window as any).__APP_CONFIG__.table_page_size_options).toEqual([20, 100, 1000])
+      expect((window as any).__APP_CONFIG_STALE__).toBeUndefined()
       expect(localStorage.getItem('table-page-size')).toBeNull()
       expect(localStorage.getItem('table-page-size-source')).toBeNull()
     })

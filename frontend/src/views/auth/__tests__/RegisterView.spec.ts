@@ -10,6 +10,7 @@ const {
   showErrorMock,
   showWarningMock,
   getPublicSettingsMock,
+  appStoreState,
   validateAffiliateCodeMock,
   validateInvitationCodeMock,
   validatePromoCodeMock
@@ -21,6 +22,9 @@ const {
   showErrorMock: vi.fn(),
   showWarningMock: vi.fn(),
   getPublicSettingsMock: vi.fn(),
+  appStoreState: {
+    siteName: 'Sub2API'
+  },
   validateAffiliateCodeMock: vi.fn(),
   validateInvitationCodeMock: vi.fn(),
   validatePromoCodeMock: vi.fn()
@@ -38,7 +42,12 @@ vi.mock('vue-i18n', () => ({
     }
   }),
   useI18n: () => ({
-    t: (key: string) => key,
+    t: (key: string, params?: Record<string, string>) => {
+      if (key === 'auth.signUpToStart') {
+        return `Sign up to start using ${params?.siteName}`
+      }
+      return key
+    },
     locale: { value: 'en' }
   })
 }))
@@ -48,6 +57,8 @@ vi.mock('@/stores', () => ({
     register: (...args: unknown[]) => registerMock(...args)
   }),
   useAppStore: () => ({
+    siteName: appStoreState.siteName,
+    fetchPublicSettings: (...args: unknown[]) => getPublicSettingsMock(...args),
     showSuccess: (...args: unknown[]) => showSuccessMock(...args),
     showError: (...args: unknown[]) => showErrorMock(...args),
     showWarning: (...args: unknown[]) => showWarningMock(...args)
@@ -118,6 +129,7 @@ describe('RegisterView affiliate referral code', () => {
     showErrorMock.mockReset()
     showWarningMock.mockReset()
     getPublicSettingsMock.mockReset()
+    appStoreState.siteName = 'Sub2API'
     validateAffiliateCodeMock.mockReset()
     validateInvitationCodeMock.mockReset()
     validatePromoCodeMock.mockReset()
@@ -129,6 +141,16 @@ describe('RegisterView affiliate referral code', () => {
     validateInvitationCodeMock.mockResolvedValue({ valid: true })
     validatePromoCodeMock.mockResolvedValue({ valid: true })
     registerMock.mockResolvedValue({})
+  })
+
+  it('renders the app-store site name on the first render', () => {
+    appStoreState.siteName = 'Acme Gateway'
+    getPublicSettingsMock.mockReturnValue(new Promise(() => undefined))
+
+    const wrapper = mountRegisterView()
+
+    expect(wrapper.text()).toContain('Sign up to start using Acme Gateway')
+    expect(wrapper.text()).not.toContain('Sub2API')
   })
 
   it('shows and validates a referral code restored from the URL', async () => {

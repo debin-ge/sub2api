@@ -132,6 +132,15 @@ func TestInjectSiteFavicon(t *testing.T) {
 		assert.Contains(t, string(injectSiteFavicon(html, []byte(`{"site_logo":"data:image/png;base64,abc"}`))), `data:image/png;base64,abc`)
 	})
 
+	t.Run("uses_default_logo_when_custom_logo_is_empty", func(t *testing.T) {
+		html := []byte(`<link rel="icon" href="data:," />`)
+
+		result := injectSiteFavicon(html, []byte(`{"site_logo":""}`))
+
+		assert.Contains(t, string(result), `href="/logo.svg"`)
+		assert.NotContains(t, string(result), `href="data:,"`)
+	})
+
 	t.Run("rejects_unsafe_logo_urls", func(t *testing.T) {
 		html := []byte(`<link rel="icon" href="/logo.png" />`)
 
@@ -214,6 +223,22 @@ type mockSettingsProvider struct {
 func (m *mockSettingsProvider) GetPublicSettingsForInjection(ctx context.Context) (any, error) {
 	m.called++
 	return m.settings, m.err
+}
+
+type blockingSettingsProvider struct {
+	settings any
+	started  chan struct{}
+	release  chan struct{}
+}
+
+func (p *blockingSettingsProvider) GetPublicSettingsForInjection(ctx context.Context) (any, error) {
+	close(p.started)
+	select {
+	case <-p.release:
+		return p.settings, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }
 
 func TestFrontendServer_InjectSettings(t *testing.T) {
@@ -424,6 +449,147 @@ func TestFrontendServer_ServeIndexHTML(t *testing.T) {
 		// Should still return 200 with base HTML
 		assert.Equal(t, http.StatusOK, w.Code)
 		assert.Contains(t, w.Header().Get("Content-Type"), "text/html")
+		assert.Equal(t, "no-cache", w.Header().Get("Cache-Control"))
+		assert.Empty(t, w.Header().Get("ETag"))
+	})
+
+	t.Run("serves_stale_branded_html_when_refresh_fails", func(t *testing.T) {
+		provider := &mockSettingsProvider{
+			settings: map[string]string{
+				"site_name": "Old Brand",
+				"site_logo": "/old-logo.svg",
+			},
+		}
+
+		server, err := NewFrontendServer(provider)
+		require.NoError(t, err)
+
+		w1 := httptest.NewRecorder()
+		c1, _ := gin.CreateTestContext(w1)
+		c1.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+		c1.Set(middleware.CSPNonceKey, "nonce1")
+		server.serveIndexHTML(c1)
+
+		oldETag := w1.Header().Get("ETag")
+		require.NotEmpty(t, oldETag)
+		require.Contains(t, w1.Body.String(), "<title>Old Brand - AI API Gateway</title>")
+		require.Contains(t, w1.Body.String(), `href="/old-logo.svg"`)
+
+		server.InvalidateCache()
+		provider.err = context.DeadlineExceeded
+
+		w2 := httptest.NewRecorder()
+		c2, _ := gin.CreateTestContext(w2)
+		c2.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+		c2.Request.Header.Set("If-None-Match", oldETag)
+		c2.Set(middleware.CSPNonceKey, "nonce2")
+		server.serveIndexHTML(c2)
+
+		assert.Equal(t, http.StatusOK, w2.Code)
+		assert.Equal(t, "no-cache", w2.Header().Get("Cache-Control"))
+		assert.Empty(t, w2.Header().Get("ETag"))
+		assert.Contains(t, w2.Body.String(), "<title>Old Brand - AI API Gateway</title>")
+		assert.Contains(t, w2.Body.String(), `href="/old-logo.svg"`)
+		assert.Contains(t, w2.Body.String(), `nonce="nonce2"`)
+		assert.Contains(t, w2.Body.String(), `window.__APP_CONFIG_STALE__=true;`)
+		assert.Equal(t, 2, provider.called)
+	})
+
+	t.Run("replaces_stale_html_after_successful_refresh", func(t *testing.T) {
+		provider := &mockSettingsProvider{
+			settings: map[string]string{
+				"site_name": "Old Brand",
+				"site_logo": "/old-logo.svg",
+			},
+		}
+
+		server, err := NewFrontendServer(provider)
+		require.NoError(t, err)
+
+		w1 := httptest.NewRecorder()
+		c1, _ := gin.CreateTestContext(w1)
+		c1.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+		c1.Set(middleware.CSPNonceKey, "nonce1")
+		server.serveIndexHTML(c1)
+		oldETag := w1.Header().Get("ETag")
+		require.NotEmpty(t, oldETag)
+
+		server.InvalidateCache()
+		provider.settings = map[string]string{
+			"site_name": "New Brand",
+			"site_logo": "/new-logo.svg",
+		}
+
+		w2 := httptest.NewRecorder()
+		c2, _ := gin.CreateTestContext(w2)
+		c2.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+		c2.Request.Header.Set("If-None-Match", oldETag)
+		c2.Set(middleware.CSPNonceKey, "nonce2")
+		server.serveIndexHTML(c2)
+
+		newETag := w2.Header().Get("ETag")
+		assert.Equal(t, http.StatusOK, w2.Code)
+		assert.NotEmpty(t, newETag)
+		assert.NotEqual(t, oldETag, newETag)
+		assert.Contains(t, w2.Body.String(), "<title>New Brand - AI API Gateway</title>")
+		assert.Contains(t, w2.Body.String(), `href="/new-logo.svg"`)
+		assert.NotContains(t, w2.Body.String(), "Old Brand")
+		assert.Equal(t, 2, provider.called)
+
+		w3 := httptest.NewRecorder()
+		c3, _ := gin.CreateTestContext(w3)
+		c3.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+		c3.Set(middleware.CSPNonceKey, "nonce3")
+		server.serveIndexHTML(c3)
+
+		assert.Equal(t, 2, provider.called)
+		assert.Contains(t, w3.Body.String(), "<title>New Brand - AI API Gateway</title>")
+	})
+
+	t.Run("does_not_commit_refresh_invalidated_while_provider_is_running", func(t *testing.T) {
+		provider := &blockingSettingsProvider{
+			settings: map[string]string{
+				"site_name": "Superseded Brand",
+				"site_logo": "/superseded-logo.svg",
+			},
+			started: make(chan struct{}),
+			release: make(chan struct{}),
+		}
+
+		server, err := NewFrontendServer(provider)
+		require.NoError(t, err)
+
+		lastGoodJSON := []byte(`{"site_name":"Last Good Brand","site_logo":"/last-good-logo.svg"}`)
+		server.cache.Set(server.injectSettings(lastGoodJSON), lastGoodJSON)
+		server.InvalidateCache()
+
+		w := httptest.NewRecorder()
+		requestDone := make(chan struct{})
+		go func() {
+			defer close(requestDone)
+			c, _ := gin.CreateTestContext(w)
+			c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+			c.Set(middleware.CSPNonceKey, "race-nonce")
+			server.serveIndexHTML(c)
+		}()
+
+		<-provider.started
+		server.InvalidateCache()
+		close(provider.release)
+		<-requestDone
+
+		cached := server.cache.Get()
+		require.NotNil(t, cached)
+		assert.True(t, cached.Stale)
+		assert.Contains(t, string(cached.Content), "Last Good Brand")
+		assert.NotContains(t, string(cached.Content), "Superseded Brand")
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Empty(t, w.Header().Get("ETag"))
+		assert.Equal(t, "no-cache", w.Header().Get("Cache-Control"))
+		assert.Contains(t, w.Body.String(), "Last Good Brand")
+		assert.NotContains(t, w.Body.String(), "Superseded Brand")
+		assert.Contains(t, w.Body.String(), `window.__APP_CONFIG_STALE__=true;`)
 	})
 }
 
@@ -836,7 +1002,7 @@ func TestHTMLCache(t *testing.T) {
 		assert.NotEmpty(t, result.ETag)
 	})
 
-	t.Run("invalidate_clears_cache", func(t *testing.T) {
+	t.Run("invalidate_marks_last_good_content_stale", func(t *testing.T) {
 		cache := NewHTMLCache()
 		cache.SetBaseHTML([]byte("<html></html>"))
 
@@ -848,7 +1014,11 @@ func TestHTMLCache(t *testing.T) {
 
 		cache.Invalidate()
 
-		assert.Nil(t, cache.Get())
+		result := cache.Get()
+		require.NotNil(t, result)
+		assert.Equal(t, html, result.Content)
+		assert.NotEmpty(t, result.ETag)
+		assert.True(t, result.Stale)
 	})
 
 	t.Run("etag_changes_with_settings", func(t *testing.T) {
@@ -865,6 +1035,22 @@ func TestHTMLCache(t *testing.T) {
 		etag2 := cache.Get().ETag
 
 		assert.NotEqual(t, etag1, etag2)
+	})
+
+	t.Run("set_if_version_rejects_result_after_invalidation", func(t *testing.T) {
+		cache := NewHTMLCache()
+		cache.SetBaseHTML([]byte("<html></html>"))
+		cache.Set([]byte("<html>old</html>"), []byte(`{"v":1}`))
+
+		version := cache.Version()
+		cache.Invalidate()
+
+		assert.False(t, cache.SetIfVersion([]byte("<html>superseded</html>"), []byte(`{"v":2}`), version))
+
+		result := cache.Get()
+		require.NotNil(t, result)
+		assert.True(t, result.Stale)
+		assert.Equal(t, []byte("<html>old</html>"), result.Content)
 	})
 
 	t.Run("etag_format", func(t *testing.T) {

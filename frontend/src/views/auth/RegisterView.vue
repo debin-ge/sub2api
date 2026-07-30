@@ -404,7 +404,6 @@ import Icon from '@/components/icons/Icon.vue'
 import TurnstileWidget from '@/components/TurnstileWidget.vue'
 import { useAuthStore, useAppStore } from '@/stores'
 import {
-  getPublicSettings,
   isWeChatWebOAuthEnabled,
   validateAffiliateCode,
   validatePromoCode,
@@ -449,7 +448,7 @@ const invitationCodeRequired = ref<boolean>(true)
 const affiliateEnabled = ref<boolean>(false)
 const turnstileEnabled = ref<boolean>(false)
 const turnstileSiteKey = ref<string>('')
-const siteName = ref<string>('Sub2API')
+const siteName = computed(() => appStore.siteName)
 const linuxdoOAuthEnabled = ref<boolean>(false)
 const wechatOAuthEnabled = ref<boolean>(false)
 const oidcOAuthEnabled = ref<boolean>(false)
@@ -592,7 +591,10 @@ onMounted(async () => {
   syncAffiliateReferralCode()
 
   try {
-    const settings = await getPublicSettings()
+    const settings = await appStore.fetchPublicSettings()
+    if (!settings) {
+      throw new Error('Public settings are unavailable')
+    }
     registrationEnabled.value = settings.registration_enabled
     emailVerifyEnabled.value = settings.email_verify_enabled
     promoCodeEnabled.value = settings.promo_code_enabled
@@ -602,7 +604,6 @@ onMounted(async () => {
     affiliateEnabled.value = settings.affiliate_enabled
     turnstileEnabled.value = settings.turnstile_enabled
     turnstileSiteKey.value = settings.turnstile_site_key || ''
-    siteName.value = settings.site_name || 'Sub2API'
     linuxdoOAuthEnabled.value = settings.linuxdo_oauth_enabled
     wechatOAuthEnabled.value = isWeChatWebOAuthEnabled(settings)
     oidcOAuthEnabled.value = settings.oidc_oauth_enabled

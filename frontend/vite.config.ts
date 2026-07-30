@@ -3,6 +3,7 @@ import vue from '@vitejs/plugin-vue'
 import checker from 'vite-plugin-checker'
 import { resolve } from 'path'
 import { manualChunkName } from './build-tools/manual-chunks'
+import { serializeInlineScriptJson } from './build-tools/inline-script-json'
 
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => ({
@@ -37,8 +38,13 @@ function injectBranding(html: string, config: { site_name?: string; site_logo?: 
     )
   }
 
-  const siteLogo = config.site_logo?.trim()
-  if (siteLogo && isSafeImageUrl(siteLogo)) {
+  const configuredSiteLogo = config.site_logo?.trim()
+  const siteLogo = !configuredSiteLogo
+    ? '/logo.svg'
+    : isSafeImageUrl(configuredSiteLogo)
+      ? configuredSiteLogo
+      : ''
+  if (siteLogo) {
     brandedHtml = brandedHtml.replace(
       /<link\s+rel=["']icon["'][^>]*>/i,
       `<link rel="icon" href="${escapeHtml(siteLogo)}" />`,
@@ -65,7 +71,7 @@ function injectPublicSettings(backendUrl: string): Plugin {
           if (response.ok) {
             const data = await response.json()
             if (data.code === 0 && data.data) {
-              const script = `<script>window.__APP_CONFIG__=${JSON.stringify(data.data)};</script>`
+              const script = `<script>window.__APP_CONFIG__=${serializeInlineScriptJson(data.data)};</script>`
               return injectBranding(html, data.data).replace('</head>', `${script}\n</head>`)
             }
           }

@@ -4,6 +4,7 @@ import App from './App.vue'
 import router from './router'
 import i18n, { initI18n } from './i18n'
 import { useAppStore } from '@/stores/app'
+import { initializePublicSettings } from '@/startup/publicSettings'
 import { updateFavicon } from '@/utils/branding'
 import { isIOSDevice } from '@/utils/device'
 import './style.css'
@@ -40,18 +41,21 @@ async function bootstrap() {
   const pinia = createPinia()
   app.use(pinia)
 
-  // Initialize settings from injected config BEFORE mounting (prevents flash)
-  // This must happen after pinia is installed but before router and i18n
+  // Initialize branding BEFORE the router's first navigation and app mount.
+  // If server injection is unavailable, wait for the normal settings request.
   const appStore = useAppStore()
-  appStore.initFromInjectedConfig()
+  await Promise.all([
+    initializePublicSettings(appStore),
+    initI18n()
+  ])
 
-  // Set document title immediately after config is loaded
-  if (appStore.siteName && appStore.siteName !== 'Sub2API') {
+  // Set document title/favicon immediately after config is loaded. The static
+  // HTML uses neutral placeholders so missing injection never exposes the
+  // built-in brand while the real settings request is still in flight.
+  if (appStore.siteName) {
     document.title = `${appStore.siteName} - AI API Gateway`
   }
-  updateFavicon(appStore.siteLogo)
-
-  await initI18n()
+  updateFavicon(appStore.siteLogo || '/logo.svg')
 
   app.use(router)
   app.use(i18n)

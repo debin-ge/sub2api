@@ -155,7 +155,6 @@ import TurnstileWidget from '@/components/TurnstileWidget.vue'
 import { useAuthStore, useAppStore } from '@/stores'
 import {
   persistOAuthTokenContext,
-  getPublicSettings,
   isOAuthLoginCompletion,
   type PendingOAuthSendVerifyCodeResponse,
   sendPendingOAuthVerifyCode,
@@ -228,7 +227,7 @@ const hasRegisterData = ref<boolean>(false)
 // Public settings
 const turnstileEnabled = ref<boolean>(false)
 const turnstileSiteKey = ref<string>('')
-const siteName = ref<string>('Sub2API')
+const siteName = computed(() => appStore.siteName)
 const registrationEmailSuffixBlacklist = ref<string[]>([])
 
 // Turnstile for resend
@@ -290,10 +289,12 @@ onMounted(async () => {
 
   // Load public settings
   try {
-    const settings = await getPublicSettings()
+    const settings = await appStore.fetchPublicSettings()
+    if (!settings) {
+      throw new Error('Public settings are unavailable')
+    }
     turnstileEnabled.value = settings.turnstile_enabled
     turnstileSiteKey.value = settings.turnstile_site_key || ''
-    siteName.value = settings.site_name || 'Sub2API'
     registrationEmailSuffixBlacklist.value = normalizeRegistrationEmailSuffixBlacklist(
       settings.registration_email_suffix_blacklist || []
     )

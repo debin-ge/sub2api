@@ -16,6 +16,7 @@ const {
   persistOAuthTokenContextMock,
   apiClientPostMock,
   authStoreState,
+  appStoreState,
 } = vi.hoisted(() => ({
   pushMock: vi.fn(),
   showSuccessMock: vi.fn(),
@@ -29,6 +30,9 @@ const {
   sendPendingOAuthVerifyCodeMock: vi.fn(),
   persistOAuthTokenContextMock: vi.fn(),
   apiClientPostMock: vi.fn(),
+  appStoreState: {
+    siteName: 'Sub2API'
+  },
   authStoreState: {
     pendingAuthSession: null as null | {
       token: string
@@ -74,6 +78,8 @@ vi.mock('@/stores', () => ({
     clearPendingAuthSession: (...args: any[]) => clearPendingAuthSessionMock(...args),
   }),
   useAppStore: () => ({
+    siteName: appStoreState.siteName,
+    fetchPublicSettings: (...args: any[]) => getPublicSettingsMock(...args),
     showSuccess: (...args: any[]) => showSuccessMock(...args),
     showError: (...args: any[]) => showErrorMock(...args),
   }),
@@ -111,6 +117,7 @@ describe('EmailVerifyView', () => {
     persistOAuthTokenContextMock.mockReset()
     apiClientPostMock.mockReset()
     authStoreState.pendingAuthSession = null
+    appStoreState.siteName = 'Sub2API'
     sessionStorage.clear()
     localStorage.clear()
 
@@ -422,6 +429,7 @@ describe('EmailVerifyView', () => {
   })
 
   it('keeps the normal email registration flow unchanged', async () => {
+    appStoreState.siteName = 'Acme Gateway'
     sessionStorage.setItem(
       'register_data',
       JSON.stringify({
@@ -458,6 +466,7 @@ describe('EmailVerifyView', () => {
       invitation_code: 'INVITE',
     })
     expect(apiClientPostMock).not.toHaveBeenCalled()
+    expect(showSuccessMock).toHaveBeenCalledWith('Account created for Acme Gateway')
     expect(pushMock).toHaveBeenCalledWith('/dashboard')
   })
 })

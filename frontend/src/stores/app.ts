@@ -250,14 +250,19 @@ export const useAppStore = defineStore('app', () => {
       return publicSettingsRequest
     }
 
+    // A last-known-good HTML fallback deliberately injects stale settings to
+    // preserve branding. Keep bypassing the client cache until a fresh API
+    // response clears this marker.
+    const refreshRequired = force || window.__APP_CONFIG_STALE__ === true
+
     // Check for injected config from server (eliminates flash)
-    if (!publicSettingsLoaded.value && !force && window.__APP_CONFIG__) {
+    if (!publicSettingsLoaded.value && !refreshRequired && window.__APP_CONFIG__) {
       applySettings(window.__APP_CONFIG__)
       return Promise.resolve(window.__APP_CONFIG__)
     }
 
     // Return cached data if available and not forcing refresh
-    if (publicSettingsLoaded.value && !force) {
+    if (publicSettingsLoaded.value && !refreshRequired) {
       if (cachedPublicSettings.value) {
         return Promise.resolve({ ...cachedPublicSettings.value })
       }
@@ -323,6 +328,7 @@ export const useAppStore = defineStore('app', () => {
     const request = apiRequest
       .then((data) => {
         applySettings(data)
+        delete window.__APP_CONFIG_STALE__
         return data
       })
       .catch((error) => {

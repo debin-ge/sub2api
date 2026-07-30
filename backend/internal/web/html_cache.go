@@ -15,12 +15,14 @@ type HTMLCache struct {
 	etag            string
 	baseHTMLHash    string // Hash of the original index.html (immutable after build)
 	settingsVersion uint64 // Incremented when settings change
+	stale           bool
 }
 
 // CachedHTML represents the cache state
 type CachedHTML struct {
 	Content []byte
 	ETag    string
+	Stale   bool
 }
 
 // NewHTMLCache creates a new HTML cache instance
@@ -43,11 +45,12 @@ func (c *HTMLCache) Invalidate() {
 	defer c.mu.Unlock()
 
 	c.settingsVersion++
-	c.cachedHTML = nil
-	c.etag = ""
+	if c.cachedHTML != nil {
+		c.stale = true
+	}
 }
 
-// Get returns the cached HTML or nil if cache is stale
+// Get returns the last successfully rendered HTML, including stale content.
 func (c *HTMLCache) Get() *CachedHTML {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -58,7 +61,16 @@ func (c *HTMLCache) Get() *CachedHTML {
 	return &CachedHTML{
 		Content: c.cachedHTML,
 		ETag:    c.etag,
+		Stale:   c.stale,
 	}
+}
+
+// Version returns the current settings generation.
+func (c *HTMLCache) Version() uint64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	return c.settingsVersion
 }
 
 // Set updates the cache with new rendered HTML
@@ -66,8 +78,27 @@ func (c *HTMLCache) Set(html []byte, settingsJSON []byte) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	c.set(html, settingsJSON)
+}
+
+// SetIfVersion updates the cache only if settings were not invalidated while
+// the rendered HTML was being prepared.
+func (c *HTMLCache) SetIfVersion(html []byte, settingsJSON []byte, version uint64) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.settingsVersion != version {
+		return false
+	}
+
+	c.set(html, settingsJSON)
+	return true
+}
+
+func (c *HTMLCache) set(html []byte, settingsJSON []byte) {
 	c.cachedHTML = html
 	c.etag = c.generateETag(settingsJSON)
+	c.stale = false
 }
 
 // generateETag creates an ETag from base HTML hash + settings hash
