@@ -17,22 +17,31 @@ func ValidateRadarBucketSnapshot(snapshot BucketSnapshotDTO) error {
 	if snapshot.CalculationVersion != radarQuotaCalculationVersion {
 		return ErrInvalidRadarBucketSnapshot
 	}
+	snapshot = NormalizeRadarBucketSnapshot(snapshot)
 	threshold := snapshot.PrivacyThreshold
 	if threshold < defaultRadarPublicMinBucketAccounts || snapshot.AccountsCount < threshold {
 		return ErrInvalidRadarBucketSnapshot
 	}
-	for _, window := range []*WindowStatsDTO{snapshot.FiveHour, snapshot.SevenDay} {
-		if window != nil && (window.ContributorsCount < threshold || window.ContributorsCount > snapshot.AccountsCount) {
+	definitions := radarQuotaWindowDefinitionsForPlan(snapshot.Platform, snapshot.PlanTier)
+	if len(definitions) == 0 || len(snapshot.Windows) != len(definitions) {
+		return ErrInvalidRadarBucketSnapshot
+	}
+	for index, window := range snapshot.Windows {
+		definition := definitions[index]
+		if window.Key != definition.Key || window.Label != definition.Label ||
+			window.DurationSeconds != int64(definition.Duration.Seconds()) || window.Currency != definition.Currency {
 			return ErrInvalidRadarBucketSnapshot
 		}
-	}
-	for _, window := range []*ModelWindowStatsDTO{snapshot.SevenDaySonnet, snapshot.SevenDayFable} {
-		if window != nil && (window.SampleSize < threshold || window.SampleSize > snapshot.AccountsCount || !isCanonicalRadarSnapshotModel(snapshot.Platform, window.Model)) {
+		if window.Stats != nil && (window.Stats.ContributorsCount < threshold || window.Stats.ContributorsCount > snapshot.AccountsCount) {
 			return ErrInvalidRadarBucketSnapshot
 		}
-	}
-	for _, breakdown := range [][]ModelCostBreakdownDTO{snapshot.ModelBreakdown5h, snapshot.ModelBreakdown7d} {
-		for _, model := range breakdown {
+		for _, modelWindow := range window.ModelWindows {
+			if modelWindow.SampleSize < threshold || modelWindow.SampleSize > snapshot.AccountsCount ||
+				!isCanonicalRadarSnapshotModel(snapshot.Platform, modelWindow.Model) {
+				return ErrInvalidRadarBucketSnapshot
+			}
+		}
+		for _, model := range window.ModelBreakdown {
 			if model.ContributorsCount < threshold || model.ContributorsCount > snapshot.AccountsCount || !isCanonicalRadarSnapshotModel(snapshot.Platform, model.Model) {
 				return ErrInvalidRadarBucketSnapshot
 			}

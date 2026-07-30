@@ -14,11 +14,11 @@ vi.mock('vue-i18n', async (importOriginal) => {
 })
 
 describe('ServiceHealthGrid', () => {
-  it('renders only supported added platforms without source links', () => {
+  it('renders the platform list already validated by the page without source links', () => {
     const wrapper = mount(ServiceHealthGrid, {
       props: {
         services: [service('openai_api')],
-        platforms: ['deepseek', 'openai', 'glm', 'google', 'deepseek'],
+        platforms: ['deepseek', 'openai', 'deepseek'],
       },
       global: { stubs: { Icon: true } },
     })
@@ -230,7 +230,7 @@ describe('ServiceHealthGrid', () => {
     expect(wrapper.get('[data-history-date="2026-07-09"]').attributes('data-history-status')).toBe('unknown')
   })
 
-  it('maps official platform cards and temporarily hides GLM', () => {
+  it('maps official platform cards supplied by the page', () => {
     const wrapper = mount(ServiceHealthGrid, {
       props: {
         services: [
@@ -239,7 +239,7 @@ describe('ServiceHealthGrid', () => {
           service('kimi', 'partial_outage'),
           service('minimax', 'major_outage'),
         ],
-        platforms: ['windsurf', 'deepseek', 'kimi', 'minimax', 'glm'],
+        platforms: ['windsurf', 'deepseek', 'kimi', 'minimax'],
       },
       global: { stubs: { Icon: true } },
     })
@@ -247,7 +247,6 @@ describe('ServiceHealthGrid', () => {
     expect(wrapper.findAll('[data-service-key]').map((card) => card.attributes('data-service-key'))).toEqual([
       'windsurf', 'deepseek', 'kimi', 'minimax',
     ])
-    expect(wrapper.text()).not.toContain('GLM')
     expect(wrapper.get('[data-service-key="deepseek"]').text()).toContain('Degraded performance')
     expect(wrapper.get('[data-service-key="minimax"]').text()).toContain('Major outage')
   })

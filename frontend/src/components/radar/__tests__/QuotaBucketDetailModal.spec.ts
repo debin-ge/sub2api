@@ -42,7 +42,7 @@ describe('QuotaBucketDetailModal', () => {
     expect(document.activeElement).toBe(close)
     expect(document.body.style.overflow).toBe('hidden')
     const accessibleTrend = document.body.querySelector<HTMLElement>('[data-testid="quota-modal-trend-summary"]')!
-    expect(accessibleTrend.textContent).toContain('5-hour utilization')
+    expect(accessibleTrend.textContent).toContain('5H')
     expect(accessibleTrend.textContent).toContain('Latest: 60%')
     expect(accessibleTrend.textContent).toContain('Minimum: 20%')
     expect(accessibleTrend.textContent).toContain('Maximum: 60%')
@@ -86,9 +86,8 @@ describe('QuotaBucketDetailModal', () => {
     const sevenDay = document.body.querySelector<HTMLButtonElement>('[data-window="7d"]')!
     sevenDay.click()
     await wrapper.vm.$nextTick()
-    expect(document.body.textContent).toContain('Sonnet')
-    expect(document.body.textContent).toContain('Fable')
     expect(document.body.textContent).toContain('claude-sonnet')
+    expect(document.body.textContent).toContain('claude-fable')
     expect(document.body.textContent).toContain('75%')
 
     document.body.querySelector<HTMLElement>('[data-testid="quota-modal-backdrop"]')!.click()
@@ -195,6 +194,7 @@ describe('QuotaBucketDetailModal', () => {
     const start = Date.parse('2026-07-06T08:00:00.000Z')
     trend.data_points = Array.from({ length: 672 }, (_, index) => ({
       timestamp: new Date(start + index * 15 * 60 * 1000).toISOString(),
+      windows: [],
       five_hour: {
         avg_utilization: index % 100,
         avg_cost: index,
@@ -254,7 +254,7 @@ describe('QuotaBucketDetailModal', () => {
 	  expect(document.body.querySelector('[data-window="5h"]')).toBeNull()
 	  expect(document.body.querySelector('[data-window="7d"]')?.getAttribute('aria-selected')).toBe('true')
 	  expect(document.body.textContent).toContain('Single-sample estimate · Low confidence: n=1')
-    expect(document.body.querySelector('[data-testid="quota-modal-trend-summary"]')?.textContent).toContain('7-day utilization')
+    expect(document.body.querySelector('[data-testid="quota-modal-trend-summary"]')?.textContent).toContain('7D')
   })
 
   it('renders a low-confidence singleton estimate for the generic Claude plan', async () => {

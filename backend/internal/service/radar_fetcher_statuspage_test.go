@@ -319,7 +319,11 @@ func TestMapStatuspageServiceHealthBuildsThirtyDayHistoryWithoutInventingCoverag
 
 	cards, err := MapStatuspageServiceHealth(RadarSourceStatusClaude, summary)
 	require.NoError(t, err)
-	require.Len(t, cards[0].History30d, 30)
+	require.Len(t, cards[0].History30d, serviceHealthHistoryDays)
+	require.Equal(t, serviceHealthHistoryDays, cards[0].HistoryDays)
+	require.Equal(t, serviceHealthUptimeWindowDays, cards[0].UptimeWindowDays)
+	require.Equal(t, serviceHealthRecentIncidentDays, cards[0].RecentIncidentDays)
+	require.Equal(t, serviceHealthIncidentPreviewLimit, cards[0].IncidentPreviewLimit)
 	require.Equal(t, "2026-06-17", cards[0].History30d[0].Date)
 	require.Equal(t, ServiceStatusUnknown, cards[0].History30d[0].Status)
 	require.NotNil(t, cards[0].History30d[0].Incidents)
@@ -819,6 +823,12 @@ func TestMergeStatuspageServiceHealthAlwaysReturnsFourCanonicalSafeCards(t *test
 		require.Equal(t, ServiceStatusUnknown, missing.Status)
 		require.Equal(t, StatusIndicatorUnknown, missing.StatusIndicator)
 		require.Nil(t, missing.LastUpdatedAt)
+	}
+	for _, card := range cards {
+		require.Equal(t, serviceHealthHistoryDays, card.HistoryDays)
+		require.Equal(t, serviceHealthUptimeWindowDays, card.UptimeWindowDays)
+		require.Equal(t, serviceHealthRecentIncidentDays, card.RecentIncidentDays)
+		require.Equal(t, serviceHealthIncidentPreviewLimit, card.IncidentPreviewLimit)
 	}
 }
 

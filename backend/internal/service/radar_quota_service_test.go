@@ -53,6 +53,13 @@ func (r *radarQuotaServiceTestRepo) AppendBucketSnapshot(context.Context, Bucket
 	return errors.New("unexpected write")
 }
 
+func (r *radarQuotaServiceTestRepo) ReplaceActiveBucketKeys(context.Context, []string) error {
+	r.mu.Lock()
+	r.writeCalls++
+	r.mu.Unlock()
+	return errors.New("unexpected write")
+}
+
 func (r *radarQuotaServiceTestRepo) ListBucketKeys(ctx context.Context) ([]string, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -504,6 +511,15 @@ func TestRadarServiceGetQuotaBucketsTrendMapsSortsUsesUTCAnchorAndDeepClones(t *
 	require.Equal(t, 700.0, *got.DataPoints[1].SevenDay.InferredLimitUSD)
 	require.Equal(t, 6, got.DataPoints[1].SevenDay.SampleSize)
 	require.Equal(t, InferenceConfidenceHigh, got.DataPoints[1].SevenDay.InferenceConfidence)
+	require.Equal(t, []string{radarQuotaWindowFiveHour, radarQuotaWindowSevenDay}, []string{
+		got.DataPoints[1].Windows[0].Key,
+		got.DataPoints[1].Windows[1].Key,
+	})
+	require.Equal(t, "5H", got.DataPoints[1].Windows[0].Label)
+	require.Equal(t, int64((5*time.Hour)/time.Second), got.DataPoints[1].Windows[0].DurationSeconds)
+	require.Equal(t, "USD", got.DataPoints[1].Windows[0].Currency)
+	require.Equal(t, 5.0, got.DataPoints[1].Windows[0].Stats.AvgCost)
+	require.Equal(t, 500.0, *got.DataPoints[1].Windows[0].Stats.InferredLimitUSD)
 	calls := repo.snapshotTrendCalls()
 	require.Equal(t, []radarQuotaTrendCall{{
 		bucket: "anthropic/pro",
@@ -514,12 +530,16 @@ func TestRadarServiceGetQuotaBucketsTrendMapsSortsUsesUTCAnchorAndDeepClones(t *
 	got.DataPoints[1].FiveHour.AvgCost = 0
 	*got.DataPoints[1].FiveHour.InferredLimitUSD = 0
 	*got.DataPoints[1].SevenDay.InferredLimitUSD = 0
+	got.DataPoints[1].Windows[0].Stats.AvgCost = 0
+	*got.DataPoints[1].Windows[0].Stats.InferredLimitUSD = 0
 	again, err := service.GetQuotaBucketsTrend(context.Background(), "anthropic/pro", 7)
 	require.NoError(t, err)
 	require.Equal(t, older.CapturedAt, again.DataPoints[0].Timestamp)
 	require.Equal(t, 5.0, again.DataPoints[1].FiveHour.AvgCost)
 	require.Equal(t, 500.0, *again.DataPoints[1].FiveHour.InferredLimitUSD)
 	require.Equal(t, 700.0, *again.DataPoints[1].SevenDay.InferredLimitUSD)
+	require.Equal(t, 5.0, again.DataPoints[1].Windows[0].Stats.AvgCost)
+	require.Equal(t, 500.0, *again.DataPoints[1].Windows[0].Stats.InferredLimitUSD)
 	require.Len(t, repo.snapshotTrendCalls(), 1)
 }
 

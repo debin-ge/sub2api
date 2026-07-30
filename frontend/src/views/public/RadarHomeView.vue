@@ -60,7 +60,7 @@
               {{ t('radar.quota.title', 'Quota radar') }}
             </h2>
             <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">
-              {{ t('radar.quota.subtitle', '5H and 7D quota limits with sample sizes by plan.') }}
+              {{ t('radar.quota.subtitle', 'API-equivalent value estimates with sample sizes for each available quota window.') }}
             </p>
           </div>
           <RadarSectionState
@@ -75,6 +75,8 @@
             <QuotaBucketGrid
               v-if="quotaData"
               :buckets="quotaData.buckets"
+              :sample-size-warn-below="quotaData.sample_size_warn_below"
+              @select="openQuotaDetails"
             />
           </RadarSectionState>
         </section>
@@ -100,6 +102,22 @@
       </main>
     </template>
 
+    <QuotaBucketDetailModal
+      :show="selectedQuotaBucket !== null"
+      :bucket="selectedQuotaBucket"
+      :trend="selectedQuotaTrend"
+      :trend-loading="selectedQuotaTrendLoading"
+      :trend-error="selectedQuotaTrendError"
+      :sample-size-warn-below="quotaData?.sample_size_warn_below"
+      @close="selectedQuotaBucket = null"
+    />
+
+    <DataSourceFooter
+      v-if="!radar.allInitialFailed.value"
+      :sources="sourcesData ?? []"
+      :loading="radar.sources.loading.value"
+    />
+
     <footer
       data-testid="radar-footer"
       class="border-t border-gray-200/50 px-6 py-8 dark:border-dark-800/50"
@@ -121,6 +139,8 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import DegradationRadarTabs from '@/components/radar/DegradationRadarTabs.vue'
+import DataSourceFooter from '@/components/radar/DataSourceFooter.vue'
+import QuotaBucketDetailModal from '@/components/radar/QuotaBucketDetailModal.vue'
 import QuotaBucketGrid from '@/components/radar/QuotaBucketGrid.vue'
 import RadarHero from '@/components/radar/RadarHero.vue'
 import RadarPageHeader from '@/components/radar/RadarPageHeader.vue'
@@ -131,9 +151,7 @@ import userChannelsAPI, { type UserAvailableChannel } from '@/api/channels'
 import {
   usePublicRadar,
 } from '@/composables/usePublicRadar'
-import type {
-  ServiceHealthDTO,
-} from '@/types/radar'
+import type { BucketSnapshotDTO } from '@/types/radar'
 import { radarCatalogPlatforms } from '@/utils/radarCatalog'
 
 const { t } = useI18n()
@@ -142,28 +160,62 @@ const radar = usePublicRadar()
 const catalogChannels = shallowRef<UserAvailableChannel[]>([])
 const catalogLoading = ref(true)
 const catalogError = ref<'load_failed' | null>(null)
+const selectedQuotaBucket = ref<BucketSnapshotDTO | null>(null)
 let catalogController: AbortController | null = null
-
-const supportedHealthPlatforms = new Set(['anthropic', 'openai', 'windsurf', 'deepseek', 'kimi', 'minimax'])
-const healthPlatformOrder = ['anthropic', 'deepseek', 'kimi', 'minimax', 'openai', 'windsurf'] as const
 
 const siteName = computed(() => appStore.cachedPublicSettings?.site_name || appStore.siteName || 'Sub2API')
 const currentYear = computed(() => new Date().getFullYear())
 const healthData = computed(() => radar.health.data.value)
 const quotaData = computed(() => radar.quotaLatest.data.value)
+const selectedQuotaTrendState = computed(() => (
+  selectedQuotaBucket.value
+    ? radar.getQuotaTrendState(selectedQuotaBucket.value.bucket_key, 7)
+    : null
+))
+const selectedQuotaTrend = computed(() => selectedQuotaTrendState.value?.data.value ?? null)
+const selectedQuotaTrendLoading = computed(() => selectedQuotaTrendState.value?.loading.value ?? false)
+const selectedQuotaTrendError = computed(() => selectedQuotaTrendState.value?.error.value ?? null)
 const degradationData = computed(() => radar.degradationLatest.data.value)
 const lmarenaData = computed(() => radar.lmarena.data.value)
 const sourcesData = computed(() => radar.sources.data.value)
-const catalogPlatforms = computed(() => radarCatalogPlatforms(catalogChannels.value)
-  .filter((platform) => supportedHealthPlatforms.has(platform)))
+const healthSourcePlatforms = computed(() => {
+  const byPlatform = new Map<string, number>()
+  for (const source of sourcesData.value ?? []) {
+    const platform = source.platform?.trim().toLowerCase()
+    if (!platform || source.platform_order === null) continue
+    const current = byPlatform.get(platform)
+    if (current === undefined || source.platform_order < current) {
+      byPlatform.set(platform, source.platform_order)
+    }
+  }
+  return [...byPlatform.entries()]
+    .sort(([leftPlatform, leftOrder], [rightPlatform, rightOrder]) => (
+      leftOrder - rightOrder || leftPlatform.localeCompare(rightPlatform)
+    ))
+    .map(([platform]) => platform)
+})
+const catalogPlatforms = computed(() => {
+  const available = new Set(radarCatalogPlatforms(catalogChannels.value))
+  return healthSourcePlatforms.value.filter((platform) => available.has(platform))
+})
 const responseHealthPlatforms = computed(() => {
-  const platforms = new Set((healthData.value ?? [])
-    .map((service) => healthPlatformForService(service))
-    .filter((platform): platform is string => platform !== null))
-  return healthPlatformOrder.filter((platform) => platforms.has(platform))
+  const byPlatform = new Map<string, number>()
+  for (const service of healthData.value ?? []) {
+    const platform = service.platform.trim().toLowerCase()
+    if (!platform) continue
+    const current = byPlatform.get(platform)
+    if (current === undefined || service.platform_order < current) {
+      byPlatform.set(platform, service.platform_order)
+    }
+  }
+  return [...byPlatform.entries()]
+    .sort(([leftPlatform, leftOrder], [rightPlatform, rightOrder]) => (
+      leftOrder - rightOrder || leftPlatform.localeCompare(rightPlatform)
+    ))
+    .map(([platform]) => platform)
 })
 const healthPlatforms = computed(() => (
-  !catalogLoading.value && catalogError.value === null
+  !catalogLoading.value && catalogError.value === null && healthSourcePlatforms.value.length > 0
     ? catalogPlatforms.value
     : responseHealthPlatforms.value
 ))
@@ -210,22 +262,9 @@ const quotaEmptyMessage = computed(() => {
   )
 })
 
-function healthPlatformForService(service: ServiceHealthDTO): string | null {
-  switch (service.service_key) {
-    case 'claude_api':
-    case 'claude_code':
-      return 'anthropic'
-    case 'openai_api':
-    case 'codex_web':
-      return 'openai'
-    case 'windsurf':
-    case 'deepseek':
-    case 'kimi':
-    case 'minimax':
-      return service.service_key
-    default:
-      return null
-  }
+function openQuotaDetails(bucket: BucketSnapshotDTO): void {
+  selectedQuotaBucket.value = bucket
+  void radar.loadQuotaTrend(bucket.bucket_key, 7).catch(() => undefined)
 }
 
 onMounted(() => {

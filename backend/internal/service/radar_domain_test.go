@@ -141,6 +141,40 @@ func TestCanonicalRadarServicesReturnsIndependentRegistry(t *testing.T) {
 	require.Equal(t, want, CanonicalRadarServices())
 }
 
+func TestRadarRegistryOwnsServicePlatformMetadata(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, []RadarSourceKey{
+		RadarSourceStatusClaude,
+		RadarSourceStatusOpenAI,
+		RadarSourceStatusWindsurf,
+		RadarSourceStatusKimi,
+		RadarSourceStatusMiniMaxChina,
+		RadarSourceStatusDeepSeek,
+	}, statuspageRadarSources())
+
+	tests := []struct {
+		service  ServiceKey
+		platform string
+		order    int
+	}{
+		{service: ServiceKeyClaudeAPI, platform: PlatformAnthropic, order: 0},
+		{service: ServiceKeyClaudeCode, platform: PlatformAnthropic, order: 0},
+		{service: ServiceKeyDeepSeek, platform: "deepseek", order: 1},
+		{service: ServiceKeyKimi, platform: "kimi", order: 2},
+		{service: ServiceKeyMiniMax, platform: "minimax", order: 3},
+		{service: ServiceKeyCodexWeb, platform: PlatformOpenAI, order: 4},
+		{service: ServiceKeyOpenAIAPI, platform: PlatformOpenAI, order: 4},
+		{service: ServiceKeyWindsurf, platform: "windsurf", order: 5},
+	}
+	for _, test := range tests {
+		platform, order, ok := radarServicePlatform(test.service)
+		require.True(t, ok)
+		require.Equal(t, test.platform, platform)
+		require.Equal(t, test.order, order)
+	}
+}
+
 func TestRadarDomainJSONKeysUseSnakeCase(t *testing.T) {
 	t.Parallel()
 
@@ -180,6 +214,8 @@ func TestRadarDomainJSONKeysUseSnakeCase(t *testing.T) {
 			name: "service health",
 			got: ServiceHealthDTO{
 				ServiceKey:      ServiceKeyOpenAIAPI,
+				Platform:        PlatformOpenAI,
+				PlatformOrder:   4,
 				Name:            "OpenAI API",
 				Status:          ServiceStatusOperational,
 				StatusIndicator: StatusIndicatorNone,
@@ -189,7 +225,7 @@ func TestRadarDomainJSONKeysUseSnakeCase(t *testing.T) {
 				SourceURL:       "https://status.openai.com",
 				Stale:           false,
 			},
-			want: []string{"history_30d", "last_incident", "last_updated_at", "name", "service_key", "source_url", "stale", "status", "status_indicator", "uptime_90d"},
+			want: []string{"history_30d", "history_days", "incident_preview_limit", "last_incident", "last_updated_at", "name", "platform", "platform_order", "recent_incident_days", "service_key", "source_url", "stale", "status", "status_indicator", "uptime_90d", "uptime_window_days"},
 		},
 		{
 			name: "window stats",
@@ -234,7 +270,7 @@ func TestRadarDomainJSONKeysUseSnakeCase(t *testing.T) {
 				CapturedAt:         now,
 				Stale:              false,
 			},
-			want: []string{"accounts_count", "bucket_key", "calculation_version", "captured_at", "display_name", "five_hour", "model_breakdown_5h", "model_breakdown_7d", "plan_tier", "platform", "privacy_threshold", "seven_day", "seven_day_fable", "seven_day_sonnet", "stale"},
+			want: []string{"accounts_count", "bucket_key", "calculation_version", "captured_at", "display_name", "five_hour", "model_breakdown_5h", "model_breakdown_7d", "plan_tier", "platform", "privacy_threshold", "seven_day", "seven_day_fable", "seven_day_sonnet", "stale", "windows"},
 		},
 		{
 			name: "quota latest",
@@ -254,7 +290,7 @@ func TestRadarDomainJSONKeysUseSnakeCase(t *testing.T) {
 		{
 			name: "quota trend point",
 			got:  QuotaTrendPointDTO{Timestamp: now, FiveHour: &QuotaTrendWindowDTO{}, SevenDay: &QuotaTrendWindowDTO{}},
-			want: []string{"five_hour", "seven_day", "timestamp"},
+			want: []string{"five_hour", "seven_day", "timestamp", "windows"},
 		},
 		{
 			name: "quota trend",
@@ -289,7 +325,7 @@ func TestRadarDomainJSONKeysUseSnakeCase(t *testing.T) {
 				SourcesLastUpdated: map[string]*time.Time{"lmarena": &now},
 				Stale:              false,
 			},
-			want: []string{"available_models", "default_model_slugs", "intelligence_index_version", "lmarena_top5", "models", "sources_last_updated", "stale"},
+			want: []string{"available_models", "default_model_count", "default_model_slugs", "intelligence_index_version", "lmarena_top5", "max_selected_models", "metrics", "models", "score_max", "score_min", "score_step", "sources_last_updated", "stale"},
 		},
 		{
 			name: "lmarena",
@@ -312,7 +348,7 @@ func TestRadarDomainJSONKeysUseSnakeCase(t *testing.T) {
 				IsHealthy:     true,
 				Stale:         false,
 			},
-			want: []string{"error", "http_status", "interval", "is_healthy", "key", "last_attempt_at", "last_success_at", "name", "next_fire_at", "stale", "state", "url"},
+			want: []string{"error", "http_status", "interval", "is_healthy", "key", "last_attempt_at", "last_success_at", "name", "next_fire_at", "platform", "platform_order", "stale", "state", "url"},
 		},
 	}
 
@@ -471,6 +507,10 @@ func TestRadarDomainJSONPreservesNullsAndEmptyCollections(t *testing.T) {
 	}
 	require.Contains(t, source, "http_status")
 	require.Nil(t, source["http_status"])
+	require.Contains(t, source, "platform")
+	require.Nil(t, source["platform"])
+	require.Contains(t, source, "platform_order")
+	require.Nil(t, source["platform_order"])
 	require.NotContains(t, source, "error")
 	require.Equal(t, "never_attempted", source["state"])
 }

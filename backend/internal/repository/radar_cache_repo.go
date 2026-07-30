@@ -21,6 +21,7 @@ import (
 const (
 	radarBucketKeyPrefix         = "radar:quota:bucket:"
 	radarBucketIndexKey          = "radar:quota:buckets"
+	radarActiveBucketIndexKey    = "radar:quota:active_buckets"
 	radarAASourceKey             = "radar:degradation:aa"
 	radarAAPerfKeyPrefix         = "radar:degradation:aa:perf:"
 	radarLMArenaSourceKey        = "radar:degradation:lmarena"
@@ -750,6 +751,7 @@ func NewRadarCacheRepository(rdb *redis.Client, cfg *config.Config) (service.Rad
 // capture. Accepted older points do not refresh TTL; an equal-score correction
 // replaces the newest snapshot and refreshes its full retention.
 func (r *radarCacheRepository) AppendBucketSnapshot(ctx context.Context, snapshot service.BucketSnapshotDTO) error {
+	snapshot = service.NormalizeRadarBucketSnapshot(snapshot)
 	if err := validateRadarSnapshot(snapshot); err != nil {
 		return err
 	}
@@ -800,20 +802,76 @@ func (r *radarCacheRepository) AppendBucketSnapshot(ctx context.Context, snapsho
 	return nil
 }
 
-func (r *radarCacheRepository) ListBucketKeys(ctx context.Context) ([]string, error) {
-	indexed, err := r.rdb.SMembers(ctx, radarBucketIndexKey).Result()
+// ReplaceActiveBucketKeys publishes the complete current bucket set in one
+// atomic Redis write. The append-only historical index remains independent so
+// buckets that disappear after an account plan change retain their trend data
+// without remaining visible in the latest response.
+func (r *radarCacheRepository) ReplaceActiveBucketKeys(ctx context.Context, bucketKeys []string) error {
+	normalized := make([]string, 0, len(bucketKeys))
+	seen := make(map[string]struct{}, len(bucketKeys))
+	for _, bucketKey := range bucketKeys {
+		if _, _, err := service.ParseRadarBucketKey(bucketKey); err != nil {
+			return err
+		}
+		if _, duplicate := seen[bucketKey]; duplicate {
+			continue
+		}
+		seen[bucketKey] = struct{}{}
+		normalized = append(normalized, bucketKey)
+	}
+	sort.Strings(normalized)
+	encoded, err := json.Marshal(normalized)
 	if err != nil {
+		return errors.New("encode active radar bucket index failed")
+	}
+	if err := r.rdb.Set(ctx, radarActiveBucketIndexKey, encoded, 0).Err(); err != nil {
+		r.metrics.RecordRedis("replace_active_buckets", "write", err)
+		return errors.New("replace active radar bucket index failed")
+	}
+	r.metrics.RecordRedis("replace_active_buckets", "write", nil)
+	r.updateRadarMemoryLedger(ctx, "metadata", radarActiveBucketIndexKey)
+	return nil
+}
+
+func (r *radarCacheRepository) ListBucketKeys(ctx context.Context) ([]string, error) {
+	activeRaw, err := r.rdb.Get(ctx, radarActiveBucketIndexKey).Bytes()
+	activeIndex := err == nil
+	var indexed []string
+	switch {
+	case err == nil:
+		if json.Unmarshal(activeRaw, &indexed) != nil || indexed == nil || !sort.StringsAreSorted(indexed) {
+			r.metrics.RecordRedis("list_buckets", "read", errors.New("invalid active bucket index"))
+			return nil, errors.New("list active radar bucket index failed")
+		}
+		for i, bucketKey := range indexed {
+			if _, _, parseErr := service.ParseRadarBucketKey(bucketKey); parseErr != nil ||
+				(i > 0 && indexed[i-1] == bucketKey) {
+				r.metrics.RecordRedis("list_buckets", "read", errors.New("invalid active bucket index"))
+				return nil, errors.New("list active radar bucket index failed")
+			}
+		}
+	case errors.Is(err, redis.Nil):
+		// Rolling-upgrade fallback: until the first successful aggregation from
+		// the new binary publishes an active manifest, preserve legacy behavior.
+		indexed, err = r.rdb.SMembers(ctx, radarBucketIndexKey).Result()
+		if err != nil {
+			r.metrics.RecordRedis("list_buckets", "read", err)
+			return nil, fmt.Errorf("list radar bucket index: %w", err)
+		}
+	default:
 		r.metrics.RecordRedis("list_buckets", "read", err)
-		return nil, fmt.Errorf("list radar bucket index: %w", err)
+		return nil, errors.New("list active radar bucket index failed")
 	}
 	if len(indexed) == 0 {
 		r.metrics.RecordRedis("list_buckets", "read", nil)
 		return make([]string, 0), nil
 	}
 
-	for _, bucketKey := range indexed {
-		if _, _, err := service.ParseRadarBucketKey(bucketKey); err != nil {
-			return nil, fmt.Errorf("validate indexed radar bucket: %w", err)
+	if !activeIndex {
+		for _, bucketKey := range indexed {
+			if _, _, err := service.ParseRadarBucketKey(bucketKey); err != nil {
+				return nil, fmt.Errorf("validate indexed radar bucket: %w", err)
+			}
 		}
 	}
 
@@ -836,7 +894,10 @@ func (r *radarCacheRepository) ListBucketKeys(ctx context.Context) ([]string, er
 		}
 		active = append(active, bucketKey)
 	}
-	if err := r.cleanupMissingBucketIndexEntries(ctx, missingCandidates); err != nil {
+	if !activeIndex {
+		err = r.cleanupMissingBucketIndexEntries(ctx, missingCandidates)
+	}
+	if err != nil {
 		r.metrics.RecordRedis("list_buckets", "write", err)
 		return nil, err
 	}
@@ -1590,6 +1651,13 @@ func (r *radarCacheRepository) GetRadarMetricsSnapshot(ctx context.Context) (ser
 		}
 	}
 
+	currentBucketKeys, err := r.ListBucketKeys(ctx)
+	if err != nil {
+		result.Partial = true
+		return result, nil
+	}
+	result.ActiveBucketCount = len(currentBucketKeys)
+
 	bucketKeys, err := r.scanRadarSetBounded(ctx, radarBucketIndexKey)
 	if err != nil {
 		r.metrics.RecordRedis("cache_size", "read", err)
@@ -1622,8 +1690,6 @@ func (r *radarCacheRepository) GetRadarMetricsSnapshot(ctx context.Context) (ser
 		result.Partial = true
 		return result, nil
 	}
-	result.ActiveBucketCount = len(activeBuckets)
-
 	validFields, err := r.refreshRadarQuotaMemoryLedger(ctx, activeBuckets)
 	if err != nil {
 		result.Partial = true
@@ -1643,7 +1709,7 @@ func (r *radarCacheRepository) GetRadarMetricsSnapshot(ctx context.Context) (ser
 			validFields[field] = struct{}{}
 		}
 	}
-	for _, key := range []string{radarSourceMetaKey, radarSourceVersionKey, radarSourceCadenceKey, radarSourceCadenceVersionKey, radarBucketIndexKey, radarMetricsStateKey} {
+	for _, key := range []string{radarSourceMetaKey, radarSourceVersionKey, radarSourceCadenceKey, radarSourceCadenceVersionKey, radarBucketIndexKey, radarActiveBucketIndexKey, radarMetricsStateKey} {
 		field := radarMetricsLedgerField("metadata", key)
 		if _, stored, err := r.writeRadarMemoryLedgerEntry(ctx, "metadata", key); err != nil {
 			result.Partial = true
@@ -1736,6 +1802,7 @@ func decodeRadarSnapshot(encoded, bucketKey string) (service.BucketSnapshotDTO, 
 	if err := json.Unmarshal([]byte(encoded), &snapshot); err != nil {
 		return service.BucketSnapshotDTO{}, errInvalidStoredRadarBucketSnapshot
 	}
+	snapshot = service.NormalizeRadarBucketSnapshot(snapshot)
 	if err := validateRadarSnapshot(snapshot); err != nil {
 		return service.BucketSnapshotDTO{}, errInvalidStoredRadarBucketSnapshot
 	}

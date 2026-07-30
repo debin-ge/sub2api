@@ -173,13 +173,20 @@ func (*radarQuotaBatchReaderFake) GetAccountModelBreakdown(context.Context, int6
 }
 
 type radarQuotaCacheFake struct {
-	writes []BucketSnapshotDTO
-	errors map[string]error
+	writes          []BucketSnapshotDTO
+	errors          map[string]error
+	activeKeyWrites [][]string
+	activeKeyError  error
 }
 
 func (f *radarQuotaCacheFake) AppendBucketSnapshot(_ context.Context, snapshot BucketSnapshotDTO) error {
 	f.writes = append(f.writes, snapshot)
 	return f.errors[snapshot.BucketKey]
+}
+
+func (f *radarQuotaCacheFake) ReplaceActiveBucketKeys(_ context.Context, bucketKeys []string) error {
+	f.activeKeyWrites = append(f.activeKeyWrites, append([]string{}, bucketKeys...))
+	return f.activeKeyError
 }
 
 func radarQuotaTestConfig() *config.RadarConfig {
@@ -435,6 +442,10 @@ func TestRadarQuotaAggregatorConstructorAndInference(t *testing.T) {
 					"model-c": {Requests: 8, AccountCost: 80},
 				},
 			},
+			map[int64]radarQuotaBucketAccount{
+				1: {accountID: 1},
+				2: {accountID: 2},
+			},
 		)
 
 		require.InDelta(t, 40, stats[1].Cost, 1e-12)
@@ -447,6 +458,39 @@ func TestRadarQuotaAggregatorConstructorAndInference(t *testing.T) {
 		require.InDelta(t, 180, *bucketResult.limit, 1e-12, "account candidates use an arithmetic mean")
 		require.InDelta(t, 20, *bucketResult.stdev, 1e-12)
 		require.Equal(t, InferenceConfidenceMedium, bucketResult.confidence)
+	})
+
+	t.Run("current account multiplier rebases raw provider cost safely", func(t *testing.T) {
+		multiplier20x := 20.0
+		zero := 0.0
+		negative := -5.0
+		notANumber := math.NaN()
+		infinity := math.Inf(1)
+
+		tests := []struct {
+			name       string
+			rawCost    float64
+			multiplier *float64
+			wantCost   float64
+			wantOK     bool
+		}{
+			{name: "nil defaults to one", rawCost: 9, wantCost: 9, wantOK: true},
+			{name: "current 20x multiplier", rawCost: 9, multiplier: &multiplier20x, wantCost: 180, wantOK: true},
+			{name: "zero excludes cost", rawCost: 9, multiplier: &zero},
+			{name: "negative falls back to one", rawCost: 9, multiplier: &negative, wantCost: 9, wantOK: true},
+			{name: "nan falls back to one", rawCost: 9, multiplier: &notANumber, wantCost: 9, wantOK: true},
+			{name: "infinity falls back to one", rawCost: 9, multiplier: &infinity, wantCost: 9, wantOK: true},
+			{name: "invalid raw cost is excluded", rawCost: math.NaN(), multiplier: &multiplier20x},
+		}
+		for _, testCase := range tests {
+			t.Run(testCase.name, func(t *testing.T) {
+				got, ok := radarQuotaCurrentAccountCost(testCase.rawCost, radarQuotaBucketAccount{
+					rateMultiplier: testCase.multiplier,
+				})
+				require.Equal(t, testCase.wantOK, ok)
+				require.InDelta(t, testCase.wantCost, got, 1e-12)
+			})
+		}
 	})
 
 	t.Run("bucket identity normalizes safe tiers without unsafe fallback", func(t *testing.T) {
@@ -611,7 +655,7 @@ func TestRadarQuotaAggregatorPublishesAnthropicOAuthWithoutPlanAsGeneric(t *test
 	require.Len(t, batch.exactBreakdownCalls, 1)
 	require.Len(t, cache.writes, 1)
 	snapshot := cache.writes[0]
-	require.Equal(t, 3, snapshot.CalculationVersion)
+	require.Equal(t, radarQuotaCalculationVersion, snapshot.CalculationVersion)
 	require.Equal(t, "anthropic/generic", snapshot.BucketKey)
 	require.Equal(t, "Claude Subscription", snapshot.DisplayName)
 	require.NotNil(t, snapshot.FiveHour)
@@ -837,6 +881,81 @@ func TestRadarQuotaAggregatorPublishesOnlySupportedAccountPlanIntersection(t *te
 		cache.writes[4].DisplayName,
 		cache.writes[5].DisplayName,
 	})
+	require.Equal(t, 2, cache.writes[4].AccountsCount)
+	require.Equal(t, 3, cache.writes[5].AccountsCount)
+	require.Equal(t, [][]string{{
+		"anthropic/max_20x",
+		"anthropic/max_5x",
+		"anthropic/pro",
+		"openai/plus",
+		"openai/pro_20x",
+		"openai/pro_5x",
+	}}, cache.activeKeyWrites)
+}
+
+func TestRadarQuotaAggregatorOpenAIProUpgradeUsesCurrent20xMultiplier(t *testing.T) {
+	currentNow := time.Date(2026, time.July, 30, 12, 0, 0, 0, time.UTC)
+	weeklyReset := currentNow.Add(48 * time.Hour)
+	multiplier5x := 5.0
+	multiplier20x := 20.0
+	legacy := radarQuotaOpenAIAccount(1, "prolite")
+	legacy.RateMultiplier = &multiplier5x
+	current := radarQuotaOpenAIAccount(2, "pro")
+	current.RateMultiplier = &multiplier20x
+	accounts := &radarQuotaAccountListerFake{accounts: []Account{legacy, current}}
+	usage := &radarQuotaUsageReaderFake{snapshots: map[int64]*UsageInfo{
+		1: {SevenDay: radarQuotaWeeklyProgress(10, weeklyReset)},
+		2: {SevenDay: radarQuotaWeeklyProgress(20, weeklyReset)},
+	}}
+	batch := &radarQuotaBatchReaderFake{exactBreakdownResults: []map[int64]map[string]ModelCostStats{
+		{
+			1: {"gpt-5.3-codex": {Requests: 3, AccountCost: 9}},
+			2: {"gpt-5.3-codex": {Requests: 6, AccountCost: 18}},
+		},
+		{
+			1: {"gpt-5.3-codex": {Requests: 3, AccountCost: 9}},
+			2: {"gpt-5.3-codex": {Requests: 6, AccountCost: 18}},
+		},
+	}}
+	cache := &radarQuotaCacheFake{}
+	cfg := radarQuotaTestConfig()
+	cfg.PublicMinBucketAccounts = 1
+	aggregator := newRadarQuotaTestAggregator(
+		t,
+		accounts,
+		usage,
+		batch,
+		cache,
+		cfg,
+		func() time.Time { return currentNow },
+	)
+
+	require.NoError(t, aggregator.RunOnce(context.Background()))
+	require.Len(t, cache.writes, 2)
+	require.Equal(t, [][]string{{"openai/pro_20x", "openai/pro_5x"}}, cache.activeKeyWrites)
+
+	accounts.accounts[0].Credentials["plan_type"] = "pro"
+	accounts.accounts[0].RateMultiplier = &multiplier20x
+	currentNow = currentNow.Add(15 * time.Minute)
+
+	require.NoError(t, aggregator.RunOnce(context.Background()))
+	require.Len(t, cache.writes, 3, "the second run publishes one merged current 20x bucket")
+	require.Equal(t, [][]string{
+		{"openai/pro_20x", "openai/pro_5x"},
+		{"openai/pro_20x"},
+	}, cache.activeKeyWrites)
+	snapshot := cache.writes[2]
+	require.Equal(t, radarQuotaCalculationVersion, snapshot.CalculationVersion)
+	require.Equal(t, "openai/pro_20x", snapshot.BucketKey)
+	require.Equal(t, "ChatGPT Pro 20x", snapshot.DisplayName)
+	require.Equal(t, 2, snapshot.AccountsCount)
+	require.NotNil(t, snapshot.SevenDay)
+	require.Equal(t, 2, snapshot.SevenDay.SampleSize)
+	require.InDelta(t, 15, snapshot.SevenDay.AvgUtilization, 1e-12)
+	require.InDelta(t, 270, snapshot.SevenDay.AvgCost, 1e-12)
+	require.InDelta(t, 1800, *snapshot.SevenDay.InferredLimitUSD, 1e-12)
+	require.InDelta(t, 0, *snapshot.SevenDay.InferredStdev, 1e-12)
+	require.Equal(t, InferenceConfidenceMedium, snapshot.SevenDay.InferenceConfidence)
 }
 
 func TestRadarQuotaAggregatorPublishesSingleAccountBucketWithSevenDayOnly(t *testing.T) {
@@ -880,10 +999,14 @@ func TestRadarQuotaAggregatorPublishesSingleAccountBucketWithSevenDayOnly(t *tes
 
 func TestRadarQuotaAggregatorUsesOpenAISparkShadowSnapshotsOncePerParent(t *testing.T) {
 	now := time.Date(2026, time.July, 19, 11, 0, 0, 0, time.UTC)
+	multiplier := 20.0
 	parents := []Account{
 		radarQuotaOpenAIAccount(1, "pro"),
 		radarQuotaOpenAIAccount(2, "pro"),
 		radarQuotaOpenAIAccount(3, "pro"),
+	}
+	for index := range parents {
+		parents[index].RateMultiplier = &multiplier
 	}
 	parent1, parent2, parent3 := int64(1), int64(2), int64(3)
 	accounts := &radarQuotaAccountListerFake{accounts: []Account{
@@ -901,7 +1024,13 @@ func TestRadarQuotaAggregatorUsesOpenAISparkShadowSnapshotsOncePerParent(t *test
 		102: {SevenDay: radarQuotaWeeklyProgress(20, weeklyReset)}, // parent has no passive snapshot
 		103: {SevenDay: radarQuotaWeeklyProgress(30, weeklyReset)},
 	}}
-	batch := &radarQuotaBatchReaderFake{}
+	batch := &radarQuotaBatchReaderFake{exactBreakdownResults: []map[int64]map[string]ModelCostStats{
+		{
+			1:   {"gpt-5.3-codex": {Requests: 1, AccountCost: 9}},
+			102: {"gpt-5.3-codex": {Requests: 2, AccountCost: 18}},
+			103: {"gpt-5.3-codex": {Requests: 3, AccountCost: 27}},
+		},
+	}}
 	cache := &radarQuotaCacheFake{}
 	aggregator := newRadarQuotaTestAggregator(t, accounts, usage, batch, cache, radarQuotaTestConfig(), func() time.Time { return now })
 
@@ -913,6 +1042,9 @@ func TestRadarQuotaAggregatorUsesOpenAISparkShadowSnapshotsOncePerParent(t *test
 	require.Nil(t, snapshot.FiveHour)
 	require.NotNil(t, snapshot.SevenDay)
 	require.InDelta(t, 20, snapshot.SevenDay.AvgUtilization, 1e-12)
+	require.InDelta(t, 360, snapshot.SevenDay.AvgCost, 1e-12)
+	require.Equal(t, 3, snapshot.SevenDay.SampleSize)
+	require.InDelta(t, 1800, *snapshot.SevenDay.InferredLimitUSD, 1e-12)
 	require.Empty(t, batch.windowCalls)
 	require.Empty(t, batch.breakdownCalls)
 	require.Equal(t, []int64{1, 102, 103}, []int64{
@@ -926,7 +1058,7 @@ func TestRadarQuotaAggregatorUsesOpenAISparkShadowSnapshotsOncePerParent(t *test
 func TestRadarQuotaAggregatorRunOnceFailurePrivacyAndDeterminism(t *testing.T) {
 	now := time.Date(2026, time.July, 13, 0, 0, 0, 0, time.UTC)
 
-	t.Run("empty candidate set performs no reader batch or cache calls", func(t *testing.T) {
+	t.Run("empty candidate set clears the active manifest without snapshot reads or writes", func(t *testing.T) {
 		accounts := &radarQuotaAccountListerFake{accounts: []Account{{ID: 1, Platform: PlatformGemini, Type: AccountTypeOAuth}}}
 		usage := &radarQuotaUsageReaderFake{}
 		batch := &radarQuotaBatchReaderFake{}
@@ -938,6 +1070,7 @@ func TestRadarQuotaAggregatorRunOnceFailurePrivacyAndDeterminism(t *testing.T) {
 		require.Empty(t, batch.windowCalls)
 		require.Empty(t, batch.breakdownCalls)
 		require.Empty(t, cache.writes)
+		require.Equal(t, [][]string{{}}, cache.activeKeyWrites)
 	})
 
 	t.Run("successful lister cancellation is observed before the zero-candidate return", func(t *testing.T) {
@@ -1302,6 +1435,34 @@ func TestRadarQuotaAggregatorRunOnceFailurePrivacyAndDeterminism(t *testing.T) {
 			cache.writes[0].BucketKey,
 			cache.writes[1].BucketKey,
 		})
+		require.Empty(t, cache.activeKeyWrites, "a partial snapshot write must not switch the active manifest")
+	})
+
+	t.Run("active manifest failure keeps the run failed after snapshots are written", func(t *testing.T) {
+		accounts := &radarQuotaAccountListerFake{accounts: []Account{
+			radarQuotaOpenAIAccount(1, "pro"),
+			radarQuotaOpenAIAccount(2, "pro"),
+		}}
+		usage := &radarQuotaUsageReaderFake{snapshots: map[int64]*UsageInfo{
+			1: {SevenDay: radarQuotaWeeklyProgress(10, now.Add(48*time.Hour))},
+			2: {SevenDay: radarQuotaWeeklyProgress(20, now.Add(48*time.Hour))},
+		}}
+		cache := &radarQuotaCacheFake{activeKeyError: errors.New("redis private manifest failure")}
+		aggregator := newRadarQuotaTestAggregator(
+			t,
+			accounts,
+			usage,
+			&radarQuotaBatchReaderFake{},
+			cache,
+			radarQuotaTestConfig(),
+			func() time.Time { return now },
+		)
+
+		err := aggregator.RunOnce(context.Background())
+		require.ErrorIs(t, err, ErrRadarQuotaAggregation)
+		require.NotContains(t, err.Error(), "private manifest")
+		require.Len(t, cache.writes, 1)
+		require.Equal(t, [][]string{{"openai/pro_20x"}}, cache.activeKeyWrites)
 	})
 
 	t.Run("writer cancellation and deadline propagate immediately", func(t *testing.T) {

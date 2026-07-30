@@ -20,7 +20,10 @@
         {{ bucket.display_name }}
       </h3>
 
-      <div class="mt-5 grid grid-cols-2 gap-3">
+      <div
+        class="mt-5 grid gap-3"
+        style="grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr))"
+      >
         <section
           v-for="window in quotaWindows(bucket)"
           :key="window.label"
@@ -36,7 +39,7 @@
                 {{ t('radar.quota.inferredLimit', 'Estimated API-equivalent value') }}
               </dt>
               <dd class="mt-0.5 text-lg font-bold tabular-nums text-gray-950 dark:text-white">
-                {{ formatLimit(window.stats) }}
+                {{ formatLimit(window.stats, window.currency) }}
                 <span
                   v-if="window.stats?.inference_confidence === 'low'"
                   class="mt-1 block text-xs font-medium text-amber-700 dark:text-amber-300"
@@ -57,11 +60,26 @@
               </dt>
               <dd class="mt-0.5 font-semibold tabular-nums text-gray-900 dark:text-gray-100">
                 {{ formatSampleSize(window.stats) }}
+                <span
+                  v-if="isSmallSample(window.stats)"
+                  data-testid="quota-small-sample"
+                  class="mt-1 block text-xs font-medium text-amber-700 dark:text-amber-300"
+                >
+                  {{ t('radar.quota.smallSample', 'Small sample') }}
+                </span>
               </dd>
             </div>
           </dl>
         </section>
       </div>
+      <button
+        type="button"
+        data-testid="quota-view-details"
+        class="mt-4 inline-flex w-full items-center justify-center rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 transition hover:border-primary-300 hover:text-primary-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:border-dark-700 dark:text-gray-200 dark:hover:border-primary-700 dark:hover:text-primary-300"
+        @click="emit('select', bucket)"
+      >
+        {{ t('radar.quota.openDetails', 'View details') }}
+      </button>
     </article>
   </div>
 </template>
@@ -69,44 +87,51 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { BucketSnapshotDTO, RadarPlatform, WindowStatsDTO } from '@/types/radar'
+import type { BucketSnapshotDTO, WindowStatsDTO } from '@/types/radar'
+import { platformLabel } from '@/utils/platformColors'
+import { quotaWindowsForBucket } from '@/utils/radarQuotaWindows'
 
-withDefaults(defineProps<{
+const props = withDefaults(defineProps<{
   buckets?: readonly BucketSnapshotDTO[] | null
+  sampleSizeWarnBelow?: number
 }>(), {
   buckets: () => [],
+  sampleSizeWarnBelow: 3,
 })
 
 const { t, locale } = useI18n()
+const emit = defineEmits<{
+  select: [bucket: BucketSnapshotDTO]
+}>()
 const numberFormatter = computed(() => new Intl.NumberFormat(locale.value))
-const usdFormatter = computed(() => new Intl.NumberFormat(locale.value, {
-  style: 'currency',
-  currency: 'USD',
-  minimumFractionDigits: 0,
-  maximumFractionDigits: 2,
-}))
 
 function quotaWindows(bucket: BucketSnapshotDTO) {
-  return [
-    { key: '5h', label: '5H', stats: bucket.five_hour },
-    { key: '7d', label: '7D', stats: bucket.seven_day },
-  ] as const
+  return quotaWindowsForBucket(bucket)
 }
 
-function platformLabel(platform: RadarPlatform): string {
-  switch (platform) {
-    case 'anthropic': return 'Anthropic'
-    case 'openai': return 'OpenAI'
-    case 'antigravity': return 'Antigravity'
-  }
-}
-
-function formatLimit(stats: WindowStatsDTO | null): string {
+function formatLimit(stats: WindowStatsDTO | null, currency: string): string {
   if (!stats || stats.inferred_limit_usd === null) return '—'
-  return usdFormatter.value.format(stats.inferred_limit_usd)
+  try {
+    return new Intl.NumberFormat(locale.value, {
+      style: 'currency',
+      currency,
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    }).format(stats.inferred_limit_usd)
+  } catch {
+    return numberFormatter.value.format(stats.inferred_limit_usd)
+  }
 }
 
 function formatSampleSize(stats: WindowStatsDTO | null): string {
   return stats === null ? '—' : numberFormatter.value.format(stats.sample_size)
+}
+
+function isSmallSample(stats: WindowStatsDTO | null): boolean {
+  return Boolean(
+    stats
+    && stats.inference_confidence !== 'low'
+    && stats.sample_size < (props.sampleSizeWarnBelow ?? 3)
+  )
 }
 </script>

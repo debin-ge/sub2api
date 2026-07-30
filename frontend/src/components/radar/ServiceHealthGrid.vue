@@ -29,7 +29,7 @@
         <div class="min-w-0">
           <h3 class="truncate text-base font-semibold text-gray-950 dark:text-white">{{ item.name }}</h3>
           <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-            {{ t('radar.health.history30d', '30-day history') }} · {{ historyRange(item.history_30d) }}
+            {{ historyWindowLabel(item.history_days) }} · {{ historyRange(item.history_30d) }}
           </p>
         </div>
         <span
@@ -49,7 +49,7 @@
           </dd>
         </div>
         <div v-if="item.uptime_90d !== null" data-testid="service-uptime">
-          <dt class="font-medium">{{ t('radar.health.uptime', '90-day uptime') }}</dt>
+          <dt class="font-medium">{{ uptimeWindowLabel(item.uptime_window_days) }}</dt>
           <dd class="mt-0.5 font-semibold text-gray-900 dark:text-white">{{ formatPercent(item.uptime_90d) }}</dd>
         </div>
       </dl>
@@ -99,7 +99,7 @@
         <div
           data-testid="service-history-strip"
           class="grid gap-1"
-          style="grid-template-columns: repeat(30, minmax(0, 1fr))"
+          :style="{ gridTemplateColumns: `repeat(${item.history_30d.length}, minmax(0, 1fr))` }"
         >
           <button
             v-for="day in item.history_30d"
@@ -141,12 +141,15 @@
             </button>
           </div>
           <div v-if="activeHistory.day.incidents.length > 0" class="mt-3 space-y-3 border-t border-gray-100 pt-3 dark:border-dark-700">
-            <div v-for="incident in activeHistory.day.incidents.slice(0, 3)" :key="`${incident.created_at}-${incident.name}`">
+            <div
+              v-for="incident in activeHistory.day.incidents.slice(0, activeHistory.incidentPreviewLimit)"
+              :key="`${incident.created_at}-${incident.name}`"
+            >
               <p class="font-medium leading-5 text-gray-900 dark:text-white">{{ incident.name }}</p>
               <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{{ formatIncidentWindow(incident) }}</p>
             </div>
-            <p v-if="activeHistory.day.incidents.length > 3" class="text-xs text-gray-500 dark:text-gray-400">
-              +{{ formatNumber(activeHistory.day.incidents.length - 3) }} {{ t('radar.health.moreIncidents', 'more incidents') }}
+            <p v-if="activeHistory.day.incidents.length > activeHistory.incidentPreviewLimit" class="text-xs text-gray-500 dark:text-gray-400">
+              +{{ formatNumber(activeHistory.day.incidents.length - activeHistory.incidentPreviewLimit) }} {{ t('radar.health.moreIncidents', 'more incidents') }}
             </p>
           </div>
           <p v-else class="mt-3 border-t border-gray-100 pt-3 text-xs text-gray-500 dark:border-dark-700 dark:text-gray-400">
@@ -168,7 +171,6 @@ import type {
   RadarIncidentDTO,
   ServiceHealthDTO,
   ServiceHealthHistoryDayDTO,
-  ServiceKey,
   ServiceStatus,
 } from '@/types/radar'
 import { platformLabel } from '@/utils/platformColors'
@@ -189,6 +191,7 @@ const activeHistory = ref<{
   serviceKey: string
   day: ServiceHealthHistoryDayDTO
   pinned: boolean
+  incidentPreviewLimit: number
 } | null>(null)
 const statusSeverity: Readonly<Record<ServiceStatus, number>> = {
   operational: 0,
@@ -206,50 +209,72 @@ const historySeverity: Readonly<Record<ServiceStatus, number>> = {
   partial_outage: 4,
   major_outage: 5,
 }
-const supportedPlatforms = new Set(['anthropic', 'openai', 'windsurf', 'deepseek', 'kimi', 'minimax'])
-
-function platformServiceKeys(platform: string): ServiceKey[] {
-  if (platform === 'anthropic') return ['claude_api', 'claude_code']
-  if (platform === 'openai') return ['openai_api', 'codex_web']
-  if (platform === 'windsurf') return ['windsurf']
-  if (platform === 'deepseek') return ['deepseek']
-  if (platform === 'kimi') return ['kimi']
-  if (platform === 'minimax') return ['minimax']
-  return []
+interface HealthDisplayMetadata {
+  historyDays: number
+  uptimeWindowDays: number
+  recentIncidentDays: number
+  incidentPreviewLimit: number
 }
 
-function emptyHistory(anchor = new Date()): ServiceHealthHistoryDayDTO[] {
+function displayMetadata(candidates: readonly ServiceHealthDTO[]): HealthDisplayMetadata {
+  const source = candidates.find((item) => (
+    item.history_days > 0
+    && item.uptime_window_days > 0
+    && item.recent_incident_days > 0
+    && item.incident_preview_limit > 0
+  )) ?? (props.services ?? []).find((item) => item.history_days > 0)
+  return {
+    historyDays: source?.history_days ?? Math.max(0, ...candidates.map((item) => item.history_30d?.length ?? 0)),
+    uptimeWindowDays: source?.uptime_window_days ?? 0,
+    recentIncidentDays: source?.recent_incident_days ?? 0,
+    incidentPreviewLimit: source?.incident_preview_limit ?? 0,
+  }
+}
+
+function emptyHistory(historyDays: number, anchor = new Date()): ServiceHealthHistoryDayDTO[] {
+  if (historyDays <= 0) return []
   const end = new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth(), anchor.getUTCDate()))
-  return Array.from({ length: 30 }, (_, index) => {
+  return Array.from({ length: historyDays }, (_, index) => {
     const date = new Date(end)
-    date.setUTCDate(end.getUTCDate() - (29 - index))
+    date.setUTCDate(end.getUTCDate() - (historyDays - 1 - index))
     return { date: date.toISOString().slice(0, 10), status: 'unknown', incidents: [] }
   })
 }
 
-function unknownPlatformCard(platform: string): PlatformHealthCard {
+function unknownPlatformCard(
+  platform: string,
+  platformOrder: number,
+  metadata: HealthDisplayMetadata
+): PlatformHealthCard {
   return {
     service_key: platform,
+    platform,
+    platform_order: platformOrder,
     name: platformLabel(platform),
     status: 'unknown',
     status_indicator: 'unknown',
     uptime_90d: null,
     last_incident: null,
     last_updated_at: null,
-    history_30d: emptyHistory(),
+    history_30d: emptyHistory(metadata.historyDays),
+    history_days: metadata.historyDays,
+    uptime_window_days: metadata.uptimeWindowDays,
+    recent_incident_days: metadata.recentIncidentDays,
+    incident_preview_limit: metadata.incidentPreviewLimit,
     source_url: '',
     stale: false,
   }
 }
 
 function mergeHistory(candidates: readonly ServiceHealthDTO[]): ServiceHealthHistoryDayDTO[] {
+  const metadata = displayMetadata(candidates)
   const latestDate = candidates
     .flatMap((candidate) => candidate.history_30d ?? [])
     .map((day) => day.date)
     .filter((date) => parseHistoryDate(date) !== null)
     .sort()
     .at(-1)
-  const history = emptyHistory(latestDate ? parseHistoryDate(latestDate)! : new Date())
+  const history = emptyHistory(metadata.historyDays, latestDate ? parseHistoryDate(latestDate)! : new Date())
   const byDate = new Map(history.map((day) => [day.date, day]))
   const coveredDates = new Set<string>()
   for (const candidate of candidates) {
@@ -278,8 +303,9 @@ function mergeHistory(candidates: readonly ServiceHealthDTO[]): ServiceHealthHis
 
 function latestIncidentFromRecentHistory(
   history: readonly ServiceHealthHistoryDayDTO[],
-  days = 7
+  days: number
 ): RadarIncidentDTO | null {
+  if (days <= 0) return null
   const uniqueIncidents = new Map<string, RadarIncidentDTO>()
   const recentDays = [...history]
     .filter((day) => parseHistoryDate(day.date) !== null)
@@ -300,21 +326,27 @@ function latestIncidentFromRecentHistory(
 }
 
 const normalizedServices = computed(() => {
-  const byKey = new Map((props.services ?? []).map((item) => [item.service_key, item]))
+  const byPlatform = new Map<string, ServiceHealthDTO[]>()
+  for (const service of props.services ?? []) {
+    const platform = service.platform.trim().toLowerCase()
+    if (!platform) continue
+    const current = byPlatform.get(platform) ?? []
+    current.push(service)
+    byPlatform.set(platform, current)
+  }
   const seen = new Set<string>()
   const platforms = (props.platforms ?? [])
     .map((platform) => platform.trim().toLowerCase())
     .filter((platform) => {
-      if (!supportedPlatforms.has(platform) || seen.has(platform)) return false
+      if (!platform || seen.has(platform)) return false
       seen.add(platform)
       return true
     })
 
-  return platforms.map((platform): PlatformHealthCard => {
-    const candidates = platformServiceKeys(platform)
-      .map((key) => byKey.get(key))
-      .filter((item): item is ServiceHealthDTO => item !== undefined)
-    if (candidates.length === 0) return unknownPlatformCard(platform)
+  return platforms.map((platform, platformOrder): PlatformHealthCard => {
+    const candidates = byPlatform.get(platform) ?? []
+    const metadata = displayMetadata(candidates)
+    if (candidates.length === 0) return unknownPlatformCard(platform, platformOrder, metadata)
 
     const worst = [...candidates].sort((left, right) => statusSeverity[right.status] - statusSeverity[left.status])[0]
     const latestUpdated = candidates
@@ -326,11 +358,17 @@ const normalizedServices = computed(() => {
     return {
       ...worst,
       service_key: platform,
+      platform,
+      platform_order: Math.min(...candidates.map((item) => item.platform_order)),
       name: platformLabel(platform),
-      last_incident: latestIncidentFromRecentHistory(history),
+      last_incident: latestIncidentFromRecentHistory(history, metadata.recentIncidentDays),
       last_updated_at: latestUpdated,
       source_url: worst.source_url || candidates.find((item) => item.source_url)?.source_url || '',
       history_30d: history,
+      history_days: metadata.historyDays,
+      uptime_window_days: metadata.uptimeWindowDays,
+      recent_incident_days: metadata.recentIncidentDays,
+      incident_preview_limit: metadata.incidentPreviewLimit,
       stale: candidates.some((item) => item.stale),
     }
   })
@@ -370,7 +408,13 @@ const historyLegend = computed(() => (['operational', 'degraded_performance', 'p
   .map((status) => ({ status, ...historyStatusMeta(status) })))
 
 function openHistory(serviceKey: string, day: ServiceHealthHistoryDayDTO, pinned: boolean): void {
-  activeHistory.value = { serviceKey, day, pinned }
+  const service = normalizedServices.value.find((item) => item.service_key === serviceKey)
+  activeHistory.value = {
+    serviceKey,
+    day,
+    pinned,
+    incidentPreviewLimit: service?.incident_preview_limit ?? 0,
+  }
 }
 
 function closeHoverHistory(serviceKey: string): void {
@@ -404,6 +448,14 @@ function formatHistoryDate(value: string): string {
 function historyRange(history: readonly ServiceHealthHistoryDayDTO[]): string {
   if (history.length === 0) return '—'
   return `${formatHistoryDate(history[0].date)} – ${formatHistoryDate(history.at(-1)!.date)}`
+}
+
+function historyWindowLabel(days: number): string {
+  return t('radar.health.dayHistory', '{days}-day history').replace('{days}', formatNumber(days))
+}
+
+function uptimeWindowLabel(days: number): string {
+  return t('radar.health.dayUptime', '{days}-day uptime').replace('{days}', formatNumber(days))
 }
 
 function historyDayAriaLabel(day: ServiceHealthHistoryDayDTO): string {

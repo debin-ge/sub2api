@@ -41,14 +41,15 @@ export function windowStats(overrides: Partial<WindowStatsDTO> = {}): WindowStat
 }
 
 export function bucket(overrides: Partial<BucketSnapshotDTO> = {}): BucketSnapshotDTO {
-  return {
-    calculation_version: 3,
+  const result: BucketSnapshotDTO = {
+    calculation_version: 4,
     bucket_key: 'anthropic/max_20x',
     platform: 'anthropic',
     plan_tier: 'max_20x',
     display_name: 'Claude Max 20x',
     accounts_count: 4,
     privacy_threshold: 2,
+    windows: [],
     five_hour: windowStats(),
     seven_day: windowStats({ avg_utilization: 35 }),
     seven_day_sonnet: null,
@@ -59,6 +60,41 @@ export function bucket(overrides: Partial<BucketSnapshotDTO> = {}): BucketSnapsh
     stale: false,
     ...overrides,
   }
+  if (overrides.windows === undefined) {
+    result.windows = result.platform === 'openai'
+      ? [{
+          key: '7d',
+          label: '7D',
+          duration_seconds: 604800,
+          currency: 'USD',
+          stats: result.seven_day,
+          model_windows: [],
+          model_breakdown: result.model_breakdown_7d,
+        }]
+      : [
+          {
+            key: '5h',
+            label: '5H',
+            duration_seconds: 18000,
+            currency: 'USD',
+            stats: result.five_hour,
+            model_windows: [],
+            model_breakdown: result.model_breakdown_5h,
+          },
+          {
+            key: '7d',
+            label: '7D',
+            duration_seconds: 604800,
+            currency: 'USD',
+            stats: result.seven_day,
+            model_windows: [result.seven_day_sonnet, result.seven_day_fable].filter(
+              (window): window is NonNullable<typeof window> => window !== null
+            ),
+            model_breakdown: result.model_breakdown_7d,
+          },
+        ]
+  }
+  return result
 }
 
 export function quotaTrend(bucketKey = 'anthropic/max_20x'): QuotaTrendDTO {
@@ -68,11 +104,25 @@ export function quotaTrend(bucketKey = 'anthropic/max_20x'): QuotaTrendDTO {
     data_points: [
       {
         timestamp: '2026-07-12T08:00:00.000Z',
+        windows: [{
+          key: '5h',
+          label: '5H',
+          duration_seconds: 18000,
+          currency: 'USD',
+          stats: { avg_utilization: 20, avg_cost: 4, inferred_limit_usd: 20, sample_size: 3, inference_confidence: 'high' },
+        }],
         five_hour: { avg_utilization: 20, avg_cost: 4, inferred_limit_usd: 20, sample_size: 3, inference_confidence: 'high' },
         seven_day: null,
       },
       {
         timestamp: now,
+        windows: [{
+          key: '5h',
+          label: '5H',
+          duration_seconds: 18000,
+          currency: 'USD',
+          stats: { avg_utilization: 60, avg_cost: 12, inferred_limit_usd: 20, sample_size: 3, inference_confidence: 'high' },
+        }],
         five_hour: { avg_utilization: 60, avg_cost: 12, inferred_limit_usd: 20, sample_size: 3, inference_confidence: 'high' },
         seven_day: null,
       },
@@ -85,8 +135,21 @@ export function service(
   serviceKey: ServiceKey,
   status: ServiceStatus = 'operational'
 ): ServiceHealthDTO {
+  const platformByService: Record<ServiceKey, { platform: string; order: number }> = {
+    claude_api: { platform: 'anthropic', order: 0 },
+    claude_code: { platform: 'anthropic', order: 0 },
+    codex_web: { platform: 'openai', order: 4 },
+    openai_api: { platform: 'openai', order: 4 },
+    windsurf: { platform: 'windsurf', order: 5 },
+    deepseek: { platform: 'deepseek', order: 1 },
+    kimi: { platform: 'kimi', order: 2 },
+    minimax: { platform: 'minimax', order: 3 },
+  }
+  const platform = platformByService[serviceKey]
   return {
     service_key: serviceKey,
+    platform: platform.platform,
+    platform_order: platform.order,
     name: 'untrusted upstream name',
     status,
     status_indicator: 'none',
@@ -94,6 +157,10 @@ export function service(
     last_incident: null,
     last_updated_at: now,
     history_30d: serviceHistory(),
+    history_days: 30,
+    uptime_window_days: 90,
+    recent_incident_days: 7,
+    incident_preview_limit: 3,
     source_url: 'https://status.claude.com',
     stale: false,
   }
@@ -131,6 +198,16 @@ export const degradationLatest: DegradationLatestDTO = {
   ],
   models: [],
   default_model_slugs: ['model-a', 'model-2', 'model-3', 'model-4', 'model-5', 'model-6'],
+  metrics: [
+    { key: 'intelligence_index' },
+    { key: 'coding_index' },
+    { key: 'agentic_index' },
+  ],
+  max_selected_models: 10,
+  default_model_count: 6,
+  score_min: 0,
+  score_max: 100,
+  score_step: 25,
   intelligence_index_version: 4.1,
   lmarena_top5: [],
   sources_last_updated: { aa: now },
@@ -154,7 +231,9 @@ export function source(overrides: Partial<DataSourceMetaDTO> = {}): DataSourceMe
   return {
     key: 'aa',
     name: 'Artificial Analysis',
-    url: 'https://evil.example/secret',
+    url: 'https://artificialanalysis.ai',
+    platform: null,
+    platform_order: null,
     interval: '6h',
     last_attempt_at: now,
     last_success_at: now,

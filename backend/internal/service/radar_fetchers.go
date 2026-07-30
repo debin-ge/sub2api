@@ -57,35 +57,18 @@ func newRadarFetchers(
 	}
 	fetchers = append(fetchers, lmarenaFetcher)
 
-	claudeFetcher, err := NewStatuspageFetcher(cfg, RadarSourceStatusClaude, client)
-	if err != nil {
-		return nil, err
-	}
-	fetchers = append(fetchers, claudeFetcher)
-
-	openAIFetcher, err := NewStatuspageFetcher(cfg, RadarSourceStatusOpenAI, client)
-	if err != nil {
-		return nil, err
-	}
-	fetchers = append(fetchers, openAIFetcher)
-
-	for _, source := range []RadarSourceKey{
-		RadarSourceStatusWindsurf,
-		RadarSourceStatusKimi,
-		RadarSourceStatusMiniMaxChina,
-	} {
-		fetcher, err := NewStatuspageFetcher(cfg, source, client)
+	for _, source := range statuspageRadarSources() {
+		var fetcher RadarFetcher
+		if source == RadarSourceStatusDeepSeek {
+			fetcher, err = NewDeepSeekStatusFetcher(cfg, client)
+		} else {
+			fetcher, err = NewStatuspageFetcher(cfg, source, client)
+		}
 		if err != nil {
 			return nil, err
 		}
 		fetchers = append(fetchers, fetcher)
 	}
-
-	deepSeekFetcher, err := NewDeepSeekStatusFetcher(cfg, client)
-	if err != nil {
-		return nil, err
-	}
-	fetchers = append(fetchers, deepSeekFetcher)
 
 	seen := make(map[RadarSourceKey]struct{}, len(fetchers))
 	for _, fetcher := range fetchers {

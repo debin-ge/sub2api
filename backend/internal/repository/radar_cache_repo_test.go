@@ -204,7 +204,7 @@ func TestNewRadarCacheRepositoryRejectsInvalidDependenciesAndConfig(t *testing.T
 func testRadarSnapshot(bucketKey string, capturedAt time.Time) service.BucketSnapshotDTO {
 	platform, planTier, _ := strings.Cut(bucketKey, "/")
 	return service.BucketSnapshotDTO{
-		CalculationVersion: 3,
+		CalculationVersion: 4,
 		BucketKey:          bucketKey,
 		Platform:           platform,
 		PlanTier:           planTier,
@@ -264,7 +264,7 @@ func TestRadarCacheRepositoryAppendIsIdempotentAtExactScore(t *testing.T) {
 	ctx := context.Background()
 	capturedAt := time.Date(2026, time.July, 2, 9, 30, 0, 123456000, time.UTC)
 
-	first := testRadarSnapshot("openai/team", capturedAt)
+	first := testRadarSnapshot("openai/pro_20x", capturedAt)
 	first.AccountsCount = 2
 	second := first
 	second.AccountsCount = 9
@@ -272,11 +272,11 @@ func TestRadarCacheRepositoryAppendIsIdempotentAtExactScore(t *testing.T) {
 	require.NoError(t, repo.AppendBucketSnapshot(ctx, first))
 	require.NoError(t, repo.AppendBucketSnapshot(ctx, second))
 
-	count, err := rdb.ZCard(ctx, "radar:quota:bucket:openai/team").Result()
+	count, err := rdb.ZCard(ctx, "radar:quota:bucket:openai/pro_20x").Result()
 	require.NoError(t, err)
 	require.Equal(t, int64(1), count)
 
-	latest, err := repo.GetLatestBucket(ctx, "openai/team")
+	latest, err := repo.GetLatestBucket(ctx, "openai/pro_20x")
 	require.NoError(t, err)
 	require.Equal(t, 9, latest.AccountsCount)
 }
@@ -285,17 +285,17 @@ func TestRadarCacheRepositoryAppendTrimsHistoryAndSetsTTL(t *testing.T) {
 	repo, _, mr := newRadarCacheTestRepository(t)
 	ctx := context.Background()
 	now := time.Date(2026, time.July, 9, 12, 0, 0, 0, time.UTC)
-	key := "radar:quota:bucket:antigravity/enterprise"
+	key := "radar:quota:bucket:openai/plus"
 
 	for _, capturedAt := range []time.Time{
 		now.Add(-testRadarHistoryRetention - time.Millisecond),
 		now.Add(-testRadarHistoryRetention),
 		now,
 	} {
-		require.NoError(t, repo.AppendBucketSnapshot(ctx, testRadarSnapshot("antigravity/enterprise", capturedAt)))
+		require.NoError(t, repo.AppendBucketSnapshot(ctx, testRadarSnapshot("openai/plus", capturedAt)))
 	}
 
-	trend, err := repo.GetBucketTrend(ctx, "antigravity/enterprise", time.Time{})
+	trend, err := repo.GetBucketTrend(ctx, "openai/plus", time.Time{})
 	require.NoError(t, err)
 	require.Len(t, trend, 2)
 	require.Equal(t, now.Add(-testRadarHistoryRetention), trend[0].CapturedAt)
@@ -343,20 +343,58 @@ func TestRadarCacheRepositoryListBucketKeysSortsAndCleansExpiredEntries(t *testi
 	repo, rdb, _ := newRadarCacheTestRepository(t)
 	ctx := context.Background()
 	capturedAt := time.Date(2026, time.July, 3, 0, 0, 0, 0, time.UTC)
-	for _, bucketKey := range []string{"openai/team", "anthropic/pro", "antigravity/free"} {
+	for _, bucketKey := range []string{"openai/pro_20x", "anthropic/pro", "openai/plus"} {
 		require.NoError(t, repo.AppendBucketSnapshot(ctx, testRadarSnapshot(bucketKey, capturedAt)))
 	}
 
 	// Simulate a bucket zset expiring while its durable index entry remains.
-	require.NoError(t, rdb.Del(ctx, "radar:quota:bucket:openai/team").Err())
+	require.NoError(t, rdb.Del(ctx, "radar:quota:bucket:openai/pro_20x").Err())
 
 	keys, err := repo.ListBucketKeys(ctx)
 	require.NoError(t, err)
-	require.Equal(t, []string{"anthropic/pro", "antigravity/free"}, keys)
+	require.Equal(t, []string{"anthropic/pro", "openai/plus"}, keys)
 
 	indexed, err := rdb.SMembers(ctx, "radar:quota:buckets").Result()
 	require.NoError(t, err)
 	require.ElementsMatch(t, keys, indexed)
+}
+
+func TestRadarCacheRepositoryActiveBucketManifestReplacesCurrentSetWithoutDeletingHistory(t *testing.T) {
+	repo, rdb, _ := newRadarCacheTestRepository(t)
+	ctx := context.Background()
+	capturedAt := time.Date(2026, time.July, 30, 12, 0, 0, 0, time.UTC)
+
+	require.NoError(t, repo.AppendBucketSnapshot(ctx, testRadarSnapshot("openai/pro_5x", capturedAt)))
+	require.NoError(t, repo.AppendBucketSnapshot(ctx, testRadarSnapshot("openai/pro_20x", capturedAt)))
+	require.NoError(t, repo.ReplaceActiveBucketKeys(ctx, []string{
+		"openai/pro_5x",
+		"openai/pro_20x",
+		"openai/pro_5x",
+	}))
+
+	keys, err := repo.ListBucketKeys(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"openai/pro_20x", "openai/pro_5x"}, keys)
+
+	require.NoError(t, repo.AppendBucketSnapshot(ctx, testRadarSnapshot("openai/pro_20x", capturedAt.Add(15*time.Minute))))
+	require.NoError(t, repo.ReplaceActiveBucketKeys(ctx, []string{"openai/pro_20x"}))
+
+	keys, err = repo.ListBucketKeys(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"openai/pro_20x"}, keys)
+
+	legacyTrend, err := repo.GetBucketTrend(ctx, "openai/pro_5x", time.Time{})
+	require.NoError(t, err)
+	require.Len(t, legacyTrend, 1, "inactive 5x history remains retained for its normal TTL")
+	historicalIndex, err := rdb.SMembers(ctx, radarBucketIndexKey).Result()
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"openai/pro_5x", "openai/pro_20x"}, historicalIndex)
+
+	require.NoError(t, repo.ReplaceActiveBucketKeys(ctx, nil))
+	keys, err = repo.ListBucketKeys(ctx)
+	require.NoError(t, err)
+	require.Empty(t, keys)
+	require.Equal(t, "[]", rdb.Get(ctx, radarActiveBucketIndexKey).Val())
 }
 
 func TestRadarCacheRepositoryIndexCleanupRechecksExistenceAtomically(t *testing.T) {
@@ -1565,11 +1603,11 @@ func TestRadarCacheRepositoryBoundedLatestFallbackAndTrendRecovery(t *testing.T)
 		require.NoError(t, rdb.ZAdd(ctx, radarBucketRedisKey(valid.BucketKey), redis.Z{Score: float64(base.UnixMilli()), Member: `{legacy`}).Err())
 		trend, err := repo.GetBucketTrend(ctx, valid.BucketKey, base.Add(-time.Hour))
 		require.NoError(t, err)
-		require.Equal(t, []service.BucketSnapshotDTO{valid}, trend)
+		require.Equal(t, []service.BucketSnapshotDTO{service.NormalizeRadarBucketSnapshot(valid)}, trend)
 	})
 }
 
-func TestRadarCacheRepositoryPreservesNilAndEmptyCollections(t *testing.T) {
+func TestRadarCacheRepositoryNormalizesLegacyCollectionsToStableEmptyArrays(t *testing.T) {
 	repo, _, _ := newRadarCacheTestRepository(t)
 	ctx := context.Background()
 	capturedAt := time.Date(2026, time.July, 6, 0, 0, 0, 0, time.UTC)
@@ -1593,6 +1631,8 @@ func TestRadarCacheRepositoryPreservesNilAndEmptyCollections(t *testing.T) {
 
 	gotNil, err := repo.GetLatestBucket(ctx, "openai/pro_20x")
 	require.NoError(t, err)
-	require.Nil(t, gotNil.ModelBreakdown5h)
-	require.Nil(t, gotNil.ModelBreakdown7d)
+	require.NotNil(t, gotNil.ModelBreakdown5h)
+	require.NotNil(t, gotNil.ModelBreakdown7d)
+	require.Empty(t, gotNil.ModelBreakdown5h)
+	require.Empty(t, gotNil.ModelBreakdown7d)
 }

@@ -110,7 +110,13 @@ describe('radar supporting components', () => {
     const wrapper = mount(DataSourceFooter, {
       props: {
         sources: [
-          source(),
+          source({
+            key: 'status_deepseek',
+            name: 'DeepSeek Status',
+            url: 'https://status.deepseek.com',
+            platform: 'deepseek',
+            platform_order: 1,
+          }),
           source({
             key: 'unknown_source',
             name: 'Unknown',
@@ -125,7 +131,7 @@ describe('radar supporting components', () => {
     })
 
     const link = wrapper.get('a')
-    expect(link.attributes('href')).toBe('https://artificialanalysis.ai')
+    expect(link.attributes('href')).toBe('https://status.deepseek.com')
     expect(link.attributes('target')).toBe('_blank')
     expect(link.attributes('rel')).toBe('noopener noreferrer')
     expect(wrapper.findAll('a')).toHaveLength(1)

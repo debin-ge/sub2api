@@ -106,7 +106,7 @@
                 {{ t('radar.degradation.chartTitle', 'Benchmark comparison') }}
               </h3>
               <span class="text-xs text-gray-500 dark:text-gray-400">
-                {{ t('radar.degradation.scaleHint', 'All indices use a 0–100 scale') }}
+                {{ t('radar.degradation.scaleHint', 'Index scale') }}: {{ formatNumber(scoreMin) }}–{{ formatNumber(scoreMax) }}
               </span>
             </div>
             <div class="flex flex-1 items-center">
@@ -226,7 +226,7 @@
             </ul>
 
             <p class="mt-2 text-xs text-gray-400 dark:text-gray-500">
-              {{ t('radar.degradation.selectionLimit', 'Compare up to 10 models') }}
+              {{ t('radar.degradation.selectionLimit', 'Compare up to') }} {{ formatNumber(maxSelectedModels) }} {{ t('radar.degradation.models', 'models') }}
             </p>
           </section>
         </div>
@@ -390,8 +390,6 @@ ChartJS.register(BarController, BarElement, CategoryScale, Legend, LinearScale, 
 
 type DegradationTab = 'overview' | 'lmarena'
 
-const maxSelectedModels = 10
-
 const props = withDefaults(defineProps<{
   latest?: DegradationLatestDTO | null
   latestLoading?: boolean
@@ -422,42 +420,77 @@ const tabs = computed(() => [
   { key: 'overview' as const, label: t('radar.degradation.overview', 'Index overview') },
   { key: 'lmarena' as const, label: t('radar.degradation.lmarena', 'Model leaderboard') },
 ])
-const metrics = computed(() => [
-  {
+const metricPresentation: Readonly<Record<DegradationMetric, {
+  key: DegradationMetric
+  icon: 'sparkles' | 'terminal' | 'cpu'
+  iconClass: string
+}>> = {
+  intelligence_index: {
     key: 'intelligence_index' as const,
-    label: t('radar.degradation.intelligence', 'Intelligence index'),
-    shortLabel: t('radar.degradation.intelligenceShort', 'Intelligence'),
-    description: t('radar.degradation.intelligenceDescription', 'Composite performance across broad reasoning and knowledge evaluations.'),
     icon: 'sparkles' as const,
     iconClass: 'bg-violet-50 text-violet-600 dark:bg-violet-950/40 dark:text-violet-300',
   },
-  {
+  coding_index: {
     key: 'coding_index' as const,
-    label: t('radar.degradation.coding', 'Coding index'),
-    shortLabel: t('radar.degradation.codingShort', 'Coding'),
-    description: t('radar.degradation.codingDescription', 'Performance on software-development and code-generation evaluations.'),
     icon: 'terminal' as const,
     iconClass: 'bg-sky-50 text-sky-600 dark:bg-sky-950/40 dark:text-sky-300',
   },
-  {
+  agentic_index: {
     key: 'agentic_index' as const,
-    label: t('radar.degradation.agentic', 'Agentic index'),
-    shortLabel: t('radar.degradation.agenticShort', 'Agentic'),
-    description: t('radar.degradation.agenticDescription', 'Performance on multi-step agent and tool-use evaluations.'),
     icon: 'cpu' as const,
     iconClass: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-300',
   },
-])
+}
+const metrics = computed(() => {
+  const configured = props.latest?.metrics?.map((metric) => metric.key) ?? []
+  const keys = configured.length > 0
+    ? configured
+    : Object.keys(metricPresentation) as DegradationMetric[]
+  return keys.flatMap((key) => {
+    const presentation = metricPresentation[key]
+    if (!presentation) return []
+    return [{
+      ...presentation,
+      label: metricLabel(key),
+      shortLabel: metricShortLabel(key),
+      description: metricDescription(key),
+    }]
+  })
+})
 const allModels = computed<DegradationModelDTO[]>(() => {
   if (Array.isArray(props.latest?.available_models)) return props.latest.available_models
   return props.latest?.models ?? []
+})
+const maxSelectedModels = computed(() => Math.max(
+  1,
+  props.latest?.max_selected_models ?? allModels.value.length
+))
+const defaultModelCount = computed(() => Math.max(
+  1,
+  props.latest?.default_model_count ?? props.latest?.default_model_slugs?.length ?? 1
+))
+const scoreMin = computed(() => props.latest?.score_min ?? 0)
+const scoreMax = computed(() => {
+  const configured = props.latest?.score_max
+  if (configured !== undefined && configured > scoreMin.value) return configured
+  const values = allModels.value.flatMap((model) => metrics.value.flatMap((metric) => {
+    const value = metricValue(model, metric.key)
+    return value === null ? [] : [value]
+  }))
+  return Math.max(scoreMin.value + 1, ...values)
+})
+const scoreStep = computed(() => {
+  const configured = props.latest?.score_step
+  return configured !== undefined && configured > 0
+    ? configured
+    : (scoreMax.value - scoreMin.value) / 4
 })
 const modelsBySlug = computed(() => new Map(allModels.value.map((model) => [model.slug, model])))
 const defaultModelSlugs = computed(() => {
   const configured = Array.isArray(props.latest?.default_model_slugs)
     ? props.latest.default_model_slugs
     : props.latest?.models?.map((model) => model.slug) ?? []
-  return sanitizeModelSlugs(configured).slice(0, 6)
+  return sanitizeModelSlugs(configured).slice(0, defaultModelCount.value)
 })
 const radarModels = computed(() => selectedModelSlugs.value
   .map((slug) => modelsBySlug.value.get(slug))
@@ -512,11 +545,11 @@ const chartOptions = computed(() => {
         ticks: { color: textColor, font: { size: 13, weight: 600 } },
       },
       y: {
-        beginAtZero: true,
-        suggestedMax: 100,
+        min: scoreMin.value,
+        max: scoreMax.value,
         grid: { color: gridColor },
         border: { display: false },
-        ticks: { color: mutedTextColor, stepSize: 25, font: { size: 10 } },
+        ticks: { color: mutedTextColor, stepSize: scoreStep.value, font: { size: 10 } },
       },
     },
     plugins: {
@@ -550,7 +583,7 @@ function sanitizeModelSlugs(slugs: readonly string[]): string[] {
   const result: string[] = []
   const seen = new Set<string>()
   for (const slug of slugs) {
-    if (result.length >= maxSelectedModels || seen.has(slug) || !modelsBySlug.value.has(slug)) continue
+    if (result.length >= maxSelectedModels.value || seen.has(slug) || !modelsBySlug.value.has(slug)) continue
     seen.add(slug)
     result.push(slug)
   }
@@ -566,7 +599,9 @@ function readModelsQuery(): string[] {
 
 function fallbackModelSlugs(): string[] {
   const defaults = defaultModelSlugs.value
-  return defaults.length > 0 ? defaults : allModels.value.slice(0, 6).map((model) => model.slug)
+  return defaults.length > 0
+    ? defaults
+    : allModels.value.slice(0, defaultModelCount.value).map((model) => model.slug)
 }
 
 function reconcileSelection(fromLocation = !selectionInitialized.value): void {
@@ -610,7 +645,7 @@ function modelSearchText(model: DegradationModelDTO): string {
 
 function modelOptionDisabled(slug: string): boolean {
   if (selectedModelSlugs.value.includes(slug)) return selectedModelSlugs.value.length <= 1
-  return selectedModelSlugs.value.length >= maxSelectedModels
+  return selectedModelSlugs.value.length >= maxSelectedModels.value
 }
 
 function toggleModel(slug: string): void {
@@ -620,7 +655,7 @@ function toggleModel(slug: string): void {
     if (selected.length > 1) selectedModelSlugs.value = selected.filter((item) => item !== slug)
     return
   }
-  if (selected.length < maxSelectedModels) selectedModelSlugs.value = [...selected, slug]
+  if (selected.length < maxSelectedModels.value) selectedModelSlugs.value = [...selected, slug]
 }
 
 function removeModel(slug: string): void {
@@ -647,7 +682,33 @@ function modelColor(index: number): string {
 function metricBarWidth(model: DegradationModelDTO, metric: DegradationMetric): string {
   const value = metricValue(model, metric)
   if (value === null) return '0%'
-  return `${Math.min(100, Math.max(0, value))}%`
+  const range = scoreMax.value - scoreMin.value
+  if (range <= 0) return '0%'
+  return `${Math.min(100, Math.max(0, ((value - scoreMin.value) / range) * 100))}%`
+}
+
+function metricLabel(metric: DegradationMetric): string {
+  switch (metric) {
+    case 'intelligence_index': return t('radar.degradation.intelligence', 'Intelligence index')
+    case 'coding_index': return t('radar.degradation.coding', 'Coding index')
+    case 'agentic_index': return t('radar.degradation.agentic', 'Agentic index')
+  }
+}
+
+function metricShortLabel(metric: DegradationMetric): string {
+  switch (metric) {
+    case 'intelligence_index': return t('radar.degradation.intelligenceShort', 'Intelligence')
+    case 'coding_index': return t('radar.degradation.codingShort', 'Coding')
+    case 'agentic_index': return t('radar.degradation.agenticShort', 'Agentic')
+  }
+}
+
+function metricDescription(metric: DegradationMetric): string {
+  switch (metric) {
+    case 'intelligence_index': return t('radar.degradation.intelligenceDescription', 'Composite performance across broad reasoning and knowledge evaluations.')
+    case 'coding_index': return t('radar.degradation.codingDescription', 'Performance on software-development and code-generation evaluations.')
+    case 'agentic_index': return t('radar.degradation.agenticDescription', 'Performance on multi-step agent and tool-use evaluations.')
+  }
 }
 
 function activateTab(tab: DegradationTab): void {

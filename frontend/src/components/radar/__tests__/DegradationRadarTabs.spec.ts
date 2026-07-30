@@ -159,6 +159,42 @@ describe('DegradationRadarTabs', () => {
     wrapper.unmount()
   })
 
+  it('uses backend metric, selection, default-count, and score-scale metadata', async () => {
+    const latest = {
+      ...latestWithModels(9),
+      default_model_slugs: [],
+      metrics: [{ key: 'coding_index' as const }],
+      max_selected_models: 4,
+      default_model_count: 3,
+      score_min: 50,
+      score_max: 90,
+      score_step: 10,
+    }
+    const wrapper = mount(DegradationRadarTabs, { props: { latest, lmarena }, global: radarGlobal })
+    await flushPromises()
+
+    const chart = wrapper.findComponent({ name: 'BenchmarkBarChart' })
+    const data = chart.props('data') as { labels: string[]; datasets: Array<{ data: number[] }> }
+    const options = chart.props('options') as {
+      scales: { y: { min: number; max: number; ticks: { stepSize: number } } }
+    }
+    expect(data.labels).toEqual(['Coding'])
+    expect(data.datasets).toHaveLength(3)
+    expect(data.datasets[0].data).toEqual([89])
+    expect(options.scales.y).toEqual(expect.objectContaining({ min: 50, max: 90 }))
+    expect(options.scales.y.ticks.stepSize).toBe(10)
+    expect(wrapper.text()).toContain('Compare up to 4 models')
+
+    const optionsInputs = wrapper.findAll('[data-testid="model-options"] input[type="checkbox"]')
+    await optionsInputs[3].trigger('change')
+    await flushPromises()
+    expect(chart.props('data')).toEqual(expect.objectContaining({
+      datasets: expect.arrayContaining([expect.objectContaining({ label: 'Model 4' })]),
+    }))
+    expect(optionsInputs[4].attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
+
   it('falls back to Top 6 when the URL has no valid selection and never permits an empty selection', async () => {
     await router.replace('/radar?models=unknown')
     const wrapper = mount(DegradationRadarTabs, { props: { latest: degradationLatest, lmarena }, global: radarGlobal })

@@ -16,11 +16,9 @@ import (
 )
 
 const (
-	deepSeekStatusDataURL               = "https://statuspage.flashcat.cloud/deepseek"
-	deepSeekStatusPageID          int64 = 6410630422455
-	deepSeekMaxComponents               = 128
-	deepSeekMaxActiveChanges            = 256
-	deepSeekMaxAffectedComponents       = 128
+	deepSeekMaxComponents         = 128
+	deepSeekMaxActiveChanges      = 256
+	deepSeekMaxAffectedComponents = 128
 )
 
 var errInvalidDeepSeekStatusResponse = errors.New("invalid DeepSeek status response")
@@ -126,8 +124,8 @@ func decodeDeepSeekStatusPage(payload []byte) ([]byte, error) {
 	if err != nil {
 		return nil, errInvalidDeepSeekStatusResponse
 	}
-	if props.InitialData.Page.PageID != deepSeekStatusPageID || strings.TrimSpace(props.InitialData.Page.Name) != "DeepSeek" ||
-		strings.TrimSpace(props.InitialData.Page.CustomDomain) != "status.deepseek.com" ||
+	if props.InitialData.Page.PageID != deepSeekStatusPageID || strings.TrimSpace(props.InitialData.Page.Name) != deepSeekStatusPageName ||
+		strings.TrimSpace(props.InitialData.Page.CustomDomain) != deepSeekStatusCustomDomain ||
 		props.InitialDataUpdatedAt <= 0 || len(props.InitialData.Page.Components) == 0 ||
 		len(props.InitialData.Page.Components) > deepSeekMaxComponents ||
 		len(props.InitialData.ActiveChanges) > deepSeekMaxActiveChanges {

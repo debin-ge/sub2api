@@ -85,23 +85,19 @@
               {{ sampleWarning }}
             </p>
 
-            <section
-              v-if="selectedWindow === '7d' && bucket.platform === 'anthropic' && (bucket.seven_day_sonnet || bucket.seven_day_fable)"
-              class="mt-6"
-            >
+            <section v-if="selectedModelWindows.length > 0" class="mt-6">
               <h3 class="text-base font-semibold text-gray-950 dark:text-white">
-                {{ t('radar.quota.modelUtilization', 'Anthropic model utilization') }}
+                {{ t('radar.quota.modelUtilization', 'Model utilization') }}
               </h3>
               <div class="mt-3 grid gap-3 sm:grid-cols-2">
-                <div v-if="bucket.seven_day_sonnet" class="rounded-xl border border-gray-200 p-4 dark:border-dark-800">
-                  <p class="font-medium text-gray-900 dark:text-white">Sonnet</p>
-                  <p class="mt-1 text-2xl font-bold text-gray-950 dark:text-white">{{ formatPercent(bucket.seven_day_sonnet.avg_utilization) }}</p>
-                  <p class="text-xs text-gray-500 dark:text-gray-400">n={{ formatNumber(bucket.seven_day_sonnet.sample_size) }}</p>
-                </div>
-                <div v-if="bucket.seven_day_fable" class="rounded-xl border border-gray-200 p-4 dark:border-dark-800">
-                  <p class="font-medium text-gray-900 dark:text-white">Fable</p>
-                  <p class="mt-1 text-2xl font-bold text-gray-950 dark:text-white">{{ formatPercent(bucket.seven_day_fable.avg_utilization) }}</p>
-                  <p class="text-xs text-gray-500 dark:text-gray-400">n={{ formatNumber(bucket.seven_day_fable.sample_size) }}</p>
+                <div
+                  v-for="modelWindow in selectedModelWindows"
+                  :key="modelWindow.model"
+                  class="rounded-xl border border-gray-200 p-4 dark:border-dark-800"
+                >
+                  <p class="font-medium text-gray-900 dark:text-white">{{ modelWindow.model }}</p>
+                  <p class="mt-1 text-2xl font-bold text-gray-950 dark:text-white">{{ formatPercent(modelWindow.avg_utilization) }}</p>
+                  <p class="text-xs text-gray-500 dark:text-gray-400">n={{ formatNumber(modelWindow.sample_size) }}</p>
                 </div>
               </div>
             </section>
@@ -123,7 +119,7 @@
                   <tbody class="divide-y divide-gray-100 dark:divide-dark-800">
                     <tr v-for="row in selectedBreakdown" :key="row.model">
                       <td class="whitespace-nowrap px-4 py-3 font-medium text-gray-900 dark:text-white">{{ row.model }}</td>
-                      <td class="whitespace-nowrap px-4 py-3 text-right text-gray-600 dark:text-gray-300">{{ formatUSD(row.avg_cost) }}</td>
+                      <td class="whitespace-nowrap px-4 py-3 text-right text-gray-600 dark:text-gray-300">{{ formatCurrency(row.avg_cost) }}</td>
                       <td class="whitespace-nowrap px-4 py-3 text-right text-gray-600 dark:text-gray-300">{{ formatNumber(row.avg_requests) }}</td>
                       <td class="whitespace-nowrap px-4 py-3 text-right text-gray-600 dark:text-gray-300">{{ formatPercent(row.percentage) }}</td>
                     </tr>
@@ -183,11 +179,13 @@ import type {
   BucketSnapshotDTO,
   ModelCostBreakdownDTO,
   QuotaTrendDTO,
-  RadarPlatform,
+  QuotaWindowDTO,
   WindowStatsDTO,
 } from '@/types/radar'
+import { platformLabel } from '@/utils/platformColors'
+import { quotaTrendWindow, quotaWindowsForBucket } from '@/utils/radarQuotaWindows'
 
-type QuotaWindow = '5h' | '7d'
+type QuotaWindowKey = string
 
 const props = withDefaults(defineProps<{
   show: boolean
@@ -210,40 +208,35 @@ const emit = defineEmits<{
 const { t, locale } = useI18n()
 const dialogRef = ref<HTMLElement | null>(null)
 const closeButtonRef = ref<HTMLButtonElement | null>(null)
-const selectedWindow = ref<QuotaWindow>('5h')
+const selectedWindow = ref<QuotaWindowKey>('')
 let returnFocusTo: HTMLElement | null = null
 let previousBodyOverflow = ''
 let bodyLocked = false
 
 const windowOptions = computed(() => {
-	const options = [
-		{ key: '5h' as const, label: t('radar.quota.window5h', '5 hours'), available: Boolean(props.bucket?.five_hour) },
-		{ key: '7d' as const, label: t('radar.quota.window7d', '7 days'), available: Boolean(props.bucket?.seven_day) },
-	]
-	return props.bucket?.platform === 'openai'
-		? options.filter((option) => option.key === '7d')
-		: options
+  if (!props.bucket) return []
+  return quotaWindowsForBucket(props.bucket).map((window) => ({
+    ...window,
+    available: window.stats !== null,
+  }))
 })
+const selectedWindowData = computed<QuotaWindowDTO | null>(() => (
+  windowOptions.value.find((window) => window.key === selectedWindow.value) ?? null
+))
 const selectedStats = computed<WindowStatsDTO | null>(() => {
-	if (!props.bucket) return null
-	if (props.bucket.platform === 'openai') return props.bucket.seven_day
-	return selectedWindow.value === '5h' ? props.bucket.five_hour : props.bucket.seven_day
+  return selectedWindowData.value?.stats ?? null
 })
 const selectedBreakdown = computed<readonly ModelCostBreakdownDTO[]>(() => {
-	if (!props.bucket) return []
-  // Older cached Radar snapshots may contain JSON null for an empty Go slice.
-  // Keep the public dialog compatible with those snapshots while the backend
-  // normalizes newly served responses to arrays.
-	if (props.bucket.platform === 'openai') return props.bucket.model_breakdown_7d ?? []
-	return (selectedWindow.value === '5h' ? props.bucket.model_breakdown_5h : props.bucket.model_breakdown_7d) ?? []
+  return selectedWindowData.value?.model_breakdown ?? []
 })
+const selectedModelWindows = computed(() => selectedWindowData.value?.model_windows ?? [])
 const summaryStats = computed(() => {
   const stats = selectedStats.value
   if (!stats) return []
   return [
     { label: t('radar.quota.averageUtilization', 'Average utilization'), value: formatPercent(stats.avg_utilization) },
     { label: t('radar.quota.range', 'Utilization range'), value: `${formatPercent(stats.min_utilization)} – ${formatPercent(stats.max_utilization)}` },
-    { label: t('radar.quota.averageCost', 'Average cost'), value: formatUSD(stats.avg_cost) },
+    { label: t('radar.quota.averageCost', 'Average cost'), value: formatCurrency(stats.avg_cost) },
     { label: t('radar.quota.inferredLimit', 'Estimated API-equivalent value'), value: formatInference(stats) },
     { label: t('radar.quota.sampleSize', 'Sample size'), value: formatNumber(stats.sample_size) },
   ]
@@ -259,15 +252,11 @@ const sampleWarning = computed(() => {
   }
   return ''
 })
-const selectedWindowLabel = computed(() => selectedWindow.value === '5h'
-  ? t('radar.quota.fiveHourUtilization', '5-hour utilization')
-  : t('radar.quota.sevenDayUtilization', '7-day utilization'))
+const selectedWindowLabel = computed(() => selectedWindowData.value?.label ?? selectedWindow.value)
 const trendData = computed(() => {
   if (!props.trend) return []
   return (props.trend.data_points ?? []).flatMap((point) => {
-    const value = selectedWindow.value === '5h'
-      ? point.five_hour?.avg_utilization
-      : point.seven_day?.avg_utilization
+    const value = quotaTrendWindow(point, selectedWindow.value)?.avg_utilization
     return value !== undefined && Number.isFinite(value)
       ? [{ timestamp: point.timestamp, value }]
       : []
@@ -290,7 +279,6 @@ const visualTrendData = computed(() => downsampleTrendData(trendData.value, 96))
 const numberFormatter = computed(() => new Intl.NumberFormat(locale.value, { maximumFractionDigits: 1 }))
 const percentFormatter = computed(() => new Intl.NumberFormat(locale.value, { maximumFractionDigits: 1 }))
 const dateTimeFormatter = computed(() => new Intl.DateTimeFormat(locale.value, { dateStyle: 'medium', timeStyle: 'short' }))
-const usdFormatter = computed(() => new Intl.NumberFormat(locale.value, { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }))
 
 watch(() => props.bucket, (bucket) => {
   chooseAvailableWindow()
@@ -305,16 +293,9 @@ watch(() => props.show, (show) => {
 }, { immediate: true })
 
 function chooseAvailableWindow(): void {
-	if (props.bucket?.platform === 'openai') {
-		selectedWindow.value = '7d'
-		return
-	}
-  const selectedIsAvailable = selectedWindow.value === '5h'
-    ? Boolean(props.bucket?.five_hour)
-    : Boolean(props.bucket?.seven_day)
-  if (selectedIsAvailable) return
-  if (props.bucket?.five_hour) selectedWindow.value = '5h'
-  else if (props.bucket?.seven_day) selectedWindow.value = '7d'
+  const options = windowOptions.value
+  if (options.some((window) => window.key === selectedWindow.value && window.available)) return
+  selectedWindow.value = options.find((window) => window.available)?.key ?? options[0]?.key ?? ''
 }
 
 function openDialog(): void {
@@ -383,9 +364,10 @@ function handleWindowKeydown(event: KeyboardEvent): void {
   void nextTick(() => dialogRef.value?.querySelector<HTMLButtonElement>(`[data-window="${next.key}"]`)?.focus())
 }
 
-function selectWindow(value: QuotaWindow): void {
-  const available = value === '5h' ? props.bucket?.five_hour : props.bucket?.seven_day
-  if (available) selectedWindow.value = value
+function selectWindow(value: QuotaWindowKey): void {
+  if (windowOptions.value.some((window) => window.key === value && window.available)) {
+    selectedWindow.value = value
+  }
 }
 
 function downsampleTrendData<T extends { value: number }>(data: readonly T[], limit: number): T[] {
@@ -417,16 +399,8 @@ function formatInference(stats: WindowStatsDTO): string {
       default: return t('radar.quota.inference.unavailable', 'No trusted result')
     }
   }
-  const stdev = stats.inferred_stdev === null ? '' : ` ± ${formatUSD(stats.inferred_stdev)}`
-  return `${formatUSD(stats.inferred_limit_usd)}${stdev}`
-}
-
-function platformLabel(platform: RadarPlatform): string {
-  switch (platform) {
-    case 'anthropic': return 'Anthropic'
-    case 'openai': return 'OpenAI'
-    case 'antigravity': return 'Antigravity'
-  }
+  const stdev = stats.inferred_stdev === null ? '' : ` ± ${formatCurrency(stats.inferred_stdev)}`
+  return `${formatCurrency(stats.inferred_limit_usd)}${stdev}`
 }
 
 function formatDate(value: string): string {
@@ -443,8 +417,18 @@ function formatPercent(value: number): string {
   return `${percentFormatter.value.format(value)}%`
 }
 
-function formatUSD(value: number): string {
-  return usdFormatter.value.format(value)
+function formatCurrency(value: number): string {
+  const currency = selectedWindowData.value?.currency
+  if (!currency) return numberFormatter.value.format(value)
+  try {
+    return new Intl.NumberFormat(locale.value, {
+      style: 'currency',
+      currency,
+      maximumFractionDigits: 2,
+    }).format(value)
+  } catch {
+    return numberFormatter.value.format(value)
+  }
 }
 
 onBeforeUnmount(closeDialog)

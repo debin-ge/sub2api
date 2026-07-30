@@ -46,6 +46,11 @@ func (r *radarServiceTestRepo) AppendBucketSnapshot(context.Context, BucketSnaps
 	return errors.New("unexpected write")
 }
 
+func (r *radarServiceTestRepo) ReplaceActiveBucketKeys(context.Context, []string) error {
+	r.recordWrite()
+	return errors.New("unexpected write")
+}
+
 func (r *radarServiceTestRepo) ListBucketKeys(context.Context) ([]string, error) {
 	return nil, errors.New("unexpected quota read")
 }
@@ -207,6 +212,9 @@ func (c *radarServiceTestClock) Advance(duration time.Duration) {
 type nilRadarServiceTestRepo struct{}
 
 func (*nilRadarServiceTestRepo) AppendBucketSnapshot(context.Context, BucketSnapshotDTO) error {
+	return nil
+}
+func (*nilRadarServiceTestRepo) ReplaceActiveBucketKeys(context.Context, []string) error {
 	return nil
 }
 func (*nilRadarServiceTestRepo) ListBucketKeys(context.Context) ([]string, error) { return nil, nil }
@@ -372,6 +380,17 @@ func TestRadarServiceGetServiceHealthIncludesOfficialPlatformsAndUsesMiniMaxChin
 		ServiceKeyClaudeAPI, ServiceKeyClaudeCode, ServiceKeyCodexWeb, ServiceKeyOpenAIAPI,
 		ServiceKeyWindsurf, ServiceKeyDeepSeek, ServiceKeyKimi, ServiceKeyMiniMax,
 	}, radarServiceHealthKeys(got))
+	require.Equal(t, []string{
+		PlatformAnthropic, PlatformAnthropic, PlatformOpenAI, PlatformOpenAI,
+		"windsurf", "deepseek", "kimi", "minimax",
+	}, []string{
+		got[0].Platform, got[1].Platform, got[2].Platform, got[3].Platform,
+		got[4].Platform, got[5].Platform, got[6].Platform, got[7].Platform,
+	})
+	require.Equal(t, []int{0, 0, 4, 4, 5, 1, 2, 3}, []int{
+		got[0].PlatformOrder, got[1].PlatformOrder, got[2].PlatformOrder, got[3].PlatformOrder,
+		got[4].PlatformOrder, got[5].PlatformOrder, got[6].PlatformOrder, got[7].PlatformOrder,
+	})
 	require.Equal(t, ServiceStatusOperational, got[4].Status)
 	require.Equal(t, ServiceStatusDegradedPerformance, got[5].Status)
 	require.Equal(t, ServiceStatusPartialOutage, got[6].Status)
@@ -925,6 +944,16 @@ func TestRadarServiceGetDegradationLatestCombinesSourcesAndDeepClones(t *testing
 	require.Equal(t, []string{"aa", "lmarena"}, radarServiceSortedMapKeys(got.SourcesLastUpdated))
 	require.NotNil(t, got.SourcesLastUpdated["aa"])
 	require.NotNil(t, got.SourcesLastUpdated["lmarena"])
+	require.Equal(t, []DegradationMetricDTO{
+		{Key: "intelligence_index"},
+		{Key: "coding_index"},
+		{Key: "agentic_index"},
+	}, got.Metrics)
+	require.Equal(t, radarBenchmarkMaxSelectedModels, got.MaxSelectedModels)
+	require.Equal(t, radarBenchmarkDefaultModelCount, got.DefaultModelCount)
+	require.Equal(t, float64(radarBenchmarkScoreMin), got.ScoreMin)
+	require.Equal(t, float64(radarBenchmarkScoreMax), got.ScoreMax)
+	require.Equal(t, float64(radarBenchmarkScoreStep), got.ScoreStep)
 
 	*got.Models[0].IntelligenceIndex = 0
 	*got.Models[0].LastUpdatedAt = time.Time{}
@@ -933,6 +962,7 @@ func TestRadarServiceGetDegradationLatestCombinesSourcesAndDeepClones(t *testing
 	*got.SourcesLastUpdated["aa"] = time.Time{}
 	got.Models = append(got.Models, DegradationModelDTO{Slug: "caller"})
 	got.SourcesLastUpdated["extra"] = &now
+	got.Metrics[0].Key = "caller_mutation"
 
 	again, err := service.GetDegradationLatest(context.Background())
 	require.NoError(t, err)
@@ -943,6 +973,7 @@ func TestRadarServiceGetDegradationLatestCombinesSourcesAndDeepClones(t *testing
 	require.NotZero(t, *again.LMArenaTop5[0].Elo)
 	require.False(t, again.SourcesLastUpdated["aa"].IsZero())
 	require.NotContains(t, again.SourcesLastUpdated, "extra")
+	require.Equal(t, "intelligence_index", again.Metrics[0].Key)
 	require.Equal(t, 1, repo.payloadCallCount(RadarSourceAA))
 	require.Equal(t, 1, repo.payloadCallCount(RadarSourceLMArena))
 	require.Equal(t, 1, repo.metaCallCount())
@@ -1261,6 +1292,16 @@ func TestRadarServiceGetDataSourcesStableSafeStatesAndDeepClone(t *testing.T) {
 		"",
 	}, radarServiceSourceURLs(got))
 	require.Equal(t, []string{"6h", "24h", "30m", "30m", "30m", "30m", "30m", "30m", "15m"}, radarServiceSourceIntervals(got))
+	require.Nil(t, got[0].Platform)
+	require.Nil(t, got[1].Platform)
+	require.Equal(t, PlatformAnthropic, *got[2].Platform)
+	require.Equal(t, 0, *got[2].PlatformOrder)
+	require.Equal(t, PlatformOpenAI, *got[3].Platform)
+	require.Equal(t, 4, *got[3].PlatformOrder)
+	require.Equal(t, "deepseek", *got[5].Platform)
+	require.Equal(t, 1, *got[5].PlatformOrder)
+	require.Nil(t, got[len(got)-1].Platform)
+	require.Nil(t, got[len(got)-1].PlatformOrder)
 
 	require.Equal(t, DataSourceStateHealthy, got[0].State)
 	require.True(t, got[0].IsHealthy)
@@ -1287,6 +1328,8 @@ func TestRadarServiceGetDataSourcesStableSafeStatesAndDeepClone(t *testing.T) {
 	*got[0].NextFireAt = time.Time{}
 	*got[0].HTTPStatus = 0
 	*got[2].Error = DataSourceErrorCodeUnauthorized
+	*got[2].Platform = "mutated"
+	*got[2].PlatformOrder = 99
 	again, err := service.GetDataSources(context.Background())
 	require.NoError(t, err)
 	require.False(t, again[0].LastAttemptAt.IsZero())
@@ -1294,6 +1337,8 @@ func TestRadarServiceGetDataSourcesStableSafeStatesAndDeepClone(t *testing.T) {
 	require.False(t, again[0].NextFireAt.IsZero())
 	require.NotZero(t, *again[0].HTTPStatus)
 	require.Equal(t, DataSourceErrorCodeInvalidResponse, *again[2].Error)
+	require.Equal(t, PlatformAnthropic, *again[2].Platform)
+	require.Equal(t, 0, *again[2].PlatformOrder)
 	require.Zero(t, repo.writeCalls)
 }
 

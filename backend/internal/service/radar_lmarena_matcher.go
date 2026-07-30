@@ -8,8 +8,6 @@ import (
 	"unicode"
 )
 
-const radarLMArenaCatalogLimit = 10
-
 type radarLMArenaCatalogModel struct {
 	display            string
 	raw                string

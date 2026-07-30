@@ -110,6 +110,10 @@ type RadarCacheRepository interface {
 	// anchored at the newest stored capture as a successful no-op. Accepted
 	// older points do not refresh TTL; equal-score corrections do.
 	AppendBucketSnapshot(ctx context.Context, snapshot BucketSnapshotDTO) error
+	// ReplaceActiveBucketKeys atomically publishes the current account-derived
+	// bucket set after a complete successful aggregation. Historical snapshots
+	// remain retained independently for trend storage.
+	ReplaceActiveBucketKeys(ctx context.Context, bucketKeys []string) error
 	ListBucketKeys(ctx context.Context) ([]string, error)
 	GetLatestBucket(ctx context.Context, bucketKey string) (*BucketSnapshotDTO, error)
 	GetBucketTrend(ctx context.Context, bucketKey string, since time.Time) ([]BucketSnapshotDTO, error)

@@ -18,10 +18,7 @@ import (
 
 const (
 	artificialAnalysisModelsURL = "https://artificialanalysis.ai/api/v2/language/models/free"
-	// The overview renders at most six radar series. When operators configure
-	// only an AA key, keep the automatic response bounded to that same size.
-	artificialAnalysisAutoModelLimit = 6
-	artificialAnalysisMaxPages       = 20
+	artificialAnalysisMaxPages  = 20
 )
 
 var errInvalidArtificialAnalysisModelsResponse = errors.New("invalid Artificial Analysis models response")
@@ -347,8 +344,8 @@ func mapAutomaticArtificialAnalysisModels(models []ArtificialAnalysisModel) ([]D
 		}
 		return candidates[i].Slug < candidates[j].Slug
 	})
-	if len(candidates) > artificialAnalysisAutoModelLimit {
-		candidates = candidates[:artificialAnalysisAutoModelLimit]
+	if len(candidates) > radarBenchmarkDefaultModelCount {
+		candidates = candidates[:radarBenchmarkDefaultModelCount]
 	}
 
 	result := make([]DegradationModelDTO, 0, len(candidates))

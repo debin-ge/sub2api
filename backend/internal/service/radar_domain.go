@@ -52,12 +52,13 @@ type RadarServiceDescriptor struct {
 // CanonicalRadarServices returns the public services in their stable display order.
 // Each call returns an independent slice that callers may safely modify.
 func CanonicalRadarServices() []RadarServiceDescriptor {
-	return []RadarServiceDescriptor{
-		{Key: ServiceKeyClaudeAPI, Name: "Claude API"},
-		{Key: ServiceKeyClaudeCode, Name: "Claude Code"},
-		{Key: ServiceKeyCodexWeb, Name: "Codex Web"},
-		{Key: ServiceKeyOpenAIAPI, Name: "OpenAI API"},
+	result := make([]RadarServiceDescriptor, 0, 4)
+	for _, registration := range radarServiceRegistrations() {
+		if registration.AlwaysPresent {
+			result = append(result, registration.Descriptor)
+		}
 	}
+	return result
 }
 
 // ServiceStatus is the normalized operational status of a public service.
@@ -145,16 +146,22 @@ type ServiceHealthHistoryDayDTO struct {
 
 // ServiceHealthDTO describes the current health of a public service.
 type ServiceHealthDTO struct {
-	ServiceKey      ServiceKey                   `json:"service_key"`
-	Name            string                       `json:"name"`
-	Status          ServiceStatus                `json:"status"`
-	StatusIndicator StatusIndicator              `json:"status_indicator"`
-	Uptime90d       *float64                     `json:"uptime_90d"`
-	LastIncident    *RadarIncidentDTO            `json:"last_incident"`
-	LastUpdatedAt   *time.Time                   `json:"last_updated_at"`
-	History30d      []ServiceHealthHistoryDayDTO `json:"history_30d"`
-	SourceURL       string                       `json:"source_url"`
-	Stale           bool                         `json:"stale"`
+	ServiceKey           ServiceKey                   `json:"service_key"`
+	Platform             string                       `json:"platform"`
+	PlatformOrder        int                          `json:"platform_order"`
+	Name                 string                       `json:"name"`
+	Status               ServiceStatus                `json:"status"`
+	StatusIndicator      StatusIndicator              `json:"status_indicator"`
+	Uptime90d            *float64                     `json:"uptime_90d"`
+	LastIncident         *RadarIncidentDTO            `json:"last_incident"`
+	LastUpdatedAt        *time.Time                   `json:"last_updated_at"`
+	History30d           []ServiceHealthHistoryDayDTO `json:"history_30d"`
+	HistoryDays          int                          `json:"history_days"`
+	UptimeWindowDays     int                          `json:"uptime_window_days"`
+	RecentIncidentDays   int                          `json:"recent_incident_days"`
+	IncidentPreviewLimit int                          `json:"incident_preview_limit"`
+	SourceURL            string                       `json:"source_url"`
+	Stale                bool                         `json:"stale"`
 }
 
 // WindowStatsDTO contains aggregate quota statistics for one time window.
@@ -187,23 +194,37 @@ type ModelCostBreakdownDTO struct {
 	ContributorsCount int     `json:"contributors_count"`
 }
 
+// QuotaWindowDTO describes one supported quota window without coupling clients
+// to platform-specific field names.
+type QuotaWindowDTO struct {
+	Key             string                  `json:"key"`
+	Label           string                  `json:"label"`
+	DurationSeconds int64                   `json:"duration_seconds"`
+	Currency        string                  `json:"currency"`
+	Stats           *WindowStatsDTO         `json:"stats"`
+	ModelWindows    []ModelWindowStatsDTO   `json:"model_windows"`
+	ModelBreakdown  []ModelCostBreakdownDTO `json:"model_breakdown"`
+}
+
 // BucketSnapshotDTO contains the latest public aggregate for one quota bucket.
 type BucketSnapshotDTO struct {
-	CalculationVersion int                     `json:"calculation_version"`
-	BucketKey          string                  `json:"bucket_key"`
-	Platform           string                  `json:"platform"`
-	PlanTier           string                  `json:"plan_tier"`
-	DisplayName        string                  `json:"display_name"`
-	AccountsCount      int                     `json:"accounts_count"`
-	PrivacyThreshold   int                     `json:"privacy_threshold"`
-	FiveHour           *WindowStatsDTO         `json:"five_hour"`
-	SevenDay           *WindowStatsDTO         `json:"seven_day"`
-	SevenDaySonnet     *ModelWindowStatsDTO    `json:"seven_day_sonnet"`
-	SevenDayFable      *ModelWindowStatsDTO    `json:"seven_day_fable"`
-	ModelBreakdown5h   []ModelCostBreakdownDTO `json:"model_breakdown_5h"`
-	ModelBreakdown7d   []ModelCostBreakdownDTO `json:"model_breakdown_7d"`
-	CapturedAt         time.Time               `json:"captured_at"`
-	Stale              bool                    `json:"stale"`
+	CalculationVersion int              `json:"calculation_version"`
+	BucketKey          string           `json:"bucket_key"`
+	Platform           string           `json:"platform"`
+	PlanTier           string           `json:"plan_tier"`
+	DisplayName        string           `json:"display_name"`
+	AccountsCount      int              `json:"accounts_count"`
+	PrivacyThreshold   int              `json:"privacy_threshold"`
+	Windows            []QuotaWindowDTO `json:"windows"`
+	// Legacy fields remain during the Redis snapshot compatibility window.
+	FiveHour         *WindowStatsDTO         `json:"five_hour"`
+	SevenDay         *WindowStatsDTO         `json:"seven_day"`
+	SevenDaySonnet   *ModelWindowStatsDTO    `json:"seven_day_sonnet"`
+	SevenDayFable    *ModelWindowStatsDTO    `json:"seven_day_fable"`
+	ModelBreakdown5h []ModelCostBreakdownDTO `json:"model_breakdown_5h"`
+	ModelBreakdown7d []ModelCostBreakdownDTO `json:"model_breakdown_7d"`
+	CapturedAt       time.Time               `json:"captured_at"`
+	Stale            bool                    `json:"stale"`
 }
 
 // QuotaRadarLatestDTO is the latest public quota radar snapshot.
@@ -223,11 +244,22 @@ type QuotaTrendWindowDTO struct {
 	InferenceConfidence InferenceConfidence `json:"inference_confidence,omitempty"`
 }
 
+// QuotaTrendPointWindowDTO identifies one window within a trend point.
+type QuotaTrendPointWindowDTO struct {
+	Key             string               `json:"key"`
+	Label           string               `json:"label"`
+	DurationSeconds int64                `json:"duration_seconds"`
+	Currency        string               `json:"currency"`
+	Stats           *QuotaTrendWindowDTO `json:"stats"`
+}
+
 // QuotaTrendPointDTO contains quota window aggregates captured at one time.
 type QuotaTrendPointDTO struct {
-	Timestamp time.Time            `json:"timestamp"`
-	FiveHour  *QuotaTrendWindowDTO `json:"five_hour"`
-	SevenDay  *QuotaTrendWindowDTO `json:"seven_day"`
+	Timestamp time.Time                  `json:"timestamp"`
+	Windows   []QuotaTrendPointWindowDTO `json:"windows"`
+	// Legacy fields remain for clients deployed before the generic window DTO.
+	FiveHour *QuotaTrendWindowDTO `json:"five_hour"`
+	SevenDay *QuotaTrendWindowDTO `json:"seven_day"`
 }
 
 // QuotaTrendDTO is the public trend series for one quota bucket.
@@ -270,13 +302,25 @@ type LMArenaEntryDTO struct {
 
 // DegradationLatestDTO is the latest public model degradation snapshot.
 type DegradationLatestDTO struct {
-	Models                   []DegradationModelDTO `json:"models"`
-	AvailableModels          []DegradationModelDTO `json:"available_models"`
-	DefaultModelSlugs        []string              `json:"default_model_slugs"`
-	IntelligenceIndexVersion *float64              `json:"intelligence_index_version"`
-	LMArenaTop5              []LMArenaEntryDTO     `json:"lmarena_top5"`
-	SourcesLastUpdated       map[string]*time.Time `json:"sources_last_updated"`
-	Stale                    bool                  `json:"stale"`
+	Models                   []DegradationModelDTO  `json:"models"`
+	AvailableModels          []DegradationModelDTO  `json:"available_models"`
+	DefaultModelSlugs        []string               `json:"default_model_slugs"`
+	Metrics                  []DegradationMetricDTO `json:"metrics"`
+	MaxSelectedModels        int                    `json:"max_selected_models"`
+	DefaultModelCount        int                    `json:"default_model_count"`
+	ScoreMin                 float64                `json:"score_min"`
+	ScoreMax                 float64                `json:"score_max"`
+	ScoreStep                float64                `json:"score_step"`
+	IntelligenceIndexVersion *float64               `json:"intelligence_index_version"`
+	LMArenaTop5              []LMArenaEntryDTO      `json:"lmarena_top5"`
+	SourcesLastUpdated       map[string]*time.Time  `json:"sources_last_updated"`
+	Stale                    bool                   `json:"stale"`
+}
+
+// DegradationMetricDTO declares an ordered benchmark metric exposed by the
+// backend. Presentation details remain localized by the frontend.
+type DegradationMetricDTO struct {
+	Key string `json:"key"`
 }
 
 // LMArenaDTO is the public LMArena leaderboard snapshot.
@@ -294,6 +338,8 @@ type DataSourceMetaDTO struct {
 	Name string `json:"name"`
 	// URL is an allowlisted canonical public source URL, never a configured fetch URL.
 	URL           string     `json:"url"`
+	Platform      *string    `json:"platform"`
+	PlatformOrder *int       `json:"platform_order"`
 	Interval      string     `json:"interval"`
 	LastAttemptAt *time.Time `json:"last_attempt_at"`
 	LastSuccessAt *time.Time `json:"last_success_at"`

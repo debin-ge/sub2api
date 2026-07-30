@@ -72,6 +72,10 @@ func (*cleanupRadarRepositoryStub) AppendBucketSnapshot(context.Context, service
 	return nil
 }
 
+func (*cleanupRadarRepositoryStub) ReplaceActiveBucketKeys(context.Context, []string) error {
+	return nil
+}
+
 func (*cleanupRadarRepositoryStub) ListSourceMeta(context.Context) (map[service.RadarSourceKey]service.SourceFetchMeta, error) {
 	return map[service.RadarSourceKey]service.SourceFetchMeta{}, nil
 }

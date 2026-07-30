@@ -19,7 +19,7 @@ describe('QuotaBucketGrid', () => {
     expect(wrapper.text()).toContain('No publishable quota data')
   })
 
-  it('shows only the 5H and 7D API-equivalent estimates and sample sizes for each plan', () => {
+  it('shows backend-declared quota windows, estimates, sample sizes, and a details entry', async () => {
     const item = bucket({
       five_hour: windowStats({
         inferred_limit_usd: 100.25,
@@ -50,10 +50,30 @@ describe('QuotaBucketGrid', () => {
     expect(wrapper.text()).not.toContain('55%')
     expect(wrapper.text()).not.toContain('Accounts')
     expect(wrapper.text()).not.toContain('Trend')
-    expect(wrapper.text()).not.toContain('View details')
+    expect(wrapper.text()).toContain('View details')
     expect(wrapper.text()).not.toContain('±')
-    expect(wrapper.find('button').exists()).toBe(false)
+    await wrapper.get('[data-testid="quota-view-details"]').trigger('click')
+    expect(wrapper.emitted('select')?.[0]).toEqual([item])
     expect(wrapper.find('svg').exists()).toBe(false)
+  })
+
+  it('renders a backend-added window without a frontend platform switch', () => {
+    const item = bucket({
+      windows: [{
+        key: '24h',
+        label: '24H',
+        duration_seconds: 86400,
+        currency: 'EUR',
+        stats: windowStats({ inferred_limit_usd: 250 }),
+        model_windows: [],
+        model_breakdown: [],
+      }],
+    })
+    const wrapper = mount(QuotaBucketGrid, { props: { buckets: [item] } })
+
+    expect(wrapper.get('[data-testid="quota-window-anthropic/max_20x-24h"]').text()).toContain('24H')
+    expect(wrapper.text()).toContain('€250')
+    expect(wrapper.find('[data-testid$="-5h"]').exists()).toBe(false)
   })
 
   it.each(['en', 'zh'])('locale-formats large sample counts in %s', (locale) => {
@@ -108,6 +128,23 @@ describe('QuotaBucketGrid', () => {
     expect(fiveHour.text()).toContain('$80')
     expect(fiveHour.text()).toContain('Single-sample estimate · Low confidence')
     expect(fiveHour.text()).not.toContain('±')
+  })
+
+  it('uses the warning threshold returned by the quota API', () => {
+    const wrapper = mount(QuotaBucketGrid, {
+      props: {
+        buckets: [bucket({
+          five_hour: windowStats({
+            sample_size: 4,
+            inference_confidence: 'medium',
+          }),
+        })],
+        sampleSizeWarnBelow: 5,
+      },
+    })
+
+    expect(wrapper.get('[data-testid="quota-window-anthropic/max_20x-5h"]').text())
+      .toContain('Small sample')
   })
 
   it('explains an unavailable estimate from a legacy unknown-plan snapshot', () => {

@@ -60,6 +60,8 @@ export interface ServiceHealthHistoryDayDTO {
 
 export interface ServiceHealthDTO {
   service_key: ServiceKey
+  platform: string
+  platform_order: number
   name: string
   status: ServiceStatus
   status_indicator: StatusIndicator
@@ -67,6 +69,10 @@ export interface ServiceHealthDTO {
   last_incident: RadarIncidentDTO | null
   last_updated_at: RadarTimestamp | null
   history_30d: ServiceHealthHistoryDayDTO[]
+  history_days: number
+  uptime_window_days: number
+  recent_incident_days: number
+  incident_preview_limit: number
   source_url: string
   stale: boolean
 }
@@ -98,6 +104,16 @@ export interface ModelCostBreakdownDTO {
   contributors_count: number
 }
 
+export interface QuotaWindowDTO {
+  key: string
+  label: string
+  duration_seconds: number
+  currency: string
+  stats: WindowStatsDTO | null
+  model_windows: ModelWindowStatsDTO[]
+  model_breakdown: ModelCostBreakdownDTO[]
+}
+
 export interface BucketSnapshotDTO {
   calculation_version: number
   bucket_key: string
@@ -106,6 +122,8 @@ export interface BucketSnapshotDTO {
   display_name: string
   accounts_count: number
   privacy_threshold: number
+  windows: QuotaWindowDTO[]
+  /** Legacy compatibility fields; prefer windows. */
   five_hour: WindowStatsDTO | null
   seven_day: WindowStatsDTO | null
   seven_day_sonnet: ModelWindowStatsDTO | null
@@ -131,8 +149,18 @@ export interface QuotaTrendWindowDTO {
   inference_confidence?: InferenceConfidence
 }
 
+export interface QuotaTrendPointWindowDTO {
+  key: string
+  label: string
+  duration_seconds: number
+  currency: string
+  stats: QuotaTrendWindowDTO | null
+}
+
 export interface QuotaTrendPointDTO {
   timestamp: RadarTimestamp
+  windows: QuotaTrendPointWindowDTO[]
+  /** Legacy compatibility fields; prefer windows. */
   five_hour: QuotaTrendWindowDTO | null
   seven_day: QuotaTrendWindowDTO | null
 }
@@ -174,6 +202,12 @@ export interface DegradationLatestDTO {
   models: DegradationModelDTO[]
   available_models: DegradationModelDTO[]
   default_model_slugs: string[]
+  metrics: Array<{ key: DegradationMetric }>
+  max_selected_models: number
+  default_model_count: number
+  score_min: number
+  score_max: number
+  score_step: number
   intelligence_index_version: number | null
   lmarena_top5: LMArenaEntryDTO[]
   sources_last_updated: Record<string, RadarTimestamp | null>
@@ -192,6 +226,8 @@ export interface DataSourceMetaDTO {
   key: string
   name: string
   url: string
+  platform: string | null
+  platform_order: number | null
   interval: string
   last_attempt_at: RadarTimestamp | null
   last_success_at: RadarTimestamp | null

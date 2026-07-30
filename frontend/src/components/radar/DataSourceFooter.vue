@@ -1,5 +1,8 @@
 <template>
-  <footer class="border-t border-gray-200 bg-gray-50 dark:border-dark-800 dark:bg-dark-950/60">
+  <footer
+    data-testid="sources"
+    class="border-t border-gray-200 bg-gray-50 dark:border-dark-800 dark:bg-dark-950/60"
+  >
     <div class="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
       <h2 class="text-base font-semibold text-gray-950 dark:text-white">
         {{ t('radar.sources.title', 'Data sources') }}
@@ -14,8 +17,8 @@
           <div class="flex min-w-0 flex-col items-start gap-3 sm:flex-row sm:justify-between">
             <div class="min-w-0 flex-1">
               <a
-                v-if="sourceLink(source.key)"
-                :href="sourceLink(source.key) ?? undefined"
+                v-if="sourceLink(source)"
+                :href="sourceLink(source) ?? undefined"
                 target="_blank"
                 rel="noopener noreferrer"
                 class="flex min-w-0 max-w-full items-start gap-1 font-semibold text-primary-600 hover:underline dark:text-primary-400"
@@ -67,7 +70,10 @@
         {{ t('radar.sources.empty', 'No source metadata available') }}
       </p>
 
-      <p class="mt-8 max-w-5xl text-sm leading-6 text-gray-600 dark:text-gray-400">
+      <p
+        data-testid="disclaimer"
+        class="mt-8 max-w-5xl text-sm leading-6 text-gray-600 dark:text-gray-400"
+      >
         {{ t('radar.sources.disclaimer', 'Data is aggregated from anonymous on-site statistics and public third-party sources. Model benchmark results depend on evaluation methodology; API-equivalent values are statistical estimates, not official vendor quota limits or commitments, and should not be the sole basis for critical business decisions.') }}
       </p>
     </div>
@@ -94,12 +100,16 @@ function formatInterval(value: string): string {
   return formatGoDuration(value, locale.value)
 }
 
-function sourceLink(key: string): string | null {
-  if (key === 'aa') return 'https://artificialanalysis.ai'
-  if (key === 'lmarena') return 'https://arena.ai/leaderboard/text'
-  if (key === 'status_claude') return 'https://status.claude.com'
-  if (key === 'status_openai') return 'https://status.openai.com'
-  return null
+function sourceLink(source: DataSourceMetaDTO): string | null {
+  const value = source.url.trim()
+  if (!value) return null
+  try {
+    const parsed = new URL(value)
+    if (parsed.protocol !== 'https:' || parsed.username || parsed.password) return null
+    return value
+  } catch {
+    return null
+  }
 }
 
 function sourceName(source: DataSourceMetaDTO): string {

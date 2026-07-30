@@ -80,6 +80,36 @@ func TestDecodeDeepSeekStatusPageMapsOfficialThirtyDayHistory(t *testing.T) {
 	require.Equal(t, "DeepSeek API unavailable", incidentDay.Incidents[0].Name)
 }
 
+func TestDecodeDeepSeekStatusPageMapsSplitV4APIComponentsAsOperational(t *testing.T) {
+	var current any
+	require.NoError(t, json.Unmarshal([]byte(`{
+      "initialData":{"page":{"page_id":6410630422455,"name":"DeepSeek","custom_domain":"status.deepseek.com","components":[
+        {"component_id":"v4-pro-api","name":"DeepSeek V4 Pro API服务","available_since_seconds":1706745600},
+        {"component_id":"v4-flash-api","name":"DeepSeek V4 Flash API服务","available_since_seconds":1706745600},
+        {"component_id":"chat","name":"网页对话服务 (Web Chat Service)","available_since_seconds":1706745600}
+      ]},"active_changes":[]},"initialDataUpdatedAt":1784165568367
+    }`), &current))
+	history := map[string]any{"initialData": map[string]any{
+		"component_impacts": []any{},
+		"linked_changes":    []any{},
+	}}
+
+	summary, err := DecodeDeepSeekStatusPage(deepSeekStatusHTMLNodes(t, current, history))
+	require.NoError(t, err)
+	cards, err := MapStatuspageServiceHealth(RadarSourceStatusDeepSeek, summary)
+	require.NoError(t, err)
+	require.Len(t, cards, 1)
+	require.Equal(t, ServiceStatusOperational, cards[0].Status)
+	require.Equal(t, StatusIndicatorNone, cards[0].StatusIndicator)
+	require.NotNil(t, cards[0].LastUpdatedAt)
+	require.Nil(t, cards[0].LastIncident)
+	require.Len(t, cards[0].History30d, serviceHealthHistoryDays)
+	for _, day := range cards[0].History30d {
+		require.Equal(t, ServiceStatusOperational, day.Status)
+		require.Empty(t, day.Incidents)
+	}
+}
+
 func TestDecodeDeepSeekStatusPageRejectsUnmappedHistoricalComponent(t *testing.T) {
 	var current any
 	require.NoError(t, json.Unmarshal([]byte(`{

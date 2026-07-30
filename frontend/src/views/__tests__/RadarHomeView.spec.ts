@@ -108,7 +108,15 @@ function makeRadar(options: RadarFixtureOptions = {}): UsePublicRadarReturn {
   })
   const latest = options.degradationLatest ?? resource(degradationLatest)
   const arena = options.lmarena ?? resource(lmarena)
-  const sources = options.sources ?? resource([source()])
+  const sources = options.sources ?? resource([
+    source(),
+    source({ key: 'status_claude', name: 'Claude Status', url: 'https://status.claude.com', platform: 'anthropic', platform_order: 0 }),
+    source({ key: 'status_openai', name: 'OpenAI Status', url: 'https://status.openai.com', platform: 'openai', platform_order: 4 }),
+    source({ key: 'status_windsurf', name: 'Windsurf Status', url: 'https://status.windsurf.com', platform: 'windsurf', platform_order: 5 }),
+    source({ key: 'status_deepseek', name: 'DeepSeek Status', url: 'https://status.deepseek.com', platform: 'deepseek', platform_order: 1 }),
+    source({ key: 'status_kimi', name: 'Kimi Status', url: 'https://status.moonshot.cn', platform: 'kimi', platform_order: 2 }),
+    source({ key: 'status_minimax_china', name: 'MiniMax China Status', url: 'https://status.minimaxi.com', platform: 'minimax', platform_order: 3 }),
+  ])
   const states = [health, quotaLatest, latest, arena, sources] as const
   const hasCompletedRefresh = ref(options.hasCompletedRefresh ?? true)
   const quotaTrendState = options.quotaTrendState ?? resource<QuotaTrendDTO>(null, {
@@ -151,8 +159,22 @@ const ServiceHealthGridStub = defineComponent({
 
 const QuotaBucketGridStub = defineComponent({
   name: 'QuotaBucketGrid',
-  props: ['buckets'],
-  template: '<div data-testid="quota-grid" />',
+  props: ['buckets', 'sampleSizeWarnBelow'],
+  emits: ['select'],
+  template: '<button data-testid="quota-grid" :data-sample-warning="sampleSizeWarnBelow" @click="$emit(\'select\', buckets?.[0])" />',
+})
+
+const QuotaBucketDetailModalStub = defineComponent({
+  name: 'QuotaBucketDetailModal',
+  props: ['show', 'bucket', 'trend', 'trendLoading', 'trendError', 'sampleSizeWarnBelow'],
+  emits: ['close'],
+  template: '<div v-if="show" data-testid="quota-modal"><button data-testid="quota-modal-close" @click="$emit(\'close\')" /></div>',
+})
+
+const DataSourceFooterStub = defineComponent({
+  name: 'DataSourceFooter',
+  props: ['sources', 'loading'],
+  template: '<div data-testid="sources"><p data-testid="disclaimer">disclaimer</p></div>',
 })
 
 const DegradationStub = defineComponent({
@@ -173,6 +195,8 @@ const stubs: Record<string, Component> = {
   RadarHero: RadarHeroStub,
   ServiceHealthGrid: ServiceHealthGridStub,
   QuotaBucketGrid: QuotaBucketGridStub,
+  QuotaBucketDetailModal: QuotaBucketDetailModalStub,
+  DataSourceFooter: DataSourceFooterStub,
   DegradationRadarTabs: DegradationStub,
   Icon: true,
 }
@@ -266,7 +290,7 @@ describe('RadarHomeView', () => {
     const wrapper = mountView(radar)
     await flushPromises()
 
-    expect(wrapper.get('[data-testid="health-grid"]').text()).toContain('2')
+    expect(wrapper.get('[data-testid="health-grid"]').text()).toContain('1')
     expect(wrapper.find('[data-testid="quota-grid"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('Unable to load this section')
     expect(wrapper.getComponent(RadarHeroStub).props()).not.toHaveProperty('stale')
@@ -289,10 +313,10 @@ describe('RadarHomeView', () => {
     expect(wrapper.text()).not.toContain('Unable to load this section')
   })
 
-  it('does not render the data-source footer', () => {
+  it('renders the data-source footer from the API metadata', () => {
     const wrapper = mountView(makeRadar())
-    expect(wrapper.find('[data-testid="sources"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="disclaimer"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="sources"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="disclaimer"]').exists()).toBe(true)
   })
 
   it('renders the same localized copyright footer as the home page', () => {
@@ -309,8 +333,9 @@ describe('RadarHomeView', () => {
     expect(contentWrapper.get('[data-testid="hero"]').exists()).toBe(true)
     expect(contentWrapper.get('[data-testid="health-grid"]').exists()).toBe(true)
     expect(contentWrapper.get('[data-testid="quota-grid"]').exists()).toBe(true)
+    expect(contentWrapper.get('[data-testid="quota-grid"]').attributes('data-sample-warning')).toBe('3')
     expect(contentWrapper.get('[data-testid="degradation"]').exists()).toBe(true)
-    expect(contentWrapper.find('[data-testid="sources"]').exists()).toBe(false)
+    expect(contentWrapper.find('[data-testid="sources"]').exists()).toBe(true)
 
     const emptyWrapper = mountView(makeRadar({
       health: resource<ServiceHealthDTO[]>([]),
@@ -335,7 +360,7 @@ describe('RadarHomeView', () => {
     await flushPromises()
     expect(emptyWrapper.text()).toContain('No quota data yet')
     expect(emptyWrapper.get('[data-testid="degradation"]').exists()).toBe(true)
-    expect(emptyWrapper.find('[data-testid="sources"]').exists()).toBe(false)
+    expect(emptyWrapper.find('[data-testid="sources"]').exists()).toBe(true)
   })
 
   it('distinguishes a completed empty aggregation from a pending first run', () => {
@@ -379,16 +404,35 @@ describe('RadarHomeView', () => {
     }
   })
 
-  it('renders quota buckets without requesting trends or mounting a details modal', async () => {
+  it('loads and displays the selected bucket trend through the details modal', async () => {
     const radar = makeRadar()
     const wrapper = mountView(radar)
     await flushPromises()
 
     expect(wrapper.getComponent(QuotaBucketGridStub).props()).toEqual({
       buckets: radar.quotaLatest.data.value?.buckets,
+      sampleSizeWarnBelow: radar.quotaLatest.data.value?.sample_size_warn_below,
     })
-    expect(radar.getQuotaTrendState).not.toHaveBeenCalled()
-    expect(radar.loadQuotaTrend).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="quota-modal"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="quota-grid"]').trigger('click')
+    await flushPromises()
+
+    expect(radar.getQuotaTrendState).toHaveBeenCalledWith(
+      radar.quotaLatest.data.value?.buckets[0].bucket_key,
+      7
+    )
+    expect(radar.loadQuotaTrend).toHaveBeenCalledWith(
+      radar.quotaLatest.data.value?.buckets[0].bucket_key,
+      7
+    )
+    expect(wrapper.getComponent(QuotaBucketDetailModalStub).props()).toMatchObject({
+      show: true,
+      bucket: radar.quotaLatest.data.value?.buckets[0],
+      sampleSizeWarnBelow: radar.quotaLatest.data.value?.sample_size_warn_below,
+    })
+
+    await wrapper.get('[data-testid="quota-modal-close"]').trigger('click')
     expect(wrapper.find('[data-testid="quota-modal"]').exists()).toBe(false)
   })
 

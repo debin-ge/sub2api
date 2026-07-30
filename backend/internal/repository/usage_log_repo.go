@@ -272,8 +272,9 @@ func (r *usageLogRepository) GetAccountModelBreakdownBatch(ctx context.Context, 
 
 // GetAccountModelBreakdownByWindowBatch aggregates every account inside its
 // own provider reset-bound quota period, ending at the passive snapshot's
-// sampled_at timestamp. Radar uses the provider-equivalent cost without the
-// account billing multiplier.
+// sampled_at timestamp. It returns the raw provider-equivalent cost; Radar
+// applies each account's current multiplier so plan upgrades rebase the whole
+// active quota period instead of mixing historical multipliers.
 func (r *usageLogRepository) GetAccountModelBreakdownByWindowBatch(
 	ctx context.Context,
 	windows []service.RadarQuotaAccountWindow,

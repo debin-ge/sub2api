@@ -113,6 +113,9 @@ func (r *radarRunnerTestRepository) signal(kind string, source RadarSourceKey) {
 func (r *radarRunnerTestRepository) AppendBucketSnapshot(context.Context, BucketSnapshotDTO) error {
 	return nil
 }
+func (r *radarRunnerTestRepository) ReplaceActiveBucketKeys(context.Context, []string) error {
+	return nil
+}
 func (r *radarRunnerTestRepository) ListBucketKeys(context.Context) ([]string, error) {
 	return nil, nil
 }
@@ -1461,6 +1464,8 @@ func TestRadarRunnerSameSourceNeverOverlapsWhenExecutionExceedsInterval(t *testi
 
 func TestNewRadarRunnerRejectsTypedNilQuotaAggregator(t *testing.T) {
 	cfg := validRadarFetcherTestConfig()
+	cfg.Radar.QuotaAggregatorIntervalMin = 6 * 60
+	cfg.Radar.QuotaStaleThresholdMinutes = 12 * 60
 	repo := newRadarRunnerTestRepository()
 	fetcher := &radarRunnerTestFetcher{source: RadarSourceLMArena, interval: time.Hour}
 	var aggregator *RadarQuotaAggregator
@@ -1477,7 +1482,7 @@ func TestNewRadarRunnerRejectsTypedNilQuotaAggregator(t *testing.T) {
 		radarRunnerOptions{skipQuotaScheduler: true},
 	)
 	require.NoError(t, err)
-	require.Equal(t, 15*time.Minute, validRunner.quotaInterval)
+	require.Equal(t, 6*time.Hour, validRunner.quotaInterval)
 	require.Positive(t, validRunner.quotaTimeout)
 	require.Less(t, validRunner.quotaTimeout, validRunner.quotaInterval)
 	require.Greater(t, validRunner.quotaLockTTL, validRunner.quotaTimeout+validRunner.cleanupTimeout)

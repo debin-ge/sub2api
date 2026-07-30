@@ -107,8 +107,8 @@ func TestRadarCacheRepositoryRecordsRedisResultsAndBoundedCacheMemory(t *testing
 	repo.metrics = metrics
 
 	now := time.Now().UTC().Truncate(time.Millisecond)
-	require.NoError(t, repo.AppendBucketSnapshot(context.Background(), testRadarSnapshot("anthropic/private-plan", now)))
-	_, err = repo.GetLatestBucket(context.Background(), "anthropic/private-plan")
+	require.NoError(t, repo.AppendBucketSnapshot(context.Background(), testRadarSnapshot("anthropic/pro", now)))
+	_, err = repo.GetLatestBucket(context.Background(), "anthropic/pro")
 	require.NoError(t, err)
 	snapshot, err := repo.GetRadarMetricsSnapshot(context.Background())
 	require.NoError(t, err)
@@ -144,7 +144,7 @@ func TestRadarCacheMemoryRefreshHydratesCurrentFamilyTotals(t *testing.T) {
 	for _, snapshot := range []service.BucketSnapshotDTO{
 		testRadarSnapshot("anthropic/pro", base),
 		testRadarSnapshot("anthropic/pro", base.Add(time.Minute)),
-		testRadarSnapshot("openai/team", base),
+		testRadarSnapshot("openai/pro_20x", base),
 	} {
 		require.NoError(t, repo.AppendBucketSnapshot(ctx, snapshot))
 	}
@@ -173,7 +173,7 @@ func TestRadarCacheMemoryRefreshHydratesCurrentFamilyTotals(t *testing.T) {
 	body := scrapeRepositoryMetrics(t, restartedRegistry)
 
 	quotaUsageA, _ := rdb.MemoryUsage(ctx, radarBucketRedisKey("anthropic/pro")).Result()
-	quotaUsageB, _ := rdb.MemoryUsage(ctx, radarBucketRedisKey("openai/team")).Result()
+	quotaUsageB, _ := rdb.MemoryUsage(ctx, radarBucketRedisKey("openai/pro_20x")).Result()
 	wantQuota := quotaUsageA + quotaUsageB
 	require.Contains(t, body, fmt.Sprintf(`radar_cache_memory_bytes{cache="quota_bucket"} %d`, wantQuota))
 	aaUsage, _ := rdb.MemoryUsage(ctx, radarAASourceKey).Result()
@@ -240,7 +240,7 @@ func TestRadarAppendSurvivesLedgerFailureAndPeriodicSnapshotRepairsExistingQuota
 	repo := repoValue.(*radarCacheRepository)
 	repo.metrics = metrics
 	ctx := context.Background()
-	bucket := "anthropic/private-plan"
+	bucket := "anthropic/pro"
 	key := radarBucketRedisKey(bucket)
 	field := radarMetricsLedgerField("quota_bucket", key)
 
@@ -331,8 +331,14 @@ func TestRadarAggregatorMetricsStateIsMonotonicAndIndependentOfRetainedBuckets(t
 	repo := repoValue.(*radarCacheRepository)
 	ctx := context.Background()
 	base := time.Now().UTC().Truncate(time.Millisecond)
-	for i := 0; i < 6; i++ {
-		bucket := fmt.Sprintf("anthropic/retained-%d", i)
+	for _, bucket := range []string{
+		"anthropic/generic",
+		"anthropic/pro",
+		"anthropic/max_5x",
+		"anthropic/max_20x",
+		"openai/plus",
+		"openai/pro_5x",
+	} {
 		require.NoError(t, repo.AppendBucketSnapshot(ctx, testRadarSnapshot(bucket, base)))
 	}
 	applied, err := repo.CommitRadarAggregatorRun(ctx, service.RadarAggregatorRunState{

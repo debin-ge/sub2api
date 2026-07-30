@@ -16,7 +16,7 @@ import (
 
 const (
 	defaultRadarPublicMinBucketAccounts = 1
-	radarQuotaCalculationVersion        = 3
+	radarQuotaCalculationVersion        = 4
 	defaultRadarInferenceSnapshotMaxAge = 30 * time.Minute
 
 	radarQuotaAnthropicPlanGeneric = "generic"
@@ -76,6 +76,7 @@ type radarQuotaAccountLister interface {
 // radarQuotaSnapshotWriter excludes every Radar cache read and source method.
 type radarQuotaSnapshotWriter interface {
 	AppendBucketSnapshot(ctx context.Context, snapshot BucketSnapshotDTO) error
+	ReplaceActiveBucketKeys(ctx context.Context, bucketKeys []string) error
 }
 
 type radarQuotaAggregatorConfig struct {
@@ -200,11 +201,12 @@ type radarQuotaBucketIdentity struct {
 }
 
 type radarQuotaBucketAccount struct {
-	accountID     int64
-	contributorID int64
-	usage         *UsageInfo
-	identity      radarQuotaBucketIdentity
-	isShadow      bool
+	accountID      int64
+	contributorID  int64
+	usage          *UsageInfo
+	identity       radarQuotaBucketIdentity
+	isShadow       bool
+	rateMultiplier *float64
 }
 
 // RunOnce preserves the original error-only entry point for callers that do
@@ -249,6 +251,7 @@ func (a *RadarQuotaAggregator) runOnce(ctx context.Context, report *RadarQuotaAg
 			accountsByID[accounts[i].ID] = &accounts[i]
 		}
 	}
+	activeBucketContributors := make(map[string]map[int64]struct{})
 	byContributorID := make(map[int64]radarQuotaBucketAccount)
 	for i := range accounts {
 		account := &accounts[i]
@@ -259,6 +262,17 @@ func (a *RadarQuotaAggregator) runOnce(ctx context.Context, report *RadarQuotaAg
 		if report != nil {
 			report.CandidateAccountCount++
 		}
+		identity, ok := radarQuotaBucketIdentityForAccount(identityAccount)
+		if !ok {
+			radarQuotaReportSkippedAccount(report, radarQuotaSkipInvalidBucket)
+			continue
+		}
+		contributors := activeBucketContributors[identity.bucketKey]
+		if contributors == nil {
+			contributors = make(map[int64]struct{})
+			activeBucketContributors[identity.bucketKey] = contributors
+		}
+		contributors[contributorID] = struct{}{}
 
 		usage, readErr := a.usageReader.GetRadarUsageSnapshot(ctx, account)
 		if readErr != nil {
@@ -271,21 +285,17 @@ func (a *RadarQuotaAggregator) runOnce(ctx context.Context, report *RadarQuotaAg
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		identity, ok := buildRadarQuotaBucketIdentity(identityAccount, usage)
-		if !ok {
-			radarQuotaReportSkippedAccount(report, radarQuotaSkipInvalidBucket)
-			continue
-		}
 		if !radarQuotaUsageHasValidWindowForPlatform(usage, identity.platform, readAt) {
 			radarQuotaReportSkippedAccount(report, radarQuotaSkipInvalidWindow)
 			continue
 		}
 		candidate := radarQuotaBucketAccount{
-			accountID:     account.ID,
-			contributorID: contributorID,
-			usage:         usage,
-			identity:      identity,
-			isShadow:      account.IsShadow(),
+			accountID:      account.ID,
+			contributorID:  contributorID,
+			usage:          usage,
+			identity:       identity,
+			isShadow:       account.IsShadow(),
+			rateMultiplier: identityAccount.RateMultiplier,
 		}
 		if existing, duplicate := byContributorID[contributorID]; duplicate {
 			radarQuotaReportSkippedAccount(report, radarQuotaSkipDuplicate)
@@ -300,7 +310,21 @@ func (a *RadarQuotaAggregator) runOnce(ctx context.Context, report *RadarQuotaAg
 		report.UsableAccountCount = len(byContributorID)
 	}
 
+	activeBucketKeys := make([]string, 0, len(activeBucketContributors))
+	for bucketKey, contributors := range activeBucketContributors {
+		if isRadarQuotaBucketPublic(len(contributors), a.cfg.PublicMinBucketAccounts) {
+			activeBucketKeys = append(activeBucketKeys, bucketKey)
+		}
+	}
+	sort.Strings(activeBucketKeys)
+
 	if len(byContributorID) == 0 {
+		if err := a.cacheWriter.ReplaceActiveBucketKeys(ctx, activeBucketKeys); err != nil {
+			if terminal := radarQuotaContextError(ctx, err); terminal != nil {
+				return terminal
+			}
+			return ErrRadarQuotaAggregation
+		}
 		return nil
 	}
 
@@ -346,7 +370,7 @@ func (a *RadarQuotaAggregator) runOnce(ctx context.Context, report *RadarQuotaAg
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		window5h = buildRadarWindowStatsFromBreakdown(anthropicFiveHourWindows, breakdown5h)
+		window5h = buildRadarWindowStatsFromBreakdown(anthropicFiveHourWindows, breakdown5h, selectedByAccountID)
 	}
 	if len(anthropicSevenDayWindows) > 0 {
 		breakdown7d, err = a.batchReader.GetAccountModelBreakdownByWindowBatch(ctx, anthropicSevenDayWindows)
@@ -356,7 +380,7 @@ func (a *RadarQuotaAggregator) runOnce(ctx context.Context, report *RadarQuotaAg
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		window7d = buildRadarWindowStatsFromBreakdown(anthropicSevenDayWindows, breakdown7d)
+		window7d = buildRadarWindowStatsFromBreakdown(anthropicSevenDayWindows, breakdown7d, selectedByAccountID)
 	}
 
 	if len(openAIWindows) > 0 {
@@ -370,7 +394,7 @@ func (a *RadarQuotaAggregator) runOnce(ctx context.Context, report *RadarQuotaAg
 		for accountID, models := range openAIBreakdown {
 			breakdown7d[accountID] = models
 		}
-		openAIStats := buildRadarWindowStatsFromBreakdown(openAIWindows, openAIBreakdown)
+		openAIStats := buildRadarWindowStatsFromBreakdown(openAIWindows, openAIBreakdown, selectedByAccountID)
 		for accountID, stats := range openAIStats {
 			window7d[accountID] = stats
 		}
@@ -427,6 +451,7 @@ func (a *RadarQuotaAggregator) runOnce(ctx context.Context, report *RadarQuotaAg
 			// summed over the reset-bound period ending exactly at sampled_at.
 			snapshot.SevenDay = aggregateRadarQuotaWindow(bucketAccounts, window7d, func(usage *UsageInfo) *UsageProgress { return usage.SevenDay }, bucketConfig)
 		}
+		snapshot = NormalizeRadarBucketSnapshot(snapshot)
 		if err := a.cacheWriter.AppendBucketSnapshot(ctx, snapshot); err != nil {
 			if terminal := radarQuotaContextError(ctx, err); terminal != nil {
 				return terminal
@@ -437,6 +462,12 @@ func (a *RadarQuotaAggregator) runOnce(ctx context.Context, report *RadarQuotaAg
 		radarQuotaReportPublishedBucket(report, snapshot)
 	}
 	if writeFailed {
+		return ErrRadarQuotaAggregation
+	}
+	if err := a.cacheWriter.ReplaceActiveBucketKeys(ctx, activeBucketKeys); err != nil {
+		if terminal := radarQuotaContextError(ctx, err); terminal != nil {
+			return terminal
+		}
 		return ErrRadarQuotaAggregation
 	}
 	return nil
@@ -608,6 +639,13 @@ func buildRadarQuotaBucketIdentity(account *Account, usage *UsageInfo) (radarQuo
 	if account == nil || usage == nil {
 		return radarQuotaBucketIdentity{}, false
 	}
+	return radarQuotaBucketIdentityForAccount(account)
+}
+
+func radarQuotaBucketIdentityForAccount(account *Account) (radarQuotaBucketIdentity, bool) {
+	if account == nil {
+		return radarQuotaBucketIdentity{}, false
+	}
 	platform, planTier, ok := radarQuotaPlanTierForAccount(account)
 	if !ok {
 		return radarQuotaBucketIdentity{}, false
@@ -667,73 +705,6 @@ func radarQuotaPlanTierForAccount(account *Account) (string, string, bool) {
 		return "", "", false
 	}
 	return platform, planTier, true
-}
-
-func normalizeRadarAnthropicPlanTier(planTier string) string {
-	switch strings.ToLower(strings.TrimSpace(planTier)) {
-	case "pro", "claude_pro", "claudepro":
-		return radarQuotaAnthropicPlanPro
-	case "max_5x", "max5x", "5x_max", "5xmax", "claude_max_5x":
-		return radarQuotaAnthropicPlanMax5x
-	case "max_20x", "max20x", "20x_max", "20xmax", "claude_max_20x":
-		return radarQuotaAnthropicPlanMax20x
-	default:
-		return ""
-	}
-}
-
-func normalizeRadarOpenAIPlanTier(planTier string) string {
-	switch strings.ToLower(strings.TrimSpace(planTier)) {
-	case "plus", "chatgpt_plus", "chatgptplus":
-		return radarQuotaOpenAIPlanPlus
-	case "prolite",
-		"5x_pro", "5xpro", "pro_5x", "pro5x", "pro-5x", "chatgpt_pro_5x", "chatgpt_5x_pro":
-		return radarQuotaOpenAIPlanPro5x
-	case "pro", "chatgpt_pro", "chatgptpro",
-		"20x_pro", "20xpro", "pro_20x", "pro20x", "pro-20x", "chatgpt_pro_20x", "chatgpt_20x_pro":
-		// OpenAI reports the standard personal Pro subscription as plan_type=pro.
-		// Keep it in the canonical 20x tier alongside explicit 20x aliases.
-		return radarQuotaOpenAIPlanPro20x
-	default:
-		return ""
-	}
-}
-
-func isSupportedRadarQuotaPlanTier(platform, planTier string) bool {
-	switch platform {
-	case PlatformAnthropic:
-		return planTier == radarQuotaAnthropicPlanGeneric ||
-			planTier == radarQuotaAnthropicPlanPro ||
-			planTier == radarQuotaAnthropicPlanMax5x ||
-			planTier == radarQuotaAnthropicPlanMax20x
-	case PlatformOpenAI:
-		return planTier == radarQuotaOpenAIPlanPlus ||
-			planTier == radarQuotaOpenAIPlanPro5x ||
-			planTier == radarQuotaOpenAIPlanPro20x
-	default:
-		return false
-	}
-}
-
-func radarQuotaDisplayName(platform, planTier string) string {
-	switch {
-	case platform == PlatformAnthropic && planTier == radarQuotaAnthropicPlanGeneric:
-		return "Claude Subscription"
-	case platform == PlatformAnthropic && planTier == radarQuotaAnthropicPlanPro:
-		return "Claude Pro"
-	case platform == PlatformAnthropic && planTier == radarQuotaAnthropicPlanMax5x:
-		return "Claude Max 5x"
-	case platform == PlatformAnthropic && planTier == radarQuotaAnthropicPlanMax20x:
-		return "Claude Max 20x"
-	case platform == PlatformOpenAI && planTier == radarQuotaOpenAIPlanPlus:
-		return "ChatGPT Plus"
-	case platform == PlatformOpenAI && planTier == radarQuotaOpenAIPlanPro5x:
-		return "ChatGPT Pro 5x"
-	case platform == PlatformOpenAI && planTier == radarQuotaOpenAIPlanPro20x:
-		return "ChatGPT Pro 20x"
-	default:
-		return ""
-	}
 }
 
 type radarQuotaInferenceSample struct {
@@ -823,21 +794,38 @@ func radarInferenceReason(reason InferenceRejectReason) *InferenceRejectReason {
 func buildRadarWindowStatsFromBreakdown(
 	windows []RadarQuotaAccountWindow,
 	breakdownByAccount map[int64]map[string]ModelCostStats,
+	accountsByID map[int64]radarQuotaBucketAccount,
 ) map[int64]*usagestats.AccountStats {
 	statsByAccount := make(map[int64]*usagestats.AccountStats, len(windows))
 	for _, window := range windows {
 		stats := &usagestats.AccountStats{}
+		account := accountsByID[window.AccountID]
 		models := breakdownByAccount[window.AccountID]
 		for _, modelStats := range models {
 			stats.Requests = saturatedRadarAddInt64(stats.Requests, modelStats.Requests)
 			stats.Tokens = saturatedRadarAddInt64(stats.Tokens, modelStats.Tokens)
-			if isFinite(modelStats.AccountCost) && modelStats.AccountCost > 0 {
-				stats.Cost = finiteRadarAdd(stats.Cost, modelStats.AccountCost)
+			if cost, ok := radarQuotaCurrentAccountCost(modelStats.AccountCost, account); ok {
+				stats.Cost = finiteRadarAdd(stats.Cost, cost)
 			}
 		}
 		statsByAccount[window.AccountID] = stats
 	}
 	return statsByAccount
+}
+
+func radarQuotaCurrentAccountCost(rawCost float64, account radarQuotaBucketAccount) (float64, bool) {
+	if !isFinite(rawCost) || rawCost <= 0 {
+		return 0, false
+	}
+	multiplier := 1.0
+	if account.rateMultiplier != nil {
+		multiplier = *account.rateMultiplier
+	}
+	if !isFinite(multiplier) || multiplier < 0 {
+		multiplier = 1
+	}
+	cost := rawCost * multiplier
+	return cost, isFinite(cost) && cost > 0
 }
 
 func aggregateRadarQuotaWindow(
@@ -958,7 +946,7 @@ func aggregateRadarModelBreakdown(
 			if canonical, ok := canonicalModels[strings.ToLower(strings.TrimSpace(rawModel))]; ok {
 				label = canonical
 			}
-			validCost := isFinite(stats.AccountCost) && stats.AccountCost > 0
+			accountCost, validCost := radarQuotaCurrentAccountCost(stats.AccountCost, account)
 			validRequests := stats.Requests > 0
 			if !validCost && !validRequests {
 				continue
@@ -973,7 +961,7 @@ func aggregateRadarModelBreakdown(
 			}
 			totals.contributors[contributorID] = struct{}{}
 			if validCost {
-				totals.avgCost = finiteRadarAdd(totals.avgCost, stats.AccountCost/denominator)
+				totals.avgCost = finiteRadarAdd(totals.avgCost, accountCost/denominator)
 			}
 			if validRequests {
 				totals.requests = saturatedRadarAddInt64(totals.requests, stats.Requests)

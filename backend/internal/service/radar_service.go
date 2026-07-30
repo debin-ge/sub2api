@@ -313,18 +313,22 @@ func (s *RadarService) GetQuotaBucketsLatest(ctx context.Context) (*QuotaRadarLa
 			if err != nil {
 				return nil, false, nil, ErrRadarUnavailable
 			}
-			if snapshot == nil || snapshot.BucketKey != bucketKey ||
-				snapshot.Platform != platform || snapshot.PlanTier != planTier ||
-				ValidateRadarBucketSnapshot(*snapshot) != nil {
+			if snapshot == nil {
 				continue
 			}
-			if snapshot.PrivacyThreshold < s.publicMinBucketAccounts {
+			normalized := NormalizeRadarBucketSnapshot(*snapshot)
+			if normalized.BucketKey != bucketKey ||
+				normalized.Platform != platform || normalized.PlanTier != planTier ||
+				ValidateRadarBucketSnapshot(normalized) != nil {
+				continue
+			}
+			if normalized.PrivacyThreshold < s.publicMinBucketAccounts {
 				continue
 			}
 
-			mapped := *snapshot
+			mapped := normalized
 			mapped.DisplayName = radarQuotaDisplayName(platform, planTier)
-			mapped.CapturedAt = snapshot.CapturedAt.UTC()
+			mapped.CapturedAt = normalized.CapturedAt.UTC()
 			var deadline *time.Time
 			mapped.Stale, deadline = radarQuotaFreshness(now, s.quotaStaleThreshold, mapped.CapturedAt)
 			deadlines = append(deadlines, deadline)
@@ -421,7 +425,7 @@ func (s *RadarService) GetQuotaBucketsTrend(ctx context.Context, bucketKey strin
 		result.DataPoints = make([]QuotaTrendPointDTO, 0, len(snapshots))
 		var latestCapturedAt *time.Time
 		for index := range snapshots {
-			snapshot := snapshots[index]
+			snapshot := NormalizeRadarBucketSnapshot(snapshots[index])
 			if snapshot.BucketKey != bucketKey || snapshot.Platform != platform || snapshot.PlanTier != planTier ||
 				ValidateRadarBucketSnapshot(snapshot) != nil {
 				continue
@@ -432,6 +436,7 @@ func (s *RadarService) GetQuotaBucketsTrend(ctx context.Context, bucketKey strin
 			timestamp := snapshot.CapturedAt.UTC()
 			result.DataPoints = append(result.DataPoints, QuotaTrendPointDTO{
 				Timestamp: timestamp,
+				Windows:   radarQuotaTrendWindows(snapshot.Windows),
 				FiveHour:  radarQuotaTrendWindow(snapshot.FiveHour),
 				SevenDay:  radarQuotaTrendWindow(snapshot.SevenDay),
 			})
@@ -531,7 +536,7 @@ func (s *RadarService) GetDegradationLatest(ctx context.Context) (*DegradationLa
 
 		now := s.clock.Now().UTC()
 		arenaMeta, arenaMetaOK := metas[RadarSourceLMArena]
-		defaultCount := min(len(availableModels), artificialAnalysisAutoModelLimit)
+		defaultCount := min(len(availableModels), radarBenchmarkDefaultModelCount)
 		defaultModels := cloneRadarServiceDegradationModels(availableModels[:defaultCount])
 		defaultSlugs := make([]string, defaultCount)
 		for i := range defaultModels {
@@ -541,6 +546,12 @@ func (s *RadarService) GetDegradationLatest(ctx context.Context) (*DegradationLa
 			Models:                   defaultModels,
 			AvailableModels:          cloneRadarServiceDegradationModels(availableModels),
 			DefaultModelSlugs:        defaultSlugs,
+			Metrics:                  radarBenchmarkMetrics(),
+			MaxSelectedModels:        radarBenchmarkMaxSelectedModels,
+			DefaultModelCount:        radarBenchmarkDefaultModelCount,
+			ScoreMin:                 radarBenchmarkScoreMin,
+			ScoreMax:                 radarBenchmarkScoreMax,
+			ScoreStep:                radarBenchmarkScoreStep,
 			IntelligenceIndexVersion: cloneRadarFloat(intelligenceIndexVersion),
 			LMArenaTop5:              topFive,
 			SourcesLastUpdated: map[string]*time.Time{
@@ -756,82 +767,42 @@ func (s *RadarService) readLMArenaLocally(ctx context.Context) (LMArenaDTO, bool
 }
 
 type radarServiceDataSourceSpec struct {
-	source     RadarSourceKey
-	name       string
-	url        string
-	interval   time.Duration
-	threshold  time.Duration
-	configured bool
+	source        RadarSourceKey
+	name          string
+	url           string
+	platform      string
+	platformOrder int
+	interval      time.Duration
+	threshold     time.Duration
+	configured    bool
 }
 
 func (s *RadarService) dataSourceSpecs() []radarServiceDataSourceSpec {
-	result := make([]radarServiceDataSourceSpec, 0, 9)
-	result = append(result, radarServiceDataSourceSpec{
-		source:     RadarSourceAA,
-		name:       "Artificial Analysis",
-		url:        radarServiceArtificialAnalysisPublicURL,
-		interval:   s.aaModelsInterval,
-		threshold:  s.aaModelsStaleThreshold,
-		configured: s.aaConfigured,
-	})
-	result = append(result,
-		radarServiceDataSourceSpec{
-			source:     RadarSourceLMArena,
-			name:       "LMArena",
-			url:        radarServiceLMArenaPublicURL,
-			interval:   s.lmarenaInterval,
-			threshold:  s.lmarenaStaleThreshold,
-			configured: true,
-		},
-		radarServiceDataSourceSpec{
-			source:     RadarSourceStatusClaude,
-			name:       "Claude Status",
-			url:        claudeStatuspagePublicURL,
-			interval:   s.statuspageInterval,
-			threshold:  s.healthStaleThreshold,
-			configured: true,
-		},
-		radarServiceDataSourceSpec{
-			source:     RadarSourceStatusOpenAI,
-			name:       "OpenAI Status",
-			url:        openAIStatuspagePublicURL,
-			interval:   s.statuspageInterval,
-			threshold:  s.healthStaleThreshold,
-			configured: true,
-		},
-		radarServiceDataSourceSpec{
-			source:     RadarSourceStatusWindsurf,
-			name:       "Windsurf Status",
-			url:        windsurfStatuspagePublicURL,
-			interval:   s.statuspageInterval,
-			threshold:  s.healthStaleThreshold,
-			configured: true,
-		},
-		radarServiceDataSourceSpec{
-			source:     RadarSourceStatusDeepSeek,
-			name:       "DeepSeek Status",
-			url:        deepSeekStatuspagePublicURL,
-			interval:   s.statuspageInterval,
-			threshold:  s.healthStaleThreshold,
-			configured: true,
-		},
-		radarServiceDataSourceSpec{
-			source:     RadarSourceStatusKimi,
-			name:       "Kimi Status",
-			url:        kimiStatuspagePublicURL,
-			interval:   s.statuspageInterval,
-			threshold:  s.healthStaleThreshold,
-			configured: true,
-		},
-		radarServiceDataSourceSpec{
-			source:     RadarSourceStatusMiniMaxChina,
-			name:       "MiniMax China Status",
-			url:        miniMaxChinaStatuspagePublicURL,
-			interval:   s.statuspageInterval,
-			threshold:  s.healthStaleThreshold,
-			configured: true,
-		},
-	)
+	registrations := radarSourceRegistrations()
+	result := make([]radarServiceDataSourceSpec, 0, len(registrations))
+	for _, registration := range registrations {
+		spec := radarServiceDataSourceSpec{
+			source:        registration.Source,
+			name:          registration.Name,
+			url:           registration.PublicURL,
+			platform:      registration.Platform,
+			platformOrder: registration.PlatformOrder,
+			configured:    true,
+		}
+		switch registration.Source {
+		case RadarSourceAA:
+			spec.interval = s.aaModelsInterval
+			spec.threshold = s.aaModelsStaleThreshold
+			spec.configured = s.aaConfigured
+		case RadarSourceLMArena:
+			spec.interval = s.lmarenaInterval
+			spec.threshold = s.lmarenaStaleThreshold
+		default:
+			spec.interval = s.statuspageInterval
+			spec.threshold = s.healthStaleThreshold
+		}
+		result = append(result, spec)
+	}
 	return result
 }
 
@@ -847,6 +818,10 @@ func radarServiceMapDataSource(
 		URL:      spec.url,
 		Interval: radarServiceIntervalString(spec.interval),
 		Stale:    true,
+	}
+	if spec.platform != "" {
+		result.Platform = radarServiceStringPointer(&spec.platform)
+		result.PlatformOrder = radarServiceIntPointer(&spec.platformOrder)
 	}
 	if !spec.configured {
 		result.State = DataSourceStateNotConfigured
@@ -1191,12 +1166,25 @@ func cloneRadarServiceQuotaLatest(input *QuotaRadarLatestDTO) *QuotaRadarLatestD
 
 func cloneRadarServiceBucketSnapshot(input BucketSnapshotDTO) BucketSnapshotDTO {
 	result := input
+	result.Windows = make([]QuotaWindowDTO, len(input.Windows))
+	for index := range input.Windows {
+		result.Windows[index] = cloneRadarServiceQuotaWindow(input.Windows[index])
+	}
 	result.FiveHour = cloneRadarServiceWindowStats(input.FiveHour)
 	result.SevenDay = cloneRadarServiceWindowStats(input.SevenDay)
 	result.SevenDaySonnet = cloneRadarServiceModelWindowStats(input.SevenDaySonnet)
 	result.SevenDayFable = cloneRadarServiceModelWindowStats(input.SevenDayFable)
 	result.ModelBreakdown5h = cloneRadarServiceModelBreakdown(input.ModelBreakdown5h)
 	result.ModelBreakdown7d = cloneRadarServiceModelBreakdown(input.ModelBreakdown7d)
+	return result
+}
+
+func cloneRadarServiceQuotaWindow(input QuotaWindowDTO) QuotaWindowDTO {
+	result := input
+	result.Stats = cloneRadarServiceWindowStats(input.Stats)
+	result.ModelWindows = make([]ModelWindowStatsDTO, len(input.ModelWindows))
+	copy(result.ModelWindows, input.ModelWindows)
+	result.ModelBreakdown = cloneRadarServiceModelBreakdown(input.ModelBreakdown)
 	return result
 }
 
@@ -1238,6 +1226,12 @@ func cloneRadarServiceQuotaTrend(input *QuotaTrendDTO) *QuotaTrendDTO {
 	}
 	for index := range input.DataPoints {
 		result.DataPoints[index] = input.DataPoints[index]
+		result.DataPoints[index].Windows = make([]QuotaTrendPointWindowDTO, len(input.DataPoints[index].Windows))
+		for windowIndex := range input.DataPoints[index].Windows {
+			window := input.DataPoints[index].Windows[windowIndex]
+			window.Stats = cloneRadarServiceQuotaTrendWindow(window.Stats)
+			result.DataPoints[index].Windows[windowIndex] = window
+		}
 		result.DataPoints[index].FiveHour = cloneRadarServiceQuotaTrendWindow(input.DataPoints[index].FiveHour)
 		result.DataPoints[index].SevenDay = cloneRadarServiceQuotaTrendWindow(input.DataPoints[index].SevenDay)
 	}
@@ -1253,6 +1247,20 @@ func cloneRadarServiceQuotaTrendWindow(input *QuotaTrendWindowDTO) *QuotaTrendWi
 	return &result
 }
 
+func radarQuotaTrendWindows(windows []QuotaWindowDTO) []QuotaTrendPointWindowDTO {
+	result := make([]QuotaTrendPointWindowDTO, 0, len(windows))
+	for _, window := range windows {
+		result = append(result, QuotaTrendPointWindowDTO{
+			Key:             window.Key,
+			Label:           window.Label,
+			DurationSeconds: window.DurationSeconds,
+			Currency:        window.Currency,
+			Stats:           radarQuotaTrendWindow(window.Stats),
+		})
+	}
+	return result
+}
+
 func cloneRadarServiceDegradationLatest(input *DegradationLatestDTO) *DegradationLatestDTO {
 	if input == nil {
 		return nil
@@ -1261,11 +1269,25 @@ func cloneRadarServiceDegradationLatest(input *DegradationLatestDTO) *Degradatio
 		Models:                   cloneRadarServiceDegradationModels(input.Models),
 		AvailableModels:          cloneRadarServiceDegradationModels(input.AvailableModels),
 		DefaultModelSlugs:        append([]string(nil), input.DefaultModelSlugs...),
+		Metrics:                  append([]DegradationMetricDTO(nil), input.Metrics...),
+		MaxSelectedModels:        input.MaxSelectedModels,
+		DefaultModelCount:        input.DefaultModelCount,
+		ScoreMin:                 input.ScoreMin,
+		ScoreMax:                 input.ScoreMax,
+		ScoreStep:                input.ScoreStep,
 		IntelligenceIndexVersion: cloneRadarFloat(input.IntelligenceIndexVersion),
 		LMArenaTop5:              cloneRadarServiceLMArenaEntries(input.LMArenaTop5),
 		SourcesLastUpdated:       cloneRadarServiceTimeMap(input.SourcesLastUpdated),
 		Stale:                    input.Stale,
 	}
+}
+
+func radarBenchmarkMetrics() []DegradationMetricDTO {
+	result := make([]DegradationMetricDTO, len(radarBenchmarkMetricKeys))
+	for index, key := range radarBenchmarkMetricKeys {
+		result[index] = DegradationMetricDTO{Key: key}
+	}
+	return result
 }
 
 func cloneRadarServiceDegradationModels(input []DegradationModelDTO) []DegradationModelDTO {
@@ -1318,6 +1340,8 @@ func cloneRadarServiceDataSources(input []DataSourceMetaDTO) []DataSourceMetaDTO
 		result[index].NextFireAt = radarServiceTimePointerFromPointer(input[index].NextFireAt)
 		result[index].HTTPStatus = radarServiceIntPointer(input[index].HTTPStatus)
 		result[index].Error = radarServiceSafeErrorPointer(input[index].Error)
+		result[index].Platform = radarServiceStringPointer(input[index].Platform)
+		result[index].PlatformOrder = radarServiceIntPointer(input[index].PlatformOrder)
 	}
 	return result
 }

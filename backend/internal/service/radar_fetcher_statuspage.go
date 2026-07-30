@@ -19,40 +19,6 @@ import (
 )
 
 const (
-	claudeStatuspageAPIURL           = "https://status.claude.com/api/v2/summary.json"
-	openAIStatuspageAPIURL           = "https://status.openai.com/api/v2/summary.json"
-	windsurfStatuspageAPIURL         = "https://status.windsurf.com/api/v2/summary.json"
-	kimiStatuspageAPIURL             = "https://status.moonshot.cn/api/v2/summary.json"
-	miniMaxGlobalStatuspageAPIURL    = "https://status.minimax.io/api/v2/summary.json"
-	miniMaxChinaStatuspageAPIURL     = "https://status.minimaxi.com/api/v2/summary.json"
-	claudeStatuspageIncidentsURL     = "https://status.claude.com/api/v2/incidents.json"
-	openAIStatuspageIncidentsURL     = "https://status.openai.com/api/v2/incidents.json"
-	windsurfStatuspageIncidentsURL   = "https://status.windsurf.com/api/v2/incidents.json"
-	kimiStatuspageIncidentsURL       = "https://status.moonshot.cn/api/v2/incidents.json"
-	miniMaxGlobalIncidentsURL        = "https://status.minimax.io/api/v2/incidents.json"
-	miniMaxChinaIncidentsURL         = "https://status.minimaxi.com/api/v2/incidents.json"
-	openAIStatuspageFeedURL          = "https://status.openai.com/feed.atom"
-	openAIStatusSummaryURL           = "https://status.openai.com/proxy/openai-1"
-	openAIComponentImpactsURL        = "https://status.openai.com/proxy/openai-1/component_impacts"
-	claudeAPIHistoryURL              = "https://status.claude.com/history?filter=k8w3r06qmzrp"
-	claudeCodeHistoryURL             = "https://status.claude.com/history?filter=yyzkbfz2thpt"
-	windsurfHistoryURL               = "https://status.windsurf.com/history?filter=8q19cygxvshj,r5wf1ykd7y1m"
-	kimiHistoryURL                   = "https://status.moonshot.cn/history?filter=8psr5dfdld0s,8rkd3yj051gl,lk7q3z0fcylp,p1j9ttb7jwhp,rf64wcbxt3r2,wmn9wzv84k1v,x0zsqgy57b75,z2zfp65lvb2z"
-	miniMaxGlobalLLMHistoryURL       = "https://status.minimax.io/history?filter=pr0d8qr59svt"
-	miniMaxChinaLLMHistoryURL        = "https://status.minimaxi.com/history?filter=vwp8mgy34fck"
-	claudeStatuspagePublicURL        = "https://status.claude.com"
-	openAIStatuspagePublicURL        = "https://status.openai.com"
-	windsurfStatuspagePublicURL      = "https://status.windsurf.com"
-	deepSeekStatuspagePublicURL      = "https://status.deepseek.com"
-	kimiStatuspagePublicURL          = "https://status.moonshot.cn"
-	miniMaxGlobalStatuspagePublicURL = "https://status.minimax.io"
-	miniMaxChinaStatuspagePublicURL  = "https://status.minimaxi.com"
-	miniMaxChinaLLMComponentID       = "vwp8mgy34fck"
-	miniMaxChinaLLMComponentName     = "大语言模型LLM"
-)
-
-const (
-	serviceHealthHistoryDays       = 30
 	statuspageIncidentHistoryLimit = 50
 	openAIIncidentHistoryLimit     = 25
 	openAIStatusFeedMaxEntries     = 500
@@ -67,180 +33,41 @@ var (
 	statuspageHistoryOpenTimestampPattern = regexp.MustCompile(`^([A-Z][a-z]{2}) <var data-var='date'>([0-9]{1,2})</var>, <var data-var='time'>([0-9]{2}:[0-9]{2})</var> (UTC|CST)$`)
 )
 
-var (
-	claudeAPIStatuspageAliases = map[string]struct{}{
-		"claude api":                     {},
-		"claude api (api.anthropic.com)": {},
-	}
-	claudeCodeStatuspageAliases = map[string]struct{}{
-		"claude code": {},
-	}
-	codexWebStatuspageAliases = map[string]struct{}{
-		"codex web":                {},
-		"chatgpt codex":            {},
-		"codex in chatgpt desktop": {},
-	}
-	openAIAPIStatuspageAliases = map[string]struct{}{
-		"api":                  {},
-		"apis":                 {},
-		"openai api":           {},
-		"codex api":            {},
-		"responses":            {},
-		"responses api":        {},
-		"batch":                {},
-		"batch api":            {},
-		"audio":                {},
-		"audio api":            {},
-		"embeddings":           {},
-		"embeddings api":       {},
-		"moderations":          {},
-		"moderations api":      {},
-		"files":                {},
-		"files api":            {},
-		"fine-tuning":          {},
-		"fine-tuning api":      {},
-		"fine tuning":          {},
-		"fine tuning api":      {},
-		"chat completions":     {},
-		"chat completions api": {},
-		"completions":          {},
-		"completions api":      {},
-		"assistants":           {},
-		"assistants api":       {},
-		"images":               {},
-		"images api":           {},
-		"image generation":     {},
-		"realtime":             {},
-		"realtime api":         {},
-		"uploads":              {},
-		"uploads api":          {},
-		"compliance api":       {},
-		"ads api":              {},
-	}
-	windsurfStatuspageAliases = map[string]struct{}{
-		"cascade":      {},
-		"windsurf tab": {},
-	}
-	deepSeekStatuspageAliases = map[string]struct{}{
-		"api service":          {},
-		"api 服务 (api service)": {},
-	}
-	kimiStatuspageAliases = map[string]struct{}{
-		"open api":       {},
-		"api service":    {},
-		"model":          {},
-		"vision model":   {},
-		"thinking model": {},
-		"text model":     {},
-		"research model": {},
-		"k2 model":       {},
-	}
-	miniMaxGlobalStatuspageAliases = map[string]struct{}{
-		"large language models (llm)": {},
-	}
-	miniMaxChinaStatuspageAliases = map[string]struct{}{
-		"大语言模型llm": {},
-	}
-)
-
-func statuspageRadarSources() []RadarSourceKey {
-	return []RadarSourceKey{
-		RadarSourceStatusClaude,
-		RadarSourceStatusOpenAI,
-		RadarSourceStatusWindsurf,
-		RadarSourceStatusDeepSeek,
-		RadarSourceStatusKimi,
-		RadarSourceStatusMiniMaxChina,
-	}
-}
-
 func statuspageSourceDescriptor(source RadarSourceKey) (string, string, []RadarServiceDescriptor, bool) {
-	switch source {
-	case RadarSourceStatusClaude:
-		return claudeStatuspageAPIURL, claudeStatuspagePublicURL, CanonicalRadarServices()[:2], true
-	case RadarSourceStatusOpenAI:
-		return openAIStatuspageAPIURL, openAIStatuspagePublicURL, CanonicalRadarServices()[2:], true
-	case RadarSourceStatusWindsurf:
-		return windsurfStatuspageAPIURL, windsurfStatuspagePublicURL, []RadarServiceDescriptor{{Key: ServiceKeyWindsurf, Name: "Windsurf"}}, true
-	case RadarSourceStatusKimi:
-		return kimiStatuspageAPIURL, kimiStatuspagePublicURL, []RadarServiceDescriptor{{Key: ServiceKeyKimi, Name: "Kimi"}}, true
-	case RadarSourceStatusMiniMaxGlobal:
-		return miniMaxGlobalStatuspageAPIURL, miniMaxGlobalStatuspagePublicURL, []RadarServiceDescriptor{{Key: ServiceKeyMiniMax, Name: "MiniMax"}}, true
-	case RadarSourceStatusMiniMaxChina:
-		return miniMaxChinaStatuspageAPIURL, miniMaxChinaStatuspagePublicURL, []RadarServiceDescriptor{{Key: ServiceKeyMiniMax, Name: "MiniMax"}}, true
-	case RadarSourceStatusDeepSeek:
-		return "", deepSeekStatuspagePublicURL, []RadarServiceDescriptor{{Key: ServiceKeyDeepSeek, Name: "DeepSeek"}}, true
-	default:
+	contract, ok := radarStatuspageContractFor(source)
+	if !ok {
 		return "", "", nil, false
 	}
+	return contract.SummaryEndpoint, contract.PublicURL, radarServiceDescriptorsForSource(source), true
 }
 
 func statuspageIncidentsURL(source RadarSourceKey) (string, bool) {
-	switch source {
-	case RadarSourceStatusClaude:
-		return claudeStatuspageIncidentsURL, true
-	case RadarSourceStatusOpenAI:
-		return openAIStatuspageIncidentsURL, true
-	case RadarSourceStatusWindsurf:
-		return windsurfStatuspageIncidentsURL, true
-	case RadarSourceStatusKimi:
-		return kimiStatuspageIncidentsURL, true
-	case RadarSourceStatusMiniMaxGlobal:
-		return miniMaxGlobalIncidentsURL, true
-	case RadarSourceStatusMiniMaxChina:
-		return miniMaxChinaIncidentsURL, true
-	default:
+	contract, ok := radarStatuspageContractFor(source)
+	if !ok || contract.IncidentsEndpoint == "" {
 		return "", false
 	}
+	return contract.IncidentsEndpoint, true
 }
 
 func statuspageCalendarSpecs(source RadarSourceKey) []statuspageCalendarSpec {
-	switch source {
-	case RadarSourceStatusClaude:
-		return []statuspageCalendarSpec{
-			{serviceKey: ServiceKeyClaudeAPI, endpoint: claudeAPIHistoryURL, componentIDs: []string{"k8w3r06qmzrp"}},
-			{serviceKey: ServiceKeyClaudeCode, endpoint: claudeCodeHistoryURL, componentIDs: []string{"yyzkbfz2thpt"}},
-		}
-	case RadarSourceStatusWindsurf:
-		return []statuspageCalendarSpec{{
-			serviceKey: ServiceKeyWindsurf, endpoint: windsurfHistoryURL,
-			componentIDs: []string{"8q19cygxvshj", "r5wf1ykd7y1m"},
-		}}
-	case RadarSourceStatusKimi:
-		return []statuspageCalendarSpec{{
-			serviceKey: ServiceKeyKimi, endpoint: kimiHistoryURL,
-			componentIDs: []string{"8psr5dfdld0s", "8rkd3yj051gl", "lk7q3z0fcylp", "p1j9ttb7jwhp", "rf64wcbxt3r2", "wmn9wzv84k1v", "x0zsqgy57b75", "z2zfp65lvb2z"},
-		}}
-	case RadarSourceStatusMiniMaxGlobal:
-		return []statuspageCalendarSpec{{
-			serviceKey: ServiceKeyMiniMax, endpoint: miniMaxGlobalLLMHistoryURL, componentIDs: []string{"pr0d8qr59svt"},
-		}}
-	case RadarSourceStatusMiniMaxChina:
-		return []statuspageCalendarSpec{{
-			serviceKey: ServiceKeyMiniMax, endpoint: miniMaxChinaLLMHistoryURL, componentIDs: []string{miniMaxChinaLLMComponentID},
-		}}
-	default:
+	contract, ok := radarStatuspageContractFor(source)
+	if !ok {
 		return nil
 	}
+	result := make([]statuspageCalendarSpec, len(contract.CalendarSpecs))
+	for index := range contract.CalendarSpecs {
+		result[index] = contract.CalendarSpecs[index]
+		result[index].componentIDs = append([]string(nil), contract.CalendarSpecs[index].componentIDs...)
+	}
+	return result
 }
 
 func statuspageSourcesForServiceKey(serviceKey ServiceKey) []RadarSourceKey {
-	switch serviceKey {
-	case ServiceKeyClaudeAPI, ServiceKeyClaudeCode:
-		return []RadarSourceKey{RadarSourceStatusClaude}
-	case ServiceKeyOpenAIAPI, ServiceKeyCodexWeb:
-		return []RadarSourceKey{RadarSourceStatusOpenAI}
-	case ServiceKeyWindsurf:
-		return []RadarSourceKey{RadarSourceStatusWindsurf}
-	case ServiceKeyDeepSeek:
-		return []RadarSourceKey{RadarSourceStatusDeepSeek}
-	case ServiceKeyKimi:
-		return []RadarSourceKey{RadarSourceStatusKimi}
-	case ServiceKeyMiniMax:
-		return []RadarSourceKey{RadarSourceStatusMiniMaxChina}
-	default:
+	registration, ok := radarServiceRegistrationForKey(serviceKey)
+	if !ok {
 		return nil
 	}
+	return []RadarSourceKey{registration.Source}
 }
 
 // StatuspageSummary is the validated subset of a Statuspage v2 summary used
@@ -438,12 +265,6 @@ type statuspageCalendarBundle struct {
 	Incidents     []statuspageIncidentWire
 }
 
-type statuspageCalendarSpec struct {
-	serviceKey   ServiceKey
-	endpoint     string
-	componentIDs []string
-}
-
 type statuspageHistoryFetcher struct {
 	source    RadarSourceKey
 	interval  time.Duration
@@ -459,6 +280,7 @@ type openAIComponentImpactsFetcher struct {
 	interval         time.Duration
 	client           RadarHTTPDoer
 	maxResponseBytes int64
+	endpoint         string
 	now              func() time.Time
 }
 
@@ -483,9 +305,8 @@ func NewStatuspageFetcher(cfg *config.Config, source RadarSourceKey, client Rada
 		return nil, &RadarFetcherConfigError{Field: "http_client"}
 	}
 
-	endpoint, _, _, ok := statuspageSourceDescriptor(source)
-	incidentsEndpoint, incidentsOK := statuspageIncidentsURL(source)
-	if !ok || endpoint == "" || !incidentsOK || incidentsEndpoint == "" {
+	contract, ok := radarStatuspageContractFor(source)
+	if !ok || contract.SummaryEndpoint == "" || contract.IncidentsEndpoint == "" {
 		return nil, &RadarFetcherConfigError{Field: "statuspage_source"}
 	}
 
@@ -494,7 +315,7 @@ func NewStatuspageFetcher(cfg *config.Config, source RadarSourceKey, client Rada
 		source:           source,
 		interval:         interval,
 		client:           client,
-		endpoint:         endpoint,
+		endpoint:         contract.SummaryEndpoint,
 		maxResponseBytes: cfg.Radar.ExternalResponseMaxBytes,
 		validate: func(payload []byte) error {
 			_, err := DecodeStatuspageSummary(payload)
@@ -508,7 +329,7 @@ func NewStatuspageFetcher(cfg *config.Config, source RadarSourceKey, client Rada
 		source:           source,
 		interval:         interval,
 		client:           client,
-		endpoint:         incidentsEndpoint,
+		endpoint:         contract.IncidentsEndpoint,
 		maxResponseBytes: cfg.Radar.ExternalResponseMaxBytes,
 		validate: func(payload []byte) error {
 			_, _, err := decodeStatuspageIncidents(payload)
@@ -525,7 +346,7 @@ func NewStatuspageFetcher(cfg *config.Config, source RadarSourceKey, client Rada
 	switch source {
 	case RadarSourceStatusOpenAI:
 		auxiliary, err = newRadarHTTPFetcher(radarHTTPFetcherOptions{
-			source: source, interval: interval, client: client, endpoint: openAIStatuspageFeedURL,
+			source: source, interval: interval, client: client, endpoint: contract.FeedEndpoint,
 			maxResponseBytes: cfg.Radar.ExternalResponseMaxBytes,
 			validate: func(payload []byte) error {
 				_, err := decodeOpenAIStatusFeed(payload)
@@ -536,10 +357,11 @@ func NewStatuspageFetcher(cfg *config.Config, source RadarSourceKey, client Rada
 			return nil, err
 		}
 		timeline = &openAIComponentImpactsFetcher{
-			interval: interval, client: client, maxResponseBytes: cfg.Radar.ExternalResponseMaxBytes, now: time.Now,
+			interval: interval, client: client, maxResponseBytes: cfg.Radar.ExternalResponseMaxBytes,
+			endpoint: contract.ComponentImpactsEndpoint, now: time.Now,
 		}
 		catalog, err = newRadarHTTPFetcher(radarHTTPFetcherOptions{
-			source: source, interval: interval, client: client, endpoint: openAIStatusSummaryURL,
+			source: source, interval: interval, client: client, endpoint: contract.StatusSummaryEndpoint,
 			maxResponseBytes: cfg.Radar.ExternalResponseMaxBytes,
 			validate: func(payload []byte) error {
 				_, err := decodeOpenAIStatusCatalog(payload)
@@ -572,7 +394,7 @@ func (f *openAIComponentImpactsFetcher) Fetch(ctx context.Context) ([]byte, Sour
 	}
 	start := utcDayStart(now).AddDate(0, 0, -(serviceHealthHistoryDays - 1))
 	end := utcDayStart(now).AddDate(0, 0, 1)
-	endpoint, err := url.Parse(openAIComponentImpactsURL)
+	endpoint, err := url.Parse(f.endpoint)
 	if err != nil {
 		return nil, SourceFetchMeta{}, &RadarFetcherConfigError{Field: "openai_component_impacts_url"}
 	}
@@ -1875,19 +1697,29 @@ func MapStatuspageServiceHealth(source RadarSourceKey, summary StatuspageSummary
 
 	cards := make([]ServiceHealthDTO, 0, 2)
 	for _, descriptor := range descriptors {
+		platform, platformOrder, ok := radarServicePlatform(descriptor.Key)
+		if !ok {
+			return nil, &RadarFetcherConfigError{Field: "service_platform"}
+		}
 		matched := matchingStatuspageComponents(source, descriptor.Key, summary.Components)
 		status, lastUpdatedAt := aggregateStatuspageComponents(matched)
 		cards = append(cards, ServiceHealthDTO{
-			ServiceKey:      descriptor.Key,
-			Name:            descriptor.Name,
-			Status:          status,
-			StatusIndicator: statusIndicatorForServiceStatus(status),
-			Uptime90d:       nil,
-			LastIncident:    latestApplicableStatuspageIncident(source, descriptor.Key, matched, summary.Incidents),
-			LastUpdatedAt:   lastUpdatedAt,
-			History30d:      statuspageHistoryForService(source, descriptor.Key, matched, summary),
-			SourceURL:       publicURL,
-			Stale:           false,
+			ServiceKey:           descriptor.Key,
+			Platform:             platform,
+			PlatformOrder:        platformOrder,
+			Name:                 descriptor.Name,
+			Status:               status,
+			StatusIndicator:      statusIndicatorForServiceStatus(status),
+			Uptime90d:            nil,
+			LastIncident:         latestApplicableStatuspageIncident(source, descriptor.Key, matched, summary.Incidents),
+			LastUpdatedAt:        lastUpdatedAt,
+			History30d:           statuspageHistoryForService(source, descriptor.Key, matched, summary),
+			HistoryDays:          serviceHealthHistoryDays,
+			UptimeWindowDays:     serviceHealthUptimeWindowDays,
+			RecentIncidentDays:   serviceHealthRecentIncidentDays,
+			IncidentPreviewLimit: serviceHealthIncidentPreviewLimit,
+			SourceURL:            publicURL,
+			Stale:                false,
 		})
 	}
 	return cards, nil
@@ -1913,27 +1745,32 @@ func MergeStatuspageServiceHealth(groups ...[]ServiceHealthDTO) []ServiceHealthD
 		}
 	}
 
-	descriptors := CanonicalRadarServices()
-	descriptors = append(descriptors,
-		RadarServiceDescriptor{Key: ServiceKeyWindsurf, Name: "Windsurf"},
-		RadarServiceDescriptor{Key: ServiceKeyDeepSeek, Name: "DeepSeek"},
-		RadarServiceDescriptor{Key: ServiceKeyKimi, Name: "Kimi"},
-		RadarServiceDescriptor{Key: ServiceKeyMiniMax, Name: "MiniMax"},
-	)
+	descriptors := radarAllServiceDescriptors()
 	result := make([]ServiceHealthDTO, 0, len(descriptors))
 	for _, descriptor := range descriptors {
 		card, ok := byKey[descriptor.Key]
 		if !ok {
-			if descriptor.Key == ServiceKeyWindsurf || descriptor.Key == ServiceKeyDeepSeek || descriptor.Key == ServiceKeyKimi || descriptor.Key == ServiceKeyMiniMax {
+			registration, registered := radarServiceRegistrationForKey(descriptor.Key)
+			if !registered || !registration.AlwaysPresent {
 				continue
 			}
 			card = unknownStatuspageCard(descriptor)
 		}
+		platform, platformOrder, registered := radarServicePlatform(descriptor.Key)
+		if !registered {
+			continue
+		}
 		card.ServiceKey = descriptor.Key
+		card.Platform = platform
+		card.PlatformOrder = platformOrder
 		card.Name = descriptor.Name
 		card.Status = canonicalServiceStatus(card.Status)
 		card.StatusIndicator = statusIndicatorForServiceStatus(card.Status)
 		card.Uptime90d = nil
+		card.HistoryDays = serviceHealthHistoryDays
+		card.UptimeWindowDays = serviceHealthUptimeWindowDays
+		card.RecentIncidentDays = serviceHealthRecentIncidentDays
+		card.IncidentPreviewLimit = serviceHealthIncidentPreviewLimit
 		if descriptor.Key == ServiceKeyClaudeAPI || descriptor.Key == ServiceKeyClaudeCode || descriptor.Key == ServiceKeyOpenAIAPI || descriptor.Key == ServiceKeyCodexWeb {
 			card.SourceURL = statuspagePublicURLForService(descriptor.Key)
 		} else if card.SourceURL == "" {
@@ -2121,28 +1958,12 @@ func matchingStatuspageComponents(source RadarSourceKey, serviceKey ServiceKey, 
 
 func statuspageComponentMatches(source RadarSourceKey, serviceKey ServiceKey, rawName string) bool {
 	name := strings.ToLower(strings.TrimSpace(rawName))
-	switch {
-	case source == RadarSourceStatusClaude && serviceKey == ServiceKeyClaudeAPI:
-		return matchesStatuspageAlias(name, claudeAPIStatuspageAliases)
-	case source == RadarSourceStatusClaude && serviceKey == ServiceKeyClaudeCode:
-		return matchesStatuspageAlias(name, claudeCodeStatuspageAliases)
-	case source == RadarSourceStatusOpenAI && serviceKey == ServiceKeyCodexWeb:
-		return matchesStatuspageAlias(name, codexWebStatuspageAliases)
-	case source == RadarSourceStatusOpenAI && serviceKey == ServiceKeyOpenAIAPI:
-		return matchesStatuspageAlias(name, openAIAPIStatuspageAliases)
-	case source == RadarSourceStatusWindsurf && serviceKey == ServiceKeyWindsurf:
-		return matchesStatuspageAlias(name, windsurfStatuspageAliases)
-	case source == RadarSourceStatusDeepSeek && serviceKey == ServiceKeyDeepSeek:
-		return matchesStatuspageAlias(name, deepSeekStatuspageAliases)
-	case source == RadarSourceStatusKimi && serviceKey == ServiceKeyKimi:
-		return matchesStatuspageAlias(name, kimiStatuspageAliases)
-	case source == RadarSourceStatusMiniMaxGlobal && serviceKey == ServiceKeyMiniMax:
-		return matchesStatuspageAlias(name, miniMaxGlobalStatuspageAliases)
-	case source == RadarSourceStatusMiniMaxChina && serviceKey == ServiceKeyMiniMax:
-		return matchesStatuspageAlias(name, miniMaxChinaStatuspageAliases)
-	default:
+	contract, ok := radarStatuspageContractFor(source)
+	if !ok {
 		return false
 	}
+	aliases, ok := contract.ServiceAliases[serviceKey]
+	return ok && matchesStatuspageAlias(name, aliases)
 }
 
 func matchesStatuspageAlias(name string, aliases map[string]struct{}) bool {
@@ -2539,32 +2360,32 @@ func statuspageIncidentMatches(
 }
 
 func unknownStatuspageCard(descriptor RadarServiceDescriptor) ServiceHealthDTO {
+	platform, platformOrder, _ := radarServicePlatform(descriptor.Key)
 	return ServiceHealthDTO{
-		ServiceKey:      descriptor.Key,
-		Name:            descriptor.Name,
-		Status:          ServiceStatusUnknown,
-		StatusIndicator: StatusIndicatorUnknown,
-		SourceURL:       statuspagePublicURLForService(descriptor.Key),
+		ServiceKey:           descriptor.Key,
+		Platform:             platform,
+		PlatformOrder:        platformOrder,
+		Name:                 descriptor.Name,
+		Status:               ServiceStatusUnknown,
+		StatusIndicator:      StatusIndicatorUnknown,
+		HistoryDays:          serviceHealthHistoryDays,
+		UptimeWindowDays:     serviceHealthUptimeWindowDays,
+		RecentIncidentDays:   serviceHealthRecentIncidentDays,
+		IncidentPreviewLimit: serviceHealthIncidentPreviewLimit,
+		SourceURL:            statuspagePublicURLForService(descriptor.Key),
 	}
 }
 
 func statuspagePublicURLForService(serviceKey ServiceKey) string {
-	switch serviceKey {
-	case ServiceKeyClaudeAPI, ServiceKeyClaudeCode:
-		return claudeStatuspagePublicURL
-	case ServiceKeyOpenAIAPI, ServiceKeyCodexWeb:
-		return openAIStatuspagePublicURL
-	case ServiceKeyWindsurf:
-		return windsurfStatuspagePublicURL
-	case ServiceKeyDeepSeek:
-		return deepSeekStatuspagePublicURL
-	case ServiceKeyKimi:
-		return kimiStatuspagePublicURL
-	case ServiceKeyMiniMax:
-		return miniMaxChinaStatuspagePublicURL
-	default:
+	registration, ok := radarServiceRegistrationForKey(serviceKey)
+	if !ok {
 		return ""
 	}
+	source, ok := radarSourceRegistrationFor(registration.Source)
+	if !ok {
+		return ""
+	}
+	return source.PublicURL
 }
 
 func cloneServiceHealthDTO(input ServiceHealthDTO) ServiceHealthDTO {

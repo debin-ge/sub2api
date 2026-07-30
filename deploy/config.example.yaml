@@ -1255,7 +1255,7 @@ radar:
   # mode 0400 (or 0600 only for writable rotation), never group/world-readable.
   metrics_bearer_token: ""
   # Quota aggregation cadence (1-1440 minutes) and history retention (1-30 days).
-  quota_aggregator_interval_min: 15
+  quota_aggregator_interval_min: 360
   quota_history_retention_days: 7
   # Privacy thresholds for warnings and public aggregate buckets. ChatGPT Pro
   # uses its available contributor count so a singleton 20x plan remains visible.
@@ -1276,7 +1276,7 @@ radar:
   # Hard retention is 1-30 days. Each stale threshold must be between its
   # producer cadence and the hard-retention window, in minutes.
   source_hard_retention_days: 7
-  quota_stale_threshold_minutes: 30
+  quota_stale_threshold_minutes: 720
   health_stale_threshold_minutes: 60
   artificial_analysis_models_stale_threshold_minutes: 720
   lmarena_stale_threshold_minutes: 2880
