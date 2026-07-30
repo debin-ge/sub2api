@@ -590,7 +590,7 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_DefaultDisabled_Embeddi
 		OpenAIEndpointCapabilityEmbeddings,
 		false,
 		false,
-		true,
+		BillingKindToken,
 	)
 	require.NoError(t, err)
 	require.NotNil(t, selection)
@@ -635,7 +635,7 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_ResponsesCapabilityExcl
 		selection, _, err := svc.SelectAccountWithSchedulerForCapability(
 			ctx, &groupID, "", "", "gpt-image-2", nil,
 			OpenAIUpstreamTransportAny, OpenAIEndpointCapabilityResponses,
-			false, false, false,
+			false, false, BillingKindUnspecified,
 		)
 		require.NoError(t, err)
 		require.NotNil(t, selection)
@@ -648,7 +648,7 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_ResponsesCapabilityExcl
 		selection, _, err := svc.SelectAccountWithSchedulerForCapability(
 			ctx, &groupID, "", "", "gpt-image-2", nil,
 			OpenAIUpstreamTransportAny, OpenAIEndpointCapabilityResponses,
-			false, false, false,
+			false, false, BillingKindUnspecified,
 		)
 		require.Error(t, err)
 		require.Nil(t, selection)
@@ -659,7 +659,7 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_ResponsesCapabilityExcl
 		selection, _, err := svc.SelectAccountWithSchedulerForCapability(
 			ctx, &groupID, "", "", "gpt-5.1", nil,
 			OpenAIUpstreamTransportAny, OpenAIEndpointCapabilityChatCompletions,
-			false, false, true,
+			false, false, BillingKindToken,
 		)
 		require.NoError(t, err)
 		require.NotNil(t, selection)
@@ -707,7 +707,7 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_AlphaSearchAllowsAPIKey
 		OpenAIEndpointCapabilityAlphaSearch,
 		false,
 		false,
-		false,
+		BillingKindUnspecified,
 	)
 	require.NoError(t, err)
 	require.NotNil(t, selection)
@@ -751,7 +751,7 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_DefaultDisabled_AllowsG
 		OpenAIEndpointCapabilityChatCompletions,
 		false,
 		false,
-		false,
+		BillingKindUnspecified,
 		PlatformGrok,
 	)
 	require.NoError(t, err)
@@ -791,7 +791,7 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_GrokMediaCapabilityFilt
 		selection, _, err := newService([]Account{ineligible, eligible}).SelectAccountWithSchedulerForCapability(
 			ctx, &groupID, "", "", "grok-imagine-video", nil,
 			OpenAIUpstreamTransportHTTPSSE, OpenAIEndpointCapabilityGrokMediaGeneration,
-			false, false, false, PlatformGrok,
+			false, false, BillingKindUnspecified, PlatformGrok,
 		)
 
 		require.NoError(t, err)
@@ -804,7 +804,7 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_GrokMediaCapabilityFilt
 		selection, _, err := newService([]Account{ineligible}).SelectAccountWithSchedulerForCapability(
 			ctx, &groupID, "", "", "grok-imagine-video", nil,
 			OpenAIUpstreamTransportHTTPSSE, OpenAIEndpointCapabilityGrokMediaGeneration,
-			false, false, false, PlatformGrok,
+			false, false, BillingKindUnspecified, PlatformGrok,
 		)
 
 		require.Error(t, err)
@@ -816,7 +816,7 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_GrokMediaCapabilityFilt
 		selection, _, err := newService([]Account{ineligible}).SelectAccountWithSchedulerForCapability(
 			ctx, &groupID, "", "", "grok-4.3", nil,
 			OpenAIUpstreamTransportHTTPSSE, OpenAIEndpointCapabilityChatCompletions,
-			false, false, false, PlatformGrok,
+			false, false, BillingKindUnspecified, PlatformGrok,
 		)
 
 		require.NoError(t, err)
@@ -1175,7 +1175,7 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_StickyWeightedPreviousR
 		OpenAIEndpointCapabilityChatCompletions,
 		false,
 		false,
-		true,
+		BillingKindToken,
 		PlatformOpenAI,
 	)
 	require.NoError(t, err)
@@ -1199,7 +1199,7 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_StickyWeightedPreviousR
 		OpenAIEndpointCapabilityChatCompletions,
 		false,
 		true,
-		true,
+		BillingKindToken,
 		PlatformOpenAI,
 	)
 	require.NoError(t, err)
@@ -1342,7 +1342,7 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_Enabled_EmbeddingsSkips
 		OpenAIEndpointCapabilityEmbeddings,
 		false,
 		false,
-		true,
+		BillingKindToken,
 	)
 	require.NoError(t, err)
 	require.NotNil(t, selection)
@@ -1417,7 +1417,7 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_Enabled_EmbeddingsSkips
 		OpenAIEndpointCapabilityEmbeddings,
 		false,
 		false,
-		true,
+		BillingKindToken,
 	)
 	require.NoError(t, err)
 	require.NotNil(t, selection)

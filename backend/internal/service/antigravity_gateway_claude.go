@@ -57,6 +57,15 @@ func (s *AntigravityGatewayService) Forward(ctx context.Context, c *gin.Context,
 	thinkingEnabled := claudeReq.Thinking != nil && (claudeReq.Thinking.Type == "enabled" || claudeReq.Thinking.Type == "adaptive")
 	mappedModel = applyThinkingModelSuffix(mappedModel, thinkingEnabled)
 	billingModel := mappedModel
+	if err := s.validateResolvedAntigravityTokenPricing(
+		ctx,
+		c,
+		account,
+		originalModel,
+		mappedModel,
+	); err != nil {
+		return nil, err
+	}
 
 	// 获取 access_token
 	if s.tokenProvider == nil {

@@ -457,11 +457,12 @@ func TestCalculateCost_OpenAIGPT54LongContextAppliesWholeSessionMultipliers(t *t
 func TestCalculateCost_OpenAIGPT54LongContextMarkerRequiresActualCostIncrease(t *testing.T) {
 	svc := newTestBillingService()
 
-	cost, err := svc.calculateCostWithServiceTierPolicy(
+	cost, err := svc.calculateCostInternalWithPolicy(
 		"gpt-5.4-2026-03-05",
 		UsageTokens{InputTokens: 300000},
 		0,
 		"",
+		nil,
 		true,
 	)
 
@@ -751,6 +752,37 @@ func TestGetFallbackPricing_FamilyMatching(t *testing.T) {
 			expectedInput:     0,
 			expectedOutput:    floatPtr(0),
 			expectedCacheRead: floatPtr(0),
+		},
+		{
+			name:              "glm 4.7-flash approved models alias keeps free tier",
+			model:             "models/glm-4.7-flash",
+			expectedInput:     0,
+			expectedOutput:    floatPtr(0),
+			expectedCacheRead: floatPtr(0),
+		},
+		{
+			name:           "arbitrary provider glm 4.7 flash cannot inherit free tier",
+			model:          "future-provider/glm-4.7-flash",
+			expectedInput:  0.6e-6,
+			expectedOutput: floatPtr(2.2e-6),
+		},
+		{
+			name:           "arbitrary provider glm 4.5 flash cannot inherit free tier",
+			model:          "future-provider/glm-4.5-flash",
+			expectedInput:  0.6e-6,
+			expectedOutput: floatPtr(2.2e-6),
+		},
+		{
+			name:           "unknown glm 4.5 flash suffix does not inherit free tier",
+			model:          "glm-4.5-flash-future-paid",
+			expectedInput:  0.6e-6,
+			expectedOutput: floatPtr(2.2e-6),
+		},
+		{
+			name:           "unknown glm 4.7 flash suffix does not inherit free tier",
+			model:          "glm-4.7-flash-future-paid",
+			expectedInput:  0.6e-6,
+			expectedOutput: floatPtr(2.2e-6),
 		},
 		{
 			name:           "glm 4-32b legacy",
@@ -1050,6 +1082,179 @@ func TestComputeTokenBreakdown_GptImage2ImageEditIssue4386(t *testing.T) {
 	require.InDelta(t, wantImageOutput, cost.ImageOutputCost, 1e-15)
 	require.InDelta(t, 0.016081, cost.TotalCost, 1e-9, "总额应为 $0.016081（修复前为 $0.015025）")
 }
+
+func TestComputeTokenBreakdown_ExplicitZeroImageInputPriceDoesNotFallback(t *testing.T) {
+	svc := newTestBillingService()
+	pricing := &ModelPricing{
+		InputPricePerToken:      5e-6,
+		ImageInputPricePerToken: 0,
+		ImageInputPriceExplicit: true,
+	}
+
+	cost := svc.computeTokenBreakdown(pricing, UsageTokens{
+		InputTokens:      10,
+		ImageInputTokens: 10,
+	}, 1, "", false)
+	require.Zero(t, cost.InputCost)
+	require.Zero(t, cost.ImageInputCost)
+}
+
+func TestComputeTokenBreakdown_UnconfiguredImageInputPriceFallsBackToTextInput(t *testing.T) {
+	svc := newTestBillingService()
+	pricing := &ModelPricing{InputPricePerToken: 5e-6}
+
+	cost := svc.computeTokenBreakdown(pricing, UsageTokens{
+		InputTokens:      10,
+		ImageInputTokens: 10,
+	}, 1, "", false)
+	require.InDelta(t, 10*5e-6, cost.ImageInputCost, 1e-12)
+}
+
+func TestCalculateCost_PresenceKnownCatalogRejectsUsedMissingCacheDimension(t *testing.T) {
+	pricingSvc := &PricingService{}
+	data, err := pricingSvc.parsePricingData([]byte(`{
+		"catalog-no-cache-price": {
+			"input_cost_per_token": 0.000001,
+			"output_cost_per_token": 0.000002,
+			"mode": "chat"
+		}
+	}`))
+	require.NoError(t, err)
+	pricingSvc.pricingData = data
+	svc := NewBillingService(&config.Config{}, pricingSvc)
+
+	_, err = svc.CalculateCost("catalog-no-cache-price", UsageTokens{CacheReadTokens: 10}, 1)
+	require.ErrorIs(t, err, ErrModelPricingUnavailable)
+	require.Contains(t, err.Error(), "cache_read")
+
+	_, err = svc.CalculateCost("catalog-no-cache-price", UsageTokens{CacheCreation5mTokens: 10}, 1)
+	require.ErrorIs(t, err, ErrModelPricingUnavailable)
+	require.Contains(t, err.Error(), "cache_write")
+
+	cost, err := svc.CalculateCost("catalog-no-cache-price", UsageTokens{InputTokens: 10}, 1)
+	require.NoError(t, err, "unused optional dimensions do not invalidate ordinary token usage")
+	require.InDelta(t, 10e-6, cost.TotalCost, 1e-12)
+}
+
+func TestCalculateCost_PresenceKnownCatalogPreservesExplicitZeroCachePrices(t *testing.T) {
+	pricingSvc := &PricingService{}
+	data, err := pricingSvc.parsePricingData([]byte(`{
+		"catalog-free-cache": {
+			"input_cost_per_token": 0.000001,
+			"output_cost_per_token": 0.000002,
+			"cache_creation_input_token_cost": 0,
+			"cache_read_input_token_cost": 0,
+			"supports_prompt_caching": true,
+			"mode": "chat"
+		}
+	}`))
+	require.NoError(t, err)
+	pricingSvc.pricingData = data
+	svc := NewBillingService(&config.Config{}, pricingSvc)
+
+	cost, err := svc.CalculateCost("catalog-free-cache", UsageTokens{
+		CacheCreation5mTokens: 10,
+		CacheReadTokens:       20,
+	}, 1)
+	require.NoError(t, err)
+	require.Zero(t, cost.CacheCreationCost)
+	require.Zero(t, cost.CacheReadCost)
+}
+
+func TestCalculateCost_CacheCreationExplicitZeroOneHourTier(t *testing.T) {
+	pricingSvc := &PricingService{}
+	data, err := pricingSvc.parsePricingData([]byte(`{
+		"catalog-zero-1h-cache": {
+			"input_cost_per_token": 0.000001,
+			"output_cost_per_token": 0.000002,
+			"cache_creation_input_token_cost": 0.000002,
+			"cache_creation_input_token_cost_above_1hr": 0,
+			"cache_read_input_token_cost": 0,
+			"supports_prompt_caching": true,
+			"mode": "chat"
+		}
+	}`))
+	require.NoError(t, err)
+	pricingSvc.pricingData = data
+	svc := NewBillingService(&config.Config{}, pricingSvc)
+
+	pricing, err := svc.GetModelPricingStrict("catalog-zero-1h-cache")
+	require.NoError(t, err)
+	require.True(t, pricing.SupportsCacheBreakdown)
+	require.True(t, pricing.CacheCreation1hPriceExplicit)
+
+	cost, err := svc.CalculateCost("catalog-zero-1h-cache", UsageTokens{
+		CacheCreationTokens:   200,
+		CacheCreation5mTokens: 100,
+		CacheCreation1hTokens: 100,
+	}, 1)
+	require.NoError(t, err)
+	require.InDelta(t, 100*2e-6, cost.CacheCreationCost, 1e-12)
+}
+
+func TestComputeCacheCreationCost_UsesBreakdownWhenAggregateIsMissingOrPartial(t *testing.T) {
+	svc := newTestBillingService()
+	pricing := &ModelPricing{
+		SupportsCacheBreakdown: true,
+		CacheCreation5mPrice:   2,
+		CacheCreation1hPrice:   3,
+	}
+
+	t.Run("detail without aggregate", func(t *testing.T) {
+		cost := svc.computeCacheCreationCost(pricing, UsageTokens{
+			CacheCreation5mTokens: 2,
+			CacheCreation1hTokens: 3,
+		}, 99, 1)
+		require.Equal(t, float64(2*2+3*3), cost)
+	})
+
+	t.Run("unclassified aggregate remainder uses 5m tier", func(t *testing.T) {
+		cost := svc.computeCacheCreationCost(pricing, UsageTokens{
+			CacheCreationTokens:   10,
+			CacheCreation5mTokens: 4,
+			CacheCreation1hTokens: 3,
+		}, 99, 1)
+		require.Equal(t, float64((4+3)*2+3*3), cost)
+	})
+}
+
+func TestComputeTokenBreakdown_LongContextAppliesToExplicitImageTokenPricesExactlyOnce(t *testing.T) {
+	svc := newTestBillingService()
+	tokens := UsageTokens{
+		InputTokens:       200,
+		ImageInputTokens:  50,
+		OutputTokens:      20,
+		ImageOutputTokens: 10,
+	}
+	base := ModelPricing{
+		InputPricePerToken:          1,
+		OutputPricePerToken:         2,
+		LongContextInputThreshold:   100,
+		LongContextInputMultiplier:  2,
+		LongContextOutputMultiplier: 3,
+	}
+
+	t.Run("dedicated image prices combine with priority and long context", func(t *testing.T) {
+		pricing := base
+		pricing.ImageInputPricePerToken = 3
+		pricing.ImageInputPriceExplicit = true
+		pricing.ImageOutputPricePerToken = 4
+		pricing.ImageOutputPriceExplicit = true
+
+		cost := svc.computeTokenBreakdown(&pricing, tokens, 1, "priority", true)
+		require.Equal(t, float64(150*1*2*2), cost.InputCost)
+		require.Equal(t, float64(50*3*2*2), cost.ImageInputCost)
+		require.Equal(t, float64(10*2*2*3), cost.OutputCost)
+		require.Equal(t, float64(10*4*2*3), cost.ImageOutputCost)
+	})
+
+	t.Run("fallback image prices reuse adjusted text prices without double multiplier", func(t *testing.T) {
+		cost := svc.computeTokenBreakdown(&base, tokens, 1, "priority", true)
+		require.Equal(t, float64(50*1*2*2), cost.ImageInputCost)
+		require.Equal(t, float64(10*2*2*3), cost.ImageOutputCost)
+	})
+}
+
 func TestCalculateCostWithLongContext_BelowThreshold(t *testing.T) {
 	svc := newTestBillingService()
 
@@ -1196,6 +1401,144 @@ func TestCalculateVideoCostBillsPerSecond(t *testing.T) {
 	require.InDelta(t, 0.07*15, fifteenSeconds.TotalCost, 1e-10)
 	require.InDelta(t, 0.07*8, defaultDuration.TotalCost, 1e-10)
 	require.InDelta(t, 0.07*15, clampedDuration.TotalCost, 1e-10)
+}
+
+func TestCalculateMediaCostStrictRejectsUnknownModelsInsteadOfPlaceholder(t *testing.T) {
+	svc := newTestBillingService()
+
+	imageCost, imageErr := svc.CalculateImageCostStrict(
+		"unknown-image-future",
+		ImageBillingSize4K,
+		1,
+		nil,
+		1,
+	)
+	require.ErrorIs(t, imageErr, ErrModelPricingUnavailable)
+	require.Nil(t, imageCost)
+
+	videoCost, videoErr := svc.CalculateVideoCostStrict(
+		"grok-imagine-video-future",
+		VideoBillingResolution720P,
+		1,
+		8,
+		nil,
+		1,
+	)
+	require.ErrorIs(t, videoErr, ErrModelPricingUnavailable)
+	require.Nil(t, videoCost)
+}
+
+func TestCalculateImageCostStrict_GrokRateCardDoesNotBorrow2KFor4K(t *testing.T) {
+	svc := newTestBillingService()
+	tests := []struct {
+		model       string
+		want1KPrice float64
+		want2KPrice float64
+	}{
+		{
+			model:       "grok-imagine-image",
+			want1KPrice: defaultGrokImagineImagePrice1K,
+			want2KPrice: defaultGrokImagineImagePrice2K,
+		},
+		{
+			model:       "grok-imagine-image-quality",
+			want1KPrice: defaultGrokImagineImageQualityPrice1K,
+			want2KPrice: defaultGrokImagineImageQualityPrice2K,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			cost1K, err := svc.CalculateImageCostStrict(tt.model, ImageBillingSize1K, 1, nil, 1)
+			require.NoError(t, err)
+			require.InDelta(t, tt.want1KPrice, cost1K.TotalCost, 1e-12)
+
+			cost2K, err := svc.CalculateImageCostStrict(tt.model, ImageBillingSize2K, 1, nil, 1)
+			require.NoError(t, err)
+			require.InDelta(t, tt.want2KPrice, cost2K.TotalCost, 1e-12)
+
+			cost4K, err := svc.CalculateImageCostStrict(tt.model, ImageBillingSize4K, 1, nil, 1)
+			require.ErrorIs(t, err, ErrModelPricingUnavailable)
+			require.Nil(t, cost4K)
+			_, hardcoded4K := getDefaultGrokImagineImagePrice(tt.model, ImageBillingSize4K)
+			require.False(t, hardcoded4K, "the hard-coded rate card itself must not expose a borrowed 4K price")
+		})
+	}
+}
+
+func TestCalculateMediaCostStrictPreservesExplicitZeroTierPrice(t *testing.T) {
+	svc := newTestBillingService()
+	zero := 0.0
+
+	imageCost, err := svc.CalculateImageCostStrict(
+		"unknown-image-with-admin-price",
+		ImageBillingSize4K,
+		2,
+		&ImagePriceConfig{Price4K: &zero},
+		1,
+	)
+	require.NoError(t, err)
+	require.Zero(t, imageCost.TotalCost)
+	require.Zero(t, imageCost.ActualCost)
+	require.Equal(t, string(BillingModeImage), imageCost.BillingMode)
+
+	videoCost, err := svc.CalculateVideoCostStrict(
+		"unknown-video-with-admin-price",
+		VideoBillingResolution1080P,
+		1,
+		8,
+		&VideoPriceConfig{Price1080P: &zero},
+		1,
+	)
+	require.NoError(t, err)
+	require.Zero(t, videoCost.TotalCost)
+	require.Zero(t, videoCost.ActualCost)
+	require.Equal(t, string(BillingModeVideo), videoCost.BillingMode)
+}
+
+func TestCalculateMediaCostStrictPreservesCatalogExplicitZeroImagePrice(t *testing.T) {
+	pricingService := &PricingService{
+		pricingData: map[string]*ModelPriceEntry{
+			"catalog-free-image": {
+				OutputCostPerImage:         0,
+				OutputCostPerImageExplicit: true,
+				TokenPricingAbsent:         true,
+			},
+			"catalog-missing-image-price": {
+				OutputCostPerImage: 0,
+				TokenPricingAbsent: true,
+			},
+		},
+	}
+	svc := NewBillingService(&config.Config{}, pricingService)
+
+	cost, err := svc.CalculateImageCostStrict(
+		"catalog-free-image",
+		ImageBillingSize4K,
+		2,
+		nil,
+		1,
+	)
+	require.NoError(t, err)
+	require.Zero(t, cost.TotalCost)
+	require.Zero(t, cost.ActualCost)
+	require.Zero(t, svc.getDefaultImagePrice("catalog-free-image", ImageBillingSize4K))
+
+	missingCost, err := svc.CalculateImageCostStrict(
+		"catalog-missing-image-price",
+		ImageBillingSize1K,
+		1,
+		nil,
+		1,
+	)
+	require.ErrorIs(t, err, ErrModelPricingUnavailable)
+	require.Nil(t, missingCost)
+	require.InDelta(
+		t,
+		defaultImageGenerationPrice,
+		svc.getDefaultImagePrice("catalog-missing-image-price", ImageBillingSize1K),
+		1e-12,
+	)
 }
 
 func TestCalculateGrokImagineImageCostUsesDefaultRateCard(t *testing.T) {
@@ -1601,6 +1944,96 @@ func TestCalculateCostWithServiceTier_PriorityFallsBackToTierMultiplierWhenExpli
 	require.InDelta(t, baseCost.TotalCost*2, priorityCost.TotalCost, 1e-10)
 }
 
+func TestCalculateCostWithServiceTier_PartialPriorityPricingUsesMultiplierForMissingDimensions(t *testing.T) {
+	svc := NewBillingService(&config.Config{}, &PricingService{
+		pricingData: map[string]*ModelPriceEntry{
+			"custom-partial-priority": {
+				InputCostPerToken:           1e-6,
+				InputCostPerTokenPriority:   3e-6,
+				OutputCostPerToken:          2e-6,
+				CacheCreationInputTokenCost: 0.5e-6,
+				CacheReadInputTokenCost:     0.25e-6,
+				OutputCostPerImageToken:     4e-6,
+				ImageOutputPriceExplicit:    true,
+			},
+		},
+	})
+	tokens := UsageTokens{
+		InputTokens:         100,
+		OutputTokens:        60,
+		ImageOutputTokens:   10,
+		CacheCreationTokens: 40,
+		CacheReadTokens:     20,
+	}
+
+	priorityCost, err := svc.CalculateCostWithServiceTier(
+		"custom-partial-priority",
+		tokens,
+		1.0,
+		"priority",
+	)
+	require.NoError(t, err)
+	require.InDelta(t, 100*3e-6, priorityCost.InputCost, 1e-12)
+	require.InDelta(t, 50*2e-6*2, priorityCost.OutputCost, 1e-12)
+	require.InDelta(t, 10*4e-6*2, priorityCost.ImageOutputCost, 1e-12)
+	require.InDelta(t, 40*0.5e-6*2, priorityCost.CacheCreationCost, 1e-12)
+	require.InDelta(t, 20*0.25e-6*2, priorityCost.CacheReadCost, 1e-12)
+}
+
+func TestCalculateCostWithServiceTier_PriorityScalesCacheDurationBreakdown(t *testing.T) {
+	svc := NewBillingService(&config.Config{}, &PricingService{
+		pricingData: map[string]*ModelPriceEntry{
+			"priority-cache-breakdown": {
+				InputCostPerToken:                   1e-6,
+				OutputCostPerToken:                  2e-6,
+				CacheCreationInputTokenCost:         1e-6,
+				CacheCreationInputTokenCostPriority: 3e-6,
+				CacheCreationInputTokenCostAbove1hr: 2e-6,
+			},
+		},
+	})
+
+	cost, err := svc.CalculateCostWithServiceTier(
+		"priority-cache-breakdown",
+		UsageTokens{
+			CacheCreationTokens:   15,
+			CacheCreation5mTokens: 10,
+			CacheCreation1hTokens: 5,
+		},
+		1.0,
+		"priority",
+	)
+	require.NoError(t, err)
+	require.InDelta(t, (10*1e-6+5*2e-6)*3, cost.CacheCreationCost, 1e-12)
+}
+
+func TestCalculateCostWithServiceTier_ExplicitZeroPriorityPriceRemainsZero(t *testing.T) {
+	pricingSvc := &PricingService{}
+	data, err := pricingSvc.parsePricingData([]byte(`{
+		"intentional-free-priority": {
+			"input_cost_per_token": 0.000001,
+			"input_cost_per_token_priority": 0,
+			"output_cost_per_token": 0.000002,
+			"output_cost_per_token_priority": 0,
+			"supports_service_tier": true
+		}
+	}`))
+	require.NoError(t, err)
+	pricingSvc.pricingData = data
+	svc := NewBillingService(&config.Config{}, pricingSvc)
+
+	cost, err := svc.CalculateCostWithServiceTier(
+		"intentional-free-priority",
+		UsageTokens{InputTokens: 100, OutputTokens: 50},
+		1.0,
+		"priority",
+	)
+	require.NoError(t, err)
+	require.Zero(t, cost.InputCost)
+	require.Zero(t, cost.OutputCost)
+	require.Zero(t, cost.TotalCost)
+}
+
 func TestGetModelPricing_OpenAIGpt52FallbacksExposePriorityPrices(t *testing.T) {
 	svc := newTestBillingService()
 
@@ -1774,7 +2207,7 @@ func TestGetModelPricingWithChannel_UnknownModelReturnsError(t *testing.T) {
 	require.Contains(t, err.Error(), "pricing not found")
 }
 
-func TestGetModelPricingWithChannel_NilImageOutputPriceZerosAndMarksExplicit(t *testing.T) {
+func TestGetModelPricingWithChannel_NilImageOutputPriceFallsBackToOutput(t *testing.T) {
 	svc := newTestBillingService()
 
 	chPricing := &ChannelModelPricing{
@@ -1786,7 +2219,13 @@ func TestGetModelPricingWithChannel_NilImageOutputPriceZerosAndMarksExplicit(t *
 	require.NoError(t, err)
 
 	require.Equal(t, 0.0, pricing.ImageOutputPricePerToken)
-	require.True(t, pricing.ImageOutputPriceExplicit)
+	require.False(t, pricing.ImageOutputPriceExplicit)
+
+	bd := svc.computeTokenBreakdown(pricing, UsageTokens{
+		OutputTokens:      10,
+		ImageOutputTokens: 10,
+	}, 1, "", false)
+	require.InDelta(t, 10*20e-6, bd.ImageOutputCost, 1e-12)
 }
 
 func TestComputeTokenBreakdown_ExplicitZeroImagePrice_NoFallback(t *testing.T) {

@@ -20,6 +20,9 @@ func TestClassifyImageBillingTier(t *testing.T) {
 		{name: "long edge 1k", size: "1024X768", wantTier: "1K", wantOK: true},
 		{name: "long edge 2k", size: "1280x768", wantTier: "2K", wantOK: true},
 		{name: "long edge 4k", size: "2560x1600", wantTier: "4K", wantOK: true},
+		{name: "4k boundary", size: "4096x4096", wantTier: "4K", wantOK: true},
+		{name: "future 8k dimensions", size: "8192x8192", wantOK: false},
+		{name: "oversized single edge", size: "4097x1024", wantOK: false},
 		{name: "tier string 1k", size: "1k", wantTier: "1K", wantOK: true},
 		{name: "empty", size: "", wantOK: false},
 		{name: "auto", size: "auto", wantOK: false},
@@ -73,10 +76,10 @@ func TestResolveImageBillingSize(t *testing.T) {
 			wantSource:  ImageSizeSourceDefault,
 		},
 		{
-			name:        "invalid defaults",
+			name:        "invalid input remains unpriced",
 			inputSize:   "largest",
-			wantBilling: "2K",
-			wantSource:  ImageSizeSourceDefault,
+			wantBilling: "largest",
+			wantSource:  ImageSizeSourceInput,
 		},
 		{
 			name:          "mixed output chooses highest tier",
@@ -95,6 +98,22 @@ func TestResolveImageBillingSize(t *testing.T) {
 			wantOutput:  "auto",
 			wantSource:  ImageSizeSourceInput,
 		},
+		{
+			name:        "future output tier remains unpriced",
+			inputSize:   "2048x1152",
+			outputSizes: []string{"8K"},
+			wantBilling: "8K",
+			wantOutput:  "8K",
+			wantSource:  ImageSizeSourceOutput,
+		},
+		{
+			name:        "future output dimensions remain unpriced",
+			inputSize:   "2048x1152",
+			outputSizes: []string{"8192x8192"},
+			wantBilling: "8192x8192",
+			wantOutput:  "8192x8192",
+			wantSource:  ImageSizeSourceOutput,
+		},
 	}
 
 	for _, tt := range tests {
@@ -106,5 +125,24 @@ func TestResolveImageBillingSize(t *testing.T) {
 			require.Equal(t, tt.wantSource, got.Source)
 			require.Equal(t, tt.wantBreakdown, got.Breakdown)
 		})
+	}
+}
+
+func TestNormalizeImageBillingTierStrictOrDefault(t *testing.T) {
+	for _, size := range []string{"", "auto"} {
+		tier, err := NormalizeImageBillingTierStrictOrDefault(size)
+		require.NoError(t, err)
+		require.Equal(t, ImageBillingSize2K, tier)
+	}
+
+	for _, size := range []string{"1K", "2048x2048", "4096x4096"} {
+		_, err := NormalizeImageBillingTierStrictOrDefault(size)
+		require.NoError(t, err)
+	}
+
+	for _, size := range []string{"8K", "8192x8192", "largest"} {
+		tier, err := NormalizeImageBillingTierStrictOrDefault(size)
+		require.Empty(t, tier)
+		require.ErrorIs(t, err, ErrModelPricingUnavailable)
 	}
 }

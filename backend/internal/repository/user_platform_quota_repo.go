@@ -440,7 +440,10 @@ func insertLimitsRow(ctx context.Context, client *dbent.Client, userID int64, re
 // batchRows 是 BatchSnapshotUsage 每批最大行数（9 参/行 × 6000 ≈ 54000 参,低于 Postgres 65535 上限）。
 const batchRows = 6000
 
-// BatchSnapshotUsage 用一条多行 UPSERT 把整批 usage 以绝对值覆盖写入（非累加）。
+// BatchSnapshotUsage 用一条多行 UPSERT 把整批 Redis usage 快照写入 DB。
+// 同一窗口内 usage 只允许单调增加；较新的窗口起点覆盖较旧窗口。这样一个在
+// durable billing 事务提交前读到的陈旧 flusher 快照，不能在事务提交后把
+// max(DB, captured Redis)+cost 覆盖回较小值。
 // 每批最多 batchRows 行；$1=now 共用；每行 8 个 per-row 参（user_id, platform, 3×usage, 3×window_start）。
 // FK 违反（user_id 不存在）返回 ErrUserPlatformQuotaFKViolation。
 //
@@ -488,12 +491,21 @@ func (r *userPlatformQuotaRepository) BatchSnapshotUsage(ctx context.Context, sn
 
 		_, _ = sb.WriteString(
 			" ON CONFLICT (user_id, platform) WHERE deleted_at IS NULL DO UPDATE SET" +
-				"  daily_usage_usd      = EXCLUDED.daily_usage_usd," +
-				"  weekly_usage_usd     = EXCLUDED.weekly_usage_usd," +
-				"  monthly_usage_usd    = EXCLUDED.monthly_usage_usd," +
-				"  daily_window_start   = EXCLUDED.daily_window_start," +
-				"  weekly_window_start  = EXCLUDED.weekly_window_start," +
-				"  monthly_window_start = EXCLUDED.monthly_window_start," +
+				"  daily_usage_usd = CASE" +
+				"    WHEN user_platform_quotas.daily_window_start IS NULL OR EXCLUDED.daily_window_start > user_platform_quotas.daily_window_start THEN EXCLUDED.daily_usage_usd" +
+				"    WHEN EXCLUDED.daily_window_start = user_platform_quotas.daily_window_start THEN GREATEST(user_platform_quotas.daily_usage_usd, EXCLUDED.daily_usage_usd)" +
+				"    ELSE user_platform_quotas.daily_usage_usd END," +
+				"  weekly_usage_usd = CASE" +
+				"    WHEN user_platform_quotas.weekly_window_start IS NULL OR EXCLUDED.weekly_window_start > user_platform_quotas.weekly_window_start THEN EXCLUDED.weekly_usage_usd" +
+				"    WHEN EXCLUDED.weekly_window_start = user_platform_quotas.weekly_window_start THEN GREATEST(user_platform_quotas.weekly_usage_usd, EXCLUDED.weekly_usage_usd)" +
+				"    ELSE user_platform_quotas.weekly_usage_usd END," +
+				"  monthly_usage_usd = CASE" +
+				"    WHEN user_platform_quotas.monthly_window_start IS NULL OR EXCLUDED.monthly_window_start > user_platform_quotas.monthly_window_start THEN EXCLUDED.monthly_usage_usd" +
+				"    WHEN EXCLUDED.monthly_window_start = user_platform_quotas.monthly_window_start THEN GREATEST(user_platform_quotas.monthly_usage_usd, EXCLUDED.monthly_usage_usd)" +
+				"    ELSE user_platform_quotas.monthly_usage_usd END," +
+				"  daily_window_start = GREATEST(user_platform_quotas.daily_window_start, EXCLUDED.daily_window_start)," +
+				"  weekly_window_start = GREATEST(user_platform_quotas.weekly_window_start, EXCLUDED.weekly_window_start)," +
+				"  monthly_window_start = GREATEST(user_platform_quotas.monthly_window_start, EXCLUDED.monthly_window_start)," +
 				"  updated_at           = EXCLUDED.updated_at")
 
 		if _, err := client.ExecContext(ctx, sb.String(), args...); err != nil {

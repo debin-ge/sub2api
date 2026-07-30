@@ -27,8 +27,10 @@ type openCodeForwarder interface {
 }
 
 type openCodeGatewayService interface {
+	specializedGatewayChannelMapper
 	GenerateSessionHash(parsed *service.ParsedRequest) string
 	SelectAccountWithLoadAwareness(ctx context.Context, groupID *int64, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}, metadataUserID string, sub2apiUserID int64) (*service.AccountSelectionResult, error)
+	SelectAccountWithLoadAwarenessForNonBillingEndpoint(ctx context.Context, groupID *int64, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}, metadataUserID string, sub2apiUserID int64) (*service.AccountSelectionResult, error)
 	RecordUsage(ctx context.Context, input *service.RecordUsageInput) error
 }
 
@@ -120,7 +122,15 @@ func (h *OpenCodeGatewayHandler) Models(c *gin.Context) {
 		return
 	}
 	subject, _ := middleware2.GetAuthSubjectFromContext(c)
-	selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), apiKey.GroupID, "opencode-models", "", nil, "", subject.UserID)
+	selection, err := h.gatewayService.SelectAccountWithLoadAwarenessForNonBillingEndpoint(
+		c.Request.Context(),
+		apiKey.GroupID,
+		"opencode-models",
+		"",
+		nil,
+		"",
+		subject.UserID,
+	)
 	if err != nil || selection == nil || selection.Account == nil {
 		if handleOpenAICompatibleGroupAccessSelectionError(c, err, false) {
 			return
@@ -190,11 +200,12 @@ func (h *OpenCodeGatewayHandler) forwardBody(
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
 		return
 	}
-	reqModel := parsedReq.Model
+	reqModel := strings.TrimSpace(parsedReq.Model)
 	if reqModel == "" {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "model is required")
 		return
 	}
+	parsedReq.Model = reqModel
 	parsedReq.GroupID = apiKey.GroupID
 	parsedReq.SessionContext = &service.SessionContext{
 		ClientIP:  ip.GetClientIP(c),
@@ -212,6 +223,9 @@ func (h *OpenCodeGatewayHandler) forwardBody(
 		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "opencode gateway service unavailable")
 		return
 	}
+	channelMapping, forwardBody := resolveSpecializedGatewayChannelMapping(
+		c.Request.Context(), h.gatewayService, apiKey.GroupID, reqModel, body,
+	)
 
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
 	streamStarted := false
@@ -288,7 +302,7 @@ func (h *OpenCodeGatewayHandler) forwardBody(
 		}
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
-		result, err := forward(c.Request.Context(), c, account, body, openCodeRequestID(c))
+		result, err := forward(c.Request.Context(), c, account, forwardBody, openCodeRequestID(c))
 		releaseOnce()
 		if err != nil {
 			if c.Writer.Written() || streamStarted {
@@ -328,6 +342,7 @@ func (h *OpenCodeGatewayHandler) forwardBody(
 		inboundEndpoint := GetInboundEndpoint(c)
 		upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
 		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
+		channelUsageFields := clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel)
 		component := "handler.opencode_gateway." + componentSuffix
 
 		h.submitUsageRecordTask(func(ctx context.Context) {
@@ -344,6 +359,7 @@ func (h *OpenCodeGatewayHandler) forwardBody(
 				IPAddress:          clientIP,
 				RequestPayloadHash: requestPayloadHash,
 				APIKeyService:      h.apiKeyService,
+				ChannelUsageFields: channelUsageFields,
 			}); err != nil {
 				logger.L().With(
 					zap.String("component", component),
@@ -461,24 +477,12 @@ func (h *OpenCodeGatewayHandler) errorResponse(c *gin.Context, status int, errTy
 }
 
 func (h *OpenCodeGatewayHandler) submitUsageRecordTask(task service.UsageRecordTask) {
-	if task == nil {
-		return
-	}
-	if h.usageRecordWorkerPool != nil {
-		h.usageRecordWorkerPool.Submit(task)
-		return
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	defer func() {
-		if recovered := recover(); recovered != nil {
-			logger.L().With(
-				zap.String("component", "handler.opencode_gateway"),
-				zap.Any("panic", recovered),
-			).Error("opencode_gateway.usage_record_task_panic_recovered")
-		}
-	}()
-	task(ctx)
+	submitUsageRecordTaskWithFallback(
+		context.Background(),
+		h.usageRecordWorkerPool,
+		"handler.opencode_gateway",
+		task,
+	)
 }
 
 func openCodeRequestID(c *gin.Context) string {

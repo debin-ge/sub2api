@@ -324,6 +324,54 @@ func TestCheckUserPlatformQuotaEligibility_OldSchemaCacheMissTriggersDB(t *testi
 	}
 }
 
+func TestCheckUserPlatformQuotaEligibility_DBExpiredWindowsBackfillCurrentAnchors(t *testing.T) {
+	dailyLimit := 5.0
+	weeklyLimit := 20.0
+	monthlyLimit := 50.0
+	expired := time.Date(2020, time.January, 1, 0, 0, 0, 0, time.UTC)
+	repo := &fakeQuotaRepo{rec: &UserPlatformQuotaRecord{
+		UserID:             1,
+		Platform:           "anthropic",
+		DailyLimitUSD:      &dailyLimit,
+		WeeklyLimitUSD:     &weeklyLimit,
+		MonthlyLimitUSD:    &monthlyLimit,
+		DailyUsageUSD:      10,
+		WeeklyUsageUSD:     30,
+		MonthlyUsageUSD:    60,
+		DailyWindowStart:   &expired,
+		WeeklyWindowStart:  &expired,
+		MonthlyWindowStart: &expired,
+	}}
+	cache := &fakeFullCache{}
+	s := newServiceForPreflight(t, repo, cache)
+	before := time.Now()
+
+	err := s.checkUserPlatformQuotaEligibility(context.Background(), 1, "anthropic")
+
+	after := time.Now()
+	if err != nil {
+		t.Fatalf("expired DB windows should reset and allow request, got %v", err)
+	}
+	refreshed := cache.getEntry()
+	if refreshed == nil {
+		t.Fatal("expected current-window DB projection to be cached")
+	}
+	if refreshed.DailyUsageUSD != 0 || refreshed.WeeklyUsageUSD != 0 || refreshed.MonthlyUsageUSD != 0 {
+		t.Fatalf("expired usage was not reset: %+v", refreshed)
+	}
+	if refreshed.DailyWindowStart == nil || refreshed.DailyWindowStart.Equal(expired) {
+		t.Fatalf("daily anchor stayed stale: %v", refreshed.DailyWindowStart)
+	}
+	if refreshed.WeeklyWindowStart == nil || refreshed.WeeklyWindowStart.Equal(expired) {
+		t.Fatalf("weekly anchor stayed stale: %v", refreshed.WeeklyWindowStart)
+	}
+	if refreshed.MonthlyWindowStart == nil ||
+		refreshed.MonthlyWindowStart.Before(before) ||
+		refreshed.MonthlyWindowStart.After(after) {
+		t.Fatalf("monthly anchor = %v, want current load time in [%v,%v]", refreshed.MonthlyWindowStart, before, after)
+	}
+}
+
 // TestCheckUserPlatformQuotaEligibility_WindowExpiredInCache 验证 cache HIT 时若窗口已过期，usage 归零，用户放行。
 func TestCheckUserPlatformQuotaEligibility_WindowExpiredInCache(t *testing.T) {
 	daily := 5.0
@@ -769,9 +817,9 @@ func TestHasUserPlatformQuotaLimit(t *testing.T) {
 	daily := 5.0
 
 	tests := []struct {
-		name    string
-		setup   func() *BillingCacheService
-		want    bool
+		name  string
+		setup func() *BillingCacheService
+		want  bool
 	}{
 		{
 			name: "has_limit",

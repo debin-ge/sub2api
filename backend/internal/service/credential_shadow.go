@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"reflect"
 )
 
 // resolveCredentialAccount 解析影子账号到其母账号，用于凭据/Token 透传。
@@ -13,6 +14,9 @@ import (
 func resolveCredentialAccount(ctx context.Context, repo AccountRepository, account *Account) (*Account, error) {
 	if account == nil || !account.IsShadow() {
 		return account, nil
+	}
+	if isNilAccountRepository(repo) {
+		return nil, fmt.Errorf("resolve spark shadow parent %d: account repository is nil", *account.ParentAccountID)
 	}
 	parent, err := repo.GetByID(ctx, *account.ParentAccountID)
 	if err != nil {
@@ -30,4 +34,17 @@ func resolveCredentialAccount(ctx context.Context, repo AccountRepository, accou
 		return nil, fmt.Errorf("spark shadow parent %d is not OpenAI OAuth", parent.ID)
 	}
 	return parent, nil
+}
+
+func isNilAccountRepository(repo AccountRepository) bool {
+	if repo == nil {
+		return true
+	}
+	value := reflect.ValueOf(repo)
+	switch value.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return value.IsNil()
+	default:
+		return false
+	}
 }

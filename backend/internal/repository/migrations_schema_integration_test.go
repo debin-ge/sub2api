@@ -97,6 +97,7 @@ func TestMigrationsRunner_IsIdempotent_AndSchemaIsUpToDate(t *testing.T) {
 		"billing_mode",
 		"'video'",
 		"video_count",
+		"billing_state",
 		"image_size IS NOT NULL",
 		"'1K'",
 		"'2K'",

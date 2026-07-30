@@ -171,6 +171,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		if !gjson.ValidBytes(trimmed) {
 			return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket request payload", errors.New("invalid json"))
 		}
+		if err := ValidateUniqueOpenAIResponsesBillingFields(trimmed); err != nil {
+			return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, err.Error(), err)
+		}
 
 		values := gjson.GetManyBytes(trimmed, "type", "model", "prompt_cache_key", "previous_response_id")
 		eventType := strings.TrimSpace(values[0].String())
@@ -329,13 +332,35 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		imageInputSize := ""
 		if imageIntent {
 			var imageCfgErr error
-			imageCfg, imageCfgErr := resolveOpenAIResponsesImageBillingConfigDetailedFromBody(normalized, originalModel)
+			imageCfg, imageCfgErr := resolveOpenAIResponsesImageBillingConfigDetailedFromBody(normalized, upstreamModel)
 			if imageCfgErr != nil {
 				return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, imageCfgErr.Error(), imageCfgErr)
 			}
 			imageBillingModel = imageCfg.Model
 			imageSizeTier = imageCfg.SizeTier
 			imageInputSize = imageCfg.InputSize
+		}
+		if IsExplicitImageGenerationIntent(openAIResponsesEndpoint, upstreamModel, normalized) &&
+			(s.pricingGuardRequired || s.billingService != nil) {
+			var groupID *int64
+			if apiKey != nil {
+				groupID = apiKey.GroupID
+			}
+			if pricingErr := s.enforceResolvedOpenAIMediaPricing(
+				ctx,
+				groupID,
+				account,
+				originalModel,
+				imageBillingModel,
+				imageSizeTier,
+				BillingKindImage,
+			); pricingErr != nil {
+				return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(
+					coderws.StatusPolicyViolation,
+					"image model pricing is unavailable",
+					pricingErr,
+				)
+			}
 		}
 
 		// Apply OpenAI Fast Policy on the response.create frame using the same

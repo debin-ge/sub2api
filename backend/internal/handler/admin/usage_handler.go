@@ -57,6 +57,42 @@ type CreateUsageCleanupTaskRequest struct {
 	Timezone    string  `json:"timezone"`
 }
 
+// parseBillingStateFilters 解析待结算看板的两个筛选参数。
+//
+//	billing_state=<int>            精确到某一档（0 已结算 / 1 定价缺失待处理 / 2 价格已恢复、未追扣）
+//	billing_state_unsettled=true   只看仍待处理的定价缺失记录（billing_state = 1）
+//
+// 校验取值是有意的：这个筛选的价值就在于"看得见欠账"，一个打错的档位悄悄返回空列表
+// 会被读成"没有欠账"，比报错危险得多。
+//
+// 返回 ok=false 表示已经写过 400 响应，调用方直接 return。
+func parseBillingStateFilters(c *gin.Context) (state *int8, unsettledOnly bool, ok bool) {
+	if raw := strings.TrimSpace(c.Query("billing_state")); raw != "" {
+		val, err := strconv.ParseInt(raw, 10, 8)
+		if err != nil {
+			response.BadRequest(c, "Invalid billing_state")
+			return nil, false, false
+		}
+		parsed := int8(val)
+		switch parsed {
+		case service.BillingStateSettled, service.BillingStatePricingUnavailable, service.BillingStatePricingRecovered:
+		default:
+			response.BadRequest(c, "Invalid billing_state, use 0 (settled), 1 (pricing unavailable) or 2 (pricing recovered, not charged)")
+			return nil, false, false
+		}
+		state = &parsed
+	}
+	if raw := strings.TrimSpace(c.Query("billing_state_unsettled")); raw != "" {
+		parsed, err := strconv.ParseBool(raw)
+		if err != nil {
+			response.BadRequest(c, "Invalid billing_state_unsettled value, use true or false")
+			return nil, false, false
+		}
+		unsettledOnly = parsed
+	}
+	return state, unsettledOnly, true
+}
+
 // List handles listing all usage records with filters
 // GET /api/v1/admin/usage
 func (h *UsageHandler) List(c *gin.Context) {
@@ -172,21 +208,28 @@ func (h *UsageHandler) List(c *gin.Context) {
 		SortBy:    c.DefaultQuery("sort_by", "created_at"),
 		SortOrder: c.DefaultQuery("sort_order", "desc"),
 	}
+	billingState, billingStateUnsettled, ok := parseBillingStateFilters(c)
+	if !ok {
+		return
+	}
+
 	filters := usagestats.UsageLogFilters{
-		UserID:            userID,
-		APIKeyID:          apiKeyID,
-		AccountID:         accountID,
-		GroupID:           groupID,
-		RequestID:         requestID,
-		Model:             model,
-		ModelFilterSource: usagestats.ModelSourceRequested,
-		RequestType:       requestType,
-		Stream:            stream,
-		BillingType:       billingType,
-		BillingMode:       billingMode,
-		StartTime:         startTime,
-		EndTime:           endTime,
-		ExactTotal:        exactTotal,
+		UserID:                userID,
+		APIKeyID:              apiKeyID,
+		AccountID:             accountID,
+		GroupID:               groupID,
+		RequestID:             requestID,
+		Model:                 model,
+		ModelFilterSource:     usagestats.ModelSourceRequested,
+		RequestType:           requestType,
+		Stream:                stream,
+		BillingType:           billingType,
+		BillingMode:           billingMode,
+		StartTime:             startTime,
+		EndTime:               endTime,
+		BillingState:          billingState,
+		BillingStateUnsettled: billingStateUnsettled,
+		ExactTotal:            exactTotal,
 	}
 
 	records, result, err := h.usageService.ListWithFilters(c.Request.Context(), params, filters)
@@ -313,20 +356,27 @@ func (h *UsageHandler) Stats(c *gin.Context) {
 		endTime = now
 	}
 
+	billingState, billingStateUnsettled, ok := parseBillingStateFilters(c)
+	if !ok {
+		return
+	}
+
 	// Build filters and call GetStatsWithFilters
 	filters := usagestats.UsageLogFilters{
-		UserID:            userID,
-		APIKeyID:          apiKeyID,
-		AccountID:         accountID,
-		GroupID:           groupID,
-		Model:             model,
-		ModelFilterSource: usagestats.ModelSourceRequested,
-		RequestType:       requestType,
-		Stream:            stream,
-		BillingType:       billingType,
-		BillingMode:       billingMode,
-		StartTime:         &startTime,
-		EndTime:           &endTime,
+		UserID:                userID,
+		APIKeyID:              apiKeyID,
+		AccountID:             accountID,
+		GroupID:               groupID,
+		Model:                 model,
+		ModelFilterSource:     usagestats.ModelSourceRequested,
+		RequestType:           requestType,
+		Stream:                stream,
+		BillingType:           billingType,
+		BillingMode:           billingMode,
+		StartTime:             &startTime,
+		EndTime:               &endTime,
+		BillingState:          billingState,
+		BillingStateUnsettled: billingStateUnsettled,
 	}
 
 	var stats *usagestats.UsageStats

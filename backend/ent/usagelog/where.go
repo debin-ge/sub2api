@@ -200,6 +200,11 @@ func BillingType(v int8) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldBillingType, v))
 }
 
+// BillingState applies equality check predicate on the "billing_state" field. It's identical to BillingStateEQ.
+func BillingState(v int8) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldBillingState, v))
+}
+
 // Stream applies equality check predicate on the "stream" field. It's identical to StreamEQ.
 func Stream(v bool) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldStream, v))
@@ -1568,6 +1573,46 @@ func BillingTypeLT(v int8) predicate.UsageLog {
 // BillingTypeLTE applies the LTE predicate on the "billing_type" field.
 func BillingTypeLTE(v int8) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldLTE(FieldBillingType, v))
+}
+
+// BillingStateEQ applies the EQ predicate on the "billing_state" field.
+func BillingStateEQ(v int8) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldBillingState, v))
+}
+
+// BillingStateNEQ applies the NEQ predicate on the "billing_state" field.
+func BillingStateNEQ(v int8) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldBillingState, v))
+}
+
+// BillingStateIn applies the In predicate on the "billing_state" field.
+func BillingStateIn(vs ...int8) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldBillingState, vs...))
+}
+
+// BillingStateNotIn applies the NotIn predicate on the "billing_state" field.
+func BillingStateNotIn(vs ...int8) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldBillingState, vs...))
+}
+
+// BillingStateGT applies the GT predicate on the "billing_state" field.
+func BillingStateGT(v int8) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldBillingState, v))
+}
+
+// BillingStateGTE applies the GTE predicate on the "billing_state" field.
+func BillingStateGTE(v int8) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldBillingState, v))
+}
+
+// BillingStateLT applies the LT predicate on the "billing_state" field.
+func BillingStateLT(v int8) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldBillingState, v))
+}
+
+// BillingStateLTE applies the LTE predicate on the "billing_state" field.
+func BillingStateLTE(v int8) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldBillingState, v))
 }
 
 // StreamEQ applies the EQ predicate on the "stream" field.

@@ -1,6 +1,9 @@
 package service
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 const (
 	VideoBillingResolution480P  = "480p"
@@ -32,14 +35,32 @@ func NormalizeVideoBillingDurationSecondsOrDefault(durationSeconds int) int {
 }
 
 func NormalizeVideoBillingResolutionOrDefault(resolution string) string {
-	switch strings.ToLower(strings.TrimSpace(resolution)) {
+	normalized, err := NormalizeVideoBillingResolutionStrictOrDefault(resolution)
+	if err != nil {
+		return VideoBillingResolution480P
+	}
+	return normalized
+}
+
+// NormalizeVideoBillingResolutionStrictOrDefault applies the documented 480p
+// default only when the upstream omitted the resolution. An explicit unknown
+// value is a distinct, unpriced output tier and must remain fail-closed.
+func NormalizeVideoBillingResolutionStrictOrDefault(resolution string) (string, error) {
+	raw := strings.ToLower(strings.TrimSpace(resolution))
+	switch raw {
+	case "":
+		return VideoBillingResolution480P, nil
 	case "480", "480p", "sd":
-		return VideoBillingResolution480P
+		return VideoBillingResolution480P, nil
 	case "720", "720p", "hd":
-		return VideoBillingResolution720P
+		return VideoBillingResolution720P, nil
 	case "1080", "1080p", "full_hd", "full-hd", "fhd":
-		return VideoBillingResolution1080P
+		return VideoBillingResolution1080P, nil
 	default:
-		return VideoBillingResolution480P
+		return "", fmt.Errorf(
+			"%w: unsupported video billing resolution %q",
+			ErrModelPricingUnavailable,
+			strings.TrimSpace(resolution),
+		)
 	}
 }

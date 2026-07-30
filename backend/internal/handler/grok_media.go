@@ -98,6 +98,12 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 	}
 
 	contentType := c.GetHeader("Content-Type")
+	if endpoint.RequiresRequestBody() {
+		if err := service.ValidateGrokMediaBillingFields(contentType, body); err != nil {
+			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", err.Error())
+			return
+		}
+	}
 	requestInfo := service.ParseGrokMediaRequest(contentType, body)
 	requestModel := requestInfo.Model
 	routingModel := service.NormalizeGrokMediaModelForEndpoint(endpoint, requestModel, requestInfo.HasInputImage())
@@ -206,7 +212,8 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 			requiredCapability,
 			false,
 			false,
-			false,
+			// images_* / videos_* 路由的结算口径由端点决定，与上游回不回计数无关。
+			endpoint.BillingKind(),
 			service.PlatformGrok,
 		)
 		if err != nil {
@@ -225,7 +232,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 				return
 			}
 			if len(failedAccountIDs) == 0 {
-				cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, requestModel, routingModel, service.PlatformGrok)
+				cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, err, requestModel, routingModel, service.PlatformGrok)
 				if !cls.ModelNotFound {
 					markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
 				}
@@ -245,7 +252,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 				h.errorResponse(c, http.StatusServiceUnavailable, "grok_media_no_eligible_account", "No eligible Grok media accounts")
 				return
 			}
-			cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, requestModel, routingModel, service.PlatformGrok)
+			cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, err, requestModel, routingModel, service.PlatformGrok)
 			if !cls.ModelNotFound {
 				markOpsRoutingCapacityLimited(c)
 			}
@@ -405,7 +412,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 			}
 		}
 		if shouldRecordGrokMediaUsage(endpoint, requestModel) {
-			recordGrokMediaUsage(c, h, reqLog, apiKey, subject, subscription, account, result, requestModel, body, requestID)
+			recordGrokMediaUsage(c, h, reqLog, apiKey, subject, subscription, account, result, endpoint, requestModel, body, requestID)
 		}
 		reqLog.Debug("grok_media.request_completed",
 			zap.Int64("account_id", account.ID),
@@ -459,6 +466,7 @@ func recordGrokMediaUsage(
 	subscription *service.UserSubscription,
 	account *service.Account,
 	result *service.OpenAIForwardResult,
+	endpoint service.GrokMediaEndpoint,
 	requestModel string,
 	body []byte,
 	requestID string,
@@ -480,7 +488,10 @@ func recordGrokMediaUsage(
 		OriginalModel:      clientRequestedModel(c, requestModel),
 		ChannelMappedModel: requestModel,
 	}
-	h.submitOpenAIUsageRecordTask(c.Request.Context(), result, func(ctx context.Context) {
+	// All Grok generation endpoints are mandatory billing paths. In
+	// particular, some video upstreams omit video_count; selecting durability
+	// from response counters would put the task back into the in-memory queue.
+	h.submitMandatoryUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
 		if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
 			Result:             result,
 			APIKey:             apiKey,
@@ -495,6 +506,10 @@ func recordGrokMediaUsage(
 			APIKeyService:      h.apiKeyService,
 			QuotaPlatform:      quotaPlatform,
 			SessionID:          sessionID,
+			// 图片还是视频由端点决定。此前靠上游回的 video_count 反推：
+			// videos/extensions 这类端点若漏回该字段就会掉进 token 分支，
+			// 而 grok-imagine-video 没有 token 价，一条已交付的视频就成了 $0。
+			BillingKind:        endpoint.BillingKind(),
 			ChannelUsageFields: channelUsageFields,
 		}); err != nil {
 			logger.L().With(

@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"errors"
+	"math"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
@@ -1087,11 +1088,12 @@ func TestIsModelRestricted_CaseInsensitive(t *testing.T) {
 	require.False(t, restricted)
 }
 
-// --- 4.5 ResolveChannelMappingAndRestrict ---
-// 注意：模型限制检查已移至调度阶段（GatewayService.checkChannelPricingRestriction），
-// ResolveChannelMappingAndRestrict 仅做映射，restricted 始终为 false。
+// --- 4.5 ResolveRequestChannelMapping ---
+// 这个函数只做映射。模型限制检查在调度阶段由 checkChannelPricingRestriction 执行，
+// 下面的 _RestrictionIsEnforcedElsewhere 用同一份渠道数据把那一层钉住：映射层放行的
+// 受限模型，限制层必须仍然判定为受限。
 
-func TestResolveChannelMappingAndRestrict_NilGroupID(t *testing.T) {
+func TestResolveRequestChannelMapping_NilGroupID(t *testing.T) {
 	repo := &mockChannelRepository{
 		listAllFn: func(_ context.Context) ([]Channel, error) {
 			return nil, nil
@@ -1099,13 +1101,12 @@ func TestResolveChannelMappingAndRestrict_NilGroupID(t *testing.T) {
 	}
 	svc := newTestChannelService(repo)
 
-	mapping, restricted := svc.ResolveChannelMappingAndRestrict(context.Background(), nil, "claude-opus-4")
-	require.False(t, restricted)
+	mapping := svc.ResolveRequestChannelMapping(context.Background(), nil, "claude-opus-4")
 	require.False(t, mapping.Mapped)
 	require.Equal(t, "claude-opus-4", mapping.MappedModel)
 }
 
-func TestResolveChannelMappingAndRestrict_WithMapping(t *testing.T) {
+func TestResolveRequestChannelMapping_WithMapping(t *testing.T) {
 	ch := Channel{
 		ID:             1,
 		Status:         StatusActive,
@@ -1124,13 +1125,12 @@ func TestResolveChannelMappingAndRestrict_WithMapping(t *testing.T) {
 	svc := newTestChannelService(repo)
 
 	gid := int64(10)
-	mapping, restricted := svc.ResolveChannelMappingAndRestrict(context.Background(), &gid, "claude-sonnet-4")
-	require.False(t, restricted) // restricted 始终为 false，限制检查在调度阶段
+	mapping := svc.ResolveRequestChannelMapping(context.Background(), &gid, "claude-sonnet-4")
 	require.True(t, mapping.Mapped)
 	require.Equal(t, "claude-sonnet-4-20250514", mapping.MappedModel)
 }
 
-func TestResolveChannelMappingAndRestrict_NoMapping(t *testing.T) {
+func TestResolveRequestChannelMapping_NoMapping(t *testing.T) {
 	ch := Channel{
 		ID:             1,
 		Status:         StatusActive,
@@ -1144,10 +1144,37 @@ func TestResolveChannelMappingAndRestrict_NoMapping(t *testing.T) {
 	svc := newTestChannelService(repo)
 
 	gid := int64(10)
-	mapping, restricted := svc.ResolveChannelMappingAndRestrict(context.Background(), &gid, "unknown-model")
-	require.False(t, restricted) // restricted 始终为 false，限制检查在调度阶段
+	mapping := svc.ResolveRequestChannelMapping(context.Background(), &gid, "unknown-model")
 	require.False(t, mapping.Mapped)
 	require.Equal(t, "unknown-model", mapping.MappedModel)
+}
+
+// TestResolveRequestChannelMapping_RestrictionIsEnforcedElsewhere 固定"映射层不查限制"
+// 这个分工的另一半。
+//
+// 去掉恒为 false 的 restricted 返回值之后，"受限模型在映射层被放行"就不再有任何断言
+// 覆盖了；如果没有这条测试，限制检查哪天从调度阶段消失也不会有人发现——映射层的测试
+// 依旧全绿，因为它本来就不负责这件事。
+func TestResolveRequestChannelMapping_RestrictionIsEnforcedElsewhere(t *testing.T) {
+	ch := Channel{
+		ID:             1,
+		Status:         StatusActive,
+		GroupIDs:       []int64{10},
+		RestrictModels: true,
+		ModelPricing: []ChannelModelPricing{
+			{Platform: "anthropic", Models: []string{"claude-sonnet-4"}},
+		},
+	}
+	repo := makeStandardRepo(ch, map[int64]string{10: "anthropic"})
+	svc := newTestChannelService(repo)
+
+	gid := int64(10)
+	// 映射层原样放行——它对"该不该放"不发表意见。
+	mapping := svc.ResolveRequestChannelMapping(context.Background(), &gid, "unknown-model")
+	require.Equal(t, "unknown-model", mapping.MappedModel)
+	// 调度阶段调用的这一层必须拦下来。
+	require.True(t, svc.IsModelRestricted(context.Background(), gid, "unknown-model"))
+	require.False(t, svc.IsModelRestricted(context.Background(), gid, "claude-sonnet-4"))
 }
 
 // --- 4.6 Cache Building Specifics ---
@@ -2388,6 +2415,15 @@ func TestValidatePricingBillingMode(t *testing.T) {
 			errMsg:  "input_price must be >= 0",
 		},
 		{
+			name: "non-finite output_price - invalid",
+			pricing: []ChannelModelPricing{{
+				BillingMode: BillingModeToken,
+				OutputPrice: testPtrFloat64(math.Inf(1)),
+			}},
+			wantErr: true,
+			errMsg:  "output_price must be finite",
+		},
+		{
 			name: "interval with no price fields - invalid",
 			pricing: []ChannelModelPricing{{
 				BillingMode:     BillingModePerRequest,
@@ -2395,7 +2431,32 @@ func TestValidatePricingBillingMode(t *testing.T) {
 				Intervals:       []PricingInterval{{MinTokens: 0, MaxTokens: testPtrInt(1000)}},
 			}},
 			wantErr: true,
-			errMsg:  "has no price fields set",
+			errMsg:  "has no per_request_price",
+		},
+		{
+			name: "token interval with only per-request price - invalid",
+			pricing: []ChannelModelPricing{{
+				BillingMode: BillingModeToken,
+				Intervals: []PricingInterval{{
+					MinTokens:       0,
+					MaxTokens:       testPtrInt(1000),
+					PerRequestPrice: testPtrFloat64(0.1),
+				}},
+			}},
+			wantErr: true,
+			errMsg:  "has no token price fields",
+		},
+		{
+			name: "image interval with only token price - invalid",
+			pricing: []ChannelModelPricing{{
+				BillingMode: BillingModeImage,
+				Intervals: []PricingInterval{{
+					TierLabel:  "1K",
+					InputPrice: testPtrFloat64(0.1),
+				}},
+			}},
+			wantErr: true,
+			errMsg:  "has no per_request_price",
 		},
 	}
 

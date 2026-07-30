@@ -42,82 +42,84 @@ func TestIsImageGenerationModel_CaseInsensitive(t *testing.T) {
 
 // TestExtractImageSize_ValidSizes 测试有效尺寸解析
 func TestExtractImageSize_ValidSizes(t *testing.T) {
-	svc := &AntigravityGatewayService{}
-
 	// 1K
 	body := []byte(`{"generationConfig":{"imageConfig":{"imageSize":"1K"}}}`)
-	require.Equal(t, "1K", NormalizeImageBillingTierOrDefault(svc.extractImageInputSize(body)))
+	requireGeminiImageBillingTier(t, body, "1K")
 
 	// 2K
 	body = []byte(`{"generationConfig":{"imageConfig":{"imageSize":"2K"}}}`)
-	require.Equal(t, "2K", NormalizeImageBillingTierOrDefault(svc.extractImageInputSize(body)))
+	requireGeminiImageBillingTier(t, body, "2K")
 
 	// 4K
 	body = []byte(`{"generationConfig":{"imageConfig":{"imageSize":"4K"}}}`)
-	require.Equal(t, "4K", NormalizeImageBillingTierOrDefault(svc.extractImageInputSize(body)))
+	requireGeminiImageBillingTier(t, body, "4K")
 }
 
 // TestExtractImageSize_CaseInsensitive 测试大小写不敏感
 func TestExtractImageSize_CaseInsensitive(t *testing.T) {
-	svc := &AntigravityGatewayService{}
-
 	body := []byte(`{"generationConfig":{"imageConfig":{"imageSize":"1k"}}}`)
-	require.Equal(t, "1K", NormalizeImageBillingTierOrDefault(svc.extractImageInputSize(body)))
+	requireGeminiImageBillingTier(t, body, "1K")
 
 	body = []byte(`{"generationConfig":{"imageConfig":{"imageSize":"4k"}}}`)
-	require.Equal(t, "4K", NormalizeImageBillingTierOrDefault(svc.extractImageInputSize(body)))
+	requireGeminiImageBillingTier(t, body, "4K")
 }
 
 // TestExtractImageSize_Default 测试无 imageConfig 返回默认 2K
 func TestExtractImageSize_Default(t *testing.T) {
-	svc := &AntigravityGatewayService{}
-
 	// 无 generationConfig
 	body := []byte(`{"contents":[]}`)
-	require.Equal(t, "2K", NormalizeImageBillingTierOrDefault(svc.extractImageInputSize(body)))
+	requireGeminiImageBillingTier(t, body, "2K")
 
 	// 有 generationConfig 但无 imageConfig
 	body = []byte(`{"generationConfig":{"temperature":0.7}}`)
-	require.Equal(t, "2K", NormalizeImageBillingTierOrDefault(svc.extractImageInputSize(body)))
+	requireGeminiImageBillingTier(t, body, "2K")
 
 	// 有 imageConfig 但无 imageSize
 	body = []byte(`{"generationConfig":{"imageConfig":{}}}`)
-	require.Equal(t, "2K", NormalizeImageBillingTierOrDefault(svc.extractImageInputSize(body)))
+	requireGeminiImageBillingTier(t, body, "2K")
 }
 
-// TestExtractImageSize_InvalidJSON 测试非法 JSON 返回默认 2K
+// TestExtractImageSize_InvalidJSON 测试非法 JSON 必须 fail-closed。
 func TestExtractImageSize_InvalidJSON(t *testing.T) {
-	svc := &AntigravityGatewayService{}
-
-	body := []byte(`not valid json`)
-	require.Equal(t, "2K", NormalizeImageBillingTierOrDefault(svc.extractImageInputSize(body)))
-
-	body = []byte(`{"broken":`)
-	require.Equal(t, "2K", NormalizeImageBillingTierOrDefault(svc.extractImageInputSize(body)))
+	for _, body := range [][]byte{
+		[]byte(`not valid json`),
+		[]byte(`{"broken":`),
+	} {
+		_, err := geminiImageBillingTier(body)
+		require.ErrorIs(t, err, ErrModelPricingUnavailable)
+	}
 }
 
 // TestExtractImageSize_EmptySize 测试空 imageSize 返回默认 2K
 func TestExtractImageSize_EmptySize(t *testing.T) {
-	svc := &AntigravityGatewayService{}
-
 	body := []byte(`{"generationConfig":{"imageConfig":{"imageSize":""}}}`)
-	require.Equal(t, "2K", NormalizeImageBillingTierOrDefault(svc.extractImageInputSize(body)))
+	requireGeminiImageBillingTier(t, body, "2K")
 
 	// 空格
 	body = []byte(`{"generationConfig":{"imageConfig":{"imageSize":"   "}}}`)
-	require.Equal(t, "2K", NormalizeImageBillingTierOrDefault(svc.extractImageInputSize(body)))
+	requireGeminiImageBillingTier(t, body, "2K")
 }
 
-// TestExtractImageSize_InvalidSize 测试无效尺寸返回默认 2K
+// TestExtractImageSize_InvalidSize 测试显式无效尺寸不能回落到默认 2K
 func TestExtractImageSize_InvalidSize(t *testing.T) {
-	svc := &AntigravityGatewayService{}
+	for _, imageSize := range []string{"3K", "8K", "invalid"} {
+		body := []byte(`{"generationConfig":{"imageConfig":{"imageSize":"` + imageSize + `"}}}`)
+		_, err := geminiImageBillingTier(body)
+		require.ErrorIs(t, err, ErrModelPricingUnavailable)
+	}
+}
 
-	body := []byte(`{"generationConfig":{"imageConfig":{"imageSize":"3K"}}}`)
-	require.Equal(t, "2K", NormalizeImageBillingTierOrDefault(svc.extractImageInputSize(body)))
+func requireGeminiImageBillingTier(t *testing.T, body []byte, expected string) {
+	t.Helper()
+	tier, err := geminiImageBillingTier(body)
+	require.NoError(t, err)
+	require.Equal(t, expected, tier)
+}
 
-	body = []byte(`{"generationConfig":{"imageConfig":{"imageSize":"8K"}}}`)
-	require.Equal(t, "2K", NormalizeImageBillingTierOrDefault(svc.extractImageInputSize(body)))
-
-	body = []byte(`{"generationConfig":{"imageConfig":{"imageSize":"invalid"}}}`)
-	require.Equal(t, "2K", NormalizeImageBillingTierOrDefault(svc.extractImageInputSize(body)))
+func geminiImageBillingTier(body []byte) (string, error) {
+	inputSize, err := extractGeminiImageInputSizeStrict(body)
+	if err != nil {
+		return "", err
+	}
+	return normalizeGeminiImageSizeTierStrict(inputSize)
 }

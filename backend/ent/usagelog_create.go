@@ -393,6 +393,20 @@ func (_c *UsageLogCreate) SetNillableBillingType(v *int8) *UsageLogCreate {
 	return _c
 }
 
+// SetBillingState sets the "billing_state" field.
+func (_c *UsageLogCreate) SetBillingState(v int8) *UsageLogCreate {
+	_c.mutation.SetBillingState(v)
+	return _c
+}
+
+// SetNillableBillingState sets the "billing_state" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableBillingState(v *int8) *UsageLogCreate {
+	if v != nil {
+		_c.SetBillingState(*v)
+	}
+	return _c
+}
+
 // SetStream sets the "stream" field.
 func (_c *UsageLogCreate) SetStream(v bool) *UsageLogCreate {
 	_c.mutation.SetStream(v)
@@ -729,6 +743,10 @@ func (_c *UsageLogCreate) defaults() {
 		v := usagelog.DefaultBillingType
 		_c.mutation.SetBillingType(v)
 	}
+	if _, ok := _c.mutation.BillingState(); !ok {
+		v := usagelog.DefaultBillingState
+		_c.mutation.SetBillingState(v)
+	}
 	if _, ok := _c.mutation.Stream(); !ok {
 		v := usagelog.DefaultStream
 		_c.mutation.SetStream(v)
@@ -847,6 +865,9 @@ func (_c *UsageLogCreate) check() error {
 	}
 	if _, ok := _c.mutation.BillingType(); !ok {
 		return &ValidationError{Name: "billing_type", err: errors.New(`ent: missing required field "UsageLog.billing_type"`)}
+	}
+	if _, ok := _c.mutation.BillingState(); !ok {
+		return &ValidationError{Name: "billing_state", err: errors.New(`ent: missing required field "UsageLog.billing_state"`)}
 	}
 	if _, ok := _c.mutation.Stream(); !ok {
 		return &ValidationError{Name: "stream", err: errors.New(`ent: missing required field "UsageLog.stream"`)}
@@ -1029,6 +1050,10 @@ func (_c *UsageLogCreate) createSpec() (*UsageLog, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.BillingType(); ok {
 		_spec.SetField(usagelog.FieldBillingType, field.TypeInt8, value)
 		_node.BillingType = value
+	}
+	if value, ok := _c.mutation.BillingState(); ok {
+		_spec.SetField(usagelog.FieldBillingState, field.TypeInt8, value)
+		_node.BillingState = value
 	}
 	if value, ok := _c.mutation.Stream(); ok {
 		_spec.SetField(usagelog.FieldStream, field.TypeBool, value)
@@ -1726,6 +1751,24 @@ func (u *UsageLogUpsert) UpdateBillingType() *UsageLogUpsert {
 // AddBillingType adds v to the "billing_type" field.
 func (u *UsageLogUpsert) AddBillingType(v int8) *UsageLogUpsert {
 	u.Add(usagelog.FieldBillingType, v)
+	return u
+}
+
+// SetBillingState sets the "billing_state" field.
+func (u *UsageLogUpsert) SetBillingState(v int8) *UsageLogUpsert {
+	u.Set(usagelog.FieldBillingState, v)
+	return u
+}
+
+// UpdateBillingState sets the "billing_state" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateBillingState() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldBillingState)
+	return u
+}
+
+// AddBillingState adds v to the "billing_state" field.
+func (u *UsageLogUpsert) AddBillingState(v int8) *UsageLogUpsert {
+	u.Add(usagelog.FieldBillingState, v)
 	return u
 }
 
@@ -2628,6 +2671,27 @@ func (u *UsageLogUpsertOne) AddBillingType(v int8) *UsageLogUpsertOne {
 func (u *UsageLogUpsertOne) UpdateBillingType() *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.UpdateBillingType()
+	})
+}
+
+// SetBillingState sets the "billing_state" field.
+func (u *UsageLogUpsertOne) SetBillingState(v int8) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetBillingState(v)
+	})
+}
+
+// AddBillingState adds v to the "billing_state" field.
+func (u *UsageLogUpsertOne) AddBillingState(v int8) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddBillingState(v)
+	})
+}
+
+// UpdateBillingState sets the "billing_state" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateBillingState() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateBillingState()
 	})
 }
 
@@ -3742,6 +3806,27 @@ func (u *UsageLogUpsertBulk) AddBillingType(v int8) *UsageLogUpsertBulk {
 func (u *UsageLogUpsertBulk) UpdateBillingType() *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.UpdateBillingType()
+	})
+}
+
+// SetBillingState sets the "billing_state" field.
+func (u *UsageLogUpsertBulk) SetBillingState(v int8) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetBillingState(v)
+	})
+}
+
+// AddBillingState adds v to the "billing_state" field.
+func (u *UsageLogUpsertBulk) AddBillingState(v int8) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddBillingState(v)
+	})
+}
+
+// UpdateBillingState sets the "billing_state" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateBillingState() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateBillingState()
 	})
 }
 

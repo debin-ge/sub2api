@@ -35,9 +35,9 @@ func BenchmarkIsImageGenerationIntent(b *testing.B) {
 			want: false,
 		},
 		{
-			name: "DuplicateKeysFirstWins",
+			name: "DuplicateKeysScanAllForFailClosedClassification",
 			body: []byte(`{"model":"gpt-5.5","model":"gpt-image-2","tools":[],"tools":[{"type":"image_generation"}],"input":"` + largeInput + `","tool_choice":"auto","tool_choice":{"type":"image_generation"}}`),
-			want: false,
+			want: true,
 		},
 	}
 

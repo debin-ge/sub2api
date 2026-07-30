@@ -183,6 +183,9 @@ func parseGatewayRequestCurrentBody(parsed *ParsedRequest, protocol string) erro
 	if !gjson.ValidBytes(bodyBytes) {
 		return DescribeInvalidJSON(bodyBytes)
 	}
+	if err := ValidateUniqueBillingModelField(bodyBytes); err != nil {
+		return err
+	}
 
 	// 只在当前函数内零拷贝读取 JSON 字段；ReplaceBody 后必须重新进入本函数刷新派生状态。
 	jsonStr := *(*string)(unsafe.Pointer(&bodyBytes))
@@ -235,6 +238,56 @@ func parseGatewayRequestCurrentBody(parsed *ParsedRequest, protocol string) erro
 	}
 
 	setGatewayRequestRanges(parsed, protocol, jsonStr)
+	return nil
+}
+
+// ValidateUniqueBillingModelField rejects ambiguous JSON objects before model
+// admission or forwarding. Different JSON parsers disagree on whether the
+// first or last duplicate key wins; accepting duplicate model fields can make
+// the pricing guard validate one SKU while the upstream executes another.
+func ValidateUniqueBillingModelField(body []byte) error {
+	if len(body) == 0 || !gjson.ValidBytes(body) {
+		return nil
+	}
+	modelFields := 0
+	var modelValue gjson.Result
+	parseRawJSONView(body).ForEach(func(key, value gjson.Result) bool {
+		if key.Str == "model" {
+			modelFields++
+			modelValue = value
+		}
+		return modelFields < 2
+	})
+	if modelFields > 1 {
+		return fmt.Errorf("duplicate top-level model fields are not allowed")
+	}
+	// PostgreSQL JSONB cannot store U+0000. A channel mapping can replace this
+	// value before forwarding, so reject it even when the selected upstream
+	// model itself would be valid and priced.
+	if modelFields == 1 && modelValue.Type == gjson.String &&
+		strings.ContainsRune(modelValue.String(), '\x00') {
+		return fmt.Errorf("top-level model must not contain null characters")
+	}
+	return nil
+}
+
+// ValidateUniqueOpenAIServiceTierField prevents the upstream and settlement
+// paths from choosing different service tiers when duplicate JSON keys are
+// interpreted with different first-wins/last-wins semantics.
+func ValidateUniqueOpenAIServiceTierField(body []byte) error {
+	if len(body) == 0 || !gjson.ValidBytes(body) {
+		return nil
+	}
+	serviceTierFields := 0
+	parseRawJSONView(body).ForEach(func(key, _ gjson.Result) bool {
+		if key.Str == "service_tier" {
+			serviceTierFields++
+		}
+		return serviceTierFields < 2
+	})
+	if serviceTierFields > 1 {
+		return fmt.Errorf("duplicate top-level service_tier fields are not allowed")
+	}
 	return nil
 }
 

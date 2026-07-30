@@ -254,6 +254,143 @@ func TestOpenAIGatewayServicePassthroughCompactImageIntentIsAttemptLocal(t *test
 	}
 }
 
+func TestOpenAIGatewayServicePassthroughRevalidatesFinalImageModelBeforeUpstream(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"id":"must_not_be_called"}`)),
+	}}
+	svc := newOpenAIImageGenerationControlTestService(upstream)
+	svc.billingService = NewBillingService(svc.cfg, &PricingService{
+		pricingData: map[string]*ModelPriceEntry{
+			"gpt-image-2": {
+				TokenPricingAbsent: true,
+				OutputCostPerImage: 0.04,
+			},
+		},
+	})
+	c, recorder := newOpenAIImageGenerationControlTestContext(true, "unit-test-agent/1.0")
+	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses/compact", nil)
+	SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
+	account := newOpenAIImageGenerationControlTestAccount()
+	account.Extra = map[string]any{"openai_passthrough": true}
+	account.Credentials = map[string]any{
+		"api_key": "sk-test",
+		"compact_model_mapping": map[string]any{
+			"gpt-image-2": "gpt-image-future-unpriced",
+		},
+	}
+	body := []byte(`{"model":"gpt-image-2","stream":false,"input":"draw"}`)
+
+	result, err := svc.Forward(context.Background(), c, account, body)
+
+	require.ErrorIs(t, err, ErrModelPricingUnavailable)
+	require.Nil(t, result)
+	require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
+	require.Empty(t, upstream.requests, "final unpriced media model must be rejected before any upstream request")
+}
+
+func TestOpenAIGatewayServiceRejectsMultipleImageToolsBeforeUpstream(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, tt := range []struct {
+		name  string
+		extra map[string]any
+	}{
+		{name: "native", extra: map[string]any{"use_responses_api": true}},
+		{name: "passthrough", extra: map[string]any{"openai_passthrough": true}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			upstream := &httpUpstreamRecorder{resp: &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(`{"id":"must_not_be_called"}`)),
+			}}
+			svc := newOpenAIImageGenerationControlTestService(upstream)
+			c, recorder := newOpenAIImageGenerationControlTestContext(true, "unit-test-agent/1.0")
+			SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
+			account := newOpenAIImageGenerationControlTestAccount()
+			account.Extra = tt.extra
+			body := []byte(`{
+				"model":"gpt-5.4",
+				"stream":false,
+				"input":"draw",
+				"tools":[
+					{"type":"image_generation","model":"gpt-image-2"},
+					{"type":"image_generation","model":"unknown-image-model"}
+				]
+			}`)
+
+			result, err := svc.Forward(context.Background(), c, account, body)
+
+			require.ErrorIs(t, err, ErrModelPricingUnavailable)
+			require.Nil(t, result)
+			require.Equal(t, http.StatusBadRequest, recorder.Code)
+			require.Empty(t, upstream.requests)
+		})
+	}
+}
+
+func TestOpenAIGatewayServiceRejectsDuplicateImageToolIdentityBeforeUpstream(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	bodies := [][]byte{
+		[]byte(`{"model":"gpt-5.4","stream":false,"input":"draw","tools":[{"type":"function","type":"image_generation","model":"unknown-image-model"}]}`),
+		[]byte(`{"model":"gpt-5.4","stream":false,"input":"draw","tools":[{"type":"image_generation","model":"gpt-image-2","model":"unknown-image-model"}]}`),
+		[]byte(`{"model":"gpt-5.4","stream":false,"input":"draw","tools":[{"type":"image_generation","model":"gpt-image-2","size":"1K","size":"4K"}]}`),
+		[]byte(`{"model":"gpt-5.4","stream":false,"input":"draw","tools":[{"type":"image_generation","model":"gpt-image-2","size":"ultra"}]}`),
+		[]byte(`{"model":"gpt-5.4","stream":false,"input":"draw","tools":[{"type":"image_generation","model":"gpt-image-2\u0000future","size":"1K"}]}`),
+		[]byte(`{"model":"gpt-5.4","stream":false,"input":"hello","service_tier":"standard","service_tier":"priority"}`),
+	}
+	for _, body := range bodies {
+		upstream := &httpUpstreamRecorder{resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"id":"must_not_be_called"}`)),
+		}}
+		svc := newOpenAIImageGenerationControlTestService(upstream)
+		c, recorder := newOpenAIImageGenerationControlTestContext(true, "unit-test-agent/1.0")
+		SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
+		account := newOpenAIImageGenerationControlTestAccount()
+		account.Extra = map[string]any{"openai_passthrough": true}
+
+		result, err := svc.Forward(context.Background(), c, account, body)
+
+		require.ErrorIs(t, err, ErrModelPricingUnavailable)
+		require.Nil(t, result)
+		require.Equal(t, http.StatusBadRequest, recorder.Code)
+		require.Empty(t, upstream.requests)
+	}
+}
+
+func TestOpenAIGatewayServiceRejectsUnpricedResponsesLiteImageToolBeforeUpstream(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"id":"must_not_be_called"}`)),
+	}}
+	svc := newOpenAIImageGenerationControlTestService(upstream)
+	c, recorder := newOpenAIImageGenerationControlTestContext(true, "unit-test-agent/1.0")
+	SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
+	account := newOpenAIImageGenerationControlTestAccount()
+	account.Extra = map[string]any{"use_responses_api": true}
+	body := []byte(`{
+		"model":"gpt-5.4",
+		"stream":false,
+		"input":[{
+			"type":"additional_tools",
+			"tools":[{"type":"image_generation","model":"unknown-image-model","size":"4K"}]
+		}]
+	}`)
+
+	result, err := svc.Forward(context.Background(), c, account, body)
+
+	require.ErrorIs(t, err, ErrModelPricingUnavailable)
+	require.Nil(t, result)
+	require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
+	require.Empty(t, upstream.requests, "unpriced nested image tool must be rejected before upstream")
+}
+
 func TestResolveOpenAIImageIntentHintExcludesWebSocketAndUnknownTransport(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	for _, transport := range []OpenAIClientTransport{OpenAIClientTransportWS, OpenAIClientTransportUnknown} {

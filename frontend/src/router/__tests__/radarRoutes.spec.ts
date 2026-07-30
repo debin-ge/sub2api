@@ -92,6 +92,24 @@ describe('Model Radar routes', () => {
     expect(radarModule.default).not.toBe(homeModule.default)
   })
 
+  it('keeps the original /plaza route and does not register /model-plaza', async () => {
+    const [{ default: router }, plazaModule] = await Promise.all([
+      import('@/router'),
+      import('@/views/PlazaView.vue'),
+    ])
+    const plazaRoute = router.getRoutes().find((record) => record.path === '/plaza')
+
+    expect(router.resolve('/plaza').name).toBe('ModelPlaza')
+    expect(plazaRoute?.meta.requiresAuth).toBe(false)
+    expect(router.getRoutes().some((record) => record.path === '/model-plaza')).toBe(false)
+
+    const loadPlaza = plazaRoute?.components?.default
+    expect(loadPlaza).toBeTypeOf('function')
+    await expect((loadPlaza as () => Promise<unknown>)()).resolves.toMatchObject({
+      default: plazaModule.default,
+    })
+  })
+
   it('allows only the exact root path through the backend-mode root allowlist entry', async () => {
     const { isBackendModePublicRouteAllowed } = await import('@/router')
 

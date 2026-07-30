@@ -43,4 +43,11 @@ func TestResolveCredentialAccount(t *testing.T) {
 	badRepo := newStubCredRepo(&Account{ID: 100, Platform: PlatformOpenAI, Type: AccountTypeAPIKey})
 	_, err = resolveCredentialAccount(ctx, badRepo, shadow)
 	require.Error(t, err)
+
+	// Interface 中包裹的 typed nil 也必须显式报错，不能在 GetByID 调用处 panic。
+	var typedNilRepo *stubCredRepo
+	require.NotPanics(t, func() {
+		_, err = resolveCredentialAccount(ctx, typedNilRepo, shadow)
+	})
+	require.Error(t, err)
 }

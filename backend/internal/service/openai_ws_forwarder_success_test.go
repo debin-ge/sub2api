@@ -227,6 +227,7 @@ func TestOpenAIGatewayService_Forward_WSv2_UsesPatchedBodyAfterValidationDecode(
 
 	svc := &OpenAIGatewayService{
 		cfg:              cfg,
+		billingService:   newOpenAIImageCatalogBillingServiceForTest(cfg),
 		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
 		toolCorrector:    NewCodexToolCorrector(),
 	}
@@ -344,6 +345,7 @@ func TestOpenAIGatewayService_Forward_WSv2_ImageGenerationCountsOutputs(t *testi
 		cfg:              cfg,
 		httpUpstream:     &httpUpstreamRecorder{},
 		cache:            &stubGatewayCache{},
+		billingService:   newOpenAIImageCatalogBillingServiceForTest(cfg),
 		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
 		toolCorrector:    NewCodexToolCorrector(),
 	}

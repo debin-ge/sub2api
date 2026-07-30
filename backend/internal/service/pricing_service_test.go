@@ -363,6 +363,147 @@ func TestParsePricingData_KeepsImageOnlyPricing(t *testing.T) {
 	require.True(t, pricing.TokenPricingAbsent)
 }
 
+func TestParsePricingData_MarksOneSidedTokenPricingIncomplete(t *testing.T) {
+	svc := &PricingService{}
+	data, err := svc.parsePricingData([]byte(`{
+		"input-only-model": {"input_cost_per_token": 0.000001, "mode": "chat"},
+		"output-only-model": {"output_cost_per_token": 0.000002, "mode": "chat"},
+		"explicit-zero-model": {
+			"input_cost_per_token": 0,
+			"output_cost_per_token": 0,
+			"input_cost_per_image_token": 0,
+			"output_cost_per_image": 0,
+			"output_cost_per_image_token": 0,
+			"mode": "chat"
+		}
+	}`))
+	require.NoError(t, err)
+	require.True(t, data["input-only-model"].TokenPricingAbsent)
+	require.True(t, data["output-only-model"].TokenPricingAbsent)
+	require.False(t, data["explicit-zero-model"].TokenPricingAbsent)
+	require.True(t, data["explicit-zero-model"].ImageInputPriceExplicit)
+	require.True(t, data["explicit-zero-model"].OutputCostPerImageExplicit)
+	require.True(t, data["explicit-zero-model"].ImageOutputPriceExplicit)
+}
+
+func TestParsePricingData_MarksIncompleteBillingDimensionsUnavailable(t *testing.T) {
+	svc := &PricingService{}
+	data, err := svc.parsePricingData([]byte(`{
+		"incomplete-cache": {
+			"input_cost_per_token": 0.000001,
+			"output_cost_per_token": 0.000002,
+			"cache_read_input_token_cost": 0.0000001,
+			"supports_prompt_caching": true
+		},
+		"incomplete-priority": {
+			"input_cost_per_token": 0.000001,
+			"output_cost_per_token": 0.000002,
+			"input_cost_per_token_priority": 0.000002,
+			"supports_service_tier": true
+		},
+		"incomplete-long-context": {
+			"input_cost_per_token": 0.000001,
+			"output_cost_per_token": 0.000002,
+			"long_context_input_token_threshold": 100,
+			"long_context_input_cost_multiplier": 2
+		},
+		"complete-explicit-zero": {
+			"input_cost_per_token": 0.000001,
+			"output_cost_per_token": 0.000002,
+			"cache_creation_input_token_cost": 0,
+			"cache_creation_input_token_cost_above_1hr": 0,
+			"cache_read_input_token_cost": 0,
+			"input_cost_per_token_priority": 0.000002,
+			"output_cost_per_token_priority": 0.000004,
+			"cache_creation_input_token_cost_priority": 0,
+			"cache_read_input_token_cost_priority": 0,
+			"long_context_input_token_threshold": 100,
+			"long_context_input_cost_multiplier": 2,
+			"long_context_output_cost_multiplier": 1.5,
+			"supports_prompt_caching": true,
+			"supports_service_tier": true
+		}
+	}`))
+	require.NoError(t, err)
+
+	for _, model := range []string{
+		"incomplete-cache",
+		"incomplete-priority",
+		"incomplete-long-context",
+	} {
+		require.True(t, data[model].TokenPricingAbsent, model)
+	}
+
+	complete := data["complete-explicit-zero"]
+	require.False(t, complete.TokenPricingAbsent)
+	require.True(t, complete.PricePresenceKnown)
+	require.True(t, complete.CacheCreationPriceExplicit)
+	require.True(t, complete.CacheCreationAbove1hrPriceExplicit)
+	require.True(t, complete.CacheReadPriceExplicit)
+	require.True(t, complete.InputPriorityPriceExplicit)
+	require.True(t, complete.OutputPriorityPriceExplicit)
+	require.True(t, complete.CacheCreationPriorityPriceExplicit)
+	require.True(t, complete.CacheReadPriorityPriceExplicit)
+	require.True(t, complete.LongContextPricingExplicit)
+
+	svc.pricingData = data
+	billingSvc := NewBillingService(&config.Config{}, svc)
+	for _, model := range []string{
+		"incomplete-cache",
+		"incomplete-priority",
+		"incomplete-long-context",
+	} {
+		_, err := billingSvc.GetModelPricingStrict(model)
+		require.ErrorIs(t, err, ErrModelPricingUnavailable, model)
+	}
+	resolved := mustModelPricing(t, billingSvc, "complete-explicit-zero")
+	require.True(t, resolved.PricePresenceKnown)
+	require.True(t, resolved.CacheCreationPriceExplicit)
+	require.True(t, resolved.CacheCreation1hPriceExplicit)
+	require.True(t, resolved.CacheReadPriceExplicit)
+	require.True(t, resolved.InputPriorityPriceExplicit)
+	require.True(t, resolved.OutputPriorityPriceExplicit)
+	require.True(t, resolved.CacheCreationPriorityPriceExplicit)
+	require.True(t, resolved.CacheReadPriorityPriceExplicit)
+	require.True(t, resolved.LongContextPricingExplicit)
+}
+
+func mustModelPricing(t *testing.T, svc *BillingService, model string) *ModelPricing {
+	t.Helper()
+	pricing, err := svc.GetModelPricingStrict(model)
+	require.NoError(t, err)
+	return pricing
+}
+
+func TestPricingService_ExplicitZeroPriceDoesNotFuzzyMatchUnknownModel(t *testing.T) {
+	pricingSvc := &PricingService{}
+	data, err := pricingSvc.parsePricingData([]byte(`{
+		"glm-4.7-flash": {
+			"input_cost_per_token": 0,
+			"output_cost_per_token": 0,
+			"mode": "chat"
+		}
+	}`))
+	require.NoError(t, err)
+	pricingSvc.pricingData = data
+
+	require.NotNil(t, pricingSvc.GetModelPricing("glm-4.7-flash"))
+	require.NotNil(t, pricingSvc.GetModelPricing("glm-4-7-flash"))
+	require.NotNil(t, pricingSvc.GetModelPricing("models/glm-4.7-flash"))
+	require.Nil(t, pricingSvc.GetModelPricing("glm-4.7-flash-20990101"))
+	require.Nil(t, pricingSvc.GetModelPricing("glm-4.7-flash-v1:0"))
+	require.Nil(t, pricingSvc.GetModelPricing("future-provider/glm-4.7-flash"))
+
+	// BillingService 仍可选择明确的非零 hardcoded fallback，但绝不能继承动态免费价。
+	billingSvc := NewBillingService(&config.Config{}, pricingSvc)
+	for _, model := range []string{"glm-4.7-flash-20990101", "glm-4.7-flash-v1:0"} {
+		pricing, err := billingSvc.GetModelPricing(model)
+		require.NoError(t, err)
+		require.Greater(t, pricing.InputPricePerToken, 0.0)
+		require.Greater(t, pricing.OutputPricePerToken, 0.0)
+	}
+}
+
 func TestBillingService_GetModelPricing_FailsClosedForImageOnlyEntries(t *testing.T) {
 	pricingSvc := &PricingService{}
 	data, err := pricingSvc.parsePricingData([]byte(`{
@@ -370,6 +511,11 @@ func TestBillingService_GetModelPricing_FailsClosedForImageOnlyEntries(t *testin
 			"output_cost_per_image": 0.04,
 			"litellm_provider": "vertex_ai-image-models",
 			"mode": "image_generation"
+		},
+		"input-only-future-model": {
+			"input_cost_per_token": 0.000001,
+			"litellm_provider": "future-provider",
+			"mode": "chat"
 		},
 		"gemini-image-with-token-price": {
 			"input_cost_per_token": 0.0,
@@ -386,6 +532,8 @@ func TestBillingService_GetModelPricing_FailsClosedForImageOnlyEntries(t *testin
 	// image-only 条目不得进入 token 计费（否则 token 流量按 $0 计费），
 	// 必须落到 fallback / ErrModelPricingUnavailable 的 fail-closed 路径。
 	_, err = billingSvc.GetModelPricing("imagen-9.0-generate")
+	require.ErrorIs(t, err, ErrModelPricingUnavailable)
+	_, err = billingSvc.GetModelPricing("input-only-future-model")
 	require.ErrorIs(t, err, ErrModelPricingUnavailable)
 
 	// 显式 0 token 价的免费条目保持历史行为：正常返回。
@@ -433,8 +581,8 @@ func TestPricingService_MergesFallbackOnlyModels(t *testing.T) {
 }
 
 func TestGetModelPricing_Gpt53CodexSparkUsesGpt51CodexPricing(t *testing.T) {
-	sparkPricing := &ModelPriceEntry{InputCostPerToken: 1}
-	gpt53Pricing := &ModelPriceEntry{InputCostPerToken: 9}
+	sparkPricing := &ModelPriceEntry{InputCostPerToken: 1, OutputCostPerToken: 1}
+	gpt53Pricing := &ModelPriceEntry{InputCostPerToken: 9, OutputCostPerToken: 9}
 
 	svc := &PricingService{
 		pricingData: map[string]*ModelPriceEntry{
@@ -448,7 +596,7 @@ func TestGetModelPricing_Gpt53CodexSparkUsesGpt51CodexPricing(t *testing.T) {
 }
 
 func TestGetModelPricing_Gpt53CodexFallbackStillUsesGpt52Codex(t *testing.T) {
-	gpt52CodexPricing := &ModelPriceEntry{InputCostPerToken: 2}
+	gpt52CodexPricing := &ModelPriceEntry{InputCostPerToken: 2, OutputCostPerToken: 2}
 
 	svc := &PricingService{
 		pricingData: map[string]*ModelPriceEntry{
@@ -464,7 +612,7 @@ func TestGetModelPricing_OpenAIFallbackMatchedLoggedAsInfo(t *testing.T) {
 	logSink, restore := captureStructuredLog(t)
 	defer restore()
 
-	gpt52CodexPricing := &ModelPriceEntry{InputCostPerToken: 2}
+	gpt52CodexPricing := &ModelPriceEntry{InputCostPerToken: 2, OutputCostPerToken: 2}
 	svc := &PricingService{
 		pricingData: map[string]*ModelPriceEntry{
 			"gpt-5.2-codex": gpt52CodexPricing,
@@ -632,8 +780,8 @@ func TestGetModelPricing_Gpt54NanoUsesDedicatedStaticFallbackWhenRemoteMissing(t
 }
 
 func TestGetModelPricing_ImageModelDoesNotFallbackToTextModel(t *testing.T) {
-	imagePricing := &ModelPriceEntry{InputCostPerToken: 3}
-	textPricing := &ModelPriceEntry{InputCostPerToken: 9}
+	imagePricing := &ModelPriceEntry{InputCostPerToken: 3, OutputCostPerToken: 3}
+	textPricing := &ModelPriceEntry{InputCostPerToken: 9, OutputCostPerToken: 9}
 
 	svc := &PricingService{
 		pricingData: map[string]*ModelPriceEntry{
@@ -649,16 +797,18 @@ func TestGetModelPricing_ImageModelDoesNotFallbackToTextModel(t *testing.T) {
 func TestParsePricingData_PreservesPriorityAndServiceTierFields(t *testing.T) {
 	raw := map[string]any{
 		"gpt-5.4": map[string]any{
-			"input_cost_per_token":                 2.5e-6,
-			"input_cost_per_token_priority":        5e-6,
-			"output_cost_per_token":                15e-6,
-			"output_cost_per_token_priority":       30e-6,
-			"cache_read_input_token_cost":          0.25e-6,
-			"cache_read_input_token_cost_priority": 0.5e-6,
-			"supports_service_tier":                true,
-			"supports_prompt_caching":              true,
-			"litellm_provider":                     "openai",
-			"mode":                                 "chat",
+			"input_cost_per_token":                     2.5e-6,
+			"input_cost_per_token_priority":            5e-6,
+			"output_cost_per_token":                    15e-6,
+			"output_cost_per_token_priority":           30e-6,
+			"cache_creation_input_token_cost":          0.0,
+			"cache_creation_input_token_cost_priority": 0.0,
+			"cache_read_input_token_cost":              0.25e-6,
+			"cache_read_input_token_cost_priority":     0.5e-6,
+			"supports_service_tier":                    true,
+			"supports_prompt_caching":                  true,
+			"litellm_provider":                         "openai",
+			"mode":                                     "chat",
 		},
 	}
 	body, err := json.Marshal(raw)
@@ -687,6 +837,8 @@ func TestParsePricingData_PreservesServiceTierPriorityFields(t *testing.T) {
 			"input_cost_per_token_priority": 0.000005,
 			"output_cost_per_token": 0.000015,
 			"output_cost_per_token_priority": 0.00003,
+			"cache_creation_input_token_cost": 0,
+			"cache_creation_input_token_cost_priority": 0,
 			"cache_read_input_token_cost": 0.00000025,
 			"cache_read_input_token_cost_priority": 0.0000005,
 			"supports_service_tier": true,

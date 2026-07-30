@@ -96,6 +96,79 @@ func TestModelCatalogDefaults(t *testing.T) {
 	require.Equal(t, 5, cfg.ModelCatalog.MaxConcurrency)
 }
 
+func TestPricingAdmissionGuardDefaultsAndValidation(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, PricingGuardModeEnforce, cfg.Pricing.GuardMode)
+	require.Equal(t, PricingGuardModeEnforce, cfg.Pricing.StrictModelMatchMode)
+	require.Equal(t, PricingGuardModeShadow, cfg.Pricing.RecoveryMode)
+
+	tests := []struct {
+		name    string
+		mutate  func(*Config)
+		wantErr string
+	}{
+		{
+			name: "invalid media guard mode",
+			mutate: func(cfg *Config) {
+				cfg.Pricing.GuardMode = "enfroce"
+			},
+			wantErr: "pricing.guard_mode",
+		},
+		{
+			name: "invalid strict model match mode",
+			mutate: func(cfg *Config) {
+				cfg.Pricing.StrictModelMatchMode = "enfroce"
+			},
+			wantErr: "pricing.strict_model_match_mode",
+		},
+		{
+			name: "media guard cannot be disabled",
+			mutate: func(cfg *Config) {
+				cfg.Pricing.GuardMode = PricingGuardModeOff
+			},
+			wantErr: "pricing.guard_mode",
+		},
+		{
+			name: "strict model guard cannot run in shadow",
+			mutate: func(cfg *Config) {
+				cfg.Pricing.StrictModelMatchMode = PricingGuardModeShadow
+			},
+			wantErr: "pricing.strict_model_match_mode",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testCfg := validConfigForTest(t)
+			tt.mutate(testCfg)
+			require.ErrorContains(t, testCfg.Validate(), tt.wantErr)
+		})
+	}
+
+	t.Run("empty modes normalize to fail-closed defaults", func(t *testing.T) {
+		testCfg := validConfigForTest(t)
+		testCfg.Pricing.GuardMode = ""
+		testCfg.Pricing.StrictModelMatchMode = "  "
+		require.NoError(t, testCfg.Validate())
+		require.Equal(t, PricingGuardModeEnforce, testCfg.Pricing.GuardMode)
+		require.Equal(t, PricingGuardModeEnforce, testCfg.Pricing.StrictModelMatchMode)
+	})
+}
+
+func TestNormalizePricingModesUsePurposeSpecificFailSafeDefaults(t *testing.T) {
+	require.Equal(t, PricingGuardModeEnforce, NormalizePricingGuardMode(" OFF "))
+	require.Equal(t, PricingGuardModeEnforce, NormalizePricingGuardMode("shadow"))
+	require.Equal(t, PricingGuardModeEnforce, NormalizePricingGuardMode("enforce"))
+	require.Equal(t, PricingGuardModeEnforce, NormalizePricingGuardMode("enfroce"))
+	require.Equal(t, PricingGuardModeEnforce, NormalizePricingGuardMode(""))
+
+	require.Equal(t, PricingGuardModeOff, NormalizePricingRecoveryMode(" OFF "))
+	require.Equal(t, PricingGuardModeEnforce, NormalizePricingRecoveryMode("enforce"))
+	require.Equal(t, PricingGuardModeShadow, NormalizePricingRecoveryMode("enfroce"))
+	require.Equal(t, PricingGuardModeShadow, NormalizePricingRecoveryMode(""))
+}
+
 func TestDomesticProviderHostsAreInDefaultUpstreamAllowlist(t *testing.T) {
 	resetViperWithJWTSecret(t)
 	cfg, err := Load()

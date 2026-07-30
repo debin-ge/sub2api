@@ -11,6 +11,26 @@ const (
 	BillingTypeSubscription int8 = 1 // 订阅套餐
 )
 
+// BillingState 标记一条用量记录的结算状态。
+//
+// 未定价模型采用 fail-closed 准入策略：请求在转发上游之前就应被拒绝。但准入
+// 与结算之间仍可能出现分歧（上游回显了另一个模型、管理员在请求进行中删除了
+// 价格等），此时上游成本已经真实发生。这类记录必须落库并标记为待结算，既不能
+// 静默按 $0 结算，也不能整条丢弃。
+const (
+	// BillingStateSettled 正常结算。管理员显式配置的 $0 属于有效价格，也是本状态。
+	BillingStateSettled int8 = 0
+	// BillingStatePricingUnavailable 模型无可解析价格：本行未扣费，等待补配价格后重算。
+	BillingStatePricingUnavailable int8 = 1
+	// BillingStatePricingRecovered 表示价格已由补偿流程重算并回填，但没有事后追扣用户
+	// 余额、订阅或配额。此状态的 actual_cost 必须继续表示真实扣除额（通常为 0）。
+	BillingStatePricingRecovered int8 = 2
+	// BillingStateRecovered 是旧名称的兼容别名。状态 2 只表示价格信息已恢复，不表示已补扣。
+	//
+	// Deprecated: use BillingStatePricingRecovered.
+	BillingStateRecovered int8 = BillingStatePricingRecovered
+)
+
 type RequestType int16
 
 const (
@@ -162,7 +182,10 @@ type UsageLog struct {
 	// AccountStatsCost 账号统计定价预计算费用（nil = 使用默认公式 total_cost × account_rate_multiplier）
 	AccountStatsCost *float64
 
-	BillingType  int8
+	BillingType int8
+	// BillingState 结算状态，取值见 BillingStateSettled / BillingStatePricingUnavailable /
+	// BillingStatePricingRecovered。零值即"已结算"，历史行天然兼容。
+	BillingState int8
 	RequestType  RequestType
 	Stream       bool
 	OpenAIWSMode bool

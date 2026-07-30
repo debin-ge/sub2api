@@ -321,7 +321,8 @@ func (r *usageCleanupRepository) DeleteUsageLogsBatch(ctx context.Context, filte
 }
 
 func buildUsageCleanupWhere(filters service.UsageCleanupFilters) (string, []any) {
-	conditions := make([]string, 0, 8)
+	// 定价缺失待处理的行是唯一的补偿证据，任何手工清理任务都必须保留。
+	conditions := []string{fmt.Sprintf("billing_state <> %d", service.BillingStatePricingUnavailable)}
 	args := make([]any, 0, 8)
 	idx := 1
 	if !filters.StartTime.IsZero() {

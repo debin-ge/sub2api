@@ -27,7 +27,7 @@ var (
 	ErrUserNotActive             = infraerrors.Forbidden("USER_NOT_ACTIVE", "user is not active")
 	ErrEmailExists               = infraerrors.Conflict("EMAIL_EXISTS", "email already exists")
 	ErrEmailReserved             = infraerrors.BadRequest("EMAIL_RESERVED", "email is reserved")
-	ErrEmailLocalPartInvalid     = infraerrors.BadRequest("EMAIL_LOCAL_PART_INVALID", "email address with plus sign (+) or dot (.) in local part is not allowed")
+	ErrEmailLocalPartInvalid     = infraerrors.BadRequest("EMAIL_LOCAL_PART_INVALID", "email address with plus sign (+) in local part is not allowed")
 	ErrDisposableEmailNotAllowed = infraerrors.BadRequest("DISPOSABLE_EMAIL_NOT_ALLOWED", "temporary or disposable email addresses are not allowed")
 	ErrInvalidToken              = infraerrors.Unauthorized("INVALID_TOKEN", "invalid token")
 	ErrTokenExpired              = infraerrors.Unauthorized("TOKEN_EXPIRED", "token has expired")
@@ -302,7 +302,7 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 	if isReservedEmail(email) {
 		return "", nil, ErrEmailReserved
 	}
-	// 验证邮箱本地部分，拒绝包含加号或点号的邮箱（防止薅羊毛）
+	// 验证邮箱本地部分，拒绝包含加号的邮箱（防止 plus addressing 薅羊毛）
 	if err := ValidateEmailLocalPart(email); err != nil {
 		return "", nil, ErrEmailLocalPartInvalid
 	}
@@ -465,7 +465,7 @@ func (s *AuthService) SendVerifyCode(ctx context.Context, email string, locale .
 	if isReservedEmail(email) {
 		return ErrEmailReserved
 	}
-	// 验证邮箱本地部分，拒绝包含加号或点号的邮箱（防止薅羊毛）
+	// 验证邮箱本地部分，拒绝包含加号的邮箱（防止 plus addressing 薅羊毛）
 	if err := ValidateEmailLocalPart(email); err != nil {
 		return ErrEmailLocalPartInvalid
 	}
@@ -519,7 +519,7 @@ func (s *AuthService) SendVerifyCodeAsync(ctx context.Context, email string, loc
 	if isReservedEmail(email) {
 		return nil, ErrEmailReserved
 	}
-	// 验证邮箱本地部分，拒绝包含加号或点号的邮箱（防止薅羊毛）
+	// 验证邮箱本地部分，拒绝包含加号的邮箱（防止 plus addressing 薅羊毛）
 	if err := ValidateEmailLocalPart(email); err != nil {
 		return nil, ErrEmailLocalPartInvalid
 	}

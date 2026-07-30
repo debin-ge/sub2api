@@ -58,6 +58,7 @@ const schedulerOutboxPendingDedupKeyIndex = "idx_scheduler_outbox_pending_dedup_
 const latestAPIKeyIPIndexMigration = "174_add_usage_logs_api_key_latest_ip_index_notx.sql"
 const latestAPIKeyIPIndex = "idx_usage_logs_api_key_latest_ip"
 const vipIndexesMigration = "194_vip_indexes_notx.sql"
+const usageLogsBillingStateIndexMigration = "193_add_usage_logs_billing_state_index_notx.sql"
 
 // vipConcurrentIndexNames must stay in sync with every index created by
 // vipIndexesMigration. PostgreSQL leaves a same-named invalid index behind when
@@ -76,6 +77,11 @@ var vipConcurrentIndexNames = []string{
 	"idx_vip_reconcile_jobs_request_id",
 	"idx_vip_reconcile_jobs_one_active",
 	"idx_vip_reconcile_jobs_status_updated",
+}
+
+var usageLogsBillingStateIndexes = []string{
+	"idx_usage_logs_billing_state_pending",
+	"idx_usage_logs_billing_state_pending_id",
 }
 
 type migrationChecksumCompatibilityRule struct {
@@ -306,6 +312,8 @@ func prepareNonTransactionalMigration(ctx context.Context, db migrationConnectio
 		return dropInvalidIndexIfPresent(ctx, db, latestAPIKeyIPIndex)
 	case vipIndexesMigration:
 		return dropInvalidIndexesIfPresent(ctx, db, vipConcurrentIndexNames...)
+	case usageLogsBillingStateIndexMigration:
+		return dropInvalidIndexesIfPresent(ctx, db, usageLogsBillingStateIndexes...)
 	default:
 		return nil
 	}

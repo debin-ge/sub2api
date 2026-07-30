@@ -94,6 +94,18 @@ func (s *GatewayService) ForwardAsResponses(
 	if err != nil {
 		return nil, fmt.Errorf("marshal anthropic request: %w", err)
 	}
+	imageIdentity := geminiImageBillingIdentity{}
+	if account.Platform == PlatformGemini {
+		imageIdentity, err = resolveGeminiImageBillingIdentity(mappedModel, anthropicBody)
+		if err != nil {
+			writeResponsesError(c, http.StatusServiceUnavailable, "api_error", err.Error())
+			return nil, err
+		}
+		if err := s.validateExactResolvedImagePricing(ctx, account, imageIdentity); err != nil {
+			writeResponsesError(c, http.StatusServiceUnavailable, "api_error", err.Error())
+			return nil, err
+		}
+	}
 
 	// 6. Apply Claude Code mimicry for OAuth accounts (non-Claude-Code endpoints).
 	// OpenAI Responses 协议进来的请求永远不是 Claude Code 客户端，所以对 OAuth 账号
@@ -191,6 +203,13 @@ func (s *GatewayService) ForwardAsResponses(
 		result, handleErr = s.handleResponsesStreamingResponse(resp, c, originalModel, mappedModel, reasoningEffort, startTime, clientToolMapping)
 	} else {
 		result, handleErr = s.handleResponsesBufferedStreamingResponse(resp, c, originalModel, mappedModel, reasoningEffort, startTime, clientToolMapping)
+	}
+	if handleErr == nil && result != nil && imageIdentity.Count > 0 {
+		result.UpstreamModel = imageIdentity.Model
+		result.BillingModel = imageIdentity.Model
+		result.ImageCount = imageIdentity.Count
+		result.ImageSize = imageIdentity.SizeTier
+		result.ImageInputSize = imageIdentity.InputSize
 	}
 
 	return result, handleErr

@@ -29,6 +29,7 @@ func TestUserRepositoryExistsByEmailAlias(t *testing.T) {
 		{"same address", "someone@gmail.com", "someone@gmail.com", true},
 		{"gmail plus alias", "someone@gmail.com", "someone+bulk294@gmail.com", true},
 		{"gmail dot trick", "d.axis.2026@gmail.com", "daxis2026@gmail.com", true},
+		{"gmail dot trick reverse", "daxis2026@gmail.com", "d.axis.2026@gmail.com", true},
 		{"gmail dot trick both sides", "d.axis.2026@gmail.com", "da.xis.2026@gmail.com", true},
 		{"stored plus alias found by canonical form", "someone+tag@gmail.com", "someone@gmail.com", true},
 		{"googlemail is a gmail alias", "someone@googlemail.com", "some.one@gmail.com", true},

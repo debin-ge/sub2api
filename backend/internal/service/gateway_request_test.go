@@ -26,6 +26,44 @@ func TestParseGatewayRequest(t *testing.T) {
 	require.False(t, parsed.ThinkingEnabled)
 }
 
+func TestParseGatewayRequestRejectsDuplicateBillingModelFields(t *testing.T) {
+	_, err := ParseGatewayRequest(
+		NewRequestBodyRef([]byte(`{"model":"claude-sonnet-4","model":"unknown-future-model","messages":[]}`)),
+		domain.PlatformAnthropic,
+	)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "duplicate top-level model")
+}
+
+func TestParseGatewayRequestRejectsNullCharacterInBillingModel(t *testing.T) {
+	_, err := ParseGatewayRequest(
+		NewRequestBodyRef([]byte(`{"model":"priced-alias\u0000unknown","messages":[]}`)),
+		domain.PlatformAnthropic,
+	)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "model must not contain null characters")
+}
+
+func TestValidateUniqueOpenAIServiceTierField(t *testing.T) {
+	require.NoError(t, ValidateUniqueOpenAIServiceTierField(
+		[]byte(`{"model":"gpt-5.4","service_tier":"priority"}`),
+	))
+
+	err := ValidateUniqueOpenAIServiceTierField(
+		[]byte(`{"model":"gpt-5.4","service_tier":"standard","service_tier":"priority"}`),
+	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "duplicate top-level service_tier")
+
+	err = ValidateUniqueOpenAIServiceTierField(
+		[]byte(`{"model":"gpt-5.4","service_tier":"standard","service_\u0074ier":"priority"}`),
+	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "duplicate top-level service_tier")
+}
+
 func TestParseGatewayRequest_ThinkingEnabled(t *testing.T) {
 	body := []byte(`{"model":"claude-sonnet-4-5","thinking":{"type":"enabled"},"messages":[{"content":"hi"}]}`)
 	parsed, err := ParseGatewayRequest(NewRequestBodyRef(body), "")

@@ -4,10 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"math"
 	"strings"
+	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
@@ -15,7 +18,7 @@ type usageBillingRepository struct {
 	db *sql.DB
 }
 
-func NewUsageBillingRepository(_ *dbent.Client, sqlDB *sql.DB) service.UsageBillingRepository {
+func NewUsageBillingRepository(_ *dbent.Client, sqlDB *sql.DB) *usageBillingRepository {
 	return &usageBillingRepository{db: sqlDB}
 }
 
@@ -209,22 +212,243 @@ func (r *usageBillingRepository) applyUsageBillingEffects(ctx context.Context, t
 		result.QuotaState = quotaState
 	}
 
+	if cmd.PlatformQuotaCost > 0 && strings.TrimSpace(cmd.Platform) != "" {
+		if err := applyUsageBillingPlatformQuota(ctx, tx, cmd); err != nil {
+			return err
+		}
+	}
+
 	return nil
+}
+
+type usageBillingQuotaWindow struct {
+	usage float64
+	start *time.Time
+}
+
+type usageBillingPlatformQuotaRow struct {
+	id      int64
+	daily   usageBillingQuotaWindow
+	weekly  usageBillingQuotaWindow
+	monthly usageBillingQuotaWindow
+}
+
+func scanUsageBillingPlatformQuotaRow(
+	ctx context.Context,
+	tx *sql.Tx,
+	userID int64,
+	platform string,
+) (usageBillingPlatformQuotaRow, bool, error) {
+	var (
+		row                                   usageBillingPlatformQuotaRow
+		dailyStart, weeklyStart, monthlyStart sql.NullTime
+	)
+	err := tx.QueryRowContext(ctx, `
+		SELECT id,
+			daily_usage_usd, weekly_usage_usd, monthly_usage_usd,
+			daily_window_start, weekly_window_start, monthly_window_start
+		FROM user_platform_quotas
+		WHERE user_id = $1 AND platform = $2 AND deleted_at IS NULL
+		FOR UPDATE
+	`, userID, platform).Scan(
+		&row.id,
+		&row.daily.usage, &row.weekly.usage, &row.monthly.usage,
+		&dailyStart, &weeklyStart, &monthlyStart,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return usageBillingPlatformQuotaRow{}, false, nil
+	}
+	if err != nil {
+		return usageBillingPlatformQuotaRow{}, false, err
+	}
+	if dailyStart.Valid {
+		row.daily.start = &dailyStart.Time
+	}
+	if weeklyStart.Valid {
+		row.weekly.start = &weeklyStart.Time
+	}
+	if monthlyStart.Valid {
+		row.monthly.start = &monthlyStart.Time
+	}
+	return row, true, nil
+}
+
+func normalizeUsageBillingFixedWindow(
+	window usageBillingQuotaWindow,
+	currentStart time.Time,
+) usageBillingQuotaWindow {
+	if window.start == nil || window.start.Before(currentStart) {
+		return usageBillingQuotaWindow{start: &currentStart}
+	}
+	start := *window.start
+	return usageBillingQuotaWindow{usage: window.usage, start: &start}
+}
+
+func normalizeUsageBillingMonthlyWindow(
+	window usageBillingQuotaWindow,
+	now time.Time,
+) usageBillingQuotaWindow {
+	if window.start == nil || now.Sub(*window.start) >= 30*24*time.Hour {
+		return usageBillingQuotaWindow{start: &now}
+	}
+	start := *window.start
+	return usageBillingQuotaWindow{usage: window.usage, start: &start}
+}
+
+func mergeUsageBillingQuotaWindow(
+	current usageBillingQuotaWindow,
+	snapshot usageBillingQuotaWindow,
+) usageBillingQuotaWindow {
+	if current.start == nil {
+		return snapshot
+	}
+	if snapshot.start == nil {
+		return current
+	}
+	if snapshot.start.After(*current.start) {
+		return snapshot
+	}
+	if current.start.After(*snapshot.start) {
+		return current
+	}
+	if snapshot.usage > current.usage {
+		current.usage = snapshot.usage
+	}
+	return current
+}
+
+func usageBillingPlatformQuotaSnapshotWindows(
+	snapshot *service.UsageBillingPlatformQuotaSnapshot,
+) (usageBillingQuotaWindow, usageBillingQuotaWindow, usageBillingQuotaWindow) {
+	if snapshot == nil {
+		return usageBillingQuotaWindow{}, usageBillingQuotaWindow{}, usageBillingQuotaWindow{}
+	}
+	return usageBillingQuotaWindow{usage: snapshot.DailyUsageUSD, start: snapshot.DailyWindowStart},
+		usageBillingQuotaWindow{usage: snapshot.WeeklyUsageUSD, start: snapshot.WeeklyWindowStart},
+		usageBillingQuotaWindow{usage: snapshot.MonthlyUsageUSD, start: snapshot.MonthlyWindowStart}
+}
+
+func reconciledUsageBillingPlatformQuota(
+	row usageBillingPlatformQuotaRow,
+	snapshot *service.UsageBillingPlatformQuotaSnapshot,
+	cost float64,
+	now time.Time,
+) usageBillingPlatformQuotaRow {
+	dailySnapshot, weeklySnapshot, monthlySnapshot := usageBillingPlatformQuotaSnapshotWindows(snapshot)
+	dailyStart := timezone.StartOfDay(now)
+	weeklyStart := timezone.StartOfWeek(now)
+
+	row.daily = mergeUsageBillingQuotaWindow(
+		normalizeUsageBillingFixedWindow(row.daily, dailyStart),
+		normalizeUsageBillingFixedWindow(dailySnapshot, dailyStart),
+	)
+	row.weekly = mergeUsageBillingQuotaWindow(
+		normalizeUsageBillingFixedWindow(row.weekly, weeklyStart),
+		normalizeUsageBillingFixedWindow(weeklySnapshot, weeklyStart),
+	)
+	row.monthly = normalizeUsageBillingMonthlyWindow(row.monthly, now)
+	// A missing or already-expired snapshot has no current rolling-window
+	// evidence. Normalizing such a snapshot to this event's OccurredAt would
+	// manufacture a newer anchor and could discard usage committed by an
+	// earlier waiter on the same row lock. Only an explicit, still-current
+	// snapshot may participate in newer-window selection. A future anchor is
+	// retained as newer evidence rather than being treated as expired.
+	if monthlySnapshot.start != nil &&
+		now.Sub(*monthlySnapshot.start) < 30*24*time.Hour {
+		row.monthly = mergeUsageBillingQuotaWindow(
+			row.monthly,
+			normalizeUsageBillingMonthlyWindow(monthlySnapshot, now),
+		)
+	}
+	row.daily.usage += cost
+	row.weekly.usage += cost
+	row.monthly.usage += cost
+	return row
+}
+
+func applyUsageBillingPlatformQuota(
+	ctx context.Context,
+	tx *sql.Tx,
+	cmd *service.UsageBillingCommand,
+) error {
+	if cmd == nil || cmd.PlatformQuotaCost <= 0 || strings.TrimSpace(cmd.Platform) == "" {
+		return nil
+	}
+	if math.IsNaN(cmd.PlatformQuotaCost) || math.IsInf(cmd.PlatformQuotaCost, 0) {
+		return service.ErrUsageBillingPayloadInvalid
+	}
+	now := cmd.OccurredAt
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	platform := strings.TrimSpace(cmd.Platform)
+
+	for attempt := 0; attempt < 2; attempt++ {
+		row, exists, err := scanUsageBillingPlatformQuotaRow(ctx, tx, cmd.UserID, platform)
+		if err != nil {
+			return err
+		}
+		row = reconciledUsageBillingPlatformQuota(row, cmd.PlatformQuotaSnapshot, cmd.PlatformQuotaCost, now)
+		if exists {
+			result, err := tx.ExecContext(ctx, `
+				UPDATE user_platform_quotas
+				SET daily_usage_usd = $2,
+					weekly_usage_usd = $3,
+					monthly_usage_usd = $4,
+					daily_window_start = $5,
+					weekly_window_start = $6,
+					monthly_window_start = $7,
+					updated_at = NOW()
+				WHERE id = $1 AND deleted_at IS NULL
+			`, row.id, row.daily.usage, row.weekly.usage, row.monthly.usage,
+				row.daily.start, row.weekly.start, row.monthly.start)
+			if err != nil {
+				return err
+			}
+			affected, err := result.RowsAffected()
+			if err != nil {
+				return err
+			}
+			if affected != 1 {
+				return errors.New("usage billing platform quota row was concurrently removed")
+			}
+			return nil
+		}
+
+		result, err := tx.ExecContext(ctx, `
+			INSERT INTO user_platform_quotas (
+				user_id, platform,
+				daily_usage_usd, weekly_usage_usd, monthly_usage_usd,
+				daily_window_start, weekly_window_start, monthly_window_start,
+				created_at, updated_at
+			)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
+			ON CONFLICT (user_id, platform) WHERE deleted_at IS NULL DO NOTHING
+		`, cmd.UserID, platform, row.daily.usage, row.weekly.usage, row.monthly.usage,
+			row.daily.start, row.weekly.start, row.monthly.start)
+		if err != nil {
+			return err
+		}
+		affected, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if affected == 1 {
+			return nil
+		}
+	}
+	return errors.New("usage billing platform quota row conflicted repeatedly")
 }
 
 func incrementUsageBillingSubscription(ctx context.Context, tx *sql.Tx, subscriptionID int64, costUSD float64) error {
 	const updateSQL = `
-		UPDATE user_subscriptions us
+		UPDATE user_subscriptions
 		SET
-			daily_usage_usd = us.daily_usage_usd + $1,
-			weekly_usage_usd = us.weekly_usage_usd + $1,
-			monthly_usage_usd = us.monthly_usage_usd + $1,
+			daily_usage_usd = daily_usage_usd + $1,
+			weekly_usage_usd = weekly_usage_usd + $1,
+			monthly_usage_usd = monthly_usage_usd + $1,
 			updated_at = NOW()
-		FROM groups g
-		WHERE us.id = $2
-			AND us.deleted_at IS NULL
-			AND us.group_id = g.id
-			AND g.deleted_at IS NULL
+		WHERE id = $2
 	`
 	res, err := tx.ExecContext(ctx, updateSQL, costUSD, subscriptionID)
 	if err != nil {
@@ -246,7 +470,7 @@ func deductUsageBillingBalance(ctx context.Context, tx *sql.Tx, userID int64, am
 		UPDATE users
 		SET balance = balance - $1,
 			updated_at = NOW()
-		WHERE id = $2 AND deleted_at IS NULL AND balance >= $1
+		WHERE id = $2 AND balance >= $1
 		RETURNING balance
 	`, amount, userID).Scan(&newBalance)
 	if err == nil {
@@ -260,7 +484,7 @@ func deductUsageBillingBalance(ctx context.Context, tx *sql.Tx, userID int64, am
 		UPDATE users
 		SET balance = balance - $1,
 			updated_at = NOW()
-		WHERE id = $2 AND deleted_at IS NULL
+		WHERE id = $2
 		RETURNING balance
 	`, amount, userID).Scan(&newBalance)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -427,11 +651,14 @@ func incrementUsageBillingAPIKeyQuota(ctx context.Context, tx *sql.Tx, apiKeyID 
 				ELSE status
 			END,
 			updated_at = NOW()
-		WHERE id = $2 AND deleted_at IS NULL
+		WHERE id = $2
 		RETURNING quota > 0 AND quota_used >= quota AND quota_used - $1 < quota
 	`, amount, apiKeyID, service.StatusAPIKeyActive, service.StatusAPIKeyQuotaExhausted).Scan(&exhausted)
 	if errors.Is(err, sql.ErrNoRows) {
-		return false, service.ErrAPIKeyNotFound
+		// The API key is an attribution/counter target, not the source of
+		// funds. A hard-deleted historical key must not roll back the user's
+		// balance/subscription charge after the upstream request succeeded.
+		return false, nil
 	}
 	if err != nil {
 		return false, err
@@ -449,7 +676,7 @@ func incrementUsageBillingAPIKeyRateLimit(ctx context.Context, tx *sql.Tx, apiKe
 			window_1d_start = CASE WHEN window_1d_start IS NULL OR window_1d_start + INTERVAL '24 hours' <= NOW() THEN date_trunc('day', NOW()) ELSE window_1d_start END,
 			window_7d_start = CASE WHEN window_7d_start IS NULL OR window_7d_start + INTERVAL '7 days' <= NOW() THEN date_trunc('day', NOW()) ELSE window_7d_start END,
 			updated_at = NOW()
-		WHERE id = $2 AND deleted_at IS NULL
+			WHERE id = $2
 	`, cost, apiKeyID)
 	if err != nil {
 		return err
@@ -459,7 +686,9 @@ func incrementUsageBillingAPIKeyRateLimit(ctx context.Context, tx *sql.Tx, apiKe
 		return err
 	}
 	if affected == 0 {
-		return service.ErrAPIKeyNotFound
+		// Rate-limit accounting is ancillary. Missing historical keys are safe
+		// to skip and must not cancel the primary financial transaction.
+		return nil
 	}
 	return nil
 }
@@ -500,7 +729,7 @@ func incrementUsageBillingAccountQuota(ctx context.Context, tx *sql.Tx, accountI
 				   ELSE '{}'::jsonb END
 			ELSE '{}'::jsonb END
 		), updated_at = NOW()
-		WHERE id = $2 AND deleted_at IS NULL
+			WHERE id = $2
 		RETURNING
 			COALESCE((extra->>'quota_used')::numeric, 0),
 			COALESCE((extra->>'quota_limit')::numeric, 0),

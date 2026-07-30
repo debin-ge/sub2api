@@ -88,7 +88,7 @@ func newOpenAIResponsesFailoverTestHandler(t *testing.T, upstream service.HTTPUp
 		cfg,
 		nil,
 		nil,
-		nil,
+		service.NewBillingService(cfg, nil),
 		nil,
 		nil,
 		upstream,
@@ -122,7 +122,7 @@ func newOpenAIResponsesFailoverTestHandler(t *testing.T, upstream service.HTTPUp
 func newOpenAIResponsesFailoverTestContext(t *testing.T, ctx context.Context) (*gin.Context, *httptest.ResponseRecorder) {
 	t.Helper()
 	groupID := int64(3131)
-	body := []byte(`{"model":"gpt-5.1","stream":false,"input":"hello"}`)
+	body := []byte(`{"model":"gpt-5.4","stream":false,"input":"hello"}`)
 	req := httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
 	if ctx != nil {
 		req = req.WithContext(ctx)

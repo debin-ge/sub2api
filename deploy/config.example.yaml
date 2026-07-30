@@ -1186,6 +1186,40 @@ pricing:
   # Hash check interval in minutes
   # 哈希检查间隔（分钟）
   hash_check_interval_minutes: 10
+  # Pricing admission guard for image / video routes. Only enforce is accepted:
+  # a missing price rejects the request before any upstream cost is incurred.
+  # 图片/视频路由的定价准入守卫。只接受 enforce：查不到价格时必须在产生上游成本前
+  # 拒绝请求，不能通过 off/shadow 将未知价格解释为可调用。
+  guard_mode: "enforce"
+  # Strict model matching for the token-route admission guard. Only enforce is
+  # accepted: an unknown SKU cannot inherit another model's fuzzy fallback price.
+  # token 路由准入守卫的严格模型匹配。只接受 enforce：未知 SKU 不能借用其它模型的
+  # 模糊兜底价格通过准入。
+  strict_model_match_mode: "enforce"
+  # Settlement recovery for usage recorded while its price was missing: off | shadow | enforce
+  # Rows land in billing_state=1 when the upstream cost was real but no price could be
+  # found, so they were stored at $0. Once an admin configures the price, this job
+  # recomputes those rows and flips them to billing_state=2.
+  # It repairs the accounting record only — no mode ever moves user balance. Charging a
+  # user days after the fact is an operator decision, not a background job's default;
+  # the recovered amounts are visible on the admin pending-settlement view so that
+  # decision can be made with the numbers in hand.
+  # shadow scans and reports what it would recover without writing; switch to enforce
+  # once the reported counts look right.
+  # 定价缺失时落库的用量的补偿结算档位：off | shadow | enforce
+  # 上游成本真实发生、但当时查不到价的请求会按 $0 落库并标为 billing_state=1。管理员补上
+  # 价格后，这个任务按今天的价重算这些行并置为 billing_state=2。
+  # 它只修账目，三档都不动用户余额：事后几天从余额里扣钱是运营决定，不该是后台任务的默认
+  # 行为（用户当时拿到的是一个显示免费的请求，余额可能早已花掉，静默补扣会打成负数）。
+  # 补回的金额在管理端待结算看板上可见，要不要追收由管理员拿着数据显式决定。
+  # shadow 只扫描并汇报"会补多少笔、多少钱"，不写库；确认数字合理后再切 enforce。
+  recovery_mode: "shadow"
+  # Scan interval in minutes (<=0 falls back to 60)
+  # 补偿扫描间隔（分钟），<=0 时取默认值 60
+  recovery_interval_minutes: 60
+  # Max rows processed per scan (<=0 falls back to 500)
+  # 单轮最多处理多少行，<=0 时取默认值 500
+  recovery_batch_size: 500
 
 # =============================================================================
 # Model Catalog Configuration

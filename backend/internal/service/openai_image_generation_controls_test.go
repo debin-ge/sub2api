@@ -701,9 +701,18 @@ func newOpenAIImageGenerationControlTestService(upstream *httpUpstreamRecorder) 
 		cfg:              cfg,
 		httpUpstream:     upstream,
 		cache:            &stubGatewayCache{},
+		billingService:   newOpenAIImageCatalogBillingServiceForTest(cfg),
 		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
 		toolCorrector:    NewCodexToolCorrector(),
 	}
+}
+
+func newOpenAIImageCatalogBillingServiceForTest(cfg *config.Config) *BillingService {
+	return NewBillingService(cfg, &PricingService{
+		pricingData: map[string]*ModelPriceEntry{
+			"gpt-image-2": {OutputCostPerImage: 0.04},
+		},
+	})
 }
 
 func newOpenAIImageGenerationControlChannelService(groupID int64, ch *Channel) *ChannelService {

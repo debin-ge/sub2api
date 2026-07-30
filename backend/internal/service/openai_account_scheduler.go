@@ -1989,12 +1989,17 @@ func (s *OpenAIGatewayService) SelectAccountWithScheduler(
 	requiredTransport OpenAIUpstreamTransport,
 	requireCompact bool,
 ) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
-	return s.selectAccountWithScheduler(ctx, groupID, previousResponseID, sessionHash, requestedModel, excludedIDs, requiredTransport, "", "", requireCompact, PlatformOpenAI, false, true)
+	return s.selectAccountWithScheduler(ctx, groupID, previousResponseID, sessionHash, requestedModel, excludedIDs, requiredTransport, "", "", requireCompact, PlatformOpenAI, false, BillingKindToken)
 }
 
 // SelectAccountWithSchedulerForCapability 按能力要求调度账号。
 // previousResponseCanMove 表示首包 input 可自行重建工具续链，previous_response_id 允许跨账号迁移
 // （粘性加权模式下改为加权偏好而非硬粘连）。
+//
+// billingKind 是该路由的结算口径，由入口给出。它同时决定两件事：调度是否参考上游
+// token 成本（只有 token 口径下这个权重才有意义），以及转发前该用哪层定价守卫。
+// 此前这里是一个 useUpstreamTokenCost bool，守卫顺带挂在它上面，于是所有非 token
+// 路由——图片、视频、网页搜索——连同"要不要按 token 成本挑账号"一起把守卫也关掉了。
 func (s *OpenAIGatewayService) SelectAccountWithSchedulerForCapability(
 	ctx context.Context,
 	groupID *int64,
@@ -2006,14 +2011,14 @@ func (s *OpenAIGatewayService) SelectAccountWithSchedulerForCapability(
 	requiredCapability OpenAIEndpointCapability,
 	requireCompact bool,
 	previousResponseCanMove bool,
-	useUpstreamTokenCost bool,
+	billingKind BillingKind,
 	platformOverride ...string,
 ) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
 	platform := PlatformOpenAI
 	if len(platformOverride) > 0 {
 		platform = platformOverride[0]
 	}
-	return s.selectAccountWithScheduler(ctx, groupID, previousResponseID, sessionHash, requestedModel, excludedIDs, requiredTransport, requiredCapability, "", requireCompact, platform, previousResponseCanMove, useUpstreamTokenCost)
+	return s.selectAccountWithScheduler(ctx, groupID, previousResponseID, sessionHash, requestedModel, excludedIDs, requiredTransport, requiredCapability, "", requireCompact, platform, previousResponseCanMove, billingKind)
 }
 
 func (s *OpenAIGatewayService) SelectAccountWithSchedulerForImages(
@@ -2024,13 +2029,13 @@ func (s *OpenAIGatewayService) SelectAccountWithSchedulerForImages(
 	excludedIDs map[int64]struct{},
 	requiredCapability OpenAIImagesCapability,
 ) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
-	selection, decision, err := s.selectAccountWithScheduler(ctx, groupID, "", sessionHash, requestedModel, excludedIDs, OpenAIUpstreamTransportHTTPSSE, "", requiredCapability, false, PlatformOpenAI, false, false)
+	selection, decision, err := s.selectAccountWithScheduler(ctx, groupID, "", sessionHash, requestedModel, excludedIDs, OpenAIUpstreamTransportHTTPSSE, "", requiredCapability, false, PlatformOpenAI, false, BillingKindImage)
 	if err == nil && selection != nil && selection.Account != nil {
 		return selection, decision, nil
 	}
 	// 如果要求 native 能力（如指定了模型）但没有可用的 APIKey 账号，回退到 basic（OAuth 账号）
 	if requiredCapability == OpenAIImagesCapabilityNative {
-		return s.selectAccountWithScheduler(ctx, groupID, "", sessionHash, requestedModel, excludedIDs, OpenAIUpstreamTransportHTTPSSE, "", OpenAIImagesCapabilityBasic, false, PlatformOpenAI, false, false)
+		return s.selectAccountWithScheduler(ctx, groupID, "", sessionHash, requestedModel, excludedIDs, OpenAIUpstreamTransportHTTPSSE, "", OpenAIImagesCapabilityBasic, false, PlatformOpenAI, false, BillingKindImage)
 	}
 	return selection, decision, err
 }
@@ -2048,11 +2053,27 @@ func (s *OpenAIGatewayService) selectAccountWithScheduler(
 	requireCompact bool,
 	platform string,
 	previousResponseCanMove bool,
-	useUpstreamTokenCost bool,
+	billingKind BillingKind,
 ) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
 	ctx = s.withOpenAIQuotaAutoPauseContext(ctx)
 	platform = normalizeOpenAICompatiblePlatform(platform)
+	// 上游 token 成本权重只对按 token 结算的请求有意义：一张图的价钱和账号的
+	// token 单价无关，拿它排序等于按无关量挑账号。
+	useUpstreamTokenCost := billingKind == BillingKindToken
 	decision := OpenAIAccountScheduleDecision{}
+	finishSelection := func(selection *AccountSelectionResult, decision OpenAIAccountScheduleDecision, err error) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
+		if err != nil || selection == nil || selection.Account == nil ||
+			(!s.pricingGuardRequired && s.billingService == nil) {
+			return selection, decision, err
+		}
+		if err := s.validateSelectedPricingForBillingKind(ctx, groupID, selection.Account, requestedModel, requireCompact, billingKind); err != nil {
+			if selection.ReleaseFunc != nil {
+				selection.ReleaseFunc()
+			}
+			return nil, decision, err
+		}
+		return selection, decision, nil
+	}
 	scheduler := s.getOpenAIAccountScheduler(ctx)
 	if scheduler == nil {
 		decision.Layer = openAIAccountScheduleLayerLoadBalance
@@ -2067,7 +2088,7 @@ func (s *OpenAIGatewayService) selectAccountWithScheduler(
 					return selection, decision, nil
 				}
 				if accountSupportsOpenAICapabilities(selection.Account, requiredCapability, requiredImageCapability) {
-					return selection, decision, nil
+					return finishSelection(selection, decision, nil)
 				}
 				if selection.ReleaseFunc != nil {
 					selection.ReleaseFunc()
@@ -2093,7 +2114,7 @@ func (s *OpenAIGatewayService) selectAccountWithScheduler(
 			}
 			if s.isOpenAIAccountTransportCompatible(selection.Account, requiredTransport) &&
 				accountSupportsOpenAICapabilities(selection.Account, requiredCapability, requiredImageCapability) {
-				return selection, decision, nil
+				return finishSelection(selection, decision, nil)
 			}
 			if selection.ReleaseFunc != nil {
 				selection.ReleaseFunc()
@@ -2128,7 +2149,7 @@ func (s *OpenAIGatewayService) selectAccountWithScheduler(
 		stickyPreviousAccountID = s.ResolveAccountIDByPreviousResponseIDForScheduler(ctx, groupID, previousResponseID, requestedModel, excludedIDs, requiredCapability, requireCompact)
 	}
 
-	return scheduler.Select(ctx, OpenAIAccountScheduleRequest{
+	selection, scheduleDecision, err := scheduler.Select(ctx, OpenAIAccountScheduleRequest{
 		GroupID:                 groupID,
 		Platform:                platform,
 		SessionHash:             sessionHash,
@@ -2146,6 +2167,7 @@ func (s *OpenAIGatewayService) selectAccountWithScheduler(
 		RequireCompact:          requireCompact,
 		ExcludedIDs:             excludedIDs,
 	})
+	return finishSelection(selection, scheduleDecision, err)
 }
 
 func accountSupportsOpenAICapabilities(account *Account, requiredCapability OpenAIEndpointCapability, requiredImageCapability OpenAIImagesCapability) bool {

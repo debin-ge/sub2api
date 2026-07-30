@@ -7,10 +7,22 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 )
 
 var ErrUsageBillingRequestIDRequired = errors.New("usage billing request_id is required")
 var ErrUsageBillingRequestConflict = errors.New("usage billing request fingerprint conflict")
+var ErrUsageBillingPlatformQuotaSnapshotRequired = errors.New("usage billing platform quota snapshot is required")
+var ErrUsageBillingPayloadInvalid = errors.New("usage billing payload is not persistable")
+
+type UsageBillingPlatformQuotaSnapshot struct {
+	DailyUsageUSD      float64
+	WeeklyUsageUSD     float64
+	MonthlyUsageUSD    float64
+	DailyWindowStart   *time.Time
+	WeeklyWindowStart  *time.Time
+	MonthlyWindowStart *time.Time
+}
 
 // UsageBillingCommand describes one billable request that must be applied at most once.
 type UsageBillingCommand struct {
@@ -34,6 +46,16 @@ type UsageBillingCommand struct {
 	ImageCount          int
 	MediaType           string
 
+	GroupID                     *int64
+	Platform                    string
+	PlatformQuotaCost           float64
+	PlatformQuotaSnapshot       *UsageBillingPlatformQuotaSnapshot
+	PlatformQuotaSnapshotNeeded bool
+	ActualCost                  float64
+	TotalCost                   float64
+	IsSubscriptionBilling       bool
+	OccurredAt                  time.Time
+
 	BalanceCost         float64
 	SubscriptionCost    float64
 	APIKeyQuotaCost     float64
@@ -56,7 +78,7 @@ func buildUsageBillingFingerprint(c *UsageBillingCommand) string {
 		return ""
 	}
 	raw := fmt.Sprintf(
-		"%d|%d|%d|%s|%s|%s|%s|%d|%d|%d|%d|%d|%d|%s|%d|%0.10f|%0.10f|%0.10f|%0.10f|%0.10f",
+		"%d|%d|%d|%s|%s|%s|%s|%d|%d|%d|%d|%d|%d|%s|%d|%d|%s|%t|%0.10f|%0.10f|%0.10f|%0.10f|%0.10f|%0.10f|%0.10f|%0.10f",
 		c.UserID,
 		c.AccountID,
 		c.APIKeyID,
@@ -72,6 +94,12 @@ func buildUsageBillingFingerprint(c *UsageBillingCommand) string {
 		c.ImageCount,
 		strings.TrimSpace(c.MediaType),
 		valueOrZero(c.SubscriptionID),
+		valueOrZero(c.GroupID),
+		strings.TrimSpace(c.Platform),
+		c.IsSubscriptionBilling,
+		c.ActualCost,
+		c.TotalCost,
+		c.PlatformQuotaCost,
 		c.BalanceCost,
 		c.SubscriptionCost,
 		c.APIKeyQuotaCost,
@@ -112,11 +140,37 @@ type AccountQuotaState struct {
 }
 
 type UsageBillingApplyResult struct {
-	Applied              bool
-	APIKeyQuotaExhausted bool
-	NewBalance           *float64           // post-deduction balance (nil = no balance deduction)
-	BalanceOverdrafted   bool               // true when the sufficient-balance guard missed and debt was still recorded
-	QuotaState           *AccountQuotaState // post-increment quota state (nil = no quota increment)
+	Applied          bool
+	UsageLogRecorded bool // true when billing and usage_log were committed atomically
+	// ProjectionRepairRequired marks a legacy recovery where an earlier
+	// process committed the billing dedup/effects but died before recording
+	// usage or completing cache post-effects. Recovery must replay only the
+	// idempotent projections; it must not send notifications again.
+	ProjectionRepairRequired bool
+	APIKeyQuotaExhausted     bool
+	NewBalance               *float64           // post-deduction balance (nil = no balance deduction)
+	BalanceOverdrafted       bool               // true when the sufficient-balance guard missed and debt was still recorded
+	QuotaState               *AccountQuotaState // post-increment quota state (nil = no quota increment)
+	OutboxReceipt            *UsageBillingOutboxReceipt
+}
+
+type UsageBillingOutboxReceipt struct {
+	ID       int64
+	WorkerID string
+}
+
+// UsageBillingOutboxEvent is one durably persisted billing intent claimed by a
+// recovery worker. Command and UsageLog are immutable snapshots captured after
+// the upstream request succeeded.
+type UsageBillingOutboxEvent struct {
+	ID                     int64
+	Attempts               int
+	Stage                  int8
+	Command                *UsageBillingCommand
+	UsageLog               *UsageLog
+	Result                 *UsageBillingApplyResult
+	PayloadValidationError string
+	CreatedAt              time.Time
 }
 
 // BatchImageBalanceHoldCommand describes an idempotent balance hold operation.
@@ -172,4 +226,25 @@ type UsageBillingRepository interface {
 	ReserveBatchImageBalance(ctx context.Context, cmd *BatchImageBalanceHoldCommand) (*BatchImageBalanceHoldResult, error)
 	CaptureBatchImageBalance(ctx context.Context, cmd *BatchImageBalanceHoldCommand) (*BatchImageBalanceHoldResult, error)
 	ReleaseBatchImageBalance(ctx context.Context, cmd *BatchImageBalanceHoldCommand) (*BatchImageBalanceHoldResult, error)
+}
+
+// DurableUsageBillingRepository extends UsageBillingRepository with a
+// transactional usage-log write and a leased recovery queue. Production
+// repositories implement this interface; lightweight test stubs may keep using
+// UsageBillingRepository and exercise the legacy fallback path.
+type DurableUsageBillingRepository interface {
+	UsageBillingRepository
+
+	// ApplyAndRecord first persists an immutable outbox intent, then attempts to
+	// apply billing effects and insert the usage log in one transaction. When
+	// the second step fails, the returned error is non-nil and the outbox row is
+	// retained for recovery.
+	ApplyAndRecord(ctx context.Context, cmd *UsageBillingCommand, usageLog *UsageLog) (*UsageBillingApplyResult, error)
+
+	ClaimUsageBillingOutbox(ctx context.Context, workerID string, limit int, lease time.Duration) ([]UsageBillingOutboxEvent, error)
+	UpdateUsageBillingOutboxCommand(ctx context.Context, workerID string, eventID int64, cmd *UsageBillingCommand) error
+	CompleteUsageBillingOutbox(ctx context.Context, workerID string, event UsageBillingOutboxEvent) (*UsageBillingApplyResult, error)
+	AcknowledgeUsageBillingOutbox(ctx context.Context, workerID string, eventID int64) error
+	QuarantineUsageBillingOutbox(ctx context.Context, workerID string, eventID int64, reason string) error
+	RetryUsageBillingOutbox(ctx context.Context, workerID string, eventID int64, availableAt time.Time, lastError string) error
 }

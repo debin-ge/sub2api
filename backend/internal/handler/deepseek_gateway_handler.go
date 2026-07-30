@@ -27,6 +27,7 @@ type deepseekMessagesForwarder interface {
 }
 
 type deepseekGatewayService interface {
+	specializedGatewayChannelMapper
 	GenerateSessionHash(parsed *service.ParsedRequest) string
 	SelectAccountWithLoadAwareness(ctx context.Context, groupID *int64, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}, metadataUserID string, sub2apiUserID int64) (*service.AccountSelectionResult, error)
 	RecordUsage(ctx context.Context, input *service.RecordUsageInput) error
@@ -157,6 +158,9 @@ func (h *DeepSeekGatewayHandler) Messages(c *gin.Context) {
 		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "deepseek gateway service unavailable")
 		return
 	}
+	channelMapping, forwardBody := resolveSpecializedGatewayChannelMapping(
+		c.Request.Context(), h.gatewayService, apiKey.GroupID, reqModel, body,
+	)
 
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
 	streamStarted := false
@@ -233,7 +237,7 @@ func (h *DeepSeekGatewayHandler) Messages(c *gin.Context) {
 		}
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
-		result, err := h.deepseekService.ForwardMessages(c.Request.Context(), c, account, body, deepseekRequestID(c))
+		result, err := h.deepseekService.ForwardMessages(c.Request.Context(), c, account, forwardBody, deepseekRequestID(c))
 		releaseOnce()
 		if err != nil {
 			if c.Writer.Written() || streamStarted {
@@ -273,6 +277,7 @@ func (h *DeepSeekGatewayHandler) Messages(c *gin.Context) {
 		inboundEndpoint := GetInboundEndpoint(c)
 		upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
 		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
+		channelUsageFields := clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel)
 
 		h.submitUsageRecordTask(func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
@@ -288,6 +293,7 @@ func (h *DeepSeekGatewayHandler) Messages(c *gin.Context) {
 				IPAddress:          clientIP,
 				RequestPayloadHash: requestPayloadHash,
 				APIKeyService:      h.apiKeyService,
+				ChannelUsageFields: channelUsageFields,
 			}); err != nil {
 				logger.L().With(
 					zap.String("component", "handler.deepseek_gateway.messages"),
@@ -366,6 +372,9 @@ func (h *DeepSeekGatewayHandler) ChatCompletions(c *gin.Context) {
 		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "deepseek gateway service unavailable")
 		return
 	}
+	channelMapping, forwardBody := resolveSpecializedGatewayChannelMapping(
+		c.Request.Context(), h.gatewayService, apiKey.GroupID, reqModel, body,
+	)
 
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
 	streamStarted := false
@@ -442,7 +451,7 @@ func (h *DeepSeekGatewayHandler) ChatCompletions(c *gin.Context) {
 		}
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
-		result, err := h.deepseekService.ForwardChatCompletions(c.Request.Context(), c, account, body, deepseekRequestID(c))
+		result, err := h.deepseekService.ForwardChatCompletions(c.Request.Context(), c, account, forwardBody, deepseekRequestID(c))
 		releaseOnce()
 		if err != nil {
 			if c.Writer.Written() || streamStarted {
@@ -482,6 +491,7 @@ func (h *DeepSeekGatewayHandler) ChatCompletions(c *gin.Context) {
 		inboundEndpoint := GetInboundEndpoint(c)
 		upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
 		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
+		channelUsageFields := clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel)
 
 		h.submitUsageRecordTask(func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
@@ -497,6 +507,7 @@ func (h *DeepSeekGatewayHandler) ChatCompletions(c *gin.Context) {
 				IPAddress:          clientIP,
 				RequestPayloadHash: requestPayloadHash,
 				APIKeyService:      h.apiKeyService,
+				ChannelUsageFields: channelUsageFields,
 			}); err != nil {
 				logger.L().With(
 					zap.String("component", "handler.deepseek_gateway.chat_completions"),
@@ -589,6 +600,9 @@ func (h *DeepSeekGatewayHandler) Responses(c *gin.Context) {
 		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "deepseek gateway service unavailable")
 		return
 	}
+	channelMapping, forwardBody := resolveSpecializedGatewayChannelMapping(
+		c.Request.Context(), h.gatewayService, apiKey.GroupID, reqModel, body,
+	)
 
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
 	streamStarted := false
@@ -665,7 +679,7 @@ func (h *DeepSeekGatewayHandler) Responses(c *gin.Context) {
 		}
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
-		result, err := h.deepseekService.ForwardResponses(c.Request.Context(), c, account, body, deepseekRequestID(c))
+		result, err := h.deepseekService.ForwardResponses(c.Request.Context(), c, account, forwardBody, deepseekRequestID(c))
 		releaseOnce()
 		if err != nil {
 			if c.Writer.Written() || streamStarted {
@@ -705,6 +719,7 @@ func (h *DeepSeekGatewayHandler) Responses(c *gin.Context) {
 		inboundEndpoint := GetInboundEndpoint(c)
 		upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
 		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
+		channelUsageFields := clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel)
 
 		h.submitUsageRecordTask(func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
@@ -720,6 +735,7 @@ func (h *DeepSeekGatewayHandler) Responses(c *gin.Context) {
 				IPAddress:          clientIP,
 				RequestPayloadHash: requestPayloadHash,
 				APIKeyService:      h.apiKeyService,
+				ChannelUsageFields: channelUsageFields,
 			}); err != nil {
 				logger.L().With(
 					zap.String("component", "handler.deepseek_gateway.responses"),
@@ -847,24 +863,12 @@ func (h *DeepSeekGatewayHandler) errorResponse(c *gin.Context, status int, errTy
 }
 
 func (h *DeepSeekGatewayHandler) submitUsageRecordTask(task service.UsageRecordTask) {
-	if task == nil {
-		return
-	}
-	if h.usageRecordWorkerPool != nil {
-		h.usageRecordWorkerPool.Submit(task)
-		return
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	defer func() {
-		if recovered := recover(); recovered != nil {
-			logger.L().With(
-				zap.String("component", "handler.deepseek_gateway.messages"),
-				zap.Any("panic", recovered),
-			).Error("deepseek_gateway.usage_record_task_panic_recovered")
-		}
-	}()
-	task(ctx)
+	submitUsageRecordTaskWithFallback(
+		context.Background(),
+		h.usageRecordWorkerPool,
+		"handler.deepseek_gateway.messages",
+		task,
+	)
 }
 
 func deepseekRequestID(c *gin.Context) string {

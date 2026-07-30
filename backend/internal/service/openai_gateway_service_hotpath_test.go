@@ -47,6 +47,47 @@ func TestOpenAIRequestView_KeepsFirstDuplicateField(t *testing.T) {
 	require.Equal(t, "low", view.ReasoningEffort)
 }
 
+func TestOpenAIGatewayServiceForwardRejectsDuplicateBillingModelsBeforeUpstream(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"id":"must_not_be_called"}`)),
+	}}
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	svc := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream}
+	account := &Account{
+		ID:          404,
+		Name:        "duplicate-model-test",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "sk-test",
+			"base_url": "https://example.com",
+		},
+		Extra: map[string]any{"use_responses_api": true},
+	}
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+	SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
+
+	result, err := svc.Forward(
+		context.Background(),
+		c,
+		account,
+		[]byte(`{"model":"gpt-5.4","model":"gpt-future-unpriced-v99","input":"hello"}`),
+	)
+
+	require.ErrorIs(t, err, ErrModelPricingUnavailable)
+	require.Contains(t, err.Error(), `duplicate top-level "model"`)
+	require.Nil(t, result)
+	require.Equal(t, http.StatusBadRequest, recorder.Code)
+	require.Empty(t, upstream.requests)
+}
+
 func TestOpenAIRequestView_KeepsLenientPrefixExtraction(t *testing.T) {
 	view := newOpenAIRequestView([]byte(`{"model":"gpt-5","stream":true,"input":[`))
 
@@ -157,7 +198,15 @@ func TestOpenAIGatewayService_Forward_DecodedMutationKeepsLaterFieldDeletes(t *t
 	}
 	cfg := &config.Config{}
 	cfg.Security.URLAllowlist.Enabled = false
-	svc := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream}
+	svc := &OpenAIGatewayService{
+		cfg:          cfg,
+		httpUpstream: upstream,
+		billingService: NewBillingService(cfg, &PricingService{
+			pricingData: map[string]*ModelPriceEntry{
+				"gpt-image-2": {OutputCostPerImage: 0.04},
+			},
+		}),
+	}
 	account := &Account{
 		ID:          2,
 		Name:        "openai-apikey",
@@ -482,7 +531,15 @@ func TestOpenAIGatewayService_Forward_ImageToolBillingDoesNotForceFullDecode(t *
 	}
 	cfg := &config.Config{}
 	cfg.Security.URLAllowlist.Enabled = false
-	svc := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream}
+	svc := &OpenAIGatewayService{
+		cfg:          cfg,
+		httpUpstream: upstream,
+		billingService: NewBillingService(cfg, &PricingService{
+			pricingData: map[string]*ModelPriceEntry{
+				"gpt-image-2": {OutputCostPerImage: 0.04},
+			},
+		}),
+	}
 	account := &Account{
 		ID:          9,
 		Name:        "openai-apikey",
@@ -521,7 +578,11 @@ func TestOpenAIGatewayService_Forward_ImageToolWithImageOnlyModelIsNormalized(t 
 	}
 	cfg := &config.Config{}
 	cfg.Security.URLAllowlist.Enabled = false
-	svc := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream}
+	svc := &OpenAIGatewayService{
+		cfg:            cfg,
+		httpUpstream:   upstream,
+		billingService: newOpenAIImageCatalogBillingServiceForTest(cfg),
+	}
 	account := &Account{
 		ID:          11,
 		Name:        "openai-apikey",
@@ -645,7 +706,11 @@ func TestOpenAIGatewayService_Forward_CodexBridgeInjectionSetsImageBilling(t *te
 	cfg.Security.URLAllowlist.Enabled = false
 	cfg.Gateway.ForceCodexCLI = true
 	cfg.Gateway.CodexImageGenerationBridgeEnabled = true
-	svc := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream}
+	svc := &OpenAIGatewayService{
+		cfg:            cfg,
+		httpUpstream:   upstream,
+		billingService: newOpenAIImageCatalogBillingServiceForTest(cfg),
+	}
 	account := &Account{
 		ID:          7,
 		Name:        "openai-apikey",
@@ -784,7 +849,11 @@ func TestOpenAIGatewayService_Forward_ImageOnlyModelKeepsSupportedVerbosity(t *t
 	}
 	cfg := &config.Config{}
 	cfg.Security.URLAllowlist.Enabled = false
-	svc := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream}
+	svc := &OpenAIGatewayService{
+		cfg:            cfg,
+		httpUpstream:   upstream,
+		billingService: newOpenAIImageCatalogBillingServiceForTest(cfg),
+	}
 	account := &Account{
 		ID:          6,
 		Name:        "openai-apikey",

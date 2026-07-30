@@ -810,6 +810,8 @@ var ProviderSet = wire.NewSet(
 	NewVIPEntitlementService,
 	ProvideVIPReconcileService,
 	ProvideAuthCacheInvalidationWorker,
+	NewUsageBillingPostEffectsService,
+	ProvideUsageBillingOutboxWorker,
 	NewGroupService,
 	NewCompositeRouteResolver,
 	NewAccountService,
@@ -939,6 +941,7 @@ var ProviderSet = wire.NewSet(
 	ProvidePaymentService,
 	ProvideVIPIncrementalReconcileService,
 	ProvidePaymentOrderExpiryService,
+	ProvideBillingRecoveryService,
 	ProvideBalanceNotifyService,
 	ProvideChannelMonitorService,
 	ProvideChannelMonitorRunner,
@@ -1015,6 +1018,26 @@ func ProvideVIPIncrementalReconcileService(
 		return nil, fmt.Errorf("start VIP incremental reconcile service: %w", err)
 	}
 	return svc, nil
+}
+
+// ProvideBillingRecoveryService 创建并启动待结算用量的补偿任务。
+// 档位由 pricing.recovery_mode 控制，off 档下 Start 不会起协程。
+func ProvideBillingRecoveryService(
+	cfg *config.Config,
+	usageLogRepo BillingRecoveryUsageLogRepository,
+	apiKeyRepo APIKeyRepository,
+	billingService *BillingService,
+	channelService *ChannelService,
+	resolver *ModelPricingResolver,
+	dashboardAgg *DashboardAggregationService,
+	lockCache LeaderLockCache,
+	db *sql.DB,
+) *BillingRecoveryService {
+	svc := NewBillingRecoveryService(cfg, usageLogRepo, apiKeyRepo, billingService, channelService, resolver)
+	svc.SetAggregationRefresher(dashboardAgg)
+	svc.SetLeaderLock(lockCache, db)
+	svc.Start()
+	return svc
 }
 
 // ProvidePaymentOrderExpiryService creates and starts PaymentOrderExpiryService.

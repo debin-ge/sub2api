@@ -68,7 +68,6 @@ func TestRegisterRoutesWiresSixUnauthenticatedRadarGETs(t *testing.T) {
 		router,
 		&handler.Handlers{Radar: radarHandler, Admin: &handler.AdminHandlers{}},
 		middleware2.JWTAuthMiddleware(reject(&jwtCalls)),
-		nil,
 		middleware2.AdminAuthMiddleware(reject(&adminCalls)),
 		middleware2.APIKeyAuthMiddleware(reject(&apiKeyCalls)),
 		nil,

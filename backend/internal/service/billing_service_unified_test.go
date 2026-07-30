@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"math"
 	"testing"
 	"time"
 
@@ -230,8 +231,9 @@ func TestCalculateCostUnified_UsesPreResolvedPricing(t *testing.T) {
 
 	// Pre-resolve with per_request mode to verify it's used instead of re-resolving
 	preResolved := &ResolvedPricing{
-		Mode:                   BillingModePerRequest,
-		DefaultPerRequestPrice: 0.07,
+		Mode:                      BillingModePerRequest,
+		DefaultPerRequestPrice:    0.07,
+		DefaultPerRequestPriceSet: true,
 	}
 
 	cost, err := bs.CalculateCostUnified(CostInput{
@@ -249,6 +251,139 @@ func TestCalculateCostUnified_UsesPreResolvedPricing(t *testing.T) {
 	// 2 * $0.07 = $0.14
 	require.InDelta(t, 0.14, cost.TotalCost, 1e-10)
 	require.Equal(t, string(BillingModePerRequest), cost.BillingMode)
+}
+
+func TestCalculateCostUnified_PerRequestTierMissFailsClosed(t *testing.T) {
+	bs := newTestBillingService()
+	resolver := NewModelPricingResolver(nil, bs)
+	resolved := &ResolvedPricing{
+		Mode: BillingModeImage,
+		RequestTiers: []PricingInterval{{
+			TierLabel:       "1K",
+			PerRequestPrice: testPtrFloat64(0.04),
+		}},
+	}
+
+	cost, err := bs.CalculateCostUnified(CostInput{
+		Model:          "unknown-image-model",
+		RequestCount:   1,
+		SizeTier:       "4K",
+		RateMultiplier: 1,
+		Resolver:       resolver,
+		Resolved:       resolved,
+	})
+	require.Nil(t, cost)
+	require.ErrorIs(t, err, ErrModelPricingUnavailable)
+}
+
+func TestCalculateCostUnified_PerRequestContextTierMissFailsClosed(t *testing.T) {
+	bs := newTestBillingService()
+	resolver := NewModelPricingResolver(nil, bs)
+	maxTokens := 100
+	resolved := &ResolvedPricing{
+		Mode: BillingModePerRequest,
+		RequestTiers: []PricingInterval{{
+			MinTokens:       0,
+			MaxTokens:       &maxTokens,
+			PerRequestPrice: testPtrFloat64(0.04),
+		}},
+	}
+
+	_, err := bs.CalculateCostUnified(CostInput{
+		Model:          "unknown-request-model",
+		Tokens:         UsageTokens{InputTokens: 101},
+		RequestCount:   1,
+		RateMultiplier: 1,
+		Resolver:       resolver,
+		Resolved:       resolved,
+	})
+	require.ErrorIs(t, err, ErrModelPricingUnavailable)
+}
+
+func TestCalculateCostUnified_PerRequestExplicitZeroRemainsFree(t *testing.T) {
+	bs := newTestBillingService()
+	resolver := NewModelPricingResolver(nil, bs)
+	zero := 0.0
+	resolved := &ResolvedPricing{
+		Mode: BillingModeImage,
+		RequestTiers: []PricingInterval{{
+			TierLabel:       "1K",
+			PerRequestPrice: &zero,
+		}},
+		DefaultPerRequestPrice:    0.10,
+		DefaultPerRequestPriceSet: true,
+	}
+
+	cost, err := bs.CalculateCostUnified(CostInput{
+		Model:          "explicitly-free-image-model",
+		RequestCount:   1,
+		SizeTier:       "1K",
+		RateMultiplier: 1,
+		Resolver:       resolver,
+		Resolved:       resolved,
+	})
+	require.NoError(t, err)
+	require.Zero(t, cost.TotalCost)
+}
+
+func TestCalculateCostUnified_PerRequestExplicitZeroDefaultRemainsFree(t *testing.T) {
+	bs := newTestBillingService()
+	resolver := NewModelPricingResolver(nil, bs)
+	resolved := &ResolvedPricing{
+		Mode:                      BillingModeImage,
+		DefaultPerRequestPrice:    0,
+		DefaultPerRequestPriceSet: true,
+	}
+
+	cost, err := bs.CalculateCostUnified(CostInput{
+		Model:          "explicitly-free-image-model",
+		RequestCount:   1,
+		SizeTier:       "4K",
+		RateMultiplier: 1,
+		Resolver:       resolver,
+		Resolved:       resolved,
+	})
+	require.NoError(t, err)
+	require.Zero(t, cost.TotalCost)
+}
+
+func TestCalculateCostUnified_RejectsInvalidStoredPrices(t *testing.T) {
+	bs := newTestBillingService()
+	resolver := NewModelPricingResolver(nil, bs)
+
+	t.Run("negative token override", func(t *testing.T) {
+		cost, err := bs.CalculateCostUnified(CostInput{
+			Model:          "known-model-with-dirty-override",
+			Tokens:         UsageTokens{InputTokens: 1},
+			RateMultiplier: 1,
+			Resolver:       resolver,
+			Resolved: &ResolvedPricing{
+				Mode: BillingModeToken,
+				BasePricing: &ModelPricing{
+					InputPricePerToken:  -1,
+					OutputPricePerToken: 1,
+				},
+			},
+		})
+		require.Nil(t, cost)
+		require.ErrorIs(t, err, ErrModelPricingUnavailable)
+	})
+
+	t.Run("non-finite per-request price", func(t *testing.T) {
+		cost, err := bs.CalculateCostUnified(CostInput{
+			Model:          "known-media-model-with-dirty-override",
+			RequestCount:   1,
+			RateMultiplier: 1,
+			Resolver:       resolver,
+			Resolved: &ResolvedPricing{
+				Mode:                      BillingModeImage,
+				DefaultPerRequestPrice:    math.Inf(1),
+				DefaultPerRequestPriceSet: true,
+			},
+		})
+		require.Nil(t, cost)
+		require.ErrorIs(t, err, ErrModelPricingUnavailable)
+	})
 }
 
 // ---------------------------------------------------------------------------

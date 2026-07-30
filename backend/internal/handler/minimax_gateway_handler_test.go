@@ -99,6 +99,10 @@ type fakeMiniMaxGatewayService struct {
 	selectedUserID int64
 }
 
+func (f *fakeMiniMaxGatewayService) ResolveRequestChannelMapping(_ context.Context, _ *int64, model string) service.ChannelMappingResult {
+	return service.ChannelMappingResult{MappedModel: model}
+}
+
 func (f *fakeMiniMaxGatewayService) GenerateSessionHash(parsed *service.ParsedRequest) string {
 	if f.sessionHash != "" {
 		return f.sessionHash

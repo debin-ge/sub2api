@@ -58,6 +58,129 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_JSON(t *testing.T) {
 	require.False(t, parsed.Multipart)
 }
 
+func TestOpenAIGatewayServiceParseOpenAIImagesRequest_JSONBillingFieldsMustBeUnique(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name    string
+		body    string
+		wantErr string
+	}{
+		{
+			name:    "duplicate model",
+			body:    `{"model":"gpt-image-1.5","model":"gpt-image-2","size":"1024x1024","n":1}`,
+			wantErr: "duplicate top-level model fields are not allowed",
+		},
+		{
+			name:    "duplicate size",
+			body:    `{"model":"gpt-image-2","size":"1024x1024","size":"3840x2160","n":1}`,
+			wantErr: "duplicate top-level size fields are not allowed",
+		},
+		{
+			name:    "duplicate count",
+			body:    `{"model":"gpt-image-2","size":"1024x1024","n":1,"n":4}`,
+			wantErr: "duplicate top-level n fields are not allowed",
+		},
+		{
+			name:    "escaped duplicate size",
+			body:    `{"model":"gpt-image-2","s\u0069ze":"1024x1024","size":"3840x2160","n":1}`,
+			wantErr: "duplicate top-level size fields are not allowed",
+		},
+		{
+			name:    "null then valid count",
+			body:    `{"model":"gpt-image-2","size":"1024x1024","n":null,"n":4}`,
+			wantErr: "duplicate top-level n fields are not allowed",
+		},
+		{
+			name:    "valid then null count",
+			body:    `{"model":"gpt-image-2","size":"1024x1024","n":4,"n":null}`,
+			wantErr: "duplicate top-level n fields are not allowed",
+		},
+		{
+			name:    "null character in model",
+			body:    `{"model":"gpt-image-2\u0000unknown","size":"1024x1024","n":1}`,
+			wantErr: "model must not contain null characters",
+		},
+		{
+			name:    "non-string size",
+			body:    `{"model":"gpt-image-2","size":2048,"n":1}`,
+			wantErr: "invalid size field type",
+		},
+		{
+			name:    "unknown size",
+			body:    `{"model":"gpt-image-2","size":"cinema","n":1}`,
+			wantErr: "no billing tier is configured",
+		},
+		{
+			name: "unique billing fields",
+			body: `{"model":"gpt-image-2","size":"1536x1024","n":2}`,
+		},
+	}
+
+	svc := &OpenAIGatewayService{}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := []byte(tt.body)
+			req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = req
+
+			parsed, err := svc.ParseOpenAIImagesRequest(c, body)
+			if tt.wantErr != "" {
+				require.Nil(t, parsed)
+				require.ErrorContains(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, parsed)
+			require.Equal(t, "gpt-image-2", parsed.Model)
+			require.Equal(t, "1536x1024", parsed.Size)
+			require.Equal(t, 2, parsed.N)
+		})
+	}
+}
+
+func TestOpenAIGatewayServiceParseOpenAIImagesRequest_CountMustBePersistableInteger(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name    string
+		body    string
+		wantN   int
+		wantErr string
+	}{
+		{name: "positive integer", body: `{"model":"gpt-image-2","n":3}`, wantN: 3},
+		{name: "zero", body: `{"model":"gpt-image-2","n":0}`, wantErr: "n must be a positive 32-bit integer"},
+		{name: "negative", body: `{"model":"gpt-image-2","n":-1}`, wantErr: "n must be a positive 32-bit integer"},
+		{name: "fractional", body: `{"model":"gpt-image-2","n":1.5}`, wantErr: "n must be a positive 32-bit integer"},
+		{name: "exponent", body: `{"model":"gpt-image-2","n":1e2}`, wantErr: "n must be a positive 32-bit integer"},
+		{name: "integer overflow", body: `{"model":"gpt-image-2","n":2147483648}`, wantErr: "n must be a positive 32-bit integer"},
+	}
+
+	svc := &OpenAIGatewayService{}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := []byte(tt.body)
+			req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = req
+
+			parsed, err := svc.ParseOpenAIImagesRequest(c, body)
+			if tt.wantErr != "" {
+				require.Nil(t, parsed)
+				require.ErrorContains(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.wantN, parsed.N)
+		})
+	}
+}
+
 func TestOpenAIGatewayServiceParseOpenAIImagesRequest_MultipartEdit(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -90,6 +213,130 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_MultipartEdit(t *testing.T
 	require.Equal(t, "2K", parsed.SizeTier)
 	require.Len(t, parsed.Uploads, 1)
 	require.Equal(t, OpenAIImagesCapabilityNative, parsed.RequiredCapability)
+}
+
+func TestOpenAIGatewayServiceParseOpenAIImagesRequest_MultipartBillingFieldsMustBeUnique(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name       string
+		fields     [][2]string
+		wantErr    string
+		wantModel  string
+		wantSize   string
+		wantN      int
+		wantSizeTy string
+	}{
+		{
+			name: "duplicate model",
+			fields: [][2]string{
+				{"model", "gpt-image-1.5"},
+				{"model", "gpt-image-2"},
+				{"size", "1024x1024"},
+			},
+			wantErr: "duplicate multipart model fields are not allowed",
+		},
+		{
+			name: "duplicate size",
+			fields: [][2]string{
+				{"model", "gpt-image-2"},
+				{"size", "1024x1024"},
+				{"size", "3840x2160"},
+			},
+			wantErr: "duplicate multipart size fields are not allowed",
+		},
+		{
+			name: "duplicate count",
+			fields: [][2]string{
+				{"model", "gpt-image-2"},
+				{"size", "1024x1024"},
+				{"n", "1"},
+				{"n", "4"},
+			},
+			wantErr: "duplicate multipart n fields are not allowed",
+		},
+		{
+			name: "unknown size",
+			fields: [][2]string{
+				{"model", "gpt-image-2"},
+				{"size", "cinema"},
+			},
+			wantErr: "no billing tier is configured",
+		},
+		{
+			name: "single billing fields",
+			fields: [][2]string{
+				{"model", "gpt-image-2"},
+				{"size", "1536x1024"},
+				{"n", "2"},
+				{"prompt", "draw two cats"},
+			},
+			wantModel:  "gpt-image-2",
+			wantSize:   "1536x1024",
+			wantN:      2,
+			wantSizeTy: "2K",
+		},
+	}
+
+	svc := &OpenAIGatewayService{}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var body bytes.Buffer
+			writer := multipart.NewWriter(&body)
+			for _, field := range tt.fields {
+				require.NoError(t, writer.WriteField(field[0], field[1]))
+			}
+			require.NoError(t, writer.Close())
+
+			req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body.Bytes()))
+			req.Header.Set("Content-Type", writer.FormDataContentType())
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = req
+
+			parsed, err := svc.ParseOpenAIImagesRequest(c, body.Bytes())
+			if tt.wantErr != "" {
+				require.Nil(t, parsed)
+				require.ErrorContains(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, parsed)
+			require.Equal(t, tt.wantModel, parsed.Model)
+			require.Equal(t, tt.wantSize, parsed.Size)
+			require.Equal(t, tt.wantN, parsed.N)
+			require.Equal(t, tt.wantSizeTy, parsed.SizeTier)
+		})
+	}
+}
+
+func TestOpenAIGatewayServiceParseOpenAIImagesRequest_RejectsMultipartBillingFieldAsFile(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	for _, field := range []string{"model", "size", "n"} {
+		t.Run(field, func(t *testing.T) {
+			var body bytes.Buffer
+			writer := multipart.NewWriter(&body)
+			if field != "model" {
+				require.NoError(t, writer.WriteField("model", "gpt-image-2"))
+			}
+			part, err := writer.CreateFormFile(field, field+".txt")
+			require.NoError(t, err)
+			_, err = part.Write([]byte("1024x1024"))
+			require.NoError(t, err)
+			require.NoError(t, writer.Close())
+
+			req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body.Bytes()))
+			req.Header.Set("Content-Type", writer.FormDataContentType())
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = req
+
+			parsed, err := (&OpenAIGatewayService{}).ParseOpenAIImagesRequest(c, body.Bytes())
+			require.Nil(t, parsed)
+			require.ErrorContains(t, err, "multipart "+field+" field must be text")
+		})
+	}
 }
 
 func TestOpenAIImagesRequestModerationBody_JSONEditIncludesInputImageURLs(t *testing.T) {
@@ -178,7 +425,7 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_NormalizesOfficialAndCusto
 	}
 }
 
-func TestOpenAIGatewayServiceParseOpenAIImagesRequest_UnknownSizesDoNotBlockPassthrough(t *testing.T) {
+func TestOpenAIGatewayServiceParseOpenAIImagesRequest_CustomDimensionsUseDeterministicTiers(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	tests := []struct {
@@ -189,8 +436,6 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_UnknownSizesDoNotBlockPass
 		{size: "4096x1024", wantTier: "4K"},
 		{size: "3840x1024", wantTier: "4K"},
 		{size: "512x512", wantTier: "1K"},
-		{size: "invalid", wantTier: "2K"},
-		{size: "999999999999999999999999999x2", wantTier: "2K"},
 	}
 
 	svc := &OpenAIGatewayService{}
@@ -209,6 +454,26 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_UnknownSizesDoNotBlockPass
 			require.NotNil(t, parsed)
 			require.Equal(t, tt.size, parsed.Size)
 			require.Equal(t, tt.wantTier, parsed.SizeTier)
+		})
+	}
+}
+
+func TestOpenAIGatewayServiceParseOpenAIImagesRequest_RejectsUnclassifiableExplicitSize(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	svc := &OpenAIGatewayService{}
+	for _, size := range []string{"invalid", "999999999999999999999999999x2", "1x0", "2x-1"} {
+		t.Run(size, func(t *testing.T) {
+			body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","size":"` + size + `"}`)
+			req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = req
+
+			parsed, err := svc.ParseOpenAIImagesRequest(c, body)
+			require.Nil(t, parsed)
+			require.ErrorContains(t, err, "no billing tier is configured")
 		})
 	}
 }

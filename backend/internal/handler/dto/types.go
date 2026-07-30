@@ -591,6 +591,12 @@ type AdminUsageLog struct {
 	// IPAddress 用户请求 IP
 	IPAddress *string `json:"ip_address,omitempty"`
 
+	// BillingState 结算状态：0=已结算 1=定价缺失待处理 2=价格已恢复（未追扣）。
+	//
+	// 不用 omitempty：0 是绝大多数记录的取值，省掉它会让前端分不清"已结算"和
+	// "这个字段还没上线"。待结算看板要按它筛选，字段必须恒定存在。
+	BillingState int8 `json:"billing_state"`
+
 	// Account 最小账号信息（避免泄露敏感字段）
 	Account *AccountSummary `json:"account,omitempty"`
 }

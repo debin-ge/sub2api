@@ -476,8 +476,9 @@ func (r *usageLogRepository) GetUserDashboardStats(ctx context.Context, userID i
 	// 与 ops 路径口径一致；HAVING 过滤掉无法确定平台的行（避免出现空字符串平台）。
 	// 与上面 totalStatsQuery/todayStatsQuery 的总值可能略微差异，原因有二：
 	//   1) 无平台归属的极少数行（group/account 都没 platform）会被 HAVING 排除；
-	//   2) usageLogSuccessFilterUL 会把 actual_cost = 0 的失败 placeholder 行排除，
-	//      而 totalStatsQuery/todayStatsQuery 没有这层过滤、会把这些行的 request 计数算进去。
+	//   2) usageLogSuccessFilterUL 会把 actual_cost = 0 且 billing_state = 0 的失败
+	//      placeholder 行排除，而 totalStatsQuery/todayStatsQuery 没有这层过滤、会把这些行的
+	//      request 计数算进去。定价缺失/价格已恢复行已确认发生过上游用量，不会被排除。
 	platformQuery := `
 		SELECT
 			` + usageLogEffectivePlatformExpr + ` as platform,

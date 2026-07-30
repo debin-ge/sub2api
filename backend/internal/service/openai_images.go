@@ -209,6 +209,9 @@ func (s *OpenAIGatewayService) ParseOpenAIImagesRequest(c *gin.Context, body []b
 		if !gjson.ValidBytes(body) {
 			return nil, fmt.Errorf("failed to parse request body")
 		}
+		if err := validateUniqueOpenAIImagesBillingFields(body); err != nil {
+			return nil, err
+		}
 		if parseErr := parseOpenAIImagesJSONRequest(body, req); parseErr != nil {
 			return nil, parseErr
 		}
@@ -221,6 +224,35 @@ func (s *OpenAIGatewayService) ParseOpenAIImagesRequest(c *gin.Context, body []b
 	req.SizeTier = normalizeOpenAIImageSizeTier(req.Size)
 	req.RequiredCapability = classifyOpenAIImagesCapability(req)
 	return req, nil
+}
+
+// validateUniqueOpenAIImagesBillingFields rejects ambiguous JSON before
+// admission, routing, or forwarding. model and size select the price, while n
+// multiplies it; different JSON parsers choosing different duplicate values
+// must not let the upstream execute a more expensive request than we settle.
+func validateUniqueOpenAIImagesBillingFields(body []byte) error {
+	if len(body) == 0 || !gjson.ValidBytes(body) {
+		return nil
+	}
+	if err := ValidateUniqueBillingModelField(body); err != nil {
+		return err
+	}
+	counts := map[string]int{
+		"size": 0,
+		"n":    0,
+	}
+	parseRawJSONView(body).ForEach(func(key, _ gjson.Result) bool {
+		if _, ok := counts[key.Str]; ok {
+			counts[key.Str]++
+		}
+		return true
+	})
+	for _, field := range []string{"size", "n"} {
+		if counts[field] > 1 {
+			return fmt.Errorf("duplicate top-level %s fields are not allowed", field)
+		}
+	}
+	return nil
 }
 
 func parseOpenAIImagesJSONRequest(body []byte, req *OpenAIImagesRequest) error {
@@ -241,15 +273,22 @@ func parseOpenAIImagesJSONRequest(body []byte, req *OpenAIImagesRequest) error {
 		if nResult.Type != gjson.Number {
 			return fmt.Errorf("invalid n field type")
 		}
-		req.N = int(nResult.Int())
-		if req.N <= 0 {
-			return fmt.Errorf("n must be greater than 0")
+		n, err := parseOpenAIImagesCount(nResult.Raw)
+		if err != nil {
+			return err
 		}
+		req.N = n
 	}
 
 	if sizeResult := gjson.GetBytes(body, "size"); sizeResult.Exists() {
+		if sizeResult.Type != gjson.String {
+			return fmt.Errorf("invalid size field type")
+		}
 		req.Size = strings.TrimSpace(sizeResult.String())
 		req.ExplicitSize = req.Size != ""
+		if err := validateOpenAIImagesBillingSize(req.Size); err != nil {
+			return err
+		}
 	}
 	req.ResponseFormat = strings.ToLower(strings.TrimSpace(gjson.GetBytes(body, "response_format").String()))
 	req.Quality = strings.TrimSpace(gjson.GetBytes(body, "quality").String())
@@ -317,6 +356,7 @@ func parseOpenAIImagesMultipartRequest(body []byte, contentType string, req *Ope
 	}
 
 	reader := multipart.NewReader(bytes.NewReader(body), boundary)
+	billingFieldCounts := make(map[string]int, 3)
 	for {
 		part, err := reader.NextPart()
 		if err == io.EOF {
@@ -330,6 +370,13 @@ func parseOpenAIImagesMultipartRequest(body []byte, contentType string, req *Ope
 			_ = part.Close()
 			continue
 		}
+		if isOpenAIImagesMultipartBillingField(name) {
+			billingFieldCounts[name]++
+			if billingFieldCounts[name] > 1 {
+				_ = part.Close()
+				return fmt.Errorf("duplicate multipart %s fields are not allowed", name)
+			}
+		}
 
 		data, err := io.ReadAll(io.LimitReader(part, openAIImageMaxUploadPartSize))
 		_ = part.Close()
@@ -339,6 +386,9 @@ func parseOpenAIImagesMultipartRequest(body []byte, contentType string, req *Ope
 
 		fileName := strings.TrimSpace(part.FileName())
 		if fileName != "" {
+			if isOpenAIImagesMultipartBillingField(name) {
+				return fmt.Errorf("multipart %s field must be text", name)
+			}
 			partContentType := strings.TrimSpace(part.Header.Get("Content-Type"))
 			if name == "mask" && len(data) > 0 {
 				req.HasMask = true
@@ -377,6 +427,9 @@ func parseOpenAIImagesMultipartRequest(body []byte, contentType string, req *Ope
 		case "size":
 			req.Size = value
 			req.ExplicitSize = value != ""
+			if err := validateOpenAIImagesBillingSize(value); err != nil {
+				return err
+			}
 		case "response_format":
 			req.ResponseFormat = strings.ToLower(value)
 		case "stream":
@@ -386,9 +439,9 @@ func parseOpenAIImagesMultipartRequest(body []byte, contentType string, req *Ope
 			}
 			req.Stream = parsed
 		case "n":
-			n, err := strconv.Atoi(value)
-			if err != nil || n <= 0 {
-				return fmt.Errorf("n must be a positive integer")
+			n, err := parseOpenAIImagesCount(value)
+			if err != nil {
+				return err
 			}
 			req.N = n
 		case "quality":
@@ -434,6 +487,45 @@ func parseOpenAIImagesMultipartRequest(body []byte, contentType string, req *Ope
 		return fmt.Errorf("image file is required")
 	}
 	return nil
+}
+
+func parseOpenAIImagesCount(value string) (int, error) {
+	n, err := strconv.ParseInt(strings.TrimSpace(value), 10, 32)
+	if err != nil || n <= 0 {
+		return 0, fmt.Errorf("n must be a positive 32-bit integer")
+	}
+	return int(n), nil
+}
+
+// validateOpenAIImagesBillingSize distinguishes a deliberately unspecified
+// size (empty / auto, which uses the documented default tier) from an unknown
+// explicit size. The latter must not be coerced to 2K: doing so would let the
+// upstream execute a dimension for which settlement never established a
+// price.
+func validateOpenAIImagesBillingSize(value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" || strings.EqualFold(value, "auto") {
+		return nil
+	}
+	if strings.ContainsRune(value, '\x00') {
+		return fmt.Errorf("size must not contain null characters")
+	}
+	if _, ok := ClassifyImageBillingTier(value); !ok {
+		return fmt.Errorf("unsupported image size %q: no billing tier is configured", value)
+	}
+	return nil
+}
+
+// isOpenAIImagesMultipartBillingField identifies the single-value multipart
+// fields that select the image price or multiply the billed request count.
+// Repeated image file parts remain valid for multi-image edit requests.
+func isOpenAIImagesMultipartBillingField(name string) bool {
+	switch name {
+	case "model", "size", "n":
+		return true
+	default:
+		return false
+	}
 }
 
 func parseOpenAIImageDimensions(_ textproto.MIMEHeader) (int, int) {
@@ -589,6 +681,23 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 	if err := validateOpenAIImagesModel(upstreamModel); err != nil {
 		return nil, err
 	}
+	var groupID *int64
+	if apiKey := getAPIKeyFromContext(c); apiKey != nil {
+		groupID = apiKey.GroupID
+	}
+	if s.pricingGuardRequired || s.billingService != nil {
+		if err := s.enforceResolvedOpenAIMediaPricing(
+			ctx,
+			groupID,
+			account,
+			parsed.Model,
+			upstreamModel,
+			parsed.SizeTier,
+			BillingKindImage,
+		); err != nil {
+			return nil, err
+		}
+	}
 	logger.LegacyPrintf(
 		"service.openai_gateway",
 		"[OpenAI] Images request routing request_model=%s upstream_model=%s endpoint=%s account_type=%s",
@@ -674,6 +783,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 					RequestID:        resp.Header.Get("x-request-id"),
 					Usage:            streamUsage,
 					Model:            requestModel,
+					BillingModel:     upstreamModel,
 					UpstreamModel:    upstreamModel,
 					Stream:           parsed.Stream,
 					ResponseHeaders:  resp.Header.Clone(),
@@ -695,6 +805,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 			RequestID:        resp.Header.Get("x-request-id"),
 			Usage:            usage,
 			Model:            requestModel,
+			BillingModel:     upstreamModel,
 			UpstreamModel:    upstreamModel,
 			Stream:           parsed.Stream,
 			ResponseHeaders:  resp.Header.Clone(),
@@ -718,6 +829,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 			RequestID:        resp.Header.Get("x-request-id"),
 			Usage:            usage,
 			Model:            requestModel,
+			BillingModel:     upstreamModel,
 			UpstreamModel:    upstreamModel,
 			Stream:           parsed.Stream,
 			ResponseHeaders:  resp.Header.Clone(),

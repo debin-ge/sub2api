@@ -509,15 +509,53 @@ func TestAuthService_Register_EmailExists(t *testing.T) {
 	require.ErrorIs(t, err, ErrEmailExists)
 }
 
-func TestAuthService_Register_AliasFormRejectedBeforeDedup(t *testing.T) {
+func TestAuthService_Register_PlusAliasRejectedBeforeDedup(t *testing.T) {
 	repo := &userRepoStub{aliasExists: true}
 	service := newAuthService(repo, map[string]string{
 		SettingKeyRegistrationEnabled: "true",
 	}, nil, nil)
 
-	_, _, err := service.Register(context.Background(), "some.one+bulk294@gmail.com", "password")
+	_, _, err := service.Register(context.Background(), "someone+bulk294@gmail.com", "password")
 	require.ErrorIs(t, err, ErrEmailLocalPartInvalid)
+	appErr := infraerrors.FromError(err)
+	require.Equal(t, "EMAIL_LOCAL_PART_INVALID", appErr.Reason)
+	require.Contains(t, appErr.Message, "plus sign (+)")
+	require.NotContains(t, appErr.Message, "dot (.)")
 	require.Empty(t, repo.created)
+	require.Zero(t, repo.guardedCreates)
+}
+
+func TestAuthService_Register_DottedLocalPartAllowed(t *testing.T) {
+	for _, email := range []string{
+		"first.last@example.com",
+		"first.last@gmail.com",
+	} {
+		t.Run(email, func(t *testing.T) {
+			repo := &userRepoStub{nextID: 92}
+			service := newAuthService(repo, map[string]string{
+				SettingKeyRegistrationEnabled: "true",
+			}, nil, nil)
+
+			_, user, err := service.Register(context.Background(), email, "password")
+			require.NoError(t, err)
+			require.NotNil(t, user)
+			require.Equal(t, email, user.Email)
+			require.Equal(t, 1, repo.guardedCreates)
+			require.Len(t, repo.created, 1)
+		})
+	}
+}
+
+func TestAuthService_Register_GmailDotAliasRejectedByDedup(t *testing.T) {
+	repo := &userRepoStub{aliasExists: true}
+	service := newAuthService(repo, map[string]string{
+		SettingKeyRegistrationEnabled: "true",
+	}, nil, nil)
+
+	_, _, err := service.Register(context.Background(), "first.last@gmail.com", "password")
+	require.ErrorIs(t, err, ErrEmailExists)
+	require.Empty(t, repo.created)
+	require.Zero(t, repo.guardedCreates, "pre-create alias lookup should reject the duplicate")
 }
 
 func TestAuthService_Register_UsesAliasGuardedCreate(t *testing.T) {
@@ -607,6 +645,25 @@ func TestAuthService_SendVerifyCode_EmailSuffixNotAllowed(t *testing.T) {
 	appErr := infraerrors.FromError(err)
 	require.Equal(t, "EMAIL_SUFFIX_NOT_ALLOWED", appErr.Reason)
 	require.Empty(t, appErr.Metadata)
+}
+
+func TestAuthService_SendVerifyCodeAsync_DottedLocalPartAllowed(t *testing.T) {
+	repo := &userRepoStub{}
+	service := newAuthService(repo, map[string]string{
+		SettingKeyRegistrationEnabled: "true",
+	}, nil, nil)
+	taskChan := make(chan EmailTask, 1)
+	service.emailQueueService = &EmailQueueService{taskChan: taskChan}
+
+	result, err := service.SendVerifyCodeAsync(context.Background(), "first.last@example.com", "zh-CN")
+
+	require.NoError(t, err)
+	require.Equal(t, 60, result.Countdown)
+	require.Len(t, taskChan, 1)
+	task := <-taskChan
+	require.Equal(t, "first.last@example.com", task.Email)
+	require.Equal(t, TaskTypeVerifyCode, task.TaskType)
+	require.Equal(t, "zh-CN", task.Locale)
 }
 
 func TestAuthService_Register_CreateError(t *testing.T) {

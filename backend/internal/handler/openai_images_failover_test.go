@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -117,6 +118,19 @@ func TestOpenAIGatewayHandlerImages_ServerErrorFailsOverAndReturnsClearErrorWhen
 	accountRepo := openAIImagesFailoverAccountRepo{accounts: accounts}
 	upstream := &openAIImagesFailoverHTTPUpstream{}
 	cfg := &config.Config{RunMode: config.RunModeSimple}
+	imagePrice1K := 0.10
+	imagePrice2K := 0.15
+	imagePrice4K := 0.30
+	group := &service.Group{
+		ID:                   groupID,
+		Hydrated:             true,
+		Platform:             service.PlatformOpenAI,
+		Status:               service.StatusActive,
+		AllowImageGeneration: true,
+		ImagePrice1K:         &imagePrice1K,
+		ImagePrice2K:         &imagePrice2K,
+		ImagePrice4K:         &imagePrice4K,
+	}
 	gatewayService := service.NewOpenAIGatewayService(
 		accountRepo,
 		nil,
@@ -128,7 +142,7 @@ func TestOpenAIGatewayHandlerImages_ServerErrorFailsOverAndReturnsClearErrorWhen
 		cfg,
 		nil,
 		nil,
-		nil,
+		service.NewBillingService(cfg, nil),
 		nil,
 		nil,
 		upstream,
@@ -160,6 +174,7 @@ func TestOpenAIGatewayHandlerImages_ServerErrorFailsOverAndReturnsClearErrorWhen
 	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","quality":"high","size":"1536x1024"}`)
 	core, observedLogs := observer.New(zap.DebugLevel)
 	requestCtx := logger.IntoContext(context.Background(), zap.New(core))
+	requestCtx = context.WithValue(requestCtx, ctxkey.Group, group)
 	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body)).WithContext(requestCtx)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -168,11 +183,8 @@ func TestOpenAIGatewayHandlerImages_ServerErrorFailsOverAndReturnsClearErrorWhen
 	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
 		ID:      99,
 		GroupID: &groupID,
-		Group: &service.Group{
-			ID:                   groupID,
-			AllowImageGeneration: true,
-		},
-		User: &service.User{ID: 100},
+		Group:   group,
+		User:    &service.User{ID: 100},
 	})
 	c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 100, Concurrency: 0})
 

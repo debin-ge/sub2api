@@ -6,11 +6,109 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/stretchr/testify/require"
 )
+
+type fakeBatchImageUsageLogRepo struct {
+	UsageLogRepository
+	logs []*UsageLog
+	err  error
+}
+
+func (r *fakeBatchImageUsageLogRepo) Create(_ context.Context, log *UsageLog) (bool, error) {
+	if r.err != nil {
+		return false, r.err
+	}
+	r.logs = append(r.logs, log)
+	return true, nil
+}
+
+func TestBatchImageModelPricingResolver_RequiresStrictModelPrice(t *testing.T) {
+	pricingService := &PricingService{
+		pricingData: map[string]*ModelPriceEntry{
+			"gpt-image-2": {
+				InputCostPerToken:       0.000001,
+				OutputCostPerToken:      0.000002,
+				OutputCostPerImageToken: 0.25,
+			},
+			"gpt-image-free": {
+				InputCostPerToken:        0.000001,
+				OutputCostPerToken:       0.000002,
+				OutputCostPerImageToken:  0,
+				ImageOutputPriceExplicit: true,
+			},
+			"gpt-image-zero-unconfigured": {
+				InputCostPerToken:       0.000001,
+				OutputCostPerToken:      0.000002,
+				OutputCostPerImageToken: 0,
+			},
+			"gpt-image-nan": {
+				InputCostPerToken:        0.000001,
+				OutputCostPerToken:       0.000002,
+				OutputCostPerImageToken:  math.NaN(),
+				ImageOutputPriceExplicit: true,
+			},
+			"gpt-image-infinity": {
+				InputCostPerToken:        0.000001,
+				OutputCostPerToken:       0.000002,
+				OutputCostPerImageToken:  math.Inf(1),
+				ImageOutputPriceExplicit: true,
+			},
+		},
+	}
+	billingService := NewBillingService(&config.Config{}, pricingService)
+	resolver := &BatchImageModelPricingResolver{
+		Resolver: NewModelPricingResolver(nil, billingService),
+	}
+
+	unitPrice, err := resolver.BatchImageUnitPrice(
+		context.Background(),
+		&BatchImageJob{Model: "gpt-image-2"},
+	)
+	require.NoError(t, err)
+	require.InDelta(t, 0.25, unitPrice, 1e-12)
+
+	freeUnitPrice, err := resolver.BatchImageUnitPrice(
+		context.Background(),
+		&BatchImageJob{Model: "gpt-image-free"},
+	)
+	require.NoError(t, err)
+	require.Zero(t, freeUnitPrice)
+
+	for _, model := range []string{
+		"gpt-image-zero-unconfigured",
+		"gpt-image-nan",
+		"gpt-image-infinity",
+		"gpt-image-future-unpriced",
+	} {
+		_, err = resolver.BatchImageUnitPrice(
+			context.Background(),
+			&BatchImageJob{Model: model},
+		)
+		require.ErrorIs(t, err, ErrBatchImageSettlementPricingMissing, model)
+	}
+
+	resolverWithoutBilling := &BatchImageModelPricingResolver{
+		Resolver: &ModelPricingResolver{},
+	}
+	_, err = resolver.BatchImageUnitPrice(
+		context.Background(),
+		&BatchImageJob{Model: "gpt-image-2"},
+	)
+	require.NoError(t, err)
+	require.NotPanics(t, func() {
+		_, err = resolverWithoutBilling.BatchImageUnitPrice(
+			context.Background(),
+			&BatchImageJob{Model: "gpt-image-2"},
+		)
+	})
+	require.ErrorIs(t, err, ErrBatchImageSettlementPricingMissing)
+}
 
 func TestBatchImageSettlementService_SettlesAndChargesSuccessfulImagesOnly(t *testing.T) {
 	repo := newFakeBatchImageRepository()
@@ -21,7 +119,7 @@ func TestBatchImageSettlementService_SettlesAndChargesSuccessfulImagesOnly(t *te
 	job.SessionID = batchImageStringPtr("batch-settlement-session")
 	repo.jobs[job.BatchID] = job
 	billing := &fakeBatchImageBillingRepo{}
-	usageLogs := &openAIRecordUsageLogRepoStub{}
+	usageLogs := &fakeBatchImageUsageLogRepo{}
 	svc := &BatchImageSettlementService{
 		Repo: repo, BillingRepo: billing, Pricing: &fakeBatchImagePricingResolver{unitPrice: 0.25},
 		UsageLogRepo: usageLogs,
@@ -37,7 +135,8 @@ func TestBatchImageSettlementService_SettlesAndChargesSuccessfulImagesOnly(t *te
 	require.Equal(t, 0.75, *repo.jobs[job.BatchID].ActualCost)
 	require.NotEmpty(t, batchImageDerefString(repo.jobs[job.BatchID].ManifestHash))
 	require.NotNil(t, repo.jobs[job.BatchID].SettledAt)
-	require.Equal(t, "batch-settlement-session", batchImageDerefString(usageLogs.lastLog.SessionID))
+	require.Len(t, usageLogs.logs, 1)
+	require.Equal(t, "batch-settlement-session", batchImageDerefString(usageLogs.logs[0].SessionID))
 	require.Len(t, billing.captures, 1)
 	require.Equal(t, int64(321), billing.captures[0].APIKeyID)
 	require.Equal(t, job.UserID, billing.captures[0].UserID)
@@ -57,7 +156,10 @@ func TestBatchImageSettlementService_ZeroSuccessCanComplete(t *testing.T) {
 	job.ItemCount = 4
 	repo.jobs[job.BatchID] = job
 	billing := &fakeBatchImageBillingRepo{}
-	svc := &BatchImageSettlementService{Repo: repo, BillingRepo: billing, Pricing: &fakeBatchImagePricingResolver{unitPrice: 0.25}}
+	svc := &BatchImageSettlementService{
+		Repo: repo, BillingRepo: billing, UsageLogRepo: &fakeBatchImageUsageLogRepo{},
+		Pricing: &fakeBatchImagePricingResolver{unitPrice: 0.25},
+	}
 
 	result, err := svc.Settle(context.Background(), job.BatchID)
 	require.NoError(t, err)
@@ -75,7 +177,10 @@ func TestBatchImageSettlementService_CompletedJobReturnsAlreadySettledWithoutBil
 	job.ActualCost = &cost
 	repo.jobs[job.BatchID] = job
 	billing := &fakeBatchImageBillingRepo{}
-	svc := &BatchImageSettlementService{Repo: repo, BillingRepo: billing, Pricing: &fakeBatchImagePricingResolver{unitPrice: 0.25}}
+	svc := &BatchImageSettlementService{
+		Repo: repo, BillingRepo: billing, UsageLogRepo: &fakeBatchImageUsageLogRepo{},
+		Pricing: &fakeBatchImagePricingResolver{unitPrice: 0.25},
+	}
 
 	result, err := svc.Settle(context.Background(), job.BatchID)
 	require.NoError(t, err)
@@ -89,7 +194,10 @@ func TestBatchImageSettlementService_IdempotentAfterBillingCrash(t *testing.T) {
 	job := testSettlingBatchImageJob("imgbatch_crash")
 	repo.jobs[job.BatchID] = job
 	billing := &fakeBatchImageBillingRepo{alreadyApplied: map[string]bool{BatchImageCaptureRequestID(job.BatchID): true}}
-	svc := &BatchImageSettlementService{Repo: repo, BillingRepo: billing, Pricing: &fakeBatchImagePricingResolver{unitPrice: 0.25}}
+	svc := &BatchImageSettlementService{
+		Repo: repo, BillingRepo: billing, UsageLogRepo: &fakeBatchImageUsageLogRepo{},
+		Pricing: &fakeBatchImagePricingResolver{unitPrice: 0.25},
+	}
 
 	result, err := svc.Settle(context.Background(), job.BatchID)
 	require.NoError(t, err)
@@ -112,6 +220,17 @@ func TestBatchImageSettlementService_ValidationErrors(t *testing.T) {
 		{name: "missing_api_key", mutate: func(j *BatchImageJob) { j.APIKeyID = nil }, want: ErrBatchImageSettlementMissingAPIKeyID},
 		{name: "missing_account", mutate: func(j *BatchImageJob) { j.AccountID = nil }, want: ErrBatchImageSettlementMissingAccountID},
 		{name: "pricing_missing", pricing: &fakeBatchImagePricingResolver{err: ErrBatchImageSettlementPricingMissing}, want: ErrBatchImageSettlementPricingMissing},
+		{name: "nan_unit_price", pricing: &fakeBatchImagePricingResolver{unitPrice: math.NaN()}, want: ErrBatchImageSettlementPricingMissing},
+		{name: "infinite_unit_price", pricing: &fakeBatchImagePricingResolver{unitPrice: math.Inf(1)}, want: ErrBatchImageSettlementPricingMissing},
+		{name: "actual_cost_overflow", pricing: &fakeBatchImagePricingResolver{unitPrice: math.MaxFloat64}, want: ErrBatchImageSettlementPricingMissing},
+		{name: "infinite_hold_amount", mutate: func(j *BatchImageJob) {
+			hold := math.Inf(1)
+			j.HoldAmount = &hold
+		}, want: ErrBatchImageSettlementPricingMissing},
+		{name: "nan_snapshot_unit_price", mutate: func(j *BatchImageJob) {
+			j.PricingSnapshotVersion = 1
+			j.BillableUnitPrice = math.NaN()
+		}, want: ErrBatchImageSettlementPricingMissing},
 		{name: "manifest_conflict", mutate: func(j *BatchImageJob) { v := "different"; j.ManifestHash = &v }, want: ErrBatchImageSettlementManifestConflict},
 	}
 
@@ -149,7 +268,10 @@ func TestBatchImageSettlementService_CostExceedingHoldDoesNotCharge(t *testing.T
 	job.EstimatedCost = holdAmount
 	repo.jobs[job.BatchID] = job
 	billing := &fakeBatchImageBillingRepo{}
-	svc := &BatchImageSettlementService{Repo: repo, BillingRepo: billing, Pricing: &fakeBatchImagePricingResolver{unitPrice: 0.50}}
+	svc := &BatchImageSettlementService{
+		Repo: repo, BillingRepo: billing, UsageLogRepo: &fakeBatchImageUsageLogRepo{},
+		Pricing: &fakeBatchImagePricingResolver{unitPrice: 0.50},
+	}
 
 	_, err := svc.Settle(context.Background(), job.BatchID)
 	require.ErrorIs(t, err, ErrBatchImageSettlementCostExceedsHold)
@@ -177,7 +299,10 @@ func TestBatchImageSettlementService_UsesSubmittedPricingSnapshot(t *testing.T) 
 	job.EstimatedCost = 0.5
 	repo.jobs[job.BatchID] = job
 	billing := &fakeBatchImageBillingRepo{}
-	svc := &BatchImageSettlementService{Repo: repo, BillingRepo: billing, Pricing: &fakeBatchImagePricingResolver{unitPrice: 0.50}}
+	svc := &BatchImageSettlementService{
+		Repo: repo, BillingRepo: billing, UsageLogRepo: &fakeBatchImageUsageLogRepo{},
+		Pricing: &fakeBatchImagePricingResolver{unitPrice: 0.50},
+	}
 
 	result, err := svc.Settle(context.Background(), job.BatchID)
 	require.NoError(t, err)
@@ -207,7 +332,10 @@ func TestBatchImagePipelineProcessor_SettlesQueuedSettlingJob(t *testing.T) {
 	job := testSettlingBatchImageJob("imgbatch_pipeline")
 	repo.jobs[job.BatchID] = job
 	billing := &fakeBatchImageBillingRepo{}
-	settlement := &BatchImageSettlementService{Repo: repo, BillingRepo: billing, Pricing: &fakeBatchImagePricingResolver{unitPrice: 0.25}}
+	settlement := &BatchImageSettlementService{
+		Repo: repo, BillingRepo: billing, UsageLogRepo: &fakeBatchImageUsageLogRepo{},
+		Pricing: &fakeBatchImagePricingResolver{unitPrice: 0.25},
+	}
 	processor := &BatchImagePipelineProcessor{
 		ProviderProcessor: &BatchImageProviderProcessor{Repo: repo, ProviderRegistry: NewBatchImageProviderRegistry(&fakeProcessorProvider{}), AccountResolver: &fakeBatchImageAccountResolver{account: &Account{}}},
 		SettlementService: settlement,
@@ -267,7 +395,10 @@ func TestBatchImageSettlementRetryExhaustedReleaseIsIdempotentAfterTransitionFai
 	repo.jobs[job.BatchID] = job
 	repo.transitionErr = errors.New("temporary transition failure")
 	billing := &fakeBatchImageBillingRepo{}
-	svc := &BatchImageSettlementService{Repo: repo, BillingRepo: billing, Pricing: &fakeBatchImagePricingResolver{unitPrice: 0.25}}
+	svc := &BatchImageSettlementService{
+		Repo: repo, BillingRepo: billing, UsageLogRepo: &fakeBatchImageUsageLogRepo{},
+		Pricing: &fakeBatchImagePricingResolver{unitPrice: 0.25},
+	}
 
 	_, err := svc.Settle(context.Background(), job.BatchID)
 	require.ErrorContains(t, err, "temporary transition failure")
@@ -373,7 +504,10 @@ func TestBatchImageSettlementBillingRequestIDs(t *testing.T) {
 	repo.jobs[first.BatchID] = first
 	repo.jobs[second.BatchID] = second
 	billing := &fakeBatchImageBillingRepo{}
-	svc := &BatchImageSettlementService{Repo: repo, BillingRepo: billing, Pricing: &fakeBatchImagePricingResolver{unitPrice: 0.25}}
+	svc := &BatchImageSettlementService{
+		Repo: repo, BillingRepo: billing, UsageLogRepo: &fakeBatchImageUsageLogRepo{},
+		Pricing: &fakeBatchImagePricingResolver{unitPrice: 0.25},
+	}
 
 	_, err := svc.Settle(context.Background(), first.BatchID)
 	require.NoError(t, err)

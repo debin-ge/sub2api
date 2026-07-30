@@ -3,6 +3,7 @@
 package service
 
 import (
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -413,6 +414,19 @@ func TestValidateIntervals_NegativePrice(t *testing.T) {
 	require.Contains(t, err.Error(), ">= 0")
 }
 
+func TestValidateIntervals_RejectsNonFinitePrices(t *testing.T) {
+	for _, price := range []float64{math.NaN(), math.Inf(1), math.Inf(-1)} {
+		price := price
+		err := ValidateIntervals([]PricingInterval{{
+			MinTokens:  0,
+			MaxTokens:  testPtrInt(100),
+			InputPrice: &price,
+		}}, BillingModeToken)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "finite")
+	}
+}
+
 func TestValidateIntervals_OverlappingIntervals(t *testing.T) {
 	intervals := []PricingInterval{
 		{MinTokens: 0, MaxTokens: testPtrInt(200), InputPrice: testPtrFloat64(1e-6)},
@@ -443,6 +457,41 @@ func TestValidateIntervals_ImageModeAllowsMultipleUnboundedTiers(t *testing.T) {
 	}
 	require.NoError(t, ValidateIntervals(intervals, BillingModeImage))
 	require.NoError(t, ValidateIntervals(intervals, BillingModePerRequest))
+}
+
+func TestValidateIntervals_ImageModeRejectsBlankOrDuplicateTierLabels(t *testing.T) {
+	t.Run("blank label", func(t *testing.T) {
+		err := ValidateIntervals([]PricingInterval{{
+			PerRequestPrice: testPtrFloat64(0.04),
+		}}, BillingModeImage)
+		require.ErrorContains(t, err, "tier_label is required")
+	})
+
+	t.Run("case-insensitive duplicate", func(t *testing.T) {
+		err := ValidateIntervals([]PricingInterval{
+			{TierLabel: "1K", PerRequestPrice: testPtrFloat64(0)},
+			{TierLabel: " 1k ", PerRequestPrice: testPtrFloat64(0.04)},
+		}, BillingModeImage)
+		require.ErrorContains(t, err, "duplicate tier_label")
+	})
+}
+
+func TestValidateIntervals_PerRequestContextRangesRejectOverlapAndMixedLabels(t *testing.T) {
+	t.Run("overlapping context ranges", func(t *testing.T) {
+		err := ValidateIntervals([]PricingInterval{
+			{MinTokens: 0, MaxTokens: testPtrInt(200), PerRequestPrice: testPtrFloat64(0)},
+			{MinTokens: 100, MaxTokens: testPtrInt(300), PerRequestPrice: testPtrFloat64(0.04)},
+		}, BillingModePerRequest)
+		require.ErrorContains(t, err, "overlap")
+	})
+
+	t.Run("mixed label and context ranges", func(t *testing.T) {
+		err := ValidateIntervals([]PricingInterval{
+			{TierLabel: "1K", PerRequestPrice: testPtrFloat64(0.04)},
+			{MinTokens: 0, MaxTokens: testPtrInt(100), PerRequestPrice: testPtrFloat64(0.05)},
+		}, BillingModePerRequest)
+		require.ErrorContains(t, err, "cannot mix")
+	})
 }
 
 func TestValidateIntervals_ImageModeStillRejectsNegativePrice(t *testing.T) {

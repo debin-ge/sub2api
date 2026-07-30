@@ -294,9 +294,9 @@ func TestUserPlatformQuotaRepository_ResetExpiredWindow_NotFoundReturnsSentinel(
 		"expected ErrUserPlatformQuotaNotFound, got %v", err)
 }
 
-// TestBatchSnapshotUsage_InsertOverwriteMultiKey 验证 BatchSnapshotUsage 的绝对值覆盖语义：
+// TestBatchSnapshotUsage_InsertOverwriteMultiKey 验证 BatchSnapshotUsage 的窗口内单调绝对值语义：
 //  1. 首批插入 2 条（不同 user），验证 daily 等于首批值；
-//  2. 对同一 key 传不同值，验证 daily 等于新值（绝对覆盖，非累加）。
+//  2. 对同一 key 传更大值，验证 daily 等于新值（绝对值合并，非累加）。
 func TestBatchSnapshotUsage_InsertOverwriteMultiKey(t *testing.T) {
 	ctx := context.Background()
 	// BatchSnapshotUsage 不开事务（直接写），使用独立 client 保证跨调用可见性。
@@ -350,7 +350,7 @@ func TestBatchSnapshotUsage_InsertOverwriteMultiKey(t *testing.T) {
 	require.NotNil(t, rec2, "user2/openai should exist after first batch")
 	require.InDelta(t, 2.0, rec2.DailyUsageUSD, 1e-9, "user2 daily after first batch")
 
-	// ── 第二批：对同一 key 传不同值，验证绝对覆盖（非累加）──────────────────
+	// ── 第二批：对同一 key 传更大值，验证绝对值合并（非累加）──────────────
 	now2 := now.Add(5 * time.Minute)
 	secondBatch := []UserPlatformQuotaSnapshot{
 		{
@@ -390,4 +390,51 @@ func TestBatchSnapshotUsage_InsertOverwriteMultiKey(t *testing.T) {
 	require.InDelta(t, 8.8, rec2After.DailyUsageUSD, 1e-9, "user2 daily must be overwritten to 8.8 (not accumulated)")
 	require.InDelta(t, 18.8, rec2After.WeeklyUsageUSD, 1e-9, "user2 weekly must be overwritten to 18.8")
 	require.InDelta(t, 28.8, rec2After.MonthlyUsageUSD, 1e-9, "user2 monthly must be overwritten to 28.8")
+}
+
+func TestBatchSnapshotUsage_StaleSameWindowSnapshotCannotRollbackDurableBilling(t *testing.T) {
+	ctx := context.Background()
+	client := testEntClient(t)
+	userID := mustCreateUserForQuota(t, client)
+	repo := NewUserPlatformQuotaRepository(client)
+
+	now := time.Date(2026, time.July, 29, 12, 0, 0, 0, time.UTC)
+	dailyStart := time.Date(2026, time.July, 29, 0, 0, 0, 0, time.UTC)
+	weeklyStart := time.Date(2026, time.July, 27, 0, 0, 0, 0, time.UTC)
+	monthlyStart := time.Date(2026, time.July, 15, 12, 0, 0, 0, time.UTC)
+	staleSnapshot := UserPlatformQuotaSnapshot{
+		UserID:             userID,
+		Platform:           "anthropic",
+		DailyUsageUSD:      10,
+		WeeklyUsageUSD:     10,
+		MonthlyUsageUSD:    10,
+		DailyWindowStart:   dailyStart,
+		WeeklyWindowStart:  weeklyStart,
+		MonthlyWindowStart: monthlyStart,
+	}
+	require.NoError(t, repo.BatchSnapshotUsage(ctx, []UserPlatformQuotaSnapshot{staleSnapshot}, now))
+
+	// Simulate the durable billing transaction committing after the flusher
+	// captured the Redis snapshot but before that snapshot is written.
+	_, err := integrationDB.ExecContext(ctx, `
+		UPDATE user_platform_quotas
+		SET daily_usage_usd = 11,
+			weekly_usage_usd = 11,
+			monthly_usage_usd = 11
+		WHERE user_id = $1 AND platform = $2 AND deleted_at IS NULL
+	`, userID, "anthropic")
+	require.NoError(t, err)
+
+	require.NoError(t, repo.BatchSnapshotUsage(
+		ctx,
+		[]UserPlatformQuotaSnapshot{staleSnapshot},
+		now.Add(time.Second),
+	))
+
+	rec, err := repo.GetByUserPlatform(ctx, userID, "anthropic")
+	require.NoError(t, err)
+	require.NotNil(t, rec)
+	require.InDelta(t, 11, rec.DailyUsageUSD, 1e-9)
+	require.InDelta(t, 11, rec.WeeklyUsageUSD, 1e-9)
+	require.InDelta(t, 11, rec.MonthlyUsageUSD, 1e-9)
 }

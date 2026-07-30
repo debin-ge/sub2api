@@ -126,9 +126,15 @@ type AntigravityGatewayService struct {
 	rateLimitService  *RateLimitService
 	httpUpstream      HTTPUpstream
 	settingService    *SettingService
+	billingService    *BillingService
+	channelService    *ChannelService
 	cache             GatewayCache // 用于模型级限流时清除粘性会话绑定
 	schedulerSnapshot *SchedulerSnapshotService
 	internal500Cache  Internal500CounterCache // INTERNAL 500 渐进惩罚计数器
+	// Production construction requires the final-model pricing guard even if a
+	// dependency is accidentally nil. Direct struct literals in isolated tests
+	// keep the zero value for backward compatibility.
+	pricingGuardRequired bool
 }
 
 func (s *AntigravityGatewayService) upstreamErrorBodyReadLimit() int64 {
@@ -156,16 +162,21 @@ func NewAntigravityGatewayService(
 	httpUpstream HTTPUpstream,
 	settingService *SettingService,
 	internal500Cache Internal500CounterCache,
+	billingService *BillingService,
+	channelService *ChannelService,
 ) *AntigravityGatewayService {
 	return &AntigravityGatewayService{
-		accountRepo:       accountRepo,
-		tokenProvider:     tokenProvider,
-		rateLimitService:  rateLimitService,
-		httpUpstream:      httpUpstream,
-		settingService:    settingService,
-		cache:             cache,
-		schedulerSnapshot: schedulerSnapshot,
-		internal500Cache:  internal500Cache,
+		accountRepo:          accountRepo,
+		tokenProvider:        tokenProvider,
+		rateLimitService:     rateLimitService,
+		httpUpstream:         httpUpstream,
+		settingService:       settingService,
+		billingService:       billingService,
+		channelService:       channelService,
+		cache:                cache,
+		schedulerSnapshot:    schedulerSnapshot,
+		internal500Cache:     internal500Cache,
+		pricingGuardRequired: true,
 	}
 }
 

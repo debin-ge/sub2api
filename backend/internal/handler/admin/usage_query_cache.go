@@ -10,18 +10,23 @@ import (
 // 与 dashboard 查询缓存同款:30s TTL 进程内缓存,仅服务 /admin/usage/stats 读路径。
 var usageStatsCache = newSnapshotCache(30 * time.Second)
 
+// usageStatsCacheKeyData 必须覆盖 GetStatsWithFilters 真正会用到的每个筛选字段。
+// 漏掉一个，两次条件不同的统计就会共用一份缓存——待结算看板尤其危险：它拿到的可能
+// 是全量统计，把"有欠账"读成"没欠账"。新增筛选字段时这里必须同步加。
 type usageStatsCacheKeyData struct {
-	StartTime   string `json:"start_time"`
-	EndTime     string `json:"end_time"`
-	UserID      int64  `json:"user_id"`
-	APIKeyID    int64  `json:"api_key_id"`
-	AccountID   int64  `json:"account_id"`
-	GroupID     int64  `json:"group_id"`
-	Model       string `json:"model"`
-	BillingMode string `json:"billing_mode"`
-	RequestType *int16 `json:"request_type"`
-	Stream      *bool  `json:"stream"`
-	BillingType *int8  `json:"billing_type"`
+	StartTime             string `json:"start_time"`
+	EndTime               string `json:"end_time"`
+	UserID                int64  `json:"user_id"`
+	APIKeyID              int64  `json:"api_key_id"`
+	AccountID             int64  `json:"account_id"`
+	GroupID               int64  `json:"group_id"`
+	Model                 string `json:"model"`
+	BillingMode           string `json:"billing_mode"`
+	RequestType           *int16 `json:"request_type"`
+	Stream                *bool  `json:"stream"`
+	BillingType           *int8  `json:"billing_type"`
+	BillingState          *int8  `json:"billing_state"`
+	BillingStateUnsettled bool   `json:"billing_state_unsettled"`
 }
 
 func usageStatsCacheKey(filters usagestats.UsageLogFilters) string {
@@ -34,17 +39,19 @@ func usageStatsCacheKey(filters usagestats.UsageLogFilters) string {
 		end = filters.EndTime.UTC().Format(time.RFC3339)
 	}
 	return mustMarshalDashboardCacheKey(usageStatsCacheKeyData{
-		StartTime:   start,
-		EndTime:     end,
-		UserID:      filters.UserID,
-		APIKeyID:    filters.APIKeyID,
-		AccountID:   filters.AccountID,
-		GroupID:     filters.GroupID,
-		Model:       filters.Model,
-		BillingMode: filters.BillingMode,
-		RequestType: filters.RequestType,
-		Stream:      filters.Stream,
-		BillingType: filters.BillingType,
+		StartTime:             start,
+		EndTime:               end,
+		UserID:                filters.UserID,
+		APIKeyID:              filters.APIKeyID,
+		AccountID:             filters.AccountID,
+		GroupID:               filters.GroupID,
+		Model:                 filters.Model,
+		BillingMode:           filters.BillingMode,
+		RequestType:           filters.RequestType,
+		Stream:                filters.Stream,
+		BillingType:           filters.BillingType,
+		BillingState:          filters.BillingState,
+		BillingStateUnsettled: filters.BillingStateUnsettled,
 	})
 }
 

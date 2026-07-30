@@ -45,6 +45,10 @@ type miniMaxUsageGatewayService struct {
 	recorder  *service.GatewayService
 }
 
+func (s *miniMaxUsageGatewayService) ResolveRequestChannelMapping(_ context.Context, _ *int64, model string) service.ChannelMappingResult {
+	return service.ChannelMappingResult{MappedModel: model}
+}
+
 func (s *miniMaxUsageGatewayService) GenerateSessionHash(parsed *service.ParsedRequest) string {
 	return "minimax-usage-session"
 }
@@ -82,7 +86,7 @@ func TestMiniMaxUsageRecordMetadata(t *testing.T) {
 		nil,
 		nil,
 		usageRepo,
-		nil,
+		&metadataUsageBillingRepoStub{usageLogRepo: usageRepo},
 		&miniMaxUsageUserRepoStub{},
 		&miniMaxUsageSubRepoStub{},
 		nil,

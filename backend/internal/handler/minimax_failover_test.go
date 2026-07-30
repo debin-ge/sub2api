@@ -65,6 +65,10 @@ type miniMaxDegradeCall struct {
 	status    int
 }
 
+func (s *miniMaxFailoverGatewayService) ResolveRequestChannelMapping(_ context.Context, _ *int64, model string) service.ChannelMappingResult {
+	return service.ChannelMappingResult{MappedModel: model}
+}
+
 func (s *miniMaxFailoverGatewayService) GenerateSessionHash(parsed *service.ParsedRequest) string {
 	return "session-hash"
 }

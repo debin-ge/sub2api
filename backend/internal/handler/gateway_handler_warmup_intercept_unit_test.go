@@ -161,6 +161,8 @@ func newTestGatewayHandler(t *testing.T, group *service.Group, accounts []*servi
 
 	schedulerCache := &fakeSchedulerCache{accounts: accounts}
 	schedulerSnapshot := service.NewSchedulerSnapshotService(schedulerCache, nil, nil, nil, nil)
+	// Simple Mode 只免扣款，不免除价格准入；使用代码内置的严格有价 SKU。
+	cfg := &config.Config{RunMode: config.RunModeSimple}
 
 	gwSvc := service.NewGatewayService(
 		nil, // accountRepo (not used: scheduler snapshot hit)
@@ -171,10 +173,10 @@ func newTestGatewayHandler(t *testing.T, group *service.Group, accounts []*servi
 		nil, // userSubRepo
 		nil, // userGroupRateRepo
 		nil, // cache (disable sticky)
-		nil, // cfg
+		cfg,
 		schedulerSnapshot,
 		nil, // concurrencyService (disable load-aware; tryAcquire always acquired)
-		nil, // billingService
+		service.NewBillingService(cfg, nil),
 		nil, // rateLimitService
 		nil, // billingCacheService
 		nil, // identityService
@@ -194,8 +196,6 @@ func newTestGatewayHandler(t *testing.T, group *service.Group, accounts []*servi
 		nil, // modelCatalog
 	)
 
-	// RunModeSimple：跳过计费检查，避免引入 repo/cache 依赖。
-	cfg := &config.Config{RunMode: config.RunModeSimple}
 	billingCacheSvc := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
 
 	concurrencySvc := service.NewConcurrencyService(&fakeConcurrencyCache{})
@@ -237,6 +237,9 @@ func TestGatewayHandlerMessages_InterceptWarmup_AntigravityAccount_MixedScheduli
 		Credentials: map[string]any{
 			"access_token":              "tok_xxx",
 			"intercept_warmup_requests": true,
+			"model_mapping": map[string]any{
+				"claude-sonnet-4": "claude-sonnet-4",
+			},
 		},
 		Extra: map[string]any{
 			"mixed_scheduling": true, // 关键：允许被 anthropic 分组混合调度选中
@@ -255,7 +258,7 @@ func TestGatewayHandlerMessages_InterceptWarmup_AntigravityAccount_MixedScheduli
 	c, _ := gin.CreateTestContext(rec)
 
 	body := []byte(`{
-		"model": "claude-sonnet-4-5",
+		"model": "claude-sonnet-4",
 		"max_tokens": 256,
 		"messages": [{"role":"user","content":[{"type":"text","text":"Warmup"}]}]
 	}`)
@@ -292,7 +295,7 @@ func TestGatewayHandlerMessages_InterceptWarmup_AntigravityAccount_MixedScheduli
 	var resp map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	require.True(t, strings.HasPrefix(resp["id"].(string), "msg_01"))
-	require.Equal(t, "claude-sonnet-4-5", resp["model"])
+	require.Equal(t, "claude-sonnet-4", resp["model"])
 
 	content, ok := resp["content"].([]any)
 	require.True(t, ok)
@@ -323,6 +326,9 @@ func TestGatewayHandlerMessages_InterceptWarmup_AntigravityAccount_ForcePlatform
 		Credentials: map[string]any{
 			"access_token":              "tok_xxx",
 			"intercept_warmup_requests": true,
+			"model_mapping": map[string]any{
+				"claude-sonnet-4": "claude-sonnet-4",
+			},
 		},
 		Concurrency:   1,
 		Priority:      1,
@@ -338,7 +344,7 @@ func TestGatewayHandlerMessages_InterceptWarmup_AntigravityAccount_ForcePlatform
 	c, _ := gin.CreateTestContext(rec)
 
 	body := []byte(`{
-		"model": "claude-sonnet-4-5",
+		"model": "claude-sonnet-4",
 		"max_tokens": 256,
 		"messages": [{"role":"user","content":[{"type":"text","text":"Warmup"}]}]
 	}`)
@@ -381,5 +387,5 @@ func TestGatewayHandlerMessages_InterceptWarmup_AntigravityAccount_ForcePlatform
 	var resp map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	require.True(t, strings.HasPrefix(resp["id"].(string), "msg_01"))
-	require.Equal(t, "claude-sonnet-4-5", resp["model"])
+	require.Equal(t, "claude-sonnet-4", resp["model"])
 }

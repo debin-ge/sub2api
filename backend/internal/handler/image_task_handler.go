@@ -192,6 +192,9 @@ func (h *AsyncImageHandler) validateRequest(c *gin.Context, platform string, bod
 		return nil
 	}
 	if platform == service.PlatformGrok {
+		if err := service.ValidateGrokMediaBillingFields(c.GetHeader("Content-Type"), body); err != nil {
+			return err
+		}
 		parsed := service.ParseGrokMediaRequest(c.GetHeader("Content-Type"), body)
 		if strings.TrimSpace(parsed.Model) == "" {
 			return errors.New("model is required")

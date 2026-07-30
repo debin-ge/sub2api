@@ -1040,7 +1040,7 @@ func (s *BatchImagePublicService) resolvePricingSnapshot(ctx context.Context, ow
 		if group.BatchImageHoldMultiplier >= 0 {
 			holdMultiplier = group.BatchImageHoldMultiplier
 		}
-		if configuredUnit := group.GetImagePrice(req.ImageSize); configuredUnit != nil && *configuredUnit >= 0 {
+		if configuredUnit := group.GetImagePrice(req.ImageSize); validConfiguredPrice(configuredUnit) {
 			unit = *configuredUnit
 		}
 	}
@@ -1049,7 +1049,7 @@ func (s *BatchImagePublicService) resolvePricingSnapshot(ctx context.Context, ow
 			return nil, ErrBatchImageSettlementPricingMissing
 		}
 		resolvedUnit, err := s.Pricing.BatchImageUnitPrice(ctx, &BatchImageJob{Provider: provider, Model: req.Model})
-		if err != nil || resolvedUnit < 0 {
+		if err != nil || !isFiniteNonNegativePrice(resolvedUnit) {
 			return nil, ErrBatchImageSettlementPricingMissing
 		}
 		unit = resolvedUnit
@@ -1074,6 +1074,16 @@ func (s *BatchImagePublicService) resolvePricingSnapshot(ctx context.Context, ow
 	standardUnitPrice := unit * groupMultiplier * accountMultiplier
 	billableUnitPrice := standardUnitPrice * discountMultiplier
 	holdUnitPrice := standardUnitPrice * holdMultiplier
+	if !isFiniteNonNegativePrice(standardUnitPrice) ||
+		!isFiniteNonNegativePrice(billableUnitPrice) ||
+		!isFiniteNonNegativePrice(holdUnitPrice) {
+		return nil, ErrBatchImageSettlementPricingMissing
+	}
+	estimatedCost := billableUnitPrice * float64(len(req.Items))
+	holdAmount := holdUnitPrice * float64(len(req.Items))
+	if !isFiniteNonNegativePrice(estimatedCost) || !isFiniteNonNegativePrice(holdAmount) {
+		return nil, ErrBatchImageSettlementPricingMissing
+	}
 	return &BatchImagePricingSnapshot{
 		BaseUnitPrice:           unit,
 		GroupRateMultiplier:     groupMultiplier,
@@ -1082,8 +1092,8 @@ func (s *BatchImagePublicService) resolvePricingSnapshot(ctx context.Context, ow
 		HoldMultiplier:          holdMultiplier,
 		BillableUnitPrice:       billableUnitPrice,
 		HoldUnitPrice:           holdUnitPrice,
-		EstimatedCost:           billableUnitPrice * float64(len(req.Items)),
-		HoldAmount:              holdUnitPrice * float64(len(req.Items)),
+		EstimatedCost:           estimatedCost,
+		HoldAmount:              holdAmount,
 	}, nil
 }
 

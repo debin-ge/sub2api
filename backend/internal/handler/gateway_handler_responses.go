@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
@@ -70,7 +71,7 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 
 	// Extract model and stream using gjson (like OpenAI handler)
 	modelResult := gjson.GetBytes(body, "model")
-	if !modelResult.Exists() || modelResult.Type != gjson.String || modelResult.String() == "" {
+	if !modelResult.Exists() || modelResult.Type != gjson.String || strings.TrimSpace(modelResult.String()) == "" {
 		h.responsesErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "model is required")
 		return
 	}
@@ -85,17 +86,45 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 		h.responsesErrorResponse(c, http.StatusBadRequest, "invalid_request_error", invalidStreamFieldTypeMessage)
 		return
 	}
+
+	// Parse once before model mapping, billing checks, or account selection.
+	// ParseGatewayRequest rejects ambiguous duplicate model fields (different
+	// JSON consumers disagree on first-vs-last wins) and other payloads that
+	// must never reach pricing/forwarding. Do not silently replace its error
+	// with a partially parsed fallback request.
+	bodyRef := service.NewRequestBodyRef(body)
+	parsedReq, err := service.ParseGatewayRequest(bodyRef, "responses")
+	if err != nil {
+		logRequestBodyParseFailure(reqLog, body, err)
+		h.responsesErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
+		return
+	}
+	body = parsedReq.Body.Bytes()
+	imageBillingConfig, err := service.ResolveOpenAIResponsesImageBillingConfigFromBody(body, reqModel)
+	if err != nil {
+		logRequestBodyParseFailure(reqLog, body, err)
+		h.responsesErrorResponse(c, http.StatusBadRequest, "invalid_request_error", err.Error())
+		return
+	}
 	reqLog = reqLog.With(zap.String("model", reqModel), zap.Bool("stream", reqStream))
 
 	setOpsRequestContext(c, reqModel, reqStream)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(reqStream, false)))
 	requestCtx := c.Request.Context()
-	if service.IsImageGenerationIntentForPlatform("/v1/responses", reqModel, body, openAICompatibleRequestPlatform(c.Request.Context(), apiKey)) {
-		requestCtx = service.WithOpenAIImageGenerationIntent(requestCtx)
+	if service.IsExplicitImageGenerationIntent("/v1/responses", reqModel, body) {
+		if imageBillingConfig.NativeTool {
+			requestCtx = service.WithOpenAIImageGenerationPricingIntent(
+				requestCtx,
+				imageBillingConfig.Model,
+				imageBillingConfig.SizeTier,
+			)
+		} else {
+			requestCtx = service.WithOpenAIImageGenerationIntent(requestCtx)
+		}
 	}
 
 	// 解析渠道级模型映射
-	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(requestCtx, apiKey.GroupID, reqModel)
+	channelMapping := h.gatewayService.ResolveRequestChannelMapping(requestCtx, apiKey.GroupID, reqModel)
 
 	// Claude Code only restriction:
 	// /v1/responses is never a Claude Code endpoint.
@@ -145,12 +174,7 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 		return
 	}
 
-	// Parse request for session hash
-	bodyRef := service.NewRequestBodyRef(body)
-	parsedReq, _ := service.ParseGatewayRequest(bodyRef, "responses")
-	if parsedReq == nil {
-		parsedReq = &service.ParsedRequest{Model: reqModel, Stream: reqStream, Body: bodyRef}
-	}
+	// Enrich the request parsed and validated before routing for session hash.
 	parsedReq.SessionContext = &service.SessionContext{
 		ClientIP:  ip.GetClientIP(c),
 		UserAgent: c.GetHeader("User-Agent"),
@@ -172,7 +196,7 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 				return
 			}
 			if len(fs.FailedAccountIDs) == 0 {
-				cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, reqModel, reqModel, effectiveAPIKeyPlatform(c, apiKey))
+				cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, err, reqModel, reqModel, effectiveAPIKeyPlatform(c, apiKey))
 				if !cls.ModelNotFound {
 					markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
 				}
@@ -286,6 +310,19 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 			return
 		}
 
+		if result != nil && result.ImageCount > 0 {
+			if mediaIntent, ok := service.OpenAIImageGenerationPricingIntentFromContext(requestCtx); ok {
+				// Lock the exact nested tool SKU that passed the pre-forward
+				// guard into the settlement result. Channel BillingModelSource
+				// only describes the top-level text model and must not overwrite
+				// this independent media identity.
+				result.BillingModel = mediaIntent.BillingModel
+				if strings.TrimSpace(result.ImageSize) == "" {
+					result.ImageSize = mediaIntent.SizeTier
+				}
+			}
+		}
+
 		// 6. Record usage
 		userAgent := c.GetHeader("User-Agent")
 		clientIP := ip.GetClientIP(c)
@@ -295,7 +332,7 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 
 		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
 		sessionID := service.ExtractClientSessionID(c)
-		h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
+		h.submitGatewayUsageRecordTask(c.Request.Context(), result, func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
 				Result:             result,
 				QuotaPlatform:      quotaPlatform,

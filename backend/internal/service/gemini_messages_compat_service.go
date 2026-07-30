@@ -53,8 +53,12 @@ type GeminiMessagesCompatService struct {
 	rateLimitService          *RateLimitService
 	httpUpstream              HTTPUpstream
 	antigravityGatewayService *AntigravityGatewayService
+	gatewayPricingGuard       *GatewayService
 	cfg                       *config.Config
 	responseHeaderFilter      *responseheaders.CompiledHeaderFilter
+	// Production construction requires exact final-media pricing admission.
+	// Direct struct literals in isolated tests retain the zero value.
+	pricingGuardRequired bool
 }
 
 func (s *GeminiMessagesCompatService) readUpstreamErrorBody(resp *http.Response) []byte {
@@ -78,6 +82,7 @@ func NewGeminiMessagesCompatService(
 	rateLimitService *RateLimitService,
 	httpUpstream HTTPUpstream,
 	antigravityGatewayService *AntigravityGatewayService,
+	gatewayPricingGuard *GatewayService,
 	cfg *config.Config,
 ) *GeminiMessagesCompatService {
 	return &GeminiMessagesCompatService{
@@ -89,8 +94,10 @@ func NewGeminiMessagesCompatService(
 		rateLimitService:          rateLimitService,
 		httpUpstream:              httpUpstream,
 		antigravityGatewayService: antigravityGatewayService,
+		gatewayPricingGuard:       gatewayPricingGuard,
 		cfg:                       cfg,
 		responseHeaderFilter:      compileResponseHeaderFilter(cfg),
+		pricingGuardRequired:      true,
 	}
 }
 
@@ -605,6 +612,15 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 		return nil, s.writeClaudeError(c, http.StatusBadRequest, "invalid_request_error", err.Error())
 	}
 	geminiReq = ensureGeminiFunctionCallThoughtSignatures(geminiReq)
+	imageIdentity, err := resolveGeminiImageBillingIdentity(mappedModel, geminiReq)
+	if err != nil {
+		_ = s.writeClaudeError(c, http.StatusServiceUnavailable, "api_error", err.Error())
+		return nil, err
+	}
+	if err := s.validateResolvedGeminiImagePricing(ctx, account, imageIdentity); err != nil {
+		_ = s.writeClaudeError(c, http.StatusServiceUnavailable, "api_error", err.Error())
+		return nil, err
+	}
 	originalClaudeBody := body
 
 	proxyURL := ""
@@ -1086,25 +1102,18 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 		}
 	}
 
-	// 图片生成计费
-	imageCount := 0
-	imageInputSize := s.extractImageInputSize(body)
-	imageSize := normalizeOpenAIImageSizeTier(imageInputSize)
-	if isImageGenerationModel(originalModel) {
-		imageCount = 1
-	}
-
 	return &ForwardResult{
 		RequestID:      requestID,
 		Usage:          *usage,
 		Model:          originalModel,
 		UpstreamModel:  mappedModel,
+		BillingModel:   imageIdentity.Model,
 		Stream:         req.Stream,
 		Duration:       time.Since(startTime),
 		FirstTokenMs:   firstTokenMs,
-		ImageCount:     imageCount,
-		ImageSize:      imageSize,
-		ImageInputSize: imageInputSize,
+		ImageCount:     imageIdentity.Count,
+		ImageSize:      imageIdentity.SizeTier,
+		ImageInputSize: imageIdentity.InputSize,
 	}, nil
 }
 
@@ -1148,6 +1157,19 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 	mappedModel := originalModel
 	if account.Type == AccountTypeAPIKey || account.Type == AccountTypeServiceAccount {
 		mappedModel = account.GetMappedModel(originalModel)
+	}
+	if err := s.validateResolvedGeminiTokenPricing(ctx, account, originalModel); err != nil {
+		_ = s.writeGoogleError(c, http.StatusServiceUnavailable, err.Error())
+		return nil, err
+	}
+	imageIdentity, err := resolveGeminiImageBillingIdentity(mappedModel, body)
+	if err != nil {
+		_ = s.writeGoogleError(c, http.StatusServiceUnavailable, err.Error())
+		return nil, err
+	}
+	if err := s.validateResolvedGeminiImagePricing(ctx, account, imageIdentity); err != nil {
+		_ = s.writeGoogleError(c, http.StatusServiceUnavailable, err.Error())
+		return nil, err
 	}
 
 	proxyURL := ""
@@ -1618,25 +1640,18 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 		usage = &ClaudeUsage{}
 	}
 
-	// 图片生成计费
-	imageCount := 0
-	imageInputSize := s.extractImageInputSize(body)
-	imageSize := normalizeOpenAIImageSizeTier(imageInputSize)
-	if isImageGenerationModel(originalModel) {
-		imageCount = 1
-	}
-
 	return &ForwardResult{
 		RequestID:      requestID,
 		Usage:          *usage,
 		Model:          originalModel,
 		UpstreamModel:  mappedModel,
+		BillingModel:   imageIdentity.Model,
 		Stream:         stream,
 		Duration:       time.Since(startTime),
 		FirstTokenMs:   firstTokenMs,
-		ImageCount:     imageCount,
-		ImageSize:      imageSize,
-		ImageInputSize: imageInputSize,
+		ImageCount:     imageIdentity.Count,
+		ImageSize:      imageIdentity.SizeTier,
+		ImageInputSize: imageIdentity.InputSize,
 	}, nil
 }
 
@@ -3555,23 +3570,4 @@ func convertClaudeGenerationConfig(req map[string]any) map[string]any {
 		return nil
 	}
 	return out
-}
-
-func (s *GeminiMessagesCompatService) extractImageInputSize(body []byte) string {
-	var req struct {
-		GenerationConfig *struct {
-			ImageConfig *struct {
-				ImageSize string `json:"imageSize"`
-			} `json:"imageConfig"`
-		} `json:"generationConfig"`
-	}
-	if err := json.Unmarshal(body, &req); err != nil {
-		return ""
-	}
-
-	if req.GenerationConfig != nil && req.GenerationConfig.ImageConfig != nil {
-		return strings.TrimSpace(req.GenerationConfig.ImageConfig.ImageSize)
-	}
-
-	return ""
 }

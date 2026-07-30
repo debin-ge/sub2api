@@ -155,6 +155,32 @@ func TestNormalizeResponsesBodyServiceTier(t *testing.T) {
 	require.False(t, gjson.GetBytes(body, "service_tier").Exists())
 }
 
+func TestForwardAsChatCompletionsRejectsDuplicateServiceTierBeforeUpstream(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	body := []byte(`{"model":"gpt-5.4","service_tier":"standard","service_tier":"priority","messages":[{"role":"user","content":"hello"}]}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+
+	upstream := &httpUpstreamRecorder{}
+	svc := &OpenAIGatewayService{httpUpstream: upstream}
+	result, err := svc.ForwardAsChatCompletions(
+		context.Background(),
+		c,
+		&Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey},
+		body,
+		"",
+		"",
+	)
+
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Contains(t, err.Error(), "duplicate top-level service_tier")
+	require.Empty(t, upstream.requests)
+}
+
 func TestForwardAsChatCompletions_UnknownModelWithoutMessagesDispatchKeepsRequestedModel(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

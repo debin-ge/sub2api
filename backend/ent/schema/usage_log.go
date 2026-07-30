@@ -36,7 +36,7 @@ func (UsageLog) Fields() []ent.Field {
 		field.Int64("api_key_id"),
 		field.Int64("account_id"),
 		field.String("request_id").
-			MaxLen(64).
+			MaxLen(255).
 			NotEmpty(),
 		field.String("model").
 			MaxLen(100).
@@ -113,6 +113,11 @@ func (UsageLog) Fields() []ent.Field {
 		// 其他字段
 		field.Int8("billing_type").
 			Default(0),
+		// billing_state: 0=已结算 1=定价缺失待处理 2=价格已恢复（未追扣）。
+		// 定价解析失败时用量仍然落库并标记为 1，绝不静默按 $0 结算，也不丢弃记录。
+		field.Int8("billing_state").
+			Default(0).
+			Comment("结算状态：0=已结算 1=定价缺失待处理 2=价格已恢复（未追扣）"),
 		field.Bool("stream").
 			Default(false),
 		field.Int("duration_ms").

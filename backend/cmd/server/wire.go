@@ -189,6 +189,7 @@ func provideCleanup(
 	opsIngressReject *service.OpsIngressRejectAggregator,
 	apiKeyService *service.APIKeyService,
 	authCacheInvalidationWorker *service.AuthCacheInvalidationWorker,
+	usageBillingOutboxWorker *service.UsageBillingOutboxWorker,
 	schedulerSnapshot *service.SchedulerSnapshotService,
 	tokenRefresh *service.TokenRefreshService,
 	accountExpiry *service.AccountExpiryService,
@@ -214,6 +215,7 @@ func provideCleanup(
 	scheduledTestRunner *service.ScheduledTestRunnerService,
 	backupSvc *service.BackupService,
 	paymentOrderExpiry *service.PaymentOrderExpiryService,
+	billingRecovery *service.BillingRecoveryService,
 	miniMaxRemainsSyncRunner *service.MiniMaxRemainsSyncRunner,
 	deepSeekBalanceHealthRunner *service.DeepSeekBalanceHealthRunner,
 	channelMonitorRunner *service.ChannelMonitorRunner,
@@ -238,6 +240,7 @@ func provideCleanup(
 			opsIngressReject,
 			apiKeyService,
 			authCacheInvalidationWorker,
+			usageBillingOutboxWorker,
 			schedulerSnapshot,
 			tokenRefresh,
 			accountExpiry,
@@ -263,6 +266,7 @@ func provideCleanup(
 			scheduledTestRunner,
 			backupSvc,
 			paymentOrderExpiry,
+			billingRecovery,
 			miniMaxRemainsSyncRunner,
 			deepSeekBalanceHealthRunner,
 			channelMonitorRunner,
@@ -290,6 +294,7 @@ func provideFinalCleanup(
 	opsIngressReject *service.OpsIngressRejectAggregator,
 	apiKeyService *service.APIKeyService,
 	authCacheInvalidationWorker *service.AuthCacheInvalidationWorker,
+	usageBillingOutboxWorker *service.UsageBillingOutboxWorker,
 	schedulerSnapshot *service.SchedulerSnapshotService,
 	tokenRefresh *service.TokenRefreshService,
 	accountExpiry *service.AccountExpiryService,
@@ -315,6 +320,7 @@ func provideFinalCleanup(
 	scheduledTestRunner *service.ScheduledTestRunnerService,
 	backupSvc *service.BackupService,
 	paymentOrderExpiry *service.PaymentOrderExpiryService,
+	billingRecovery *service.BillingRecoveryService,
 	miniMaxRemainsSyncRunner *service.MiniMaxRemainsSyncRunner,
 	deepSeekBalanceHealthRunner *service.DeepSeekBalanceHealthRunner,
 	channelMonitorRunner *service.ChannelMonitorRunner,
@@ -346,6 +352,12 @@ func provideFinalCleanup(
 			{"AuthCacheInvalidationWorker", func() error {
 				if authCacheInvalidationWorker != nil {
 					authCacheInvalidationWorker.Stop()
+				}
+				return nil
+			}},
+			{"UsageBillingOutboxWorker", func() error {
+				if usageBillingOutboxWorker != nil {
+					usageBillingOutboxWorker.Stop()
 				}
 				return nil
 			}},
@@ -534,6 +546,12 @@ func provideFinalCleanup(
 			{"PaymentOrderExpiryService", func() error {
 				if paymentOrderExpiry != nil {
 					paymentOrderExpiry.Stop()
+				}
+				return nil
+			}},
+			{"BillingRecoveryService", func() error {
+				if billingRecovery != nil {
+					billingRecovery.Stop()
 				}
 				return nil
 			}},

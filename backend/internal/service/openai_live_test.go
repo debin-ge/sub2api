@@ -94,6 +94,124 @@ func TestValidateLiveCallRequestDoesNotRequireDelegation(t *testing.T) {
 	require.NotContains(t, string(request.Session), "delegation")
 }
 
+func TestValidateLiveCallRequestRejectsAmbiguousOrInvalidModel(t *testing.T) {
+	tests := []struct {
+		name    string
+		session string
+		wantErr string
+	}{
+		{
+			name:    "duplicate model",
+			session: `{"model":"gpt-live","model":"gpt-live-unknown"}`,
+			wantErr: "duplicate top-level model",
+		},
+		{
+			name:    "numeric model",
+			session: `{"model":123}`,
+			wantErr: "session model must be a string",
+		},
+		{
+			name:    "null model",
+			session: `{"model":null}`,
+			wantErr: "session model must be a string",
+		},
+		{
+			name:    "nul model",
+			session: `{"model":"gpt-live\u0000unknown"}`,
+			wantErr: "null characters",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateLiveCallRequest(&LiveCallRequest{
+				SDP:     "v=0\r\n",
+				Session: json.RawMessage(tt.session),
+			})
+			require.ErrorContains(t, err, tt.wantErr)
+		})
+	}
+}
+
+func TestLiveSidebandSessionUpdateModelValidation(t *testing.T) {
+	tests := []struct {
+		name      string
+		payload   string
+		wantModel string
+		wantFound bool
+		wantErr   string
+	}{
+		{
+			name:      "priced identity candidate",
+			payload:   `{"type":"session.update","session":{"model":"gpt-live-next"}}`,
+			wantModel: "gpt-live-next",
+			wantFound: true,
+		},
+		{
+			name:    "duplicate nested model",
+			payload: `{"type":"session.update","session":{"model":"gpt-live","model":"unknown"}}`,
+			wantErr: "duplicate top-level model",
+		},
+		{
+			name:    "non-string nested model",
+			payload: `{"type":"session.update","session":{"model":123}}`,
+			wantErr: "must be a string",
+		},
+		{
+			name:    "duplicate session",
+			payload: `{"type":"session.update","session":{"voice":"alloy"},"session":{"model":"unknown"}}`,
+			wantErr: "duplicate top-level session",
+		},
+		{
+			name:    "unrelated frame",
+			payload: `{"type":"conversation.item.create","item":{"model":"unknown"}}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			model, found, err := liveSidebandSessionUpdateModel([]byte(tt.payload))
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.wantFound, found)
+			require.Equal(t, tt.wantModel, model)
+		})
+	}
+}
+
+func TestEnforceResolvedOpenAITokenPricingDoesNotRemapVerbatimLiveModel(t *testing.T) {
+	cfg := &config.Config{RunMode: config.RunModeStandard}
+	svc := &OpenAIGatewayService{
+		cfg:            cfg,
+		billingService: NewBillingService(cfg, nil),
+	}
+	account := &Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{
+				"public-live-unpriced-alias": "gpt-5.4",
+			},
+		},
+	}
+
+	require.NoError(t, svc.ValidateSelectedOpenAIModelPricing(
+		context.Background(),
+		nil,
+		account,
+		"public-live-unpriced-alias",
+		false,
+	), "control: the ordinary mapped-model guard accepts the priced target")
+	require.ErrorIs(t, svc.enforceResolvedOpenAITokenPricing(
+		context.Background(),
+		nil,
+		account,
+		"public-live-unpriced-alias",
+		"public-live-unpriced-alias",
+	), ErrModelPricingUnavailable)
+}
+
 func TestCreateUpstreamLiveCallPreservesSession(t *testing.T) {
 	upstream := &liveHTTPUpstreamStub{}
 	service := &OpenAIGatewayService{
@@ -140,6 +258,44 @@ func TestCreateUpstreamLiveCallPreservesSession(t *testing.T) {
 	require.Empty(t, upstream.request.Header.Get("OpenAI-Beta"))
 	require.Equal(t, HTTPUpstreamProfileOpenAI, HTTPUpstreamProfileFromContext(upstream.request.Context()))
 	require.True(t, HTTPUpstreamRedirectsDisabled(upstream.request.Context()))
+}
+
+func TestCreateLiveCallRejectsUnknownSessionModelBeforeUpstream(t *testing.T) {
+	groupID := int64(7101)
+	upstream := &liveHTTPUpstreamStub{}
+	store := &liveTestStore{GatewayCache: &schedulerTestGatewayCache{}}
+	concurrencyCache := &liveTestConcurrencyCache{
+		ConcurrencyCache: schedulerTestConcurrencyCache{},
+	}
+	cfg := &config.Config{JWT: config.JWTConfig{Secret: "live-pricing-guard-test"}}
+	cfg.Gateway.Scheduling.LoadBatchEnabled = false
+	service := &OpenAIGatewayService{
+		accountRepo: schedulerTestOpenAIAccountRepo{accounts: []Account{{
+			ID:          7102,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeOAuth,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+			GroupIDs:    []int64{groupID},
+		}}},
+		cache:                 store,
+		cfg:                   cfg,
+		concurrencyService:    NewConcurrencyService(concurrencyCache),
+		pricingGuardRequired:  true,
+		httpUpstream:          upstream,
+		liveAttestation:       liveAttestationStub{header: `{"v":1,"s":0,"t":"v1.test"}`},
+		liveAttestationCipher: newLiveAttestationCipher(cfg),
+	}
+
+	_, err := service.CreateLiveCall(context.Background(), &LiveCallRequest{
+		SDP:     "v=offer\r\n",
+		Session: json.RawMessage(`{"model":"gpt-live-unknown-v99"}`),
+	}, LiveCallIdentity{GroupID: &groupID, APIKeyID: 7103, UserID: 7104}, 1)
+
+	require.ErrorIs(t, err, ErrModelPricingUnavailable)
+	require.ErrorContains(t, err, `requested_model="gpt-live-unknown-v99"`)
+	require.Nil(t, upstream.request, "pricing admission must run before creating the upstream Live call")
 }
 
 func TestLiveAttestationCipherRoundTripAndRejectsOtherInstanceKey(t *testing.T) {

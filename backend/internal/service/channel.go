@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -288,9 +289,9 @@ func deepCopyFeaturesConfig(src map[string]any) map[string]any {
 // mode 决定区间语义：
 //   - BillingModeToken（含空值）：区间是上下文 token 数分段 (min, max]，
 //     按 MinTokens 排序后无重叠，无界区间（MaxTokens=nil）必须是最后一个。
-//   - BillingModePerRequest / BillingModeImage：区间是按 tier_label
-//     (1K/2K/4K 等) 分层，匹配走 label 不依赖 min/max，因此跳过区间重叠
-//     与 last-unlimited 校验，仅做单条字段自洽（min/max/价格非负）检查。
+//   - BillingModeImage：区间必须是唯一的非空 tier_label（1K/2K/4K 等）。
+//   - BillingModePerRequest：支持 tier_label 分层或无 label 的 context 分段，
+//     两种语义不能混用；context 分段沿用 token 模式的重叠校验。
 //
 // 通用规则：MinTokens >= 0；MaxTokens 若非 nil 则 > 0 且 > MinTokens；
 // 所有价格字段 >= 0。
@@ -310,11 +311,46 @@ func ValidateIntervals(intervals []PricingInterval, mode BillingMode) error {
 		}
 	}
 
-	// per_request / image 模式按 tier_label 匹配，不做 token 区间重叠校验
-	if mode == BillingModePerRequest || mode == BillingModeImage {
-		return nil
+	if mode == BillingModeImage {
+		return validateUniqueTierLabels(sorted, true)
+	}
+	if mode == BillingModePerRequest {
+		hasLabel := false
+		hasContextInterval := false
+		for i := range sorted {
+			if strings.TrimSpace(sorted[i].TierLabel) == "" {
+				hasContextInterval = true
+			} else {
+				hasLabel = true
+			}
+		}
+		if hasLabel && hasContextInterval {
+			return fmt.Errorf("per_request intervals cannot mix tier_label and context ranges")
+		}
+		if hasLabel {
+			return validateUniqueTierLabels(sorted, true)
+		}
 	}
 	return validateIntervalOverlap(sorted)
+}
+
+func validateUniqueTierLabels(intervals []PricingInterval, requireLabel bool) error {
+	seen := make(map[string]struct{}, len(intervals))
+	for i := range intervals {
+		label := strings.TrimSpace(intervals[i].TierLabel)
+		if label == "" {
+			if requireLabel {
+				return fmt.Errorf("interval #%d: tier_label is required", i+1)
+			}
+			continue
+		}
+		key := strings.ToLower(label)
+		if _, ok := seen[key]; ok {
+			return fmt.Errorf("interval #%d: duplicate tier_label %q", i+1, label)
+		}
+		seen[key] = struct{}{}
+	}
+	return nil
 }
 
 // validateSingleInterval 校验单个区间的字段合法性
@@ -347,11 +383,21 @@ func validateIntervalPrices(iv *PricingInterval, idx int) error {
 		{"per_request_price", iv.PerRequestPrice},
 	}
 	for _, p := range prices {
-		if p.val != nil && *p.val < 0 {
+		if p.val == nil {
+			continue
+		}
+		if math.IsNaN(*p.val) || math.IsInf(*p.val, 0) {
+			return fmt.Errorf("interval #%d: %s must be finite", idx+1, p.name)
+		}
+		if *p.val < 0 {
 			return fmt.Errorf("interval #%d: %s must be >= 0", idx+1, p.name)
 		}
 	}
 	return nil
+}
+
+func isFiniteNonNegativePrice(price float64) bool {
+	return price >= 0 && !math.IsNaN(price) && !math.IsInf(price, 0)
 }
 
 // validateIntervalOverlap 校验排序后的区间列表无重叠，且无界区间在最后

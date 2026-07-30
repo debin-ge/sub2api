@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 	"unsafe"
@@ -556,7 +557,12 @@ type ForwardResult struct {
 	Model     string
 	// UpstreamModel is the actual upstream model after mapping.
 	// Prefer empty when it is identical to Model; persistence normalizes equal values away as no-op mappings.
-	UpstreamModel    string
+	UpstreamModel string
+	// BillingModel locks an independently priced media SKU selected before
+	// forwarding (for example Responses tools[].model). When non-empty for an
+	// image result, settlement must not replace it with the top-level text
+	// model selected by ChannelUsageFields.BillingModelSource.
+	BillingModel     string
 	Stream           bool
 	Duration         time.Duration
 	FirstTokenMs     *int // 首字时间（流式请求）
@@ -1130,44 +1136,50 @@ type gatewayServiceModelCatalog interface {
 }
 
 type GatewayService struct {
-	accountRepo           AccountRepository
-	groupRepo             GroupRepository
-	usageLogRepo          UsageLogRepository
-	usageBillingRepo      UsageBillingRepository
-	userRepo              UserRepository
-	userSubRepo           UserSubscriptionRepository
-	userGroupRateRepo     UserGroupRateRepository
-	cache                 GatewayCache
-	digestStore           *DigestSessionStore
-	cfg                   *config.Config
-	schedulerSnapshot     *SchedulerSnapshotService
-	billingService        *BillingService
-	rateLimitService      *RateLimitService
-	billingCacheService   *BillingCacheService
-	identityService       *IdentityService
-	httpUpstream          HTTPUpstream
-	deferredService       *DeferredService
-	concurrencyService    *ConcurrencyService
-	claudeTokenProvider   *ClaudeTokenProvider
-	sessionLimitCache     SessionLimitCache // 会话数量限制缓存（仅 Anthropic OAuth/SetupToken）
-	rpmCache              RPMCache          // RPM 计数缓存（仅 Anthropic OAuth/SetupToken）
-	userGroupRateResolver *userGroupRateResolver
-	userGroupRateCache    *gocache.Cache
-	userGroupRateSF       singleflight.Group
-	modelsListCache       *gocache.Cache
-	modelsListCacheTTL    time.Duration
-	settingService        *SettingService
-	responseHeaderFilter  *responseheaders.CompiledHeaderFilter
-	debugModelRouting     atomic.Bool
-	debugClaudeMimic      atomic.Bool
-	channelService        *ChannelService
-	resolver              *ModelPricingResolver
-	compositeResolver     *CompositeRouteResolver
-	debugGatewayBodyFile  atomic.Pointer[os.File] // non-nil when SUB2API_DEBUG_GATEWAY_BODY is set
-	tlsFPProfileService   *TLSFingerprintProfileService
-	balanceNotifyService  *BalanceNotifyService
-	userPlatformQuotaRepo UserPlatformQuotaRepository
-	modelCatalog          gatewayServiceModelCatalog
+	accountRepo      AccountRepository
+	groupRepo        GroupRepository
+	usageLogRepo     UsageLogRepository
+	usageBillingRepo UsageBillingRepository
+	// Tests with lightweight stubs may explicitly opt into the pre-durable
+	// settlement path. Production constructors intentionally leave this false.
+	allowLegacyUsageBillingForTests bool
+	userRepo                        UserRepository
+	userSubRepo                     UserSubscriptionRepository
+	userGroupRateRepo               UserGroupRateRepository
+	cache                           GatewayCache
+	digestStore                     *DigestSessionStore
+	cfg                             *config.Config
+	schedulerSnapshot               *SchedulerSnapshotService
+	billingService                  *BillingService
+	pricingGuardRequired            bool
+	rateLimitService                *RateLimitService
+	billingCacheService             *BillingCacheService
+	identityService                 *IdentityService
+	httpUpstream                    HTTPUpstream
+	deferredService                 *DeferredService
+	concurrencyService              *ConcurrencyService
+	claudeTokenProvider             *ClaudeTokenProvider
+	sessionLimitCache               SessionLimitCache // 会话数量限制缓存（仅 Anthropic OAuth/SetupToken）
+	rpmCache                        RPMCache          // RPM 计数缓存（仅 Anthropic OAuth/SetupToken）
+	userGroupRateResolver           *userGroupRateResolver
+	userGroupRateCache              *gocache.Cache
+	userGroupRateSF                 singleflight.Group
+	modelsListCache                 *gocache.Cache
+	modelsListCacheTTL              time.Duration
+	settingService                  *SettingService
+	responseHeaderFilter            *responseheaders.CompiledHeaderFilter
+	debugModelRouting               atomic.Bool
+	debugClaudeMimic                atomic.Bool
+	channelService                  *ChannelService
+	resolver                        *ModelPricingResolver
+	compositeResolver               *CompositeRouteResolver
+	debugGatewayBodyFile            atomic.Pointer[os.File] // non-nil when SUB2API_DEBUG_GATEWAY_BODY is set
+	tlsFPProfileService             *TLSFingerprintProfileService
+	balanceNotifyService            *BalanceNotifyService
+	userPlatformQuotaRepo           UserPlatformQuotaRepository
+	modelCatalog                    gatewayServiceModelCatalog
+	// billingModelDriftSeen 给漂移告警做 (准入模型, 结算模型) 去重，零值即可用。
+	billingModelDriftSeen sync.Map
 }
 
 // NewGatewayService creates a new GatewayService
@@ -1224,6 +1236,7 @@ func NewGatewayService(
 		schedulerSnapshot:     schedulerSnapshot,
 		concurrencyService:    concurrencyService,
 		billingService:        billingService,
+		pricingGuardRequired:  true,
 		rateLimitService:      rateLimitService,
 		billingCacheService:   billingCacheService,
 		identityService:       identityService,
@@ -1921,33 +1934,6 @@ func recordUsageBillingModel(result *ForwardResult, account *Account) string {
 	return forwardResultBillingModel(result.Model, result.UpstreamModel)
 }
 
-func (s *GatewayService) validateMiniMaxUsagePricing(ctx context.Context, billingModel string, apiKey *APIKey, account *Account, multiplier float64) error {
-	if account == nil || !account.IsMiniMax() || miniMaxUsagePricingMayBeZero(multiplier, account) {
-		return nil
-	}
-	billingModel = strings.TrimSpace(billingModel)
-	if billingModel == "" {
-		return fmt.Errorf("minimax usage billing model is required")
-	}
-	if s == nil || s.billingService == nil {
-		return fmt.Errorf("minimax usage billing service unavailable")
-	}
-	if s.resolveChannelPricing(ctx, billingModel, apiKey) != nil {
-		return nil
-	}
-	if _, err := s.billingService.GetModelPricing(billingModel); err != nil {
-		return fmt.Errorf("minimax model pricing missing for %q: %w", billingModel, err)
-	}
-	return nil
-}
-
-func miniMaxUsagePricingMayBeZero(multiplier float64, account *Account) bool {
-	if multiplier == 0 {
-		return true
-	}
-	return account != nil && account.RateMultiplier != nil && *account.RateMultiplier == 0
-}
-
 // calculateRecordUsageCost 根据请求类型和选项计算费用。
 // resolveChannelPricing 检查指定模型是否存在渠道级别定价。
 // 返回非 nil 的 ResolvedPricing 表示有渠道定价，nil 表示走默认定价路径。
@@ -1958,8 +1944,8 @@ func miniMaxUsagePricingMayBeZero(multiplier float64, account *Account) bool {
 // ResolveChannelMapping 委托渠道服务解析模型映射
 // ReplaceModelInBody 替换请求体中的模型名（导出供 handler 使用）
 // IsModelRestricted 检查模型是否被渠道限制
-// ResolveChannelMappingAndRestrict 解析渠道映射。
-// 模型限制检查已移至调度阶段（checkChannelPricingRestriction），restricted 始终返回 false。
+// ResolveRequestChannelMapping 解析入站请求的渠道映射（groupID 可为空）。
+// 不含模型限制检查——那一步由调度阶段的 checkChannelPricingRestriction 负责。
 // checkChannelPricingRestriction 根据渠道计费基准检查模型是否受定价列表限制。
 // 供调度阶段预检查（requested / channel_mapped）。
 // upstream 需逐账号检查，此处返回 false。

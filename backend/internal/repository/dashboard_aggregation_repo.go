@@ -223,11 +223,12 @@ func (r *dashboardAggregationRepository) CleanupUsageLogs(ctx context.Context, c
 				SELECT ctid
 				FROM usage_logs
 				WHERE created_at < $1
+					AND billing_state <> $3
 				LIMIT $2
 			)
 			DELETE FROM usage_logs
 			WHERE ctid IN (SELECT ctid FROM victims)
-		`, cutoff.UTC(), usageLogsCleanupBatchSize)
+		`, cutoff.UTC(), usageLogsCleanupBatchSize, int16(service.BillingStatePricingUnavailable))
 		if err != nil {
 			return err
 		}
@@ -489,10 +490,8 @@ func (r *dashboardAggregationRepository) dropUsageLogsPartitions(ctx context.Con
 	if err != nil {
 		return err
 	}
-	defer func() {
-		_ = rows.Close()
-	}()
-
+	defer func() { _ = rows.Close() }()
+	partitionNames := make([]string, 0)
 	cutoffMonth := truncateToMonthUTC(cutoff)
 	for rows.Next() {
 		var name string
@@ -509,12 +508,43 @@ func (r *dashboardAggregationRepository) dropUsageLogsPartitions(ctx context.Con
 		}
 		month = month.UTC()
 		if month.Before(cutoffMonth) {
-			if _, err := r.sql.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s", pq.QuoteIdentifier(name))); err != nil {
-				return err
-			}
+			partitionNames = append(partitionNames, name)
 		}
 	}
-	return rows.Err()
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+
+	for _, name := range partitionNames {
+		hasPending, err := r.usageLogsPartitionHasPendingSettlement(ctx, name)
+		if err != nil {
+			return err
+		}
+		if hasPending {
+			// 整个分区 DROP 不可恢复；只要还有一条待定价记录，就保留分区供补偿任务处理。
+			continue
+		}
+		if _, err := r.sql.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s", pq.QuoteIdentifier(name))); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *dashboardAggregationRepository) usageLogsPartitionHasPendingSettlement(ctx context.Context, partitionName string) (bool, error) {
+	query := fmt.Sprintf(
+		"SELECT EXISTS (SELECT 1 FROM %s WHERE billing_state = $1 LIMIT 1)",
+		pq.QuoteIdentifier(partitionName),
+	)
+	var pending bool
+	if err := scanSingleRow(ctx, r.sql, query, []any{int16(service.BillingStatePricingUnavailable)}, &pending); err != nil {
+		return false, err
+	}
+	return pending, nil
 }
 
 func (r *dashboardAggregationRepository) createUsageLogsPartition(ctx context.Context, month time.Time) error {
