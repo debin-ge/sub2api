@@ -41,14 +41,6 @@ func statuspageSourceDescriptor(source RadarSourceKey) (string, string, []RadarS
 	return contract.SummaryEndpoint, contract.PublicURL, radarServiceDescriptorsForSource(source), true
 }
 
-func statuspageIncidentsURL(source RadarSourceKey) (string, bool) {
-	contract, ok := radarStatuspageContractFor(source)
-	if !ok || contract.IncidentsEndpoint == "" {
-		return "", false
-	}
-	return contract.IncidentsEndpoint, true
-}
-
 func statuspageCalendarSpecs(source RadarSourceKey) []statuspageCalendarSpec {
 	contract, ok := radarStatuspageContractFor(source)
 	if !ok {
