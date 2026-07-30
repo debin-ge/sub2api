@@ -340,6 +340,146 @@ func (_c *UserCreate) SetNillableTotalRecharged(v *float64) *UserCreate {
 	return _c
 }
 
+// SetVipPaidEligible sets the "vip_paid_eligible" field.
+func (_c *UserCreate) SetVipPaidEligible(v bool) *UserCreate {
+	_c.mutation.SetVipPaidEligible(v)
+	return _c
+}
+
+// SetNillableVipPaidEligible sets the "vip_paid_eligible" field if the given value is not nil.
+func (_c *UserCreate) SetNillableVipPaidEligible(v *bool) *UserCreate {
+	if v != nil {
+		_c.SetVipPaidEligible(*v)
+	}
+	return _c
+}
+
+// SetVipPaidEligibleAt sets the "vip_paid_eligible_at" field.
+func (_c *UserCreate) SetVipPaidEligibleAt(v time.Time) *UserCreate {
+	_c.mutation.SetVipPaidEligibleAt(v)
+	return _c
+}
+
+// SetNillableVipPaidEligibleAt sets the "vip_paid_eligible_at" field if the given value is not nil.
+func (_c *UserCreate) SetNillableVipPaidEligibleAt(v *time.Time) *UserCreate {
+	if v != nil {
+		_c.SetVipPaidEligibleAt(*v)
+	}
+	return _c
+}
+
+// SetVipPaidSource sets the "vip_paid_source" field.
+func (_c *UserCreate) SetVipPaidSource(v string) *UserCreate {
+	_c.mutation.SetVipPaidSource(v)
+	return _c
+}
+
+// SetNillableVipPaidSource sets the "vip_paid_source" field if the given value is not nil.
+func (_c *UserCreate) SetNillableVipPaidSource(v *string) *UserCreate {
+	if v != nil {
+		_c.SetVipPaidSource(*v)
+	}
+	return _c
+}
+
+// SetVipManualOverride sets the "vip_manual_override" field.
+func (_c *UserCreate) SetVipManualOverride(v bool) *UserCreate {
+	_c.mutation.SetVipManualOverride(v)
+	return _c
+}
+
+// SetNillableVipManualOverride sets the "vip_manual_override" field if the given value is not nil.
+func (_c *UserCreate) SetNillableVipManualOverride(v *bool) *UserCreate {
+	if v != nil {
+		_c.SetVipManualOverride(*v)
+	}
+	return _c
+}
+
+// SetVipOverrideAt sets the "vip_override_at" field.
+func (_c *UserCreate) SetVipOverrideAt(v time.Time) *UserCreate {
+	_c.mutation.SetVipOverrideAt(v)
+	return _c
+}
+
+// SetNillableVipOverrideAt sets the "vip_override_at" field if the given value is not nil.
+func (_c *UserCreate) SetNillableVipOverrideAt(v *time.Time) *UserCreate {
+	if v != nil {
+		_c.SetVipOverrideAt(*v)
+	}
+	return _c
+}
+
+// SetVipOverrideBy sets the "vip_override_by" field.
+func (_c *UserCreate) SetVipOverrideBy(v int64) *UserCreate {
+	_c.mutation.SetVipOverrideBy(v)
+	return _c
+}
+
+// SetNillableVipOverrideBy sets the "vip_override_by" field if the given value is not nil.
+func (_c *UserCreate) SetNillableVipOverrideBy(v *int64) *UserCreate {
+	if v != nil {
+		_c.SetVipOverrideBy(*v)
+	}
+	return _c
+}
+
+// SetVipOverrideReason sets the "vip_override_reason" field.
+func (_c *UserCreate) SetVipOverrideReason(v string) *UserCreate {
+	_c.mutation.SetVipOverrideReason(v)
+	return _c
+}
+
+// SetNillableVipOverrideReason sets the "vip_override_reason" field if the given value is not nil.
+func (_c *UserCreate) SetNillableVipOverrideReason(v *string) *UserCreate {
+	if v != nil {
+		_c.SetVipOverrideReason(*v)
+	}
+	return _c
+}
+
+// SetIsVip sets the "is_vip" field.
+func (_c *UserCreate) SetIsVip(v bool) *UserCreate {
+	_c.mutation.SetIsVip(v)
+	return _c
+}
+
+// SetNillableIsVip sets the "is_vip" field if the given value is not nil.
+func (_c *UserCreate) SetNillableIsVip(v *bool) *UserCreate {
+	if v != nil {
+		_c.SetIsVip(*v)
+	}
+	return _c
+}
+
+// SetVipGrantedAt sets the "vip_granted_at" field.
+func (_c *UserCreate) SetVipGrantedAt(v time.Time) *UserCreate {
+	_c.mutation.SetVipGrantedAt(v)
+	return _c
+}
+
+// SetNillableVipGrantedAt sets the "vip_granted_at" field if the given value is not nil.
+func (_c *UserCreate) SetNillableVipGrantedAt(v *time.Time) *UserCreate {
+	if v != nil {
+		_c.SetVipGrantedAt(*v)
+	}
+	return _c
+}
+
+// SetVipEffectiveSource sets the "vip_effective_source" field.
+func (_c *UserCreate) SetVipEffectiveSource(v string) *UserCreate {
+	_c.mutation.SetVipEffectiveSource(v)
+	return _c
+}
+
+// SetNillableVipEffectiveSource sets the "vip_effective_source" field if the given value is not nil.
+func (_c *UserCreate) SetNillableVipEffectiveSource(v *string) *UserCreate {
+	if v != nil {
+		_c.SetVipEffectiveSource(*v)
+	}
+	return _c
+}
+
 // SetRpmLimit sets the "rpm_limit" field.
 func (_c *UserCreate) SetRpmLimit(v int) *UserCreate {
 	_c.mutation.SetRpmLimit(v)
@@ -652,6 +792,26 @@ func (_c *UserCreate) defaults() error {
 		v := user.DefaultTotalRecharged
 		_c.mutation.SetTotalRecharged(v)
 	}
+	if _, ok := _c.mutation.VipPaidEligible(); !ok {
+		v := user.DefaultVipPaidEligible
+		_c.mutation.SetVipPaidEligible(v)
+	}
+	if _, ok := _c.mutation.VipPaidSource(); !ok {
+		v := user.DefaultVipPaidSource
+		_c.mutation.SetVipPaidSource(v)
+	}
+	if _, ok := _c.mutation.VipOverrideReason(); !ok {
+		v := user.DefaultVipOverrideReason
+		_c.mutation.SetVipOverrideReason(v)
+	}
+	if _, ok := _c.mutation.IsVip(); !ok {
+		v := user.DefaultIsVip
+		_c.mutation.SetIsVip(v)
+	}
+	if _, ok := _c.mutation.VipEffectiveSource(); !ok {
+		v := user.DefaultVipEffectiveSource
+		_c.mutation.SetVipEffectiveSource(v)
+	}
 	if _, ok := _c.mutation.RpmLimit(); !ok {
 		v := user.DefaultRpmLimit
 		_c.mutation.SetRpmLimit(v)
@@ -741,6 +901,31 @@ func (_c *UserCreate) check() error {
 	}
 	if _, ok := _c.mutation.TotalRecharged(); !ok {
 		return &ValidationError{Name: "total_recharged", err: errors.New(`ent: missing required field "User.total_recharged"`)}
+	}
+	if _, ok := _c.mutation.VipPaidEligible(); !ok {
+		return &ValidationError{Name: "vip_paid_eligible", err: errors.New(`ent: missing required field "User.vip_paid_eligible"`)}
+	}
+	if _, ok := _c.mutation.VipPaidSource(); !ok {
+		return &ValidationError{Name: "vip_paid_source", err: errors.New(`ent: missing required field "User.vip_paid_source"`)}
+	}
+	if v, ok := _c.mutation.VipPaidSource(); ok {
+		if err := user.VipPaidSourceValidator(v); err != nil {
+			return &ValidationError{Name: "vip_paid_source", err: fmt.Errorf(`ent: validator failed for field "User.vip_paid_source": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.VipOverrideReason(); !ok {
+		return &ValidationError{Name: "vip_override_reason", err: errors.New(`ent: missing required field "User.vip_override_reason"`)}
+	}
+	if _, ok := _c.mutation.IsVip(); !ok {
+		return &ValidationError{Name: "is_vip", err: errors.New(`ent: missing required field "User.is_vip"`)}
+	}
+	if _, ok := _c.mutation.VipEffectiveSource(); !ok {
+		return &ValidationError{Name: "vip_effective_source", err: errors.New(`ent: missing required field "User.vip_effective_source"`)}
+	}
+	if v, ok := _c.mutation.VipEffectiveSource(); ok {
+		if err := user.VipEffectiveSourceValidator(v); err != nil {
+			return &ValidationError{Name: "vip_effective_source", err: fmt.Errorf(`ent: validator failed for field "User.vip_effective_source": %w`, err)}
+		}
 	}
 	if _, ok := _c.mutation.RpmLimit(); !ok {
 		return &ValidationError{Name: "rpm_limit", err: errors.New(`ent: missing required field "User.rpm_limit"`)}
@@ -863,6 +1048,46 @@ func (_c *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.TotalRecharged(); ok {
 		_spec.SetField(user.FieldTotalRecharged, field.TypeFloat64, value)
 		_node.TotalRecharged = value
+	}
+	if value, ok := _c.mutation.VipPaidEligible(); ok {
+		_spec.SetField(user.FieldVipPaidEligible, field.TypeBool, value)
+		_node.VipPaidEligible = value
+	}
+	if value, ok := _c.mutation.VipPaidEligibleAt(); ok {
+		_spec.SetField(user.FieldVipPaidEligibleAt, field.TypeTime, value)
+		_node.VipPaidEligibleAt = &value
+	}
+	if value, ok := _c.mutation.VipPaidSource(); ok {
+		_spec.SetField(user.FieldVipPaidSource, field.TypeString, value)
+		_node.VipPaidSource = value
+	}
+	if value, ok := _c.mutation.VipManualOverride(); ok {
+		_spec.SetField(user.FieldVipManualOverride, field.TypeBool, value)
+		_node.VipManualOverride = &value
+	}
+	if value, ok := _c.mutation.VipOverrideAt(); ok {
+		_spec.SetField(user.FieldVipOverrideAt, field.TypeTime, value)
+		_node.VipOverrideAt = &value
+	}
+	if value, ok := _c.mutation.VipOverrideBy(); ok {
+		_spec.SetField(user.FieldVipOverrideBy, field.TypeInt64, value)
+		_node.VipOverrideBy = &value
+	}
+	if value, ok := _c.mutation.VipOverrideReason(); ok {
+		_spec.SetField(user.FieldVipOverrideReason, field.TypeString, value)
+		_node.VipOverrideReason = value
+	}
+	if value, ok := _c.mutation.IsVip(); ok {
+		_spec.SetField(user.FieldIsVip, field.TypeBool, value)
+		_node.IsVip = value
+	}
+	if value, ok := _c.mutation.VipGrantedAt(); ok {
+		_spec.SetField(user.FieldVipGrantedAt, field.TypeTime, value)
+		_node.VipGrantedAt = &value
+	}
+	if value, ok := _c.mutation.VipEffectiveSource(); ok {
+		_spec.SetField(user.FieldVipEffectiveSource, field.TypeString, value)
+		_node.VipEffectiveSource = value
 	}
 	if value, ok := _c.mutation.RpmLimit(); ok {
 		_spec.SetField(user.FieldRpmLimit, field.TypeInt, value)
@@ -1462,6 +1687,162 @@ func (u *UserUpsert) AddTotalRecharged(v float64) *UserUpsert {
 	return u
 }
 
+// SetVipPaidEligible sets the "vip_paid_eligible" field.
+func (u *UserUpsert) SetVipPaidEligible(v bool) *UserUpsert {
+	u.Set(user.FieldVipPaidEligible, v)
+	return u
+}
+
+// UpdateVipPaidEligible sets the "vip_paid_eligible" field to the value that was provided on create.
+func (u *UserUpsert) UpdateVipPaidEligible() *UserUpsert {
+	u.SetExcluded(user.FieldVipPaidEligible)
+	return u
+}
+
+// SetVipPaidEligibleAt sets the "vip_paid_eligible_at" field.
+func (u *UserUpsert) SetVipPaidEligibleAt(v time.Time) *UserUpsert {
+	u.Set(user.FieldVipPaidEligibleAt, v)
+	return u
+}
+
+// UpdateVipPaidEligibleAt sets the "vip_paid_eligible_at" field to the value that was provided on create.
+func (u *UserUpsert) UpdateVipPaidEligibleAt() *UserUpsert {
+	u.SetExcluded(user.FieldVipPaidEligibleAt)
+	return u
+}
+
+// ClearVipPaidEligibleAt clears the value of the "vip_paid_eligible_at" field.
+func (u *UserUpsert) ClearVipPaidEligibleAt() *UserUpsert {
+	u.SetNull(user.FieldVipPaidEligibleAt)
+	return u
+}
+
+// SetVipPaidSource sets the "vip_paid_source" field.
+func (u *UserUpsert) SetVipPaidSource(v string) *UserUpsert {
+	u.Set(user.FieldVipPaidSource, v)
+	return u
+}
+
+// UpdateVipPaidSource sets the "vip_paid_source" field to the value that was provided on create.
+func (u *UserUpsert) UpdateVipPaidSource() *UserUpsert {
+	u.SetExcluded(user.FieldVipPaidSource)
+	return u
+}
+
+// SetVipManualOverride sets the "vip_manual_override" field.
+func (u *UserUpsert) SetVipManualOverride(v bool) *UserUpsert {
+	u.Set(user.FieldVipManualOverride, v)
+	return u
+}
+
+// UpdateVipManualOverride sets the "vip_manual_override" field to the value that was provided on create.
+func (u *UserUpsert) UpdateVipManualOverride() *UserUpsert {
+	u.SetExcluded(user.FieldVipManualOverride)
+	return u
+}
+
+// ClearVipManualOverride clears the value of the "vip_manual_override" field.
+func (u *UserUpsert) ClearVipManualOverride() *UserUpsert {
+	u.SetNull(user.FieldVipManualOverride)
+	return u
+}
+
+// SetVipOverrideAt sets the "vip_override_at" field.
+func (u *UserUpsert) SetVipOverrideAt(v time.Time) *UserUpsert {
+	u.Set(user.FieldVipOverrideAt, v)
+	return u
+}
+
+// UpdateVipOverrideAt sets the "vip_override_at" field to the value that was provided on create.
+func (u *UserUpsert) UpdateVipOverrideAt() *UserUpsert {
+	u.SetExcluded(user.FieldVipOverrideAt)
+	return u
+}
+
+// ClearVipOverrideAt clears the value of the "vip_override_at" field.
+func (u *UserUpsert) ClearVipOverrideAt() *UserUpsert {
+	u.SetNull(user.FieldVipOverrideAt)
+	return u
+}
+
+// SetVipOverrideBy sets the "vip_override_by" field.
+func (u *UserUpsert) SetVipOverrideBy(v int64) *UserUpsert {
+	u.Set(user.FieldVipOverrideBy, v)
+	return u
+}
+
+// UpdateVipOverrideBy sets the "vip_override_by" field to the value that was provided on create.
+func (u *UserUpsert) UpdateVipOverrideBy() *UserUpsert {
+	u.SetExcluded(user.FieldVipOverrideBy)
+	return u
+}
+
+// AddVipOverrideBy adds v to the "vip_override_by" field.
+func (u *UserUpsert) AddVipOverrideBy(v int64) *UserUpsert {
+	u.Add(user.FieldVipOverrideBy, v)
+	return u
+}
+
+// ClearVipOverrideBy clears the value of the "vip_override_by" field.
+func (u *UserUpsert) ClearVipOverrideBy() *UserUpsert {
+	u.SetNull(user.FieldVipOverrideBy)
+	return u
+}
+
+// SetVipOverrideReason sets the "vip_override_reason" field.
+func (u *UserUpsert) SetVipOverrideReason(v string) *UserUpsert {
+	u.Set(user.FieldVipOverrideReason, v)
+	return u
+}
+
+// UpdateVipOverrideReason sets the "vip_override_reason" field to the value that was provided on create.
+func (u *UserUpsert) UpdateVipOverrideReason() *UserUpsert {
+	u.SetExcluded(user.FieldVipOverrideReason)
+	return u
+}
+
+// SetIsVip sets the "is_vip" field.
+func (u *UserUpsert) SetIsVip(v bool) *UserUpsert {
+	u.Set(user.FieldIsVip, v)
+	return u
+}
+
+// UpdateIsVip sets the "is_vip" field to the value that was provided on create.
+func (u *UserUpsert) UpdateIsVip() *UserUpsert {
+	u.SetExcluded(user.FieldIsVip)
+	return u
+}
+
+// SetVipGrantedAt sets the "vip_granted_at" field.
+func (u *UserUpsert) SetVipGrantedAt(v time.Time) *UserUpsert {
+	u.Set(user.FieldVipGrantedAt, v)
+	return u
+}
+
+// UpdateVipGrantedAt sets the "vip_granted_at" field to the value that was provided on create.
+func (u *UserUpsert) UpdateVipGrantedAt() *UserUpsert {
+	u.SetExcluded(user.FieldVipGrantedAt)
+	return u
+}
+
+// ClearVipGrantedAt clears the value of the "vip_granted_at" field.
+func (u *UserUpsert) ClearVipGrantedAt() *UserUpsert {
+	u.SetNull(user.FieldVipGrantedAt)
+	return u
+}
+
+// SetVipEffectiveSource sets the "vip_effective_source" field.
+func (u *UserUpsert) SetVipEffectiveSource(v string) *UserUpsert {
+	u.Set(user.FieldVipEffectiveSource, v)
+	return u
+}
+
+// UpdateVipEffectiveSource sets the "vip_effective_source" field to the value that was provided on create.
+func (u *UserUpsert) UpdateVipEffectiveSource() *UserUpsert {
+	u.SetExcluded(user.FieldVipEffectiveSource)
+	return u
+}
+
 // SetRpmLimit sets the "rpm_limit" field.
 func (u *UserUpsert) SetRpmLimit(v int) *UserUpsert {
 	u.Set(user.FieldRpmLimit, v)
@@ -1907,6 +2288,188 @@ func (u *UserUpsertOne) AddTotalRecharged(v float64) *UserUpsertOne {
 func (u *UserUpsertOne) UpdateTotalRecharged() *UserUpsertOne {
 	return u.Update(func(s *UserUpsert) {
 		s.UpdateTotalRecharged()
+	})
+}
+
+// SetVipPaidEligible sets the "vip_paid_eligible" field.
+func (u *UserUpsertOne) SetVipPaidEligible(v bool) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.SetVipPaidEligible(v)
+	})
+}
+
+// UpdateVipPaidEligible sets the "vip_paid_eligible" field to the value that was provided on create.
+func (u *UserUpsertOne) UpdateVipPaidEligible() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateVipPaidEligible()
+	})
+}
+
+// SetVipPaidEligibleAt sets the "vip_paid_eligible_at" field.
+func (u *UserUpsertOne) SetVipPaidEligibleAt(v time.Time) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.SetVipPaidEligibleAt(v)
+	})
+}
+
+// UpdateVipPaidEligibleAt sets the "vip_paid_eligible_at" field to the value that was provided on create.
+func (u *UserUpsertOne) UpdateVipPaidEligibleAt() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateVipPaidEligibleAt()
+	})
+}
+
+// ClearVipPaidEligibleAt clears the value of the "vip_paid_eligible_at" field.
+func (u *UserUpsertOne) ClearVipPaidEligibleAt() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.ClearVipPaidEligibleAt()
+	})
+}
+
+// SetVipPaidSource sets the "vip_paid_source" field.
+func (u *UserUpsertOne) SetVipPaidSource(v string) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.SetVipPaidSource(v)
+	})
+}
+
+// UpdateVipPaidSource sets the "vip_paid_source" field to the value that was provided on create.
+func (u *UserUpsertOne) UpdateVipPaidSource() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateVipPaidSource()
+	})
+}
+
+// SetVipManualOverride sets the "vip_manual_override" field.
+func (u *UserUpsertOne) SetVipManualOverride(v bool) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.SetVipManualOverride(v)
+	})
+}
+
+// UpdateVipManualOverride sets the "vip_manual_override" field to the value that was provided on create.
+func (u *UserUpsertOne) UpdateVipManualOverride() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateVipManualOverride()
+	})
+}
+
+// ClearVipManualOverride clears the value of the "vip_manual_override" field.
+func (u *UserUpsertOne) ClearVipManualOverride() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.ClearVipManualOverride()
+	})
+}
+
+// SetVipOverrideAt sets the "vip_override_at" field.
+func (u *UserUpsertOne) SetVipOverrideAt(v time.Time) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.SetVipOverrideAt(v)
+	})
+}
+
+// UpdateVipOverrideAt sets the "vip_override_at" field to the value that was provided on create.
+func (u *UserUpsertOne) UpdateVipOverrideAt() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateVipOverrideAt()
+	})
+}
+
+// ClearVipOverrideAt clears the value of the "vip_override_at" field.
+func (u *UserUpsertOne) ClearVipOverrideAt() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.ClearVipOverrideAt()
+	})
+}
+
+// SetVipOverrideBy sets the "vip_override_by" field.
+func (u *UserUpsertOne) SetVipOverrideBy(v int64) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.SetVipOverrideBy(v)
+	})
+}
+
+// AddVipOverrideBy adds v to the "vip_override_by" field.
+func (u *UserUpsertOne) AddVipOverrideBy(v int64) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.AddVipOverrideBy(v)
+	})
+}
+
+// UpdateVipOverrideBy sets the "vip_override_by" field to the value that was provided on create.
+func (u *UserUpsertOne) UpdateVipOverrideBy() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateVipOverrideBy()
+	})
+}
+
+// ClearVipOverrideBy clears the value of the "vip_override_by" field.
+func (u *UserUpsertOne) ClearVipOverrideBy() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.ClearVipOverrideBy()
+	})
+}
+
+// SetVipOverrideReason sets the "vip_override_reason" field.
+func (u *UserUpsertOne) SetVipOverrideReason(v string) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.SetVipOverrideReason(v)
+	})
+}
+
+// UpdateVipOverrideReason sets the "vip_override_reason" field to the value that was provided on create.
+func (u *UserUpsertOne) UpdateVipOverrideReason() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateVipOverrideReason()
+	})
+}
+
+// SetIsVip sets the "is_vip" field.
+func (u *UserUpsertOne) SetIsVip(v bool) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.SetIsVip(v)
+	})
+}
+
+// UpdateIsVip sets the "is_vip" field to the value that was provided on create.
+func (u *UserUpsertOne) UpdateIsVip() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateIsVip()
+	})
+}
+
+// SetVipGrantedAt sets the "vip_granted_at" field.
+func (u *UserUpsertOne) SetVipGrantedAt(v time.Time) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.SetVipGrantedAt(v)
+	})
+}
+
+// UpdateVipGrantedAt sets the "vip_granted_at" field to the value that was provided on create.
+func (u *UserUpsertOne) UpdateVipGrantedAt() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateVipGrantedAt()
+	})
+}
+
+// ClearVipGrantedAt clears the value of the "vip_granted_at" field.
+func (u *UserUpsertOne) ClearVipGrantedAt() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.ClearVipGrantedAt()
+	})
+}
+
+// SetVipEffectiveSource sets the "vip_effective_source" field.
+func (u *UserUpsertOne) SetVipEffectiveSource(v string) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.SetVipEffectiveSource(v)
+	})
+}
+
+// UpdateVipEffectiveSource sets the "vip_effective_source" field to the value that was provided on create.
+func (u *UserUpsertOne) UpdateVipEffectiveSource() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateVipEffectiveSource()
 	})
 }
 
@@ -2524,6 +3087,188 @@ func (u *UserUpsertBulk) AddTotalRecharged(v float64) *UserUpsertBulk {
 func (u *UserUpsertBulk) UpdateTotalRecharged() *UserUpsertBulk {
 	return u.Update(func(s *UserUpsert) {
 		s.UpdateTotalRecharged()
+	})
+}
+
+// SetVipPaidEligible sets the "vip_paid_eligible" field.
+func (u *UserUpsertBulk) SetVipPaidEligible(v bool) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.SetVipPaidEligible(v)
+	})
+}
+
+// UpdateVipPaidEligible sets the "vip_paid_eligible" field to the value that was provided on create.
+func (u *UserUpsertBulk) UpdateVipPaidEligible() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateVipPaidEligible()
+	})
+}
+
+// SetVipPaidEligibleAt sets the "vip_paid_eligible_at" field.
+func (u *UserUpsertBulk) SetVipPaidEligibleAt(v time.Time) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.SetVipPaidEligibleAt(v)
+	})
+}
+
+// UpdateVipPaidEligibleAt sets the "vip_paid_eligible_at" field to the value that was provided on create.
+func (u *UserUpsertBulk) UpdateVipPaidEligibleAt() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateVipPaidEligibleAt()
+	})
+}
+
+// ClearVipPaidEligibleAt clears the value of the "vip_paid_eligible_at" field.
+func (u *UserUpsertBulk) ClearVipPaidEligibleAt() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.ClearVipPaidEligibleAt()
+	})
+}
+
+// SetVipPaidSource sets the "vip_paid_source" field.
+func (u *UserUpsertBulk) SetVipPaidSource(v string) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.SetVipPaidSource(v)
+	})
+}
+
+// UpdateVipPaidSource sets the "vip_paid_source" field to the value that was provided on create.
+func (u *UserUpsertBulk) UpdateVipPaidSource() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateVipPaidSource()
+	})
+}
+
+// SetVipManualOverride sets the "vip_manual_override" field.
+func (u *UserUpsertBulk) SetVipManualOverride(v bool) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.SetVipManualOverride(v)
+	})
+}
+
+// UpdateVipManualOverride sets the "vip_manual_override" field to the value that was provided on create.
+func (u *UserUpsertBulk) UpdateVipManualOverride() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateVipManualOverride()
+	})
+}
+
+// ClearVipManualOverride clears the value of the "vip_manual_override" field.
+func (u *UserUpsertBulk) ClearVipManualOverride() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.ClearVipManualOverride()
+	})
+}
+
+// SetVipOverrideAt sets the "vip_override_at" field.
+func (u *UserUpsertBulk) SetVipOverrideAt(v time.Time) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.SetVipOverrideAt(v)
+	})
+}
+
+// UpdateVipOverrideAt sets the "vip_override_at" field to the value that was provided on create.
+func (u *UserUpsertBulk) UpdateVipOverrideAt() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateVipOverrideAt()
+	})
+}
+
+// ClearVipOverrideAt clears the value of the "vip_override_at" field.
+func (u *UserUpsertBulk) ClearVipOverrideAt() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.ClearVipOverrideAt()
+	})
+}
+
+// SetVipOverrideBy sets the "vip_override_by" field.
+func (u *UserUpsertBulk) SetVipOverrideBy(v int64) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.SetVipOverrideBy(v)
+	})
+}
+
+// AddVipOverrideBy adds v to the "vip_override_by" field.
+func (u *UserUpsertBulk) AddVipOverrideBy(v int64) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.AddVipOverrideBy(v)
+	})
+}
+
+// UpdateVipOverrideBy sets the "vip_override_by" field to the value that was provided on create.
+func (u *UserUpsertBulk) UpdateVipOverrideBy() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateVipOverrideBy()
+	})
+}
+
+// ClearVipOverrideBy clears the value of the "vip_override_by" field.
+func (u *UserUpsertBulk) ClearVipOverrideBy() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.ClearVipOverrideBy()
+	})
+}
+
+// SetVipOverrideReason sets the "vip_override_reason" field.
+func (u *UserUpsertBulk) SetVipOverrideReason(v string) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.SetVipOverrideReason(v)
+	})
+}
+
+// UpdateVipOverrideReason sets the "vip_override_reason" field to the value that was provided on create.
+func (u *UserUpsertBulk) UpdateVipOverrideReason() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateVipOverrideReason()
+	})
+}
+
+// SetIsVip sets the "is_vip" field.
+func (u *UserUpsertBulk) SetIsVip(v bool) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.SetIsVip(v)
+	})
+}
+
+// UpdateIsVip sets the "is_vip" field to the value that was provided on create.
+func (u *UserUpsertBulk) UpdateIsVip() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateIsVip()
+	})
+}
+
+// SetVipGrantedAt sets the "vip_granted_at" field.
+func (u *UserUpsertBulk) SetVipGrantedAt(v time.Time) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.SetVipGrantedAt(v)
+	})
+}
+
+// UpdateVipGrantedAt sets the "vip_granted_at" field to the value that was provided on create.
+func (u *UserUpsertBulk) UpdateVipGrantedAt() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateVipGrantedAt()
+	})
+}
+
+// ClearVipGrantedAt clears the value of the "vip_granted_at" field.
+func (u *UserUpsertBulk) ClearVipGrantedAt() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.ClearVipGrantedAt()
+	})
+}
+
+// SetVipEffectiveSource sets the "vip_effective_source" field.
+func (u *UserUpsertBulk) SetVipEffectiveSource(v string) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.SetVipEffectiveSource(v)
+	})
+}
+
+// UpdateVipEffectiveSource sets the "vip_effective_source" field to the value that was provided on create.
+func (u *UserUpsertBulk) UpdateVipEffectiveSource() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateVipEffectiveSource()
 	})
 }
 

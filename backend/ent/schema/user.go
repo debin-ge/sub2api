@@ -112,6 +112,40 @@ func (User) Fields() []ent.Field {
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}).
 			Default(0),
 
+		// 付费 VIP (local extension; added by migration 192)
+		// 自动支付资格与管理员覆盖保持正交；is_vip 是认证热路径读取的物化有效态。
+		field.Bool("vip_paid_eligible").
+			Default(false),
+		field.Time("vip_paid_eligible_at").
+			Optional().
+			Nillable().
+			SchemaType(map[string]string{dialect.Postgres: "timestamptz"}),
+		field.String("vip_paid_source").
+			MaxLen(20).
+			Default(""),
+		field.Bool("vip_manual_override").
+			Optional().
+			Nillable(),
+		field.Time("vip_override_at").
+			Optional().
+			Nillable().
+			SchemaType(map[string]string{dialect.Postgres: "timestamptz"}),
+		field.Int64("vip_override_by").
+			Optional().
+			Nillable(),
+		field.String("vip_override_reason").
+			SchemaType(map[string]string{dialect.Postgres: "text"}).
+			Default(""),
+		field.Bool("is_vip").
+			Default(false),
+		field.Time("vip_granted_at").
+			Optional().
+			Nillable().
+			SchemaType(map[string]string{dialect.Postgres: "timestamptz"}),
+		field.String("vip_effective_source").
+			MaxLen(20).
+			Default(""),
+
 		// 用户级每分钟请求数上限（0 = 不限制）。仅当所在分组未设置 rpm_limit 时作为兜底生效。
 		field.Int("rpm_limit").
 			Default(0),

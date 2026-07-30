@@ -275,7 +275,6 @@ function platformAccentDotClass(p: string): string {
 const { t } = useI18n()
 const router = useRouter()
 const appStore = useAppStore()
-
 const subscriptions = ref<UserSubscription[]>([])
 const loading = ref(true)
 

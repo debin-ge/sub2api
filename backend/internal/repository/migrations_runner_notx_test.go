@@ -3,10 +3,12 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"regexp"
 	"testing"
 	"testing/fstest"
 
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
+	"github.com/Wei-Shaw/sub2api/migrations"
 	"github.com/stretchr/testify/require"
 )
 
@@ -269,6 +271,45 @@ CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_scheduler_outbox_pending_dedu
 	err = applyMigrationsFS(context.Background(), db, fsys)
 	require.NoError(t, err)
 	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestPrepareNonTransactionalMigration_VIPIndexesDropsEveryInvalidTargetBeforeRetry(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	for _, indexName := range vipConcurrentIndexNames {
+		mock.ExpectQuery("SELECT EXISTS \\(").
+			WithArgs(indexName).
+			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+		mock.ExpectExec("DROP INDEX CONCURRENTLY IF EXISTS " + regexp.QuoteMeta(indexName)).
+			WillReturnResult(sqlmock.NewResult(0, 0))
+	}
+
+	require.NoError(
+		t,
+		prepareNonTransactionalMigration(context.Background(), db, vipIndexesMigration),
+	)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestVIPConcurrentIndexNamesCoverEveryMigrationTarget(t *testing.T) {
+	sqlBytes, err := migrations.FS.ReadFile(vipIndexesMigration)
+	require.NoError(t, err)
+
+	indexPattern := regexp.MustCompile(
+		`(?im)\bCREATE\s+(?:UNIQUE\s+)?INDEX\s+CONCURRENTLY\s+IF\s+NOT\s+EXISTS\s+([a-zA-Z0-9_]+)`,
+	)
+	matches := indexPattern.FindAllStringSubmatch(string(sqlBytes), -1)
+	require.NotEmpty(t, matches)
+
+	migrationIndexNames := make([]string, 0, len(matches))
+	for _, match := range matches {
+		require.Len(t, match, 2)
+		migrationIndexNames = append(migrationIndexNames, match[1])
+	}
+	require.ElementsMatch(t, migrationIndexNames, vipConcurrentIndexNames)
+	require.Len(t, vipConcurrentIndexNames, len(matches), "retry cleanup list contains duplicates")
 }
 
 func TestApplyMigrationsFS_TransactionalMigration(t *testing.T) {

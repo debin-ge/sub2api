@@ -650,6 +650,66 @@ func TestAlreadyProcessedRecoversStaleRechargingLease(t *testing.T) {
 	require.Equal(t, OrderStatusCompleted, reloaded.Status)
 }
 
+func TestCompletedFulfillmentReplayRepairsVIPProjection(t *testing.T) {
+	ctx := context.Background()
+	for _, orderType := range []string{payment.OrderTypeBalance, payment.OrderTypeSubscription} {
+		t.Run(orderType, func(t *testing.T) {
+			client := newPaymentConfigServiceTestClient(t)
+			completedAt := time.Now().Add(-time.Minute).UTC().Truncate(time.Microsecond)
+			order := createPaymentFulfillmentSubscriptionOrder(t, ctx, client, OrderStatusCompleted, completedAt)
+			update := client.PaymentOrder.UpdateOneID(order.ID).
+				SetOrderType(orderType).
+				SetCompletedAt(completedAt)
+			if orderType == payment.OrderTypeBalance {
+				update = update.ClearPlanID().ClearSubscriptionGroupID().ClearSubscriptionDays()
+			}
+			order, err := update.Save(ctx)
+			require.NoError(t, err)
+
+			repo := &vipEntitlementRepositoryStub{
+				applyResult: VIPMutationResult{
+					EligibilityChanged: true,
+					EffectiveChanged:   true,
+					ManualMode:         VIPModeAuto,
+				},
+			}
+			svc := &PaymentService{
+				entClient:             client,
+				vipEntitlementService: NewVIPEntitlementService(repo, nil),
+			}
+
+			if orderType == payment.OrderTypeBalance {
+				err = svc.ExecuteBalanceFulfillment(ctx, order.ID)
+			} else {
+				err = svc.ExecuteSubscriptionFulfillment(ctx, order.ID)
+			}
+			require.NoError(t, err)
+			require.Len(t, repo.applyCalls, 1)
+			require.Equal(t, order.UserID, repo.applyCalls[0].userID)
+			require.Equal(t, order.ID, repo.applyCalls[0].orderID)
+			require.Equal(t, completedAt, repo.applyCalls[0].completedAt)
+			require.Equal(t, VIPPaidSourcePayment, repo.applyCalls[0].source)
+		})
+	}
+}
+
+func TestCompletedFulfillmentReplayDoesNotFailPaymentWhenVIPProjectionFails(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	completedAt := time.Now().Add(-time.Minute).UTC().Truncate(time.Microsecond)
+	order := createPaymentFulfillmentSubscriptionOrder(t, ctx, client, OrderStatusCompleted, completedAt)
+	order, err := client.PaymentOrder.UpdateOneID(order.ID).SetCompletedAt(completedAt).Save(ctx)
+	require.NoError(t, err)
+
+	repo := &vipEntitlementRepositoryStub{applyErr: errors.New("projection unavailable")}
+	svc := &PaymentService{
+		entClient:             client,
+		vipEntitlementService: NewVIPEntitlementService(repo, nil),
+	}
+	require.NoError(t, svc.ExecuteSubscriptionFulfillment(ctx, order.ID))
+	require.Len(t, repo.applyCalls, 1)
+}
+
 func TestFulfillmentLeaseVersionRejectsStaleWorker(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentConfigServiceTestClient(t)

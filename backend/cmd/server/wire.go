@@ -194,6 +194,8 @@ func provideCleanup(
 	accountExpiry *service.AccountExpiryService,
 	proxyExpiry *service.ProxyExpiryService,
 	subscriptionExpiry *service.SubscriptionExpiryService,
+	vipReconcile *service.VIPReconcileService,
+	vipIncrementalReconcile *service.VIPIncrementalReconcileService,
 	usageCleanup *service.UsageCleanupService,
 	idempotencyCleanup *service.IdempotencyCleanupService,
 	batchImageCleanup *service.BatchImageCleanupService,
@@ -241,6 +243,8 @@ func provideCleanup(
 			accountExpiry,
 			proxyExpiry,
 			subscriptionExpiry,
+			vipReconcile,
+			vipIncrementalReconcile,
 			usageCleanup,
 			idempotencyCleanup,
 			batchImageCleanup,
@@ -291,6 +295,8 @@ func provideFinalCleanup(
 	accountExpiry *service.AccountExpiryService,
 	proxyExpiry *service.ProxyExpiryService,
 	subscriptionExpiry *service.SubscriptionExpiryService,
+	vipReconcile *service.VIPReconcileService,
+	vipIncrementalReconcile *service.VIPIncrementalReconcileService,
 	usageCleanup *service.UsageCleanupService,
 	idempotencyCleanup *service.IdempotencyCleanupService,
 	batchImageCleanup *service.BatchImageCleanupService,
@@ -447,6 +453,18 @@ func provideFinalCleanup(
 			}},
 			{"SubscriptionExpiryService", func() error {
 				subscriptionExpiry.Stop()
+				return nil
+			}},
+			{"VIPReconcileService", func() error {
+				if vipReconcile != nil {
+					vipReconcile.Stop()
+				}
+				return nil
+			}},
+			{"VIPIncrementalReconcileService", func() error {
+				if vipIncrementalReconcile != nil {
+					vipIncrementalReconcile.Stop()
+				}
 				return nil
 			}},
 			{"SubscriptionService", func() error {

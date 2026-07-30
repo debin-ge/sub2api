@@ -6,12 +6,16 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -45,6 +49,85 @@ func (s *GroupRepoSuite) SetupTest() {
 
 func TestGroupRepoSuite(t *testing.T) {
 	suite.Run(t, new(GroupRepoSuite))
+}
+
+func TestGroupRepositoryDeleteCascadeSerializesConcurrentIncomingEdge(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	repo := newGroupRepositoryWithSQL(integrationEntClient, integrationDB)
+	suffix := time.Now().UnixNano()
+	target := &service.Group{
+		Name:             fmt.Sprintf("delete-race-target-%d", suffix),
+		Platform:         service.PlatformAnthropic,
+		RateMultiplier:   1,
+		Status:           service.StatusActive,
+		SubscriptionType: service.SubscriptionTypeStandard,
+	}
+	require.NoError(t, repo.Create(ctx, target))
+	source := &service.Group{
+		Name:             fmt.Sprintf("delete-race-source-%d", suffix),
+		Platform:         service.PlatformAnthropic,
+		RateMultiplier:   1,
+		Status:           service.StatusActive,
+		SubscriptionType: service.SubscriptionTypeStandard,
+	}
+	require.NoError(t, repo.Create(ctx, source))
+	t.Cleanup(func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cleanupCancel()
+		_, _ = integrationDB.ExecContext(
+			cleanupCtx,
+			"UPDATE groups SET fallback_group_id = NULL WHERE id = $1",
+			source.ID,
+		)
+		_, _ = repo.DeleteCascade(cleanupCtx, source.ID)
+		_, _ = repo.DeleteCascade(cleanupCtx, target.ID)
+	})
+
+	writerTx, err := integrationDB.BeginTx(ctx, nil)
+	require.NoError(t, err)
+	defer func() { _ = writerTx.Rollback() }()
+	_, err = writerTx.ExecContext(
+		ctx,
+		"SELECT pg_advisory_xact_lock($1)",
+		groupAccessGraphAdvisoryLockID,
+	)
+	require.NoError(t, err)
+
+	deleteDone := make(chan error, 1)
+	go func() {
+		_, deleteErr := repo.DeleteCascade(ctx, target.ID)
+		deleteDone <- deleteErr
+	}()
+	select {
+	case deleteErr := <-deleteDone:
+		t.Fatalf("delete bypassed the group access graph lock: %v", deleteErr)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	_, err = writerTx.ExecContext(
+		ctx,
+		"UPDATE groups SET fallback_group_id = $1 WHERE id = $2 AND deleted_at IS NULL",
+		target.ID,
+		source.ID,
+	)
+	require.NoError(t, err)
+	require.NoError(t, writerTx.Commit())
+
+	select {
+	case deleteErr := <-deleteDone:
+		require.Error(t, deleteErr)
+		require.Equal(
+			t,
+			service.GroupFallbackReasonTargetNotFound,
+			infraerrors.Reason(deleteErr),
+		)
+	case <-ctx.Done():
+		t.Fatal("delete did not resume after the graph writer committed")
+	}
+	_, err = repo.GetByIDLite(ctx, target.ID)
+	require.NoError(t, err, "target must remain after the concurrent incoming edge commits")
 }
 
 // --- Create / GetByID / Update / Delete ---
@@ -199,6 +282,134 @@ func (s *GroupRepoSuite) TestUpdate() {
 	s.Require().Equal("updated", got.Name)
 }
 
+func (s *GroupRepoSuite) TestVIPOnlyPersistsAndFinalGraphRejectsReverseEscalation() {
+	target := &service.Group{
+		Name:             "vip-final-target",
+		Platform:         service.PlatformAnthropic,
+		RateMultiplier:   1,
+		Status:           service.StatusActive,
+		SubscriptionType: service.SubscriptionTypeStandard,
+	}
+	s.Require().NoError(s.repo.Create(s.ctx, target))
+	source := &service.Group{
+		Name:             "vip-final-source",
+		Platform:         service.PlatformAnthropic,
+		RateMultiplier:   1,
+		Status:           service.StatusActive,
+		SubscriptionType: service.SubscriptionTypeStandard,
+		FallbackGroupID:  &target.ID,
+	}
+	s.Require().NoError(s.repo.Create(s.ctx, source))
+
+	target.VIPOnly = true
+	err := s.repo.Update(s.ctx, target)
+	s.Require().Error(err)
+	s.Require().Equal(service.GroupFallbackReasonVIPEscalation, infraerrors.Reason(err))
+
+	storedTarget, err := s.repo.GetByIDLite(s.ctx, target.ID)
+	s.Require().NoError(err)
+	s.Require().False(storedTarget.VIPOnly)
+
+	source.FallbackGroupID = nil
+	s.Require().NoError(s.repo.Update(s.ctx, source))
+	s.Require().NoError(s.repo.Update(s.ctx, target))
+	storedTarget, err = s.repo.GetByIDLite(s.ctx, target.ID)
+	s.Require().NoError(err)
+	s.Require().True(storedTarget.VIPOnly)
+}
+
+func (s *GroupRepoSuite) TestVIPConfigWriteGateRejectsStaleSnapshotReenable() {
+	group := &service.Group{
+		Name:             "vip-gate-stale-snapshot",
+		Platform:         service.PlatformAnthropic,
+		RateMultiplier:   1,
+		Status:           service.StatusActive,
+		SubscriptionType: service.SubscriptionTypeStandard,
+		VIPOnly:          true,
+	}
+	s.Require().NoError(s.repo.Create(s.ctx, group))
+
+	stale, err := s.repo.GetByIDLite(s.ctx, group.ID)
+	s.Require().NoError(err)
+	current, err := s.repo.GetByIDLite(s.ctx, group.ID)
+	s.Require().NoError(err)
+	current.VIPOnly = false
+	s.Require().NoError(s.repo.UpdateWithVIPConfigWriteGate(s.ctx, current, false))
+
+	stale.Description = "unrelated stale update"
+	err = s.repo.UpdateWithVIPConfigWriteGate(s.ctx, stale, false)
+
+	s.Require().Error(err)
+	s.Require().Equal(service.GroupVIPConfigWriteDisabledReason, infraerrors.Reason(err))
+	stored, getErr := s.repo.GetByIDLite(s.ctx, group.ID)
+	s.Require().NoError(getErr)
+	s.Require().False(stored.VIPOnly)
+	s.Require().NotEqual("unrelated stale update", stored.Description)
+}
+
+func (s *GroupRepoSuite) TestFinalGraphRejectsSubscriptionVIPAndBothSubscriptionFallbackKinds() {
+	subscription := &service.Group{
+		Name:             "graph-subscription-target",
+		Platform:         service.PlatformAnthropic,
+		RateMultiplier:   1,
+		Status:           service.StatusActive,
+		SubscriptionType: service.SubscriptionTypeSubscription,
+	}
+	s.Require().NoError(s.repo.Create(s.ctx, subscription))
+
+	illegalVIP := &service.Group{
+		Name:             "graph-subscription-vip",
+		Platform:         service.PlatformAnthropic,
+		RateMultiplier:   1,
+		Status:           service.StatusActive,
+		SubscriptionType: service.SubscriptionTypeSubscription,
+		VIPOnly:          true,
+	}
+	err := s.repo.Create(s.ctx, illegalVIP)
+	s.Require().Error(err)
+	s.Require().Equal(service.GroupFallbackReasonSubscriptionVIPOnly, infraerrors.Reason(err))
+	s.Require().Zero(illegalVIP.ID)
+
+	for _, testCase := range []struct {
+		name       string
+		configure  func(*service.Group)
+		wantedKind service.GroupFallbackKind
+	}{
+		{
+			name: "default",
+			configure: func(group *service.Group) {
+				group.FallbackGroupID = &subscription.ID
+			},
+			wantedKind: service.GroupFallbackDefault,
+		},
+		{
+			name: "invalid request",
+			configure: func(group *service.Group) {
+				group.FallbackGroupIDOnInvalidRequest = &subscription.ID
+			},
+			wantedKind: service.GroupFallbackInvalidRequest,
+		},
+	} {
+		s.Run(testCase.name, func() {
+			source := &service.Group{
+				Name:             "subscription-fallback-" + testCase.name,
+				Platform:         service.PlatformAnthropic,
+				RateMultiplier:   1,
+				Status:           service.StatusActive,
+				SubscriptionType: service.SubscriptionTypeStandard,
+			}
+			testCase.configure(source)
+
+			err := s.repo.Create(s.ctx, source)
+
+			s.Require().Error(err)
+			s.Require().Equal(service.GroupFallbackReasonSubscriptionTarget, infraerrors.Reason(err))
+			s.Require().Equal(string(testCase.wantedKind), infraerrors.FromError(err).Metadata["fallback_kind"])
+			s.Require().Zero(source.ID)
+		})
+	}
+}
+
 func (s *GroupRepoSuite) TestGetByID_PreservesMessagesDispatchModelConfig() {
 	group := &service.Group{
 		Name:                  "openai-dispatch",
@@ -243,6 +454,88 @@ func (s *GroupRepoSuite) TestDelete() {
 	_, err = s.repo.GetByID(s.ctx, group.ID)
 	s.Require().Error(err, "expected error after delete")
 	s.Require().ErrorIs(err, service.ErrGroupNotFound)
+}
+
+func (s *GroupRepoSuite) TestDeleteCascadeRejectsBothIncomingFallbackKinds() {
+	for _, testCase := range []struct {
+		name       string
+		configure  func(*service.Group, int64)
+		wantedKind service.GroupFallbackKind
+	}{
+		{
+			name: "default",
+			configure: func(source *service.Group, targetID int64) {
+				source.FallbackGroupID = &targetID
+			},
+			wantedKind: service.GroupFallbackDefault,
+		},
+		{
+			name: "invalid request",
+			configure: func(source *service.Group, targetID int64) {
+				source.FallbackGroupIDOnInvalidRequest = &targetID
+			},
+			wantedKind: service.GroupFallbackInvalidRequest,
+		},
+	} {
+		s.Run(testCase.name, func() {
+			target := &service.Group{
+				Name:             "delete-referenced-target-" + testCase.name,
+				Platform:         service.PlatformAnthropic,
+				RateMultiplier:   1,
+				Status:           service.StatusActive,
+				SubscriptionType: service.SubscriptionTypeStandard,
+			}
+			s.Require().NoError(s.repo.Create(s.ctx, target))
+			source := &service.Group{
+				Name:             "delete-referencing-source-" + testCase.name,
+				Platform:         service.PlatformAnthropic,
+				RateMultiplier:   1,
+				Status:           service.StatusActive,
+				SubscriptionType: service.SubscriptionTypeStandard,
+			}
+			testCase.configure(source, target.ID)
+			s.Require().NoError(s.repo.Create(s.ctx, source))
+
+			_, err := s.repo.DeleteCascade(s.ctx, target.ID)
+
+			s.Require().Error(err)
+			s.Require().Equal(service.GroupFallbackReasonTargetNotFound, infraerrors.Reason(err))
+			s.Require().Equal(
+				string(testCase.wantedKind),
+				infraerrors.FromError(err).Metadata["fallback_kind"],
+			)
+			stored, getErr := s.repo.GetByIDLite(s.ctx, target.ID)
+			s.Require().NoError(getErr)
+			s.Require().Equal(target.ID, stored.ID)
+		})
+	}
+}
+
+func (s *GroupRepoSuite) TestDeleteDelegatesToFinalGraphValidation() {
+	target := &service.Group{
+		Name:             "safe-delete-delegated-target",
+		Platform:         service.PlatformAnthropic,
+		RateMultiplier:   1,
+		Status:           service.StatusActive,
+		SubscriptionType: service.SubscriptionTypeStandard,
+	}
+	s.Require().NoError(s.repo.Create(s.ctx, target))
+	source := &service.Group{
+		Name:             "safe-delete-delegated-source",
+		Platform:         service.PlatformAnthropic,
+		RateMultiplier:   1,
+		Status:           service.StatusActive,
+		SubscriptionType: service.SubscriptionTypeStandard,
+		FallbackGroupID:  &target.ID,
+	}
+	s.Require().NoError(s.repo.Create(s.ctx, source))
+
+	err := s.repo.Delete(s.ctx, target.ID)
+
+	s.Require().Error(err)
+	s.Require().Equal(service.GroupFallbackReasonTargetNotFound, infraerrors.Reason(err))
+	_, getErr := s.repo.GetByIDLite(s.ctx, target.ID)
+	s.Require().NoError(getErr)
 }
 
 // --- List / ListWithFilters ---

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -307,6 +308,9 @@ func (s *PaymentService) ExecuteBalanceFulfillment(ctx context.Context, oid int6
 		return infraerrors.NotFound("NOT_FOUND", "order not found")
 	}
 	if o.Status == OrderStatusCompleted {
+		if o.CompletedAt != nil {
+			s.grantPaidVIPEligibilityBestEffort(ctx, o, *o.CompletedAt)
+		}
 		return nil
 	}
 	if psIsRefundStatus(o.Status) {
@@ -437,18 +441,16 @@ func (s *PaymentService) markCompleted(ctx context.Context, o *dbent.PaymentOrde
 	if lease == nil {
 		return errors.New("missing payment fulfillment lease")
 	}
-	now := time.Now()
-	updated, err := s.entClient.PaymentOrder.Update().Where(
-		paymentorder.IDEQ(o.ID),
-		paymentorder.StatusEQ(OrderStatusRecharging),
-		paymentorder.UpdatedAtEQ(lease.version),
-	).SetStatus(OrderStatusCompleted).SetCompletedAt(now).Save(ctx)
+	completedAt, updated, err := s.markPaymentOrderCompletedAtDatabaseTime(ctx, o.ID, lease.version)
 	if err != nil {
 		return fmt.Errorf("mark completed: %w", err)
 	}
-	if updated == 0 {
+	if !updated {
 		current, getErr := s.entClient.PaymentOrder.Get(ctx, o.ID)
 		if getErr == nil && current.Status == OrderStatusCompleted {
+			if current.CompletedAt != nil {
+				s.grantPaidVIPEligibilityBestEffort(ctx, current, *current.CompletedAt)
+			}
 			return nil
 		}
 		return infraerrors.Conflict("CONFLICT", "fulfillment lease was lost before completion")
@@ -461,7 +463,181 @@ func (s *PaymentService) markCompleted(ctx context.Context, o *dbent.PaymentOrde
 		})
 		s.dispatchPaymentFulfillmentNotification(o, auditAction)
 	}
+	s.grantPaidVIPEligibilityBestEffort(ctx, o, completedAt)
 	return nil
+}
+
+func (s *PaymentService) markPaymentOrderCompletedAtDatabaseTime(
+	ctx context.Context,
+	orderID int64,
+	leaseVersion time.Time,
+) (time.Time, bool, error) {
+	const query = `
+		UPDATE payment_orders
+		SET status = $1,
+		    completed_at = CURRENT_TIMESTAMP,
+		    updated_at = CURRENT_TIMESTAMP
+		WHERE id = $2
+		  AND status = $3
+		  AND updated_at = $4
+		RETURNING completed_at
+	`
+	if s.paymentFulfillmentDB != nil && s.paymentFulfillmentDBTxTimeout > 0 {
+		txCtx, cancel := context.WithTimeout(ctx, s.paymentFulfillmentDBTxTimeout)
+		defer cancel()
+
+		tx, err := s.paymentFulfillmentDB.BeginTx(txCtx, nil)
+		if err != nil {
+			return time.Time{}, false, err
+		}
+		defer func() { _ = tx.Rollback() }()
+
+		statementTimeoutMillis := s.paymentFulfillmentDBTxTimeout.Milliseconds()
+		if statementTimeoutMillis < 1 {
+			statementTimeoutMillis = 1
+		}
+		statementTimeout := fmt.Sprintf("%dms", statementTimeoutMillis)
+		if _, err := tx.ExecContext(
+			txCtx,
+			`SELECT set_config('statement_timeout', $1, true)`,
+			statementTimeout,
+		); err != nil {
+			return time.Time{}, false, fmt.Errorf(
+				"set payment fulfillment statement timeout: %w",
+				err,
+			)
+		}
+		completedAt, updated, err := queryPaymentOrderCompletion(
+			txCtx,
+			tx,
+			query,
+			orderID,
+			leaseVersion,
+		)
+		if err != nil {
+			return time.Time{}, false, err
+		}
+		if err := tx.Commit(); err != nil {
+			return time.Time{}, false, err
+		}
+		return completedAt, updated, nil
+	}
+
+	rows, err := s.entClient.QueryContext(
+		ctx,
+		query,
+		OrderStatusCompleted,
+		orderID,
+		OrderStatusRecharging,
+		leaseVersion,
+	)
+	if err != nil {
+		return time.Time{}, false, err
+	}
+	defer func() { _ = rows.Close() }()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return time.Time{}, false, err
+		}
+		return time.Time{}, false, nil
+	}
+	var completedAt time.Time
+	if err := rows.Scan(&completedAt); err != nil {
+		return time.Time{}, false, err
+	}
+	if rows.Next() {
+		return time.Time{}, false, fmt.Errorf("mark completed updated more than one order")
+	}
+	if err := rows.Err(); err != nil {
+		return time.Time{}, false, err
+	}
+	return completedAt.UTC(), true, nil
+}
+
+type paymentCompletionQueryer interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
+func queryPaymentOrderCompletion(
+	ctx context.Context,
+	queryer paymentCompletionQueryer,
+	query string,
+	orderID int64,
+	leaseVersion time.Time,
+) (time.Time, bool, error) {
+	rows, err := queryer.QueryContext(
+		ctx,
+		query,
+		OrderStatusCompleted,
+		orderID,
+		OrderStatusRecharging,
+		leaseVersion,
+	)
+	if err != nil {
+		return time.Time{}, false, err
+	}
+	defer func() { _ = rows.Close() }()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return time.Time{}, false, err
+		}
+		return time.Time{}, false, nil
+	}
+	var completedAt time.Time
+	if err := rows.Scan(&completedAt); err != nil {
+		return time.Time{}, false, err
+	}
+	if rows.Next() {
+		return time.Time{}, false, fmt.Errorf(
+			"mark completed updated more than one order",
+		)
+	}
+	if err := rows.Err(); err != nil {
+		return time.Time{}, false, err
+	}
+	return completedAt.UTC(), true, nil
+}
+
+func (s *PaymentService) grantPaidVIPEligibilityBestEffort(
+	ctx context.Context,
+	order *dbent.PaymentOrder,
+	completedAt time.Time,
+) {
+	if s == nil || s.vipEntitlementService == nil || order == nil {
+		return
+	}
+	if order.PayAmount <= 0 || order.PaidAt == nil || completedAt.IsZero() {
+		return
+	}
+	switch order.OrderType {
+	case payment.OrderTypeBalance, payment.OrderTypeSubscription:
+	default:
+		return
+	}
+	result, err := s.vipEntitlementService.GrantPaidEligibility(
+		ctx,
+		order.UserID,
+		order.ID,
+		completedAt,
+		VIPPaidSourcePayment,
+	)
+	if err != nil {
+		slog.Error(
+			"vip_paid_eligibility_grant_failed",
+			"order_id", order.ID,
+			"user_id", order.UserID,
+			"error", err.Error(),
+		)
+		return
+	}
+	slog.Info(
+		"vip_paid_eligibility_grant_completed",
+		"order_id", order.ID,
+		"user_id", order.UserID,
+		"eligibility_changed", result.EligibilityChanged,
+		"effective_changed", result.EffectiveChanged,
+		"manual_mode", result.ManualMode,
+	)
 }
 
 func (s *PaymentService) dispatchPaymentFulfillmentNotification(o *dbent.PaymentOrder, auditAction string) {
@@ -547,6 +723,9 @@ func (s *PaymentService) ExecuteSubscriptionFulfillment(ctx context.Context, oid
 		return infraerrors.NotFound("NOT_FOUND", "order not found")
 	}
 	if o.Status == OrderStatusCompleted {
+		if o.CompletedAt != nil {
+			s.grantPaidVIPEligibilityBestEffort(ctx, o, *o.CompletedAt)
+		}
 		return nil
 	}
 	if psIsRefundStatus(o.Status) {

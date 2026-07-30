@@ -36,6 +36,63 @@
           <option value="admin">{{ t('admin.users.roles.admin') }}</option>
         </select>
       </div>
+      <section class="rounded-xl border border-amber-200 bg-amber-50/60 p-4 dark:border-amber-900/60 dark:bg-amber-950/20">
+        <div class="mb-3">
+          <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
+            {{ t('admin.users.vip.editTitle') }}
+          </h3>
+          <p class="mt-1 text-xs text-gray-600 dark:text-gray-400">
+            {{ t('admin.users.vip.editHint') }}
+          </p>
+        </div>
+        <label class="input-label" for="edit-user-vip-mode">
+          {{ t('admin.users.vip.modeLabel') }}
+        </label>
+        <select
+          id="edit-user-vip-mode"
+          v-model="form.vip_mode"
+          class="input"
+          data-test="vip-mode-select"
+        >
+          <option
+            v-if="!isKnownVIPMode(form.vip_mode)"
+            :value="form.vip_mode"
+            disabled
+          >
+            {{
+              t('admin.users.vip.unknownMode', {
+                mode: form.vip_mode || t('admin.users.vip.unknownValue')
+              })
+            }}
+          </option>
+          <option value="AUTO">{{ t('admin.users.vip.modes.AUTO') }}</option>
+          <option value="FORCE_ON">{{ t('admin.users.vip.modes.FORCE_ON') }}</option>
+          <option value="FORCE_OFF">{{ t('admin.users.vip.modes.FORCE_OFF') }}</option>
+        </select>
+        <p class="input-hint">{{ t(vipModeHintKey) }}</p>
+
+        <div class="mt-3">
+          <label class="input-label" for="edit-user-vip-reason">
+            {{ t('admin.users.vip.reasonLabel') }}
+          </label>
+          <textarea
+            id="edit-user-vip-reason"
+            v-model="form.vip_override_reason"
+            rows="2"
+            class="input"
+            :required="vipModeChanged"
+            :placeholder="t('admin.users.vip.reasonPlaceholder')"
+            data-test="vip-reason"
+          ></textarea>
+          <p class="input-hint">
+            {{
+              vipModeChanged
+                ? t('admin.users.vip.reasonRequiredHint')
+                : t('admin.users.vip.reasonUnchangedHint')
+            }}
+          </p>
+        </div>
+      </section>
       <div>
         <label class="input-label">{{ t('admin.users.notes') }}</label>
         <textarea v-model="form.notes" rows="3" class="input"></textarea>
@@ -73,7 +130,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch } from 'vue'
+import { computed, ref, reactive, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { useClipboard } from '@/composables/useClipboard'
@@ -90,11 +147,50 @@ const emit = defineEmits(['close', 'success'])
 const { t } = useI18n(); const appStore = useAppStore(); const { copyToClipboard } = useClipboard()
 
 const submitting = ref(false); const passwordCopied = ref(false)
-const form = reactive({ email: '', password: '', username: '', notes: '', role: 'user', concurrency: 1, rpm_limit: 0, customAttributes: {} as UserAttributeValuesMap })
+const KNOWN_VIP_MODES = ['AUTO', 'FORCE_ON', 'FORCE_OFF'] as const
+type KnownVIPMode = (typeof KNOWN_VIP_MODES)[number]
+const isKnownVIPMode = (value: string | null | undefined): value is KnownVIPMode =>
+  KNOWN_VIP_MODES.includes(value as KnownVIPMode)
+
+const originalVIPMode = ref('')
+const form = reactive({
+  email: '',
+  password: '',
+  username: '',
+  notes: '',
+  role: 'user',
+  concurrency: 1,
+  rpm_limit: 0,
+  vip_mode: '',
+  vip_override_reason: '',
+  customAttributes: {} as UserAttributeValuesMap
+})
+
+const vipModeChanged = computed(
+  () => isKnownVIPMode(form.vip_mode) && form.vip_mode !== originalVIPMode.value
+)
+const vipModeHintKey = computed(() =>
+  isKnownVIPMode(form.vip_mode)
+    ? `admin.users.vip.modeHints.${form.vip_mode}`
+    : 'admin.users.vip.modeHints.UNKNOWN'
+)
 
 watch(() => props.user, (u) => {
   if (u) {
-    Object.assign(form, { email: u.email, password: '', username: u.username || '', notes: u.notes || '', role: u.role || 'user', concurrency: u.concurrency, rpm_limit: u.rpm_limit ?? 0, customAttributes: {} })
+    const vipMode = typeof u.vip_mode === 'string' ? u.vip_mode : ''
+    originalVIPMode.value = vipMode
+    Object.assign(form, {
+      email: u.email,
+      password: '',
+      username: u.username || '',
+      notes: u.notes || '',
+      role: u.role || 'user',
+      concurrency: u.concurrency,
+      rpm_limit: u.rpm_limit ?? 0,
+      vip_mode: vipMode,
+      vip_override_reason: '',
+      customAttributes: {}
+    })
     passwordCopied.value = false
   }
 }, { immediate: true })
@@ -121,6 +217,10 @@ const handleUpdateUser = async () => {
     appStore.showError(t('admin.users.concurrencyMin'))
     return
   }
+  if (vipModeChanged.value && !form.vip_override_reason.trim()) {
+    appStore.showError(t('admin.users.vip.reasonRequired'))
+    return
+  }
   const userId = props.user.id
   submitting.value = true
   try {
@@ -129,6 +229,12 @@ const handleUpdateUser = async () => {
     // 提升为管理员属敏感操作：后端返回 STEP_UP_REQUIRED 时弹 TOTP 验证并重试
     await stepUp.run(() => adminAPI.users.update(userId, data))
     if (Object.keys(form.customAttributes).length > 0) await adminAPI.userAttributes.updateUserAttributeValues(userId, form.customAttributes)
+    if (vipModeChanged.value && isKnownVIPMode(form.vip_mode)) {
+      await adminAPI.users.updateVIPMode(userId, {
+        vip_mode: form.vip_mode,
+        vip_override_reason: form.vip_override_reason.trim()
+      })
+    }
     appStore.showSuccess(t('admin.users.userUpdated'))
     emit('success'); emit('close')
   } catch (e: any) {

@@ -31,7 +31,9 @@ func TestCommonRoutesMetricsAreClosedByDefault(t *testing.T) {
 func TestCommonRoutesMetricsRequireBearerTokenRegardlessOfPeer(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	RegisterCommonRoutes(router, &config.Config{Radar: config.RadarConfig{MetricsBearerToken: "test-secret"}}, "")
+	RegisterCommonRoutes(router, &config.Config{
+		Radar: config.RadarConfig{MetricsBearerToken: "test-secret"},
+	}, "")
 
 	for _, tt := range []struct {
 		name       string

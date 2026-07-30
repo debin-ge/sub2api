@@ -191,6 +191,8 @@ func TestAPIKeyService_GetByKey_UsesL2Cache(t *testing.T) {
 	svc := NewAPIKeyService(repo, nil, nil, nil, nil, cache, cfg)
 
 	groupID := int64(9)
+	vipMode := VIPModeAuto
+	vipAccessState := VIPAccessStatePaymentRequired
 	cacheEntry := &APIKeyAuthCacheEntry{
 		Snapshot: &APIKeyAuthSnapshot{
 			Version:  apiKeyAuthSnapshotVersion,
@@ -199,11 +201,14 @@ func TestAPIKeyService_GetByKey_UsesL2Cache(t *testing.T) {
 			GroupID:  &groupID,
 			Status:   StatusActive,
 			User: APIKeyAuthUserSnapshot{
-				ID:          2,
-				Status:      StatusActive,
-				Role:        RoleUser,
-				Balance:     10,
-				Concurrency: 3,
+				ID:             2,
+				Status:         StatusActive,
+				Role:           RoleUser,
+				Balance:        10,
+				Concurrency:    3,
+				IsVIP:          authSnapshotBool(false),
+				VIPMode:        &vipMode,
+				VIPAccessState: &vipAccessState,
 			},
 			Group: &APIKeyAuthGroupSnapshot{
 				ID:                  groupID,
@@ -212,6 +217,7 @@ func TestAPIKeyService_GetByKey_UsesL2Cache(t *testing.T) {
 				Status:              StatusActive,
 				SubscriptionType:    SubscriptionTypeStandard,
 				RateMultiplier:      1,
+				VIPOnly:             authSnapshotBool(false),
 				ModelRoutingEnabled: true,
 				ModelRouting: map[string][]int64{
 					"claude-opus-*": {1, 2},

@@ -9,6 +9,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
@@ -160,10 +161,12 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 		if abortIfAPIKeyGroupUnavailable(c, apiKey) {
 			return
 		}
-		if abortIfAPIKeyGroupNotAllowed(c, apiKey) {
+		groupAccessProfile := service.NewGroupAccessProfileFromUser(apiKey.User)
+		if abortIfAPIKeyGroupAccessDenied(c, apiKey, groupAccessProfile, cfg) {
 			return
 		}
 		ctx := context.WithValue(c.Request.Context(), ctxkey.UserID, apiKey.User.ID)
+		ctx = service.WithGroupAccessProfile(ctx, groupAccessProfile)
 		c.Request = c.Request.WithContext(ctx)
 		billingInfoRequest := c.Request.URL.Path == "/v1/sub2api/billing"
 		// Async image task polling only reads data that already belongs to the
@@ -422,25 +425,51 @@ func abortIfAPIKeyGroupUnavailable(c *gin.Context, apiKey *service.APIKey) bool 
 	return true
 }
 
-func abortIfAPIKeyGroupNotAllowed(c *gin.Context, apiKey *service.APIKey) bool {
-	if validateAPIKeyGroupAllowed(apiKey) {
+func abortIfAPIKeyGroupAccessDenied(
+	c *gin.Context,
+	apiKey *service.APIKey,
+	profile *service.GroupAccessProfile,
+	cfg *config.Config,
+) bool {
+	decision := evaluateAPIKeyPrimaryGroupAccess(apiKey, profile)
+	runtimeMode := ""
+	if cfg != nil {
+		runtimeMode = cfg.GroupAccessRuntimeMode
+	}
+	groupID := int64(0)
+	if apiKey != nil && apiKey.Group != nil {
+		groupID = apiKey.Group.ID
+	}
+	userID := int64(0)
+	if profile != nil {
+		userID = profile.UserID
+	}
+	err := service.ApplyGroupAccessRuntimeDecision(
+		runtimeMode,
+		service.GroupAccessRuntimeEntryPrimaryAuth,
+		decision,
+		userID,
+		groupID,
+	)
+	if err == nil {
 		return false
 	}
 	service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonAPIKeyGroupUnavailable)
 	MarkIngressRejected(c, IngressRejectGroupNotAllowed)
-	AbortWithError(c, 403, "GROUP_NOT_ALLOWED", "API Key 所属专属分组不再允许当前用户使用")
+	AbortWithError(c, infraerrors.Code(err), infraerrors.Reason(err), infraerrors.Message(err))
 	return true
 }
 
-func validateAPIKeyGroupAllowed(apiKey *service.APIKey) bool {
-	if apiKey == nil || apiKey.GroupID == nil || apiKey.User == nil || apiKey.Group == nil {
-		return true
+var apiKeyPrimaryGroupAccessPolicy = service.NewGroupAccessPolicy()
+
+func evaluateAPIKeyPrimaryGroupAccess(
+	apiKey *service.APIKey,
+	profile *service.GroupAccessProfile,
+) service.GroupAccessDecision {
+	if apiKey == nil || apiKey.GroupID == nil {
+		return service.GroupAccessDecision{Visible: true, Allowed: true}
 	}
-	group := apiKey.Group
-	if group.IsSubscriptionType() {
-		return true
-	}
-	return apiKey.User.CanBindGroup(group.ID, group.IsExclusive)
+	return apiKeyPrimaryGroupAccessPolicy.Evaluate(profile, apiKey.Group, service.GroupAccessPrimaryAuth)
 }
 
 func validateAPIKeyGroupAvailable(apiKey *service.APIKey) (string, string, bool) {

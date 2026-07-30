@@ -73,6 +73,64 @@ func TestGoogleAPIKeyAuthMarksLookupBulkheadRejection(t *testing.T) {
 	require.Equal(t, IngressRejectAPIKeyAuthOverloaded, reason)
 }
 
+func TestGoogleAPIKeyAuthVIPOnlyPrimaryGroupRollout(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	for _, tt := range []struct {
+		name        string
+		mode        string
+		isVIP       bool
+		exclusive   bool
+		wantStatus  int
+		wantMessage string
+	}{
+		{name: "audit non VIP is observed but allowed", mode: config.GroupAccessRuntimeModeAuditOnly, wantStatus: http.StatusOK},
+		{name: "enforce non VIP is denied", mode: config.GroupAccessRuntimeModeEnforce, wantStatus: http.StatusForbidden, wantMessage: "GROUP_VIP_ONLY"},
+		{name: "enforce VIP is allowed", mode: config.GroupAccessRuntimeModeEnforce, isVIP: true, wantStatus: http.StatusOK},
+		{name: "audit does not bypass existing exclusive denial", mode: config.GroupAccessRuntimeModeAuditOnly, isVIP: true, exclusive: true, wantStatus: http.StatusForbidden, wantMessage: "GROUP_NOT_ALLOWED"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			group := &service.Group{
+				ID: 404, Name: "vip-google", Status: service.StatusActive, Platform: service.PlatformGemini,
+				Hydrated: true, VIPOnly: true, IsExclusive: tt.exclusive,
+			}
+			user := &service.User{
+				ID: 7, Role: service.RoleUser, Status: service.StatusActive, Balance: 10, Concurrency: 3,
+				VIPEntitlementSnapshot: service.VIPEntitlementSnapshot{IsVIP: tt.isVIP},
+			}
+			apiKey := &service.APIKey{
+				ID: 100, UserID: user.ID, Key: "vip-google-key", Status: service.StatusActive, User: user, Group: group,
+			}
+			apiKey.GroupID = &group.ID
+			repo := fakeAPIKeyRepo{getByKey: func(context.Context, string) (*service.APIKey, error) {
+				clone := *apiKey
+				return &clone, nil
+			}}
+			cfg := &config.Config{RunMode: config.RunModeSimple, GroupAccessRuntimeMode: tt.mode}
+			router := gin.New()
+			router.Use(APIKeyAuthGoogle(service.NewAPIKeyService(repo, nil, nil, nil, nil, nil, cfg), cfg))
+			router.GET("/v1beta/test", func(c *gin.Context) {
+				profile, ok := service.GroupAccessProfileFromContext(c.Request.Context())
+				require.True(t, ok)
+				require.Equal(t, tt.isVIP, profile.IsVIP)
+				c.JSON(http.StatusOK, gin.H{"ok": true})
+			})
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, "/v1beta/test", nil)
+			req.Header.Set("x-goog-api-key", apiKey.Key)
+
+			router.ServeHTTP(w, req)
+
+			require.Equal(t, tt.wantStatus, w.Code)
+			if tt.wantMessage != "" {
+				var resp googleErrorResponse
+				require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+				require.Contains(t, resp.Error.Message, tt.wantMessage)
+			}
+		})
+	}
+}
+
 type fakeAPIKeyRepo struct {
 	getByKey       func(ctx context.Context, key string) (*service.APIKey, error)
 	updateLastUsed func(ctx context.Context, id int64, usedAt time.Time) error

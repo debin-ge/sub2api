@@ -55,6 +55,10 @@ type User struct {
 	// 且该 (用户, 分组) 无 rpm_override 时作为全局兜底生效，计数键 rpm:u:{userID}:{min}。
 	RPMLimit int
 
+	// VIP entitlement fields. The paid fact and administrator override are
+	// orthogonal; IsVIP is the materialized effective state used on hot paths.
+	VIPEntitlementSnapshot
+
 	// UserGroupRPMOverride 来自 auth cache snapshot 的 (user, group) RPM 覆盖值。
 	// nil = 该 API Key 对应的 (user, group) 无 override；非 nil 时 checkRPM 直接使用，
 	// 避免每请求查 DB。字段不持久化到数据库。
@@ -70,24 +74,6 @@ func (u *User) IsAdmin() bool {
 
 func (u *User) IsActive() bool {
 	return u.Status == StatusActive
-}
-
-// CanBindGroup checks whether a user can bind to a given group.
-// For standard groups:
-// - Public groups (non-exclusive): all users can bind
-// - Exclusive groups: only users with the group in AllowedGroups can bind
-func (u *User) CanBindGroup(groupID int64, isExclusive bool) bool {
-	// 公开分组（非专属）：所有用户都可以绑定
-	if !isExclusive {
-		return true
-	}
-	// 专属分组：需要在 AllowedGroups 中
-	for _, id := range u.AllowedGroups {
-		if id == groupID {
-			return true
-		}
-	}
-	return false
 }
 
 func (u *User) SetPassword(password string) error {

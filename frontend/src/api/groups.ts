@@ -4,7 +4,7 @@
  */
 
 import { apiClient } from './client'
-import type { Group } from '@/types'
+import type { GroupCatalogEntry } from '@/types'
 
 /**
  * Get available groups that the current user can bind to API keys
@@ -13,8 +13,8 @@ import type { Group } from '@/types'
  * - Subscription groups: user has active subscription
  * @returns List of available groups
  */
-export async function getAvailable(): Promise<Group[]> {
-  const { data } = await apiClient.get<Group[]>('/groups/available')
+export async function getAvailable(): Promise<GroupCatalogEntry[]> {
+  const { data } = await apiClient.get<GroupCatalogEntry[]>('/groups/available')
   return data
 }
 

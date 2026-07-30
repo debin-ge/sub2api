@@ -173,6 +173,12 @@
                     : t("admin.groups.subscription.standard")
                 }}
               </span>
+              <span
+                v-if="row.vip_only"
+                class="ml-1 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/35 dark:text-amber-200"
+              >
+                {{ t("admin.groups.vipOnly.badge") }}
+              </span>
               <!-- Subscription Limits - compact single line -->
               <div
                 v-if="row.subscription_type === 'subscription'"
@@ -707,6 +713,45 @@
             <p class="input-hint">
               {{ t("admin.groups.subscription.typeHint") }}
             </p>
+          </div>
+
+          <div class="mt-4 rounded-xl border border-amber-200 bg-amber-50/60 p-4 dark:border-amber-900/60 dark:bg-amber-950/20">
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <label class="text-sm font-medium text-gray-800 dark:text-gray-200">
+                  {{ t("admin.groups.vipOnly.label") }}
+                </label>
+                <p class="mt-1 text-xs text-gray-600 dark:text-gray-400">
+                  {{
+                    createForm.subscription_type === "subscription"
+                      ? t("admin.groups.vipOnly.subscriptionDisabled")
+                      : t("admin.groups.vipOnly.hint")
+                  }}
+                </p>
+              </div>
+              <button
+                type="button"
+                :disabled="createForm.subscription_type === 'subscription'"
+                :aria-pressed="createForm.vip_only"
+                :aria-label="t('admin.groups.vipOnly.label')"
+                data-test="create-vip-only-toggle"
+                @click="createForm.vip_only = !createForm.vip_only"
+                :class="[
+                  'relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors',
+                  createForm.vip_only
+                    ? 'bg-amber-500'
+                    : 'bg-gray-300 dark:bg-dark-600',
+                  createForm.subscription_type === 'subscription' && 'cursor-not-allowed opacity-50'
+                ]"
+              >
+                <span
+                  :class="[
+                    'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+                    createForm.vip_only ? 'translate-x-6' : 'translate-x-1'
+                  ]"
+                />
+              </button>
+            </div>
           </div>
 
           <!-- Subscription limits (only show when subscription type is selected) -->
@@ -1350,6 +1395,9 @@
             <p class="input-hint">
               {{ t("admin.groups.claudeCode.fallbackHint") }}
             </p>
+            <p class="mt-1 text-xs text-amber-700 dark:text-amber-300">
+              {{ t("admin.groups.fallbackSubscriptionExcluded") }}
+            </p>
           </div>
         </div>
 
@@ -1754,6 +1802,9 @@
           />
           <p class="input-hint">
             {{ t("admin.groups.invalidRequestFallback.hint") }}
+          </p>
+          <p class="mt-1 text-xs text-amber-700 dark:text-amber-300">
+            {{ t("admin.groups.fallbackSubscriptionExcluded") }}
           </p>
         </div>
 
@@ -2254,6 +2305,45 @@
             <p class="input-hint">
               {{ t("admin.groups.subscription.typeNotEditable") }}
             </p>
+          </div>
+
+          <div class="mt-4 rounded-xl border border-amber-200 bg-amber-50/60 p-4 dark:border-amber-900/60 dark:bg-amber-950/20">
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <label class="text-sm font-medium text-gray-800 dark:text-gray-200">
+                  {{ t("admin.groups.vipOnly.label") }}
+                </label>
+                <p class="mt-1 text-xs text-gray-600 dark:text-gray-400">
+                  {{
+                    editForm.subscription_type === "subscription"
+                      ? t("admin.groups.vipOnly.subscriptionDisabled")
+                      : t("admin.groups.vipOnly.hint")
+                  }}
+                </p>
+              </div>
+              <button
+                type="button"
+                :disabled="editForm.subscription_type === 'subscription'"
+                :aria-pressed="editForm.vip_only"
+                :aria-label="t('admin.groups.vipOnly.label')"
+                data-test="edit-vip-only-toggle"
+                @click="editForm.vip_only = !editForm.vip_only"
+                :class="[
+                  'relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors',
+                  editForm.vip_only
+                    ? 'bg-amber-500'
+                    : 'bg-gray-300 dark:bg-dark-600',
+                  editForm.subscription_type === 'subscription' && 'cursor-not-allowed opacity-50'
+                ]"
+              >
+                <span
+                  :class="[
+                    'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+                    editForm.vip_only ? 'translate-x-6' : 'translate-x-1'
+                  ]"
+                />
+              </button>
+            </div>
           </div>
 
           <!-- Subscription limits (only show when subscription type is selected) -->
@@ -2893,6 +2983,9 @@
             <p class="input-hint">
               {{ t("admin.groups.claudeCode.fallbackHint") }}
             </p>
+            <p class="mt-1 text-xs text-amber-700 dark:text-amber-300">
+              {{ t("admin.groups.fallbackSubscriptionExcluded") }}
+            </p>
           </div>
         </div>
 
@@ -3297,6 +3390,9 @@
           />
           <p class="input-hint">
             {{ t("admin.groups.invalidRequestFallback.hint") }}
+          </p>
+          <p class="mt-1 text-xs text-amber-700 dark:text-amber-300">
+            {{ t("admin.groups.fallbackSubscriptionExcluded") }}
           </p>
         </div>
 
@@ -4071,7 +4167,11 @@ import GroupCapacityBadge from "@/components/common/GroupCapacityBadge.vue";
 import ReasoningEffortPolicyFields from "@/components/admin/group/ReasoningEffortPolicyFields.vue";
 import { VueDraggable } from "vue-draggable-plus";
 import { createStableObjectKeyResolver } from "@/utils/stableObjectKey";
-import { extractApiErrorMessage } from "@/utils/apiError";
+import {
+  extractApiErrorCode,
+  extractApiErrorMessage,
+  extractI18nErrorMessage,
+} from "@/utils/apiError";
 import { useKeyedDebouncedSearch } from "@/composables/useKeyedDebouncedSearch";
 import { getPersistedPageSize } from "@/composables/usePersistedPageSize";
 import {
@@ -4092,6 +4192,10 @@ import {
 import { createModelsListCandidatesTracker } from "./groupsModelsListCandidates";
 import { normalizeSupportedModelScopesForPlatform } from "./groupsSupportedModelScopes";
 import {
+  getClaudeCodeFallbackTargets,
+  getInvalidRequestFallbackTargets,
+} from "./groupFallbackTargets";
+import {
   normalizeReasoningEffortForPlatform,
   reasoningEffortMappingsToAPI,
   reasoningEffortMappingsToRows,
@@ -4110,6 +4214,17 @@ import {
 const { t } = useI18n();
 const appStore = useAppStore();
 const onboardingStore = useOnboardingStore();
+
+const getGroupMutationErrorMessage = (error: unknown, fallback: string): string => {
+  const message = extractI18nErrorMessage(
+    error,
+    t,
+    "vip.group.errors",
+    fallback,
+  );
+  const code = extractApiErrorCode(error);
+  return code?.startsWith("GROUP_") ? `${message} [${code}]` : message;
+};
 
 const ALWAYS_VISIBLE_COLUMNS = new Set(["name", "actions"]);
 // Default hidden columns (hidden on first load / after schema bumps).
@@ -4369,12 +4484,7 @@ const fallbackGroupOptions = computed(() => {
   const options: { value: number | null; label: string }[] = [
     { value: null, label: t("admin.groups.claudeCode.noFallback") },
   ];
-  const eligibleGroups = groups.value.filter(
-    (g) =>
-      g.platform === "anthropic" &&
-      !g.claude_code_only &&
-      g.status === "active",
-  );
+  const eligibleGroups = getClaudeCodeFallbackTargets(groups.value);
   eligibleGroups.forEach((g) => {
     options.push({ value: g.id, label: g.name });
   });
@@ -4387,13 +4497,7 @@ const fallbackGroupOptionsForEdit = computed(() => {
     { value: null, label: t("admin.groups.claudeCode.noFallback") },
   ];
   const currentId = editingGroup.value?.id;
-  const eligibleGroups = groups.value.filter(
-    (g) =>
-      g.platform === "anthropic" &&
-      !g.claude_code_only &&
-      g.status === "active" &&
-      g.id !== currentId,
-  );
+  const eligibleGroups = getClaudeCodeFallbackTargets(groups.value, currentId);
   eligibleGroups.forEach((g) => {
     options.push({ value: g.id, label: g.name });
   });
@@ -4405,13 +4509,7 @@ const invalidRequestFallbackOptions = computed(() => {
   const options: { value: number | null; label: string }[] = [
     { value: null, label: t("admin.groups.invalidRequestFallback.noFallback") },
   ];
-  const eligibleGroups = groups.value.filter(
-    (g) =>
-      g.platform === "anthropic" &&
-      g.status === "active" &&
-      g.subscription_type !== "subscription" &&
-      g.fallback_group_id_on_invalid_request === null,
-  );
+  const eligibleGroups = getInvalidRequestFallbackTargets(groups.value);
   eligibleGroups.forEach((g) => {
     options.push({ value: g.id, label: g.name });
   });
@@ -4424,13 +4522,9 @@ const invalidRequestFallbackOptionsForEdit = computed(() => {
     { value: null, label: t("admin.groups.invalidRequestFallback.noFallback") },
   ];
   const currentId = editingGroup.value?.id;
-  const eligibleGroups = groups.value.filter(
-    (g) =>
-      g.platform === "anthropic" &&
-      g.status === "active" &&
-      g.subscription_type !== "subscription" &&
-      g.fallback_group_id_on_invalid_request === null &&
-      g.id !== currentId,
+  const eligibleGroups = getInvalidRequestFallbackTargets(
+    groups.value,
+    currentId,
   );
   eligibleGroups.forEach((g) => {
     options.push({ value: g.id, label: g.name });
@@ -4597,6 +4691,7 @@ const createForm = reactive({
   platform: "anthropic" as GroupPlatform,
   rate_multiplier: 1.0,
   is_exclusive: false,
+  vip_only: false,
   subscription_type: "standard" as SubscriptionType,
   daily_limit_usd: null as number | null,
   weekly_limit_usd: null as number | null,
@@ -4946,6 +5041,7 @@ const editForm = reactive({
   platform: "anthropic" as GroupPlatform,
   rate_multiplier: 1.0,
   is_exclusive: false,
+  vip_only: false,
   status: "active" as "active" | "inactive",
   subscription_type: "standard" as SubscriptionType,
   daily_limit_usd: null as number | null,
@@ -5388,6 +5484,7 @@ const closeCreateModal = () => {
   createForm.platform = "anthropic";
   createForm.rate_multiplier = 1.0;
   createForm.is_exclusive = false;
+  createForm.vip_only = false;
   createForm.subscription_type = "standard";
   createForm.daily_limit_usd = null;
   createForm.weekly_limit_usd = null;
@@ -5553,7 +5650,7 @@ const handleCreateGroup = async () => {
     }
   } catch (error: any) {
     appStore.showError(
-      error.response?.data?.detail || t("admin.groups.failedToCreate"),
+      getGroupMutationErrorMessage(error, t("admin.groups.failedToCreate")),
     );
     console.error("Error creating group:", error);
     // Don't advance tour on error
@@ -5569,6 +5666,8 @@ const handleEdit = async (group: AdminGroup) => {
   editForm.platform = group.platform;
   editForm.rate_multiplier = group.rate_multiplier;
   editForm.is_exclusive = group.is_exclusive;
+  editForm.vip_only =
+    group.subscription_type === "subscription" ? false : group.vip_only ?? false;
   editForm.status = group.status;
   editForm.subscription_type = group.subscription_type || "standard";
   editForm.daily_limit_usd = group.daily_limit_usd;
@@ -5765,7 +5864,7 @@ const handleUpdateGroup = async () => {
     loadGroups();
   } catch (error: any) {
     appStore.showError(
-      error.response?.data?.detail || t("admin.groups.failedToUpdate"),
+      getGroupMutationErrorMessage(error, t("admin.groups.failedToUpdate")),
     );
     console.error("Error updating group:", error);
   } finally {
@@ -6036,6 +6135,8 @@ watch(
   (newVal) => {
     if (newVal === "subscription") {
       createForm.is_exclusive = true;
+      createForm.vip_only = false;
+      createForm.fallback_group_id = null;
       createForm.fallback_group_id_on_invalid_request = null;
     }
   },

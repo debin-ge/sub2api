@@ -175,6 +175,20 @@ func (_c *GroupCreate) SetNillableIsExclusive(v *bool) *GroupCreate {
 	return _c
 }
 
+// SetVipOnly sets the "vip_only" field.
+func (_c *GroupCreate) SetVipOnly(v bool) *GroupCreate {
+	_c.mutation.SetVipOnly(v)
+	return _c
+}
+
+// SetNillableVipOnly sets the "vip_only" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableVipOnly(v *bool) *GroupCreate {
+	if v != nil {
+		_c.SetVipOnly(*v)
+	}
+	return _c
+}
+
 // SetStatus sets the "status" field.
 func (_c *GroupCreate) SetStatus(v string) *GroupCreate {
 	_c.mutation.SetStatus(v)
@@ -890,6 +904,10 @@ func (_c *GroupCreate) defaults() error {
 		v := group.DefaultIsExclusive
 		_c.mutation.SetIsExclusive(v)
 	}
+	if _, ok := _c.mutation.VipOnly(); !ok {
+		v := group.DefaultVipOnly
+		_c.mutation.SetVipOnly(v)
+	}
 	if _, ok := _c.mutation.Status(); !ok {
 		v := group.DefaultStatus
 		_c.mutation.SetStatus(v)
@@ -1044,6 +1062,9 @@ func (_c *GroupCreate) check() error {
 	}
 	if _, ok := _c.mutation.IsExclusive(); !ok {
 		return &ValidationError{Name: "is_exclusive", err: errors.New(`ent: missing required field "Group.is_exclusive"`)}
+	}
+	if _, ok := _c.mutation.VipOnly(); !ok {
+		return &ValidationError{Name: "vip_only", err: errors.New(`ent: missing required field "Group.vip_only"`)}
 	}
 	if _, ok := _c.mutation.Status(); !ok {
 		return &ValidationError{Name: "status", err: errors.New(`ent: missing required field "Group.status"`)}
@@ -1226,6 +1247,10 @@ func (_c *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.IsExclusive(); ok {
 		_spec.SetField(group.FieldIsExclusive, field.TypeBool, value)
 		_node.IsExclusive = value
+	}
+	if value, ok := _c.mutation.VipOnly(); ok {
+		_spec.SetField(group.FieldVipOnly, field.TypeBool, value)
+		_node.VipOnly = value
 	}
 	if value, ok := _c.mutation.Status(); ok {
 		_spec.SetField(group.FieldStatus, field.TypeString, value)
@@ -1688,6 +1713,18 @@ func (u *GroupUpsert) SetIsExclusive(v bool) *GroupUpsert {
 // UpdateIsExclusive sets the "is_exclusive" field to the value that was provided on create.
 func (u *GroupUpsert) UpdateIsExclusive() *GroupUpsert {
 	u.SetExcluded(group.FieldIsExclusive)
+	return u
+}
+
+// SetVipOnly sets the "vip_only" field.
+func (u *GroupUpsert) SetVipOnly(v bool) *GroupUpsert {
+	u.Set(group.FieldVipOnly, v)
+	return u
+}
+
+// UpdateVipOnly sets the "vip_only" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateVipOnly() *GroupUpsert {
+	u.SetExcluded(group.FieldVipOnly)
 	return u
 }
 
@@ -2576,6 +2613,20 @@ func (u *GroupUpsertOne) SetIsExclusive(v bool) *GroupUpsertOne {
 func (u *GroupUpsertOne) UpdateIsExclusive() *GroupUpsertOne {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateIsExclusive()
+	})
+}
+
+// SetVipOnly sets the "vip_only" field.
+func (u *GroupUpsertOne) SetVipOnly(v bool) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetVipOnly(v)
+	})
+}
+
+// UpdateVipOnly sets the "vip_only" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateVipOnly() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateVipOnly()
 	})
 }
 
@@ -3742,6 +3793,20 @@ func (u *GroupUpsertBulk) SetIsExclusive(v bool) *GroupUpsertBulk {
 func (u *GroupUpsertBulk) UpdateIsExclusive() *GroupUpsertBulk {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateIsExclusive()
+	})
+}
+
+// SetVipOnly sets the "vip_only" field.
+func (u *GroupUpsertBulk) SetVipOnly(v bool) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetVipOnly(v)
+	})
+}
+
+// UpdateVipOnly sets the "vip_only" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateVipOnly() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateVipOnly()
 	})
 }
 

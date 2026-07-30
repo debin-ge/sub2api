@@ -279,15 +279,15 @@ func (h *APIKeyHandler) GetAvailableGroups(c *gin.Context) {
 		return
 	}
 
-	groups, err := h.apiKeyService.GetAvailableGroups(c.Request.Context(), subject.UserID)
+	groups, err := h.apiKeyService.GetVisibleGroupCatalog(c.Request.Context(), subject.UserID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
 
-	out := make([]dto.Group, 0, len(groups))
+	out := make([]dto.GroupCatalogEntry, 0, len(groups))
 	for i := range groups {
-		out = append(out, *dto.GroupFromService(&groups[i]))
+		out = append(out, *dto.GroupCatalogEntryFromService(&groups[i]))
 	}
 	response.Success(c, out)
 }

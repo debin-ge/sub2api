@@ -66,6 +66,8 @@ func TestAPIContracts(t *testing.T) {
 					"balance_notify_threshold": null,
 					"balance_notify_extra_emails": null,
 					"total_recharged": 0,
+					"is_vip": false,
+					"vip_access_state": "PAYMENT_REQUIRED",
 					"linuxdo_bound": false,
 					"oidc_bound": false,
 					"wechat_bound": false,
@@ -355,6 +357,8 @@ func TestAPIContracts(t *testing.T) {
 						"peak_end": "",
 						"peak_rate_multiplier": 1,
 						"is_exclusive": false,
+						"vip_only": false,
+						"can_bind": true,
 						"status": "active",
 						"subscription_type": "standard",
 						"daily_limit_usd": null,
@@ -1438,7 +1442,7 @@ func newContractDeps(t *testing.T) *contractDeps {
 	adminService := service.NewAdminService(
 		userRepo, groupRepo, &accountRepo, proxyRepo, apiKeyRepo, redeemRepo,
 		nil, nil, nil, nil, nil, nil, nil, nil,
-		nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, cfg,
 	)
 	authHandler := handler.NewAuthHandler(cfg, nil, userService, settingService, nil, redeemService, nil, nil)
 	apiKeyHandler := handler.NewAPIKeyHandler(apiKeyService)

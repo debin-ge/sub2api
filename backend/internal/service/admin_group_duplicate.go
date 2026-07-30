@@ -89,6 +89,7 @@ func cloneGroupForDuplicate(source *Group, operationID string) *Group {
 		PeakEnd:                         source.PeakEnd,
 		PeakRateMultiplier:              source.PeakRateMultiplier,
 		IsExclusive:                     source.IsExclusive,
+		VIPOnly:                         source.VIPOnly,
 		Status:                          duplicateGroupInactiveStatus,
 		DuplicateOperationID:            operationID,
 		SubscriptionType:                source.SubscriptionType,
@@ -181,6 +182,12 @@ func (s *adminServiceImpl) DuplicateGroup(ctx context.Context, id int64, actorSc
 
 	duplicate := cloneGroupForDuplicate(source, duplicateGroupOperationID(id, actorScope, operationKey))
 	sanitizeGroupReasoningEffortPolicy(duplicate)
+	if err := ValidateGroupVIPOnlyConfiguration(duplicate); err != nil {
+		return nil, err
+	}
+	if err := s.validateVIPConfigWriteTransition(false, duplicate.VIPOnly); err != nil {
+		return nil, err
+	}
 	for copyNumber := 1; ; copyNumber++ {
 		duplicate.Name = duplicateGroupName(source.Name, copyNumber)
 		duplicate.ID = 0

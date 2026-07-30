@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"html"
 	"sort"
@@ -257,6 +258,7 @@ type APIKeyService struct {
 	groupRepo                 GroupRepository
 	userSubRepo               UserSubscriptionRepository
 	userGroupRateRepo         UserGroupRateRepository
+	groupAccessPolicy         *GroupAccessPolicy
 	cache                     APIKeyCache
 	rateLimitCacheInvalid     RateLimitCacheInvalidator // optional: invalidate Redis rate limit cache
 	concurrencyService        *ConcurrencyService
@@ -315,6 +317,7 @@ func NewAPIKeyService(
 		groupRepo:         groupRepo,
 		userSubRepo:       userSubRepo,
 		userGroupRateRepo: userGroupRateRepo,
+		groupAccessPolicy: NewGroupAccessPolicy(),
 		cache:             cache,
 		cfg:               cfg,
 	}
@@ -413,17 +416,24 @@ func (s *APIKeyService) incrementAPIKeyErrorCount(ctx context.Context, userID in
 	_ = s.cache.IncrementCreateAttemptCount(ctx, userID)
 }
 
-// canUserBindGroup 检查用户是否可以绑定指定分组
-// 对于订阅类型分组：检查用户是否有有效订阅
-// 对于标准类型分组：使用原有的 AllowedGroups 和 IsExclusive 逻辑
-func (s *APIKeyService) canUserBindGroup(ctx context.Context, user *User, group *Group) bool {
-	// 订阅类型分组：需要有效订阅
+func (s *APIKeyService) evaluateGroupBinding(
+	ctx context.Context,
+	user *User,
+	group *Group,
+) (GroupAccessDecision, error) {
+	profile := NewGroupAccessProfileFromUser(user)
 	if group.IsSubscriptionType() {
+		if s.userSubRepo == nil {
+			return s.accessPolicy().Evaluate(profile, group, GroupAccessBinding), nil
+		}
 		_, err := s.userSubRepo.GetActiveByUserIDAndGroupID(ctx, user.ID, group.ID)
-		return err == nil // 有有效订阅则允许
+		if err == nil {
+			profile.ActiveSubscriptionGroupIDs = []int64{group.ID}
+		} else if !errors.Is(err, ErrSubscriptionNotFound) {
+			return GroupAccessDecision{}, fmt.Errorf("load active subscription: %w", err)
+		}
 	}
-	// 标准类型分组：使用原有逻辑
-	return user.CanBindGroup(group.ID, group.IsExclusive)
+	return s.accessPolicy().Evaluate(profile, group, GroupAccessBinding), nil
 }
 
 // Create 创建API Key
@@ -456,8 +466,12 @@ func (s *APIKeyService) Create(ctx context.Context, userID int64, req CreateAPIK
 		}
 
 		// 检查用户是否可以绑定该分组
-		if !s.canUserBindGroup(ctx, user, group) {
-			return nil, ErrGroupNotAllowed
+		decision, err := s.evaluateGroupBinding(ctx, user, group)
+		if err != nil {
+			return nil, err
+		}
+		if !decision.Allowed {
+			return nil, decision.Error()
 		}
 	}
 
@@ -772,8 +786,12 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 			return nil, fmt.Errorf("get group: %w", err)
 		}
 
-		if !s.canUserBindGroup(ctx, user, group) {
-			return nil, ErrGroupNotAllowed
+		decision, err := s.evaluateGroupBinding(ctx, user, group)
+		if err != nil {
+			return nil, err
+		}
+		if !decision.Allowed {
+			return nil, decision.Error()
 		}
 
 		apiKey.GroupID = req.GroupID
@@ -976,11 +994,9 @@ func (s *APIKeyService) IncrementUsage(ctx context.Context, keyID int64) error {
 	return nil
 }
 
-// GetAvailableGroups 获取用户有权限绑定的分组列表
-// 返回用户可以选择的分组：
-// - 标准类型分组：公开的（非专属）或用户被明确允许的
-// - 订阅类型分组：用户有有效订阅的
-func (s *APIKeyService) GetAvailableGroups(ctx context.Context, userID int64) ([]Group, error) {
+// GetVisibleGroupCatalog returns the server-authoritative group catalog. A
+// public VIP group remains visible while CanBind is false.
+func (s *APIKeyService) GetVisibleGroupCatalog(ctx context.Context, userID int64) ([]GroupCatalogEntry, error) {
 	// 获取用户信息
 	user, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
@@ -994,36 +1010,116 @@ func (s *APIKeyService) GetAvailableGroups(ctx context.Context, userID int64) ([
 	}
 
 	// 获取用户的所有有效订阅
-	activeSubscriptions, err := s.userSubRepo.ListActiveByUserID(ctx, userID)
-	if err != nil {
-		return nil, fmt.Errorf("list active subscriptions: %w", err)
-	}
-
-	// 构建订阅分组 ID 集合
-	subscribedGroupIDs := make(map[int64]bool)
-	for _, sub := range activeSubscriptions {
-		subscribedGroupIDs[sub.GroupID] = true
-	}
-
-	// 过滤出用户有权限的分组
-	availableGroups := make([]Group, 0)
-	for _, group := range allGroups {
-		if s.canUserBindGroupInternal(user, &group, subscribedGroupIDs) {
-			availableGroups = append(availableGroups, group)
+	var activeSubscriptions []UserSubscription
+	if s.userSubRepo != nil {
+		activeSubscriptions, err = s.userSubRepo.ListActiveByUserID(ctx, userID)
+		if err != nil {
+			return nil, fmt.Errorf("list active subscriptions: %w", err)
 		}
 	}
 
-	return availableGroups, nil
+	// 构建订阅分组 ID 集合
+	subscribedGroupIDs := make([]int64, 0, len(activeSubscriptions))
+	for _, sub := range activeSubscriptions {
+		subscribedGroupIDs = append(subscribedGroupIDs, sub.GroupID)
+	}
+
+	profile := NewGroupAccessProfileFromUser(user)
+	profile.ActiveSubscriptionGroupIDs = subscribedGroupIDs
+	catalog := make([]GroupCatalogEntry, 0, len(allGroups))
+	for _, group := range allGroups {
+		decision := s.accessPolicy().Evaluate(profile, &group, GroupAccessVisibility)
+		if !decision.Visible {
+			continue
+		}
+		catalog = append(catalog, GroupCatalogEntry{
+			Group:           group,
+			CanBind:         decision.Allowed,
+			DenyReason:      decision.Reason,
+			SuggestedAction: decision.SuggestedAction,
+		})
+	}
+	return catalog, nil
 }
 
-// canUserBindGroupInternal 内部方法，检查用户是否可以绑定分组（使用预加载的订阅数据）
-func (s *APIKeyService) canUserBindGroupInternal(user *User, group *Group, subscribedGroupIDs map[int64]bool) bool {
-	// 订阅类型分组：需要有效订阅
-	if group.IsSubscriptionType() {
-		return subscribedGroupIDs[group.ID]
+// GetAdminTargetGroupCatalog evaluates every active group against the target
+// user. For an exclusive standard group, the prospective allow-list grant is
+// included in the candidate profile so the catalog can describe the atomic
+// "grant + bind" operation without using the administrator's own permissions.
+func (s *APIKeyService) GetAdminTargetGroupCatalog(
+	ctx context.Context,
+	userID int64,
+) ([]AdminGroupCatalogEntry, error) {
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("get user: %w", err)
 	}
-	// 标准类型分组：使用原有逻辑
-	return user.CanBindGroup(group.ID, group.IsExclusive)
+	allGroups, err := s.groupRepo.ListActive(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list active groups: %w", err)
+	}
+
+	var activeSubscriptions []UserSubscription
+	if s.userSubRepo != nil {
+		activeSubscriptions, err = s.userSubRepo.ListActiveByUserID(ctx, userID)
+		if err != nil {
+			return nil, fmt.Errorf("list active subscriptions: %w", err)
+		}
+	}
+	subscribedGroupIDs := make([]int64, 0, len(activeSubscriptions))
+	for i := range activeSubscriptions {
+		subscribedGroupIDs = append(subscribedGroupIDs, activeSubscriptions[i].GroupID)
+	}
+
+	baseProfile := NewGroupAccessProfileFromUser(user)
+	baseProfile.ActiveSubscriptionGroupIDs = subscribedGroupIDs
+	catalog := make([]AdminGroupCatalogEntry, 0, len(allGroups))
+	for i := range allGroups {
+		group := allGroups[i]
+		profile := *baseProfile
+		profile.AllowedGroups = append([]int64(nil), baseProfile.AllowedGroups...)
+		prospectiveExclusiveGrant := group.IsExclusive &&
+			!group.IsSubscriptionType() &&
+			!containsInt64(profile.AllowedGroups, group.ID)
+		if prospectiveExclusiveGrant {
+			profile.AllowedGroups = append(profile.AllowedGroups, group.ID)
+		}
+
+		decision := s.accessPolicy().Evaluate(&profile, &group, GroupAccessBinding)
+		catalog = append(catalog, AdminGroupCatalogEntry{
+			GroupCatalogEntry: GroupCatalogEntry{
+				Group:           group,
+				CanBind:         decision.Allowed,
+				DenyReason:      decision.Reason,
+				SuggestedAction: decision.SuggestedAction,
+			},
+			WillGrantExclusive: prospectiveExclusiveGrant && decision.Allowed,
+		})
+	}
+	return catalog, nil
+}
+
+// GetAvailableGroups is retained for internal callers that need only groups
+// the user can bind. HTTP clients should consume GetVisibleGroupCatalog.
+func (s *APIKeyService) GetAvailableGroups(ctx context.Context, userID int64) ([]Group, error) {
+	catalog, err := s.GetVisibleGroupCatalog(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Group, 0, len(catalog))
+	for i := range catalog {
+		if catalog[i].CanBind {
+			out = append(out, catalog[i].Group)
+		}
+	}
+	return out, nil
+}
+
+func (s *APIKeyService) accessPolicy() *GroupAccessPolicy {
+	if s.groupAccessPolicy == nil {
+		s.groupAccessPolicy = NewGroupAccessPolicy()
+	}
+	return s.groupAccessPolicy
 }
 
 func (s *APIKeyService) SearchAPIKeys(ctx context.Context, userID int64, keyword string, limit int) ([]APIKey, error) {

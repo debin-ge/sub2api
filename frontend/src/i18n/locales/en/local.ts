@@ -301,12 +301,15 @@ export default {
     "clear": "Clear",
     "creating": "Creating...",
     "login": "Log in",
+    "previous": "Previous",
     "required": "Required",
+    "retry": "Retry",
     "sending": "Sending...",
     "tryAgain": "Try again"
   },
   "nav": {
-    "apps": "Apps"
+    "apps": "Apps",
+    "vipReconcile": "VIP Reconciliation"
   },
   "monitorCommon": {
     "providers": {
@@ -329,8 +332,170 @@ export default {
       "upstreamBalanceInvalidResponse": "Invalid upstream balance response",
       "upstreamBalanceError": "Upstream returned an error"
     },
+    "vipReconcile": {
+      "title": "VIP Reconciliation",
+      "description": "Preview historical paid-eligibility drift and repair it safely with a resumable background job.",
+      "preview": {
+        "title": "Reconciliation preview",
+        "description": "The preview uses a fixed database as-of time. Pagination passes the server cursor through unchanged so every page stays on the same snapshot.",
+        "pageSize": "Page size",
+        "newSnapshot": "Refresh snapshot",
+        "asOf": "Fixed as-of",
+        "total": "Total requiring action",
+        "page": "Page {page}",
+        "empty": "This snapshot contains no records requiring repair or manual review.",
+        "loadFailed": "Unable to load the VIP reconciliation preview.",
+        "stats": {
+          "eligibilityRepair": "Eligibility repairs",
+          "eligibilityRepairHint": "Paid eligibility must be materialized",
+          "effectiveChange": "Effective state changes",
+          "effectiveChangeHint": "Final VIP state will change",
+          "forceOffUnchanged": "Force-off preserved",
+          "forceOffUnchangedHint": "Eligibility repaired; final VIP stays off",
+          "invalidOrder": "Invalid orders",
+          "invalidOrderHint": "Missing completed_at; cannot auto-repair",
+          "deletedUser": "Deleted users",
+          "deletedUserHint": "Order owner is missing or deleted"
+        },
+        "columns": {
+          "category": "Category",
+          "user": "User ID",
+          "order": "Order ID",
+          "completedAt": "Completed at",
+          "currentMode": "Current mode",
+          "currentEffective": "Current effective VIP",
+          "willChange": "Effective state changes"
+        },
+        "categories": {
+          "eligibilityRepair": "Eligibility repair",
+          "effectiveChange": "Effective state change",
+          "forceOffUnchanged": "Force-off preserved",
+          "invalidOrder": "Invalid order",
+          "deletedUser": "Deleted user"
+        }
+      },
+      "execute": {
+        "title": "Run full reconciliation",
+        "description": "The background job recalculates from a fresh as-of time. The preview is for assessment only and is not used as execution input.",
+        "warning": "This operation repairs historical VIP paid eligibility and writes immutable audit events. FORCE_OFF always wins; later payments and reconciliation cannot bypass an administrator override.",
+        "requestId": "Idempotency request ID",
+        "requestIdHint": "A failed retry must reuse the same request ID and reason. The server enforces idempotency and detects conflicts.",
+        "newRequest": "Generate new request",
+        "reason": "Execution reason",
+        "reasonPlaceholder": "Describe the business context, ticket, or change reference for this full reconciliation",
+        "reasonRequired": "A reason is required to run full reconciliation.",
+        "invalidRequestId": "The idempotency request ID is invalid. Generate a new request ID.",
+        "stepUpHint": "Starting and resuming a job both require administrator TOTP step-up verification.",
+        "submit": "Start full reconciliation",
+        "submitting": "Submitting...",
+        "accepted": "VIP reconciliation job #{id} was accepted.",
+        "failed": "Unable to submit the VIP reconciliation job."
+      },
+      "job": {
+        "title": "Latest reconciliation job",
+        "requestId": "Request ID",
+        "restoring": "Restoring the latest job status...",
+        "restoreFailed": "Unable to restore the latest VIP reconciliation job.",
+        "loadFailed": "Unable to load VIP reconciliation job status.",
+        "unknownStatus": "The server returned unknown job status “{status}”. Automatic polling and actions have stopped; verify the job manually before continuing.",
+        "inProgress": "Background job in progress",
+        "indeterminateHint": "The backend does not expose a total scan count, so this shows scanned records without estimating a percentage.",
+        "scannedCount": "{count} records scanned",
+        "resume": "Resume from failure",
+        "lastError": "Latest error",
+        "reason": "Execution reason",
+        "actor": "Administrator",
+        "cursor": "Resume cursor (completed time / order)",
+        "startedAt": "Started at",
+        "finishedAt": "Finished at",
+        "updatedAt": "Updated at",
+        "attempts": "Attempts",
+        "scanned": "Scanned",
+        "eligibilityRepaired": "Eligibility repaired",
+        "effectiveChanged": "Effective state changed",
+        "forceOffUnchanged": "Force-off preserved",
+        "alreadyCorrect": "Already correct",
+        "deleted": "Deleted users",
+        "invalidOrder": "Invalid orders",
+        "failedCount": "Failed records",
+        "status": {
+          "queued": "Queued",
+          "running": "Running",
+          "succeeded": "Succeeded",
+          "failed": "Failed",
+          "unknown": "Unknown: {status}"
+        }
+      },
+      "errors": {
+        "VIP_RECONCILE_IDEMPOTENCY_CONFLICT": "This request ID was used by a different administrator or with a different reason. Verify the input and generate a new request.",
+        "VIP_RECONCILE_ACTIVE_JOB": "Another full VIP reconciliation job is already active. Wait for it to finish.",
+        "VIP_RECONCILE_JOB_NOT_FOUND": "The VIP reconciliation job does not exist or is no longer accessible.",
+        "VIP_RECONCILE_JOB_NOT_RUNNABLE": "This VIP reconciliation job cannot currently run or resume."
+      }
+    },
     "users": {
-      "passwordCopied": "Password copied"
+      "passwordCopied": "Password copied",
+      "replaceGroupFailed": "Failed to replace group",
+      "vip": {
+        "column": "Effective VIP",
+        "editTitle": "VIP entitlement mode",
+        "editHint": "This controls the target user's final VIP entitlement only. Administrator binding is still rechecked against the target user's effective state.",
+        "modeLabel": "Management mode",
+        "modes": {
+          "AUTO": "Automatic (follow paid eligibility)",
+          "FORCE_ON": "Force on",
+          "FORCE_OFF": "Force off"
+        },
+        "modeHints": {
+          "AUTO": "Clears the manual override and derives the final state from completed qualifying payments.",
+          "FORCE_ON": "Keeps final VIP access enabled regardless of automatic paid eligibility.",
+          "FORCE_OFF": "Highest priority; later payments may record eligibility but cannot re-enable final VIP access.",
+          "UNKNOWN": "The server returned an unknown or missing mode. Select an explicit mode before submitting."
+        },
+        "unknownMode": "Unknown mode: {mode}",
+        "unknownValue": "Unknown",
+        "notAvailable": "None",
+        "reasonLabel": "Change reason",
+        "reasonPlaceholder": "Explain the business reason for changing this VIP mode",
+        "reasonRequiredHint": "The mode changed. A reason is required and will be written to immutable audit history.",
+        "reasonUnchangedHint": "A reason is required only when changing the VIP mode.",
+        "reasonRequired": "A reason is required when changing the VIP mode.",
+        "effectiveActive": "VIP active",
+        "effectiveInactive": "Not VIP",
+        "effectiveUnknown": "State unknown",
+        "filters": {
+          "allEffective": "All VIP states",
+          "effective": "Effective VIP only",
+          "notEffective": "Non-VIP only",
+          "allModes": "All VIP modes"
+        },
+        "tooltip": {
+          "effective": "Final state",
+          "mode": "Management mode",
+          "paidEligible": "Automatic paid eligibility",
+          "paidSource": "Eligibility source",
+          "paidAt": "Eligibility time",
+          "effectiveSource": "Effective source",
+          "grantedAt": "Effective time",
+          "overrideAt": "Override time",
+          "overrideBy": "Administrator ID",
+          "overrideReason": "Override reason"
+        },
+        "auditMenu": "VIP audit",
+        "auditTitle": "VIP entitlement audit",
+        "auditEmpty": "No VIP entitlement changes yet.",
+        "auditLoadFailed": "Failed to load VIP audit history.",
+        "auditUnknownAction": "Unknown change",
+        "auditBefore": "Before",
+        "auditAfter": "After",
+        "auditActor": "Actor",
+        "auditReason": "Reason",
+        "auditOrder": "Order",
+        "auditRequest": "Request ID",
+        "willGrantExclusive": "Submitting will atomically grant access to this exclusive group",
+        "catalogLoadFailed": "Failed to load the target user's group catalog.",
+        "catalogDenied": "This group cannot currently be bound for the target user."
+      }
     },
     "groups": {
       "platforms": {
@@ -340,7 +505,14 @@ export default {
         "deepseek": "DeepSeek",
         "windsurf": "Windsurf",
         "opencode": "OpenCode"
-      }
+      },
+      "vipOnly": {
+        "badge": "VIP only",
+        "label": "Effective VIP only",
+        "hint": "When enabled, only users with effective VIP access can bind to and run this standard group.",
+        "subscriptionDisabled": "Subscription groups cannot also be VIP-only; use subscription entitlement checks instead."
+      },
+      "fallbackSubscriptionExcluded": "Subscription groups are excluded from fallback targets; both fallback paths prohibit entering a subscription group."
     },
     "channels": {
       "emptyModelsInPricing": "Configure at least one model price.",
@@ -560,6 +732,62 @@ export default {
         "wiseGuideSummary": "Wise v1 uses hosted redirect plus automatic reconciliation. Enable Wise balance / bank transfer only.",
         "wiseGuideNote": "Do not enable card / Apple Pay / Google Pay auto-fulfillment in v1. Fee-deducted transactions require manual review."
       }
+    }
+  },
+  "vip": {
+    "access": {
+      "label": {
+        "ACTIVE": "VIP active",
+        "PAYMENT_REQUIRED": "VIP payment required",
+        "ACTIVATION_PENDING": "VIP activation pending",
+        "ACTIVATION_FAILED": "VIP activation needs support",
+        "RESTRICTED": "VIP access restricted",
+        "UNKNOWN": "VIP status unavailable"
+      },
+      "description": {
+        "ACTIVE": "Your VIP benefits are active. You can use VIP-only groups you are authorized for.",
+        "PAYMENT_REQUIRED": "Complete a real payment to become eligible for VIP access.",
+        "ACTIVATION_PENDING": "Your payment is complete and VIP benefits are syncing. Refresh later and do not pay again.",
+        "ACTIVATION_FAILED": "Your payment is complete, but VIP activation exceeded the expected time. Do not pay again; contact an administrator.",
+        "RESTRICTED": "VIP access is restricted by your account status. Contact an administrator if you need help.",
+        "UNKNOWN": "VIP access cannot be confirmed. Related actions and purchase links are hidden for safety; refresh later or contact an administrator."
+      },
+      "purchaseAction": "Go to purchase"
+    },
+    "group": {
+      "badge": "VIP only",
+      "denied": {
+        "GROUP_VIP_ONLY": "This group is available only to users with active VIP access.",
+        "GROUP_NOT_ALLOWED": "Your account is not allowed to bind this group.",
+        "GROUP_NOT_ACTIVE": "This group is not active.",
+        "SUBSCRIPTION_REQUIRED": "An active subscription is required for this group.",
+        "GROUP_ACCESS_PROFILE_MISSING": "Group access cannot be confirmed right now. Try again later.",
+        "INVALID_CONFIGURATION": "This group is unavailable because its configuration is invalid. Contact an administrator.",
+        "UNKNOWN": "Access to this group cannot be confirmed right now."
+      },
+      "actions": {
+        "PAYMENT": "Purchase to unlock",
+        "CONTACT_SUPPORT": "Contact an administrator for help"
+      },
+      "errors": {
+        "GROUP_NOT_ALLOWED": "Your account is not allowed to bind this group.",
+        "GROUP_VIP_ONLY": "This group is available only to users with active VIP access.",
+        "GROUP_NOT_ACTIVE": "This group is not active.",
+        "SUBSCRIPTION_REQUIRED": "An active subscription is required for this group.",
+        "GROUP_ACCESS_PROFILE_MISSING": "Group access cannot be confirmed right now. Try again later.",
+        "GROUP_FALLBACK_SUBSCRIPTION_FORBIDDEN": "A subscription group cannot be used as a fallback target.",
+        "GROUP_FALLBACK_EXCLUSIVE_ESCALATION": "The fallback would escalate exclusive access and cannot be saved.",
+        "GROUP_FALLBACK_VIP_ESCALATION": "The fallback would escalate VIP access and cannot be saved.",
+        "GROUP_FALLBACK_INVALID_CONFIG": "The group fallback configuration is invalid."
+      }
+    },
+    "paymentResult": {
+      "ACTIVE": "Payment and fulfillment succeeded. Your VIP benefits are active.",
+      "PAYMENT_REQUIRED": "Payment is complete, but VIP status is not confirmed. Do not pay again; refresh later or contact an administrator.",
+      "ACTIVATION_PENDING": "Payment is complete and your VIP benefits are syncing. Refresh later and do not pay again.",
+      "ACTIVATION_FAILED": "Payment is complete, but VIP activation needs administrator support. Do not pay again.",
+      "RESTRICTED": "Payment is complete, but VIP access remains restricted by your account status. Contact an administrator if you need help.",
+      "UNKNOWN": "Payment is complete, but VIP status cannot be confirmed. Do not pay again; refresh later or contact an administrator."
     }
   },
   "payment": {

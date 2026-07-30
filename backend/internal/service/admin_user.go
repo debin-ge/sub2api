@@ -105,6 +105,79 @@ func (s *adminServiceImpl) GetUserIncludeDeleted(ctx context.Context, id int64) 
 	return s.userRepo.GetByIDIncludeDeleted(ctx, id)
 }
 
+func (s *adminServiceImpl) SetUserVIPMode(
+	ctx context.Context,
+	userID int64,
+	mode VIPMode,
+	actorID int64,
+	reason string,
+) (*User, error) {
+	if s.vipEntitlementService == nil {
+		return nil, fmt.Errorf("VIP entitlement service is not configured")
+	}
+	if _, err := s.vipEntitlementService.SetManualMode(ctx, userID, mode, actorID, reason); err != nil {
+		return nil, err
+	}
+	return s.GetUser(ctx, userID)
+}
+
+func (s *adminServiceImpl) ListUserVIPAudit(
+	ctx context.Context,
+	userID int64,
+	page, pageSize int,
+) ([]VIPAuditEvent, int64, error) {
+	if s.vipEntitlementService == nil {
+		return nil, 0, fmt.Errorf("VIP entitlement service is not configured")
+	}
+	if _, err := s.userRepo.GetByID(ctx, userID); err != nil {
+		return nil, 0, err
+	}
+	return s.vipEntitlementService.ListAuditEvents(ctx, userID, page, pageSize)
+}
+
+func (s *adminServiceImpl) GetUserGroupCatalog(
+	ctx context.Context,
+	userID int64,
+) ([]AdminGroupCatalogEntry, error) {
+	if s.apiKeyService == nil {
+		return nil, fmt.Errorf("API key service is not configured")
+	}
+	return s.apiKeyService.GetAdminTargetGroupCatalog(ctx, userID)
+}
+
+func (s *adminServiceImpl) PreviewVIPReconcile(
+	ctx context.Context,
+	cursor string,
+	limit int,
+) (*VIPReconcilePreview, error) {
+	if s.vipReconcileService == nil {
+		return nil, fmt.Errorf("VIP reconcile service is not configured")
+	}
+	return s.vipReconcileService.Preview(ctx, cursor, limit)
+}
+
+func (s *adminServiceImpl) CreateVIPReconcileJob(
+	ctx context.Context,
+	requestID string,
+	actorID int64,
+	reason string,
+) (*VIPReconcileJob, error) {
+	if s.vipReconcileService == nil {
+		return nil, fmt.Errorf("VIP reconcile service is not configured")
+	}
+	return s.vipReconcileService.CreateJob(ctx, requestID, actorID, reason)
+}
+
+func (s *adminServiceImpl) GetVIPReconcileJob(
+	ctx context.Context,
+	jobID int64,
+) (*VIPReconcileJob, error) {
+	if s.vipReconcileService == nil {
+		return nil, fmt.Errorf("VIP reconcile service is not configured")
+	}
+	return s.vipReconcileService.GetJob(ctx, jobID)
+}
+
 // normalizeUserRole 校验并归一化角色输入。
 // 空字符串返回 fallback(未提供时的默认角色);非法值返回错误。
 func normalizeUserRole(role, fallback string) (string, error) {

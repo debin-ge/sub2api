@@ -93,24 +93,69 @@
                 <div
                   v-for="g in exclusiveGroups(section)"
                   :key="`ex-${g.id}`"
-                  class="inline-flex flex-wrap items-center gap-1"
+                  class="inline-flex max-w-full flex-col items-start gap-1"
+                  :class="groupAccessContainerClass(g)"
+                  data-testid="available-group"
+                  :data-group-id="g.id"
                 >
-                  <GroupBadge
-                    :name="g.name"
-                    :platform="g.platform as GroupPlatform"
-                    :subscription-type="(g.subscription_type || 'standard') as SubscriptionType"
-                    :rate-multiplier="g.rate_multiplier"
-                    :user-rate-multiplier="userGroupRates[g.id] ?? null"
-                    always-show-rate
-                  />
-                  <span
-                    v-if="hasPeakRate(g)"
-                    class="inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
-                    :title="peakRateTitle(g)"
+                  <div
+                    class="flex max-w-full flex-wrap items-center gap-1"
+                    :class="{ 'opacity-60': !isGroupBindable(g) }"
+                    :aria-disabled="isGroupBindable(g) ? undefined : 'true'"
+                    :aria-label="groupAriaLabel(g)"
+                    :tabindex="isGroupBindable(g) ? undefined : 0"
+                    :title="isGroupBindable(g) ? undefined : t(getGroupDenyMessageKey(g.deny_reason))"
+                    data-testid="available-group-bind-target"
                   >
-                    <Icon name="clock" size="xs" class="h-3 w-3" />
-                    {{ peakRateLabel(g) }}
-                  </span>
+                    <GroupBadge
+                      :name="g.name"
+                      :platform="g.platform as GroupPlatform"
+                      :subscription-type="(g.subscription_type || 'standard') as SubscriptionType"
+                      :rate-multiplier="g.rate_multiplier"
+                      :user-rate-multiplier="userGroupRates[g.id] ?? null"
+                      always-show-rate
+                    />
+                    <span
+                      v-if="g.vip_only === true"
+                      class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-900/35 dark:text-amber-200"
+                      data-testid="available-group-vip-badge"
+                    >
+                      {{ t('vip.group.badge') }}
+                    </span>
+                    <span
+                      v-if="hasPeakRate(g)"
+                      class="inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
+                      :title="peakRateTitle(g)"
+                    >
+                      <Icon name="clock" size="xs" class="h-3 w-3" />
+                      {{ peakRateLabel(g) }}
+                    </span>
+                  </div>
+                  <div
+                    v-if="!isGroupBindable(g)"
+                    class="flex max-w-full flex-wrap items-center gap-1.5 text-[10px] text-amber-800 dark:text-amber-200"
+                    role="note"
+                    data-testid="available-group-denied"
+                  >
+                    <span>{{ t(getGroupDenyMessageKey(g.deny_reason)) }}</span>
+                    <button
+                      v-if="showGroupPaymentAction(g)"
+                      type="button"
+                      class="inline-flex rounded-md bg-primary-600 px-2 py-1 font-semibold text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1 dark:focus:ring-offset-dark-800"
+                      data-testid="available-group-payment-cta"
+                      @click.stop="emit('action', 'PAYMENT')"
+                      @keydown.stop
+                    >
+                      {{ t('vip.group.actions.PAYMENT') }}
+                    </button>
+                    <span
+                      v-else-if="safeGroupSuggestedAction(g) === 'CONTACT_SUPPORT'"
+                      class="font-medium"
+                      data-testid="available-group-contact-support"
+                    >
+                      {{ t('vip.group.actions.CONTACT_SUPPORT') }}
+                    </span>
+                  </div>
                 </div>
               </div>
               <div
@@ -127,24 +172,69 @@
                 <div
                   v-for="g in publicGroups(section)"
                   :key="`pub-${g.id}`"
-                  class="inline-flex flex-wrap items-center gap-1"
+                  class="inline-flex max-w-full flex-col items-start gap-1"
+                  :class="groupAccessContainerClass(g)"
+                  data-testid="available-group"
+                  :data-group-id="g.id"
                 >
-                  <GroupBadge
-                    :name="g.name"
-                    :platform="g.platform as GroupPlatform"
-                    :subscription-type="(g.subscription_type || 'standard') as SubscriptionType"
-                    :rate-multiplier="g.rate_multiplier"
-                    :user-rate-multiplier="userGroupRates[g.id] ?? null"
-                    always-show-rate
-                  />
-                  <span
-                    v-if="hasPeakRate(g)"
-                    class="inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
-                    :title="peakRateTitle(g)"
+                  <div
+                    class="flex max-w-full flex-wrap items-center gap-1"
+                    :class="{ 'opacity-60': !isGroupBindable(g) }"
+                    :aria-disabled="isGroupBindable(g) ? undefined : 'true'"
+                    :aria-label="groupAriaLabel(g)"
+                    :tabindex="isGroupBindable(g) ? undefined : 0"
+                    :title="isGroupBindable(g) ? undefined : t(getGroupDenyMessageKey(g.deny_reason))"
+                    data-testid="available-group-bind-target"
                   >
-                    <Icon name="clock" size="xs" class="h-3 w-3" />
-                    {{ peakRateLabel(g) }}
-                  </span>
+                    <GroupBadge
+                      :name="g.name"
+                      :platform="g.platform as GroupPlatform"
+                      :subscription-type="(g.subscription_type || 'standard') as SubscriptionType"
+                      :rate-multiplier="g.rate_multiplier"
+                      :user-rate-multiplier="userGroupRates[g.id] ?? null"
+                      always-show-rate
+                    />
+                    <span
+                      v-if="g.vip_only === true"
+                      class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-900/35 dark:text-amber-200"
+                      data-testid="available-group-vip-badge"
+                    >
+                      {{ t('vip.group.badge') }}
+                    </span>
+                    <span
+                      v-if="hasPeakRate(g)"
+                      class="inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
+                      :title="peakRateTitle(g)"
+                    >
+                      <Icon name="clock" size="xs" class="h-3 w-3" />
+                      {{ peakRateLabel(g) }}
+                    </span>
+                  </div>
+                  <div
+                    v-if="!isGroupBindable(g)"
+                    class="flex max-w-full flex-wrap items-center gap-1.5 text-[10px] text-amber-800 dark:text-amber-200"
+                    role="note"
+                    data-testid="available-group-denied"
+                  >
+                    <span>{{ t(getGroupDenyMessageKey(g.deny_reason)) }}</span>
+                    <button
+                      v-if="showGroupPaymentAction(g)"
+                      type="button"
+                      class="inline-flex rounded-md bg-primary-600 px-2 py-1 font-semibold text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1 dark:focus:ring-offset-dark-800"
+                      data-testid="available-group-payment-cta"
+                      @click.stop="emit('action', 'PAYMENT')"
+                      @keydown.stop
+                    >
+                      {{ t('vip.group.actions.PAYMENT') }}
+                    </button>
+                    <span
+                      v-else-if="safeGroupSuggestedAction(g) === 'CONTACT_SUPPORT'"
+                      class="font-medium"
+                      data-testid="available-group-contact-support"
+                    >
+                      {{ t('vip.group.actions.CONTACT_SUPPORT') }}
+                    </span>
+                  </div>
                 </div>
               </div>
               <span v-if="section.groups.length === 0" class="text-xs text-gray-400">-</span>
@@ -231,25 +321,70 @@
                     <div
                       v-for="g in exclusiveGroups(section)"
                       :key="`mobile-ex-${g.id}`"
-                      class="inline-flex max-w-full min-w-0 flex-wrap items-center gap-1"
+                      class="inline-flex max-w-full min-w-0 flex-col items-start gap-1"
+                      :class="groupAccessContainerClass(g)"
+                      data-testid="available-group"
+                      :data-group-id="g.id"
                     >
-                      <GroupBadge
-                        class="max-w-full"
-                        :name="g.name"
-                        :platform="g.platform as GroupPlatform"
-                        :subscription-type="(g.subscription_type || 'standard') as SubscriptionType"
-                        :rate-multiplier="g.rate_multiplier"
-                        :user-rate-multiplier="userGroupRates[g.id] ?? null"
-                        always-show-rate
-                      />
-                      <span
-                        v-if="hasPeakRate(g)"
-                        class="inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
-                        :title="peakRateTitle(g)"
+                      <div
+                        class="flex max-w-full min-w-0 flex-wrap items-center gap-1"
+                        :class="{ 'opacity-60': !isGroupBindable(g) }"
+                        :aria-disabled="isGroupBindable(g) ? undefined : 'true'"
+                        :aria-label="groupAriaLabel(g)"
+                        :tabindex="isGroupBindable(g) ? undefined : 0"
+                        :title="isGroupBindable(g) ? undefined : t(getGroupDenyMessageKey(g.deny_reason))"
+                        data-testid="available-group-bind-target"
                       >
-                        <Icon name="clock" size="xs" class="h-3 w-3" />
-                        {{ peakRateLabel(g) }}
-                      </span>
+                        <GroupBadge
+                          class="max-w-full"
+                          :name="g.name"
+                          :platform="g.platform as GroupPlatform"
+                          :subscription-type="(g.subscription_type || 'standard') as SubscriptionType"
+                          :rate-multiplier="g.rate_multiplier"
+                          :user-rate-multiplier="userGroupRates[g.id] ?? null"
+                          always-show-rate
+                        />
+                        <span
+                          v-if="g.vip_only === true"
+                          class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-900/35 dark:text-amber-200"
+                          data-testid="available-group-vip-badge"
+                        >
+                          {{ t('vip.group.badge') }}
+                        </span>
+                        <span
+                          v-if="hasPeakRate(g)"
+                          class="inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
+                          :title="peakRateTitle(g)"
+                        >
+                          <Icon name="clock" size="xs" class="h-3 w-3" />
+                          {{ peakRateLabel(g) }}
+                        </span>
+                      </div>
+                      <div
+                        v-if="!isGroupBindable(g)"
+                        class="flex max-w-full flex-wrap items-center gap-1.5 text-[10px] text-amber-800 dark:text-amber-200"
+                        role="note"
+                        data-testid="available-group-denied"
+                      >
+                        <span>{{ t(getGroupDenyMessageKey(g.deny_reason)) }}</span>
+                        <button
+                          v-if="showGroupPaymentAction(g)"
+                          type="button"
+                          class="inline-flex rounded-md bg-primary-600 px-2 py-1 font-semibold text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1 dark:focus:ring-offset-dark-800"
+                          data-testid="available-group-payment-cta"
+                          @click.stop="emit('action', 'PAYMENT')"
+                          @keydown.stop
+                        >
+                          {{ t('vip.group.actions.PAYMENT') }}
+                        </button>
+                        <span
+                          v-else-if="safeGroupSuggestedAction(g) === 'CONTACT_SUPPORT'"
+                          class="font-medium"
+                          data-testid="available-group-contact-support"
+                        >
+                          {{ t('vip.group.actions.CONTACT_SUPPORT') }}
+                        </span>
+                      </div>
                     </div>
                   </div>
                   <div
@@ -266,25 +401,70 @@
                     <div
                       v-for="g in publicGroups(section)"
                       :key="`mobile-pub-${g.id}`"
-                      class="inline-flex max-w-full min-w-0 flex-wrap items-center gap-1"
+                      class="inline-flex max-w-full min-w-0 flex-col items-start gap-1"
+                      :class="groupAccessContainerClass(g)"
+                      data-testid="available-group"
+                      :data-group-id="g.id"
                     >
-                      <GroupBadge
-                        class="max-w-full"
-                        :name="g.name"
-                        :platform="g.platform as GroupPlatform"
-                        :subscription-type="(g.subscription_type || 'standard') as SubscriptionType"
-                        :rate-multiplier="g.rate_multiplier"
-                        :user-rate-multiplier="userGroupRates[g.id] ?? null"
-                        always-show-rate
-                      />
-                      <span
-                        v-if="hasPeakRate(g)"
-                        class="inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
-                        :title="peakRateTitle(g)"
+                      <div
+                        class="flex max-w-full min-w-0 flex-wrap items-center gap-1"
+                        :class="{ 'opacity-60': !isGroupBindable(g) }"
+                        :aria-disabled="isGroupBindable(g) ? undefined : 'true'"
+                        :aria-label="groupAriaLabel(g)"
+                        :tabindex="isGroupBindable(g) ? undefined : 0"
+                        :title="isGroupBindable(g) ? undefined : t(getGroupDenyMessageKey(g.deny_reason))"
+                        data-testid="available-group-bind-target"
                       >
-                        <Icon name="clock" size="xs" class="h-3 w-3" />
-                        {{ peakRateLabel(g) }}
-                      </span>
+                        <GroupBadge
+                          class="max-w-full"
+                          :name="g.name"
+                          :platform="g.platform as GroupPlatform"
+                          :subscription-type="(g.subscription_type || 'standard') as SubscriptionType"
+                          :rate-multiplier="g.rate_multiplier"
+                          :user-rate-multiplier="userGroupRates[g.id] ?? null"
+                          always-show-rate
+                        />
+                        <span
+                          v-if="g.vip_only === true"
+                          class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-900/35 dark:text-amber-200"
+                          data-testid="available-group-vip-badge"
+                        >
+                          {{ t('vip.group.badge') }}
+                        </span>
+                        <span
+                          v-if="hasPeakRate(g)"
+                          class="inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
+                          :title="peakRateTitle(g)"
+                        >
+                          <Icon name="clock" size="xs" class="h-3 w-3" />
+                          {{ peakRateLabel(g) }}
+                        </span>
+                      </div>
+                      <div
+                        v-if="!isGroupBindable(g)"
+                        class="flex max-w-full flex-wrap items-center gap-1.5 text-[10px] text-amber-800 dark:text-amber-200"
+                        role="note"
+                        data-testid="available-group-denied"
+                      >
+                        <span>{{ t(getGroupDenyMessageKey(g.deny_reason)) }}</span>
+                        <button
+                          v-if="showGroupPaymentAction(g)"
+                          type="button"
+                          class="inline-flex rounded-md bg-primary-600 px-2 py-1 font-semibold text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1 dark:focus:ring-offset-dark-800"
+                          data-testid="available-group-payment-cta"
+                          @click.stop="emit('action', 'PAYMENT')"
+                          @keydown.stop
+                        >
+                          {{ t('vip.group.actions.PAYMENT') }}
+                        </button>
+                        <span
+                          v-else-if="safeGroupSuggestedAction(g) === 'CONTACT_SUPPORT'"
+                          class="font-medium"
+                          data-testid="available-group-contact-support"
+                        >
+                          {{ t('vip.group.actions.CONTACT_SUPPORT') }}
+                        </span>
+                      </div>
                     </div>
                   </div>
                   <span v-if="section.groups.length === 0" class="text-xs text-gray-400">-</span>
@@ -330,6 +510,12 @@ import type { GroupPlatform, SubscriptionType } from '@/types'
 import { platformBadgeClass } from '@/utils/platformColors'
 import { useAppStore } from '@/stores/app'
 import { hasPeakRate as groupHasPeakRate, formatPeakRateWindow, serverTimezoneLabel } from '@/utils/peak-rate'
+import {
+  getGroupDenyMessageKey,
+  getSafeGroupSuggestedAction,
+  isGroupBindable,
+  shouldShowGroupPaymentCTA,
+} from '@/utils/vipAccess'
 
 const props = defineProps<{
   columns: {
@@ -353,6 +539,10 @@ const props = defineProps<{
 // the explicit reference here keeps the linter from flagging userGroupRates.
 void props.userGroupRates
 
+const emit = defineEmits<{
+  (event: 'action', action: 'PAYMENT'): void
+}>()
+
 const { t } = useI18n()
 
 function exclusiveGroups(section: UserChannelPlatformSection): UserAvailableGroup[] {
@@ -361,6 +551,29 @@ function exclusiveGroups(section: UserChannelPlatformSection): UserAvailableGrou
 
 function publicGroups(section: UserChannelPlatformSection): UserAvailableGroup[] {
   return section.groups.filter((g) => !g.is_exclusive)
+}
+
+function safeGroupSuggestedAction(group: UserAvailableGroup) {
+  return getSafeGroupSuggestedAction(group.deny_reason, group.suggested_action)
+}
+
+function showGroupPaymentAction(group: UserAvailableGroup): boolean {
+  return shouldShowGroupPaymentCTA(
+    group.can_bind,
+    group.deny_reason,
+    group.suggested_action,
+  )
+}
+
+function groupAriaLabel(group: UserAvailableGroup): string {
+  if (isGroupBindable(group)) return group.name
+  return `${group.name}: ${t(getGroupDenyMessageKey(group.deny_reason))}`
+}
+
+function groupAccessContainerClass(group: UserAvailableGroup): string {
+  return isGroupBindable(group)
+    ? ''
+    : 'rounded-lg border border-amber-200 bg-amber-50/70 px-2 py-1.5 dark:border-amber-900/60 dark:bg-amber-950/20'
 }
 
 const appStore = useAppStore()

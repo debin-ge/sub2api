@@ -174,6 +174,36 @@ func (s *stubAdminService) GetUserIncludeDeleted(ctx context.Context, id int64) 
 	return s.GetUser(ctx, id)
 }
 
+func (s *stubAdminService) SetUserVIPMode(ctx context.Context, userID int64, mode service.VIPMode, actorID int64, reason string) (*service.User, error) {
+	user, err := s.GetUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	user.ManualOverride = mode.ManualOverride()
+	user.IsVIP = service.EffectiveVIPState(user.PaidEligible, user.ManualOverride)
+	return user, nil
+}
+
+func (s *stubAdminService) ListUserVIPAudit(context.Context, int64, int, int) ([]service.VIPAuditEvent, int64, error) {
+	return nil, 0, nil
+}
+
+func (s *stubAdminService) GetUserGroupCatalog(context.Context, int64) ([]service.AdminGroupCatalogEntry, error) {
+	return nil, nil
+}
+
+func (s *stubAdminService) PreviewVIPReconcile(context.Context, string, int) (*service.VIPReconcilePreview, error) {
+	return &service.VIPReconcilePreview{}, nil
+}
+
+func (s *stubAdminService) CreateVIPReconcileJob(context.Context, string, int64, string) (*service.VIPReconcileJob, error) {
+	return &service.VIPReconcileJob{ID: 1, Status: "queued"}, nil
+}
+
+func (s *stubAdminService) GetVIPReconcileJob(context.Context, int64) (*service.VIPReconcileJob, error) {
+	return &service.VIPReconcileJob{ID: 1, Status: "succeeded"}, nil
+}
+
 func (s *stubAdminService) CreateUser(ctx context.Context, input *service.CreateUserInput) (*service.User, error) {
 	user := service.User{ID: 100, Email: input.Email, Status: service.StatusActive}
 	return &user, nil

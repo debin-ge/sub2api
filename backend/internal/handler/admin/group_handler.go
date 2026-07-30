@@ -27,6 +27,10 @@ type GroupHandler struct {
 	modelCatalog         adminModelCatalog
 }
 
+type groupAccessGraphScanner interface {
+	ScanGroupAccessGraph(context.Context) (*service.GroupAccessGraphScanReport, error)
+}
+
 // GetLiveCapability 返回当前服务端是否具备生成 Live attestation 的运行环境。
 func (h *GroupHandler) GetLiveCapability(c *gin.Context) {
 	err := liveattestation.NewProvider().Check(c.Request.Context())
@@ -106,6 +110,7 @@ type CreateGroupRequest struct {
 	Platform         string             `json:"platform" binding:"omitempty,oneof=anthropic openai gemini antigravity grok minimax glm kimi deepseek windsurf opencode composite"`
 	RateMultiplier   float64            `json:"rate_multiplier"`
 	IsExclusive      bool               `json:"is_exclusive"`
+	VIPOnly          bool               `json:"vip_only"`
 	SubscriptionType string             `json:"subscription_type" binding:"omitempty,oneof=standard subscription"`
 	DailyLimitUSD    optionalLimitField `json:"daily_limit_usd"`
 	WeeklyLimitUSD   optionalLimitField `json:"weekly_limit_usd"`
@@ -164,6 +169,7 @@ type UpdateGroupRequest struct {
 	Platform         string             `json:"platform" binding:"omitempty,oneof=anthropic openai gemini antigravity grok minimax glm kimi deepseek windsurf opencode composite"`
 	RateMultiplier   *float64           `json:"rate_multiplier"`
 	IsExclusive      *bool              `json:"is_exclusive"`
+	VIPOnly          *bool              `json:"vip_only"`
 	Status           string             `json:"status" binding:"omitempty,oneof=active inactive"`
 	SubscriptionType string             `json:"subscription_type" binding:"omitempty,oneof=standard subscription"`
 	DailyLimitUSD    optionalLimitField `json:"daily_limit_usd"`
@@ -426,6 +432,22 @@ func (h *GroupHandler) GetAll(c *gin.Context) {
 	response.Success(c, outGroups)
 }
 
+// ScanAccessGraph returns a read-only report of every known fallback/VIP graph
+// violation. It deliberately offers no mutation or automatic repair action.
+func (h *GroupHandler) ScanAccessGraph(c *gin.Context) {
+	scanner, ok := h.adminService.(groupAccessGraphScanner)
+	if !ok {
+		response.InternalError(c, "Group access graph scanner is not configured")
+		return
+	}
+	report, err := scanner.ScanGroupAccessGraph(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, report)
+}
+
 // GetByID handles getting a group by ID
 // GET /api/v1/admin/groups/:id
 func (h *GroupHandler) GetByID(c *gin.Context) {
@@ -491,6 +513,7 @@ func (h *GroupHandler) Create(c *gin.Context) {
 		Platform:                        req.Platform,
 		RateMultiplier:                  req.RateMultiplier,
 		IsExclusive:                     req.IsExclusive,
+		VIPOnly:                         req.VIPOnly,
 		SubscriptionType:                req.SubscriptionType,
 		DailyLimitUSD:                   req.DailyLimitUSD.ToServiceInput(),
 		WeeklyLimitUSD:                  req.WeeklyLimitUSD.ToServiceInput(),
@@ -609,6 +632,7 @@ func (h *GroupHandler) Update(c *gin.Context) {
 		Platform:                        req.Platform,
 		RateMultiplier:                  req.RateMultiplier,
 		IsExclusive:                     req.IsExclusive,
+		VIPOnly:                         req.VIPOnly,
 		Status:                          req.Status,
 		SubscriptionType:                req.SubscriptionType,
 		DailyLimitUSD:                   req.DailyLimitUSD.ToServiceInput(),

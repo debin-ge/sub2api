@@ -17,6 +17,8 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
+
+	"entgo.io/ent/dialect"
 )
 
 // Group management implementations
@@ -42,6 +44,40 @@ func (s *adminServiceImpl) GetAllGroupsIncludingInactive(ctx context.Context) ([
 	// PageSize 10000 is intentionally large; group count is O(dozens) in practice.
 	groups, _, err := s.groupRepo.ListWithFilters(ctx, pagination.PaginationParams{Page: 1, PageSize: 10000}, "", "", "", nil)
 	return groups, err
+}
+
+// ScanGroupAccessGraph is a read-only operational check. It never repairs or
+// rewrites group configuration and returns deterministic machine-readable rows.
+func (s *adminServiceImpl) ScanGroupAccessGraph(ctx context.Context) (*GroupAccessGraphScanReport, error) {
+	const pageSize = 1000
+
+	groups := make([]Group, 0)
+	for page := 1; ; page++ {
+		batch, result, err := s.groupRepo.ListWithFilters(
+			ctx,
+			pagination.PaginationParams{Page: page, PageSize: pageSize, SortBy: "id", SortOrder: pagination.SortOrderAsc},
+			"",
+			"",
+			"",
+			nil,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("load group access graph: %w", err)
+		}
+		groups = append(groups, batch...)
+		if len(batch) < pageSize || (result != nil && int64(len(groups)) >= result.Total) {
+			break
+		}
+	}
+	violations := ScanGroupAccessGraph(groups)
+	if violations == nil {
+		violations = make([]GroupAccessGraphViolation, 0)
+	}
+	return &GroupAccessGraphScanReport{
+		ScannedAt:  time.Now().UTC(),
+		GroupCount: len(groups),
+		Violations: violations,
+	}, nil
 }
 
 func (s *adminServiceImpl) GetGroup(ctx context.Context, id int64) (*Group, error) {
@@ -295,6 +331,18 @@ func groupSupportsOAuthOnlyFilter(platform string) bool {
 		platform == PlatformComposite
 }
 
+const GroupVIPConfigWriteDisabledReason = "VIP_CONFIG_WRITE_DISABLED"
+
+func (s *adminServiceImpl) validateVIPConfigWriteTransition(wasVIPOnly, willBeVIPOnly bool) error {
+	if wasVIPOnly || !willBeVIPOnly || s.vipConfigWriteEnabled {
+		return nil
+	}
+	return infraerrors.BadRequest(
+		GroupVIPConfigWriteDisabledReason,
+		"enabling VIP-only groups is disabled during the current rollout phase",
+	)
+}
+
 func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupInput) (*Group, error) {
 	if input.RateMultiplier <= 0 {
 		return nil, errors.New("rate_multiplier must be > 0")
@@ -439,6 +487,7 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		Platform:                        platform,
 		RateMultiplier:                  input.RateMultiplier,
 		IsExclusive:                     input.IsExclusive,
+		VIPOnly:                         input.VIPOnly,
 		Status:                          StatusActive,
 		SubscriptionType:                subscriptionType,
 		DailyLimitUSD:                   dailyLimit,
@@ -485,6 +534,15 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		group.AllowLive = false
 	}
 	sanitizeGroupReasoningEffortPolicy(group)
+	if err := ValidateGroupVIPOnlyConfiguration(group); err != nil {
+		return nil, err
+	}
+	if err := ValidateGroupClaudeCodeOnlyConfiguration(group); err != nil {
+		return nil, err
+	}
+	if err := s.validateVIPConfigWriteTransition(false, group.VIPOnly); err != nil {
+		return nil, err
+	}
 	if err := s.groupRepo.Create(ctx, group); err != nil {
 		return nil, err
 	}
@@ -548,6 +606,7 @@ func (s *adminServiceImpl) validateFallbackGroup(ctx context.Context, currentGro
 
 	visited := map[int64]struct{}{}
 	nextID := fallbackGroupID
+	path := []int64{currentGroupID}
 	for {
 		if _, seen := visited[nextID]; seen {
 			return fmt.Errorf("fallback group cycle detected")
@@ -561,6 +620,17 @@ func (s *adminServiceImpl) validateFallbackGroup(ctx context.Context, currentGro
 		fallbackGroup, err := s.groupRepo.GetByIDLite(ctx, nextID)
 		if err != nil {
 			return fmt.Errorf("fallback group not found: %w", err)
+		}
+		path = append(path, nextID)
+		if fallbackGroup.IsSubscriptionType() {
+			return GroupAccessGraphViolation{
+				Reason:     GroupFallbackReasonSubscriptionTarget,
+				SourceID:   currentGroupID,
+				TargetID:   fallbackGroup.ID,
+				TargetName: fallbackGroup.Name,
+				Kind:       GroupFallbackDefault,
+				Path:       path,
+			}.Error()
 		}
 
 		// 降级分组不能启用 claude_code_only，否则会造成死循环
@@ -598,7 +668,14 @@ func (s *adminServiceImpl) validateFallbackGroupOnInvalidRequest(ctx context.Con
 		return fmt.Errorf("fallback group must be anthropic platform")
 	}
 	if fallbackGroup.SubscriptionType == SubscriptionTypeSubscription {
-		return fmt.Errorf("fallback group cannot be subscription type")
+		return GroupAccessGraphViolation{
+			Reason:     GroupFallbackReasonSubscriptionTarget,
+			SourceID:   currentGroupID,
+			TargetID:   fallbackGroup.ID,
+			TargetName: fallbackGroup.Name,
+			Kind:       GroupFallbackInvalidRequest,
+			Path:       []int64{currentGroupID, fallbackGroup.ID},
+		}.Error()
 	}
 	if fallbackGroup.FallbackGroupIDOnInvalidRequest != nil {
 		return fmt.Errorf("fallback group cannot have invalid request fallback configured")
@@ -611,6 +688,7 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	if err != nil {
 		return nil, err
 	}
+	wasVIPOnly := group.VIPOnly
 
 	if input.Name != "" {
 		group.Name = input.Name
@@ -629,6 +707,9 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	}
 	if input.IsExclusive != nil {
 		group.IsExclusive = *input.IsExclusive
+	}
+	if input.VIPOnly != nil {
+		group.VIPOnly = *input.VIPOnly
 	}
 	if input.Status != "" {
 		group.Status = input.Status
@@ -821,9 +902,30 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 		group.AllowLive = false
 	}
 	sanitizeGroupReasoningEffortPolicy(group)
-
-	if err := s.groupRepo.Update(ctx, group); err != nil {
+	if err := ValidateGroupVIPOnlyConfiguration(group); err != nil {
 		return nil, err
+	}
+	if err := ValidateGroupClaudeCodeOnlyConfiguration(group); err != nil {
+		return nil, err
+	}
+	if err := s.validateVIPConfigWriteTransition(wasVIPOnly, group.VIPOnly); err != nil {
+		return nil, err
+	}
+
+	var updateErr error
+	if gatedRepo, ok := s.groupRepo.(interface {
+		UpdateWithVIPConfigWriteGate(context.Context, *Group, bool) error
+	}); ok {
+		updateErr = gatedRepo.UpdateWithVIPConfigWriteGate(
+			ctx,
+			group,
+			s.vipConfigWriteEnabled,
+		)
+	} else {
+		updateErr = s.groupRepo.Update(ctx, group)
+	}
+	if updateErr != nil {
+		return nil, updateErr
 	}
 
 	if s.authCacheInvalidator != nil {
@@ -1010,6 +1112,74 @@ func (s *adminServiceImpl) UpdateGroupSortOrders(ctx context.Context, updates []
 	return s.groupRepo.UpdateSortOrders(ctx, updates)
 }
 
+func (s *adminServiceImpl) authorizeAdminGroupBinding(
+	ctx context.Context,
+	userID int64,
+	target *Group,
+	willGrantExclusive bool,
+) error {
+	if s.userRepo == nil {
+		return infraerrors.InternalServer(string(GroupAccessDenyProfileMissing), "user repository is not configured")
+	}
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	profile := NewGroupAccessProfileFromUser(user)
+	if profile == nil {
+		return infraerrors.InternalServer(string(GroupAccessDenyProfileMissing), "target user access profile is missing")
+	}
+
+	// Admin binding to an exclusive standard group preserves the existing
+	// auto-grant behavior. Evaluate a virtual candidate first so exclusive
+	// passes and a simultaneous VIP denial is returned before any grant/write.
+	if willGrantExclusive && target != nil && target.IsExclusive && !target.IsSubscriptionType() {
+		if !containsInt64(profile.AllowedGroups, target.ID) {
+			profile.AllowedGroups = append(profile.AllowedGroups, target.ID)
+		}
+	}
+	if target != nil && target.IsSubscriptionType() {
+		if s.userSubRepo == nil {
+			return infraerrors.InternalServer("SUBSCRIPTION_REPOSITORY_UNAVAILABLE", "subscription repository is not configured")
+		}
+		if _, err := s.userSubRepo.GetActiveByUserIDAndGroupID(ctx, userID, target.ID); err != nil {
+			if errors.Is(err, ErrSubscriptionNotFound) {
+				return infraerrors.BadRequest("SUBSCRIPTION_REQUIRED", "user does not have an active subscription for this group")
+			}
+			return err
+		}
+		profile.ActiveSubscriptionGroupIDs = append(profile.ActiveSubscriptionGroupIDs, target.ID)
+	}
+
+	decision := NewGroupAccessPolicy().Evaluate(profile, target, GroupAccessBinding)
+	return decision.Error()
+}
+
+func lockAdminBindingUser(ctx context.Context, tx *dbent.Tx, userID int64) error {
+	if tx.Client().Driver().Dialect() != dialect.Postgres {
+		// SQLite is used by deterministic unit tests and serializes writes at
+		// the database level. Production is PostgreSQL and always takes the
+		// explicit row lock below.
+		return nil
+	}
+	rows, err := tx.Client().QueryContext(ctx, "SELECT id FROM users WHERE id = $1 AND deleted_at IS NULL FOR UPDATE", userID)
+	if err != nil {
+		return fmt.Errorf("lock target user: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("lock target user: %w", err)
+		}
+		return ErrUserNotFound
+	}
+	var lockedID int64
+	if err := rows.Scan(&lockedID); err != nil {
+		return fmt.Errorf("lock target user: %w", err)
+	}
+	return nil
+}
+
 // AdminUpdateAPIKeyGroupID 管理员修改 API Key 分组绑定
 // groupID: nil=不修改, 指向0=解绑, 指向正整数=绑定到目标分组
 func (s *adminServiceImpl) AdminUpdateAPIKeyGroupID(ctx context.Context, keyID int64, groupID *int64) (*AdminUpdateAPIKeyGroupIDResult, error) {
@@ -1042,66 +1212,61 @@ func (s *adminServiceImpl) AdminUpdateAPIKeyGroupID(ctx context.Context, keyID i
 		if group.Status != StatusActive {
 			return nil, infraerrors.BadRequest("GROUP_NOT_ACTIVE", "target group is not active")
 		}
-		// 订阅类型分组：用户须持有该分组的有效订阅才可绑定
-		if group.IsSubscriptionType() {
-			if s.userSubRepo == nil {
-				return nil, infraerrors.InternalServer("SUBSCRIPTION_REPOSITORY_UNAVAILABLE", "subscription repository is not configured")
-			}
-			if _, err := s.userSubRepo.GetActiveByUserIDAndGroupID(ctx, apiKey.UserID, *groupID); err != nil {
-				if errors.Is(err, ErrSubscriptionNotFound) {
-					return nil, infraerrors.BadRequest("SUBSCRIPTION_REQUIRED", "user does not have an active subscription for this group")
-				}
-				return nil, err
-			}
-		}
 
 		gid := *groupID
 		apiKey.GroupID = &gid
 		apiKey.Group = group
 
-		// 专属标准分组：使用事务保证「添加分组权限」与「更新 API Key」的原子性
-		if group.IsExclusive && !group.IsSubscriptionType() {
-			opCtx := ctx
-			var tx *dbent.Tx
-			if s.entClient == nil {
-				logger.LegacyPrintf("service.admin", "Warning: entClient is nil, skipping transaction protection for exclusive group binding")
-			} else {
-				var txErr error
-				tx, txErr = s.entClient.Tx(ctx)
-				if txErr != nil {
-					return nil, fmt.Errorf("begin transaction: %w", txErr)
-				}
-				defer func() { _ = tx.Rollback() }()
-				opCtx = dbent.NewTxContext(ctx, tx)
+		// Positive binding is evaluated from a freshly loaded target-user
+		// profile. In production the user row is locked so entitlement changes,
+		// an exclusive grant, and the key update have one serialization point.
+		opCtx := ctx
+		var tx *dbent.Tx
+		if s.entClient != nil {
+			tx, err = s.entClient.Tx(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("begin transaction: %w", err)
 			}
+			defer func() { _ = tx.Rollback() }()
+			opCtx = dbent.NewTxContext(ctx, tx)
+			if err := lockAdminBindingUser(opCtx, tx, apiKey.UserID); err != nil {
+				return nil, err
+			}
+		} else if group.IsExclusive && !group.IsSubscriptionType() {
+			return nil, infraerrors.InternalServer("GROUP_BINDING_TRANSACTION_UNAVAILABLE", "exclusive group binding requires a transaction")
+		}
 
+		willGrantExclusive := group.IsExclusive && !group.IsSubscriptionType()
+		if err := s.authorizeAdminGroupBinding(opCtx, apiKey.UserID, group, willGrantExclusive); err != nil {
+			return nil, err
+		}
+
+		if willGrantExclusive {
 			if addErr := s.userRepo.AddGroupToAllowedGroups(opCtx, apiKey.UserID, gid); addErr != nil {
 				return nil, fmt.Errorf("add group to user allowed groups: %w", addErr)
 			}
-			if err := s.apiKeyRepo.Update(opCtx, apiKey, APIKeyUpdateFields{GroupID: true}); err != nil {
-				return nil, fmt.Errorf("update api key: %w", err)
-			}
-			if tx != nil {
-				if err := tx.Commit(); err != nil {
-					return nil, fmt.Errorf("commit transaction: %w", err)
-				}
-			}
-
 			result.AutoGrantedGroupAccess = true
 			result.GrantedGroupID = &gid
 			result.GrantedGroupName = group.Name
-
-			// 失效认证缓存（在事务提交后执行）
-			if s.authCacheInvalidator != nil {
-				s.authCacheInvalidator.InvalidateAuthCacheByKey(ctx, apiKey.Key)
-			}
-
-			result.APIKey = apiKey
-			return result, nil
 		}
+
+		if err := s.apiKeyRepo.Update(opCtx, apiKey, APIKeyUpdateFields{GroupID: true}); err != nil {
+			return nil, fmt.Errorf("update api key: %w", err)
+		}
+		if tx != nil {
+			if err := tx.Commit(); err != nil {
+				return nil, fmt.Errorf("commit transaction: %w", err)
+			}
+		}
+
+		if s.authCacheInvalidator != nil {
+			s.authCacheInvalidator.InvalidateAuthCacheByKey(ctx, apiKey.Key)
+		}
+		result.APIKey = apiKey
+		return result, nil
 	}
 
-	// 非专属分组 / 解绑：无需事务，单步更新即可
+	// Unbinding is permission-reducing and does not need a target-user profile.
 	if err := s.apiKeyRepo.Update(ctx, apiKey, APIKeyUpdateFields{GroupID: true}); err != nil {
 		return nil, fmt.Errorf("update api key: %w", err)
 	}
@@ -1170,6 +1335,16 @@ func (s *adminServiceImpl) ReplaceUserGroup(ctx context.Context, userID, oldGrou
 	}
 	defer func() { _ = tx.Rollback() }()
 	opCtx := dbent.NewTxContext(ctx, tx)
+
+	if err := lockAdminBindingUser(opCtx, tx, userID); err != nil {
+		return nil, err
+	}
+	// Evaluate a candidate profile before granting the exclusive whitelist.
+	// This makes VIP failure side-effect free and gives GROUP_VIP_ONLY rather
+	// than an exclusive error when the grant itself is part of the operation.
+	if err := s.authorizeAdminGroupBinding(opCtx, userID, newGroup, true); err != nil {
+		return nil, err
+	}
 
 	// 1. 授予新分组权限
 	if err := s.userRepo.AddGroupToAllowedGroups(opCtx, userID, newGroupID); err != nil {

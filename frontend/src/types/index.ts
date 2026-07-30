@@ -36,6 +36,38 @@ export interface NotifyEmailEntry {
 
 export type UserAuthProvider = 'email' | 'linuxdo' | 'oidc' | 'wechat' | 'github' | 'google' | 'dingtalk'
 
+/**
+ * User-visible VIP access state. The string extension deliberately keeps the
+ * client forward-compatible: runtime consumers must still validate values and
+ * fail closed when a newer state is not understood.
+ */
+export type VIPAccessState =
+  | 'ACTIVE'
+  | 'PAYMENT_REQUIRED'
+  | 'ACTIVATION_PENDING'
+  | 'ACTIVATION_FAILED'
+  | 'RESTRICTED'
+  | (string & {})
+
+export type VIPMode = 'AUTO' | 'FORCE_ON' | 'FORCE_OFF' | (string & {})
+
+export type GroupDenyReason =
+  | 'GROUP_NOT_ALLOWED'
+  | 'GROUP_VIP_ONLY'
+  | 'GROUP_NOT_ACTIVE'
+  | 'SUBSCRIPTION_REQUIRED'
+  | 'GROUP_FALLBACK_SUBSCRIPTION_FORBIDDEN'
+  | 'GROUP_FALLBACK_EXCLUSIVE_ESCALATION'
+  | 'GROUP_FALLBACK_VIP_ESCALATION'
+  | 'GROUP_ACCESS_PROFILE_MISSING'
+  | 'GROUP_FALLBACK_INVALID_CONFIG'
+  | (string & {})
+
+export type GroupSuggestedAction =
+  | 'PAYMENT'
+  | 'CONTACT_SUPPORT'
+  | (string & {})
+
 export interface UserAuthBindingStatus {
   bound?: boolean
   bound_count?: number
@@ -90,6 +122,10 @@ export interface User {
   concurrency: number // Allowed concurrent requests
   rpm_limit?: number // User-level RPM cap (0 = unlimited); effective as fallback when group has no rpm_limit
   status: 'active' | 'disabled' // Account status
+  /** Effective VIP state. This is safe for the user to see. */
+  is_vip?: boolean
+  /** Safe state only; admin override source/reason must never be returned here. */
+  vip_access_state?: VIPAccessState | null
   allowed_groups: number[] | null // Allowed group IDs (null = all non-exclusive groups)
   balance_notify_enabled: boolean
   balance_notify_threshold: number | null
@@ -105,10 +141,103 @@ export interface AdminUser extends User {
   // 管理员备注（普通用户接口不返回）
   notes: string
   last_used_at?: string | null
+  /** Explicit administrator mode. Unknown values are preserved for safe UI fallback. */
+  vip_mode?: VIPMode
+  /** Whether at least one qualifying paid order has granted automatic eligibility. */
+  vip_paid_eligible?: boolean
+  vip_paid_eligible_at?: string | null
+  vip_paid_source?: string | null
+  vip_effective_source?: string | null
+  vip_granted_at?: string | null
+  vip_override_at?: string | null
+  vip_override_by?: number | null
+  vip_override_reason?: string | null
   // 用户专属分组倍率配置 (group_id -> rate_multiplier)
   group_rates?: Record<number, number>
   // 当前并发数（仅管理员列表接口返回）
   current_concurrency?: number
+}
+
+export interface VIPAuditEvent {
+  id: number
+  user_id: number
+  actor_type: string
+  actor_user_id: number | null
+  actor_snapshot: string
+  action: string
+  reason: string
+  order_id: number | null
+  request_id: string
+  old_paid_eligible: boolean
+  new_paid_eligible: boolean
+  old_manual_override: boolean | null
+  new_manual_override: boolean | null
+  old_is_vip: boolean
+  new_is_vip: boolean
+  source: string
+  created_at: string
+}
+
+export interface VIPReconcilePreviewStats {
+  eligibility_repair: number
+  effective_change: number
+  force_off_unchanged: number
+  invalid_order: number
+  deleted_user: number
+}
+
+export interface VIPReconcilePreviewItem {
+  category: string
+  user_id: number | null
+  order_id: number
+  completed_at: string | null
+  current_vip_mode: VIPMode
+  current_is_vip: boolean
+  will_effective_change: boolean
+}
+
+export interface VIPReconcilePreview {
+  as_of: string
+  total: number
+  stats: VIPReconcilePreviewStats
+  items: VIPReconcilePreviewItem[]
+  next_cursor: string
+}
+
+export interface VIPReconcileJob {
+  id: number
+  request_id: string
+  actor_user_id: number
+  actor_snapshot: string
+  reason: string
+  status: string
+  as_of: string
+  cursor_completed_at: string
+  cursor_order_id: number
+  scanned: number
+  eligibility_repaired: number
+  effective_changed: number
+  force_off_unchanged: number
+  already_correct: number
+  deleted: number
+  invalid_order: number
+  failed: number
+  attempts: number
+  last_error: string
+  started_at: string | null
+  finished_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface CreateVIPReconcileJobRequest {
+  request_id: string
+  reason: string
+}
+
+export interface CreateVIPReconcileJobResponse {
+  job_id: number
+  job: VIPReconcileJob
 }
 
 export interface LoginRequest {
@@ -527,6 +656,16 @@ export interface Group {
   max_reasoning_effort?: string // OpenAI/Codex reasoning ceiling; empty means unlimited
   reasoning_effort_mappings?: ReasoningEffortMapping[]
   is_exclusive: boolean
+  /** Standard group reserved for effective VIP users. */
+  vip_only?: boolean
+  /** Catalog decision for the current target user. Only literal true is bindable. */
+  can_bind?: boolean
+  /** Stable machine reason. Unknown values must fail closed in the UI. */
+  deny_reason?: GroupDenyReason | null
+  /** Optional safe next action. Unknown values must not render an action. */
+  suggested_action?: GroupSuggestedAction | null
+  /** Admin catalog hint; harmless when absent from a user catalog. */
+  will_grant_exclusive?: boolean
   status: 'active' | 'inactive'
   subscription_type: SubscriptionType
   daily_limit_usd: number | null
@@ -568,6 +707,19 @@ export interface Group {
   require_privacy_set: boolean
   created_at: string
   updated_at: string
+}
+
+/** Per-user binding catalog returned by GET /groups/available. */
+export interface GroupCatalogEntry extends Group {
+  vip_only: boolean
+  can_bind: boolean
+  deny_reason: GroupDenyReason | null
+  suggested_action: GroupSuggestedAction | null
+}
+
+/** Target-user catalog used by administrator binding and replacement flows. */
+export interface AdminGroupCatalogEntry extends GroupCatalogEntry {
+  will_grant_exclusive: boolean
 }
 
 export interface AdminGroup extends Group {
@@ -723,6 +875,7 @@ export interface CreateGroupRequest {
   platform?: GroupPlatform
   rate_multiplier?: number
   is_exclusive?: boolean
+  vip_only?: boolean
   subscription_type?: SubscriptionType
   daily_limit_usd?: number | null
   weekly_limit_usd?: number | null
@@ -773,6 +926,7 @@ export interface UpdateGroupRequest {
   platform?: GroupPlatform
   rate_multiplier?: number
   is_exclusive?: boolean
+  vip_only?: boolean
   status?: 'active' | 'inactive'
   subscription_type?: SubscriptionType
   daily_limit_usd?: number | null

@@ -89,6 +89,7 @@ func TestValidateWebAuthnConfig(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			viper.Reset()
 			t.Setenv("JWT_SECRET", strings.Repeat("x", 32))
+			t.Setenv("GROUP_ACCESS_RUNTIME_MODE", GroupAccessRuntimeModeAuditOnly)
 			cfg, err := Load()
 			require.NoError(t, err)
 			tt.configure(cfg)

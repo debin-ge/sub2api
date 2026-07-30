@@ -385,4 +385,28 @@ describe('admin GroupsView column settings', () => {
     expect(getUsageSummary).toHaveBeenCalledTimes(1)
     expect(getCapacitySummary).toHaveBeenCalledTimes(1)
   })
+
+  it('allows VIP-only on a standard group and explains why subscription groups disable it', async () => {
+    const wrapper = await mountView()
+    await wrapper.get('[data-tour="groups-create-btn"]').trigger('click')
+    await flushPromises()
+
+    const vipToggle = wrapper.get('[data-test="create-vip-only-toggle"]')
+    expect(vipToggle.attributes('disabled')).toBeUndefined()
+    expect(vipToggle.attributes('aria-pressed')).toBe('false')
+
+    await vipToggle.trigger('click')
+    expect(vipToggle.attributes('aria-pressed')).toBe('true')
+
+    const subscriptionSelect = wrapper
+      .findAll('select')
+      .find((select) => select.text().includes('admin.groups.subscription.subscription'))
+    expect(subscriptionSelect).toBeTruthy()
+    await subscriptionSelect!.setValue('subscription')
+    await flushPromises()
+
+    expect(vipToggle.attributes('disabled')).toBeDefined()
+    expect(vipToggle.attributes('aria-pressed')).toBe('false')
+    expect(wrapper.text()).toContain('admin.groups.vipOnly.subscriptionDisabled')
+  })
 })

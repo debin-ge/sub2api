@@ -22,6 +22,9 @@ import (
 const (
 	RunModeStandard = "standard"
 	RunModeSimple   = "simple"
+
+	GroupAccessRuntimeModeAuditOnly = "AUDIT_ONLY"
+	GroupAccessRuntimeModeEnforce   = "ENFORCE"
 )
 
 // 使用量记录队列溢出策略
@@ -108,13 +111,36 @@ type Config struct {
 	Concurrency             ConcurrencyConfig             `mapstructure:"concurrency"`
 	TokenRefresh            TokenRefreshConfig            `mapstructure:"token_refresh"`
 	RunMode                 string                        `mapstructure:"run_mode" yaml:"run_mode"`
-	Timezone                string                        `mapstructure:"timezone"` // e.g. "Asia/Shanghai", "UTC"
-	Gemini                  GeminiConfig                  `mapstructure:"gemini"`
-	Update                  UpdateConfig                  `mapstructure:"update"`
-	Idempotency             IdempotencyConfig             `mapstructure:"idempotency"`
-	Reseller                ResellerConfig                `mapstructure:"reseller"`
-	BatchImage              BatchImageConfig              `mapstructure:"batch_image"`
-	ImageStorage            ImageStorageConfig            `mapstructure:"image_storage"`
+	// GroupAccessRuntimeMode controls only the runtime authorization checks
+	// introduced by the VIP/fallback rollout. It must be explicitly configured
+	// so a deployment cannot silently enter either audit or enforcement mode.
+	GroupAccessRuntimeMode           string `mapstructure:"group_access_runtime_mode" yaml:"group_access_runtime_mode"`
+	GroupAccessRuntimeModeConfigured bool   `mapstructure:"-" yaml:"-"`
+	// VIPConfigWriteEnabled is intentionally independent from runtime rollout.
+	// Its safe zero value prevents administrators from enabling new VIP groups.
+	VIPConfigWriteEnabled bool `mapstructure:"vip_config_write_enabled" yaml:"vip_config_write_enabled"`
+	// PaymentFulfillmentDBTxTimeout is the maximum database transaction
+	// duration that the L1 overlap window must cover.
+	PaymentFulfillmentDBTxTimeout time.Duration `mapstructure:"payment_fulfillment_db_tx_timeout" yaml:"payment_fulfillment_db_tx_timeout"`
+	// VIPIncrementalReconcile controls the automatic, durable-watermark L1
+	// repair loop. The flat keys intentionally match the rollout contract.
+	VIPReconcileEnabled       bool               `mapstructure:"vip_reconcile_enabled" yaml:"vip_reconcile_enabled"`
+	VIPReconcileInterval      time.Duration      `mapstructure:"vip_reconcile_interval" yaml:"vip_reconcile_interval"`
+	VIPReconcileRunTimeout    time.Duration      `mapstructure:"vip_reconcile_run_timeout" yaml:"vip_reconcile_run_timeout"`
+	VIPReconcileSafetyDelay   time.Duration      `mapstructure:"vip_reconcile_safety_delay" yaml:"vip_reconcile_safety_delay"`
+	VIPReconcileBatchSize     int                `mapstructure:"vip_reconcile_batch_size" yaml:"vip_reconcile_batch_size"`
+	VIPReconcileBatchPause    time.Duration      `mapstructure:"vip_reconcile_batch_pause" yaml:"vip_reconcile_batch_pause"`
+	VIPReconcileMaxBatches    int                `mapstructure:"vip_reconcile_max_batches_per_run" yaml:"vip_reconcile_max_batches_per_run"`
+	VIPReconcileOverlap       time.Duration      `mapstructure:"vip_reconcile_overlap" yaml:"vip_reconcile_overlap"`
+	VIPReconcileOverlapMargin time.Duration      `mapstructure:"vip_reconcile_overlap_margin" yaml:"vip_reconcile_overlap_margin"`
+	VIPReconcileJobRunTimeout time.Duration      `mapstructure:"vip_reconcile_job_run_timeout" yaml:"vip_reconcile_job_run_timeout"`
+	Timezone                  string             `mapstructure:"timezone"` // e.g. "Asia/Shanghai", "UTC"
+	Gemini                    GeminiConfig       `mapstructure:"gemini"`
+	Update                    UpdateConfig       `mapstructure:"update"`
+	Idempotency               IdempotencyConfig  `mapstructure:"idempotency"`
+	Reseller                  ResellerConfig     `mapstructure:"reseller"`
+	BatchImage                BatchImageConfig   `mapstructure:"batch_image"`
+	ImageStorage              ImageStorageConfig `mapstructure:"image_storage"`
 }
 
 type ModelCatalogConfig struct {
@@ -1724,6 +1750,20 @@ func NormalizeRunMode(value string) string {
 	}
 }
 
+func ParseGroupAccessRuntimeMode(value string) (string, error) {
+	normalized := strings.ToUpper(strings.TrimSpace(value))
+	switch normalized {
+	case GroupAccessRuntimeModeAuditOnly, GroupAccessRuntimeModeEnforce:
+		return normalized, nil
+	default:
+		return "", fmt.Errorf(
+			"group_access_runtime_mode must be explicitly set to AUDIT_ONLY or ENFORCE " +
+				"(config key `group_access_runtime_mode` or env GROUP_ACCESS_RUNTIME_MODE); " +
+				"new deployments and upgrades should start with AUDIT_ONLY",
+		)
+	}
+}
+
 // Load 读取并校验完整配置（要求 jwt.secret 已显式提供）。
 func Load() (*Config, error) {
 	return load(false)
@@ -1787,6 +1827,11 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 	}
 
 	cfg.RunMode = NormalizeRunMode(cfg.RunMode)
+	cfg.GroupAccessRuntimeModeConfigured = hasExplicitConfigOrEnv(
+		"group_access_runtime_mode",
+		"GROUP_ACCESS_RUNTIME_MODE",
+	)
+	cfg.GroupAccessRuntimeMode = strings.ToUpper(strings.TrimSpace(cfg.GroupAccessRuntimeMode))
 	cfg.Server.Mode = strings.ToLower(strings.TrimSpace(cfg.Server.Mode))
 	if cfg.Server.Mode == "" {
 		cfg.Server.Mode = "debug"
@@ -1937,6 +1982,21 @@ func configureConfigSource(setConfigFile, addConfigPath func(string)) {
 
 func setDefaults() {
 	viper.SetDefault("run_mode", RunModeStandard)
+	// Empty is deliberate: startup validation requires an explicit config or
+	// environment value, while registration keeps AutomaticEnv reachable.
+	viper.SetDefault("group_access_runtime_mode", "")
+	viper.SetDefault("vip_config_write_enabled", false)
+	viper.SetDefault("payment_fulfillment_db_tx_timeout", 2*time.Minute)
+	viper.SetDefault("vip_reconcile_enabled", false)
+	viper.SetDefault("vip_reconcile_interval", time.Minute)
+	viper.SetDefault("vip_reconcile_run_timeout", 45*time.Second)
+	viper.SetDefault("vip_reconcile_safety_delay", 5*time.Second)
+	viper.SetDefault("vip_reconcile_batch_size", 200)
+	viper.SetDefault("vip_reconcile_batch_pause", 200*time.Millisecond)
+	viper.SetDefault("vip_reconcile_max_batches_per_run", 50)
+	viper.SetDefault("vip_reconcile_overlap", 5*time.Minute)
+	viper.SetDefault("vip_reconcile_overlap_margin", time.Minute)
+	viper.SetDefault("vip_reconcile_job_run_timeout", 30*time.Minute)
 	viper.SetDefault("model_catalog.refresh_interval_seconds", 300)
 	viper.SetDefault("model_catalog.request_timeout_seconds", 10)
 	viper.SetDefault("model_catalog.stale_ttl_seconds", 86400)
@@ -2714,6 +2774,21 @@ func validateRadarLMArenaURL(raw string) error {
 }
 
 func (c *Config) Validate() error {
+	if !c.GroupAccessRuntimeModeConfigured {
+		return fmt.Errorf(
+			"group_access_runtime_mode must be explicitly configured as AUDIT_ONLY or ENFORCE " +
+				"(config key `group_access_runtime_mode` or env GROUP_ACCESS_RUNTIME_MODE); " +
+				"new deployments and upgrades should start with AUDIT_ONLY",
+		)
+	}
+	groupAccessRuntimeMode, err := ParseGroupAccessRuntimeMode(c.GroupAccessRuntimeMode)
+	if err != nil {
+		return err
+	}
+	c.GroupAccessRuntimeMode = groupAccessRuntimeMode
+	if err := c.validateVIPReconcile(); err != nil {
+		return err
+	}
 	if c.ModelCatalog.RefreshIntervalSeconds <= 0 {
 		return fmt.Errorf("model_catalog.refresh_interval_seconds must be positive")
 	}
@@ -3787,6 +3862,46 @@ func (c *Config) Validate() error {
 	}
 	if err := ValidateDingTalkConfig(c.DingTalk); err != nil {
 		return fmt.Errorf("dingtalk_connect: %w", err)
+	}
+	return nil
+}
+
+func (c *Config) validateVIPReconcile() error {
+	if c.PaymentFulfillmentDBTxTimeout <= 0 {
+		return fmt.Errorf("payment_fulfillment_db_tx_timeout must be positive")
+	}
+	if c.VIPReconcileInterval <= 0 {
+		return fmt.Errorf("vip_reconcile_interval must be positive")
+	}
+	if c.VIPReconcileRunTimeout <= 0 {
+		return fmt.Errorf("vip_reconcile_run_timeout must be positive")
+	}
+	if c.VIPReconcileSafetyDelay < 0 {
+		return fmt.Errorf("vip_reconcile_safety_delay must be non-negative")
+	}
+	if c.VIPReconcileBatchSize < 1 || c.VIPReconcileBatchSize > 5000 {
+		return fmt.Errorf("vip_reconcile_batch_size must be between 1 and 5000")
+	}
+	if c.VIPReconcileBatchPause < 0 || c.VIPReconcileBatchPause > 10*time.Second {
+		return fmt.Errorf("vip_reconcile_batch_pause must be between 0 and 10s")
+	}
+	if c.VIPReconcileMaxBatches < 0 || c.VIPReconcileMaxBatches > 10000 {
+		return fmt.Errorf("vip_reconcile_max_batches_per_run must be between 0 and 10000")
+	}
+	if c.VIPReconcileOverlapMargin < 0 {
+		return fmt.Errorf("vip_reconcile_overlap_margin must be non-negative")
+	}
+	if c.VIPReconcileJobRunTimeout <= 0 {
+		return fmt.Errorf("vip_reconcile_job_run_timeout must be positive")
+	}
+	minimumOverlap := c.PaymentFulfillmentDBTxTimeout + c.VIPReconcileOverlapMargin
+	if minimumOverlap < c.PaymentFulfillmentDBTxTimeout {
+		return fmt.Errorf("payment_fulfillment_db_tx_timeout + vip_reconcile_overlap_margin overflows")
+	}
+	if c.VIPReconcileOverlap < minimumOverlap {
+		return fmt.Errorf(
+			"vip_reconcile_overlap must be >= payment_fulfillment_db_tx_timeout + vip_reconcile_overlap_margin",
+		)
 	}
 	return nil
 }

@@ -21864,6 +21864,7 @@ type GroupMutation struct {
 	peak_rate_multiplier                    *float64
 	addpeak_rate_multiplier                 *float64
 	is_exclusive                            *bool
+	vip_only                                *bool
 	status                                  *string
 	duplicate_operation_id                  *string
 	platform                                *string
@@ -22508,6 +22509,42 @@ func (m *GroupMutation) OldIsExclusive(ctx context.Context) (v bool, err error) 
 // ResetIsExclusive resets all changes to the "is_exclusive" field.
 func (m *GroupMutation) ResetIsExclusive() {
 	m.is_exclusive = nil
+}
+
+// SetVipOnly sets the "vip_only" field.
+func (m *GroupMutation) SetVipOnly(b bool) {
+	m.vip_only = &b
+}
+
+// VipOnly returns the value of the "vip_only" field in the mutation.
+func (m *GroupMutation) VipOnly() (r bool, exists bool) {
+	v := m.vip_only
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVipOnly returns the old "vip_only" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldVipOnly(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVipOnly is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVipOnly requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVipOnly: %w", err)
+	}
+	return oldValue.VipOnly, nil
+}
+
+// ResetVipOnly resets all changes to the "vip_only" field.
+func (m *GroupMutation) ResetVipOnly() {
+	m.vip_only = nil
 }
 
 // SetStatus sets the "status" field.
@@ -24948,7 +24985,7 @@ func (m *GroupMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *GroupMutation) Fields() []string {
-	fields := make([]string, 0, 52)
+	fields := make([]string, 0, 53)
 	if m.created_at != nil {
 		fields = append(fields, group.FieldCreatedAt)
 	}
@@ -24981,6 +25018,9 @@ func (m *GroupMutation) Fields() []string {
 	}
 	if m.is_exclusive != nil {
 		fields = append(fields, group.FieldIsExclusive)
+	}
+	if m.vip_only != nil {
+		fields = append(fields, group.FieldVipOnly)
 	}
 	if m.status != nil {
 		fields = append(fields, group.FieldStatus)
@@ -25135,6 +25175,8 @@ func (m *GroupMutation) Field(name string) (ent.Value, bool) {
 		return m.PeakRateMultiplier()
 	case group.FieldIsExclusive:
 		return m.IsExclusive()
+	case group.FieldVipOnly:
+		return m.VipOnly()
 	case group.FieldStatus:
 		return m.Status()
 	case group.FieldDuplicateOperationID:
@@ -25248,6 +25290,8 @@ func (m *GroupMutation) OldField(ctx context.Context, name string) (ent.Value, e
 		return m.OldPeakRateMultiplier(ctx)
 	case group.FieldIsExclusive:
 		return m.OldIsExclusive(ctx)
+	case group.FieldVipOnly:
+		return m.OldVipOnly(ctx)
 	case group.FieldStatus:
 		return m.OldStatus(ctx)
 	case group.FieldDuplicateOperationID:
@@ -25415,6 +25459,13 @@ func (m *GroupMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetIsExclusive(v)
+		return nil
+	case group.FieldVipOnly:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVipOnly(v)
 		return nil
 	case group.FieldStatus:
 		v, ok := value.(string)
@@ -26138,6 +26189,9 @@ func (m *GroupMutation) ResetField(name string) error {
 		return nil
 	case group.FieldIsExclusive:
 		m.ResetIsExclusive()
+		return nil
+	case group.FieldVipOnly:
+		m.ResetVipOnly()
 		return nil
 	case group.FieldStatus:
 		m.ResetStatus()
@@ -49030,6 +49084,17 @@ type UserMutation struct {
 	balance_notify_extra_emails   *string
 	total_recharged               *float64
 	addtotal_recharged            *float64
+	vip_paid_eligible             *bool
+	vip_paid_eligible_at          *time.Time
+	vip_paid_source               *string
+	vip_manual_override           *bool
+	vip_override_at               *time.Time
+	vip_override_by               *int64
+	addvip_override_by            *int64
+	vip_override_reason           *string
+	is_vip                        *bool
+	vip_granted_at                *time.Time
+	vip_effective_source          *string
 	rpm_limit                     *int
 	addrpm_limit                  *int
 	clearedFields                 map[string]struct{}
@@ -50182,6 +50247,452 @@ func (m *UserMutation) ResetTotalRecharged() {
 	m.addtotal_recharged = nil
 }
 
+// SetVipPaidEligible sets the "vip_paid_eligible" field.
+func (m *UserMutation) SetVipPaidEligible(b bool) {
+	m.vip_paid_eligible = &b
+}
+
+// VipPaidEligible returns the value of the "vip_paid_eligible" field in the mutation.
+func (m *UserMutation) VipPaidEligible() (r bool, exists bool) {
+	v := m.vip_paid_eligible
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVipPaidEligible returns the old "vip_paid_eligible" field's value of the User entity.
+// If the User object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserMutation) OldVipPaidEligible(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVipPaidEligible is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVipPaidEligible requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVipPaidEligible: %w", err)
+	}
+	return oldValue.VipPaidEligible, nil
+}
+
+// ResetVipPaidEligible resets all changes to the "vip_paid_eligible" field.
+func (m *UserMutation) ResetVipPaidEligible() {
+	m.vip_paid_eligible = nil
+}
+
+// SetVipPaidEligibleAt sets the "vip_paid_eligible_at" field.
+func (m *UserMutation) SetVipPaidEligibleAt(t time.Time) {
+	m.vip_paid_eligible_at = &t
+}
+
+// VipPaidEligibleAt returns the value of the "vip_paid_eligible_at" field in the mutation.
+func (m *UserMutation) VipPaidEligibleAt() (r time.Time, exists bool) {
+	v := m.vip_paid_eligible_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVipPaidEligibleAt returns the old "vip_paid_eligible_at" field's value of the User entity.
+// If the User object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserMutation) OldVipPaidEligibleAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVipPaidEligibleAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVipPaidEligibleAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVipPaidEligibleAt: %w", err)
+	}
+	return oldValue.VipPaidEligibleAt, nil
+}
+
+// ClearVipPaidEligibleAt clears the value of the "vip_paid_eligible_at" field.
+func (m *UserMutation) ClearVipPaidEligibleAt() {
+	m.vip_paid_eligible_at = nil
+	m.clearedFields[user.FieldVipPaidEligibleAt] = struct{}{}
+}
+
+// VipPaidEligibleAtCleared returns if the "vip_paid_eligible_at" field was cleared in this mutation.
+func (m *UserMutation) VipPaidEligibleAtCleared() bool {
+	_, ok := m.clearedFields[user.FieldVipPaidEligibleAt]
+	return ok
+}
+
+// ResetVipPaidEligibleAt resets all changes to the "vip_paid_eligible_at" field.
+func (m *UserMutation) ResetVipPaidEligibleAt() {
+	m.vip_paid_eligible_at = nil
+	delete(m.clearedFields, user.FieldVipPaidEligibleAt)
+}
+
+// SetVipPaidSource sets the "vip_paid_source" field.
+func (m *UserMutation) SetVipPaidSource(s string) {
+	m.vip_paid_source = &s
+}
+
+// VipPaidSource returns the value of the "vip_paid_source" field in the mutation.
+func (m *UserMutation) VipPaidSource() (r string, exists bool) {
+	v := m.vip_paid_source
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVipPaidSource returns the old "vip_paid_source" field's value of the User entity.
+// If the User object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserMutation) OldVipPaidSource(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVipPaidSource is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVipPaidSource requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVipPaidSource: %w", err)
+	}
+	return oldValue.VipPaidSource, nil
+}
+
+// ResetVipPaidSource resets all changes to the "vip_paid_source" field.
+func (m *UserMutation) ResetVipPaidSource() {
+	m.vip_paid_source = nil
+}
+
+// SetVipManualOverride sets the "vip_manual_override" field.
+func (m *UserMutation) SetVipManualOverride(b bool) {
+	m.vip_manual_override = &b
+}
+
+// VipManualOverride returns the value of the "vip_manual_override" field in the mutation.
+func (m *UserMutation) VipManualOverride() (r bool, exists bool) {
+	v := m.vip_manual_override
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVipManualOverride returns the old "vip_manual_override" field's value of the User entity.
+// If the User object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserMutation) OldVipManualOverride(ctx context.Context) (v *bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVipManualOverride is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVipManualOverride requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVipManualOverride: %w", err)
+	}
+	return oldValue.VipManualOverride, nil
+}
+
+// ClearVipManualOverride clears the value of the "vip_manual_override" field.
+func (m *UserMutation) ClearVipManualOverride() {
+	m.vip_manual_override = nil
+	m.clearedFields[user.FieldVipManualOverride] = struct{}{}
+}
+
+// VipManualOverrideCleared returns if the "vip_manual_override" field was cleared in this mutation.
+func (m *UserMutation) VipManualOverrideCleared() bool {
+	_, ok := m.clearedFields[user.FieldVipManualOverride]
+	return ok
+}
+
+// ResetVipManualOverride resets all changes to the "vip_manual_override" field.
+func (m *UserMutation) ResetVipManualOverride() {
+	m.vip_manual_override = nil
+	delete(m.clearedFields, user.FieldVipManualOverride)
+}
+
+// SetVipOverrideAt sets the "vip_override_at" field.
+func (m *UserMutation) SetVipOverrideAt(t time.Time) {
+	m.vip_override_at = &t
+}
+
+// VipOverrideAt returns the value of the "vip_override_at" field in the mutation.
+func (m *UserMutation) VipOverrideAt() (r time.Time, exists bool) {
+	v := m.vip_override_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVipOverrideAt returns the old "vip_override_at" field's value of the User entity.
+// If the User object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserMutation) OldVipOverrideAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVipOverrideAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVipOverrideAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVipOverrideAt: %w", err)
+	}
+	return oldValue.VipOverrideAt, nil
+}
+
+// ClearVipOverrideAt clears the value of the "vip_override_at" field.
+func (m *UserMutation) ClearVipOverrideAt() {
+	m.vip_override_at = nil
+	m.clearedFields[user.FieldVipOverrideAt] = struct{}{}
+}
+
+// VipOverrideAtCleared returns if the "vip_override_at" field was cleared in this mutation.
+func (m *UserMutation) VipOverrideAtCleared() bool {
+	_, ok := m.clearedFields[user.FieldVipOverrideAt]
+	return ok
+}
+
+// ResetVipOverrideAt resets all changes to the "vip_override_at" field.
+func (m *UserMutation) ResetVipOverrideAt() {
+	m.vip_override_at = nil
+	delete(m.clearedFields, user.FieldVipOverrideAt)
+}
+
+// SetVipOverrideBy sets the "vip_override_by" field.
+func (m *UserMutation) SetVipOverrideBy(i int64) {
+	m.vip_override_by = &i
+	m.addvip_override_by = nil
+}
+
+// VipOverrideBy returns the value of the "vip_override_by" field in the mutation.
+func (m *UserMutation) VipOverrideBy() (r int64, exists bool) {
+	v := m.vip_override_by
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVipOverrideBy returns the old "vip_override_by" field's value of the User entity.
+// If the User object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserMutation) OldVipOverrideBy(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVipOverrideBy is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVipOverrideBy requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVipOverrideBy: %w", err)
+	}
+	return oldValue.VipOverrideBy, nil
+}
+
+// AddVipOverrideBy adds i to the "vip_override_by" field.
+func (m *UserMutation) AddVipOverrideBy(i int64) {
+	if m.addvip_override_by != nil {
+		*m.addvip_override_by += i
+	} else {
+		m.addvip_override_by = &i
+	}
+}
+
+// AddedVipOverrideBy returns the value that was added to the "vip_override_by" field in this mutation.
+func (m *UserMutation) AddedVipOverrideBy() (r int64, exists bool) {
+	v := m.addvip_override_by
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearVipOverrideBy clears the value of the "vip_override_by" field.
+func (m *UserMutation) ClearVipOverrideBy() {
+	m.vip_override_by = nil
+	m.addvip_override_by = nil
+	m.clearedFields[user.FieldVipOverrideBy] = struct{}{}
+}
+
+// VipOverrideByCleared returns if the "vip_override_by" field was cleared in this mutation.
+func (m *UserMutation) VipOverrideByCleared() bool {
+	_, ok := m.clearedFields[user.FieldVipOverrideBy]
+	return ok
+}
+
+// ResetVipOverrideBy resets all changes to the "vip_override_by" field.
+func (m *UserMutation) ResetVipOverrideBy() {
+	m.vip_override_by = nil
+	m.addvip_override_by = nil
+	delete(m.clearedFields, user.FieldVipOverrideBy)
+}
+
+// SetVipOverrideReason sets the "vip_override_reason" field.
+func (m *UserMutation) SetVipOverrideReason(s string) {
+	m.vip_override_reason = &s
+}
+
+// VipOverrideReason returns the value of the "vip_override_reason" field in the mutation.
+func (m *UserMutation) VipOverrideReason() (r string, exists bool) {
+	v := m.vip_override_reason
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVipOverrideReason returns the old "vip_override_reason" field's value of the User entity.
+// If the User object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserMutation) OldVipOverrideReason(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVipOverrideReason is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVipOverrideReason requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVipOverrideReason: %w", err)
+	}
+	return oldValue.VipOverrideReason, nil
+}
+
+// ResetVipOverrideReason resets all changes to the "vip_override_reason" field.
+func (m *UserMutation) ResetVipOverrideReason() {
+	m.vip_override_reason = nil
+}
+
+// SetIsVip sets the "is_vip" field.
+func (m *UserMutation) SetIsVip(b bool) {
+	m.is_vip = &b
+}
+
+// IsVip returns the value of the "is_vip" field in the mutation.
+func (m *UserMutation) IsVip() (r bool, exists bool) {
+	v := m.is_vip
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldIsVip returns the old "is_vip" field's value of the User entity.
+// If the User object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserMutation) OldIsVip(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldIsVip is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldIsVip requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldIsVip: %w", err)
+	}
+	return oldValue.IsVip, nil
+}
+
+// ResetIsVip resets all changes to the "is_vip" field.
+func (m *UserMutation) ResetIsVip() {
+	m.is_vip = nil
+}
+
+// SetVipGrantedAt sets the "vip_granted_at" field.
+func (m *UserMutation) SetVipGrantedAt(t time.Time) {
+	m.vip_granted_at = &t
+}
+
+// VipGrantedAt returns the value of the "vip_granted_at" field in the mutation.
+func (m *UserMutation) VipGrantedAt() (r time.Time, exists bool) {
+	v := m.vip_granted_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVipGrantedAt returns the old "vip_granted_at" field's value of the User entity.
+// If the User object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserMutation) OldVipGrantedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVipGrantedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVipGrantedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVipGrantedAt: %w", err)
+	}
+	return oldValue.VipGrantedAt, nil
+}
+
+// ClearVipGrantedAt clears the value of the "vip_granted_at" field.
+func (m *UserMutation) ClearVipGrantedAt() {
+	m.vip_granted_at = nil
+	m.clearedFields[user.FieldVipGrantedAt] = struct{}{}
+}
+
+// VipGrantedAtCleared returns if the "vip_granted_at" field was cleared in this mutation.
+func (m *UserMutation) VipGrantedAtCleared() bool {
+	_, ok := m.clearedFields[user.FieldVipGrantedAt]
+	return ok
+}
+
+// ResetVipGrantedAt resets all changes to the "vip_granted_at" field.
+func (m *UserMutation) ResetVipGrantedAt() {
+	m.vip_granted_at = nil
+	delete(m.clearedFields, user.FieldVipGrantedAt)
+}
+
+// SetVipEffectiveSource sets the "vip_effective_source" field.
+func (m *UserMutation) SetVipEffectiveSource(s string) {
+	m.vip_effective_source = &s
+}
+
+// VipEffectiveSource returns the value of the "vip_effective_source" field in the mutation.
+func (m *UserMutation) VipEffectiveSource() (r string, exists bool) {
+	v := m.vip_effective_source
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVipEffectiveSource returns the old "vip_effective_source" field's value of the User entity.
+// If the User object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserMutation) OldVipEffectiveSource(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVipEffectiveSource is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVipEffectiveSource requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVipEffectiveSource: %w", err)
+	}
+	return oldValue.VipEffectiveSource, nil
+}
+
+// ResetVipEffectiveSource resets all changes to the "vip_effective_source" field.
+func (m *UserMutation) ResetVipEffectiveSource() {
+	m.vip_effective_source = nil
+}
+
 // SetRpmLimit sets the "rpm_limit" field.
 func (m *UserMutation) SetRpmLimit(i int) {
 	m.rpm_limit = &i
@@ -50974,7 +51485,7 @@ func (m *UserMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UserMutation) Fields() []string {
-	fields := make([]string, 0, 24)
+	fields := make([]string, 0, 34)
 	if m.created_at != nil {
 		fields = append(fields, user.FieldCreatedAt)
 	}
@@ -51044,6 +51555,36 @@ func (m *UserMutation) Fields() []string {
 	if m.total_recharged != nil {
 		fields = append(fields, user.FieldTotalRecharged)
 	}
+	if m.vip_paid_eligible != nil {
+		fields = append(fields, user.FieldVipPaidEligible)
+	}
+	if m.vip_paid_eligible_at != nil {
+		fields = append(fields, user.FieldVipPaidEligibleAt)
+	}
+	if m.vip_paid_source != nil {
+		fields = append(fields, user.FieldVipPaidSource)
+	}
+	if m.vip_manual_override != nil {
+		fields = append(fields, user.FieldVipManualOverride)
+	}
+	if m.vip_override_at != nil {
+		fields = append(fields, user.FieldVipOverrideAt)
+	}
+	if m.vip_override_by != nil {
+		fields = append(fields, user.FieldVipOverrideBy)
+	}
+	if m.vip_override_reason != nil {
+		fields = append(fields, user.FieldVipOverrideReason)
+	}
+	if m.is_vip != nil {
+		fields = append(fields, user.FieldIsVip)
+	}
+	if m.vip_granted_at != nil {
+		fields = append(fields, user.FieldVipGrantedAt)
+	}
+	if m.vip_effective_source != nil {
+		fields = append(fields, user.FieldVipEffectiveSource)
+	}
 	if m.rpm_limit != nil {
 		fields = append(fields, user.FieldRpmLimit)
 	}
@@ -51101,6 +51642,26 @@ func (m *UserMutation) Field(name string) (ent.Value, bool) {
 		return m.BalanceNotifyExtraEmails()
 	case user.FieldTotalRecharged:
 		return m.TotalRecharged()
+	case user.FieldVipPaidEligible:
+		return m.VipPaidEligible()
+	case user.FieldVipPaidEligibleAt:
+		return m.VipPaidEligibleAt()
+	case user.FieldVipPaidSource:
+		return m.VipPaidSource()
+	case user.FieldVipManualOverride:
+		return m.VipManualOverride()
+	case user.FieldVipOverrideAt:
+		return m.VipOverrideAt()
+	case user.FieldVipOverrideBy:
+		return m.VipOverrideBy()
+	case user.FieldVipOverrideReason:
+		return m.VipOverrideReason()
+	case user.FieldIsVip:
+		return m.IsVip()
+	case user.FieldVipGrantedAt:
+		return m.VipGrantedAt()
+	case user.FieldVipEffectiveSource:
+		return m.VipEffectiveSource()
 	case user.FieldRpmLimit:
 		return m.RpmLimit()
 	}
@@ -51158,6 +51719,26 @@ func (m *UserMutation) OldField(ctx context.Context, name string) (ent.Value, er
 		return m.OldBalanceNotifyExtraEmails(ctx)
 	case user.FieldTotalRecharged:
 		return m.OldTotalRecharged(ctx)
+	case user.FieldVipPaidEligible:
+		return m.OldVipPaidEligible(ctx)
+	case user.FieldVipPaidEligibleAt:
+		return m.OldVipPaidEligibleAt(ctx)
+	case user.FieldVipPaidSource:
+		return m.OldVipPaidSource(ctx)
+	case user.FieldVipManualOverride:
+		return m.OldVipManualOverride(ctx)
+	case user.FieldVipOverrideAt:
+		return m.OldVipOverrideAt(ctx)
+	case user.FieldVipOverrideBy:
+		return m.OldVipOverrideBy(ctx)
+	case user.FieldVipOverrideReason:
+		return m.OldVipOverrideReason(ctx)
+	case user.FieldIsVip:
+		return m.OldIsVip(ctx)
+	case user.FieldVipGrantedAt:
+		return m.OldVipGrantedAt(ctx)
+	case user.FieldVipEffectiveSource:
+		return m.OldVipEffectiveSource(ctx)
 	case user.FieldRpmLimit:
 		return m.OldRpmLimit(ctx)
 	}
@@ -51330,6 +51911,76 @@ func (m *UserMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetTotalRecharged(v)
 		return nil
+	case user.FieldVipPaidEligible:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVipPaidEligible(v)
+		return nil
+	case user.FieldVipPaidEligibleAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVipPaidEligibleAt(v)
+		return nil
+	case user.FieldVipPaidSource:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVipPaidSource(v)
+		return nil
+	case user.FieldVipManualOverride:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVipManualOverride(v)
+		return nil
+	case user.FieldVipOverrideAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVipOverrideAt(v)
+		return nil
+	case user.FieldVipOverrideBy:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVipOverrideBy(v)
+		return nil
+	case user.FieldVipOverrideReason:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVipOverrideReason(v)
+		return nil
+	case user.FieldIsVip:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetIsVip(v)
+		return nil
+	case user.FieldVipGrantedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVipGrantedAt(v)
+		return nil
+	case user.FieldVipEffectiveSource:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVipEffectiveSource(v)
+		return nil
 	case user.FieldRpmLimit:
 		v, ok := value.(int)
 		if !ok {
@@ -51360,6 +52011,9 @@ func (m *UserMutation) AddedFields() []string {
 	if m.addtotal_recharged != nil {
 		fields = append(fields, user.FieldTotalRecharged)
 	}
+	if m.addvip_override_by != nil {
+		fields = append(fields, user.FieldVipOverrideBy)
+	}
 	if m.addrpm_limit != nil {
 		fields = append(fields, user.FieldRpmLimit)
 	}
@@ -51381,6 +52035,8 @@ func (m *UserMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedBalanceNotifyThreshold()
 	case user.FieldTotalRecharged:
 		return m.AddedTotalRecharged()
+	case user.FieldVipOverrideBy:
+		return m.AddedVipOverrideBy()
 	case user.FieldRpmLimit:
 		return m.AddedRpmLimit()
 	}
@@ -51427,6 +52083,13 @@ func (m *UserMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddTotalRecharged(v)
 		return nil
+	case user.FieldVipOverrideBy:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddVipOverrideBy(v)
+		return nil
 	case user.FieldRpmLimit:
 		v, ok := value.(int)
 		if !ok {
@@ -51460,6 +52123,21 @@ func (m *UserMutation) ClearedFields() []string {
 	if m.FieldCleared(user.FieldBalanceNotifyThreshold) {
 		fields = append(fields, user.FieldBalanceNotifyThreshold)
 	}
+	if m.FieldCleared(user.FieldVipPaidEligibleAt) {
+		fields = append(fields, user.FieldVipPaidEligibleAt)
+	}
+	if m.FieldCleared(user.FieldVipManualOverride) {
+		fields = append(fields, user.FieldVipManualOverride)
+	}
+	if m.FieldCleared(user.FieldVipOverrideAt) {
+		fields = append(fields, user.FieldVipOverrideAt)
+	}
+	if m.FieldCleared(user.FieldVipOverrideBy) {
+		fields = append(fields, user.FieldVipOverrideBy)
+	}
+	if m.FieldCleared(user.FieldVipGrantedAt) {
+		fields = append(fields, user.FieldVipGrantedAt)
+	}
 	return fields
 }
 
@@ -51491,6 +52169,21 @@ func (m *UserMutation) ClearField(name string) error {
 		return nil
 	case user.FieldBalanceNotifyThreshold:
 		m.ClearBalanceNotifyThreshold()
+		return nil
+	case user.FieldVipPaidEligibleAt:
+		m.ClearVipPaidEligibleAt()
+		return nil
+	case user.FieldVipManualOverride:
+		m.ClearVipManualOverride()
+		return nil
+	case user.FieldVipOverrideAt:
+		m.ClearVipOverrideAt()
+		return nil
+	case user.FieldVipOverrideBy:
+		m.ClearVipOverrideBy()
+		return nil
+	case user.FieldVipGrantedAt:
+		m.ClearVipGrantedAt()
 		return nil
 	}
 	return fmt.Errorf("unknown User nullable field %s", name)
@@ -51568,6 +52261,36 @@ func (m *UserMutation) ResetField(name string) error {
 		return nil
 	case user.FieldTotalRecharged:
 		m.ResetTotalRecharged()
+		return nil
+	case user.FieldVipPaidEligible:
+		m.ResetVipPaidEligible()
+		return nil
+	case user.FieldVipPaidEligibleAt:
+		m.ResetVipPaidEligibleAt()
+		return nil
+	case user.FieldVipPaidSource:
+		m.ResetVipPaidSource()
+		return nil
+	case user.FieldVipManualOverride:
+		m.ResetVipManualOverride()
+		return nil
+	case user.FieldVipOverrideAt:
+		m.ResetVipOverrideAt()
+		return nil
+	case user.FieldVipOverrideBy:
+		m.ResetVipOverrideBy()
+		return nil
+	case user.FieldVipOverrideReason:
+		m.ResetVipOverrideReason()
+		return nil
+	case user.FieldIsVip:
+		m.ResetIsVip()
+		return nil
+	case user.FieldVipGrantedAt:
+		m.ResetVipGrantedAt()
+		return nil
+	case user.FieldVipEffectiveSource:
+		m.ResetVipEffectiveSource()
 		return nil
 	case user.FieldRpmLimit:
 		m.ResetRpmLimit()

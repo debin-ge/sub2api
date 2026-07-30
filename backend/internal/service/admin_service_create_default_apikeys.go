@@ -22,24 +22,23 @@ func (s *adminServiceImpl) createDefaultAPIKeysAsync(userID int64) {
 	}()
 }
 
-// createDefaultAPIKeys 为新用户创建所有公开分组的 API Key（同步方法）
-// 公开分组 = 非订阅类型 && 非专属 && 活跃状态
+// createDefaultAPIKeys 为新用户创建所有当前可绑定的公开标准分组 API Key。
+// VIP/exclusive/subscription 等不可绑定项被正常跳过，不使整个默认批次失败。
 func (s *adminServiceImpl) createDefaultAPIKeys(ctx context.Context, userID int64) error {
-	if s.apiKeyService == nil || s.groupRepo == nil {
-		return fmt.Errorf("apiKeyService or groupRepo not initialized")
+	if s.apiKeyService == nil {
+		return fmt.Errorf("apiKeyService not initialized")
 	}
 
-	// 1. 获取所有活跃分组
-	allGroups, err := s.groupRepo.ListActive(ctx)
+	catalog, err := s.apiKeyService.GetVisibleGroupCatalog(ctx, userID)
 	if err != nil {
-		return fmt.Errorf("list active groups: %w", err)
+		return fmt.Errorf("load target user group catalog: %w", err)
 	}
 
-	// 2. 过滤出公开分组（非订阅类型 && 非专属）
 	publicGroups := make([]Group, 0)
-	for _, group := range allGroups {
-		if !group.IsSubscriptionType() && !group.IsExclusive {
-			publicGroups = append(publicGroups, group)
+	for i := range catalog {
+		entry := catalog[i]
+		if entry.CanBind && !entry.IsSubscriptionType() && !entry.IsExclusive {
+			publicGroups = append(publicGroups, entry.Group)
 		}
 	}
 

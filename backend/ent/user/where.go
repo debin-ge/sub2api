@@ -170,6 +170,56 @@ func TotalRecharged(v float64) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldTotalRecharged, v))
 }
 
+// VipPaidEligible applies equality check predicate on the "vip_paid_eligible" field. It's identical to VipPaidEligibleEQ.
+func VipPaidEligible(v bool) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldVipPaidEligible, v))
+}
+
+// VipPaidEligibleAt applies equality check predicate on the "vip_paid_eligible_at" field. It's identical to VipPaidEligibleAtEQ.
+func VipPaidEligibleAt(v time.Time) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldVipPaidEligibleAt, v))
+}
+
+// VipPaidSource applies equality check predicate on the "vip_paid_source" field. It's identical to VipPaidSourceEQ.
+func VipPaidSource(v string) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldVipPaidSource, v))
+}
+
+// VipManualOverride applies equality check predicate on the "vip_manual_override" field. It's identical to VipManualOverrideEQ.
+func VipManualOverride(v bool) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldVipManualOverride, v))
+}
+
+// VipOverrideAt applies equality check predicate on the "vip_override_at" field. It's identical to VipOverrideAtEQ.
+func VipOverrideAt(v time.Time) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldVipOverrideAt, v))
+}
+
+// VipOverrideBy applies equality check predicate on the "vip_override_by" field. It's identical to VipOverrideByEQ.
+func VipOverrideBy(v int64) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldVipOverrideBy, v))
+}
+
+// VipOverrideReason applies equality check predicate on the "vip_override_reason" field. It's identical to VipOverrideReasonEQ.
+func VipOverrideReason(v string) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldVipOverrideReason, v))
+}
+
+// IsVip applies equality check predicate on the "is_vip" field. It's identical to IsVipEQ.
+func IsVip(v bool) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldIsVip, v))
+}
+
+// VipGrantedAt applies equality check predicate on the "vip_granted_at" field. It's identical to VipGrantedAtEQ.
+func VipGrantedAt(v time.Time) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldVipGrantedAt, v))
+}
+
+// VipEffectiveSource applies equality check predicate on the "vip_effective_source" field. It's identical to VipEffectiveSourceEQ.
+func VipEffectiveSource(v string) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldVipEffectiveSource, v))
+}
+
 // RpmLimit applies equality check predicate on the "rpm_limit" field. It's identical to RpmLimitEQ.
 func RpmLimit(v int) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldRpmLimit, v))
@@ -1343,6 +1393,441 @@ func TotalRechargedLT(v float64) predicate.User {
 // TotalRechargedLTE applies the LTE predicate on the "total_recharged" field.
 func TotalRechargedLTE(v float64) predicate.User {
 	return predicate.User(sql.FieldLTE(FieldTotalRecharged, v))
+}
+
+// VipPaidEligibleEQ applies the EQ predicate on the "vip_paid_eligible" field.
+func VipPaidEligibleEQ(v bool) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldVipPaidEligible, v))
+}
+
+// VipPaidEligibleNEQ applies the NEQ predicate on the "vip_paid_eligible" field.
+func VipPaidEligibleNEQ(v bool) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldVipPaidEligible, v))
+}
+
+// VipPaidEligibleAtEQ applies the EQ predicate on the "vip_paid_eligible_at" field.
+func VipPaidEligibleAtEQ(v time.Time) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldVipPaidEligibleAt, v))
+}
+
+// VipPaidEligibleAtNEQ applies the NEQ predicate on the "vip_paid_eligible_at" field.
+func VipPaidEligibleAtNEQ(v time.Time) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldVipPaidEligibleAt, v))
+}
+
+// VipPaidEligibleAtIn applies the In predicate on the "vip_paid_eligible_at" field.
+func VipPaidEligibleAtIn(vs ...time.Time) predicate.User {
+	return predicate.User(sql.FieldIn(FieldVipPaidEligibleAt, vs...))
+}
+
+// VipPaidEligibleAtNotIn applies the NotIn predicate on the "vip_paid_eligible_at" field.
+func VipPaidEligibleAtNotIn(vs ...time.Time) predicate.User {
+	return predicate.User(sql.FieldNotIn(FieldVipPaidEligibleAt, vs...))
+}
+
+// VipPaidEligibleAtGT applies the GT predicate on the "vip_paid_eligible_at" field.
+func VipPaidEligibleAtGT(v time.Time) predicate.User {
+	return predicate.User(sql.FieldGT(FieldVipPaidEligibleAt, v))
+}
+
+// VipPaidEligibleAtGTE applies the GTE predicate on the "vip_paid_eligible_at" field.
+func VipPaidEligibleAtGTE(v time.Time) predicate.User {
+	return predicate.User(sql.FieldGTE(FieldVipPaidEligibleAt, v))
+}
+
+// VipPaidEligibleAtLT applies the LT predicate on the "vip_paid_eligible_at" field.
+func VipPaidEligibleAtLT(v time.Time) predicate.User {
+	return predicate.User(sql.FieldLT(FieldVipPaidEligibleAt, v))
+}
+
+// VipPaidEligibleAtLTE applies the LTE predicate on the "vip_paid_eligible_at" field.
+func VipPaidEligibleAtLTE(v time.Time) predicate.User {
+	return predicate.User(sql.FieldLTE(FieldVipPaidEligibleAt, v))
+}
+
+// VipPaidEligibleAtIsNil applies the IsNil predicate on the "vip_paid_eligible_at" field.
+func VipPaidEligibleAtIsNil() predicate.User {
+	return predicate.User(sql.FieldIsNull(FieldVipPaidEligibleAt))
+}
+
+// VipPaidEligibleAtNotNil applies the NotNil predicate on the "vip_paid_eligible_at" field.
+func VipPaidEligibleAtNotNil() predicate.User {
+	return predicate.User(sql.FieldNotNull(FieldVipPaidEligibleAt))
+}
+
+// VipPaidSourceEQ applies the EQ predicate on the "vip_paid_source" field.
+func VipPaidSourceEQ(v string) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldVipPaidSource, v))
+}
+
+// VipPaidSourceNEQ applies the NEQ predicate on the "vip_paid_source" field.
+func VipPaidSourceNEQ(v string) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldVipPaidSource, v))
+}
+
+// VipPaidSourceIn applies the In predicate on the "vip_paid_source" field.
+func VipPaidSourceIn(vs ...string) predicate.User {
+	return predicate.User(sql.FieldIn(FieldVipPaidSource, vs...))
+}
+
+// VipPaidSourceNotIn applies the NotIn predicate on the "vip_paid_source" field.
+func VipPaidSourceNotIn(vs ...string) predicate.User {
+	return predicate.User(sql.FieldNotIn(FieldVipPaidSource, vs...))
+}
+
+// VipPaidSourceGT applies the GT predicate on the "vip_paid_source" field.
+func VipPaidSourceGT(v string) predicate.User {
+	return predicate.User(sql.FieldGT(FieldVipPaidSource, v))
+}
+
+// VipPaidSourceGTE applies the GTE predicate on the "vip_paid_source" field.
+func VipPaidSourceGTE(v string) predicate.User {
+	return predicate.User(sql.FieldGTE(FieldVipPaidSource, v))
+}
+
+// VipPaidSourceLT applies the LT predicate on the "vip_paid_source" field.
+func VipPaidSourceLT(v string) predicate.User {
+	return predicate.User(sql.FieldLT(FieldVipPaidSource, v))
+}
+
+// VipPaidSourceLTE applies the LTE predicate on the "vip_paid_source" field.
+func VipPaidSourceLTE(v string) predicate.User {
+	return predicate.User(sql.FieldLTE(FieldVipPaidSource, v))
+}
+
+// VipPaidSourceContains applies the Contains predicate on the "vip_paid_source" field.
+func VipPaidSourceContains(v string) predicate.User {
+	return predicate.User(sql.FieldContains(FieldVipPaidSource, v))
+}
+
+// VipPaidSourceHasPrefix applies the HasPrefix predicate on the "vip_paid_source" field.
+func VipPaidSourceHasPrefix(v string) predicate.User {
+	return predicate.User(sql.FieldHasPrefix(FieldVipPaidSource, v))
+}
+
+// VipPaidSourceHasSuffix applies the HasSuffix predicate on the "vip_paid_source" field.
+func VipPaidSourceHasSuffix(v string) predicate.User {
+	return predicate.User(sql.FieldHasSuffix(FieldVipPaidSource, v))
+}
+
+// VipPaidSourceEqualFold applies the EqualFold predicate on the "vip_paid_source" field.
+func VipPaidSourceEqualFold(v string) predicate.User {
+	return predicate.User(sql.FieldEqualFold(FieldVipPaidSource, v))
+}
+
+// VipPaidSourceContainsFold applies the ContainsFold predicate on the "vip_paid_source" field.
+func VipPaidSourceContainsFold(v string) predicate.User {
+	return predicate.User(sql.FieldContainsFold(FieldVipPaidSource, v))
+}
+
+// VipManualOverrideEQ applies the EQ predicate on the "vip_manual_override" field.
+func VipManualOverrideEQ(v bool) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldVipManualOverride, v))
+}
+
+// VipManualOverrideNEQ applies the NEQ predicate on the "vip_manual_override" field.
+func VipManualOverrideNEQ(v bool) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldVipManualOverride, v))
+}
+
+// VipManualOverrideIsNil applies the IsNil predicate on the "vip_manual_override" field.
+func VipManualOverrideIsNil() predicate.User {
+	return predicate.User(sql.FieldIsNull(FieldVipManualOverride))
+}
+
+// VipManualOverrideNotNil applies the NotNil predicate on the "vip_manual_override" field.
+func VipManualOverrideNotNil() predicate.User {
+	return predicate.User(sql.FieldNotNull(FieldVipManualOverride))
+}
+
+// VipOverrideAtEQ applies the EQ predicate on the "vip_override_at" field.
+func VipOverrideAtEQ(v time.Time) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldVipOverrideAt, v))
+}
+
+// VipOverrideAtNEQ applies the NEQ predicate on the "vip_override_at" field.
+func VipOverrideAtNEQ(v time.Time) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldVipOverrideAt, v))
+}
+
+// VipOverrideAtIn applies the In predicate on the "vip_override_at" field.
+func VipOverrideAtIn(vs ...time.Time) predicate.User {
+	return predicate.User(sql.FieldIn(FieldVipOverrideAt, vs...))
+}
+
+// VipOverrideAtNotIn applies the NotIn predicate on the "vip_override_at" field.
+func VipOverrideAtNotIn(vs ...time.Time) predicate.User {
+	return predicate.User(sql.FieldNotIn(FieldVipOverrideAt, vs...))
+}
+
+// VipOverrideAtGT applies the GT predicate on the "vip_override_at" field.
+func VipOverrideAtGT(v time.Time) predicate.User {
+	return predicate.User(sql.FieldGT(FieldVipOverrideAt, v))
+}
+
+// VipOverrideAtGTE applies the GTE predicate on the "vip_override_at" field.
+func VipOverrideAtGTE(v time.Time) predicate.User {
+	return predicate.User(sql.FieldGTE(FieldVipOverrideAt, v))
+}
+
+// VipOverrideAtLT applies the LT predicate on the "vip_override_at" field.
+func VipOverrideAtLT(v time.Time) predicate.User {
+	return predicate.User(sql.FieldLT(FieldVipOverrideAt, v))
+}
+
+// VipOverrideAtLTE applies the LTE predicate on the "vip_override_at" field.
+func VipOverrideAtLTE(v time.Time) predicate.User {
+	return predicate.User(sql.FieldLTE(FieldVipOverrideAt, v))
+}
+
+// VipOverrideAtIsNil applies the IsNil predicate on the "vip_override_at" field.
+func VipOverrideAtIsNil() predicate.User {
+	return predicate.User(sql.FieldIsNull(FieldVipOverrideAt))
+}
+
+// VipOverrideAtNotNil applies the NotNil predicate on the "vip_override_at" field.
+func VipOverrideAtNotNil() predicate.User {
+	return predicate.User(sql.FieldNotNull(FieldVipOverrideAt))
+}
+
+// VipOverrideByEQ applies the EQ predicate on the "vip_override_by" field.
+func VipOverrideByEQ(v int64) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldVipOverrideBy, v))
+}
+
+// VipOverrideByNEQ applies the NEQ predicate on the "vip_override_by" field.
+func VipOverrideByNEQ(v int64) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldVipOverrideBy, v))
+}
+
+// VipOverrideByIn applies the In predicate on the "vip_override_by" field.
+func VipOverrideByIn(vs ...int64) predicate.User {
+	return predicate.User(sql.FieldIn(FieldVipOverrideBy, vs...))
+}
+
+// VipOverrideByNotIn applies the NotIn predicate on the "vip_override_by" field.
+func VipOverrideByNotIn(vs ...int64) predicate.User {
+	return predicate.User(sql.FieldNotIn(FieldVipOverrideBy, vs...))
+}
+
+// VipOverrideByGT applies the GT predicate on the "vip_override_by" field.
+func VipOverrideByGT(v int64) predicate.User {
+	return predicate.User(sql.FieldGT(FieldVipOverrideBy, v))
+}
+
+// VipOverrideByGTE applies the GTE predicate on the "vip_override_by" field.
+func VipOverrideByGTE(v int64) predicate.User {
+	return predicate.User(sql.FieldGTE(FieldVipOverrideBy, v))
+}
+
+// VipOverrideByLT applies the LT predicate on the "vip_override_by" field.
+func VipOverrideByLT(v int64) predicate.User {
+	return predicate.User(sql.FieldLT(FieldVipOverrideBy, v))
+}
+
+// VipOverrideByLTE applies the LTE predicate on the "vip_override_by" field.
+func VipOverrideByLTE(v int64) predicate.User {
+	return predicate.User(sql.FieldLTE(FieldVipOverrideBy, v))
+}
+
+// VipOverrideByIsNil applies the IsNil predicate on the "vip_override_by" field.
+func VipOverrideByIsNil() predicate.User {
+	return predicate.User(sql.FieldIsNull(FieldVipOverrideBy))
+}
+
+// VipOverrideByNotNil applies the NotNil predicate on the "vip_override_by" field.
+func VipOverrideByNotNil() predicate.User {
+	return predicate.User(sql.FieldNotNull(FieldVipOverrideBy))
+}
+
+// VipOverrideReasonEQ applies the EQ predicate on the "vip_override_reason" field.
+func VipOverrideReasonEQ(v string) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldVipOverrideReason, v))
+}
+
+// VipOverrideReasonNEQ applies the NEQ predicate on the "vip_override_reason" field.
+func VipOverrideReasonNEQ(v string) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldVipOverrideReason, v))
+}
+
+// VipOverrideReasonIn applies the In predicate on the "vip_override_reason" field.
+func VipOverrideReasonIn(vs ...string) predicate.User {
+	return predicate.User(sql.FieldIn(FieldVipOverrideReason, vs...))
+}
+
+// VipOverrideReasonNotIn applies the NotIn predicate on the "vip_override_reason" field.
+func VipOverrideReasonNotIn(vs ...string) predicate.User {
+	return predicate.User(sql.FieldNotIn(FieldVipOverrideReason, vs...))
+}
+
+// VipOverrideReasonGT applies the GT predicate on the "vip_override_reason" field.
+func VipOverrideReasonGT(v string) predicate.User {
+	return predicate.User(sql.FieldGT(FieldVipOverrideReason, v))
+}
+
+// VipOverrideReasonGTE applies the GTE predicate on the "vip_override_reason" field.
+func VipOverrideReasonGTE(v string) predicate.User {
+	return predicate.User(sql.FieldGTE(FieldVipOverrideReason, v))
+}
+
+// VipOverrideReasonLT applies the LT predicate on the "vip_override_reason" field.
+func VipOverrideReasonLT(v string) predicate.User {
+	return predicate.User(sql.FieldLT(FieldVipOverrideReason, v))
+}
+
+// VipOverrideReasonLTE applies the LTE predicate on the "vip_override_reason" field.
+func VipOverrideReasonLTE(v string) predicate.User {
+	return predicate.User(sql.FieldLTE(FieldVipOverrideReason, v))
+}
+
+// VipOverrideReasonContains applies the Contains predicate on the "vip_override_reason" field.
+func VipOverrideReasonContains(v string) predicate.User {
+	return predicate.User(sql.FieldContains(FieldVipOverrideReason, v))
+}
+
+// VipOverrideReasonHasPrefix applies the HasPrefix predicate on the "vip_override_reason" field.
+func VipOverrideReasonHasPrefix(v string) predicate.User {
+	return predicate.User(sql.FieldHasPrefix(FieldVipOverrideReason, v))
+}
+
+// VipOverrideReasonHasSuffix applies the HasSuffix predicate on the "vip_override_reason" field.
+func VipOverrideReasonHasSuffix(v string) predicate.User {
+	return predicate.User(sql.FieldHasSuffix(FieldVipOverrideReason, v))
+}
+
+// VipOverrideReasonEqualFold applies the EqualFold predicate on the "vip_override_reason" field.
+func VipOverrideReasonEqualFold(v string) predicate.User {
+	return predicate.User(sql.FieldEqualFold(FieldVipOverrideReason, v))
+}
+
+// VipOverrideReasonContainsFold applies the ContainsFold predicate on the "vip_override_reason" field.
+func VipOverrideReasonContainsFold(v string) predicate.User {
+	return predicate.User(sql.FieldContainsFold(FieldVipOverrideReason, v))
+}
+
+// IsVipEQ applies the EQ predicate on the "is_vip" field.
+func IsVipEQ(v bool) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldIsVip, v))
+}
+
+// IsVipNEQ applies the NEQ predicate on the "is_vip" field.
+func IsVipNEQ(v bool) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldIsVip, v))
+}
+
+// VipGrantedAtEQ applies the EQ predicate on the "vip_granted_at" field.
+func VipGrantedAtEQ(v time.Time) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldVipGrantedAt, v))
+}
+
+// VipGrantedAtNEQ applies the NEQ predicate on the "vip_granted_at" field.
+func VipGrantedAtNEQ(v time.Time) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldVipGrantedAt, v))
+}
+
+// VipGrantedAtIn applies the In predicate on the "vip_granted_at" field.
+func VipGrantedAtIn(vs ...time.Time) predicate.User {
+	return predicate.User(sql.FieldIn(FieldVipGrantedAt, vs...))
+}
+
+// VipGrantedAtNotIn applies the NotIn predicate on the "vip_granted_at" field.
+func VipGrantedAtNotIn(vs ...time.Time) predicate.User {
+	return predicate.User(sql.FieldNotIn(FieldVipGrantedAt, vs...))
+}
+
+// VipGrantedAtGT applies the GT predicate on the "vip_granted_at" field.
+func VipGrantedAtGT(v time.Time) predicate.User {
+	return predicate.User(sql.FieldGT(FieldVipGrantedAt, v))
+}
+
+// VipGrantedAtGTE applies the GTE predicate on the "vip_granted_at" field.
+func VipGrantedAtGTE(v time.Time) predicate.User {
+	return predicate.User(sql.FieldGTE(FieldVipGrantedAt, v))
+}
+
+// VipGrantedAtLT applies the LT predicate on the "vip_granted_at" field.
+func VipGrantedAtLT(v time.Time) predicate.User {
+	return predicate.User(sql.FieldLT(FieldVipGrantedAt, v))
+}
+
+// VipGrantedAtLTE applies the LTE predicate on the "vip_granted_at" field.
+func VipGrantedAtLTE(v time.Time) predicate.User {
+	return predicate.User(sql.FieldLTE(FieldVipGrantedAt, v))
+}
+
+// VipGrantedAtIsNil applies the IsNil predicate on the "vip_granted_at" field.
+func VipGrantedAtIsNil() predicate.User {
+	return predicate.User(sql.FieldIsNull(FieldVipGrantedAt))
+}
+
+// VipGrantedAtNotNil applies the NotNil predicate on the "vip_granted_at" field.
+func VipGrantedAtNotNil() predicate.User {
+	return predicate.User(sql.FieldNotNull(FieldVipGrantedAt))
+}
+
+// VipEffectiveSourceEQ applies the EQ predicate on the "vip_effective_source" field.
+func VipEffectiveSourceEQ(v string) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldVipEffectiveSource, v))
+}
+
+// VipEffectiveSourceNEQ applies the NEQ predicate on the "vip_effective_source" field.
+func VipEffectiveSourceNEQ(v string) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldVipEffectiveSource, v))
+}
+
+// VipEffectiveSourceIn applies the In predicate on the "vip_effective_source" field.
+func VipEffectiveSourceIn(vs ...string) predicate.User {
+	return predicate.User(sql.FieldIn(FieldVipEffectiveSource, vs...))
+}
+
+// VipEffectiveSourceNotIn applies the NotIn predicate on the "vip_effective_source" field.
+func VipEffectiveSourceNotIn(vs ...string) predicate.User {
+	return predicate.User(sql.FieldNotIn(FieldVipEffectiveSource, vs...))
+}
+
+// VipEffectiveSourceGT applies the GT predicate on the "vip_effective_source" field.
+func VipEffectiveSourceGT(v string) predicate.User {
+	return predicate.User(sql.FieldGT(FieldVipEffectiveSource, v))
+}
+
+// VipEffectiveSourceGTE applies the GTE predicate on the "vip_effective_source" field.
+func VipEffectiveSourceGTE(v string) predicate.User {
+	return predicate.User(sql.FieldGTE(FieldVipEffectiveSource, v))
+}
+
+// VipEffectiveSourceLT applies the LT predicate on the "vip_effective_source" field.
+func VipEffectiveSourceLT(v string) predicate.User {
+	return predicate.User(sql.FieldLT(FieldVipEffectiveSource, v))
+}
+
+// VipEffectiveSourceLTE applies the LTE predicate on the "vip_effective_source" field.
+func VipEffectiveSourceLTE(v string) predicate.User {
+	return predicate.User(sql.FieldLTE(FieldVipEffectiveSource, v))
+}
+
+// VipEffectiveSourceContains applies the Contains predicate on the "vip_effective_source" field.
+func VipEffectiveSourceContains(v string) predicate.User {
+	return predicate.User(sql.FieldContains(FieldVipEffectiveSource, v))
+}
+
+// VipEffectiveSourceHasPrefix applies the HasPrefix predicate on the "vip_effective_source" field.
+func VipEffectiveSourceHasPrefix(v string) predicate.User {
+	return predicate.User(sql.FieldHasPrefix(FieldVipEffectiveSource, v))
+}
+
+// VipEffectiveSourceHasSuffix applies the HasSuffix predicate on the "vip_effective_source" field.
+func VipEffectiveSourceHasSuffix(v string) predicate.User {
+	return predicate.User(sql.FieldHasSuffix(FieldVipEffectiveSource, v))
+}
+
+// VipEffectiveSourceEqualFold applies the EqualFold predicate on the "vip_effective_source" field.
+func VipEffectiveSourceEqualFold(v string) predicate.User {
+	return predicate.User(sql.FieldEqualFold(FieldVipEffectiveSource, v))
+}
+
+// VipEffectiveSourceContainsFold applies the ContainsFold predicate on the "vip_effective_source" field.
+func VipEffectiveSourceContainsFold(v string) predicate.User {
+	return predicate.User(sql.FieldContainsFold(FieldVipEffectiveSource, v))
 }
 
 // RpmLimitEQ applies the EQ predicate on the "rpm_limit" field.

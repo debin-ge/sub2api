@@ -36,6 +36,12 @@
                       : t('common.disabled')
                   }}
                 </span>
+                <span
+                  data-testid="profile-vip-badge"
+                  :class="['badge', vipBadgeClass]"
+                >
+                  {{ t(vipLabelKey) }}
+                </span>
               </div>
 
               <div class="space-y-1">
@@ -92,6 +98,23 @@
                   {{ memberSinceLabel }}
                 </p>
               </div>
+            </div>
+
+            <div
+              data-testid="profile-vip-status"
+              class="rounded-2xl border px-4 py-3 text-sm"
+              :class="vipStatusClass"
+              role="status"
+            >
+              <p>{{ t(vipDescriptionKey) }}</p>
+              <a
+                v-if="vipState === 'PAYMENT_REQUIRED'"
+                href="/purchase"
+                class="mt-2 inline-flex rounded-lg bg-primary-600 px-3 py-2 text-xs font-semibold text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 dark:focus:ring-offset-dark-900"
+                data-testid="profile-vip-purchase-cta"
+              >
+                {{ t('vip.access.purchaseAction') }}
+              </a>
             </div>
           </div>
         </div>
@@ -188,6 +211,11 @@ import ProfileEditForm from '@/components/user/profile/ProfileEditForm.vue'
 import ProfileIdentityBindingsSection from '@/components/user/profile/ProfileIdentityBindingsSection.vue'
 import { formatBalanceAmount } from '@/utils/formatters'
 import type { User, UserAuthBindingStatus, UserAuthProvider, UserProfileSourceContext } from '@/types'
+import {
+  getKnownVIPAccessState,
+  vipAccessDescriptionKey,
+  vipAccessLabelKey,
+} from '@/utils/vipAccess'
 
 const props = withDefaults(defineProps<{
   user: User | null
@@ -209,6 +237,36 @@ const props = withDefaults(defineProps<{
 })
 
 const { t } = useI18n()
+
+const vipState = computed(() => getKnownVIPAccessState(props.user?.vip_access_state))
+const vipLabelKey = computed(() => vipAccessLabelKey(vipState.value))
+const vipDescriptionKey = computed(() => vipAccessDescriptionKey(vipState.value))
+const vipBadgeClass = computed(() => {
+  switch (vipState.value) {
+    case 'ACTIVE':
+      return 'badge-success'
+    case 'ACTIVATION_PENDING':
+      return 'badge-warning'
+    case 'ACTIVATION_FAILED':
+    case 'RESTRICTED':
+      return 'badge-danger'
+    default:
+      return 'badge-gray'
+  }
+})
+const vipStatusClass = computed(() => {
+  switch (vipState.value) {
+    case 'ACTIVE':
+      return 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-200'
+    case 'ACTIVATION_PENDING':
+      return 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100'
+    case 'ACTIVATION_FAILED':
+    case 'RESTRICTED':
+      return 'border-red-200 bg-red-50 text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200'
+    default:
+      return 'border-gray-200 bg-gray-50 text-gray-700 dark:border-dark-700 dark:bg-dark-900/50 dark:text-gray-300'
+  }
+})
 
 function normalizeBindingStatus(binding: boolean | UserAuthBindingStatus | undefined): boolean | null {
   if (typeof binding === 'boolean') {

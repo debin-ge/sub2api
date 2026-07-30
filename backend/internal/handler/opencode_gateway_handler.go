@@ -122,6 +122,9 @@ func (h *OpenCodeGatewayHandler) Models(c *gin.Context) {
 	subject, _ := middleware2.GetAuthSubjectFromContext(c)
 	selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), apiKey.GroupID, "opencode-models", "", nil, "", subject.UserID)
 	if err != nil || selection == nil || selection.Account == nil {
+		if handleOpenAICompatibleGroupAccessSelectionError(c, err, false) {
+			return
+		}
 		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Service temporarily unavailable")
 		return
 	}
@@ -260,6 +263,9 @@ func (h *OpenCodeGatewayHandler) forwardBody(
 	for {
 		selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), apiKey.GroupID, sessionHash, reqModel, fs.FailedAccountIDs, parsedReq.MetadataUserID, subject.UserID)
 		if err != nil || selection == nil || selection.Account == nil {
+			if handleOpenAICompatibleGroupAccessSelectionError(c, err, streamStarted) {
+				return
+			}
 			if fs.LastFailoverErr != nil && !streamStarted {
 				status, errType, message := openCodeForwardErrorDetails(fs.LastFailoverErr)
 				h.errorResponse(c, status, errType, message)

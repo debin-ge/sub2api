@@ -23,6 +23,7 @@ type AvailableGroupRef struct {
 	PeakEnd            string
 	PeakRateMultiplier float64
 	IsExclusive        bool
+	VIPOnly            bool
 	ModelsListConfig   GroupModelsListConfig
 }
 
@@ -103,6 +104,7 @@ func (s *ChannelService) listAvailable(ctx context.Context, opts availableListOp
 			PeakEnd:            g.PeakEnd,
 			PeakRateMultiplier: g.PeakRateMultiplier,
 			IsExclusive:        g.IsExclusive,
+			VIPOnly:            g.VIPOnly,
 			ModelsListConfig:   g.ModelsListConfig,
 		}
 		groupByID[g.ID] = ref

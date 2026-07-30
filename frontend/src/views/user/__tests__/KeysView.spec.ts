@@ -16,6 +16,8 @@ const {
   copyToClipboard,
   isCurrentStep,
   nextStep,
+  createKey,
+  updateKey,
 } = vi.hoisted(() => ({
   listKeys: vi.fn(),
   getPublicSettings: vi.fn(),
@@ -27,6 +29,8 @@ const {
   copyToClipboard: vi.fn(),
   isCurrentStep: vi.fn(),
   nextStep: vi.fn(),
+  createKey: vi.fn(),
+  updateKey: vi.fn(),
 }))
 
 const messages: Record<string, string> = {
@@ -53,13 +57,15 @@ const messages: Record<string, string> = {
   'keys.status.inactive': 'Inactive',
   'keys.status.quota_exhausted': 'Quota exhausted',
   'keys.usage': 'Usage',
+  'vip.group.denied.GROUP_VIP_ONLY': 'VIP group unavailable',
+  'vip.group.errors.GROUP_VIP_ONLY': 'VIP group unavailable',
 }
 
 vi.mock('@/api', () => ({
   keysAPI: {
     list: listKeys,
-    create: vi.fn(),
-    update: vi.fn(),
+    create: createKey,
+    update: updateKey,
     delete: vi.fn(),
     toggleStatus: vi.fn(),
   },
@@ -170,6 +176,9 @@ const DataTableStub = {
           <slot name="cell-id" :value="row.id" :row="row" />
         </div>
         <slot name="cell-name" :value="row.name" :row="row" />
+        <div data-test="group-cell">
+          <slot name="cell-group" :value="row.group" :row="row" />
+        </div>
         <div data-test="current-concurrency">
           <slot name="cell-current_concurrency" :value="row.current_concurrency" :row="row" />
         </div>
@@ -178,6 +187,9 @@ const DataTableStub = {
           data-test="last-used-ip"
         >
           <slot name="cell-last_used_ip" :value="row.last_used_ip" :row="row" />
+        </div>
+        <div data-test="actions-cell">
+          <slot name="cell-actions" :row="row" />
         </div>
       </div>
       <slot name="empty" />
@@ -215,6 +227,12 @@ const IconStub = {
   template: '<span data-test="icon">{{ name }}</span>',
 }
 
+const BaseDialogStub = {
+  name: 'BaseDialog',
+  props: ['show'],
+  template: '<div v-if="show"><slot /><slot name="footer" /></div>',
+}
+
 const mountView = async () => {
   const wrapper = mount(KeysView, {
     global: {
@@ -223,7 +241,7 @@ const mountView = async () => {
         TablePageLayout: TablePageLayoutStub,
         DataTable: DataTableStub,
         Pagination: PaginationStub,
-        BaseDialog: true,
+        BaseDialog: BaseDialogStub,
         ConfirmDialog: true,
         EmptyState: true,
         Select: SelectStub,
@@ -270,6 +288,8 @@ describe('user KeysView column settings', () => {
     copyToClipboard.mockReset()
     isCurrentStep.mockReset()
     nextStep.mockReset()
+    createKey.mockReset()
+    updateKey.mockReset()
 
     listKeys.mockResolvedValue({
       items: [createApiKey()],
@@ -437,5 +457,169 @@ describe('user KeysView column settings', () => {
       },
       expect.objectContaining({ signal: expect.any(AbortSignal) })
     )
+  })
+
+  it('does not call the update API from the quick selector for a denied catalog entry', async () => {
+    getAvailableGroups.mockResolvedValueOnce([{
+      id: 7,
+      name: 'VIP only',
+      description: null,
+      platform: 'openai',
+      rate_multiplier: 1,
+      peak_rate_enabled: false,
+      peak_start: '',
+      peak_end: '',
+      peak_rate_multiplier: 1,
+      subscription_type: 'standard',
+      vip_only: true,
+      can_bind: false,
+      deny_reason: 'GROUP_VIP_ONLY',
+      suggested_action: 'PAYMENT',
+    }])
+    const wrapper = await mountView()
+
+    await wrapper.get('button[title="keys.clickToChangeGroup"]').trigger('click')
+    await nextTick()
+    const deniedOption = wrapper.get('[role="option"][aria-disabled="true"]')
+    await deniedOption.trigger('click')
+
+    expect(updateKey).not.toHaveBeenCalled()
+  })
+
+  it('blocks a denied group again when the create form is submitted', async () => {
+    getAvailableGroups.mockResolvedValueOnce([{
+      id: 7,
+      name: 'VIP only',
+      description: null,
+      platform: 'openai',
+      rate_multiplier: 1,
+      peak_rate_enabled: false,
+      peak_start: '',
+      peak_end: '',
+      peak_rate_multiplier: 1,
+      subscription_type: 'standard',
+      vip_only: true,
+      can_bind: false,
+      deny_reason: 'GROUP_VIP_ONLY',
+      suggested_action: 'PAYMENT',
+    }])
+    const wrapper = await mountView()
+
+    await getButtonByText(wrapper, 'Create API Key').trigger('click')
+    await nextTick()
+    await wrapper.get('input[data-tour="key-form-name"]').setValue('blocked-key')
+    const matchingSelects = wrapper.findAllComponents({ name: 'Select' }).filter(
+      (select) => select.props('options')?.some((option: { value?: unknown }) => option.value === 7),
+    )
+    const groupSelect = matchingSelects[matchingSelects.length - 1]
+    await groupSelect!.vm.$emit('update:modelValue', 7)
+    await wrapper.get('#key-form').trigger('submit')
+    await flushPromises()
+
+    expect(createKey).not.toHaveBeenCalled()
+    expect(showError).toHaveBeenCalledWith('VIP group unavailable')
+  })
+
+  it('blocks a denied group again when the edit form is submitted', async () => {
+    getAvailableGroups.mockResolvedValueOnce([{
+      id: 7,
+      name: 'VIP only',
+      description: null,
+      platform: 'openai',
+      rate_multiplier: 1,
+      peak_rate_enabled: false,
+      peak_start: '',
+      peak_end: '',
+      peak_rate_multiplier: 1,
+      subscription_type: 'standard',
+      vip_only: true,
+      can_bind: false,
+      deny_reason: 'GROUP_VIP_ONLY',
+      suggested_action: 'PAYMENT',
+    }])
+    const wrapper = await mountView()
+
+    await getButtonByText(wrapper, 'common.edit').trigger('click')
+    await nextTick()
+    const matchingSelects = wrapper.findAllComponents({ name: 'Select' }).filter(
+      (select) => select.props('options')?.some((option: { value?: unknown }) => option.value === 7),
+    )
+    const groupSelect = matchingSelects[matchingSelects.length - 1]
+    await groupSelect!.vm.$emit('update:modelValue', 7)
+    await wrapper.get('#key-form').trigger('submit')
+    await flushPromises()
+
+    expect(updateKey).not.toHaveBeenCalled()
+    expect(showError).toHaveBeenCalledWith('VIP group unavailable')
+  })
+
+  it('allows editing other fields when the original group is no longer bindable', async () => {
+    listKeys.mockResolvedValueOnce({
+      items: [{ ...createApiKey(), group_id: 7 }],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1,
+    })
+    getAvailableGroups.mockResolvedValueOnce([{
+      id: 7,
+      name: 'VIP only',
+      description: null,
+      platform: 'openai',
+      rate_multiplier: 1,
+      peak_rate_enabled: false,
+      peak_start: '',
+      peak_end: '',
+      peak_rate_multiplier: 1,
+      subscription_type: 'standard',
+      vip_only: true,
+      can_bind: false,
+      deny_reason: 'GROUP_VIP_ONLY',
+      suggested_action: 'PAYMENT',
+    }])
+    updateKey.mockResolvedValueOnce({})
+    const wrapper = await mountView()
+
+    await getButtonByText(wrapper, 'common.edit').trigger('click')
+    await nextTick()
+    await wrapper.get('input[data-tour="key-form-name"]').setValue('renamed-key')
+    await wrapper.get('#key-form').trigger('submit')
+    await flushPromises()
+
+    expect(showError).not.toHaveBeenCalledWith('VIP group unavailable')
+    expect(updateKey).toHaveBeenCalledTimes(1)
+    expect(updateKey.mock.calls[0]![1]).toMatchObject({ name: 'renamed-key' })
+    expect(updateKey.mock.calls[0]![1]).not.toHaveProperty('group_id')
+  })
+
+  it('keeps the original quick binding when the backend rejects a raced catalog decision', async () => {
+    getAvailableGroups.mockResolvedValueOnce([{
+      id: 8,
+      name: 'Initially allowed',
+      description: null,
+      platform: 'openai',
+      rate_multiplier: 1,
+      peak_rate_enabled: false,
+      peak_start: '',
+      peak_end: '',
+      peak_rate_multiplier: 1,
+      subscription_type: 'standard',
+      vip_only: true,
+      can_bind: true,
+      deny_reason: null,
+      suggested_action: null,
+    }])
+    updateKey.mockRejectedValueOnce({ status: 403, reason: 'GROUP_VIP_ONLY' })
+    const wrapper = await mountView()
+
+    await wrapper.get('button[title="keys.clickToChangeGroup"]').trigger('click')
+    await nextTick()
+    await wrapper.get('[role="option"][aria-disabled="false"]').trigger('click')
+    await flushPromises()
+
+    expect(updateKey).toHaveBeenCalledWith(1, { group_id: 8 })
+    expect(listKeys).toHaveBeenCalledTimes(1)
+    expect(wrapper.get('[data-test="group-cell"]').text()).toContain('keys.noGroup')
+    expect(showError).toHaveBeenCalledWith('VIP group unavailable')
   })
 })

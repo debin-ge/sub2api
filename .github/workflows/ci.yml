@@ -48,6 +48,11 @@ jobs:
       - name: Test (unit tags)
         run: go test -tags=unit ./...
 
+      - name: Generated code is up to date
+        run: |
+          make generate
+          git diff --exit-code
+
       # 与 backend/Makefile 的 test 目标对齐（go test + golangci-lint）
       # backend/.golangci.yml 为 v2 配置，需使用 action@v8+（v9 起运行于 Node 24）
       - name: Lint
@@ -55,6 +60,31 @@ jobs:
         with:
           version: latest
           working-directory: backend
+
+  vip-integration:
+    name: VIP security integration (PostgreSQL 16 + Redis)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: Run VIP, fallback graph, migration, and durable invalidation integration tests
+        env:
+          SUB2API_TEST_POSTGRES_IMAGE: postgres:16-alpine
+        run: >-
+          go test -tags=integration ./internal/repository
+          -run 'Test(VIP|AuthCacheInvalidationTriggers|GroupRepoSuite|MigrationsRunner)'
+          -count=1
 
   # 迁移门禁：保证 backend/migrations/ 变更满足蓝绿发布的 expand-contract 纪律
   # （规则见 backend/migrations/README.md）。破坏性迁移需给 PR 打 breaking-migration
@@ -111,8 +141,8 @@ jobs:
       - name: Install dependencies
         run: pnpm --dir frontend install --frozen-lockfile
 
-      # 复用根 Makefile 的口径：lint:check + typecheck + 关键 vitest 用例
-      - name: Lint / typecheck / critical tests
+      # 复用根 Makefile 的口径：lint:check + typecheck + 完整 Vitest/入口隐私测试
+      - name: Lint / typecheck / full tests
         run: make test-frontend
 
       # 完整构建（vue-tsc -b + vite build + 入口隐私断言），与 Docker 构建同路径

@@ -208,6 +208,9 @@ func (h *KimiGatewayHandler) Messages(c *gin.Context) {
 	for {
 		selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), apiKey.GroupID, sessionHash, reqModel, fs.FailedAccountIDs, parsedReq.MetadataUserID, subject.UserID)
 		if err != nil || selection == nil || selection.Account == nil {
+			if handleOpenAICompatibleGroupAccessSelectionError(c, err, streamStarted) {
+				return
+			}
 			if fs.LastFailoverErr != nil && !streamStarted {
 				status, errType, message := kimiForwardErrorDetails(fs.LastFailoverErr)
 				h.errorResponse(c, status, errType, message)
@@ -414,6 +417,9 @@ func (h *KimiGatewayHandler) ChatCompletions(c *gin.Context) {
 	for {
 		selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), apiKey.GroupID, sessionHash, reqModel, fs.FailedAccountIDs, parsedReq.MetadataUserID, subject.UserID)
 		if err != nil || selection == nil || selection.Account == nil {
+			if handleOpenAICompatibleGroupAccessSelectionError(c, err, streamStarted) {
+				return
+			}
 			if fs.LastFailoverErr != nil && !streamStarted {
 				status, errType, message := kimiForwardErrorDetails(fs.LastFailoverErr)
 				h.errorResponse(c, status, errType, message)
@@ -634,6 +640,9 @@ func (h *KimiGatewayHandler) Responses(c *gin.Context) {
 	for {
 		selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), apiKey.GroupID, sessionHash, reqModel, fs.FailedAccountIDs, parsedReq.MetadataUserID, subject.UserID)
 		if err != nil || selection == nil || selection.Account == nil {
+			if handleOpenAICompatibleGroupAccessSelectionError(c, err, streamStarted) {
+				return
+			}
 			if fs.LastFailoverErr != nil && !streamStarted {
 				status, errType, message := kimiForwardErrorDetails(fs.LastFailoverErr)
 				h.errorResponse(c, status, errType, message)

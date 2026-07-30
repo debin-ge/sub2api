@@ -10,19 +10,21 @@ import (
 )
 
 type User struct {
-	ID            int64      `json:"id"`
-	Email         string     `json:"email"`
-	Username      string     `json:"username"`
-	Role          string     `json:"role"`
-	Balance       float64    `json:"balance"`
-	FrozenBalance float64    `json:"frozen_balance"`
-	Concurrency   int        `json:"concurrency"`
-	Status        string     `json:"status"`
-	AllowedGroups []int64    `json:"allowed_groups"`
-	LastActiveAt  *time.Time `json:"last_active_at,omitempty"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
-	DeletedAt     *time.Time `json:"deleted_at,omitempty"`
+	ID             int64                  `json:"id"`
+	Email          string                 `json:"email"`
+	Username       string                 `json:"username"`
+	Role           string                 `json:"role"`
+	Balance        float64                `json:"balance"`
+	FrozenBalance  float64                `json:"frozen_balance"`
+	Concurrency    int                    `json:"concurrency"`
+	Status         string                 `json:"status"`
+	AllowedGroups  []int64                `json:"allowed_groups"`
+	LastActiveAt   *time.Time             `json:"last_active_at,omitempty"`
+	CreatedAt      time.Time              `json:"created_at"`
+	UpdatedAt      time.Time              `json:"updated_at"`
+	DeletedAt      *time.Time             `json:"deleted_at,omitempty"`
+	IsVIP          bool                   `json:"is_vip"`
+	VIPAccessState service.VIPAccessState `json:"vip_access_state"`
 
 	// 余额不足通知
 	BalanceNotifyEnabled       bool               `json:"balance_notify_enabled"`
@@ -43,8 +45,17 @@ type User struct {
 type AdminUser struct {
 	User
 
-	Notes      string     `json:"notes"`
-	LastUsedAt *time.Time `json:"last_used_at"`
+	Notes              string                     `json:"notes"`
+	LastUsedAt         *time.Time                 `json:"last_used_at"`
+	VIPMode            service.VIPMode            `json:"vip_mode"`
+	VIPPaidEligible    bool                       `json:"vip_paid_eligible"`
+	VIPPaidEligibleAt  *time.Time                 `json:"vip_paid_eligible_at"`
+	VIPPaidSource      service.VIPPaidSource      `json:"vip_paid_source"`
+	VIPEffectiveSource service.VIPEffectiveSource `json:"vip_effective_source"`
+	VIPGrantedAt       *time.Time                 `json:"vip_granted_at"`
+	VIPOverrideAt      *time.Time                 `json:"vip_override_at"`
+	VIPOverrideBy      *int64                     `json:"vip_override_by"`
+	VIPOverrideReason  string                     `json:"vip_override_reason"`
 	// GroupRates 用户专属分组倍率配置
 	// map[groupID]rateMultiplier
 	GroupRates map[int64]float64 `json:"group_rates,omitempty"`
@@ -94,6 +105,7 @@ type Group struct {
 	Platform       string  `json:"platform"`
 	RateMultiplier float64 `json:"rate_multiplier"`
 	IsExclusive    bool    `json:"is_exclusive"`
+	VIPOnly        bool    `json:"vip_only"`
 	Status         string  `json:"status"`
 
 	SubscriptionType string   `json:"subscription_type"`
@@ -148,6 +160,21 @@ type Group struct {
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// GroupCatalogEntry is the server-authoritative binding catalog. Visibility
+// and authorization are intentionally separate so public VIP groups can be
+// shown without allowing stale clients to bind them.
+type GroupCatalogEntry struct {
+	Group
+	CanBind         bool                               `json:"can_bind"`
+	DenyReason      service.GroupAccessDenyReason      `json:"deny_reason,omitempty"`
+	SuggestedAction service.GroupAccessSuggestedAction `json:"suggested_action,omitempty"`
+}
+
+type AdminGroupCatalogEntry struct {
+	GroupCatalogEntry
+	WillGrantExclusive bool `json:"will_grant_exclusive"`
 }
 
 // AdminGroup 是管理员接口使用的 group DTO（包含敏感/内部字段）。

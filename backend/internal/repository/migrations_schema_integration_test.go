@@ -5,6 +5,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -162,6 +163,116 @@ func TestMigrationsRunner_IsIdempotent_AndSchemaIsUpToDate(t *testing.T) {
 	requireColumn(t, tx, "user_allowed_groups", "created_at", "timestamp with time zone", 0, false)
 }
 
+func TestMigrationsRunner_VIPConcurrentIndexRetryRepairsInvalidRemainder(t *testing.T) {
+	ctx := context.Background()
+	orderID := time.Now().UnixNano()
+
+	t.Cleanup(func() {
+		if _, err := integrationDB.ExecContext(
+			context.Background(),
+			"DELETE FROM user_vip_audit_events WHERE order_id = $1",
+			orderID,
+		); err != nil {
+			t.Errorf("cleanup duplicate VIP audit fixtures: %v", err)
+		}
+		if _, err := integrationDB.ExecContext(
+			context.Background(),
+			"DELETE FROM schema_migrations WHERE filename = $1",
+			vipIndexesMigration,
+		); err != nil {
+			t.Errorf("reset VIP index migration record for cleanup: %v", err)
+			return
+		}
+		if _, err := integrationDB.ExecContext(
+			context.Background(),
+			"DROP INDEX CONCURRENTLY IF EXISTS idx_user_vip_audit_order_action",
+		); err != nil {
+			t.Errorf("drop VIP audit index for cleanup: %v", err)
+			return
+		}
+		if err := ApplyMigrations(context.Background(), integrationDB); err != nil {
+			t.Errorf("restore VIP index migration after retry test: %v", err)
+		}
+	})
+
+	_, err := integrationDB.ExecContext(
+		ctx,
+		"DELETE FROM schema_migrations WHERE filename = $1",
+		vipIndexesMigration,
+	)
+	require.NoError(t, err)
+	_, err = integrationDB.ExecContext(
+		ctx,
+		"DROP INDEX CONCURRENTLY IF EXISTS idx_user_vip_audit_order_action",
+	)
+	require.NoError(t, err)
+
+	const insertDuplicateAudit = `
+		INSERT INTO user_vip_audit_events (
+			user_id,
+			actor_type,
+			actor_snapshot,
+			action,
+			order_id,
+			request_id,
+			old_paid_eligible,
+			new_paid_eligible,
+			old_is_vip,
+			new_is_vip,
+			source
+		)
+		VALUES (
+			1,
+			'system',
+			'system',
+			'paid_grant',
+			$1,
+			$2,
+			FALSE,
+			TRUE,
+			FALSE,
+			TRUE,
+			'payment'
+		)
+	`
+	for duplicate := 0; duplicate < 2; duplicate++ {
+		_, err = integrationDB.ExecContext(
+			ctx,
+			insertDuplicateAudit,
+			orderID,
+			fmt.Sprintf("vip-invalid-index-retry-%d-%d", orderID, duplicate),
+		)
+		require.NoError(t, err)
+	}
+
+	err = ApplyMigrations(ctx, integrationDB)
+	require.ErrorContains(t, err, "idx_user_vip_audit_order_action")
+	requireVIPIndexState(t, integrationDB, "idx_user_vip_audit_order_action", false, false)
+
+	_, err = integrationDB.ExecContext(ctx, `
+		DELETE FROM user_vip_audit_events
+		WHERE id = (
+			SELECT MAX(id)
+			FROM user_vip_audit_events
+			WHERE order_id = $1
+		)
+	`, orderID)
+	require.NoError(t, err)
+
+	require.NoError(t, ApplyMigrations(ctx, integrationDB))
+	requireVIPIndexState(t, integrationDB, "idx_user_vip_audit_order_action", true, true)
+
+	var recorded bool
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM schema_migrations
+			WHERE filename = $1
+		)
+	`, vipIndexesMigration).Scan(&recorded))
+	require.True(t, recorded)
+}
+
 func TestMigrationsRunner_AuthIdentityAndPaymentSchemaStayAligned(t *testing.T) {
 	tx := testTx(t)
 
@@ -189,6 +300,31 @@ func TestMigrationsRunner_AuthIdentityAndPaymentSchemaStayAligned(t *testing.T) 
 	requireIndex(t, tx, "payment_orders", "paymentorder_out_trade_no")
 	requirePartialUniqueIndexDefinition(t, tx, "payment_orders", "paymentorder_out_trade_no", "out_trade_no", "WHERE")
 	requireIndexAbsent(t, tx, "payment_orders", "paymentorder_out_trade_no_unique")
+}
+
+func requireVIPIndexState(
+	t *testing.T,
+	db *sql.DB,
+	indexName string,
+	wantValid, wantReady bool,
+) {
+	t.Helper()
+
+	var (
+		valid bool
+		ready bool
+	)
+	err := db.QueryRowContext(context.Background(), `
+		SELECT i.indisvalid, i.indisready
+		FROM pg_class idx
+		JOIN pg_namespace ns ON ns.oid = idx.relnamespace
+		JOIN pg_index i ON i.indexrelid = idx.oid
+		WHERE ns.nspname = 'public'
+		  AND idx.relname = $1
+	`, indexName).Scan(&valid, &ready)
+	require.NoError(t, err, "query retry state for index %s", indexName)
+	require.Equal(t, wantValid, valid, "unexpected indisvalid for index %s", indexName)
+	require.Equal(t, wantReady, ready, "unexpected indisready for index %s", indexName)
 }
 
 func requireIndex(t *testing.T, tx *sql.Tx, table, index string) {

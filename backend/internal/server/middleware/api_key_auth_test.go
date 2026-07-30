@@ -429,6 +429,54 @@ func TestAPIKeyAuthRejectsExclusiveGroupWhenUserNoLongerAllowed(t *testing.T) {
 	require.Contains(t, w.Body.String(), "GROUP_NOT_ALLOWED")
 }
 
+func TestAPIKeyAuthVIPOnlyPrimaryGroupRollout(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	for _, tt := range []struct {
+		name       string
+		mode       string
+		isVIP      bool
+		wantStatus int
+		wantCode   string
+	}{
+		{name: "audit non VIP is observed but allowed", mode: config.GroupAccessRuntimeModeAuditOnly, wantStatus: http.StatusOK},
+		{name: "enforce non VIP is denied", mode: config.GroupAccessRuntimeModeEnforce, wantStatus: http.StatusForbidden, wantCode: "GROUP_VIP_ONLY"},
+		{name: "enforce VIP is allowed", mode: config.GroupAccessRuntimeModeEnforce, isVIP: true, wantStatus: http.StatusOK},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			group := &service.Group{
+				ID: 303, Name: "vip", Status: service.StatusActive, Hydrated: true, VIPOnly: true,
+			}
+			user := &service.User{
+				ID: 7, Role: service.RoleUser, Status: service.StatusActive, Balance: 10, Concurrency: 3,
+				VIPEntitlementSnapshot: service.VIPEntitlementSnapshot{IsVIP: tt.isVIP},
+			}
+			apiKey := &service.APIKey{
+				ID: 100, UserID: user.ID, Key: "vip-primary-key", Status: service.StatusActive, User: user, Group: group,
+			}
+			apiKey.GroupID = &group.ID
+			repo := &stubApiKeyRepo{getByKey: func(context.Context, string) (*service.APIKey, error) {
+				clone := *apiKey
+				return &clone, nil
+			}}
+			cfg := &config.Config{RunMode: config.RunModeSimple, GroupAccessRuntimeMode: tt.mode}
+			router := newAuthTestRouter(service.NewAPIKeyService(repo, nil, nil, nil, nil, nil, cfg), nil, cfg)
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, "/t", nil)
+			req.Header.Set("x-api-key", apiKey.Key)
+
+			router.ServeHTTP(w, req)
+
+			require.Equal(t, tt.wantStatus, w.Code)
+			if tt.wantCode != "" {
+				var resp ErrorResponse
+				require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+				require.Equal(t, tt.wantCode, resp.Code)
+			}
+		})
+	}
+}
+
 func TestAPIKeyAuthOverwritesInvalidContextGroup(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

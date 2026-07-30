@@ -63,6 +63,26 @@ type User struct {
 	BalanceNotifyExtraEmails string `json:"balance_notify_extra_emails,omitempty"`
 	// TotalRecharged holds the value of the "total_recharged" field.
 	TotalRecharged float64 `json:"total_recharged,omitempty"`
+	// VipPaidEligible holds the value of the "vip_paid_eligible" field.
+	VipPaidEligible bool `json:"vip_paid_eligible,omitempty"`
+	// VipPaidEligibleAt holds the value of the "vip_paid_eligible_at" field.
+	VipPaidEligibleAt *time.Time `json:"vip_paid_eligible_at,omitempty"`
+	// VipPaidSource holds the value of the "vip_paid_source" field.
+	VipPaidSource string `json:"vip_paid_source,omitempty"`
+	// VipManualOverride holds the value of the "vip_manual_override" field.
+	VipManualOverride *bool `json:"vip_manual_override,omitempty"`
+	// VipOverrideAt holds the value of the "vip_override_at" field.
+	VipOverrideAt *time.Time `json:"vip_override_at,omitempty"`
+	// VipOverrideBy holds the value of the "vip_override_by" field.
+	VipOverrideBy *int64 `json:"vip_override_by,omitempty"`
+	// VipOverrideReason holds the value of the "vip_override_reason" field.
+	VipOverrideReason string `json:"vip_override_reason,omitempty"`
+	// IsVip holds the value of the "is_vip" field.
+	IsVip bool `json:"is_vip,omitempty"`
+	// VipGrantedAt holds the value of the "vip_granted_at" field.
+	VipGrantedAt *time.Time `json:"vip_granted_at,omitempty"`
+	// VipEffectiveSource holds the value of the "vip_effective_source" field.
+	VipEffectiveSource string `json:"vip_effective_source,omitempty"`
 	// RpmLimit holds the value of the "rpm_limit" field.
 	RpmLimit int `json:"rpm_limit,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
@@ -237,15 +257,15 @@ func (*User) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case user.FieldTotpEnabled, user.FieldBalanceNotifyEnabled:
+		case user.FieldTotpEnabled, user.FieldBalanceNotifyEnabled, user.FieldVipPaidEligible, user.FieldVipManualOverride, user.FieldIsVip:
 			values[i] = new(sql.NullBool)
 		case user.FieldBalance, user.FieldFrozenBalance, user.FieldBalanceNotifyThreshold, user.FieldTotalRecharged:
 			values[i] = new(sql.NullFloat64)
-		case user.FieldID, user.FieldConcurrency, user.FieldRpmLimit:
+		case user.FieldID, user.FieldConcurrency, user.FieldVipOverrideBy, user.FieldRpmLimit:
 			values[i] = new(sql.NullInt64)
-		case user.FieldEmail, user.FieldPasswordHash, user.FieldRole, user.FieldStatus, user.FieldUsername, user.FieldNotes, user.FieldTotpSecretEncrypted, user.FieldSignupSource, user.FieldBalanceNotifyThresholdType, user.FieldBalanceNotifyExtraEmails:
+		case user.FieldEmail, user.FieldPasswordHash, user.FieldRole, user.FieldStatus, user.FieldUsername, user.FieldNotes, user.FieldTotpSecretEncrypted, user.FieldSignupSource, user.FieldBalanceNotifyThresholdType, user.FieldBalanceNotifyExtraEmails, user.FieldVipPaidSource, user.FieldVipOverrideReason, user.FieldVipEffectiveSource:
 			values[i] = new(sql.NullString)
-		case user.FieldCreatedAt, user.FieldUpdatedAt, user.FieldDeletedAt, user.FieldTotpEnabledAt, user.FieldLastLoginAt, user.FieldLastActiveAt:
+		case user.FieldCreatedAt, user.FieldUpdatedAt, user.FieldDeletedAt, user.FieldTotpEnabledAt, user.FieldLastLoginAt, user.FieldLastActiveAt, user.FieldVipPaidEligibleAt, user.FieldVipOverrideAt, user.FieldVipGrantedAt:
 			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -411,6 +431,71 @@ func (_m *User) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field total_recharged", values[i])
 			} else if value.Valid {
 				_m.TotalRecharged = value.Float64
+			}
+		case user.FieldVipPaidEligible:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field vip_paid_eligible", values[i])
+			} else if value.Valid {
+				_m.VipPaidEligible = value.Bool
+			}
+		case user.FieldVipPaidEligibleAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field vip_paid_eligible_at", values[i])
+			} else if value.Valid {
+				_m.VipPaidEligibleAt = new(time.Time)
+				*_m.VipPaidEligibleAt = value.Time
+			}
+		case user.FieldVipPaidSource:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field vip_paid_source", values[i])
+			} else if value.Valid {
+				_m.VipPaidSource = value.String
+			}
+		case user.FieldVipManualOverride:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field vip_manual_override", values[i])
+			} else if value.Valid {
+				_m.VipManualOverride = new(bool)
+				*_m.VipManualOverride = value.Bool
+			}
+		case user.FieldVipOverrideAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field vip_override_at", values[i])
+			} else if value.Valid {
+				_m.VipOverrideAt = new(time.Time)
+				*_m.VipOverrideAt = value.Time
+			}
+		case user.FieldVipOverrideBy:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field vip_override_by", values[i])
+			} else if value.Valid {
+				_m.VipOverrideBy = new(int64)
+				*_m.VipOverrideBy = value.Int64
+			}
+		case user.FieldVipOverrideReason:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field vip_override_reason", values[i])
+			} else if value.Valid {
+				_m.VipOverrideReason = value.String
+			}
+		case user.FieldIsVip:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field is_vip", values[i])
+			} else if value.Valid {
+				_m.IsVip = value.Bool
+			}
+		case user.FieldVipGrantedAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field vip_granted_at", values[i])
+			} else if value.Valid {
+				_m.VipGrantedAt = new(time.Time)
+				*_m.VipGrantedAt = value.Time
+			}
+		case user.FieldVipEffectiveSource:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field vip_effective_source", values[i])
+			} else if value.Valid {
+				_m.VipEffectiveSource = value.String
 			}
 		case user.FieldRpmLimit:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -604,6 +689,46 @@ func (_m *User) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("total_recharged=")
 	builder.WriteString(fmt.Sprintf("%v", _m.TotalRecharged))
+	builder.WriteString(", ")
+	builder.WriteString("vip_paid_eligible=")
+	builder.WriteString(fmt.Sprintf("%v", _m.VipPaidEligible))
+	builder.WriteString(", ")
+	if v := _m.VipPaidEligibleAt; v != nil {
+		builder.WriteString("vip_paid_eligible_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	builder.WriteString("vip_paid_source=")
+	builder.WriteString(_m.VipPaidSource)
+	builder.WriteString(", ")
+	if v := _m.VipManualOverride; v != nil {
+		builder.WriteString("vip_manual_override=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.VipOverrideAt; v != nil {
+		builder.WriteString("vip_override_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	if v := _m.VipOverrideBy; v != nil {
+		builder.WriteString("vip_override_by=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	builder.WriteString("vip_override_reason=")
+	builder.WriteString(_m.VipOverrideReason)
+	builder.WriteString(", ")
+	builder.WriteString("is_vip=")
+	builder.WriteString(fmt.Sprintf("%v", _m.IsVip))
+	builder.WriteString(", ")
+	if v := _m.VipGrantedAt; v != nil {
+		builder.WriteString("vip_granted_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	builder.WriteString("vip_effective_source=")
+	builder.WriteString(_m.VipEffectiveSource)
 	builder.WriteString(", ")
 	builder.WriteString("rpm_limit=")
 	builder.WriteString(fmt.Sprintf("%v", _m.RpmLimit))

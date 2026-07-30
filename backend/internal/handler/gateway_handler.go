@@ -327,6 +327,10 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 		for {
 			selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), apiKey.GroupID, sessionKey, reqModel, fs.FailedAccountIDs, "", int64(0)) // Gemini 不使用会话限制
 			if err != nil {
+				if accessErr, ok := classifyGroupAccessSelectionError(err); ok {
+					h.handleStreamingAwareError(c, accessErr.Status, accessErr.Reason, accessErr.Message, streamStarted)
+					return
+				}
 				if len(fs.FailedAccountIDs) == 0 {
 					cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, reqModel, reqModel, service.PlatformGemini)
 					if !cls.ModelNotFound {
@@ -616,6 +620,10 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			)
 			selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), currentAPIKey.GroupID, sessionKey, reqModel, fs.FailedAccountIDs, parsedReq.MetadataUserID, subject.UserID)
 			if err != nil {
+				if accessErr, ok := classifyGroupAccessSelectionError(err); ok {
+					h.handleStreamingAwareError(c, accessErr.Status, accessErr.Reason, accessErr.Message, streamStarted)
+					return
+				}
 				if len(fs.FailedAccountIDs) == 0 {
 					cls := classifyNoAccountErrorFromGin(c, h.gatewayService, currentAPIKey, reqModel, reqModel, platform)
 					if !cls.ModelNotFound {
@@ -861,6 +869,25 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 						if err != nil {
 							reqLog.Warn("gateway.resolve_fallback_group_failed", zap.Int64("fallback_group_id", *fallbackGroupID), zap.Error(err))
 							_ = h.antigravityGatewayService.WriteMappedClaudeError(c, account, promptTooLongErr.StatusCode, promptTooLongErr.RequestID, promptTooLongErr.Body)
+							return
+						}
+						if err := h.gatewayService.ResolveAuthorizedFallback(
+							c.Request.Context(),
+							apiKey.Group,
+							fallbackGroup,
+							service.GroupAccessRuntimeEntryInvalidRequestFallback,
+						); err != nil {
+							reqLog.Warn("gateway.fallback_group_access_denied",
+								zap.Int64("fallback_group_id", fallbackGroup.ID),
+								zap.String("reason", pkgerrors.Reason(err)),
+							)
+							h.handleStreamingAwareError(
+								c,
+								pkgerrors.Code(err),
+								pkgerrors.Reason(err),
+								pkgerrors.Message(err),
+								streamStarted,
+							)
 							return
 						}
 						if fallbackGroup.Platform != service.PlatformAnthropic ||

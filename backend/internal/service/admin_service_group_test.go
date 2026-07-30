@@ -4,8 +4,10 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/stretchr/testify/require"
 )
@@ -38,6 +40,35 @@ type groupRepoStubForAdmin struct {
 	listWithFiltersGroups      []Group
 	listWithFiltersResult      *pagination.PaginationResult
 	listWithFiltersErr         error
+}
+
+type pagedGroupRepoStub struct {
+	GroupRepository
+	groups []Group
+	calls  []pagination.PaginationParams
+}
+
+func (s *pagedGroupRepoStub) ListWithFilters(
+	_ context.Context,
+	params pagination.PaginationParams,
+	_, _, _ string,
+	_ *bool,
+) ([]Group, *pagination.PaginationResult, error) {
+	s.calls = append(s.calls, params)
+	offset := params.Offset()
+	if offset >= len(s.groups) {
+		return []Group{}, &pagination.PaginationResult{
+			Total:    int64(len(s.groups)),
+			Page:     params.Page,
+			PageSize: params.Limit(),
+		}, nil
+	}
+	end := min(offset+params.Limit(), len(s.groups))
+	return s.groups[offset:end], &pagination.PaginationResult{
+		Total:    int64(len(s.groups)),
+		Page:     params.Page,
+		PageSize: params.Limit(),
+	}, nil
 }
 
 func (s *groupRepoStubForAdmin) Create(_ context.Context, g *Group) error {
@@ -280,6 +311,160 @@ func TestAdminService_CreateGroup_WithImagePricing(t *testing.T) {
 	require.InDelta(t, 0.10, *repo.created.ImagePrice1K, 0.0001)
 	require.InDelta(t, 0.15, *repo.created.ImagePrice2K, 0.0001)
 	require.InDelta(t, 0.30, *repo.created.ImagePrice4K, 0.0001)
+}
+
+func TestAdminService_GroupVIPOnlyUsesFinalSubscriptionType(t *testing.T) {
+	t.Run("standard create propagates vip_only", func(t *testing.T) {
+		repo := &groupRepoStubForAdmin{}
+		svc := &adminServiceImpl{groupRepo: repo, vipConfigWriteEnabled: true}
+
+		group, err := svc.CreateGroup(context.Background(), &CreateGroupInput{
+			Name:             "vip-standard",
+			RateMultiplier:   1,
+			SubscriptionType: SubscriptionTypeStandard,
+			VIPOnly:          true,
+		})
+
+		require.NoError(t, err)
+		require.True(t, group.VIPOnly)
+		require.NotNil(t, repo.created)
+		require.True(t, repo.created.VIPOnly)
+	})
+
+	t.Run("rollout gate rejects enabling standard vip_only", func(t *testing.T) {
+		repo := &groupRepoStubForAdmin{}
+		svc := &adminServiceImpl{groupRepo: repo}
+
+		_, err := svc.CreateGroup(context.Background(), &CreateGroupInput{
+			Name:             "vip-gated",
+			RateMultiplier:   1,
+			SubscriptionType: SubscriptionTypeStandard,
+			VIPOnly:          true,
+		})
+
+		require.Error(t, err)
+		require.Equal(t, GroupVIPConfigWriteDisabledReason, infraerrors.Reason(err))
+		require.Nil(t, repo.created)
+	})
+
+	t.Run("subscription create is rejected before write", func(t *testing.T) {
+		repo := &groupRepoStubForAdmin{}
+		svc := &adminServiceImpl{groupRepo: repo}
+
+		_, err := svc.CreateGroup(context.Background(), &CreateGroupInput{
+			Name:             "vip-subscription",
+			RateMultiplier:   1,
+			SubscriptionType: SubscriptionTypeSubscription,
+			VIPOnly:          true,
+		})
+
+		require.Error(t, err)
+		require.Equal(t, GroupFallbackReasonSubscriptionVIPOnly, infraerrors.Reason(err))
+		require.Nil(t, repo.created)
+	})
+
+	t.Run("type switch evaluates merged candidate", func(t *testing.T) {
+		repo := &groupRepoStubForAdmin{getByID: &Group{
+			ID:               1,
+			Name:             "vip-standard",
+			Status:           StatusActive,
+			SubscriptionType: SubscriptionTypeStandard,
+			VIPOnly:          true,
+		}}
+		svc := &adminServiceImpl{groupRepo: repo}
+
+		_, err := svc.UpdateGroup(context.Background(), 1, &UpdateGroupInput{
+			SubscriptionType: SubscriptionTypeSubscription,
+		})
+
+		require.Error(t, err)
+		require.Equal(t, GroupFallbackReasonSubscriptionVIPOnly, infraerrors.Reason(err))
+		require.Nil(t, repo.updated)
+	})
+
+	t.Run("simultaneous type and vip changes use final candidate", func(t *testing.T) {
+		repo := &groupRepoStubForAdmin{getByID: &Group{
+			ID:               1,
+			Name:             "standard",
+			Status:           StatusActive,
+			SubscriptionType: SubscriptionTypeStandard,
+		}}
+		svc := &adminServiceImpl{groupRepo: repo}
+		enableVIP := true
+
+		_, err := svc.UpdateGroup(context.Background(), 1, &UpdateGroupInput{
+			SubscriptionType: SubscriptionTypeSubscription,
+			VIPOnly:          &enableVIP,
+		})
+
+		require.Error(t, err)
+		require.Equal(t, GroupFallbackReasonSubscriptionVIPOnly, infraerrors.Reason(err))
+		require.Nil(t, repo.updated)
+	})
+
+	t.Run("rollout gate allows disabling an existing vip group", func(t *testing.T) {
+		repo := &groupRepoStubForAdmin{getByID: &Group{
+			ID:               1,
+			Name:             "vip-standard",
+			Status:           StatusActive,
+			SubscriptionType: SubscriptionTypeStandard,
+			VIPOnly:          true,
+		}}
+		svc := &adminServiceImpl{groupRepo: repo}
+		disableVIP := false
+
+		group, err := svc.UpdateGroup(context.Background(), 1, &UpdateGroupInput{VIPOnly: &disableVIP})
+
+		require.NoError(t, err)
+		require.False(t, group.VIPOnly)
+		require.NotNil(t, repo.updated)
+		require.False(t, repo.updated.VIPOnly)
+	})
+}
+
+func TestAdminServiceScanGroupAccessGraphIsReadOnlyAndStable(t *testing.T) {
+	source := graphGroup(1, "source")
+	target := graphGroup(2, "vip")
+	target.VIPOnly = true
+	source.FallbackGroupID = groupGraphPtr(target.ID)
+	repo := &groupRepoStubForAdmin{
+		listWithFiltersGroups: []Group{target, source},
+	}
+	svc := &adminServiceImpl{groupRepo: repo}
+
+	report, err := svc.ScanGroupAccessGraph(context.Background())
+
+	require.NoError(t, err)
+	require.Equal(t, 2, report.GroupCount)
+	require.NotZero(t, report.ScannedAt)
+	require.Len(t, report.Violations, 1)
+	require.Equal(t, GroupFallbackReasonVIPEscalation, report.Violations[0].Reason)
+	require.Equal(t, []int64{1, 2}, report.Violations[0].Path)
+	require.Nil(t, repo.created)
+	require.Nil(t, repo.updated)
+	require.Equal(t, "id", repo.listWithFiltersParams.SortBy)
+}
+
+func TestAdminServiceScanGroupAccessGraphReadsEveryPage(t *testing.T) {
+	groups := make([]Group, 1001)
+	for i := range groups {
+		groups[i] = graphGroup(int64(i+1), fmt.Sprintf("group-%04d", i+1))
+	}
+	groups[0].FallbackGroupID = groupGraphPtr(groups[len(groups)-1].ID)
+	groups[len(groups)-1].VIPOnly = true
+	repo := &pagedGroupRepoStub{groups: groups}
+	svc := &adminServiceImpl{groupRepo: repo}
+
+	report, err := svc.ScanGroupAccessGraph(context.Background())
+
+	require.NoError(t, err)
+	require.Equal(t, len(groups), report.GroupCount)
+	require.Len(t, repo.calls, 2)
+	require.Equal(t, 1, repo.calls[0].Page)
+	require.Equal(t, 2, repo.calls[1].Page)
+	require.Len(t, report.Violations, 1)
+	require.Equal(t, GroupFallbackReasonVIPEscalation, report.Violations[0].Reason)
+	require.Equal(t, []int64{groups[0].ID, groups[len(groups)-1].ID}, report.Violations[0].Path)
 }
 
 func TestAdminService_CreateGroup_WithVideoPricing(t *testing.T) {
@@ -1295,7 +1480,7 @@ func TestAdminService_CreateGroup_InvalidRequestFallbackRejectsFallbackGroup(t *
 		{
 			name:        "subscription_group",
 			fallback:    &Group{ID: 10, Platform: PlatformAnthropic, SubscriptionType: SubscriptionTypeSubscription},
-			wantMessage: "fallback group cannot be subscription type",
+			wantMessage: GroupFallbackReasonSubscriptionTarget,
 		},
 		{
 			name: "nested_fallback",
@@ -1492,7 +1677,7 @@ func TestAdminService_UpdateGroup_InvalidRequestFallbackRejectsFallbackGroup(t *
 		FallbackGroupIDOnInvalidRequest: &fallbackID,
 	})
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "fallback group cannot be subscription type")
+	require.Equal(t, GroupFallbackReasonSubscriptionTarget, infraerrors.Reason(err))
 	require.Nil(t, repo.updated)
 }
 

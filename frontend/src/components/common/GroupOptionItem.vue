@@ -6,13 +6,22 @@
       :title="description || undefined"
     >
       <!-- Row 1: platform badge (name bold) -->
-      <GroupBadge
-        :name="name"
-        :platform="platform"
-        :subscription-type="subscriptionType"
-        :show-rate="false"
-        class="groupOptionItemBadge"
-      />
+      <div class="flex flex-wrap items-center gap-2">
+        <GroupBadge
+          :name="name"
+          :platform="platform"
+          :subscription-type="subscriptionType"
+          :show-rate="false"
+          class="groupOptionItemBadge"
+        />
+        <span
+          v-if="vipOnly"
+          class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800 dark:bg-amber-900/35 dark:text-amber-200"
+          data-testid="vip-only-badge"
+        >
+          {{ t('vip.group.badge') }}
+        </span>
+      </div>
       <!-- Row 2: description with top spacing -->
       <span
         v-if="description"
@@ -20,6 +29,28 @@
       >
         {{ description }}
       </span>
+      <div
+        v-if="accessDenied"
+        class="mt-2 w-full rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-left text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100"
+        role="note"
+        tabindex="0"
+        data-testid="group-access-denied"
+      >
+        <p>{{ t(denyMessageKey) }}</p>
+        <button
+          v-if="showPaymentAction"
+          type="button"
+          class="mt-2 inline-flex rounded-md bg-primary-600 px-2.5 py-1.5 font-semibold text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 dark:focus:ring-offset-dark-800"
+          data-testid="group-payment-cta"
+          @click.stop="emit('action', 'PAYMENT')"
+          @keydown.stop
+        >
+          {{ t('vip.group.actions.PAYMENT') }}
+        </button>
+        <p v-else-if="safeSuggestedAction === 'CONTACT_SUPPORT'" class="mt-1 font-medium">
+          {{ t('vip.group.actions.CONTACT_SUPPORT') }}
+        </p>
+      </div>
     </div>
 
     <!-- Right: rate pill + checkmark (vertically centered to first row) -->
@@ -65,6 +96,11 @@ import GroupBadge from './GroupBadge.vue'
 import type { SubscriptionType, GroupPlatform } from '@/types'
 import { useAppStore } from '@/stores/app'
 import { formatPeakRateWindow, serverTimezoneLabel } from '@/utils/peak-rate'
+import {
+  getGroupDenyMessageKey,
+  getSafeGroupSuggestedAction,
+  shouldShowGroupPaymentCTA,
+} from '@/utils/vipAccess'
 
 const { t } = useI18n()
 
@@ -81,6 +117,11 @@ interface Props {
   description?: string | null
   selected?: boolean
   showCheckmark?: boolean
+  vipOnly?: boolean
+  canBind?: boolean
+  denyReason?: string | null
+  suggestedAction?: string | null
+  allowPaymentAction?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -88,8 +129,26 @@ const props = withDefaults(defineProps<Props>(), {
   selected: false,
   showCheckmark: true,
   userRateMultiplier: null,
-  peakRateEnabled: false
+  peakRateEnabled: false,
+  vipOnly: false,
+  allowPaymentAction: false,
 })
+
+const emit = defineEmits<{
+  (event: 'action', action: 'PAYMENT'): void
+}>()
+
+const accessDenied = computed(() => props.canBind === false)
+const denyMessageKey = computed(() => getGroupDenyMessageKey(props.denyReason))
+const safeSuggestedAction = computed(() => getSafeGroupSuggestedAction(
+  props.denyReason,
+  props.suggestedAction,
+))
+const showPaymentAction = computed(() => shouldShowGroupPaymentCTA(
+  props.canBind,
+  props.denyReason,
+  props.suggestedAction,
+) && props.allowPaymentAction)
 
 // Whether user has a custom rate different from default
 const hasCustomRate = computed(() => {

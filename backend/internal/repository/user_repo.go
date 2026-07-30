@@ -28,18 +28,31 @@ import (
 )
 
 type userRepository struct {
-	client *dbent.Client
-	sql    sqlExecutor
+	client                     *dbent.Client
+	sql                        sqlExecutor
+	vipActivationPendingWindow time.Duration
 }
 
 var _ service.RedeemUserAdjustmentRepository = (*userRepository)(nil)
+
+const defaultVIPActivationPendingWindow = 30 * time.Minute
 
 func NewUserRepository(client *dbent.Client, sqlDB *sql.DB) service.UserRepository {
 	return newUserRepositoryWithSQL(client, sqlDB)
 }
 
 func newUserRepositoryWithSQL(client *dbent.Client, sqlq sqlExecutor) *userRepository {
-	return &userRepository{client: client, sql: sqlq}
+	return &userRepository{
+		client:                     client,
+		sql:                        sqlq,
+		vipActivationPendingWindow: defaultVIPActivationPendingWindow,
+	}
+}
+
+func (r *userRepository) SetVIPActivationPendingWindow(window time.Duration) {
+	if r != nil && window > 0 {
+		r.vipActivationPendingWindow = window
+	}
 }
 
 func (r *userRepository) Create(ctx context.Context, userIn *service.User) error {
@@ -141,19 +154,21 @@ func (r *userRepository) create(ctx context.Context, userIn *service.User, guard
 }
 
 func (r *userRepository) GetByID(ctx context.Context, id int64) (*service.User, error) {
-	m, err := r.client.User.Query().Where(dbuser.IDEQ(id)).Only(ctx)
+	client := clientFromContext(ctx, r.client)
+	m, err := client.User.Query().Where(dbuser.IDEQ(id)).Only(ctx)
 	if err != nil {
 		return nil, translatePersistenceError(err, service.ErrUserNotFound, nil)
 	}
 
 	out := userEntityToService(m)
-	groups, err := r.loadAllowedGroups(ctx, []int64{id})
+	groups, err := loadAllowedGroupsWithClient(ctx, client, []int64{id})
 	if err != nil {
 		return nil, err
 	}
 	if v, ok := groups[id]; ok {
 		out.AllowedGroups = v
 	}
+	r.hydrateVIPActivationPending(ctx, client, out)
 	return out, nil
 }
 
@@ -198,7 +213,56 @@ func (r *userRepository) GetByEmail(ctx context.Context, email string) (*service
 	if v, ok := groups[m.ID]; ok {
 		out.AllowedGroups = v
 	}
+	r.hydrateVIPActivationPending(ctx, r.client, out)
 	return out, nil
+}
+
+func (r *userRepository) hydrateVIPActivationPending(
+	ctx context.Context,
+	client *dbent.Client,
+	user *service.User,
+) {
+	if user == nil || user.PaidEligible || user.ManualOverride != nil || client == nil {
+		return
+	}
+	window := r.vipActivationPendingWindow
+	if window <= 0 {
+		window = defaultVIPActivationPendingWindow
+	}
+	exec := txAwareSQLExecutor(ctx, r.sql, client)
+	if exec == nil {
+		user.ActivationPending = true
+		return
+	}
+	rows, err := exec.QueryContext(ctx, `
+		WITH latest AS (
+			SELECT MAX(completed_at) AS completed_at
+			FROM vip_qualifying_payment_order_facts
+			WHERE user_id = $1
+		)
+		SELECT
+			completed_at IS NOT NULL,
+			COALESCE(
+				completed_at > CURRENT_TIMESTAMP - $2::interval,
+				FALSE
+			)
+		FROM latest
+	`, user.ID, window.String())
+	if err != nil {
+		// Fail closed for repeat-payment UX. A profile refresh that cannot
+		// establish the absence of a completed payment must not encourage the
+		// user to pay again; L1 reconciliation and subsequent refreshes recover.
+		user.ActivationPending = true
+		return
+	}
+	defer func() { _ = rows.Close() }()
+	var exists, withinWindow bool
+	if !rows.Next() || rows.Scan(&exists, &withinWindow) != nil || rows.Err() != nil {
+		user.ActivationPending = true
+		return
+	}
+	user.ActivationPending = exists && withinWindow
+	user.ActivationFailed = exists && !withinWindow
 }
 
 func (r *userRepository) Update(ctx context.Context, userIn *service.User, fields service.UserUpdateFields) error {
@@ -501,6 +565,17 @@ func (r *userRepository) ListWithFilters(ctx context.Context, params pagination.
 	}
 	if filters.UserID > 0 {
 		q = q.Where(dbuser.IDEQ(filters.UserID))
+	}
+	if filters.IsVIP != nil {
+		q = q.Where(dbuser.IsVipEQ(*filters.IsVIP))
+	}
+	switch filters.VIPMode {
+	case service.VIPModeAuto:
+		q = q.Where(dbuser.VipManualOverrideIsNil())
+	case service.VIPModeForceOn:
+		q = q.Where(dbuser.VipManualOverrideEQ(true))
+	case service.VIPModeForceOff:
+		q = q.Where(dbuser.VipManualOverrideEQ(false))
 	}
 	if filters.Search != "" {
 		q = q.Where(
@@ -1256,12 +1331,16 @@ func (r *userRepository) GetFirstAdmin(ctx context.Context) (*service.User, erro
 }
 
 func (r *userRepository) loadAllowedGroups(ctx context.Context, userIDs []int64) (map[int64][]int64, error) {
+	return loadAllowedGroupsWithClient(ctx, clientFromContext(ctx, r.client), userIDs)
+}
+
+func loadAllowedGroupsWithClient(ctx context.Context, client *dbent.Client, userIDs []int64) (map[int64][]int64, error) {
 	out := make(map[int64][]int64, len(userIDs))
 	if len(userIDs) == 0 {
 		return out, nil
 	}
 
-	rows, err := r.client.UserAllowedGroup.Query().
+	rows, err := client.UserAllowedGroup.Query().
 		Where(userallowedgroup.UserIDIn(userIDs...)).
 		All(ctx)
 	if err != nil {

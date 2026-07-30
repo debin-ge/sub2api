@@ -53,3 +53,19 @@ describe('AppSidebar docs entry', () => {
     expect(componentSource).not.toContain('DocsIcon')
   })
 })
+
+describe('AppSidebar VIP reconciliation entry', () => {
+  it('exposes the administrator page without making the parent users item active', () => {
+    expect(componentSource).toContain("{ path: '/admin/users/vip-reconcile'")
+    expect(componentSource).toContain("label: t('nav.vipReconcile')")
+    expect(componentSource).toContain("{ path: '/admin/users', label: t('nav.users'), icon: UsersIcon, hideInSimpleMode: true, exact: true }")
+  })
+})
+
+describe('AppSidebar purchase entry', () => {
+  it('is controlled only by the payment feature flag', () => {
+    expect(componentSource).toContain('const flagUserPurchase = () => flagPayment() !== false')
+    expect(componentSource).not.toContain('canShowDuplicateVIPPaymentCTA')
+    expect(componentSource).not.toContain('canShowPurchaseCTA')
+  })
+})

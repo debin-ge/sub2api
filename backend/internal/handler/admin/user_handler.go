@@ -88,6 +88,16 @@ type UpdateUserRequest struct {
 	GroupRates map[int64]*float64 `json:"group_rates"`
 }
 
+type UpdateUserVIPModeRequest struct {
+	VIPMode           string `json:"vip_mode" binding:"required"`
+	VIPOverrideReason string `json:"vip_override_reason" binding:"required"`
+}
+
+type CreateVIPReconcileJobRequest struct {
+	RequestID string `json:"request_id"`
+	Reason    string `json:"reason" binding:"required"`
+}
+
 // UpdateBalanceRequest represents balance update request
 type UpdateBalanceRequest struct {
 	Balance   float64 `json:"balance" binding:"required,gt=0"`
@@ -145,6 +155,22 @@ func (h *UserHandler) List(c *gin.Context) {
 		UserID:     userID,
 		GroupName:  strings.TrimSpace(c.Query("group_name")),
 		Attributes: parseAttributeFilters(c),
+	}
+	if raw, ok := c.GetQuery("is_vip"); ok {
+		value, parseErr := strconv.ParseBool(strings.TrimSpace(raw))
+		if parseErr != nil {
+			response.BadRequest(c, "Invalid is_vip filter")
+			return
+		}
+		filters.IsVIP = &value
+	}
+	if raw := strings.TrimSpace(c.Query("vip_mode")); raw != "" {
+		mode, parseErr := service.ParseVIPMode(raw)
+		if parseErr != nil {
+			response.BadRequest(c, "Invalid vip_mode filter")
+			return
+		}
+		filters.VIPMode = mode
 	}
 	if raw := strings.TrimSpace(c.Query("api_key_group_id")); raw != "" {
 		if id, parseErr := strconv.ParseInt(raw, 10, 64); parseErr == nil && id > 0 {
@@ -235,6 +261,172 @@ func (h *UserHandler) GetByID(c *gin.Context) {
 	}
 
 	response.Success(c, dto.UserFromServiceAdmin(user))
+}
+
+// UpdateVIPMode updates the target user's explicit three-state VIP mode.
+// PUT /api/v1/admin/users/:id/vip-mode
+func (h *UserHandler) UpdateVIPMode(c *gin.Context) {
+	userID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || userID <= 0 {
+		response.BadRequest(c, "Invalid user ID")
+		return
+	}
+
+	var req UpdateUserVIPModeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	mode, err := service.ParseVIPMode(req.VIPMode)
+	if err != nil {
+		response.BadRequest(c, "Invalid vip_mode")
+		return
+	}
+	if strings.TrimSpace(req.VIPOverrideReason) == "" {
+		response.BadRequest(c, "VIP override reason is required")
+		return
+	}
+
+	user, err := h.adminService.SetUserVIPMode(
+		c.Request.Context(),
+		userID,
+		mode,
+		getAdminIDFromContext(c),
+		req.VIPOverrideReason,
+	)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, dto.UserFromServiceAdmin(user))
+}
+
+// ListVIPAudit returns immutable VIP entitlement transitions newest first.
+// GET /api/v1/admin/users/:id/vip-audit
+func (h *UserHandler) ListVIPAudit(c *gin.Context) {
+	userID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || userID <= 0 {
+		response.BadRequest(c, "Invalid user ID")
+		return
+	}
+	page, pageSize := response.ParsePagination(c)
+	events, total, err := h.adminService.ListUserVIPAudit(
+		c.Request.Context(),
+		userID,
+		page,
+		pageSize,
+	)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Paginated(c, events, total, page, pageSize)
+}
+
+// GetGroupCatalog evaluates active groups against the target user's current
+// entitlement, subscriptions, and allow-list.
+// GET /api/v1/admin/users/:id/group-catalog
+func (h *UserHandler) GetGroupCatalog(c *gin.Context) {
+	userID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || userID <= 0 {
+		response.BadRequest(c, "Invalid user ID")
+		return
+	}
+	catalog, err := h.adminService.GetUserGroupCatalog(c.Request.Context(), userID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	out := make([]dto.AdminGroupCatalogEntry, 0, len(catalog))
+	for i := range catalog {
+		entry := dto.AdminGroupCatalogEntryFromService(&catalog[i])
+		if entry != nil {
+			out = append(out, *entry)
+		}
+	}
+	response.Success(c, out)
+}
+
+// PreviewVIPReconcile returns a fixed-as-of, cursor-paginated view of historical
+// payment facts whose VIP projection is missing or invalid.
+// GET /api/v1/admin/users/vip-reconcile/preview
+func (h *UserHandler) PreviewVIPReconcile(c *gin.Context) {
+	limit := 50
+	if raw := strings.TrimSpace(c.Query("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 200 {
+			response.BadRequest(c, "Invalid preview limit")
+			return
+		}
+		limit = parsed
+	}
+	preview, err := h.adminService.PreviewVIPReconcile(
+		c.Request.Context(),
+		strings.TrimSpace(c.Query("cursor")),
+		limit,
+	)
+	if err != nil {
+		if strings.Contains(err.Error(), "invalid VIP reconcile cursor") {
+			response.BadRequest(c, err.Error())
+			return
+		}
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, preview)
+}
+
+// CreateVIPReconcileJob starts or idempotently resumes a full-history repair.
+// POST /api/v1/admin/users/vip-reconcile/jobs
+func (h *UserHandler) CreateVIPReconcileJob(c *gin.Context) {
+	var req CreateVIPReconcileJobRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	req.Reason = strings.TrimSpace(req.Reason)
+	if req.Reason == "" {
+		response.BadRequest(c, "VIP reconcile reason is required")
+		return
+	}
+	req.RequestID = strings.TrimSpace(req.RequestID)
+	if req.RequestID == "" {
+		req.RequestID = strings.TrimSpace(c.GetHeader("Idempotency-Key"))
+	}
+	if req.RequestID == "" || len(req.RequestID) > 128 {
+		response.BadRequest(c, "Valid request_id or Idempotency-Key is required")
+		return
+	}
+	if !middleware.EnforceStepUpAlways(c, h.totpService, h.userService) {
+		return
+	}
+	job, err := h.adminService.CreateVIPReconcileJob(
+		c.Request.Context(),
+		req.RequestID,
+		getAdminIDFromContext(c),
+		req.Reason,
+	)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Accepted(c, gin.H{"job_id": job.ID, "job": job})
+}
+
+// GetVIPReconcileJob returns progress and the resumable cursor for a repair.
+// GET /api/v1/admin/users/vip-reconcile/jobs/:job_id
+func (h *UserHandler) GetVIPReconcileJob(c *gin.Context) {
+	jobID, err := strconv.ParseInt(c.Param("job_id"), 10, 64)
+	if err != nil || jobID <= 0 {
+		response.BadRequest(c, "Invalid VIP reconcile job ID")
+		return
+	}
+	job, err := h.adminService.GetVIPReconcileJob(c.Request.Context(), jobID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, job)
 }
 
 // BindAuthIdentity manually binds a canonical auth identity to a user.

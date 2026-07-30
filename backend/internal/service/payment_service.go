@@ -287,24 +287,27 @@ type TopUsersByCurrency map[string][]TopUserStat
 // --- Service ---
 
 type PaymentService struct {
-	providerMu               sync.Mutex
-	providersLoaded          bool
-	entClient                *dbent.Client
-	registry                 *payment.Registry
-	loadBalancer             payment.LoadBalancer
-	redeemService            *RedeemService
-	subscriptionSvc          *SubscriptionService
-	configService            *PaymentConfigService
-	settingRepo              SettingRepository
-	userRepo                 UserRepository
-	groupRepo                GroupRepository
-	resumeService            *PaymentResumeService
-	affiliateService         *AffiliateService
-	notificationEmailService *NotificationEmailService
-	wiseReconcileLockCache   LeaderLockCache
-	wiseReconcileDB          *sql.DB
-	wiseReconcileInstanceID  string
-	wiseReconcileCoordinator *wiseReconcileCoordinator
+	providerMu                    sync.Mutex
+	providersLoaded               bool
+	entClient                     *dbent.Client
+	registry                      *payment.Registry
+	loadBalancer                  payment.LoadBalancer
+	redeemService                 *RedeemService
+	subscriptionSvc               *SubscriptionService
+	configService                 *PaymentConfigService
+	settingRepo                   SettingRepository
+	userRepo                      UserRepository
+	groupRepo                     GroupRepository
+	resumeService                 *PaymentResumeService
+	affiliateService              *AffiliateService
+	notificationEmailService      *NotificationEmailService
+	vipEntitlementService         *VIPEntitlementService
+	paymentFulfillmentDB          *sql.DB
+	paymentFulfillmentDBTxTimeout time.Duration
+	wiseReconcileLockCache        LeaderLockCache
+	wiseReconcileDB               *sql.DB
+	wiseReconcileInstanceID       string
+	wiseReconcileCoordinator      *wiseReconcileCoordinator
 }
 
 func NewPaymentService(entClient *dbent.Client, registry *payment.Registry, loadBalancer payment.LoadBalancer, redeemService *RedeemService, subscriptionSvc *SubscriptionService, configService *PaymentConfigService, userRepo UserRepository, groupRepo GroupRepository, affiliateService *AffiliateService) *PaymentService {
@@ -342,6 +345,21 @@ func (s *PaymentService) orderIDPrefix(ctx context.Context) string {
 
 func (s *PaymentService) SetNotificationEmailService(notificationEmailService *NotificationEmailService) {
 	s.notificationEmailService = notificationEmailService
+}
+
+func (s *PaymentService) SetVIPEntitlementService(vipEntitlementService *VIPEntitlementService) {
+	s.vipEntitlementService = vipEntitlementService
+}
+
+func (s *PaymentService) SetPaymentFulfillmentDBTransaction(
+	db *sql.DB,
+	timeout time.Duration,
+) {
+	if s == nil {
+		return
+	}
+	s.paymentFulfillmentDB = db
+	s.paymentFulfillmentDBTxTimeout = timeout
 }
 
 // --- Provider Registry ---

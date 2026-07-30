@@ -7,6 +7,7 @@ import (
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
 
@@ -16,6 +17,12 @@ type AdminService interface {
 	ListUsers(ctx context.Context, page, pageSize int, filters UserListFilters, sortBy, sortOrder string) ([]User, int64, error)
 	GetUser(ctx context.Context, id int64) (*User, error)
 	GetUserIncludeDeleted(ctx context.Context, id int64) (*User, error)
+	SetUserVIPMode(ctx context.Context, userID int64, mode VIPMode, actorID int64, reason string) (*User, error)
+	ListUserVIPAudit(ctx context.Context, userID int64, page, pageSize int) ([]VIPAuditEvent, int64, error)
+	GetUserGroupCatalog(ctx context.Context, userID int64) ([]AdminGroupCatalogEntry, error)
+	PreviewVIPReconcile(ctx context.Context, cursor string, limit int) (*VIPReconcilePreview, error)
+	CreateVIPReconcileJob(ctx context.Context, requestID string, actorID int64, reason string) (*VIPReconcileJob, error)
+	GetVIPReconcileJob(ctx context.Context, jobID int64) (*VIPReconcileJob, error)
 	CreateUser(ctx context.Context, input *CreateUserInput) (*User, error)
 	UpdateUser(ctx context.Context, id int64, input *UpdateUserInput) (*User, error)
 	DeleteUser(ctx context.Context, id int64) error
@@ -209,12 +216,18 @@ type AdminBoundAuthIdentityChannel struct {
 	UpdatedAt      time.Time      `json:"updated_at"`
 }
 
+type AdminGroupCatalogEntry struct {
+	GroupCatalogEntry
+	WillGrantExclusive bool
+}
+
 type CreateGroupInput struct {
 	Name             string
 	Description      string
 	Platform         string
 	RateMultiplier   float64
 	IsExclusive      bool
+	VIPOnly          bool
 	SubscriptionType string   // standard/subscription
 	DailyLimitUSD    *float64 // 日限额 (USD)
 	WeeklyLimitUSD   *float64 // 周限额 (USD)
@@ -275,6 +288,7 @@ type UpdateGroupInput struct {
 	Platform         string
 	RateMultiplier   *float64 // 使用指针以支持设置为0
 	IsExclusive      *bool
+	VIPOnly          *bool
 	Status           string
 	SubscriptionType string   // standard/subscription
 	DailyLimitUSD    *float64 // 日限额 (USD)
@@ -674,30 +688,33 @@ var ErrRPMStatusUnavailable = infraerrors.New(http.StatusNotImplemented, "RPM_ST
 
 // adminServiceImpl implements AdminService
 type adminServiceImpl struct {
-	userRepo             UserRepository
-	groupRepo            GroupRepository
-	groupDuplicateRepo   GroupDuplicateRepository
-	accountRepo          AccountRepository
-	accountDuplicateRepo AccountDuplicateRepository
-	proxyRepo            ProxyRepository
-	apiKeyRepo           APIKeyRepository
-	redeemCodeRepo       RedeemCodeRepository
-	userGroupRateRepo    UserGroupRateRepository
-	userRPMCache         UserRPMCache
-	billingCacheService  *BillingCacheService
-	proxyProber          ProxyExitInfoProber
-	proxyLatencyCache    ProxyLatencyCache
-	authCacheInvalidator APIKeyAuthCacheInvalidator
-	entClient            *dbent.Client // 用于开启数据库事务
-	settingService       *SettingService
-	defaultSubAssigner   DefaultSubscriptionAssigner
-	userSubRepo          UserSubscriptionRepository
-	privacyClientFactory PrivacyClientFactory
-	runtimeBlocker       AccountRuntimeBlocker
-	apiKeyService        *APIKeyService
-	affiliateService     adminRechargeAffiliateAccruer
-	compositeRouteRepo   CompositeModelRouteRepository
-	compositeResolver    *CompositeRouteResolver
+	userRepo              UserRepository
+	groupRepo             GroupRepository
+	groupDuplicateRepo    GroupDuplicateRepository
+	accountRepo           AccountRepository
+	accountDuplicateRepo  AccountDuplicateRepository
+	proxyRepo             ProxyRepository
+	apiKeyRepo            APIKeyRepository
+	redeemCodeRepo        RedeemCodeRepository
+	userGroupRateRepo     UserGroupRateRepository
+	userRPMCache          UserRPMCache
+	billingCacheService   *BillingCacheService
+	proxyProber           ProxyExitInfoProber
+	proxyLatencyCache     ProxyLatencyCache
+	authCacheInvalidator  APIKeyAuthCacheInvalidator
+	entClient             *dbent.Client // 用于开启数据库事务
+	settingService        *SettingService
+	defaultSubAssigner    DefaultSubscriptionAssigner
+	userSubRepo           UserSubscriptionRepository
+	privacyClientFactory  PrivacyClientFactory
+	runtimeBlocker        AccountRuntimeBlocker
+	apiKeyService         *APIKeyService
+	vipEntitlementService *VIPEntitlementService
+	vipReconcileService   *VIPReconcileService
+	affiliateService      adminRechargeAffiliateAccruer
+	compositeRouteRepo    CompositeModelRouteRepository
+	compositeResolver     *CompositeRouteResolver
+	vipConfigWriteEnabled bool
 }
 
 type adminRechargeAffiliateAccruer interface {
@@ -729,34 +746,41 @@ func NewAdminService(
 	privacyClientFactory PrivacyClientFactory,
 	runtimeBlocker AccountRuntimeBlocker,
 	apiKeyService *APIKeyService,
+	vipEntitlementService *VIPEntitlementService,
+	vipReconcileService *VIPReconcileService,
 	affiliateService *AffiliateService,
 	compositeRouteRepo CompositeModelRouteRepository,
 	compositeResolver *CompositeRouteResolver,
+	cfg *config.Config,
 ) AdminService {
+	vipConfigWriteEnabled := cfg != nil && cfg.VIPConfigWriteEnabled
 	return &adminServiceImpl{
-		userRepo:             userRepo,
-		groupRepo:            groupRepo,
-		groupDuplicateRepo:   groupRepo,
-		accountRepo:          accountRepo,
-		accountDuplicateRepo: accountRepo,
-		proxyRepo:            proxyRepo,
-		apiKeyRepo:           apiKeyRepo,
-		redeemCodeRepo:       redeemCodeRepo,
-		userGroupRateRepo:    userGroupRateRepo,
-		userRPMCache:         userRPMCache,
-		billingCacheService:  billingCacheService,
-		proxyProber:          proxyProber,
-		proxyLatencyCache:    proxyLatencyCache,
-		authCacheInvalidator: authCacheInvalidator,
-		entClient:            entClient,
-		settingService:       settingService,
-		defaultSubAssigner:   defaultSubAssigner,
-		userSubRepo:          userSubRepo,
-		privacyClientFactory: privacyClientFactory,
-		runtimeBlocker:       runtimeBlocker,
-		apiKeyService:        apiKeyService,
-		affiliateService:     affiliateService,
-		compositeRouteRepo:   compositeRouteRepo,
-		compositeResolver:    compositeResolver,
+		userRepo:              userRepo,
+		groupRepo:             groupRepo,
+		groupDuplicateRepo:    groupRepo,
+		accountRepo:           accountRepo,
+		accountDuplicateRepo:  accountRepo,
+		proxyRepo:             proxyRepo,
+		apiKeyRepo:            apiKeyRepo,
+		redeemCodeRepo:        redeemCodeRepo,
+		userGroupRateRepo:     userGroupRateRepo,
+		userRPMCache:          userRPMCache,
+		billingCacheService:   billingCacheService,
+		proxyProber:           proxyProber,
+		proxyLatencyCache:     proxyLatencyCache,
+		authCacheInvalidator:  authCacheInvalidator,
+		entClient:             entClient,
+		settingService:        settingService,
+		defaultSubAssigner:    defaultSubAssigner,
+		userSubRepo:           userSubRepo,
+		privacyClientFactory:  privacyClientFactory,
+		runtimeBlocker:        runtimeBlocker,
+		apiKeyService:         apiKeyService,
+		vipEntitlementService: vipEntitlementService,
+		vipReconcileService:   vipReconcileService,
+		affiliateService:      affiliateService,
+		compositeRouteRepo:    compositeRouteRepo,
+		compositeResolver:     compositeResolver,
+		vipConfigWriteEnabled: vipConfigWriteEnabled,
 	}
 }

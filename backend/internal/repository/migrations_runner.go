@@ -57,6 +57,26 @@ const schedulerOutboxPendingDedupKeyMigration = "153_scheduler_outbox_pending_de
 const schedulerOutboxPendingDedupKeyIndex = "idx_scheduler_outbox_pending_dedup_key"
 const latestAPIKeyIPIndexMigration = "174_add_usage_logs_api_key_latest_ip_index_notx.sql"
 const latestAPIKeyIPIndex = "idx_usage_logs_api_key_latest_ip"
+const vipIndexesMigration = "194_vip_indexes_notx.sql"
+
+// vipConcurrentIndexNames must stay in sync with every index created by
+// vipIndexesMigration. PostgreSQL leaves a same-named invalid index behind when
+// CREATE INDEX CONCURRENTLY is cancelled or a uniqueness check fails. Without
+// this preflight, IF NOT EXISTS would skip the invalid index on retry and the
+// migration runner could incorrectly record the migration as successful.
+var vipConcurrentIndexNames = []string{
+	"idx_users_is_vip",
+	"idx_users_vip_manual_override",
+	"idx_groups_vip_only",
+	"idx_payment_orders_vip_reconcile_cursor",
+	"idx_payment_orders_vip_user_completed",
+	"idx_user_vip_audit_order_action",
+	"idx_user_vip_audit_user_created",
+	"idx_user_vip_audit_actor_created",
+	"idx_vip_reconcile_jobs_request_id",
+	"idx_vip_reconcile_jobs_one_active",
+	"idx_vip_reconcile_jobs_status_updated",
+}
 
 type migrationChecksumCompatibilityRule struct {
 	fileChecksum       string
@@ -284,9 +304,24 @@ func prepareNonTransactionalMigration(ctx context.Context, db migrationConnectio
 		return dropInvalidIndexIfPresent(ctx, db, schedulerOutboxPendingDedupKeyIndex)
 	case latestAPIKeyIPIndexMigration:
 		return dropInvalidIndexIfPresent(ctx, db, latestAPIKeyIPIndex)
+	case vipIndexesMigration:
+		return dropInvalidIndexesIfPresent(ctx, db, vipConcurrentIndexNames...)
 	default:
 		return nil
 	}
+}
+
+func dropInvalidIndexesIfPresent(
+	ctx context.Context,
+	db migrationConnection,
+	indexNames ...string,
+) error {
+	for _, indexName := range indexNames {
+		if err := dropInvalidIndexIfPresent(ctx, db, indexName); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func preparePaymentOrdersOutTradeNoUniqueMigration(ctx context.Context, db migrationConnection) error {

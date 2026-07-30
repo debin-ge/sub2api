@@ -36,6 +36,14 @@ type APIKeyAuthUserSnapshot struct {
 	Balance       float64 `json:"balance"`
 	Concurrency   int     `json:"concurrency"`
 	AllowedGroups []int64 `json:"allowed_groups,omitempty"`
+	// Pointer form is intentional: v18 must distinguish an explicit false
+	// value from a legacy/corrupt payload that omitted the authorization field.
+	IsVIP *bool `json:"is_vip"`
+	// VIPMode preserves the tri-state manual override without conflating AUTO
+	// (nil override) with a missing JSON field.
+	VIPMode *VIPMode `json:"vip_mode"`
+	// VIPAccessState preserves pending/failed/restricted semantics on cache hits.
+	VIPAccessState *VIPAccessState `json:"vip_access_state"`
 
 	// Balance notification fields (required for CheckBalanceAfterDeduction)
 	Email                      string             `json:"email"`
@@ -56,10 +64,12 @@ type APIKeyAuthUserSnapshot struct {
 
 // APIKeyAuthGroupSnapshot 分组快照
 type APIKeyAuthGroupSnapshot struct {
-	ID                              int64    `json:"id"`
-	Name                            string   `json:"name"`
-	Platform                        string   `json:"platform"`
-	IsExclusive                     bool     `json:"is_exclusive"`
+	ID          int64  `json:"id"`
+	Name        string `json:"name"`
+	Platform    string `json:"platform"`
+	IsExclusive bool   `json:"is_exclusive"`
+	// Pointer form is intentional; see APIKeyAuthUserSnapshot.IsVIP.
+	VIPOnly                         *bool    `json:"vip_only"`
 	Status                          string   `json:"status"`
 	SubscriptionType                string   `json:"subscription_type"`
 	RateMultiplier                  float64  `json:"rate_multiplier"`

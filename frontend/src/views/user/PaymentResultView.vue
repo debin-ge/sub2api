@@ -31,6 +31,14 @@
           <p v-if="isPending" class="mt-2 text-sm text-gray-500 dark:text-gray-400">
             {{ t('payment.result.processingHint') }}
           </p>
+          <p
+            v-else-if="isSuccess"
+            class="mt-2 text-sm text-gray-600 dark:text-gray-300"
+            data-testid="payment-vip-result"
+            aria-live="polite"
+          >
+            {{ t(completionVIPMessageKey) }}
+          </p>
         </div>
         <!-- Order Info -->
         <div v-if="order" class="rounded-xl bg-white p-5 shadow-sm dark:bg-dark-800">
@@ -88,7 +96,7 @@
         </div>
         <!-- Actions -->
         <div class="flex gap-3">
-          <button class="btn btn-secondary flex-1" @click="router.push('/purchase')">{{ t('payment.result.backToRecharge') }}</button>
+          <button v-if="showRechargeAction" class="btn btn-secondary flex-1" @click="router.push('/purchase')">{{ t('payment.result.backToRecharge') }}</button>
           <button class="btn btn-primary flex-1" @click="router.push('/orders')">{{ t('payment.result.viewOrders') }}</button>
         </div>
       </template>
@@ -107,17 +115,24 @@ import {
   readPaymentRecoverySnapshot,
 } from '@/components/payment/paymentFlow'
 import { usePaymentStore } from '@/stores/payment'
+import { useAuthStore } from '@/stores/auth'
 import { paymentAPI } from '@/api/payment'
 import type { PublicOrderResult, PublicOrderVerifyResult } from '@/api/payment'
 import type { OrderStatus, PaymentOrder } from '@/types/payment'
 import { formatPaymentAmount, normalizePaymentCurrency } from '@/components/payment/currency'
 import { normalizePaymentMethodForDisplay, paymentMethodI18nKey } from './paymentUx'
+import {
+  canShowDuplicateVIPPaymentCTA,
+  getKnownVIPAccessState,
+  type KnownVIPAccessState,
+} from '@/utils/vipAccess'
 
 const i18n = useI18n()
 const { t } = i18n
 const route = useRoute()
 const router = useRouter()
 const paymentStore = usePaymentStore()
+const authStore = useAuthStore()
 
 type DetailedResolvedOrder = PaymentOrder | PublicOrderResult
 type ResolvedOrder = DetailedResolvedOrder | PublicOrderVerifyResult
@@ -134,8 +149,8 @@ interface ReturnInfo {
 }
 const returnInfo = ref<ReturnInfo | null>(null)
 
-const SUCCESS_STATUSES = new Set(['COMPLETED', 'PAID', 'RECHARGING'])
-const PENDING_STATUSES = new Set(['PENDING', 'CREATED', 'WAITING', 'PROCESSING'])
+const SUCCESS_STATUSES = new Set(['COMPLETED'])
+const PENDING_STATUSES = new Set(['PENDING', 'CREATED', 'WAITING', 'PROCESSING', 'PAID', 'RECHARGING'])
 const STATUS_REFRESH_INTERVAL_MS = 2000
 const STATUS_REFRESH_BACKOFF_INTERVAL_MS = 10000
 const STATUS_REFRESH_FAST_ATTEMPTS = 15
@@ -153,6 +168,9 @@ let activeStatusRefresh: StatusRefreshOrder | null = null
 let resolveStatusRefreshInterval: (() => number) | null = null
 let statusRefreshInFlight = false
 let statusRefreshStopped = false
+let completionRefreshStarted = false
+const completionRefreshPending = ref(false)
+const completionVIPState = ref<KnownVIPAccessState | null>(null)
 
 /** 充值金额 = pay_amount / (1 + fee_rate/100)，fee_rate=0 时等于 pay_amount */
 const baseAmount = computed(() => {
@@ -197,6 +215,35 @@ const statusTitle = computed(() => {
   return t('payment.result.failed')
 })
 
+const completionVIPMessageKey = computed(() => {
+  if (completionRefreshPending.value) return 'vip.paymentResult.ACTIVATION_PENDING'
+  switch (completionVIPState.value) {
+    case 'ACTIVE':
+      return 'vip.paymentResult.ACTIVE'
+    case 'PAYMENT_REQUIRED':
+      return 'vip.paymentResult.PAYMENT_REQUIRED'
+    case 'ACTIVATION_PENDING':
+      return 'vip.paymentResult.ACTIVATION_PENDING'
+    case 'ACTIVATION_FAILED':
+      return 'vip.paymentResult.ACTIVATION_FAILED'
+    case 'RESTRICTED':
+      return 'vip.paymentResult.RESTRICTED'
+    default:
+      return 'vip.paymentResult.UNKNOWN'
+  }
+})
+
+const showRechargeAction = computed(() => {
+  if (isPending.value) return false
+  const state = getKnownVIPAccessState(authStore.user?.vip_access_state)
+  // A just-completed order must never prompt another payment while its
+  // entitlement is not explicitly active.
+  if (isSuccess.value) {
+    return !completionRefreshPending.value && completionVIPState.value === 'ACTIVE'
+  }
+  return canShowDuplicateVIPPaymentCTA(state)
+})
+
 function normalizedOrderPaymentType(paymentType: string): string {
   return normalizePaymentMethodForDisplay(paymentType || '') || paymentType || ''
 }
@@ -209,6 +256,30 @@ function setResolvedOrder(nextOrder: ResolvedOrder | null): void {
   order.value = nextOrder
   if (nextOrder && 'currency' in nextOrder && nextOrder.currency) {
     currency.value = normalizePaymentCurrency(nextOrder.currency)
+  }
+  if (isSuccessStatus(nextOrder?.status)) {
+    void refreshEntitlementAfterCompletion()
+  }
+}
+
+async function refreshEntitlementAfterCompletion(): Promise<void> {
+  if (completionRefreshStarted) return
+  completionRefreshStarted = true
+  completionRefreshPending.value = true
+
+  try {
+    if (!authStore.isAuthenticated) {
+      completionVIPState.value = null
+      return
+    }
+    const refreshedUser = await authStore.refreshUser()
+    completionVIPState.value = getKnownVIPAccessState(refreshedUser.vip_access_state)
+  } catch {
+    // Payment remains complete even if refreshing the entitlement projection
+    // fails. The UI stays generic and never suggests paying again.
+    completionVIPState.value = null
+  } finally {
+    completionRefreshPending.value = false
   }
 }
 

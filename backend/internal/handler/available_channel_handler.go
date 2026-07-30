@@ -29,7 +29,7 @@ type billingFallbackProvider interface {
 }
 
 type availableChannelAPIKeyService interface {
-	GetAvailableGroups(context.Context, int64) ([]service.Group, error)
+	GetVisibleGroupCatalog(context.Context, int64) ([]service.GroupCatalogEntry, error)
 }
 
 type availableChannelSettingService interface {
@@ -99,17 +99,21 @@ func (h *AvailableChannelHandler) featureEnabled(c *gin.Context) bool {
 // 订阅视觉加深），并展示默认倍率与高峰倍率规则；用户专属倍率前端走
 // /groups/rates，和 API 密钥页面保持一致。
 type userAvailableGroup struct {
-	ID                 int64                         `json:"id"`
-	Name               string                        `json:"name"`
-	Platform           string                        `json:"platform"`
-	SubscriptionType   string                        `json:"subscription_type"`
-	RateMultiplier     float64                       `json:"rate_multiplier"`
-	PeakRateEnabled    bool                          `json:"peak_rate_enabled"`
-	PeakStart          string                        `json:"peak_start"`
-	PeakEnd            string                        `json:"peak_end"`
-	PeakRateMultiplier float64                       `json:"peak_rate_multiplier"`
-	IsExclusive        bool                          `json:"is_exclusive"`
-	ModelsListConfig   service.GroupModelsListConfig `json:"-"`
+	ID                 int64                              `json:"id"`
+	Name               string                             `json:"name"`
+	Platform           string                             `json:"platform"`
+	SubscriptionType   string                             `json:"subscription_type"`
+	RateMultiplier     float64                            `json:"rate_multiplier"`
+	PeakRateEnabled    bool                               `json:"peak_rate_enabled"`
+	PeakStart          string                             `json:"peak_start"`
+	PeakEnd            string                             `json:"peak_end"`
+	PeakRateMultiplier float64                            `json:"peak_rate_multiplier"`
+	IsExclusive        bool                               `json:"is_exclusive"`
+	VIPOnly            bool                               `json:"vip_only"`
+	CanBind            *bool                              `json:"can_bind,omitempty"`
+	DenyReason         service.GroupAccessDenyReason      `json:"deny_reason,omitempty"`
+	SuggestedAction    service.GroupAccessSuggestedAction `json:"suggested_action,omitempty"`
+	ModelsListConfig   service.GroupModelsListConfig      `json:"-"`
 }
 
 // userSupportedModelPricing 用户可见的定价字段白名单。
@@ -181,14 +185,17 @@ func (h *AvailableChannelHandler) List(c *gin.Context) {
 		return
 	}
 
-	userGroups, err := h.apiKeyService.GetAvailableGroups(c.Request.Context(), subject.UserID)
+	groupCatalog, err := h.apiKeyService.GetVisibleGroupCatalog(
+		c.Request.Context(),
+		subject.UserID,
+	)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
-	allowedGroupIDs := make(map[int64]struct{}, len(userGroups))
-	for i := range userGroups {
-		allowedGroupIDs[userGroups[i].ID] = struct{}{}
+	catalogByGroupID := make(map[int64]service.GroupCatalogEntry, len(groupCatalog))
+	for i := range groupCatalog {
+		catalogByGroupID[groupCatalog[i].ID] = groupCatalog[i]
 	}
 
 	channels, err := h.channelService.ListAvailable(c.Request.Context())
@@ -204,7 +211,7 @@ func (h *AvailableChannelHandler) List(c *gin.Context) {
 		if ch.Status != service.StatusActive {
 			continue
 		}
-		visibleGroups := filterUserVisibleGroups(ch.Groups, allowedGroupIDs)
+		visibleGroups := filterUserVisibleGroups(ch.Groups, catalogByGroupID)
 		if len(visibleGroups) == 0 {
 			continue
 		}
@@ -586,16 +593,20 @@ func filterSectionsWithModels(sections []userChannelPlatformSection) []userChann
 	return out
 }
 
-// filterUserVisibleGroups 仅保留用户可访问的分组。
+// filterUserVisibleGroups keeps every server-visible group, including a
+// public VIP group that the current user cannot yet bind. Binding decisions
+// come from the authoritative catalog and are never reconstructed here.
 func filterUserVisibleGroups(
 	groups []service.AvailableGroupRef,
-	allowed map[int64]struct{},
+	catalog map[int64]service.GroupCatalogEntry,
 ) []userAvailableGroup {
 	visible := make([]userAvailableGroup, 0, len(groups))
 	for _, g := range groups {
-		if _, ok := allowed[g.ID]; !ok {
+		entry, ok := catalog[g.ID]
+		if !ok {
 			continue
 		}
+		canBind := entry.CanBind
 		visible = append(visible, userAvailableGroup{
 			ID:                 g.ID,
 			Name:               g.Name,
@@ -607,6 +618,10 @@ func filterUserVisibleGroups(
 			PeakEnd:            g.PeakEnd,
 			PeakRateMultiplier: g.PeakRateMultiplier,
 			IsExclusive:        g.IsExclusive,
+			VIPOnly:            entry.VIPOnly,
+			CanBind:            &canBind,
+			DenyReason:         entry.DenyReason,
+			SuggestedAction:    entry.SuggestedAction,
 			ModelsListConfig:   g.ModelsListConfig,
 		})
 	}
@@ -631,6 +646,7 @@ func filterPublicGroups(groups []service.AvailableGroupRef) []userAvailableGroup
 			PeakEnd:            g.PeakEnd,
 			PeakRateMultiplier: g.PeakRateMultiplier,
 			IsExclusive:        g.IsExclusive,
+			VIPOnly:            g.VIPOnly,
 			ModelsListConfig:   g.ModelsListConfig,
 		})
 	}

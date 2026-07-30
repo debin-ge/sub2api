@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 )
@@ -65,6 +66,7 @@ type CreateGroupRequest struct {
 	Description          string   `json:"description"`
 	RateMultiplier       float64  `json:"rate_multiplier"`
 	IsExclusive          bool     `json:"is_exclusive"`
+	VIPOnly              bool     `json:"vip_only"`
 	AllowImageGeneration bool     `json:"allow_image_generation"`
 	ImageRateIndependent bool     `json:"image_rate_independent"`
 	ImageRateMultiplier  *float64 `json:"image_rate_multiplier"`
@@ -76,6 +78,7 @@ type UpdateGroupRequest struct {
 	Description          *string  `json:"description"`
 	RateMultiplier       *float64 `json:"rate_multiplier"`
 	IsExclusive          *bool    `json:"is_exclusive"`
+	VIPOnly              *bool    `json:"vip_only"`
 	Status               *string  `json:"status"`
 	AllowImageGeneration *bool    `json:"allow_image_generation"`
 	ImageRateIndependent *bool    `json:"image_rate_independent"`
@@ -84,15 +87,21 @@ type UpdateGroupRequest struct {
 
 // GroupService 分组管理服务
 type GroupService struct {
-	groupRepo            GroupRepository
-	authCacheInvalidator APIKeyAuthCacheInvalidator
+	groupRepo             GroupRepository
+	authCacheInvalidator  APIKeyAuthCacheInvalidator
+	vipConfigWriteEnabled bool
 }
 
 // NewGroupService 创建分组服务实例
-func NewGroupService(groupRepo GroupRepository, authCacheInvalidator APIKeyAuthCacheInvalidator) *GroupService {
+func NewGroupService(
+	groupRepo GroupRepository,
+	authCacheInvalidator APIKeyAuthCacheInvalidator,
+	cfg *config.Config,
+) *GroupService {
 	return &GroupService{
-		groupRepo:            groupRepo,
-		authCacheInvalidator: authCacheInvalidator,
+		groupRepo:             groupRepo,
+		authCacheInvalidator:  authCacheInvalidator,
+		vipConfigWriteEnabled: cfg != nil && cfg.VIPConfigWriteEnabled,
 	}
 }
 
@@ -121,11 +130,21 @@ func (s *GroupService) Create(ctx context.Context, req CreateGroupRequest) (*Gro
 		Platform:             PlatformAnthropic,
 		RateMultiplier:       req.RateMultiplier,
 		IsExclusive:          req.IsExclusive,
+		VIPOnly:              req.VIPOnly,
 		Status:               StatusActive,
 		SubscriptionType:     SubscriptionTypeStandard,
 		AllowImageGeneration: req.AllowImageGeneration,
 		ImageRateIndependent: req.ImageRateIndependent,
 		ImageRateMultiplier:  imageRateMultiplier,
+	}
+	if err := ValidateGroupVIPOnlyConfiguration(group); err != nil {
+		return nil, err
+	}
+	if group.VIPOnly && !s.vipConfigWriteEnabled {
+		return nil, infraerrors.BadRequest(
+			GroupVIPConfigWriteDisabledReason,
+			"enabling VIP-only groups is disabled during the current rollout phase",
+		)
 	}
 
 	if err := s.groupRepo.Create(ctx, group); err != nil {
@@ -168,6 +187,7 @@ func (s *GroupService) Update(ctx context.Context, id int64, req UpdateGroupRequ
 	if err != nil {
 		return nil, fmt.Errorf("get group: %w", err)
 	}
+	wasVIPOnly := group.VIPOnly
 
 	// 更新字段
 	if req.Name != nil && *req.Name != group.Name {
@@ -193,6 +213,9 @@ func (s *GroupService) Update(ctx context.Context, id int64, req UpdateGroupRequ
 	if req.IsExclusive != nil {
 		group.IsExclusive = *req.IsExclusive
 	}
+	if req.VIPOnly != nil {
+		group.VIPOnly = *req.VIPOnly
+	}
 
 	if req.Status != nil {
 		group.Status = *req.Status
@@ -209,9 +232,30 @@ func (s *GroupService) Update(ctx context.Context, id int64, req UpdateGroupRequ
 		}
 		group.ImageRateMultiplier = *req.ImageRateMultiplier
 	}
+	if err := ValidateGroupVIPOnlyConfiguration(group); err != nil {
+		return nil, err
+	}
+	if !wasVIPOnly && group.VIPOnly && !s.vipConfigWriteEnabled {
+		return nil, infraerrors.BadRequest(
+			GroupVIPConfigWriteDisabledReason,
+			"enabling VIP-only groups is disabled during the current rollout phase",
+		)
+	}
 
-	if err := s.groupRepo.Update(ctx, group); err != nil {
-		return nil, fmt.Errorf("update group: %w", err)
+	var updateErr error
+	if gatedRepo, ok := s.groupRepo.(interface {
+		UpdateWithVIPConfigWriteGate(context.Context, *Group, bool) error
+	}); ok {
+		updateErr = gatedRepo.UpdateWithVIPConfigWriteGate(
+			ctx,
+			group,
+			s.vipConfigWriteEnabled,
+		)
+	} else {
+		updateErr = s.groupRepo.Update(ctx, group)
+	}
+	if updateErr != nil {
+		return nil, fmt.Errorf("update group: %w", updateErr)
 	}
 	if s.authCacheInvalidator != nil {
 		s.authCacheInvalidator.InvalidateAuthCacheByGroupID(ctx, id)
@@ -228,11 +272,11 @@ func (s *GroupService) Delete(ctx context.Context, id int64) error {
 		return fmt.Errorf("get group: %w", err)
 	}
 
-	if s.authCacheInvalidator != nil {
-		s.authCacheInvalidator.InvalidateAuthCacheByGroupID(ctx, id)
-	}
 	if err := s.groupRepo.Delete(ctx, id); err != nil {
 		return fmt.Errorf("delete group: %w", err)
+	}
+	if s.authCacheInvalidator != nil {
+		s.authCacheInvalidator.InvalidateAuthCacheByGroupID(ctx, id)
 	}
 
 	return nil

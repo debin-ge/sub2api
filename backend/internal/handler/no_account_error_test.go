@@ -7,11 +7,14 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
@@ -200,4 +203,125 @@ func TestClassifyNoAccountError_FromGin_NilContextStillSafe(t *testing.T) {
 
 	require.Equal(t, http.StatusNotFound, cls.Status, "even with a nil gin context the classifier must still run and yield a coherent response")
 	require.True(t, cls.ModelNotFound)
+}
+
+func TestClassifyGroupAccessSelectionError_PreservesTypedContract(t *testing.T) {
+	tests := []struct {
+		name       string
+		err        error
+		wantStatus int
+		wantReason string
+		wantType   string
+	}{
+		{
+			name:       "exclusive",
+			err:        infraerrors.Forbidden(string(service.GroupAccessDenyGroupNotAllowed), "exclusive access required"),
+			wantStatus: http.StatusForbidden,
+			wantReason: string(service.GroupAccessDenyGroupNotAllowed),
+			wantType:   "permission_error",
+		},
+		{
+			name:       "vip",
+			err:        infraerrors.Forbidden(string(service.GroupAccessDenyVIPOnly), "VIP access required"),
+			wantStatus: http.StatusForbidden,
+			wantReason: string(service.GroupAccessDenyVIPOnly),
+			wantType:   "permission_error",
+		},
+		{
+			name:       "profile missing",
+			err:        infraerrors.InternalServer(string(service.GroupAccessDenyProfileMissing), "profile missing"),
+			wantStatus: http.StatusInternalServerError,
+			wantReason: string(service.GroupAccessDenyProfileMissing),
+			wantType:   "api_error",
+		},
+		{
+			name:       "invalid fallback",
+			err:        infraerrors.ServiceUnavailable(string(service.GroupAccessDenyFallbackInvalidConfig), "invalid fallback"),
+			wantStatus: http.StatusServiceUnavailable,
+			wantReason: string(service.GroupAccessDenyFallbackInvalidConfig),
+			wantType:   "api_error",
+		},
+		{
+			name:       "inactive group keeps legacy contract",
+			err:        infraerrors.BadRequest(string(service.GroupAccessDenyGroupInactive), "group inactive"),
+			wantStatus: http.StatusBadRequest,
+			wantReason: string(service.GroupAccessDenyGroupInactive),
+			wantType:   "invalid_request_error",
+		},
+		{
+			name:       "subscription required keeps legacy contract",
+			err:        infraerrors.BadRequest(string(service.GroupAccessDenySubscriptionRequired), "subscription required"),
+			wantStatus: http.StatusBadRequest,
+			wantReason: string(service.GroupAccessDenySubscriptionRequired),
+			wantType:   "invalid_request_error",
+		},
+		{
+			name:       "write-time subscription reason is normalized for runtime",
+			err:        infraerrors.BadRequest(string(service.GroupAccessDenyFallbackSubscription), "subscription forbidden"),
+			wantStatus: http.StatusServiceUnavailable,
+			wantReason: string(service.GroupAccessDenyFallbackInvalidConfig),
+			wantType:   "api_error",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := classifyGroupAccessSelectionError(fmt.Errorf("selection failed: %w", tt.err))
+			require.True(t, ok)
+			require.Equal(t, tt.wantStatus, got.Status)
+			require.Equal(t, tt.wantReason, got.Reason)
+			require.Equal(t, tt.wantType, got.OpenAIType)
+			require.NotEmpty(t, got.Message)
+		})
+	}
+
+	_, ok := classifyGroupAccessSelectionError(fmt.Errorf("%w: model", service.ErrNoAvailableAccounts))
+	require.False(t, ok, "ordinary capacity errors must continue to the no-account classifier")
+}
+
+func TestHandleOpenAICompatibleGroupAccessSelectionErrorWritesStableCode(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+
+	handled := handleOpenAICompatibleGroupAccessSelectionError(
+		c,
+		infraerrors.Forbidden(string(service.GroupAccessDenyVIPOnly), "VIP access required"),
+		false,
+	)
+
+	require.True(t, handled)
+	require.Equal(t, http.StatusForbidden, recorder.Code)
+	require.JSONEq(t, `{
+		"type": "error",
+		"error": {
+			"type": "permission_error",
+			"code": "GROUP_VIP_ONLY",
+			"message": "VIP access required"
+		}
+	}`, recorder.Body.String())
+}
+
+func TestForkGatewaysClassifyEverySelectionFailureExit(t *testing.T) {
+	for filename, expected := range map[string]int{
+		"windsurf_gateway_handler.go": 3,
+		"glm_gateway_handler.go":      3,
+		"deepseek_gateway_handler.go": 3,
+		"kimi_gateway_handler.go":     3,
+		"minimax_gateway_handler.go":  3,
+		"opencode_gateway_handler.go": 2,
+	} {
+		t.Run(filename, func(t *testing.T) {
+			source, err := os.ReadFile(filename)
+			require.NoError(t, err)
+			require.Equal(
+				t,
+				expected,
+				strings.Count(
+					string(source),
+					"handleOpenAICompatibleGroupAccessSelectionError(c, err,",
+				),
+			)
+		})
+	}
 }

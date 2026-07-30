@@ -50,6 +50,10 @@ const rows: UserAvailableChannel[] = [
             peak_end: '10:00',
             peak_rate_multiplier: 1.5,
             is_exclusive: true,
+            vip_only: false,
+            can_bind: true,
+            deny_reason: null,
+            suggested_action: null,
           },
           {
             id: 2,
@@ -62,6 +66,10 @@ const rows: UserAvailableChannel[] = [
             peak_end: '',
             peak_rate_multiplier: 1,
             is_exclusive: false,
+            vip_only: false,
+            can_bind: true,
+            deny_reason: null,
+            suggested_action: null,
           },
         ],
         supported_models: [{ name: 'claude-test', platform: 'anthropic', pricing: null }],
@@ -175,5 +183,110 @@ describe('AvailableChannelsTable responsive surfaces', () => {
 
     expect(wrapper.get('[data-testid="desktop-channels"]').text()).toContain('No channels')
     expect(wrapper.get('[data-testid="mobile-empty"]').text()).toContain('No channels')
+  })
+
+  it('shows a VIP badge, fail-safe disabled state, readable denial, and independent payment action', async () => {
+    const wrapper = mountTable({
+      rows: [{
+        name: 'VIP channel',
+        description: '',
+        platforms: [{
+          platform: 'openai',
+          supported_models: [],
+          groups: [{
+            id: 10,
+            name: 'VIP paid group',
+            platform: 'openai',
+            subscription_type: 'standard',
+            rate_multiplier: 1,
+            peak_rate_enabled: false,
+            peak_start: '',
+            peak_end: '',
+            peak_rate_multiplier: 1,
+            is_exclusive: false,
+            vip_only: true,
+            can_bind: false,
+            deny_reason: 'GROUP_VIP_ONLY',
+            suggested_action: 'PAYMENT',
+          }],
+        }],
+      }],
+    })
+    const desktop = wrapper.get('[data-testid="desktop-channels"]')
+    const group = desktop.get('[data-testid="available-group"]')
+    const bindTarget = group.get('[data-testid="available-group-bind-target"]')
+
+    expect(bindTarget.attributes('aria-disabled')).toBe('true')
+    expect(bindTarget.attributes('tabindex')).toBe('0')
+    expect(group.get('[data-testid="available-group-vip-badge"]').text()).toBe('vip.group.badge')
+    expect(group.get('[data-testid="available-group-denied"]').text()).toContain(
+      'vip.group.denied.GROUP_VIP_ONLY',
+    )
+
+    await group.get('[data-testid="available-group-payment-cta"]').trigger('click')
+    expect(wrapper.emitted('action')).toEqual([['PAYMENT']])
+    expect(group.attributes('aria-disabled')).toBeUndefined()
+  })
+
+  it('renders CONTACT_SUPPORT as guidance without a CTA and suppresses unknown actions', () => {
+    const wrapper = mountTable({
+      rows: [{
+        name: 'Restricted channel',
+        description: '',
+        platforms: [{
+          platform: 'openai',
+          supported_models: [],
+          groups: [
+            {
+              id: 20,
+              name: 'Support group',
+              platform: 'openai',
+              subscription_type: 'standard',
+              rate_multiplier: 1,
+              peak_rate_enabled: false,
+              peak_start: '',
+              peak_end: '',
+              peak_rate_multiplier: 1,
+              is_exclusive: false,
+              vip_only: true,
+              can_bind: false,
+              deny_reason: 'GROUP_NOT_ALLOWED',
+              suggested_action: 'CONTACT_SUPPORT',
+            },
+            {
+              id: 21,
+              name: 'Future decision group',
+              platform: 'openai',
+              subscription_type: 'standard',
+              rate_multiplier: 1,
+              peak_rate_enabled: false,
+              peak_start: '',
+              peak_end: '',
+              peak_rate_multiplier: 1,
+              is_exclusive: false,
+              vip_only: true,
+              deny_reason: 'FUTURE_DENIAL',
+              suggested_action: 'FUTURE_ACTION',
+            },
+          ],
+        }],
+      }],
+    })
+    const desktop = wrapper.get('[data-testid="desktop-channels"]')
+    const supportGroup = desktop.get('[data-group-id="20"]')
+    const unknownGroup = desktop.get('[data-group-id="21"]')
+
+    expect(supportGroup.get('[data-testid="available-group-contact-support"]').text()).toBe(
+      'vip.group.actions.CONTACT_SUPPORT',
+    )
+    expect(supportGroup.find('[data-testid="available-group-payment-cta"]').exists()).toBe(false)
+
+    // Missing can_bind and future enums fail closed.
+    expect(
+      unknownGroup.get('[data-testid="available-group-bind-target"]').attributes('aria-disabled'),
+    ).toBe('true')
+    expect(unknownGroup.text()).toContain('vip.group.denied.UNKNOWN')
+    expect(unknownGroup.find('[data-testid="available-group-payment-cta"]').exists()).toBe(false)
+    expect(unknownGroup.find('[data-testid="available-group-contact-support"]').exists()).toBe(false)
   })
 })

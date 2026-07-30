@@ -48,6 +48,26 @@ func ProvideSessionLimitCache(rdb *redis.Client, cfg *config.Config) service.Ses
 	return NewSessionLimitCache(rdb, defaultIdleTimeoutMinutes)
 }
 
+func ProvideUserRepository(
+	client *ent.Client,
+	sqlDB *sql.DB,
+	cfg *config.Config,
+) service.UserRepository {
+	repo := newUserRepositoryWithSQL(client, sqlDB)
+	if cfg == nil {
+		return repo
+	}
+	window := 2*cfg.VIPReconcileInterval +
+		cfg.VIPReconcileRunTimeout +
+		cfg.VIPReconcileSafetyDelay +
+		cfg.VIPReconcileOverlapMargin
+	if window < defaultVIPActivationPendingWindow {
+		window = defaultVIPActivationPendingWindow
+	}
+	repo.SetVIPActivationPendingWindow(window)
+	return repo
+}
+
 // ProvideSchedulerCache 创建调度快照缓存，并注入快照分块参数。
 func ProvideSchedulerCache(rdb *redis.Client, cfg *config.Config) service.SchedulerCache {
 	mgetChunkSize := defaultSchedulerSnapshotMGetChunkSize
@@ -65,7 +85,10 @@ func ProvideSchedulerCache(rdb *redis.Client, cfg *config.Config) service.Schedu
 
 // ProviderSet is the Wire provider set for all repositories
 var ProviderSet = wire.NewSet(
-	NewUserRepository,
+	ProvideUserRepository,
+	NewVIPEntitlementRepository,
+	NewVIPReconcileRepository,
+	NewVIPIncrementalReconcileRepository,
 	NewAPIKeyRepository,
 	NewGroupRepository,
 	NewAdminGroupRepository,

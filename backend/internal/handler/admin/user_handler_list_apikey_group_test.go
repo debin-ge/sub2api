@@ -81,3 +81,36 @@ func TestAdminUserList_ParsesUserID(t *testing.T) {
 		})
 	}
 }
+
+func TestAdminUserList_ParsesVIPFilters(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	stub := &listUsersFilterStub{AdminService: newStubAdminService()}
+	r := gin.New()
+	h := NewUserHandler(stub, nil, nil, nil, nil, nil, nil)
+	r.GET("/admin/users", h.List)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodGet, "/admin/users?is_vip=true&vip_mode=force_off", nil)
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.NotNil(t, stub.captured.IsVIP)
+	require.True(t, *stub.captured.IsVIP)
+	require.Equal(t, service.VIPModeForceOff, stub.captured.VIPMode)
+}
+
+func TestAdminUserList_RejectsInvalidVIPFilters(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, query := range []string{"?is_vip=maybe", "?vip_mode=manual"} {
+		stub := &listUsersFilterStub{AdminService: newStubAdminService()}
+		r := gin.New()
+		h := NewUserHandler(stub, nil, nil, nil, nil, nil, nil)
+		r.GET("/admin/users", h.List)
+
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest(http.MethodGet, "/admin/users"+query, nil)
+		r.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusBadRequest, w.Code)
+	}
+}

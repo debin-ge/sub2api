@@ -38,12 +38,37 @@ func TestFilterUserVisibleGroups_IntersectionOnly(t *testing.T) {
 		{ID: 2, Name: "g2", Platform: "anthropic"},
 		{ID: 3, Name: "g3", Platform: "openai"},
 	}
-	allowed := map[int64]struct{}{1: {}, 3: {}}
+	catalog := map[int64]service.GroupCatalogEntry{
+		1: {Group: service.Group{ID: 1}, CanBind: true},
+		3: {Group: service.Group{ID: 3}, CanBind: true},
+	}
 
-	visible := filterUserVisibleGroups(groups, allowed)
+	visible := filterUserVisibleGroups(groups, catalog)
 	require.Len(t, visible, 2)
 	ids := []int64{visible[0].ID, visible[1].ID}
 	require.ElementsMatch(t, []int64{1, 3}, ids)
+}
+
+func TestFilterUserVisibleGroups_KeepsDeniedVIPWithServerDecision(t *testing.T) {
+	groups := []service.AvailableGroupRef{{
+		ID: 7, Name: "vip", Platform: "anthropic", VIPOnly: true,
+	}}
+	catalog := map[int64]service.GroupCatalogEntry{
+		7: {
+			Group:           service.Group{ID: 7, VIPOnly: true},
+			CanBind:         false,
+			DenyReason:      service.GroupAccessDenyVIPOnly,
+			SuggestedAction: service.GroupAccessActionPayment,
+		},
+	}
+
+	visible := filterUserVisibleGroups(groups, catalog)
+	require.Len(t, visible, 1)
+	require.True(t, visible[0].VIPOnly)
+	require.NotNil(t, visible[0].CanBind)
+	require.False(t, *visible[0].CanBind)
+	require.Equal(t, service.GroupAccessDenyVIPOnly, visible[0].DenyReason)
+	require.Equal(t, service.GroupAccessActionPayment, visible[0].SuggestedAction)
 }
 
 func TestToUserSupportedModels_FiltersByAllowedPlatforms(t *testing.T) {
@@ -340,8 +365,11 @@ func TestList_UsesGroupCatalog(t *testing.T) {
 	}
 	h := &AvailableChannelHandler{
 		channelService: channelSvc,
-		apiKeyService: stubAvailableChannelAPIKeyService{groups: []service.Group{{
-			ID: 20, Name: "visible-openai", Platform: service.PlatformOpenAI, Status: service.StatusActive,
+		apiKeyService: stubAvailableChannelAPIKeyService{catalog: []service.GroupCatalogEntry{{
+			Group: service.Group{
+				ID: 20, Name: "visible-openai", Platform: service.PlatformOpenAI, Status: service.StatusActive,
+			},
+			CanBind: true,
 		}}},
 		settingService: stubAvailableChannelSettingService{enabled: true},
 		modelCatalog:   catalog,
@@ -909,11 +937,14 @@ func (s *stubModelCatalogProvider) ListForGroup(_ context.Context, groupID int64
 }
 
 type stubAvailableChannelAPIKeyService struct {
-	groups []service.Group
+	catalog []service.GroupCatalogEntry
 }
 
-func (s stubAvailableChannelAPIKeyService) GetAvailableGroups(context.Context, int64) ([]service.Group, error) {
-	return s.groups, nil
+func (s stubAvailableChannelAPIKeyService) GetVisibleGroupCatalog(
+	context.Context,
+	int64,
+) ([]service.GroupCatalogEntry, error) {
+	return s.catalog, nil
 }
 
 type stubAvailableChannelSettingService struct {

@@ -42,6 +42,7 @@
           :no-pricing-label="t('availableChannels.noPricing')"
           :no-models-label="t('availableChannels.noModels')"
           :empty-label="t('availableChannels.empty')"
+          @action="handleGroupAccessAction"
         />
       </template>
     </TablePageLayout>
@@ -67,6 +68,12 @@ const channels = ref<UserAvailableChannel[]>([])
 const userGroupRates = ref<Record<number, number>>({})
 const loading = ref(false)
 const searchQuery = ref('')
+
+function handleGroupAccessAction(action: 'PAYMENT') {
+  if (action === 'PAYMENT') {
+    window.location.assign('/purchase')
+  }
+}
 
 const columnLabels = computed(() => ({
   name: t('availableChannels.columns.name'),

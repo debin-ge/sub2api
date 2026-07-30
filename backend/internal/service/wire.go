@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
@@ -779,6 +780,24 @@ func ProvideAPIKeyService(
 	return svc
 }
 
+// ProvideVIPReconcileService starts the multi-instance L2 supervisor before the
+// server accepts requests. Startup fails if durable active-job discovery is
+// unavailable, rather than silently leaving a repair job unowned.
+func ProvideVIPReconcileService(
+	repository VIPReconcileRepository,
+	authCacheInvalidator APIKeyAuthCacheInvalidator,
+	lockCache LeaderLockCache,
+	db *sql.DB,
+	cfg *config.Config,
+) (*VIPReconcileService, error) {
+	svc := NewVIPReconcileService(repository, authCacheInvalidator)
+	svc.ConfigureRuntime(lockCache, db, cfg.VIPReconcileJobRunTimeout)
+	if err := svc.Start(); err != nil {
+		return nil, fmt.Errorf("resume active VIP reconcile job: %w", err)
+	}
+	return svc, nil
+}
+
 // ProviderSet is the Wire provider set for all services
 var ProviderSet = wire.NewSet(
 	NewRadarAdminController,
@@ -788,6 +807,8 @@ var ProviderSet = wire.NewSet(
 	NewUserService,
 	ProvideAPIKeyService,
 	ProvideAPIKeyAuthCacheInvalidator,
+	NewVIPEntitlementService,
+	ProvideVIPReconcileService,
 	ProvideAuthCacheInvalidationWorker,
 	NewGroupService,
 	NewCompositeRouteResolver,
@@ -916,6 +937,7 @@ var ProviderSet = wire.NewSet(
 	NewAffiliateService,
 	ProvidePaymentConfigService,
 	ProvidePaymentService,
+	ProvideVIPIncrementalReconcileService,
 	ProvidePaymentOrderExpiryService,
 	ProvideBalanceNotifyService,
 	ProvideChannelMonitorService,
@@ -945,11 +967,54 @@ func ProvideBalanceNotifyService(emailService *EmailService, settingRepo Setting
 }
 
 // ProvidePaymentService creates PaymentService and attaches notification email delivery.
-func ProvidePaymentService(entClient *dbent.Client, registry *payment.Registry, loadBalancer payment.LoadBalancer, redeemService *RedeemService, subscriptionSvc *SubscriptionService, configService *PaymentConfigService, userRepo UserRepository, groupRepo GroupRepository, affiliateService *AffiliateService, notificationEmailService *NotificationEmailService, lockCache LeaderLockCache, db *sql.DB) *PaymentService {
+func ProvidePaymentService(entClient *dbent.Client, registry *payment.Registry, loadBalancer payment.LoadBalancer, redeemService *RedeemService, subscriptionSvc *SubscriptionService, configService *PaymentConfigService, userRepo UserRepository, groupRepo GroupRepository, affiliateService *AffiliateService, notificationEmailService *NotificationEmailService, vipEntitlementService *VIPEntitlementService, lockCache LeaderLockCache, db *sql.DB, cfg *config.Config) *PaymentService {
 	svc := NewPaymentService(entClient, registry, loadBalancer, redeemService, subscriptionSvc, configService, userRepo, groupRepo, affiliateService)
 	svc.SetNotificationEmailService(notificationEmailService)
+	svc.SetVIPEntitlementService(vipEntitlementService)
+	if cfg != nil {
+		svc.SetPaymentFulfillmentDBTransaction(
+			db,
+			cfg.PaymentFulfillmentDBTxTimeout,
+		)
+	}
 	svc.SetWiseReconcileLock(lockCache, db)
 	return svc
+}
+
+func ProvideVIPIncrementalReconcileService(
+	repository VIPIncrementalReconcileRepository,
+	authCacheInvalidator APIKeyAuthCacheInvalidator,
+	opsRepo OpsRepository,
+	lockCache LeaderLockCache,
+	db *sql.DB,
+	cfg *config.Config,
+) (*VIPIncrementalReconcileService, error) {
+	if cfg == nil {
+		return nil, errors.New("VIP incremental reconcile service requires config")
+	}
+	svc := NewVIPIncrementalReconcileService(
+		repository,
+		authCacheInvalidator,
+		lockCache,
+		db,
+		VIPIncrementalReconcileConfig{
+			Enabled:                     cfg.VIPReconcileEnabled,
+			Interval:                    cfg.VIPReconcileInterval,
+			RunTimeout:                  cfg.VIPReconcileRunTimeout,
+			SafetyDelay:                 cfg.VIPReconcileSafetyDelay,
+			BatchSize:                   cfg.VIPReconcileBatchSize,
+			BatchPause:                  cfg.VIPReconcileBatchPause,
+			MaxBatchesPerRun:            cfg.VIPReconcileMaxBatches,
+			Overlap:                     cfg.VIPReconcileOverlap,
+			OverlapMargin:               cfg.VIPReconcileOverlapMargin,
+			PaymentFulfillmentDBTimeout: cfg.PaymentFulfillmentDBTxTimeout,
+		},
+	)
+	svc.SetHeartbeatWriter(opsRepo)
+	if err := svc.Start(); err != nil {
+		return nil, fmt.Errorf("start VIP incremental reconcile service: %w", err)
+	}
+	return svc, nil
 }
 
 // ProvidePaymentOrderExpiryService creates and starts PaymentOrderExpiryService.

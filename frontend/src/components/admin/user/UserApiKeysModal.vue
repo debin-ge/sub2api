@@ -23,6 +23,7 @@
               <button
                 :ref="(el) => setGroupButtonRef(key.id, el)"
                 @click="openGroupSelector(key)"
+                :data-test="`api-key-group-trigger-${key.id}`"
                 class="-mx-1 -my-0.5 flex cursor-pointer items-center gap-1 rounded-md px-1 py-0.5 transition-colors hover:bg-gray-100 dark:hover:bg-dark-700"
                 :disabled="updatingKeyIds.has(key.id)"
               >
@@ -80,25 +81,42 @@
           v-for="group in allGroups"
           :key="group.id"
           @click="changeGroup(selectedKeyForGroup!, group.id)"
+          :disabled="group.can_bind !== true"
           :class="[
             'flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm transition-colors',
             selectedKeyForGroup?.group_id === group.id
               ? 'bg-primary-50 dark:bg-primary-900/20'
-              : 'hover:bg-gray-100 dark:hover:bg-dark-700'
+              : group.can_bind === true
+                ? 'hover:bg-gray-100 dark:hover:bg-dark-700'
+                : 'cursor-not-allowed opacity-70'
           ]"
+          :data-test="`admin-group-option-${group.id}`"
         >
-          <GroupOptionItem
-            :name="group.name"
-            :platform="group.platform"
-            :subscription-type="group.subscription_type"
-            :rate-multiplier="group.rate_multiplier"
-            :peak-rate-enabled="group.peak_rate_enabled"
-            :peak-start="group.peak_start"
-            :peak-end="group.peak_end"
-            :peak-rate-multiplier="group.peak_rate_multiplier"
-            :description="group.description"
-            :selected="selectedKeyForGroup?.group_id === group.id"
-          />
+          <div class="w-full min-w-0">
+            <GroupOptionItem
+              :name="group.name"
+              :platform="group.platform"
+              :subscription-type="group.subscription_type"
+              :rate-multiplier="group.rate_multiplier"
+              :peak-rate-enabled="group.peak_rate_enabled"
+              :peak-start="group.peak_start"
+              :peak-end="group.peak_end"
+              :peak-rate-multiplier="group.peak_rate_multiplier"
+              :description="group.description"
+              :selected="selectedKeyForGroup?.group_id === group.id"
+              :vip-only="group.vip_only"
+              :can-bind="group.can_bind"
+              :deny-reason="group.deny_reason"
+              :suggested-action="group.suggested_action"
+              :allow-payment-action="false"
+            />
+            <p
+              v-if="group.will_grant_exclusive"
+              class="mt-1.5 text-left text-[11px] font-medium text-purple-600 dark:text-purple-300"
+            >
+              {{ t('admin.users.vip.willGrantExclusive') }}
+            </p>
+          </div>
         </button>
       </div>
     </div>
@@ -111,7 +129,8 @@ import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { adminAPI } from '@/api/admin'
 import { formatDateTime } from '@/utils/format'
-import type { AdminUser, AdminGroup, ApiKey } from '@/types'
+import { extractI18nErrorMessage } from '@/utils/apiError'
+import type { AdminUser, AdminGroupCatalogEntry, ApiKey } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import GroupBadge from '@/components/common/GroupBadge.vue'
 import GroupOptionItem from '@/components/common/GroupOptionItem.vue'
@@ -122,7 +141,7 @@ const { t } = useI18n()
 const appStore = useAppStore()
 
 const apiKeys = ref<ApiKey[]>([])
-const allGroups = ref<AdminGroup[]>([])
+const allGroups = ref<AdminGroupCatalogEntry[]>([])
 const loading = ref(false)
 const updatingKeyIds = ref(new Set<number>())
 const groupSelectorKeyId = ref<number | null>(null)
@@ -130,6 +149,7 @@ const dropdownPosition = ref<{ top: number; left: number } | null>(null)
 const dropdownRef = ref<HTMLElement | null>(null)
 const scrollContainerRef = ref<HTMLElement | null>(null)
 const groupButtonRefs = ref<Map<number, HTMLElement>>(new Map())
+let catalogLoadSequence = 0
 
 const selectedKeyForGroup = computed(() => {
   if (groupSelectorKeyId.value === null) return null
@@ -144,11 +164,13 @@ const setGroupButtonRef = (keyId: number, el: Element | ComponentPublicInstance 
   }
 }
 
-watch(() => props.show, (v) => {
-  if (v && props.user) {
-    load()
-    loadGroups()
+watch(() => [props.show, props.user?.id] as const, ([show]) => {
+  if (show && props.user) {
+    void load()
+    void loadGroups()
   } else {
+    catalogLoadSequence += 1
+    allGroups.value = []
     closeGroupSelector()
   }
 })
@@ -168,10 +190,24 @@ const load = async () => {
 }
 
 const loadGroups = async () => {
+  if (!props.user) return
+  const sequence = ++catalogLoadSequence
+  allGroups.value = []
   try {
-    const groups = await adminAPI.groups.getAll()
-    allGroups.value = groups
-  } catch (error) {
+    const catalog = await adminAPI.users.getGroupCatalog(props.user.id)
+    if (sequence !== catalogLoadSequence) return
+    allGroups.value = catalog
+  } catch (error: unknown) {
+    if (sequence !== catalogLoadSequence) return
+    allGroups.value = []
+    appStore.showError(
+      extractI18nErrorMessage(
+        error,
+        t,
+        'vip.group.errors',
+        t('admin.users.vip.catalogLoadFailed')
+      )
+    )
     console.error('Failed to load groups:', error)
   }
 }
@@ -220,7 +256,14 @@ const changeGroup = async (key: ApiKey, newGroupId: number | null) => {
       appStore.showSuccess(t('admin.users.groupChangedSuccess'))
     }
   } catch (error: any) {
-    appStore.showError(error?.message || t('admin.users.groupChangeFailed'))
+    appStore.showError(
+      extractI18nErrorMessage(
+        error,
+        t,
+        'vip.group.errors',
+        t('admin.users.groupChangeFailed')
+      )
+    )
   } finally {
     updatingKeyIds.value.delete(key.id)
   }

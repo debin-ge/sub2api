@@ -4,7 +4,18 @@
  */
 
 import { apiClient } from '../client'
-import type { AdminUser, UpdateUserRequest, PaginatedResponse, ApiKey } from '@/types'
+import type {
+  AdminGroupCatalogEntry,
+  AdminUser,
+  ApiKey,
+  CreateVIPReconcileJobRequest,
+  CreateVIPReconcileJobResponse,
+  PaginatedResponse,
+  UpdateUserRequest,
+  VIPAuditEvent,
+  VIPReconcileJob,
+  VIPReconcilePreview
+} from '@/types'
 
 export interface AdminBindAuthIdentityChannelRequest {
   channel: string
@@ -73,6 +84,8 @@ export async function list(
     user_id?: number
     group_name?: string         // fuzzy filter by allowed group name
     api_key_group_id?: number   // filter users by the group their API keys are bound to
+    is_vip?: boolean
+    vip_mode?: 'AUTO' | 'FORCE_ON' | 'FORCE_OFF'
     attributes?: Record<number, string>  // attributeId -> value
     include_subscriptions?: boolean
     sort_by?: string
@@ -92,6 +105,8 @@ export async function list(
     user_id: filters?.user_id,
     group_name: filters?.group_name,
     api_key_group_id: filters?.api_key_group_id,
+    is_vip: filters?.is_vip,
+    vip_mode: filters?.vip_mode,
     include_subscriptions: filters?.include_subscriptions,
     sort_by: filters?.sort_by,
     sort_order: filters?.sort_order
@@ -152,6 +167,69 @@ export async function create(userData: {
  */
 export async function update(id: number, updates: UpdateUserRequest): Promise<AdminUser> {
   const { data } = await apiClient.put<AdminUser>(`/admin/users/${id}`, updates)
+  return data
+}
+
+export async function updateVIPMode(
+  id: number,
+  request: {
+    vip_mode: 'AUTO' | 'FORCE_ON' | 'FORCE_OFF'
+    vip_override_reason: string
+  }
+): Promise<AdminUser> {
+  const { data } = await apiClient.put<AdminUser>(`/admin/users/${id}/vip-mode`, request)
+  return data
+}
+
+export async function getVIPAudit(
+  id: number,
+  page: number = 1,
+  pageSize: number = 20
+): Promise<PaginatedResponse<VIPAuditEvent>> {
+  const { data } = await apiClient.get<PaginatedResponse<VIPAuditEvent>>(
+    `/admin/users/${id}/vip-audit`,
+    { params: { page, page_size: pageSize } }
+  )
+  return data
+}
+
+export async function getGroupCatalog(id: number): Promise<AdminGroupCatalogEntry[]> {
+  const { data } = await apiClient.get<AdminGroupCatalogEntry[]>(
+    `/admin/users/${id}/group-catalog`
+  )
+  return data
+}
+
+export async function getVIPReconcilePreview(
+  cursor: string = '',
+  limit: number = 50
+): Promise<VIPReconcilePreview> {
+  const { data } = await apiClient.get<VIPReconcilePreview>(
+    '/admin/users/vip-reconcile/preview',
+    {
+      params: {
+        cursor: cursor || undefined,
+        limit
+      }
+    }
+  )
+  return data
+}
+
+export async function createVIPReconcileJob(
+  request: CreateVIPReconcileJobRequest
+): Promise<CreateVIPReconcileJobResponse> {
+  const { data } = await apiClient.post<CreateVIPReconcileJobResponse>(
+    '/admin/users/vip-reconcile/jobs',
+    request
+  )
+  return data
+}
+
+export async function getVIPReconcileJob(jobId: number): Promise<VIPReconcileJob> {
+  const { data } = await apiClient.get<VIPReconcileJob>(
+    `/admin/users/vip-reconcile/jobs/${jobId}`
+  )
   return data
 }
 
@@ -406,6 +484,12 @@ export const usersAPI = {
   getById,
   create,
   update,
+  updateVIPMode,
+  getVIPAudit,
+  getGroupCatalog,
+  getVIPReconcilePreview,
+  createVIPReconcileJob,
+  getVIPReconcileJob,
   delete: deleteUser,
   updateBalance,
   updateConcurrency,

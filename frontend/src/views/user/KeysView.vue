@@ -502,6 +502,12 @@
                 :peak-rate-multiplier="(option as unknown as GroupOption).peakRateMultiplier"
                 :description="(option as unknown as GroupOption).description"
                 :selected="selected"
+                :vip-only="(option as unknown as GroupOption).vipOnly"
+                :can-bind="(option as unknown as GroupOption).canBind"
+                :deny-reason="(option as unknown as GroupOption).denyReason"
+                :suggested-action="(option as unknown as GroupOption).suggestedAction"
+                :allow-payment-action="true"
+                @action="handleGroupAccessAction"
               />
             </template>
           </Select>
@@ -1074,18 +1080,25 @@
           </div>
         </div>
         <!-- Group list -->
-        <div class="max-h-80 overflow-y-auto p-1.5">
-          <button
+        <div class="max-h-80 overflow-y-auto p-1.5" role="listbox" :aria-label="t('keys.groupLabel')">
+          <div
             v-for="option in filteredGroupOptions"
             :key="option.value ?? 'null'"
-            @click="changeGroup(selectedKeyForGroup!, option.value)"
+            role="option"
+            :tabindex="option.canBind ? 0 : -1"
+            :aria-selected="selectedKeyForGroup?.group_id === option.value"
+            :aria-disabled="!option.canBind"
+            @click="option.canBind && changeGroup(selectedKeyForGroup!, option.value)"
+            @keydown.enter.prevent="option.canBind && changeGroup(selectedKeyForGroup!, option.value)"
+            @keydown.space.prevent="option.canBind && changeGroup(selectedKeyForGroup!, option.value)"
             :class="[
               'flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm transition-colors',
               'border-b border-gray-100 last:border-0 dark:border-dark-700',
+              option.canBind ? 'cursor-pointer' : 'cursor-not-allowed opacity-80',
               selectedKeyForGroup?.group_id === option.value ||
               (!selectedKeyForGroup?.group_id && option.value === null)
                 ? 'bg-primary-50 dark:bg-primary-900/20'
-                : 'hover:bg-gray-100 dark:hover:bg-dark-700'
+                : option.canBind ? 'hover:bg-gray-100 dark:hover:bg-dark-700' : ''
             ]"
             :title="option.description || undefined"
           >
@@ -1100,12 +1113,18 @@
               :peak-end="option.peakEnd"
               :peak-rate-multiplier="option.peakRateMultiplier"
               :description="option.description"
+              :vip-only="option.vipOnly"
+              :can-bind="option.canBind"
+              :deny-reason="option.denyReason"
+              :suggested-action="option.suggestedAction"
+              :allow-payment-action="true"
               :selected="
                 selectedKeyForGroup?.group_id === option.value ||
                 (!selectedKeyForGroup?.group_id && option.value === null)
               "
+              @action="handleGroupAccessAction"
             />
-          </button>
+          </div>
           <!-- Empty state when search has no results -->
           <div v-if="filteredGroupOptions.length === 0" class="py-4 text-center text-sm text-gray-400 dark:text-gray-500">
             {{ t('keys.noGroupFound') }}
@@ -1140,11 +1159,13 @@ import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 	import EndpointPopover from '@/components/keys/EndpointPopover.vue'
 	import GroupBadge from '@/components/common/GroupBadge.vue'
 	import GroupOptionItem from '@/components/common/GroupOptionItem.vue'
-	import type { ApiKey, Group, PublicSettings, SubscriptionType, GroupPlatform, UpdateApiKeyRequest } from '@/types'
+	import type { ApiKey, GroupCatalogEntry, PublicSettings, SubscriptionType, GroupPlatform, UpdateApiKeyRequest } from '@/types'
 import type { Column } from '@/components/common/types'
 import type { BatchApiKeyUsageStats } from '@/api/usage'
 import { formatDateTime } from '@/utils/format'
 import { maskApiKey } from '@/utils/maskApiKey'
+import { extractI18nErrorMessage } from '@/utils/apiError'
+import { getGroupDenyMessageKey, isGroupBindable } from '@/utils/vipAccess'
 import {
   buildCcSwitchImportDeeplink,
   type CcSwitchClientType
@@ -1169,6 +1190,11 @@ interface GroupOption {
   peakRateMultiplier: number
   subscriptionType: SubscriptionType
   platform: GroupPlatform
+  disabled: boolean
+  vipOnly: boolean
+  canBind: boolean
+  denyReason: string | null
+  suggestedAction: string | null
 }
 
 const appStore = useAppStore()
@@ -1270,7 +1296,7 @@ const columns = computed<Column[]>(() =>
 )
 
 const apiKeys = ref<ApiKey[]>([])
-const groups = ref<Group[]>([])
+const groups = ref<GroupCatalogEntry[]>([])
 const loading = ref(false)
 const submitting = ref(false)
 const now = ref(new Date())
@@ -1420,7 +1446,12 @@ const groupOptions = computed(() =>
     peakEnd: group.peak_end,
     peakRateMultiplier: group.peak_rate_multiplier,
     subscriptionType: group.subscription_type,
-    platform: group.platform
+    platform: group.platform,
+    disabled: !isGroupBindable(group),
+    vipOnly: group.vip_only === true,
+    canBind: isGroupBindable(group),
+    denyReason: typeof group.deny_reason === 'string' ? group.deny_reason : null,
+    suggestedAction: typeof group.suggested_action === 'string' ? group.suggested_action : null,
   }))
 )
 
@@ -1631,6 +1662,12 @@ const openGroupSelector = (key: ApiKey) => {
 }
 
 const changeGroup = async (key: ApiKey, newGroupId: number | null) => {
+  const targetOption = groupOptions.value.find((option) => option.value === newGroupId)
+  if (!targetOption?.canBind) {
+    appStore.showError(t(getGroupDenyMessageKey(targetOption?.denyReason)))
+    return
+  }
+
   groupSelectorKeyId.value = null
   dropdownPosition.value = null
   if (key.group_id === newGroupId) return
@@ -1639,8 +1676,19 @@ const changeGroup = async (key: ApiKey, newGroupId: number | null) => {
     await keysAPI.update(key.id, { group_id: newGroupId })
     appStore.showSuccess(t('keys.groupChangedSuccess'))
     loadApiKeys()
-  } catch (error) {
-    appStore.showError(t('keys.failedToChangeGroup'))
+  } catch (error: unknown) {
+    appStore.showError(extractI18nErrorMessage(
+      error,
+      t,
+      'vip.group.errors',
+      t('keys.failedToChangeGroup'),
+    ))
+  }
+}
+
+const handleGroupAccessAction = (action: 'PAYMENT') => {
+  if (action === 'PAYMENT') {
+    window.location.assign('/purchase')
   }
 }
 
@@ -1665,6 +1713,16 @@ const handleSubmit = async () => {
   // Validate group_id is required
   if (formData.value.group_id === null) {
     appStore.showError(t('keys.groupRequired'))
+    return
+  }
+
+  const selectedGroupOption = groupOptions.value.find(
+    (option) => option.value === formData.value.group_id,
+  )
+  const editingOriginalGroup = showEditModal.value
+    && selectedKey.value?.group_id === formData.value.group_id
+  if (!editingOriginalGroup && !selectedGroupOption?.canBind) {
+    appStore.showError(t(getGroupDenyMessageKey(selectedGroupOption?.denyReason)))
     return
   }
 
@@ -1720,7 +1778,6 @@ const handleSubmit = async () => {
     if (showEditModal.value && selectedKey.value) {
       const updates: UpdateApiKeyRequest = {
         name: formData.value.name,
-        group_id: formData.value.group_id,
         ip_whitelist: ipWhitelist,
         ip_blacklist: ipBlacklist,
         quota: quota,
@@ -1728,6 +1785,9 @@ const handleSubmit = async () => {
         rate_limit_5h: rateLimitData.rate_limit_5h,
         rate_limit_1d: rateLimitData.rate_limit_1d,
         rate_limit_7d: rateLimitData.rate_limit_7d,
+      }
+      if (selectedKey.value.group_id !== formData.value.group_id) {
+        updates.group_id = formData.value.group_id
       }
       if (shouldSubmitEditStatus(selectedKey.value, formData.value.status)) {
         updates.status = formData.value.status
@@ -1754,9 +1814,13 @@ const handleSubmit = async () => {
     }
     closeModals()
     loadApiKeys()
-  } catch (error: any) {
-    const errorMsg = error.response?.data?.detail || t('keys.failedToSave')
-    appStore.showError(errorMsg)
+  } catch (error: unknown) {
+    appStore.showError(extractI18nErrorMessage(
+      error,
+      t,
+      'vip.group.errors',
+      t('keys.failedToSave'),
+    ))
     // Don't advance tour on error
   } finally {
     submitting.value = false

@@ -61,6 +61,26 @@ const (
 	FieldBalanceNotifyExtraEmails = "balance_notify_extra_emails"
 	// FieldTotalRecharged holds the string denoting the total_recharged field in the database.
 	FieldTotalRecharged = "total_recharged"
+	// FieldVipPaidEligible holds the string denoting the vip_paid_eligible field in the database.
+	FieldVipPaidEligible = "vip_paid_eligible"
+	// FieldVipPaidEligibleAt holds the string denoting the vip_paid_eligible_at field in the database.
+	FieldVipPaidEligibleAt = "vip_paid_eligible_at"
+	// FieldVipPaidSource holds the string denoting the vip_paid_source field in the database.
+	FieldVipPaidSource = "vip_paid_source"
+	// FieldVipManualOverride holds the string denoting the vip_manual_override field in the database.
+	FieldVipManualOverride = "vip_manual_override"
+	// FieldVipOverrideAt holds the string denoting the vip_override_at field in the database.
+	FieldVipOverrideAt = "vip_override_at"
+	// FieldVipOverrideBy holds the string denoting the vip_override_by field in the database.
+	FieldVipOverrideBy = "vip_override_by"
+	// FieldVipOverrideReason holds the string denoting the vip_override_reason field in the database.
+	FieldVipOverrideReason = "vip_override_reason"
+	// FieldIsVip holds the string denoting the is_vip field in the database.
+	FieldIsVip = "is_vip"
+	// FieldVipGrantedAt holds the string denoting the vip_granted_at field in the database.
+	FieldVipGrantedAt = "vip_granted_at"
+	// FieldVipEffectiveSource holds the string denoting the vip_effective_source field in the database.
+	FieldVipEffectiveSource = "vip_effective_source"
 	// FieldRpmLimit holds the string denoting the rpm_limit field in the database.
 	FieldRpmLimit = "rpm_limit"
 	// EdgeAPIKeys holds the string denoting the api_keys edge name in mutations.
@@ -217,6 +237,16 @@ var Columns = []string{
 	FieldBalanceNotifyThreshold,
 	FieldBalanceNotifyExtraEmails,
 	FieldTotalRecharged,
+	FieldVipPaidEligible,
+	FieldVipPaidEligibleAt,
+	FieldVipPaidSource,
+	FieldVipManualOverride,
+	FieldVipOverrideAt,
+	FieldVipOverrideBy,
+	FieldVipOverrideReason,
+	FieldIsVip,
+	FieldVipGrantedAt,
+	FieldVipEffectiveSource,
 	FieldRpmLimit,
 }
 
@@ -288,6 +318,20 @@ var (
 	DefaultBalanceNotifyExtraEmails string
 	// DefaultTotalRecharged holds the default value on creation for the "total_recharged" field.
 	DefaultTotalRecharged float64
+	// DefaultVipPaidEligible holds the default value on creation for the "vip_paid_eligible" field.
+	DefaultVipPaidEligible bool
+	// DefaultVipPaidSource holds the default value on creation for the "vip_paid_source" field.
+	DefaultVipPaidSource string
+	// VipPaidSourceValidator is a validator for the "vip_paid_source" field. It is called by the builders before save.
+	VipPaidSourceValidator func(string) error
+	// DefaultVipOverrideReason holds the default value on creation for the "vip_override_reason" field.
+	DefaultVipOverrideReason string
+	// DefaultIsVip holds the default value on creation for the "is_vip" field.
+	DefaultIsVip bool
+	// DefaultVipEffectiveSource holds the default value on creation for the "vip_effective_source" field.
+	DefaultVipEffectiveSource string
+	// VipEffectiveSourceValidator is a validator for the "vip_effective_source" field. It is called by the builders before save.
+	VipEffectiveSourceValidator func(string) error
 	// DefaultRpmLimit holds the default value on creation for the "rpm_limit" field.
 	DefaultRpmLimit int
 )
@@ -413,6 +457,56 @@ func ByBalanceNotifyExtraEmails(opts ...sql.OrderTermOption) OrderOption {
 // ByTotalRecharged orders the results by the total_recharged field.
 func ByTotalRecharged(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldTotalRecharged, opts...).ToFunc()
+}
+
+// ByVipPaidEligible orders the results by the vip_paid_eligible field.
+func ByVipPaidEligible(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldVipPaidEligible, opts...).ToFunc()
+}
+
+// ByVipPaidEligibleAt orders the results by the vip_paid_eligible_at field.
+func ByVipPaidEligibleAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldVipPaidEligibleAt, opts...).ToFunc()
+}
+
+// ByVipPaidSource orders the results by the vip_paid_source field.
+func ByVipPaidSource(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldVipPaidSource, opts...).ToFunc()
+}
+
+// ByVipManualOverride orders the results by the vip_manual_override field.
+func ByVipManualOverride(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldVipManualOverride, opts...).ToFunc()
+}
+
+// ByVipOverrideAt orders the results by the vip_override_at field.
+func ByVipOverrideAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldVipOverrideAt, opts...).ToFunc()
+}
+
+// ByVipOverrideBy orders the results by the vip_override_by field.
+func ByVipOverrideBy(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldVipOverrideBy, opts...).ToFunc()
+}
+
+// ByVipOverrideReason orders the results by the vip_override_reason field.
+func ByVipOverrideReason(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldVipOverrideReason, opts...).ToFunc()
+}
+
+// ByIsVip orders the results by the is_vip field.
+func ByIsVip(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldIsVip, opts...).ToFunc()
+}
+
+// ByVipGrantedAt orders the results by the vip_granted_at field.
+func ByVipGrantedAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldVipGrantedAt, opts...).ToFunc()
+}
+
+// ByVipEffectiveSource orders the results by the vip_effective_source field.
+func ByVipEffectiveSource(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldVipEffectiveSource, opts...).ToFunc()
 }
 
 // ByRpmLimit orders the results by the rpm_limit field.

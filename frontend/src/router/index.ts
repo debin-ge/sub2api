@@ -506,6 +506,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/users/vip-reconcile',
+    name: 'AdminVIPReconcile',
+    component: () => import('@/views/admin/VIPReconcileView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'VIP Reconciliation',
+      titleKey: 'admin.vipReconcile.title',
+      descriptionKey: 'admin.vipReconcile.description'
+    }
+  },
+  {
     path: '/admin/groups',
     name: 'AdminGroups',
     component: () => import('@/views/admin/GroupsView.vue'),

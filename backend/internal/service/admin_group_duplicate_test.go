@@ -10,6 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/stretchr/testify/require"
 )
 
@@ -233,6 +234,43 @@ func TestDuplicateGroupCopiesConfigurationDeeplyAndResetsRuntimeState(t *testing
 	require.Equal(t, "gpt-5.4", source.ModelsListConfig.Models[0])
 	require.Equal(t, "xhigh", source.ReasoningEffortMappings[0].To)
 	require.Equal(t, 11.0, *source.DailyLimitUSD)
+}
+
+func TestCloneGroupForDuplicateCopiesVIPOnly(t *testing.T) {
+	source := &Group{
+		ID:               7,
+		Name:             "VIP standard",
+		Platform:         PlatformAnthropic,
+		Status:           StatusActive,
+		SubscriptionType: SubscriptionTypeStandard,
+		VIPOnly:          true,
+	}
+
+	duplicate := cloneGroupForDuplicate(source, "operation")
+
+	require.True(t, duplicate.VIPOnly)
+	require.Equal(t, SubscriptionTypeStandard, duplicate.SubscriptionType)
+	require.Equal(t, duplicateGroupInactiveStatus, duplicate.Status)
+}
+
+func TestDuplicateGroupHonorsVIPConfigWriteGate(t *testing.T) {
+	source := &Group{
+		ID:               7,
+		Name:             "VIP standard",
+		Platform:         PlatformAnthropic,
+		Status:           StatusActive,
+		SubscriptionType: SubscriptionTypeStandard,
+		VIPOnly:          true,
+	}
+	repo := newDuplicateGroupRepoStub(source)
+	svc := &adminServiceImpl{groupRepo: repo, groupDuplicateRepo: repo}
+
+	duplicate, err := svc.DuplicateGroup(context.Background(), source.ID, "admin:1", "key")
+
+	require.Error(t, err)
+	require.Equal(t, GroupVIPConfigWriteDisabledReason, infraerrors.Reason(err))
+	require.Nil(t, duplicate)
+	require.Len(t, repo.groups, 1)
 }
 
 func TestDuplicateGroupRecoversSameOperationAndScopesByAdmin(t *testing.T) {

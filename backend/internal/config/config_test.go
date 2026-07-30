@@ -21,6 +21,67 @@ func resetViperWithJWTSecret(t *testing.T) {
 	t.Setenv("CONFIG_FILE", "")
 	t.Setenv("DATA_DIR", "")
 	t.Setenv("JWT_SECRET", strings.Repeat("x", 32))
+	t.Setenv("GROUP_ACCESS_RUNTIME_MODE", GroupAccessRuntimeModeAuditOnly)
+}
+
+func TestGroupAccessRuntimeModeRequiresExplicitValidValue(t *testing.T) {
+	t.Run("missing", func(t *testing.T) {
+		cfg := validConfigForTest(t)
+		cfg.GroupAccessRuntimeModeConfigured = false
+		require.ErrorContains(t, cfg.Validate(), "must be explicitly configured")
+	})
+
+	for _, mode := range []string{GroupAccessRuntimeModeAuditOnly, GroupAccessRuntimeModeEnforce} {
+		t.Run(strings.ToLower(mode), func(t *testing.T) {
+			cfg := validConfigForTest(t)
+			cfg.GroupAccessRuntimeMode = "  " + strings.ToLower(mode) + "  "
+			require.NoError(t, cfg.Validate())
+			require.Equal(t, mode, cfg.GroupAccessRuntimeMode)
+		})
+	}
+
+	t.Run("unknown", func(t *testing.T) {
+		cfg := validConfigForTest(t)
+		cfg.GroupAccessRuntimeMode = "shadow"
+		require.ErrorContains(t, cfg.Validate(), "AUDIT_ONLY or ENFORCE")
+	})
+}
+
+func TestLoadGroupAccessRuntimeModeIsStrict(t *testing.T) {
+	t.Run("missing", func(t *testing.T) {
+		viper.Reset()
+		t.Cleanup(viper.Reset)
+		t.Setenv("CONFIG_FILE", "")
+		t.Setenv("DATA_DIR", "")
+		t.Setenv("JWT_SECRET", strings.Repeat("x", 32))
+		previous, existed := os.LookupEnv("GROUP_ACCESS_RUNTIME_MODE")
+		require.NoError(t, os.Unsetenv("GROUP_ACCESS_RUNTIME_MODE"))
+		t.Cleanup(func() {
+			if existed {
+				_ = os.Setenv("GROUP_ACCESS_RUNTIME_MODE", previous)
+			} else {
+				_ = os.Unsetenv("GROUP_ACCESS_RUNTIME_MODE")
+			}
+		})
+
+		_, err := Load()
+		require.ErrorContains(t, err, "must be explicitly configured")
+	})
+
+	t.Run("unknown", func(t *testing.T) {
+		resetViperWithJWTSecret(t)
+		t.Setenv("GROUP_ACCESS_RUNTIME_MODE", "shadow")
+		_, err := Load()
+		require.ErrorContains(t, err, "AUDIT_ONLY or ENFORCE")
+	})
+
+	t.Run("normalized enforce", func(t *testing.T) {
+		resetViperWithJWTSecret(t)
+		t.Setenv("GROUP_ACCESS_RUNTIME_MODE", " enforce ")
+		cfg, err := Load()
+		require.NoError(t, err)
+		require.Equal(t, GroupAccessRuntimeModeEnforce, cfg.GroupAccessRuntimeMode)
+	})
 }
 
 func TestModelCatalogDefaults(t *testing.T) {
@@ -613,6 +674,7 @@ func TestLoadForBootstrapAllowsMissingJWTSecret(t *testing.T) {
 	t.Setenv("CONFIG_FILE", "")
 	t.Setenv("DATA_DIR", "")
 	t.Setenv("JWT_SECRET", "")
+	t.Setenv("GROUP_ACCESS_RUNTIME_MODE", GroupAccessRuntimeModeAuditOnly)
 
 	cfg, err := LoadForBootstrap()
 	if err != nil {

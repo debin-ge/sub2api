@@ -861,6 +861,7 @@ func (s *GatewayService) resolveGatewayGroup(ctx context.Context, groupID *int64
 
 	currentID := *groupID
 	visited := map[int64]struct{}{}
+	var sourceGroup *Group
 	for {
 		if _, seen := visited[currentID]; seen {
 			return nil, nil, fmt.Errorf("fallback group cycle detected")
@@ -871,6 +872,11 @@ func (s *GatewayService) resolveGatewayGroup(ctx context.Context, groupID *int64
 		if err != nil {
 			return nil, nil, err
 		}
+		if sourceGroup != nil {
+			if err := s.ResolveAuthorizedFallback(ctx, sourceGroup, group, GroupAccessRuntimeEntryFallback); err != nil {
+				return nil, nil, err
+			}
+		}
 
 		if !group.ClaudeCodeOnly || IsClaudeCodeClient(ctx) {
 			return group, &currentID, nil
@@ -879,6 +885,7 @@ func (s *GatewayService) resolveGatewayGroup(ctx context.Context, groupID *int64
 		if group.FallbackGroupID == nil {
 			return nil, nil, ErrClaudeCodeOnly
 		}
+		sourceGroup = group
 		currentID = *group.FallbackGroupID
 	}
 }

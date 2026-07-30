@@ -71,6 +71,10 @@ type UserListFilters struct {
 	Search    string // Search in email, username
 	UserID    int64  // Exact user ID filter; 0 means no filter
 	GroupName string // Filter by allowed group name (fuzzy match)
+	// IsVIP filters by the final materialized entitlement state.
+	IsVIP *bool
+	// VIPMode accepts AUTO, FORCE_ON, or FORCE_OFF. Empty means no filter.
+	VIPMode VIPMode
 	// APIKeyGroupID filters users who own at least one non-soft-deleted API key
 	// bound to this group (api_keys.group_id). 0 = no filter. Covers all three
 	// group types since it matches the key's group directly, not allowed_groups.

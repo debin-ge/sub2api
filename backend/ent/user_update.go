@@ -411,6 +411,183 @@ func (_u *UserUpdate) AddTotalRecharged(v float64) *UserUpdate {
 	return _u
 }
 
+// SetVipPaidEligible sets the "vip_paid_eligible" field.
+func (_u *UserUpdate) SetVipPaidEligible(v bool) *UserUpdate {
+	_u.mutation.SetVipPaidEligible(v)
+	return _u
+}
+
+// SetNillableVipPaidEligible sets the "vip_paid_eligible" field if the given value is not nil.
+func (_u *UserUpdate) SetNillableVipPaidEligible(v *bool) *UserUpdate {
+	if v != nil {
+		_u.SetVipPaidEligible(*v)
+	}
+	return _u
+}
+
+// SetVipPaidEligibleAt sets the "vip_paid_eligible_at" field.
+func (_u *UserUpdate) SetVipPaidEligibleAt(v time.Time) *UserUpdate {
+	_u.mutation.SetVipPaidEligibleAt(v)
+	return _u
+}
+
+// SetNillableVipPaidEligibleAt sets the "vip_paid_eligible_at" field if the given value is not nil.
+func (_u *UserUpdate) SetNillableVipPaidEligibleAt(v *time.Time) *UserUpdate {
+	if v != nil {
+		_u.SetVipPaidEligibleAt(*v)
+	}
+	return _u
+}
+
+// ClearVipPaidEligibleAt clears the value of the "vip_paid_eligible_at" field.
+func (_u *UserUpdate) ClearVipPaidEligibleAt() *UserUpdate {
+	_u.mutation.ClearVipPaidEligibleAt()
+	return _u
+}
+
+// SetVipPaidSource sets the "vip_paid_source" field.
+func (_u *UserUpdate) SetVipPaidSource(v string) *UserUpdate {
+	_u.mutation.SetVipPaidSource(v)
+	return _u
+}
+
+// SetNillableVipPaidSource sets the "vip_paid_source" field if the given value is not nil.
+func (_u *UserUpdate) SetNillableVipPaidSource(v *string) *UserUpdate {
+	if v != nil {
+		_u.SetVipPaidSource(*v)
+	}
+	return _u
+}
+
+// SetVipManualOverride sets the "vip_manual_override" field.
+func (_u *UserUpdate) SetVipManualOverride(v bool) *UserUpdate {
+	_u.mutation.SetVipManualOverride(v)
+	return _u
+}
+
+// SetNillableVipManualOverride sets the "vip_manual_override" field if the given value is not nil.
+func (_u *UserUpdate) SetNillableVipManualOverride(v *bool) *UserUpdate {
+	if v != nil {
+		_u.SetVipManualOverride(*v)
+	}
+	return _u
+}
+
+// ClearVipManualOverride clears the value of the "vip_manual_override" field.
+func (_u *UserUpdate) ClearVipManualOverride() *UserUpdate {
+	_u.mutation.ClearVipManualOverride()
+	return _u
+}
+
+// SetVipOverrideAt sets the "vip_override_at" field.
+func (_u *UserUpdate) SetVipOverrideAt(v time.Time) *UserUpdate {
+	_u.mutation.SetVipOverrideAt(v)
+	return _u
+}
+
+// SetNillableVipOverrideAt sets the "vip_override_at" field if the given value is not nil.
+func (_u *UserUpdate) SetNillableVipOverrideAt(v *time.Time) *UserUpdate {
+	if v != nil {
+		_u.SetVipOverrideAt(*v)
+	}
+	return _u
+}
+
+// ClearVipOverrideAt clears the value of the "vip_override_at" field.
+func (_u *UserUpdate) ClearVipOverrideAt() *UserUpdate {
+	_u.mutation.ClearVipOverrideAt()
+	return _u
+}
+
+// SetVipOverrideBy sets the "vip_override_by" field.
+func (_u *UserUpdate) SetVipOverrideBy(v int64) *UserUpdate {
+	_u.mutation.ResetVipOverrideBy()
+	_u.mutation.SetVipOverrideBy(v)
+	return _u
+}
+
+// SetNillableVipOverrideBy sets the "vip_override_by" field if the given value is not nil.
+func (_u *UserUpdate) SetNillableVipOverrideBy(v *int64) *UserUpdate {
+	if v != nil {
+		_u.SetVipOverrideBy(*v)
+	}
+	return _u
+}
+
+// AddVipOverrideBy adds value to the "vip_override_by" field.
+func (_u *UserUpdate) AddVipOverrideBy(v int64) *UserUpdate {
+	_u.mutation.AddVipOverrideBy(v)
+	return _u
+}
+
+// ClearVipOverrideBy clears the value of the "vip_override_by" field.
+func (_u *UserUpdate) ClearVipOverrideBy() *UserUpdate {
+	_u.mutation.ClearVipOverrideBy()
+	return _u
+}
+
+// SetVipOverrideReason sets the "vip_override_reason" field.
+func (_u *UserUpdate) SetVipOverrideReason(v string) *UserUpdate {
+	_u.mutation.SetVipOverrideReason(v)
+	return _u
+}
+
+// SetNillableVipOverrideReason sets the "vip_override_reason" field if the given value is not nil.
+func (_u *UserUpdate) SetNillableVipOverrideReason(v *string) *UserUpdate {
+	if v != nil {
+		_u.SetVipOverrideReason(*v)
+	}
+	return _u
+}
+
+// SetIsVip sets the "is_vip" field.
+func (_u *UserUpdate) SetIsVip(v bool) *UserUpdate {
+	_u.mutation.SetIsVip(v)
+	return _u
+}
+
+// SetNillableIsVip sets the "is_vip" field if the given value is not nil.
+func (_u *UserUpdate) SetNillableIsVip(v *bool) *UserUpdate {
+	if v != nil {
+		_u.SetIsVip(*v)
+	}
+	return _u
+}
+
+// SetVipGrantedAt sets the "vip_granted_at" field.
+func (_u *UserUpdate) SetVipGrantedAt(v time.Time) *UserUpdate {
+	_u.mutation.SetVipGrantedAt(v)
+	return _u
+}
+
+// SetNillableVipGrantedAt sets the "vip_granted_at" field if the given value is not nil.
+func (_u *UserUpdate) SetNillableVipGrantedAt(v *time.Time) *UserUpdate {
+	if v != nil {
+		_u.SetVipGrantedAt(*v)
+	}
+	return _u
+}
+
+// ClearVipGrantedAt clears the value of the "vip_granted_at" field.
+func (_u *UserUpdate) ClearVipGrantedAt() *UserUpdate {
+	_u.mutation.ClearVipGrantedAt()
+	return _u
+}
+
+// SetVipEffectiveSource sets the "vip_effective_source" field.
+func (_u *UserUpdate) SetVipEffectiveSource(v string) *UserUpdate {
+	_u.mutation.SetVipEffectiveSource(v)
+	return _u
+}
+
+// SetNillableVipEffectiveSource sets the "vip_effective_source" field if the given value is not nil.
+func (_u *UserUpdate) SetNillableVipEffectiveSource(v *string) *UserUpdate {
+	if v != nil {
+		_u.SetVipEffectiveSource(*v)
+	}
+	return _u
+}
+
 // SetRpmLimit sets the "rpm_limit" field.
 func (_u *UserUpdate) SetRpmLimit(v int) *UserUpdate {
 	_u.mutation.ResetRpmLimit()
@@ -979,6 +1156,16 @@ func (_u *UserUpdate) check() error {
 			return &ValidationError{Name: "signup_source", err: fmt.Errorf(`ent: validator failed for field "User.signup_source": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.VipPaidSource(); ok {
+		if err := user.VipPaidSourceValidator(v); err != nil {
+			return &ValidationError{Name: "vip_paid_source", err: fmt.Errorf(`ent: validator failed for field "User.vip_paid_source": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.VipEffectiveSource(); ok {
+		if err := user.VipEffectiveSourceValidator(v); err != nil {
+			return &ValidationError{Name: "vip_effective_source", err: fmt.Errorf(`ent: validator failed for field "User.vip_effective_source": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -1092,6 +1279,54 @@ func (_u *UserUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.AddedTotalRecharged(); ok {
 		_spec.AddField(user.FieldTotalRecharged, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.VipPaidEligible(); ok {
+		_spec.SetField(user.FieldVipPaidEligible, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.VipPaidEligibleAt(); ok {
+		_spec.SetField(user.FieldVipPaidEligibleAt, field.TypeTime, value)
+	}
+	if _u.mutation.VipPaidEligibleAtCleared() {
+		_spec.ClearField(user.FieldVipPaidEligibleAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.VipPaidSource(); ok {
+		_spec.SetField(user.FieldVipPaidSource, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.VipManualOverride(); ok {
+		_spec.SetField(user.FieldVipManualOverride, field.TypeBool, value)
+	}
+	if _u.mutation.VipManualOverrideCleared() {
+		_spec.ClearField(user.FieldVipManualOverride, field.TypeBool)
+	}
+	if value, ok := _u.mutation.VipOverrideAt(); ok {
+		_spec.SetField(user.FieldVipOverrideAt, field.TypeTime, value)
+	}
+	if _u.mutation.VipOverrideAtCleared() {
+		_spec.ClearField(user.FieldVipOverrideAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.VipOverrideBy(); ok {
+		_spec.SetField(user.FieldVipOverrideBy, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedVipOverrideBy(); ok {
+		_spec.AddField(user.FieldVipOverrideBy, field.TypeInt64, value)
+	}
+	if _u.mutation.VipOverrideByCleared() {
+		_spec.ClearField(user.FieldVipOverrideBy, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.VipOverrideReason(); ok {
+		_spec.SetField(user.FieldVipOverrideReason, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.IsVip(); ok {
+		_spec.SetField(user.FieldIsVip, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.VipGrantedAt(); ok {
+		_spec.SetField(user.FieldVipGrantedAt, field.TypeTime, value)
+	}
+	if _u.mutation.VipGrantedAtCleared() {
+		_spec.ClearField(user.FieldVipGrantedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.VipEffectiveSource(); ok {
+		_spec.SetField(user.FieldVipEffectiveSource, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.RpmLimit(); ok {
 		_spec.SetField(user.FieldRpmLimit, field.TypeInt, value)
@@ -2087,6 +2322,183 @@ func (_u *UserUpdateOne) AddTotalRecharged(v float64) *UserUpdateOne {
 	return _u
 }
 
+// SetVipPaidEligible sets the "vip_paid_eligible" field.
+func (_u *UserUpdateOne) SetVipPaidEligible(v bool) *UserUpdateOne {
+	_u.mutation.SetVipPaidEligible(v)
+	return _u
+}
+
+// SetNillableVipPaidEligible sets the "vip_paid_eligible" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillableVipPaidEligible(v *bool) *UserUpdateOne {
+	if v != nil {
+		_u.SetVipPaidEligible(*v)
+	}
+	return _u
+}
+
+// SetVipPaidEligibleAt sets the "vip_paid_eligible_at" field.
+func (_u *UserUpdateOne) SetVipPaidEligibleAt(v time.Time) *UserUpdateOne {
+	_u.mutation.SetVipPaidEligibleAt(v)
+	return _u
+}
+
+// SetNillableVipPaidEligibleAt sets the "vip_paid_eligible_at" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillableVipPaidEligibleAt(v *time.Time) *UserUpdateOne {
+	if v != nil {
+		_u.SetVipPaidEligibleAt(*v)
+	}
+	return _u
+}
+
+// ClearVipPaidEligibleAt clears the value of the "vip_paid_eligible_at" field.
+func (_u *UserUpdateOne) ClearVipPaidEligibleAt() *UserUpdateOne {
+	_u.mutation.ClearVipPaidEligibleAt()
+	return _u
+}
+
+// SetVipPaidSource sets the "vip_paid_source" field.
+func (_u *UserUpdateOne) SetVipPaidSource(v string) *UserUpdateOne {
+	_u.mutation.SetVipPaidSource(v)
+	return _u
+}
+
+// SetNillableVipPaidSource sets the "vip_paid_source" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillableVipPaidSource(v *string) *UserUpdateOne {
+	if v != nil {
+		_u.SetVipPaidSource(*v)
+	}
+	return _u
+}
+
+// SetVipManualOverride sets the "vip_manual_override" field.
+func (_u *UserUpdateOne) SetVipManualOverride(v bool) *UserUpdateOne {
+	_u.mutation.SetVipManualOverride(v)
+	return _u
+}
+
+// SetNillableVipManualOverride sets the "vip_manual_override" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillableVipManualOverride(v *bool) *UserUpdateOne {
+	if v != nil {
+		_u.SetVipManualOverride(*v)
+	}
+	return _u
+}
+
+// ClearVipManualOverride clears the value of the "vip_manual_override" field.
+func (_u *UserUpdateOne) ClearVipManualOverride() *UserUpdateOne {
+	_u.mutation.ClearVipManualOverride()
+	return _u
+}
+
+// SetVipOverrideAt sets the "vip_override_at" field.
+func (_u *UserUpdateOne) SetVipOverrideAt(v time.Time) *UserUpdateOne {
+	_u.mutation.SetVipOverrideAt(v)
+	return _u
+}
+
+// SetNillableVipOverrideAt sets the "vip_override_at" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillableVipOverrideAt(v *time.Time) *UserUpdateOne {
+	if v != nil {
+		_u.SetVipOverrideAt(*v)
+	}
+	return _u
+}
+
+// ClearVipOverrideAt clears the value of the "vip_override_at" field.
+func (_u *UserUpdateOne) ClearVipOverrideAt() *UserUpdateOne {
+	_u.mutation.ClearVipOverrideAt()
+	return _u
+}
+
+// SetVipOverrideBy sets the "vip_override_by" field.
+func (_u *UserUpdateOne) SetVipOverrideBy(v int64) *UserUpdateOne {
+	_u.mutation.ResetVipOverrideBy()
+	_u.mutation.SetVipOverrideBy(v)
+	return _u
+}
+
+// SetNillableVipOverrideBy sets the "vip_override_by" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillableVipOverrideBy(v *int64) *UserUpdateOne {
+	if v != nil {
+		_u.SetVipOverrideBy(*v)
+	}
+	return _u
+}
+
+// AddVipOverrideBy adds value to the "vip_override_by" field.
+func (_u *UserUpdateOne) AddVipOverrideBy(v int64) *UserUpdateOne {
+	_u.mutation.AddVipOverrideBy(v)
+	return _u
+}
+
+// ClearVipOverrideBy clears the value of the "vip_override_by" field.
+func (_u *UserUpdateOne) ClearVipOverrideBy() *UserUpdateOne {
+	_u.mutation.ClearVipOverrideBy()
+	return _u
+}
+
+// SetVipOverrideReason sets the "vip_override_reason" field.
+func (_u *UserUpdateOne) SetVipOverrideReason(v string) *UserUpdateOne {
+	_u.mutation.SetVipOverrideReason(v)
+	return _u
+}
+
+// SetNillableVipOverrideReason sets the "vip_override_reason" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillableVipOverrideReason(v *string) *UserUpdateOne {
+	if v != nil {
+		_u.SetVipOverrideReason(*v)
+	}
+	return _u
+}
+
+// SetIsVip sets the "is_vip" field.
+func (_u *UserUpdateOne) SetIsVip(v bool) *UserUpdateOne {
+	_u.mutation.SetIsVip(v)
+	return _u
+}
+
+// SetNillableIsVip sets the "is_vip" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillableIsVip(v *bool) *UserUpdateOne {
+	if v != nil {
+		_u.SetIsVip(*v)
+	}
+	return _u
+}
+
+// SetVipGrantedAt sets the "vip_granted_at" field.
+func (_u *UserUpdateOne) SetVipGrantedAt(v time.Time) *UserUpdateOne {
+	_u.mutation.SetVipGrantedAt(v)
+	return _u
+}
+
+// SetNillableVipGrantedAt sets the "vip_granted_at" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillableVipGrantedAt(v *time.Time) *UserUpdateOne {
+	if v != nil {
+		_u.SetVipGrantedAt(*v)
+	}
+	return _u
+}
+
+// ClearVipGrantedAt clears the value of the "vip_granted_at" field.
+func (_u *UserUpdateOne) ClearVipGrantedAt() *UserUpdateOne {
+	_u.mutation.ClearVipGrantedAt()
+	return _u
+}
+
+// SetVipEffectiveSource sets the "vip_effective_source" field.
+func (_u *UserUpdateOne) SetVipEffectiveSource(v string) *UserUpdateOne {
+	_u.mutation.SetVipEffectiveSource(v)
+	return _u
+}
+
+// SetNillableVipEffectiveSource sets the "vip_effective_source" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillableVipEffectiveSource(v *string) *UserUpdateOne {
+	if v != nil {
+		_u.SetVipEffectiveSource(*v)
+	}
+	return _u
+}
+
 // SetRpmLimit sets the "rpm_limit" field.
 func (_u *UserUpdateOne) SetRpmLimit(v int) *UserUpdateOne {
 	_u.mutation.ResetRpmLimit()
@@ -2668,6 +3080,16 @@ func (_u *UserUpdateOne) check() error {
 			return &ValidationError{Name: "signup_source", err: fmt.Errorf(`ent: validator failed for field "User.signup_source": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.VipPaidSource(); ok {
+		if err := user.VipPaidSourceValidator(v); err != nil {
+			return &ValidationError{Name: "vip_paid_source", err: fmt.Errorf(`ent: validator failed for field "User.vip_paid_source": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.VipEffectiveSource(); ok {
+		if err := user.VipEffectiveSourceValidator(v); err != nil {
+			return &ValidationError{Name: "vip_effective_source", err: fmt.Errorf(`ent: validator failed for field "User.vip_effective_source": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -2798,6 +3220,54 @@ func (_u *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) {
 	}
 	if value, ok := _u.mutation.AddedTotalRecharged(); ok {
 		_spec.AddField(user.FieldTotalRecharged, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.VipPaidEligible(); ok {
+		_spec.SetField(user.FieldVipPaidEligible, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.VipPaidEligibleAt(); ok {
+		_spec.SetField(user.FieldVipPaidEligibleAt, field.TypeTime, value)
+	}
+	if _u.mutation.VipPaidEligibleAtCleared() {
+		_spec.ClearField(user.FieldVipPaidEligibleAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.VipPaidSource(); ok {
+		_spec.SetField(user.FieldVipPaidSource, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.VipManualOverride(); ok {
+		_spec.SetField(user.FieldVipManualOverride, field.TypeBool, value)
+	}
+	if _u.mutation.VipManualOverrideCleared() {
+		_spec.ClearField(user.FieldVipManualOverride, field.TypeBool)
+	}
+	if value, ok := _u.mutation.VipOverrideAt(); ok {
+		_spec.SetField(user.FieldVipOverrideAt, field.TypeTime, value)
+	}
+	if _u.mutation.VipOverrideAtCleared() {
+		_spec.ClearField(user.FieldVipOverrideAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.VipOverrideBy(); ok {
+		_spec.SetField(user.FieldVipOverrideBy, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedVipOverrideBy(); ok {
+		_spec.AddField(user.FieldVipOverrideBy, field.TypeInt64, value)
+	}
+	if _u.mutation.VipOverrideByCleared() {
+		_spec.ClearField(user.FieldVipOverrideBy, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.VipOverrideReason(); ok {
+		_spec.SetField(user.FieldVipOverrideReason, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.IsVip(); ok {
+		_spec.SetField(user.FieldIsVip, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.VipGrantedAt(); ok {
+		_spec.SetField(user.FieldVipGrantedAt, field.TypeTime, value)
+	}
+	if _u.mutation.VipGrantedAtCleared() {
+		_spec.ClearField(user.FieldVipGrantedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.VipEffectiveSource(); ok {
+		_spec.SetField(user.FieldVipEffectiveSource, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.RpmLimit(); ok {
 		_spec.SetField(user.FieldRpmLimit, field.TypeInt, value)

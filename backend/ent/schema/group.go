@@ -63,6 +63,10 @@ func (Group) Fields() []ent.Field {
 			Comment("高峰时段叠加倍率，仅在 peak_rate_enabled 且处于 [peak_start, peak_end) 时乘入文本倍率"),
 		field.Bool("is_exclusive").
 			Default(false),
+		// 付费 VIP (local extension; added by migration 192)
+		field.Bool("vip_only").
+			Default(false).
+			Comment("仅当前有效 VIP 用户可以绑定和使用该标准分组"),
 		field.String("status").
 			MaxLen(20).
 			Default(domain.StatusActive),

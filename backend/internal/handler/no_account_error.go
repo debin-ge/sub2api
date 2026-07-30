@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
@@ -30,6 +31,91 @@ type noAccountErrorClassification struct {
 	ErrType       string
 	Message       string
 	ModelNotFound bool // true when this is a 404 model_not_found classification
+}
+
+type groupAccessSelectionError struct {
+	Status     int
+	Reason     string
+	Message    string
+	OpenAIType string
+}
+
+// classifyGroupAccessSelectionError recognizes the typed access/configuration
+// failures emitted while resolving a fallback target. Callers must run this
+// before the generic no-account classifier so an exact 403/500/503 is not
+// rewritten as a retryable capacity error.
+func classifyGroupAccessSelectionError(err error) (groupAccessSelectionError, bool) {
+	reason := infraerrors.Reason(err)
+	switch service.GroupAccessDenyReason(reason) {
+	case service.GroupAccessDenyGroupNotAllowed,
+		service.GroupAccessDenyVIPOnly,
+		service.GroupAccessDenyProfileMissing,
+		service.GroupAccessDenyFallbackInvalidConfig,
+		service.GroupAccessDenyGroupInactive,
+		service.GroupAccessDenySubscriptionRequired:
+		return groupAccessSelectionError{
+			Status:     infraerrors.Code(err),
+			Reason:     reason,
+			Message:    infraerrors.Message(err),
+			OpenAIType: openAICompatibleErrorType(infraerrors.Code(err)),
+		}, true
+	case service.GroupAccessDenyFallbackSubscription:
+		// This reason belongs to write-time validation. If it reaches the
+		// gateway through a legacy path, preserve the runtime contract: a
+		// subscription fallback is invalid configuration, not a client error.
+		return groupAccessSelectionError{
+			Status:     http.StatusServiceUnavailable,
+			Reason:     string(service.GroupAccessDenyFallbackInvalidConfig),
+			Message:    "fallback group configuration is invalid",
+			OpenAIType: "api_error",
+		}, true
+	default:
+		return groupAccessSelectionError{}, false
+	}
+}
+
+func openAICompatibleErrorType(status int) string {
+	switch status {
+	case http.StatusBadRequest:
+		return "invalid_request_error"
+	case http.StatusUnauthorized:
+		return "authentication_error"
+	case http.StatusForbidden:
+		return "permission_error"
+	default:
+		return "api_error"
+	}
+}
+
+// handleOpenAICompatibleGroupAccessSelectionError writes the common error
+// envelope used by the fork gateways. It deliberately runs before their
+// failover/capacity handling so a typed authorization failure cannot become a
+// retryable 503. Once streaming has started the response cannot be rewritten,
+// but the error is still consumed and the handler must stop.
+func handleOpenAICompatibleGroupAccessSelectionError(
+	c *gin.Context,
+	err error,
+	streamStarted bool,
+) bool {
+	if err == nil {
+		return false
+	}
+	accessErr, ok := classifyGroupAccessSelectionError(err)
+	if !ok {
+		return false
+	}
+	if streamStarted || c == nil {
+		return true
+	}
+	c.JSON(accessErr.Status, gin.H{
+		"type": "error",
+		"error": gin.H{
+			"type":    accessErr.OpenAIType,
+			"code":    accessErr.Reason,
+			"message": accessErr.Message,
+		},
+	})
+	return true
 }
 
 // classifyNoAccountError decides between 404 model_not_found and 503

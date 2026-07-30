@@ -68,6 +68,35 @@
               />
             </div>
 
+            <!-- Effective VIP + explicit mode filters are always visible so entitlement
+                 operations do not get hidden behind saved filter preferences. -->
+            <div class="w-full sm:w-36">
+              <Select
+                v-model="filters.isVip"
+                data-test="is-vip-filter"
+                :options="[
+                  { value: '', label: t('admin.users.vip.filters.allEffective') },
+                  { value: 'true', label: t('admin.users.vip.filters.effective') },
+                  { value: 'false', label: t('admin.users.vip.filters.notEffective') }
+                ]"
+                @change="applyFilter"
+              />
+            </div>
+
+            <div class="w-full sm:w-40">
+              <Select
+                v-model="filters.vipMode"
+                data-test="vip-mode-filter"
+                :options="[
+                  { value: '', label: t('admin.users.vip.filters.allModes') },
+                  { value: 'AUTO', label: t('admin.users.vip.modes.AUTO') },
+                  { value: 'FORCE_ON', label: t('admin.users.vip.modes.FORCE_ON') },
+                  { value: 'FORCE_OFF', label: t('admin.users.vip.modes.FORCE_OFF') }
+                ]"
+                @change="applyFilter"
+              />
+            </div>
+
             <!-- Group Filter (visible when enabled) -->
             <div v-if="visibleFilters.has('group')" class="w-full sm:w-44">
               <Select
@@ -291,7 +320,7 @@
           selectable
           :selected-keys="selectedIds"
           :selection-label="getUserSelectionLabel"
-          :actions-count="7"
+          :actions-count="8"
           :server-side-sort="true"
           default-sort-key="created_at"
           default-sort-order="desc"
@@ -349,6 +378,37 @@
             <span :class="['badge', value === 'admin' ? 'badge-purple' : 'badge-gray']">
               {{ t('admin.users.roles.' + value) }}
             </span>
+          </template>
+
+          <template #cell-vip="{ row }">
+            <div
+              class="group/vip relative inline-flex flex-col items-start gap-1"
+              :title="getVIPTooltip(row)"
+              tabindex="0"
+              data-test="vip-status-cell"
+            >
+              <span
+                :class="[
+                  'inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold',
+                  row.is_vip === true
+                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/35 dark:text-amber-200'
+                    : row.is_vip === false
+                      ? 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-300'
+                      : 'bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-300'
+                ]"
+              >
+                {{ effectiveVIPLabel(row.is_vip) }}
+              </span>
+              <span class="text-[11px] text-gray-500 dark:text-gray-400">
+                {{ vipModeLabel(row.vip_mode) }}
+              </span>
+              <div
+                class="pointer-events-none absolute left-0 top-full z-50 mt-1.5 hidden w-72 whitespace-pre-line rounded-lg bg-gray-900 px-3 py-2 text-left text-xs leading-relaxed text-white shadow-xl group-hover/vip:block group-focus-within/vip:block dark:bg-dark-600"
+                role="tooltip"
+              >
+                {{ getVIPTooltip(row) }}
+              </div>
+            </div>
           </template>
 
           <template #cell-groups="{ row }">
@@ -750,6 +810,15 @@
                 {{ t('admin.users.balanceHistory') }}
               </button>
 
+              <button
+                @click="handleVIPAudit(user); closeActionMenu()"
+                class="flex w-full items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-dark-700"
+                data-test="open-vip-audit"
+              >
+                <Icon name="shield" size="sm" class="text-amber-500" :stroke-width="2" />
+                {{ t('admin.users.vip.auditMenu') }}
+              </button>
+
               <div class="my-1 border-t border-gray-100 dark:border-dark-700"></div>
 
               <!-- Delete (not for admin) -->
@@ -786,7 +855,8 @@
     <UserAllowedGroupsModal :show="showAllowedGroupsModal" :user="allowedGroupsUser" @close="closeAllowedGroupsModal" @success="loadUsers" />
     <UserBalanceModal :show="showBalanceModal" :user="balanceUser" :operation="balanceOperation" @close="closeBalanceModal" @success="loadUsers" />
     <UserBalanceHistoryModal :show="showBalanceHistoryModal" :user="balanceHistoryUser" @close="closeBalanceHistoryModal" @deposit="handleDepositFromHistory" @withdraw="handleWithdrawFromHistory" />
-    <GroupReplaceModal :show="showGroupReplaceModal" :user="groupReplaceUser" :old-group="groupReplaceOldGroup" :all-groups="allGroups" @close="closeGroupReplaceModal" @success="loadUsers" />
+    <GroupReplaceModal :show="showGroupReplaceModal" :user="groupReplaceUser" :old-group="groupReplaceOldGroup" @close="closeGroupReplaceModal" @success="loadUsers" />
+    <UserVIPAuditDrawer :show="showVIPAuditDrawer" :user="vipAuditUser" @close="closeVIPAuditDrawer" />
     <UserAttributesConfigModal :show="showAttributesModal" @close="handleAttributesModalClose" />
   </AppLayout>
 </template>
@@ -831,6 +901,7 @@ import UserAllowedGroupsModal from '@/components/admin/user/UserAllowedGroupsMod
 import UserBalanceModal from '@/components/admin/user/UserBalanceModal.vue'
 import UserBalanceHistoryModal from '@/components/admin/user/UserBalanceHistoryModal.vue'
 import GroupReplaceModal from '@/components/admin/user/GroupReplaceModal.vue'
+import UserVIPAuditDrawer from '@/components/admin/user/UserVIPAuditDrawer.vue'
 
 const appStore = useAppStore()
 
@@ -880,6 +951,50 @@ const getAttributeValue = (userId: number, attrId: number): string => {
   return value
 }
 
+const effectiveVIPLabel = (value: boolean | undefined): string => {
+  if (value === true) return t('admin.users.vip.effectiveActive')
+  if (value === false) return t('admin.users.vip.effectiveInactive')
+  return t('admin.users.vip.effectiveUnknown')
+}
+
+const vipModeLabel = (mode: string | null | undefined): string => {
+  if (mode === 'AUTO' || mode === 'FORCE_ON' || mode === 'FORCE_OFF') {
+    return t(`admin.users.vip.modes.${mode}`)
+  }
+  return t('admin.users.vip.unknownMode', {
+    mode: mode || t('admin.users.vip.unknownValue')
+  })
+}
+
+const formatVIPTime = (value: string | null | undefined): string =>
+  value ? formatDateTime(value) : t('admin.users.vip.notAvailable')
+
+const getVIPTooltip = (user: AdminUser): string => {
+  const lines = [
+    `${t('admin.users.vip.tooltip.effective')}: ${effectiveVIPLabel(user.is_vip)}`,
+    `${t('admin.users.vip.tooltip.mode')}: ${vipModeLabel(user.vip_mode)}`,
+    `${t('admin.users.vip.tooltip.paidEligible')}: ${
+      user.vip_paid_eligible === true
+        ? t('common.yes')
+        : user.vip_paid_eligible === false
+          ? t('common.no')
+          : t('admin.users.vip.unknownValue')
+    }`,
+    `${t('admin.users.vip.tooltip.paidSource')}: ${user.vip_paid_source || t('admin.users.vip.notAvailable')}`,
+    `${t('admin.users.vip.tooltip.paidAt')}: ${formatVIPTime(user.vip_paid_eligible_at)}`,
+    `${t('admin.users.vip.tooltip.effectiveSource')}: ${user.vip_effective_source || t('admin.users.vip.notAvailable')}`,
+    `${t('admin.users.vip.tooltip.grantedAt')}: ${formatVIPTime(user.vip_granted_at)}`
+  ]
+  if (user.vip_override_at || user.vip_override_by || user.vip_override_reason) {
+    lines.push(
+      `${t('admin.users.vip.tooltip.overrideAt')}: ${formatVIPTime(user.vip_override_at)}`,
+      `${t('admin.users.vip.tooltip.overrideBy')}: ${user.vip_override_by ?? t('admin.users.vip.notAvailable')}`,
+      `${t('admin.users.vip.tooltip.overrideReason')}: ${user.vip_override_reason || t('admin.users.vip.notAvailable')}`
+    )
+  }
+  return lines.join('\n')
+}
+
 // All possible columns (for column settings)
 const allColumns = computed<Column[]>(() => [
   { key: 'email', label: t('admin.users.columns.user'), sortable: true },
@@ -889,6 +1004,7 @@ const allColumns = computed<Column[]>(() => [
   // Dynamic attribute columns
   ...attributeColumns.value,
   { key: 'role', label: t('admin.users.columns.role'), sortable: true },
+  { key: 'vip', label: t('admin.users.vip.column'), sortable: false },
   { key: 'groups', label: t('admin.users.columns.groups'), sortable: false },
   { key: 'subscriptions', label: t('admin.users.columns.subscriptions'), sortable: false },
   { key: 'balance', label: t('admin.users.columns.balance'), sortable: true },
@@ -1131,6 +1247,8 @@ const apiKeyGroupFilterOptions = computed(() =>
 const filters = reactive({
   role: '',
   status: '',
+  isVip: '',
+  vipMode: '',
   group: '',  // group name for fuzzy match, '' = all
   apiKeyGroup: null as number | null  // group id bound to the user's API keys, null = all
 })
@@ -1180,6 +1298,10 @@ const loadSavedFilters = () => {
       const parsed = JSON.parse(savedValues)
       if (parsed.role) filters.role = parsed.role
       if (parsed.status) filters.status = parsed.status
+      if (parsed.isVip === 'true' || parsed.isVip === 'false') filters.isVip = parsed.isVip
+      if (['AUTO', 'FORCE_ON', 'FORCE_OFF'].includes(parsed.vipMode)) {
+        filters.vipMode = parsed.vipMode
+      }
       if (parsed.group) filters.group = parsed.group
       if (typeof parsed.apiKeyGroup === 'number') filters.apiKeyGroup = parsed.apiKeyGroup
       if (parsed.attributes) {
@@ -1200,6 +1322,8 @@ const saveFiltersToStorage = () => {
     const values = {
       role: filters.role,
       status: filters.status,
+      isVip: filters.isVip,
+      vipMode: filters.vipMode,
       group: filters.group,
       apiKeyGroup: filters.apiKeyGroup,
       attributes: activeAttributeFilters
@@ -1558,6 +1682,9 @@ const balanceOperation = ref<'add' | 'subtract'>('add')
 const showBalanceHistoryModal = ref(false)
 const balanceHistoryUser = ref<AdminUser | null>(null)
 
+const showVIPAuditDrawer = ref(false)
+const vipAuditUser = ref<AdminUser | null>(null)
+
 // 计算剩余天数
 const getDaysRemaining = (expiresAt: string): number => {
   const now = new Date()
@@ -1606,6 +1733,10 @@ const loadUsers = async () => {
         user_id: userIdQuery.value ? Number(userIdQuery.value) : undefined,
         group_name: filters.group || undefined,
         api_key_group_id: filters.apiKeyGroup ?? undefined,
+        is_vip: filters.isVip === '' ? undefined : filters.isVip === 'true',
+        vip_mode: filters.vipMode === ''
+          ? undefined
+          : filters.vipMode as 'AUTO' | 'FORCE_ON' | 'FORCE_OFF',
         attributes: Object.keys(attrFilters).length > 0 ? attrFilters : undefined,
         // 始终请求 subscriptions：列隐藏时仍需用于 UserPlatformQuotaModal 的 active-subscription 警示 banner
         include_subscriptions: true,
@@ -1833,6 +1964,16 @@ const handleBalanceHistory = (user: AdminUser) => {
 const closeBalanceHistoryModal = () => {
   showBalanceHistoryModal.value = false
   balanceHistoryUser.value = null
+}
+
+const handleVIPAudit = (user: AdminUser) => {
+  vipAuditUser.value = user
+  showVIPAuditDrawer.value = true
+}
+
+const closeVIPAuditDrawer = () => {
+  showVIPAuditDrawer.value = false
+  vipAuditUser.value = null
 }
 
 // Handle deposit from balance history modal

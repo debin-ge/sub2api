@@ -32,6 +32,8 @@ func UserFromServiceShallow(u *service.User) *User {
 		TotalRecharged:             u.TotalRecharged,
 		RPMLimit:                   u.RPMLimit,
 		DeletedAt:                  u.DeletedAt,
+		IsVIP:                      u.IsVIP,
+		VIPAccessState:             u.AccessState(),
 	}
 }
 
@@ -68,10 +70,19 @@ func UserFromServiceAdmin(u *service.User) *AdminUser {
 		return nil
 	}
 	return &AdminUser{
-		User:       *base,
-		Notes:      u.Notes,
-		LastUsedAt: u.LastUsedAt,
-		GroupRates: u.GroupRates,
+		User:               *base,
+		Notes:              u.Notes,
+		LastUsedAt:         u.LastUsedAt,
+		VIPMode:            u.Mode(),
+		VIPPaidEligible:    u.PaidEligible,
+		VIPPaidEligibleAt:  u.PaidEligibleAt,
+		VIPPaidSource:      u.PaidSource,
+		VIPEffectiveSource: u.EffectiveSource,
+		VIPGrantedAt:       u.GrantedAt,
+		VIPOverrideAt:      u.OverrideAt,
+		VIPOverrideBy:      u.OverrideBy,
+		VIPOverrideReason:  u.OverrideReason,
+		GroupRates:         u.GroupRates,
 	}
 }
 
@@ -138,6 +149,36 @@ func GroupFromService(g *service.Group) *Group {
 	return GroupFromServiceShallow(g)
 }
 
+func GroupCatalogEntryFromService(entry *service.GroupCatalogEntry) *GroupCatalogEntry {
+	if entry == nil {
+		return nil
+	}
+	group := GroupFromService(&entry.Group)
+	if group == nil {
+		return nil
+	}
+	return &GroupCatalogEntry{
+		Group:           *group,
+		CanBind:         entry.CanBind,
+		DenyReason:      entry.DenyReason,
+		SuggestedAction: entry.SuggestedAction,
+	}
+}
+
+func AdminGroupCatalogEntryFromService(entry *service.AdminGroupCatalogEntry) *AdminGroupCatalogEntry {
+	if entry == nil {
+		return nil
+	}
+	base := GroupCatalogEntryFromService(&entry.GroupCatalogEntry)
+	if base == nil {
+		return nil
+	}
+	return &AdminGroupCatalogEntry{
+		GroupCatalogEntry:  *base,
+		WillGrantExclusive: entry.WillGrantExclusive,
+	}
+}
+
 // GroupFromServiceAdmin converts a service Group to DTO for admin users.
 // It includes internal fields like model_routing and account_count.
 func GroupFromServiceAdmin(g *service.Group) *AdminGroup {
@@ -176,6 +217,7 @@ func groupFromServiceBase(g *service.Group) Group {
 		Platform:                        g.Platform,
 		RateMultiplier:                  g.RateMultiplier,
 		IsExclusive:                     g.IsExclusive,
+		VIPOnly:                         g.VIPOnly,
 		Status:                          g.Status,
 		SubscriptionType:                g.SubscriptionType,
 		DailyLimitUSD:                   g.DailyLimitUSD,

@@ -14,7 +14,7 @@ import (
 	"github.com/dgraph-io/ristretto"
 )
 
-const apiKeyAuthSnapshotVersion = 17 // v17: include the OpenAI group Live gate
+const apiKeyAuthSnapshotVersion = 18 // v18: include complete VIP authorization profile
 
 type apiKeyAuthCacheConfig struct {
 	l1Size        int
@@ -328,6 +328,14 @@ func (s *APIKeyService) applyAuthCacheEntry(key string, entry *APIKeyAuthCacheEn
 	if entry.Snapshot.Version != apiKeyAuthSnapshotVersion {
 		return nil, false, nil
 	}
+	// Authorization booleans are pointers in the wire snapshot so a missing
+	// field cannot silently decode as false and turn a partial v18 payload into
+	// an apparently valid profile. A group-less key only requires the user
+	// field; a hydrated group requires both fields.
+	if !validAuthSnapshotVIPProfile(entry.Snapshot.User) ||
+		(entry.Snapshot.Group != nil && entry.Snapshot.Group.VIPOnly == nil) {
+		return nil, false, nil
+	}
 	return s.snapshotToAPIKey(key, entry.Snapshot), true, nil
 }
 
@@ -335,6 +343,8 @@ func (s *APIKeyService) snapshotFromAPIKey(ctx context.Context, apiKey *APIKey) 
 	if apiKey == nil || apiKey.User == nil {
 		return nil
 	}
+	vipMode := apiKey.User.Mode()
+	vipAccessState := apiKey.User.AccessState()
 	snapshot := &APIKeyAuthSnapshot{
 		Version:     apiKeyAuthSnapshotVersion,
 		APIKeyID:    apiKey.ID,
@@ -357,6 +367,9 @@ func (s *APIKeyService) snapshotFromAPIKey(ctx context.Context, apiKey *APIKey) 
 			Balance:                    apiKey.User.Balance,
 			Concurrency:                apiKey.User.Concurrency,
 			AllowedGroups:              apiKey.User.AllowedGroups,
+			IsVIP:                      authSnapshotBool(apiKey.User.IsVIP),
+			VIPMode:                    &vipMode,
+			VIPAccessState:             &vipAccessState,
 			Email:                      apiKey.User.Email,
 			Username:                   apiKey.User.Username,
 			BalanceNotifyEnabled:       apiKey.User.BalanceNotifyEnabled,
@@ -382,6 +395,7 @@ func (s *APIKeyService) snapshotFromAPIKey(ctx context.Context, apiKey *APIKey) 
 			Name:                            apiKey.Group.Name,
 			Platform:                        apiKey.Group.Platform,
 			IsExclusive:                     apiKey.Group.IsExclusive,
+			VIPOnly:                         authSnapshotBool(apiKey.Group.VIPOnly),
 			Status:                          apiKey.Group.Status,
 			SubscriptionType:                apiKey.Group.SubscriptionType,
 			RateMultiplier:                  apiKey.Group.RateMultiplier,
@@ -445,12 +459,18 @@ func (s *APIKeyService) snapshotToAPIKey(key string, snapshot *APIKeyAuthSnapsho
 		RateLimit1d: snapshot.RateLimit1d,
 		RateLimit7d: snapshot.RateLimit7d,
 		User: &User{
-			ID:                         snapshot.User.ID,
-			Status:                     snapshot.User.Status,
-			Role:                       snapshot.User.Role,
-			Balance:                    snapshot.User.Balance,
-			Concurrency:                snapshot.User.Concurrency,
-			AllowedGroups:              snapshot.User.AllowedGroups,
+			ID:            snapshot.User.ID,
+			Status:        snapshot.User.Status,
+			Role:          snapshot.User.Role,
+			Balance:       snapshot.User.Balance,
+			Concurrency:   snapshot.User.Concurrency,
+			AllowedGroups: snapshot.User.AllowedGroups,
+			VIPEntitlementSnapshot: VIPEntitlementSnapshot{
+				IsVIP:             *snapshot.User.IsVIP,
+				ManualOverride:    snapshot.User.VIPMode.ManualOverride(),
+				ActivationPending: *snapshot.User.VIPAccessState == VIPAccessStateActivationPending,
+				ActivationFailed:  *snapshot.User.VIPAccessState == VIPAccessStateActivationFailed,
+			},
 			Email:                      snapshot.User.Email,
 			Username:                   snapshot.User.Username,
 			BalanceNotifyEnabled:       snapshot.User.BalanceNotifyEnabled,
@@ -468,6 +488,7 @@ func (s *APIKeyService) snapshotToAPIKey(key string, snapshot *APIKeyAuthSnapsho
 			Name:                            snapshot.Group.Name,
 			Platform:                        snapshot.Group.Platform,
 			IsExclusive:                     snapshot.Group.IsExclusive,
+			VIPOnly:                         *snapshot.Group.VIPOnly,
 			Status:                          snapshot.Group.Status,
 			Hydrated:                        true,
 			SubscriptionType:                snapshot.Group.SubscriptionType,
@@ -511,4 +532,32 @@ func (s *APIKeyService) snapshotToAPIKey(key string, snapshot *APIKeyAuthSnapsho
 	}
 	s.compileAPIKeyIPRules(apiKey)
 	return apiKey
+}
+
+func validAuthSnapshotVIPProfile(snapshot APIKeyAuthUserSnapshot) bool {
+	if snapshot.IsVIP == nil || snapshot.VIPMode == nil || snapshot.VIPAccessState == nil {
+		return false
+	}
+	if _, err := ParseVIPMode(string(*snapshot.VIPMode)); err != nil {
+		return false
+	}
+	switch *snapshot.VIPAccessState {
+	case VIPAccessStateActive,
+		VIPAccessStatePaymentRequired,
+		VIPAccessStateRestricted,
+		VIPAccessStateActivationPending,
+		VIPAccessStateActivationFailed:
+	default:
+		return false
+	}
+	return SafeVIPAccessState(
+		*snapshot.IsVIP,
+		snapshot.VIPMode.ManualOverride(),
+		*snapshot.VIPAccessState == VIPAccessStateActivationPending,
+		*snapshot.VIPAccessState == VIPAccessStateActivationFailed,
+	) == *snapshot.VIPAccessState
+}
+
+func authSnapshotBool(value bool) *bool {
+	return &value
 }

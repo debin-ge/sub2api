@@ -10,11 +10,13 @@ import (
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/group"
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/lib/pq"
 
+	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
 )
 
@@ -27,6 +29,11 @@ type groupRepository struct {
 	client *dbent.Client
 	sql    sqlExecutor
 }
+
+// groupAccessGraphAdvisoryLockID serializes low-frequency group/fallback
+// mutations across instances. It is transaction-scoped, so a crashed writer
+// cannot leave a session lock behind.
+const groupAccessGraphAdvisoryLockID int64 = 0x67726f7570766970
 
 func NewGroupRepository(client *dbent.Client, sqlDB *sql.DB) service.GroupRepository {
 	return newGroupRepositoryWithSQL(client, sqlDB)
@@ -43,7 +50,9 @@ func newGroupRepositoryWithSQL(client *dbent.Client, sqlq sqlExecutor) *groupRep
 }
 
 func (r *groupRepository) Create(ctx context.Context, groupIn *service.Group) error {
-	if err := createGroupRecord(ctx, r.client, groupIn); err != nil {
+	if err := r.mutateWithAccessGraphValidation(ctx, groupIn, true, func(client *dbent.Client) error {
+		return createGroupRecord(ctx, client, groupIn)
+	}); err != nil {
 		return err
 	}
 	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventGroupChanged, nil, &groupIn.ID, nil); err != nil {
@@ -63,6 +72,7 @@ func createGroupRecord(ctx context.Context, client *dbent.Client, groupIn *servi
 		SetRateMultiplier(groupIn.RateMultiplier).
 		SetSortOrder(groupIn.SortOrder).
 		SetIsExclusive(groupIn.IsExclusive).
+		SetVipOnly(groupIn.VIPOnly).
 		SetStatus(groupIn.Status).
 		SetSubscriptionType(groupIn.SubscriptionType).
 		SetNillableDailyLimitUsd(groupIn.DailyLimitUSD).
@@ -149,54 +159,33 @@ func (r *groupRepository) CreateFromSource(ctx context.Context, groupIn *service
 	if groupIn == nil {
 		return errors.New("group is nil")
 	}
-	tx, err := r.client.Tx(ctx)
-	if err != nil && !errors.Is(err, dbent.ErrTxStarted) {
-		return err
-	}
-
-	var txClient *dbent.Client
-	if err == nil {
-		defer func() { _ = tx.Rollback() }()
-		txClient = tx.Client()
-	} else {
-		// Reuse a caller-owned transaction when this repository is already transactional.
-		txClient = r.client
-	}
-
-	if err := createGroupRecord(ctx, txClient, groupIn); err != nil {
-		return err
-	}
-	result, err := txClient.ExecContext(
-		ctx,
-		`INSERT INTO account_groups (account_id, group_id, priority, created_at)
-		 SELECT ag.account_id, $2, ag.priority, NOW()
-		 FROM account_groups ag
-		 JOIN accounts a ON a.id = ag.account_id
-		 WHERE ag.group_id = $1
-		   AND a.deleted_at IS NULL
-		   AND (NOT $3 OR a.type <> $4)
-		 ON CONFLICT (account_id, group_id) DO NOTHING`,
-		sourceGroupID,
-		groupIn.ID,
-		groupIn.RequireOAuthOnly,
-		service.AccountTypeAPIKey,
-	)
-	if err != nil {
-		return err
-	}
-	if count, countErr := result.RowsAffected(); countErr == nil {
-		groupIn.AccountCount = count
-	}
-	if err := enqueueSchedulerOutbox(ctx, txClient, service.SchedulerOutboxEventGroupChanged, nil, &groupIn.ID, nil); err != nil {
-		return err
-	}
-
-	if tx != nil {
-		if err := tx.Commit(); err != nil {
+	return r.mutateWithAccessGraphValidation(ctx, groupIn, true, func(txClient *dbent.Client) error {
+		if err := createGroupRecord(ctx, txClient, groupIn); err != nil {
 			return err
 		}
-	}
-	return nil
+		result, err := txClient.ExecContext(
+			ctx,
+			`INSERT INTO account_groups (account_id, group_id, priority, created_at)
+			 SELECT ag.account_id, $2, ag.priority, NOW()
+			 FROM account_groups ag
+			 JOIN accounts a ON a.id = ag.account_id
+			 WHERE ag.group_id = $1
+			   AND a.deleted_at IS NULL
+			   AND (NOT $3 OR a.type <> $4)
+			 ON CONFLICT (account_id, group_id) DO NOTHING`,
+			sourceGroupID,
+			groupIn.ID,
+			groupIn.RequireOAuthOnly,
+			service.AccountTypeAPIKey,
+		)
+		if err != nil {
+			return err
+		}
+		if count, countErr := result.RowsAffected(); countErr == nil {
+			groupIn.AccountCount = count
+		}
+		return enqueueSchedulerOutbox(ctx, txClient, service.SchedulerOutboxEventGroupChanged, nil, &groupIn.ID, nil)
+	})
 }
 
 func (r *groupRepository) GetByID(ctx context.Context, id int64) (*service.Group, error) {
@@ -226,145 +215,262 @@ func (r *groupRepository) GetByIDLite(ctx context.Context, id int64) (*service.G
 }
 
 func (r *groupRepository) Update(ctx context.Context, groupIn *service.Group) error {
-	builder := r.client.Group.UpdateOneID(groupIn.ID).
-		SetName(groupIn.Name).
-		SetDescription(groupIn.Description).
-		SetPlatform(groupIn.Platform).
-		SetRateMultiplier(groupIn.RateMultiplier).
-		SetIsExclusive(groupIn.IsExclusive).
-		SetStatus(groupIn.Status).
-		SetSubscriptionType(groupIn.SubscriptionType).
-		SetNillableDailyLimitUsd(groupIn.DailyLimitUSD).
-		SetNillableWeeklyLimitUsd(groupIn.WeeklyLimitUSD).
-		SetNillableMonthlyLimitUsd(groupIn.MonthlyLimitUSD).
-		SetAllowImageGeneration(groupIn.AllowImageGeneration).
-		SetAllowBatchImageGeneration(groupIn.AllowBatchImageGeneration).
-		SetImageRateIndependent(groupIn.ImageRateIndependent).
-		SetImageRateMultiplier(groupIn.ImageRateMultiplier).
-		SetNillableImagePrice1k(groupIn.ImagePrice1K).
-		SetNillableImagePrice2k(groupIn.ImagePrice2K).
-		SetNillableImagePrice4k(groupIn.ImagePrice4K).
-		SetBatchImageDiscountMultiplier(groupIn.BatchImageDiscountMultiplier).
-		SetBatchImageHoldMultiplier(groupIn.BatchImageHoldMultiplier).
-		SetVideoRateIndependent(groupIn.VideoRateIndependent).
-		SetVideoRateMultiplier(groupIn.VideoRateMultiplier).
-		SetNillableVideoPrice480p(groupIn.VideoPrice480P).
-		SetNillableVideoPrice720p(groupIn.VideoPrice720P).
-		SetNillableVideoPrice1080p(groupIn.VideoPrice1080P).
-		SetDefaultValidityDays(groupIn.DefaultValidityDays).
-		SetClaudeCodeOnly(groupIn.ClaudeCodeOnly).
-		SetModelRoutingEnabled(groupIn.ModelRoutingEnabled).
-		SetMcpXMLInject(groupIn.MCPXMLInject).
-		SetAllowMessagesDispatch(groupIn.AllowMessagesDispatch).
-		SetAllowLive(groupIn.AllowLive).
-		SetRequireOauthOnly(groupIn.RequireOAuthOnly).
-		SetRequirePrivacySet(groupIn.RequirePrivacySet).
-		SetDefaultMappedModel(groupIn.DefaultMappedModel).
-		SetMessagesDispatchModelConfig(groupIn.MessagesDispatchModelConfig).
-		SetModelsListConfig(groupIn.ModelsListConfig).
-		SetRpmLimit(groupIn.RPMLimit).
-		SetMaxReasoningEffort(groupIn.MaxReasoningEffort).
-		SetReasoningEffortMappings(groupIn.ReasoningEffortMappings).
-		SetPeakRateEnabled(groupIn.PeakRateEnabled).
-		SetPeakStart(groupIn.PeakStart).
-		SetPeakEnd(groupIn.PeakEnd).
-		SetPeakRateMultiplier(groupIn.PeakRateMultiplier)
+	return r.update(ctx, groupIn, nil)
+}
 
-	// 显式处理可空字段：nil 需要 clear，非 nil 需要 set。
-	if groupIn.DailyLimitUSD != nil {
-		builder = builder.SetDailyLimitUsd(*groupIn.DailyLimitUSD)
-	} else {
-		builder = builder.ClearDailyLimitUsd()
-	}
-	if groupIn.WeeklyLimitUSD != nil {
-		builder = builder.SetWeeklyLimitUsd(*groupIn.WeeklyLimitUSD)
-	} else {
-		builder = builder.ClearWeeklyLimitUsd()
-	}
-	if groupIn.MonthlyLimitUSD != nil {
-		builder = builder.SetMonthlyLimitUsd(*groupIn.MonthlyLimitUSD)
-	} else {
-		builder = builder.ClearMonthlyLimitUsd()
-	}
-	if groupIn.ImagePrice1K != nil {
-		builder = builder.SetImagePrice1k(*groupIn.ImagePrice1K)
-	} else {
-		builder = builder.ClearImagePrice1k()
-	}
-	if groupIn.ImagePrice2K != nil {
-		builder = builder.SetImagePrice2k(*groupIn.ImagePrice2K)
-	} else {
-		builder = builder.ClearImagePrice2k()
-	}
-	if groupIn.ImagePrice4K != nil {
-		builder = builder.SetImagePrice4k(*groupIn.ImagePrice4K)
-	} else {
-		builder = builder.ClearImagePrice4k()
-	}
-	if groupIn.VideoPrice480P != nil {
-		builder = builder.SetVideoPrice480p(*groupIn.VideoPrice480P)
-	} else {
-		builder = builder.ClearVideoPrice480p()
-	}
-	if groupIn.VideoPrice720P != nil {
-		builder = builder.SetVideoPrice720p(*groupIn.VideoPrice720P)
-	} else {
-		builder = builder.ClearVideoPrice720p()
-	}
-	if groupIn.VideoPrice1080P != nil {
-		builder = builder.SetVideoPrice1080p(*groupIn.VideoPrice1080P)
-	} else {
-		builder = builder.ClearVideoPrice1080p()
-	}
-	if groupIn.WebSearchPricePerCall != nil {
-		builder = builder.SetWebSearchPricePerCall(*groupIn.WebSearchPricePerCall)
-	} else {
-		builder = builder.ClearWebSearchPricePerCall()
-	}
+// UpdateWithVIPConfigWriteGate repeats the rollout transition check against
+// the locked current row. This closes the stale whole-row write race where an
+// unrelated update read vip_only=true, a concurrent request disabled it, and
+// the old snapshot then wrote true back while the config gate was closed.
+func (r *groupRepository) UpdateWithVIPConfigWriteGate(
+	ctx context.Context,
+	groupIn *service.Group,
+	vipConfigWriteEnabled bool,
+) error {
+	return r.update(ctx, groupIn, func(current *service.Group) error {
+		if vipConfigWriteEnabled || current == nil || current.VIPOnly || !groupIn.VIPOnly {
+			return nil
+		}
+		return infraerrors.BadRequest(
+			service.GroupVIPConfigWriteDisabledReason,
+			"enabling VIP-only groups is disabled during the current rollout phase",
+		)
+	})
+}
 
-	// 处理 FallbackGroupID：nil 时清除，否则设置
-	if groupIn.FallbackGroupID != nil {
-		builder = builder.SetFallbackGroupID(*groupIn.FallbackGroupID)
-	} else {
-		builder = builder.ClearFallbackGroupID()
-	}
-	// 处理 FallbackGroupIDOnInvalidRequest：nil 时清除，否则设置
-	if groupIn.FallbackGroupIDOnInvalidRequest != nil {
-		builder = builder.SetFallbackGroupIDOnInvalidRequest(*groupIn.FallbackGroupIDOnInvalidRequest)
-	} else {
-		builder = builder.ClearFallbackGroupIDOnInvalidRequest()
-	}
+func (r *groupRepository) update(
+	ctx context.Context,
+	groupIn *service.Group,
+	validateCurrent func(*service.Group) error,
+) error {
+	err := r.mutateWithAccessGraphValidationAndCurrent(ctx, groupIn, false, validateCurrent, func(client *dbent.Client) error {
+		builder := client.Group.UpdateOneID(groupIn.ID).
+			SetName(groupIn.Name).
+			SetDescription(groupIn.Description).
+			SetPlatform(groupIn.Platform).
+			SetRateMultiplier(groupIn.RateMultiplier).
+			SetIsExclusive(groupIn.IsExclusive).
+			SetVipOnly(groupIn.VIPOnly).
+			SetStatus(groupIn.Status).
+			SetSubscriptionType(groupIn.SubscriptionType).
+			SetNillableDailyLimitUsd(groupIn.DailyLimitUSD).
+			SetNillableWeeklyLimitUsd(groupIn.WeeklyLimitUSD).
+			SetNillableMonthlyLimitUsd(groupIn.MonthlyLimitUSD).
+			SetAllowImageGeneration(groupIn.AllowImageGeneration).
+			SetAllowBatchImageGeneration(groupIn.AllowBatchImageGeneration).
+			SetImageRateIndependent(groupIn.ImageRateIndependent).
+			SetImageRateMultiplier(groupIn.ImageRateMultiplier).
+			SetNillableImagePrice1k(groupIn.ImagePrice1K).
+			SetNillableImagePrice2k(groupIn.ImagePrice2K).
+			SetNillableImagePrice4k(groupIn.ImagePrice4K).
+			SetBatchImageDiscountMultiplier(groupIn.BatchImageDiscountMultiplier).
+			SetBatchImageHoldMultiplier(groupIn.BatchImageHoldMultiplier).
+			SetVideoRateIndependent(groupIn.VideoRateIndependent).
+			SetVideoRateMultiplier(groupIn.VideoRateMultiplier).
+			SetNillableVideoPrice480p(groupIn.VideoPrice480P).
+			SetNillableVideoPrice720p(groupIn.VideoPrice720P).
+			SetNillableVideoPrice1080p(groupIn.VideoPrice1080P).
+			SetDefaultValidityDays(groupIn.DefaultValidityDays).
+			SetClaudeCodeOnly(groupIn.ClaudeCodeOnly).
+			SetModelRoutingEnabled(groupIn.ModelRoutingEnabled).
+			SetMcpXMLInject(groupIn.MCPXMLInject).
+			SetAllowMessagesDispatch(groupIn.AllowMessagesDispatch).
+			SetAllowLive(groupIn.AllowLive).
+			SetRequireOauthOnly(groupIn.RequireOAuthOnly).
+			SetRequirePrivacySet(groupIn.RequirePrivacySet).
+			SetDefaultMappedModel(groupIn.DefaultMappedModel).
+			SetMessagesDispatchModelConfig(groupIn.MessagesDispatchModelConfig).
+			SetModelsListConfig(groupIn.ModelsListConfig).
+			SetRpmLimit(groupIn.RPMLimit).
+			SetMaxReasoningEffort(groupIn.MaxReasoningEffort).
+			SetReasoningEffortMappings(groupIn.ReasoningEffortMappings).
+			SetPeakRateEnabled(groupIn.PeakRateEnabled).
+			SetPeakStart(groupIn.PeakStart).
+			SetPeakEnd(groupIn.PeakEnd).
+			SetPeakRateMultiplier(groupIn.PeakRateMultiplier)
 
-	// 处理 ModelRouting：nil 时清除，否则设置
-	if groupIn.ModelRouting != nil {
-		builder = builder.SetModelRouting(groupIn.ModelRouting)
-	} else {
-		builder = builder.ClearModelRouting()
-	}
+		// 显式处理可空字段：nil 需要 clear，非 nil 需要 set。
+		if groupIn.DailyLimitUSD != nil {
+			builder = builder.SetDailyLimitUsd(*groupIn.DailyLimitUSD)
+		} else {
+			builder = builder.ClearDailyLimitUsd()
+		}
+		if groupIn.WeeklyLimitUSD != nil {
+			builder = builder.SetWeeklyLimitUsd(*groupIn.WeeklyLimitUSD)
+		} else {
+			builder = builder.ClearWeeklyLimitUsd()
+		}
+		if groupIn.MonthlyLimitUSD != nil {
+			builder = builder.SetMonthlyLimitUsd(*groupIn.MonthlyLimitUSD)
+		} else {
+			builder = builder.ClearMonthlyLimitUsd()
+		}
+		if groupIn.ImagePrice1K != nil {
+			builder = builder.SetImagePrice1k(*groupIn.ImagePrice1K)
+		} else {
+			builder = builder.ClearImagePrice1k()
+		}
+		if groupIn.ImagePrice2K != nil {
+			builder = builder.SetImagePrice2k(*groupIn.ImagePrice2K)
+		} else {
+			builder = builder.ClearImagePrice2k()
+		}
+		if groupIn.ImagePrice4K != nil {
+			builder = builder.SetImagePrice4k(*groupIn.ImagePrice4K)
+		} else {
+			builder = builder.ClearImagePrice4k()
+		}
+		if groupIn.VideoPrice480P != nil {
+			builder = builder.SetVideoPrice480p(*groupIn.VideoPrice480P)
+		} else {
+			builder = builder.ClearVideoPrice480p()
+		}
+		if groupIn.VideoPrice720P != nil {
+			builder = builder.SetVideoPrice720p(*groupIn.VideoPrice720P)
+		} else {
+			builder = builder.ClearVideoPrice720p()
+		}
+		if groupIn.VideoPrice1080P != nil {
+			builder = builder.SetVideoPrice1080p(*groupIn.VideoPrice1080P)
+		} else {
+			builder = builder.ClearVideoPrice1080p()
+		}
+		if groupIn.WebSearchPricePerCall != nil {
+			builder = builder.SetWebSearchPricePerCall(*groupIn.WebSearchPricePerCall)
+		} else {
+			builder = builder.ClearWebSearchPricePerCall()
+		}
 
-	// 处理 SupportedModelScopes（始终设置，空数组表示不限制）
-	builder = builder.SetSupportedModelScopes(groupIn.SupportedModelScopes)
+		// 处理 FallbackGroupID：nil 时清除，否则设置
+		if groupIn.FallbackGroupID != nil {
+			builder = builder.SetFallbackGroupID(*groupIn.FallbackGroupID)
+		} else {
+			builder = builder.ClearFallbackGroupID()
+		}
+		// 处理 FallbackGroupIDOnInvalidRequest：nil 时清除，否则设置
+		if groupIn.FallbackGroupIDOnInvalidRequest != nil {
+			builder = builder.SetFallbackGroupIDOnInvalidRequest(*groupIn.FallbackGroupIDOnInvalidRequest)
+		} else {
+			builder = builder.ClearFallbackGroupIDOnInvalidRequest()
+		}
 
-	updated, err := builder.Save(ctx)
+		// 处理 ModelRouting：nil 时清除，否则设置
+		if groupIn.ModelRouting != nil {
+			builder = builder.SetModelRouting(groupIn.ModelRouting)
+		} else {
+			builder = builder.ClearModelRouting()
+		}
+
+		// 处理 SupportedModelScopes（始终设置，空数组表示不限制）
+		builder = builder.SetSupportedModelScopes(groupIn.SupportedModelScopes)
+
+		updated, err := builder.Save(ctx)
+		if err != nil {
+			return translatePersistenceError(err, service.ErrGroupNotFound, service.ErrGroupExists)
+		}
+		groupIn.UpdatedAt = updated.UpdatedAt
+		return nil
+	})
 	if err != nil {
-		return translatePersistenceError(err, service.ErrGroupNotFound, service.ErrGroupExists)
+		return err
 	}
-	groupIn.UpdatedAt = updated.UpdatedAt
 	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventGroupChanged, nil, &groupIn.ID, nil); err != nil {
 		logger.LegacyPrintf("repository.group", "[SchedulerOutbox] enqueue group update failed: group=%d err=%v", groupIn.ID, err)
 	}
 	return nil
 }
 
-func (r *groupRepository) Delete(ctx context.Context, id int64) error {
-	_, err := r.client.Group.Delete().Where(group.IDEQ(id)).Exec(ctx)
-	if err != nil {
-		return translatePersistenceError(err, service.ErrGroupNotFound, nil)
+// mutateWithAccessGraphValidation applies one complete candidate under a
+// transaction-scoped advisory lock. All reverse effects (incoming edges when
+// type/exclusive/VIP changes) are therefore checked against the exact snapshot
+// that is written.
+func (r *groupRepository) mutateWithAccessGraphValidation(
+	ctx context.Context,
+	candidate *service.Group,
+	create bool,
+	mutate func(*dbent.Client) error,
+) error {
+	return r.mutateWithAccessGraphValidationAndCurrent(
+		ctx,
+		candidate,
+		create,
+		nil,
+		mutate,
+	)
+}
+
+func (r *groupRepository) mutateWithAccessGraphValidationAndCurrent(
+	ctx context.Context,
+	candidate *service.Group,
+	create bool,
+	validateCurrent func(*service.Group) error,
+	mutate func(*dbent.Client) error,
+) error {
+	if candidate == nil {
+		return errors.New("group is nil")
 	}
-	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventGroupChanged, nil, &id, nil); err != nil {
-		logger.LegacyPrintf("repository.group", "[SchedulerOutbox] enqueue group delete failed: group=%d err=%v", id, err)
+
+	tx, txErr := r.client.Tx(ctx)
+	if txErr != nil && !errors.Is(txErr, dbent.ErrTxStarted) {
+		return txErr
+	}
+	txClient := r.client
+	ownsTx := txErr == nil
+	if ownsTx {
+		defer func() { _ = tx.Rollback() }()
+		txClient = tx.Client()
+	}
+
+	if txClient.Driver().Dialect() == dialect.Postgres {
+		if _, err := txClient.ExecContext(ctx, "SELECT pg_advisory_xact_lock($1)", groupAccessGraphAdvisoryLockID); err != nil {
+			return fmt.Errorf("lock group access graph: %w", err)
+		}
+	}
+
+	rows, err := txClient.Group.Query().All(ctx)
+	if err != nil {
+		return fmt.Errorf("load group access graph: %w", err)
+	}
+	before := make([]service.Group, 0, len(rows))
+	after := make([]service.Group, 0, len(rows)+1)
+	replaced := false
+	for _, row := range rows {
+		current := groupEntityToService(row)
+		before = append(before, *current)
+		if !create && current.ID == candidate.ID {
+			if validateCurrent != nil {
+				if err := validateCurrent(current); err != nil {
+					return err
+				}
+			}
+			after = append(after, *candidate)
+			replaced = true
+			continue
+		}
+		after = append(after, *current)
+	}
+	if create {
+		after = append(after, *candidate)
+	} else if !replaced {
+		return service.ErrGroupNotFound
+	}
+	if err := service.ValidateGroupAccessGraphMutation(before, after); err != nil {
+		return err
+	}
+	if err := mutate(txClient); err != nil {
+		return err
+	}
+	if ownsTx {
+		if err := tx.Commit(); err != nil {
+			return err
+		}
 	}
 	return nil
+}
+
+func (r *groupRepository) Delete(ctx context.Context, id int64) error {
+	_, err := r.DeleteCascade(ctx, id)
+	return err
 }
 
 func (r *groupRepository) List(ctx context.Context, params pagination.PaginationParams) ([]service.Group, *pagination.PaginationResult, error) {
@@ -754,12 +860,6 @@ func (r *groupRepository) DeleteAccountGroupsByGroupID(ctx context.Context, grou
 }
 
 func (r *groupRepository) DeleteCascade(ctx context.Context, id int64) ([]int64, error) {
-	g, err := r.client.Group.Query().Where(group.IDEQ(id)).Only(ctx)
-	if err != nil {
-		return nil, translatePersistenceError(err, service.ErrGroupNotFound, nil)
-	}
-	groupSvc := groupEntityToService(g)
-
 	// 使用 ent 事务统一包裹：避免手工基于 *sql.Tx 构造 ent client 带来的驱动断言问题，
 	// 同时保证级联删除的原子性。
 	tx, err := r.client.Tx(ctx)
@@ -774,6 +874,15 @@ func (r *groupRepository) DeleteCascade(ctx context.Context, id int64) ([]int64,
 		txClient = exec
 	}
 	// err 为 dbent.ErrTxStarted 时，复用当前 client 参与同一事务。
+
+	// Delete participates in the same cross-instance serialization contract as
+	// create/update/duplicate. Otherwise a concurrent writer can commit a new
+	// incoming fallback edge immediately before this target disappears.
+	if txClient.Driver().Dialect() == dialect.Postgres {
+		if _, err := txClient.ExecContext(ctx, "SELECT pg_advisory_xact_lock($1)", groupAccessGraphAdvisoryLockID); err != nil {
+			return nil, fmt.Errorf("lock group access graph: %w", err)
+		}
+	}
 
 	// Lock the group row to avoid concurrent writes while we cascade.
 	// 这里使用 exec.QueryContext 手动扫描，确保同一事务内加锁并能区分"未找到"与其他错误。
@@ -796,6 +905,33 @@ func (r *groupRepository) DeleteCascade(ctx context.Context, id int64) ([]int64,
 	}
 	if lockedID == 0 {
 		return nil, service.ErrGroupNotFound
+	}
+
+	// Validate the exact final candidate (the active graph with this group
+	// removed) while still holding the graph lock. Incoming edges would become
+	// missing-target violations, so deletion is rejected until operators clear
+	// those edges explicitly.
+	groupRows, err := txClient.Group.Query().All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load group access graph: %w", err)
+	}
+	before := make([]service.Group, 0, len(groupRows))
+	after := make([]service.Group, 0, len(groupRows)-1)
+	var groupSvc *service.Group
+	for _, row := range groupRows {
+		current := groupEntityToService(row)
+		before = append(before, *current)
+		if current.ID == id {
+			groupSvc = current
+			continue
+		}
+		after = append(after, *current)
+	}
+	if groupSvc == nil {
+		return nil, service.ErrGroupNotFound
+	}
+	if err := service.ValidateGroupAccessGraphMutation(before, after); err != nil {
+		return nil, err
 	}
 
 	var affectedUserIDs []int64

@@ -172,6 +172,7 @@ describe('admin UsersView', () => {
           UserBalanceModal: true,
           UserBalanceHistoryModal: true,
           GroupReplaceModal: true,
+          UserVIPAuditDrawer: true,
           Icon: true,
           Teleport: true
         }
@@ -182,6 +183,7 @@ describe('admin UsersView', () => {
 
     const columns = wrapper.get('[data-test="columns"]').text()
     const visibleColumns = columns.split(',')
+    expect(visibleColumns).toContain('vip')
     expect(visibleColumns.slice(-4, -1)).toEqual(['last_active_at', 'last_used_at', 'created_at'])
     expect(visibleColumns).not.toContain('last_login_at')
 
@@ -258,6 +260,7 @@ describe('admin UsersView', () => {
           UserBalanceModal: true,
           UserBalanceHistoryModal: true,
           GroupReplaceModal: true,
+          UserVIPAuditDrawer: true,
           Icon: true,
           Teleport: true
         }
@@ -336,6 +339,7 @@ describe('admin UsersView', () => {
           UserBalanceModal: true,
           UserBalanceHistoryModal: true,
           GroupReplaceModal: true,
+          UserVIPAuditDrawer: true,
           Icon: true,
           Teleport: true
         }
@@ -397,6 +401,7 @@ describe('admin UsersView', () => {
           UserBalanceModal: true,
           UserBalanceHistoryModal: true,
           GroupReplaceModal: true,
+          UserVIPAuditDrawer: true,
           Icon: true,
           Teleport: true
         }

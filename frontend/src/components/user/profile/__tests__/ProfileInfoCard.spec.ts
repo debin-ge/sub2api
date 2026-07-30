@@ -194,4 +194,43 @@ describe('ProfileInfoCard', () => {
     expect(wrapper.get('[data-testid="profile-basics-panel"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="profile-auth-bindings-panel"]').exists()).toBe(true)
   })
+
+  it.each([
+    ['ACTIVE', 'vip.access.label.ACTIVE', false],
+    ['PAYMENT_REQUIRED', 'vip.access.label.PAYMENT_REQUIRED', true],
+    ['ACTIVATION_PENDING', 'vip.access.label.ACTIVATION_PENDING', false],
+    ['ACTIVATION_FAILED', 'vip.access.label.ACTIVATION_FAILED', false],
+    ['RESTRICTED', 'vip.access.label.RESTRICTED', false],
+  ] as const)('renders the safe %s VIP state', (vipAccessState, label, hasPurchaseAction) => {
+    const wrapper = mount(ProfileInfoCard, {
+      props: {
+        user: createUser({ vip_access_state: vipAccessState })
+      },
+      global: {
+        stubs: {
+          Icon: true
+        }
+      }
+    })
+
+    expect(wrapper.get('[data-testid="profile-vip-badge"]').text()).toBe(label)
+    expect(wrapper.find('[data-testid="profile-vip-purchase-cta"]').exists()).toBe(hasPurchaseAction)
+  })
+
+  it('fails safe for an unknown VIP state without a purchase action', () => {
+    const wrapper = mount(ProfileInfoCard, {
+      props: {
+        user: createUser({ vip_access_state: 'FUTURE_STATE' })
+      },
+      global: {
+        stubs: {
+          Icon: true
+        }
+      }
+    })
+
+    expect(wrapper.get('[data-testid="profile-vip-badge"]').text()).toBe('vip.access.label.UNKNOWN')
+    expect(wrapper.get('[data-testid="profile-vip-status"]').text()).toContain('vip.access.description.UNKNOWN')
+    expect(wrapper.find('[data-testid="profile-vip-purchase-cta"]').exists()).toBe(false)
+  })
 })

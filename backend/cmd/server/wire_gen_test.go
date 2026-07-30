@@ -288,6 +288,8 @@ func cleanupWithRadarTestDependencies(rdb *redis.Client, radarRunner *service.Ra
 		service.NewAccountExpiryService(nil, time.Second),
 		service.NewProxyExpiryService(nil, time.Second),
 		service.NewSubscriptionExpiryService(nil, time.Second),
+		nil, // vipReconcile
+		nil, // vipIncrementalReconcile
 		nil, // usageCleanup
 		nil, // idempotencyCleanup
 		nil, // batchImageCleanup
@@ -415,6 +417,8 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 		accountExpirySvc,
 		proxyExpirySvc,
 		subscriptionExpirySvc,
+		nil, // vipReconcile
+		nil, // vipIncrementalReconcile
 		&service.UsageCleanupService{},
 		idempotencyCleanupSvc,
 		&service.BatchImageCleanupService{},
@@ -702,6 +706,7 @@ func TestValidatedConfigFrontloadsRadarRepositoryServiceAndHandlerConditions(t *
 	viper.Reset()
 	t.Cleanup(viper.Reset)
 	t.Setenv("JWT_SECRET", strings.Repeat("x", 32))
+	t.Setenv("GROUP_ACCESS_RUNTIME_MODE", config.GroupAccessRuntimeModeAuditOnly)
 
 	cfg, err := config.Load()
 	require.NoError(t, err)

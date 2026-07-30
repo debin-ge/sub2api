@@ -100,6 +100,36 @@ webauthn:
 # - simple: 隐藏 SaaS 功能，跳过计费和余额校验
 run_mode: "standard"
 
+# VIP/fallback runtime rollout. This value is required and strictly parsed.
+# Phase A: AUDIT_ONLY records would-deny without changing existing traffic.
+# Phase B: ENFORCE rejects the new VIP/fallback authorization failures.
+group_access_runtime_mode: "AUDIT_ONLY"
+
+# Independent write-side gate. Keep false until every binary is upgraded and
+# runtime enforcement has been verified.
+vip_config_write_enabled: false
+
+# Payment completion uses both a context deadline and a transaction-local
+# PostgreSQL statement_timeout. The reconcile overlap below must cover this
+# timeout plus its margin.
+payment_fulfillment_db_tx_timeout: "2m"
+
+# Automatic L1 repair for paid VIP eligibility. The durable cursor scans only
+# payment rows at least safety_delay old, then rechecks the overlap window for
+# transactions that committed late.
+vip_reconcile_enabled: false
+vip_reconcile_interval: "1m"
+vip_reconcile_run_timeout: "45s"
+vip_reconcile_safety_delay: "5s"
+vip_reconcile_batch_size: 200
+vip_reconcile_batch_pause: "200ms"
+vip_reconcile_max_batches_per_run: 50
+vip_reconcile_overlap: "5m"
+vip_reconcile_overlap_margin: "1m"
+# Maximum ownership window for an operator-triggered full-history L2 job.
+# Timed-out jobs keep their cursor and return to queued for automatic takeover.
+vip_reconcile_job_run_timeout: "30m"
+
 # =============================================================================
 # Reseller / Sub-site Configuration
 # 子站 / 下级代理商配置
