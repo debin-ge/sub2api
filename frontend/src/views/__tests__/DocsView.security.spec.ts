@@ -58,7 +58,7 @@ function createDocsRouter() {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      { path: '/home', component: { template: '<div>Home</div>' } },
+      { path: '/', component: { template: '<div>Model Radar</div>' } },
       { path: '/login', component: { template: '<div>Login</div>' } },
       { path: '/dashboard', component: { template: '<div>Dashboard</div>' } },
       { path: '/docs', component: DocsView },

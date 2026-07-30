@@ -60,11 +60,10 @@ describe('Model Radar routes', () => {
     appStore.cachedPublicSettings = null
   })
 
-  it('registers / as a public lazy Radar page without redirecting /home', async () => {
-    const [{ default: router }, radarModule, homeModule] = await Promise.all([
+  it('registers / as the public Radar homepage and redirects legacy /home visits to it', async () => {
+    const [{ default: router }, radarModule] = await Promise.all([
       import('@/router'),
       import('@/views/public/RadarHomeView.vue'),
-      import('@/views/HomeView.vue'),
     ])
     const rootRoute = router.getRoutes().find((record) => record.path === '/')
     const homeRoute = router.getRoutes().find((record) => record.path === '/home')
@@ -76,20 +75,19 @@ describe('Model Radar routes', () => {
       title: 'Model Radar',
       titleKey: 'radar.pageTitle',
     })
-    expect(homeRoute?.name).toBe('Home')
-    expect(homeRoute?.meta.requiresAuth).toBe(false)
+    expect(homeRoute?.name).toBe('LegacyHomeRedirect')
+    expect(homeRoute?.redirect).toBe('/')
+    expect(homeRoute?.components?.default).toBeUndefined()
 
     const loadRoot = rootRoute?.components?.default
-    const loadHome = homeRoute?.components?.default
     expect(loadRoot).toBeTypeOf('function')
-    expect(loadHome).toBeTypeOf('function')
     await expect((loadRoot as () => Promise<unknown>)()).resolves.toMatchObject({
       default: radarModule.default,
     })
-    await expect((loadHome as () => Promise<unknown>)()).resolves.toMatchObject({
-      default: homeModule.default,
-    })
-    expect(radarModule.default).not.toBe(homeModule.default)
+
+    await router.push('/home')
+    expect(router.currentRoute.value.name).toBe('RadarHome')
+    expect(router.currentRoute.value.fullPath).toBe('/')
   })
 
   it('keeps the original /plaza route and does not register /model-plaza', async () => {
