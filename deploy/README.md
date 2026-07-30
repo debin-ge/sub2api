@@ -2,12 +2,12 @@
 
 This directory contains files for deploying Sub2API on Linux servers and Apple-silicon Macs.
 
-## BREAKING: group access rollout mode is required
+## Group access rollout mode
 
-Before upgrading, explicitly set `group_access_runtime_mode: "AUDIT_ONLY"` in
-`config.yaml` or `GROUP_ACCESS_RUNTIME_MODE=AUDIT_ONLY` in the environment.
-The application intentionally refuses to start when this setting is missing or
-unknown. Review the audit results before changing the value to `ENFORCE`.
+When `group_access_runtime_mode` is omitted from `config.yaml` and
+`GROUP_ACCESS_RUNTIME_MODE` is not set, the application safely defaults to
+`AUDIT_ONLY`. Unknown explicit values still prevent startup. Review the audit
+results before changing the value to `ENFORCE`.
 
 ## Deployment Methods
 

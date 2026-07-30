@@ -112,10 +112,9 @@ type Config struct {
 	TokenRefresh            TokenRefreshConfig            `mapstructure:"token_refresh"`
 	RunMode                 string                        `mapstructure:"run_mode" yaml:"run_mode"`
 	// GroupAccessRuntimeMode controls only the runtime authorization checks
-	// introduced by the VIP/fallback rollout. It must be explicitly configured
-	// so a deployment cannot silently enter either audit or enforcement mode.
-	GroupAccessRuntimeMode           string `mapstructure:"group_access_runtime_mode" yaml:"group_access_runtime_mode"`
-	GroupAccessRuntimeModeConfigured bool   `mapstructure:"-" yaml:"-"`
+	// introduced by the VIP/fallback rollout. Missing values safely default to
+	// AUDIT_ONLY; invalid explicit values are rejected during validation.
+	GroupAccessRuntimeMode string `mapstructure:"group_access_runtime_mode" yaml:"group_access_runtime_mode"`
 	// VIPConfigWriteEnabled is intentionally independent from runtime rollout.
 	// Its safe zero value prevents administrators from enabling new VIP groups.
 	VIPConfigWriteEnabled bool `mapstructure:"vip_config_write_enabled" yaml:"vip_config_write_enabled"`
@@ -1753,13 +1752,14 @@ func NormalizeRunMode(value string) string {
 func ParseGroupAccessRuntimeMode(value string) (string, error) {
 	normalized := strings.ToUpper(strings.TrimSpace(value))
 	switch normalized {
+	case "":
+		return GroupAccessRuntimeModeAuditOnly, nil
 	case GroupAccessRuntimeModeAuditOnly, GroupAccessRuntimeModeEnforce:
 		return normalized, nil
 	default:
 		return "", fmt.Errorf(
-			"group_access_runtime_mode must be explicitly set to AUDIT_ONLY or ENFORCE " +
-				"(config key `group_access_runtime_mode` or env GROUP_ACCESS_RUNTIME_MODE); " +
-				"new deployments and upgrades should start with AUDIT_ONLY",
+			"group_access_runtime_mode must be AUDIT_ONLY or ENFORCE; " +
+				"omit it to use the safe AUDIT_ONLY default",
 		)
 	}
 }
@@ -1827,10 +1827,6 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 	}
 
 	cfg.RunMode = NormalizeRunMode(cfg.RunMode)
-	cfg.GroupAccessRuntimeModeConfigured = hasExplicitConfigOrEnv(
-		"group_access_runtime_mode",
-		"GROUP_ACCESS_RUNTIME_MODE",
-	)
 	cfg.GroupAccessRuntimeMode = strings.ToUpper(strings.TrimSpace(cfg.GroupAccessRuntimeMode))
 	cfg.Server.Mode = strings.ToLower(strings.TrimSpace(cfg.Server.Mode))
 	if cfg.Server.Mode == "" {
@@ -1982,9 +1978,7 @@ func configureConfigSource(setConfigFile, addConfigPath func(string)) {
 
 func setDefaults() {
 	viper.SetDefault("run_mode", RunModeStandard)
-	// Empty is deliberate: startup validation requires an explicit config or
-	// environment value, while registration keeps AutomaticEnv reachable.
-	viper.SetDefault("group_access_runtime_mode", "")
+	viper.SetDefault("group_access_runtime_mode", GroupAccessRuntimeModeAuditOnly)
 	viper.SetDefault("vip_config_write_enabled", false)
 	viper.SetDefault("payment_fulfillment_db_tx_timeout", 2*time.Minute)
 	viper.SetDefault("vip_reconcile_enabled", false)
@@ -2774,13 +2768,6 @@ func validateRadarLMArenaURL(raw string) error {
 }
 
 func (c *Config) Validate() error {
-	if !c.GroupAccessRuntimeModeConfigured {
-		return fmt.Errorf(
-			"group_access_runtime_mode must be explicitly configured as AUDIT_ONLY or ENFORCE " +
-				"(config key `group_access_runtime_mode` or env GROUP_ACCESS_RUNTIME_MODE); " +
-				"new deployments and upgrades should start with AUDIT_ONLY",
-		)
-	}
 	groupAccessRuntimeMode, err := ParseGroupAccessRuntimeMode(c.GroupAccessRuntimeMode)
 	if err != nil {
 		return err

@@ -21,14 +21,14 @@ func resetViperWithJWTSecret(t *testing.T) {
 	t.Setenv("CONFIG_FILE", "")
 	t.Setenv("DATA_DIR", "")
 	t.Setenv("JWT_SECRET", strings.Repeat("x", 32))
-	t.Setenv("GROUP_ACCESS_RUNTIME_MODE", GroupAccessRuntimeModeAuditOnly)
 }
 
-func TestGroupAccessRuntimeModeRequiresExplicitValidValue(t *testing.T) {
+func TestGroupAccessRuntimeModeDefaultsAndValidates(t *testing.T) {
 	t.Run("missing", func(t *testing.T) {
 		cfg := validConfigForTest(t)
-		cfg.GroupAccessRuntimeModeConfigured = false
-		require.ErrorContains(t, cfg.Validate(), "must be explicitly configured")
+		cfg.GroupAccessRuntimeMode = ""
+		require.NoError(t, cfg.Validate())
+		require.Equal(t, GroupAccessRuntimeModeAuditOnly, cfg.GroupAccessRuntimeMode)
 	})
 
 	for _, mode := range []string{GroupAccessRuntimeModeAuditOnly, GroupAccessRuntimeModeEnforce} {
@@ -47,7 +47,7 @@ func TestGroupAccessRuntimeModeRequiresExplicitValidValue(t *testing.T) {
 	})
 }
 
-func TestLoadGroupAccessRuntimeModeIsStrict(t *testing.T) {
+func TestLoadGroupAccessRuntimeModeDefaultsAndValidates(t *testing.T) {
 	t.Run("missing", func(t *testing.T) {
 		viper.Reset()
 		t.Cleanup(viper.Reset)
@@ -64,8 +64,9 @@ func TestLoadGroupAccessRuntimeModeIsStrict(t *testing.T) {
 			}
 		})
 
-		_, err := Load()
-		require.ErrorContains(t, err, "must be explicitly configured")
+		cfg, err := Load()
+		require.NoError(t, err)
+		require.Equal(t, GroupAccessRuntimeModeAuditOnly, cfg.GroupAccessRuntimeMode)
 	})
 
 	t.Run("unknown", func(t *testing.T) {

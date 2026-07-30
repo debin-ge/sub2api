@@ -100,7 +100,8 @@ webauthn:
 # - simple: 隐藏 SaaS 功能，跳过计费和余额校验
 run_mode: "standard"
 
-# VIP/fallback runtime rollout. This value is required and strictly parsed.
+# VIP/fallback runtime rollout. Omitted values default to AUDIT_ONLY; unknown
+# explicit values are rejected.
 # Phase A: AUDIT_ONLY records would-deny without changing existing traffic.
 # Phase B: ENFORCE rejects the new VIP/fallback authorization failures.
 group_access_runtime_mode: "AUDIT_ONLY"
