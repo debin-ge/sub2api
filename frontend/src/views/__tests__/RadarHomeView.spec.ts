@@ -171,12 +171,6 @@ const QuotaBucketDetailModalStub = defineComponent({
   template: '<div v-if="show" data-testid="quota-modal"><button data-testid="quota-modal-close" @click="$emit(\'close\')" /></div>',
 })
 
-const DataSourceFooterStub = defineComponent({
-  name: 'DataSourceFooter',
-  props: ['sources', 'loading'],
-  template: '<div data-testid="sources"><p data-testid="disclaimer">disclaimer</p></div>',
-})
-
 const DegradationStub = defineComponent({
   name: 'DegradationRadarTabs',
   props: [
@@ -196,7 +190,6 @@ const stubs: Record<string, Component> = {
   ServiceHealthGrid: ServiceHealthGridStub,
   QuotaBucketGrid: QuotaBucketGridStub,
   QuotaBucketDetailModal: QuotaBucketDetailModalStub,
-  DataSourceFooter: DataSourceFooterStub,
   DegradationRadarTabs: DegradationStub,
   Icon: true,
 }
@@ -313,10 +306,10 @@ describe('RadarHomeView', () => {
     expect(wrapper.text()).not.toContain('Unable to load this section')
   })
 
-  it('renders the data-source footer from the API metadata', () => {
+  it('does not render the data-source section', () => {
     const wrapper = mountView(makeRadar())
-    expect(wrapper.find('[data-testid="sources"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="disclaimer"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="sources"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Data sources')
   })
 
   it('renders the same localized copyright footer as the home page', () => {
@@ -335,7 +328,7 @@ describe('RadarHomeView', () => {
     expect(contentWrapper.get('[data-testid="quota-grid"]').exists()).toBe(true)
     expect(contentWrapper.get('[data-testid="quota-grid"]').attributes('data-sample-warning')).toBe('3')
     expect(contentWrapper.get('[data-testid="degradation"]').exists()).toBe(true)
-    expect(contentWrapper.find('[data-testid="sources"]').exists()).toBe(true)
+    expect(contentWrapper.find('[data-testid="sources"]').exists()).toBe(false)
 
     const emptyWrapper = mountView(makeRadar({
       health: resource<ServiceHealthDTO[]>([]),
@@ -360,7 +353,7 @@ describe('RadarHomeView', () => {
     await flushPromises()
     expect(emptyWrapper.text()).toContain('No quota data yet')
     expect(emptyWrapper.get('[data-testid="degradation"]').exists()).toBe(true)
-    expect(emptyWrapper.find('[data-testid="sources"]').exists()).toBe(true)
+    expect(emptyWrapper.find('[data-testid="sources"]').exists()).toBe(false)
   })
 
   it('distinguishes a completed empty aggregation from a pending first run', () => {

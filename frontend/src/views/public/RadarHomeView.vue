@@ -112,12 +112,6 @@
       @close="selectedQuotaBucket = null"
     />
 
-    <DataSourceFooter
-      v-if="!radar.allInitialFailed.value"
-      :sources="sourcesData ?? []"
-      :loading="radar.sources.loading.value"
-    />
-
     <footer
       data-testid="radar-footer"
       class="border-t border-gray-200/50 px-6 py-8 dark:border-dark-800/50"
@@ -139,7 +133,6 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import DegradationRadarTabs from '@/components/radar/DegradationRadarTabs.vue'
-import DataSourceFooter from '@/components/radar/DataSourceFooter.vue'
 import QuotaBucketDetailModal from '@/components/radar/QuotaBucketDetailModal.vue'
 import QuotaBucketGrid from '@/components/radar/QuotaBucketGrid.vue'
 import RadarHero from '@/components/radar/RadarHero.vue'
