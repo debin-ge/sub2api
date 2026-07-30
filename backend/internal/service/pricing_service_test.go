@@ -393,7 +393,19 @@ func TestParsePricingData_MarksIncompleteBillingDimensionsUnavailable(t *testing
 			"input_cost_per_token": 0.000001,
 			"output_cost_per_token": 0.000002,
 			"cache_read_input_token_cost": 0.0000001,
-			"supports_prompt_caching": true
+			"supports_prompt_caching": true,
+			"litellm_provider": "anthropic"
+		},
+		"openai-native-cache": {
+			"input_cost_per_token": 0.000001,
+			"output_cost_per_token": 0.000002,
+			"cache_read_input_token_cost": 0.0000001,
+			"input_cost_per_token_priority": 0.000002,
+			"output_cost_per_token_priority": 0.000004,
+			"cache_read_input_token_cost_priority": 0.0000002,
+			"supports_prompt_caching": true,
+			"supports_service_tier": true,
+			"litellm_provider": "openai"
 		},
 		"incomplete-priority": {
 			"input_cost_per_token": 0.000001,
@@ -434,6 +446,11 @@ func TestParsePricingData_MarksIncompleteBillingDimensionsUnavailable(t *testing
 		require.True(t, data[model].TokenPricingAbsent, model)
 	}
 
+	openAINativeCache := data["openai-native-cache"]
+	require.False(t, openAINativeCache.TokenPricingAbsent)
+	require.False(t, openAINativeCache.CacheCreationPriceExplicit)
+	require.True(t, openAINativeCache.CacheReadPriceExplicit)
+
 	complete := data["complete-explicit-zero"]
 	require.False(t, complete.TokenPricingAbsent)
 	require.True(t, complete.PricePresenceKnown)
@@ -456,6 +473,12 @@ func TestParsePricingData_MarksIncompleteBillingDimensionsUnavailable(t *testing
 		_, err := billingSvc.GetModelPricingStrict(model)
 		require.ErrorIs(t, err, ErrModelPricingUnavailable, model)
 	}
+	openAIPricing, err := billingSvc.GetModelPricingStrict("openai-native-cache")
+	require.NoError(t, err)
+	require.InDelta(t, 0.000001, openAIPricing.InputPricePerToken, 1e-12)
+	require.InDelta(t, 0.0000001, openAIPricing.CacheReadPricePerToken, 1e-12)
+	require.False(t, openAIPricing.CacheCreationPriceExplicit)
+
 	resolved := mustModelPricing(t, billingSvc, "complete-explicit-zero")
 	require.True(t, resolved.PricePresenceKnown)
 	require.True(t, resolved.CacheCreationPriceExplicit)
@@ -741,12 +764,20 @@ func TestDefaultPricingIncludesCodexAutoReview(t *testing.T) {
 	pricingData, err := svc.parsePricingData(data)
 	require.NoError(t, err)
 	svc.pricingData = pricingData
+	billingSvc := NewBillingService(&config.Config{}, svc)
 
-	got := svc.GetModelPricing("codex-auto-review")
+	raw := svc.LookupModelPricingStrict("codex-auto-review")
+	require.NotNil(t, raw)
+	require.False(t, raw.TokenPricingAbsent)
+	require.False(t, raw.CacheCreationPriceExplicit)
+
+	got, err := billingSvc.GetModelPricingStrict("codex-auto-review")
+	require.NoError(t, err)
 	require.NotNil(t, got)
-	require.InDelta(t, 5e-6, got.InputCostPerToken, 1e-12)
-	require.InDelta(t, 3e-5, got.OutputCostPerToken, 1e-12)
-	require.InDelta(t, 5e-7, got.CacheReadInputTokenCost, 1e-12)
+	require.InDelta(t, 5e-6, got.InputPricePerToken, 1e-12)
+	require.InDelta(t, 3e-5, got.OutputPricePerToken, 1e-12)
+	require.InDelta(t, 5e-7, got.CacheReadPricePerToken, 1e-12)
+	require.True(t, newStrictGlobalPricingGate(billingSvc, "codex-auto-review").effective())
 }
 
 func TestGetModelPricing_Gpt54MiniUsesDedicatedStaticFallbackWhenRemoteMissing(t *testing.T) {

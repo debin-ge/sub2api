@@ -195,11 +195,16 @@ func rawModelTokenPricingIncomplete(model string, entry *RawModelPriceEntry) boo
 		return true
 	}
 	hasDerivedGPT56CacheWritePolicy := isOpenAIGPT56Model(normalizeKnownOpenAICodexModel(model))
+	usesOpenAINativeCacheBilling := strings.EqualFold(strings.TrimSpace(entry.PricingCatalogProvider), "openai")
 
 	// A cache-capable catalog entry must say what both cache operations cost.
-	// Explicit zero is valid; omission is not. The same rule applies when the
-	// entry carries either cache price even if supports_prompt_caching was
-	// omitted or stale.
+	// Explicit zero is valid; omission is not, except for native OpenAI pricing:
+	// OpenAI publishes a cached-input read discount but no separate cache-write
+	// price because cache-populating input remains ordinary input. OpenAI usage
+	// also normally reports only total/cached input, so no cache-write bucket is
+	// created. If an OpenAI-compatible upstream unexpectedly reports explicit
+	// cache-write tokens, validateUsedModelPricingDimensions still fails closed
+	// unless a model policy or channel price supplies that dimension.
 	cachePricingDeclared := entry.SupportsPromptCaching ||
 		entry.CacheCreationInputTokenCost != nil ||
 		entry.CacheCreationInputTokenCostAbove1hr != nil ||
@@ -208,7 +213,7 @@ func rawModelTokenPricingIncomplete(model string, entry *RawModelPriceEntry) boo
 		return true
 	}
 	if cachePricingDeclared && entry.CacheCreationInputTokenCost == nil &&
-		!hasDerivedGPT56CacheWritePolicy {
+		!hasDerivedGPT56CacheWritePolicy && !usesOpenAINativeCacheBilling {
 		return true
 	}
 	if entry.CacheCreationInputTokenCostAbove1hr != nil &&
