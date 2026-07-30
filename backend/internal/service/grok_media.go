@@ -112,6 +112,207 @@ func ExtractGrokMediaModel(contentType string, body []byte) string {
 	return ParseGrokMediaRequest(contentType, body).Model
 }
 
+// ValidateGrokMediaBillingFields rejects request ambiguity and unsupported
+// billing dimensions before account selection or forwarding. The permissive
+// parser below is intentionally useful for moderation and compatibility, but
+// it must not decide billable identity: duplicate JSON/multipart fields can be
+// interpreted first-wins here and last-wins upstream, while unknown
+// resolutions would otherwise collapse to the cheapest 480p tier.
+func ValidateGrokMediaBillingFields(contentType string, body []byte) error {
+	if len(body) == 0 {
+		return fmt.Errorf("request body is empty")
+	}
+	if gjson.ValidBytes(body) {
+		return validateGrokMediaJSONBillingFields(body)
+	}
+	return validateGrokMediaMultipartBillingFields(contentType, body)
+}
+
+func validateGrokMediaJSONBillingFields(body []byte) error {
+	if err := ValidateUniqueBillingModelField(body); err != nil {
+		return err
+	}
+
+	counts := map[string]int{
+		"size":       0,
+		"n":          0,
+		"resolution": 0,
+		"duration":   0,
+	}
+	values := make(map[string]gjson.Result, len(counts))
+	parseRawJSONView(body).ForEach(func(key, value gjson.Result) bool {
+		if _, ok := counts[key.Str]; ok {
+			counts[key.Str]++
+			values[key.Str] = value
+		}
+		return true
+	})
+	for _, field := range []string{"size", "n", "resolution", "duration"} {
+		if counts[field] > 1 {
+			return fmt.Errorf("duplicate top-level %s fields are not allowed", field)
+		}
+	}
+
+	if model := gjson.GetBytes(body, "model"); model.Exists() {
+		if model.Type != gjson.String {
+			return fmt.Errorf("invalid model field type")
+		}
+		if strings.ContainsRune(model.String(), '\x00') {
+			return fmt.Errorf("top-level model must not contain null characters")
+		}
+	}
+	if value, ok := values["size"]; ok {
+		if value.Type != gjson.String {
+			return fmt.Errorf("invalid size field type")
+		}
+		if err := validateGrokMediaImageSize(value.String()); err != nil {
+			return err
+		}
+	}
+	if value, ok := values["resolution"]; ok {
+		if value.Type != gjson.String {
+			return fmt.Errorf("invalid resolution field type")
+		}
+		if err := validateGrokMediaVideoResolution(value.String()); err != nil {
+			return err
+		}
+	}
+	if value, ok := values["n"]; ok {
+		if value.Type != gjson.Number {
+			return fmt.Errorf("invalid n field type")
+		}
+		if _, err := parseOpenAIImagesCount(value.Raw); err != nil {
+			return err
+		}
+	}
+	if value, ok := values["duration"]; ok {
+		if value.Type != gjson.Number {
+			return fmt.Errorf("invalid duration field type")
+		}
+		if _, err := parseGrokMediaDuration(value.Raw); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateGrokMediaMultipartBillingFields(contentType string, body []byte) error {
+	mediaType, params, err := mime.ParseMediaType(strings.TrimSpace(contentType))
+	if err != nil || !strings.EqualFold(mediaType, "multipart/form-data") {
+		return fmt.Errorf("request body must be valid JSON or multipart/form-data")
+	}
+	boundary := strings.TrimSpace(params["boundary"])
+	if boundary == "" {
+		return fmt.Errorf("multipart boundary is required")
+	}
+
+	counts := make(map[string]int, 5)
+	values := make(map[string]string, 5)
+	reader := multipart.NewReader(bytes.NewReader(body), boundary)
+	for {
+		part, err := reader.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("parse multipart request: %w", err)
+		}
+		name := strings.TrimSpace(part.FormName())
+		if !isGrokMediaBillingField(name) {
+			_ = part.Close()
+			continue
+		}
+		counts[name]++
+		if counts[name] > 1 {
+			_ = part.Close()
+			return fmt.Errorf("duplicate multipart %s fields are not allowed", name)
+		}
+		if strings.TrimSpace(part.FileName()) != "" {
+			_ = part.Close()
+			return fmt.Errorf("multipart %s field must be text", name)
+		}
+		data, readErr := io.ReadAll(io.LimitReader(part, openAIImageMaxUploadPartSize))
+		_ = part.Close()
+		if readErr != nil {
+			return fmt.Errorf("read multipart %s field: %w", name, readErr)
+		}
+		values[name] = strings.TrimSpace(string(data))
+	}
+
+	if model, ok := values["model"]; ok && strings.ContainsRune(model, '\x00') {
+		return fmt.Errorf("multipart model must not contain null characters")
+	}
+	if size, ok := values["size"]; ok {
+		if err := validateGrokMediaImageSize(size); err != nil {
+			return err
+		}
+	}
+	if resolution, ok := values["resolution"]; ok {
+		if err := validateGrokMediaVideoResolution(resolution); err != nil {
+			return err
+		}
+	}
+	if count, ok := values["n"]; ok {
+		if _, err := parseOpenAIImagesCount(count); err != nil {
+			return err
+		}
+	}
+	if duration, ok := values["duration"]; ok {
+		if _, err := parseGrokMediaDuration(duration); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func isGrokMediaBillingField(name string) bool {
+	switch name {
+	case "model", "size", "n", "resolution", "duration":
+		return true
+	default:
+		return false
+	}
+}
+
+func validateGrokMediaImageSize(value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" || strings.EqualFold(value, "auto") {
+		return nil
+	}
+	if strings.ContainsRune(value, '\x00') {
+		return fmt.Errorf("size must not contain null characters")
+	}
+	if _, ok := ClassifyImageBillingTier(value); !ok {
+		return fmt.Errorf("unsupported image size %q: no billing tier is configured", value)
+	}
+	return nil
+}
+
+func validateGrokMediaVideoResolution(value string) error {
+	value = strings.ToLower(strings.TrimSpace(value))
+	switch value {
+	case "", "480", "480p", "sd", "720", "720p", "hd",
+		"1080", "1080p", "full_hd", "full-hd", "fhd":
+		return nil
+	default:
+		return fmt.Errorf("unsupported video resolution %q: no billing tier is configured", value)
+	}
+}
+
+func parseGrokMediaDuration(value string) (int, error) {
+	duration, err := strconv.ParseInt(strings.TrimSpace(value), 10, 32)
+	if err != nil ||
+		duration < VideoBillingMinDurationSeconds ||
+		duration > VideoBillingMaxDurationSeconds {
+		return 0, fmt.Errorf(
+			"duration must be an integer between %d and %d seconds",
+			VideoBillingMinDurationSeconds,
+			VideoBillingMaxDurationSeconds,
+		)
+	}
+	return int(duration), nil
+}
+
 func ParseGrokMediaRequest(contentType string, body []byte) GrokMediaRequestInfo {
 	info := GrokMediaRequestInfo{N: 1}
 	if gjson.ValidBytes(body) {
@@ -331,12 +532,17 @@ func (s *OpenAIGatewayService) ForwardGrokMedia(
 	if account.Platform != PlatformGrok {
 		return nil, fmt.Errorf("account platform %s is not supported for grok media", account.Platform)
 	}
-
-	token, _, err := s.getRequestCredential(ctx, c, account)
-	if err != nil {
-		return nil, err
+	if endpoint.RequiresRequestBody() {
+		if err := ValidateGrokMediaBillingFields(contentType, body); err != nil {
+			return nil, err
+		}
 	}
+
 	if endpoint == GrokMediaEndpointVideoContent {
+		token, _, err := s.getRequestCredential(ctx, c, account)
+		if err != nil {
+			return nil, err
+		}
 		return s.forwardGrokMediaVideoContent(ctx, c, account, token, requestID, startTime)
 	}
 	targetURL, err := buildGrokMediaURL(account, s.cfg, endpoint, requestID)
@@ -366,6 +572,34 @@ func (s *OpenAIGatewayService) ForwardGrokMedia(
 		}
 	}
 	body, contentType, err = sanitizeGrokMediaForwardBody(endpoint, body, contentType)
+	if err != nil {
+		return nil, err
+	}
+	if kind := endpoint.BillingKind(); kind == BillingKindImage || kind == BillingKindVideo {
+		var groupID *int64
+		if apiKey := getAPIKeyFromContext(c); apiKey != nil {
+			groupID = apiKey.GroupID
+		}
+		imageSizeTier := ""
+		if kind == BillingKindImage {
+			imageSizeTier = requestInfo.SizeTier
+		}
+		if s.pricingGuardRequired || s.billingService != nil {
+			if err := s.enforceResolvedOpenAIMediaPricing(
+				ctx,
+				groupID,
+				account,
+				requestInfo.Model,
+				upstreamModel,
+				imageSizeTier,
+				kind,
+			); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	token, _, err := s.getRequestCredential(ctx, c, account)
 	if err != nil {
 		return nil, err
 	}
@@ -442,7 +676,7 @@ func (s *OpenAIGatewayService) ForwardGrokMedia(
 		ResponseID:           usage.ResponseID,
 		Usage:                usage.Usage,
 		Model:                requestModel,
-		BillingModel:         requestModel,
+		BillingModel:         upstreamModel,
 		UpstreamModel:        upstreamModel,
 		ResponseHeaders:      resp.Header.Clone(),
 		Duration:             time.Since(startTime),

@@ -63,10 +63,6 @@ func (s *AntigravityGatewayService) ForwardGemini(ctx context.Context, c *gin.Co
 		return nil, s.writeGoogleError(c, http.StatusBadRequest, "Request body is empty")
 	}
 
-	// 解析请求以获取 image_size（用于图片计费）
-	imageInputSize := s.extractImageInputSize(body)
-	imageSize := normalizeOpenAIImageSizeTier(imageInputSize)
-
 	switch action {
 	case "generateContent", "streamGenerateContent":
 		// ok
@@ -91,6 +87,22 @@ func (s *AntigravityGatewayService) ForwardGemini(ctx context.Context, c *gin.Co
 		return nil, s.writeGoogleError(c, http.StatusForbidden, fmt.Sprintf("model %s not in whitelist", originalModel))
 	}
 	billingModel := mappedModel
+	imageIdentity, err := resolveGeminiImageBillingIdentity(mappedModel, body)
+	if err != nil {
+		_ = s.writeGoogleError(c, http.StatusServiceUnavailable, err.Error())
+		return nil, err
+	}
+	if err := s.validateResolvedAntigravityUsagePricing(
+		ctx,
+		c,
+		account,
+		originalModel,
+		mappedModel,
+		imageIdentity,
+	); err != nil {
+		_ = s.writeGoogleError(c, http.StatusServiceUnavailable, err.Error())
+		return nil, err
+	}
 
 	// 获取 access_token
 	if s.tokenProvider == nil {
@@ -195,6 +207,22 @@ func (s *AntigravityGatewayService) ForwardGemini(ctx context.Context, c *gin.Co
 			if fallbackModel != "" && fallbackModel != mappedModel {
 				logger.LegacyPrintf("service.antigravity_gateway", "[Antigravity] Model not found (%s), retrying with fallback model %s (account: %s)", mappedModel, fallbackModel, account.Name)
 
+				fallbackImageIdentity, identityErr := resolveGeminiImageBillingIdentity(fallbackModel, injectedBody)
+				if identityErr != nil {
+					_ = s.writeGoogleError(c, http.StatusServiceUnavailable, identityErr.Error())
+					return nil, identityErr
+				}
+				if pricingErr := s.validateResolvedAntigravityUsagePricing(
+					ctx,
+					c,
+					account,
+					originalModel,
+					fallbackModel,
+					fallbackImageIdentity,
+				); pricingErr != nil {
+					_ = s.writeGoogleError(c, http.StatusServiceUnavailable, pricingErr.Error())
+					return nil, pricingErr
+				}
 				fallbackWrapped, err := s.wrapV1InternalRequest(projectID, fallbackModel, injectedBody)
 				if err == nil {
 					fallbackReq, err := antigravity.NewAPIRequest(ctx, upstreamAction, accessToken, fallbackWrapped)
@@ -203,6 +231,8 @@ func (s *AntigravityGatewayService) ForwardGemini(ctx context.Context, c *gin.Co
 						if err == nil && fallbackResp.StatusCode < 400 {
 							_ = resp.Body.Close()
 							resp = fallbackResp
+							billingModel = fallbackModel
+							imageIdentity = fallbackImageIdentity
 						} else if fallbackResp != nil {
 							_ = fallbackResp.Body.Close()
 						}
@@ -423,25 +453,19 @@ handleSuccess:
 		usage = &ClaudeUsage{}
 	}
 
-	// 判断是否为图片生成模型
-	imageCount := 0
-	if isImageGenerationModel(mappedModel) {
-		// Gemini 图片生成 API 每次请求只生成一张图片（API 限制）
-		imageCount = 1
-	}
-
 	return &ForwardResult{
 		RequestID:        requestID,
 		Usage:            *usage,
 		Model:            originalModel,
 		UpstreamModel:    billingModel,
+		BillingModel:     imageIdentity.Model,
 		Stream:           stream,
 		Duration:         time.Since(startTime),
 		FirstTokenMs:     firstTokenMs,
 		ClientDisconnect: clientDisconnect,
-		ImageCount:       imageCount,
-		ImageSize:        imageSize,
-		ImageInputSize:   imageInputSize,
+		ImageCount:       imageIdentity.Count,
+		ImageSize:        imageIdentity.SizeTier,
+		ImageInputSize:   imageIdentity.InputSize,
 	}, nil
 }
 

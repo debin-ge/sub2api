@@ -198,12 +198,20 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 		return
 	}
 
-	// 解析渠道级模型映射
-	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, modelName)
-	reqModel := modelName // 保存映射前的原始模型名
+	// 解析渠道级模型映射。Gemini Native 的账号路由使用映射后的模型，
+	// 但价格/渠道限制仍必须绑定客户端原始模型；把本次解析结果钉在 context
+	// 中，防止调度器把映射后的模型再次送进映射表。
+	reqModel := modelName
+	channelMapping := h.gatewayService.ResolveRequestChannelMapping(c.Request.Context(), apiKey.GroupID, reqModel)
 	if channelMapping.Mapped {
 		modelName = channelMapping.MappedModel
 	}
+	pricingCtx := service.WithResolvedChannelPricingIdentity(
+		c.Request.Context(),
+		reqModel,
+		channelMapping,
+	)
+	c.Request = c.Request.WithContext(service.WithFinalGeminiImagePricingGuard(pricingCtx))
 
 	// Get subscription (may be nil)
 	subscription, _ := middleware.GetSubscriptionFromContext(c)
@@ -356,7 +364,7 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 		selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), apiKey.GroupID, sessionKey, modelName, fs.FailedAccountIDs, "", int64(0)) // Gemini 不使用会话限制
 		if err != nil {
 			if len(fs.FailedAccountIDs) == 0 {
-				cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, modelName, modelName, service.PlatformGemini)
+				cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, err, modelName, modelName, service.PlatformGemini)
 				if !cls.ModelNotFound {
 					markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
 				}
@@ -533,7 +541,7 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 		forceCacheBilling := fs.ForceCacheBilling
 		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
 		sessionID := service.ExtractClientSessionID(c)
-		h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
+		h.submitGatewayUsageRecordTask(c.Request.Context(), result, func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsageWithLongContext(ctx, &service.RecordUsageLongContextInput{
 				Result:                result,
 				QuotaPlatform:         quotaPlatform,

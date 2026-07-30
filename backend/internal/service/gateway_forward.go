@@ -888,13 +888,13 @@ func (s *GatewayService) IsModelRestricted(ctx context.Context, groupID int64, m
 	return s.channelService.IsModelRestricted(ctx, groupID, model)
 }
 
-// ResolveChannelMappingAndRestrict 解析渠道映射。
-// 模型限制检查已移至调度阶段（checkChannelPricingRestriction），restricted 始终返回 false。
-func (s *GatewayService) ResolveChannelMappingAndRestrict(ctx context.Context, groupID *int64, model string) (ChannelMappingResult, bool) {
+// ResolveRequestChannelMapping 解析入站请求的渠道映射（代理到 ChannelService）。
+// 不含模型限制检查——那一步由调度阶段的 checkChannelPricingRestriction 负责。
+func (s *GatewayService) ResolveRequestChannelMapping(ctx context.Context, groupID *int64, model string) ChannelMappingResult {
 	if s.channelService == nil {
-		return ChannelMappingResult{MappedModel: model}, false
+		return ChannelMappingResult{MappedModel: model}
 	}
-	return s.channelService.ResolveChannelMappingAndRestrict(ctx, groupID, model)
+	return s.channelService.ResolveRequestChannelMapping(ctx, groupID, model)
 }
 
 // checkChannelPricingRestriction 根据渠道计费基准检查模型是否受定价列表限制。
@@ -904,8 +904,20 @@ func (s *GatewayService) checkChannelPricingRestriction(ctx context.Context, gro
 	if groupID == nil || s.channelService == nil || requestedModel == "" {
 		return false
 	}
-	mapping := s.channelService.ResolveChannelMapping(ctx, *groupID, requestedModel)
-	billingModel := billingModelForRestriction(mapping.BillingModelSource, requestedModel, mapping.MappedModel)
+	pricingRequestedModel := requestedModel
+	mapping := ChannelMappingResult{}
+	if identity, ok := resolvedChannelPricingIdentityFromContext(ctx, requestedModel); ok {
+		pricingRequestedModel = identity.requestedModel
+		mapping.MappedModel = identity.channelMappedModel
+		mapping.BillingModelSource = identity.billingModelSource
+	} else {
+		mapping = s.channelService.ResolveChannelMapping(ctx, *groupID, requestedModel)
+	}
+	billingModel := billingModelForRestriction(
+		mapping.BillingModelSource,
+		pricingRequestedModel,
+		mapping.MappedModel,
+	)
 	if billingModel == "" {
 		return false
 	}
@@ -945,6 +957,12 @@ func resolveAccountUpstreamModel(account *Account, requestedModel string) string
 	if account == nil {
 		return ""
 	}
+	if account.IsBedrock() {
+		if mapped, ok := ResolveBedrockModelID(account, requestedModel); ok {
+			return mapped
+		}
+		return ""
+	}
 	switch account.Platform {
 	case PlatformMiniMax:
 		return account.GetMiniMaxMappedModel(requestedModel)
@@ -962,7 +980,24 @@ func resolveAccountUpstreamModel(account *Account, requestedModel string) string
 	if account.Platform == PlatformAntigravity {
 		return mapAntigravityModel(account, requestedModel)
 	}
-	return account.GetMappedModel(requestedModel)
+	// The generic forwarders apply account model_mapping only to credentials
+	// that actually control a model-bearing HTTP request. OAuth/SetupToken
+	// Gemini paths forward the requested model verbatim; validating a configured
+	// mapping for those accounts would prove the price of one SKU and execute a
+	// different, potentially unpriced SKU.
+	if account.Type == AccountTypeAPIKey || account.Type == AccountTypeServiceAccount {
+		if account.Platform == PlatformAnthropic && account.Type == AccountTypeServiceAccount {
+			if mapped, ok := account.ResolveMappedModel(requestedModel); ok {
+				return mapped
+			}
+			return normalizeVertexAnthropicModelID(claude.NormalizeModelID(requestedModel))
+		}
+		return account.GetMappedModel(requestedModel)
+	}
+	if account.Platform == PlatformAnthropic {
+		return claude.NormalizeModelID(requestedModel)
+	}
+	return requestedModel
 }
 
 // needsUpstreamChannelRestrictionCheck 判断是否需要在调度循环中逐账号检查上游模型的渠道限制。

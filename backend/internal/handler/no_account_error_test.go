@@ -54,7 +54,7 @@ func TestClassifyNoAccountError_NilDiagnoser_Falls503(t *testing.T) {
 	c := newTestGinContextWithRequest()
 	apiKey := &service.APIKey{GroupID: ptrInt64(7)}
 
-	cls := classifyNoAccountErrorFromGin(c, nil, apiKey, "gpt-5", "gpt-5", service.PlatformOpenAI)
+	cls := classifyNoAccountErrorFromGin(c, nil, apiKey, nil, "gpt-5", "gpt-5", service.PlatformOpenAI)
 
 	require.Equal(t, http.StatusServiceUnavailable, cls.Status)
 	require.Equal(t, "api_error", cls.ErrType)
@@ -65,7 +65,7 @@ func TestClassifyNoAccountError_NilAPIKey_Falls503(t *testing.T) {
 	c := newTestGinContextWithRequest()
 	fd := &fakeDiagnoser{resp: service.ModelAvailabilityDiagnosis{HasAccountsInPool: true, HasModelSupport: false}}
 
-	cls := classifyNoAccountErrorFromGin(c, fd, nil, "gpt-5", "gpt-5", service.PlatformOpenAI)
+	cls := classifyNoAccountErrorFromGin(c, fd, nil, nil, "gpt-5", "gpt-5", service.PlatformOpenAI)
 
 	require.Equal(t, http.StatusServiceUnavailable, cls.Status)
 	require.False(t, cls.ModelNotFound)
@@ -77,7 +77,7 @@ func TestClassifyNoAccountError_NilGroupID_Falls503(t *testing.T) {
 	fd := &fakeDiagnoser{resp: service.ModelAvailabilityDiagnosis{HasAccountsInPool: true, HasModelSupport: false}}
 	apiKey := &service.APIKey{GroupID: nil}
 
-	cls := classifyNoAccountErrorFromGin(c, fd, apiKey, "gpt-5", "gpt-5", service.PlatformOpenAI)
+	cls := classifyNoAccountErrorFromGin(c, fd, apiKey, nil, "gpt-5", "gpt-5", service.PlatformOpenAI)
 
 	require.Equal(t, http.StatusServiceUnavailable, cls.Status)
 	require.False(t, cls.ModelNotFound)
@@ -89,7 +89,7 @@ func TestClassifyNoAccountError_EmptyModel_Falls503(t *testing.T) {
 	fd := &fakeDiagnoser{resp: service.ModelAvailabilityDiagnosis{HasAccountsInPool: true, HasModelSupport: false}}
 	apiKey := &service.APIKey{GroupID: ptrInt64(7)}
 
-	cls := classifyNoAccountErrorFromGin(c, fd, apiKey, "   ", "", service.PlatformOpenAI)
+	cls := classifyNoAccountErrorFromGin(c, fd, apiKey, nil, "   ", "", service.PlatformOpenAI)
 
 	require.Equal(t, http.StatusServiceUnavailable, cls.Status)
 	require.False(t, cls.ModelNotFound)
@@ -101,7 +101,7 @@ func TestClassifyNoAccountError_ModelNotSupported_Returns404(t *testing.T) {
 	fd := &fakeDiagnoser{resp: service.ModelAvailabilityDiagnosis{HasAccountsInPool: true, HasModelSupport: false}}
 	apiKey := &service.APIKey{GroupID: ptrInt64(42)}
 
-	cls := classifyNoAccountErrorFromGin(c, fd, apiKey, "gpt-5.1-codex-mini", "gpt-5.1-codex-mini", service.PlatformOpenAI)
+	cls := classifyNoAccountErrorFromGin(c, fd, apiKey, nil, "gpt-5.1-codex-mini", "gpt-5.1-codex-mini", service.PlatformOpenAI)
 
 	require.Equal(t, http.StatusNotFound, cls.Status)
 	require.Equal(t, "model_not_found", cls.ErrType)
@@ -127,7 +127,7 @@ func TestClassifyOpenAICompatibleNoAccountError_GrokUsesGrokPlatform(t *testing.
 		},
 	}
 
-	cls := classifyOpenAICompatibleNoAccountErrorFromGin(c, fd, apiKey, "grok-4.5", "grok-4.5")
+	cls := classifyOpenAICompatibleNoAccountErrorFromGin(c, fd, apiKey, nil, "grok-4.5", "grok-4.5")
 
 	require.Equal(t, http.StatusNotFound, cls.Status)
 	require.Equal(t, "model_not_found", cls.ErrType)
@@ -147,7 +147,7 @@ func TestClassifyNoAccountError_HasModelSupport_KeepsRoutingMessageGenerationToC
 	fd := &fakeDiagnoser{resp: service.ModelAvailabilityDiagnosis{HasAccountsInPool: true, HasModelSupport: true}}
 	apiKey := &service.APIKey{GroupID: ptrInt64(7)}
 
-	cls := classifyNoAccountErrorFromGin(c, fd, apiKey, "gpt-5", "gpt-5", service.PlatformOpenAI)
+	cls := classifyNoAccountErrorFromGin(c, fd, apiKey, nil, "gpt-5", "gpt-5", service.PlatformOpenAI)
 
 	require.Equal(t, http.StatusServiceUnavailable, cls.Status, "model exists somewhere — caller stays on 503")
 	require.Equal(t, "api_error", cls.ErrType)
@@ -161,7 +161,7 @@ func TestClassifyNoAccountError_ModelSupportedOnlyByRateLimitedAccount_Returns50
 	fd := &fakeDiagnoser{resp: service.ModelAvailabilityDiagnosis{HasAccountsInPool: true, HasModelSupport: true}}
 	apiKey := &service.APIKey{GroupID: ptrInt64(7)}
 
-	cls := classifyNoAccountErrorFromGin(c, fd, apiKey, "claude-opus-4-8", "claude-opus-4-8", service.PlatformAnthropic)
+	cls := classifyNoAccountErrorFromGin(c, fd, apiKey, nil, "claude-opus-4-8", "claude-opus-4-8", service.PlatformAnthropic)
 
 	require.Equal(t, http.StatusServiceUnavailable, cls.Status)
 	require.Equal(t, "api_error", cls.ErrType)
@@ -173,7 +173,7 @@ func TestClassifyNoAccountError_NoAccountsInPool_Stays503(t *testing.T) {
 	fd := &fakeDiagnoser{resp: service.ModelAvailabilityDiagnosis{HasAccountsInPool: false, HasModelSupport: false}}
 	apiKey := &service.APIKey{GroupID: ptrInt64(7)}
 
-	cls := classifyNoAccountErrorFromGin(c, fd, apiKey, "gpt-5", "gpt-5", service.PlatformOpenAI)
+	cls := classifyNoAccountErrorFromGin(c, fd, apiKey, nil, "gpt-5", "gpt-5", service.PlatformOpenAI)
 
 	require.Equal(t, http.StatusServiceUnavailable, cls.Status, "empty pool is a service-availability issue, not a model issue")
 	require.False(t, cls.ModelNotFound)
@@ -184,7 +184,7 @@ func TestClassifyNoAccountError_DisplayModelOverridesRoutingForMessage(t *testin
 	fd := &fakeDiagnoser{resp: service.ModelAvailabilityDiagnosis{HasAccountsInPool: true, HasModelSupport: false}}
 	apiKey := &service.APIKey{GroupID: ptrInt64(7)}
 
-	cls := classifyNoAccountErrorFromGin(c, fd, apiKey, "gpt-5", "claude-3-fancy", service.PlatformOpenAI)
+	cls := classifyNoAccountErrorFromGin(c, fd, apiKey, nil, "gpt-5", "claude-3-fancy", service.PlatformOpenAI)
 
 	require.True(t, cls.ModelNotFound)
 	require.Contains(t, cls.Message, "claude-3-fancy", "user-facing message must reference the model the user asked for, not the post-mapping routing model")
@@ -192,11 +192,83 @@ func TestClassifyNoAccountError_DisplayModelOverridesRoutingForMessage(t *testin
 	require.Equal(t, "gpt-5", fd.calls[0].Model, "diagnosis must run against the routing model (post group dispatch mapping)")
 }
 
+func TestClassifyNoAccountError_PricingUnavailable_Returns404(t *testing.T) {
+	c := newTestGinContextWithRequest()
+	// 池子完全健康：有账号、账号也支持该模型。旧口径下这会被判成 503「稍后重试」。
+	fd := &fakeDiagnoser{resp: service.ModelAvailabilityDiagnosis{HasAccountsInPool: true, HasModelSupport: true}}
+	apiKey := &service.APIKey{GroupID: ptrInt64(7)}
+	selErr := fmt.Errorf("%w for billing_kind=token upstream_model=%q", service.ErrModelPricingUnavailable, "kimi-k3")
+
+	cls := classifyNoAccountErrorFromGin(c, fd, apiKey, selErr, "gpt-5", "gpt-5", service.PlatformOpenAI)
+
+	require.Equal(t, http.StatusNotFound, cls.Status, "定价缺失要改配置才能修，重试无意义")
+	require.Equal(t, "model_not_found", cls.ErrType)
+	require.True(t, cls.ModelNotFound, "调用方据此跳过 markOpsRoutingCapacityLimited*")
+	require.True(t, cls.PricingUnavailable)
+	require.Contains(t, cls.Message, "gpt-5")
+	require.NotContains(t, cls.Message, "kimi-k3", "上游模型链是运维信息，不能进响应体")
+	require.Empty(t, fd.calls, "错误已自述原因，不必再查账号池")
+}
+
+// 价格门禁与账号池状态无关：池子空、未绑定分组、模型名为空这些会让通用分支直接回落
+// 503 的前置条件，都不该把定价缺失也拖回 503。
+func TestClassifyNoAccountError_PricingUnavailable_IgnoresPoolPreconditions(t *testing.T) {
+	selErr := fmt.Errorf("%w: no price", service.ErrModelPricingUnavailable)
+	cases := []struct {
+		name   string
+		diag   service.ModelAvailabilityDiagnoser
+		apiKey *service.APIKey
+	}{
+		{name: "nil diagnoser", apiKey: &service.APIKey{GroupID: ptrInt64(7)}},
+		{name: "nil api key", diag: &fakeDiagnoser{}},
+		{name: "no group bound", diag: &fakeDiagnoser{}, apiKey: &service.APIKey{}},
+		{name: "empty pool", diag: &fakeDiagnoser{}, apiKey: &service.APIKey{GroupID: ptrInt64(7)}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cls := classifyNoAccountErrorFromGin(
+				newTestGinContextWithRequest(), tc.diag, tc.apiKey, selErr, "gpt-5", "gpt-5", service.PlatformOpenAI)
+			require.Equal(t, http.StatusNotFound, cls.Status)
+			require.True(t, cls.PricingUnavailable)
+		})
+	}
+}
+
+func TestClassifyNoAccountError_NonPricingErrorStillDiagnosesPool(t *testing.T) {
+	c := newTestGinContextWithRequest()
+	fd := &fakeDiagnoser{resp: service.ModelAvailabilityDiagnosis{HasAccountsInPool: true, HasModelSupport: true}}
+	apiKey := &service.APIKey{GroupID: ptrInt64(7)}
+
+	cls := classifyNoAccountErrorFromGin(
+		c, fd, apiKey, service.ErrNoAvailableAccounts, "gpt-5", "gpt-5", service.PlatformOpenAI)
+
+	require.Equal(t, http.StatusServiceUnavailable, cls.Status)
+	require.False(t, cls.PricingUnavailable)
+	require.Len(t, fd.calls, 1, "非定价原因仍要靠账号池诊断区分 404/503")
+}
+
+func TestClassifyOpenAICompatibleNoAccountError_PricingUnavailable_Returns404(t *testing.T) {
+	c := newTestGinContextWithRequest()
+	fd := &fakeDiagnoser{resp: service.ModelAvailabilityDiagnosis{HasAccountsInPool: true, HasModelSupport: true}}
+	groupID := int64(43)
+	apiKey := &service.APIKey{
+		GroupID: &groupID,
+		Group:   &service.Group{ID: groupID, Platform: service.PlatformGrok},
+	}
+	selErr := fmt.Errorf("%w: no price", service.ErrModelPricingUnavailable)
+
+	cls := classifyOpenAICompatibleNoAccountErrorFromGin(c, fd, apiKey, selErr, "grok-4.5", "grok-4.5")
+
+	require.Equal(t, http.StatusNotFound, cls.Status)
+	require.True(t, cls.PricingUnavailable)
+	require.Empty(t, fd.calls)
+}
+
 func TestClassifyNoAccountError_FromGin_NilContextStillSafe(t *testing.T) {
 	fd := &fakeDiagnoser{resp: service.ModelAvailabilityDiagnosis{HasAccountsInPool: true, HasModelSupport: false}}
 	apiKey := &service.APIKey{GroupID: ptrInt64(7)}
 
-	cls := classifyNoAccountErrorFromGin(nil, fd, apiKey, "gpt-5", "gpt-5", service.PlatformOpenAI)
+	cls := classifyNoAccountErrorFromGin(nil, fd, apiKey, nil, "gpt-5", "gpt-5", service.PlatformOpenAI)
 
 	require.Equal(t, http.StatusNotFound, cls.Status, "even with a nil gin context the classifier must still run and yield a coherent response")
 	require.True(t, cls.ModelNotFound)

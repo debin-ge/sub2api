@@ -134,34 +134,34 @@ func TestIsImageGenerationIntentJSONSemantics(t *testing.T) {
 			want:     false,
 		},
 		{
-			name:     "duplicate model uses first value",
+			name:     "duplicate model conservatively detects any image value",
 			endpoint: "/v1/responses",
 			body:     []byte(`{"model":"gpt-5.5","model":"gpt-image-2"}`),
-			want:     false,
+			want:     true,
 		},
 		{
-			name:     "duplicate null model still uses first value",
+			name:     "duplicate null model conservatively detects image value",
 			endpoint: "/v1/responses",
 			body:     []byte(`{"model":null,"model":"gpt-image-2"}`),
-			want:     false,
+			want:     true,
 		},
 		{
-			name:     "duplicate tools uses first value",
+			name:     "duplicate tools conservatively detects image declaration",
 			endpoint: "/v1/responses",
 			body:     []byte(`{"tools":[],"tools":[{"type":"image_generation"}]}`),
-			want:     false,
+			want:     true,
 		},
 		{
-			name:     "duplicate input uses first value",
+			name:     "duplicate input conservatively detects image declaration",
 			endpoint: "/v1/responses",
 			body:     []byte(`{"input":[],"input":[{"type":"additional_tools","tools":[{"type":"namespace","name":"image_gen"}]}]}`),
-			want:     false,
+			want:     true,
 		},
 		{
-			name:     "duplicate tool choice uses first value",
+			name:     "duplicate tool choice conservatively detects image selection",
 			endpoint: "/v1/responses",
 			body:     []byte(`{"tool_choice":"required","tool_choice":{"type":"image_generation"}}`),
-			want:     false,
+			want:     true,
 		},
 		{
 			name:     "escaped top level key",
@@ -284,6 +284,335 @@ func TestResolveOpenAIResponsesImageBillingConfigToolModelWins(t *testing.T) {
 	require.Equal(t, "2K", imageSize)
 }
 
+func TestResolveOpenAIResponsesImageBillingConfigUsesResponsesLiteToolIdentity(t *testing.T) {
+	rawCfg, err := resolveOpenAIResponsesImageBillingConfigDetailedFromBody(
+		[]byte(`{
+			"model":"gpt-5.4",
+			"input":[{
+				"type":"additional_tools",
+				"tools":[{"type":"image_generation","model":"nested-image-model","size":"3840x2160"}]
+			}]
+		}`),
+		"fallback-model",
+	)
+	require.NoError(t, err)
+	require.Equal(t, "nested-image-model", rawCfg.Model)
+	require.Equal(t, "4K", rawCfg.SizeTier)
+	require.Equal(t, "3840x2160", rawCfg.InputSize)
+
+	mapCfg, err := resolveOpenAIResponsesImageBillingConfigDetailed(
+		map[string]any{
+			"model": "gpt-5.4",
+			"input": []any{
+				map[string]any{
+					"type": "additional_tools",
+					"tools": []any{
+						map[string]any{
+							"type":  "image_generation",
+							"model": "nested-map-image-model",
+							"size":  "2048x1152",
+						},
+					},
+				},
+			},
+		},
+		"fallback-model",
+	)
+	require.NoError(t, err)
+	require.Equal(t, "nested-map-image-model", mapCfg.Model)
+	require.Equal(t, "2K", mapCfg.SizeTier)
+	require.Equal(t, "2048x1152", mapCfg.InputSize)
+}
+
+func TestResolveOpenAIResponsesImageBillingConfigRejectsMultipleResponsesLiteImageTools(t *testing.T) {
+	tests := []struct {
+		name    string
+		rawBody []byte
+		mapBody map[string]any
+	}{
+		{
+			name: "top level and nested",
+			rawBody: []byte(`{
+				"model":"gpt-5.4",
+				"tools":[{"type":"image_generation","model":"priced-image-model"}],
+				"input":[{
+					"type":"additional_tools",
+					"tools":[{"type":"image_generation","model":"unknown-image-model"}]
+				}]
+			}`),
+			mapBody: map[string]any{
+				"model": "gpt-5.4",
+				"tools": []any{
+					map[string]any{"type": "image_generation", "model": "priced-image-model"},
+				},
+				"input": []any{
+					map[string]any{
+						"type": "additional_tools",
+						"tools": []any{
+							map[string]any{"type": "image_generation", "model": "unknown-image-model"},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "two nested",
+			rawBody: []byte(`{
+				"model":"gpt-5.4",
+				"input":[{
+					"type":"additional_tools",
+					"tools":[
+						{"type":"image_generation","model":"priced-image-model"},
+						{"type":"image_generation","model":"unknown-image-model"}
+					]
+				}]
+			}`),
+			mapBody: map[string]any{
+				"model": "gpt-5.4",
+				"input": []any{
+					map[string]any{
+						"type": "additional_tools",
+						"tools": []any{
+							map[string]any{"type": "image_generation", "model": "priced-image-model"},
+							map[string]any{"type": "image_generation", "model": "unknown-image-model"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := resolveOpenAIResponsesImageBillingConfigDetailedFromBody(tt.rawBody, "gpt-5.4")
+			require.ErrorIs(t, err, ErrModelPricingUnavailable)
+			require.Contains(t, err.Error(), "multiple image_generation tools")
+
+			_, err = resolveOpenAIResponsesImageBillingConfigDetailed(tt.mapBody, "gpt-5.4")
+			require.ErrorIs(t, err, ErrModelPricingUnavailable)
+			require.Contains(t, err.Error(), "multiple image_generation tools")
+		})
+	}
+}
+
+func TestResolveOpenAIResponsesImageBillingConfigRejectsMultipleImageTools(t *testing.T) {
+	rawBody := []byte(`{
+		"model":"gpt-5.4",
+		"tools":[
+			{"type":"image_generation","model":"priced-image-model","size":"1024x1024"},
+			{"type":"image_generation","model":"unknown-image-model","size":"3840x2160"}
+		]
+	}`)
+	_, err := resolveOpenAIResponsesImageBillingConfigDetailedFromBody(rawBody, "gpt-5.4")
+	require.ErrorIs(t, err, ErrModelPricingUnavailable)
+	require.Contains(t, err.Error(), "multiple image_generation tools")
+
+	mapBody := map[string]any{
+		"model": "gpt-5.4",
+		"tools": []any{
+			map[string]any{"type": "image_generation", "model": "priced-image-model", "size": "1024x1024"},
+			map[string]any{"type": "image_generation", "model": "unknown-image-model", "size": "3840x2160"},
+		},
+	}
+	_, err = resolveOpenAIResponsesImageBillingConfigDetailed(mapBody, "gpt-5.4")
+	require.ErrorIs(t, err, ErrModelPricingUnavailable)
+	require.Contains(t, err.Error(), "multiple image_generation tools")
+}
+
+func TestResolveOpenAIResponsesImageBillingConfigRejectsDuplicateIdentityFields(t *testing.T) {
+	tests := []struct {
+		name string
+		body []byte
+	}{
+		{
+			name: "tools",
+			body: []byte(`{"model":"gpt-5.4","tools":[{"type":"function"}],"tools":[{"type":"image_generation","model":"unknown-image-model"}]}`),
+		},
+		{
+			name: "model",
+			body: []byte(`{"model":"gpt-5.4","model":"unknown-image-model","tools":[{"type":"image_generation"}]}`),
+		},
+		{
+			name: "size",
+			body: []byte(`{"model":"gpt-image-2","size":"1024x1024","size":"3840x2160","tools":[{"type":"image_generation"}]}`),
+		},
+		{
+			name: "tool choice",
+			body: []byte(`{"model":"gpt-5.4","tools":[{"type":"image_generation"}],"tool_choice":"auto","tool_choice":{"type":"image_generation"}}`),
+		},
+		{
+			name: "input",
+			body: []byte(`{"model":"gpt-5.4","tools":[{"type":"image_generation"}],"input":"first","input":"second"}`),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := resolveOpenAIResponsesImageBillingConfigDetailedFromBody(tt.body, "gpt-5.4")
+			require.ErrorIs(t, err, ErrModelPricingUnavailable)
+			require.Contains(t, err.Error(), "duplicate top-level")
+		})
+	}
+}
+
+func TestValidateUniqueOpenAIResponsesBillingFieldsRejectsNestedIdentityDuplicates(t *testing.T) {
+	tests := []struct {
+		name     string
+		body     []byte
+		wantPath string
+	}{
+		{
+			name:     "tool type hides image intent",
+			body:     []byte(`{"model":"gpt-5.4","tools":[{"type":"function","type":"image_generation","model":"unknown-image-model"}]}`),
+			wantPath: "tools[0].type",
+		},
+		{
+			name:     "tool model changes billed sku",
+			body:     []byte(`{"model":"gpt-5.4","tools":[{"type":"image_generation","model":"priced-image-model","model":"unknown-image-model"}]}`),
+			wantPath: "tools[0].model",
+		},
+		{
+			name:     "escaped tool size changes billed tier",
+			body:     []byte(`{"model":"gpt-5.4","tools":[{"type":"image_generation","size":"1K","s\u0069ze":"4K"}]}`),
+			wantPath: "tools[0].size",
+		},
+		{
+			name:     "responses lite nested tool model",
+			body:     []byte(`{"model":"gpt-5.4","input":[{"type":"additional_tools","tools":[{"type":"image_generation","model":"priced-image-model","model":"unknown-image-model"}]}]}`),
+			wantPath: "input[0].tools[0].model",
+		},
+		{
+			name:     "nested tool choice type",
+			body:     []byte(`{"model":"gpt-5.4","tool_choice":{"type":"function","type":"image_generation"}}`),
+			wantPath: "tool_choice.type",
+		},
+		{
+			name:     "service tier changes settlement multiplier",
+			body:     []byte(`{"model":"gpt-5.4","service_tier":"standard","service_tier":"priority"}`),
+			wantPath: "service_tier",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateUniqueOpenAIResponsesBillingFields(tt.body)
+			require.ErrorIs(t, err, ErrModelPricingUnavailable)
+			require.Contains(t, err.Error(), tt.wantPath)
+		})
+	}
+}
+
+func TestValidateUniqueOpenAIResponsesBillingFieldsRejectsUnbillableValues(t *testing.T) {
+	tests := []struct {
+		name     string
+		body     []byte
+		wantPath string
+	}{
+		{
+			name:     "unknown root size",
+			body:     []byte(`{"model":"gpt-image-2","size":"ultra","tools":[{"type":"image_generation"}]}`),
+			wantPath: "size",
+		},
+		{
+			name:     "unknown nested size",
+			body:     []byte(`{"model":"gpt-5.4","tools":[{"type":"image_generation","model":"gpt-image-2","size":"ultra"}]}`),
+			wantPath: "tools[0].size",
+		},
+		{
+			name:     "non string nested size",
+			body:     []byte(`{"model":"gpt-5.4","tools":[{"type":"image_generation","model":"gpt-image-2","size":2048}]}`),
+			wantPath: "tools[0].size",
+		},
+		{
+			name:     "nested model null character",
+			body:     []byte(`{"model":"gpt-5.4","tools":[{"type":"image_generation","model":"gpt-image-2\u0000future"}]}`),
+			wantPath: "tools[0].model",
+		},
+		{
+			name:     "nested model must be string",
+			body:     []byte(`{"model":"gpt-5.4","tools":[{"type":"image_generation","model":null}]}`),
+			wantPath: "tools[0].model",
+		},
+		{
+			name:     "responses lite nested model must be string",
+			body:     []byte(`{"model":"gpt-5.4","input":[{"type":"additional_tools","tools":[{"type":"image_generation","model":42}]}]}`),
+			wantPath: "input[0].tools[0].model",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateUniqueOpenAIResponsesBillingFields(tt.body)
+			require.ErrorIs(t, err, ErrModelPricingUnavailable)
+			require.Contains(t, err.Error(), tt.wantPath)
+		})
+	}
+
+	for _, body := range [][]byte{
+		[]byte(`{"model":"gpt-image-2","size":"","tools":[{"type":"image_generation"}]}`),
+		[]byte(`{"model":"gpt-image-2","size":"auto","tools":[{"type":"image_generation"}]}`),
+		[]byte(`{"model":"gpt-5.4","tools":[{"type":"image_generation","size":"auto"}]}`),
+		[]byte(`{"model":"gpt-5.4","tools":[{"type":"image_generation","size":"3840x2160"}]}`),
+	} {
+		require.NoError(t, ValidateUniqueOpenAIResponsesBillingFields(body))
+	}
+}
+
+func TestValidateUniqueOpenAIResponsesBillingFieldsDoesNotInspectFunctionParameterSchema(t *testing.T) {
+	body := []byte(`{
+		"model":"gpt-5.4",
+		"tools":[{
+			"type":"function",
+			"name":"render_asset",
+			"parameters":{
+				"type":"object",
+				"properties":{
+					"model":{"type":"string"},
+					"size":{"type":"string","default":"ultra"}
+				}
+			}
+		}]
+	}`)
+
+	require.NoError(t, ValidateUniqueOpenAIResponsesBillingFields(body))
+}
+
+func TestResolveOpenAIResponsesImageBillingConfigMapRejectsUnbillableSize(t *testing.T) {
+	_, err := resolveOpenAIResponsesImageBillingConfigDetailed(
+		map[string]any{
+			"model": "gpt-5.4",
+			"tools": []any{
+				map[string]any{"type": "image_generation", "model": "gpt-image-2", "size": "ultra"},
+			},
+		},
+		"gpt-5.4",
+	)
+	require.ErrorIs(t, err, ErrModelPricingUnavailable)
+	require.Contains(t, err.Error(), "size")
+}
+
+func TestResolveOpenAIResponsesImageBillingConfigMapRejectsNonStringToolIdentity(t *testing.T) {
+	for _, tool := range []map[string]any{
+		{"type": "image_generation", "model": nil},
+		{"type": "image_generation", "model": 7},
+		{"type": "image_generation", "model": "gpt-image-2", "size": 2048},
+	} {
+		_, err := resolveOpenAIResponsesImageBillingConfigDetailed(
+			map[string]any{
+				"model": "gpt-5.4",
+				"tools": []any{tool},
+			},
+			"gpt-5.4",
+		)
+		require.ErrorIs(t, err, ErrModelPricingUnavailable)
+	}
+}
+
+func TestIsExplicitImageGenerationIntentScansDuplicateRootFields(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.4","tools":[{"type":"function","name":"safe"}],"tools":[{"type":"image_generation","model":"unknown-image-model"}]}`)
+	require.True(t, IsExplicitImageGenerationIntent(openAIResponsesEndpoint, "gpt-5.4", body))
+}
+
 func TestResolveOpenAIResponsesImageBillingConfigFromBodyIgnoresUnrelatedLargeInput(t *testing.T) {
 	cfg, err := resolveOpenAIResponsesImageBillingConfigDetailedFromBody(
 		[]byte(`{"model":"mapped-text-model","tools":[{"type":"image_generation","model":"gpt-image-2","size":"2048x1152"}],"input":[{"type":"message","content":[{"type":"input_text","text":"hi","nonce":1e1000000}]}]}`),
@@ -293,6 +622,18 @@ func TestResolveOpenAIResponsesImageBillingConfigFromBodyIgnoresUnrelatedLargeIn
 	require.Equal(t, "gpt-image-2", cfg.Model)
 	require.Equal(t, "2K", cfg.SizeTier)
 	require.Equal(t, "2048x1152", cfg.InputSize)
+	require.True(t, cfg.NativeTool)
+}
+
+func TestResolveOpenAIResponsesImageBillingConfigRejectsNonStringNativeToolModel(t *testing.T) {
+	for _, body := range [][]byte{
+		[]byte(`{"model":"gpt-5.4","tools":[{"type":"image_generation","model":null}]}`),
+		[]byte(`{"model":"gpt-5.4","input":[{"type":"additional_tools","tools":[{"type":"image_generation","model":7}]}]}`),
+	} {
+		_, err := ResolveOpenAIResponsesImageBillingConfigFromBody(body, "gpt-5.4")
+		require.ErrorIs(t, err, ErrModelPricingUnavailable)
+		require.ErrorContains(t, err, "model")
+	}
 }
 
 func TestResolveOpenAIResponsesImageBillingConfigSupportsOfficialAndCustomSizes(t *testing.T) {

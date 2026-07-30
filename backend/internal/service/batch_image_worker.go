@@ -245,7 +245,10 @@ func (w *BatchImageWorker) RunDelayedMover(ctx context.Context) {
 		if err := ctx.Err(); err != nil {
 			return
 		}
-		moved, _ := w.MoveDueDelayedOnce(ctx)
+		moved, err := w.MoveDueDelayedOnce(ctx)
+		if err != nil && ctx.Err() == nil {
+			logger.L().Warn("batch_image.delayed_mover_failed", zap.Error(err))
+		}
 		if moved > 0 {
 			continue
 		}
@@ -268,7 +271,9 @@ func (w *BatchImageWorker) RunStaleActiveRecovery(ctx context.Context) {
 		if err := ctx.Err(); err != nil {
 			return
 		}
-		_, _ = w.RecoverStaleActiveOnce(ctx)
+		if _, err := w.RecoverStaleActiveOnce(ctx); err != nil && ctx.Err() == nil {
+			logger.L().Warn("batch_image.stale_active_recovery_failed", zap.Error(err))
+		}
 		sleepOrDone(ctx, w.opts.RecoveryInterval)
 	}
 }

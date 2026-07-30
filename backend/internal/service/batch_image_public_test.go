@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -132,9 +133,57 @@ func TestBatchImagePublicService_Submit(t *testing.T) {
 		require.InDelta(t, 0.1608, *job.HoldAmount, 1e-12)
 	})
 
+	t.Run("explicit zero group image price remains free without global pricing", func(t *testing.T) {
+		svc, repo, _, gemini, _ := newTestBatchImagePublicService(true)
+		groupID := int64(7)
+		zero := 0.0
+		svc.Pricing = &fakeBatchImagePricingResolver{err: ErrBatchImageSettlementPricingMissing}
+		svc.GroupRepo = &publicBatchImageGroupRepo{groups: map[int64]*Group{
+			groupID: {
+				ID:                           groupID,
+				Platform:                     PlatformGemini,
+				RateMultiplier:               1,
+				AllowImageGeneration:         true,
+				AllowBatchImageGeneration:    true,
+				ImagePrice1K:                 &zero,
+				BatchImageDiscountMultiplier: 0.5,
+				BatchImageHoldMultiplier:     0.6,
+			},
+		}}
+
+		got, err := svc.Submit(
+			ctx,
+			BatchImageOwner{UserID: 11, APIKeyID: 22, GroupID: &groupID},
+			validBatchImageSubmitRequest(),
+			"",
+		)
+		require.NoError(t, err)
+		require.Zero(t, got.EstimatedCost)
+		require.Len(t, gemini.submits, 1)
+
+		job := repo.jobs[got.ID]
+		require.Zero(t, job.BaseUnitPrice)
+		require.Zero(t, job.BillableUnitPrice)
+		require.Zero(t, job.HoldUnitPrice)
+		require.Zero(t, job.EstimatedCost)
+		require.NotNil(t, job.HoldAmount)
+		require.Zero(t, *job.HoldAmount)
+	})
+
 	t.Run("pricing missing rejects before provider submit", func(t *testing.T) {
 		svc, repo, queue, gemini, _ := newTestBatchImagePublicService(true)
 		svc.Pricing = &fakeBatchImagePricingResolver{err: ErrBatchImageSettlementPricingMissing}
+
+		_, err := svc.Submit(ctx, testBatchImageOwner(), validBatchImageSubmitRequest(), "")
+		require.ErrorIs(t, err, ErrBatchImageSettlementPricingMissing)
+		require.Empty(t, repo.jobs)
+		require.Empty(t, queue.enqueued)
+		require.Empty(t, gemini.submits)
+	})
+
+	t.Run("non-finite total rejects before provider submit", func(t *testing.T) {
+		svc, repo, queue, gemini, _ := newTestBatchImagePublicService(true)
+		svc.Pricing = &fakeBatchImagePricingResolver{unitPrice: math.MaxFloat64}
 
 		_, err := svc.Submit(ctx, testBatchImageOwner(), validBatchImageSubmitRequest(), "")
 		require.ErrorIs(t, err, ErrBatchImageSettlementPricingMissing)

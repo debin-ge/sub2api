@@ -115,6 +115,7 @@ type liveTestStore struct {
 	claimErr         error
 	getCallErr       error
 	getControllerErr error
+	releaseErr       error
 }
 
 func (s *liveTestStore) SaveLiveCall(_ context.Context, record *LiveCallRecord, _ time.Duration) error {
@@ -161,6 +162,9 @@ func (s *liveTestStore) ClaimLiveController(_ context.Context, callHash, control
 func (s *liveTestStore) ReleaseLiveController(_ context.Context, callHash, owner string) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.releaseErr != nil {
+		return false, s.releaseErr
+	}
 	if s.record == nil || s.record.CallHash != callHash || s.record.ControllerOwner != owner {
 		return false, nil
 	}
@@ -430,6 +434,89 @@ func TestProxyLiveSidebandForwardsTextAndBinary(t *testing.T) {
 	require.ErrorIs(t, <-proxyResult, ErrLiveCallNotFound)
 }
 
+func TestProxyLiveSidebandRejectsUnpricedSessionModelBeforeUpstreamWrite(t *testing.T) {
+	account := &Account{
+		ID:          111,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token":       "test-access-token",
+			"chatgpt_account_id": "acct_test",
+		},
+	}
+	record := &LiveCallRecord{
+		CallID:     "call_pricing_guard",
+		CallHash:   hashLiveCallID("call_pricing_guard"),
+		AccountID:  account.ID,
+		APIKeyID:   112,
+		UserID:     113,
+		LeaseID:    "lease-pricing",
+		Model:      "gpt-live",
+		CreatedAt:  time.Now(),
+		ExpiresAt:  time.Now().Add(time.Minute),
+		Controller: LiveControllerPending,
+	}
+	cfg := &config.Config{RunMode: config.RunModeStandard}
+	cfg.JWT.Secret = "live-sideband-pricing-guard"
+	attestationCipher := newLiveAttestationCipher(cfg)
+	var err error
+	record.AttestationCiphertext, err = attestationCipher.Encrypt(`{"v":1,"s":0,"t":"v1.sideband"}`)
+	require.NoError(t, err)
+
+	store := &liveTestStore{}
+	require.NoError(t, store.SaveLiveCall(context.Background(), record, time.Hour))
+	upstream := newLiveTestFrameConn()
+	service := &OpenAIGatewayService{
+		accountRepo:               &liveTestAccountRepo{account: account},
+		cache:                     store,
+		cfg:                       cfg,
+		billingService:            NewBillingService(cfg, nil),
+		pricingGuardRequired:      true,
+		openaiWSPassthroughDialer: &liveTestDialer{conn: upstream},
+		liveAttestationCipher:     attestationCipher,
+	}
+
+	proxyResult := make(chan error, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		downstream, acceptErr := coderws.Accept(writer, request, nil)
+		if acceptErr != nil {
+			proxyResult <- acceptErr
+			return
+		}
+		defer func() { _ = downstream.CloseNow() }()
+		proxyResult <- service.ProxyLiveSideband(request.Context(), record, downstream)
+	}))
+	defer server.Close()
+
+	client, _, err := coderws.Dial(
+		context.Background(),
+		"ws"+strings.TrimPrefix(server.URL, "http"),
+		nil,
+	)
+	require.NoError(t, err)
+	defer func() { _ = client.CloseNow() }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	require.NoError(t, client.Write(ctx, coderws.MessageText, []byte(
+		`{"type":"session.update","session":{"model":"gpt-live-unpriced-v99"}}`,
+	)))
+
+	select {
+	case proxyErr := <-proxyResult:
+		require.ErrorIs(t, proxyErr, ErrModelPricingUnavailable)
+	case <-ctx.Done():
+		t.Fatal("waiting for Live sideband pricing rejection timed out")
+	}
+	select {
+	case frame := <-upstream.writes:
+		t.Fatalf("unpriced session.update reached upstream: %s", frame.payload)
+	default:
+	}
+	_, _ = store.MarkLiveCallClosed(context.Background(), record.CallHash, time.Minute)
+}
+
 // TestLiveSessionEndedTreatsLeaseLossAsTerminal 锁定：租约续租失败（ErrLiveUnavailable）
 // 必须判为会话终结。RefreshLiveLease 的 Lua 在 leaseID 被 GC 后不会重新写入，若把它
 // 当临时错误交给 observer 重连，会话会空转到 ExpiresAt 且不计入任何并发限制。
@@ -568,9 +655,31 @@ func (r *liveTestBestEffortUsageRepo) CreateBestEffort(_ context.Context, _ *Usa
 	return r.bestEffortErr
 }
 
-// TestFinalizeLiveCallUsageLogFallsBackToSyncCreate 锁定：finalize 是该会话唯一一次
-// 落库机会（MarkLiveCallClosed 已标记 first），best-effort 写入失败必须走同步 Create
-// 兜底，而不是丢弃错误。
+type liveTestFailingUsageRepo struct {
+	UsageLogRepository
+	mu              sync.Mutex
+	bestEffortErr   error
+	createErr       error
+	bestEffortCalls int
+	createCalls     int
+}
+
+func (r *liveTestFailingUsageRepo) CreateBestEffort(_ context.Context, _ *UsageLog) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.bestEffortCalls++
+	return r.bestEffortErr
+}
+
+func (r *liveTestFailingUsageRepo) Create(_ context.Context, _ *UsageLog) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.createCalls++
+	return false, r.createErr
+}
+
+// TestFinalizeLiveCallUsageLogFallsBackToSyncCreate 锁定：best-effort 写入失败必须
+// 在写 closed marker 前走同步 Create 兜底，而不是丢弃错误。
 func TestFinalizeLiveCallUsageLogFallsBackToSyncCreate(t *testing.T) {
 	record := &LiveCallRecord{
 		CallID:     "call_usage_fallback",
@@ -600,4 +709,92 @@ func TestFinalizeLiveCallUsageLogFallsBackToSyncCreate(t *testing.T) {
 	require.Equal(t, 1, usageRepo.bestEffortCalls)
 	require.Len(t, usageRepo.logs, 1, "best-effort 失败后必须同步兜底落库")
 	require.Equal(t, record.CallHash, usageRepo.logs[0].RequestID)
+}
+
+func TestFinalizeLiveCallDoesNotCloseBeforeUsageIsDurable(t *testing.T) {
+	record := &LiveCallRecord{
+		CallID:     "call_usage_both_writes_fail",
+		CallHash:   hashLiveCallID("call_usage_both_writes_fail"),
+		AccountID:  11,
+		APIKeyID:   22,
+		UserID:     33,
+		LeaseID:    "lease-1",
+		Model:      "gpt-live-test",
+		CreatedAt:  time.Now().Add(-time.Second),
+		ExpiresAt:  time.Now().Add(time.Hour),
+		Controller: LiveControllerPending,
+	}
+	store := &liveTestStore{}
+	require.NoError(t, store.SaveLiveCall(context.Background(), record, time.Hour))
+	concurrencyCache := &liveTestConcurrencyCache{}
+	usageRepo := &liveTestFailingUsageRepo{
+		bestEffortErr: errors.New("usage log queue unavailable"),
+		createErr:     errors.New("usage log database unavailable"),
+	}
+	svc := &OpenAIGatewayService{
+		cache:              store,
+		concurrencyService: NewConcurrencyService(concurrencyCache),
+		usageLogRepo:       usageRepo,
+	}
+
+	svc.finalizeLiveCall(record)
+
+	store.mu.Lock()
+	require.NotEqual(t, LiveControllerClosed, store.record.Controller,
+		"usage 未持久化时不得先写 closed marker")
+	store.mu.Unlock()
+	concurrencyCache.mu.Lock()
+	require.Zero(t, concurrencyCache.releases,
+		"usage 未持久化时保留精确 lease，允许后续安全重试")
+	concurrencyCache.mu.Unlock()
+	usageRepo.mu.Lock()
+	require.Equal(t, 1, usageRepo.bestEffortCalls)
+	require.Equal(t, 1, usageRepo.createCalls)
+	usageRepo.mu.Unlock()
+}
+
+func TestFinalizeLiveCallPersistsUsageWhenStoreIsUnavailable(t *testing.T) {
+	record := &LiveCallRecord{
+		CallID:     "call_store_unavailable",
+		CallHash:   hashLiveCallID("call_store_unavailable"),
+		AccountID:  11,
+		APIKeyID:   22,
+		UserID:     33,
+		LeaseID:    "lease-1",
+		Model:      "gpt-live-test",
+		CreatedAt:  time.Now().Add(-time.Second),
+		ExpiresAt:  time.Now().Add(time.Hour),
+		Controller: LiveControllerPending,
+	}
+	usageRepo := &liveTestUsageRepo{}
+	svc := &OpenAIGatewayService{usageLogRepo: usageRepo}
+
+	svc.finalizeLiveCall(record)
+
+	usageRepo.mu.Lock()
+	defer usageRepo.mu.Unlock()
+	require.Len(t, usageRepo.logs, 1,
+		"Redis 生命周期状态不可用不能阻止持久化 usage fact")
+	require.Equal(t, record.CallHash, usageRepo.logs[0].RequestID)
+}
+
+func TestReleaseLiveControllerFailureReturnsFalse(t *testing.T) {
+	record := &LiveCallRecord{
+		CallID:          "call_release_failure",
+		CallHash:        hashLiveCallID("call_release_failure"),
+		AccountID:       11,
+		APIKeyID:        22,
+		UserID:          33,
+		LeaseID:         "lease-1",
+		Model:           "gpt-live-test",
+		CreatedAt:       time.Now().Add(-time.Minute),
+		ExpiresAt:       time.Now().Add(-time.Second),
+		Controller:      LiveControllerProxy,
+		ControllerOwner: "proxy-owner",
+	}
+	store := &liveTestStore{releaseErr: errors.New("redis release failed")}
+	require.NoError(t, store.SaveLiveCall(context.Background(), record, time.Hour))
+	svc := &OpenAIGatewayService{cache: store}
+
+	require.False(t, svc.releaseLiveController(store, record, record.ControllerOwner))
 }

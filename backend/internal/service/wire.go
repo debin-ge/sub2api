@@ -789,6 +789,8 @@ var ProviderSet = wire.NewSet(
 	ProvideAPIKeyService,
 	ProvideAPIKeyAuthCacheInvalidator,
 	ProvideAuthCacheInvalidationWorker,
+	NewUsageBillingPostEffectsService,
+	ProvideUsageBillingOutboxWorker,
 	NewGroupService,
 	NewCompositeRouteResolver,
 	NewAccountService,
@@ -917,6 +919,7 @@ var ProviderSet = wire.NewSet(
 	ProvidePaymentConfigService,
 	ProvidePaymentService,
 	ProvidePaymentOrderExpiryService,
+	ProvideBillingRecoveryService,
 	ProvideBalanceNotifyService,
 	ProvideChannelMonitorService,
 	ProvideChannelMonitorRunner,
@@ -949,6 +952,26 @@ func ProvidePaymentService(entClient *dbent.Client, registry *payment.Registry, 
 	svc := NewPaymentService(entClient, registry, loadBalancer, redeemService, subscriptionSvc, configService, userRepo, groupRepo, affiliateService)
 	svc.SetNotificationEmailService(notificationEmailService)
 	svc.SetWiseReconcileLock(lockCache, db)
+	return svc
+}
+
+// ProvideBillingRecoveryService 创建并启动待结算用量的补偿任务。
+// 档位由 pricing.recovery_mode 控制，off 档下 Start 不会起协程。
+func ProvideBillingRecoveryService(
+	cfg *config.Config,
+	usageLogRepo BillingRecoveryUsageLogRepository,
+	apiKeyRepo APIKeyRepository,
+	billingService *BillingService,
+	channelService *ChannelService,
+	resolver *ModelPricingResolver,
+	dashboardAgg *DashboardAggregationService,
+	lockCache LeaderLockCache,
+	db *sql.DB,
+) *BillingRecoveryService {
+	svc := NewBillingRecoveryService(cfg, usageLogRepo, apiKeyRepo, billingService, channelService, resolver)
+	svc.SetAggregationRefresher(dashboardAgg)
+	svc.SetLeaderLock(lockCache, db)
+	svc.Start()
 	return svc
 }
 

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"path"
@@ -109,12 +110,28 @@ func ValidateLiveCallRequest(request *LiveCallRequest) error {
 	if len(request.Session) == 0 || !json.Valid(request.Session) {
 		return errors.New("session must be valid JSON")
 	}
+	if err := ValidateUniqueBillingModelField(request.Session); err != nil {
+		return err
+	}
 	var sessionObject map[string]json.RawMessage
 	if err := json.Unmarshal(request.Session, &sessionObject); err != nil {
 		return errors.New("session must be a JSON object")
 	}
 	if sessionObject == nil {
 		return errors.New("session must be a JSON object")
+	}
+	if rawModel, exists := sessionObject["model"]; exists {
+		var modelValue any
+		if err := json.Unmarshal(rawModel, &modelValue); err != nil {
+			return errors.New("session model must be a string")
+		}
+		model, ok := modelValue.(string)
+		if !ok {
+			return errors.New("session model must be a string")
+		}
+		if strings.ContainsRune(model, '\x00') {
+			return errors.New("session model must not contain null characters")
+		}
 	}
 	return nil
 }
@@ -129,6 +146,10 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 ) (*LiveCallCreated, error) {
 	if err := ValidateLiveCallRequest(request); err != nil {
 		return nil, err
+	}
+	model := strings.TrimSpace(gjson.GetBytes(request.Session, "model").String())
+	if model == "" {
+		model = "gpt-live"
 	}
 	store, err := s.liveStore()
 	if err != nil {
@@ -151,13 +172,17 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 			identity.GroupID,
 			"",
 			uuid.NewString(),
-			"",
+			model,
 			excluded,
 			OpenAIUpstreamTransportHTTPSSE,
 			OpenAIEndpointCapabilityLive,
 			false,
 			false,
-			false,
+			// Live still has a deliberately separate zero-charge settlement
+			// path, but it may incur upstream cost. Unknown Live SKUs must
+			// therefore pass the same fail-closed pricing admission as other
+			// token routes before a call is created.
+			BillingKindToken,
 		)
 		if selectErr != nil {
 			if lastErr != nil {
@@ -173,6 +198,20 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 		}
 
 		account := selection.Account
+		if s.pricingGuardRequired || s.billingService != nil {
+			if pricingErr := s.enforceResolvedOpenAITokenPricing(
+				ctx,
+				identity.GroupID,
+				account,
+				model,
+				model,
+			); pricingErr != nil {
+				if selection.ReleaseFunc != nil {
+					selection.ReleaseFunc()
+				}
+				return nil, pricingErr
+			}
+		}
 		leaseID := generateRequestID()
 		acquired, acquireErr := liveCache.AcquireLiveLease(
 			ctx,
@@ -205,10 +244,6 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 		}
 
 		now := time.Now()
-		model := strings.TrimSpace(gjson.GetBytes(request.Session, "model").String())
-		if model == "" {
-			model = "gpt-live"
-		}
 		record := &LiveCallRecord{
 			CallID:                created.CallID,
 			CallHash:              hashLiveCallID(created.CallID),
@@ -440,6 +475,14 @@ func (s *OpenAIGatewayService) dialLiveSideband(ctx context.Context, record *Liv
 	if err != nil {
 		return nil, err
 	}
+	return s.dialLiveSidebandWithAccount(ctx, account, record)
+}
+
+func (s *OpenAIGatewayService) dialLiveSidebandWithAccount(
+	ctx context.Context,
+	account *Account,
+	record *LiveCallRecord,
+) (liveFrameConn, error) {
 	if account == nil || !account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityLive) {
 		return nil, ErrLiveUnavailable
 	}
@@ -485,6 +528,68 @@ func (s *OpenAIGatewayService) GetLiveCallForIdentity(
 	return record, nil
 }
 
+func liveRecordGroupID(record *LiveCallRecord) *int64 {
+	if record == nil || record.GroupID <= 0 {
+		return nil
+	}
+	groupID := record.GroupID
+	return &groupID
+}
+
+func liveSidebandSessionUpdateModel(payload []byte) (string, bool, error) {
+	if len(payload) == 0 || !gjson.ValidBytes(payload) {
+		return "", false, nil
+	}
+
+	var eventType gjson.Result
+	var session gjson.Result
+	typeCount := 0
+	sessionCount := 0
+	parseRawJSONView(payload).ForEach(func(key, value gjson.Result) bool {
+		switch key.Str {
+		case "type":
+			typeCount++
+			eventType = value
+		case "session":
+			sessionCount++
+			session = value
+		}
+		return true
+	})
+	if typeCount > 1 {
+		return "", false, errors.New("duplicate top-level type fields are not allowed")
+	}
+	if sessionCount > 1 {
+		return "", false, errors.New("duplicate top-level session fields are not allowed")
+	}
+	if typeCount == 0 || eventType.Type != gjson.String ||
+		strings.TrimSpace(eventType.String()) != "session.update" {
+		return "", false, nil
+	}
+	if sessionCount == 0 || !session.IsObject() {
+		return "", false, errors.New("session.update session must be a JSON object")
+	}
+	sessionRaw := []byte(session.Raw)
+	if err := ValidateUniqueBillingModelField(sessionRaw); err != nil {
+		return "", false, err
+	}
+	model := gjson.GetBytes(sessionRaw, "model")
+	if !model.Exists() {
+		return "", false, nil
+	}
+	if model.Type != gjson.String {
+		return "", false, errors.New("session.update model must be a string")
+	}
+	value := strings.TrimSpace(model.String())
+	if value == "" {
+		return "", false, errors.New("session.update model must not be empty")
+	}
+	if strings.ContainsRune(value, '\x00') {
+		return "", false, errors.New("session.update model must not contain null characters")
+	}
+	return value, true, nil
+}
+
 // ProxyLiveSideband 让认证后的客户端接管控制连接；媒体始终不经过这里。
 func (s *OpenAIGatewayService) ProxyLiveSideband(
 	ctx context.Context,
@@ -509,10 +614,22 @@ func (s *OpenAIGatewayService) ProxyLiveSideband(
 
 	// observer 轮询到接管状态后会关闭旧控制连接；同一个 call 可重新加入。
 	time.Sleep(liveObserverPollInterval)
-	upstream, err := s.dialLiveSideband(ctx, record)
+	account, err := s.accountRepo.GetByID(ctx, record.AccountID)
 	if err != nil {
-		_, _ = store.ReleaseLiveController(context.Background(), record.CallHash, owner)
-		go s.observeLiveCall(record)
+		if s.releaseLiveController(store, record, owner) {
+			go s.observeLiveCall(record)
+		} else {
+			go s.finalizeLiveCallAfterExpiry(record)
+		}
+		return err
+	}
+	upstream, err := s.dialLiveSidebandWithAccount(ctx, account, record)
+	if err != nil {
+		if s.releaseLiveController(store, record, owner) {
+			go s.observeLiveCall(record)
+		} else {
+			go s.finalizeLiveCallAfterExpiry(record)
+		}
 		return err
 	}
 	defer func() { _ = upstream.Close() }()
@@ -527,6 +644,34 @@ func (s *OpenAIGatewayService) ProxyLiveSideband(
 			if readErr != nil {
 				errCh <- readErr
 				return
+			}
+			if messageType == coderws.MessageText {
+				updatedModel, hasModel, modelErr := liveSidebandSessionUpdateModel(payload)
+				if modelErr != nil {
+					errCh <- NewOpenAIWSClientCloseError(
+						coderws.StatusPolicyViolation,
+						"invalid live session model update",
+						modelErr,
+					)
+					return
+				}
+				if hasModel && (s.pricingGuardRequired || s.billingService != nil) {
+					groupID := liveRecordGroupID(record)
+					if pricingErr := s.enforceResolvedOpenAITokenPricing(
+						proxyCtx,
+						groupID,
+						account,
+						updatedModel,
+						updatedModel,
+					); pricingErr != nil {
+						errCh <- NewOpenAIWSClientCloseError(
+							coderws.StatusPolicyViolation,
+							"live session model pricing is unavailable",
+							pricingErr,
+						)
+						return
+					}
+				}
 			}
 			if writeErr := upstream.WriteFrame(proxyCtx, messageType, payload); writeErr != nil {
 				errCh <- writeErr
@@ -557,13 +702,51 @@ func (s *OpenAIGatewayService) ProxyLiveSideband(
 
 	runErr := s.runLiveController(proxyCtx, record, upstream, errCh)
 	cancel()
-	_, _ = store.ReleaseLiveController(context.Background(), record.CallHash, owner)
+	released := s.releaseLiveController(store, record, owner)
 	if liveSessionEnded(runErr) || !time.Now().Before(record.ExpiresAt) {
 		s.finalizeLiveCall(record)
 		return runErr
 	}
-	go s.observeLiveCall(record)
+	if released {
+		go s.observeLiveCall(record)
+	} else {
+		// A failed/ambiguous release may leave the dead proxy as controller.
+		// Preserve a finalizer owner so the usage record and lease are still
+		// completed no later than the session expiry.
+		go s.finalizeLiveCallAfterExpiry(record)
+	}
 	return runErr
+}
+
+func (s *OpenAIGatewayService) releaseLiveController(
+	store LiveCallStore,
+	record *LiveCallRecord,
+	owner string,
+) bool {
+	if store == nil || record == nil {
+		slog.Error("release live controller failed",
+			"error", errors.New("live call store or record is nil"))
+		return false
+	}
+	releaseCtx, cancel := context.WithTimeout(context.Background(), liveRedisOperationTimeout)
+	defer cancel()
+	released, err := store.ReleaseLiveController(releaseCtx, record.CallHash, owner)
+	if err != nil {
+		slog.Error("release live controller failed",
+			"call_hash", record.CallHash,
+			"account_id", record.AccountID,
+			"error", err,
+		)
+		return false
+	}
+	if !released {
+		slog.Warn("release live controller did not own current controller",
+			"call_hash", record.CallHash,
+			"account_id", record.AccountID,
+		)
+		return false
+	}
+	return true
 }
 
 // liveSessionEnded 判断控制连接的退出原因是否意味着会话已终结（应 finalize：写
@@ -784,29 +967,65 @@ func (s *OpenAIGatewayService) refreshLiveLease(record *LiveCallRecord) bool {
 func (s *OpenAIGatewayService) releaseLiveLease(accountID, userID, apiKeyID int64, leaseID string) {
 	cache, err := s.liveConcurrencyCache()
 	if err != nil {
+		slog.Error("release live lease failed",
+			"account_id", accountID,
+			"api_key_id", apiKeyID,
+			"error", err,
+		)
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), liveRedisOperationTimeout)
 	defer cancel()
-	_ = cache.ReleaseLiveLease(ctx, accountID, userID, apiKeyID, leaseID)
+	if err := cache.ReleaseLiveLease(ctx, accountID, userID, apiKeyID, leaseID); err != nil {
+		slog.Error("release live lease failed",
+			"account_id", accountID,
+			"api_key_id", apiKeyID,
+			"error", err,
+		)
+	}
 }
 
 func (s *OpenAIGatewayService) finalizeLiveCall(record *LiveCallRecord) {
 	if record == nil {
 		return
 	}
-	store, err := s.liveStore()
-	if err != nil {
-		return
+	store, storeErr := s.liveStore()
+	var controllerErr error
+	if storeErr != nil {
+		slog.Error("finalize live call store unavailable",
+			"call_hash", record.CallHash,
+			"api_key_id", record.APIKeyID,
+			"account_id", record.AccountID,
+			"error", storeErr,
+		)
+	} else {
+		// Fast idempotency check for the common sequential path. A read failure
+		// is not proof that finalization already happened, so continue to the
+		// database-idempotent usage insert below and let MarkLiveCallClosed
+		// decide.
+		controllerCtx, controllerCancel := context.WithTimeout(context.Background(), liveRedisOperationTimeout)
+		controller, getControllerErr := store.GetLiveController(controllerCtx, record.CallHash)
+		controllerCancel()
+		controllerErr = getControllerErr
+		if controllerErr == nil && controller == LiveControllerClosed {
+			return
+		}
+		if controllerErr != nil && !errors.Is(controllerErr, ErrLiveCallNotFound) {
+			slog.Error("load live controller before finalize failed",
+				"call_hash", record.CallHash,
+				"api_key_id", record.APIKeyID,
+				"account_id", record.AccountID,
+				"error", controllerErr,
+			)
+		}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), liveRedisOperationTimeout)
-	first, err := store.MarkLiveCallClosed(ctx, record.CallHash, liveClosedRecordTTL)
-	cancel()
-	if err != nil || !first {
-		return
-	}
-	s.releaseLiveLease(record.AccountID, record.UserID, record.APIKeyID, record.LeaseID)
-	if s.usageLogRepo == nil {
+	if isNilInterfaceValue(s.usageLogRepo) {
+		slog.Error("persist finalized live usage failed",
+			"call_hash", record.CallHash,
+			"api_key_id", record.APIKeyID,
+			"account_id", record.AccountID,
+			"error", fmt.Errorf("%w: usage log repository is nil", ErrDurableUsageBillingRequired),
+		)
 		return
 	}
 	duration := int(time.Since(record.CreatedAt).Milliseconds())
@@ -827,9 +1046,11 @@ func (s *OpenAIGatewayService) finalizeLiveCall(record *LiveCallRecord) {
 	// 若确认有意免费，删除本注释即可（零值行为由
 	// TestFinalizeLiveCallIsIdempotentAndWritesZeroUsage 锁定）。
 	//
-	// 这是该会话唯一一次落库机会（MarkLiveCallClosed 已标记 first），失败即永久
-	// 丢失，因此走带日志与同步兜底的 writeUsageLogBestEffort（issue #3656）。
-	writeUsageLogBestEffort(context.Background(), s.usageLogRepo, &UsageLog{
+	// Persist before closing the Redis lifecycle marker. The usage_logs
+	// (request_id, api_key_id) unique key makes concurrent/replayed finalizers
+	// idempotent. If both writes fail, leaving the call unclosed preserves a
+	// retryable state instead of permanently suppressing the only usage record.
+	if err := writeUsageLogBestEffort(context.Background(), s.usageLogRepo, &UsageLog{
 		UserID:           record.UserID,
 		APIKeyID:         record.APIKeyID,
 		AccountID:        record.AccountID,
@@ -847,5 +1068,40 @@ func (s *OpenAIGatewayService) finalizeLiveCall(record *LiveCallRecord) {
 		InboundEndpoint:  &inboundEndpoint,
 		UpstreamEndpoint: &upstreamEndpoint,
 		CreatedAt:        record.CreatedAt,
-	}, "service.openai_live")
+	}, "service.openai_live"); err != nil {
+		slog.Error("persist finalized live usage failed",
+			"call_hash", record.CallHash,
+			"api_key_id", record.APIKeyID,
+			"account_id", record.AccountID,
+			"error", err,
+		)
+		return
+	}
+
+	if storeErr != nil {
+		// The usage fact is already durable. Keep the exact lease in place and
+		// let its TTL fail safe while another lifecycle finalizer retries Redis.
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), liveRedisOperationTimeout)
+	first, err := store.MarkLiveCallClosed(ctx, record.CallHash, liveClosedRecordTTL)
+	cancel()
+	if err != nil {
+		slog.Error("mark finalized live call closed failed",
+			"call_hash", record.CallHash,
+			"api_key_id", record.APIKeyID,
+			"account_id", record.AccountID,
+			"error", err,
+		)
+		return
+	}
+	if !first {
+		// If the lifecycle record expired, the idempotent usage row is already
+		// durable and releasing this exact lease remains safe.
+		if errors.Is(controllerErr, ErrLiveCallNotFound) {
+			s.releaseLiveLease(record.AccountID, record.UserID, record.APIKeyID, record.LeaseID)
+		}
+		return
+	}
+	s.releaseLiveLease(record.AccountID, record.UserID, record.APIKeyID, record.LeaseID)
 }

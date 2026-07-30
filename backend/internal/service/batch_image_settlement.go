@@ -34,20 +34,27 @@ func (r *BatchImageModelPricingResolver) BatchImageUnitPrice(ctx context.Context
 	if r == nil || r.Resolver == nil || job == nil || strings.TrimSpace(job.Model) == "" {
 		return 0, ErrBatchImageSettlementPricingMissing
 	}
-	resolved := r.Resolver.Resolve(ctx, PricingInput{Model: job.Model})
-	if resolved == nil {
+	// Batch submission happens outside the gateway pricing guard. It must not
+	// use Resolve's family/OpenAI inference, otherwise an unknown image SKU can
+	// borrow a known model's image-output price and pass the pre-charge check.
+	// The batch path currently consumes token-style image output pricing, so
+	// ResolveStrictToken is the matching fail-closed resolver.
+	resolved, err := r.Resolver.ResolveStrictToken(ctx, PricingInput{Model: job.Model})
+	if err != nil || resolved == nil {
 		return 0, ErrBatchImageSettlementPricingMissing
 	}
 	switch resolved.Mode {
 	case BillingModeImage, BillingModePerRequest:
-		if resolved.DefaultPerRequestPrice > 0 {
+		if resolved.DefaultPerRequestPriceSet && isFiniteNonNegativePrice(resolved.DefaultPerRequestPrice) {
 			return resolved.DefaultPerRequestPrice, nil
 		}
-		if len(resolved.RequestTiers) == 1 && resolved.RequestTiers[0].PerRequestPrice != nil && *resolved.RequestTiers[0].PerRequestPrice >= 0 {
+		if len(resolved.RequestTiers) == 1 && validConfiguredPrice(resolved.RequestTiers[0].PerRequestPrice) {
 			return *resolved.RequestTiers[0].PerRequestPrice, nil
 		}
 	case BillingModeToken:
-		if resolved.BasePricing != nil && (resolved.BasePricing.ImageOutputPriceExplicit || resolved.BasePricing.ImageOutputPricePerToken > 0) {
+		if resolved.BasePricing != nil &&
+			isFiniteNonNegativePrice(resolved.BasePricing.ImageOutputPricePerToken) &&
+			(resolved.BasePricing.ImageOutputPriceExplicit || resolved.BasePricing.ImageOutputPricePerToken > 0) {
 			return resolved.BasePricing.ImageOutputPricePerToken, nil
 		}
 	}
@@ -126,7 +133,7 @@ func (s *BatchImageSettlementService) Settle(ctx context.Context, batchID string
 	}
 
 	unitPrice, err := s.settlementUnitPrice(ctx, job)
-	if err == nil && unitPrice < 0 {
+	if err == nil && !isFiniteNonNegativePrice(unitPrice) {
 		err = ErrBatchImageSettlementPricingMissing
 	}
 	if err != nil {
@@ -136,11 +143,23 @@ func (s *BatchImageSettlementService) Settle(ctx context.Context, batchID string
 		return nil, err
 	}
 	actualCost := float64(job.SuccessCount) * unitPrice
-	result.ActualCost = actualCost
 	holdAmount := job.EstimatedCost
 	if job.HoldAmount != nil {
 		holdAmount = *job.HoldAmount
 	}
+	if !isFiniteNonNegativePrice(actualCost) || !isFiniteNonNegativePrice(holdAmount) {
+		err = ErrBatchImageSettlementPricingMissing
+		if failErr := s.recordSettlementFailure(
+			ctx,
+			job,
+			"SETTLEMENT_PRICING_MISSING",
+			"settlement amount is negative or non-finite",
+		); failErr != nil {
+			return nil, failErr
+		}
+		return nil, err
+	}
+	result.ActualCost = actualCost
 	if actualCost-holdAmount > batchImageCostEpsilon {
 		msg := fmt.Sprintf("actual cost %.10f exceeds held amount %.10f", actualCost, holdAmount)
 		if failErr := s.recordSettlementFailure(ctx, job, "SETTLEMENT_COST_EXCEEDS_HOLD", msg); failErr != nil {
@@ -159,6 +178,31 @@ func (s *BatchImageSettlementService) Settle(ctx context.Context, batchID string
 	s.invalidateAuthCache(ctx, job.UserID)
 
 	now := time.Now()
+	// The balance capture above is idempotent, while the job remains in
+	// "settling" until MarkBatchImageJobSettled succeeds. Persist the usage log
+	// before making the job terminal so a transient DB failure (or a crash
+	// between capture and logging) is retried by the batch worker. Marking the
+	// job completed first would turn a failed best-effort insert into a
+	// permanent "charged without usage_log" accounting gap.
+	if err := s.recordUsageLog(ctx, job, actualCost, result.RequestID, now); err != nil {
+		logger.L().Error("batch_image.settlement_usage_log_failed",
+			zap.String("batch_id", job.BatchID),
+			zap.String("request_id", result.RequestID),
+			zap.Error(err),
+		)
+		if eventErr := s.Repo.AppendBatchImageEvent(ctx, job.BatchID, "settlement_usage_log_failed", map[string]any{
+			"batch_id":   job.BatchID,
+			"request_id": result.RequestID,
+			"error":      truncateBatchImageMessage(err.Error(), batchImageMaxErrorMessageLength),
+		}); eventErr != nil {
+			logger.L().Warn("batch_image.settlement_usage_log_failure_event_failed",
+				zap.String("batch_id", job.BatchID),
+				zap.Error(eventErr),
+			)
+		}
+		return nil, ErrBatchImageSettlementBillingFailed.WithCause(err)
+	}
+
 	outputExpiresAt := now.Add(s.outputRetentionAfterTerminal())
 	if err := s.Repo.MarkBatchImageJobSettled(ctx, MarkBatchImageJobSettledParams{
 		BatchID:         job.BatchID,
@@ -177,7 +221,6 @@ func (s *BatchImageSettlementService) Settle(ctx context.Context, batchID string
 	}); err != nil {
 		return nil, err
 	}
-	s.recordUsageLog(ctx, job, actualCost, result.RequestID, now)
 
 	return result, nil
 }
@@ -249,9 +292,12 @@ func (s *BatchImageSettlementService) failExhaustedSettlement(ctx context.Contex
 	return ErrBatchImageSettlementBillingFailed
 }
 
-func (s *BatchImageSettlementService) recordUsageLog(ctx context.Context, job *BatchImageJob, actualCost float64, requestID string, createdAt time.Time) {
-	if s == nil || s.UsageLogRepo == nil || job == nil || job.APIKeyID == nil || job.AccountID == nil {
-		return
+func (s *BatchImageSettlementService) recordUsageLog(ctx context.Context, job *BatchImageJob, actualCost float64, requestID string, createdAt time.Time) error {
+	if s == nil || isNilInterfaceValue(s.UsageLogRepo) {
+		return errors.New("batch image usage log repository is not configured")
+	}
+	if job == nil || job.APIKeyID == nil || job.AccountID == nil {
+		return errors.New("batch image usage log identity is incomplete")
 	}
 	billingMode := string(BillingModeImage)
 	accountRateMultiplier := job.AccountRateMultiplier
@@ -280,7 +326,12 @@ func (s *BatchImageSettlementService) recordUsageLog(ctx context.Context, job *B
 		SessionID:             job.SessionID,
 		CreatedAt:             createdAt,
 	}
-	writeUsageLogBestEffort(ctx, s.UsageLogRepo, usageLog, "service.batch_image_settlement")
+	usageCtx, cancel := detachedBillingContext(ctx)
+	defer cancel()
+	if _, err := s.UsageLogRepo.Create(usageCtx, usageLog); err != nil {
+		return fmt.Errorf("create batch image settlement usage log: %w", err)
+	}
+	return nil
 }
 
 func (s *BatchImageSettlementService) invalidateAuthCache(ctx context.Context, userID int64) {
@@ -291,7 +342,7 @@ func (s *BatchImageSettlementService) invalidateAuthCache(ctx context.Context, u
 
 func (s *BatchImageSettlementService) settlementUnitPrice(ctx context.Context, job *BatchImageJob) (float64, error) {
 	if job != nil && job.PricingSnapshotVersion >= 1 {
-		if job.BillableUnitPrice < 0 {
+		if !isFiniteNonNegativePrice(job.BillableUnitPrice) {
 			return 0, ErrBatchImageSettlementPricingMissing
 		}
 		return job.BillableUnitPrice, nil
@@ -353,6 +404,10 @@ func (p *BatchImagePipelineProcessor) Process(ctx context.Context, batchID strin
 		_, err := p.SettlementService.Settle(ctx, batchID)
 		if err != nil {
 			if errors.Is(err, ErrBatchImageSettlementBillingFailed) {
+				logger.L().Warn("batch_image.settlement_billing_retry_scheduled",
+					zap.String("batch_id", batchID),
+					zap.Error(err),
+				)
 				updated, getErr := p.ProviderProcessor.Repo.GetBatchImageJobByBatchID(ctx, batchID)
 				if getErr == nil && IsTerminalBatchImageJobStatus(updated.Status) {
 					return BatchImageProcessResult{Terminal: true}, nil

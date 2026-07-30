@@ -27,6 +27,7 @@ type kimiMessagesForwarder interface {
 }
 
 type kimiGatewayService interface {
+	specializedGatewayChannelMapper
 	GenerateSessionHash(parsed *service.ParsedRequest) string
 	SelectAccountWithLoadAwareness(ctx context.Context, groupID *int64, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}, metadataUserID string, sub2apiUserID int64) (*service.AccountSelectionResult, error)
 	RecordUsage(ctx context.Context, input *service.RecordUsageInput) error
@@ -157,6 +158,9 @@ func (h *KimiGatewayHandler) Messages(c *gin.Context) {
 		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "kimi gateway service unavailable")
 		return
 	}
+	channelMapping, forwardBody := resolveSpecializedGatewayChannelMapping(
+		c.Request.Context(), h.gatewayService, apiKey.GroupID, reqModel, body,
+	)
 
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
 	streamStarted := false
@@ -230,7 +234,7 @@ func (h *KimiGatewayHandler) Messages(c *gin.Context) {
 		}
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
-		result, err := h.kimiService.ForwardMessages(c.Request.Context(), c, account, body, kimiRequestID(c))
+		result, err := h.kimiService.ForwardMessages(c.Request.Context(), c, account, forwardBody, kimiRequestID(c))
 		releaseOnce()
 		if err != nil {
 			if c.Writer.Written() || streamStarted {
@@ -270,6 +274,7 @@ func (h *KimiGatewayHandler) Messages(c *gin.Context) {
 		inboundEndpoint := GetInboundEndpoint(c)
 		upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
 		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
+		channelUsageFields := clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel)
 
 		h.submitUsageRecordTask(func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
@@ -285,6 +290,7 @@ func (h *KimiGatewayHandler) Messages(c *gin.Context) {
 				IPAddress:          clientIP,
 				RequestPayloadHash: requestPayloadHash,
 				APIKeyService:      h.apiKeyService,
+				ChannelUsageFields: channelUsageFields,
 			}); err != nil {
 				logger.L().With(
 					zap.String("component", "handler.kimi_gateway.messages"),
@@ -363,6 +369,9 @@ func (h *KimiGatewayHandler) ChatCompletions(c *gin.Context) {
 		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "kimi gateway service unavailable")
 		return
 	}
+	channelMapping, forwardBody := resolveSpecializedGatewayChannelMapping(
+		c.Request.Context(), h.gatewayService, apiKey.GroupID, reqModel, body,
+	)
 
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
 	streamStarted := false
@@ -436,7 +445,7 @@ func (h *KimiGatewayHandler) ChatCompletions(c *gin.Context) {
 		}
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
-		result, err := h.kimiService.ForwardChatCompletions(c.Request.Context(), c, account, body, kimiRequestID(c))
+		result, err := h.kimiService.ForwardChatCompletions(c.Request.Context(), c, account, forwardBody, kimiRequestID(c))
 		releaseOnce()
 		if err != nil {
 			if c.Writer.Written() || streamStarted {
@@ -476,6 +485,7 @@ func (h *KimiGatewayHandler) ChatCompletions(c *gin.Context) {
 		inboundEndpoint := GetInboundEndpoint(c)
 		upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
 		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
+		channelUsageFields := clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel)
 
 		h.submitUsageRecordTask(func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
@@ -491,6 +501,7 @@ func (h *KimiGatewayHandler) ChatCompletions(c *gin.Context) {
 				IPAddress:          clientIP,
 				RequestPayloadHash: requestPayloadHash,
 				APIKeyService:      h.apiKeyService,
+				ChannelUsageFields: channelUsageFields,
 			}); err != nil {
 				logger.L().With(
 					zap.String("component", "handler.kimi_gateway.chat_completions"),
@@ -583,6 +594,9 @@ func (h *KimiGatewayHandler) Responses(c *gin.Context) {
 		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "kimi gateway service unavailable")
 		return
 	}
+	channelMapping, forwardBody := resolveSpecializedGatewayChannelMapping(
+		c.Request.Context(), h.gatewayService, apiKey.GroupID, reqModel, body,
+	)
 
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
 	streamStarted := false
@@ -656,7 +670,7 @@ func (h *KimiGatewayHandler) Responses(c *gin.Context) {
 		}
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
-		result, err := h.kimiService.ForwardResponses(c.Request.Context(), c, account, body, kimiRequestID(c))
+		result, err := h.kimiService.ForwardResponses(c.Request.Context(), c, account, forwardBody, kimiRequestID(c))
 		releaseOnce()
 		if err != nil {
 			if c.Writer.Written() || streamStarted {
@@ -696,6 +710,7 @@ func (h *KimiGatewayHandler) Responses(c *gin.Context) {
 		inboundEndpoint := GetInboundEndpoint(c)
 		upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
 		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
+		channelUsageFields := clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel)
 
 		h.submitUsageRecordTask(func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
@@ -711,6 +726,7 @@ func (h *KimiGatewayHandler) Responses(c *gin.Context) {
 				IPAddress:          clientIP,
 				RequestPayloadHash: requestPayloadHash,
 				APIKeyService:      h.apiKeyService,
+				ChannelUsageFields: channelUsageFields,
 			}); err != nil {
 				logger.L().With(
 					zap.String("component", "handler.kimi_gateway.responses"),
@@ -837,24 +853,12 @@ func (h *KimiGatewayHandler) errorResponse(c *gin.Context, status int, errType, 
 }
 
 func (h *KimiGatewayHandler) submitUsageRecordTask(task service.UsageRecordTask) {
-	if task == nil {
-		return
-	}
-	if h.usageRecordWorkerPool != nil {
-		h.usageRecordWorkerPool.Submit(task)
-		return
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	defer func() {
-		if recovered := recover(); recovered != nil {
-			logger.L().With(
-				zap.String("component", "handler.kimi_gateway.messages"),
-				zap.Any("panic", recovered),
-			).Error("kimi_gateway.usage_record_task_panic_recovered")
-		}
-	}()
-	task(ctx)
+	submitUsageRecordTaskWithFallback(
+		context.Background(),
+		h.usageRecordWorkerPool,
+		"handler.kimi_gateway.messages",
+		task,
+	)
 }
 
 func kimiRequestID(c *gin.Context) string {

@@ -124,6 +124,134 @@ func TestGatewayOpenAICompatibleHandlersAllowBooleanStreamToContinue(t *testing.
 	}
 }
 
+func TestGatewayOpenAICompatibleHandlersRejectAmbiguousModelBeforeRouting(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name string
+		path string
+		body string
+		run  func(*gin.Context)
+	}{
+		{
+			name: "responses duplicate model",
+			path: "/v1/responses",
+			body: `{"model":"priced-model","model":"unpriced-model","input":"hello"}`,
+			run: func(c *gin.Context) {
+				(&GatewayHandler{}).Responses(c)
+			},
+		},
+		{
+			name: "chat completions duplicate model",
+			path: "/v1/chat/completions",
+			body: `{"model":"priced-model","model":"unpriced-model","messages":[{"role":"user","content":"hello"}]}`,
+			run: func(c *gin.Context) {
+				(&GatewayHandler{}).ChatCompletions(c)
+			},
+		},
+		{
+			name: "responses model with null character",
+			path: "/v1/responses",
+			body: `{"model":"priced\u0000model","input":"hello"}`,
+			run: func(c *gin.Context) {
+				(&GatewayHandler{}).Responses(c)
+			},
+		},
+		{
+			name: "chat completions model with null character",
+			path: "/v1/chat/completions",
+			body: `{"model":"priced\u0000model","messages":[{"role":"user","content":"hello"}]}`,
+			run: func(c *gin.Context) {
+				(&GatewayHandler{}).ChatCompletions(c)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, rec := newOpenAICompatibleStreamValidationContext(tt.path, tt.body, false)
+
+			tt.run(c)
+
+			require.Equal(t, http.StatusBadRequest, rec.Code)
+			require.Equal(t, "Failed to parse request body", gjson.GetBytes(rec.Body.Bytes(), "error.message").String())
+			require.Contains(t, rec.Body.String(), "invalid_request_error")
+		})
+	}
+}
+
+func TestOpenAICompatibleHandlersRejectWhitespaceOnlyModelBeforeRouting(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name string
+		path string
+		body string
+		run  func(*gin.Context)
+	}{
+		{
+			name: "gateway responses",
+			path: "/v1/responses",
+			body: `{"model":" \t\u2003","input":"hello"}`,
+			run:  (&GatewayHandler{}).Responses,
+		},
+		{
+			name: "gateway chat completions",
+			path: "/v1/chat/completions",
+			body: `{"model":" \t\u2003","messages":[{"role":"user","content":"hello"}]}`,
+			run:  (&GatewayHandler{}).ChatCompletions,
+		},
+		{
+			name: "gateway messages",
+			path: "/v1/messages",
+			body: `{"model":" \t\u2003","messages":[{"role":"user","content":"hello"}]}`,
+			run:  (&GatewayHandler{}).Messages,
+		},
+		{
+			name: "openai responses",
+			path: "/openai/v1/responses",
+			body: `{"model":" \t\u2003","input":"hello"}`,
+			run:  newOpenAIHandlerForPreviousResponseIDValidation(t, nil).Responses,
+		},
+		{
+			name: "openai chat completions",
+			path: "/openai/v1/chat/completions",
+			body: `{"model":" \t\u2003","messages":[{"role":"user","content":"hello"}]}`,
+			run:  newOpenAIHandlerForPreviousResponseIDValidation(t, nil).ChatCompletions,
+		},
+		{
+			name: "openai messages",
+			path: "/openai/v1/messages",
+			body: `{"model":" \t\u2003","messages":[{"role":"user","content":"hello"}]}`,
+			run:  newOpenAIHandlerForPreviousResponseIDValidation(t, nil).Messages,
+		},
+		{
+			name: "gateway count tokens",
+			path: "/v1/messages/count_tokens",
+			body: `{"model":" \t\u2003","messages":[{"role":"user","content":"hello"}]}`,
+			run:  (&GatewayHandler{}).CountTokens,
+		},
+		{
+			name: "openai count tokens",
+			path: "/openai/v1/messages/count_tokens",
+			body: `{"model":" \t\u2003","messages":[{"role":"user","content":"hello"}]}`,
+			run:  newOpenAIHandlerForPreviousResponseIDValidation(t, nil).CountTokens,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, rec := newOpenAICompatibleStreamValidationContext(tt.path, tt.body, false)
+
+			tt.run(c)
+
+			require.Equal(t, http.StatusBadRequest, rec.Code)
+			require.Equal(t, "model is required", gjson.GetBytes(rec.Body.Bytes(), "error.message").String())
+			require.Contains(t, rec.Body.String(), "invalid_request_error")
+		})
+	}
+}
+
 func newOpenAICompatibleStreamValidationContext(path, body string, claudeCodeOnly bool) (*gin.Context, *httptest.ResponseRecorder) {
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -134,8 +262,12 @@ func newOpenAICompatibleStreamValidationContext(path, body string, claudeCodeOnl
 	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
 		ID:      11,
 		GroupID: &groupID,
-		Group:   &service.Group{ID: groupID, ClaudeCodeOnly: claudeCodeOnly},
-		User:    &service.User{ID: 13},
+		Group: &service.Group{
+			ID:                    groupID,
+			ClaudeCodeOnly:        claudeCodeOnly,
+			AllowMessagesDispatch: true,
+		},
+		User: &service.User{ID: 13},
 	})
 	c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 13, Concurrency: 1})
 

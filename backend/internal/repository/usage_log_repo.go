@@ -27,10 +27,12 @@ const rawUsageLogModelColumn = "model"
 // schema 中没有 success bool 列；新增列要做迁移，风险大；这里用 actual_cost > 0 作为代理：
 // 任何成功落账的请求都会产生 actual_cost（包括 token 计费、纯图片 token 计费、按次/按图计费），
 // 反之 failed-request usage log 的 actual_cost 为 0。
+// 定价缺失及价格已恢复的行是例外：它们都在上游请求成功、成本已经发生后才写入，虽然没有
+// 实际扣款，也必须计入成功请求/平台用量。因此 non-zero billing_state 也视为成功。
 // 早期版本用 4 项 token 和 > 0 判定会把"按次/按图计费"与"image_output_tokens 独立计费"的纯图片
 // 请求误判为失败，导致这部分请求从用量统计里消失，故改用 actual_cost。
 // 配合 `FROM usage_logs ul` JOIN 查询使用。
-const usageLogSuccessFilterUL = "ul.actual_cost > 0"
+const usageLogSuccessFilterUL = "(ul.actual_cost > 0 OR ul.billing_state <> 0)"
 
 // usageLogEffectivePlatformExpr 用于按"有效平台"维度聚合 usage_logs：
 // 优先取请求实际走的分组 platform，若分组未设置 platform 再 fallback 到 account.platform。
@@ -69,6 +71,22 @@ func appendRawUsageLogModelWhereCondition(conditions []string, args []any, model
 
 func appendUsageLogBillingModeWhereCondition(conditions []string, args []any, billingMode string) ([]string, []any) {
 	return appendUsageLogBillingModeWhereConditionWithAlias(conditions, args, billingMode, "")
+}
+
+// appendUsageLogBillingStateWhereCondition 拼出待结算看板的筛选条件。
+//
+// unsettled 条件写成能命中部分索引 idx_usage_logs_billing_state_pending 的形状：该索引的
+// 谓词就是 billing_state = 1，未结算记录是全表里极少的异常行，正常行根本不进索引。
+// 所以哪怕 usage_logs 有上亿行，这两个筛选也只扫那一小撮。
+func appendUsageLogBillingStateWhereCondition(conditions []string, args []any, state *int8, unsettledOnly bool) ([]string, []any) {
+	if unsettledOnly {
+		conditions = append(conditions, fmt.Sprintf("billing_state = %d", service.BillingStatePricingUnavailable))
+	}
+	if state != nil {
+		conditions = append(conditions, fmt.Sprintf("billing_state = $%d", len(args)+1))
+		args = append(args, int16(*state))
+	}
+	return conditions, args
 }
 
 func appendUsageLogBillingModeWhereConditionWithAlias(conditions []string, args []any, billingMode string, alias string) ([]string, []any) {
@@ -126,6 +144,14 @@ func appendRawUsageLogModelQueryFilter(query string, args []any, model string) (
 	}
 	query += fmt.Sprintf(" AND %s = $%d", rawUsageLogModelColumn, len(args)+1)
 	args = append(args, model)
+	return query, args
+}
+
+func appendUsageLogBillingStateQueryFilter(query string, args []any, state *int8, unsettledOnly bool) (string, []any) {
+	conditions, args := appendUsageLogBillingStateWhereCondition(nil, args, state, unsettledOnly)
+	for _, condition := range conditions {
+		query += " AND " + condition
+	}
 	return query, args
 }
 

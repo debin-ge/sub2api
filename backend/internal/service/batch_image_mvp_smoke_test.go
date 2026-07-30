@@ -62,10 +62,11 @@ func TestBatchImageMVPFlow(t *testing.T) {
 			BillingRepo:      billing,
 		},
 		SettlementService: &BatchImageSettlementService{
-			Repo:        repo,
-			BillingRepo: billing,
-			Pricing:     pricing,
-			Config:      cfg,
+			Repo:         repo,
+			BillingRepo:  billing,
+			UsageLogRepo: &fakeBatchImageUsageLogRepo{},
+			Pricing:      pricing,
+			Config:       cfg,
 		},
 	}
 	downloadSvc := &BatchImageDownloadService{

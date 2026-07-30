@@ -386,33 +386,37 @@ var ErrNoAvailableCompactAccounts = errors.New("no available accounts support /r
 
 // OpenAIGatewayService handles OpenAI API gateway operations
 type OpenAIGatewayService struct {
-	accountRepo           AccountRepository
-	usageLogRepo          UsageLogRepository
-	usageBillingRepo      UsageBillingRepository
-	userRepo              UserRepository
-	userSubRepo           UserSubscriptionRepository
-	cache                 GatewayCache
-	cfg                   *config.Config
-	codexDetector         CodexClientRestrictionDetector
-	schedulerSnapshot     *SchedulerSnapshotService
-	concurrencyService    *ConcurrencyService
-	billingService        *BillingService
-	rateLimitService      *RateLimitService
-	billingCacheService   *BillingCacheService
-	userGroupRateResolver *userGroupRateResolver
-	httpUpstream          HTTPUpstream
-	deferredService       *DeferredService
-	openAITokenProvider   *OpenAITokenProvider
-	grokTokenProvider     *GrokTokenProvider
-	toolCorrector         *CodexToolCorrector
-	openaiWSResolver      OpenAIWSProtocolResolver
-	resolver              *ModelPricingResolver
-	channelService        *ChannelService
-	balanceNotifyService  *BalanceNotifyService
-	settingService        *SettingService
-	userPlatformQuotaRepo UserPlatformQuotaRepository
-	liveAttestation       liveattestation.Provider
-	liveAttestationCipher SecretEncryptor
+	accountRepo      AccountRepository
+	usageLogRepo     UsageLogRepository
+	usageBillingRepo UsageBillingRepository
+	// Tests with lightweight stubs may explicitly opt into the pre-durable
+	// settlement path. Production constructors intentionally leave this false.
+	allowLegacyUsageBillingForTests bool
+	userRepo                        UserRepository
+	userSubRepo                     UserSubscriptionRepository
+	cache                           GatewayCache
+	cfg                             *config.Config
+	codexDetector                   CodexClientRestrictionDetector
+	schedulerSnapshot               *SchedulerSnapshotService
+	concurrencyService              *ConcurrencyService
+	billingService                  *BillingService
+	pricingGuardRequired            bool
+	rateLimitService                *RateLimitService
+	billingCacheService             *BillingCacheService
+	userGroupRateResolver           *userGroupRateResolver
+	httpUpstream                    HTTPUpstream
+	deferredService                 *DeferredService
+	openAITokenProvider             *OpenAITokenProvider
+	grokTokenProvider               *GrokTokenProvider
+	toolCorrector                   *CodexToolCorrector
+	openaiWSResolver                OpenAIWSProtocolResolver
+	resolver                        *ModelPricingResolver
+	channelService                  *ChannelService
+	balanceNotifyService            *BalanceNotifyService
+	settingService                  *SettingService
+	userPlatformQuotaRepo           UserPlatformQuotaRepository
+	liveAttestation                 liveattestation.Provider
+	liveAttestationCipher           SecretEncryptor
 
 	openaiWSPoolOnce              sync.Once
 	openaiWSStateStoreOnce        sync.Once
@@ -471,19 +475,20 @@ func NewOpenAIGatewayService(
 	userPlatformQuotaRepo UserPlatformQuotaRepository,
 ) *OpenAIGatewayService {
 	svc := &OpenAIGatewayService{
-		accountRepo:         accountRepo,
-		usageLogRepo:        usageLogRepo,
-		usageBillingRepo:    usageBillingRepo,
-		userRepo:            userRepo,
-		userSubRepo:         userSubRepo,
-		cache:               cache,
-		cfg:                 cfg,
-		codexDetector:       NewOpenAICodexClientRestrictionDetector(cfg),
-		schedulerSnapshot:   schedulerSnapshot,
-		concurrencyService:  concurrencyService,
-		billingService:      billingService,
-		rateLimitService:    rateLimitService,
-		billingCacheService: billingCacheService,
+		accountRepo:          accountRepo,
+		usageLogRepo:         usageLogRepo,
+		usageBillingRepo:     usageBillingRepo,
+		userRepo:             userRepo,
+		userSubRepo:          userSubRepo,
+		cache:                cache,
+		cfg:                  cfg,
+		codexDetector:        NewOpenAICodexClientRestrictionDetector(cfg),
+		schedulerSnapshot:    schedulerSnapshot,
+		concurrencyService:   concurrencyService,
+		billingService:       billingService,
+		pricingGuardRequired: true,
+		rateLimitService:     rateLimitService,
+		billingCacheService:  billingCacheService,
 		userGroupRateResolver: newUserGroupRateResolver(
 			userGroupRateRepo,
 			nil,
@@ -534,13 +539,13 @@ func (s *OpenAIGatewayService) IsModelRestricted(ctx context.Context, groupID in
 	return s.channelService.IsModelRestricted(ctx, groupID, model)
 }
 
-// ResolveChannelMappingAndRestrict 解析渠道映射。
-// 模型限制检查已移至调度阶段，restricted 始终返回 false。
-func (s *OpenAIGatewayService) ResolveChannelMappingAndRestrict(ctx context.Context, groupID *int64, model string) (ChannelMappingResult, bool) {
+// ResolveRequestChannelMapping 解析入站请求的渠道映射（代理到 ChannelService）。
+// 不含模型限制检查——那一步由调度阶段的 checkChannelPricingRestriction 负责。
+func (s *OpenAIGatewayService) ResolveRequestChannelMapping(ctx context.Context, groupID *int64, model string) ChannelMappingResult {
 	if s.channelService == nil {
-		return ChannelMappingResult{MappedModel: model}, false
+		return ChannelMappingResult{MappedModel: model}
 	}
-	return s.channelService.ResolveChannelMappingAndRestrict(ctx, groupID, model)
+	return s.channelService.ResolveRequestChannelMapping(ctx, groupID, model)
 }
 
 func (s *OpenAIGatewayService) isCodexImageGenerationBridgeEnabled(ctx context.Context, account *Account, apiKey *APIKey) bool {
@@ -610,13 +615,15 @@ func (s *OpenAIGatewayService) getCodexSnapshotThrottle() *accountWriteThrottle 
 
 func (s *OpenAIGatewayService) billingDeps() *billingDeps {
 	return &billingDeps{
-		accountRepo:           s.accountRepo,
-		userRepo:              s.userRepo,
-		userSubRepo:           s.userSubRepo,
-		billingCacheService:   s.billingCacheService,
-		deferredService:       s.deferredService,
-		balanceNotifyService:  s.balanceNotifyService,
-		userPlatformQuotaRepo: s.userPlatformQuotaRepo,
+		accountRepo:                     s.accountRepo,
+		userRepo:                        s.userRepo,
+		userSubRepo:                     s.userSubRepo,
+		billingCacheService:             s.billingCacheService,
+		deferredService:                 s.deferredService,
+		balanceNotifyService:            s.balanceNotifyService,
+		userPlatformQuotaRepo:           s.userPlatformQuotaRepo,
+		cfg:                             s.cfg,
+		allowLegacyUsageBillingForTests: s.allowLegacyUsageBillingForTests,
 	}
 }
 

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -23,6 +24,25 @@ type ImageBillingSizeResolution struct {
 	OutputSize  string
 	Source      string
 	Breakdown   map[string]int
+}
+
+// NormalizeImageBillingTierStrictOrDefault accepts the documented default
+// spellings (empty/auto) but rejects every explicit size that is not covered by
+// the configured 1K/2K/4K rate card. Settlement code must use this helper
+// instead of coercing future tiers to 2K.
+func NormalizeImageBillingTierStrictOrDefault(size string) (string, error) {
+	size = strings.TrimSpace(size)
+	if size == "" || strings.EqualFold(size, "auto") {
+		return ImageBillingSize2K, nil
+	}
+	if tier, ok := ClassifyImageBillingTier(size); ok {
+		return tier, nil
+	}
+	return "", fmt.Errorf(
+		"%w: image size %q has no configured billing tier",
+		ErrModelPricingUnavailable,
+		size,
+	)
 }
 
 func ClassifyImageBillingTier(size string) (string, bool) {
@@ -56,8 +76,13 @@ func ClassifyImageBillingTier(size string) (string, bool) {
 		return ImageBillingSize1K, true
 	case maxEdge <= 2048:
 		return ImageBillingSize2K, true
-	default:
+	case maxEdge <= 4096:
 		return ImageBillingSize4K, true
+	default:
+		// The configured rate card stops at 4K. Treat larger/future output
+		// dimensions as an unknown tier instead of silently borrowing the 4K
+		// price; callers use the false result to fail closed before forwarding.
+		return "", false
 	}
 }
 
@@ -75,14 +100,30 @@ func ResolveImageBillingSize(inputSize string, outputSizes []string) ImageBillin
 	breakdown := map[string]int{}
 	outputSize := firstDisplayImageOutputSize(outputSizes)
 	outputTier := ""
+	unpricedOutputSize := ""
 	for _, output := range outputSizes {
 		tier, ok := ClassifyImageBillingTier(output)
 		if !ok {
+			if !strings.EqualFold(strings.TrimSpace(output), "auto") && unpricedOutputSize == "" {
+				unpricedOutputSize = strings.TrimSpace(output)
+			}
 			continue
 		}
 		breakdown[tier]++
 		if imageTierRank(tier) > imageTierRank(outputTier) {
 			outputTier = tier
+		}
+	}
+	if unpricedOutputSize != "" {
+		return ImageBillingSizeResolution{
+			// Preserve the unknown value all the way into usage logging and
+			// recovery. The strict settlement helper will keep this row
+			// pending until the rate card explicitly learns the new tier.
+			BillingSize: unpricedOutputSize,
+			InputSize:   inputSize,
+			OutputSize:  unpricedOutputSize,
+			Source:      ImageSizeSourceOutput,
+			Breakdown:   normalizeImageSizeBreakdown(breakdown),
 		}
 	}
 	if outputTier != "" {
@@ -98,6 +139,14 @@ func ResolveImageBillingSize(inputSize string, outputSizes []string) ImageBillin
 	if tier, ok := ClassifyImageBillingTier(inputSize); ok {
 		return ImageBillingSizeResolution{
 			BillingSize: tier,
+			InputSize:   inputSize,
+			OutputSize:  outputSize,
+			Source:      ImageSizeSourceInput,
+		}
+	}
+	if inputSize != "" && !strings.EqualFold(inputSize, "auto") {
+		return ImageBillingSizeResolution{
+			BillingSize: inputSize,
 			InputSize:   inputSize,
 			OutputSize:  outputSize,
 			Source:      ImageSizeSourceInput,

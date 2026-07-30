@@ -63,7 +63,7 @@ func newAntigravityCompatService(cfg config.GatewayConfig, upstream HTTPUpstream
 		&antigravityCompatTokenCache{token: "fresh-oauth-token"},
 		nil,
 	)
-	return NewAntigravityGatewayService(
+	svc := NewAntigravityGatewayService(
 		nil,
 		nil,
 		nil,
@@ -72,7 +72,11 @@ func newAntigravityCompatService(cfg config.GatewayConfig, upstream HTTPUpstream
 		upstream,
 		NewSettingService(&antigravitySettingRepoStub{}, &config.Config{Gateway: cfg}),
 		nil,
+		nil,
+		nil,
 	)
+	svc.pricingGuardRequired = false
+	return svc
 }
 
 func newAntigravityCompatAccount(accountType string) *Account {

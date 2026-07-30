@@ -27,6 +27,7 @@ type glmMessagesForwarder interface {
 }
 
 type glmGatewayService interface {
+	specializedGatewayChannelMapper
 	GenerateSessionHash(parsed *service.ParsedRequest) string
 	SelectAccountWithLoadAwareness(ctx context.Context, groupID *int64, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}, metadataUserID string, sub2apiUserID int64) (*service.AccountSelectionResult, error)
 	RecordUsage(ctx context.Context, input *service.RecordUsageInput) error
@@ -157,6 +158,9 @@ func (h *GLMGatewayHandler) Messages(c *gin.Context) {
 		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "glm gateway service unavailable")
 		return
 	}
+	channelMapping, forwardBody := resolveSpecializedGatewayChannelMapping(
+		c.Request.Context(), h.gatewayService, apiKey.GroupID, reqModel, body,
+	)
 
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
 	streamStarted := false
@@ -230,7 +234,7 @@ func (h *GLMGatewayHandler) Messages(c *gin.Context) {
 		}
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
-		result, err := h.glmService.ForwardMessages(c.Request.Context(), c, account, body, glmRequestID(c))
+		result, err := h.glmService.ForwardMessages(c.Request.Context(), c, account, forwardBody, glmRequestID(c))
 		releaseOnce()
 		if err != nil {
 			if c.Writer.Written() || streamStarted {
@@ -270,6 +274,7 @@ func (h *GLMGatewayHandler) Messages(c *gin.Context) {
 		inboundEndpoint := GetInboundEndpoint(c)
 		upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
 		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
+		channelUsageFields := clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel)
 
 		h.submitUsageRecordTask(func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
@@ -285,6 +290,7 @@ func (h *GLMGatewayHandler) Messages(c *gin.Context) {
 				IPAddress:          clientIP,
 				RequestPayloadHash: requestPayloadHash,
 				APIKeyService:      h.apiKeyService,
+				ChannelUsageFields: channelUsageFields,
 			}); err != nil {
 				logger.L().With(
 					zap.String("component", "handler.glm_gateway.messages"),
@@ -363,6 +369,9 @@ func (h *GLMGatewayHandler) ChatCompletions(c *gin.Context) {
 		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "glm gateway service unavailable")
 		return
 	}
+	channelMapping, forwardBody := resolveSpecializedGatewayChannelMapping(
+		c.Request.Context(), h.gatewayService, apiKey.GroupID, reqModel, body,
+	)
 
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
 	streamStarted := false
@@ -436,7 +445,7 @@ func (h *GLMGatewayHandler) ChatCompletions(c *gin.Context) {
 		}
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
-		result, err := h.glmService.ForwardChatCompletions(c.Request.Context(), c, account, body, glmRequestID(c))
+		result, err := h.glmService.ForwardChatCompletions(c.Request.Context(), c, account, forwardBody, glmRequestID(c))
 		releaseOnce()
 		if err != nil {
 			if c.Writer.Written() || streamStarted {
@@ -476,6 +485,7 @@ func (h *GLMGatewayHandler) ChatCompletions(c *gin.Context) {
 		inboundEndpoint := GetInboundEndpoint(c)
 		upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
 		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
+		channelUsageFields := clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel)
 
 		h.submitUsageRecordTask(func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
@@ -491,6 +501,7 @@ func (h *GLMGatewayHandler) ChatCompletions(c *gin.Context) {
 				IPAddress:          clientIP,
 				RequestPayloadHash: requestPayloadHash,
 				APIKeyService:      h.apiKeyService,
+				ChannelUsageFields: channelUsageFields,
 			}); err != nil {
 				logger.L().With(
 					zap.String("component", "handler.glm_gateway.chat_completions"),
@@ -583,6 +594,9 @@ func (h *GLMGatewayHandler) Responses(c *gin.Context) {
 		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "glm gateway service unavailable")
 		return
 	}
+	channelMapping, forwardBody := resolveSpecializedGatewayChannelMapping(
+		c.Request.Context(), h.gatewayService, apiKey.GroupID, reqModel, body,
+	)
 
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
 	streamStarted := false
@@ -656,7 +670,7 @@ func (h *GLMGatewayHandler) Responses(c *gin.Context) {
 		}
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
-		result, err := h.glmService.ForwardResponses(c.Request.Context(), c, account, body, glmRequestID(c))
+		result, err := h.glmService.ForwardResponses(c.Request.Context(), c, account, forwardBody, glmRequestID(c))
 		releaseOnce()
 		if err != nil {
 			if c.Writer.Written() || streamStarted {
@@ -696,6 +710,7 @@ func (h *GLMGatewayHandler) Responses(c *gin.Context) {
 		inboundEndpoint := GetInboundEndpoint(c)
 		upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
 		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
+		channelUsageFields := clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel)
 
 		h.submitUsageRecordTask(func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
@@ -711,6 +726,7 @@ func (h *GLMGatewayHandler) Responses(c *gin.Context) {
 				IPAddress:          clientIP,
 				RequestPayloadHash: requestPayloadHash,
 				APIKeyService:      h.apiKeyService,
+				ChannelUsageFields: channelUsageFields,
 			}); err != nil {
 				logger.L().With(
 					zap.String("component", "handler.glm_gateway.responses"),
@@ -851,24 +867,12 @@ func (h *GLMGatewayHandler) errorResponse(c *gin.Context, status int, errType, m
 }
 
 func (h *GLMGatewayHandler) submitUsageRecordTask(task service.UsageRecordTask) {
-	if task == nil {
-		return
-	}
-	if h.usageRecordWorkerPool != nil {
-		h.usageRecordWorkerPool.Submit(task)
-		return
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	defer func() {
-		if recovered := recover(); recovered != nil {
-			logger.L().With(
-				zap.String("component", "handler.glm_gateway.messages"),
-				zap.Any("panic", recovered),
-			).Error("glm_gateway.usage_record_task_panic_recovered")
-		}
-	}()
-	task(ctx)
+	submitUsageRecordTaskWithFallback(
+		context.Background(),
+		h.usageRecordWorkerPool,
+		"handler.glm_gateway.messages",
+		task,
+	)
 }
 
 func glmRequestID(c *gin.Context) string {

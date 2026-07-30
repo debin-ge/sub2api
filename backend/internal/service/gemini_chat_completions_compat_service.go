@@ -93,6 +93,15 @@ func (s *GeminiMessagesCompatService) forwardClaudeBodyAsChatCompletions(
 		return nil, s.writeChatCompletionsError(c, http.StatusBadRequest, "invalid_request_error", err.Error())
 	}
 	geminiReq = ensureGeminiFunctionCallThoughtSignatures(geminiReq)
+	imageIdentity, err := resolveGeminiImageBillingIdentity(mappedModel, geminiReq)
+	if err != nil {
+		_ = s.writeChatCompletionsError(c, http.StatusServiceUnavailable, "api_error", err.Error())
+		return nil, err
+	}
+	if err := s.validateResolvedGeminiImagePricing(ctx, account, imageIdentity); err != nil {
+		_ = s.writeChatCompletionsError(c, http.StatusServiceUnavailable, "api_error", err.Error())
+		return nil, err
+	}
 
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
@@ -274,25 +283,19 @@ func (s *GeminiMessagesCompatService) forwardClaudeBodyAsChatCompletions(
 		usage = &ClaudeUsage{}
 	}
 
-	imageCount := 0
-	imageInputSize := s.extractImageInputSize(claudeBody)
-	imageSize := normalizeOpenAIImageSizeTier(imageInputSize)
-	if isImageGenerationModel(originalModel) {
-		imageCount = 1
-	}
-
 	return &ForwardResult{
 		RequestID:        requestID,
 		Usage:            *usage,
 		Model:            originalModel,
 		UpstreamModel:    mappedModel,
+		BillingModel:     imageIdentity.Model,
 		Stream:           clientStream,
 		Duration:         time.Since(startTime),
 		FirstTokenMs:     firstTokenMs,
 		ReasoningEffort:  reasoningEffort,
-		ImageCount:       imageCount,
-		ImageSize:        imageSize,
-		ImageInputSize:   imageInputSize,
+		ImageCount:       imageIdentity.Count,
+		ImageSize:        imageIdentity.SizeTier,
+		ImageInputSize:   imageIdentity.InputSize,
 		ClientDisconnect: false,
 	}, nil
 }

@@ -604,6 +604,27 @@ func (_u *UsageLogUpdate) AddBillingType(v int8) *UsageLogUpdate {
 	return _u
 }
 
+// SetBillingState sets the "billing_state" field.
+func (_u *UsageLogUpdate) SetBillingState(v int8) *UsageLogUpdate {
+	_u.mutation.ResetBillingState()
+	_u.mutation.SetBillingState(v)
+	return _u
+}
+
+// SetNillableBillingState sets the "billing_state" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableBillingState(v *int8) *UsageLogUpdate {
+	if v != nil {
+		_u.SetBillingState(*v)
+	}
+	return _u
+}
+
+// AddBillingState adds value to the "billing_state" field.
+func (_u *UsageLogUpdate) AddBillingState(v int8) *UsageLogUpdate {
+	_u.mutation.AddBillingState(v)
+	return _u
+}
+
 // SetStream sets the "stream" field.
 func (_u *UsageLogUpdate) SetStream(v bool) *UsageLogUpdate {
 	_u.mutation.SetStream(v)
@@ -1230,6 +1251,12 @@ func (_u *UsageLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.AddedBillingType(); ok {
 		_spec.AddField(usagelog.FieldBillingType, field.TypeInt8, value)
+	}
+	if value, ok := _u.mutation.BillingState(); ok {
+		_spec.SetField(usagelog.FieldBillingState, field.TypeInt8, value)
+	}
+	if value, ok := _u.mutation.AddedBillingState(); ok {
+		_spec.AddField(usagelog.FieldBillingState, field.TypeInt8, value)
 	}
 	if value, ok := _u.mutation.Stream(); ok {
 		_spec.SetField(usagelog.FieldStream, field.TypeBool, value)
@@ -2061,6 +2088,27 @@ func (_u *UsageLogUpdateOne) AddBillingType(v int8) *UsageLogUpdateOne {
 	return _u
 }
 
+// SetBillingState sets the "billing_state" field.
+func (_u *UsageLogUpdateOne) SetBillingState(v int8) *UsageLogUpdateOne {
+	_u.mutation.ResetBillingState()
+	_u.mutation.SetBillingState(v)
+	return _u
+}
+
+// SetNillableBillingState sets the "billing_state" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableBillingState(v *int8) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetBillingState(*v)
+	}
+	return _u
+}
+
+// AddBillingState adds value to the "billing_state" field.
+func (_u *UsageLogUpdateOne) AddBillingState(v int8) *UsageLogUpdateOne {
+	_u.mutation.AddBillingState(v)
+	return _u
+}
+
 // SetStream sets the "stream" field.
 func (_u *UsageLogUpdateOne) SetStream(v bool) *UsageLogUpdateOne {
 	_u.mutation.SetStream(v)
@@ -2717,6 +2765,12 @@ func (_u *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, err 
 	}
 	if value, ok := _u.mutation.AddedBillingType(); ok {
 		_spec.AddField(usagelog.FieldBillingType, field.TypeInt8, value)
+	}
+	if value, ok := _u.mutation.BillingState(); ok {
+		_spec.SetField(usagelog.FieldBillingState, field.TypeInt8, value)
+	}
+	if value, ok := _u.mutation.AddedBillingState(); ok {
+		_spec.AddField(usagelog.FieldBillingState, field.TypeInt8, value)
 	}
 	if value, ok := _u.mutation.Stream(); ok {
 		_spec.SetField(usagelog.FieldStream, field.TypeBool, value)

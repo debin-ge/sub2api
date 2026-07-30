@@ -112,6 +112,35 @@ func WithOpenAIImageGenerationIntent(ctx context.Context) context.Context {
 	return context.WithValue(ctx, ctxkey.OpenAIImageGenerationIntent, true)
 }
 
+type openAIImageGenerationPricingIntentContextKey struct{}
+
+type OpenAIImageGenerationPricingIntent struct {
+	BillingModel string
+	SizeTier     string
+}
+
+func WithOpenAIImageGenerationPricingIntent(
+	ctx context.Context,
+	billingModel string,
+	sizeTier string,
+) context.Context {
+	ctx = WithOpenAIImageGenerationIntent(ctx)
+	return context.WithValue(ctx, openAIImageGenerationPricingIntentContextKey{}, OpenAIImageGenerationPricingIntent{
+		BillingModel: strings.TrimSpace(billingModel),
+		SizeTier:     NormalizeImageBillingTierOrDefault(sizeTier),
+	})
+}
+
+func OpenAIImageGenerationPricingIntentFromContext(
+	ctx context.Context,
+) (OpenAIImageGenerationPricingIntent, bool) {
+	if ctx == nil {
+		return OpenAIImageGenerationPricingIntent{}, false
+	}
+	intent, ok := ctx.Value(openAIImageGenerationPricingIntentContextKey{}).(OpenAIImageGenerationPricingIntent)
+	return intent, ok
+}
+
 func OpenAIImageGenerationIntentFromContext(ctx context.Context) bool {
 	if ctx == nil {
 		return false

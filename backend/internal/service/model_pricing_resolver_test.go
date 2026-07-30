@@ -57,6 +57,36 @@ func TestResolve_UnknownModel(t *testing.T) {
 	require.Equal(t, "fallback", resolved.Source)
 }
 
+func TestResolveStrictToken_RejectsFamilyFallback(t *testing.T) {
+	bs := newTestBillingServiceForResolver()
+	bs.fallbackPrices["claude-3-opus"] = &ModelPricing{
+		InputPricePerToken:  15e-6,
+		OutputPricePerToken: 75e-6,
+	}
+	r := NewModelPricingResolver(nil, bs)
+
+	// The loose path can infer a Sonnet price merely because the unknown alias
+	// contains "claude". Settlement must not treat that inference as evidence
+	// that this exact SKU was priced.
+	loose := r.Resolve(context.Background(), PricingInput{Model: "claude-opus-business"})
+	require.NotNil(t, loose)
+	require.NotNil(t, loose.BasePricing)
+
+	strict, err := r.ResolveStrictToken(context.Background(), PricingInput{
+		Model: "claude-opus-business",
+	})
+	require.ErrorIs(t, err, ErrModelPricingUnavailable)
+	require.Nil(t, strict)
+
+	strict, err = r.ResolveStrictToken(context.Background(), PricingInput{
+		Model: "claude-sonnet-4",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, strict)
+	require.NotNil(t, strict.BasePricing)
+	require.InDelta(t, 3e-6, strict.BasePricing.InputPricePerToken, 1e-12)
+}
+
 func TestGetIntervalPricing_NoIntervals(t *testing.T) {
 	bs := newTestBillingServiceForResolver()
 	r := NewModelPricingResolver(&ChannelService{}, bs)
@@ -125,14 +155,26 @@ func TestGPT56ExplicitZeroCacheWritePriceIsPreserved(t *testing.T) {
 			BasePricing: &ModelPricing{
 				InputPricePerToken:  5e-6,
 				OutputPricePerToken: 30e-6,
+				PricePresenceKnown:  true,
 			},
 		}
-		resolver.applyTokenOverrides(&ChannelModelPricing{CacheWritePrice: &zero}, resolved)
+		resolver.applyTokenOverrides(&ChannelModelPricing{
+			InputPrice:      &zero,
+			OutputPrice:     &zero,
+			CacheWritePrice: &zero,
+			CacheReadPrice:  &zero,
+		}, resolved)
 
 		require.True(t, resolved.BasePricing.CacheCreationPriceExplicit)
+		require.True(t, resolved.BasePricing.CacheCreation1hPriceExplicit)
+		require.True(t, resolved.BasePricing.CacheReadPriceExplicit)
+		require.True(t, resolved.BasePricing.InputPriorityPriceExplicit)
+		require.True(t, resolved.BasePricing.OutputPriorityPriceExplicit)
+		require.True(t, resolved.BasePricing.CacheCreationPriorityPriceExplicit)
+		require.True(t, resolved.BasePricing.CacheReadPriorityPriceExplicit)
 		cost, err := bs.CalculateCostUnified(CostInput{
 			Model:          "gpt-5.6-sol",
-			Tokens:         UsageTokens{CacheCreationTokens: 100},
+			Tokens:         UsageTokens{CacheCreationTokens: 100, CacheReadTokens: 100},
 			RateMultiplier: 1,
 			Resolver:       resolver,
 			Resolved:       resolved,
@@ -142,12 +184,23 @@ func TestGPT56ExplicitZeroCacheWritePriceIsPreserved(t *testing.T) {
 	})
 
 	t.Run("interval price", func(t *testing.T) {
-		pricing := intervalToModelPricing(&PricingInterval{CacheWritePrice: &zero}, false, nil)
+		pricing := intervalToModelPricing(&PricingInterval{
+			InputPrice:      &zero,
+			OutputPrice:     &zero,
+			CacheWritePrice: &zero,
+			CacheReadPrice:  &zero,
+		}, nil, false, nil)
 		require.True(t, pricing.CacheCreationPriceExplicit)
+		require.True(t, pricing.CacheCreation1hPriceExplicit)
+		require.True(t, pricing.CacheReadPriceExplicit)
+		require.True(t, pricing.InputPriorityPriceExplicit)
+		require.True(t, pricing.OutputPriorityPriceExplicit)
+		require.True(t, pricing.CacheCreationPriorityPriceExplicit)
+		require.True(t, pricing.CacheReadPriorityPriceExplicit)
 
 		cost, err := bs.CalculateCostUnified(CostInput{
 			Model:          "gpt-5.6-sol",
-			Tokens:         UsageTokens{CacheCreationTokens: 100},
+			Tokens:         UsageTokens{CacheCreationTokens: 100, CacheReadTokens: 100},
 			RateMultiplier: 1,
 			Resolver:       resolver,
 			Resolved: &ResolvedPricing{
@@ -177,6 +230,26 @@ func TestGetRequestTierPrice(t *testing.T) {
 	require.InDelta(t, 0.0, r.GetRequestTierPrice(resolved, "4K"), 1e-12)
 }
 
+func TestLookupRequestTierPrice_DistinguishesExplicitZeroAndMiss(t *testing.T) {
+	r := NewModelPricingResolver(nil, newTestBillingServiceForResolver())
+	zero := 0.0
+	resolved := &ResolvedPricing{
+		Mode: BillingModeImage,
+		RequestTiers: []PricingInterval{{
+			TierLabel:       " 1k ",
+			PerRequestPrice: &zero,
+		}},
+	}
+
+	price, found := r.LookupRequestTierPrice(resolved, "1K")
+	require.True(t, found)
+	require.Zero(t, price)
+
+	price, found = r.LookupRequestTierPrice(resolved, "4K")
+	require.False(t, found)
+	require.Zero(t, price)
+}
+
 func TestGetRequestTierPriceByContext(t *testing.T) {
 	bs := newTestBillingServiceForResolver()
 	r := NewModelPricingResolver(&ChannelService{}, bs)
@@ -193,6 +266,22 @@ func TestGetRequestTierPriceByContext(t *testing.T) {
 	require.InDelta(t, 0.10, r.GetRequestTierPriceByContext(resolved, 200000), 1e-12)
 }
 
+func TestLookupRequestTierPriceByContext_SkipsLabelTiers(t *testing.T) {
+	r := NewModelPricingResolver(nil, newTestBillingServiceForResolver())
+	zero := 0.0
+	resolved := &ResolvedPricing{
+		Mode: BillingModePerRequest,
+		RequestTiers: []PricingInterval{
+			{TierLabel: "1K", MinTokens: 0, MaxTokens: nil, PerRequestPrice: &zero},
+			{MinTokens: 0, MaxTokens: testPtrInt(1000), PerRequestPrice: testPtrFloat64(0.05)},
+		},
+	}
+
+	price, found := r.LookupRequestTierPriceByContext(resolved, 100)
+	require.True(t, found)
+	require.InDelta(t, 0.05, price, 1e-12)
+}
+
 func TestGetRequestTierPrice_NilPerRequestPrice(t *testing.T) {
 	bs := newTestBillingServiceForResolver()
 	r := NewModelPricingResolver(&ChannelService{}, bs)
@@ -205,6 +294,8 @@ func TestGetRequestTierPrice_NilPerRequestPrice(t *testing.T) {
 	}
 
 	require.InDelta(t, 0.0, r.GetRequestTierPrice(resolved, "1K"), 1e-12)
+	_, found := r.LookupRequestTierPrice(resolved, "1K")
+	require.False(t, found)
 }
 
 // ===========================================================================
@@ -343,6 +434,47 @@ func TestResolve_WithChannelOverride_TokenNilBasePricing(t *testing.T) {
 	require.NotNil(t, resolved.BasePricing)
 	require.InDelta(t, 7e-6, resolved.BasePricing.InputPricePerToken, 1e-12)
 	require.InDelta(t, 21e-6, resolved.BasePricing.OutputPricePerToken, 1e-12)
+}
+
+func TestResolveStrictToken_UnknownModelRequiresCompleteExplicitChannelPrice(t *testing.T) {
+	t.Run("partial channel price is rejected", func(t *testing.T) {
+		r := newResolverWithChannel(t, []ChannelModelPricing{{
+			Platform:    "anthropic",
+			Models:      []string{"unknown-model-xyz"},
+			BillingMode: BillingModeToken,
+			InputPrice:  testPtrFloat64(7e-6),
+			OutputPrice: testPtrFloat64(21e-6),
+		}})
+
+		resolved, err := r.ResolveStrictToken(context.Background(), PricingInput{
+			Model:   "unknown-model-xyz",
+			GroupID: groupIDPtr(),
+		})
+		require.ErrorIs(t, err, ErrModelPricingUnavailable)
+		require.Nil(t, resolved)
+	})
+
+	t.Run("complete channel price is accepted", func(t *testing.T) {
+		r := newResolverWithChannel(t, []ChannelModelPricing{{
+			Platform:        "anthropic",
+			Models:          []string{"unknown-model-xyz"},
+			BillingMode:     BillingModeToken,
+			InputPrice:      testPtrFloat64(7e-6),
+			OutputPrice:     testPtrFloat64(21e-6),
+			CacheWritePrice: testPtrFloat64(8e-6),
+			CacheReadPrice:  testPtrFloat64(1e-6),
+		}})
+
+		resolved, err := r.ResolveStrictToken(context.Background(), PricingInput{
+			Model:   "unknown-model-xyz",
+			GroupID: groupIDPtr(),
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resolved)
+		require.NotNil(t, resolved.BasePricing)
+		require.InDelta(t, 7e-6, resolved.BasePricing.InputPricePerToken, 1e-12)
+		require.InDelta(t, 21e-6, resolved.BasePricing.OutputPricePerToken, 1e-12)
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -526,6 +658,56 @@ func TestGetIntervalPricing_WithChannelIntervals(t *testing.T) {
 	require.InDelta(t, 10e-6, pricing2.OutputPricePerToken, 1e-12)
 }
 
+func TestGetIntervalPricing_PartialIntervalInheritsBasePricing(t *testing.T) {
+	r := newResolverWithChannel(t, []ChannelModelPricing{{
+		Platform:    "anthropic",
+		Models:      []string{"claude-sonnet-4"},
+		BillingMode: BillingModeToken,
+		Intervals: []PricingInterval{{
+			MinTokens:  0,
+			MaxTokens:  nil,
+			InputPrice: testPtrFloat64(1e-6),
+		}},
+	}})
+	resolved := r.Resolve(context.Background(), PricingInput{
+		Model:   "claude-sonnet-4",
+		GroupID: groupIDPtr(),
+	})
+
+	pricing := r.GetIntervalPricing(resolved, 100)
+	require.InDelta(t, 1e-6, pricing.InputPricePerToken, 1e-12)
+	require.InDelta(t, 15e-6, pricing.OutputPricePerToken, 1e-12)
+	require.InDelta(t, 3.75e-6, pricing.CacheCreationPricePerToken, 1e-12)
+	require.InDelta(t, 0.3e-6, pricing.CacheReadPricePerToken, 1e-12)
+}
+
+func TestCalculateCostUnified_IntervalPricesOutputOnlyUsageAtLowestTier(t *testing.T) {
+	bs := newTestBillingServiceForResolver()
+	r := NewModelPricingResolver(nil, bs)
+	resolved := &ResolvedPricing{
+		Mode:        BillingModeToken,
+		BasePricing: &ModelPricing{},
+		Intervals: []PricingInterval{{
+			MinTokens:       0,
+			MaxTokens:       nil,
+			InputPrice:      testPtrFloat64(1e-6),
+			OutputPrice:     testPtrFloat64(2e-6),
+			CacheWritePrice: testPtrFloat64(3e-6),
+			CacheReadPrice:  testPtrFloat64(0.5e-6),
+		}},
+	}
+
+	cost, err := bs.CalculateCostUnified(CostInput{
+		Model:          "unknown-output-only-model",
+		Tokens:         UsageTokens{OutputTokens: 100},
+		RateMultiplier: 1,
+		Resolver:       r,
+		Resolved:       resolved,
+	})
+	require.NoError(t, err)
+	require.InDelta(t, 100*2e-6, cost.OutputCost, 1e-12)
+}
+
 func TestGetIntervalPricing_ChannelIntervalsNoMatch(t *testing.T) {
 	// Channel intervals don't match token count → falls back to BasePricing.
 	r := newResolverWithChannel(t, []ChannelModelPricing{{
@@ -633,10 +815,10 @@ func TestGetRequestTierPriceByContext_ExactBoundary(t *testing.T) {
 }
 
 // ===========================================================================
-// 8. filterValidIntervals
+// 8. mode-specific interval filters
 // ===========================================================================
 
-func TestFilterValidIntervals(t *testing.T) {
+func TestFilterValidTokenIntervals(t *testing.T) {
 	tests := []struct {
 		name      string
 		intervals []PricingInterval
@@ -683,11 +865,11 @@ func TestFilterValidIntervals(t *testing.T) {
 			wantLen: 1,
 		},
 		{
-			name: "interval with only PerRequestPrice kept",
+			name: "interval with only PerRequestPrice filtered out",
 			intervals: []PricingInterval{
 				{TierLabel: "1K", PerRequestPrice: testPtrFloat64(0.04)},
 			},
-			wantLen: 1,
+			wantLen: 0,
 		},
 		{
 			name: "mixed valid and invalid",
@@ -702,17 +884,28 @@ func TestFilterValidIntervals(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := filterValidIntervals(tt.intervals)
+			result := filterValidTokenIntervals(tt.intervals)
 			require.Len(t, result, tt.wantLen)
 		})
 	}
+}
+
+func TestFilterValidRequestTiers(t *testing.T) {
+	intervals := []PricingInterval{
+		{TierLabel: "token-only", InputPrice: testPtrFloat64(1e-6)},
+		{TierLabel: "1K", PerRequestPrice: testPtrFloat64(0.04)},
+	}
+
+	result := filterValidRequestTiers(intervals)
+	require.Len(t, result, 1)
+	require.Equal(t, "1K", result[0].TierLabel)
 }
 
 // ===========================================================================
 // 9. ImageOutputPriceExplicit tests
 // ===========================================================================
 
-func TestApplyTokenOverrides_FlatSetsImageOutputPriceExplicit(t *testing.T) {
+func TestApplyTokenOverrides_FlatNilImageOutputFallsBackToTextOutput(t *testing.T) {
 	r := newResolverWithChannel(t, []ChannelModelPricing{{
 		Platform:    "anthropic",
 		Models:      []string{"claude-sonnet-4"},
@@ -727,8 +920,18 @@ func TestApplyTokenOverrides_FlatSetsImageOutputPriceExplicit(t *testing.T) {
 	})
 
 	require.Equal(t, PricingSourceChannel, resolved.Source)
-	require.True(t, resolved.BasePricing.ImageOutputPriceExplicit)
+	require.False(t, resolved.BasePricing.ImageOutputPriceExplicit)
 	require.Equal(t, 0.0, resolved.BasePricing.ImageOutputPricePerToken)
+
+	cost, err := r.billingService.CalculateCostUnified(CostInput{
+		Model:          "claude-sonnet-4",
+		Tokens:         UsageTokens{OutputTokens: 10, ImageOutputTokens: 10},
+		RateMultiplier: 1,
+		Resolver:       r,
+		Resolved:       resolved,
+	})
+	require.NoError(t, err)
+	require.InDelta(t, 10*15e-6, cost.ImageOutputCost, 1e-12)
 }
 
 func TestApplyTokenOverrides_FlatWithImageOutputPriceSetsExplicit(t *testing.T) {
@@ -749,7 +952,7 @@ func TestApplyTokenOverrides_FlatWithImageOutputPriceSetsExplicit(t *testing.T) 
 	require.InDelta(t, 50e-6, resolved.BasePricing.ImageOutputPricePerToken, 1e-12)
 }
 
-func TestApplyTokenOverrides_IntervalSetsImageOutputPriceExplicit(t *testing.T) {
+func TestApplyTokenOverrides_IntervalNilImageOutputFallsBackToIntervalOutput(t *testing.T) {
 	r := newResolverWithChannel(t, []ChannelModelPricing{{
 		Platform:    "anthropic",
 		Models:      []string{"claude-sonnet-4"},
@@ -764,14 +967,24 @@ func TestApplyTokenOverrides_IntervalSetsImageOutputPriceExplicit(t *testing.T) 
 		GroupID: groupIDPtr(),
 	})
 
-	// BasePricing should have explicit mark (for interval fallback)
-	require.True(t, resolved.BasePricing.ImageOutputPriceExplicit)
+	// nil 表示未配置，不能被解释为显式免费。
+	require.False(t, resolved.BasePricing.ImageOutputPriceExplicit)
 	require.Equal(t, 0.0, resolved.BasePricing.ImageOutputPricePerToken)
 
-	// intervalToModelPricing should also have explicit mark
+	// interval price keeps the fallback-to-output semantics.
 	pricing := r.GetIntervalPricing(resolved, 50000)
-	require.True(t, pricing.ImageOutputPriceExplicit)
+	require.False(t, pricing.ImageOutputPriceExplicit)
 	require.Equal(t, 0.0, pricing.ImageOutputPricePerToken)
+
+	cost, err := r.billingService.CalculateCostUnified(CostInput{
+		Model:          "claude-sonnet-4",
+		Tokens:         UsageTokens{InputTokens: 1, OutputTokens: 10, ImageOutputTokens: 10},
+		RateMultiplier: 1,
+		Resolver:       r,
+		Resolved:       resolved,
+	})
+	require.NoError(t, err)
+	require.InDelta(t, 10*15e-6, cost.ImageOutputCost, 1e-12)
 }
 
 // ===========================================================================
@@ -825,7 +1038,7 @@ func TestApplyTokenOverrides_IntervalDoesNotPolluteFallbackPrices(t *testing.T) 
 	})
 
 	require.NotNil(t, resolved)
-	require.True(t, resolved.BasePricing.ImageOutputPriceExplicit)
+	require.False(t, resolved.BasePricing.ImageOutputPriceExplicit)
 
 	// Global fallbackPrices must NOT be polluted
 	fp := r.billingService.fallbackPrices["claude-sonnet-4"]

@@ -1161,19 +1161,6 @@ func (s *AntigravityGatewayService) handleClaudeStreamingResponse(c *gin.Context
 	}
 }
 
-func (s *AntigravityGatewayService) extractImageInputSize(body []byte) string {
-	var req antigravity.GeminiRequest
-	if err := json.Unmarshal(body, &req); err != nil {
-		return ""
-	}
-
-	if req.GenerationConfig != nil && req.GenerationConfig.ImageConfig != nil {
-		return strings.TrimSpace(req.GenerationConfig.ImageConfig.ImageSize)
-	}
-
-	return ""
-}
-
 // isImageGenerationModel 判断模型是否为图片生成模型
 // 支持的模型：gemini-3.1-flash-image, gemini-3-pro-image, gemini-2.5-flash-image 等
 func isImageGenerationModel(model string) bool {

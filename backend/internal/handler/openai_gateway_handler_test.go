@@ -860,6 +860,45 @@ func TestOpenAIResponses_RejectsHTTPContinuationPreviousResponseID(t *testing.T)
 	require.Contains(t, w.Body.String(), "previous_response_id")
 }
 
+func TestOpenAIResponses_RejectsDuplicateImageToolIdentityBeforeRouting(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		body        string
+		wantMessage string
+	}{
+		{body: `{"model":"gpt-5.1","input":"draw","tools":[{"type":"function","type":"image_generation","model":"unknown-image-model"}]}`, wantMessage: "duplicate"},
+		{body: `{"model":"gpt-5.1","input":"draw","tools":[{"type":"image_generation","model":"gpt-image-2","model":"unknown-image-model"}]}`, wantMessage: "duplicate"},
+		{body: `{"model":"gpt-5.1","input":"draw","tools":[{"type":"image_generation","model":"gpt-image-2","size":"1K","size":"4K"}]}`, wantMessage: "duplicate"},
+		{body: `{"model":"gpt-5.1","input":"draw","tools":[{"type":"image_generation","model":"gpt-image-2","size":"ultra"}]}`, wantMessage: "no configured image billing tier"},
+		{body: `{"model":"gpt-5.1","input":"draw","tools":[{"type":"image_generation","model":"gpt-image-2\u0000future"}]}`, wantMessage: "must not contain null characters"},
+		{body: `{"model":"gpt-5.1","input":"hello","service_tier":"standard","service_tier":"priority"}`, wantMessage: "duplicate"},
+	}
+	for _, tt := range tests {
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", strings.NewReader(tt.body))
+		c.Request.Header.Set("Content-Type", "application/json")
+
+		groupID := int64(2)
+		c.Set(string(middleware.ContextKeyAPIKey), &service.APIKey{
+			ID:      101,
+			GroupID: &groupID,
+			User:    &service.User{ID: 1},
+		})
+		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{
+			UserID:      1,
+			Concurrency: 1,
+		})
+
+		h := newOpenAIHandlerForPreviousResponseIDValidation(t, nil)
+		h.Responses(c)
+
+		require.Equal(t, http.StatusBadRequest, w.Code)
+		require.Contains(t, w.Body.String(), tt.wantMessage)
+	}
+}
+
 func TestOpenAIResponses_FunctionCallOutputHTTPGuidanceDoesNotSuggestPreviousResponseReuse(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -1091,6 +1130,38 @@ func TestOpenAIResponsesWebSocket_RejectsMessageIDAsPreviousResponseID(t *testin
 	require.ErrorAs(t, err, &closeErr)
 	require.Equal(t, coderws.StatusPolicyViolation, closeErr.Code)
 	require.Contains(t, strings.ToLower(closeErr.Reason), "previous_response_id")
+}
+
+func TestOpenAIResponsesWebSocket_RejectsDuplicateImageToolIdentityInFirstMessage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	h := newOpenAIHandlerForPreviousResponseIDValidation(t, nil)
+	wsServer := newOpenAIWSHandlerTestServer(t, h, middleware.AuthSubject{UserID: 1, Concurrency: 1})
+	defer wsServer.Close()
+
+	dialCtx, cancelDial := context.WithTimeout(context.Background(), 3*time.Second)
+	clientConn, _, err := coderws.Dial(dialCtx, "ws"+strings.TrimPrefix(wsServer.URL, "http")+"/openai/v1/responses", nil)
+	cancelDial()
+	require.NoError(t, err)
+	defer func() {
+		_ = clientConn.CloseNow()
+	}()
+
+	writeCtx, cancelWrite := context.WithTimeout(context.Background(), 3*time.Second)
+	err = clientConn.Write(writeCtx, coderws.MessageText, []byte(
+		`{"type":"response.create","model":"gpt-5.1","tools":[{"type":"function","type":"image_generation","model":"unknown-image-model"}]}`,
+	))
+	cancelWrite()
+	require.NoError(t, err)
+
+	readCtx, cancelRead := context.WithTimeout(context.Background(), 3*time.Second)
+	_, _, err = clientConn.Read(readCtx)
+	cancelRead()
+	require.Error(t, err)
+	var closeErr coderws.CloseError
+	require.ErrorAs(t, err, &closeErr)
+	require.Equal(t, coderws.StatusPolicyViolation, closeErr.Code)
+	require.Contains(t, strings.ToLower(closeErr.Reason), "duplicate")
 }
 
 func TestOpenAIResponsesWebSocket_PreviousResponseIDKindLoggedBeforeAcquireFailure(t *testing.T) {
@@ -1370,6 +1441,277 @@ func TestOpenAIResponsesWebSocket_PassthroughUsageLogLeavesUserAgentNilWhenMissi
 	require.Equal(t, "medium", *got.log.ReasoningEffort)
 }
 
+type openAIWSStandardPricingGuardResult struct {
+	secondClientEvent     []byte
+	secondClientErr       error
+	secondUpstreamPayload []byte
+	upstreamErr           error
+	upstreamWriteCount    int32
+}
+
+func TestOpenAIResponsesWebSocket_StandardModeRejectsUnpricedSecondTurnBeforeUpstreamWrite(t *testing.T) {
+	got := runOpenAIResponsesWebSocketStandardPricingGuardCase(
+		t,
+		`{"type":"response.create","model":"gpt-future-unpriced-v99","stream":false,"input":"second turn"}`,
+	)
+
+	require.Error(t, got.secondClientErr)
+	var closeErr coderws.CloseError
+	require.ErrorAs(t, got.secondClientErr, &closeErr)
+	require.Equal(t, coderws.StatusPolicyViolation, closeErr.Code)
+	require.Equal(t, "model pricing is unavailable", closeErr.Reason)
+	require.Error(t, got.upstreamErr, "定价门禁应关闭连接，而不是把第二个 turn 写给上游")
+	require.Equal(t, int32(1), got.upstreamWriteCount, "未知且无定价的第二个 turn 不得写入上游")
+	require.Empty(t, got.secondUpstreamPayload)
+}
+
+func TestOpenAIResponsesWebSocket_StandardModeRejectsUnpricedImageSecondTurnBeforeUpstreamWrite(t *testing.T) {
+	got := runOpenAIResponsesWebSocketStandardPricingGuardCase(
+		t,
+		`{"type":"response.create","model":"gpt-future-unpriced-v99","stream":false,"input":"draw a cat","tools":[{"type":"image_generation","model":"gpt-image-2"}]}`,
+	)
+
+	require.Error(t, got.secondClientErr)
+	var closeErr coderws.CloseError
+	require.ErrorAs(t, got.secondClientErr, &closeErr)
+	require.Equal(t, coderws.StatusPolicyViolation, closeErr.Code)
+	require.Equal(t, "model pricing is unavailable", closeErr.Reason)
+	require.Error(t, got.upstreamErr, "图片工具意图不能让未知文本模型绕过定价门禁")
+	require.Equal(t, int32(1), got.upstreamWriteCount)
+	require.Empty(t, got.secondUpstreamPayload)
+}
+
+func TestOpenAIResponsesWebSocket_StandardModeRejectsPricedSecondTurnMappedToUnpricedUpstream(t *testing.T) {
+	got := runOpenAIResponsesWebSocketStandardPricingGuardCase(
+		t,
+		`{"type":"response.create","model":"gpt-5.6-terra","stream":false,"input":"second turn"}`,
+	)
+
+	require.Error(t, got.secondClientErr)
+	var closeErr coderws.CloseError
+	require.ErrorAs(t, got.secondClientErr, &closeErr)
+	require.Equal(t, coderws.StatusPolicyViolation, closeErr.Code)
+	require.Equal(t, "model pricing is unavailable", closeErr.Reason)
+	require.Error(t, got.upstreamErr, "已定价别名映射到未知上游时，第二个 turn 不得写给上游")
+	require.Equal(t, int32(1), got.upstreamWriteCount)
+	require.Empty(t, got.secondUpstreamPayload)
+}
+
+func runOpenAIResponsesWebSocketStandardPricingGuardCase(t *testing.T, secondPayload string) openAIWSStandardPricingGuardResult {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+
+	var upstreamWriteCount atomic.Int32
+	firstUpstreamPayload := make(chan []byte, 1)
+	secondUpstreamPayload := make(chan []byte, 1)
+	upstreamDone := make(chan error, 1)
+	upstreamServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := coderws.Accept(w, r, &coderws.AcceptOptions{
+			CompressionMode: coderws.CompressionContextTakeover,
+		})
+		if err != nil {
+			upstreamDone <- err
+			return
+		}
+		defer func() { _ = conn.CloseNow() }()
+
+		readCtx, cancelRead := context.WithTimeout(r.Context(), 3*time.Second)
+		_, payload, readErr := conn.Read(readCtx)
+		cancelRead()
+		if readErr != nil {
+			upstreamDone <- readErr
+			return
+		}
+		upstreamWriteCount.Add(1)
+		firstUpstreamPayload <- append([]byte(nil), payload...)
+
+		writeCtx, cancelWrite := context.WithTimeout(r.Context(), 3*time.Second)
+		writeErr := conn.Write(writeCtx, coderws.MessageText, []byte(`{"type":"response.completed","response":{"id":"resp_priced_first_turn","model":"gpt-5.4","usage":{"input_tokens":2,"output_tokens":1}}}`))
+		cancelWrite()
+		if writeErr != nil {
+			upstreamDone <- writeErr
+			return
+		}
+
+		readCtx, cancelRead = context.WithTimeout(r.Context(), 3*time.Second)
+		_, payload, readErr = conn.Read(readCtx)
+		cancelRead()
+		if readErr != nil {
+			upstreamDone <- readErr
+			return
+		}
+		upstreamWriteCount.Add(1)
+		secondUpstreamPayload <- append([]byte(nil), payload...)
+
+		writeCtx, cancelWrite = context.WithTimeout(r.Context(), 3*time.Second)
+		writeErr = conn.Write(writeCtx, coderws.MessageText, []byte(`{"type":"response.completed","response":{"id":"resp_second_turn","model":"gpt-future-unpriced-v99","usage":{"input_tokens":2,"output_tokens":1}}}`))
+		cancelWrite()
+		upstreamDone <- writeErr
+	}))
+	defer upstreamServer.Close()
+
+	groupID := int64(4204)
+	user := service.User{ID: 1704, Balance: 100, Status: service.StatusActive}
+	account := service.Account{
+		ID:          9904,
+		Name:        "openai-ws-standard-pricing-guard-e2e",
+		Platform:    service.PlatformOpenAI,
+		Type:        service.AccountTypeAPIKey,
+		Status:      service.StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		GroupIDs:    []int64{groupID},
+		Credentials: map[string]any{
+			"api_key":  "sk-test",
+			"base_url": upstreamServer.URL,
+			"model_mapping": map[string]any{
+				"gpt-5.4":       "gpt-5.4",
+				"gpt-5.6-terra": "gpt-future-unpriced-v99",
+			},
+		},
+		Extra: map[string]any{
+			"openai_apikey_responses_websockets_v2_enabled": true,
+			"openai_apikey_responses_websockets_v2_mode":    service.OpenAIWSIngressModePassthrough,
+		},
+	}
+
+	cfg := &config.Config{RunMode: config.RunModeStandard}
+	cfg.Default.RateMultiplier = 1
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	cfg.Gateway.OpenAIWS.ModeRouterV2Enabled = true
+	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
+
+	accountRepo := &openAIWSUsageHandlerAccountRepoStub{account: account}
+	userRepo := &openAIWSUsageHandlerUserRepoStub{user: user}
+	billingCacheSvc := service.NewBillingCacheService(nil, userRepo, nil, nil, nil, nil, cfg, nil)
+	t.Cleanup(billingCacheSvc.Stop)
+	gatewaySvc := service.NewOpenAIGatewayService(
+		accountRepo,
+		nil,
+		nil,
+		userRepo,
+		nil,
+		nil,
+		nil,
+		cfg,
+		nil,
+		nil,
+		service.NewBillingService(cfg, nil),
+		nil,
+		billingCacheSvc,
+		nil,
+		&service.DeferredService{},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	cache := &concurrencyCacheMock{
+		acquireUserSlotFn: func(context.Context, int64, int, string) (bool, error) {
+			return true, nil
+		},
+		acquireAccountSlotFn: func(context.Context, int64, int, string) (bool, error) {
+			return true, nil
+		},
+	}
+	h := &OpenAIGatewayHandler{
+		gatewayService:        gatewaySvc,
+		billingCacheService:   billingCacheSvc,
+		apiKeyService:         &service.APIKeyService{},
+		usageRecordWorkerPool: &service.UsageRecordWorkerPool{},
+		concurrencyHelper:     NewConcurrencyHelper(service.NewConcurrencyService(cache), SSEPingFormatNone, time.Second),
+	}
+
+	apiKey := &service.APIKey{
+		ID:      1804,
+		GroupID: &groupID,
+		User:    &user,
+		Group: &service.Group{
+			ID:                   groupID,
+			Platform:             service.PlatformOpenAI,
+			Status:               service.StatusActive,
+			AllowImageGeneration: true,
+		},
+	}
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(string(middleware.ContextKeyAPIKey), apiKey)
+		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: user.ID, Concurrency: 1})
+		c.Next()
+	})
+	router.GET("/openai/v1/responses", h.ResponsesWebSocket)
+	handlerServer := httptest.NewServer(router)
+	defer handlerServer.Close()
+
+	dialCtx, cancelDial := context.WithTimeout(context.Background(), 3*time.Second)
+	clientConn, _, err := coderws.Dial(
+		dialCtx,
+		"ws"+strings.TrimPrefix(handlerServer.URL, "http")+"/openai/v1/responses",
+		&coderws.DialOptions{CompressionMode: coderws.CompressionContextTakeover},
+	)
+	cancelDial()
+	require.NoError(t, err)
+	defer func() { _ = clientConn.CloseNow() }()
+
+	writeCtx, cancelWrite := context.WithTimeout(context.Background(), 3*time.Second)
+	err = clientConn.Write(writeCtx, coderws.MessageText, []byte(`{"type":"response.create","model":"gpt-5.4","stream":false,"input":"first turn"}`))
+	cancelWrite()
+	require.NoError(t, err)
+
+	readCtx, cancelRead := context.WithTimeout(context.Background(), 3*time.Second)
+	_, firstEvent, err := clientConn.Read(readCtx)
+	cancelRead()
+	require.NoError(t, err)
+	require.Equal(t, "response.completed", gjson.GetBytes(firstEvent, "type").String())
+
+	select {
+	case payload := <-firstUpstreamPayload:
+		require.Equal(t, "gpt-5.4", gjson.GetBytes(payload, "model").String())
+	case <-time.After(3 * time.Second):
+		t.Fatal("等待首个上游 WebSocket 请求帧超时")
+	}
+
+	writeCtx, cancelWrite = context.WithTimeout(context.Background(), 3*time.Second)
+	err = clientConn.Write(writeCtx, coderws.MessageText, []byte(secondPayload))
+	cancelWrite()
+	require.NoError(t, err)
+
+	readCtx, cancelRead = context.WithTimeout(context.Background(), 3*time.Second)
+	_, secondClientEvent, secondClientErr := clientConn.Read(readCtx)
+	cancelRead()
+
+	var upstreamErr error
+	select {
+	case upstreamErr = <-upstreamDone:
+	case <-time.After(4 * time.Second):
+		t.Fatal("等待上游 WebSocket 第二个 turn 结束超时")
+	}
+
+	var forwardedSecondPayload []byte
+	select {
+	case forwardedSecondPayload = <-secondUpstreamPayload:
+	default:
+	}
+
+	return openAIWSStandardPricingGuardResult{
+		secondClientEvent:     secondClientEvent,
+		secondClientErr:       secondClientErr,
+		secondUpstreamPayload: forwardedSecondPayload,
+		upstreamErr:           upstreamErr,
+		upstreamWriteCount:    upstreamWriteCount.Load(),
+	}
+}
+
 func TestOpenAIResponsesWebSocket_PassthroughTracksModelPerTurn(t *testing.T) {
 	got := runOpenAIResponsesWebSocketUsageLogCase(t, openAIResponsesWSUsageLogCase{
 		firstPayload:  `{"type":"response.create","model":"sol","stream":false}`,
@@ -1514,6 +1856,8 @@ func TestOpenAIWSTurnBillingModelPreservesImagePricingModel(t *testing.T) {
 	tests := []struct {
 		name             string
 		resultModel      string
+		imageCount       int
+		videoCount       int
 		mapping          service.ChannelMappingResult
 		requestedModel   string
 		upstreamModel    string
@@ -1522,32 +1866,52 @@ func TestOpenAIWSTurnBillingModelPreservesImagePricingModel(t *testing.T) {
 		{
 			name:             "upstream billing preserves image model",
 			resultModel:      "gpt-image-2",
+			imageCount:       1,
 			mapping:          service.ChannelMappingResult{BillingModelSource: service.BillingModelSourceUpstream},
 			requestedModel:   "gpt-5.6-sol",
 			upstreamModel:    "gpt-5.6-sol",
 			wantBillingModel: "gpt-image-2",
 		},
 		{
-			name:             "unmapped channel preserves image model",
+			name:             "requested source preserves image model",
 			resultModel:      "gpt-image-2",
-			mapping:          service.ChannelMappingResult{MappedModel: "gpt-5.6-sol", BillingModelSource: service.BillingModelSourceChannelMapped},
-			requestedModel:   "gpt-5.6-sol",
+			imageCount:       1,
+			mapping:          service.ChannelMappingResult{BillingModelSource: service.BillingModelSourceRequested},
+			requestedModel:   "public-image-alias",
 			upstreamModel:    "gpt-5.6-sol",
 			wantBillingModel: "gpt-image-2",
 		},
 		{
-			name:             "requested source overrides image model",
+			name:             "mapped channel source preserves image model",
 			resultModel:      "gpt-image-2",
-			mapping:          service.ChannelMappingResult{BillingModelSource: service.BillingModelSourceRequested},
-			requestedModel:   "public-image-alias",
-			upstreamModel:    "gpt-5.6-sol",
-			wantBillingModel: "public-image-alias",
-		},
-		{
-			name:             "mapped channel source overrides image model",
-			resultModel:      "gpt-image-2",
+			imageCount:       1,
 			mapping:          service.ChannelMappingResult{MappedModel: "priced-channel-model", BillingModelSource: service.BillingModelSourceChannelMapped},
 			requestedModel:   "public-image-alias",
+			upstreamModel:    "gpt-5.6-sol",
+			wantBillingModel: "gpt-image-2",
+		},
+		{
+			name:             "mapped channel source preserves video model",
+			resultModel:      "grok-imagine-video-1.5",
+			videoCount:       1,
+			mapping:          service.ChannelMappingResult{MappedModel: "priced-channel-model", BillingModelSource: service.BillingModelSourceChannelMapped},
+			requestedModel:   "public-video-alias",
+			upstreamModel:    "gpt-5.6-sol",
+			wantBillingModel: "grok-imagine-video-1.5",
+		},
+		{
+			name:             "requested source still overrides text model",
+			resultModel:      "gpt-5.6-sol",
+			mapping:          service.ChannelMappingResult{BillingModelSource: service.BillingModelSourceRequested},
+			requestedModel:   "public-text-alias",
+			upstreamModel:    "gpt-5.6-sol",
+			wantBillingModel: "public-text-alias",
+		},
+		{
+			name:             "mapped channel source still overrides text model",
+			resultModel:      "gpt-5.6-sol",
+			mapping:          service.ChannelMappingResult{MappedModel: "priced-channel-model", BillingModelSource: service.BillingModelSourceChannelMapped},
+			requestedModel:   "public-text-alias",
 			upstreamModel:    "gpt-5.6-sol",
 			wantBillingModel: "priced-channel-model",
 		},
@@ -1562,7 +1926,11 @@ func TestOpenAIWSTurnBillingModelPreservesImagePricingModel(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := &service.OpenAIForwardResult{BillingModel: tt.resultModel}
+			result := &service.OpenAIForwardResult{
+				BillingModel: tt.resultModel,
+				ImageCount:   tt.imageCount,
+				VideoCount:   tt.videoCount,
+			}
 			require.Equal(t, tt.wantBillingModel, openAIWSTurnBillingModel(result, tt.mapping, tt.requestedModel, tt.upstreamModel))
 		})
 	}
@@ -1761,6 +2129,19 @@ type openAIResponsesWSUsageLogResult struct {
 type openAIWSUsageHandlerAccountRepoStub struct {
 	service.AccountRepository
 	account service.Account
+}
+
+type openAIWSUsageHandlerUserRepoStub struct {
+	service.UserRepository
+	user service.User
+}
+
+func (s *openAIWSUsageHandlerUserRepoStub) GetByID(_ context.Context, id int64) (*service.User, error) {
+	if s.user.ID != id {
+		return nil, nil
+	}
+	user := s.user
+	return &user, nil
 }
 
 func (s *openAIWSUsageHandlerAccountRepoStub) ListSchedulableByPlatform(ctx context.Context, platform string) ([]service.Account, error) {
@@ -2052,7 +2433,7 @@ func TestOpenAIResponsesWebSocket_FailoverOnUpstreamUsageLimitEvent(t *testing.T
 		}
 
 		writeCtx, cancelWrite := context.WithTimeout(r.Context(), 3*time.Second)
-		_ = conn.Write(writeCtx, coderws.MessageText, []byte(`{"type":"response.completed","response":{"id":"resp_ws_failover_ok","model":"gpt-5.1","usage":{"input_tokens":1,"output_tokens":1}}}`))
+		_ = conn.Write(writeCtx, coderws.MessageText, []byte(`{"type":"response.completed","response":{"id":"resp_ws_failover_ok","model":"gpt-5.4","usage":{"input_tokens":1,"output_tokens":1}}}`))
 		cancelWrite()
 		_ = conn.Close(coderws.StatusNormalClosure, "done")
 	}))
@@ -2183,7 +2564,7 @@ func TestOpenAIResponsesWebSocket_FailoverOnUpstreamUsageLimitEvent(t *testing.T
 	defer func() { _ = clientConn.CloseNow() }()
 
 	writeCtx, cancelWrite := context.WithTimeout(context.Background(), 3*time.Second)
-	err = clientConn.Write(writeCtx, coderws.MessageText, []byte(`{"type":"response.create","model":"gpt-5.1","stream":false}`))
+	err = clientConn.Write(writeCtx, coderws.MessageText, []byte(`{"type":"response.create","model":"gpt-5.4","stream":false}`))
 	cancelWrite()
 	require.NoError(t, err)
 
@@ -2253,9 +2634,9 @@ func TestOpenAIResponsesWebSocket_FirstOutputTimeoutWithoutDownstreamReusesClien
 		}
 
 		for _, event := range []string{
-			`{"type":"response.created","response":{"id":"resp_ws_timeout_b","model":"gpt-5.1"}}`,
+			`{"type":"response.created","response":{"id":"resp_ws_timeout_b","model":"gpt-5.4"}}`,
 			`{"type":"response.output_text.delta","response_id":"resp_ws_timeout_b","delta":"recovered"}`,
-			`{"type":"response.completed","response":{"id":"resp_ws_timeout_b","model":"gpt-5.1","usage":{"input_tokens":1,"output_tokens":1}}}`,
+			`{"type":"response.completed","response":{"id":"resp_ws_timeout_b","model":"gpt-5.4","usage":{"input_tokens":1,"output_tokens":1}}}`,
 		} {
 			writeCtx, cancelWrite := context.WithTimeout(r.Context(), 3*time.Second)
 			writeErr := conn.Write(writeCtx, coderws.MessageText, []byte(event))
@@ -2373,7 +2754,7 @@ func TestOpenAIResponsesWebSocket_FirstOutputTimeoutWithoutDownstreamReusesClien
 	defer func() { _ = clientConn.CloseNow() }()
 
 	writeCtx, cancelWrite := context.WithTimeout(context.Background(), 3*time.Second)
-	err = clientConn.Write(writeCtx, coderws.MessageText, []byte(`{"type":"response.create","model":"gpt-5.1","stream":false}`))
+	err = clientConn.Write(writeCtx, coderws.MessageText, []byte(`{"type":"response.create","model":"gpt-5.4","stream":false}`))
 	cancelWrite()
 	require.NoError(t, err)
 

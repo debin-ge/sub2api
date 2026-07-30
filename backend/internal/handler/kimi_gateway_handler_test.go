@@ -112,6 +112,7 @@ type fakeKimiGatewayService struct {
 	selections      []*service.AccountSelectionResult
 	selectErr       error
 	recorded        *service.RecordUsageInput
+	channelMapping  service.ChannelMappingResult
 	sessionHash     string
 	selectedModel   string
 	selectedGroup   *int64
@@ -119,6 +120,13 @@ type fakeKimiGatewayService struct {
 	excludedHistory []map[int64]struct{}
 	degradedAccount *service.Account
 	degradedErr     *service.UpstreamFailoverError
+}
+
+func (f *fakeKimiGatewayService) ResolveRequestChannelMapping(_ context.Context, _ *int64, model string) service.ChannelMappingResult {
+	if f.channelMapping.MappedModel == "" {
+		return service.ChannelMappingResult{MappedModel: model}
+	}
+	return f.channelMapping
 }
 
 func (f *fakeKimiGatewayService) GenerateSessionHash(parsed *service.ParsedRequest) string {
@@ -282,6 +290,43 @@ func TestKimiGatewayHandlerMessagesSuccessForwardsAndRecordsUsage(t *testing.T) 
 	require.Equal(t, 1, concurrency.decrementWaitCalls)
 	require.Equal(t, 1, concurrency.releaseUserCalls)
 	require.Equal(t, 1, billing.calls)
+}
+
+func TestKimiGatewayHandlerMessagesAppliesChannelMappingToForwardAndUsage(t *testing.T) {
+	account := kimiTestAccount(101)
+	forwarder := &fakeKimiForwarder{}
+	gateway := &fakeKimiGatewayService{
+		selections: []*service.AccountSelectionResult{{Account: account, Acquired: true}},
+		channelMapping: service.ChannelMappingResult{
+			MappedModel:        "K3",
+			ChannelID:          77,
+			Mapped:             true,
+			BillingModelSource: service.BillingModelSourceUpstream,
+		},
+	}
+	h := &KimiGatewayHandler{
+		kimiService:         forwarder,
+		gatewayService:      gateway,
+		concurrencyHelper:   &fakeKimiConcurrencyController{allowWait: true},
+		billingCacheService: &fakeKimiBillingChecker{},
+	}
+	c, rec, _ := newKimiHandlerTestContext(
+		t,
+		service.PlatformKimi,
+		`{"model":"public-kimi","messages":[{"role":"user","content":"hello"}]}`,
+	)
+
+	h.Messages(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.JSONEq(t, `{"model":"K3","messages":[{"role":"user","content":"hello"}]}`, string(forwarder.body))
+	require.Equal(t, "public-kimi", gateway.selectedModel)
+	require.NotNil(t, gateway.recorded)
+	require.Equal(t, int64(77), gateway.recorded.ChannelID)
+	require.Equal(t, "public-kimi", gateway.recorded.OriginalModel)
+	require.Equal(t, "K3", gateway.recorded.ChannelMappedModel)
+	require.Equal(t, service.BillingModelSourceUpstream, gateway.recorded.BillingModelSource)
+	require.Equal(t, "public-kimi→K3→kimi-for-coding", gateway.recorded.ModelMappingChain)
 }
 
 func TestKimiGatewayHandlerChatCompletionsSuccessForwardsAndRecordsUsage(t *testing.T) {

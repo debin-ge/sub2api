@@ -1679,6 +1679,23 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 	if err := validateOpenAIImagesModel(requestModel); err != nil {
 		return nil, err
 	}
+	var groupID *int64
+	if apiKey := getAPIKeyFromContext(c); apiKey != nil {
+		groupID = apiKey.GroupID
+	}
+	if s.pricingGuardRequired || s.billingService != nil {
+		if err := s.enforceResolvedOpenAIMediaPricing(
+			ctx,
+			groupID,
+			account,
+			parsed.Model,
+			requestModel,
+			parsed.SizeTier,
+			BillingKindImage,
+		); err != nil {
+			return nil, err
+		}
+	}
 	logger.LegacyPrintf(
 		"service.openai_gateway",
 		"[OpenAI] Images request routing request_model=%s endpoint=%s account_type=%s uploads=%d",

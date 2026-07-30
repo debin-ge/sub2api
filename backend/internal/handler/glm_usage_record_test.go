@@ -45,6 +45,10 @@ type glmUsageGatewayService struct {
 	recorder  *service.GatewayService
 }
 
+func (s *glmUsageGatewayService) ResolveRequestChannelMapping(_ context.Context, _ *int64, model string) service.ChannelMappingResult {
+	return service.ChannelMappingResult{MappedModel: model}
+}
+
 func (s *glmUsageGatewayService) GenerateSessionHash(parsed *service.ParsedRequest) string {
 	return "glm-usage-session"
 }
@@ -82,7 +86,7 @@ func TestGLMUsageRecordMetadata(t *testing.T) {
 		nil,
 		nil,
 		usageRepo,
-		nil,
+		&metadataUsageBillingRepoStub{usageLogRepo: usageRepo},
 		&glmUsageUserRepoStub{},
 		&glmUsageSubRepoStub{},
 		nil,

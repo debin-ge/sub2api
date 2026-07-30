@@ -775,6 +775,162 @@ func TestParseGrokMediaVideoRequestResolution(t *testing.T) {
 	require.Equal(t, "720p", info.Resolution)
 }
 
+func TestValidateGrokMediaBillingFieldsRejectsAmbiguousOrUnpricedJSONDimensions(t *testing.T) {
+	tests := []struct {
+		name    string
+		body    string
+		wantErr string
+	}{
+		{
+			name:    "duplicate model",
+			body:    `{"model":"grok-imagine-image","model":"future-unpriced-image"}`,
+			wantErr: "duplicate top-level model",
+		},
+		{
+			name:    "escaped duplicate resolution",
+			body:    `{"model":"grok-imagine-video","resol\u0075tion":"480p","resolution":"1080p"}`,
+			wantErr: "duplicate top-level resolution",
+		},
+		{
+			name:    "duplicate duration",
+			body:    `{"model":"grok-imagine-video","duration":1,"duration":15}`,
+			wantErr: "duplicate top-level duration",
+		},
+		{
+			name:    "duplicate image count",
+			body:    `{"model":"grok-imagine-image","n":1,"n":4}`,
+			wantErr: "duplicate top-level n",
+		},
+		{
+			name:    "model contains postgres null",
+			body:    `{"model":"grok-imagine-image\u0000future"}`,
+			wantErr: "model must not contain null",
+		},
+		{
+			name:    "fractional image count",
+			body:    `{"model":"grok-imagine-image","n":1.5}`,
+			wantErr: "positive 32-bit integer",
+		},
+		{
+			name:    "exponent image count",
+			body:    `{"model":"grok-imagine-image","n":1e2}`,
+			wantErr: "positive 32-bit integer",
+		},
+		{
+			name:    "duration exceeds priced range",
+			body:    `{"model":"grok-imagine-video","duration":16}`,
+			wantErr: "between 1 and 15",
+		},
+		{
+			name:    "fractional duration",
+			body:    `{"model":"grok-imagine-video","duration":8.5}`,
+			wantErr: "between 1 and 15",
+		},
+		{
+			name:    "unknown resolution cannot fall back to 480p",
+			body:    `{"model":"grok-imagine-video","resolution":"8k","duration":8}`,
+			wantErr: "no billing tier is configured",
+		},
+		{
+			name:    "unknown image size cannot fall back to 2k",
+			body:    `{"model":"grok-imagine-image","size":"ultra","n":1}`,
+			wantErr: "no billing tier is configured",
+		},
+		{
+			name: "valid priced dimensions",
+			body: `{"model":"grok-imagine-video","resolution":"1080p","duration":15,"n":1,"size":"2048x1152"}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateGrokMediaBillingFields("application/json", []byte(tt.body))
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorContains(t, err, tt.wantErr)
+		})
+	}
+}
+
+func TestValidateGrokMediaBillingFieldsRejectsDuplicateMultipartDimensions(t *testing.T) {
+	tests := []struct {
+		name    string
+		fields  [][2]string
+		wantErr string
+	}{
+		{
+			name: "duplicate model",
+			fields: [][2]string{
+				{"model", "grok-imagine-image"},
+				{"model", "future-unpriced-image"},
+			},
+			wantErr: "duplicate multipart model",
+		},
+		{
+			name: "duplicate resolution",
+			fields: [][2]string{
+				{"model", "grok-imagine-video"},
+				{"resolution", "480p"},
+				{"resolution", "1080p"},
+			},
+			wantErr: "duplicate multipart resolution",
+		},
+		{
+			name: "unknown resolution",
+			fields: [][2]string{
+				{"model", "grok-imagine-video"},
+				{"resolution", "8k"},
+				{"duration", "8"},
+			},
+			wantErr: "no billing tier is configured",
+		},
+		{
+			name: "valid",
+			fields: [][2]string{
+				{"model", "grok-imagine-video"},
+				{"resolution", "720p"},
+				{"duration", "8"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var body bytes.Buffer
+			writer := multipart.NewWriter(&body)
+			for _, field := range tt.fields {
+				require.NoError(t, writer.WriteField(field[0], field[1]))
+			}
+			require.NoError(t, writer.Close())
+
+			err := ValidateGrokMediaBillingFields(writer.FormDataContentType(), body.Bytes())
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorContains(t, err, tt.wantErr)
+		})
+	}
+}
+
+func TestForwardGrokMediaRejectsAmbiguousBillingFieldsBeforeCredentials(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	_, err := svc.ForwardGrokMedia(
+		context.Background(),
+		nil,
+		&Account{Platform: PlatformGrok},
+		GrokMediaEndpointVideosGenerations,
+		"",
+		[]byte(`{"model":"grok-imagine-video","resolution":"480p","resolution":"1080p"}`),
+		"application/json",
+	)
+
+	require.ErrorContains(t, err, "duplicate top-level resolution")
+	require.NotContains(t, err.Error(), "credential")
+}
+
 func TestParseGrokMediaRequestAcceptsOfficialImageURLFields(t *testing.T) {
 	body := []byte(`{
 		"model":"grok-imagine-video-1.5",
@@ -1033,7 +1189,7 @@ func TestForwardGrokMediaAppliesAccountModelMappingAfterEndpointNormalization(t 
 			require.NoError(t, err)
 			require.JSONEq(t, tt.wantBody, string(upstream.lastBody))
 			require.Equal(t, tt.wantRequestModel, result.Model)
-			require.Equal(t, tt.wantRequestModel, result.BillingModel)
+			require.Equal(t, tt.wantUpstream, result.BillingModel)
 			require.Equal(t, tt.wantUpstream, result.UpstreamModel)
 		})
 	}
@@ -1166,7 +1322,7 @@ func TestForwardGrokMediaImagesEditMultipartConvertsToJSON(t *testing.T) {
 	require.Equal(t, "edit this private image", gjson.GetBytes(upstream.lastBody, "prompt").String())
 	require.True(t, strings.HasPrefix(gjson.GetBytes(upstream.lastBody, "image.url").String(), "data:image/png;base64,"))
 	require.False(t, gjson.GetBytes(upstream.lastBody, "image.image_url").Exists())
-	require.Equal(t, "grok-imagine-edit", result.BillingModel)
+	require.Equal(t, "vendor-image-edit", result.BillingModel)
 	require.Equal(t, "vendor-image-edit", result.UpstreamModel)
 }
 
@@ -1385,7 +1541,7 @@ func TestForwardGrokMediaVideoMutationEndpoints(t *testing.T) {
 			require.Equal(t, "video-mutation-123", result.ResponseID)
 			require.Equal(t, 1, result.VideoCount)
 			require.Equal(t, 6, result.VideoDurationSeconds)
-			require.Equal(t, "grok-imagine-video", result.BillingModel)
+			require.Equal(t, "vendor-video-mutation", result.BillingModel)
 			require.Equal(t, "vendor-video-mutation", result.UpstreamModel)
 		})
 	}

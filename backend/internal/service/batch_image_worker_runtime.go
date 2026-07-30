@@ -5,6 +5,8 @@ import (
 	"sync"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"go.uber.org/zap"
 )
 
 type BatchImageWorkerRuntime struct {
@@ -109,7 +111,9 @@ func (r *BatchImageWorkerRuntime) runBillingRecovery(ctx context.Context) {
 		if err := ctx.Err(); err != nil {
 			return
 		}
-		_, _ = r.billingRecovery.ReleaseStaleUnsubmittedOnce(ctx)
+		if _, err := r.billingRecovery.ReleaseStaleUnsubmittedOnce(ctx); err != nil && ctx.Err() == nil {
+			logger.L().Warn("batch_image.billing_recovery_failed", zap.Error(err))
+		}
 		sleepOrDone(ctx, interval)
 	}
 }

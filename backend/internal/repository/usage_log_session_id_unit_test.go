@@ -28,11 +28,24 @@ func newSessionIDUsageLog(sessionID *string) *service.UsageLog {
 	}
 }
 
+// Offsets from the end of the insert arg slice. New columns are appended to the
+// tail (so no existing $N placeholder has to be renumbered), which means these
+// offsets shift by one each time — that's the point: the compiler can't catch a
+// forgotten call site, these constants make the test do it.
+const (
+	usageLogArgOffsetSessionID  = 3 // …, session_id, created_at, billing_state
+	usageLogArgOffsetCreatedAt  = 2
+	usageLogArgOffsetBillingSta = 1
+)
+
+func usageLogInsertArgFromEnd(args []any, offsetFromEnd int) any {
+	return args[len(args)-offsetFromEnd]
+}
+
 // TestPrepareUsageLogInsert_SessionIDArgWiring pins the session_id column to the
-// arg slice / arg-type table so the five INSERT column lists stay in sync. session_id
-// is the penultimate arg (created_at is always last).
+// arg slice / arg-type table so the INSERT column lists stay in sync.
 func TestPrepareUsageLogInsert_SessionIDArgWiring(t *testing.T) {
-	require.Len(t, usageLogInsertArgTypes, 57, "arg-type table must include session_id")
+	require.Len(t, usageLogInsertArgTypes, 58, "arg-type table must include session_id and billing_state")
 
 	sessionID := "sess-persisted-123"
 	prepared := prepareUsageLogInsert(newSessionIDUsageLog(&sessionID))
@@ -40,14 +53,13 @@ func TestPrepareUsageLogInsert_SessionIDArgWiring(t *testing.T) {
 	require.Len(t, prepared.args, len(usageLogInsertArgTypes),
 		"prepared args must match the arg-type table length")
 
-	// created_at is last; session_id is the arg immediately before it.
-	sessionArg := prepared.args[len(prepared.args)-2]
+	sessionArg := usageLogInsertArgFromEnd(prepared.args, usageLogArgOffsetSessionID)
 	ns, ok := sessionArg.(sql.NullString)
 	require.True(t, ok, "session_id arg should be a sql.NullString, got %T", sessionArg)
 	require.True(t, ns.Valid)
 	require.Equal(t, sessionID, ns.String)
 
-	require.Equal(t, "text", usageLogInsertArgTypes[len(usageLogInsertArgTypes)-2],
+	require.Equal(t, "text", usageLogInsertArgTypes[len(usageLogInsertArgTypes)-usageLogArgOffsetSessionID],
 		"session_id arg type must be text")
 }
 
@@ -55,15 +67,59 @@ func TestPrepareUsageLogInsert_SessionIDArgWiring(t *testing.T) {
 // persisted as SQL NULL rather than an empty string.
 func TestPrepareUsageLogInsert_SessionIDNullWhenAbsent(t *testing.T) {
 	prepared := prepareUsageLogInsert(newSessionIDUsageLog(nil))
-	sessionArg := prepared.args[len(prepared.args)-2]
+	sessionArg := usageLogInsertArgFromEnd(prepared.args, usageLogArgOffsetSessionID)
 	ns, ok := sessionArg.(sql.NullString)
 	require.True(t, ok, "session_id arg should be a sql.NullString, got %T", sessionArg)
 	require.False(t, ns.Valid, "absent session id must be NULL, not empty string")
 
 	empty := ""
 	preparedEmpty := prepareUsageLogInsert(newSessionIDUsageLog(&empty))
-	nsEmpty := preparedEmpty.args[len(preparedEmpty.args)-2].(sql.NullString)
+	nsEmpty := usageLogInsertArgFromEnd(preparedEmpty.args, usageLogArgOffsetSessionID).(sql.NullString)
 	require.False(t, nsEmpty.Valid, "empty session id must also be NULL")
+}
+
+// TestPrepareUsageLogInsert_BillingStateArgWiring pins billing_state to the insert
+// path. Every INSERT column list here uses AnyArg-style fixtures elsewhere, so a
+// dropped arg would otherwise silently persist every row as "已结算" — exactly the
+// "$0 看起来像免费" failure this column exists to prevent.
+func TestPrepareUsageLogInsert_BillingStateArgWiring(t *testing.T) {
+	log := newSessionIDUsageLog(nil)
+	log.BillingState = service.BillingStatePricingUnavailable
+
+	prepared := prepareUsageLogInsert(log)
+
+	require.Equal(t, "smallint", usageLogInsertArgTypes[len(usageLogInsertArgTypes)-usageLogArgOffsetBillingSta],
+		"billing_state arg type must be smallint")
+	require.IsType(t, time.Time{}, usageLogInsertArgFromEnd(prepared.args, usageLogArgOffsetCreatedAt),
+		"created_at must stay immediately before billing_state")
+	require.Equal(t, service.BillingStatePricingUnavailable,
+		usageLogInsertArgFromEnd(prepared.args, usageLogArgOffsetBillingSta),
+		"billing_state must reach the insert args verbatim")
+
+	settled := prepareUsageLogInsert(newSessionIDUsageLog(nil))
+	require.Equal(t, service.BillingStateSettled,
+		usageLogInsertArgFromEnd(settled.args, usageLogArgOffsetBillingSta),
+		"zero value must persist as settled so historical rows stay compatible")
+}
+
+// TestUsageLogQueries_IncludeBillingState guards that every generated INSERT path and
+// the SELECT column list carry billing_state — a marker only written on one path is
+// worse than no marker, because the gap looks like healthy traffic.
+func TestUsageLogQueries_IncludeBillingState(t *testing.T) {
+	require.Contains(t, usageLogSelectColumns, "billing_state",
+		"SELECT column list must include billing_state")
+
+	log := newSessionIDUsageLog(nil)
+	prepared := prepareUsageLogInsert(log)
+	key := usageLogBatchKey(log.RequestID, log.APIKeyID)
+
+	batchQuery, _ := buildUsageLogBatchInsertQuery([]string{key},
+		map[string]usageLogInsertPrepared{key: prepared})
+	require.GreaterOrEqual(t, strings.Count(batchQuery, "billing_state"), 3,
+		"batch insert needs billing_state in the CTE def, the INSERT column list and the SELECT")
+
+	bestEffortQuery, _ := buildUsageLogBestEffortInsertQuery([]usageLogInsertPrepared{prepared})
+	require.Contains(t, bestEffortQuery, "billing_state")
 }
 
 // TestUsageLogInsertQueries_IncludeSessionID guards that every generated INSERT path

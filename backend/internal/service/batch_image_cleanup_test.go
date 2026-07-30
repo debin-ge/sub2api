@@ -149,10 +149,11 @@ func TestBatchImageSettlementOutputExpiration(t *testing.T) {
 	repo.jobs[job.BatchID] = job
 	billing := &fakeBatchImageBillingRepo{}
 	svc := &BatchImageSettlementService{
-		Repo:        repo,
-		BillingRepo: billing,
-		Pricing:     &fakeBatchImagePricingResolver{unitPrice: 0.25},
-		Config:      &config.Config{BatchImage: config.BatchImageConfig{OutputRetentionAfterTerminalHours: 5}},
+		Repo:         repo,
+		BillingRepo:  billing,
+		UsageLogRepo: &fakeBatchImageUsageLogRepo{},
+		Pricing:      &fakeBatchImagePricingResolver{unitPrice: 0.25},
+		Config:       &config.Config{BatchImage: config.BatchImageConfig{OutputRetentionAfterTerminalHours: 5}},
 	}
 
 	_, err := svc.Settle(context.Background(), job.BatchID)

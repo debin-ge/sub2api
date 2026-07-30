@@ -92,7 +92,8 @@ type BillingCache interface {
 type ModelPricing struct {
 	InputPricePerToken                 float64 // 每token输入价格 (USD)
 	InputPricePerTokenPriority         float64 // priority service tier 下每token输入价格 (USD)
-	ImageInputPricePerToken            float64 // 图片输入 token 价格 (USD)，用于多模态 embedding 等图文不同价场景；为 0 时回退到 InputPricePerToken
+	ImageInputPricePerToken            float64 // 图片输入 token 价格 (USD)，用于多模态 embedding 等图文不同价场景
+	ImageInputPriceExplicit            bool    // 是否显式配置；false 且价格为 0 时回退 InputPricePerToken
 	OutputPricePerToken                float64 // 每token输出价格 (USD)
 	OutputPricePerTokenPriority        float64 // priority service tier 下每token输出价格 (USD)
 	CacheCreationPricePerToken         float64 // 缓存创建每token价格 (USD)
@@ -107,7 +108,18 @@ type ModelPricing struct {
 	LongContextInputMultiplier         float64 // 长上下文整次会话输入倍率
 	LongContextOutputMultiplier        float64 // 长上下文整次会话输出倍率
 	ImageOutputPricePerToken           float64 // 图片输出 token 价格 (USD)
-	ImageOutputPriceExplicit           bool    // 是否由渠道定价显式设定（为 true 时即使 == 0 也不回退）
+	ImageOutputPriceExplicit           bool    // 是否由目录或渠道定价显式设定（为 true 时即使 == 0 也不回退）
+	// PricePresenceKnown is true only for JSON catalog entries. It lets the
+	// billing core distinguish an omitted dimension from an explicit zero
+	// without changing legacy in-memory fallback entries.
+	PricePresenceKnown                 bool
+	CacheReadPriceExplicit             bool
+	CacheCreation1hPriceExplicit       bool
+	InputPriorityPriceExplicit         bool
+	OutputPriorityPriceExplicit        bool
+	CacheCreationPriorityPriceExplicit bool
+	CacheReadPriorityPriceExplicit     bool
+	LongContextPricingExplicit         bool
 }
 
 const (
@@ -131,12 +143,24 @@ func normalizeBillingServiceTier(serviceTier string) string {
 	return strings.ToLower(strings.TrimSpace(serviceTier))
 }
 
-func usePriorityServiceTierPricing(serviceTier string, pricing *ModelPricing) bool {
-	if pricing == nil || normalizeBillingServiceTier(serviceTier) != "priority" {
-		return false
-	}
-	return pricing.InputPricePerTokenPriority > 0 || pricing.OutputPricePerTokenPriority > 0 ||
-		pricing.CacheCreationPricePerTokenPriority > 0 || pricing.CacheReadPricePerTokenPriority > 0
+func inputPriorityPriceConfigured(pricing *ModelPricing) bool {
+	return pricing != nil &&
+		(pricing.InputPriorityPriceExplicit || pricing.InputPricePerTokenPriority > 0)
+}
+
+func outputPriorityPriceConfigured(pricing *ModelPricing) bool {
+	return pricing != nil &&
+		(pricing.OutputPriorityPriceExplicit || pricing.OutputPricePerTokenPriority > 0)
+}
+
+func cacheCreationPriorityPriceConfigured(pricing *ModelPricing) bool {
+	return pricing != nil &&
+		(pricing.CacheCreationPriorityPriceExplicit || pricing.CacheCreationPricePerTokenPriority > 0)
+}
+
+func cacheReadPriorityPriceConfigured(pricing *ModelPricing) bool {
+	return pricing != nil &&
+		(pricing.CacheReadPriorityPriceExplicit || pricing.CacheReadPricePerTokenPriority > 0)
 }
 
 func serviceTierCostMultiplier(serviceTier string) float64 {
@@ -179,6 +203,77 @@ type CostBreakdown struct {
 // ErrModelPricingUnavailable indicates that none of the configured pricing
 // sources can price the requested model.
 var ErrModelPricingUnavailable = errors.New("pricing not found")
+
+func validateFiniteModelPricing(model string, pricing *ModelPricing) error {
+	if pricing == nil {
+		return fmt.Errorf("%w for model: %s", ErrModelPricingUnavailable, model)
+	}
+	prices := []struct {
+		name  string
+		value float64
+	}{
+		{"input", pricing.InputPricePerToken},
+		{"input_priority", pricing.InputPricePerTokenPriority},
+		{"image_input", pricing.ImageInputPricePerToken},
+		{"output", pricing.OutputPricePerToken},
+		{"output_priority", pricing.OutputPricePerTokenPriority},
+		{"cache_write", pricing.CacheCreationPricePerToken},
+		{"cache_write_priority", pricing.CacheCreationPricePerTokenPriority},
+		{"cache_read", pricing.CacheReadPricePerToken},
+		{"cache_read_priority", pricing.CacheReadPricePerTokenPriority},
+		{"cache_write_5m", pricing.CacheCreation5mPrice},
+		{"cache_write_1h", pricing.CacheCreation1hPrice},
+		{"image_output", pricing.ImageOutputPricePerToken},
+		{"long_context_input_multiplier", pricing.LongContextInputMultiplier},
+		{"long_context_output_multiplier", pricing.LongContextOutputMultiplier},
+	}
+	for _, price := range prices {
+		if !isFiniteNonNegativePrice(price.value) {
+			return fmt.Errorf(
+				"%w: invalid %s price for model %s",
+				ErrModelPricingUnavailable,
+				price.name,
+				model,
+			)
+		}
+	}
+	return nil
+}
+
+// validateUsedModelPricingDimensions applies presence-aware fail-closed
+// validation to dimensions that are optional in the catalog but appeared in
+// actual upstream usage. A float64 zero is ambiguous for legacy in-memory
+// entries, so this stricter check is limited to parsed catalog entries where
+// PricePresenceKnown can distinguish omission from an explicit free price.
+func validateUsedModelPricingDimensions(model string, pricing *ModelPricing, tokens UsageTokens) error {
+	if pricing == nil || !pricing.PricePresenceKnown {
+		return nil
+	}
+
+	cacheCreationUsed := tokens.CacheCreationTokens > 0 ||
+		tokens.CacheCreation5mTokens > 0 ||
+		tokens.CacheCreation1hTokens > 0
+	cacheCreationConfigured := pricing.CacheCreationPriceExplicit ||
+		pricing.CacheCreationPricePerToken > 0
+	if cacheCreationUsed && !cacheCreationConfigured {
+		return fmt.Errorf(
+			"%w: cache_write usage has no configured price for model %s",
+			ErrModelPricingUnavailable,
+			model,
+		)
+	}
+
+	cacheReadConfigured := pricing.CacheReadPriceExplicit ||
+		pricing.CacheReadPricePerToken > 0
+	if tokens.CacheReadTokens > 0 && !cacheReadConfigured {
+		return fmt.Errorf(
+			"%w: cache_read usage has no configured price for model %s",
+			ErrModelPricingUnavailable,
+			model,
+		)
+	}
+	return nil
+}
 
 // BillingService 计费服务
 type BillingService struct {
@@ -637,6 +732,53 @@ func (s *BillingService) GetFallbackPricing(model string) *ModelPricing {
 	return s.getFallbackPricing(model)
 }
 
+// matchesExactModelAlias only accepts the canonical model ID and the
+// explicitly supported Google-style "models/" spelling. In particular, it
+// must not use HasSuffix: a future or third-party provider namespace is a
+// distinct SKU and must never inherit a hard-coded free price.
+func matchesExactModelAlias(model, canonical string) bool {
+	model = strings.ToLower(strings.TrimSpace(model))
+	canonical = strings.ToLower(strings.TrimSpace(canonical))
+	return model == canonical || model == "models/"+canonical
+}
+
+// getFallbackPricingStrict 只查兜底表里这个模型自己的条目。
+//
+// 它对应 getFallbackPricing 的前两步——精确命中与 GLM 的 SKU 归一化——之后的分支
+// 全是关键字猜测：含 opus/sonnet/haiku 的按系列套价，剩下任何含 claude 的一律套
+// claude-sonnet-4。兜底表里逐个 SKU 写死的价格是开发者的真实决定，算一个来源；
+// 关键字分支猜出来的不算。
+func (s *BillingService) getFallbackPricingStrict(model string) *ModelPricing {
+	modelLower := strings.ToLower(strings.TrimSpace(model))
+	if pricing := s.fallbackPrices[modelLower]; pricing != nil {
+		return pricing
+	}
+	strictAliasModel := modelLower
+	// Apply only the same-SKU spellings admitted by the strict catalog lookup.
+	// This keeps explicit namespaces such as openai/gpt-5.4 and models/gemini-*
+	// working when the dynamic catalog is unavailable, without accepting an
+	// arbitrary provider/model suffix.
+	if _, ok := explicitPricingAliasTarget(modelLower); ok {
+		if normalized := normalizeModelNameForPricing(modelLower); normalized != modelLower {
+			strictAliasModel = normalized
+			if pricing := s.fallbackPrices[normalized]; pricing != nil {
+				return pricing
+			}
+		}
+	}
+	// Kimi Code documents these two bare IDs as aliases of the kimi-k3 billing
+	// tier. Exact matching is intentional: kimi-k30 and bracketed context
+	// selectors remain distinct, unpriced SKUs.
+	switch modelLower {
+	case "k3", "k3-256k":
+		return s.fallbackPrices["kimi-k3"]
+	}
+	if normalized := normalizeGLMBillingModelStrict(strictAliasModel); normalized != "" {
+		return s.fallbackPrices[normalized]
+	}
+	return nil
+}
+
 // getFallbackPricing 根据模型系列获取回退价格
 func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 	modelLower := strings.ToLower(model)
@@ -713,10 +855,10 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 	if strings.Contains(modelLower, "glm-5") {
 		return s.fallbackPrices["glm-5"]
 	}
-	if strings.Contains(modelLower, "glm-4.7-flashx") {
+	if matchesExactModelAlias(modelLower, "glm-4.7-flashx") {
 		return s.fallbackPrices["glm-4.7-flashx"]
 	}
-	if strings.Contains(modelLower, "glm-4.7-flash") {
+	if matchesExactModelAlias(modelLower, "glm-4.7-flash") {
 		return s.fallbackPrices["glm-4.7-flash"]
 	}
 	if strings.Contains(modelLower, "glm-4.7") {
@@ -725,7 +867,7 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 	if strings.Contains(modelLower, "glm-4.6") {
 		return s.fallbackPrices["glm-4.6"]
 	}
-	if strings.Contains(modelLower, "glm-4.5-flash") {
+	if matchesExactModelAlias(modelLower, "glm-4.5-flash") {
 		return s.fallbackPrices["glm-4.5-flash"]
 	}
 	if strings.Contains(modelLower, "glm-4.5-x") || strings.Contains(modelLower, "glm-4.5x") {
@@ -854,16 +996,69 @@ func normalizeGLMBillingModel(model string) string {
 	}
 }
 
+// normalizeGLMBillingModelStrict accepts only an exact GLM SKU or a numeric
+// release snapshot of that SKU. The settlement-side normalizer above remains
+// intentionally loose, but admission must not treat arbitrary future suffixes
+// as an already-priced model.
+func normalizeGLMBillingModelStrict(model string) string {
+	normalized := strings.ToLower(strings.TrimSpace(model))
+	for _, canonical := range []string{"glm-5.1", "glm-4.7", "glm-4.5-air"} {
+		if normalized == canonical {
+			return canonical
+		}
+		suffix, ok := strings.CutPrefix(normalized, canonical+"-")
+		if ok && isGLMReleaseSnapshotSuffix(suffix) {
+			return canonical
+		}
+	}
+	return ""
+}
+
+func isGLMReleaseSnapshotSuffix(suffix string) bool {
+	switch len(suffix) {
+	case 4, 6, 8:
+	default:
+		return false
+	}
+	for _, r := range suffix {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 // GetModelPricing 获取模型价格配置
 func (s *BillingService) GetModelPricing(model string) (*ModelPricing, error) {
+	return s.getModelPricing(model, true)
+}
+
+// GetModelPricingStrict 只在模型自身配过价时返回价格，不接受跨模型推断出来的价格。
+//
+// 供准入守卫、实时后扣与补偿结算共同使用。GetModelPricing 那条链的最后两级
+// （PricingService 的 family/OpenAI 兜底、以及这里 getFallbackPricing 的关键字分支）
+// 会把别的模型的价格套到未知型号上，用它判断"配没配价"接近恒真——任何含 claude
+// 的模型名都能拿到 claude-sonnet-4 的价，任何 gpt- 开头的都能兜到 DefaultTestModel。
+//
+// 参见 PricingService.LookupModelPricingStrict 对两种口径差异的完整说明。
+func (s *BillingService) GetModelPricingStrict(model string) (*ModelPricing, error) {
+	return s.getModelPricing(model, false)
+}
+
+func (s *BillingService) getModelPricing(model string, allowInference bool) (*ModelPricing, error) {
 	// 标准化模型名称（转小写）
 	model = strings.ToLower(model)
 
 	// 1. 优先从动态价格服务获取
 	if s.pricingService != nil {
-		catalogEntry := s.pricingService.GetModelPricing(model)
-		// 仅有图片价、无 token 价的条目（如 LiteLLM 的 imagen 类模型）不能用于
-		// token 计费：直接返回会把 token 流量按 $0 计费。跳过后走 fallback，
+		var catalogEntry *ModelPriceEntry
+		if allowInference {
+			catalogEntry = s.pricingService.GetModelPricing(model)
+		} else {
+			catalogEntry = s.pricingService.LookupModelPricingStrict(model)
+		}
+		// input/output token 价不完整的条目（如 LiteLLM 的 imagen 类模型）不能用于
+		// token 计费：直接返回会把缺失的一侧按 $0 计费。跳过后走 fallback，
 		// 无 fallback 则 fail-closed（ErrModelPricingUnavailable）。
 		// 图片计费路径（getDefaultImagePrice / getImageUnitPrice）直接读
 		// PricingService，不受影响。
@@ -871,49 +1066,78 @@ func (s *BillingService) GetModelPricing(model string) (*ModelPricing, error) {
 			catalogEntry = nil
 		}
 		if catalogEntry != nil {
-			// 启用 5m/1h 分类计费的条件：
-			// 1. 存在 1h 价格
-			// 2. 1h 价格 > 5m 价格（防止配置化模型价格目录数据错误导致少收费）
+			// Presence-aware catalog entries preserve an explicitly configured
+			// 1h tier even when it is zero or below the 5m price. Legacy
+			// in-memory entries cannot distinguish omission from zero, so they
+			// retain the historical positive-and-higher condition.
 			price5m := catalogEntry.CacheCreationInputTokenCost
 			price1h := catalogEntry.CacheCreationInputTokenCostAbove1hr
-			enableBreakdown := price1h > 0 && price1h > price5m
-			return s.applyModelSpecificPricingPolicy(model, &ModelPricing{
+			enableBreakdown := catalogEntry.CacheCreationAbove1hrPriceExplicit &&
+				price1h != price5m
+			if !catalogEntry.PricePresenceKnown {
+				enableBreakdown = price1h > 0 && price1h > price5m
+			}
+			pricing := s.applyModelSpecificPricingPolicy(model, &ModelPricing{
 				InputPricePerToken:                 catalogEntry.InputCostPerToken,
 				InputPricePerTokenPriority:         catalogEntry.InputCostPerTokenPriority,
 				OutputPricePerToken:                catalogEntry.OutputCostPerToken,
 				OutputPricePerTokenPriority:        catalogEntry.OutputCostPerTokenPriority,
 				CacheCreationPricePerToken:         catalogEntry.CacheCreationInputTokenCost,
 				CacheCreationPricePerTokenPriority: catalogEntry.CacheCreationInputTokenCostPriority,
+				CacheCreationPriceExplicit:         catalogEntry.CacheCreationPriceExplicit,
 				CacheReadPricePerToken:             catalogEntry.CacheReadInputTokenCost,
 				CacheReadPricePerTokenPriority:     catalogEntry.CacheReadInputTokenCostPriority,
+				CacheReadPriceExplicit:             catalogEntry.CacheReadPriceExplicit,
 				CacheCreation5mPrice:               price5m,
 				CacheCreation1hPrice:               price1h,
+				CacheCreation1hPriceExplicit:       catalogEntry.CacheCreationAbove1hrPriceExplicit,
 				SupportsCacheBreakdown:             enableBreakdown,
 				LongContextInputThreshold:          catalogEntry.LongContextInputTokenThreshold,
 				LongContextInputMultiplier:         catalogEntry.LongContextInputCostMultiplier,
 				LongContextOutputMultiplier:        catalogEntry.LongContextOutputCostMultiplier,
+				LongContextPricingExplicit:         catalogEntry.LongContextPricingExplicit,
 				ImageInputPricePerToken:            catalogEntry.InputCostPerImageToken,
+				ImageInputPriceExplicit:            catalogEntry.ImageInputPriceExplicit,
 				ImageOutputPricePerToken:           catalogEntry.OutputCostPerImageToken,
-			}), nil
+				ImageOutputPriceExplicit:           catalogEntry.ImageOutputPriceExplicit,
+				PricePresenceKnown:                 catalogEntry.PricePresenceKnown,
+				InputPriorityPriceExplicit:         catalogEntry.InputPriorityPriceExplicit,
+				OutputPriorityPriceExplicit:        catalogEntry.OutputPriorityPriceExplicit,
+				CacheCreationPriorityPriceExplicit: catalogEntry.CacheCreationPriorityPriceExplicit,
+				CacheReadPriorityPriceExplicit:     catalogEntry.CacheReadPriorityPriceExplicit,
+			})
+			if err := validateFiniteModelPricing(model, pricing); err != nil {
+				return nil, err
+			}
+			return pricing, nil
 		}
 	}
 
 	// 2. 使用硬编码回退价格
-	fallback := s.getFallbackPricing(model)
+	var fallback *ModelPricing
+	if allowInference {
+		fallback = s.getFallbackPricing(model)
+	} else {
+		fallback = s.getFallbackPricingStrict(model)
+	}
 	if fallback != nil {
 		// 按模型名去重:每个模型每进程最多打一条 warn,避免热路径每请求刷屏（issue #3394）。
 		// model 在函数入口已 ToLower,故 GLM-5.2 / glm-5.2 视为同一条目。
 		if _, seen := s.fallbackWarnSeen.LoadOrStore(model, struct{}{}); !seen {
 			log.Printf("[Billing] Using fallback pricing for model: %s", model)
 		}
-		return s.applyModelSpecificPricingPolicy(model, fallback), nil
+		pricing := s.applyModelSpecificPricingPolicy(model, fallback)
+		if err := validateFiniteModelPricing(model, pricing); err != nil {
+			return nil, err
+		}
+		return pricing, nil
 	}
 
 	return nil, fmt.Errorf("%w for model: %s", ErrModelPricingUnavailable, model)
 }
 
-// GetModelPricingWithChannel 获取模型定价，渠道配置的价格覆盖默认值
-// 渠道存在时，未配置的图片输出价格归零（不回退到 configured pricing catalog）
+// GetModelPricingWithChannel 获取模型定价，渠道配置的价格覆盖默认值。
+// 渠道未配置图片输出价格时，图片 token 回退到渠道文本输出价；只有显式 0 才免费。
 func (s *BillingService) GetModelPricingWithChannel(model string, channelPricing *ChannelModelPricing) (*ModelPricing, error) {
 	pricing, err := s.GetModelPricing(model)
 	if err != nil {
@@ -928,29 +1152,29 @@ func (s *BillingService) GetModelPricingWithChannel(model string, channelPricing
 	if channelPricing.InputPrice != nil {
 		pricing.InputPricePerToken = *channelPricing.InputPrice
 		pricing.InputPricePerTokenPriority = *channelPricing.InputPrice
+		pricing.InputPriorityPriceExplicit = true
 	}
 	if channelPricing.OutputPrice != nil {
 		pricing.OutputPricePerToken = *channelPricing.OutputPrice
 		pricing.OutputPricePerTokenPriority = *channelPricing.OutputPrice
+		pricing.OutputPriorityPriceExplicit = true
 	}
 	if channelPricing.CacheWritePrice != nil {
 		pricing.CacheCreationPricePerToken = *channelPricing.CacheWritePrice
 		pricing.CacheCreationPricePerTokenPriority = *channelPricing.CacheWritePrice
 		pricing.CacheCreationPriceExplicit = true
+		pricing.CacheCreationPriorityPriceExplicit = true
 		pricing.CacheCreation5mPrice = *channelPricing.CacheWritePrice
 		pricing.CacheCreation1hPrice = *channelPricing.CacheWritePrice
+		pricing.CacheCreation1hPriceExplicit = true
 	}
 	if channelPricing.CacheReadPrice != nil {
 		pricing.CacheReadPricePerToken = *channelPricing.CacheReadPrice
 		pricing.CacheReadPricePerTokenPriority = *channelPricing.CacheReadPrice
+		pricing.CacheReadPriceExplicit = true
+		pricing.CacheReadPriorityPriceExplicit = true
 	}
-	if channelPricing.ImageOutputPrice != nil {
-		pricing.ImageOutputPricePerToken = *channelPricing.ImageOutputPrice
-	} else {
-		pricing.ImageOutputPricePerToken = 0
-	}
-	pricing.ImageOutputPriceExplicit = true
-	applyChannelImageInputPrice(channelPricing, pricing)
+	applyChannelImagePrices(channelPricing, pricing)
 	return pricing, nil
 }
 
@@ -1038,7 +1262,31 @@ func (s *BillingService) calculateTokenCost(resolved *ResolvedPricing, input Cos
 		applyLongCtx = applyLongCtx && *input.LongContextBillingEnabled
 	}
 
-	return s.computeTokenBreakdown(pricing, input.Tokens, input.RateMultiplier, input.ServiceTier, applyLongCtx), nil
+	return s.computeTokenBreakdownValidated(
+		input.Model,
+		pricing,
+		input.Tokens,
+		input.RateMultiplier,
+		input.ServiceTier,
+		applyLongCtx,
+	)
+}
+
+func (s *BillingService) computeTokenBreakdownValidated(
+	model string,
+	pricing *ModelPricing,
+	tokens UsageTokens,
+	rateMultiplier float64,
+	serviceTier string,
+	applyLongCtx bool,
+) (*CostBreakdown, error) {
+	if err := validateFiniteModelPricing(model, pricing); err != nil {
+		return nil, err
+	}
+	if err := validateUsedModelPricingDimensions(model, pricing, tokens); err != nil {
+		return nil, err
+	}
+	return s.computeTokenBreakdown(pricing, tokens, rateMultiplier, serviceTier, applyLongCtx), nil
 }
 
 // computeTokenBreakdown 是 token 计费的核心逻辑，由 calculateTokenCost 和 calculateCostInternal 共用。
@@ -1058,23 +1306,73 @@ func (s *BillingService) computeTokenBreakdown(
 	cacheReadPrice := pricing.CacheReadPricePerToken
 	cacheCreationPrice := pricing.CacheCreationPricePerToken
 	cacheCreationMultiplier := 1.0
-	tierMultiplier := 1.0
+	inputTierMultiplier := 1.0
+	var imageInputTierMultiplier float64
+	outputTierMultiplier := 1.0
+	var imageOutputTierMultiplier float64
+	cacheCreationTierMultiplier := 1.0
+	cacheReadTierMultiplier := 1.0
 
-	if usePriorityServiceTierPricing(serviceTier, pricing) {
-		if pricing.InputPricePerTokenPriority > 0 {
+	if normalizeBillingServiceTier(serviceTier) == "priority" {
+		if inputPriorityPriceConfigured(pricing) {
 			inputPrice = pricing.InputPricePerTokenPriority
+		} else {
+			inputTierMultiplier = serviceTierCostMultiplier(serviceTier)
 		}
-		if pricing.OutputPricePerTokenPriority > 0 {
+		if outputPriorityPriceConfigured(pricing) {
 			outputPrice = pricing.OutputPricePerTokenPriority
+		} else {
+			outputTierMultiplier = serviceTierCostMultiplier(serviceTier)
 		}
-		if pricing.CacheReadPricePerTokenPriority > 0 {
+		if cacheReadPriorityPriceConfigured(pricing) {
 			cacheReadPrice = pricing.CacheReadPricePerTokenPriority
+		} else {
+			cacheReadTierMultiplier = serviceTierCostMultiplier(serviceTier)
 		}
-		if pricing.CacheCreationPricePerTokenPriority > 0 {
+		if cacheCreationPriorityPriceConfigured(pricing) {
 			cacheCreationPrice = pricing.CacheCreationPricePerTokenPriority
+			if pricing.SupportsCacheBreakdown {
+				switch {
+				case pricing.CacheCreationPricePerToken > 0:
+					// The catalog has one priority cache-write price but separate
+					// standard 5m/1h prices. Apply the declared priority/base
+					// ratio to both cache durations instead of silently using
+					// the standard tier for breakdown usage.
+					cacheCreationTierMultiplier =
+						cacheCreationPrice / pricing.CacheCreationPricePerToken
+				case cacheCreationPrice == 0:
+					// Explicit zero remains an intentional free priority tier.
+					cacheCreationTierMultiplier = 0
+				default:
+					// Legacy in-memory entries cannot express presence. Preserve
+					// the documented whole-tier multiplier rather than settling
+					// a positive priority price as standard-price zero.
+					cacheCreationTierMultiplier = serviceTierCostMultiplier(serviceTier)
+				}
+			}
+		} else {
+			cacheCreationTierMultiplier = serviceTierCostMultiplier(serviceTier)
+		}
+		// The catalog has no separate priority fields for image-token prices.
+		// An omitted image price falls back to the already tier-adjusted text
+		// price, so it must reuse that text dimension's multiplier. A dedicated
+		// image price has not been tier-adjusted and uses the explicit 2x policy.
+		imageInputTierMultiplier = inputTierMultiplier
+		if pricing.ImageInputPriceExplicit {
+			imageInputTierMultiplier = serviceTierCostMultiplier(serviceTier)
+		}
+		imageOutputTierMultiplier = outputTierMultiplier
+		if pricing.ImageOutputPriceExplicit {
+			imageOutputTierMultiplier = serviceTierCostMultiplier(serviceTier)
 		}
 	} else {
-		tierMultiplier = serviceTierCostMultiplier(serviceTier)
+		tierMultiplier := serviceTierCostMultiplier(serviceTier)
+		inputTierMultiplier = tierMultiplier
+		imageInputTierMultiplier = tierMultiplier
+		outputTierMultiplier = tierMultiplier
+		imageOutputTierMultiplier = tierMultiplier
+		cacheCreationTierMultiplier = tierMultiplier
+		cacheReadTierMultiplier = tierMultiplier
 	}
 
 	longContextPricingEligible := applyLongCtx && s.shouldApplySessionLongContextPricing(tokens, pricing)
@@ -1083,6 +1381,16 @@ func (s *BillingService) computeTokenBreakdown(
 		baselineCost = s.computeTokenBreakdown(pricing, tokens, rateMultiplier, serviceTier, false)
 		inputPrice *= pricing.LongContextInputMultiplier
 		outputPrice *= pricing.LongContextOutputMultiplier
+		// Dedicated image-token prices do not flow through inputPrice/outputPrice.
+		// Apply the corresponding long-context multiplier exactly once here.
+		// Omitted image prices fall back to the already-adjusted text price below
+		// and therefore must not receive this extra multiplier.
+		if pricing.ImageInputPriceExplicit {
+			imageInputTierMultiplier *= pricing.LongContextInputMultiplier
+		}
+		if pricing.ImageOutputPriceExplicit {
+			imageOutputTierMultiplier *= pricing.LongContextOutputMultiplier
+		}
 		// 缓存读取本质上是输入侧的复用，应与 input 一同应用长上下文倍率；
 		// 否则 cache hit 越多，少计的费用越多（见 #2293）。
 		cacheReadPrice *= pricing.LongContextInputMultiplier
@@ -1104,7 +1412,7 @@ func (s *BillingService) computeTokenBreakdown(
 			imageInputTokens = tokens.InputTokens
 		}
 		imageInputPrice := pricing.ImageInputPricePerToken
-		if imageInputPrice == 0 {
+		if imageInputPrice == 0 && !pricing.ImageInputPriceExplicit {
 			// 未配置图片输入档时回退到文本 input 价（已含 priority / 长上下文调整）
 			imageInputPrice = inputPrice
 		}
@@ -1135,14 +1443,12 @@ func (s *BillingService) computeTokenBreakdown(
 
 	bd.CacheReadCost = float64(tokens.CacheReadTokens) * cacheReadPrice
 
-	if tierMultiplier != 1.0 {
-		bd.InputCost *= tierMultiplier
-		bd.ImageInputCost *= tierMultiplier
-		bd.OutputCost *= tierMultiplier
-		bd.ImageOutputCost *= tierMultiplier
-		bd.CacheCreationCost *= tierMultiplier
-		bd.CacheReadCost *= tierMultiplier
-	}
+	bd.InputCost *= inputTierMultiplier
+	bd.ImageInputCost *= imageInputTierMultiplier
+	bd.OutputCost *= outputTierMultiplier
+	bd.ImageOutputCost *= imageOutputTierMultiplier
+	bd.CacheCreationCost *= cacheCreationTierMultiplier
+	bd.CacheReadCost *= cacheReadTierMultiplier
 
 	bd.TotalCost = bd.InputCost + bd.ImageInputCost + bd.OutputCost + bd.ImageOutputCost +
 		bd.CacheCreationCost + bd.CacheReadCost
@@ -1155,15 +1461,29 @@ func (s *BillingService) computeTokenBreakdown(
 // computeCacheCreationCost 计算缓存创建费用（支持 5m/1h 分类或标准计费）。
 // multiplier 用于长上下文等场景下的整体价格缩放（普通调用传 1.0 即可）。
 func (s *BillingService) computeCacheCreationCost(pricing *ModelPricing, tokens UsageTokens, price, multiplier float64) float64 {
-	if pricing.SupportsCacheBreakdown && (pricing.CacheCreation5mPrice > 0 || pricing.CacheCreation1hPrice > 0) {
-		if tokens.CacheCreation5mTokens == 0 && tokens.CacheCreation1hTokens == 0 && tokens.CacheCreationTokens > 0 {
+	classifiedTokens := tokens.CacheCreation5mTokens + tokens.CacheCreation1hTokens
+	totalTokens := tokens.CacheCreationTokens
+	if totalTokens <= 0 && classifiedTokens > 0 {
+		// Some providers return only the ephemeral duration breakdown.
+		totalTokens = classifiedTokens
+	}
+
+	if pricing.SupportsCacheBreakdown {
+		if classifiedTokens == 0 && totalTokens > 0 {
 			// API 未返回 ephemeral 明细，回退到全部按 5m 单价计费
-			return float64(tokens.CacheCreationTokens) * pricing.CacheCreation5mPrice * multiplier
+			return float64(totalTokens) * pricing.CacheCreation5mPrice * multiplier
 		}
-		return float64(tokens.CacheCreation5mTokens)*pricing.CacheCreation5mPrice*multiplier +
+		// If the aggregate exceeds the classified detail, conservatively price
+		// the unclassified remainder at the 5m/base cache-write tier. Never
+		// subtract when a provider reports detail greater than its aggregate.
+		unclassifiedTokens := totalTokens - classifiedTokens
+		if unclassifiedTokens < 0 {
+			unclassifiedTokens = 0
+		}
+		return float64(tokens.CacheCreation5mTokens+unclassifiedTokens)*pricing.CacheCreation5mPrice*multiplier +
 			float64(tokens.CacheCreation1hTokens)*pricing.CacheCreation1hPrice*multiplier
 	}
-	return float64(tokens.CacheCreationTokens) * price * multiplier
+	return float64(totalTokens) * price * multiplier
 }
 
 // calculatePerRequestCost 按次/图片计费
@@ -1173,20 +1493,39 @@ func (s *BillingService) calculatePerRequestCost(resolved *ResolvedPricing, inpu
 		count = 1
 	}
 
-	var unitPrice float64
-
+	var (
+		unitPrice float64
+		found     bool
+	)
 	if input.SizeTier != "" {
-		unitPrice = input.Resolver.GetRequestTierPrice(resolved, input.SizeTier)
-	}
-
-	if unitPrice == 0 {
+		unitPrice, found = input.Resolver.LookupRequestTierPrice(resolved, input.SizeTier)
+	} else {
 		totalContext := input.Tokens.InputTokens + input.Tokens.CacheCreationTokens + input.Tokens.CacheReadTokens
-		unitPrice = input.Resolver.GetRequestTierPriceByContext(resolved, totalContext)
+		unitPrice, found = input.Resolver.LookupRequestTierPriceByContext(resolved, totalContext)
 	}
 
-	// 回退到默认按次价格
-	if unitPrice == 0 {
+	// 仅在层级未命中时回退默认价。显式 0 是有效免费配置，不能继续 fallback。
+	if !found && resolved.DefaultPerRequestPriceSet {
 		unitPrice = resolved.DefaultPerRequestPrice
+		found = true
+	}
+	if !found {
+		return nil, fmt.Errorf(
+			"%w for model=%s billing_mode=%s size_tier=%q",
+			ErrModelPricingUnavailable,
+			input.Model,
+			resolved.Mode,
+			input.SizeTier,
+		)
+	}
+	if !isFiniteNonNegativePrice(unitPrice) {
+		return nil, fmt.Errorf(
+			"%w: invalid per-request price for model=%s billing_mode=%s size_tier=%q",
+			ErrModelPricingUnavailable,
+			input.Model,
+			resolved.Mode,
+			input.SizeTier,
+		)
 	}
 
 	totalCost := unitPrice * float64(count)
@@ -1205,16 +1544,6 @@ func (s *BillingService) CalculateCost(model string, tokens UsageTokens, rateMul
 
 func (s *BillingService) CalculateCostWithServiceTier(model string, tokens UsageTokens, rateMultiplier float64, serviceTier string) (*CostBreakdown, error) {
 	return s.calculateCostInternal(model, tokens, rateMultiplier, serviceTier, nil)
-}
-
-func (s *BillingService) calculateCostWithServiceTierPolicy(
-	model string,
-	tokens UsageTokens,
-	rateMultiplier float64,
-	serviceTier string,
-	longContextBillingEnabled bool,
-) (*CostBreakdown, error) {
-	return s.calculateCostInternalWithPolicy(model, tokens, rateMultiplier, serviceTier, nil, longContextBillingEnabled)
 }
 
 func (s *BillingService) calculateCostInternal(model string, tokens UsageTokens, rateMultiplier float64, serviceTier string, channelPricing *ChannelModelPricing) (*CostBreakdown, error) {
@@ -1239,8 +1568,14 @@ func (s *BillingService) calculateCostInternalWithPolicy(
 	if err != nil {
 		return nil, err
 	}
-
-	return s.computeTokenBreakdown(pricing, tokens, rateMultiplier, serviceTier, longContextBillingEnabled), nil
+	return s.computeTokenBreakdownValidated(
+		model,
+		pricing,
+		tokens,
+		rateMultiplier,
+		serviceTier,
+		longContextBillingEnabled,
+	)
 }
 
 func (s *BillingService) applyModelSpecificPricingPolicy(model string, pricing *ModelPricing) *ModelPricing {
@@ -1481,7 +1816,7 @@ func (s *BillingService) CalculateWebSearchCost(callCount int, groupPrice *float
 		return &CostBreakdown{}
 	}
 	unitPrice := defaultWebSearchPricePerCall
-	if groupPrice != nil && *groupPrice >= 0 {
+	if groupPrice != nil && isFiniteNonNegativePrice(*groupPrice) {
 		unitPrice = *groupPrice
 	}
 	totalCost := unitPrice * float64(callCount)
@@ -1528,6 +1863,45 @@ func (s *BillingService) CalculateImageCost(model string, imageSize string, imag
 	}
 }
 
+// CalculateImageCostStrict calculates image cost only when the actual output
+// tier has a real price source. Unlike CalculateImageCost it never falls back
+// to defaultImageGenerationPrice, which is a generic safety placeholder rather
+// than a price for an arbitrary model.
+func (s *BillingService) CalculateImageCostStrict(
+	model string,
+	imageSize string,
+	imageCount int,
+	groupConfig *ImagePriceConfig,
+	rateMultiplier float64,
+) (*CostBreakdown, error) {
+	if imageCount <= 0 {
+		return &CostBreakdown{}, nil
+	}
+	var err error
+	imageSize, err = NormalizeImageBillingTierStrictOrDefault(imageSize)
+	if err != nil {
+		return nil, err
+	}
+	unitPrice, ok := s.strictImageUnitPrice(model, imageSize, groupConfig)
+	if !ok {
+		return nil, fmt.Errorf(
+			"%w for image model %q tier %q",
+			ErrModelPricingUnavailable,
+			strings.TrimSpace(model),
+			imageSize,
+		)
+	}
+	if rateMultiplier < 0 {
+		rateMultiplier = 0
+	}
+	totalCost := unitPrice * float64(imageCount)
+	return &CostBreakdown{
+		TotalCost:   totalCost,
+		ActualCost:  totalCost * rateMultiplier,
+		BillingMode: string(BillingModeImage),
+	}, nil
+}
+
 // CalculateVideoCost 计算视频生成费用（按秒计费，与 xAI 口径一致）。
 // model: 请求的模型名称（用于获取默认价格）
 // resolution: 视频分辨率 "480p", "720p", "1080p"
@@ -1557,21 +1931,153 @@ func (s *BillingService) CalculateVideoCost(model string, resolution string, vid
 	}
 }
 
+// CalculateVideoCostStrict is the fail-loud settlement counterpart of the
+// media admission guard. It requires a real price for the actual resolution
+// and never turns an unknown video SKU into the generic image placeholder.
+func (s *BillingService) CalculateVideoCostStrict(
+	model string,
+	resolution string,
+	videoCount int,
+	durationSeconds int,
+	groupConfig *VideoPriceConfig,
+	rateMultiplier float64,
+) (*CostBreakdown, error) {
+	if videoCount <= 0 {
+		return &CostBreakdown{}, nil
+	}
+	normalizedResolution, err := NormalizeVideoBillingResolutionStrictOrDefault(resolution)
+	if err != nil {
+		return nil, err
+	}
+	resolution = normalizedResolution
+	durationSeconds = NormalizeVideoBillingDurationSecondsOrDefault(durationSeconds)
+	perSecondPrice, ok := s.strictVideoUnitPrice(model, resolution, groupConfig)
+	if !ok {
+		return nil, fmt.Errorf(
+			"%w for video model %q tier %q",
+			ErrModelPricingUnavailable,
+			strings.TrimSpace(model),
+			resolution,
+		)
+	}
+	if rateMultiplier < 0 {
+		rateMultiplier = 0
+	}
+	totalCost := perSecondPrice * float64(durationSeconds) * float64(videoCount)
+	return &CostBreakdown{
+		TotalCost:   totalCost,
+		ActualCost:  totalCost * rateMultiplier,
+		BillingMode: string(BillingModeVideo),
+	}, nil
+}
+
+// strictImageUnitPrice resolves only explicit group pricing, exact hard-coded
+// SKUs, or an exact catalog entry. The bool distinguishes an explicitly
+// configured zero price from a missing price.
+func (s *BillingService) strictImageUnitPrice(
+	model string,
+	imageSize string,
+	groupConfig *ImagePriceConfig,
+) (float64, bool) {
+	var err error
+	imageSize, err = NormalizeImageBillingTierStrictOrDefault(imageSize)
+	if err != nil {
+		return 0, false
+	}
+	if groupConfig != nil {
+		var configured *float64
+		switch imageSize {
+		case ImageBillingSize1K:
+			configured = groupConfig.Price1K
+		case ImageBillingSize2K:
+			configured = groupConfig.Price2K
+		case ImageBillingSize4K:
+			configured = groupConfig.Price4K
+		}
+		if validConfiguredPrice(configured) {
+			return *configured, true
+		}
+	}
+
+	if price, ok := getDefaultGrokImagineImagePrice(model, imageSize); ok {
+		return price, true
+	}
+	basePrice, ok := s.strictCatalogMediaBasePrice(model)
+	if !ok {
+		return 0, false
+	}
+	switch imageSize {
+	case ImageBillingSize2K:
+		return basePrice * 1.5, true
+	case ImageBillingSize4K:
+		return basePrice * 2, true
+	default:
+		return basePrice, true
+	}
+}
+
+func (s *BillingService) strictVideoUnitPrice(
+	model string,
+	resolution string,
+	groupConfig *VideoPriceConfig,
+) (float64, bool) {
+	normalizedResolution, err := NormalizeVideoBillingResolutionStrictOrDefault(resolution)
+	if err != nil {
+		return 0, false
+	}
+	resolution = normalizedResolution
+	if groupConfig != nil {
+		var configured *float64
+		switch resolution {
+		case VideoBillingResolution480P:
+			configured = groupConfig.Price480P
+		case VideoBillingResolution720P:
+			configured = groupConfig.Price720P
+		case VideoBillingResolution1080P:
+			configured = groupConfig.Price1080P
+		}
+		if validConfiguredPrice(configured) {
+			return *configured, true
+		}
+	}
+
+	if price, ok := getDefaultGrokImagineVideoPrice(model, resolution); ok {
+		return price, true
+	}
+	// The bundled catalog exposes output_cost_per_image but no video-per-second
+	// field. Treating an image price as a video price is an inference, not a
+	// real source. Video therefore requires an explicit group/channel tier or
+	// an exact hard-coded video SKU.
+	return 0, false
+}
+
+func (s *BillingService) strictCatalogMediaBasePrice(model string) (float64, bool) {
+	if s == nil || s.pricingService == nil {
+		return 0, false
+	}
+	pricing := s.pricingService.LookupModelPricingStrict(strings.TrimSpace(model))
+	if pricing == nil || !isFiniteNonNegativePrice(pricing.OutputCostPerImage) ||
+		(pricing.OutputCostPerImage == 0 && !pricing.OutputCostPerImageExplicit) {
+		return 0, false
+	}
+	return pricing.OutputCostPerImage, true
+}
+
 // getImageUnitPrice 获取图片单价
 func (s *BillingService) getImageUnitPrice(model string, imageSize string, groupConfig *ImagePriceConfig) float64 {
 	// 优先使用分组配置的价格
 	if groupConfig != nil {
 		switch imageSize {
 		case "1K":
-			if groupConfig.Price1K != nil {
+			if groupConfig.Price1K != nil && isFiniteNonNegativePrice(*groupConfig.Price1K) {
 				return *groupConfig.Price1K
 			}
 		case "2K":
-			if groupConfig.Price2K != nil {
+			if groupConfig.Price2K != nil && isFiniteNonNegativePrice(*groupConfig.Price2K) {
 				return *groupConfig.Price2K
 			}
 		case "4K":
-			if groupConfig.Price4K != nil {
+			if groupConfig.Price4K != nil && isFiniteNonNegativePrice(*groupConfig.Price4K) {
 				return *groupConfig.Price4K
 			}
 		}
@@ -1585,15 +2091,15 @@ func (s *BillingService) getVideoUnitPrice(model string, resolution string, grou
 	if groupConfig != nil {
 		switch resolution {
 		case VideoBillingResolution480P:
-			if groupConfig.Price480P != nil {
+			if groupConfig.Price480P != nil && isFiniteNonNegativePrice(*groupConfig.Price480P) {
 				return *groupConfig.Price480P
 			}
 		case VideoBillingResolution720P:
-			if groupConfig.Price720P != nil {
+			if groupConfig.Price720P != nil && isFiniteNonNegativePrice(*groupConfig.Price720P) {
 				return *groupConfig.Price720P
 			}
 		case VideoBillingResolution1080P:
-			if groupConfig.Price1080P != nil {
+			if groupConfig.Price1080P != nil && isFiniteNonNegativePrice(*groupConfig.Price1080P) {
 				return *groupConfig.Price1080P
 			}
 		}
@@ -1609,17 +2115,20 @@ func (s *BillingService) getDefaultImagePrice(model string, imageSize string) fl
 	}
 
 	basePrice := 0.0
+	priceConfigured := false
 
 	// 从 PricingService 获取 output_cost_per_image
 	if s.pricingService != nil {
 		pricing := s.pricingService.GetModelPricing(model)
-		if pricing != nil && pricing.OutputCostPerImage > 0 {
+		if pricing != nil && isFiniteNonNegativePrice(pricing.OutputCostPerImage) &&
+			(pricing.OutputCostPerImage > 0 || pricing.OutputCostPerImageExplicit) {
 			basePrice = pricing.OutputCostPerImage
+			priceConfigured = true
 		}
 	}
 
 	// 如果没有找到价格，使用硬编码默认值（$0.134，来自 gemini-3-pro-image-preview）
-	if basePrice <= 0 {
+	if !priceConfigured {
 		basePrice = defaultImageGenerationPrice
 	}
 
@@ -1647,40 +2156,34 @@ func (s *BillingService) getDefaultVideoPrice(model string, resolution string) f
 }
 
 func getDefaultGrokImagineImagePrice(model string, imageSize string) (float64, bool) {
+	tier, err := NormalizeImageBillingTierStrictOrDefault(imageSize)
+	if err != nil {
+		return 0, false
+	}
 	model = strings.ToLower(strings.TrimSpace(model))
 	switch model {
 	case "grok-imagine-image-quality":
-		return getGrokImagineImageTierPrice(
-			imageSize,
-			defaultGrokImagineImageQualityPrice1K,
-			defaultGrokImagineImageQualityPrice2K,
-		), true
+		switch tier {
+		case ImageBillingSize1K:
+			return defaultGrokImagineImageQualityPrice1K, true
+		case ImageBillingSize2K:
+			return defaultGrokImagineImageQualityPrice2K, true
+		}
 	case "grok-imagine", "grok-imagine-image", "grok-imagine-edit":
-		return getGrokImagineImageTierPrice(
-			imageSize,
-			defaultGrokImagineImagePrice1K,
-			defaultGrokImagineImagePrice2K,
-		), true
-	default:
-		return 0, false
+		switch tier {
+		case ImageBillingSize1K:
+			return defaultGrokImagineImagePrice1K, true
+		case ImageBillingSize2K:
+			return defaultGrokImagineImagePrice2K, true
+		}
 	}
-}
-
-func getGrokImagineImageTierPrice(imageSize string, price1K float64, price2K float64) float64 {
-	switch NormalizeImageBillingTierOrDefault(imageSize) {
-	case ImageBillingSize1K:
-		return price1K
-	case ImageBillingSize2K, ImageBillingSize4K:
-		return price2K
-	default:
-		return price2K
-	}
+	return 0, false
 }
 
 func getDefaultGrokImagineVideoPrice(model string, resolution string) (float64, bool) {
 	model = strings.ToLower(strings.TrimSpace(model))
-	switch {
-	case strings.HasPrefix(model, "grok-imagine-video-1.5"):
+	switch model {
+	case "grok-imagine-video-1.5":
 		switch NormalizeVideoBillingResolutionOrDefault(resolution) {
 		case VideoBillingResolution480P:
 			return defaultGrokImagineVideo15Price480P, true
@@ -1691,7 +2194,7 @@ func getDefaultGrokImagineVideoPrice(model string, resolution string) (float64, 
 		default:
 			return defaultGrokImagineVideo15Price480P, true
 		}
-	case strings.HasPrefix(model, "grok-imagine-video"):
+	case "grok-imagine-video":
 		switch NormalizeVideoBillingResolutionOrDefault(resolution) {
 		case VideoBillingResolution480P:
 			return defaultGrokImagineVideoPrice480P, true

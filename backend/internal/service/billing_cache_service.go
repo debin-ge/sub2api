@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"sync"
@@ -89,6 +90,8 @@ type cacheWriteTask struct {
 	balance          float64
 	amount           float64
 	subscriptionData *subscriptionCacheData
+	cacheGeneration  int64
+	generationFenced bool
 }
 
 // apiKeyRateLimitLoader defines the interface for loading rate limit data from DB.
@@ -99,6 +102,24 @@ type apiKeyRateLimitLoader interface {
 type subscriptionCacheInvalidationPubSub interface {
 	PublishSubscriptionCacheInvalidation(ctx context.Context, cacheKey string) error
 	SubscribeSubscriptionCacheInvalidation(ctx context.Context, handler func(cacheKey string)) error
+}
+
+// billingCacheGenerationFence prevents a cache fill or queued increment that
+// captured pre-commit DB state from resurrecting it after invalidation. The
+// Redis cache advances a per-key generation atomically with DEL; stale tasks
+// carry the older generation and are rejected in the write script.
+type billingCacheGenerationFence interface {
+	GetUserBalanceCacheGeneration(ctx context.Context, userID int64) (int64, error)
+	SetUserBalanceIfGeneration(ctx context.Context, userID int64, balance float64, generation int64) error
+	DeductUserBalanceIfGeneration(ctx context.Context, userID int64, amount float64, generation int64) error
+
+	GetSubscriptionCacheGeneration(ctx context.Context, userID, groupID int64) (int64, error)
+	SetSubscriptionCacheIfGeneration(ctx context.Context, userID, groupID int64, data *SubscriptionCacheData, generation int64) error
+	UpdateSubscriptionUsageIfGeneration(ctx context.Context, userID, groupID int64, cost float64, generation int64) error
+
+	GetAPIKeyRateLimitCacheGeneration(ctx context.Context, keyID int64) (int64, error)
+	SetAPIKeyRateLimitIfGeneration(ctx context.Context, keyID int64, data *APIKeyRateLimitCacheData, generation int64) error
+	UpdateAPIKeyRateLimitUsageIfGeneration(ctx context.Context, keyID int64, cost float64, generation int64) error
 }
 
 // BillingCacheService 计费缓存服务
@@ -219,30 +240,85 @@ func (s *BillingCacheService) cacheWriteWorker(ch <-chan cacheWriteTask) {
 		ctx, cancel := context.WithTimeout(context.Background(), cacheWriteTimeout)
 		switch task.kind {
 		case cacheWriteSetBalance:
-			s.setBalanceCache(ctx, task.userID, task.balance)
+			s.setBalanceCache(ctx, task.userID, task.balance, task.cacheGeneration, task.generationFenced)
 		case cacheWriteSetSubscription:
-			s.setSubscriptionCache(ctx, task.userID, task.groupID, task.subscriptionData)
+			s.setSubscriptionCache(
+				ctx,
+				task.userID,
+				task.groupID,
+				task.subscriptionData,
+				task.cacheGeneration,
+				task.generationFenced,
+			)
 		case cacheWriteUpdateSubscriptionUsage:
-			if s.cache != nil {
-				if err := s.cache.UpdateSubscriptionUsage(ctx, task.userID, task.groupID, task.amount); err != nil {
-					logger.LegacyPrintf("service.billing_cache", "Warning: update subscription cache failed for user %d group %d: %v", task.userID, task.groupID, err)
-				}
+			if err := s.applySubscriptionUsageCacheTask(ctx, task); err != nil {
+				logger.LegacyPrintf("service.billing_cache", "Warning: update subscription cache failed for user %d group %d: %v", task.userID, task.groupID, err)
 			}
 		case cacheWriteDeductBalance:
-			if s.cache != nil {
-				if err := s.cache.DeductUserBalance(ctx, task.userID, task.amount); err != nil {
-					logger.LegacyPrintf("service.billing_cache", "Warning: deduct balance cache failed for user %d: %v", task.userID, err)
-				}
+			if err := s.applyBalanceDeductionCacheTask(ctx, task); err != nil {
+				logger.LegacyPrintf("service.billing_cache", "Warning: deduct balance cache failed for user %d: %v", task.userID, err)
 			}
 		case cacheWriteUpdateRateLimitUsage:
-			if s.cache != nil {
-				if err := s.cache.UpdateAPIKeyRateLimitUsage(ctx, task.apiKeyID, task.amount); err != nil {
-					logger.LegacyPrintf("service.billing_cache", "Warning: update rate limit usage cache failed for api key %d: %v", task.apiKeyID, err)
-				}
+			if err := s.applyRateLimitUsageCacheTask(ctx, task); err != nil {
+				logger.LegacyPrintf("service.billing_cache", "Warning: update rate limit usage cache failed for api key %d: %v", task.apiKeyID, err)
 			}
 		}
 		cancel()
 	}
+}
+
+func (s *BillingCacheService) userBalanceCacheGeneration(
+	ctx context.Context,
+	userID int64,
+) (int64, bool, error) {
+	fence, ok := s.cache.(billingCacheGenerationFence)
+	if !ok {
+		return 0, false, nil
+	}
+	generation, err := fence.GetUserBalanceCacheGeneration(ctx, userID)
+	return generation, true, err
+}
+
+func (s *BillingCacheService) subscriptionCacheGeneration(
+	ctx context.Context,
+	userID, groupID int64,
+) (int64, bool, error) {
+	fence, ok := s.cache.(billingCacheGenerationFence)
+	if !ok {
+		return 0, false, nil
+	}
+	generation, err := fence.GetSubscriptionCacheGeneration(ctx, userID, groupID)
+	return generation, true, err
+}
+
+func (s *BillingCacheService) apiKeyRateLimitCacheGeneration(
+	ctx context.Context,
+	keyID int64,
+) (int64, bool, error) {
+	fence, ok := s.cache.(billingCacheGenerationFence)
+	if !ok {
+		return 0, false, nil
+	}
+	generation, err := fence.GetAPIKeyRateLimitCacheGeneration(ctx, keyID)
+	return generation, true, err
+}
+
+func (s *BillingCacheService) captureUserBalanceCacheGeneration(userID int64) (int64, bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), cacheWriteTimeout)
+	defer cancel()
+	return s.userBalanceCacheGeneration(ctx, userID)
+}
+
+func (s *BillingCacheService) captureSubscriptionCacheGeneration(userID, groupID int64) (int64, bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), cacheWriteTimeout)
+	defer cancel()
+	return s.subscriptionCacheGeneration(ctx, userID, groupID)
+}
+
+func (s *BillingCacheService) captureAPIKeyRateLimitCacheGeneration(keyID int64) (int64, bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), cacheWriteTimeout)
+	defer cancel()
+	return s.apiKeyRateLimitCacheGeneration(ctx, keyID)
 }
 
 // cacheWriteKindName 用于日志中的任务类型标识，便于排查丢弃原因。
@@ -325,17 +401,25 @@ func (s *BillingCacheService) GetUserBalance(ctx context.Context, userID int64) 
 		loadCtx, cancel := context.WithTimeout(context.Background(), balanceLoadTimeout)
 		defer cancel()
 
+		generation, generationFenced, generationErr := s.userBalanceCacheGeneration(loadCtx, userID)
 		balance, err := s.getUserBalanceFromDB(loadCtx, userID)
 		if err != nil {
 			return nil, err
 		}
 
-		// 异步建立缓存
-		_ = s.enqueueCacheWrite(cacheWriteTask{
-			kind:    cacheWriteSetBalance,
-			userID:  userID,
-			balance: balance,
-		})
+		// Capture the generation before the DB read. If invalidation raced
+		// with the read, the queued SET is atomically rejected.
+		if generationErr == nil {
+			_ = s.enqueueCacheWrite(cacheWriteTask{
+				kind:             cacheWriteSetBalance,
+				userID:           userID,
+				balance:          balance,
+				cacheGeneration:  generation,
+				generationFenced: generationFenced,
+			})
+		} else {
+			logger.LegacyPrintf("service.billing_cache", "Warning: capture balance cache generation failed for user %d: %v", userID, generationErr)
+		}
 		return balance, nil
 	})
 	if err != nil {
@@ -358,11 +442,27 @@ func (s *BillingCacheService) getUserBalanceFromDB(ctx context.Context, userID i
 }
 
 // setBalanceCache 设置余额缓存
-func (s *BillingCacheService) setBalanceCache(ctx context.Context, userID int64, balance float64) {
+func (s *BillingCacheService) setBalanceCache(
+	ctx context.Context,
+	userID int64,
+	balance float64,
+	generation int64,
+	generationFenced bool,
+) {
 	if s.cache == nil {
 		return
 	}
-	if err := s.cache.SetUserBalance(ctx, userID, balance); err != nil {
+	var err error
+	if generationFenced {
+		fence, ok := s.cache.(billingCacheGenerationFence)
+		if !ok {
+			return
+		}
+		err = fence.SetUserBalanceIfGeneration(ctx, userID, balance, generation)
+	} else {
+		err = s.cache.SetUserBalance(ctx, userID, balance)
+	}
+	if err != nil {
 		logger.LegacyPrintf("service.billing_cache", "Warning: set balance cache failed for user %d: %v", userID, err)
 	}
 }
@@ -380,19 +480,41 @@ func (s *BillingCacheService) QueueDeductBalance(userID int64, amount float64) {
 	if s.cache == nil {
 		return
 	}
+	generation, generationFenced, err := s.captureUserBalanceCacheGeneration(userID)
+	if err != nil {
+		logger.LegacyPrintf("service.billing_cache", "Warning: capture balance cache generation before deduct failed for user %d: %v", userID, err)
+		return
+	}
+	task := cacheWriteTask{
+		kind:             cacheWriteDeductBalance,
+		userID:           userID,
+		amount:           amount,
+		cacheGeneration:  generation,
+		generationFenced: generationFenced,
+	}
 	// 队列满时同步回退，避免关键扣减被静默丢弃。
-	if s.enqueueCacheWrite(cacheWriteTask{
-		kind:   cacheWriteDeductBalance,
-		userID: userID,
-		amount: amount,
-	}) {
+	if s.enqueueCacheWrite(task) {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), cacheWriteTimeout)
 	defer cancel()
-	if err := s.DeductBalanceCache(ctx, userID, amount); err != nil {
+	if err := s.applyBalanceDeductionCacheTask(ctx, task); err != nil {
 		logger.LegacyPrintf("service.billing_cache", "Warning: deduct balance cache fallback failed for user %d: %v", userID, err)
 	}
+}
+
+func (s *BillingCacheService) applyBalanceDeductionCacheTask(ctx context.Context, task cacheWriteTask) error {
+	if s.cache == nil {
+		return nil
+	}
+	if task.generationFenced {
+		fence, ok := s.cache.(billingCacheGenerationFence)
+		if !ok {
+			return nil
+		}
+		return fence.DeductUserBalanceIfGeneration(ctx, task.userID, task.amount, task.cacheGeneration)
+	}
+	return s.cache.DeductUserBalance(ctx, task.userID, task.amount)
 }
 
 // InvalidateUserBalance 失效用户余额缓存
@@ -423,19 +545,27 @@ func (s *BillingCacheService) GetSubscriptionStatus(ctx context.Context, userID,
 		return s.convertFromPortsData(cacheData), nil
 	}
 
-	// 缓存未命中，从数据库读取
+	// 缓存未命中，从数据库读取。generation 必须在 DB read 前捕获，
+	// 否则失效与回源交错时无法识别旧快照。
+	generation, generationFenced, generationErr := s.subscriptionCacheGeneration(ctx, userID, groupID)
 	data, err := s.getSubscriptionFromDB(ctx, userID, groupID)
 	if err != nil {
 		return nil, err
 	}
 
 	// 异步建立缓存
-	_ = s.enqueueCacheWrite(cacheWriteTask{
-		kind:             cacheWriteSetSubscription,
-		userID:           userID,
-		groupID:          groupID,
-		subscriptionData: data,
-	})
+	if generationErr == nil {
+		_ = s.enqueueCacheWrite(cacheWriteTask{
+			kind:             cacheWriteSetSubscription,
+			userID:           userID,
+			groupID:          groupID,
+			subscriptionData: data,
+			cacheGeneration:  generation,
+			generationFenced: generationFenced,
+		})
+	} else {
+		logger.LegacyPrintf("service.billing_cache", "Warning: capture subscription cache generation failed for user %d group %d: %v", userID, groupID, generationErr)
+	}
 
 	return data, nil
 }
@@ -480,11 +610,28 @@ func (s *BillingCacheService) getSubscriptionFromDB(ctx context.Context, userID,
 }
 
 // setSubscriptionCache 设置订阅缓存
-func (s *BillingCacheService) setSubscriptionCache(ctx context.Context, userID, groupID int64, data *subscriptionCacheData) {
+func (s *BillingCacheService) setSubscriptionCache(
+	ctx context.Context,
+	userID, groupID int64,
+	data *subscriptionCacheData,
+	generation int64,
+	generationFenced bool,
+) {
 	if s.cache == nil || data == nil {
 		return
 	}
-	if err := s.cache.SetSubscriptionCache(ctx, userID, groupID, s.convertToPortsData(data)); err != nil {
+	portsData := s.convertToPortsData(data)
+	var err error
+	if generationFenced {
+		fence, ok := s.cache.(billingCacheGenerationFence)
+		if !ok {
+			return
+		}
+		err = fence.SetSubscriptionCacheIfGeneration(ctx, userID, groupID, portsData, generation)
+	} else {
+		err = s.cache.SetSubscriptionCache(ctx, userID, groupID, portsData)
+	}
+	if err != nil {
 		logger.LegacyPrintf("service.billing_cache", "Warning: set subscription cache failed for user %d group %d: %v", userID, groupID, err)
 	}
 }
@@ -502,20 +649,48 @@ func (s *BillingCacheService) QueueUpdateSubscriptionUsage(userID, groupID int64
 	if s.cache == nil {
 		return
 	}
+	generation, generationFenced, err := s.captureSubscriptionCacheGeneration(userID, groupID)
+	if err != nil {
+		logger.LegacyPrintf("service.billing_cache", "Warning: capture subscription cache generation before update failed for user %d group %d: %v", userID, groupID, err)
+		return
+	}
+	task := cacheWriteTask{
+		kind:             cacheWriteUpdateSubscriptionUsage,
+		userID:           userID,
+		groupID:          groupID,
+		amount:           costUSD,
+		cacheGeneration:  generation,
+		generationFenced: generationFenced,
+	}
 	// 队列满时同步回退，确保订阅用量及时更新。
-	if s.enqueueCacheWrite(cacheWriteTask{
-		kind:    cacheWriteUpdateSubscriptionUsage,
-		userID:  userID,
-		groupID: groupID,
-		amount:  costUSD,
-	}) {
+	if s.enqueueCacheWrite(task) {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), cacheWriteTimeout)
 	defer cancel()
-	if err := s.UpdateSubscriptionUsage(ctx, userID, groupID, costUSD); err != nil {
+	if err := s.applySubscriptionUsageCacheTask(ctx, task); err != nil {
 		logger.LegacyPrintf("service.billing_cache", "Warning: update subscription cache fallback failed for user %d group %d: %v", userID, groupID, err)
 	}
+}
+
+func (s *BillingCacheService) applySubscriptionUsageCacheTask(ctx context.Context, task cacheWriteTask) error {
+	if s.cache == nil {
+		return nil
+	}
+	if task.generationFenced {
+		fence, ok := s.cache.(billingCacheGenerationFence)
+		if !ok {
+			return nil
+		}
+		return fence.UpdateSubscriptionUsageIfGeneration(
+			ctx,
+			task.userID,
+			task.groupID,
+			task.amount,
+			task.cacheGeneration,
+		)
+	}
+	return s.cache.UpdateSubscriptionUsage(ctx, task.userID, task.groupID, task.amount)
 }
 
 // InvalidateSubscription 失效指定订阅缓存
@@ -592,6 +767,7 @@ func (s *BillingCacheService) checkAPIKeyRateLimits(ctx context.Context, apiKey 
 		if s.apiKeyRateLimitLoader == nil {
 			return nil
 		}
+		generation, generationFenced, generationErr := s.apiKeyRateLimitCacheGeneration(ctx, apiKey.ID)
 		dbData, dbErr := s.apiKeyRateLimitLoader.GetRateLimitData(ctx, apiKey.ID)
 		if dbErr != nil {
 			return nil // Don't block requests on DB errors
@@ -611,7 +787,18 @@ func (s *BillingCacheService) checkAPIKeyRateLimits(ctx context.Context, apiKey 
 		if dbData.Window7dStart != nil {
 			cacheEntry.Window7d = dbData.Window7dStart.Unix()
 		}
-		_ = s.cache.SetAPIKeyRateLimit(ctx, apiKey.ID, cacheEntry)
+		if generationErr == nil {
+			if generationFenced {
+				fence, ok := s.cache.(billingCacheGenerationFence)
+				if ok {
+					_ = fence.SetAPIKeyRateLimitIfGeneration(ctx, apiKey.ID, cacheEntry, generation)
+				}
+			} else {
+				_ = s.cache.SetAPIKeyRateLimit(ctx, apiKey.ID, cacheEntry)
+			}
+		} else {
+			logger.LegacyPrintf("service.billing_cache", "Warning: capture api key rate-limit cache generation failed for key %d: %v", apiKey.ID, generationErr)
+		}
 		cacheData = cacheEntry
 	}
 
@@ -692,11 +879,37 @@ func (s *BillingCacheService) QueueUpdateAPIKeyRateLimitUsage(apiKeyID int64, co
 	if s.cache == nil {
 		return
 	}
+	generation, generationFenced, err := s.captureAPIKeyRateLimitCacheGeneration(apiKeyID)
+	if err != nil {
+		logger.LegacyPrintf("service.billing_cache", "Warning: capture api key rate-limit cache generation before update failed for key %d: %v", apiKeyID, err)
+		return
+	}
 	s.enqueueCacheWrite(cacheWriteTask{
-		kind:     cacheWriteUpdateRateLimitUsage,
-		apiKeyID: apiKeyID,
-		amount:   cost,
+		kind:             cacheWriteUpdateRateLimitUsage,
+		apiKeyID:         apiKeyID,
+		amount:           cost,
+		cacheGeneration:  generation,
+		generationFenced: generationFenced,
 	})
+}
+
+func (s *BillingCacheService) applyRateLimitUsageCacheTask(ctx context.Context, task cacheWriteTask) error {
+	if s.cache == nil {
+		return nil
+	}
+	if task.generationFenced {
+		fence, ok := s.cache.(billingCacheGenerationFence)
+		if !ok {
+			return nil
+		}
+		return fence.UpdateAPIKeyRateLimitUsageIfGeneration(
+			ctx,
+			task.apiKeyID,
+			task.amount,
+			task.cacheGeneration,
+		)
+	}
+	return s.cache.UpdateAPIKeyRateLimitUsage(ctx, task.apiKeyID, task.amount)
 }
 
 // IncrementUserPlatformQuotaUsage 同步累加 user × platform usage 到 Redis 缓存。
@@ -722,6 +935,56 @@ func (s *BillingCacheService) IncrementUserPlatformQuotaUsage(userID int64, plat
 			"ALERT: incr user platform quota cache failed user=%d platform=%s cost=%f: %v",
 			userID, platform, cost, err)
 	}
+}
+
+// InvalidateUserPlatformQuota removes the Redis projection after a durable DB
+// quota update. Invalidation is replay-safe, unlike incrementing the cached
+// value after an ambiguous outbox acknowledgement.
+func (s *BillingCacheService) InvalidateUserPlatformQuota(ctx context.Context, userID int64, platform string) error {
+	if s == nil || s.cache == nil || platform == "" {
+		return nil
+	}
+	if err := s.cache.DeleteUserPlatformQuotaCache(ctx, userID, platform); err != nil {
+		logger.LegacyPrintf("service.billing_cache",
+			"Warning: invalidate user platform quota cache failed user=%d platform=%s: %v",
+			userID, platform, err)
+		return err
+	}
+	return nil
+}
+
+// RefreshUserPlatformQuotaProjection reloads the committed DB fact and writes
+// a complete cache entry. The cache repository merges usage monotonically per
+// window, so a loader that began before this billing commit cannot overwrite
+// the refreshed value after this method returns.
+func (s *BillingCacheService) RefreshUserPlatformQuotaProjection(ctx context.Context, userID int64, platform string) error {
+	if s == nil || s.cache == nil || platform == "" {
+		return nil
+	}
+	if s.userPlatformQuotaRepo == nil {
+		return errors.New("user platform quota repository is not configured")
+	}
+	rec, err := s.userPlatformQuotaRepo.GetByUserPlatform(ctx, userID, platform)
+	if err != nil {
+		return err
+	}
+	if rec == nil {
+		return s.cache.DeleteUserPlatformQuotaCache(ctx, userID, platform)
+	}
+	entry := &UserPlatformQuotaCacheEntry{
+		DailyUsageUSD:      rec.DailyUsageUSD,
+		WeeklyUsageUSD:     rec.WeeklyUsageUSD,
+		MonthlyUsageUSD:    rec.MonthlyUsageUSD,
+		SchemaVersion:      UserPlatformQuotaCacheSchemaV1,
+		DailyLimitUSD:      rec.DailyLimitUSD,
+		WeeklyLimitUSD:     rec.WeeklyLimitUSD,
+		MonthlyLimitUSD:    rec.MonthlyLimitUSD,
+		DailyWindowStart:   rec.DailyWindowStart,
+		WeeklyWindowStart:  rec.WeeklyWindowStart,
+		MonthlyWindowStart: rec.MonthlyWindowStart,
+	}
+	ttl := time.Duration(s.cfg.Billing.UserPlatformQuotaCacheTTLSeconds) * time.Second
+	return s.cache.SetUserPlatformQuotaCache(ctx, userID, platform, entry, ttl)
 }
 
 // ============================================
@@ -1241,14 +1504,22 @@ func (s *BillingCacheService) checkUserPlatformQuotaEligibility(
 	dailyUsage := rec.DailyUsageUSD
 	weeklyUsage := rec.WeeklyUsageUSD
 	monthlyUsage := rec.MonthlyUsageUSD
-	if quotaWindowExpired(rec.DailyWindowStart, timezone.StartOfDay(now)) {
+	dailyWindowStart := rec.DailyWindowStart
+	weeklyWindowStart := rec.WeeklyWindowStart
+	monthlyWindowStart := rec.MonthlyWindowStart
+	currentDailyStart := timezone.StartOfDay(now)
+	currentWeeklyStart := timezone.StartOfWeek(now)
+	if quotaWindowExpired(dailyWindowStart, currentDailyStart) {
 		dailyUsage = 0
+		dailyWindowStart = &currentDailyStart
 	}
-	if quotaWindowExpired(rec.WeeklyWindowStart, timezone.StartOfWeek(now)) {
+	if quotaWindowExpired(weeklyWindowStart, currentWeeklyStart) {
 		weeklyUsage = 0
+		weeklyWindowStart = &currentWeeklyStart
 	}
-	if monthlyQuotaWindowExpired(rec.MonthlyWindowStart, now) {
+	if monthlyQuotaWindowExpired(monthlyWindowStart, now) {
 		monthlyUsage = 0
+		monthlyWindowStart = &now
 	}
 
 	// Redis 故障时 fail-open：不回填，直接用 DB 数据做一次性检查
@@ -1260,7 +1531,7 @@ func (s *BillingCacheService) checkUserPlatformQuotaEligibility(
 			return withWindowResetsMetadata(ErrUserPlatformWeeklyQuotaExhausted, nextWeeklyReset(now))
 		}
 		if rec.MonthlyLimitUSD != nil && monthlyUsage >= *rec.MonthlyLimitUSD {
-			return withWindowResetsMetadata(ErrUserPlatformMonthlyQuotaExhausted, nextMonthlyResetFrom(rec.MonthlyWindowStart, now))
+			return withWindowResetsMetadata(ErrUserPlatformMonthlyQuotaExhausted, nextMonthlyResetFrom(monthlyWindowStart, now))
 		}
 		return nil
 	}
@@ -1274,9 +1545,9 @@ func (s *BillingCacheService) checkUserPlatformQuotaEligibility(
 		DailyLimitUSD:      rec.DailyLimitUSD,
 		WeeklyLimitUSD:     rec.WeeklyLimitUSD,
 		MonthlyLimitUSD:    rec.MonthlyLimitUSD,
-		DailyWindowStart:   rec.DailyWindowStart,
-		WeeklyWindowStart:  rec.WeeklyWindowStart,
-		MonthlyWindowStart: rec.MonthlyWindowStart,
+		DailyWindowStart:   dailyWindowStart,
+		WeeklyWindowStart:  weeklyWindowStart,
+		MonthlyWindowStart: monthlyWindowStart,
 	}
 	if s.cache != nil {
 		ttl := time.Duration(s.cfg.Billing.UserPlatformQuotaCacheTTLSeconds) * time.Second
@@ -1297,7 +1568,7 @@ func (s *BillingCacheService) checkUserPlatformQuotaEligibility(
 		return withWindowResetsMetadata(ErrUserPlatformWeeklyQuotaExhausted, nextWeeklyReset(now))
 	}
 	if rec.MonthlyLimitUSD != nil && monthlyUsage >= *rec.MonthlyLimitUSD {
-		return withWindowResetsMetadata(ErrUserPlatformMonthlyQuotaExhausted, nextMonthlyResetFrom(rec.MonthlyWindowStart, now))
+		return withWindowResetsMetadata(ErrUserPlatformMonthlyQuotaExhausted, nextMonthlyResetFrom(monthlyWindowStart, now))
 	}
 	return nil
 }

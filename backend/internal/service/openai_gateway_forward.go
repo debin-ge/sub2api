@@ -21,6 +21,15 @@ import (
 func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, account *Account, body []byte) (*OpenAIForwardResult, error) {
 	clearGrokResponsesClientToolMapping(c)
 	startTime := time.Now()
+	if err := ValidateUniqueOpenAIResponsesBillingFields(body); err != nil {
+		setOpsUpstreamError(c, http.StatusBadRequest, err.Error(), "")
+		if c != nil && c.Writer != nil && !c.Writer.Written() {
+			c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{
+				"type": "invalid_request_error", "message": err.Error(),
+			}})
+		}
+		return nil, err
+	}
 	// 固定渠道映射后的请求级 canonical body；账号 normalize/strip 不得改写跨 failover hint。
 	canonicalImageIntentBody := body
 
@@ -534,6 +543,36 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		imageBillingModel = imageCfg.Model
 		imageSizeTier = imageCfg.SizeTier
 		imageInputSize = imageCfg.InputSize
+	}
+	// /responses is token-based at the route level, but native image generation
+	// can settle under an independent tools[].model. Validate that exact model
+	// after all request normalization and before any upstream credential is used.
+	if imageIntent &&
+		IsExplicitImageGenerationIntent(openAIResponsesEndpoint, billingModel, body) {
+		var groupID *int64
+		if apiKey != nil {
+			groupID = apiKey.GroupID
+		}
+		if err := s.enforceResolvedOpenAIMediaPricing(
+			ctx,
+			groupID,
+			account,
+			originalModel,
+			imageBillingModel,
+			imageSizeTier,
+			BillingKindImage,
+		); err != nil {
+			setOpsUpstreamError(c, http.StatusServiceUnavailable, "image model pricing is unavailable", "")
+			if c != nil && c.Writer != nil && !c.Writer.Written() {
+				c.JSON(http.StatusServiceUnavailable, gin.H{
+					"error": gin.H{
+						"type":    "api_error",
+						"message": "Image model pricing is unavailable",
+					},
+				})
+			}
+			return nil, err
+		}
 	}
 
 	// Get access token

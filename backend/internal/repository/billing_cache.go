@@ -18,10 +18,12 @@ const (
 	billingBalanceKeyPrefix   = "billing:balance:"
 	billingSubKeyPrefix       = "billing:sub:"
 	billingRateLimitKeyPrefix = "apikey:rate:"
+	billingFenceKeyPrefix     = "billing:fence:"
 	subCacheInvalidateChannel = "subscription:cache:invalidate"
 	billingCacheTTL           = 5 * time.Minute
 	billingCacheJitter        = 30 * time.Second
 	rateLimitCacheTTL         = 7 * 24 * time.Hour // 7 days matches the longest window
+	billingCacheFenceTTL      = 24 * time.Hour
 
 	// Rate limit window durations — must match service.RateLimitWindow* constants.
 	rateLimitWindow5h = 5 * time.Hour
@@ -44,9 +46,17 @@ func billingBalanceKey(userID int64) string {
 	return fmt.Sprintf("%s%d", billingBalanceKeyPrefix, userID)
 }
 
+func billingBalanceFenceKey(userID int64) string {
+	return fmt.Sprintf("%sbalance:%d", billingFenceKeyPrefix, userID)
+}
+
 // billingSubKey generates the Redis key for subscription cache.
 func billingSubKey(userID, groupID int64) string {
 	return fmt.Sprintf("%s%d:%d", billingSubKeyPrefix, userID, groupID)
+}
+
+func billingSubFenceKey(userID, groupID int64) string {
+	return fmt.Sprintf("%ssub:%d:%d", billingFenceKeyPrefix, userID, groupID)
 }
 
 const (
@@ -63,6 +73,10 @@ func billingRateLimitKey(keyID int64) string {
 	return fmt.Sprintf("%s%d", billingRateLimitKeyPrefix, keyID)
 }
 
+func billingRateLimitFenceKey(keyID int64) string {
+	return fmt.Sprintf("%srate:%d", billingFenceKeyPrefix, keyID)
+}
+
 const (
 	rateLimitFieldUsage5h  = "usage_5h"
 	rateLimitFieldUsage1d  = "usage_1d"
@@ -73,6 +87,119 @@ const (
 )
 
 var (
+	invalidateBillingCacheScript = redis.NewScript(`
+		redis.call('INCR', KEYS[2])
+		redis.call('EXPIRE', KEYS[2], ARGV[1])
+		redis.call('DEL', KEYS[1])
+		return 1
+	`)
+
+	setBalanceIfGenerationScript = redis.NewScript(`
+		local generation = tonumber(redis.call('GET', KEYS[2]) or '0')
+		if generation ~= tonumber(ARGV[2]) then
+			return 0
+		end
+		redis.call('SET', KEYS[1], ARGV[1])
+		redis.call('EXPIRE', KEYS[1], ARGV[3])
+		return 1
+	`)
+
+	deductBalanceIfGenerationScript = redis.NewScript(`
+		local generation = tonumber(redis.call('GET', KEYS[2]) or '0')
+		if generation ~= tonumber(ARGV[3]) then
+			return 0
+		end
+		local current = redis.call('GET', KEYS[1])
+		if current == false then
+			return 0
+		end
+		local newVal = tonumber(current) - tonumber(ARGV[1])
+		redis.call('SET', KEYS[1], newVal)
+		redis.call('EXPIRE', KEYS[1], ARGV[2])
+		return 1
+	`)
+
+	setSubscriptionIfGenerationScript = redis.NewScript(`
+		local generation = tonumber(redis.call('GET', KEYS[2]) or '0')
+		if generation ~= tonumber(ARGV[7]) then
+			return 0
+		end
+		redis.call('HSET', KEYS[1],
+			'status', ARGV[1],
+			'expires_at', ARGV[2],
+			'daily_usage', ARGV[3],
+			'weekly_usage', ARGV[4],
+			'monthly_usage', ARGV[5],
+			'version', ARGV[6])
+		redis.call('EXPIRE', KEYS[1], ARGV[8])
+		return 1
+	`)
+
+	updateSubscriptionIfGenerationScript = redis.NewScript(`
+		local generation = tonumber(redis.call('GET', KEYS[2]) or '0')
+		if generation ~= tonumber(ARGV[3]) then
+			return 0
+		end
+		local exists = redis.call('EXISTS', KEYS[1])
+		if exists == 0 then
+			return 0
+		end
+		local cost = tonumber(ARGV[1])
+		redis.call('HINCRBYFLOAT', KEYS[1], 'daily_usage', cost)
+		redis.call('HINCRBYFLOAT', KEYS[1], 'weekly_usage', cost)
+		redis.call('HINCRBYFLOAT', KEYS[1], 'monthly_usage', cost)
+		redis.call('EXPIRE', KEYS[1], ARGV[2])
+		return 1
+	`)
+
+	setRateLimitIfGenerationScript = redis.NewScript(`
+		local generation = tonumber(redis.call('GET', KEYS[2]) or '0')
+		if generation ~= tonumber(ARGV[7]) then
+			return 0
+		end
+		redis.call('HSET', KEYS[1],
+			'usage_5h', ARGV[1],
+			'usage_1d', ARGV[2],
+			'usage_7d', ARGV[3],
+			'window_5h', ARGV[4],
+			'window_1d', ARGV[5],
+			'window_7d', ARGV[6])
+		redis.call('EXPIRE', KEYS[1], ARGV[8])
+		return 1
+	`)
+
+	updateRateLimitIfGenerationScript = redis.NewScript(`
+		local generation = tonumber(redis.call('GET', KEYS[2]) or '0')
+		if generation ~= tonumber(ARGV[7]) then
+			return 0
+		end
+		local exists = redis.call('EXISTS', KEYS[1])
+		if exists == 0 then
+			return 0
+		end
+		local cost = tonumber(ARGV[1])
+		local now = tonumber(ARGV[3])
+		local win5h = tonumber(ARGV[4])
+		local win1d = tonumber(ARGV[5])
+		local win7d = tonumber(ARGV[6])
+
+		local function update_window(usage_field, window_field, window_duration)
+			local w = tonumber(redis.call('HGET', KEYS[1], window_field) or 0)
+			if w == 0 or (now - w) >= window_duration then
+				redis.call('HSET', KEYS[1], usage_field, tostring(cost))
+				redis.call('HSET', KEYS[1], window_field, tostring(now))
+			else
+				redis.call('HINCRBYFLOAT', KEYS[1], usage_field, cost)
+			end
+		end
+
+		update_window('usage_5h', 'window_5h', win5h)
+		update_window('usage_1d', 'window_1d', win1d)
+		update_window('usage_7d', 'window_7d', win7d)
+		redis.call('EXPIRE', KEYS[1], ARGV[2])
+		return 1
+	`)
+
 	deductBalanceScript = redis.NewScript(`
 		local current = redis.call('GET', KEYS[1])
 		if current == false then
@@ -158,6 +285,27 @@ func (c *billingCache) SetUserBalance(ctx context.Context, userID int64, balance
 	return c.rdb.Set(ctx, key, balance, jitteredTTL()).Err()
 }
 
+func (c *billingCache) GetUserBalanceCacheGeneration(ctx context.Context, userID int64) (int64, error) {
+	return c.getBillingCacheGeneration(ctx, billingBalanceFenceKey(userID))
+}
+
+func (c *billingCache) SetUserBalanceIfGeneration(
+	ctx context.Context,
+	userID int64,
+	balance float64,
+	generation int64,
+) error {
+	_, err := setBalanceIfGenerationScript.Run(
+		ctx,
+		c.rdb,
+		[]string{billingBalanceKey(userID), billingBalanceFenceKey(userID)},
+		balance,
+		generation,
+		int(jitteredTTL().Seconds()),
+	).Result()
+	return err
+}
+
 func (c *billingCache) DeductUserBalance(ctx context.Context, userID int64, amount float64) error {
 	key := billingBalanceKey(userID)
 	_, err := deductBalanceScript.Run(ctx, c.rdb, []string{key}, amount, int(jitteredTTL().Seconds())).Result()
@@ -168,9 +316,32 @@ func (c *billingCache) DeductUserBalance(ctx context.Context, userID int64, amou
 	return nil
 }
 
+func (c *billingCache) DeductUserBalanceIfGeneration(
+	ctx context.Context,
+	userID int64,
+	amount float64,
+	generation int64,
+) error {
+	_, err := deductBalanceIfGenerationScript.Run(
+		ctx,
+		c.rdb,
+		[]string{billingBalanceKey(userID), billingBalanceFenceKey(userID)},
+		amount,
+		int(jitteredTTL().Seconds()),
+		generation,
+	).Result()
+	if err != nil && !errors.Is(err, redis.Nil) {
+		return err
+	}
+	return nil
+}
+
 func (c *billingCache) InvalidateUserBalance(ctx context.Context, userID int64) error {
-	key := billingBalanceKey(userID)
-	return c.rdb.Del(ctx, key).Err()
+	return c.invalidateBillingCache(
+		ctx,
+		billingBalanceKey(userID),
+		billingBalanceFenceKey(userID),
+	)
 }
 
 func (c *billingCache) GetSubscriptionCache(ctx context.Context, userID, groupID int64) (*service.SubscriptionCacheData, error) {
@@ -242,6 +413,35 @@ func (c *billingCache) SetSubscriptionCache(ctx context.Context, userID, groupID
 	return err
 }
 
+func (c *billingCache) GetSubscriptionCacheGeneration(ctx context.Context, userID, groupID int64) (int64, error) {
+	return c.getBillingCacheGeneration(ctx, billingSubFenceKey(userID, groupID))
+}
+
+func (c *billingCache) SetSubscriptionCacheIfGeneration(
+	ctx context.Context,
+	userID, groupID int64,
+	data *service.SubscriptionCacheData,
+	generation int64,
+) error {
+	if data == nil {
+		return nil
+	}
+	_, err := setSubscriptionIfGenerationScript.Run(
+		ctx,
+		c.rdb,
+		[]string{billingSubKey(userID, groupID), billingSubFenceKey(userID, groupID)},
+		data.Status,
+		data.ExpiresAt.Unix(),
+		data.DailyUsage,
+		data.WeeklyUsage,
+		data.MonthlyUsage,
+		data.Version,
+		generation,
+		int(jitteredTTL().Seconds()),
+	).Result()
+	return err
+}
+
 func (c *billingCache) UpdateSubscriptionUsage(ctx context.Context, userID, groupID int64, cost float64) error {
 	key := billingSubKey(userID, groupID)
 	_, err := updateSubUsageScript.Run(ctx, c.rdb, []string{key}, cost, int(jitteredTTL().Seconds())).Result()
@@ -252,9 +452,32 @@ func (c *billingCache) UpdateSubscriptionUsage(ctx context.Context, userID, grou
 	return nil
 }
 
+func (c *billingCache) UpdateSubscriptionUsageIfGeneration(
+	ctx context.Context,
+	userID, groupID int64,
+	cost float64,
+	generation int64,
+) error {
+	_, err := updateSubscriptionIfGenerationScript.Run(
+		ctx,
+		c.rdb,
+		[]string{billingSubKey(userID, groupID), billingSubFenceKey(userID, groupID)},
+		cost,
+		int(jitteredTTL().Seconds()),
+		generation,
+	).Result()
+	if err != nil && !errors.Is(err, redis.Nil) {
+		return err
+	}
+	return nil
+}
+
 func (c *billingCache) InvalidateSubscriptionCache(ctx context.Context, userID, groupID int64) error {
-	key := billingSubKey(userID, groupID)
-	return c.rdb.Del(ctx, key).Err()
+	return c.invalidateBillingCache(
+		ctx,
+		billingSubKey(userID, groupID),
+		billingSubFenceKey(userID, groupID),
+	)
 }
 
 func (c *billingCache) PublishSubscriptionCacheInvalidation(ctx context.Context, cacheKey string) error {
@@ -347,6 +570,35 @@ func (c *billingCache) SetAPIKeyRateLimit(ctx context.Context, keyID int64, data
 	return err
 }
 
+func (c *billingCache) GetAPIKeyRateLimitCacheGeneration(ctx context.Context, keyID int64) (int64, error) {
+	return c.getBillingCacheGeneration(ctx, billingRateLimitFenceKey(keyID))
+}
+
+func (c *billingCache) SetAPIKeyRateLimitIfGeneration(
+	ctx context.Context,
+	keyID int64,
+	data *service.APIKeyRateLimitCacheData,
+	generation int64,
+) error {
+	if data == nil {
+		return nil
+	}
+	_, err := setRateLimitIfGenerationScript.Run(
+		ctx,
+		c.rdb,
+		[]string{billingRateLimitKey(keyID), billingRateLimitFenceKey(keyID)},
+		data.Usage5h,
+		data.Usage1d,
+		data.Usage7d,
+		data.Window5h,
+		data.Window1d,
+		data.Window7d,
+		generation,
+		int(rateLimitCacheTTL.Seconds()),
+	).Result()
+	return err
+}
+
 func (c *billingCache) UpdateAPIKeyRateLimitUsage(ctx context.Context, keyID int64, cost float64) error {
 	key := billingRateLimitKey(keyID)
 	now := time.Now().Unix()
@@ -365,9 +617,55 @@ func (c *billingCache) UpdateAPIKeyRateLimitUsage(ctx context.Context, keyID int
 	return nil
 }
 
+func (c *billingCache) UpdateAPIKeyRateLimitUsageIfGeneration(
+	ctx context.Context,
+	keyID int64,
+	cost float64,
+	generation int64,
+) error {
+	now := time.Now().Unix()
+	_, err := updateRateLimitIfGenerationScript.Run(
+		ctx,
+		c.rdb,
+		[]string{billingRateLimitKey(keyID), billingRateLimitFenceKey(keyID)},
+		cost,
+		int(rateLimitCacheTTL.Seconds()),
+		now,
+		int(rateLimitWindow5h.Seconds()),
+		int(rateLimitWindow1d.Seconds()),
+		int(rateLimitWindow7d.Seconds()),
+		generation,
+	).Result()
+	if err != nil && !errors.Is(err, redis.Nil) {
+		return err
+	}
+	return nil
+}
+
 func (c *billingCache) InvalidateAPIKeyRateLimit(ctx context.Context, keyID int64) error {
-	key := billingRateLimitKey(keyID)
-	return c.rdb.Del(ctx, key).Err()
+	return c.invalidateBillingCache(
+		ctx,
+		billingRateLimitKey(keyID),
+		billingRateLimitFenceKey(keyID),
+	)
+}
+
+func (c *billingCache) getBillingCacheGeneration(ctx context.Context, key string) (int64, error) {
+	value, err := c.rdb.Get(ctx, key).Int64()
+	if errors.Is(err, redis.Nil) {
+		return 0, nil
+	}
+	return value, err
+}
+
+func (c *billingCache) invalidateBillingCache(ctx context.Context, key, fenceKey string) error {
+	_, err := invalidateBillingCacheScript.Run(
+		ctx,
+		c.rdb,
+		[]string{key, fenceKey},
+		int(billingCacheFenceTTL.Seconds()),
+	).Result()
+	return err
 }
 
 // ============================================
@@ -456,7 +754,6 @@ func (c *billingCache) SetUserPlatformQuotaCache(ctx context.Context, userID int
 		return nil
 	}
 	key := userPlatformQuotaCacheKey(userID, platform)
-	pipe := c.rdb.TxPipeline()
 
 	// 浮点可空字段：nil → 空字符串（读取时 parseFloatPtr 返回 nil，表示无限额）
 	fmtFloatPtr := func(p *float64) string {
@@ -473,23 +770,78 @@ func (c *billingCache) SetUserPlatformQuotaCache(ctx context.Context, userID int
 		return strconv.FormatInt(p.Unix(), 10)
 	}
 
-	pipe.HSet(ctx, key,
-		"daily_usage", entry.DailyUsageUSD,
-		"weekly_usage", entry.WeeklyUsageUSD,
-		"monthly_usage", entry.MonthlyUsageUSD,
-		"version", entry.Version,
-		"schema_version", entry.SchemaVersion,
-		"daily_limit", fmtFloatPtr(entry.DailyLimitUSD),
-		"weekly_limit", fmtFloatPtr(entry.WeeklyLimitUSD),
-		"monthly_limit", fmtFloatPtr(entry.MonthlyLimitUSD),
-		"daily_window_start", fmtTimePtr(entry.DailyWindowStart),
-		"weekly_window_start", fmtTimePtr(entry.WeeklyWindowStart),
-		"monthly_window_start", fmtTimePtr(entry.MonthlyWindowStart),
-	)
-	pipe.Expire(ctx, key, ttl)
-	_, err := pipe.Exec(ctx)
+	_, err := c.rdb.Eval(ctx, setUserPlatformQuotaCacheScript, []string{key},
+		strconv.FormatFloat(entry.DailyUsageUSD, 'f', -1, 64),
+		strconv.FormatFloat(entry.WeeklyUsageUSD, 'f', -1, 64),
+		strconv.FormatFloat(entry.MonthlyUsageUSD, 'f', -1, 64),
+		entry.Version,
+		entry.SchemaVersion,
+		fmtFloatPtr(entry.DailyLimitUSD),
+		fmtFloatPtr(entry.WeeklyLimitUSD),
+		fmtFloatPtr(entry.MonthlyLimitUSD),
+		fmtTimePtr(entry.DailyWindowStart),
+		fmtTimePtr(entry.WeeklyWindowStart),
+		fmtTimePtr(entry.MonthlyWindowStart),
+		int64(ttl/time.Second),
+	).Result()
 	return err
 }
+
+// setUserPlatformQuotaCacheScript prevents a stale DB/cache loader that started
+// before a durable billing commit from writing an older usage projection after
+// the commit's post-effect. Limits are configuration and remain last-writer
+// wins; usage is monotonic within the same window, a newer window wins, and an
+// older window can never roll the cache back.
+const setUserPlatformQuotaCacheScript = `
+local key = KEYS[1]
+local existed = redis.call('EXISTS', key) == 1
+
+local function merged(usageField, startField, newUsageRaw, newStartRaw)
+  local newUsage = tonumber(newUsageRaw) or 0
+  local newStart = tonumber(newStartRaw)
+  if not existed then
+    return newUsageRaw, newStartRaw
+  end
+
+  local oldUsageRaw = redis.call('HGET', key, usageField)
+  local oldUsage = tonumber(oldUsageRaw) or 0
+  local oldStartRaw = redis.call('HGET', key, startField)
+  local oldStart = tonumber(oldStartRaw)
+
+  if newStart == nil then
+    return oldUsageRaw or tostring(oldUsage), oldStartRaw or ''
+  end
+  if oldStart == nil or newStart > oldStart then
+    return newUsageRaw, newStartRaw
+  end
+  if newStart < oldStart then
+    return oldUsageRaw or tostring(oldUsage), oldStartRaw or ''
+  end
+  if newUsage > oldUsage then
+    return newUsageRaw, newStartRaw
+  end
+  return oldUsageRaw or tostring(oldUsage), oldStartRaw or newStartRaw
+end
+
+local dailyUsage, dailyStart = merged('daily_usage', 'daily_window_start', ARGV[1], ARGV[9])
+local weeklyUsage, weeklyStart = merged('weekly_usage', 'weekly_window_start', ARGV[2], ARGV[10])
+local monthlyUsage, monthlyStart = merged('monthly_usage', 'monthly_window_start', ARGV[3], ARGV[11])
+
+redis.call('HSET', key,
+  'daily_usage', dailyUsage,
+  'weekly_usage', weeklyUsage,
+  'monthly_usage', monthlyUsage,
+  'version', ARGV[4],
+  'schema_version', ARGV[5],
+  'daily_limit', ARGV[6],
+  'weekly_limit', ARGV[7],
+  'monthly_limit', ARGV[8],
+  'daily_window_start', dailyStart,
+  'weekly_window_start', weeklyStart,
+  'monthly_window_start', monthlyStart)
+redis.call('EXPIRE', key, ARGV[12])
+return 1
+`
 
 func (c *billingCache) DeleteUserPlatformQuotaCache(ctx context.Context, userID int64, platform string) error {
 	return c.rdb.Del(ctx, userPlatformQuotaCacheKey(userID, platform)).Err()

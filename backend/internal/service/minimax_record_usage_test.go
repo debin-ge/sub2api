@@ -13,7 +13,7 @@ import (
 func newMiniMaxGatewayRecordUsageServiceForTest(usageRepo UsageLogRepository, userRepo UserRepository, subRepo UserSubscriptionRepository) *GatewayService {
 	cfg := &config.Config{}
 	cfg.Default.RateMultiplier = 1
-	return NewGatewayService(
+	svc := NewGatewayService(
 		nil,
 		nil,
 		usageRepo,
@@ -44,9 +44,11 @@ func newMiniMaxGatewayRecordUsageServiceForTest(usageRepo UsageLogRepository, us
 		nil,
 		nil,
 	)
+	svc.allowLegacyUsageBillingForTests = true
+	return svc
 }
 
-func TestMiniMaxRecordUsageMissingPricingReturnsBillingError(t *testing.T) {
+func TestMiniMaxRecordUsageMissingPricingPersistsPendingSettlement(t *testing.T) {
 	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
 	userRepo := &openAIRecordUsageUserRepoStub{}
 	subRepo := &openAIRecordUsageSubRepoStub{}
@@ -81,9 +83,13 @@ func TestMiniMaxRecordUsageMissingPricingReturnsBillingError(t *testing.T) {
 		},
 	})
 
-	require.Error(t, err)
-	require.Contains(t, strings.ToLower(err.Error()), "pricing")
-	require.Nil(t, usageRepo.lastLog)
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	require.Equal(t, BillingStatePricingUnavailable, usageRepo.lastLog.BillingState)
+	require.Zero(t, usageRepo.lastLog.TotalCost)
+	require.Zero(t, usageRepo.lastLog.ActualCost)
+	require.Equal(t, 11, usageRepo.lastLog.InputTokens)
+	require.Equal(t, 7, usageRepo.lastLog.OutputTokens)
 	require.Equal(t, 0, userRepo.deductCalls)
 	require.Equal(t, 0, subRepo.incrementCalls)
 }
@@ -115,8 +121,8 @@ func TestMiniMaxRecordUsageMissingPricingWithNilAPIKeyDoesNotPanic(t *testing.T)
 				Type:     AccountTypeAPIKey,
 			},
 		})
-		require.Error(t, err)
-		require.Contains(t, strings.ToLower(err.Error()), "pricing")
+		require.ErrorIs(t, err, ErrDurableUsageBillingRequired)
+		require.Contains(t, strings.ToLower(err.Error()), "api key")
 	})
 	require.Nil(t, usageRepo.lastLog)
 	require.Equal(t, 0, userRepo.deductCalls)

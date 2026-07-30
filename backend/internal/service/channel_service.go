@@ -543,18 +543,25 @@ func (s *ChannelService) IsModelRestricted(ctx context.Context, groupID int64, m
 	return checkRestricted(lk, groupID, model)
 }
 
-// ResolveChannelMappingAndRestrict 解析渠道映射。
-// 返回映射结果。模型限制检查已移至调度阶段（GatewayService.checkChannelPricingRestriction），
-// restricted 始终返回 false，保留签名兼容性。
-func (s *ChannelService) ResolveChannelMappingAndRestrict(ctx context.Context, groupID *int64, model string) (ChannelMappingResult, bool) {
+// ResolveRequestChannelMapping 解析入站请求的渠道级模型映射，允许 groupID 为空。
+//
+// 它**不**做模型限制检查：限制检查统一在调度阶段由 checkChannelPricingRestriction
+// 执行（gateway_scheduling.go、openai_account_scheduler.go）。只有到那一步才具备判断
+// 所需的两个前提——Claude Code 限制可能已把 groupID 换成降级分组，而渠道的计费基准
+// 若是 upstream 还必须逐账号确认映射后的上游模型。
+//
+// 这个函数原名 ResolveChannelMappingAndRestrict，多返回一个恒为 false 的 restricted，
+// 全部 16 个调用点无一例外写成 `mapping, _ :=`。那个布尔值留着比删掉更危险：读代码的人
+// 会以为此处漏掉了一层限制检查，而真正的检查其实在调度阶段。
+func (s *ChannelService) ResolveRequestChannelMapping(ctx context.Context, groupID *int64, model string) ChannelMappingResult {
 	if groupID == nil {
-		return ChannelMappingResult{MappedModel: model}, false
+		return ChannelMappingResult{MappedModel: model}
 	}
 	lk, _ := s.lookupGroupChannel(ctx, *groupID)
 	if lk == nil {
-		return ChannelMappingResult{MappedModel: model}, false
+		return ChannelMappingResult{MappedModel: model}
 	}
-	return resolveMapping(lk, *groupID, model), false
+	return resolveMapping(lk, *groupID, model)
 }
 
 // resolveMapping 基于已查找的渠道信息解析模型映射。
@@ -642,7 +649,8 @@ func validatePricingEntries(pricing []ChannelModelPricing) error {
 	return validatePricingBillingMode(pricing)
 }
 
-// validatePricingBillingMode 校验计费模式配置：按次/图片模式必须配价格或区间，所有价格字段不能为负，区间至少有一个价格字段。
+// validatePricingBillingMode 校验计费模式配置：按次/图片模式必须配价格或区间，
+// 所有价格字段不能为负，且区间必须包含当前计费模式实际会使用的价格字段。
 func validatePricingBillingMode(pricing []ChannelModelPricing) error {
 	for _, p := range pricing {
 		if err := checkBillingModeRequirements(p); err != nil {
@@ -684,8 +692,14 @@ func checkPricesNotNegative(p ChannelModelPricing) error {
 		{"per_request_price", p.PerRequestPrice},
 	}
 	for _, c := range checks {
-		if c.val != nil && *c.val < 0 {
+		if c.val == nil {
+			continue
+		}
+		if *c.val < 0 {
 			return infraerrors.BadRequest("NEGATIVE_PRICE", fmt.Sprintf("%s must be >= 0", c.field))
+		}
+		if !isFiniteNonNegativePrice(*c.val) {
+			return infraerrors.BadRequest("INVALID_PRICE", fmt.Sprintf("%s must be finite", c.field))
 		}
 	}
 	return nil
@@ -693,12 +707,21 @@ func checkPricesNotNegative(p ChannelModelPricing) error {
 
 func checkIntervalsHavePrices(p ChannelModelPricing) error {
 	for _, iv := range p.Intervals {
-		if iv.InputPrice == nil && iv.OutputPrice == nil &&
-			iv.CacheWritePrice == nil && iv.CacheReadPrice == nil &&
-			iv.PerRequestPrice == nil {
+		if p.BillingMode == BillingModePerRequest || p.BillingMode == BillingModeImage {
+			if iv.PerRequestPrice != nil {
+				continue
+			}
 			return infraerrors.BadRequest(
 				"INTERVAL_MISSING_PRICE",
-				fmt.Sprintf("interval [%d, %s] has no price fields set for model %v",
+				fmt.Sprintf("interval [%d, %s] has no per_request_price for %s model %v",
+					iv.MinTokens, formatMaxTokens(iv.MaxTokens), p.BillingMode, p.Models),
+			)
+		}
+		if iv.InputPrice == nil && iv.OutputPrice == nil &&
+			iv.CacheWritePrice == nil && iv.CacheReadPrice == nil {
+			return infraerrors.BadRequest(
+				"INTERVAL_MISSING_PRICE",
+				fmt.Sprintf("interval [%d, %s] has no token price fields set for model %v",
 					iv.MinTokens, formatMaxTokens(iv.MaxTokens), p.Models),
 			)
 		}

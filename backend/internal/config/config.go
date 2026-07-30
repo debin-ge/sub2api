@@ -24,6 +24,18 @@ const (
 	RunModeSimple   = "simple"
 )
 
+// 定价守卫/恢复任务使用的模式常量。
+//
+// 在线准入只允许 enforce；off/shadow 仅供不产生新上游成本的历史恢复任务使用。
+const (
+	// PricingGuardModeOff 关闭历史恢复任务。
+	PricingGuardModeOff = "off"
+	// PricingGuardModeShadow 只扫描并报告历史待结算记录。
+	PricingGuardModeShadow = "shadow"
+	// PricingGuardModeEnforce 查不到价就拒绝转发。
+	PricingGuardModeEnforce = "enforce"
+)
+
 // 使用量记录队列溢出策略
 const (
 	UsageRecordOverflowPolicyDrop   = "drop"
@@ -709,6 +721,37 @@ type PricingConfig struct {
 	UpdateIntervalHours int `mapstructure:"update_interval_hours"`
 	// 哈希校验间隔（分钟）
 	HashCheckIntervalMinutes int `mapstructure:"hash_check_interval_minutes"`
+	// GuardMode: 媒体/按次路由的定价准入守卫模式。
+	//
+	// 在线准入只允许 enforce：未知价格不能解释为免费，也不能先把上游成本放出去
+	// 再等待事后补价。字段保留用于兼容已有配置文件，但 off/shadow 会在启动校验时
+	// 被拒绝，直接构造 Config 的调用方也会在运行时按 enforce 处理。
+	GuardMode string `mapstructure:"guard_mode"`
+	// StrictModelMatchMode: token 路由准入时要求"这个模型自己配过价"。
+	//
+	// 守卫此前问 BillingService.GetModelPricing "能不能算出一个数"，而那条链最后会拿
+	// 别的模型的价格套上来（任何含 claude 的兜底到 claude-sonnet-4、任何 gpt- 开头的
+	// 兜底到 DefaultTestModel）。切到严格口径后，只有模型自身在价格目录/兜底表里有条目
+	// 才算配过价。和 GuardMode 一样，在线准入只允许 enforce。
+	StrictModelMatchMode string `mapstructure:"strict_model_match_mode"`
+	// RecoveryMode: 待结算用量的补偿结算模式（off/shadow/enforce）
+	//
+	// 处理的是 billing_state=1 的行——上游成本已经真实发生、但当时查不到价，于是按零
+	// 费用落库等补配价格。管理员补上价格后，这些行需要按今天的价重算并置为
+	// billing_state=2。
+	//
+	// recovery 独立默认 shadow：补偿改的是历史账目，enforce 之前先看清"会重算多少
+	// 笔、金额多大"。在线准入的另外两个开关则固定为 enforce。
+	//
+	// 三档都不动用户余额，理由见 service/billing_recovery_service.go 的类型注释。
+	RecoveryMode string `mapstructure:"recovery_mode"`
+	// RecoveryIntervalMinutes: 补偿扫描间隔（分钟），<=0 时取默认值 60。
+	RecoveryIntervalMinutes int `mapstructure:"recovery_interval_minutes"`
+	// RecoveryBatchSize: 单轮最多处理多少行，<=0 时取默认值 500。
+	//
+	// 有上限是因为补偿是低优先级的后台修正：一次补太多会跟在线流量抢数据库，而剩下的
+	// 行等下一轮补也不会更糟——它们已经在库里了，只是数字还没填。
+	RecoveryBatchSize int `mapstructure:"recovery_batch_size"`
 }
 
 type ServerConfig struct {
@@ -1724,6 +1767,35 @@ func NormalizeRunMode(value string) string {
 	}
 }
 
+// NormalizePricingGuardMode 把在线定价准入配置规整为 enforce。
+//
+// Config.Validate 会拒绝显式 off/shadow 和非法值；这里仍对直接构造 Config、
+// 测试替身或未来遗漏校验的装配保持最后一道 fail-closed 防线。
+func NormalizePricingGuardMode(_ string) string {
+	return PricingGuardModeEnforce
+}
+
+// NormalizePricingRecoveryMode 把历史结算恢复配置规整到三个档位。
+//
+// 恢复任务会改写历史账目，不属于在线请求的准入边界；非法或缺失配置保持 shadow，
+// 避免因为准入侧的 fail-closed 默认而意外开启历史写回。
+func NormalizePricingRecoveryMode(value string) string {
+	if normalized, ok := normalizePricingGuardMode(value); ok {
+		return normalized
+	}
+	return PricingGuardModeShadow
+}
+
+func normalizePricingGuardMode(value string) (string, bool) {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	switch normalized {
+	case PricingGuardModeOff, PricingGuardModeShadow, PricingGuardModeEnforce:
+		return normalized, true
+	default:
+		return "", false
+	}
+}
+
 // Load 读取并校验完整配置（要求 jwt.secret 已显式提供）。
 func Load() (*Config, error) {
 	return load(false)
@@ -2264,6 +2336,11 @@ func setDefaults() {
 	viper.SetDefault("pricing.fallback_file", "./resources/model-pricing/model_prices_and_context_window.json")
 	viper.SetDefault("pricing.update_interval_hours", 24)
 	viper.SetDefault("pricing.hash_check_interval_minutes", 10)
+	viper.SetDefault("pricing.guard_mode", PricingGuardModeEnforce)
+	viper.SetDefault("pricing.strict_model_match_mode", PricingGuardModeEnforce)
+	viper.SetDefault("pricing.recovery_mode", PricingGuardModeShadow)
+	viper.SetDefault("pricing.recovery_interval_minutes", 60)
+	viper.SetDefault("pricing.recovery_batch_size", 500)
 
 	// Timezone (default to Asia/Shanghai for Chinese users)
 	viper.SetDefault("timezone", "Asia/Shanghai")
@@ -2714,6 +2791,20 @@ func validateRadarLMArenaURL(raw string) error {
 }
 
 func (c *Config) Validate() error {
+	guardMode, err := validatePricingAdmissionGuardMode("pricing.guard_mode", c.Pricing.GuardMode)
+	if err != nil {
+		return err
+	}
+	c.Pricing.GuardMode = guardMode
+	strictModelMatchMode, err := validatePricingAdmissionGuardMode(
+		"pricing.strict_model_match_mode",
+		c.Pricing.StrictModelMatchMode,
+	)
+	if err != nil {
+		return err
+	}
+	c.Pricing.StrictModelMatchMode = strictModelMatchMode
+
 	if c.ModelCatalog.RefreshIntervalSeconds <= 0 {
 		return fmt.Errorf("model_catalog.refresh_interval_seconds must be positive")
 	}
@@ -3789,6 +3880,16 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("dingtalk_connect: %w", err)
 	}
 	return nil
+}
+
+func validatePricingAdmissionGuardMode(name, value string) (string, error) {
+	if strings.TrimSpace(value) == "" {
+		return PricingGuardModeEnforce, nil
+	}
+	if strings.EqualFold(strings.TrimSpace(value), PricingGuardModeEnforce) {
+		return PricingGuardModeEnforce, nil
+	}
+	return "", fmt.Errorf("%s must be enforce; online pricing admission cannot be disabled or shadowed", name)
 }
 
 func normalizeStringSlice(values []string) []string {

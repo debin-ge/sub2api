@@ -27,6 +27,7 @@ type windsurfMessagesForwarder interface {
 }
 
 type windsurfGatewayService interface {
+	specializedGatewayChannelMapper
 	GenerateSessionHash(parsed *service.ParsedRequest) string
 	SelectAccountWithLoadAwareness(ctx context.Context, groupID *int64, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}, metadataUserID string, sub2apiUserID int64) (*service.AccountSelectionResult, error)
 	RecordUsage(ctx context.Context, input *service.RecordUsageInput) error
@@ -134,7 +135,7 @@ func (h *WindsurfGatewayHandler) Messages(c *gin.Context) {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
 		return
 	}
-	reqModel := parsedReq.Model
+	reqModel := strings.TrimSpace(parsedReq.Model)
 	if reqModel == "" {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "model is required")
 		return
@@ -157,6 +158,9 @@ func (h *WindsurfGatewayHandler) Messages(c *gin.Context) {
 		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "windsurf gateway service unavailable")
 		return
 	}
+	channelMapping, forwardBody := resolveSpecializedGatewayChannelMapping(
+		c.Request.Context(), h.gatewayService, apiKey.GroupID, reqModel, body,
+	)
 
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
 	streamStarted := false
@@ -230,7 +234,7 @@ func (h *WindsurfGatewayHandler) Messages(c *gin.Context) {
 		}
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
-		result, err := h.windsurfService.ForwardMessages(c.Request.Context(), c, account, body, windsurfRequestID(c))
+		result, err := h.windsurfService.ForwardMessages(c.Request.Context(), c, account, forwardBody, windsurfRequestID(c))
 		releaseOnce()
 		if err != nil {
 			if c.Writer.Written() || streamStarted {
@@ -270,6 +274,7 @@ func (h *WindsurfGatewayHandler) Messages(c *gin.Context) {
 		inboundEndpoint := GetInboundEndpoint(c)
 		upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
 		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
+		channelUsageFields := clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel)
 
 		h.submitUsageRecordTask(func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
@@ -285,6 +290,7 @@ func (h *WindsurfGatewayHandler) Messages(c *gin.Context) {
 				IPAddress:          clientIP,
 				RequestPayloadHash: requestPayloadHash,
 				APIKeyService:      h.apiKeyService,
+				ChannelUsageFields: channelUsageFields,
 			}); err != nil {
 				logger.L().With(
 					zap.String("component", "handler.windsurf_gateway.messages"),
@@ -339,7 +345,7 @@ func (h *WindsurfGatewayHandler) ChatCompletions(c *gin.Context) {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
 		return
 	}
-	reqModel := parsedReq.Model
+	reqModel := strings.TrimSpace(parsedReq.Model)
 	if reqModel == "" {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "model is required")
 		return
@@ -363,6 +369,9 @@ func (h *WindsurfGatewayHandler) ChatCompletions(c *gin.Context) {
 		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "windsurf gateway service unavailable")
 		return
 	}
+	channelMapping, forwardBody := resolveSpecializedGatewayChannelMapping(
+		c.Request.Context(), h.gatewayService, apiKey.GroupID, reqModel, body,
+	)
 
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
 	streamStarted := false
@@ -436,7 +445,7 @@ func (h *WindsurfGatewayHandler) ChatCompletions(c *gin.Context) {
 		}
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
-		result, err := h.windsurfService.ForwardChatCompletions(c.Request.Context(), c, account, body, windsurfRequestID(c))
+		result, err := h.windsurfService.ForwardChatCompletions(c.Request.Context(), c, account, forwardBody, windsurfRequestID(c))
 		releaseOnce()
 		if err != nil {
 			if c.Writer.Written() || streamStarted {
@@ -476,6 +485,7 @@ func (h *WindsurfGatewayHandler) ChatCompletions(c *gin.Context) {
 		inboundEndpoint := GetInboundEndpoint(c)
 		upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
 		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
+		channelUsageFields := clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel)
 
 		h.submitUsageRecordTask(func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
@@ -491,6 +501,7 @@ func (h *WindsurfGatewayHandler) ChatCompletions(c *gin.Context) {
 				IPAddress:          clientIP,
 				RequestPayloadHash: requestPayloadHash,
 				APIKeyService:      h.apiKeyService,
+				ChannelUsageFields: channelUsageFields,
 			}); err != nil {
 				logger.L().With(
 					zap.String("component", "handler.windsurf_gateway.chat_completions"),
@@ -583,6 +594,9 @@ func (h *WindsurfGatewayHandler) Responses(c *gin.Context) {
 		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "windsurf gateway service unavailable")
 		return
 	}
+	channelMapping, forwardBody := resolveSpecializedGatewayChannelMapping(
+		c.Request.Context(), h.gatewayService, apiKey.GroupID, reqModel, body,
+	)
 
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
 	streamStarted := false
@@ -656,7 +670,7 @@ func (h *WindsurfGatewayHandler) Responses(c *gin.Context) {
 		}
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
-		result, err := h.windsurfService.ForwardResponses(c.Request.Context(), c, account, body, windsurfRequestID(c))
+		result, err := h.windsurfService.ForwardResponses(c.Request.Context(), c, account, forwardBody, windsurfRequestID(c))
 		releaseOnce()
 		if err != nil {
 			if c.Writer.Written() || streamStarted {
@@ -696,6 +710,7 @@ func (h *WindsurfGatewayHandler) Responses(c *gin.Context) {
 		inboundEndpoint := GetInboundEndpoint(c)
 		upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
 		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
+		channelUsageFields := clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel)
 
 		h.submitUsageRecordTask(func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
@@ -711,6 +726,7 @@ func (h *WindsurfGatewayHandler) Responses(c *gin.Context) {
 				IPAddress:          clientIP,
 				RequestPayloadHash: requestPayloadHash,
 				APIKeyService:      h.apiKeyService,
+				ChannelUsageFields: channelUsageFields,
 			}); err != nil {
 				logger.L().With(
 					zap.String("component", "handler.windsurf_gateway.responses"),
@@ -838,24 +854,12 @@ func (h *WindsurfGatewayHandler) errorResponse(c *gin.Context, status int, errTy
 }
 
 func (h *WindsurfGatewayHandler) submitUsageRecordTask(task service.UsageRecordTask) {
-	if task == nil {
-		return
-	}
-	if h.usageRecordWorkerPool != nil {
-		h.usageRecordWorkerPool.Submit(task)
-		return
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	defer func() {
-		if recovered := recover(); recovered != nil {
-			logger.L().With(
-				zap.String("component", "handler.windsurf_gateway.messages"),
-				zap.Any("panic", recovered),
-			).Error("windsurf_gateway.usage_record_task_panic_recovered")
-		}
-	}()
-	task(ctx)
+	submitUsageRecordTaskWithFallback(
+		context.Background(),
+		h.usageRecordWorkerPool,
+		"handler.windsurf_gateway.messages",
+		task,
+	)
 }
 
 func windsurfRequestID(c *gin.Context) string {

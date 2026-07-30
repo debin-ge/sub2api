@@ -40,6 +40,24 @@ func (s *AntigravityGatewayService) ForwardUpstream(ctx context.Context, c *gin.
 		return nil, fmt.Errorf("missing model")
 	}
 	originalModel := claudeReq.Model
+	imageIdentity, err := resolveGeminiImageBillingIdentity(originalModel, body)
+	if err != nil {
+		return nil, err
+	}
+	// AccountTypeUpstream is a byte-preserving Claude passthrough: unlike the
+	// OAuth Antigravity path it does not apply account model_mapping. Guard the
+	// exact model that remains in the body, otherwise scheduler admission can
+	// validate a mapped SKU while this function sends an unpriced one.
+	if err := s.validateResolvedAntigravityUsagePricing(
+		ctx,
+		c,
+		account,
+		originalModel,
+		originalModel,
+		imageIdentity,
+	); err != nil {
+		return nil, err
+	}
 
 	// 构建上游请求 URL
 	upstreamURL := baseURL + "/v1/messages"
@@ -142,6 +160,8 @@ func (s *AntigravityGatewayService) ForwardUpstream(ctx context.Context, c *gin.
 
 	return &ForwardResult{
 		Model:            originalModel,
+		UpstreamModel:    originalModel,
+		BillingModel:     imageIdentity.Model,
 		Stream:           claudeReq.Stream,
 		Duration:         duration,
 		FirstTokenMs:     firstTokenMs,
@@ -152,6 +172,9 @@ func (s *AntigravityGatewayService) ForwardUpstream(ctx context.Context, c *gin.
 			CacheReadInputTokens:     usage.CacheReadInputTokens,
 			CacheCreationInputTokens: usage.CacheCreationInputTokens,
 		},
+		ImageCount:     imageIdentity.Count,
+		ImageSize:      imageIdentity.SizeTier,
+		ImageInputSize: imageIdentity.InputSize,
 	}, nil
 }
 

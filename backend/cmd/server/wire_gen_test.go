@@ -283,6 +283,7 @@ func cleanupWithRadarTestDependencies(rdb *redis.Client, radarRunner *service.Ra
 		nil, // opsIngressReject
 		nil, // apiKeyService
 		nil, // authCacheInvalidationWorker
+		nil, // usageBillingOutboxWorker
 		nil, // schedulerSnapshot
 		tokenRefreshSvc,
 		service.NewAccountExpiryService(nil, time.Second),
@@ -306,6 +307,7 @@ func cleanupWithRadarTestDependencies(rdb *redis.Client, radarRunner *service.Ra
 		nil, // scheduledTestRunner
 		nil, // backupSvc
 		nil, // paymentOrderExpiry
+		nil, // billingRecovery
 		nil, // miniMaxRemainsSyncRunner
 		nil, // deepSeekBalanceHealthRunner
 		nil, // channelMonitorRunner
@@ -410,6 +412,7 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 		nil, // opsIngressRejectAggregator
 		nil, // apiKeyService
 		nil, // authCacheInvalidationWorker
+		nil, // usageBillingOutboxWorker
 		schedulerSnapshotSvc,
 		tokenRefreshSvc,
 		accountExpirySvc,
@@ -433,6 +436,7 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 		nil, // scheduledTestRunner
 		nil, // backupSvc
 		nil, // paymentOrderExpiry
+		nil, // billingRecovery
 		nil, // miniMaxRemainsSyncRunner
 		nil, // deepSeekBalanceHealthRunner
 		nil, // channelMonitorRunner

@@ -2,7 +2,10 @@ package service
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
+	"reflect"
 	"strings"
 	"time"
 
@@ -10,7 +13,34 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
+	"go.uber.org/zap"
 )
+
+// ErrDurableUsageBillingRequired is returned when usage settlement cannot enter
+// the atomic billing + usage-log durable path. Production must never fall back
+// to best-effort billing after an upstream request has already incurred cost.
+var ErrDurableUsageBillingRequired = errors.New("durable usage billing is required")
+
+func isNilUsageBillingRepository(repo UsageBillingRepository) bool {
+	return isNilInterfaceValue(repo)
+}
+
+// isNilInterfaceValue treats an interface containing a typed nil pointer as
+// nil. Dependency injection normally supplies concrete non-nil values, but a
+// typed nil must never turn the post-upstream durable billing path into a
+// panic before stage 0 is persisted.
+func isNilInterfaceValue(value any) bool {
+	if value == nil {
+		return true
+	}
+	reflected := reflect.ValueOf(value)
+	switch reflected.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return reflected.IsNil()
+	default:
+		return false
+	}
+}
 
 func (s *GatewayService) getUserGroupRateMultiplier(ctx context.Context, userID, groupID int64, groupDefaultMultiplier float64) float64 {
 	if s == nil {
@@ -212,7 +242,7 @@ func resolveUsageBillingRequestID(ctx context.Context, upstreamRequestID string)
 		}
 	}
 	if requestID := strings.TrimSpace(upstreamRequestID); requestID != "" {
-		return requestID
+		return "upstream:" + requestID
 	}
 	return "generated:" + generateRequestID()
 }
@@ -232,18 +262,28 @@ func resolveUsageBillingPayloadFingerprint(ctx context.Context, requestPayloadHa
 	return ""
 }
 
-func buildUsageBillingCommand(requestID string, usageLog *UsageLog, p *postUsageBillingParams) *UsageBillingCommand {
+func buildUsageBillingCommand(
+	ctx context.Context,
+	requestID string,
+	usageLog *UsageLog,
+	p *postUsageBillingParams,
+	deps *billingDeps,
+) *UsageBillingCommand {
 	if p == nil || p.Cost == nil || p.APIKey == nil || p.User == nil || p.Account == nil {
 		return nil
 	}
 
 	cmd := &UsageBillingCommand{
-		RequestID:          requestID,
-		APIKeyID:           p.APIKey.ID,
-		UserID:             p.User.ID,
-		AccountID:          p.Account.ID,
-		AccountType:        p.Account.Type,
-		RequestPayloadHash: strings.TrimSpace(p.RequestPayloadHash),
+		RequestID:             requestID,
+		APIKeyID:              p.APIKey.ID,
+		UserID:                p.User.ID,
+		AccountID:             p.Account.ID,
+		AccountType:           p.Account.Type,
+		RequestPayloadHash:    strings.TrimSpace(p.RequestPayloadHash),
+		Platform:              strings.TrimSpace(p.Platform),
+		ActualCost:            p.Cost.ActualCost,
+		TotalCost:             p.Cost.TotalCost,
+		IsSubscriptionBilling: p.IsSubscriptionBill,
 	}
 	if usageLog != nil {
 		cmd.Model = usageLog.Model
@@ -262,6 +302,16 @@ func buildUsageBillingCommand(requestID string, usageLog *UsageLog, p *postUsage
 		if usageLog.SubscriptionID != nil {
 			cmd.SubscriptionID = usageLog.SubscriptionID
 		}
+		if usageLog.GroupID != nil {
+			cmd.GroupID = usageLog.GroupID
+		}
+		cmd.OccurredAt = usageLog.CreatedAt
+	}
+	if cmd.GroupID == nil && p.APIKey.GroupID != nil {
+		cmd.GroupID = p.APIKey.GroupID
+	}
+	if cmd.OccurredAt.IsZero() {
+		cmd.OccurredAt = time.Now().UTC()
 	}
 
 	// Record subscription / balance cost using ActualCost so the group (and any
@@ -284,33 +334,163 @@ func buildUsageBillingCommand(requestID string, usageLog *UsageLog, p *postUsage
 	if p.shouldUpdateAccountQuota() {
 		cmd.AccountQuotaCost = p.Cost.TotalCost * p.AccountRateMultiplier
 	}
+	if !p.IsSubscriptionBill && cmd.Platform != "" && p.Cost.ActualCost > 0 {
+		snapshot, snapshotNeeded, track := captureUsageBillingPlatformQuotaSnapshot(
+			ctx,
+			p.User.ID,
+			cmd.Platform,
+			deps,
+		)
+		if track {
+			cmd.PlatformQuotaCost = p.Cost.ActualCost
+			cmd.PlatformQuotaSnapshot = snapshot
+			cmd.PlatformQuotaSnapshotNeeded = snapshotNeeded
+		}
+	}
 
 	cmd.Normalize()
 	return cmd
 }
 
-func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog, p *postUsageBillingParams, deps *billingDeps, repo UsageBillingRepository) (bool, error) {
-	if p == nil || deps == nil {
-		return false, nil
+func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog, p *postUsageBillingParams, deps *billingDeps, repo UsageBillingRepository) (applied bool, usageLogRecorded bool, err error) {
+	allowLegacy := deps != nil && deps.allowLegacyUsageBillingForTests
+	if p == nil {
+		if allowLegacy {
+			return false, false, nil
+		}
+		return false, false, fmt.Errorf("%w: billing params are nil", ErrDurableUsageBillingRequired)
+	}
+	if deps == nil {
+		return false, false, fmt.Errorf("%w: billing dependencies are nil", ErrDurableUsageBillingRequired)
 	}
 
-	cmd := buildUsageBillingCommand(requestID, usageLog, p)
-	if cmd == nil || cmd.RequestID == "" || repo == nil {
+	cmd := buildUsageBillingCommand(ctx, requestID, usageLog, p, deps)
+	if cmd == nil {
+		if !allowLegacy {
+			return false, false, fmt.Errorf("%w: billing command is unavailable", ErrDurableUsageBillingRequired)
+		}
 		postUsageBilling(ctx, p, deps)
-		return true, nil
+		return true, false, nil
+	}
+	if cmd.RequestID == "" {
+		if !allowLegacy {
+			return false, false, fmt.Errorf("%w: billing request id is empty", ErrDurableUsageBillingRequired)
+		}
+		postUsageBilling(ctx, p, deps)
+		return true, false, nil
+	}
+	if usageLog == nil && !allowLegacy {
+		return false, false, fmt.Errorf("%w: usage log is nil", ErrDurableUsageBillingRequired)
+	}
+	if isNilUsageBillingRepository(repo) {
+		if !allowLegacy {
+			return false, false, fmt.Errorf("%w: billing repository is nil", ErrDurableUsageBillingRequired)
+		}
+		postUsageBilling(ctx, p, deps)
+		return true, false, nil
 	}
 
 	billingCtx, cancel := detachedBillingContext(ctx)
 	defer cancel()
 
-	result, err := repo.Apply(billingCtx, cmd)
+	var (
+		result      *UsageBillingApplyResult
+		durableRepo DurableUsageBillingRepository
+	)
+	if candidate, ok := repo.(DurableUsageBillingRepository); ok && usageLog != nil {
+		durableRepo = candidate
+		result, err = durableRepo.ApplyAndRecord(billingCtx, cmd, usageLog)
+	} else {
+		if !allowLegacy {
+			return false, false, fmt.Errorf(
+				"%w: repository %T does not implement DurableUsageBillingRepository",
+				ErrDurableUsageBillingRequired,
+				repo,
+			)
+		}
+		result, err = repo.Apply(billingCtx, cmd)
+	}
 	if err != nil {
-		return false, err
+		return false, false, err
+	}
+	if result == nil {
+		return false, false, fmt.Errorf(
+			"%w: repository %T returned a nil settlement result",
+			ErrDurableUsageBillingRequired,
+			repo,
+		)
+	}
+	if durableRepo != nil {
+		if !result.UsageLogRecorded {
+			return false, false, fmt.Errorf(
+				"%w: durable repository %T did not record the usage log",
+				ErrDurableUsageBillingRequired,
+				repo,
+			)
+		}
+		if result.OutboxReceipt == nil ||
+			result.OutboxReceipt.ID <= 0 ||
+			strings.TrimSpace(result.OutboxReceipt.WorkerID) == "" {
+			// ApplyAndRecord may already have committed billing at this point.
+			// Without a valid receipt the inline path cannot safely finalize and
+			// acknowledge that staged fact. Returning success (or falling into
+			// the legacy finalizer) would leave the outbox to replay projections
+			// and notifications later with no explicit hand-off.
+			return false, false, fmt.Errorf(
+				"%w: durable repository %T returned an invalid outbox receipt",
+				ErrDurableUsageBillingRequired,
+				repo,
+			)
+		}
 	}
 
-	if result == nil || !result.Applied {
-		deps.deferredService.ScheduleLastUsedUpdate(p.Account.ID)
-		return false, nil
+	if !result.Applied {
+		usageLogRecorded = result.UsageLogRecorded
+		if result.ProjectionRepairRequired &&
+			durableRepo != nil &&
+			result.OutboxReceipt != nil {
+			if finalizeErr := finalizeDurablePostUsageBilling(
+				billingCtx,
+				cmd,
+				p,
+				deps,
+				result,
+			); finalizeErr != nil {
+				releaseUsageBillingOutboxAfterPostEffectFailure(
+					durableRepo,
+					result.OutboxReceipt,
+					finalizeErr,
+				)
+				return false, usageLogRecorded, finalizeErr
+			}
+		} else if deps.deferredService != nil && p.Account != nil {
+			deps.deferredService.ScheduleLastUsedUpdate(p.Account.ID)
+		}
+		if durableRepo != nil && result.OutboxReceipt != nil {
+			if ackErr := durableRepo.AcknowledgeUsageBillingOutbox(
+				billingCtx,
+				result.OutboxReceipt.WorkerID,
+				result.OutboxReceipt.ID,
+			); ackErr != nil {
+				return false, usageLogRecorded, ackErr
+			}
+		}
+		return false, usageLogRecorded, nil
+	}
+
+	if durableRepo != nil && result.OutboxReceipt != nil {
+		if err := finalizeDurablePostUsageBilling(billingCtx, cmd, p, deps, result); err != nil {
+			releaseUsageBillingOutboxAfterPostEffectFailure(durableRepo, result.OutboxReceipt, err)
+			return false, result.UsageLogRecorded, err
+		}
+		if err := durableRepo.AcknowledgeUsageBillingOutbox(
+			billingCtx,
+			result.OutboxReceipt.WorkerID,
+			result.OutboxReceipt.ID,
+		); err != nil {
+			return false, result.UsageLogRecorded, err
+		}
+		return true, result.UsageLogRecorded, nil
 	}
 
 	if result.APIKeyQuotaExhausted {
@@ -320,7 +500,31 @@ func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog
 	}
 
 	finalizePostUsageBilling(billingCtx, p, deps, result)
-	return true, nil
+	return true, result.UsageLogRecorded, nil
+}
+
+func releaseUsageBillingOutboxAfterPostEffectFailure(
+	repo DurableUsageBillingRepository,
+	receipt *UsageBillingOutboxReceipt,
+	cause error,
+) {
+	if repo == nil || receipt == nil {
+		return
+	}
+	retryCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err := repo.RetryUsageBillingOutbox(
+		retryCtx,
+		receipt.WorkerID,
+		receipt.ID,
+		time.Now().UTC().Add(time.Second),
+		boundedUsageBillingOutboxError(cause),
+	); err != nil {
+		slog.Error("release usage billing outbox after post-effect failure failed",
+			"outbox_id", receipt.ID,
+			"error", err,
+		)
+	}
 }
 
 func finalizePostUsageBilling(ctx context.Context, p *postUsageBillingParams, deps *billingDeps, result *UsageBillingApplyResult) {
@@ -507,24 +711,32 @@ type billingDeps struct {
 	balanceNotifyService  *BalanceNotifyService
 	userPlatformQuotaRepo UserPlatformQuotaRepository
 	cfg                   *config.Config
+	// Test-only escape hatch for lightweight repository stubs. Production
+	// constructors must leave this false so settlement always uses the durable
+	// atomic billing + usage-log path.
+	allowLegacyUsageBillingForTests bool
 }
 
 func (s *GatewayService) billingDeps() *billingDeps {
 	return &billingDeps{
-		accountRepo:           s.accountRepo,
-		userRepo:              s.userRepo,
-		userSubRepo:           s.userSubRepo,
-		billingCacheService:   s.billingCacheService,
-		deferredService:       s.deferredService,
-		balanceNotifyService:  s.balanceNotifyService,
-		userPlatformQuotaRepo: s.userPlatformQuotaRepo,
-		cfg:                   s.cfg,
+		accountRepo:                     s.accountRepo,
+		userRepo:                        s.userRepo,
+		userSubRepo:                     s.userSubRepo,
+		billingCacheService:             s.billingCacheService,
+		deferredService:                 s.deferredService,
+		balanceNotifyService:            s.balanceNotifyService,
+		userPlatformQuotaRepo:           s.userPlatformQuotaRepo,
+		cfg:                             s.cfg,
+		allowLegacyUsageBillingForTests: s.allowLegacyUsageBillingForTests,
 	}
 }
 
-func writeUsageLogBestEffort(ctx context.Context, repo UsageLogRepository, usageLog *UsageLog, logKey string) {
-	if repo == nil || usageLog == nil {
-		return
+func writeUsageLogBestEffort(ctx context.Context, repo UsageLogRepository, usageLog *UsageLog, logKey string) error {
+	if isNilInterfaceValue(repo) {
+		return fmt.Errorf("%w: usage log repository is nil", ErrDurableUsageBillingRequired)
+	}
+	if usageLog == nil {
+		return fmt.Errorf("%w: usage log is nil", ErrDurableUsageBillingRequired)
 	}
 	usageCtx, cancel := detachedBillingContext(ctx)
 	defer cancel()
@@ -544,14 +756,20 @@ func writeUsageLogBestEffort(ctx context.Context, repo UsageLogRepository, usage
 			}
 			if _, syncErr := repo.Create(fallbackCtx, usageLog); syncErr != nil {
 				logger.LegacyPrintf(logKey, "Create usage log sync fallback failed: %v", syncErr)
+				return errors.Join(
+					fmt.Errorf("create usage log best-effort: %w", err),
+					fmt.Errorf("create usage log sync fallback: %w", syncErr),
+				)
 			}
 		}
-		return
+		return nil
 	}
 
 	if _, err := repo.Create(usageCtx, usageLog); err != nil {
 		logger.LegacyPrintf(logKey, "Create usage log failed: %v", err)
+		return fmt.Errorf("create usage log: %w", err)
 	}
+	return nil
 }
 
 // recordUsageOpts 内部选项，参数化普通计费与长上下文计费的差异点。
@@ -563,6 +781,12 @@ type recordUsageOpts struct {
 
 // RecordUsage 记录使用量并扣费（或更新订阅用量）
 func (s *GatewayService) RecordUsage(ctx context.Context, input *RecordUsageInput) error {
+	if s == nil {
+		return fmt.Errorf("%w: gateway service is nil", ErrDurableUsageBillingRequired)
+	}
+	if input == nil {
+		return fmt.Errorf("%w: gateway usage input is nil", ErrDurableUsageBillingRequired)
+	}
 	return s.recordUsageCore(ctx, &recordUsageCoreInput{
 		Result:             input.Result,
 		APIKey:             input.APIKey,
@@ -606,6 +830,12 @@ type RecordUsageLongContextInput struct {
 
 // RecordUsageWithLongContext 记录使用量并扣费，支持长上下文双倍计费（用于 Gemini）
 func (s *GatewayService) RecordUsageWithLongContext(ctx context.Context, input *RecordUsageLongContextInput) error {
+	if s == nil {
+		return fmt.Errorf("%w: gateway service is nil", ErrDurableUsageBillingRequired)
+	}
+	if input == nil {
+		return fmt.Errorf("%w: gateway long-context usage input is nil", ErrDurableUsageBillingRequired)
+	}
 	return s.recordUsageCore(ctx, &recordUsageCoreInput{
 		Result:             input.Result,
 		APIKey:             input.APIKey,
@@ -650,6 +880,28 @@ type recordUsageCoreInput struct {
 // recordUsageCore 是 RecordUsage 和 RecordUsageWithLongContext 的统一实现。
 // LongContextThreshold > 0 时 Token 计费回退走 CalculateCostWithLongContext。
 func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsageCoreInput, opts *recordUsageOpts) error {
+	if s == nil {
+		return fmt.Errorf("%w: gateway service is nil", ErrDurableUsageBillingRequired)
+	}
+	if input == nil {
+		return fmt.Errorf("%w: gateway usage input is nil", ErrDurableUsageBillingRequired)
+	}
+	if input.Result == nil {
+		return fmt.Errorf("%w: gateway usage result is nil", ErrDurableUsageBillingRequired)
+	}
+	if input.APIKey == nil {
+		return fmt.Errorf("%w: gateway usage API key is nil", ErrDurableUsageBillingRequired)
+	}
+	if input.User == nil {
+		return fmt.Errorf("%w: gateway usage user is nil", ErrDurableUsageBillingRequired)
+	}
+	if input.Account == nil {
+		return fmt.Errorf("%w: gateway usage account is nil", ErrDurableUsageBillingRequired)
+	}
+	if s.billingService == nil {
+		return fmt.Errorf("%w: gateway billing service is nil", ErrDurableUsageBillingRequired)
+	}
+
 	result := input.Result
 	apiKey := input.APIKey
 	user := input.User
@@ -687,30 +939,74 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 	// 不并入上面的 getUserGroupRateMultiplier，以免污染 user:group 倍率缓存。
 	multiplier, imageMultiplier := computePeakAwareMultipliers(apiKey, multiplier, timezone.Now())
 
-	// 确定实际计费模型。MiniMax 必须按真实上游模型计费，避免别名绕过价格校验。
+	// 确定实际计费模型。BillingModelSource=upstream 必须以 ForwardResult
+	// 记录的真实上游模型为准；MiniMax 仍无条件按真实上游模型计费。
 	concreteBillingModel := recordUsageBillingModel(result, account)
 	billingModel := concreteBillingModel
-	if account == nil || !account.IsMiniMax() {
-		if input.BillingModelSource == BillingModelSourceChannelMapped && input.ChannelMappedModel != "" {
-			billingModel = input.ChannelMappedModel
+	lockedMediaBillingModel := ""
+	if result.ImageCount > 0 {
+		lockedMediaBillingModel = strings.TrimSpace(result.BillingModel)
+	}
+	if lockedMediaBillingModel != "" {
+		// Responses native image tools have their own pre-admitted SKU. The
+		// channel source fields describe only the top-level text model and are
+		// therefore not allowed to replace this media identity.
+		billingModel = lockedMediaBillingModel
+	} else {
+		// 来源 → 用哪个模型名查价的映射表与准入守卫共用，见 billing_model_selection.go。
+		// 结算这一侧的空值策略与准入相反：名字为空要回落到具体模型，把记录落下来（I2）。
+		if selected, ok := selectBillingModelBySource(
+			input.BillingModelSource,
+			input.OriginalModel,
+			input.ChannelMappedModel,
+			result.UpstreamModel,
+		); ok && selected != "" {
+			// MiniMax 无条件按真实上游模型计费，来源声明的别名不能盖掉它；
+			// upstream 来源选的本来就是上游模型，不受这条例外影响。
+			if input.BillingModelSource == BillingModelSourceUpstream || account == nil || !account.IsMiniMax() {
+				billingModel = selected
+			}
 		}
-		if input.BillingModelSource == BillingModelSourceRequested && input.OriginalModel != "" {
-			billingModel = input.OriginalModel
+	}
+	// 准入守卫按同一张映射表验过的就是这个名字。下面 composite 与通用兜底的改写都会
+	// 让结算离开它，漂移哨兵据此判断（billing_model_selection.go）。
+	admittedBillingModel := billingModel
+	if result.ImageCount > 0 {
+		// 图片专用 SKU 可能只有按张价格、没有 token 价格。若继续复用 token
+		// 探测，它会被误判为“无价”并改写成上游文本模型，最终按错误 SKU
+		// 结算或进入待结算。图片候选必须按本次实际尺寸检查严格媒体价格。
+		if lockedMediaBillingModel == "" {
+			if apiKey != nil && apiKey.Group != nil && apiKey.Group.Platform == PlatformComposite {
+				billingModel = s.compositeImageBillableModel(
+					ctx,
+					apiKey,
+					billingModel,
+					concreteBillingModel,
+					result.ImageSize,
+				)
+			}
+			billingModel = s.billableImageModelWithFallback(
+				ctx,
+				apiKey,
+				billingModel,
+				result.ImageSize,
+				result.UpstreamModel,
+				result.Model,
+			)
 		}
+	} else {
+		// composite 分组的公开别名（如 all/claude）会经 OriginalModel/ChannelMappedModel
+		// 进入上面的来源覆盖：任意别名查无价会静默落 $0，含家族词的别名则被价格表的
+		// 家族模糊匹配错计（如 Opus 流量按 Sonnet 兜底价）。除非管理员为别名显式配置了
+		// 渠道定价（OpenRouter 式自定价），composite 请求一律按实际转发的具体模型计费。
+		if apiKey != nil && apiKey.Group != nil && apiKey.Group.Platform == PlatformComposite {
+			billingModel = s.compositeBillableModel(ctx, apiKey, billingModel, concreteBillingModel)
+		}
+		// 通用 token 兜底（与 OpenAI 路径的 usageBillingModelCandidates 语义对齐）：
+		// 选定模型没有严格价格时回退到实际转发的具体模型。
+		billingModel = s.billableModelWithFallback(ctx, apiKey, billingModel, result.UpstreamModel, result.Model)
 	}
-	if err := s.validateMiniMaxUsagePricing(ctx, billingModel, apiKey, account, multiplier); err != nil {
-		return err
-	}
-	// composite 分组的公开别名（如 all/claude）会经 OriginalModel/ChannelMappedModel
-	// 进入上面的来源覆盖：任意别名查无价会静默落 $0，含家族词的别名则被价格表的
-	// 家族模糊匹配错计（如 Opus 流量按 Sonnet 兜底价）。除非管理员为别名显式配置了
-	// 渠道定价（OpenRouter 式自定价），composite 请求一律按实际转发的具体模型计费。
-	if apiKey != nil && apiKey.Group != nil && apiKey.Group.Platform == PlatformComposite {
-		billingModel = s.compositeBillableModel(ctx, apiKey, billingModel, concreteBillingModel)
-	}
-	// 通用兜底（与 OpenAI 路径的 usageBillingModelCandidates 语义对齐）：
-	// 选定模型查不到任何价格时回退到实际转发的具体模型。已定价流量不受影响。
-	billingModel = s.billableModelWithFallback(ctx, apiKey, billingModel, result.UpstreamModel, result.Model)
+	s.reportBillingModelDrift(apiKey, account, input.BillingModelSource, admittedBillingModel, billingModel, result)
 
 	// 确定 RequestedModel（渠道映射前的原始模型）
 	requestedModel := result.Model
@@ -718,8 +1014,34 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 		requestedModel = input.OriginalModel
 	}
 
-	// 计算费用
-	cost := s.calculateRecordUsageCost(ctx, result, apiKey, billingModel, multiplier, imageMultiplier, opts)
+	// 计算费用。定价缺失的 fail-closed 属于准入层（转发前拒绝）；走到这里说明
+	// 上游成本已经真实发生，丢弃整条记录会连用量、配额计数和对账线索一起丢掉。
+	// 因此改为 fail-loud：不扣费、标记为待结算、照常落库并告警。
+	// 非定价错误（依赖故障等）仍然上抛，重试有意义。
+	simpleMode := s.cfg != nil && s.cfg.RunMode == config.RunModeSimple
+	billingState := BillingStateSettled
+	cost, costErr := s.calculateRecordUsageCost(ctx, result, apiKey, billingModel, multiplier, imageMultiplier, opts)
+	if costErr != nil {
+		unpriced, fatal := classifyRecordUsageCostError(costErr)
+		if fatal != nil {
+			return fatal
+		}
+		if unpriced {
+			billingState = BillingStatePricingUnavailable
+			// 该路径暂未接入显式 BillingKind，沿用按上游计数反推。
+			cost = unpricedCostBreakdown(BillingKindUnspecified, result.ImageCount, 0)
+			logPricingUnavailableUsage("service.gateway", simpleMode, costErr,
+				zap.String("billing_model", billingModel),
+				zap.String("requested_model", requestedModel),
+				zap.String("mapped_model", input.ChannelMappedModel),
+				zap.String("upstream_model", result.UpstreamModel),
+				zap.String("billing_model_source", input.BillingModelSource),
+				zap.String("platform", accountPlatformForLog(account)),
+				zap.Int64("api_key_id", apiKeyIDForLog(apiKey)),
+				zap.Int64("account_id", accountIDForLog(account)),
+			)
+		}
+	}
 
 	// 判断计费方式：订阅模式 vs 余额模式
 	isSubscriptionBilling := subscription != nil && apiKey != nil && apiKey.Group != nil && apiKey.Group.IsSubscriptionType()
@@ -731,7 +1053,8 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 	// 创建使用日志
 	accountRateMultiplier := account.BillingRateMultiplier()
 	usageLog := s.buildRecordUsageLog(ctx, input, result, apiKey, user, account, subscription,
-		requestedModel, multiplier, imageMultiplier, accountRateMultiplier, billingType, cacheTTLOverridden, cost, opts)
+		requestedModel, billingModel, multiplier, imageMultiplier, accountRateMultiplier, billingType, cacheTTLOverridden, cost, opts)
+	usageLog.BillingState = billingState
 
 	// 计算账号统计定价费用（使用最终上游模型匹配自定义规则）
 	if apiKey != nil && apiKey.GroupID != nil {
@@ -750,8 +1073,10 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 		)
 	}
 
-	if s.cfg != nil && s.cfg.RunMode == config.RunModeSimple {
-		writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.gateway")
+	if simpleMode {
+		if err := writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.gateway"); err != nil {
+			return err
+		}
 		logger.LegacyPrintf("service.gateway", "[SIMPLE MODE] Usage recorded (not billed): user=%d, tokens=%d", usageLog.UserID, usageLog.TotalTokens())
 		s.deferredService.ScheduleLastUsedUpdate(account.ID)
 		return nil
@@ -768,7 +1093,7 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 		}
 	}
 	requestID := usageLog.RequestID
-	_, billingErr := applyUsageBilling(ctx, requestID, usageLog, &postUsageBillingParams{
+	_, usageLogRecorded, billingErr := applyUsageBilling(ctx, requestID, usageLog, &postUsageBillingParams{
 		Cost:                  cost,
 		User:                  user,
 		APIKey:                apiKey,
@@ -784,7 +1109,11 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 	if billingErr != nil {
 		return billingErr
 	}
-	writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.gateway")
+	if !usageLogRecorded {
+		if err := writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.gateway"); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
@@ -798,7 +1127,7 @@ func (s *GatewayService) calculateRecordUsageCost(
 	multiplier float64,
 	imageMultiplier float64,
 	opts *recordUsageOpts,
-) *CostBreakdown {
+) (*CostBreakdown, error) {
 	// 图片生成：渠道定价为 token 计费时走 token 路径，否则走图片计费
 	if result.ImageCount > 0 {
 		if resolved := s.resolveChannelPricing(ctx, billingModel, apiKey); resolved != nil && resolved.Mode == BillingModeToken {
@@ -826,9 +1155,37 @@ func (s *GatewayService) compositeBillableModel(ctx context.Context, apiKey *API
 	return concreteBillingModel
 }
 
+// compositeImageBillableModel is the media counterpart of
+// compositeBillableModel. An exact image-only catalog SKU is a valid billing
+// identity even when it has no token price, so the token-oriented composite
+// helper must not rewrite it to the top-level text model.
+func (s *GatewayService) compositeImageBillableModel(
+	ctx context.Context,
+	apiKey *APIKey,
+	billingModel string,
+	concreteBillingModel string,
+	imageSize string,
+) string {
+	if concreteBillingModel == "" || billingModel == concreteBillingModel {
+		return billingModel
+	}
+	if s.hasResolvableImagePricing(ctx, billingModel, imageSize, apiKey) {
+		return billingModel
+	}
+	logger.LegacyPrintf(
+		"service.gateway",
+		"[Billing] composite image billing model %q has no strict pricing for tier %q, billing by concrete model %q",
+		billingModel,
+		NormalizeImageBillingTierOrDefault(imageSize),
+		concreteBillingModel,
+	)
+	return concreteBillingModel
+}
+
 // billableModelWithFallback 在选定计费模型（可能是 composite 公开别名或未定价的映射名）
-// 查不到任何价格（渠道价与全局价均无）时，按序回退到实际转发的具体模型，避免静默 $0 计费。
-// 所有候选都无价时保持原值，走既有的 warn + 零成本路径。
+// 查不到严格价格（完整显式渠道价或模型自己的全局价）时，按序回退到实际转发的
+// 具体模型，避免把另一个 SKU 的 family 模糊价套到当前用量上。所有候选都无价时
+// 保持原值，由后扣阶段 fail-loud 并持久化为待结算。
 func (s *GatewayService) billableModelWithFallback(ctx context.Context, apiKey *APIKey, billingModel string, fallbacks ...string) string {
 	if s.hasResolvableTokenPricing(ctx, billingModel, apiKey) {
 		return billingModel
@@ -846,18 +1203,120 @@ func (s *GatewayService) billableModelWithFallback(ctx context.Context, apiKey *
 	return billingModel
 }
 
-// hasResolvableTokenPricing 判断模型是否能在渠道定价或全局价格表中解析出 token 价格。
+// billableImageModelWithFallback applies the same fallback policy using the
+// actual media tier. It deliberately does not ask the token catalog first:
+// image-only SKUs commonly have no token price.
+func (s *GatewayService) billableImageModelWithFallback(
+	ctx context.Context,
+	apiKey *APIKey,
+	billingModel string,
+	imageSize string,
+	fallbacks ...string,
+) string {
+	if s.hasResolvableImagePricing(ctx, billingModel, imageSize, apiKey) {
+		return billingModel
+	}
+	for _, fallback := range fallbacks {
+		fallback = strings.TrimSpace(fallback)
+		if fallback == "" || fallback == billingModel {
+			continue
+		}
+		if s.hasResolvableImagePricing(ctx, fallback, imageSize, apiKey) {
+			logger.LegacyPrintf(
+				"service.gateway",
+				"[Billing] image billing model %q has no strict pricing for tier %q, falling back to concrete model %q",
+				billingModel,
+				NormalizeImageBillingTierOrDefault(imageSize),
+				fallback,
+			)
+			return fallback
+		}
+	}
+	return billingModel
+}
+
+func (s *GatewayService) hasResolvableImagePricing(
+	ctx context.Context,
+	model string,
+	imageSize string,
+	apiKey *APIKey,
+) bool {
+	model = strings.TrimSpace(model)
+	if model == "" || s == nil || s.billingService == nil {
+		return false
+	}
+	tier, err := NormalizeImageBillingTierStrictOrDefault(imageSize)
+	if err != nil {
+		// Admission must never prove an explicit future/malformed tier by
+		// silently borrowing the documented 2K default. Empty/auto still map
+		// to that default inside the strict helper.
+		return false
+	}
+
+	resolved := s.resolveChannelPricing(ctx, model, apiKey)
+	if resolved != nil && resolved.Mode == BillingModeToken {
+		// A channel explicitly choosing token billing must satisfy strict
+		// token pricing; do not silently switch that request to image mode.
+		return s.hasResolvableTokenPricing(ctx, model, apiKey)
+	}
+
+	// A group media price is a complete price source for this exact tier and
+	// intentionally applies independently of the model catalog.
+	if apiKey != nil && apiKey.Group != nil &&
+		validConfiguredPrice(apiKey.Group.GetImagePrice(tier)) {
+		return true
+	}
+
+	if resolved != nil {
+		if resolved.Mode == BillingModePerRequest || resolved.Mode == BillingModeImage {
+			price, found := s.resolver.LookupRequestTierPrice(resolved, tier)
+			if !found && resolved.DefaultPerRequestPriceSet {
+				price = resolved.DefaultPerRequestPrice
+				found = true
+			}
+			if found && isFiniteNonNegativePrice(price) {
+				return true
+			}
+			// calculateImageCost deliberately falls through to the strict
+			// catalog when a channel tier is missing, so do the same here.
+		}
+	}
+
+	_, ok := s.billingService.strictImageUnitPrice(model, tier, nil)
+	return ok
+}
+
+// hasResolvableTokenPricing only accepts a complete explicit channel price or
+// a strict global match for the model itself. Cross-SKU family/OpenAI inference
+// is not settlement evidence.
 func (s *GatewayService) hasResolvableTokenPricing(ctx context.Context, model string, apiKey *APIKey) bool {
 	if strings.TrimSpace(model) == "" {
 		return false
 	}
-	if s.resolveChannelPricing(ctx, model, apiKey) != nil {
-		return true
+	if s.channelService != nil && apiKey != nil && apiKey.GroupID != nil {
+		if pricing := s.channelService.GetChannelModelPricing(ctx, *apiKey.GroupID, model); pricing != nil {
+			mode := pricing.BillingMode
+			if mode == BillingModePerRequest || mode == BillingModeImage {
+				// 非 token 模式会完全替换全局 token 价，不能在缺少默认按次价时
+				// 再用全局价格“放行”，否则实际后扣的 tier miss 仍会免费。
+				return validConfiguredPrice(pricing.PerRequestPrice)
+			}
+			// A partial non-negative token override may safely inherit the global
+			// price below. Invalid stored values must not: otherwise admission can
+			// pass on the global SKU and post-billing can apply a negative/Inf
+			// channel override.
+			if channelTokenPricingHasInvalidPrice(pricing) {
+				return false
+			}
+			if channelTokenPricingConfigured(pricing) {
+				return true
+			}
+		}
 	}
 	if s.billingService == nil {
 		return false
 	}
-	_, err := s.billingService.GetModelPricing(model)
+	_, err := s.billingService.GetModelPricingStrict(model)
 	return err == nil
 }
 
@@ -882,11 +1341,16 @@ func (s *GatewayService) calculateImageCost(
 	apiKey *APIKey,
 	billingModel string,
 	multiplier float64,
-) *CostBreakdown {
-	sizeTier := NormalizeImageBillingTierOrDefault(result.ImageSize)
+) (*CostBreakdown, error) {
+	sizeTier, err := NormalizeImageBillingTierStrictOrDefault(result.ImageSize)
+	if err != nil {
+		return nil, err
+	}
 	groupConfig := imagePriceConfigFromAPIKey(apiKey)
 	if apiKeyHasConfiguredImagePrice(apiKey, sizeTier) {
-		return s.billingService.CalculateImageCost(billingModel, sizeTier, result.ImageCount, groupConfig, multiplier)
+		return s.billingService.CalculateImageCostStrict(
+			billingModel, sizeTier, result.ImageCount, groupConfig, multiplier,
+		)
 	}
 	if resolved := s.resolveChannelPricing(ctx, billingModel, apiKey); resolved != nil {
 		tokens := UsageTokens{
@@ -907,13 +1371,20 @@ func (s *GatewayService) calculateImageCost(
 			Resolved:       resolved,
 		})
 		if err != nil {
-			logger.LegacyPrintf("service.gateway", "Calculate image token cost failed: %v", err)
-			return &CostBreakdown{ActualCost: 0}
+			// 上游成本已经发生，但渠道实际 tier 无价时不能用通用 $0.134
+			// 占位数伪装成正常结算。继续检查严格模型目录；仍无价则由上层
+			// fail-loud 路径记录 billing_state=pricing_unavailable。
+			logger.LegacyPrintf("service.gateway", "Calculate image channel cost failed, checking strict catalog price: %v", err)
+			return s.billingService.CalculateImageCostStrict(
+				billingModel, sizeTier, result.ImageCount, groupConfig, multiplier,
+			)
 		}
-		return cost
+		return cost, nil
 	}
 
-	return s.billingService.CalculateImageCost(billingModel, sizeTier, result.ImageCount, groupConfig, multiplier)
+	return s.billingService.CalculateImageCostStrict(
+		billingModel, sizeTier, result.ImageCount, groupConfig, multiplier,
+	)
 }
 
 // calculateTokenCost 计算 Token 计费：根据 opts 决定走普通/长上下文/渠道统一计费。
@@ -924,7 +1395,7 @@ func (s *GatewayService) calculateTokenCost(
 	billingModel string,
 	multiplier float64,
 	opts *recordUsageOpts,
-) *CostBreakdown {
+) (*CostBreakdown, error) {
 	tokens := UsageTokens{
 		InputTokens:           result.Usage.InputTokens,
 		OutputTokens:          result.Usage.OutputTokens,
@@ -935,13 +1406,29 @@ func (s *GatewayService) calculateTokenCost(
 		ImageOutputTokens:     result.Usage.ImageOutputTokens,
 	}
 
-	var cost *CostBreakdown
-	var err error
+	if s == nil || s.billingService == nil {
+		return nil, fmt.Errorf("%w: gateway billing service unavailable", ErrModelPricingUnavailable)
+	}
 
-	// 优先尝试渠道定价 → CalculateCostUnified
+	// 渠道定价仍然优先，但价格证据必须使用 ResolveStrictToken：
+	// 部分渠道覆盖只能叠加在当前模型自己的全局价上；完整显式渠道价可以独立结算。
 	if resolved := s.resolveChannelPricing(ctx, billingModel, apiKey); resolved != nil {
+		if s.resolver == nil || apiKey == nil || apiKey.Group == nil {
+			return nil, fmt.Errorf(
+				"%w for model %q: channel pricing resolver unavailable",
+				ErrModelPricingUnavailable,
+				billingModel,
+			)
+		}
 		gid := apiKey.Group.ID
-		cost, err = s.billingService.CalculateCostUnified(CostInput{
+		strictResolved, err := s.resolver.ResolveStrictToken(ctx, PricingInput{
+			Model:   billingModel,
+			GroupID: &gid,
+		})
+		if err != nil {
+			return nil, err
+		}
+		cost, err := s.billingService.CalculateCostUnified(CostInput{
 			Ctx:            ctx,
 			Model:          billingModel,
 			GroupID:        &gid,
@@ -949,19 +1436,139 @@ func (s *GatewayService) calculateTokenCost(
 			RequestCount:   1,
 			RateMultiplier: multiplier,
 			Resolver:       s.resolver,
-			Resolved:       resolved,
+			Resolved:       strictResolved,
 		})
-	} else if opts.LongContextThreshold > 0 {
-		// 长上下文双倍计费（如 Gemini 200K 阈值）
-		cost, err = s.billingService.CalculateCostWithLongContext(billingModel, tokens, multiplier, opts.LongContextThreshold, opts.LongContextMultiplier)
-	} else {
-		cost, err = s.billingService.CalculateCost(billingModel, tokens, multiplier)
+		if err != nil {
+			logger.LegacyPrintf("service.gateway", "Calculate strict channel cost failed: %v", err)
+			return nil, err
+		}
+		return cost, nil
 	}
+
+	pricing, err := s.billingService.GetModelPricingStrict(billingModel)
 	if err != nil {
-		logger.LegacyPrintf("service.gateway", "Calculate cost failed: %v", err)
-		return &CostBreakdown{ActualCost: 0}
+		logger.LegacyPrintf("service.gateway", "Resolve strict model pricing failed: %v", err)
+		return nil, err
 	}
-	return cost
+	cost, err := s.calculateStrictTokenCostWithLongContext(
+		billingModel,
+		pricing,
+		tokens,
+		multiplier,
+		opts,
+	)
+	if err != nil {
+		return nil, err
+	}
+	cost.BillingMode = string(BillingModeToken)
+	return cost, nil
+}
+
+func (s *GatewayService) calculateStrictTokenCostWithLongContext(
+	model string,
+	pricing *ModelPricing,
+	tokens UsageTokens,
+	rateMultiplier float64,
+	opts *recordUsageOpts,
+) (*CostBreakdown, error) {
+	if opts == nil || opts.LongContextThreshold <= 0 || opts.LongContextMultiplier <= 1 {
+		return s.billingService.computeTokenBreakdownValidated(
+			model,
+			pricing,
+			tokens,
+			rateMultiplier,
+			"",
+			true,
+		)
+	}
+
+	total := tokens.CacheReadTokens + tokens.InputTokens
+	if total <= opts.LongContextThreshold {
+		return s.billingService.computeTokenBreakdownValidated(
+			model,
+			pricing,
+			tokens,
+			rateMultiplier,
+			"",
+			true,
+		)
+	}
+
+	var inRangeCacheTokens, inRangeInputTokens int
+	var outRangeCacheTokens, outRangeInputTokens int
+	if tokens.CacheReadTokens >= opts.LongContextThreshold {
+		inRangeCacheTokens = opts.LongContextThreshold
+		outRangeCacheTokens = tokens.CacheReadTokens - opts.LongContextThreshold
+		outRangeInputTokens = tokens.InputTokens
+	} else {
+		inRangeCacheTokens = tokens.CacheReadTokens
+		inRangeInputTokens = opts.LongContextThreshold - tokens.CacheReadTokens
+		outRangeInputTokens = tokens.InputTokens - inRangeInputTokens
+	}
+
+	inRangeImageInputTokens := tokens.ImageInputTokens
+	if inRangeImageInputTokens > inRangeInputTokens {
+		inRangeImageInputTokens = inRangeInputTokens
+	}
+	if inRangeImageInputTokens < 0 {
+		inRangeImageInputTokens = 0
+	}
+	outRangeImageInputTokens := tokens.ImageInputTokens - inRangeImageInputTokens
+	if outRangeImageInputTokens > outRangeInputTokens {
+		outRangeImageInputTokens = outRangeInputTokens
+	}
+	if outRangeImageInputTokens < 0 {
+		outRangeImageInputTokens = 0
+	}
+
+	inRangeTokens := UsageTokens{
+		InputTokens:           inRangeInputTokens,
+		ImageInputTokens:      inRangeImageInputTokens,
+		OutputTokens:          tokens.OutputTokens,
+		CacheCreationTokens:   tokens.CacheCreationTokens,
+		CacheReadTokens:       inRangeCacheTokens,
+		CacheCreation5mTokens: tokens.CacheCreation5mTokens,
+		CacheCreation1hTokens: tokens.CacheCreation1hTokens,
+		ImageOutputTokens:     tokens.ImageOutputTokens,
+	}
+	inRangeCost, err := s.billingService.computeTokenBreakdownValidated(
+		model,
+		pricing,
+		inRangeTokens,
+		rateMultiplier,
+		"",
+		true,
+	)
+	if err != nil {
+		return nil, err
+	}
+	outRangeCost, err := s.billingService.computeTokenBreakdownValidated(
+		model,
+		pricing,
+		UsageTokens{
+			InputTokens:      outRangeInputTokens,
+			ImageInputTokens: outRangeImageInputTokens,
+			CacheReadTokens:  outRangeCacheTokens,
+		},
+		rateMultiplier*opts.LongContextMultiplier,
+		"",
+		true,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &CostBreakdown{
+		InputCost:                 inRangeCost.InputCost + outRangeCost.InputCost,
+		ImageInputCost:            inRangeCost.ImageInputCost + outRangeCost.ImageInputCost,
+		OutputCost:                inRangeCost.OutputCost,
+		ImageOutputCost:           inRangeCost.ImageOutputCost,
+		CacheCreationCost:         inRangeCost.CacheCreationCost,
+		CacheReadCost:             inRangeCost.CacheReadCost + outRangeCost.CacheReadCost,
+		TotalCost:                 inRangeCost.TotalCost + outRangeCost.TotalCost,
+		ActualCost:                inRangeCost.ActualCost + outRangeCost.ActualCost,
+		LongContextBillingApplied: outRangeCost.ActualCost > 0,
+	}, nil
 }
 
 // buildRecordUsageLog 构建使用日志并设置计费模式。
@@ -974,6 +1581,7 @@ func (s *GatewayService) buildRecordUsageLog(
 	account *Account,
 	subscription *UserSubscription,
 	requestedModel string,
+	billingModel string,
 	multiplier float64,
 	imageMultiplier float64,
 	accountRateMultiplier float64,
@@ -985,7 +1593,11 @@ func (s *GatewayService) buildRecordUsageLog(
 	durationMs := int(result.Duration.Milliseconds())
 	requestID := resolveUsageBillingRequestID(ctx, result.RequestID)
 	modelName := result.Model
-	if account != nil && account.IsMiniMax() {
+	if result.ImageCount > 0 && strings.TrimSpace(billingModel) != "" {
+		// Recovery checks Model first. Persist the exact media settlement
+		// identity instead of the unrelated top-level text/request model.
+		modelName = strings.TrimSpace(billingModel)
+	} else if account != nil && account.IsMiniMax() {
 		if upstreamModel := strings.TrimSpace(result.UpstreamModel); upstreamModel != "" {
 			modelName = upstreamModel
 		}

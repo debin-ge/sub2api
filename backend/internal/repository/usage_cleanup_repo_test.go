@@ -462,8 +462,51 @@ func TestBuildUsageCleanupWhere(t *testing.T) {
 		BillingType: &billingType,
 	})
 
-	require.Equal(t, "created_at >= $1 AND created_at <= $2 AND user_id = $3 AND api_key_id = $4 AND account_id = $5 AND group_id = $6 AND model = $7 AND stream = $8 AND billing_type = $9", where)
+	require.Equal(t, "billing_state <> 1 AND created_at >= $1 AND created_at <= $2 AND user_id = $3 AND api_key_id = $4 AND account_id = $5 AND group_id = $6 AND model = $7 AND stream = $8 AND billing_type = $9", where)
 	require.Equal(t, []any{start, end, userID, apiKeyID, accountID, groupID, "gpt-4", stream, billingType}, args)
+}
+
+func TestDashboardAggregationCleanupUsageLogsPreservesPendingSettlement(t *testing.T) {
+	db, mock := newSQLMock(t)
+	repo := newDashboardAggregationRepositoryWithSQL(db)
+	cutoff := time.Date(2025, 5, 1, 0, 0, 0, 0, time.UTC)
+
+	mock.ExpectQuery("SELECT EXISTS\\(").
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
+	mock.ExpectExec(`WITH victims AS \([\s\S]*billing_state <> \$3[\s\S]*DELETE FROM usage_logs`).
+		WithArgs(cutoff, usageLogsCleanupBatchSize, int16(service.BillingStatePricingUnavailable)).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+
+	err := repo.CleanupUsageLogs(context.Background(), cutoff)
+
+	require.NoError(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestDashboardAggregationCleanupUsageLogsSkipsPartitionWithPendingSettlement(t *testing.T) {
+	db, mock := newSQLMock(t)
+	repo := newDashboardAggregationRepositoryWithSQL(db)
+	cutoff := time.Date(2025, 3, 1, 0, 0, 0, 0, time.UTC)
+
+	mock.ExpectQuery("SELECT EXISTS\\(").
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+	mock.ExpectQuery("FROM pg_inherits").
+		WillReturnRows(sqlmock.NewRows([]string{"relname"}).
+			AddRow("usage_logs_202501").
+			AddRow("usage_logs_202502"))
+	mock.ExpectQuery(`SELECT EXISTS \(SELECT 1 FROM "usage_logs_202501" WHERE billing_state = \$1 LIMIT 1\)`).
+		WithArgs(int16(service.BillingStatePricingUnavailable)).
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+	mock.ExpectQuery(`SELECT EXISTS \(SELECT 1 FROM "usage_logs_202502" WHERE billing_state = \$1 LIMIT 1\)`).
+		WithArgs(int16(service.BillingStatePricingUnavailable)).
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
+	mock.ExpectExec(`DROP TABLE IF EXISTS "usage_logs_202502"`).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+
+	err := repo.CleanupUsageLogs(context.Background(), cutoff)
+
+	require.NoError(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestBuildUsageCleanupWhereRequestTypePriority(t *testing.T) {
@@ -479,7 +522,7 @@ func TestBuildUsageCleanupWhereRequestTypePriority(t *testing.T) {
 		Stream:      &stream,
 	})
 
-	require.Equal(t, "created_at >= $1 AND created_at <= $2 AND (request_type = $3 OR (request_type = 0 AND openai_ws_mode = TRUE))", where)
+	require.Equal(t, "billing_state <> 1 AND created_at >= $1 AND created_at <= $2 AND (request_type = $3 OR (request_type = 0 AND openai_ws_mode = TRUE))", where)
 	require.Equal(t, []any{start, end, requestType}, args)
 }
 
@@ -494,7 +537,7 @@ func TestBuildUsageCleanupWhereRequestTypeLegacyFallback(t *testing.T) {
 		RequestType: &requestType,
 	})
 
-	require.Equal(t, "created_at >= $1 AND created_at <= $2 AND (request_type = $3 OR (request_type = 0 AND stream = TRUE AND openai_ws_mode = FALSE))", where)
+	require.Equal(t, "billing_state <> 1 AND created_at >= $1 AND created_at <= $2 AND (request_type = $3 OR (request_type = 0 AND stream = TRUE AND openai_ws_mode = FALSE))", where)
 	require.Equal(t, []any{start, end, requestType}, args)
 }
 
@@ -509,6 +552,6 @@ func TestBuildUsageCleanupWhereModelEmpty(t *testing.T) {
 		Model:     &model,
 	})
 
-	require.Equal(t, "created_at >= $1 AND created_at <= $2", where)
+	require.Equal(t, "billing_state <> 1 AND created_at >= $1 AND created_at <= $2", where)
 	require.Equal(t, []any{start, end}, args)
 }

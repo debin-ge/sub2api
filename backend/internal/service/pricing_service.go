@@ -132,10 +132,27 @@ type ModelPriceEntry struct {
 	OutputCostPerImage                  float64 `json:"output_cost_per_image"`       // 图片生成模型每张图片价格
 	OutputCostPerImageToken             float64 `json:"output_cost_per_image_token"` // 图片输出 token 价格
 	InputCostPerImageToken              float64 `json:"input_cost_per_image_token"`  // 图片输入 token 价格（如 gpt-image-2 图片编辑）
+	OutputCostPerImageExplicit          bool    `json:"-"`
+	ImageOutputPriceExplicit            bool    `json:"-"`
+	ImageInputPriceExplicit             bool    `json:"-"`
+	// PricePresenceKnown is true for entries parsed from the JSON catalog.
+	// In-memory fallback/test entries predate presence tracking and keep the
+	// zero value for backward compatibility.
+	PricePresenceKnown                 bool `json:"-"`
+	CacheCreationPriceExplicit         bool `json:"-"`
+	CacheCreationAbove1hrPriceExplicit bool `json:"-"`
+	CacheReadPriceExplicit             bool `json:"-"`
+	InputPriorityPriceExplicit         bool `json:"-"`
+	OutputPriorityPriceExplicit        bool `json:"-"`
+	CacheCreationPriorityPriceExplicit bool `json:"-"`
+	CacheReadPriorityPriceExplicit     bool `json:"-"`
+	LongContextPricingExplicit         bool `json:"-"`
 
-	// TokenPricingAbsent 表示源数据中 input/output token 价格均缺失（仅有图片价）。
-	// 此类条目只可用于图片计费，token 计费必须回退到 fallback 或 fail-closed，
-	// 否则 token 流量会被按 $0 计费。零值（false）表示条目具备 token 价格。
+	// TokenPricingAbsent 表示源数据缺少一组完整、自洽的 token 价格：
+	// input/output 必须同时存在；声明 cache、priority 或 long-context 时，
+	// 该维度的整组字段也必须完整。此类条目只可用于图片等专用计费，
+	// token 计费必须回退到 fallback 或 fail-closed；显式 0 仍视为已配置。
+	// 零值（false）兼容代码内构造的条目。
 	TokenPricingAbsent bool `json:"-"`
 }
 
@@ -171,6 +188,78 @@ type RawModelPriceEntry struct {
 	OutputCostPerImage                  *float64 `json:"output_cost_per_image"`
 	OutputCostPerImageToken             *float64 `json:"output_cost_per_image_token"`
 	InputCostPerImageToken              *float64 `json:"input_cost_per_image_token"`
+}
+
+func rawModelTokenPricingIncomplete(model string, entry *RawModelPriceEntry) bool {
+	if entry == nil || entry.InputCostPerToken == nil || entry.OutputCostPerToken == nil {
+		return true
+	}
+	hasDerivedGPT56CacheWritePolicy := isOpenAIGPT56Model(normalizeKnownOpenAICodexModel(model))
+
+	// A cache-capable catalog entry must say what both cache operations cost.
+	// Explicit zero is valid; omission is not. The same rule applies when the
+	// entry carries either cache price even if supports_prompt_caching was
+	// omitted or stale.
+	cachePricingDeclared := entry.SupportsPromptCaching ||
+		entry.CacheCreationInputTokenCost != nil ||
+		entry.CacheCreationInputTokenCostAbove1hr != nil ||
+		entry.CacheReadInputTokenCost != nil
+	if cachePricingDeclared && entry.CacheReadInputTokenCost == nil {
+		return true
+	}
+	if cachePricingDeclared && entry.CacheCreationInputTokenCost == nil &&
+		!hasDerivedGPT56CacheWritePolicy {
+		return true
+	}
+	if entry.CacheCreationInputTokenCostAbove1hr != nil &&
+		entry.CacheCreationInputTokenCost == nil {
+		return true
+	}
+
+	// Priority pricing is one coherent tier. Once the catalog declares support
+	// or provides any priority field, every base dimension exposed by this
+	// entry needs its corresponding priority price. Otherwise the calculator
+	// would silently mix priority and standard prices.
+	priorityPricingDeclared := entry.SupportsServiceTier ||
+		entry.InputCostPerTokenPriority != nil ||
+		entry.OutputCostPerTokenPriority != nil ||
+		entry.CacheCreationInputTokenCostPriority != nil ||
+		entry.CacheReadInputTokenCostPriority != nil
+	if priorityPricingDeclared {
+		if entry.InputCostPerTokenPriority == nil || entry.OutputCostPerTokenPriority == nil {
+			return true
+		}
+		if entry.CacheCreationInputTokenCost != nil &&
+			entry.CacheCreationInputTokenCostPriority == nil {
+			return true
+		}
+		if entry.CacheReadInputTokenCost != nil &&
+			entry.CacheReadInputTokenCostPriority == nil {
+			return true
+		}
+	}
+
+	// Long-context pricing is also an indivisible tuple. A partial tuple can
+	// make one side of a long request get multiplied by the float zero value.
+	longContextPricingDeclared := entry.LongContextInputTokenThreshold != nil ||
+		entry.LongContextInputCostMultiplier != nil ||
+		entry.LongContextOutputCostMultiplier != nil
+	if longContextPricingDeclared {
+		if entry.LongContextInputTokenThreshold == nil ||
+			entry.LongContextInputCostMultiplier == nil ||
+			entry.LongContextOutputCostMultiplier == nil {
+			return true
+		}
+		if *entry.LongContextInputTokenThreshold <= 0 ||
+			!isFiniteNonNegativePrice(*entry.LongContextInputCostMultiplier) ||
+			!isFiniteNonNegativePrice(*entry.LongContextOutputCostMultiplier) ||
+			*entry.LongContextInputCostMultiplier <= 0 ||
+			*entry.LongContextOutputCostMultiplier <= 0 {
+			return true
+		}
+	}
+
+	return false
 }
 
 // PricingService 动态价格服务
@@ -458,11 +547,25 @@ func (s *PricingService) parsePricingData(body []byte) (map[string]*ModelPriceEn
 		}
 
 		pricing := &ModelPriceEntry{
-			PricingCatalogProvider: entry.PricingCatalogProvider,
-			Mode:                   entry.Mode,
-			SupportsPromptCaching:  entry.SupportsPromptCaching,
-			SupportsServiceTier:    entry.SupportsServiceTier,
-			TokenPricingAbsent:     entry.InputCostPerToken == nil && entry.OutputCostPerToken == nil,
+			PricingCatalogProvider:             entry.PricingCatalogProvider,
+			Mode:                               entry.Mode,
+			SupportsPromptCaching:              entry.SupportsPromptCaching,
+			SupportsServiceTier:                entry.SupportsServiceTier,
+			TokenPricingAbsent:                 rawModelTokenPricingIncomplete(modelName, &entry),
+			OutputCostPerImageExplicit:         entry.OutputCostPerImage != nil,
+			ImageOutputPriceExplicit:           entry.OutputCostPerImageToken != nil,
+			ImageInputPriceExplicit:            entry.InputCostPerImageToken != nil,
+			PricePresenceKnown:                 true,
+			CacheCreationPriceExplicit:         entry.CacheCreationInputTokenCost != nil,
+			CacheCreationAbove1hrPriceExplicit: entry.CacheCreationInputTokenCostAbove1hr != nil,
+			CacheReadPriceExplicit:             entry.CacheReadInputTokenCost != nil,
+			InputPriorityPriceExplicit:         entry.InputCostPerTokenPriority != nil,
+			OutputPriorityPriceExplicit:        entry.OutputCostPerTokenPriority != nil,
+			CacheCreationPriorityPriceExplicit: entry.CacheCreationInputTokenCostPriority != nil,
+			CacheReadPriorityPriceExplicit:     entry.CacheReadInputTokenCostPriority != nil,
+			LongContextPricingExplicit: entry.LongContextInputTokenThreshold != nil ||
+				entry.LongContextInputCostMultiplier != nil ||
+				entry.LongContextOutputCostMultiplier != nil,
 		}
 
 		if entry.InputCostPerToken != nil {
@@ -652,6 +755,35 @@ func (s *PricingService) validatePricingURL(raw string) (string, error) {
 
 // GetModelPricing 获取模型价格（带模糊匹配）
 func (s *PricingService) GetModelPricing(modelName string) *ModelPriceEntry {
+	return s.lookupModelPricing(modelName, true)
+}
+
+// LookupModelPricingStrict 只在"这个模型自己有价目条目"时返回价格，不做跨模型推断。
+//
+// GetModelPricing 回答的是"我能不能给这个模型算出一个数"，而不是"有没有人给这个模型
+// 配过价"。两者的差距在最后两步：matchByModelFamily 会把任何含 opus/sonnet/haiku 的
+// 未知型号按关键字粗分到某个系列，matchOpenAIModel 更是在剥掉 -codex/-mini/-max 后缀、
+// 试过若干静态兜底之后，把**任何** gpt- 开头的模型兜到 DefaultTestModel 上。于是
+// "gpt-<明年发布的新模型>" 在准入守卫看来是"有价的"，实际按 DefaultTestModel 收费。
+//
+// 这和媒体路由的 $0.134 占位价是同一种形态：不是免费，是一个和真实上游成本无关的
+// 猜测值，账面上还"正常收费"了，比记成 0 更难发现。所以准入守卫需要一个更严的口径：
+// 恰好命中这个模型自己的条目（含大小写/前缀别名、dash↔dot 拼写归一化，以及同一模型
+// 不同日期快照之间的互认），才算"配过价"。
+//
+// 在线准入、实时后扣与 recovery 都使用严格口径。宽松 GetModelPricing 只保留给
+// 明确需要兼容旧模型推断的非准入调用方；已经产生上游成本但严格价缺失时，账务链会
+// 持久化 pricing_unavailable，而不是借别的 SKU 凑出一个金额。
+func (s *PricingService) LookupModelPricingStrict(modelName string) *ModelPriceEntry {
+	return s.lookupModelPricing(modelName, false)
+}
+
+// lookupModelPricing 是上面两个入口的唯一实现。
+//
+// 合并成一份是刻意的：准入用严格口径、结算用宽松口径，两边对"前缀别名 / 拼写归一化"
+// 的理解必须完全一致。各写一份迟早会在某个归一化分支上分叉，那时守卫放行的模型和结算
+// 查价的模型就不是同一个了。allowInference 只控制最后两步跨模型推断开不开。
+func (s *PricingService) lookupModelPricing(modelName string, allowInference bool) *ModelPriceEntry {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -669,7 +801,9 @@ func (s *PricingService) GetModelPricing(modelName string) *ModelPriceEntry {
 			continue
 		}
 		if pricing, ok := s.pricingData[candidate]; ok {
-			return pricing
+			if directPricingCandidateAllowed(modelLower, candidate, pricing, allowInference) {
+				return pricing
+			}
 		}
 	}
 
@@ -677,7 +811,7 @@ func (s *PricingService) GetModelPricing(modelName string) *ModelPriceEntry {
 	// 2a. 定向替换：claude-opus-4-5-20251101 -> claude-opus-4.5-20251101
 	for _, candidate := range lookupCandidates {
 		normalized := strings.ReplaceAll(candidate, "-4-5-", "-4.5-")
-		if pricing, ok := s.pricingData[normalized]; ok {
+		if pricing, ok := s.pricingData[normalized]; ok && directPricingCandidateAllowed(modelLower, candidate, pricing, allowInference) {
 			return pricing
 		}
 	}
@@ -689,32 +823,127 @@ func (s *PricingService) GetModelPricing(modelName string) *ModelPriceEntry {
 		if normalized == candidate {
 			continue
 		}
-		if pricing, ok := s.pricingData[normalized]; ok {
+		if pricing, ok := s.pricingData[normalized]; ok && directPricingCandidateAllowed(modelLower, candidate, pricing, allowInference) {
 			return pricing
 		}
 	}
 
 	// 3. 尝试模糊匹配（去掉版本号后缀）
 	// claude-opus-4-5-20251101 -> claude-opus-4.5
-	baseName := s.extractBaseName(lookupCandidates[0])
+	//
+	// 严格口径只剥尾部的 8 位日期快照；宽松口径保留历史 extractBaseName 行为。
+	// extractBaseName 还会删除任意位置的 8 位数字段和包含 ":" 的版本段，若用于
+	// 严格匹配，会让 gpt-5.4-v1:0 等未知 SKU 借用 gpt-5.4 的价格。
+	baseCandidate := lookupCandidates[0]
+	if !allowInference && !sameSKUPricingCandidateAllowed(modelLower, baseCandidate) {
+		// Arbitrary provider/model paths are distinct SKUs. Keeping their prefix
+		// here also prevents the date-snapshot loop from reopening the exact-match
+		// bypass closed above.
+		baseCandidate = modelLower
+	}
+	baseName := s.extractBaseName(baseCandidate)
+	if !allowInference {
+		baseName = strictPricingSnapshotBase(baseCandidate)
+	}
 	for key, pricing := range s.pricingData {
 		keyBase := s.extractBaseName(strings.ToLower(key))
-		if keyBase == baseName {
+		if !allowInference {
+			keyBase = strictPricingSnapshotBase(key)
+		}
+		if keyBase == baseName && inferredPricingCandidateAllowed(pricing) {
 			return pricing
 		}
 	}
 
+	// 以下两步是真正的跨模型推断：拿**别的**模型的价格套到这个模型上。
+	// 严格口径到此为止。
+	if !allowInference {
+		return nil
+	}
+
 	// 4. 基于模型系列匹配（Claude）
-	if pricing := s.matchByModelFamily(lookupCandidates[0]); pricing != nil {
+	if pricing := s.matchByModelFamily(lookupCandidates[0]); inferredPricingCandidateAllowed(pricing) {
 		return pricing
 	}
 
 	// 5. OpenAI 模型回退策略
 	if strings.HasPrefix(lookupCandidates[0], "gpt-") {
-		return s.matchOpenAIModel(lookupCandidates[0])
+		if pricing := s.matchOpenAIModel(lookupCandidates[0]); inferredPricingCandidateAllowed(pricing) {
+			return pricing
+		}
 	}
 
 	return nil
+}
+
+// directPricingCandidateAllowed 区分结算使用的宽松查价和准入使用的严格查价。
+//
+// 宽松查价保留历史的正价 provider/model last-segment 回退，确保已经产生上游成本的
+// 请求仍能结算；严格查价只接受精确 SKU 或下方白名单里的显式别名。零价/不完整 token
+// 价在两种口径下都不能通过任意 provider 前缀扩散。
+func directPricingCandidateAllowed(requested, candidate string, pricing *ModelPriceEntry, allowInference bool) bool {
+	if sameSKUPricingCandidateAllowed(requested, candidate) {
+		return true
+	}
+	return allowInference && inferredPricingCandidateAllowed(pricing)
+}
+
+// sameSKUPricingCandidateAllowed reports whether candidate is the requested SKU
+// itself or an explicitly supported spelling of that same SKU.
+func sameSKUPricingCandidateAllowed(requested, candidate string) bool {
+	requested = strings.ToLower(strings.TrimSpace(requested))
+	candidate = strings.ToLower(strings.TrimSpace(candidate))
+	if requested == "" || candidate == "" {
+		return false
+	}
+	if candidate == requested {
+		return true
+	}
+
+	aliasTarget, ok := explicitPricingAliasTarget(requested)
+	if !ok {
+		return false
+	}
+	if candidate == aliasTarget {
+		return true
+	}
+	return candidate == normalizeModelNameForPricing(requested)
+}
+
+// explicitPricingAliasTarget returns the unprefixed target only for namespace
+// syntaxes whose pricing identity is defined by this service. An arbitrary
+// "provider/model" path is deliberately not an alias: the provider may have a
+// different cost and must carry its own catalog/channel price.
+func explicitPricingAliasTarget(model string) (string, bool) {
+	if !strings.Contains(model, "/") {
+		// Bare OpenAI spelling aliases (for example gpt5.4 -> gpt-5.4) and
+		// Gemini thinking-tier aliases are explicit normalizations too.
+		return model, true
+	}
+	for _, prefix := range []string{"models/", "openai/", "publishers/google/models/"} {
+		if target, ok := strings.CutPrefix(model, prefix); ok {
+			return target, target != "" && !strings.Contains(target, "/")
+		}
+	}
+
+	// Fully-qualified Vertex model resource:
+	// projects/{project}/locations/{location}/publishers/google/models/{model}
+	parts := strings.Split(model, "/")
+	if len(parts) != 8 ||
+		parts[0] != "projects" || parts[1] == "" ||
+		parts[2] != "locations" || parts[3] == "" ||
+		parts[4] != "publishers" || parts[5] != "google" ||
+		parts[6] != "models" || parts[7] == "" {
+		return "", false
+	}
+	return parts[7], true
+}
+
+// inferredPricingCandidateAllowed 仅允许 input/output 均为正价的条目参与日期剥离、
+// family 和 default fuzzy fallback。显式零价仍可精确命中，但不能扩散到未知型号。
+func inferredPricingCandidateAllowed(pricing *ModelPriceEntry) bool {
+	return pricing != nil && !pricing.TokenPricingAbsent &&
+		pricing.InputCostPerToken > 0 && pricing.OutputCostPerToken > 0
 }
 
 func (s *PricingService) buildModelLookupCandidates(modelLower string) []string {
@@ -766,6 +995,28 @@ func (s *PricingService) buildModelLookupCandidates(modelLower string) []string 
 //	deepseek-v4          -> deepseek-v4        （无 -digit 尾缀，不变）
 func normalizeDashVersionSuffix(model string) string {
 	return dashVersionSuffixPattern.ReplaceAllString(model, "${1}${2}.${3}")
+}
+
+// strictPricingSnapshotBase canonicalizes only spelling and a trailing
+// -YYYYMMDD release snapshot that is both a real calendar date and within a
+// plausible modern-model release window. It deliberately does not use
+// extractBaseName: embedded/invalid/far-future numeric segments are part of the
+// SKU and must not inherit another model's price under the fail-closed lookup.
+func strictPricingSnapshotBase(model string) string {
+	model = strings.ToLower(strings.TrimSpace(model))
+	if lastDash := strings.LastIndexByte(model, '-'); lastDash >= 0 {
+		suffix := model[lastDash+1:]
+		if len(suffix) == 8 && isNumeric(suffix) {
+			if snapshotDate, err := time.Parse("20060102", suffix); err == nil {
+				earliest := time.Date(2020, time.January, 1, 0, 0, 0, 0, time.UTC)
+				latest := time.Now().UTC().AddDate(1, 0, 0)
+				if !snapshotDate.Before(earliest) && !snapshotDate.After(latest) {
+					model = model[:lastDash]
+				}
+			}
+		}
+	}
+	return normalizeDashVersionSuffix(model)
 }
 
 func normalizeModelNameForPricing(model string) string {

@@ -1,14 +1,38 @@
 package handler
 
 import (
+	"context"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+type blockingCyberUsageBillingRepo struct {
+	service.DurableUsageBillingRepository
+
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (s *blockingCyberUsageBillingRepo) ApplyAndRecord(
+	ctx context.Context,
+	_ *service.UsageBillingCommand,
+	_ *service.UsageLog,
+) (*service.UsageBillingApplyResult, error) {
+	close(s.entered)
+	select {
+	case <-s.release:
+		return &service.UsageBillingApplyResult{UsageLogRecorded: true}, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
 
 // newTestGinContext builds a bare gin.Context backed by an httptest recorder.
 func newTestGinContext() *gin.Context {
@@ -149,6 +173,82 @@ func TestRecordCyberPolicyIfMarked_BlockKeyPlumbed(t *testing.T) {
 	require.NotPanics(t, func() {
 		h.recordCyberPolicyIfMarked(c, nil, nil, nil, "gpt-5", true, "deadbeef", service.ChannelUsageFields{}, "")
 	})
+}
+
+func TestRecordCyberPolicyIfMarked_WaitsForDurableUsageSubmission(t *testing.T) {
+	repo := &blockingCyberUsageBillingRepo{
+		entered: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	cfg := &config.Config{}
+	cfg.Default.RateMultiplier = 1
+	gateway := service.NewOpenAIGatewayService(
+		nil,
+		nil,
+		repo,
+		nil,
+		nil,
+		nil,
+		nil,
+		cfg,
+		nil,
+		nil,
+		service.NewBillingService(cfg, nil),
+		nil,
+		&service.BillingCacheService{},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	h := &OpenAIGatewayHandler{gatewayService: gateway}
+	c := newTestGinContext()
+	c.Request = httptest.NewRequest("POST", "/openai/v1/responses", strings.NewReader(`{}`))
+	c.Writer.Header().Set("X-Request-Id", "req-cyber-durable")
+	service.MarkOpsCyberPolicy(c, service.CyberPolicyMark{
+		Message:        "flagged",
+		UpstreamStatus: 400,
+		UpstreamInTok:  10,
+		UpstreamOutTok: 2,
+	})
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		h.recordCyberPolicyIfMarked(
+			c,
+			&service.APIKey{ID: 2, User: &service.User{ID: 1}},
+			&service.Account{ID: 3},
+			nil,
+			"gpt-5.1",
+			true,
+			"",
+			service.ChannelUsageFields{},
+			"",
+		)
+	}()
+
+	select {
+	case <-repo.entered:
+	case <-time.After(time.Second):
+		t.Fatal("cyber usage did not reach durable billing")
+	}
+	select {
+	case <-done:
+		t.Fatal("handler returned before durable billing submission completed")
+	case <-time.After(30 * time.Millisecond):
+	}
+	close(repo.release)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("handler did not return after durable billing submission completed")
+	}
 }
 
 // TestBuildCyberPolicyOpsErrorEntry_StatusCode verifies F6: the ops error log

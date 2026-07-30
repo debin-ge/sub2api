@@ -9,6 +9,7 @@ import (
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
+	"github.com/stretchr/testify/require"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
@@ -64,6 +65,76 @@ func TestUserPlatformQuotaCache_SetThenGet(t *testing.T) {
 	if got.DailyWindowStart == nil || !got.DailyWindowStart.Equal(ts) {
 		t.Errorf("DailyWindowStart = %v, want %v", got.DailyWindowStart, ts)
 	}
+}
+
+func TestUserPlatformQuotaCache_SetMergesUsageMonotonicallyByWindow(t *testing.T) {
+	c, _ := newMiniRedisCache(t)
+	ctx := context.Background()
+	windowStart := time.Date(2026, time.July, 29, 0, 0, 0, 0, time.UTC)
+	olderWindowStart := windowStart.Add(-24 * time.Hour)
+	newerWindowStart := windowStart.Add(24 * time.Hour)
+
+	require.NoError(t, c.SetUserPlatformQuotaCache(ctx, 1, "openai", &service.UserPlatformQuotaCacheEntry{
+		DailyUsageUSD:      11,
+		WeeklyUsageUSD:     11,
+		MonthlyUsageUSD:    11,
+		SchemaVersion:      service.UserPlatformQuotaCacheSchemaV1,
+		DailyWindowStart:   &windowStart,
+		WeeklyWindowStart:  &windowStart,
+		MonthlyWindowStart: &windowStart,
+	}, time.Minute))
+
+	// A loader that read before the durable billing commit may finish later.
+	// Its lower, same-window absolute projection must not roll usage back.
+	require.NoError(t, c.SetUserPlatformQuotaCache(ctx, 1, "openai", &service.UserPlatformQuotaCacheEntry{
+		DailyUsageUSD:      10,
+		WeeklyUsageUSD:     10,
+		MonthlyUsageUSD:    10,
+		SchemaVersion:      service.UserPlatformQuotaCacheSchemaV1,
+		DailyWindowStart:   &windowStart,
+		WeeklyWindowStart:  &windowStart,
+		MonthlyWindowStart: &windowStart,
+	}, time.Minute))
+	got, ok, err := c.GetUserPlatformQuotaCache(ctx, 1, "openai")
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, 11.0, got.DailyUsageUSD)
+	require.Equal(t, 11.0, got.WeeklyUsageUSD)
+	require.Equal(t, 11.0, got.MonthlyUsageUSD)
+
+	// Even a larger value from an older window cannot resurrect stale usage.
+	require.NoError(t, c.SetUserPlatformQuotaCache(ctx, 1, "openai", &service.UserPlatformQuotaCacheEntry{
+		DailyUsageUSD:      99,
+		WeeklyUsageUSD:     99,
+		MonthlyUsageUSD:    99,
+		SchemaVersion:      service.UserPlatformQuotaCacheSchemaV1,
+		DailyWindowStart:   &olderWindowStart,
+		WeeklyWindowStart:  &olderWindowStart,
+		MonthlyWindowStart: &olderWindowStart,
+	}, time.Minute))
+	got, ok, err = c.GetUserPlatformQuotaCache(ctx, 1, "openai")
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, 11.0, got.DailyUsageUSD)
+	require.Equal(t, 11.0, got.WeeklyUsageUSD)
+	require.Equal(t, 11.0, got.MonthlyUsageUSD)
+
+	// A genuinely newer window is allowed to reset to zero.
+	require.NoError(t, c.SetUserPlatformQuotaCache(ctx, 1, "openai", &service.UserPlatformQuotaCacheEntry{
+		SchemaVersion:      service.UserPlatformQuotaCacheSchemaV1,
+		DailyWindowStart:   &newerWindowStart,
+		WeeklyWindowStart:  &newerWindowStart,
+		MonthlyWindowStart: &newerWindowStart,
+	}, time.Minute))
+	got, ok, err = c.GetUserPlatformQuotaCache(ctx, 1, "openai")
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Zero(t, got.DailyUsageUSD)
+	require.Zero(t, got.WeeklyUsageUSD)
+	require.Zero(t, got.MonthlyUsageUSD)
+	require.Equal(t, newerWindowStart, *got.DailyWindowStart)
+	require.Equal(t, newerWindowStart, *got.WeeklyWindowStart)
+	require.Equal(t, newerWindowStart, *got.MonthlyWindowStart)
 }
 
 func TestUserPlatformQuotaCache_NilLimitSetThenGet(t *testing.T) {

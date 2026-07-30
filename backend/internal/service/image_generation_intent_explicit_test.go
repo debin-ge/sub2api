@@ -35,6 +35,38 @@ func TestIsExplicitImageGenerationIntent_DetectsNativeTool(t *testing.T) {
 		"native image_generation tool IS explicit intent")
 }
 
+func TestIsExplicitImageGenerationIntent_DetectsResponsesLiteNativeTool(t *testing.T) {
+	body := []byte(`{
+		"model": "gpt-5.5",
+		"input": [{
+			"type": "additional_tools",
+			"tools": [{"type":"image_generation","model":"gpt-image-2"}]
+		}]
+	}`)
+
+	assert.True(t, IsExplicitImageGenerationIntent("/v1/responses", "gpt-5.5", body),
+		"Responses Lite native image_generation tool IS explicit intent")
+}
+
+func TestIsExplicitImageGenerationIntent_IgnoresResponsesLitePassiveNamespace(t *testing.T) {
+	body := []byte(`{
+		"model": "gpt-5.5",
+		"input": [{
+			"type": "additional_tools",
+			"tools": [{
+				"type": "namespace",
+				"name": "image_gen",
+				"tools": [{"type":"function","name":"imagegen"}]
+			}]
+		}]
+	}`)
+
+	assert.False(t, IsExplicitImageGenerationIntent("/v1/responses", "gpt-5.5", body),
+		"Responses Lite image_gen namespace remains passive")
+	assert.True(t, IsImageGenerationIntent("/v1/responses", "gpt-5.5", body),
+		"passive namespace remains visible to the permission classifier")
+}
+
 func TestIsExplicitImageGenerationIntent_DetectsImageModel(t *testing.T) {
 	assert.True(t, IsExplicitImageGenerationIntent("/v1/responses", "gpt-image-2", nil),
 		"image model IS explicit intent")

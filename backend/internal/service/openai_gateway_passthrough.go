@@ -144,6 +144,37 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		imageSizeTier = imageCfg.SizeTier
 		imageInputSize = imageCfg.InputSize
 	}
+	// Passthrough can rewrite the request after the handler-level pricing
+	// check (compact mapping, OAuth normalization and fast-policy mutation).
+	// Revalidate the exact media identity from the final body before fetching
+	// credentials or issuing any upstream request.
+	if imageIntent &&
+		IsExplicitImageGenerationIntent(openAIResponsesEndpoint, policyModel, body) {
+		var groupID *int64
+		if apiKey != nil {
+			groupID = apiKey.GroupID
+		}
+		if err := s.enforceResolvedOpenAIMediaPricing(
+			ctx,
+			groupID,
+			account,
+			reqModel,
+			imageBillingModel,
+			imageSizeTier,
+			BillingKindImage,
+		); err != nil {
+			setOpsUpstreamError(c, http.StatusServiceUnavailable, "image model pricing is unavailable", "")
+			if c != nil && c.Writer != nil && !c.Writer.Written() {
+				c.JSON(http.StatusServiceUnavailable, gin.H{
+					"error": gin.H{
+						"type":    "api_error",
+						"message": "Image model pricing is unavailable",
+					},
+				})
+			}
+			return nil, err
+		}
+	}
 
 	logger.LegacyPrintf("service.openai_gateway",
 		"[OpenAI 自动透传] 命中自动透传分支: account=%d name=%s type=%s model=%s stream=%v",
