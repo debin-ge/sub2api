@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -536,6 +537,22 @@ func (s *BillingRecoveryService) hasStrictPricingForUsage(
 	if log != nil {
 		groupID = log.GroupID
 	}
+	if log != nil && log.ImageCount > 0 && billingModeIsToken(log.BillingMode) {
+		// A delivered token-billed image without image-output usage cannot be
+		// reconstructed from pricing alone. Keep it pending instead of
+		// "recovering" it as a settled zero-cost row.
+		if log.ImageOutputTokens <= 0 || log.OutputTokens < log.ImageOutputTokens {
+			return false
+		}
+		requireImageInput := strings.Contains(
+			strings.ToLower(stringOrEmpty(log.InboundEndpoint)),
+			"/images/edits",
+		)
+		if requireImageInput && log.ImageInputTokens <= 0 {
+			return false
+		}
+		return s.hasStrictImageTokenPricing(ctx, model, groupID, requireImageInput)
+	}
 	switch kind {
 	case BillingKindImage, BillingKindVideo:
 		if !tierValid {
@@ -547,6 +564,26 @@ func (s *BillingRecoveryService) hasStrictPricingForUsage(
 	default:
 		return s.hasStrictTokenPricing(ctx, model, groupID)
 	}
+}
+
+func (s *BillingRecoveryService) hasStrictImageTokenPricing(
+	ctx context.Context,
+	model string,
+	groupID *int64,
+	requireImageInput bool,
+) bool {
+	if s == nil || s.billingService == nil {
+		return false
+	}
+	resolver := s.resolver
+	if resolver == nil {
+		resolver = NewModelPricingResolver(s.channelService, s.billingService)
+	}
+	_, err := resolver.ResolveStrictImageToken(ctx, PricingInput{
+		Model:   model,
+		GroupID: groupID,
+	}, requireImageInput)
+	return err == nil
 }
 
 func recoveryBillingKindAndTier(log *UsageLog) (BillingKind, string, bool) {
@@ -777,6 +814,43 @@ func (s *BillingRecoveryService) recomputeCost(
 	}
 
 	tokens := recoveryUsageTokens(log)
+	if log.ImageCount > 0 && billingModeIsToken(log.BillingMode) {
+		requireImageInput := strings.Contains(
+			strings.ToLower(stringOrEmpty(log.InboundEndpoint)),
+			"/images/edits",
+		)
+		if log.ImageOutputTokens <= 0 || log.OutputTokens < log.ImageOutputTokens ||
+			(requireImageInput && log.ImageInputTokens <= 0) {
+			return nil, fmt.Errorf(
+				"%w: persisted image token usage is incomplete",
+				ErrModelPricingUnavailable,
+			)
+		}
+		resolver := s.resolver
+		if resolver == nil {
+			resolver = NewModelPricingResolver(s.channelService, s.billingService)
+		}
+		resolved, err := resolver.ResolveStrictImageToken(ctx, PricingInput{
+			Model:   billingModel,
+			GroupID: log.GroupID,
+		}, requireImageInput)
+		if err != nil {
+			return nil, err
+		}
+		longContextBillingEnabled := true
+		return s.billingService.CalculateCostUnified(CostInput{
+			Ctx:                       ctx,
+			Model:                     billingModel,
+			GroupID:                   log.GroupID,
+			Tokens:                    tokens,
+			RequestCount:              1,
+			RateMultiplier:            multiplier,
+			ServiceTier:               stringOrEmpty(log.ServiceTier),
+			Resolver:                  resolver,
+			Resolved:                  resolved,
+			LongContextBillingEnabled: &longContextBillingEnabled,
+		})
+	}
 	if s.resolver != nil && log.GroupID != nil {
 		resolved, err := s.resolver.ResolveStrictToken(ctx, PricingInput{
 			Model:   billingModel,

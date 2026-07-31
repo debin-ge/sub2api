@@ -91,10 +91,12 @@ type BillingCache interface {
 // ModelPricing 模型价格配置（per-token价格，与配置化模型价格目录格式一致）
 type ModelPricing struct {
 	InputPricePerToken                 float64 // 每token输入价格 (USD)
+	InputPriceExplicit                 bool    // 是否由目录或渠道显式配置；用于区分缺失与显式 0
 	InputPricePerTokenPriority         float64 // priority service tier 下每token输入价格 (USD)
 	ImageInputPricePerToken            float64 // 图片输入 token 价格 (USD)，用于多模态 embedding 等图文不同价场景
 	ImageInputPriceExplicit            bool    // 是否显式配置；false 且价格为 0 时回退 InputPricePerToken
 	OutputPricePerToken                float64 // 每token输出价格 (USD)
+	OutputPriceExplicit                bool    // 是否由目录或渠道显式配置；用于区分缺失与显式 0
 	OutputPricePerTokenPriority        float64 // priority service tier 下每token输出价格 (USD)
 	CacheCreationPricePerToken         float64 // 缓存创建每token价格 (USD)
 	CacheCreationPricePerTokenPriority float64 // priority service tier 下缓存创建每token价格 (USD)
@@ -1045,6 +1047,85 @@ func (s *BillingService) GetModelPricingStrict(model string) (*ModelPricing, err
 	return s.getModelPricing(model, false)
 }
 
+// GetImageTokenPricingStrict resolves the exact catalog entry for an Image API
+// model without requiring a complete ordinary text input/output token pair.
+//
+// GPT Image models can expose a dedicated image-output token price while
+// omitting the ordinary text-output price. That entry is incomplete for a
+// chat/token route, but it is complete for /v1/images/* as long as the image
+// dimensions used by that endpoint are explicitly priced.
+func (s *BillingService) GetImageTokenPricingStrict(model string, requireImageInput bool) (*ModelPricing, error) {
+	model = strings.ToLower(strings.TrimSpace(model))
+	if model == "" || s == nil || s.pricingService == nil {
+		return nil, fmt.Errorf("%w for image model: %s", ErrModelPricingUnavailable, model)
+	}
+	entry := s.pricingService.LookupModelPricingStrict(model)
+	inputConfigured := entry != nil && (entry.InputPriceExplicit ||
+		(!entry.PricePresenceKnown && entry.InputCostPerToken > 0))
+	imageOutputConfigured := entry != nil && (entry.ImageOutputPriceExplicit ||
+		(!entry.PricePresenceKnown && entry.OutputCostPerImageToken > 0))
+	imageInputConfigured := entry != nil && (entry.ImageInputPriceExplicit ||
+		(!entry.PricePresenceKnown && entry.InputCostPerImageToken > 0))
+	if entry == nil ||
+		!inputConfigured ||
+		!imageOutputConfigured ||
+		(requireImageInput && !imageInputConfigured) {
+		return nil, fmt.Errorf("%w for image token model: %s", ErrModelPricingUnavailable, model)
+	}
+	return s.modelPricingFromCatalogEntry(model, entry)
+}
+
+func (s *BillingService) modelPricingFromCatalogEntry(model string, catalogEntry *ModelPriceEntry) (*ModelPricing, error) {
+	if catalogEntry == nil {
+		return nil, fmt.Errorf("%w for model: %s", ErrModelPricingUnavailable, model)
+	}
+	// Presence-aware catalog entries preserve an explicitly configured 1h tier
+	// even when it is zero or below the 5m price. Legacy in-memory entries
+	// retain the historical positive-and-higher condition.
+	price5m := catalogEntry.CacheCreationInputTokenCost
+	price1h := catalogEntry.CacheCreationInputTokenCostAbove1hr
+	enableBreakdown := catalogEntry.CacheCreationAbove1hrPriceExplicit &&
+		price1h != price5m
+	if !catalogEntry.PricePresenceKnown {
+		enableBreakdown = price1h > 0 && price1h > price5m
+	}
+	pricing := s.applyModelSpecificPricingPolicy(model, &ModelPricing{
+		InputPricePerToken:                 catalogEntry.InputCostPerToken,
+		InputPriceExplicit:                 catalogEntry.InputPriceExplicit,
+		InputPricePerTokenPriority:         catalogEntry.InputCostPerTokenPriority,
+		OutputPricePerToken:                catalogEntry.OutputCostPerToken,
+		OutputPriceExplicit:                catalogEntry.OutputPriceExplicit,
+		OutputPricePerTokenPriority:        catalogEntry.OutputCostPerTokenPriority,
+		CacheCreationPricePerToken:         catalogEntry.CacheCreationInputTokenCost,
+		CacheCreationPricePerTokenPriority: catalogEntry.CacheCreationInputTokenCostPriority,
+		CacheCreationPriceExplicit:         catalogEntry.CacheCreationPriceExplicit,
+		CacheReadPricePerToken:             catalogEntry.CacheReadInputTokenCost,
+		CacheReadPricePerTokenPriority:     catalogEntry.CacheReadInputTokenCostPriority,
+		CacheReadPriceExplicit:             catalogEntry.CacheReadPriceExplicit,
+		CacheCreation5mPrice:               price5m,
+		CacheCreation1hPrice:               price1h,
+		CacheCreation1hPriceExplicit:       catalogEntry.CacheCreationAbove1hrPriceExplicit,
+		SupportsCacheBreakdown:             enableBreakdown,
+		LongContextInputThreshold:          catalogEntry.LongContextInputTokenThreshold,
+		LongContextInputMultiplier:         catalogEntry.LongContextInputCostMultiplier,
+		LongContextOutputMultiplier:        catalogEntry.LongContextOutputCostMultiplier,
+		LongContextPricingExplicit:         catalogEntry.LongContextPricingExplicit,
+		ImageInputPricePerToken:            catalogEntry.InputCostPerImageToken,
+		ImageInputPriceExplicit:            catalogEntry.ImageInputPriceExplicit,
+		ImageOutputPricePerToken:           catalogEntry.OutputCostPerImageToken,
+		ImageOutputPriceExplicit:           catalogEntry.ImageOutputPriceExplicit,
+		PricePresenceKnown:                 catalogEntry.PricePresenceKnown,
+		InputPriorityPriceExplicit:         catalogEntry.InputPriorityPriceExplicit,
+		OutputPriorityPriceExplicit:        catalogEntry.OutputPriorityPriceExplicit,
+		CacheCreationPriorityPriceExplicit: catalogEntry.CacheCreationPriorityPriceExplicit,
+		CacheReadPriorityPriceExplicit:     catalogEntry.CacheReadPriorityPriceExplicit,
+	})
+	if err := validateFiniteModelPricing(model, pricing); err != nil {
+		return nil, err
+	}
+	return pricing, nil
+}
+
 func (s *BillingService) getModelPricing(model string, allowInference bool) (*ModelPricing, error) {
 	// 标准化模型名称（转小写）
 	model = strings.ToLower(model)
@@ -1066,50 +1147,7 @@ func (s *BillingService) getModelPricing(model string, allowInference bool) (*Mo
 			catalogEntry = nil
 		}
 		if catalogEntry != nil {
-			// Presence-aware catalog entries preserve an explicitly configured
-			// 1h tier even when it is zero or below the 5m price. Legacy
-			// in-memory entries cannot distinguish omission from zero, so they
-			// retain the historical positive-and-higher condition.
-			price5m := catalogEntry.CacheCreationInputTokenCost
-			price1h := catalogEntry.CacheCreationInputTokenCostAbove1hr
-			enableBreakdown := catalogEntry.CacheCreationAbove1hrPriceExplicit &&
-				price1h != price5m
-			if !catalogEntry.PricePresenceKnown {
-				enableBreakdown = price1h > 0 && price1h > price5m
-			}
-			pricing := s.applyModelSpecificPricingPolicy(model, &ModelPricing{
-				InputPricePerToken:                 catalogEntry.InputCostPerToken,
-				InputPricePerTokenPriority:         catalogEntry.InputCostPerTokenPriority,
-				OutputPricePerToken:                catalogEntry.OutputCostPerToken,
-				OutputPricePerTokenPriority:        catalogEntry.OutputCostPerTokenPriority,
-				CacheCreationPricePerToken:         catalogEntry.CacheCreationInputTokenCost,
-				CacheCreationPricePerTokenPriority: catalogEntry.CacheCreationInputTokenCostPriority,
-				CacheCreationPriceExplicit:         catalogEntry.CacheCreationPriceExplicit,
-				CacheReadPricePerToken:             catalogEntry.CacheReadInputTokenCost,
-				CacheReadPricePerTokenPriority:     catalogEntry.CacheReadInputTokenCostPriority,
-				CacheReadPriceExplicit:             catalogEntry.CacheReadPriceExplicit,
-				CacheCreation5mPrice:               price5m,
-				CacheCreation1hPrice:               price1h,
-				CacheCreation1hPriceExplicit:       catalogEntry.CacheCreationAbove1hrPriceExplicit,
-				SupportsCacheBreakdown:             enableBreakdown,
-				LongContextInputThreshold:          catalogEntry.LongContextInputTokenThreshold,
-				LongContextInputMultiplier:         catalogEntry.LongContextInputCostMultiplier,
-				LongContextOutputMultiplier:        catalogEntry.LongContextOutputCostMultiplier,
-				LongContextPricingExplicit:         catalogEntry.LongContextPricingExplicit,
-				ImageInputPricePerToken:            catalogEntry.InputCostPerImageToken,
-				ImageInputPriceExplicit:            catalogEntry.ImageInputPriceExplicit,
-				ImageOutputPricePerToken:           catalogEntry.OutputCostPerImageToken,
-				ImageOutputPriceExplicit:           catalogEntry.ImageOutputPriceExplicit,
-				PricePresenceKnown:                 catalogEntry.PricePresenceKnown,
-				InputPriorityPriceExplicit:         catalogEntry.InputPriorityPriceExplicit,
-				OutputPriorityPriceExplicit:        catalogEntry.OutputPriorityPriceExplicit,
-				CacheCreationPriorityPriceExplicit: catalogEntry.CacheCreationPriorityPriceExplicit,
-				CacheReadPriorityPriceExplicit:     catalogEntry.CacheReadPriorityPriceExplicit,
-			})
-			if err := validateFiniteModelPricing(model, pricing); err != nil {
-				return nil, err
-			}
-			return pricing, nil
+			return s.modelPricingFromCatalogEntry(model, catalogEntry)
 		}
 	}
 

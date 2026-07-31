@@ -135,6 +135,8 @@ type ModelPriceEntry struct {
 	OutputCostPerImageExplicit          bool    `json:"-"`
 	ImageOutputPriceExplicit            bool    `json:"-"`
 	ImageInputPriceExplicit             bool    `json:"-"`
+	InputPriceExplicit                  bool    `json:"-"`
+	OutputPriceExplicit                 bool    `json:"-"`
 	// PricePresenceKnown is true for entries parsed from the JSON catalog.
 	// In-memory fallback/test entries predate presence tracking and keep the
 	// zero value for backward compatibility.
@@ -560,6 +562,8 @@ func (s *PricingService) parsePricingData(body []byte) (map[string]*ModelPriceEn
 			OutputCostPerImageExplicit:         entry.OutputCostPerImage != nil,
 			ImageOutputPriceExplicit:           entry.OutputCostPerImageToken != nil,
 			ImageInputPriceExplicit:            entry.InputCostPerImageToken != nil,
+			InputPriceExplicit:                 entry.InputCostPerToken != nil,
+			OutputPriceExplicit:                entry.OutputCostPerToken != nil,
 			PricePresenceKnown:                 true,
 			CacheCreationPriceExplicit:         entry.CacheCreationInputTokenCost != nil,
 			CacheCreationAbove1hrPriceExplicit: entry.CacheCreationInputTokenCostAbove1hr != nil,

@@ -195,7 +195,7 @@ func TestClassifyNoAccountError_DisplayModelOverridesRoutingForMessage(t *testin
 	require.Equal(t, "gpt-5", fd.calls[0].Model, "diagnosis must run against the routing model (post group dispatch mapping)")
 }
 
-func TestClassifyNoAccountError_PricingUnavailable_Returns404(t *testing.T) {
+func TestClassifyNoAccountError_PricingUnavailable_Returns503(t *testing.T) {
 	c := newTestGinContextWithRequest()
 	// 池子完全健康：有账号、账号也支持该模型。旧口径下这会被判成 503「稍后重试」。
 	fd := &fakeDiagnoser{resp: service.ModelAvailabilityDiagnosis{HasAccountsInPool: true, HasModelSupport: true}}
@@ -204,8 +204,8 @@ func TestClassifyNoAccountError_PricingUnavailable_Returns404(t *testing.T) {
 
 	cls := classifyNoAccountErrorFromGin(c, fd, apiKey, selErr, "gpt-5", "gpt-5", service.PlatformOpenAI)
 
-	require.Equal(t, http.StatusNotFound, cls.Status, "定价缺失要改配置才能修，重试无意义")
-	require.Equal(t, "model_not_found", cls.ErrType)
+	require.Equal(t, http.StatusServiceUnavailable, cls.Status)
+	require.Equal(t, "billing_configuration_error", cls.ErrType)
 	require.True(t, cls.ModelNotFound, "调用方据此跳过 markOpsRoutingCapacityLimited*")
 	require.True(t, cls.PricingUnavailable)
 	require.Contains(t, cls.Message, "gpt-5")
@@ -231,7 +231,7 @@ func TestClassifyNoAccountError_PricingUnavailable_IgnoresPoolPreconditions(t *t
 		t.Run(tc.name, func(t *testing.T) {
 			cls := classifyNoAccountErrorFromGin(
 				newTestGinContextWithRequest(), tc.diag, tc.apiKey, selErr, "gpt-5", "gpt-5", service.PlatformOpenAI)
-			require.Equal(t, http.StatusNotFound, cls.Status)
+			require.Equal(t, http.StatusServiceUnavailable, cls.Status)
 			require.True(t, cls.PricingUnavailable)
 		})
 	}
@@ -250,7 +250,7 @@ func TestClassifyNoAccountError_NonPricingErrorStillDiagnosesPool(t *testing.T) 
 	require.Len(t, fd.calls, 1, "非定价原因仍要靠账号池诊断区分 404/503")
 }
 
-func TestClassifyOpenAICompatibleNoAccountError_PricingUnavailable_Returns404(t *testing.T) {
+func TestClassifyOpenAICompatibleNoAccountError_PricingUnavailable_Returns503(t *testing.T) {
 	c := newTestGinContextWithRequest()
 	fd := &fakeDiagnoser{resp: service.ModelAvailabilityDiagnosis{HasAccountsInPool: true, HasModelSupport: true}}
 	groupID := int64(43)
@@ -262,7 +262,7 @@ func TestClassifyOpenAICompatibleNoAccountError_PricingUnavailable_Returns404(t 
 
 	cls := classifyOpenAICompatibleNoAccountErrorFromGin(c, fd, apiKey, selErr, "grok-4.5", "grok-4.5")
 
-	require.Equal(t, http.StatusNotFound, cls.Status)
+	require.Equal(t, http.StatusServiceUnavailable, cls.Status)
 	require.True(t, cls.PricingUnavailable)
 	require.Empty(t, fd.calls)
 }

@@ -1092,8 +1092,17 @@ func openAIImagesToolUsageFromGJSON(value gjson.Result) (OpenAIUsage, bool) {
 	if !inputOK || !outputOK || !imageOutputOK {
 		return OpenAIUsage{}, false
 	}
+	imageInputTokens := 0
+	if imageInput := value.Get("input_tokens_details.image_tokens"); imageInput.Exists() {
+		var imageInputOK bool
+		imageInputTokens, imageInputOK = boundedJSONNonNegativeInt(imageInput)
+		if !imageInputOK {
+			return OpenAIUsage{}, false
+		}
+	}
 	return OpenAIUsage{
 		InputTokens:       inputTokens,
+		ImageInputTokens:  imageInputTokens,
 		OutputTokens:      outputTokens,
 		ImageOutputTokens: imageOutputTokens,
 	}, true
@@ -1679,20 +1688,25 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 	if err := validateOpenAIImagesModel(requestModel); err != nil {
 		return nil, err
 	}
-	var groupID *int64
-	if apiKey := getAPIKeyFromContext(c); apiKey != nil {
+	var (
+		apiKey      = getAPIKeyFromContext(c)
+		groupID     *int64
+		billingPlan *OpenAIImageBillingPlan
+	)
+	if apiKey != nil {
 		groupID = apiKey.GroupID
 	}
 	if s.pricingGuardRequired || s.billingService != nil {
-		if err := s.enforceResolvedOpenAIMediaPricing(
+		var err error
+		billingPlan, err = s.resolveOpenAIImageBillingPlan(
 			ctx,
+			apiKey,
 			groupID,
-			account,
-			parsed.Model,
 			requestModel,
 			parsed.SizeTier,
-			BillingKindImage,
-		); err != nil {
+			parsed.IsEdits(),
+		)
+		if err != nil {
 			return nil, err
 		}
 	}
@@ -1797,7 +1811,9 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 					RequestID:        resp.Header.Get("x-request-id"),
 					Usage:            usage,
 					Model:            requestModel,
+					BillingModel:     requestModel,
 					UpstreamModel:    requestModel,
+					ImageBillingPlan: billingPlan,
 					Stream:           parsed.Stream,
 					ResponseHeaders:  resp.Header.Clone(),
 					Duration:         time.Since(startTime),
@@ -1841,7 +1857,9 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 		RequestID:        resp.Header.Get("x-request-id"),
 		Usage:            usage,
 		Model:            requestModel,
+		BillingModel:     requestModel,
 		UpstreamModel:    requestModel,
+		ImageBillingPlan: billingPlan,
 		Stream:           parsed.Stream,
 		ResponseHeaders:  resp.Header.Clone(),
 		Duration:         time.Since(startTime),

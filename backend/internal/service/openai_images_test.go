@@ -985,7 +985,11 @@ func TestOpenAIGatewayServiceForwardImages_OAuthPassesNAndReturnsAllImages(t *te
 	c.Request = req
 	c.Set("api_key", &APIKey{ID: 42})
 
-	svc := &OpenAIGatewayService{}
+	pricingSvc := newOpenAIImageBillingPlanTestService(t)
+	svc := &OpenAIGatewayService{
+		billingService: pricingSvc.billingService,
+		resolver:       pricingSvc.resolver,
+	}
 	parsed, err := svc.ParseOpenAIImagesRequest(c, body)
 	require.NoError(t, err)
 
@@ -1020,6 +1024,9 @@ func TestOpenAIGatewayServiceForwardImages_OAuthPassesNAndReturnsAllImages(t *te
 	require.NotNil(t, result)
 	require.Equal(t, "gpt-image-2", result.Model)
 	require.Equal(t, "gpt-image-2", result.UpstreamModel)
+	require.NotNil(t, result.ImageBillingPlan)
+	require.Equal(t, BillingModeToken, result.ImageBillingPlan.Mode)
+	require.Equal(t, "gpt-image-2", result.ImageBillingPlan.Model)
 	require.Equal(t, 3, result.ImageCount)
 	require.Equal(t, 46, result.Usage.InputTokens)
 	require.Equal(t, 2459, result.Usage.OutputTokens)
@@ -1066,6 +1073,11 @@ func TestParseOpenAIImagesSSEUsageBytes_ToolUsagePrecedenceAndFallback(t *testin
 			name:      "valid tool usage takes atomic precedence",
 			toolUsage: `{"input_tokens":4.6e1,"output_tokens":2459e0,"output_tokens_details":{"image_tokens":24590e-1}}`,
 			want:      OpenAIUsage{InputTokens: 46, OutputTokens: 2459, ImageOutputTokens: 2459},
+		},
+		{
+			name:      "image edit usage preserves image input tokens",
+			toolUsage: `{"input_tokens":371,"input_tokens_details":{"image_tokens":352},"output_tokens":439,"output_tokens_details":{"image_tokens":439}}`,
+			want:      OpenAIUsage{InputTokens: 371, ImageInputTokens: 352, OutputTokens: 439, ImageOutputTokens: 439},
 		},
 		{name: "absent", want: fallback},
 		{name: "malformed field", toolUsage: `{"input_tokens":"46","output_tokens":2459,"output_tokens_details":{"image_tokens":2459}}`, want: fallback},
@@ -1412,6 +1424,9 @@ func TestOpenAIGatewayServiceForwardImages_APIKeyGenerationUsesConfiguredV1BaseU
 			},
 		},
 	}
+	pricingSvc := newOpenAIImageBillingPlanTestService(t)
+	svc.billingService = pricingSvc.billingService
+	svc.resolver = pricingSvc.resolver
 	parsed, err := svc.ParseOpenAIImagesRequest(c, body)
 	require.NoError(t, err)
 
@@ -1421,8 +1436,9 @@ func TestOpenAIGatewayServiceForwardImages_APIKeyGenerationUsesConfiguredV1BaseU
 		Platform: PlatformOpenAI,
 		Type:     AccountTypeAPIKey,
 		Credentials: map[string]any{
-			"api_key":  "test-api-key",
-			"base_url": "https://image-upstream.example/v1",
+			"api_key":       "test-api-key",
+			"base_url":      "https://image-upstream.example/v1",
+			"model_mapping": map[string]any{"gpt-image-2": "gpt-image-1"},
 		},
 	}
 
@@ -1431,7 +1447,10 @@ func TestOpenAIGatewayServiceForwardImages_APIKeyGenerationUsesConfiguredV1BaseU
 	require.NotNil(t, result)
 	require.Equal(t, 1, result.ImageCount)
 	require.Equal(t, "gpt-image-2", result.Model)
-	require.Equal(t, "gpt-image-2", result.UpstreamModel)
+	require.Equal(t, "gpt-image-1", result.UpstreamModel)
+	require.NotNil(t, result.ImageBillingPlan)
+	require.Equal(t, BillingModeToken, result.ImageBillingPlan.Mode)
+	require.Equal(t, "gpt-image-1", result.ImageBillingPlan.Model)
 
 	upstream, ok := svc.httpUpstream.(*httpUpstreamRecorder)
 	require.True(t, ok)
@@ -1439,7 +1458,7 @@ func TestOpenAIGatewayServiceForwardImages_APIKeyGenerationUsesConfiguredV1BaseU
 	require.Equal(t, "https://image-upstream.example/v1/images/generations", upstream.lastReq.URL.String())
 	require.Equal(t, "Bearer test-api-key", upstream.lastReq.Header.Get("Authorization"))
 	require.Equal(t, "application/json", upstream.lastReq.Header.Get("Content-Type"))
-	require.Equal(t, "gpt-image-2", gjson.GetBytes(upstream.lastBody, "model").String())
+	require.Equal(t, "gpt-image-1", gjson.GetBytes(upstream.lastBody, "model").String())
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Equal(t, "aGVsbG8=", gjson.Get(rec.Body.String(), "data.0.b64_json").String())
 }
@@ -1870,7 +1889,11 @@ func TestOpenAIGatewayServiceForwardImages_OAuthEditsMultipartUsesResponsesAPI(t
 	c.Request = req
 	c.Set("api_key", &APIKey{ID: 100})
 
-	svc := &OpenAIGatewayService{}
+	pricingSvc := newOpenAIImageBillingPlanTestService(t)
+	svc := &OpenAIGatewayService{
+		billingService: pricingSvc.billingService,
+		resolver:       pricingSvc.resolver,
+	}
 	parsed, err := svc.ParseOpenAIImagesRequest(c, body.Bytes())
 	require.NoError(t, err)
 
@@ -1882,7 +1905,7 @@ func TestOpenAIGatewayServiceForwardImages_OAuthEditsMultipartUsesResponsesAPI(t
 				"X-Request-Id": []string{"req_img_edit_123"},
 			},
 			Body: io.NopCloser(strings.NewReader(
-				"data: {\"type\":\"response.completed\",\"response\":{\"created_at\":1710000002,\"usage\":{\"input_tokens\":13,\"output_tokens\":21,\"output_tokens_details\":{\"image_tokens\":8}},\"tool_usage\":{\"image_gen\":{\"images\":1}},\"output\":[{\"type\":\"image_generation_call\",\"result\":\"ZWRpdGVk\",\"revised_prompt\":\"replace background with aurora\",\"output_format\":\"webp\",\"quality\":\"high\"}]}}\n\n" +
+				"data: {\"type\":\"response.completed\",\"response\":{\"created_at\":1710000002,\"usage\":{\"input_tokens\":13,\"output_tokens\":21,\"output_tokens_details\":{\"image_tokens\":8}},\"tool_usage\":{\"image_gen\":{\"input_tokens\":371,\"input_tokens_details\":{\"image_tokens\":352},\"output_tokens\":439,\"output_tokens_details\":{\"image_tokens\":439},\"images\":1}},\"output\":[{\"type\":\"image_generation_call\",\"result\":\"ZWRpdGVk\",\"revised_prompt\":\"replace background with aurora\",\"output_format\":\"webp\",\"quality\":\"high\"}]}}\n\n" +
 					"data: [DONE]\n\n",
 			)),
 		},
@@ -1903,6 +1926,13 @@ func TestOpenAIGatewayServiceForwardImages_OAuthEditsMultipartUsesResponsesAPI(t
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, 1, result.ImageCount)
+	require.NotNil(t, result.ImageBillingPlan)
+	require.Equal(t, BillingModeToken, result.ImageBillingPlan.Mode)
+	require.True(t, result.ImageBillingPlan.RequireImageInput)
+	require.Equal(t, 371, result.Usage.InputTokens)
+	require.Equal(t, 352, result.Usage.ImageInputTokens)
+	require.Equal(t, 439, result.Usage.OutputTokens)
+	require.Equal(t, 439, result.Usage.ImageOutputTokens)
 	require.Equal(t, "gpt-image-2", gjson.GetBytes(upstream.lastBody, "tools.0.model").String())
 	require.Equal(t, "edit", gjson.GetBytes(upstream.lastBody, "tools.0.action").String())
 	require.False(t, gjson.GetBytes(upstream.lastBody, "tools.0.input_fidelity").Exists())

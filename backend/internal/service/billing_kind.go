@@ -28,7 +28,9 @@ const (
 	// /v1/chat/completions、/v1/embeddings、realtime 等。
 	BillingKindToken BillingKind = "token"
 
-	// BillingKindImage 按张计费：/v1/images/*、grok images。
+	// BillingKindImage 图片生成工作负载：/v1/images/*、grok images。
+	// 实际结算算法由 ResolvedBillingPlan/BillingMode 决定；GPT Image 可以按
+	// 图片 token 计费，Grok 等模型仍可按张计费。
 	BillingKindImage BillingKind = "image"
 
 	// BillingKindVideo 按秒计费：grok videos。

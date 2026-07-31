@@ -29,14 +29,20 @@ import (
 //     the group has no accounts at all. Both stay on 503 because retrying
 //     after a backoff can plausibly succeed (or, in the empty-pool case, the
 //     operator may be in the middle of adding accounts).
+//
+//   - 503 billing_configuration_error — the model exists but the local
+//     billing guard cannot resolve a safe price. This is not an upstream
+//     model-not-found response.
 type noAccountErrorClassification struct {
-	Status        int
-	ErrType       string
-	Message       string
-	ModelNotFound bool // true when this is a 404 model_not_found classification
-	// PricingUnavailable 标记这次 404 是价格门禁拒绝的，而不是"没有账号支持该模型"。
-	// 两者对客户端是同一件事（改配置前重试没有意义），但对运维是完全不同的两处配置：
-	// 一处在账号/模型映射，一处在价目录。调用方据此区分埋点与告警。
+	Status  int
+	ErrType string
+	Message string
+	// ModelNotFound also suppresses capacity-limit side effects for permanent
+	// model/configuration failures. PricingUnavailable retains that behavior
+	// even though its public response is no longer a misleading 404.
+	ModelNotFound bool
+	// PricingUnavailable marks a local billing configuration rejection rather
+	// than an upstream model lookup failure.
 	PricingUnavailable bool
 }
 
@@ -202,10 +208,10 @@ func classifyNoAccountError(
 
 // pricingUnavailableClassification 是价格门禁拒绝的统一出口。
 //
-// 状态码沿用 404 model_not_found，理由与"没有账号支持该模型"那一支相同：都要先改
-// 服务端配置，重试再多次也不会成功，503 会让客户端和反向代理把它当成瞬时故障一直
-// 重试。ModelNotFound=true 同时让调用方跳过 markOpsRoutingCapacityLimited*——把
-// 定价缺失记成"容量打满"会污染扩容决策。
+// Price resolution is a local service dependency, not evidence that the
+// requested upstream model does not exist. Return a billing-specific 503 while
+// retaining ModelNotFound=true internally only to skip
+// markOpsRoutingCapacityLimited* side effects.
 //
 // 客户端只拿到"这个模型不可用"，模型链细节（requested/channel/billing/upstream）
 // 留在日志里，那是运维要看的东西，不该出现在响应体。
@@ -226,9 +232,9 @@ func pricingUnavailableClassification(
 		zap.Error(selErr),
 	)
 	return noAccountErrorClassification{
-		Status:             http.StatusNotFound,
-		ErrType:            "model_not_found",
-		Message:            fmt.Sprintf("Model %q is not available: no billing price is configured for it", displayModel),
+		Status:             http.StatusServiceUnavailable,
+		ErrType:            "billing_configuration_error",
+		Message:            fmt.Sprintf("Model %q is temporarily unavailable due to billing configuration", displayModel),
 		ModelNotFound:      true,
 		PricingUnavailable: true,
 	}

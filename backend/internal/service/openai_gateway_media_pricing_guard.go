@@ -233,6 +233,14 @@ func (s *OpenAIGatewayService) hasResolvableOpenAIMediaPricing(
 	if s.hasCompleteOpenAIChannelMediaPricing(ctx, groupID, billingModel, kind) {
 		return true
 	}
+	// /v1/images/* may be billed from exact image token dimensions. This is
+	// only a scheduler-level candidate check; the Image API forwarder resolves
+	// and locks the exact plan after account mapping. Native Responses image
+	// tools retain their existing exact per-image guard.
+	if kind == BillingKindImage &&
+		s.hasResolvableOpenAIImageTokenPricing(ctx, groupID, billingModel) {
+		return true
+	}
 	// 模型价格目录 / 按 SKU 写死的默认价。
 	if s.catalogHasMediaPricing(billingModel, kind) {
 		return true

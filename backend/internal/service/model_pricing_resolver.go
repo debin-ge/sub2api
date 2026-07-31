@@ -81,6 +81,85 @@ func (r *ModelPricingResolver) ResolveStrictToken(ctx context.Context, input Pri
 	return r.resolve(ctx, input, true)
 }
 
+// ResolveStrictImageToken resolves the exact image-token dimensions used by
+// /v1/images/*. Unlike ResolveStrictToken, it permits catalog entries that omit
+// ordinary text-output pricing when a dedicated image-output price exists.
+func (r *ModelPricingResolver) ResolveStrictImageToken(
+	ctx context.Context,
+	input PricingInput,
+	requireImageInput bool,
+) (*ResolvedPricing, error) {
+	if r == nil || r.billingService == nil {
+		return nil, fmt.Errorf(
+			"%w for image model: %s: pricing resolver unavailable",
+			ErrModelPricingUnavailable,
+			input.Model,
+		)
+	}
+	var channelPricing *ChannelModelPricing
+	if input.GroupID != nil && r.channelService != nil {
+		channelPricing = r.channelService.GetChannelModelPricing(ctx, *input.GroupID, input.Model)
+		if channelPricing != nil {
+			mode := channelPricing.BillingMode
+			if mode != "" && mode != BillingModeToken {
+				return nil, fmt.Errorf(
+					"%w for image model: %s: channel billing mode is %s",
+					ErrModelPricingUnavailable,
+					input.Model,
+					mode,
+				)
+			}
+		}
+	}
+
+	basePricing, baseErr := r.billingService.GetImageTokenPricingStrict(input.Model, requireImageInput)
+	if baseErr != nil && !channelImageTokenPricingConfigured(channelPricing) {
+		return nil, baseErr
+	}
+	resolved := &ResolvedPricing{
+		Mode:                   BillingModeToken,
+		BasePricing:            basePricing,
+		Source:                 PricingSourceModelPrice,
+		SupportsCacheBreakdown: basePricing != nil && basePricing.SupportsCacheBreakdown,
+	}
+	if channelPricing != nil {
+		resolved.Source = PricingSourceChannel
+		resolved.channelPricing = channelPricing
+		preserveImageOutput := basePricing != nil && channelPricing.OutputPrice == nil && channelPricing.ImageOutputPrice == nil
+		preserveImageInput := basePricing != nil && channelPricing.InputPrice == nil && channelPricing.ImageInputPrice == nil
+		var imageOutputPrice float64
+		var imageOutputExplicit bool
+		var imageInputPrice float64
+		var imageInputExplicit bool
+		if basePricing != nil {
+			imageOutputPrice = basePricing.ImageOutputPricePerToken
+			imageOutputExplicit = basePricing.ImageOutputPriceExplicit
+			imageInputPrice = basePricing.ImageInputPricePerToken
+			imageInputExplicit = basePricing.ImageInputPriceExplicit
+		}
+		r.applyTokenOverrides(channelPricing, resolved)
+		if preserveImageOutput {
+			resolved.BasePricing.ImageOutputPricePerToken = imageOutputPrice
+			resolved.BasePricing.ImageOutputPriceExplicit = imageOutputExplicit
+		}
+		if preserveImageInput {
+			resolved.BasePricing.ImageInputPricePerToken = imageInputPrice
+			resolved.BasePricing.ImageInputPriceExplicit = imageInputExplicit
+		}
+	}
+	if !openAIImageTokenPricingComplete(resolved.BasePricing, requireImageInput) {
+		return nil, fmt.Errorf(
+			"%w for image token model: %s: required image dimensions are incomplete",
+			ErrModelPricingUnavailable,
+			input.Model,
+		)
+	}
+	if err := validateFiniteModelPricing(input.Model, resolved.BasePricing); err != nil {
+		return nil, err
+	}
+	return resolved, nil
+}
+
 func (r *ModelPricingResolver) resolve(
 	ctx context.Context,
 	input PricingInput,
@@ -219,11 +298,13 @@ func (r *ModelPricingResolver) applyTokenOverrides(chPricing *ChannelModelPricin
 
 	if chPricing.InputPrice != nil {
 		resolved.BasePricing.InputPricePerToken = *chPricing.InputPrice
+		resolved.BasePricing.InputPriceExplicit = true
 		resolved.BasePricing.InputPricePerTokenPriority = *chPricing.InputPrice
 		resolved.BasePricing.InputPriorityPriceExplicit = true
 	}
 	if chPricing.OutputPrice != nil {
 		resolved.BasePricing.OutputPricePerToken = *chPricing.OutputPrice
+		resolved.BasePricing.OutputPriceExplicit = true
 		resolved.BasePricing.OutputPricePerTokenPriority = *chPricing.OutputPrice
 		resolved.BasePricing.OutputPriorityPriceExplicit = true
 	}
@@ -337,11 +418,13 @@ func intervalToModelPricing(iv *PricingInterval, base *ModelPricing, supportsCac
 	pricing.SupportsCacheBreakdown = supportsCacheBreakdown
 	if iv.InputPrice != nil {
 		pricing.InputPricePerToken = *iv.InputPrice
+		pricing.InputPriceExplicit = true
 		pricing.InputPricePerTokenPriority = *iv.InputPrice
 		pricing.InputPriorityPriceExplicit = true
 	}
 	if iv.OutputPrice != nil {
 		pricing.OutputPricePerToken = *iv.OutputPrice
+		pricing.OutputPriceExplicit = true
 		pricing.OutputPricePerTokenPriority = *iv.OutputPrice
 		pricing.OutputPriorityPriceExplicit = true
 	}

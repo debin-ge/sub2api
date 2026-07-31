@@ -264,6 +264,12 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		if unpriced {
 			billingState = BillingStatePricingUnavailable
 			cost = unpricedCostBreakdown(input.BillingKind, result.ImageCount, result.VideoCount)
+			if result.ImageBillingPlan != nil && result.ImageBillingPlan.Mode != "" {
+				// A token-priced Image API request with missing upstream usage
+				// must remain identifiable as token billing in the recovery
+				// queue; labeling it "image" could later settle it by count.
+				cost.BillingMode = string(result.ImageBillingPlan.Mode)
+			}
 			logPricingUnavailableUsage("service.openai_gateway", simpleMode, err,
 				zap.String("billing_kind", input.BillingKind.String()),
 				zap.Strings("billing_models", billingModels),
@@ -514,6 +520,19 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
 			return s.calculateOpenAIVideoCost(ctx, billingModel, apiKey, result, videoMultiplier)
 		}
 	case BillingKindImage:
+		if result != nil && result.ImageBillingPlan != nil {
+			return s.calculateOpenAIImageCostFromPlan(
+				ctx,
+				result,
+				result.ImageBillingPlan,
+				apiKey,
+				tokens,
+				multiplier,
+				imageMultiplier,
+				serviceTier,
+				longContextBillingEnabled,
+			)
+		}
 		if resolved := s.resolveOpenAIChannelPricing(ctx, billingModel, apiKey); resolved == nil || resolved.Mode != BillingModeToken {
 			return s.calculateOpenAIImageCost(ctx, billingModel, apiKey, result, imageMultiplier)
 		}
@@ -566,6 +585,113 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
 		lastErr = errors.New("no non-empty billing model candidates")
 	}
 	return nil, fmt.Errorf("calculate OpenAI usage cost failed for billing models %s: %w", strings.Join(billingModels, ","), lastErr)
+}
+
+func (s *OpenAIGatewayService) calculateOpenAIImageCostFromPlan(
+	ctx context.Context,
+	result *OpenAIForwardResult,
+	plan *OpenAIImageBillingPlan,
+	apiKey *APIKey,
+	tokens UsageTokens,
+	tokenMultiplier float64,
+	imageMultiplier float64,
+	serviceTier string,
+	longContextBillingEnabled bool,
+) (*CostBreakdown, error) {
+	if plan == nil || plan.Resolved == nil || strings.TrimSpace(plan.Model) == "" {
+		return nil, fmt.Errorf("%w: OpenAI image billing plan is incomplete", ErrModelPricingUnavailable)
+	}
+	resolver := s.resolver
+	if resolver == nil {
+		resolver = NewModelPricingResolver(s.channelService, s.billingService)
+	}
+
+	switch plan.Mode {
+	case BillingModeToken:
+		if err := validateOpenAIImageTokenUsage(plan, result, tokens); err != nil {
+			return nil, err
+		}
+		var groupID *int64
+		if apiKey != nil {
+			groupID = apiKey.GroupID
+		}
+		cost, err := s.billingService.CalculateCostUnified(CostInput{
+			Ctx:                       ctx,
+			Model:                     plan.Model,
+			GroupID:                   groupID,
+			Tokens:                    tokens,
+			RequestCount:              1,
+			RateMultiplier:            tokenMultiplier,
+			ServiceTier:               serviceTier,
+			Resolver:                  resolver,
+			Resolved:                  plan.Resolved,
+			LongContextBillingEnabled: &longContextBillingEnabled,
+		})
+		if err != nil {
+			return nil, err
+		}
+		cost.BillingMode = string(BillingModeToken)
+		return cost, nil
+	case BillingModeImage, BillingModePerRequest:
+		if result == nil || result.ImageCount <= 0 {
+			return nil, fmt.Errorf("%w: billable image count is missing", ErrModelPricingUnavailable)
+		}
+		cost, err := s.billingService.CalculateCostUnified(CostInput{
+			Ctx:            ctx,
+			Model:          plan.Model,
+			RequestCount:   result.ImageCount,
+			SizeTier:       plan.SizeTier,
+			RateMultiplier: imageMultiplier,
+			Resolver:       resolver,
+			Resolved:       plan.Resolved,
+		})
+		if err != nil {
+			return nil, err
+		}
+		cost.BillingMode = string(BillingModeImage)
+		return cost, nil
+	default:
+		return nil, fmt.Errorf(
+			"%w: unsupported OpenAI image billing mode %q",
+			ErrModelPricingUnavailable,
+			plan.Mode,
+		)
+	}
+}
+
+func validateOpenAIImageTokenUsage(
+	plan *OpenAIImageBillingPlan,
+	result *OpenAIForwardResult,
+	tokens UsageTokens,
+) error {
+	if result == nil || result.ImageCount <= 0 {
+		return fmt.Errorf("%w: image token usage has no billable image", ErrModelPricingUnavailable)
+	}
+	if tokens.ImageOutputTokens <= 0 || tokens.OutputTokens < tokens.ImageOutputTokens {
+		return fmt.Errorf(
+			"%w: image output token usage is missing or inconsistent",
+			ErrModelPricingUnavailable,
+		)
+	}
+	if tokens.ImageInputTokens < 0 || tokens.InputTokens < tokens.ImageInputTokens {
+		return fmt.Errorf(
+			"%w: image input token usage is inconsistent",
+			ErrModelPricingUnavailable,
+		)
+	}
+	if plan.RequireImageInput && tokens.ImageInputTokens <= 0 {
+		return fmt.Errorf("%w: image edit input token usage is missing", ErrModelPricingUnavailable)
+	}
+	pricing := plan.Resolved.BasePricing
+	if pricing == nil {
+		return fmt.Errorf("%w: image token pricing snapshot is missing", ErrModelPricingUnavailable)
+	}
+	textOutputTokens := tokens.OutputTokens - tokens.ImageOutputTokens
+	outputPriceConfigured := pricing.OutputPriceExplicit || pricing.OutputPricePerToken > 0
+	if textOutputTokens > 0 && !outputPriceConfigured {
+		return fmt.Errorf("%w: text output usage has no configured price", ErrModelPricingUnavailable)
+	}
+	return nil
 }
 
 func webSearchCallsFromResult(result *OpenAIForwardResult) int {

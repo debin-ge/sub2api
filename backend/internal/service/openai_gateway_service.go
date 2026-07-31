@@ -236,6 +236,11 @@ type OpenAIForwardResult struct {
 	// UpstreamEndpoint is the actual upstream API path used for this request.
 	// It avoids guessing when one downstream protocol can use multiple upstream endpoints.
 	UpstreamEndpoint string
+	// ImageBillingPlan locks the exact pricing mode and price snapshot admitted
+	// before a /v1/images/* request reaches upstream. It is intentionally scoped
+	// to the Image API; native Responses image tools require separate primary
+	// and media usage components.
+	ImageBillingPlan *OpenAIImageBillingPlan
 	// ServiceTier records the OpenAI Responses API service tier, e.g. "priority" / "flex".
 	// Nil means the request did not specify a recognized tier.
 	ServiceTier *string

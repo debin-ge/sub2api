@@ -681,20 +681,25 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 	if err := validateOpenAIImagesModel(upstreamModel); err != nil {
 		return nil, err
 	}
-	var groupID *int64
-	if apiKey := getAPIKeyFromContext(c); apiKey != nil {
+	var (
+		apiKey      = getAPIKeyFromContext(c)
+		groupID     *int64
+		billingPlan *OpenAIImageBillingPlan
+	)
+	if apiKey != nil {
 		groupID = apiKey.GroupID
 	}
 	if s.pricingGuardRequired || s.billingService != nil {
-		if err := s.enforceResolvedOpenAIMediaPricing(
+		var err error
+		billingPlan, err = s.resolveOpenAIImageBillingPlan(
 			ctx,
+			apiKey,
 			groupID,
-			account,
-			parsed.Model,
 			upstreamModel,
 			parsed.SizeTier,
-			BillingKindImage,
-		); err != nil {
+			parsed.IsEdits(),
+		)
+		if err != nil {
 			return nil, err
 		}
 	}
@@ -785,6 +790,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 					Model:            requestModel,
 					BillingModel:     upstreamModel,
 					UpstreamModel:    upstreamModel,
+					ImageBillingPlan: billingPlan,
 					Stream:           parsed.Stream,
 					ResponseHeaders:  resp.Header.Clone(),
 					Duration:         time.Since(startTime),
@@ -807,6 +813,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 			Model:            requestModel,
 			BillingModel:     upstreamModel,
 			UpstreamModel:    upstreamModel,
+			ImageBillingPlan: billingPlan,
 			Stream:           parsed.Stream,
 			ResponseHeaders:  resp.Header.Clone(),
 			Duration:         time.Since(startTime),
@@ -831,6 +838,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 			Model:            requestModel,
 			BillingModel:     upstreamModel,
 			UpstreamModel:    upstreamModel,
+			ImageBillingPlan: billingPlan,
 			Stream:           parsed.Stream,
 			ResponseHeaders:  resp.Header.Clone(),
 			Duration:         time.Since(startTime),
