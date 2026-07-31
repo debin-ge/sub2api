@@ -1707,7 +1707,12 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 			parsed.IsEdits(),
 		)
 		if err != nil {
-			return nil, err
+			return nil, wrapOpenAIImageBillingPlanError(
+				err,
+				account,
+				requestModel,
+				parsed.SizeTier,
+			)
 		}
 	}
 	logger.LegacyPrintf(

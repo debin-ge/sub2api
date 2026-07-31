@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -166,6 +167,30 @@ func (s *OpenAIGatewayService) resolveOpenAIImageBillingPlan(
 		ErrModelPricingUnavailable,
 		model,
 		tier,
+	)
+}
+
+func wrapOpenAIImageBillingPlanError(
+	err error,
+	account *Account,
+	upstreamModel string,
+	imageSizeTier string,
+) error {
+	if err == nil || !errors.Is(err, ErrModelPricingUnavailable) {
+		return err
+	}
+	platform := PlatformOpenAI
+	if account != nil && strings.TrimSpace(account.Platform) != "" {
+		platform = account.Platform
+	}
+	return fmt.Errorf(
+		"%w for billing_kind=%s platform=%s upstream_model=%q media_size_tier=%q: %v",
+		ErrModelPricingUnavailable,
+		BillingKindImage.String(),
+		platform,
+		strings.TrimSpace(upstreamModel),
+		strings.TrimSpace(imageSizeTier),
+		err,
 	)
 }
 

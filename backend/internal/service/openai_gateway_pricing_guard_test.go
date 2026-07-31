@@ -970,7 +970,7 @@ func TestOpenAIMediaPricingGuardUsesExactSettlementModel(t *testing.T) {
 	require.ErrorIs(t, err, ErrModelPricingUnavailable)
 }
 
-func TestOpenAIMediaPricingGuardDoesNotUseTokenChannelPriceAsMediaEvidence(t *testing.T) {
+func TestOpenAIMediaPricingGuardAllowsImageTokenChannelPriceButRejectsVideo(t *testing.T) {
 	groupID := int64(84)
 	model := "channel-token-only-media-unpriced-v99"
 	price := 1e-6
@@ -991,16 +991,20 @@ func TestOpenAIMediaPricingGuardDoesNotUseTokenChannelPriceAsMediaEvidence(t *te
 	svc.channelService = channelService
 	account := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
 
-	for _, kind := range []BillingKind{BillingKindImage, BillingKindVideo} {
-		err := svc.ValidateSelectedOpenAIMediaPricing(
-			context.Background(),
-			&groupID,
-			account,
-			model,
-			kind,
-		)
-		require.ErrorIs(t, err, ErrModelPricingUnavailable, kind.String())
-	}
+	require.NoError(t, svc.ValidateSelectedOpenAIMediaPricing(
+		context.Background(),
+		&groupID,
+		account,
+		model,
+		BillingKindImage,
+	))
+	require.ErrorIs(t, svc.ValidateSelectedOpenAIMediaPricing(
+		context.Background(),
+		&groupID,
+		account,
+		model,
+		BillingKindVideo,
+	), ErrModelPricingUnavailable)
 }
 
 func TestValidateSelectedOpenAIResponsesImagePricingUsesToolModel(t *testing.T) {

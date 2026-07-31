@@ -700,7 +700,12 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 			parsed.IsEdits(),
 		)
 		if err != nil {
-			return nil, err
+			return nil, wrapOpenAIImageBillingPlanError(
+				err,
+				account,
+				upstreamModel,
+				parsed.SizeTier,
+			)
 		}
 	}
 	logger.LegacyPrintf(
