@@ -86,21 +86,21 @@ func (s *FrontendServer) InvalidateCache() {
 // Middleware returns the Gin middleware handler
 func (s *FrontendServer) Middleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		path := c.Request.URL.Path
+		requestPath := c.Request.URL.Path
 
 		// Skip API routes
-		if shouldBypassEmbeddedFrontend(path) {
+		if shouldBypassEmbeddedFrontend(requestPath) {
 			c.Next()
 			return
 		}
 
-		cleanPath := strings.TrimPrefix(path, "/")
-		if cleanPath == "" {
-			cleanPath = "index.html"
+		if !isFrontendReadRequest(c.Request.Method) {
+			c.Next()
+			return
 		}
 
-		// For index.html or SPA routes, serve with injected settings
-		if cleanPath == "index.html" || !s.fileExists(cleanPath) {
+		cleanPath := strings.TrimPrefix(requestPath, "/")
+		if cleanPath == "" || cleanPath == "index.html" {
 			s.serveIndexHTML(c)
 			return
 		}
@@ -110,9 +110,25 @@ func (s *FrontendServer) Middleware() gin.HandlerFunc {
 			return
 		}
 
-		// Serve static files normally (hashed assets get long-lived cache headers)
-		applyStaticAssetCacheHeaders(c.Writer.Header(), cleanPath)
-		s.fileServer.ServeHTTP(c.Writer, c.Request)
+		if s.fileExists(cleanPath) {
+			// Serve static files normally (hashed assets get long-lived cache headers)
+			applyStaticAssetCacheHeaders(c.Writer.Header(), cleanPath)
+			s.fileServer.ServeHTTP(c.Writer, c.Request)
+			c.Abort()
+			return
+		}
+
+		if isFrontendAssetRequest(c, cleanPath) {
+			serveMissingFrontendAsset(c)
+			return
+		}
+
+		if acceptsHTML(c) {
+			s.serveIndexHTML(c)
+			return
+		}
+
+		c.Status(http.StatusNotFound)
 		c.Abort()
 	}
 }
@@ -341,31 +357,48 @@ func ServeEmbeddedFrontend() gin.HandlerFunc {
 	overrideDir := filepath.Join("data", "public")
 
 	return func(c *gin.Context) {
-		path := c.Request.URL.Path
+		requestPath := c.Request.URL.Path
 
-		if shouldBypassEmbeddedFrontend(path) {
+		if shouldBypassEmbeddedFrontend(requestPath) {
 			c.Next()
 			return
 		}
 
-		cleanPath := strings.TrimPrefix(path, "/")
-		if cleanPath == "" {
-			cleanPath = "index.html"
+		if !isFrontendReadRequest(c.Request.Method) {
+			c.Next()
+			return
+		}
+
+		cleanPath := strings.TrimPrefix(requestPath, "/")
+		if cleanPath == "" || cleanPath == "index.html" {
+			serveIndexHTML(c, distFS)
+			return
+		}
+
+		if tryServeOverrideFile(c, overrideDir, cleanPath) {
+			return
 		}
 
 		if file, err := distFS.Open(cleanPath); err == nil {
 			_ = file.Close()
-			// Try local override first
-			if tryServeOverrideFile(c, overrideDir, cleanPath) {
-				return
-			}
 			applyStaticAssetCacheHeaders(c.Writer.Header(), cleanPath)
 			fileServer.ServeHTTP(c.Writer, c.Request)
 			c.Abort()
 			return
 		}
 
-		serveIndexHTML(c, distFS)
+		if isFrontendAssetRequest(c, cleanPath) {
+			serveMissingFrontendAsset(c)
+			return
+		}
+
+		if acceptsHTML(c) {
+			serveIndexHTML(c, distFS)
+			return
+		}
+
+		c.Status(http.StatusNotFound)
+		c.Abort()
 	}
 }
 
@@ -402,6 +435,43 @@ func shouldBypassEmbeddedFrontend(path string) bool {
 		strings.HasPrefix(trimmed, "/videos/")
 }
 
+func isFrontendReadRequest(method string) bool {
+	return method == http.MethodGet || method == http.MethodHead
+}
+
+func isFrontendAssetRequest(c *gin.Context, cleanPath string) bool {
+	if strings.HasPrefix(cleanPath, "assets/") {
+		return true
+	}
+
+	switch strings.ToLower(filepath.Ext(cleanPath)) {
+	case ".js", ".mjs", ".css", ".map", ".wasm",
+		".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif",
+		".svg", ".ico",
+		".woff", ".woff2", ".ttf", ".otf",
+		".json", ".webmanifest", ".xml", ".txt":
+		return true
+	}
+
+	switch strings.ToLower(c.GetHeader("Sec-Fetch-Dest")) {
+	case "script", "style", "font", "image":
+		return true
+	}
+
+	return false
+}
+
+func acceptsHTML(c *gin.Context) bool {
+	accept := strings.ToLower(c.GetHeader("Accept"))
+	return accept == "" || strings.Contains(accept, "text/html")
+}
+
+func serveMissingFrontendAsset(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	c.Data(http.StatusNotFound, "text/plain; charset=utf-8", []byte("static asset not found"))
+	c.Abort()
+}
+
 func serveIndexHTML(c *gin.Context, fsys fs.FS) {
 	file, err := fsys.Open("index.html")
 	if err != nil {
@@ -418,6 +488,7 @@ func serveIndexHTML(c *gin.Context, fsys fs.FS) {
 		return
 	}
 
+	c.Header("Cache-Control", "no-cache")
 	c.Data(http.StatusOK, "text/html; charset=utf-8", content)
 	c.Abort()
 }

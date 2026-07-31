@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { RouterView, useRouter, useRoute } from 'vue-router'
 import { onMounted, onBeforeUnmount, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import Toast from '@/components/common/Toast.vue'
 import NavigationProgress from '@/components/common/NavigationProgress.vue'
 import AdminComplianceDialog from '@/components/admin/AdminComplianceDialog.vue'
@@ -9,7 +10,12 @@ import AnnouncementPopup from '@/components/common/AnnouncementPopup.vue'
 import { useAppStore, useAuthStore, useSubscriptionStore, useAnnouncementStore, useAdminComplianceStore, useAdminSettingsStore } from '@/stores'
 import { getSetupStatus } from '@/api/setup'
 import { updateFavicon } from '@/utils/branding'
+import {
+  FRONTEND_UPDATE_REQUIRED_EVENT,
+  isFrontendUpdateRequired
+} from '@/utils/chunkLoadRecovery'
 
+const { t } = useI18n()
 const router = useRouter()
 const route = useRoute()
 const appStore = useAppStore()
@@ -62,6 +68,10 @@ function onAdminComplianceRequired(event: Event) {
   adminComplianceStore.requireAcknowledgement(detail)
 }
 
+function onFrontendUpdateRequired() {
+  appStore.showWarning(t('auth.frontendUpdateRequired'))
+}
+
 watch(
   () => authStore.isAuthenticated,
   (isAuthenticated, oldValue) => {
@@ -110,10 +120,15 @@ router.afterEach(() => {
 onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', onVisibilityChange)
   window.removeEventListener('admin-compliance-required', onAdminComplianceRequired)
+  window.removeEventListener(FRONTEND_UPDATE_REQUIRED_EVENT, onFrontendUpdateRequired)
 })
 
 onMounted(async () => {
   window.addEventListener('admin-compliance-required', onAdminComplianceRequired)
+  window.addEventListener(FRONTEND_UPDATE_REQUIRED_EVENT, onFrontendUpdateRequired)
+  if (isFrontendUpdateRequired()) {
+    onFrontendUpdateRequired()
+  }
 
   // Check if setup is needed
   try {

@@ -6,6 +6,7 @@ import OidcCallbackView from '../OidcCallbackView.vue'
 const replace = vi.fn()
 const showSuccess = vi.fn()
 const showError = vi.fn()
+const showWarning = vi.fn()
 const setToken = vi.fn()
 const setPendingAuthSession = vi.fn()
 const clearPendingAuthSession = vi.fn()
@@ -52,7 +53,8 @@ vi.mock('@/stores', () => ({
   }),
   useAppStore: () => ({
     showSuccess,
-    showError
+    showError,
+    showWarning
   })
 }))
 
@@ -80,6 +82,7 @@ describe('OidcCallbackView', () => {
     replace.mockReset()
     showSuccess.mockReset()
     showError.mockReset()
+    showWarning.mockReset()
     setToken.mockReset()
     setPendingAuthSession.mockReset()
     clearPendingAuthSession.mockReset()

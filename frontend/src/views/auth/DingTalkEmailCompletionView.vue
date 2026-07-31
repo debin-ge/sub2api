@@ -37,6 +37,7 @@ import {
   type PendingOAuthExchangeResponse
 } from '@/api/auth'
 import { clearAllAffiliateReferralCodes } from '@/utils/oauthAffiliate'
+import { finishAuthenticatedNavigation } from '@/utils/authNavigation'
 
 const route = useRoute()
 const router = useRouter()
@@ -62,6 +63,18 @@ function sanitizeRedirectPath(path: string | null | undefined): string {
 function getRequestErrorMessage(error: unknown, fallback: string): string {
   const err = error as { message?: string; response?: { data?: { detail?: string; message?: string } } }
   return err.response?.data?.detail || err.response?.data?.message || err.message || fallback
+}
+
+async function finishLoginNavigation(redirect: string): Promise<void> {
+  await finishAuthenticatedNavigation({
+    router,
+    redirectTo: redirect,
+    onSuccess: () => appStore.showSuccess(t('auth.loginSuccess')),
+    onNavigationFailure: (error) => {
+      console.error('Post-login navigation failed:', error)
+      appStore.showWarning(t('auth.loginSucceededNavigationFailed'))
+    }
+  })
 }
 
 async function handleCreateAccount(payload: PendingOAuthCreateAccountPayload) {
@@ -92,8 +105,7 @@ async function handleCreateAccount(payload: PendingOAuthCreateAccountPayload) {
       persistOAuthTokenContext(data)
       await authStore.setToken(data.access_token)
       clearAllAffiliateReferralCodes()
-      appStore.showSuccess(t('auth.loginSuccess'))
-      await router.replace(redirect)
+      await finishLoginNavigation(redirect)
       return
     }
 

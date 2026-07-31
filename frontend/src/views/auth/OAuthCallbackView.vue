@@ -163,6 +163,7 @@ import {
   loadOAuthAffiliateCode,
   oauthAffiliatePayload
 } from '@/utils/oauthAffiliate'
+import { finishAuthenticatedNavigation } from '@/utils/authNavigation'
 
 const route = useRoute()
 const router = useRouter()
@@ -271,6 +272,18 @@ function redirectProviderCallbackToBackend(provider: 'github' | 'google'): void 
   window.location.href = buildApiUrl(`/auth/oauth/${provider}/callback${suffix}`)
 }
 
+async function finishOAuthNavigation(redirect: string): Promise<void> {
+  await finishAuthenticatedNavigation({
+    router,
+    redirectTo: sanitizeRedirectPath(redirect),
+    onSuccess: () => appStore.showSuccess(t('auth.loginSuccess')),
+    onNavigationFailure: (error) => {
+      console.error('Post-login navigation failed:', error)
+      appStore.showWarning(t('auth.loginSucceededNavigationFailed'))
+    }
+  })
+}
+
 async function finalizeTokenResponse(tokenResponse: OAuthTokenResponse, redirect: string) {
   persistOAuthTokenContext(tokenResponse)
   await authStore.setToken(tokenResponse.access_token)
@@ -278,8 +291,7 @@ async function finalizeTokenResponse(tokenResponse: OAuthTokenResponse, redirect
     window.sessionStorage.removeItem(EMAIL_OAUTH_PENDING_PROVIDER_KEY)
   }
   clearAllAffiliateReferralCodes()
-  appStore.showSuccess(t('auth.loginSuccess'))
-  await router.replace(sanitizeRedirectPath(redirect))
+  await finishOAuthNavigation(redirect)
 }
 
 function hasOAuthTokenResponse(value: Partial<OAuthTokenResponse>): value is OAuthTokenResponse {

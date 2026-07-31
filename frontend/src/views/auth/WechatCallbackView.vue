@@ -345,6 +345,7 @@ import {
   loadOAuthAffiliateCode,
   oauthAffiliatePayload
 } from '@/utils/oauthAffiliate'
+import { finishAuthenticatedNavigation } from '@/utils/authNavigation'
 
 const route = useRoute()
 const router = useRouter()
@@ -779,6 +780,22 @@ function getRequestErrorMessage(error: unknown, fallback: string): string {
   return err.response?.data?.detail || err.response?.data?.message || err.message || fallback
 }
 
+async function finishOAuthNavigation(
+  redirect: string,
+  successMessage: string = t('auth.loginSuccess'),
+  navigationFailureMessage: string = t('auth.loginSucceededNavigationFailed')
+): Promise<void> {
+  await finishAuthenticatedNavigation({
+    router,
+    redirectTo: redirect,
+    onSuccess: () => appStore.showSuccess(successMessage),
+    onNavigationFailure: (error) => {
+      console.error('Post-auth navigation failed:', error)
+      appStore.showWarning(navigationFailureMessage)
+    }
+  })
+}
+
 function isCreateAccountRecoveryError(error: unknown): boolean {
   const data = (error as {
     response?: {
@@ -808,8 +825,11 @@ async function finalizeCompletion(completion: PendingOAuthExchangeResponse, redi
     const bindRedirect = sanitizeRedirectPath(completion.redirect || '/profile')
     clearPendingAuthSession()
     clearAllAffiliateReferralCodes()
-    appStore.showSuccess(bindSuccessMessage)
-    await router.replace(bindRedirect)
+    await finishOAuthNavigation(
+      bindRedirect,
+      bindSuccessMessage,
+      t('auth.actionSucceededNavigationFailed')
+    )
     return
   }
 
@@ -820,8 +840,7 @@ async function finalizeCompletion(completion: PendingOAuthExchangeResponse, redi
   persistOAuthTokenContext(completion)
   await authStore.setToken(completion.access_token)
   clearAllAffiliateReferralCodes()
-  appStore.showSuccess(t('auth.loginSuccess'))
-  await router.replace(redirect)
+  await finishOAuthNavigation(redirect)
 }
 
 async function finalizePendingAccountResponse(completion: PendingWeChatCompletion) {
@@ -966,8 +985,7 @@ async function handleSubmitTotpChallenge() {
     persistOAuthTokenContext(completion)
     await authStore.setToken(completion.access_token)
     clearAllAffiliateReferralCodes()
-    appStore.showSuccess(t('auth.loginSuccess'))
-    await router.replace(redirectTo.value)
+    await finishOAuthNavigation(redirectTo.value)
   } catch (e: unknown) {
     totpError.value = getRequestErrorMessage(e, t('auth.loginFailed'))
   } finally {
@@ -1027,8 +1045,7 @@ onMounted(async () => {
       persistOAuthTokenContext(legacyLogin)
       await authStore.setToken(legacyLogin.access_token)
       clearAllAffiliateReferralCodes()
-      appStore.showSuccess(t('auth.loginSuccess'))
-      await router.replace(redirect)
+      await finishOAuthNavigation(redirect)
       return
     }
 

@@ -235,6 +235,12 @@ export default {
     registrationFailed: 'Registration failed. Please try again.',
     emailSuffixNotAllowed: 'Registration with this email domain is blocked.',
     loginSuccess: 'Login successful! Welcome back.',
+    loginSucceededNavigationFailed:
+      'You are signed in, but the next page could not be loaded. Please refresh and try again.',
+    actionSucceededNavigationFailed:
+      'The operation succeeded, but the next page could not be loaded. Please refresh and try again.',
+    frontendUpdateRequired:
+      'The application was updated. Please close and reopen this page.',
     accountCreatedSuccess: 'Account created successfully! Welcome to {siteName}.',
     reloginRequired: 'Session expired. Please log in again.',
     turnstileExpired: 'Verification expired, please try again',

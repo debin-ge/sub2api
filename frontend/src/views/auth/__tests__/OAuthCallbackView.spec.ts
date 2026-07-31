@@ -8,6 +8,7 @@ const {
   routerReplaceMock,
   showErrorMock,
   showSuccessMock,
+  showWarningMock,
   setTokenMock,
   copyToClipboardMock,
   exchangePendingOAuthCompletionMock,
@@ -26,6 +27,7 @@ const {
   routerReplaceMock: vi.fn(),
   showErrorMock: vi.fn(),
   showSuccessMock: vi.fn(),
+  showWarningMock: vi.fn(),
   setTokenMock: vi.fn(),
   copyToClipboardMock: vi.fn(),
   exchangePendingOAuthCompletionMock: vi.fn(),
@@ -52,6 +54,7 @@ vi.mock('@/stores', () => ({
   useAppStore: () => ({
     showError: (...args: any[]) => showErrorMock(...args),
     showSuccess: (...args: any[]) => showSuccessMock(...args),
+    showWarning: (...args: any[]) => showWarningMock(...args),
   }),
 }))
 
@@ -91,6 +94,7 @@ describe('OAuthCallbackView', () => {
     routerReplaceMock.mockReset()
     showErrorMock.mockReset()
     showSuccessMock.mockReset()
+    showWarningMock.mockReset()
     setTokenMock.mockReset()
     copyToClipboardMock.mockReset()
     exchangePendingOAuthCompletionMock.mockReset()
@@ -222,5 +226,22 @@ describe('OAuthCallbackView', () => {
     })
     expect(apiPostMock.mock.calls[0][1]).not.toHaveProperty('email')
     expect(setTokenMock).toHaveBeenCalledWith('token-2')
+  })
+
+  it('does not report a successful token exchange as login failure when navigation fails', async () => {
+    locationState.current.hash = '#access_token=token-3&redirect=%2Fdashboard'
+    setTokenMock.mockResolvedValue(undefined)
+    routerReplaceMock.mockRejectedValue(new Error('navigation guard failed'))
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+
+    mount(OAuthCallbackView)
+    await vi.dynamicImportSettled()
+
+    expect(setTokenMock).toHaveBeenCalledWith('token-3')
+    expect(showSuccessMock).not.toHaveBeenCalled()
+    expect(showErrorMock).not.toHaveBeenCalled()
+    expect(showWarningMock).toHaveBeenCalledWith('auth.loginSucceededNavigationFailed')
+
+    consoleError.mockRestore()
   })
 })

@@ -64,6 +64,7 @@ func TestSetupRouterEmbeddedFrontendDoesNotCaptureMetrics(t *testing.T) {
 		nil,
 		nil,
 		settingService,
+		nil,
 		cfg,
 		nil,
 	)

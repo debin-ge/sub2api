@@ -18,6 +18,7 @@ const {
   clearPendingAuthSessionMock,
   showSuccessMock,
   showErrorMock,
+  showWarningMock,
   fetchPublicSettingsMock,
   routeState,
   locationState,
@@ -38,6 +39,7 @@ const {
   clearPendingAuthSessionMock: vi.fn(),
   showSuccessMock: vi.fn(),
   showErrorMock: vi.fn(),
+  showWarningMock: vi.fn(),
   fetchPublicSettingsMock: vi.fn(),
   routeState: {
     query: {} as Record<string, unknown>,
@@ -125,6 +127,7 @@ vi.mock('@/stores', () => ({
     ...appStoreState,
     showSuccess: showSuccessMock,
     showError: showErrorMock,
+    showWarning: showWarningMock,
     fetchPublicSettings: fetchPublicSettingsMock,
   }),
 }))
@@ -165,6 +168,7 @@ describe('WechatCallbackView', () => {
     clearPendingAuthSessionMock.mockReset()
     showSuccessMock.mockReset()
     showErrorMock.mockReset()
+    showWarningMock.mockReset()
     prepareOAuthBindAccessTokenCookieMock.mockReset()
     getAuthTokenMock.mockReset()
     fetchPublicSettingsMock.mockReset()

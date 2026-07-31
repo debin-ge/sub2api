@@ -223,9 +223,15 @@ import TotpLoginModal from '@/components/auth/TotpLoginModal.vue'
 import Icon from '@/components/icons/Icon.vue'
 import TurnstileWidget from '@/components/TurnstileWidget.vue'
 import { useAuthStore, useAppStore } from '@/stores'
-import { getPublicSettings, isTotp2FARequired, isWeChatWebOAuthEnabled } from '@/api/auth'
+import {
+  getPublicSettings,
+  isTotp2FARequired,
+  isWeChatWebOAuthEnabled,
+  type LoginResponse
+} from '@/api/auth'
 import type { LoginAgreementDocument, TotpLoginResponse } from '@/types'
 import { extractI18nErrorMessage } from '@/utils/apiError'
+import { finishAuthenticatedNavigation } from '@/utils/authNavigation'
 import { clearAllAffiliateReferralCodes } from '@/utils/oauthAffiliate'
 
 const { t } = useI18n()
@@ -482,6 +488,21 @@ function validateForm(): boolean {
 
 // ==================== Form Handlers ====================
 
+async function finishLoginNavigation(): Promise<void> {
+  clearAllAffiliateReferralCodes()
+  const redirectTo = (router.currentRoute.value.query.redirect as string) || '/dashboard'
+
+  await finishAuthenticatedNavigation({
+    router,
+    redirectTo,
+    onSuccess: () => appStore.showSuccess(t('auth.loginSuccess')),
+    onNavigationFailure: (error) => {
+      console.error('Post-login navigation failed:', error)
+      appStore.showWarning(t('auth.loginSucceededNavigationFailed'))
+    }
+  })
+}
+
 async function handleLogin(): Promise<void> {
   // Clear previous error
   errorMessage.value = ''
@@ -493,33 +514,17 @@ async function handleLogin(): Promise<void> {
 
   isLoading.value = true
 
+  let response: LoginResponse
+
   try {
-    // Call auth store login
-    const response = await authStore.login({
+    response = await authStore.login({
       email: formData.email,
       password: formData.password,
       turnstile_token: turnstileEnabled.value ? turnstileToken.value : undefined
     })
-
-    // Check if 2FA is required
-    if (isTotp2FARequired(response)) {
-      const totpResponse = response as TotpLoginResponse
-      totpTempToken.value = totpResponse.temp_token || ''
-      totpUserEmailMasked.value = totpResponse.user_email_masked || ''
-      show2FAModal.value = true
-      isLoading.value = false
-      return
-    }
-
-    // Show success toast
-    clearAllAffiliateReferralCodes()
-    appStore.showSuccess(t('auth.loginSuccess'))
-
-    // Redirect to dashboard or intended route
-    const redirectTo = (router.currentRoute.value.query.redirect as string) || '/dashboard'
-    await router.push(redirectTo)
   } catch (error: unknown) {
-    // Reset Turnstile on error
+    // A Turnstile token is consumed only by an authentication request. Route
+    // failures after authentication must never reset the widget.
     if (turnstileRef.value) {
       turnstileRef.value.reset()
       turnstileToken.value = ''
@@ -529,6 +534,22 @@ async function handleLogin(): Promise<void> {
 
     // Also show error toast
     appStore.showError(errorMessage.value)
+    isLoading.value = false
+    return
+  }
+
+  // Check if 2FA is required
+  if (isTotp2FARequired(response)) {
+    const totpResponse = response as TotpLoginResponse
+    totpTempToken.value = totpResponse.temp_token || ''
+    totpUserEmailMasked.value = totpResponse.user_email_masked || ''
+    show2FAModal.value = true
+    isLoading.value = false
+    return
+  }
+
+  try {
+    await finishLoginNavigation()
   } finally {
     isLoading.value = false
   }
@@ -546,16 +567,18 @@ async function handlePasskeyLogin(): Promise<void> {
   passkeyLoading.value = true
   try {
     await authStore.loginWithPasskey()
-    clearAllAffiliateReferralCodes()
-    appStore.showSuccess(t('auth.loginSuccess'))
-    const redirectTo = (router.currentRoute.value.query.redirect as string) || '/dashboard'
-    await router.push(redirectTo)
   } catch (error: unknown) {
     const fallback = error instanceof DOMException && error.name === 'NotAllowedError'
       ? t('auth.passkeyCancelled')
       : t('auth.passkeyFailed')
     errorMessage.value = extractI18nErrorMessage(error, t, 'auth.errors', fallback)
     appStore.showError(errorMessage.value)
+    passkeyLoading.value = false
+    return
+  }
+
+  try {
+    await finishLoginNavigation()
   } finally {
     passkeyLoading.value = false
   }
@@ -570,15 +593,6 @@ async function handle2FAVerify(code: string): Promise<void> {
 
   try {
     await authStore.login2FA(totpTempToken.value, code)
-
-    // Close modal and show success
-    show2FAModal.value = false
-    clearAllAffiliateReferralCodes()
-    appStore.showSuccess(t('auth.loginSuccess'))
-
-    // Redirect to dashboard or intended route
-    const redirectTo = (router.currentRoute.value.query.redirect as string) || '/dashboard'
-    await router.push(redirectTo)
   } catch (error: unknown) {
     const err = error as { message?: string; response?: { data?: { message?: string } } }
     const message = err.response?.data?.message || err.message || t('profile.totp.loginFailed')
@@ -587,7 +601,11 @@ async function handle2FAVerify(code: string): Promise<void> {
       totpModalRef.value.setError(message)
       totpModalRef.value.setVerifying(false)
     }
+    return
   }
+
+  show2FAModal.value = false
+  await finishLoginNavigation()
 }
 
 function handle2FACancel(): void {

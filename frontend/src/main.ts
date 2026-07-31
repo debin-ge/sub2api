@@ -6,9 +6,29 @@ import i18n, { initI18n } from './i18n'
 import { useAppStore } from '@/stores/app'
 import { initializePublicSettings } from '@/startup/publicSettings'
 import { updateFavicon } from '@/utils/branding'
+import {
+  isChunkLoadError,
+  notifyFrontendUpdateRequired,
+  recoverFromChunkLoadError
+} from '@/utils/chunkLoadRecovery'
 import { isIOSDevice } from '@/utils/device'
 import './style.css'
 import './assets/styles/docsContent.css'
+
+function handleVitePreloadError(event: Event) {
+  const preloadEvent = event as Event & { payload?: unknown }
+  if (!isChunkLoadError(preloadEvent.payload)) {
+    return
+  }
+
+  event.preventDefault()
+  const recovery = recoverFromChunkLoadError(preloadEvent.payload)
+  if (recovery === 'already-reloaded') {
+    notifyFrontendUpdateRequired()
+  }
+}
+
+window.addEventListener('vite:preloadError', handleVitePreloadError)
 
 function initIOSViewportZoomFix() {
   // iOS Safari 在输入框字号小于 16px 时聚焦会自动放大页面，且失焦后不会恢复。
@@ -61,8 +81,25 @@ async function bootstrap() {
   app.use(i18n)
 
   // 等待路由器完成初始导航后再挂载，避免竞态条件导致的空白渲染
-  await router.isReady()
+  try {
+    await router.isReady()
+  } catch (error) {
+    const recovery = recoverFromChunkLoadError(error)
+    if (recovery === 'reloading') {
+      return
+    }
+    if (recovery === 'already-reloaded') {
+      notifyFrontendUpdateRequired()
+    } else {
+      console.error('Initial router navigation failed:', error)
+    }
+  }
+
+  // Mount even after a persistent chunk failure so the toast host can explain
+  // that the user must reopen the updated application.
   app.mount('#app')
 }
 
-bootstrap()
+bootstrap().catch((error) => {
+  console.error('Failed to bootstrap application:', error)
+})

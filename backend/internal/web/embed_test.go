@@ -843,6 +843,79 @@ func TestFrontendServer_Middleware(t *testing.T) {
 		assert.Equal(t, http.StatusOK, assetWriter.Code)
 		assert.Equal(t, staticAssetsCacheControl, assetWriter.Header().Get("Cache-Control"))
 	})
+
+	t.Run("returns_404_for_missing_static_assets", func(t *testing.T) {
+		provider := &mockSettingsProvider{
+			settings: map[string]string{"test": "value"},
+		}
+
+		server, err := NewFrontendServer(provider)
+		require.NoError(t, err)
+
+		router := gin.New()
+		router.Use(server.Middleware())
+
+		for _, assetPath := range []string{
+			"/assets/DashboardView-OldHash.js",
+			"/assets/index-OldHash.css",
+			"/assets/runtime-OldHash.wasm",
+			"/missing-logo.svg",
+		} {
+			t.Run(assetPath, func(t *testing.T) {
+				w := httptest.NewRecorder()
+				req := httptest.NewRequest(http.MethodGet, assetPath, nil)
+				req.Header.Set("Accept", "text/html,application/xhtml+xml")
+				router.ServeHTTP(w, req)
+
+				assert.Equal(t, http.StatusNotFound, w.Code)
+				assert.Equal(t, "no-store", w.Header().Get("Cache-Control"))
+				assert.Contains(t, w.Header().Get("Content-Type"), "text/plain")
+				assert.NotContains(t, strings.ToLower(w.Body.String()), "<!doctype html>")
+			})
+		}
+	})
+
+	t.Run("returns_404_for_non_html_unknown_requests", func(t *testing.T) {
+		provider := &mockSettingsProvider{
+			settings: map[string]string{"test": "value"},
+		}
+
+		server, err := NewFrontendServer(provider)
+		require.NoError(t, err)
+
+		router := gin.New()
+		router.Use(server.Middleware())
+
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/unknown-resource", nil)
+		req.Header.Set("Accept", "application/json")
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusNotFound, w.Code)
+		assert.NotContains(t, strings.ToLower(w.Body.String()), "<!doctype html>")
+	})
+
+	t.Run("passes_non_read_spa_requests_to_the_router", func(t *testing.T) {
+		provider := &mockSettingsProvider{
+			settings: map[string]string{"test": "value"},
+		}
+
+		server, err := NewFrontendServer(provider)
+		require.NoError(t, err)
+
+		router := gin.New()
+		router.Use(server.Middleware())
+		router.POST("/dashboard", func(c *gin.Context) {
+			c.String(http.StatusAccepted, "handled")
+		})
+
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/dashboard", nil)
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusAccepted, w.Code)
+		assert.Equal(t, "handled", w.Body.String())
+	})
 }
 
 func TestEmbeddedFrontendBypassesBareVideoAPIRoutes(t *testing.T) {
@@ -942,6 +1015,63 @@ func TestServeEmbeddedFrontend(t *testing.T) {
 				assert.Contains(t, w.Header().Get("Content-Type"), "text/html")
 			})
 		}
+	})
+
+	t.Run("returns_404_for_missing_static_assets", func(t *testing.T) {
+		middleware := ServeEmbeddedFrontend()
+
+		router := gin.New()
+		router.Use(middleware)
+
+		for _, assetPath := range []string{
+			"/assets/DashboardView-OldHash.js",
+			"/assets/index-OldHash.css",
+			"/missing-logo.svg",
+		} {
+			t.Run(assetPath, func(t *testing.T) {
+				w := httptest.NewRecorder()
+				req := httptest.NewRequest(http.MethodGet, assetPath, nil)
+				req.Header.Set("Accept", "text/html,application/xhtml+xml")
+				router.ServeHTTP(w, req)
+
+				assert.Equal(t, http.StatusNotFound, w.Code)
+				assert.Equal(t, "no-store", w.Header().Get("Cache-Control"))
+				assert.Contains(t, w.Header().Get("Content-Type"), "text/plain")
+				assert.NotContains(t, strings.ToLower(w.Body.String()), "<!doctype html>")
+			})
+		}
+	})
+
+	t.Run("returns_404_for_non_html_unknown_requests", func(t *testing.T) {
+		middleware := ServeEmbeddedFrontend()
+
+		router := gin.New()
+		router.Use(middleware)
+
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/unknown-resource", nil)
+		req.Header.Set("Accept", "application/json")
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusNotFound, w.Code)
+		assert.NotContains(t, strings.ToLower(w.Body.String()), "<!doctype html>")
+	})
+
+	t.Run("passes_non_read_spa_requests_to_the_router", func(t *testing.T) {
+		middleware := ServeEmbeddedFrontend()
+
+		router := gin.New()
+		router.Use(middleware)
+		router.POST("/dashboard", func(c *gin.Context) {
+			c.String(http.StatusAccepted, "handled")
+		})
+
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/dashboard", nil)
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusAccepted, w.Code)
+		assert.Equal(t, "handled", w.Body.String())
 	})
 
 	t.Run("skips_api_routes", func(t *testing.T) {
