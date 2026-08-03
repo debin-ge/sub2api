@@ -291,6 +291,7 @@ export default {
     creditedBalance: 'Credited Balance',
     quickAmounts: 'Quick Amounts',
     customAmount: 'Custom Amount',
+    minimumRechargeAmount: 'Minimum top-up: {amount}',
     enterAmount: 'Enter amount',
     paymentMethod: 'Payment Method',
     fee: 'Fee',

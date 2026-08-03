@@ -48,9 +48,10 @@
             <div class="card p-6">
               <AmountInput
                 v-model="amount"
-                :amounts="[10, 20, 50, 100, 200, 500, 1000, 2000, 5000]"
+                :amounts="[20, 50, 100, 200, 500, 1000, 2000, 5000]"
                 :min="globalMinAmount"
                 :max="globalMaxAmount"
+                :configured-min="configuredMinAmount"
               />
               <p v-if="amountError" class="mt-2 text-xs text-amber-600 dark:text-amber-300">{{ amountError }}</p>
             </div>
@@ -502,6 +503,7 @@ function onPaymentSettled() {
 // All checkout data from single API call
 const checkout = ref<CheckoutInfoResponse>({
   methods: {}, global_min: 0, global_max: 0,
+  min_amount: 0,
   plans: [], balance_disabled: false, balance_recharge_multiplier: 1, subscription_usd_to_cny_rate: 0, recharge_fee_rate: 0, help_text: '', help_image_url: '', stripe_publishable_key: '',
 })
 
@@ -543,12 +545,19 @@ function amountFitsMethod(amt: number, methodType: string): boolean {
   return true
 }
 
-// Visible methods decide the amount range shown to users.
+const configuredMinAmount = computed(() => {
+  const min = checkout.value.min_amount
+  return Number.isFinite(min) && min > 0 ? min : 0
+})
+
+// Visible methods and the system recharge configuration jointly decide the
+// amount range shown to users.
 const globalMinAmount = computed(() => {
   const limits = Object.values(visibleMethods.value)
-  if (limits.length === 0) return 0
-  if (limits.some(limit => limit.single_min <= 0)) return 0
-  return Math.min(...limits.map(limit => limit.single_min))
+  const methodMin = limits.length === 0 || limits.some(limit => limit.single_min <= 0)
+    ? 0
+    : Math.min(...limits.map(limit => limit.single_min))
+  return Math.max(configuredMinAmount.value, methodMin)
 })
 const globalMaxAmount = computed(() => {
   const limits = Object.values(visibleMethods.value)
@@ -633,6 +642,9 @@ const totalAmount = computed(() =>
 
 const amountError = computed(() => {
   if (validAmount.value <= 0) return ''
+  if (configuredMinAmount.value > 0 && validAmount.value < configuredMinAmount.value) {
+    return t('payment.amountTooLow', { min: formatSelectedPaymentAmount(configuredMinAmount.value) })
+  }
   // No method can handle this amount
   if (!enabledMethods.value.some((m) => amountFitsMethod(validAmount.value, m))) {
     return t('payment.amountNoMethod')
@@ -648,6 +660,7 @@ const amountError = computed(() => {
 
 const canSubmit = computed(() =>
   validAmount.value > 0
+    && (configuredMinAmount.value <= 0 || validAmount.value >= configuredMinAmount.value)
     && amountFitsMethod(validAmount.value, selectedMethod.value)
     && selectedLimit.value?.available !== false
 )

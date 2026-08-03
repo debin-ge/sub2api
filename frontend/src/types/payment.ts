@@ -67,6 +67,8 @@ export interface CheckoutInfoResponse {
   methods: Record<string, MethodLimit>
   global_min: number
   global_max: number
+  /** System-configured minimum balance recharge amount; 0 = no minimum. */
+  min_amount: number
   plans: SubscriptionPlan[]
   balance_disabled: boolean
   balance_recharge_multiplier: number

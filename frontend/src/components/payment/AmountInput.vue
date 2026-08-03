@@ -5,7 +5,7 @@
       <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
         {{ t('payment.quickAmounts') }}
       </label>
-      <div class="grid grid-cols-3 gap-2">
+      <div class="grid grid-cols-4 gap-2">
         <button
           v-for="amt in filteredAmounts"
           :key="amt"
@@ -25,9 +25,18 @@
 
     <!-- Custom Amount Input -->
     <div>
-      <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-        {{ t('payment.customAmount') }}
-      </label>
+      <div class="mb-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+          {{ t('payment.customAmount') }}
+        </label>
+        <span
+          v-if="configuredMin > 0"
+          data-test="minimum-recharge-amount"
+          class="text-xs text-gray-500 dark:text-gray-400"
+        >
+          {{ t('payment.minimumRechargeAmount', { amount: configuredMin }) }}
+        </span>
+      </div>
       <div class="relative">
         <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-dark-500">
           $
@@ -54,10 +63,12 @@ const props = withDefaults(defineProps<{
   modelValue: number | null
   min?: number
   max?: number
+  configuredMin?: number
 }>(), {
-  amounts: () => [10, 20, 50, 100, 200, 500, 1000, 2000, 5000],
+  amounts: () => [20, 50, 100, 200, 500, 1000, 2000, 5000],
   min: 0,
   max: 0,
+  configuredMin: 0,
 })
 
 const emit = defineEmits<{

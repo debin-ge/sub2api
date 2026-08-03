@@ -315,6 +315,7 @@ export default {
     creditedBalance: '到账余额',
     quickAmounts: '快捷金额',
     customAmount: '自定义金额',
+    minimumRechargeAmount: '最低充值额度：{amount}',
     enterAmount: '输入金额',
     paymentMethod: '支付方式',
     fee: '手续费',

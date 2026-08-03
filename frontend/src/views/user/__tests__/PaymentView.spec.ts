@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, shallowMount } from '@vue/test-utils'
 import PaymentView from '../PaymentView.vue'
+import AmountInput from '@/components/payment/AmountInput.vue'
 import { PAYMENT_RECOVERY_STORAGE_KEY } from '@/components/payment/paymentFlow'
 import { formatPaymentAmount } from '@/components/payment/currency'
 import type { CheckoutInfoResponse, MethodLimit, SubscriptionPlan } from '@/types/payment'
@@ -102,6 +103,7 @@ function checkoutInfoFixture(overrides: Partial<CheckoutInfoResponse> = {}) {
     },
     global_min: 0,
     global_max: 0,
+    min_amount: 0,
     plans: [],
     balance_disabled: false,
     balance_recharge_multiplier: 1,
@@ -198,6 +200,53 @@ function oauthOrderFixture() {
     },
   }
 }
+
+describe('PaymentView recharge amount configuration', () => {
+  it('uses the configured minimum and omits the 10 quick amount', async () => {
+    vi.useRealTimers()
+    routeState.path = '/purchase'
+    routeState.query = {}
+    routerReplace.mockReset().mockResolvedValue(undefined)
+    routerPush.mockReset().mockResolvedValue(undefined)
+    routerResolve.mockClear()
+    createOrder.mockReset()
+    refreshUser.mockReset()
+    fetchActiveSubscriptions.mockReset().mockResolvedValue(undefined)
+    showError.mockReset()
+    showInfo.mockReset()
+    showWarning.mockReset()
+    getCheckoutInfo.mockReset().mockResolvedValue(checkoutInfoFixture({ min_amount: 25 }))
+    bridgeInvoke.mockReset()
+    window.localStorage.clear()
+
+    const wrapper = shallowMount(PaymentView, {
+      global: {
+        stubs: {
+          AppLayout: {
+            template: '<div><slot /></div>',
+          },
+          Teleport: true,
+          Transition: false,
+        },
+      },
+    })
+    await flushPromises()
+    await flushPromises()
+
+    const amountInput = wrapper.getComponent(AmountInput)
+    expect(amountInput.props('amounts')).toEqual([20, 50, 100, 200, 500, 1000, 2000, 5000])
+    expect(amountInput.props('configuredMin')).toBe(25)
+    expect(amountInput.props('min')).toBe(25)
+
+    amountInput.vm.$emit('update:modelValue', 20)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('payment.amountTooLow')
+    const submitButton = wrapper.findAll('button')
+      .find(button => button.text().includes('payment.createOrder'))
+    expect(submitButton?.attributes('disabled')).toBeDefined()
+  })
+})
 
 async function mountSubscriptionConfirm(options: Parameters<typeof checkoutInfoWithPlansFixture>[0] = {}) {
   vi.useRealTimers()
