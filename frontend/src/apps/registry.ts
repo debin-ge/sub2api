@@ -2,6 +2,7 @@ import type { AppIconKind } from '@/components/apps/AppIcon.vue'
 
 import claudeCodeContent from './zh/claude-code.md?raw'
 import codexContent from './zh/codex.md?raw'
+import opencodeContent from './zh/opencode.md?raw'
 import cursorContent from './zh/cursor.md?raw'
 import clineContent from './zh/cline.md?raw'
 import continueContent from './zh/continue.md?raw'
@@ -12,6 +13,7 @@ import codeContent from './zh/code.md?raw'
 
 import claudeCodeContentEn from './en/claude-code.md?raw'
 import codexContentEn from './en/codex.md?raw'
+import opencodeContentEn from './en/opencode.md?raw'
 import cursorContentEn from './en/cursor.md?raw'
 import clineContentEn from './en/cline.md?raw'
 import continueContentEn from './en/continue.md?raw'
@@ -52,6 +54,15 @@ export const appEntriesByLocale: Record<AppLocale, AppEntry[]> = {
       protocols: ['openai'],
       steps: 3,
       content: codexContent,
+    },
+    {
+      slug: 'opencode',
+      name: 'OpenCode',
+      tagline: '开源 AI 编程智能体，支持 OpenAI Responses 与 Claude Messages',
+      icon: 'app',
+      protocols: ['openai', 'anthropic'],
+      steps: 3,
+      content: opencodeContent,
     },
     {
       slug: 'cursor',
@@ -135,6 +146,15 @@ export const appEntriesByLocale: Record<AppLocale, AppEntry[]> = {
       protocols: ['openai'],
       steps: 3,
       content: codexContentEn,
+    },
+    {
+      slug: 'opencode',
+      name: 'OpenCode',
+      tagline: 'Open-source coding agent for OpenAI Responses and Claude Messages',
+      icon: 'app',
+      protocols: ['openai', 'anthropic'],
+      steps: 3,
+      content: opencodeContentEn,
     },
     {
       slug: 'cursor',

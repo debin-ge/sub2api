@@ -344,9 +344,9 @@ describe('DocsView', () => {
     const grid = wrapper.find('[data-testid="apps-grid"]')
     expect(grid.exists()).toBe(true)
 
-    // Nine cards: 8 tools + code samples.
+    // Ten cards: 9 tools + code samples.
     const cards = grid.findAll('a[href^="/apps/"]')
-    expect(cards.length).toBe(9)
+    expect(cards.length).toBe(10)
 
     // Docs sidebar is hidden while on Apps tab; apps sidebar list is shown.
     expect(wrapper.find('[data-testid="docs-nav-groups"]').exists()).toBe(false)
@@ -363,6 +363,7 @@ describe('DocsView', () => {
     for (const slug of [
       'claude-code',
       'codex',
+      'opencode',
       'cursor',
       'cline',
       'continue',
@@ -402,6 +403,42 @@ describe('DocsView', () => {
     const callout = wrapper.find('.doc-callout-important')
     expect(callout.exists()).toBe(true)
     expect(callout.element.closest('.client-card')).toBeNull()
+  })
+
+  it('renders the OpenCode app detail page with OpenAI and Claude provider configs', async () => {
+    appState.cachedPublicSettings = {
+      site_name: 'Acme AI',
+      site_logo: '',
+      api_base_url: 'https://api.acme.test/',
+    }
+    appState.siteName = 'Acme AI'
+    appState.apiBaseUrl = 'https://api.acme.test/'
+
+    const wrapper = await mountDocs('/apps/opencode')
+
+    expect(wrapper.find('article > header h1').text()).toBe('OpenCode')
+    expect(wrapper.find('.client-card').exists()).toBe(true)
+    expect(wrapper.text()).toContain('~/.config/opencode/opencode.json')
+    expect(wrapper.html()).toContain('@ai-sdk/openai')
+    expect(wrapper.html()).toContain('@ai-sdk/anthropic')
+
+    const configBlocks = wrapper.findAll('pre[data-download-name="opencode.json"]')
+    expect(configBlocks).toHaveLength(2)
+    expect(configBlocks.every((block) => block.find('.download-btn').exists())).toBe(true)
+
+    const openAIConfig = configBlocks[0].text()
+    expect(openAIConfig).toContain('"Acme AI"')
+    expect(openAIConfig).toContain('"baseURL": "https://api.acme.test/"')
+    expect(openAIConfig).toContain('@ai-sdk/openai')
+
+    const claudeConfig = configBlocks[1].text()
+    expect(claudeConfig).toContain('"Acme AI"')
+    expect(claudeConfig).toContain('"baseURL": "https://api.acme.test/"')
+    expect(claudeConfig).toContain('@ai-sdk/anthropic')
+    expect(claudeConfig).toContain('claude-sonnet-4-6')
+
+    expect(`${openAIConfig}${claudeConfig}`).not.toContain('sub2api')
+    expect(`${openAIConfig}${claudeConfig}`).not.toContain('https://api.acme.test/v1')
   })
 
   it('offers config file downloads on /apps/claude-code with the resolved base URL', async () => {
