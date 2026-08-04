@@ -968,14 +968,12 @@ func TestGetFallbackPricing_FamilyMatching(t *testing.T) {
 		// kimi-k3[1m] 是 Claude Code 上下文选择语法，不是 Kimi API 模型 ID，不命中 fallback。
 		{name: "kimi-k3[1m] not an API model id no fallback", model: "kimi-k3[1m]", expectNilPricing: true},
 		{name: "path kimi-k3[1m] not an API model id no fallback", model: "moonshot/kimi-k3[1m]", expectNilPricing: true},
-		// kimi-k2-0905 / kimi-k2-0711 官方未公布独立价，走 kimi-k2 隐性回退（接受）——
-		// 如未来官方公布独立价，需在 getFallbackPricing 加显式分支。
+		// kimi-k2-0905 / kimi-k2-0711 官方未公布独立价，不能隐式继承 kimi-k2
+		// 基础价；否则未知 SKU 可能被静默降档计费。
 		{
-			name:              "kimi k2-0905-preview implicit fallback to k2",
-			model:             "kimi-k2-0905-preview",
-			expectedInput:     0.56e-6,
-			expectedOutput:    floatPtr(2.24e-6),
-			expectedCacheRead: floatPtr(0.14e-6),
+			name:             "kimi k2-0905-preview unknown version no fallback",
+			model:            "kimi-k2-0905-preview",
+			expectNilPricing: true,
 		},
 	}
 
