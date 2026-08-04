@@ -269,33 +269,9 @@ func RegisterGatewayRoutes(
 		// Codex manifest format; other clients keep the OpenAI-style list.
 		gateway.GET("/models", modelsHandler)
 		gateway.GET("/balance", h.Gateway.Balance)
-		gateway.GET("/usage", func(c *gin.Context) {
-			if getGroupPlatform(c) == service.PlatformMiniMax {
-				writeMiniMaxUnsupported(c, h)
-				return
-			}
-			if getGroupPlatform(c) == service.PlatformGLM {
-				writeGLMUnsupported(c, h)
-				return
-			}
-			if getGroupPlatform(c) == service.PlatformKimi {
-				writeKimiUnsupported(c, h)
-				return
-			}
-			if getGroupPlatform(c) == service.PlatformDeepSeek {
-				writeDeepSeekUnsupported(c, h)
-				return
-			}
-			if getGroupPlatform(c) == service.PlatformWindsurf {
-				writeWindsurfUnsupported(c, h)
-				return
-			}
-			if getGroupPlatform(c) == service.PlatformOpenCode {
-				writeOpenCodeUnsupported(c, h)
-				return
-			}
-			h.Gateway.Usage(c)
-		})
+		// /v1/usage 是纯本地端点（用量/额度/限速/余额均取自本地库，不回源上游），
+		// 因此对所有分组平台一律放行，与相邻的 /v1/balance 保持一致。
+		gateway.GET("/usage", h.Gateway.Usage)
 		gateway.POST("/live", h.OpenAIGateway.Live)
 		gateway.GET("/live/:call_id", h.OpenAIGateway.LiveSideband)
 		// OpenAI Responses API: auto-route based on group platform
@@ -688,7 +664,7 @@ func writeMiniMaxUnsupported(c *gin.Context, _ *handler.Handlers) {
 		"type": "error",
 		"error": gin.H{
 			"type":    "not_found_error",
-			"message": "MiniMax gateway supports /v1/messages, /v1/chat/completions, /v1/responses, and /v1/models only",
+			"message": "MiniMax gateway does not support this endpoint",
 		},
 	})
 }
@@ -728,7 +704,7 @@ func writeGLMUnsupported(c *gin.Context, _ *handler.Handlers) {
 		"type": "error",
 		"error": gin.H{
 			"type":    "not_found_error",
-			"message": "GLM gateway supports /v1/messages, /v1/chat/completions, and /v1/responses only",
+			"message": "GLM gateway does not support this endpoint",
 		},
 	})
 }
@@ -768,7 +744,7 @@ func writeKimiUnsupported(c *gin.Context, _ *handler.Handlers) {
 		"type": "error",
 		"error": gin.H{
 			"type":    "not_found_error",
-			"message": "Kimi gateway supports /v1/messages, /v1/chat/completions, and /v1/responses only",
+			"message": "Kimi gateway does not support this endpoint",
 		},
 	})
 }
@@ -808,7 +784,7 @@ func writeDeepSeekUnsupported(c *gin.Context, _ *handler.Handlers) {
 		"type": "error",
 		"error": gin.H{
 			"type":    "not_found_error",
-			"message": "DeepSeek gateway supports /v1/messages, /v1/chat/completions, and /v1/responses only",
+			"message": "DeepSeek gateway does not support this endpoint",
 		},
 	})
 }
@@ -848,7 +824,7 @@ func writeWindsurfUnsupported(c *gin.Context, _ *handler.Handlers) {
 		"type": "error",
 		"error": gin.H{
 			"type":    "not_found_error",
-			"message": "Windsurf gateway supports /v1/messages, /v1/chat/completions, and /v1/responses only",
+			"message": "Windsurf gateway does not support this endpoint",
 		},
 	})
 }
@@ -892,7 +868,7 @@ func writeOpenCodeUnsupported(c *gin.Context, h *handler.Handlers) {
 		"type": "error",
 		"error": gin.H{
 			"type":    "not_found_error",
-			"message": "OpenCode gateway supports /v1/models, /v1/chat/completions, and /v1/responses only",
+			"message": "OpenCode gateway does not support this endpoint",
 		},
 	})
 }

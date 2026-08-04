@@ -594,7 +594,7 @@ func TestKimiGatewayHandlerUnsupportedReturnsNotFound(t *testing.T) {
 
 	require.Equal(t, http.StatusNotFound, rec.Code)
 	require.Contains(t, rec.Body.String(), "not_found_error")
-	require.Contains(t, rec.Body.String(), "Kimi gateway supports /v1/messages, /v1/chat/completions, and /v1/responses only")
+	require.Contains(t, rec.Body.String(), "Kimi gateway does not support this endpoint")
 }
 
 func TestKimiGatewayHandlerRetryableUpstreamErrorFailsOverToNextAccount(t *testing.T) {

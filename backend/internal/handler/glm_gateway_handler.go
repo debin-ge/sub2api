@@ -752,7 +752,7 @@ func (h *GLMGatewayHandler) Responses(c *gin.Context) {
 }
 
 func (h *GLMGatewayHandler) Unsupported(c *gin.Context) {
-	h.errorResponse(c, http.StatusNotFound, "not_found_error", "GLM gateway supports /v1/messages, /v1/chat/completions, and /v1/responses only")
+	h.errorResponse(c, http.StatusNotFound, "not_found_error", "GLM gateway does not support this endpoint")
 }
 
 func (h *GLMGatewayHandler) streamingAwareError(c *gin.Context, status int, errType, message string, streamStarted bool) {

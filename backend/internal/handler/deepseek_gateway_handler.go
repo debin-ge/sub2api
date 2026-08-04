@@ -752,7 +752,7 @@ func (h *DeepSeekGatewayHandler) Responses(c *gin.Context) {
 }
 
 func (h *DeepSeekGatewayHandler) Unsupported(c *gin.Context) {
-	h.errorResponse(c, http.StatusNotFound, "not_found_error", "DeepSeek gateway supports /v1/messages, /v1/chat/completions, and /v1/responses only")
+	h.errorResponse(c, http.StatusNotFound, "not_found_error", "DeepSeek gateway does not support this endpoint")
 }
 
 func (h *DeepSeekGatewayHandler) streamingAwareError(c *gin.Context, status int, errType, message string, streamStarted bool) {

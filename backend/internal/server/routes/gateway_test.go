@@ -172,6 +172,30 @@ func TestGatewayRoutesBalanceIsRegistered(t *testing.T) {
 	require.Contains(t, w.Body.String(), `"user_id":101`)
 }
 
+// /v1/usage 是纯本地端点（用量/额度/限速/余额均取自本地库），对所有分组平台都应可用，
+// 包括曾被路由层门禁拦截的 MiniMax/GLM/Kimi/DeepSeek/Windsurf/OpenCode。
+func TestGatewayRoutesUsageIsAvailableForAllPlatforms(t *testing.T) {
+	for _, platform := range []string{
+		service.PlatformMiniMax,
+		service.PlatformGLM,
+		service.PlatformKimi,
+		service.PlatformDeepSeek,
+		service.PlatformWindsurf,
+		service.PlatformOpenCode,
+	} {
+		router := newGatewayRoutesTestRouterForPlatform(platform)
+
+		req := httptest.NewRequest(http.MethodGet, "/v1/usage", nil)
+		w := httptest.NewRecorder()
+
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusOK, w.Code, "platform=%s", platform)
+		require.Contains(t, w.Body.String(), `"mode":"unrestricted"`, "platform=%s", platform)
+		require.Contains(t, w.Body.String(), `"balance":12.34`, "platform=%s", platform)
+	}
+}
+
 func TestGatewayRoutesOpenAIResponsesCompactPathIsRegistered(t *testing.T) {
 	router := newGatewayRoutesTestRouter()
 
@@ -504,7 +528,7 @@ func TestGatewayRoutesMiniMaxUnsupportedEndpointsReturnNotFound(t *testing.T) {
 		router.ServeHTTP(w, req)
 		require.Equal(t, http.StatusNotFound, w.Code, "path=%s should be MiniMax unsupported", path)
 		require.Contains(t, w.Body.String(), "not_found_error", "path=%s", path)
-		require.Contains(t, w.Body.String(), "MiniMax gateway supports /v1/messages, /v1/chat/completions, /v1/responses, and /v1/models only", "path=%s", path)
+		require.Contains(t, w.Body.String(), "MiniMax gateway does not support this endpoint", "path=%s", path)
 	}
 }
 
@@ -512,7 +536,6 @@ func TestGatewayRoutesMiniMaxUnsupportedGetEndpointsReturnNotFound(t *testing.T)
 	router := newGatewayRoutesTestRouterForPlatform(service.PlatformMiniMax)
 
 	for _, path := range []string{
-		"/v1/usage",
 		"/v1/responses",
 		"/responses",
 		"/backend-api/codex/responses",
@@ -523,7 +546,7 @@ func TestGatewayRoutesMiniMaxUnsupportedGetEndpointsReturnNotFound(t *testing.T)
 		router.ServeHTTP(w, req)
 		require.Equal(t, http.StatusNotFound, w.Code, "path=%s should be MiniMax unsupported", path)
 		require.Contains(t, w.Body.String(), "not_found_error", "path=%s", path)
-		require.Contains(t, w.Body.String(), "MiniMax gateway supports /v1/messages, /v1/chat/completions, /v1/responses, and /v1/models only", "path=%s", path)
+		require.Contains(t, w.Body.String(), "MiniMax gateway does not support this endpoint", "path=%s", path)
 	}
 }
 
@@ -589,7 +612,7 @@ func TestGatewayRoutesGLMUnsupportedEndpointsReturnNotFound(t *testing.T) {
 		router.ServeHTTP(w, req)
 		require.Equal(t, http.StatusNotFound, w.Code, "path=%s should be GLM unsupported", path)
 		require.Contains(t, w.Body.String(), "not_found_error", "path=%s", path)
-		require.Contains(t, w.Body.String(), "GLM gateway supports /v1/messages, /v1/chat/completions, and /v1/responses only", "path=%s", path)
+		require.Contains(t, w.Body.String(), "GLM gateway does not support this endpoint", "path=%s", path)
 	}
 }
 
@@ -597,7 +620,6 @@ func TestGatewayRoutesGLMUnsupportedGetEndpointsReturnNotFound(t *testing.T) {
 	router := newGatewayRoutesTestRouterForPlatform(service.PlatformGLM)
 
 	for _, path := range []string{
-		"/v1/usage",
 		"/v1/responses",
 		"/responses",
 		"/backend-api/codex/responses",
@@ -608,7 +630,7 @@ func TestGatewayRoutesGLMUnsupportedGetEndpointsReturnNotFound(t *testing.T) {
 		router.ServeHTTP(w, req)
 		require.Equal(t, http.StatusNotFound, w.Code, "path=%s should be GLM unsupported", path)
 		require.Contains(t, w.Body.String(), "not_found_error", "path=%s", path)
-		require.Contains(t, w.Body.String(), "GLM gateway supports /v1/messages, /v1/chat/completions, and /v1/responses only", "path=%s", path)
+		require.Contains(t, w.Body.String(), "GLM gateway does not support this endpoint", "path=%s", path)
 	}
 }
 
@@ -701,7 +723,7 @@ func TestGatewayRoutesKimiUnsupportedEndpointsReturnNotFound(t *testing.T) {
 		router.ServeHTTP(w, req)
 		require.Equal(t, http.StatusNotFound, w.Code, "path=%s should be Kimi unsupported", path)
 		require.Contains(t, w.Body.String(), "not_found_error", "path=%s", path)
-		require.Contains(t, w.Body.String(), "Kimi gateway supports /v1/messages, /v1/chat/completions, and /v1/responses only", "path=%s", path)
+		require.Contains(t, w.Body.String(), "Kimi gateway does not support this endpoint", "path=%s", path)
 	}
 }
 
@@ -709,7 +731,6 @@ func TestGatewayRoutesKimiUnsupportedGetEndpointsReturnNotFound(t *testing.T) {
 	router := newGatewayRoutesTestRouterForPlatform(service.PlatformKimi)
 
 	for _, path := range []string{
-		"/v1/usage",
 		"/v1/responses",
 		"/responses",
 		"/backend-api/codex/responses",
@@ -720,7 +741,7 @@ func TestGatewayRoutesKimiUnsupportedGetEndpointsReturnNotFound(t *testing.T) {
 		router.ServeHTTP(w, req)
 		require.Equal(t, http.StatusNotFound, w.Code, "path=%s should be Kimi unsupported", path)
 		require.Contains(t, w.Body.String(), "not_found_error", "path=%s", path)
-		require.Contains(t, w.Body.String(), "Kimi gateway supports /v1/messages, /v1/chat/completions, and /v1/responses only", "path=%s", path)
+		require.Contains(t, w.Body.String(), "Kimi gateway does not support this endpoint", "path=%s", path)
 	}
 }
 
@@ -785,7 +806,7 @@ func TestGatewayRoutesDeepSeekUnsupportedEndpointsReturnNotFound(t *testing.T) {
 		router.ServeHTTP(w, req)
 		require.Equal(t, http.StatusNotFound, w.Code, "path=%s should be DeepSeek unsupported", path)
 		require.Contains(t, w.Body.String(), "not_found_error", "path=%s", path)
-		require.Contains(t, w.Body.String(), "DeepSeek gateway supports /v1/messages, /v1/chat/completions, and /v1/responses only", "path=%s", path)
+		require.Contains(t, w.Body.String(), "DeepSeek gateway does not support this endpoint", "path=%s", path)
 	}
 }
 
@@ -793,7 +814,6 @@ func TestGatewayRoutesDeepSeekUnsupportedGetEndpointsReturnNotFound(t *testing.T
 	router := newGatewayRoutesTestRouterForPlatform(service.PlatformDeepSeek)
 
 	for _, path := range []string{
-		"/v1/usage",
 		"/v1/responses",
 		"/responses",
 		"/backend-api/codex/responses",
@@ -804,7 +824,7 @@ func TestGatewayRoutesDeepSeekUnsupportedGetEndpointsReturnNotFound(t *testing.T
 		router.ServeHTTP(w, req)
 		require.Equal(t, http.StatusNotFound, w.Code, "path=%s should be DeepSeek unsupported", path)
 		require.Contains(t, w.Body.String(), "not_found_error", "path=%s", path)
-		require.Contains(t, w.Body.String(), "DeepSeek gateway supports /v1/messages, /v1/chat/completions, and /v1/responses only", "path=%s", path)
+		require.Contains(t, w.Body.String(), "DeepSeek gateway does not support this endpoint", "path=%s", path)
 	}
 }
 
@@ -837,7 +857,7 @@ func TestGatewayRoutesWindsurfResponsesWebSocketAliasesReturnNotFound(t *testing
 		router.ServeHTTP(w, req)
 		require.Equal(t, http.StatusNotFound, w.Code, "path=%s should be Windsurf unsupported", path)
 		require.Contains(t, w.Body.String(), "not_found_error", "path=%s", path)
-		require.Contains(t, w.Body.String(), "Windsurf gateway supports /v1/messages, /v1/chat/completions, and /v1/responses only", "path=%s", path)
+		require.Contains(t, w.Body.String(), "Windsurf gateway does not support this endpoint", "path=%s", path)
 	}
 }
 
@@ -874,11 +894,11 @@ func TestGatewayRoutesProviderResponsesSubpathsRemainUnsupported(t *testing.T) {
 		platform string
 		message  string
 	}{
-		{platform: service.PlatformMiniMax, message: "MiniMax gateway supports /v1/messages, /v1/chat/completions, /v1/responses, and /v1/models only"},
-		{platform: service.PlatformGLM, message: "GLM gateway supports /v1/messages, /v1/chat/completions, and /v1/responses only"},
-		{platform: service.PlatformKimi, message: "Kimi gateway supports /v1/messages, /v1/chat/completions, and /v1/responses only"},
-		{platform: service.PlatformDeepSeek, message: "DeepSeek gateway supports /v1/messages, /v1/chat/completions, and /v1/responses only"},
-		{platform: service.PlatformWindsurf, message: "Windsurf gateway supports /v1/messages, /v1/chat/completions, and /v1/responses only"},
+		{platform: service.PlatformMiniMax, message: "MiniMax gateway does not support this endpoint"},
+		{platform: service.PlatformGLM, message: "GLM gateway does not support this endpoint"},
+		{platform: service.PlatformKimi, message: "Kimi gateway does not support this endpoint"},
+		{platform: service.PlatformDeepSeek, message: "DeepSeek gateway does not support this endpoint"},
+		{platform: service.PlatformWindsurf, message: "Windsurf gateway does not support this endpoint"},
 	} {
 		router := newGatewayRoutesTestRouterForPlatformWithoutProviderHandlers(tc.platform)
 
@@ -913,7 +933,7 @@ func TestGatewayRoutesOpenCodeMessagesUnsupported(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusNotFound, w.Code)
-	require.Contains(t, w.Body.String(), "OpenCode gateway supports /v1/models, /v1/chat/completions, and /v1/responses only")
+	require.Contains(t, w.Body.String(), "OpenCode gateway does not support this endpoint")
 }
 
 func TestGatewayRoutesOpenCodeChatCompletionsDispatchesToOpenCodeHandler(t *testing.T) {
@@ -970,7 +990,7 @@ func TestGatewayRoutesOpenCodeUnsupportedEndpointsReturnNotFound(t *testing.T) {
 		router.ServeHTTP(w, req)
 		require.Equal(t, http.StatusNotFound, w.Code, "path=%s should be OpenCode unsupported", path)
 		require.Contains(t, w.Body.String(), "not_found_error", "path=%s", path)
-		require.Contains(t, w.Body.String(), "OpenCode gateway supports /v1/models, /v1/chat/completions, and /v1/responses only", "path=%s", path)
+		require.Contains(t, w.Body.String(), "OpenCode gateway does not support this endpoint", "path=%s", path)
 	}
 }
 
@@ -978,7 +998,6 @@ func TestGatewayRoutesOpenCodeUnsupportedGetEndpointsReturnNotFound(t *testing.T
 	router := newGatewayRoutesTestRouterForPlatform(service.PlatformOpenCode)
 
 	for _, path := range []string{
-		"/v1/usage",
 		"/v1/responses",
 		"/responses",
 		"/backend-api/codex/responses",
@@ -989,7 +1008,7 @@ func TestGatewayRoutesOpenCodeUnsupportedGetEndpointsReturnNotFound(t *testing.T
 		router.ServeHTTP(w, req)
 		require.Equal(t, http.StatusNotFound, w.Code, "path=%s should be OpenCode unsupported", path)
 		require.Contains(t, w.Body.String(), "not_found_error", "path=%s", path)
-		require.Contains(t, w.Body.String(), "OpenCode gateway supports /v1/models, /v1/chat/completions, and /v1/responses only", "path=%s", path)
+		require.Contains(t, w.Body.String(), "OpenCode gateway does not support this endpoint", "path=%s", path)
 	}
 }
 

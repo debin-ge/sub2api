@@ -1502,20 +1502,27 @@ func (h *GatewayHandler) usageUnrestricted(c *gin.Context, ctx context.Context, 
 		return
 	}
 
-	// 余额模式
-	latestUser, err := h.userService.GetByID(ctx, subject.UserID)
-	if err != nil {
-		h.errorResponse(c, http.StatusInternalServerError, "api_error", "Failed to get user info")
-		return
+	// 余额模式：userService 未注入时回退到 Key 上已加载的用户余额
+	balance := 0.0
+	if apiKey.User != nil {
+		balance = apiKey.User.Balance
+	}
+	if h.userService != nil {
+		latestUser, err := h.userService.GetByID(ctx, subject.UserID)
+		if err != nil {
+			h.errorResponse(c, http.StatusInternalServerError, "api_error", "Failed to get user info")
+			return
+		}
+		balance = latestUser.Balance
 	}
 
 	resp := gin.H{
 		"mode":      "unrestricted",
 		"isValid":   true,
 		"planName":  "钱包余额",
-		"remaining": latestUser.Balance,
+		"remaining": balance,
 		"unit":      "USD",
-		"balance":   latestUser.Balance,
+		"balance":   balance,
 	}
 	if usageData != nil {
 		resp["usage"] = usageData

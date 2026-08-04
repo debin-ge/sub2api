@@ -742,7 +742,7 @@ func (h *MiniMaxGatewayHandler) Responses(c *gin.Context) {
 }
 
 func (h *MiniMaxGatewayHandler) Unsupported(c *gin.Context) {
-	h.errorResponse(c, http.StatusNotFound, "not_found_error", "MiniMax gateway supports /v1/messages, /v1/chat/completions, /v1/responses, and /v1/models only")
+	h.errorResponse(c, http.StatusNotFound, "not_found_error", "MiniMax gateway does not support this endpoint")
 }
 
 func (h *MiniMaxGatewayHandler) streamingAwareError(c *gin.Context, status int, errType, message string, streamStarted bool) {

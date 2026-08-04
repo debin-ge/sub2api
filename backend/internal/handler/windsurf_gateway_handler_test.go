@@ -348,5 +348,5 @@ func TestWindsurfGatewayHandlerUnsupportedReturnsNotFound(t *testing.T) {
 
 	require.Equal(t, http.StatusNotFound, rec.Code)
 	require.Contains(t, rec.Body.String(), "not_found_error")
-	require.Contains(t, rec.Body.String(), "Windsurf gateway supports /v1/messages, /v1/chat/completions, and /v1/responses only")
+	require.Contains(t, rec.Body.String(), "Windsurf gateway does not support this endpoint")
 }

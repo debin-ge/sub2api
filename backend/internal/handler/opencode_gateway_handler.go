@@ -376,7 +376,7 @@ func (h *OpenCodeGatewayHandler) forwardBody(
 }
 
 func (h *OpenCodeGatewayHandler) Unsupported(c *gin.Context) {
-	h.errorResponse(c, http.StatusNotFound, "not_found_error", "OpenCode gateway supports /v1/models, /v1/chat/completions, and /v1/responses only")
+	h.errorResponse(c, http.StatusNotFound, "not_found_error", "OpenCode gateway does not support this endpoint")
 }
 
 func (h *OpenCodeGatewayHandler) streamingAwareError(c *gin.Context, status int, errType, message string, streamStarted bool) {
