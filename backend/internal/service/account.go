@@ -1390,20 +1390,24 @@ func (a *Account) GetGLMOpenAIBaseURL() string {
 	return "https://open.bigmodel.cn/api/coding/paas/v4"
 }
 
+// NormalizeGLMModel 把 GLM 模型 ID 规范成 provider 能力表里登记的大小写写法
+// （z.ai 官方文档用 GLM-5.2 这种混合大小写，而客户端普遍发小写）。
+//
+// 它已不再参与准入判定——IsGLMModelSupported 现在与其余国产平台一样走
+// isFlexibleProviderModelSupported。这里只做出站前的大小写规范化：能力表里
+// 没登记的型号原样透传，因此上游上新 SKU 不需要再改这个函数。
 func NormalizeGLMModel(model string) string {
 	trimmed := strings.TrimSpace(model)
-	switch strings.ToLower(trimmed) {
-	case "glm-5.2":
-		return "GLM-5.2"
-	case "glm-5.1":
-		return "GLM-5.1"
-	case "glm-4.7":
-		return "GLM-4.7"
-	case "glm-4.5-air":
-		return "GLM-4.5-air"
-	default:
+	if trimmed == "" {
 		return trimmed
 	}
+	lower := strings.ToLower(trimmed)
+	for _, canonical := range domesticProviderCapabilities[PlatformGLM].SupportedModelIDs {
+		if strings.ToLower(canonical) == lower {
+			return canonical
+		}
+	}
+	return trimmed
 }
 
 func DefaultGLMModelIDs() []string {
@@ -1449,37 +1453,17 @@ func (a *Account) GetGLMMappedModel(model string) string {
 		return trimmed
 	}
 
+	// 大小写差异由 resolveAccountMappingWithPattern 的兜底重试统一处理，
+	// 这里不再针对 GLM 做第二次硬编码归一化后的查表。
 	if mapped, ok := ResolveAccountProviderModel(a, trimmed); ok {
 		return NormalizeGLMModel(mapped.UpstreamModel)
-	}
-	normalized := NormalizeGLMModel(trimmed)
-	if normalized != trimmed {
-		if mapped, ok := ResolveAccountProviderModel(a, normalized); ok {
-			return NormalizeGLMModel(mapped.UpstreamModel)
-		}
 	}
 	return trimmed
 }
 
+// IsGLMModelSupported 与其余国产平台共用同一套准入语义，不再自带硬编码型号表。
 func (a *Account) IsGLMModelSupported(model string) bool {
-	trimmed := strings.TrimSpace(model)
-	if trimmed == "" || a == nil || a.Platform != PlatformGLM {
-		return false
-	}
-
-	mapping := a.GetModelMapping()
-	if len(mapping) == 0 {
-		return true
-	}
-	if _, ok := ResolveAccountProviderModel(a, trimmed); ok {
-		return true
-	}
-	normalized := NormalizeGLMModel(trimmed)
-	if normalized != trimmed {
-		_, ok := ResolveAccountProviderModel(a, normalized)
-		return ok
-	}
-	return false
+	return isFlexibleProviderModelSupported(a, PlatformGLM, model)
 }
 
 func (a *Account) IsKimi() bool {
