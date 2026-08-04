@@ -3,6 +3,8 @@ import type { AppIconKind } from '@/components/apps/AppIcon.vue'
 import claudeCodeContent from './zh/claude-code.md?raw'
 import codexContent from './zh/codex.md?raw'
 import opencodeContent from './zh/opencode.md?raw'
+import hermesContent from './zh/hermes.md?raw'
+import openclawContent from './zh/openclaw.md?raw'
 import cursorContent from './zh/cursor.md?raw'
 import clineContent from './zh/cline.md?raw'
 import continueContent from './zh/continue.md?raw'
@@ -14,6 +16,8 @@ import codeContent from './zh/code.md?raw'
 import claudeCodeContentEn from './en/claude-code.md?raw'
 import codexContentEn from './en/codex.md?raw'
 import opencodeContentEn from './en/opencode.md?raw'
+import hermesContentEn from './en/hermes.md?raw'
+import openclawContentEn from './en/openclaw.md?raw'
 import cursorContentEn from './en/cursor.md?raw'
 import clineContentEn from './en/cline.md?raw'
 import continueContentEn from './en/continue.md?raw'
@@ -63,6 +67,24 @@ export const appEntriesByLocale: Record<AppLocale, AppEntry[]> = {
       protocols: ['openai', 'anthropic'],
       steps: 3,
       content: opencodeContent,
+    },
+    {
+      slug: 'hermes',
+      name: 'Hermes Agent',
+      tagline: 'Nous Research 智能体，通过 OpenAI 兼容端点使用多类模型',
+      icon: 'app',
+      protocols: ['openai'],
+      steps: 3,
+      content: hermesContent,
+    },
+    {
+      slug: 'openclaw',
+      name: 'OpenClaw',
+      tagline: '可自托管的个人智能体，支持 Responses 与 Claude Messages',
+      icon: 'app',
+      protocols: ['openai', 'anthropic'],
+      steps: 3,
+      content: openclawContent,
     },
     {
       slug: 'cursor',
@@ -155,6 +177,24 @@ export const appEntriesByLocale: Record<AppLocale, AppEntry[]> = {
       protocols: ['openai', 'anthropic'],
       steps: 3,
       content: opencodeContentEn,
+    },
+    {
+      slug: 'hermes',
+      name: 'Hermes Agent',
+      tagline: 'Nous Research agent for models behind an OpenAI-compatible endpoint',
+      icon: 'app',
+      protocols: ['openai'],
+      steps: 3,
+      content: hermesContentEn,
+    },
+    {
+      slug: 'openclaw',
+      name: 'OpenClaw',
+      tagline: 'Self-hosted personal agent for Responses and Claude Messages',
+      icon: 'app',
+      protocols: ['openai', 'anthropic'],
+      steps: 3,
+      content: openclawContentEn,
     },
     {
       slug: 'cursor',

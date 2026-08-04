@@ -344,9 +344,9 @@ describe('DocsView', () => {
     const grid = wrapper.find('[data-testid="apps-grid"]')
     expect(grid.exists()).toBe(true)
 
-    // Ten cards: 9 tools + code samples.
+    // Twelve cards: 11 tools + code samples.
     const cards = grid.findAll('a[href^="/apps/"]')
-    expect(cards.length).toBe(10)
+    expect(cards.length).toBe(12)
 
     // Docs sidebar is hidden while on Apps tab; apps sidebar list is shown.
     expect(wrapper.find('[data-testid="docs-nav-groups"]').exists()).toBe(false)
@@ -364,6 +364,8 @@ describe('DocsView', () => {
       'claude-code',
       'codex',
       'opencode',
+      'hermes',
+      'openclaw',
       'cursor',
       'cline',
       'continue',
@@ -439,6 +441,36 @@ describe('DocsView', () => {
 
     expect(`${openAIConfig}${claudeConfig}`).not.toContain('sub2api')
     expect(`${openAIConfig}${claudeConfig}`).not.toContain('https://api.acme.test/v1')
+  })
+
+  it('renders Hermes and OpenClaw integration configs with the resolved site settings', async () => {
+    appState.cachedPublicSettings = {
+      site_name: 'Acme AI',
+      site_logo: '',
+      api_base_url: 'https://api.acme.test/',
+    }
+    appState.siteName = 'Acme AI'
+    appState.apiBaseUrl = 'https://api.acme.test/'
+
+    const hermes = await mountDocs('/apps/hermes')
+    expect(hermes.find('article > header h1').text()).toBe('Hermes Agent')
+    const hermesConfig = hermes.find('pre[data-download-name="config.yaml"]')
+    expect(hermesConfig.find('.download-btn').exists()).toBe(true)
+    expect(hermesConfig.text()).toContain('provider: custom')
+    expect(hermesConfig.text()).toContain('base_url: https://api.acme.test/v1')
+    expect(hermesConfig.text()).toContain('claude-sonnet-4-6')
+    hermes.unmount()
+
+    const openclaw = await mountDocs('/apps/openclaw')
+    expect(openclaw.find('article > header h1').text()).toBe('OpenClaw')
+    const openclawConfigs = openclaw.findAll('pre[data-download-name="openclaw.json"]')
+    expect(openclawConfigs).toHaveLength(2)
+    expect(openclawConfigs[0].text()).toContain('"Acme AI"')
+    expect(openclawConfigs[0].text()).toContain('"baseUrl": "https://api.acme.test/"')
+    expect(openclawConfigs[0].text()).toContain('"api": "openai-responses"')
+    expect(openclawConfigs[1].text()).toContain('"api": "anthropic-messages"')
+    expect(openclawConfigs[1].text()).toContain('claude-sonnet-4-6')
+    expect(openclawConfigs.every((block) => block.find('.download-btn').exists())).toBe(true)
   })
 
   it('offers config file downloads on /apps/claude-code with the resolved base URL', async () => {
