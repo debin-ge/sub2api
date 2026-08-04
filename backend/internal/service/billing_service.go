@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -750,6 +751,51 @@ func matchesExactModelAlias(model, canonical string) bool {
 	return model == canonical || model == "models/"+canonical
 }
 
+// matchesModelFamily 判断 model 属于 family 这一档，且不是它的更高版本。
+//
+// 与裸 strings.Contains 的差别是两个边界检查：
+//   - family 前面不能紧邻字母或数字，避免无关 ID 误命中；
+//   - family 后面不能紧跟版本延续字符（数字、".数字"、"-数字"）。
+//
+// 第二条是关键。glm-5.2 上线时曾被 strings.Contains(model, "glm-5") 套上低一档的
+// glm-5 价，少收约 29% 且没有任何告警——宽匹配会把每一个未登记的同族新 SKU 静默
+// 降档计价。加上边界后，未知的 glm-5.3 / kimi-k2-0905 一类会落空并返回
+// ErrModelPricingUnavailable，暴露出来总比按错价扣费好。
+//
+// 后缀是词而非数字时仍然命中（glm-5-turbo 属于 glm-5 档），这类变体在本表里都有
+// 各自更靠前的分支，靠"最具体优先"的排列顺序兜住。
+func matchesModelFamily(model, family string) bool {
+	for idx := 0; idx+len(family) <= len(model); idx++ {
+		if model[idx:idx+len(family)] != family {
+			continue
+		}
+		if idx > 0 && isModelIDWordByte(model[idx-1]) {
+			continue
+		}
+		if modelVersionContinues(model[idx+len(family):]) {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+func isModelIDWordByte(b byte) bool {
+	return (b >= '0' && b <= '9') || (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
+}
+
+// modelVersionContinues 判断紧跟 family 之后的内容是否在延续版本号，
+// 即 "5" → "5.2" / "5-1" / "52" 这三种写法。
+func modelVersionContinues(rest string) bool {
+	if rest == "" {
+		return false
+	}
+	if rest[0] >= '0' && rest[0] <= '9' {
+		return true
+	}
+	return (rest[0] == '.' || rest[0] == '-') && len(rest) > 1 && rest[1] >= '0' && rest[1] <= '9'
+}
+
 // getFallbackPricingStrict 只查兜底表里这个模型自己的条目。
 //
 // 它对应 getFallbackPricing 的前两步——精确命中与 GLM 的 SKU 归一化——之后的分支
@@ -856,16 +902,20 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 	// 匹配顺序：先判别最高 tier，再依次降级。
 	// 注意：glm-5.2 / glm-5.1 必须排在 glm-5 之前——"glm-5.2" 含子串 "glm-5"，
 	// 顺序颠倒会让它误命中低一档的 glm-5 价（$1.0/$3.2 而非 $1.4/$4.4）。
-	if strings.Contains(modelLower, "glm-5.2") {
+	//
+	// 同时接受短横线写法：Windsurf 的官方模型表用 glm-5-1 而不是 glm-5.1
+	// （见 windsurfOfficialModelIDs），只认点号会让它掉到 glm-5 档、同样少收 29%。
+	// Kimi / MiniMax 的分支早就两种写法都写了，这里是补齐 GLM 漏掉的那一半。
+	if strings.Contains(modelLower, "glm-5.2") || strings.Contains(modelLower, "glm-5-2") {
 		return s.fallbackPrices["glm-5.2"]
 	}
-	if strings.Contains(modelLower, "glm-5.1") {
+	if strings.Contains(modelLower, "glm-5.1") || strings.Contains(modelLower, "glm-5-1") {
 		return s.fallbackPrices["glm-5.1"]
 	}
 	if strings.Contains(modelLower, "glm-5-turbo") || strings.Contains(modelLower, "glm-5turbo") {
 		return s.fallbackPrices["glm-5-turbo"]
 	}
-	if strings.Contains(modelLower, "glm-5") {
+	if matchesModelFamily(modelLower, "glm-5") {
 		return s.fallbackPrices["glm-5"]
 	}
 	if matchesExactModelAlias(modelLower, "glm-4.7-flashx") {
@@ -874,10 +924,10 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 	if matchesExactModelAlias(modelLower, "glm-4.7-flash") {
 		return s.fallbackPrices["glm-4.7-flash"]
 	}
-	if strings.Contains(modelLower, "glm-4.7") {
+	if matchesModelFamily(modelLower, "glm-4.7") {
 		return s.fallbackPrices["glm-4.7"]
 	}
-	if strings.Contains(modelLower, "glm-4.6") {
+	if matchesModelFamily(modelLower, "glm-4.6") {
 		return s.fallbackPrices["glm-4.6"]
 	}
 	if matchesExactModelAlias(modelLower, "glm-4.5-flash") {
@@ -892,7 +942,7 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 	if strings.Contains(modelLower, "glm-4.5-air") || strings.Contains(modelLower, "glm-4.5air") {
 		return s.fallbackPrices["glm-4.5-air"]
 	}
-	if strings.Contains(modelLower, "glm-4.5") {
+	if matchesModelFamily(modelLower, "glm-4.5") {
 		return s.fallbackPrices["glm-4.5"]
 	}
 	if strings.Contains(modelLower, "glm-4-32b") {
@@ -921,12 +971,15 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 	if strings.Contains(modelLower, "kimi-k2-thinking") || strings.Contains(modelLower, "kimi-k2-thinking-") {
 		return s.fallbackPrices["kimi-k2-thinking"]
 	}
-	if strings.Contains(modelLower, "kimi-k2") || strings.Contains(modelLower, "kimi/k2") {
+	// 基础档 K2 用 matchesModelFamily 而非 Contains：注释里说的"K2-0905 / K2-0711
+	// 官方未保留定价，不进入 fallback"过去并没有真的生效——裸 Contains 会把
+	// kimi-k2-0905 也算成 kimi-k2。同理未来的 kimi-k2.7 也不该套 K2 基础价。
+	if matchesModelFamily(modelLower, "kimi-k2") || matchesModelFamily(modelLower, "kimi/k2") {
 		return s.fallbackPrices["kimi-k2"]
 	}
 
 	// MiniMax M 系列（M3 / M2.7 / M2.5 / M2.1 / M2；含 highspeed 变体）
-	if strings.Contains(modelLower, "minimax-m3") {
+	if matchesModelFamily(modelLower, "minimax-m3") {
 		return s.fallbackPrices["minimax-m3"]
 	}
 	if strings.Contains(modelLower, "minimax-m2.7-highspeed") || strings.Contains(modelLower, "minimax-m2-7-highspeed") {
@@ -941,7 +994,7 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 	if strings.Contains(modelLower, "minimax-m2.1") || strings.Contains(modelLower, "minimax-m2-1") {
 		return s.fallbackPrices["minimax-m2.1"]
 	}
-	if strings.Contains(modelLower, "minimax-m2") || strings.Contains(modelLower, "minimax-m-2") {
+	if matchesModelFamily(modelLower, "minimax-m2") || matchesModelFamily(modelLower, "minimax-m-2") {
 		return s.fallbackPrices["minimax-m2"]
 	}
 
@@ -995,20 +1048,38 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 	return nil
 }
 
+// glmBillingCanonicalIDs 是 GLM 能力表登记的型号（小写，长的在前）。
+//
+// 计费侧不再自带第二份型号清单：新 SKU 只需要登记进 domesticProviderCapabilities
+// 并在 fallbackPrices 里配上价格。长的在前，保证 glm-4.5-air 这类带后缀的 SKU
+// 先于将来可能加入的 glm-4.5 命中，不会被前缀更短的条目抢走。
+var glmBillingCanonicalIDs = buildGLMBillingCanonicalIDs()
+
+func buildGLMBillingCanonicalIDs() []string {
+	supported := domesticProviderCapabilities[PlatformGLM].SupportedModelIDs
+	ids := make([]string, 0, len(supported))
+	for _, id := range supported {
+		if trimmed := strings.ToLower(strings.TrimSpace(id)); trimmed != "" {
+			ids = append(ids, trimmed)
+		}
+	}
+	sort.Slice(ids, func(i, j int) bool {
+		if len(ids[i]) != len(ids[j]) {
+			return len(ids[i]) > len(ids[j])
+		}
+		return ids[i] < ids[j]
+	})
+	return ids
+}
+
 func normalizeGLMBillingModel(model string) string {
 	normalized := strings.ToLower(NormalizeGLMModel(model))
-	switch {
-	case normalized == "glm-5.2" || strings.HasPrefix(normalized, "glm-5.2-"):
-		return "glm-5.2"
-	case normalized == "glm-5.1" || strings.HasPrefix(normalized, "glm-5.1-"):
-		return "glm-5.1"
-	case normalized == "glm-4.7" || strings.HasPrefix(normalized, "glm-4.7-"):
-		return "glm-4.7"
-	case normalized == "glm-4.5-air" || strings.HasPrefix(normalized, "glm-4.5-air-"):
-		return "glm-4.5-air"
-	default:
-		return ""
+	for _, canonical := range glmBillingCanonicalIDs {
+		if normalized == canonical || strings.HasPrefix(normalized, canonical+"-") {
+			return canonical
+		}
 	}
+	return ""
 }
 
 // normalizeGLMBillingModelStrict accepts only an exact GLM SKU or a numeric
@@ -1017,7 +1088,7 @@ func normalizeGLMBillingModel(model string) string {
 // as an already-priced model.
 func normalizeGLMBillingModelStrict(model string) string {
 	normalized := strings.ToLower(strings.TrimSpace(model))
-	for _, canonical := range []string{"glm-5.2", "glm-5.1", "glm-4.7", "glm-4.5-air"} {
+	for _, canonical := range glmBillingCanonicalIDs {
 		if normalized == canonical {
 			return canonical
 		}
