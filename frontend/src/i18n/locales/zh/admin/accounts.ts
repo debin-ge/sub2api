@@ -660,6 +660,11 @@ export default {
         webSearchEnabled: '开启',
         webSearchDisabled: '关闭',
       },
+      providerPassthrough: '自动透传（仅替换认证）',
+      providerPassthroughDesc:
+        '开启后，模型名原样透传给上游，网关不再用模型映射筛选账号，也不改写模型名。上游上新模型时无需先把它补进映射即可直接调用；关闭则恢复"映射即白名单"的严格模式。',
+      modelRestrictionDisabledByProviderPassthrough:
+        '已开启自动透传：模型白名单/映射不会生效，所有模型都会原样发给上游。',
       modelRestriction: '模型限制（可选）',
       modelWhitelist: '模型白名单',
       modelMapping: '模型映射',

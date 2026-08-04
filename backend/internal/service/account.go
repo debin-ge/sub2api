@@ -1300,6 +1300,13 @@ func isFlexibleProviderModelSupported(account *Account, platform, requestedModel
 	if account == nil || account.Platform != platform || trimmed == "" {
 		return false
 	}
+	// 透传模式仅替换认证、模型语义完全交由上游决定，因此放行所有模型。
+	// 该短路必须在 model_mapping 判定之前：mapping 同时也是白名单，上游上新 SKU 时
+	// 账号里残留的旧 mapping 会把整个账号排除出候选集，表现为 503 且没有
+	// account_scheduling_list_single 日志。OpenAI 透传已因同一原因踩过一次（issue #4936）。
+	if account.IsProviderPassthroughEnabled() {
+		return true
+	}
 	if len(account.GetModelMapping()) == 0 {
 		return true
 	}
@@ -1339,6 +1346,10 @@ func (a *Account) GetMiniMaxOpenAIBaseURL() string {
 func (a *Account) GetMiniMaxMappedModel(model string) string {
 	trimmed := strings.TrimSpace(model)
 	if a == nil || a.Platform != PlatformMiniMax {
+		return trimmed
+	}
+	// 透传模式下模型名原样上送，不走映射改写。
+	if a.IsProviderPassthroughEnabled() {
 		return trimmed
 	}
 	if mapped, ok := ResolveAccountProviderModel(a, trimmed); ok {
@@ -1444,6 +1455,10 @@ func (a *Account) GetGLMMappedModel(model string) string {
 	if a == nil || a.Platform != PlatformGLM {
 		return trimmed
 	}
+	// 透传模式下模型名原样上送，不走映射改写。
+	if a.IsProviderPassthroughEnabled() {
+		return trimmed
+	}
 
 	mapping := a.GetModelMapping()
 	if len(mapping) == 0 {
@@ -1518,6 +1533,10 @@ func (a *Account) GetKimiMappedModel(model string) string {
 	if a == nil || a.Platform != PlatformKimi {
 		return trimmed
 	}
+	// 透传模式下模型名原样上送，不走映射改写。
+	if a.IsProviderPassthroughEnabled() {
+		return trimmed
+	}
 	if mapped, ok := ResolveAccountProviderModel(a, trimmed); ok {
 		return mapped.UpstreamModel
 	}
@@ -1580,6 +1599,10 @@ func (a *Account) GetDeepSeekMappedModel(model string) string {
 	if a == nil || a.Platform != PlatformDeepSeek {
 		return trimmed
 	}
+	// 透传模式下模型名原样上送，不走映射改写。
+	if a.IsProviderPassthroughEnabled() {
+		return trimmed
+	}
 	if mapped, ok := ResolveAccountProviderModel(a, trimmed); ok {
 		return mapped.UpstreamModel
 	}
@@ -1631,6 +1654,10 @@ func (a *Account) GetWindsurfMappedModel(model string) string {
 	if a == nil || a.Platform != PlatformWindsurf {
 		return trimmed
 	}
+	// 透传模式下模型名原样上送，不走映射改写。
+	if a.IsProviderPassthroughEnabled() {
+		return trimmed
+	}
 	if mapped, ok := ResolveAccountProviderModel(a, trimmed); ok {
 		return mapped.UpstreamModel
 	}
@@ -1676,6 +1703,10 @@ func DefaultOpenCodeModelIDs() []string {
 func (a *Account) GetOpenCodeMappedModel(model string) string {
 	trimmed := strings.TrimSpace(model)
 	if a == nil || a.Platform != PlatformOpenCode {
+		return trimmed
+	}
+	// 透传模式下模型名原样上送，不走映射改写。
+	if a.IsProviderPassthroughEnabled() {
 		return trimmed
 	}
 	if mapped, ok := ResolveAccountProviderModel(a, trimmed); ok {
@@ -2303,6 +2334,26 @@ func (a *Account) IsOpenAIWSAllowStoreRecoveryEnabled() bool {
 // IsOpenAIOAuthPassthroughEnabled 兼容旧接口，等价于 OAuth 账号的 IsOpenAIPassthroughEnabled。
 func (a *Account) IsOpenAIOAuthPassthroughEnabled() bool {
 	return a != nil && a.IsOpenAIOAuth() && a.IsOpenAIPassthroughEnabled()
+}
+
+// IsProviderPassthroughEnabled 返回国产网关账号（GLM / MiniMax / Kimi / DeepSeek /
+// Windsurf / OpenCode）是否启用"自动透传（仅替换认证）"。
+//
+// 字段：accounts.extra.provider_passthrough。
+// 字段缺失或类型不正确时，按 false（关闭）处理。
+//
+// 语义与 IsOpenAIPassthroughEnabled 一致：开启后模型语义完全交由上游决定，
+// 网关既不拿 model_mapping 当白名单筛账号，也不改写模型名。这是上游上新 SKU 时的
+// 逃生阀——不开它，管理员必须先手工把新模型补进每个账号的 model_mapping 才能用。
+func (a *Account) IsProviderPassthroughEnabled() bool {
+	if a == nil || a.Extra == nil {
+		return false
+	}
+	if _, ok := domesticProviderCapabilities[a.Platform]; !ok {
+		return false
+	}
+	enabled, ok := a.Extra["provider_passthrough"].(bool)
+	return ok && enabled
 }
 
 // IsAnthropicAPIKeyPassthroughEnabled 返回 Anthropic API Key 账号是否启用"自动透传（仅替换认证）"。

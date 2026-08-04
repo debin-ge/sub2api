@@ -296,11 +296,11 @@
           <label class="input-label">{{ t('admin.accounts.modelRestriction') }}</label>
 
           <div
-            v-if="isOpenAIModelRestrictionDisabled"
+            v-if="modelRestrictionDisabledHint"
             class="mb-3 rounded-lg bg-amber-50 p-3 dark:bg-amber-900/20"
           >
             <p class="text-xs text-amber-700 dark:text-amber-400">
-              {{ t('admin.accounts.openai.modelRestrictionDisabledByPassthrough') }}
+              {{ t(modelRestrictionDisabledHint) }}
             </p>
           </div>
 
@@ -1859,6 +1859,36 @@
         @updated="handleOllamaCloudUsageUpdated"
       />
 
+      <!-- 国产网关自动透传开关（GLM/MiniMax/Kimi/DeepSeek/Windsurf/OpenCode） -->
+      <div
+        v-if="isProviderPassthroughPlatform"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
+        <div class="flex items-center justify-between">
+          <div>
+            <label class="input-label mb-0">{{ t('admin.accounts.providerPassthrough') }}</label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.providerPassthroughDesc') }}
+            </p>
+          </div>
+          <button
+            type="button"
+            @click="providerPassthroughEnabled = !providerPassthroughEnabled"
+            :class="[
+              'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
+              providerPassthroughEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+            ]"
+          >
+            <span
+              :class="[
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                providerPassthroughEnabled ? 'translate-x-5' : 'translate-x-0'
+              ]"
+            />
+          </button>
+        </div>
+      </div>
+
       <!-- Anthropic API Key 自动透传开关 -->
       <div
         v-if="account?.platform === 'anthropic' && account?.type === 'apikey'"
@@ -2876,6 +2906,7 @@ import {
   DEEPSEEK_OPENAI_BASE_URL,
   WINDSURF_BASE_URL,
   OPENCODE_BASE_URL,
+  PROVIDER_PASSTHROUGH_PLATFORMS,
   VERTEX_LOCATION_OPTIONS
 } from '@/constants/account'
 import {
@@ -3147,6 +3178,12 @@ const codexCLIOnlyAllowClaudeCodeEnabled = ref(false)
 type CodexImageToolMode = 'inherit' | 'enabled' | 'disabled' | 'block'
 const codexImageToolMode = ref<CodexImageToolMode>('inherit')
 const anthropicPassthroughEnabled = ref(false)
+// 国产网关（GLM/MiniMax/Kimi/DeepSeek/Windsurf/OpenCode）共用的透传开关：
+// 对应 accounts.extra.provider_passthrough。开启后 model_mapping 不再当白名单用。
+const providerPassthroughEnabled = ref(false)
+const isProviderPassthroughPlatform = computed(
+  () => PROVIDER_PASSTHROUGH_PLATFORMS.includes(props.account?.platform ?? '') && props.account?.type === 'apikey'
+)
 const webSearchEmulationMode = ref('default')
 const webSearchGlobalEnabled = ref(false)
 const {
@@ -3359,6 +3396,16 @@ const normalizeOpenAIResponsesMode = (mode: unknown): OpenAIResponsesMode => {
 const isOpenAIModelRestrictionDisabled = computed(() =>
   props.account?.platform === 'openai' && openaiPassthroughEnabled.value
 )
+// 模型映射被透传接管时的提示文案 key；null 表示映射照常生效、编辑区正常显示。
+const modelRestrictionDisabledHint = computed(() => {
+  if (isOpenAIModelRestrictionDisabled.value) {
+    return 'admin.accounts.openai.modelRestrictionDisabledByPassthrough'
+  }
+  if (isProviderPassthroughPlatform.value && providerPassthroughEnabled.value) {
+    return 'admin.accounts.modelRestrictionDisabledByProviderPassthrough'
+  }
+  return null
+})
 
 const loadAccountAvailableModelIDs = async () => {
   if (!props.account?.id) return []
@@ -3583,6 +3630,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   codexCLIOnlyAllowClaudeCodeEnabled.value = false
   codexImageToolMode.value = 'inherit'
   anthropicPassthroughEnabled.value = false
+  providerPassthroughEnabled.value = false
   webSearchEmulationMode.value = 'default'
   if (newAccount.platform === 'openai' && (newAccount.type === 'oauth' || newAccount.type === 'setup-token' || newAccount.type === 'apikey')) {
     openaiPassthroughEnabled.value = extra?.openai_passthrough === true || extra?.openai_oauth_passthrough === true
@@ -3636,6 +3684,9 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     if (compactMappings && typeof compactMappings === 'object') {
       openAICompactModelMappings.value = Object.entries(compactMappings).map(([from, to]) => ({ from, to }))
     }
+  }
+  if (PROVIDER_PASSTHROUGH_PLATFORMS.includes(newAccount.platform) && newAccount.type === 'apikey') {
+    providerPassthroughEnabled.value = extra?.provider_passthrough === true
   }
   if (newAccount.platform === 'anthropic' && newAccount.type === 'apikey') {
     anthropicPassthroughEnabled.value = extra?.anthropic_passthrough === true
@@ -4395,7 +4446,12 @@ const handleSubmit = async () => {
     // For apikey type, handle credentials update
     if (props.account.type === 'apikey') {
       const currentCredentials = (props.account.credentials as Record<string, unknown>) || {}
-      const shouldApplyModelMapping = !(props.account.platform === 'openai' && openaiPassthroughEnabled.value)
+      // 透传模式下模型映射不再是白名单，表单也被禁用，因此不提交表单值——
+      // 否则一个被禁用的空表单会把账号里已有的映射清掉。
+      const shouldApplyModelMapping = !(
+        (props.account.platform === 'openai' && openaiPassthroughEnabled.value) ||
+        (isProviderPassthroughPlatform.value && providerPassthroughEnabled.value)
+      )
 
       // Always update credentials for apikey type to handle model mapping changes
       const newCredentials: Record<string, unknown> = { ...currentCredentials }
@@ -4495,7 +4551,7 @@ const handleSubmit = async () => {
         return
       }
 
-      // Add model mapping if configured（OpenAI 开启自动透传时保留现有映射，不再编辑）
+      // Add model mapping if configured（开启自动透传时保留现有映射，不再编辑）
       if (shouldApplyModelMapping) {
         const modelMapping = buildModelRestrictionMapping()
         if (modelMapping) {
@@ -4912,6 +4968,18 @@ const handleSubmit = async () => {
         delete newExtra.custom_base_url
       }
 
+      updatePayload.extra = newExtra
+    }
+
+    // 国产网关 API Key 账号：写入 extra.provider_passthrough
+    if (isProviderPassthroughPlatform.value) {
+      const currentExtra = (updatePayload.extra as Record<string, unknown>) || (props.account.extra as Record<string, unknown>) || {}
+      const newExtra: Record<string, unknown> = { ...currentExtra }
+      if (providerPassthroughEnabled.value) {
+        newExtra.provider_passthrough = true
+      } else {
+        delete newExtra.provider_passthrough
+      }
       updatePayload.extra = newExtra
     }
 

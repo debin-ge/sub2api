@@ -600,6 +600,11 @@ export default {
         webSearchEnabled: 'Enabled',
         webSearchDisabled: 'Disabled',
       },
+      providerPassthrough: 'Auto passthrough (auth only)',
+      providerPassthroughDesc:
+        'When enabled, the model name is forwarded upstream verbatim: the gateway no longer uses model mapping to filter accounts, nor rewrites the model name. New upstream models become callable without first adding them to the mapping. Disable to restore the strict "mapping is an allow-list" behaviour.',
+      modelRestrictionDisabledByProviderPassthrough:
+        'Auto passthrough is enabled: the model whitelist/mapping will not take effect and every model is forwarded upstream as-is.',
       modelRestriction: 'Model Restriction (Optional)',
       modelWhitelist: 'Model Whitelist',
       modelMapping: 'Model Mapping',

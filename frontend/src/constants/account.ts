@@ -25,6 +25,20 @@ export const DEEPSEEK_OPENAI_BASE_URL = 'https://api.deepseek.com'
 export const WINDSURF_BASE_URL = 'https://tik.frontech.dev:3003'
 export const OPENCODE_BASE_URL = ''
 
+/**
+ * 支持 accounts.extra.provider_passthrough 的国产网关平台。
+ * 必须与后端 domesticProviderCapabilities（provider_gateway_capabilities.go）保持一致——
+ * IsProviderPassthroughEnabled 只对这张表里的平台返回 true。
+ */
+export const PROVIDER_PASSTHROUGH_PLATFORMS: readonly string[] = [
+  'glm',
+  'minimax',
+  'kimi',
+  'deepseek',
+  'windsurf',
+  'opencode'
+]
+
 /** Vertex AI location options for Service Account accounts */
 export const VERTEX_LOCATION_OPTIONS = [
   {

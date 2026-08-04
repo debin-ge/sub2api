@@ -835,9 +835,11 @@ func accountRequiresLiveCatalog(account *Account) bool {
 		return account.Type == AccountTypeOAuth ||
 			account.Type == AccountTypeUpstream
 	default:
+		// 与 Anthropic / OpenAI 透传同理：开启透传后 model_mapping 不再限制可用模型，
+		// 因此不能因为账号里残留 mapping 就关掉实时发现，否则 /v1/models 只会回旧型号。
 		return account.Type == AccountTypeAPIKey &&
 			providerSupportsLiveModelDiscovery(account.Platform) &&
-			len(account.GetModelMapping()) == 0
+			(account.IsProviderPassthroughEnabled() || len(account.GetModelMapping()) == 0)
 	}
 }
 
@@ -851,6 +853,11 @@ func configuredOrDefaultAccountModels(account *Account, defaults []string) []str
 
 func configuredAccountModelPatterns(account *Account) []string {
 	if account == nil || account.Credentials == nil {
+		return nil
+	}
+	// 透传账号的 model_mapping 是惰性的，不能拿它的 key 当对外模型清单：
+	// 实时发现失败时应回落到 provider 默认型号，而不是账号里残留的旧映射。
+	if account.IsProviderPassthroughEnabled() {
 		return nil
 	}
 

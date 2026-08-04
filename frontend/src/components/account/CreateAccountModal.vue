@@ -1481,11 +1481,11 @@
           <label class="input-label">{{ t('admin.accounts.modelRestriction') }}</label>
 
           <div
-            v-if="isOpenAIModelRestrictionDisabled"
+            v-if="modelRestrictionDisabledHint"
             class="mb-3 rounded-lg bg-amber-50 p-3 dark:bg-amber-900/20"
           >
             <p class="text-xs text-amber-700 dark:text-amber-400">
-              {{ t('admin.accounts.openai.modelRestrictionDisabledByPassthrough') }}
+              {{ t(modelRestrictionDisabledHint) }}
             </p>
           </div>
 
@@ -3109,6 +3109,36 @@
         </div>
       </div>
 
+      <!-- 国产网关自动透传开关（GLM/MiniMax/Kimi/DeepSeek/Windsurf/OpenCode） -->
+      <div
+        v-if="isProviderPassthroughPlatform"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
+        <div class="flex items-center justify-between">
+          <div>
+            <label class="input-label mb-0">{{ t('admin.accounts.providerPassthrough') }}</label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.providerPassthroughDesc') }}
+            </p>
+          </div>
+          <button
+            type="button"
+            @click="providerPassthroughEnabled = !providerPassthroughEnabled"
+            :class="[
+              'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
+              providerPassthroughEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+            ]"
+          >
+            <span
+              :class="[
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                providerPassthroughEnabled ? 'translate-x-5' : 'translate-x-0'
+              ]"
+            />
+          </button>
+        </div>
+      </div>
+
       <!-- Anthropic API Key 自动透传开关 -->
       <div
         v-if="form.platform === 'anthropic' && accountCategory === 'apikey'"
@@ -3880,6 +3910,7 @@ import {
   DEEPSEEK_OPENAI_BASE_URL,
   WINDSURF_BASE_URL,
   OPENCODE_BASE_URL,
+  PROVIDER_PASSTHROUGH_PLATFORMS,
   VERTEX_LOCATION_OPTIONS
 } from '@/constants/account'
 import {
@@ -4149,6 +4180,9 @@ const codexCLIOnlyEnabled = ref(false)
 const codexCLIOnlyAppServerEnabled = ref(false)
 const codexCLIOnlyAllowClaudeCodeEnabled = ref(false)
 const anthropicPassthroughEnabled = ref(false)
+// 国产网关（GLM/MiniMax/Kimi/DeepSeek/Windsurf/OpenCode）共用的透传开关：
+// 对应 accounts.extra.provider_passthrough。开启后 model_mapping 不再当白名单用。
+const providerPassthroughEnabled = ref(false)
 const webSearchEmulationMode = ref('default')
 const webSearchGlobalEnabled = ref(false)
 
@@ -4360,6 +4394,23 @@ const openAIWSModeConcurrencyHintKey = computed(() =>
 const isOpenAIModelRestrictionDisabled = computed(() =>
   form.platform === 'openai' && openaiPassthroughEnabled.value
 )
+
+const isProviderPassthroughPlatform = computed(
+  () => PROVIDER_PASSTHROUGH_PLATFORMS.includes(form.platform) && form.type === 'apikey'
+)
+const isProviderPassthroughActive = computed(
+  () => isProviderPassthroughPlatform.value && providerPassthroughEnabled.value
+)
+// 模型映射被透传接管时的提示文案 key；null 表示映射照常生效、编辑区正常显示。
+const modelRestrictionDisabledHint = computed(() => {
+  if (isOpenAIModelRestrictionDisabled.value) {
+    return 'admin.accounts.openai.modelRestrictionDisabledByPassthrough'
+  }
+  if (isProviderPassthroughActive.value) {
+    return 'admin.accounts.modelRestrictionDisabledByProviderPassthrough'
+  }
+  return null
+})
 
 const mixedChannelWarningMessageText = computed(() => {
   if (mixedChannelWarningDetails.value) {
@@ -4664,6 +4715,9 @@ watch(
     if (newPlatform !== 'anthropic') {
       anthropicPassthroughEnabled.value = false
       webSearchEmulationMode.value = 'default'
+    }
+    if (!PROVIDER_PASSTHROUGH_PLATFORMS.includes(newPlatform)) {
+      providerPassthroughEnabled.value = false
     }
     // 请求头覆写为平台相关配置（常用头集合不同），切换平台时清空，
     // 避免上一平台的配置行被提交到新平台账号
@@ -5107,6 +5161,7 @@ const resetForm = () => {
   codexCLIOnlyAppServerEnabled.value = false
   codexCLIOnlyAllowClaudeCodeEnabled.value = false
   anthropicPassthroughEnabled.value = false
+  providerPassthroughEnabled.value = false
   webSearchEmulationMode.value = 'default'
   // Reset quota control state
   windowCostEnabled.value = false
@@ -5250,6 +5305,22 @@ const buildAnthropicExtra = (base?: Record<string, unknown>): Record<string, unk
     delete extra.web_search_emulation
   } else {
     extra.web_search_emulation = webSearchEmulationMode.value
+  }
+
+  return Object.keys(extra).length > 0 ? extra : undefined
+}
+
+// 国产网关 API Key 账号：写入 accounts.extra.provider_passthrough
+const buildProviderPassthroughExtra = (base?: Record<string, unknown>): Record<string, unknown> | undefined => {
+  if (!isProviderPassthroughPlatform.value) {
+    return base
+  }
+
+  const extra: Record<string, unknown> = { ...(base || {}) }
+  if (providerPassthroughEnabled.value) {
+    extra.provider_passthrough = true
+  } else {
+    delete extra.provider_passthrough
   }
 
   return Object.keys(extra).length > 0 ? extra : undefined
@@ -5546,8 +5617,9 @@ const handleSubmit = async () => {
     credentials.tier_id = geminiTierAIStudio.value
   }
 
-  // Add model mapping if configured（OpenAI 开启自动透传时不应用）
-  if (!isOpenAIModelRestrictionDisabled.value) {
+  // Add model mapping if configured（开启自动透传时不应用：映射编辑区被禁用，
+  // 此时提交表单值只会写进一份空映射，反而把账号锁成"什么模型都不支持"）
+  if (!modelRestrictionDisabledHint.value) {
     const modelMapping = buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
     if (modelMapping) {
       credentials.model_mapping = modelMapping
@@ -5597,7 +5669,7 @@ const handleSubmit = async () => {
   }
 
   form.credentials = credentials
-  const extra = buildAnthropicExtra(buildOpenAIExtra())
+  const extra = buildProviderPassthroughExtra(buildAnthropicExtra(buildOpenAIExtra()))
 
   await doCreateAccount({
     ...form,
