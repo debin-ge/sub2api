@@ -206,7 +206,7 @@ const minimaxModels = [
 
 // GLM Coding Plan Gateway
 const glmModels = [
-  'GLM-5.1', 'GLM-4.7', 'GLM-4.5-air'
+  'GLM-5.2', 'GLM-5.1', 'GLM-4.7', 'GLM-4.5-air'
 ]
 
 // Kimi Coding Plan Gateway
@@ -436,6 +436,7 @@ const glmPresetMappings = [
   { label: 'Opus 4.5→GLM-5.1', from: 'claude-opus-4-5', to: 'GLM-5.1', color: 'bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300' },
   { label: 'Haiku→GLM-4.5-air', from: 'claude-haiku-*', to: 'GLM-4.5-air', color: 'bg-sky-100 text-sky-700 hover:bg-sky-200 dark:bg-sky-900/30 dark:text-sky-300' },
   { label: 'Haiku 4.5→GLM-4.5-air', from: 'claude-haiku-4-5', to: 'GLM-4.5-air', color: 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-300' },
+  { label: 'GLM-5.2 passthrough', from: 'GLM-5.2', to: 'GLM-5.2', color: 'bg-rose-100 text-rose-700 hover:bg-rose-200 dark:bg-rose-900/30 dark:text-rose-300' },
   { label: 'GLM-5.1 passthrough', from: 'GLM-5.1', to: 'GLM-5.1', color: 'bg-rose-100 text-rose-700 hover:bg-rose-200 dark:bg-rose-900/30 dark:text-rose-300' },
   { label: 'GLM-4.7 passthrough', from: 'GLM-4.7', to: 'GLM-4.7', color: 'bg-pink-100 text-pink-700 hover:bg-pink-200 dark:bg-pink-900/30 dark:text-pink-300' },
   { label: 'GLM-4.5-air passthrough', from: 'GLM-4.5-air', to: 'GLM-4.5-air', color: 'bg-sky-100 text-sky-700 hover:bg-sky-200 dark:bg-sky-900/30 dark:text-sky-300' }

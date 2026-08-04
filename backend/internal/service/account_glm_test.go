@@ -281,3 +281,46 @@ func TestAccountGLMGetMappedModelAllowsRuntimeTargets(t *testing.T) {
 		t.Fatalf("GetGLMMappedModel(custom-whitelist) = %q, want original model", got)
 	}
 }
+
+// 回归 (GLM-5.2 503)：未在 provider 目录注册的 GLM 型号会原样穿透——
+// NormalizeGLMModel 不认识它 → isOfficialGLMModel 失败 → 小写模型名直接发往上游；
+// 若账号配了 model_mapping（同时充当白名单），IsGLMModelSupported 返回 false，
+// 调度器过滤掉分组内全部 GLM 账号，请求以 503 no-available-accounts 结束。
+// 本用例锁住 GLM-5.2 已完成注册，避免下一个新型号重蹈覆辙时无人察觉。
+func TestAccountGLMSupportsGLM52(t *testing.T) {
+	if got := NormalizeGLMModel("glm-5.2"); got != "GLM-5.2" {
+		t.Fatalf("NormalizeGLMModel(glm-5.2) = %q, want canonical GLM-5.2", got)
+	}
+	if !isOfficialGLMModel("GLM-5.2") {
+		t.Fatal("GLM-5.2 must be an official provider model")
+	}
+
+	withoutMapping := &Account{
+		Platform:    PlatformGLM,
+		Type:        AccountTypeAPIKey,
+		Credentials: map[string]any{"api_key": "sk-glm"},
+	}
+	// 无映射：小写请求必须被归一化后再发往上游，而不是原样穿透。
+	if !withoutMapping.IsGLMModelSupported("glm-5.2") {
+		t.Fatal("glm-5.2 must be supported when no mapping is configured")
+	}
+	if got := withoutMapping.GetGLMMappedModel("glm-5.2"); got != "GLM-5.2" {
+		t.Fatalf("GetGLMMappedModel(glm-5.2) = %q, want GLM-5.2", got)
+	}
+
+	// 有映射（白名单语义）：显式放行后必须通过调度器的模型支持筛选。
+	withMapping := &Account{
+		Platform: PlatformGLM,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key":       "sk-glm",
+			"model_mapping": map[string]any{"GLM-5.2": "GLM-5.2"},
+		},
+	}
+	if !withMapping.IsGLMModelSupported("GLM-5.2") {
+		t.Fatal("GLM-5.2 must pass the model-support filter when whitelisted")
+	}
+	if got := withMapping.GetGLMMappedModel("GLM-5.2"); got != "GLM-5.2" {
+		t.Fatalf("GetGLMMappedModel(GLM-5.2) = %q, want GLM-5.2", got)
+	}
+}

@@ -140,9 +140,9 @@ var domesticProviderCapabilities = map[string]ProviderGatewayCapabilities{
 	},
 	PlatformGLM: {
 		Platform:                   PlatformGLM,
-		DefaultModelIDs:            []string{"GLM-5.1", "GLM-4.7", "GLM-4.5-air"},
-		PublicModelIDs:             []string{"GLM-5.1", "GLM-4.7", "GLM-4.5-air"},
-		SupportedModelIDs:          []string{"GLM-5.1", "GLM-4.7", "GLM-4.5-air"},
+		DefaultModelIDs:            []string{"GLM-5.2", "GLM-5.1", "GLM-4.7", "GLM-4.5-air"},
+		PublicModelIDs:             []string{"GLM-5.2", "GLM-5.1", "GLM-4.7", "GLM-4.5-air"},
+		SupportedModelIDs:          []string{"GLM-5.2", "GLM-5.1", "GLM-4.7", "GLM-4.5-air"},
 		AllowUnknownModels:         true,
 		SupportsLiveModelDiscovery: true,
 		AliasRules: []ModelAliasRule{

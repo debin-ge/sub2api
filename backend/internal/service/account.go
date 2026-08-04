@@ -1393,6 +1393,8 @@ func (a *Account) GetGLMOpenAIBaseURL() string {
 func NormalizeGLMModel(model string) string {
 	trimmed := strings.TrimSpace(model)
 	switch strings.ToLower(trimmed) {
+	case "glm-5.2":
+		return "GLM-5.2"
 	case "glm-5.1":
 		return "GLM-5.1"
 	case "glm-4.7":

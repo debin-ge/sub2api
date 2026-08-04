@@ -404,16 +404,16 @@ func TestAdminModelBuilders_PreserveProviderMetadataFallbacksAndOrder(t *testing
 }
 
 func TestAdminModelBuilders_GLMDefaultOrderPreserved(t *testing.T) {
-	require.Equal(t, []string{"GLM-5.1", "GLM-4.7", "GLM-4.5-air"}, service.DefaultGLMModelIDs())
+	require.Equal(t, []string{"GLM-5.2", "GLM-5.1", "GLM-4.7", "GLM-4.5-air"}, service.DefaultGLMModelIDs())
 
-	models := buildGLMAdminModels([]string{"glm-5.1", "GLM-4.7", "glm-4.5-air", "GLM-5.1"})
+	models := buildGLMAdminModels([]string{"glm-5.2", "glm-5.1", "GLM-4.7", "glm-4.5-air", "GLM-5.1"})
 	modelIDs := make([]string, 0, len(models))
 	for _, model := range models {
 		modelIDs = append(modelIDs, model.ID)
 	}
 
-	require.Equal(t, []string{"GLM-5.1", "GLM-4.7", "GLM-4.5-air"}, modelIDs)
-	require.Equal(t, "GLM-5.1", models[0].ID, "newest provider default must remain first")
+	require.Equal(t, []string{"GLM-5.2", "GLM-5.1", "GLM-4.7", "GLM-4.5-air"}, modelIDs)
+	require.Equal(t, "GLM-5.2", models[0].ID, "newest provider default must remain first")
 }
 
 func TestGroupModelsListCandidates_UsesCatalog(t *testing.T) {

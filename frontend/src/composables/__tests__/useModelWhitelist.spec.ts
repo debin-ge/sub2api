@@ -103,7 +103,7 @@ describe('useModelWhitelist', () => {
   it('glm 模型列表仅包含 Coding Plan MVP 模型', () => {
     const models = getModelsByPlatform('glm')
 
-    expect(models).toEqual(['GLM-5.1', 'GLM-4.7', 'GLM-4.5-air'])
+    expect(models).toEqual(['GLM-5.2', 'GLM-5.1', 'GLM-4.7', 'GLM-4.5-air'])
   })
 
   it('kimi 模型列表仅包含 Coding Plan 模型', () => {

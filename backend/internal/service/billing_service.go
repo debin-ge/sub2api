@@ -516,6 +516,12 @@ func (s *BillingService) initFallbackPricing() {
 	// 不要改回「中国区 CNY ÷ 核算汇率」口径。GLM-4.5 国内价 ¥0.8/¥2 换算后约
 	// $0.11/$0.28，与国际版 $0.6/$2.2 相差数倍，混用会让同一张价表自相矛盾
 	// （v0.1.166 合并曾因重复键误回退到 CNY 口径，GLM 计费被下调 25~75%）。
+	s.fallbackPrices["glm-5.2"] = &ModelPricing{
+		InputPricePerToken:     1.4e-6, // $1.40 per MTok
+		OutputPricePerToken:    4.4e-6, // $4.40 per MTok
+		CacheReadPricePerToken: 0.26e-6,
+		SupportsCacheBreakdown: false,
+	}
 	s.fallbackPrices["glm-5.1"] = &ModelPricing{
 		InputPricePerToken:     1.4e-6, // $1.40 per MTok
 		OutputPricePerToken:    4.4e-6, // $4.40 per MTok
@@ -846,8 +852,13 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 	// 匹配策略：长 key 优先（具体模型 → 系列 / 厂商），未知型号不回退以避免误计价。
 	// 与 DeepSeek 一样采用"白名单"语义：未在本表命中的国产模型 alias 一律不返回兜底价。
 
-	// 智谱 GLM（z.ai 公开 SKU：glm-5.1 / glm-5 / glm-5-turbo / glm-4.7 / glm-4.6 / glm-4.5 等）
+	// 智谱 GLM（z.ai 公开 SKU：glm-5.2 / glm-5.1 / glm-5 / glm-5-turbo / glm-4.7 / glm-4.6 / glm-4.5 等）
 	// 匹配顺序：先判别最高 tier，再依次降级。
+	// 注意：glm-5.2 / glm-5.1 必须排在 glm-5 之前——"glm-5.2" 含子串 "glm-5"，
+	// 顺序颠倒会让它误命中低一档的 glm-5 价（$1.0/$3.2 而非 $1.4/$4.4）。
+	if strings.Contains(modelLower, "glm-5.2") {
+		return s.fallbackPrices["glm-5.2"]
+	}
 	if strings.Contains(modelLower, "glm-5.1") {
 		return s.fallbackPrices["glm-5.1"]
 	}
@@ -987,6 +998,8 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 func normalizeGLMBillingModel(model string) string {
 	normalized := strings.ToLower(NormalizeGLMModel(model))
 	switch {
+	case normalized == "glm-5.2" || strings.HasPrefix(normalized, "glm-5.2-"):
+		return "glm-5.2"
 	case normalized == "glm-5.1" || strings.HasPrefix(normalized, "glm-5.1-"):
 		return "glm-5.1"
 	case normalized == "glm-4.7" || strings.HasPrefix(normalized, "glm-4.7-"):
@@ -1004,7 +1017,7 @@ func normalizeGLMBillingModel(model string) string {
 // as an already-priced model.
 func normalizeGLMBillingModelStrict(model string) string {
 	normalized := strings.ToLower(strings.TrimSpace(model))
-	for _, canonical := range []string{"glm-5.1", "glm-4.7", "glm-4.5-air"} {
+	for _, canonical := range []string{"glm-5.2", "glm-5.1", "glm-4.7", "glm-4.5-air"} {
 		if normalized == canonical {
 			return canonical
 		}

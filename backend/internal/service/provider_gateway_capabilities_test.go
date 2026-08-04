@@ -8,7 +8,7 @@ func TestProviderGatewayCapabilitiesDomesticDefaults(t *testing.T) {
 		models   []string
 	}{
 		{platform: PlatformMiniMax, models: []string{"MiniMax-M3", "MiniMax-M2.7", "MiniMax-M2.7-highspeed"}},
-		{platform: PlatformGLM, models: []string{"GLM-5.1", "GLM-4.7", "GLM-4.5-air"}},
+		{platform: PlatformGLM, models: []string{"GLM-5.2", "GLM-5.1", "GLM-4.7", "GLM-4.5-air"}},
 		{platform: PlatformKimi, models: []string{"kimi-for-coding"}},
 		{platform: PlatformDeepSeek, models: []string{"deepseek-v4-flash", "deepseek-v4-pro"}},
 		{platform: PlatformWindsurf, models: windsurfOfficialModelIDs},
