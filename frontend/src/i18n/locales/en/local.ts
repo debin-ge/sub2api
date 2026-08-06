@@ -219,6 +219,9 @@ export default {
       "billingPerToken": "Pay per token",
       "billingPerRequest": "Pay per request",
       "discountBadge": "≈ {percent}% of reference",
+      "standardDiscountBadge": "Standard ≈ {percent}% of reference",
+      "vipDiscountBadge": "VIP ≈ {percent}% of reference",
+      "peakPricing": "Peak pricing applies",
       "notAvailable": "N/A",
       "recentCalls": "{count} calls in 7d"
     },
@@ -227,7 +230,7 @@ export default {
       "filtered": "{visible}/{total} models"
     },
     "infoBanner": {
-      "text": "The same model can differ in price across channels. Cards show the lowest — click through to see every channel."
+      "text": "Each model shows the lowest usable base price for standard public groups and VIP groups separately. The two price classes never overwrite each other; peak windows are called out in details."
     },
     "modal": {
       "close": "Close",
@@ -241,10 +244,15 @@ export default {
       "supportedChannels": "Channels supporting this model",
       "channelsCount": "{n} channels",
       "tieredPricing": "Tiered pricing",
+      "basePricePeakNote": "Prices above use the base multipliers for standard public and VIP groups separately. Token billing also applies the configured peak multiplier during peak windows.",
       "tierRange": "{min} - {max} tokens",
       "tierRangeOpenEnded": "{min}+ tokens"
     },
     "price": {
+      "standardLabel": "Standard",
+      "vipLabel": "VIP",
+      "standardPricing": "Standard group pricing",
+      "vipPricing": "VIP group pricing",
       "unitPerMillion": "/1M",
       "unitPerRequest": "/request"
     },

@@ -39,7 +39,6 @@ type availableChannelSettingService interface {
 // availableChannelModelCatalog is the narrow catalog surface consumed by the
 // authenticated channel view and the anonymous Model Plaza.
 type availableChannelModelCatalog interface {
-	ListPublic(context.Context) (map[string][]string, error)
 	ListForGroup(context.Context, int64, string) ([]string, error)
 }
 
@@ -243,17 +242,24 @@ func (h *AvailableChannelHandler) ListPublic(c *gin.Context) {
 		return
 	}
 
-	var catalog map[string][]string
+	groupCatalogs := make(map[int64][]string)
+	resolvedGroups := make(map[int64]struct{})
 	if h.modelCatalog != nil {
-		catalog, err = h.modelCatalog.ListPublic(c.Request.Context())
-		if err != nil {
-			response.ErrorFrom(c, err)
-			return
+		for _, ch := range channels {
+			if err := h.resolveGroupCatalogs(
+				c.Request.Context(),
+				filterPublicGroups(ch.Groups),
+				groupCatalogs,
+				resolvedGroups,
+			); err != nil {
+				response.ErrorFrom(c, err)
+				return
+			}
 		}
 	}
 
 	c.Header("Cache-Control", "public, max-age=60, stale-while-revalidate=300")
-	out := buildPublicAvailableChannels(h.channelService, catalog, channels)
+	out := buildPublicAvailableChannels(h.channelService, groupCatalogs, channels)
 	applyBillingFallbackToChannels(h.billingFallback, out)
 	applyRecentCallCounts(c.Request.Context(), h.modelStats, out)
 	response.Success(c, out)
@@ -392,7 +398,7 @@ func applyRecentCallCounts(
 
 func buildPublicAvailableChannels(
 	channelService *service.ChannelService,
-	catalog map[string][]string,
+	groupCatalogs map[int64][]string,
 	channels []service.AvailableChannel,
 ) []userAvailableChannel {
 	out := make([]userAvailableChannel, 0, len(channels))
@@ -404,8 +410,7 @@ func buildPublicAvailableChannels(
 		if len(visibleGroups) == 0 {
 			continue
 		}
-		sections := buildPlatformSections(ch, visibleGroups)
-		sections = mergePlatformCatalogModels(sections, catalog)
+		sections := buildPublicGroupSections(ch, visibleGroups, groupCatalogs)
 		sections = filterRoutingOnlyModels(sections)
 		applyPricingFallbackToSections(channelService, sections)
 		sections = filterSectionsWithModels(sections)
@@ -421,18 +426,80 @@ func buildPublicAvailableChannels(
 	return out
 }
 
-func mergePlatformCatalogModels(
-	sections []userChannelPlatformSection,
-	catalog map[string][]string,
+// buildPublicGroupSections emits one section per public group. Keeping the
+// group and its authoritative model catalog together prevents a low-rate group
+// from contributing to a model that the group cannot actually route.
+func buildPublicGroupSections(
+	ch service.AvailableChannel,
+	visibleGroups []userAvailableGroup,
+	groupCatalogs map[int64][]string,
 ) []userChannelPlatformSection {
-	for i := range sections {
-		sections[i].SupportedModels = mergeNamedSupportedModels(
-			sections[i].SupportedModels,
-			catalog[sections[i].Platform],
-			sections[i].Platform,
-		)
+	groups := append([]userAvailableGroup(nil), visibleGroups...)
+	sort.SliceStable(groups, func(i, j int) bool {
+		if groups[i].Platform != groups[j].Platform {
+			return groups[i].Platform < groups[j].Platform
+		}
+		return strings.ToLower(groups[i].Name) < strings.ToLower(groups[j].Name)
+	})
+
+	sections := make([]userChannelPlatformSection, 0, len(groups))
+	for _, group := range groups {
+		if strings.TrimSpace(group.Platform) == "" {
+			continue
+		}
+		platformSet := map[string]struct{}{group.Platform: {}}
+		models := toUserSupportedModels(ch.SupportedModels, platformSet)
+		if catalog, resolved := groupCatalogs[group.ID]; resolved {
+			models = selectCatalogSupportedModels(models, catalog, group.Platform)
+		}
+		sections = append(sections, userChannelPlatformSection{
+			Platform:        group.Platform,
+			Groups:          []userAvailableGroup{group},
+			SupportedModels: models,
+		})
 	}
 	return sections
+}
+
+// selectCatalogSupportedModels treats the resolved group catalog as the
+// authority while retaining channel pricing for matching model names.
+func selectCatalogSupportedModels(
+	channelModels []userSupportedModel,
+	catalog []string,
+	platform string,
+) []userSupportedModel {
+	byName := make(map[string]userSupportedModel, len(channelModels))
+	for _, model := range channelModels {
+		name := strings.TrimSpace(model.Name)
+		if name == "" {
+			continue
+		}
+		byName[strings.ToLower(name)] = model
+	}
+
+	out := make([]userSupportedModel, 0, len(catalog))
+	seen := make(map[string]struct{}, len(catalog))
+	for _, rawName := range catalog {
+		name := strings.TrimSpace(rawName)
+		if name == "" {
+			continue
+		}
+		key := strings.ToLower(name)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		if model, exists := byName[key]; exists {
+			model.Name = name
+			if model.Platform == "" {
+				model.Platform = platform
+			}
+			out = append(out, model)
+			continue
+		}
+		out = append(out, userSupportedModel{Name: name, Platform: platform})
+	}
+	return out
 }
 
 func mergeGroupCatalogModels(

@@ -25,6 +25,7 @@ describe('usePlazaData', () => {
     plazaData.pricingConfig.value = {
       multiplier: 1,
       rate: 7.2,
+      serverUtcOffset: '',
       paymentEnabled: false,
       balanceDisabled: false,
     }
@@ -46,6 +47,7 @@ describe('usePlazaData', () => {
       payment_cny_usd_rate: 6.8,
       payment_enabled: true,
       payment_balance_disabled: false,
+      server_utc_offset: '+08:00',
       available_channels_enabled: false,
     })
 
@@ -57,6 +59,7 @@ describe('usePlazaData', () => {
     expect(plazaData.pricingConfig.value).toEqual({
       multiplier: 1.25,
       rate: 6.8,
+      serverUtcOffset: '+08:00',
       paymentEnabled: true,
       balanceDisabled: false,
     })

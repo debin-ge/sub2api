@@ -59,11 +59,11 @@ func (s *ChannelService) ListAvailable(ctx context.Context) ([]AvailableChannel,
 
 // ListPublicAvailable 返回公开模型广场使用的可用视图。
 //
-// 与用户侧 ListAvailable 不同，公开模型广场不依赖渠道-分组绑定关系；它把所有活跃分组
-// 按平台参与展示，让渠道模型配置/定价与分组自定义模型列表都能进入匿名目录。
+// 已绑定到活跃渠道的分组只出现在其真实渠道下，避免把其他渠道价格与该分组倍率错误组合。
+// 未绑定到任何活跃渠道的分组归入合成的公共目录，仍可通过分组模型目录和全局价格回退展示。
 func (s *ChannelService) ListPublicAvailable(ctx context.Context) ([]AvailableChannel, error) {
 	return s.listAvailable(ctx, availableListOptions{
-		selectGroups:             allActiveGroups,
+		selectGroups:             channelBoundGroups,
 		synthesizePublicCatalog:  true,
 		publicCatalogChannelName: PublicCatalogChannelName,
 		publicCatalogDescription: "",
@@ -112,14 +112,16 @@ func (s *ChannelService) listAvailable(ctx context.Context, opts availableListOp
 	}
 
 	out := make([]AvailableChannel, 0, len(channels))
-	hasActiveChannel := false
+	boundActiveGroupIDs := make(map[int64]struct{}, len(allGroupRefs))
 	for i := range channels {
 		ch := &channels[i]
-		if ch.Status == StatusActive {
-			hasActiveChannel = true
-		}
 		groups := opts.selectGroups(ch, groupByID, allGroupRefs)
 		sort.SliceStable(groups, func(i, j int) bool { return groups[i].Name < groups[j].Name })
+		if opts.synthesizePublicCatalog && ch.Status == StatusActive {
+			for _, group := range groups {
+				boundActiveGroupIDs[group.ID] = struct{}{}
+			}
+		}
 
 		ch.normalizeBillingModelSource()
 
@@ -138,15 +140,23 @@ func (s *ChannelService) listAvailable(ctx context.Context, opts availableListOp
 		})
 	}
 
-	if opts.synthesizePublicCatalog && !hasActiveChannel && len(allGroupRefs) > 0 {
-		groups := append([]AvailableGroupRef(nil), allGroupRefs...)
+	if opts.synthesizePublicCatalog && len(allGroupRefs) > 0 {
+		groups := make([]AvailableGroupRef, 0, len(allGroupRefs))
+		for _, group := range allGroupRefs {
+			if _, bound := boundActiveGroupIDs[group.ID]; bound {
+				continue
+			}
+			groups = append(groups, group)
+		}
 		sort.SliceStable(groups, func(i, j int) bool { return groups[i].Name < groups[j].Name })
-		out = append(out, AvailableChannel{
-			Name:        opts.publicCatalogChannelName,
-			Description: opts.publicCatalogDescription,
-			Status:      StatusActive,
-			Groups:      groups,
-		})
+		if len(groups) > 0 {
+			out = append(out, AvailableChannel{
+				Name:        opts.publicCatalogChannelName,
+				Description: opts.publicCatalogDescription,
+				Status:      StatusActive,
+				Groups:      groups,
+			})
+		}
 	}
 
 	sort.SliceStable(out, func(i, j int) bool {
@@ -163,10 +173,6 @@ func channelBoundGroups(ch *Channel, groupByID map[int64]AvailableGroupRef, _ []
 		}
 	}
 	return groups
-}
-
-func allActiveGroups(_ *Channel, _ map[int64]AvailableGroupRef, allGroups []AvailableGroupRef) []AvailableGroupRef {
-	return append([]AvailableGroupRef(nil), allGroups...)
 }
 
 // FillGlobalPricingFallback fills display-only pricing for supported models that

@@ -14,10 +14,15 @@ const messages: Record<string, string> = {
   'plaza.card.billingPerToken': 'Pay per token',
   'plaza.card.billingPerRequest': 'Pay per request',
   'plaza.card.discountBadge': '{percent}% of reference',
+  'plaza.card.standardDiscountBadge': 'Standard {percent}% of reference',
+  'plaza.card.vipDiscountBadge': 'VIP {percent}% of reference',
+  'plaza.card.peakPricing': 'Peak pricing applies',
   'plaza.card.notAvailable': 'N/A',
   'plaza.card.recentCalls': '{count} calls',
   'plaza.price.unitPerMillion': '/1M',
   'plaza.price.unitPerRequest': '/request',
+  'plaza.price.standardLabel': 'Standard',
+  'plaza.price.vipLabel': 'VIP',
 }
 
 vi.mock('vue-i18n', async (importOriginal) => {
@@ -37,14 +42,26 @@ const model: AggregatedModel = {
   model: 'claude-opus-4-8',
   displayName: 'claude-opus-4-8',
   platform: 'anthropic',
-  minPricing: {
-    input: 0.000015,
-    output: 0.000075,
-    cacheWrite: 0.00001875,
-    cacheRead: 0.0000015,
-    imageOutput: null,
-    perRequest: null
+  standardPricing: {
+    minPricing: {
+      input: 0.000015,
+      output: 0.000075,
+      cacheWrite: 0.00001875,
+      cacheRead: 0.0000015,
+      imageOutput: null,
+      perRequest: null
+    },
+    minPricingRateMultipliers: {
+      input: 1,
+      output: 1,
+      cacheWrite: 1,
+      cacheRead: 1,
+      imageOutput: 1,
+      perRequest: 1
+    },
+    displayRateMultiplier: 1
   },
+  vipPricing: null,
   supportedGroups: [
     {
       channelName: 'Anthropic',
@@ -60,7 +77,6 @@ const model: AggregatedModel = {
       pricing: null
     }
   ],
-  bestRateMultiplier: 1,
   recentCalls: 0,
   recentCallWindowSeconds: 0
 }
@@ -86,9 +102,9 @@ describe('ModelCard', () => {
     expect(wrapper.text()).not.toContain('支持渠道')
     expect(wrapper.text()).not.toContain('查看详情')
     expect(wrapper.text()).not.toContain('rose')
-    expect(wrapper.html()).toContain('bg-sky-50')
-    expect(wrapper.html()).toContain('bg-emerald-50')
-    expect(wrapper.html()).toContain('text-2xl')
+    expect(wrapper.html()).toContain('divide-y')
+    expect(wrapper.html()).toContain('tabular-nums')
+    // the reference USD price is struck through against the recharged CNY price
     expect(wrapper.html()).toContain('line-through')
     expect(wrapper.html()).not.toContain('bg-rose-50')
 
@@ -100,7 +116,18 @@ describe('ModelCard', () => {
   it('uses the model group multiplier when showing the model discount and recharged price', () => {
     const premiumModel: AggregatedModel = {
       ...model,
-      bestRateMultiplier: 2,
+      standardPricing: {
+        ...model.standardPricing!,
+        displayRateMultiplier: 2,
+        minPricingRateMultipliers: {
+          input: 2,
+          output: 2,
+          cacheWrite: 2,
+          cacheRead: 2,
+          imageOutput: 2,
+          perRequest: 2
+        }
+      },
       supportedGroups: model.supportedGroups.map((entry) => ({
         ...entry,
         group: { ...entry.group, rate_multiplier: 2 }
@@ -114,5 +141,70 @@ describe('ModelCard', () => {
     expect(wrapper.text()).toContain('19.61% of reference')
     expect(wrapper.text()).toContain('¥20')
     expect(wrapper.text()).not.toContain('10.2x boost')
+  })
+
+  it('warns when a supported public group has peak token pricing', () => {
+    const peakModel: AggregatedModel = {
+      ...model,
+      supportedGroups: model.supportedGroups.map((entry) => ({
+        ...entry,
+        group: {
+          ...entry.group,
+          subscription_type: 'subscription',
+          peak_rate_enabled: true,
+          peak_start: '14:00',
+          peak_end: '18:00',
+          peak_rate_multiplier: 2
+        }
+      }))
+    }
+
+    const wrapper = mount(ModelCard, {
+      props: { model: peakModel, multiplier: 1.5, rate: 6.8 }
+    })
+
+    expect(wrapper.text()).toContain('Peak pricing applies')
+  })
+
+  it('renders standard and VIP prices and discounts without one replacing the other', () => {
+    const mixedModel: AggregatedModel = {
+      ...model,
+      vipPricing: {
+        minPricing: { ...model.standardPricing!.minPricing },
+        minPricingRateMultipliers: {
+          input: 0.8,
+          output: 0.8,
+          cacheWrite: 0.8,
+          cacheRead: 0.8,
+          imageOutput: 0.8,
+          perRequest: 0.8
+        },
+        displayRateMultiplier: 0.8
+      },
+      supportedGroups: [
+        ...model.supportedGroups,
+        {
+          ...model.supportedGroups[0],
+          group: {
+            ...model.supportedGroups[0].group,
+            id: 2,
+            name: 'vip',
+            rate_multiplier: 0.8,
+            vip_only: true
+          }
+        }
+      ]
+    }
+
+    const wrapper = mount(ModelCard, {
+      props: { model: mixedModel, multiplier: 1.5, rate: 6.8 }
+    })
+
+    expect(wrapper.text()).toContain('9.8% of reference')
+    expect(wrapper.text()).toContain('7.84% of reference')
+    expect(wrapper.text()).toContain('¥10')
+    expect(wrapper.text()).toContain('¥8')
+    expect(wrapper.text()).toContain('Standard')
+    expect(wrapper.text()).toContain('VIP')
   })
 })

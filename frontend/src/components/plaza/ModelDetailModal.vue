@@ -40,10 +40,10 @@
                   {{ billingLabel }}
                 </span>
                 <span
-                  v-if="hasDiscount"
-                  class="inline-flex items-center rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                  v-if="hasPeakPricing"
+                  class="inline-flex items-center rounded-md bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
                 >
-                  {{ discountLabel }}
+                  {{ t('plaza.card.peakPricing') }}
                 </span>
                 <span
                   v-if="model.recentCalls > 0"
@@ -78,56 +78,98 @@
               <span class="inline-block h-4 w-1 rounded-full bg-primary-500" aria-hidden="true"></span>
               {{ t('plaza.modal.fullPricing') }}
             </h3>
-            <div class="grid gap-2 md:grid-cols-2">
-              <PriceLine
-                :label="t('plaza.modal.input')"
-                :value="model.minPricing.input"
-                :scale="PER_MILLION_TOKEN_SCALE"
-                :multiplier="multiplier"
-                :rate="rate"
-                :billing-rate-multiplier="model.bestRateMultiplier"
-              />
-              <PriceLine
-                :label="t('plaza.modal.output')"
-                :value="model.minPricing.output"
-                :scale="PER_MILLION_TOKEN_SCALE"
-                :multiplier="multiplier"
-                :rate="rate"
-                :billing-rate-multiplier="model.bestRateMultiplier"
-              />
-              <PriceLine
-                :label="t('plaza.modal.cacheWrite')"
-                :value="model.minPricing.cacheWrite"
-                :scale="PER_MILLION_TOKEN_SCALE"
-                :multiplier="multiplier"
-                :rate="rate"
-                :billing-rate-multiplier="model.bestRateMultiplier"
-              />
-              <PriceLine
-                :label="t('plaza.modal.cacheRead')"
-                :value="model.minPricing.cacheRead"
-                :scale="PER_MILLION_TOKEN_SCALE"
-                :multiplier="multiplier"
-                :rate="rate"
-                :billing-rate-multiplier="model.bestRateMultiplier"
-              />
-              <PriceLine
-                :label="t('plaza.modal.imageOutput')"
-                :value="model.minPricing.imageOutput"
-                :scale="PER_MILLION_TOKEN_SCALE"
-                :multiplier="multiplier"
-                :rate="rate"
-                :billing-rate-multiplier="model.bestRateMultiplier"
-              />
-              <PriceLine
-                :label="t('plaza.modal.perRequest')"
-                :value="model.minPricing.perRequest"
-                :scale="PER_REQUEST_SCALE"
-                :multiplier="multiplier"
-                :rate="rate"
-                :billing-rate-multiplier="model.bestRateMultiplier"
-              />
+            <div class="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-dark-800 dark:bg-dark-900/40">
+              <div :class="['grid items-center gap-x-3 border-b border-gray-100 bg-gray-50 px-3 py-2.5 dark:border-dark-800 dark:bg-dark-800/40', pricingGridClass]">
+                <div :class="pricingHeaderSpacerClass"></div>
+                <div v-if="model.standardPricing" class="min-w-0 text-right">
+                  <div class="text-xs font-semibold text-gray-700 dark:text-gray-200">
+                    {{ t('plaza.price.standardPricing') }}
+                  </div>
+                  <div v-if="hasStandardDiscount" class="mt-0.5 truncate text-[10px] text-emerald-600 dark:text-emerald-400">
+                    {{ standardDiscountLabel }}
+                  </div>
+                </div>
+                <div v-if="model.vipPricing" class="min-w-0 border-l border-orange-200 pl-3 text-right dark:border-orange-900/60">
+                  <div class="text-xs font-semibold text-orange-700 dark:text-orange-400">
+                    {{ t('plaza.price.vipPricing') }}
+                  </div>
+                  <div v-if="hasVipDiscount" class="mt-0.5 truncate text-[10px] text-orange-500 dark:text-orange-400/90">
+                    {{ vipDiscountLabel }}
+                  </div>
+                </div>
+              </div>
+              <div class="divide-y divide-gray-100 dark:divide-dark-800">
+                <PriceCell
+                  :label="t('plaza.modal.input')"
+                  :scale="PER_MILLION_TOKEN_SCALE"
+                  :multiplier="multiplier"
+                  :standard-available="model.standardPricing != null"
+                  :standard-value="model.standardPricing?.minPricing.input ?? null"
+                  :standard-billing-rate-multiplier="model.standardPricing?.minPricingRateMultipliers.input"
+                  :vip-available="model.vipPricing != null"
+                  :vip-value="model.vipPricing?.minPricing.input ?? null"
+                  :vip-billing-rate-multiplier="model.vipPricing?.minPricingRateMultipliers.input"
+                />
+                <PriceCell
+                  :label="t('plaza.modal.output')"
+                  :scale="PER_MILLION_TOKEN_SCALE"
+                  :multiplier="multiplier"
+                  :standard-available="model.standardPricing != null"
+                  :standard-value="model.standardPricing?.minPricing.output ?? null"
+                  :standard-billing-rate-multiplier="model.standardPricing?.minPricingRateMultipliers.output"
+                  :vip-available="model.vipPricing != null"
+                  :vip-value="model.vipPricing?.minPricing.output ?? null"
+                  :vip-billing-rate-multiplier="model.vipPricing?.minPricingRateMultipliers.output"
+                />
+                <PriceCell
+                  :label="t('plaza.modal.cacheWrite')"
+                  :scale="PER_MILLION_TOKEN_SCALE"
+                  :multiplier="multiplier"
+                  :standard-available="model.standardPricing != null"
+                  :standard-value="model.standardPricing?.minPricing.cacheWrite ?? null"
+                  :standard-billing-rate-multiplier="model.standardPricing?.minPricingRateMultipliers.cacheWrite"
+                  :vip-available="model.vipPricing != null"
+                  :vip-value="model.vipPricing?.minPricing.cacheWrite ?? null"
+                  :vip-billing-rate-multiplier="model.vipPricing?.minPricingRateMultipliers.cacheWrite"
+                />
+                <PriceCell
+                  :label="t('plaza.modal.cacheRead')"
+                  :scale="PER_MILLION_TOKEN_SCALE"
+                  :multiplier="multiplier"
+                  :standard-available="model.standardPricing != null"
+                  :standard-value="model.standardPricing?.minPricing.cacheRead ?? null"
+                  :standard-billing-rate-multiplier="model.standardPricing?.minPricingRateMultipliers.cacheRead"
+                  :vip-available="model.vipPricing != null"
+                  :vip-value="model.vipPricing?.minPricing.cacheRead ?? null"
+                  :vip-billing-rate-multiplier="model.vipPricing?.minPricingRateMultipliers.cacheRead"
+                />
+                <PriceCell
+                  :label="t('plaza.modal.imageOutput')"
+                  :scale="PER_MILLION_TOKEN_SCALE"
+                  :multiplier="multiplier"
+                  :standard-available="model.standardPricing != null"
+                  :standard-value="model.standardPricing?.minPricing.imageOutput ?? null"
+                  :standard-billing-rate-multiplier="model.standardPricing?.minPricingRateMultipliers.imageOutput"
+                  :vip-available="model.vipPricing != null"
+                  :vip-value="model.vipPricing?.minPricing.imageOutput ?? null"
+                  :vip-billing-rate-multiplier="model.vipPricing?.minPricingRateMultipliers.imageOutput"
+                />
+                <PriceCell
+                  :label="t('plaza.modal.perRequest')"
+                  :scale="PER_REQUEST_SCALE"
+                  :multiplier="multiplier"
+                  :standard-available="model.standardPricing != null"
+                  :standard-value="model.standardPricing?.minPricing.perRequest ?? null"
+                  :standard-billing-rate-multiplier="model.standardPricing?.minPricingRateMultipliers.perRequest"
+                  :vip-available="model.vipPricing != null"
+                  :vip-value="model.vipPricing?.minPricing.perRequest ?? null"
+                  :vip-billing-rate-multiplier="model.vipPricing?.minPricingRateMultipliers.perRequest"
+                />
+              </div>
             </div>
+            <p v-if="hasPeakPricing" class="mt-3 text-xs text-amber-700 dark:text-amber-300">
+              {{ t('plaza.modal.basePricePeakNote') }}
+            </p>
           </section>
 
           <section v-if="tieredGroups.length > 0">
@@ -150,6 +192,12 @@
                     ]"
                   >
                     {{ item.group.name }}
+                  </span>
+                  <span
+                    v-if="item.group.vip_only === true"
+                    class="inline-flex items-center rounded-md bg-orange-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-orange-700 dark:bg-orange-900/50 dark:text-orange-300"
+                  >
+                    {{ t('plaza.price.vipLabel') }}
                   </span>
                 </div>
                 <div class="space-y-4">
@@ -249,7 +297,19 @@
                   </div>
                   <div class="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
                     <span class="rounded-md bg-gray-100 px-1.5 py-0.5 dark:bg-dark-800">{{ item.group.name }}</span>
+                    <span
+                      v-if="item.group.vip_only === true"
+                      class="rounded-md bg-orange-100 px-1.5 py-0.5 font-semibold text-orange-700 dark:bg-orange-900/50 dark:text-orange-300"
+                    >
+                      {{ t('plaza.price.vipLabel') }}
+                    </span>
                     <span>×{{ item.group.rate_multiplier || 1 }}</span>
+                    <span
+                      v-if="hasPeakRate(item.group)"
+                      class="rounded-md bg-amber-50 px-1.5 py-0.5 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                    >
+                      {{ formatPeakRateWindow(item.group, serverTimezone) }}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -264,6 +324,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import PriceCell from './PriceCell.vue'
 import PriceLine from './PriceLine.vue'
 import PlatformIcon from '@/components/common/PlatformIcon.vue'
 import {
@@ -278,15 +339,17 @@ import {
   platformBadgeLightClass,
   platformLabel
 } from '@/utils/platformColors'
-import type { AggregatedModel } from '@/composables/useModelAggregation'
+import type { AggregatedModel, PlazaPricingSummary } from '@/composables/useModelAggregation'
 import type { UserPricingInterval } from '@/api/channels'
 import type { GroupPlatform } from '@/types'
+import { formatPeakRateWindow, hasPeakRate, serverTimezoneLabel } from '@/utils/peak-rate'
 
 const props = defineProps<{
   open: boolean
   model: AggregatedModel | null
   multiplier: number
   rate: number
+  serverUtcOffset?: string
 }>()
 
 const emit = defineEmits<{ close: [] }>()
@@ -299,7 +362,10 @@ const previousFocus = ref<HTMLElement | null>(null)
 
 const sortedGroups = computed(() =>
   [...(props.model?.supportedGroups ?? [])].sort(
-    (a, b) => (a.group.rate_multiplier || 1) - (b.group.rate_multiplier || 1)
+    (a, b) => {
+      const typeDifference = Number(a.group.vip_only === true) - Number(b.group.vip_only === true)
+      return typeDifference || (a.group.rate_multiplier || 1) - (b.group.rate_multiplier || 1)
+    }
   )
 )
 
@@ -317,27 +383,66 @@ const tieredGroups = computed(() =>
     }))
 )
 
-const discountFold = computed(() =>
-  computeDiscountFold(props.multiplier, props.rate, props.model?.bestRateMultiplier)
+const pricingSummaries = computed<PlazaPricingSummary[]>(() =>
+  [props.model?.standardPricing, props.model?.vipPricing]
+    .filter((pricing): pricing is PlazaPricingSummary => pricing != null)
 )
-const discountPercent = computed(() =>
-  computeDiscountPercent(props.multiplier, props.rate, props.model?.bestRateMultiplier)
+
+const standardDiscountFold = computed(() =>
+  computeDiscountFold(props.multiplier, props.rate, props.model?.standardPricing?.displayRateMultiplier)
 )
-const hasDiscount = computed(() => discountPercent.value < 100)
-const discountLabel = computed(() =>
+const standardDiscountPercent = computed(() =>
+  computeDiscountPercent(props.multiplier, props.rate, props.model?.standardPricing?.displayRateMultiplier)
+)
+const vipDiscountFold = computed(() =>
+  computeDiscountFold(props.multiplier, props.rate, props.model?.vipPricing?.displayRateMultiplier)
+)
+const vipDiscountPercent = computed(() =>
+  computeDiscountPercent(props.multiplier, props.rate, props.model?.vipPricing?.displayRateMultiplier)
+)
+const hasAnyPrice = (pricing: PlazaPricingSummary | null | undefined) =>
+  pricing != null && Object.values(pricing.minPricing).some((value) => value != null)
+const hasStandardDiscount = computed(() =>
+  hasAnyPrice(props.model?.standardPricing) && standardDiscountPercent.value < 100
+)
+const hasVipDiscount = computed(() =>
+  hasAnyPrice(props.model?.vipPricing) && vipDiscountPercent.value < 100
+)
+const hasPeakPricing = computed(() =>
+  props.model?.supportedGroups.some((item) => hasPeakRate(item.group)) === true
+)
+const serverTimezone = computed(() => serverTimezoneLabel(props.serverUtcOffset))
+const standardDiscountLabel = computed(() =>
   t('plaza.card.discountBadge', {
-    discount: formatDiscountFold(discountFold.value),
-    percent: discountPercent.value
+    discount: formatDiscountFold(standardDiscountFold.value),
+    percent: standardDiscountPercent.value
+  })
+)
+const vipDiscountLabel = computed(() =>
+  t('plaza.card.discountBadge', {
+    discount: formatDiscountFold(vipDiscountFold.value),
+    percent: vipDiscountPercent.value
   })
 )
 const isPerRequestOnly = computed(() =>
-  props.model?.minPricing.perRequest != null &&
-  props.model.minPricing.input == null &&
-  props.model.minPricing.output == null
+  pricingSummaries.value.some((pricing) => pricing.minPricing.perRequest != null) &&
+  pricingSummaries.value.every((pricing) =>
+    pricing.minPricing.input == null && pricing.minPricing.output == null
+  )
 )
 const billingLabel = computed(() =>
   isPerRequestOnly.value ? t('plaza.card.billingPerRequest') : t('plaza.card.billingPerToken')
 )
+
+const hasBothPricingTypes = computed(() =>
+  props.model?.standardPricing != null && props.model.vipPricing != null
+)
+const pricingGridClass = computed(() =>
+  hasBothPricingTypes.value
+    ? 'grid-cols-2 sm:grid-cols-[minmax(5rem,0.75fr)_repeat(2,minmax(0,1fr))]'
+    : 'grid-cols-[minmax(0,1fr)_minmax(7rem,auto)]'
+)
+const pricingHeaderSpacerClass = computed(() => hasBothPricingTypes.value ? 'hidden sm:block' : '')
 
 const tokenFormatter = new Intl.NumberFormat()
 

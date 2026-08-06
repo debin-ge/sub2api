@@ -241,6 +241,7 @@ describe('PlazaView', () => {
     pricingConfig.value = {
       multiplier: 1.5,
       rate: 6.8,
+      serverUtcOffset: '+08:00',
       paymentEnabled: true,
       balanceDisabled: false,
     }
@@ -297,14 +298,15 @@ describe('PlazaView', () => {
     expect(wrapper.text()).toContain('gpt-live-after-release')
   })
 
-  it('renders search and filters above a four-column card grid', async () => {
+  it('renders search and filters above a responsive comparison card grid', async () => {
     const wrapper = await mountPlaza()
 
     expect(wrapper.find('aside').exists()).toBe(false)
     expect(wrapper.find('input[type="search"]').exists()).toBe(true)
     expect(wrapper.find('select[aria-label="Sort"]').exists()).toBe(true)
     expect(wrapper.find('select[aria-label="Providers"]').exists()).toBe(true)
-    expect(wrapper.find('.xl\\:grid-cols-4').exists()).toBe(true)
+    expect(wrapper.find('.xl\\:grid-cols-3').exists()).toBe(true)
+    expect(wrapper.find('.\\32xl\\:grid-cols-4').exists()).toBe(true)
   })
 
   it('renders the localized loading state', async () => {

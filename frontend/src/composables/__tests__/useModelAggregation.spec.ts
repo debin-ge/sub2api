@@ -48,9 +48,11 @@ describe('aggregateByPlatformModel', () => {
     expect(result[0].models).toHaveLength(1)
     expect(result[0].models[0].model).toBe('claude-sonnet')
     expect(result[0].models[0].displayName).toBe('claude-sonnet')
-    expect(result[0].models[0].minPricing.input).toBe(0.000002)
+    expect(result[0].models[0].standardPricing?.minPricing.input).toBe(0.000002)
+    expect(result[0].models[0].standardPricing?.minPricingRateMultipliers.input).toBe(1.2)
     expect(result[0].models[0].supportedGroups).toHaveLength(2)
-    expect(result[0].models[0].bestRateMultiplier).toBe(1)
+    expect(result[0].models[0].standardPricing?.displayRateMultiplier).toBe(1.2)
+    expect(result[0].models[0].vipPricing).toBeNull()
   })
 
   it('tracks the lowest valid group multiplier for discount and recharged price display', () => {
@@ -69,7 +71,67 @@ describe('aggregateByPlatformModel', () => {
 
     const result = aggregateByPlatformModel(rows)
 
-    expect(result[0].models[0].bestRateMultiplier).toBe(0.8)
+    expect(result[0].models[0].standardPricing?.displayRateMultiplier).toBe(0.8)
+  })
+
+  it('keeps the lowest multiplier when every public group is above one', () => {
+    const rows: UserAvailableChannel[] = [{
+      name: 'premium',
+      description: '',
+      platforms: [{
+        platform: 'anthropic',
+        groups: [
+          { id: 1, name: 'premium-12', platform: 'anthropic', subscription_type: 'standard', rate_multiplier: 1.2, is_exclusive: false },
+          { id: 2, name: 'premium-15', platform: 'anthropic', subscription_type: 'standard', rate_multiplier: 1.5, is_exclusive: false }
+        ],
+        supported_models: [{ name: 'claude-premium', platform: 'anthropic', pricing: price(0.000003) }]
+      }]
+    }]
+
+    const model = aggregateByPlatformModel(rows)[0].models[0]
+
+    expect(model.standardPricing?.displayRateMultiplier).toBe(1.2)
+    expect(model.standardPricing?.minPricingRateMultipliers.input).toBe(1.2)
+  })
+
+  it('selects and sorts by the lowest effective model and group price pair', () => {
+    const rows: UserAvailableChannel[] = [
+      {
+        name: 'cheap-raw-premium-group',
+        description: '',
+        platforms: [{
+          platform: 'openai',
+          groups: [{ id: 1, name: 'premium', platform: 'openai', subscription_type: 'standard', rate_multiplier: 2, is_exclusive: false }],
+          supported_models: [
+            { name: 'paired-model', platform: 'openai', pricing: price(0.000001) },
+            { name: 'effective-expensive', platform: 'openai', pricing: price(0.000001) }
+          ]
+        }]
+      },
+      {
+        name: 'higher-raw-standard-group',
+        description: '',
+        platforms: [{
+          platform: 'openai',
+          groups: [{ id: 2, name: 'standard', platform: 'openai', subscription_type: 'standard', rate_multiplier: 1, is_exclusive: false }],
+          supported_models: [
+            { name: 'paired-model', platform: 'openai', pricing: price(0.0000015) },
+            { name: 'effective-cheap', platform: 'openai', pricing: price(0.0000016) }
+          ]
+        }]
+      }
+    ]
+
+    const models = aggregateByPlatformModel(rows, { sort: 'input_asc' })[0].models
+    const paired = models.find((model) => model.model === 'paired-model')!
+
+    expect(paired.standardPricing?.minPricing.input).toBe(0.0000015)
+    expect(paired.standardPricing?.minPricingRateMultipliers.input).toBe(1)
+    expect(models.map((model) => model.model)).toEqual([
+      'paired-model',
+      'effective-cheap',
+      'effective-expensive'
+    ])
   })
 
   it('does not merge same model name across different platforms', () => {
@@ -139,7 +201,7 @@ describe('aggregateByPlatformModel', () => {
 
     const model = aggregateByPlatformModel(rows)[0].models[0]
 
-    expect(model.minPricing).toEqual({
+    expect(model.standardPricing?.minPricing).toEqual({
       input: 0.000005,
       output: 0.00001,
       cacheWrite: 0.000004,
@@ -238,7 +300,7 @@ describe('aggregateByPlatformModel', () => {
     const tiered = ascending[0].models[0]
 
     expect(ascending[0].models.map((m) => m.model)).toEqual(['tiered-cheap', 'flat-expensive'])
-    expect(tiered.minPricing).toEqual({
+    expect(tiered.standardPricing?.minPricing).toEqual({
       input: 0.000001,
       output: 0.00001,
       cacheWrite: 0.000004,
@@ -273,6 +335,152 @@ describe('aggregateByPlatformModel', () => {
     expect(globallySortedModels.map((model) => `${model.platform}:${model.model}`)).toEqual([
       'openai:a-first',
       'anthropic:z-last'
+    ])
+  })
+
+  it('keeps standard and VIP pricing independent for the same model', () => {
+    const rows: UserAvailableChannel[] = [{
+      name: 'mixed-groups',
+      description: '',
+      platforms: [{
+        platform: 'openai',
+        groups: [
+          {
+            id: 1,
+            name: 'standard',
+            platform: 'openai',
+            subscription_type: 'standard',
+            rate_multiplier: 1.2,
+            is_exclusive: false
+          },
+          {
+            id: 2,
+            name: 'vip',
+            platform: 'openai',
+            subscription_type: 'standard',
+            rate_multiplier: 0.8,
+            is_exclusive: false,
+            vip_only: true
+          }
+        ],
+        supported_models: [{ name: 'gpt-vip', platform: 'openai', pricing: price(0.000002, 0.000008) }]
+      }]
+    }]
+
+    const model = aggregateByPlatformModel(rows)[0].models[0]
+
+    expect(model.standardPricing).toMatchObject({
+      minPricing: { input: 0.000002, output: 0.000008 },
+      minPricingRateMultipliers: { input: 1.2, output: 1.2 },
+      displayRateMultiplier: 1.2
+    })
+    expect(model.vipPricing).toMatchObject({
+      minPricing: { input: 0.000002, output: 0.000008 },
+      minPricingRateMultipliers: { input: 0.8, output: 0.8 },
+      displayRateMultiplier: 0.8
+    })
+  })
+
+  it('does not let a cheaper VIP offer overwrite the standard offer', () => {
+    const rows: UserAvailableChannel[] = [
+      {
+        name: 'standard-channel',
+        description: '',
+        platforms: [{
+          platform: 'openai',
+          groups: [{
+            id: 1,
+            name: 'standard',
+            platform: 'openai',
+            subscription_type: 'standard',
+            rate_multiplier: 1.2,
+            is_exclusive: false
+          }],
+          supported_models: [{ name: 'gpt-vip', platform: 'openai', pricing: price(0.000002) }]
+        }]
+      },
+      {
+        name: 'vip-channel',
+        description: '',
+        platforms: [{
+          platform: 'openai',
+          groups: [{
+            id: 2,
+            name: 'vip',
+            platform: 'openai',
+            subscription_type: 'standard',
+            rate_multiplier: 0.8,
+            is_exclusive: false,
+            vip_only: true
+          }],
+          supported_models: [{ name: 'gpt-vip', platform: 'openai', pricing: price(0.000001) }]
+        }]
+      }
+    ]
+
+    const model = aggregateByPlatformModel(rows)[0].models[0]
+
+    expect(model.standardPricing?.minPricing.input).toBe(0.000002)
+    expect(model.standardPricing?.minPricingRateMultipliers.input).toBe(1.2)
+    expect(model.vipPricing?.minPricing.input).toBe(0.000001)
+    expect(model.vipPricing?.minPricingRateMultipliers.input).toBe(0.8)
+  })
+
+  it('sorts by standard input pricing and falls back to VIP when standard pricing is absent', () => {
+    const summary = (input: number, rate: number) => ({
+      minPricing: {
+        input,
+        output: null,
+        cacheWrite: null,
+        cacheRead: null,
+        imageOutput: null,
+        perRequest: null
+      },
+      minPricingRateMultipliers: {
+        input: rate,
+        output: rate,
+        cacheWrite: rate,
+        cacheRead: rate,
+        imageOutput: rate,
+        perRequest: rate
+      },
+      displayRateMultiplier: rate
+    })
+    const base = {
+      displayName: '',
+      platform: 'openai',
+      supportedGroups: [],
+      recentCalls: 0,
+      recentCallWindowSeconds: 0
+    }
+    const models = [
+      {
+        ...base,
+        model: 'standard-first',
+        displayName: 'standard-first',
+        standardPricing: summary(0.000002, 1),
+        vipPricing: summary(0.0000001, 0.5)
+      },
+      {
+        ...base,
+        model: 'vip-only',
+        displayName: 'vip-only',
+        standardPricing: null,
+        vipPricing: summary(0.000003, 1)
+      },
+      {
+        ...base,
+        model: 'standard-second',
+        displayName: 'standard-second',
+        standardPricing: summary(0.000004, 1),
+        vipPricing: summary(0.00000005, 0.5)
+      }
+    ]
+
+    expect(sortAggregatedModels(models, 'input_asc').map((model) => model.model)).toEqual([
+      'standard-first',
+      'vip-only',
+      'standard-second'
     ])
   })
 })

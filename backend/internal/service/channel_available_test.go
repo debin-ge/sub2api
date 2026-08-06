@@ -141,7 +141,7 @@ func TestListAvailable_CarriesGroupModelsListConfig(t *testing.T) {
 	require.Equal(t, []string{"group-only-model"}, out[0].Groups[0].ModelsListConfig.Models)
 }
 
-func TestListPublicAvailable_UsesAllActiveGroups(t *testing.T) {
+func TestListPublicAvailable_SeparatesBoundAndUnboundActiveGroups(t *testing.T) {
 	channels := []Channel{{
 		ID:       1,
 		Name:     "chA",
@@ -163,8 +163,11 @@ func TestListPublicAvailable_UsesAllActiveGroups(t *testing.T) {
 
 	publicOut, err := svc.ListPublicAvailable(context.Background())
 	require.NoError(t, err)
-	require.Len(t, publicOut, 1)
-	require.Equal(t, []int64{1, 2}, availableGroupIDs(publicOut[0].Groups))
+	require.Len(t, publicOut, 2)
+	require.Equal(t, "chA", publicOut[0].Name)
+	require.Equal(t, []int64{1}, availableGroupIDs(publicOut[0].Groups))
+	require.Equal(t, PublicCatalogChannelName, publicOut[1].Name)
+	require.Equal(t, []int64{2}, availableGroupIDs(publicOut[1].Groups))
 }
 
 func TestListPublicAvailable_SynthesizesCatalogWhenNoChannelsExist(t *testing.T) {

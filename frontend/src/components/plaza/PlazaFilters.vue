@@ -1,8 +1,10 @@
 <template>
-  <div class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-dark-800 dark:bg-dark-900">
-    <div class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_13rem_14rem_auto] lg:items-end">
+  <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-dark-800 dark:bg-dark-900">
+    <div class="grid gap-x-4 gap-y-3 lg:grid-cols-[minmax(0,1fr)_13rem_14rem_auto] lg:items-end">
       <label>
-        <span class="sr-only">{{ t('plaza.filters.search') }}</span>
+        <span class="mb-1.5 block font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-gray-400 dark:text-gray-500">
+          {{ t('plaza.filters.search') }}
+        </span>
         <span class="relative block">
           <svg
             class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
@@ -15,7 +17,7 @@
           <input
             :value="modelValue.query"
             type="search"
-            class="h-11 w-full rounded-xl border border-gray-200 bg-white pl-10 pr-4 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 dark:border-dark-700 dark:bg-dark-950 dark:text-white"
+            class="h-11 w-full rounded-lg border border-gray-200 bg-white pl-10 pr-4 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 dark:border-dark-700 dark:bg-dark-950 dark:text-white"
             :placeholder="t('plaza.filters.searchPlaceholder')"
             @input="update({ query: ($event.target as HTMLInputElement).value })"
           />
@@ -23,14 +25,14 @@
       </label>
 
       <label>
-        <span class="mb-1.5 block text-xs font-medium text-gray-500 dark:text-gray-400">
+        <span class="mb-1.5 block font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-gray-400 dark:text-gray-500">
           {{ t('plaza.filters.platform') }}
         </span>
         <div class="relative">
           <select
             :value="modelValue.platform"
             :aria-label="t('plaza.filters.platform')"
-            class="h-11 w-full appearance-none rounded-xl border border-gray-200 bg-white px-3 pr-9 text-sm text-gray-900 outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 dark:border-dark-700 dark:bg-dark-950 dark:text-white"
+            class="h-11 w-full appearance-none rounded-lg border border-gray-200 bg-white px-3 pr-9 text-sm text-gray-900 outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 dark:border-dark-700 dark:bg-dark-950 dark:text-white"
             @change="update({ platform: ($event.target as HTMLSelectElement).value })"
           >
             <option value="">{{ t('plaza.filters.allPlatforms') }} ({{ totalCount }})</option>
@@ -47,14 +49,14 @@
       </label>
 
       <label>
-        <span class="mb-1.5 block text-xs font-medium text-gray-500 dark:text-gray-400">
+        <span class="mb-1.5 block font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-gray-400 dark:text-gray-500">
           {{ t('plaza.filters.sort') }}
         </span>
         <div class="relative">
           <select
             :value="modelValue.sort"
             :aria-label="t('plaza.filters.sort')"
-            class="h-11 w-full appearance-none rounded-xl border border-gray-200 bg-white px-3 pr-9 text-sm text-gray-900 outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 dark:border-dark-700 dark:bg-dark-950 dark:text-white"
+            class="h-11 w-full appearance-none rounded-lg border border-gray-200 bg-white px-3 pr-9 text-sm text-gray-900 outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 dark:border-dark-700 dark:bg-dark-950 dark:text-white"
             @change="update({ sort: ($event.target as HTMLSelectElement).value as PlazaSort })"
           >
             <option value="popularity">{{ t('plaza.filters.sortPopularity') }}</option>
@@ -66,7 +68,7 @@
         </div>
       </label>
 
-      <div class="flex h-11 items-center justify-start text-xs text-gray-500 dark:text-gray-400 lg:justify-end">
+      <div class="flex h-11 items-center justify-start font-mono text-[11px] tabular-nums text-gray-400 dark:text-gray-500 lg:justify-end">
         <span v-if="hasActiveFilters" class="font-medium text-primary-600 dark:text-primary-400">
           {{ t('plaza.searchBar.filtered', { visible: visibleCount, total: totalCount }) }}
         </span>

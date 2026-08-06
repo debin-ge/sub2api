@@ -9,7 +9,7 @@
         :multiplier="pricingConfig.multiplier"
       />
 
-      <section class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+      <section class="mx-auto max-w-[90rem] px-4 py-8 sm:px-6 lg:px-8">
         <div class="flex flex-col gap-4">
           <PlazaFilters
             v-model="filters"
@@ -33,7 +33,7 @@
             :subtitle="emptySubtitle"
           />
           <template v-else>
-            <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
               <ModelCard
                 v-for="model in paginatedModels"
                 :key="`${model.platform}::${model.model}`"
@@ -46,7 +46,7 @@
 
             <div
               v-if="visibleModelCount > pageSize"
-              class="overflow-hidden rounded-xl border border-gray-200 shadow-sm dark:border-dark-800"
+              class="overflow-hidden rounded-lg border border-gray-200 dark:border-dark-800"
             >
               <Pagination
                 :page="currentPage"
@@ -67,6 +67,7 @@
       :model="modalCurrentModel"
       :multiplier="pricingConfig.multiplier"
       :rate="pricingConfig.rate"
+      :server-utc-offset="pricingConfig.serverUtcOffset"
       @close="modal.close"
     />
   </div>

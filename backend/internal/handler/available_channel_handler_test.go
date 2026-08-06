@@ -137,6 +137,51 @@ func TestFilterPublicGroups_DropsExclusiveGroups(t *testing.T) {
 	require.NotContains(t, supportedModelNames(out[0].Platforms[0].SupportedModels), "gpt-exclusive")
 }
 
+func TestFilterPublicGroups_KeepsPublicVIPGroup(t *testing.T) {
+	groups := []service.AvailableGroupRef{{
+		ID:             5,
+		Name:           "vip-public",
+		Platform:       service.PlatformOpenAI,
+		RateMultiplier: 0.8,
+		VIPOnly:        true,
+		IsExclusive:    false,
+	}}
+
+	visible := filterPublicGroups(groups)
+
+	require.Len(t, visible, 1)
+	require.True(t, visible[0].VIPOnly)
+	require.Equal(t, 0.8, visible[0].RateMultiplier)
+}
+
+func TestBuildPublicGroupSections_KeepsModelCatalogScopedToEachGroup(t *testing.T) {
+	inputA := 0.000001
+	inputB := 0.000002
+	ch := service.AvailableChannel{
+		Name:   "public",
+		Status: service.StatusActive,
+		SupportedModels: []service.SupportedModel{
+			{Name: "model-a", Platform: service.PlatformOpenAI, Pricing: &service.ChannelModelPricing{InputPrice: &inputA}},
+			{Name: "model-b", Platform: service.PlatformOpenAI, Pricing: &service.ChannelModelPricing{InputPrice: &inputB}},
+		},
+	}
+	groups := []userAvailableGroup{
+		{ID: 1, Name: "discount-a", Platform: service.PlatformOpenAI, RateMultiplier: 0.5},
+		{ID: 2, Name: "premium-b", Platform: service.PlatformOpenAI, RateMultiplier: 2},
+	}
+
+	sections := buildPublicGroupSections(ch, groups, map[int64][]string{
+		1: {"model-a"},
+		2: {"model-b"},
+	})
+
+	require.Len(t, sections, 2)
+	require.Equal(t, int64(1), sections[0].Groups[0].ID)
+	require.Equal(t, []string{"model-a"}, supportedModelNames(sections[0].SupportedModels))
+	require.Equal(t, int64(2), sections[1].Groups[0].ID)
+	require.Equal(t, []string{"model-b"}, supportedModelNames(sections[1].SupportedModels))
+}
+
 func TestListPublic_IgnoresAvailableChannelsFeatureFlag(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	inputPrice := 0.000001
@@ -182,7 +227,7 @@ func TestListPublic_IgnoresAvailableChannelsFeatureFlag(t *testing.T) {
 	require.Contains(t, supportedModelNames(body.Data[0].Platforms[0].SupportedModels), "gpt-4o-mini")
 }
 
-func TestListPublic_UsesAllActivePublicGroupsNotOnlyChannelBindings(t *testing.T) {
+func TestListPublic_DoesNotPairUnboundChannelPricingWithPublicGroup(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	inputPrice := 0.000001
 	channelSvc := service.NewChannelService(
@@ -214,8 +259,8 @@ func TestListPublic_UsesAllActivePublicGroupsNotOnlyChannelBindings(t *testing.T
 	)
 	h := &AvailableChannelHandler{
 		channelService: channelSvc,
-		modelCatalog: &stubModelCatalogProvider{public: map[string][]string{
-			service.PlatformOpenAI: {"group-only-model"},
+		modelCatalog: &stubModelCatalogProvider{byGroup: map[int64][]string{
+			1: {"group-only-model"},
 		}},
 	}
 	w := httptest.NewRecorder()
@@ -230,11 +275,11 @@ func TestListPublic_UsesAllActivePublicGroupsNotOnlyChannelBindings(t *testing.T
 	}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
 	require.Len(t, body.Data, 1)
-	require.Equal(t, "unbound-channel", body.Data[0].Name)
+	require.Equal(t, service.PublicCatalogChannelName, body.Data[0].Name)
 	require.Len(t, body.Data[0].Platforms, 1)
 	names := supportedModelNames(body.Data[0].Platforms[0].SupportedModels)
 	require.Contains(t, names, "group-only-model")
-	require.Contains(t, names, "priced-model")
+	require.NotContains(t, names, "priced-model")
 }
 
 func TestListPublic_UsesUnifiedCatalogAndCacheHeader(t *testing.T) {
@@ -280,7 +325,8 @@ func TestListPublic_UsesUnifiedCatalogAndCacheHeader(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Equal(t, "public, max-age=60, stale-while-revalidate=300", w.Header().Get("Cache-Control"))
-	require.Equal(t, 1, catalog.publicCalls)
+	require.Equal(t, 0, catalog.publicCalls)
+	require.Equal(t, 1, catalog.groupCalls[10])
 	var body struct {
 		Data []userAvailableChannel `json:"data"`
 	}
@@ -928,12 +974,15 @@ func (s *stubModelCatalogProvider) ListPublic(context.Context) (map[string][]str
 	return s.public, nil
 }
 
-func (s *stubModelCatalogProvider) ListForGroup(_ context.Context, groupID int64, _ string) ([]string, error) {
+func (s *stubModelCatalogProvider) ListForGroup(_ context.Context, groupID int64, platform string) ([]string, error) {
 	if s.groupCalls == nil {
 		s.groupCalls = make(map[int64]int)
 	}
 	s.groupCalls[groupID]++
-	return s.byGroup[groupID], nil
+	if models, ok := s.byGroup[groupID]; ok {
+		return models, nil
+	}
+	return s.public[platform], nil
 }
 
 type stubAvailableChannelAPIKeyService struct {

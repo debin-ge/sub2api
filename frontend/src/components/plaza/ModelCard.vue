@@ -1,8 +1,7 @@
 <template>
   <article
     :class="[
-      'group relative flex h-full cursor-pointer flex-col rounded-2xl border bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg dark:bg-dark-900',
-      cardBorderClass
+      'group relative flex h-full cursor-pointer flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-md dark:border-dark-800 dark:bg-dark-900 dark:hover:border-dark-700',
     ]"
     tabindex="0"
     role="button"
@@ -10,10 +9,13 @@
     @keydown.enter="$emit('open-detail', model)"
     @keydown.space.prevent="$emit('open-detail', model)"
   >
-    <header class="mb-3 flex items-start gap-3">
+    <!-- platform accent bar -->
+    <div :class="['h-0.5 w-full shrink-0', platformAccentBarClass(model.platform)]" aria-hidden="true"></div>
+
+    <header class="flex items-center gap-3 border-b border-gray-100 px-4 py-3.5 dark:border-dark-800">
       <div
         :class="[
-          'flex h-9 w-9 shrink-0 items-center justify-center rounded-xl',
+          'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
           platformBadgeLightClass(model.platform)
         ]"
         aria-hidden="true"
@@ -21,94 +23,147 @@
         <PlatformIcon :platform="model.platform as GroupPlatform" size="lg" />
       </div>
       <div class="min-w-0 flex-1">
-        <h3 class="truncate text-base font-semibold text-gray-900 dark:text-white">
+        <h3 class="truncate text-[15px] font-semibold tracking-tight text-gray-900 dark:text-white">
           {{ model.displayName }}
         </h3>
+        <div class="mt-1.5 flex flex-wrap items-center gap-1.5">
+          <span
+            :class="[
+              'inline-flex items-center rounded px-1.5 py-0.5 font-mono text-[9.5px] font-medium uppercase tracking-[0.1em]',
+              platformBadgeLightClass(model.platform)
+            ]"
+          >
+            {{ platformLabel(model.platform) }}
+          </span>
+          <span class="inline-flex items-center rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[9.5px] font-medium uppercase tracking-[0.1em] text-gray-600 dark:bg-dark-800 dark:text-gray-400">
+            {{ billingLabel }}
+          </span>
+          <span
+            v-if="hasPeakPricing"
+            class="inline-flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 font-mono text-[9.5px] font-medium uppercase tracking-[0.1em] text-amber-700 dark:bg-amber-500/15 dark:text-amber-400"
+          >
+            <span class="h-1 w-1 rounded-full bg-amber-500" aria-hidden="true"></span>
+            {{ t('plaza.card.peakPricing') }}
+          </span>
+        </div>
       </div>
     </header>
 
-    <div class="mb-4 flex flex-wrap gap-1.5">
-      <span class="inline-flex items-center rounded-md bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700 dark:bg-sky-900/30 dark:text-sky-300">
-        {{ billingLabel }}
-      </span>
-      <span
-        v-if="hasDiscount"
-        class="inline-flex items-center rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
-      >
-        {{ discountLabel }}
-      </span>
+    <div class="flex-1">
+      <div :class="['grid items-center gap-x-3 border-b border-gray-100 px-3 py-2 dark:border-dark-800', pricingGridClass]">
+        <div :class="pricingHeaderSpacerClass"></div>
+        <div v-if="model.standardPricing" class="min-w-0 text-right">
+          <span class="inline-flex items-center rounded border border-gray-200 px-1.5 py-0.5 font-mono text-[9.5px] font-semibold uppercase tracking-[0.14em] text-gray-500 dark:border-dark-700 dark:text-gray-400">
+            {{ t('plaza.price.standardLabel') }}
+          </span>
+          <div v-if="hasStandardDiscount" class="mt-1 font-mono text-[9.5px] leading-tight tabular-nums text-emerald-600 dark:text-emerald-400">
+            {{ standardDiscountLabel }}
+          </div>
+        </div>
+        <div v-if="model.vipPricing" class="min-w-0 text-right">
+          <span class="inline-flex items-center rounded bg-orange-500 px-1.5 py-0.5 font-mono text-[9.5px] font-semibold uppercase tracking-[0.14em] text-white">
+            {{ t('plaza.price.vipLabel') }}
+          </span>
+          <div v-if="hasVipDiscount" class="mt-1 font-mono text-[9.5px] leading-tight tabular-nums text-orange-600 dark:text-orange-400">
+            {{ vipDiscountLabel }}
+          </div>
+        </div>
+      </div>
+      <div class="divide-y divide-gray-100 dark:divide-dark-800/70">
+        <PriceCell
+          :label="t('plaza.card.input')"
+          :scale="PER_MILLION_TOKEN_SCALE"
+          :multiplier="multiplier"
+          :standard-available="model.standardPricing != null"
+          :standard-value="model.standardPricing?.minPricing.input ?? null"
+          :standard-billing-rate-multiplier="model.standardPricing?.minPricingRateMultipliers.input"
+          :vip-available="model.vipPricing != null"
+          :vip-value="model.vipPricing?.minPricing.input ?? null"
+          :vip-billing-rate-multiplier="model.vipPricing?.minPricingRateMultipliers.input"
+        />
+        <PriceCell
+          :label="t('plaza.card.output')"
+          :scale="PER_MILLION_TOKEN_SCALE"
+          :multiplier="multiplier"
+          :standard-available="model.standardPricing != null"
+          :standard-value="model.standardPricing?.minPricing.output ?? null"
+          :standard-billing-rate-multiplier="model.standardPricing?.minPricingRateMultipliers.output"
+          :vip-available="model.vipPricing != null"
+          :vip-value="model.vipPricing?.minPricing.output ?? null"
+          :vip-billing-rate-multiplier="model.vipPricing?.minPricingRateMultipliers.output"
+        />
+        <PriceCell
+          v-if="hasCacheWrite"
+          :label="t('plaza.card.cacheWrite')"
+          :scale="PER_MILLION_TOKEN_SCALE"
+          :multiplier="multiplier"
+          :standard-available="model.standardPricing != null"
+          :standard-value="model.standardPricing?.minPricing.cacheWrite ?? null"
+          :standard-billing-rate-multiplier="model.standardPricing?.minPricingRateMultipliers.cacheWrite"
+          :vip-available="model.vipPricing != null"
+          :vip-value="model.vipPricing?.minPricing.cacheWrite ?? null"
+          :vip-billing-rate-multiplier="model.vipPricing?.minPricingRateMultipliers.cacheWrite"
+        />
+        <PriceCell
+          v-if="hasCacheRead"
+          :label="t('plaza.card.cacheRead')"
+          :scale="PER_MILLION_TOKEN_SCALE"
+          :multiplier="multiplier"
+          :standard-available="model.standardPricing != null"
+          :standard-value="model.standardPricing?.minPricing.cacheRead ?? null"
+          :standard-billing-rate-multiplier="model.standardPricing?.minPricingRateMultipliers.cacheRead"
+          :vip-available="model.vipPricing != null"
+          :vip-value="model.vipPricing?.minPricing.cacheRead ?? null"
+          :vip-billing-rate-multiplier="model.vipPricing?.minPricingRateMultipliers.cacheRead"
+        />
+        <PriceCell
+          v-if="hasImageOutput"
+          :label="t('plaza.card.imageOutput')"
+          :scale="PER_MILLION_TOKEN_SCALE"
+          :multiplier="multiplier"
+          :standard-available="model.standardPricing != null"
+          :standard-value="model.standardPricing?.minPricing.imageOutput ?? null"
+          :standard-billing-rate-multiplier="model.standardPricing?.minPricingRateMultipliers.imageOutput"
+          :vip-available="model.vipPricing != null"
+          :vip-value="model.vipPricing?.minPricing.imageOutput ?? null"
+          :vip-billing-rate-multiplier="model.vipPricing?.minPricingRateMultipliers.imageOutput"
+        />
+        <PriceCell
+          v-if="hasPerRequest"
+          :label="t('plaza.card.perRequest')"
+          :scale="PER_REQUEST_SCALE"
+          :multiplier="multiplier"
+          :standard-available="model.standardPricing != null"
+          :standard-value="model.standardPricing?.minPricing.perRequest ?? null"
+          :standard-billing-rate-multiplier="model.standardPricing?.minPricingRateMultipliers.perRequest"
+          :vip-available="model.vipPricing != null"
+          :vip-value="model.vipPricing?.minPricing.perRequest ?? null"
+          :vip-billing-rate-multiplier="model.vipPricing?.minPricingRateMultipliers.perRequest"
+        />
+      </div>
     </div>
 
-    <div class="grid flex-1 grid-cols-2 gap-x-4 gap-y-4">
-      <PriceCell
-        :label="t('plaza.card.input')"
-        :value="model.minPricing.input"
-        :scale="PER_MILLION_TOKEN_SCALE"
-        :multiplier="multiplier"
-        :rate="rate"
-        :billing-rate-multiplier="model.bestRateMultiplier"
-      />
-      <PriceCell
-        :label="t('plaza.card.output')"
-        :value="model.minPricing.output"
-        :scale="PER_MILLION_TOKEN_SCALE"
-        :multiplier="multiplier"
-        :rate="rate"
-        :billing-rate-multiplier="model.bestRateMultiplier"
-      />
-      <PriceCell
-        v-if="hasCacheWrite"
-        :label="t('plaza.card.cacheWrite')"
-        :value="model.minPricing.cacheWrite"
-        :scale="PER_MILLION_TOKEN_SCALE"
-        :multiplier="multiplier"
-        :rate="rate"
-        :billing-rate-multiplier="model.bestRateMultiplier"
-      />
-      <PriceCell
-        v-if="hasCacheRead"
-        :label="t('plaza.card.cacheRead')"
-        :value="model.minPricing.cacheRead"
-        :scale="PER_MILLION_TOKEN_SCALE"
-        :multiplier="multiplier"
-        :rate="rate"
-        :billing-rate-multiplier="model.bestRateMultiplier"
-      />
-      <PriceCell
-        v-if="hasImageOutput"
-        :label="t('plaza.card.imageOutput')"
-        :value="model.minPricing.imageOutput"
-        :scale="PER_MILLION_TOKEN_SCALE"
-        :multiplier="multiplier"
-        :rate="rate"
-        :billing-rate-multiplier="model.bestRateMultiplier"
-      />
-      <PriceCell
-        v-if="hasPerRequest"
-        :label="t('plaza.card.perRequest')"
-        :value="model.minPricing.perRequest"
-        :scale="PER_REQUEST_SCALE"
-        :multiplier="multiplier"
-        :rate="rate"
-        :billing-rate-multiplier="model.bestRateMultiplier"
-      />
-    </div>
-
-    <div class="mt-4 flex items-center justify-between gap-2 border-t border-gray-100 pt-3 text-xs dark:border-dark-800">
-      <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-gray-500 dark:text-gray-400">
-        <span class="truncate">
+    <div class="flex items-center justify-between gap-2 border-t border-gray-100 px-4 py-3 dark:border-dark-800">
+      <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+        <span class="font-mono text-[11px] tabular-nums text-gray-400 dark:text-gray-500">
           {{ t('plaza.card.supportedChannels', { n: model.supportedGroups.length }) }}
         </span>
         <span
           v-if="model.recentCalls > 0"
-          class="inline-flex items-center gap-1 text-orange-600 dark:text-orange-400"
+          class="inline-flex items-center gap-1.5 font-mono text-[11px] tabular-nums text-gray-500 dark:text-gray-400"
         >
-          <svg class="h-3 w-3 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-            <path fill-rule="evenodd" d="M12.395 2.553a1 1 0 00-1.45-.385c-.345.23-.614.558-.822.88-.214.33-.403.713-.57 1.116-.334.804-.614 1.768-.84 2.734a31.365 31.365 0 00-.613 3.58 2.64 2.64 0 01-.945-1.067c-.328-.68-.398-1.534-.398-2.654A1 1 0 005.05 6.05 6.981 6.981 0 003 11a7 7 0 1011.95-4.95c-.592-.591-.98-.985-1.348-1.467-.363-.476-.724-1.063-1.207-2.03zM12.12 15.12A3 3 0 017 13s.879.5 2.5.5c0-1 .5-4 1.25-4.5.5 1 .786 1.293 1.371 1.879A2.99 2.99 0 0113 13a2.99 2.99 0 01-.879 2.121z" clip-rule="evenodd" />
-          </svg>
+          <span class="relative flex h-1.5 w-1.5 shrink-0" aria-hidden="true">
+            <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary-400 opacity-60"></span>
+            <span class="relative inline-flex h-1.5 w-1.5 rounded-full bg-primary-500"></span>
+          </span>
           {{ t('plaza.card.recentCalls', { count: formattedRecentCalls }) }}
         </span>
       </div>
+      <span class="inline-flex shrink-0 items-center text-gray-300 transition-all duration-200 group-hover:translate-x-0.5 group-hover:text-primary-500 dark:text-dark-600 dark:group-hover:text-primary-400" aria-hidden="true">
+        <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+          <path fill-rule="evenodd" d="M3 10a1 1 0 011-1h9.586L10.293 5.707a1 1 0 011.414-1.414l5 5a1 1 0 010 1.414l-5 5a1 1 0 01-1.414-1.414L13.586 11H4a1 1 0 01-1-1z" clip-rule="evenodd" />
+        </svg>
+      </span>
     </div>
   </article>
 </template>
@@ -117,7 +172,7 @@
 import { computed } from 'vue'
 import PriceCell from './PriceCell.vue'
 import PlatformIcon from '@/components/common/PlatformIcon.vue'
-import { platformBadgeLightClass, platformBorderClass } from '@/utils/platformColors'
+import { platformAccentBarClass, platformBadgeLightClass, platformLabel } from '@/utils/platformColors'
 import {
   PER_MILLION_TOKEN_SCALE,
   PER_REQUEST_SCALE,
@@ -128,6 +183,7 @@ import {
 import type { AggregatedModel } from '@/composables/useModelAggregation'
 import type { GroupPlatform } from '@/types'
 import { useI18n } from 'vue-i18n'
+import { hasPeakRate } from '@/utils/peak-rate'
 
 const props = defineProps<{
   model: AggregatedModel
@@ -141,17 +197,39 @@ defineEmits<{
 
 const { t } = useI18n()
 
-const discountFold = computed(() =>
-  computeDiscountFold(props.multiplier, props.rate, props.model.bestRateMultiplier)
+const standardDiscountFold = computed(() =>
+  computeDiscountFold(props.multiplier, props.rate, props.model.standardPricing?.displayRateMultiplier)
 )
-const discountPercent = computed(() =>
-  computeDiscountPercent(props.multiplier, props.rate, props.model.bestRateMultiplier)
+const standardDiscountPercent = computed(() =>
+  computeDiscountPercent(props.multiplier, props.rate, props.model.standardPricing?.displayRateMultiplier)
 )
-const hasDiscount = computed(() => discountPercent.value < 100)
-const discountLabel = computed(() =>
+const vipDiscountFold = computed(() =>
+  computeDiscountFold(props.multiplier, props.rate, props.model.vipPricing?.displayRateMultiplier)
+)
+const vipDiscountPercent = computed(() =>
+  computeDiscountPercent(props.multiplier, props.rate, props.model.vipPricing?.displayRateMultiplier)
+)
+const hasAnyPrice = (pricing: AggregatedModel['standardPricing']) =>
+  pricing != null && Object.values(pricing.minPricing).some((value) => value != null)
+const hasStandardDiscount = computed(() =>
+  hasAnyPrice(props.model.standardPricing) && standardDiscountPercent.value < 100
+)
+const hasVipDiscount = computed(() =>
+  hasAnyPrice(props.model.vipPricing) && vipDiscountPercent.value < 100
+)
+const hasPeakPricing = computed(() =>
+  props.model.supportedGroups.some((item) => hasPeakRate(item.group))
+)
+const standardDiscountLabel = computed(() =>
   t('plaza.card.discountBadge', {
-    discount: formatDiscountFold(discountFold.value),
-    percent: discountPercent.value
+    discount: formatDiscountFold(standardDiscountFold.value),
+    percent: standardDiscountPercent.value
+  })
+)
+const vipDiscountLabel = computed(() =>
+  t('plaza.card.discountBadge', {
+    discount: formatDiscountFold(vipDiscountFold.value),
+    percent: vipDiscountPercent.value
   })
 )
 
@@ -162,22 +240,32 @@ const formattedRecentCalls = computed(() => {
   return String(count)
 })
 
-const hasCacheWrite = computed(() => props.model.minPricing.cacheWrite != null)
-const hasCacheRead = computed(() => props.model.minPricing.cacheRead != null)
-const hasImageOutput = computed(() => props.model.minPricing.imageOutput != null)
-const hasPerRequest = computed(() => props.model.minPricing.perRequest != null)
+const hasDimension = (key: keyof NonNullable<AggregatedModel['standardPricing']>['minPricing']) =>
+  props.model.standardPricing?.minPricing[key] != null ||
+  props.model.vipPricing?.minPricing[key] != null
+
+const hasCacheWrite = computed(() => hasDimension('cacheWrite'))
+const hasCacheRead = computed(() => hasDimension('cacheRead'))
+const hasImageOutput = computed(() => hasDimension('imageOutput'))
+const hasPerRequest = computed(() => hasDimension('perRequest'))
 
 const isPerRequestOnly = computed(() =>
   hasPerRequest.value &&
-  props.model.minPricing.input == null &&
-  props.model.minPricing.output == null
+  !hasDimension('input') &&
+  !hasDimension('output')
 )
 
 const billingLabel = computed(() =>
   isPerRequestOnly.value ? t('plaza.card.billingPerRequest') : t('plaza.card.billingPerToken')
 )
 
-const cardBorderClass = computed(() =>
-  `${platformBorderClass(props.model.platform)} hover:border-primary-300 dark:hover:border-primary-700`
+const hasBothPricingTypes = computed(() =>
+  props.model.standardPricing != null && props.model.vipPricing != null
 )
+const pricingGridClass = computed(() =>
+  hasBothPricingTypes.value
+    ? 'grid-cols-2 sm:grid-cols-[minmax(5rem,0.75fr)_repeat(2,minmax(0,1fr))]'
+    : 'grid-cols-[minmax(0,1fr)_minmax(7rem,auto)]'
+)
+const pricingHeaderSpacerClass = computed(() => hasBothPricingTypes.value ? 'hidden sm:block' : '')
 </script>

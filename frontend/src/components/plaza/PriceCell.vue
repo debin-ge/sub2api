@@ -1,24 +1,45 @@
 <template>
-  <div class="min-w-0">
-    <div class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
-      <span class="inline-block h-3 w-0.5 rounded-full bg-gray-300 dark:bg-dark-600" aria-hidden="true"></span>
+  <div :class="['grid items-center gap-x-3 px-3 py-2', gridClass]">
+    <div :class="['min-w-0 font-mono text-[10px] font-medium uppercase tracking-[0.12em] text-gray-400 dark:text-gray-500', labelClass]">
       <span class="truncate">{{ label }}</span>
     </div>
-    <div class="mt-1 flex items-baseline gap-1">
-      <span class="text-2xl font-extrabold tracking-tight text-emerald-600 dark:text-emerald-400">
-        {{ rechargedDisplay }}
-      </span>
-      <span v-if="hasValue" class="text-xs font-medium text-gray-400 dark:text-gray-500">
-        {{ unitLabel }}
-      </span>
+
+    <div v-if="standardAvailable" class="min-w-0 text-right">
+      <div class="flex items-baseline justify-end gap-1">
+        <span class="truncate font-mono text-base font-semibold tabular-nums tracking-tight text-gray-900 dark:text-white">
+          {{ rechargedDisplay(standardValue, standardBillingRateMultiplier) }}
+        </span>
+        <span v-if="standardValue != null" class="shrink-0 font-mono text-[10px] text-gray-400 dark:text-gray-500">
+          {{ unitLabel }}
+        </span>
+      </div>
+      <div
+        :class="[
+          'mt-0.5 truncate font-mono text-[10px] tabular-nums text-gray-400/80 dark:text-gray-500',
+          standardValue != null && 'line-through decoration-gray-400/70 dark:decoration-gray-500/70'
+        ]"
+      >
+        {{ standardValue == null ? t('plaza.card.notAvailable') : originalDisplay(standardValue) }}
+      </div>
     </div>
-    <div v-if="hasValue" class="mt-0.5 flex items-center gap-1 text-xs">
-      <span class="text-gray-400 line-through decoration-gray-400 dark:text-gray-500 dark:decoration-gray-500">
-        {{ originalDisplay }}
-      </span>
-    </div>
-    <div v-else class="mt-1 text-xs text-gray-400 dark:text-gray-600">
-      {{ t('plaza.card.notAvailable') }}
+
+    <div v-if="vipAvailable" class="min-w-0 text-right">
+      <div class="flex items-baseline justify-end gap-1">
+        <span class="truncate font-mono text-base font-semibold tabular-nums tracking-tight text-orange-600 dark:text-orange-400">
+          {{ rechargedDisplay(vipValue, vipBillingRateMultiplier) }}
+        </span>
+        <span v-if="vipValue != null" class="shrink-0 font-mono text-[10px] text-orange-400 dark:text-orange-500/80">
+          {{ unitLabel }}
+        </span>
+      </div>
+      <div
+        :class="[
+          'mt-0.5 truncate font-mono text-[10px] tabular-nums text-gray-400/80 dark:text-gray-500',
+          vipValue != null && 'line-through decoration-gray-400/70 dark:decoration-gray-500/70'
+        ]"
+      >
+        {{ vipValue == null ? t('plaza.card.notAvailable') : originalDisplay(vipValue) }}
+      </div>
     </div>
   </div>
 </template>
@@ -34,20 +55,29 @@ import {
 
 const props = defineProps<{
   label: string
-  value: number | null
   scale: number
   multiplier: number
-  rate: number
-  billingRateMultiplier?: number
+  standardAvailable: boolean
+  standardValue: number | null
+  standardBillingRateMultiplier?: number
+  vipAvailable: boolean
+  vipValue: number | null
+  vipBillingRateMultiplier?: number
 }>()
 
 const { t } = useI18n()
 
-const hasValue = computed(() => props.value != null)
-const originalDisplay = computed(() => formatScaled(props.value, props.scale))
-const rechargedDisplay = computed(() =>
-  formatCNYRecharged(props.value, props.multiplier, props.scale, props.billingRateMultiplier)
+const hasBothPricingTypes = computed(() => props.standardAvailable && props.vipAvailable)
+const gridClass = computed(() =>
+  hasBothPricingTypes.value
+    ? 'grid-cols-2 sm:grid-cols-[minmax(5rem,0.75fr)_repeat(2,minmax(0,1fr))]'
+    : 'grid-cols-[minmax(0,1fr)_minmax(7rem,auto)]'
 )
+const labelClass = computed(() => hasBothPricingTypes.value ? 'col-span-2 sm:col-span-1' : '')
+
+const originalDisplay = (value: number | null) => formatScaled(value, props.scale)
+const rechargedDisplay = (value: number | null, billingRateMultiplier?: number) =>
+  formatCNYRecharged(value, props.multiplier, props.scale, billingRateMultiplier)
 
 const unitLabel = computed(() =>
   props.scale === PER_REQUEST_SCALE

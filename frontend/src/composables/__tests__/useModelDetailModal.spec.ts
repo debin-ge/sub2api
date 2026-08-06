@@ -6,16 +6,27 @@ const model: AggregatedModel = {
   model: 'gpt-4o',
   displayName: 'gpt-4o',
   platform: 'openai',
-  minPricing: {
-    input: 0.0000025,
-    output: 0.00001,
-    cacheWrite: null,
-    cacheRead: null,
-    imageOutput: null,
-    perRequest: null
+  standardPricing: {
+    minPricing: {
+      input: 0.0000025,
+      output: 0.00001,
+      cacheWrite: null,
+      cacheRead: null,
+      imageOutput: null,
+      perRequest: null
+    },
+    minPricingRateMultipliers: {
+      input: 1,
+      output: 1,
+      cacheWrite: 1,
+      cacheRead: 1,
+      imageOutput: 1,
+      perRequest: 1
+    },
+    displayRateMultiplier: 1
   },
+  vipPricing: null,
   supportedGroups: [],
-  bestRateMultiplier: 1,
   recentCalls: 0,
   recentCallWindowSeconds: 0
 }

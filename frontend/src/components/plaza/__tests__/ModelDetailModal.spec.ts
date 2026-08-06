@@ -20,9 +20,17 @@ const messages: Record<string, string> = {
   'plaza.modal.tierRangeOpenEnded': '{min}+ tokens',
   'plaza.card.billingPerToken': 'Pay per token',
   'plaza.card.discountBadge': '{percent}% of reference',
+  'plaza.card.standardDiscountBadge': 'Standard {percent}% of reference',
+  'plaza.card.vipDiscountBadge': 'VIP {percent}% of reference',
+  'plaza.card.peakPricing': 'Peak pricing applies',
   'plaza.card.recentCalls': '{count} calls in 7d',
+  'plaza.modal.basePricePeakNote': 'Base prices exclude peak multiplier.',
   'plaza.price.unitPerMillion': '/1M',
   'plaza.price.unitPerRequest': '/request',
+  'plaza.price.standardLabel': 'Standard',
+  'plaza.price.vipLabel': 'VIP',
+  'plaza.price.standardPricing': 'Standard group pricing',
+  'plaza.price.vipPricing': 'VIP group pricing',
 }
 
 vi.mock('vue-i18n', async (importOriginal) => {
@@ -42,14 +50,26 @@ const model: AggregatedModel = {
   model: 'gpt-5.5',
   displayName: 'gpt-5.5',
   platform: 'openai',
-  minPricing: {
-    input: 0.000003,
-    output: 0.000012,
-    cacheWrite: null,
-    cacheRead: null,
-    imageOutput: 0.00004,
-    perRequest: 0.002
+  standardPricing: {
+    minPricing: {
+      input: 0.000003,
+      output: 0.000012,
+      cacheWrite: null,
+      cacheRead: null,
+      imageOutput: 0.00004,
+      perRequest: 0.002
+    },
+    minPricingRateMultipliers: {
+      input: 1,
+      output: 1,
+      cacheWrite: 1,
+      cacheRead: 1,
+      imageOutput: 1,
+      perRequest: 1
+    },
+    displayRateMultiplier: 1
   },
+  vipPricing: null,
   supportedGroups: [
     {
       channelName: 'OpenAI backup',
@@ -58,8 +78,12 @@ const model: AggregatedModel = {
         id: 3,
         name: 'backup',
         platform: 'openai',
-        subscription_type: 'standard',
+        subscription_type: 'subscription',
         rate_multiplier: 2,
+        peak_rate_enabled: true,
+        peak_start: '14:00',
+        peak_end: '18:00',
+        peak_rate_multiplier: 2,
         is_exclusive: false
       },
       pricing: null
@@ -108,7 +132,6 @@ const model: AggregatedModel = {
       }
     }
   ],
-  bestRateMultiplier: 1,
   recentCalls: 0,
   recentCallWindowSeconds: 0
 }
@@ -128,13 +151,14 @@ describe('ModelDetailModal', () => {
     trigger?.focus()
 
     wrapper = mount(ModelDetailModal, {
-      props: { open: true, model, multiplier: 1.5, rate: 6.8 },
+      props: { open: true, model, multiplier: 1.5, rate: 6.8, serverUtcOffset: '+08:00' },
       attachTo: document.body
     })
     await wrapper.vm.$nextTick()
 
     expect(document.body.textContent).toContain('gpt-5.5')
     expect(document.body.textContent).toContain('Full pricing')
+    expect(document.body.textContent).toContain('Standard group pricing')
     expect(document.body.textContent).toContain('Input')
     expect(document.body.textContent).toContain('Output')
     expect(document.body.textContent).toContain('Cache write')
@@ -143,6 +167,9 @@ describe('ModelDetailModal', () => {
     expect(document.body.textContent).toContain('Per request')
     expect(document.body.textContent).toContain('$3')
     expect(document.body.textContent).toContain('9.8% of reference')
+    expect(document.body.textContent).toContain('Peak pricing applies')
+    expect(document.body.textContent).toContain('Base prices exclude peak multiplier.')
+    expect(document.body.textContent).toContain('14:00-18:00 ×2 (UTC+08:00)')
     expect(document.body.textContent).toContain('$12')
     expect(document.body.textContent).toContain('$40')
     expect(document.body.textContent).toContain('$0.002')
@@ -180,5 +207,52 @@ describe('ModelDetailModal', () => {
     expect(wrapper.emitted('close')).toHaveLength(2)
     await wrapper.setProps({ open: false })
     expect(document.activeElement).toBe(trigger)
+  })
+
+  it('shows separate standard and VIP pricing sections and marks VIP groups', async () => {
+    const vipModel: AggregatedModel = {
+      ...model,
+      vipPricing: {
+        minPricing: { ...model.standardPricing!.minPricing },
+        minPricingRateMultipliers: {
+          input: 0.8,
+          output: 0.8,
+          cacheWrite: 0.8,
+          cacheRead: 0.8,
+          imageOutput: 0.8,
+          perRequest: 0.8
+        },
+        displayRateMultiplier: 0.8
+      },
+      supportedGroups: [
+        ...model.supportedGroups,
+        {
+          ...model.supportedGroups[1],
+          channelName: 'OpenAI VIP',
+          group: {
+            ...model.supportedGroups[1].group,
+            id: 4,
+            name: 'vip',
+            rate_multiplier: 0.8,
+            vip_only: true
+          }
+        }
+      ]
+    }
+
+    wrapper = mount(ModelDetailModal, {
+      props: { open: true, model: vipModel, multiplier: 1.5, rate: 6.8 },
+      attachTo: document.body
+    })
+    await wrapper.vm.$nextTick()
+
+    expect(document.body.textContent).toContain('Standard group pricing')
+    expect(document.body.textContent).toContain('VIP group pricing')
+    expect(document.body.textContent).toContain('9.8% of reference')
+    expect(document.body.textContent).toContain('7.84% of reference')
+    expect(document.body.textContent).toContain('OpenAI VIP')
+    expect(document.body.textContent).toContain('VIP')
+    expect(document.body.textContent).toContain('¥2')
+    expect(document.body.textContent).toContain('¥1.6')
   })
 })

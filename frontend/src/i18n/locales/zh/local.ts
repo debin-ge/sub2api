@@ -219,6 +219,9 @@ export default {
       "billingPerToken": "按量计费",
       "billingPerRequest": "按次计费",
       "discountBadge": "约 {discount} 折",
+      "standardDiscountBadge": "普通约 {discount} 折",
+      "vipDiscountBadge": "VIP 约 {discount} 折",
+      "peakPricing": "含高峰时段价",
       "notAvailable": "暂无",
       "recentCalls": "近 7 日 {count} 次调用"
     },
@@ -227,7 +230,7 @@ export default {
       "filtered": "{visible}/{total} 个模型"
     },
     "infoBanner": {
-      "text": "同一模型在不同渠道可能有不同价格，默认展示最低价。点击卡片查看该模型在所有渠道的具体价格。"
+      "text": "同一模型会分别展示普通公开分组和 VIP 分组中的最低可用基础价；两类价格独立计算，不会相互覆盖。高峰时段倍率会在详情中单独标注。"
     },
     "modal": {
       "close": "关闭",
@@ -241,10 +244,15 @@ export default {
       "supportedChannels": "支持该模型的渠道",
       "channelsCount": "{n} 个渠道",
       "tieredPricing": "分层定价",
+      "basePricePeakNote": "以上分别按普通公开分组和 VIP 分组的基础倍率计算；高峰窗口内的 Token 计费还会叠加对应高峰倍率。",
       "tierRange": "{min} - {max} tokens",
       "tierRangeOpenEnded": "{min}+ tokens"
     },
     "price": {
+      "standardLabel": "普通",
+      "vipLabel": "VIP",
+      "standardPricing": "普通分组价格",
+      "vipPricing": "VIP 分组价格",
       "unitPerMillion": "/1M",
       "unitPerRequest": "/次"
     },
