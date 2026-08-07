@@ -4,11 +4,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/Wei-Shaw/sub2api/migrations"
 	"github.com/stretchr/testify/require"
 )
@@ -120,4 +122,37 @@ func TestAuthCacheInvalidationMigration_SecurityCoverageAndNoPlaintextPayload(t 
 	sum := sha256.Sum256([]byte(plaintext))
 	require.Len(t, hex.EncodeToString(sum[:]), 64)
 	require.NotContains(t, sqlText, plaintext)
+}
+
+func TestAuthCacheInvalidationMigration_LatestGroupTriggerCoversCompleteSnapshot(t *testing.T) {
+	entries, err := migrations.FS.ReadDir(".")
+	require.NoError(t, err)
+
+	var latestName string
+	var latestSQL string
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
+			continue
+		}
+		content, readErr := migrations.FS.ReadFile(entry.Name())
+		require.NoError(t, readErr)
+		if strings.Contains(string(content), "CREATE OR REPLACE FUNCTION enqueue_group_auth_cache_invalidation()") &&
+			entry.Name() > latestName {
+			latestName = entry.Name()
+			latestSQL = string(content)
+		}
+	}
+
+	require.NotEmpty(t, latestName, "group invalidation trigger migration must exist")
+	snapshotType := reflect.TypeOf(service.APIKeyAuthGroupSnapshot{})
+	for i := 0; i < snapshotType.NumField(); i++ {
+		field := strings.Split(snapshotType.Field(i).Tag.Get("json"), ",")[0]
+		if field == "" || field == "-" || field == "id" {
+			continue
+		}
+		require.Contains(t, latestSQL, "OLD."+field+" IS NOT DISTINCT FROM NEW."+field,
+			"latest group invalidation trigger migration %s is missing cached field %s", latestName, field)
+	}
+	require.Contains(t, latestSQL, "OLD.deleted_at IS NOT DISTINCT FROM NEW.deleted_at",
+		"soft deletion must invalidate every cached key bound to the group")
 }
