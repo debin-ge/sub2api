@@ -678,6 +678,13 @@ func TestGetFallbackPricing_FamilyMatching(t *testing.T) {
 
 		// ---- 智谱 GLM（z.ai 国际版 USD 报价，整表统一口径）----
 		{
+			name:              "glm 5.2 flagship",
+			model:             "glm-5.2",
+			expectedInput:     1.4e-6,
+			expectedOutput:    floatPtr(4.4e-6),
+			expectedCacheRead: floatPtr(0.26e-6),
+		},
+		{
 			name:              "glm 5.1 flagship",
 			model:             "glm-5.1",
 			expectedInput:     1.4e-6,
@@ -791,11 +798,18 @@ func TestGetFallbackPricing_FamilyMatching(t *testing.T) {
 			expectedInput:  0.1e-6,
 			expectedOutput: floatPtr(0.1e-6),
 		},
-		// 关键：5.1 必须先于 5 匹配（避免被 glm-5 抢走）
+		// 关键：5.1 / 5.2 必须先于 5 匹配（避免被 glm-5 抢走）
 		{
 			name:              "glm 5.1 vs glm 5 ordering (verbatim 5.1)",
 			model:             "glm-5.1",
 			expectedInput:     1.4e-6,
+			expectedOutput:    floatPtr(4.4e-6),
+			expectedCacheRead: floatPtr(0.26e-6),
+		},
+		{
+			name:              "glm 5.2 vs glm 5 ordering (verbatim 5.2)",
+			model:             "glm-5.2",
+			expectedInput:     1.4e-6, // = glm-5.2 价格（不是 glm-5 的 1e-6）
 			expectedOutput:    floatPtr(4.4e-6),
 			expectedCacheRead: floatPtr(0.26e-6),
 		},

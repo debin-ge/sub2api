@@ -43,8 +43,17 @@ type UsageRecordSubmitMode string
 const (
 	UsageRecordSubmitModeEnqueued UsageRecordSubmitMode = "enqueued"
 	UsageRecordSubmitModeDropped  UsageRecordSubmitMode = "dropped"
-	UsageRecordSubmitModeSync     UsageRecordSubmitMode = "sync_fallback"
+	// UsageRecordSubmitModeDroppedStopped 表示任务因池已停止（进程关停窗口）被丢弃。
+	// 与显式 drop/sample 溢出策略的丢弃区分开：溢出丢弃是运维显式配置的取舍，
+	// 而关停窗口丢弃不是，计费关键任务应在调用侧降级为同步执行兜底。
+	UsageRecordSubmitModeDroppedStopped UsageRecordSubmitMode = "dropped_stopped"
+	UsageRecordSubmitModeSync           UsageRecordSubmitMode = "sync_fallback"
 )
+
+// Dropped 报告任务是否未被执行（入队失败且未同步执行）。
+func (m UsageRecordSubmitMode) Dropped() bool {
+	return m == UsageRecordSubmitModeDropped || m == UsageRecordSubmitModeDroppedStopped
+}
 
 // UsageRecordWorkerPoolOptions 使用量记录池配置。
 type UsageRecordWorkerPoolOptions struct {
@@ -150,7 +159,7 @@ func (p *UsageRecordWorkerPool) Submit(task UsageRecordTask) UsageRecordSubmitMo
 	if p.pool == nil || p.pool.Stopped() {
 		p.droppedPoolStopped.Add(1)
 		p.logDrop("stopped")
-		return UsageRecordSubmitModeDropped
+		return UsageRecordSubmitModeDroppedStopped
 	}
 
 	_, ok := p.pool.TrySubmit(func() {
@@ -163,7 +172,7 @@ func (p *UsageRecordWorkerPool) Submit(task UsageRecordTask) UsageRecordSubmitMo
 	if p.pool.Stopped() {
 		p.droppedPoolStopped.Add(1)
 		p.logDrop("stopped")
-		return UsageRecordSubmitModeDropped
+		return UsageRecordSubmitModeDroppedStopped
 	}
 
 	switch p.overflowPolicy {
@@ -181,6 +190,48 @@ func (p *UsageRecordWorkerPool) Submit(task UsageRecordTask) UsageRecordSubmitMo
 
 	p.droppedQueueFull.Add(1)
 	p.logDrop("full")
+	return UsageRecordSubmitModeDropped
+}
+
+// InspectInlineAdmission reports how a handler-owned, synchronous billing task
+// should be treated when the process-local queue is used only as an overflow
+// guard. It deliberately does not enqueue the task: the durable billing path
+// must run inline so a successful upstream request cannot be lost between the
+// response and the stage-0 outbox write.
+//
+// Enqueued means that the queue has spare capacity and the caller may proceed
+// with its inline execution. Sync means an explicit sync/sample policy chose
+// the inline path after observing saturation. Dropped means an explicit
+// drop/sample policy chose to discard the task. DroppedStopped is returned
+// without incrementing the stopped counter so the caller can safely perform
+// the shutdown-window synchronous fallback without reporting a false queue
+// submission.
+func (p *UsageRecordWorkerPool) InspectInlineAdmission() UsageRecordSubmitMode {
+	if p == nil || p.pool == nil {
+		return UsageRecordSubmitModeSync
+	}
+	if p.pool.Stopped() {
+		return UsageRecordSubmitModeDroppedStopped
+	}
+
+	queueSize := p.pool.QueueSize()
+	if queueSize <= 0 || p.pool.WaitingTasks() < uint64(queueSize) {
+		return UsageRecordSubmitModeEnqueued
+	}
+
+	switch p.overflowPolicy {
+	case config.UsageRecordOverflowPolicySync:
+		p.syncFallback.Add(1)
+		return UsageRecordSubmitModeSync
+	case config.UsageRecordOverflowPolicySample:
+		if p.shouldSyncFallback() {
+			p.syncFallback.Add(1)
+			return UsageRecordSubmitModeSync
+		}
+	}
+
+	p.droppedQueueFull.Add(1)
+	p.logDrop("full_inline")
 	return UsageRecordSubmitModeDropped
 }
 

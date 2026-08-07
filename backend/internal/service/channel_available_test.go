@@ -141,6 +141,41 @@ func TestListAvailable_CarriesGroupModelsListConfig(t *testing.T) {
 	require.Equal(t, []string{"group-only-model"}, out[0].Groups[0].ModelsListConfig.Models)
 }
 
+func TestListAvailable_CarriesImagePricingMetadata(t *testing.T) {
+	price1K := 0.01
+	price4K := 0.04
+	channels := []Channel{{
+		ID:       1,
+		Name:     "chA",
+		Status:   StatusActive,
+		GroupIDs: []int64{1},
+	}}
+	groupRepo := &stubGroupRepoForAvailable{
+		activeGroups: []Group{{
+			ID:                   1,
+			Name:                 "image-group",
+			Platform:             PlatformOpenAI,
+			ImageRateIndependent: true,
+			ImageRateMultiplier:  0.5,
+			ImagePrice1K:         &price1K,
+			ImagePrice4K:         &price4K,
+		}},
+	}
+	svc := newAvailableChannelService(channels, groupRepo)
+
+	out, err := svc.ListAvailable(context.Background())
+
+	require.NoError(t, err)
+	require.Len(t, out, 1)
+	require.Len(t, out[0].Groups, 1)
+	group := out[0].Groups[0]
+	require.True(t, group.ImageRateIndependent)
+	require.InDelta(t, 0.5, group.ImageRateMultiplier, 1e-12)
+	require.Same(t, &price1K, group.ImagePrice1K)
+	require.Nil(t, group.ImagePrice2K)
+	require.Same(t, &price4K, group.ImagePrice4K)
+}
+
 func TestListPublicAvailable_SeparatesBoundAndUnboundActiveGroups(t *testing.T) {
 	channels := []Channel{{
 		ID:       1,
@@ -286,6 +321,43 @@ func TestPricingNeedsFallback(t *testing.T) {
 			require.Equal(t, tt.want, pricingNeedsFallback(tt.in))
 		})
 	}
+}
+
+func TestAvailableImageDisplayPricing_UsesGroupThenChannelTierThenDefault(t *testing.T) {
+	groupPrice1K := 0.11
+	channelPrice1K := 0.01
+	channelPrice2K := 0.02
+	channelDefault := 0.03
+	original := &ChannelModelPricing{
+		BillingMode:     BillingModeImage,
+		PerRequestPrice: &channelDefault,
+		Intervals: []PricingInterval{
+			{TierLabel: ImageBillingSize1K, PerRequestPrice: &channelPrice1K},
+			{TierLabel: ImageBillingSize2K, PerRequestPrice: &channelPrice2K},
+		},
+	}
+
+	got := AvailableImageDisplayPricing(original, AvailableGroupRef{ImagePrice1K: &groupPrice1K})
+
+	require.NotSame(t, original, got)
+	require.Len(t, got.Intervals, 3)
+	require.Equal(t, []string{ImageBillingSize1K, ImageBillingSize2K, ImageBillingSize4K}, []string{
+		got.Intervals[0].TierLabel,
+		got.Intervals[1].TierLabel,
+		got.Intervals[2].TierLabel,
+	})
+	require.InDelta(t, groupPrice1K, *got.Intervals[0].PerRequestPrice, 1e-12)
+	require.InDelta(t, channelPrice2K, *got.Intervals[1].PerRequestPrice, 1e-12)
+	require.InDelta(t, channelDefault, *got.Intervals[2].PerRequestPrice, 1e-12)
+
+	// 展示合成不得污染渠道缓存中的原始定价。
+	require.Len(t, original.Intervals, 2)
+	require.InDelta(t, channelPrice1K, *original.Intervals[0].PerRequestPrice, 1e-12)
+}
+
+func TestAvailableImageDisplayPricing_NoGroupImagePriceReturnsOriginal(t *testing.T) {
+	pricing := &ChannelModelPricing{BillingMode: BillingModeImage}
+	require.Same(t, pricing, AvailableImageDisplayPricing(pricing, AvailableGroupRef{}))
 }
 
 func TestSynthesizePricingFromModelPrice_TokenMode(t *testing.T) {

@@ -260,6 +260,7 @@ type ResponsesInputItem struct {
 	CallID    string `json:"call_id,omitempty"`
 	Name      string `json:"name,omitempty"`
 	Arguments string `json:"arguments,omitempty"`
+	Input     string `json:"input,omitempty"`
 	ID        string `json:"id,omitempty"`
 
 	// type=function_call_output
@@ -271,13 +272,23 @@ func (i *ResponsesInputItem) UnmarshalJSON(data []byte) error {
 	type alias ResponsesInputItem
 	var wire struct {
 		*alias
-		Output json.RawMessage `json:"output"`
+		Arguments json.RawMessage `json:"arguments"`
+		Output    json.RawMessage `json:"output"`
 	}
 
 	*i = ResponsesInputItem{}
 	wire.alias = (*alias)(i)
 	if err := json.Unmarshal(data, &wire); err != nil {
 		return err
+	}
+
+	arguments := bytes.TrimSpace(wire.Arguments)
+	if len(arguments) > 0 && !bytes.Equal(arguments, []byte("null")) {
+		if err := json.Unmarshal(arguments, &i.Arguments); err != nil {
+			// tool_search_call carries arguments as an object. Preserve its JSON
+			// bytes as the function-call argument string used by Chat Completions.
+			i.Arguments = string(arguments)
+		}
 	}
 
 	output := bytes.TrimSpace(wire.Output)

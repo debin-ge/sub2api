@@ -141,7 +141,7 @@ func TestGatewayHandlerSubmitUsageRecordTask_WithPool_TaskPanicRecoveredInline(t
 	require.Zero(t, pool.Stats().SubmittedTasks, "panicking billing task must still bypass the process-local queue")
 }
 
-func TestGatewayHandlerSubmitUsageRecordTask_SaturatedPoolStillRunsInline(t *testing.T) {
+func TestGatewayHandlerSubmitUsageRecordTask_SaturatedPoolDropPolicyDrops(t *testing.T) {
 	pool := newSaturatedDroppedUsageRecordTestPool(t)
 	h := &GatewayHandler{usageRecordWorkerPool: pool}
 	var called atomic.Bool
@@ -155,9 +155,9 @@ func TestGatewayHandlerSubmitUsageRecordTask_SaturatedPoolStillRunsInline(t *tes
 	})
 
 	after := pool.Stats()
-	require.True(t, called.Load(), "generic billing task must run inline even when a pool is present")
+	require.False(t, called.Load(), "explicit drop policy must remain effective when the queue is saturated")
 	require.Equal(t, before.SubmittedTasks, after.SubmittedTasks, "billing task must not be submitted to the saturated pool")
-	require.Equal(t, before.DroppedQueueFull, after.DroppedQueueFull, "billing task must not probe and overflow the pool")
+	require.Greater(t, after.DroppedQueueFull, before.DroppedQueueFull, "explicit overflow drops must remain observable")
 }
 
 func TestGatewayHandlerSubmitGatewayUsageRecordTask_ImageRunsInlineBeforeReturn(t *testing.T) {
@@ -308,7 +308,7 @@ func TestOpenAIGatewayHandlerSubmitUsageRecordTask_WithoutPool_TaskPanicRecovere
 	require.True(t, called.Load(), "panic 后后续任务应仍可执行")
 }
 
-func TestOpenAIGatewayHandlerSubmitOpenAIUsageRecordTask_TextIgnoresSaturatedPool(t *testing.T) {
+func TestOpenAIGatewayHandlerSubmitOpenAIUsageRecordTask_TextDropPolicyDropsWhenSaturated(t *testing.T) {
 	pool := newSaturatedDroppedUsageRecordTestPool(t)
 	h := &OpenAIGatewayHandler{usageRecordWorkerPool: pool}
 	var called atomic.Bool
@@ -326,9 +326,9 @@ func TestOpenAIGatewayHandlerSubmitOpenAIUsageRecordTask_TextIgnoresSaturatedPoo
 	)
 
 	after := pool.Stats()
-	require.True(t, called.Load(), "OpenAI text billing task must run inline even when a pool is present")
+	require.False(t, called.Load(), "explicit drop policy must remain effective when the queue is saturated")
 	require.Equal(t, before.SubmittedTasks, after.SubmittedTasks, "OpenAI text billing must not enter the saturated pool")
-	require.Equal(t, before.DroppedQueueFull, after.DroppedQueueFull, "OpenAI text billing must not probe and overflow the pool")
+	require.Greater(t, after.DroppedQueueFull, before.DroppedQueueFull, "explicit overflow drops must remain observable")
 }
 
 func TestUsageRecordSubmitTask_StoppedPoolIsNotConsulted(t *testing.T) {

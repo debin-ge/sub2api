@@ -82,6 +82,30 @@ function groupRateMultiplier(group: UserAvailableGroup): number {
   return typeof rate === 'number' && Number.isFinite(rate) && rate > 0 ? rate : 1
 }
 
+function imageRateMultiplier(group: UserAvailableGroup): number {
+  const rate = group.image_rate_multiplier
+  return typeof rate === 'number' && Number.isFinite(rate) && rate >= 0 ? rate : 1
+}
+
+function pricingRateMultipliers(
+  group: UserAvailableGroup,
+  pricing: UserSupportedModelPricing | null
+): PlazaPricingRateMultipliers {
+  const rate = groupRateMultiplier(group)
+  const rates: PlazaPricingRateMultipliers = {
+    input: rate,
+    output: rate,
+    cacheWrite: rate,
+    cacheRead: rate,
+    imageOutput: rate,
+    perRequest: rate
+  }
+  if (pricing?.billing_mode === 'image' && group.image_rate_independent === true) {
+    rates.perRequest = imageRateMultiplier(group)
+  }
+  return rates
+}
+
 function extractMinPricing(pricing: UserSupportedModelPricing | null): PlazaMinPricing {
   if (!pricing) return emptyPricing()
   const minPricing = {
@@ -121,14 +145,14 @@ function mergeEffectivePricing(
   currentPricing: PlazaMinPricing,
   currentRates: PlazaPricingRateMultipliers,
   candidatePricing: PlazaMinPricing,
-  candidateRate: number
+  candidateRates: PlazaPricingRateMultipliers
 ): { pricing: PlazaMinPricing; rates: PlazaPricingRateMultipliers } {
-  const input = chooseEffectivePrice(currentPricing.input, currentRates.input, candidatePricing.input, candidateRate)
-  const output = chooseEffectivePrice(currentPricing.output, currentRates.output, candidatePricing.output, candidateRate)
-  const cacheWrite = chooseEffectivePrice(currentPricing.cacheWrite, currentRates.cacheWrite, candidatePricing.cacheWrite, candidateRate)
-  const cacheRead = chooseEffectivePrice(currentPricing.cacheRead, currentRates.cacheRead, candidatePricing.cacheRead, candidateRate)
-  const imageOutput = chooseEffectivePrice(currentPricing.imageOutput, currentRates.imageOutput, candidatePricing.imageOutput, candidateRate)
-  const perRequest = chooseEffectivePrice(currentPricing.perRequest, currentRates.perRequest, candidatePricing.perRequest, candidateRate)
+  const input = chooseEffectivePrice(currentPricing.input, currentRates.input, candidatePricing.input, candidateRates.input)
+  const output = chooseEffectivePrice(currentPricing.output, currentRates.output, candidatePricing.output, candidateRates.output)
+  const cacheWrite = chooseEffectivePrice(currentPricing.cacheWrite, currentRates.cacheWrite, candidatePricing.cacheWrite, candidateRates.cacheWrite)
+  const cacheRead = chooseEffectivePrice(currentPricing.cacheRead, currentRates.cacheRead, candidatePricing.cacheRead, candidateRates.cacheRead)
+  const imageOutput = chooseEffectivePrice(currentPricing.imageOutput, currentRates.imageOutput, candidatePricing.imageOutput, candidateRates.imageOutput)
+  const perRequest = chooseEffectivePrice(currentPricing.perRequest, currentRates.perRequest, candidatePricing.perRequest, candidateRates.perRequest)
 
   return {
     pricing: {
@@ -171,13 +195,13 @@ function representativePricingRate(
 function mergePricingSummary(
   current: PlazaPricingSummary | null,
   candidatePricing: PlazaMinPricing,
-  candidateRate: number
+  candidateRates: PlazaPricingRateMultipliers
 ): PlazaPricingSummary {
   const merged = mergeEffectivePricing(
     current?.minPricing ?? emptyPricing(),
     current?.minPricingRateMultipliers ?? defaultPricingRateMultipliers(),
     candidatePricing,
-    candidateRate
+    candidateRates
   )
   return {
     minPricing: merged.pricing,
@@ -263,7 +287,7 @@ export function aggregateByPlatformModel(
           existing[pricingKey] = mergePricingSummary(
             existing[pricingKey],
             candidatePricing,
-            groupRateMultiplier(group)
+            pricingRateMultipliers(group, model.pricing)
           )
         }
         existing.recentCalls = Math.max(existing.recentCalls, recentCalls)

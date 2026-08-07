@@ -255,4 +255,76 @@ describe('ModelDetailModal', () => {
     expect(document.body.textContent).toContain('¥2')
     expect(document.body.textContent).toContain('¥1.6')
   })
+
+  it('uses the independent image multiplier for tiered image per-request prices', async () => {
+    const imageModel: AggregatedModel = {
+      ...model,
+      model: 'gpt-image',
+      displayName: 'gpt-image',
+      standardPricing: {
+        minPricing: {
+          input: null,
+          output: null,
+          cacheWrite: null,
+          cacheRead: null,
+          imageOutput: null,
+          perRequest: 0.02
+        },
+        minPricingRateMultipliers: {
+          input: 0.1,
+          output: 0.1,
+          cacheWrite: 0.1,
+          cacheRead: 0.1,
+          imageOutput: 0.1,
+          perRequest: 1
+        },
+        displayRateMultiplier: 1
+      },
+      supportedGroups: [{
+        channelName: 'Image direct',
+        channelDescription: '',
+        group: {
+          id: 9,
+          name: 'image',
+          platform: 'openai',
+          subscription_type: 'standard',
+          rate_multiplier: 0.1,
+          image_rate_independent: true,
+          image_rate_multiplier: 1,
+          is_exclusive: false
+        },
+        pricing: {
+          billing_mode: 'image',
+          input_price: null,
+          output_price: null,
+          cache_write_price: null,
+          cache_read_price: null,
+          image_input_price: null,
+          image_output_price: null,
+          per_request_price: null,
+          intervals: [{
+            min_tokens: 0,
+            max_tokens: null,
+            tier_label: '1K',
+            input_price: null,
+            output_price: null,
+            cache_write_price: null,
+            cache_read_price: null,
+            per_request_price: 0.02
+          }]
+        }
+      }]
+    }
+
+    wrapper = mount(ModelDetailModal, {
+      props: { open: true, model: imageModel, multiplier: 1, rate: 6.8 },
+      attachTo: document.body
+    })
+    await wrapper.vm.$nextTick()
+
+    const tierSection = document.body.textContent ?? ''
+    expect(tierSection).toContain('$0.02')
+    expect(tierSection).toContain('¥0.02')
+    expect(tierSection).not.toContain('<¥0.01')
+  })
 })

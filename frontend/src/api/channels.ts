@@ -23,6 +23,10 @@ export interface UserAvailableGroup {
   is_exclusive: boolean
   /** Standard group reserved for users with effective VIP access. */
   vip_only?: boolean
+  /** 图片计费模型是否使用独立倍率，不叠加普通分组倍率。 */
+  image_rate_independent?: boolean
+  /** 图片计费模型启用独立倍率时使用的倍率。 */
+  image_rate_multiplier?: number
   /**
    * Authenticated binding decision. Only a literal true is safe to treat as
    * bindable; the public catalog may omit this field.

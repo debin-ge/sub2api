@@ -24,9 +24,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
-      - name: Validate Caddy streaming configuration
+      - name: Validate deployment runtime manifests
         working-directory: .
-        run: /bin/sh deploy/test-caddyfile-cache.sh
+        run: |
+          /bin/sh deploy/test-caddyfile-cache.sh
+          /bin/sh deploy/tests/docker-compose-security-test.sh
+          /bin/sh deploy/tests/docker-runtime-resources-test.sh
 
       - name: Set up Go
         uses: actions/setup-go@v7

@@ -14,7 +14,10 @@ import (
 	"github.com/dgraph-io/ristretto"
 )
 
-const apiKeyAuthSnapshotVersion = 18 // v18: include complete VIP authorization profile
+// v19 merges the fork's complete VIP authorization profile with upstream's
+// group profit-control fields. Both branches independently used v18, so keeping
+// that number would allow structurally incomplete snapshots to survive the merge.
+const apiKeyAuthSnapshotVersion = 19
 
 type apiKeyAuthCacheConfig struct {
 	l1Size        int
@@ -329,7 +332,7 @@ func (s *APIKeyService) applyAuthCacheEntry(key string, entry *APIKeyAuthCacheEn
 		return nil, false, nil
 	}
 	// Authorization booleans are pointers in the wire snapshot so a missing
-	// field cannot silently decode as false and turn a partial v18 payload into
+	// field cannot silently decode as false and turn a partial v19 payload into
 	// an apparently valid profile. A group-less key only requires the user
 	// field; a hydrated group requires both fields.
 	if !validAuthSnapshotVIPProfile(entry.Snapshot.User) ||
@@ -434,6 +437,9 @@ func (s *APIKeyService) snapshotFromAPIKey(ctx context.Context, apiKey *APIKey) 
 			PeakStart:                       apiKey.Group.PeakStart,
 			PeakEnd:                         apiKey.Group.PeakEnd,
 			PeakRateMultiplier:              apiKey.Group.PeakRateMultiplier,
+			ProfitControlEnabled:            apiKey.Group.ProfitControlEnabled,
+			ProfitMinMargin:                 apiKey.Group.ProfitMinMargin,
+			ProfitSafetyBuffer:              apiKey.Group.ProfitSafetyBuffer,
 		}
 	}
 	return snapshot
@@ -528,6 +534,9 @@ func (s *APIKeyService) snapshotToAPIKey(key string, snapshot *APIKeyAuthSnapsho
 			PeakStart:                       snapshot.Group.PeakStart,
 			PeakEnd:                         snapshot.Group.PeakEnd,
 			PeakRateMultiplier:              snapshot.Group.PeakRateMultiplier,
+			ProfitControlEnabled:            snapshot.Group.ProfitControlEnabled,
+			ProfitMinMargin:                 snapshot.Group.ProfitMinMargin,
+			ProfitSafetyBuffer:              snapshot.Group.ProfitSafetyBuffer,
 		}
 	}
 	s.compileAPIKeyIPRules(apiKey)

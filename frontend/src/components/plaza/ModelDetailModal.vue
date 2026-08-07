@@ -261,7 +261,7 @@
                         :scale="PER_REQUEST_SCALE"
                         :multiplier="multiplier"
                         :rate="rate"
-                        :billing-rate-multiplier="item.group.rate_multiplier"
+                        :billing-rate-multiplier="requestRateMultiplier(item)"
                       />
                     </div>
                   </div>
@@ -339,7 +339,11 @@ import {
   platformBadgeLightClass,
   platformLabel
 } from '@/utils/platformColors'
-import type { AggregatedModel, PlazaPricingSummary } from '@/composables/useModelAggregation'
+import type {
+  AggregatedModel,
+  PlazaPricingSummary,
+  PlazaSupportedGroup
+} from '@/composables/useModelAggregation'
 import type { UserPricingInterval } from '@/api/channels'
 import type { GroupPlatform } from '@/types'
 import { formatPeakRateWindow, hasPeakRate, serverTimezoneLabel } from '@/utils/peak-rate'
@@ -452,6 +456,14 @@ function formatTierRange(minTokens: UserPricingInterval['min_tokens'], maxTokens
     return t('plaza.modal.tierRangeOpenEnded', { min })
   }
   return t('plaza.modal.tierRange', { min, max: tokenFormatter.format(maxTokens) })
+}
+
+function requestRateMultiplier(item: PlazaSupportedGroup): number {
+  if (item.pricing?.billing_mode !== 'image' || item.group.image_rate_independent !== true) {
+    return item.group.rate_multiplier
+  }
+  const rate = item.group.image_rate_multiplier
+  return typeof rate === 'number' && Number.isFinite(rate) && rate >= 0 ? rate : 1
 }
 
 function formatCallCount(count: number): string {

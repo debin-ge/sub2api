@@ -98,3 +98,13 @@ func (r *manualRefundUserRepo) GetByID(context.Context, int64) (*User, error) {
 func (r *manualRefundUserRepo) DeductBalance(ctx context.Context, id int64, amount float64) error {
 	return r.deductBalanceFn(ctx, id, amount)
 }
+
+// The refund path now prefers the repository's atomic available-balance
+// deduction contract. Keep this lightweight test double compatible with that
+// production interface while preserving the same observable deduction amount.
+func (r *manualRefundUserRepo) DeductAvailableBalance(ctx context.Context, id int64, amount float64) (float64, error) {
+	if err := r.deductBalanceFn(ctx, id, amount); err != nil {
+		return 0, err
+	}
+	return amount, nil
+}

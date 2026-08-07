@@ -205,6 +205,16 @@ func (r *proxyMutationAccountRepo) Update(_ context.Context, account *service.Ac
 	return nil
 }
 
+func (r *proxyMutationAccountRepo) UpdateWithAccountBillingSettings(
+	ctx context.Context,
+	account *service.Account,
+	_ *bool,
+	_ *bool,
+	_ *float64,
+) error {
+	return r.Update(ctx, account)
+}
+
 func (r *proxyMutationAccountRepo) ListShadowsByParent(ctx context.Context, parentID int64) ([]*service.Account, error) {
 	return r.GetByIDs(ctx, r.shadowsByParent[parentID])
 }

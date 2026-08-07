@@ -21,6 +21,8 @@ services:
     # 优雅关闭窗口：必须 ≥ SERVER_SHUTDOWN_TIMEOUT_SECONDS，否则应用还在
     # 排空在途请求时就会被 Docker SIGKILL。两者绑定同一个变量。
     stop_grace_period: ${SERVER_SHUTDOWN_TIMEOUT_SECONDS:-30}s
+    security_opt:
+      - no-new-privileges:true
     ulimits:
       nofile:
         soft: 100000

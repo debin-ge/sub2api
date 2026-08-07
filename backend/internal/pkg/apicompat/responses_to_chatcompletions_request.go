@@ -93,18 +93,41 @@ func convertResponsesInputToChatMessages(input json.RawMessage) ([]ChatMessage, 
 		}
 
 		messages := make([]ChatMessage, 0, len(items))
+		mediaByCallID := make(toolOutputMediaByCallID)
 		for i, item := range items {
+			if isResponsesToolOutputItemType(item.Type) {
+				outputRaw := item.outputRaw
+				if len(outputRaw) == 0 {
+					var err error
+					outputRaw, err = json.Marshal(item.Output)
+					if err != nil {
+						return nil, fmt.Errorf("marshal responses tool output %d: %w", i, err)
+					}
+				}
+				outputText, media, rewritten := extractToolOutputMedia(outputRaw)
+				if rewritten {
+					item.Output = outputText
+					if strings.TrimSpace(item.CallID) != "" {
+						mediaByCallID[item.CallID] = media
+					}
+				} else {
+					// Duplicate outputs are last-wins; a later text output must clear
+					// media extracted from an earlier output for the same call.
+					delete(mediaByCallID, item.CallID)
+				}
+			}
+
 			message, err := convertResponsesInputItemToChatMessage(item)
 			if err != nil {
 				return nil, fmt.Errorf("convert responses input item %d: %w", i, err)
 			}
-			if item.Type == "function_call" && i > 0 && items[i-1].Type == "function_call" {
+			if isResponsesToolCallItemType(item.Type) && i > 0 && isResponsesToolCallItemType(items[i-1].Type) {
 				messages[len(messages)-1].ToolCalls = append(messages[len(messages)-1].ToolCalls, message.ToolCalls...)
 				continue
 			}
 			messages = append(messages, message)
 		}
-		return messages, nil
+		return normalizeChatMessagesWithToolOutputMedia(messages, mediaByCallID), nil
 
 	default:
 		return nil, fmt.Errorf("responses input must be a JSON string or array")
@@ -113,14 +136,26 @@ func convertResponsesInputToChatMessages(input json.RawMessage) ([]ChatMessage, 
 
 func convertResponsesInputItemToChatMessage(item ResponsesInputItem) (ChatMessage, error) {
 	switch item.Type {
-	case "function_call":
+	case "function_call", "custom_tool_call", "tool_search_call":
 		if strings.TrimSpace(item.CallID) == "" {
-			return ChatMessage{}, fmt.Errorf("function_call is missing call_id")
+			return ChatMessage{}, fmt.Errorf("%s is missing call_id", item.Type)
 		}
-		if strings.TrimSpace(item.Name) == "" {
-			return ChatMessage{}, fmt.Errorf("function_call is missing name")
+		if item.Type != "tool_search_call" && strings.TrimSpace(item.Name) == "" {
+			return ChatMessage{}, fmt.Errorf("%s is missing name", item.Type)
 		}
+
+		name := item.Name
 		arguments := item.Arguments
+		switch item.Type {
+		case "custom_tool_call":
+			encoded, err := json.Marshal(map[string]string{"input": item.Input})
+			if err != nil {
+				return ChatMessage{}, fmt.Errorf("marshal custom_tool_call input: %w", err)
+			}
+			arguments = string(encoded)
+		case "tool_search_call":
+			name = toolSearchProxyName
+		}
 		if arguments == "" {
 			arguments = "{}"
 		}
@@ -131,16 +166,16 @@ func convertResponsesInputItemToChatMessage(item ResponsesInputItem) (ChatMessag
 					ID:   item.CallID,
 					Type: "function",
 					Function: ChatFunctionCall{
-						Name:      item.Name,
+						Name:      name,
 						Arguments: arguments,
 					},
 				},
 			},
 		}, nil
 
-	case "function_call_output":
+	case "function_call_output", "custom_tool_call_output", "tool_search_output":
 		if strings.TrimSpace(item.CallID) == "" {
-			return ChatMessage{}, fmt.Errorf("function_call_output is missing call_id")
+			return ChatMessage{}, fmt.Errorf("%s is missing call_id", item.Type)
 		}
 		content, err := json.Marshal(item.Output)
 		if err != nil {
@@ -157,6 +192,24 @@ func convertResponsesInputItemToChatMessage(item ResponsesInputItem) (ChatMessag
 
 	default:
 		return ChatMessage{}, fmt.Errorf("unsupported responses input item type %q", item.Type)
+	}
+}
+
+func isResponsesToolCallItemType(itemType string) bool {
+	switch itemType {
+	case "function_call", "custom_tool_call", "tool_search_call":
+		return true
+	default:
+		return false
+	}
+}
+
+func isResponsesToolOutputItemType(itemType string) bool {
+	switch itemType {
+	case "function_call_output", "custom_tool_call_output", "tool_search_output":
+		return true
+	default:
+		return false
 	}
 }
 

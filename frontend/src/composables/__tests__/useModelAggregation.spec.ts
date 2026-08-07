@@ -211,6 +211,66 @@ describe('aggregateByPlatformModel', () => {
     })
   })
 
+  it('compares image per-request offers with each group effective image multiplier', () => {
+    const imagePrice = (perRequest: number): UserSupportedModelPricing => price(null, null, {
+      billing_mode: 'image',
+      per_request_price: perRequest
+    })
+    const rows: UserAvailableChannel[] = [
+      {
+        name: 'lower-raw-independent',
+        description: '',
+        platforms: [{
+          platform: 'openai',
+          groups: [{
+            id: 1,
+            name: 'independent',
+            platform: 'openai',
+            subscription_type: 'standard',
+            rate_multiplier: 0.1,
+            image_rate_independent: true,
+            image_rate_multiplier: 2,
+            is_exclusive: false
+          }],
+          supported_models: [{
+            name: 'gpt-image',
+            platform: 'openai',
+            pricing: imagePrice(0.01)
+          }]
+        }]
+      },
+      {
+        name: 'higher-raw-cheaper-effective',
+        description: '',
+        platforms: [{
+          platform: 'openai',
+          groups: [{
+            id: 2,
+            name: 'regular',
+            platform: 'openai',
+            subscription_type: 'standard',
+            rate_multiplier: 1,
+            image_rate_independent: false,
+            image_rate_multiplier: 1,
+            is_exclusive: false
+          }],
+          supported_models: [{
+            name: 'gpt-image',
+            platform: 'openai',
+            pricing: imagePrice(0.015)
+          }]
+        }]
+      }
+    ]
+
+    const model = aggregateByPlatformModel(rows)[0].models[0]
+
+    // 0.01 × 2 = 0.02，高于 0.015 × 1；最低价必须选择后者。
+    expect(model.standardPricing?.minPricing.perRequest).toBe(0.015)
+    expect(model.standardPricing?.minPricingRateMultipliers.perRequest).toBe(1)
+    expect(model.standardPricing?.displayRateMultiplier).toBe(1)
+  })
+
   it('collects every public group with channel metadata and model pricing', () => {
     const channelPricing = price(0.000003)
     const rows: UserAvailableChannel[] = [{

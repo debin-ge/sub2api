@@ -322,7 +322,11 @@ func TestGatewayServiceRecordUsage_PropagatesMissingDurableRepository(t *testing
 	})
 
 	require.ErrorIs(t, err, ErrDurableUsageBillingRequired)
-	require.Zero(t, usageRepo.calls)
+	// A durable settlement failure must still leave an unsettled usage row for
+	// reconciliation; it must never look like a successful charge.
+	require.Equal(t, 1, usageRepo.calls)
+	require.NotNil(t, usageRepo.lastLog)
+	require.Zero(t, usageRepo.lastLog.ActualCost)
 	require.Zero(t, userRepo.deductCalls)
 }
 
@@ -356,6 +360,10 @@ func TestOpenAIGatewayServiceRecordUsage_PropagatesNonDurableRepository(t *testi
 
 	require.ErrorIs(t, err, ErrDurableUsageBillingRequired)
 	require.Zero(t, billingRepo.calls, "strict mode must not call legacy repo.Apply")
-	require.Zero(t, usageRepo.calls)
+	// Preserve the request as an unsettled usage row even though the strict
+	// repository contract rejected the billing path.
+	require.Equal(t, 1, usageRepo.calls)
+	require.NotNil(t, usageRepo.lastLog)
+	require.Zero(t, usageRepo.lastLog.ActualCost)
 	require.Zero(t, userRepo.deductCalls)
 }

@@ -60,14 +60,14 @@ func TestAPIKeyService_RejectsV15AuthSnapshotWithoutReasoningEffortPolicy(t *tes
 	}
 }
 
-func TestAPIKeyService_RejectsV18AuthSnapshotWithMissingVIPFields(t *testing.T) {
+func TestAPIKeyService_RejectsV19AuthSnapshotWithMissingVIPFields(t *testing.T) {
 	groupID := int64(9)
 	svc := &APIKeyService{}
 	autoMode := VIPModeAuto
 	paymentRequired := VIPAccessStatePaymentRequired
 
 	t.Run("missing user is_vip", func(t *testing.T) {
-		apiKey, ok, err := svc.applyAuthCacheEntry("k-v18-missing-user-vip", &APIKeyAuthCacheEntry{
+		apiKey, ok, err := svc.applyAuthCacheEntry("k-v19-missing-user-vip", &APIKeyAuthCacheEntry{
 			Snapshot: &APIKeyAuthSnapshot{
 				Version:  apiKeyAuthSnapshotVersion,
 				APIKeyID: 1,
@@ -79,12 +79,12 @@ func TestAPIKeyService_RejectsV18AuthSnapshotWithMissingVIPFields(t *testing.T) 
 			t.Fatalf("expected incomplete snapshot to be ignored without error, got %v", err)
 		}
 		if ok || apiKey != nil {
-			t.Fatalf("expected incomplete v18 user snapshot to miss, got ok=%v apiKey=%#v", ok, apiKey)
+			t.Fatalf("expected incomplete v19 user snapshot to miss, got ok=%v apiKey=%#v", ok, apiKey)
 		}
 	})
 
 	t.Run("missing user vip mode", func(t *testing.T) {
-		apiKey, ok, err := svc.applyAuthCacheEntry("k-v18-missing-user-vip-mode", &APIKeyAuthCacheEntry{
+		apiKey, ok, err := svc.applyAuthCacheEntry("k-v19-missing-user-vip-mode", &APIKeyAuthCacheEntry{
 			Snapshot: &APIKeyAuthSnapshot{
 				Version:  apiKeyAuthSnapshotVersion,
 				APIKeyID: 1,
@@ -100,12 +100,12 @@ func TestAPIKeyService_RejectsV18AuthSnapshotWithMissingVIPFields(t *testing.T) 
 			t.Fatalf("expected incomplete snapshot to be ignored without error, got %v", err)
 		}
 		if ok || apiKey != nil {
-			t.Fatalf("expected incomplete v18 user snapshot to miss, got ok=%v apiKey=%#v", ok, apiKey)
+			t.Fatalf("expected incomplete v19 user snapshot to miss, got ok=%v apiKey=%#v", ok, apiKey)
 		}
 	})
 
 	t.Run("missing group vip_only", func(t *testing.T) {
-		apiKey, ok, err := svc.applyAuthCacheEntry("k-v18-missing-group-vip", &APIKeyAuthCacheEntry{
+		apiKey, ok, err := svc.applyAuthCacheEntry("k-v19-missing-group-vip", &APIKeyAuthCacheEntry{
 			Snapshot: &APIKeyAuthSnapshot{
 				Version:  apiKeyAuthSnapshotVersion,
 				APIKeyID: 1,
@@ -124,12 +124,12 @@ func TestAPIKeyService_RejectsV18AuthSnapshotWithMissingVIPFields(t *testing.T) 
 			t.Fatalf("expected incomplete snapshot to be ignored without error, got %v", err)
 		}
 		if ok || apiKey != nil {
-			t.Fatalf("expected incomplete v18 group snapshot to miss, got ok=%v apiKey=%#v", ok, apiKey)
+			t.Fatalf("expected incomplete v19 group snapshot to miss, got ok=%v apiKey=%#v", ok, apiKey)
 		}
 	})
 }
 
-func TestAPIKeyService_V18AuthSnapshotRoundTripPreservesVIPAuthorization(t *testing.T) {
+func TestAPIKeyService_V19AuthSnapshotRoundTripPreservesVIPAuthorization(t *testing.T) {
 	groupID := int64(9)
 	forceOff := false
 	svc := &APIKeyService{}
@@ -160,11 +160,11 @@ func TestAPIKeyService_V18AuthSnapshotRoundTripPreservesVIPAuthorization(t *test
 		snapshot.User.VIPAccessState == nil ||
 		snapshot.Group == nil ||
 		snapshot.Group.VIPOnly == nil {
-		t.Fatalf("expected complete v18 VIP authorization snapshot, got %#v", snapshot)
+		t.Fatalf("expected complete v19 VIP authorization snapshot, got %#v", snapshot)
 	}
-	apiKey, ok, err := svc.applyAuthCacheEntry("k-v18", &APIKeyAuthCacheEntry{Snapshot: snapshot})
+	apiKey, ok, err := svc.applyAuthCacheEntry("k-v19", &APIKeyAuthCacheEntry{Snapshot: snapshot})
 	if err != nil || !ok {
-		t.Fatalf("expected complete v18 snapshot to apply, ok=%v err=%v", ok, err)
+		t.Fatalf("expected complete v19 snapshot to apply, ok=%v err=%v", ok, err)
 	}
 	if apiKey == nil ||
 		apiKey.User == nil ||

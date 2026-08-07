@@ -58,14 +58,14 @@ var (
 		SupportsPromptCaching:               true,
 	}
 	openAIGPT56TerraFallbackPricing = &LiteLLMModelPricing{
-		InputCostPerToken:                   2.5e-06,
-		InputCostPerTokenPriority:           5e-06,
-		OutputCostPerToken:                  1.5e-05,
-		OutputCostPerTokenPriority:          3e-05,
-		CacheCreationInputTokenCost:         3.125e-06,
-		CacheCreationInputTokenCostPriority: 6.25e-06,
-		CacheReadInputTokenCost:             2.5e-07,
-		CacheReadInputTokenCostPriority:     5e-07,
+		InputCostPerToken:                   2e-06,
+		InputCostPerTokenPriority:           4e-06,
+		OutputCostPerToken:                  1.2e-05,
+		OutputCostPerTokenPriority:          2.4e-05,
+		CacheCreationInputTokenCost:         2.5e-06,
+		CacheCreationInputTokenCostPriority: 5e-06,
+		CacheReadInputTokenCost:             2e-07,
+		CacheReadInputTokenCostPriority:     4e-07,
 		LongContextInputTokenThreshold:      openAIGPT54LongContextInputThreshold,
 		LongContextInputCostMultiplier:      openAIGPT54LongContextInputMultiplier,
 		LongContextOutputCostMultiplier:     openAIGPT54LongContextOutputMultiplier,
@@ -75,14 +75,14 @@ var (
 		SupportsPromptCaching:               true,
 	}
 	openAIGPT56LunaFallbackPricing = &LiteLLMModelPricing{
-		InputCostPerToken:                   1e-06,
-		InputCostPerTokenPriority:           2e-06,
-		OutputCostPerToken:                  6e-06,
-		OutputCostPerTokenPriority:          1.2e-05,
-		CacheCreationInputTokenCost:         1.25e-06,
-		CacheCreationInputTokenCostPriority: 2.5e-06,
-		CacheReadInputTokenCost:             1e-07,
-		CacheReadInputTokenCostPriority:     2e-07,
+		InputCostPerToken:                   2e-07,
+		InputCostPerTokenPriority:           4e-07,
+		OutputCostPerToken:                  1.2e-06,
+		OutputCostPerTokenPriority:          2.4e-06,
+		CacheCreationInputTokenCost:         2.5e-07,
+		CacheCreationInputTokenCostPriority: 5e-07,
+		CacheReadInputTokenCost:             2e-08,
+		CacheReadInputTokenCostPriority:     4e-08,
 		LongContextInputTokenThreshold:      openAIGPT54LongContextInputThreshold,
 		LongContextInputCostMultiplier:      openAIGPT54LongContextInputMultiplier,
 		LongContextOutputCostMultiplier:     openAIGPT54LongContextOutputMultiplier,
@@ -192,6 +192,24 @@ type RawModelPriceEntry struct {
 	InputCostPerImageToken              *float64 `json:"input_cost_per_image_token"`
 }
 
+// codexAutoReviewHasUnpricedServiceTier is an explicit catalog policy for the
+// internal Codex Auto Review SKU. The upstream catalog keeps the capability
+// metadata (supports_service_tier) but intentionally publishes no priority
+// price dimensions for this model. Its base and cache-read prices are still
+// authoritative; do not infer public GPT pricing for the omitted dimensions.
+// Keep this exception narrow so an unrelated partial priority entry continues
+// to fail closed.
+func codexAutoReviewHasUnpricedServiceTier(model string, entry *RawModelPriceEntry) bool {
+	if entry == nil || !entry.SupportsServiceTier ||
+		!strings.EqualFold(strings.TrimSpace(model), "codex-auto-review") {
+		return false
+	}
+	return entry.InputCostPerTokenPriority == nil &&
+		entry.OutputCostPerTokenPriority == nil &&
+		entry.CacheCreationInputTokenCostPriority == nil &&
+		entry.CacheReadInputTokenCostPriority == nil
+}
+
 func rawModelTokenPricingIncomplete(model string, entry *RawModelPriceEntry) bool {
 	if entry == nil || entry.InputCostPerToken == nil || entry.OutputCostPerToken == nil {
 		return true
@@ -227,7 +245,8 @@ func rawModelTokenPricingIncomplete(model string, entry *RawModelPriceEntry) boo
 	// or provides any priority field, every base dimension exposed by this
 	// entry needs its corresponding priority price. Otherwise the calculator
 	// would silently mix priority and standard prices.
-	priorityPricingDeclared := entry.SupportsServiceTier ||
+	priorityPricingDeclared := entry.SupportsServiceTier &&
+		!codexAutoReviewHasUnpricedServiceTier(model, entry) ||
 		entry.InputCostPerTokenPriority != nil ||
 		entry.OutputCostPerTokenPriority != nil ||
 		entry.CacheCreationInputTokenCostPriority != nil ||

@@ -12,11 +12,11 @@ import (
 
 const usageRecordSyncFallbackTimeout = 10 * time.Second
 
-// submitUsageRecordTaskWithFallback runs every billing task inline, including
-// ordinary token usage. The pool argument is retained for constructor/call-site
-// compatibility only: accepting a task into the process-local pool is not a
-// durability boundary, so a hard crash could otherwise lose a successful
-// upstream request before RecordUsage reaches the durable billing outbox.
+// submitUsageRecordTaskWithFallback runs billing tasks inline so a successful
+// upstream request reaches the durable stage-0 billing outbox before the
+// handler returns. The process-local pool is consulted only as an overflow
+// guard: if it is saturated, an explicitly configured drop/sample policy may
+// still discard the task; the default sync policy remains lossless.
 //
 // Forwarders call this only after the upstream response/stream has completed.
 // Inline execution therefore does not delay stream chunks; it only keeps the
@@ -24,10 +24,28 @@ const usageRecordSyncFallbackTimeout = 10 * time.Second
 // bounded task context expires).
 func submitUsageRecordTaskWithFallback(
 	parent context.Context,
-	_ *service.UsageRecordWorkerPool,
+	pool *service.UsageRecordWorkerPool,
 	component string,
 	task service.UsageRecordTask,
 ) {
+	if task == nil {
+		return
+	}
+
+	if pool != nil {
+		switch mode := pool.InspectInlineAdmission(); mode {
+		case service.UsageRecordSubmitModeDropped:
+			logger.L().With(
+				zap.String("component", normalizedUsageRecordComponent(component)),
+				zap.String("submit_mode", mode.String()),
+			).Warn("usage_record.task_dropped_by_explicit_overflow_policy")
+			return
+		case service.UsageRecordSubmitModeDroppedStopped:
+			logger.L().With(
+				zap.String("component", normalizedUsageRecordComponent(component)),
+			).Warn("usage_record.task_stopped_sync_fallback")
+		}
+	}
 	runUsageRecordTaskInline(parent, component, usageRecordSyncFallbackTimeout, task)
 }
 

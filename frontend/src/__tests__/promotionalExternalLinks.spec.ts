@@ -10,11 +10,15 @@ function readRepoFile(path: string) {
 }
 
 describe('promotional external links', () => {
-  it('does not include sponsor sections in public README files', () => {
-    for (const path of ['README.md', 'README_CN.md', 'README_JA.md']) {
+  it('keeps the upstream sponsor sections in public README files', () => {
+    for (const [path, heading] of [
+      ['README.md', '## ❤️ Sponsors'],
+      ['README_CN.md', '## ❤️ 赞助商'],
+      ['README_JA.md', '## ❤️ スポンサー'],
+    ]) {
       const source = readRepoFile(path)
 
-      expect(source).not.toMatch(/^## .*(Sponsors|赞助商|スポンサー)$/m)
+      expect(source).toContain(heading)
     }
   })
 

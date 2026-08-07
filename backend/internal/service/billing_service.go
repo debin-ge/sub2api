@@ -425,27 +425,27 @@ func (s *BillingService) initFallbackPricing() {
 		LongContextOutputMultiplier:        openAIGPT54LongContextOutputMultiplier,
 	}
 	s.fallbackPrices["gpt-5.6-terra"] = &ModelPricing{
-		InputPricePerToken:                 2.5e-6,
-		InputPricePerTokenPriority:         5e-6,
-		OutputPricePerToken:                15e-6,
-		OutputPricePerTokenPriority:        30e-6,
-		CacheCreationPricePerToken:         3.125e-6,
-		CacheCreationPricePerTokenPriority: 6.25e-6,
-		CacheReadPricePerToken:             0.25e-6,
-		CacheReadPricePerTokenPriority:     0.5e-6,
+		InputPricePerToken:                 2e-6,
+		InputPricePerTokenPriority:         4e-6,
+		OutputPricePerToken:                12e-6,
+		OutputPricePerTokenPriority:        24e-6,
+		CacheCreationPricePerToken:         2.5e-6,
+		CacheCreationPricePerTokenPriority: 5e-6,
+		CacheReadPricePerToken:             0.2e-6,
+		CacheReadPricePerTokenPriority:     0.4e-6,
 		LongContextInputThreshold:          openAIGPT54LongContextInputThreshold,
 		LongContextInputMultiplier:         openAIGPT54LongContextInputMultiplier,
 		LongContextOutputMultiplier:        openAIGPT54LongContextOutputMultiplier,
 	}
 	s.fallbackPrices["gpt-5.6-luna"] = &ModelPricing{
-		InputPricePerToken:                 1e-6,
-		InputPricePerTokenPriority:         2e-6,
-		OutputPricePerToken:                6e-6,
-		OutputPricePerTokenPriority:        12e-6,
-		CacheCreationPricePerToken:         1.25e-6,
-		CacheCreationPricePerTokenPriority: 2.5e-6,
-		CacheReadPricePerToken:             0.1e-6,
-		CacheReadPricePerTokenPriority:     0.2e-6,
+		InputPricePerToken:                 0.2e-6,
+		InputPricePerTokenPriority:         0.4e-6,
+		OutputPricePerToken:                1.2e-6,
+		OutputPricePerTokenPriority:        2.4e-6,
+		CacheCreationPricePerToken:         0.25e-6,
+		CacheCreationPricePerTokenPriority: 0.5e-6,
+		CacheReadPricePerToken:             0.02e-6,
+		CacheReadPricePerTokenPriority:     0.04e-6,
 		LongContextInputThreshold:          openAIGPT54LongContextInputThreshold,
 		LongContextInputMultiplier:         openAIGPT54LongContextInputMultiplier,
 		LongContextOutputMultiplier:        openAIGPT54LongContextOutputMultiplier,
@@ -517,6 +517,7 @@ func (s *BillingService) initFallbackPricing() {
 	// 不要改回「中国区 CNY ÷ 核算汇率」口径。GLM-4.5 国内价 ¥0.8/¥2 换算后约
 	// $0.11/$0.28，与国际版 $0.6/$2.2 相差数倍，混用会让同一张价表自相矛盾
 	// （v0.1.166 合并曾因重复键误回退到 CNY 口径，GLM 计费被下调 25~75%）。
+	// GLM-5.2 与 GLM-5.1 在 z.ai 上同价。
 	s.fallbackPrices["glm-5.2"] = &ModelPricing{
 		InputPricePerToken:     1.4e-6, // $1.40 per MTok
 		OutputPricePerToken:    4.4e-6, // $4.40 per MTok

@@ -13,18 +13,23 @@ import (
 // 订阅 vs 标准（SubscriptionType）、默认倍率（RateMultiplier）与高峰倍率规则。
 // 用户专属倍率不在这里暴露，前端自己通过 /groups/rates 拉取，和 API 密钥页面保持一致。
 type AvailableGroupRef struct {
-	ID                 int64
-	Name               string
-	Platform           string
-	SubscriptionType   string
-	RateMultiplier     float64
-	PeakRateEnabled    bool
-	PeakStart          string
-	PeakEnd            string
-	PeakRateMultiplier float64
-	IsExclusive        bool
-	VIPOnly            bool
-	ModelsListConfig   GroupModelsListConfig
+	ID                   int64
+	Name                 string
+	Platform             string
+	SubscriptionType     string
+	RateMultiplier       float64
+	PeakRateEnabled      bool
+	PeakStart            string
+	PeakEnd              string
+	PeakRateMultiplier   float64
+	IsExclusive          bool
+	VIPOnly              bool
+	ImageRateIndependent bool
+	ImageRateMultiplier  float64
+	ImagePrice1K         *float64
+	ImagePrice2K         *float64
+	ImagePrice4K         *float64
+	ModelsListConfig     GroupModelsListConfig
 }
 
 // AvailableChannel 可用渠道视图：用于「可用渠道」页面展示渠道基础信息 +
@@ -94,18 +99,23 @@ func (s *ChannelService) listAvailable(ctx context.Context, opts availableListOp
 	for i := range groups {
 		g := groups[i]
 		ref := AvailableGroupRef{
-			ID:                 g.ID,
-			Name:               g.Name,
-			Platform:           g.Platform,
-			SubscriptionType:   g.SubscriptionType,
-			RateMultiplier:     g.RateMultiplier,
-			PeakRateEnabled:    g.PeakRateEnabled,
-			PeakStart:          g.PeakStart,
-			PeakEnd:            g.PeakEnd,
-			PeakRateMultiplier: g.PeakRateMultiplier,
-			IsExclusive:        g.IsExclusive,
-			VIPOnly:            g.VIPOnly,
-			ModelsListConfig:   g.ModelsListConfig,
+			ID:                   g.ID,
+			Name:                 g.Name,
+			Platform:             g.Platform,
+			SubscriptionType:     g.SubscriptionType,
+			RateMultiplier:       g.RateMultiplier,
+			PeakRateEnabled:      g.PeakRateEnabled,
+			PeakStart:            g.PeakStart,
+			PeakEnd:              g.PeakEnd,
+			PeakRateMultiplier:   g.PeakRateMultiplier,
+			IsExclusive:          g.IsExclusive,
+			VIPOnly:              g.VIPOnly,
+			ImageRateIndependent: g.ImageRateIndependent,
+			ImageRateMultiplier:  g.ImageRateMultiplier,
+			ImagePrice1K:         g.ImagePrice1K,
+			ImagePrice2K:         g.ImagePrice2K,
+			ImagePrice4K:         g.ImagePrice4K,
+			ModelsListConfig:     g.ModelsListConfig,
 		}
 		groupByID[g.ID] = ref
 		allGroupRefs = append(allGroupRefs, ref)
@@ -173,6 +183,57 @@ func channelBoundGroups(ch *Channel, groupByID map[int64]AvailableGroupRef, _ []
 		}
 	}
 	return groups
+}
+
+// AvailableImageDisplayPricing 为模型广场的图片计费模型合成展示档位价，使展示与实收一致。
+// 每档（1K/2K/4K）的价格优先级为：分组图片价 > 渠道同档位价 > 渠道默认按次价。
+// 分组未配置任何图片价、定价为空或不是图片模式时原样返回。返回值是独立克隆，
+// 不会修改渠道缓存中共享的定价对象。
+func AvailableImageDisplayPricing(p *ChannelModelPricing, g AvailableGroupRef) *ChannelModelPricing {
+	if p == nil || p.BillingMode != BillingModeImage {
+		return p
+	}
+	if g.ImagePrice1K == nil && g.ImagePrice2K == nil && g.ImagePrice4K == nil {
+		return p
+	}
+
+	channelTierPrice := func(label string) *float64 {
+		for i := range p.Intervals {
+			if strings.EqualFold(strings.TrimSpace(p.Intervals[i].TierLabel), label) &&
+				p.Intervals[i].PerRequestPrice != nil {
+				return p.Intervals[i].PerRequestPrice
+			}
+		}
+		return p.PerRequestPrice
+	}
+
+	tiers := []struct {
+		label      string
+		groupPrice *float64
+	}{
+		{label: ImageBillingSize1K, groupPrice: g.ImagePrice1K},
+		{label: ImageBillingSize2K, groupPrice: g.ImagePrice2K},
+		{label: ImageBillingSize4K, groupPrice: g.ImagePrice4K},
+	}
+
+	clone := p.Clone()
+	clone.Intervals = make([]PricingInterval, 0, len(tiers))
+	for i, tier := range tiers {
+		price := tier.groupPrice
+		if price == nil {
+			price = channelTierPrice(tier.label)
+		}
+		if price == nil {
+			continue
+		}
+		value := *price
+		clone.Intervals = append(clone.Intervals, PricingInterval{
+			TierLabel:       tier.label,
+			PerRequestPrice: &value,
+			SortOrder:       i,
+		})
+	}
+	return &clone
 }
 
 // FillGlobalPricingFallback fills display-only pricing for supported models that
