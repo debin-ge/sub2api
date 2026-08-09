@@ -1117,7 +1117,9 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 
 	if billingErr != nil {
 		usageLog.ActualCost = 0
-		writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.gateway")
+		if usageLogErr := writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.gateway"); usageLogErr != nil {
+			return errors.Join(billingErr, usageLogErr)
+		}
 		return billingErr
 	}
 	if !usageLogRecorded {

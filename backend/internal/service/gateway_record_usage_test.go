@@ -959,6 +959,41 @@ func TestGatewayServiceRecordUsage_BillingErrorWritesUnsettledUsageLog(t *testin
 	require.Zero(t, usageRepo.lastLog.ActualCost)
 }
 
+func TestGatewayServiceRecordUsage_BillingErrorPreservesUsageLogFailure(t *testing.T) {
+	usageLogErr := errors.New("usage log write failed")
+	usageRepo := &openAIRecordUsageLogRepoStub{err: usageLogErr}
+	billingErr := errors.New("billing tx failed")
+	billingRepo := &openAIRecordUsageBillingRepoStub{err: billingErr}
+	svc := newGatewayRecordUsageServiceWithBillingRepoForTest(
+		usageRepo,
+		billingRepo,
+		&openAIRecordUsageUserRepoStub{},
+		&openAIRecordUsageSubRepoStub{},
+	)
+
+	err := svc.RecordUsage(context.Background(), &RecordUsageInput{
+		Result: &ForwardResult{
+			RequestID: "gateway_billing_and_usage_log_fail",
+			Usage: ClaudeUsage{
+				InputTokens:  10,
+				OutputTokens: 6,
+			},
+			Model:    "claude-sonnet-4",
+			Duration: time.Second,
+		},
+		APIKey:  &APIKey{ID: 511},
+		User:    &User{ID: 611},
+		Account: &Account{ID: 711},
+	})
+
+	require.ErrorIs(t, err, billingErr)
+	require.ErrorIs(t, err, usageLogErr)
+	require.Equal(t, 1, billingRepo.calls)
+	require.Equal(t, 1, usageRepo.calls)
+	require.NotNil(t, usageRepo.lastLog)
+	require.Zero(t, usageRepo.lastLog.ActualCost)
+}
+
 func TestGatewayServiceRecordUsage_ReasoningEffortPersisted(t *testing.T) {
 	usageRepo := &openAIRecordUsageBestEffortLogRepoStub{}
 	svc := newGatewayRecordUsageServiceForTest(usageRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{})

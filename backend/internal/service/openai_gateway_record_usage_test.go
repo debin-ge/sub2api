@@ -1130,6 +1130,42 @@ func TestOpenAIGatewayServiceRecordUsage_BillingErrorWritesUnsettledUsageLog(t *
 	require.Zero(t, usageRepo.lastLog.ActualCost)
 }
 
+func TestOpenAIGatewayServiceRecordUsage_BillingErrorPreservesUsageLogFailure(t *testing.T) {
+	usageLogErr := errors.New("usage log write failed")
+	usageRepo := &openAIRecordUsageLogRepoStub{err: usageLogErr}
+	billingErr := errors.New("billing tx failed")
+	billingRepo := &openAIRecordUsageBillingRepoStub{err: billingErr}
+	svc := newOpenAIRecordUsageServiceWithBillingRepoForTest(
+		usageRepo,
+		billingRepo,
+		&openAIRecordUsageUserRepoStub{},
+		&openAIRecordUsageSubRepoStub{},
+		nil,
+	)
+
+	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{
+			RequestID: "resp_billing_and_usage_log_fail",
+			Usage: OpenAIUsage{
+				InputTokens:  8,
+				OutputTokens: 4,
+			},
+			Model:    "gpt-5.1",
+			Duration: time.Second,
+		},
+		APIKey:  &APIKey{ID: 10049},
+		User:    &User{ID: 20049},
+		Account: &Account{ID: 30049},
+	})
+
+	require.ErrorIs(t, err, billingErr)
+	require.ErrorIs(t, err, usageLogErr)
+	require.Equal(t, 1, billingRepo.calls)
+	require.Equal(t, 1, usageRepo.calls)
+	require.NotNil(t, usageRepo.lastLog)
+	require.Zero(t, usageRepo.lastLog.ActualCost)
+}
+
 func TestOpenAIGatewayServiceRecordUsage_UpdatesAPIKeyQuotaWhenConfigured(t *testing.T) {
 	usage := OpenAIUsage{InputTokens: 10, OutputTokens: 6, CacheReadInputTokens: 2}
 	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
