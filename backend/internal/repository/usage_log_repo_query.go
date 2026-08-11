@@ -136,6 +136,9 @@ func (r *usageLogRepository) ListWithFilters(ctx context.Context, params paginat
 		conditions = append(conditions, fmt.Sprintf("created_at < $%d", len(args)+1))
 		args = append(args, *filters.EndTime)
 	}
+	if filters.ExcludeInternalRelay {
+		conditions = append(conditions, usageLogBusinessStatsFilter(""))
+	}
 
 	whereClause := buildWhere(conditions)
 	var (

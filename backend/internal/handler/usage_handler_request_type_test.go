@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/internalrelay"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -23,9 +24,18 @@ type userUsageRepoCapture struct {
 	trendFilters usagestats.UsageLogFilters
 	groupFilters usagestats.UsageLogFilters
 	listRows     []service.UsageLog
+	getByIDRow   *service.UsageLog
 	stats        *usagestats.UsageStats
 	modelStats   []usagestats.ModelStat
 	groupStats   []usagestats.GroupStat
+}
+
+func (s *userUsageRepoCapture) GetByID(ctx context.Context, id int64) (*service.UsageLog, error) {
+	if s.getByIDRow == nil || s.getByIDRow.ID != id {
+		return nil, service.ErrUsageLogNotFound
+	}
+	row := *s.getByIDRow
+	return &row, nil
 }
 
 func (s *userUsageRepoCapture) ListWithFilters(ctx context.Context, params pagination.PaginationParams, filters usagestats.UsageLogFilters) ([]service.UsageLog, *pagination.PaginationResult, error) {
@@ -88,6 +98,7 @@ func newUserUsageRequestTypeTestRouter(repo *userUsageRepoCapture) *gin.Engine {
 		c.Next()
 	})
 	router.GET("/usage", handler.List)
+	router.GET("/usage/:id", handler.GetByID)
 	router.GET("/usage/stats", handler.Stats)
 	router.GET("/usage/dashboard/models", handler.DashboardModels)
 	router.GET("/usage/dashboard/snapshot-v2", handler.DashboardSnapshotV2)
@@ -104,9 +115,41 @@ func TestUserUsageListRequestTypePriority(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Equal(t, int64(42), repo.listFilters.UserID)
+	require.True(t, repo.listFilters.ExcludeInternalRelay)
 	require.NotNil(t, repo.listFilters.RequestType)
 	require.Equal(t, int16(service.RequestTypeWSV2), *repo.listFilters.RequestType)
 	require.Nil(t, repo.listFilters.Stream)
+}
+
+func TestUserUsageGetByIDHidesInternalRelayRows(t *testing.T) {
+	repo := &userUsageRepoCapture{getByIDRow: &service.UsageLog{
+		ID:        7,
+		UserID:    42,
+		RequestID: internalrelay.MarkUsageRequestID("client:outer", "client:inner"),
+	}}
+	router := newUserUsageRequestTypeTestRouter(repo)
+
+	req := httptest.NewRequest(http.MethodGet, "/usage/7", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestUserUsageGetByIDKeepsOrdinaryRows(t *testing.T) {
+	repo := &userUsageRepoCapture{getByIDRow: &service.UsageLog{
+		ID:        8,
+		UserID:    42,
+		RequestID: "client:ordinary",
+	}}
+	router := newUserUsageRequestTypeTestRouter(repo)
+
+	req := httptest.NewRequest(http.MethodGet, "/usage/8", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), `"request_id":"client:ordinary"`)
 }
 
 func TestUserUsageListInvalidRequestType(t *testing.T) {

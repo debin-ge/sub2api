@@ -55,6 +55,7 @@ func TestAdminUsageListRequestTypePriority(t *testing.T) {
 	router.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusOK, rec.Code)
+	require.False(t, repo.listFilters.ExcludeInternalRelay)
 	require.NotNil(t, repo.listFilters.RequestType)
 	require.Equal(t, int16(service.RequestTypeWSV2), *repo.listFilters.RequestType)
 	require.Nil(t, repo.listFilters.Stream)

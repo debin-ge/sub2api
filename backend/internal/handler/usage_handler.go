@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/internalrelay"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
@@ -195,17 +196,18 @@ func (h *UsageHandler) parseUserUsageFilters(c *gin.Context, requireRange bool) 
 
 	return &userUsageFilters{
 		Filters: usagestats.UsageLogFilters{
-			UserID:            subject.UserID,
-			APIKeyID:          apiKeyID,
-			GroupID:           groupID,
-			Model:             strings.TrimSpace(c.Query("model")),
-			ModelFilterSource: usagestats.ModelSourceRequested,
-			RequestType:       requestType,
-			Stream:            stream,
-			BillingType:       billingType,
-			BillingMode:       billingMode,
-			StartTime:         startPtr,
-			EndTime:           endPtr,
+			UserID:               subject.UserID,
+			APIKeyID:             apiKeyID,
+			GroupID:              groupID,
+			Model:                strings.TrimSpace(c.Query("model")),
+			ModelFilterSource:    usagestats.ModelSourceRequested,
+			RequestType:          requestType,
+			Stream:               stream,
+			BillingType:          billingType,
+			BillingMode:          billingMode,
+			StartTime:            startPtr,
+			EndTime:              endPtr,
+			ExcludeInternalRelay: true,
 		},
 		StartTime: derefTime(startPtr),
 		EndTime:   derefTime(endPtr),
@@ -380,6 +382,10 @@ func (h *UsageHandler) GetByID(c *gin.Context) {
 	record, err := h.usageService.GetByID(c.Request.Context(), usageID)
 	if err != nil {
 		response.ErrorFrom(c, err)
+		return
+	}
+	if _, isInternalRelay := internalrelay.ParseUsageRequestID(record.RequestID); isInternalRelay {
+		response.ErrorFrom(c, service.ErrUsageLogNotFound)
 		return
 	}
 

@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestUsageLog_InternalRelayIsVisibleInRawLogsButExcludedFromBusinessStats(t *testing.T) {
+func TestUsageLog_InternalRelayIsVisibleToAdminHiddenFromUserAndExcludedFromBusinessStats(t *testing.T) {
 	ctx := context.Background()
 	tx := testEntTx(t)
 	client := tx.Client()
@@ -41,12 +41,23 @@ func TestUsageLog_InternalRelayIsVisibleInRawLogsButExcludedFromBusinessStats(t 
 
 	start := now.Add(-time.Minute)
 	end := now.Add(time.Minute)
-	logs, page, err := repo.ListWithFilters(ctx, pagination.PaginationParams{Page: 1, PageSize: 10}, usagestats.UsageLogFilters{
+	adminLogs, adminPage, err := repo.ListWithFilters(ctx, pagination.PaginationParams{Page: 1, PageSize: 10}, usagestats.UsageLogFilters{
 		UserID: user.ID, StartTime: &start, EndTime: &end, ExactTotal: true,
 	})
 	require.NoError(t, err)
-	require.Len(t, logs, 3)
-	require.Equal(t, int64(3), page.Total)
+	require.Len(t, adminLogs, 3)
+	require.Equal(t, int64(3), adminPage.Total)
+
+	userLogs, userPage, err := repo.ListWithFilters(ctx, pagination.PaginationParams{Page: 1, PageSize: 10}, usagestats.UsageLogFilters{
+		UserID: user.ID, StartTime: &start, EndTime: &end, ExcludeInternalRelay: true, ExactTotal: true,
+	})
+	require.NoError(t, err)
+	require.Len(t, userLogs, 2)
+	require.Equal(t, int64(2), userPage.Total)
+	for _, log := range userLogs {
+		_, isInternalRelay := internalrelay.ParseUsageRequestID(log.RequestID)
+		require.False(t, isInternalRelay)
+	}
 
 	stats, err := repo.GetAPIKeyStatsAggregated(ctx, apiKey.ID, start, end)
 	require.NoError(t, err)

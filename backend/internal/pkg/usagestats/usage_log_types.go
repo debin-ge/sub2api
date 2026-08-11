@@ -290,6 +290,10 @@ type UsageLogFilters struct {
 	// 它与 BillingState 分开是因为 BillingState 用于精确下钻到某一历史状态；两者同时
 	// 给出时按 AND 组合。
 	BillingStateUnsettled bool
+	// ExcludeInternalRelay hides verified internal loopback rows from raw usage
+	// log listings. User-facing handlers set this server-side; admin listings
+	// leave it false so audit visibility remains complete.
+	ExcludeInternalRelay bool
 	// ExactTotal requests exact COUNT(*) for pagination. Default false for fast large-table paging.
 	ExactTotal bool
 }

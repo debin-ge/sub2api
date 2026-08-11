@@ -43,9 +43,10 @@ const usageLogSuccessFilterUL = "(ul.actual_cost > 0 OR ul.billing_state <> 0)"
 const usageLogEffectivePlatformExpr = "CASE WHEN g.platform = 'composite' THEN a.platform ELSE COALESCE(NULLIF(g.platform,''), a.platform) END"
 
 // usageLogBusinessStatsFilter excludes the persisted inner half of an
-// authenticated loopback relay from product-facing usage statistics. Raw
-// usage-log queries, billing, quota, scheduling, Radar, and Ops intentionally
-// do not use this condition because they operate on physical traffic.
+// authenticated loopback relay from product-facing usage statistics. The
+// user-facing raw list also opts into this condition for visibility control.
+// Admin/audit raw queries, billing, quota, scheduling, Radar, and Ops do not
+// use it because they retain the physical traffic view.
 func usageLogBusinessStatsFilter(alias string) string {
 	column := "request_id"
 	if alias = strings.TrimSpace(alias); alias != "" {
