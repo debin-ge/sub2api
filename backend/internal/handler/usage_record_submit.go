@@ -67,7 +67,8 @@ func runUsageRecordTaskInline(
 	// Deliberately start from Background rather than parent. Request
 	// cancellation (including a client disconnect after receiving a stream)
 	// must not prevent the durable stage-0 write. wrapUsageRecordTaskContext
-	// copies only the stable request identifiers needed for idempotency.
+	// copies only stable billing metadata: request identifiers for idempotency
+	// and an already-verified InternalRelay marker for statistics attribution.
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	defer func() {

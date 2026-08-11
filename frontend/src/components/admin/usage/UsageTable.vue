@@ -216,8 +216,18 @@
           </div>
         </template>
 
-        <template #cell-created_at="{ value }">
-          <span class="text-sm text-gray-600 dark:text-gray-400">{{ formatDateTime(value) }}</span>
+        <template #cell-created_at="{ value, row }">
+          <div class="space-y-1">
+            <span class="block text-sm text-gray-600 dark:text-gray-400">{{ formatDateTime(value) }}</span>
+            <span
+              v-if="row.internal_relay"
+              data-testid="internal-relay-badge"
+              class="inline-flex cursor-help items-center rounded px-1.5 py-0.5 text-[10px] font-medium leading-tight bg-cyan-100 text-cyan-700 ring-1 ring-inset ring-cyan-200 dark:bg-cyan-500/20 dark:text-cyan-300 dark:ring-cyan-500/30"
+              :title="row.relay_parent_request_id ? t('usage.internalRelayParent', { requestId: row.relay_parent_request_id }) : t('usage.internalRelayHint')"
+            >
+              {{ t('usage.internalRelay') }}
+            </span>
+          </div>
         </template>
 
         <template #cell-user_agent="{ row }">

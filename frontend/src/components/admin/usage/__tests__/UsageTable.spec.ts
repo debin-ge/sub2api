@@ -26,6 +26,9 @@ const messages: Record<string, string> = {
   'usage.serviceTierPriority': 'Fast',
   'usage.serviceTierFlex': 'Flex',
   'usage.serviceTierStandard': 'Standard',
+  'usage.internalRelay': 'Internal relay',
+  'usage.internalRelayHint': 'Verified internal relay',
+  'usage.internalRelayParent': 'Internal relay parent: {requestId}',
   'usage.rate': 'Rate',
   'usage.accountMultiplier': 'Account rate',
   'usage.original': 'Original',
@@ -58,7 +61,13 @@ vi.mock('vue-i18n', async () => {
   return {
     ...actual,
     useI18n: () => ({
-      t: (key: string) => messages[key] ?? key,
+      t: (key: string, params?: Record<string, string>) => {
+        let message = messages[key] ?? key
+        for (const [name, value] of Object.entries(params ?? {})) {
+          message = message.replace(`{${name}}`, value)
+        }
+        return message
+      },
     }),
   }
 })
@@ -72,6 +81,7 @@ const DataTableStub = {
         <slot name="cell-billing_mode" :row="row" />
         <slot name="cell-tokens" :row="row" />
         <slot name="cell-cost" :row="row" />
+        <slot v-if="row.created_at !== undefined" name="cell-created_at" :row="row" :value="row.created_at" />
       </div>
     </div>
   `,
@@ -150,6 +160,43 @@ describe('admin UsageTable tooltip', () => {
 
     expect(wrapper.findAll('[data-testid="long-context-billing-marker"]')).toHaveLength(1)
     expect(wrapper.get('[data-testid="long-context-billing-marker"]').text()).toBe('x2')
+  })
+
+  it('labels verified internal relay rows while keeping normal rows unmarked', () => {
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [
+          {
+            ...baseImageRow,
+            request_id: 'internal-relay:parent:client:inner',
+            created_at: '2026-08-11T12:00:00Z',
+            internal_relay: true,
+            relay_parent_request_id: 'client:outer-request',
+          },
+          {
+            ...baseImageRow,
+            request_id: 'client:normal',
+            created_at: '2026-08-11T12:01:00Z',
+            internal_relay: false,
+          },
+        ],
+        loading: false,
+        columns: [],
+      },
+      global: {
+        stubs: {
+          DataTable: DataTableStub,
+          EmptyState: true,
+          Icon: true,
+          Teleport: true,
+        },
+      },
+    })
+
+    const badges = wrapper.findAll('[data-testid="internal-relay-badge"]')
+    expect(badges).toHaveLength(1)
+    expect(badges[0].text()).toBe('Internal relay')
+    expect(badges[0].attributes('title')).toContain('client:outer-request')
   })
 
   it('shows service tier and billing breakdown in cost tooltip', async () => {

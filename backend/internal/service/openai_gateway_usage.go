@@ -327,6 +327,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 			requestID = "generated:" + generateRequestID()
 		}
 	}
+	requestID = markInternalRelayUsageRequestID(ctx, requestID)
 
 	// 确定 RequestedModel（渠道映射前的原始模型）
 	requestedModel := result.Model

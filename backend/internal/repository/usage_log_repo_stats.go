@@ -32,6 +32,7 @@ func (r *usageLogRepository) GetUserStatsAggregated(ctx context.Context, userID 
 			COALESCE(AVG(COALESCE(duration_ms, 0)), 0) as avg_duration_ms
 		FROM usage_logs
 		WHERE user_id = $1 AND created_at >= $2 AND created_at < $3
+		  AND ` + usageLogBusinessStatsFilter("") + `
 	`
 
 	var stats usagestats.UsageStats
@@ -71,6 +72,7 @@ func (r *usageLogRepository) GetAPIKeyStatsAggregated(ctx context.Context, apiKe
 			COALESCE(AVG(COALESCE(duration_ms, 0)), 0) as avg_duration_ms
 		FROM usage_logs
 		WHERE api_key_id = $1 AND created_at >= $2 AND created_at < $3
+		  AND ` + usageLogBusinessStatsFilter("") + `
 	`
 
 	var stats usagestats.UsageStats
@@ -120,6 +122,7 @@ func (r *usageLogRepository) GetAccountStatsAggregated(ctx context.Context, acco
 			COALESCE(AVG(COALESCE(duration_ms, 0)), 0) as avg_duration_ms
 		FROM usage_logs
 		WHERE account_id = $1 AND created_at >= $2 AND created_at < $3
+		  AND ` + usageLogBusinessStatsFilter("") + `
 	`
 
 	var stats usagestats.UsageStats
@@ -160,7 +163,8 @@ func (r *usageLogRepository) GetModelStatsAggregated(ctx context.Context, modelN
 			COALESCE(AVG(COALESCE(duration_ms, 0)), 0) as avg_duration_ms
 		FROM usage_logs
 		WHERE %s = $1 AND created_at >= $2 AND created_at < $3
-	`, rawUsageLogModelColumn)
+		  AND %s
+	`, rawUsageLogModelColumn, usageLogBusinessStatsFilter(""))
 
 	var stats usagestats.UsageStats
 	if err := scanSingleRow(
@@ -201,6 +205,7 @@ func (r *usageLogRepository) GetDailyStatsAggregated(ctx context.Context, userID
 			COALESCE(AVG(COALESCE(duration_ms, 0)), 0) as avg_duration_ms
 		FROM usage_logs
 		WHERE user_id = $1 AND created_at >= $2 AND created_at < $3
+		  AND ` + usageLogBusinessStatsFilter("") + `
 		GROUP BY 1
 		ORDER BY 1
 	`
@@ -505,6 +510,7 @@ func (r *usageLogRepository) GetBatchUserUsageStats(ctx context.Context, userIDs
 		LEFT JOIN accounts a ON a.id = ul.account_id
 		WHERE ul.user_id = ANY($1)
 		  AND ul.created_at >= LEAST($2, $4)
+		  AND ` + usageLogBusinessStatsFilter("ul") + `
 		  AND ` + usageLogSuccessFilterUL + `
 		GROUP BY ul.user_id, ` + usageLogEffectivePlatformExpr + `
 	`
@@ -578,6 +584,7 @@ func (r *usageLogRepository) GetBatchAPIKeyUsageStats(ctx context.Context, apiKe
 		FROM usage_logs
 		WHERE api_key_id = ANY($1)
 		  AND created_at >= LEAST($2, $4)
+		  AND ` + usageLogBusinessStatsFilter("") + `
 		GROUP BY api_key_id
 	`
 	today := timezone.Today()
@@ -633,6 +640,7 @@ func (r *usageLogRepository) GetGlobalStats(ctx context.Context, startTime, endT
 			COALESCE(AVG(duration_ms), 0) as avg_duration_ms
 		FROM usage_logs
 		WHERE created_at >= $1 AND created_at < $2
+		  AND ` + usageLogBusinessStatsFilter("") + `
 	`
 
 	stats := &UsageStats{}
@@ -657,7 +665,7 @@ func (r *usageLogRepository) GetGlobalStats(ctx context.Context, startTime, endT
 
 // GetStatsWithFilters gets usage statistics with optional filters
 func (r *usageLogRepository) GetStatsWithFilters(ctx context.Context, filters UsageLogFilters) (*UsageStats, error) {
-	conditions := make([]string, 0, 9)
+	conditions := make([]string, 0, 10)
 	args := make([]any, 0, 9)
 
 	if filters.UserID > 0 {
@@ -692,6 +700,7 @@ func (r *usageLogRepository) GetStatsWithFilters(ctx context.Context, filters Us
 		conditions = append(conditions, fmt.Sprintf("created_at < $%d", len(args)+1))
 		args = append(args, *filters.EndTime)
 	}
+	conditions = append(conditions, usageLogBusinessStatsFilter(""))
 
 	query := fmt.Sprintf(`
 		SELECT
@@ -827,7 +836,8 @@ func (r *usageLogRepository) getEndpointStatsByColumnWithFilters(ctx context.Con
 			%s
 		FROM usage_logs
 		WHERE created_at >= $1 AND created_at < $2
-	`, endpointColumn, actualCostExpr)
+		  AND %s
+	`, endpointColumn, actualCostExpr, usageLogBusinessStatsFilter(""))
 
 	args := []any{startTime, endTime}
 	if userID > 0 {
@@ -900,7 +910,8 @@ func (r *usageLogRepository) getEndpointPathStatsWithFilters(ctx context.Context
 			%s
 		FROM usage_logs
 		WHERE created_at >= $1 AND created_at < $2
-	`, actualCostExpr)
+		  AND %s
+	`, actualCostExpr, usageLogBusinessStatsFilter(""))
 
 	args := []any{startTime, endTime}
 	if userID > 0 {
@@ -981,6 +992,7 @@ func (r *usageLogRepository) GetAccountUsageStats(ctx context.Context, accountID
 			COALESCE(SUM(actual_cost), 0) as user_cost
 		FROM usage_logs
 		WHERE account_id = $1 AND created_at >= $2 AND created_at < $3
+		  AND ` + usageLogBusinessStatsFilter("") + `
 		GROUP BY date
 		ORDER BY date ASC
 	`
@@ -1049,7 +1061,7 @@ func (r *usageLogRepository) GetAccountUsageStats(ctx context.Context, accountID
 		actualDaysUsed = 1
 	}
 
-	avgQuery := "SELECT COALESCE(AVG(duration_ms), 0) as avg_duration_ms FROM usage_logs WHERE account_id = $1 AND created_at >= $2 AND created_at < $3"
+	avgQuery := "SELECT COALESCE(AVG(duration_ms), 0) as avg_duration_ms FROM usage_logs WHERE account_id = $1 AND created_at >= $2 AND created_at < $3 AND " + usageLogBusinessStatsFilter("")
 	var avgDuration float64
 	if err := scanSingleRow(ctx, r.sql, avgQuery, []any{accountID, startTime, endTime}, &avgDuration); err != nil {
 		return nil, err

@@ -35,6 +35,7 @@ func (r *usageLogRepository) GetAPIKeyUsageTrend(ctx context.Context, startTime,
 			SELECT api_key_id
 			FROM usage_logs
 			WHERE created_at >= $1 AND created_at < $2
+			  AND %s
 			GROUP BY api_key_id
 			ORDER BY SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens) DESC
 			LIMIT $3
@@ -49,9 +50,10 @@ func (r *usageLogRepository) GetAPIKeyUsageTrend(ctx context.Context, startTime,
 		LEFT JOIN api_keys k ON u.api_key_id = k.id
 		WHERE u.api_key_id IN (SELECT api_key_id FROM top_keys)
 		  AND u.created_at >= $4 AND u.created_at < $5
+		  AND %s
 		GROUP BY date, u.api_key_id, k.name
 		ORDER BY date ASC, tokens DESC
-	`, dateFormat)
+	`, usageLogBusinessStatsFilter(""), dateFormat, usageLogBusinessStatsFilter("u"))
 
 	rows, err := r.sql.QueryContext(ctx, query, startTime, endTime, limit, startTime, endTime)
 	if err != nil {
@@ -90,6 +92,7 @@ func (r *usageLogRepository) GetUserUsageTrend(ctx context.Context, startTime, e
 			SELECT user_id
 			FROM usage_logs
 			WHERE created_at >= $1 AND created_at < $2
+			  AND %s
 			GROUP BY user_id
 			ORDER BY SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens) DESC
 			LIMIT $3
@@ -107,9 +110,10 @@ func (r *usageLogRepository) GetUserUsageTrend(ctx context.Context, startTime, e
 		LEFT JOIN users us ON u.user_id = us.id
 		WHERE u.user_id IN (SELECT user_id FROM top_users)
 		  AND u.created_at >= $4 AND u.created_at < $5
+		  AND %s
 		GROUP BY date, u.user_id, us.email, us.username
 		ORDER BY date ASC, tokens DESC
-	`, dateFormat)
+	`, usageLogBusinessStatsFilter(""), dateFormat, usageLogBusinessStatsFilter("u"))
 
 	rows, err := r.sql.QueryContext(ctx, query, startTime, endTime, limit, startTime, endTime)
 	if err != nil {
@@ -157,6 +161,7 @@ func (r *usageLogRepository) GetUserSpendingRanking(ctx context.Context, startTi
 			FROM usage_logs u
 			LEFT JOIN users us ON u.user_id = us.id
 			WHERE u.created_at >= $1 AND u.created_at < $2
+			  AND ` + usageLogBusinessStatsFilter("u") + `
 			GROUP BY u.user_id, us.email, us.username
 		),
 		ranked AS (
@@ -239,9 +244,10 @@ func (r *usageLogRepository) GetUserUsageTrendByUserID(ctx context.Context, user
 			COALESCE(SUM(actual_cost), 0) as actual_cost
 		FROM usage_logs
 		WHERE user_id = $1 AND created_at >= $2 AND created_at < $3
+		  AND %s
 		GROUP BY date
 		ORDER BY date ASC
-	`, dateFormat)
+	`, dateFormat, usageLogBusinessStatsFilter(""))
 
 	rows, err := r.sql.QueryContext(ctx, query, userID, startTime, endTime)
 	if err != nil {
@@ -326,6 +332,7 @@ func (r *usageLogRepository) getUsageTrendWithFilters(ctx context.Context, start
 		args = append(args, int16(*billingType))
 	}
 	query, args = appendUsageLogBillingModeQueryFilter(query, args, billingMode, "")
+	query += " AND " + usageLogBusinessStatsFilter("")
 	query += " GROUP BY date ORDER BY date ASC"
 
 	rows, err := r.sql.QueryContext(ctx, query, args...)
@@ -490,6 +497,7 @@ func (r *usageLogRepository) getModelStatsWithFiltersBySource(ctx context.Contex
 		args = append(args, int16(*billingType))
 	}
 	query, args = appendUsageLogBillingModeQueryFilter(query, args, billingMode, "")
+	query += " AND " + usageLogBusinessStatsFilter("")
 	query += fmt.Sprintf(" GROUP BY %s ORDER BY total_tokens DESC", modelExpr)
 
 	rows, err := r.sql.QueryContext(ctx, query, args...)
@@ -564,6 +572,7 @@ func (r *usageLogRepository) getGroupStatsWithFilters(ctx context.Context, start
 		args = append(args, int16(*billingType))
 	}
 	query, args = appendUsageLogBillingModeQueryFilter(query, args, billingMode, "ul")
+	query += " AND " + usageLogBusinessStatsFilter("ul")
 	query += " GROUP BY ul.group_id, g.name ORDER BY total_tokens DESC"
 
 	rows, err := r.sql.QueryContext(ctx, query, args...)
@@ -657,6 +666,7 @@ func (r *usageLogRepository) GetUserBreakdownStats(ctx context.Context, startTim
 		query += fmt.Sprintf(" AND ul.billing_type = $%d", len(args)+1)
 		args = append(args, *dim.BillingType)
 	}
+	query += " AND " + usageLogBusinessStatsFilter("ul")
 
 	// ORDER BY 列来自固定 allowlist(非用户原样字符串),避免 SQL 注入。
 	orderBy := "actual_cost"
@@ -718,6 +728,7 @@ func (r *usageLogRepository) GetAllGroupUsageSummary(ctx context.Context, todayS
 			COALESCE(SUM(CASE WHEN ul.created_at >= $1 THEN ul.actual_cost ELSE 0 END), 0) AS today_cost
 		FROM groups g
 		LEFT JOIN usage_logs ul ON ul.group_id = g.id
+		  AND ` + usageLogBusinessStatsFilter("ul") + `
 		GROUP BY g.id
 	`
 

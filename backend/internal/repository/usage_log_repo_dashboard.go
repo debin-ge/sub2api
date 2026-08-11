@@ -19,7 +19,8 @@ func (r *usageLogRepository) getPerformanceStats(ctx context.Context, userID int
 			COUNT(*) as request_count,
 			COALESCE(SUM(input_tokens + output_tokens), 0) as token_count
 		FROM usage_logs
-		WHERE created_at >= $1`
+		WHERE created_at >= $1
+		  AND ` + usageLogBusinessStatsFilter("")
 	args := []any{fiveMinutesAgo}
 	if userID > 0 {
 		query += " AND user_id = $2"
@@ -55,6 +56,7 @@ func (r *usageLogRepository) GetUserStats(ctx context.Context, userID int64, sta
 			COALESCE(SUM(cache_read_tokens), 0) as cache_read_tokens
 		FROM usage_logs
 		WHERE user_id = $1 AND created_at >= $2 AND created_at < $3
+		  AND ` + usageLogBusinessStatsFilter("") + `
 	`
 
 	stats := &UserStats{}
@@ -296,6 +298,7 @@ func (r *usageLogRepository) fillDashboardUsageStatsFromUsageLogs(ctx context.Co
 			FROM usage_logs
 			WHERE created_at >= LEAST($1::timestamptz, $3::timestamptz)
 				AND created_at < GREATEST($2::timestamptz, $4::timestamptz)
+				AND ` + usageLogBusinessStatsFilter("") + `
 		)
 		SELECT
 			COUNT(*) FILTER (WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz) AS total_requests,
@@ -358,6 +361,7 @@ func (r *usageLogRepository) fillDashboardUsageStatsFromUsageLogs(ctx context.Co
 			FROM usage_logs
 			WHERE created_at >= LEAST($1::timestamptz, $3::timestamptz)
 				AND created_at < GREATEST($2::timestamptz, $4::timestamptz)
+				AND ` + usageLogBusinessStatsFilter("") + `
 		)
 		SELECT
 			COUNT(DISTINCT CASE WHEN created_at >= $1::timestamptz AND created_at < $2::timestamptz THEN user_id END) AS active_users,
@@ -415,6 +419,7 @@ func (r *usageLogRepository) GetUserDashboardStats(ctx context.Context, userID i
 			COALESCE(AVG(duration_ms), 0) as avg_duration_ms
 		FROM usage_logs
 		WHERE user_id = $1
+		  AND ` + usageLogBusinessStatsFilter("") + `
 	`
 	if err := scanSingleRow(
 		ctx,
@@ -446,6 +451,7 @@ func (r *usageLogRepository) GetUserDashboardStats(ctx context.Context, userID i
 			COALESCE(SUM(actual_cost), 0) as today_actual_cost
 		FROM usage_logs
 		WHERE user_id = $1 AND created_at >= $2
+		  AND ` + usageLogBusinessStatsFilter("") + `
 	`
 	if err := scanSingleRow(
 		ctx,
@@ -492,6 +498,7 @@ func (r *usageLogRepository) GetUserDashboardStats(ctx context.Context, userID i
 		LEFT JOIN groups g ON g.id = ul.group_id
 		LEFT JOIN accounts a ON a.id = ul.account_id
 		WHERE ul.user_id = $1
+		  AND ` + usageLogBusinessStatsFilter("ul") + `
 		  AND ` + usageLogSuccessFilterUL + `
 		GROUP BY ` + usageLogEffectivePlatformExpr + `
 		HAVING ` + usageLogEffectivePlatformExpr + ` IS NOT NULL AND ` + usageLogEffectivePlatformExpr + ` <> ''
@@ -535,7 +542,8 @@ func (r *usageLogRepository) getPerformanceStatsByAPIKey(ctx context.Context, ap
 			COUNT(*) as request_count,
 			COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0) as token_count
 		FROM usage_logs
-		WHERE created_at >= $1 AND api_key_id = $2`
+		WHERE created_at >= $1 AND api_key_id = $2
+		  AND ` + usageLogBusinessStatsFilter("")
 	args := []any{fiveMinutesAgo, apiKeyID}
 
 	var requestCount int64
@@ -568,6 +576,7 @@ func (r *usageLogRepository) GetAPIKeyDashboardStats(ctx context.Context, apiKey
 			COALESCE(AVG(duration_ms), 0) as avg_duration_ms
 		FROM usage_logs
 		WHERE api_key_id = $1
+		  AND ` + usageLogBusinessStatsFilter("") + `
 	`
 	if err := scanSingleRow(
 		ctx,
@@ -599,6 +608,7 @@ func (r *usageLogRepository) GetAPIKeyDashboardStats(ctx context.Context, apiKey
 			COALESCE(SUM(actual_cost), 0) as today_actual_cost
 		FROM usage_logs
 		WHERE api_key_id = $1 AND created_at >= $2
+		  AND ` + usageLogBusinessStatsFilter("") + `
 	`
 	if err := scanSingleRow(
 		ctx,

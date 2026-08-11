@@ -291,6 +291,7 @@ func (s *OpenAIGatewayService) FetchCodexModelsManifest(ctx context.Context, acc
 	if useAPIKeyUpstream {
 		headers.Set("Authorization", "Bearer "+authToken)
 		credAccount.ApplyHeaderOverrides(headers)
+		s.applyInternalRelayHeader(ctx, credAccount, headers)
 	} else {
 		authHeaders, authErr := s.buildOpenAIAuthenticationHeaders(ctx, credAccount, authToken)
 		if authErr != nil {

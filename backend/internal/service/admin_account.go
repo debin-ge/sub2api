@@ -15,6 +15,7 @@ import (
 	"time"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/internalrelay"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 )
@@ -309,6 +310,10 @@ func (s *adminServiceImpl) DuplicateAccount(ctx context.Context, id int64, actor
 	if err != nil {
 		return nil, fmt.Errorf("normalize duplicate account extra: %w", err)
 	}
+	accountExtra, err = normalizeInternalRelayCreateExtra(input.Platform, input.Type, input.Credentials, accountExtra)
+	if err != nil {
+		return nil, fmt.Errorf("normalize duplicate account internal relay: %w", err)
+	}
 	if err := NormalizeHeaderOverrideCredentials(input.Credentials); err != nil {
 		return nil, err
 	}
@@ -390,6 +395,98 @@ func normalizeOpenAILongContextBillingUpdateExtra(account *Account, input *Updat
 		if hasCurrent {
 			normalized[openAILongContextBillingEnabledKey] = current
 		}
+	}
+	return normalized, nil
+}
+
+func internalRelayBadRequest(code, message string) error {
+	return infraerrors.BadRequest(code, message)
+}
+
+func validateInternalRelayEligibility(platform, accountType string, credentials map[string]any) error {
+	if platform != PlatformOpenAI || accountType != AccountTypeAPIKey {
+		return internalRelayBadRequest(
+			"INTERNAL_RELAY_ACCOUNT_UNSUPPORTED",
+			"internal_relay is only supported for OpenAI API key accounts",
+		)
+	}
+	baseURL, _ := credentials["base_url"].(string)
+	if !internalrelay.IsLoopbackBaseURL(baseURL) {
+		return internalRelayBadRequest(
+			"INTERNAL_RELAY_BASE_URL_INVALID",
+			"internal_relay requires an HTTP(S) loopback base_url using localhost, 127.0.0.0/8, or ::1",
+		)
+	}
+	return nil
+}
+
+func normalizeInternalRelayCreateExtra(platform, accountType string, credentials, extra map[string]any) (map[string]any, error) {
+	raw, provided := extra[InternalRelayExtraKey]
+	if !provided {
+		return extra, nil
+	}
+	enabled, ok := raw.(bool)
+	if !ok {
+		return nil, internalRelayBadRequest(
+			"INTERNAL_RELAY_INVALID",
+			"internal_relay must be a boolean",
+		)
+	}
+	normalized := maps.Clone(extra)
+	if !enabled {
+		delete(normalized, InternalRelayExtraKey)
+		return normalized, nil
+	}
+	if err := validateInternalRelayEligibility(platform, accountType, credentials); err != nil {
+		return nil, err
+	}
+	normalized[InternalRelayExtraKey] = true
+	return normalized, nil
+}
+
+func normalizeInternalRelayUpdateExtra(account *Account, input *UpdateAccountInput, normalized map[string]any) (map[string]any, error) {
+	if account == nil || input == nil {
+		return normalized, nil
+	}
+
+	desired := account.IsInternalRelay()
+	if input.Extra != nil {
+		raw, provided := input.Extra[InternalRelayExtraKey]
+		if provided {
+			enabled, ok := raw.(bool)
+			if !ok {
+				return nil, internalRelayBadRequest(
+					"INTERNAL_RELAY_INVALID",
+					"internal_relay must be a boolean",
+				)
+			}
+			desired = enabled
+		}
+
+		normalized = maps.Clone(normalized)
+		if normalized == nil {
+			normalized = make(map[string]any)
+		}
+		if desired {
+			normalized[InternalRelayExtraKey] = true
+		} else {
+			delete(normalized, InternalRelayExtraKey)
+		}
+	}
+
+	if !desired {
+		return normalized, nil
+	}
+	effectiveType := account.Type
+	if input.Type != "" {
+		effectiveType = input.Type
+	}
+	effectiveCredentials := account.Credentials
+	if len(input.Credentials) > 0 {
+		effectiveCredentials = MergePreservingSensitiveCreds(account.Credentials, input.Credentials)
+	}
+	if err := validateInternalRelayEligibility(account.Platform, effectiveType, effectiveCredentials); err != nil {
+		return nil, err
 	}
 	return normalized, nil
 }
@@ -523,6 +620,10 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 	if err != nil {
 		return nil, err
 	}
+	accountExtra, err = normalizeInternalRelayCreateExtra(input.Platform, input.Type, input.Credentials, accountExtra)
+	if err != nil {
+		return nil, err
+	}
 
 	// 绑定分组
 	groupIDs := input.GroupIDs
@@ -610,6 +711,10 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		if err != nil {
 			return nil, err
 		}
+	}
+	normalizedExtra, err = normalizeInternalRelayUpdateExtra(account, input, normalizedExtra)
+	if err != nil {
+		return nil, err
 	}
 	previousProbeIdentity := upstreamBillingProbeIdentity(account)
 	previousOllamaUsageIdentity := ollamaCloudUsageIdentity(account)
@@ -908,6 +1013,12 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 // UpdateAccountExtra 仅对 Extra JSONB 做 key 级合并，避免覆盖其它运行态键
 // （如 model_rate_limits / passive_usage_* 等）。
 func (s *adminServiceImpl) UpdateAccountExtra(ctx context.Context, id int64, updates map[string]any) error {
+	if _, exists := updates[InternalRelayExtraKey]; exists {
+		return internalRelayBadRequest(
+			"INTERNAL_RELAY_DEDICATED_UPDATE_REQUIRED",
+			"internal_relay must be changed through the single-account edit endpoint",
+		)
+	}
 	delete(updates, UpstreamBillingProbeEnabledExtraKey)
 	delete(updates, UpstreamBillingRateSyncEnabledExtraKey)
 	delete(updates, UpstreamBillingProbeExtraKey)
@@ -932,6 +1043,12 @@ func (s *adminServiceImpl) UpdateAccountExtra(ctx context.Context, id int64, upd
 // BulkUpdateAccounts updates multiple accounts in one request.
 // It merges credentials/extra keys instead of overwriting the whole object.
 func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUpdateAccountsInput) (*BulkUpdateAccountsResult, error) {
+	if _, exists := input.Extra[InternalRelayExtraKey]; exists {
+		return nil, internalRelayBadRequest(
+			"INTERNAL_RELAY_BULK_UPDATE_UNSUPPORTED",
+			"internal_relay cannot be changed through bulk account updates",
+		)
+	}
 	// Managed probe/session state may only enter through dedicated typed endpoints.
 	delete(input.Extra, UpstreamBillingProbeEnabledExtraKey)
 	delete(input.Extra, UpstreamBillingRateSyncEnabledExtraKey)
@@ -1008,6 +1125,22 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	// 影子账号绝不持有凭据:批量更新携带凭据时,目标中不得含影子(外审 G5,与单账号
 	// UpdateAccount 守卫对齐)。覆盖显式 IDs 与 filter 解析出的 IDs(此处 AccountIDs 已解析完成)。
 	if len(input.Credentials) > 0 {
+		for _, account := range cachedTargets {
+			if account == nil || !account.IsInternalRelay() {
+				continue
+			}
+			effectiveCredentials := maps.Clone(account.Credentials)
+			if effectiveCredentials == nil {
+				effectiveCredentials = make(map[string]any, len(input.Credentials))
+			}
+			for key, value := range input.Credentials {
+				effectiveCredentials[key] = value
+			}
+			if err := validateInternalRelayEligibility(account.Platform, account.Type, effectiveCredentials); err != nil {
+				return nil, fmt.Errorf("validate internal_relay account %d: %w", account.ID, err)
+			}
+		}
+
 		for _, acc := range cachedTargets {
 			if acc != nil && acc.IsCredentialShadow() {
 				return nil, infraerrors.Newf(http.StatusBadRequest, "SPARK_SHADOW_NO_CREDENTIALS",

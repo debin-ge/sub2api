@@ -1,12 +1,25 @@
 package dto
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
 )
+
+func TestUsageLogFromService_DerivesInternalRelayMetadata(t *testing.T) {
+	parent := "client:outer-request"
+	requestID := "internal-relay:" + base64.RawURLEncoding.EncodeToString([]byte(parent)) + ":client:inner-request"
+
+	dto := UsageLogFromService(&service.UsageLog{RequestID: requestID})
+
+	require.True(t, dto.InternalRelay)
+	require.NotNil(t, dto.RelayParentRequestID)
+	require.Equal(t, parent, *dto.RelayParentRequestID)
+	require.Equal(t, requestID, dto.RequestID)
+}
 
 func TestUsageLogFromService_IncludesOpenAIWSMode(t *testing.T) {
 	t.Parallel()

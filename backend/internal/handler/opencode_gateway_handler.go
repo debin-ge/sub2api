@@ -345,7 +345,7 @@ func (h *OpenCodeGatewayHandler) forwardBody(
 		channelUsageFields := clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel)
 		component := "handler.opencode_gateway." + componentSuffix
 
-		h.submitUsageRecordTask(func(ctx context.Context) {
+		h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
 				Result:             result,
 				QuotaPlatform:      quotaPlatform,
@@ -476,9 +476,9 @@ func (h *OpenCodeGatewayHandler) errorResponse(c *gin.Context, status int, errTy
 	})
 }
 
-func (h *OpenCodeGatewayHandler) submitUsageRecordTask(task service.UsageRecordTask) {
+func (h *OpenCodeGatewayHandler) submitUsageRecordTask(parent context.Context, task service.UsageRecordTask) {
 	submitUsageRecordTaskWithFallback(
-		context.Background(),
+		parent,
 		h.usageRecordWorkerPool,
 		"handler.opencode_gateway",
 		task,

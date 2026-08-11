@@ -279,7 +279,7 @@ func (h *KimiGatewayHandler) Messages(c *gin.Context) {
 		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
 		channelUsageFields := clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel)
 
-		h.submitUsageRecordTask(func(ctx context.Context) {
+		h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
 				Result:             result,
 				QuotaPlatform:      quotaPlatform,
@@ -493,7 +493,7 @@ func (h *KimiGatewayHandler) ChatCompletions(c *gin.Context) {
 		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
 		channelUsageFields := clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel)
 
-		h.submitUsageRecordTask(func(ctx context.Context) {
+		h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
 				Result:             result,
 				QuotaPlatform:      quotaPlatform,
@@ -721,7 +721,7 @@ func (h *KimiGatewayHandler) Responses(c *gin.Context) {
 		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
 		channelUsageFields := clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel)
 
-		h.submitUsageRecordTask(func(ctx context.Context) {
+		h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
 				Result:             result,
 				QuotaPlatform:      quotaPlatform,
@@ -861,9 +861,9 @@ func (h *KimiGatewayHandler) errorResponse(c *gin.Context, status int, errType, 
 	})
 }
 
-func (h *KimiGatewayHandler) submitUsageRecordTask(task service.UsageRecordTask) {
+func (h *KimiGatewayHandler) submitUsageRecordTask(parent context.Context, task service.UsageRecordTask) {
 	submitUsageRecordTaskWithFallback(
-		context.Background(),
+		parent,
 		h.usageRecordWorkerPool,
 		"handler.kimi_gateway.messages",
 		task,

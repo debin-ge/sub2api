@@ -11,6 +11,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/internalrelay"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"go.uber.org/zap"
@@ -234,18 +235,37 @@ func postUsageBilling(ctx context.Context, p *postUsageBillingParams, deps *bill
 }
 
 func resolveUsageBillingRequestID(ctx context.Context, upstreamRequestID string) string {
+	resolved := ""
 	if ctx != nil {
 		if clientRequestID, _ := ctx.Value(ctxkey.ClientRequestID).(string); strings.TrimSpace(clientRequestID) != "" {
-			return "client:" + strings.TrimSpace(clientRequestID)
+			resolved = "client:" + strings.TrimSpace(clientRequestID)
 		}
-		if requestID, _ := ctx.Value(ctxkey.RequestID).(string); strings.TrimSpace(requestID) != "" {
-			return "local:" + strings.TrimSpace(requestID)
+		if resolved == "" {
+			if requestID, _ := ctx.Value(ctxkey.RequestID).(string); strings.TrimSpace(requestID) != "" {
+				resolved = "local:" + strings.TrimSpace(requestID)
+			}
 		}
 	}
-	if requestID := strings.TrimSpace(upstreamRequestID); requestID != "" {
-		return "upstream:" + requestID
+	if resolved == "" {
+		if requestID := strings.TrimSpace(upstreamRequestID); requestID != "" {
+			resolved = "upstream:" + requestID
+		}
 	}
-	return "generated:" + generateRequestID()
+	if resolved == "" {
+		resolved = "generated:" + generateRequestID()
+	}
+	return markInternalRelayUsageRequestID(ctx, resolved)
+}
+
+func markInternalRelayUsageRequestID(ctx context.Context, requestID string) string {
+	if ctx == nil {
+		return requestID
+	}
+	metadata, ok := ctx.Value(ctxkey.InternalRelay).(internalrelay.Metadata)
+	if !ok {
+		return requestID
+	}
+	return internalrelay.MarkUsageRequestID(metadata.ParentRequestID, requestID)
 }
 
 func resolveUsageBillingPayloadFingerprint(ctx context.Context, requestPayloadHash string) string {

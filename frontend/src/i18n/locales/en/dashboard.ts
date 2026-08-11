@@ -256,6 +256,9 @@ export default {
   usage: {
     title: 'Usage Records',
     description: 'View and analyze your API usage history',
+    internalRelay: 'Internal relay',
+    internalRelayHint: 'This row is a verified internal loopback call and is excluded from business statistics.',
+    internalRelayParent: 'Internal relay; parent request: {requestId}',
     costDetails: 'Cost Breakdown',
     tokenDetails: 'Token Breakdown',
     cacheTtlOverriddenHint: 'Cache TTL Override enabled',

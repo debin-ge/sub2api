@@ -502,7 +502,11 @@ type UsageLog struct {
 	APIKeyID  int64  `json:"api_key_id"`
 	AccountID int64  `json:"account_id"`
 	RequestID string `json:"request_id"`
-	Model     string `json:"model"`
+	// InternalRelay and RelayParentRequestID are derived from RequestID. They do
+	// not add persisted columns and keep the raw audit identifier intact.
+	InternalRelay        bool    `json:"internal_relay"`
+	RelayParentRequestID *string `json:"relay_parent_request_id,omitempty"`
+	Model                string  `json:"model"`
 	// ServiceTier records the OpenAI service tier used for billing, e.g. "priority" / "flex".
 	ServiceTier *string `json:"service_tier,omitempty"`
 	// ReasoningEffort is the request's reasoning effort level.

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/internalrelay"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
 )
@@ -212,7 +213,7 @@ func TestOpenAIGatewayHandlerSubmitUsageRecordTask_WithPoolRunsInline(t *testing
 }
 
 func TestSpecializedGatewayUsageRecordTasks_BypassPool(t *testing.T) {
-	type submitFunc func(service.UsageRecordTask)
+	type submitFunc func(context.Context, service.UsageRecordTask)
 	tests := []struct {
 		name    string
 		factory func(*service.UsageRecordWorkerPool) submitFunc
@@ -259,9 +260,17 @@ func TestSpecializedGatewayUsageRecordTasks_BypassPool(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			pool := newUsageRecordTestPool(t)
 			var called atomic.Bool
+			relayMetadata := internalrelay.Metadata{
+				Version:         "v1",
+				AccountID:       42,
+				IssuedAt:        time.Unix(1_700_000_000, 0).UTC(),
+				ParentRequestID: "client:outer-request-123",
+			}
+			parent := context.WithValue(context.Background(), ctxkey.InternalRelay, relayMetadata)
 
-			tt.factory(pool)(func(ctx context.Context) {
+			tt.factory(pool)(parent, func(ctx context.Context) {
 				require.NotNil(t, ctx)
+				require.Equal(t, relayMetadata, ctx.Value(ctxkey.InternalRelay))
 				called.Store(true)
 			})
 
@@ -378,6 +387,13 @@ func TestRunUsageRecordTaskInline_DetachesCanceledParentAndCopiesRequestIDs(t *t
 	parent := context.WithValue(context.Background(), unrelatedKey, "must-not-copy")
 	parent = context.WithValue(parent, ctxkey.ClientRequestID, "client-123")
 	parent = context.WithValue(parent, ctxkey.RequestID, "request-456")
+	relayMetadata := internalrelay.Metadata{
+		Version:         "v1",
+		AccountID:       42,
+		IssuedAt:        time.Unix(1_700_000_000, 0).UTC(),
+		ParentRequestID: "client:outer-request-123",
+	}
+	parent = context.WithValue(parent, ctxkey.InternalRelay, relayMetadata)
 	parent, cancel := context.WithCancel(parent)
 	cancel()
 
@@ -386,7 +402,8 @@ func TestRunUsageRecordTaskInline_DetachesCanceledParentAndCopiesRequestIDs(t *t
 		require.NoError(t, ctx.Err(), "request cancellation must not cancel stage-0 billing")
 		require.Equal(t, "client-123", ctx.Value(ctxkey.ClientRequestID))
 		require.Equal(t, "request-456", ctx.Value(ctxkey.RequestID))
-		require.Nil(t, ctx.Value(unrelatedKey), "only stable billing idempotency identifiers should be copied")
+		require.Equal(t, relayMetadata, ctx.Value(ctxkey.InternalRelay))
+		require.Nil(t, ctx.Value(unrelatedKey), "only stable billing metadata should be copied")
 		called.Store(true)
 	})
 

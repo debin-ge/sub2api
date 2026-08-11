@@ -1,6 +1,10 @@
 package service
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/internalrelay"
+)
 
 func TestParseDebugEnvBool(t *testing.T) {
 	t.Run("empty is false", func(t *testing.T) {
@@ -28,4 +32,11 @@ func TestParseDebugEnvBool(t *testing.T) {
 			})
 		}
 	})
+}
+
+func TestSafeHeaderValueForLogRedactsInternalRelayMarker(t *testing.T) {
+	const marker = "signed.internal.relay.marker"
+	if got := safeHeaderValueForLog(internalrelay.HeaderName, marker); got != "[redacted]" {
+		t.Fatalf("internal relay marker was not redacted: %q", got)
+	}
 }

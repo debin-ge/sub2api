@@ -152,6 +152,11 @@ func (s *AccountTestService) ProbeOpenAIAPIKeyResponsesSupport(ctx context.Conte
 
 	// 账号级请求头覆写：能力探测与真实转发保持一致的最终头
 	account.ApplyHeaderOverrides(req.Header)
+	jwtSecret := ""
+	if s.cfg != nil {
+		jwtSecret = s.cfg.JWT.Secret
+	}
+	applyInternalRelayHeaderWithSecret(req.Context(), jwtSecret, account, req.Header)
 
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {

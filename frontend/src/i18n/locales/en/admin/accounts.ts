@@ -498,6 +498,9 @@ export default {
       openai: {
         baseUrlHint: 'Leave default for official OpenAI API',
         apiKeyHint: 'Your OpenAI API Key',
+        internalRelay: 'Internal relay',
+        internalRelayDesc:
+          'Enable only when this API Key account points back to this sub2api instance through localhost, 127.0.0.0/8, or ::1. Inner calls remain in raw logs and billing, but are excluded from business usage statistics.',
         oauthPassthrough: 'Auto passthrough (auth only)',
         oauthPassthroughDesc:
           'When enabled, this OpenAI account uses automatic passthrough: the gateway forwards request/response as-is and only swaps auth, while keeping billing/concurrency/audit and necessary safety filtering.',

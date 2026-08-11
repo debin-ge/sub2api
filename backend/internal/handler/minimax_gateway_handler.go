@@ -275,7 +275,7 @@ func (h *MiniMaxGatewayHandler) Messages(c *gin.Context) {
 		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
 		channelUsageFields := clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel)
 
-		h.submitUsageRecordTask(func(ctx context.Context) {
+		h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
 				Result:             result,
 				QuotaPlatform:      quotaPlatform,
@@ -486,7 +486,7 @@ func (h *MiniMaxGatewayHandler) ChatCompletions(c *gin.Context) {
 		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
 		channelUsageFields := clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel)
 
-		h.submitUsageRecordTask(func(ctx context.Context) {
+		h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
 				Result:             result,
 				QuotaPlatform:      quotaPlatform,
@@ -711,7 +711,7 @@ func (h *MiniMaxGatewayHandler) Responses(c *gin.Context) {
 		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
 		channelUsageFields := clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel)
 
-		h.submitUsageRecordTask(func(ctx context.Context) {
+		h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
 				Result:             result,
 				QuotaPlatform:      quotaPlatform,
@@ -836,9 +836,9 @@ func (h *MiniMaxGatewayHandler) errorResponse(c *gin.Context, status int, errTyp
 	})
 }
 
-func (h *MiniMaxGatewayHandler) submitUsageRecordTask(task service.UsageRecordTask) {
+func (h *MiniMaxGatewayHandler) submitUsageRecordTask(parent context.Context, task service.UsageRecordTask) {
 	submitUsageRecordTaskWithFallback(
-		context.Background(),
+		parent,
 		h.usageRecordWorkerPool,
 		"handler.minimax_gateway.messages",
 		task,

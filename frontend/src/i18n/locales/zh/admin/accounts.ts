@@ -569,6 +569,9 @@ export default {
       openai: {
         baseUrlHint: '留空使用官方 OpenAI API',
         apiKeyHint: '您的 OpenAI API Key',
+        internalRelay: '内部中继',
+        internalRelayDesc:
+          '仅当该 API Key 账号通过 localhost、127.0.0.0/8 或 ::1 回环到当前 sub2api 实例时开启。内层调用仍保留在原始日志和账务中，但不计入业务用量统计。',
         oauthPassthrough: '自动透传（仅替换认证）',
         oauthPassthroughDesc:
           '开启后，该 OpenAI 账号将自动透传请求与响应，仅替换认证并保留计费/并发/审计及必要安全过滤；如遇兼容性问题可随时关闭回滚。',

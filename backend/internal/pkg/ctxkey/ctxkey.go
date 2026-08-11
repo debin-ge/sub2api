@@ -26,6 +26,10 @@ const (
 	// ClientRequestID 客户端请求的唯一标识，用于追踪请求全生命周期（用于 Ops 监控与排障）。
 	ClientRequestID Key = "ctx_client_request_id"
 
+	// InternalRelay 保存已通过 HMAC 验证的内部回环请求元数据。未经验证的
+	// X-Sub2API-Internal-Relay 请求头不会进入该上下文。
+	InternalRelay Key = "ctx_internal_relay"
+
 	// Model 请求模型标识（用于统一请求链路日志字段）。
 	Model Key = "ctx_model"
 

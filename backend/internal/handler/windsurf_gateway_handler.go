@@ -279,7 +279,7 @@ func (h *WindsurfGatewayHandler) Messages(c *gin.Context) {
 		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
 		channelUsageFields := clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel)
 
-		h.submitUsageRecordTask(func(ctx context.Context) {
+		h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
 				Result:             result,
 				QuotaPlatform:      quotaPlatform,
@@ -493,7 +493,7 @@ func (h *WindsurfGatewayHandler) ChatCompletions(c *gin.Context) {
 		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
 		channelUsageFields := clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel)
 
-		h.submitUsageRecordTask(func(ctx context.Context) {
+		h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
 				Result:             result,
 				QuotaPlatform:      quotaPlatform,
@@ -721,7 +721,7 @@ func (h *WindsurfGatewayHandler) Responses(c *gin.Context) {
 		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
 		channelUsageFields := clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel)
 
-		h.submitUsageRecordTask(func(ctx context.Context) {
+		h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
 				Result:             result,
 				QuotaPlatform:      quotaPlatform,
@@ -862,9 +862,9 @@ func (h *WindsurfGatewayHandler) errorResponse(c *gin.Context, status int, errTy
 	})
 }
 
-func (h *WindsurfGatewayHandler) submitUsageRecordTask(task service.UsageRecordTask) {
+func (h *WindsurfGatewayHandler) submitUsageRecordTask(parent context.Context, task service.UsageRecordTask) {
 	submitUsageRecordTaskWithFallback(
-		context.Background(),
+		parent,
 		h.usageRecordWorkerPool,
 		"handler.windsurf_gateway.messages",
 		task,

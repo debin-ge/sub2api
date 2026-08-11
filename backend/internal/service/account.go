@@ -89,6 +89,10 @@ type OpenAIEndpointCapability string
 
 const openAILongContextBillingEnabledKey = "openai_long_context_billing_enabled"
 
+// InternalRelayExtraKey marks an OpenAI API-key account whose upstream is an
+// authenticated loopback back into this sub2api instance.
+const InternalRelayExtraKey = "internal_relay"
+
 const (
 	OpenAIEndpointCapabilityChatCompletions OpenAIEndpointCapability = "chat_completions"
 	OpenAIEndpointCapabilityEmbeddings      OpenAIEndpointCapability = "embeddings"
@@ -138,6 +142,18 @@ type TempUnschedulableRule struct {
 
 func (a *Account) IsActive() bool {
 	return a.Status == StatusActive
+}
+
+// IsInternalRelay reports whether the account is configured as an internal
+// loopback relay. Eligibility is validated on account create/update; this
+// accessor intentionally remains a strict, side-effect-free flag lookup for
+// hot request paths.
+func (a *Account) IsInternalRelay() bool {
+	if a == nil || a.Extra == nil {
+		return false
+	}
+	enabled, ok := a.Extra[InternalRelayExtraKey].(bool)
+	return ok && enabled
 }
 
 // AffectedAccountIDs returns a clone of the transient IDs persisted by the operation

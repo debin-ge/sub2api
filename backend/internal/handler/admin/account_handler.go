@@ -2029,6 +2029,13 @@ func (h *AccountHandler) BatchCreate(c *gin.Context) {
 			response.ErrorFrom(c, err)
 			return
 		}
+		if enabled, ok := item.Extra[service.InternalRelayExtraKey].(bool); ok && enabled {
+			response.ErrorFrom(c, infraerrors.BadRequest(
+				"INTERNAL_RELAY_BATCH_CREATE_UNSUPPORTED",
+				"internal_relay cannot be enabled through batch account creation",
+			))
+			return
+		}
 	}
 
 	executeAdminIdempotentJSON(c, "admin.accounts.batch_create", req, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {

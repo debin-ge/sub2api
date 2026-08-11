@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/internalrelay"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
@@ -670,12 +671,19 @@ func usageLogFromServiceUser(l *service.UsageLog) UsageLog {
 	if requestedModel == "" {
 		requestedModel = l.Model
 	}
+	relayParentRequestID, isInternalRelay := internalrelay.ParseUsageRequestID(l.RequestID)
+	var relayParentRequestIDPtr *string
+	if isInternalRelay {
+		relayParentRequestIDPtr = &relayParentRequestID
+	}
 	return UsageLog{
 		ID:                        l.ID,
 		UserID:                    l.UserID,
 		APIKeyID:                  l.APIKeyID,
 		AccountID:                 l.AccountID,
 		RequestID:                 l.RequestID,
+		InternalRelay:             isInternalRelay,
+		RelayParentRequestID:      relayParentRequestIDPtr,
 		Model:                     requestedModel,
 		ServiceTier:               l.ServiceTier,
 		ReasoningEffort:           l.ReasoningEffort,

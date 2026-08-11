@@ -7,10 +7,53 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/internalrelay"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
 )
+
+func TestUsageLog_InternalRelayIsVisibleInRawLogsButExcludedFromBusinessStats(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	client := tx.Client()
+	repo := newUsageLogRepositoryWithSQL(client, tx)
+
+	user := mustCreateUser(t, client, &service.User{Email: "internal-relay-stats@test.com"})
+	apiKey := mustCreateApiKey(t, client, &service.APIKey{UserID: user.ID, Key: "sk-internal-relay", Name: "relay"})
+	account := mustCreateAccount(t, client, &service.Account{Name: "internal-relay-account"})
+	now := time.Now().UTC()
+
+	requestIDs := []string{
+		"client:outer-request",
+		internalrelay.MarkUsageRequestID("client:outer-request", "client:inner-request"),
+		"client:normal-direct-request",
+	}
+	for _, requestID := range requestIDs {
+		_, err := repo.Create(ctx, &service.UsageLog{
+			UserID: user.ID, APIKeyID: apiKey.ID, AccountID: account.ID,
+			RequestID: requestID, Model: "gpt-5", InputTokens: 10, OutputTokens: 5,
+			TotalCost: 0.1, ActualCost: 0.1, CreatedAt: now,
+		})
+		require.NoError(t, err)
+	}
+
+	start := now.Add(-time.Minute)
+	end := now.Add(time.Minute)
+	logs, page, err := repo.ListWithFilters(ctx, pagination.PaginationParams{Page: 1, PageSize: 10}, usagestats.UsageLogFilters{
+		UserID: user.ID, StartTime: &start, EndTime: &end, ExactTotal: true,
+	})
+	require.NoError(t, err)
+	require.Len(t, logs, 3)
+	require.Equal(t, int64(3), page.Total)
+
+	stats, err := repo.GetAPIKeyStatsAggregated(ctx, apiKey.ID, start, end)
+	require.NoError(t, err)
+	require.Equal(t, int64(2), stats.TotalRequests)
+	require.Equal(t, int64(20), stats.TotalInputTokens)
+	require.Equal(t, int64(10), stats.TotalOutputTokens)
+}
 
 func TestUsageLog_GetStatsWithFilters_AggregatesAndEndpoints(t *testing.T) {
 	ctx := context.Background()

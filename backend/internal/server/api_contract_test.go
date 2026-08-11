@@ -587,6 +587,7 @@ func TestAPIContracts(t *testing.T) {
 							"api_key_id": 100,
 							"account_id": 200,
 								"request_id": "req_123",
+								"internal_relay": false,
 								"model": "claude-3",
 								"request_type": "stream",
 								"openai_ws_mode": false,

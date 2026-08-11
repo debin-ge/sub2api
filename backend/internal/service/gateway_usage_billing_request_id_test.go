@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/internalrelay"
 	"github.com/stretchr/testify/require"
 )
 
@@ -54,4 +55,22 @@ func TestResolveUsageBillingRequestID_UpstreamCannotImpersonateAnotherNamespace(
 		"upstream:generated:shared",
 		resolveUsageBillingRequestID(context.Background(), "generated:shared"),
 	)
+}
+
+func TestResolveUsageBillingRequestID_MarksVerifiedInternalRelayWithoutLosingInnerIdentity(t *testing.T) {
+	ctx := context.WithValue(context.Background(), ctxkey.ClientRequestID, "inner-request")
+	ctx = context.WithValue(ctx, ctxkey.InternalRelay, internalrelay.Metadata{
+		ParentRequestID: "client:outer-request",
+	})
+
+	first := resolveUsageBillingRequestID(ctx, "")
+	parent, ok := internalrelay.ParseUsageRequestID(first)
+	require.True(t, ok)
+	require.Equal(t, "client:outer-request", parent)
+	require.Contains(t, first, ":client:inner-request")
+
+	secondCtx := context.WithValue(ctx, ctxkey.ClientRequestID, "second-inner-request")
+	second := resolveUsageBillingRequestID(secondCtx, "")
+	require.NotEqual(t, first, second)
+	require.Contains(t, second, ":client:second-inner-request")
 }

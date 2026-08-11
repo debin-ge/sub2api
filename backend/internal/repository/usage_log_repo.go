@@ -10,6 +10,7 @@ import (
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/internalrelay"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/lib/pq"
 	gocache "github.com/patrickmn/go-cache"
@@ -40,6 +41,21 @@ const usageLogSuccessFilterUL = "(ul.actual_cost > 0 OR ul.billing_state <> 0)"
 // resolved concrete account platform instead of grouping spend under "composite".
 // 配套要求查询里 LEFT JOIN groups g ON g.id = ul.group_id 与 LEFT JOIN accounts a ON a.id = ul.account_id。
 const usageLogEffectivePlatformExpr = "CASE WHEN g.platform = 'composite' THEN a.platform ELSE COALESCE(NULLIF(g.platform,''), a.platform) END"
+
+// usageLogBusinessStatsFilter excludes the persisted inner half of an
+// authenticated loopback relay from product-facing usage statistics. Raw
+// usage-log queries, billing, quota, scheduling, Radar, and Ops intentionally
+// do not use this condition because they operate on physical traffic.
+func usageLogBusinessStatsFilter(alias string) string {
+	column := "request_id"
+	if alias = strings.TrimSpace(alias); alias != "" {
+		column = alias + ".request_id"
+	}
+	// Legacy rows may have a NULL request_id. They are ordinary historical
+	// traffic and must remain in business statistics; only the authenticated
+	// relay prefix is excluded.
+	return "(" + column + " IS NULL OR " + column + " NOT LIKE '" + internalrelay.UsageRequestIDPrefix + "%')"
+}
 
 // dateFormatWhitelist 将 granularity 参数映射为 PostgreSQL TO_CHAR 格式字符串，防止外部输入直接拼入 SQL
 var dateFormatWhitelist = map[string]string{
@@ -489,6 +505,7 @@ func (r *usageLogRepository) GetPublicModelRecentCallCounts(
 			COUNT(*)::bigint AS call_count
 		FROM usage_logs
 		WHERE created_at >= $1
+		  AND ` + usageLogBusinessStatsFilter("") + `
 		GROUP BY model_key`
 	rows, err := r.sql.QueryContext(ctx, query, since.UTC())
 	if err != nil {

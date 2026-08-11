@@ -564,6 +564,56 @@ describe('CreateAccountModal', () => {
       ).toBe(false)
     })
 
+    it('omits InternalRelay from a normal OpenAI API key account', async () => {
+      await submitApiKeyAccount('openai')
+
+      expect(createAccountMock).toHaveBeenCalledTimes(1)
+      expect(createAccountMock.mock.calls[0]?.[0]?.extra).not.toHaveProperty('internal_relay')
+    })
+
+    it('submits InternalRelay for an OpenAI API key account using a loopback base URL', async () => {
+      const wrapper = mountModal()
+      await selectButtonByText(wrapper, 'OpenAI')
+      await selectButtonByText(wrapper, 'API Key')
+      await wrapper
+        .get('form#create-account-form input[type="text"]')
+        .setValue('OpenAI internal relay')
+      await wrapper
+        .get('input[placeholder="https://api.openai.com"]')
+        .setValue('http://127.0.0.1:8080')
+      await wrapper
+        .get('form#create-account-form input[type="password"]')
+        .setValue('test-api-key')
+      const toggle = wrapper.get('[data-testid="openai-internal-relay-toggle"]')
+      expect(toggle.attributes('aria-checked')).toBe('false')
+
+      await toggle.trigger('click')
+      await wrapper.get('form#create-account-form').trigger('submit.prevent')
+      await flushPromises()
+
+      expect(createAccountMock).toHaveBeenCalledTimes(1)
+      expect(createAccountMock.mock.calls[0]?.[0]).toMatchObject({
+        platform: 'openai',
+        type: 'apikey',
+        credentials: {
+          base_url: 'http://127.0.0.1:8080'
+        },
+        extra: {
+          internal_relay: true
+        }
+      })
+    })
+
+    it('shows InternalRelay only for OpenAI API key accounts', async () => {
+      const wrapper = mountModal()
+      await selectButtonByText(wrapper, 'OpenAI')
+
+      expect(wrapper.find('[data-testid="openai-internal-relay-toggle"]').exists()).toBe(false)
+
+      await selectButtonByText(wrapper, 'API Key')
+      expect(wrapper.find('[data-testid="openai-internal-relay-toggle"]').exists()).toBe(true)
+    })
+
     it('shows the Codex namespace flatten toggle only for OpenAI OAuth accounts', async () => {
       const wrapper = mountModal()
       await selectButtonByText(wrapper, 'OpenAI')

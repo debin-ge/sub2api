@@ -280,7 +280,7 @@ func redactAuthHeaderValue(v string) string {
 func safeHeaderValueForLog(key string, v string) string {
 	key = strings.ToLower(strings.TrimSpace(key))
 	switch key {
-	case "authorization", "x-api-key":
+	case "authorization", "x-api-key", "x-sub2api-internal-relay":
 		return redactAuthHeaderValue(v)
 	default:
 		return strings.TrimSpace(v)

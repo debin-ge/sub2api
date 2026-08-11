@@ -198,6 +198,56 @@ func TestAdminService_BulkUpdateAccounts_RejectsRateChangeForSyncedAccounts(t *t
 	require.Empty(t, repo.bulkUpdateIDs, "rate conflict must be rejected before any write")
 }
 
+func TestAdminService_BulkUpdateAccounts_ProtectsInternalRelayBaseURL(t *testing.T) {
+	repo := &accountRepoStubForBulkUpdate{
+		getByIDsAccounts: []*Account{
+			{
+				ID:          1,
+				Platform:    PlatformOpenAI,
+				Type:        AccountTypeAPIKey,
+				Credentials: map[string]any{"base_url": "http://127.0.0.1:8080", "api_key": "stored"},
+				Extra:       map[string]any{InternalRelayExtraKey: true},
+			},
+		},
+	}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	result, err := svc.BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
+		AccountIDs:  []int64{1},
+		Credentials: map[string]any{"base_url": "https://api.openai.com"},
+	})
+
+	require.Nil(t, result)
+	require.Equal(t, http.StatusBadRequest, infraerrors.Code(err))
+	require.Empty(t, repo.bulkUpdateIDs, "invalid relay base URL must be rejected before any write")
+}
+
+func TestAdminService_BulkUpdateAccounts_AllowsUnrelatedInternalRelayCredentialUpdate(t *testing.T) {
+	repo := &accountRepoStubForBulkUpdate{
+		getByIDsAccounts: []*Account{
+			{
+				ID:          1,
+				Platform:    PlatformOpenAI,
+				Type:        AccountTypeAPIKey,
+				Credentials: map[string]any{"base_url": "http://127.0.0.1:8080", "api_key": "stored"},
+				Extra:       map[string]any{InternalRelayExtraKey: true},
+			},
+		},
+	}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	result, err := svc.BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
+		AccountIDs: []int64{1},
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{"gpt-5": "gpt-5"},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, []int64{1}, repo.bulkUpdateIDs)
+}
+
 // TestAdminService_BulkUpdateAccounts_PartialFailureIDs 验证部分失败时 success_ids/failed_ids 正确。
 func TestAdminService_BulkUpdateAccounts_PartialFailureIDs(t *testing.T) {
 	repo := &accountRepoStubForBulkUpdate{

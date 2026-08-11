@@ -1442,6 +1442,24 @@
               @select="apiKeyBaseUrl = $event"
             />
           </div>
+          <div
+            v-if="form.platform === 'openai' && accountCategory === 'apikey'"
+            class="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-800/60 dark:bg-amber-900/20"
+          >
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <label class="input-label mb-0">{{ t('admin.accounts.openai.internalRelay') }}</label>
+                <p class="mt-1 text-xs text-amber-700 dark:text-amber-300">
+                  {{ t('admin.accounts.openai.internalRelayDesc') }}
+                </p>
+              </div>
+              <Toggle
+                v-model="internalRelayEnabled"
+                data-testid="openai-internal-relay-toggle"
+                :aria-label="t('admin.accounts.openai.internalRelay')"
+              />
+            </div>
+          </div>
           <div>
             <label class="input-label">{{ t('admin.accounts.apiKeyRequired') }}</label>
             <input
@@ -4096,6 +4114,7 @@ const accountCategory = ref<'oauth-based' | 'apikey' | 'bedrock' | 'service_acco
 const addMethod = ref<AddMethod>('oauth') // For oauth-based: 'oauth' or 'setup-token'
 const apiKeyBaseUrl = ref('https://api.anthropic.com')
 const apiKeyValue = ref('')
+const internalRelayEnabled = ref(false)
 const minimaxAnthropicBaseUrl = ref(MINIMAX_ANTHROPIC_BASE_URL)
 const minimaxOpenAIBaseUrl = ref(MINIMAX_OPENAI_BASE_URL)
 const glmAnthropicBaseUrl = ref(GLM_ANTHROPIC_BASE_URL)
@@ -4657,6 +4676,7 @@ watch(
 watch(
   () => form.platform,
   (newPlatform) => {
+    internalRelayEnabled.value = false
     // Reset base URL based on platform
     apiKeyBaseUrl.value =
       (newPlatform === 'openai')
@@ -4787,6 +4807,9 @@ watch(
 watch(
   [accountCategory, () => form.platform],
   ([category, platform]) => {
+    if (platform !== 'openai' || category !== 'apikey') {
+      internalRelayEnabled.value = false
+    }
     if (platform === 'openai' && category !== 'oauth-based') {
       codexCLIOnlyEnabled.value = false
       codexCLIOnlyAllowClaudeCodeEnabled.value = false
@@ -5154,6 +5177,7 @@ const resetForm = () => {
   addMethod.value = 'oauth'
   apiKeyBaseUrl.value = 'https://api.anthropic.com'
   apiKeyValue.value = ''
+  internalRelayEnabled.value = false
   minimaxAnthropicBaseUrl.value = MINIMAX_ANTHROPIC_BASE_URL
   minimaxOpenAIBaseUrl.value = MINIMAX_OPENAI_BASE_URL
   glmAnthropicBaseUrl.value = GLM_ANTHROPIC_BASE_URL
@@ -5273,6 +5297,11 @@ const buildOpenAIExtra = (base?: Record<string, unknown>): Record<string, unknow
   } else if (accountCategory.value === 'apikey') {
     extra.openai_apikey_responses_websockets_v2_mode = openaiAPIKeyResponsesWebSocketV2Mode.value
     extra.openai_apikey_responses_websockets_v2_enabled = isOpenAIWSModeEnabled(openaiAPIKeyResponsesWebSocketV2Mode.value)
+  }
+  if (accountCategory.value === 'apikey' && internalRelayEnabled.value) {
+    extra.internal_relay = true
+  } else {
+    delete extra.internal_relay
   }
   // 清理兼容旧键，统一改用分类型开关。
   delete extra.responses_websockets_v2_enabled

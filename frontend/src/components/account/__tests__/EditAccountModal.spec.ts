@@ -552,6 +552,38 @@ describe('EditAccountModal', () => {
     expect(updateAccountMock.mock.calls[0]?.[1]?.extra?.openai_long_context_billing_enabled).toBe(false)
   })
 
+  it('loads InternalRelay and explicitly disables it without dropping unknown extra fields', async () => {
+    const account = buildAccount()
+    account.credentials.base_url = 'http://127.0.0.1:8080'
+    account.extra = {
+      internal_relay: true,
+      future_key: 'keep'
+    }
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    const toggle = wrapper.get('[data-testid="openai-internal-relay-toggle"]')
+    expect(toggle.attributes('aria-checked')).toBe('true')
+
+    await toggle.trigger('click')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.extra).toMatchObject({
+      internal_relay: false,
+      future_key: 'keep'
+    })
+  })
+
+  it('does not expose InternalRelay for OpenAI OAuth accounts', () => {
+    const wrapper = mountModal(buildOpenAIOAuthAccount())
+
+    expect(wrapper.find('[data-testid="openai-internal-relay-toggle"]').exists()).toBe(false)
+  })
+
   it('does not render or submit the long-context billing toggle for Spark shadow accounts', async () => {
     const account = buildOpenAISparkShadowAccount()
     account.extra = {

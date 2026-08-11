@@ -265,6 +265,24 @@
               @select="editBaseUrl = $event"
             />
           </div>
+          <div
+            v-if="account.platform === 'openai' && account.type === 'apikey'"
+            class="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-800/60 dark:bg-amber-900/20"
+          >
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <label class="input-label mb-0">{{ t('admin.accounts.openai.internalRelay') }}</label>
+                <p class="mt-1 text-xs text-amber-700 dark:text-amber-300">
+                  {{ t('admin.accounts.openai.internalRelayDesc') }}
+                </p>
+              </div>
+              <Toggle
+                v-model="internalRelayEnabled"
+                data-testid="openai-internal-relay-toggle"
+                :aria-label="t('admin.accounts.openai.internalRelay')"
+              />
+            </div>
+          </div>
           <div>
             <label class="input-label">{{ t('admin.accounts.apiKey') }}</label>
             <input
@@ -3050,6 +3068,7 @@ interface TempUnschedRuleForm {
 const submitting = ref(false)
 const editBaseUrl = ref('https://api.anthropic.com')
 const editApiKey = ref('')
+const internalRelayEnabled = ref(false)
 const editMiniMaxAnthropicBaseUrl = ref(MINIMAX_ANTHROPIC_BASE_URL)
 const editMiniMaxOpenAIBaseUrl = ref(MINIMAX_OPENAI_BASE_URL)
 const editGLMAnthropicBaseUrl = ref(GLM_ANTHROPIC_BASE_URL)
@@ -3888,6 +3907,10 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   }
 
   // Initialize API Key fields for apikey type
+  internalRelayEnabled.value =
+    newAccount.platform === 'openai' &&
+    newAccount.type === 'apikey' &&
+    newAccount.extra?.internal_relay === true
   if (newAccount.type === 'apikey' && newAccount.credentials) {
     const credentials = newAccount.credentials as Record<string, unknown>
     const platformDefaultUrl =
@@ -5139,6 +5162,13 @@ const handleSubmit = async () => {
           newExtra.openai_responses_mode = openAIResponsesMode.value
         }
 		}
+      if (props.account.type === 'apikey') {
+        // false is intentionally sent so the backend can delete an existing
+        // internal_relay key while preserving every other extra field.
+        newExtra.internal_relay = internalRelayEnabled.value
+      } else {
+        delete newExtra.internal_relay
+      }
 		if (autoPause5hThreshold.value != null && autoPause5hThreshold.value > 0) {
 			newExtra.auto_pause_5h_threshold = autoPause5hThreshold.value / 100
 		} else {

@@ -261,6 +261,9 @@ export default {
   usage: {
     title: '使用记录',
     description: '查看和分析您的 API 使用历史',
+    internalRelay: '内部中继',
+    internalRelayHint: '此记录来自已验证的内部回环调用，不计入业务统计。',
+    internalRelayParent: '内部中继；父请求：{requestId}',
     costDetails: '费用明细',
     tokenDetails: 'Token 明细',
     cacheTtlOverriddenHint: '缓存 TTL Override 已启用',
