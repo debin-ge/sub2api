@@ -52,6 +52,13 @@ func (s *OpenAIGatewayService) validateSelectedPricingForBillingKind(
 		return s.ValidateSelectedOpenAIModelPricing(ctx, groupID, account, requestedModel, requireCompact)
 	case BillingKindImage, BillingKindVideo:
 		return s.enforceSelectedOpenAIMediaPricing(ctx, groupID, account, requestedModel, kind)
+	case BillingKindAudio:
+		// Grok voice billing uses group audio prices or documented defaults;
+		// it must not be forced through token-model pricing.
+		if s.billingService == nil {
+			return fmt.Errorf("%w: OpenAI billing service unavailable for audio", ErrModelPricingUnavailable)
+		}
+		return nil
 	case BillingKindWebSearch, BillingKindNone:
 		// web_search：单价要么是分组配置、要么是官方默认，不存在"未知"。
 		// none：产品显式列入非计费白名单，不是未知模型的兜底。

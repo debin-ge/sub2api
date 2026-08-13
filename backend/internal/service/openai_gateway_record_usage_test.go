@@ -334,6 +334,17 @@ func newOpenAIRecordUsageServiceForTest(usageRepo UsageLogRepository, userRepo U
 	return svc
 }
 
+func openAIRecordUsageAPIKeyWithGroup(svc *OpenAIGatewayService, id int64, groupLongContext bool) *APIKey {
+	svc.resolver = NewModelPricingResolver(nil, svc.billingService)
+	return &APIKey{
+		ID: id,
+		Group: &Group{
+			ID:                        1,
+			LongContextPricingEnabled: groupLongContext,
+		},
+	}
+}
+
 func newOpenAIRecordUsageServiceWithBillingRepoForTest(usageRepo UsageLogRepository, billingRepo UsageBillingRepository, userRepo UserRepository, subRepo UserSubscriptionRepository, rateRepo UserGroupRateRepository) *OpenAIGatewayService {
 	svc := newOpenAIRecordUsageServiceForTest(usageRepo, userRepo, subRepo, rateRepo)
 	svc.usageBillingRepo = billingRepo
@@ -1283,7 +1294,7 @@ func TestOpenAIGatewayServiceRecordUsage_Gpt54LongContextBillingDisabledByDefaul
 			Model:    "gpt-5.4-2026-03-05",
 			Duration: time.Second,
 		},
-		APIKey:  &APIKey{ID: 1014},
+		APIKey:  openAIRecordUsageAPIKeyWithGroup(svc, 1014, true),
 		User:    &User{ID: 2014},
 		Account: &Account{ID: 3014, Platform: PlatformOpenAI},
 	})
@@ -1317,7 +1328,7 @@ func TestOpenAIGatewayServiceRecordUsage_Gpt54LongContextBillingEnabledPerAccoun
 			Model:    "gpt-5.4-2026-03-05",
 			Duration: time.Second,
 		},
-		APIKey: &APIKey{ID: 1015},
+		APIKey: openAIRecordUsageAPIKeyWithGroup(svc, 1015, true),
 		User:   &User{ID: 2015},
 		Account: &Account{
 			ID:       3015,
@@ -1336,6 +1347,62 @@ func TestOpenAIGatewayServiceRecordUsage_Gpt54LongContextBillingEnabledPerAccoun
 	require.InDelta(t, expectedInput+expectedOutput, usageRepo.lastLog.TotalCost, 1e-10)
 	require.InDelta(t, (expectedInput+expectedOutput)*1.1, usageRepo.lastLog.ActualCost, 1e-10)
 	require.True(t, usageRepo.lastLog.LongContextBillingApplied)
+}
+
+func TestOpenAIGatewayServiceRecordUsage_GroupAndAccountLongContextMustBothAllow(t *testing.T) {
+	tokens := OpenAIUsage{InputTokens: 300000, OutputTokens: 2000}
+	baseInput := 300000 * 2.5e-6
+	baseOutput := 2000 * 15e-6
+
+	t.Run("group on account off", func(t *testing.T) {
+		usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+		svc := newOpenAIRecordUsageServiceForTest(usageRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{}, nil)
+		err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+			Result:  &OpenAIForwardResult{RequestID: "resp_and_off", Usage: tokens, Model: "gpt-5.4-2026-03-05", Duration: time.Second},
+			APIKey:  openAIRecordUsageAPIKeyWithGroup(svc, 1020, true),
+			User:    &User{ID: 2020},
+			Account: &Account{ID: 3020, Platform: PlatformOpenAI},
+		})
+		require.NoError(t, err)
+		require.False(t, usageRepo.lastLog.LongContextBillingApplied)
+		require.InDelta(t, baseInput, usageRepo.lastLog.InputCost, 1e-10)
+		require.InDelta(t, baseOutput, usageRepo.lastLog.OutputCost, 1e-10)
+	})
+
+	t.Run("group off account on", func(t *testing.T) {
+		usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+		svc := newOpenAIRecordUsageServiceForTest(usageRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{}, nil)
+		err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+			Result: &OpenAIForwardResult{RequestID: "resp_and_group_off", Usage: tokens, Model: "gpt-5.4-2026-03-05", Duration: time.Second},
+			APIKey: openAIRecordUsageAPIKeyWithGroup(svc, 1021, false),
+			User:   &User{ID: 2021},
+			Account: &Account{
+				ID: 3021, Platform: PlatformOpenAI,
+				Extra: map[string]any{"openai_long_context_billing_enabled": true},
+			},
+		})
+		require.NoError(t, err)
+		require.False(t, usageRepo.lastLog.LongContextBillingApplied)
+		require.InDelta(t, baseInput, usageRepo.lastLog.InputCost, 1e-10)
+	})
+
+	t.Run("group on account on", func(t *testing.T) {
+		usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+		svc := newOpenAIRecordUsageServiceForTest(usageRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{}, nil)
+		err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+			Result: &OpenAIForwardResult{RequestID: "resp_and_on", Usage: tokens, Model: "gpt-5.4-2026-03-05", Duration: time.Second},
+			APIKey: openAIRecordUsageAPIKeyWithGroup(svc, 1022, true),
+			User:   &User{ID: 2022},
+			Account: &Account{
+				ID: 3022, Platform: PlatformOpenAI,
+				Extra: map[string]any{"openai_long_context_billing_enabled": true},
+			},
+		})
+		require.NoError(t, err)
+		require.True(t, usageRepo.lastLog.LongContextBillingApplied)
+		require.InDelta(t, baseInput*2, usageRepo.lastLog.InputCost, 1e-10)
+		require.InDelta(t, baseOutput*1.5, usageRepo.lastLog.OutputCost, 1e-10)
+	})
 }
 
 func TestOpenAIGatewayServiceRecordUsage_SparkShadowUsesCurrentParentBillingSetting(t *testing.T) {
@@ -1372,7 +1439,7 @@ func TestOpenAIGatewayServiceRecordUsage_SparkShadowUsesCurrentParentBillingSett
 					Model:     "gpt-5.4-2026-03-05",
 					Duration:  time.Second,
 				},
-				APIKey: &APIKey{ID: 1016},
+				APIKey: openAIRecordUsageAPIKeyWithGroup(svc, 1016, true),
 				User:   &User{ID: 2016},
 				Account: &Account{
 					ID:              3016,
@@ -2476,11 +2543,12 @@ func TestGrokVideoBillingUsesSeparateVideoRateMultiplier(t *testing.T) {
 
 	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
 		Result: &OpenAIForwardResult{
-			RequestID:            "video-request-123",
-			ResponseID:           "video-request-123",
-			Model:                "grok-imagine-video-1.5",
-			BillingModel:         "grok-imagine-video-1.5",
-			ImageCount:           1,
+			RequestID:    "video-request-123",
+			ResponseID:   "video-request-123",
+			Model:        "grok-imagine-video-1.5",
+			BillingModel: "grok-imagine-video-1.5",
+			// Pure video completion clears ImageCount (handler contract).
+			ImageCount:           0,
 			VideoCount:           1,
 			VideoResolution:      VideoBillingResolution480P,
 			VideoDurationSeconds: 1,
@@ -2508,7 +2576,7 @@ func TestGrokVideoBillingUsesSeparateVideoRateMultiplier(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, usageRepo.lastLog)
 	require.Equal(t, "grok-imagine-video-1.5", usageRepo.lastLog.Model)
-	require.Equal(t, 1, usageRepo.lastLog.ImageCount)
+	require.Equal(t, 0, usageRepo.lastLog.ImageCount)
 	require.Nil(t, usageRepo.lastLog.ImageSize)
 	require.InDelta(t, 0.08, usageRepo.lastLog.TotalCost, 1e-12)
 	require.InDelta(t, 0.02, usageRepo.lastLog.ActualCost, 1e-12)
@@ -2584,7 +2652,7 @@ func TestOpenAIGatewayServiceRecordUsage_GrokVideoUsesDefaultRateCard(t *testing
 			ResponseID:      "video-default-rate-card",
 			Model:           "grok-imagine-video-1.5",
 			BillingModel:    "grok-imagine-video-1.5",
-			ImageCount:      1,
+			ImageCount:      0,
 			VideoCount:      1,
 			VideoResolution: VideoBillingResolution720P,
 			Duration:        time.Second,
@@ -2608,7 +2676,7 @@ func TestOpenAIGatewayServiceRecordUsage_GrokVideoUsesDefaultRateCard(t *testing
 	// 结果未携带 duration 时按上游默认 8 秒计费：0.14 USD/s × 8s。
 	require.InDelta(t, 0.14*8, usageRepo.lastLog.TotalCost, 1e-12)
 	require.InDelta(t, 0.14*8, usageRepo.lastLog.ActualCost, 1e-12)
-	require.Equal(t, 1, usageRepo.lastLog.ImageCount)
+	require.Equal(t, 0, usageRepo.lastLog.ImageCount)
 	require.NotNil(t, usageRepo.lastLog.BillingMode)
 	require.Equal(t, string(BillingModeVideo), *usageRepo.lastLog.BillingMode)
 	require.Equal(t, 1, usageRepo.lastLog.VideoCount)
@@ -2672,7 +2740,7 @@ func TestOpenAIGatewayServiceRecordUsage_GroupVideoPriceOverridesChannelImagePri
 			RequestID:            "resp_grok_video_group_price",
 			Model:                "grok-imagine-video",
 			BillingModel:         "grok-imagine-video",
-			ImageCount:           1,
+			ImageCount:           0,
 			VideoCount:           1,
 			VideoResolution:      VideoBillingResolution720P,
 			VideoDurationSeconds: 1,
@@ -2696,10 +2764,57 @@ func TestOpenAIGatewayServiceRecordUsage_GroupVideoPriceOverridesChannelImagePri
 
 	require.NoError(t, err)
 	require.NotNil(t, usageRepo.lastLog)
-	require.Equal(t, 1, usageRepo.lastLog.ImageCount)
+	require.Equal(t, 0, usageRepo.lastLog.ImageCount)
 	require.Nil(t, usageRepo.lastLog.ImageSize)
 	require.InDelta(t, 0.037, usageRepo.lastLog.TotalCost, 1e-12)
 	require.InDelta(t, 0.037, usageRepo.lastLog.ActualCost, 1e-12)
+	require.NotNil(t, usageRepo.lastLog.BillingMode)
+	require.Equal(t, string(BillingModeVideo), *usageRepo.lastLog.BillingMode)
+}
+
+func TestOpenAIGatewayServiceRecordUsage_GroupVideoModelPriceOverridesFlatAndChannelPrice(t *testing.T) {
+	groupID := int64(129)
+	channelPrice := 0.201
+	flatVideoPrice720P := 0.037
+	modelVideoPrice720P := 0.123
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	svc := newOpenAIRecordUsageServiceForTest(usageRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{}, nil)
+	svc.resolver = newOpenAIImageChannelPricingResolverForTest(t, groupID, "grok-imagine-video-1.5-preview", channelPrice)
+
+	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{
+			RequestID:            "resp_grok_video_model_price",
+			Model:                "grok-imagine-video-1.5-preview",
+			BillingModel:         "grok-imagine-video-1.5-preview",
+			ImageCount:           0,
+			VideoCount:           1,
+			VideoResolution:      VideoBillingResolution720P,
+			VideoDurationSeconds: 2,
+			Duration:             time.Second,
+		},
+		APIKey: &APIKey{
+			ID:      10129,
+			GroupID: i64p(groupID),
+			Group: &Group{
+				ID:                   groupID,
+				Platform:             PlatformGrok,
+				RateMultiplier:       1,
+				VideoRateIndependent: true,
+				VideoRateMultiplier:  1,
+				VideoPrice720P:       &flatVideoPrice720P,
+				VideoModelPrices: map[string]map[string]float64{
+					VideoPriceFamilyGrokImagineVideo15: {VideoBillingResolution720P: modelVideoPrice720P},
+				},
+			},
+		},
+		User:    &User{ID: 20129},
+		Account: &Account{ID: 30129, Platform: PlatformGrok},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	require.InDelta(t, modelVideoPrice720P*2, usageRepo.lastLog.TotalCost, 1e-12)
+	require.InDelta(t, modelVideoPrice720P*2, usageRepo.lastLog.ActualCost, 1e-12)
 	require.NotNil(t, usageRepo.lastLog.BillingMode)
 	require.Equal(t, string(BillingModeVideo), *usageRepo.lastLog.BillingMode)
 }
@@ -2774,7 +2889,7 @@ func TestOpenAIGatewayServiceRecordUsage_HydratesGroupVideoPriceWhenAuthSnapshot
 			RequestID:            "resp_grok_video_hydrated_price",
 			Model:                "grok-imagine-video",
 			BillingModel:         "grok-imagine-video",
-			ImageCount:           1,
+			ImageCount:           0,
 			VideoCount:           1,
 			VideoResolution:      VideoBillingResolution720P,
 			VideoDurationSeconds: 1,
@@ -2815,7 +2930,7 @@ func TestOpenAIGatewayServiceRecordUsage_GrokVideoWithTokenChannelPricingKeepsVi
 			RequestID:            "resp_grok_video_token_channel",
 			Model:                "grok-imagine-video",
 			BillingModel:         "grok-imagine-video",
-			ImageCount:           1,
+			ImageCount:           0,
 			VideoCount:           1,
 			VideoResolution:      VideoBillingResolution720P,
 			VideoDurationSeconds: 5,
@@ -2840,7 +2955,7 @@ func TestOpenAIGatewayServiceRecordUsage_GrokVideoWithTokenChannelPricingKeepsVi
 	require.NotNil(t, usageRepo.lastLog.BillingMode)
 	require.Equal(t, string(BillingModeToken), *usageRepo.lastLog.BillingMode)
 	require.Nil(t, usageRepo.lastLog.ImageSize)
-	require.Equal(t, 1, usageRepo.lastLog.ImageCount)
+	require.Equal(t, 0, usageRepo.lastLog.ImageCount)
 	require.Equal(t, 1, usageRepo.lastLog.VideoCount)
 	require.NotNil(t, usageRepo.lastLog.VideoResolution)
 	require.Equal(t, VideoBillingResolution720P, *usageRepo.lastLog.VideoResolution)

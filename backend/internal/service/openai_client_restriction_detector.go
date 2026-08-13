@@ -29,6 +29,8 @@ const (
 	CodexClientRestrictionReasonBlacklisted = "blacklist_matched"
 	// CodexClientRestrictionReasonMatchedWhitelistClient 表示请求命中全局自由白名单条目（双因子 AND）。
 	CodexClientRestrictionReasonMatchedWhitelistClient = "whitelist_client_matched"
+	// CodexClientRestrictionReasonMatchedClaudeCodePlugin 表示请求命中账号级 Claude Code 插件预设。
+	CodexClientRestrictionReasonMatchedClaudeCodePlugin = "claude_code_plugin_matched"
 	// CodexClientRestrictionReasonVersionTooLow 表示 UA 解析出的 Codex 引擎版本低于最低要求。
 	CodexClientRestrictionReasonVersionTooLow = "codex_version_too_low"
 	// CodexClientRestrictionReasonMissingEngineFingerprint 表示 strict 指纹门下缺少 codex 引擎指纹头。
@@ -84,7 +86,8 @@ func NewOpenAICodexClientRestrictionDetector(cfg *config.Config) *OpenAICodexCli
 //  1. 账号未开 codex_cli_only → 不限制（Disabled）。
 //  2. gateway.force_codex_cli → 全局旁路放行（ForceCodexCLI）。
 //  3. 黑名单命中 → 立即拒（门内 deny 最先，OR 语义）。
-//  4. 身份候选：官方 UA / 官方 originator / 全局白名单 / App Server 开闸（全局开关 OR 账号开关）；都不命中 → 拒（NotMatchedUA）。
+//  4. 身份候选：官方 UA / 官方 originator / 账号级 Claude Code 插件预设 /
+//     全局白名单 / App Server 开闸（全局开关 OR 账号开关）；都不命中 → 拒（NotMatchedUA）。
 //  5. Codex 版本（仅官方候选）：版本必须可解析（否则 VersionUndetectable）；< Min → 拒（TooLow）；> Max → 拒（TooHigh）。
 //  6. 引擎指纹 AND 硬门：按 EngineFingerprintSignals 列表勾选 AND 判定（无任何 Required 信号→放行，即「关闭指纹门」=取消所有勾选）；白名单条目可显式 skip。
 func (d *OpenAICodexClientRestrictionDetector) Detect(c *gin.Context, account *Account, policy CodexRestrictionPolicy, body []byte) CodexClientRestrictionDetectionResult {
@@ -112,7 +115,9 @@ func (d *OpenAICodexClientRestrictionDetector) Detect(c *gin.Context, account *A
 		return CodexClientRestrictionDetectionResult{Enabled: true, Matched: false, Reason: CodexClientRestrictionReasonBlacklisted}
 	}
 
-	// 4. 身份候选（优先级：官方 > 全局白名单 > App Server 开闸：全局开关 OR 账号开关）。
+	// 4. 身份候选（优先级：官方 > 账号级窄预设 > 全局白名单 >
+	// App Server 开闸）。账号级 Claude Code 预设仍经过下方引擎指纹门，
+	// 且必须同时匹配精确 originator 与 UA 标记。
 	reason := ""
 	skipFingerprint := false
 	switch {
@@ -120,6 +125,12 @@ func (d *OpenAICodexClientRestrictionDetector) Detect(c *gin.Context, account *A
 		reason = CodexClientRestrictionReasonMatchedUA
 	case openai.IsCodexOfficialClientOriginator(originator):
 		reason = CodexClientRestrictionReasonMatchedOriginator
+	case account.IsCodexCLIOnlyClaudeCodeAllowed() && openai.IsAllowedClientMatch(
+		userAgent,
+		originator,
+		openai.AllowedClientEntry{Originator: "Claude Code", UAContains: []string{"Claude Code/"}},
+	):
+		reason = CodexClientRestrictionReasonMatchedClaudeCodePlugin
 	default:
 		if entry, ok := openai.MatchClientEntry(userAgent, originator, policy.Whitelist); ok {
 			reason = CodexClientRestrictionReasonMatchedWhitelistClient

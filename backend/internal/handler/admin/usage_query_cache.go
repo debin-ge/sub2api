@@ -27,6 +27,7 @@ type usageStatsCacheKeyData struct {
 	BillingType           *int8  `json:"billing_type"`
 	BillingState          *int8  `json:"billing_state"`
 	BillingStateUnsettled bool   `json:"billing_state_unsettled"`
+	UpstreamModelMismatch *bool  `json:"upstream_model_mismatch"`
 }
 
 func usageStatsCacheKey(filters usagestats.UsageLogFilters) string {
@@ -52,6 +53,7 @@ func usageStatsCacheKey(filters usagestats.UsageLogFilters) string {
 		BillingType:           filters.BillingType,
 		BillingState:          filters.BillingState,
 		BillingStateUnsettled: filters.BillingStateUnsettled,
+		UpstreamModelMismatch: filters.UpstreamModelMismatch,
 	})
 }
 

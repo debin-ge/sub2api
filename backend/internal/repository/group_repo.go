@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -10,7 +11,6 @@ import (
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/group"
-	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -65,6 +65,10 @@ func createGroupRecord(ctx context.Context, client *dbent.Client, groupIn *servi
 	if groupIn == nil {
 		return errors.New("group is nil")
 	}
+	modelPricing, err := json.Marshal(groupIn.ModelPricing)
+	if err != nil {
+		return fmt.Errorf("marshal group model pricing: %w", err)
+	}
 	builder := client.Group.Create().
 		SetName(groupIn.Name).
 		SetDescription(groupIn.Description).
@@ -92,7 +96,14 @@ func createGroupRecord(ctx context.Context, client *dbent.Client, groupIn *servi
 		SetNillableVideoPrice480p(groupIn.VideoPrice480P).
 		SetNillableVideoPrice720p(groupIn.VideoPrice720P).
 		SetNillableVideoPrice1080p(groupIn.VideoPrice1080P).
+		SetVideoModelPrices(service.NormalizeVideoModelPrices(groupIn.VideoModelPrices)).
 		SetNillableWebSearchPricePerCall(groupIn.WebSearchPricePerCall).
+		SetNillableSearchPricePer1k(groupIn.SearchPricePer1k).
+		SetNillableAudioRealtimePricePerMin(groupIn.AudioRealtimePricePerMin).
+		SetNillableAudioTtsPricePerMillionChars(groupIn.AudioTTSPricePerMillionChars).
+		SetNillableAudioSttPricePerHour(groupIn.AudioSTTPricePerHour).
+		SetLongContextPricingEnabled(groupIn.LongContextPricingEnabled).
+		SetModelPricing(modelPricing).
 		SetDefaultValidityDays(groupIn.DefaultValidityDays).
 		SetClaudeCodeOnly(groupIn.ClaudeCodeOnly).
 		SetNillableFallbackGroupID(groupIn.FallbackGroupID).
@@ -221,32 +232,16 @@ func (r *groupRepository) Update(ctx context.Context, groupIn *service.Group) er
 	return r.update(ctx, groupIn, nil)
 }
 
-// UpdateWithVIPConfigWriteGate repeats the rollout transition check against
-// the locked current row. This closes the stale whole-row write race where an
-// unrelated update read vip_only=true, a concurrent request disabled it, and
-// the old snapshot then wrote true back while the config gate was closed.
-func (r *groupRepository) UpdateWithVIPConfigWriteGate(
-	ctx context.Context,
-	groupIn *service.Group,
-	vipConfigWriteEnabled bool,
-) error {
-	return r.update(ctx, groupIn, func(current *service.Group) error {
-		if vipConfigWriteEnabled || current == nil || current.VIPOnly || !groupIn.VIPOnly {
-			return nil
-		}
-		return infraerrors.BadRequest(
-			service.GroupVIPConfigWriteDisabledReason,
-			"enabling VIP-only groups is disabled during the current rollout phase",
-		)
-	})
-}
-
 func (r *groupRepository) update(
 	ctx context.Context,
 	groupIn *service.Group,
 	validateCurrent func(*service.Group) error,
 ) error {
 	err := r.mutateWithAccessGraphValidationAndCurrent(ctx, groupIn, false, validateCurrent, func(client *dbent.Client) error {
+		modelPricing, err := json.Marshal(groupIn.ModelPricing)
+		if err != nil {
+			return fmt.Errorf("marshal group model pricing: %w", err)
+		}
 		builder := client.Group.UpdateOneID(groupIn.ID).
 			SetName(groupIn.Name).
 			SetDescription(groupIn.Description).
@@ -273,6 +268,9 @@ func (r *groupRepository) update(
 			SetNillableVideoPrice480p(groupIn.VideoPrice480P).
 			SetNillableVideoPrice720p(groupIn.VideoPrice720P).
 			SetNillableVideoPrice1080p(groupIn.VideoPrice1080P).
+			SetVideoModelPrices(service.NormalizeVideoModelPrices(groupIn.VideoModelPrices)).
+			SetLongContextPricingEnabled(groupIn.LongContextPricingEnabled).
+			SetModelPricing(modelPricing).
 			SetDefaultValidityDays(groupIn.DefaultValidityDays).
 			SetClaudeCodeOnly(groupIn.ClaudeCodeOnly).
 			SetModelRoutingEnabled(groupIn.ModelRoutingEnabled).
@@ -345,6 +343,26 @@ func (r *groupRepository) update(
 			builder = builder.SetWebSearchPricePerCall(*groupIn.WebSearchPricePerCall)
 		} else {
 			builder = builder.ClearWebSearchPricePerCall()
+		}
+		if groupIn.SearchPricePer1k != nil {
+			builder = builder.SetSearchPricePer1k(*groupIn.SearchPricePer1k)
+		} else {
+			builder = builder.ClearSearchPricePer1k()
+		}
+		if groupIn.AudioRealtimePricePerMin != nil {
+			builder = builder.SetAudioRealtimePricePerMin(*groupIn.AudioRealtimePricePerMin)
+		} else {
+			builder = builder.ClearAudioRealtimePricePerMin()
+		}
+		if groupIn.AudioTTSPricePerMillionChars != nil {
+			builder = builder.SetAudioTtsPricePerMillionChars(*groupIn.AudioTTSPricePerMillionChars)
+		} else {
+			builder = builder.ClearAudioTtsPricePerMillionChars()
+		}
+		if groupIn.AudioSTTPricePerHour != nil {
+			builder = builder.SetAudioSttPricePerHour(*groupIn.AudioSTTPricePerHour)
+		} else {
+			builder = builder.ClearAudioSttPricePerHour()
 		}
 
 		// 处理 FallbackGroupID：nil 时清除，否则设置

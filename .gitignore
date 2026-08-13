@@ -145,5 +145,5 @@ frontend/coverage/
 aicodex
 output/
 
-# Session Recovery 本地构建产物
-tools/session-recovery/bin/*
+# Vitest / Vite cache at repo root
+.vite/

@@ -17,6 +17,7 @@ func TestProvideHandlersIncludesRadarHandler(t *testing.T) {
 		nil, // subscriptionHandler
 		nil, // announcementHandler
 		nil, // channelMonitorUserHandler
+		nil, // channelMonitorV2Handler
 		nil, // adminHandlers
 		nil, // gatewayHandler
 		nil, // openaiGatewayHandler

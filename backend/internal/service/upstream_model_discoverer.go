@@ -14,6 +14,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
 )
 
@@ -539,7 +540,7 @@ func (d *UpstreamModelDiscoverer) buildOpenAIUpstreamModelsRequest(ctx context.C
 		req.Header.Set("Authorization", "Bearer "+accessToken)
 		req.Header.Set("User-Agent", codexCLIUserAgent)
 		req.Header.Set("Version", codexCLIVersion)
-		req.Header.Set("originator", "codex_cli_rs")
+		req.Header.Set("originator", openai.CodexDefaultOriginator)
 		setOpenAIChatGPTAccountHeaders(req.Header, credentialAccount)
 		account.ApplyHeaderOverrides(req.Header)
 		// Keep model discovery on the same authenticated Codex client contract

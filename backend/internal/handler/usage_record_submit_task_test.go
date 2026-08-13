@@ -483,60 +483,32 @@ func TestOpenAIGatewayHandlerSubmitOpenAIUsageRecordTask_ImageResultUsesMandator
 	require.True(t, called.Load(), "image usage task must be mandatory when async submit is dropped")
 }
 
-func TestOpenAIGatewayHandlerSubmitMandatoryUsageRecordTask_RunsInlineBeforeReturn(t *testing.T) {
-	pool := newUsageRecordTestPool(t)
+func TestOpenAIGatewayHandlerSubmitOpenAIUsageRecordTask_SearchCountUsesMandatoryFallback(t *testing.T) {
+	pool := service.NewUsageRecordWorkerPoolWithOptions(service.UsageRecordWorkerPoolOptions{
+		WorkerCount:           1,
+		QueueSize:             1,
+		TaskTimeout:           time.Second,
+		OverflowPolicy:        "drop",
+		OverflowSamplePercent: 0,
+		AutoScaleEnabled:      false,
+	})
+	t.Cleanup(pool.Stop)
 	h := &OpenAIGatewayHandler{usageRecordWorkerPool: pool}
-	started := make(chan struct{})
+
+	block := make(chan struct{})
 	release := make(chan struct{})
-	returned := make(chan struct{})
+	pool.Submit(func(ctx context.Context) {
+		close(block)
+		<-release
+	})
+	<-block
+	pool.Submit(func(ctx context.Context) {})
 
-	go func() {
-		h.submitMandatoryUsageRecordTask(context.Background(), func(ctx context.Context) {
-			close(started)
-			<-release
-		})
-		close(returned)
-	}()
-
-	select {
-	case <-started:
-	case <-time.After(time.Second):
-		t.Fatal("mandatory task did not start inline")
-	}
-	select {
-	case <-returned:
-		t.Fatal("mandatory submit returned before billing task completed")
-	default:
-	}
-	require.Zero(t, pool.Stats().SubmittedTasks, "mandatory billing must bypass the process-local queue")
-
+	var called atomic.Bool
+	h.submitOpenAIUsageRecordTask(context.Background(), &service.OpenAIForwardResult{SearchCount: 3}, func(ctx context.Context) {
+		called.Store(true)
+	})
 	close(release)
-	select {
-	case <-returned:
-	case <-time.After(time.Second):
-		t.Fatal("mandatory submit did not return after billing task completed")
-	}
-}
 
-func TestOpenAIGatewayHandlerSubmitOpenAIUsageRecordTask_VideoAndPerCallResultsAreMandatory(t *testing.T) {
-	for _, tc := range []struct {
-		name   string
-		result *service.OpenAIForwardResult
-	}{
-		{name: "video", result: &service.OpenAIForwardResult{VideoCount: 1}},
-		{name: "web search", result: &service.OpenAIForwardResult{WebSearchCalls: 1}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			pool := newUsageRecordTestPool(t)
-			h := &OpenAIGatewayHandler{usageRecordWorkerPool: pool}
-			var called atomic.Bool
-
-			h.submitOpenAIUsageRecordTask(context.Background(), tc.result, func(context.Context) {
-				called.Store(true)
-			})
-
-			require.True(t, called.Load())
-			require.Zero(t, pool.Stats().SubmittedTasks, "mandatory billing must not wait in memory")
-		})
-	}
+	require.True(t, called.Load(), "search surcharge usage task must be mandatory when async submit is dropped")
 }

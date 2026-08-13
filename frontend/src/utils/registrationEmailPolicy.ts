@@ -3,6 +3,7 @@ const EMAIL_SUFFIX_INVALID_CHAR_RE = /[^a-z0-9.-]/g
 const EMAIL_SUFFIX_INVALID_CHAR_CHECK_RE = /[^a-z0-9.-]/
 const EMAIL_SUFFIX_PREFIX_RE = /^@+/
 const EMAIL_SUFFIX_WILDCARD_PREFIX = '*.'
+const EMAIL_SUFFIX_MESSAGE_VISIBLE_LIMIT = 5
 const EMAIL_SUFFIX_DOMAIN_PATTERN =
   /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/
 
@@ -58,7 +59,33 @@ export function parseRegistrationEmailSuffixBlacklistInput(input: string): strin
   return normalized
 }
 
+export function parseRegistrationEmailSuffixWhitelistInput(input: string): string[] {
+  if (!input || !input.trim()) {
+    return []
+  }
+
+  const seen = new Set<string>()
+  const normalized: string[] = []
+
+  for (const token of input.split(EMAIL_SUFFIX_TOKEN_SPLIT_RE)) {
+    const domain = normalizeRegistrationEmailSuffixDomainStrict(token)
+    if (!isRegistrationEmailSuffixDomainValid(domain) || seen.has(domain)) {
+      continue
+    }
+    seen.add(domain)
+    normalized.push(domain)
+  }
+
+  return normalized
+}
+
 export function normalizeRegistrationEmailSuffixBlacklist(
+  items: string[] | null | undefined
+): string[] {
+  return normalizeRegistrationEmailSuffixDomains(items).map(toCanonicalRegistrationEmailSuffix)
+}
+
+export function normalizeRegistrationEmailSuffixWhitelist(
   items: string[] | null | undefined
 ): string[] {
   return normalizeRegistrationEmailSuffixDomains(items).map(toCanonicalRegistrationEmailSuffix)
@@ -102,6 +129,47 @@ export function isRegistrationEmailSuffixBlocked(
     }
     return false
   })
+}
+
+export function isRegistrationEmailSuffixAllowed(
+  email: string,
+  whitelist: string[] | null | undefined
+): boolean {
+  const normalizedWhitelist = normalizeRegistrationEmailSuffixWhitelist(whitelist)
+  if (normalizedWhitelist.length === 0) {
+    return true
+  }
+  const emailDomain = extractRegistrationEmailDomain(email)
+  if (!emailDomain) {
+    return false
+  }
+  const emailSuffix = `@${emailDomain}`
+  return normalizedWhitelist.some((allowed) => {
+    if (allowed.startsWith('@')) {
+      return allowed === emailSuffix
+    }
+    if (allowed.startsWith(EMAIL_SUFFIX_WILDCARD_PREFIX)) {
+      const base = allowed.slice(EMAIL_SUFFIX_WILDCARD_PREFIX.length)
+      return emailDomain === base || emailDomain.endsWith(`.${base}`)
+    }
+    return false
+  })
+}
+
+export function formatRegistrationEmailSuffixWhitelistForMessage(
+  whitelist: string[] | null | undefined,
+  options: {
+    separator: string
+    more: (count: number) => string
+  }
+): string {
+  const normalizedWhitelist = normalizeRegistrationEmailSuffixWhitelist(whitelist)
+  const visible = normalizedWhitelist.slice(0, EMAIL_SUFFIX_MESSAGE_VISIBLE_LIMIT)
+  const hiddenCount = normalizedWhitelist.length - visible.length
+  if (hiddenCount > 0) {
+    visible.push(options.more(hiddenCount))
+  }
+  return visible.join(options.separator)
 }
 
 // Pasted domains should be strict: any invalid character drops the whole token.

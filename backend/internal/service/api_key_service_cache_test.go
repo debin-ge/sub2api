@@ -324,6 +324,56 @@ func TestAPIKeyService_SnapshotRoundTrip_PreservesReasoningEffortPolicy(t *testi
 	require.Equal(t, apiKey.Group.ReasoningEffortMappings, roundTrip.Group.ReasoningEffortMappings)
 }
 
+func TestAPIKeyService_SnapshotRoundTrip_PreservesGroupModelPricing(t *testing.T) {
+	svc := NewAPIKeyService(nil, nil, nil, nil, nil, nil, &config.Config{})
+	groupID := int64(9)
+	inputPrice := 1.25
+	apiKey := &APIKey{
+		ID:      1,
+		UserID:  2,
+		GroupID: &groupID,
+		Key:     "k-group-model-pricing",
+		Status:  StatusActive,
+		User:    &User{ID: 2, Status: StatusActive, Role: RoleUser},
+		Group: &Group{
+			ID:                        groupID,
+			Platform:                  PlatformOpenAI,
+			Status:                    StatusActive,
+			SubscriptionType:          SubscriptionTypeStandard,
+			LongContextPricingEnabled: true,
+			ModelPricing: []ChannelModelPricing{
+				{
+					Models:      []string{"gpt-custom"},
+					BillingMode: BillingModeToken,
+					InputPrice:  &inputPrice,
+					Intervals: []PricingInterval{
+						{TierLabel: "long", MinContextTokens: 1000, InputPrice: 2.5},
+					},
+				},
+			},
+		},
+	}
+
+	snapshot := svc.snapshotFromAPIKey(context.Background(), apiKey)
+	require.NotNil(t, snapshot)
+	require.NotNil(t, snapshot.Group)
+	roundTrip := svc.snapshotToAPIKey(apiKey.Key, snapshot)
+
+	require.NotNil(t, roundTrip)
+	require.NotNil(t, roundTrip.Group)
+	require.True(t, roundTrip.Group.LongContextPricingEnabled)
+	require.Equal(t, apiKey.Group.ModelPricing, roundTrip.Group.ModelPricing)
+
+	// Snapshot construction/restoration must not share mutable pricing slices
+	// with the repository entity or with each other.
+	snapshot.Group.ModelPricing[0].Models[0] = "snapshot-mutated"
+	snapshot.Group.ModelPricing[0].Intervals[0].TierLabel = "snapshot-mutated"
+	require.Equal(t, "gpt-custom", apiKey.Group.ModelPricing[0].Models[0])
+	require.Equal(t, "long", apiKey.Group.ModelPricing[0].Intervals[0].TierLabel)
+	require.Equal(t, "gpt-custom", roundTrip.Group.ModelPricing[0].Models[0])
+	require.Equal(t, "long", roundTrip.Group.ModelPricing[0].Intervals[0].TierLabel)
+}
+
 func TestAPIKeyService_GetByKey_IgnoresLegacyAuthCacheSnapshotWithoutMessagesDispatchConfig(t *testing.T) {
 	cache := &authCacheStub{}
 	var repoCalls int32

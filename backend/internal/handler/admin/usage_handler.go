@@ -179,6 +179,16 @@ func (h *UsageHandler) List(c *gin.Context) {
 		billingType = &bt
 	}
 
+	var upstreamModelMismatch *bool
+	if raw := strings.TrimSpace(c.Query("upstream_model_mismatch")); raw != "" {
+		value, err := strconv.ParseBool(raw)
+		if err != nil {
+			response.BadRequest(c, "Invalid upstream_model_mismatch value, use true or false")
+			return
+		}
+		upstreamModelMismatch = &value
+	}
+
 	// Parse date range
 	var startTime, endTime *time.Time
 	userTZ := c.Query("timezone") // Get user's timezone from request
@@ -225,10 +235,11 @@ func (h *UsageHandler) List(c *gin.Context) {
 		Stream:                stream,
 		BillingType:           billingType,
 		BillingMode:           billingMode,
-		StartTime:             startTime,
-		EndTime:               endTime,
 		BillingState:          billingState,
 		BillingStateUnsettled: billingStateUnsettled,
+		UpstreamModelMismatch: upstreamModelMismatch,
+		StartTime:             startTime,
+		EndTime:               endTime,
 		ExactTotal:            exactTotal,
 	}
 
@@ -319,6 +330,16 @@ func (h *UsageHandler) Stats(c *gin.Context) {
 		billingType = &bt
 	}
 
+	var upstreamModelMismatch *bool
+	if raw := strings.TrimSpace(c.Query("upstream_model_mismatch")); raw != "" {
+		value, err := strconv.ParseBool(raw)
+		if err != nil {
+			response.BadRequest(c, "Invalid upstream_model_mismatch value, use true or false")
+			return
+		}
+		upstreamModelMismatch = &value
+	}
+
 	// Parse date range
 	userTZ := c.Query("timezone")
 	now := timezone.NowInUserLocation(userTZ)
@@ -373,10 +394,11 @@ func (h *UsageHandler) Stats(c *gin.Context) {
 		Stream:                stream,
 		BillingType:           billingType,
 		BillingMode:           billingMode,
-		StartTime:             &startTime,
-		EndTime:               &endTime,
 		BillingState:          billingState,
 		BillingStateUnsettled: billingStateUnsettled,
+		UpstreamModelMismatch: upstreamModelMismatch,
+		StartTime:             &startTime,
+		EndTime:               &endTime,
 	}
 
 	var stats *usagestats.UsageStats

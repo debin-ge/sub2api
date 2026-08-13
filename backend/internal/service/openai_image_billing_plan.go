@@ -7,8 +7,6 @@ import (
 	"strings"
 )
 
-const PricingSourceGroup = "group"
-
 // OpenAIImageBillingPlan locks the pricing mode, billing identity and price
 // snapshot selected immediately before an Image API request reaches upstream.
 //

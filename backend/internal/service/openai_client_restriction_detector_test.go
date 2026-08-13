@@ -132,6 +132,87 @@ func TestOpenAICodexClientRestrictionDetector_Detect_AllowedClients(t *testing.T
 		claudeCodeOriginator = "Claude Code"
 	)
 
+	t.Run("账号预设命中 Claude Code 双因子并通过指纹门", func(t *testing.T) {
+		detector := NewOpenAICodexClientRestrictionDetector(nil)
+		account := &Account{
+			Platform: PlatformOpenAI,
+			Type:     AccountTypeOAuth,
+			Extra: map[string]any{
+				"codex_cli_only":                 true,
+				"codex_cli_only_allowed_clients": []any{"claude_code"},
+			},
+		}
+		ctx := newCodexDetectorTestContext(claudeCodeUA, claudeCodeOriginator)
+		ctx.Request.Header.Set("x-codex-window-id", "window-1")
+
+		result := detector.Detect(ctx, account, CodexRestrictionPolicy{
+			EngineFingerprintSignals: openai.DefaultEngineFingerprintSignals,
+		}, nil)
+		require.True(t, result.Enabled)
+		require.True(t, result.Matched)
+		require.Equal(t, CodexClientRestrictionReasonMatchedClaudeCodePlugin, result.Reason)
+	})
+
+	t.Run("账号预设不能绕过黑名单", func(t *testing.T) {
+		detector := NewOpenAICodexClientRestrictionDetector(nil)
+		account := &Account{
+			Platform: PlatformOpenAI,
+			Type:     AccountTypeOAuth,
+			Extra: map[string]any{
+				"codex_cli_only":                 true,
+				"codex_cli_only_allowed_clients": []any{"claude_code"},
+			},
+		}
+		result := detector.Detect(
+			newCodexDetectorTestContext(claudeCodeUA, claudeCodeOriginator),
+			account,
+			CodexRestrictionPolicy{Blacklist: []openai.AllowedClientEntry{{Originator: claudeCodeOriginator}}},
+			nil,
+		)
+		require.False(t, result.Matched)
+		require.Equal(t, CodexClientRestrictionReasonBlacklisted, result.Reason)
+	})
+
+	t.Run("账号预设要求 originator 和 User-Agent 同时匹配", func(t *testing.T) {
+		detector := NewOpenAICodexClientRestrictionDetector(nil)
+		account := &Account{
+			Platform: PlatformOpenAI,
+			Type:     AccountTypeOAuth,
+			Extra: map[string]any{
+				"codex_cli_only":                 true,
+				"codex_cli_only_allowed_clients": []any{"claude_code"},
+			},
+		}
+		for _, ctx := range []*gin.Context{
+			newCodexDetectorTestContext(claudeCodeUA, "other"),
+			newCodexDetectorTestContext("curl/8.0", claudeCodeOriginator),
+		} {
+			result := detector.Detect(ctx, account, CodexRestrictionPolicy{}, nil)
+			require.False(t, result.Matched)
+			require.Equal(t, CodexClientRestrictionReasonNotMatchedUA, result.Reason)
+		}
+	})
+
+	t.Run("账号预设仍受引擎指纹门约束", func(t *testing.T) {
+		detector := NewOpenAICodexClientRestrictionDetector(nil)
+		account := &Account{
+			Platform: PlatformOpenAI,
+			Type:     AccountTypeOAuth,
+			Extra: map[string]any{
+				"codex_cli_only":                 true,
+				"codex_cli_only_allowed_clients": []any{"claude_code"},
+			},
+		}
+		result := detector.Detect(
+			newCodexDetectorTestContext(claudeCodeUA, claudeCodeOriginator),
+			account,
+			CodexRestrictionPolicy{EngineFingerprintSignals: openai.DefaultEngineFingerprintSignals},
+			nil,
+		)
+		require.False(t, result.Matched)
+		require.Equal(t, CodexClientRestrictionReasonMissingEngineFingerprint, result.Reason)
+	})
+
 	t.Run("未配置白名单时 Claude Code 签名仍拒绝", func(t *testing.T) {
 		detector := NewOpenAICodexClientRestrictionDetector(nil)
 		account := &Account{

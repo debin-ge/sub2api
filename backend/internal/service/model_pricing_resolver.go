@@ -9,8 +9,10 @@ import (
 
 // PricingSource 定价来源标识
 const (
+	PricingSourceGroup      = "group"
 	PricingSourceChannel    = "channel"
 	PricingSourceModelPrice = "model_price"
+	PricingSourceLiteLLM    = PricingSourceModelPrice
 	PricingSourceFallback   = "fallback"
 )
 
@@ -40,10 +42,12 @@ type ResolvedPricing struct {
 
 	// 渠道定价原始配置（用于区间模式下获取 ImageOutputPrice）
 	channelPricing *ChannelModelPricing
+
+	longContextPricingEnabled bool
 }
 
 // ModelPricingResolver 统一模型定价解析器。
-// 解析链：Channel → configured pricing catalog → Fallback。
+// 解析链：Group → Channel → LiteLLM → Fallback。
 type ModelPricingResolver struct {
 	channelService *ChannelService
 	billingService *BillingService
@@ -61,6 +65,7 @@ func NewModelPricingResolver(channelService *ChannelService, billingService *Bil
 type PricingInput struct {
 	Model   string
 	GroupID *int64 // nil 表示不检查渠道
+	Group   *Group
 }
 
 // Resolve 解析模型定价。
@@ -71,30 +76,101 @@ func (r *ModelPricingResolver) Resolve(ctx context.Context, input PricingInput) 
 	return resolved
 }
 
-// ResolveStrictToken 为已经发生上游成本的 token 用量解析可结算价格。
-//
-// 与 Resolve 的差别只在价格证据：全局价格必须严格命中候选模型自己的条目，
-// 不能通过 family/OpenAI 模糊回退借用另一个 SKU 的价格。若严格全局价格缺失，
-// 只有完整、显式的渠道价格才能独立构成结算依据；部分渠道覆盖仍可叠加在严格
-// 全局价格之上。
 func (r *ModelPricingResolver) ResolveStrictToken(ctx context.Context, input PricingInput) (*ResolvedPricing, error) {
 	return r.resolve(ctx, input, true)
 }
 
-// ResolveStrictImageToken resolves the exact image-token dimensions used by
-// /v1/images/*. Unlike ResolveStrictToken, it permits catalog entries that omit
-// ordinary text-output pricing when a dedicated image-output price exists.
+func (r *ModelPricingResolver) resolve(ctx context.Context, input PricingInput, strictTokenPricing bool) (*ResolvedPricing, error) {
+	if r == nil {
+		return nil, fmt.Errorf("%w for model: %s: pricing resolver unavailable", ErrModelPricingUnavailable, input.Model)
+	}
+	longContextPricingEnabled := input.Group == nil || input.Group.LongContextPricingEnabled
+	if groupPricing := matchGroupModelPricing(input.Group, input.Model); groupPricing != nil {
+		// Group token cards only override the first-tier / flat rates.
+		// Long-context ladders come from official presets, gated by the checkbox.
+		if groupPricing.BillingMode == "" || groupPricing.BillingMode == BillingModeToken {
+			stripped := groupPricing.Clone()
+			stripped.Intervals = nil
+			groupPricing = &stripped
+		}
+		resolved, err := r.resolveConfiguredPricing(groupPricing, input.Model, PricingSourceGroup, strictTokenPricing)
+		if err != nil {
+			return nil, err
+		}
+		resolved.longContextPricingEnabled = longContextPricingEnabled
+		return resolved, nil
+	}
+
+	var chPricing *ChannelModelPricing
+	if input.GroupID != nil && r.channelService != nil {
+		chPricing = r.channelService.GetChannelModelPricing(ctx, *input.GroupID, input.Model)
+		if chPricing != nil {
+			mode := chPricing.BillingMode
+			if mode == "" {
+				mode = BillingModeToken
+			}
+			if mode == BillingModePerRequest || mode == BillingModeImage || mode == BillingModeVideo {
+				resolved := &ResolvedPricing{
+					Mode:           mode,
+					Source:         PricingSourceChannel,
+					channelPricing: chPricing,
+				}
+				resolved.longContextPricingEnabled = longContextPricingEnabled
+				r.applyRequestTierOverrides(chPricing, resolved)
+				if strictTokenPricing && !resolved.DefaultPerRequestPriceSet && len(resolved.RequestTiers) == 0 {
+					return nil, fmt.Errorf("%w for model: %s: incomplete explicit channel pricing", ErrModelPricingUnavailable, input.Model)
+				}
+				return resolved, nil
+			}
+		}
+	}
+
+	// 1. 获取基础定价
+	basePricing, source, baseErr := r.resolveBasePricing(input.Model, strictTokenPricing)
+
+	resolved := &ResolvedPricing{
+		Mode:                   BillingModeToken,
+		BasePricing:            basePricing,
+		Source:                 source,
+		SupportsCacheBreakdown: basePricing != nil && basePricing.SupportsCacheBreakdown,
+	}
+	resolved.longContextPricingEnabled = longContextPricingEnabled
+
+	// 2. 如果有 GroupID，尝试渠道覆盖
+	if chPricing != nil {
+		resolved.Source = PricingSourceChannel
+		resolved.channelPricing = chPricing
+		if strictTokenPricing && basePricing == nil && !channelTokenPricingConfigured(chPricing) {
+			return nil, fmt.Errorf(
+				"%w for model: %s: strict global pricing unavailable and explicit channel pricing is incomplete",
+				ErrModelPricingUnavailable,
+				input.Model,
+			)
+		}
+		r.applyTokenOverrides(chPricing, resolved)
+		if !longContextPricingEnabled {
+			r.applyFirstTokenTier(resolved, chPricing)
+		}
+	} else if input.GroupID != nil && r.channelService != nil {
+		r.applyChannelOverrides(ctx, *input.GroupID, input.Model, resolved)
+		if resolved.Source == PricingSourceChannel && !longContextPricingEnabled {
+			r.applyFirstTokenTier(resolved, resolved.channelPricing)
+		}
+	}
+
+	if strictTokenPricing && basePricing == nil && chPricing == nil {
+		return nil, baseErr
+	}
+	return resolved, nil
+}
+
 func (r *ModelPricingResolver) ResolveStrictImageToken(
 	ctx context.Context,
 	input PricingInput,
 	requireImageInput bool,
 ) (*ResolvedPricing, error) {
 	if r == nil || r.billingService == nil {
-		return nil, fmt.Errorf(
-			"%w for image model: %s: pricing resolver unavailable",
-			ErrModelPricingUnavailable,
-			input.Model,
-		)
+		return nil, fmt.Errorf("%w for image model: %s: pricing resolver unavailable", ErrModelPricingUnavailable, input.Model)
 	}
 	var channelPricing *ChannelModelPricing
 	if input.GroupID != nil && r.channelService != nil {
@@ -102,12 +178,7 @@ func (r *ModelPricingResolver) ResolveStrictImageToken(
 		if channelPricing != nil {
 			mode := channelPricing.BillingMode
 			if mode != "" && mode != BillingModeToken {
-				return nil, fmt.Errorf(
-					"%w for image model: %s: channel billing mode is %s",
-					ErrModelPricingUnavailable,
-					input.Model,
-					mode,
-				)
+				return nil, fmt.Errorf("%w for image model: %s: channel billing mode is %s", ErrModelPricingUnavailable, input.Model, mode)
 			}
 		}
 	}
@@ -138,21 +209,17 @@ func (r *ModelPricingResolver) ResolveStrictImageToken(
 			imageInputExplicit = basePricing.ImageInputPriceExplicit
 		}
 		r.applyTokenOverrides(channelPricing, resolved)
-		if preserveImageOutput {
+		if preserveImageOutput && resolved.BasePricing != nil {
 			resolved.BasePricing.ImageOutputPricePerToken = imageOutputPrice
 			resolved.BasePricing.ImageOutputPriceExplicit = imageOutputExplicit
 		}
-		if preserveImageInput {
+		if preserveImageInput && resolved.BasePricing != nil {
 			resolved.BasePricing.ImageInputPricePerToken = imageInputPrice
 			resolved.BasePricing.ImageInputPriceExplicit = imageInputExplicit
 		}
 	}
 	if !openAIImageTokenPricingComplete(resolved.BasePricing, requireImageInput) {
-		return nil, fmt.Errorf(
-			"%w for image token model: %s: required image dimensions are incomplete",
-			ErrModelPricingUnavailable,
-			input.Model,
-		)
+		return nil, fmt.Errorf("%w for image token model: %s: required image dimensions are incomplete", ErrModelPricingUnavailable, input.Model)
 	}
 	if err := validateFiniteModelPricing(input.Model, resolved.BasePricing); err != nil {
 		return nil, err
@@ -160,85 +227,72 @@ func (r *ModelPricingResolver) ResolveStrictImageToken(
 	return resolved, nil
 }
 
-func (r *ModelPricingResolver) resolve(
-	ctx context.Context,
-	input PricingInput,
-	strictTokenPricing bool,
-) (*ResolvedPricing, error) {
-	if r == nil {
-		return nil, fmt.Errorf(
-			"%w for model: %s: pricing resolver unavailable",
-			ErrModelPricingUnavailable,
-			input.Model,
-		)
+func (r *ModelPricingResolver) resolveConfiguredPricing(config *ChannelModelPricing, model, source string, strict bool) (*ResolvedPricing, error) {
+	mode := config.BillingMode
+	if mode == "" {
+		mode = BillingModeToken
 	}
-	var chPricing *ChannelModelPricing
-	if input.GroupID != nil && r.channelService != nil {
-		chPricing = r.channelService.GetChannelModelPricing(ctx, *input.GroupID, input.Model)
-		if chPricing != nil {
-			mode := chPricing.BillingMode
-			if mode == "" {
-				mode = BillingModeToken
-			}
-			if mode == BillingModePerRequest || mode == BillingModeImage {
-				if strictTokenPricing && !validConfiguredPrice(chPricing.PerRequestPrice) {
-					return nil, fmt.Errorf(
-						"%w for model: %s: incomplete explicit channel pricing",
-						ErrModelPricingUnavailable,
-						input.Model,
-					)
-				}
-				resolved := &ResolvedPricing{
-					Mode:           mode,
-					Source:         PricingSourceChannel,
-					channelPricing: chPricing,
-				}
-				r.applyRequestTierOverrides(chPricing, resolved)
-				return resolved, nil
-			}
+	resolved := &ResolvedPricing{Mode: mode, Source: source, channelPricing: config}
+	if mode == BillingModePerRequest || mode == BillingModeImage || mode == BillingModeVideo {
+		r.applyRequestTierOverrides(config, resolved)
+		if strict && !resolved.DefaultPerRequestPriceSet && len(resolved.RequestTiers) == 0 {
+			return nil, fmt.Errorf("%w for model: %s: incomplete explicit group pricing", ErrModelPricingUnavailable, model)
 		}
+		return resolved, nil
 	}
-
-	// 1. 获取基础定价
-	basePricing, source, baseErr := r.resolveBasePricing(input.Model, strictTokenPricing)
-
-	resolved := &ResolvedPricing{
-		Mode:                   BillingModeToken,
-		BasePricing:            basePricing,
-		Source:                 source,
-		SupportsCacheBreakdown: basePricing != nil && basePricing.SupportsCacheBreakdown,
+	basePricing, _, baseErr := r.resolveBasePricing(model, strict)
+	resolved.BasePricing = basePricing
+	if strict && basePricing == nil && !channelTokenPricingConfigured(config) {
+		return nil, fmt.Errorf("%w for model: %s: incomplete explicit group pricing", ErrModelPricingUnavailable, model)
 	}
-
-	// 2. 如果有 GroupID，尝试渠道覆盖
-	if chPricing != nil {
-		resolved.Source = PricingSourceChannel
-		resolved.channelPricing = chPricing
-		if strictTokenPricing && basePricing == nil && !channelTokenPricingConfigured(chPricing) {
-			return nil, fmt.Errorf(
-				"%w for model: %s: strict global pricing unavailable and explicit channel pricing is incomplete",
-				ErrModelPricingUnavailable,
-				input.Model,
-			)
-		}
-		r.applyTokenOverrides(chPricing, resolved)
-	} else if !strictTokenPricing && input.GroupID != nil && r.channelService != nil {
-		r.applyChannelOverrides(ctx, *input.GroupID, input.Model, resolved)
-	}
-
-	if strictTokenPricing && basePricing == nil && chPricing == nil {
+	resolved.SupportsCacheBreakdown = resolved.BasePricing != nil && resolved.BasePricing.SupportsCacheBreakdown
+	r.applyTokenOverrides(config, resolved)
+	if strict && resolved.BasePricing == nil {
 		return nil, baseErr
 	}
 	return resolved, nil
 }
 
-// resolveBasePricing 从配置化模型价格目录或 fallback 获取基础定价。
+func matchGroupModelPricing(group *Group, model string) *ChannelModelPricing {
+	if group == nil {
+		return nil
+	}
+	model = normalizeChannelPricingModelName(model)
+	var wildcard *ChannelModelPricing
+	for i := range group.ModelPricing {
+		entry := &group.ModelPricing[i]
+		for _, pattern := range entry.Models {
+			normalized := normalizeChannelPricingModelName(pattern)
+			if normalized == model {
+				cp := entry.Clone()
+				return &cp
+			}
+			if strings.HasSuffix(normalized, "*") && strings.HasPrefix(model, strings.TrimSuffix(normalized, "*")) && wildcard == nil {
+				cp := entry.Clone()
+				wildcard = &cp
+			}
+		}
+	}
+	return wildcard
+}
+
+func (r *ModelPricingResolver) applyFirstTokenTier(resolved *ResolvedPricing, config *ChannelModelPricing) {
+	if resolved == nil || len(resolved.Intervals) == 0 {
+		return
+	}
+	first := resolved.Intervals[0]
+	for _, interval := range resolved.Intervals[1:] {
+		if interval.MinTokens < first.MinTokens {
+			first = interval
+		}
+	}
+	resolved.BasePricing = intervalToModelPricing(&first, resolved.BasePricing, resolved.SupportsCacheBreakdown, config)
+	resolved.Intervals = nil
+}
+
 func (r *ModelPricingResolver) resolveBasePricing(model string, strict bool) (*ModelPricing, string, error) {
 	if r == nil || r.billingService == nil {
-		return nil, PricingSourceFallback, fmt.Errorf(
-			"%w for model: %s: billing service unavailable",
-			ErrModelPricingUnavailable,
-			model,
-		)
+		return nil, PricingSourceFallback, fmt.Errorf("%w for model: %s: billing service unavailable", ErrModelPricingUnavailable, model)
 	}
 	var (
 		pricing *ModelPricing
@@ -274,7 +328,7 @@ func (r *ModelPricingResolver) applyChannelOverrides(ctx context.Context, groupI
 	switch resolved.Mode {
 	case BillingModeToken:
 		r.applyTokenOverrides(chPricing, resolved)
-	case BillingModePerRequest, BillingModeImage:
+	case BillingModePerRequest, BillingModeImage, BillingModeVideo:
 		r.applyRequestTierOverrides(chPricing, resolved)
 	}
 }

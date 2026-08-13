@@ -39,6 +39,9 @@ const (
 	// BillingKindWebSearch 按次计费：codex alpha/search。上游不返回 usage。
 	BillingKindWebSearch BillingKind = "web_search"
 
+	// BillingKindAudio 按音频单位计费：Grok realtime/TTS/STT。
+	BillingKindAudio BillingKind = "audio"
+
 	// BillingKindNone 是产品明确列入非计费白名单的端点：本地 Grok
 	// count_tokens，以及当前不向用户收费的 OpenAI responses/input_tokens
 	// bridge。它不是“查不到价格”的兜底；新增调用方必须先有明确的免费政策，
@@ -49,7 +52,7 @@ const (
 // Valid 报告 k 是否为已知口径（不含零值）。
 func (k BillingKind) Valid() bool {
 	switch k {
-	case BillingKindToken, BillingKindImage, BillingKindVideo, BillingKindWebSearch, BillingKindNone:
+	case BillingKindToken, BillingKindImage, BillingKindVideo, BillingKindWebSearch, BillingKindAudio, BillingKindNone:
 		return true
 	default:
 		return false
@@ -71,7 +74,7 @@ func (k BillingKind) String() string {
 // 调用方漏传口径时 fail-open。
 func (k BillingKind) RequiresPricing() bool {
 	switch k {
-	case BillingKindUnspecified, BillingKindToken, BillingKindImage, BillingKindVideo, BillingKindWebSearch:
+	case BillingKindUnspecified, BillingKindToken, BillingKindImage, BillingKindVideo, BillingKindWebSearch, BillingKindAudio:
 		return true
 	default:
 		return false
@@ -97,6 +100,8 @@ func (k BillingKind) BillingMode() BillingMode {
 		return BillingModeImage
 	case BillingKindVideo:
 		return BillingModeVideo
+	case BillingKindAudio:
+		return BillingModePerRequest
 	default:
 		return BillingModeToken
 	}

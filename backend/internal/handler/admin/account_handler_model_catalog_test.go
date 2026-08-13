@@ -294,6 +294,7 @@ func setupProxyMutationCatalogRouter(repo service.AdminAccountRepository, catalo
 	adminSvc := service.NewAdminService(
 		nil, nil, repo, nil, nil, nil, nil, nil, nil,
 		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil,
 	)
 	handler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	handler.modelCatalog = catalog

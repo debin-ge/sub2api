@@ -220,6 +220,7 @@ func provideCleanup(
 	miniMaxRemainsSyncRunner *service.MiniMaxRemainsSyncRunner,
 	deepSeekBalanceHealthRunner *service.DeepSeekBalanceHealthRunner,
 	channelMonitorRunner *service.ChannelMonitorRunner,
+	channelMonitorV2Aggregator *service.ChannelMonitorV2Aggregator,
 	modelCatalogRefreshRunner *service.ModelCatalogRefreshRunner,
 	quotaFlusher *service.UserPlatformQuotaUsageFlusher,
 	upstreamBillingProbe *service.UpstreamBillingProbeService,
@@ -272,6 +273,7 @@ func provideCleanup(
 			miniMaxRemainsSyncRunner,
 			deepSeekBalanceHealthRunner,
 			channelMonitorRunner,
+			channelMonitorV2Aggregator,
 			modelCatalogRefreshRunner,
 			quotaFlusher,
 			upstreamBillingProbe,
@@ -327,6 +329,7 @@ func provideFinalCleanup(
 	miniMaxRemainsSyncRunner *service.MiniMaxRemainsSyncRunner,
 	deepSeekBalanceHealthRunner *service.DeepSeekBalanceHealthRunner,
 	channelMonitorRunner *service.ChannelMonitorRunner,
+	channelMonitorV2Aggregator *service.ChannelMonitorV2Aggregator,
 	modelCatalogRefreshRunner *service.ModelCatalogRefreshRunner,
 	quotaFlusher *service.UserPlatformQuotaUsageFlusher,
 	upstreamBillingProbe *service.UpstreamBillingProbeService,
@@ -556,21 +559,9 @@ func provideFinalCleanup(
 				}
 				return nil
 			}},
-			{"BillingRecoveryService", func() error {
-				if billingRecovery != nil {
-					billingRecovery.Stop()
-				}
-				return nil
-			}},
-			{"MiniMaxRemainsSyncRunner", func() error {
-				if miniMaxRemainsSyncRunner != nil {
-					miniMaxRemainsSyncRunner.Stop()
-				}
-				return nil
-			}},
-			{"DeepSeekBalanceHealthRunner", func() error {
-				if deepSeekBalanceHealthRunner != nil {
-					deepSeekBalanceHealthRunner.Stop()
+			{"ChannelMonitorV2Aggregator", func() error {
+				if channelMonitorV2Aggregator != nil {
+					channelMonitorV2Aggregator.Stop()
 				}
 				return nil
 			}},

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -21,10 +22,12 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
 	"github.com/cespare/xxhash/v2"
 	gocache "github.com/patrickmn/go-cache"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -472,6 +475,17 @@ type GatewayCache interface {
 	// DeleteSessionAccountID 删除粘性会话绑定，用于账号不可用时主动清理
 	// Delete sticky session binding, used to proactively clean up when account becomes unavailable
 	DeleteSessionAccountID(ctx context.Context, groupID int64, sessionHash string) error
+
+	// Grok async video billing snapshot (create → status success).
+	// SetGrokVideoPendingBilling stores create-time model/duration/resolution for status billing.
+	SetGrokVideoPendingBilling(ctx context.Context, key string, payload []byte, ttl time.Duration) error
+	// GetGrokVideoPendingBilling returns the create-time billing snapshot; miss → nil, nil.
+	GetGrokVideoPendingBilling(ctx context.Context, key string) ([]byte, error)
+	// ClaimGrokVideoBilled atomically marks a video request as billed (SetNX).
+	// Returns true when this caller won the claim; false when already billed or claim unavailable.
+	ClaimGrokVideoBilled(ctx context.Context, key string, ttl time.Duration) (bool, error)
+	// ReleaseGrokVideoBilled clears a claim so a failed RecordUsage can retry billing.
+	ReleaseGrokVideoBilled(ctx context.Context, key string) error
 }
 
 // derefGroupID safely dereferences *int64 to int64, returning 0 if nil
@@ -570,6 +584,11 @@ type ClaudeUsage struct {
 }
 
 // ForwardResult 转发结果
+type AudioUsage struct {
+	Mode            string  // realtime | tts | stt
+	DurationOrUnits float64 // minutes / million-chars / hours
+}
+
 type ForwardResult struct {
 	RequestID string
 	Usage     ClaudeUsage
@@ -577,16 +596,16 @@ type ForwardResult struct {
 	// UpstreamModel is the actual upstream model after mapping.
 	// Prefer empty when it is identical to Model; persistence normalizes equal values away as no-op mappings.
 	UpstreamModel string
-	// BillingModel locks an independently priced media SKU selected before
-	// forwarding (for example Responses tools[].model). When non-empty for an
-	// image result, settlement must not replace it with the top-level text
-	// model selected by ChannelUsageFields.BillingModelSource.
-	BillingModel     string
-	Stream           bool
-	Duration         time.Duration
-	FirstTokenMs     *int // 首字时间（流式请求）
-	ClientDisconnect bool // 客户端是否在流式传输过程中断开
-	ReasoningEffort  *string
+	// UpstreamResponseModel is captured from the raw successful upstream
+	// response before any client-facing rewrite or protocol conversion.
+	UpstreamResponseModel         string
+	UpstreamResponseModelConflict bool
+	BillingModel                  string
+	Stream                        bool
+	Duration                      time.Duration
+	FirstTokenMs                  *int // 首字时间（流式请求）
+	ClientDisconnect              bool // 客户端是否在流式传输过程中断开
+	ReasoningEffort               *string
 
 	// 图片生成计费字段（图片生成模型使用）
 	ImageCount         int    // 生成的图片数量
@@ -596,6 +615,8 @@ type ForwardResult struct {
 	ImageOutputSizes   []string
 	ImageSizeSource    string
 	ImageSizeBreakdown map[string]int
+	SearchCount        int
+	AudioUsage         *AudioUsage
 }
 
 // GatewayFailureStage identifies which request stage failed. The zero value is
@@ -1801,6 +1822,15 @@ func (s *GatewayService) getOAuthToken(ctx context.Context, account *Account) (s
 		return accessToken, "oauth", nil
 	}
 
+	// Grok OAuth: prefer access_token from credentials (background refresher keeps it warm).
+	if account.Platform == PlatformGrok && account.Type == AccountTypeOAuth {
+		accessToken := account.GetGrokAccessToken()
+		if accessToken == "" {
+			return "", "", errors.New("grok access_token not found in credentials")
+		}
+		return accessToken, "oauth", nil
+	}
+
 	// 其他情况（Gemini 有自己的 TokenProvider，setup-token 类型等）直接从账号读取
 	accessToken := account.GetCredential("access_token")
 	if accessToken == "" {
@@ -1810,224 +1840,80 @@ func (s *GatewayService) getOAuthToken(ctx context.Context, account *Account) (s
 	return accessToken, "oauth", nil
 }
 
-// 重试相关常量
-// shouldFailoverUpstreamError determines whether an upstream error should trigger account failover.
-// isClaudeCodeClient 判断请求是否来自真正的 Claude Code 客户端。
-// 判定条件：
-//  1. User-Agent 匹配 claude-cli/X.Y.Z（大小写不敏感）
-//  2. metadata.user_id 符合 Claude Code 格式（legacy 或 JSON 格式）
-//
-// 只检查 metadata.user_id 非空不够严格：第三方工具（opencode 等）可能伪造 UA
-// 并附带任意 metadata.user_id 字符串，从而绕过 mimicry。必须通过 ParseMetadataUserID
-// 验证格式才能确认是真正的 Claude Code 客户端。
-// normalizeSystemParam 将 json.RawMessage 类型的 system 参数转为标准 Go 类型（string / []any / nil），
-// 避免 type switch 中 json.RawMessage（底层 []byte）无法匹配 case string / case []any / case nil 的问题。
-// 这是 Go 的 typed nil 陷阱：(json.RawMessage, nil) ≠ (nil, nil)。
-// systemIncludesClaudeCodePrompt 检查 system 中是否已包含 Claude Code 提示词
-// 使用前缀匹配支持多种变体（标准版、Agent SDK 版等）
-// hasClaudeCodePrefix 检查文本是否以 Claude Code 提示词的特征前缀开头
-// injectClaudeCodePrompt 在 system 开头注入 Claude Code 提示词
-// 处理 null、字符串、数组三种格式
-// rewriteSystemForNonClaudeCode 将非 Claude Code 客户端的 system prompt 迁移至 messages，
-// system 字段仅保留 Claude Code 标识提示词。
-// Anthropic 基于 system 参数内容检测第三方应用，仅前置追加 Claude Code 提示词
-// 无法通过检测，因为后续内容仍为非 Claude Code 格式。
-// 策略：将原始 system prompt 提取并注入为 user/assistant 消息对，system 仅保留 Claude Code 标识。
-// enforceCacheControlLimit 强制执行 cache_control 块数量限制（最多 4 个）
-// 超限时优先移除工具断点，再移除 messages 断点，最后才移除 system 断点。
-// injectAnthropicCacheControlTTL1h 将已有 ephemeral cache_control 块的 ttl 强制写为 1h。
-// 仅修改已经存在的 cache_control，不新增缓存断点。
-// shouldNormalizeClientDateline reports whether the request body's client
-// dateline should be normalized before forwarding to Anthropic. The switch is
-// scoped to Anthropic OAuth/SetupToken accounts only; API-Key accounts and
-// non-Anthropic platforms bypass this step entirely.
-// normalizeClientDatelineIfEnabled applies dateline normalization to body when
-// the switch is on and the account qualifies. Returns (nextBody, true) only
-// when the body actually changed; otherwise returns (nil, false) so callers
-// can skip the writeback.
-// Forward 转发请求到Claude API
-// ApplyBedrockCCCompat 应用 Bedrock CC 兼容转换（渠道级模型映射后调用）
-// 清理 body 中 Anthropic API 专有字段、修复 thinking/tool_use ID、过滤 beta token，
-// 同时过滤 HTTP header 中的 anthropic-beta（防止 Passthrough 路径透传不支持的 token）。
-// isBedrockCCCompatEnabled 检查渠道是否启用了 Bedrock CC 兼容模式
-// forwardBedrock 转发请求到 AWS Bedrock
-// executeBedrockUpstream 执行 Bedrock 上游请求（含重试逻辑）
-// handleBedrockUpstreamErrors 处理 Bedrock 上游 4xx/5xx 错误（failover + 错误响应）
-// buildUpstreamRequestBedrock 构建 Bedrock 上游请求
-// buildUpstreamRequestBedrockAPIKey 构建 Bedrock API Key (Bearer Token) 上游请求
-// handleBedrockNonStreamingResponse 处理 Bedrock 非流式响应
-// Bedrock InvokeModel 非流式响应的 body 格式与 Claude API 兼容
-// vertexSupportedBetaTokens 是 Vertex AI 的 Anthropic 端点接受的 anthropic-beta
-// 白名单。Vertex 对任何未知 token 直接 HTTP 400，故采用白名单（与 Bedrock 的
-// bedrockSupportedBetaTokens 同思路）而非黑名单：未来 Claude Code 新增的、Vertex 尚未
-// 支持的 token 天然被剥离。当 Vertex 新增支持某 beta 时在此补充。
-//
-// 明确排除（issue #3358 中 Vertex 报 400 的 token）：advisor-tool-2026-03-01、
-// prompt-caching-scope-2026-01-05、redact-thinking-2026-02-12、
-// thinking-token-count-2026-05-13；以及 claude-code-20250219 / oauth-2025-04-20 等
-// 客户端身份 beta——Vertex service_account 走 Bearer 鉴权，不需要它们。
-// filterVertexBetaTokens 解析 client 的 anthropic-beta header，先剔除 drop 集合中的
-// token（BetaPolicy filter + 默认 drop），再只保留 Vertex 支持的 token，去重后逗号拼接。
-// 返回最终 header（可能为空字符串）。
-// getBetaHeader 处理anthropic-beta header
-// 对于OAuth账号，需要确保包含oauth-2025-04-20
-// computeFinalAnthropicBeta 计算发往上游的最终 anthropic-beta header 值。
-//
-// 设计动机：将原本在 buildUpstreamRequest 内联在一起、依赖 req.Header 的
-// anthropic-beta 计算逻辑抽成纯函数。这样调用方可以在 NewRequest 之前
-// 就提前拿到最终 beta header，进而能按它对 body 做能力维度 sanitize 后再做
-// CCH 签名——一举修复了以下之前由顺序依赖导致的能力维度 sanitize
-// 无法部署的问题（签名与最终 body 不一致可以被判 third-party）。
-//
-// 返回 (value, shouldSet)：
-//   - shouldSet=false 意为“不主动设置 anthropic-beta header”，与原代码“
-//     API-key 账号 + 客户端未传 anthropic-beta + InjectBetaForAPIKey 未开启或
-//     requestNeedsBetaFeatures=false”的行为对齐。
-//   - shouldSet=true 时 value 可能为空字符串（例如客户端透传的 beta 被 dropSet
-//     全部过滤掉），这与原代码中 setHeaderRaw 的结果一致。
-//
-// clientHeaders 是客户端原始 HTTP header（通常为 c.Request.Header）；nil 时按“客户端
-// 未传”处理。body 是已经 metadata 重写 / billing version sync 之后但未 sanitize 上游
-// 不兼容字段之前的版本。
-// computeFinalCountTokensAnthropicBeta 是 count_tokens 路径上 anthropic-beta header 的
-// 计算纯函数。语义与 computeFinalAnthropicBeta 对齐，但备份了 count_tokens 独有的
-// 两条特殊规则：
-//
-//   - OAuth mimic：requiredBetas 为 FullClaudeCodeMimicryBetas + BetaTokenCounting
-//     （与 messages 不同的是：不按 haiku 排除；count_tokens 始终携带 token-counting beta）
-//   - OAuth 透传 + 客户端未传 anthropic-beta：补齐 CountTokensBetaHeader
-//   - OAuth 透传 + 客户端传了：补齐 BetaTokenCounting（如果未含）
-//
-// 返回语义同 computeFinalAnthropicBeta。
-// stripBetaTokens removes the given beta tokens from a comma-separated header value.
-// BetaBlockedError indicates a request was blocked by a beta policy rule.
-// betaPolicyResult holds the evaluated result of beta policy rules for a single request.
-// evaluateBetaPolicy loads settings once and evaluates all rules against the given request.
-// mergeDropSets merges the static defaultDroppedBetasSet with dynamic policy filter tokens.
-// Returns defaultDroppedBetasSet directly when policySet is empty (zero allocation).
-// betaPolicyFilterSetKey is the gin.Context key for caching the policy filter set within a request.
-// getBetaPolicyFilterSet returns the beta policy filter set, using the gin context cache if available.
-// In the /v1/messages path, Forward() evaluates the policy first and caches the result;
-// buildUpstreamRequest reuses it (zero extra DB calls). In the count_tokens path, this
-// evaluates on demand (one DB call).
-// betaPolicyScopeMatches checks whether a rule's scope matches the current account type.
-// matchModelWhitelist checks if a model matches any pattern in the whitelist.
-// Reuses matchModelPattern from group.go which supports exact and wildcard prefix matching.
-// resolveRuleAction determines the effective action and error message for a rule given the request model.
-// When ModelWhitelist is empty, the rule's primary Action/ErrorMessage applies unconditionally.
-// When non-empty, Action applies to matching models; FallbackAction/FallbackErrorMessage applies to others.
-// droppedBetaSet returns claude.DroppedBetas as a set, with optional extra tokens.
-// containsBetaToken checks if a comma-separated header value contains the given token.
-// checkBetaPolicyBlockForTokens 检查 token 列表中是否有被管理员 block 规则命中的 token。
-// 用于补充 evaluateBetaPolicy 对 header 的检查，覆盖 body 自动注入的 token。
-// applyClaudeCodeMimicHeaders forces "Claude Code-like" request headers.
-// This mirrors opencode-anthropic-auth behavior: do not trust downstream
-// headers when using Claude Code-scoped OAuth credentials.
-// shouldRectifySignatureError 统一判断是否应触发签名整流（strip thinking blocks 并重试）。
-// 根据账号类型检查对应的开关和匹配模式。
-//
-// mappedModel 用于按 thinking 协议族分流：passback-required (DeepSeek/Kimi/GLM 等) 上游
-// 的 400 不是签名缺失问题，retry 任何 thinking 变形都会破坏「原样回传」契约——直接透传
-// 错误给客户端。详见 thinking_protocol.go。
-// isSignatureErrorPattern 仅做模式匹配，不检查开关。
-// 用于已进入重试流程后的二阶段检测（此时开关已在首次调用时验证过）。
-// matchSignaturePatterns 检查响应体是否匹配自定义关键词列表（不区分大小写）。
-// isThinkingBlockSignatureError 检测是否是thinking block相关错误
-// 这类错误可以通过过滤thinking blocks并重试来解决
-// sanitizeStreamError 返回不含网络地址的客户端可见错误描述。
-// 默认 (*net.OpError).Error() 会拼接 Source/Addr 字段，泄露内部 IP/端口与上游
-// 服务器地址（例如 "read tcp 10.0.0.1:54321->52.1.2.3:443: read: connection
-// reset by peer"）。该函数只保留可识别的错误类别，原始 err 仍在调用点写入日志。
-// ExtractUpstreamErrorMessage 从上游响应体中提取错误消息
-// 支持 Claude 风格的错误格式：{"type":"error","error":{"type":"...","message":"..."}}
-// handleRetryExhaustedError 处理重试耗尽后的错误
-// OAuth 403：标记账号异常
-// API Key 未配置错误码：仅返回错误，不标记账号
-// streamingResult 流式响应结果
-// applyCacheTTLOverride 将所有 cache creation tokens 归入指定的 TTL 类型。
-// target 为 "5m" 或 "1h"。返回 true 表示发生了变更。
-// rewriteCacheCreationJSON 在 JSON usage 对象中重写 cache_creation 嵌套对象的 TTL 分类。
-// usageObj 是 usage JSON 对象（map[string]any）。
-// replaceModelInResponseBody 替换响应体中的model字段
-// 使用 gjson/sjson 精确替换，避免全量 JSON 反序列化
-// RecordUsageInput 记录使用量的输入参数。
-// 异步 worker 只接收计费所需快照，不能持有 ParsedRequest/RequestBodyRef 这类大请求体引用。
-// APIKeyQuotaUpdater defines the interface for updating API Key quota and rate limit usage
-// postUsageBillingParams 统一扣费所需的参数
-// PlatformFromAPIKey 从 APIKey 关联的 Group 推导 platform 名称。
-// apiKey 为 nil 或 Group 信息缺失时返回空串（调用方据此 short-circuit quota 累加）。
-// 导出供 handler 层调用。
-// QuotaPlatform 返回 user×platform 配额计量使用的平台标识。
-// 强制平台路由（如 /antigravity）优先按 ctx 中的 ForcePlatform 计量，否则回退到
-// APIKey 关联 Group 的平台。
-//
-// 注意：必须用带 ForcePlatform 的请求 context 调用（如 handler 的 c.Request.Context()）。
-// 后扣运行在 worker 池的 background ctx 上没有 ForcePlatform，因此后扣平台由 handler
-// 预先算定、经 RecordUsageInput.QuotaPlatform 传入，不要在后扣链路用 worker ctx 调用本函数。
-// postUsageBilling is the legacy fallback billing path used when the unified
-// billing repo is unavailable (nil). Production uses applyUsageBilling → repo.Apply
-// for atomic billing. This path only runs in tests or degraded mode.
-// notifyBalanceLow sends balance low notification after deduction.
-// When result.NewBalance is available (from DB transaction RETURNING), it is used directly
-// to reconstruct oldBalance, avoiding stale Redis reads and concurrent-deduction races.
-// resolveOldBalance returns the pre-deduction balance.
-// Prefers the DB transaction result (newBalance + cost) over snapshot.
-// notifyAccountQuota sends account quota threshold notification after increment.
-// When result.QuotaState is available (from DB transaction RETURNING), it is passed directly
-// to avoid a separate DB read that may see stale or concurrently-modified data.
-// billingDeps 扣费逻辑依赖的服务（由各 gateway service 提供）
-// recordUsageOpts 内部选项，参数化普通计费与长上下文计费的差异点。
-// RecordUsage 记录使用量并扣费（或更新订阅用量）
-// RecordUsageLongContextInput 记录使用量的输入参数（支持长上下文双倍计费）
-// RecordUsageWithLongContext 记录使用量并扣费，支持长上下文双倍计费（用于 Gemini）
-// recordUsageCoreInput 是 recordUsageCore 的公共输入字段，从两种输入结构体中提取。
-// recordUsageCore 是 RecordUsage 和 RecordUsageWithLongContext 的统一实现。
-// LongContextThreshold > 0 时 Token 计费回退走 CalculateCostWithLongContext。
-func recordUsageBillingModel(result *ForwardResult, account *Account) string {
-	if result == nil {
-		return ""
+// GetAvailableModels returns the list of models available for a group
+// It aggregates model_mapping keys from all schedulable accounts in the group
+
+// DoGrokNativeResponsesJSON POSTs a non-streaming Responses body to the account's
+// Grok upstream and returns the raw JSON body. Used by /v1/web_search.
+// Gin-free: UA is always the pinned Grok CLI identity (resolveGrokUpstreamUserAgent ignores inbound).
+func (s *GatewayService) DoGrokNativeResponsesJSON(ctx context.Context, account *Account, body []byte) ([]byte, error) {
+	if s == nil || s.httpUpstream == nil {
+		return nil, errors.New("http upstream not configured")
 	}
-	if account != nil && account.IsMiniMax() {
-		if upstreamModel := strings.TrimSpace(result.UpstreamModel); upstreamModel != "" {
-			return upstreamModel
+	if account == nil {
+		return nil, errors.New("account is required")
+	}
+	if !account.IsGrok() {
+		return nil, errors.New("grok account required")
+	}
+	token, _, err := s.GetAccessToken(ctx, account)
+	if err != nil {
+		// Credential/token failures should try the next Grok account in the pool.
+		return nil, &UpstreamFailoverError{
+			StatusCode: http.StatusUnauthorized,
+			Reason:     GatewayFailureReason("grok_search_token"),
 		}
 	}
-	return forwardResultBillingModel(result.Model, result.UpstreamModel)
+	targetURL, err := buildGrokResponsesURL(account, nil, s.settingService)
+	if err != nil {
+		return nil, err
+	}
+	if json.Valid(body) {
+		if model := strings.TrimSpace(gjson.GetBytes(body, "model").String()); model == "" {
+			if patched, patchErr := sjson.SetBytes(body, "model", xai.DefaultTextModel); patchErr == nil {
+				body = patched
+			}
+		}
+	}
+	upstreamReq, err := http.NewRequestWithContext(ctx, http.MethodPost, targetURL, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("build grok responses request: %w", err)
+	}
+	upstreamReq.Header.Set("Authorization", "Bearer "+token)
+	upstreamReq.Header.Set("Content-Type", "application/json")
+	upstreamReq.Header.Set("Accept", "application/json")
+	upstreamReq.Header.Set("User-Agent", defaultGrokUpstreamUserAgent())
+	applyGrokCLIHeaders(upstreamReq.Header)
+	account.ApplyHeaderOverrides(upstreamReq.Header)
+	proxyURL := ""
+	if account.ProxyID != nil && account.Proxy != nil {
+		proxyURL = account.Proxy.URL()
+	}
+	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
+	if err != nil {
+		return nil, &UpstreamFailoverError{StatusCode: http.StatusBadGateway, Reason: GatewayFailureReason("grok_search_transport")}
+	}
+	defer func() { _ = resp.Body.Close() }()
+	respBytes, readErr := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if readErr != nil {
+		return nil, &UpstreamFailoverError{
+			StatusCode: http.StatusBadGateway,
+			Reason:     GatewayFailureReason("grok_search_read"),
+		}
+	}
+	if resp.StatusCode >= 400 {
+		msg := string(respBytes)
+		if len(msg) > 200 {
+			msg = msg[:200]
+		}
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusPaymentRequired || resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+			return nil, &UpstreamFailoverError{StatusCode: resp.StatusCode, ResponseBody: respBytes}
+		}
+		return nil, fmt.Errorf("grok upstream %d: %s", resp.StatusCode, msg)
+	}
+	return respBytes, nil
 }
 
-// calculateRecordUsageCost 根据请求类型和选项计算费用。
-// resolveChannelPricing 检查指定模型是否存在渠道级别定价。
-// 返回非 nil 的 ResolvedPricing 表示有渠道定价，nil 表示走默认定价路径。
-// calculateImageCost 计算图片生成费用：渠道级别定价优先，否则走按次计费。
-// calculateTokenCost 计算 Token 计费：根据 opts 决定走普通/长上下文/渠道统一计费。
-// buildRecordUsageLog 构建使用日志并设置计费模式。
-// resolveBillingMode 根据计费结果和请求类型确定计费模式。
-// ResolveChannelMapping 委托渠道服务解析模型映射
-// ReplaceModelInBody 替换请求体中的模型名（导出供 handler 使用）
-// IsModelRestricted 检查模型是否被渠道限制
-// ResolveRequestChannelMapping 解析入站请求的渠道映射（groupID 可为空）。
-// 不含模型限制检查——那一步由调度阶段的 checkChannelPricingRestriction 负责。
-// checkChannelPricingRestriction 根据渠道计费基准检查模型是否受定价列表限制。
-// 供调度阶段预检查（requested / channel_mapped）。
-// upstream 需逐账号检查，此处返回 false。
-// billingModelForRestriction 根据计费基准确定限制检查使用的模型。
-// upstream 返回空（需逐账号检查）。
-// isUpstreamModelRestrictedByChannel 检查账号映射后的上游模型是否受渠道定价限制。
-// 仅在 BillingModelSource="upstream" 且 RestrictModels=true 时由调度循环调用。
-// resolveAccountUpstreamModel 确定账号将请求模型映射为什么上游模型。
-// needsUpstreamChannelRestrictionCheck 判断是否需要在调度循环中逐账号检查上游模型的渠道限制。
-// isStickyAccountUpstreamRestricted 检查粘性会话命中的账号是否受 upstream 渠道限制。
-// 合并 needsUpstreamChannelRestrictionCheck + isUpstreamModelRestrictedByChannel 两步调用，
-// 供 sticky session 条件链使用，避免内联多个函数调用导致行过长。
-// ForwardCountTokens 转发 count_tokens 请求到上游 API
-// 特点：不记录使用量、仅支持非流式响应
-// buildCountTokensRequest 构建 count_tokens 上游请求
-// countTokensError 返回 count_tokens 错误响应
-// buildCustomRelayURL 构建自定义中继转发 URL
-// 在 path 后附加 beta=true 和可选的 proxy 查询参数
-// GetAvailableModels delegates to the unified model catalog first. Only when the
-// catalog is unavailable or returns an error does it defensively aggregate legacy
-// model mappings and provider defaults from schedulable accounts.
 func (s *GatewayService) GetAvailableModels(ctx context.Context, groupID *int64, platform string) []string {
 	if s == nil {
 		return nil

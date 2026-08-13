@@ -282,6 +282,7 @@
             :turnstile-site-key="turnstileSiteKey"
             :tencent-enabled="tencentCaptchaEnabled"
             :tencent-app-id="tencentCaptchaAppId"
+            :tencent-region="tencentCaptchaRegion"
             :aliyun-enabled="aliyunCaptchaEnabled"
             :aliyun-scene-id="aliyunCaptchaSceneId"
             :aliyun-prefix="aliyunCaptchaPrefix"
@@ -424,10 +425,13 @@ import {
   validateInvitationCode
 } from '@/api/auth'
 import { buildAuthErrorMessage } from '@/utils/authError'
-import { extractI18nErrorMessage } from '@/utils/apiError'
+import { extractApiErrorCode, extractI18nErrorMessage } from '@/utils/apiError'
 import {
+  formatRegistrationEmailSuffixWhitelistForMessage,
+  isRegistrationEmailSuffixAllowed,
   isRegistrationEmailSuffixBlocked,
-  normalizeRegistrationEmailSuffixBlacklist
+  normalizeRegistrationEmailSuffixBlacklist,
+  normalizeRegistrationEmailSuffixWhitelist
 } from '@/utils/registrationEmailPolicy'
 import {
   clearAffiliateReferralCode,
@@ -437,7 +441,7 @@ import {
 } from '@/utils/oauthAffiliate'
 import type { LoginAgreementDocument } from '@/types'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const LOGIN_AGREEMENT_STORAGE_KEY = 'sub2api_login_agreement_consent'
 
 // ==================== Router & Stores ====================
@@ -466,6 +470,7 @@ const turnstileSiteKey = ref<string>('')
 const siteName = computed(() => appStore.siteName)
 const tencentCaptchaEnabled = ref<boolean>(false)
 const tencentCaptchaAppId = ref<string>('')
+const tencentCaptchaRegion = ref<string>('cn')
 const aliyunCaptchaEnabled = ref<boolean>(false)
 const aliyunCaptchaSceneId = ref<string>('')
 const aliyunCaptchaPrefix = ref<string>('')
@@ -477,6 +482,9 @@ const oidcOAuthProviderName = ref<string>('OIDC')
 const githubOAuthEnabled = ref<boolean>(false)
 const googleOAuthEnabled = ref<boolean>(false)
 const registrationEmailSuffixBlacklist = ref<string[]>([])
+const registrationEmailSuffixWhitelist = ref<string[]>([])
+// 域名限量注册开关：开启时非白名单域名可注册 1 个账户（由后端判定），前端不做白名单预检。
+const emailDomainQuotaEnabled = ref<boolean>(false)
 const loginAgreementEnabled = ref<boolean>(false)
 const loginAgreementMode = ref<'modal' | 'checkbox' | string>('modal')
 const loginAgreementUpdatedAt = ref<string>('')
@@ -644,6 +652,7 @@ onMounted(async () => {
     turnstileSiteKey.value = settings.turnstile_site_key || ''
     tencentCaptchaEnabled.value = settings.tencent_captcha_enabled === true
     tencentCaptchaAppId.value = settings.tencent_captcha_app_id || ''
+    tencentCaptchaRegion.value = settings.tencent_captcha_region || 'cn'
     aliyunCaptchaEnabled.value = settings.aliyun_captcha_enabled === true
     aliyunCaptchaSceneId.value = settings.aliyun_captcha_scene_id || ''
     aliyunCaptchaPrefix.value = settings.aliyun_captcha_prefix || ''
@@ -657,6 +666,10 @@ onMounted(async () => {
     registrationEmailSuffixBlacklist.value = normalizeRegistrationEmailSuffixBlacklist(
       settings.registration_email_suffix_blacklist || []
     )
+    registrationEmailSuffixWhitelist.value = normalizeRegistrationEmailSuffixWhitelist(
+      settings.registration_email_suffix_whitelist || []
+    )
+    emailDomainQuotaEnabled.value = settings.registration_email_domain_quota_enabled === true
     applyLoginAgreementSettings(settings)
 
     // Read promo code from URL parameter only if promo code is enabled
@@ -1124,7 +1137,19 @@ function validateEmail(email: string): boolean {
 }
 
 function buildEmailSuffixNotAllowedMessage(): string {
-  return t('auth.emailSuffixNotAllowed')
+  const normalizedWhitelist = normalizeRegistrationEmailSuffixWhitelist(
+    registrationEmailSuffixWhitelist.value
+  )
+  if (normalizedWhitelist.length === 0) {
+    return t('auth.emailSuffixNotAllowed')
+  }
+  const separator = String(locale.value || '').toLowerCase().startsWith('zh') ? '、' : ', '
+  return t('auth.emailSuffixNotAllowedWithAllowed', {
+    suffixes: formatRegistrationEmailSuffixWhitelistForMessage(normalizedWhitelist, {
+      separator,
+      more: (count) => t('auth.emailSuffixAllowedMore', { count })
+    })
+  })
 }
 
 function validateForm(): boolean {
@@ -1155,6 +1180,13 @@ function validateForm(): boolean {
   } else if (
     isRegistrationEmailSuffixBlocked(formData.email, registrationEmailSuffixBlacklist.value)
   ) {
+    errors.email = t('auth.emailSuffixNotAllowed')
+    isValid = false
+  } else if (
+    !emailDomainQuotaEnabled.value &&
+    !isRegistrationEmailSuffixAllowed(formData.email, registrationEmailSuffixWhitelist.value)
+  ) {
+    // 域名限量注册关闭时保持严格白名单预检；开启时交给后端按域名额度判定
     errors.email = buildEmailSuffixNotAllowedMessage()
     isValid = false
   }
@@ -1325,9 +1357,7 @@ async function handleRegister(): Promise<void> {
     await router.push('/dashboard')
   } catch (error: unknown) {
     // Handle registration error
-    errorMessage.value = buildAuthErrorMessage(error, {
-      fallback: t('auth.registrationFailed')
-    })
+    errorMessage.value = buildRegistrationErrorMessage(error, t('auth.registrationFailed'))
 
     // Also show error toast
     appStore.showError(errorMessage.value)
@@ -1337,6 +1367,13 @@ async function handleRegister(): Promise<void> {
     }
     isLoading.value = false
   }
+}
+
+function buildRegistrationErrorMessage(error: unknown, fallback: string): string {
+  if (extractApiErrorCode(error) === 'EMAIL_DOMAIN_REGISTRATION_LIMIT') {
+    return t('auth.emailDomainRegistrationLimit')
+  }
+  return buildAuthErrorMessage(error, { fallback })
 }
 </script>
 

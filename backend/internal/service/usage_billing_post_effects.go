@@ -80,14 +80,6 @@ func usageBillingPlatformQuotaSnapshotFromRecord(rec *UserPlatformQuotaRecord) *
 	}
 }
 
-func cloneTimePtr(value *time.Time) *time.Time {
-	if value == nil {
-		return nil
-	}
-	cloned := *value
-	return &cloned
-}
-
 func userPlatformQuotaCacheEntryHasLimit(entry *UserPlatformQuotaCacheEntry) bool {
 	return entry != nil &&
 		(entry.DailyLimitUSD != nil || entry.WeeklyLimitUSD != nil || entry.MonthlyLimitUSD != nil)

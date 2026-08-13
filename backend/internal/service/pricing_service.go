@@ -823,68 +823,10 @@ func (s *PricingService) lookupModelPricing(modelName string, allowInference boo
 	modelLower := strings.ToLower(strings.TrimSpace(modelName))
 	lookupCandidates := s.buildModelLookupCandidates(modelLower)
 
-	// 1. 精确匹配
-	for _, candidate := range lookupCandidates {
-		if candidate == "" {
-			continue
-		}
-		if pricing, ok := s.pricingData[candidate]; ok {
-			if directPricingCandidateAllowed(modelLower, candidate, pricing, allowInference) {
-				return pricing
-			}
-		}
+	// 1~3. 确定性识别（精确名 / 已知拼写变体 / 去掉日期版本后缀）
+	if pricing := s.lookupIdentifiedModelPricingLocked(modelLower, lookupCandidates); pricing != nil {
+		return pricing
 	}
-
-	// 2. 处理常见的模型名称变体
-	// 2a. 定向替换：claude-opus-4-5-20251101 -> claude-opus-4.5-20251101
-	for _, candidate := range lookupCandidates {
-		normalized := strings.ReplaceAll(candidate, "-4-5-", "-4.5-")
-		if pricing, ok := s.pricingData[normalized]; ok && directPricingCandidateAllowed(modelLower, candidate, pricing, allowInference) {
-			return pricing
-		}
-	}
-	// 2b. 通用 dash → dot 版本号归一化（覆盖 glm-5-1 → glm-5.1、
-	// kimi-k2-5 → kimi-k2.5、minimax-m2-7 → minimax-m2.7 等 dash 版本命名）。
-	// 前置的 \D 限定避免误伤已经是 dot 版本或纯 `-N`（如 -20251101）尾缀的情况。
-	for _, candidate := range lookupCandidates {
-		normalized := normalizeDashVersionSuffix(candidate)
-		if normalized == candidate {
-			continue
-		}
-		if pricing, ok := s.pricingData[normalized]; ok && directPricingCandidateAllowed(modelLower, candidate, pricing, allowInference) {
-			return pricing
-		}
-	}
-
-	// 3. 尝试模糊匹配（去掉版本号后缀）
-	// claude-opus-4-5-20251101 -> claude-opus-4.5
-	//
-	// 严格口径只剥尾部的 8 位日期快照；宽松口径保留历史 extractBaseName 行为。
-	// extractBaseName 还会删除任意位置的 8 位数字段和包含 ":" 的版本段，若用于
-	// 严格匹配，会让 gpt-5.4-v1:0 等未知 SKU 借用 gpt-5.4 的价格。
-	baseCandidate := lookupCandidates[0]
-	if !allowInference && !sameSKUPricingCandidateAllowed(modelLower, baseCandidate) {
-		// Arbitrary provider/model paths are distinct SKUs. Keeping their prefix
-		// here also prevents the date-snapshot loop from reopening the exact-match
-		// bypass closed above.
-		baseCandidate = modelLower
-	}
-	baseName := s.extractBaseName(baseCandidate)
-	if !allowInference {
-		baseName = strictPricingSnapshotBase(baseCandidate)
-	}
-	for key, pricing := range s.pricingData {
-		keyBase := s.extractBaseName(strings.ToLower(key))
-		if !allowInference {
-			keyBase = strictPricingSnapshotBase(key)
-		}
-		if keyBase == baseName && inferredPricingCandidateAllowed(pricing) {
-			return pricing
-		}
-	}
-
-	// 以下两步是真正的跨模型推断：拿**别的**模型的价格套到这个模型上。
-	// 严格口径到此为止。
 	if !allowInference {
 		return nil
 	}
@@ -904,20 +846,68 @@ func (s *PricingService) lookupModelPricing(modelName string, allowInference boo
 	return nil
 }
 
-// directPricingCandidateAllowed 区分结算使用的宽松查价和准入使用的严格查价。
-//
-// 宽松查价保留历史的正价 provider/model last-segment 回退，确保已经产生上游成本的
-// 请求仍能结算；严格查价只接受精确 SKU 或下方白名单里的显式别名。零价/不完整 token
-// 价在两种口径下都不能通过任意 provider 前缀扩散。
-func directPricingCandidateAllowed(requested, candidate string, pricing *ModelPriceEntry, allowInference bool) bool {
-	if sameSKUPricingCandidateAllowed(requested, candidate) {
-		return true
+// lookupIdentifiedModelPricingLocked 只做"确定性识别"的三步查找：精确键、已知拼写
+// 变体、去掉日期/版本后缀后的同名条目。它刻意不包含 matchByModelFamily /
+// matchOpenAIModel 这类按子串猜系列的兜底——那些兜底会给任意名字都返回一个价格。
+// 调用方必须持有 s.mu 读锁。
+func (s *PricingService) lookupIdentifiedModelPricingLocked(modelLower string, lookupCandidates []string) *LiteLLMModelPricing {
+	if len(lookupCandidates) == 0 {
+		return nil
 	}
-	return allowInference && inferredPricingCandidateAllowed(pricing)
+
+	// 1. 精确匹配
+	for _, candidate := range lookupCandidates {
+		if candidate == "" {
+			continue
+		}
+		if pricing, ok := s.pricingData[candidate]; ok {
+			if sameSKUPricingCandidateAllowed(modelLower, candidate) {
+				return pricing
+			}
+		}
+	}
+
+	// 2. 处理常见的模型名称变体
+	// 2a. 定向替换：claude-opus-4-5-20251101 -> claude-opus-4.5-20251101
+	for _, candidate := range lookupCandidates {
+		normalized := strings.ReplaceAll(candidate, "-4-5-", "-4.5-")
+		if pricing, ok := s.pricingData[normalized]; ok && sameSKUPricingCandidateAllowed(modelLower, candidate) {
+			return pricing
+		}
+	}
+	// 2b. 通用 dash → dot 版本号归一化（覆盖 glm-5-1 → glm-5.1、
+	// kimi-k2-5 → kimi-k2.5、minimax-m2-7 → minimax-m2.7 等 dash 版本命名）。
+	// 前置的 \D 限定避免误伤已经是 dot 版本或纯 `-N`（如 -20251101）尾缀的情况。
+	for _, candidate := range lookupCandidates {
+		normalized := normalizeDashVersionSuffix(candidate)
+		if normalized == candidate {
+			continue
+		}
+		if pricing, ok := s.pricingData[normalized]; ok && sameSKUPricingCandidateAllowed(modelLower, candidate) {
+			return pricing
+		}
+	}
+
+	// 3. 尝试模糊匹配（去掉版本号后缀）
+	// claude-opus-4-5-20251101 -> claude-opus-4.5
+	//
+	// 严格口径只剥尾部的 8 位日期快照；宽松口径保留历史 extractBaseName 行为。
+	// extractBaseName 还会删除任意位置的 8 位数字段和包含 ":" 的版本段，若用于
+	// 严格匹配，会让 gpt-5.4-v1:0 等未知 SKU 借用 gpt-5.4 的价格。
+	baseCandidate := modelLower
+	baseName := strictPricingSnapshotBase(baseCandidate)
+	for key, pricing := range s.pricingData {
+		keyBase := strictPricingSnapshotBase(strings.ToLower(key))
+		if keyBase == baseName && inferredPricingCandidateAllowed(pricing) {
+			return pricing
+		}
+	}
+
+	return nil
 }
 
-// sameSKUPricingCandidateAllowed reports whether candidate is the requested SKU
-// itself or an explicitly supported spelling of that same SKU.
+// sameSKUPricingCandidateAllowed only accepts the requested SKU itself or an
+// explicitly supported spelling of the same SKU.
 func sameSKUPricingCandidateAllowed(requested, candidate string) bool {
 	requested = strings.ToLower(strings.TrimSpace(requested))
 	candidate = strings.ToLower(strings.TrimSpace(candidate))
@@ -927,7 +917,6 @@ func sameSKUPricingCandidateAllowed(requested, candidate string) bool {
 	if candidate == requested {
 		return true
 	}
-
 	aliasTarget, ok := explicitPricingAliasTarget(requested)
 	if !ok {
 		return false
@@ -938,14 +927,8 @@ func sameSKUPricingCandidateAllowed(requested, candidate string) bool {
 	return candidate == normalizeModelNameForPricing(requested)
 }
 
-// explicitPricingAliasTarget returns the unprefixed target only for namespace
-// syntaxes whose pricing identity is defined by this service. An arbitrary
-// "provider/model" path is deliberately not an alias: the provider may have a
-// different cost and must carry its own catalog/channel price.
 func explicitPricingAliasTarget(model string) (string, bool) {
 	if !strings.Contains(model, "/") {
-		// Bare OpenAI spelling aliases (for example gpt5.4 -> gpt-5.4) and
-		// Gemini thinking-tier aliases are explicit normalizations too.
 		return model, true
 	}
 	for _, prefix := range []string{"models/", "openai/", "publishers/google/models/"} {
@@ -953,25 +936,34 @@ func explicitPricingAliasTarget(model string) (string, bool) {
 			return target, target != "" && !strings.Contains(target, "/")
 		}
 	}
-
-	// Fully-qualified Vertex model resource:
-	// projects/{project}/locations/{location}/publishers/google/models/{model}
 	parts := strings.Split(model, "/")
-	if len(parts) != 8 ||
-		parts[0] != "projects" || parts[1] == "" ||
-		parts[2] != "locations" || parts[3] == "" ||
-		parts[4] != "publishers" || parts[5] != "google" ||
-		parts[6] != "models" || parts[7] == "" {
+	if len(parts) != 8 || parts[0] != "projects" || parts[1] == "" ||
+		parts[2] != "locations" || parts[3] == "" || parts[4] != "publishers" ||
+		parts[5] != "google" || parts[6] != "models" || parts[7] == "" {
 		return "", false
 	}
 	return parts[7], true
 }
 
-// inferredPricingCandidateAllowed 仅允许 input/output 均为正价的条目参与日期剥离、
-// family 和 default fuzzy fallback。显式零价仍可精确命中，但不能扩散到未知型号。
-func inferredPricingCandidateAllowed(pricing *ModelPriceEntry) bool {
-	return pricing != nil && !pricing.TokenPricingAbsent &&
-		pricing.InputCostPerToken > 0 && pricing.OutputCostPerToken > 0
+func inferredPricingCandidateAllowed(pricing *LiteLLMModelPricing) bool {
+	return pricing != nil && pricing.InputCostPerToken > 0 && pricing.OutputCostPerToken > 0
+}
+
+// GetIdentifiedModelPricing 在价格表中确定性地识别模型，识别不到时返回 nil。
+// 与 GetModelPricing 的区别：不会退化成按 "opus"/"haiku" 之类子串猜出的系列兜底价。
+// 用于必须区分"这是价格表里已知的模型"和"这只是名字里带某个关键词"的场景。
+func (s *PricingService) GetIdentifiedModelPricing(modelName string) *LiteLLMModelPricing {
+	if s == nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	modelLower := strings.ToLower(strings.TrimSpace(modelName))
+	if modelLower == "" {
+		return nil
+	}
+	return s.lookupIdentifiedModelPricingLocked(modelLower, s.buildModelLookupCandidates(modelLower))
 }
 
 func (s *PricingService) buildModelLookupCandidates(modelLower string) []string {

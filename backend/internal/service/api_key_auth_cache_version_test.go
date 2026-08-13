@@ -60,7 +60,7 @@ func TestAPIKeyService_RejectsV15AuthSnapshotWithoutReasoningEffortPolicy(t *tes
 	}
 }
 
-func TestAPIKeyService_RejectsV19AuthSnapshotWithMissingVIPFields(t *testing.T) {
+func TestAPIKeyService_RejectsCurrentAuthSnapshotWithMissingVIPFields(t *testing.T) {
 	groupID := int64(9)
 	svc := &APIKeyService{}
 	autoMode := VIPModeAuto
@@ -129,7 +129,7 @@ func TestAPIKeyService_RejectsV19AuthSnapshotWithMissingVIPFields(t *testing.T) 
 	})
 }
 
-func TestAPIKeyService_V19AuthSnapshotRoundTripPreservesVIPAuthorization(t *testing.T) {
+func TestAPIKeyService_CurrentAuthSnapshotRoundTripPreservesVIPAuthorization(t *testing.T) {
 	groupID := int64(9)
 	forceOff := false
 	svc := &APIKeyService{}

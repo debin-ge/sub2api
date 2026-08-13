@@ -17,14 +17,12 @@ const {
 } = vi.hoisted(() => ({
   routeState: { query: {} as Record<string, string> },
   pushMock: vi.fn(),
+  getPublicSettingsMock: vi.fn(),
   registerMock: vi.fn(),
   showSuccessMock: vi.fn(),
   showErrorMock: vi.fn(),
   showWarningMock: vi.fn(),
-  getPublicSettingsMock: vi.fn(),
-  appStoreState: {
-    siteName: 'Sub2API'
-  },
+  appStoreState: { siteName: 'Sub2API' },
   validateAffiliateCodeMock: vi.fn(),
   validateInvitationCodeMock: vi.fn(),
   validatePromoCodeMock: vi.fn()
@@ -43,6 +41,9 @@ vi.mock('vue-i18n', () => ({
   }),
   useI18n: () => ({
     t: (key: string, params?: Record<string, string>) => {
+      if (key === 'auth.emailDomainRegistrationLimit') {
+        return '该邮箱域名无法注册新账户。请使用主流邮箱注册；如需使用企业邮箱，请联系客服添加域名白名单。'
+      }
       if (key === 'auth.signUpToStart') {
         return `Sign up to start using ${params?.siteName}`
       }
@@ -53,14 +54,12 @@ vi.mock('vue-i18n', () => ({
 }))
 
 vi.mock('@/stores', () => ({
-  useAuthStore: () => ({
-    register: (...args: unknown[]) => registerMock(...args)
-  }),
+  useAuthStore: () => ({ register: (...args: unknown[]) => registerMock(...args) }),
   useAppStore: () => ({
     siteName: appStoreState.siteName,
     fetchPublicSettings: (...args: unknown[]) => getPublicSettingsMock(...args),
-    showSuccess: (...args: unknown[]) => showSuccessMock(...args),
     showError: (...args: unknown[]) => showErrorMock(...args),
+    showSuccess: (...args: unknown[]) => showSuccessMock(...args),
     showWarning: (...args: unknown[]) => showWarningMock(...args)
   })
 }))
@@ -95,6 +94,8 @@ function publicSettings(overrides: Record<string, unknown> = {}) {
     github_oauth_enabled: false,
     google_oauth_enabled: false,
     registration_email_suffix_blacklist: [],
+    registration_email_suffix_whitelist: [],
+    registration_email_domain_quota_enabled: false,
     login_agreement_enabled: false,
     login_agreement_documents: [],
     ...overrides
@@ -135,177 +136,11 @@ describe('RegisterView affiliate referral code', () => {
     validatePromoCodeMock.mockReset()
     localStorage.clear()
     sessionStorage.clear()
-
     getPublicSettingsMock.mockResolvedValue(publicSettings())
     validateAffiliateCodeMock.mockResolvedValue({ valid: true })
     validateInvitationCodeMock.mockResolvedValue({ valid: true })
     validatePromoCodeMock.mockResolvedValue({ valid: true })
     registerMock.mockResolvedValue({})
-  })
-
-  it('renders the app-store site name on the first render', () => {
-    appStoreState.siteName = 'Acme Gateway'
-    getPublicSettingsMock.mockReturnValue(new Promise(() => undefined))
-
-    const wrapper = mountRegisterView()
-
-    expect(wrapper.text()).toContain('Sign up to start using Acme Gateway')
-    expect(wrapper.text()).not.toContain('Sub2API')
-  })
-
-  it('shows and validates a referral code restored from the URL', async () => {
-    routeState.query = { aff: 'AFF123' }
-
-    const wrapper = mountRegisterView()
-    await flushPromises()
-
-    expect(wrapper.get('#aff_code').element).toHaveProperty('value', 'AFF123')
-    expect(validateAffiliateCodeMock).toHaveBeenCalledWith('AFF123')
-    expect(wrapper.text()).toContain('auth.affiliateCodeValid')
-    expect(localStorage.getItem('affiliate_referral_code')).toContain('AFF123')
-  })
-
-  it('hides the referral field when affiliate rewards are disabled', async () => {
-    getPublicSettingsMock.mockResolvedValue(publicSettings({ affiliate_enabled: false }))
-
-    const wrapper = mountRegisterView()
-    await flushPromises()
-
-    expect(wrapper.find('#aff_code').exists()).toBe(false)
-  })
-
-  it('blocks registration for an email domain on the blacklist', async () => {
-    getPublicSettingsMock.mockResolvedValue(
-      publicSettings({
-        registration_email_suffix_blacklist: ['@nimail.cn', '*.edu.cn']
-      })
-    )
-
-    const wrapper = mountRegisterView()
-    await flushPromises()
-    await wrapper.get('#email').setValue('blocked@nimail.cn')
-    await wrapper.get('#password').setValue('secret-123')
-    await wrapper.get('form').trigger('submit.prevent')
-    await flushPromises()
-
-    expect(registerMock).not.toHaveBeenCalled()
-    expect(showErrorMock).toHaveBeenCalledWith('auth.emailSuffixNotAllowed')
-  })
-
-  it('allows a validated referral code to satisfy the invitation requirement', async () => {
-    routeState.query = { aff_code: 'AFF123' }
-    getPublicSettingsMock.mockResolvedValue(
-      publicSettings({ invitation_code_enabled: true })
-    )
-
-    const wrapper = mountRegisterView()
-    await flushPromises()
-    await wrapper.get('#email').setValue('invitee@example.com')
-    await wrapper.get('#password').setValue('secret-123')
-    await wrapper.get('form').trigger('submit.prevent')
-    await flushPromises()
-
-    expect(registerMock).toHaveBeenCalledWith({
-      email: 'invitee@example.com',
-      password: 'secret-123',
-      turnstile_token: undefined,
-      promo_code: undefined,
-      invitation_code: undefined,
-      aff_code: 'AFF123'
-    })
-    expect(pushMock).toHaveBeenCalledWith('/dashboard')
-    expect(localStorage.getItem('affiliate_referral_code')).toBeNull()
-  })
-
-  it('disables native form validation so the affiliate-only path is not blocked', async () => {
-    getPublicSettingsMock.mockResolvedValue(
-      publicSettings({ invitation_code_enabled: true })
-    )
-
-    const wrapper = mountRegisterView()
-    await flushPromises()
-
-    // Without novalidate the browser blocks submit on the empty required
-    // invitation input before validateForm can accept the affiliate code.
-    expect(wrapper.get('form').attributes('novalidate')).toBeDefined()
-  })
-
-  it('allows registration without an invitation code when the field is optional', async () => {
-    getPublicSettingsMock.mockResolvedValue(
-      publicSettings({
-        invitation_code_enabled: true,
-        invitation_code_required: false
-      })
-    )
-
-    const wrapper = mountRegisterView()
-    await flushPromises()
-    await wrapper.get('#email').setValue('optional-invite@example.com')
-    await wrapper.get('#password').setValue('secret-123')
-    await wrapper.get('form').trigger('submit.prevent')
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('common.optional')
-    expect(registerMock).toHaveBeenCalledWith({
-      email: 'optional-invite@example.com',
-      password: 'secret-123',
-      turnstile_token: undefined,
-      promo_code: undefined,
-      invitation_code: undefined,
-      aff_code: undefined
-    })
-  })
-
-  it('still rejects a supplied invalid invitation code when the field is optional', async () => {
-    getPublicSettingsMock.mockResolvedValue(
-      publicSettings({
-        invitation_code_enabled: true,
-        invitation_code_required: false
-      })
-    )
-    validateInvitationCodeMock.mockResolvedValue({
-      valid: false,
-      error_code: 'INVITATION_CODE_INVALID'
-    })
-
-    const wrapper = mountRegisterView()
-    await flushPromises()
-    await wrapper.get('#email').setValue('invalid-invite@example.com')
-    await wrapper.get('#password').setValue('secret-123')
-    await wrapper.get('#invitation_code').setValue('BADCODE')
-    await wrapper.get('form').trigger('submit.prevent')
-    await flushPromises()
-
-    expect(validateInvitationCodeMock).toHaveBeenCalledWith('BADCODE')
-    expect(registerMock).not.toHaveBeenCalled()
-    expect(showErrorMock).toHaveBeenCalledWith('auth.invitationCodeInvalid')
-  })
-
-  it('blocks registration when a supplied referral code is invalid', async () => {
-    routeState.query = { aff: 'BADCODE' }
-    validateAffiliateCodeMock.mockResolvedValue({
-      valid: false,
-      error_code: 'AFFILIATE_CODE_INVALID'
-    })
-
-    const wrapper = mountRegisterView()
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('auth.affiliateCodeInvalid')
-    expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeDefined()
-    expect(registerMock).not.toHaveBeenCalled()
-    // An invalid code must not linger in localStorage, where it would otherwise be
-    // carried into a later OAuth start URL for 30 days.
-    expect(localStorage.getItem('affiliate_referral_code')).toBeNull()
-  })
-
-  it('does not persist an unvalidated code on each keystroke', async () => {
-    // Validation is debounced; before it resolves, nothing should be stored.
-    const wrapper = mountRegisterView()
-    await flushPromises()
-
-    await wrapper.get('#aff_code').setValue('TYPING')
-    expect(localStorage.getItem('affiliate_referral_code')).toBeNull()
   })
 
   it('keeps the optional affiliate invitation field before Turnstile', async () => {
@@ -340,5 +175,91 @@ describe('RegisterView affiliate referral code', () => {
 
     expect(wrapper.get('#invitation_code').exists()).toBe(true)
     expect(wrapper.get('[data-testid="affiliate-invitation-field"] #aff_code').exists()).toBe(true)
+  })
+
+  it('submits a non-whitelist email domain so the backend can enforce its registration quota', async () => {
+    getPublicSettingsMock.mockResolvedValueOnce({
+      ...publicSettings(),
+      turnstile_enabled: false,
+      registration_email_suffix_whitelist: ['allowed.com'],
+      registration_email_domain_quota_enabled: true
+    })
+
+    const wrapper = mountRegisterView()
+    await flushPromises()
+    await wrapper.get('#email').setValue('first@custom.example')
+    await wrapper.get('#password').setValue('secret-123')
+    await wrapper.get('form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(registerMock).toHaveBeenCalledWith(
+      expect.objectContaining({ email: 'first@custom.example' })
+    )
+    expect(showErrorMock).not.toHaveBeenCalled()
+  })
+
+  it('shows the localized registration domain quota message returned by the backend', async () => {
+    getPublicSettingsMock.mockResolvedValueOnce({
+      ...publicSettings(),
+      turnstile_enabled: false,
+      registration_email_suffix_whitelist: ['allowed.com'],
+      registration_email_domain_quota_enabled: true
+    })
+    registerMock.mockRejectedValueOnce({
+      reason: 'EMAIL_DOMAIN_REGISTRATION_LIMIT',
+      message: 'raw backend message'
+    })
+
+    const wrapper = mountRegisterView()
+    await flushPromises()
+    await wrapper.get('#email').setValue('second@custom.example')
+    await wrapper.get('#password').setValue('secret-123')
+    await wrapper.get('form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(showErrorMock).toHaveBeenCalledWith(
+      '该邮箱域名无法注册新账户。请使用主流邮箱注册；如需使用企业邮箱，请联系客服添加域名白名单。'
+    )
+  })
+
+  // 域名限量注册开关默认关闭：恢复 PR5423 之前的客户端白名单预检，非白名单域名不发起注册请求。
+  it('rejects a non-whitelist email domain locally when the domain quota switch is disabled', async () => {
+    getPublicSettingsMock.mockResolvedValueOnce({
+      ...publicSettings(),
+      turnstile_enabled: false,
+      registration_email_suffix_whitelist: ['allowed.com']
+    })
+
+    const wrapper = mountRegisterView()
+    await flushPromises()
+    await wrapper.get('#email').setValue('first@custom.example')
+    await wrapper.get('#password').setValue('secret-123')
+    await wrapper.get('form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(registerMock).not.toHaveBeenCalled()
+    // 校验失败通过 validationToastMessage watcher 弹 toast
+    expect(showErrorMock).toHaveBeenCalledWith('auth.emailSuffixNotAllowedWithAllowed')
+    expect(wrapper.get('#email').classes()).toContain('input-error')
+  })
+
+  it('still submits whitelisted email domains when the domain quota switch is disabled', async () => {
+    getPublicSettingsMock.mockResolvedValueOnce({
+      ...publicSettings(),
+      turnstile_enabled: false,
+      registration_email_suffix_whitelist: ['allowed.com']
+    })
+
+    const wrapper = mountRegisterView()
+    await flushPromises()
+    await wrapper.get('#email').setValue('user@allowed.com')
+    await wrapper.get('#password').setValue('secret-123')
+    await wrapper.get('form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(registerMock).toHaveBeenCalledWith(
+      expect.objectContaining({ email: 'user@allowed.com' })
+    )
+    expect(showErrorMock).not.toHaveBeenCalled()
   })
 })

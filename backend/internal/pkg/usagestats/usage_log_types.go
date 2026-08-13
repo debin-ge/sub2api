@@ -274,26 +274,17 @@ type UsageLogFilters struct {
 	RequestID string
 	Model     string
 	// ModelFilterSource controls how Model is matched. Empty preserves raw usage_logs.model semantics.
-	ModelFilterSource string
-	RequestType       *int16
-	Stream            *bool
-	BillingType       *int8
-	BillingMode       string
-	StartTime         *time.Time
-	EndTime           *time.Time
-	// BillingState 精确匹配结算状态（service.BillingState* 常量）。
-	BillingState *int8
-	// BillingStateUnsettled 只保留仍因定价缺失而待处理的记录（billing_state = 1），
-	// 与部分索引 idx_usage_logs_billing_state_pending 的谓词一致。价格已经恢复的 state=2
-	// 不再属于未结算集合，即使它没有被事后追扣。
-	//
-	// 它与 BillingState 分开是因为 BillingState 用于精确下钻到某一历史状态；两者同时
-	// 给出时按 AND 组合。
+	ModelFilterSource     string
+	RequestType           *int16
+	Stream                *bool
+	BillingType           *int8
+	BillingMode           string
+	UpstreamModelMismatch *bool
+	StartTime             *time.Time
+	EndTime               *time.Time
+	BillingState          *int8
 	BillingStateUnsettled bool
-	// ExcludeInternalRelay hides verified internal loopback rows from raw usage
-	// log listings. User-facing handlers set this server-side; admin listings
-	// leave it false so audit visibility remains complete.
-	ExcludeInternalRelay bool
+	ExcludeInternalRelay  bool
 	// ExactTotal requests exact COUNT(*) for pagination. Default false for fast large-table paging.
 	ExactTotal bool
 }

@@ -318,6 +318,7 @@ func cleanupWithRadarTestDependencies(rdb *redis.Client, radarRunner *service.Ra
 		nil, // miniMaxRemainsSyncRunner
 		nil, // deepSeekBalanceHealthRunner
 		nil, // channelMonitorRunner
+		nil, // channelMonitorV2Aggregator
 		nil, // modelCatalogRefreshRunner
 		nil, // quotaFlusher
 		nil, // upstreamBillingProbe
@@ -451,7 +452,8 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 		nil, // miniMaxRemainsSyncRunner
 		nil, // deepSeekBalanceHealthRunner
 		nil, // channelMonitorRunner
-		modelCatalogRefreshRunner,
+		nil, // channelMonitorV2Aggregator
+		nil, // modelCatalogRefreshRunner
 		nil, // quotaFlusher
 		nil, // upstreamBillingProbe
 		nil, // ollamaCloudUsage

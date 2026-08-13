@@ -13,6 +13,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/stretchr/testify/require"
 )
@@ -271,7 +272,7 @@ func TestUpstreamModelDiscoverer_OpenAIOAuthUsesCodexCatalog(t *testing.T) {
 	require.Equal(t, "acct-1", upstream.lastReq.Header.Get("chatgpt-account-id"))
 	require.Equal(t, codexCLIUserAgent, upstream.lastReq.Header.Get("User-Agent"))
 	require.Equal(t, codexCLIVersion, upstream.lastReq.Header.Get("Version"))
-	require.Equal(t, "codex_cli_rs", upstream.lastReq.Header.Get("originator"))
+	require.Equal(t, openai.CodexDefaultOriginator, upstream.lastReq.Header.Get("originator"))
 }
 
 func TestUpstreamModelDiscoverer_OpenAIOAuthUsesConfiguredTokenProvider(t *testing.T) {
@@ -860,7 +861,7 @@ func TestBuildUpstreamModelsRequestSupportsGrokOAuth(t *testing.T) {
 	require.Equal(t, "Bearer oauth-access-token", req.Header.Get("Authorization"))
 	require.Equal(t, grokCLIVersion, req.Header.Get("X-Grok-Client-Version"))
 	require.Equal(t, "interactive", req.Header.Get("X-Grok-Client-Mode"))
-	require.Equal(t, grokUpstreamUserAgent, req.Header.Get("User-Agent"))
+	require.Equal(t, defaultGrokUpstreamUserAgent(), req.Header.Get("User-Agent"))
 	require.Equal(t, "grok-user-id", req.Header.Get("X-UserID"))
 	require.Equal(t, "grok-user@example.com", req.Header.Get("X-Email"))
 	require.NotContains(t, req.Header.Get("Authorization"), "oauth-refresh-token")

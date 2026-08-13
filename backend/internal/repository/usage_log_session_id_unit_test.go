@@ -45,7 +45,7 @@ func usageLogInsertArgFromEnd(args []any, offsetFromEnd int) any {
 // TestPrepareUsageLogInsert_SessionIDArgWiring pins the session_id column to the
 // arg slice / arg-type table so the INSERT column lists stay in sync.
 func TestPrepareUsageLogInsert_SessionIDArgWiring(t *testing.T) {
-	require.Len(t, usageLogInsertArgTypes, 58, "arg-type table must include session_id and billing_state")
+	require.Len(t, usageLogInsertArgTypes, 59, "arg-type table must include session_id")
 
 	sessionID := "sess-persisted-123"
 	prepared := prepareUsageLogInsert(newSessionIDUsageLog(&sessionID))

@@ -283,21 +283,39 @@ func convertResponsesMessageContentToChat(role string, content json.RawMessage) 
 func convertResponsesToolsToChatTools(tools []ResponsesTool) ([]ChatTool, error) {
 	chatTools := make([]ChatTool, 0, len(tools))
 	for i, tool := range tools {
-		if tool.Type != "function" {
+		switch strings.ToLower(strings.TrimSpace(tool.Type)) {
+		case "function", "custom":
+			if strings.TrimSpace(tool.Name) == "" {
+				return nil, fmt.Errorf("function tool at index %d is missing name", i)
+			}
+			chatTools = append(chatTools, ChatTool{
+				Type: "function",
+				Function: &ChatFunction{
+					Name:        tool.Name,
+					Description: tool.Description,
+					Parameters:  tool.Parameters,
+					Strict:      tool.Strict,
+				},
+			})
+		case "x_search":
+			chatTools = append(chatTools, ChatTool{
+				Type:                     "x_search",
+				AllowedXHandles:          tool.AllowedXHandles,
+				ExcludedXHandles:         tool.ExcludedXHandles,
+				FromDate:                 tool.FromDate,
+				ToDate:                   tool.ToDate,
+				EnableImageUnderstanding: tool.EnableImageUnderstanding,
+				EnableVideoUnderstanding: tool.EnableVideoUnderstanding,
+			})
+		case "web_search", "image_generation", "file_search", "computer_use", "tool_search", "namespace", "":
+			// This converter is the strict compatibility path. Silently dropping a
+			// server-side tool changes request semantics, so callers must explicitly
+			// use LegacyResponsesToChatCompletionsRequest when lossy fallback is
+			// acceptable.
+			return nil, fmt.Errorf("unsupported responses tool type %q at index %d", tool.Type, i)
+		default:
 			return nil, fmt.Errorf("unsupported responses tool type %q at index %d", tool.Type, i)
 		}
-		if strings.TrimSpace(tool.Name) == "" {
-			return nil, fmt.Errorf("function tool at index %d is missing name", i)
-		}
-		chatTools = append(chatTools, ChatTool{
-			Type: "function",
-			Function: &ChatFunction{
-				Name:        tool.Name,
-				Description: tool.Description,
-				Parameters:  tool.Parameters,
-				Strict:      tool.Strict,
-			},
-		})
 	}
 	return chatTools, nil
 }
@@ -306,7 +324,7 @@ func convertResponsesToolChoiceToChat(raw json.RawMessage) (json.RawMessage, err
 	var choice string
 	if err := json.Unmarshal(raw, &choice); err == nil {
 		switch choice {
-		case "auto", "none", "required":
+		case "auto", "none", "required", "x_search":
 			return json.Marshal(choice)
 		default:
 			return nil, fmt.Errorf("unsupported responses tool_choice %q", choice)
@@ -322,6 +340,8 @@ func convertResponsesToolChoiceToChat(raw json.RawMessage) (json.RawMessage, err
 	}
 	switch choiceObject.Type {
 	case "function":
+	case "x_search":
+		return json.Marshal(map[string]string{"type": "x_search"})
 	case "allowed_tools":
 		return nil, fmt.Errorf("unsupported responses tool_choice type %q", choiceObject.Type)
 	default:

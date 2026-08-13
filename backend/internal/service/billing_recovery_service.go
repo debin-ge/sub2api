@@ -403,6 +403,7 @@ func (s *BillingRecoveryService) recomputeAccountStatsCost(
 		recoveryUsageTokens(log),
 		requestCount,
 		totalCost,
+		stringOrEmpty(log.ServiceTier),
 	)
 }
 
