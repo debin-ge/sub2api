@@ -315,9 +315,25 @@ func ValidateIntervals(intervals []PricingInterval, mode BillingMode) error {
 		}
 	}
 
-	// per_request / image 模式按 tier_label 匹配，不做 token 区间重叠校验
-	if mode == BillingModePerRequest || mode == BillingModeImage || mode == BillingModeVideo {
-		return nil
+	if mode == BillingModeImage || mode == BillingModeVideo {
+		return validateUniqueTierLabels(sorted, true)
+	}
+	if mode == BillingModePerRequest {
+		hasLabel := false
+		hasContextInterval := false
+		for i := range sorted {
+			if strings.TrimSpace(sorted[i].TierLabel) == "" {
+				hasContextInterval = true
+			} else {
+				hasLabel = true
+			}
+		}
+		if hasLabel && hasContextInterval {
+			return fmt.Errorf("per_request intervals cannot mix tier_label and context ranges")
+		}
+		if hasLabel {
+			return validateUniqueTierLabels(sorted, true)
+		}
 	}
 	return validateIntervalOverlap(sorted)
 }

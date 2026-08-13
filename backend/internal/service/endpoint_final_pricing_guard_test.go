@@ -120,7 +120,7 @@ func TestForwardGrokMediaRejectsUnpricedAccountMappedGenerationModelBeforeCreden
 			name:          "video",
 			endpoint:      GrokMediaEndpointVideosGenerations,
 			path:          "/v1/videos/generations",
-			body:          `{"model":"grok-imagine-video-1.5","prompt":"animate"}`,
+			body:          `{"model":"grok-imagine-video","prompt":"animate"}`,
 			mappingSource: "grok-imagine-video",
 			mappingTarget: "vendor-video-unpriced-v99",
 		},

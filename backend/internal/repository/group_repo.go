@@ -11,6 +11,7 @@ import (
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/group"
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -230,6 +231,26 @@ func (r *groupRepository) GetByIDLite(ctx context.Context, id int64) (*service.G
 
 func (r *groupRepository) Update(ctx context.Context, groupIn *service.Group) error {
 	return r.update(ctx, groupIn, nil)
+}
+
+// UpdateWithVIPConfigWriteGate repeats the rollout transition check against
+// the locked current row. This closes the stale whole-row write race where an
+// unrelated update read vip_only=true, a concurrent request disabled it, and
+// the old snapshot then wrote true back while the config gate was closed.
+func (r *groupRepository) UpdateWithVIPConfigWriteGate(
+	ctx context.Context,
+	groupIn *service.Group,
+	vipConfigWriteEnabled bool,
+) error {
+	return r.update(ctx, groupIn, func(current *service.Group) error {
+		if vipConfigWriteEnabled || current == nil || current.VIPOnly || !groupIn.VIPOnly {
+			return nil
+		}
+		return infraerrors.BadRequest(
+			service.GroupVIPConfigWriteDisabledReason,
+			"enabling VIP-only groups is disabled during the current rollout phase",
+		)
+	})
 }
 
 func (r *groupRepository) update(

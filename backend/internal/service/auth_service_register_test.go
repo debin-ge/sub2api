@@ -725,7 +725,7 @@ func TestAuthService_Register_EmailSuffixAllowed(t *testing.T) {
 	require.Equal(t, int64(8), user.ID)
 }
 
-func TestAuthService_Register_LegacyEmailSuffixWhitelistIsNotReinterpreted(t *testing.T) {
+func TestAuthService_Register_EmailSuffixWhitelistIsEnforced(t *testing.T) {
 	repo := &userRepoStub{nextID: 9}
 	service := newAuthService(repo, map[string]string{
 		SettingKeyRegistrationEnabled:         "true",
@@ -734,9 +734,9 @@ func TestAuthService_Register_LegacyEmailSuffixWhitelistIsNotReinterpreted(t *te
 
 	_, user, err := service.Register(context.Background(), "user@other.com", "password")
 
-	require.NoError(t, err)
-	require.NotNil(t, user)
-	require.Equal(t, int64(9), user.ID)
+	require.ErrorIs(t, err, ErrEmailSuffixNotAllowed)
+	require.Nil(t, user)
+	require.Empty(t, repo.created)
 }
 
 func TestAuthService_SendVerifyCode_EmailSuffixNotAllowed(t *testing.T) {

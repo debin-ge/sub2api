@@ -1033,7 +1033,7 @@ func logResponseModelBillingApplied(component string, account *Account, requestI
 }
 
 // recordUsageCore 是 RecordUsage 和 RecordUsageWithLongContext 的统一实现。
-// LongContextThreshold > 0 时 Token 计费回退走 CalculateCostWithLongContext。
+// LongContextThreshold > 0 时，Token 计费在严格模型价格上按阈值分段计算。
 func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsageCoreInput, opts *recordUsageOpts) error {
 	if s == nil {
 		return fmt.Errorf("%w: gateway service is nil", ErrDurableUsageBillingRequired)
@@ -1658,10 +1658,8 @@ func (s *GatewayService) calculateTokenCost(
 		return nil, fmt.Errorf("%w: gateway billing service unavailable", ErrModelPricingUnavailable)
 	}
 
-	// Explicit group/channel pricing wins. Built-in pricing also uses the unified
-	// resolver so the group long-context toggle can veto model-native tiers.
-	var cost *CostBreakdown
-	var err error
+	// Explicit group/channel pricing wins. Otherwise, use the strict model
+	// catalog below and apply the request-specific long-context split there.
 	if resolved := s.resolveChannelPricing(ctx, billingModel, apiKey); resolved != nil {
 		if s.resolver == nil || apiKey == nil || apiKey.Group == nil {
 			return nil, fmt.Errorf(
@@ -1678,7 +1676,7 @@ func (s *GatewayService) calculateTokenCost(
 		if err != nil {
 			return nil, err
 		}
-		cost, err = s.billingService.CalculateCostUnified(CostInput{
+		cost, err := s.billingService.CalculateCostUnified(CostInput{
 			Ctx:            ctx,
 			Model:          billingModel,
 			GroupID:        &gid,
@@ -1693,20 +1691,6 @@ func (s *GatewayService) calculateTokenCost(
 			return nil, err
 		}
 		return cost, nil
-	} else if opts.LongContextThreshold > 0 && (apiKey.Group == nil || apiKey.Group.LongContextPricingEnabled) {
-		// 长上下文双倍计费（如 Gemini 200K 阈值）
-		cost, err = s.billingService.CalculateCostWithLongContext(billingModel, tokens, multiplier, opts.LongContextThreshold, opts.LongContextMultiplier)
-	} else if s.resolver != nil && apiKey.Group != nil {
-		gid := apiKey.Group.ID
-		cost, err = s.billingService.CalculateCostUnified(CostInput{
-			Ctx: ctx, Model: billingModel, GroupID: &gid, Group: apiKey.Group,
-			Tokens: tokens, RequestCount: 1, RateMultiplier: multiplier, Resolver: s.resolver,
-		})
-	} else {
-		cost, err = s.billingService.CalculateCost(billingModel, tokens, multiplier)
-	}
-	if err != nil {
-		return nil, err
 	}
 
 	pricing, err := s.billingService.GetModelPricingStrict(billingModel)
@@ -1714,7 +1698,7 @@ func (s *GatewayService) calculateTokenCost(
 		logger.LegacyPrintf("service.gateway", "Resolve strict model pricing failed: %v", err)
 		return nil, err
 	}
-	cost, err = s.calculateStrictTokenCostWithLongContext(
+	cost, err := s.calculateStrictTokenCostWithLongContext(
 		billingModel,
 		pricing,
 		tokens,

@@ -162,6 +162,8 @@ func (s *AntigravityGatewayService) ForwardUpstream(ctx context.Context, c *gin.
 
 	return &ForwardResult{
 		Model:                         originalModel,
+		UpstreamModel:                 originalModel,
+		BillingModel:                  imageIdentity.Model,
 		UpstreamResponseModel:         observedUpstreamResponseModel(c),
 		UpstreamResponseModelConflict: observedUpstreamResponseModelConflict(c),
 		Stream:                        claudeReq.Stream,

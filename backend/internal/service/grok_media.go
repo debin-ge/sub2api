@@ -954,7 +954,7 @@ func (s *OpenAIGatewayService) ForwardGrokMedia(
 	writeGrokMediaResponse(c, resp, respBody, s.responseHeaderFilter)
 	usage := grokMediaUsageFromResponse(endpoint, requestInfo, respBody)
 	resultModel := requestModel
-	resultBillingModel := requestModel
+	resultBillingModel := upstreamModel
 	if endpoint == GrokMediaEndpointVideoStatus {
 		// Status has no request body model; use upstream status fields when billable.
 		if m := strings.TrimSpace(usage.Model); m != "" {

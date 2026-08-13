@@ -228,6 +228,7 @@ func TestRegisterOAuthEmailAccount_NonWhitelistDomainLimit(t *testing.T) {
 		"secret-123",
 		"246810",
 		"",
+		"",
 		"oidc",
 	)
 
@@ -253,6 +254,7 @@ func TestRegisterVerifiedOAuthEmailAccount_NonWhitelistDomainLimit(t *testing.T)
 		context.Background(),
 		"second@custom.example",
 		"secret-123",
+		"",
 		"",
 		"oidc",
 	)

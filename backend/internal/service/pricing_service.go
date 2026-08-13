@@ -1090,25 +1090,6 @@ func lastSegment(model string) string {
 	return model
 }
 
-// extractBaseName 提取基础模型名称（去掉日期版本号）
-func (s *PricingService) extractBaseName(model string) string {
-	// 移除日期后缀 (如 -20251101, -20241022)
-	parts := strings.Split(model, "-")
-	result := make([]string, 0, len(parts))
-	for _, part := range parts {
-		// 跳过看起来像日期的部分（8位数字）
-		if len(part) == 8 && isNumeric(part) {
-			continue
-		}
-		// 跳过版本号（如 v1:0）
-		if strings.Contains(part, ":") {
-			continue
-		}
-		result = append(result, part)
-	}
-	return strings.Join(result, "-")
-}
-
 // matchByModelFamily 基于模型系列匹配
 func (s *PricingService) matchByModelFamily(model string) *ModelPriceEntry {
 	// modelFamily 定义一个模型系列的匹配和定价查找规则。

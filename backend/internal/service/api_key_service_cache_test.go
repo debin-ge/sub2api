@@ -328,6 +328,7 @@ func TestAPIKeyService_SnapshotRoundTrip_PreservesGroupModelPricing(t *testing.T
 	svc := NewAPIKeyService(nil, nil, nil, nil, nil, nil, &config.Config{})
 	groupID := int64(9)
 	inputPrice := 1.25
+	intervalInputPrice := 2.5
 	apiKey := &APIKey{
 		ID:      1,
 		UserID:  2,
@@ -347,7 +348,7 @@ func TestAPIKeyService_SnapshotRoundTrip_PreservesGroupModelPricing(t *testing.T
 					BillingMode: BillingModeToken,
 					InputPrice:  &inputPrice,
 					Intervals: []PricingInterval{
-						{TierLabel: "long", MinContextTokens: 1000, InputPrice: 2.5},
+						{TierLabel: "long", MinTokens: 1000, InputPrice: &intervalInputPrice},
 					},
 				},
 			},
