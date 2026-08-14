@@ -135,6 +135,102 @@ func TestUsageBillingOutbox_RestartRecoveryChargesExactlyOnce(t *testing.T) {
 	assertBillingState(98.75)
 }
 
+func TestUsageBillingOutbox_RepairsUnchargedFallbackAndFloatTail(t *testing.T) {
+	ctx := context.Background()
+	client := testEntClient(t)
+
+	user := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("usage-billing-fallback-%s@example.com", uuid.NewString()),
+		PasswordHash: "hash",
+		Balance:      100,
+	})
+	apiKey := mustCreateApiKey(t, client, &service.APIKey{
+		UserID: user.ID,
+		Key:    "sk-usage-billing-fallback-" + uuid.NewString(),
+		Name:   "billing-fallback",
+	})
+	account := mustCreateAccount(t, client, &service.Account{
+		Name: "usage-billing-fallback-" + uuid.NewString(),
+		Type: service.AccountTypeAPIKey,
+	})
+
+	const rawCost = 0.17918979999999998
+	requestID := "fallback-" + uuid.NewString()
+	occurredAt := time.Now().UTC()
+	cmd := &service.UsageBillingCommand{
+		RequestID:   requestID,
+		APIKeyID:    apiKey.ID,
+		UserID:      user.ID,
+		AccountID:   account.ID,
+		AccountType: account.Type,
+		Model:       "priced-model",
+		InputTokens: 10,
+		BalanceCost: rawCost,
+		ActualCost:  rawCost,
+		TotalCost:   rawCost,
+		OccurredAt:  occurredAt,
+	}
+	usageLog := &service.UsageLog{
+		UserID:      user.ID,
+		APIKeyID:    apiKey.ID,
+		AccountID:   account.ID,
+		RequestID:   requestID,
+		Model:       cmd.Model,
+		InputTokens: cmd.InputTokens,
+		InputCost:   rawCost,
+		TotalCost:   rawCost,
+		ActualCost:  rawCost,
+		CreatedAt:   occurredAt,
+	}
+
+	commandJSON, usageLogJSON, err := marshalUsageBillingOutboxPayload(cmd, usageLog)
+	require.NoError(t, err)
+	canonicalCost := service.QuantizeUsageBillingAmount(rawCost)
+	require.Equal(t, canonicalCost, cmd.ActualCost)
+	require.Equal(t, canonicalCost, usageLog.ActualCost)
+
+	repo := NewUsageBillingRepository(client, integrationDB)
+	event, err := repo.enqueueAndClaimUsageBillingOutbox(
+		ctx,
+		"fallback-repair-worker",
+		cmd,
+		commandJSON,
+		usageLogJSON,
+	)
+	require.NoError(t, err)
+
+	// Reproduce the old error path: the durable billing transaction failed,
+	// then the caller inserted the same immutable usage facts with cost zero.
+	fallback := *usageLog
+	fallback.ActualCost = 0
+	inserted, err := (&usageLogRepository{}).createSingle(ctx, integrationDB, &fallback)
+	require.NoError(t, err)
+	require.True(t, inserted)
+
+	result, err := repo.CompleteUsageBillingOutbox(ctx, "fallback-repair-worker", event)
+	require.NoError(t, err)
+	require.True(t, result.Applied)
+	require.True(t, result.UsageLogRecorded)
+	require.False(t, result.ProjectionRepairRequired)
+	require.NoError(t, repo.AcknowledgeUsageBillingOutbox(
+		ctx,
+		result.OutboxReceipt.WorkerID,
+		result.OutboxReceipt.ID,
+	))
+
+	var balance, actualCost float64
+	require.NoError(t, integrationDB.QueryRowContext(ctx,
+		"SELECT balance FROM users WHERE id = $1", user.ID,
+	).Scan(&balance))
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `
+		SELECT actual_cost
+		FROM usage_logs
+		WHERE request_id = $1 AND api_key_id = $2
+	`, requestID, apiKey.ID).Scan(&actualCost))
+	require.InDelta(t, 100-canonicalCost, balance, 1e-9)
+	require.Equal(t, canonicalCost, actualCost)
+}
+
 func TestUsageBillingOutbox_ReplayUsesPersistedNumericPrecision(t *testing.T) {
 	ctx := context.Background()
 	client := testEntClient(t)

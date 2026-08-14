@@ -4,11 +4,21 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestShouldWriteUnsettledUsageLog(t *testing.T) {
+	require.False(t, shouldWriteUnsettledUsageLog(
+		errors.Join(ErrUsageBillingIntentPending, errors.New("transaction failed")),
+		false,
+	))
+	require.False(t, shouldWriteUnsettledUsageLog(errors.New("ack failed"), true))
+	require.True(t, shouldWriteUnsettledUsageLog(errors.New("no durable repository"), false))
+}
 
 type strictDurableUsageBillingRepoStub struct {
 	DurableUsageBillingRepository

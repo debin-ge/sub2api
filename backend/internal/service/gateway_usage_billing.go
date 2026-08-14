@@ -475,6 +475,11 @@ func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog
 	if err != nil {
 		return false, false, err
 	}
+	// ApplyAndRecord canonicalizes the durable customer charge to the same
+	// NUMERIC(20,8) amount used by the balance/quota mutations. Keep cache
+	// projections and notifications on that exact amount as well.
+	p.Cost.ActualCost = cmd.ActualCost
+	usageLog.ActualCost = cmd.ActualCost
 	if result == nil {
 		return false, false, fmt.Errorf(
 			"%w: repository %T returned a nil settlement result",
@@ -563,6 +568,12 @@ func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog
 
 	finalizePostUsageBilling(billingCtx, p, deps, result)
 	return true, result.UsageLogRecorded, nil
+}
+
+func shouldWriteUnsettledUsageLog(billingErr error, usageLogRecorded bool) bool {
+	return billingErr != nil &&
+		!usageLogRecorded &&
+		!errors.Is(billingErr, ErrUsageBillingIntentPending)
 }
 
 func releaseUsageBillingOutboxAfterPostEffectFailure(
@@ -1286,9 +1297,11 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 	}, s.billingDeps(), s.usageBillingRepo)
 
 	if billingErr != nil {
-		usageLog.ActualCost = 0
-		if usageLogErr := writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.gateway"); usageLogErr != nil {
-			return errors.Join(billingErr, usageLogErr)
+		if shouldWriteUnsettledUsageLog(billingErr, usageLogRecorded) {
+			usageLog.ActualCost = 0
+			if usageLogErr := writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.gateway"); usageLogErr != nil {
+				return errors.Join(billingErr, usageLogErr)
+			}
 		}
 		return billingErr
 	}

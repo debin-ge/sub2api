@@ -725,6 +725,32 @@ func usageLogPayloadsBillingEquivalent(existing, intended usageLogPayloadV1) boo
 	)
 }
 
+func usageLogPayloadsRecoverableUnchargedFallback(
+	existing,
+	intended usageLogPayloadV1,
+) bool {
+	existingComparable := usageLogPayloadBillingComparable(existing)
+	intendedComparable := usageLogPayloadBillingComparable(intended)
+	if existingComparable.ActualCost != 0 || intendedComparable.ActualCost <= 0 {
+		return false
+	}
+	existingComparable.ActualCost = intendedComparable.ActualCost
+	return reflect.DeepEqual(existingComparable, intendedComparable)
+}
+
+func canonicalizeUsageBillingChargeAmounts(
+	cmd *service.UsageBillingCommand,
+	usageLog *service.UsageLog,
+) {
+	if cmd != nil {
+		cmd.ActualCost = service.QuantizeUsageBillingAmount(cmd.ActualCost)
+		cmd.PlatformQuotaCost = service.QuantizeUsageBillingAmount(cmd.PlatformQuotaCost)
+	}
+	if usageLog != nil {
+		usageLog.ActualCost = service.QuantizeUsageBillingAmount(usageLog.ActualCost)
+	}
+}
+
 func usageBillingPayloadNumericError(
 	commandIssues []usageBillingNumericIssueV1,
 	logIssues []usageBillingNumericIssueV1,
@@ -971,6 +997,10 @@ func marshalUsageBillingOutboxPayload(cmd *service.UsageBillingCommand, usageLog
 	usageLog.RequestID = canonicalizeUsageBillingIdentity(usageLog.RequestID, 255)
 	usageLog.Model = canonicalizeUsageBillingIdentity(usageLog.Model, 100)
 	usageLog.RequestedModel = strings.TrimSpace(sanitizeUsageBillingPostgresText(usageLog.RequestedModel))
+	// Normalize once before rebuilding the fingerprint so direct repository
+	// callers receive the same allocation quantization as service callers.
+	// ActualCost intentionally remains raw until after serialization below.
+	cmd.Normalize()
 	// Never trust a fingerprint that may have been computed over a
 	// pre-canonicalized command. Rebuild it from the values that will actually
 	// be persisted and charged.
@@ -990,6 +1020,12 @@ func marshalUsageBillingOutboxPayload(cmd *service.UsageBillingCommand, usageLog
 	if err != nil {
 		return nil, nil, fmt.Errorf("marshal usage billing log: %w", err)
 	}
+	// Keep the immutable payload on the pre-quantized amount used to build its
+	// fingerprint. The decoder verifies that historical fact first, then
+	// canonicalizes the charge before validation and mutation. The caller still
+	// receives the exact NUMERIC(20,8) amount used by PostgreSQL so cache and
+	// notification projections stay in sync with the durable balance change.
+	canonicalizeUsageBillingChargeAmounts(cmd, usageLog)
 	return commandJSON, usageLogJSON, nil
 }
 
@@ -1042,6 +1078,10 @@ func decodeUsageBillingOutboxEvent(
 	if payloadValidationError == "" && recomputed.RequestFingerprint != fingerprint {
 		return service.UsageBillingOutboxEvent{}, errors.New("usage billing outbox payload identity mismatch")
 	}
+	// Historical v1 payloads can contain the original float in ActualCost while
+	// their balance/subscription allocation was already rounded to NUMERIC(20,8).
+	// Only canonicalize after the immutable fingerprint has been verified.
+	canonicalizeUsageBillingChargeAmounts(cmd, usageLog)
 	var result *service.UsageBillingApplyResult
 	if stage == usageBillingOutboxStageEffects {
 		if len(resultJSON) == 0 {
@@ -1102,7 +1142,14 @@ func (r *usageBillingRepository) ApplyAndRecord(
 	}
 	cancel()
 	if retryErr != nil {
-		return nil, errors.Join(err, fmt.Errorf("release durable usage billing intent: %w", retryErr))
+		return nil, errors.Join(
+			service.ErrUsageBillingIntentPending,
+			err,
+			fmt.Errorf("release durable usage billing intent: %w", retryErr),
+		)
+	}
+	if !isPermanentUsageBillingOutboxError(err) {
+		return nil, errors.Join(service.ErrUsageBillingIntentPending, err)
 	}
 	return nil, err
 }
@@ -1443,7 +1490,10 @@ func (r *usageBillingRepository) CompleteUsageBillingOutbox(
 		return nil, err
 	}
 	intendedLog := usageLogToPayloadV1(storedEvent.UsageLog)
-	if exists && !usageLogPayloadsBillingEquivalent(existingLog, intendedLog) {
+	recoverableFallback := exists && usageLogPayloadsRecoverableUnchargedFallback(existingLog, intendedLog)
+	if exists &&
+		!usageLogPayloadsBillingEquivalent(existingLog, intendedLog) &&
+		!recoverableFallback {
 		return nil, service.ErrUsageBillingRequestConflict
 	}
 
@@ -1453,15 +1503,17 @@ func (r *usageBillingRepository) CompleteUsageBillingOutbox(
 	}
 	// A legacy usage_log without the newer billing dedup row is evidence that
 	// the pre-upgrade request was already finalized. Backfill the fingerprint
-	// but never debit it again.
-	applied := claimed && !exists
+	// but never debit it again. The sole exception is the old unsettled fallback
+	// row: actual_cost=0 with every other immutable billing fact matching the
+	// durable intent proves that the request was logged but never charged.
+	applied := claimed && (!exists || recoverableFallback)
 	result := &service.UsageBillingApplyResult{
 		Applied: applied,
 		// A dedup key without a usage log is the exact crash window of the
 		// pre-outbox flow: billing committed, while usage logging and possibly
 		// cache post-effects did not. Persist this bit in result_payload so a
 		// restarted worker repairs projections without debiting or notifying.
-		ProjectionRepairRequired: !claimed && !exists,
+		ProjectionRepairRequired: !claimed && (!exists || recoverableFallback),
 	}
 	if applied {
 		if err := r.applyUsageBillingEffects(ctx, tx, storedEvent.Command, result); err != nil {
@@ -1469,18 +1521,38 @@ func (r *usageBillingRepository) CompleteUsageBillingOutbox(
 		}
 	}
 
-	logRepo := &usageLogRepository{}
-	inserted, err := logRepo.createSingle(ctx, tx, storedEvent.UsageLog)
-	if err != nil {
-		return nil, fmt.Errorf("insert usage log in billing transaction: %w", err)
-	}
-	if !inserted && !exists {
-		racedLog, racedExists, loadErr := loadUsageBillingExistingLogPayload(ctx, tx, requestID, apiKeyID)
-		if loadErr != nil {
-			return nil, loadErr
+	if recoverableFallback {
+		updateLogResult, updateErr := tx.ExecContext(ctx, `
+			UPDATE usage_logs
+			SET actual_cost = $3
+			WHERE request_id = $1
+			  AND api_key_id = $2
+			  AND actual_cost = 0
+		`, requestID, apiKeyID, storedEvent.UsageLog.ActualCost)
+		if updateErr != nil {
+			return nil, fmt.Errorf("repair unsettled usage log in billing transaction: %w", updateErr)
 		}
-		if !racedExists || !usageLogPayloadsBillingEquivalent(racedLog, intendedLog) {
+		updated, rowsErr := updateLogResult.RowsAffected()
+		if rowsErr != nil {
+			return nil, rowsErr
+		}
+		if updated != 1 {
 			return nil, service.ErrUsageBillingRequestConflict
+		}
+	} else {
+		logRepo := &usageLogRepository{}
+		inserted, insertErr := logRepo.createSingle(ctx, tx, storedEvent.UsageLog)
+		if insertErr != nil {
+			return nil, fmt.Errorf("insert usage log in billing transaction: %w", insertErr)
+		}
+		if !inserted && !exists {
+			racedLog, racedExists, loadErr := loadUsageBillingExistingLogPayload(ctx, tx, requestID, apiKeyID)
+			if loadErr != nil {
+				return nil, loadErr
+			}
+			if !racedExists || !usageLogPayloadsBillingEquivalent(racedLog, intendedLog) {
+				return nil, service.ErrUsageBillingRequestConflict
+			}
 		}
 	}
 	result.UsageLogRecorded = true

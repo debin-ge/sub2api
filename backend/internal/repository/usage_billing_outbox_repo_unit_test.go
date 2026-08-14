@@ -57,6 +57,49 @@ func newUsageBillingOutboxTestPayload(t *testing.T) (*service.UsageBillingComman
 	return cmd, usageLog, commandJSON, usageLogJSON
 }
 
+func TestMarshalUsageBillingOutboxPayload_CanonicalizesCustomerChargeAfterFingerprinting(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  float64
+	}{
+		{name: "binary float tail", raw: 0.17918979999999998},
+		{name: "numeric half boundary", raw: 0.000078125},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd, usageLog, _, _ := newUsageBillingOutboxTestPayload(t)
+			cmd.ActualCost = tt.raw
+			cmd.BalanceCost = tt.raw
+			usageLog.ActualCost = tt.raw
+
+			commandJSON, usageLogJSON, err := marshalUsageBillingOutboxPayload(cmd, usageLog)
+			require.NoError(t, err)
+			require.Equal(t, service.QuantizeUsageBillingAmount(tt.raw), cmd.ActualCost)
+			require.Equal(t, cmd.BalanceCost, cmd.ActualCost)
+			require.Equal(t, cmd.ActualCost, usageLog.ActualCost)
+
+			decoded, err := decodeUsageBillingOutboxEvent(
+				91,
+				0,
+				usageLog.CreatedAt,
+				cmd.RequestID,
+				cmd.APIKeyID,
+				cmd.RequestFingerprint,
+				usageBillingOutboxPayloadVersion,
+				usageBillingOutboxStageBilling,
+				commandJSON,
+				usageLogJSON,
+				nil,
+			)
+			require.NoError(t, err)
+			require.Equal(t, cmd.ActualCost, decoded.Command.ActualCost)
+			require.Equal(t, decoded.Command.ActualCost, decoded.UsageLog.ActualCost)
+			require.NoError(t, validateUsageBillingOutboxPayload(decoded.Command, decoded.UsageLog))
+		})
+	}
+}
+
 func expectClaimedOutboxRow(
 	mock sqlmock.Sqlmock,
 	cmd *service.UsageBillingCommand,
@@ -141,6 +184,7 @@ func TestUsageBillingApplyAndRecord_BillingFailureLeavesDurableIntent(t *testing
 	repo := &usageBillingRepository{db: db}
 	result, err := repo.ApplyAndRecord(ctx, cmd, usageLog)
 	require.ErrorContains(t, err, "injected balance write failure")
+	require.ErrorIs(t, err, service.ErrUsageBillingIntentPending)
 	require.Nil(t, result)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
@@ -381,6 +425,42 @@ func TestUsageBillingOutboxComplete_LegacyConflictingLogIsPermanentConflict(t *t
 	result, err := repo.CompleteUsageBillingOutbox(ctx, "worker-conflict", event)
 	require.ErrorIs(t, err, service.ErrUsageBillingRequestConflict)
 	require.Nil(t, result)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestUsageBillingOutboxComplete_RecoversUnchargedFallbackAtomically(t *testing.T) {
+	ctx := context.Background()
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	cmd, usageLog, commandJSON, usageLogJSON := newUsageBillingOutboxTestPayload(t)
+	fallback := *usageLog
+	fallback.ActualCost = 0
+	event := service.UsageBillingOutboxEvent{ID: 22, Command: cmd, UsageLog: usageLog}
+
+	mock.ExpectBegin()
+	expectClaimedOutboxRow(mock, cmd, commandJSON, usageLogJSON, usageLog.CreatedAt)
+	expectExistingUsageLog(t, mock, &fallback)
+	expectNewUsageBillingClaim(mock, cmd)
+	mock.ExpectQuery(conditionalBalanceDeductSQL).
+		WillReturnRows(sqlmock.NewRows([]string{"balance"}).AddRow(8.75))
+	mock.ExpectExec(`(?s)UPDATE usage_logs\s+SET actual_cost = \$3\s+WHERE request_id = \$1`).
+		WithArgs(cmd.RequestID, cmd.APIKeyID, cmd.ActualCost).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(`(?s)UPDATE usage_billing_outbox\s+SET stage = \$3`).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	repo := &usageBillingRepository{db: db}
+	result, err := repo.CompleteUsageBillingOutbox(ctx, "worker-recover-fallback", event)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.Applied)
+	require.True(t, result.UsageLogRecorded)
+	require.False(t, result.ProjectionRepairRequired)
+	require.NotNil(t, result.NewBalance)
+	require.InDelta(t, 8.75, *result.NewBalance, 1e-9)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 

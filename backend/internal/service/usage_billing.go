@@ -18,6 +18,12 @@ var ErrUsageBillingRequestConflict = errors.New("usage billing request fingerpri
 var ErrUsageBillingPlatformQuotaSnapshotRequired = errors.New("usage billing platform quota snapshot is required")
 var ErrUsageBillingPayloadInvalid = errors.New("usage billing payload is not persistable")
 
+// ErrUsageBillingIntentPending means the immutable billing intent was already
+// committed to the durable outbox, but the inline settlement attempt failed.
+// Callers must not insert a second, zero-cost usage row for the same request:
+// that row would conflict with the outbox snapshot and make recovery impossible.
+var ErrUsageBillingIntentPending = errors.New("usage billing intent is pending durable retry")
+
 type UsageBillingPlatformQuotaSnapshot struct {
 	DailyUsageUSD      float64
 	WeeklyUsageUSD     float64
