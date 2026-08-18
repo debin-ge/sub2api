@@ -233,6 +233,7 @@ func (s *GLMGatewayService) buildMessagesRequest(ctx context.Context, c *gin.Con
 		return nil, "", "", err
 	}
 	setGLMUpstreamHeaders(req, c, apiKey)
+	applyInternalRelayHeaderFromContext(ctx, account, req.Header)
 	return req, originalModel, upstreamModel, nil
 }
 
@@ -253,6 +254,7 @@ func (s *GLMGatewayService) buildChatCompletionsRequest(ctx context.Context, c *
 		return nil, "", "", err
 	}
 	setGLMUpstreamHeaders(req, c, apiKey)
+	applyInternalRelayHeaderFromContext(ctx, account, req.Header)
 	return req, originalModel, upstreamModel, nil
 }
 

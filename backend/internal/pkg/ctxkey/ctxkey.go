@@ -30,6 +30,10 @@ const (
 	// X-Sub2API-Internal-Relay 请求头不会进入该上下文。
 	InternalRelay Key = "ctx_internal_relay"
 
+	// InternalRelaySigner 保存由服务启动配置构造的只读签名器，供各平台
+	// API Key 出站请求生成内部回环标记。它不包含在日志或响应中。
+	InternalRelaySigner Key = "ctx_internal_relay_signer"
+
 	// Model 请求模型标识（用于统一请求链路日志字段）。
 	Model Key = "ctx_model"
 

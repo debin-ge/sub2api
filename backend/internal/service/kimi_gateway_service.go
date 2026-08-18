@@ -225,6 +225,7 @@ func (s *KimiGatewayService) buildMessagesRequest(ctx context.Context, c *gin.Co
 	}
 	setKimiUpstreamHeaders(req, c, apiKey)
 	setKimiAnthropicHeaders(req, c)
+	applyInternalRelayHeaderFromContext(ctx, account, req.Header)
 	return req, originalModel, upstreamModel, nil
 }
 
@@ -243,6 +244,7 @@ func (s *KimiGatewayService) buildChatCompletionsRequest(ctx context.Context, c 
 		return nil, "", "", err
 	}
 	setKimiUpstreamHeaders(req, c, apiKey)
+	applyInternalRelayHeaderFromContext(ctx, account, req.Header)
 	return req, originalModel, upstreamModel, nil
 }
 

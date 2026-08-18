@@ -1080,7 +1080,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 		if baseURL == "" {
 			targetURL = openaiPlatformAPIURL
 		} else {
-			validatedURL, err := s.validateUpstreamBaseURL(baseURL)
+			validatedURL, err := validateInternalRelayOrUpstreamBaseURL(account, baseURL, s.validateUpstreamBaseURL)
 			if err != nil {
 				return nil, err
 			}

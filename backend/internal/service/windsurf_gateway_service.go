@@ -234,6 +234,7 @@ func (s *WindsurfGatewayService) buildMessagesRequest(ctx context.Context, c *gi
 		return nil, "", "", err
 	}
 	setWindsurfAnthropicHeaders(req, c, apiKey)
+	applyInternalRelayHeaderFromContext(ctx, account, req.Header)
 	return req, originalModel, upstreamModel, nil
 }
 
@@ -252,6 +253,7 @@ func (s *WindsurfGatewayService) buildChatCompletionsRequest(ctx context.Context
 		return nil, "", "", err
 	}
 	setWindsurfOpenAIHeaders(req, c, apiKey)
+	applyInternalRelayHeaderFromContext(ctx, account, req.Header)
 	return req, originalModel, upstreamModel, nil
 }
 

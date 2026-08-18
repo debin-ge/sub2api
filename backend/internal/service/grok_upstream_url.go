@@ -34,7 +34,10 @@ func grokBaseURLValidator(account *Account, cfg *config.Config) (xai.BaseURLVali
 			return policyValidator(raw)
 		}), nil
 	case AccountTypeAPIKey:
-		return redactedGrokBaseURLValidator(grokOperatorPolicyValidator(cfg)), nil
+		policyValidator := grokOperatorPolicyValidator(cfg)
+		return redactedGrokBaseURLValidator(func(raw string) (string, error) {
+			return validateInternalRelayOrUpstreamBaseURL(account, raw, policyValidator)
+		}), nil
 	default:
 		return nil, fmt.Errorf("unsupported grok account type: %s", account.Type)
 	}

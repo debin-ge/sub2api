@@ -663,7 +663,7 @@ func (s *OpenAIGatewayService) openAIAlphaSearchURL(account *Account) (string, e
 		if baseURL == "" {
 			return openAIPlatformAlphaSearchURL, nil
 		}
-		validatedURL, err := s.validateUpstreamBaseURL(baseURL)
+		validatedURL, err := validateInternalRelayOrUpstreamBaseURL(account, baseURL, s.validateUpstreamBaseURL)
 		if err != nil {
 			return "", err
 		}

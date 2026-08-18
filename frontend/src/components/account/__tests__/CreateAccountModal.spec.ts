@@ -604,7 +604,7 @@ describe('CreateAccountModal', () => {
       })
     })
 
-    it('shows InternalRelay only for OpenAI API key accounts', async () => {
+    it('shows InternalRelay for API key accounts across platforms', async () => {
       const wrapper = mountModal()
       await selectButtonByText(wrapper, 'OpenAI')
 
@@ -612,6 +612,39 @@ describe('CreateAccountModal', () => {
 
       await selectButtonByText(wrapper, 'API Key')
       expect(wrapper.find('[data-testid="openai-internal-relay-toggle"]').exists()).toBe(true)
+
+      const anthropicWrapper = mountModal()
+      await selectButtonByText(anthropicWrapper, 'admin.accounts.claudeConsole')
+      expect(anthropicWrapper.find('[data-testid="openai-internal-relay-toggle"]').exists()).toBe(true)
+    })
+
+    it('submits InternalRelay for an Anthropic API key account', async () => {
+      const wrapper = mountModal()
+      await selectButtonByText(wrapper, 'admin.accounts.claudeConsole')
+      await wrapper
+        .get('form#create-account-form input[type="text"]')
+        .setValue('Anthropic internal relay')
+      await wrapper
+        .get('input[placeholder="https://api.anthropic.com"]')
+        .setValue('http://127.0.0.1:8080')
+      await wrapper
+        .get('form#create-account-form input[type="password"]')
+        .setValue('test-api-key')
+      await wrapper.get('[data-testid="openai-internal-relay-toggle"]').trigger('click')
+      await wrapper.get('form#create-account-form').trigger('submit.prevent')
+      await flushPromises()
+
+      expect(createAccountMock).toHaveBeenCalledTimes(1)
+      expect(createAccountMock.mock.calls[0]?.[0]).toMatchObject({
+        platform: 'anthropic',
+        type: 'apikey',
+        credentials: {
+          base_url: 'http://127.0.0.1:8080'
+        },
+        extra: {
+          internal_relay: true
+        }
+      })
     })
 
     it('shows the Codex namespace flatten toggle only for OpenAI OAuth accounts', async () => {

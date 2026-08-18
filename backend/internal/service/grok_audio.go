@@ -83,6 +83,7 @@ func (s *OpenAIGatewayService) ForwardGrokVoice(ctx context.Context, c *gin.Cont
 		applyGrokCLIHeaders(req.Header)
 	}
 	account.ApplyHeaderOverrides(req.Header)
+	applyInternalRelayHeaderFromContext(ctx, account, req.Header)
 
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
@@ -142,6 +143,7 @@ func (s *OpenAIGatewayService) ProxyGrokRealtime(ctx context.Context, c *gin.Con
 	}
 	if account != nil {
 		account.ApplyHeaderOverrides(headers)
+		applyInternalRelayHeaderFromContext(ctx, account, headers)
 	}
 
 	dialer := s.getOpenAIWSPassthroughDialer()

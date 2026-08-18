@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"testing"
 	"time"
@@ -38,7 +39,7 @@ func TestAccountIsInternalRelay(t *testing.T) {
 func TestNormalizeInternalRelayCreateExtra(t *testing.T) {
 	validCredentials := map[string]any{"base_url": "http://127.0.0.1:8080", "api_key": "secret"}
 
-	t.Run("eligible OpenAI API key account is enabled and preserves unknown extra", func(t *testing.T) {
+	t.Run("eligible API key account is enabled and preserves unknown extra", func(t *testing.T) {
 		extra, err := normalizeInternalRelayCreateExtra(
 			PlatformOpenAI,
 			AccountTypeAPIKey,
@@ -50,6 +51,45 @@ func TestNormalizeInternalRelayCreateExtra(t *testing.T) {
 		require.Equal(t, true, extra[InternalRelayExtraKey])
 		require.Equal(t, "keep", extra["future_key"])
 	})
+
+	for _, platform := range []string{
+		PlatformAnthropic,
+		PlatformOpenAI,
+		PlatformGemini,
+		PlatformGrok,
+		PlatformWindsurf,
+		PlatformOpenCode,
+	} {
+		t.Run("supports "+platform+" API key", func(t *testing.T) {
+			extra, err := normalizeInternalRelayCreateExtra(
+				platform,
+				AccountTypeAPIKey,
+				validCredentials,
+				map[string]any{InternalRelayExtraKey: true},
+			)
+
+			require.NoError(t, err)
+			require.Equal(t, true, extra[InternalRelayExtraKey])
+		})
+	}
+
+	for _, platform := range []string{PlatformMiniMax, PlatformGLM, PlatformKimi, PlatformDeepSeek} {
+		t.Run("supports dual endpoints for "+platform, func(t *testing.T) {
+			extra, err := normalizeInternalRelayCreateExtra(
+				platform,
+				AccountTypeAPIKey,
+				map[string]any{
+					"api_key":            "secret",
+					"base_url_anthropic": "http://127.0.0.1:8080",
+					"base_url_openai":    "http://localhost:8080/v1",
+				},
+				map[string]any{InternalRelayExtraKey: true},
+			)
+
+			require.NoError(t, err)
+			require.Equal(t, true, extra[InternalRelayExtraKey])
+		})
+	}
 
 	t.Run("false is removed instead of persisted", func(t *testing.T) {
 		extra, err := normalizeInternalRelayCreateExtra(
@@ -71,7 +111,6 @@ func TestNormalizeInternalRelayCreateExtra(t *testing.T) {
 		baseURL     string
 	}{
 		{name: "OAuth is unsupported", platform: PlatformOpenAI, accountType: AccountTypeOAuth, baseURL: "http://127.0.0.1:8080"},
-		{name: "other platform is unsupported", platform: PlatformAnthropic, accountType: AccountTypeAPIKey, baseURL: "http://127.0.0.1:8080"},
 		{name: "non-loopback URL is rejected", platform: PlatformOpenAI, accountType: AccountTypeAPIKey, baseURL: "https://api.openai.com"},
 		{name: "URL without HTTP scheme is rejected", platform: PlatformOpenAI, accountType: AccountTypeAPIKey, baseURL: "127.0.0.1:8080"},
 	} {
@@ -86,6 +125,20 @@ func TestNormalizeInternalRelayCreateExtra(t *testing.T) {
 			require.Equal(t, http.StatusBadRequest, infraerrors.Code(err))
 		})
 	}
+
+	t.Run("dual endpoint platform rejects one external endpoint", func(t *testing.T) {
+		_, err := normalizeInternalRelayCreateExtra(
+			PlatformGLM,
+			AccountTypeAPIKey,
+			map[string]any{
+				"base_url_anthropic": "http://127.0.0.1:8080",
+				"base_url_openai":    "https://open.bigmodel.cn/api/coding/paas/v4",
+			},
+			map[string]any{InternalRelayExtraKey: true},
+		)
+
+		require.Equal(t, http.StatusBadRequest, infraerrors.Code(err))
+	})
 
 	t.Run("malformed flag is rejected", func(t *testing.T) {
 		_, err := normalizeInternalRelayCreateExtra(
@@ -182,4 +235,44 @@ func TestApplyInternalRelayHeaderWithSecret(t *testing.T) {
 
 		require.Empty(t, missingIDHeaders.Get(internalrelay.HeaderName))
 	})
+}
+
+func TestApplyInternalRelayHeaderFromContextSupportsNonOpenAIAPIKey(t *testing.T) {
+	const secret = "test-jwt-secret-32-bytes-long-value"
+	account := &Account{
+		ID:          84,
+		Platform:    PlatformAnthropic,
+		Type:        AccountTypeAPIKey,
+		Credentials: map[string]any{"base_url": "http://localhost:8080", "api_key": "stored"},
+		Extra:       map[string]any{InternalRelayExtraKey: true},
+	}
+	ctx := context.WithValue(context.Background(), ctxkey.ClientRequestID, "outer-anthropic")
+	ctx = context.WithValue(ctx, ctxkey.InternalRelaySigner, internalrelay.NewSigner(secret))
+	headers := make(http.Header)
+
+	applyInternalRelayHeaderFromContext(ctx, account, headers)
+
+	metadata, err := internalrelay.NewSigner(secret).Verify(headers.Get(internalrelay.HeaderName), time.Now())
+	require.NoError(t, err)
+	require.Equal(t, int64(84), metadata.AccountID)
+	require.Equal(t, "client:outer-anthropic", metadata.ParentRequestID)
+}
+
+func TestValidateInternalRelayOrUpstreamBaseURLAllowsValidatedLoopback(t *testing.T) {
+	account := &Account{
+		Platform:    PlatformGemini,
+		Type:        AccountTypeAPIKey,
+		Credentials: map[string]any{"base_url": "http://127.0.0.1:8080/"},
+		Extra:       map[string]any{InternalRelayExtraKey: true},
+	}
+	fallbackCalled := false
+
+	normalized, err := validateInternalRelayOrUpstreamBaseURL(account, "http://127.0.0.1:8080/", func(string) (string, error) {
+		fallbackCalled = true
+		return "", errors.New("operator policy rejected loopback")
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "http://127.0.0.1:8080", normalized)
+	require.False(t, fallbackCalled)
 }

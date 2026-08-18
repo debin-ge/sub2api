@@ -22,10 +22,11 @@ func InternalRelay(jwtSecret string) gin.HandlerFunc {
 
 		raw := c.Request.Header.Get(internalrelay.HeaderName)
 		c.Request.Header.Del(internalrelay.HeaderName)
+		ctx := context.WithValue(c.Request.Context(), ctxkey.InternalRelaySigner, signer)
 		if metadata, err := signer.Verify(raw, time.Now()); err == nil {
-			ctx := context.WithValue(c.Request.Context(), ctxkey.InternalRelay, metadata)
-			c.Request = c.Request.WithContext(ctx)
+			ctx = context.WithValue(ctx, ctxkey.InternalRelay, metadata)
 		}
+		c.Request = c.Request.WithContext(ctx)
 		c.Next()
 	}
 }

@@ -584,6 +584,28 @@ describe('EditAccountModal', () => {
     expect(wrapper.find('[data-testid="openai-internal-relay-toggle"]').exists()).toBe(false)
   })
 
+  it('loads and updates InternalRelay for a non-OpenAI API key account', async () => {
+    const account = buildAccount()
+    account.platform = 'anthropic'
+    account.credentials.base_url = 'http://127.0.0.1:8080'
+    account.extra = { internal_relay: true, future_key: 'keep' }
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
+
+    const wrapper = mountModal(account)
+    const toggle = wrapper.get('[data-testid="openai-internal-relay-toggle"]')
+    expect(toggle.attributes('aria-checked')).toBe('true')
+
+    await toggle.trigger('click')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.extra).toMatchObject({
+      internal_relay: false,
+      future_key: 'keep'
+    })
+  })
+
   it('does not render or submit the long-context billing toggle for Spark shadow accounts', async () => {
     const account = buildOpenAISparkShadowAccount()
     account.extra = {

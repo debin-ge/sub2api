@@ -234,6 +234,7 @@ func (s *DeepSeekGatewayService) buildMessagesRequest(ctx context.Context, c *gi
 		return nil, "", "", err
 	}
 	setDeepSeekAnthropicHeaders(req, c, apiKey)
+	applyInternalRelayHeaderFromContext(ctx, account, req.Header)
 	return req, originalModel, upstreamModel, nil
 }
 
@@ -252,6 +253,7 @@ func (s *DeepSeekGatewayService) buildChatCompletionsRequest(ctx context.Context
 		return nil, "", "", err
 	}
 	setDeepSeekOpenAIHeaders(req, c, apiKey)
+	applyInternalRelayHeaderFromContext(ctx, account, req.Header)
 	return req, originalModel, upstreamModel, nil
 }
 

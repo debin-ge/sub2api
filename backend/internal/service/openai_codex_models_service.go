@@ -269,7 +269,7 @@ func (s *OpenAIGatewayService) FetchCodexModelsManifest(ctx context.Context, acc
 		if authToken == "" {
 			return nil, infraerrors.New(http.StatusBadGateway, "OPENAI_CODEX_MODELS_API_KEY_MISSING", "account has no API key for the Codex models upstream")
 		}
-		normalizedBaseURL, validateErr := s.validateUpstreamBaseURL(baseURL)
+		normalizedBaseURL, validateErr := validateInternalRelayOrUpstreamBaseURL(credAccount, baseURL, s.validateUpstreamBaseURL)
 		if validateErr != nil {
 			return nil, infraerrors.Newf(http.StatusBadGateway, "OPENAI_CODEX_MODELS_API_KEY_UPSTREAM_INVALID", "invalid Codex models upstream base URL: %v", validateErr)
 		}

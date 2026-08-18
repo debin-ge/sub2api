@@ -106,6 +106,7 @@ func (s *OpenCodeGatewayService) ForwardModels(ctx context.Context, c *gin.Conte
 		return nil, fmt.Errorf("build opencode models request: %w", err)
 	}
 	setOpenCodeHeaders(req, c, apiKey)
+	applyInternalRelayHeaderFromContext(ctx, account, req.Header)
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
@@ -222,6 +223,7 @@ func (s *OpenCodeGatewayService) buildOpenCodeJSONRequest(ctx context.Context, c
 		return nil, "", "", err
 	}
 	setOpenCodeHeaders(req, c, apiKey)
+	applyInternalRelayHeaderFromContext(ctx, account, req.Header)
 	return req, originalModel, upstreamModel, nil
 }
 

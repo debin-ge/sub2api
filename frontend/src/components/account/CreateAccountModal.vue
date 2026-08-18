@@ -873,38 +873,6 @@
         </div>
       </div>
 
-      <!-- Account Type Selection (Grok - OAuth only) -->
-      <div v-if="form.platform === 'grok'">
-        <label class="input-label">{{ t('admin.accounts.accountType') }}</label>
-        <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2" data-tour="account-form-type">
-          <button
-            type="button"
-            @click="accountCategory = 'oauth-based'"
-            :class="[
-              'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
-              accountCategory === 'oauth-based'
-                ? 'border-zinc-700 bg-zinc-50 dark:bg-zinc-900/30'
-                : 'border-gray-200 hover:border-zinc-400 dark:border-dark-600 dark:hover:border-zinc-500'
-            ]"
-          >
-            <div
-              :class="[
-                'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
-                accountCategory === 'oauth-based'
-                  ? 'bg-zinc-900 text-white dark:bg-zinc-200 dark:text-zinc-900'
-                  : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-gray-400'
-              ]"
-            >
-              <PlatformIcon platform="grok" size="sm" />
-            </div>
-            <div>
-              <span class="block text-sm font-medium text-gray-900 dark:text-white">OAuth</span>
-              <span class="text-xs text-gray-500 dark:text-gray-400">Grok / xAI</span>
-            </div>
-          </button>
-        </div>
-      </div>
-
       <!-- Account Type Selection (Antigravity - OAuth or Upstream) -->
       <div v-if="form.platform === 'antigravity'">
         <label class="input-label">{{ t('admin.accounts.accountType') }}</label>
@@ -1423,6 +1391,7 @@
             <label class="input-label">{{ t('admin.accounts.baseUrl') }}</label>
             <input
               v-model="apiKeyBaseUrl"
+              data-testid="api-key-base-url"
               type="text"
               class="input"
               :placeholder="
@@ -1442,28 +1411,11 @@
               @select="apiKeyBaseUrl = $event"
             />
           </div>
-          <div
-            v-if="form.platform === 'openai' && accountCategory === 'apikey'"
-            class="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-800/60 dark:bg-amber-900/20"
-          >
-            <div class="flex items-center justify-between gap-4">
-              <div>
-                <label class="input-label mb-0">{{ t('admin.accounts.openai.internalRelay') }}</label>
-                <p class="mt-1 text-xs text-amber-700 dark:text-amber-300">
-                  {{ t('admin.accounts.openai.internalRelayDesc') }}
-                </p>
-              </div>
-              <Toggle
-                v-model="internalRelayEnabled"
-                data-testid="openai-internal-relay-toggle"
-                :aria-label="t('admin.accounts.openai.internalRelay')"
-              />
-            </div>
-          </div>
           <div>
             <label class="input-label">{{ t('admin.accounts.apiKeyRequired') }}</label>
             <input
               v-model="apiKeyValue"
+              data-testid="api-key-value"
               type="password"
               required
               class="input font-mono"
@@ -1480,6 +1432,24 @@
             <p v-if="apiKeyHint" class="input-hint">{{ apiKeyHint }}</p>
           </div>
         </template>
+
+        <div
+          class="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-800/60 dark:bg-amber-900/20"
+        >
+          <div class="flex items-center justify-between gap-4">
+            <div>
+              <label class="input-label mb-0">{{ t('admin.accounts.openai.internalRelay') }}</label>
+              <p class="mt-1 text-xs text-amber-700 dark:text-amber-300">
+                {{ t('admin.accounts.openai.internalRelayDesc') }}
+              </p>
+            </div>
+            <Toggle
+              v-model="internalRelayEnabled"
+              data-testid="openai-internal-relay-toggle"
+              :aria-label="t('admin.accounts.openai.internalRelay')"
+            />
+          </div>
+        </div>
 
         <!-- 上游倍率自动探测：全部 API-key 平台可用（所在区块已限定 apikey 类型） -->
         <div
@@ -1858,9 +1828,10 @@
 
       </div>
 
-        <!-- Header Override Section (anthropic/openai apikey only) -->
+        <!-- Header Override Section (API-key accounts only) -->
         <div
-          v-if="isHeaderOverrideCapable(form.platform, 'apikey')"
+          v-if="form.type === 'apikey' && isHeaderOverrideCapable(form.platform, form.type)"
+          data-testid="api-key-header-override-section"
           class="border-t border-gray-200 pt-4 dark:border-dark-600"
         >
           <div class="mb-3 flex items-center justify-between">
@@ -2309,6 +2280,7 @@
       <!-- Grok OAuth Header Override (OAuth 类型没有 apikey 容器，需要独立区域) -->
       <div
         v-if="form.platform === 'grok' && isOAuthFlow"
+        data-testid="grok-oauth-header-override-section"
         class="border-t border-gray-200 pt-4 dark:border-dark-600"
       >
         <div class="mb-3 flex items-center justify-between">
@@ -4676,7 +4648,7 @@ watch(
       return
     }
     if (form.platform === 'grok') {
-      form.type = 'oauth'
+      form.type = category === 'apikey' ? 'apikey' : 'oauth'
       return
     }
     // Antigravity upstream 类型（实际创建为 apikey）
@@ -4711,6 +4683,8 @@ watch(
         ? 'https://api.openai.com'
         : newPlatform === 'gemini'
           ? 'https://generativelanguage.googleapis.com'
+          : newPlatform === 'grok'
+            ? 'https://api.x.ai/v1'
           : newPlatform === 'minimax'
             ? MINIMAX_ANTHROPIC_BASE_URL
             : newPlatform === 'glm'
@@ -4835,7 +4809,7 @@ watch(
 watch(
   [accountCategory, () => form.platform],
   ([category, platform]) => {
-    if (platform !== 'openai' || category !== 'apikey') {
+    if (category !== 'apikey') {
       internalRelayEnabled.value = false
     }
     if (platform === 'openai' && category !== 'oauth-based') {
@@ -5314,22 +5288,22 @@ const handleClose = () => {
 }
 
 const buildOpenAIExtra = (base?: Record<string, unknown>): Record<string, unknown> | undefined => {
+  const extra: Record<string, unknown> = { ...(base || {}) }
+  if (accountCategory.value === 'apikey' && internalRelayEnabled.value) {
+    extra.internal_relay = true
+  } else {
+    delete extra.internal_relay
+  }
   if (form.platform !== 'openai') {
-    return base
+    return Object.keys(extra).length > 0 ? extra : undefined
   }
 
-  const extra: Record<string, unknown> = { ...(base || {}) }
   if (accountCategory.value === 'oauth-based') {
     extra.openai_oauth_responses_websockets_v2_mode = openaiOAuthResponsesWebSocketV2Mode.value
     extra.openai_oauth_responses_websockets_v2_enabled = isOpenAIWSModeEnabled(openaiOAuthResponsesWebSocketV2Mode.value)
   } else if (accountCategory.value === 'apikey') {
     extra.openai_apikey_responses_websockets_v2_mode = openaiAPIKeyResponsesWebSocketV2Mode.value
     extra.openai_apikey_responses_websockets_v2_enabled = isOpenAIWSModeEnabled(openaiAPIKeyResponsesWebSocketV2Mode.value)
-  }
-  if (accountCategory.value === 'apikey' && internalRelayEnabled.value) {
-    extra.internal_relay = true
-  } else {
-    delete extra.internal_relay
   }
   // 清理兼容旧键，统一改用分类型开关。
   delete extra.responses_websockets_v2_enabled

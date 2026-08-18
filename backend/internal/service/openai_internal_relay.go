@@ -10,10 +10,10 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/internalrelay"
 )
 
-// applyInternalRelayHeader is the final outbound header guard for OpenAI
-// traffic. It always removes any caller/account supplied value first, then
-// adds a short-lived authenticated marker only for an eligible loopback
-// account with a request-scoped client correlation ID.
+// applyInternalRelayHeader is the final outbound header guard used by the
+// OpenAI-family gateway. Other API-key platform gateways use
+// applyInternalRelayHeaderFromContext so they do not need their own config
+// dependency.
 func (s *OpenAIGatewayService) applyInternalRelayHeader(ctx context.Context, account *Account, headers http.Header) {
 	jwtSecret := ""
 	if s != nil && s.cfg != nil {
@@ -23,14 +23,23 @@ func (s *OpenAIGatewayService) applyInternalRelayHeader(ctx context.Context, acc
 }
 
 func applyInternalRelayHeaderWithSecret(ctx context.Context, jwtSecret string, account *Account, headers http.Header) {
+	applyInternalRelayHeaderWithSigner(ctx, internalrelay.NewSigner(jwtSecret), account, headers)
+}
+
+func applyInternalRelayHeaderFromContext(ctx context.Context, account *Account, headers http.Header) {
+	var signer *internalrelay.Signer
+	if ctx != nil {
+		signer, _ = ctx.Value(ctxkey.InternalRelaySigner).(*internalrelay.Signer)
+	}
+	applyInternalRelayHeaderWithSigner(ctx, signer, account, headers)
+}
+
+func applyInternalRelayHeaderWithSigner(ctx context.Context, signer *internalrelay.Signer, account *Account, headers http.Header) {
 	if headers == nil {
 		return
 	}
 	headers.Del(internalrelay.HeaderName)
-	if account == nil || !account.IsInternalRelay() || account.Platform != PlatformOpenAI || account.Type != AccountTypeAPIKey {
-		return
-	}
-	if !internalrelay.IsLoopbackBaseURL(account.GetCredential("base_url")) {
+	if account == nil || !account.hasValidInternalRelayConfiguration() {
 		return
 	}
 	if ctx == nil {
@@ -41,7 +50,7 @@ func applyInternalRelayHeaderWithSecret(ctx context.Context, jwtSecret string, a
 	if strings.TrimSpace(parentRequestID) == "" {
 		return
 	}
-	marker, err := internalrelay.NewSigner(jwtSecret).Sign(account.ID, parentRequestID, time.Now())
+	marker, err := signer.Sign(account.ID, parentRequestID, time.Now())
 	if err != nil {
 		return
 	}

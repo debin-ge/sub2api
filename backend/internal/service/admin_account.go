@@ -15,7 +15,6 @@ import (
 	"time"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/internalrelay"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 )
@@ -404,17 +403,16 @@ func internalRelayBadRequest(code, message string) error {
 }
 
 func validateInternalRelayEligibility(platform, accountType string, credentials map[string]any) error {
-	if platform != PlatformOpenAI || accountType != AccountTypeAPIKey {
+	if accountType != AccountTypeAPIKey {
 		return internalRelayBadRequest(
 			"INTERNAL_RELAY_ACCOUNT_UNSUPPORTED",
-			"internal_relay is only supported for OpenAI API key accounts",
+			"internal_relay is only supported for API key accounts",
 		)
 	}
-	baseURL, _ := credentials["base_url"].(string)
-	if !internalrelay.IsLoopbackBaseURL(baseURL) {
+	if !isInternalRelayEligibleConfiguration(platform, accountType, credentials) {
 		return internalRelayBadRequest(
 			"INTERNAL_RELAY_BASE_URL_INVALID",
-			"internal_relay requires an HTTP(S) loopback base_url using localhost, 127.0.0.0/8, or ::1",
+			"internal_relay requires every API base URL to use HTTP(S) loopback via localhost, 127.0.0.0/8, or ::1",
 		)
 	}
 	return nil

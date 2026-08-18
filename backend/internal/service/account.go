@@ -91,7 +91,7 @@ type OpenAIEndpointCapability string
 
 const openAILongContextBillingEnabledKey = "openai_long_context_billing_enabled"
 
-// InternalRelayExtraKey marks an OpenAI API-key account whose upstream is an
+// InternalRelayExtraKey marks an API-key account whose upstream is an
 // authenticated loopback back into this sub2api instance.
 const InternalRelayExtraKey = "internal_relay"
 

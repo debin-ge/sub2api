@@ -324,6 +324,7 @@ func (s *MiniMaxGatewayService) buildMessagesRequest(ctx context.Context, c *gin
 			req.Header.Del("User-Agent")
 		}
 	}
+	applyInternalRelayHeaderFromContext(ctx, account, req.Header)
 	return req, originalModel, upstreamModel, nil
 }
 
@@ -363,6 +364,7 @@ func (s *MiniMaxGatewayService) buildChatCompletionsRequest(ctx context.Context,
 			req.Header.Del("User-Agent")
 		}
 	}
+	applyInternalRelayHeaderFromContext(ctx, account, req.Header)
 	return req, originalModel, upstreamModel, nil
 }
 
@@ -448,7 +450,7 @@ func miniMaxContentIsTextOnly(value any) bool {
 }
 
 func buildMiniMaxMessagesURL(account *Account) (string, error) {
-	baseURL, err := validateMiniMaxUpstreamBaseURL(account.GetMiniMaxAnthropicBaseURL())
+	baseURL, err := validateInternalRelayOrUpstreamBaseURL(account, account.GetMiniMaxAnthropicBaseURL(), validateMiniMaxUpstreamBaseURL)
 	if err != nil {
 		return "", err
 	}
@@ -456,7 +458,7 @@ func buildMiniMaxMessagesURL(account *Account) (string, error) {
 }
 
 func buildMiniMaxChatCompletionsURL(account *Account) (string, error) {
-	baseURL, err := validateMiniMaxUpstreamBaseURL(account.GetMiniMaxOpenAIBaseURL())
+	baseURL, err := validateInternalRelayOrUpstreamBaseURL(account, account.GetMiniMaxOpenAIBaseURL(), validateMiniMaxUpstreamBaseURL)
 	if err != nil {
 		return "", err
 	}

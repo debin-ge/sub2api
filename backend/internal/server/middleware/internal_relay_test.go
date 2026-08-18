@@ -32,6 +32,9 @@ func TestInternalRelayVerifiesAndAlwaysStripsHeader(t *testing.T) {
 			router := gin.New()
 			router.Use(InternalRelay(secret))
 			router.GET("/", func(c *gin.Context) {
+				contextSigner, ok := c.Request.Context().Value(ctxkey.InternalRelaySigner).(*internalrelay.Signer)
+				require.True(t, ok)
+				require.NotNil(t, contextSigner)
 				_, relay := c.Request.Context().Value(ctxkey.InternalRelay).(internalrelay.Metadata)
 				require.Equal(t, tc.wantRelay, relay)
 				require.Empty(t, c.Request.Header.Get(internalrelay.HeaderName))
