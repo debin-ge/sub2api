@@ -292,3 +292,55 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     expect(createOpenAICodexPATMock.mock.calls[0]?.[0]?.extra?.openai_long_context_billing_enabled).toBe(false)
   })
 })
+
+describe('CreateAccountModal Grok account types', () => {
+  beforeEach(() => {
+    createAccountMock.mockReset().mockResolvedValue({ id: 84, platform: 'grok', type: 'apikey' })
+    probeUpstreamBillingMock.mockReset().mockResolvedValue({})
+  })
+
+  it('shows one account type selector and the fields for the selected authentication mode', async () => {
+    const wrapper = mountModal()
+
+    await wrapper.get('[data-testid="create-platform-grok"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.findAll('[data-tour="account-form-type"]')).toHaveLength(1)
+    expect(wrapper.find('[data-testid="grok-oauth-header-override-section"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="api-key-header-override-section"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="grok-account-type-api-key"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get<HTMLInputElement>('[data-testid="api-key-base-url"]').element.value).toBe(
+      'https://api.x.ai/v1'
+    )
+    expect(wrapper.find('[data-testid="api-key-value"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="grok-oauth-header-override-section"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="api-key-header-override-section"]').exists()).toBe(true)
+  })
+
+  it('creates a Grok API-key account with the entered base URL and API key', async () => {
+    const wrapper = mountModal()
+
+    await wrapper.get('[data-testid="create-platform-grok"]').trigger('click')
+    await wrapper.get('[data-testid="grok-account-type-api-key"]').trigger('click')
+    await wrapper.get('[data-tour="account-form-name"]').setValue('Grok API')
+    await wrapper.get('[data-testid="api-key-base-url"]').setValue('https://relay.example.com/v1')
+    await wrapper.get('[data-testid="api-key-value"]').setValue('xai-test-key')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createAccountMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'Grok API',
+        platform: 'grok',
+        type: 'apikey',
+        credentials: expect.objectContaining({
+          base_url: 'https://relay.example.com/v1',
+          api_key: 'xai-test-key'
+        })
+      })
+    )
+  })
+})
