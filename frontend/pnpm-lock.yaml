@@ -38,6 +38,9 @@ importers:
       file-saver:
         specifier: ^2.0.5
         version: 2.0.5
+      go-captcha-vue:
+        specifier: ^2.0.7
+        version: 2.0.7(vue@3.5.26(typescript@5.6.3))
       marked:
         specifier: ^17.0.1
         version: 17.0.1
@@ -2639,6 +2642,11 @@ packages:
   globby@11.1.0:
     resolution: {integrity: sha512-jhIXaOzy1sb8IyocaruWSn1TjmnBVs8Ayhcy83rmxNJ8q2uWKCAj3CnJY+KpGSXCueAPc0i05kVvVKtP1t9S3g==}
     engines: {node: '>=10'}
+
+  go-captcha-vue@2.0.7:
+    resolution: {integrity: sha512-ynlb/6CJiMdsqKe+79lIVpTsNXQTgOHDJ7BH+Gx6EZQZyHSwuyLZvQwjz9vQOYhyHpREW9tapBo8ZOTyVzIQew==}
+    peerDependencies:
+      vue: '>=3'
 
   gopd@1.2.0:
     resolution: {integrity: sha512-ZUKRh6/kUFoAiTAtTYPZJ3hw9wNxx+BIBOijnlG9PnrJsCcSjs1wyyD6vJpaYtgnzDrKYRSqf3OO6Rfa93xsRg==}
@@ -7342,6 +7350,10 @@ snapshots:
       ignore: 5.3.2
       merge2: 1.4.1
       slash: 3.0.0
+
+  go-captcha-vue@2.0.7(vue@3.5.26(typescript@5.6.3)):
+    dependencies:
+      vue: 3.5.26(typescript@5.6.3)
 
   gopd@1.2.0: {}
 

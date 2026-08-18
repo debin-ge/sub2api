@@ -13,6 +13,7 @@ import {
 } from '@/utils/chunkLoadRecovery'
 import { isIOSDevice } from '@/utils/device'
 import './style.css'
+import 'go-captcha-vue/dist/style.css'
 import './assets/styles/docsContent.css'
 
 function handleVitePreloadError(event: Event) {

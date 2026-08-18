@@ -3,6 +3,7 @@
 package admin
 
 import (
+	"encoding/json"
 	"net/http"
 	"testing"
 
@@ -98,6 +99,29 @@ func TestUpdateSettingsRejectsTwoCaptchaProviders(t *testing.T) {
 
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 	require.Contains(t, rec.Body.String(), "cannot be enabled at the same time")
+}
+
+func TestUpdateSettingsResponseIncludesGoCaptchaState(t *testing.T) {
+	h, repo := newStepUpSwitchTestHandler(t, map[string]string{})
+
+	rec := doUpdateSettings(t, h, map[string]any{
+		"gocaptcha_enabled": true,
+		"gocaptcha_mode":    "slide",
+	}, nil)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "true", repo.values[service.SettingKeyGoCaptchaEnabled])
+	require.Equal(t, "slide", repo.values[service.SettingKeyGoCaptchaMode])
+
+	var envelope struct {
+		Data struct {
+			Enabled bool   `json:"gocaptcha_enabled"`
+			Mode    string `json:"gocaptcha_mode"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &envelope))
+	require.True(t, envelope.Data.Enabled)
+	require.Equal(t, "slide", envelope.Data.Mode)
 }
 
 func TestUpdateSettingsRequiresFourTencentCaptchaCredentialsWhenEnabled(t *testing.T) {

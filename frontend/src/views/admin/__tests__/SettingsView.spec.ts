@@ -969,6 +969,43 @@ describe("admin SettingsView payment visible method controls", () => {
     );
   });
 
+  it("切换到自建验证码时只显示自建配置并隐藏阿里云凭据", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+    await openSecurityTab(wrapper);
+
+    await wrapper.get('[data-testid="captcha-enabled-toggle"]').setValue(true);
+    await wrapper.get('[data-testid="captcha-provider-gocaptcha"]').trigger("click");
+    await flushPromises();
+
+    const card = wrapper
+      .findAll(".card")
+      .find((node) => node.text().includes("admin.settings.captcha.title"));
+    expect(card).toBeDefined();
+    expect(card!.find('[data-testid="gocaptcha-mode-select"]').exists()).toBe(true);
+    expect(card!.text()).toContain("admin.settings.goCaptcha.description");
+    expect(card!.text()).not.toContain("admin.settings.aliyunCaptcha.region");
+    expect(card!.text()).not.toContain("admin.settings.aliyunCaptcha.accessKeyId");
+    expect(card!.text()).not.toContain("admin.settings.aliyunCaptcha.accessKeySecret");
+
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(
+      (wrapper.get('[data-testid="captcha-enabled-toggle"]').element as HTMLInputElement)
+        .checked,
+    ).toBe(true);
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        turnstile_enabled: false,
+        tencent_captcha_enabled: false,
+        aliyun_captcha_enabled: false,
+        gocaptcha_enabled: true,
+        gocaptcha_mode: "click",
+      }),
+    );
+  });
+
   it("关闭人机验证总开关会同时关闭所有服务商", async () => {
     getSettings.mockResolvedValueOnce({
       ...baseSettingsResponse,

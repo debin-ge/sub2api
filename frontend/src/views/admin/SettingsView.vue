@@ -2210,7 +2210,7 @@
                     {{ t("admin.settings.captcha.provider") }}
                   </label>
                   <div
-                    class="grid grid-cols-3 gap-2 rounded-lg bg-gray-100 p-1 dark:bg-dark-700"
+                    class="grid grid-cols-2 gap-2 rounded-lg bg-gray-100 p-1 dark:bg-dark-700 sm:grid-cols-4"
                   >
                     <button
                       type="button"
@@ -2250,6 +2250,19 @@
                       @click="selectCaptchaProvider('aliyun')"
                     >
                       {{ t("admin.settings.captcha.providerAliyun") }}
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="captcha-provider-gocaptcha"
+                      class="inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition"
+                      :class="
+                        captchaProviderSelection === 'gocaptcha'
+                          ? 'bg-white text-primary-700 shadow-sm dark:bg-dark-800 dark:text-primary-300'
+                          : 'text-gray-600 hover:text-gray-900 dark:text-dark-300 dark:hover:text-white'
+                      "
+                      @click="selectCaptchaProvider('gocaptcha')"
+                    >
+                      {{ t("admin.settings.captcha.providerGoCaptcha") }}
                     </button>
                   </div>
                 </div>
@@ -2455,7 +2468,10 @@
                 </div>
 
                 <!-- Aliyun Captcha 2.0 fields -->
-                <div v-else class="grid grid-cols-1 gap-6">
+                <div
+                  v-else-if="captchaProviderSelection === 'aliyun'"
+                  class="grid grid-cols-1 gap-6"
+                >
                   <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
                     <div>
                       <label
@@ -2567,6 +2583,79 @@
                       }}
                     </p>
                   </div>
+                </div>
+
+                <!-- 自建行为验证码：无密钥，只需选择交互模式 -->
+                <div
+                  v-else-if="captchaProviderSelection === 'gocaptcha'"
+                  class="grid grid-cols-1 gap-6"
+                >
+                  <p class="text-sm text-gray-500 dark:text-gray-400">
+                    {{ t("admin.settings.goCaptcha.description") }}
+                  </p>
+                  <div>
+                    <label
+                      class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                    >
+                      {{ t("admin.settings.goCaptcha.mode") }}
+                    </label>
+                    <select
+                      v-model="form.gocaptcha_mode"
+                      data-testid="gocaptcha-mode-select"
+                      class="input text-sm"
+                    >
+                      <option
+                        v-for="mode in goCaptchaModes"
+                        :key="mode"
+                        :value="mode"
+                      >
+                        {{ t(`admin.settings.goCaptcha.modes.${mode}`) }}
+                      </option>
+                    </select>
+                    <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                      {{ t(`admin.settings.goCaptcha.modeHints.${goCaptchaSelectedMode}`) }}
+                    </p>
+                  </div>
+                  <!-- 抗盲猜能力在各模式间差两到三个数量级，选型时必须让管理员看到 -->
+                  <div
+                    class="rounded-lg border border-gray-200 p-4 dark:border-dark-600"
+                  >
+                    <p
+                      class="mb-2 text-sm font-medium text-gray-700 dark:text-gray-300"
+                    >
+                      {{ t("admin.settings.goCaptcha.strengthTitle") }}
+                    </p>
+                    <ul class="space-y-1 text-xs text-gray-500 dark:text-gray-400">
+                      <li
+                        v-for="mode in goCaptchaModes"
+                        :key="`strength-${mode}`"
+                        class="flex items-center justify-between gap-4"
+                      >
+                        <span
+                          :class="
+                            goCaptchaSelectedMode === mode
+                              ? 'font-medium text-primary-700 dark:text-primary-300'
+                              : ''
+                          "
+                        >
+                          {{ t(`admin.settings.goCaptcha.modes.${mode}`) }}
+                        </span>
+                        <span class="font-mono">{{
+                          t(`admin.settings.goCaptcha.strength.${mode}`)
+                        }}</span>
+                      </li>
+                    </ul>
+                    <p class="mt-2 text-xs text-gray-400 dark:text-gray-500">
+                      {{ t("admin.settings.goCaptcha.strengthHint") }}
+                    </p>
+                  </div>
+                  <p
+                    v-if="goCaptchaSelectedMode === 'click'"
+                    class="text-xs text-amber-600 dark:text-amber-400"
+                    data-testid="gocaptcha-click-language-warning"
+                  >
+                    {{ t("admin.settings.goCaptcha.chineseOnlyWarning") }}
+                  </p>
                 </div>
               </div>
             </div>
@@ -9823,6 +9912,8 @@ const form = reactive<SettingsForm>({
   aliyun_captcha_scene_id: "",
   aliyun_captcha_prefix: "",
   aliyun_captcha_region: "cn",
+  gocaptcha_enabled: false,
+  gocaptcha_mode: "click",
   api_key_acl_trust_forwarded_ip: true,
   forwarded_client_ip_headers: [],
   // LinuxDo Connect OAuth 登录
@@ -9987,23 +10078,45 @@ const form = reactive<SettingsForm>({
   allow_user_view_error_requests: false,
 });
 
-// 人机验证 UI 状态：单卡片「总开关 + 服务商单选」，落库仍是三个独立
+// 人机验证 UI 状态：单卡片「总开关 + 服务商单选」，落库仍是四个独立
 // enabled 键（与上游一致），由下面的映射保证同一时间至多一家启用。
-type CaptchaProviderSelection = "turnstile" | "tencent" | "aliyun";
+type CaptchaProviderSelection =
+  | "turnstile"
+  | "tencent"
+  | "aliyun"
+  | "gocaptcha";
 
 const captchaProviderSelection = ref<CaptchaProviderSelection>("turnstile");
+
+const goCaptchaModes = [
+  "click",
+  "shape",
+  "slide",
+  "drag",
+  "rotate",
+] as const;
+type GoCaptchaMode = (typeof goCaptchaModes)[number];
+
+// 后端对未知模式一律回落到文字点选，前端展示保持一致
+const goCaptchaSelectedMode = computed<GoCaptchaMode>(() =>
+  (goCaptchaModes as readonly string[]).includes(form.gocaptcha_mode)
+    ? (form.gocaptcha_mode as GoCaptchaMode)
+    : "click",
+);
 
 function applyCaptchaSelection(provider: CaptchaProviderSelection | null): void {
   form.turnstile_enabled = provider === "turnstile";
   form.tencent_captcha_enabled = provider === "tencent";
   form.aliyun_captcha_enabled = provider === "aliyun";
+  form.gocaptcha_enabled = provider === "gocaptcha";
 }
 
 const captchaMasterEnabled = computed({
   get: () =>
     form.turnstile_enabled ||
     form.tencent_captcha_enabled ||
-    form.aliyun_captcha_enabled,
+    form.aliyun_captcha_enabled ||
+    form.gocaptcha_enabled,
   set: (enabled: boolean) =>
     applyCaptchaSelection(enabled ? captchaProviderSelection.value : null),
 });
@@ -10034,6 +10147,8 @@ function syncCaptchaProviderSelection(): void {
     captchaProviderSelection.value = "tencent";
   } else if (form.aliyun_captcha_enabled) {
     captchaProviderSelection.value = "aliyun";
+  } else if (form.gocaptcha_enabled) {
+    captchaProviderSelection.value = "gocaptcha";
   } else if (form.turnstile_enabled) {
     captchaProviderSelection.value = "turnstile";
   }
@@ -11528,6 +11643,8 @@ async function saveSettings() {
       aliyun_captcha_scene_id: form.aliyun_captcha_scene_id,
       aliyun_captcha_prefix: form.aliyun_captcha_prefix,
       aliyun_captcha_region: form.aliyun_captcha_region,
+      gocaptcha_enabled: form.gocaptcha_enabled,
+      gocaptcha_mode: form.gocaptcha_mode,
       api_key_acl_trust_forwarded_ip: form.api_key_acl_trust_forwarded_ip,
       forwarded_client_ip_headers: form.forwarded_client_ip_headers,
       linuxdo_connect_enabled: form.linuxdo_connect_enabled,

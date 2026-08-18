@@ -362,6 +362,8 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		AliyunCaptchaSceneID:                   settings[SettingKeyAliyunCaptchaSceneID],
 		AliyunCaptchaPrefix:                    settings[SettingKeyAliyunCaptchaPrefix],
 		AliyunCaptchaRegion:                    normalizeAliyunCaptchaRegion(settings[SettingKeyAliyunCaptchaRegion]),
+		GoCaptchaEnabled:                       settings[SettingKeyGoCaptchaEnabled] == "true",
+		GoCaptchaMode:                          string(NormalizeGoCaptchaMode(settings[SettingKeyGoCaptchaMode])),
 		APIKeyACLTrustForwardedIP:              apiKeyACLTrustForwardedIP,
 		ForwardedClientIPHeaders:               forwardedClientIPHeaders,
 		SiteName:                               s.getStringOrDefault(settings, SettingKeySiteName, "Sub2API"),

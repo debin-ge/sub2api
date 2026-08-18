@@ -67,19 +67,10 @@
         </div>
 
         <!-- Turnstile Widget for Resend -->
-        <div v-if="actionCaptchaEnabled || (turnstileEnabled && showResendTurnstile)">
+        <div v-if="actionCaptchaEnabled || (inlineCaptchaPending && showResendTurnstile)">
           <TurnstileWidget
             ref="turnstileRef"
-            :site-key="turnstileSiteKey"
-            :turnstile-enabled="turnstileEnabled"
-            :turnstile-site-key="turnstileSiteKey"
-            :tencent-enabled="tencentCaptchaEnabled"
-            :tencent-app-id="tencentCaptchaAppId"
-            :tencent-region="tencentCaptchaRegion"
-            :aliyun-enabled="aliyunCaptchaEnabled"
-            :aliyun-scene-id="aliyunCaptchaSceneId"
-            :aliyun-prefix="aliyunCaptchaPrefix"
-            :aliyun-region="aliyunCaptchaRegion"
+            v-bind="captchaProps"
             @verify="onTurnstileVerify"
             @expire="onTurnstileExpire"
             @error="onTurnstileError"
@@ -89,16 +80,7 @@
         <div v-if="pendingOAuthCreateCaptchaEnabled" class="space-y-2">
           <TurnstileWidget
             ref="createAccountTurnstileRef"
-            :site-key="turnstileSiteKey"
-            :turnstile-enabled="turnstileEnabled"
-            :turnstile-site-key="turnstileSiteKey"
-            :tencent-enabled="tencentCaptchaEnabled"
-            :tencent-app-id="tencentCaptchaAppId"
-            :tencent-region="tencentCaptchaRegion"
-            :aliyun-enabled="aliyunCaptchaEnabled"
-            :aliyun-scene-id="aliyunCaptchaSceneId"
-            :aliyun-prefix="aliyunCaptchaPrefix"
-            :aliyun-region="aliyunCaptchaRegion"
+            v-bind="captchaProps"
             @verify="onCreateAccountTurnstileVerify"
             @expire="onCreateAccountTurnstileExpire"
             @error="onCreateAccountTurnstileError"
@@ -150,7 +132,7 @@
             type="button"
             @click="handleResendCode"
             :disabled="
-              isSendingCode || (turnstileEnabled && showResendTurnstile && !resendTurnstileToken)
+              isSendingCode || (inlineCaptchaPending && showResendTurnstile && !resendTurnstileToken)
             "
             class="text-sm text-primary-600 transition-colors hover:text-primary-500 disabled:cursor-not-allowed disabled:opacity-50 dark:text-primary-400 dark:hover:text-primary-300"
           >
@@ -184,6 +166,7 @@ import { useI18n } from 'vue-i18n'
 import { AuthLayout } from '@/components/layout'
 import Icon from '@/components/icons/Icon.vue'
 import TurnstileWidget from '@/components/CaptchaChallenge.vue'
+import { useCaptcha, type CaptchaRequestPayload } from '@/composables/useCaptcha'
 import { useAuthStore, useAppStore } from '@/stores'
 import {
   persistOAuthTokenContext,
@@ -262,56 +245,58 @@ const pendingAdoptionDecision = ref<{
 const hasRegisterData = ref<boolean>(false)
 
 // Public settings
-const turnstileEnabled = ref<boolean>(false)
-const turnstileSiteKey = ref<string>('')
 const siteName = computed(() => appStore.siteName)
 const registrationEmailSuffixBlacklist = ref<string[]>([])
-const tencentCaptchaEnabled = ref<boolean>(false)
-const tencentCaptchaAppId = ref<string>('')
-const tencentCaptchaRegion = ref<string>('cn')
-const aliyunCaptchaEnabled = ref<boolean>(false)
-const aliyunCaptchaSceneId = ref<string>('')
-const aliyunCaptchaPrefix = ref<string>('')
-const aliyunCaptchaRegion = ref<string>('cn')
 const registrationEmailSuffixWhitelist = ref<string[]>([])
 // 域名限量注册开关：开启时非白名单域名可注册 1 个账户（由后端判定），前端不做白名单预检。
 const emailDomainQuotaEnabled = ref<boolean>(false)
 
-// Turnstile for resend
-const turnstileRef = ref<InstanceType<typeof TurnstileWidget> | null>(null)
-const createAccountTurnstileRef = ref<InstanceType<typeof TurnstileWidget> | null>(null)
-const resendTurnstileToken = ref<string>('')
-const resendTencentCaptchaRandstr = ref<string>('')
-const createAccountTurnstileToken = ref<string>('')
-const createAccountTencentCaptchaRandstr = ref<string>('')
 const showResendTurnstile = ref<boolean>(false)
-const aliyunCaptchaReady = computed(
-  () =>
-    aliyunCaptchaEnabled.value &&
-    Boolean(aliyunCaptchaSceneId.value) &&
-    Boolean(aliyunCaptchaPrefix.value)
-)
-// 动作触发式验证码（腾讯/阿里云）：重发验证码、创建账号时弹窗验证
-const actionCaptchaEnabled = computed(
-  () =>
-    (tencentCaptchaEnabled.value && Boolean(tencentCaptchaAppId.value)) ||
-    aliyunCaptchaReady.value
-)
-const captchaEnabled = computed(
-  () =>
-    (turnstileEnabled.value && Boolean(turnstileSiteKey.value)) || actionCaptchaEnabled.value
-)
 
 const errors = ref({
   code: '',
   turnstile: ''
 })
 
+// 本页有两套互相独立的验证凭据：重发验证码一套，pending OAuth 创建账号一套。
+// 它们共享同一份 provider 配置，因此复用同一个 useCaptcha 实例的两个槽位。
+const {
+  captchaRef: turnstileRef,
+  token: resendTurnstileToken,
+  randstr: resendTencentCaptchaRandstr,
+  captchaProps,
+  captchaEnabled,
+  actionCaptchaEnabled,
+  inlineCaptchaPending,
+  applyPublicSettings: applyCaptchaSettings,
+  onVerify: onTurnstileVerify,
+  onExpire: onTurnstileExpire,
+  onError: onTurnstileError,
+  acquireActionProof: acquireResendActionProof,
+  buildRequestPayload,
+  createProofSlot
+} = useCaptcha((message) => {
+  errors.value.turnstile = message
+})
+
+const {
+  captchaRef: createAccountTurnstileRef,
+  token: createAccountTurnstileToken,
+  randstr: createAccountTencentCaptchaRandstr,
+  onVerify: onCreateAccountTurnstileVerify,
+  onExpire: onCreateAccountTurnstileExpire,
+  onError: onCreateAccountTurnstileError,
+  reset: resetCreateAccountTurnstile,
+  acquireActionProof: acquireCreateAccountProof
+} = createProofSlot((message) => {
+  errors.value.turnstile = message
+})
+
 const validationToastMessage = computed(
   () => errors.value.code || errors.value.turnstile || ''
 )
 const pendingOAuthCreateTurnstileRequired = computed(
-  () => isPendingOAuthFlow() && turnstileEnabled.value
+  () => isPendingOAuthFlow() && inlineCaptchaPending.value
 )
 const pendingOAuthCreateCaptchaEnabled = computed(
   () => isPendingOAuthFlow() && captchaEnabled.value
@@ -368,15 +353,7 @@ onMounted(async () => {
     if (!settings) {
       throw new Error('Public settings are unavailable')
     }
-    turnstileEnabled.value = settings.turnstile_enabled
-    turnstileSiteKey.value = settings.turnstile_site_key || ''
-    tencentCaptchaEnabled.value = settings.tencent_captcha_enabled === true
-    tencentCaptchaAppId.value = settings.tencent_captcha_app_id || ''
-    tencentCaptchaRegion.value = settings.tencent_captcha_region || 'cn'
-    aliyunCaptchaEnabled.value = settings.aliyun_captcha_enabled === true
-    aliyunCaptchaSceneId.value = settings.aliyun_captcha_scene_id || ''
-    aliyunCaptchaPrefix.value = settings.aliyun_captcha_prefix || ''
-    aliyunCaptchaRegion.value = settings.aliyun_captcha_region || 'cn'
+    applyCaptchaSettings(settings)
     registrationEmailSuffixBlacklist.value = normalizeRegistrationEmailSuffixBlacklist(
       settings.registration_email_suffix_blacklist || []
     )
@@ -422,70 +399,23 @@ function startCountdown(seconds: number): void {
   }, 1000)
 }
 
-// ==================== Turnstile Handlers ====================
-
-function onTurnstileVerify(token: string, randstr = ''): void {
-  resendTurnstileToken.value = token
-  resendTencentCaptchaRandstr.value = randstr
-  errors.value.turnstile = ''
-}
-
-function onTurnstileExpire(): void {
-  resendTurnstileToken.value = ''
-  resendTencentCaptchaRandstr.value = ''
-  errors.value.turnstile = t('auth.turnstileExpired')
-}
-
-function onTurnstileError(): void {
-  resendTurnstileToken.value = ''
-  resendTencentCaptchaRandstr.value = ''
-  errors.value.turnstile = t('auth.turnstileFailed')
-}
-
-function onCreateAccountTurnstileVerify(token: string, randstr = ''): void {
-  createAccountTurnstileToken.value = token
-  createAccountTencentCaptchaRandstr.value = randstr
-  errors.value.turnstile = ''
-}
-
-function onCreateAccountTurnstileExpire(): void {
-  createAccountTurnstileToken.value = ''
-  createAccountTencentCaptchaRandstr.value = ''
-  errors.value.turnstile = t('auth.turnstileExpired')
-}
-
-function onCreateAccountTurnstileError(): void {
-  createAccountTurnstileToken.value = ''
-  createAccountTencentCaptchaRandstr.value = ''
-  errors.value.turnstile = t('auth.turnstileFailed')
-}
-
-function resetCreateAccountTurnstile(): void {
-  createAccountTurnstileToken.value = ''
-  createAccountTencentCaptchaRandstr.value = ''
-  createAccountTurnstileRef.value?.reset()
-}
-
-async function acquireResendActionProof(): Promise<boolean> {
-  if (!actionCaptchaEnabled.value) return true
-
-  const proof = await turnstileRef.value?.verifyAction()
-  if (!proof) return false
-
-  resendTurnstileToken.value = proof.token
-  resendTencentCaptchaRandstr.value = proof.randstr
-  return true
-}
-
 async function acquireCreateAccountActionProof(): Promise<boolean> {
-  if (!isPendingOAuthFlow() || !actionCaptchaEnabled.value) return true
+  if (!isPendingOAuthFlow()) return true
+  return acquireCreateAccountProof()
+}
 
-  const proof = await createAccountTurnstileRef.value?.verifyAction()
-  if (!proof) return false
+function createAccountCaptchaFields(): CaptchaRequestPayload {
+  return buildRequestPayload(
+    createAccountTurnstileToken.value,
+    createAccountTencentCaptchaRandstr.value
+  )
+}
 
-  createAccountTurnstileToken.value = proof.token
-  createAccountTencentCaptchaRandstr.value = proof.randstr
-  return true
+// pending OAuth 建号接口对空字符串敏感，未取得凭据时字段整体省略
+function omitEmptyCaptchaFields(fields: CaptchaRequestPayload): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(fields).filter(([, value]) => Boolean(value))
+  ) as Record<string, string>
 }
 
 function isPendingOAuthFlow(): boolean {
@@ -557,20 +487,14 @@ async function sendCode(): Promise<void> {
       return
     }
 
+    // 优先使用重发时新获取的 token（因为初始 token 可能已被使用）
+    const effectiveToken = resendTurnstileToken.value || initialTurnstileToken.value
+    const effectiveRandstr =
+      resendTencentCaptchaRandstr.value || initialTencentCaptchaRandstr.value
     const requestPayload = {
       email: email.value,
       [pendingAuthTokenField.value]: pendingAuthToken.value || undefined,
-      // 优先使用重发时新获取的 token（因为初始 token 可能已被使用）
-      turnstile_token:
-        turnstileEnabled.value || aliyunCaptchaEnabled.value
-          ? resendTurnstileToken.value || initialTurnstileToken.value || undefined
-          : undefined,
-      tencent_captcha_ticket: tencentCaptchaEnabled.value
-        ? resendTurnstileToken.value || initialTurnstileToken.value || undefined
-        : undefined,
-      tencent_captcha_randstr: tencentCaptchaEnabled.value
-        ? resendTencentCaptchaRandstr.value || initialTencentCaptchaRandstr.value || undefined
-        : undefined
+      ...buildRequestPayload(effectiveToken, effectiveRandstr)
     } as Parameters<typeof sendVerifyCode>[0]
     captchaProofUsed = Boolean(
       requestPayload.turnstile_token || requestPayload.tencent_captcha_ticket
@@ -611,7 +535,7 @@ async function sendCode(): Promise<void> {
       resendTurnstileToken.value = ''
       resendTencentCaptchaRandstr.value = ''
       turnstileRef.value?.reset()
-      if (!requestSucceeded && turnstileEnabled.value) {
+      if (!requestSucceeded && inlineCaptchaPending.value) {
         showResendTurnstile.value = true
       }
     }
@@ -638,12 +562,12 @@ function clearStoredCaptchaProof(): void {
 
 async function handleResendCode(): Promise<void> {
   // Turnstile stays staged; Tencent is acquired from this action.
-  if (turnstileEnabled.value && !showResendTurnstile.value) {
+  if (inlineCaptchaPending.value && !showResendTurnstile.value) {
     showResendTurnstile.value = true
     return
   }
 
-  if (turnstileEnabled.value && !resendTurnstileToken.value) {
+  if (inlineCaptchaPending.value && !resendTurnstileToken.value) {
     errors.value.turnstile = t('auth.completeVerification')
     return
   }
@@ -707,16 +631,7 @@ async function handleVerify(): Promise<void> {
         email: email.value,
         password: password.value,
         verify_code: verifyCode.value.trim(),
-        ...((turnstileEnabled.value || aliyunCaptchaEnabled.value) &&
-        createAccountTurnstileToken.value
-          ? { turnstile_token: createAccountTurnstileToken.value }
-          : {}),
-        ...(tencentCaptchaEnabled.value && createAccountTurnstileToken.value
-          ? {
-              tencent_captcha_ticket: createAccountTurnstileToken.value,
-              tencent_captcha_randstr: createAccountTencentCaptchaRandstr.value
-          }
-          : {}),
+        ...omitEmptyCaptchaFields(createAccountCaptchaFields()),
         ...oauthAffiliatePayload(affCode.value || loadAffiliateReferralCode()),
       }
       if (invitationCode.value) {
@@ -752,12 +667,7 @@ async function handleVerify(): Promise<void> {
         email: email.value,
         password: password.value,
         verify_code: verifyCode.value.trim(),
-        turnstile_token:
-          turnstileEnabled.value || aliyunCaptchaEnabled.value
-            ? initialTurnstileToken.value || undefined
-            : undefined,
-        tencent_captcha_ticket: tencentCaptchaEnabled.value ? initialTurnstileToken.value || undefined : undefined,
-        tencent_captcha_randstr: tencentCaptchaEnabled.value ? initialTencentCaptchaRandstr.value || undefined : undefined,
+        ...buildRequestPayload(initialTurnstileToken.value, initialTencentCaptchaRandstr.value),
         promo_code: promoCode.value || undefined,
         invitation_code: invitationCode.value || undefined,
         ...(affCode.value ? { aff_code: affCode.value } : {})

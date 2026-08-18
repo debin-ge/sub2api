@@ -82,15 +82,7 @@
         <div v-if="captchaEnabled">
           <TurnstileWidget
             ref="turnstileRef"
-            :turnstile-enabled="turnstileEnabled"
-            :turnstile-site-key="turnstileSiteKey"
-            :tencent-enabled="tencentCaptchaEnabled"
-            :tencent-app-id="tencentCaptchaAppId"
-            :tencent-region="tencentCaptchaRegion"
-            :aliyun-enabled="aliyunCaptchaEnabled"
-            :aliyun-scene-id="aliyunCaptchaSceneId"
-            :aliyun-prefix="aliyunCaptchaPrefix"
-            :aliyun-region="aliyunCaptchaRegion"
+            v-bind="captchaProps"
             @verify="onTurnstileVerify"
             @expire="onTurnstileExpire"
             @error="onTurnstileError"
@@ -100,7 +92,7 @@
         <!-- Submit Button -->
         <button
           type="submit"
-          :disabled="authActionDisabled || (turnstileEnabled && !turnstileToken)"
+          :disabled="authActionDisabled || (inlineCaptchaPending && !turnstileToken)"
           class="btn btn-primary w-full"
         >
           <svg
@@ -235,6 +227,7 @@ import LoginAgreementPrompt from '@/components/auth/LoginAgreementPrompt.vue'
 import TotpLoginModal from '@/components/auth/TotpLoginModal.vue'
 import Icon from '@/components/icons/Icon.vue'
 import TurnstileWidget from '@/components/CaptchaChallenge.vue'
+import { useCaptcha } from '@/composables/useCaptcha'
 import { useAuthStore, useAppStore } from '@/stores'
 import {
   buildOAuthLoginStartURL,
@@ -272,15 +265,6 @@ const showPassword = ref<boolean>(false)
 const publicSettingsLoaded = ref<boolean>(false)
 
 // Public settings
-const turnstileEnabled = ref<boolean>(false)
-const turnstileSiteKey = ref<string>('')
-const tencentCaptchaEnabled = ref<boolean>(false)
-const tencentCaptchaAppId = ref<string>('')
-const tencentCaptchaRegion = ref<string>('cn')
-const aliyunCaptchaEnabled = ref<boolean>(false)
-const aliyunCaptchaSceneId = ref<string>('')
-const aliyunCaptchaPrefix = ref<string>('')
-const aliyunCaptchaRegion = ref<string>('cn')
 const linuxdoOAuthEnabled = ref<boolean>(false)
 const dingtalkOAuthEnabled = ref<boolean>(false)
 const wechatOAuthEnabled = ref<boolean>(false)
@@ -299,27 +283,6 @@ const loginAgreementDocuments = ref<LoginAgreementDocument[]>([])
 const agreementAccepted = ref<boolean>(false)
 const showAgreementModal = ref<boolean>(false)
 
-// Turnstile
-const turnstileRef = ref<InstanceType<typeof TurnstileWidget> | null>(null)
-const turnstileToken = ref<string>('')
-const tencentCaptchaRandstr = ref<string>('')
-const aliyunCaptchaReady = computed(
-  () =>
-    aliyunCaptchaEnabled.value &&
-    Boolean(aliyunCaptchaSceneId.value) &&
-    Boolean(aliyunCaptchaPrefix.value)
-)
-// 动作触发式验证码（腾讯/阿里云）：提交、OAuth 启动、passkey 时弹窗验证
-const actionCaptchaEnabled = computed(
-  () =>
-    (tencentCaptchaEnabled.value && Boolean(tencentCaptchaAppId.value)) ||
-    aliyunCaptchaReady.value
-)
-const captchaEnabled = computed(
-  () =>
-    (turnstileEnabled.value && Boolean(turnstileSiteKey.value)) || actionCaptchaEnabled.value
-)
-
 // 2FA state
 const show2FAModal = ref<boolean>(false)
 const totpTempToken = ref<string>('')
@@ -335,6 +298,26 @@ const errors = reactive({
   email: '',
   password: '',
   turnstile: ''
+})
+
+// 人机验证：四家 provider 的配置、凭据与请求字段映射统一收敛在 useCaptcha 里
+const {
+  captchaRef: turnstileRef,
+  token: turnstileToken,
+  captchaProps,
+  captchaEnabled,
+  actionCaptchaEnabled,
+  inlineCaptchaPending,
+  applyPublicSettings: applyCaptchaSettings,
+  onVerify: onTurnstileVerify,
+  onExpire: onTurnstileExpire,
+  onError: onTurnstileError,
+  reset: resetCaptchaProof,
+  acquireActionProof,
+  requestPayload: captchaRequestPayload,
+  toActionProof
+} = useCaptcha((message) => {
+  errors.turnstile = message
 })
 
 const validationToastMessage = computed(
@@ -383,15 +366,7 @@ onMounted(async () => {
 
   try {
     const settings = await getPublicSettings()
-    turnstileEnabled.value = settings.turnstile_enabled
-    turnstileSiteKey.value = settings.turnstile_site_key || ''
-    tencentCaptchaEnabled.value = settings.tencent_captcha_enabled === true
-    tencentCaptchaAppId.value = settings.tencent_captcha_app_id || ''
-    tencentCaptchaRegion.value = settings.tencent_captcha_region || 'cn'
-    aliyunCaptchaEnabled.value = settings.aliyun_captcha_enabled === true
-    aliyunCaptchaSceneId.value = settings.aliyun_captcha_scene_id || ''
-    aliyunCaptchaPrefix.value = settings.aliyun_captcha_prefix || ''
-    aliyunCaptchaRegion.value = settings.aliyun_captcha_region || 'cn'
+    applyCaptchaSettings(settings)
     linuxdoOAuthEnabled.value = settings.linuxdo_oauth_enabled
     dingtalkOAuthEnabled.value = settings.dingtalk_oauth_enabled ?? false
     wechatOAuthEnabled.value = isWeChatWebOAuthEnabled(settings)
@@ -475,44 +450,6 @@ function rejectLoginAgreement(): void {
   appStore.showWarning(t('legal.loginAgreementPrompt.loginRejectedWarning'))
 }
 
-// ==================== Turnstile Handlers ====================
-
-function onTurnstileVerify(token: string, randstr = ''): void {
-  turnstileToken.value = token
-  tencentCaptchaRandstr.value = randstr
-  errors.turnstile = ''
-}
-
-function onTurnstileExpire(): void {
-  turnstileToken.value = ''
-  tencentCaptchaRandstr.value = ''
-  errors.turnstile = t('auth.turnstileExpired')
-}
-
-function onTurnstileError(): void {
-  turnstileToken.value = ''
-  tencentCaptchaRandstr.value = ''
-  errors.turnstile = t('auth.turnstileFailed')
-}
-
-function resetCaptchaProof(): void {
-  turnstileRef.value?.reset()
-  turnstileToken.value = ''
-  tencentCaptchaRandstr.value = ''
-  errors.turnstile = ''
-}
-
-async function acquireActionProof(): Promise<boolean> {
-  if (!actionCaptchaEnabled.value) return true
-
-  const proof = await turnstileRef.value?.verifyAction()
-  if (!proof) return false
-
-  turnstileToken.value = proof.token
-  tencentCaptchaRandstr.value = proof.randstr
-  return true
-}
-
 // ==================== Validation ====================
 
 function validateForm(): boolean {
@@ -550,7 +487,7 @@ function validateForm(): boolean {
   }
 
   // Turnstile validation
-  if (turnstileEnabled.value && !turnstileToken.value) {
+  if (inlineCaptchaPending.value && !turnstileToken.value) {
     errors.turnstile = t('auth.completeVerification')
     isValid = false
   }
@@ -592,16 +529,11 @@ async function handleLogin(): Promise<void> {
   let response: LoginResponse
 
   try {
-    // Call auth store login（阿里云 captchaVerifyParam 复用 turnstile_token 字段）
+    // Call auth store login（阿里云 captchaVerifyParam 与自建令牌复用 turnstile_token 字段）
     response = await authStore.login({
       email: formData.email,
       password: formData.password,
-      turnstile_token:
-        turnstileEnabled.value || aliyunCaptchaEnabled.value ? turnstileToken.value : undefined,
-      tencent_captcha_ticket: tencentCaptchaEnabled.value ? turnstileToken.value : undefined,
-      tencent_captcha_randstr: tencentCaptchaEnabled.value
-         ? tencentCaptchaRandstr.value
-         : undefined
+      ...captchaRequestPayload()
     })
 
   } catch (error: unknown) {
@@ -659,12 +591,7 @@ async function handlePasskeyLogin(): Promise<void> {
         passkeyLoading.value = false
         return
       }
-      proof = tencentCaptchaEnabled.value
-        ? {
-            tencent_captcha_ticket: result.token,
-            tencent_captcha_randstr: result.randstr
-          }
-        : { turnstile_token: result.token }
+      proof = toActionProof(result)
     }
 
     await authStore.loginWithPasskey(proof)
@@ -706,15 +633,7 @@ async function handleOAuthStart(request: OAuthLoginStart): Promise<void> {
     const proof = await turnstileRef.value?.verifyAction()
     if (!proof) return
 
-    const result = await startOAuthLogin(
-      request,
-      tencentCaptchaEnabled.value
-        ? {
-            tencent_captcha_ticket: proof.token,
-            tencent_captcha_randstr: proof.randstr
-          }
-        : { turnstile_token: proof.token }
-    )
+    const result = await startOAuthLogin(request, toActionProof(proof))
     window.location.href = result.authorize_url
   } catch (error: unknown) {
     errorMessage.value = extractI18nErrorMessage(

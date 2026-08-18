@@ -183,6 +183,8 @@ var ProviderSet = wire.NewSet(
 	NewTurnstileVerifier,
 	NewTencentCaptchaVerifier,
 	NewAliyunCaptchaVerifier,
+	NewGoCaptchaGenerator,
+	NewGoCaptchaCache,
 	ProvidePricingRemoteClient,
 	ProvideGitHubReleaseClient,
 	NewProxyExitInfoProber,

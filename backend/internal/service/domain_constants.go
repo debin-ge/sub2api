@@ -223,6 +223,11 @@ const (
 	SettingKeyAliyunCaptchaPrefix          = "aliyun_captcha_prefix"            // 身份标，前端 SDK 初始化用
 	SettingKeyAliyunCaptchaRegion          = "aliyun_captcha_region"            // 地域："cn"|"sgp"，决定前端脚本区域与服务端接入点
 
+	// 自建行为验证码 go-captcha 设置（与 Turnstile、腾讯天御、阿里云互斥，同一时间仅可启用一家）
+	SettingKeyGoCaptchaEnabled = "gocaptcha_enabled" // 是否启用自建行为验证码
+	// 交互模式："click"（文字点选，默认）|"shape"（图形点选）|"slide"（滑动）|"drag"（拖拽）|"rotate"（旋转）
+	SettingKeyGoCaptchaMode = "gocaptcha_mode"
+
 	// API Key IP 访问控制设置
 	SettingKeyAPIKeyACLTrustForwardedIP = "api_key_acl_trust_forwarded_ip" // API Key IP 白/黑名单是否信任转发 IP
 	SettingKeyForwardedClientIPHeaders  = "forwarded_client_ip_headers"    // 自定义 CDN 客户端 IP 请求头（JSON 数组）

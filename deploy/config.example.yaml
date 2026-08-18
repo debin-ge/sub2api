@@ -1349,6 +1349,59 @@ turnstile:
   required: false
 
 # =============================================================================
+# Self-hosted Behavioral CAPTCHA (go-captcha)
+# 自建行为验证码配置
+# =============================================================================
+# The enable switch and interaction mode live in the admin panel (database settings).
+# Only operational tuning knobs are here; they require a restart to take effect.
+# 启用开关与交互模式在管理后台配置（存数据库）。这里只有运维调参项，改动需重启生效。
+gocaptcha:
+  # How long a user has between seeing the image and submitting an answer
+  # 用户从看到验证码到提交作答的允许时长
+  challenge_ttl: 120s
+  # How long a verified token stays valid before the business request must use it
+  # 验证通过后到提交业务请求之间，令牌的有效时长
+  token_ttl: 300s
+
+  # Tolerance for click / shape modes, in pixels
+  # 文字点选、图形点选的容差（像素）
+  padding_click: 5
+  # Tolerance for slide / drag modes, in pixels
+  # 滑动、拖拽的容差（像素）
+  padding_slide: 5
+  # Tolerance for rotate mode, in degrees. Higher than the others on purpose:
+  # aligning an angle precisely is hard, 5 degrees noticeably hurts pass rate.
+  # 旋转的容差（度）。刻意高于其他模式：精确对齐角度较难，用 5 度会明显压低通过率。
+  padding_rotate: 8
+
+  # Number of characters/shapes the user must click, in order. Lowering this to 2
+  # raises the blind-guess success rate by roughly two orders of magnitude.
+  # 点选需要按顺序点中的目标数量。降到 2 会让盲猜成功率上升约两个数量级。
+  click_verify_len: 3
+
+  # Per-IP rate limits. Challenge generation composes images and is CPU-bound,
+  # so this endpoint must stay limited.
+  # 按 IP 限流。挑战生成涉及图像合成，是 CPU 密集操作，必须限流。
+  challenge_rate_per_min: 20
+  verify_rate_per_min: 60
+
+  # Consecutive-failure penalty. Slide and rotate have a blind-guess success rate
+  # around 1/20, so rate limiting alone is not enough to stop brute force.
+  # After max_failures within failure_window, the IP cannot get new challenges
+  # for cooldown. A successful verification resets the counter.
+  # 连续失败惩罚。滑动与旋转的单次盲猜成功率在 1/20 量级，仅靠限流拦不住爆破。
+  # 同一 IP 在 failure_window 内失败 max_failures 次后，冷却 cooldown 时长内不再签发挑战；
+  # 成功一次即清零计数。
+  max_failures: 5
+  failure_window: 10m
+  cooldown: 10m
+
+  # Bind the issued token to the client IP. Off by default: mobile networks can
+  # switch egress IP within the token lifetime, which would reject real users.
+  # 令牌绑定客户端 IP。默认关闭：移动网络可能在令牌有效期内切换出口 IP，会误伤真实用户。
+  bind_ip: false
+
+# =============================================================================
 # Gemini OAuth (Required for Gemini accounts)
 # Gemini OAuth 配置（Gemini 账户必需）
 # =============================================================================

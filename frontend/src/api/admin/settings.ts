@@ -521,6 +521,9 @@ export interface SystemSettings {
   aliyun_captcha_scene_id: string;
   aliyun_captcha_prefix: string;
   aliyun_captcha_region: string;
+  // 自建行为验证码：无密钥，因此没有 *_configured 掩码字段
+  gocaptcha_enabled: boolean;
+  gocaptcha_mode: string;
   api_key_acl_trust_forwarded_ip: boolean;
   forwarded_client_ip_headers: string[];
 
@@ -865,6 +868,8 @@ export interface UpdateSettingsRequest {
   aliyun_captcha_scene_id?: string;
   aliyun_captcha_prefix?: string;
   aliyun_captcha_region?: string;
+  gocaptcha_enabled?: boolean;
+  gocaptcha_mode?: string;
   api_key_acl_trust_forwarded_ip?: boolean;
   forwarded_client_ip_headers?: string[];
   linuxdo_connect_enabled?: boolean;

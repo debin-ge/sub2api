@@ -80,6 +80,10 @@ type UpdateSettingsRequest struct {
 	AliyunCaptchaPrefix          string `json:"aliyun_captcha_prefix"`
 	AliyunCaptchaRegion          string `json:"aliyun_captcha_region"`
 
+	// 自建行为验证码：无密钥，只有开关与交互模式
+	GoCaptchaEnabled bool   `json:"gocaptcha_enabled"`
+	GoCaptchaMode    string `json:"gocaptcha_mode"`
+
 	// API Key IP 访问控制设置
 	APIKeyACLTrustForwardedIP *bool     `json:"api_key_acl_trust_forwarded_ip"`
 	ForwardedClientIPHeaders  *[]string `json:"forwarded_client_ip_headers"`
@@ -673,16 +677,25 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	if _, sent := sentFields["aliyun_captcha_enabled"]; !sent {
 		aliyunCaptchaEnabled = previousSettings.AliyunCaptchaEnabled
 	}
+	goCaptchaEnabled := req.GoCaptchaEnabled
+	if _, sent := sentFields["gocaptcha_enabled"]; !sent {
+		goCaptchaEnabled = previousSettings.GoCaptchaEnabled
+	}
 	enabledCaptchaProviders := 0
-	for _, enabled := range []bool{turnstileEnabled, tencentCaptchaEnabled, aliyunCaptchaEnabled} {
+	for _, enabled := range []bool{turnstileEnabled, tencentCaptchaEnabled, aliyunCaptchaEnabled, goCaptchaEnabled} {
 		if enabled {
 			enabledCaptchaProviders++
 		}
 	}
 	if enabledCaptchaProviders > 1 {
-		response.BadRequest(c, "Multiple captcha providers (Cloudflare Turnstile / Tencent Captcha / Aliyun Captcha) cannot be enabled at the same time")
+		response.BadRequest(c, "Multiple captcha providers (Cloudflare Turnstile / Tencent Captcha / Aliyun Captcha / Self-hosted Captcha) cannot be enabled at the same time")
 		return
 	}
+	// 自建验证码模式 normalize：未发送保留已存值，非法值一律回落到文字点选
+	if _, sent := sentFields["gocaptcha_mode"]; !sent {
+		req.GoCaptchaMode = previousSettings.GoCaptchaMode
+	}
+	req.GoCaptchaMode = string(service.NormalizeGoCaptchaMode(req.GoCaptchaMode))
 	// 阿里云地域 normalize：未发送保留已存值，非法值一律按中国内地落库
 	if _, sent := sentFields["aliyun_captcha_region"]; !sent {
 		req.AliyunCaptchaRegion = previousSettings.AliyunCaptchaRegion
@@ -1571,6 +1584,8 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		AliyunCaptchaSceneID:                   req.AliyunCaptchaSceneID,
 		AliyunCaptchaPrefix:                    req.AliyunCaptchaPrefix,
 		AliyunCaptchaRegion:                    req.AliyunCaptchaRegion,
+		GoCaptchaEnabled:                       req.GoCaptchaEnabled,
+		GoCaptchaMode:                          req.GoCaptchaMode,
 		APIKeyACLTrustForwardedIP: func() bool {
 			if req.APIKeyACLTrustForwardedIP != nil {
 				return *req.APIKeyACLTrustForwardedIP
@@ -2195,6 +2210,8 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		AliyunCaptchaSceneID:                                   updatedSettings.AliyunCaptchaSceneID,
 		AliyunCaptchaPrefix:                                    updatedSettings.AliyunCaptchaPrefix,
 		AliyunCaptchaRegion:                                    updatedSettings.AliyunCaptchaRegion,
+		GoCaptchaEnabled:                                       updatedSettings.GoCaptchaEnabled,
+		GoCaptchaMode:                                          updatedSettings.GoCaptchaMode,
 		APIKeyACLTrustForwardedIP:                              updatedSettings.APIKeyACLTrustForwardedIP,
 		ForwardedClientIPHeaders:                               updatedSettings.ForwardedClientIPHeaders,
 		LinuxDoConnectEnabled:                                  updatedSettings.LinuxDoConnectEnabled,

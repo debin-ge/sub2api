@@ -355,6 +355,53 @@ export async function getPublicSettings(): Promise<PublicSettings> {
   return data
 }
 
+/** 自建行为验证码的交互模式，由挑战响应回带，前端据此渲染对应组件 */
+export type GoCaptchaMode = 'click' | 'shape' | 'slide' | 'drag' | 'rotate'
+
+/**
+ * 一道自建验证码题面。只包含图片与布局参数：
+ * slide/drag 的 tile_* 是拼图块起始位置，rotate 的 thumb_size 是缩略图直径，
+ * 答案（缺口坐标 / 目标角度 / 文字坐标）始终留在服务端。
+ */
+export interface GoCaptchaChallenge {
+  captcha_id: string
+  mode: GoCaptchaMode
+  master_image: string
+  thumb_image: string
+  tile_x?: number
+  tile_y?: number
+  tile_width?: number
+  tile_height?: number
+  thumb_size?: number
+}
+
+export interface GoCaptchaVerifyResult {
+  token: string
+  expires_in: number
+}
+
+/** 申请一道自建验证码题面（无需认证，服务端按 IP 限流） */
+export async function createGoCaptchaChallenge(): Promise<GoCaptchaChallenge> {
+  const { data } = await apiClient.post<GoCaptchaChallenge>('/captcha/challenge')
+  return data
+}
+
+/**
+ * 提交作答换取一次性令牌。
+ * answer 的格式随模式而变：click/shape 为 "x1,y1,x2,y2,..."，
+ * slide/drag 为 "x,y"，rotate 为 "angle"。
+ */
+export async function verifyGoCaptcha(
+  captchaId: string,
+  answer: string
+): Promise<GoCaptchaVerifyResult> {
+  const { data } = await apiClient.post<GoCaptchaVerifyResult>('/captcha/verify', {
+    captcha_id: captchaId,
+    answer
+  })
+  return data
+}
+
 export type WeChatOAuthMode = 'open' | 'mp'
 export type WeChatOAuthUnavailableReason =
   | 'not_configured'

@@ -70,6 +70,7 @@ require github.com/aws/smithy-go v1.24.2 // indirect
 
 require (
 	github.com/beorn7/perks v1.0.1 // indirect
+	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
 	github.com/google/subcommands v1.2.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/mattn/go-runewidth v0.0.15 // indirect
@@ -80,6 +81,8 @@ require (
 	github.com/prometheus/procfs v0.16.1 // indirect
 	github.com/rivo/uniseg v0.2.0 // indirect
 	github.com/spf13/cobra v1.7.0 // indirect
+	github.com/wenlng/go-captcha-assets v1.0.7 // indirect
+	github.com/wenlng/go-captcha/v2 v2.0.5 // indirect
 	go.yaml.in/yaml/v2 v2.4.2 // indirect
 )
 

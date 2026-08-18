@@ -184,6 +184,8 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		AliyunCaptchaSceneID:                                   settings.AliyunCaptchaSceneID,
 		AliyunCaptchaPrefix:                                    settings.AliyunCaptchaPrefix,
 		AliyunCaptchaRegion:                                    settings.AliyunCaptchaRegion,
+		GoCaptchaEnabled:                                       settings.GoCaptchaEnabled,
+		GoCaptchaMode:                                          settings.GoCaptchaMode,
 		APIKeyACLTrustForwardedIP:                              settings.APIKeyACLTrustForwardedIP,
 		ForwardedClientIPHeaders:                               settings.ForwardedClientIPHeaders,
 		LinuxDoConnectEnabled:                                  settings.LinuxDoConnectEnabled,

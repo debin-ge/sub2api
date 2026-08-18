@@ -70,8 +70,11 @@ type SystemSettings struct {
 	AliyunCaptchaSceneID                   string
 	AliyunCaptchaPrefix                    string
 	AliyunCaptchaRegion                    string
-	APIKeyACLTrustForwardedIP              bool
-	ForwardedClientIPHeaders               []string
+	// 自建行为验证码：没有任何密钥，因此不需要 *Configured 掩码字段
+	GoCaptchaEnabled          bool
+	GoCaptchaMode             string
+	APIKeyACLTrustForwardedIP bool
+	ForwardedClientIPHeaders  []string
 
 	// LinuxDo Connect OAuth 登录
 	LinuxDoConnectEnabled                bool
@@ -352,6 +355,8 @@ type PublicSettings struct {
 	AliyunCaptchaSceneID                string
 	AliyunCaptchaPrefix                 string
 	AliyunCaptchaRegion                 string
+	GoCaptchaEnabled                    bool
+	GoCaptchaMode                       string
 	SiteName                            string
 	SiteLogo                            string
 	SiteSubtitle                        string

@@ -23,20 +23,32 @@
     @expire="emit('expire')"
     @error="emit('error')"
   />
+  <GoCaptchaWidget
+    v-else-if="goCaptchaEnabled"
+    ref="goCaptchaRef"
+    :mode="normalizedGoCaptchaMode"
+    @verify="(token: string) => emit('verify', token, '')"
+    @expire="emit('expire')"
+    @error="emit('error')"
+  />
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import TurnstileWidget from '@/components/TurnstileWidget.vue'
 import TencentCaptchaGate from '@/components/TencentCaptchaGate.vue'
 import AliyunCaptchaWidget from '@/components/AliyunCaptchaWidget.vue'
+import GoCaptchaWidget from '@/components/GoCaptchaWidget.vue'
+import type { GoCaptchaMode } from '@/api/auth'
 
-// ActionCaptchaResult 动作触发式验证（腾讯/阿里云弹窗）的结果：
-// 腾讯 token=ticket、randstr 非空；阿里云 token=captchaVerifyParam、randstr 恒为空。
+// ActionCaptchaResult 动作触发式验证（腾讯/阿里云/自建弹窗）的结果：
+// 腾讯 token=ticket、randstr 非空；阿里云 token=captchaVerifyParam、自建 token=一次性令牌，randstr 恒为空。
 export interface ActionCaptchaResult {
   token: string
   randstr: string
 }
+
+const GO_CAPTCHA_MODES: readonly GoCaptchaMode[] = ['click', 'shape', 'slide', 'drag', 'rotate']
 
 const props = defineProps<{
   siteKey?: string
@@ -49,6 +61,8 @@ const props = defineProps<{
   aliyunSceneId?: string
   aliyunPrefix?: string
   aliyunRegion?: string
+  goCaptchaEnabled?: boolean
+  goCaptchaMode?: string
 }>()
 
 const emit = defineEmits<{
@@ -60,14 +74,23 @@ const emit = defineEmits<{
 const turnstileRef = ref<InstanceType<typeof TurnstileWidget> | null>(null)
 const tencentRef = ref<InstanceType<typeof TencentCaptchaGate> | null>(null)
 const aliyunRef = ref<InstanceType<typeof AliyunCaptchaWidget> | null>(null)
+const goCaptchaRef = ref<InstanceType<typeof GoCaptchaWidget> | null>(null)
+
+// 与后端保持一致：未知模式一律回落到文字点选
+const normalizedGoCaptchaMode = computed<GoCaptchaMode>(() =>
+  GO_CAPTCHA_MODES.includes(props.goCaptchaMode as GoCaptchaMode)
+    ? (props.goCaptchaMode as GoCaptchaMode)
+    : 'click'
+)
 
 function reset(): void {
   turnstileRef.value?.reset()
   tencentRef.value?.reset()
   aliyunRef.value?.reset()
+  goCaptchaRef.value?.reset()
 }
 
-// verifyAction 弹出当前启用的动作触发式验证码（腾讯/阿里云）并等待结果；
+// verifyAction 弹出当前启用的动作触发式验证码（腾讯/阿里云/自建）并等待结果；
 // 用户关闭弹窗返回 null，验证异常 emit('error') 并返回 null。
 async function verifyAction(): Promise<ActionCaptchaResult | null> {
   if (props.tencentEnabled && props.tencentAppId) {
@@ -85,6 +108,16 @@ async function verifyAction(): Promise<ActionCaptchaResult | null> {
       const param = (await aliyunRef.value?.verify()) ?? null
       if (!param) return null
       return { token: param, randstr: '' }
+    } catch {
+      emit('error')
+      return null
+    }
+  }
+  if (props.goCaptchaEnabled) {
+    try {
+      const token = (await goCaptchaRef.value?.verify()) ?? null
+      if (!token) return null
+      return { token, randstr: '' }
     } catch {
       emit('error')
       return null

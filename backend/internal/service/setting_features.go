@@ -524,11 +524,19 @@ type AliyunCaptchaConfig struct {
 	Region          string
 }
 
+// GoCaptchaSettings 自建行为验证码的业务开关。与三家云服务商不同，
+// 自建方案没有任何密钥，因此这里可以整体暴露给管理后台，也不需要 *_configured 掩码。
+type GoCaptchaSettings struct {
+	Enabled bool
+	Mode    GoCaptchaMode
+}
+
 type CaptchaProviderConfig struct {
 	TurnstileEnabled   bool
 	TurnstileSecretKey string
 	Tencent            TencentCaptchaConfig
 	Aliyun             AliyunCaptchaConfig
+	GoCaptcha          GoCaptchaSettings
 }
 
 func (s *SettingService) GetCaptchaProviderConfig(ctx context.Context) (CaptchaProviderConfig, error) {
@@ -546,6 +554,8 @@ func (s *SettingService) GetCaptchaProviderConfig(ctx context.Context) (CaptchaP
 		SettingKeyAliyunCaptchaAccessKeySecret,
 		SettingKeyAliyunCaptchaSceneID,
 		SettingKeyAliyunCaptchaRegion,
+		SettingKeyGoCaptchaEnabled,
+		SettingKeyGoCaptchaMode,
 	})
 	if err != nil {
 		return CaptchaProviderConfig{}, fmt.Errorf("read captcha provider settings: %w", err)
@@ -567,6 +577,10 @@ func (s *SettingService) GetCaptchaProviderConfig(ctx context.Context) (CaptchaP
 			AccessKeySecret: values[SettingKeyAliyunCaptchaAccessKeySecret],
 			SceneID:         values[SettingKeyAliyunCaptchaSceneID],
 			Region:          normalizeAliyunCaptchaRegion(values[SettingKeyAliyunCaptchaRegion]),
+		},
+		GoCaptcha: GoCaptchaSettings{
+			Enabled: values[SettingKeyGoCaptchaEnabled] == "true",
+			Mode:    NormalizeGoCaptchaMode(values[SettingKeyGoCaptchaMode]),
 		},
 	}, nil
 }

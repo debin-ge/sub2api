@@ -361,6 +361,8 @@ export interface PublicSettings {
   aliyun_captcha_scene_id?: string
   aliyun_captcha_prefix?: string
   aliyun_captcha_region?: string
+  gocaptcha_enabled?: boolean
+  gocaptcha_mode?: string
   site_name: string
   site_logo: string
   site_subtitle: string

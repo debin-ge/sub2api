@@ -203,7 +203,39 @@ export default {
         provider: '验证服务商',
         providerTurnstile: 'Cloudflare Turnstile',
         providerTencent: '腾讯天御验证码',
-        providerAliyun: '阿里云验证码 2.0'
+        providerAliyun: '阿里云验证码 2.0',
+        providerGoCaptcha: '自建验证码'
+      },
+      goCaptcha: {
+        description:
+          '完全自托管，不依赖任何外部服务，无需申请密钥，国内网络直接可用。验证图片由本服务生成，用户数据不出本机。',
+        mode: '交互模式',
+        modes: {
+          click: '文字点选',
+          shape: '图形点选',
+          slide: '滑动',
+          drag: '拖拽',
+          rotate: '旋转'
+        },
+        modeHints: {
+          click: '按顺序点中若干汉字。抗机器破解能力最强，推荐国内用户为主的部署。',
+          shape: '按顺序点中若干图形。与文字点选同级强度，且与语言无关，推荐海外部署。',
+          slide: '水平拖动拼图对齐缺口。用户最熟悉、操作最轻，但抗机器破解能力最弱。',
+          drag: '在整个图区自由拖动拼图。强度介于点选与滑动之间。',
+          rotate: '旋转图片使其角度对齐。观感新颖，但对齐精度要求较高，通过率可能偏低。'
+        },
+        strengthTitle: '各模式抗盲猜能力（单次随机猜中的概率，数量级估算）',
+        strength: {
+          click: '约 1/70000',
+          shape: '约 1/70000',
+          slide: '约 1/22',
+          drag: '约 1/300',
+          rotate: '约 1/20'
+        },
+        strengthHint:
+          '仅针对无脑随机猜测。面对打码平台，所有模式都会被绕过，验证码只是第一道筛网，仍需依赖注册频率等风控。系统已内置连续失败冷却，用于兜底滑动与旋转模式。',
+        chineseOnlyWarning:
+          '文字点选使用中文字符，海外用户无法识别。面向海外的部署建议改用「图形点选」。'
       },
       tencentCaptcha: {
         title: '腾讯天御验证码',

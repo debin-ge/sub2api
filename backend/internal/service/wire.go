@@ -75,6 +75,7 @@ func ProvideAuthService(
 	turnstileService *TurnstileService,
 	tencentCaptchaService *TencentCaptchaService,
 	aliyunCaptchaService *AliyunCaptchaService,
+	goCaptchaService *GoCaptchaService,
 	emailQueueService *EmailQueueService,
 	promoService *PromoService,
 	defaultSubAssigner DefaultSubscriptionAssigner,
@@ -104,6 +105,7 @@ func ProvideAuthService(
 	)
 	svc.SetTencentCaptchaService(tencentCaptchaService)
 	svc.SetAliyunCaptchaService(aliyunCaptchaService)
+	svc.SetGoCaptchaService(goCaptchaService)
 	return svc
 }
 
@@ -984,6 +986,7 @@ var ProviderSet = wire.NewSet(
 	ProvideDisposableEmailService,
 	NewTencentCaptchaService,
 	NewAliyunCaptchaService,
+	NewGoCaptchaService,
 	NewSubscriptionService,
 	wire.Bind(new(DefaultSubscriptionAssigner), new(*SubscriptionService)),
 	ProvideConcurrencyService,

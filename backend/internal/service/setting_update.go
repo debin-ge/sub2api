@@ -252,6 +252,10 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyAliyunCaptchaSceneID] = settings.AliyunCaptchaSceneID
 	updates[SettingKeyAliyunCaptchaPrefix] = settings.AliyunCaptchaPrefix
 	updates[SettingKeyAliyunCaptchaRegion] = normalizeAliyunCaptchaRegion(settings.AliyunCaptchaRegion)
+
+	// 自建行为验证码设置（无密钥字段，不需要「非空才更新」的合并逻辑）
+	updates[SettingKeyGoCaptchaEnabled] = strconv.FormatBool(settings.GoCaptchaEnabled)
+	updates[SettingKeyGoCaptchaMode] = string(NormalizeGoCaptchaMode(settings.GoCaptchaMode))
 	updates[SettingKeyAPIKeyACLTrustForwardedIP] = strconv.FormatBool(settings.APIKeyACLTrustForwardedIP)
 	forwardedClientIPHeadersJSON, err := json.Marshal(settings.ForwardedClientIPHeaders)
 	if err != nil {

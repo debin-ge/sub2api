@@ -96,6 +96,7 @@ type Config struct {
 	Security                SecurityConfig                `mapstructure:"security"`
 	Billing                 BillingConfig                 `mapstructure:"billing"`
 	Turnstile               TurnstileConfig               `mapstructure:"turnstile"`
+	GoCaptcha               GoCaptchaConfig               `mapstructure:"gocaptcha"`
 	Database                DatabaseConfig                `mapstructure:"database"`
 	Redis                   RedisConfig                   `mapstructure:"redis"`
 	Ops                     OpsConfig                     `mapstructure:"ops"`
@@ -1727,6 +1728,34 @@ type TurnstileConfig struct {
 	Required bool `mapstructure:"required"`
 }
 
+// GoCaptchaConfig 自建行为验证码的运行参数。
+// 启用开关与交互模式存在数据库设置里（管理后台可改），这里只放运维调参项。
+type GoCaptchaConfig struct {
+	ChallengeTTL time.Duration `mapstructure:"challenge_ttl"`
+	TokenTTL     time.Duration `mapstructure:"token_ttl"`
+
+	// 容差按模式区分：旋转要求用户精确对齐角度，沿用点选的 5 会明显压低通过率
+	PaddingClick  int `mapstructure:"padding_click"`
+	PaddingSlide  int `mapstructure:"padding_slide"`
+	PaddingRotate int `mapstructure:"padding_rotate"`
+
+	// 点选校验点数，调低会显著削弱抗盲猜能力
+	ClickVerifyLen int `mapstructure:"click_verify_len"`
+
+	ChallengeRatePerMin int `mapstructure:"challenge_rate_per_min"`
+	VerifyRatePerMin    int `mapstructure:"verify_rate_per_min"`
+
+	// 连续失败惩罚。滑动与旋转模式单次盲猜成功率在 1/20 量级，
+	// 仅靠速率限制拦不住爆破，必须依赖失败计数与冷却。
+	MaxFailures   int           `mapstructure:"max_failures"`
+	FailureWindow time.Duration `mapstructure:"failure_window"`
+	Cooldown      time.Duration `mapstructure:"cooldown"`
+
+	// BindIP 开启后令牌只能由签发时的 IP 消费。默认关闭：
+	// 移动网络在令牌有效期内切换出口 IP 并不罕见，误伤代价高于收益。
+	BindIP bool `mapstructure:"bind_ip"`
+}
+
 type DefaultConfig struct {
 	AdminEmail      string  `mapstructure:"admin_email"`
 	AdminPassword   string  `mapstructure:"admin_password"`
@@ -2235,6 +2264,20 @@ func setDefaults() {
 
 	// Turnstile
 	viper.SetDefault("turnstile.required", false)
+
+	// GoCaptcha 自建行为验证码
+	viper.SetDefault("gocaptcha.challenge_ttl", 120*time.Second)
+	viper.SetDefault("gocaptcha.token_ttl", 300*time.Second)
+	viper.SetDefault("gocaptcha.padding_click", 5)
+	viper.SetDefault("gocaptcha.padding_slide", 5)
+	viper.SetDefault("gocaptcha.padding_rotate", 8)
+	viper.SetDefault("gocaptcha.click_verify_len", 3)
+	viper.SetDefault("gocaptcha.challenge_rate_per_min", 20)
+	viper.SetDefault("gocaptcha.verify_rate_per_min", 60)
+	viper.SetDefault("gocaptcha.max_failures", 5)
+	viper.SetDefault("gocaptcha.failure_window", 10*time.Minute)
+	viper.SetDefault("gocaptcha.cooldown", 10*time.Minute)
+	viper.SetDefault("gocaptcha.bind_ip", false)
 
 	// LinuxDo Connect OAuth 登录
 	viper.SetDefault("linuxdo_connect.enabled", false)

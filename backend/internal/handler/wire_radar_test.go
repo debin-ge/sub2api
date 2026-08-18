@@ -28,6 +28,7 @@ func TestProvideHandlersIncludesRadarHandler(t *testing.T) {
 		nil, // windsurfGatewayHandler
 		nil, // openCodeGatewayHandler
 		nil, // settingHandler
+		nil, // captchaHandler
 		nil, // totpHandler
 		nil, // passkeyHandler
 		nil, // paymentHandler

@@ -67,6 +67,7 @@ type Handlers struct {
 	WindsurfGateway  *WindsurfGatewayHandler
 	OpenCodeGateway  *OpenCodeGatewayHandler
 	Setting          *SettingHandler
+	Captcha          *CaptchaHandler
 	Totp             *TotpHandler
 	Passkey          *PasskeyHandler
 	Payment          *PaymentHandler
