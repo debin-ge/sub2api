@@ -302,6 +302,7 @@ export default {
       "minimax": "MiniMax",
       "glm": "GLM",
       "kimi": "Kimi",
+      "zhipu": "智谱 GLM",
       "deepseek": "DeepSeek",
       "windsurf": "Windsurf",
       "opencode": "OpenCode"
@@ -327,6 +328,7 @@ export default {
       "minimax": "MiniMax",
       "glm": "GLM",
       "kimi": "Kimi",
+      "zhipu": "智谱 GLM",
       "deepseek": "DeepSeek",
       "windsurf": "Windsurf",
       "opencode": "OpenCode"
@@ -513,6 +515,7 @@ export default {
         "minimax": "MiniMax",
         "glm": "GLM",
         "kimi": "Kimi",
+        "zhipu": "智谱 GLM",
         "deepseek": "DeepSeek",
         "windsurf": "Windsurf",
         "opencode": "OpenCode"
@@ -546,6 +549,7 @@ export default {
         "minimax": "MiniMax",
         "glm": "GLM",
         "kimi": "Kimi",
+        "zhipu": "智谱 GLM",
         "deepseek": "DeepSeek",
         "windsurf": "Windsurf",
         "opencode": "OpenCode"

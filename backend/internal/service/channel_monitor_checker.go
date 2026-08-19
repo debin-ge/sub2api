@@ -168,8 +168,9 @@ type providerAdapter struct {
 //
 //nolint:gochecknoglobals // 适配器表是只读静态数据，初始化后不变更。
 var providerAdapters = map[string]providerAdapter{
-	MonitorProviderOpenAI: providerOpenAIChatAdapter,
-	MonitorProviderGrok:   providerGrokChatAdapter,
+	MonitorProviderOpenAI:    providerOpenAIChatAdapter,
+	MonitorProviderGrok:      providerGrokChatAdapter,
+	MonitorProviderZhipu:     providerZhipuChatAdapter,
 	MonitorProviderAnthropic: {
 		buildPath: func(string) string { return providerAnthropicPath },
 		buildBody: func(model, prompt string) ([]byte, error) {
@@ -220,6 +221,7 @@ var providerAdapters = map[string]providerAdapter{
 		},
 		textPath: "content.0.text",
 	},
+	// Kimi 探活沿用本地 Coding Anthropic 路径；配额模式不走 adapter。
 	MonitorProviderKimi: {
 		buildPath: func(string) string { return providerKimiAnthropicPath },
 		buildBody: buildMonitorAnthropicCompatibleBody,
@@ -228,7 +230,8 @@ var providerAdapters = map[string]providerAdapter{
 		},
 		textPath: "content.0.text",
 	},
-	MonitorProviderDeepSeek: {
+	// DeepSeek 官方 Chat Completions 在 /chat/completions（无 /v1 前缀）。
+	MonitorProviderDeepseek: {
 		buildPath: func(string) string { return providerDeepSeekChatPath },
 		buildBody: func(model, prompt string) ([]byte, error) {
 			return json.Marshal(map[string]any{
@@ -293,6 +296,9 @@ var providerOpenAIChatAdapter = newOpenAICompatibleChatAdapter(providerOpenAIPat
 //nolint:gochecknoglobals // 适配器表是只读静态数据，初始化后不变更。
 var providerGrokChatAdapter = newOpenAICompatibleChatAdapter(providerGrokPath)
 
+//nolint:gochecknoglobals // 适配器表是只读静态数据，初始化后不变更。
+var providerZhipuChatAdapter = newOpenAICompatibleChatAdapter(providerZhipuPath)
+
 func newOpenAICompatibleChatAdapter(path string) providerAdapter {
 	return providerAdapter{
 		buildPath: func(string) string { return path },
@@ -336,13 +342,6 @@ func providerAdapterFor(provider, apiMode string) (providerAdapter, string, bool
 	}
 	adapter, ok := providerAdapters[provider]
 	return adapter, MonitorAPIModeChatCompletions, ok
-}
-
-// isSupportedProvider 校验 provider 字符串是否在 adapter 表中。
-// 供 validate.go 的 validateProvider 复用，避免两份 switch 漂移。
-func isSupportedProvider(p string) bool {
-	_, ok := providerAdapters[p]
-	return ok
 }
 
 // callProvider 通过 providerAdapters 分发到具体实现。
@@ -530,8 +529,9 @@ var bodyMergeKeyDenyList = map[string]map[string]bool{
 	MonitorProviderGrok:                                         {"model": true, "messages": true, "stream": true},
 	MonitorProviderMiniMax:                                      {"model": true, "messages": true},
 	MonitorProviderGLM:                                          {"model": true, "messages": true},
-	MonitorProviderKimi:                                         {"model": true, "messages": true},
-	MonitorProviderDeepSeek:                                     {"model": true, "messages": true, "stream": true},
+	MonitorProviderKimi:                                         {"model": true, "messages": true, "stream": true},
+	MonitorProviderZhipu:                                        {"model": true, "messages": true, "stream": true},
+	MonitorProviderDeepseek:                                     {"model": true, "messages": true, "stream": true},
 	MonitorProviderWindsurf:                                     {"model": true, "messages": true, "stream": true},
 	MonitorProviderOpenCode:                                     {"model": true, "messages": true, "stream": true},
 }
@@ -550,8 +550,21 @@ func bodyMergeDenyKey(provider, apiMode string) string {
 	return provider
 }
 
+// isOpenAICompatibleChatProvider 该 provider 的探活请求是否为 OpenAI Chat
+// Completions 同构（replace 模式的 body 校验按 messages 必填处理）。
+func isOpenAICompatibleChatProvider(provider string) bool {
+	switch provider {
+	case MonitorProviderOpenAI, MonitorProviderGrok,
+		MonitorProviderZhipu, MonitorProviderDeepseek,
+		MonitorProviderWindsurf, MonitorProviderOpenCode:
+		return true
+	default:
+		return false
+	}
+}
+
 func validateReplaceRequestBody(provider, apiMode string, body map[string]any) error {
-	if provider != MonitorProviderOpenAI && provider != MonitorProviderGrok {
+	if !isOpenAICompatibleChatProvider(provider) {
 		return nil
 	}
 	switch defaultAPIMode(apiMode) {

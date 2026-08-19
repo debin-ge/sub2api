@@ -50,18 +50,12 @@ func RegisterGatewayRoutes(
 	}
 	countTokensHandler := func(c *gin.Context) {
 		switch getGroupPlatform(c) {
-		case service.PlatformOpenAI:
+		case service.PlatformOpenAI, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformGLM:
 			h.OpenAIGateway.CountTokens(c)
 		case service.PlatformGrok:
 			h.OpenAIGateway.GrokCountTokens(c)
 		case service.PlatformMiniMax:
 			writeMiniMaxUnsupported(c, h)
-		case service.PlatformGLM:
-			writeGLMUnsupported(c, h)
-		case service.PlatformKimi:
-			writeKimiUnsupported(c, h)
-		case service.PlatformDeepSeek:
-			writeDeepSeekUnsupported(c, h)
 		case service.PlatformWindsurf:
 			writeWindsurfUnsupported(c, h)
 		case service.PlatformOpenCode:
@@ -92,12 +86,6 @@ func RegisterGatewayRoutes(
 			h.OpenAIGateway.GrokImages(c)
 		case service.PlatformMiniMax:
 			writeMiniMaxUnsupported(c, h)
-		case service.PlatformGLM:
-			writeGLMUnsupported(c, h)
-		case service.PlatformKimi:
-			writeKimiUnsupported(c, h)
-		case service.PlatformDeepSeek:
-			writeDeepSeekUnsupported(c, h)
 		case service.PlatformWindsurf:
 			writeWindsurfUnsupported(c, h)
 		case service.PlatformOpenCode:
@@ -206,7 +194,7 @@ func RegisterGatewayRoutes(
 		// /v1/messages: auto-route based on group platform
 		gateway.POST("/messages", func(c *gin.Context) {
 			switch getGroupPlatform(c) {
-			case service.PlatformOpenAI, service.PlatformGrok:
+			case service.PlatformOpenAI, service.PlatformGrok, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformGLM:
 				h.OpenAIGateway.Messages(c)
 				return
 			case service.PlatformMiniMax:
@@ -221,45 +209,6 @@ func RegisterGatewayRoutes(
 					return
 				}
 				h.MiniMaxGateway.Messages(c)
-				return
-			case service.PlatformGLM:
-				if h.GLMGateway == nil {
-					c.JSON(http.StatusServiceUnavailable, gin.H{
-						"type": "error",
-						"error": gin.H{
-							"type":    "api_error",
-							"message": "glm gateway service unavailable",
-						},
-					})
-					return
-				}
-				h.GLMGateway.Messages(c)
-				return
-			case service.PlatformKimi:
-				if h.KimiGateway == nil {
-					c.JSON(http.StatusServiceUnavailable, gin.H{
-						"type": "error",
-						"error": gin.H{
-							"type":    "api_error",
-							"message": "kimi gateway service unavailable",
-						},
-					})
-					return
-				}
-				h.KimiGateway.Messages(c)
-				return
-			case service.PlatformDeepSeek:
-				if h.DeepSeekGateway == nil {
-					c.JSON(http.StatusServiceUnavailable, gin.H{
-						"type": "error",
-						"error": gin.H{
-							"type":    "api_error",
-							"message": "deepseek gateway service unavailable",
-						},
-					})
-					return
-				}
-				h.DeepSeekGateway.Messages(c)
 				return
 			case service.PlatformWindsurf:
 				if h.WindsurfGateway == nil {
@@ -296,20 +245,11 @@ func RegisterGatewayRoutes(
 		// OpenAI Responses API: auto-route based on group platform
 		gateway.POST("/responses", func(c *gin.Context) {
 			switch getGroupPlatform(c) {
-			case service.PlatformOpenAI, service.PlatformGrok:
+			case service.PlatformOpenAI, service.PlatformGrok, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformGLM:
 				h.OpenAIGateway.Responses(c)
 				return
 			case service.PlatformMiniMax:
 				writeMiniMaxResponses(c, h)
-				return
-			case service.PlatformGLM:
-				writeGLMResponses(c, h)
-				return
-			case service.PlatformKimi:
-				writeKimiResponses(c, h)
-				return
-			case service.PlatformDeepSeek:
-				writeDeepSeekResponses(c, h)
 				return
 			case service.PlatformWindsurf:
 				writeWindsurfResponses(c, h)
@@ -322,20 +262,11 @@ func RegisterGatewayRoutes(
 		})
 		gateway.POST("/responses/*subpath", guardResponsesSubpath(func(c *gin.Context) {
 			switch getGroupPlatform(c) {
-			case service.PlatformOpenAI, service.PlatformGrok:
+			case service.PlatformOpenAI, service.PlatformGrok, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformGLM:
 				h.OpenAIGateway.Responses(c)
 				return
 			case service.PlatformMiniMax:
 				writeMiniMaxUnsupported(c, h)
-				return
-			case service.PlatformGLM:
-				writeGLMUnsupported(c, h)
-				return
-			case service.PlatformKimi:
-				writeKimiUnsupported(c, h)
-				return
-			case service.PlatformDeepSeek:
-				writeDeepSeekUnsupported(c, h)
 				return
 			case service.PlatformWindsurf:
 				writeWindsurfUnsupported(c, h)
@@ -352,18 +283,6 @@ func RegisterGatewayRoutes(
 				writeMiniMaxUnsupported(c, h)
 				return
 			}
-			if getGroupPlatform(c) == service.PlatformGLM {
-				writeGLMUnsupported(c, h)
-				return
-			}
-			if getGroupPlatform(c) == service.PlatformKimi {
-				writeKimiUnsupported(c, h)
-				return
-			}
-			if getGroupPlatform(c) == service.PlatformDeepSeek {
-				writeDeepSeekUnsupported(c, h)
-				return
-			}
 			if getGroupPlatform(c) == service.PlatformWindsurf {
 				writeWindsurfUnsupported(c, h)
 				return
@@ -377,20 +296,11 @@ func RegisterGatewayRoutes(
 		// OpenAI Chat Completions API: auto-route based on group platform
 		gateway.POST("/chat/completions", func(c *gin.Context) {
 			switch getGroupPlatform(c) {
-			case service.PlatformOpenAI, service.PlatformGrok:
+			case service.PlatformOpenAI, service.PlatformGrok, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformGLM:
 				h.OpenAIGateway.ChatCompletions(c)
 				return
 			case service.PlatformMiniMax:
 				writeMiniMaxChatCompletions(c, h)
-				return
-			case service.PlatformGLM:
-				writeGLMChatCompletions(c, h)
-				return
-			case service.PlatformKimi:
-				writeKimiChatCompletions(c, h)
-				return
-			case service.PlatformDeepSeek:
-				writeDeepSeekChatCompletions(c, h)
 				return
 			case service.PlatformWindsurf:
 				writeWindsurfChatCompletions(c, h)
@@ -517,20 +427,11 @@ func RegisterGatewayRoutes(
 	// OpenAI Responses API（不带v1前缀的别名）— auto-route based on group platform
 	responsesHandler := func(c *gin.Context) {
 		switch getGroupPlatform(c) {
-		case service.PlatformOpenAI, service.PlatformGrok:
+		case service.PlatformOpenAI, service.PlatformGrok, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformGLM:
 			h.OpenAIGateway.Responses(c)
 			return
 		case service.PlatformMiniMax:
 			writeMiniMaxResponses(c, h)
-			return
-		case service.PlatformGLM:
-			writeGLMResponses(c, h)
-			return
-		case service.PlatformKimi:
-			writeKimiResponses(c, h)
-			return
-		case service.PlatformDeepSeek:
-			writeDeepSeekResponses(c, h)
 			return
 		case service.PlatformWindsurf:
 			writeWindsurfResponses(c, h)
@@ -543,20 +444,11 @@ func RegisterGatewayRoutes(
 	}
 	responsesSubpathHandler := func(c *gin.Context) {
 		switch getGroupPlatform(c) {
-		case service.PlatformOpenAI, service.PlatformGrok:
+		case service.PlatformOpenAI, service.PlatformGrok, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformGLM:
 			h.OpenAIGateway.Responses(c)
 			return
 		case service.PlatformMiniMax:
 			writeMiniMaxUnsupported(c, h)
-			return
-		case service.PlatformGLM:
-			writeGLMUnsupported(c, h)
-			return
-		case service.PlatformKimi:
-			writeKimiUnsupported(c, h)
-			return
-		case service.PlatformDeepSeek:
-			writeDeepSeekUnsupported(c, h)
 			return
 		case service.PlatformWindsurf:
 			writeWindsurfUnsupported(c, h)
@@ -573,18 +465,6 @@ func RegisterGatewayRoutes(
 	r.GET("/responses", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
 		if getGroupPlatform(c) == service.PlatformMiniMax {
 			writeMiniMaxUnsupported(c, h)
-			return
-		}
-		if getGroupPlatform(c) == service.PlatformGLM {
-			writeGLMUnsupported(c, h)
-			return
-		}
-		if getGroupPlatform(c) == service.PlatformKimi {
-			writeKimiUnsupported(c, h)
-			return
-		}
-		if getGroupPlatform(c) == service.PlatformDeepSeek {
-			writeDeepSeekUnsupported(c, h)
 			return
 		}
 		if getGroupPlatform(c) == service.PlatformWindsurf {
@@ -612,18 +492,6 @@ func RegisterGatewayRoutes(
 				writeMiniMaxUnsupported(c, h)
 				return
 			}
-			if getGroupPlatform(c) == service.PlatformGLM {
-				writeGLMUnsupported(c, h)
-				return
-			}
-			if getGroupPlatform(c) == service.PlatformKimi {
-				writeKimiUnsupported(c, h)
-				return
-			}
-			if getGroupPlatform(c) == service.PlatformDeepSeek {
-				writeDeepSeekUnsupported(c, h)
-				return
-			}
 			if getGroupPlatform(c) == service.PlatformWindsurf {
 				writeWindsurfUnsupported(c, h)
 				return
@@ -639,20 +507,11 @@ func RegisterGatewayRoutes(
 	// OpenAI Chat Completions API（不带v1前缀的别名）— auto-route based on group platform
 	r.POST("/chat/completions", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
 		switch getGroupPlatform(c) {
-		case service.PlatformOpenAI, service.PlatformGrok:
+		case service.PlatformOpenAI, service.PlatformGrok, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformGLM:
 			h.OpenAIGateway.ChatCompletions(c)
 			return
 		case service.PlatformMiniMax:
 			writeMiniMaxChatCompletions(c, h)
-			return
-		case service.PlatformGLM:
-			writeGLMChatCompletions(c, h)
-			return
-		case service.PlatformKimi:
-			writeKimiChatCompletions(c, h)
-			return
-		case service.PlatformDeepSeek:
-			writeDeepSeekChatCompletions(c, h)
 			return
 		case service.PlatformWindsurf:
 			writeWindsurfChatCompletions(c, h)
@@ -834,126 +693,6 @@ func writeMiniMaxChatCompletions(c *gin.Context, h *handler.Handlers) {
 		"error": gin.H{
 			"type":    "api_error",
 			"message": "minimax gateway service unavailable",
-		},
-	})
-}
-
-func writeGLMUnsupported(c *gin.Context, _ *handler.Handlers) {
-	c.JSON(http.StatusNotFound, gin.H{
-		"type": "error",
-		"error": gin.H{
-			"type":    "not_found_error",
-			"message": "GLM gateway does not support this endpoint",
-		},
-	})
-}
-
-func writeGLMResponses(c *gin.Context, h *handler.Handlers) {
-	if h != nil && h.GLMGateway != nil {
-		if responsesHandler, ok := any(h.GLMGateway).(providerResponsesHandler); ok {
-			responsesHandler.Responses(c)
-			return
-		}
-	}
-	c.JSON(http.StatusServiceUnavailable, gin.H{
-		"type": "error",
-		"error": gin.H{
-			"type":    "api_error",
-			"message": "glm gateway service unavailable",
-		},
-	})
-}
-
-func writeGLMChatCompletions(c *gin.Context, h *handler.Handlers) {
-	if h != nil && h.GLMGateway != nil {
-		h.GLMGateway.ChatCompletions(c)
-		return
-	}
-	c.JSON(http.StatusServiceUnavailable, gin.H{
-		"type": "error",
-		"error": gin.H{
-			"type":    "api_error",
-			"message": "glm gateway service unavailable",
-		},
-	})
-}
-
-func writeKimiUnsupported(c *gin.Context, _ *handler.Handlers) {
-	c.JSON(http.StatusNotFound, gin.H{
-		"type": "error",
-		"error": gin.H{
-			"type":    "not_found_error",
-			"message": "Kimi gateway does not support this endpoint",
-		},
-	})
-}
-
-func writeKimiResponses(c *gin.Context, h *handler.Handlers) {
-	if h != nil && h.KimiGateway != nil {
-		if responsesHandler, ok := any(h.KimiGateway).(providerResponsesHandler); ok {
-			responsesHandler.Responses(c)
-			return
-		}
-	}
-	c.JSON(http.StatusServiceUnavailable, gin.H{
-		"type": "error",
-		"error": gin.H{
-			"type":    "api_error",
-			"message": "kimi gateway service unavailable",
-		},
-	})
-}
-
-func writeKimiChatCompletions(c *gin.Context, h *handler.Handlers) {
-	if h != nil && h.KimiGateway != nil {
-		h.KimiGateway.ChatCompletions(c)
-		return
-	}
-	c.JSON(http.StatusServiceUnavailable, gin.H{
-		"type": "error",
-		"error": gin.H{
-			"type":    "api_error",
-			"message": "kimi gateway service unavailable",
-		},
-	})
-}
-
-func writeDeepSeekUnsupported(c *gin.Context, _ *handler.Handlers) {
-	c.JSON(http.StatusNotFound, gin.H{
-		"type": "error",
-		"error": gin.H{
-			"type":    "not_found_error",
-			"message": "DeepSeek gateway does not support this endpoint",
-		},
-	})
-}
-
-func writeDeepSeekResponses(c *gin.Context, h *handler.Handlers) {
-	if h != nil && h.DeepSeekGateway != nil {
-		if responsesHandler, ok := any(h.DeepSeekGateway).(providerResponsesHandler); ok {
-			responsesHandler.Responses(c)
-			return
-		}
-	}
-	c.JSON(http.StatusServiceUnavailable, gin.H{
-		"type": "error",
-		"error": gin.H{
-			"type":    "api_error",
-			"message": "deepseek gateway service unavailable",
-		},
-	})
-}
-
-func writeDeepSeekChatCompletions(c *gin.Context, h *handler.Handlers) {
-	if h != nil && h.DeepSeekGateway != nil {
-		h.DeepSeekGateway.ChatCompletions(c)
-		return
-	}
-	c.JSON(http.StatusServiceUnavailable, gin.H{
-		"type": "error",
-		"error": gin.H{
-			"type":    "api_error",
-			"message": "deepseek gateway service unavailable",
 		},
 	})
 }

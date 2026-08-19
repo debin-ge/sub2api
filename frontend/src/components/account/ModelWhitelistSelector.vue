@@ -219,8 +219,17 @@ const dedupeModels = (models: string[]) => {
 }
 
 const upstreamSyncPlatforms = new Set([
-  'anthropic', 'openai', 'gemini', 'antigravity',
-  'minimax', 'glm', 'kimi', 'deepseek'
+  'anthropic',
+  'openai',
+  'gemini',
+  'antigravity',
+  'grok',
+  'kimi',
+  'zhipu',
+  'deepseek',
+  'minimax',
+  'glm',
+])
 ])
 const canSyncUpstream = computed(() => {
   if (props.accountId) {

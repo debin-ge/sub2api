@@ -195,6 +195,9 @@ func (d *UpstreamModelDiscoverer) buildUpstreamModelsRequest(ctx context.Context
 		return d.buildAntigravityAPIKeyModelsRequest(ctx, account)
 	case account.IsGrok():
 		return d.buildGrokUpstreamModelsRequest(ctx, account)
+	case account.IsCNProvider():
+		// kimi/zhipu/deepseek（含本地 glm 别名）复用 OpenAI /v1/models，按 account_mode 选默认 base。
+		return d.buildCNProviderUpstreamModelsRequest(ctx, account)
 	case providerSupportsLiveModelDiscovery(account.Platform):
 		return d.buildDomesticCompatibleUpstreamModelsRequest(ctx, account)
 	case account.IsOpenAI():
@@ -281,6 +284,32 @@ func (d *UpstreamModelDiscoverer) buildGrokUpstreamModelsRequest(ctx context.Con
 			}
 		}
 	}
+	account.ApplyHeaderOverrides(req.Header)
+	return req, nil
+}
+
+func (d *UpstreamModelDiscoverer) buildCNProviderUpstreamModelsRequest(ctx context.Context, account *Account) (*http.Request, error) {
+	if account == nil || account.Type != AccountTypeAPIKey || !account.IsCNProvider() {
+		return nil, newUpstreamModelSyncUnsupportedError("Unsupported CN provider account for upstream model sync", nil)
+	}
+	apiKey := strings.TrimSpace(account.GetOpenAIProtocolAPIKey())
+	if apiKey == "" {
+		return nil, newUpstreamModelSyncConfigError("No compatible provider API key is available", nil)
+	}
+	baseURL := account.GetOpenAIFormatBaseURL()
+	if strings.TrimSpace(baseURL) == "" {
+		return nil, newUpstreamModelSyncConfigError("Compatible provider base URL is empty", nil)
+	}
+	validatedBaseURL, err := d.validateUpstreamBaseURL(baseURL)
+	if err != nil {
+		return nil, newUpstreamModelSyncConfigError("Invalid compatible provider model list URL", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, buildOpenAIModelsURL(validatedBaseURL), nil)
+	if err != nil {
+		return nil, newUpstreamModelSyncConfigError("Invalid compatible provider model list URL", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Authorization", "Bearer "+apiKey)
 	account.ApplyHeaderOverrides(req.Header)
 	return req, nil
 }

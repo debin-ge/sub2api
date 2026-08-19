@@ -1,6 +1,6 @@
 module github.com/Wei-Shaw/sub2api
 
-go 1.26.5
+go 1.26.6
 
 tool (
 	entgo.io/ent/cmd/ent

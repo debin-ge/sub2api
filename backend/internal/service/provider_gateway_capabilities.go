@@ -151,6 +151,19 @@ var domesticProviderCapabilities = map[string]ProviderGatewayCapabilities{
 			{AliasPattern: "claude-haiku-*", TargetModel: "GLM-4.5-air"},
 		},
 	},
+	PlatformZhipu: {
+		Platform:                   PlatformZhipu,
+		DefaultModelIDs:            []string{"GLM-5.2", "GLM-5.1", "GLM-4.7", "GLM-4.5-air"},
+		PublicModelIDs:             []string{"GLM-5.2", "GLM-5.1", "GLM-4.7", "GLM-4.5-air"},
+		SupportedModelIDs:          []string{"GLM-5.2", "GLM-5.1", "GLM-4.7", "GLM-4.5-air"},
+		AllowUnknownModels:         true,
+		SupportsLiveModelDiscovery: true,
+		AliasRules: []ModelAliasRule{
+			{AliasPattern: "claude-sonnet-*", TargetModel: "GLM-5.1"},
+			{AliasPattern: "claude-opus-*", TargetModel: "GLM-5.1"},
+			{AliasPattern: "claude-haiku-*", TargetModel: "GLM-4.5-air"},
+		},
+	},
 	PlatformKimi: {
 		Platform:                   PlatformKimi,
 		DefaultModelIDs:            []string{"kimi-for-coding"},
@@ -196,8 +209,22 @@ var domesticProviderCapabilities = map[string]ProviderGatewayCapabilities{
 	},
 }
 
+func lookupDomesticProviderCapabilities(platform string) (ProviderGatewayCapabilities, bool) {
+	if caps, ok := domesticProviderCapabilities[platform]; ok {
+		return caps, true
+	}
+	if CanonicalCNPlatform(platform) == PlatformZhipu {
+		if caps, ok := domesticProviderCapabilities[PlatformZhipu]; ok {
+			return caps, true
+		}
+		caps, ok := domesticProviderCapabilities[PlatformGLM]
+		return caps, ok
+	}
+	return ProviderGatewayCapabilities{}, false
+}
+
 func GetProviderGatewayCapabilities(platform string) (ProviderGatewayCapabilities, bool) {
-	caps, ok := domesticProviderCapabilities[platform]
+	caps, ok := lookupDomesticProviderCapabilities(platform)
 	if !ok {
 		return ProviderGatewayCapabilities{}, false
 	}
@@ -239,7 +266,7 @@ func mergeProviderModelIDs(slices ...[]string) []string {
 }
 
 func providerSupportsUpstreamModel(platform, model string) bool {
-	caps, ok := domesticProviderCapabilities[platform]
+	caps, ok := lookupDomesticProviderCapabilities(platform)
 	if !ok {
 		return false
 	}
@@ -259,7 +286,7 @@ func providerSupportsUpstreamModel(platform, model string) bool {
 }
 
 func providerSupportsLiveModelDiscovery(platform string) bool {
-	caps, ok := domesticProviderCapabilities[platform]
+	caps, ok := lookupDomesticProviderCapabilities(platform)
 	return ok && caps.SupportsLiveModelDiscovery
 }
 

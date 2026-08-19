@@ -90,10 +90,10 @@ const platformLabel = computed(() => {
   if (props.platform === 'openai') return 'OpenAI'
   if (props.platform === 'antigravity') return 'Antigravity'
   if (props.platform === 'grok') return 'Grok'
-  if (props.platform === 'minimax') return 'MiniMax'
-  if (props.platform === 'glm') return 'GLM'
   if (props.platform === 'kimi') return 'Kimi'
+  if (props.platform === 'zhipu' || props.platform === 'glm') return 'Zhipu GLM'
   if (props.platform === 'deepseek') return 'DeepSeek'
+  if (props.platform === 'minimax') return 'MiniMax'
   if (props.platform === 'windsurf') return 'Windsurf'
   if (props.platform === 'opencode') return 'OpenCode'
   return 'Gemini'
@@ -194,17 +194,20 @@ const platformClass = computed(() => {
   if (props.platform === 'grok') {
     return 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'
   }
+  if (props.platform === 'kimi') {
+    return 'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-400'
+  }
+  if (props.platform === 'zhipu') {
+    return 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400'
+  }
+  if (props.platform === 'deepseek') {
+    return 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400'
+  }
   if (props.platform === 'minimax') {
     return 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300'
   }
   if (props.platform === 'glm') {
     return 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400'
-  }
-  if (props.platform === 'kimi') {
-    return 'bg-lime-100 text-lime-700 dark:bg-lime-900/30 dark:text-lime-300'
-  }
-  if (props.platform === 'deepseek') {
-    return 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300'
   }
   if (props.platform === 'windsurf') {
     return 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300'
@@ -228,17 +231,20 @@ const typeClass = computed(() => {
   if (props.platform === 'grok') {
     return 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300'
   }
+  if (props.platform === 'kimi') {
+    return 'bg-pink-100 text-pink-600 dark:bg-pink-900/30 dark:text-pink-400'
+  }
+  if (props.platform === 'zhipu') {
+    return 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400'
+  }
+  if (props.platform === 'deepseek') {
+    return 'bg-teal-100 text-teal-600 dark:bg-teal-900/30 dark:text-teal-400'
+  }
   if (props.platform === 'minimax') {
     return 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300'
   }
   if (props.platform === 'glm') {
     return 'bg-rose-100 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400'
-  }
-  if (props.platform === 'kimi') {
-    return 'bg-lime-100 text-lime-700 dark:bg-lime-900/30 dark:text-lime-300'
-  }
-  if (props.platform === 'deepseek') {
-    return 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300'
   }
   if (props.platform === 'windsurf') {
     return 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300'

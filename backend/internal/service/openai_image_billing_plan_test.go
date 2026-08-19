@@ -248,7 +248,8 @@ func TestCalculateOpenAIImageCostFromTokenPlan(t *testing.T) {
 		1,
 		tokens,
 		"",
-		false,
+		boolPtr(false),
+		time.Time{},
 	)
 	require.NoError(t, err)
 	require.Equal(t, string(BillingModeToken), cost.BillingMode)
@@ -296,7 +297,8 @@ func TestCalculateOpenAIImageCostSupportsCatalogWithoutTextOutputPrice(t *testin
 		1,
 		tokens,
 		"",
-		false,
+		boolPtr(false),
+		time.Time{},
 	)
 	require.NoError(t, err)
 	require.Equal(t, string(BillingModeToken), cost.BillingMode)
@@ -333,7 +335,8 @@ func TestCalculateOpenAIImageCostFromTokenPlanRejectsMissingUsage(t *testing.T) 
 		1,
 		UsageTokens{},
 		"",
-		false,
+		boolPtr(false),
+		time.Time{},
 	)
 	require.ErrorIs(t, err, ErrModelPricingUnavailable)
 	require.ErrorContains(t, err, "image output token usage")

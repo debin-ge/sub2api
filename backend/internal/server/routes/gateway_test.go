@@ -178,6 +178,7 @@ func TestGatewayRoutesUsageIsAvailableForAllPlatforms(t *testing.T) {
 	for _, platform := range []string{
 		service.PlatformMiniMax,
 		service.PlatformGLM,
+		service.PlatformZhipu,
 		service.PlatformKimi,
 		service.PlatformDeepSeek,
 		service.PlatformWindsurf,
@@ -675,73 +676,50 @@ func TestGatewayRoutesMiniMaxModelsReturnsDefaultList(t *testing.T) {
 	require.NotContains(t, w.Body.String(), "claude-sonnet")
 }
 
-func TestGatewayRoutesGLMMessagesDispatchesToGLMHandler(t *testing.T) {
-	router := newGatewayRoutesTestRouterForPlatform(service.PlatformGLM)
-
-	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"hello"}]}`))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
-	router.ServeHTTP(w, req)
-
-	require.Equal(t, http.StatusServiceUnavailable, w.Code)
-	require.Contains(t, w.Body.String(), "glm gateway service unavailable")
-}
-
-func TestGatewayRoutesGLMChatCompletionsDispatchesToGLMHandler(t *testing.T) {
-	router := newGatewayRoutesTestRouterForPlatform(service.PlatformGLM)
-
-	for _, path := range []string{"/v1/chat/completions", "/chat/completions"} {
-		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"model":"glm-4.5-air","messages":[{"role":"user","content":"hello"}]}`))
-		req.Header.Set("Content-Type", "application/json")
-		w := httptest.NewRecorder()
-
-		router.ServeHTTP(w, req)
-
-		require.Equal(t, http.StatusServiceUnavailable, w.Code, "path=%s", path)
-		require.Contains(t, w.Body.String(), "glm gateway service unavailable", "path=%s", path)
+func TestGatewayRoutesCNProvidersDispatchToOpenAIGateway(t *testing.T) {
+	for _, platform := range []string{
+		service.PlatformGLM,
+		service.PlatformZhipu,
+		service.PlatformKimi,
+		service.PlatformDeepSeek,
+	} {
+		router := newGatewayRoutesTestRouterForPlatformWithoutProviderHandlers(platform)
+		for _, path := range []string{
+			"/v1/messages",
+			"/v1/chat/completions",
+			"/chat/completions",
+			"/v1/responses",
+			"/responses",
+			"/v1/messages/count_tokens",
+			"/v1/responses/compact",
+		} {
+			req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"model":"test","messages":[{"role":"user","content":"hello"}]}`))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+			require.NotEqual(t, http.StatusNotFound, w.Code, "platform=%s path=%s", platform, path)
+			require.NotContains(t, w.Body.String(), "gateway service unavailable", "platform=%s path=%s", platform, path)
+			require.NotContains(t, w.Body.String(), "does not support this endpoint", "platform=%s path=%s", platform, path)
+		}
 	}
 }
 
-func TestGatewayRoutesGLMUnsupportedEndpointsReturnNotFound(t *testing.T) {
-	router := newGatewayRoutesTestRouterForPlatform(service.PlatformGLM)
-
-	for _, path := range []string{
-		"/v1/responses/compact",
-		"/v1/messages/count_tokens",
-		"/responses/compact",
-		"/backend-api/codex/responses/compact",
-		"/v1/images/generations",
-		"/v1/images/edits",
-		"/images/generations",
-		"/images/edits",
+func TestGatewayRoutesCNProvidersImagesRemainUnsupported(t *testing.T) {
+	for _, platform := range []string{
+		service.PlatformGLM,
+		service.PlatformZhipu,
+		service.PlatformKimi,
+		service.PlatformDeepSeek,
 	} {
-		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"model":"glm-5.1"}`))
-		req.Header.Set("Content-Type", "application/json")
-		w := httptest.NewRecorder()
-
-		router.ServeHTTP(w, req)
-		require.Equal(t, http.StatusNotFound, w.Code, "path=%s should be GLM unsupported", path)
-		require.Contains(t, w.Body.String(), "not_found_error", "path=%s", path)
-		require.Contains(t, w.Body.String(), "GLM gateway does not support this endpoint", "path=%s", path)
-	}
-}
-
-func TestGatewayRoutesGLMUnsupportedGetEndpointsReturnNotFound(t *testing.T) {
-	router := newGatewayRoutesTestRouterForPlatform(service.PlatformGLM)
-
-	for _, path := range []string{
-		"/v1/responses",
-		"/responses",
-		"/backend-api/codex/responses",
-	} {
-		req := httptest.NewRequest(http.MethodGet, path, nil)
-		w := httptest.NewRecorder()
-
-		router.ServeHTTP(w, req)
-		require.Equal(t, http.StatusNotFound, w.Code, "path=%s should be GLM unsupported", path)
-		require.Contains(t, w.Body.String(), "not_found_error", "path=%s", path)
-		require.Contains(t, w.Body.String(), "GLM gateway does not support this endpoint", "path=%s", path)
+		router := newGatewayRoutesTestRouterForPlatformWithoutProviderHandlers(platform)
+		for _, path := range []string{"/v1/images/generations", "/v1/images/edits"} {
+			req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"model":"test"}`))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+			require.Equal(t, http.StatusNotFound, w.Code, "platform=%s path=%s", platform, path)
+			require.Contains(t, w.Body.String(), "Images API is not supported for this platform", "platform=%s path=%s", platform, path)
+		}
 	}
 }
 
@@ -759,102 +737,6 @@ func TestGatewayRoutesGLMModelsReturnsDefaultList(t *testing.T) {
 	require.Contains(t, w.Body.String(), "GLM-4.5-air")
 }
 
-func TestGatewayRoutesGLMDispatchDiffersWhenHandlerIsPresent(t *testing.T) {
-	for _, path := range []string{"/v1/messages", "/v1/chat/completions"} {
-		nilRouter := newGatewayRoutesTestRouterForPlatformWithHandlers(service.PlatformGLM, &handler.Handlers{
-			Gateway:       &handler.GatewayHandler{},
-			OpenAIGateway: &handler.OpenAIGatewayHandler{},
-		})
-		presentRouter := newGatewayRoutesTestRouterForPlatformWithHandlers(service.PlatformGLM, &handler.Handlers{
-			Gateway:       &handler.GatewayHandler{},
-			OpenAIGateway: &handler.OpenAIGatewayHandler{},
-			GLMGateway:    &handler.GLMGatewayHandler{},
-		})
-
-		nilReq := httptest.NewRequest(http.MethodPost, path, nil)
-		nilW := httptest.NewRecorder()
-		nilRouter.ServeHTTP(nilW, nilReq)
-
-		presentReq := httptest.NewRequest(http.MethodPost, path, nil)
-		presentW := httptest.NewRecorder()
-		presentRouter.ServeHTTP(presentW, presentReq)
-
-		require.Equal(t, http.StatusServiceUnavailable, nilW.Code, "path=%s nil handler", path)
-		require.Contains(t, nilW.Body.String(), "glm gateway service unavailable", "path=%s nil handler", path)
-		require.Equal(t, http.StatusBadRequest, presentW.Code, "path=%s present handler", path)
-		require.Contains(t, presentW.Body.String(), "Request body is empty", "path=%s present handler", path)
-	}
-}
-
-func TestGatewayRoutesKimiMessagesDispatchesToKimiHandler(t *testing.T) {
-	router := newGatewayRoutesTestRouterForPlatform(service.PlatformKimi)
-
-	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"kimi-for-coding","messages":[{"role":"user","content":"hello"}]}`))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
-	router.ServeHTTP(w, req)
-
-	require.Equal(t, http.StatusServiceUnavailable, w.Code)
-	require.Contains(t, w.Body.String(), "kimi gateway service unavailable")
-}
-
-func TestGatewayRoutesKimiChatCompletionsDispatchesToKimiHandler(t *testing.T) {
-	router := newGatewayRoutesTestRouterForPlatform(service.PlatformKimi)
-
-	for _, path := range []string{"/v1/chat/completions", "/chat/completions"} {
-		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"model":"kimi-for-coding","messages":[{"role":"user","content":"hello"}]}`))
-		req.Header.Set("Content-Type", "application/json")
-		w := httptest.NewRecorder()
-
-		router.ServeHTTP(w, req)
-
-		require.Equal(t, http.StatusServiceUnavailable, w.Code, "path=%s", path)
-		require.Contains(t, w.Body.String(), "kimi gateway service unavailable", "path=%s", path)
-	}
-}
-
-func TestGatewayRoutesKimiUnsupportedEndpointsReturnNotFound(t *testing.T) {
-	router := newGatewayRoutesTestRouterForPlatform(service.PlatformKimi)
-
-	for _, path := range []string{
-		"/v1/responses/compact",
-		"/v1/messages/count_tokens",
-		"/responses/compact",
-		"/backend-api/codex/responses/compact",
-		"/v1/images/generations",
-		"/v1/images/edits",
-		"/images/generations",
-		"/images/edits",
-	} {
-		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"model":"kimi-for-coding"}`))
-		req.Header.Set("Content-Type", "application/json")
-		w := httptest.NewRecorder()
-
-		router.ServeHTTP(w, req)
-		require.Equal(t, http.StatusNotFound, w.Code, "path=%s should be Kimi unsupported", path)
-		require.Contains(t, w.Body.String(), "not_found_error", "path=%s", path)
-		require.Contains(t, w.Body.String(), "Kimi gateway does not support this endpoint", "path=%s", path)
-	}
-}
-
-func TestGatewayRoutesKimiUnsupportedGetEndpointsReturnNotFound(t *testing.T) {
-	router := newGatewayRoutesTestRouterForPlatform(service.PlatformKimi)
-
-	for _, path := range []string{
-		"/v1/responses",
-		"/responses",
-		"/backend-api/codex/responses",
-	} {
-		req := httptest.NewRequest(http.MethodGet, path, nil)
-		w := httptest.NewRecorder()
-
-		router.ServeHTTP(w, req)
-		require.Equal(t, http.StatusNotFound, w.Code, "path=%s should be Kimi unsupported", path)
-		require.Contains(t, w.Body.String(), "not_found_error", "path=%s", path)
-		require.Contains(t, w.Body.String(), "Kimi gateway does not support this endpoint", "path=%s", path)
-	}
-}
 
 func TestGatewayRoutesKimiModelsReturnsDefaultList(t *testing.T) {
 	router := newGatewayRoutesTestRouterForPlatform(service.PlatformKimi)
@@ -867,76 +749,6 @@ func TestGatewayRoutesKimiModelsReturnsDefaultList(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Contains(t, w.Body.String(), "kimi-for-coding")
 	require.NotContains(t, w.Body.String(), "claude-sonnet")
-}
-
-func TestGatewayRoutesDeepSeekMessagesDispatchesToDeepSeekHandler(t *testing.T) {
-	router := newGatewayRoutesTestRouterForPlatform(service.PlatformDeepSeek)
-
-	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"deepseek-v4-flash","messages":[{"role":"user","content":"hello"}]}`))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
-	router.ServeHTTP(w, req)
-
-	require.Equal(t, http.StatusServiceUnavailable, w.Code)
-	require.Contains(t, w.Body.String(), "deepseek gateway service unavailable")
-}
-
-func TestGatewayRoutesDeepSeekChatCompletionsDispatchesToDeepSeekHandler(t *testing.T) {
-	router := newGatewayRoutesTestRouterForPlatform(service.PlatformDeepSeek)
-
-	for _, path := range []string{"/v1/chat/completions", "/chat/completions"} {
-		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"model":"deepseek-v4-pro","messages":[{"role":"user","content":"hello"}]}`))
-		req.Header.Set("Content-Type", "application/json")
-		w := httptest.NewRecorder()
-
-		router.ServeHTTP(w, req)
-
-		require.Equal(t, http.StatusServiceUnavailable, w.Code, "path=%s", path)
-		require.Contains(t, w.Body.String(), "deepseek gateway service unavailable", "path=%s", path)
-	}
-}
-
-func TestGatewayRoutesDeepSeekUnsupportedEndpointsReturnNotFound(t *testing.T) {
-	router := newGatewayRoutesTestRouterForPlatform(service.PlatformDeepSeek)
-
-	for _, path := range []string{
-		"/v1/responses/compact",
-		"/v1/messages/count_tokens",
-		"/responses/compact",
-		"/backend-api/codex/responses/compact",
-		"/v1/images/generations",
-		"/v1/images/edits",
-		"/images/generations",
-		"/images/edits",
-	} {
-		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"model":"deepseek-v4-flash"}`))
-		req.Header.Set("Content-Type", "application/json")
-		w := httptest.NewRecorder()
-
-		router.ServeHTTP(w, req)
-		require.Equal(t, http.StatusNotFound, w.Code, "path=%s should be DeepSeek unsupported", path)
-		require.Contains(t, w.Body.String(), "not_found_error", "path=%s", path)
-		require.Contains(t, w.Body.String(), "DeepSeek gateway does not support this endpoint", "path=%s", path)
-	}
-}
-
-func TestGatewayRoutesDeepSeekUnsupportedGetEndpointsReturnNotFound(t *testing.T) {
-	router := newGatewayRoutesTestRouterForPlatform(service.PlatformDeepSeek)
-
-	for _, path := range []string{
-		"/v1/responses",
-		"/responses",
-		"/backend-api/codex/responses",
-	} {
-		req := httptest.NewRequest(http.MethodGet, path, nil)
-		w := httptest.NewRecorder()
-
-		router.ServeHTTP(w, req)
-		require.Equal(t, http.StatusNotFound, w.Code, "path=%s should be DeepSeek unsupported", path)
-		require.Contains(t, w.Body.String(), "not_found_error", "path=%s", path)
-		require.Contains(t, w.Body.String(), "DeepSeek gateway does not support this endpoint", "path=%s", path)
-	}
 }
 
 func TestGatewayRoutesDeepSeekModelsReturnsDefaultList(t *testing.T) {
@@ -979,9 +791,6 @@ func TestGatewayRoutesProviderResponsesRootsDispatchToProviderHandlers(t *testin
 		message  string
 	}{
 		{platform: service.PlatformMiniMax, body: `{"model":"MiniMax-M2.7","input":"hello"}`, message: "minimax gateway service unavailable"},
-		{platform: service.PlatformGLM, body: `{"model":"glm-5.1","input":"hello"}`, message: "glm gateway service unavailable"},
-		{platform: service.PlatformKimi, body: `{"model":"kimi-for-coding","input":"hello"}`, message: "kimi gateway service unavailable"},
-		{platform: service.PlatformDeepSeek, body: `{"model":"deepseek-chat","input":"hello"}`, message: "deepseek gateway service unavailable"},
 		{platform: service.PlatformWindsurf, body: `{"model":"claude-sonnet-4.6","input":"hello"}`, message: "windsurf gateway service unavailable"},
 	} {
 		router := newGatewayRoutesTestRouterForPlatformWithoutProviderHandlers(tc.platform)
@@ -1006,9 +815,6 @@ func TestGatewayRoutesProviderResponsesSubpathsRemainUnsupported(t *testing.T) {
 		message  string
 	}{
 		{platform: service.PlatformMiniMax, message: "MiniMax gateway does not support this endpoint"},
-		{platform: service.PlatformGLM, message: "GLM gateway does not support this endpoint"},
-		{platform: service.PlatformKimi, message: "Kimi gateway does not support this endpoint"},
-		{platform: service.PlatformDeepSeek, message: "DeepSeek gateway does not support this endpoint"},
 		{platform: service.PlatformWindsurf, message: "Windsurf gateway does not support this endpoint"},
 	} {
 		router := newGatewayRoutesTestRouterForPlatformWithoutProviderHandlers(tc.platform)

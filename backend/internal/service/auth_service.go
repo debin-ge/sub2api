@@ -429,9 +429,17 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 		Status:       StatusActive,
 	}
 
+	var invitationRedeemCode *RedeemCode
+	if invitation != nil {
+		invitationRedeemCode = invitation.redeemCode
+	}
+
 	createCtx := ctx
 	var registrationTx *dbent.Tx
-	hasCriticalRegistrationState := selectedAffiliateCode != "" || (invitation != nil && invitation.redeemCode != nil)
+	// Affiliate bind is fail-closed and must share the user-create transaction.
+	// Invitation claim is handled inside createUserAndClaimInvitation; when both
+	// exist, the outer TX is reused so affiliate rollback also undoes user+invite.
+	hasCriticalRegistrationState := selectedAffiliateCode != ""
 	if hasCriticalRegistrationState && s.entClient != nil {
 		registrationTx, err = s.entClient.Tx(ctx)
 		if err != nil {
@@ -441,21 +449,18 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 		createCtx = dbent.NewTxContext(ctx, registrationTx)
 	}
 
-	if err := s.createUserWithRegistrationEmailGuard(createCtx, user); err != nil {
+	if err := s.createUserAndClaimInvitation(createCtx, user, invitationRedeemCode); err != nil {
 		// 优先检查邮箱冲突错误（竞态条件下可能发生）
 		switch {
 		case errors.Is(err, ErrEmailExists):
 			return "", nil, ErrEmailExists
 		case errors.Is(err, ErrEmailDomainRegistrationLimit):
 			return "", nil, ErrEmailDomainRegistrationLimit
+		case errors.Is(err, ErrInvitationCodeInvalid):
+			return "", nil, ErrInvitationCodeInvalid
 		default:
 			logger.LegacyPrintf("service.auth", "[Auth] Database error creating user: %v", err)
 			return "", nil, ErrServiceUnavailable
-		}
-	}
-	if invitation != nil && invitation.redeemCode != nil {
-		if err := s.useOAuthRegistrationInvitation(createCtx, invitation.redeemCode.ID, user.ID); err != nil {
-			return "", nil, ErrInvitationCodeInvalid
 		}
 	}
 	if selectedAffiliateCode != "" {
@@ -483,8 +488,8 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 		}
 	}
 
-	// Applying promo codes remains fail-open and happens only after the critical
-	// registration transaction has committed.
+	// 邀请码占用已由 createUserAndClaimInvitation 在“用户创建 + 邀请码占用”的
+	// 同一个数据库事务内原子完成。优惠码仍 fail-open，且必须在关键注册事务提交之后。
 	if promoCode != "" && s.promoService != nil && s.settingService != nil && s.settingService.IsPromoCodeEnabled(ctx) {
 		if err := s.promoService.ApplyPromoCode(ctx, user.ID, promoCode); err != nil {
 			// 优惠码应用失败不影响注册，只记录日志
@@ -1572,6 +1577,67 @@ func (s *AuthService) createUserWithRegistrationEmailGuard(ctx context.Context, 
 		return s.userRepo.CreateWithEmailAliasGuard(ctx, user)
 	}
 	return quotaRepo.CreateWithEmailAliasGuardAndDomainLimit(ctx, user, domain)
+}
+
+// createUserAndClaimInvitation 原子化完成“用户创建 + 邀请码占用”。
+//
+// 背景：邀请码属于一次性凭证，必须保证“一个邀请码最多注册一个账号”。旧实现先检查
+// CanUse()、再创建用户、最后才 redeemRepo.Use()（且失败仅记日志），检查与消耗分离且
+// 不在同一事务，并发注册可在同一邀请码上同时通过检查并各自创建账号（TOCTOU 竞态）。
+//
+// 本实现把两者放入同一个数据库事务：
+//   - 占用走 redeemRepo.Use 的条件更新（WHERE status='unused'，乐观锁）；
+//   - 并发下只有一个事务能占用成功，其余事务回滚——既不产生多余账号，也不让码被烧掉；
+//   - 事务回滚同时撤销用户创建，避免“账号已建、码被占用”的中间态。
+//
+// 无邀请码时保持原单次创建路径（不开事务）；entClient 缺失的异常配置下退化为顺序执行，
+// 并发正确性仍由 Use 的条件更新兜底（可能产生孤儿用户，但不会放行第二个注册）。
+func (s *AuthService) createUserAndClaimInvitation(ctx context.Context, user *User, invitation *RedeemCode) error {
+	commitUser := func(execCtx context.Context) error {
+		if err := s.createUserWithRegistrationEmailGuard(execCtx, user); err != nil {
+			return err
+		}
+		if invitation == nil {
+			return nil
+		}
+		// createUserWithRegistrationEmailGuard 会回填 user.ID（applyUserEntityToService），
+		// 直接以其原子占用邀请码；占用失败即整体回滚（含用户创建，见 user_repo.create
+		// 对外部事务的复用）。
+		if err := s.redeemRepo.Use(execCtx, invitation.ID, user.ID); err != nil {
+			// 并发下唯一的合法失败路径：另一个注册已占用该码
+			logger.LegacyPrintf("service.auth",
+				"[Auth] Rejected registration: invitation code %s already claimed (user_id=%d err=%v)",
+				invitation.Code, user.ID, err)
+			return ErrInvitationCodeInvalid
+		}
+		return nil
+	}
+
+	if invitation == nil {
+		return commitUser(ctx)
+	}
+	if dbent.TxFromContext(ctx) != nil {
+		return commitUser(ctx)
+	}
+	if s.entClient == nil {
+		return commitUser(ctx)
+	}
+
+	tx, err := s.entClient.Tx(ctx)
+	if err != nil {
+		logger.LegacyPrintf("service.auth", "[Auth] Failed to start registration transaction: %v", err)
+		return ErrServiceUnavailable
+	}
+	defer func() { _ = tx.Rollback() }()
+	execCtx := dbent.NewTxContext(ctx, tx)
+	if err := commitUser(execCtx); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		logger.LegacyPrintf("service.auth", "[Auth] Failed to commit registration transaction: %v", err)
+		return ErrServiceUnavailable
+	}
+	return nil
 }
 
 func buildEmailSuffixNotAllowedError(whitelist []string) error {

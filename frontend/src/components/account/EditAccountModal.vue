@@ -106,84 +106,6 @@
             </div>
           </div>
         </template>
-        <template v-else-if="account.platform === 'kimi'">
-          <div>
-            <label class="input-label">Kimi API Key</label>
-            <input
-              v-model="editApiKey"
-              data-testid="kimi-api-key"
-              type="password"
-              class="input font-mono"
-              autocomplete="new-password"
-              data-1p-ignore
-              data-lpignore="true"
-              data-bwignore="true"
-              placeholder="sk-..."
-            />
-            <p class="input-hint">{{ t('admin.accounts.leaveEmptyToKeep') }}</p>
-          </div>
-          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <label class="input-label">Anthropic base URL</label>
-              <input
-                v-model="editKimiAnthropicBaseUrl"
-                data-testid="kimi-anthropic-base-url"
-                type="text"
-                class="input font-mono"
-                :placeholder="KIMI_ANTHROPIC_BASE_URL"
-              />
-            </div>
-            <div>
-              <label class="input-label">OpenAI base URL</label>
-              <input
-                v-model="editKimiOpenAIBaseUrl"
-                data-testid="kimi-openai-base-url"
-                type="text"
-                class="input font-mono"
-                :placeholder="KIMI_OPENAI_BASE_URL"
-              />
-            </div>
-          </div>
-        </template>
-        <template v-else-if="account.platform === 'deepseek'">
-          <div>
-            <label class="input-label">DeepSeek API Key</label>
-            <input
-              v-model="editApiKey"
-              data-testid="deepseek-api-key"
-              type="password"
-              class="input font-mono"
-              autocomplete="new-password"
-              data-1p-ignore
-              data-lpignore="true"
-              data-bwignore="true"
-              placeholder="sk-..."
-            />
-            <p class="input-hint">{{ t('admin.accounts.leaveEmptyToKeep') }}</p>
-          </div>
-          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <label class="input-label">Anthropic base URL</label>
-              <input
-                v-model="editDeepSeekAnthropicBaseUrl"
-                data-testid="deepseek-anthropic-base-url"
-                type="text"
-                class="input font-mono"
-                :placeholder="DEEPSEEK_ANTHROPIC_BASE_URL"
-              />
-            </div>
-            <div>
-              <label class="input-label">OpenAI base URL</label>
-              <input
-                v-model="editDeepSeekOpenAIBaseUrl"
-                data-testid="deepseek-openai-base-url"
-                type="text"
-                class="input font-mono"
-                :placeholder="DEEPSEEK_OPENAI_BASE_URL"
-              />
-            </div>
-          </div>
-        </template>
         <template v-else-if="account.platform === 'windsurf'">
           <div>
             <label class="input-label">Windsurf API Key</label>
@@ -240,55 +162,106 @@
           </div>
         </template>
         <template v-else>
-          <div>
-            <label class="input-label">{{ t('admin.accounts.baseUrl') }}</label>
-            <input
-              v-model="editBaseUrl"
-              type="text"
-              class="input"
-              :placeholder="
-                account.platform === 'openai'
-                  ? 'https://api.openai.com'
-                  : account.platform === 'gemini'
-                    ? 'https://generativelanguage.googleapis.com'
-                    : account.platform === 'antigravity'
-                      ? 'https://cloudcode-pa.googleapis.com'
-                      : account.platform === 'grok'
-                        ? 'https://api.x.ai/v1'
-                        : 'https://api.anthropic.com'
-              "
-            />
-            <p v-if="baseUrlHint" class="input-hint">{{ baseUrlHint }}</p>
-            <GrokBaseUrlPresets
-              v-if="account.platform === 'grok'"
-              class="mt-2"
-              @select="editBaseUrl = $event"
-            />
+        <div>
+          <label class="input-label">{{ t('admin.accounts.baseUrl') }}</label>
+          <input
+            v-model="editBaseUrl"
+            type="text"
+            class="input"
+            :placeholder="
+              account.platform === 'openai'
+                ? 'https://api.openai.com'
+                : account.platform === 'gemini'
+                  ? 'https://generativelanguage.googleapis.com'
+                  : account.platform === 'antigravity'
+                    ? 'https://cloudcode-pa.googleapis.com'
+                    : account.platform === 'grok'
+                      ? 'https://api.x.ai/v1'
+                      : 'https://api.anthropic.com'
+            "
+          />
+          <p v-if="baseUrlHint" class="input-hint">{{ baseUrlHint }}</p>
+          <GrokBaseUrlPresets
+            v-if="account.platform === 'grok'"
+            class="mt-2"
+            @select="editBaseUrl = $event"
+          />
+          <CnBaseUrlPresets
+            v-if="isCNApiKeyAccount"
+            class="mt-2"
+            :platform="cnPresetPlatform"
+            :mode="editAccountMode"
+            :protocol="editApiProtocol"
+            :current-url="editBaseUrl"
+            @select="onCnPresetSelect"
+          />
+        </div>
+        <!-- Account Mode Selection (CN providers) -->
+        <div v-if="isCNApiKeyAccount">
+          <label class="input-label">{{ t('admin.accounts.cnProviders.accountMode.title') }}</label>
+          <div class="mt-2 flex flex-wrap gap-2">
+            <button
+              v-for="opt in cnAccountModeOptions"
+              :key="opt.value"
+              type="button"
+              :class="[
+                'rounded-lg border-2 px-3 py-1.5 text-xs transition-all',
+                editAccountMode === opt.value
+                  ? 'border-primary-500 bg-primary-50 font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-300'
+                  : 'border-gray-200 text-gray-700 hover:border-gray-400 dark:border-dark-600 dark:text-gray-300 dark:hover:border-gray-600'
+              ]"
+              @click="editAccountMode = opt.value"
+            >
+              {{ t(`admin.accounts.cnProviders.accountMode.${opt.labelKey}`) }}
+            </button>
           </div>
-          <div>
-            <label class="input-label">{{ t('admin.accounts.apiKey') }}</label>
-            <input
-              v-model="editApiKey"
-              type="password"
-              class="input font-mono"
-              autocomplete="new-password"
-              data-1p-ignore
-              data-lpignore="true"
-              data-bwignore="true"
-              :placeholder="
-                account.platform === 'openai'
-                  ? 'sk-proj-...'
-                  : account.platform === 'gemini'
-                    ? 'AIza...'
-                    : account.platform === 'antigravity'
-                      ? 'sk-...'
-                      : account.platform === 'grok'
-                        ? 'xai-...'
-                        : 'sk-ant-...'
-              "
-            />
-            <p class="input-hint">{{ t('admin.accounts.leaveEmptyToKeep') }}</p>
+          <p class="input-hint">{{ t(`admin.accounts.cnProviders.accountMode.${editAccountMode}Desc`) }}</p>
+        </div>
+        <!-- API Protocol Selection (CN providers) -->
+        <div v-if="isCNApiKeyAccount">
+          <label class="input-label">{{ t('admin.accounts.cnProviders.apiProtocol.title') }}</label>
+          <div class="mt-2 flex flex-wrap gap-2">
+            <button
+              v-for="opt in cnProtocolOptions"
+              :key="opt.value"
+              type="button"
+              :class="[
+                'rounded-lg border-2 px-3 py-1.5 text-xs transition-all',
+                editApiProtocol === opt.value
+                  ? 'border-primary-500 bg-primary-50 font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-300'
+                  : 'border-gray-200 text-gray-700 hover:border-gray-400 dark:border-dark-600 dark:text-gray-300 dark:hover:border-gray-600'
+              ]"
+              @click="editApiProtocol = opt.value"
+            >
+              {{ t(`admin.accounts.cnProviders.apiProtocol.${opt.labelKey}`) }}
+            </button>
           </div>
+          <p class="input-hint">{{ t(`admin.accounts.cnProviders.apiProtocol.${cnProtocolDescKey}Desc`) }}</p>
+        </div>
+        <div>
+          <label class="input-label">{{ t('admin.accounts.apiKey') }}</label>
+          <input
+            v-model="editApiKey"
+            type="password"
+            class="input font-mono"
+            autocomplete="new-password"
+            data-1p-ignore
+            data-lpignore="true"
+            data-bwignore="true"
+            :placeholder="
+              account.platform === 'openai'
+                ? 'sk-proj-...'
+                : account.platform === 'gemini'
+                  ? 'AIza...'
+                  : account.platform === 'antigravity'
+                    ? 'sk-...'
+                    : account.platform === 'grok'
+                      ? 'xai-...'
+                      : 'sk-ant-...'
+            "
+          />
+          <p class="input-hint">{{ t('admin.accounts.leaveEmptyToKeep') }}</p>
+        </div>
         </template>
 
         <div
@@ -2987,7 +2960,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch } from 'vue'
+import { ref, reactive, computed, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
@@ -3013,6 +2986,7 @@ import GroupSelector from '@/components/common/GroupSelector.vue'
 import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.vue'
 import QuotaLimitCard from '@/components/account/QuotaLimitCard.vue'
 import GrokBaseUrlPresets from '@/components/account/GrokBaseUrlPresets.vue'
+import CnBaseUrlPresets from '@/components/account/CnBaseUrlPresets.vue'
 import HeaderOverrideEditor from '@/components/account/HeaderOverrideEditor.vue'
 import OllamaCloudUsageSettings from '@/components/account/OllamaCloudUsageSettings.vue'
 import {
@@ -3028,6 +3002,9 @@ import {
   isHeaderOverrideCapable,
   splitHeaderOverridesObject,
   validateHeaderOverrideRows,
+  defaultCNBaseUrl,
+  type CnAccountMode,
+  type CnApiProtocol,
   type HeaderOverrideRow
 } from '@/components/account/credentialsBuilder'
 import { formatDateTime, formatDateTimeLocalInput, parseDateTimeLocalInput } from '@/utils/format'
@@ -3037,10 +3014,6 @@ import {
   MINIMAX_OPENAI_BASE_URL,
   GLM_ANTHROPIC_BASE_URL,
   GLM_OPENAI_BASE_URL,
-  KIMI_ANTHROPIC_BASE_URL,
-  KIMI_OPENAI_BASE_URL,
-  DEEPSEEK_ANTHROPIC_BASE_URL,
-  DEEPSEEK_OPENAI_BASE_URL,
   WINDSURF_BASE_URL,
   OPENCODE_BASE_URL,
   PROVIDER_PASSTHROUGH_PLATFORMS,
@@ -3097,7 +3070,8 @@ const baseUrlHint = computed(() => {
   return t('admin.accounts.baseUrlHint')
 })
 
-const isFixedEndpointGatewayPlatformValue = (platform?: string) => platform === 'glm' || platform === 'kimi' || platform === 'deepseek' || platform === 'windsurf' || platform === 'opencode'
+const isFixedEndpointGatewayPlatformValue = (platform?: string) =>
+  platform === 'glm' || platform === 'windsurf' || platform === 'opencode'
 const isFixedEndpointGatewayPlatform = computed(() => isFixedEndpointGatewayPlatformValue(props.account?.platform))
 
 const antigravityPresetMappings = computed(() => getPresetMappingsByPlatform('antigravity'))
@@ -3125,10 +3099,6 @@ const editMiniMaxAnthropicBaseUrl = ref(MINIMAX_ANTHROPIC_BASE_URL)
 const editMiniMaxOpenAIBaseUrl = ref(MINIMAX_OPENAI_BASE_URL)
 const editGLMAnthropicBaseUrl = ref(GLM_ANTHROPIC_BASE_URL)
 const editGLMOpenAIBaseUrl = ref(GLM_OPENAI_BASE_URL)
-const editKimiAnthropicBaseUrl = ref(KIMI_ANTHROPIC_BASE_URL)
-const editKimiOpenAIBaseUrl = ref(KIMI_OPENAI_BASE_URL)
-const editDeepSeekAnthropicBaseUrl = ref(DEEPSEEK_ANTHROPIC_BASE_URL)
-const editDeepSeekOpenAIBaseUrl = ref(DEEPSEEK_OPENAI_BASE_URL)
 const editWindsurfBaseUrl = ref(WINDSURF_BASE_URL)
 const editOpenCodeBaseUrl = ref(OPENCODE_BASE_URL)
 const editSyncCredentials = computed(() => {
@@ -3144,21 +3114,19 @@ const editSyncCredentials = computed(() => {
       baseUrl = editGLMOpenAIBaseUrl.value
       break
     case 'kimi':
-      baseUrl = editKimiOpenAIBaseUrl.value
-      break
+    case 'zhipu':
     case 'deepseek':
-      baseUrl = editDeepSeekOpenAIBaseUrl.value
+    case 'anthropic':
+    case 'openai':
+    case 'gemini':
+    case 'grok':
+      baseUrl = editBaseUrl.value
       break
     case 'windsurf':
       baseUrl = editWindsurfBaseUrl.value
       break
     case 'opencode':
       baseUrl = editOpenCodeBaseUrl.value
-      break
-    case 'anthropic':
-    case 'openai':
-    case 'gemini':
-      baseUrl = editBaseUrl.value
       break
     default:
       return undefined
@@ -3171,6 +3139,78 @@ const editSyncCredentials = computed(() => {
     api_key: editApiKey.value.trim() || undefined
   }
 })
+
+// ── 国产供应商（Kimi / Zhipu / DeepSeek）account_mode / api_protocol 编辑 ──
+// account_mode 决定额度/余额监控路径，api_protocol 决定转发端点与格式；
+// 二者均可修正（早期创建的账号可能存错默认值），切换时重置 base_url 预置。
+const isCNApiKeyAccount = computed(
+  () =>
+    props.account?.type === 'apikey' &&
+    (props.account.platform === 'kimi' ||
+      props.account.platform === 'zhipu' ||
+      props.account.platform === 'deepseek')
+)
+// CnBaseUrlPresets 的 platform prop 是平台字面量联合类型，模板里不能写
+// `as` 断言（其中的 `|` 会被 eslint 误判为 Vue2 filter 语法），经此 computed 传递。
+const cnPresetPlatform = computed<'kimi' | 'zhipu' | 'deepseek'>(() => {
+  const platform = props.account?.platform
+  if (platform === 'kimi' || platform === 'zhipu' || platform === 'deepseek') {
+    return platform
+  }
+  return 'kimi'
+})
+const editApiProtocol = ref<CnApiProtocol>('chat_completions')
+const editAccountMode = ref<CnAccountMode>('payg')
+// 回填窗口标志：syncFormFromAccount 会同步改写 editAccountMode / editApiProtocol，
+// 而 watcher（pre-flush）在同步代码执行完之后才触发——若不抑制，会把刚恢复的
+// 存储版 base_url（可能是用户自定义/中转地址）覆盖为官方预设并在下次保存时持久化。
+// nextTick 后解除，此后用户主动切换模式/协议仍正常联动重置。
+const syncingForm = ref(false)
+const cnAccountModeOptions = computed<Array<{ value: CnAccountMode; labelKey: 'payg' | 'coding' }>>(
+  () => {
+    // DeepSeek 无 coding 套餐（与创建弹窗一致），仅保留按量付费。
+    if (props.account?.platform === 'deepseek') {
+      return [{ value: 'payg', labelKey: 'payg' }]
+    }
+    return [
+      { value: 'payg', labelKey: 'payg' },
+      { value: 'coding', labelKey: 'coding' }
+    ]
+  }
+)
+const cnProtocolOptions = computed<Array<{ value: CnApiProtocol; labelKey: string }>>(() => {
+  const opts: Array<{ value: CnApiProtocol; labelKey: string }> = [
+    { value: 'chat_completions', labelKey: 'chatCompletions' },
+    { value: 'anthropic', labelKey: 'anthropic' }
+  ]
+  if (props.account?.platform === 'deepseek') {
+    opts.push({ value: 'responses', labelKey: 'responses' })
+  }
+  return opts
+})
+watch(editApiProtocol, (protocol) => {
+  if (!isCNApiKeyAccount.value || syncingForm.value) return
+  editBaseUrl.value = defaultCNBaseUrl(props.account!.platform, editAccountMode.value, protocol)
+})
+watch(editAccountMode, (mode) => {
+  if (!isCNApiKeyAccount.value || syncingForm.value) return
+  // deepseek 无 coding 套餐：防御性回退（UI 已隐藏该选项）。
+  const effectiveMode = props.account!.platform === 'deepseek' && mode === 'coding' ? 'payg' : mode
+  if (effectiveMode !== mode) {
+    editAccountMode.value = effectiveMode
+    return
+  }
+  editBaseUrl.value = defaultCNBaseUrl(props.account!.platform, mode, editApiProtocol.value)
+})
+const cnProtocolDescKey = computed(
+  () => cnProtocolOptions.value.find(o => o.value === editApiProtocol.value)?.labelKey ?? 'chatCompletions'
+)
+// 点击预设端点：回填 base url 与对应模式/协议。
+function onCnPresetSelect(preset: { mode: CnAccountMode; protocol: CnApiProtocol; url: string }) {
+  editAccountMode.value = preset.mode
+  editApiProtocol.value = preset.protocol
+  editBaseUrl.value = preset.url
+}
 // Bedrock credentials
 const editBedrockAccessKeyId = ref('')
 const editBedrockSecretAccessKey = ref('')
@@ -3323,7 +3363,7 @@ const codexCLIOnlyEnabled = ref(false)
 const codexCLIOnlyAppServerEnabled = ref(false)
 const codexCLIOnlyAllowClaudeCodeEnabled = ref(false)
 type CodexFingerprintMode = 'off' | 'device' | 'session' | 'full'
-const codexFingerprintMode = ref<CodexFingerprintMode>('session')
+const codexFingerprintMode = ref<CodexFingerprintMode>('off')
 type CodexImageToolMode = 'inherit' | 'enabled' | 'disabled' | 'block'
 const codexImageToolMode = ref<CodexImageToolMode>('inherit')
 const anthropicPassthroughEnabled = ref(false)
@@ -3639,11 +3679,18 @@ const defaultBaseUrl = computed(() => {
   if (props.account?.platform === 'gemini') return 'https://generativelanguage.googleapis.com'
   if (props.account?.platform === 'minimax') return MINIMAX_ANTHROPIC_BASE_URL
   if (props.account?.platform === 'glm') return GLM_ANTHROPIC_BASE_URL
-  if (props.account?.platform === 'kimi') return KIMI_ANTHROPIC_BASE_URL
-  if (props.account?.platform === 'deepseek') return DEEPSEEK_ANTHROPIC_BASE_URL
   if (props.account?.platform === 'windsurf') return WINDSURF_BASE_URL
   if (props.account?.platform === 'opencode') return OPENCODE_BASE_URL
   if (props.account?.platform === 'grok') return 'https://api.x.ai/v1'
+  // CN 供应商：按当前模式/协议回落到官方预设（清空输入框提交时使用），
+  // 不能落到 anthropic 默认值（会被当 CC base 拼出错误端点）。
+  if (
+    props.account?.platform === 'kimi' ||
+    props.account?.platform === 'zhipu' ||
+    props.account?.platform === 'deepseek'
+  ) {
+    return defaultCNBaseUrl(props.account.platform, editAccountMode.value, editApiProtocol.value)
+  }
   return 'https://api.anthropic.com'
 })
 
@@ -3731,6 +3778,11 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   if (!newAccount) {
     return
   }
+  // 进入回填窗口：抑制 CN 模式/协议 watcher 联动重置 base_url（见 syncingForm 注释）。
+  syncingForm.value = true
+  void nextTick(() => {
+    syncingForm.value = false
+  })
   antigravityMixedChannelConfirmed.value = false
   showMixedChannelWarning.value = false
   mixedChannelWarningDetails.value = null
@@ -3766,10 +3818,6 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   editMiniMaxOpenAIBaseUrl.value = MINIMAX_OPENAI_BASE_URL
   editGLMAnthropicBaseUrl.value = GLM_ANTHROPIC_BASE_URL
   editGLMOpenAIBaseUrl.value = GLM_OPENAI_BASE_URL
-  editKimiAnthropicBaseUrl.value = KIMI_ANTHROPIC_BASE_URL
-  editKimiOpenAIBaseUrl.value = KIMI_OPENAI_BASE_URL
-  editDeepSeekAnthropicBaseUrl.value = DEEPSEEK_ANTHROPIC_BASE_URL
-  editDeepSeekOpenAIBaseUrl.value = DEEPSEEK_OPENAI_BASE_URL
   editWindsurfBaseUrl.value = WINDSURF_BASE_URL
   editOpenCodeBaseUrl.value = OPENCODE_BASE_URL
 
@@ -3801,7 +3849,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   codexCLIOnlyEnabled.value = false
   codexCLIOnlyAppServerEnabled.value = false
   codexCLIOnlyAllowClaudeCodeEnabled.value = false
-  codexFingerprintMode.value = 'session'
+  codexFingerprintMode.value = 'off'
   codexImageToolMode.value = 'inherit'
   anthropicPassthroughEnabled.value = false
   providerPassthroughEnabled.value = false
@@ -3857,9 +3905,10 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     }
     if (newAccount.type === 'oauth') {
       const fpMode = extra?.codex_fingerprint_mode as string | undefined
+      // 缺省/非法值按 off 呈现，与后端 GetCodexFingerprintMode 的 opt-in 语义一致（#5610）
       codexFingerprintMode.value = (['off', 'device', 'session', 'full'].includes(fpMode || '')
         ? fpMode as CodexFingerprintMode
-        : 'session')
+        : 'off')
     }
     const credentials = newAccount.credentials as Record<string, unknown> | undefined
     const compactMappings = credentials?.compact_model_mapping as Record<string, string> | undefined
@@ -3987,25 +4036,36 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     newAccount.extra?.internal_relay === true
   if (newAccount.type === 'apikey' && newAccount.credentials) {
     const credentials = newAccount.credentials as Record<string, unknown>
+    // 国产供应商：读取 account_mode 与 api_protocol 作为可编辑初始值
+    // （编辑弹窗允许修正两者，用于修复早期存错默认值的账号）。
+    if (newAccount.platform === 'kimi' || newAccount.platform === 'zhipu' || newAccount.platform === 'glm' || newAccount.platform === 'deepseek') {
+      editAccountMode.value = credentials.account_mode === 'coding' ? 'coding' : 'payg'
+      const storedProtocol = credentials.api_protocol
+      editApiProtocol.value =
+        storedProtocol === 'anthropic' || storedProtocol === 'responses' ? storedProtocol : 'chat_completions'
+      if (newAccount.platform !== 'deepseek' && editApiProtocol.value === 'responses') {
+        editApiProtocol.value = 'chat_completions'
+      }
+    }
     const platformDefaultUrl =
       newAccount.platform === 'openai'
         ? 'https://api.openai.com'
         : newAccount.platform === 'gemini'
           ? 'https://generativelanguage.googleapis.com'
-          : newAccount.platform === 'minimax'
-            ? MINIMAX_ANTHROPIC_BASE_URL
-            : newAccount.platform === 'glm'
-              ? GLM_ANTHROPIC_BASE_URL
-              : newAccount.platform === 'kimi'
-                ? KIMI_ANTHROPIC_BASE_URL
-                : newAccount.platform === 'deepseek'
-                  ? DEEPSEEK_ANTHROPIC_BASE_URL
+          : newAccount.platform === 'grok'
+            ? 'https://api.x.ai/v1'
+            : newAccount.platform === 'kimi' ||
+                newAccount.platform === 'zhipu' ||
+                newAccount.platform === 'deepseek'
+              ? defaultCNBaseUrl(newAccount.platform, editAccountMode.value, editApiProtocol.value)
+              : newAccount.platform === 'minimax'
+                ? MINIMAX_ANTHROPIC_BASE_URL
+                : newAccount.platform === 'glm'
+                  ? GLM_ANTHROPIC_BASE_URL
                   : newAccount.platform === 'windsurf'
                     ? WINDSURF_BASE_URL
-                  : newAccount.platform === 'opencode'
-                    ? OPENCODE_BASE_URL
-                    : newAccount.platform === 'grok'
-                      ? 'https://api.x.ai/v1'
+                    : newAccount.platform === 'opencode'
+                      ? OPENCODE_BASE_URL
                       : 'https://api.anthropic.com'
     editBaseUrl.value = (credentials.base_url as string) || platformDefaultUrl
     if (newAccount.platform === 'minimax') {
@@ -4018,16 +4078,6 @@ const syncFormFromAccount = (newAccount: Account | null) => {
         (credentials.base_url_anthropic as string) || GLM_ANTHROPIC_BASE_URL
       editGLMOpenAIBaseUrl.value =
         (credentials.base_url_openai as string) || GLM_OPENAI_BASE_URL
-    } else if (newAccount.platform === 'kimi') {
-      editKimiAnthropicBaseUrl.value =
-        (credentials.base_url_anthropic as string) || KIMI_ANTHROPIC_BASE_URL
-      editKimiOpenAIBaseUrl.value =
-        (credentials.base_url_openai as string) || KIMI_OPENAI_BASE_URL
-    } else if (newAccount.platform === 'deepseek') {
-      editDeepSeekAnthropicBaseUrl.value =
-        (credentials.base_url_anthropic as string) || DEEPSEEK_ANTHROPIC_BASE_URL
-      editDeepSeekOpenAIBaseUrl.value =
-        (credentials.base_url_openai as string) || DEEPSEEK_OPENAI_BASE_URL
     } else if (newAccount.platform === 'windsurf') {
       editWindsurfBaseUrl.value = (credentials.base_url as string) || WINDSURF_BASE_URL
     } else if (newAccount.platform === 'opencode') {
@@ -4103,11 +4153,11 @@ const syncFormFromAccount = (newAccount: Account | null) => {
             ? MINIMAX_ANTHROPIC_BASE_URL
             : newAccount.platform === 'glm'
               ? GLM_ANTHROPIC_BASE_URL
-              : newAccount.platform === 'kimi'
-                ? KIMI_ANTHROPIC_BASE_URL
-                : newAccount.platform === 'deepseek'
-                  ? DEEPSEEK_ANTHROPIC_BASE_URL
-                  : newAccount.platform === 'windsurf'
+              : newAccount.platform === 'kimi' ||
+                  newAccount.platform === 'zhipu' ||
+                  newAccount.platform === 'deepseek'
+                ? defaultCNBaseUrl(newAccount.platform, editAccountMode.value, editApiProtocol.value)
+                : newAccount.platform === 'windsurf'
                     ? WINDSURF_BASE_URL
                   : newAccount.platform === 'opencode'
                     ? OPENCODE_BASE_URL
@@ -4733,36 +4783,6 @@ const handleSubmit = async () => {
         delete newCredentials.intercept_warmup_requests
         delete newCredentials.temp_unschedulable_enabled
         delete newCredentials.temp_unschedulable_rules
-      } else if (props.account.platform === 'kimi') {
-        delete newCredentials.auth_scheme
-        delete newCredentials.base_url
-        newCredentials.base_url_anthropic =
-          editKimiAnthropicBaseUrl.value.trim() || KIMI_ANTHROPIC_BASE_URL
-        newCredentials.base_url_openai =
-          editKimiOpenAIBaseUrl.value.trim() || KIMI_OPENAI_BASE_URL
-        delete newCredentials.compact_model_mapping
-        delete newCredentials.pool_mode
-        delete newCredentials.pool_mode_retry_count
-        delete newCredentials.custom_error_codes_enabled
-        delete newCredentials.custom_error_codes
-        delete newCredentials.intercept_warmup_requests
-        delete newCredentials.temp_unschedulable_enabled
-        delete newCredentials.temp_unschedulable_rules
-      } else if (props.account.platform === 'deepseek') {
-        delete newCredentials.auth_scheme
-        delete newCredentials.base_url
-        newCredentials.base_url_anthropic =
-          editDeepSeekAnthropicBaseUrl.value.trim() || DEEPSEEK_ANTHROPIC_BASE_URL
-        newCredentials.base_url_openai =
-          editDeepSeekOpenAIBaseUrl.value.trim() || DEEPSEEK_OPENAI_BASE_URL
-        delete newCredentials.compact_model_mapping
-        delete newCredentials.pool_mode
-        delete newCredentials.pool_mode_retry_count
-        delete newCredentials.custom_error_codes_enabled
-        delete newCredentials.custom_error_codes
-        delete newCredentials.intercept_warmup_requests
-        delete newCredentials.temp_unschedulable_enabled
-        delete newCredentials.temp_unschedulable_rules
       } else if (props.account.platform === 'windsurf') {
         delete newCredentials.auth_scheme
         delete newCredentials.base_url_anthropic
@@ -4791,6 +4811,14 @@ const handleSubmit = async () => {
         delete newCredentials.temp_unschedulable_rules
       } else {
         newCredentials.base_url = editBaseUrl.value.trim() || defaultBaseUrl.value
+      }
+
+      // 国产供应商：模式与协议写入凭据（决定额度/余额探测与转发端点/格式）。
+      if (isCNApiKeyAccount.value) {
+        newCredentials.account_mode = editAccountMode.value
+        newCredentials.api_protocol = editApiProtocol.value
+        delete newCredentials.base_url_anthropic
+        delete newCredentials.base_url_openai
       }
 
       // Handle API key
@@ -5369,9 +5397,10 @@ const handleSubmit = async () => {
         }
       }
 
-      // 指纹收敛模式：默认 session，不写入；非默认值显式写入（包括 off）
+      // 指纹收敛模式：默认 off（不写入）；device/session/full 是显式 opt-in，
+      // 必须落键，否则管理员的选择会被后端当作"未设置"而回落到 off（#5610）。
       if (props.account.type === 'oauth') {
-        if (codexFingerprintMode.value !== 'session') {
+        if (codexFingerprintMode.value !== 'off') {
           newExtra.codex_fingerprint_mode = codexFingerprintMode.value
         } else {
           delete newExtra.codex_fingerprint_mode
