@@ -985,10 +985,10 @@ func resolveAccountUpstreamModel(account *Account, requestedModel string) string
 		}
 		return ""
 	}
-	switch account.Platform {
+	switch CanonicalCNPlatform(account.Platform) {
 	case PlatformMiniMax:
 		return account.GetMiniMaxMappedModel(requestedModel)
-	case PlatformGLM:
+	case PlatformZhipu:
 		return account.GetGLMMappedModel(requestedModel)
 	case PlatformKimi:
 		return account.GetKimiMappedModel(requestedModel)

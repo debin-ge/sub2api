@@ -18,9 +18,9 @@ type accountRepoStubForBulkUpdate struct {
 	accountRepoStub
 	bulkUpdateErr       error
 	bulkUpdateIDs       []int64
-	bulkUpdatePayload AccountBulkUpdate
-	bulkUpdateCalls   int
-	lastBulkUpdate    AccountBulkUpdate
+	bulkUpdatePayload   AccountBulkUpdate
+	bulkUpdateCalls     int
+	lastBulkUpdate      AccountBulkUpdate
 	bindGroupErrByID    map[int64]error
 	bindGroupsCalls     []int64
 	bindGroupsByAccount map[int64][]int64

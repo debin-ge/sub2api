@@ -177,48 +177,6 @@
           </button>
           <button
             type="button"
-            data-testid="create-platform-glm"
-            @click="form.platform = 'glm'"
-            :class="[
-              'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2.5 text-sm font-medium transition-all',
-              form.platform === 'glm'
-                ? 'bg-white text-rose-600 shadow-sm dark:bg-dark-600 dark:text-rose-400'
-                : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
-            ]"
-          >
-            <Icon name="key" size="sm" />
-            GLM
-          </button>
-          <button
-            type="button"
-            data-testid="create-platform-kimi"
-            @click="form.platform = 'kimi'"
-            :class="[
-              'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2.5 text-sm font-medium transition-all',
-              form.platform === 'kimi'
-                ? 'bg-white text-lime-700 shadow-sm dark:bg-dark-600 dark:text-lime-300'
-                : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
-            ]"
-          >
-            <Icon name="key" size="sm" />
-            Kimi
-          </button>
-          <button
-            type="button"
-            data-testid="create-platform-deepseek"
-            @click="form.platform = 'deepseek'"
-            :class="[
-              'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2.5 text-sm font-medium transition-all',
-              form.platform === 'deepseek'
-                ? 'bg-white text-indigo-700 shadow-sm dark:bg-dark-600 dark:text-indigo-300'
-                : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
-            ]"
-          >
-            <Icon name="key" size="sm" />
-            DeepSeek
-          </button>
-          <button
-            type="button"
             data-testid="create-platform-windsurf"
             @click="form.platform = 'windsurf'"
             :class="[
@@ -250,6 +208,7 @@
         <div class="mt-2 flex flex-wrap rounded-lg bg-gray-100 p-1 dark:bg-dark-700">
           <button
             type="button"
+            data-testid="create-platform-kimi"
             @click="selectCNPlatform('kimi')"
             :class="[
               'flex flex-1 items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium transition-all',
@@ -263,6 +222,7 @@
           </button>
           <button
             type="button"
+            data-testid="create-platform-zhipu"
             @click="selectCNPlatform('zhipu')"
             :class="[
               'flex flex-1 items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium transition-all',
@@ -276,6 +236,7 @@
           </button>
           <button
             type="button"
+            data-testid="create-platform-deepseek"
             @click="selectCNPlatform('deepseek')"
             :class="[
               'flex flex-1 items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium transition-all',
@@ -1455,6 +1416,7 @@
           <label class="input-label">{{ t('admin.accounts.baseUrl') }}</label>
           <input
             v-model="apiKeyBaseUrl"
+            :data-testid="isCNPlatform ? 'cn-base-url' : 'api-key-base-url'"
             type="text"
             class="input"
             :placeholder="apiKeyBaseUrlPlaceholder"
@@ -1479,6 +1441,7 @@
           <label class="input-label">{{ t('admin.accounts.apiKeyRequired') }}</label>
           <input
             v-model="apiKeyValue"
+            :data-testid="isCNPlatform ? 'cn-api-key' : 'api-key-value'"
             type="password"
             required
             class="input font-mono"

@@ -78,3 +78,15 @@ func TestResolveAccountUpstreamModelUsesDomesticProviderAlias(t *testing.T) {
 		t.Fatalf("resolveAccountUpstreamModel(deepseek-chat) = %q", got)
 	}
 }
+
+func TestResolveAccountUpstreamModelZhipuUsesGLMAlias(t *testing.T) {
+	for _, platform := range []string{PlatformZhipu, PlatformGLM} {
+		acc := &Account{Platform: platform}
+		if got := resolveAccountUpstreamModel(acc, "claude-sonnet-4-5"); got != "GLM-5.1" {
+			t.Fatalf("resolveAccountUpstreamModel(%q, claude-sonnet-4-5) = %q, want GLM-5.1", platform, got)
+		}
+		if !acc.IsGLMModelSupported("claude-sonnet-4-5") {
+			t.Fatalf("IsGLMModelSupported(%q) = false, want true", platform)
+		}
+	}
+}

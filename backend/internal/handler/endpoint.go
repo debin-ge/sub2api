@@ -145,7 +145,7 @@ func isBareOrSubpathOf(path, root string) bool {
 func DeriveUpstreamEndpoint(inbound, rawRequestPath, platform string) string {
 	inbound = strings.TrimSpace(inbound)
 
-	switch platform {
+	switch service.CanonicalCNPlatform(platform) {
 	case service.PlatformOpenAI, service.PlatformGrok:
 		if inbound == EndpointEmbeddings || inbound == EndpointAlphaSearch || inbound == EndpointImagesGenerations || inbound == EndpointImagesEdits || inbound == EndpointVideosGenerations || inbound == EndpointVideosEdits || inbound == EndpointVideosExtensions || inbound == EndpointVideos {
 			return inbound
@@ -180,7 +180,7 @@ func DeriveUpstreamEndpoint(inbound, rawRequestPath, platform string) string {
 			return inbound
 		}
 
-	case service.PlatformGLM:
+	case service.PlatformZhipu:
 		switch inbound {
 		case EndpointMessages, EndpointChatCompletions:
 			return inbound
@@ -329,8 +329,8 @@ func isResponsesRootPath(path string) bool {
 }
 
 func providerResponsesBridgeEndpoint(platform string) (string, bool) {
-	switch platform {
-	case service.PlatformMiniMax, service.PlatformGLM, service.PlatformKimi:
+	switch service.CanonicalCNPlatform(platform) {
+	case service.PlatformMiniMax, service.PlatformZhipu, service.PlatformKimi:
 		return EndpointMessages, true
 	case service.PlatformDeepSeek, service.PlatformWindsurf:
 		return EndpointChatCompletions, true

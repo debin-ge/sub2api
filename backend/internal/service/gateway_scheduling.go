@@ -2623,10 +2623,10 @@ func (s *GatewayService) isModelSupportedByAccount(account *Account, requestedMo
 	if account == nil {
 		return false
 	}
-	switch account.Platform {
+	switch CanonicalCNPlatform(account.Platform) {
 	case PlatformMiniMax:
 		return account.IsMiniMaxModelSupported(requestedModel)
-	case PlatformGLM:
+	case PlatformZhipu:
 		return account.IsGLMModelSupported(requestedModel)
 	case PlatformKimi:
 		return account.IsKimiModelSupported(requestedModel)

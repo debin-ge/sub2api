@@ -66,7 +66,7 @@ func TestSchedulerHasAllCanonicalPlatformBuckets(t *testing.T) {
 			PlatformAntigravity,
 			PlatformGrok,
 			PlatformMiniMax,
-			PlatformGLM,
+			PlatformZhipu,
 			PlatformKimi,
 			PlatformDeepSeek,
 			PlatformWindsurf,

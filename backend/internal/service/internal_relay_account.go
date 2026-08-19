@@ -11,8 +11,8 @@ import (
 // compatibility endpoints must point both endpoints at loopback before the
 // account can be enabled as an internal relay.
 func internalRelayBaseURLCredentialKeys(platform string) []string {
-	switch strings.TrimSpace(platform) {
-	case PlatformMiniMax, PlatformGLM, PlatformKimi, PlatformDeepSeek:
+	switch CanonicalCNPlatform(strings.TrimSpace(platform)) {
+	case PlatformMiniMax, PlatformZhipu, PlatformKimi, PlatformDeepSeek:
 		return []string{"base_url_anthropic", "base_url_openai"}
 	default:
 		return []string{"base_url"}

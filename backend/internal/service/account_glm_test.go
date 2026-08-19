@@ -80,6 +80,35 @@ func TestAccountGLMHelpersDefaultEndpoints(t *testing.T) {
 	}
 }
 
+func TestZhipuOpenAIBaseURLFollowsAccountMode(t *testing.T) {
+	payg := &Account{
+		Platform:    PlatformZhipu,
+		Type:        AccountTypeAPIKey,
+		Credentials: map[string]any{"api_key": "sk-zhipu"},
+	}
+	if got := payg.GetOpenAIBaseURL(); got != DefaultZhipuPayGBaseURL {
+		t.Fatalf("zhipu payg default = %q, want %q", got, DefaultZhipuPayGBaseURL)
+	}
+	if got := payg.GetGLMOpenAIBaseURL(); got != DefaultZhipuPayGBaseURL {
+		t.Fatalf("GetGLMOpenAIBaseURL payg default = %q, want %q", got, DefaultZhipuPayGBaseURL)
+	}
+
+	coding := &Account{
+		Platform: PlatformZhipu,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key":      "sk-zhipu",
+			"account_mode": AccountModeCoding,
+		},
+	}
+	if got := coding.GetOpenAIBaseURL(); got != DefaultZhipuCodingBaseURL {
+		t.Fatalf("zhipu coding default = %q, want %q", got, DefaultZhipuCodingBaseURL)
+	}
+	if got := coding.GetGLMOpenAIBaseURL(); got != DefaultZhipuCodingBaseURL {
+		t.Fatalf("GetGLMOpenAIBaseURL coding default = %q, want %q", got, DefaultZhipuCodingBaseURL)
+	}
+}
+
 func TestAccountGLMModelMappingHonorsExplicitMappings(t *testing.T) {
 	acc := &Account{
 		Platform: PlatformGLM,

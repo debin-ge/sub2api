@@ -170,6 +170,20 @@ func TestDeriveUpstreamEndpoint(t *testing.T) {
 			want:     EndpointResponses,
 		},
 		{
+			name:     "zhipu compact normalizes to responses",
+			inbound:  EndpointResponsesCompact,
+			rawPath:  "/v1/responses/compact",
+			platform: service.PlatformZhipu,
+			want:     EndpointResponses,
+		},
+		{
+			name:     "glm compact still normalizes after CanonicalCNPlatform",
+			inbound:  EndpointResponsesCompact,
+			rawPath:  "/v1/responses/compact",
+			platform: service.PlatformGLM,
+			want:     EndpointResponses,
+		},
+		{
 			name:     "kimi messages",
 			inbound:  EndpointMessages,
 			rawPath:  "/v1/messages",
@@ -403,6 +417,7 @@ func TestGetUpstreamEndpoint_ProviderResponsesRootPOSTUsesPlannedBridge(t *testi
 	}{
 		{service.PlatformMiniMax, EndpointMessages},
 		{service.PlatformGLM, EndpointMessages},
+		{service.PlatformZhipu, EndpointMessages},
 		{service.PlatformKimi, EndpointMessages},
 		{service.PlatformDeepSeek, EndpointChatCompletions},
 		{service.PlatformWindsurf, EndpointChatCompletions},
@@ -425,6 +440,7 @@ func TestGetUpstreamEndpoint_ProviderResponsesSubpathPOSTRemainsResponses(t *tes
 	platforms := []string{
 		service.PlatformMiniMax,
 		service.PlatformGLM,
+		service.PlatformZhipu,
 		service.PlatformKimi,
 		service.PlatformDeepSeek,
 		service.PlatformWindsurf,
@@ -447,6 +463,7 @@ func TestGetUpstreamEndpoint_ProviderResponsesGETRemainsResponses(t *testing.T) 
 	platforms := []string{
 		service.PlatformMiniMax,
 		service.PlatformGLM,
+		service.PlatformZhipu,
 		service.PlatformKimi,
 		service.PlatformDeepSeek,
 		service.PlatformWindsurf,

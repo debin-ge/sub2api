@@ -100,7 +100,7 @@ const ModelWhitelistSelectorStub = defineComponent({
       <button
         type="button"
         data-testid="select-models"
-        @click="$emit('update:modelValue', platform === 'glm' ? ['GLM-4.7'] : platform === 'kimi' ? ['kimi-for-coding'] : platform === 'deepseek' ? ['deepseek-v4-pro'] : platform === 'windsurf' ? ['claude-sonnet-4.6'] : platform === 'opencode' ? ['opencode/gpt5-nano'] : ['gpt-5.2'])"
+        @click="$emit('update:modelValue', platform === 'zhipu' || platform === 'glm' ? ['GLM-4.7'] : platform === 'kimi' ? ['kimi-for-coding'] : platform === 'deepseek' ? ['deepseek-v4-pro'] : platform === 'windsurf' ? ['claude-sonnet-4.6'] : platform === 'opencode' ? ['opencode/gpt5-nano'] : ['gpt-5.2'])"
       >
         select
       </button>
@@ -282,31 +282,27 @@ describe('CreateAccountModal', () => {
     expect(checkMixedChannelRiskMock).not.toHaveBeenCalled()
   })
 
-  it('submits GLM API key credentials with editable base URLs', async () => {
+  it('submits Zhipu API key credentials with account mode and a single base URL', async () => {
     createAccountMock.mockReset()
     checkMixedChannelRiskMock.mockReset()
     createAccountMock.mockResolvedValue({ id: 2 })
 
     const wrapper = mountModal()
 
-    expect(wrapper.find('[data-testid="create-platform-glm"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="create-platform-glm"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="create-platform-zhipu"]').exists()).toBe(true)
 
-	    await wrapper.get('[data-tour="account-form-name"]').setValue('GLM Coding')
-	    await wrapper.get('[data-testid="create-platform-glm"]').trigger('click')
-	    expect(wrapper.text()).toContain('admin.accounts.glm.apiKeyHint')
-	    expect(wrapper.text()).not.toContain('admin.accounts.apiKeyHint')
-	    expect(wrapper.find('[data-testid="glm-anthropic-base-url"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="glm-openai-base-url"]').exists()).toBe(true)
+    await wrapper.get('[data-tour="account-form-name"]').setValue('Zhipu PayG')
+    await wrapper.get('[data-testid="create-platform-zhipu"]').trigger('click')
+    expect(wrapper.text()).toContain('admin.accounts.apiKeyHint')
+    expect(wrapper.find('[data-testid="cn-base-url"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="cn-api-key"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="glm-anthropic-base-url"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="model-whitelist-selector"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="model-whitelist-platform"]').text()).toBe('glm')
-    expect(wrapper.find('[data-testid="quota-limit-card"]').exists()).toBe(false)
-    expect(wrapper.text()).not.toContain('admin.accounts.poolMode')
-    expect(wrapper.text()).not.toContain('admin.accounts.customErrorCodes')
-    expect(wrapper.text()).not.toContain('admin.accounts.tempUnschedulable.title')
+    expect(wrapper.get('[data-testid="model-whitelist-platform"]').text()).toBe('zhipu')
 
-    await wrapper.get('[data-testid="glm-api-key"]').setValue('sk-glm-test')
-    await wrapper.get('[data-testid="glm-anthropic-base-url"]').setValue('https://custom.example/glm/anthropic')
-    await wrapper.get('[data-testid="glm-openai-base-url"]').setValue('https://custom.example/glm/openai')
+    await wrapper.get('[data-testid="cn-api-key"]').setValue('sk-zhipu-test')
+    await wrapper.get('[data-testid="cn-base-url"]').setValue('https://custom.example/zhipu')
     await wrapper.get('[data-testid="select-models"]').trigger('click')
     expect(wrapper.get('[data-testid="model-whitelist-value"]').text()).toBe('GLM-4.7')
     await wrapper.get('form#create-account-form').trigger('submit.prevent')
@@ -315,20 +311,22 @@ describe('CreateAccountModal', () => {
     expect(createAccountMock).toHaveBeenCalledTimes(1)
     const payload = createAccountMock.mock.calls[0]?.[0]
     expect(payload).toEqual(expect.objectContaining({
-      name: 'GLM Coding',
-      platform: 'glm',
+      name: 'Zhipu PayG',
+      platform: 'zhipu',
       type: 'apikey',
       credentials: expect.objectContaining({
-        api_key: 'sk-glm-test',
-        base_url_anthropic: 'https://custom.example/glm/anthropic',
-        base_url_openai: 'https://custom.example/glm/openai',
+        api_key: 'sk-zhipu-test',
+        account_mode: 'payg',
+        api_protocol: 'chat_completions',
+        base_url: 'https://custom.example/zhipu',
         model_mapping: {
           'GLM-4.7': 'GLM-4.7'
         }
       })
     }))
-    expect(Object.keys(payload.credentials).sort()).toEqual(['api_key', 'base_url_anthropic', 'base_url_openai', 'model_mapping'])
-    expect(payload.credentials.base_url).toBeUndefined()
+    expect(Object.keys(payload.credentials).sort()).toEqual(['account_mode', 'api_key', 'api_protocol', 'base_url', 'model_mapping'])
+    expect(payload.credentials.base_url_anthropic).toBeUndefined()
+    expect(payload.credentials.base_url_openai).toBeUndefined()
     expect(payload.extra?.quota_limit).toBeUndefined()
     expect(payload.extra?.quota_daily_limit).toBeUndefined()
     expect(payload.extra?.quota_weekly_limit).toBeUndefined()
@@ -349,19 +347,13 @@ describe('CreateAccountModal', () => {
     await wrapper.get('[data-tour="account-form-name"]').setValue('Kimi Coding')
     await wrapper.get('[data-testid="create-platform-kimi"]').trigger('click')
     expect(wrapper.text()).toContain('admin.accounts.kimi.apiKeyHint')
-    expect(wrapper.text()).not.toContain('admin.accounts.apiKeyHint')
-    expect(wrapper.find('[data-testid="kimi-anthropic-base-url"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="kimi-openai-base-url"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="cn-base-url"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="kimi-anthropic-base-url"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="model-whitelist-selector"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="model-whitelist-platform"]').text()).toBe('kimi')
-    expect(wrapper.find('[data-testid="quota-limit-card"]').exists()).toBe(false)
-    expect(wrapper.text()).not.toContain('admin.accounts.poolMode')
-    expect(wrapper.text()).not.toContain('admin.accounts.customErrorCodes')
-    expect(wrapper.text()).not.toContain('admin.accounts.tempUnschedulable.title')
 
-    await wrapper.get('[data-testid="kimi-api-key"]').setValue('sk-kimi-test')
-    await wrapper.get('[data-testid="kimi-anthropic-base-url"]').setValue('https://custom.example/kimi/anthropic')
-    await wrapper.get('[data-testid="kimi-openai-base-url"]').setValue('https://custom.example/kimi/openai')
+    await wrapper.get('[data-testid="cn-api-key"]').setValue('sk-kimi-test')
+    await wrapper.get('[data-testid="cn-base-url"]').setValue('https://custom.example/kimi')
     const mappingModeButton = wrapper.findAll('button').find((button) => button.text().includes('admin.accounts.modelMapping'))
     expect(mappingModeButton).toBeDefined()
     await mappingModeButton!.trigger('click')
@@ -381,15 +373,17 @@ describe('CreateAccountModal', () => {
       type: 'apikey',
       credentials: expect.objectContaining({
         api_key: 'sk-kimi-test',
-        base_url_anthropic: 'https://custom.example/kimi/anthropic',
-        base_url_openai: 'https://custom.example/kimi/openai',
+        account_mode: 'payg',
+        api_protocol: 'chat_completions',
+        base_url: 'https://custom.example/kimi',
         model_mapping: {
           'kimi-latest': 'kimi-future-model'
         }
       })
     }))
-    expect(Object.keys(payload.credentials).sort()).toEqual(['api_key', 'base_url_anthropic', 'base_url_openai', 'model_mapping'])
-    expect(payload.credentials.base_url).toBeUndefined()
+    expect(Object.keys(payload.credentials).sort()).toEqual(['account_mode', 'api_key', 'api_protocol', 'base_url', 'model_mapping'])
+    expect(payload.credentials.base_url_anthropic).toBeUndefined()
+    expect(payload.credentials.base_url_openai).toBeUndefined()
     expect(checkMixedChannelRiskMock).not.toHaveBeenCalled()
   })
 
@@ -405,19 +399,13 @@ describe('CreateAccountModal', () => {
     await wrapper.get('[data-tour="account-form-name"]').setValue('DeepSeek Gateway')
     await wrapper.get('[data-testid="create-platform-deepseek"]').trigger('click')
     expect(wrapper.text()).toContain('admin.accounts.deepseek.apiKeyHint')
-    expect(wrapper.text()).not.toContain('admin.accounts.apiKeyHint')
-    expect(wrapper.find('[data-testid="deepseek-anthropic-base-url"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="deepseek-openai-base-url"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="cn-base-url"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="deepseek-anthropic-base-url"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="model-whitelist-selector"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="model-whitelist-platform"]').text()).toBe('deepseek')
-    expect(wrapper.find('[data-testid="quota-limit-card"]').exists()).toBe(false)
-    expect(wrapper.text()).not.toContain('admin.accounts.poolMode')
-    expect(wrapper.text()).not.toContain('admin.accounts.customErrorCodes')
-    expect(wrapper.text()).not.toContain('admin.accounts.tempUnschedulable.title')
 
-    await wrapper.get('[data-testid="deepseek-api-key"]').setValue('sk-deepseek-test')
-    await wrapper.get('[data-testid="deepseek-anthropic-base-url"]').setValue('https://custom.example/deepseek/anthropic')
-    await wrapper.get('[data-testid="deepseek-openai-base-url"]').setValue('https://custom.example/deepseek/openai')
+    await wrapper.get('[data-testid="cn-api-key"]').setValue('sk-deepseek-test')
+    await wrapper.get('[data-testid="cn-base-url"]').setValue('https://custom.example/deepseek')
     const mappingModeButton = wrapper.findAll('button').find((button) => button.text().includes('admin.accounts.modelMapping'))
     expect(mappingModeButton).toBeDefined()
     await mappingModeButton!.trigger('click')
@@ -437,15 +425,17 @@ describe('CreateAccountModal', () => {
       type: 'apikey',
       credentials: expect.objectContaining({
         api_key: 'sk-deepseek-test',
-        base_url_anthropic: 'https://custom.example/deepseek/anthropic',
-        base_url_openai: 'https://custom.example/deepseek/openai',
+        account_mode: 'payg',
+        api_protocol: 'chat_completions',
+        base_url: 'https://custom.example/deepseek',
         model_mapping: {
           'deepseek-latest': 'deepseek-future-model'
         }
       })
     }))
-    expect(Object.keys(payload.credentials).sort()).toEqual(['api_key', 'base_url_anthropic', 'base_url_openai', 'model_mapping'])
-    expect(payload.credentials.base_url).toBeUndefined()
+    expect(Object.keys(payload.credentials).sort()).toEqual(['account_mode', 'api_key', 'api_protocol', 'base_url', 'model_mapping'])
+    expect(payload.credentials.base_url_anthropic).toBeUndefined()
+    expect(payload.credentials.base_url_openai).toBeUndefined()
     expect(checkMixedChannelRiskMock).not.toHaveBeenCalled()
   })
 

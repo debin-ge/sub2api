@@ -30,9 +30,9 @@ const (
 	PlatformDeepSeek = "deepseek" // DeepSeek
 	PlatformDeepseek = PlatformDeepSeek
 	// PlatformGLM 是本地历史平台 ID，运行时按 zhipu 处理。
-	PlatformGLM      = "glm"
-	PlatformWindsurf = "windsurf"
-	PlatformOpenCode = "opencode"
+	PlatformGLM       = "glm"
+	PlatformWindsurf  = "windsurf"
+	PlatformOpenCode  = "opencode"
 	PlatformComposite = "composite"
 )
 

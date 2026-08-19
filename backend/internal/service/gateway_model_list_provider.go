@@ -18,7 +18,7 @@ func NewGatewayModelListProvider(options GatewayModelListOptions) *GatewayModelL
 }
 
 func (p *GatewayModelListProvider) ModelsForProvider(platform string, accounts []Account) []string {
-	caps, ok := domesticProviderCapabilities[platform]
+	caps, ok := lookupDomesticProviderCapabilities(platform)
 	if !ok {
 		return nil
 	}
@@ -37,7 +37,7 @@ func (p *GatewayModelListProvider) ModelsForProvider(platform string, accounts [
 
 	for i := range accounts {
 		acc := accounts[i]
-		if acc.Platform != platform {
+		if CanonicalCNPlatform(acc.Platform) != CanonicalCNPlatform(platform) {
 			continue
 		}
 		for requested, upstream := range acc.GetModelMapping() {

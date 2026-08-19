@@ -101,7 +101,9 @@ func TestGetModelPricing_KnownDomesticSKUsKeepTheirPrice(t *testing.T) {
 func TestGLMBillingNormalizersFollowCapabilityRegistry(t *testing.T) {
 	require.NotEmpty(t, glmBillingCanonicalIDs)
 
-	for _, supported := range domesticProviderCapabilities[PlatformGLM].SupportedModelIDs {
+	caps, ok := GetProviderGatewayCapabilities(PlatformZhipu)
+	require.True(t, ok)
+	for _, supported := range caps.SupportedModelIDs {
 		require.Contains(t, glmBillingCanonicalIDs, strings.ToLower(supported))
 	}
 

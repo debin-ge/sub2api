@@ -103,18 +103,30 @@ describe('useModelWhitelist', () => {
     expect(models).toContain('MiniMax-M3')
   })
 
-  it('glm 模型列表仅包含 Coding Plan MVP 模型', () => {
-    const models = getModelsByPlatform('glm')
+  it('glm/zhipu 模型列表合并 Coding Plan 与智谱公开模型', () => {
+    const expected = [
+      'GLM-5.2', 'GLM-5.1', 'GLM-4.7', 'GLM-4.5-air',
+      'glm-4', 'glm-4v', 'glm-4-plus', 'glm-4-0520',
+      'glm-4-air', 'glm-4-airx', 'glm-4-long', 'glm-4-flash',
+      'glm-4v-plus', 'glm-4.5', 'glm-4.6',
+      'glm-3-turbo', 'glm-4-alltools',
+      'chatglm_turbo', 'chatglm_pro', 'chatglm_std', 'chatglm_lite',
+      'cogview-3', 'cogvideo'
+    ]
 
-    expect(models).toEqual(['GLM-5.2', 'GLM-5.1', 'GLM-4.7', 'GLM-4.5-air'])
+    expect(getModelsByPlatform('glm')).toEqual(expected)
+    expect(getModelsByPlatform('zhipu')).toEqual(expected)
   })
 
-  it('kimi 模型列表仅包含 Coding Plan 模型', () => {
+  it('kimi 模型列表包含 Moonshot 公开模型与 Coding Plan 型号', () => {
     const models = getModelsByPlatform('kimi')
 
-    expect(models).toEqual(['kimi-for-coding'])
-    expect(models).not.toContain('kimi-latest')
-    expect(models).not.toContain('claude-sonnet-4-5')
+    expect(models).toEqual([
+      'moonshot-v1-8k', 'moonshot-v1-32k', 'moonshot-v1-128k',
+      'kimi-latest',
+      'kimi-for-coding',
+      'kimi-k2'
+    ])
   })
 
   it('deepseek 模型列表仅包含 Gateway 默认模型', () => {

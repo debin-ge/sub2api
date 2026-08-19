@@ -884,7 +884,11 @@ func (s *BillingService) getFallbackPricingStrict(model string) *ModelPricing {
 var glmBillingCanonicalIDs = buildGLMBillingCanonicalIDs()
 
 func buildGLMBillingCanonicalIDs() []string {
-	supported := domesticProviderCapabilities[PlatformGLM].SupportedModelIDs
+	caps, ok := GetProviderGatewayCapabilities(PlatformZhipu)
+	if !ok {
+		return nil
+	}
+	supported := caps.SupportedModelIDs
 	ids := make([]string, 0, len(supported))
 	for _, id := range supported {
 		if trimmed := strings.ToLower(strings.TrimSpace(id)); trimmed != "" {

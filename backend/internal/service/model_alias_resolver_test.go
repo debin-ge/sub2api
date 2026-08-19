@@ -14,6 +14,7 @@ func TestResolveProviderModelAliasDomesticProviders(t *testing.T) {
 		{name: "minimax latest sonnet", platform: PlatformMiniMax, model: "claude-3-5-sonnet-latest", want: "MiniMax-M2.7", pattern: "claude-3-5-sonnet-latest"},
 		{name: "minimax haiku wildcard", platform: PlatformMiniMax, model: "claude-haiku-3-5", want: "MiniMax-M2.7-highspeed", pattern: "claude-haiku-*"},
 		{name: "glm sonnet wildcard", platform: PlatformGLM, model: "claude-sonnet-4-5", want: "GLM-5.1", pattern: "claude-sonnet-*"},
+		{name: "zhipu sonnet wildcard", platform: PlatformZhipu, model: "claude-sonnet-4-5", want: "GLM-5.1", pattern: "claude-sonnet-*"},
 		{name: "glm opus wildcard", platform: PlatformGLM, model: "claude-opus-4-5", want: "GLM-5.1", pattern: "claude-opus-*"},
 		{name: "glm haiku wildcard", platform: PlatformGLM, model: "claude-haiku-4-5", want: "GLM-4.5-air", pattern: "claude-haiku-*"},
 		{name: "kimi exact sonnet", platform: PlatformKimi, model: "claude-sonnet-4-5", want: "kimi-for-coding", pattern: "claude-sonnet-4-5"},

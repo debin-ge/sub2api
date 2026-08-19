@@ -9,7 +9,7 @@ import (
 func TestDefaultModelCatalogIDs_AllPlatforms(t *testing.T) {
 	platforms := []string{
 		PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity,
-		PlatformGrok, PlatformMiniMax, PlatformGLM, PlatformKimi,
+		PlatformGrok, PlatformMiniMax, PlatformZhipu, PlatformGLM, PlatformKimi,
 		PlatformDeepSeek, PlatformWindsurf, PlatformOpenCode,
 	}
 	for _, platform := range platforms {

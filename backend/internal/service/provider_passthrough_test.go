@@ -16,6 +16,10 @@ var domesticPassthroughPlatforms = []struct {
 		mappedFor: func(a *Account, m string) string { return a.GetGLMMappedModel(m) },
 	},
 	{
+		platform: PlatformZhipu, oldModel: "GLM-5.1", upstream: "GLM-5.1", newModel: "glm-6",
+		mappedFor: func(a *Account, m string) string { return a.GetGLMMappedModel(m) },
+	},
+	{
 		platform: PlatformMiniMax, oldModel: "MiniMax-M2.7", upstream: "MiniMax-M2.7", newModel: "MiniMax-M4",
 		mappedFor: func(a *Account, m string) string { return a.GetMiniMaxMappedModel(m) },
 	},

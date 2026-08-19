@@ -614,8 +614,9 @@ func TestUpstreamModelDiscoverer_DomesticCompatibleProviders(t *testing.T) {
 	}{
 		{platform: PlatformMiniMax, baseURL: "https://gateway.example/minimax/v1", wantURL: "https://gateway.example/minimax/v1/models"},
 		{platform: PlatformGLM, baseURL: "https://gateway.example/glm/v4", wantURL: "https://gateway.example/glm/v4/models"},
+		{platform: PlatformZhipu, baseURL: "https://gateway.example/zhipu/v4", wantURL: "https://gateway.example/zhipu/v4/models"},
 		{platform: PlatformKimi, baseURL: "https://gateway.example/kimi/v1", wantURL: "https://gateway.example/kimi/v1/models"},
-		{platform: PlatformDeepSeek, baseURL: "https://gateway.example/deepseek", wantURL: "https://gateway.example/deepseek/models"},
+		{platform: PlatformDeepSeek, baseURL: "https://gateway.example/deepseek", wantURL: "https://gateway.example/deepseek/v1/models"},
 	}
 
 	for _, tt := range tests {

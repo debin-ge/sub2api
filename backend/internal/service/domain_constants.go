@@ -64,9 +64,9 @@ const (
 	PlatformDeepSeek = domain.PlatformDeepSeek
 	PlatformDeepseek = domain.PlatformDeepseek
 	// PlatformGLM 兼容本地历史数据，语义上等同 PlatformZhipu。
-	PlatformGLM      = domain.PlatformGLM
-	PlatformWindsurf = domain.PlatformWindsurf
-	PlatformOpenCode = domain.PlatformOpenCode
+	PlatformGLM       = domain.PlatformGLM
+	PlatformWindsurf  = domain.PlatformWindsurf
+	PlatformOpenCode  = domain.PlatformOpenCode
 	PlatformComposite = domain.PlatformComposite
 	// PlatformKiro is retained for unsupported-platform threshold tests and legacy
 	// account rows. Scheduling-threshold evaluation never pauses kiro accounts.

@@ -320,11 +320,11 @@ func (d *UpstreamModelDiscoverer) buildDomesticCompatibleUpstreamModelsRequest(c
 	}
 
 	var apiKey, baseURL string
-	switch account.Platform {
+	switch CanonicalCNPlatform(account.Platform) {
 	case PlatformMiniMax:
 		apiKey, baseURL = account.GetMiniMaxAPIKey(), account.GetMiniMaxOpenAIBaseURL()
-	case PlatformGLM:
-		apiKey, baseURL = account.GetGLMAPIKey(), account.GetGLMOpenAIBaseURL()
+	case PlatformZhipu:
+		apiKey, baseURL = account.GetGLMAPIKey(), account.GetOpenAIBaseURL()
 	case PlatformKimi:
 		apiKey, baseURL = account.GetKimiAPIKey(), account.GetKimiOpenAIBaseURL()
 	case PlatformDeepSeek:

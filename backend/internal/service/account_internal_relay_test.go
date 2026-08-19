@@ -73,7 +73,7 @@ func TestNormalizeInternalRelayCreateExtra(t *testing.T) {
 		})
 	}
 
-	for _, platform := range []string{PlatformMiniMax, PlatformGLM, PlatformKimi, PlatformDeepSeek} {
+	for _, platform := range []string{PlatformMiniMax, PlatformGLM, PlatformZhipu, PlatformKimi, PlatformDeepSeek} {
 		t.Run("supports dual endpoints for "+platform, func(t *testing.T) {
 			extra, err := normalizeInternalRelayCreateExtra(
 				platform,

@@ -737,7 +737,6 @@ func TestGatewayRoutesGLMModelsReturnsDefaultList(t *testing.T) {
 	require.Contains(t, w.Body.String(), "GLM-4.5-air")
 }
 
-
 func TestGatewayRoutesKimiModelsReturnsDefaultList(t *testing.T) {
 	router := newGatewayRoutesTestRouterForPlatform(service.PlatformKimi)
 

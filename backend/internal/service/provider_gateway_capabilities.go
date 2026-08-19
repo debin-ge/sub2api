@@ -138,19 +138,6 @@ var domesticProviderCapabilities = map[string]ProviderGatewayCapabilities{
 			{AliasPattern: "claude-haiku-*", TargetModel: "MiniMax-M2.7-highspeed"},
 		},
 	},
-	PlatformGLM: {
-		Platform:                   PlatformGLM,
-		DefaultModelIDs:            []string{"GLM-5.2", "GLM-5.1", "GLM-4.7", "GLM-4.5-air"},
-		PublicModelIDs:             []string{"GLM-5.2", "GLM-5.1", "GLM-4.7", "GLM-4.5-air"},
-		SupportedModelIDs:          []string{"GLM-5.2", "GLM-5.1", "GLM-4.7", "GLM-4.5-air"},
-		AllowUnknownModels:         true,
-		SupportsLiveModelDiscovery: true,
-		AliasRules: []ModelAliasRule{
-			{AliasPattern: "claude-sonnet-*", TargetModel: "GLM-5.1"},
-			{AliasPattern: "claude-opus-*", TargetModel: "GLM-5.1"},
-			{AliasPattern: "claude-haiku-*", TargetModel: "GLM-4.5-air"},
-		},
-	},
 	PlatformZhipu: {
 		Platform:                   PlatformZhipu,
 		DefaultModelIDs:            []string{"GLM-5.2", "GLM-5.1", "GLM-4.7", "GLM-4.5-air"},
@@ -214,10 +201,7 @@ func lookupDomesticProviderCapabilities(platform string) (ProviderGatewayCapabil
 		return caps, true
 	}
 	if CanonicalCNPlatform(platform) == PlatformZhipu {
-		if caps, ok := domesticProviderCapabilities[PlatformZhipu]; ok {
-			return caps, true
-		}
-		caps, ok := domesticProviderCapabilities[PlatformGLM]
+		caps, ok := domesticProviderCapabilities[PlatformZhipu]
 		return caps, ok
 	}
 	return ProviderGatewayCapabilities{}, false

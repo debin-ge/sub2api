@@ -34,7 +34,7 @@ var modelCatalogPlatforms = [...]string{
 	PlatformAntigravity,
 	PlatformGrok,
 	PlatformMiniMax,
-	PlatformGLM,
+	PlatformZhipu,
 	PlatformKimi,
 	PlatformDeepSeek,
 	PlatformWindsurf,
@@ -161,7 +161,7 @@ func recordModelCatalogFallback(platform, reason string) {
 }
 
 func normalizeModelCatalogStatsPlatform(platform string) string {
-	platform = strings.TrimSpace(platform)
+	platform = CanonicalCNPlatform(strings.TrimSpace(platform))
 	for _, known := range modelCatalogPlatforms[:len(modelCatalogPlatforms)-1] {
 		if platform == known {
 			return known

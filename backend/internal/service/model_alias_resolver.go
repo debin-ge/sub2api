@@ -26,7 +26,7 @@ func ResolveProviderModelAlias(provider, requested string) (ModelAliasResolution
 	if trimmed == "" {
 		return ModelAliasResolution{}, false
 	}
-	caps, ok := domesticProviderCapabilities[provider]
+	caps, ok := lookupDomesticProviderCapabilities(provider)
 	if !ok {
 		return ModelAliasResolution{}, false
 	}

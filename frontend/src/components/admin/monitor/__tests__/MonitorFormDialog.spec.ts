@@ -65,7 +65,7 @@ describe('MonitorFormDialog', () => {
       }
     })
 
-    const labels = wrapper.findAll('button[aria-pressed]').map((button) => button.text())
+    const labels = wrapper.findAll('button[data-testid^="monitor-provider-"]').map((button) => button.text())
 
     expect(labels).toEqual(expect.arrayContaining([
       'monitorCommon.providers.anthropic',
@@ -73,6 +73,7 @@ describe('MonitorFormDialog', () => {
       'monitorCommon.providers.gemini',
       'monitorCommon.providers.grok',
       'monitorCommon.providers.minimax',
+      'monitorCommon.providers.zhipu',
       'monitorCommon.providers.glm',
       'monitorCommon.providers.kimi',
       'monitorCommon.providers.deepseek',

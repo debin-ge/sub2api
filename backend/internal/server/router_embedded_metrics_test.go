@@ -44,7 +44,7 @@ func (*embeddedRouterSettingRepo) Delete(context.Context, string) error { return
 func TestSetupRouterEmbeddedFrontendDoesNotCaptureMetrics(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	cfg := &config.Config{Radar: config.RadarConfig{
-		MetricsBearerToken:           "test-secret",
+		MetricsBearerToken: "test-secret",
 	}}
 	cfg.Pricing.DataDir = t.TempDir()
 	cfg.Gateway.MaxBodySize = 1024 * 1024

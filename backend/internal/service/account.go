@@ -1344,7 +1344,7 @@ func (a *Account) IsMiniMaxModelSupported(requestedModel string) bool {
 // model is passed through; with a mapping, its keys become the account allow-list.
 func isFlexibleProviderModelSupported(account *Account, platform, requestedModel string) bool {
 	trimmed := strings.TrimSpace(requestedModel)
-	if account == nil || account.Platform != platform || trimmed == "" {
+	if account == nil || CanonicalCNPlatform(account.Platform) != CanonicalCNPlatform(platform) || trimmed == "" {
 		return false
 	}
 	// 透传模式仅替换认证、模型语义完全交由上游决定，因此放行所有模型。
@@ -1445,7 +1445,10 @@ func (a *Account) GetGLMOpenAIBaseURL() string {
 	if baseURL != "" {
 		return baseURL
 	}
-	return "https://open.bigmodel.cn/api/coding/paas/v4"
+	if a.GetAccountMode() == AccountModeCoding {
+		return DefaultZhipuCodingBaseURL
+	}
+	return DefaultZhipuPayGBaseURL
 }
 
 // NormalizeGLMModel 把 GLM 模型 ID 规范成 provider 能力表里登记的大小写写法
@@ -1460,7 +1463,11 @@ func NormalizeGLMModel(model string) string {
 		return trimmed
 	}
 	lower := strings.ToLower(trimmed)
-	for _, canonical := range domesticProviderCapabilities[PlatformGLM].SupportedModelIDs {
+	caps, ok := lookupDomesticProviderCapabilities(PlatformZhipu)
+	if !ok {
+		return trimmed
+	}
+	for _, canonical := range caps.SupportedModelIDs {
 		if strings.ToLower(canonical) == lower {
 			return canonical
 		}
@@ -1469,7 +1476,7 @@ func NormalizeGLMModel(model string) string {
 }
 
 func DefaultGLMModelIDs() []string {
-	return DefaultDomesticProviderModelIDs(PlatformGLM)
+	return DefaultDomesticProviderModelIDs(PlatformZhipu)
 }
 
 func isOfficialGLMModel(model string) bool {
@@ -1487,7 +1494,7 @@ func mapDefaultGLMModel(model string) (string, bool) {
 		return "", false
 	}
 	lower := strings.ToLower(trimmed)
-	if mapped, matched := ResolveProviderModelAlias(PlatformGLM, lower); matched {
+	if mapped, matched := ResolveProviderModelAlias(PlatformZhipu, lower); matched {
 		return mapped.UpstreamModel, true
 	}
 	normalized := NormalizeGLMModel(trimmed)
@@ -1525,7 +1532,7 @@ func (a *Account) GetGLMMappedModel(model string) string {
 
 // IsGLMModelSupported 与其余国产平台共用同一套准入语义，不再自带硬编码型号表。
 func (a *Account) IsGLMModelSupported(model string) bool {
-	return isFlexibleProviderModelSupported(a, PlatformGLM, model)
+	return isFlexibleProviderModelSupported(a, PlatformZhipu, model)
 }
 
 func (a *Account) IsKimiCode() bool {
@@ -2601,7 +2608,7 @@ func (a *Account) IsProviderPassthroughEnabled() bool {
 	if a == nil || a.Extra == nil {
 		return false
 	}
-	if _, ok := domesticProviderCapabilities[a.Platform]; !ok {
+	if _, ok := lookupDomesticProviderCapabilities(a.Platform); !ok {
 		return false
 	}
 	enabled, ok := a.Extra["provider_passthrough"].(bool)

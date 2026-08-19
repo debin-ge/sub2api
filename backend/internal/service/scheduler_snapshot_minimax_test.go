@@ -28,7 +28,7 @@ func TestMiniMaxSchedulingDefaultBucketsIncludePlatform(t *testing.T) {
 	}
 }
 
-func TestGLMSchedulingDefaultBucketsIncludePlatform(t *testing.T) {
+func TestZhipuSchedulingDefaultBucketsIncludePlatform(t *testing.T) {
 	svc := &SchedulerSnapshotService{
 		cfg: &config.Config{RunMode: config.RunModeSimple},
 	}
@@ -38,14 +38,17 @@ func TestGLMSchedulingDefaultBucketsIncludePlatform(t *testing.T) {
 		t.Fatalf("defaultBuckets error = %v", err)
 	}
 
-	if !schedulerBucketExists(buckets, SchedulerBucket{GroupID: 0, Platform: PlatformGLM, Mode: SchedulerModeSingle}) {
-		t.Fatalf("expected GLM single scheduler bucket, got %+v", buckets)
+	if !schedulerBucketExists(buckets, SchedulerBucket{GroupID: 0, Platform: PlatformZhipu, Mode: SchedulerModeSingle}) {
+		t.Fatalf("expected zhipu single scheduler bucket, got %+v", buckets)
 	}
-	if !schedulerBucketExists(buckets, SchedulerBucket{GroupID: 0, Platform: PlatformGLM, Mode: SchedulerModeForced}) {
-		t.Fatalf("expected GLM forced scheduler bucket, got %+v", buckets)
+	if !schedulerBucketExists(buckets, SchedulerBucket{GroupID: 0, Platform: PlatformZhipu, Mode: SchedulerModeForced}) {
+		t.Fatalf("expected zhipu forced scheduler bucket, got %+v", buckets)
 	}
-	if schedulerBucketExists(buckets, SchedulerBucket{GroupID: 0, Platform: PlatformGLM, Mode: SchedulerModeMixed}) {
-		t.Fatalf("GLM must not use mixed scheduler bucket")
+	if schedulerBucketExists(buckets, SchedulerBucket{GroupID: 0, Platform: PlatformZhipu, Mode: SchedulerModeMixed}) {
+		t.Fatalf("zhipu must not use mixed scheduler bucket")
+	}
+	if schedulerBucketExists(buckets, SchedulerBucket{GroupID: 0, Platform: PlatformGLM, Mode: SchedulerModeSingle}) {
+		t.Fatalf("legacy glm must not keep a separate scheduler bucket")
 	}
 }
 

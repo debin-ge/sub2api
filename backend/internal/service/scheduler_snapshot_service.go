@@ -832,7 +832,7 @@ func schedulerSnapshotPlatforms() []string {
 		PlatformAntigravity,
 		PlatformGrok,
 		PlatformMiniMax,
-		PlatformGLM,
+		PlatformZhipu,
 		PlatformKimi,
 		PlatformDeepSeek,
 		PlatformWindsurf,

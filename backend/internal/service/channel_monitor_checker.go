@@ -168,9 +168,9 @@ type providerAdapter struct {
 //
 //nolint:gochecknoglobals // 适配器表是只读静态数据，初始化后不变更。
 var providerAdapters = map[string]providerAdapter{
-	MonitorProviderOpenAI:    providerOpenAIChatAdapter,
-	MonitorProviderGrok:      providerGrokChatAdapter,
-	MonitorProviderZhipu:     providerZhipuChatAdapter,
+	MonitorProviderOpenAI: providerOpenAIChatAdapter,
+	MonitorProviderGrok:   providerGrokChatAdapter,
+	MonitorProviderZhipu:  providerZhipuChatAdapter,
 	MonitorProviderAnthropic: {
 		buildPath: func(string) string { return providerAnthropicPath },
 		buildBody: func(model, prompt string) ([]byte, error) {

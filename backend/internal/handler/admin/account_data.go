@@ -702,13 +702,13 @@ func validateDataAccount(item DataAccount) error {
 			return errors.New("minimax account api_key is required")
 		}
 	}
-	if item.Platform == service.PlatformGLM {
+	if service.CanonicalCNPlatform(item.Platform) == service.PlatformZhipu {
 		if item.Type != service.AccountTypeAPIKey {
-			return errors.New("glm account type must be apikey")
+			return errors.New("zhipu account type must be apikey")
 		}
 		apiKey, _ := item.Credentials["api_key"].(string)
 		if strings.TrimSpace(apiKey) == "" {
-			return errors.New("glm account api_key is required")
+			return errors.New("zhipu account api_key is required")
 		}
 	}
 	if item.Platform == service.PlatformKimi {

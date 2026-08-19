@@ -212,6 +212,16 @@ func TestAccountHandlerGetAvailableModels_DomesticPlatformsDoNotFallBackToClaude
 			wantForbidden: "claude-fable-5",
 		},
 		{
+			name:     "zhipu",
+			platform: service.PlatformZhipu,
+			credentials: map[string]any{
+				"model_mapping": map[string]any{"glm-4.5-air": "GLM-4.5-air"},
+			},
+			catalogModels: []string{"glm-4.5-air"},
+			wantContains:  "GLM-4.5-air",
+			wantForbidden: "claude-fable-5",
+		},
+		{
 			name:          "kimi",
 			platform:      service.PlatformKimi,
 			wantContains:  "kimi-for-coding",

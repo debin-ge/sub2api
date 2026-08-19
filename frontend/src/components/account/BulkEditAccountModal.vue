@@ -1632,18 +1632,18 @@ const capabilityTypes = computed<AccountType[]>(() => (
     : targetSelectedTypes.value
 ))
 const targetMayIncludeFixedEndpointGateway = computed(() => {
-  if (targetSelectedPlatforms.value.includes('glm') || targetSelectedPlatforms.value.includes('kimi') || targetSelectedPlatforms.value.includes('deepseek') || targetSelectedPlatforms.value.includes('windsurf') || targetSelectedPlatforms.value.includes('opencode')) {
+  if (targetSelectedPlatforms.value.includes('glm') || targetSelectedPlatforms.value.includes('zhipu') || targetSelectedPlatforms.value.includes('kimi') || targetSelectedPlatforms.value.includes('deepseek') || targetSelectedPlatforms.value.includes('windsurf') || targetSelectedPlatforms.value.includes('opencode')) {
     return true
   }
   if (targetMode.value !== 'filtered') {
     return false
   }
-  return filteredPlatform.value === '' || filteredPlatform.value === 'glm' || filteredPlatform.value === 'kimi' || filteredPlatform.value === 'deepseek' || filteredPlatform.value === 'windsurf' || filteredPlatform.value === 'opencode'
+  return filteredPlatform.value === '' || filteredPlatform.value === 'glm' || filteredPlatform.value === 'zhipu' || filteredPlatform.value === 'kimi' || filteredPlatform.value === 'deepseek' || filteredPlatform.value === 'windsurf' || filteredPlatform.value === 'opencode'
 })
 
 const targetIsFixedEndpointGatewayAPIKeyOnly = computed(() => (
   capabilityPlatforms.value.length === 1 &&
-  (capabilityPlatforms.value[0] === 'glm' || capabilityPlatforms.value[0] === 'kimi' || capabilityPlatforms.value[0] === 'deepseek' || capabilityPlatforms.value[0] === 'windsurf' || capabilityPlatforms.value[0] === 'opencode') &&
+  (capabilityPlatforms.value[0] === 'glm' || capabilityPlatforms.value[0] === 'zhipu' || capabilityPlatforms.value[0] === 'kimi' || capabilityPlatforms.value[0] === 'deepseek' || capabilityPlatforms.value[0] === 'windsurf' || capabilityPlatforms.value[0] === 'opencode') &&
   capabilityTypes.value.length > 0 &&
   capabilityTypes.value.every(t => t === 'apikey')
 ))
@@ -1655,7 +1655,7 @@ const allOpenAIPassthroughCapable = computed(() => {
     capabilityPlatforms.value.length === 1 &&
     capabilityPlatforms.value[0] === 'openai' &&
     capabilityTypes.value.length > 0 &&
-    capabilityTypes.value.every(t => t === 'oauth' || t === 'apikey')
+    capabilityTypes.value.every(t => t === 'oauth' || t === 'setup-token' || t === 'apikey')
   )
 })
 

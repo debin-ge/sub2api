@@ -1160,8 +1160,8 @@ func validateUpdateAccountRequest(account *service.Account, req UpdateAccountReq
 }
 
 func requiresAPIKeyAccount(platform string) bool {
-	switch platform {
-	case service.PlatformGLM, service.PlatformKimi, service.PlatformDeepSeek, service.PlatformWindsurf, service.PlatformOpenCode:
+	switch service.CanonicalCNPlatform(platform) {
+	case service.PlatformZhipu, service.PlatformKimi, service.PlatformDeepSeek, service.PlatformWindsurf, service.PlatformOpenCode:
 		return true
 	default:
 		return false
@@ -2797,7 +2797,7 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 		return
 	}
 
-	switch account.Platform {
+	switch service.CanonicalCNPlatform(account.Platform) {
 	case service.PlatformOpenAI:
 		response.Success(c, buildOpenAIAdminModels(modelIDs))
 	case service.PlatformGemini:
@@ -2806,7 +2806,7 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 		response.Success(c, buildGrokAdminModels(modelIDs))
 	case service.PlatformAntigravity:
 		response.Success(c, buildAntigravityAdminModels(modelIDs))
-	case service.PlatformGLM:
+	case service.PlatformZhipu:
 		response.Success(c, buildGLMAdminModels(modelIDs))
 	case service.PlatformKimi, service.PlatformDeepSeek, service.PlatformWindsurf, service.PlatformOpenCode:
 		response.Success(c, buildDomesticClaudeShapeAdminModels(modelIDs))
@@ -2995,8 +2995,8 @@ func (h *AccountHandler) SyncUpstreamModels(c *gin.Context) {
 	}
 	if baseURL := strings.TrimSpace(req.BaseURL); baseURL != "" {
 		syncAccount.Credentials["base_url"] = baseURL
-		switch syncAccount.Platform {
-		case service.PlatformMiniMax, service.PlatformGLM, service.PlatformKimi, service.PlatformDeepSeek:
+		switch service.CanonicalCNPlatform(syncAccount.Platform) {
+		case service.PlatformMiniMax, service.PlatformZhipu, service.PlatformKimi, service.PlatformDeepSeek:
 			syncAccount.Credentials["base_url_openai"] = baseURL
 		}
 	}

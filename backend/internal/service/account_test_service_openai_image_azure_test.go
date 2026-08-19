@@ -42,7 +42,7 @@ func TestAccountTestService_OpenAIImageAPIKeyAzure_FallbackAPIVersion(t *testing
 
 	require.Len(t, upstream.requests, 1)
 	req := upstream.requests[0]
-	// 验证降级到默认版本 2024-02-01 
+	// 验证降级到默认版本 2024-02-01
 	require.Equal(t, "https://test-images.cognitiveservices.azure.com/openai/deployments/gpt-image-2/images/generations?api-version=2024-02-01", req.URL.String())
 	require.Equal(t, "azure-image-key", req.Header.Get("api-key"))
 	require.Empty(t, req.Header.Get("Authorization"))

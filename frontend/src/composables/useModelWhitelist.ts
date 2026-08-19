@@ -590,7 +590,8 @@ export function getModelsByPlatform(platform: string): string[] {
     case 'claude': return claudeModels
     case 'gemini': return geminiModels
     case 'antigravity': return antigravityModels
-    case 'zhipu': return zhipuModels
+    case 'zhipu':
+    case 'glm': return [...glmModels, ...zhipuModels]
     case 'qwen': return qwenModels
     case 'deepseek': return deepseekGatewayModels
     case 'windsurf': return windsurfGatewayModels
@@ -605,8 +606,6 @@ export function getModelsByPlatform(platform: string): string[] {
     case 'kimi': return moonshotModels
     case 'doubao': return doubaoModels
     case 'minimax': return minimaxModels
-    case 'glm': return glmModels
-    case 'kimi': return kimiModels
     case 'baidu': return baiduModels
     case 'spark': return sparkModels
     case 'hunyuan': return hunyuanModels
@@ -621,7 +620,7 @@ export function getPresetMappingsByPlatform(platform: string) {
   if (platform === 'gemini') return geminiPresetMappings
   if (platform === 'grok' || platform === 'xai') return grokPresetMappings
   if (platform === 'minimax') return minimaxPresetMappings
-  if (platform === 'glm') return glmPresetMappings
+  if (platform === 'zhipu' || platform === 'glm') return glmPresetMappings
   if (platform === 'kimi') return kimiPresetMappings
   if (platform === 'deepseek') return deepseekPresetMappings
   if (platform === 'windsurf') return windsurfPresetMappings

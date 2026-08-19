@@ -6,8 +6,8 @@ import "testing"
 // provider_passthrough_test.go 共用。
 func isDomesticModelSupported(t *testing.T, account *Account, model string) bool {
 	t.Helper()
-	switch account.Platform {
-	case PlatformGLM:
+	switch CanonicalCNPlatform(account.Platform) {
+	case PlatformZhipu:
 		return account.IsGLMModelSupported(model)
 	case PlatformMiniMax:
 		return account.IsMiniMaxModelSupported(model)
