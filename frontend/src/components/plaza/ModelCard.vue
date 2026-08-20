@@ -1,7 +1,7 @@
 <template>
   <article
     :class="[
-      'group relative flex h-full cursor-pointer flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-md dark:border-dark-800 dark:bg-dark-900 dark:hover:border-dark-700',
+      'group relative flex h-full cursor-pointer flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 dark:border-dark-800 dark:bg-dark-900 dark:hover:border-dark-700',
     ]"
     tabindex="0"
     role="button"
@@ -12,7 +12,7 @@
     <!-- platform accent bar -->
     <div :class="['h-0.5 w-full shrink-0', platformAccentBarClass(model.platform)]" aria-hidden="true"></div>
 
-    <header class="flex items-center gap-3 border-b border-gray-100 px-4 py-3.5 dark:border-dark-800">
+    <header class="flex items-start gap-3 px-4 pb-3 pt-3.5">
       <div
         :class="[
           'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
@@ -23,24 +23,23 @@
         <PlatformIcon :platform="model.platform as GroupPlatform" size="lg" />
       </div>
       <div class="min-w-0 flex-1">
-        <h3 class="truncate text-[15px] font-semibold tracking-tight text-gray-900 dark:text-white">
+        <h3 class="truncate text-[15px] font-semibold leading-5 tracking-tight text-gray-900 dark:text-white">
           {{ model.displayName }}
         </h3>
-        <div class="mt-1.5 flex flex-wrap items-center gap-1.5">
+        <div class="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] leading-4 text-gray-500 dark:text-gray-400">
+          <span class="font-medium text-gray-600 dark:text-gray-300">{{ platformLabel(model.platform) }}</span>
+          <span class="text-gray-300 dark:text-dark-600" aria-hidden="true">·</span>
+          <span>{{ billingLabel }}</span>
           <span
-            :class="[
-              'inline-flex items-center rounded px-1.5 py-0.5 font-mono text-[9.5px] font-medium uppercase tracking-[0.1em]',
-              platformBadgeLightClass(model.platform)
-            ]"
+            v-if="hasDeepSeekTimePricing"
+            class="inline-flex items-center gap-1 rounded-full bg-sky-50 px-1.5 py-px font-medium text-sky-700 dark:bg-sky-500/10 dark:text-sky-300"
           >
-            {{ platformLabel(model.platform) }}
-          </span>
-          <span class="inline-flex items-center rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[9.5px] font-medium uppercase tracking-[0.1em] text-gray-600 dark:bg-dark-800 dark:text-gray-400">
-            {{ billingLabel }}
+            <span class="h-1 w-1 rounded-full bg-sky-500" aria-hidden="true"></span>
+            {{ t('plaza.card.deepSeekTimePricing') }}
           </span>
           <span
             v-if="hasPeakPricing"
-            class="inline-flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 font-mono text-[9.5px] font-medium uppercase tracking-[0.1em] text-amber-700 dark:bg-amber-500/15 dark:text-amber-400"
+            class="inline-flex items-center gap-1 rounded-full bg-amber-50 px-1.5 py-px font-medium text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"
           >
             <span class="h-1 w-1 rounded-full bg-amber-500" aria-hidden="true"></span>
             {{ t('plaza.card.peakPricing') }}
@@ -49,22 +48,22 @@
       </div>
     </header>
 
-    <div class="flex-1">
-      <div :class="['grid items-center gap-x-3 border-b border-gray-100 px-3 py-2 dark:border-dark-800', pricingGridClass]">
+    <div>
+      <div :class="['grid items-center gap-x-3 border-y border-gray-100 bg-gray-50/70 px-3 py-1.5 dark:border-dark-800 dark:bg-dark-800/30', pricingGridClass]">
         <div :class="pricingHeaderSpacerClass"></div>
         <div v-if="model.standardPricing" class="min-w-0 text-right">
-          <span class="inline-flex items-center rounded border border-gray-200 px-1.5 py-0.5 font-mono text-[9.5px] font-semibold uppercase tracking-[0.14em] text-gray-500 dark:border-dark-700 dark:text-gray-400">
+          <div class="text-[11px] font-semibold leading-4 text-gray-600 dark:text-gray-300">
             {{ t('plaza.price.standardLabel') }}
-          </span>
-          <div v-if="hasStandardDiscount" class="mt-1 font-mono text-[9.5px] leading-tight tabular-nums text-emerald-600 dark:text-emerald-400">
+          </div>
+          <div v-if="hasStandardDiscount" class="truncate text-[10px] leading-4 tabular-nums text-emerald-600 dark:text-emerald-400">
             {{ standardDiscountLabel }}
           </div>
         </div>
         <div v-if="model.vipPricing" class="min-w-0 text-right">
-          <span class="inline-flex items-center rounded bg-orange-500 px-1.5 py-0.5 font-mono text-[9.5px] font-semibold uppercase tracking-[0.14em] text-white">
+          <div class="text-[11px] font-semibold leading-4 text-orange-600 dark:text-orange-400">
             {{ t('plaza.price.vipLabel') }}
-          </span>
-          <div v-if="hasVipDiscount" class="mt-1 font-mono text-[9.5px] leading-tight tabular-nums text-orange-600 dark:text-orange-400">
+          </div>
+          <div v-if="hasVipDiscount" class="truncate text-[10px] leading-4 tabular-nums text-orange-500 dark:text-orange-400/90">
             {{ vipDiscountLabel }}
           </div>
         </div>
@@ -80,6 +79,7 @@
           :vip-available="model.vipPricing != null"
           :vip-value="model.vipPricing?.minPricing.input ?? null"
           :vip-billing-rate-multiplier="model.vipPricing?.minPricingRateMultipliers.input"
+          :time-schedule="model.timeSchedule"
         />
         <PriceCell
           :label="t('plaza.card.output')"
@@ -91,6 +91,7 @@
           :vip-available="model.vipPricing != null"
           :vip-value="model.vipPricing?.minPricing.output ?? null"
           :vip-billing-rate-multiplier="model.vipPricing?.minPricingRateMultipliers.output"
+          :time-schedule="model.timeSchedule"
         />
         <PriceCell
           v-if="hasCacheWrite"
@@ -103,6 +104,7 @@
           :vip-available="model.vipPricing != null"
           :vip-value="model.vipPricing?.minPricing.cacheWrite ?? null"
           :vip-billing-rate-multiplier="model.vipPricing?.minPricingRateMultipliers.cacheWrite"
+          :time-schedule="model.timeSchedule"
         />
         <PriceCell
           v-if="hasCacheRead"
@@ -115,6 +117,7 @@
           :vip-available="model.vipPricing != null"
           :vip-value="model.vipPricing?.minPricing.cacheRead ?? null"
           :vip-billing-rate-multiplier="model.vipPricing?.minPricingRateMultipliers.cacheRead"
+          :time-schedule="model.timeSchedule"
         />
         <PriceCell
           v-if="hasImageOutput"
@@ -127,6 +130,7 @@
           :vip-available="model.vipPricing != null"
           :vip-value="model.vipPricing?.minPricing.imageOutput ?? null"
           :vip-billing-rate-multiplier="model.vipPricing?.minPricingRateMultipliers.imageOutput"
+          :time-schedule="model.timeSchedule"
         />
         <PriceCell
           v-if="hasPerRequest"
@@ -143,14 +147,14 @@
       </div>
     </div>
 
-    <div class="flex items-center justify-between gap-2 border-t border-gray-100 px-4 py-3 dark:border-dark-800">
-      <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-        <span class="font-mono text-[11px] tabular-nums text-gray-400 dark:text-gray-500">
+    <div class="mt-auto flex items-center justify-between gap-2 border-t border-gray-100 px-4 py-2.5 dark:border-dark-800">
+      <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+        <span class="text-[11px] leading-4 tabular-nums text-gray-400 dark:text-gray-500">
           {{ t('plaza.card.supportedChannels', { n: model.supportedGroups.length }) }}
         </span>
         <span
           v-if="model.recentCalls > 0"
-          class="inline-flex items-center gap-1.5 font-mono text-[11px] tabular-nums text-gray-500 dark:text-gray-400"
+          class="inline-flex items-center gap-1.5 text-[11px] leading-4 tabular-nums text-gray-500 dark:text-gray-400"
         >
           <span class="relative flex h-1.5 w-1.5 shrink-0" aria-hidden="true">
             <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary-400 opacity-60"></span>
@@ -219,6 +223,9 @@ const hasVipDiscount = computed(() =>
 )
 const hasPeakPricing = computed(() =>
   props.model.supportedGroups.some((item) => hasPeakRate(item.group))
+)
+const hasDeepSeekTimePricing = computed(() =>
+  props.model.timeSchedule?.kind === 'deepseek_official'
 )
 const standardDiscountLabel = computed(() =>
   t('plaza.card.discountBadge', {

@@ -222,6 +222,9 @@ export default {
       "standardDiscountBadge": "普通约 {discount} 折",
       "vipDiscountBadge": "VIP 约 {discount} 折",
       "peakPricing": "含高峰时段价",
+      "deepSeekTimePricing": "高峰/空闲价",
+      "peakPrice": "高峰",
+      "offPeakPrice": "空闲",
       "notAvailable": "暂无",
       "recentCalls": "近 7 日 {count} 次调用"
     },
@@ -230,7 +233,7 @@ export default {
       "filtered": "{visible}/{total} 个模型"
     },
     "infoBanner": {
-      "text": "同一模型会分别展示普通公开分组和 VIP 分组中的最低可用基础价；两类价格独立计算，不会相互覆盖。高峰时段倍率会在详情中单独标注。"
+      "text": "同一模型会分别展示普通公开分组和 VIP 分组中的最低可用基础价；两类价格独立计算，不会相互覆盖。展示单价来自模型价格目录。DeepSeek 按北京时间区分高峰（09:00-12:00、14:00-18:00）与空闲（半价）。"
     },
     "modal": {
       "close": "关闭",
@@ -245,6 +248,7 @@ export default {
       "channelsCount": "{n} 个渠道",
       "tieredPricing": "分层定价",
       "basePricePeakNote": "以上分别按普通公开分组和 VIP 分组的基础倍率计算；高峰窗口内的 Token 计费还会叠加对应高峰倍率。",
+      "deepSeekTimeNote": "DeepSeek 官方价按北京时间选档：高峰 09:00-12:00、14:00-18:00，空闲价为高峰价的一半。",
       "tierRange": "{min} - {max} tokens",
       "tierRangeOpenEnded": "{min}+ tokens"
     },

@@ -5,7 +5,7 @@
         <div class="min-w-0">
           <div class="flex items-center gap-3">
             <span class="h-px w-8 bg-primary-500" aria-hidden="true"></span>
-            <span class="font-mono text-[11px] uppercase tracking-[0.22em] text-gray-400 dark:text-gray-500">
+            <span class="text-xs font-medium tracking-wide text-gray-500 dark:text-gray-400">
               {{ t('plaza.hero.eyebrow') }}
             </span>
           </div>
@@ -24,7 +24,7 @@
 
         <div class="grid shrink-0 grid-cols-3 overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-dark-800 dark:bg-dark-900">
           <div class="px-5 py-4">
-            <div class="font-mono text-[10px] uppercase tracking-[0.16em] text-gray-400 dark:text-gray-500">
+            <div class="text-xs font-medium text-gray-500 dark:text-gray-400">
               {{ t('plaza.metrics.models') }}
             </div>
             <div class="mt-1.5 font-mono text-2xl font-semibold tabular-nums tracking-tight text-gray-900 dark:text-white">
@@ -32,7 +32,7 @@
             </div>
           </div>
           <div class="border-l border-gray-200 px-5 py-4 dark:border-dark-800">
-            <div class="font-mono text-[10px] uppercase tracking-[0.16em] text-gray-400 dark:text-gray-500">
+            <div class="text-xs font-medium text-gray-500 dark:text-gray-400">
               {{ t('plaza.metrics.platforms') }}
             </div>
             <div class="mt-1.5 font-mono text-2xl font-semibold tabular-nums tracking-tight text-gray-900 dark:text-white">
@@ -40,7 +40,7 @@
             </div>
           </div>
           <div class="border-l border-gray-200 px-5 py-4 dark:border-dark-800">
-            <div class="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-gray-400 dark:text-gray-500">
+            <div class="flex items-center gap-1.5 text-xs font-medium text-gray-500 dark:text-gray-400">
               <span v-if="hasBoost" class="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden="true"></span>
               {{ t('plaza.metrics.boost') }}
             </div>

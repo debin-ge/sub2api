@@ -737,6 +737,18 @@ func (s *BillingRecoveryService) apiKeyForLog(ctx context.Context, cache map[int
 //
 // 用的是 usage_logs 自己存下来的 tokens / 倍率 / 图片尺寸 / 视频时长，不是重新去问上游：
 // 那些数字是请求当时的事实，补偿唯一要换的是价格。
+// recoveryPricingGroup 返回补偿结算用的分组。定价解析器要靠 Group 拿到平台，
+// 才能命中平台级手动覆盖价；只传 GroupID 会让补偿路径和网关路径算出不同的价。
+func recoveryPricingGroup(log *UsageLog, apiKey *APIKey) *Group {
+	if log != nil && log.Group != nil {
+		return log.Group
+	}
+	if apiKey != nil {
+		return apiKey.Group
+	}
+	return nil
+}
+
 func (s *BillingRecoveryService) recomputeCost(
 	ctx context.Context,
 	log *UsageLog,
@@ -770,9 +782,11 @@ func (s *BillingRecoveryService) recomputeCost(
 				Ctx:            ctx,
 				Model:          billingModel,
 				GroupID:        log.GroupID,
+				Group:          recoveryPricingGroup(log, apiKey),
 				RequestCount:   log.VideoCount,
 				SizeTier:       resolution,
 				RateMultiplier: multiplier,
+				PricingAt:      log.CreatedAt,
 				Resolver:       s.resolver,
 				Resolved:       resolved,
 			})
@@ -799,9 +813,11 @@ func (s *BillingRecoveryService) recomputeCost(
 				Ctx:            ctx,
 				Model:          billingModel,
 				GroupID:        log.GroupID,
+				Group:          recoveryPricingGroup(log, apiKey),
 				RequestCount:   log.ImageCount,
 				SizeTier:       sizeTier,
 				RateMultiplier: multiplier,
+				PricingAt:      log.CreatedAt,
 				Resolver:       s.resolver,
 				Resolved:       resolved,
 			})
@@ -834,6 +850,7 @@ func (s *BillingRecoveryService) recomputeCost(
 		resolved, err := resolver.ResolveStrictImageToken(ctx, PricingInput{
 			Model:   billingModel,
 			GroupID: log.GroupID,
+			Group:   recoveryPricingGroup(log, apiKey),
 		}, requireImageInput)
 		if err != nil {
 			return nil, err
@@ -843,9 +860,11 @@ func (s *BillingRecoveryService) recomputeCost(
 			Ctx:                       ctx,
 			Model:                     billingModel,
 			GroupID:                   log.GroupID,
+			Group:                     recoveryPricingGroup(log, apiKey),
 			Tokens:                    tokens,
 			RequestCount:              1,
 			RateMultiplier:            multiplier,
+			PricingAt:                 log.CreatedAt,
 			ServiceTier:               stringOrEmpty(log.ServiceTier),
 			Resolver:                  resolver,
 			Resolved:                  resolved,
@@ -856,6 +875,7 @@ func (s *BillingRecoveryService) recomputeCost(
 		resolved, err := s.resolver.ResolveStrictToken(ctx, PricingInput{
 			Model:   billingModel,
 			GroupID: log.GroupID,
+			Group:   recoveryPricingGroup(log, apiKey),
 		})
 		if err != nil {
 			return nil, err
@@ -865,10 +885,12 @@ func (s *BillingRecoveryService) recomputeCost(
 			Ctx:                       ctx,
 			Model:                     billingModel,
 			GroupID:                   log.GroupID,
+			Group:                     recoveryPricingGroup(log, apiKey),
 			Tokens:                    tokens,
 			RequestCount:              1,
 			SizeTier:                  stringOrEmpty(log.BillingTier),
 			RateMultiplier:            multiplier,
+			PricingAt:                 log.CreatedAt,
 			ServiceTier:               stringOrEmpty(log.ServiceTier),
 			Resolver:                  s.resolver,
 			Resolved:                  resolved,

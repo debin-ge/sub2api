@@ -52,6 +52,10 @@ type modelCatalogChannelRepoStub struct {
 	platforms map[int64]string
 }
 
+func (s *modelCatalogAccountRepoStub) ListSchedulableByGroupID(_ context.Context, groupID int64) ([]Account, error) {
+	return append([]Account(nil), s.byGroup[groupID]...), nil
+}
+
 func (s *modelCatalogAccountRepoStub) ListSchedulableByGroupIDAndPlatform(_ context.Context, groupID int64, platform string) ([]Account, error) {
 	accounts := s.byGroup[groupID]
 	result := make([]Account, 0, len(accounts))
@@ -709,6 +713,34 @@ func TestModelCatalogListPublicPassiveUsesCachedModelsAndExcludesExclusiveGroups
 	require.NoError(t, err)
 	require.Equal(t, []string{"gpt-5.5", "gpt-5.5-high"}, models[PlatformOpenAI])
 	require.Empty(t, discoverer.calls)
+}
+
+func TestModelCatalogListAllPassiveIncludesExclusiveGroups(t *testing.T) {
+	now := time.Date(2026, 7, 16, 0, 0, 0, 0, time.UTC)
+	groups := []Group{
+		{ID: 60, Platform: PlatformOpenAI, Status: StatusActive},
+		{ID: 61, Platform: PlatformOpenAI, Status: StatusActive, IsExclusive: true},
+	}
+	publicAccount := Account{ID: 62, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true}
+	exclusiveAccount := Account{ID: 63, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true}
+	catalog := NewModelCatalogService(
+		&modelCatalogAccountRepoStub{byGroup: map[int64][]Account{
+			60: {publicAccount},
+			61: {exclusiveAccount},
+		}},
+		&modelCatalogGroupRepoStub{groups: groups},
+		nil,
+		&recordingModelDiscoverer{models: map[int64][]string{}, errs: map[int64]error{}},
+		config.ModelCatalogConfig{RefreshIntervalSeconds: 300, RequestTimeoutSeconds: 10, StaleTTLSeconds: 86400},
+	)
+	catalog.now = func() time.Time { return now }
+	catalog.cache.storeSuccess(publicAccount.ID, []string{"gpt-5.5"}, now)
+	catalog.cache.storeSuccess(exclusiveAccount.ID, []string{"exclusive-model"}, now)
+
+	models, err := catalog.ListAllPassive(context.Background())
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"exclusive-model", "gpt-5.5"}, models[PlatformOpenAI])
 }
 
 func TestModelCatalogRequestMemoResolvesAccountOnce(t *testing.T) {

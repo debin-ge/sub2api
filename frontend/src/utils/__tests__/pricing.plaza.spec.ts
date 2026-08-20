@@ -8,7 +8,8 @@ import {
   formatDiscountFold,
   formatScaled,
   normalizePlazaMultiplier,
-  normalizePlazaRate
+  normalizePlazaRate,
+  scheduledScaledPrice
 } from '@/utils/pricing'
 
 describe('plaza pricing helpers', () => {
@@ -66,5 +67,14 @@ describe('plaza pricing helpers', () => {
   it('formats tiny positive non-zero CNY prices below the cent threshold', () => {
     expect(formatCNYMarket(0.0000000001, 6.8, 1_000_000)).toBe('<¥0.01')
     expect(formatCNYRecharged(0.0000000001, 1.5, 1_000_000)).toBe('<¥0.01')
+  })
+
+  it('scales the stored price to either schedule tier', () => {
+    // 官方兜底表存高峰价：空闲 ×0.5。
+    expect(scheduledScaledPrice(0.000003, 0.5)).toBeCloseTo(0.0000015)
+    // 价格目录 / 管理端生效价存空闲价：高峰 ×2。
+    expect(scheduledScaledPrice(0.000003, 2)).toBeCloseTo(0.000006)
+    expect(scheduledScaledPrice(null, 0.5)).toBeNull()
+    expect(scheduledScaledPrice(0.000003, undefined)).toBeNull()
   })
 })

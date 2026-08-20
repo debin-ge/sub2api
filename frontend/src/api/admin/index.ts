@@ -36,6 +36,7 @@ import adminComplianceAPI from './compliance'
 import resellerAPI from './reseller'
 import radarAdminAPI from './radar'
 import auditAPI from './audit'
+import * as modelPricesAPI from './modelPrices'
 
 /**
  * Unified admin API object for convenient access
@@ -73,7 +74,8 @@ export const adminAPI = {
   compliance: adminComplianceAPI,
   reseller: resellerAPI,
   radar: radarAdminAPI,
-  audit: auditAPI
+  audit: auditAPI,
+  modelPrices: modelPricesAPI
 }
 
 export {
@@ -109,7 +111,8 @@ export {
   adminComplianceAPI,
   resellerAPI,
   radarAdminAPI,
-  auditAPI
+  auditAPI,
+  modelPricesAPI
 }
 
 export default adminAPI

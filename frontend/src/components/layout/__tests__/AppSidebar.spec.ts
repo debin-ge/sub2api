@@ -69,3 +69,10 @@ describe('AppSidebar purchase entry', () => {
     expect(componentSource).not.toContain('canShowPurchaseCTA')
   })
 })
+
+describe('AppSidebar model prices entry', () => {
+  it('exposes an independent admin menu item instead of nesting under channels', () => {
+    expect(componentSource).toContain("{ path: '/admin/model-prices', label: t('nav.modelPrices'), icon: PriceTagIcon }")
+    expect(componentSource).not.toMatch(/channelPricing[\s\S]*model-prices[\s\S]*channelMonitor/)
+  })
+})

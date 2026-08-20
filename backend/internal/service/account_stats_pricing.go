@@ -28,6 +28,7 @@ func resolveAccountStatsCost(
 	requestCount int,
 	totalCost float64,
 	serviceTier string,
+	accountPlatform ...string,
 ) *float64 {
 	if channelService == nil || upstreamModel == "" {
 		return nil
@@ -38,6 +39,9 @@ func resolveAccountStatsCost(
 	}
 
 	platform := channelService.GetGroupPlatform(ctx, groupID)
+	if len(accountPlatform) > 0 && strings.TrimSpace(accountPlatform[0]) != "" {
+		platform = strings.TrimSpace(accountPlatform[0])
+	}
 
 	// 优先级 1：自定义规则（始终尝试）
 	if cost := tryCustomRules(channel, accountID, groupID, platform, upstreamModel, tokens, requestCount); cost != nil {
@@ -55,22 +59,26 @@ func resolveAccountStatsCost(
 
 	// 优先级 3：配置化模型价格目录默认价格
 	if billingService != nil {
-		return tryModelFilePricing(billingService, upstreamModel, tokens, serviceTier)
+		return tryModelFilePricing(billingService, upstreamModel, tokens, serviceTier, platform)
 	}
 
 	return nil
 }
 
 // tryModelFilePricing 使用模型定价文件（LiteLLM/fallback）中的价格计算费用。
-func tryModelFilePricing(billingService *BillingService, model string, tokens UsageTokens, serviceTier string) *float64 {
-	pricing, err := billingService.GetModelPricing(model)
+func tryModelFilePricing(billingService *BillingService, model string, tokens UsageTokens, serviceTier string, pricingPlatform ...string) *float64 {
+	platform := ""
+	if len(pricingPlatform) > 0 {
+		platform = pricingPlatform[0]
+	}
+	pricing, err := billingService.GetModelPricingForPlatform(platform, model)
 	if err != nil || pricing == nil {
 		return nil
 	}
 	normalizedTier := normalizeBillingServiceTier(serviceTier)
 	if normalizedTier == "priority" || normalizedTier == "flex" ||
 		billingService.shouldApplySessionLongContextPricing(tokens, pricing) {
-		breakdown, err := billingService.CalculateCostWithServiceTier(model, tokens, 1, normalizedTier)
+		breakdown, err := billingService.CalculateCostWithServiceTierForPlatform(platform, model, tokens, 1, normalizedTier)
 		if err != nil || breakdown == nil || breakdown.TotalCost <= 0 {
 			return nil
 		}
@@ -236,6 +244,7 @@ func applyAccountStatsCost(
 	upstreamModel, requestedModel string,
 	tokens UsageTokens,
 	totalCost float64,
+	accountPlatform ...string,
 ) {
 	model := upstreamModel
 	if model == "" {
@@ -251,5 +260,6 @@ func applyAccountStatsCost(
 	}
 	usageLog.AccountStatsCost = resolveAccountStatsCost(
 		ctx, cs, bs, accountID, groupID, model, tokens, requestCount, totalCost, serviceTier,
+		accountPlatform...,
 	)
 }

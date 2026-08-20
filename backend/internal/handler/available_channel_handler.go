@@ -58,6 +58,7 @@ type AvailableChannelHandler struct {
 	modelCatalog    availableChannelModelCatalog
 	modelStats      publicModelStatsProvider
 	billingFallback billingFallbackProvider
+	modelPrices     *service.PricingService
 }
 
 // NewAvailableChannelHandler 创建用户侧可用渠道 handler。
@@ -68,6 +69,7 @@ func NewAvailableChannelHandler(
 	modelCatalogService *service.ModelCatalogService,
 	modelStats publicModelStatsProvider,
 	billingFallback billingFallbackProvider,
+	modelPrices *service.PricingService,
 ) *AvailableChannelHandler {
 	var modelCatalog availableChannelModelCatalog
 	if modelCatalogService != nil {
@@ -80,6 +82,7 @@ func NewAvailableChannelHandler(
 		modelCatalog:    modelCatalog,
 		modelStats:      modelStats,
 		billingFallback: billingFallback,
+		modelPrices:     modelPrices,
 	}
 }
 
@@ -146,11 +149,12 @@ type userPricingIntervalDTO struct {
 
 // userSupportedModel 用户可见的支持模型条目。
 type userSupportedModel struct {
-	Name             string                     `json:"name"`
-	Platform         string                     `json:"platform"`
-	Pricing          *userSupportedModelPricing `json:"pricing"`
-	RecentCallCount  int64                      `json:"recent_call_count"`
-	RecentCallWindow int64                      `json:"recent_call_window_seconds"`
+	Name             string                          `json:"name"`
+	Platform         string                          `json:"platform"`
+	Pricing          *userSupportedModelPricing      `json:"pricing"`
+	RecentCallCount  int64                           `json:"recent_call_count"`
+	RecentCallWindow int64                           `json:"recent_call_window_seconds"`
+	TimeSchedule     *service.ModelPriceTimeSchedule `json:"time_schedule,omitempty"`
 }
 
 // userChannelPlatformSection 单渠道内某个平台的子视图：用户可见的分组 + 该平台
@@ -264,7 +268,7 @@ func (h *AvailableChannelHandler) ListPublic(c *gin.Context) {
 
 	c.Header("Cache-Control", "public, max-age=60, stale-while-revalidate=300")
 	out := buildPublicAvailableChannels(h.channelService, groupCatalogs, channels)
-	applyBillingFallbackToChannels(h.billingFallback, out)
+	applyPlazaModelPricesToChannels(h.modelPrices, h.billingFallback, out)
 	applyRecentCallCounts(c.Request.Context(), h.modelStats, out)
 	response.Success(c, out)
 }
@@ -292,36 +296,113 @@ func (h *AvailableChannelHandler) resolveGroupCatalogs(
 	return nil
 }
 
-// applyBillingFallbackToChannels 在 pricing catalog 补齐后再跑一遍：
-// 用 billing_service 的硬编码 fallback 补 pricing 完全为空或存在 nil 字段的模型。
-func applyBillingFallbackToChannels(
-	provider billingFallbackProvider,
+// applyPlazaModelPricesToChannels 用管理端模型价格页的生效价覆盖广场展示价
+// （目录 + 手动覆盖 + 官方兜底），并附带 DeepSeek 官方峰谷规则。
+func applyPlazaModelPricesToChannels(
+	pricing *service.PricingService,
+	official billingFallbackProvider,
 	channels []userAvailableChannel,
 ) {
-	if provider == nil || len(channels) == 0 {
+	if len(channels) == 0 {
 		return
 	}
 	for i := range channels {
 		for j := range channels[i].Platforms {
+			platform := channels[i].Platforms[j].Platform
 			models := channels[i].Platforms[j].SupportedModels
 			for k := range models {
 				name := strings.TrimSpace(models[k].Name)
 				if name == "" {
 					continue
 				}
-				mp := provider.GetFallbackPricing(name)
-				if mp == nil {
-					continue
+				modelPlatform := strings.TrimSpace(models[k].Platform)
+				if modelPlatform == "" {
+					modelPlatform = platform
 				}
-				if models[k].Pricing == nil {
-					models[k].Pricing = buildUserPricingFromModelPricing(mp)
-					continue
+				officialEntry := plazaOfficialEntry(official, name)
+				if pricing != nil {
+					entry, schedule := service.ResolvePlazaDisplayPrice(pricing, modelPlatform, name, officialEntry)
+					if entry != nil {
+						models[k].Pricing = overlayUserPricingFromModelPrice(models[k].Pricing, entry)
+					}
+					models[k].TimeSchedule = schedule
+				} else {
+					// 没有价格目录时展示价只能来自官方兜底表，表里存的是高峰价。
+					models[k].TimeSchedule = service.DeepSeekOfficialPriceTimeSchedule(modelPlatform, name, false)
 				}
-				enrichUserPricingFromModelPricing(models[k].Pricing, mp)
+				if mp := officialModelPricing(official, name); mp != nil {
+					if models[k].Pricing == nil {
+						models[k].Pricing = buildUserPricingFromModelPricing(mp)
+					} else {
+						enrichUserPricingFromModelPricing(models[k].Pricing, mp)
+					}
+				}
 			}
 			channels[i].Platforms[j].SupportedModels = models
 		}
 	}
+}
+
+func officialModelPricing(provider billingFallbackProvider, model string) *service.ModelPricing {
+	if provider == nil {
+		return nil
+	}
+	return provider.GetFallbackPricing(model)
+}
+
+func plazaOfficialEntry(provider billingFallbackProvider, model string) *service.ModelPriceEntry {
+	return service.ModelPriceEntryFromOfficial(model, officialModelPricing(provider, model))
+}
+
+func overlayUserPricingFromModelPrice(existing *userSupportedModelPricing, entry *service.ModelPriceEntry) *userSupportedModelPricing {
+	if entry == nil || !plazaModelPriceUsable(entry) {
+		return existing
+	}
+	if existing == nil {
+		existing = &userSupportedModelPricing{
+			BillingMode: string(service.BillingModeToken),
+			Intervals:   []userPricingIntervalDTO{},
+		}
+	}
+	if v := plazaTokenPrice(entry.InputCostPerToken, entry.InputPriceExplicit); v != nil {
+		existing.InputPrice = v
+	}
+	if v := plazaTokenPrice(entry.OutputCostPerToken, entry.OutputPriceExplicit); v != nil {
+		existing.OutputPrice = v
+	}
+	if v := plazaTokenPrice(entry.CacheCreationInputTokenCost, entry.CacheCreationPriceExplicit); v != nil {
+		existing.CacheWritePrice = v
+	}
+	if v := plazaTokenPrice(entry.CacheReadInputTokenCost, entry.CacheReadPriceExplicit); v != nil {
+		existing.CacheReadPrice = v
+	}
+	if v := plazaTokenPrice(entry.OutputCostPerImageToken, entry.ImageOutputPriceExplicit); v != nil {
+		existing.ImageOutputPrice = v
+	}
+	if v := plazaTokenPrice(entry.InputCostPerImageToken, entry.ImageInputPriceExplicit); v != nil {
+		existing.ImageInputPrice = v
+	}
+	return existing
+}
+
+func plazaModelPriceUsable(entry *service.ModelPriceEntry) bool {
+	if entry == nil {
+		return false
+	}
+	return entry.InputCostPerToken != 0 || entry.InputPriceExplicit ||
+		entry.OutputCostPerToken != 0 || entry.OutputPriceExplicit ||
+		entry.CacheCreationInputTokenCost != 0 || entry.CacheCreationPriceExplicit ||
+		entry.CacheReadInputTokenCost != 0 || entry.CacheReadPriceExplicit ||
+		entry.OutputCostPerImageToken != 0 || entry.ImageOutputPriceExplicit ||
+		entry.InputCostPerImageToken != 0 || entry.ImageInputPriceExplicit ||
+		entry.OutputCostPerImage != 0 || entry.OutputCostPerImageExplicit
+}
+
+func plazaTokenPrice(value float64, explicit bool) *float64 {
+	if value != 0 || explicit {
+		return nonZeroFloatPtr(value)
+	}
+	return nil
 }
 
 func buildUserPricingFromModelPricing(mp *service.ModelPricing) *userSupportedModelPricing {

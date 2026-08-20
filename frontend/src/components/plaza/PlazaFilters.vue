@@ -2,7 +2,7 @@
   <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-dark-800 dark:bg-dark-900">
     <div class="grid gap-x-4 gap-y-3 lg:grid-cols-[minmax(0,1fr)_13rem_14rem_auto] lg:items-end">
       <label>
-        <span class="mb-1.5 block font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-gray-400 dark:text-gray-500">
+        <span class="mb-1.5 block text-xs font-medium text-gray-500 dark:text-gray-400">
           {{ t('plaza.filters.search') }}
         </span>
         <span class="relative block">
@@ -25,7 +25,7 @@
       </label>
 
       <label>
-        <span class="mb-1.5 block font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-gray-400 dark:text-gray-500">
+        <span class="mb-1.5 block text-xs font-medium text-gray-500 dark:text-gray-400">
           {{ t('plaza.filters.platform') }}
         </span>
         <div class="relative">
@@ -49,7 +49,7 @@
       </label>
 
       <label>
-        <span class="mb-1.5 block font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-gray-400 dark:text-gray-500">
+        <span class="mb-1.5 block text-xs font-medium text-gray-500 dark:text-gray-400">
           {{ t('plaza.filters.sort') }}
         </span>
         <div class="relative">
@@ -68,7 +68,7 @@
         </div>
       </label>
 
-      <div class="flex h-11 items-center justify-start font-mono text-[11px] tabular-nums text-gray-400 dark:text-gray-500 lg:justify-end">
+      <div class="flex h-11 items-center justify-start text-xs tabular-nums text-gray-500 dark:text-gray-400 lg:justify-end">
         <span v-if="hasActiveFilters" class="font-medium text-primary-600 dark:text-primary-400">
           {{ t('plaza.searchBar.filtered', { visible: visibleCount, total: totalCount }) }}
         </span>

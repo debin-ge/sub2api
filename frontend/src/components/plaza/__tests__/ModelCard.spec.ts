@@ -17,6 +17,9 @@ const messages: Record<string, string> = {
   'plaza.card.standardDiscountBadge': 'Standard {percent}% of reference',
   'plaza.card.vipDiscountBadge': 'VIP {percent}% of reference',
   'plaza.card.peakPricing': 'Peak pricing applies',
+  'plaza.card.deepSeekTimePricing': 'Peak / off-peak',
+  'plaza.card.peakPrice': 'Peak',
+  'plaza.card.offPeakPrice': 'Off-peak',
   'plaza.card.notAvailable': 'N/A',
   'plaza.card.recentCalls': '{count} calls',
   'plaza.price.unitPerMillion': '/1M',
@@ -206,5 +209,95 @@ describe('ModelCard', () => {
     expect(wrapper.text()).toContain('¥8')
     expect(wrapper.text()).toContain('Standard')
     expect(wrapper.text()).toContain('VIP')
+  })
+
+  it('shows DeepSeek peak and off-peak prices from the model-price schedule', () => {
+    const deepseekModel: AggregatedModel = {
+      ...model,
+      model: 'deepseek-v4-flash',
+      displayName: 'deepseek-v4-flash',
+      platform: 'deepseek',
+      standardPricing: {
+        minPricing: {
+          input: 0.000003,
+          output: 0.000009,
+          cacheWrite: null,
+          cacheRead: 0.0000001,
+          imageOutput: null,
+          perRequest: null
+        },
+        minPricingRateMultipliers: {
+          input: 1,
+          output: 1,
+          cacheWrite: 1,
+          cacheRead: 1,
+          imageOutput: 1,
+          perRequest: 1
+        },
+        displayRateMultiplier: 1
+      },
+      // 目录价 / 管理端生效价对官方分时 SKU 存的是空闲价：高峰 ×2、空闲 ×1。
+      timeSchedule: {
+        kind: 'deepseek_official',
+        timezone: 'Asia/Shanghai',
+        peak_windows: ['09:00-12:00', '14:00-18:00'],
+        peak_multiplier: 2,
+        off_peak_multiplier: 1
+      }
+    }
+
+    const wrapper = mount(ModelCard, {
+      props: { model: deepseekModel, multiplier: 1, rate: 7.2 }
+    })
+
+    expect(wrapper.text()).toContain('Peak / off-peak')
+    expect(wrapper.text()).toContain('Peak')
+    expect(wrapper.text()).toContain('Off-peak')
+    // 原价行按「高峰 / 空闲」顺序渲染，倍率接反会变成 "$3 / $6"。
+    expect(wrapper.text()).toContain('$6 / $3')
+    expect(wrapper.text()).toContain('$18 / $9')
+  })
+
+  it('halves the price for schedules whose base price is the peak tier', () => {
+    // 价格目录缺该 SKU 时生效价来自代码内官方兜底表，那份存的是高峰价。
+    const deepseekModel: AggregatedModel = {
+      ...model,
+      model: 'deepseek-v4-pro',
+      displayName: 'deepseek-v4-pro',
+      platform: 'deepseek',
+      standardPricing: {
+        minPricing: {
+          input: 0.000003,
+          output: 0.000009,
+          cacheWrite: null,
+          cacheRead: 0.0000001,
+          imageOutput: null,
+          perRequest: null
+        },
+        minPricingRateMultipliers: {
+          input: 1,
+          output: 1,
+          cacheWrite: 1,
+          cacheRead: 1,
+          imageOutput: 1,
+          perRequest: 1
+        },
+        displayRateMultiplier: 1
+      },
+      timeSchedule: {
+        kind: 'deepseek_official',
+        timezone: 'Asia/Shanghai',
+        peak_windows: ['09:00-12:00', '14:00-18:00'],
+        peak_multiplier: 1,
+        off_peak_multiplier: 0.5
+      }
+    }
+
+    const wrapper = mount(ModelCard, {
+      props: { model: deepseekModel, multiplier: 1, rate: 7.2 }
+    })
+
+    expect(wrapper.text()).toContain('$3 / $1.5')
+    expect(wrapper.text()).toContain('$9 / $4.5')
   })
 })

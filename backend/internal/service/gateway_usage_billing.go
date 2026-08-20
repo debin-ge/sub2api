@@ -1260,6 +1260,7 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 				ImageOutputTokens:   result.Usage.ImageOutputTokens,
 			},
 			cost.TotalCost,
+			account.Platform,
 		)
 	}
 
@@ -1684,9 +1685,12 @@ func (s *GatewayService) calculateTokenCost(
 			)
 		}
 		gid := apiKey.Group.ID
+		// Group 必须传：解析器要靠它拿到平台，才能命中平台级手动覆盖价。
+		// 漏传会让同一模型走 /v1/messages 与 /v1/chat/completions 扣费不一致。
 		strictResolved, err := s.resolver.ResolveStrictToken(ctx, PricingInput{
 			Model:   billingModel,
 			GroupID: &gid,
+			Group:   apiKey.Group,
 		})
 		if err != nil {
 			return nil, err
@@ -1723,6 +1727,11 @@ func (s *GatewayService) calculateTokenCost(
 	)
 	if err != nil {
 		return nil, err
+	}
+	// 峰谷倍率只作用在官方报价上；基准价是空闲档还是高峰档由 pricing 自己带着。
+	if officialTimePricingApplies(pricing) {
+		applyCostBreakdownMultiplier(cost, deepSeekOfficialTimeMultiplier(
+			"", billingModel, pricingAt, pricing.OfficialTimeBaseIsOffPeak))
 	}
 	cost.BillingMode = string(BillingModeToken)
 	return cost, nil

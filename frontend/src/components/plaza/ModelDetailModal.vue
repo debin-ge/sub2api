@@ -40,6 +40,12 @@
                   {{ billingLabel }}
                 </span>
                 <span
+                  v-if="hasDeepSeekTimePricing"
+                  class="inline-flex items-center rounded-md bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700 dark:bg-sky-900/30 dark:text-sky-300"
+                >
+                  {{ t('plaza.card.deepSeekTimePricing') }}
+                </span>
+                <span
                   v-if="hasPeakPricing"
                   class="inline-flex items-center rounded-md bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
                 >
@@ -109,6 +115,7 @@
                   :vip-available="model.vipPricing != null"
                   :vip-value="model.vipPricing?.minPricing.input ?? null"
                   :vip-billing-rate-multiplier="model.vipPricing?.minPricingRateMultipliers.input"
+                  :time-schedule="model.timeSchedule"
                 />
                 <PriceCell
                   :label="t('plaza.modal.output')"
@@ -120,6 +127,7 @@
                   :vip-available="model.vipPricing != null"
                   :vip-value="model.vipPricing?.minPricing.output ?? null"
                   :vip-billing-rate-multiplier="model.vipPricing?.minPricingRateMultipliers.output"
+                  :time-schedule="model.timeSchedule"
                 />
                 <PriceCell
                   :label="t('plaza.modal.cacheWrite')"
@@ -131,6 +139,7 @@
                   :vip-available="model.vipPricing != null"
                   :vip-value="model.vipPricing?.minPricing.cacheWrite ?? null"
                   :vip-billing-rate-multiplier="model.vipPricing?.minPricingRateMultipliers.cacheWrite"
+                  :time-schedule="model.timeSchedule"
                 />
                 <PriceCell
                   :label="t('plaza.modal.cacheRead')"
@@ -142,6 +151,7 @@
                   :vip-available="model.vipPricing != null"
                   :vip-value="model.vipPricing?.minPricing.cacheRead ?? null"
                   :vip-billing-rate-multiplier="model.vipPricing?.minPricingRateMultipliers.cacheRead"
+                  :time-schedule="model.timeSchedule"
                 />
                 <PriceCell
                   :label="t('plaza.modal.imageOutput')"
@@ -153,6 +163,7 @@
                   :vip-available="model.vipPricing != null"
                   :vip-value="model.vipPricing?.minPricing.imageOutput ?? null"
                   :vip-billing-rate-multiplier="model.vipPricing?.minPricingRateMultipliers.imageOutput"
+                  :time-schedule="model.timeSchedule"
                 />
                 <PriceCell
                   :label="t('plaza.modal.perRequest')"
@@ -167,6 +178,9 @@
                 />
               </div>
             </div>
+            <p v-if="hasDeepSeekTimePricing" class="mt-3 text-xs text-sky-700 dark:text-sky-300">
+              {{ t('plaza.modal.deepSeekTimeNote') }}
+            </p>
             <p v-if="hasPeakPricing" class="mt-3 text-xs text-amber-700 dark:text-amber-300">
               {{ t('plaza.modal.basePricePeakNote') }}
             </p>
@@ -414,6 +428,9 @@ const hasVipDiscount = computed(() =>
 )
 const hasPeakPricing = computed(() =>
   props.model?.supportedGroups.some((item) => hasPeakRate(item.group)) === true
+)
+const hasDeepSeekTimePricing = computed(() =>
+  props.model?.timeSchedule?.kind === 'deepseek_official'
 )
 const serverTimezone = computed(() => serverTimezoneLabel(props.serverUtcOffset))
 const standardDiscountLabel = computed(() =>

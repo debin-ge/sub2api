@@ -59,12 +59,26 @@ export interface UserSupportedModelPricing {
   intervals: UserPricingInterval[]
 }
 
+/**
+ * 官方分时定价规则。两个倍率都是相对同一条响应里随行的那份价：价格目录 /
+ * 管理端生效价存的是空闲价（peak=2、off_peak=1），代码内官方兜底表存的是
+ * 高峰价（peak=1、off_peak=0.5）。展示侧一律用倍率换算，不要假设基准是哪一档。
+ */
+export interface ModelPriceTimeSchedule {
+  kind: string
+  timezone: string
+  peak_windows: string[]
+  peak_multiplier: number
+  off_peak_multiplier: number
+}
+
 export interface UserSupportedModel {
   name: string
   platform: string
   pricing: UserSupportedModelPricing | null
   recent_call_count?: number
   recent_call_window_seconds?: number
+  time_schedule?: ModelPriceTimeSchedule
 }
 
 /**

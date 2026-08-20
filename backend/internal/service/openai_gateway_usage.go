@@ -515,6 +515,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		applyAccountStatsCost(ctx, usageLog, s.channelService, s.billingService,
 			account.ID, *apiKey.GroupID, result.UpstreamModel, result.Model,
 			tokens, cost.TotalCost,
+			account.Platform,
 		)
 	}
 
@@ -960,6 +961,11 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageTokenCost(
 	)
 	if err != nil {
 		return nil, err
+	}
+	// 峰谷倍率只作用在官方报价上；基准价是空闲档还是高峰档由 pricing 自己带着。
+	if officialTimePricingApplies(pricing) {
+		applyCostBreakdownMultiplier(cost, deepSeekOfficialTimeMultiplier(
+			"", billingModel, pricingAt, pricing.OfficialTimeBaseIsOffPeak))
 	}
 	cost.BillingMode = string(BillingModeToken)
 	return cost, nil

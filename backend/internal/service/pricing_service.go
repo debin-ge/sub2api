@@ -290,12 +290,18 @@ func rawModelTokenPricingIncomplete(model string, entry *RawModelPriceEntry) boo
 
 // PricingService 动态价格服务
 type PricingService struct {
-	cfg          *config.Config
-	remoteClient PricingRemoteClient
-	mu           sync.RWMutex
-	pricingData  map[string]*ModelPriceEntry
-	lastUpdated  time.Time
-	localHash    string
+	cfg               *config.Config
+	remoteClient      PricingRemoteClient
+	mu                sync.RWMutex
+	pricingData       map[string]*ModelPriceEntry
+	catalogData       map[string]*ModelPriceEntry
+	overrideStore     ModelPriceOverrideStore
+	overrideCache     ModelPriceOverrideCache
+	overrideRows      []ModelPriceOverride
+	platformOverrides map[string]map[string]*ModelPriceEntry
+	syncInvalidated   map[string]struct{}
+	lastUpdated       time.Time
+	localHash         string
 
 	// 停止信号
 	stopCh chan struct{}
@@ -305,12 +311,161 @@ type PricingService struct {
 // NewPricingService 创建价格服务
 func NewPricingService(cfg *config.Config, remoteClient PricingRemoteClient) *PricingService {
 	s := &PricingService{
-		cfg:          cfg,
-		remoteClient: remoteClient,
-		pricingData:  make(map[string]*ModelPriceEntry),
-		stopCh:       make(chan struct{}),
+		cfg:               cfg,
+		remoteClient:      remoteClient,
+		pricingData:       make(map[string]*ModelPriceEntry),
+		catalogData:       make(map[string]*ModelPriceEntry),
+		platformOverrides: make(map[string]map[string]*ModelPriceEntry),
+		syncInvalidated:   make(map[string]struct{}),
+		stopCh:            make(chan struct{}),
 	}
 	return s
+}
+
+func (s *PricingService) SetOverrideDependencies(store ModelPriceOverrideStore, cache ModelPriceOverrideCache) {
+	if s == nil {
+		return
+	}
+	s.overrideStore = store
+	s.overrideCache = cache
+}
+
+// SeedCatalogForTest replaces the synced catalog and rebuilds effective prices.
+func (s *PricingService) SeedCatalogForTest(data map[string]*ModelPriceEntry) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.catalogData = data
+	s.rebuildEffectiveLocked(s.catalogData)
+}
+
+func (s *PricingService) SeedOverridesForTest(rows []ModelPriceOverride) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.overrideRows = rows
+	s.rebuildEffectiveLocked(s.catalogData)
+}
+
+func (s *PricingService) ReloadOverrides(ctx context.Context) error {
+	if s == nil || s.overrideStore == nil {
+		return nil
+	}
+	rows, err := s.overrideStore.List(ctx)
+	if err != nil {
+		return err
+	}
+	for i := range rows {
+		rows[i].Platform = normalizeOverridePlatform(rows[i].Platform)
+		rows[i].ModelName = normalizePricingModelKey(rows[i].ModelName)
+	}
+	s.mu.Lock()
+	s.overrideRows = rows
+	s.rebuildEffectiveLocked(s.catalogData)
+	s.mu.Unlock()
+	return nil
+}
+
+func (s *PricingService) startOverrideReconcile() {
+	if s == nil || s.overrideStore == nil {
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		<-s.stopCh
+		cancel()
+	}()
+	if s.overrideCache != nil {
+		s.overrideCache.SubscribeRefresh(ctx, func() {
+			if err := s.ReloadOverrides(context.Background()); err != nil {
+				logger.LegacyPrintf("service.pricing", "[Pricing] Override refresh failed: %v", err)
+			}
+		})
+	}
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		ticker := time.NewTicker(60 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if err := s.ReloadOverrides(context.Background()); err != nil {
+					logger.LegacyPrintf("service.pricing", "[Pricing] Override reconcile failed: %v", err)
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+}
+
+// rebuildEffectiveLocked is the sole production writer of pricingData and
+// platformOverrides. The caller must hold s.mu.
+func (s *PricingService) rebuildEffectiveLocked(catalog map[string]*ModelPriceEntry) {
+	base := cloneCatalog(catalog)
+	invalidated := make(map[string]struct{})
+	for i := range s.overrideRows {
+		row := &s.overrideRows[i]
+		if !row.Enabled || row.Platform != ModelPriceOverrideWildcardPlatform {
+			continue
+		}
+		before := base[row.ModelName]
+		merged := buildModelPriceEntry(row.ModelName, mergeRawPriceEntry(rawOf(before), &row.Payload))
+		base[row.ModelName] = merged
+		if catalogHasUsablePrice(before) && !catalogHasUsablePrice(merged) {
+			invalidated[ModelPriceOverrideWildcardPlatform+"\x00"+row.ModelName] = struct{}{}
+		}
+	}
+	overlay := make(map[string]map[string]*ModelPriceEntry)
+	for i := range s.overrideRows {
+		row := &s.overrideRows[i]
+		if !row.Enabled || row.Platform == ModelPriceOverrideWildcardPlatform {
+			continue
+		}
+		if overlay[row.Platform] == nil {
+			overlay[row.Platform] = make(map[string]*ModelPriceEntry)
+		}
+		before := base[row.ModelName]
+		merged := buildModelPriceEntry(row.ModelName, mergeRawPriceEntry(rawOf(before), &row.Payload))
+		overlay[row.Platform][row.ModelName] = merged
+		if catalogHasUsablePrice(before) && !catalogHasUsablePrice(merged) {
+			invalidated[row.Platform+"\x00"+row.ModelName] = struct{}{}
+		}
+	}
+	s.pricingData = base
+	s.platformOverrides = overlay
+	s.syncInvalidated = invalidated
+}
+
+func (s *PricingService) effectiveEntryLocked(platform, model string) *ModelPriceEntry {
+	model = normalizePricingModelKey(model)
+	candidates := s.buildModelLookupCandidates(model)
+	if overlay := s.platformOverrides[normalizeOverridePlatform(platform)]; len(overlay) > 0 {
+		if entry := lookupIdentifiedIn(overlay, model, candidates); entry != nil {
+			return entry
+		}
+	}
+	return lookupIdentifiedIn(s.pricingData, model, candidates)
+}
+
+func (s *PricingService) isInvalidatedLocked(platform, model string) bool {
+	if s == nil {
+		return false
+	}
+	platform = normalizeOverridePlatform(platform)
+	model = normalizePricingModelKey(model)
+	if _, ok := s.syncInvalidated[platform+"\x00"+model]; ok {
+		return true
+	}
+	_, ok := s.syncInvalidated[ModelPriceOverrideWildcardPlatform+"\x00"+model]
+	return ok
 }
 
 // Initialize 初始化价格服务
@@ -327,6 +482,11 @@ func (s *PricingService) Initialize() error {
 			return fmt.Errorf("failed to load pricing data: %w", err)
 		}
 	}
+
+	if err := s.ReloadOverrides(context.Background()); err != nil {
+		logger.LegacyPrintf("service.pricing", "[Pricing] Initial override load failed: %v", err)
+	}
+	s.startOverrideReconcile()
 
 	// 启动定时更新
 	s.startUpdateScheduler()
@@ -534,7 +694,8 @@ func (s *PricingService) downloadPricingData() error {
 
 	// 更新内存数据
 	s.mu.Lock()
-	s.pricingData = data
+	s.catalogData = data
+	s.rebuildEffectiveLocked(s.catalogData)
 	s.lastUpdated = time.Now()
 	s.localHash = syncHash
 	s.mu.Unlock()
@@ -572,77 +733,8 @@ func (s *PricingService) parsePricingData(body []byte) (map[string]*ModelPriceEn
 			continue
 		}
 
-		pricing := &ModelPriceEntry{
-			PricingCatalogProvider:             entry.PricingCatalogProvider,
-			Mode:                               entry.Mode,
-			SupportsPromptCaching:              entry.SupportsPromptCaching,
-			SupportsServiceTier:                entry.SupportsServiceTier,
-			TokenPricingAbsent:                 rawModelTokenPricingIncomplete(modelName, &entry),
-			OutputCostPerImageExplicit:         entry.OutputCostPerImage != nil,
-			ImageOutputPriceExplicit:           entry.OutputCostPerImageToken != nil,
-			ImageInputPriceExplicit:            entry.InputCostPerImageToken != nil,
-			InputPriceExplicit:                 entry.InputCostPerToken != nil,
-			OutputPriceExplicit:                entry.OutputCostPerToken != nil,
-			PricePresenceKnown:                 true,
-			CacheCreationPriceExplicit:         entry.CacheCreationInputTokenCost != nil,
-			CacheCreationAbove1hrPriceExplicit: entry.CacheCreationInputTokenCostAbove1hr != nil,
-			CacheReadPriceExplicit:             entry.CacheReadInputTokenCost != nil,
-			InputPriorityPriceExplicit:         entry.InputCostPerTokenPriority != nil,
-			OutputPriorityPriceExplicit:        entry.OutputCostPerTokenPriority != nil,
-			CacheCreationPriorityPriceExplicit: entry.CacheCreationInputTokenCostPriority != nil,
-			CacheReadPriorityPriceExplicit:     entry.CacheReadInputTokenCostPriority != nil,
-			LongContextPricingExplicit: entry.LongContextInputTokenThreshold != nil ||
-				entry.LongContextInputCostMultiplier != nil ||
-				entry.LongContextOutputCostMultiplier != nil,
-		}
-
-		if entry.InputCostPerToken != nil {
-			pricing.InputCostPerToken = *entry.InputCostPerToken
-		}
-		if entry.InputCostPerTokenPriority != nil {
-			pricing.InputCostPerTokenPriority = *entry.InputCostPerTokenPriority
-		}
-		if entry.OutputCostPerToken != nil {
-			pricing.OutputCostPerToken = *entry.OutputCostPerToken
-		}
-		if entry.OutputCostPerTokenPriority != nil {
-			pricing.OutputCostPerTokenPriority = *entry.OutputCostPerTokenPriority
-		}
-		if entry.CacheCreationInputTokenCost != nil {
-			pricing.CacheCreationInputTokenCost = *entry.CacheCreationInputTokenCost
-		}
-		if entry.CacheCreationInputTokenCostPriority != nil {
-			pricing.CacheCreationInputTokenCostPriority = *entry.CacheCreationInputTokenCostPriority
-		}
-		if entry.CacheCreationInputTokenCostAbove1hr != nil {
-			pricing.CacheCreationInputTokenCostAbove1hr = *entry.CacheCreationInputTokenCostAbove1hr
-		}
-		if entry.CacheReadInputTokenCost != nil {
-			pricing.CacheReadInputTokenCost = *entry.CacheReadInputTokenCost
-		}
-		if entry.CacheReadInputTokenCostPriority != nil {
-			pricing.CacheReadInputTokenCostPriority = *entry.CacheReadInputTokenCostPriority
-		}
-		if entry.LongContextInputTokenThreshold != nil {
-			pricing.LongContextInputTokenThreshold = *entry.LongContextInputTokenThreshold
-		}
-		if entry.LongContextInputCostMultiplier != nil {
-			pricing.LongContextInputCostMultiplier = *entry.LongContextInputCostMultiplier
-		}
-		if entry.LongContextOutputCostMultiplier != nil {
-			pricing.LongContextOutputCostMultiplier = *entry.LongContextOutputCostMultiplier
-		}
-		if entry.OutputCostPerImage != nil {
-			pricing.OutputCostPerImage = *entry.OutputCostPerImage
-		}
-		if entry.OutputCostPerImageToken != nil {
-			pricing.OutputCostPerImageToken = *entry.OutputCostPerImageToken
-		}
-		if entry.InputCostPerImageToken != nil {
-			pricing.InputCostPerImageToken = *entry.InputCostPerImageToken
-		}
-
-		result[modelName] = pricing
+		pricing := buildModelPriceEntry(modelName, &entry)
+		result[normalizePricingModelKey(modelName)] = pricing
 	}
 
 	if skipped > 0 {
@@ -675,7 +767,8 @@ func (s *PricingService) loadPricingData(filePath string) error {
 	hashStr := hex.EncodeToString(hash[:])
 
 	s.mu.Lock()
-	s.pricingData = pricingData
+	s.catalogData = pricingData
+	s.rebuildEffectiveLocked(s.catalogData)
 	s.localHash = hashStr
 
 	info, _ := os.Stat(filePath)
@@ -783,7 +876,11 @@ func (s *PricingService) validatePricingURL(raw string) (string, error) {
 
 // GetModelPricing 获取模型价格（带模糊匹配）
 func (s *PricingService) GetModelPricing(modelName string) *ModelPriceEntry {
-	return s.lookupModelPricing(modelName, true)
+	return s.GetModelPricingForPlatform("", modelName)
+}
+
+func (s *PricingService) GetModelPricingForPlatform(platform, modelName string) *ModelPriceEntry {
+	return s.lookupModelPricing(platform, modelName, true)
 }
 
 // LookupModelPricingStrict 只在"这个模型自己有价目条目"时返回价格，不做跨模型推断。
@@ -803,7 +900,11 @@ func (s *PricingService) GetModelPricing(modelName string) *ModelPriceEntry {
 // 明确需要兼容旧模型推断的非准入调用方；已经产生上游成本但严格价缺失时，账务链会
 // 持久化 pricing_unavailable，而不是借别的 SKU 凑出一个金额。
 func (s *PricingService) LookupModelPricingStrict(modelName string) *ModelPriceEntry {
-	return s.lookupModelPricing(modelName, false)
+	return s.LookupModelPricingStrictForPlatform("", modelName)
+}
+
+func (s *PricingService) LookupModelPricingStrictForPlatform(platform, modelName string) *ModelPriceEntry {
+	return s.lookupModelPricing(platform, modelName, false)
 }
 
 // lookupModelPricing 是上面两个入口的唯一实现。
@@ -811,7 +912,7 @@ func (s *PricingService) LookupModelPricingStrict(modelName string) *ModelPriceE
 // 合并成一份是刻意的：准入用严格口径、结算用宽松口径，两边对"前缀别名 / 拼写归一化"
 // 的理解必须完全一致。各写一份迟早会在某个归一化分支上分叉，那时守卫放行的模型和结算
 // 查价的模型就不是同一个了。allowInference 只控制最后两步跨模型推断开不开。
-func (s *PricingService) lookupModelPricing(modelName string, allowInference bool) *ModelPriceEntry {
+func (s *PricingService) lookupModelPricing(platform, modelName string, allowInference bool) *ModelPriceEntry {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -823,8 +924,14 @@ func (s *PricingService) lookupModelPricing(modelName string, allowInference boo
 	modelLower := strings.ToLower(strings.TrimSpace(modelName))
 	lookupCandidates := s.buildModelLookupCandidates(modelLower)
 
+	if overlay := s.platformOverrides[normalizeOverridePlatform(platform)]; len(overlay) > 0 {
+		if pricing := lookupIdentifiedIn(overlay, modelLower, lookupCandidates); pricing != nil {
+			return pricing
+		}
+	}
+
 	// 1~3. 确定性识别（精确名 / 已知拼写变体 / 去掉日期版本后缀）
-	if pricing := s.lookupIdentifiedModelPricingLocked(modelLower, lookupCandidates); pricing != nil {
+	if pricing := lookupIdentifiedIn(s.pricingData, modelLower, lookupCandidates); pricing != nil {
 		return pricing
 	}
 	if !allowInference {
@@ -850,7 +957,7 @@ func (s *PricingService) lookupModelPricing(modelName string, allowInference boo
 // 变体、去掉日期/版本后缀后的同名条目。它刻意不包含 matchByModelFamily /
 // matchOpenAIModel 这类按子串猜系列的兜底——那些兜底会给任意名字都返回一个价格。
 // 调用方必须持有 s.mu 读锁。
-func (s *PricingService) lookupIdentifiedModelPricingLocked(modelLower string, lookupCandidates []string) *LiteLLMModelPricing {
+func lookupIdentifiedIn(data map[string]*ModelPriceEntry, modelLower string, lookupCandidates []string) *LiteLLMModelPricing {
 	if len(lookupCandidates) == 0 {
 		return nil
 	}
@@ -860,7 +967,7 @@ func (s *PricingService) lookupIdentifiedModelPricingLocked(modelLower string, l
 		if candidate == "" {
 			continue
 		}
-		if pricing, ok := s.pricingData[candidate]; ok {
+		if pricing, ok := data[candidate]; ok {
 			if sameSKUPricingCandidateAllowed(modelLower, candidate) {
 				return pricing
 			}
@@ -871,7 +978,7 @@ func (s *PricingService) lookupIdentifiedModelPricingLocked(modelLower string, l
 	// 2a. 定向替换：claude-opus-4-5-20251101 -> claude-opus-4.5-20251101
 	for _, candidate := range lookupCandidates {
 		normalized := strings.ReplaceAll(candidate, "-4-5-", "-4.5-")
-		if pricing, ok := s.pricingData[normalized]; ok && sameSKUPricingCandidateAllowed(modelLower, candidate) {
+		if pricing, ok := data[normalized]; ok && sameSKUPricingCandidateAllowed(modelLower, candidate) {
 			return pricing
 		}
 	}
@@ -883,7 +990,7 @@ func (s *PricingService) lookupIdentifiedModelPricingLocked(modelLower string, l
 		if normalized == candidate {
 			continue
 		}
-		if pricing, ok := s.pricingData[normalized]; ok && sameSKUPricingCandidateAllowed(modelLower, candidate) {
+		if pricing, ok := data[normalized]; ok && sameSKUPricingCandidateAllowed(modelLower, candidate) {
 			return pricing
 		}
 	}
@@ -896,7 +1003,7 @@ func (s *PricingService) lookupIdentifiedModelPricingLocked(modelLower string, l
 	// 严格匹配，会让 gpt-5.4-v1:0 等未知 SKU 借用 gpt-5.4 的价格。
 	baseCandidate := modelLower
 	baseName := strictPricingSnapshotBase(baseCandidate)
-	for key, pricing := range s.pricingData {
+	for key, pricing := range data {
 		keyBase := strictPricingSnapshotBase(strings.ToLower(key))
 		if keyBase == baseName && inferredPricingCandidateAllowed(pricing) {
 			return pricing
@@ -953,6 +1060,10 @@ func inferredPricingCandidateAllowed(pricing *LiteLLMModelPricing) bool {
 // 与 GetModelPricing 的区别：不会退化成按 "opus"/"haiku" 之类子串猜出的系列兜底价。
 // 用于必须区分"这是价格表里已知的模型"和"这只是名字里带某个关键词"的场景。
 func (s *PricingService) GetIdentifiedModelPricing(modelName string) *LiteLLMModelPricing {
+	return s.GetIdentifiedModelPricingForPlatform("", modelName)
+}
+
+func (s *PricingService) GetIdentifiedModelPricingForPlatform(platform, modelName string) *LiteLLMModelPricing {
 	if s == nil {
 		return nil
 	}
@@ -963,7 +1074,13 @@ func (s *PricingService) GetIdentifiedModelPricing(modelName string) *LiteLLMMod
 	if modelLower == "" {
 		return nil
 	}
-	return s.lookupIdentifiedModelPricingLocked(modelLower, s.buildModelLookupCandidates(modelLower))
+	candidates := s.buildModelLookupCandidates(modelLower)
+	if overlay := s.platformOverrides[normalizeOverridePlatform(platform)]; len(overlay) > 0 {
+		if pricing := lookupIdentifiedIn(overlay, modelLower, candidates); pricing != nil {
+			return pricing
+		}
+	}
+	return lookupIdentifiedIn(s.pricingData, modelLower, candidates)
 }
 
 func (s *PricingService) buildModelLookupCandidates(modelLower string) []string {
@@ -1340,15 +1457,34 @@ func (s *PricingService) GetStatus() map[string]any {
 	defer s.mu.RUnlock()
 
 	return map[string]any{
-		"model_count":  len(s.pricingData),
-		"last_updated": s.lastUpdated,
-		"local_hash":   s.localHash[:min(8, len(s.localHash))],
+		"model_count":         len(s.pricingData),
+		"catalog_model_count": len(s.catalogData),
+		"override_count":      len(s.overrideRows),
+		"last_updated":        s.lastUpdated,
+		"local_hash":          s.localHash[:min(8, len(s.localHash))],
 	}
 }
 
 // ForceUpdate 强制更新
 func (s *PricingService) ForceUpdate() error {
 	return s.downloadPricingData()
+}
+
+func (s *PricingService) ForceUpdateWithOverrideCount() (map[string]any, error) {
+	if err := s.ForceUpdate(); err != nil {
+		return nil, err
+	}
+	status := s.GetStatus()
+	s.mu.RLock()
+	reapplied := 0
+	for i := range s.overrideRows {
+		if s.overrideRows[i].Enabled {
+			reapplied++
+		}
+	}
+	s.mu.RUnlock()
+	status["overrides_reapplied"] = reapplied
+	return status, nil
 }
 
 // getPricingFilePath 获取价格文件路径

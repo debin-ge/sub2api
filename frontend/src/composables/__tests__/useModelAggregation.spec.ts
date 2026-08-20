@@ -48,11 +48,39 @@ describe('aggregateByPlatformModel', () => {
     expect(result[0].models).toHaveLength(1)
     expect(result[0].models[0].model).toBe('claude-sonnet')
     expect(result[0].models[0].displayName).toBe('claude-sonnet')
+    expect(result[0].models[0].timeSchedule).toBeUndefined()
     expect(result[0].models[0].standardPricing?.minPricing.input).toBe(0.000002)
     expect(result[0].models[0].standardPricing?.minPricingRateMultipliers.input).toBe(1.2)
     expect(result[0].models[0].supportedGroups).toHaveLength(2)
     expect(result[0].models[0].standardPricing?.displayRateMultiplier).toBe(1.2)
     expect(result[0].models[0].vipPricing).toBeNull()
+  })
+
+  it('keeps DeepSeek official time schedule on the aggregated model', () => {
+    const schedule = {
+      kind: 'deepseek_official',
+      timezone: 'Asia/Shanghai',
+      peak_windows: ['09:00-12:00', '14:00-18:00'],
+      peak_multiplier: 2,
+      off_peak_multiplier: 1
+    }
+    const rows: UserAvailableChannel[] = [{
+      name: 'ch',
+      description: '',
+      platforms: [{
+        platform: 'deepseek',
+        groups: [{ id: 1, name: 'g1', platform: 'deepseek', subscription_type: 'standard', rate_multiplier: 1, is_exclusive: false }],
+        supported_models: [{
+          name: 'deepseek-v4-flash',
+          platform: 'deepseek',
+          pricing: price(0.000003, 0.000009),
+          time_schedule: schedule
+        }]
+      }]
+    }]
+
+    const result = aggregateByPlatformModel(rows)
+    expect(result[0].models[0].timeSchedule).toEqual(schedule)
   })
 
   it('tracks the lowest valid group multiplier for discount and recharged price display', () => {

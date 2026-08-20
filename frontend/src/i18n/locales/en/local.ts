@@ -222,6 +222,9 @@ export default {
       "standardDiscountBadge": "Standard ≈ {percent}% of reference",
       "vipDiscountBadge": "VIP ≈ {percent}% of reference",
       "peakPricing": "Peak pricing applies",
+      "deepSeekTimePricing": "Peak / off-peak",
+      "peakPrice": "Peak",
+      "offPeakPrice": "Off-peak",
       "notAvailable": "N/A",
       "recentCalls": "{count} calls in 7d"
     },
@@ -230,7 +233,7 @@ export default {
       "filtered": "{visible}/{total} models"
     },
     "infoBanner": {
-      "text": "Each model shows the lowest usable base price for standard public groups and VIP groups separately. The two price classes never overwrite each other; peak windows are called out in details."
+      "text": "Each model shows the lowest usable base price for standard public groups and VIP groups separately. Displayed unit prices come from the model-price catalog. DeepSeek uses Beijing time: peak 09:00-12:00 and 14:00-18:00; off-peak is half the peak price."
     },
     "modal": {
       "close": "Close",
@@ -245,6 +248,7 @@ export default {
       "channelsCount": "{n} channels",
       "tieredPricing": "Tiered pricing",
       "basePricePeakNote": "Prices above use the base multipliers for standard public and VIP groups separately. Token billing also applies the configured peak multiplier during peak windows.",
+      "deepSeekTimeNote": "DeepSeek official prices use Beijing time: peak 09:00-12:00 and 14:00-18:00; off-peak is half the peak price.",
       "tierRange": "{min} - {max} tokens",
       "tierRangeOpenEnded": "{min}+ tokens"
     },

@@ -63,9 +63,10 @@ func NewModelPricingResolver(channelService *ChannelService, billingService *Bil
 
 // PricingInput 定价解析输入
 type PricingInput struct {
-	Model   string
-	GroupID *int64 // nil 表示不检查渠道
-	Group   *Group
+	Model    string
+	Platform string
+	GroupID  *int64 // nil 表示不检查渠道
+	Group    *Group
 }
 
 // Resolve 解析模型定价。
@@ -85,6 +86,10 @@ func (r *ModelPricingResolver) resolve(ctx context.Context, input PricingInput, 
 		return nil, fmt.Errorf("%w for model: %s: pricing resolver unavailable", ErrModelPricingUnavailable, input.Model)
 	}
 	longContextPricingEnabled := input.Group == nil || input.Group.LongContextPricingEnabled
+	platform := strings.TrimSpace(input.Platform)
+	if platform == "" && input.Group != nil {
+		platform = input.Group.Platform
+	}
 	if groupPricing := matchGroupModelPricing(input.Group, input.Model); groupPricing != nil {
 		// Group token cards only override the first-tier / flat rates.
 		// Long-context ladders come from official presets, gated by the checkbox.
@@ -93,7 +98,7 @@ func (r *ModelPricingResolver) resolve(ctx context.Context, input PricingInput, 
 			stripped.Intervals = nil
 			groupPricing = &stripped
 		}
-		resolved, err := r.resolveConfiguredPricing(groupPricing, input.Model, PricingSourceGroup, strictTokenPricing)
+		resolved, err := r.resolveConfiguredPricing(groupPricing, platform, input.Model, PricingSourceGroup, strictTokenPricing)
 		if err != nil {
 			return nil, err
 		}
@@ -126,7 +131,7 @@ func (r *ModelPricingResolver) resolve(ctx context.Context, input PricingInput, 
 	}
 
 	// 1. 获取基础定价
-	basePricing, source, baseErr := r.resolveBasePricing(input.Model, strictTokenPricing)
+	basePricing, source, baseErr := r.resolveBasePricing(platform, input.Model, strictTokenPricing)
 
 	resolved := &ResolvedPricing{
 		Mode:                   BillingModeToken,
@@ -183,7 +188,11 @@ func (r *ModelPricingResolver) ResolveStrictImageToken(
 		}
 	}
 
-	basePricing, baseErr := r.billingService.GetImageTokenPricingStrict(input.Model, requireImageInput)
+	platform := strings.TrimSpace(input.Platform)
+	if platform == "" && input.Group != nil {
+		platform = input.Group.Platform
+	}
+	basePricing, baseErr := r.billingService.GetImageTokenPricingStrictForPlatform(platform, input.Model, requireImageInput)
 	if baseErr != nil && !channelImageTokenPricingConfigured(channelPricing) {
 		return nil, baseErr
 	}
@@ -227,7 +236,7 @@ func (r *ModelPricingResolver) ResolveStrictImageToken(
 	return resolved, nil
 }
 
-func (r *ModelPricingResolver) resolveConfiguredPricing(config *ChannelModelPricing, model, source string, strict bool) (*ResolvedPricing, error) {
+func (r *ModelPricingResolver) resolveConfiguredPricing(config *ChannelModelPricing, platform, model, source string, strict bool) (*ResolvedPricing, error) {
 	mode := config.BillingMode
 	if mode == "" {
 		mode = BillingModeToken
@@ -240,7 +249,7 @@ func (r *ModelPricingResolver) resolveConfiguredPricing(config *ChannelModelPric
 		}
 		return resolved, nil
 	}
-	basePricing, _, baseErr := r.resolveBasePricing(model, strict)
+	basePricing, _, baseErr := r.resolveBasePricing(platform, model, strict)
 	resolved.BasePricing = basePricing
 	if strict && basePricing == nil && !channelTokenPricingConfigured(config) {
 		return nil, fmt.Errorf("%w for model: %s: incomplete explicit group pricing", ErrModelPricingUnavailable, model)
@@ -290,7 +299,7 @@ func (r *ModelPricingResolver) applyFirstTokenTier(resolved *ResolvedPricing, co
 	resolved.Intervals = nil
 }
 
-func (r *ModelPricingResolver) resolveBasePricing(model string, strict bool) (*ModelPricing, string, error) {
+func (r *ModelPricingResolver) resolveBasePricing(platform, model string, strict bool) (*ModelPricing, string, error) {
 	if r == nil || r.billingService == nil {
 		return nil, PricingSourceFallback, fmt.Errorf("%w for model: %s: billing service unavailable", ErrModelPricingUnavailable, model)
 	}
@@ -299,9 +308,9 @@ func (r *ModelPricingResolver) resolveBasePricing(model string, strict bool) (*M
 		err     error
 	)
 	if strict {
-		pricing, err = r.billingService.GetModelPricingStrict(model)
+		pricing, err = r.billingService.GetModelPricingStrictForPlatform(platform, model)
 	} else {
-		pricing, err = r.billingService.GetModelPricing(model)
+		pricing, err = r.billingService.GetModelPricingForPlatform(platform, model)
 	}
 	if err != nil {
 		slog.Debug("failed to get model pricing",

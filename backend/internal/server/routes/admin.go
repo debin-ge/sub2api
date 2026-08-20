@@ -114,6 +114,9 @@ func RegisterAdminRoutes(
 		// 渠道管理
 		registerChannelRoutes(admin, h)
 
+		// 模型成本价管理
+		registerModelPriceRoutes(admin, h, stepUpAuth)
+
 		// 渠道监控
 		registerChannelMonitorRoutes(admin, h, settingService)
 		registerChannelMonitorV2Routes(admin, h, settingService)
@@ -774,6 +777,22 @@ func registerChannelRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		channels.POST("", h.Admin.Channel.Create)
 		channels.PUT("/:id", h.Admin.Channel.Update)
 		channels.DELETE("/:id", h.Admin.Channel.Delete)
+	}
+}
+
+func registerModelPriceRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAuth middleware.StepUpAuthMiddleware) {
+	if h == nil || h.Admin == nil || h.Admin.ModelPrice == nil {
+		return
+	}
+	prices := admin.Group("/model-prices")
+	{
+		prices.GET("", h.Admin.ModelPrice.List)
+		prices.GET("/platforms", h.Admin.ModelPrice.ListPlatforms)
+		prices.GET("/entry", h.Admin.ModelPrice.Detail)
+		prices.GET("/sync-status", h.Admin.ModelPrice.SyncStatus)
+		prices.POST("/sync", h.Admin.ModelPrice.Sync)
+		prices.PUT("/entry", gin.HandlerFunc(stepUpAuth), h.Admin.ModelPrice.Upsert)
+		prices.DELETE("/entry", gin.HandlerFunc(stepUpAuth), h.Admin.ModelPrice.Delete)
 	}
 }
 

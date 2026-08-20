@@ -365,15 +365,15 @@ func TestGetModelPricing_DeepSeekFallback(t *testing.T) {
 	}{
 		{
 			model:             "deepseek-v4-flash",
-			expectedInput:     1.0 / 7.2 / 1_000_000,
-			expectedOutput:    2.0 / 7.2 / 1_000_000,
-			expectedCacheRead: 0.02 / 7.2 / 1_000_000,
+			expectedInput:     3.0 / 7.2 / 1_000_000,
+			expectedOutput:    9.0 / 7.2 / 1_000_000,
+			expectedCacheRead: 0.10 / 7.2 / 1_000_000,
 		},
 		{
 			model:             "DeepSeek-V4-Pro",
-			expectedInput:     3.0 / 7.2 / 1_000_000,
-			expectedOutput:    6.0 / 7.2 / 1_000_000,
-			expectedCacheRead: 0.025 / 7.2 / 1_000_000,
+			expectedInput:     9.0 / 7.2 / 1_000_000,
+			expectedOutput:    27.0 / 7.2 / 1_000_000,
+			expectedCacheRead: 0.30 / 7.2 / 1_000_000,
 		},
 	}
 
@@ -408,10 +408,10 @@ func TestCalculateCost_DeepSeekFallbackUsesCacheMissAndHitPrices(t *testing.T) {
 	}, 1.0)
 	require.NoError(t, err)
 
-	expectedTotal := (1.0 + 2.0 + 0.02) / 7.2
-	require.InDelta(t, 1.0/7.2, cost.InputCost, 1e-10)
-	require.InDelta(t, 2.0/7.2, cost.OutputCost, 1e-10)
-	require.InDelta(t, 0.02/7.2, cost.CacheReadCost, 1e-10)
+	expectedTotal := (3.0 + 9.0 + 0.10) / 7.2
+	require.InDelta(t, 3.0/7.2, cost.InputCost, 1e-10)
+	require.InDelta(t, 9.0/7.2, cost.OutputCost, 1e-10)
+	require.InDelta(t, 0.10/7.2, cost.CacheReadCost, 1e-10)
 	require.InDelta(t, expectedTotal, cost.TotalCost, 1e-10)
 	require.InDelta(t, expectedTotal, cost.ActualCost, 1e-10)
 }
@@ -654,16 +654,16 @@ func TestGetFallbackPricing_FamilyMatching(t *testing.T) {
 		{
 			name:              "deepseek v4 pro",
 			model:             "deepseek-v4-pro",
-			expectedInput:     3.0 / 7.2 / 1_000_000,
-			expectedOutput:    floatPtr(6.0 / 7.2 / 1_000_000),
-			expectedCacheRead: floatPtr(0.025 / 7.2 / 1_000_000),
+			expectedInput:     9.0 / 7.2 / 1_000_000,
+			expectedOutput:    floatPtr(27.0 / 7.2 / 1_000_000),
+			expectedCacheRead: floatPtr(0.30 / 7.2 / 1_000_000),
 		},
 		{
 			name:              "deepseek v4 flash",
 			model:             "deepseek-v4-flash",
-			expectedInput:     1.0 / 7.2 / 1_000_000,
-			expectedOutput:    floatPtr(2.0 / 7.2 / 1_000_000),
-			expectedCacheRead: floatPtr(0.02 / 7.2 / 1_000_000),
+			expectedInput:     3.0 / 7.2 / 1_000_000,
+			expectedOutput:    floatPtr(9.0 / 7.2 / 1_000_000),
+			expectedCacheRead: floatPtr(0.10 / 7.2 / 1_000_000),
 		},
 		{
 			name:             "deepseek chat requires resolved upstream model",

@@ -100,3 +100,18 @@ export function computeDiscountPercent(
 export function formatDiscountFold(value: number): string {
   return formatNumber(value)
 }
+
+/**
+ * 按官方分时规则把「随行的那份生效价」换算到某一档（高峰 / 空闲）。
+ * 倍率相对基准价，方向由后端给的 peak_multiplier / off_peak_multiplier 决定：
+ * 目录价是空闲价（2 / 1），官方兜底表是高峰价（1 / 0.5）。
+ */
+export function scheduledScaledPrice(
+  value: number | null,
+  multiplier: number | null | undefined
+): number | null {
+  if (value == null || typeof multiplier !== 'number' || !Number.isFinite(multiplier) || multiplier < 0) {
+    return null
+  }
+  return value * multiplier
+}

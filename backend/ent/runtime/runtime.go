@@ -24,6 +24,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/idempotencyrecord"
 	"github.com/Wei-Shaw/sub2api/ent/identityadoptiondecision"
+	"github.com/Wei-Shaw/sub2api/ent/modelpriceoverride"
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	"github.com/Wei-Shaw/sub2api/ent/paymentproviderinstance"
@@ -1273,6 +1274,61 @@ func init() {
 	identityadoptiondecisionDescDecidedAt := identityadoptiondecisionFields[4].Descriptor()
 	// identityadoptiondecision.DefaultDecidedAt holds the default value on creation for the decided_at field.
 	identityadoptiondecision.DefaultDecidedAt = identityadoptiondecisionDescDecidedAt.Default.(func() time.Time)
+	modelpriceoverrideMixin := schema.ModelPriceOverride{}.Mixin()
+	modelpriceoverrideMixinFields0 := modelpriceoverrideMixin[0].Fields()
+	_ = modelpriceoverrideMixinFields0
+	modelpriceoverrideFields := schema.ModelPriceOverride{}.Fields()
+	_ = modelpriceoverrideFields
+	// modelpriceoverrideDescCreatedAt is the schema descriptor for created_at field.
+	modelpriceoverrideDescCreatedAt := modelpriceoverrideMixinFields0[0].Descriptor()
+	// modelpriceoverride.DefaultCreatedAt holds the default value on creation for the created_at field.
+	modelpriceoverride.DefaultCreatedAt = modelpriceoverrideDescCreatedAt.Default.(func() time.Time)
+	// modelpriceoverrideDescUpdatedAt is the schema descriptor for updated_at field.
+	modelpriceoverrideDescUpdatedAt := modelpriceoverrideMixinFields0[1].Descriptor()
+	// modelpriceoverride.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	modelpriceoverride.DefaultUpdatedAt = modelpriceoverrideDescUpdatedAt.Default.(func() time.Time)
+	// modelpriceoverride.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	modelpriceoverride.UpdateDefaultUpdatedAt = modelpriceoverrideDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// modelpriceoverrideDescPlatform is the schema descriptor for platform field.
+	modelpriceoverrideDescPlatform := modelpriceoverrideFields[0].Descriptor()
+	// modelpriceoverride.PlatformValidator is a validator for the "platform" field. It is called by the builders before save.
+	modelpriceoverride.PlatformValidator = func() func(string) error {
+		validators := modelpriceoverrideDescPlatform.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(platform string) error {
+			for _, fn := range fns {
+				if err := fn(platform); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// modelpriceoverrideDescModelName is the schema descriptor for model_name field.
+	modelpriceoverrideDescModelName := modelpriceoverrideFields[1].Descriptor()
+	// modelpriceoverride.ModelNameValidator is a validator for the "model_name" field. It is called by the builders before save.
+	modelpriceoverride.ModelNameValidator = func() func(string) error {
+		validators := modelpriceoverrideDescModelName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(model_name string) error {
+			for _, fn := range fns {
+				if err := fn(model_name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// modelpriceoverrideDescEnabled is the schema descriptor for enabled field.
+	modelpriceoverrideDescEnabled := modelpriceoverrideFields[3].Descriptor()
+	// modelpriceoverride.DefaultEnabled holds the default value on creation for the enabled field.
+	modelpriceoverride.DefaultEnabled = modelpriceoverrideDescEnabled.Default.(bool)
 	paymentauditlogFields := schema.PaymentAuditLog{}.Fields()
 	_ = paymentauditlogFields
 	// paymentauditlogDescOrderID is the schema descriptor for order_id field.

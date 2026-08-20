@@ -626,6 +626,93 @@ func TestListPublic_BillingFallbackEnrichesPartialCatalog(t *testing.T) {
 	require.InDelta(t, 0.25e-6, *model.Pricing.CacheReadPrice, 1e-12)
 }
 
+func TestListPublic_UsesModelPriceOverrideAndDeepSeekTimeSchedule(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	pricing := newHandlerTestPricingService(map[string]*service.ModelPriceEntry{
+		"deepseek-v4-flash": {
+			Mode:                "chat",
+			InputCostPerToken:   1e-6,
+			OutputCostPerToken:  2e-6,
+			InputPriceExplicit:  true,
+			OutputPriceExplicit: true,
+		},
+	})
+	overrideInput := 3e-6
+	pricing.SeedCatalogForTest(map[string]*service.ModelPriceEntry{
+		"deepseek-v4-flash": {
+			Mode:                "chat",
+			InputCostPerToken:   1e-6,
+			OutputCostPerToken:  2e-6,
+			InputPriceExplicit:  true,
+			OutputPriceExplicit: true,
+		},
+	})
+	pricing.SeedOverridesForTest([]service.ModelPriceOverride{{
+		Platform:  service.PlatformDeepSeek,
+		ModelName: "deepseek-v4-flash",
+		Enabled:   true,
+		Payload:   service.ModelPriceOverridePayload{InputCostPerToken: &overrideInput},
+	}})
+	channelSvc := service.NewChannelService(
+		&publicChannelRepoStub{
+			channels: []service.Channel{{
+				ID:     1,
+				Name:   "public-channel",
+				Status: service.StatusActive,
+			}},
+		},
+		&publicGroupRepoStub{
+			groups: []service.Group{{
+				ID:          1,
+				Name:        "public-deepseek",
+				Platform:    service.PlatformDeepSeek,
+				IsExclusive: false,
+			}},
+		},
+		nil,
+		pricing,
+	)
+	h := &AvailableChannelHandler{
+		channelService: channelSvc,
+		modelCatalog: &stubModelCatalogProvider{public: map[string][]string{
+			service.PlatformDeepSeek: {"deepseek-v4-flash"},
+		}},
+		billingFallback: stubBillingFallbackProvider{
+			data: map[string]*service.ModelPricing{
+				"deepseek-v4-flash": {
+					InputPricePerToken:     99e-6,
+					OutputPricePerToken:    99e-6,
+					CacheReadPricePerToken: 0.1e-6,
+				},
+			},
+		},
+		modelPrices: pricing,
+	}
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/channels/public", nil)
+
+	h.ListPublic(c)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var body struct {
+		Data []userAvailableChannel `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	model := body.Data[0].Platforms[0].SupportedModels[0]
+	require.Equal(t, "deepseek-v4-flash", model.Name)
+	require.NotNil(t, model.Pricing)
+	require.InDelta(t, 3e-6, *model.Pricing.InputPrice, 1e-12)
+	require.InDelta(t, 2e-6, *model.Pricing.OutputPrice, 1e-12)
+	require.NotNil(t, model.Pricing.CacheReadPrice)
+	require.InDelta(t, 0.1e-6, *model.Pricing.CacheReadPrice, 1e-12)
+	require.NotNil(t, model.TimeSchedule)
+	require.Equal(t, "deepseek_official", model.TimeSchedule.Kind)
+	// 展示价来自目录 + 手动覆盖，即官方空闲价：高峰 ×2、空闲 ×1。
+	require.Equal(t, 2.0, model.TimeSchedule.PeakMultiplier)
+	require.Equal(t, 1.0, model.TimeSchedule.OffPeakMultiplier)
+}
+
 func TestListPublic_HidesRoutingOnlyModels(t *testing.T) {
 	// Windsurf 的 arena-* / swe-* / adaptive 是运行时路由标识，不应出现在广场。
 	gin.SetMode(gin.TestMode)

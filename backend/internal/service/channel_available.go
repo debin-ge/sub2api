@@ -255,7 +255,7 @@ func (s *ChannelService) fillGlobalPricingFallback(models []SupportedModel) {
 		return
 	}
 	for i := range models {
-		lp := s.pricingService.GetModelPricing(models[i].Name)
+		lp := s.pricingService.GetModelPricingForPlatform(models[i].Platform, models[i].Name)
 		if lp == nil {
 			continue
 		}

@@ -97,7 +97,7 @@ func (s *GatewayService) reportBillingModelDrift(
 	// false 说明这笔钱是拿别的模型的价格套上去的（见 pricing_strict_match.go）。
 	settledStrictlyPriced := false
 	if s.billingService != nil {
-		_, err := s.billingService.GetModelPricingStrict(settled)
+		_, err := s.billingService.GetModelPricingStrictForPlatform(accountPlatformForLog(account), settled)
 		settledStrictlyPriced = err == nil
 	}
 

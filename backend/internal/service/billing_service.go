@@ -125,6 +125,14 @@ type ModelPricing struct {
 	CacheCreationPriorityPriceExplicit bool
 	CacheReadPriorityPriceExplicit     bool
 	LongContextPricingExplicit         bool
+	// OfficialTimePricing 标记这份价格是官方报价（价格目录 / 管理端生效价 /
+	// 代码内官方兜底表），可以叠加官方峰谷倍率。渠道价、分组价是渠道侧显式定价
+	// （渠道另有独立的 TimePricing 配置），必须为 false。
+	OfficialTimePricing bool
+	// OfficialTimeBaseIsOffPeak 标记上面这份基准价存的是官方空闲价：价格目录对
+	// DeepSeek 官方分时 SKU 存的是空闲价（高峰 = 基准 ×2）；false 表示存的是高峰价
+	// （代码内官方兜底表，空闲 = 基准 ×0.5）。
+	OfficialTimeBaseIsOffPeak bool
 }
 
 const (
@@ -219,11 +227,43 @@ func applyCostBreakdownMultiplier(cost *CostBreakdown, multiplier float64) {
 	cost.ActualCost *= multiplier
 }
 
-func resolvedChannelTimeMultiplier(resolved *ResolvedPricing, at time.Time) float64 {
-	if resolved == nil || resolved.Source != PricingSourceChannel || resolved.channelPricing == nil {
+// resolvedTokenTimeMultiplier 返回 token 计费的分时倍率。
+// 渠道显式分时配置优先；否则仅当生效价确实是官方报价时，才按北京时间选档
+// DeepSeek 官方峰谷价。effective 是本次实际用于计算的价格，它自己带着基准档位
+// （OfficialTimeBaseIsOffPeak）。
+func resolvedTokenTimeMultiplier(
+	resolved *ResolvedPricing,
+	effective *ModelPricing,
+	platform, model string,
+	at time.Time,
+) float64 {
+	if resolved != nil && resolved.Source == PricingSourceChannel &&
+		resolved.channelPricing != nil &&
+		resolved.channelPricing.TimePricing != nil &&
+		len(resolved.channelPricing.TimePricing.Periods) > 0 {
+		return resolved.channelPricing.TimePricing.MultiplierAt(at)
+	}
+	// 渠道价/分组价即使没配 TimePricing 也不叠加官方峰谷：它们是显式定价。
+	if resolved != nil && (resolved.Source == PricingSourceChannel || resolved.Source == PricingSourceGroup) {
 		return 1
 	}
-	return resolved.channelPricing.TimePricing.MultiplierAt(at)
+	if !officialTimePricingApplies(effective) {
+		return 1
+	}
+	return deepSeekOfficialTimeMultiplier(platform, model, at, effective.OfficialTimeBaseIsOffPeak)
+}
+
+// officialTimeMultiplierForPlatform 供无 ResolvedPricing 的旧路径使用：先确认该
+// platform/model 的生效基准价确实来自官方兜底表，再返回峰谷倍率。
+func (s *BillingService) officialTimeMultiplierForPlatform(platform, model string, at time.Time) float64 {
+	if !usesDeepSeekOfficialTimePricing(platform, model) {
+		return 1
+	}
+	pricing, err := s.GetModelPricingForPlatform(platform, model)
+	if err != nil || !officialTimePricingApplies(pricing) {
+		return 1
+	}
+	return deepSeekOfficialTimeMultiplier(platform, model, at, pricing.OfficialTimeBaseIsOffPeak)
 }
 
 // ErrModelPricingUnavailable indicates that none of the configured pricing
@@ -517,19 +557,24 @@ func (s *BillingService) initFallbackPricing() {
 
 	// ---- DeepSeek V4 系列 ----
 	// 中国区官方价格为 CNY/百万 tokens；系统内部按固定核算汇率换算为 USD/token。
+	// 下表存高峰价，空闲价为高峰一半，由 deepSeekOfficialTimeMultiplier 按
+	// 北京时间 09:00-12:00、14:00-18:00 现算。只在价格目录没有该 SKU 时兜底；
+	// 目录里有条目时以目录价为准（目录价是空闲价，见 getModelPricing）。
 	s.fallbackPrices["deepseek-v4-pro"] = &ModelPricing{
-		InputPricePerToken:         deepSeekCNYPerMillionTokens(3),
-		OutputPricePerToken:        deepSeekCNYPerMillionTokens(6),
+		InputPricePerToken:         deepSeekCNYPerMillionTokens(9),
+		OutputPricePerToken:        deepSeekCNYPerMillionTokens(27),
 		CacheCreationPricePerToken: 0,
-		CacheReadPricePerToken:     deepSeekCNYPerMillionTokens(0.025),
+		CacheReadPricePerToken:     deepSeekCNYPerMillionTokens(0.30),
 		SupportsCacheBreakdown:     false,
+		OfficialTimePricing:        true,
 	}
 	s.fallbackPrices["deepseek-v4-flash"] = &ModelPricing{
-		InputPricePerToken:         deepSeekCNYPerMillionTokens(1),
-		OutputPricePerToken:        deepSeekCNYPerMillionTokens(2),
+		InputPricePerToken:         deepSeekCNYPerMillionTokens(3),
+		OutputPricePerToken:        deepSeekCNYPerMillionTokens(9),
 		CacheCreationPricePerToken: 0,
-		CacheReadPricePerToken:     deepSeekCNYPerMillionTokens(0.02),
+		CacheReadPricePerToken:     deepSeekCNYPerMillionTokens(0.10),
 		SupportsCacheBreakdown:     false,
+		OfficialTimePricing:        true,
 	}
 
 	// ---- 智谱 GLM（Z.AI）----
@@ -781,10 +826,10 @@ func (s *BillingService) initFallbackPricing() {
 // GetFallbackPricing 公开访问硬编码回退价（getFallbackPricing 的 public wrapper）。
 // 用于模型广场等展示场景，在配置化 pricing catalog 命中失败时对齐真实计费口径。
 //
-// 注意：返回值中 DeepSeek 系列的单价是官方 CNY 报价通过固定内部核算汇率换算得到的
-// USD 数字（见 initFallbackPricing 中 deepSeekCNYPerMillionTokens）；GLM 采用 z.ai
-// 国际版 USD 报价，Kimi/MiniMax 采用官方 USD 报价。调用方应以「参考单价」而非精确
-// 市场价处理。若模型没有硬编码 fallback，返回 nil。
+// 注意：返回值中 DeepSeek 系列的单价是官方高峰 CNY 报价通过固定内部核算汇率换算得到的
+// USD 数字（见 initFallbackPricing 中 deepSeekCNYPerMillionTokens）；空闲价为高峰一半。
+// GLM 采用 z.ai 国际版 USD 报价，Kimi/MiniMax 采用官方 USD 报价。调用方应以「参考单价」
+// 而非精确市场价处理。若模型没有硬编码 fallback，返回 nil。
 func (s *BillingService) GetFallbackPricing(model string) *ModelPricing {
 	return s.getFallbackPricing(model)
 }
@@ -1211,6 +1256,10 @@ func isGrokMediaFamilyModel(native string) bool {
 // 的系列兜底价上，因此凡是模型名来自外部、且"能查到价"会直接影响计费金额的场景
 // （如按上游响应自报模型计费），都必须用本函数而不是 GetModelPricing 做准入判断。
 func (s *BillingService) HasIdentifiedTokenPricing(model string) bool {
+	return s.HasIdentifiedTokenPricingForPlatform("", model)
+}
+
+func (s *BillingService) HasIdentifiedTokenPricingForPlatform(platform, model string) bool {
 	if s == nil {
 		return false
 	}
@@ -1220,7 +1269,7 @@ func (s *BillingService) HasIdentifiedTokenPricing(model string) bool {
 	}
 	if s.pricingService != nil {
 		// 仅有图片价的条目不能用于 token 计费，口径与 GetModelPricing 保持一致。
-		if pricing := s.pricingService.GetIdentifiedModelPricing(model); pricing != nil && !pricing.TokenPricingAbsent {
+		if pricing := s.pricingService.GetIdentifiedModelPricingForPlatform(platform, model); pricing != nil && !pricing.TokenPricingAbsent {
 			return true
 		}
 	}
@@ -1230,7 +1279,11 @@ func (s *BillingService) HasIdentifiedTokenPricing(model string) bool {
 
 // GetModelPricing 获取模型价格配置
 func (s *BillingService) GetModelPricing(model string) (*ModelPricing, error) {
-	return s.getModelPricing(model, true)
+	return s.GetModelPricingForPlatform("", model)
+}
+
+func (s *BillingService) GetModelPricingForPlatform(platform, model string) (*ModelPricing, error) {
+	return s.getModelPricing(platform, model, true)
 }
 
 // GetModelPricingStrict 只在模型自身配过价时返回价格，不接受跨模型推断出来的价格。
@@ -1242,7 +1295,11 @@ func (s *BillingService) GetModelPricing(model string) (*ModelPricing, error) {
 //
 // 参见 PricingService.LookupModelPricingStrict 对两种口径差异的完整说明。
 func (s *BillingService) GetModelPricingStrict(model string) (*ModelPricing, error) {
-	return s.getModelPricing(model, false)
+	return s.GetModelPricingStrictForPlatform("", model)
+}
+
+func (s *BillingService) GetModelPricingStrictForPlatform(platform, model string) (*ModelPricing, error) {
+	return s.getModelPricing(platform, model, false)
 }
 
 // GetImageTokenPricingStrict resolves the exact catalog entry for an Image API
@@ -1253,11 +1310,15 @@ func (s *BillingService) GetModelPricingStrict(model string) (*ModelPricing, err
 // chat/token route, but it is complete for /v1/images/* as long as the image
 // dimensions used by that endpoint are explicitly priced.
 func (s *BillingService) GetImageTokenPricingStrict(model string, requireImageInput bool) (*ModelPricing, error) {
+	return s.GetImageTokenPricingStrictForPlatform("", model, requireImageInput)
+}
+
+func (s *BillingService) GetImageTokenPricingStrictForPlatform(platform, model string, requireImageInput bool) (*ModelPricing, error) {
 	model = strings.ToLower(strings.TrimSpace(model))
 	if model == "" || s == nil || s.pricingService == nil {
 		return nil, fmt.Errorf("%w for image model: %s", ErrModelPricingUnavailable, model)
 	}
-	entry := s.pricingService.LookupModelPricingStrict(model)
+	entry := s.pricingService.LookupModelPricingStrictForPlatform(platform, model)
 	inputConfigured := entry != nil && (entry.InputPriceExplicit ||
 		(!entry.PricePresenceKnown && entry.InputCostPerToken > 0))
 	imageOutputConfigured := entry != nil && (entry.ImageOutputPriceExplicit ||
@@ -1324,7 +1385,7 @@ func (s *BillingService) modelPricingFromCatalogEntry(model string, catalogEntry
 	return pricing, nil
 }
 
-func (s *BillingService) getModelPricing(model string, allowInference bool) (*ModelPricing, error) {
+func (s *BillingService) getModelPricing(platform, model string, allowInference bool) (*ModelPricing, error) {
 	// 标准化模型名称（转小写）
 	model = strings.ToLower(model)
 
@@ -1332,9 +1393,9 @@ func (s *BillingService) getModelPricing(model string, allowInference bool) (*Mo
 	if s.pricingService != nil {
 		var catalogEntry *ModelPriceEntry
 		if allowInference {
-			catalogEntry = s.pricingService.GetModelPricing(model)
+			catalogEntry = s.pricingService.GetModelPricingForPlatform(platform, model)
 		} else {
-			catalogEntry = s.pricingService.LookupModelPricingStrict(model)
+			catalogEntry = s.pricingService.LookupModelPricingStrictForPlatform(platform, model)
 		}
 		// input/output token 价不完整的条目（如 LiteLLM 的 imagen 类模型）不能用于
 		// token 计费：直接返回会把缺失的一侧按 $0 计费。跳过后走 fallback，
@@ -1345,7 +1406,18 @@ func (s *BillingService) getModelPricing(model string, allowInference bool) (*Mo
 			catalogEntry = nil
 		}
 		if catalogEntry != nil {
-			return s.modelPricingFromCatalogEntry(model, catalogEntry)
+			pricing, err := s.modelPricingFromCatalogEntry(model, catalogEntry)
+			if err != nil {
+				return nil, err
+			}
+			// 价格目录（含管理端手动覆盖后的生效价）对 DeepSeek 官方分时 SKU 存的是
+			// 官方空闲价，高峰按北京时间翻倍。第三方中转（platform 非 deepseek）
+			// 不是官方计费口径，usesDeepSeekOfficialTimePricing 已把它挡在外面。
+			if usesDeepSeekOfficialTimePricing(platform, model) {
+				pricing.OfficialTimePricing = true
+				pricing.OfficialTimeBaseIsOffPeak = true
+			}
+			return pricing, nil
 		}
 	}
 
@@ -1375,7 +1447,11 @@ func (s *BillingService) getModelPricing(model string, allowInference bool) (*Mo
 // GetModelPricingWithChannel 获取模型定价，渠道配置的价格覆盖默认值。
 // 渠道未配置图片输出价格时，图片 token 回退到渠道文本输出价；只有显式 0 才免费。
 func (s *BillingService) GetModelPricingWithChannel(model string, channelPricing *ChannelModelPricing) (*ModelPricing, error) {
-	pricing, err := s.GetModelPricing(model)
+	return s.GetModelPricingWithChannelForPlatform("", model, channelPricing)
+}
+
+func (s *BillingService) GetModelPricingWithChannelForPlatform(platform, model string, channelPricing *ChannelModelPricing) (*ModelPricing, error) {
+	pricing, err := s.GetModelPricingForPlatform(platform, model)
 	if err != nil {
 		return nil, err
 	}
@@ -1385,6 +1461,9 @@ func (s *BillingService) GetModelPricingWithChannel(model string, channelPricing
 	// 防止修改 fallbackPrices 中的共享指针
 	cloned := *pricing
 	pricing = &cloned
+	// 渠道显式定价后不再是官方报价，不能再叠加官方峰谷倍率。
+	pricing.OfficialTimePricing = false
+	pricing.OfficialTimeBaseIsOffPeak = false
 	if channelPricing.InputPrice != nil {
 		pricing.InputPricePerToken = *channelPricing.InputPrice
 		pricing.InputPricePerTokenPriority = *channelPricing.InputPrice
@@ -1420,6 +1499,7 @@ func (s *BillingService) GetModelPricingWithChannel(model string, channelPricing
 type CostInput struct {
 	Ctx                       context.Context
 	Model                     string
+	Platform                  string
 	GroupID                   *int64 // 用于渠道定价查找
 	Group                     *Group
 	Tokens                    UsageTokens
@@ -1427,7 +1507,7 @@ type CostInput struct {
 	UsageUnits                float64 // 音频等连续计量单位（分钟/小时/百万字符）
 	SizeTier                  string  // 按次/图片模式的层级标签（"1K","2K","4K","HD" 等）
 	RateMultiplier            float64
-	PricingAt                 time.Time             // 渠道分时定价使用的计费时刻
+	PricingAt                 time.Time             // 分时定价时刻：渠道 TimePricing 与 DeepSeek 官方峰谷价共用
 	ServiceTier               string                // "priority","flex","" 等
 	Resolver                  *ModelPricingResolver // 定价解析器
 	Resolved                  *ResolvedPricing      // 可选：预解析的定价结果（避免重复 Resolve 调用）
@@ -1443,7 +1523,8 @@ func (s *BillingService) CalculateCostUnified(input CostInput) (*CostBreakdown, 
 		if input.LongContextBillingEnabled != nil {
 			applyLongContextBilling = *input.LongContextBillingEnabled
 		}
-		return s.calculateCostInternalWithPolicy(
+		breakdown, err := s.calculateCostInternalForPlatform(
+			input.Platform,
 			input.Model,
 			input.Tokens,
 			input.RateMultiplier,
@@ -1451,15 +1532,20 @@ func (s *BillingService) CalculateCostUnified(input CostInput) (*CostBreakdown, 
 			nil,
 			applyLongContextBilling,
 		)
+		if err == nil {
+			applyCostBreakdownMultiplier(breakdown, s.officialTimeMultiplierForPlatform(input.Platform, input.Model, input.PricingAt))
+		}
+		return breakdown, err
 	}
 
 	// 优先使用预解析结果，避免重复 Resolve 调用
 	resolved := input.Resolved
 	if resolved == nil {
 		resolved = input.Resolver.Resolve(input.Ctx, PricingInput{
-			Model:   input.Model,
-			GroupID: input.GroupID,
-			Group:   input.Group,
+			Model:    input.Model,
+			Platform: input.Platform,
+			GroupID:  input.GroupID,
+			Group:    input.Group,
 		})
 	}
 
@@ -1513,7 +1599,7 @@ func (s *BillingService) calculateTokenCost(resolved *ResolvedPricing, input Cos
 	if err != nil {
 		return nil, err
 	}
-	applyCostBreakdownMultiplier(breakdown, resolvedChannelTimeMultiplier(resolved, input.PricingAt))
+	applyCostBreakdownMultiplier(breakdown, resolvedTokenTimeMultiplier(resolved, pricing, input.Platform, input.Model, input.PricingAt))
 	return breakdown, nil
 }
 
@@ -1795,8 +1881,12 @@ func (s *BillingService) CalculateCostWithServiceTier(model string, tokens Usage
 	return s.calculateCostInternal(model, tokens, rateMultiplier, serviceTier, nil)
 }
 
+func (s *BillingService) CalculateCostWithServiceTierForPlatform(platform, model string, tokens UsageTokens, rateMultiplier float64, serviceTier string) (*CostBreakdown, error) {
+	return s.calculateCostInternalForPlatform(platform, model, tokens, rateMultiplier, serviceTier, nil, true)
+}
+
 func (s *BillingService) calculateCostInternal(model string, tokens UsageTokens, rateMultiplier float64, serviceTier string, channelPricing *ChannelModelPricing) (*CostBreakdown, error) {
-	return s.calculateCostInternalWithPolicy(model, tokens, rateMultiplier, serviceTier, channelPricing, true)
+	return s.calculateCostInternalForPlatform("", model, tokens, rateMultiplier, serviceTier, channelPricing, true)
 }
 
 func (s *BillingService) calculateCostInternalWithPolicy(
@@ -1807,12 +1897,24 @@ func (s *BillingService) calculateCostInternalWithPolicy(
 	channelPricing *ChannelModelPricing,
 	longContextBillingEnabled bool,
 ) (*CostBreakdown, error) {
+	return s.calculateCostInternalForPlatform("", model, tokens, rateMultiplier, serviceTier, channelPricing, longContextBillingEnabled)
+}
+
+func (s *BillingService) calculateCostInternalForPlatform(
+	platform string,
+	model string,
+	tokens UsageTokens,
+	rateMultiplier float64,
+	serviceTier string,
+	channelPricing *ChannelModelPricing,
+	longContextBillingEnabled bool,
+) (*CostBreakdown, error) {
 	var pricing *ModelPricing
 	var err error
 	if channelPricing != nil {
-		pricing, err = s.GetModelPricingWithChannel(model, channelPricing)
+		pricing, err = s.GetModelPricingWithChannelForPlatform(platform, model, channelPricing)
 	} else {
-		pricing, err = s.GetModelPricing(model)
+		pricing, err = s.GetModelPricingForPlatform(platform, model)
 	}
 	if err != nil {
 		return nil, err

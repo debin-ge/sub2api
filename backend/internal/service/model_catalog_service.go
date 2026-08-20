@@ -735,6 +735,18 @@ func (s *ModelCatalogService) ListPublic(ctx context.Context) (map[string][]stri
 // remain usable even after their normal request-path stale TTL; cache misses
 // fall back to the same configured/default model policy used elsewhere.
 func (s *ModelCatalogService) ListPublicPassive(ctx context.Context) (map[string][]string, error) {
+	return s.listPassive(ctx, false)
+}
+
+// ListAllPassive returns catalogs for every active group, including exclusive
+// ones, without starting live upstream discovery. Admin cost-catalog pages use
+// this so the list matches currently callable models rather than the full
+// third-party pricing dump.
+func (s *ModelCatalogService) ListAllPassive(ctx context.Context) (map[string][]string, error) {
+	return s.listPassive(ctx, true)
+}
+
+func (s *ModelCatalogService) listPassive(ctx context.Context, includeExclusive bool) (map[string][]string, error) {
 	groups, err := s.groupRepo.ListActive(ctx)
 	if err != nil {
 		return nil, err
@@ -744,7 +756,7 @@ func (s *ModelCatalogService) ListPublicPassive(ctx context.Context) (map[string
 	memo := make(map[int64][]string)
 	for i := range groups {
 		group := &groups[i]
-		if group.IsExclusive {
+		if !includeExclusive && group.IsExclusive {
 			continue
 		}
 		models, listErr := s.listForGroupPassive(ctx, group, memo)
@@ -767,14 +779,27 @@ func (s *ModelCatalogService) listForGroupPassive(
 	if group == nil {
 		return nil, nil
 	}
-	accounts, err := s.accountRepo.ListSchedulableByGroupIDAndPlatform(ctx, group.ID, group.Platform)
+	var accounts []Account
+	var err error
+	if group.Platform == PlatformComposite {
+		accounts, err = s.accountRepo.ListSchedulableByGroupID(ctx, group.ID)
+	} else {
+		accounts, err = s.accountRepo.ListSchedulableByGroupIDAndPlatform(ctx, group.ID, group.Platform)
+	}
 	if err != nil {
 		return nil, err
 	}
 	candidates := make([]string, 0)
 	for i := range accounts {
 		account := &accounts[i]
-		if account.Status != StatusActive || !account.Schedulable || account.Platform != group.Platform {
+		if account.Status != StatusActive || !account.Schedulable {
+			continue
+		}
+		if group.Platform == PlatformComposite {
+			if !isCompositeCatalogPlatform(account.Platform) {
+				continue
+			}
+		} else if account.Platform != group.Platform {
 			continue
 		}
 		models, ok := memo[account.ID]
@@ -790,6 +815,12 @@ func (s *ModelCatalogService) listForGroupPassive(
 			return nil, channelErr
 		}
 		for _, model := range channel.SupportedModels() {
+			if group.Platform == PlatformComposite {
+				if isCompositeCatalogPlatform(model.Platform) {
+					candidates = append(candidates, model.Name)
+				}
+				continue
+			}
 			if model.Platform == group.Platform {
 				candidates = append(candidates, model.Name)
 			}

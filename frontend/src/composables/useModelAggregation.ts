@@ -1,4 +1,5 @@
 import type {
+  ModelPriceTimeSchedule,
   UserAvailableChannel,
   UserAvailableGroup,
   UserSupportedModelPricing
@@ -46,6 +47,7 @@ export interface AggregatedModel {
   supportedGroups: PlazaSupportedGroup[]
   recentCalls: number
   recentCallWindowSeconds: number
+  timeSchedule?: ModelPriceTimeSchedule
 }
 
 export interface PlazaPlatformSection {
@@ -271,9 +273,13 @@ export function aggregateByPlatformModel(
             vipPricing: null,
             supportedGroups: [],
             recentCalls,
-            recentCallWindowSeconds
+            recentCallWindowSeconds,
+            timeSchedule: model.time_schedule
           }
           byModel.set(model.name, existing)
+        }
+        if (model.time_schedule) {
+          existing.timeSchedule = model.time_schedule
         }
 
         for (const group of platformSection.groups) {
