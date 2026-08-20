@@ -565,7 +565,8 @@ func (h *ChannelHandler) GetModelDefaultPricing(c *gin.Context) {
 
 // platformToPricingCatalogProvider maps a channel platform name to the
 // provider string used by the configured pricing catalog's litellm_provider
-// field.
+// field. kimi/zhipu 等平台在同步目录里通常没有条目，映射仍必须存在，这样
+// SyncPricingModels 会返回空列表而不是 UNSUPPORTED_PLATFORM。
 var platformToPricingCatalogProvider = map[string]string{
 	service.PlatformAnthropic:   "anthropic",
 	service.PlatformOpenAI:      "openai",
@@ -588,7 +589,7 @@ func (h *ChannelHandler) SyncPricingModels(c *gin.Context) {
 		return
 	}
 
-	provider, ok := service.PlatformToPricingCatalogProvider[platform]
+	provider, ok := platformToPricingCatalogProvider[platform]
 	if !ok {
 		response.ErrorFrom(c, infraerrors.BadRequest("UNSUPPORTED_PLATFORM",
 			fmt.Sprintf("unsupported platform: %s", platform)).
