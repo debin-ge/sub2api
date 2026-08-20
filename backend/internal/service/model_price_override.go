@@ -799,11 +799,15 @@ func (s *PricingService) ListCatalog(q ModelPriceListQuery) ModelPriceListResult
 			}
 			display := row.Platform
 			if platformFilter != "" {
-				if row.Platform != platformFilter && row.Platform != ModelPriceOverrideWildcardPlatform {
+				// A wildcard override changes pricing wherever the model is callable,
+				// but it must not make that model appear callable on every platform.
+				// Callable wildcard models were already added from RestrictTo above;
+				// an unseen wildcard row therefore has no place in this platform tab.
+				if row.Platform == ModelPriceOverrideWildcardPlatform {
 					continue
 				}
-				if row.Platform == ModelPriceOverrideWildcardPlatform {
-					display = platformFilter
+				if row.Platform != platformFilter {
+					continue
 				}
 			}
 			addItem(display, row.ModelName, s.effectiveEntryLocked(display, row.ModelName))

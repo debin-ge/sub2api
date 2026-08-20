@@ -222,6 +222,46 @@ func TestListCatalogRestrictsToCallableModels(t *testing.T) {
 	require.Equal(t, ModelPriceSourceCatalog, got.Items[0].Source)
 }
 
+func TestListCatalogPlatformFilterDoesNotMaterializeWildcardOverrideFromAnotherPlatform(t *testing.T) {
+	svc := &PricingService{
+		catalogData: map[string]*ModelPriceEntry{
+			"claude-sonnet-4":   pricedEntry(1e-6, 2e-6),
+			"deepseek-v4-flash": pricedEntry(3e-6, 9e-6),
+		},
+		overrideRows: []ModelPriceOverride{{
+			Platform:  ModelPriceOverrideWildcardPlatform,
+			ModelName: "deepseek-v4-flash",
+			Enabled:   true,
+			Payload:   ModelPriceOverridePayload{InputCostPerToken: ptrPrice(4e-6)},
+		}},
+	}
+	svc.rebuildEffectiveLocked(svc.catalogData)
+
+	callable := []CallableModelRef{
+		{Platform: PlatformAntigravity, Model: "claude-sonnet-4"},
+		{Platform: PlatformDeepSeek, Model: "deepseek-v4-flash"},
+	}
+	antigravity := svc.ListCatalog(ModelPriceListQuery{
+		Platform:   PlatformAntigravity,
+		Page:       1,
+		PageSize:   50,
+		RestrictTo: callable,
+	})
+	require.Equal(t, 1, antigravity.Total)
+	require.Equal(t, "claude-sonnet-4", antigravity.Items[0].Model)
+
+	deepseek := svc.ListCatalog(ModelPriceListQuery{
+		Platform:   PlatformDeepSeek,
+		Page:       1,
+		PageSize:   50,
+		RestrictTo: callable,
+	})
+	require.Equal(t, 1, deepseek.Total)
+	require.Equal(t, "deepseek-v4-flash", deepseek.Items[0].Model)
+	require.Equal(t, ModelPriceOverrideWildcardPlatform, deepseek.Items[0].OverridePlatform)
+	require.InDelta(t, 4e-6, deepseek.Items[0].Effective["input_cost_per_token"], 1e-12)
+}
+
 func TestListCatalogUsesOfficialPriceWhenCatalogMissing(t *testing.T) {
 	svc := &PricingService{catalogData: map[string]*ModelPriceEntry{}}
 	svc.rebuildEffectiveLocked(svc.catalogData)
