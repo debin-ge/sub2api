@@ -297,18 +297,20 @@ func cleanupUsageLogsBatchWithRollupInvalidation(ctx context.Context, db *sql.DB
 	if err := lockGroupUsageRollupState(ctx, tx); err != nil {
 		return rollback(err)
 	}
+	// 待定价记录必须留给补偿任务，不能被仪表盘清理删掉。
 	rows, err := tx.QueryContext(ctx, `
 		WITH victims AS (
 			SELECT ctid
 			FROM usage_logs
 			WHERE created_at < $1
+				AND billing_state <> $3
 			ORDER BY created_at ASC, id ASC
 			LIMIT $2
 		)
 		DELETE FROM usage_logs
 		WHERE ctid IN (SELECT ctid FROM victims)
 		RETURNING created_at
-	`, cutoff.UTC(), usageLogsCleanupBatchSize)
+	`, cutoff.UTC(), usageLogsCleanupBatchSize, int16(service.BillingStatePricingUnavailable))
 	if err != nil {
 		return rollback(err)
 	}

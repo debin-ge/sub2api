@@ -193,8 +193,8 @@ func TestDashboardAggregationRepositoryCleanupUsageLogsNonPartitionedInvalidates
 	mock.ExpectBegin()
 	mock.ExpectQuery(`SELECT id FROM usage_group_rollup_state.*FOR UPDATE`).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(1))
-	mock.ExpectQuery(`(?s)DELETE FROM usage_logs.*RETURNING created_at`).
-		WithArgs(cutoff, usageLogsCleanupBatchSize).
+	mock.ExpectQuery(`(?s)billing_state <> \$3[\s\S]*DELETE FROM usage_logs.*RETURNING created_at`).
+		WithArgs(cutoff, usageLogsCleanupBatchSize, int16(service.BillingStatePricingUnavailable)).
 		WillReturnRows(sqlmock.NewRows([]string{"created_at"}).
 			AddRow(earliestDeletedAt.Add(time.Hour)).
 			AddRow(earliestDeletedAt))
@@ -239,6 +239,7 @@ func TestDashboardAggregationRepositoryCleanupUsageLogsPartitionedSortsAndInvali
 		{name: "usage_logs_202604", start: aprilStart},
 		{name: "usage_logs_202606", start: juneStart},
 	} {
+		expectUsageLogsPartitionPendingSettlement(mock, partition.name, false)
 		mock.ExpectBegin()
 		mock.ExpectQuery(`SELECT id FROM usage_group_rollup_state.*FOR UPDATE`).
 			WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(1))
@@ -271,8 +272,8 @@ func TestDashboardAggregationRepositoryCleanupUsageLogsNonPartitionedFailureRoll
 	mock.ExpectBegin()
 	mock.ExpectQuery(`SELECT id FROM usage_group_rollup_state.*FOR UPDATE`).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(1))
-	mock.ExpectQuery(`(?s)SELECT ctid.*ORDER BY created_at ASC, id ASC.*DELETE FROM usage_logs.*RETURNING created_at`).
-		WithArgs(cutoff, usageLogsCleanupBatchSize).
+	mock.ExpectQuery(`(?s)billing_state <> \$3[\s\S]*DELETE FROM usage_logs.*RETURNING created_at`).
+		WithArgs(cutoff, usageLogsCleanupBatchSize, int16(service.BillingStatePricingUnavailable)).
 		WillReturnRows(sqlmock.NewRows([]string{"created_at"}).AddRow(deletedAt))
 	mock.ExpectExec(`UPDATE usage_group_rollup_state`).
 		WithArgs(deletedAt, "Asia/Shanghai").
@@ -298,6 +299,7 @@ func TestDashboardAggregationRepositoryCleanupUsageLogsPartitionFailureRollsBack
 		WillReturnRows(sqlmock.NewRows([]string{"relname"}).
 			AddRow("usage_logs_202606").
 			AddRow("usage_logs_202604"))
+	expectUsageLogsPartitionPendingSettlement(mock, "usage_logs_202604", false)
 	mock.ExpectBegin()
 	mock.ExpectQuery(`SELECT id FROM usage_group_rollup_state.*FOR UPDATE`).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(1))

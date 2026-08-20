@@ -540,15 +540,24 @@ func TestBuildUsageCleanupWhere(t *testing.T) {
 }
 
 func TestDashboardAggregationCleanupUsageLogsPreservesPendingSettlement(t *testing.T) {
+	setUsageCleanupRollupTestTimezone(t)
 	db, mock := newSQLMock(t)
 	repo := newDashboardAggregationRepositoryWithSQL(db)
 	cutoff := time.Date(2025, 5, 1, 0, 0, 0, 0, time.UTC)
+	fixedNow := time.Date(2025, 6, 1, 8, 0, 0, 0, time.UTC)
+	repo.clock = func() time.Time { return fixedNow }
+	todayStart := service.GroupUsageTodayStart(fixedNow)
 
 	mock.ExpectQuery("SELECT EXISTS\\(").
 		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
-	mock.ExpectExec(`WITH victims AS \([\s\S]*billing_state <> \$3[\s\S]*DELETE FROM usage_logs`).
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT id FROM usage_group_rollup_state.*FOR UPDATE`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(1))
+	mock.ExpectQuery(`(?s)WITH victims AS \([\s\S]*billing_state <> \$3[\s\S]*DELETE FROM usage_logs.*RETURNING created_at`).
 		WithArgs(cutoff, usageLogsCleanupBatchSize, int16(service.BillingStatePricingUnavailable)).
-		WillReturnResult(sqlmock.NewResult(0, 0))
+		WillReturnRows(sqlmock.NewRows([]string{"created_at"}))
+	mock.ExpectCommit()
+	expectGroupUsageRollupSyncAlreadyClosed(mock, todayStart)
 
 	err := repo.CleanupUsageLogs(context.Background(), cutoff)
 
@@ -557,9 +566,14 @@ func TestDashboardAggregationCleanupUsageLogsPreservesPendingSettlement(t *testi
 }
 
 func TestDashboardAggregationCleanupUsageLogsSkipsPartitionWithPendingSettlement(t *testing.T) {
+	setUsageCleanupRollupTestTimezone(t)
 	db, mock := newSQLMock(t)
 	repo := newDashboardAggregationRepositoryWithSQL(db)
 	cutoff := time.Date(2025, 3, 1, 0, 0, 0, 0, time.UTC)
+	fixedNow := time.Date(2025, 4, 1, 8, 0, 0, 0, time.UTC)
+	repo.clock = func() time.Time { return fixedNow }
+	todayStart := service.GroupUsageTodayStart(fixedNow)
+	febStart := time.Date(2025, 2, 1, 0, 0, 0, 0, time.UTC)
 
 	mock.ExpectQuery("SELECT EXISTS\\(").
 		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
@@ -567,19 +581,37 @@ func TestDashboardAggregationCleanupUsageLogsSkipsPartitionWithPendingSettlement
 		WillReturnRows(sqlmock.NewRows([]string{"relname"}).
 			AddRow("usage_logs_202501").
 			AddRow("usage_logs_202502"))
-	mock.ExpectQuery(`SELECT EXISTS \(SELECT 1 FROM "usage_logs_202501" WHERE billing_state = \$1 LIMIT 1\)`).
-		WithArgs(int16(service.BillingStatePricingUnavailable)).
-		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
-	mock.ExpectQuery(`SELECT EXISTS \(SELECT 1 FROM "usage_logs_202502" WHERE billing_state = \$1 LIMIT 1\)`).
-		WithArgs(int16(service.BillingStatePricingUnavailable)).
-		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
+	expectUsageLogsPartitionPendingSettlement(mock, "usage_logs_202501", true)
+	expectUsageLogsPartitionPendingSettlement(mock, "usage_logs_202502", false)
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT id FROM usage_group_rollup_state.*FOR UPDATE`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(1))
+	mock.ExpectExec(`UPDATE usage_group_rollup_state`).
+		WithArgs(febStart, "Asia/Shanghai").
+		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(`DROP TABLE IF EXISTS "usage_logs_202502"`).
 		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectCommit()
+	expectGroupUsageRollupSyncAlreadyClosed(mock, todayStart)
 
 	err := repo.CleanupUsageLogs(context.Background(), cutoff)
 
 	require.NoError(t, err)
 	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func expectUsageLogsPartitionPendingSettlement(mock sqlmock.Sqlmock, partition string, pending bool) {
+	mock.ExpectQuery(`SELECT EXISTS \(SELECT 1 FROM "` + partition + `" WHERE billing_state = \$1 LIMIT 1\)`).
+		WithArgs(int16(service.BillingStatePricingUnavailable)).
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(pending))
+}
+
+func expectGroupUsageRollupSyncAlreadyClosed(mock sqlmock.Sqlmock, todayStart time.Time) {
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT closed_before::text, retained_from.*FOR UPDATE`).
+		WillReturnRows(sqlmock.NewRows([]string{"closed_before", "retained_from", "timezone_name"}).
+			AddRow(service.GroupUsageDate(todayStart), time.Unix(0, 0).UTC(), "Asia/Shanghai"))
+	mock.ExpectCommit()
 }
 
 func TestBuildUsageCleanupWhereRequestTypePriority(t *testing.T) {
