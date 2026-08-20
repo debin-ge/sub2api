@@ -64,6 +64,23 @@ func TestClassifyNoAccountError_NilDiagnoser_Falls503(t *testing.T) {
 	require.False(t, cls.ModelNotFound)
 }
 
+// 选号失败分类必须用「上游路由模型」做诊断、用「客户端请求模型」写报错文案。
+// /v1/images 曾把这两个位置传反，结果既查错了模型，又把内部映射模型泄漏给客户端。
+func TestClassifyNoAccountError_DiagnosesRoutingModelButReportsDisplayModel(t *testing.T) {
+	c := newTestGinContextWithRequest()
+	fd := &fakeDiagnoser{resp: service.ModelAvailabilityDiagnosis{HasAccountsInPool: true, HasModelSupport: false}}
+	apiKey := &service.APIKey{GroupID: ptrInt64(7)}
+
+	cls := classifyNoAccountErrorFromGin(c, fd, apiKey, nil, "provider-image-model", "gpt-image-1", service.PlatformOpenAI)
+
+	require.Equal(t, http.StatusNotFound, cls.Status)
+	require.True(t, cls.ModelNotFound)
+	require.Contains(t, cls.Message, "gpt-image-1")
+	require.NotContains(t, cls.Message, "provider-image-model")
+	require.Len(t, fd.calls, 1)
+	require.Equal(t, "provider-image-model", fd.calls[0].Model)
+}
+
 func TestClassifyNoAccountError_NilAPIKey_Falls503(t *testing.T) {
 	c := newTestGinContextWithRequest()
 	fd := &fakeDiagnoser{resp: service.ModelAvailabilityDiagnosis{HasAccountsInPool: true, HasModelSupport: false}}

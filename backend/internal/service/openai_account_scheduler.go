@@ -2081,6 +2081,112 @@ func (s *OpenAIGatewayService) SelectAccountWithSchedulerForCapability(
 	return s.selectAccountWithScheduler(ctx, groupID, previousResponseID, sessionHash, requestedModel, excludedIDs, requiredTransport, requiredCapability, "", requireCompact, platform, previousResponseCanMove, billingKind)
 }
 
+// openAIScheduledSelection bundles what one scheduler attempt produces so the
+// generic channel-mapping fallback can carry both values through its single
+// result slot.
+type openAIScheduledSelection struct {
+	selection *AccountSelectionResult
+	decision  OpenAIAccountScheduleDecision
+}
+
+// SelectAccountWithSchedulerForMappedCapability first preserves the existing
+// account compatibility lookup for the client-requested model. If that pool is
+// exhausted and the channel maps the request to a different model, it retries
+// selection with the model that will actually be forwarded upstream.
+//
+// The fallback context pins the original request and its already-resolved
+// channel mapping. This prevents pricing and restriction guards from treating
+// the routed model as a fresh request and applying channel mapping twice.
+// routingModel reports which model was used by the successful/final selection
+// attempt so callers can attribute scheduler health and availability checks to
+// the same model identity.
+//
+// fallbackState may be nil for single-shot selection; callers that re-select
+// inside a failover loop should share one state so the requested-model pass is
+// skipped once it has been proven empty.
+func (s *OpenAIGatewayService) SelectAccountWithSchedulerForMappedCapability(
+	ctx context.Context,
+	groupID *int64,
+	previousResponseID string,
+	sessionHash string,
+	requestedModel string,
+	channelMapping ChannelMappingResult,
+	fallbackState *ChannelMappingFallbackState,
+	excludedIDs map[int64]struct{},
+	requiredTransport OpenAIUpstreamTransport,
+	requiredCapability OpenAIEndpointCapability,
+	requireCompact bool,
+	previousResponseCanMove bool,
+	billingKind BillingKind,
+	platformOverride ...string,
+) (*AccountSelectionResult, OpenAIAccountScheduleDecision, string, error) {
+	return s.SelectAccountWithSchedulerForResolvedCapability(
+		ctx,
+		groupID,
+		previousResponseID,
+		sessionHash,
+		requestedModel,
+		requestedModel,
+		channelMapping,
+		fallbackState,
+		excludedIDs,
+		requiredTransport,
+		requiredCapability,
+		requireCompact,
+		previousResponseCanMove,
+		billingKind,
+		platformOverride...,
+	)
+}
+
+// SelectAccountWithSchedulerForResolvedCapability is the OpenAI scheduler
+// adapter for compatibility routes whose primary routing identity may already
+// be normalized or resolved by a dispatch rule. The generic fallback still
+// pins requestedModel as the original channel pricing identity.
+func (s *OpenAIGatewayService) SelectAccountWithSchedulerForResolvedCapability(
+	ctx context.Context,
+	groupID *int64,
+	previousResponseID string,
+	sessionHash string,
+	requestedModel string,
+	primaryRoutingModel string,
+	channelMapping ChannelMappingResult,
+	fallbackState *ChannelMappingFallbackState,
+	excludedIDs map[int64]struct{},
+	requiredTransport OpenAIUpstreamTransport,
+	requiredCapability OpenAIEndpointCapability,
+	requireCompact bool,
+	previousResponseCanMove bool,
+	billingKind BillingKind,
+	platformOverride ...string,
+) (*AccountSelectionResult, OpenAIAccountScheduleDecision, string, error) {
+	attempt, routingModel, err := SelectWithChannelMappingRoutingFallback(
+		ctx,
+		fallbackState,
+		requestedModel,
+		primaryRoutingModel,
+		channelMapping,
+		func(attemptCtx context.Context, attemptModel string) (openAIScheduledSelection, error) {
+			selection, decision, selectErr := s.SelectAccountWithSchedulerForCapability(
+				attemptCtx,
+				groupID,
+				previousResponseID,
+				sessionHash,
+				attemptModel,
+				excludedIDs,
+				requiredTransport,
+				requiredCapability,
+				requireCompact,
+				previousResponseCanMove,
+				billingKind,
+				platformOverride...,
+			)
+			return openAIScheduledSelection{selection: selection, decision: decision}, selectErr
+		},
+	)
+	return attempt.selection, attempt.decision, routingModel, err
+}
+
 func (s *OpenAIGatewayService) SelectAccountWithSchedulerForImages(
 	ctx context.Context,
 	groupID *int64,
@@ -2098,6 +2204,39 @@ func (s *OpenAIGatewayService) SelectAccountWithSchedulerForImages(
 		return s.selectAccountWithScheduler(ctx, groupID, "", sessionHash, requestedModel, excludedIDs, OpenAIUpstreamTransportHTTPSSE, "", OpenAIImagesCapabilityBasic, false, PlatformOpenAI, false, BillingKindImage)
 	}
 	return selection, decision, err
+}
+
+// SelectAccountWithSchedulerForMappedImages applies the platform-neutral
+// channel-mapping fallback policy while preserving the image scheduler's
+// capability fallback and decision metadata.
+func (s *OpenAIGatewayService) SelectAccountWithSchedulerForMappedImages(
+	ctx context.Context,
+	groupID *int64,
+	sessionHash string,
+	requestedModel string,
+	channelMapping ChannelMappingResult,
+	fallbackState *ChannelMappingFallbackState,
+	excludedIDs map[int64]struct{},
+	requiredCapability OpenAIImagesCapability,
+) (*AccountSelectionResult, OpenAIAccountScheduleDecision, string, error) {
+	attempt, routingModel, err := SelectWithChannelMappingFallback(
+		ctx,
+		fallbackState,
+		requestedModel,
+		channelMapping,
+		func(attemptCtx context.Context, attemptModel string) (openAIScheduledSelection, error) {
+			selection, decision, selectErr := s.SelectAccountWithSchedulerForImages(
+				attemptCtx,
+				groupID,
+				sessionHash,
+				attemptModel,
+				excludedIDs,
+				requiredCapability,
+			)
+			return openAIScheduledSelection{selection: selection, decision: decision}, selectErr
+		},
+	)
+	return attempt.selection, attempt.decision, routingModel, err
 }
 
 // selectAccountWithScheduler wraps selectAccountWithSchedulerOnce with a

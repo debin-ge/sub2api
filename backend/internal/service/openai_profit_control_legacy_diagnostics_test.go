@@ -80,6 +80,9 @@ func TestSelectAccountWithScheduler_LegacyProfitDiagnostics(t *testing.T) {
 		require.Nil(t, selection)
 		require.ErrorIs(t, err, ErrNoAvailableCompactAccounts)
 		require.False(t, strings.Contains(err.Error(), "pool="), err)
-		require.False(t, errors.Is(err, ErrNoAvailableAccounts))
+		// 保留专有 sentinel 与专有文案，但仍要能被通用容量分支识别：compact 池
+		// 排空同样是「池子为空」，否则渠道映射回退不触发，legacy
+		// /responses/compact 请求会卡死在请求模型那一跳。
+		require.True(t, errors.Is(err, ErrNoAvailableAccounts))
 	})
 }

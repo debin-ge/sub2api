@@ -317,6 +317,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 
 	if platform == service.PlatformGemini {
 		fs := NewFailoverState(h.maxAccountSwitchesGemini, hasBoundSession)
+		var mappingFallback service.ChannelMappingFallbackState
 
 		// 单账号分组提前设置 SingleAccountRetry 标记，让 Service 层首次 503 就不设模型限流标记。
 		// 避免单账号分组收到 503 (MODEL_CAPACITY_EXHAUSTED) 时设 29s 限流，导致后续请求连续快速失败。
@@ -326,14 +327,25 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 		}
 
 		for {
-			selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), apiKey.GroupID, sessionKey, reqModel, fs.FailedAccountIDs, "", int64(0)) // Gemini 不使用会话限制
+			selection, routingModel, err := selectGatewayAccountWithChannelMapping(
+				c.Request.Context(),
+				h.gatewayService,
+				apiKey.GroupID,
+				sessionKey,
+				reqModel,
+				channelMapping,
+				&mappingFallback,
+				fs.FailedAccountIDs,
+				"",
+				int64(0),
+			) // Gemini 不使用会话限制
 			if err != nil {
 				if accessErr, ok := classifyGroupAccessSelectionError(err); ok {
 					h.handleStreamingAwareError(c, accessErr.Status, accessErr.Reason, accessErr.Message, streamStarted)
 					return
 				}
 				if len(fs.FailedAccountIDs) == 0 {
-					cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, err, reqModel, reqModel, service.PlatformGemini)
+					cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, err, routingModel, reqModel, service.PlatformGemini)
 					if !cls.ModelNotFound {
 						markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
 					}
@@ -632,6 +644,8 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 
 	for {
 		fs := NewFailoverState(h.maxAccountSwitches, hasBoundSession)
+		// 回退分组会换池，因此 latch 与 fs 同生命周期，随外层重试一起重置。
+		var mappingFallback service.ChannelMappingFallbackState
 		retryWithFallback := false
 
 		for {
@@ -648,14 +662,25 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				zap.Bool("has_bound_session", hasBoundSession),
 				zap.Int("failed_account_count", len(fs.FailedAccountIDs)),
 			)
-			selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), currentAPIKey.GroupID, sessionKey, reqModel, fs.FailedAccountIDs, parsedReq.MetadataUserID, subject.UserID)
+			selection, routingModel, err := selectGatewayAccountWithChannelMapping(
+				c.Request.Context(),
+				h.gatewayService,
+				currentAPIKey.GroupID,
+				sessionKey,
+				reqModel,
+				channelMapping,
+				&mappingFallback,
+				fs.FailedAccountIDs,
+				parsedReq.MetadataUserID,
+				subject.UserID,
+			)
 			if err != nil {
 				if accessErr, ok := classifyGroupAccessSelectionError(err); ok {
 					h.handleStreamingAwareError(c, accessErr.Status, accessErr.Reason, accessErr.Message, streamStarted)
 					return
 				}
 				if len(fs.FailedAccountIDs) == 0 {
-					cls := classifyNoAccountErrorFromGin(c, h.gatewayService, currentAPIKey, err, reqModel, reqModel, platform)
+					cls := classifyNoAccountErrorFromGin(c, h.gatewayService, currentAPIKey, err, routingModel, reqModel, platform)
 					if !cls.ModelNotFound {
 						markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
 					}

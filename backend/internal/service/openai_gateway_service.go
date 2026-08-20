@@ -405,7 +405,21 @@ var defaultOpenAICodexSnapshotPersistThrottle = newAccountWriteThrottle(openAICo
 
 // ErrNoAvailableCompactAccounts indicates a legacy /responses/compact request
 // needs compact support but no compatible account is available.
-var ErrNoAvailableCompactAccounts = errors.New("no available accounts support /responses/compact")
+//
+// It unwraps to ErrNoAvailableAccounts: an exhausted compact-capable pool is
+// still an exhausted pool, so generic capacity handling must treat it like any
+// other "no account" exit. Channel-mapping fallback depends on this — without
+// the unwrap a compact request gives up on the requested model's pool and never
+// re-selects against the channel-mapped model.
+var ErrNoAvailableCompactAccounts error = noAvailableCompactAccountsError{}
+
+type noAvailableCompactAccountsError struct{}
+
+func (noAvailableCompactAccountsError) Error() string {
+	return "no available accounts support /responses/compact"
+}
+
+func (noAvailableCompactAccountsError) Unwrap() error { return ErrNoAvailableAccounts }
 
 // OpenAIGatewayService handles OpenAI API gateway operations
 type OpenAIGatewayService struct {
@@ -601,8 +615,17 @@ func (s *OpenAIGatewayService) checkChannelPricingRestriction(ctx context.Contex
 	if groupID == nil || s.channelService == nil || requestedModel == "" {
 		return false
 	}
-	mapping := s.channelService.ResolveChannelMapping(ctx, *groupID, requestedModel)
-	billingModel := billingModelForRestriction(mapping.BillingModelSource, requestedModel, mapping.MappedModel)
+	pricingRequestedModel := requestedModel
+	mapping := ChannelMappingResult{}
+	if identity, ok := resolvedChannelPricingIdentityFromContext(ctx, requestedModel); ok {
+		pricingRequestedModel = identity.requestedModel
+		mapping.Mapped = identity.mapped
+		mapping.MappedModel = identity.channelMappedModel
+		mapping.BillingModelSource = identity.billingModelSource
+	} else {
+		mapping = s.channelService.ResolveChannelMapping(ctx, *groupID, requestedModel)
+	}
+	billingModel := billingModelForRestriction(mapping.BillingModelSource, pricingRequestedModel, mapping.MappedModel)
 	if billingModel == "" {
 		return false
 	}

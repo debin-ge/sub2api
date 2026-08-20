@@ -210,6 +210,87 @@ func TestOpenAIGatewayServiceValidateSelectedOpenAIModelPricing_AllowsChannelMap
 	))
 }
 
+func TestOpenAIGatewayServiceValidateSelectedOpenAIModelPricing_ResolvedIdentityPreventsSecondMapping(t *testing.T) {
+	const (
+		requestedModel  = "gpt-public-alias"
+		routedModel     = "gpt-5.4"
+		secondPassModel = "gpt-future-unpriced-v99"
+	)
+	groupID := int64(84)
+	channelService, cache := newOpenAIPricingGuardChannel(groupID, BillingModelSourceChannelMapped)
+	cache.mappingByGroupModel[channelModelKey{
+		groupID: groupID, platform: PlatformOpenAI, model: requestedModel,
+	}] = routedModel
+	cache.mappingByGroupModel[channelModelKey{
+		groupID: groupID, platform: PlatformOpenAI, model: routedModel,
+	}] = secondPassModel
+	svc := newOpenAIPricingGuardService(nil)
+	svc.channelService = channelService
+	account := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+
+	// Without the ingress identity, treating the routed model as a new request
+	// applies the second mapping and rejects its unknown upstream SKU.
+	require.ErrorIs(t, svc.ValidateSelectedOpenAIModelPricing(
+		context.Background(),
+		&groupID,
+		account,
+		routedModel,
+		false,
+	), ErrModelPricingUnavailable)
+
+	mapping := channelService.ResolveRequestChannelMapping(context.Background(), &groupID, requestedModel)
+	ctx := WithResolvedChannelPricingIdentity(context.Background(), requestedModel, mapping)
+	require.NoError(t, svc.ValidateSelectedOpenAIModelPricing(
+		ctx,
+		&groupID,
+		account,
+		routedModel,
+		false,
+	))
+}
+
+func TestOpenAIGatewayServiceValidateSelectedOpenAIMediaPricing_ResolvedIdentityPreventsSecondMapping(t *testing.T) {
+	const (
+		requestedModel  = "image-public-alias"
+		routedModel     = "image-priced-route"
+		secondPassModel = "image-future-unpriced-v99"
+	)
+	groupID := int64(85)
+	channelService, cache := newOpenAIPricingGuardChannel(groupID, BillingModelSourceChannelMapped)
+	cache.mappingByGroupModel[channelModelKey{
+		groupID: groupID, platform: PlatformOpenAI, model: requestedModel,
+	}] = routedModel
+	cache.mappingByGroupModel[channelModelKey{
+		groupID: groupID, platform: PlatformOpenAI, model: routedModel,
+	}] = secondPassModel
+	svc := newOpenAIPricingGuardService(nil)
+	svc.channelService = channelService
+	svc.billingService = NewBillingService(svc.cfg, &PricingService{
+		pricingData: map[string]*ModelPriceEntry{
+			routedModel: {OutputCostPerImage: 0.04},
+		},
+	})
+	account := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+
+	require.ErrorIs(t, svc.ValidateSelectedOpenAIMediaPricing(
+		context.Background(),
+		&groupID,
+		account,
+		routedModel,
+		BillingKindImage,
+	), ErrModelPricingUnavailable)
+
+	mapping := channelService.ResolveRequestChannelMapping(context.Background(), &groupID, requestedModel)
+	ctx := WithResolvedChannelPricingIdentity(context.Background(), requestedModel, mapping)
+	require.NoError(t, svc.ValidateSelectedOpenAIMediaPricing(
+		ctx,
+		&groupID,
+		account,
+		routedModel,
+		BillingKindImage,
+	))
+}
+
 func TestOpenAIGatewayServiceValidateSelectedOpenAIModelPricing_AllowsUnpricedUpstreamWithExplicitSelectedChannelPrice(t *testing.T) {
 	groupID := int64(83)
 	channelService, cache := newOpenAIPricingGuardChannel(groupID, BillingModelSourceRequested)

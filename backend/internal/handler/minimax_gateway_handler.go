@@ -206,9 +206,13 @@ func (h *MiniMaxGatewayHandler) Messages(c *gin.Context) {
 
 	sessionHash := h.gatewayService.GenerateSessionHash(parsedReq)
 	fs := NewFailoverState(h.maxAccountSwitches, false)
+	var mappingFallback service.ChannelMappingFallbackState
 
 	for {
-		selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), apiKey.GroupID, sessionHash, reqModel, fs.FailedAccountIDs, parsedReq.MetadataUserID, subject.UserID)
+		selection, _, err := selectGatewayAccountWithChannelMapping(
+			c.Request.Context(), h.gatewayService, apiKey.GroupID, sessionHash,
+			reqModel, channelMapping, &mappingFallback, fs.FailedAccountIDs, parsedReq.MetadataUserID, subject.UserID,
+		)
 		if err != nil || selection == nil || selection.Account == nil {
 			if handleOpenAICompatibleGroupAccessSelectionError(c, err, streamStarted) {
 				return
@@ -417,9 +421,13 @@ func (h *MiniMaxGatewayHandler) ChatCompletions(c *gin.Context) {
 
 	sessionHash := h.gatewayService.GenerateSessionHash(parsedReq)
 	fs := NewFailoverState(h.maxAccountSwitches, false)
+	var mappingFallback service.ChannelMappingFallbackState
 
 	for {
-		selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), apiKey.GroupID, sessionHash, reqModel, fs.FailedAccountIDs, parsedReq.MetadataUserID, subject.UserID)
+		selection, _, err := selectGatewayAccountWithChannelMapping(
+			c.Request.Context(), h.gatewayService, apiKey.GroupID, sessionHash,
+			reqModel, channelMapping, &mappingFallback, fs.FailedAccountIDs, parsedReq.MetadataUserID, subject.UserID,
+		)
 		if err != nil || selection == nil || selection.Account == nil {
 			if handleOpenAICompatibleGroupAccessSelectionError(c, err, streamStarted) {
 				return
@@ -642,9 +650,13 @@ func (h *MiniMaxGatewayHandler) Responses(c *gin.Context) {
 
 	sessionHash := h.gatewayService.GenerateSessionHash(parsedReq)
 	fs := NewFailoverState(h.maxAccountSwitches, false)
+	var mappingFallback service.ChannelMappingFallbackState
 
 	for {
-		selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), apiKey.GroupID, sessionHash, reqModel, fs.FailedAccountIDs, parsedReq.MetadataUserID, subject.UserID)
+		selection, _, err := selectGatewayAccountWithChannelMapping(
+			c.Request.Context(), h.gatewayService, apiKey.GroupID, sessionHash,
+			reqModel, channelMapping, &mappingFallback, fs.FailedAccountIDs, parsedReq.MetadataUserID, subject.UserID,
+		)
 		if err != nil || selection == nil || selection.Account == nil {
 			if handleOpenAICompatibleGroupAccessSelectionError(c, err, streamStarted) {
 				return

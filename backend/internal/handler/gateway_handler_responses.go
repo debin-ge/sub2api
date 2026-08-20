@@ -193,19 +193,31 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 
 	// 3. Account selection + failover loop
 	fs := NewFailoverState(h.maxAccountSwitches, false)
+	var mappingFallback service.ChannelMappingFallbackState
 
 	for {
 		if requestCtx.Err() != nil {
 			return
 		}
-		selection, err := h.gatewayService.SelectAccountWithLoadAwareness(requestCtx, apiKey.GroupID, sessionHash, reqModel, fs.FailedAccountIDs, "", int64(0))
+		selection, routingModel, err := selectGatewayAccountWithChannelMapping(
+			requestCtx,
+			h.gatewayService,
+			apiKey.GroupID,
+			sessionHash,
+			reqModel,
+			channelMapping,
+			&mappingFallback,
+			fs.FailedAccountIDs,
+			"",
+			int64(0),
+		)
 		if err != nil {
 			if accessErr, ok := classifyGroupAccessSelectionError(err); ok {
 				h.responsesErrorResponse(c, accessErr.Status, accessErr.Reason, accessErr.Message)
 				return
 			}
 			if len(fs.FailedAccountIDs) == 0 {
-				cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, err, reqModel, reqModel, effectiveAPIKeyPlatform(c, apiKey))
+				cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, err, routingModel, reqModel, effectiveAPIKeyPlatform(c, apiKey))
 				if !cls.ModelNotFound {
 					markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
 				}

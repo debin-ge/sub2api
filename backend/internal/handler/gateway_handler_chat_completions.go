@@ -174,19 +174,31 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 	if groupPlatform == service.PlatformGemini {
 		fs = NewFailoverState(h.maxAccountSwitchesGemini, false)
 	}
+	var mappingFallback service.ChannelMappingFallbackState
 
 	for {
 		if c.Request.Context().Err() != nil {
 			return
 		}
-		selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), apiKey.GroupID, selectionSessionHash, reqModel, fs.FailedAccountIDs, "", int64(0))
+		selection, routingModel, err := selectGatewayAccountWithChannelMapping(
+			c.Request.Context(),
+			h.gatewayService,
+			apiKey.GroupID,
+			selectionSessionHash,
+			reqModel,
+			channelMapping,
+			&mappingFallback,
+			fs.FailedAccountIDs,
+			"",
+			int64(0),
+		)
 		if err != nil {
 			if accessErr, ok := classifyGroupAccessSelectionError(err); ok {
 				h.chatCompletionsErrorResponse(c, accessErr.Status, accessErr.Reason, accessErr.Message)
 				return
 			}
 			if len(fs.FailedAccountIDs) == 0 {
-				cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, err, reqModel, reqModel, groupPlatform)
+				cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, err, routingModel, reqModel, groupPlatform)
 				if !cls.ModelNotFound {
 					markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
 				}

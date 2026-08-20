@@ -26,15 +26,23 @@ func (s *OpenAIGatewayService) ValidateSelectedOpenAIModelPricing(
 	if s == nil {
 		return fmt.Errorf("%w: OpenAI gateway billing service unavailable", ErrModelPricingUnavailable)
 	}
+	pricingRequestedModel := requestedModel
 	mapping := ChannelMappingResult{MappedModel: requestedModel}
-	if s.channelService != nil && groupID != nil {
+	if identity, ok := resolvedChannelPricingIdentityFromContext(ctx, requestedModel); ok {
+		pricingRequestedModel = identity.requestedModel
+		mapping = ChannelMappingResult{
+			Mapped:             identity.mapped,
+			MappedModel:        identity.channelMappedModel,
+			BillingModelSource: identity.billingModelSource,
+		}
+	} else if s.channelService != nil && groupID != nil {
 		mapping = s.channelService.ResolveChannelMapping(ctx, *groupID, requestedModel)
 	}
 	return s.validateSelectedOpenAIModelPricing(
 		ctx,
 		groupID,
 		account,
-		requestedModel,
+		pricingRequestedModel,
 		mapping,
 		"",
 		requireCompact,

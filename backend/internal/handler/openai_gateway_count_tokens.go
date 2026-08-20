@@ -152,13 +152,16 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 	if preferredMappedModel != "" {
 		currentRoutingModel = preferredMappedModel
 	}
-	selection, _, err := h.gatewayService.SelectAccountWithSchedulerForCapability(
+	selection, _, selectedRoutingModel, err := h.gatewayService.SelectAccountWithSchedulerForResolvedCapability(
 		c.Request.Context(),
 		apiKey.GroupID,
 		"",
 		sessionHash,
+		reqModel,
 		currentRoutingModel,
-		nil,
+		channelMapping,
+		nil, // 单次选号，没有失败重试循环，不需要映射回退 latch
+		nil, // 无需排除账号
 		service.OpenAIUpstreamTransportAny,
 		service.OpenAIEndpointCapabilityChatCompletions,
 		false,
@@ -172,7 +175,7 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 	if err != nil {
 		requestPlatform := openAICompatibleRequestPlatform(c.Request.Context(), apiKey)
 		reqLog.Warn("openai_count_tokens.account_select_failed", zap.Error(openAICompatibleSelectionErrorForLog(err, requestPlatform)))
-		cls := classifyOpenAICompatibleNoAccountErrorFromGin(c, h.gatewayService, apiKey, err, currentRoutingModel, reqModel)
+		cls := classifyOpenAICompatibleNoAccountErrorFromGin(c, h.gatewayService, apiKey, err, selectedRoutingModel, reqModel)
 		if !cls.ModelNotFound {
 			markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
 		}
@@ -180,7 +183,7 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 		return
 	}
 	if selection == nil || selection.Account == nil {
-		cls := classifyOpenAICompatibleNoAccountErrorFromGin(c, h.gatewayService, apiKey, err, currentRoutingModel, reqModel)
+		cls := classifyOpenAICompatibleNoAccountErrorFromGin(c, h.gatewayService, apiKey, err, selectedRoutingModel, reqModel)
 		if !cls.ModelNotFound {
 			markOpsRoutingCapacityLimited(c)
 		}
@@ -194,7 +197,9 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 		defer selection.ReleaseFunc()
 	}
 	forwardBody := mappedBodyForMessages(channelMapping.Mapped, channelMapping.MappedModel)
-	defaultMappedModel := preferredMappedModel
+	// 选号回退到渠道映射模型时，分发映射模型的账号池刚被证明为空：不能再把它
+	// 作为默认模型转发给只对渠道映射模型负责的账号。
+	defaultMappedModel := resolveDispatchMappedModelAfterFallback(preferredMappedModel, currentRoutingModel, selectedRoutingModel)
 
 	if err := h.gatewayService.ForwardCountTokensAsAnthropic(c.Request.Context(), c, account, forwardBody, defaultMappedModel); err != nil {
 		reqLog.Error("openai_count_tokens.forward_failed", zap.Int64("account_id", account.ID), zap.Error(err))

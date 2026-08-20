@@ -39,6 +39,42 @@ func TestOpenAISelectAccountForModelWithExclusions_ChannelMappedRestrictionRejec
 	require.Contains(t, err.Error(), "channel pricing restriction")
 }
 
+func TestOpenAICheckChannelPricingRestriction_ResolvedIdentityPreventsSecondMapping(t *testing.T) {
+	t.Parallel()
+
+	const (
+		requestedModel = "gpt-public-alias"
+		routedModel    = "gpt-5.4"
+		secondPass     = "gpt-future-unpriced-v99"
+	)
+	channelSvc := newTestChannelService(makeStandardRepo(Channel{
+		ID:                 1,
+		Status:             StatusActive,
+		GroupIDs:           []int64{10},
+		RestrictModels:     true,
+		BillingModelSource: BillingModelSourceChannelMapped,
+		ModelPricing: []ChannelModelPricing{
+			{Platform: PlatformOpenAI, Models: []string{routedModel}},
+		},
+		ModelMapping: map[string]map[string]string{
+			PlatformOpenAI: {
+				requestedModel: routedModel,
+				routedModel:    secondPass,
+			},
+		},
+	}, map[int64]string{10: PlatformOpenAI}))
+	svc := &OpenAIGatewayService{channelService: channelSvc}
+	groupID := int64(10)
+
+	require.True(t, svc.checkChannelPricingRestriction(
+		context.Background(), &groupID, routedModel,
+	), "without the ingress identity the routed model is mapped a second time")
+
+	mapping := channelSvc.ResolveRequestChannelMapping(context.Background(), &groupID, requestedModel)
+	ctx := WithResolvedChannelPricingIdentity(context.Background(), requestedModel, mapping)
+	require.False(t, svc.checkChannelPricingRestriction(ctx, &groupID, routedModel))
+}
+
 func TestOpenAISelectAccountForModelWithExclusions_UpstreamRestrictionSkipsDisallowedAccount(t *testing.T) {
 	t.Parallel()
 

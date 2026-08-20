@@ -16,6 +16,9 @@ type resolvedChannelPricingIdentity struct {
 	requestedModel     string
 	channelMappedModel string
 	billingModelSource string
+	// mapped 记录渠道映射本身是否命中，不能由 requested/mapped 模型名是否
+	// 相等反推：显式配置「映射到自身 + 指定计费基准」时两者相同但确实映射了。
+	mapped bool
 }
 
 func withNonBillingEndpointPricingExemption(ctx context.Context) context.Context {
@@ -52,6 +55,7 @@ func WithResolvedChannelPricingIdentity(
 		requestedModel:     requestedModel,
 		channelMappedModel: mappedModel,
 		billingModelSource: strings.TrimSpace(mapping.BillingModelSource),
+		mapped:             mapping.Mapped,
 	})
 }
 
