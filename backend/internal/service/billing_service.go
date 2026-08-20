@@ -1889,17 +1889,6 @@ func (s *BillingService) calculateCostInternal(model string, tokens UsageTokens,
 	return s.calculateCostInternalForPlatform("", model, tokens, rateMultiplier, serviceTier, channelPricing, true)
 }
 
-func (s *BillingService) calculateCostInternalWithPolicy(
-	model string,
-	tokens UsageTokens,
-	rateMultiplier float64,
-	serviceTier string,
-	channelPricing *ChannelModelPricing,
-	longContextBillingEnabled bool,
-) (*CostBreakdown, error) {
-	return s.calculateCostInternalForPlatform("", model, tokens, rateMultiplier, serviceTier, channelPricing, longContextBillingEnabled)
-}
-
 func (s *BillingService) calculateCostInternalForPlatform(
 	platform string,
 	model string,

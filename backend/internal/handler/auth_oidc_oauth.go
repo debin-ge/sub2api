@@ -1150,10 +1150,20 @@ func (k oidcJWK) publicKey() (any, error) {
 		if err != nil {
 			return nil, fmt.Errorf("decode ec y: %w", err)
 		}
-		if !curve.IsOnCurve(x, y) { //nolint:staticcheck // SA1019: 迁移 crypto/ecdh 需单独评估与测试，当前保持 JWK 解析行为不变
-			return nil, errors.New("ec point is not on curve")
+		// 组装 SEC 1 未压缩点（0x04 || X || Y），由 ParseUncompressedPublicKey 校验点是否在曲线上
+		coordLen := (curve.Params().BitSize + 7) / 8
+		if x.BitLen() > coordLen*8 || y.BitLen() > coordLen*8 {
+			return nil, errors.New("ec coordinate out of range")
 		}
-		return &ecdsa.PublicKey{Curve: curve, X: x, Y: y}, nil
+		point := make([]byte, 1+2*coordLen)
+		point[0] = 4
+		x.FillBytes(point[1 : 1+coordLen])
+		y.FillBytes(point[1+coordLen:])
+		pub, err := ecdsa.ParseUncompressedPublicKey(curve, point)
+		if err != nil {
+			return nil, fmt.Errorf("invalid ec public key: %w", err)
+		}
+		return pub, nil
 	default:
 		return nil, fmt.Errorf("unsupported jwk kty: %s", k.Kty)
 	}

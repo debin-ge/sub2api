@@ -458,7 +458,8 @@ func TestCalculateCost_OpenAIGPT54LongContextAppliesWholeSessionMultipliers(t *t
 func TestCalculateCost_OpenAIGPT54LongContextMarkerRequiresActualCostIncrease(t *testing.T) {
 	svc := newTestBillingService()
 
-	cost, err := svc.calculateCostInternalWithPolicy(
+	cost, err := svc.calculateCostInternalForPlatform(
+		"",
 		"gpt-5.4-2026-03-05",
 		UsageTokens{InputTokens: 300000},
 		0,

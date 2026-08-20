@@ -3,6 +3,8 @@ package handler
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/base64"
@@ -119,6 +121,37 @@ func TestOIDCParseUserInfoIncludesSuggestedProfile(t *testing.T) {
 	require.Equal(t, "https://cdn.example/avatar.png", claims.AvatarURL)
 	require.NotNil(t, claims.EmailVerified)
 	require.True(t, *claims.EmailVerified)
+}
+
+func TestOIDCJWKPublicKeyParsesECKey(t *testing.T) {
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	pubBytes, err := priv.PublicKey.Bytes()
+	require.NoError(t, err)
+	require.Len(t, pubBytes, 65)
+
+	jwk := oidcJWK{
+		Kty: "EC",
+		Crv: "P-256",
+		X:   base64.RawURLEncoding.EncodeToString(pubBytes[1:33]),
+		Y:   base64.RawURLEncoding.EncodeToString(pubBytes[33:]),
+	}
+
+	parsed, err := jwk.publicKey()
+	require.NoError(t, err)
+	pub, ok := parsed.(*ecdsa.PublicKey)
+	require.True(t, ok)
+	require.True(t, pub.Equal(&priv.PublicKey))
+
+	offCurve := jwk
+	offCurve.Y = base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{1}, 32))
+	_, err = offCurve.publicKey()
+	require.Error(t, err)
+
+	oversized := jwk
+	oversized.X = base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{1}, 33))
+	_, err = oversized.publicKey()
+	require.Error(t, err)
 }
 
 func buildRSAJWK(kid string, pub *rsa.PublicKey) oidcJWK {

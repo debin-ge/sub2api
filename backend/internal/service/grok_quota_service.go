@@ -486,11 +486,18 @@ func preferSuccessfulBillingStatus(weeklyStatus, monthlyStatus int, weeklyOK, mo
 	return monthlyStatus
 }
 
+// 显式声明为 error 接口类型：调用方按普通错误分支处理，无需感知返回值恒为非 nil
+var errGrokQuotaResetUnsupported error = infraerrors.New(
+	http.StatusNotImplemented,
+	"GROK_QUOTA_RESET_UNSUPPORTED",
+	"xAI does not expose a Grok subscription quota reset endpoint for OAuth accounts",
+)
+
 func (s *GrokQuotaService) ResetQuota(ctx context.Context, accountID int64) (*GrokQuotaResetResult, error) {
 	if _, err := s.loadGrokOAuthAccount(ctx, accountID); err != nil {
 		return nil, err
 	}
-	return nil, infraerrors.New(http.StatusNotImplemented, "GROK_QUOTA_RESET_UNSUPPORTED", "xAI does not expose a Grok subscription quota reset endpoint for OAuth accounts")
+	return nil, errGrokQuotaResetUnsupported
 }
 
 func (s *GrokQuotaService) prepareProbe(ctx context.Context, accountID int64) (*Account, string, string, error) {
