@@ -291,6 +291,7 @@ func cleanupWithRadarTestDependencies(rdb *redis.Client, radarRunner *service.Ra
 		nil, // schedulerSnapshot
 		tokenRefreshSvc,
 		service.NewAccountExpiryService(nil, time.Second),
+		nil, // cnProviderBalanceCheck
 		nil, // codexVersionSync
 		service.NewProxyExpiryService(nil, time.Second),
 		service.NewSubscriptionExpiryService(nil, time.Second),
