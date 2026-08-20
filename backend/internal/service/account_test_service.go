@@ -2321,6 +2321,11 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 	}
 	applyOpenAICodexProbeHeaders(req.Header)
 	if isOAuth {
+		// Native remote compaction v2 negotiates through
+		// x-codex-beta-features. The legacy OpenAI-Beta
+		// responses=experimental marker can route ChatGPT OAuth requests to
+		// the retired unary compact handler, which returns a bare 404.
+		stripOpenAILegacyResponsesBeta(req.Header)
 		enforceCodexIdentityHeadersWithUA(req.Header, credentialAccount.GetOpenAIUserAgent())
 	}
 	probeSessionID := compactProbeSessionID(account.ID)
