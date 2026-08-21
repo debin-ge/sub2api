@@ -468,8 +468,20 @@ func TestMonitorAccountQuotaCapability_Matrix(t *testing.T) {
 			account: &Account{ID: 6, Platform: domain.PlatformKimi},
 		},
 		{
+			name: "custom-domain kimi payg unsupported",
+			account: &Account{ID: 16, Platform: domain.PlatformKimi, Type: AccountTypeAPIKey,
+				Credentials: map[string]any{"base_url": "https://relay.example/v1"}},
+			wantErr: ErrChannelMonitorAccountNotSupportable,
+		},
+		{
 			name:    "deepseek payg ok",
 			account: &Account{ID: 7, Platform: domain.PlatformDeepseek},
+		},
+		{
+			name: "custom-domain deepseek payg unsupported",
+			account: &Account{ID: 17, Platform: domain.PlatformDeepseek, Type: AccountTypeAPIKey,
+				Credentials: map[string]any{"base_url": "https://relay.example/v1"}},
+			wantErr: ErrChannelMonitorAccountNotSupportable,
 		},
 		{
 			name:    "anthropic api key cannot query usage",

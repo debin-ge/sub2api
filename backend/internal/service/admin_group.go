@@ -285,12 +285,12 @@ func defaultModelsListCandidateIDs(platform string) []string {
 		return xai.DefaultModelIDs()
 	case PlatformMiniMax:
 		return DefaultMiniMaxModelIDs()
-	case PlatformZhipu, PlatformGLM:
-		return DefaultGLMModelIDs()
-	case PlatformKimi:
-		return DefaultKimiModelIDs()
-	case PlatformDeepSeek:
-		return DefaultDeepSeekModelIDs()
+	// Standalone CN-provider groups keep the historical Claude alias list.
+	// Their provider-native defaults are used by account/model capability
+	// surfaces, while the group editor remains client-facing and expects Claude
+	// model names that the gateway maps to the selected provider.
+	case PlatformKimi, PlatformZhipu, PlatformGLM, PlatformDeepSeek:
+		return claude.DefaultModelIDs()
 	case PlatformWindsurf:
 		return DefaultWindsurfModelIDs()
 	case PlatformOpenCode:
