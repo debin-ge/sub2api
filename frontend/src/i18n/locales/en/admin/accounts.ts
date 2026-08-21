@@ -558,6 +558,8 @@ export default {
         longContextBilling: 'API long-context pricing',
         longContextBillingDesc:
           'Long-context tiers apply when either the group or account switch is enabled. Enable this only when the account needs the billing policy independently of its groups; review existing groups and accounts after upgrading.',
+        longContextBillingWarningTitle: '⚠️ Billing Policy Change',
+        longContextBillingWarningMessage: 'Once enabled, this account will be billed on long-context tiers even when its groups have not enabled long-context pricing. Please confirm the impact on billing.',
         responsesWebsocketsV2: 'Responses WebSocket v2',
         responsesWebsocketsV2Desc:
           'Disabled by default. Enable to allow responses_websockets_v2 capability (still gated by global and account-type switches).',

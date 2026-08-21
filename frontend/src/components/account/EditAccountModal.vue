@@ -2153,6 +2153,22 @@
         v-if="account?.platform === 'openai' && !isSparkShadow && !hideAccountLongContextBilling && (account?.type === 'oauth' || account?.type === 'setup-token' || account?.type === 'apikey')"
         class="border-t border-gray-200 pt-4 dark:border-dark-600"
       >
+        <!-- 账单口径变更警告 -->
+        <div
+          v-if="openAILongContextBillingEnabled"
+          class="mb-3 rounded-md border border-amber-200 bg-amber-50 p-3 dark:border-amber-900/50 dark:bg-amber-900/20"
+        >
+          <div class="flex items-start gap-2">
+            <svg class="h-5 w-5 flex-shrink-0 text-amber-600 dark:text-amber-400" fill="currentColor" viewBox="0 0 20 20">
+              <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" />
+            </svg>
+            <div class="text-sm text-amber-800 dark:text-amber-200">
+              <p class="font-medium">{{ t('admin.accounts.openai.longContextBillingWarningTitle') }}</p>
+              <p class="mt-1">{{ t('admin.accounts.openai.longContextBillingWarningMessage') }}</p>
+            </div>
+          </div>
+        </div>
+
         <div class="flex items-center justify-between gap-4">
           <div>
             <label class="input-label mb-0">{{ t('admin.accounts.openai.longContextBilling') }}</label>

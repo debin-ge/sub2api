@@ -634,6 +634,8 @@ export default {
           '默认关闭：/responses 上的 namespace 工具声明原样转发，这正是 ChatGPT Codex 后端期望的形态。仅当该 OAuth 账号指向不认识 namespace 的兼容上游时才开启——摊平会把工具改名为 namespace__tool，使按 functions.<命名空间>.<工具> 寻址的模型（如 gpt-5.6 多智能体）无法调用。压缩（compact）请求不受该开关影响，始终摊平。',
         longContextBilling: 'API 长上下文计费',
         longContextBillingDesc: '分组开关或账号开关任一开启即按长上下文阶梯计费。仅当该账号需要独立于分组启用该账单口径时开启；升级后请复核存量分组与账号。',
+        longContextBillingWarningTitle: '⚠️ 账单口径变更',
+        longContextBillingWarningMessage: '启用后，即使所属分组未开启长上下文定价，此账号仍将按长上下文阶梯计费。请确认此变更对账单的影响。',
         responsesWebsocketsV2: 'Responses WebSocket v2',
         responsesWebsocketsV2Desc:
           '默认关闭。开启后可启用 responses_websockets_v2 协议能力（受网关全局开关与账号类型开关约束）。',

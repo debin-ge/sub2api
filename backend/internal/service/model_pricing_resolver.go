@@ -279,20 +279,6 @@ func matchGroupModelPricing(group *Group, model string) *ChannelModelPricing {
 	return wildcard
 }
 
-func (r *ModelPricingResolver) applyFirstTokenTier(resolved *ResolvedPricing, config *ChannelModelPricing) {
-	if resolved == nil || len(resolved.Intervals) == 0 {
-		return
-	}
-	first := resolved.Intervals[0]
-	for _, interval := range resolved.Intervals[1:] {
-		if interval.MinTokens < first.MinTokens {
-			first = interval
-		}
-	}
-	resolved.BasePricing = intervalToModelPricing(&first, resolved.BasePricing, resolved.SupportsCacheBreakdown, config)
-	resolved.Intervals = nil
-}
-
 func (r *ModelPricingResolver) resolveBasePricing(platform, model string, strict bool) (*ModelPricing, string, error) {
 	if r == nil || r.billingService == nil {
 		return nil, PricingSourceFallback, fmt.Errorf("%w for model: %s: billing service unavailable", ErrModelPricingUnavailable, model)
