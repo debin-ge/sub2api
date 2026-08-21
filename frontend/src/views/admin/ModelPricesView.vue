@@ -261,10 +261,12 @@ const columns = computed<Column[]>(() => [
 
 const platformOptions = computed(() => [
   { value: '', label: t('admin.modelPrices.allPlatforms') },
-  ...platforms.value.map((platform) => ({
-    value: platform,
-    label: platform === '*' ? t('admin.modelPrices.wildcard') : platform,
-  })),
+  ...platforms.value
+    .filter((platform) => platform !== '*')
+    .map((platform) => ({
+      value: platform,
+      label: platform,
+    })),
 ])
 
 const writePlatformOptions = computed(() =>
@@ -402,7 +404,7 @@ function resetForm() {
 }
 
 function fillFormFromDetail(entry: ModelPriceDetail) {
-  form.platform = entry.override_platform || entry.platform || '*'
+  form.platform = entry.platform || '*'
   form.model = entry.model
   form.enabled = entry.enabled
   form.note = entry.note || ''
@@ -426,7 +428,7 @@ function openCreate() {
 async function openEdit(row: ModelPriceListItem) {
   creating.value = false
   try {
-    const entry = await getModelPriceEntry(row.override_platform || '*', row.model)
+    const entry = await getModelPriceEntry(row.platform, row.model)
     detail.value = entry
     fillFormFromDetail(entry)
     showEditor.value = true

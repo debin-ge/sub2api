@@ -9,12 +9,14 @@ const {
   listModelPricePlatforms,
   getModelPriceSyncStatus,
   getModelPriceEntry,
+  upsertModelPrice,
   showError,
 } = vi.hoisted(() => ({
   listModelPrices: vi.fn(),
   listModelPricePlatforms: vi.fn(),
   getModelPriceSyncStatus: vi.fn(),
   getModelPriceEntry: vi.fn(),
+  upsertModelPrice: vi.fn(),
   showError: vi.fn(),
 }))
 
@@ -27,7 +29,7 @@ vi.mock('@/api/admin/modelPrices', async () => {
     getModelPriceSyncStatus,
     getModelPriceEntry,
     syncModelPrices: vi.fn(),
-    upsertModelPrice: vi.fn(),
+    upsertModelPrice,
     deleteModelPrice: vi.fn(),
   }
 })
@@ -56,6 +58,26 @@ const DataTableStub = defineComponent({
   },
   template: '<div data-test="table"><div v-for="row in data" :key="row.model"><span>{{ row.model }}</span><slot name="cell-input" :row="row" /><slot name="cell-output" :row="row" /><slot name="cell-actions" :row="row" /></div></div>',
 })
+const SelectStub = defineComponent({
+  props: {
+    modelValue: { type: [String, Number, Boolean], default: '' },
+    options: { type: Array, default: () => [] },
+    disabled: { type: Boolean, default: false },
+  },
+  emits: ['update:modelValue', 'change'],
+  template: `
+    <select
+      data-test="select"
+      :value="modelValue"
+      :disabled="disabled"
+      @change="$emit('update:modelValue', $event.target.value); $emit('change', $event.target.value)"
+    >
+      <option v-for="option in options" :key="String(option.value)" :value="option.value">
+        {{ option.label }}
+      </option>
+    </select>
+  `,
+})
 
 function mountView() {
   return mount(ModelPricesView, {
@@ -65,7 +87,7 @@ function mountView() {
         TablePageLayout: TablePageLayoutStub,
         DataTable: DataTableStub,
         Pagination: true,
-        Select: true,
+        Select: SelectStub,
         Icon: true,
         EmptyState: true,
         BaseDialog: {
@@ -84,8 +106,9 @@ describe('ModelPricesView', () => {
     listModelPricePlatforms.mockReset()
     getModelPriceSyncStatus.mockReset()
     getModelPriceEntry.mockReset()
+    upsertModelPrice.mockReset()
     showError.mockReset()
-    listModelPricePlatforms.mockResolvedValue(['*', 'anthropic'])
+    listModelPricePlatforms.mockResolvedValue(['*', 'anthropic', 'deepseek'])
     getModelPriceSyncStatus.mockResolvedValue({ catalog_model_count: 2, override_count: 1 })
     listModelPrices.mockResolvedValue({
       items: [
@@ -106,7 +129,7 @@ describe('ModelPricesView', () => {
       total: 1,
     })
     getModelPriceEntry.mockResolvedValue({
-      platform: '*',
+      platform: 'anthropic',
       model: 'openai/gpt-5.4',
       catalog: {},
       override: { input_cost_per_token: 3e-6 },
@@ -116,19 +139,37 @@ describe('ModelPricesView', () => {
       has_image_pricing: false,
       sync_invalidated: false,
       redundant: false,
+      override_platform: '*',
     })
+    upsertModelPrice.mockResolvedValue({})
   })
 
-  it('loads slash model names and opens them with query-style detail', async () => {
+  it('keeps wildcard out of the platform filter and edits the row platform', async () => {
     const wrapper = mountView()
     await flushPromises()
     expect(listModelPrices).toHaveBeenCalled()
     expect(wrapper.text()).toContain('openai/gpt-5.4')
 
+    const filterOptions = wrapper.findAll('[data-test="select"]')[0].findAll('option')
+    expect(filterOptions.map((option) => option.element.value)).toEqual(['', 'anthropic', 'deepseek'])
+
     await wrapper.find('button.action-btn').trigger('click')
     await flushPromises()
-    expect(getModelPriceEntry).toHaveBeenCalledWith('*', 'openai/gpt-5.4')
+    expect(getModelPriceEntry).toHaveBeenCalledWith('anthropic', 'openai/gpt-5.4')
     expect(wrapper.text()).toContain('admin.modelPrices.fields.input_cost_per_token')
+
+    const editorPlatform = wrapper.find('[data-test="editor"] [data-test="select"]')
+    expect(editorPlatform.element.value).toBe('anthropic')
+    expect(editorPlatform.attributes('disabled')).toBeDefined()
+
+    const saveButton = wrapper.findAll('button').find((button) => button.text() === 'admin.modelPrices.save')
+    expect(saveButton).toBeDefined()
+    await saveButton!.trigger('click')
+    await flushPromises()
+    expect(upsertModelPrice).toHaveBeenCalledWith(expect.objectContaining({
+      platform: 'anthropic',
+      model: 'openai/gpt-5.4',
+    }))
   })
 
   it('shows DeepSeek peak and off-peak prices when a time schedule is present', async () => {
