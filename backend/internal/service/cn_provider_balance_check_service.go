@@ -107,6 +107,8 @@ func (s *CNProviderBalanceCheckService) runOnce() {
 	}
 	var quotaTargets []quotaTarget
 	var paygTargets []*Account
+	var unsupportedBalanceTargets []*Account
+	var unsupportedQuotaTargets []*Account
 	collect := func(platform string, accounts []Account) {
 		for i := range accounts {
 			account := &accounts[i]
@@ -116,7 +118,18 @@ func (s *CNProviderBalanceCheckService) runOnce() {
 			// coding 账号：探测滚动窗口并落快照（不要求 Schedulable——已被
 			// 阈值停调的账号也需要新鲜快照决定是否续停）。
 			if account.IsCodingPlan() {
+				if !cnProviderOfficialQuotaProbeSupported(account) {
+					unsupportedQuotaTargets = append(unsupportedQuotaTargets, account)
+					continue
+				}
 				quotaTargets = append(quotaTargets, quotaTarget{id: account.ID, platform: account.Platform})
+				continue
+			}
+			// Provider balance endpoints are official-account APIs, not part of the
+			// OpenAI-compatible contract. Never let a third-party endpoint's response
+			// participate in scheduling.
+			if platform != PlatformZhipu && !cnProviderOfficialBalanceProbeSupported(account) {
+				unsupportedBalanceTargets = append(unsupportedBalanceTargets, account)
 				continue
 			}
 			// payg 余额探测仅 kimi/deepseek（智谱无公开余额端点，payg 账号
@@ -157,6 +170,16 @@ func (s *CNProviderBalanceCheckService) runOnce() {
 
 	threshold := s.cfg.Gateway.CNProviders.BalanceThreshold
 	paused, cleared := 0, 0
+	for _, account := range unsupportedBalanceTargets {
+		if s.clearUnsupportedCNBalanceState(ctx, account) {
+			cleared++
+		}
+	}
+	for _, account := range unsupportedQuotaTargets {
+		if s.clearUnsupportedCNQuotaState(ctx, account) {
+			cleared++
+		}
+	}
 	for _, account := range paygTargets {
 		switch s.checkOne(ctx, account, threshold) {
 		case cnBalancePaused:
@@ -184,6 +207,116 @@ func (s *CNProviderBalanceCheckService) runOnce() {
 	if paused > 0 || cleared > 0 {
 		log.Printf("[CNBalance] paused=%d cleared=%d (threshold=%.2f)", paused, cleared, threshold)
 	}
+}
+
+// clearUnsupportedCNBalanceState removes stale official-balance probe snapshots
+// from third-party Kimi/DeepSeek-compatible accounts. It only clears a
+// temporary pause whose text identifies the proactive threshold probe; a real
+// upstream 402/"insufficient balance" reactive pause remains untouched.
+func (s *CNProviderBalanceCheckService) clearUnsupportedCNBalanceState(ctx context.Context, account *Account) bool {
+	if account == nil {
+		return false
+	}
+	provider := CanonicalCNPlatform(account.Platform)
+	updates := make(map[string]any)
+	for _, suffix := range []string{
+		cnBalanceExtraSuffixBalance,
+		cnBalanceExtraSuffixCurrency,
+		cnBalanceExtraSuffixAvailable,
+		cnBalanceExtraSuffixUpdated,
+		cnBalanceExtraSuffixBalances,
+	} {
+		key := cnExtraKey(provider, suffix)
+		if account.Extra != nil && account.Extra[key] != nil {
+			updates[key] = nil
+		}
+	}
+	if provider == PlatformDeepseek {
+		for _, key := range []string{
+			"deepseek_balance_amount",
+			"deepseek_balance_checked_at",
+			"deepseek_balance_status",
+			"deepseek_balance_error",
+			"deepseek_balance_raw",
+		} {
+			if account.Extra != nil && account.Extra[key] != nil {
+				updates[key] = nil
+			}
+		}
+	}
+	lowKey := cnExtraKey(provider, cnBalanceExtraSuffixLow)
+	if account.Extra != nil && account.Extra[lowKey] == true {
+		updates[lowKey] = false
+	}
+	if len(updates) > 0 {
+		if err := s.accountRepo.UpdateExtra(ctx, account.ID, updates); err != nil {
+			log.Printf("[CNBalance] clear unsupported %s snapshot for account %d failed: %v", provider, account.ID, err)
+		}
+	}
+
+	if account.TempUnschedulableUntil == nil || !isCNBalanceProbeLowReason(account.TempUnschedulableReason) {
+		return false
+	}
+	if err := s.accountRepo.ClearTempUnschedulable(ctx, account.ID); err != nil {
+		log.Printf("[CNBalance] clear unsupported %s pause for account %d failed: %v", provider, account.ID, err)
+		return false
+	}
+	log.Printf("[CNBalance] reactivated third-party %s account %d: official balance probe is not applicable", provider, account.ID)
+	return true
+}
+
+// clearUnsupportedCNQuotaState drops official Coding Plan snapshots from a
+// third-party endpoint and safely clears only a threshold pause owned by that
+// provider. Reactive 429/other temporary blocks are not touched.
+func (s *CNProviderBalanceCheckService) clearUnsupportedCNQuotaState(ctx context.Context, account *Account) bool {
+	if account == nil {
+		return false
+	}
+	provider := account.GetCodingPlanProvider()
+	updates := make(map[string]any)
+	for _, suffix := range []string{
+		cnExtraSuffix5hUsed,
+		cnExtraSuffix5hReset,
+		cnExtraSuffixWeeklyUsed,
+		cnExtraSuffixWeeklyReset,
+		cnExtraSuffixUsageUpdated,
+	} {
+		key := cnExtraKey(provider, suffix)
+		if account.Extra != nil && account.Extra[key] != nil {
+			updates[key] = nil
+		}
+	}
+	if len(updates) > 0 {
+		if err := s.accountRepo.UpdateExtra(ctx, account.ID, updates); err != nil {
+			log.Printf("[CNBalance] clear unsupported %s quota snapshot for account %d failed: %v", provider, account.ID, err)
+		}
+	}
+
+	if account.TempUnschedulableUntil == nil || !isCNProviderThresholdPause(account, provider) {
+		return false
+	}
+	if err := s.accountRepo.ClearTempUnschedulable(ctx, account.ID); err != nil {
+		log.Printf("[CNBalance] clear unsupported %s threshold pause for account %d failed: %v", provider, account.ID, err)
+		return false
+	}
+	log.Printf("[CNBalance] reactivated third-party %s coding account %d: official quota probe is not applicable", provider, account.ID)
+	return true
+}
+
+func isCNProviderThresholdPause(account *Account, provider string) bool {
+	if account == nil || CanonicalCNPlatform(account.Platform) != provider {
+		return false
+	}
+	payload, ok := parseTempUnschedReasonPayload(account.TempUnschedulableReason)
+	if !ok || payload.Source != AccountSchedulingThresholdReasonSource {
+		return false
+	}
+	return payload.Platform == "" || CanonicalCNPlatform(payload.Platform) == provider
+}
+
+func isCNBalanceProbeLowReason(reason string) bool {
+	reason = strings.TrimSpace(reason)
+	return strings.HasPrefix(reason, cnBalanceLowReasonPrefix+": 余额 ") && strings.Contains(reason, "低于阈值")
 }
 
 // probeQuota 探测单个 coding plan 账号的滚动窗口用量并落 extra 快照。

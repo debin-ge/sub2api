@@ -112,6 +112,25 @@ func TestCNProviderBalanceService_QueryBalanceForAccount_RejectsInvalidAccount(t
 	require.Zero(t, upstream.calls)
 }
 
+func TestCNProviderServicesRejectThirdPartyOfficialProbesBeforeRequest(t *testing.T) {
+	repo := &fakeCNProbeAccountRepo{}
+	upstream := &recordingHTTPUpstream{}
+	balanceSvc := NewCNProviderBalanceService(repo, nil, upstream, nil)
+	quotaSvc := NewCNProviderQuotaService(repo, nil, upstream, nil)
+
+	thirdPartyPayG := paygAccount(PlatformKimi)
+	thirdPartyPayG.Credentials["base_url"] = "https://relay.example/v1"
+	_, err := balanceSvc.QueryBalanceForAccount(context.Background(), thirdPartyPayG)
+	requireReason(t, err, "CN_BALANCE_UNSUPPORTED_ENDPOINT")
+	require.Zero(t, upstream.calls)
+
+	thirdPartyCoding := codingAccount(PlatformZhipu)
+	thirdPartyCoding.Credentials["base_url"] = "https://relay.example/zhipu"
+	_, err = quotaSvc.QueryUsageForAccount(context.Background(), thirdPartyCoding)
+	requireReason(t, err, "CN_QUOTA_UNSUPPORTED_ENDPOINT")
+	require.Zero(t, upstream.calls)
+}
+
 // ID 入口与 ForAccount 入口对同一账号的行为一致（loadCodingPlanAccount 的
 // 加载后校验 = validateCodingPlanAccount；余额侧对称）。
 func TestCNProviderServices_IDEntryAppliesSameValidation(t *testing.T) {

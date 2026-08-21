@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 )
@@ -57,6 +58,10 @@ func (s *MiniMaxRemainsSyncService) SyncBatch(ctx context.Context, batchSize int
 		if !account.IsMiniMaxTokenPlan() {
 			continue
 		}
+		if !miniMaxOfficialRemainsProbeSupported(&account) {
+			s.clearUnsupportedMiniMaxRemains(ctx, &account)
+			continue
+		}
 		if batchSize > 0 && processed >= batchSize {
 			break
 		}
@@ -79,6 +84,10 @@ func (s *MiniMaxRemainsSyncService) SyncAccount(ctx context.Context, account *Ac
 	}
 	if account == nil || !account.IsMiniMaxTokenPlan() {
 		return nil, fmt.Errorf("minimax token plan account is required")
+	}
+	if !miniMaxOfficialRemainsProbeSupported(account) {
+		s.clearUnsupportedMiniMaxRemains(ctx, account)
+		return nil, fmt.Errorf("minimax official remains probe is not supported for a third-party provider endpoint")
 	}
 
 	checkedAt := s.now().UTC().Format(time.RFC3339)
@@ -135,6 +144,35 @@ func (s *MiniMaxRemainsSyncService) SyncAccount(ctx context.Context, account *Ac
 		SyntheticAdded:   added,
 		SyntheticRemoved: removed,
 	}, nil
+}
+
+func (s *MiniMaxRemainsSyncService) clearUnsupportedMiniMaxRemains(ctx context.Context, account *Account) {
+	if s == nil || s.accountRepo == nil || account == nil || len(account.Extra) == 0 {
+		return
+	}
+	updates := make(map[string]any)
+	for _, key := range []string{
+		"minimax_text_5h_limit",
+		"minimax_text_5h_remaining",
+		"minimax_remains_synced_at",
+		"minimax_remains_checked_at",
+		"minimax_remains_calibrated_at",
+		"minimax_remains_sync_status",
+		"minimax_remains_sync_error",
+		"minimax_remains_raw",
+		"minimax_remains_local_used",
+		"minimax_remains_synthetic_added",
+		"minimax_remains_synthetic_removed",
+	} {
+		if account.Extra[key] != nil {
+			updates[key] = nil
+		}
+	}
+	if len(updates) > 0 {
+		if err := s.accountRepo.UpdateExtra(ctx, account.ID, updates); err != nil {
+			slog.Warn("minimax_clear_unsupported_remains_failed", "account_id", account.ID, "error", err)
+		}
+	}
 }
 
 func sanitizeMiniMaxSyncError(err error) string {

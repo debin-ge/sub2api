@@ -32,6 +32,9 @@ func (c *DeepSeekBalanceClient) FetchBalanceForAccount(ctx context.Context, acco
 	if account == nil || !account.IsDeepSeekAPIKey() {
 		return nil, fmt.Errorf("deepseek api key account is required")
 	}
+	if !cnProviderOfficialBalanceProbeSupported(account) {
+		return nil, fmt.Errorf("deepseek official balance probe is not supported for a third-party provider endpoint")
+	}
 	apiKey := account.GetDeepSeekAPIKey()
 	if apiKey == "" {
 		return nil, fmt.Errorf("deepseek api key is required")
@@ -60,7 +63,14 @@ func (c *DeepSeekBalanceClient) FetchBalanceForAccount(ctx context.Context, acco
 	if err := json.Unmarshal(body, &raw); err != nil {
 		return nil, fmt.Errorf("decode deepseek balance: %w", err)
 	}
-	return parseDeepSeekBalance(raw), nil
+	balance := parseDeepSeekBalance(raw)
+	if balance.Currency == "" || balance.Amount == "" {
+		return nil, fmt.Errorf("invalid deepseek balance response: missing valid balance_infos")
+	}
+	if _, ok := cnParseF64(balance.Amount); !ok {
+		return nil, fmt.Errorf("invalid deepseek balance response: invalid total_balance")
+	}
+	return balance, nil
 }
 
 func parseDeepSeekBalance(raw map[string]any) *DeepSeekBalance {

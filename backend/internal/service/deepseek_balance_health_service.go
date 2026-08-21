@@ -45,6 +45,10 @@ func (s *DeepSeekBalanceHealthService) CheckBatch(ctx context.Context, batchSize
 		if !account.IsDeepSeekAPIKey() {
 			continue
 		}
+		if !cnProviderOfficialBalanceProbeSupported(&account) {
+			s.clearUnsupportedSnapshot(ctx, &account)
+			continue
+		}
 		if batchSize > 0 && processed >= batchSize {
 			break
 		}
@@ -59,6 +63,29 @@ func (s *DeepSeekBalanceHealthService) CheckBatch(ctx context.Context, batchSize
 		results = append(results, *result)
 	}
 	return results, firstErr
+}
+
+func (s *DeepSeekBalanceHealthService) clearUnsupportedSnapshot(ctx context.Context, account *Account) {
+	if s == nil || s.accountRepo == nil || account == nil || len(account.Extra) == 0 {
+		return
+	}
+	updates := make(map[string]any)
+	for _, key := range []string{
+		"deepseek_balance_available",
+		"deepseek_balance_amount",
+		"deepseek_balance_currency",
+		"deepseek_balance_checked_at",
+		"deepseek_balance_status",
+		"deepseek_balance_error",
+		"deepseek_balance_raw",
+	} {
+		if account.Extra[key] != nil {
+			updates[key] = nil
+		}
+	}
+	if len(updates) > 0 {
+		_ = s.accountRepo.UpdateExtra(ctx, account.ID, updates)
+	}
 }
 
 func (s *DeepSeekBalanceHealthService) CheckAccount(ctx context.Context, account *Account) (*DeepSeekBalance, error) {

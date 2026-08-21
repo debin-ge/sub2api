@@ -6,7 +6,9 @@ package service
 
 import (
 	"context"
+	"io"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -126,4 +128,93 @@ func TestCNProviderBalanceService_OfficialHostPassesValidation(t *testing.T) {
 
 	_, _ = svc.QueryBalance(context.Background(), 3)
 	require.Equal(t, 1, upstream.calls, "official host must pass URL policy and reach the upstream layer")
+}
+
+func TestCNProviderBalanceService_DoesNotTreatMissingDeepSeekBalanceSchemaAsZero(t *testing.T) {
+	repo := &fakeCNProbeAccountRepo{account: &Account{
+		ID: 4, Platform: PlatformDeepseek, Type: AccountTypeAPIKey, Status: StatusActive,
+		Credentials: map[string]any{
+			"account_mode": AccountModePayG,
+			"api_key":      "sk-official",
+			"base_url":     DefaultDeepseekBaseURL,
+		},
+	}}
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"object":"list","data":[]}`)),
+	}}
+	svc := NewCNProviderBalanceService(repo, nil, upstream, &config.Config{})
+
+	result, err := svc.QueryBalance(context.Background(), 4)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, result.Success)
+	require.Contains(t, result.Error, "missing valid balance_infos")
+}
+
+func TestCNProviderBalanceService_DoesNotTreatMissingKimiBalanceSchemaAsZero(t *testing.T) {
+	repo := &fakeCNProbeAccountRepo{account: &Account{
+		ID: 5, Platform: PlatformKimi, Type: AccountTypeAPIKey, Status: StatusActive,
+		Credentials: map[string]any{
+			"account_mode": AccountModePayG,
+			"api_key":      "sk-official",
+			"base_url":     DefaultKimiPayGBaseURL,
+		},
+	}}
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"object":"list","data":[]}`)),
+	}}
+	svc := NewCNProviderBalanceService(repo, nil, upstream, &config.Config{})
+
+	result, err := svc.QueryBalance(context.Background(), 5)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, result.Success)
+	require.Contains(t, result.Error, "missing valid data.available_balance")
+}
+
+func TestCNProviderQuotaServiceRejectsEmptyOfficialQuotaSchemas(t *testing.T) {
+	tests := []struct {
+		name     string
+		account  *Account
+		response string
+	}{
+		{
+			name: "kimi",
+			account: &Account{
+				ID: 6, Platform: PlatformKimi, Type: AccountTypeAPIKey, Status: StatusActive,
+				Credentials: map[string]any{"account_mode": AccountModeCoding, "api_key": "sk-kimi"},
+			},
+			response: `{"limits":[],"usage":null}`,
+		},
+		{
+			name: "zhipu",
+			account: &Account{
+				ID: 7, Platform: PlatformZhipu, Type: AccountTypeAPIKey, Status: StatusActive,
+				Credentials: map[string]any{"account_mode": AccountModeCoding, "api_key": "sk-zhipu"},
+			},
+			response: `{"success":true,"data":{"limits":[]}}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &fakeCNProbeAccountRepo{account: tt.account}
+			upstream := &httpUpstreamRecorder{resp: &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(tt.response)),
+			}}
+			svc := NewCNProviderQuotaService(repo, nil, upstream, &config.Config{})
+
+			result, err := svc.QueryUsage(context.Background(), tt.account.ID)
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			require.False(t, result.Success)
+			require.Contains(t, result.Error, "missing valid quota tiers")
+		})
+	}
 }

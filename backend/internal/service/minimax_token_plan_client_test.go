@@ -259,3 +259,45 @@ func TestMiniMaxTokenPlanClientRejectsMissingAPIKey(t *testing.T) {
 		t.Fatalf("expected missing key error")
 	}
 }
+
+func TestMiniMaxTokenPlanClientRejectsMissingRemainsSchema(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":0,"data":{}}`))
+	}))
+	defer srv.Close()
+
+	client := NewMiniMaxTokenPlanClient(srv.URL, srv.Client())
+	remains, err := client.FetchRemains(context.Background(), "sk-cp-test")
+	if err == nil || !strings.Contains(err.Error(), "missing valid 5h limit") {
+		t.Fatalf("err = %v", err)
+	}
+	if remains != nil {
+		t.Fatalf("remains = %+v, want nil", remains)
+	}
+}
+
+func TestMiniMaxTokenPlanClientRejectsThirdPartyAccountBeforeRequest(t *testing.T) {
+	calls := 0
+	client := NewMiniMaxTokenPlanClient("", &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		calls++
+		return nil, context.DeadlineExceeded
+	})})
+	account := &Account{
+		Platform: PlatformMiniMax,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key":            "sk-third-party",
+			"base_url_anthropic": "https://relay.example/anthropic",
+			"base_url_openai":    "https://relay.example/v1",
+		},
+	}
+
+	_, err := client.FetchRemainsForAccount(context.Background(), account)
+	if err == nil || !strings.Contains(err.Error(), "third-party") {
+		t.Fatalf("err = %v", err)
+	}
+	if calls != 0 {
+		t.Fatalf("requests = %d, want 0", calls)
+	}
+}

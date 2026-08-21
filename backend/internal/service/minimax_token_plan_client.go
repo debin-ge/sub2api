@@ -49,6 +49,9 @@ func (c *MiniMaxTokenPlanClient) FetchRemainsForAccount(ctx context.Context, acc
 	if account == nil || !account.IsMiniMaxTokenPlan() {
 		return nil, fmt.Errorf("minimax token plan account is required")
 	}
+	if !miniMaxOfficialRemainsProbeSupported(account) {
+		return nil, fmt.Errorf("minimax official remains probe is not supported for a third-party provider endpoint")
+	}
 	baseURL := c.baseURL
 	if !c.baseURLExplicit {
 		baseURL = miniMaxRemainsBaseURLForAccount(account)
@@ -118,11 +121,18 @@ func (c *MiniMaxTokenPlanClient) fetchRemains(ctx context.Context, apiKey string
 
 	remains := &MiniMaxTokenPlanRemains{Raw: raw}
 	if data, ok := raw["data"].(map[string]any); ok {
-		remains.Text5hLimit = int64FromAny(data["text_5h_limit"])
-		remains.Text5hRemaining = int64FromAny(data["text_5h_remaining"])
+		limit, limitOK := int64FromAnyOK(data["text_5h_limit"])
+		remaining, remainingOK := int64FromAnyOK(data["text_5h_remaining"])
+		if limitOK && remainingOK && limit > 0 && remaining >= 0 && remaining <= limit {
+			remains.Text5hLimit = limit
+			remains.Text5hRemaining = remaining
+		}
 	}
 	if remains.Text5hLimit == 0 {
 		applyMiniMaxModelRemains(remains, raw["model_remains"])
+	}
+	if remains.Text5hLimit <= 0 || remains.Text5hRemaining < 0 || remains.Text5hRemaining > remains.Text5hLimit {
+		return nil, fmt.Errorf("invalid minimax remains response: missing valid 5h limit and remaining fields")
 	}
 	return remains, nil
 }
@@ -157,8 +167,9 @@ func applyMiniMaxModelRemains(remains *MiniMaxTokenPlanRemains, value any) {
 		if !ok {
 			continue
 		}
-		limit := int64FromAny(entry["current_interval_total_count"])
-		if limit <= 0 {
+		limit, limitOK := int64FromAnyOK(entry["current_interval_total_count"])
+		used, usedOK := int64FromAnyOK(entry["current_interval_usage_count"])
+		if !limitOK || !usedOK || limit <= 0 || used < 0 || used > limit {
 			continue
 		}
 		if fallback == nil {
@@ -176,8 +187,8 @@ func applyMiniMaxModelRemains(remains *MiniMaxTokenPlanRemains, value any) {
 }
 
 func setMiniMaxModelRemainValues(remains *MiniMaxTokenPlanRemains, entry map[string]any) {
-	limit := int64FromAny(entry["current_interval_total_count"])
-	used := int64FromAny(entry["current_interval_usage_count"])
+	limit, _ := int64FromAnyOK(entry["current_interval_total_count"])
+	used, _ := int64FromAnyOK(entry["current_interval_usage_count"])
 	remaining := limit - used
 	if remaining < 0 {
 		remaining = 0
@@ -202,20 +213,25 @@ func sanitizeMiniMaxErrorBody(body []byte, apiKey string) string {
 }
 
 func int64FromAny(v any) int64 {
+	value, _ := int64FromAnyOK(v)
+	return value
+}
+
+func int64FromAnyOK(v any) (int64, bool) {
 	switch n := v.(type) {
 	case float64:
-		return int64(n)
+		return int64(n), n == float64(int64(n))
 	case int64:
-		return n
+		return n, true
 	case int:
-		return int64(n)
+		return int64(n), true
 	case json.Number:
-		i, _ := n.Int64()
-		return i
+		i, err := n.Int64()
+		return i, err == nil
 	case string:
-		i, _ := strconv.ParseInt(strings.TrimSpace(n), 10, 64)
-		return i
+		i, err := strconv.ParseInt(strings.TrimSpace(n), 10, 64)
+		return i, err == nil
 	default:
-		return 0
+		return 0, false
 	}
 }

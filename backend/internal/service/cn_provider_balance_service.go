@@ -141,6 +141,9 @@ func (s *CNProviderBalanceService) queryBalanceForAccount(ctx context.Context, a
 		return nil, infraerrors.New(http.StatusForbidden, "CN_BALANCE_URL_REJECTED", err.Error())
 	}
 	targetURL = validatedURL
+	if !cnProviderOfficialBalanceProbeSupported(account) {
+		return nil, infraerrors.New(http.StatusBadRequest, "CN_BALANCE_UNSUPPORTED_ENDPOINT", "official balance probe is not supported for a third-party provider endpoint")
+	}
 	proxyURL := s.resolveProxyURL(ctx, account)
 	callCtx, cancel := context.WithTimeout(ctx, cnBalanceUpstreamTimeout)
 	defer cancel()
@@ -181,7 +184,16 @@ func (s *CNProviderBalanceService) queryBalanceForAccount(ctx context.Context, a
 	switch provider {
 	case PlatformKimi:
 		// Moonshot：code==0 成功；data.available_balance（number），单币种 CNY。
-		balance, _ := cnParseF64(gjson.GetBytes(bodyBytes, "data.available_balance").Value())
+		if code := gjson.GetBytes(bodyBytes, "code"); code.Exists() && code.Int() != 0 {
+			result.Error = fmt.Sprintf("API error: Kimi balance code %d", code.Int())
+			return result, nil
+		}
+		balanceValue := gjson.GetBytes(bodyBytes, "data.available_balance")
+		balance, ok := cnParseF64(balanceValue.Value())
+		if !balanceValue.Exists() || !ok {
+			result.Error = "Invalid Kimi balance response: missing valid data.available_balance"
+			return result, nil
+		}
 		entries = append(entries, CNProviderBalanceEntry{Currency: "CNY", Balance: balance})
 	case PlatformDeepseek:
 		// is_available 缺省视为 true（健康）；显式存在时取其值。
@@ -192,7 +204,10 @@ func (s *CNProviderBalanceService) queryBalanceForAccount(ctx context.Context, a
 		// 主次序，首条为主币种）。
 		gjson.GetBytes(bodyBytes, "balance_infos").ForEach(func(_, info gjson.Result) bool {
 			currency := strings.ToUpper(strings.TrimSpace(info.Get("currency").String()))
-			balance, _ := cnParseF64(info.Get("total_balance").Value())
+			balance, ok := cnParseF64(info.Get("total_balance").Value())
+			if !ok {
+				return true
+			}
 			if currency == "" {
 				currency = "CNY"
 			}
@@ -200,7 +215,12 @@ func (s *CNProviderBalanceService) queryBalanceForAccount(ctx context.Context, a
 			return true
 		})
 		if len(entries) == 0 {
-			entries = append(entries, CNProviderBalanceEntry{Currency: "CNY"})
+			// A 2xx response alone does not prove this is DeepSeek's official
+			// balance API. Compatible third-party gateways may return a generic
+			// success payload for unknown paths. Treat a missing/invalid schema as
+			// unsupported instead of manufacturing a 0 CNY balance.
+			result.Error = "Invalid DeepSeek balance response: missing valid balance_infos"
+			return result, nil
 		}
 	}
 	result.Balances = entries
@@ -284,7 +304,9 @@ func (s *CNProviderBalanceService) resolveProxyURL(ctx context.Context, account 
 func cnBalanceURL(account *Account) string {
 	switch account.Platform {
 	case PlatformKimi:
-		return strings.TrimRight(ResolveCompatibleGatewayBaseURL(account, APIProtocolChatCompletions), "/") + "/users/me/balance"
+		// Anthropic 协议的 base_url 指向 /anthropic，余额端点仍属于官方
+		// OpenAI 格式 API 根路径，不能直接在 /anthropic 后拼接。
+		return strings.TrimRight(account.GetOpenAIFormatBaseURL(), "/") + "/users/me/balance"
 	case PlatformDeepseek:
 		// Anthropic 协议账号的凭证 base_url 指向 /anthropic 端点，余额探测需回退
 		// 到 OpenAI 格式 base（协议感知）再拼接 /user/balance。

@@ -159,6 +159,9 @@ func (s *CNProviderQuotaService) queryUsageForAccount(ctx context.Context, accou
 		return nil, infraerrors.New(http.StatusForbidden, "CN_QUOTA_URL_REJECTED", err.Error())
 	}
 	targetURL = validatedURL
+	if !cnProviderOfficialQuotaProbeSupported(account) {
+		return nil, infraerrors.New(http.StatusBadRequest, "CN_QUOTA_UNSUPPORTED_ENDPOINT", "official quota probe is not supported for a third-party provider endpoint")
+	}
 
 	proxyURL := s.resolveProxyURL(ctx, account)
 	callCtx, cancel := context.WithTimeout(ctx, cnQuotaUpstreamTimeout)
@@ -220,6 +223,10 @@ func (s *CNProviderQuotaService) queryUsageForAccount(ctx context.Context, accou
 	case PlatformZhipu:
 		tiers = parseZhipuTokenTiers(gjson.GetBytes(bodyBytes, "data"))
 		result.PlanLevel = strings.TrimSpace(gjson.GetBytes(bodyBytes, "data.level").String())
+	}
+	if len(tiers) == 0 {
+		result.Error = fmt.Sprintf("Invalid %s quota response: missing valid quota tiers", provider)
+		return result, nil
 	}
 	result.Tiers = tiers
 	result.Success = true
@@ -318,8 +325,11 @@ func parseKimiUsageTiers(body []byte) []CNQuotaTier {
 			if !detail.Exists() {
 				return true
 			}
-			limit, _ := cnParseF64(detail.Get("limit").Value())
-			remaining, _ := cnParseF64(detail.Get("remaining").Value())
+			limit, limitOK := cnParseF64(detail.Get("limit").Value())
+			remaining, remainingOK := cnParseF64(detail.Get("remaining").Value())
+			if !limitOK || !remainingOK || limit <= 0 {
+				return true
+			}
 			used := limit - remaining
 			if used < 0 {
 				used = 0
@@ -338,8 +348,11 @@ func parseKimiUsageTiers(body []byte) []CNQuotaTier {
 	}
 
 	if usage := gjson.GetBytes(body, "usage"); usage.Exists() {
-		limit, _ := cnParseF64(usage.Get("limit").Value())
-		remaining, _ := cnParseF64(usage.Get("remaining").Value())
+		limit, limitOK := cnParseF64(usage.Get("limit").Value())
+		remaining, remainingOK := cnParseF64(usage.Get("remaining").Value())
+		if !limitOK || !remainingOK || limit <= 0 {
+			return tiers
+		}
 		used := limit - remaining
 		if used < 0 {
 			used = 0
@@ -433,9 +446,9 @@ func parseZhipuTokenTiers(data gjson.Result) []CNQuotaTier {
 		if limitType != "TOKENS_LIMIT" && limitType != "CREDIT_LIMIT" {
 			return true
 		}
-		percentage := 0.0
-		if p, ok := cnParseF64(item.Get("percentage").Value()); ok {
-			percentage = p
+		percentage, ok := cnParseF64(item.Get("percentage").Value())
+		if !ok {
+			return true
 		}
 		var (
 			resetMs  int64

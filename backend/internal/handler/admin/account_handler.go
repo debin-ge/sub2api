@@ -74,6 +74,7 @@ type AccountHandler struct {
 	rpmCache                service.RPMCache
 	tokenCacheInvalidator   service.TokenCacheInvalidator
 	minimaxTokenPlanClient  *service.MiniMaxTokenPlanClient
+	deepseekBalanceClient   *service.DeepSeekBalanceClient
 	modelCatalog            adminModelCatalog
 	grokImportProber        grokImportProber
 	upstreamBillingProbe    *service.UpstreamBillingProbeService
@@ -87,6 +88,13 @@ func (h *AccountHandler) SetUpstreamBillingProbeService(probe *service.UpstreamB
 
 func (h *AccountHandler) SetOllamaCloudUsageService(usage *service.OllamaCloudUsageService) {
 	h.ollamaCloudUsage = usage
+}
+
+// SetDeepSeekBalanceClient overrides the client used by the manual official
+// balance check. Production uses the default client; tests can inject a
+// transport without changing the account's official endpoint identity.
+func (h *AccountHandler) SetDeepSeekBalanceClient(client *service.DeepSeekBalanceClient) {
+	h.deepseekBalanceClient = client
 }
 
 // NewAccountHandler creates a new admin account handler
@@ -3376,7 +3384,11 @@ func (h *AccountHandler) CheckDeepSeekBalance(c *gin.Context) {
 		return
 	}
 
-	balance, err := service.NewDeepSeekBalanceClient(nil).FetchBalanceForAccount(ctx, account)
+	client := h.deepseekBalanceClient
+	if client == nil {
+		client = service.NewDeepSeekBalanceClient(nil)
+	}
+	balance, err := client.FetchBalanceForAccount(ctx, account)
 	now := time.Now().UTC().Format(time.RFC3339)
 	extra := copyAccountExtra(account.Extra)
 	if err != nil {

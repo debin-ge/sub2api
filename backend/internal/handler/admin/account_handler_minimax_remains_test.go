@@ -2,14 +2,22 @@ package admin
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+type deepSeekBalanceRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f deepSeekBalanceRoundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
 
 type minimaxRemainsAdminService struct {
 	*stubAdminService
@@ -91,13 +99,15 @@ func TestAccountHandlerSyncMiniMaxRemainsUpdatesExtra(t *testing.T) {
 func TestAccountHandlerCheckDeepSeekBalanceUpdatesExtra(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	var gotAuthorization string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	client := &http.Client{Transport: deepSeekBalanceRoundTripFunc(func(r *http.Request) (*http.Response, error) {
 		gotAuthorization = r.Header.Get("Authorization")
 		require.Equal(t, "/user/balance", r.URL.Path)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"is_available":true,"balance_infos":[{"currency":"CNY","total_balance":"10.50"}]}`))
-	}))
-	t.Cleanup(srv.Close)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"is_available":true,"balance_infos":[{"currency":"CNY","total_balance":"10.50"}]}`)),
+		}, nil
+	})}
 
 	adminSvc := &minimaxRemainsAdminService{
 		stubAdminService: newStubAdminService(),
@@ -108,12 +118,13 @@ func TestAccountHandlerCheckDeepSeekBalanceUpdatesExtra(t *testing.T) {
 			Status:   service.StatusActive,
 			Credentials: map[string]any{
 				"api_key":         "sk-deepseek-test",
-				"base_url_openai": srv.URL,
+				"base_url_openai": service.DefaultDeepseekBaseURL,
 			},
 			Extra: map[string]any{"future_field": "keep"},
 		},
 	}
 	h := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	h.SetDeepSeekBalanceClient(service.NewDeepSeekBalanceClient(client))
 	router := gin.New()
 	router.POST("/api/v1/admin/accounts/:id/deepseek/balance-check", h.CheckDeepSeekBalance)
 

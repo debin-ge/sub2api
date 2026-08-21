@@ -88,3 +88,36 @@ func TestDeepSeekBalanceHealthServiceCheckAccountStoresError(t *testing.T) {
 	assertExtraValue(t, repo.updatePayload, "deepseek_balance_error", "upstream down")
 	assertExtraValue(t, repo.updatePayload, "deepseek_balance_checked_at", "2026-05-12T03:04:05Z")
 }
+
+func TestDeepSeekBalanceHealthServiceCheckBatchSkipsThirdPartyEndpoint(t *testing.T) {
+	repo := &deepSeekBalanceRepoStub{accounts: []Account{{
+		ID:       402,
+		Platform: PlatformDeepSeek,
+		Type:     AccountTypeAPIKey,
+		Status:   StatusActive,
+		Credentials: map[string]any{
+			"api_key":  "sk-third-party",
+			"base_url": "https://relay.example/v1",
+		},
+		Extra: map[string]any{
+			"deepseek_balance_amount": "10.50",
+			"deepseek_balance_status": "ok",
+		},
+	}}}
+	svc := NewDeepSeekBalanceHealthService(repo, deepSeekBalanceFetcherStub{balance: &DeepSeekBalance{
+		Available: true,
+		Amount:    "10.50",
+		Currency:  "CNY",
+	}})
+
+	results, err := svc.CheckBatch(context.Background(), 0)
+	if err != nil {
+		t.Fatalf("CheckBatch error = %v", err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("results = %+v, want empty", results)
+	}
+	if repo.updatePayload == nil || repo.updatePayload["deepseek_balance_amount"] != nil || repo.updatePayload["deepseek_balance_status"] != nil {
+		t.Fatalf("stale balance snapshot was not cleared: %+v", repo.updatePayload)
+	}
+}

@@ -105,6 +105,38 @@ func TestMiniMaxRemainsSyncServiceSyncAccountStoresErrorStatus(t *testing.T) {
 	assertExtraValue(t, repo.updatePayload, "minimax_remains_checked_at", "2026-05-12T03:04:05Z")
 }
 
+func TestMiniMaxRemainsSyncServiceSkipsThirdPartyAndClearsOfficialSnapshot(t *testing.T) {
+	repo := &minimaxRemainsSyncRepoStub{accounts: []Account{{
+		ID:       102,
+		Platform: PlatformMiniMax,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key":            "sk-third-party",
+			"base_url_anthropic": "https://relay.example/anthropic",
+			"base_url_openai":    "https://relay.example/v1",
+		},
+		Extra: map[string]any{
+			"minimax_text_5h_remaining":   0.0,
+			"minimax_remains_synced_at":   time.Now().UTC().Format(time.RFC3339),
+			"minimax_remains_sync_status": "ok",
+		},
+	}}}
+	svc := NewMiniMaxRemainsSyncService(repo, minimaxRemainsFetcherStub{
+		remains: &MiniMaxTokenPlanRemains{Text5hLimit: 4500, Text5hRemaining: 0},
+	}, NewMiniMaxQuotaService(&minimaxQuotaCacheStub{}, nil))
+
+	results, err := svc.SyncBatch(context.Background(), 0)
+	if err != nil {
+		t.Fatalf("SyncBatch error = %v", err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("results = %+v, want empty", results)
+	}
+	assertExtraValue(t, repo.updatePayload, "minimax_text_5h_remaining", nil)
+	assertExtraValue(t, repo.updatePayload, "minimax_remains_synced_at", nil)
+	assertExtraValue(t, repo.updatePayload, "minimax_remains_sync_status", nil)
+}
+
 func assertExtraValue(t *testing.T, payload map[string]any, key string, want any) {
 	t.Helper()
 	got, ok := payload[key]

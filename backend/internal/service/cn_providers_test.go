@@ -244,6 +244,17 @@ func TestCNBalanceURL(t *testing.T) {
 		},
 	}
 	require.Equal(t, "https://relay.example/kimi/v1/users/me/balance", cnBalanceURL(kimiRelay))
+	kimiAnthropic := &Account{
+		Platform: PlatformKimi,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"account_mode": AccountModePayG,
+			"api_protocol": APIProtocolAnthropic,
+			"api_key":      "sk-kimi",
+			"base_url":     DefaultKimiPayGAnthropicBaseURL,
+		},
+	}
+	require.Equal(t, "https://api.moonshot.cn/v1/users/me/balance", cnBalanceURL(kimiAnthropic))
 
 	deepseek := &Account{
 		Platform:    PlatformDeepseek,
