@@ -29,7 +29,9 @@ import (
 	"go.uber.org/zap"
 )
 
-// OpenAIGatewayHandler handles OpenAI API gateway requests
+// OpenAIGatewayHandler is the legacy implementation name for the shared
+// CompatibleGatewayHandler. It dispatches multiple ingress protocols and
+// provider transports, not only OpenAI requests.
 type OpenAIGatewayHandler struct {
 	gatewayService             *service.OpenAIGatewayService
 	billingCacheService        *service.BillingCacheService

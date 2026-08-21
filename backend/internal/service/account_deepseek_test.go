@@ -87,6 +87,21 @@ func TestAccountDeepSeekHelpersDefaultEndpoints(t *testing.T) {
 	}
 }
 
+func TestAccountDeepSeekHelpersFallbackToGenericBaseURL(t *testing.T) {
+	acc := &Account{
+		Platform:    PlatformDeepSeek,
+		Type:        AccountTypeAPIKey,
+		Credentials: map[string]any{"api_key": "sk-deepseek-test", "base_url": " https://proxy.example/deepseek/ "},
+	}
+
+	if got := acc.GetDeepSeekOpenAIBaseURL(); got != "https://proxy.example/deepseek" {
+		t.Fatalf("openai base url = %q", got)
+	}
+	if got := acc.GetDeepSeekAnthropicBaseURL(); got != "https://proxy.example/deepseek" {
+		t.Fatalf("anthropic base url = %q", got)
+	}
+}
+
 func TestAccountDeepSeekInvalidAccountHelpers(t *testing.T) {
 	oauth := &Account{Platform: PlatformDeepSeek, Type: AccountTypeOAuth, Credentials: map[string]any{"api_key": "sk-deepseek"}}
 	if oauth.IsDeepSeekAPIKey() {

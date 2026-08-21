@@ -122,6 +122,28 @@ func ProvideGatewayHandler(
 	return h
 }
 
+func ProvideCompatibleGatewayHandler(
+	gatewayService *service.OpenAIGatewayService,
+	concurrencyService *service.ConcurrencyService,
+	billingCacheService *service.BillingCacheService,
+	apiKeyService *service.APIKeyService,
+	usageRecordWorkerPool *service.UsageRecordWorkerPool,
+	errorPassthroughService *service.ErrorPassthroughService,
+	contentModerationService *service.ContentModerationService,
+	opsService *service.OpsService,
+	grokQuotaService *service.GrokQuotaService,
+	cfg *config.Config,
+	coordinator *securityaudit.Coordinator,
+) *CompatibleGatewayHandler {
+	h := NewOpenAIGatewayHandler(gatewayService, concurrencyService, billingCacheService, apiKeyService,
+		usageRecordWorkerPool, errorPassthroughService, contentModerationService, opsService, cfg)
+	h.securityAuditCoordinator = coordinator
+	h.grokMediaEligibilityProber = grokQuotaService
+	return h
+}
+
+// ProvideOpenAIGatewayHandler is retained for source compatibility. New
+// production wiring uses ProvideCompatibleGatewayHandler.
 func ProvideOpenAIGatewayHandler(
 	gatewayService *service.OpenAIGatewayService,
 	concurrencyService *service.ConcurrencyService,
@@ -135,11 +157,8 @@ func ProvideOpenAIGatewayHandler(
 	cfg *config.Config,
 	coordinator *securityaudit.Coordinator,
 ) *OpenAIGatewayHandler {
-	h := NewOpenAIGatewayHandler(gatewayService, concurrencyService, billingCacheService, apiKeyService,
-		usageRecordWorkerPool, errorPassthroughService, contentModerationService, opsService, cfg)
-	h.securityAuditCoordinator = coordinator
-	h.grokMediaEligibilityProber = grokQuotaService
-	return h
+	return ProvideCompatibleGatewayHandler(gatewayService, concurrencyService, billingCacheService, apiKeyService,
+		usageRecordWorkerPool, errorPassthroughService, contentModerationService, opsService, grokQuotaService, cfg, coordinator)
 }
 
 func ProvideBatchImageHandler(
@@ -201,9 +220,6 @@ func ProvideHandlers(
 	gatewayHandler *GatewayHandler,
 	openaiGatewayHandler *OpenAIGatewayHandler,
 	miniMaxGatewayHandler *MiniMaxGatewayHandler,
-	glmGatewayHandler *GLMGatewayHandler,
-	kimiGatewayHandler *KimiGatewayHandler,
-	deepSeekGatewayHandler *DeepSeekGatewayHandler,
 	windsurfGatewayHandler *WindsurfGatewayHandler,
 	openCodeGatewayHandler *OpenCodeGatewayHandler,
 	settingHandler *SettingHandler,
@@ -221,35 +237,33 @@ func ProvideHandlers(
 	_ *service.IdempotencyCleanupService,
 ) *Handlers {
 	return &Handlers{
-		BuildInfo:        buildInfo,
-		Auth:             authHandler,
-		User:             userHandler,
-		APIKey:           apiKeyHandler,
-		Usage:            usageHandler,
-		Redeem:           redeemHandler,
-		Subscription:     subscriptionHandler,
-		Announcement:     announcementHandler,
-		ChannelMonitor:   channelMonitorUserHandler,
-		ChannelMonitorV2: channelMonitorV2Handler,
-		Admin:            adminHandlers,
-		Gateway:          gatewayHandler,
-		OpenAIGateway:    openaiGatewayHandler,
-		MiniMaxGateway:   miniMaxGatewayHandler,
-		GLMGateway:       glmGatewayHandler,
-		KimiGateway:      kimiGatewayHandler,
-		DeepSeekGateway:  deepSeekGatewayHandler,
-		WindsurfGateway:  windsurfGatewayHandler,
-		OpenCodeGateway:  openCodeGatewayHandler,
-		Setting:          settingHandler,
-		Captcha:          captchaHandler,
-		Totp:             totpHandler,
-		Passkey:          passkeyHandler,
-		Payment:          paymentHandler,
-		PaymentWebhook:   paymentWebhookHandler,
-		AvailableChannel: availableChannelHandler,
-		Radar:            radarHandler,
-		AsyncImage:       asyncImageHandler,
-		BatchImage:       batchImageHandler,
+		BuildInfo:         buildInfo,
+		Auth:              authHandler,
+		User:              userHandler,
+		APIKey:            apiKeyHandler,
+		Usage:             usageHandler,
+		Redeem:            redeemHandler,
+		Subscription:      subscriptionHandler,
+		Announcement:      announcementHandler,
+		ChannelMonitor:    channelMonitorUserHandler,
+		ChannelMonitorV2:  channelMonitorV2Handler,
+		Admin:             adminHandlers,
+		Gateway:           gatewayHandler,
+		CompatibleGateway: openaiGatewayHandler,
+		OpenAIGateway:     openaiGatewayHandler,
+		MiniMaxGateway:    miniMaxGatewayHandler,
+		WindsurfGateway:   windsurfGatewayHandler,
+		OpenCodeGateway:   openCodeGatewayHandler,
+		Setting:           settingHandler,
+		Captcha:           captchaHandler,
+		Totp:              totpHandler,
+		Passkey:           passkeyHandler,
+		Payment:           paymentHandler,
+		PaymentWebhook:    paymentWebhookHandler,
+		AvailableChannel:  availableChannelHandler,
+		Radar:             radarHandler,
+		AsyncImage:        asyncImageHandler,
+		BatchImage:        batchImageHandler,
 	}
 }
 
@@ -270,11 +284,8 @@ var ProviderSet = wire.NewSet(
 	NewChannelMonitorUserHandler,
 	NewChannelMonitorV2Handler,
 	ProvideGatewayHandler,
-	ProvideOpenAIGatewayHandler,
+	ProvideCompatibleGatewayHandler,
 	NewMiniMaxGatewayHandler,
-	NewGLMGatewayHandler,
-	NewKimiGatewayHandler,
-	NewDeepSeekGatewayHandler,
 	NewWindsurfGatewayHandler,
 	NewOpenCodeGatewayHandler,
 	NewTotpHandler,

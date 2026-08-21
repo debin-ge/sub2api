@@ -213,7 +213,7 @@ func provideCleanup(
 	geminiOAuth *service.GeminiOAuthService,
 	antigravityOAuth *service.AntigravityOAuthService,
 	grokOAuth *service.GrokOAuthService,
-	openAIGateway *service.OpenAIGatewayService,
+	compatibleGateway *service.OpenAIGatewayService,
 	scheduledTestRunner *service.ScheduledTestRunnerService,
 	backupSvc *service.BackupService,
 	paymentOrderExpiry *service.PaymentOrderExpiryService,
@@ -267,7 +267,7 @@ func provideCleanup(
 			geminiOAuth,
 			antigravityOAuth,
 			grokOAuth,
-			openAIGateway,
+			compatibleGateway,
 			scheduledTestRunner,
 			backupSvc,
 			paymentOrderExpiry,
@@ -324,7 +324,7 @@ func provideFinalCleanup(
 	geminiOAuth *service.GeminiOAuthService,
 	antigravityOAuth *service.AntigravityOAuthService,
 	grokOAuth *service.GrokOAuthService,
-	openAIGateway *service.OpenAIGatewayService,
+	compatibleGateway *service.OpenAIGatewayService,
 	scheduledTestRunner *service.ScheduledTestRunnerService,
 	backupSvc *service.BackupService,
 	paymentOrderExpiry *service.PaymentOrderExpiryService,
@@ -545,8 +545,8 @@ func provideFinalCleanup(
 				return nil
 			}},
 			{"OpenAIWSPool", func() error {
-				if openAIGateway != nil {
-					openAIGateway.CloseOpenAIWSPool()
+				if compatibleGateway != nil {
+					compatibleGateway.CloseOpenAIWSPool()
 				}
 				return nil
 			}},

@@ -49,18 +49,21 @@ type AdminHandlers struct {
 
 // Handlers contains all HTTP handlers
 type Handlers struct {
-	BuildInfo        BuildInfo
-	Auth             *AuthHandler
-	User             *UserHandler
-	APIKey           *APIKeyHandler
-	Usage            *UsageHandler
-	Redeem           *RedeemHandler
-	Subscription     *SubscriptionHandler
-	Announcement     *AnnouncementHandler
-	ChannelMonitor   *ChannelMonitorUserHandler
-	ChannelMonitorV2 *ChannelMonitorV2Handler
-	Admin            *AdminHandlers
-	Gateway          *GatewayHandler
+	BuildInfo         BuildInfo
+	Auth              *AuthHandler
+	User              *UserHandler
+	APIKey            *APIKeyHandler
+	Usage             *UsageHandler
+	Redeem            *RedeemHandler
+	Subscription      *SubscriptionHandler
+	Announcement      *AnnouncementHandler
+	ChannelMonitor    *ChannelMonitorUserHandler
+	ChannelMonitorV2  *ChannelMonitorV2Handler
+	Admin             *AdminHandlers
+	Gateway           *GatewayHandler
+	CompatibleGateway *CompatibleGatewayHandler
+	// OpenAIGateway is retained as a compatibility alias for integrations that
+	// construct Handlers directly. Production routes use CompatibleGateway.
 	OpenAIGateway    *OpenAIGatewayHandler
 	MiniMaxGateway   *MiniMaxGatewayHandler
 	GLMGateway       *GLMGatewayHandler

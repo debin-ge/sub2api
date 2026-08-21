@@ -82,6 +82,37 @@ func TestAccountKimiHelpersDefaultEndpoints(t *testing.T) {
 	}
 }
 
+func TestAccountKimiHelpersFallbackToGenericBaseURL(t *testing.T) {
+	acc := &Account{
+		Platform:    PlatformKimi,
+		Type:        AccountTypeAPIKey,
+		Credentials: map[string]any{"api_key": "sk-kimi-test", "base_url": " https://proxy.example/kimi/ "},
+	}
+
+	if got := acc.GetKimiAnthropicBaseURL(); got != "https://proxy.example/kimi" {
+		t.Fatalf("anthropic base url = %q", got)
+	}
+	if got := acc.GetKimiOpenAIBaseURL(); got != "https://proxy.example/kimi" {
+		t.Fatalf("openai base url = %q", got)
+	}
+}
+
+func TestAccountKimiCodingProviderUsesPlatformNotBaseURL(t *testing.T) {
+	acc := &Account{
+		Platform: PlatformKimi,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key":      "sk-kimi-test",
+			"account_mode": AccountModeCoding,
+			"base_url":     "https://relay.example/kimi",
+		},
+	}
+
+	if got := acc.GetCodingPlanProvider(); got != PlatformKimi {
+		t.Fatalf("coding provider = %q, want %q", got, PlatformKimi)
+	}
+}
+
 func TestAccountKimiInvalidAccountHelpers(t *testing.T) {
 	oauth := &Account{Platform: PlatformKimi, Type: AccountTypeOAuth, Credentials: map[string]any{"api_key": "sk-kimi"}}
 	if oauth.IsKimiCode() {

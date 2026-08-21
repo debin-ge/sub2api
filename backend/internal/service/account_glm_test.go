@@ -80,6 +80,37 @@ func TestAccountGLMHelpersDefaultEndpoints(t *testing.T) {
 	}
 }
 
+func TestAccountGLMHelpersFallbackToGenericBaseURL(t *testing.T) {
+	acc := &Account{
+		Platform:    PlatformZhipu,
+		Type:        AccountTypeAPIKey,
+		Credentials: map[string]any{"api_key": "sk-glm-test", "base_url": " https://proxy.example/glm/ "},
+	}
+
+	if got := acc.GetGLMAnthropicBaseURL(); got != "https://proxy.example/glm" {
+		t.Fatalf("anthropic base url = %q", got)
+	}
+	if got := acc.GetGLMOpenAIBaseURL(); got != "https://proxy.example/glm" {
+		t.Fatalf("openai base url = %q", got)
+	}
+}
+
+func TestAccountZhipuCodingProviderUsesCanonicalPlatformNotBaseURL(t *testing.T) {
+	acc := &Account{
+		Platform: PlatformZhipu,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key":      "sk-zhipu-test",
+			"account_mode": AccountModeCoding,
+			"base_url":     "https://relay.example/zhipu",
+		},
+	}
+
+	if got := acc.GetCodingPlanProvider(); got != PlatformZhipu {
+		t.Fatalf("coding provider = %q, want %q", got, PlatformZhipu)
+	}
+}
+
 func TestZhipuOpenAIBaseURLFollowsAccountMode(t *testing.T) {
 	payg := &Account{
 		Platform:    PlatformZhipu,

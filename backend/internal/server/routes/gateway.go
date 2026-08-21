@@ -33,6 +33,11 @@ func RegisterGatewayRoutes(
 	compositeResolver *service.CompositeRouteResolver,
 	cfg *config.Config,
 ) {
+	// CompatibleGateway is the canonical multi-protocol ingress. Keep a
+	// fallback for tests/integrations that still construct only OpenAIGateway.
+	if h != nil && h.CompatibleGateway == nil {
+		h.CompatibleGateway = h.OpenAIGateway
+	}
 	bodyLimit := middleware.RequestBodyLimit(cfg.Gateway.MaxBodySize)
 	textBodyLimit := middleware.RequestBodyLimit(cfg.Gateway.TextMaxBodySize)
 	clientRequestID := middleware.ClientRequestID()
@@ -45,15 +50,15 @@ func RegisterGatewayRoutes(
 	requireGroupAnthropic := middleware.RequireGroupAssignment(settingService, middleware.AnthropicErrorWriter)
 	requireGroupGoogle := middleware.RequireGroupAssignment(settingService, middleware.GoogleErrorWriter)
 
-	isOpenAIGatewayPlatform := func(c *gin.Context) bool {
+	isCompatibleGatewayPlatform := func(c *gin.Context) bool {
 		return getGroupPlatform(c) == service.PlatformOpenAI
 	}
 	countTokensHandler := func(c *gin.Context) {
 		switch getGroupPlatform(c) {
 		case service.PlatformOpenAI, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformGLM:
-			h.OpenAIGateway.CountTokens(c)
+			h.CompatibleGateway.CountTokens(c)
 		case service.PlatformGrok:
-			h.OpenAIGateway.GrokCountTokens(c)
+			h.CompatibleGateway.GrokCountTokens(c)
 		case service.PlatformMiniMax:
 			writeMiniMaxUnsupported(c, h)
 		case service.PlatformWindsurf:
@@ -69,8 +74,8 @@ func RegisterGatewayRoutes(
 			writeOpenCodeModels(c, h)
 			return
 		}
-		if isOpenAIGatewayPlatform(c) && c.Query("client_version") != "" {
-			h.OpenAIGateway.CodexModels(c)
+		if isCompatibleGatewayPlatform(c) && c.Query("client_version") != "" {
+			h.CompatibleGateway.CodexModels(c)
 			return
 		}
 		h.Gateway.Models(c)
@@ -81,9 +86,9 @@ func RegisterGatewayRoutes(
 	imagesHandler := func(c *gin.Context) {
 		switch getGroupPlatform(c) {
 		case service.PlatformOpenAI:
-			h.OpenAIGateway.Images(c)
+			h.CompatibleGateway.Images(c)
 		case service.PlatformGrok:
-			h.OpenAIGateway.GrokImages(c)
+			h.CompatibleGateway.GrokImages(c)
 		case service.PlatformMiniMax:
 			writeMiniMaxUnsupported(c, h)
 		case service.PlatformWindsurf:
@@ -102,7 +107,7 @@ func RegisterGatewayRoutes(
 	}
 	videoGenerationHandler := func(c *gin.Context) {
 		if getGroupPlatform(c) == service.PlatformGrok {
-			h.OpenAIGateway.GrokVideoGeneration(c)
+			h.CompatibleGateway.GrokVideoGeneration(c)
 			return
 		}
 		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
@@ -118,7 +123,7 @@ func RegisterGatewayRoutes(
 		// be resolved by compositeTargetPlatformMiddleware. Route them through
 		// the Grok handler and let scheduler/account selection enforce capacity.
 		if getGroupPlatform(c) == service.PlatformGrok || getGroupPlatform(c) == service.PlatformComposite {
-			h.OpenAIGateway.GrokVideoStatus(c)
+			h.CompatibleGateway.GrokVideoStatus(c)
 			return
 		}
 		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
@@ -134,7 +139,7 @@ func RegisterGatewayRoutes(
 		// be resolved by compositeTargetPlatformMiddleware. Route them through
 		// the Grok handler just like video status lookups.
 		if getGroupPlatform(c) == service.PlatformGrok || getGroupPlatform(c) == service.PlatformComposite {
-			h.OpenAIGateway.GrokVideoContent(c)
+			h.CompatibleGateway.GrokVideoContent(c)
 			return
 		}
 		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
@@ -147,7 +152,7 @@ func RegisterGatewayRoutes(
 	}
 	videoEditHandler := func(c *gin.Context) {
 		if getGroupPlatform(c) == service.PlatformGrok {
-			h.OpenAIGateway.GrokVideoEdit(c)
+			h.CompatibleGateway.GrokVideoEdit(c)
 			return
 		}
 		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
@@ -155,7 +160,7 @@ func RegisterGatewayRoutes(
 	}
 	videoExtensionHandler := func(c *gin.Context) {
 		if getGroupPlatform(c) == service.PlatformGrok {
-			h.OpenAIGateway.GrokVideoExtension(c)
+			h.CompatibleGateway.GrokVideoExtension(c)
 			return
 		}
 		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
@@ -195,7 +200,7 @@ func RegisterGatewayRoutes(
 		gateway.POST("/messages", func(c *gin.Context) {
 			switch getGroupPlatform(c) {
 			case service.PlatformOpenAI, service.PlatformGrok, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformGLM:
-				h.OpenAIGateway.Messages(c)
+				h.CompatibleGateway.Messages(c)
 				return
 			case service.PlatformMiniMax:
 				if h.MiniMaxGateway == nil {
@@ -240,13 +245,13 @@ func RegisterGatewayRoutes(
 		// /v1/usage 是纯本地端点（用量/额度/限速/余额均取自本地库，不回源上游），
 		// 因此对所有分组平台一律放行，与相邻的 /v1/balance 保持一致。
 		gateway.GET("/usage", h.Gateway.Usage)
-		gateway.POST("/live", h.OpenAIGateway.Live)
-		gateway.GET("/live/:call_id", h.OpenAIGateway.LiveSideband)
+		gateway.POST("/live", h.CompatibleGateway.Live)
+		gateway.GET("/live/:call_id", h.CompatibleGateway.LiveSideband)
 		// OpenAI Responses API: auto-route based on group platform
 		gateway.POST("/responses", func(c *gin.Context) {
 			switch getGroupPlatform(c) {
 			case service.PlatformOpenAI, service.PlatformGrok, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformGLM:
-				h.OpenAIGateway.Responses(c)
+				h.CompatibleGateway.Responses(c)
 				return
 			case service.PlatformMiniMax:
 				writeMiniMaxResponses(c, h)
@@ -263,7 +268,7 @@ func RegisterGatewayRoutes(
 		gateway.POST("/responses/*subpath", guardResponsesSubpath(func(c *gin.Context) {
 			switch getGroupPlatform(c) {
 			case service.PlatformOpenAI, service.PlatformGrok, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformGLM:
-				h.OpenAIGateway.Responses(c)
+				h.CompatibleGateway.Responses(c)
 				return
 			case service.PlatformMiniMax:
 				writeMiniMaxUnsupported(c, h)
@@ -277,7 +282,7 @@ func RegisterGatewayRoutes(
 			}
 			h.Gateway.Responses(c)
 		}))
-		gateway.POST("/alpha/search", textBodyLimit, h.OpenAIGateway.AlphaSearch)
+		gateway.POST("/alpha/search", textBodyLimit, h.CompatibleGateway.AlphaSearch)
 		gateway.GET("/responses", func(c *gin.Context) {
 			if getGroupPlatform(c) == service.PlatformMiniMax {
 				writeMiniMaxUnsupported(c, h)
@@ -291,13 +296,13 @@ func RegisterGatewayRoutes(
 				writeOpenCodeUnsupported(c, h)
 				return
 			}
-			h.OpenAIGateway.ResponsesWebSocket(c)
+			h.CompatibleGateway.ResponsesWebSocket(c)
 		})
 		// OpenAI Chat Completions API: auto-route based on group platform
 		gateway.POST("/chat/completions", func(c *gin.Context) {
 			switch getGroupPlatform(c) {
 			case service.PlatformOpenAI, service.PlatformGrok, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformGLM:
-				h.OpenAIGateway.ChatCompletions(c)
+				h.CompatibleGateway.ChatCompletions(c)
 				return
 			case service.PlatformMiniMax:
 				writeMiniMaxChatCompletions(c, h)
@@ -322,7 +327,7 @@ func RegisterGatewayRoutes(
 				})
 				return
 			}
-			h.OpenAIGateway.Embeddings(c)
+			h.CompatibleGateway.Embeddings(c)
 		})
 		gateway.POST("/images/generations", imagesHandler)
 		gateway.POST("/images/edits", imagesHandler)
@@ -363,7 +368,7 @@ func RegisterGatewayRoutes(
 					c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": "Voice API is not supported for this platform"}})
 					return
 				}
-				h.OpenAIGateway.GrokVoice(c, endpoint)
+				h.CompatibleGateway.GrokVoice(c, endpoint)
 			}
 		}
 		gateway.POST("/tts", voiceHandler("tts"))
@@ -375,7 +380,7 @@ func RegisterGatewayRoutes(
 				c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": "Voice API is not supported for this platform"}})
 				return
 			}
-			h.OpenAIGateway.GrokVoice(c, grokCustomVoiceEndpoint(c))
+			h.CompatibleGateway.GrokVoice(c, grokCustomVoiceEndpoint(c))
 		}
 		gateway.GET("/custom-voices", voiceHandler("custom-voices"))
 		gateway.GET("/custom-voices/:voice_id/audio", customVoicePathHandler)
@@ -388,7 +393,7 @@ func RegisterGatewayRoutes(
 				c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": "Realtime API is not supported for this platform"}})
 				return
 			}
-			h.OpenAIGateway.GrokRealtime(c)
+			h.CompatibleGateway.GrokRealtime(c)
 		})
 		gateway.POST("/web_search", func(c *gin.Context) {
 			if getGroupPlatform(c) != service.PlatformGrok {
@@ -428,7 +433,7 @@ func RegisterGatewayRoutes(
 	responsesHandler := func(c *gin.Context) {
 		switch getGroupPlatform(c) {
 		case service.PlatformOpenAI, service.PlatformGrok, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformGLM:
-			h.OpenAIGateway.Responses(c)
+			h.CompatibleGateway.Responses(c)
 			return
 		case service.PlatformMiniMax:
 			writeMiniMaxResponses(c, h)
@@ -445,7 +450,7 @@ func RegisterGatewayRoutes(
 	responsesSubpathHandler := func(c *gin.Context) {
 		switch getGroupPlatform(c) {
 		case service.PlatformOpenAI, service.PlatformGrok, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformGLM:
-			h.OpenAIGateway.Responses(c)
+			h.CompatibleGateway.Responses(c)
 			return
 		case service.PlatformMiniMax:
 			writeMiniMaxUnsupported(c, h)
@@ -461,7 +466,7 @@ func RegisterGatewayRoutes(
 	}
 	r.POST("/responses", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, responsesHandler)
 	r.POST("/responses/*subpath", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, guardResponsesSubpath(responsesSubpathHandler))
-	r.POST("/alpha/search", textBodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, h.OpenAIGateway.AlphaSearch)
+	r.POST("/alpha/search", textBodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, h.CompatibleGateway.AlphaSearch)
 	r.GET("/responses", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
 		if getGroupPlatform(c) == service.PlatformMiniMax {
 			writeMiniMaxUnsupported(c, h)
@@ -475,18 +480,18 @@ func RegisterGatewayRoutes(
 			writeOpenCodeUnsupported(c, h)
 			return
 		}
-		h.OpenAIGateway.ResponsesWebSocket(c)
+		h.CompatibleGateway.ResponsesWebSocket(c)
 	})
 	r.GET("/models", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, modelsHandler)
 	r.POST("/messages/count_tokens", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, countTokensHandler)
 	codexDirect := r.Group("/backend-api/codex")
 	codexDirect.Use(bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic)
 	{
-		codexDirect.POST("/realtime/calls", h.OpenAIGateway.Live)
-		codexDirect.GET("/:call_id", h.OpenAIGateway.LiveSideband)
+		codexDirect.POST("/realtime/calls", h.CompatibleGateway.Live)
+		codexDirect.GET("/:call_id", h.CompatibleGateway.LiveSideband)
 		codexDirect.POST("/responses", responsesHandler)
 		codexDirect.POST("/responses/*subpath", guardResponsesSubpath(responsesSubpathHandler))
-		codexDirect.POST("/alpha/search", textBodyLimit, h.OpenAIGateway.AlphaSearch)
+		codexDirect.POST("/alpha/search", textBodyLimit, h.CompatibleGateway.AlphaSearch)
 		codexDirect.GET("/responses", func(c *gin.Context) {
 			if getGroupPlatform(c) == service.PlatformMiniMax {
 				writeMiniMaxUnsupported(c, h)
@@ -500,15 +505,15 @@ func RegisterGatewayRoutes(
 				writeOpenCodeUnsupported(c, h)
 				return
 			}
-			h.OpenAIGateway.ResponsesWebSocket(c)
+			h.CompatibleGateway.ResponsesWebSocket(c)
 		})
-		codexDirect.GET("/models", h.OpenAIGateway.CodexModels)
+		codexDirect.GET("/models", h.CompatibleGateway.CodexModels)
 	}
 	// OpenAI Chat Completions API（不带v1前缀的别名）— auto-route based on group platform
 	r.POST("/chat/completions", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
 		switch getGroupPlatform(c) {
 		case service.PlatformOpenAI, service.PlatformGrok, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformGLM:
-			h.OpenAIGateway.ChatCompletions(c)
+			h.CompatibleGateway.ChatCompletions(c)
 			return
 		case service.PlatformMiniMax:
 			writeMiniMaxChatCompletions(c, h)
@@ -533,7 +538,7 @@ func RegisterGatewayRoutes(
 			})
 			return
 		}
-		h.OpenAIGateway.Embeddings(c)
+		h.CompatibleGateway.Embeddings(c)
 	})
 	r.POST("/images/generations", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, imagesHandler)
 	r.POST("/images/edits", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, imagesHandler)
@@ -560,7 +565,7 @@ func RegisterGatewayRoutes(
 				c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": "Voice API is not supported for this platform"}})
 				return
 			}
-			h.OpenAIGateway.GrokVoice(c, endpoint)
+			h.CompatibleGateway.GrokVoice(c, endpoint)
 		}
 	}
 	r.POST("/tts", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, rootVoiceHandler("tts"))
@@ -572,7 +577,7 @@ func RegisterGatewayRoutes(
 			c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": "Voice API is not supported for this platform"}})
 			return
 		}
-		h.OpenAIGateway.GrokVoice(c, grokCustomVoiceEndpoint(c))
+		h.CompatibleGateway.GrokVoice(c, grokCustomVoiceEndpoint(c))
 	}
 	r.GET("/custom-voices", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, rootVoiceHandler("custom-voices"))
 	r.GET("/custom-voices/:voice_id/audio", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, rootCustomVoicePathHandler)
@@ -585,7 +590,7 @@ func RegisterGatewayRoutes(
 			c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": "Realtime API is not supported for this platform"}})
 			return
 		}
-		h.OpenAIGateway.GrokRealtime(c)
+		h.CompatibleGateway.GrokRealtime(c)
 	})
 	r.POST("/web_search", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
 		if getGroupPlatform(c) != service.PlatformGrok {

@@ -1427,28 +1427,11 @@ func (a *Account) GetGLMAPIKey() string {
 }
 
 func (a *Account) GetGLMAnthropicBaseURL() string {
-	if a == nil || !a.IsZhipu() {
-		return ""
-	}
-	baseURL := strings.TrimRight(strings.TrimSpace(a.GetCredential("base_url_anthropic")), "/")
-	if baseURL != "" {
-		return baseURL
-	}
-	return "https://open.bigmodel.cn/api/anthropic"
+	return resolveCNProviderBaseURL(a, APIProtocolAnthropic)
 }
 
 func (a *Account) GetGLMOpenAIBaseURL() string {
-	if a == nil || !a.IsZhipu() {
-		return ""
-	}
-	baseURL := strings.TrimRight(strings.TrimSpace(a.GetCredential("base_url_openai")), "/")
-	if baseURL != "" {
-		return baseURL
-	}
-	if a.GetAccountMode() == AccountModeCoding {
-		return DefaultZhipuCodingBaseURL
-	}
-	return DefaultZhipuPayGBaseURL
+	return resolveCNProviderBaseURL(a, APIProtocolChatCompletions)
 }
 
 // NormalizeGLMModel 把 GLM 模型 ID 规范成 provider 能力表里登记的大小写写法
@@ -1553,25 +1536,11 @@ func (a *Account) GetKimiAPIKey() string {
 }
 
 func (a *Account) GetKimiAnthropicBaseURL() string {
-	if a == nil || a.Platform != PlatformKimi {
-		return ""
-	}
-	baseURL := strings.TrimRight(strings.TrimSpace(a.GetCredential("base_url_anthropic")), "/")
-	if baseURL != "" {
-		return baseURL
-	}
-	return "https://api.kimi.com/coding"
+	return resolveCNProviderBaseURLWithLegacyDefaults(a, APIProtocolAnthropic, true)
 }
 
 func (a *Account) GetKimiOpenAIBaseURL() string {
-	if a == nil || a.Platform != PlatformKimi {
-		return ""
-	}
-	baseURL := strings.TrimRight(strings.TrimSpace(a.GetCredential("base_url_openai")), "/")
-	if baseURL != "" {
-		return baseURL
-	}
-	return "https://api.kimi.com/coding/v1"
+	return resolveCNProviderBaseURLWithLegacyDefaults(a, APIProtocolChatCompletions, true)
 }
 
 func DefaultKimiModelIDs() []string {
@@ -1619,25 +1588,11 @@ func (a *Account) GetDeepSeekAPIKey() string {
 }
 
 func (a *Account) GetDeepSeekOpenAIBaseURL() string {
-	if a == nil || a.Platform != PlatformDeepSeek {
-		return ""
-	}
-	baseURL := strings.TrimRight(strings.TrimSpace(a.GetCredential("base_url_openai")), "/")
-	if baseURL != "" {
-		return baseURL
-	}
-	return "https://api.deepseek.com"
+	return resolveCNProviderBaseURL(a, APIProtocolChatCompletions)
 }
 
 func (a *Account) GetDeepSeekAnthropicBaseURL() string {
-	if a == nil || a.Platform != PlatformDeepSeek {
-		return ""
-	}
-	baseURL := strings.TrimRight(strings.TrimSpace(a.GetCredential("base_url_anthropic")), "/")
-	if baseURL != "" {
-		return baseURL
-	}
-	return "https://api.deepseek.com/anthropic"
+	return resolveCNProviderBaseURL(a, APIProtocolAnthropic)
 }
 
 func DefaultDeepSeekModelIDs() []string {
@@ -1804,6 +1759,9 @@ func (a *Account) GetOpenAIBaseURL() string {
 	if !a.IsOpenAI() && !a.IsCNProvider() {
 		return ""
 	}
+	if a.IsCNProvider() {
+		return resolveCNProviderBaseURL(a, APIProtocolChatCompletions)
+	}
 	if a.Type == AccountTypeAPIKey || a.Type == AccountTypeUpstream {
 		if baseURL := strings.TrimSpace(a.GetCredential("base_url")); baseURL != "" {
 			return baseURL
@@ -1887,6 +1845,9 @@ func (a *Account) GetAnthropicProtocolBaseURL() string {
 	if a == nil || !a.IsAnthropicProtocol() {
 		return ""
 	}
+	if a.IsCNProvider() {
+		return resolveCNProviderBaseURL(a, APIProtocolAnthropic)
+	}
 	if a.Type == AccountTypeAPIKey || a.Type == AccountTypeUpstream {
 		if baseURL := strings.TrimSpace(a.GetCredential("base_url")); baseURL != "" {
 			return baseURL
@@ -1946,18 +1907,17 @@ func (a *Account) GetCNAPIKey() string {
 	return a.GetCredential("api_key")
 }
 
-// GetCodingPlanProvider 根据 base_url 识别 Coding Plan 供应商（kimi / zhipu），
-// 用于路由到对应的额度查询端点。非 coding 模式或无法识别时返回空串。
-// 判定规则与 cc-switch coding_plan.rs::detect_provider 保持一致。
+// GetCodingPlanProvider 根据规范化平台和 account_mode 识别 Coding Plan 供应商。
+// BaseURL 只决定探测请求发往哪里，不能用来推断供应商，否则自定义中转地址
+// 会被误判为非 Coding Plan。
 func (a *Account) GetCodingPlanProvider() string {
 	if a == nil || a.GetAccountMode() != AccountModeCoding {
 		return ""
 	}
-	baseURL := strings.ToLower(a.GetOpenAIBaseURL())
-	switch {
-	case strings.Contains(baseURL, "api.kimi.com/coding"):
+	switch CanonicalCNPlatform(a.Platform) {
+	case PlatformKimi:
 		return PlatformKimi
-	case strings.Contains(baseURL, "bigmodel.cn"), strings.Contains(baseURL, "api.z.ai"):
+	case PlatformZhipu:
 		return PlatformZhipu
 	default:
 		return ""

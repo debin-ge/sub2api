@@ -22,9 +22,6 @@ func TestProvideHandlersIncludesRadarHandler(t *testing.T) {
 		nil, // gatewayHandler
 		nil, // openaiGatewayHandler
 		nil, // miniMaxGatewayHandler
-		nil, // glmGatewayHandler
-		nil, // kimiGatewayHandler
-		nil, // deepSeekGatewayHandler
 		nil, // windsurfGatewayHandler
 		nil, // openCodeGatewayHandler
 		nil, // settingHandler

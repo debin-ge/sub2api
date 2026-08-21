@@ -421,7 +421,9 @@ func (noAvailableCompactAccountsError) Error() string {
 
 func (noAvailableCompactAccountsError) Unwrap() error { return ErrNoAvailableAccounts }
 
-// OpenAIGatewayService handles OpenAI API gateway operations
+// OpenAIGatewayService is the legacy implementation name for the shared
+// CompatibleGatewayService. It handles multiple ingress/upstream protocols,
+// including Anthropic Messages and CN-provider native Anthropic endpoints.
 type OpenAIGatewayService struct {
 	accountRepo      AccountRepository
 	usageLogRepo     UsageLogRepository

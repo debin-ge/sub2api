@@ -234,6 +234,14 @@ func TestCNBalanceURL(t *testing.T) {
 	t.Parallel()
 	kimi := &Account{Platform: PlatformKimi}
 	require.Equal(t, "https://api.moonshot.cn/v1/users/me/balance", cnBalanceURL(kimi))
+	kimiRelay := &Account{
+		Platform: PlatformKimi,
+		Credentials: map[string]any{
+			"account_mode": AccountModePayG,
+			"base_url":     "https://relay.example/kimi/v1",
+		},
+	}
+	require.Equal(t, "https://relay.example/kimi/v1/users/me/balance", cnBalanceURL(kimiRelay))
 
 	deepseek := &Account{
 		Platform:    PlatformDeepseek,

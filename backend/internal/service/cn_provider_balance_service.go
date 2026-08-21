@@ -261,12 +261,12 @@ func (s *CNProviderBalanceService) resolveProxyURL(ctx context.Context, account 
 
 // cnBalanceURL 解析账号的余额端点。
 //
-//   - Kimi：固定 https://api.moonshot.cn/v1/users/me/balance（与 base_url 无关，Moonshot 仅此一处）
-//   - DeepSeek：基于 base_url 拼接 /user/balance（支持自定义域名）
+//   - Kimi：基于 OpenAI 兼容 base_url 拼接 /users/me/balance
+//   - DeepSeek：基于 OpenAI 兼容 base_url 拼接 /user/balance
 func cnBalanceURL(account *Account) string {
 	switch account.Platform {
 	case PlatformKimi:
-		return "https://api.moonshot.cn/v1/users/me/balance"
+		return strings.TrimRight(ResolveCompatibleGatewayBaseURL(account, APIProtocolChatCompletions), "/") + "/users/me/balance"
 	case PlatformDeepseek:
 		// Anthropic 协议账号的凭证 base_url 指向 /anthropic 端点，余额探测需回退
 		// 到 OpenAI 格式 base（协议感知）再拼接 /user/balance。
