@@ -1552,7 +1552,10 @@ func applyChannelTokenPriceOverrides(pricing *ModelPricing, channelPricing *Chan
 		pricing.InputPricePerToken = *channelPricing.InputPrice
 		pricing.InputPriceExplicit = true
 		pricing.InputPricePerTokenPriority = priority
-		pricing.InputPriorityPriceExplicit = priorityConfigured
+		// An explicit zero Standard price must also suppress generic Priority
+		// fallback; otherwise a free channel override can be charged at the model
+		// default tier rate even though the operator explicitly set zero.
+		pricing.InputPriorityPriceExplicit = priorityConfigured || *channelPricing.InputPrice == 0
 	}
 	if channelPricing.OutputPrice != nil {
 		priorityConfigured := outputPriorityPriceConfigured(pricing)
@@ -1560,7 +1563,7 @@ func applyChannelTokenPriceOverrides(pricing *ModelPricing, channelPricing *Chan
 		pricing.OutputPricePerToken = *channelPricing.OutputPrice
 		pricing.OutputPriceExplicit = true
 		pricing.OutputPricePerTokenPriority = priority
-		pricing.OutputPriorityPriceExplicit = priorityConfigured
+		pricing.OutputPriorityPriceExplicit = priorityConfigured || *channelPricing.OutputPrice == 0
 	}
 	if channelPricing.CacheWritePrice != nil {
 		priorityConfigured := cacheCreationPriorityPriceConfigured(pricing)
@@ -1568,7 +1571,7 @@ func applyChannelTokenPriceOverrides(pricing *ModelPricing, channelPricing *Chan
 		pricing.CacheCreationPricePerToken = *channelPricing.CacheWritePrice
 		pricing.CacheCreationPricePerTokenPriority = priority
 		pricing.CacheCreationPriceExplicit = true
-		pricing.CacheCreationPriorityPriceExplicit = priorityConfigured
+		pricing.CacheCreationPriorityPriceExplicit = priorityConfigured || *channelPricing.CacheWritePrice == 0
 		pricing.CacheCreation5mPrice = *channelPricing.CacheWritePrice
 		pricing.CacheCreation1hPrice = *channelPricing.CacheWritePrice
 		pricing.CacheCreation1hPriceExplicit = true
@@ -1579,7 +1582,7 @@ func applyChannelTokenPriceOverrides(pricing *ModelPricing, channelPricing *Chan
 		pricing.CacheReadPricePerToken = *channelPricing.CacheReadPrice
 		pricing.CacheReadPriceExplicit = true
 		pricing.CacheReadPricePerTokenPriority = priority
-		pricing.CacheReadPriorityPriceExplicit = priorityConfigured
+		pricing.CacheReadPriorityPriceExplicit = priorityConfigured || *channelPricing.CacheReadPrice == 0
 	}
 }
 

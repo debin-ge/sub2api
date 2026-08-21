@@ -781,7 +781,7 @@ func checkIntervalsHavePrices(p ChannelModelPricing) error {
 			iv.CacheWriteMultiplier == nil && iv.CacheReadMultiplier == nil {
 			return infraerrors.BadRequest(
 				"INTERVAL_MISSING_PRICE",
-				fmt.Sprintf("interval [%d, %s] has no token price or multiplier fields set for model %v",
+				fmt.Sprintf("interval [%d, %s] has no token price fields or token multiplier fields set for model %v",
 					iv.MinTokens, formatMaxTokens(iv.MaxTokens), p.Models),
 			)
 		}
