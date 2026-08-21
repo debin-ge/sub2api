@@ -107,6 +107,20 @@ func TestParseKimiUsageTiers_LimitZero(t *testing.T) {
 	require.InDelta(t, 0.0, tiers[0].UsedPercent, 1e-9)
 }
 
+// 缺字段与负数不是合法的零额度窗口，不得生成 tier。
+func TestParseKimiUsageTiers_InvalidNumericFields(t *testing.T) {
+	t.Parallel()
+	for _, body := range []string{
+		`{"limits":[{"detail":{"remaining":0,"resetTime":"2026-08-14T15:00:00Z"}}]}`,
+		`{"limits":[{"detail":{"limit":100,"resetTime":"2026-08-14T15:00:00Z"}}]}`,
+		`{"limits":[{"detail":{"limit":"invalid","remaining":0,"resetTime":"2026-08-14T15:00:00Z"}}]}`,
+		`{"limits":[{"detail":{"limit":-1,"remaining":0,"resetTime":"2026-08-14T15:00:00Z"}}]}`,
+		`{"limits":[{"detail":{"limit":100,"remaining":-1,"resetTime":"2026-08-14T15:00:00Z"}}]}`,
+	} {
+		require.Empty(t, parseKimiUsageTiers([]byte(body)), body)
+	}
+}
+
 // TestParseZhipuTokenTiers_UnitClassification 显式 unit（3=5h / 6=weekly）优先分类，
 // 不能被 reset 时间排序覆盖（周期末尾周窗口会更早重置）。
 func TestParseZhipuTokenTiers_UnitClassification(t *testing.T) {

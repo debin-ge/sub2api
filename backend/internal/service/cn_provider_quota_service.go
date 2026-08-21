@@ -327,7 +327,7 @@ func parseKimiUsageTiers(body []byte) []CNQuotaTier {
 			}
 			limit, limitOK := cnParseF64(detail.Get("limit").Value())
 			remaining, remainingOK := cnParseF64(detail.Get("remaining").Value())
-			if !limitOK || !remainingOK || limit <= 0 {
+			if !limitOK || !remainingOK || limit < 0 || remaining < 0 {
 				return true
 			}
 			used := limit - remaining
@@ -350,7 +350,7 @@ func parseKimiUsageTiers(body []byte) []CNQuotaTier {
 	if usage := gjson.GetBytes(body, "usage"); usage.Exists() {
 		limit, limitOK := cnParseF64(usage.Get("limit").Value())
 		remaining, remainingOK := cnParseF64(usage.Get("remaining").Value())
-		if !limitOK || !remainingOK || limit <= 0 {
+		if !limitOK || !remainingOK || limit < 0 || remaining < 0 {
 			return tiers
 		}
 		used := limit - remaining
