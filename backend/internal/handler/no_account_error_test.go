@@ -171,7 +171,7 @@ func TestClassifyNoAccountError_PureClassifierDoesNotMarkGinContext(t *testing.T
 	fd := &fakeDiagnoser{resp: service.ModelAvailabilityDiagnosis{HasAccountsInPool: true, HasModelSupport: false}}
 	apiKey := &service.APIKey{GroupID: ptrInt64(7)}
 
-	cls := classifyNoAccountError(c.Request.Context(), fd, apiKey, "gpt-5", "gpt-5", service.PlatformOpenAI)
+	cls := classifyNoAccountError(c.Request.Context(), fd, apiKey, nil, "gpt-5", "gpt-5", service.PlatformOpenAI)
 
 	require.True(t, cls.ModelNotFound)
 	require.False(t, service.HasOpsClientBusinessLimited(c))
