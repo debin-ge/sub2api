@@ -118,6 +118,10 @@ export default {
         },
         apiProtocol: {
           title: 'API Protocol',
+          adaptive: 'Adaptive',
+          adaptiveDesc: 'Uses the matching native provider endpoint for each inbound protocol, converting only when unavailable.',
+          endpoints: 'Protocol endpoints',
+          responsesFallbackDesc: 'Responses requests are converted to Chat Completions because this provider has no native Responses endpoint.',
           chatCompletions: 'Chat Completions',
           chatCompletionsDesc: 'Standard OpenAI-compatible endpoint; requests in other formats are converted.',
           anthropic: 'Anthropic',
@@ -553,7 +557,7 @@ export default {
           'Disabled by default: Codex namespace tool declarations are forwarded as-is on /responses, which is what the ChatGPT Codex backend expects. Enable only when this OAuth account is routed to a relay that rejects namespace tools — flattening renames them to namespace__tool, which breaks models that address collaboration tools as functions.<namespace>.<tool>. Compaction requests always flatten regardless of this switch.',
         longContextBilling: 'API long-context pricing',
         longContextBillingDesc:
-          'Disabled by default. Enable only when this account\'s upstream charges OpenAI API long-context rates above the model threshold.',
+          'Long-context tiers apply when either the group or account switch is enabled. Enable this only when the account needs the billing policy independently of its groups; review existing groups and accounts after upgrading.',
         responsesWebsocketsV2: 'Responses WebSocket v2',
         responsesWebsocketsV2Desc:
           'Disabled by default. Enable to allow responses_websockets_v2 capability (still gated by global and account-type switches).',

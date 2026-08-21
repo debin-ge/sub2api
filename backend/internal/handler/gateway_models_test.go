@@ -504,6 +504,27 @@ func TestGatewayModels_CompositeCustomModelsListFiltersAcrossConcretePlatforms(t
 							},
 						},
 					},
+					{
+						ID:       4,
+						Platform: service.PlatformKimi,
+						Credentials: map[string]any{
+							"model_mapping": map[string]any{"kimi-custom": "kimi-upstream"},
+						},
+					},
+					{
+						ID:       5,
+						Platform: service.PlatformZhipu,
+						Credentials: map[string]any{
+							"model_mapping": map[string]any{"glm-custom": "glm-upstream"},
+						},
+					},
+					{
+						ID:       6,
+						Platform: service.PlatformDeepseek,
+						Credentials: map[string]any{
+							"model_mapping": map[string]any{"deepseek-custom": "deepseek-upstream"},
+						},
+					},
 				},
 			},
 		},
@@ -518,7 +539,7 @@ func TestGatewayModels_CompositeCustomModelsListFiltersAcrossConcretePlatforms(t
 			Platform: service.PlatformComposite,
 			ModelsListConfig: service.GroupModelsListConfig{
 				Enabled: true,
-				Models:  []string{"gemini-2.5-flash", "missing-model", "ag-custom-model", "gpt-5.5"},
+				Models:  []string{"gemini-2.5-flash", "missing-model", "ag-custom-model", "gpt-5.5", "kimi-custom", "glm-custom", "deepseek-custom"},
 			},
 		},
 	})
@@ -529,7 +550,7 @@ func TestGatewayModels_CompositeCustomModelsListFiltersAcrossConcretePlatforms(t
 
 	var got gatewayModelsResponseForTest
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
-	require.Equal(t, []string{"gemini-2.5-flash", "ag-custom-model", "gpt-5.5"}, modelIDsForTest(got.Data))
+	require.Equal(t, []string{"gemini-2.5-flash", "ag-custom-model", "gpt-5.5", "kimi-custom", "glm-custom", "deepseek-custom"}, modelIDsForTest(got.Data))
 }
 
 func TestGatewayModels_CompositeUnmappedAccountsFallbackToLinkedPlatformsOnly(t *testing.T) {
@@ -566,6 +587,50 @@ func TestGatewayModels_CompositeUnmappedAccountsFallbackToLinkedPlatformsOnly(t 
 	require.Contains(t, ids, "grok-4.3")
 	require.NotContains(t, ids, "claude-sonnet-4-6")
 	require.NotContains(t, ids, "gemini-2.5-flash")
+}
+
+func TestGatewayModels_CompositeUnmappedCNAccountsContributeProviderDefaults(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	groupID := int64(35)
+	h := newGatewayModelsHandlerForTest(
+		&gatewayModelsAccountRepoStub{
+			byGroup: map[int64][]service.Account{
+				groupID: {
+					{ID: 1, Platform: service.PlatformOpenAI},
+					{ID: 2, Platform: service.PlatformKimi},
+					{ID: 3, Platform: service.PlatformZhipu},
+					{ID: 4, Platform: service.PlatformDeepseek},
+				},
+			},
+		},
+	)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
+		Group: &service.Group{ID: groupID, Platform: service.PlatformComposite},
+	})
+
+	h.Models(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var got gatewayModelsResponseForTest
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+
+	ids := modelIDsForTest(got.Data)
+	require.Contains(t, ids, "gpt-5.5")
+	require.Contains(t, ids, "kimi-for-coding")
+	require.Contains(t, ids, "GLM-5.2")
+	require.Contains(t, ids, "deepseek-v4-pro")
+}
+
+func TestDefaultModelIDsForPlatform_CNProvidersUseProviderDefaults(t *testing.T) {
+	require.Equal(t, service.DefaultKimiModelIDs(), defaultModelIDsForPlatform(service.PlatformKimi))
+	require.Equal(t, service.DefaultGLMModelIDs(), defaultModelIDsForPlatform(service.PlatformZhipu))
+	require.Equal(t, service.DefaultDeepSeekModelIDs(), defaultModelIDsForPlatform(service.PlatformDeepseek))
 }
 
 func TestGatewayModels_CustomModelsListKeepsConcreteModelAllowedByWildcardMapping(t *testing.T) {

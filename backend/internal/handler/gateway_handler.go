@@ -19,6 +19,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	pkgerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
@@ -1151,30 +1152,128 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 		platform = apiKey.Group.Platform
 	}
 
-	var (
-		models []string
-		err    error
-	)
 	forcedPlatform, forcePlatform := middleware2.GetForcePlatformFromContext(c)
 	forcedPlatform = strings.TrimSpace(forcedPlatform)
+	var groupID *int64
+	if apiKey != nil {
+		groupID = apiKey.GroupID
+		if groupID == nil && apiKey.Group != nil {
+			groupID = &apiKey.Group.ID
+		}
+	}
 	if forcePlatform && forcedPlatform != "" {
 		platform = forcedPlatform
-		var groupID *int64
-		if apiKey != nil {
-			groupID = apiKey.GroupID
-			if groupID == nil && apiKey.Group != nil {
-				groupID = &apiKey.Group.ID
-			}
+	}
+
+	if platform == service.PlatformComposite {
+		availableModels := h.compositeAvailableModels(c.Request.Context(), groupID)
+		if apiKey != nil && apiKey.Group != nil && apiKey.Group.CustomModelsListEnabled() {
+			availableModels = filterModelsByCustomList(availableModels, defaultModelIDsForPlatform(service.PlatformComposite), apiKey.Group.ModelsListConfig.Models)
+			writeCustomModelsList(c, service.PlatformComposite, availableModels)
+			return
 		}
-		models, err = h.modelCatalog.ListForPlatform(c.Request.Context(), groupID, platform, true)
+		if len(availableModels) > 0 {
+			writeModelsList(c, service.PlatformComposite, availableModels)
+			return
+		}
+		writeModelsList(c, service.PlatformComposite, defaultModelIDsForPlatform(service.PlatformComposite))
+		return
+	}
+
+	// Get available models from account configurations for the selected group platform.
+	var availableModels []string
+	var err error
+	if h.gatewayService != nil {
+		availableModels = h.gatewayService.GetAvailableModels(c.Request.Context(), groupID, platform)
+	} else if forcePlatform || (apiKey != nil && apiKey.Group != nil && apiKey.Group.CustomModelsListEnabled()) {
+		availableModels, err = h.modelCatalog.ListForPlatform(c.Request.Context(), groupID, platform, true)
 	} else {
-		models, err = h.modelCatalog.ListForAPIKey(c.Request.Context(), apiKey)
+		availableModels, err = h.modelCatalog.ListForAPIKey(c.Request.Context(), apiKey)
 	}
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
-	writeCustomModelsList(c, platform, models)
+	if apiKey != nil && apiKey.Group != nil && apiKey.Group.CustomModelsListEnabled() {
+		fallbackModels := defaultModelIDsForPlatform(platform)
+		availableModels = filterModelsByCustomList(customModelsListSource(platform, availableModels, fallbackModels), fallbackModels, apiKey.Group.ModelsListConfig.Models)
+		writeCustomModelsList(c, platform, availableModels)
+		return
+	}
+
+	if len(availableModels) > 0 {
+		writeCustomModelsList(c, platform, availableModels)
+		return
+	}
+
+	// Fallback to default models
+	if platform == service.PlatformOpenAI {
+		c.JSON(http.StatusOK, gin.H{
+			"object": "list",
+			"data":   openai.DefaultModels,
+		})
+		return
+	}
+
+	if platform == service.PlatformGemini {
+		c.JSON(http.StatusOK, gin.H{
+			"object": "list",
+			"data":   geminicli.DefaultModels,
+		})
+		return
+	}
+	if platform == service.PlatformGrok {
+		writeGrokModelsList(c, xai.DefaultModelIDs())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"object": "list",
+		"data":   claude.DefaultModels,
+	})
+}
+
+func (h *GatewayHandler) compositeAvailableModels(ctx context.Context, groupID *int64) []string {
+	if h == nil {
+		return nil
+	}
+	seen := make(map[string]struct{})
+	models := make([]string, 0)
+	schedulablePlatforms := map[string]struct{}{}
+	if h.gatewayService != nil {
+		schedulablePlatforms = h.gatewayService.GetSchedulablePlatforms(ctx, groupID)
+	}
+	for _, platform := range []string{
+		service.PlatformAnthropic, service.PlatformGemini, service.PlatformOpenAI, service.PlatformAntigravity,
+		service.PlatformGrok, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek,
+		service.PlatformMiniMax, service.PlatformGLM, service.PlatformWindsurf, service.PlatformOpenCode,
+	} {
+		var platformModels []string
+		if h.gatewayService != nil {
+			platformModels = h.gatewayService.GetAvailableModels(ctx, groupID, platform)
+		} else if h.modelCatalog != nil {
+			platformModels, _ = h.modelCatalog.ListForPlatform(ctx, groupID, platform, true)
+		}
+		if len(platformModels) == 0 {
+			// CN 供应商没有静态默认模型列表（defaultModelIDsForPlatform 的
+			// default 分支是 Claude 列表），composite 下只暴露账号映射键。
+			if _, ok := schedulablePlatforms[platform]; ok && !service.IsCNProvider(platform) {
+				platformModels = defaultModelIDsForPlatform(platform)
+			}
+		}
+		for _, model := range platformModels {
+			model = strings.TrimSpace(model)
+			if model == "" {
+				continue
+			}
+			if _, ok := seen[model]; ok {
+				continue
+			}
+			seen[model] = struct{}{}
+			models = append(models, model)
+		}
+	}
+	return models
 }
 
 func writeModelsList(c *gin.Context, platform string, modelIDs []string) {
@@ -1288,6 +1387,149 @@ func writeOpenAIModelsList(c *gin.Context, modelIDs []string) {
 		"object": "list",
 		"data":   models,
 	})
+}
+
+func customModelsListSource(platform string, availableModels, fallbackModels []string) []string {
+	if platform == service.PlatformAnthropic && len(availableModels) > 0 {
+		return mergeModelIDs(availableModels, fallbackModels)
+	}
+	return availableModels
+}
+
+func filterModelsByCustomList(availableModels, fallbackModels, selectedModels []string) []string {
+	if len(selectedModels) == 0 {
+		return availableModels
+	}
+	source := availableModels
+	if len(source) == 0 {
+		source = fallbackModels
+	}
+	if len(source) == 0 {
+		return nil
+	}
+
+	allowed := make([]string, 0, len(source))
+	for _, model := range source {
+		model = strings.TrimSpace(model)
+		if model != "" {
+			allowed = append(allowed, model)
+		}
+	}
+
+	seen := make(map[string]struct{}, len(selectedModels))
+	filtered := make([]string, 0, len(selectedModels))
+	for _, model := range selectedModels {
+		model = strings.TrimSpace(model)
+		if model == "" {
+			continue
+		}
+		if !customModelsListAllowsModel(allowed, model) {
+			continue
+		}
+		if _, ok := seen[model]; ok {
+			continue
+		}
+		seen[model] = struct{}{}
+		filtered = append(filtered, model)
+	}
+	return filtered
+}
+
+func customModelsListAllowsModel(availablePatterns []string, model string) bool {
+	for _, pattern := range availablePatterns {
+		if pattern == model {
+			return true
+		}
+		if strings.HasSuffix(pattern, "*") && strings.HasPrefix(model, strings.TrimSuffix(pattern, "*")) {
+			return true
+		}
+	}
+	return false
+}
+
+func defaultModelIDsForPlatform(platform string) []string {
+	switch platform {
+	case service.PlatformOpenAI:
+		return openai.DefaultModelIDs()
+	case service.PlatformGemini:
+		ids := make([]string, 0, len(geminicli.DefaultModels))
+		for _, model := range geminicli.DefaultModels {
+			ids = append(ids, model.ID)
+		}
+		return ids
+	case service.PlatformAntigravity:
+		models := antigravity.DefaultModels()
+		ids := make([]string, 0, len(models))
+		for _, model := range models {
+			ids = append(ids, model.ID)
+		}
+		return ids
+	case service.PlatformAnthropic:
+		ids := make([]string, 0, len(claude.DefaultModels)+len(antigravity.DefaultModels()))
+		for _, model := range claude.DefaultModels {
+			ids = append(ids, model.ID)
+		}
+		for _, model := range antigravity.DefaultModels() {
+			ids = append(ids, model.ID)
+		}
+		return mergeModelIDs(ids, nil)
+	case service.PlatformGrok:
+		return xai.DefaultModelIDs()
+	case service.PlatformMiniMax:
+		return service.DefaultMiniMaxModelIDs()
+	case service.PlatformZhipu, service.PlatformGLM:
+		return service.DefaultGLMModelIDs()
+	case service.PlatformKimi:
+		return service.DefaultKimiModelIDs()
+	case service.PlatformDeepSeek:
+		return service.DefaultDeepSeekModelIDs()
+	case service.PlatformWindsurf:
+		return service.DefaultWindsurfModelIDs()
+	case service.PlatformOpenCode:
+		return service.DefaultOpenCodeModelIDs()
+	case service.PlatformComposite:
+		ids := make([]string, 0)
+		seen := make(map[string]struct{})
+		for _, concretePlatform := range []string{
+			service.PlatformAnthropic, service.PlatformGemini, service.PlatformOpenAI, service.PlatformAntigravity,
+			service.PlatformGrok, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek,
+			service.PlatformMiniMax, service.PlatformWindsurf, service.PlatformOpenCode,
+		} {
+			for _, id := range defaultModelIDsForPlatform(concretePlatform) {
+				if _, ok := seen[id]; ok {
+					continue
+				}
+				seen[id] = struct{}{}
+				ids = append(ids, id)
+			}
+		}
+		return ids
+	default:
+		ids := make([]string, 0, len(claude.DefaultModels))
+		for _, model := range claude.DefaultModels {
+			ids = append(ids, model.ID)
+		}
+		return ids
+	}
+}
+
+func mergeModelIDs(primary, secondary []string) []string {
+	seen := make(map[string]struct{}, len(primary)+len(secondary))
+	merged := make([]string, 0, len(primary)+len(secondary))
+	for _, models := range [][]string{primary, secondary} {
+		for _, model := range models {
+			model = strings.TrimSpace(model)
+			if model == "" {
+				continue
+			}
+			if _, ok := seen[model]; ok {
+				continue
+			}
+			seen[model] = struct{}{}
+			merged = append(merged, model)
+		}
+	}
+	return merged
 }
 
 // AntigravityModels 返回 Antigravity 支持的全部模型

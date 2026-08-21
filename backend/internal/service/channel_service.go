@@ -357,7 +357,7 @@ func isPlatformPricingMatch(groupPlatform, pricingPlatform string) bool {
 // fallback used before a request target has been resolved.
 func matchingPlatforms(groupPlatform string) []string {
 	if groupPlatform == PlatformComposite {
-		return []string{PlatformAnthropic, PlatformGemini, PlatformOpenAI, PlatformAntigravity, PlatformGrok}
+		return append([]string(nil), compositeModelCatalogPlatforms[:]...)
 	}
 	return []string{groupPlatform}
 }
@@ -749,6 +749,17 @@ func checkPricesNotNegative(p ChannelModelPricing) error {
 			return infraerrors.BadRequest("INVALID_PRICE", fmt.Sprintf("%s must be finite", c.field))
 		}
 	}
+	for _, c := range []struct {
+		field string
+		val   *float64
+	}{
+		{"fast_multiplier", p.FastMultiplier},
+		{"flex_multiplier", p.FlexMultiplier},
+	} {
+		if c.val != nil && *c.val <= 0 {
+			return infraerrors.BadRequest("INVALID_MULTIPLIER", fmt.Sprintf("%s must be > 0", c.field))
+		}
+	}
 	return nil
 }
 
@@ -765,10 +776,12 @@ func checkIntervalsHavePrices(p ChannelModelPricing) error {
 			)
 		}
 		if iv.InputPrice == nil && iv.OutputPrice == nil &&
-			iv.CacheWritePrice == nil && iv.CacheReadPrice == nil {
+			iv.CacheWritePrice == nil && iv.CacheReadPrice == nil &&
+			iv.InputMultiplier == nil && iv.OutputMultiplier == nil &&
+			iv.CacheWriteMultiplier == nil && iv.CacheReadMultiplier == nil {
 			return infraerrors.BadRequest(
 				"INTERVAL_MISSING_PRICE",
-				fmt.Sprintf("interval [%d, %s] has no token price fields set for model %v",
+				fmt.Sprintf("interval [%d, %s] has no token price or multiplier fields set for model %v",
 					iv.MinTokens, formatMaxTokens(iv.MaxTokens), p.Models),
 			)
 		}

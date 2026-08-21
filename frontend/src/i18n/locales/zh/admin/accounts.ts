@@ -321,6 +321,10 @@ export default {
         },
         apiProtocol: {
           title: 'API 协议',
+          adaptive: '自适应',
+          adaptiveDesc: '按入站协议优先使用供应商原生端点，仅在没有对应端点时转换。',
+          endpoints: '协议端点',
+          responsesFallbackDesc: '该供应商没有原生 Responses 端点，Responses 请求将转换为 Chat Completions。',
           chatCompletions: 'Chat Completions',
           chatCompletionsDesc: '标准 OpenAI 兼容端点，其他格式请求将被转换。',
           anthropic: 'Anthropic',
@@ -629,7 +633,7 @@ export default {
         flattenNamespacesDesc:
           '默认关闭：/responses 上的 namespace 工具声明原样转发，这正是 ChatGPT Codex 后端期望的形态。仅当该 OAuth 账号指向不认识 namespace 的兼容上游时才开启——摊平会把工具改名为 namespace__tool，使按 functions.<命名空间>.<工具> 寻址的模型（如 gpt-5.6 多智能体）无法调用。压缩（compact）请求不受该开关影响，始终摊平。',
         longContextBilling: 'API 长上下文计费',
-        longContextBillingDesc: '默认关闭。仅当该账号的上游会按模型阈值收取 OpenAI API 长上下文费率时开启。',
+        longContextBillingDesc: '分组开关或账号开关任一开启即按长上下文阶梯计费。仅当该账号需要独立于分组启用该账单口径时开启；升级后请复核存量分组与账号。',
         responsesWebsocketsV2: 'Responses WebSocket v2',
         responsesWebsocketsV2Desc:
           '默认关闭。开启后可启用 responses_websockets_v2 协议能力（受网关全局开关与账号类型开关约束）。',

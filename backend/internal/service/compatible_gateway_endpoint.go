@@ -15,6 +15,24 @@ func resolveCNProviderBaseURLWithLegacyDefaults(account *Account, protocol strin
 		return ""
 	}
 
+	// Adaptive accounts keep one URL per wire protocol. Explicit protocol URLs
+	// win before legacy fields so an inbound protocol cannot reuse an endpoint
+	// with an incompatible request shape.
+	if account.IsAdaptiveAPIProtocol() && account.Credentials != nil {
+		if raw, ok := account.Credentials["api_base_urls"]; ok {
+			var baseURL string
+			switch values := raw.(type) {
+			case map[string]any:
+				baseURL, _ = values[protocol].(string)
+			case map[string]string:
+				baseURL = values[protocol]
+			}
+			if baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/"); baseURL != "" {
+				return baseURL
+			}
+		}
+	}
+
 	if account.Type == AccountTypeAPIKey || account.Type == AccountTypeUpstream {
 		legacyKey := "base_url_openai"
 		if protocol == APIProtocolAnthropic {

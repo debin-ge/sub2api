@@ -50,8 +50,15 @@ func RegisterGatewayRoutes(
 	requireGroupAnthropic := middleware.RequireGroupAssignment(settingService, middleware.AnthropicErrorWriter)
 	requireGroupGoogle := middleware.RequireGroupAssignment(settingService, middleware.GoogleErrorWriter)
 
-	isCompatibleGatewayPlatform := func(c *gin.Context) bool {
-		return getGroupPlatform(c) == service.PlatformOpenAI
+	isOpenAIResponsesCompatibleGatewayPlatform := func(c *gin.Context) bool {
+		switch getGroupPlatform(c) {
+		case service.PlatformOpenAI, service.PlatformGrok,
+			service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformGLM:
+			// 国产 OpenAI 兼容供应商（kimi/zhipu/deepseek）与 openai/grok 一样经 OpenAI 网关转发。
+			return true
+		default:
+			return false
+		}
 	}
 	countTokensHandler := func(c *gin.Context) {
 		switch getGroupPlatform(c) {
@@ -74,9 +81,12 @@ func RegisterGatewayRoutes(
 			writeOpenCodeModels(c, h)
 			return
 		}
-		if isCompatibleGatewayPlatform(c) && c.Query("client_version") != "" {
-			h.CompatibleGateway.CodexModels(c)
-			return
+		if c.Query("client_version") != "" {
+			switch getGroupPlatform(c) {
+			case service.PlatformOpenAI, service.PlatformComposite:
+				h.CompatibleGateway.CodexModels(c)
+				return
+			}
 		}
 		h.Gateway.Models(c)
 	}
@@ -179,6 +189,10 @@ func RegisterGatewayRoutes(
 						"message": "Unsupported responses subpath",
 					},
 				})
+				return
+			}
+			if service.IsOpenAIResponsesInputTokensRequestPath(c) && isOpenAIResponsesCompatibleGatewayPlatform(c) {
+				h.OpenAIGateway.ResponsesInputTokens(c)
 				return
 			}
 			next(c)
@@ -838,8 +852,10 @@ func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver)
 			if decision.Matched {
 				c.Request = c.Request.WithContext(service.WithCompositeRouteDecision(c.Request.Context(), decision))
 				if upstreamModel := strings.TrimSpace(decision.UpstreamModel); upstreamModel != "" && upstreamModel != model && gjson.ValidBytes(body) {
-					if rewritten, rewriteErr := sjson.SetBytes(body, "model", upstreamModel); rewriteErr == nil {
-						body = rewritten
+					if _, modelPath := compositeJSONRequestModel(body); modelPath != "" {
+						if rewritten, rewriteErr := sjson.SetBytes(body, modelPath, upstreamModel); rewriteErr == nil {
+							body = rewritten
+						}
 					}
 				}
 			}
@@ -850,10 +866,23 @@ func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver)
 }
 
 func compositeRequestModelFromBody(contentType string, body []byte) string {
-	if model := strings.TrimSpace(gjson.GetBytes(body, "model").String()); model != "" {
+	if model, _ := compositeJSONRequestModel(body); model != "" {
 		return model
 	}
 	return compositeMultipartModelFromBody(contentType, body)
+}
+
+func compositeJSONRequestModel(body []byte) (string, string) {
+	for _, path := range []string{"model", "session.model"} {
+		model := gjson.GetBytes(body, path)
+		if model.Type != gjson.String {
+			continue
+		}
+		if value := strings.TrimSpace(model.String()); value != "" {
+			return value, path
+		}
+	}
+	return "", ""
 }
 
 func compositeMultipartModelFromBody(contentType string, body []byte) string {
@@ -874,14 +903,22 @@ func compositeMultipartModelFromBody(contentType string, body []byte) string {
 		if err != nil {
 			return ""
 		}
-		if part.FormName() != "model" || part.FileName() != "" {
+		fieldName := part.FormName()
+		if part.FileName() != "" || (fieldName != "model" && fieldName != "session") {
 			continue
 		}
 		data, err := io.ReadAll(part)
 		if err != nil {
 			return ""
 		}
-		return strings.TrimSpace(string(data))
+		switch fieldName {
+		case "model":
+			return strings.TrimSpace(string(data))
+		case "session":
+			if model, _ := compositeJSONRequestModel(data); model != "" {
+				return model
+			}
+		}
 	}
 }
 
@@ -957,7 +994,10 @@ func compositeRouteEndpointForPath(path string) string {
 		return service.CompositeRouteEndpointCountTokens
 	case strings.Contains(path, "/messages"):
 		return service.CompositeRouteEndpointMessages
-	case strings.Contains(path, "/responses"):
+	case strings.Contains(path, "/responses"),
+		strings.Contains(path, "/alpha/search"),
+		strings.Contains(path, "/realtime/calls"),
+		strings.HasSuffix(strings.TrimRight(path, "/"), "/live"):
 		return service.CompositeRouteEndpointResponses
 	case strings.Contains(path, "/chat/completions"):
 		return service.CompositeRouteEndpointChatCompletions

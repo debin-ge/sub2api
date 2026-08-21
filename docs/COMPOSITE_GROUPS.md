@@ -14,6 +14,12 @@ Composite groups can route to these concrete account platforms:
 - OpenAI
 - Antigravity
 - Grok
+- Kimi
+- Zhipu GLM (the legacy `glm` alias is normalized to `zhipu`)
+- DeepSeek
+- MiniMax
+- Windsurf
+- OpenCode
 
 The selected concrete platform is used for account selection, user platform
 quota checks, post-usage billing, ops error platform attribution, channel
@@ -53,6 +59,12 @@ route's `upstream_model` before dispatch. For Gemini native paths such as
 `/v1beta/models/{model}:generateContent`, the gateway resolves `{model}` and
 the handler forwards the resolved upstream model.
 
+Codex Alpha Search and Live requests use the `responses` route domain. Live
+requests resolve the model from `session.model`, including multipart `session`
+payloads, and apply the configured `upstream_model` before dispatch.
+Codex model manifest requests reuse the existing OpenAI account selection and
+failover path within the Composite group.
+
 ## Built-In Detection
 
 Composite routing detects common public model IDs and provider-prefixed IDs:
@@ -62,6 +74,14 @@ Composite routing detects common public model IDs and provider-prefixed IDs:
 - `gpt-*`, `o*`, `codex-*`, `text-embedding-*`, `dall-e-*`, and
   `openai/*` route to OpenAI.
 - `grok-*` and `xai/grok-*` route to Grok.
+- `kimi-*` and `moonshot-*` route to Kimi.
+- `glm-*` routes to the canonical Zhipu platform.
+- `deepseek-*` routes to DeepSeek.
+- `minimax-*` routes to MiniMax.
+
+Windsurf and OpenCode models commonly overlap other providers' public model
+names. Use explicit provider-prefixed or admin-configured routes for them so
+Composite routing does not guess incorrectly.
 
 Unknown or ambiguous model names fail closed with a client error instead of
 guessing a provider.

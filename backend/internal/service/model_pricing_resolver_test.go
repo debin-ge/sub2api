@@ -193,10 +193,10 @@ func TestGPT56ExplicitZeroCacheWritePriceIsPreserved(t *testing.T) {
 		require.True(t, pricing.CacheCreationPriceExplicit)
 		require.True(t, pricing.CacheCreation1hPriceExplicit)
 		require.True(t, pricing.CacheReadPriceExplicit)
-		require.True(t, pricing.InputPriorityPriceExplicit)
-		require.True(t, pricing.OutputPriorityPriceExplicit)
-		require.True(t, pricing.CacheCreationPriorityPriceExplicit)
-		require.True(t, pricing.CacheReadPriorityPriceExplicit)
+		require.True(t, pricing.InputPriceExplicit)
+		require.True(t, pricing.OutputPriceExplicit)
+		require.False(t, pricing.InputPriorityPriceExplicit)
+		require.False(t, pricing.OutputPriorityPriceExplicit)
 
 		cost, err := bs.CalculateCostUnified(CostInput{
 			Model:          "gpt-5.6-sol",
@@ -352,9 +352,9 @@ func TestResolve_WithChannelOverride_TokenFlat(t *testing.T) {
 	require.Equal(t, "channel", resolved.Source)
 	require.NotNil(t, resolved.BasePricing)
 	require.InDelta(t, 10e-6, resolved.BasePricing.InputPricePerToken, 1e-12)
-	require.InDelta(t, 10e-6, resolved.BasePricing.InputPricePerTokenPriority, 1e-12)
+	require.Zero(t, resolved.BasePricing.InputPricePerTokenPriority)
 	require.InDelta(t, 50e-6, resolved.BasePricing.OutputPricePerToken, 1e-12)
-	require.InDelta(t, 50e-6, resolved.BasePricing.OutputPricePerTokenPriority, 1e-12)
+	require.Zero(t, resolved.BasePricing.OutputPricePerTokenPriority)
 }
 
 func TestResolve_WithChannelOverride_TokenPartialOverride(t *testing.T) {
@@ -395,10 +395,12 @@ func TestResolve_WithChannelOverride_TokenWithIntervals(t *testing.T) {
 	resolved := r.Resolve(context.Background(), PricingInput{
 		Model:   "claude-sonnet-4",
 		GroupID: groupIDPtr(),
+		Group:   &Group{LongContextPricingEnabled: false},
 	})
 
 	require.NotNil(t, resolved)
 	require.Equal(t, "channel", resolved.Source)
+	require.False(t, resolved.longContextPricingEnabled)
 	require.Len(t, resolved.Intervals, 2)
 
 	// GetIntervalPricing should use channel intervals
@@ -714,6 +716,7 @@ func TestGetIntervalPricing_ChannelIntervalsNoMatch(t *testing.T) {
 		Platform:    "anthropic",
 		Models:      []string{"claude-sonnet-4"},
 		BillingMode: BillingModeToken,
+		InputPrice:  testPtrFloat64(4e-6),
 		Intervals: []PricingInterval{
 			// Only covers tokens > 50000
 			{MinTokens: 50000, MaxTokens: testPtrInt(200000), InputPrice: testPtrFloat64(9e-6)},
@@ -727,10 +730,10 @@ func TestGetIntervalPricing_ChannelIntervalsNoMatch(t *testing.T) {
 
 	// Token count 1000 doesn't match any interval (1000 <= 50000 minTokens)
 	pricing := r.GetIntervalPricing(resolved, 1000)
-	// Should fall back to BasePricing (from the billing service fallback)
+	// Should fall back to BasePricing after applying the channel default.
 	require.NotNil(t, pricing)
 	require.Equal(t, resolved.BasePricing, pricing)
-	require.InDelta(t, 3e-6, pricing.InputPricePerToken, 1e-12) // original base price
+	require.InDelta(t, 4e-6, pricing.InputPricePerToken, 1e-12)
 }
 
 // ===========================================================================
@@ -870,6 +873,13 @@ func TestFilterValidTokenIntervals(t *testing.T) {
 				{TierLabel: "1K", PerRequestPrice: testPtrFloat64(0.04)},
 			},
 			wantLen: 0,
+		},
+		{
+			name: "interval with only multiplier kept",
+			intervals: []PricingInterval{
+				{MinTokens: 272000, InputMultiplier: testPtrFloat64(2)},
+			},
+			wantLen: 1,
 		},
 		{
 			name: "mixed valid and invalid",

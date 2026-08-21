@@ -16,20 +16,21 @@ import (
 // ──────────────────────────────────────────────────────────
 
 const (
-	EndpointMessages          = "/v1/messages"
-	EndpointChatCompletions   = "/v1/chat/completions"
-	EndpointEmbeddings        = "/v1/embeddings"
-	EndpointAlphaSearch       = "/v1/alpha/search"
-	EndpointResponses         = "/v1/responses"
-	EndpointResponsesCompact  = "/v1/responses/compact"
-	EndpointImagesGenerations = "/v1/images/generations"
-	EndpointImagesEdits       = "/v1/images/edits"
-	EndpointImageTasks        = "/v1/images/tasks"
-	EndpointVideosGenerations = "/v1/videos/generations"
-	EndpointVideosEdits       = "/v1/videos/edits"
-	EndpointVideosExtensions  = "/v1/videos/extensions"
-	EndpointVideos            = "/v1/videos"
-	EndpointGeminiModels      = "/v1beta/models"
+	EndpointMessages             = "/v1/messages"
+	EndpointChatCompletions      = "/v1/chat/completions"
+	EndpointEmbeddings           = "/v1/embeddings"
+	EndpointAlphaSearch          = "/v1/alpha/search"
+	EndpointResponses            = "/v1/responses"
+	EndpointResponsesCompact     = "/v1/responses/compact"
+	EndpointResponsesInputTokens = "/v1/responses/input_tokens"
+	EndpointImagesGenerations    = "/v1/images/generations"
+	EndpointImagesEdits          = "/v1/images/edits"
+	EndpointImageTasks           = "/v1/images/tasks"
+	EndpointVideosGenerations    = "/v1/videos/generations"
+	EndpointVideosEdits          = "/v1/videos/edits"
+	EndpointVideosExtensions     = "/v1/videos/extensions"
+	EndpointVideos               = "/v1/videos"
+	EndpointGeminiModels         = "/v1beta/models"
 )
 
 const EndpointAntigravityGenerateContent = "/v1internal:streamGenerateContent"
@@ -54,6 +55,8 @@ const (
 func NormalizeInboundEndpoint(path string) string {
 	path = strings.TrimSpace(path)
 	switch {
+	case strings.Contains(path, EndpointResponsesInputTokens) || isResponsesInputTokensAliasPath(path):
+		return EndpointResponsesInputTokens
 	case strings.Contains(path, EndpointEmbeddings):
 		return EndpointEmbeddings
 	case strings.Contains(path, EndpointAlphaSearch) || isBareOrSubpathOf(strings.TrimRight(path, "/"), "/alpha/search") || isBareOrSubpathOf(strings.TrimRight(path, "/"), "/backend-api/codex/alpha/search"):
@@ -101,9 +104,32 @@ func containsEndpointPath(path, endpoint string) bool {
 	}
 }
 
+func isResponsesInputTokensAliasPath(path string) bool {
+	trimmed := strings.TrimRight(strings.TrimSpace(path), "/")
+	if trimmed == "" {
+		return false
+	}
+	return isBareOrSubpathOf(trimmed, "/responses/input_tokens") ||
+		isBareOrSubpathOf(trimmed, "/backend-api/codex/responses/input_tokens")
+}
+
 // isResponsesCompactAliasPath reports whether path is a bare Responses
 // compact route or the equivalent Codex direct route. Keep this check before
 // the root Responses alias because the latter is a prefix of compact.
+// isResponsesCompactAliasPath reports whether path is the bare/alias
+// "compact" client endpoint — i.e. it is rooted at "/responses/compact"
+// or "/backend-api/codex/responses/compact" (bare routes that serve
+// the OpenAI Responses API "compact" client without a "/v1/" prefix),
+// or any subpath nested under either of those roots:
+//
+//   - "/responses/compact"                   (bare route, compact client)
+//   - "/responses/compact/*subpath"          (nested, e.g. "/responses/compact/detail")
+//   - "/backend-api/codex/responses/compact" (Codex direct route, compact client)
+//   - "/backend-api/codex/responses/compact/*subpath" (nested, e.g.
+//     "/backend-api/codex/responses/compact/detail")
+//
+// This MUST be checked before isResponsesRootAliasPath, since
+// "/responses" is a prefix of "/responses/compact".
 func isResponsesCompactAliasPath(path string) bool {
 	trimmed := strings.TrimRight(strings.TrimSpace(path), "/")
 	if trimmed == "" {
@@ -147,13 +173,16 @@ func DeriveUpstreamEndpoint(inbound, rawRequestPath, platform string) string {
 
 	switch service.CanonicalCNPlatform(platform) {
 	case service.PlatformOpenAI, service.PlatformGrok:
-		if inbound == EndpointEmbeddings || inbound == EndpointAlphaSearch || inbound == EndpointImagesGenerations || inbound == EndpointImagesEdits || inbound == EndpointVideosGenerations || inbound == EndpointVideosEdits || inbound == EndpointVideosExtensions || inbound == EndpointVideos {
+		if inbound == EndpointEmbeddings || inbound == EndpointAlphaSearch || inbound == EndpointResponsesInputTokens || inbound == EndpointImagesGenerations || inbound == EndpointImagesEdits || inbound == EndpointVideosGenerations || inbound == EndpointVideosEdits || inbound == EndpointVideosExtensions || inbound == EndpointVideos {
 			return inbound
 		}
 		// OpenAI forwards everything to the Responses API.
 		// Preserve subresource suffix (e.g. /v1/responses/compact).
 		if suffix := responsesSubpathSuffix(rawRequestPath); suffix != "" {
 			return EndpointResponses + suffix
+		}
+		if inbound == EndpointResponsesCompact {
+			return EndpointResponsesCompact
 		}
 		return EndpointResponses
 

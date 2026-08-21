@@ -951,13 +951,17 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageTokenCost(
 	if err != nil {
 		return nil, err
 	}
+	longContextBillingEnabled := apiKey == nil || apiKey.Group == nil || apiKey.Group.LongContextPricingEnabled
+	if longContextBillingGate != nil && *longContextBillingGate {
+		longContextBillingEnabled = true
+	}
 	cost, err := s.billingService.computeTokenBreakdownValidated(
 		billingModel,
 		pricing,
 		tokens,
 		multiplier,
 		serviceTier,
-		longContextBillingGate == nil || *longContextBillingGate,
+		longContextBillingEnabled,
 	)
 	if err != nil {
 		return nil, err

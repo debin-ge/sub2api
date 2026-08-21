@@ -398,7 +398,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	deepSeekBalanceClient := service.ProvideDeepSeekBalanceClient()
 	deepSeekBalanceHealthService := service.NewDeepSeekBalanceHealthService(accountRepository, deepSeekBalanceClient)
 	deepSeekBalanceHealthRunner := service.ProvideDeepSeekBalanceHealthRunner(deepSeekBalanceHealthService, configConfig)
-	channelMonitorQuotaFetcher := service.NewChannelMonitorQuotaFetcher(accountUsageService, cnProviderQuotaService, cnProviderBalanceService, accountRepository)
+	channelMonitorQuotaFetcher := service.NewChannelMonitorQuotaFetcher(accountUsageService, cnProviderQuotaService, cnProviderBalanceService, accountRepository, configConfig)
 	channelMonitorRunner := service.ProvideChannelMonitorRunner(channelMonitorService, settingService, channelMonitorQuotaFetcher)
 	channelMonitorV2Aggregator := service.ProvideChannelMonitorV2Aggregator(channelMonitorV2Repository, db, settingService)
 	modelCatalogRefreshRunner := service.ProvideModelCatalogRefreshRunner(modelCatalogService, modelCatalogConfig)

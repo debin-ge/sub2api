@@ -162,7 +162,7 @@
           </div>
         </template>
         <template v-else>
-        <div>
+        <div v-if="!isCNApiKeyAccount || editApiProtocol !== 'adaptive'">
           <label class="input-label">{{ t('admin.accounts.baseUrl') }}</label>
           <input
             v-model="editBaseUrl"
@@ -195,6 +195,20 @@
             :current-url="editBaseUrl"
             @select="onCnPresetSelect"
           />
+        </div>
+        <div v-else>
+          <label class="input-label">{{ t('admin.accounts.cnProviders.apiProtocol.endpoints') }}</label>
+          <div class="mt-2 space-y-3">
+            <div v-for="item in editAdaptiveProtocolOptions" :key="item.value">
+              <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
+                {{ t(`admin.accounts.cnProviders.apiProtocol.${item.labelKey}`) }}
+              </label>
+              <input v-model="editAdaptiveBaseUrls[item.value]" type="text" class="input" />
+            </div>
+          </div>
+          <p v-if="account.platform !== 'deepseek'" class="input-hint">
+            {{ t('admin.accounts.cnProviders.apiProtocol.responsesFallbackDesc') }}
+          </p>
         </div>
         <!-- Account Mode Selection (CN providers) -->
         <div v-if="isCNApiKeyAccount">
@@ -692,7 +706,7 @@
         </div>
       </div>
 
-      <!-- Header Override Section (anthropic/openai apikey + grok apikey/oauth) -->
+      <!-- Header Override Section (eligible API-key platforms + grok OAuth) -->
       <div v-if="headerOverrideCapable" class="border-t border-gray-200 pt-4 dark:border-dark-600">
         <div class="mb-3 flex items-center justify-between">
           <div>
@@ -2136,7 +2150,7 @@
 
       <!-- OpenAI API 长上下文计费开关 -->
       <div
-        v-if="account?.platform === 'openai' && !isSparkShadow && (account?.type === 'oauth' || account?.type === 'setup-token' || account?.type === 'apikey')"
+        v-if="account?.platform === 'openai' && !isSparkShadow && !hideAccountLongContextBilling && (account?.type === 'oauth' || account?.type === 'setup-token' || account?.type === 'apikey')"
         class="border-t border-gray-200 pt-4 dark:border-dark-600"
       >
         <div class="flex items-center justify-between gap-4">
@@ -3002,9 +3016,11 @@ import {
   isHeaderOverrideCapable,
   splitHeaderOverridesObject,
   validateHeaderOverrideRows,
+  defaultCNAdaptiveBaseUrls,
   defaultCNBaseUrl,
   type CnAccountMode,
   type CnApiProtocol,
+  type CnNativeApiProtocol,
   type HeaderOverrideRow
 } from '@/components/account/credentialsBuilder'
 import { formatDateTime, formatDateTimeLocalInput, parseDateTimeLocalInput } from '@/utils/format'
@@ -3019,6 +3035,7 @@ import {
   PROVIDER_PASSTHROUGH_PLATFORMS,
   VERTEX_LOCATION_OPTIONS
 } from '@/constants/account'
+import { allSelectedGroupsEnableLongContextPricing } from '@/components/account/longContextBilling'
 import {
   OPENAI_WS_MODE_CTX_POOL,
   OPENAI_WS_MODE_OFF,
@@ -3056,6 +3073,10 @@ const authStore = useAuthStore()
 
 // Spark 影子账号不持有独立凭据或代理配置，相关字段由母账号继承。
 const isSparkShadow = computed(() => props.account?.parent_account_id != null)
+
+const hideAccountLongContextBilling = computed(() => {
+  return allSelectedGroupsEnableLongContextPricing(form.group_ids, props.groups)
+})
 
 const handleOllamaCloudUsageUpdated = (state: OllamaCloudUsageState) => {
   if (props.account) emit('updated', { ...props.account, ollama_cloud_usage: state })
@@ -3148,19 +3169,26 @@ const isCNApiKeyAccount = computed(
     props.account?.type === 'apikey' &&
     (props.account.platform === 'kimi' ||
       props.account.platform === 'zhipu' ||
+      props.account.platform === 'glm' ||
       props.account.platform === 'deepseek')
 )
 // CnBaseUrlPresets 的 platform prop 是平台字面量联合类型，模板里不能写
 // `as` 断言（其中的 `|` 会被 eslint 误判为 Vue2 filter 语法），经此 computed 传递。
 const cnPresetPlatform = computed<'kimi' | 'zhipu' | 'deepseek'>(() => {
   const platform = props.account?.platform
+  if (platform === 'glm') return 'zhipu'
   if (platform === 'kimi' || platform === 'zhipu' || platform === 'deepseek') {
     return platform
   }
   return 'kimi'
 })
-const editApiProtocol = ref<CnApiProtocol>('chat_completions')
+const editApiProtocol = ref<CnApiProtocol>('adaptive')
 const editAccountMode = ref<CnAccountMode>('payg')
+const editAdaptiveBaseUrls = ref<Record<CnNativeApiProtocol, string>>({
+  chat_completions: '',
+  anthropic: '',
+  responses: ''
+})
 // 回填窗口标志：syncFormFromAccount 会同步改写 editAccountMode / editApiProtocol，
 // 而 watcher（pre-flush）在同步代码执行完之后才触发——若不抑制，会把刚恢复的
 // 存储版 base_url（可能是用户自定义/中转地址）覆盖为官方预设并在下次保存时持久化。
@@ -3180,6 +3208,7 @@ const cnAccountModeOptions = computed<Array<{ value: CnAccountMode; labelKey: 'p
 )
 const cnProtocolOptions = computed<Array<{ value: CnApiProtocol; labelKey: string }>>(() => {
   const opts: Array<{ value: CnApiProtocol; labelKey: string }> = [
+    { value: 'adaptive', labelKey: 'adaptive' },
     { value: 'chat_completions', labelKey: 'chatCompletions' },
     { value: 'anthropic', labelKey: 'anthropic' }
   ]
@@ -3188,16 +3217,51 @@ const cnProtocolOptions = computed<Array<{ value: CnApiProtocol; labelKey: strin
   }
   return opts
 })
-watch(editApiProtocol, (protocol) => {
+const editAdaptiveProtocolOptions = computed<Array<{ value: CnNativeApiProtocol; labelKey: string }>>(() => {
+  const opts: Array<{ value: CnNativeApiProtocol; labelKey: string }> = [
+    { value: 'chat_completions', labelKey: 'chatCompletions' },
+    { value: 'anthropic', labelKey: 'anthropic' }
+  ]
+  if (props.account?.platform === 'deepseek') opts.push({ value: 'responses', labelKey: 'responses' })
+  return opts
+})
+watch(editApiProtocol, (protocol, previousProtocol) => {
   if (!isCNApiKeyAccount.value || syncingForm.value) return
+  if (protocol === 'adaptive') {
+    const defaults = defaultCNAdaptiveBaseUrls(cnPresetPlatform.value, editAccountMode.value)
+    for (const item of editAdaptiveProtocolOptions.value) {
+      if (!editAdaptiveBaseUrls.value[item.value]) editAdaptiveBaseUrls.value[item.value] = defaults[item.value]
+    }
+    if (previousProtocol !== 'adaptive' && editBaseUrl.value.trim()) {
+      editAdaptiveBaseUrls.value[previousProtocol] = editBaseUrl.value.trim()
+    }
+    editBaseUrl.value = editAdaptiveBaseUrls.value.chat_completions
+    return
+  }
+  if (previousProtocol === 'adaptive') {
+    editBaseUrl.value = editAdaptiveBaseUrls.value[protocol] ||
+      defaultCNBaseUrl(props.account!.platform, editAccountMode.value, protocol)
+    return
+  }
   editBaseUrl.value = defaultCNBaseUrl(props.account!.platform, editAccountMode.value, protocol)
 })
-watch(editAccountMode, (mode) => {
+watch(editAccountMode, (mode, previousMode) => {
   if (!isCNApiKeyAccount.value || syncingForm.value) return
   // deepseek 无 coding 套餐：防御性回退（UI 已隐藏该选项）。
   const effectiveMode = props.account!.platform === 'deepseek' && mode === 'coding' ? 'payg' : mode
   if (effectiveMode !== mode) {
     editAccountMode.value = effectiveMode
+    return
+  }
+  if (editApiProtocol.value === 'adaptive') {
+    const previousDefaults = defaultCNAdaptiveBaseUrls(cnPresetPlatform.value, previousMode)
+    const nextDefaults = defaultCNAdaptiveBaseUrls(cnPresetPlatform.value, mode)
+    for (const item of editAdaptiveProtocolOptions.value) {
+      if (!editAdaptiveBaseUrls.value[item.value] || editAdaptiveBaseUrls.value[item.value] === previousDefaults[item.value]) {
+        editAdaptiveBaseUrls.value[item.value] = nextDefaults[item.value]
+      }
+    }
+    editBaseUrl.value = editAdaptiveBaseUrls.value.chat_completions
     return
   }
   editBaseUrl.value = defaultCNBaseUrl(props.account!.platform, mode, editApiProtocol.value)
@@ -4000,7 +4064,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   loadTempUnschedRules(credentials)
   loadAccountSchedulingThresholdOverride(newAccount.platform, credentials)
 
-  // Load header override state (anthropic/openai apikey + grok apikey/oauth)
+  // Load header override state for eligible account platforms/types
   headerOverrideEnabled.value = false
   headerOverrideRows.value = []
   if (newAccount.credentials && isHeaderOverrideCapable(newAccount.platform, newAccount.type)) {
@@ -4042,10 +4106,46 @@ const syncFormFromAccount = (newAccount: Account | null) => {
       editAccountMode.value = credentials.account_mode === 'coding' ? 'coding' : 'payg'
       const storedProtocol = credentials.api_protocol
       editApiProtocol.value =
-        storedProtocol === 'anthropic' || storedProtocol === 'responses' ? storedProtocol : 'chat_completions'
+        storedProtocol === 'adaptive' ||
+        storedProtocol === 'chat_completions' ||
+        storedProtocol === 'anthropic' ||
+        storedProtocol === 'responses'
+          ? storedProtocol
+          : 'chat_completions'
       if (newAccount.platform !== 'deepseek' && editApiProtocol.value === 'responses') {
         editApiProtocol.value = 'chat_completions'
       }
+      const adaptiveDefaults = defaultCNAdaptiveBaseUrls(cnPresetPlatform.value, editAccountMode.value)
+      const storedBaseUrls = (credentials.api_base_urls as Record<string, unknown> | undefined) || {}
+      const legacyBaseUrl = typeof credentials.base_url === 'string' ? credentials.base_url.trim() : ''
+      const storedChatBaseUrl = typeof storedBaseUrls.chat_completions === 'string'
+        ? storedBaseUrls.chat_completions.trim()
+        : ''
+      const storedAnthropicBaseUrl = typeof storedBaseUrls.anthropic === 'string'
+        ? storedBaseUrls.anthropic.trim()
+        : ''
+      const storedResponsesBaseUrl = typeof storedBaseUrls.responses === 'string'
+        ? storedBaseUrls.responses.trim()
+        : ''
+      const nextAdaptiveBaseUrls: Record<CnNativeApiProtocol, string> = {
+        chat_completions: storedChatBaseUrl || adaptiveDefaults.chat_completions,
+        anthropic: storedAnthropicBaseUrl || adaptiveDefaults.anthropic,
+        responses: storedResponsesBaseUrl || adaptiveDefaults.responses
+      }
+      const legacyProtocol: CnNativeApiProtocol = editApiProtocol.value === 'anthropic'
+        ? 'anthropic'
+        : editApiProtocol.value === 'responses'
+          ? 'responses'
+          : 'chat_completions'
+      const storedLegacyBaseUrl = legacyProtocol === 'anthropic'
+        ? storedAnthropicBaseUrl
+        : legacyProtocol === 'responses'
+          ? storedResponsesBaseUrl
+          : storedChatBaseUrl
+      if (legacyBaseUrl && !storedLegacyBaseUrl) {
+        nextAdaptiveBaseUrls[legacyProtocol] = legacyBaseUrl
+      }
+      editAdaptiveBaseUrls.value = nextAdaptiveBaseUrls
     }
     const platformDefaultUrl =
       newAccount.platform === 'openai'
@@ -4083,6 +4183,9 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     } else if (newAccount.platform === 'opencode') {
       editOpenCodeBaseUrl.value = (credentials.base_url as string) || OPENCODE_BASE_URL
     }
+    editBaseUrl.value = isCNApiKeyAccount.value && editApiProtocol.value === 'adaptive'
+      ? editAdaptiveBaseUrls.value.chat_completions
+      : (credentials.base_url as string) || platformDefaultUrl
 
     // Load model mappings and detect mode
     loadModelRestrictionFromMapping(credentials.model_mapping as Record<string, unknown> | undefined)
@@ -4817,8 +4920,17 @@ const handleSubmit = async () => {
       if (isCNApiKeyAccount.value) {
         newCredentials.account_mode = editAccountMode.value
         newCredentials.api_protocol = editApiProtocol.value
-        delete newCredentials.base_url_anthropic
-        delete newCredentials.base_url_openai
+        if (editApiProtocol.value === 'adaptive') {
+          const defaults = defaultCNAdaptiveBaseUrls(cnPresetPlatform.value, editAccountMode.value)
+          const protocolBaseUrls: Record<string, string> = {}
+          for (const item of editAdaptiveProtocolOptions.value) {
+            protocolBaseUrls[item.value] = (editAdaptiveBaseUrls.value[item.value] || defaults[item.value]).trim()
+          }
+          newCredentials.api_base_urls = protocolBaseUrls
+          newCredentials.base_url = protocolBaseUrls.chat_completions
+        } else {
+          delete newCredentials.api_base_urls
+        }
       }
 
       // Handle API key
@@ -4888,7 +5000,7 @@ const handleSubmit = async () => {
           return
         }
       }
-      // Add header override if enabled (anthropic/openai/grok apikey)
+      // Add header override if enabled for this API-key platform
       if (isHeaderOverrideCapable(props.account.platform, 'apikey')) {
         if (headerOverrideEnabled.value) {
           const headerError = validateHeaderOverrideRows(headerOverrideRows.value)

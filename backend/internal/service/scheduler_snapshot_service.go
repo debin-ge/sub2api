@@ -587,7 +587,7 @@ func (s *SchedulerSnapshotService) handleBulkAccountEvent(ctx context.Context, p
 		rebuildGroupIDs = append(rebuildGroupIDs, gid)
 	}
 
-	// 缺失账户无法确定原平台，保留五平台重建以避免遗留旧快照。
+	// 缺失账户无法确定原平台，保留全平台重建以避免遗留旧快照。
 	if !allAccountsFound {
 		return s.rebuildByGroupIDs(ctx, rebuildGroupIDs, "account_bulk_change", seen)
 	}
@@ -609,7 +609,7 @@ func (s *SchedulerSnapshotService) handleBulkAccountEvent(ctx context.Context, p
 		}
 		accountGroupIDs := s.normalizeGroupIDs(account.GroupIDs)
 		switch account.Platform {
-		case PlatformAnthropic, PlatformGemini, PlatformOpenAI, PlatformGrok:
+		case PlatformAnthropic, PlatformGemini, PlatformOpenAI, PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek:
 			addPlatformGroups(account.Platform, accountGroupIDs)
 		case PlatformAntigravity:
 			// 批量更新可能刚关闭 mixed_scheduling，仍需清理两个兼容平台的旧快照。

@@ -49,6 +49,12 @@ var compositeModelCatalogPlatforms = [...]string{
 	PlatformOpenAI,
 	PlatformAntigravity,
 	PlatformGrok,
+	PlatformKimi,
+	PlatformZhipu,
+	PlatformDeepSeek,
+	PlatformMiniMax,
+	PlatformWindsurf,
+	PlatformOpenCode,
 }
 
 var modelCatalogFallbackReasons = [...]string{

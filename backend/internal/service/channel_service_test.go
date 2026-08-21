@@ -2068,6 +2068,9 @@ func TestIsPlatformPricingMatch(t *testing.T) {
 		{"gemini does NOT match anthropic", PlatformGemini, PlatformAnthropic, false},
 		{"composite matches openai pricing", PlatformComposite, PlatformOpenAI, true},
 		{"composite matches gemini pricing", PlatformComposite, PlatformGemini, true},
+		{"composite matches kimi pricing", PlatformComposite, PlatformKimi, true},
+		{"composite matches zhipu pricing", PlatformComposite, PlatformZhipu, true},
+		{"composite matches deepseek pricing", PlatformComposite, PlatformDeepseek, true},
 		{"empty string matches nothing", "", PlatformAnthropic, false},
 		{"empty string matches empty", "", "", true},
 	}
@@ -2093,7 +2096,7 @@ func TestMatchingPlatforms(t *testing.T) {
 		{"anthropic returns itself", PlatformAnthropic, []string{PlatformAnthropic}},
 		{"gemini returns itself", PlatformGemini, []string{PlatformGemini}},
 		{"openai returns itself", PlatformOpenAI, []string{PlatformOpenAI}},
-		{"composite returns concrete platforms", PlatformComposite, []string{PlatformAnthropic, PlatformGemini, PlatformOpenAI, PlatformAntigravity, PlatformGrok}},
+		{"composite returns concrete platforms", PlatformComposite, append([]string(nil), compositeModelCatalogPlatforms[:]...)},
 	}
 
 	for _, tt := range tests {

@@ -31,10 +31,11 @@
       </div>
       <div>
         <label class="input-label">{{ t('admin.users.form.roleLabel') }}</label>
-        <select v-model="form.role" class="input">
-          <option value="user">{{ t('admin.users.roles.user') }}</option>
-          <option value="admin">{{ t('admin.users.roles.admin') }}</option>
-        </select>
+        <Select
+          v-model="form.role"
+          :options="roleOptions"
+          :searchable="false"
+        />
       </div>
       <section class="rounded-xl border border-amber-200 bg-amber-50/60 p-4 dark:border-amber-900/60 dark:bg-amber-950/20">
         <div class="mb-3">
@@ -137,6 +138,7 @@ import { useClipboard } from '@/composables/useClipboard'
 import { adminAPI } from '@/api/admin'
 import type { AdminUser, UserAttributeValuesMap } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
+import Select from '@/components/common/Select.vue'
 import UserAttributeForm from '@/components/user/UserAttributeForm.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { useStepUp, isStepUpBlocked, isStepUpCancelled, stepUpBlockReason } from '@/composables/useStepUp'
@@ -153,12 +155,16 @@ const isKnownVIPMode = (value: string | null | undefined): value is KnownVIPMode
   KNOWN_VIP_MODES.includes(value as KnownVIPMode)
 
 const originalVIPMode = ref('')
+const roleOptions = computed(() => [
+  { value: 'user', label: t('admin.users.roles.user') },
+  { value: 'admin', label: t('admin.users.roles.admin') }
+])
 const form = reactive({
   email: '',
   password: '',
   username: '',
   notes: '',
-  role: 'user',
+  role: 'user' as AdminUser['role'],
   concurrency: 1,
   rpm_limit: 0,
   vip_mode: '',

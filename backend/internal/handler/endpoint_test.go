@@ -29,6 +29,9 @@ func TestNormalizeInboundEndpoint(t *testing.T) {
 		{"/v1/responses", EndpointResponses},
 		{"/responses", EndpointResponses},
 		{"/backend-api/codex/responses", EndpointResponses},
+		{"/v1/responses/input_tokens", EndpointResponsesInputTokens},
+		{"/v1/responses/compact", EndpointResponsesCompact},
+		{"/v1/responses/compact/detail", EndpointResponsesCompact},
 		{"/v1/images/generations", EndpointImagesGenerations},
 		{"/v1/images/edits", EndpointImagesEdits},
 		{"/v1/images/tasks/imgtask_123", EndpointImageTasks},
@@ -57,6 +60,7 @@ func TestNormalizeInboundEndpoint(t *testing.T) {
 
 		// Bare top-level alias route "/responses" — root vs. compact.
 		{"/responses", EndpointResponses},
+		{"/responses/input_tokens", EndpointResponsesInputTokens},
 		{"/responses/compact", EndpointResponsesCompact},
 		{"/responses/compact/detail", EndpointResponsesCompact},
 		{"/alpha/search", EndpointAlphaSearch},
@@ -64,6 +68,7 @@ func TestNormalizeInboundEndpoint(t *testing.T) {
 
 		// Bare Codex direct alias route — root vs. compact.
 		{"/backend-api/codex/responses", EndpointResponses},
+		{"/backend-api/codex/responses/input_tokens", EndpointResponsesInputTokens},
 		{"/backend-api/codex/responses/compact", EndpointResponsesCompact},
 		{"/backend-api/codex/responses/compact/detail", EndpointResponsesCompact},
 		{"/backend-api/codex/alpha/search", EndpointAlphaSearch},
@@ -111,6 +116,28 @@ func TestDeriveUpstreamEndpoint(t *testing.T) {
 		{"openai responses root", EndpointResponses, "/v1/responses", service.PlatformOpenAI, EndpointResponses},
 		{"openai responses compact", EndpointResponses, "/openai/v1/responses/compact", service.PlatformOpenAI, "/v1/responses/compact"},
 		{"openai responses nested", EndpointResponses, "/openai/v1/responses/compact/detail", service.PlatformOpenAI, "/v1/responses/compact/detail"},
+		{"openai responses input tokens", EndpointResponsesInputTokens, "/v1/responses/input_tokens", service.PlatformOpenAI, EndpointResponsesInputTokens},
+
+		// OpenAI — compact, raw path carries the derivable "/compact"
+		// (or nested) suffix, which must be preserved on the upstream
+		// endpoint.
+		{"openai responses compact", EndpointResponsesCompact, "/openai/v1/responses/compact", service.PlatformOpenAI, "/v1/responses/compact"},
+		{"openai responses nested", EndpointResponsesCompact, "/openai/v1/responses/compact/detail", service.PlatformOpenAI, "/v1/responses/compact/detail"},
+		{"openai bare responses compact", EndpointResponsesCompact, "/responses/compact", service.PlatformOpenAI, "/v1/responses/compact"},
+		{"openai bare responses compact detail", EndpointResponsesCompact, "/responses/compact/detail", service.PlatformOpenAI, "/v1/responses/compact/detail"},
+		{"openai codex direct responses compact", EndpointResponsesCompact, "/backend-api/codex/responses/compact", service.PlatformOpenAI, "/v1/responses/compact"},
+		{"openai codex direct responses compact detail", EndpointResponsesCompact, "/backend-api/codex/responses/compact/detail", service.PlatformOpenAI, "/v1/responses/compact/detail"},
+
+		// OpenAI — bare root alias routes normalize to root Responses.
+		{"openai bare responses", EndpointResponses, "/responses", service.PlatformOpenAI, EndpointResponses},
+		{"openai codex direct responses", EndpointResponses, "/backend-api/codex/responses", service.PlatformOpenAI, EndpointResponses},
+
+		// OpenAI — inbound is already the canonical compact endpoint but
+		// the raw path carries no derivable "/responses..." suffix (e.g.
+		// it was already normalized upstream). Must not silently fall
+		// back to the root Responses endpoint.
+		{"openai responses compact inbound only, unrelated raw path", EndpointResponsesCompact, "/v1/messages", service.PlatformOpenAI, EndpointResponsesCompact},
+
 		{"openai from messages", EndpointMessages, "/v1/messages", service.PlatformOpenAI, EndpointResponses},
 		{"openai from completions", EndpointChatCompletions, "/v1/chat/completions", service.PlatformOpenAI, EndpointResponses},
 		{"openai embeddings", EndpointEmbeddings, "/v1/embeddings", service.PlatformOpenAI, EndpointEmbeddings},

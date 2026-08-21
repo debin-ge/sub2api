@@ -1213,6 +1213,44 @@ func TestAdminService_CreateGroup_ClearsMessagesDispatchFieldsForNonOpenAIPlatfo
 	require.Equal(t, OpenAIMessagesDispatchModelConfig{}, repo.created.MessagesDispatchModelConfig)
 }
 
+func TestAdminService_CreateCompositeGroupPreservesLive(t *testing.T) {
+	repo := &groupRepoStubForAdmin{}
+	svc := &adminServiceImpl{groupRepo: repo}
+
+	group, err := svc.CreateGroup(context.Background(), &CreateGroupInput{
+		Name:           "composite-group",
+		Platform:       PlatformComposite,
+		RateMultiplier: 1.0,
+		AllowLive:      true,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, group)
+	require.NotNil(t, repo.created)
+	require.True(t, repo.created.AllowLive)
+}
+
+func TestAdminService_UpdateCompositeGroupPreservesLive(t *testing.T) {
+	existingGroup := &Group{
+		ID:       1,
+		Name:     "composite-group",
+		Platform: PlatformComposite,
+		Status:   StatusActive,
+	}
+	repo := &groupRepoStubForAdmin{getByID: existingGroup}
+	svc := &adminServiceImpl{groupRepo: repo}
+	allowLive := true
+
+	group, err := svc.UpdateGroup(context.Background(), existingGroup.ID, &UpdateGroupInput{
+		AllowLive: &allowLive,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, group)
+	require.NotNil(t, repo.updated)
+	require.True(t, repo.updated.AllowLive)
+}
+
 func TestAdminService_UpdateGroup_ClearsMessagesDispatchFieldsWhenPlatformChangesAwayFromOpenAI(t *testing.T) {
 	existingGroup := &Group{
 		ID:                    1,
@@ -1836,6 +1874,25 @@ func TestAdminService_CreateCompositeRoute_NormalizesAndPersists(t *testing.T) {
 	require.True(t, route.Enabled)
 	require.Equal(t, "route note", route.Notes)
 	require.Equal(t, route, routeRepo.created)
+}
+
+func TestAdminService_CreateCompositeRoute_NormalizesLegacyGLMToZhipu(t *testing.T) {
+	groupRepo := &groupRepoStubForAdmin{
+		getByID: &Group{ID: 7, Platform: PlatformComposite},
+	}
+	routeRepo := &compositeRouteRepoStubForAdmin{nextID: 100}
+	svc := &adminServiceImpl{groupRepo: groupRepo, compositeRouteRepo: routeRepo}
+
+	route, err := svc.CreateCompositeRoute(context.Background(), 7, CompositeRouteInput{
+		PublicModel:    "glm-legacy",
+		TargetPlatform: PlatformGLM,
+		UpstreamModel:  "GLM-4.7",
+		Enabled:        true,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, PlatformZhipu, route.TargetPlatform)
+	require.Equal(t, PlatformZhipu, routeRepo.created.TargetPlatform)
 }
 
 // TestAdminService_CreateCompositeRoute_ExactEmptyUpstreamBackfillsPublicModel 锁定
