@@ -229,13 +229,15 @@ func TestKimiQuotaURL(t *testing.T) {
 	require.Equal(t, "https://api.kimi.com/coding/v1/usages", kimiQuotaURL("https://api.kimi.com/coding/v1/"))
 }
 
-// TestCNBalanceURL Kimi 固定端点；DeepSeek 基于 base_url 拼接。
+// TestCNBalanceURL Kimi/DeepSeek 默认使用官方端点，自定义 API Key 账号则
+// 基于账号 base_url 拼接余额路径。
 func TestCNBalanceURL(t *testing.T) {
 	t.Parallel()
 	kimi := &Account{Platform: PlatformKimi}
 	require.Equal(t, "https://api.moonshot.cn/v1/users/me/balance", cnBalanceURL(kimi))
 	kimiRelay := &Account{
 		Platform: PlatformKimi,
+		Type:     AccountTypeAPIKey,
 		Credentials: map[string]any{
 			"account_mode": AccountModePayG,
 			"base_url":     "https://relay.example/kimi/v1",
@@ -245,6 +247,7 @@ func TestCNBalanceURL(t *testing.T) {
 
 	deepseek := &Account{
 		Platform:    PlatformDeepseek,
+		Type:        AccountTypeAPIKey,
 		Credentials: map[string]any{"base_url": "https://api.deepseek.com"},
 	}
 	require.Equal(t, "https://api.deepseek.com/user/balance", cnBalanceURL(deepseek))
