@@ -26,18 +26,24 @@ import "strings"
 // 无法靠事后告警恢复。pricing.strict_model_match_mode 字段只为兼容旧配置文件保留，
 // 启动校验只接受 enforce，运行时守卫也不读取它。
 
-// strictGlobalPricingGate 表示"全局价目录里有没有这个模型自己的价格"。
+// strictGlobalPricingGate 表示"当前账号平台的全局价目录里有没有这个模型自己的价格"。
+// 管理端模型价格支持按平台覆盖，因此准入必须携带账号平台；否则平台专属覆盖只会
+// 出现在管理页，在线守卫仍会把同一模型判成未定价。
 type strictGlobalPricingGate struct {
 	strict bool
 }
 
-func newStrictGlobalPricingGate(billingService *BillingService, model string) strictGlobalPricingGate {
+func newStrictGlobalPricingGate(billingService *BillingService, platform, model string) strictGlobalPricingGate {
+	return newStrictGlobalPricingGateForPlatforms(billingService, []string{platform}, model)
+}
+
+func newStrictGlobalPricingGateForPlatforms(billingService *BillingService, platforms []string, model string) strictGlobalPricingGate {
 	gate := strictGlobalPricingGate{}
 	model = strings.TrimSpace(model)
 	if model == "" || billingService == nil {
 		return gate
 	}
-	_, err := billingService.GetModelPricingStrict(model)
+	_, err := billingService.GetModelPricingStrictForPlatforms(platforms, model)
 	gate.strict = err == nil
 	return gate
 }

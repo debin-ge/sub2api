@@ -391,23 +391,51 @@ func TestStrictGlobalPricingGate(t *testing.T) {
 	billingService := NewBillingService(&config.Config{}, newStrictMatchCatalog())
 
 	t.Run("uses the strict verdict", func(t *testing.T) {
-		gate := newStrictGlobalPricingGate(billingService, "gpt-future-unpriced-v99")
+		gate := newStrictGlobalPricingGate(billingService, PlatformOpenAI, "gpt-future-unpriced-v99")
 		require.False(t, gate.strict)
 		require.False(t, gate.effective())
 	})
 
 	t.Run("admits an exact catalog entry", func(t *testing.T) {
-		gate := newStrictGlobalPricingGate(billingService, "gpt-5.4")
+		gate := newStrictGlobalPricingGate(billingService, PlatformOpenAI, "gpt-5.4")
 		require.True(t, gate.effective())
 	})
 
 	t.Run("rejects an unpriced model", func(t *testing.T) {
-		gate := newStrictGlobalPricingGate(billingService, "totally-unknown-v99")
+		gate := newStrictGlobalPricingGate(billingService, PlatformOpenAI, "totally-unknown-v99")
 		require.False(t, gate.effective())
 	})
 
 	t.Run("missing billing service is not priced", func(t *testing.T) {
-		gate := newStrictGlobalPricingGate(nil, "gpt-5.4")
+		gate := newStrictGlobalPricingGate(nil, PlatformOpenAI, "gpt-5.4")
 		require.False(t, gate.effective())
+	})
+
+	t.Run("admits a platform-specific override", func(t *testing.T) {
+		inputPrice := 3e-6
+		outputPrice := 9e-6
+		pricingService := NewPricingService(&config.Config{}, nil)
+		pricingService.SeedCatalogForTest(map[string]*ModelPriceEntry{})
+		pricingService.SeedOverridesForTest([]ModelPriceOverride{{
+			Platform:  PlatformDeepSeek,
+			ModelName: "deepseek-v4-flash-vision-exp",
+			Enabled:   true,
+			Payload: ModelPriceOverridePayload{
+				InputCostPerToken:  &inputPrice,
+				OutputCostPerToken: &outputPrice,
+			},
+		}})
+		billing := NewBillingService(&config.Config{}, pricingService)
+
+		require.True(t, newStrictGlobalPricingGate(
+			billing,
+			PlatformDeepSeek,
+			"deepseek-v4-flash-vision-exp",
+		).effective())
+		require.False(t, newStrictGlobalPricingGate(
+			billing,
+			PlatformOpenAI,
+			"deepseek-v4-flash-vision-exp",
+		).effective())
 	})
 }

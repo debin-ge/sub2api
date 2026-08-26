@@ -132,6 +132,45 @@ func TestOpenAIGatewayServiceValidateSelectedOpenAIModelPricing(t *testing.T) {
 	}
 }
 
+func TestOpenAIGatewayPricingGuard_CompositeUsesOrderedPlatformOverrides(t *testing.T) {
+	const model = "gpt-composite-platform-override"
+	for _, overridePlatform := range []string{PlatformComposite, PlatformOpenAI} {
+		t.Run(overridePlatform, func(t *testing.T) {
+			inputPrice := 2e-6
+			outputPrice := 8e-6
+			pricingService := NewPricingService(&config.Config{}, nil)
+			pricingService.SeedCatalogForTest(map[string]*ModelPriceEntry{})
+			pricingService.SeedOverridesForTest([]ModelPriceOverride{{
+				Platform:  overridePlatform,
+				ModelName: model,
+				Enabled:   true,
+				Payload: ModelPriceOverridePayload{
+					InputCostPerToken:  &inputPrice,
+					OutputCostPerToken: &outputPrice,
+				},
+			}})
+
+			cfg := &config.Config{RunMode: config.RunModeStandard}
+			svc := newOpenAIPricingGuardService(cfg)
+			svc.billingService = NewBillingService(cfg, pricingService)
+			groupID := int64(85)
+			ctx := context.WithValue(
+				context.Background(),
+				ctxkey.Group,
+				&Group{ID: groupID, Platform: PlatformComposite, Status: StatusActive, Hydrated: true},
+			)
+
+			require.NoError(t, svc.ValidateSelectedOpenAIModelPricing(
+				ctx,
+				&groupID,
+				&Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey},
+				model,
+				false,
+			))
+		})
+	}
+}
+
 func TestOpenAIPricingGuardsRejectNilAccount(t *testing.T) {
 	svc := newOpenAIPricingGuardService(nil)
 	ctx := context.Background()

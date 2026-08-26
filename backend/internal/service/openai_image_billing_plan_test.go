@@ -77,6 +77,69 @@ func TestResolveOpenAIImageBillingPlanUsesRealGPTImageTokenCatalog(t *testing.T)
 	}
 }
 
+func TestResolveOpenAIImageBillingPlanUsesProviderOverrideUnderComposite(t *testing.T) {
+	const model = "gpt-image-composite-override"
+	groupID := int64(88)
+	apiKey := &APIKey{
+		GroupID: &groupID,
+		Group:   &Group{ID: groupID, Platform: PlatformComposite},
+	}
+	platforms := []string{PlatformComposite, PlatformOpenAI}
+
+	t.Run("image token pricing", func(t *testing.T) {
+		inputPrice := 2e-6
+		imageInputPrice := 4e-6
+		imageOutputPrice := 20e-6
+		pricingService := NewPricingService(&config.Config{}, nil)
+		pricingService.SeedCatalogForTest(map[string]*ModelPriceEntry{})
+		pricingService.SeedOverridesForTest([]ModelPriceOverride{{
+			Platform:  PlatformOpenAI,
+			ModelName: model,
+			Enabled:   true,
+			Payload: ModelPriceOverridePayload{
+				InputCostPerToken:       &inputPrice,
+				InputCostPerImageToken:  &imageInputPrice,
+				OutputCostPerImageToken: &imageOutputPrice,
+			},
+		}})
+		billing := NewBillingService(&config.Config{}, pricingService)
+		svc := &OpenAIGatewayService{
+			billingService: billing,
+			resolver:       NewModelPricingResolver(nil, billing),
+		}
+
+		plan, err := svc.resolveOpenAIImageBillingPlanForPlatforms(
+			context.Background(), apiKey, &groupID, platforms, model, ImageBillingSize1K, true,
+		)
+		require.NoError(t, err)
+		require.Equal(t, BillingModeToken, plan.Mode)
+		require.InDelta(t, imageOutputPrice, plan.Resolved.BasePricing.ImageOutputPricePerToken, 1e-12)
+	})
+
+	t.Run("per image pricing", func(t *testing.T) {
+		perImagePrice := 0.25
+		pricingService := NewPricingService(&config.Config{}, nil)
+		pricingService.SeedCatalogForTest(map[string]*ModelPriceEntry{})
+		pricingService.SeedOverridesForTest([]ModelPriceOverride{{
+			Platform:  PlatformOpenAI,
+			ModelName: model,
+			Enabled:   true,
+			Payload: ModelPriceOverridePayload{
+				OutputCostPerImage: &perImagePrice,
+			},
+		}})
+		billing := NewBillingService(&config.Config{}, pricingService)
+		svc := &OpenAIGatewayService{billingService: billing}
+
+		plan, err := svc.resolveOpenAIImageBillingPlanForPlatforms(
+			context.Background(), apiKey, &groupID, platforms, model, ImageBillingSize1K, false,
+		)
+		require.NoError(t, err)
+		require.Equal(t, BillingModeImage, plan.Mode)
+		require.InDelta(t, perImagePrice, plan.Resolved.DefaultPerRequestPrice, 1e-12)
+	})
+}
+
 func TestResolveOpenAIImageBillingPlanUsesChannelTokenPrices(t *testing.T) {
 	svc := newOpenAIImageBillingPlanTestService(t)
 	groupID := int64(72)
@@ -398,6 +461,7 @@ func TestRecordUsageKeepsMissingImageTokenUsagePending(t *testing.T) {
 		"gpt-image-2",
 		usageRepo.lastLog,
 		&APIKey{},
+		nil,
 	))
 }
 
@@ -426,12 +490,14 @@ func TestBillingRecoveryRecomputesCompleteImageTokenUsage(t *testing.T) {
 		"gpt-image-2",
 		log,
 		&APIKey{},
+		nil,
 	))
 	cost, err := recovery.recomputeCost(
 		context.Background(),
 		log,
 		"gpt-image-2",
 		&APIKey{},
+		nil,
 	)
 	require.NoError(t, err)
 	require.Equal(t, string(BillingModeToken), cost.BillingMode)

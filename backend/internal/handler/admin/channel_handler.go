@@ -575,13 +575,14 @@ func (h *ChannelHandler) Delete(c *gin.Context) {
 // GET /api/v1/admin/channels/model-pricing?model=claude-sonnet-4
 func (h *ChannelHandler) GetModelDefaultPricing(c *gin.Context) {
 	model := strings.TrimSpace(c.Query("model"))
+	platform := strings.TrimSpace(c.Query("platform"))
 	if model == "" {
 		response.ErrorFrom(c, infraerrors.BadRequest("MISSING_PARAMETER", "model parameter is required").
 			WithMetadata(map[string]string{"param": "model"}))
 		return
 	}
 
-	pricing, err := h.billingService.GetModelPricing(model)
+	pricing, err := h.billingService.GetModelPricingForPlatform(platform, model)
 	if err != nil {
 		// 模型不在定价列表中
 		response.Success(c, gin.H{"found": false})

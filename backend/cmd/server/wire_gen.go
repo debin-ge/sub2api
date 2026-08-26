@@ -392,7 +392,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	batchImageWorkerRuntime := service.ProvideBatchImageWorkerRuntime(batchImageRepository, accountRepository, batchImageQueue, usageBillingRepository, usageLogRepository, batchImageModelPricingResolver, apiKeyAuthCacheInvalidator, configConfig)
 	scheduledTestRunnerService := service.ProvideScheduledTestRunnerService(scheduledTestPlanRepository, scheduledTestService, accountTestService, rateLimitService, configConfig)
 	paymentOrderExpiryService := service.ProvidePaymentOrderExpiryService(paymentService, leaderLockCache, db)
-	billingRecoveryService := service.ProvideBillingRecoveryService(configConfig, usageLogRepository, apiKeyRepository, billingService, channelService, modelPricingResolver, dashboardAggregationService, leaderLockCache, db)
+	billingRecoveryService := service.ProvideBillingRecoveryService(configConfig, usageLogRepository, apiKeyRepository, accountRepository, billingService, channelService, modelPricingResolver, dashboardAggregationService, leaderLockCache, db)
 	miniMaxRemainsSyncService := service.NewMiniMaxRemainsSyncService(accountRepository, miniMaxTokenPlanClient, miniMaxQuotaService)
 	miniMaxRemainsSyncRunner := service.ProvideMiniMaxRemainsSyncRunner(miniMaxRemainsSyncService, configConfig)
 	deepSeekBalanceClient := service.ProvideDeepSeekBalanceClient()

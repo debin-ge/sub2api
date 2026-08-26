@@ -236,6 +236,7 @@ func (s *GatewayService) ValidateUsagePricing(ctx context.Context, apiKey *APIKe
 	if s == nil {
 		return fmt.Errorf("%w: gateway billing service unavailable", ErrModelPricingUnavailable)
 	}
+	platforms := pricingPlatformCandidates(apiKey, account)
 	mappedModel := requestedModel
 	billingModelSource := ""
 	if identity, ok := resolvedChannelPricingIdentityFromContext(ctx, requestedModel); ok {
@@ -274,8 +275,8 @@ func (s *GatewayService) ValidateUsagePricing(ctx context.Context, apiKey *APIKe
 	if !imageOnlyAdmission {
 		// 全局价目录只认这个具体上游模型自己的价格；模糊 family fallback
 		// 不能作为产生上游成本的准入证据。
-		gate := newStrictGlobalPricingGate(s.billingService, upstreamModel)
-		if s.admitTokenPricing(ctx, apiKey, billingModel, upstreamModel, gate.effective()) {
+		gate := newStrictGlobalPricingGateForPlatforms(s.billingService, platforms, upstreamModel)
+		if s.admitTokenPricing(ctx, apiKey, platforms, billingModel, upstreamModel, gate.effective()) {
 		} else {
 			return fmt.Errorf(
 				"%w for platform=%s requested_model=%q mapped_model=%q upstream_model=%q",
@@ -294,7 +295,7 @@ func (s *GatewayService) ValidateUsagePricing(ctx context.Context, apiKey *APIKe
 	if mediaIntent, ok := OpenAIImageGenerationPricingIntentFromContext(ctx); ok {
 		mediaModel := strings.TrimSpace(mediaIntent.BillingModel)
 		mediaTier := NormalizeImageBillingTierOrDefault(mediaIntent.SizeTier)
-		if mediaModel == "" || !s.hasResolvableImagePricing(ctx, mediaModel, mediaTier, apiKey) {
+		if mediaModel == "" || !s.hasResolvableImagePricingForPlatforms(ctx, mediaModel, mediaTier, apiKey, platforms) {
 			return fmt.Errorf(
 				"%w for billing_kind=%s platform=%s requested_model=%q mapped_model=%q upstream_model=%q media_billing_model=%q media_size_tier=%q",
 				ErrModelPricingUnavailable,
@@ -315,7 +316,7 @@ func (s *GatewayService) ValidateUsagePricing(ctx context.Context, apiKey *APIKe
 	// before an output size is known, so admission must prove that at least one
 	// model in the settlement fallback chain is priced for every possible tier.
 	if OpenAIImageGenerationIntentFromContext(ctx) &&
-		!s.admitImageGenerationPricing(ctx, apiKey, billingModel, upstreamModel, requestedModel) {
+		!s.admitImageGenerationPricing(ctx, apiKey, platforms, billingModel, upstreamModel, requestedModel) {
 		return fmt.Errorf(
 			"%w for billing_kind=%s platform=%s requested_model=%q mapped_model=%q upstream_model=%q selected_billing_model=%q",
 			ErrModelPricingUnavailable,
@@ -333,6 +334,7 @@ func (s *GatewayService) ValidateUsagePricing(ctx context.Context, apiKey *APIKe
 func (s *GatewayService) admitImageGenerationPricing(
 	ctx context.Context,
 	apiKey *APIKey,
+	platforms []string,
 	models ...string,
 ) bool {
 	seen := make(map[string]struct{}, len(models))
@@ -347,7 +349,7 @@ func (s *GatewayService) admitImageGenerationPricing(
 		seen[model] = struct{}{}
 		pricedForEveryTier := true
 		for _, tier := range []string{ImageBillingSize1K, ImageBillingSize2K, ImageBillingSize4K} {
-			if !s.hasResolvableImagePricing(ctx, model, tier, apiKey) {
+			if !s.hasResolvableImagePricingForPlatforms(ctx, model, tier, apiKey, platforms) {
 				pricedForEveryTier = false
 				break
 			}
@@ -366,6 +368,7 @@ func (s *GatewayService) admitImageGenerationPricing(
 func (s *GatewayService) admitTokenPricing(
 	ctx context.Context,
 	apiKey *APIKey,
+	platforms []string,
 	billingModel string,
 	upstreamModel string,
 	upstreamGloballyPriced bool,
@@ -375,13 +378,14 @@ func (s *GatewayService) admitTokenPricing(
 	// global price, use only that model as the fallback candidate so aliases
 	// still work without reopening the "any priced candidate" bypass.
 	if upstreamGloballyPriced {
-		billableModel := s.billableModelWithFallback(
+		billableModel := s.billableModelWithFallbackForPlatforms(
 			ctx,
 			apiKey,
+			platforms,
 			billingModel,
 			upstreamModel,
 		)
-		if s.hasResolvableTokenPricing(ctx, billableModel, apiKey) {
+		if s.hasResolvableTokenPricingForPlatforms(ctx, billableModel, apiKey, platforms) {
 			return true
 		}
 	}

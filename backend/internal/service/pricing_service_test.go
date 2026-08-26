@@ -787,7 +787,7 @@ func TestDefaultPricingUsesCurrentCodexAutoReviewBaseRates(t *testing.T) {
 	require.Zero(t, got.CacheCreationPricePerToken)
 	require.Zero(t, got.CacheCreationPricePerTokenPriority)
 	require.Zero(t, got.LongContextInputThreshold)
-	require.True(t, newStrictGlobalPricingGate(billingSvc, "codex-auto-review").effective())
+	require.True(t, newStrictGlobalPricingGate(billingSvc, PlatformOpenAI, "codex-auto-review").effective())
 }
 
 func TestGetModelPricing_Gpt54MiniUsesDedicatedStaticFallbackWhenRemoteMissing(t *testing.T) {

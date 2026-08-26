@@ -6,6 +6,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/stretchr/testify/require"
 )
@@ -87,6 +88,46 @@ func TestRebuildEffectiveDoesNotMutateCatalog(t *testing.T) {
 
 	svc.pricingData["claude-sonnet-4"].InputCostPerToken = 99
 	require.InDelta(t, 1e-6, svc.catalogData["claude-sonnet-4"].InputCostPerToken, 1e-12)
+}
+
+func TestPlatformCandidateOverridesPrecedeSharedCatalog(t *testing.T) {
+	const model = "deepseek-v4-flash-vision-exp"
+	svc := NewPricingService(&config.Config{}, nil)
+	svc.SeedCatalogForTest(map[string]*ModelPriceEntry{
+		model: pricedEntry(1e-6, 2e-6),
+	})
+	svc.SeedOverridesForTest([]ModelPriceOverride{
+		{
+			Platform:  PlatformDeepSeek,
+			ModelName: model,
+			Enabled:   true,
+			Payload: ModelPriceOverridePayload{
+				InputCostPerToken:  ptrPrice(3e-6),
+				OutputCostPerToken: ptrPrice(9e-6),
+			},
+		},
+		{
+			Platform:  PlatformComposite,
+			ModelName: model,
+			Enabled:   true,
+			Payload: ModelPriceOverridePayload{
+				InputCostPerToken:  ptrPrice(4e-6),
+				OutputCostPerToken: ptrPrice(12e-6),
+			},
+		},
+	})
+
+	composite := svc.LookupModelPricingStrictForPlatforms(
+		[]string{PlatformComposite, PlatformDeepSeek}, model,
+	)
+	require.NotNil(t, composite)
+	require.InDelta(t, 4e-6, composite.InputCostPerToken, 1e-12)
+
+	provider := svc.LookupModelPricingStrictForPlatforms(
+		[]string{PlatformOpenAI, PlatformDeepSeek}, model,
+	)
+	require.NotNil(t, provider)
+	require.InDelta(t, 3e-6, provider.InputCostPerToken, 1e-12)
 }
 
 func TestOverrideExplicitZeroIsPreserved(t *testing.T) {

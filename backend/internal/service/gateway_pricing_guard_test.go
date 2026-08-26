@@ -172,6 +172,85 @@ func TestGatewayServiceValidateUsagePricing(t *testing.T) {
 	}
 }
 
+func TestGatewayServiceValidateUsagePricing_AcceptsDeepSeekPlatformOverride(t *testing.T) {
+	const model = "deepseek-v4-flash-vision-exp"
+	inputPrice := 1.5e-6
+	outputPrice := 4.5e-6
+	pricingService := NewPricingService(&config.Config{}, nil)
+	pricingService.SeedCatalogForTest(map[string]*ModelPriceEntry{})
+	pricingService.SeedOverridesForTest([]ModelPriceOverride{{
+		Platform:  PlatformDeepSeek,
+		ModelName: model,
+		Enabled:   true,
+		Payload: ModelPriceOverridePayload{
+			InputCostPerToken:  &inputPrice,
+			OutputCostPerToken: &outputPrice,
+		},
+	}})
+
+	cfg := &config.Config{RunMode: config.RunModeStandard}
+	svc := newGatewayPricingGuardService(cfg)
+	svc.billingService = NewBillingService(cfg, pricingService)
+	groupID := int64(81)
+	apiKey := &APIKey{
+		GroupID: &groupID,
+		Group:   &Group{ID: groupID, Platform: PlatformDeepSeek},
+	}
+
+	require.NoError(t, svc.ValidateUsagePricing(
+		context.Background(),
+		apiKey,
+		&Account{Platform: PlatformDeepSeek},
+		model,
+	))
+	require.ErrorIs(t, svc.ValidateUsagePricing(
+		context.Background(),
+		&APIKey{GroupID: &groupID, Group: &Group{ID: groupID, Platform: PlatformOpenAI}},
+		&Account{Platform: PlatformOpenAI},
+		model,
+	), ErrModelPricingUnavailable)
+}
+
+func TestGatewayServiceValidateUsagePricing_CompositeUsesOrderedPlatformOverrides(t *testing.T) {
+	const model = "deepseek-v4-flash-vision-exp"
+	for _, tc := range []struct {
+		name             string
+		overridePlatform string
+	}{
+		{name: "composite override", overridePlatform: PlatformComposite},
+		{name: "provider fallback", overridePlatform: PlatformDeepSeek},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			inputPrice := 1.5e-6
+			outputPrice := 4.5e-6
+			pricingService := NewPricingService(&config.Config{}, nil)
+			pricingService.SeedCatalogForTest(map[string]*ModelPriceEntry{})
+			pricingService.SeedOverridesForTest([]ModelPriceOverride{{
+				Platform:  tc.overridePlatform,
+				ModelName: model,
+				Enabled:   true,
+				Payload: ModelPriceOverridePayload{
+					InputCostPerToken:  &inputPrice,
+					OutputCostPerToken: &outputPrice,
+				},
+			}})
+
+			cfg := &config.Config{RunMode: config.RunModeStandard}
+			svc := newGatewayPricingGuardService(cfg)
+			svc.billingService = NewBillingService(cfg, pricingService)
+			groupID := int64(83)
+			apiKey := &APIKey{
+				GroupID: &groupID,
+				Group:   &Group{ID: groupID, Platform: PlatformComposite},
+			}
+
+			require.NoError(t, svc.ValidateUsagePricing(
+				context.Background(), apiKey, &Account{Platform: PlatformDeepSeek}, model,
+			))
+		})
+	}
+}
+
 func TestGatewayServiceValidateUsagePricing_RejectsInvalidGlobalCatalogPrice(t *testing.T) {
 	tests := []struct {
 		name  string

@@ -112,7 +112,8 @@ func (s *OpenAIGatewayService) ValidateSelectedOpenAIMediaPricing(
 	}
 	models := resolveOpenAIPricingGuardModels(account, pricingRequestedModel, mapping, "", false, false)
 
-	if s.hasResolvableOpenAIMediaPricing(ctx, groupID, models, kind) {
+	platforms := pricingPlatformCandidates(openAIPricingGuardAPIKey(ctx, groupID), account)
+	if s.hasResolvableOpenAIMediaPricingForPlatforms(ctx, groupID, platforms, models, kind) {
 		return nil
 	}
 	return models.unavailableError(kind, account)
@@ -204,16 +205,18 @@ func (s *OpenAIGatewayService) enforceResolvedOpenAIMediaPricing(
 		Primary:   billingModel,
 	}
 	if billingModel != "" {
+		platforms := pricingPlatformCandidates(openAIPricingGuardAPIKey(ctx, groupID), account)
 		var hasPricing bool
 		if kind == BillingKindImage {
-			hasPricing = s.hasResolvableOpenAIImageTierPricing(
+			hasPricing = s.hasResolvableOpenAIImageTierPricingForPlatforms(
 				ctx,
 				groupID,
+				platforms,
 				models,
 				imageSizeTier,
 			)
 		} else {
-			hasPricing = s.hasResolvableOpenAIMediaPricing(ctx, groupID, models, kind)
+			hasPricing = s.hasResolvableOpenAIMediaPricingForPlatforms(ctx, groupID, platforms, models, kind)
 		}
 		if hasPricing {
 			return nil
@@ -225,6 +228,18 @@ func (s *OpenAIGatewayService) enforceResolvedOpenAIMediaPricing(
 func (s *OpenAIGatewayService) hasResolvableOpenAIMediaPricing(
 	ctx context.Context,
 	groupID *int64,
+	models openAIPricingGuardModels,
+	kind BillingKind,
+) bool {
+	return s.hasResolvableOpenAIMediaPricingForPlatforms(
+		ctx, groupID, []string{PlatformFromAPIKey(openAIPricingGuardAPIKey(ctx, groupID))}, models, kind,
+	)
+}
+
+func (s *OpenAIGatewayService) hasResolvableOpenAIMediaPricingForPlatforms(
+	ctx context.Context,
+	groupID *int64,
+	platforms []string,
 	models openAIPricingGuardModels,
 	kind BillingKind,
 ) bool {
@@ -253,11 +268,11 @@ func (s *OpenAIGatewayService) hasResolvableOpenAIMediaPricing(
 	// and locks the exact plan after account mapping. Native Responses image
 	// tools retain their existing exact per-image guard.
 	if kind == BillingKindImage &&
-		s.hasResolvableOpenAIImageTokenPricing(ctx, groupID, billingModel) {
+		s.hasResolvableOpenAIImageTokenPricingForPlatforms(ctx, groupID, platforms, billingModel) {
 		return true
 	}
 	// 模型价格目录 / 按 SKU 写死的默认价。
-	if s.catalogHasMediaPricing(billingModel, kind) {
+	if s.catalogHasMediaPricingForPlatforms(platforms, billingModel, kind) {
 		return true
 	}
 	// 走到这里才回源：上下文里的分组可能是没带媒体价字段的精简快照，
@@ -278,6 +293,18 @@ func (s *OpenAIGatewayService) hasResolvableOpenAIImageTierPricing(
 	models openAIPricingGuardModels,
 	imageSizeTier string,
 ) bool {
+	return s.hasResolvableOpenAIImageTierPricingForPlatforms(
+		ctx, groupID, []string{PlatformFromAPIKey(openAIPricingGuardAPIKey(ctx, groupID))}, models, imageSizeTier,
+	)
+}
+
+func (s *OpenAIGatewayService) hasResolvableOpenAIImageTierPricingForPlatforms(
+	ctx context.Context,
+	groupID *int64,
+	platforms []string,
+	models openAIPricingGuardModels,
+	imageSizeTier string,
+) bool {
 	tier, ok := ClassifyImageBillingTier(imageSizeTier)
 	if !ok {
 		return false
@@ -294,7 +321,7 @@ func (s *OpenAIGatewayService) hasResolvableOpenAIImageTierPricing(
 	if s.hasExactOpenAIChannelImagePricing(ctx, groupID, billingModel, tier) {
 		return true
 	}
-	if s.catalogHasExactImagePricing(billingModel, tier) {
+	if s.catalogHasExactImagePricingForPlatforms(platforms, billingModel, tier) {
 		return true
 	}
 	if refreshed := s.apiKeyWithFreshGroupMediaPricing(ctx, guardKey); refreshed != guardKey {
@@ -410,12 +437,16 @@ func (s *OpenAIGatewayService) hasCompleteOpenAIChannelMediaPricing(
 }
 
 func (s *OpenAIGatewayService) catalogHasExactImagePricing(model string, imageSizeTier string) bool {
+	return s.catalogHasExactImagePricingForPlatforms(nil, model, imageSizeTier)
+}
+
+func (s *OpenAIGatewayService) catalogHasExactImagePricingForPlatforms(platforms []string, model string, imageSizeTier string) bool {
 	model = strings.TrimSpace(model)
 	tier, ok := ClassifyImageBillingTier(imageSizeTier)
 	if !ok || model == "" || s == nil || s.billingService == nil {
 		return false
 	}
-	_, ok = s.billingService.strictImageUnitPrice(model, tier, nil)
+	_, ok = s.billingService.strictImageUnitPriceForPlatforms(platforms, model, tier, nil)
 	return ok
 }
 
@@ -424,6 +455,10 @@ func (s *OpenAIGatewayService) catalogHasExactImagePricing(model string, imageSi
 // 注意这里刻意**不**调用 getDefaultImagePrice：那个函数在查不到任何价格时会返回
 // defaultImageGenerationPrice（$0.134）这个通用占位值，用它判断"有没有价"会恒真。
 func (s *OpenAIGatewayService) catalogHasMediaPricing(model string, kind BillingKind) bool {
+	return s.catalogHasMediaPricingForPlatforms(nil, model, kind)
+}
+
+func (s *OpenAIGatewayService) catalogHasMediaPricingForPlatforms(platforms []string, model string, kind BillingKind) bool {
 	model = strings.TrimSpace(model)
 	if model == "" || s == nil || s.billingService == nil {
 		return false
@@ -451,7 +486,7 @@ func (s *OpenAIGatewayService) catalogHasMediaPricing(model string, kind Billing
 			ImageBillingSize2K,
 			ImageBillingSize4K,
 		} {
-			if _, ok := s.billingService.strictImageUnitPrice(model, tier, nil); ok {
+			if _, ok := s.billingService.strictImageUnitPriceForPlatforms(platforms, model, tier, nil); ok {
 				return true
 			}
 		}

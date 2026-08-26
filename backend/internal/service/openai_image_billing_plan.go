@@ -30,6 +30,17 @@ func (s *OpenAIGatewayService) hasResolvableOpenAIImageTokenPricing(
 	groupID *int64,
 	model string,
 ) bool {
+	return s.hasResolvableOpenAIImageTokenPricingForPlatforms(
+		ctx, groupID, []string{PlatformFromAPIKey(openAIPricingGuardAPIKey(ctx, groupID))}, model,
+	)
+}
+
+func (s *OpenAIGatewayService) hasResolvableOpenAIImageTokenPricingForPlatforms(
+	ctx context.Context,
+	groupID *int64,
+	platforms []string,
+	model string,
+) bool {
 	if s == nil || s.billingService == nil {
 		return false
 	}
@@ -51,6 +62,7 @@ func (s *OpenAIGatewayService) hasResolvableOpenAIImageTokenPricing(
 		ctx,
 		resolver,
 		groupID,
+		platforms,
 		strings.TrimSpace(model),
 		false,
 	)
@@ -61,6 +73,26 @@ func (s *OpenAIGatewayService) resolveOpenAIImageBillingPlan(
 	ctx context.Context,
 	apiKey *APIKey,
 	groupID *int64,
+	model string,
+	imageSizeTier string,
+	requireImageInput bool,
+) (*OpenAIImageBillingPlan, error) {
+	return s.resolveOpenAIImageBillingPlanForPlatforms(
+		ctx,
+		apiKey,
+		groupID,
+		[]string{PlatformFromAPIKey(apiKey)},
+		model,
+		imageSizeTier,
+		requireImageInput,
+	)
+}
+
+func (s *OpenAIGatewayService) resolveOpenAIImageBillingPlanForPlatforms(
+	ctx context.Context,
+	apiKey *APIKey,
+	groupID *int64,
+	platforms []string,
 	model string,
 	imageSizeTier string,
 	requireImageInput bool,
@@ -119,6 +151,7 @@ func (s *OpenAIGatewayService) resolveOpenAIImageBillingPlan(
 					ctx,
 					resolver,
 					groupID,
+					platforms,
 					model,
 					requireImageInput,
 				)
@@ -141,7 +174,7 @@ func (s *OpenAIGatewayService) resolveOpenAIImageBillingPlan(
 		}
 	}
 
-	if pricing, err := s.billingService.GetImageTokenPricingStrict(model, requireImageInput); err == nil {
+	if pricing, err := s.billingService.GetImageTokenPricingStrictForPlatforms(platforms, model, requireImageInput); err == nil {
 		return &OpenAIImageBillingPlan{
 			Mode:              BillingModeToken,
 			Model:             model,
@@ -157,7 +190,7 @@ func (s *OpenAIGatewayService) resolveOpenAIImageBillingPlan(
 		}, nil
 	}
 
-	if price, ok := s.billingService.strictImageUnitPrice(model, tier, nil); ok {
+	if price, ok := s.billingService.strictImageUnitPriceForPlatforms(platforms, model, tier, nil); ok {
 		return newOpenAIImageUnitBillingPlan(model, tier, PricingSourceModelPrice, price), nil
 	}
 	return nil, fmt.Errorf(
@@ -196,6 +229,7 @@ func (s *OpenAIGatewayService) resolveStrictOpenAIImageTokenPricing(
 	ctx context.Context,
 	resolver *ModelPricingResolver,
 	groupID *int64,
+	platforms []string,
 	model string,
 	requireImageInput bool,
 ) (*ResolvedPricing, error) {
@@ -203,8 +237,9 @@ func (s *OpenAIGatewayService) resolveStrictOpenAIImageTokenPricing(
 		return nil, fmt.Errorf("%w: image pricing resolver is nil", ErrModelPricingUnavailable)
 	}
 	return resolver.ResolveStrictImageToken(ctx, PricingInput{
-		Model:   model,
-		GroupID: groupID,
+		Model:     model,
+		Platforms: platforms,
+		GroupID:   groupID,
 	}, requireImageInput)
 }
 

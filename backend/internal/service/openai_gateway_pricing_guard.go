@@ -192,7 +192,8 @@ func (s *OpenAIGatewayService) validateSelectedOpenAIModelPricing(
 	)
 
 	// 全局价目录只认这个具体上游模型自己的价格。
-	gate := newStrictGlobalPricingGate(s.billingService, models.Upstream)
+	platforms := pricingPlatformCandidates(openAIPricingGuardAPIKey(ctx, groupID), account)
+	gate := newStrictGlobalPricingGateForPlatforms(s.billingService, platforms, models.Upstream)
 	if s.admitOpenAITokenPricing(ctx, groupID, models, gate.effective()) {
 		return nil
 	}
@@ -226,7 +227,8 @@ func (s *OpenAIGatewayService) enforceResolvedOpenAITokenPricing(
 		Upstream:  upstreamModel,
 		Primary:   upstreamModel,
 	}
-	gate := newStrictGlobalPricingGate(s.billingService, upstreamModel)
+	platforms := pricingPlatformCandidates(openAIPricingGuardAPIKey(ctx, groupID), account)
+	gate := newStrictGlobalPricingGateForPlatforms(s.billingService, platforms, upstreamModel)
 	if upstreamModel != "" && s.admitOpenAITokenPricing(ctx, groupID, models, gate.effective()) {
 		return nil
 	}

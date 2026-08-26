@@ -1705,10 +1705,11 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 	}
 	if s.pricingGuardRequired || s.billingService != nil {
 		var err error
-		billingPlan, err = s.resolveOpenAIImageBillingPlan(
+		billingPlan, err = s.resolveOpenAIImageBillingPlanForPlatforms(
 			ctx,
 			apiKey,
 			groupID,
+			pricingPlatformCandidates(apiKey, account),
 			requestModel,
 			parsed.SizeTier,
 			parsed.IsEdits(),

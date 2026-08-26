@@ -65,6 +65,10 @@ type BillingRecoveryAPIKeyRepository interface {
 	GetByID(ctx context.Context, id int64) (*APIKey, error)
 }
 
+type BillingRecoveryAccountRepository interface {
+	GetByID(ctx context.Context, id int64) (*Account, error)
+}
+
 // BillingRecoveryAggregationRefresher 让价格回填触发刷新受影响的历史仪表盘桶。
 // TriggerRecomputeRange 本身负责与正在运行的聚合作业协调和重试。
 type BillingRecoveryAggregationRefresher interface {
@@ -108,6 +112,7 @@ type BillingRecoveryService struct {
 	cfg            *config.Config
 	usageLogRepo   BillingRecoveryUsageLogRepository
 	apiKeyRepo     BillingRecoveryAPIKeyRepository
+	accountRepo    BillingRecoveryAccountRepository
 	billingService *BillingService
 	channelService *ChannelService
 	resolver       *ModelPricingResolver
@@ -125,6 +130,13 @@ type BillingRecoveryService struct {
 	lockCache  LeaderLockCache
 	db         *sql.DB
 	instanceID string
+}
+
+func (s *BillingRecoveryService) SetAccountRepository(repo BillingRecoveryAccountRepository) {
+	if s == nil {
+		return
+	}
+	s.accountRepo = repo
 }
 
 // SetAggregationRefresher 注入历史聚合刷新器。单测或未启用预聚合的部署可留空。
@@ -319,6 +331,7 @@ func (s *BillingRecoveryService) RunOnce(ctx context.Context) (BillingRecoveryRe
 	// 同一批里同一个 API Key 往往重复出现（一个模型配错价会连累它的全部流量），
 	// 分组媒体价配置按 Key 缓存一次即可。
 	keyCache := make(map[int64]*APIKey)
+	accountCache := make(map[int64]*Account)
 	var recomputeStart, recomputeEnd time.Time
 
 	for i := range logs {
@@ -326,12 +339,13 @@ func (s *BillingRecoveryService) RunOnce(ctx context.Context) (BillingRecoveryRe
 		report.LastID = log.ID
 
 		apiKey := s.apiKeyForLog(ctx, keyCache, log)
-		model, ok := s.recoverableBillingModel(ctx, log, apiKey)
+		account := s.accountForLog(ctx, accountCache, log)
+		model, ok := s.recoverableBillingModel(ctx, log, apiKey, account)
 		if !ok {
 			report.StillUnpriced++
 			continue
 		}
-		cost, err := s.recomputeCost(ctx, log, model, apiKey)
+		cost, err := s.recomputeCost(ctx, log, model, apiKey, account)
 		if err != nil {
 			report.Failed++
 			logger.L().Warn("billing.recovery_recompute_failed",
@@ -344,7 +358,7 @@ func (s *BillingRecoveryService) RunOnce(ctx context.Context) (BillingRecoveryRe
 		}
 
 		settlement := settlementCostFromBreakdown(cost)
-		settlement.AccountStatsCost = s.recomputeAccountStatsCost(ctx, log, model, cost.TotalCost)
+		settlement.AccountStatsCost = s.recomputeAccountStatsCost(ctx, log, model, cost.TotalCost, account)
 		if report.Mode == config.PricingGuardModeEnforce {
 			updated, err := s.usageLogRepo.MarkSettlementRecovered(ctx, log.ID, settlement)
 			if err != nil {
@@ -383,6 +397,7 @@ func (s *BillingRecoveryService) recomputeAccountStatsCost(
 	log *UsageLog,
 	billingModel string,
 	totalCost float64,
+	account *Account,
 ) *float64 {
 	if log == nil || log.GroupID == nil {
 		return nil
@@ -392,6 +407,10 @@ func (s *BillingRecoveryService) recomputeAccountStatsCost(
 		requestCount = log.ImageCount
 	} else if log.VideoCount > 0 {
 		requestCount = log.VideoCount
+	}
+	accountPlatform := ""
+	if account != nil {
+		accountPlatform = account.Platform
 	}
 	return resolveAccountStatsCost(
 		ctx,
@@ -404,6 +423,7 @@ func (s *BillingRecoveryService) recomputeAccountStatsCost(
 		requestCount,
 		totalCost,
 		stringOrEmpty(log.ServiceTier),
+		accountPlatform,
 	)
 }
 
@@ -468,7 +488,12 @@ func (s *BillingRecoveryService) advanceCursor(lastID int64, reachedEnd bool) {
 //
 // 返回 false 表示没有足够证据安全恢复——这行继续留在欠账里，等待管理员补价或修复
 // 模型身份元数据。
-func (s *BillingRecoveryService) recoverableBillingModel(ctx context.Context, log *UsageLog, apiKey *APIKey) (string, bool) {
+func (s *BillingRecoveryService) recoverableBillingModel(
+	ctx context.Context,
+	log *UsageLog,
+	apiKey *APIKey,
+	account *Account,
+) (string, bool) {
 	if log == nil {
 		return "", false
 	}
@@ -476,7 +501,7 @@ func (s *BillingRecoveryService) recoverableBillingModel(ctx context.Context, lo
 	kind, _, _ := recoveryBillingKindAndTier(log)
 	upstreamModel := stringOrEmpty(log.UpstreamModel)
 	if kind == BillingKindToken && upstreamModel != "" {
-		if s.hasStrictPricingForUsage(ctx, upstreamModel, log, apiKey) {
+		if s.hasStrictPricingForUsage(ctx, upstreamModel, log, apiKey, account) {
 			return upstreamModel, true
 		}
 
@@ -520,7 +545,7 @@ func (s *BillingRecoveryService) recoverableBillingModel(ctx context.Context, lo
 			continue
 		}
 		seen[key] = struct{}{}
-		if s.hasStrictPricingForUsage(ctx, candidate, log, apiKey) {
+		if s.hasStrictPricingForUsage(ctx, candidate, log, apiKey, account) {
 			return candidate, true
 		}
 	}
@@ -532,6 +557,7 @@ func (s *BillingRecoveryService) hasStrictPricingForUsage(
 	model string,
 	log *UsageLog,
 	apiKey *APIKey,
+	account *Account,
 ) bool {
 	kind, tier, tierValid := recoveryBillingKindAndTier(log)
 	var groupID *int64
@@ -552,7 +578,9 @@ func (s *BillingRecoveryService) hasStrictPricingForUsage(
 		if requireImageInput && log.ImageInputTokens <= 0 {
 			return false
 		}
-		return s.hasStrictImageTokenPricing(ctx, model, groupID, requireImageInput)
+		return s.hasStrictImageTokenPricing(
+			ctx, model, groupID, recoveryPricingGroup(log, apiKey), pricingPlatformCandidates(apiKey, account), requireImageInput,
+		)
 	}
 	switch kind {
 	case BillingKindImage, BillingKindVideo:
@@ -561,9 +589,9 @@ func (s *BillingRecoveryService) hasStrictPricingForUsage(
 		}
 		return recoveryGroupMediaTierConfigured(apiKey, kind, tier) ||
 			s.recoveryChannelMediaTierConfigured(ctx, model, groupID, tier) ||
-			s.recoveryCatalogMediaTierConfigured(model, kind, tier)
+			s.recoveryCatalogMediaTierConfigured(pricingPlatformCandidates(apiKey, account), model, kind, tier)
 	default:
-		return s.hasStrictTokenPricing(ctx, model, groupID)
+		return s.hasStrictTokenPricing(ctx, model, groupID, pricingPlatformCandidates(apiKey, account))
 	}
 }
 
@@ -571,6 +599,8 @@ func (s *BillingRecoveryService) hasStrictImageTokenPricing(
 	ctx context.Context,
 	model string,
 	groupID *int64,
+	group *Group,
+	platforms []string,
 	requireImageInput bool,
 ) bool {
 	if s == nil || s.billingService == nil {
@@ -581,8 +611,10 @@ func (s *BillingRecoveryService) hasStrictImageTokenPricing(
 		resolver = NewModelPricingResolver(s.channelService, s.billingService)
 	}
 	_, err := resolver.ResolveStrictImageToken(ctx, PricingInput{
-		Model:   model,
-		GroupID: groupID,
+		Model:     model,
+		Platforms: platforms,
+		GroupID:   groupID,
+		Group:     group,
 	}, requireImageInput)
 	return err == nil
 }
@@ -651,13 +683,13 @@ func (s *BillingRecoveryService) resolveRecoveryChannelMediaPricing(
 	return resolved
 }
 
-func (s *BillingRecoveryService) recoveryCatalogMediaTierConfigured(model string, kind BillingKind, tier string) bool {
+func (s *BillingRecoveryService) recoveryCatalogMediaTierConfigured(platforms []string, model string, kind BillingKind, tier string) bool {
 	if s == nil || s.billingService == nil {
 		return false
 	}
 	switch kind {
 	case BillingKindImage:
-		_, ok := s.billingService.strictImageUnitPrice(model, tier, nil)
+		_, ok := s.billingService.strictImageUnitPriceForPlatforms(platforms, model, tier, nil)
 		return ok
 	case BillingKindVideo:
 		_, ok := s.billingService.strictVideoUnitPrice(model, tier, nil)
@@ -669,7 +701,7 @@ func (s *BillingRecoveryService) recoveryCatalogMediaTierConfigured(model string
 
 // hasStrictTokenPricing 与 GatewayService.hasResolvableTokenPricing 使用同一严格口径：
 // 补偿和实时后扣都不能拿跨模型推断出来的价格去给一行盖“已结算”的章。
-func (s *BillingRecoveryService) hasStrictTokenPricing(ctx context.Context, model string, groupID *int64) bool {
+func (s *BillingRecoveryService) hasStrictTokenPricing(ctx context.Context, model string, groupID *int64, platforms []string) bool {
 	if s.channelService != nil && groupID != nil {
 		if pricing := s.channelService.GetChannelModelPricing(ctx, *groupID, model); pricing != nil {
 			if channelTokenPricingHasInvalidPrice(pricing) {
@@ -680,7 +712,7 @@ func (s *BillingRecoveryService) hasStrictTokenPricing(ctx context.Context, mode
 			}
 		}
 	}
-	_, err := s.billingService.GetModelPricingStrict(model)
+	_, err := s.billingService.GetModelPricingStrictForPlatforms(platforms, model)
 	return err == nil
 }
 
@@ -733,6 +765,27 @@ func (s *BillingRecoveryService) apiKeyForLog(ctx context.Context, cache map[int
 	return apiKey
 }
 
+func (s *BillingRecoveryService) accountForLog(ctx context.Context, cache map[int64]*Account, log *UsageLog) *Account {
+	if log == nil || log.AccountID == 0 {
+		return nil
+	}
+	if log.Account != nil {
+		return log.Account
+	}
+	if s.accountRepo == nil {
+		return nil
+	}
+	if cached, ok := cache[log.AccountID]; ok {
+		return cached
+	}
+	account, err := s.accountRepo.GetByID(ctx, log.AccountID)
+	if err != nil {
+		account = nil
+	}
+	cache[log.AccountID] = account
+	return account
+}
+
 // recomputeCost 按记录里持久化的用量重算费用。
 //
 // 用的是 usage_logs 自己存下来的 tokens / 倍率 / 图片尺寸 / 视频时长，不是重新去问上游：
@@ -754,7 +807,9 @@ func (s *BillingRecoveryService) recomputeCost(
 	log *UsageLog,
 	billingModel string,
 	apiKey *APIKey,
+	account *Account,
 ) (*CostBreakdown, error) {
+	platforms := pricingPlatformCandidates(apiKey, account)
 	multiplier := log.RateMultiplier
 	if multiplier < 0 {
 		multiplier = 0
@@ -804,8 +859,8 @@ func (s *BillingRecoveryService) recomputeCost(
 			return nil, err
 		}
 		if recoveryGroupMediaTierConfigured(apiKey, BillingKindImage, sizeTier) {
-			return s.billingService.CalculateImageCostStrict(
-				billingModel, sizeTier, log.ImageCount, imagePriceConfigFromAPIKey(apiKey), multiplier,
+			return s.billingService.CalculateImageCostStrictForPlatforms(
+				platforms, billingModel, sizeTier, log.ImageCount, imagePriceConfigFromAPIKey(apiKey), multiplier,
 			)
 		}
 		if resolved := s.resolveRecoveryChannelMediaPricing(ctx, billingModel, log.GroupID); resolved != nil {
@@ -825,8 +880,8 @@ func (s *BillingRecoveryService) recomputeCost(
 				return cost, nil
 			}
 		}
-		return s.billingService.CalculateImageCostStrict(
-			billingModel, sizeTier, log.ImageCount, nil, multiplier,
+		return s.billingService.CalculateImageCostStrictForPlatforms(
+			platforms, billingModel, sizeTier, log.ImageCount, nil, multiplier,
 		)
 	}
 
@@ -848,9 +903,10 @@ func (s *BillingRecoveryService) recomputeCost(
 			resolver = NewModelPricingResolver(s.channelService, s.billingService)
 		}
 		resolved, err := resolver.ResolveStrictImageToken(ctx, PricingInput{
-			Model:   billingModel,
-			GroupID: log.GroupID,
-			Group:   recoveryPricingGroup(log, apiKey),
+			Model:     billingModel,
+			Platforms: platforms,
+			GroupID:   log.GroupID,
+			Group:     recoveryPricingGroup(log, apiKey),
 		}, requireImageInput)
 		if err != nil {
 			return nil, err
@@ -873,9 +929,10 @@ func (s *BillingRecoveryService) recomputeCost(
 	}
 	if s.resolver != nil && log.GroupID != nil {
 		resolved, err := s.resolver.ResolveStrictToken(ctx, PricingInput{
-			Model:   billingModel,
-			GroupID: log.GroupID,
-			Group:   recoveryPricingGroup(log, apiKey),
+			Model:     billingModel,
+			Platforms: platforms,
+			GroupID:   log.GroupID,
+			Group:     recoveryPricingGroup(log, apiKey),
 		})
 		if err != nil {
 			return nil, err
@@ -897,7 +954,7 @@ func (s *BillingRecoveryService) recomputeCost(
 			LongContextBillingEnabled: &longContextBillingEnabled,
 		})
 	}
-	pricing, err := s.billingService.GetModelPricingStrict(billingModel)
+	pricing, err := s.billingService.GetModelPricingStrictForPlatforms(platforms, billingModel)
 	if err != nil {
 		return nil, err
 	}

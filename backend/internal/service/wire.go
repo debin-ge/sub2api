@@ -1162,6 +1162,7 @@ func ProvideBillingRecoveryService(
 	cfg *config.Config,
 	usageLogRepo BillingRecoveryUsageLogRepository,
 	apiKeyRepo APIKeyRepository,
+	accountRepo AccountRepository,
 	billingService *BillingService,
 	channelService *ChannelService,
 	resolver *ModelPricingResolver,
@@ -1170,6 +1171,7 @@ func ProvideBillingRecoveryService(
 	db *sql.DB,
 ) *BillingRecoveryService {
 	svc := NewBillingRecoveryService(cfg, usageLogRepo, apiKeyRepo, billingService, channelService, resolver)
+	svc.SetAccountRepository(accountRepo)
 	svc.SetAggregationRefresher(dashboardAgg)
 	svc.SetLeaderLock(lockCache, db)
 	svc.Start()

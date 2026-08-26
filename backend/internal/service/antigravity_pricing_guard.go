@@ -37,15 +37,19 @@ func (s *AntigravityGatewayService) validateResolvedAntigravityTokenPricing(
 	if c != nil {
 		apiKey = getAPIKeyFromContext(c)
 	}
-	gate := newStrictGlobalPricingGate(s.billingService, upstreamModel)
-	if s.hasResolvableAntigravityTokenPricing(ctx, apiKey, upstreamModel, gate.effective()) {
-		return nil
-	}
-
 	platform := PlatformAntigravity
 	if account != nil && strings.TrimSpace(account.Platform) != "" {
 		platform = account.Platform
 	}
+	gate := newStrictGlobalPricingGateForPlatforms(
+		s.billingService,
+		pricingPlatformCandidates(apiKey, account),
+		upstreamModel,
+	)
+	if s.hasResolvableAntigravityTokenPricing(ctx, apiKey, upstreamModel, gate.effective()) {
+		return nil
+	}
+
 	return fmt.Errorf(
 		"%w for platform=%s requested_model=%q upstream_model=%q",
 		ErrModelPricingUnavailable,
@@ -164,7 +168,13 @@ func (s *AntigravityGatewayService) validateResolvedAntigravityImagePricing(
 	if c != nil {
 		apiKey = getAPIKeyFromContext(c)
 	}
-	if s.hasResolvableAntigravityImagePricing(ctx, apiKey, identity.Model, identity.SizeTier) {
+	if s.hasResolvableAntigravityImagePricing(
+		ctx,
+		apiKey,
+		pricingPlatformCandidates(apiKey, account),
+		identity.Model,
+		identity.SizeTier,
+	) {
 		return nil
 	}
 
@@ -185,6 +195,7 @@ func (s *AntigravityGatewayService) validateResolvedAntigravityImagePricing(
 func (s *AntigravityGatewayService) hasResolvableAntigravityImagePricing(
 	ctx context.Context,
 	apiKey *APIKey,
+	platforms []string,
 	model string,
 	sizeTier string,
 ) bool {
@@ -217,6 +228,6 @@ func (s *AntigravityGatewayService) hasResolvableAntigravityImagePricing(
 	}
 
 	groupConfig := imagePriceConfigFromAPIKey(apiKey)
-	_, ok := s.billingService.strictImageUnitPrice(model, sizeTier, groupConfig)
+	_, ok := s.billingService.strictImageUnitPriceForPlatforms(platforms, model, sizeTier, groupConfig)
 	return ok
 }

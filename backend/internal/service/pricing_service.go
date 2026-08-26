@@ -880,7 +880,12 @@ func (s *PricingService) GetModelPricing(modelName string) *ModelPriceEntry {
 }
 
 func (s *PricingService) GetModelPricingForPlatform(platform, modelName string) *ModelPriceEntry {
-	return s.lookupModelPricing(platform, modelName, true)
+	return s.GetModelPricingForPlatforms([]string{platform}, modelName)
+}
+
+func (s *PricingService) GetModelPricingForPlatforms(platforms []string, modelName string) *ModelPriceEntry {
+	pricing, _ := s.lookupModelPricingForPlatforms(platforms, modelName, true)
+	return pricing
 }
 
 // LookupModelPricingStrict 只在"这个模型自己有价目条目"时返回价格，不做跨模型推断。
@@ -904,7 +909,12 @@ func (s *PricingService) LookupModelPricingStrict(modelName string) *ModelPriceE
 }
 
 func (s *PricingService) LookupModelPricingStrictForPlatform(platform, modelName string) *ModelPriceEntry {
-	return s.lookupModelPricing(platform, modelName, false)
+	return s.LookupModelPricingStrictForPlatforms([]string{platform}, modelName)
+}
+
+func (s *PricingService) LookupModelPricingStrictForPlatforms(platforms []string, modelName string) *ModelPriceEntry {
+	pricing, _ := s.lookupModelPricingForPlatforms(platforms, modelName, false)
+	return pricing
 }
 
 // lookupModelPricing 是上面两个入口的唯一实现。
@@ -913,44 +923,56 @@ func (s *PricingService) LookupModelPricingStrictForPlatform(platform, modelName
 // 的理解必须完全一致。各写一份迟早会在某个归一化分支上分叉，那时守卫放行的模型和结算
 // 查价的模型就不是同一个了。allowInference 只控制最后两步跨模型推断开不开。
 func (s *PricingService) lookupModelPricing(platform, modelName string, allowInference bool) *ModelPriceEntry {
+	pricing, _ := s.lookupModelPricingForPlatforms([]string{platform}, modelName, allowInference)
+	return pricing
+}
+
+// lookupModelPricingForPlatforms checks every platform overlay before the
+// shared catalog. This ordering is essential for composite routing: looking up
+// the composite platform first through the old single-platform helper would
+// immediately fall through to the shared catalog and mask a concrete provider
+// override that should be the next candidate.
+func (s *PricingService) lookupModelPricingForPlatforms(platforms []string, modelName string, allowInference bool) (*ModelPriceEntry, string) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	if modelName == "" {
-		return nil
+		return nil, ""
 	}
 
 	// 标准化模型名称（同时兼容 "models/xxx"、VertexAI 资源名等前缀）
 	modelLower := strings.ToLower(strings.TrimSpace(modelName))
 	lookupCandidates := s.buildModelLookupCandidates(modelLower)
 
-	if overlay := s.platformOverrides[normalizeOverridePlatform(platform)]; len(overlay) > 0 {
-		if pricing := lookupIdentifiedIn(overlay, modelLower, lookupCandidates); pricing != nil {
-			return pricing
+	for _, platform := range normalizePricingPlatforms(platforms) {
+		if overlay := s.platformOverrides[platform]; len(overlay) > 0 {
+			if pricing := lookupIdentifiedIn(overlay, modelLower, lookupCandidates); pricing != nil {
+				return pricing, platform
+			}
 		}
 	}
 
 	// 1~3. 确定性识别（精确名 / 已知拼写变体 / 去掉日期版本后缀）
 	if pricing := lookupIdentifiedIn(s.pricingData, modelLower, lookupCandidates); pricing != nil {
-		return pricing
+		return pricing, basePricingPlatform(platforms)
 	}
 	if !allowInference {
-		return nil
+		return nil, ""
 	}
 
 	// 4. 基于模型系列匹配（Claude）
 	if pricing := s.matchByModelFamily(lookupCandidates[0]); inferredPricingCandidateAllowed(pricing) {
-		return pricing
+		return pricing, basePricingPlatform(platforms)
 	}
 
 	// 5. OpenAI 模型回退策略
 	if strings.HasPrefix(lookupCandidates[0], "gpt-") {
 		if pricing := s.matchOpenAIModel(lookupCandidates[0]); inferredPricingCandidateAllowed(pricing) {
-			return pricing
+			return pricing, basePricingPlatform(platforms)
 		}
 	}
 
-	return nil
+	return nil, ""
 }
 
 // lookupIdentifiedModelPricingLocked 只做"确定性识别"的三步查找：精确键、已知拼写
@@ -1064,6 +1086,10 @@ func (s *PricingService) GetIdentifiedModelPricing(modelName string) *LiteLLMMod
 }
 
 func (s *PricingService) GetIdentifiedModelPricingForPlatform(platform, modelName string) *LiteLLMModelPricing {
+	return s.GetIdentifiedModelPricingForPlatforms([]string{platform}, modelName)
+}
+
+func (s *PricingService) GetIdentifiedModelPricingForPlatforms(platforms []string, modelName string) *LiteLLMModelPricing {
 	if s == nil {
 		return nil
 	}
@@ -1075,9 +1101,11 @@ func (s *PricingService) GetIdentifiedModelPricingForPlatform(platform, modelNam
 		return nil
 	}
 	candidates := s.buildModelLookupCandidates(modelLower)
-	if overlay := s.platformOverrides[normalizeOverridePlatform(platform)]; len(overlay) > 0 {
-		if pricing := lookupIdentifiedIn(overlay, modelLower, candidates); pricing != nil {
-			return pricing
+	for _, platform := range normalizePricingPlatforms(platforms) {
+		if overlay := s.platformOverrides[platform]; len(overlay) > 0 {
+			if pricing := lookupIdentifiedIn(overlay, modelLower, candidates); pricing != nil {
+				return pricing
+			}
 		}
 	}
 	return lookupIdentifiedIn(s.pricingData, modelLower, candidates)

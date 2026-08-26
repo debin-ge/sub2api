@@ -270,11 +270,12 @@ func (s *GatewayService) validateExactResolvedImagePricing(
 	}
 
 	apiKey := geminiPricingGuardAPIKey(ctx)
-	if s.hasResolvableImagePricing(
+	if s.hasResolvableImagePricingForPlatforms(
 		ctx,
 		identity.Model,
 		identity.SizeTier,
 		apiKey,
+		pricingPlatformCandidates(apiKey, account),
 	) {
 		return nil
 	}

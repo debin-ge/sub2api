@@ -63,10 +63,11 @@ func NewModelPricingResolver(channelService *ChannelService, billingService *Bil
 
 // PricingInput 定价解析输入
 type PricingInput struct {
-	Model    string
-	Platform string
-	GroupID  *int64 // nil 表示不检查渠道
-	Group    *Group
+	Model     string
+	Platform  string
+	Platforms []string
+	GroupID   *int64 // nil 表示不检查渠道
+	Group     *Group
 }
 
 // Resolve 解析模型定价。
@@ -86,10 +87,7 @@ func (r *ModelPricingResolver) resolve(ctx context.Context, input PricingInput, 
 		return nil, fmt.Errorf("%w for model: %s: pricing resolver unavailable", ErrModelPricingUnavailable, input.Model)
 	}
 	longContextPricingEnabled := input.Group == nil || input.Group.LongContextPricingEnabled
-	platform := strings.TrimSpace(input.Platform)
-	if platform == "" && input.Group != nil {
-		platform = input.Group.Platform
-	}
+	platforms := pricingInputPlatforms(input)
 	if groupPricing := matchGroupModelPricing(input.Group, input.Model); groupPricing != nil {
 		// Group token cards only override the first-tier / flat rates.
 		// Long-context ladders come from official presets, gated by the checkbox.
@@ -98,7 +96,7 @@ func (r *ModelPricingResolver) resolve(ctx context.Context, input PricingInput, 
 			stripped.Intervals = nil
 			groupPricing = &stripped
 		}
-		resolved, err := r.resolveConfiguredPricing(groupPricing, platform, input.Model, PricingSourceGroup, strictTokenPricing)
+		resolved, err := r.resolveConfiguredPricing(groupPricing, platforms, input.Model, PricingSourceGroup, strictTokenPricing)
 		if err != nil {
 			return nil, err
 		}
@@ -131,7 +129,7 @@ func (r *ModelPricingResolver) resolve(ctx context.Context, input PricingInput, 
 	}
 
 	// 1. 获取基础定价
-	basePricing, source, baseErr := r.resolveBasePricing(platform, input.Model, strictTokenPricing)
+	basePricing, source, baseErr := r.resolveBasePricingForPlatforms(platforms, input.Model, strictTokenPricing)
 
 	resolved := &ResolvedPricing{
 		Mode:                   BillingModeToken,
@@ -182,11 +180,8 @@ func (r *ModelPricingResolver) ResolveStrictImageToken(
 		}
 	}
 
-	platform := strings.TrimSpace(input.Platform)
-	if platform == "" && input.Group != nil {
-		platform = input.Group.Platform
-	}
-	basePricing, baseErr := r.billingService.GetImageTokenPricingStrictForPlatform(platform, input.Model, requireImageInput)
+	platforms := pricingInputPlatforms(input)
+	basePricing, baseErr := r.billingService.GetImageTokenPricingStrictForPlatforms(platforms, input.Model, requireImageInput)
 	if baseErr != nil && !channelImageTokenPricingConfigured(channelPricing) {
 		return nil, baseErr
 	}
@@ -230,7 +225,7 @@ func (r *ModelPricingResolver) ResolveStrictImageToken(
 	return resolved, nil
 }
 
-func (r *ModelPricingResolver) resolveConfiguredPricing(config *ChannelModelPricing, platform, model, source string, strict bool) (*ResolvedPricing, error) {
+func (r *ModelPricingResolver) resolveConfiguredPricing(config *ChannelModelPricing, platforms []string, model, source string, strict bool) (*ResolvedPricing, error) {
 	mode := config.BillingMode
 	if mode == "" {
 		mode = BillingModeToken
@@ -243,7 +238,7 @@ func (r *ModelPricingResolver) resolveConfiguredPricing(config *ChannelModelPric
 		}
 		return resolved, nil
 	}
-	basePricing, _, baseErr := r.resolveBasePricing(platform, model, strict)
+	basePricing, _, baseErr := r.resolveBasePricingForPlatforms(platforms, model, strict)
 	resolved.BasePricing = basePricing
 	if strict && basePricing == nil && !channelTokenPricingConfigured(config) {
 		return nil, fmt.Errorf("%w for model: %s: incomplete explicit group pricing", ErrModelPricingUnavailable, model)
@@ -280,6 +275,10 @@ func matchGroupModelPricing(group *Group, model string) *ChannelModelPricing {
 }
 
 func (r *ModelPricingResolver) resolveBasePricing(platform, model string, strict bool) (*ModelPricing, string, error) {
+	return r.resolveBasePricingForPlatforms([]string{platform}, model, strict)
+}
+
+func (r *ModelPricingResolver) resolveBasePricingForPlatforms(platforms []string, model string, strict bool) (*ModelPricing, string, error) {
 	if r == nil || r.billingService == nil {
 		return nil, PricingSourceFallback, fmt.Errorf("%w for model: %s: billing service unavailable", ErrModelPricingUnavailable, model)
 	}
@@ -288,9 +287,9 @@ func (r *ModelPricingResolver) resolveBasePricing(platform, model string, strict
 		err     error
 	)
 	if strict {
-		pricing, err = r.billingService.GetModelPricingStrictForPlatform(platform, model)
+		pricing, err = r.billingService.GetModelPricingStrictForPlatforms(platforms, model)
 	} else {
-		pricing, err = r.billingService.GetModelPricingForPlatform(platform, model)
+		pricing, err = r.billingService.GetModelPricingForPlatforms(platforms, model)
 	}
 	if err != nil {
 		slog.Debug("failed to get model pricing",
@@ -298,6 +297,17 @@ func (r *ModelPricingResolver) resolveBasePricing(platform, model string, strict
 		return nil, PricingSourceFallback, err
 	}
 	return pricing, PricingSourceModelPrice, nil
+}
+
+func pricingInputPlatforms(input PricingInput) []string {
+	platforms := append([]string(nil), input.Platforms...)
+	if strings.TrimSpace(input.Platform) != "" {
+		platforms = append(platforms, input.Platform)
+	}
+	if input.Group != nil {
+		platforms = append(platforms, input.Group.Platform)
+	}
+	return normalizePricingPlatforms(platforms)
 }
 
 // applyChannelOverrides 应用渠道定价覆盖

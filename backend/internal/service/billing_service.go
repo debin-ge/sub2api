@@ -1312,6 +1312,10 @@ func (s *BillingService) HasIdentifiedTokenPricing(model string) bool {
 }
 
 func (s *BillingService) HasIdentifiedTokenPricingForPlatform(platform, model string) bool {
+	return s.HasIdentifiedTokenPricingForPlatforms([]string{platform}, model)
+}
+
+func (s *BillingService) HasIdentifiedTokenPricingForPlatforms(platforms []string, model string) bool {
 	if s == nil {
 		return false
 	}
@@ -1321,7 +1325,7 @@ func (s *BillingService) HasIdentifiedTokenPricingForPlatform(platform, model st
 	}
 	if s.pricingService != nil {
 		// 仅有图片价的条目不能用于 token 计费，口径与 GetModelPricing 保持一致。
-		if pricing := s.pricingService.GetIdentifiedModelPricingForPlatform(platform, model); pricing != nil && !pricing.TokenPricingAbsent {
+		if pricing := s.pricingService.GetIdentifiedModelPricingForPlatforms(platforms, model); pricing != nil && !pricing.TokenPricingAbsent {
 			return true
 		}
 	}
@@ -1335,7 +1339,11 @@ func (s *BillingService) GetModelPricing(model string) (*ModelPricing, error) {
 }
 
 func (s *BillingService) GetModelPricingForPlatform(platform, model string) (*ModelPricing, error) {
-	return s.getModelPricing(platform, model, true)
+	return s.GetModelPricingForPlatforms([]string{platform}, model)
+}
+
+func (s *BillingService) GetModelPricingForPlatforms(platforms []string, model string) (*ModelPricing, error) {
+	return s.getModelPricingForPlatforms(platforms, model, true)
 }
 
 // GetModelPricingStrict 只在模型自身配过价时返回价格，不接受跨模型推断出来的价格。
@@ -1351,7 +1359,11 @@ func (s *BillingService) GetModelPricingStrict(model string) (*ModelPricing, err
 }
 
 func (s *BillingService) GetModelPricingStrictForPlatform(platform, model string) (*ModelPricing, error) {
-	return s.getModelPricing(platform, model, false)
+	return s.GetModelPricingStrictForPlatforms([]string{platform}, model)
+}
+
+func (s *BillingService) GetModelPricingStrictForPlatforms(platforms []string, model string) (*ModelPricing, error) {
+	return s.getModelPricingForPlatforms(platforms, model, false)
 }
 
 // GetImageTokenPricingStrict resolves the exact catalog entry for an Image API
@@ -1366,11 +1378,15 @@ func (s *BillingService) GetImageTokenPricingStrict(model string, requireImageIn
 }
 
 func (s *BillingService) GetImageTokenPricingStrictForPlatform(platform, model string, requireImageInput bool) (*ModelPricing, error) {
+	return s.GetImageTokenPricingStrictForPlatforms([]string{platform}, model, requireImageInput)
+}
+
+func (s *BillingService) GetImageTokenPricingStrictForPlatforms(platforms []string, model string, requireImageInput bool) (*ModelPricing, error) {
 	model = strings.ToLower(strings.TrimSpace(model))
 	if model == "" || s == nil || s.pricingService == nil {
 		return nil, fmt.Errorf("%w for image model: %s", ErrModelPricingUnavailable, model)
 	}
-	entry := s.pricingService.LookupModelPricingStrictForPlatform(platform, model)
+	entry := s.pricingService.LookupModelPricingStrictForPlatforms(platforms, model)
 	inputConfigured := entry != nil && (entry.InputPriceExplicit ||
 		(!entry.PricePresenceKnown && entry.InputCostPerToken > 0))
 	imageOutputConfigured := entry != nil && (entry.ImageOutputPriceExplicit ||
@@ -1438,16 +1454,22 @@ func (s *BillingService) modelPricingFromCatalogEntry(model string, catalogEntry
 }
 
 func (s *BillingService) getModelPricing(platform, model string, allowInference bool) (*ModelPricing, error) {
+	return s.getModelPricingForPlatforms([]string{platform}, model, allowInference)
+}
+
+func (s *BillingService) getModelPricingForPlatforms(platforms []string, model string, allowInference bool) (*ModelPricing, error) {
 	// 标准化模型名称（转小写）
 	model = strings.ToLower(model)
+	pricingPlatform := basePricingPlatform(platforms)
 
 	// 1. 优先从动态价格服务获取
 	if s.pricingService != nil {
 		var catalogEntry *ModelPriceEntry
+		var matchedPlatform string
 		if allowInference {
-			catalogEntry = s.pricingService.GetModelPricingForPlatform(platform, model)
+			catalogEntry, matchedPlatform = s.pricingService.lookupModelPricingForPlatforms(platforms, model, true)
 		} else {
-			catalogEntry = s.pricingService.LookupModelPricingStrictForPlatform(platform, model)
+			catalogEntry, matchedPlatform = s.pricingService.lookupModelPricingForPlatforms(platforms, model, false)
 		}
 		// input/output token 价不完整的条目（如 LiteLLM 的 imagen 类模型）不能用于
 		// token 计费：直接返回会把缺失的一侧按 $0 计费。跳过后走 fallback，
@@ -1465,7 +1487,7 @@ func (s *BillingService) getModelPricing(platform, model string, allowInference 
 			// 价格目录（含管理端手动覆盖后的生效价）对 DeepSeek 官方分时 SKU 存的是
 			// 官方空闲价，高峰按北京时间翻倍。第三方中转（platform 非 deepseek）
 			// 不是官方计费口径，usesDeepSeekOfficialTimePricing 已把它挡在外面。
-			if usesDeepSeekOfficialTimePricing(platform, model) {
+			if usesDeepSeekOfficialTimePricing(matchedPlatform, model) {
 				pricing.OfficialTimePricing = true
 				pricing.OfficialTimeBaseIsOffPeak = true
 			}
@@ -1487,6 +1509,10 @@ func (s *BillingService) getModelPricing(platform, model string, allowInference 
 			log.Printf("[Billing] Using fallback pricing for model: %s", model)
 		}
 		pricing := s.applyModelSpecificPricingPolicy(model, fallback)
+		if usesDeepSeekOfficialTimePricing(pricingPlatform, model) {
+			pricing.OfficialTimePricing = true
+			pricing.OfficialTimeBaseIsOffPeak = false
+		}
 		if err := validateFiniteModelPricing(model, pricing); err != nil {
 			return nil, err
 		}
@@ -1593,6 +1619,7 @@ type CostInput struct {
 	Ctx                       context.Context
 	Model                     string
 	Platform                  string
+	Platforms                 []string
 	GroupID                   *int64 // 用于渠道定价查找
 	Group                     *Group
 	Tokens                    UsageTokens
@@ -1610,6 +1637,10 @@ type CostInput struct {
 // CalculateCostUnified 统一计费入口，支持三种计费模式。
 // 使用 ModelPricingResolver 解析定价，然后根据 BillingMode 分发计算。
 func (s *BillingService) CalculateCostUnified(input CostInput) (*CostBreakdown, error) {
+	pricingPlatform := strings.TrimSpace(input.Platform)
+	if pricingPlatform == "" {
+		pricingPlatform = basePricingPlatform(input.Platforms)
+	}
 	if input.Resolver == nil {
 		// 无 Resolver，回退到旧路径
 		applyLongContextBilling := true
@@ -1617,7 +1648,7 @@ func (s *BillingService) CalculateCostUnified(input CostInput) (*CostBreakdown, 
 			applyLongContextBilling = *input.LongContextBillingEnabled
 		}
 		breakdown, err := s.calculateCostInternalForPlatform(
-			input.Platform,
+			pricingPlatform,
 			input.Model,
 			input.Tokens,
 			input.RateMultiplier,
@@ -1626,7 +1657,7 @@ func (s *BillingService) CalculateCostUnified(input CostInput) (*CostBreakdown, 
 			applyLongContextBilling,
 		)
 		if err == nil {
-			applyCostBreakdownMultiplier(breakdown, s.officialTimeMultiplierForPlatform(input.Platform, input.Model, input.PricingAt))
+			applyCostBreakdownMultiplier(breakdown, s.officialTimeMultiplierForPlatform(pricingPlatform, input.Model, input.PricingAt))
 		}
 		return breakdown, err
 	}
@@ -1635,10 +1666,11 @@ func (s *BillingService) CalculateCostUnified(input CostInput) (*CostBreakdown, 
 	resolved := input.Resolved
 	if resolved == nil {
 		resolved = input.Resolver.Resolve(input.Ctx, PricingInput{
-			Model:    input.Model,
-			Platform: input.Platform,
-			GroupID:  input.GroupID,
-			Group:    input.Group,
+			Model:     input.Model,
+			Platform:  input.Platform,
+			Platforms: input.Platforms,
+			GroupID:   input.GroupID,
+			Group:     input.Group,
 		})
 	}
 
@@ -1701,7 +1733,11 @@ func (s *BillingService) calculateTokenCost(resolved *ResolvedPricing, input Cos
 	if err != nil {
 		return nil, err
 	}
-	applyCostBreakdownMultiplier(breakdown, resolvedTokenTimeMultiplier(resolved, pricing, input.Platform, input.Model, input.PricingAt))
+	pricingPlatform := strings.TrimSpace(input.Platform)
+	if pricingPlatform == "" {
+		pricingPlatform = basePricingPlatform(input.Platforms)
+	}
+	applyCostBreakdownMultiplier(breakdown, resolvedTokenTimeMultiplier(resolved, pricing, pricingPlatform, input.Model, input.PricingAt))
 	return breakdown, nil
 }
 
@@ -2408,6 +2444,17 @@ func (s *BillingService) CalculateImageCostStrict(
 	groupConfig *ImagePriceConfig,
 	rateMultiplier float64,
 ) (*CostBreakdown, error) {
+	return s.CalculateImageCostStrictForPlatforms(nil, model, imageSize, imageCount, groupConfig, rateMultiplier)
+}
+
+func (s *BillingService) CalculateImageCostStrictForPlatforms(
+	platforms []string,
+	model string,
+	imageSize string,
+	imageCount int,
+	groupConfig *ImagePriceConfig,
+	rateMultiplier float64,
+) (*CostBreakdown, error) {
 	if imageCount <= 0 {
 		return &CostBreakdown{}, nil
 	}
@@ -2416,7 +2463,7 @@ func (s *BillingService) CalculateImageCostStrict(
 	if err != nil {
 		return nil, err
 	}
-	unitPrice, ok := s.strictImageUnitPrice(model, imageSize, groupConfig)
+	unitPrice, ok := s.strictImageUnitPriceForPlatforms(platforms, model, imageSize, groupConfig)
 	if !ok {
 		return nil, fmt.Errorf(
 			"%w for image model %q tier %q",
@@ -2513,6 +2560,15 @@ func (s *BillingService) strictImageUnitPrice(
 	imageSize string,
 	groupConfig *ImagePriceConfig,
 ) (float64, bool) {
+	return s.strictImageUnitPriceForPlatforms(nil, model, imageSize, groupConfig)
+}
+
+func (s *BillingService) strictImageUnitPriceForPlatforms(
+	platforms []string,
+	model string,
+	imageSize string,
+	groupConfig *ImagePriceConfig,
+) (float64, bool) {
 	var err error
 	imageSize, err = NormalizeImageBillingTierStrictOrDefault(imageSize)
 	if err != nil {
@@ -2536,7 +2592,7 @@ func (s *BillingService) strictImageUnitPrice(
 	if price, ok := getDefaultGrokImagineImagePrice(model, imageSize); ok {
 		return price, true
 	}
-	basePrice, ok := s.strictCatalogMediaBasePrice(model)
+	basePrice, ok := s.strictCatalogMediaBasePriceForPlatforms(platforms, model)
 	if !ok {
 		return 0, false
 	}
@@ -2586,10 +2642,14 @@ func (s *BillingService) strictVideoUnitPrice(
 }
 
 func (s *BillingService) strictCatalogMediaBasePrice(model string) (float64, bool) {
+	return s.strictCatalogMediaBasePriceForPlatforms(nil, model)
+}
+
+func (s *BillingService) strictCatalogMediaBasePriceForPlatforms(platforms []string, model string) (float64, bool) {
 	if s == nil || s.pricingService == nil {
 		return 0, false
 	}
-	pricing := s.pricingService.LookupModelPricingStrict(strings.TrimSpace(model))
+	pricing := s.pricingService.LookupModelPricingStrictForPlatforms(platforms, strings.TrimSpace(model))
 	if pricing == nil || !isFiniteNonNegativePrice(pricing.OutputCostPerImage) ||
 		(pricing.OutputCostPerImage == 0 && !pricing.OutputCostPerImageExplicit) {
 		return 0, false

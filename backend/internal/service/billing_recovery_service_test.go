@@ -64,6 +64,20 @@ type recoveryAPIKeyRepoStub struct {
 	err   error
 }
 
+type recoveryAccountRepoStub struct {
+	accounts map[int64]*Account
+	calls    int
+	err      error
+}
+
+func (s *recoveryAccountRepoStub) GetByID(_ context.Context, id int64) (*Account, error) {
+	s.calls++
+	if s.err != nil {
+		return nil, s.err
+	}
+	return s.accounts[id], nil
+}
+
 type recoveryAggregationRefresherStub struct {
 	ranges [][2]time.Time
 	err    error
@@ -192,6 +206,62 @@ func TestBillingRecoveryRunOnce_EnforceWritesRecomputedCost(t *testing.T) {
 		got.CacheCreationCost + got.CacheReadCost + got.ImageOutputCost
 	require.InDelta(t, got.TotalCost, sum, 1e-12)
 	require.InDelta(t, got.TotalCost, report.RecoveredCost, 1e-12, "倍率为 1 时理论应收等于标准总额")
+}
+
+func TestBillingRecoveryRunOnce_UsesCompositeAndAccountPlatformOverrides(t *testing.T) {
+	const model = "deepseek-v4-flash-vision-exp"
+	for _, overridePlatform := range []string{PlatformComposite, PlatformDeepSeek} {
+		t.Run(overridePlatform, func(t *testing.T) {
+			inputPrice := 1.5e-6
+			outputPrice := 4.5e-6
+			pricingService := NewPricingService(&config.Config{}, nil)
+			pricingService.SeedCatalogForTest(map[string]*ModelPriceEntry{})
+			pricingService.SeedOverridesForTest([]ModelPriceOverride{{
+				Platform:  overridePlatform,
+				ModelName: model,
+				Enabled:   true,
+				Payload: ModelPriceOverridePayload{
+					InputCostPerToken:  &inputPrice,
+					OutputCostPerToken: &outputPrice,
+				},
+			}})
+
+			groupID := int64(86)
+			apiKeyID := int64(501)
+			accountID := int64(601)
+			log := pendingTokenLog(87, model)
+			log.APIKeyID = apiKeyID
+			log.AccountID = accountID
+			log.GroupID = &groupID
+			log.UpstreamModel = stringPtr(model)
+			repo := &recoveryUsageLogRepoStub{pages: [][]UsageLog{{log}}}
+			apiKeys := &recoveryAPIKeyRepoStub{keys: map[int64]*APIKey{
+				apiKeyID: {
+					ID:      apiKeyID,
+					GroupID: &groupID,
+					Group:   &Group{ID: groupID, Platform: PlatformComposite},
+				},
+			}}
+			accounts := &recoveryAccountRepoStub{accounts: map[int64]*Account{
+				accountID: {ID: accountID, Platform: PlatformDeepSeek},
+			}}
+			cfg := &config.Config{RunMode: config.RunModeStandard}
+			cfg.Pricing.RecoveryMode = config.PricingGuardModeEnforce
+			cfg.Pricing.RecoveryBatchSize = 10
+			billing := NewBillingService(cfg, pricingService)
+			svc := NewBillingRecoveryService(
+				cfg, repo, apiKeys, billing, nil, NewModelPricingResolver(nil, billing),
+			)
+			svc.SetAccountRepository(accounts)
+
+			report, err := svc.RunOnce(context.Background())
+			require.NoError(t, err)
+			require.Equal(t, 1, report.Recovered)
+			require.Equal(t, []int64{87}, repo.marked)
+			require.Greater(t, repo.markCost[87].TotalCost, 0.0)
+			require.Equal(t, 1, accounts.calls)
+		})
+	}
 }
 
 func TestBillingRecoveryRunOnce_ZeroMultiplierRemainsFree(t *testing.T) {
@@ -455,7 +525,7 @@ func TestBillingRecoveryRunOnce_RejectsInferredCrossModelPrice(t *testing.T) {
 	_, looseErr := svc.billingService.GetModelPricing(inferred)
 	require.NoError(t, looseErr, "前提：宽松口径确实能给这个模型推断出价格")
 
-	require.False(t, svc.hasStrictTokenPricing(context.Background(), inferred, nil),
+	require.False(t, svc.hasStrictTokenPricing(context.Background(), inferred, nil, nil),
 		"严格口径必须拒绝跨模型推断出来的价格")
 }
 
@@ -467,7 +537,7 @@ func TestBillingRecoveryRecomputeTokenCostDoesNotReintroduceFamilyFallback(t *te
 	_, looseErr := svc.billingService.GetModelPricing(inferred)
 	require.NoError(t, looseErr, "前提：旧的宽松重算能够借到家族价格")
 
-	cost, err := svc.recomputeCost(context.Background(), &log, inferred, nil)
+	cost, err := svc.recomputeCost(context.Background(), &log, inferred, nil, nil)
 
 	require.ErrorIs(t, err, ErrModelPricingUnavailable)
 	require.Nil(t, cost)

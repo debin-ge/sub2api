@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 
@@ -94,4 +95,74 @@ func TestHasResolvableTokenPricing(t *testing.T) {
 	// billingService 缺失时 fail-closed（不误判有价）
 	empty := &GatewayService{}
 	require.False(t, empty.hasResolvableTokenPricing(ctx, "claude-sonnet-4", apiKey))
+}
+
+func TestPlatformOverrideIsResolvableAndBillable(t *testing.T) {
+	const model = "deepseek-v4-flash-vision-exp"
+	inputPrice := 1.5e-6
+	outputPrice := 4.5e-6
+	pricingService := NewPricingService(&config.Config{}, nil)
+	pricingService.SeedCatalogForTest(map[string]*ModelPriceEntry{})
+	pricingService.SeedOverridesForTest([]ModelPriceOverride{{
+		Platform:  PlatformDeepSeek,
+		ModelName: model,
+		Enabled:   true,
+		Payload: ModelPriceOverridePayload{
+			InputCostPerToken:  &inputPrice,
+			OutputCostPerToken: &outputPrice,
+		},
+	}})
+	billing := NewBillingService(&config.Config{}, pricingService)
+	svc := &GatewayService{billingService: billing}
+	apiKey := &APIKey{Group: &Group{ID: 82, Platform: PlatformDeepSeek}}
+
+	require.True(t, svc.hasResolvableTokenPricing(context.Background(), model, apiKey))
+	cost, err := svc.calculateTokenCost(
+		context.Background(),
+		&ForwardResult{Usage: ClaudeUsage{InputTokens: 10, OutputTokens: 5}},
+		apiKey,
+		model,
+		1,
+		// 13:00 Beijing is off-peak, so the configured base prices apply directly.
+		time.Date(2026, time.August, 26, 5, 0, 0, 0, time.UTC),
+		&recordUsageOpts{},
+	)
+	require.NoError(t, err)
+	require.InDelta(t, 37.5e-6, cost.TotalCost, 1e-12)
+}
+
+func TestCompositeProviderOverrideIsBillable(t *testing.T) {
+	const model = "deepseek-v4-flash-vision-exp"
+	inputPrice := 1.5e-6
+	outputPrice := 4.5e-6
+	pricingService := NewPricingService(&config.Config{}, nil)
+	pricingService.SeedCatalogForTest(map[string]*ModelPriceEntry{})
+	pricingService.SeedOverridesForTest([]ModelPriceOverride{{
+		Platform:  PlatformDeepSeek,
+		ModelName: model,
+		Enabled:   true,
+		Payload: ModelPriceOverridePayload{
+			InputCostPerToken:  &inputPrice,
+			OutputCostPerToken: &outputPrice,
+		},
+	}})
+	billing := NewBillingService(&config.Config{}, pricingService)
+	svc := &GatewayService{billingService: billing}
+	apiKey := &APIKey{Group: &Group{ID: 84, Platform: PlatformComposite}}
+	platforms := pricingPlatformCandidates(apiKey, &Account{Platform: PlatformDeepSeek})
+
+	require.True(t, svc.hasResolvableTokenPricingForPlatforms(
+		context.Background(), model, apiKey, platforms,
+	))
+	cost, err := svc.calculateTokenCost(
+		context.Background(),
+		&ForwardResult{Usage: ClaudeUsage{InputTokens: 10, OutputTokens: 5}},
+		apiKey,
+		model,
+		1,
+		time.Date(2026, time.August, 26, 5, 0, 0, 0, time.UTC),
+		&recordUsageOpts{PricingPlatforms: platforms},
+	)
+	require.NoError(t, err)
+	require.InDelta(t, 37.5e-6, cost.TotalCost, 1e-12)
 }

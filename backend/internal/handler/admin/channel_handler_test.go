@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -122,6 +123,38 @@ func TestChannelToResponse_EmptyDefaults(t *testing.T) {
 	require.Len(t, resp.ModelPricing, 1)
 	require.Equal(t, "anthropic", resp.ModelPricing[0].Platform)
 	require.Equal(t, "token", resp.ModelPricing[0].BillingMode)
+}
+
+func TestGetModelDefaultPricingUsesPlatformOverride(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	const model = "deepseek-v4-flash-vision-exp"
+	inputPrice := 1.5e-6
+	outputPrice := 4.5e-6
+	pricingService := service.NewPricingService(&config.Config{}, nil)
+	pricingService.SeedCatalogForTest(map[string]*service.ModelPriceEntry{})
+	pricingService.SeedOverridesForTest([]service.ModelPriceOverride{{
+		Platform:  service.PlatformDeepSeek,
+		ModelName: model,
+		Enabled:   true,
+		Payload: service.ModelPriceOverridePayload{
+			InputCostPerToken:  &inputPrice,
+			OutputCostPerToken: &outputPrice,
+		},
+	}})
+	handler := NewChannelHandler(nil, service.NewBillingService(&config.Config{}, pricingService), pricingService)
+	router := gin.New()
+	router.GET("/model-pricing", handler.GetModelDefaultPricing)
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/model-pricing?platform=deepseek&model="+model,
+		nil,
+	)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Contains(t, w.Body.String(), `"found":true`)
+	require.Contains(t, w.Body.String(), `"input_price":0.0000015`)
 }
 
 func TestChannelToResponse_BillingModelSourcePassthrough(t *testing.T) {

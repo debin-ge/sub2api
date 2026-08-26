@@ -39,7 +39,10 @@ func (r *BatchImageModelPricingResolver) BatchImageUnitPrice(ctx context.Context
 	// borrow a known model's image-output price and pass the pre-charge check.
 	// The batch path currently consumes token-style image output pricing, so
 	// ResolveStrictToken is the matching fail-closed resolver.
-	resolved, err := r.Resolver.ResolveStrictToken(ctx, PricingInput{Model: job.Model})
+	resolved, err := r.Resolver.ResolveStrictToken(ctx, PricingInput{
+		Model:    job.Model,
+		Platform: batchImageProviderPlatform(job.Provider),
+	})
 	if err != nil || resolved == nil {
 		return 0, ErrBatchImageSettlementPricingMissing
 	}
