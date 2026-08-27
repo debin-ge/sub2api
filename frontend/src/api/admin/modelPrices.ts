@@ -97,16 +97,25 @@ export interface UpsertModelPriceRequest {
   note?: string
 }
 
+const TOKENS_PER_MTOK = 1_000_000
+const MTOK_PRICE_SIGNIFICANT_DIGITS = 15
+
 export function tokenToMTok(value: number | null | undefined): number | '' {
   if (value == null) return ''
-  return value * 1_000_000
+  const scaled = value * TOKENS_PER_MTOK
+  if (!Number.isFinite(scaled) || scaled === 0) return scaled
+
+  // Multiplying decimal token prices by 1,000,000 can expose IEEE-754 tails
+  // such as 1.9800000000000002. Keep meaningful catalog precision while
+  // normalizing those representation artifacts before rendering/editing.
+  return Number(scaled.toPrecision(MTOK_PRICE_SIGNIFICANT_DIGITS))
 }
 
 export function mTokToToken(value: string | number): number | undefined {
   if (value === '') return undefined
   const parsed = Number(value)
   if (Number.isNaN(parsed)) return undefined
-  return parsed / 1_000_000
+  return parsed / TOKENS_PER_MTOK
 }
 
 export function isImageField(field: string): boolean {

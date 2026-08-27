@@ -19,8 +19,15 @@ describe('AppHeader user menu', () => {
     expect(componentSource).toContain('computed(() => sanitizeUrl(appStore.docUrl))')
   })
 
-  it('opens the model plaza from the header', () => {
+  it('opens the model plaza from the header only when runtime access is enabled', () => {
+    expect(componentSource).toContain('v-if="showModelPlaza"')
     expect(componentSource).toContain('to="/plaza"')
     expect(componentSource).toContain("t('plaza.header.label')")
+    expect(componentSource).toContain(
+      'appStore.cachedPublicSettings?.model_plaza_enabled !== true',
+    )
+    expect(componentSource).toContain(
+      'appStore.cachedPublicSettings?.model_plaza_require_auth !== true',
+    )
   })
 })

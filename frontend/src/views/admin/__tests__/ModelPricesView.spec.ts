@@ -207,4 +207,39 @@ describe('ModelPricesView', () => {
     expect(wrapper.text()).toContain('1.5')
     expect(wrapper.text()).toContain('4.5')
   })
+
+  it('does not expose floating-point tails in DeepSeek prices', async () => {
+    listModelPrices.mockResolvedValue({
+      items: [
+        {
+          platform: 'deepseek',
+          model: 'deepseek-v4-pro',
+          source: 'override',
+          token_pricing_absent: false,
+          has_image_pricing: false,
+          sync_invalidated: false,
+          redundant: false,
+          effective: { input_cost_per_token: 0.66e-6, output_cost_per_token: 1.98e-6 },
+          overridden_fields: ['input_cost_per_token', 'output_cost_per_token'],
+          enabled: true,
+          time_schedule: {
+            kind: 'deepseek_official',
+            timezone: 'Asia/Shanghai',
+            peak_windows: ['09:00-12:00', '14:00-18:00'],
+            peak_multiplier: 2,
+            off_peak_multiplier: 1,
+          },
+        },
+      ],
+      total: 1,
+    })
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('3.96')
+    expect(wrapper.text()).toContain('1.98')
+    expect(wrapper.text()).not.toContain('3.9600000000000004')
+    expect(wrapper.text()).not.toContain('1.9800000000000002')
+  })
 })

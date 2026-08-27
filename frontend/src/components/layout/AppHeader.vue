@@ -28,6 +28,7 @@
 
         <!-- Model Plaza Link -->
         <router-link
+          v-if="showModelPlaza"
           to="/plaza"
           class="hidden items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white sm:flex"
         >
@@ -262,6 +263,10 @@ const balanceAvailableText = computed(() => t('common.availableBalance') === 'co
 const balanceFrozenText = computed(() => t('common.frozenBalance') === 'common.frozenBalance' ? '冻结金额' : t('common.frozenBalance'))
 const balanceTotalText = computed(() => t('common.totalBalance') === 'common.totalBalance' ? '总余额' : t('common.totalBalance'))
 const balanceFrozenLabel = computed(() => `${balanceFrozenText.value} ${formatHeaderMoney(frozenBalance.value)}`)
+const showModelPlaza = computed(() => {
+  if (appStore.cachedPublicSettings?.model_plaza_enabled !== true) return false
+  return authStore.isAuthenticated || appStore.cachedPublicSettings?.model_plaza_require_auth !== true
+})
 
 // 只在标准模式的管理员下显示新手引导按钮
 const showOnboardingButton = computed(() => {

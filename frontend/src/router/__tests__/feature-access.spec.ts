@@ -221,4 +221,20 @@ describe('feature route guard', () => {
     expect(next).toHaveBeenCalledOnce()
     expect(next).toHaveBeenCalledWith()
   })
+
+  it('allows an authenticated admin into an enabled model plaza', async () => {
+    authStore.isAuthenticated = true
+    authStore.isAdmin = true
+    appStore.cachedPublicSettings = {
+      model_plaza_enabled: true,
+      model_plaza_require_auth: true,
+    }
+    appStore.publicSettingsLoaded = true
+
+    const { navigation, next } = runGuard({ requiresAuth: false }, '/plaza')
+    await navigation
+
+    expect(next).toHaveBeenCalledOnce()
+    expect(next).toHaveBeenCalledWith()
+  })
 })

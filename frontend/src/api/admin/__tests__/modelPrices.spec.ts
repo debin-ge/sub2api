@@ -24,7 +24,10 @@ import zhModelPrices from '@/i18n/locales/zh/admin/modelPrices'
 describe('model price helpers', () => {
   it('converts token prices to MTok and back, keeping explicit zero', () => {
     expect(tokenToMTok(3e-6)).toBe(3)
+    expect(tokenToMTok(1.98e-6)).toBe(1.98)
+    expect(tokenToMTok(3.96e-6)).toBe(3.96)
     expect(mTokToToken('3')).toBeCloseTo(3e-6)
+    expect(mTokToToken('1.98')).toBeCloseTo(1.98e-6)
     expect(tokenToMTok(0)).toBe(0)
     expect(mTokToToken('0')).toBe(0)
     expect(mTokToToken('')).toBeUndefined()
