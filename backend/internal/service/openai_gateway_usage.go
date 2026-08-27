@@ -169,6 +169,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	if !isGrokVideoUsageResult(result, nil) {
 		ApplyOpenAIImageBillingResolution(result)
 	}
+	logServiceTierBillingDowngrade("service.openai_gateway", account, result.RequestID, ApplyOpenAIServiceTierBillingResolution(result))
 
 	// OpenAI input_tokens 是总输入，包含缓存读取和缓存写入明细。
 	// 将三类 token 拆成互斥桶，避免缓存写入同时按普通输入和 cache_write 重复计费。
@@ -570,18 +571,12 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	return nil
 }
 
-// hasIdentifiedOpenAIResponsePricing 判断上游自报的响应模型是否可以作为计费基准，
+// hasIdentifiedOpenAIResponsePricingForPlatforms 判断上游自报的响应模型是否可以作为计费基准，
 // 并回传它是否解析到了渠道级定价（供 responseModelBillingAdoptable 的跨定价源守卫使用，
 // 避免为此再解析一次）。
 // 只接受管理员为该模型显式配置的渠道定价，或价格表中能被确定性识别的条目；
 // 刻意不接受按子串猜出来的系列兜底价，否则上游随便编一个含 "haiku" 的名字就能把
 // 计费拉到最便宜的系列价上。详见 responseModelBillingDeclaration。
-func (s *OpenAIGatewayService) hasIdentifiedOpenAIResponsePricing(ctx context.Context, model string, apiKey *APIKey) (identified bool, channelPriced bool) {
-	return s.hasIdentifiedOpenAIResponsePricingForPlatforms(
-		ctx, model, apiKey, []string{PlatformFromAPIKey(apiKey)},
-	)
-}
-
 func (s *OpenAIGatewayService) hasIdentifiedOpenAIResponsePricingForPlatforms(
 	ctx context.Context,
 	model string,
@@ -1472,7 +1467,9 @@ func (s *OpenAIGatewayService) updateCodexUsageSnapshot(ctx context.Context, acc
 	go func() {
 		updateCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		_ = s.accountRepo.UpdateExtra(updateCtx, accountID, updates)
+		if err := s.accountRepo.UpdateExtra(updateCtx, accountID, updates); err == nil {
+			notifyOpenAIAutoReset(accountID)
+		}
 	}()
 }
 

@@ -21,20 +21,10 @@ type OpenAIImageBillingPlan struct {
 	Resolved          *ResolvedPricing
 }
 
-// hasResolvableOpenAIImageTokenPricing is the scheduler-level candidate check.
-// The exact image tier and price snapshot are resolved again immediately before
-// forwarding. Native Responses image tools do not use this function for their
-// final guard.
-func (s *OpenAIGatewayService) hasResolvableOpenAIImageTokenPricing(
-	ctx context.Context,
-	groupID *int64,
-	model string,
-) bool {
-	return s.hasResolvableOpenAIImageTokenPricingForPlatforms(
-		ctx, groupID, []string{PlatformFromAPIKey(openAIPricingGuardAPIKey(ctx, groupID))}, model,
-	)
-}
-
+// hasResolvableOpenAIImageTokenPricingForPlatforms is the scheduler-level
+// candidate check. The exact image tier and price snapshot are resolved again
+// immediately before forwarding. Native Responses image tools do not use this
+// function for their final guard.
 func (s *OpenAIGatewayService) hasResolvableOpenAIImageTokenPricingForPlatforms(
 	ctx context.Context,
 	groupID *int64,

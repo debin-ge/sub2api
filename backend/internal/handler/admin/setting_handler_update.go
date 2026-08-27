@@ -356,6 +356,14 @@ type UpdateSettingsRequest struct {
 	// Available Channels feature switch (user-facing)
 	AvailableChannelsEnabled *bool `json:"available_channels_enabled"`
 
+	// Model Plaza feature switches + description
+	ModelPlazaEnabled     *bool   `json:"model_plaza_enabled"`
+	ModelPlazaRequireAuth *bool   `json:"model_plaza_require_auth"`
+	ModelPlazaDescription *string `json:"model_plaza_description"`
+
+	// Plugin management menu visibility switch; plugin runtime is unaffected.
+	PluginManagementEnabled *bool `json:"plugin_management_enabled"`
+
 	// Affiliate (邀请返利) feature switch
 	AffiliateEnabled *bool `json:"affiliate_enabled"`
 
@@ -1992,6 +2000,30 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.AvailableChannelsEnabled
 		}(),
+		ModelPlazaEnabled: func() bool {
+			if req.ModelPlazaEnabled != nil {
+				return *req.ModelPlazaEnabled
+			}
+			return previousSettings.ModelPlazaEnabled
+		}(),
+		ModelPlazaRequireAuth: func() bool {
+			if req.ModelPlazaRequireAuth != nil {
+				return *req.ModelPlazaRequireAuth
+			}
+			return previousSettings.ModelPlazaRequireAuth
+		}(),
+		ModelPlazaDescription: func() string {
+			if req.ModelPlazaDescription != nil {
+				return *req.ModelPlazaDescription
+			}
+			return previousSettings.ModelPlazaDescription
+		}(),
+		PluginManagementEnabled: func() bool {
+			if req.PluginManagementEnabled != nil {
+				return *req.PluginManagementEnabled
+			}
+			return previousSettings.PluginManagementEnabled
+		}(),
 		AffiliateEnabled: func() bool {
 			if req.AffiliateEnabled != nil {
 				return *req.AffiliateEnabled
@@ -2421,6 +2453,11 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		GrokDefaultBaseURLMode:         updatedSettings.GrokDefaultBaseURLMode,
 
 		AvailableChannelsEnabled: updatedSettings.AvailableChannelsEnabled,
+
+		ModelPlazaEnabled:       updatedSettings.ModelPlazaEnabled,
+		ModelPlazaRequireAuth:   updatedSettings.ModelPlazaRequireAuth,
+		ModelPlazaDescription:   updatedSettings.ModelPlazaDescription,
+		PluginManagementEnabled: updatedSettings.PluginManagementEnabled,
 
 		AffiliateEnabled: updatedSettings.AffiliateEnabled,
 

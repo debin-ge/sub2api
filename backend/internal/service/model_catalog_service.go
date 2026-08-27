@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -283,7 +284,7 @@ func (s *ModelCatalogService) ListForAccount(ctx context.Context, account *Accou
 		return nil, newUpstreamModelSyncConfigError("Account is required for model catalog resolution", nil)
 	}
 
-	defaults := DefaultModelCatalogIDs(account.Platform)
+	defaults := defaultModelCatalogIDsForAccount(account)
 	fallback := configuredOrDefaultAccountModels(account, defaults)
 	if !accountRequiresLiveCatalog(account) {
 		return fallback, nil
@@ -344,7 +345,7 @@ func (s *ModelCatalogService) RefreshAccount(ctx context.Context, account *Accou
 
 func (s *ModelCatalogService) refreshAccountForGeneration(ctx context.Context, account *Account, generation uint64) ([]string, error) {
 	if !accountRequiresLiveCatalog(account) {
-		return configuredOrDefaultAccountModels(account, DefaultModelCatalogIDs(account.Platform)), nil
+		return configuredOrDefaultAccountModels(account, defaultModelCatalogIDsForAccount(account)), nil
 	}
 	if s == nil || s.discoverer == nil {
 		recordModelCatalogRefresh(account.Platform, false)
@@ -843,7 +844,7 @@ func (s *ModelCatalogService) listForAccountPassive(account *Account) []string {
 	if account == nil {
 		return nil
 	}
-	defaults := DefaultModelCatalogIDs(account.Platform)
+	defaults := defaultModelCatalogIDsForAccount(account)
 	fallback := configuredOrDefaultAccountModels(account, defaults)
 	if !accountRequiresLiveCatalog(account) || s == nil || s.cache == nil {
 		return fallback
@@ -878,6 +879,20 @@ func accountRequiresLiveCatalog(account *Account) bool {
 			providerSupportsLiveModelDiscovery(account.Platform) &&
 			(account.IsProviderPassthroughEnabled() || len(account.GetModelMapping()) == 0)
 	}
+}
+
+func defaultModelCatalogIDsForAccount(account *Account) []string {
+	if account == nil {
+		return nil
+	}
+	if account.IsGeminiGoogleOne() {
+		ids := make([]string, 0, len(geminicli.GoogleOneModels))
+		for _, model := range geminicli.GoogleOneModels {
+			ids = append(ids, model.ID)
+		}
+		return ids
+	}
+	return DefaultModelCatalogIDs(account.Platform)
 }
 
 func configuredOrDefaultAccountModels(account *Account, defaults []string) []string {

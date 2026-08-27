@@ -150,7 +150,7 @@ func TestCNProviderBalanceService_DoesNotTreatMissingDeepSeekBalanceSchemaAsZero
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.False(t, result.Success)
-	require.Contains(t, result.Error, "missing valid balance_infos")
+	require.Contains(t, result.Error, "missing balance_infos")
 }
 
 func TestCNProviderBalanceService_DoesNotTreatMissingKimiBalanceSchemaAsZero(t *testing.T) {

@@ -125,7 +125,8 @@ linters:
     rules:
       # 测试代码豁免 errcheck 与 gosec：
       # - errcheck 主要命中测试中的类型断言，断言失败即 panic，本身就是测试失败信号
-      # - gosec 命中的是测试桩指向本地 httptest 服务器的请求
+      # - gosec G703/G704 命中测试桩指向本地 httptest 服务器或测试者自设路径，
+      #   跨环境结果不稳定；生产代码仍需逐点 nolint 并说明信任边界
       - path: '_test\.go$'
         linters:
           - errcheck

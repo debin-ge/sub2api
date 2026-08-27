@@ -986,7 +986,7 @@ const responseModelBillingCostEpsilon = 1e-12
 //     token 价的模型名去决定媒体单价。新增按次计费形态时必须同步扩这个入参。
 //
 // 调用方还必须额外满足两条：模型能被价格表确定性识别（见
-// hasIdentifiedResponseModelPricing / hasIdentifiedOpenAIResponsePricing），以及通过
+// hasIdentifiedResponseModelPricing / hasIdentifiedOpenAIResponsePricingForPlatforms），以及通过
 // responseModelBillingAdoptable 的成本准入。
 func responseModelBillingDeclaration(source, responseModel string, conflict, mediaBilled bool) string {
 	if source != BillingModelSourceResponse || conflict || mediaBilled {
@@ -1079,6 +1079,7 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 	}
 	opts.PricingPlatforms = pricingPlatformCandidates(apiKey, account)
 	ApplyForwardImageBillingResolution(result)
+	logServiceTierBillingDowngrade("service.gateway", account, result.RequestID, ApplyForwardServiceTierBillingResolution(result))
 
 	// 强制缓存计费：将 input_tokens 转为 cache_read_input_tokens
 	// 用于粘性会话切换时的特殊计费处理
@@ -1439,12 +1440,6 @@ func (s *GatewayService) compositeImageBillableModel(
 // 查不到严格价格（完整显式渠道价或模型自己的全局价）时，按序回退到实际转发的
 // 具体模型，避免把另一个 SKU 的 family 模糊价套到当前用量上。所有候选都无价时
 // 保持原值，由后扣阶段 fail-loud 并持久化为待结算。
-func (s *GatewayService) billableModelWithFallback(ctx context.Context, apiKey *APIKey, billingModel string, fallbacks ...string) string {
-	return s.billableModelWithFallbackForPlatforms(
-		ctx, apiKey, []string{PlatformFromAPIKey(apiKey)}, billingModel, fallbacks...,
-	)
-}
-
 func (s *GatewayService) billableModelWithFallbackForPlatforms(
 	ctx context.Context,
 	apiKey *APIKey,
@@ -1471,18 +1466,6 @@ func (s *GatewayService) billableModelWithFallbackForPlatforms(
 // billableImageModelWithFallback applies the same fallback policy using the
 // actual media tier. It deliberately does not ask the token catalog first:
 // image-only SKUs commonly have no token price.
-func (s *GatewayService) billableImageModelWithFallback(
-	ctx context.Context,
-	apiKey *APIKey,
-	billingModel string,
-	imageSize string,
-	fallbacks ...string,
-) string {
-	return s.billableImageModelWithFallbackForPlatforms(
-		ctx, apiKey, []string{PlatformFromAPIKey(apiKey)}, billingModel, imageSize, fallbacks...,
-	)
-}
-
 func (s *GatewayService) billableImageModelWithFallbackForPlatforms(
 	ctx context.Context,
 	apiKey *APIKey,
@@ -1511,17 +1494,6 @@ func (s *GatewayService) billableImageModelWithFallbackForPlatforms(
 		}
 	}
 	return billingModel
-}
-
-func (s *GatewayService) hasResolvableImagePricing(
-	ctx context.Context,
-	model string,
-	imageSize string,
-	apiKey *APIKey,
-) bool {
-	return s.hasResolvableImagePricingForPlatforms(
-		ctx, model, imageSize, apiKey, []string{PlatformFromAPIKey(apiKey)},
-	)
 }
 
 func (s *GatewayService) hasResolvableImagePricingForPlatforms(
@@ -1579,12 +1551,6 @@ func (s *GatewayService) hasResolvableImagePricingForPlatforms(
 // hasResolvableTokenPricing only accepts a complete explicit channel price or
 // a strict global match for the model itself. Cross-SKU family/OpenAI inference
 // is not settlement evidence.
-func (s *GatewayService) hasResolvableTokenPricing(ctx context.Context, model string, apiKey *APIKey) bool {
-	return s.hasResolvableTokenPricingForPlatforms(
-		ctx, model, apiKey, []string{PlatformFromAPIKey(apiKey)},
-	)
-}
-
 func (s *GatewayService) hasResolvableTokenPricingForPlatforms(
 	ctx context.Context,
 	model string,
@@ -1627,12 +1593,6 @@ func (s *GatewayService) hasResolvableTokenPricingForPlatforms(
 // 与 hasResolvableTokenPricing 的区别是刻意更严：只接受管理员为该模型显式配置的
 // 渠道定价，或价格表中能被确定性识别的条目；不接受按子串猜出来的系列兜底价。
 // 详见 responseModelBillingDeclaration 的说明。
-func (s *GatewayService) hasIdentifiedResponseModelPricing(ctx context.Context, model string, apiKey *APIKey) (identified bool, channelPriced bool) {
-	return s.hasIdentifiedResponseModelPricingForPlatforms(
-		ctx, model, apiKey, []string{PlatformFromAPIKey(apiKey)},
-	)
-}
-
 func (s *GatewayService) hasIdentifiedResponseModelPricingForPlatforms(
 	ctx context.Context,
 	model string,
@@ -1744,7 +1704,8 @@ func (s *GatewayService) calculateImageCost(
 	)
 }
 
-// calculateTokenCost 计算 Token 计费：根据 opts 决定走普通/长上下文/渠道统一计费。
+// calculateTokenCost 计算 Token 计费：路径选择（分组/渠道定价 → 旧长上下文规则 → 内置定价）
+// 统一交给 BillingService.CalculateTokenCostForRequest，与模型广场的阶梯表查询同源。
 func (s *GatewayService) calculateTokenCost(
 	ctx context.Context,
 	result *ForwardResult,
@@ -1774,68 +1735,55 @@ func (s *GatewayService) calculateTokenCost(
 	if len(platforms) == 0 {
 		platforms = []string{PlatformFromAPIKey(apiKey)}
 	}
-
-	// Explicit group/channel pricing wins. Otherwise, use the strict model
-	// catalog below and apply the request-specific long-context split there.
-	if resolved := s.resolveChannelPricingForPlatforms(ctx, billingModel, apiKey, platforms); resolved != nil {
-		if s.resolver == nil || apiKey == nil || apiKey.Group == nil {
-			return nil, fmt.Errorf(
-				"%w for model %q: channel pricing resolver unavailable",
-				ErrModelPricingUnavailable,
-				billingModel,
-			)
-		}
-		gid := apiKey.Group.ID
-		// Group 必须传：解析器要靠它拿到平台，才能命中平台级手动覆盖价。
-		// 漏传会让同一模型走 /v1/messages 与 /v1/chat/completions 扣费不一致。
-		strictResolved, err := s.resolver.ResolveStrictToken(ctx, PricingInput{
-			Model:     billingModel,
-			Platforms: platforms,
-			GroupID:   &gid,
-			Group:     apiKey.Group,
-		})
+	serviceTier := optionalStringValue(result.ServiceTier)
+	if s.resolver == nil || apiKey == nil || apiKey.Group == nil {
+		pricing, err := s.billingService.GetModelPricingStrictForPlatforms(platforms, billingModel)
 		if err != nil {
 			return nil, err
 		}
-		cost, err := s.billingService.CalculateCostUnified(CostInput{
-			Ctx:            ctx,
-			Model:          billingModel,
-			GroupID:        &gid,
-			Group:          apiKey.Group,
-			Platforms:      platforms,
-			Tokens:         tokens,
-			RequestCount:   1,
-			RateMultiplier: multiplier,
-			PricingAt:      pricingAt,
-			ServiceTier:    optionalStringValue(result.ServiceTier),
-			Resolver:       s.resolver,
-			Resolved:       strictResolved,
-		})
+		cost, err := s.calculateStrictTokenCostWithLongContext(
+			billingModel, pricing, tokens, multiplier, serviceTier, opts,
+		)
 		if err != nil {
 			return nil, err
 		}
+		if officialTimePricingApplies(pricing) {
+			applyCostBreakdownMultiplier(cost, deepSeekOfficialTimeMultiplier(
+				basePricingPlatform(platforms), billingModel, pricingAt, pricing.OfficialTimeBaseIsOffPeak))
+		}
+		cost.BillingMode = string(BillingModeToken)
 		return cost, nil
 	}
 
-	pricing, err := s.billingService.GetModelPricingStrictForPlatforms(platforms, billingModel)
+	gid := apiKey.Group.ID
+	resolved, err := s.resolver.ResolveStrictToken(ctx, PricingInput{
+		Model: billingModel, Platforms: platforms, GroupID: &gid, Group: apiKey.Group,
+	})
 	if err != nil {
 		logger.LegacyPrintf("service.gateway", "Resolve strict model pricing failed: %v", err)
 		return nil, err
 	}
-	cost, err := s.calculateStrictTokenCostWithLongContext(
-		billingModel,
-		pricing,
-		tokens,
-		multiplier,
-		opts,
-	)
-	if err != nil {
-		return nil, err
+	var legacy *LegacyLongContextRule
+	if opts != nil && opts.LongContextThreshold > 0 {
+		legacy = &LegacyLongContextRule{Threshold: opts.LongContextThreshold, Multiplier: opts.LongContextMultiplier}
 	}
-	// 峰谷倍率只作用在官方报价上；基准价是空闲档还是高峰档由 pricing 自己带着。
-	if officialTimePricingApplies(pricing) {
-		applyCostBreakdownMultiplier(cost, deepSeekOfficialTimeMultiplier(
-			basePricingPlatform(platforms), billingModel, pricingAt, pricing.OfficialTimeBaseIsOffPeak))
+
+	cost, err := s.billingService.CalculateTokenCostForRequest(TokenCostRequest{
+		Ctx:               ctx,
+		Model:             billingModel,
+		Platforms:         platforms,
+		Group:             apiKey.Group,
+		Tokens:            tokens,
+		RateMultiplier:    multiplier,
+		PricingAt:         pricingAt,
+		ServiceTier:       serviceTier,
+		Resolver:          s.resolver,
+		Resolved:          resolved,
+		LegacyLongContext: legacy,
+	})
+	if err != nil {
+		logger.LegacyPrintf("service.gateway", "Calculate token cost failed: %v", err)
+		return nil, err
 	}
 	cost.BillingMode = string(BillingModeToken)
 	return cost, nil
@@ -1846,6 +1794,7 @@ func (s *GatewayService) calculateStrictTokenCostWithLongContext(
 	pricing *ModelPricing,
 	tokens UsageTokens,
 	rateMultiplier float64,
+	serviceTier string,
 	opts *recordUsageOpts,
 ) (*CostBreakdown, error) {
 	if opts == nil || opts.LongContextThreshold <= 0 || opts.LongContextMultiplier <= 1 {
@@ -1854,7 +1803,7 @@ func (s *GatewayService) calculateStrictTokenCostWithLongContext(
 			pricing,
 			tokens,
 			rateMultiplier,
-			"",
+			serviceTier,
 			true,
 		)
 	}
@@ -1866,7 +1815,7 @@ func (s *GatewayService) calculateStrictTokenCostWithLongContext(
 			pricing,
 			tokens,
 			rateMultiplier,
-			"",
+			serviceTier,
 			true,
 		)
 	}
@@ -1913,7 +1862,7 @@ func (s *GatewayService) calculateStrictTokenCostWithLongContext(
 		pricing,
 		inRangeTokens,
 		rateMultiplier,
-		"",
+		serviceTier,
 		true,
 	)
 	if err != nil {
@@ -1928,7 +1877,7 @@ func (s *GatewayService) calculateStrictTokenCostWithLongContext(
 			CacheReadTokens:  outRangeCacheTokens,
 		},
 		rateMultiplier*opts.LongContextMultiplier,
-		"",
+		serviceTier,
 		true,
 	)
 	if err != nil {
@@ -1946,6 +1895,14 @@ func (s *GatewayService) calculateStrictTokenCostWithLongContext(
 		ActualCost:                inRangeCost.ActualCost + outRangeCost.ActualCost,
 		LongContextBillingApplied: outRangeCost.ActualCost > 0,
 	}, nil
+}
+
+// LegacyLongContextRule 透传 BillingService 的平台旧长上下文规则，供入口 handler 取用。
+func (s *GatewayService) LegacyLongContextRule(platform string) *LegacyLongContextRule {
+	if s == nil || s.billingService == nil {
+		return nil
+	}
+	return s.billingService.LegacyLongContextRule(platform)
 }
 
 // buildRecordUsageLog 构建使用日志并设置计费模式。

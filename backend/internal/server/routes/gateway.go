@@ -116,7 +116,9 @@ func RegisterGatewayRoutes(
 		}
 	}
 	videoGenerationHandler := func(c *gin.Context) {
-		if getGroupPlatform(c) == service.PlatformGrok {
+		// Video status/content lookups already allow Composite groups; keep task
+		// creation aligned so composite keys can route to Grok accounts.
+		if platform := getGroupPlatform(c); platform == service.PlatformGrok || platform == service.PlatformComposite {
 			h.CompatibleGateway.GrokVideoGeneration(c)
 			return
 		}

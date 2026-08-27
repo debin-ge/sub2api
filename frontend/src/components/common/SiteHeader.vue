@@ -108,6 +108,10 @@ const siteLogo = computed(() => sanitizeUrl(
 ))
 const isAuthenticated = computed(() => authStore.isAuthenticated)
 const dashboardPath = computed(() => (authStore.isAdmin ? '/admin/dashboard' : '/dashboard'))
+const showPlaza = computed(() => {
+	if (appStore.cachedPublicSettings?.model_plaza_enabled !== true) return false
+	return isAuthenticated.value || appStore.cachedPublicSettings?.model_plaza_require_auth !== true
+})
 
 const crossLinks = computed(() => {
   const all = [
@@ -115,7 +119,7 @@ const crossLinks = computed(() => {
     { key: 'plaza', to: '/plaza', label: t('plaza.header.label') },
     { key: 'docs', to: '/docs', label: t('plaza.header.docs') },
   ]
-  return all.filter((link) => link.key !== props.current)
+  return all.filter((link) => link.key !== props.current && (link.key !== 'plaza' || showPlaza.value))
 })
 
 const isDark = ref(document.documentElement.classList.contains('dark'))

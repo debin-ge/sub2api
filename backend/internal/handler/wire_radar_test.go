@@ -37,6 +37,7 @@ func TestProvideHandlersIncludesRadarHandler(t *testing.T) {
 		BuildInfo{}, // buildInfo
 		nil,         // idempotencyCoordinator
 		nil,         // idempotencyCleanupService
+		nil,         // openAIQuotaAutoResetService
 	)
 
 	require.Same(t, radar, handlers.Radar)

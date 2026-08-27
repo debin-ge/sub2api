@@ -37,7 +37,7 @@ func TestResolve_NoGroupID(t *testing.T) {
 	require.Equal(t, BillingModeToken, resolved.Mode)
 	require.NotNil(t, resolved.BasePricing)
 	require.InDelta(t, 3e-6, resolved.BasePricing.InputPricePerToken, 1e-12)
-	// BillingService.GetModelPricing uses fallback internally, but resolveBasePricing
+	// BillingService.GetModelPricing uses fallback internally, but resolveBasePricingForPlatforms
 	// reports "model_price" when GetModelPricing succeeds (regardless of internal source)
 	require.Equal(t, "model_price", resolved.Source)
 }
@@ -432,7 +432,7 @@ func TestResolve_WithChannelOverride_TokenNilBasePricing(t *testing.T) {
 
 	require.NotNil(t, resolved)
 	require.Equal(t, "channel", resolved.Source)
-	// BasePricing was nil from resolveBasePricing but applyTokenOverrides creates a new one
+	// BasePricing was nil from resolveBasePricingForPlatforms but applyTokenOverrides creates a new one
 	require.NotNil(t, resolved.BasePricing)
 	require.InDelta(t, 7e-6, resolved.BasePricing.InputPricePerToken, 1e-12)
 	require.InDelta(t, 21e-6, resolved.BasePricing.OutputPricePerToken, 1e-12)

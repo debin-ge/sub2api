@@ -283,21 +283,10 @@ func (s *OpenAIGatewayService) hasResolvableOpenAIMediaPricingForPlatforms(
 	return false
 }
 
-// hasResolvableOpenAIImageTierPricing mirrors calculateOpenAIImageCost for the
-// exact tier already resolved from the Responses request. Requiring every
-// possible tier here would reject a request whose selected tier has a valid
-// group or channel price even though post-settlement can charge it exactly.
-func (s *OpenAIGatewayService) hasResolvableOpenAIImageTierPricing(
-	ctx context.Context,
-	groupID *int64,
-	models openAIPricingGuardModels,
-	imageSizeTier string,
-) bool {
-	return s.hasResolvableOpenAIImageTierPricingForPlatforms(
-		ctx, groupID, []string{PlatformFromAPIKey(openAIPricingGuardAPIKey(ctx, groupID))}, models, imageSizeTier,
-	)
-}
-
+// hasResolvableOpenAIImageTierPricingForPlatforms mirrors calculateOpenAIImageCost
+// for the exact tier already resolved from the Responses request. Requiring every
+// possible tier here would reject a request whose selected tier has a valid group
+// or channel price even though post-settlement can charge it exactly.
 func (s *OpenAIGatewayService) hasResolvableOpenAIImageTierPricingForPlatforms(
 	ctx context.Context,
 	groupID *int64,
@@ -436,10 +425,6 @@ func (s *OpenAIGatewayService) hasCompleteOpenAIChannelMediaPricing(
 	return true
 }
 
-func (s *OpenAIGatewayService) catalogHasExactImagePricing(model string, imageSizeTier string) bool {
-	return s.catalogHasExactImagePricingForPlatforms(nil, model, imageSizeTier)
-}
-
 func (s *OpenAIGatewayService) catalogHasExactImagePricingForPlatforms(platforms []string, model string, imageSizeTier string) bool {
 	model = strings.TrimSpace(model)
 	tier, ok := ClassifyImageBillingTier(imageSizeTier)
@@ -450,14 +435,10 @@ func (s *OpenAIGatewayService) catalogHasExactImagePricingForPlatforms(platforms
 	return ok
 }
 
-// catalogHasMediaPricing 判断价格目录里是否有该模型的真实媒体单价。
+// catalogHasMediaPricingForPlatforms 判断价格目录里是否有该模型的真实媒体单价。
 //
 // 注意这里刻意**不**调用 getDefaultImagePrice：那个函数在查不到任何价格时会返回
 // defaultImageGenerationPrice（$0.134）这个通用占位值，用它判断"有没有价"会恒真。
-func (s *OpenAIGatewayService) catalogHasMediaPricing(model string, kind BillingKind) bool {
-	return s.catalogHasMediaPricingForPlatforms(nil, model, kind)
-}
-
 func (s *OpenAIGatewayService) catalogHasMediaPricingForPlatforms(platforms []string, model string, kind BillingKind) bool {
 	model = strings.TrimSpace(model)
 	if model == "" || s == nil || s.billingService == nil {

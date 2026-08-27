@@ -15,6 +15,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/domain"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai_compat"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 )
@@ -370,6 +371,12 @@ func (a *Account) IsGeminiCodeAssist() bool {
 	return oauthType == "code_assist"
 }
 
+// IsGeminiGoogleOne reports whether this account uses the legacy consumer
+// Gemini CLI / Code Assist OAuth channel.
+func (a *Account) IsGeminiGoogleOne() bool {
+	return a.Platform == PlatformGemini && a.Type == AccountTypeOAuth && a.GeminiOAuthType() == "google_one"
+}
+
 func (a *Account) CanGetUsage() bool {
 	return a.Type == AccountTypeOAuth
 }
@@ -671,6 +678,9 @@ func (a *Account) resolveModelMapping(rawMapping map[string]any) map[string]stri
 		return nil
 	}
 	if len(rawMapping) == 0 {
+		if a.IsGeminiGoogleOne() {
+			return geminicli.GoogleOneModelMapping()
+		}
 		// Antigravity 平台使用默认映射
 		if a.Platform == domain.PlatformAntigravity {
 			return domain.DefaultAntigravityModelMapping
@@ -705,6 +715,9 @@ func (a *Account) resolveModelMapping(rawMapping map[string]any) map[string]stri
 	}
 
 	// Antigravity 平台使用默认映射
+	if a.IsGeminiGoogleOne() {
+		return geminicli.GoogleOneModelMapping()
+	}
 	if a.Platform == domain.PlatformAntigravity {
 		return domain.DefaultAntigravityModelMapping
 	}
@@ -1728,6 +1741,19 @@ func (a *Account) IsOpenAIOAuth() bool {
 	return a.IsOpenAI() && a.Type == AccountTypeOAuth
 }
 
+// IsOpenAIOAuthLike reports OpenAI credentials that use the ChatGPT/Codex
+// inference protocol. Setup tokens share that forwarding contract but do not
+// participate in the refreshable OAuth credential lifecycle.
+func (a *Account) IsOpenAIOAuthLike() bool {
+	return a != nil && a.IsOpenAI() && (a.Type == AccountTypeOAuth || a.Type == AccountTypeSetupToken)
+}
+
+// UsesOpenAICodexProtocol preserves legacy OpenAI gateway OAuth routing for
+// accounts whose platform is implicit, while adding OpenAI SetupToken.
+func (a *Account) UsesOpenAICodexProtocol() bool {
+	return a != nil && (a.Type == AccountTypeOAuth || a.IsOpenAIOAuthLike())
+}
+
 func (a *Account) IsOpenAIChatGPTSubscription() bool {
 	if !a.IsOpenAIOAuth() {
 		return false
@@ -2076,14 +2102,14 @@ func (a *Account) GetOpenAIUserAgent() string {
 }
 
 func (a *Account) GetChatGPTAccountID() string {
-	if !a.IsOpenAIOAuth() {
+	if !a.IsOpenAIOAuthLike() {
 		return ""
 	}
 	return a.GetCredential("chatgpt_account_id")
 }
 
 func (a *Account) IsChatGPTAccountFedRAMP() bool {
-	if !a.IsOpenAIOAuth() || a.Credentials == nil {
+	if !a.IsOpenAIOAuthLike() || a.Credentials == nil {
 		return false
 	}
 	v, ok := a.Credentials["chatgpt_account_is_fedramp"]
@@ -2257,18 +2283,30 @@ func (a *Account) openAIEndpointCapabilitySet() (map[string]bool, bool) {
 		result[value] = true
 	}
 
+	// 空容器（{} / []）与未配置一致：不限制任何能力。
+	// 避免 OAuth 账号因 API 直写/导入/历史数据遗留的空对象而被调度器静默排除（#5530）。
+	// 注意：非空但全 false / 类型异常的数据仍视为「已配置且不含能力」，保持原行为。
 	switch capabilities := raw.(type) {
 	case []any:
+		if len(capabilities) == 0 {
+			return nil, false
+		}
 		for _, item := range capabilities {
 			if value, ok := item.(string); ok {
 				add(value)
 			}
 		}
 	case []string:
+		if len(capabilities) == 0 {
+			return nil, false
+		}
 		for _, value := range capabilities {
 			add(value)
 		}
 	case map[string]any:
+		if len(capabilities) == 0 {
+			return nil, false
+		}
 		for key, value := range capabilities {
 			enabled, ok := value.(bool)
 			if ok && enabled {
@@ -2276,6 +2314,9 @@ func (a *Account) openAIEndpointCapabilitySet() (map[string]bool, bool) {
 			}
 		}
 	case map[string]bool:
+		if len(capabilities) == 0 {
+			return nil, false
+		}
 		for key, enabled := range capabilities {
 			if enabled {
 				add(key)
@@ -2295,7 +2336,7 @@ func (a *Account) SupportsOpenAIImageCapability(capability OpenAIImagesCapabilit
 	}
 	switch capability {
 	case OpenAIImagesCapabilityBasic, OpenAIImagesCapabilityNative:
-		return a.Type == AccountTypeOAuth || a.Type == AccountTypeAPIKey
+		return a.Type == AccountTypeOAuth || a.Type == AccountTypeSetupToken || a.Type == AccountTypeAPIKey
 	default:
 		return true
 	}
@@ -2398,7 +2439,7 @@ func (a *Account) IsOpenAIResponsesWebSocketV2Enabled() bool {
 	if a == nil || !a.IsOpenAI() || a.Extra == nil {
 		return false
 	}
-	if a.IsOpenAIOAuth() {
+	if a.IsOpenAIOAuthLike() {
 		if enabled, ok := a.Extra["openai_oauth_responses_websockets_v2_enabled"].(bool); ok {
 			return enabled
 		}
@@ -2502,7 +2543,7 @@ func (a *Account) ResolveOpenAIResponsesWebSocketV2Mode(defaultMode string) stri
 	}
 
 	// setup-token 与 oauth 共用 oauth 前缀键（前端对两类账号统一写 openai_oauth_* 字段）
-	if a.IsOAuth() {
+	if a.IsOpenAIOAuthLike() {
 		if mode, ok := resolveModeString("openai_oauth_responses_websockets_v2_mode"); ok {
 			return mode
 		}

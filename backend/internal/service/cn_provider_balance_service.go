@@ -202,10 +202,16 @@ func (s *CNProviderBalanceService) queryBalanceForAccount(ctx context.Context, a
 		}
 		// balance_infos 逐条解析：双币种账号同时返回 CNY + USD（数组顺序即
 		// 主次序，首条为主币种）。
-		gjson.GetBytes(bodyBytes, "balance_infos").ForEach(func(_, info gjson.Result) bool {
+		balanceInfos := gjson.GetBytes(bodyBytes, "balance_infos")
+		if !balanceInfos.Exists() || !balanceInfos.IsArray() {
+			result.Error = "Invalid DeepSeek balance response: missing balance_infos"
+			return result, nil
+		}
+		balanceInfos.ForEach(func(_, info gjson.Result) bool {
 			currency := strings.ToUpper(strings.TrimSpace(info.Get("currency").String()))
-			balance, ok := cnParseF64(info.Get("total_balance").Value())
-			if !ok {
+			totalBalance := info.Get("total_balance")
+			balance, ok := cnParseF64(totalBalance.Value())
+			if !totalBalance.Exists() || !ok {
 				return true
 			}
 			if currency == "" {
@@ -219,7 +225,7 @@ func (s *CNProviderBalanceService) queryBalanceForAccount(ctx context.Context, a
 			// balance API. Compatible third-party gateways may return a generic
 			// success payload for unknown paths. Treat a missing/invalid schema as
 			// unsupported instead of manufacturing a 0 CNY balance.
-			result.Error = "Invalid DeepSeek balance response: missing valid balance_infos"
+			result.Error = "Invalid DeepSeek balance response: no valid balance entries"
 			return result, nil
 		}
 	}

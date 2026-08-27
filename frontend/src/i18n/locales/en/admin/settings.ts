@@ -42,6 +42,22 @@ export default {
           enabled: 'Enable Available Channels',
           enabledHint: 'When off, the sidebar entry is hidden and the endpoint returns an empty list.',
         },
+        modelPlaza: {
+          title: 'Model Plaza',
+          description: 'A public page showcasing available models and pricing by group. Disabled by default.',
+          enabled: 'Enable Model Plaza',
+          enabledHint: 'When enabled, an entry appears in the header and the page is reachable at /plaza.',
+          requireAuth: 'Require sign-in to access',
+          requireAuthHint: 'When on, anonymous visitors are redirected to the login page; when off, the page is public and anonymous visitors only see non-exclusive groups.',
+          priceDescription: 'Pricing notes (Markdown)',
+          priceDescriptionHint: 'Rendered at the top of the plaza page. Use it for billing rules, exchange rates, promotions, etc.',
+        },
+        pluginManagement: {
+          title: 'Plugin Management',
+          description: 'Controls whether the plugin management entry appears in the admin sidebar. This switch does not control plugin runtime state.',
+          enabled: 'Show Plugin Management',
+          enabledHint: 'Turning this off only hides the sidebar entry; loaded or running plugins are not stopped.',
+        },
         riskControl: {
           title: 'Risk Control',
           description: 'Enable the content moderation menu and gateway audit entry point. Disabled by default.',

@@ -1344,7 +1344,7 @@ func TestOpenAIMediaPricingGuard_GrokImageUsesOnlyExactHardcodedTiers(t *testing
 	svc := newOpenAIPricingGuardService(cfg)
 	account := &Account{Platform: PlatformGrok, Type: AccountTypeAPIKey}
 
-	require.True(t, svc.catalogHasMediaPricing("grok-imagine-image-quality", BillingKindImage),
+	require.True(t, svc.catalogHasMediaPricingForPlatforms(nil, "grok-imagine-image-quality", BillingKindImage),
 		"scheduler model-level probe should keep a model with real 1K/2K tiers eligible")
 	for _, tier := range []string{ImageBillingSize1K, ImageBillingSize2K} {
 		require.NoError(t, svc.enforceResolvedOpenAIMediaPricing(
@@ -1374,7 +1374,7 @@ func TestOpenAIMediaPricingGuard_GrokImageUsesOnlyExactHardcodedTiers(t *testing
 // 若守卫把它当成"有价"，这层检查就永远不会拒绝任何模型，等于没有。
 func TestOpenAIMediaPricingGuardRejectsPlaceholderImagePrice(t *testing.T) {
 	svc := newOpenAIPricingGuardService(nil)
-	require.False(t, svc.catalogHasMediaPricing("totally-unknown-image-v99", BillingKindImage))
+	require.False(t, svc.catalogHasMediaPricingForPlatforms(nil, "totally-unknown-image-v99", BillingKindImage))
 	// 兜底占位值确实存在且非零——正是它让"未定价"在媒体路由上伪装成了"已正常收费"。
 	require.Greater(t, svc.billingService.getDefaultImagePrice("totally-unknown-image-v99", ImageBillingSize1K), 0.0)
 }

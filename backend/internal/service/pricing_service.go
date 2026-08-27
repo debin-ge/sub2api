@@ -831,7 +831,7 @@ func (s *PricingService) useFallbackPricing() error {
 	}
 
 	pricingFile := s.getPricingFilePath()
-	if err := os.WriteFile(pricingFile, data, 0644); err != nil { //nolint:gosec // G703: 路径来自服务端数据目录配置，非用户输入
+	if err := os.WriteFile(pricingFile, data, 0644); err != nil { //nolint:gosec // G703: 路径为配置的数据目录 + 硬编码文件名，非请求输入
 		logger.LegacyPrintf("service.pricing", "[Pricing] Failed to copy fallback: %v", err)
 	}
 
@@ -917,16 +917,11 @@ func (s *PricingService) LookupModelPricingStrictForPlatforms(platforms []string
 	return pricing
 }
 
-// lookupModelPricing 是上面两个入口的唯一实现。
+// lookupModelPricingForPlatforms 是上面两个入口的唯一实现。
 //
 // 合并成一份是刻意的：准入用严格口径、结算用宽松口径，两边对"前缀别名 / 拼写归一化"
 // 的理解必须完全一致。各写一份迟早会在某个归一化分支上分叉，那时守卫放行的模型和结算
 // 查价的模型就不是同一个了。allowInference 只控制最后两步跨模型推断开不开。
-func (s *PricingService) lookupModelPricing(platform, modelName string, allowInference bool) *ModelPriceEntry {
-	pricing, _ := s.lookupModelPricingForPlatforms([]string{platform}, modelName, allowInference)
-	return pricing
-}
-
 // lookupModelPricingForPlatforms checks every platform overlay before the
 // shared catalog. This ordering is essential for composite routing: looking up
 // the composite platform first through the old single-platform helper would

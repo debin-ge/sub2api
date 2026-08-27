@@ -136,7 +136,7 @@ func (s *ChannelService) listAvailable(ctx context.Context, opts availableListOp
 		ch.normalizeBillingModelSource()
 
 		supported := ch.SupportedModels()
-		s.fillGlobalPricingFallback(supported)
+		fillGlobalPricingFallback(s.pricingService, supported)
 
 		out = append(out, AvailableChannel{
 			ID:                 ch.ID,
@@ -239,7 +239,10 @@ func AvailableImageDisplayPricing(p *ChannelModelPricing, g AvailableGroupRef) *
 // FillGlobalPricingFallback fills display-only pricing for supported models that
 // do not already carry channel pricing. It does not change real billing rules.
 func (s *ChannelService) FillGlobalPricingFallback(models []SupportedModel) {
-	s.fillGlobalPricingFallback(models)
+	if s == nil {
+		return
+	}
+	fillGlobalPricingFallback(s.pricingService, models)
 }
 
 // fillGlobalPricingFallback 对未命中渠道定价的支持模型，从全局 LiteLLM 数据合成一份
@@ -249,13 +252,13 @@ func (s *ChannelService) FillGlobalPricingFallback(models []SupportedModel) {
 //  1. Pricing == nil（渠道完全没声明该模型的定价条目）
 //  2. Pricing 非 nil 但所有价格字段为空（admin UI 建了条目但没填价格）
 //
-// 当 s.pricingService 为 nil（测试场景），跳过回落。
-func (s *ChannelService) fillGlobalPricingFallback(models []SupportedModel) {
-	if s.pricingService == nil {
+// 当 pricingService 为 nil（测试场景），跳过回落。可用渠道与模型广场共用。
+func fillGlobalPricingFallback(pricingService *PricingService, models []SupportedModel) {
+	if pricingService == nil {
 		return
 	}
 	for i := range models {
-		lp := s.pricingService.GetModelPricingForPlatform(models[i].Platform, models[i].Name)
+		lp := pricingService.GetModelPricingForPlatform(models[i].Platform, models[i].Name)
 		if lp == nil {
 			continue
 		}

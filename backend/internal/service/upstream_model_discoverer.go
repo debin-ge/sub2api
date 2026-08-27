@@ -18,8 +18,6 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
 )
 
-const upstreamModelsBodyLimit int64 = 8 << 20
-
 // ModelDiscoverer fetches the live model catalog available to an account.
 type ModelDiscoverer interface {
 	Discover(ctx context.Context, account *Account) ([]string, error)
@@ -157,12 +155,13 @@ func (d *UpstreamModelDiscoverer) discoverHTTP(ctx context.Context, account *Acc
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, upstreamModelsBodyLimit+1))
+	bodyLimit := resolveModelsListReadLimit(d.cfg)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, bodyLimit+1))
 	if err != nil {
 		return nil, newUpstreamModelSyncUpstreamError("Failed to read upstream model list", err)
 	}
-	if int64(len(body)) > upstreamModelsBodyLimit {
-		return nil, newUpstreamModelSyncUpstreamError("Upstream model list response is too large", fmt.Errorf("response exceeds %d bytes", upstreamModelsBodyLimit))
+	if int64(len(body)) > bodyLimit {
+		return nil, newUpstreamModelSyncUpstreamError("Upstream model list response is too large", fmt.Errorf("response exceeds %d bytes", bodyLimit))
 	}
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
@@ -685,7 +684,12 @@ func (d *UpstreamModelDiscoverer) fetchAntigravityOAuthUpstreamModels(ctx contex
 	if err != nil {
 		return nil, newUpstreamModelSyncConfigError("Failed to configure Antigravity client", err)
 	}
-	modelsResp, _, err := client.FetchAvailableModels(ctx, accessToken, strings.TrimSpace(account.GetCredential("project_id")))
+	modelsResp, _, err := client.FetchAvailableModels(
+		ctx,
+		accessToken,
+		strings.TrimSpace(account.GetCredential("project_id")),
+		resolveModelsListReadLimit(d.cfg),
+	)
 	if err != nil {
 		return nil, newUpstreamModelSyncUpstreamError("Failed to fetch Antigravity available models", err)
 	}

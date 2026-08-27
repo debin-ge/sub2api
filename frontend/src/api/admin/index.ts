@@ -37,6 +37,7 @@ import resellerAPI from './reseller'
 import radarAdminAPI from './radar'
 import auditAPI from './audit'
 import * as modelPricesAPI from './modelPrices'
+import pluginsAPI from './plugins'
 
 /**
  * Unified admin API object for convenient access
@@ -75,7 +76,8 @@ export const adminAPI = {
   reseller: resellerAPI,
   radar: radarAdminAPI,
   audit: auditAPI,
-  modelPrices: modelPricesAPI
+  modelPrices: modelPricesAPI,
+  plugins: pluginsAPI,
 }
 
 export {
@@ -112,7 +114,8 @@ export {
   resellerAPI,
   radarAdminAPI,
   auditAPI,
-  modelPricesAPI
+  modelPricesAPI,
+  pluginsAPI,
 }
 
 export default adminAPI
@@ -132,3 +135,9 @@ export type {
   RadarAdminState,
   RadarAdminStatus,
 } from './radar'
+export type {
+  PluginInstallation,
+  PluginCompatibility,
+  PluginUISession,
+  PluginTestResult
+} from './plugins'

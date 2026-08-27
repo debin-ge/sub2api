@@ -25,9 +25,10 @@ import (
 )
 
 type Application struct {
-	Server      *http.Server
-	PromptAudit *securityaudit.PromptService
-	Cleanup     func()
+	Server        *http.Server
+	PromptAudit   *securityaudit.PromptService
+	PluginManager *service.PluginManager
+	Cleanup       func()
 }
 
 type cleanupFactory func(radarRunner *service.RadarRunner) func()
@@ -65,6 +66,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 
 		// BuildInfo provider
 		provideServiceBuildInfo,
+		providePluginHostInfo,
 
 		// Cleanup function provider
 		provideCleanup,
@@ -115,6 +117,7 @@ func provideRadarFetchersConstructor(modelCatalog *service.ModelCatalogService) 
 func provideApplication(
 	httpServer *http.Server,
 	promptAudit *securityaudit.PromptService,
+	pluginManager *service.PluginManager,
 	cfg *config.Config,
 	radarRepo service.RadarCacheRepository,
 	runtimeGate service.RadarRuntimeSettingReader,
@@ -126,6 +129,7 @@ func provideApplication(
 	return provideApplicationWithRadarConstructors(
 		httpServer,
 		promptAudit,
+		pluginManager,
 		cfg,
 		radarRepo,
 		runtimeGate,
@@ -140,6 +144,7 @@ func provideApplication(
 func provideApplicationWithRadarConstructors(
 	httpServer *http.Server,
 	promptAudit *securityaudit.PromptService,
+	pluginManager *service.PluginManager,
 	cfg *config.Config,
 	radarRepo service.RadarCacheRepository,
 	runtimeGate service.RadarRuntimeSettingReader,
@@ -173,9 +178,15 @@ func provideApplicationWithRadarConstructors(
 		return nil, err
 	}
 	radarRunner.Start()
-	return &Application{Server: httpServer, PromptAudit: promptAudit, Cleanup: cleanup}, nil
+	return &Application{Server: httpServer, PromptAudit: promptAudit, PluginManager: pluginManager, Cleanup: cleanup}, nil
 }
 
+func providePluginHostInfo(buildInfo handler.BuildInfo) service.PluginHostInfo {
+	return service.PluginHostInfo{
+		Version:   buildInfo.Version,
+		BuildType: buildInfo.BuildType,
+	}
+}
 func provideCleanup(
 	entClient *ent.Client,
 	rdb *redis.Client,
@@ -227,7 +238,9 @@ func provideCleanup(
 	upstreamBillingProbe *service.UpstreamBillingProbeService,
 	ollamaCloudUsage *service.OllamaCloudUsageService,
 	auditLog *service.AuditLogService,
+	openAIAutoReset *service.OpenAIQuotaAutoResetService,
 	promptAudit *securityaudit.PromptService,
+	pluginManager *service.PluginManager,
 ) cleanupFactory {
 	return func(radarRunner *service.RadarRunner) func() {
 		return provideFinalCleanup(
@@ -281,7 +294,9 @@ func provideCleanup(
 			upstreamBillingProbe,
 			ollamaCloudUsage,
 			auditLog,
+			openAIAutoReset,
 			promptAudit,
+			pluginManager,
 			radarRunner,
 		)
 	}
@@ -338,7 +353,9 @@ func provideFinalCleanup(
 	upstreamBillingProbe *service.UpstreamBillingProbeService,
 	ollamaCloudUsage *service.OllamaCloudUsageService,
 	auditLog *service.AuditLogService,
+	openAIAutoReset *service.OpenAIQuotaAutoResetService,
 	promptAudit *securityaudit.PromptService,
+	pluginManager *service.PluginManager,
 	radarRunner *service.RadarRunner,
 ) func() {
 	return func() {
@@ -352,6 +369,18 @@ func provideFinalCleanup(
 
 		// 应用层清理步骤可并行执行，基础设施资源（Redis/Ent）最后按顺序关闭。
 		parallelSteps := []cleanupStep{
+			{"PluginManager", func() error {
+				if pluginManager != nil {
+					pluginManager.Stop()
+				}
+				return nil
+			}},
+			{"OpenAIQuotaAutoResetService", func() error {
+				if openAIAutoReset != nil {
+					openAIAutoReset.Stop()
+				}
+				return nil
+			}},
 			{"OpsIngressRejectAggregator", func() error {
 				if opsIngressReject != nil {
 					opsIngressReject.Stop()

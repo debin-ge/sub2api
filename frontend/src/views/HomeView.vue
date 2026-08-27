@@ -40,6 +40,15 @@
           >
             <Icon name="book" size="md" />
           </a>
+          <router-link
+            v-if="showModelPlazaEntry"
+            to="/plaza"
+            class="flex h-10 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
+            :title="t('plaza.header.label')"
+          >
+            <Icon name="grid" size="md" />
+            <span class="hidden sm:inline">{{ t('plaza.header.label') }}</span>
+          </router-link>
           <button
             class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:text-dark-400 dark:hover:bg-dark-800"
             :title="isDark ? t('home.switchToLight') : t('home.switchToDark')"
@@ -455,6 +464,7 @@ const docUrl = computed(() => sanitizeUrl(
 const homeContent = computed(() => appStore.cachedPublicSettings?.home_content || '')
 const hasHomeContent = computed(() => homeContent.value.trim().length > 0)
 const compactHomeEnabled = computed(() => appStore.cachedPublicSettings?.compact_home_enabled === true)
+const modelPlazaEnabled = computed(() => appStore.cachedPublicSettings?.model_plaza_enabled === true)
 
 // Current year for footer
 const currentYear = computed(() => new Date().getFullYear())
@@ -467,6 +477,12 @@ const isHomeContentUrl = computed(() => {
 
 // Auth state
 const isAuthenticated = computed(() => authStore.isAuthenticated)
+const modelPlazaRequiresAuth = computed(
+  () => appStore.cachedPublicSettings?.model_plaza_require_auth === true,
+)
+const showModelPlazaEntry = computed(
+  () => modelPlazaEnabled.value && (isAuthenticated.value || !modelPlazaRequiresAuth.value),
+)
 const isAdmin = computed(() => authStore.isAdmin)
 const dashboardPath = computed(() => isAdmin.value ? '/admin/dashboard' : '/dashboard')
 

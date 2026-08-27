@@ -274,10 +274,6 @@ func matchGroupModelPricing(group *Group, model string) *ChannelModelPricing {
 	return wildcard
 }
 
-func (r *ModelPricingResolver) resolveBasePricing(platform, model string, strict bool) (*ModelPricing, string, error) {
-	return r.resolveBasePricingForPlatforms([]string{platform}, model, strict)
-}
-
 func (r *ModelPricingResolver) resolveBasePricingForPlatforms(platforms []string, model string, strict bool) (*ModelPricing, string, error) {
 	if r == nil || r.billingService == nil {
 		return nil, PricingSourceFallback, fmt.Errorf("%w for model: %s: billing service unavailable", ErrModelPricingUnavailable, model)

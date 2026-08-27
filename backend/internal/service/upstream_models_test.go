@@ -244,6 +244,11 @@ func TestExtractUpstreamModelIDs(t *testing.T) {
 			body: `{"data":[{"id":"canonical-id","model":"display-model"}]}`,
 			want: []string{"canonical-id"},
 		},
+		{
+			name: "codex manifest uses slug",
+			body: `{"models":[{"slug":"gpt-5.6-sol"},{"slug":"gpt-5.5-codex"}]}`,
+			want: []string{"gpt-5.5-codex", "gpt-5.6-sol"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -375,7 +380,7 @@ func TestUpstreamModelDiscoverer_AntigravityUpstreamUsesCommonBodyLimit(t *testi
 	upstream := &antigravityUpstreamDiscoveryRecorder{resp: &http.Response{
 		StatusCode: http.StatusOK,
 		Header:     http.Header{"Content-Type": []string{"application/json"}},
-		Body:       io.NopCloser(strings.NewReader(strings.Repeat("x", int(upstreamModelsBodyLimit)+1))),
+		Body:       io.NopCloser(strings.NewReader(strings.Repeat("x", int(config.DefaultModelsListReadMaxBytes)+1))),
 	}}
 	discoverer := &UpstreamModelDiscoverer{httpUpstream: upstream, cfg: upstreamModelSyncTestConfig()}
 
@@ -729,7 +734,7 @@ func TestUpstreamModelDiscoverer_CompatibleProvidersUseCommonBodyLimit(t *testin
 		{name: "windsurf", platform: PlatformWindsurf},
 		{name: "opencode", platform: PlatformOpenCode},
 	}
-	largeBody := strings.Repeat("x", int(upstreamModelsBodyLimit)+1)
+	largeBody := strings.Repeat("x", int(config.DefaultModelsListReadMaxBytes)+1)
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -944,6 +949,31 @@ func TestFetchUpstreamSupportedModelsParsesOpenAIResponse(t *testing.T) {
 	require.Equal(t, []string{"gpt-5", "o3"}, models)
 	require.Equal(t, "https://openai.example.com/v1/models", upstream.lastReq.URL.String())
 	require.Equal(t, "Bearer openai-key", upstream.lastReq.Header.Get("Authorization"))
+}
+
+func TestFetchUpstreamSupportedModelsUsesConfiguredBodyLimit(t *testing.T) {
+	t.Parallel()
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"data":[{"id":"gpt-5"}]}`)),
+	}}
+	cfg := upstreamModelSyncTestConfig()
+	cfg.Gateway.ModelsListReadMaxBytes = 8
+	svc := &AccountTestService{modelDiscoverer: &UpstreamModelDiscoverer{httpUpstream: upstream, cfg: cfg}}
+
+	_, err := svc.FetchUpstreamSupportedModels(context.Background(), &Account{
+		ID:       7,
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key":  "openai-key",
+			"base_url": "https://openai.example.com/v1",
+		},
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "response exceeds 8 bytes")
 }
 
 func TestFetchUpstreamSupportedModelsParsesGrokAPIKeyResponse(t *testing.T) {

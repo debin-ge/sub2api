@@ -235,6 +235,7 @@ describe('PaymentResultView', () => {
 
     expect(pollOrderStatus).not.toHaveBeenCalled()
     expect(resolveOrderPublicByResumeToken).toHaveBeenCalledWith('resume-authoritative')
+    expect(refreshUser).toHaveBeenCalledTimes(1)
     expect(wrapper.text()).toContain('payment.result.success')
     expect(wrapper.text()).toContain('103.00')
     expect(wrapper.text()).toContain('100.00')
@@ -270,6 +271,7 @@ describe('PaymentResultView', () => {
     await flushPromises()
 
     expect(resolveOrderPublicByResumeToken).toHaveBeenCalledTimes(1)
+    expect(refreshUser).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('payment.result.processing')
     expect(window.localStorage.getItem(PAYMENT_RECOVERY_STORAGE_KEY)).not.toBeNull()
 
@@ -327,8 +329,33 @@ describe('PaymentResultView', () => {
 
     expect(pollOrderStatus).toHaveBeenCalledWith(42)
     expect(resolveOrderPublicByResumeToken).toHaveBeenCalledTimes(2)
+    expect(refreshUser).toHaveBeenCalledTimes(1)
     expect(wrapper.text()).toContain('payment.result.success')
     wrapper.unmount()
+  })
+
+  it('keeps the successful result when refreshing the user balance fails', async () => {
+    routeState.query = {
+      resume_token: 'resume-refresh-failure',
+    }
+    resolveOrderPublicByResumeToken.mockResolvedValue({
+      data: orderFactory('COMPLETED'),
+    })
+    refreshUser.mockRejectedValueOnce(new Error('profile refresh failed'))
+
+    const wrapper = mount(PaymentResultView, {
+      global: {
+        stubs: {
+          OrderStatusBadge: true,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(refreshUser).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('payment.result.success')
+    expect(wrapper.text()).not.toContain('payment.result.failed')
   })
 
   it('falls back to order_id polling when resume-token recovery fails', async () => {

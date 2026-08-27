@@ -281,33 +281,47 @@ func convertResponsesMessageContentToChat(role string, content json.RawMessage) 
 }
 
 func convertResponsesToolsToChatTools(tools []ResponsesTool) ([]ChatTool, error) {
-	chatTools := make([]ChatTool, 0, len(tools))
+	// Reuse the established Codex-compatible lowering for client-executable
+	// tools, but validate the complete shape first. The legacy lowering is
+	// intentionally lossy for server-side tools; this strict path must reject
+	// those tools instead of silently changing request semantics.
+	normalized := make([]ResponsesTool, len(tools))
 	for i, tool := range tools {
-		switch strings.ToLower(strings.TrimSpace(tool.Type)) {
+		tool.Type = strings.ToLower(strings.TrimSpace(tool.Type))
+		switch tool.Type {
 		case "function", "custom":
 			if strings.TrimSpace(tool.Name) == "" {
 				return nil, fmt.Errorf("function tool at index %d is missing name", i)
 			}
-			chatTools = append(chatTools, ChatTool{
-				Type: "function",
-				Function: &ChatFunction{
-					Name:        tool.Name,
-					Description: tool.Description,
-					Parameters:  tool.Parameters,
-					Strict:      tool.Strict,
-				},
-			})
-		case "x_search":
-			chatTools = append(chatTools, ChatTool{
-				Type:                     "x_search",
-				AllowedXHandles:          tool.AllowedXHandles,
-				ExcludedXHandles:         tool.ExcludedXHandles,
-				FromDate:                 tool.FromDate,
-				ToDate:                   tool.ToDate,
-				EnableImageUnderstanding: tool.EnableImageUnderstanding,
-				EnableVideoUnderstanding: tool.EnableVideoUnderstanding,
-			})
-		case "web_search", "image_generation", "file_search", "computer_use", "tool_search", "namespace", "":
+		case "namespace":
+			if strings.TrimSpace(tool.Name) == "" {
+				return nil, fmt.Errorf("namespace tool at index %d is missing name", i)
+			}
+			children := tool.Tools
+			useChildren := false
+			if len(children) == 0 {
+				children = tool.Children
+				useChildren = true
+			}
+			if len(children) == 0 {
+				return nil, fmt.Errorf("namespace tool at index %d has no children", i)
+			}
+			for childIndex := range children {
+				children[childIndex].Type = strings.ToLower(strings.TrimSpace(children[childIndex].Type))
+				if children[childIndex].Type != "function" {
+					return nil, fmt.Errorf("unsupported namespace child tool type %q at index %d/%d", children[childIndex].Type, i, childIndex)
+				}
+				if strings.TrimSpace(children[childIndex].Name) == "" {
+					return nil, fmt.Errorf("namespace function tool at index %d/%d is missing name", i, childIndex)
+				}
+			}
+			if useChildren {
+				tool.Children = children
+			} else {
+				tool.Tools = children
+			}
+		case "x_search", "tool_search":
+		case "web_search", "image_generation", "file_search", "computer_use", "":
 			// This converter is the strict compatibility path. Silently dropping a
 			// server-side tool changes request semantics, so callers must explicitly
 			// use LegacyResponsesToChatCompletionsRequest when lossy fallback is
@@ -316,8 +330,9 @@ func convertResponsesToolsToChatTools(tools []ResponsesTool) ([]ChatTool, error)
 		default:
 			return nil, fmt.Errorf("unsupported responses tool type %q at index %d", tool.Type, i)
 		}
+		normalized[i] = tool
 	}
-	return chatTools, nil
+	return responsesToolsToChatTools(normalized)
 }
 
 func convertResponsesToolChoiceToChat(raw json.RawMessage) (json.RawMessage, error) {
