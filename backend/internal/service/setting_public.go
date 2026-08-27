@@ -242,6 +242,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyAvailableChannelsEnabled,
 		SettingKeyModelPlazaEnabled,
 		SettingKeyModelPlazaRequireAuth,
+		SettingKeyModelPlazaDescription,
 		SettingKeyPluginManagementEnabled,
 		SettingKeyAffiliateEnabled,
 		SettingKeyRiskControlEnabled,
@@ -386,6 +387,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 
 		ModelPlazaEnabled:       settings[SettingKeyModelPlazaEnabled] == "true",
 		ModelPlazaRequireAuth:   settings[SettingKeyModelPlazaRequireAuth] == "true",
+		ModelPlazaDescription:   settings[SettingKeyModelPlazaDescription],
 		PluginManagementEnabled: settings[SettingKeyPluginManagementEnabled] == "true",
 
 		AffiliateEnabled: settings[SettingKeyAffiliateEnabled] == "true",
@@ -519,6 +521,36 @@ func (s *SettingService) GetAvailableChannelsRuntime(ctx context.Context) Availa
 	}
 }
 
+// ModelPlazaRuntime is the fail-closed runtime view used by the public plaza
+// endpoint. Description is public because administrators explicitly configure
+// it for rendering on the public page.
+type ModelPlazaRuntime struct {
+	Enabled     bool
+	RequireAuth bool
+	Description string
+}
+
+// GetModelPlazaRuntime reads the model-plaza switches directly from storage so
+// access control does not depend on a stale frontend settings cache.
+func (s *SettingService) GetModelPlazaRuntime(ctx context.Context) ModelPlazaRuntime {
+	if s == nil || s.settingRepo == nil {
+		return ModelPlazaRuntime{}
+	}
+	vals, err := s.settingRepo.GetMultiple(ctx, []string{
+		SettingKeyModelPlazaEnabled,
+		SettingKeyModelPlazaRequireAuth,
+		SettingKeyModelPlazaDescription,
+	})
+	if err != nil {
+		return ModelPlazaRuntime{}
+	}
+	return ModelPlazaRuntime{
+		Enabled:     vals[SettingKeyModelPlazaEnabled] == "true",
+		RequireAuth: vals[SettingKeyModelPlazaRequireAuth] == "true",
+		Description: vals[SettingKeyModelPlazaDescription],
+	}
+}
+
 // IsUserErrorViewAllowed reads the user-facing error-requests visibility switch
 // directly from the settings store. Fail-closed: on error returns false (opt-in default).
 func (s *SettingService) IsUserErrorViewAllowed(ctx context.Context) bool {
@@ -621,14 +653,15 @@ type PublicSettingsInjectionPayload struct {
 	ChannelMonitorHideThroughput bool `json:"channel_monitor_hide_throughput"`
 	// ChannelMonitorShowQuota gates the user-facing quota/balance display on
 	// monitors; fail-closed (absent/false = hidden). Admin UI always shows it.
-	ChannelMonitorShowQuota    bool `json:"channel_monitor_show_quota"`
-	AvailableChannelsEnabled   bool `json:"available_channels_enabled"`
-	ModelPlazaEnabled          bool `json:"model_plaza_enabled"`
-	ModelPlazaRequireAuth      bool `json:"model_plaza_require_auth"`
-	PluginManagementEnabled    bool `json:"plugin_management_enabled"`
-	AffiliateEnabled           bool `json:"affiliate_enabled"`
-	RiskControlEnabled         bool `json:"risk_control_enabled"`
-	AllowUserViewErrorRequests bool `json:"allow_user_view_error_requests"`
+	ChannelMonitorShowQuota    bool   `json:"channel_monitor_show_quota"`
+	AvailableChannelsEnabled   bool   `json:"available_channels_enabled"`
+	ModelPlazaEnabled          bool   `json:"model_plaza_enabled"`
+	ModelPlazaRequireAuth      bool   `json:"model_plaza_require_auth"`
+	ModelPlazaDescription      string `json:"model_plaza_description"`
+	PluginManagementEnabled    bool   `json:"plugin_management_enabled"`
+	AffiliateEnabled           bool   `json:"affiliate_enabled"`
+	RiskControlEnabled         bool   `json:"risk_control_enabled"`
+	AllowUserViewErrorRequests bool   `json:"allow_user_view_error_requests"`
 }
 
 // GetPublicSettingsForInjection returns public settings in a format suitable for HTML injection.
@@ -713,6 +746,7 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		AvailableChannelsEnabled:             settings.AvailableChannelsEnabled,
 		ModelPlazaEnabled:                    settings.ModelPlazaEnabled,
 		ModelPlazaRequireAuth:                settings.ModelPlazaRequireAuth,
+		ModelPlazaDescription:                settings.ModelPlazaDescription,
 		PluginManagementEnabled:              settings.PluginManagementEnabled,
 		AffiliateEnabled:                     settings.AffiliateEnabled,
 		RiskControlEnabled:                   settings.RiskControlEnabled,

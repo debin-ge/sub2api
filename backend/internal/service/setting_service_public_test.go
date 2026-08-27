@@ -241,6 +241,32 @@ func TestSettingService_GetPublicSettings_ExposesPlazaPricingConfiguredValues(t 
 	require.True(t, settings.PaymentBalanceDisabled)
 }
 
+func TestSettingService_GetPublicSettings_ExposesModelPlazaDescription(t *testing.T) {
+	svc := NewSettingService(&settingPublicRepoStub{
+		values: map[string]string{
+			SettingKeyModelPlazaEnabled:     "true",
+			SettingKeyModelPlazaRequireAuth: "true",
+			SettingKeyModelPlazaDescription: "Use **discount pricing**.",
+		},
+	}, &config.Config{})
+
+	settings, err := svc.GetPublicSettings(context.Background())
+
+	require.NoError(t, err)
+	require.True(t, settings.ModelPlazaEnabled)
+	require.True(t, settings.ModelPlazaRequireAuth)
+	require.Equal(t, "Use **discount pricing**.", settings.ModelPlazaDescription)
+}
+
+func TestSettingService_GetModelPlazaRuntimeFailsClosed(t *testing.T) {
+	runtime := NewSettingService(&settingPublicRepoStub{err: context.DeadlineExceeded}, &config.Config{}).
+		GetModelPlazaRuntime(context.Background())
+
+	require.False(t, runtime.Enabled)
+	require.False(t, runtime.RequireAuth)
+	require.Empty(t, runtime.Description)
+}
+
 func TestSettingService_GetPublicSettings_ExposesPlazaPricingFallbacksForInvalidValues(t *testing.T) {
 	for name, values := range map[string]map[string]string{
 		"invalid": {

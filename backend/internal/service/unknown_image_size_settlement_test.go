@@ -119,18 +119,21 @@ func TestGatewayServiceHasResolvableImagePricing_UnknownExplicitTierCannotBorrow
 		},
 	}
 
-	require.True(t, svc.hasResolvableImagePricing(
+	platforms := []string{PlatformFromAPIKey(apiKey)}
+	require.True(t, svc.hasResolvableImagePricingForPlatforms(
 		context.Background(),
 		"priced-image-model",
 		ImageBillingSize2K,
 		apiKey,
+		platforms,
 	))
 	for _, size := range []string{"8K", "8192x8192", "largest"} {
-		require.False(t, svc.hasResolvableImagePricing(
+		require.False(t, svc.hasResolvableImagePricingForPlatforms(
 			context.Background(),
 			"priced-image-model",
 			size,
 			apiKey,
+			platforms,
 		), size)
 	}
 }

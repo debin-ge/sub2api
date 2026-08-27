@@ -86,9 +86,10 @@ func TestSettingHandler_GetPublicSettings_ExposesPlazaPricingFields(t *testing.T
 	gin.SetMode(gin.TestMode)
 	h := NewSettingHandler(service.NewSettingService(&settingHandlerPublicRepoStub{
 		values: map[string]string{
-			service.SettingBalanceRechargeMult: "1.5",
-			service.SettingPaymentCnyUsdRate:   "6.8",
-			service.SettingBalancePayDisabled:  "true",
+			service.SettingBalanceRechargeMult:      "1.5",
+			service.SettingPaymentCnyUsdRate:        "6.8",
+			service.SettingBalancePayDisabled:       "true",
+			service.SettingKeyModelPlazaDescription: "Use **discount pricing**.",
 		},
 	}, &config.Config{}), "test-version")
 
@@ -104,12 +105,14 @@ func TestSettingHandler_GetPublicSettings_ExposesPlazaPricingFields(t *testing.T
 			PaymentBalanceRechargeMultiplier float64 `json:"payment_balance_recharge_multiplier"`
 			PaymentCnyUsdRate                float64 `json:"payment_cny_usd_rate"`
 			PaymentBalanceDisabled           bool    `json:"payment_balance_disabled"`
+			ModelPlazaDescription            string  `json:"model_plaza_description"`
 		} `json:"data"`
 	}
 	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &body))
 	require.Equal(t, 1.5, body.Data.PaymentBalanceRechargeMultiplier)
 	require.Equal(t, 6.8, body.Data.PaymentCnyUsdRate)
 	require.True(t, body.Data.PaymentBalanceDisabled)
+	require.Equal(t, "Use **discount pricing**.", body.Data.ModelPlazaDescription)
 }
 
 func TestSettingHandler_GetPublicSettings_ExposesTencentCaptchaConfiguration(t *testing.T) {

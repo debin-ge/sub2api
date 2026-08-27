@@ -25,6 +25,8 @@ const appStore = vi.hoisted(() => ({
   cachedPublicSettings: null as null | {
     payment_enabled?: boolean
     risk_control_enabled?: boolean
+    model_plaza_enabled?: boolean
+    model_plaza_require_auth?: boolean
     custom_menu_items?: []
   },
   fetchPublicSettings: vi.fn(),
@@ -173,5 +175,50 @@ describe('feature route guard', () => {
     expect(appStore.fetchPublicSettings).not.toHaveBeenCalled()
     expect(next).toHaveBeenCalledOnce()
     expect(next).toHaveBeenCalledWith(target)
+  })
+
+  it('redirects away from a disabled model plaza', async () => {
+    authStore.isAuthenticated = false
+    appStore.cachedPublicSettings = {
+      model_plaza_enabled: false,
+      model_plaza_require_auth: false,
+    }
+    appStore.publicSettingsLoaded = true
+
+    const { navigation, next } = runGuard({ requiresAuth: false }, '/plaza')
+    await navigation
+
+    expect(next).toHaveBeenCalledOnce()
+    expect(next).toHaveBeenCalledWith('/')
+  })
+
+  it('redirects anonymous visitors to sign in when the plaza requires auth', async () => {
+    authStore.isAuthenticated = false
+    appStore.cachedPublicSettings = {
+      model_plaza_enabled: true,
+      model_plaza_require_auth: true,
+    }
+    appStore.publicSettingsLoaded = true
+
+    const { navigation, next } = runGuard({ requiresAuth: false }, '/plaza')
+    await navigation
+
+    expect(next).toHaveBeenCalledOnce()
+    expect(next).toHaveBeenCalledWith({ path: '/login', query: { redirect: '/plaza' } })
+  })
+
+  it('allows anonymous access when the model plaza is public', async () => {
+    authStore.isAuthenticated = false
+    appStore.cachedPublicSettings = {
+      model_plaza_enabled: true,
+      model_plaza_require_auth: false,
+    }
+    appStore.publicSettingsLoaded = true
+
+    const { navigation, next } = runGuard({ requiresAuth: false }, '/plaza')
+    await navigation
+
+    expect(next).toHaveBeenCalledOnce()
+    expect(next).toHaveBeenCalledWith()
   })
 })

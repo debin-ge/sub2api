@@ -125,16 +125,27 @@ func ExtractGrokMediaModel(contentType string, body []byte) string {
 // interpreted first-wins here and last-wins upstream, while unknown
 // resolutions would otherwise collapse to the cheapest 480p tier.
 func ValidateGrokMediaBillingFields(contentType string, body []byte) error {
+	endpoint := GrokMediaEndpointImagesGenerations
+	if strings.Contains(strings.ToLower(ExtractGrokMediaModel(contentType, body)), "video") {
+		endpoint = GrokMediaEndpointVideosGenerations
+	}
+	return ValidateGrokMediaBillingFieldsForEndpoint(endpoint, contentType, body)
+}
+
+// ValidateGrokMediaBillingFieldsForEndpoint validates shared media fields using
+// the endpoint's billing dimensions. In particular, image resolution values
+// (1k/2k) must not be interpreted as video resolution tiers.
+func ValidateGrokMediaBillingFieldsForEndpoint(endpoint GrokMediaEndpoint, contentType string, body []byte) error {
 	if len(body) == 0 {
 		return fmt.Errorf("request body is empty")
 	}
 	if gjson.ValidBytes(body) {
-		return validateGrokMediaJSONBillingFields(body)
+		return validateGrokMediaJSONBillingFields(endpoint, body)
 	}
-	return validateGrokMediaMultipartBillingFields(contentType, body)
+	return validateGrokMediaMultipartBillingFields(endpoint, contentType, body)
 }
 
-func validateGrokMediaJSONBillingFields(body []byte) error {
+func validateGrokMediaJSONBillingFields(endpoint GrokMediaEndpoint, body []byte) error {
 	if err := ValidateUniqueBillingModelField(body); err != nil {
 		return err
 	}
@@ -179,7 +190,7 @@ func validateGrokMediaJSONBillingFields(body []byte) error {
 		if value.Type != gjson.String {
 			return fmt.Errorf("invalid resolution field type")
 		}
-		if err := validateGrokMediaVideoResolution(value.String()); err != nil {
+		if err := validateGrokMediaResolution(endpoint, value.String()); err != nil {
 			return err
 		}
 	}
@@ -202,7 +213,7 @@ func validateGrokMediaJSONBillingFields(body []byte) error {
 	return nil
 }
 
-func validateGrokMediaMultipartBillingFields(contentType string, body []byte) error {
+func validateGrokMediaMultipartBillingFields(endpoint GrokMediaEndpoint, contentType string, body []byte) error {
 	mediaType, params, err := mime.ParseMediaType(strings.TrimSpace(contentType))
 	if err != nil || !strings.EqualFold(mediaType, "multipart/form-data") {
 		return fmt.Errorf("request body must be valid JSON or multipart/form-data")
@@ -254,7 +265,7 @@ func validateGrokMediaMultipartBillingFields(contentType string, body []byte) er
 		}
 	}
 	if resolution, ok := values["resolution"]; ok {
-		if err := validateGrokMediaVideoResolution(resolution); err != nil {
+		if err := validateGrokMediaResolution(endpoint, resolution); err != nil {
 			return err
 		}
 	}
@@ -302,6 +313,19 @@ func validateGrokMediaVideoResolution(value string) error {
 		return nil
 	default:
 		return fmt.Errorf("unsupported video resolution %q: no billing tier is configured", value)
+	}
+}
+
+func validateGrokMediaResolution(endpoint GrokMediaEndpoint, value string) error {
+	switch endpoint {
+	case GrokMediaEndpointImagesGenerations, GrokMediaEndpointImagesEdits:
+		value = strings.TrimSpace(value)
+		if value == "" || grokImagineImageResolution(value) != "" {
+			return nil
+		}
+		return fmt.Errorf("unsupported image resolution %q: no billing tier is configured", value)
+	default:
+		return validateGrokMediaVideoResolution(value)
 	}
 }
 
@@ -822,7 +846,7 @@ func (s *OpenAIGatewayService) ForwardGrokMedia(
 		return nil, fmt.Errorf("account platform %s is not supported for grok media", account.Platform)
 	}
 	if endpoint.RequiresRequestBody() {
-		if err := ValidateGrokMediaBillingFields(contentType, body); err != nil {
+		if err := ValidateGrokMediaBillingFieldsForEndpoint(endpoint, contentType, body); err != nil {
 			return nil, err
 		}
 	}

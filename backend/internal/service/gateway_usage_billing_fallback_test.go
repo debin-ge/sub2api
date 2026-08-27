@@ -36,28 +36,29 @@ func TestCompositeBillableModel(t *testing.T) {
 		svc.compositeBillableModel(ctx, apiKey, "all/claude", ""))
 }
 
-// billableModelWithFallback 是结算安全网：选定计费模型查不到严格价格时回退到
+// billableModelWithFallbackForPlatforms 是结算安全网：选定计费模型查不到严格价格时回退到
 // 实际转发的具体模型；family 模糊推断不能再阻止回退。
 func TestBillableModelWithFallback(t *testing.T) {
 	svc := &GatewayService{billingService: NewBillingService(&config.Config{}, nil)}
 	apiKey := &APIKey{}
 	ctx := context.Background()
+	platforms := []string{PlatformFromAPIKey(apiKey)}
 
 	// 完全无价的别名 → 回退到具体转发模型（claude-sonnet-4 有内置回退价格）
 	require.Equal(t, "claude-sonnet-4",
-		svc.billableModelWithFallback(ctx, apiKey, "team/best", "", "claude-sonnet-4"))
+		svc.billableModelWithFallbackForPlatforms(ctx, apiKey, platforms, "team/best", "", "claude-sonnet-4"))
 
 	// 已定价模型不回退，候选被忽略
 	require.Equal(t, "claude-sonnet-4",
-		svc.billableModelWithFallback(ctx, apiKey, "claude-sonnet-4", "claude-opus-4"))
+		svc.billableModelWithFallbackForPlatforms(ctx, apiKey, platforms, "claude-sonnet-4", "claude-opus-4"))
 
 	// 所有候选都无价 → 保持原值，后扣 fail-loud 并进入待结算
 	require.Equal(t, "team/best",
-		svc.billableModelWithFallback(ctx, apiKey, "team/best", "another/alias", ""))
+		svc.billableModelWithFallbackForPlatforms(ctx, apiKey, platforms, "team/best", "another/alias", ""))
 
 	// 空计费模型 + 有价候选 → 取候选
 	require.Equal(t, "claude-sonnet-4",
-		svc.billableModelWithFallback(ctx, apiKey, "", "claude-sonnet-4"))
+		svc.billableModelWithFallbackForPlatforms(ctx, apiKey, platforms, "", "claude-sonnet-4"))
 }
 
 // v0.1.166 合并移除了 getFallbackPricing 里 deepseek-chat / deepseek-reasoner →
@@ -69,32 +70,34 @@ func TestBillableModelWithFallback_DeepSeekCompatAliasFallsBackToUpstreamModel(t
 	svc := &GatewayService{billingService: NewBillingService(&config.Config{}, nil)}
 	apiKey := &APIKey{}
 	ctx := context.Background()
+	platforms := []string{PlatformFromAPIKey(apiKey)}
 
 	// 前提：裸别名本身查不到价（与 TestGetFallbackPricing_DeepSeekCompatNamesDoNotAlias 对应）
-	require.False(t, svc.hasResolvableTokenPricing(ctx, "deepseek-chat", apiKey))
-	require.False(t, svc.hasResolvableTokenPricing(ctx, "deepseek-reasoner", apiKey))
+	require.False(t, svc.hasResolvableTokenPricingForPlatforms(ctx, "deepseek-chat", apiKey, platforms))
+	require.False(t, svc.hasResolvableTokenPricingForPlatforms(ctx, "deepseek-reasoner", apiKey, platforms))
 
 	// 别名 + 已解析的上游模型 → 按上游模型计费，不会漏计
 	require.Equal(t, "deepseek-v4-flash",
-		svc.billableModelWithFallback(ctx, apiKey, "deepseek-chat", "deepseek-v4-flash", "deepseek-chat"))
+		svc.billableModelWithFallbackForPlatforms(ctx, apiKey, platforms, "deepseek-chat", "deepseek-v4-flash", "deepseek-chat"))
 	require.Equal(t, "deepseek-v4-pro",
-		svc.billableModelWithFallback(ctx, apiKey, "deepseek-reasoner", "deepseek-v4-pro", "deepseek-reasoner"))
+		svc.billableModelWithFallbackForPlatforms(ctx, apiKey, platforms, "deepseek-reasoner", "deepseek-v4-pro", "deepseek-reasoner"))
 }
 
 func TestHasResolvableTokenPricing(t *testing.T) {
 	svc := &GatewayService{billingService: NewBillingService(&config.Config{}, nil)}
 	apiKey := &APIKey{}
 	ctx := context.Background()
+	platforms := []string{PlatformFromAPIKey(apiKey)}
 
-	require.True(t, svc.hasResolvableTokenPricing(ctx, "claude-sonnet-4", apiKey))
+	require.True(t, svc.hasResolvableTokenPricingForPlatforms(ctx, "claude-sonnet-4", apiKey, platforms))
 	// 结算只认当前 SKU 自己的价；含家族词的公开别名不能借 Sonnet 的价格。
-	require.False(t, svc.hasResolvableTokenPricing(ctx, "all/claude", apiKey))
-	require.False(t, svc.hasResolvableTokenPricing(ctx, "team/best", apiKey))
-	require.False(t, svc.hasResolvableTokenPricing(ctx, "", apiKey))
+	require.False(t, svc.hasResolvableTokenPricingForPlatforms(ctx, "all/claude", apiKey, platforms))
+	require.False(t, svc.hasResolvableTokenPricingForPlatforms(ctx, "team/best", apiKey, platforms))
+	require.False(t, svc.hasResolvableTokenPricingForPlatforms(ctx, "", apiKey, platforms))
 
 	// billingService 缺失时 fail-closed（不误判有价）
 	empty := &GatewayService{}
-	require.False(t, empty.hasResolvableTokenPricing(ctx, "claude-sonnet-4", apiKey))
+	require.False(t, empty.hasResolvableTokenPricingForPlatforms(ctx, "claude-sonnet-4", apiKey, platforms))
 }
 
 func TestPlatformOverrideIsResolvableAndBillable(t *testing.T) {
@@ -116,7 +119,9 @@ func TestPlatformOverrideIsResolvableAndBillable(t *testing.T) {
 	svc := &GatewayService{billingService: billing}
 	apiKey := &APIKey{Group: &Group{ID: 82, Platform: PlatformDeepSeek}}
 
-	require.True(t, svc.hasResolvableTokenPricing(context.Background(), model, apiKey))
+	require.True(t, svc.hasResolvableTokenPricingForPlatforms(
+		context.Background(), model, apiKey, []string{PlatformDeepSeek},
+	))
 	cost, err := svc.calculateTokenCost(
 		context.Background(),
 		&ForwardResult{Usage: ClaudeUsage{InputTokens: 10, OutputTokens: 5}},

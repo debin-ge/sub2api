@@ -11,6 +11,14 @@
 
       <section class="mx-auto max-w-[90rem] px-4 py-8 sm:px-6 lg:px-8">
         <div class="flex flex-col gap-4">
+          <div
+            v-if="descriptionHtml"
+            data-testid="plaza-description"
+            class="rounded-xl border border-gray-200 bg-white px-5 py-4 text-sm leading-6 text-gray-600 shadow-sm dark:border-dark-800 dark:bg-dark-900 dark:text-gray-300"
+          >
+            <div class="plaza-description" v-html="descriptionHtml"></div>
+          </div>
+
           <PlazaFilters
             v-model="filters"
             :platforms="platformEntries"
@@ -76,6 +84,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 import SiteHeader from '@/components/common/SiteHeader.vue'
 import PlazaHero from '@/components/plaza/PlazaHero.vue'
 import PlazaFilters, { type PlazaFilterState, type PlazaPlatformEntry } from '@/components/plaza/PlazaFilters.vue'
@@ -96,6 +106,11 @@ import { useModelDetailModal } from '@/composables/useModelDetailModal'
 const { t } = useI18n()
 const { channels, pricingConfig, loading, error, fetchAll } = usePlazaData()
 const modal = useModelDetailModal()
+const descriptionHtml = computed(() => {
+  const markdown = pricingConfig.value.description.trim()
+  if (!markdown) return ''
+  return DOMPurify.sanitize(marked.parse(markdown) as string)
+})
 
 const filters = ref<PlazaFilterState>({
   platform: '',
@@ -180,3 +195,33 @@ onMounted(() => {
   void fetchAll()
 })
 </script>
+
+<style scoped>
+.plaza-description :deep(p) {
+  margin: 0.35rem 0;
+}
+
+.plaza-description :deep(a) {
+  color: #0d9488;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+:global(.dark) .plaza-description :deep(a) {
+  color: #2dd4bf;
+}
+
+.plaza-description :deep(ul),
+.plaza-description :deep(ol) {
+  margin: 0.35rem 0;
+  padding-left: 1.25rem;
+}
+
+.plaza-description :deep(ul) {
+  list-style: disc;
+}
+
+.plaza-description :deep(ol) {
+  list-style: decimal;
+}
+</style>

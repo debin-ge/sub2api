@@ -28,6 +28,7 @@ describe('usePlazaData', () => {
       serverUtcOffset: '',
       paymentEnabled: false,
       balanceDisabled: false,
+      description: '',
     }
   })
 
@@ -49,6 +50,7 @@ describe('usePlazaData', () => {
       payment_balance_disabled: false,
       server_utc_offset: '+08:00',
       available_channels_enabled: false,
+      model_plaza_description: 'Pricing **notes**',
     })
 
     const plazaData = await import('@/composables/usePlazaData')
@@ -62,6 +64,7 @@ describe('usePlazaData', () => {
       serverUtcOffset: '+08:00',
       paymentEnabled: true,
       balanceDisabled: false,
+      description: 'Pricing **notes**',
     })
     expect('availableChannelsEnabled' in plazaData.pricingConfig.value).toBe(false)
   })

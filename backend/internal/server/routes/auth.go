@@ -269,6 +269,8 @@ func RegisterAuthRoutes(
 
 	// 公开渠道（无需认证）
 	channels := v1.Group("/channels")
+	channels.Use(servermiddleware.OptionalJWTAuth(jwtAuth))
+	channels.Use(panelRateLimiter.PublicIP())
 	{
 		channels.GET("/public", h.AvailableChannel.ListPublic)
 	}

@@ -30,10 +30,12 @@ type billingFallbackProvider interface {
 
 type availableChannelAPIKeyService interface {
 	GetVisibleGroupCatalog(context.Context, int64) ([]service.GroupCatalogEntry, error)
+	GetUserGroupRates(context.Context, int64) (map[int64]float64, error)
 }
 
 type availableChannelSettingService interface {
 	GetAvailableChannelsRuntime(context.Context) service.AvailableChannelsRuntime
+	GetModelPlazaRuntime(context.Context) service.ModelPlazaRuntime
 }
 
 // availableChannelModelCatalog is the narrow catalog surface consumed by the
@@ -244,6 +246,44 @@ func (h *AvailableChannelHandler) List(c *gin.Context) {
 // ListPublic 列出无需认证即可展示的公开「可用渠道」。
 // GET /api/v1/channels/public
 func (h *AvailableChannelHandler) ListPublic(c *gin.Context) {
+	if h.settingService == nil {
+		response.NotFound(c, "Model plaza is not enabled")
+		return
+	}
+	runtime := h.settingService.GetModelPlazaRuntime(c.Request.Context())
+	if !runtime.Enabled {
+		response.NotFound(c, "Model plaza is not enabled")
+		return
+	}
+	subject, authenticated := middleware.GetAuthSubjectFromContext(c)
+	if runtime.RequireAuth && !authenticated {
+		response.Unauthorized(c, "Authentication required")
+		return
+	}
+
+	var visibleCatalog map[int64]service.GroupCatalogEntry
+	var userRates map[int64]float64
+	if authenticated {
+		if h.apiKeyService == nil {
+			response.InternalError(c, "Model plaza user catalog is not configured")
+			return
+		}
+		catalog, err := h.apiKeyService.GetVisibleGroupCatalog(c.Request.Context(), subject.UserID)
+		if err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+		visibleCatalog = make(map[int64]service.GroupCatalogEntry, len(catalog))
+		for i := range catalog {
+			visibleCatalog[catalog[i].ID] = catalog[i]
+		}
+		userRates, err = h.apiKeyService.GetUserGroupRates(c.Request.Context(), subject.UserID)
+		if err != nil {
+			slog.Warn("public plaza: user group rates query failed", "user_id", subject.UserID, "err", err)
+			userRates = nil
+		}
+	}
+
 	channels, err := h.channelService.ListPublicAvailable(c.Request.Context())
 	if err != nil {
 		response.ErrorFrom(c, err)
@@ -254,9 +294,10 @@ func (h *AvailableChannelHandler) ListPublic(c *gin.Context) {
 	resolvedGroups := make(map[int64]struct{})
 	if h.modelCatalog != nil {
 		for _, ch := range channels {
+			visibleGroups := filterPlazaVisibleGroups(ch.Groups, visibleCatalog, userRates)
 			if err := h.resolveGroupCatalogs(
 				c.Request.Context(),
-				filterPublicGroups(ch.Groups),
+				visibleGroups,
 				groupCatalogs,
 				resolvedGroups,
 			); err != nil {
@@ -266,8 +307,18 @@ func (h *AvailableChannelHandler) ListPublic(c *gin.Context) {
 		}
 	}
 
-	c.Header("Cache-Control", "public, max-age=60, stale-while-revalidate=300")
-	out := buildPublicAvailableChannels(h.channelService, groupCatalogs, channels)
+	if authenticated {
+		c.Header("Cache-Control", "private, no-store")
+	} else {
+		c.Header("Cache-Control", "public, max-age=60, stale-while-revalidate=300")
+	}
+	c.Header("Vary", "Authorization")
+	var out []userAvailableChannel
+	if authenticated {
+		out = buildPlazaAvailableChannels(h.channelService, groupCatalogs, channels, visibleCatalog, userRates)
+	} else {
+		out = buildPublicAvailableChannels(h.channelService, groupCatalogs, channels)
+	}
 	applyPlazaModelPricesToChannels(h.modelPrices, h.billingFallback, out)
 	applyRecentCallCounts(c.Request.Context(), h.modelStats, out)
 	response.Success(c, out)
@@ -486,12 +537,22 @@ func buildPublicAvailableChannels(
 	groupCatalogs map[int64][]string,
 	channels []service.AvailableChannel,
 ) []userAvailableChannel {
+	return buildPlazaAvailableChannels(channelService, groupCatalogs, channels, nil, nil)
+}
+
+func buildPlazaAvailableChannels(
+	channelService *service.ChannelService,
+	groupCatalogs map[int64][]string,
+	channels []service.AvailableChannel,
+	visibleCatalog map[int64]service.GroupCatalogEntry,
+	userRates map[int64]float64,
+) []userAvailableChannel {
 	out := make([]userAvailableChannel, 0, len(channels))
 	for _, ch := range channels {
 		if ch.Status != service.StatusActive {
 			continue
 		}
-		visibleGroups := filterPublicGroups(ch.Groups)
+		visibleGroups := filterPlazaVisibleGroups(ch.Groups, visibleCatalog, userRates)
 		if len(visibleGroups) == 0 {
 			continue
 		}
@@ -509,6 +570,23 @@ func buildPublicAvailableChannels(
 		})
 	}
 	return out
+}
+
+func filterPlazaVisibleGroups(
+	groups []service.AvailableGroupRef,
+	visibleCatalog map[int64]service.GroupCatalogEntry,
+	userRates map[int64]float64,
+) []userAvailableGroup {
+	if visibleCatalog == nil {
+		return filterPublicGroups(groups)
+	}
+	visible := filterUserVisibleGroups(groups, visibleCatalog)
+	for i := range visible {
+		if rate, ok := userRates[visible[i].ID]; ok {
+			visible[i].RateMultiplier = rate
+		}
+	}
+	return visible
 }
 
 // buildPublicGroupSections emits one section per public group. Keeping the

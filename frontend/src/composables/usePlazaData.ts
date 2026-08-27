@@ -16,6 +16,7 @@ export interface PlazaPricingConfig {
   serverUtcOffset: string
   paymentEnabled: boolean
   balanceDisabled: boolean
+  description: string
 }
 
 const defaultPricingConfig = (): PlazaPricingConfig => ({
@@ -23,7 +24,8 @@ const defaultPricingConfig = (): PlazaPricingConfig => ({
   rate: PLAZA_DEFAULT_CNY_USD_RATE,
   serverUtcOffset: '',
   paymentEnabled: false,
-  balanceDisabled: false
+  balanceDisabled: false,
+  description: ''
 })
 
 export const channels = ref<UserAvailableChannel[]>([])
@@ -52,7 +54,8 @@ export async function fetchAll(): Promise<void> {
       rate: normalizePlazaRate(settings.payment_cny_usd_rate),
       serverUtcOffset: settings.server_utc_offset ?? '',
       paymentEnabled: settings.payment_enabled === true,
-      balanceDisabled: settings.payment_balance_disabled === true
+      balanceDisabled: settings.payment_balance_disabled === true,
+      description: settings.model_plaza_description ?? ''
     }
   } catch (err: unknown) {
     if (requestId !== latestRequestId) return

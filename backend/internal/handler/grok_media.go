@@ -99,7 +99,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 
 	contentType := c.GetHeader("Content-Type")
 	if endpoint.RequiresRequestBody() {
-		if err := service.ValidateGrokMediaBillingFields(contentType, body); err != nil {
+		if err := service.ValidateGrokMediaBillingFieldsForEndpoint(endpoint, contentType, body); err != nil {
 			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", err.Error())
 			return
 		}

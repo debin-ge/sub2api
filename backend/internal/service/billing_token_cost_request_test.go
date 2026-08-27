@@ -95,6 +95,7 @@ func TestCalculateTokenCostForRequest_LegacyRuleFollowsGroupToggle(t *testing.T)
 		if enabled {
 			want, err := bs.CalculateCostWithLongContext("gemini-2.5-pro", tokens, 1, rule.Threshold, rule.Multiplier)
 			require.NoError(t, err)
+			want.BillingMode = string(BillingModeToken)
 			require.Equal(t, want, got)
 			// 输入 200K × 1.25e-6 + 超出 100K × 1.25e-6 × 2 = 0.5；输出 1000 × 10e-6 = 0.01。
 			// 旧路径的加倍只体现在 ActualCost（分项 InputCost 不含倍率），探针也据此取值。

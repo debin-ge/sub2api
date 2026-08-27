@@ -260,7 +260,10 @@ func TestListPublic_IgnoresAvailableChannelsFeatureFlag(t *testing.T) {
 		nil,
 		nil,
 	)
-	h := &AvailableChannelHandler{channelService: channelSvc}
+	h := &AvailableChannelHandler{
+		channelService: channelSvc,
+		settingService: stubAvailableChannelSettingService{},
+	}
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/channels/public", nil)
@@ -276,6 +279,92 @@ func TestListPublic_IgnoresAvailableChannelsFeatureFlag(t *testing.T) {
 	require.Equal(t, "public-channel", body.Data[0].Name)
 	require.Len(t, body.Data[0].Platforms, 1)
 	require.Contains(t, supportedModelNames(body.Data[0].Platforms[0].SupportedModels), "gpt-4o-mini")
+}
+
+func TestListPublic_ModelPlazaDisabled404(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := &AvailableChannelHandler{
+		settingService: stubAvailableChannelSettingService{plazaDisabled: true},
+	}
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/channels/public", nil)
+
+	h.ListPublic(c)
+
+	require.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestListPublic_ModelPlazaRequireAuth401(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := &AvailableChannelHandler{
+		settingService: stubAvailableChannelSettingService{plazaRequireAuth: true},
+	}
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/channels/public", nil)
+
+	h.ListPublic(c)
+
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+func TestListPublic_AuthenticatedIncludesVisibleExclusiveGroupsAndUserRates(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	channelSvc := service.NewChannelService(
+		&publicChannelRepoStub{channels: []service.Channel{{
+			ID:       1,
+			Name:     "personalized-channel",
+			Status:   service.StatusActive,
+			GroupIDs: []int64{1, 2},
+		}}},
+		&publicGroupRepoStub{groups: []service.Group{
+			{ID: 1, Name: "public", Platform: service.PlatformOpenAI, Status: service.StatusActive},
+			{ID: 2, Name: "exclusive", Platform: service.PlatformOpenAI, Status: service.StatusActive, IsExclusive: true},
+		}},
+		nil,
+		nil,
+	)
+	h := &AvailableChannelHandler{
+		channelService: channelSvc,
+		settingService: stubAvailableChannelSettingService{plazaRequireAuth: true},
+		apiKeyService: stubAvailableChannelAPIKeyService{
+			catalog: []service.GroupCatalogEntry{
+				{Group: service.Group{ID: 1, Name: "public", Platform: service.PlatformOpenAI}},
+				{Group: service.Group{ID: 2, Name: "exclusive", Platform: service.PlatformOpenAI, IsExclusive: true}},
+			},
+			rates: map[int64]float64{2: 0.4},
+		},
+		modelCatalog: &stubModelCatalogProvider{byGroup: map[int64][]string{
+			1: {"gpt-public"},
+			2: {"gpt-exclusive"},
+		}},
+	}
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/channels/public", nil)
+	c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 7})
+
+	h.ListPublic(c)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, "private, no-store", w.Header().Get("Cache-Control"))
+	require.Equal(t, "Authorization", w.Header().Get("Vary"))
+	var body struct {
+		Data []userAvailableChannel `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	require.Len(t, body.Data, 1)
+	require.Len(t, body.Data[0].Platforms, 2)
+	groups := map[int64]userAvailableGroup{}
+	for _, section := range body.Data[0].Platforms {
+		for _, group := range section.Groups {
+			groups[group.ID] = group
+		}
+	}
+	require.Len(t, groups, 2)
+	require.True(t, groups[2].IsExclusive)
+	require.InDelta(t, 0.4, groups[2].RateMultiplier, 1e-12)
 }
 
 func TestListPublic_DoesNotPairUnboundChannelPricingWithPublicGroup(t *testing.T) {
@@ -310,6 +399,7 @@ func TestListPublic_DoesNotPairUnboundChannelPricingWithPublicGroup(t *testing.T
 	)
 	h := &AvailableChannelHandler{
 		channelService: channelSvc,
+		settingService: stubAvailableChannelSettingService{},
 		modelCatalog: &stubModelCatalogProvider{byGroup: map[int64][]string{
 			1: {"group-only-model"},
 		}},
@@ -366,6 +456,7 @@ func TestListPublic_UsesUnifiedCatalogAndCacheHeader(t *testing.T) {
 	}
 	h := &AvailableChannelHandler{
 		channelService: channelSvc,
+		settingService: stubAvailableChannelSettingService{},
 		modelCatalog:   catalog,
 	}
 	w := httptest.NewRecorder()
@@ -409,6 +500,7 @@ func TestListPublic_ExcludesExclusiveCatalog(t *testing.T) {
 	)
 	h := &AvailableChannelHandler{
 		channelService: channelSvc,
+		settingService: stubAvailableChannelSettingService{},
 		modelCatalog: &stubModelCatalogProvider{public: map[string][]string{
 			service.PlatformOpenAI: {"gpt-public"},
 		}},
@@ -521,6 +613,7 @@ func TestListPublic_UsesBillingFallbackWhenCatalogMisses(t *testing.T) {
 	)
 	h := &AvailableChannelHandler{
 		channelService: channelSvc,
+		settingService: stubAvailableChannelSettingService{},
 		modelCatalog: &stubModelCatalogProvider{public: map[string][]string{
 			"glm": {"GLM-4.7"},
 		}},
@@ -594,6 +687,7 @@ func TestListPublic_BillingFallbackEnrichesPartialCatalog(t *testing.T) {
 	)
 	h := &AvailableChannelHandler{
 		channelService: channelSvc,
+		settingService: stubAvailableChannelSettingService{},
 		modelCatalog: &stubModelCatalogProvider{public: map[string][]string{
 			"openai": {"gpt-5.4"},
 		}},
@@ -674,6 +768,7 @@ func TestListPublic_UsesModelPriceOverrideAndDeepSeekTimeSchedule(t *testing.T) 
 	)
 	h := &AvailableChannelHandler{
 		channelService: channelSvc,
+		settingService: stubAvailableChannelSettingService{},
 		modelCatalog: &stubModelCatalogProvider{public: map[string][]string{
 			service.PlatformDeepSeek: {"deepseek-v4-flash"},
 		}},
@@ -737,6 +832,7 @@ func TestListPublic_HidesRoutingOnlyModels(t *testing.T) {
 	)
 	h := &AvailableChannelHandler{
 		channelService: channelSvc,
+		settingService: stubAvailableChannelSettingService{},
 		modelCatalog: &stubModelCatalogProvider{public: map[string][]string{
 			"windsurf": {
 				"adaptive",
@@ -782,6 +878,7 @@ func TestListPublic_RendersModelsFromGroupsAndAccountsWhenNoChannelsExist(t *tes
 	)
 	h := &AvailableChannelHandler{
 		channelService: channelSvc,
+		settingService: stubAvailableChannelSettingService{},
 		modelCatalog: &stubModelCatalogProvider{public: map[string][]string{
 			"openai": {"gpt-5.4"},
 		}},
@@ -1125,6 +1222,7 @@ func (s *stubModelCatalogProvider) ListForGroup(_ context.Context, groupID int64
 
 type stubAvailableChannelAPIKeyService struct {
 	catalog []service.GroupCatalogEntry
+	rates   map[int64]float64
 }
 
 func (s stubAvailableChannelAPIKeyService) GetVisibleGroupCatalog(
@@ -1134,12 +1232,25 @@ func (s stubAvailableChannelAPIKeyService) GetVisibleGroupCatalog(
 	return s.catalog, nil
 }
 
+func (s stubAvailableChannelAPIKeyService) GetUserGroupRates(context.Context, int64) (map[int64]float64, error) {
+	return s.rates, nil
+}
+
 type stubAvailableChannelSettingService struct {
-	enabled bool
+	enabled          bool
+	plazaDisabled    bool
+	plazaRequireAuth bool
 }
 
 func (s stubAvailableChannelSettingService) GetAvailableChannelsRuntime(context.Context) service.AvailableChannelsRuntime {
 	return service.AvailableChannelsRuntime{Enabled: s.enabled}
+}
+
+func (s stubAvailableChannelSettingService) GetModelPlazaRuntime(context.Context) service.ModelPlazaRuntime {
+	return service.ModelPlazaRuntime{
+		Enabled:     !s.plazaDisabled,
+		RequireAuth: s.plazaRequireAuth,
+	}
 }
 
 func newHandlerTestPricingService(data map[string]*service.ModelPriceEntry) *service.PricingService {

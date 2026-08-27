@@ -14,8 +14,10 @@ const channels = ref<any[]>([])
 const pricingConfig = ref({
   multiplier: 1.5,
   rate: 6.8,
+  serverUtcOffset: '+08:00',
   paymentEnabled: true,
   balanceDisabled: false,
+  description: '',
 })
 const loading = ref(false)
 const error = ref('')
@@ -244,6 +246,7 @@ describe('PlazaView', () => {
       serverUtcOffset: '+08:00',
       paymentEnabled: true,
       balanceDisabled: false,
+      description: '',
     }
     loading.value = false
     error.value = ''
@@ -276,6 +279,17 @@ describe('PlazaView', () => {
 
     expect(wrapper.text()).toContain('gpt-4o-mini')
     expect(wrapper.text()).not.toContain('Model Plaza is unavailable')
+  })
+
+  it('renders sanitized Markdown pricing notes', async () => {
+    pricingConfig.value.description = 'Use **discount pricing**. <script>alert(1)</script>'
+
+    const wrapper = await mountPlaza()
+
+    const description = wrapper.get('[data-testid="plaza-description"]')
+    expect(description.text()).toContain('Use discount pricing.')
+    expect(description.find('strong').exists()).toBe(true)
+    expect(description.find('script').exists()).toBe(false)
   })
 
   it('renders a newly discovered model without a frontend allowlist', async () => {

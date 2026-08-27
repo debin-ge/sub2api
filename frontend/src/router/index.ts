@@ -887,6 +887,33 @@ router.beforeEach(async (to, _from, next) => {
     }
   }
 
+  // The plaza is a public route structurally, but its runtime switch and
+  // optional sign-in requirement are controlled by public settings. The API
+  // enforces the same rules fail-closed; this guard provides a friendly redirect.
+  if (to.path === '/plaza') {
+    if (!appStore.publicSettingsLoaded) {
+      try {
+        await appStore.fetchPublicSettings()
+      } catch (error) {
+        console.warn('Failed to load public settings in plaza route guard', error)
+      }
+    }
+    if (
+      appStore.publicSettingsLoaded &&
+      appStore.cachedPublicSettings?.model_plaza_enabled === false
+    ) {
+      next(authStore.isAuthenticated ? (authStore.isAdmin ? '/admin/dashboard' : '/dashboard') : '/')
+      return
+    }
+    if (
+      appStore.cachedPublicSettings?.model_plaza_require_auth === true &&
+      !authStore.isAuthenticated
+    ) {
+      next({ path: '/login', query: { redirect: to.fullPath } })
+      return
+    }
+  }
+
   // If route doesn't require auth, allow access
   if (!requiresAuth) {
     // If already authenticated and trying to access login/register, redirect to appropriate dashboard
