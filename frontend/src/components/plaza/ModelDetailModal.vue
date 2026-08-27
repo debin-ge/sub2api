@@ -108,7 +108,7 @@
                 <PriceCell
                   :label="t('plaza.modal.input')"
                   :scale="PER_MILLION_TOKEN_SCALE"
-                  :multiplier="multiplier"
+                  :rate="rate"
                   :standard-available="model.standardPricing != null"
                   :standard-value="model.standardPricing?.minPricing.input ?? null"
                   :standard-billing-rate-multiplier="model.standardPricing?.minPricingRateMultipliers.input"
@@ -120,7 +120,7 @@
                 <PriceCell
                   :label="t('plaza.modal.output')"
                   :scale="PER_MILLION_TOKEN_SCALE"
-                  :multiplier="multiplier"
+                  :rate="rate"
                   :standard-available="model.standardPricing != null"
                   :standard-value="model.standardPricing?.minPricing.output ?? null"
                   :standard-billing-rate-multiplier="model.standardPricing?.minPricingRateMultipliers.output"
@@ -132,7 +132,7 @@
                 <PriceCell
                   :label="t('plaza.modal.cacheWrite')"
                   :scale="PER_MILLION_TOKEN_SCALE"
-                  :multiplier="multiplier"
+                  :rate="rate"
                   :standard-available="model.standardPricing != null"
                   :standard-value="model.standardPricing?.minPricing.cacheWrite ?? null"
                   :standard-billing-rate-multiplier="model.standardPricing?.minPricingRateMultipliers.cacheWrite"
@@ -144,7 +144,7 @@
                 <PriceCell
                   :label="t('plaza.modal.cacheRead')"
                   :scale="PER_MILLION_TOKEN_SCALE"
-                  :multiplier="multiplier"
+                  :rate="rate"
                   :standard-available="model.standardPricing != null"
                   :standard-value="model.standardPricing?.minPricing.cacheRead ?? null"
                   :standard-billing-rate-multiplier="model.standardPricing?.minPricingRateMultipliers.cacheRead"
@@ -156,7 +156,7 @@
                 <PriceCell
                   :label="t('plaza.modal.imageOutput')"
                   :scale="PER_MILLION_TOKEN_SCALE"
-                  :multiplier="multiplier"
+                  :rate="rate"
                   :standard-available="model.standardPricing != null"
                   :standard-value="model.standardPricing?.minPricing.imageOutput ?? null"
                   :standard-billing-rate-multiplier="model.standardPricing?.minPricingRateMultipliers.imageOutput"
@@ -168,7 +168,7 @@
                 <PriceCell
                   :label="t('plaza.modal.perRequest')"
                   :scale="PER_REQUEST_SCALE"
-                  :multiplier="multiplier"
+                  :rate="rate"
                   :standard-available="model.standardPricing != null"
                   :standard-value="model.standardPricing?.minPricing.perRequest ?? null"
                   :standard-billing-rate-multiplier="model.standardPricing?.minPricingRateMultipliers.perRequest"
@@ -233,7 +233,6 @@
                         :label="t('plaza.modal.input')"
                         :value="interval.input_price"
                         :scale="PER_MILLION_TOKEN_SCALE"
-                        :multiplier="multiplier"
                         :rate="rate"
                         :billing-rate-multiplier="item.group.rate_multiplier"
                       />
@@ -241,7 +240,6 @@
                         :label="t('plaza.modal.output')"
                         :value="interval.output_price"
                         :scale="PER_MILLION_TOKEN_SCALE"
-                        :multiplier="multiplier"
                         :rate="rate"
                         :billing-rate-multiplier="item.group.rate_multiplier"
                       />
@@ -249,7 +247,6 @@
                         :label="t('plaza.modal.cacheWrite')"
                         :value="interval.cache_write_price"
                         :scale="PER_MILLION_TOKEN_SCALE"
-                        :multiplier="multiplier"
                         :rate="rate"
                         :billing-rate-multiplier="item.group.rate_multiplier"
                       />
@@ -257,7 +254,6 @@
                         :label="t('plaza.modal.cacheRead')"
                         :value="interval.cache_read_price"
                         :scale="PER_MILLION_TOKEN_SCALE"
-                        :multiplier="multiplier"
                         :rate="rate"
                         :billing-rate-multiplier="item.group.rate_multiplier"
                       />
@@ -265,7 +261,6 @@
                         :label="t('plaza.modal.imageOutput')"
                         :value="item.pricing.image_output_price"
                         :scale="PER_MILLION_TOKEN_SCALE"
-                        :multiplier="multiplier"
                         :rate="rate"
                         :billing-rate-multiplier="item.group.rate_multiplier"
                       />
@@ -273,7 +268,6 @@
                         :label="t('plaza.modal.perRequest')"
                         :value="interval.per_request_price"
                         :scale="PER_REQUEST_SCALE"
-                        :multiplier="multiplier"
                         :rate="rate"
                         :billing-rate-multiplier="requestRateMultiplier(item)"
                       />
@@ -365,7 +359,6 @@ import { formatPeakRateWindow, hasPeakRate, serverTimezoneLabel } from '@/utils/
 const props = defineProps<{
   open: boolean
   model: AggregatedModel | null
-  multiplier: number
   rate: number
   serverUtcOffset?: string
 }>()
@@ -407,16 +400,16 @@ const pricingSummaries = computed<PlazaPricingSummary[]>(() =>
 )
 
 const standardDiscountFold = computed(() =>
-  computeDiscountFold(props.multiplier, props.rate, props.model?.standardPricing?.displayRateMultiplier)
+  computeDiscountFold(props.model?.standardPricing?.displayRateMultiplier)
 )
 const standardDiscountPercent = computed(() =>
-  computeDiscountPercent(props.multiplier, props.rate, props.model?.standardPricing?.displayRateMultiplier)
+  computeDiscountPercent(props.model?.standardPricing?.displayRateMultiplier)
 )
 const vipDiscountFold = computed(() =>
-  computeDiscountFold(props.multiplier, props.rate, props.model?.vipPricing?.displayRateMultiplier)
+  computeDiscountFold(props.model?.vipPricing?.displayRateMultiplier)
 )
 const vipDiscountPercent = computed(() =>
-  computeDiscountPercent(props.multiplier, props.rate, props.model?.vipPricing?.displayRateMultiplier)
+  computeDiscountPercent(props.model?.vipPricing?.displayRateMultiplier)
 )
 const hasAnyPrice = (pricing: PlazaPricingSummary | null | undefined) =>
   pricing != null && Object.values(pricing.minPricing).some((value) => value != null)

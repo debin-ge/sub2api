@@ -46,7 +46,6 @@
                 v-for="model in paginatedModels"
                 :key="`${model.platform}::${model.model}`"
                 :model="model"
-                :multiplier="pricingConfig.multiplier"
                 :rate="pricingConfig.rate"
                 @open-detail="modal.open"
               />
@@ -73,7 +72,6 @@
     <ModelDetailModal
       :open="modalIsOpen"
       :model="modalCurrentModel"
-      :multiplier="pricingConfig.multiplier"
       :rate="pricingConfig.rate"
       :server-utc-offset="pricingConfig.serverUtcOffset"
       @close="modal.close"

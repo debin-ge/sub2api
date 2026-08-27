@@ -57,7 +57,7 @@ import { useI18n } from 'vue-i18n'
 import type { ModelPriceTimeSchedule } from '@/api/channels'
 import {
   PER_REQUEST_SCALE,
-  formatCNYRecharged,
+  formatCNYEffective,
   formatScaled,
   scheduledScaledPrice
 } from '@/utils/pricing'
@@ -65,7 +65,7 @@ import {
 const props = defineProps<{
   label: string
   scale: number
-  multiplier: number
+  rate: number
   standardAvailable: boolean
   standardValue: number | null
   standardBillingRateMultiplier?: number
@@ -139,7 +139,7 @@ const columns = computed(() => {
 
 const originalDisplay = (value: number | null) => formatScaled(value, props.scale)
 const rechargedDisplay = (value: number | null, billingRateMultiplier?: number) =>
-  formatCNYRecharged(value, props.multiplier, props.scale, billingRateMultiplier)
+  formatCNYEffective(value, props.rate, props.scale, billingRateMultiplier)
 
 const unitLabel = computed(() =>
   props.scale === PER_REQUEST_SCALE

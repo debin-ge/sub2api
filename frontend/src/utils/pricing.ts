@@ -37,8 +37,7 @@ export function normalizeBillingRateMultiplier(value: number | null | undefined)
 
 function formatCNY(value: number): string {
   if (value > 0 && value < 0.005) return '<¥0.01'
-  const formatted = value.toFixed(2).replace(/\.?0+$/, '')
-  return `¥${formatted}`
+  return `¥${formatFixedMax(value, 6)}`
 }
 
 function formatNumber(value: number): string {
@@ -58,15 +57,22 @@ export function formatCNYMarket(
   return formatCNY(usd * normalizePlazaRate(rate) * scale)
 }
 
-export function formatCNYRecharged(
+/**
+ * Convert a USD model price to the effective CNY price shown in the plaza.
+ *
+ * The group multiplier is a billing multiplier, while the recharge multiplier
+ * only describes how much balance a payment buys. Model prices must therefore
+ * use: USD price × USD/CNY rate × effective group multiplier.
+ */
+export function formatCNYEffective(
   usd: number | null,
-  multiplier: number | null | undefined,
+  rate: number | null | undefined,
   scale: number,
   billingRateMultiplier?: number | null
 ): string {
   if (usd == null) return '-'
   return formatCNY(
-    (usd * normalizeBillingRateMultiplier(billingRateMultiplier) / normalizePlazaMultiplier(multiplier)) * scale
+    usd * normalizePlazaRate(rate) * normalizeBillingRateMultiplier(billingRateMultiplier) * scale
   )
 }
 
@@ -78,23 +84,15 @@ export function computeValueBoost(
 }
 
 export function computeDiscountFold(
-  multiplier: number | null | undefined,
-  rate: number | null | undefined,
   billingRateMultiplier?: number | null
 ): number {
-  const ratio = normalizeBillingRateMultiplier(billingRateMultiplier) /
-    (normalizePlazaMultiplier(multiplier) * normalizePlazaRate(rate))
-  return Number((ratio * 10).toFixed(2))
+  return Number((normalizeBillingRateMultiplier(billingRateMultiplier) * 10).toFixed(2))
 }
 
 export function computeDiscountPercent(
-  multiplier: number | null | undefined,
-  rate: number | null | undefined,
   billingRateMultiplier?: number | null
 ): number {
-  const ratio = normalizeBillingRateMultiplier(billingRateMultiplier) /
-    (normalizePlazaMultiplier(multiplier) * normalizePlazaRate(rate))
-  return Number((ratio * 100).toFixed(2))
+  return Number((normalizeBillingRateMultiplier(billingRateMultiplier) * 100).toFixed(2))
 }
 
 export function formatDiscountFold(value: number): string {

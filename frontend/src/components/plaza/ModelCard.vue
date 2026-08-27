@@ -72,7 +72,7 @@
         <PriceCell
           :label="t('plaza.card.input')"
           :scale="PER_MILLION_TOKEN_SCALE"
-          :multiplier="multiplier"
+          :rate="rate"
           :standard-available="model.standardPricing != null"
           :standard-value="model.standardPricing?.minPricing.input ?? null"
           :standard-billing-rate-multiplier="model.standardPricing?.minPricingRateMultipliers.input"
@@ -84,7 +84,7 @@
         <PriceCell
           :label="t('plaza.card.output')"
           :scale="PER_MILLION_TOKEN_SCALE"
-          :multiplier="multiplier"
+          :rate="rate"
           :standard-available="model.standardPricing != null"
           :standard-value="model.standardPricing?.minPricing.output ?? null"
           :standard-billing-rate-multiplier="model.standardPricing?.minPricingRateMultipliers.output"
@@ -97,7 +97,7 @@
           v-if="hasCacheWrite"
           :label="t('plaza.card.cacheWrite')"
           :scale="PER_MILLION_TOKEN_SCALE"
-          :multiplier="multiplier"
+          :rate="rate"
           :standard-available="model.standardPricing != null"
           :standard-value="model.standardPricing?.minPricing.cacheWrite ?? null"
           :standard-billing-rate-multiplier="model.standardPricing?.minPricingRateMultipliers.cacheWrite"
@@ -110,7 +110,7 @@
           v-if="hasCacheRead"
           :label="t('plaza.card.cacheRead')"
           :scale="PER_MILLION_TOKEN_SCALE"
-          :multiplier="multiplier"
+          :rate="rate"
           :standard-available="model.standardPricing != null"
           :standard-value="model.standardPricing?.minPricing.cacheRead ?? null"
           :standard-billing-rate-multiplier="model.standardPricing?.minPricingRateMultipliers.cacheRead"
@@ -123,7 +123,7 @@
           v-if="hasImageOutput"
           :label="t('plaza.card.imageOutput')"
           :scale="PER_MILLION_TOKEN_SCALE"
-          :multiplier="multiplier"
+          :rate="rate"
           :standard-available="model.standardPricing != null"
           :standard-value="model.standardPricing?.minPricing.imageOutput ?? null"
           :standard-billing-rate-multiplier="model.standardPricing?.minPricingRateMultipliers.imageOutput"
@@ -136,7 +136,7 @@
           v-if="hasPerRequest"
           :label="t('plaza.card.perRequest')"
           :scale="PER_REQUEST_SCALE"
-          :multiplier="multiplier"
+          :rate="rate"
           :standard-available="model.standardPricing != null"
           :standard-value="model.standardPricing?.minPricing.perRequest ?? null"
           :standard-billing-rate-multiplier="model.standardPricing?.minPricingRateMultipliers.perRequest"
@@ -191,7 +191,6 @@ import { hasPeakRate } from '@/utils/peak-rate'
 
 const props = defineProps<{
   model: AggregatedModel
-  multiplier: number
   rate: number
 }>()
 
@@ -202,16 +201,16 @@ defineEmits<{
 const { t } = useI18n()
 
 const standardDiscountFold = computed(() =>
-  computeDiscountFold(props.multiplier, props.rate, props.model.standardPricing?.displayRateMultiplier)
+  computeDiscountFold(props.model.standardPricing?.displayRateMultiplier)
 )
 const standardDiscountPercent = computed(() =>
-  computeDiscountPercent(props.multiplier, props.rate, props.model.standardPricing?.displayRateMultiplier)
+  computeDiscountPercent(props.model.standardPricing?.displayRateMultiplier)
 )
 const vipDiscountFold = computed(() =>
-  computeDiscountFold(props.multiplier, props.rate, props.model.vipPricing?.displayRateMultiplier)
+  computeDiscountFold(props.model.vipPricing?.displayRateMultiplier)
 )
 const vipDiscountPercent = computed(() =>
-  computeDiscountPercent(props.multiplier, props.rate, props.model.vipPricing?.displayRateMultiplier)
+  computeDiscountPercent(props.model.vipPricing?.displayRateMultiplier)
 )
 const hasAnyPrice = (pricing: AggregatedModel['standardPricing']) =>
   pricing != null && Object.values(pricing.minPricing).some((value) => value != null)

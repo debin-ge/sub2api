@@ -87,7 +87,7 @@ const model: AggregatedModel = {
 describe('ModelCard', () => {
   it('renders four core pricing rows and emits open-detail', async () => {
     const wrapper = mount(ModelCard, {
-      props: { model, multiplier: 1.5, rate: 6.8 }
+      props: { model, rate: 6.8 }
     })
 
     expect(wrapper.text()).toContain('claude-opus-4-8')
@@ -95,9 +95,8 @@ describe('ModelCard', () => {
     expect(wrapper.text()).toContain('$75')
     expect(wrapper.text()).toContain('$18.75')
     expect(wrapper.text()).toContain('$1.5')
-    expect(wrapper.text()).not.toContain('¥102')
-    expect(wrapper.text()).toContain('¥10')
-    expect(wrapper.text()).toContain('9.8% of reference')
+    expect(wrapper.text()).toContain('¥102')
+    expect(wrapper.text()).not.toContain('% of reference')
     expect(wrapper.text()).toContain('1 channels')
     expect(wrapper.text()).not.toContain('View details')
     expect(wrapper.text()).not.toContain('plaza.card.viewDetails')
@@ -138,11 +137,11 @@ describe('ModelCard', () => {
     }
 
     const wrapper = mount(ModelCard, {
-      props: { model: premiumModel, multiplier: 1.5, rate: 6.8 }
+      props: { model: premiumModel, rate: 6.8 }
     })
 
-    expect(wrapper.text()).toContain('19.61% of reference')
-    expect(wrapper.text()).toContain('¥20')
+    expect(wrapper.text()).not.toContain('% of reference')
+    expect(wrapper.text()).toContain('¥204')
     expect(wrapper.text()).not.toContain('10.2x boost')
   })
 
@@ -163,7 +162,7 @@ describe('ModelCard', () => {
     }
 
     const wrapper = mount(ModelCard, {
-      props: { model: peakModel, multiplier: 1.5, rate: 6.8 }
+      props: { model: peakModel, rate: 6.8 }
     })
 
     expect(wrapper.text()).toContain('Peak pricing applies')
@@ -200,13 +199,12 @@ describe('ModelCard', () => {
     }
 
     const wrapper = mount(ModelCard, {
-      props: { model: mixedModel, multiplier: 1.5, rate: 6.8 }
+      props: { model: mixedModel, rate: 6.8 }
     })
 
-    expect(wrapper.text()).toContain('9.8% of reference')
-    expect(wrapper.text()).toContain('7.84% of reference')
-    expect(wrapper.text()).toContain('¥10')
-    expect(wrapper.text()).toContain('¥8')
+    expect(wrapper.text()).toContain('80% of reference')
+    expect(wrapper.text()).toContain('¥102')
+    expect(wrapper.text()).toContain('¥81.6')
     expect(wrapper.text()).toContain('Standard')
     expect(wrapper.text()).toContain('VIP')
   })
@@ -247,7 +245,7 @@ describe('ModelCard', () => {
     }
 
     const wrapper = mount(ModelCard, {
-      props: { model: deepseekModel, multiplier: 1, rate: 7.2 }
+      props: { model: deepseekModel, rate: 7.2 }
     })
 
     expect(wrapper.text()).toContain('Peak / off-peak')
@@ -294,7 +292,7 @@ describe('ModelCard', () => {
     }
 
     const wrapper = mount(ModelCard, {
-      props: { model: deepseekModel, multiplier: 1, rate: 7.2 }
+      props: { model: deepseekModel, rate: 7.2 }
     })
 
     expect(wrapper.text()).toContain('$3 / $1.5')

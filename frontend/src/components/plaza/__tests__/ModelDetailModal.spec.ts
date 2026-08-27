@@ -155,7 +155,7 @@ describe('ModelDetailModal', () => {
     trigger?.focus()
 
     wrapper = mount(ModelDetailModal, {
-      props: { open: true, model, multiplier: 1.5, rate: 6.8, serverUtcOffset: '+08:00' },
+      props: { open: true, model, rate: 6.8, serverUtcOffset: '+08:00' },
       attachTo: document.body
     })
     await wrapper.vm.$nextTick()
@@ -170,7 +170,7 @@ describe('ModelDetailModal', () => {
     expect(document.body.textContent).toContain('Image output')
     expect(document.body.textContent).toContain('Per request')
     expect(document.body.textContent).toContain('$3')
-    expect(document.body.textContent).toContain('9.8% of reference')
+    expect(document.body.textContent).not.toContain('% of reference')
     expect(document.body.textContent).toContain('Peak pricing applies')
     expect(document.body.textContent).toContain('Base prices exclude peak multiplier.')
     expect(document.body.textContent).toContain('14:00-18:00 ×2 (UTC+08:00)')
@@ -245,19 +245,18 @@ describe('ModelDetailModal', () => {
     }
 
     wrapper = mount(ModelDetailModal, {
-      props: { open: true, model: vipModel, multiplier: 1.5, rate: 6.8 },
+      props: { open: true, model: vipModel, rate: 6.8 },
       attachTo: document.body
     })
     await wrapper.vm.$nextTick()
 
     expect(document.body.textContent).toContain('Standard group pricing')
     expect(document.body.textContent).toContain('VIP group pricing')
-    expect(document.body.textContent).toContain('9.8% of reference')
-    expect(document.body.textContent).toContain('7.84% of reference')
+    expect(document.body.textContent).toContain('80% of reference')
     expect(document.body.textContent).toContain('OpenAI VIP')
     expect(document.body.textContent).toContain('VIP')
-    expect(document.body.textContent).toContain('¥2')
-    expect(document.body.textContent).toContain('¥1.6')
+    expect(document.body.textContent).toContain('¥20.4')
+    expect(document.body.textContent).toContain('¥16.32')
   })
 
   it('uses the independent image multiplier for tiered image per-request prices', async () => {
@@ -321,14 +320,14 @@ describe('ModelDetailModal', () => {
     }
 
     wrapper = mount(ModelDetailModal, {
-      props: { open: true, model: imageModel, multiplier: 1, rate: 6.8 },
+      props: { open: true, model: imageModel, rate: 6.8 },
       attachTo: document.body
     })
     await wrapper.vm.$nextTick()
 
     const tierSection = document.body.textContent ?? ''
     expect(tierSection).toContain('$0.02')
-    expect(tierSection).toContain('¥0.02')
+    expect(tierSection).toContain('¥0.136')
     expect(tierSection).not.toContain('<¥0.01')
   })
 })

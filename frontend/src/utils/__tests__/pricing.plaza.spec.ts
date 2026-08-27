@@ -3,8 +3,8 @@ import {
   computeValueBoost,
   computeDiscountFold,
   computeDiscountPercent,
+  formatCNYEffective,
   formatCNYMarket,
-  formatCNYRecharged,
   formatDiscountFold,
   formatScaled,
   normalizePlazaMultiplier,
@@ -28,24 +28,24 @@ describe('plaza pricing helpers', () => {
     expect(formatScaled(0.000003, 1_000_000)).toBe('$3')
   })
 
-  it('formats recharged CNY price from USD price, multiplier, and scale', () => {
-    expect(formatCNYRecharged(0.000015, 1.5, 1_000_000)).toBe('¥10')
+  it('converts the USD model price with the configured exchange rate', () => {
+    expect(formatCNYEffective(0.000015, 6.8, 1_000_000)).toBe('¥102')
   })
 
-  it('includes model or group billing multiplier in recharged CNY prices', () => {
-    expect(formatCNYRecharged(0.000015, 1.5, 1_000_000, 2)).toBe('¥20')
+  it('includes the effective group billing multiplier in CNY prices', () => {
+    expect(formatCNYEffective(0.0000014, 6.8, 1_000_000, 0.6)).toBe('¥5.712')
   })
 
-  it('computes discount from recharge multiplier, reference rate, and group multiplier', () => {
-    expect(computeDiscountFold(1.5, 6.8, 1)).toBe(0.98)
-    expect(computeDiscountFold(1.5, 6.8, 2)).toBe(1.96)
-    expect(computeDiscountPercent(1.5, 6.8, 2)).toBe(19.61)
-    expect(formatDiscountFold(0.98)).toBe('0.98')
+  it('computes discount directly from the effective group multiplier', () => {
+    expect(computeDiscountFold(0.6)).toBe(6)
+    expect(computeDiscountFold(2)).toBe(20)
+    expect(computeDiscountPercent(0.6)).toBe(60)
+    expect(formatDiscountFold(6)).toBe('6')
   })
 
   it('uses dash for missing values', () => {
     expect(formatCNYMarket(null, 6.8, 1_000_000)).toBe('-')
-    expect(formatCNYRecharged(null, 1.5, 1_000_000)).toBe('-')
+    expect(formatCNYEffective(null, 6.8, 1_000_000)).toBe('-')
   })
 
   it('normalizes invalid config values', () => {
@@ -58,15 +58,15 @@ describe('plaza pricing helpers', () => {
   it('normalizes nullish config arguments in formatting and boost helpers', () => {
     expect(formatCNYMarket(0.000015, undefined, 1_000_000)).toBe('¥102')
     expect(formatCNYMarket(0.000015, null, 1_000_000)).toBe('¥102')
-    expect(formatCNYRecharged(0.000015, undefined, 1_000_000)).toBe('¥15')
-    expect(formatCNYRecharged(0.000015, null, 1_000_000)).toBe('¥15')
+    expect(formatCNYEffective(0.000015, undefined, 1_000_000)).toBe('¥102')
+    expect(formatCNYEffective(0.000015, null, 1_000_000)).toBe('¥102')
     expect(computeValueBoost(undefined, undefined)).toBe(6.8)
     expect(computeValueBoost(null, null)).toBe(6.8)
   })
 
   it('formats tiny positive non-zero CNY prices below the cent threshold', () => {
     expect(formatCNYMarket(0.0000000001, 6.8, 1_000_000)).toBe('<¥0.01')
-    expect(formatCNYRecharged(0.0000000001, 1.5, 1_000_000)).toBe('<¥0.01')
+    expect(formatCNYEffective(0.0000000001, 6.8, 1_000_000)).toBe('<¥0.01')
   })
 
   it('scales the stored price to either schedule tier', () => {
