@@ -926,7 +926,9 @@ func (s *PricingService) LookupModelPricingStrictForPlatforms(platforms []string
 // shared catalog. This ordering is essential for composite routing: looking up
 // the composite platform first through the old single-platform helper would
 // immediately fall through to the shared catalog and mask a concrete provider
-// override that should be the next candidate.
+// override that should be the next candidate. It is the shared implementation
+// for strict admission and permissive settlement lookup; allowInference only
+// controls the final cross-model inference steps.
 func (s *PricingService) lookupModelPricingForPlatforms(platforms []string, modelName string, allowInference bool) (*ModelPriceEntry, string) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

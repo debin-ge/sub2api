@@ -46,7 +46,7 @@ const billingModelDriftGuardName = "billing_model_drift"
 //
 // 守卫的候选集合恰好是两个：来源选定的计费模型，以及实际转发的上游模型
 // （见 GatewayService.admitTokenPricing——全局价那一支走的是
-// billableModelWithFallback(billingModel, upstreamModel)）。结算的候选集合比它宽，
+// billableModelWithFallbackForPlatforms(billingModel, upstreamModel)）。结算的候选集合比它宽，
 // 多出 composite 的具体模型与请求模型本身。这个宽窄差是有意的：准入 fail-closed 要窄，
 // 结算 fail-loud 要宽，谁向谁看齐都会坏掉一侧。
 //

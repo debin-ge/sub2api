@@ -986,7 +986,7 @@ const responseModelBillingCostEpsilon = 1e-12
 //     token 价的模型名去决定媒体单价。新增按次计费形态时必须同步扩这个入参。
 //
 // 调用方还必须额外满足两条：模型能被价格表确定性识别（见
-// hasIdentifiedResponseModelPricing / hasIdentifiedOpenAIResponsePricingForPlatforms），以及通过
+// hasIdentifiedResponseModelPricingForPlatforms / hasIdentifiedOpenAIResponsePricingForPlatforms），以及通过
 // responseModelBillingAdoptable 的成本准入。
 func responseModelBillingDeclaration(source, responseModel string, conflict, mediaBilled bool) string {
 	if source != BillingModelSourceResponse || conflict || mediaBilled {
@@ -1222,7 +1222,7 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 		}
 	}
 	// response_model：按上游成功响应自报的模型计费（渠道显式开启才生效）。
-	// 采纳条件见 responseModelBillingDeclaration + hasIdentifiedResponseModelPricing
+	// 采纳条件见 responseModelBillingDeclaration + hasIdentifiedResponseModelPricingForPlatforms
 	// + responseModelBillingAdoptable。任一条件不满足都静默回落基线，即开启本模式前的
 	// 既有行为。响应模型与基线同名时直接跳过：重算必然同价，白跑一次定价解析。
 	if responseModel := responseModelBillingDeclaration(
@@ -1436,7 +1436,7 @@ func (s *GatewayService) compositeImageBillableModel(
 	return concreteBillingModel
 }
 
-// billableModelWithFallback 在选定计费模型（可能是 composite 公开别名或未定价的映射名）
+// billableModelWithFallbackForPlatforms 在选定计费模型（可能是 composite 公开别名或未定价的映射名）
 // 查不到严格价格（完整显式渠道价或模型自己的全局价）时，按序回退到实际转发的
 // 具体模型，避免把另一个 SKU 的 family 模糊价套到当前用量上。所有候选都无价时
 // 保持原值，由后扣阶段 fail-loud 并持久化为待结算。
@@ -1463,7 +1463,7 @@ func (s *GatewayService) billableModelWithFallbackForPlatforms(
 	return billingModel
 }
 
-// billableImageModelWithFallback applies the same fallback policy using the
+// billableImageModelWithFallbackForPlatforms applies the same fallback policy using the
 // actual media tier. It deliberately does not ask the token catalog first:
 // image-only SKUs commonly have no token price.
 func (s *GatewayService) billableImageModelWithFallbackForPlatforms(
@@ -1548,7 +1548,7 @@ func (s *GatewayService) hasResolvableImagePricingForPlatforms(
 	return ok
 }
 
-// hasResolvableTokenPricing only accepts a complete explicit channel price or
+// hasResolvableTokenPricingForPlatforms only accepts a complete explicit channel price or
 // a strict global match for the model itself. Cross-SKU family/OpenAI inference
 // is not settlement evidence.
 func (s *GatewayService) hasResolvableTokenPricingForPlatforms(
@@ -1587,10 +1587,10 @@ func (s *GatewayService) hasResolvableTokenPricingForPlatforms(
 	return err == nil
 }
 
-// hasIdentifiedResponseModelPricing 判断上游自报的响应模型是否可以作为计费基准，
+// hasIdentifiedResponseModelPricingForPlatforms 判断上游自报的响应模型是否可以作为计费基准，
 // 并回传它是否解析到了渠道级定价（供 responseModelBillingAdoptable 的跨定价源守卫使用，
 // 避免为此再解析一次）。
-// 与 hasResolvableTokenPricing 的区别是刻意更严：只接受管理员为该模型显式配置的
+// 与 hasResolvableTokenPricingForPlatforms 的区别是刻意更严：只接受管理员为该模型显式配置的
 // 渠道定价，或价格表中能被确定性识别的条目；不接受按子串猜出来的系列兜底价。
 // 详见 responseModelBillingDeclaration 的说明。
 func (s *GatewayService) hasIdentifiedResponseModelPricingForPlatforms(

@@ -2646,7 +2646,7 @@ func (s *BillingService) CalculateVideoCostStrict(
 	}, nil
 }
 
-// strictImageUnitPrice resolves only explicit group pricing, exact hard-coded
+// strictImageUnitPriceForPlatforms resolves only explicit group pricing, exact hard-coded
 // SKUs, or an exact catalog entry. The bool distinguishes an explicitly
 // configured zero price from a missing price.
 func (s *BillingService) strictImageUnitPriceForPlatforms(

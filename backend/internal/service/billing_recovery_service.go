@@ -699,7 +699,7 @@ func (s *BillingRecoveryService) recoveryCatalogMediaTierConfigured(platforms []
 	}
 }
 
-// hasStrictTokenPricing 与 GatewayService.hasResolvableTokenPricing 使用同一严格口径：
+// hasStrictTokenPricing 与 GatewayService.hasResolvableTokenPricingForPlatforms 使用同一严格口径：
 // 补偿和实时后扣都不能拿跨模型推断出来的价格去给一行盖“已结算”的章。
 func (s *BillingRecoveryService) hasStrictTokenPricing(ctx context.Context, model string, groupID *int64, platforms []string) bool {
 	if s.channelService != nil && groupID != nil {

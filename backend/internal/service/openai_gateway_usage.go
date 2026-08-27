@@ -305,7 +305,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		}
 	}
 	// response_model：按上游成功响应自报的模型计费（渠道显式开启才生效）。
-	// 采纳条件见 responseModelBillingDeclaration + hasIdentifiedOpenAIResponsePricing
+	// 采纳条件见 responseModelBillingDeclaration + hasIdentifiedOpenAIResponsePricingForPlatforms
 	// + responseModelBillingAdoptable。任一条件不满足都静默回落基线，即开启本模式前的
 	// 既有行为。响应模型与基线同名时直接跳过：重算必然同价，白跑一次定价解析。
 	baselineBillingModel := firstUsageBillingModel(billingModels)
