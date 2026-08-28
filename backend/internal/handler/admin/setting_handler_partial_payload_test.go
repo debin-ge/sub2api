@@ -12,6 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const testContactQRCodePNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+
 // Saving settings is a whole-document PUT. A client that sends only the field it
 // cares about must not reset everything else: a payload as small as
 // `{"risk_control_enabled":true}` used to clear site_name, after which
@@ -56,32 +58,42 @@ func TestUpdateSettingsFullPayloadStillClearsSentEmptyFields(t *testing.T) {
 
 func TestUpdateSettingsContactQRCodePreservesOmittedAndAllowsExplicitClear(t *testing.T) {
 	h, repo := newStepUpSwitchTestHandler(t, map[string]string{
-		service.SettingKeyContactQRCode: "data:image/png;base64,iVBORw0KGgo=",
+		service.SettingKeyContactQRCode:        testContactQRCodePNG,
+		service.SettingKeyContactQRCodeEnabled: "true",
 	})
 
 	preserved := doUpdateSettings(t, h, map[string]any{"registration_enabled": true}, nil)
 	require.Equal(t, http.StatusOK, preserved.Code, preserved.Body.String())
-	require.Equal(t, "data:image/png;base64,iVBORw0KGgo=", repo.values[service.SettingKeyContactQRCode])
+	require.Equal(t, testContactQRCodePNG, repo.values[service.SettingKeyContactQRCode])
+	require.Equal(t, "true", repo.values[service.SettingKeyContactQRCodeEnabled])
 
 	cleared := doUpdateSettings(t, h, map[string]any{"contact_qr_code": ""}, nil)
 	require.Equal(t, http.StatusOK, cleared.Code, cleared.Body.String())
 	require.Equal(t, "", repo.values[service.SettingKeyContactQRCode])
+	require.Equal(t, "false", repo.values[service.SettingKeyContactQRCodeEnabled])
 }
 
 func TestUpdateSettingsContactQRCodeValidatesUploadedImage(t *testing.T) {
 	h, repo := newStepUpSwitchTestHandler(t, map[string]string{})
 
 	accepted := doUpdateSettings(t, h, map[string]any{
-		"contact_qr_code": "data:image/png;base64,iVBORw0KGgo=",
+		"contact_qr_code": testContactQRCodePNG,
 	}, nil)
 	require.Equal(t, http.StatusOK, accepted.Code, accepted.Body.String())
-	require.Equal(t, "data:image/png;base64,iVBORw0KGgo=", repo.values[service.SettingKeyContactQRCode])
+	require.Equal(t, testContactQRCodePNG, repo.values[service.SettingKeyContactQRCode])
+	require.Equal(t, "true", repo.values[service.SettingKeyContactQRCodeEnabled])
 
 	rejected := doUpdateSettings(t, h, map[string]any{
 		"contact_qr_code": "https://example.com/support.png",
 	}, nil)
 	require.Equal(t, http.StatusBadRequest, rejected.Code)
 	require.Contains(t, rejected.Body.String(), "INVALID_CONTACT_QR_CODE")
+
+	fakePNG := doUpdateSettings(t, h, map[string]any{
+		"contact_qr_code": "data:image/png;base64,aVBORw0KGgo=",
+	}, nil)
+	require.Equal(t, http.StatusBadRequest, fakePNG.Code)
+	require.Contains(t, fakePNG.Body.String(), "INVALID_CONTACT_QR_CODE")
 }
 
 // smtp_from_email is the one request field whose JSON name differs from its

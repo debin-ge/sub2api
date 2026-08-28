@@ -370,7 +370,7 @@ type PublicSettings struct {
 	SiteSubtitle                        string
 	APIBaseURL                          string
 	ContactInfo                         string
-	ContactQRCode                       string
+	ContactQRCodeEnabled                bool
 	DocURL                              string
 	HomeContent                         string
 	CompactHomeEnabled                  bool

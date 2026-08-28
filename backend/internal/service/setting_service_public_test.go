@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -11,8 +12,9 @@ import (
 )
 
 type settingPublicRepoStub struct {
-	values map[string]string
-	err    error
+	values        map[string]string
+	err           error
+	requestedKeys []string
 }
 
 func (s *settingPublicRepoStub) Get(ctx context.Context, key string) (*Setting, error) {
@@ -20,7 +22,7 @@ func (s *settingPublicRepoStub) Get(ctx context.Context, key string) (*Setting, 
 }
 
 func (s *settingPublicRepoStub) GetValue(ctx context.Context, key string) (string, error) {
-	panic("unexpected GetValue call")
+	return s.values[key], s.err
 }
 
 func (s *settingPublicRepoStub) Set(ctx context.Context, key, value string) error {
@@ -31,6 +33,7 @@ func (s *settingPublicRepoStub) GetMultiple(ctx context.Context, keys []string) 
 	if s.err != nil {
 		return nil, s.err
 	}
+	s.requestedKeys = append([]string(nil), keys...)
 	out := make(map[string]string, len(keys))
 	for _, key := range keys {
 		if value, ok := s.values[key]; ok {
@@ -149,18 +152,29 @@ func TestSettingService_GetPublicSettings_ExposesCompactHomeEnabled(t *testing.T
 	require.False(t, missingSettings.CompactHomeEnabled)
 }
 
-func TestSettingService_GetPublicSettings_ExposesContactQRCode(t *testing.T) {
-	const qrCode = "data:image/png;base64,iVBORw0KGgo="
-	svc := NewSettingService(&settingPublicRepoStub{values: map[string]string{
-		SettingKeyContactInfo:   "WeCom support",
-		SettingKeyContactQRCode: qrCode,
-	}}, &config.Config{})
+func TestSettingService_GetPublicSettings_ExposesOnlyContactQRCodeEnabled(t *testing.T) {
+	repo := &settingPublicRepoStub{values: map[string]string{
+		SettingKeyContactInfo:          "WeCom support",
+		SettingKeyContactQRCode:        "large-data-url-must-not-be-read",
+		SettingKeyContactQRCodeEnabled: "true",
+	}}
+	svc := NewSettingService(repo, &config.Config{})
 
 	settings, err := svc.GetPublicSettings(context.Background())
 
 	require.NoError(t, err)
 	require.Equal(t, "WeCom support", settings.ContactInfo)
-	require.Equal(t, qrCode, settings.ContactQRCode)
+	require.True(t, settings.ContactQRCodeEnabled)
+	require.NotContains(t, repo.requestedKeys, SettingKeyContactQRCode)
+	require.Contains(t, repo.requestedKeys, SettingKeyContactQRCodeEnabled)
+
+	injection, err := svc.GetPublicSettingsForInjection(context.Background())
+	require.NoError(t, err)
+	encoded, err := json.Marshal(injection)
+	require.NoError(t, err)
+	require.Contains(t, string(encoded), `"contact_qr_code_enabled":true`)
+	require.NotContains(t, string(encoded), "large-data-url-must-not-be-read")
+	require.NotContains(t, string(encoded), `"contact_qr_code":`)
 }
 
 func TestSettingService_ChannelMonitorHideThroughputDefaultsToPrivate(t *testing.T) {

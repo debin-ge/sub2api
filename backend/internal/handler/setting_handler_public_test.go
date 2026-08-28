@@ -4,9 +4,11 @@ package handler
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -24,8 +26,10 @@ func (s *settingHandlerPublicRepoStub) Get(ctx context.Context, key string) (*se
 }
 
 func (s *settingHandlerPublicRepoStub) GetValue(ctx context.Context, key string) (string, error) {
-	panic("unexpected GetValue call")
+	return s.values[key], nil
 }
+
+const handlerTestContactQRCodePNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
 
 func (s *settingHandlerPublicRepoStub) Set(ctx context.Context, key, value string) error {
 	panic("unexpected Set call")
@@ -80,6 +84,80 @@ func TestSettingHandler_GetPublicSettings_ExposesForceEmailOnThirdPartySignup(t 
 	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &resp))
 	require.Equal(t, 0, resp.Code)
 	require.True(t, resp.Data.ForceEmailOnThirdPartySignup)
+}
+
+func TestSettingHandler_GetPublicSettings_ExposesOnlyContactQRCodeEnabled(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := NewSettingHandler(service.NewSettingService(&settingHandlerPublicRepoStub{
+		values: map[string]string{
+			service.SettingKeyContactQRCode:        handlerTestContactQRCodePNG,
+			service.SettingKeyContactQRCodeEnabled: "true",
+		},
+	}, &config.Config{}), "test-version")
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/settings/public", nil)
+	h.GetPublicSettings(c)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.Contains(t, recorder.Body.String(), `"contact_qr_code_enabled":true`)
+	require.NotContains(t, recorder.Body.String(), `"contact_qr_code":`)
+	require.NotContains(t, recorder.Body.String(), handlerTestContactQRCodePNG)
+}
+
+func TestSettingHandler_GetContactQRCodeUsesContentAddressedCaching(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := NewSettingHandler(service.NewSettingService(&settingHandlerPublicRepoStub{
+		values: map[string]string{
+			service.SettingKeyContactQRCode: handlerTestContactQRCodePNG,
+		},
+	}, &config.Config{}), "test-version")
+
+	redirectRecorder := httptest.NewRecorder()
+	redirectContext, _ := gin.CreateTestContext(redirectRecorder)
+	redirectContext.Request = httptest.NewRequest(http.MethodGet, "/api/v1/settings/contact-qr-code", nil)
+	h.GetContactQRCode(redirectContext)
+
+	require.Equal(t, http.StatusTemporaryRedirect, redirectRecorder.Code)
+	require.Equal(t, "no-store", redirectRecorder.Header().Get("Cache-Control"))
+	location := redirectRecorder.Header().Get("Location")
+	require.Contains(t, location, "/api/v1/settings/contact-qr-code?v=")
+
+	imageRecorder := httptest.NewRecorder()
+	imageContext, _ := gin.CreateTestContext(imageRecorder)
+	imageContext.Request = httptest.NewRequest(http.MethodGet, location, nil)
+	h.GetContactQRCode(imageContext)
+
+	require.Equal(t, http.StatusOK, imageRecorder.Code)
+	require.Equal(t, "image/png", imageRecorder.Header().Get("Content-Type"))
+	require.Equal(t, "public, max-age=31536000, immutable", imageRecorder.Header().Get("Cache-Control"))
+	require.Equal(t, "nosniff", imageRecorder.Header().Get("X-Content-Type-Options"))
+	require.NotEmpty(t, imageRecorder.Header().Get("ETag"))
+	expected, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(handlerTestContactQRCodePNG, "data:image/png;base64,"))
+	require.NoError(t, err)
+	require.Equal(t, expected, imageRecorder.Body.Bytes())
+
+	notModifiedRecorder := httptest.NewRecorder()
+	notModifiedContext, _ := gin.CreateTestContext(notModifiedRecorder)
+	notModifiedContext.Request = httptest.NewRequest(http.MethodGet, location, nil)
+	notModifiedContext.Request.Header.Set("If-None-Match", imageRecorder.Header().Get("ETag"))
+	h.GetContactQRCode(notModifiedContext)
+	require.Equal(t, http.StatusNotModified, notModifiedRecorder.Code)
+	require.Empty(t, notModifiedRecorder.Body.Bytes())
+}
+
+func TestSettingHandler_GetContactQRCodeReturnsNotFoundWhenDisabled(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := NewSettingHandler(service.NewSettingService(&settingHandlerPublicRepoStub{values: map[string]string{}}, &config.Config{}), "test-version")
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/settings/contact-qr-code", nil)
+	h.GetContactQRCode(c)
+
+	require.Equal(t, http.StatusNotFound, recorder.Code)
+	require.Equal(t, "no-store", recorder.Header().Get("Cache-Control"))
 }
 
 func TestSettingHandler_GetPublicSettings_ExposesPlazaPricingFields(t *testing.T) {

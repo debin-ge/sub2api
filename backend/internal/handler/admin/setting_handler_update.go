@@ -487,6 +487,9 @@ func omittedSettingKeys(sentFields map[string]json.RawMessage) service.OmittedSe
 			omitted[settingKey] = struct{}{}
 		}
 	}
+	if _, sent := sentFields["contact_qr_code"]; !sent {
+		omitted[service.SettingKeyContactQRCodeEnabled] = struct{}{}
+	}
 	return omitted
 }
 

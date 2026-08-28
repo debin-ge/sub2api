@@ -169,7 +169,7 @@
                 class="border-t border-gray-100 px-4 py-2.5 dark:border-dark-700"
               >
                 <button
-                  v-if="contactQRCode"
+                  v-if="contactQRCodeEnabled"
                   type="button"
                   class="flex w-full items-center gap-2 rounded-md text-left text-xs text-gray-500 transition-colors hover:text-primary-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30 dark:text-gray-400 dark:hover:text-primary-400"
                   @click="openSupportDialog"
@@ -254,7 +254,6 @@
 
     <CustomerSupportDialog
       :show="supportDialogOpen"
-      :qr-code="contactQRCode"
       :contact-info="contactInfo"
       @close="supportDialogOpen = false"
     />
@@ -288,8 +287,8 @@ const dropdownOpen = ref(false)
 const supportDialogOpen = ref(false)
 const dropdownRef = ref<HTMLElement | null>(null)
 const contactInfo = computed(() => appStore.contactInfo)
-const contactQRCode = computed(() => appStore.contactQRCode)
-const hasSupportContact = computed(() => Boolean(contactInfo.value || contactQRCode.value))
+const contactQRCodeEnabled = computed(() => appStore.contactQRCodeEnabled)
+const hasSupportContact = computed(() => Boolean(contactInfo.value || contactQRCodeEnabled.value))
 const docUrl = computed(() => sanitizeUrl(appStore.docUrl))
 const avatarUrl = computed(() => user.value?.avatar_url?.trim() || '')
 const availableBalance = computed(() => Number(user.value?.balance || 0))

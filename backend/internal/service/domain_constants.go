@@ -395,6 +395,7 @@ const (
 	SettingKeyAPIBaseURL                  = "api_base_url"                  // API端点地址（用于客户端配置和导入）
 	SettingKeyContactInfo                 = "contact_info"                  // 客服联系方式
 	SettingKeyContactQRCode               = "contact_qr_code"               // 客服二维码 (base64)
+	SettingKeyContactQRCodeEnabled        = "contact_qr_code_enabled"       // 是否已配置客服二维码
 	SettingKeyDocURL                      = "doc_url"                       // 文档链接
 	SettingKeyHomeContent                 = "home_content"                  // 首页内容（支持 Markdown/HTML，或 URL 作为 iframe src）
 	SettingKeyCompactHomeEnabled          = "compact_home_enabled"          // 是否启用内置简洁首页

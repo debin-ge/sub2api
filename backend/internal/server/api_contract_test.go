@@ -688,7 +688,7 @@ func TestAPIContracts(t *testing.T) {
 					service.SettingKeySiteSubtitle:  "Subtitle",
 					service.SettingKeyAPIBaseURL:    "https://api.example.com",
 					service.SettingKeyContactInfo:   "support",
-					service.SettingKeyContactQRCode: "data:image/png;base64,iVBORw0KGgo=",
+					service.SettingKeyContactQRCode: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
 					service.SettingKeyDocURL:        "https://docs.example.com",
 
 					service.SettingKeyDefaultConcurrency:   "5",
@@ -840,7 +840,7 @@ func TestAPIContracts(t *testing.T) {
 						"api_key_acl_trust_forwarded_ip": false,
 					"forwarded_client_ip_headers": [],
 					"contact_info": "support",
-					"contact_qr_code": "data:image/png;base64,iVBORw0KGgo=",
+					"contact_qr_code": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
 					"doc_url": "https://docs.example.com",
 					"auth_source_default_email_balance": 0,
 					"auth_source_default_email_concurrency": 5,

@@ -185,7 +185,7 @@
                 <li>
                   {{ t('redeem.codeRule3') }}
                   <button
-                    v-if="contactQRCode"
+                    v-if="contactQRCodeEnabled"
                     type="button"
                     class="ml-1.5 inline-flex items-center rounded-md bg-primary-200/50 px-2 py-0.5 text-xs font-medium text-primary-800 dark:bg-primary-800/40 dark:text-primary-200"
                     @click="supportDialogOpen = true"
@@ -349,7 +349,6 @@
 
     <CustomerSupportDialog
       :show="supportDialogOpen"
-      :qr-code="contactQRCode"
       :contact-info="contactInfo"
       @close="supportDialogOpen = false"
     />
@@ -362,7 +361,7 @@ import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
 import { useSubscriptionStore } from '@/stores/subscriptions'
-import { redeemAPI, authAPI, type RedeemHistoryItem } from '@/api'
+import { redeemAPI, type RedeemHistoryItem } from '@/api'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import CustomerSupportDialog from '@/components/common/CustomerSupportDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -393,7 +392,7 @@ const errorMessage = ref('')
 const history = ref<RedeemHistoryItem[]>([])
 const loadingHistory = ref(false)
 const contactInfo = ref('')
-const contactQRCode = ref('')
+const contactQRCodeEnabled = ref(false)
 const supportDialogOpen = ref(false)
 
 // Helper functions for history display
@@ -498,9 +497,9 @@ const handleRedeem = async () => {
 onMounted(async () => {
   fetchHistory()
   try {
-    const settings = await authAPI.getPublicSettings()
-    contactInfo.value = settings.contact_info || ''
-    contactQRCode.value = settings.contact_qr_code || ''
+    const settings = await appStore.fetchPublicSettings()
+    contactInfo.value = settings?.contact_info || ''
+    contactQRCodeEnabled.value = settings?.contact_qr_code_enabled === true
   } catch (error) {
     console.error('Failed to load contact info:', error)
   }

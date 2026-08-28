@@ -9,8 +9,8 @@
     <div class="flex flex-col items-center gap-4 py-1">
       <div class="w-full max-w-sm rounded-2xl border border-gray-100 bg-white p-4 shadow-sm dark:border-dark-700">
         <img
-          v-if="qrCode"
-          :src="qrCode"
+          v-if="show"
+          :src="contactQRCodeURL"
           :alt="t('common.supportQrCodeAlt')"
           class="mx-auto max-h-[360px] w-full object-contain"
           data-testid="customer-support-qr-code"
@@ -43,7 +43,6 @@ import BaseDialog from '@/components/common/BaseDialog.vue'
 
 defineProps<{
   show: boolean
-  qrCode: string
   contactInfo?: string
 }>()
 
@@ -52,4 +51,5 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const contactQRCodeURL = '/api/v1/settings/contact-qr-code'
 </script>

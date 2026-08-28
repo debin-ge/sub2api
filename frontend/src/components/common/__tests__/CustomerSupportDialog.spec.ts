@@ -17,7 +17,6 @@ describe('CustomerSupportDialog', () => {
     const wrapper = mount(CustomerSupportDialog, {
       props: {
         show: true,
-        qrCode: 'data:image/png;base64,c3VwcG9ydA==',
         contactInfo: '企业微信客服',
       },
       global: {
@@ -31,10 +30,28 @@ describe('CustomerSupportDialog', () => {
     })
 
     const image = wrapper.get('[data-testid="customer-support-qr-code"]')
-    expect(image.attributes('src')).toBe('data:image/png;base64,c3VwcG9ydA==')
+    expect(image.attributes('src')).toBe('/api/v1/settings/contact-qr-code')
     expect(wrapper.text()).toContain('企业微信客服')
 
     await wrapper.get('button').trigger('click')
     expect(wrapper.emitted('close')).toHaveLength(1)
+  })
+
+  it('does not request the QR image while the dialog is closed', () => {
+    const wrapper = mount(CustomerSupportDialog, {
+      props: {
+        show: false,
+      },
+      global: {
+        stubs: {
+          BaseDialog: {
+            props: ['show', 'title'],
+            template: '<div><slot /></div>',
+          },
+        },
+      },
+    })
+
+    expect(wrapper.find('[data-testid="customer-support-qr-code"]').exists()).toBe(false)
   })
 })

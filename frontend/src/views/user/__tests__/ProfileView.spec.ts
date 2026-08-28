@@ -100,7 +100,7 @@ describe('ProfileView', () => {
   it('opens the customer support QR dialog from the contact card', async () => {
     fetchPublicSettingsMock.mockResolvedValue({
       contact_info: '企业微信客服',
-      contact_qr_code: 'data:image/png;base64,c3VwcG9ydA==',
+      contact_qr_code_enabled: true,
       balance_low_notify_enabled: false,
       balance_low_notify_threshold: 0,
       linuxdo_oauth_enabled: false,
@@ -120,8 +120,8 @@ describe('ProfileView', () => {
           ProfilePasskeyCard: true,
           Icon: true,
           CustomerSupportDialog: {
-            props: ['show', 'qrCode', 'contactInfo'],
-            template: '<div v-if="show" data-testid="support-dialog">{{ qrCode }} {{ contactInfo }}</div>'
+            props: ['show', 'contactInfo'],
+            template: '<div v-if="show" data-testid="support-dialog">{{ contactInfo }}</div>'
           }
         }
       }
@@ -130,7 +130,6 @@ describe('ProfileView', () => {
     await flushPromises()
     await wrapper.get('button').trigger('click')
 
-    expect(wrapper.get('[data-testid="support-dialog"]').text()).toContain('data:image/png;base64')
     expect(wrapper.get('[data-testid="support-dialog"]').text()).toContain('企业微信客服')
   })
 })

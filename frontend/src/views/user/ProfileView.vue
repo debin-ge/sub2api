@@ -16,9 +16,9 @@
       />
 
       <button
-        v-if="contactInfo || contactQRCode"
+        v-if="contactInfo || contactQRCodeEnabled"
         type="button"
-        :disabled="!contactQRCode"
+        :disabled="!contactQRCodeEnabled"
         class="card w-full border-primary-200 bg-primary-50 p-6 text-left transition-colors enabled:hover:border-primary-300 enabled:hover:bg-primary-100/70 disabled:cursor-default dark:bg-primary-900/20 dark:enabled:hover:border-primary-700 dark:enabled:hover:bg-primary-900/30"
         @click="supportDialogOpen = true"
       >
@@ -34,7 +34,7 @@
               {{ contactInfo || t('common.viewSupportQrCode') }}
             </p>
           </div>
-          <Icon v-if="contactQRCode" name="chevronRight" size="md" class="text-primary-500" />
+          <Icon v-if="contactQRCodeEnabled" name="chevronRight" size="md" class="text-primary-500" />
         </div>
       </button>
 
@@ -55,7 +55,6 @@
 
     <CustomerSupportDialog
       :show="supportDialogOpen"
-      :qr-code="contactQRCode"
       :contact-info="contactInfo"
       @close="supportDialogOpen = false"
     />
@@ -83,7 +82,7 @@ const authStore = useAuthStore()
 const user = computed(() => authStore.user)
 
 const contactInfo = ref('')
-const contactQRCode = ref('')
+const contactQRCodeEnabled = ref(false)
 const supportDialogOpen = ref(false)
 const balanceLowNotifyEnabled = ref(false)
 const systemDefaultThreshold = ref(0)
@@ -107,7 +106,7 @@ onMounted(async () => {
         return
       }
       contactInfo.value = settings.contact_info || ''
-      contactQRCode.value = settings.contact_qr_code || ''
+      contactQRCodeEnabled.value = settings.contact_qr_code_enabled === true
       balanceLowNotifyEnabled.value = settings.balance_low_notify_enabled ?? false
       systemDefaultThreshold.value = settings.balance_low_notify_threshold ?? 0
       linuxdoOAuthEnabled.value = settings.linuxdo_oauth_enabled ?? false

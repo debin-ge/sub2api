@@ -77,6 +77,7 @@ func (h *SettingHandler) GetPublicSettings(c *gin.Context) {
 		SiteSubtitle:                        settings.SiteSubtitle,
 		APIBaseURL:                          settings.APIBaseURL,
 		ContactInfo:                         settings.ContactInfo,
+		ContactQRCodeEnabled:                settings.ContactQRCodeEnabled,
 		DocURL:                              settings.DocURL,
 		HomeContent:                         settings.HomeContent,
 		CompactHomeEnabled:                  settings.CompactHomeEnabled,
@@ -129,6 +130,47 @@ func (h *SettingHandler) GetPublicSettings(c *gin.Context) {
 
 		AllowUserViewErrorRequests: settings.AllowUserViewErrorRequests,
 	})
+}
+
+// GetContactQRCode serves the customer-support QR image only when requested.
+// The stable URL redirects to a content-addressed URL whose response is immutable.
+// GET /api/v1/settings/contact-qr-code
+func (h *SettingHandler) GetContactQRCode(c *gin.Context) {
+	image, err := h.settingService.GetContactQRCodeImage(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	if image == nil {
+		c.Header("Cache-Control", "no-store")
+		c.AbortWithStatus(http.StatusNotFound)
+		return
+	}
+
+	if c.Query("v") != image.Revision {
+		c.Header("Cache-Control", "no-store")
+		c.Redirect(http.StatusTemporaryRedirect, c.Request.URL.Path+"?v="+image.Revision)
+		return
+	}
+
+	c.Header("Cache-Control", "public, max-age=31536000, immutable")
+	c.Header("ETag", image.ETag)
+	c.Header("X-Content-Type-Options", "nosniff")
+	if etagMatches(c.GetHeader("If-None-Match"), image.ETag) {
+		c.AbortWithStatus(http.StatusNotModified)
+		return
+	}
+	c.Data(http.StatusOK, image.ContentType, image.Data)
+}
+
+func etagMatches(header string, etag string) bool {
+	for _, candidate := range strings.Split(header, ",") {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "*" || candidate == etag || strings.TrimPrefix(candidate, "W/") == etag {
+			return true
+		}
+	}
+	return false
 }
 
 // UnsubscribeNotificationEmail handles optional notification email opt-outs.

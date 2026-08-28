@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -372,6 +371,7 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyAPIBaseURL] = settings.APIBaseURL
 	updates[SettingKeyContactInfo] = settings.ContactInfo
 	updates[SettingKeyContactQRCode] = settings.ContactQRCode
+	updates[SettingKeyContactQRCodeEnabled] = strconv.FormatBool(settings.ContactQRCode != "")
 	updates[SettingKeyDocURL] = settings.DocURL
 	updates[SettingKeyHomeContent] = settings.HomeContent
 	updates[SettingKeyCompactHomeEnabled] = strconv.FormatBool(settings.CompactHomeEnabled)
@@ -580,51 +580,6 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyAllowUserViewErrorRequests] = strconv.FormatBool(settings.AllowUserViewErrorRequests)
 
 	return updates, nil
-}
-
-const maxContactQRCodeImageBytes = 500 * 1024
-
-func normalizeContactQRCode(raw string) (string, error) {
-	value := strings.TrimSpace(raw)
-	if value == "" {
-		return "", nil
-	}
-
-	lowerValue := strings.ToLower(value)
-	allowedPrefixes := []string{
-		"data:image/png;base64,",
-		"data:image/jpeg;base64,",
-		"data:image/webp;base64,",
-	}
-	prefixLength := 0
-	for _, prefix := range allowedPrefixes {
-		if strings.HasPrefix(lowerValue, prefix) {
-			prefixLength = len(prefix)
-			break
-		}
-	}
-	if prefixLength == 0 {
-		return "", infraerrors.BadRequest(
-			"INVALID_CONTACT_QR_CODE",
-			"contact QR code must be a PNG, JPEG, or WEBP image",
-		)
-	}
-
-	decoded, err := base64.StdEncoding.DecodeString(value[prefixLength:])
-	if err != nil || len(decoded) == 0 {
-		return "", infraerrors.BadRequest(
-			"INVALID_CONTACT_QR_CODE",
-			"contact QR code contains invalid image data",
-		)
-	}
-	if len(decoded) > maxContactQRCodeImageBytes {
-		return "", infraerrors.BadRequest(
-			"INVALID_CONTACT_QR_CODE",
-			"contact QR code exceeds the 500KB limit",
-		)
-	}
-
-	return value, nil
 }
 
 func defaultAccountSchedulingThresholds() map[string]int {
