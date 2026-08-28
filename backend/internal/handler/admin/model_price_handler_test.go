@@ -178,3 +178,28 @@ func TestModelPriceHandlerUpsertPersistsAndReturnsCNY(t *testing.T) {
 	require.Contains(t, detailResponse.Body.String(), `"currency":"CNY"`)
 	require.Contains(t, detailResponse.Body.String(), `"override_currency":"CNY"`)
 }
+
+func TestModelPriceHandlerUpsertAllowsEmptyPayloadForInheritance(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	store := &handlerModelPriceOverrideStore{}
+	svc := service.NewPricingService(nil, nil)
+	svc.SetOverrideDependencies(store, nil)
+	handler := NewModelPriceHandler(svc, nil, nil)
+
+	router := gin.New()
+	router.PUT("/entry", handler.Upsert)
+	request := httptest.NewRequest(http.MethodPut, "/entry", strings.NewReader(`{
+		"platform":"anthropic",
+		"model":"claude-sonnet-4",
+		"currency":"USD",
+		"payload":{}
+	}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+
+	require.Equal(t, http.StatusOK, response.Code)
+	require.NotNil(t, store.row)
+	require.Empty(t, store.row.Payload)
+	require.Contains(t, response.Body.String(), `"override"`)
+}
