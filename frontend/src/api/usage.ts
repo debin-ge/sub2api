@@ -4,6 +4,7 @@
  */
 
 import { apiClient } from './client'
+import { withTimezone } from '@/utils/timezone'
 import type {
   UsageLog,
   UsageQueryParams,
@@ -58,6 +59,10 @@ export interface UserDashboardStats {
 export interface TrendParams {
   start_date?: string
   end_date?: string
+  // Exact RFC3339 window bounds; preferred over the dates when both are sent,
+  // so a rolling "last 24 hours" isn't widened to two calendar days.
+  start_time?: string
+  end_time?: string
   granularity?: 'day' | 'hour'
   api_key_id?: number
   model?: string
@@ -155,7 +160,7 @@ export async function query(
 ): Promise<PaginatedResponse<UsageLog>> {
   const { data } = await apiClient.get<PaginatedResponse<UsageLog>>('/usage', {
     ...config,
-    params
+    params: withTimezone(params)
   })
   return data
 }
@@ -179,7 +184,7 @@ export async function getStats(
   }
 
   const { data } = await apiClient.get<UsageStatsResponse>('/usage/stats', {
-    params
+    params: withTimezone(params)
   })
   return data
 }
@@ -206,7 +211,7 @@ export async function getStatsByDateRange(
   }
 
   const { data } = await apiClient.get<UsageStatsResponse>('/usage/stats', {
-    params
+    params: withTimezone(params)
   })
   return data
 }
@@ -235,7 +240,7 @@ export async function getByDateRange(
   }
 
   const { data } = await apiClient.get<PaginatedResponse<UsageLog>>('/usage', {
-    params
+    params: withTimezone(params)
   })
   return data
 }
@@ -254,10 +259,17 @@ export async function getById(id: number): Promise<UsageLog> {
 
 /**
  * Get user dashboard statistics
+ *
+ * The browser timezone is sent so the server anchors "today" on the same day
+ * boundary the usage page filters on. Without it the server would use its own
+ * configured timezone and the two views could report different totals.
+ *
  * @returns Dashboard statistics for current user
  */
 export async function getDashboardStats(): Promise<UserDashboardStats> {
-  const { data } = await apiClient.get<UserDashboardStats>('/usage/dashboard/stats')
+  const { data } = await apiClient.get<UserDashboardStats>('/usage/dashboard/stats', {
+    params: withTimezone({})
+  })
   return data
 }
 
@@ -267,7 +279,9 @@ export async function getDashboardStats(): Promise<UserDashboardStats> {
  * @returns Usage trend data for current user
  */
 export async function getDashboardTrend(params?: TrendParams): Promise<TrendResponse> {
-  const { data } = await apiClient.get<TrendResponse>('/usage/dashboard/trend', { params })
+  const { data } = await apiClient.get<TrendResponse>('/usage/dashboard/trend', {
+    params: withTimezone(params)
+  })
   return data
 }
 
@@ -279,6 +293,8 @@ export async function getDashboardTrend(params?: TrendParams): Promise<TrendResp
 export async function getDashboardModels(params?: {
   start_date?: string
   end_date?: string
+  start_time?: string
+  end_time?: string
   api_key_id?: number
   model?: string
   model_source?: 'requested'
@@ -289,7 +305,9 @@ export async function getDashboardModels(params?: {
   billing_mode?: string | null
   timezone?: string
 }): Promise<ModelStatsResponse> {
-  const { data } = await apiClient.get<ModelStatsResponse>('/usage/dashboard/models', { params })
+  const { data } = await apiClient.get<ModelStatsResponse>('/usage/dashboard/models', {
+    params: withTimezone(params)
+  })
   return data
 }
 
@@ -305,7 +323,7 @@ export async function getMyApiKeyDailyUsage(
 ): Promise<ApiKeyDailyUsageResponse> {
   const { data } = await apiClient.get<ApiKeyDailyUsageResponse>(
     `/user/api-keys/${apiKeyId}/usage/daily`,
-    { params: { days } }
+    { params: withTimezone({ days }) }
   )
   return data
 }
@@ -315,7 +333,7 @@ export async function getDashboardSnapshotV2(
 ): Promise<UsageDashboardSnapshotV2Response> {
   const { data } = await apiClient.get<UsageDashboardSnapshotV2Response>(
     '/usage/dashboard/snapshot-v2',
-    { params }
+    { params: withTimezone(params) }
   )
   return data
 }

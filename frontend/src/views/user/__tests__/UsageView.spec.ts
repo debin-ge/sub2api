@@ -207,6 +207,22 @@ describe('user UsageView', () => {
     expect(getAvailable).toHaveBeenCalled()
   })
 
+  it('queries the default range as an exact 24-hour window, not two calendar days', async () => {
+    mountUsageView()
+    await flushPromises()
+
+    // The default "last 24 hours" spans two dates, which the backend would read
+    // as [yesterday 00:00, tomorrow 00:00) — up to 48 hours. The exact instants
+    // are what keep this page agreeing with the dashboard.
+    for (const call of [query, getStats, getDashboardModels, getDashboardSnapshotV2]) {
+      const params = call.mock.calls[0][0] as { start_time?: string; end_time?: string }
+      expect(params.start_time).toBeDefined()
+      expect(params.end_time).toBeDefined()
+      const spanMs = new Date(params.end_time!).getTime() - new Date(params.start_time!).getTime()
+      expect(spanMs).toBe(24 * 60 * 60 * 1000)
+    }
+  })
+
   it('exports csv with current filters and without admin-only fields', async () => {
     const wrapper = mountUsageView()
     await flushPromises()

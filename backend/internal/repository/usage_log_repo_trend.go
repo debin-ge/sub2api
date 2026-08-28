@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 )
 
@@ -284,7 +285,7 @@ func (r *usageLogRepository) GetUsageTrendWithUsageFilters(ctx context.Context, 
 }
 
 func (r *usageLogRepository) getUsageTrendWithFilters(ctx context.Context, startTime, endTime time.Time, granularity string, userID, apiKeyID, accountID, groupID int64, model string, modelSource string, requestType *int16, stream *bool, billingType *int8, billingMode string, upstreamModelMismatch *bool) (results []TrendDataPoint, err error) {
-	if shouldUsePreaggregatedTrend(granularity, userID, apiKeyID, accountID, groupID, model, requestType, stream, billingType, billingMode, upstreamModelMismatch) {
+	if shouldUsePreaggregatedTrend(startTime, endTime, granularity, userID, apiKeyID, accountID, groupID, model, requestType, stream, billingType, billingMode, upstreamModelMismatch) {
 		aggregated, aggregatedErr := r.getUsageTrendFromAggregates(ctx, startTime, endTime, granularity)
 		if aggregatedErr == nil && len(aggregated) > 0 {
 			return aggregated, nil
@@ -357,8 +358,16 @@ func (r *usageLogRepository) getUsageTrendWithFilters(ctx context.Context, start
 	return results, nil
 }
 
-func shouldUsePreaggregatedTrend(granularity string, userID, apiKeyID, accountID, groupID int64, model string, requestType *int16, stream *bool, billingType *int8, billingMode string, upstreamModelMismatch *bool) bool {
+func shouldUsePreaggregatedTrend(startTime, endTime time.Time, granularity string, userID, apiKeyID, accountID, groupID int64, model string, requestType *int16, stream *bool, billingType *int8, billingMode string, upstreamModelMismatch *bool) bool {
 	if granularity != "day" && granularity != "hour" {
+		return false
+	}
+	// The rollup tables only hold whole buckets, and getUsageTrendFromAggregates
+	// selects them with `bucket_start >= $1`. A window that starts mid-bucket
+	// (a rolling "last 24 hours" from start_time/end_time) would silently drop
+	// its first partial bucket, so fall back to the raw usage_logs query — the
+	// rollup is an optimisation, not the source of truth.
+	if !isBucketAligned(startTime, granularity) || !isBucketAligned(endTime, granularity) {
 		return false
 	}
 	return userID == 0 &&
@@ -371,6 +380,23 @@ func shouldUsePreaggregatedTrend(granularity string, userID, apiKeyID, accountID
 		billingType == nil &&
 		billingMode == "" &&
 		upstreamModelMismatch == nil
+}
+
+// isBucketAligned reports whether t sits exactly on a rollup bucket boundary.
+// Alignment is evaluated in the server timezone because that is what the
+// aggregation job buckets on: hourly rows use
+// `date_trunc('hour', created_at AT TIME ZONE $tz) AT TIME ZONE $tz` and daily
+// rows use `(bucket_start AT TIME ZONE $tz)::date`. Checking in the caller's
+// timezone would wrongly accept a half-hour-offset zone such as Asia/Kolkata.
+func isBucketAligned(t time.Time, granularity string) bool {
+	if t.IsZero() {
+		return false
+	}
+	t = t.In(timezone.Location())
+	if t.Minute() != 0 || t.Second() != 0 || t.Nanosecond() != 0 {
+		return false
+	}
+	return granularity != "day" || t.Hour() == 0
 }
 
 func (r *usageLogRepository) getUsageTrendFromAggregates(ctx context.Context, startTime, endTime time.Time, granularity string) (results []TrendDataPoint, err error) {

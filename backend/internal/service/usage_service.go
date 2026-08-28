@@ -290,8 +290,8 @@ func (s *UsageService) Delete(ctx context.Context, id int64) error {
 }
 
 // GetUserDashboardStats returns per-user dashboard summary stats.
-func (s *UsageService) GetUserDashboardStats(ctx context.Context, userID int64) (*usagestats.UserDashboardStats, error) {
-	stats, err := s.usageRepo.GetUserDashboardStats(ctx, userID)
+func (s *UsageService) GetUserDashboardStats(ctx context.Context, userID int64, userTZ string) (*usagestats.UserDashboardStats, error) {
+	stats, err := s.usageRepo.GetUserDashboardStats(ctx, userID, userTZ)
 	if err != nil {
 		return nil, fmt.Errorf("get user dashboard stats: %w", err)
 	}
@@ -299,8 +299,8 @@ func (s *UsageService) GetUserDashboardStats(ctx context.Context, userID int64) 
 }
 
 // GetAPIKeyDashboardStats returns dashboard summary stats filtered by API Key.
-func (s *UsageService) GetAPIKeyDashboardStats(ctx context.Context, apiKeyID int64) (*usagestats.UserDashboardStats, error) {
-	stats, err := s.usageRepo.GetAPIKeyDashboardStats(ctx, apiKeyID)
+func (s *UsageService) GetAPIKeyDashboardStats(ctx context.Context, apiKeyID int64, userTZ string) (*usagestats.UserDashboardStats, error) {
+	stats, err := s.usageRepo.GetAPIKeyDashboardStats(ctx, apiKeyID, userTZ)
 	if err != nil {
 		return nil, fmt.Errorf("get api key dashboard stats: %w", err)
 	}

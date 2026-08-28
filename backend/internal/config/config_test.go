@@ -1667,11 +1667,11 @@ func TestLoadDefaultDashboardCacheConfig(t *testing.T) {
 	if cfg.Dashboard.KeyPrefix != "sub2api:" {
 		t.Fatalf("Dashboard.KeyPrefix = %q, want %q", cfg.Dashboard.KeyPrefix, "sub2api:")
 	}
-	if cfg.Dashboard.StatsFreshTTLSeconds != 15 {
-		t.Fatalf("Dashboard.StatsFreshTTLSeconds = %d, want 15", cfg.Dashboard.StatsFreshTTLSeconds)
+	if cfg.Dashboard.StatsFreshTTLSeconds != 5 {
+		t.Fatalf("Dashboard.StatsFreshTTLSeconds = %d, want 5", cfg.Dashboard.StatsFreshTTLSeconds)
 	}
-	if cfg.Dashboard.StatsTTLSeconds != 30 {
-		t.Fatalf("Dashboard.StatsTTLSeconds = %d, want 30", cfg.Dashboard.StatsTTLSeconds)
+	if cfg.Dashboard.StatsTTLSeconds != 10 {
+		t.Fatalf("Dashboard.StatsTTLSeconds = %d, want 10", cfg.Dashboard.StatsTTLSeconds)
 	}
 	if cfg.Dashboard.StatsRefreshTimeoutSeconds != 30 {
 		t.Fatalf("Dashboard.StatsRefreshTimeoutSeconds = %d, want 30", cfg.Dashboard.StatsRefreshTimeoutSeconds)
@@ -1728,8 +1728,8 @@ func TestLoadDefaultDashboardAggregationConfig(t *testing.T) {
 	if !cfg.DashboardAgg.Enabled {
 		t.Fatalf("DashboardAgg.Enabled = false, want true")
 	}
-	if cfg.DashboardAgg.IntervalSeconds != 60 {
-		t.Fatalf("DashboardAgg.IntervalSeconds = %d, want 60", cfg.DashboardAgg.IntervalSeconds)
+	if cfg.DashboardAgg.IntervalSeconds != 30 {
+		t.Fatalf("DashboardAgg.IntervalSeconds = %d, want 30", cfg.DashboardAgg.IntervalSeconds)
 	}
 	if cfg.DashboardAgg.LookbackSeconds != 120 {
 		t.Fatalf("DashboardAgg.LookbackSeconds = %d, want 120", cfg.DashboardAgg.LookbackSeconds)

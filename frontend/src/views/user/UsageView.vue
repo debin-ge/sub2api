@@ -229,6 +229,7 @@ import EndpointDistributionChart from '@/components/charts/EndpointDistributionC
 import TokenUsageTrend from '@/components/charts/TokenUsageTrend.vue'
 import Icon from '@/components/icons/Icon.vue'
 import UserErrorRequestsTable from '@/components/user/UserErrorRequestsTable.vue'
+import { getLast24HoursRange } from '@/utils/dateRange'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 import { formatReasoningEffort } from '@/utils/format'
 import { getBillingModeLabel, getDisplayBillingMode as resolveDisplayBillingMode } from '@/utils/billingMode'
@@ -324,24 +325,19 @@ let chartReqSeq = 0
 let statsReqSeq = 0
 let modelStatsReqSeq = 0
 
-const formatLocalDate = (date: Date): string =>
-  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-
-const getLast24HoursRangeDates = () => {
-  const end = new Date()
-  const start = new Date(end.getTime() - 24 * 60 * 60 * 1000)
-  return { start: formatLocalDate(start), end: formatLocalDate(end) }
-}
-
 const getGranularityForRange = (start: string, end: string): 'day' | 'hour' => {
   const startTime = new Date(`${start}T00:00:00`).getTime()
   const endTime = new Date(`${end}T00:00:00`).getTime()
   return Math.ceil((endTime - startTime) / (1000 * 60 * 60 * 24)) <= 1 ? 'hour' : 'day'
 }
 
-const defaultRange = getLast24HoursRangeDates()
+const defaultRange = getLast24HoursRange()
 const startDate = ref(defaultRange.start)
 const endDate = ref(defaultRange.end)
+// Exact bounds of the default "last 24 hours" window. Without them the two
+// dates above would be read as a 48-hour range.
+const startTime = ref<string | undefined>(defaultRange.startTime)
+const endTime = ref<string | undefined>(defaultRange.endTime)
 const granularity = ref<'day' | 'hour'>(getGranularityForRange(startDate.value, endDate.value))
 
 const modelDistributionMetric = ref<DistributionMetric>('tokens')
@@ -354,6 +350,8 @@ const errorViewEnabled = computed(() => appStore.cachedPublicSettings?.allow_use
 const filters = ref<UsageQueryParams>({
   start_date: startDate.value,
   end_date: endDate.value,
+  start_time: startTime.value,
+  end_time: endTime.value,
   request_type: undefined,
   billing_type: null,
   billing_mode: null,
@@ -417,6 +415,8 @@ const normalizedFilters = computed<UsageQueryParams>(() => {
     ...filters.value,
     start_date: startDate.value,
     end_date: endDate.value,
+    start_time: startTime.value,
+    end_time: endTime.value,
     stream: legacyStream === null ? undefined : legacyStream,
   }
 })
@@ -544,12 +544,16 @@ const refreshData = () => {
 }
 
 const resetFilters = () => {
-  const range = getLast24HoursRangeDates()
+  const range = getLast24HoursRange()
   startDate.value = range.start
   endDate.value = range.end
+  startTime.value = range.startTime
+  endTime.value = range.endTime
   filters.value = {
     start_date: range.start,
     end_date: range.end,
+    start_time: range.startTime,
+    end_time: range.endTime,
     request_type: undefined,
     billing_type: null,
     billing_mode: null,
@@ -562,11 +566,23 @@ const resetFilters = () => {
   }
 }
 
-const onDateRangeChange = (range: { startDate: string; endDate: string; preset: string | null }) => {
+const onDateRangeChange = (range: {
+  startDate: string
+  endDate: string
+  startTime?: string
+  endTime?: string
+  preset: string | null
+}) => {
   startDate.value = range.startDate
   endDate.value = range.endDate
+  // undefined for every non-rolling preset and for hand-typed dates, which is
+  // what makes the window fall back to whole calendar days.
+  startTime.value = range.startTime
+  endTime.value = range.endTime
   filters.value.start_date = range.startDate
   filters.value.end_date = range.endDate
+  filters.value.start_time = range.startTime
+  filters.value.end_time = range.endTime
   granularity.value = getGranularityForRange(range.startDate, range.endDate)
   applyFilters()
 }
@@ -830,6 +846,8 @@ const loadErrors = async () => {
       page_size: errorPageSize.value,
       start_date: startDate.value,
       end_date: endDate.value,
+      start_time: startTime.value,
+      end_time: endTime.value,
       model: (errorFilter.value.model ?? '').trim() || undefined,
       category: errorFilter.value.category || undefined,
       api_key_id: errorFilter.value.api_key_id ?? undefined,

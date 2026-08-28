@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	defaultDashboardStatsFreshTTL       = 15 * time.Second
-	defaultDashboardStatsCacheTTL       = 30 * time.Second
+	defaultDashboardStatsFreshTTL       = 5 * time.Second
+	defaultDashboardStatsCacheTTL       = 10 * time.Second
 	defaultDashboardStatsRefreshTimeout = 30 * time.Second
 )
 

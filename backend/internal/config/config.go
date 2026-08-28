@@ -2615,13 +2615,13 @@ func setDefaults() {
 	// Dashboard cache
 	viper.SetDefault("dashboard_cache.enabled", true)
 	viper.SetDefault("dashboard_cache.key_prefix", "sub2api:")
-	viper.SetDefault("dashboard_cache.stats_fresh_ttl_seconds", 15)
-	viper.SetDefault("dashboard_cache.stats_ttl_seconds", 30)
+	viper.SetDefault("dashboard_cache.stats_fresh_ttl_seconds", 5)
+	viper.SetDefault("dashboard_cache.stats_ttl_seconds", 10)
 	viper.SetDefault("dashboard_cache.stats_refresh_timeout_seconds", 30)
 
 	// Dashboard aggregation
 	viper.SetDefault("dashboard_aggregation.enabled", true)
-	viper.SetDefault("dashboard_aggregation.interval_seconds", 60)
+	viper.SetDefault("dashboard_aggregation.interval_seconds", 30)
 	viper.SetDefault("dashboard_aggregation.lookback_seconds", 120)
 	viper.SetDefault("dashboard_aggregation.backfill_enabled", false)
 	viper.SetDefault("dashboard_aggregation.backfill_max_days", 31)

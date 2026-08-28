@@ -189,27 +189,19 @@ func (h *UsageHandler) List(c *gin.Context) {
 		upstreamModelMismatch = &value
 	}
 
-	// Parse date range
-	var startTime, endTime *time.Time
+	// Parse date range: start_time/end_time (RFC3339 instants, for rolling
+	// windows) take precedence over start_date/end_date (calendar days, expanded
+	// to a half-open [start, end) window).
 	userTZ := c.Query("timezone") // Get user's timezone from request
-	if startDateStr := c.Query("start_date"); startDateStr != "" {
-		t, err := timezone.ParseInUserLocation("2006-01-02", startDateStr, userTZ)
-		if err != nil {
-			response.BadRequest(c, "Invalid start_date format, use YYYY-MM-DD")
-			return
-		}
-		startTime = &t
+	startTime, err := timezone.ResolveRangeStart(c.Query("start_time"), c.Query("start_date"), userTZ)
+	if err != nil {
+		response.BadRequest(c, "Invalid start_date/start_time, use YYYY-MM-DD or RFC3339")
+		return
 	}
-
-	if endDateStr := c.Query("end_date"); endDateStr != "" {
-		t, err := timezone.ParseInUserLocation("2006-01-02", endDateStr, userTZ)
-		if err != nil {
-			response.BadRequest(c, "Invalid end_date format, use YYYY-MM-DD")
-			return
-		}
-		// Use half-open range [start, end), move to next calendar day start (DST-safe).
-		t = t.AddDate(0, 0, 1)
-		endTime = &t
+	endTime, err := timezone.ResolveRangeEnd(c.Query("end_time"), c.Query("end_date"), userTZ)
+	if err != nil {
+		response.BadRequest(c, "Invalid end_date/end_time, use YYYY-MM-DD or RFC3339")
+		return
 	}
 
 	params := pagination.PaginationParams{
@@ -340,28 +332,26 @@ func (h *UsageHandler) Stats(c *gin.Context) {
 		upstreamModelMismatch = &value
 	}
 
-	// Parse date range
+	// Parse date range: start_time/end_time (RFC3339 instants, for rolling
+	// windows) take precedence over start_date/end_date (calendar days).
 	userTZ := c.Query("timezone")
 	now := timezone.NowInUserLocation(userTZ)
 	var startTime, endTime time.Time
 
-	startDateStr := c.Query("start_date")
-	endDateStr := c.Query("end_date")
+	startPtr, err := timezone.ResolveRangeStart(c.Query("start_time"), c.Query("start_date"), userTZ)
+	if err != nil {
+		response.BadRequest(c, "Invalid start_date/start_time, use YYYY-MM-DD or RFC3339")
+		return
+	}
+	endPtr, err := timezone.ResolveRangeEnd(c.Query("end_time"), c.Query("end_date"), userTZ)
+	if err != nil {
+		response.BadRequest(c, "Invalid end_date/end_time, use YYYY-MM-DD or RFC3339")
+		return
+	}
 
-	if startDateStr != "" && endDateStr != "" {
-		var err error
-		startTime, err = timezone.ParseInUserLocation("2006-01-02", startDateStr, userTZ)
-		if err != nil {
-			response.BadRequest(c, "Invalid start_date format, use YYYY-MM-DD")
-			return
-		}
-		endTime, err = timezone.ParseInUserLocation("2006-01-02", endDateStr, userTZ)
-		if err != nil {
-			response.BadRequest(c, "Invalid end_date format, use YYYY-MM-DD")
-			return
-		}
-		// 与 SQL 条件 created_at < end 对齐，使用次日 00:00 作为上边界（DST-safe）。
-		endTime = endTime.AddDate(0, 0, 1)
+	if startPtr != nil && endPtr != nil {
+		startTime = *startPtr
+		endTime = *endPtr
 	} else {
 		period := c.DefaultQuery("period", "today")
 		switch period {

@@ -128,6 +128,9 @@ export async function getStats(params: {
   period?: string
   start_date?: string
   end_date?: string
+  // Exact RFC3339 window bounds; preferred over the dates when both are sent.
+  start_time?: string
+  end_time?: string
   timezone?: string
   nocache?: number
 }): Promise<AdminUsageStatsResponse> {

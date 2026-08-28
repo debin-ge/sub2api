@@ -1603,7 +1603,7 @@ func (h *GatewayHandler) Usage(c *gin.Context) {
 	}
 
 	// Best-effort: 获取用量统计（按当前 API Key 过滤），失败不影响基础响应
-	usageData := h.buildUsageData(ctx, apiKey.ID)
+	usageData := h.buildUsageData(ctx, apiKey.ID, c.Query("timezone"))
 	dailyUsage := h.buildAPIKeyDailyUsage(c, subject.UserID, apiKey.ID, days)
 
 	// Best-effort: 获取模型统计
@@ -1645,11 +1645,11 @@ func (h *GatewayHandler) parseUsageDateRange(c *gin.Context) (time.Time, time.Ti
 }
 
 // buildUsageData 构建 today/total 用量摘要
-func (h *GatewayHandler) buildUsageData(ctx context.Context, apiKeyID int64) gin.H {
+func (h *GatewayHandler) buildUsageData(ctx context.Context, apiKeyID int64, userTZ string) gin.H {
 	if h.usageService == nil {
 		return nil
 	}
-	dashStats, err := h.usageService.GetAPIKeyDashboardStats(ctx, apiKeyID)
+	dashStats, err := h.usageService.GetAPIKeyDashboardStats(ctx, apiKeyID, userTZ)
 	if err != nil || dashStats == nil {
 		return nil
 	}
