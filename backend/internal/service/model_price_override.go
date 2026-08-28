@@ -666,6 +666,13 @@ func (s *PricingService) validateOverrideWrite(platform, model, currency string,
 	if !enabled {
 		return warnings, nil
 	}
+	// An entirely empty override is an explicit "inherit everything" record.
+	// This is useful when the admin form is saved without filling any price
+	// fields; non-empty partial payloads still go through the normal completeness
+	// validation below.
+	if len(payloadToMap(payload)) == 0 {
+		return warnings, nil
+	}
 	var catalog *ModelPriceEntry
 	if s != nil {
 		s.mu.RLock()

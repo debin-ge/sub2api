@@ -284,4 +284,37 @@ describe('ModelPricesView', () => {
       }),
     }))
   })
+
+  it('allows saving with every price field blank to keep inherited pricing', async () => {
+    getModelPriceEntry.mockResolvedValue({
+      platform: 'anthropic',
+      model: 'claude-sonnet-4',
+      currency: 'USD',
+      catalog_currency: 'USD',
+      catalog: { input_cost_per_token: 3e-6, output_cost_per_token: 15e-6 },
+      effective: { input_cost_per_token: 3e-6, output_cost_per_token: 15e-6 },
+      enabled: true,
+      token_pricing_absent: false,
+      has_image_pricing: false,
+      sync_invalidated: false,
+      redundant: false,
+    })
+
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.find('button.action-btn').trigger('click')
+    await flushPromises()
+
+    const saveButton = wrapper.findAll('button').find((button) => button.text() === 'admin.modelPrices.save')
+    expect(saveButton).toBeDefined()
+    await saveButton!.trigger('click')
+    await flushPromises()
+
+    expect(upsertModelPrice).toHaveBeenCalledWith(expect.objectContaining({
+      platform: 'anthropic',
+      model: 'claude-sonnet-4',
+      currency: 'USD',
+      payload: {},
+    }))
+  })
 })

@@ -539,6 +539,32 @@ func TestUpsertPersistsAndReturnsCNYCurrency(t *testing.T) {
 	require.InDelta(t, 4.4e-6, detail.Effective["output_cost_per_token"], 1e-12)
 }
 
+func TestEmptyOverridePayloadIsAllowedAndInheritsCatalog(t *testing.T) {
+	store := newMemoryOverrideStore()
+	svc := NewPricingService(&config.Config{}, nil)
+	svc.SetOverrideDependencies(store, nil)
+	svc.SeedCatalogForTest(map[string]*ModelPriceEntry{
+		"claude-sonnet-4": pricedEntry(3e-6, 15e-6),
+	})
+
+	result, err := svc.UpsertOverride(context.Background(), ModelPriceUpsertInput{
+		Platform: PlatformAnthropic,
+		Model:    "claude-sonnet-4",
+		Currency: ModelPriceCurrencyUSD,
+		Payload:  ModelPriceOverridePayload{},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.Override)
+	require.Empty(t, payloadToMap(&result.Override.Payload))
+
+	effective := svc.GetModelPricingForPlatform(PlatformAnthropic, "claude-sonnet-4")
+	require.NotNil(t, effective)
+	require.Equal(t, ModelPriceCurrencyUSD, effective.Currency)
+	require.InDelta(t, 3e-6, effective.InputCostPerToken, 1e-12)
+	require.InDelta(t, 15e-6, effective.OutputCostPerToken, 1e-12)
+}
+
 func TestDecodeOverridePayloadRejectsUnknownFields(t *testing.T) {
 	_, err := DecodeModelPriceOverridePayload(json.RawMessage(`{"not_a_price":1}`))
 	require.Error(t, err)
