@@ -96,4 +96,41 @@ describe('ProfileView', () => {
     expect(wrapper.get('[data-testid="profile-shell"]').html()).toContain('profile-password-form')
     expect(wrapper.get('[data-testid="profile-shell"]').html()).toContain('profile-totp-card')
   })
+
+  it('opens the customer support QR dialog from the contact card', async () => {
+    fetchPublicSettingsMock.mockResolvedValue({
+      contact_info: '企业微信客服',
+      contact_qr_code: 'data:image/png;base64,c3VwcG9ydA==',
+      balance_low_notify_enabled: false,
+      balance_low_notify_threshold: 0,
+      linuxdo_oauth_enabled: false,
+      wechat_oauth_enabled: false,
+      oidc_oauth_enabled: false,
+      oidc_oauth_provider_name: 'OIDC'
+    })
+
+    const wrapper = mount(ProfileView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          ProfileInfoCard: true,
+          ProfileBalanceNotifyCard: true,
+          ProfilePasswordForm: true,
+          ProfileTotpCard: true,
+          ProfilePasskeyCard: true,
+          Icon: true,
+          CustomerSupportDialog: {
+            props: ['show', 'qrCode', 'contactInfo'],
+            template: '<div v-if="show" data-testid="support-dialog">{{ qrCode }} {{ contactInfo }}</div>'
+          }
+        }
+      }
+    })
+
+    await flushPromises()
+    await wrapper.get('button').trigger('click')
+
+    expect(wrapper.get('[data-testid="support-dialog"]').text()).toContain('data:image/png;base64')
+    expect(wrapper.get('[data-testid="support-dialog"]').text()).toContain('企业微信客服')
+  })
 })

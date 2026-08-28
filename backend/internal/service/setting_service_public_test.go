@@ -149,6 +149,20 @@ func TestSettingService_GetPublicSettings_ExposesCompactHomeEnabled(t *testing.T
 	require.False(t, missingSettings.CompactHomeEnabled)
 }
 
+func TestSettingService_GetPublicSettings_ExposesContactQRCode(t *testing.T) {
+	const qrCode = "data:image/png;base64,iVBORw0KGgo="
+	svc := NewSettingService(&settingPublicRepoStub{values: map[string]string{
+		SettingKeyContactInfo:   "WeCom support",
+		SettingKeyContactQRCode: qrCode,
+	}}, &config.Config{})
+
+	settings, err := svc.GetPublicSettings(context.Background())
+
+	require.NoError(t, err)
+	require.Equal(t, "WeCom support", settings.ContactInfo)
+	require.Equal(t, qrCode, settings.ContactQRCode)
+}
+
 func TestSettingService_ChannelMonitorHideThroughputDefaultsToPrivate(t *testing.T) {
 	missing := NewSettingService(&settingPublicRepoStub{values: map[string]string{}}, &config.Config{}).GetChannelMonitorRuntime(context.Background())
 	require.True(t, missing.HideThroughput)

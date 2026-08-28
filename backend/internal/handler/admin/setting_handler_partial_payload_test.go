@@ -54,6 +54,36 @@ func TestUpdateSettingsFullPayloadStillClearsSentEmptyFields(t *testing.T) {
 		"an explicitly sent empty value is a deliberate clear, not an omission")
 }
 
+func TestUpdateSettingsContactQRCodePreservesOmittedAndAllowsExplicitClear(t *testing.T) {
+	h, repo := newStepUpSwitchTestHandler(t, map[string]string{
+		service.SettingKeyContactQRCode: "data:image/png;base64,iVBORw0KGgo=",
+	})
+
+	preserved := doUpdateSettings(t, h, map[string]any{"registration_enabled": true}, nil)
+	require.Equal(t, http.StatusOK, preserved.Code, preserved.Body.String())
+	require.Equal(t, "data:image/png;base64,iVBORw0KGgo=", repo.values[service.SettingKeyContactQRCode])
+
+	cleared := doUpdateSettings(t, h, map[string]any{"contact_qr_code": ""}, nil)
+	require.Equal(t, http.StatusOK, cleared.Code, cleared.Body.String())
+	require.Equal(t, "", repo.values[service.SettingKeyContactQRCode])
+}
+
+func TestUpdateSettingsContactQRCodeValidatesUploadedImage(t *testing.T) {
+	h, repo := newStepUpSwitchTestHandler(t, map[string]string{})
+
+	accepted := doUpdateSettings(t, h, map[string]any{
+		"contact_qr_code": "data:image/png;base64,iVBORw0KGgo=",
+	}, nil)
+	require.Equal(t, http.StatusOK, accepted.Code, accepted.Body.String())
+	require.Equal(t, "data:image/png;base64,iVBORw0KGgo=", repo.values[service.SettingKeyContactQRCode])
+
+	rejected := doUpdateSettings(t, h, map[string]any{
+		"contact_qr_code": "https://example.com/support.png",
+	}, nil)
+	require.Equal(t, http.StatusBadRequest, rejected.Code)
+	require.Contains(t, rejected.Body.String(), "INVALID_CONTACT_QR_CODE")
+}
+
 // smtp_from_email is the one request field whose JSON name differs from its
 // setting key; the alias keeps it from being treated as always-omitted.
 func TestUpdateSettingsSMTPFromAliasIsWritable(t *testing.T) {

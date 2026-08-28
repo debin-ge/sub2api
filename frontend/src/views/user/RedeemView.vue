@@ -184,8 +184,16 @@
                 <li>{{ t('redeem.codeRule2') }}</li>
                 <li>
                   {{ t('redeem.codeRule3') }}
+                  <button
+                    v-if="contactQRCode"
+                    type="button"
+                    class="ml-1.5 inline-flex items-center rounded-md bg-primary-200/50 px-2 py-0.5 text-xs font-medium text-primary-800 dark:bg-primary-800/40 dark:text-primary-200"
+                    @click="supportDialogOpen = true"
+                  >
+                    {{ contactInfo || t('common.viewSupportQrCode') }}
+                  </button>
                   <span
-                    v-if="contactInfo"
+                    v-else-if="contactInfo"
                     class="ml-1.5 inline-flex items-center rounded-md bg-primary-200/50 px-2 py-0.5 text-xs font-medium text-primary-800 dark:bg-primary-800/40 dark:text-primary-200"
                   >
                     {{ contactInfo }}
@@ -338,6 +346,13 @@
         </div>
       </div>
     </div>
+
+    <CustomerSupportDialog
+      :show="supportDialogOpen"
+      :qr-code="contactQRCode"
+      :contact-info="contactInfo"
+      @close="supportDialogOpen = false"
+    />
   </AppLayout>
 </template>
 
@@ -349,6 +364,7 @@ import { useAppStore } from '@/stores/app'
 import { useSubscriptionStore } from '@/stores/subscriptions'
 import { redeemAPI, authAPI, type RedeemHistoryItem } from '@/api'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import CustomerSupportDialog from '@/components/common/CustomerSupportDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { formatDateTime } from '@/utils/format'
 import { formatBalanceAmount } from '@/utils/formatters'
@@ -377,6 +393,8 @@ const errorMessage = ref('')
 const history = ref<RedeemHistoryItem[]>([])
 const loadingHistory = ref(false)
 const contactInfo = ref('')
+const contactQRCode = ref('')
+const supportDialogOpen = ref(false)
 
 // Helper functions for history display
 const isBalanceType = (type: string) => {
@@ -482,6 +500,7 @@ onMounted(async () => {
   try {
     const settings = await authAPI.getPublicSettings()
     contactInfo.value = settings.contact_info || ''
+    contactQRCode.value = settings.contact_qr_code || ''
   } catch (error) {
     console.error('Failed to load contact info:', error)
   }

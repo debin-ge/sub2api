@@ -15,22 +15,28 @@
         :wechat-mp-enabled="wechatOAuthMPEnabled"
       />
 
-      <div
-        v-if="contactInfo"
-        class="card border-primary-200 bg-primary-50 p-6 dark:bg-primary-900/20"
+      <button
+        v-if="contactInfo || contactQRCode"
+        type="button"
+        :disabled="!contactQRCode"
+        class="card w-full border-primary-200 bg-primary-50 p-6 text-left transition-colors enabled:hover:border-primary-300 enabled:hover:bg-primary-100/70 disabled:cursor-default dark:bg-primary-900/20 dark:enabled:hover:border-primary-700 dark:enabled:hover:bg-primary-900/30"
+        @click="supportDialogOpen = true"
       >
         <div class="flex items-center gap-4">
           <div class="rounded-xl bg-primary-100 p-3 text-primary-600">
             <Icon name="chat" size="lg" />
           </div>
-          <div>
+          <div class="min-w-0 flex-1">
             <h3 class="font-semibold text-primary-800 dark:text-primary-200">
               {{ t('common.contactSupport') }}
             </h3>
-            <p class="text-sm font-medium">{{ contactInfo }}</p>
+            <p class="text-sm font-medium">
+              {{ contactInfo || t('common.viewSupportQrCode') }}
+            </p>
           </div>
+          <Icon v-if="contactQRCode" name="chevronRight" size="md" class="text-primary-500" />
         </div>
-      </div>
+      </button>
 
       <ProfilePasswordForm />
 
@@ -46,6 +52,13 @@
       <ProfileTotpCard />
       <ProfilePasskeyCard :enabled="passkeyEnabled" />
     </div>
+
+    <CustomerSupportDialog
+      :show="supportDialogOpen"
+      :qr-code="contactQRCode"
+      :contact-info="contactInfo"
+      @close="supportDialogOpen = false"
+    />
   </AppLayout>
 </template>
 
@@ -54,6 +67,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Icon } from '@/components/icons'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import CustomerSupportDialog from '@/components/common/CustomerSupportDialog.vue'
 import ProfileBalanceNotifyCard from '@/components/user/profile/ProfileBalanceNotifyCard.vue'
 import ProfileInfoCard from '@/components/user/profile/ProfileInfoCard.vue'
 import ProfilePasswordForm from '@/components/user/profile/ProfilePasswordForm.vue'
@@ -69,6 +83,8 @@ const authStore = useAuthStore()
 const user = computed(() => authStore.user)
 
 const contactInfo = ref('')
+const contactQRCode = ref('')
+const supportDialogOpen = ref(false)
 const balanceLowNotifyEnabled = ref(false)
 const systemDefaultThreshold = ref(0)
 const linuxdoOAuthEnabled = ref(false)
@@ -91,6 +107,7 @@ onMounted(async () => {
         return
       }
       contactInfo.value = settings.contact_info || ''
+      contactQRCode.value = settings.contact_qr_code || ''
       balanceLowNotifyEnabled.value = settings.balance_low_notify_enabled ?? false
       systemDefaultThreshold.value = settings.balance_low_notify_threshold ?? 0
       linuxdoOAuthEnabled.value = settings.linuxdo_oauth_enabled ?? false
