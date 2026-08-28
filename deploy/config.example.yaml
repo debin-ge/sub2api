@@ -762,12 +762,13 @@ dashboard_cache:
   # Redis key prefix for multi-environment isolation
   # Redis key 前缀，用于多环境隔离
   key_prefix: "sub2api:"
-  # Fresh TTL (seconds); within this window cached stats are considered fresh
-  # 新鲜阈值（秒）；命中后处于该窗口视为新鲜数据
-  stats_fresh_ttl_seconds: 15
+  # Fresh TTL (seconds); within this window cached stats are considered fresh.
+  # Raise it to cut dashboard query load, at the cost of staler numbers.
+  # 新鲜阈值（秒）；命中后处于该窗口视为新鲜数据。调大可降低查询压力，代价是数据更旧。
+  stats_fresh_ttl_seconds: 5
   # Cache TTL (seconds) stored in Redis
   # Redis 缓存 TTL（秒）
-  stats_ttl_seconds: 30
+  stats_ttl_seconds: 10
   # Async refresh timeout (seconds)
   # 异步刷新超时（秒）
   stats_refresh_timeout_seconds: 30
@@ -780,9 +781,10 @@ dashboard_aggregation:
   # Enable aggregation job
   # 启用聚合作业
   enabled: true
-  # Refresh interval (seconds)
-  # 刷新间隔（秒）
-  interval_seconds: 60
+  # Refresh interval (seconds). Lower means fresher dashboard numbers and more
+  # frequent aggregation queries against usage_logs.
+  # 刷新间隔（秒）。调小可让看板数据更新更快，代价是聚合查询更频繁。
+  interval_seconds: 30
   # Lookback window (seconds) for late-arriving data
   # 回看窗口（秒），处理迟到数据
   lookback_seconds: 120
