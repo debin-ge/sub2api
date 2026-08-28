@@ -5,7 +5,6 @@
       <PlazaHero
         :model-count="modelCount"
         :platform-count="platformCount"
-        :rate="pricingConfig.rate"
         :multiplier="pricingConfig.multiplier"
       />
 
@@ -46,7 +45,6 @@
                 v-for="model in paginatedModels"
                 :key="`${model.platform}::${model.model}`"
                 :model="model"
-                :rate="pricingConfig.rate"
                 @open-detail="modal.open"
               />
             </div>
@@ -72,7 +70,6 @@
     <ModelDetailModal
       :open="modalIsOpen"
       :model="modalCurrentModel"
-      :rate="pricingConfig.rate"
       :server-utc-offset="pricingConfig.serverUtcOffset"
       @close="modal.close"
     />

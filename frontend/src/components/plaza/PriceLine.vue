@@ -7,7 +7,7 @@
     <div class="min-w-0">
       <div class="flex items-baseline gap-1">
         <span class="text-base font-semibold text-gray-900 dark:text-white">
-          {{ formatScaled(value, scale) }}
+          {{ formatCNYEffective(value, scale, billingRateMultiplier) }}
         </span>
         <span v-if="value != null" class="text-xs text-gray-400 dark:text-gray-500">
           {{ unitLabel }}
@@ -15,18 +15,7 @@
       </div>
       <div v-if="value != null" class="mt-0.5 flex items-center gap-1 text-xs">
         <span class="text-gray-400 line-through dark:text-gray-500">
-          {{ formatCNYMarket(value, rate, scale) }}
-        </span>
-        <svg
-          class="h-3 w-3 shrink-0 text-gray-400 dark:text-gray-500"
-          viewBox="0 0 20 20"
-          fill="currentColor"
-          aria-hidden="true"
-        >
-          <path fill-rule="evenodd" d="M12.293 5.293a1 1 0 011.414 0l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-2.293-2.293a1 1 0 010-1.414z" clip-rule="evenodd" />
-        </svg>
-        <span class="font-semibold text-emerald-600 dark:text-emerald-400">
-          {{ formatCNYEffective(value, rate, scale, billingRateMultiplier) }}
+          {{ formatMoney(value, currency, scale) }}
         </span>
       </div>
     </div>
@@ -39,15 +28,14 @@ import { useI18n } from 'vue-i18n'
 import {
   PER_REQUEST_SCALE,
   formatCNYEffective,
-  formatCNYMarket,
-  formatScaled
+  formatMoney
 } from '@/utils/pricing'
 
 const props = defineProps<{
   label: string
   value: number | null
   scale: number
-  rate: number
+  currency?: string
   billingRateMultiplier?: number
 }>()
 

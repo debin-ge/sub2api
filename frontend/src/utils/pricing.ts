@@ -13,9 +13,14 @@ export function formatScaled(value: number | null, scale: number): string {
 }
 
 export const PLAZA_DEFAULT_MULTIPLIER = 1
-export const PLAZA_DEFAULT_CNY_USD_RATE = 6.8
 export const PER_MILLION_TOKEN_SCALE = 1_000_000
 export const PER_REQUEST_SCALE = 1
+
+export type ModelPriceCurrency = 'USD' | 'CNY'
+
+export function normalizeModelPriceCurrency(value: string | null | undefined): ModelPriceCurrency {
+  return String(value ?? '').toUpperCase() === 'CNY' ? 'CNY' : 'USD'
+}
 
 export function normalizePlazaMultiplier(value: number | null | undefined): number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0
@@ -23,21 +28,10 @@ export function normalizePlazaMultiplier(value: number | null | undefined): numb
     : PLAZA_DEFAULT_MULTIPLIER
 }
 
-export function normalizePlazaRate(value: number | null | undefined): number {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0
-    ? value
-    : PLAZA_DEFAULT_CNY_USD_RATE
-}
-
 export function normalizeBillingRateMultiplier(value: number | null | undefined): number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0
     ? value
     : 1
-}
-
-function formatCNY(value: number): string {
-  if (value > 0 && value < 0.005) return '<¥0.01'
-  return `¥${formatFixedMax(value, 6)}`
 }
 
 function formatNumber(value: number): string {
@@ -48,39 +42,27 @@ function formatFixedMax(value: number, maxFractionDigits: number): string {
   return value.toFixed(maxFractionDigits).replace(/\.?0+$/, '')
 }
 
-export function formatCNYMarket(
-  usd: number | null,
-  rate: number | null | undefined,
+export function formatMoney(
+  value: number | null,
+  currency: ModelPriceCurrency | string | null | undefined,
   scale: number
 ): string {
-  if (usd == null) return '-'
-  return formatCNY(usd * normalizePlazaRate(rate) * scale)
+  if (value == null) return '-'
+  const symbol = normalizeModelPriceCurrency(currency) === 'CNY' ? '¥' : '$'
+  return `${symbol}${formatFixedMax(value * scale, 6)}`
 }
 
 /**
- * Convert a USD model price to the effective CNY price shown in the plaza.
- *
- * The group multiplier is a billing multiplier, while the recharge multiplier
- * only describes how much balance a payment buys. Model prices must therefore
- * use: USD price × USD/CNY rate × effective group multiplier.
+ * Final plaza price, always rendered with the CNY balance symbol.
+ * Currency metadata does not alter the numeric value and no exchange rate is applied.
  */
 export function formatCNYEffective(
-  usd: number | null,
-  rate: number | null | undefined,
+  value: number | null,
   scale: number,
   billingRateMultiplier?: number | null
 ): string {
-  if (usd == null) return '-'
-  return formatCNY(
-    usd * normalizePlazaRate(rate) * normalizeBillingRateMultiplier(billingRateMultiplier) * scale
-  )
-}
-
-export function computeValueBoost(
-  multiplier: number | null | undefined,
-  rate: number | null | undefined
-): number {
-  return Number((normalizePlazaMultiplier(multiplier) * normalizePlazaRate(rate)).toFixed(2))
+  if (value == null) return '-'
+  return formatMoney(value * normalizeBillingRateMultiplier(billingRateMultiplier), 'CNY', scale)
 }
 
 export function computeDiscountFold(

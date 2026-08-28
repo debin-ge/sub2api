@@ -63,21 +63,24 @@
             </div>
           </template>
           <template #cell-source="{ row }">
-            <span class="badge-muted">{{ sourceLabel(row.source) }}</span>
+            <div class="flex flex-col items-start gap-1">
+              <span class="badge-muted">{{ sourceLabel(row.source) }}</span>
+              <span class="text-[11px] text-gray-500 dark:text-gray-400">{{ row.currency }}</span>
+            </div>
           </template>
           <template #cell-input="{ row }">
             <div class="flex flex-col gap-0.5 text-xs">
-              <span>{{ scheduledPriceLabel(row.effective?.input_cost_per_token, row.time_schedule, 'peak') }}</span>
+              <span>{{ scheduledPriceLabel(row.effective?.input_cost_per_token, row.time_schedule, 'peak', row.currency) }}</span>
               <span v-if="row.time_schedule" class="text-gray-500 dark:text-gray-400">
-                {{ scheduledPriceLabel(row.effective?.input_cost_per_token, row.time_schedule, 'offPeak') }}
+                {{ scheduledPriceLabel(row.effective?.input_cost_per_token, row.time_schedule, 'offPeak', row.currency) }}
               </span>
             </div>
           </template>
           <template #cell-output="{ row }">
             <div class="flex flex-col gap-0.5 text-xs">
-              <span>{{ scheduledPriceLabel(row.effective?.output_cost_per_token, row.time_schedule, 'peak') }}</span>
+              <span>{{ scheduledPriceLabel(row.effective?.output_cost_per_token, row.time_schedule, 'peak', row.currency) }}</span>
               <span v-if="row.time_schedule" class="text-gray-500 dark:text-gray-400">
-                {{ scheduledPriceLabel(row.effective?.output_cost_per_token, row.time_schedule, 'offPeak') }}
+                {{ scheduledPriceLabel(row.effective?.output_cost_per_token, row.time_schedule, 'offPeak', row.currency) }}
               </span>
             </div>
           </template>
@@ -127,6 +130,16 @@
             <Select v-model="form.platform" :options="writePlatformOptions" :disabled="!creating" />
           </label>
         </div>
+        <label class="block text-sm">
+          <span class="mb-1 block text-gray-600 dark:text-gray-300">{{ t('admin.modelPrices.currency') }}</span>
+          <Select v-model="form.currency" :options="currencyOptions" />
+        </label>
+        <p
+          v-if="detail?.catalog_currency && detail.catalog_currency !== form.currency"
+          class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200"
+        >
+          {{ t('admin.modelPrices.crossCurrencyWarning', { catalog: detail.catalog_currency, currency: form.currency }) }}
+        </p>
         <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
           <input v-model="form.enabled" type="checkbox" class="rounded border-gray-300" />
           {{ t('admin.modelPrices.enabled') }}
@@ -135,21 +148,21 @@
           <div v-for="field in PRICE_FIELDS" :key="field" class="grid items-end gap-2 sm:grid-cols-[1fr,1fr,1fr,auto]">
             <div class="text-xs text-gray-500 dark:text-gray-400">
               <div class="font-medium text-gray-800 dark:text-gray-200">{{ fieldLabel(field) }}</div>
-              <div>{{ t('admin.modelPrices.catalogValue') }}: {{ formatPrice(detail?.catalog?.[field], isImageField(field)) }}</div>
+              <div>{{ t('admin.modelPrices.catalogValue') }}: {{ formatFieldPrice(detail?.catalog?.[field], field, detail?.catalog_currency) }}</div>
             </div>
             <input
               v-model="form.fields[field]"
               class="input"
-              :placeholder="isImageField(field) ? t('admin.modelPrices.perImage') : t('admin.modelPrices.perMTok')"
+              :placeholder="isImageField(field) ? t('admin.modelPrices.perImage', { currency: form.currency }) : t('admin.modelPrices.perMTok', { currency: form.currency })"
             />
             <div class="text-xs text-gray-500 dark:text-gray-400">
               {{ t('admin.modelPrices.effectiveValue') }}:
-              {{ formatPrice(detail?.effective?.[field], isImageField(field)) }}
+              {{ formatFieldPrice(detail?.effective?.[field], field, detail?.currency) }}
               <span v-if="detail?.time_schedule && !isImageField(field)" class="ml-1">
                 / {{ t('admin.modelPrices.peakPrice') }}
-                {{ scheduledPrice(detail?.effective?.[field], detail.time_schedule, 'peak') }}
+                {{ scheduledPrice(detail?.effective?.[field], detail.time_schedule, 'peak', detail.currency) }}
                 / {{ t('admin.modelPrices.offPeakPrice') }}
-                {{ scheduledPrice(detail?.effective?.[field], detail.time_schedule, 'offPeak') }}
+                {{ scheduledPrice(detail?.effective?.[field], detail.time_schedule, 'offPeak', detail.currency) }}
               </span>
             </div>
             <button type="button" class="btn btn-secondary btn-sm" @click="form.fields[field] = ''">
@@ -217,6 +230,7 @@ import {
   tokenToMTok,
   upsertModelPrice,
   type ModelPriceDetail,
+  type ModelPriceCurrency,
   type ModelPriceListItem,
   type ModelPriceSyncStatus,
   type ModelPriceTimeSchedule,
@@ -245,10 +259,16 @@ const filters = reactive({ q: '', platform: '', status: '' })
 const form = reactive({
   platform: '*',
   model: '',
+  currency: 'USD' as ModelPriceCurrency,
   enabled: true,
   note: '',
   fields: Object.fromEntries(PRICE_FIELDS.map((field) => [field, ''])) as Record<PriceField, string>,
 })
+
+const currencyOptions = [
+  { value: 'USD', label: 'USD ($)' },
+  { value: 'CNY', label: 'CNY (¥)' },
+]
 
 const columns = computed<Column[]>(() => [
   { key: 'model', label: t('admin.modelPrices.columns.model') },
@@ -303,13 +323,21 @@ function sourceLabel(source: string): string {
   return t('admin.modelPrices.sourceCatalog')
 }
 
-function formatPrice(value: unknown, image: boolean): string {
+function formatPrice(value: unknown, image: boolean, currency: ModelPriceCurrency = 'USD'): string {
   if (value == null || value === '') return t('admin.modelPrices.inherit')
   const n = Number(value)
   if (Number.isNaN(n)) return String(value)
-  if (image) return n.toString()
+  if (image) return `${currency === 'CNY' ? '¥' : '$'}${n}`
   const shown = tokenToMTok(n)
-  return shown === '' ? t('admin.modelPrices.inherit') : String(shown)
+  return shown === '' ? t('admin.modelPrices.inherit') : `${currency === 'CNY' ? '¥' : '$'}${shown}`
+}
+
+function formatFieldPrice(value: unknown, field: PriceField, currency?: string): string {
+  if (field === 'long_context_input_token_threshold' || field.endsWith('_multiplier')) {
+    if (value == null || value === '') return t('admin.modelPrices.inherit')
+    return String(value)
+  }
+  return formatPrice(value, isImageField(field), currency === 'CNY' ? 'CNY' : 'USD')
 }
 
 // 生效价可能是空闲价（目录 / 手动覆盖）也可能是高峰价（官方兜底表），
@@ -318,23 +346,25 @@ function scheduledPrice(
   value: unknown,
   schedule: ModelPriceTimeSchedule | undefined,
   kind: 'peak' | 'offPeak',
+  currency: string = 'USD',
 ): string {
   if (value == null || value === '' || !schedule) return t('admin.modelPrices.inherit')
   const n = Number(value)
   if (Number.isNaN(n)) return String(value)
   const multiplier = kind === 'peak' ? schedule.peak_multiplier : schedule.off_peak_multiplier
-  if (typeof multiplier !== 'number' || !Number.isFinite(multiplier)) return formatPrice(n, false)
-  return formatPrice(n * multiplier, false)
+  if (typeof multiplier !== 'number' || !Number.isFinite(multiplier)) return formatPrice(n, false, currency === 'CNY' ? 'CNY' : 'USD')
+  return formatPrice(n * multiplier, false, currency === 'CNY' ? 'CNY' : 'USD')
 }
 
 function scheduledPriceLabel(
   value: unknown,
   schedule: ModelPriceTimeSchedule | undefined,
   kind: 'peak' | 'offPeak',
+  currency: string = 'USD',
 ): string {
-  if (!schedule) return formatPrice(value, false)
+  if (!schedule) return formatPrice(value, false, currency === 'CNY' ? 'CNY' : 'USD')
   const label = kind === 'peak' ? t('admin.modelPrices.peakPrice') : t('admin.modelPrices.offPeakPrice')
-  return `${label} ${scheduledPrice(value, schedule, kind)}`
+  return `${label} ${scheduledPrice(value, schedule, kind, currency)}`
 }
 
 function handleSearch() {
@@ -396,6 +426,7 @@ async function handleSync() {
 function resetForm() {
   form.platform = '*'
   form.model = ''
+  form.currency = 'USD'
   form.enabled = true
   form.note = ''
   for (const field of PRICE_FIELDS) {
@@ -406,6 +437,7 @@ function resetForm() {
 function fillFormFromDetail(entry: ModelPriceDetail) {
   form.platform = entry.platform || '*'
   form.model = entry.model
+  form.currency = entry.override_currency ?? entry.currency ?? 'USD'
   form.enabled = entry.enabled
   form.note = entry.note || ''
   for (const field of PRICE_FIELDS) {
@@ -465,6 +497,7 @@ async function saveOverride(confirmed: boolean) {
     await upsertModelPrice({
       platform: form.platform,
       model: form.model,
+      currency: form.currency,
       payload,
       enabled: form.enabled,
       note: form.note || undefined,

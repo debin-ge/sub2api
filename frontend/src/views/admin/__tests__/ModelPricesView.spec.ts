@@ -242,4 +242,46 @@ describe('ModelPricesView', () => {
     expect(wrapper.text()).not.toContain('3.9600000000000004')
     expect(wrapper.text()).not.toContain('1.9800000000000002')
   })
+
+  it('submits the selected currency and warns when it replaces another catalog currency', async () => {
+    getModelPriceEntry.mockResolvedValue({
+      platform: 'zhipu',
+      model: 'glm-5.1',
+      currency: 'CNY',
+      catalog_currency: 'USD',
+      override_currency: 'CNY',
+      catalog: { input_cost_per_token: 1e-6, output_cost_per_token: 4e-6 },
+      override: { input_cost_per_token: 1.4e-6, output_cost_per_token: 4.4e-6 },
+      effective: { input_cost_per_token: 1.4e-6, output_cost_per_token: 4.4e-6 },
+      enabled: true,
+      token_pricing_absent: false,
+      has_image_pricing: false,
+      sync_invalidated: false,
+      redundant: false,
+      override_platform: 'zhipu',
+    })
+
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.find('button.action-btn').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('admin.modelPrices.crossCurrencyWarning')
+    const editorSelects = wrapper.findAll('[data-test="editor"] [data-test="select"]')
+    expect(editorSelects[1].element.value).toBe('CNY')
+
+    const saveButton = wrapper.findAll('button').find((button) => button.text() === 'admin.modelPrices.save')
+    expect(saveButton).toBeDefined()
+    await saveButton!.trigger('click')
+    await flushPromises()
+    expect(upsertModelPrice).toHaveBeenCalledWith(expect.objectContaining({
+      platform: 'zhipu',
+      model: 'glm-5.1',
+      currency: 'CNY',
+      payload: expect.objectContaining({
+        input_cost_per_token: 1.4e-6,
+        output_cost_per_token: 4.4e-6,
+      }),
+    }))
+  })
 })

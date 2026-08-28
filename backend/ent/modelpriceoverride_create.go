@@ -62,6 +62,20 @@ func (_c *ModelPriceOverrideCreate) SetModelName(v string) *ModelPriceOverrideCr
 	return _c
 }
 
+// SetCurrency sets the "currency" field.
+func (_c *ModelPriceOverrideCreate) SetCurrency(v modelpriceoverride.Currency) *ModelPriceOverrideCreate {
+	_c.mutation.SetCurrency(v)
+	return _c
+}
+
+// SetNillableCurrency sets the "currency" field if the given value is not nil.
+func (_c *ModelPriceOverrideCreate) SetNillableCurrency(v *modelpriceoverride.Currency) *ModelPriceOverrideCreate {
+	if v != nil {
+		_c.SetCurrency(*v)
+	}
+	return _c
+}
+
 // SetPayload sets the "payload" field.
 func (_c *ModelPriceOverrideCreate) SetPayload(v map[string]interface{}) *ModelPriceOverrideCreate {
 	_c.mutation.SetPayload(v)
@@ -153,6 +167,10 @@ func (_c *ModelPriceOverrideCreate) defaults() {
 		v := modelpriceoverride.DefaultUpdatedAt()
 		_c.mutation.SetUpdatedAt(v)
 	}
+	if _, ok := _c.mutation.Currency(); !ok {
+		v := modelpriceoverride.DefaultCurrency
+		_c.mutation.SetCurrency(v)
+	}
 	if _, ok := _c.mutation.Enabled(); !ok {
 		v := modelpriceoverride.DefaultEnabled
 		_c.mutation.SetEnabled(v)
@@ -181,6 +199,14 @@ func (_c *ModelPriceOverrideCreate) check() error {
 	if v, ok := _c.mutation.ModelName(); ok {
 		if err := modelpriceoverride.ModelNameValidator(v); err != nil {
 			return &ValidationError{Name: "model_name", err: fmt.Errorf(`ent: validator failed for field "ModelPriceOverride.model_name": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.Currency(); !ok {
+		return &ValidationError{Name: "currency", err: errors.New(`ent: missing required field "ModelPriceOverride.currency"`)}
+	}
+	if v, ok := _c.mutation.Currency(); ok {
+		if err := modelpriceoverride.CurrencyValidator(v); err != nil {
+			return &ValidationError{Name: "currency", err: fmt.Errorf(`ent: validator failed for field "ModelPriceOverride.currency": %w`, err)}
 		}
 	}
 	if _, ok := _c.mutation.Enabled(); !ok {
@@ -228,6 +254,10 @@ func (_c *ModelPriceOverrideCreate) createSpec() (*ModelPriceOverride, *sqlgraph
 	if value, ok := _c.mutation.ModelName(); ok {
 		_spec.SetField(modelpriceoverride.FieldModelName, field.TypeString, value)
 		_node.ModelName = value
+	}
+	if value, ok := _c.mutation.Currency(); ok {
+		_spec.SetField(modelpriceoverride.FieldCurrency, field.TypeEnum, value)
+		_node.Currency = value
 	}
 	if value, ok := _c.mutation.Payload(); ok {
 		_spec.SetField(modelpriceoverride.FieldPayload, field.TypeJSON, value)
@@ -330,6 +360,18 @@ func (u *ModelPriceOverrideUpsert) SetModelName(v string) *ModelPriceOverrideUps
 // UpdateModelName sets the "model_name" field to the value that was provided on create.
 func (u *ModelPriceOverrideUpsert) UpdateModelName() *ModelPriceOverrideUpsert {
 	u.SetExcluded(modelpriceoverride.FieldModelName)
+	return u
+}
+
+// SetCurrency sets the "currency" field.
+func (u *ModelPriceOverrideUpsert) SetCurrency(v modelpriceoverride.Currency) *ModelPriceOverrideUpsert {
+	u.Set(modelpriceoverride.FieldCurrency, v)
+	return u
+}
+
+// UpdateCurrency sets the "currency" field to the value that was provided on create.
+func (u *ModelPriceOverrideUpsert) UpdateCurrency() *ModelPriceOverrideUpsert {
+	u.SetExcluded(modelpriceoverride.FieldCurrency)
 	return u
 }
 
@@ -489,6 +531,20 @@ func (u *ModelPriceOverrideUpsertOne) SetModelName(v string) *ModelPriceOverride
 func (u *ModelPriceOverrideUpsertOne) UpdateModelName() *ModelPriceOverrideUpsertOne {
 	return u.Update(func(s *ModelPriceOverrideUpsert) {
 		s.UpdateModelName()
+	})
+}
+
+// SetCurrency sets the "currency" field.
+func (u *ModelPriceOverrideUpsertOne) SetCurrency(v modelpriceoverride.Currency) *ModelPriceOverrideUpsertOne {
+	return u.Update(func(s *ModelPriceOverrideUpsert) {
+		s.SetCurrency(v)
+	})
+}
+
+// UpdateCurrency sets the "currency" field to the value that was provided on create.
+func (u *ModelPriceOverrideUpsertOne) UpdateCurrency() *ModelPriceOverrideUpsertOne {
+	return u.Update(func(s *ModelPriceOverrideUpsert) {
+		s.UpdateCurrency()
 	})
 }
 
@@ -826,6 +882,20 @@ func (u *ModelPriceOverrideUpsertBulk) SetModelName(v string) *ModelPriceOverrid
 func (u *ModelPriceOverrideUpsertBulk) UpdateModelName() *ModelPriceOverrideUpsertBulk {
 	return u.Update(func(s *ModelPriceOverrideUpsert) {
 		s.UpdateModelName()
+	})
+}
+
+// SetCurrency sets the "currency" field.
+func (u *ModelPriceOverrideUpsertBulk) SetCurrency(v modelpriceoverride.Currency) *ModelPriceOverrideUpsertBulk {
+	return u.Update(func(s *ModelPriceOverrideUpsert) {
+		s.SetCurrency(v)
+	})
+}
+
+// UpdateCurrency sets the "currency" field to the value that was provided on create.
+func (u *ModelPriceOverrideUpsertBulk) UpdateCurrency() *ModelPriceOverrideUpsertBulk {
+	return u.Update(func(s *ModelPriceOverrideUpsert) {
+		s.UpdateCurrency()
 	})
 }
 

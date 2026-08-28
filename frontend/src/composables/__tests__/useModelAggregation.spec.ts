@@ -239,6 +239,49 @@ describe('aggregateByPlatformModel', () => {
     })
   })
 
+  it('keeps the currency and source of the selected minimum for each dimension', () => {
+    const rows: UserAvailableChannel[] = [
+      {
+        name: 'cny-catalog',
+        description: '',
+        platforms: [{
+          platform: 'zhipu',
+          groups: [{ id: 1, name: 'cny', platform: 'zhipu', subscription_type: 'standard', rate_multiplier: 0.5, is_exclusive: false }],
+          supported_models: [{
+            name: 'glm-5.1',
+            platform: 'zhipu',
+            pricing: price(0.0000014, 0.00001, { currency: 'CNY', source: 'catalog' })
+          }]
+        }]
+      },
+      {
+        name: 'usd-channel',
+        description: '',
+        platforms: [{
+          platform: 'zhipu',
+          groups: [{ id: 2, name: 'usd', platform: 'zhipu', subscription_type: 'standard', rate_multiplier: 1, is_exclusive: false }],
+          supported_models: [{
+            name: 'glm-5.1',
+            platform: 'zhipu',
+            pricing: price(0.000002, 0.000004, { currency: 'USD', source: 'channel' })
+          }]
+        }]
+      }
+    ]
+
+    const summary = aggregateByPlatformModel(rows)[0].models[0].standardPricing
+
+    // input: ¥1.4 × 0.5 = ¥0.7；output: $4 × 1 = ¥4。
+    expect(summary?.minPricing.input).toBe(0.0000014)
+    expect(summary?.minPricingRateMultipliers.input).toBe(0.5)
+    expect(summary?.minPricingCurrencies?.input).toBe('CNY')
+    expect(summary?.minPricingSources?.input).toBe('catalog')
+    expect(summary?.minPricing.output).toBe(0.000004)
+    expect(summary?.minPricingRateMultipliers.output).toBe(1)
+    expect(summary?.minPricingCurrencies?.output).toBe('USD')
+    expect(summary?.minPricingSources?.output).toBe('channel')
+  })
+
   it('compares image per-request offers with each group effective image multiplier', () => {
     const imagePrice = (perRequest: number): UserSupportedModelPricing => price(null, null, {
       billing_mode: 'image',

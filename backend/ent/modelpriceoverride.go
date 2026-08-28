@@ -26,6 +26,8 @@ type ModelPriceOverride struct {
 	Platform string `json:"platform,omitempty"`
 	// ModelName holds the value of the "model_name" field.
 	ModelName string `json:"model_name,omitempty"`
+	// Currency holds the value of the "currency" field.
+	Currency modelpriceoverride.Currency `json:"currency,omitempty"`
 	// Payload holds the value of the "payload" field.
 	Payload map[string]interface{} `json:"payload,omitempty"`
 	// Enabled holds the value of the "enabled" field.
@@ -48,7 +50,7 @@ func (*ModelPriceOverride) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case modelpriceoverride.FieldID, modelpriceoverride.FieldUpdatedBy:
 			values[i] = new(sql.NullInt64)
-		case modelpriceoverride.FieldPlatform, modelpriceoverride.FieldModelName, modelpriceoverride.FieldNote:
+		case modelpriceoverride.FieldPlatform, modelpriceoverride.FieldModelName, modelpriceoverride.FieldCurrency, modelpriceoverride.FieldNote:
 			values[i] = new(sql.NullString)
 		case modelpriceoverride.FieldCreatedAt, modelpriceoverride.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -96,6 +98,12 @@ func (_m *ModelPriceOverride) assignValues(columns []string, values []any) error
 				return fmt.Errorf("unexpected type %T for field model_name", values[i])
 			} else if value.Valid {
 				_m.ModelName = value.String
+			}
+		case modelpriceoverride.FieldCurrency:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field currency", values[i])
+			} else if value.Valid {
+				_m.Currency = modelpriceoverride.Currency(value.String)
 			}
 		case modelpriceoverride.FieldPayload:
 			if value, ok := values[i].(*[]byte); !ok {
@@ -172,6 +180,9 @@ func (_m *ModelPriceOverride) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("model_name=")
 	builder.WriteString(_m.ModelName)
+	builder.WriteString(", ")
+	builder.WriteString("currency=")
+	builder.WriteString(fmt.Sprintf("%v", _m.Currency))
 	builder.WriteString(", ")
 	builder.WriteString("payload=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Payload))

@@ -87,7 +87,7 @@ const model: AggregatedModel = {
 describe('ModelCard', () => {
   it('renders four core pricing rows and emits open-detail', async () => {
     const wrapper = mount(ModelCard, {
-      props: { model, rate: 6.8 }
+      props: { model }
     })
 
     expect(wrapper.text()).toContain('claude-opus-4-8')
@@ -95,7 +95,7 @@ describe('ModelCard', () => {
     expect(wrapper.text()).toContain('$75')
     expect(wrapper.text()).toContain('$18.75')
     expect(wrapper.text()).toContain('$1.5')
-    expect(wrapper.text()).toContain('¥102')
+    expect(wrapper.text()).toContain('¥15')
     expect(wrapper.text()).not.toContain('% of reference')
     expect(wrapper.text()).toContain('1 channels')
     expect(wrapper.text()).not.toContain('View details')
@@ -137,12 +137,54 @@ describe('ModelCard', () => {
     }
 
     const wrapper = mount(ModelCard, {
-      props: { model: premiumModel, rate: 6.8 }
+      props: { model: premiumModel }
     })
 
     expect(wrapper.text()).not.toContain('% of reference')
-    expect(wrapper.text()).toContain('¥204')
+    expect(wrapper.text()).toContain('¥30')
     expect(wrapper.text()).not.toContain('10.2x boost')
+  })
+
+  it('shows a CNY original price and applies only the group multiplier to the final price', () => {
+    const glmModel: AggregatedModel = {
+      ...model,
+      model: 'glm-5.1',
+      displayName: 'glm-5.1',
+      platform: 'zhipu',
+      standardPricing: {
+        minPricing: {
+          input: 0.0000014,
+          output: null,
+          cacheWrite: null,
+          cacheRead: null,
+          imageOutput: null,
+          perRequest: null
+        },
+        minPricingRateMultipliers: {
+          input: 0.6,
+          output: 0.6,
+          cacheWrite: 0.6,
+          cacheRead: 0.6,
+          imageOutput: 0.6,
+          perRequest: 0.6
+        },
+        minPricingCurrencies: {
+          input: 'CNY',
+          output: 'CNY',
+          cacheWrite: 'CNY',
+          cacheRead: 'CNY',
+          imageOutput: 'CNY',
+          perRequest: 'CNY'
+        },
+        displayRateMultiplier: 0.6
+      }
+    }
+
+    const wrapper = mount(ModelCard, { props: { model: glmModel } })
+
+    expect(wrapper.text()).toContain('¥1.4')
+    expect(wrapper.text()).toContain('¥0.84')
+    expect(wrapper.text()).not.toContain('¥5.712')
   })
 
   it('warns when a supported public group has peak token pricing', () => {
@@ -162,7 +204,7 @@ describe('ModelCard', () => {
     }
 
     const wrapper = mount(ModelCard, {
-      props: { model: peakModel, rate: 6.8 }
+      props: { model: peakModel }
     })
 
     expect(wrapper.text()).toContain('Peak pricing applies')
@@ -199,12 +241,12 @@ describe('ModelCard', () => {
     }
 
     const wrapper = mount(ModelCard, {
-      props: { model: mixedModel, rate: 6.8 }
+      props: { model: mixedModel }
     })
 
     expect(wrapper.text()).toContain('80% of reference')
-    expect(wrapper.text()).toContain('¥102')
-    expect(wrapper.text()).toContain('¥81.6')
+    expect(wrapper.text()).toContain('¥15')
+    expect(wrapper.text()).toContain('¥12')
     expect(wrapper.text()).toContain('Standard')
     expect(wrapper.text()).toContain('VIP')
   })
@@ -245,7 +287,7 @@ describe('ModelCard', () => {
     }
 
     const wrapper = mount(ModelCard, {
-      props: { model: deepseekModel, rate: 7.2 }
+      props: { model: deepseekModel }
     })
 
     expect(wrapper.text()).toContain('Peak / off-peak')
@@ -292,7 +334,7 @@ describe('ModelCard', () => {
     }
 
     const wrapper = mount(ModelCard, {
-      props: { model: deepseekModel, rate: 7.2 }
+      props: { model: deepseekModel }
     })
 
     expect(wrapper.text()).toContain('$3 / $1.5')

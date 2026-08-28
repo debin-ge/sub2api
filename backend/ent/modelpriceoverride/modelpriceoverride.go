@@ -3,6 +3,7 @@
 package modelpriceoverride
 
 import (
+	"fmt"
 	"time"
 
 	"entgo.io/ent/dialect/sql"
@@ -21,6 +22,8 @@ const (
 	FieldPlatform = "platform"
 	// FieldModelName holds the string denoting the model_name field in the database.
 	FieldModelName = "model_name"
+	// FieldCurrency holds the string denoting the currency field in the database.
+	FieldCurrency = "currency"
 	// FieldPayload holds the string denoting the payload field in the database.
 	FieldPayload = "payload"
 	// FieldEnabled holds the string denoting the enabled field in the database.
@@ -40,6 +43,7 @@ var Columns = []string{
 	FieldUpdatedAt,
 	FieldPlatform,
 	FieldModelName,
+	FieldCurrency,
 	FieldPayload,
 	FieldEnabled,
 	FieldNote,
@@ -71,6 +75,32 @@ var (
 	DefaultEnabled bool
 )
 
+// Currency defines the type for the "currency" enum field.
+type Currency string
+
+// CurrencyUSD is the default value of the Currency enum.
+const DefaultCurrency = CurrencyUSD
+
+// Currency values.
+const (
+	CurrencyUSD Currency = "USD"
+	CurrencyCNY Currency = "CNY"
+)
+
+func (c Currency) String() string {
+	return string(c)
+}
+
+// CurrencyValidator is a validator for the "currency" field enum values. It is called by the builders before save.
+func CurrencyValidator(c Currency) error {
+	switch c {
+	case CurrencyUSD, CurrencyCNY:
+		return nil
+	default:
+		return fmt.Errorf("modelpriceoverride: invalid enum value for currency field: %q", c)
+	}
+}
+
 // OrderOption defines the ordering options for the ModelPriceOverride queries.
 type OrderOption func(*sql.Selector)
 
@@ -97,6 +127,11 @@ func ByPlatform(opts ...sql.OrderTermOption) OrderOption {
 // ByModelName orders the results by the model_name field.
 func ByModelName(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldModelName, opts...).ToFunc()
+}
+
+// ByCurrency orders the results by the currency field.
+func ByCurrency(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCurrency, opts...).ToFunc()
 }
 
 // ByEnabled orders the results by the enabled field.

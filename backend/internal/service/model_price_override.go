@@ -15,12 +15,43 @@ import (
 
 const (
 	ModelPriceOverrideWildcardPlatform = "*"
+	ModelPriceCurrencyUSD              = "USD"
+	ModelPriceCurrencyCNY              = "CNY"
 
 	ModelPriceSourceCatalog  = "catalog"
 	ModelPriceSourceOverride = "override"
 	ModelPriceSourceMerged   = "merged"
 	ModelPriceSourceOfficial = "official"
+	ModelPriceSourceChannel  = "channel"
 )
+
+func NormalizeModelPriceCurrency(currency string) (string, error) {
+	currency = strings.ToUpper(strings.TrimSpace(currency))
+	if currency == "" {
+		return ModelPriceCurrencyUSD, nil
+	}
+	switch currency {
+	case ModelPriceCurrencyUSD, ModelPriceCurrencyCNY:
+		return currency, nil
+	default:
+		return "", infraerrors.BadRequest("INVALID_CURRENCY", "model price currency must be USD or CNY")
+	}
+}
+
+func modelPriceCurrencyOrUSD(currency string) string {
+	normalized, err := NormalizeModelPriceCurrency(currency)
+	if err != nil {
+		return ModelPriceCurrencyUSD
+	}
+	return normalized
+}
+
+func modelPriceEntryCurrency(entry *ModelPriceEntry) string {
+	if entry == nil {
+		return ""
+	}
+	return modelPriceCurrencyOrUSD(entry.Currency)
+}
 
 // PlatformToPricingCatalogProvider maps gateway platform names to the provider
 // value used by the synchronized model-price catalog.
@@ -69,6 +100,7 @@ type ModelPriceOverride struct {
 	ID        int64                     `json:"id"`
 	Platform  string                    `json:"platform"`
 	ModelName string                    `json:"model_name"`
+	Currency  string                    `json:"currency"`
 	Payload   ModelPriceOverridePayload `json:"payload"`
 	Enabled   bool                      `json:"enabled"`
 	Note      *string                   `json:"note,omitempty"`
@@ -114,10 +146,20 @@ type ModelPriceTimeSchedule struct {
 	OffPeakMultiplier float64  `json:"off_peak_multiplier"`
 }
 
+type PlazaDisplayPriceResolution struct {
+	Pricing      *ModelPriceEntry        `json:"-"`
+	Currency     string                  `json:"currency"`
+	Source       string                  `json:"source"`
+	TimeSchedule *ModelPriceTimeSchedule `json:"time_schedule,omitempty"`
+}
+
 type ModelPriceListItem struct {
 	Platform           string                  `json:"platform"`
 	Model              string                  `json:"model"`
 	Source             string                  `json:"source"`
+	Currency           string                  `json:"currency"`
+	CatalogCurrency    string                  `json:"catalog_currency,omitempty"`
+	OverrideCurrency   string                  `json:"override_currency,omitempty"`
 	TokenPricingAbsent bool                    `json:"token_pricing_absent"`
 	HasImagePricing    bool                    `json:"has_image_pricing"`
 	SyncInvalidated    bool                    `json:"sync_invalidated"`
@@ -140,6 +182,9 @@ type ModelPriceListResult struct {
 type ModelPriceDetail struct {
 	Platform           string                     `json:"platform"`
 	Model              string                     `json:"model"`
+	Currency           string                     `json:"currency"`
+	CatalogCurrency    string                     `json:"catalog_currency,omitempty"`
+	OverrideCurrency   string                     `json:"override_currency,omitempty"`
 	Catalog            map[string]any             `json:"catalog"`
 	Override           *ModelPriceOverridePayload `json:"override,omitempty"`
 	Effective          map[string]any             `json:"effective"`
@@ -158,6 +203,7 @@ type ModelPriceDetail struct {
 type ModelPriceUpsertInput struct {
 	Platform  string
 	Model     string
+	Currency  string
 	Payload   ModelPriceOverridePayload
 	Enabled   *bool
 	Note      *string
@@ -259,10 +305,11 @@ func cloneInt(v *int) *int {
 }
 
 func rawOf(entry *ModelPriceEntry) *RawModelPriceEntry {
-	raw := &RawModelPriceEntry{}
+	raw := &RawModelPriceEntry{Currency: ModelPriceCurrencyUSD}
 	if entry == nil {
 		return raw
 	}
+	raw.Currency = modelPriceEntryCurrency(entry)
 	if entry.InputPriceExplicit || (!entry.PricePresenceKnown && entry.InputCostPerToken != 0) {
 		raw.InputCostPerToken = catalogPriceFloat64(entry.InputCostPerToken)
 	}
@@ -394,11 +441,32 @@ func mergeRawPriceEntry(base *RawModelPriceEntry, patch *ModelPriceOverridePaylo
 	return out
 }
 
+func overrideBaseRaw(entry *ModelPriceEntry, currency string) *RawModelPriceEntry {
+	currency = modelPriceCurrencyOrUSD(currency)
+	if entry == nil || modelPriceEntryCurrency(entry) != currency {
+		return &RawModelPriceEntry{Currency: currency}
+	}
+	raw := rawOf(entry)
+	raw.Currency = currency
+	return raw
+}
+
+func buildOverrideModelPriceEntry(model string, base *ModelPriceEntry, row *ModelPriceOverride) *ModelPriceEntry {
+	if row == nil {
+		return base
+	}
+	currency := modelPriceCurrencyOrUSD(row.Currency)
+	raw := mergeRawPriceEntry(overrideBaseRaw(base, currency), &row.Payload)
+	raw.Currency = currency
+	return buildModelPriceEntry(model, raw)
+}
+
 func buildModelPriceEntry(model string, raw *RawModelPriceEntry) *ModelPriceEntry {
 	if raw == nil {
 		return nil
 	}
 	entry := &ModelPriceEntry{
+		Currency:                           modelPriceCurrencyOrUSD(raw.Currency),
 		PricingCatalogProvider:             raw.PricingCatalogProvider,
 		Mode:                               raw.Mode,
 		SupportsPromptCaching:              raw.SupportsPromptCaching,
@@ -476,6 +544,7 @@ func cloneCatalog(catalog map[string]*ModelPriceEntry) map[string]*ModelPriceEnt
 			continue
 		}
 		cp := *entry
+		cp.Currency = modelPriceEntryCurrency(entry)
 		out[normalizePricingModelKey(model)] = &cp
 	}
 	return out
@@ -572,7 +641,7 @@ func incompleteDimension(raw *RawModelPriceEntry) string {
 	return "pricing"
 }
 
-func (s *PricingService) validateOverrideWrite(platform, model string, payload *ModelPriceOverridePayload, enabled bool) ([]ModelPriceWarning, error) {
+func (s *PricingService) validateOverrideWrite(platform, model, currency string, payload *ModelPriceOverridePayload, enabled bool) ([]ModelPriceWarning, error) {
 	platform = normalizeOverridePlatform(platform)
 	model = normalizePricingModelKey(model)
 	if !validOverridePlatform(platform) {
@@ -580,6 +649,10 @@ func (s *PricingService) validateOverrideWrite(platform, model string, payload *
 	}
 	if model == "" || len(model) > 200 {
 		return nil, infraerrors.BadRequest("INVALID_MODEL", "model name is required and must not exceed 200 characters")
+	}
+	currency, err := NormalizeModelPriceCurrency(currency)
+	if err != nil {
+		return nil, err
 	}
 	if err := validatePayloadNumbers(payload); err != nil {
 		return nil, err
@@ -599,7 +672,7 @@ func (s *PricingService) validateOverrideWrite(platform, model string, payload *
 		catalog = s.catalogEntryLocked(model)
 		s.mu.RUnlock()
 	}
-	raw := mergeRawPriceEntry(rawOf(catalog), payload)
+	raw := mergeRawPriceEntry(overrideBaseRaw(catalog, currency), payload)
 	hasImage := raw.OutputCostPerImage != nil || raw.OutputCostPerImageToken != nil || raw.InputCostPerImageToken != nil
 	if raw.InputCostPerToken == nil && raw.OutputCostPerToken == nil && !hasImage {
 		return nil, infraerrors.BadRequest("EMPTY_PRICING", "at least one token or image price is required")
@@ -621,17 +694,21 @@ func (s *PricingService) UpsertOverride(ctx context.Context, input ModelPriceUps
 	}
 	platform := normalizeOverridePlatform(input.Platform)
 	model := normalizePricingModelKey(input.Model)
+	currency, err := NormalizeModelPriceCurrency(input.Currency)
+	if err != nil {
+		return nil, err
+	}
 	enabled := true
 	if input.Enabled != nil {
 		enabled = *input.Enabled
 	}
-	warnings, err := s.validateOverrideWrite(platform, model, &input.Payload, enabled)
+	warnings, err := s.validateOverrideWrite(platform, model, currency, &input.Payload, enabled)
 	if err != nil {
 		return nil, err
 	}
 	now := time.Now()
 	row, err := s.overrideStore.Upsert(ctx, &ModelPriceOverride{
-		Platform: platform, ModelName: model, Payload: input.Payload, Enabled: enabled,
+		Platform: platform, ModelName: model, Currency: currency, Payload: input.Payload, Enabled: enabled,
 		Note: input.Note, UpdatedBy: input.UpdatedBy, CreatedAt: now, UpdatedAt: now,
 	})
 	if err != nil {
@@ -682,6 +759,7 @@ func ModelPriceEntryFromOfficial(model string, p *ModelPricing) *ModelPriceEntry
 		return nil
 	}
 	raw := &RawModelPriceEntry{
+		Currency:           ModelPriceCurrencyUSD,
 		InputCostPerToken:  catalogPriceFloat64(p.InputPricePerToken),
 		OutputCostPerToken: catalogPriceFloat64(p.OutputPricePerToken),
 	}
@@ -878,11 +956,16 @@ func (s *PricingService) buildListItemLocked(
 	}
 	catalog := s.catalogEntryLocked(model)
 	catalogUsable := catalogHasUsablePrice(catalog)
+	catalogCurrency := modelPriceEntryCurrency(catalog)
+	if !catalogUsable && official != nil {
+		catalogCurrency = modelPriceEntryCurrency(official)
+	}
 	source := ModelPriceSourceCatalog
 	var overridden []string
-	if row != nil {
+	rowApplied := row != nil && row.Enabled
+	if rowApplied {
 		overridden = overriddenFields(&row.Payload)
-		if catalog == nil && official == nil {
+		if !catalogUsable || modelPriceEntryCurrency(catalog) != modelPriceCurrencyOrUSD(row.Currency) {
 			source = ModelPriceSourceOverride
 		} else if len(overridden) > 0 {
 			source = ModelPriceSourceMerged
@@ -895,7 +978,7 @@ func (s *PricingService) buildListItemLocked(
 	}
 	// 目录价 / 手动覆盖价对官方分时 SKU 是空闲价；回落到代码内官方兜底表时才是高峰价。
 	baseIsOffPeak := true
-	if (effective == nil || !catalogHasUsablePrice(effective)) && row == nil && official != nil {
+	if (effective == nil || !catalogHasUsablePrice(effective)) && !rowApplied && official != nil {
 		effective = official
 		baseIsOffPeak = false
 	}
@@ -903,16 +986,25 @@ func (s *PricingService) buildListItemLocked(
 		Platform:           displayPlatform,
 		Model:              model,
 		Source:             source,
+		Currency:           modelPriceEntryCurrency(effective),
+		CatalogCurrency:    catalogCurrency,
 		TokenPricingAbsent: effective == nil || effective.TokenPricingAbsent,
 		HasImagePricing:    hasImagePricing(effective),
 		SyncInvalidated:    s.isInvalidatedLocked(displayPlatform, model),
-		Redundant:          row != nil && isRedundantPayload(catalog, &row.Payload),
+		Redundant:          row != nil && isRedundantPayload(catalog, modelPriceCurrencyOrUSD(row.Currency), &row.Payload),
 		Effective:          modelPriceEntryToMap(effective),
 		OverriddenFields:   overridden,
 		Enabled:            row == nil || row.Enabled,
 		TimeSchedule:       deepSeekOfficialPriceTimeSchedule(displayPlatform, model, baseIsOffPeak),
 	}
+	if item.Currency == "" {
+		item.Currency = catalogCurrency
+		if item.Currency == "" {
+			item.Currency = ModelPriceCurrencyUSD
+		}
+	}
 	if row != nil {
+		item.OverrideCurrency = modelPriceCurrencyOrUSD(row.Currency)
 		item.OverridePlatform = row.Platform
 		item.Note = row.Note
 		item.UpdatedBy = row.UpdatedBy
@@ -954,28 +1046,63 @@ func (s *PricingService) GetPriceDetail(platform, model string) (*ModelPriceDeta
 	return s.GetPriceDetailWithOfficial(platform, model, nil)
 }
 
-// ResolvePlazaDisplayPrice 返回模型广场应展示的生效价（目录 + 手动覆盖 + 官方兜底），
-// 与管理端模型价格页同一套合并结果，并附带 DeepSeek 官方峰谷规则。
-func ResolvePlazaDisplayPrice(s *PricingService, platform, model string, official *ModelPriceEntry) (*ModelPriceEntry, *ModelPriceTimeSchedule) {
+// ResolvePlazaDisplayPrice 返回模型广场应展示的生效价（手动覆盖 > 目录 > 官方兜底）。
+// 渠道价由调用方在 nil 时兜底。币种仅用于展示，不参与计费数值运算。
+func ResolvePlazaDisplayPrice(s *PricingService, platform, model string, official *ModelPriceEntry) *PlazaDisplayPriceResolution {
 	platform = normalizeOverridePlatform(platform)
 	model = normalizePricingModelKey(model)
 	// 官方兜底表存的是高峰价，目录价 / 手动覆盖价存的是空闲价，两者挂的峰谷
 	// 换算方向相反，必须跟着实际返回的那份价一起给（结算侧同理，见
 	// resolvedTokenTimeMultiplier）。
 	if s == nil {
-		return official, deepSeekOfficialPriceTimeSchedule(platform, model, false)
+		if official == nil {
+			return nil
+		}
+		return &PlazaDisplayPriceResolution{
+			Pricing:      official,
+			Currency:     modelPriceEntryCurrency(official),
+			Source:       ModelPriceSourceOfficial,
+			TimeSchedule: deepSeekOfficialPriceTimeSchedule(platform, model, false),
+		}
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	row := findOverrideLocked(s.overrideRows, platform, model)
+	if row == nil && platform != ModelPriceOverrideWildcardPlatform {
+		row = findOverrideLocked(s.overrideRows, ModelPriceOverrideWildcardPlatform, model)
+	}
+	if row != nil && !row.Enabled {
+		row = nil
+	}
+	catalog := s.catalogEntryLocked(model)
 	effective := s.effectiveEntryLocked(platform, model)
-	if (effective == nil || !catalogHasUsablePrice(effective)) && official != nil {
-		return official, deepSeekOfficialPriceTimeSchedule(platform, model, false)
+	if catalogHasUsablePrice(effective) {
+		source := ModelPriceSourceCatalog
+		if row != nil {
+			if catalogHasUsablePrice(catalog) && modelPriceEntryCurrency(catalog) == modelPriceCurrencyOrUSD(row.Currency) {
+				if len(overriddenFields(&row.Payload)) > 0 {
+					source = ModelPriceSourceMerged
+				}
+			} else {
+				source = ModelPriceSourceOverride
+			}
+		}
+		return &PlazaDisplayPriceResolution{
+			Pricing:      effective,
+			Currency:     modelPriceEntryCurrency(effective),
+			Source:       source,
+			TimeSchedule: deepSeekOfficialPriceTimeSchedule(platform, model, true),
+		}
 	}
-	if effective == nil {
-		// 目录和官方表都没有这个模型：广场展示的是渠道自己配的价，不挂官方峰谷。
-		return nil, nil
+	if official != nil {
+		return &PlazaDisplayPriceResolution{
+			Pricing:      official,
+			Currency:     modelPriceEntryCurrency(official),
+			Source:       ModelPriceSourceOfficial,
+			TimeSchedule: deepSeekOfficialPriceTimeSchedule(platform, model, false),
+		}
 	}
-	return effective, deepSeekOfficialPriceTimeSchedule(platform, model, true)
+	return nil
 }
 
 func (s *PricingService) GetPriceDetailWithOfficial(platform, model string, official *ModelPriceEntry) (*ModelPriceDetail, error) {
@@ -996,20 +1123,29 @@ func (s *PricingService) GetPriceDetailWithOfficial(platform, model string, offi
 	}
 	catalog := s.catalogEntryLocked(model)
 	effective := s.effectiveEntryLocked(platform, model)
+	rowApplied := row != nil && row.Enabled
 	// 目录价 / 手动覆盖价对官方分时 SKU 是空闲价；回落到代码内官方兜底表时才是高峰价。
 	baseIsOffPeak := true
-	if (effective == nil || !catalogHasUsablePrice(effective)) && row == nil && official != nil {
+	if (effective == nil || !catalogHasUsablePrice(effective)) && !rowApplied && official != nil {
 		effective = official
 		baseIsOffPeak = false
 	}
 	catalogMap := modelPriceEntryToMap(catalog)
+	catalogCurrency := modelPriceEntryCurrency(catalog)
 	if !catalogHasUsablePrice(catalog) && official != nil {
 		catalogMap = modelPriceEntryToMap(official)
+		catalogCurrency = modelPriceEntryCurrency(official)
 	}
 	if catalog == nil && row == nil && effective == nil {
+		currency := catalogCurrency
+		if currency == "" {
+			currency = ModelPriceCurrencyUSD
+		}
 		return &ModelPriceDetail{
 			Platform:           platform,
 			Model:              model,
+			Currency:           currency,
+			CatalogCurrency:    catalogCurrency,
 			Catalog:            catalogMap,
 			Effective:          map[string]any{},
 			Enabled:            true,
@@ -1017,9 +1153,21 @@ func (s *PricingService) GetPriceDetailWithOfficial(platform, model string, offi
 			TimeSchedule:       deepSeekOfficialPriceTimeSchedule(platform, model, baseIsOffPeak),
 		}, nil
 	}
+	detailCurrency := modelPriceEntryCurrency(effective)
+	if detailCurrency == "" && row != nil && row.Enabled {
+		detailCurrency = modelPriceCurrencyOrUSD(row.Currency)
+	}
+	if detailCurrency == "" {
+		detailCurrency = catalogCurrency
+		if detailCurrency == "" {
+			detailCurrency = ModelPriceCurrencyUSD
+		}
+	}
 	detail := &ModelPriceDetail{
 		Platform:           platform,
 		Model:              model,
+		Currency:           detailCurrency,
+		CatalogCurrency:    catalogCurrency,
 		Catalog:            catalogMap,
 		Effective:          modelPriceEntryToMap(effective),
 		Enabled:            true,
@@ -1031,13 +1179,14 @@ func (s *PricingService) GetPriceDetailWithOfficial(platform, model string, offi
 	if row != nil {
 		payload := row.Payload
 		detail.Override = &payload
+		detail.OverrideCurrency = modelPriceCurrencyOrUSD(row.Currency)
 		detail.OverridePlatform = row.Platform
 		detail.Enabled = row.Enabled
 		detail.Note = row.Note
 		detail.UpdatedBy = row.UpdatedBy
 		updated := row.UpdatedAt
 		detail.UpdatedAt = &updated
-		detail.Redundant = isRedundantPayload(catalog, &row.Payload)
+		detail.Redundant = isRedundantPayload(catalog, detail.OverrideCurrency, &row.Payload)
 	}
 	return detail, nil
 }
@@ -1130,8 +1279,11 @@ func modelPriceEntryToMap(entry *ModelPriceEntry) map[string]any {
 	return out
 }
 
-func isRedundantPayload(catalog *ModelPriceEntry, payload *ModelPriceOverridePayload) bool {
+func isRedundantPayload(catalog *ModelPriceEntry, currency string, payload *ModelPriceOverridePayload) bool {
 	if catalog == nil || payload == nil {
+		return false
+	}
+	if modelPriceEntryCurrency(catalog) != modelPriceCurrencyOrUSD(currency) {
 		return false
 	}
 	catalogMap := modelPriceEntryToMap(catalog)

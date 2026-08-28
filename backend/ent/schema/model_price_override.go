@@ -34,6 +34,7 @@ func (ModelPriceOverride) Fields() []ent.Field {
 	return []ent.Field{
 		field.String("platform").MaxLen(50).NotEmpty(),
 		field.String("model_name").MaxLen(200).NotEmpty(),
+		field.Enum("currency").Values("USD", "CNY").Default("USD"),
 		field.JSON("payload", map[string]any{}).
 			Optional().
 			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),

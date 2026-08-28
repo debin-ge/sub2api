@@ -108,73 +108,79 @@
                 <PriceCell
                   :label="t('plaza.modal.input')"
                   :scale="PER_MILLION_TOKEN_SCALE"
-                  :rate="rate"
+                  :standard-currency="model.standardPricing?.minPricingCurrencies?.input"
                   :standard-available="model.standardPricing != null"
                   :standard-value="model.standardPricing?.minPricing.input ?? null"
                   :standard-billing-rate-multiplier="model.standardPricing?.minPricingRateMultipliers.input"
                   :vip-available="model.vipPricing != null"
                   :vip-value="model.vipPricing?.minPricing.input ?? null"
                   :vip-billing-rate-multiplier="model.vipPricing?.minPricingRateMultipliers.input"
+                  :vip-currency="model.vipPricing?.minPricingCurrencies?.input"
                   :time-schedule="model.timeSchedule"
                 />
                 <PriceCell
                   :label="t('plaza.modal.output')"
                   :scale="PER_MILLION_TOKEN_SCALE"
-                  :rate="rate"
+                  :standard-currency="model.standardPricing?.minPricingCurrencies?.output"
                   :standard-available="model.standardPricing != null"
                   :standard-value="model.standardPricing?.minPricing.output ?? null"
                   :standard-billing-rate-multiplier="model.standardPricing?.minPricingRateMultipliers.output"
                   :vip-available="model.vipPricing != null"
                   :vip-value="model.vipPricing?.minPricing.output ?? null"
                   :vip-billing-rate-multiplier="model.vipPricing?.minPricingRateMultipliers.output"
+                  :vip-currency="model.vipPricing?.minPricingCurrencies?.output"
                   :time-schedule="model.timeSchedule"
                 />
                 <PriceCell
                   :label="t('plaza.modal.cacheWrite')"
                   :scale="PER_MILLION_TOKEN_SCALE"
-                  :rate="rate"
+                  :standard-currency="model.standardPricing?.minPricingCurrencies?.cacheWrite"
                   :standard-available="model.standardPricing != null"
                   :standard-value="model.standardPricing?.minPricing.cacheWrite ?? null"
                   :standard-billing-rate-multiplier="model.standardPricing?.minPricingRateMultipliers.cacheWrite"
                   :vip-available="model.vipPricing != null"
                   :vip-value="model.vipPricing?.minPricing.cacheWrite ?? null"
                   :vip-billing-rate-multiplier="model.vipPricing?.minPricingRateMultipliers.cacheWrite"
+                  :vip-currency="model.vipPricing?.minPricingCurrencies?.cacheWrite"
                   :time-schedule="model.timeSchedule"
                 />
                 <PriceCell
                   :label="t('plaza.modal.cacheRead')"
                   :scale="PER_MILLION_TOKEN_SCALE"
-                  :rate="rate"
+                  :standard-currency="model.standardPricing?.minPricingCurrencies?.cacheRead"
                   :standard-available="model.standardPricing != null"
                   :standard-value="model.standardPricing?.minPricing.cacheRead ?? null"
                   :standard-billing-rate-multiplier="model.standardPricing?.minPricingRateMultipliers.cacheRead"
                   :vip-available="model.vipPricing != null"
                   :vip-value="model.vipPricing?.minPricing.cacheRead ?? null"
                   :vip-billing-rate-multiplier="model.vipPricing?.minPricingRateMultipliers.cacheRead"
+                  :vip-currency="model.vipPricing?.minPricingCurrencies?.cacheRead"
                   :time-schedule="model.timeSchedule"
                 />
                 <PriceCell
                   :label="t('plaza.modal.imageOutput')"
                   :scale="PER_MILLION_TOKEN_SCALE"
-                  :rate="rate"
+                  :standard-currency="model.standardPricing?.minPricingCurrencies?.imageOutput"
                   :standard-available="model.standardPricing != null"
                   :standard-value="model.standardPricing?.minPricing.imageOutput ?? null"
                   :standard-billing-rate-multiplier="model.standardPricing?.minPricingRateMultipliers.imageOutput"
                   :vip-available="model.vipPricing != null"
                   :vip-value="model.vipPricing?.minPricing.imageOutput ?? null"
                   :vip-billing-rate-multiplier="model.vipPricing?.minPricingRateMultipliers.imageOutput"
+                  :vip-currency="model.vipPricing?.minPricingCurrencies?.imageOutput"
                   :time-schedule="model.timeSchedule"
                 />
                 <PriceCell
                   :label="t('plaza.modal.perRequest')"
                   :scale="PER_REQUEST_SCALE"
-                  :rate="rate"
+                  :standard-currency="model.standardPricing?.minPricingCurrencies?.perRequest"
                   :standard-available="model.standardPricing != null"
                   :standard-value="model.standardPricing?.minPricing.perRequest ?? null"
                   :standard-billing-rate-multiplier="model.standardPricing?.minPricingRateMultipliers.perRequest"
                   :vip-available="model.vipPricing != null"
                   :vip-value="model.vipPricing?.minPricing.perRequest ?? null"
                   :vip-billing-rate-multiplier="model.vipPricing?.minPricingRateMultipliers.perRequest"
+                  :vip-currency="model.vipPricing?.minPricingCurrencies?.perRequest"
                 />
               </div>
             </div>
@@ -233,42 +239,42 @@
                         :label="t('plaza.modal.input')"
                         :value="interval.input_price"
                         :scale="PER_MILLION_TOKEN_SCALE"
-                        :rate="rate"
+                        :currency="item.pricing.currency"
                         :billing-rate-multiplier="item.group.rate_multiplier"
                       />
                       <PriceLine
                         :label="t('plaza.modal.output')"
                         :value="interval.output_price"
                         :scale="PER_MILLION_TOKEN_SCALE"
-                        :rate="rate"
+                        :currency="item.pricing.currency"
                         :billing-rate-multiplier="item.group.rate_multiplier"
                       />
                       <PriceLine
                         :label="t('plaza.modal.cacheWrite')"
                         :value="interval.cache_write_price"
                         :scale="PER_MILLION_TOKEN_SCALE"
-                        :rate="rate"
+                        :currency="item.pricing.currency"
                         :billing-rate-multiplier="item.group.rate_multiplier"
                       />
                       <PriceLine
                         :label="t('plaza.modal.cacheRead')"
                         :value="interval.cache_read_price"
                         :scale="PER_MILLION_TOKEN_SCALE"
-                        :rate="rate"
+                        :currency="item.pricing.currency"
                         :billing-rate-multiplier="item.group.rate_multiplier"
                       />
                       <PriceLine
                         :label="t('plaza.modal.imageOutput')"
                         :value="item.pricing.image_output_price"
                         :scale="PER_MILLION_TOKEN_SCALE"
-                        :rate="rate"
+                        :currency="item.pricing.currency"
                         :billing-rate-multiplier="item.group.rate_multiplier"
                       />
                       <PriceLine
                         :label="t('plaza.modal.perRequest')"
                         :value="interval.per_request_price"
                         :scale="PER_REQUEST_SCALE"
-                        :rate="rate"
+                        :currency="item.pricing.currency"
                         :billing-rate-multiplier="requestRateMultiplier(item)"
                       />
                     </div>
@@ -359,7 +365,6 @@ import { formatPeakRateWindow, hasPeakRate, serverTimezoneLabel } from '@/utils/
 const props = defineProps<{
   open: boolean
   model: AggregatedModel | null
-  rate: number
   serverUtcOffset?: string
 }>()
 

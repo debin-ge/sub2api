@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -27,6 +28,29 @@ type stubOfficialPrices struct {
 
 func (s stubOfficialPrices) GetFallbackPricing(model string) *service.ModelPricing {
 	return s.prices[model]
+}
+
+type handlerModelPriceOverrideStore struct {
+	row *service.ModelPriceOverride
+}
+
+func (s *handlerModelPriceOverrideStore) List(context.Context) ([]service.ModelPriceOverride, error) {
+	if s.row == nil {
+		return nil, nil
+	}
+	return []service.ModelPriceOverride{*s.row}, nil
+}
+
+func (s *handlerModelPriceOverrideStore) Upsert(_ context.Context, row *service.ModelPriceOverride) (*service.ModelPriceOverride, error) {
+	saved := *row
+	saved.ID = 1
+	s.row = &saved
+	return &saved, nil
+}
+
+func (s *handlerModelPriceOverrideStore) Delete(context.Context, string, string) error {
+	s.row = nil
+	return nil
 }
 
 func TestModelPriceHandlerEntryUsesQueryForSlashModels(t *testing.T) {
@@ -119,4 +143,38 @@ func TestModelPriceHandlerListRestrictsToCallableAndFillsOfficial(t *testing.T) 
 	require.Equal(t, "catalog", names["claude-sonnet-4"])
 	require.Equal(t, "official", names["glm-4.7"])
 	require.NotContains(t, names, "gpt-unrelated")
+}
+
+func TestModelPriceHandlerUpsertPersistsAndReturnsCNY(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	store := &handlerModelPriceOverrideStore{}
+	svc := service.NewPricingService(nil, nil)
+	svc.SetOverrideDependencies(store, nil)
+	handler := NewModelPriceHandler(svc, nil, nil)
+
+	router := gin.New()
+	router.PUT("/entry", handler.Upsert)
+	router.GET("/entry", handler.Detail)
+
+	requestBody := `{
+		"platform":"zhipu",
+		"model":"glm-5.1",
+		"currency":"cny",
+		"payload":{"input_cost_per_token":0.0000014,"output_cost_per_token":0.0000044}
+	}`
+	request := httptest.NewRequest(http.MethodPut, "/entry", strings.NewReader(requestBody))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	require.Equal(t, http.StatusOK, response.Code)
+	require.NotNil(t, store.row)
+	require.Equal(t, service.ModelPriceCurrencyCNY, store.row.Currency)
+	require.Contains(t, response.Body.String(), `"currency":"CNY"`)
+
+	detailRequest := httptest.NewRequest(http.MethodGet, "/entry?platform=zhipu&model=glm-5.1", nil)
+	detailResponse := httptest.NewRecorder()
+	router.ServeHTTP(detailResponse, detailRequest)
+	require.Equal(t, http.StatusOK, detailResponse.Code)
+	require.Contains(t, detailResponse.Body.String(), `"currency":"CNY"`)
+	require.Contains(t, detailResponse.Body.String(), `"override_currency":"CNY"`)
 }

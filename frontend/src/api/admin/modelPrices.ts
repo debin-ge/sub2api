@@ -20,6 +20,7 @@ export const PRICE_FIELDS = [
 
 export type PriceField = (typeof PRICE_FIELDS)[number]
 export type ModelPricePayload = Partial<Record<PriceField, number>>
+export type ModelPriceCurrency = 'USD' | 'CNY'
 
 /** 倍率语义见 @/api/channels 中的同名类型：都是相对随行的那份生效价。 */
 export interface ModelPriceTimeSchedule {
@@ -34,6 +35,9 @@ export interface ModelPriceListItem {
   platform: string
   model: string
   source: 'catalog' | 'override' | 'merged' | 'official'
+  currency: ModelPriceCurrency
+  catalog_currency?: ModelPriceCurrency
+  override_currency?: ModelPriceCurrency
   token_pricing_absent: boolean
   has_image_pricing: boolean
   sync_invalidated: boolean
@@ -51,6 +55,9 @@ export interface ModelPriceListItem {
 export interface ModelPriceDetail {
   platform: string
   model: string
+  currency: ModelPriceCurrency
+  catalog_currency?: ModelPriceCurrency
+  override_currency?: ModelPriceCurrency
   catalog: Record<string, unknown>
   override?: ModelPricePayload
   effective: Record<string, unknown>
@@ -92,6 +99,7 @@ export interface ModelPriceSyncStatus {
 export interface UpsertModelPriceRequest {
   platform: string
   model: string
+  currency: ModelPriceCurrency
   payload: ModelPricePayload
   enabled?: boolean
   note?: string
