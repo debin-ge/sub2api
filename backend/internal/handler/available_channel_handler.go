@@ -435,13 +435,6 @@ func userPricingFromPlazaResolution(resolution *service.PlazaDisplayPriceResolut
 	}
 }
 
-func nonZeroFloatPtr(v float64) *float64 {
-	if v == 0 {
-		return nil
-	}
-	return &v
-}
-
 func applyRecentCallCounts(
 	ctx context.Context,
 	stats publicModelStatsProvider,
