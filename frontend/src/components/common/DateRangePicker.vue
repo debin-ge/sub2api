@@ -79,11 +79,12 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
+import { formatLocalDate, getLast24HoursRange, type DateRangeSelection } from '@/utils/dateRange'
 
 interface DatePreset {
   labelKey: string
   value: string
-  getRange: () => { start: string; end: string }
+  getRange: () => DateRangeSelection
 }
 
 interface Props {
@@ -94,7 +95,17 @@ interface Props {
 interface Emits {
   (e: 'update:startDate', value: string): void
   (e: 'update:endDate', value: string): void
-  (e: 'change', range: { startDate: string; endDate: string; preset: string | null }): void
+  (
+    e: 'change',
+    range: {
+      startDate: string
+      endDate: string
+      // Exact bounds for rolling presets; undefined means "use the dates".
+      startTime?: string
+      endTime?: string
+      preset: string | null
+    }
+  ): void
 }
 
 const props = defineProps<Props>()
@@ -106,32 +117,22 @@ const isOpen = ref(false)
 const containerRef = ref<HTMLElement | null>(null)
 const localStartDate = ref(props.startDate)
 const localEndDate = ref(props.endDate)
+// Exact bounds of the current selection. Only rolling presets set them; a
+// manual date edit clears them so the query falls back to whole calendar days.
+const localStartTime = ref<string | undefined>(undefined)
+const localEndTime = ref<string | undefined>(undefined)
 const activePreset = ref<string | null>('last24Hours')
 
-const today = computed(() => {
-  // Use local timezone to avoid UTC timezone issues
-  const now = new Date()
-  const year = now.getFullYear()
-  const month = String(now.getMonth() + 1).padStart(2, '0')
-  const day = String(now.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-})
+// Use local timezone to avoid UTC timezone issues
+const today = computed(() => formatLocalDate(new Date()))
 
 // Tomorrow's date - used for max date to handle timezone differences
 // When user is in a timezone behind the server, "today" on server might be "tomorrow" locally
 const tomorrow = computed(() => {
   const d = new Date()
   d.setDate(d.getDate() + 1)
-  return formatDateToString(d)
+  return formatLocalDate(d)
 })
-
-// Helper function to format date to YYYY-MM-DD using local timezone
-const formatDateToString = (date: Date): string => {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
 
 const presets: DatePreset[] = [
   {
@@ -148,21 +149,16 @@ const presets: DatePreset[] = [
     getRange: () => {
       const d = new Date()
       d.setDate(d.getDate() - 1)
-      const yesterday = formatDateToString(d)
+      const yesterday = formatLocalDate(d)
       return { start: yesterday, end: yesterday }
     }
   },
   {
     labelKey: 'dates.last24Hours',
     value: 'last24Hours',
-    getRange: () => {
-      const end = new Date()
-      const start = new Date(end.getTime() - 24 * 60 * 60 * 1000)
-      return {
-        start: formatDateToString(start),
-        end: formatDateToString(end)
-      }
-    }
+    // The only rolling preset: it carries exact instants because the two dates
+    // it spans would otherwise be read as a 48-hour window.
+    getRange: () => getLast24HoursRange()
   },
   {
     labelKey: 'dates.last7Days',
@@ -171,7 +167,7 @@ const presets: DatePreset[] = [
       const end = today.value
       const d = new Date()
       d.setDate(d.getDate() - 6)
-      const start = formatDateToString(d)
+      const start = formatLocalDate(d)
       return { start, end }
     }
   },
@@ -182,7 +178,7 @@ const presets: DatePreset[] = [
       const end = today.value
       const d = new Date()
       d.setDate(d.getDate() - 13)
-      const start = formatDateToString(d)
+      const start = formatLocalDate(d)
       return { start, end }
     }
   },
@@ -193,7 +189,7 @@ const presets: DatePreset[] = [
       const end = today.value
       const d = new Date()
       d.setDate(d.getDate() - 29)
-      const start = formatDateToString(d)
+      const start = formatLocalDate(d)
       return { start, end }
     }
   },
@@ -202,7 +198,7 @@ const presets: DatePreset[] = [
     value: 'thisMonth',
     getRange: () => {
       const now = new Date()
-      const start = formatDateToString(new Date(now.getFullYear(), now.getMonth(), 1))
+      const start = formatLocalDate(new Date(now.getFullYear(), now.getMonth(), 1))
       return { start, end: today.value }
     }
   },
@@ -211,8 +207,8 @@ const presets: DatePreset[] = [
     value: 'lastMonth',
     getRange: () => {
       const now = new Date()
-      const start = formatDateToString(new Date(now.getFullYear(), now.getMonth() - 1, 1))
-      const end = formatDateToString(new Date(now.getFullYear(), now.getMonth(), 0))
+      const start = formatLocalDate(new Date(now.getFullYear(), now.getMonth() - 1, 1))
+      const end = formatLocalDate(new Date(now.getFullYear(), now.getMonth(), 0))
       return { start, end }
     }
   }
@@ -248,19 +244,35 @@ const selectPreset = (preset: DatePreset) => {
   const range = preset.getRange()
   localStartDate.value = range.start
   localEndDate.value = range.end
+  localStartTime.value = range.startTime
+  localEndTime.value = range.endTime
   activePreset.value = preset.value
 }
 
-const onDateChange = () => {
-  // Check if current dates match any preset
+// Label the current dates with whatever preset produces them, if any.
+// `adoptExactWindow` decides whether a matched rolling preset also hands over
+// its instants: yes when the dates came from outside (mount, parent update),
+// no when the user typed them — two dates typed by hand mean two whole days,
+// even when they happen to coincide with the last-24-hours span.
+const detectPreset = (adoptExactWindow: boolean) => {
   activePreset.value = null
   for (const preset of presets) {
     const range = preset.getRange()
     if (range.start === localStartDate.value && range.end === localEndDate.value) {
       activePreset.value = preset.value
+      if (adoptExactWindow) {
+        localStartTime.value = range.startTime
+        localEndTime.value = range.endTime
+      }
       break
     }
   }
+}
+
+const onDateChange = () => {
+  localStartTime.value = undefined
+  localEndTime.value = undefined
+  detectPreset(false)
 }
 
 const toggle = () => {
@@ -273,6 +285,8 @@ const apply = () => {
   emit('change', {
     startDate: localStartDate.value,
     endDate: localEndDate.value,
+    startTime: localStartTime.value,
+    endTime: localEndTime.value,
     preset: activePreset.value
   })
   isOpen.value = false
@@ -290,20 +304,24 @@ const handleEscape = (event: KeyboardEvent) => {
   }
 }
 
-// Sync local state with props
+// Sync local state with props. A prop that already matches is the parent
+// echoing back our own apply() — re-running detection there would discard the
+// instants we just emitted.
 watch(
   () => props.startDate,
   (val) => {
+    if (val === localStartDate.value) return
     localStartDate.value = val
-    onDateChange()
+    detectPreset(true)
   }
 )
 
 watch(
   () => props.endDate,
   (val) => {
+    if (val === localEndDate.value) return
     localEndDate.value = val
-    onDateChange()
+    detectPreset(true)
   }
 )
 
@@ -311,7 +329,7 @@ onMounted(() => {
   document.addEventListener('click', handleClickOutside)
   document.addEventListener('keydown', handleEscape)
   // Initialize active preset detection
-  onDateChange()
+  detectPreset(true)
 })
 
 onUnmounted(() => {

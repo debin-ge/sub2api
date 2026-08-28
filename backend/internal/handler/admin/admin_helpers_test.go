@@ -32,6 +32,28 @@ func TestParseTimeRange(t *testing.T) {
 	require.False(t, end.IsZero())
 }
 
+// A rolling window ("last 24 hours") cannot be expressed as two dates: the pair
+// above widens to 48 hours. start_time/end_time carry the exact instants and
+// must win over any dates sent alongside them.
+func TestParseTimeRangeInstantsWinOverDates(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodGet,
+		"/?start_date=2024-01-01&end_date=2024-01-02&timezone=UTC"+
+			"&start_time=2024-01-01T14:37:00Z&end_time=2024-01-02T14:37:00Z", nil)
+
+	start, end := parseTimeRange(c)
+	require.Equal(t, time.Date(2024, 1, 1, 14, 37, 0, 0, time.UTC), start.UTC())
+	require.Equal(t, time.Date(2024, 1, 2, 14, 37, 0, 0, time.UTC), end.UTC())
+	require.Equal(t, 24*time.Hour, end.Sub(start))
+
+	// The echoed dates name the days covered. end is exclusive, so a window
+	// ending mid-day still covers that day — the old `end - 24h` echo reported
+	// the day before.
+	require.Equal(t, "2024-01-01", echoStartDate(c, start))
+	require.Equal(t, "2024-01-02", echoEndDate(c, end))
+}
+
 func TestParseOpsViewParam(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()

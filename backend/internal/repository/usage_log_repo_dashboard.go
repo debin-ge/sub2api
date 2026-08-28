@@ -381,10 +381,21 @@ type UserDashboardStats = usagestats.UserDashboardStats
 // PlatformDashboardStats 单平台用量明细
 type PlatformDashboardStats = usagestats.PlatformDashboardStats
 
+// userTodayRange returns the half-open [start, end) bounds of "today" in the
+// caller's timezone, falling back to the server-configured timezone when userTZ
+// is empty or unknown. The upper bound keeps the dashboard's "today" aligned
+// with the usage list/stats endpoints, which use the same half-open window;
+// without it, rows whose created_at sits in the future (writer/DB clock skew,
+// backfilled billing rows) would count towards "today" forever.
+func userTodayRange(userTZ string) (time.Time, time.Time) {
+	start := timezone.StartOfDayInUserLocation(timezone.NowInUserLocation(userTZ), userTZ)
+	return start, start.AddDate(0, 0, 1)
+}
+
 // GetUserDashboardStats 获取用户专属的仪表盘统计
-func (r *usageLogRepository) GetUserDashboardStats(ctx context.Context, userID int64) (*UserDashboardStats, error) {
+func (r *usageLogRepository) GetUserDashboardStats(ctx context.Context, userID int64, userTZ string) (*UserDashboardStats, error) {
 	stats := &UserDashboardStats{}
-	today := timezone.Today()
+	todayStart, todayEnd := userTodayRange(userTZ)
 
 	// API Key 统计
 	if err := scanSingleRow(
@@ -450,14 +461,14 @@ func (r *usageLogRepository) GetUserDashboardStats(ctx context.Context, userID i
 			COALESCE(SUM(total_cost), 0) as today_cost,
 			COALESCE(SUM(actual_cost), 0) as today_actual_cost
 		FROM usage_logs
-		WHERE user_id = $1 AND created_at >= $2
+		WHERE user_id = $1 AND created_at >= $2 AND created_at < $3
 		  AND ` + usageLogBusinessStatsFilter("") + `
 	`
 	if err := scanSingleRow(
 		ctx,
 		r.sql,
 		todayStatsQuery,
-		[]any{userID, today},
+		[]any{userID, todayStart, todayEnd},
 		&stats.TodayRequests,
 		&stats.TodayInputTokens,
 		&stats.TodayOutputTokens,
@@ -491,9 +502,9 @@ func (r *usageLogRepository) GetUserDashboardStats(ctx context.Context, userID i
 			COUNT(*) as total_requests,
 			COALESCE(SUM(ul.input_tokens + ul.output_tokens + ul.cache_creation_tokens + ul.cache_read_tokens), 0) as total_tokens,
 			COALESCE(SUM(ul.actual_cost), 0) as total_actual_cost,
-			COUNT(*) FILTER (WHERE ul.created_at >= $2) as today_requests,
-			COALESCE(SUM(ul.input_tokens + ul.output_tokens + ul.cache_creation_tokens + ul.cache_read_tokens) FILTER (WHERE ul.created_at >= $2), 0) as today_tokens,
-			COALESCE(SUM(ul.actual_cost) FILTER (WHERE ul.created_at >= $2), 0) as today_actual_cost
+			COUNT(*) FILTER (WHERE ul.created_at >= $2 AND ul.created_at < $3) as today_requests,
+			COALESCE(SUM(ul.input_tokens + ul.output_tokens + ul.cache_creation_tokens + ul.cache_read_tokens) FILTER (WHERE ul.created_at >= $2 AND ul.created_at < $3), 0) as today_tokens,
+			COALESCE(SUM(ul.actual_cost) FILTER (WHERE ul.created_at >= $2 AND ul.created_at < $3), 0) as today_actual_cost
 		FROM usage_logs ul
 		LEFT JOIN groups g ON g.id = ul.group_id
 		LEFT JOIN accounts a ON a.id = ul.account_id
@@ -504,7 +515,7 @@ func (r *usageLogRepository) GetUserDashboardStats(ctx context.Context, userID i
 		HAVING ` + usageLogEffectivePlatformExpr + ` IS NOT NULL AND ` + usageLogEffectivePlatformExpr + ` <> ''
 		ORDER BY total_actual_cost DESC
 	`
-	rows, err := r.sql.QueryContext(ctx, platformQuery, userID, today)
+	rows, err := r.sql.QueryContext(ctx, platformQuery, userID, todayStart, todayEnd)
 	if err != nil {
 		return nil, err
 	}
@@ -555,9 +566,9 @@ func (r *usageLogRepository) getPerformanceStatsByAPIKey(ctx context.Context, ap
 }
 
 // GetAPIKeyDashboardStats 获取指定 API Key 的仪表盘统计（按 api_key_id 过滤）
-func (r *usageLogRepository) GetAPIKeyDashboardStats(ctx context.Context, apiKeyID int64) (*UserDashboardStats, error) {
+func (r *usageLogRepository) GetAPIKeyDashboardStats(ctx context.Context, apiKeyID int64, userTZ string) (*UserDashboardStats, error) {
 	stats := &UserDashboardStats{}
-	today := timezone.Today()
+	todayStart, todayEnd := userTodayRange(userTZ)
 
 	// API Key 维度不需要统计 key 数量，设为 1
 	stats.TotalAPIKeys = 1
@@ -607,14 +618,14 @@ func (r *usageLogRepository) GetAPIKeyDashboardStats(ctx context.Context, apiKey
 			COALESCE(SUM(total_cost), 0) as today_cost,
 			COALESCE(SUM(actual_cost), 0) as today_actual_cost
 		FROM usage_logs
-		WHERE api_key_id = $1 AND created_at >= $2
+		WHERE api_key_id = $1 AND created_at >= $2 AND created_at < $3
 		  AND ` + usageLogBusinessStatsFilter("") + `
 	`
 	if err := scanSingleRow(
 		ctx,
 		r.sql,
 		todayStatsQuery,
-		[]any{apiKeyID, today},
+		[]any{apiKeyID, todayStart, todayEnd},
 		&stats.TodayRequests,
 		&stats.TodayInputTokens,
 		&stats.TodayOutputTokens,

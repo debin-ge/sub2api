@@ -389,6 +389,7 @@ import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import Select from '@/components/common/Select.vue'
 import ModelDistributionChart from '@/components/charts/ModelDistributionChart.vue'
 import TokenUsageTrend from '@/components/charts/TokenUsageTrend.vue'
+import { getLast24HoursRange } from '@/utils/dateRange'
 import { useBatchImageAccess } from '@/composables/useBatchImageAccess'
 
 import {
@@ -438,25 +439,15 @@ let usersTrendLoadSeq = 0
 let rankingLoadSeq = 0
 const rankingLimit = 12
 
-// Helper function to format date in local timezone
-const formatLocalDate = (date: Date): string => {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-}
-
-const getLast24HoursRangeDates = (): { start: string; end: string } => {
-  const end = new Date()
-  const start = new Date(end.getTime() - 24 * 60 * 60 * 1000)
-  return {
-    start: formatLocalDate(start),
-    end: formatLocalDate(end)
-  }
-}
-
 // Date range
 const granularity = ref<'day' | 'hour'>('hour')
-const defaultRange = getLast24HoursRangeDates()
+const defaultRange = getLast24HoursRange()
 const startDate = ref(defaultRange.start)
 const endDate = ref(defaultRange.end)
+// Exact bounds of the default "last 24 hours" window; without them the two
+// dates above would be read as a 48-hour range.
+const startTime = ref<string | undefined>(defaultRange.startTime)
+const endTime = ref<string | undefined>(defaultRange.endTime)
 
 // Granularity options for Select component
 const granularityOptions = computed(() => [
@@ -673,8 +664,15 @@ const goToUserUsage = (item: UserSpendingRankingItem) => {
 const onDateRangeChange = (range: {
   startDate: string
   endDate: string
+  startTime?: string
+  endTime?: string
   preset: string | null
 }) => {
+  // undefined for every non-rolling preset and for hand-typed dates, which is
+  // what makes the window fall back to whole calendar days.
+  startTime.value = range.startTime
+  endTime.value = range.endTime
+
   // Auto-select granularity based on date range
   const start = new Date(range.startDate)
   const end = new Date(range.endDate)
@@ -701,6 +699,8 @@ const loadDashboardSnapshot = async (includeStats: boolean) => {
     const response = await adminAPI.dashboard.getSnapshotV2({
       start_date: startDate.value,
       end_date: endDate.value,
+      start_time: startTime.value,
+      end_time: endTime.value,
       granularity: granularity.value,
       include_stats: includeStats,
       include_trend: true,
@@ -733,6 +733,8 @@ const loadUsersTrend = async () => {
     const response = await adminAPI.dashboard.getUserUsageTrend({
       start_date: startDate.value,
       end_date: endDate.value,
+      start_time: startTime.value,
+      end_time: endTime.value,
       granularity: granularity.value,
       limit: 12
     })
@@ -757,6 +759,8 @@ const loadUserSpendingRanking = async () => {
     const response = await adminAPI.dashboard.getUserSpendingRanking({
       start_date: startDate.value,
       end_date: endDate.value,
+      start_time: startTime.value,
+      end_time: endTime.value,
       limit: rankingLimit
     })
     if (currentSeq !== rankingLoadSeq) return

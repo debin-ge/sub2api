@@ -2244,6 +2244,9 @@ export interface UserErrorListParams {
   page_size?: number
   start_date?: string
   end_date?: string
+  // Exact window bounds; take precedence over the dates. See UsageQueryParams.
+  start_time?: string
+  end_time?: string
   timezone?: string
   model?: string
   status_code?: number
@@ -2268,6 +2271,11 @@ export interface UsageQueryParams {
   billing_mode?: string | null
   start_date?: string
   end_date?: string
+  // Exact RFC3339 window bounds for rolling ranges such as "last 24 hours".
+  // The backend prefers these over start_date/end_date when both are sent,
+  // because a rolling window expressed as two dates spans up to 48 hours.
+  start_time?: string
+  end_time?: string
   timezone?: string
   sort_by?: string
   sort_order?: 'asc' | 'desc'

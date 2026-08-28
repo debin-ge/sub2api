@@ -85,12 +85,63 @@ describe('DateRangePicker', () => {
 
     expect(wrapper.emitted('update:startDate')?.[0]).toEqual([expectedStart])
     expect(wrapper.emitted('update:endDate')?.[0]).toEqual([expectedEnd])
-    expect(wrapper.emitted('change')?.[0]).toEqual([
-      {
-        startDate: expectedStart,
-        endDate: expectedEnd,
-        preset: 'last24Hours'
+
+    const [payload] = wrapper.emitted('change')![0] as {
+      startDate: string
+      endDate: string
+      startTime?: string
+      endTime?: string
+      preset: string | null
+    }[]
+    expect(payload.startDate).toBe(expectedStart)
+    expect(payload.endDate).toBe(expectedEnd)
+    expect(payload.preset).toBe('last24Hours')
+
+    // The dates alone span two calendar days (up to 48 hours), so the preset
+    // must also hand over the exact instants the window really means.
+    expect(payload.startTime).toBeDefined()
+    expect(payload.endTime).toBeDefined()
+    const spanMs = new Date(payload.endTime!).getTime() - new Date(payload.startTime!).getTime()
+    expect(spanMs).toBe(24 * 60 * 60 * 1000)
+    expect(Math.abs(new Date(payload.endTime!).getTime() - nowAfterClick.getTime())).toBeLessThan(
+      5000
+    )
+  })
+
+  it('drops the exact window when the dates are edited by hand', async () => {
+    const now = new Date()
+    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+
+    const wrapper = mount(DateRangePicker, {
+      props: {
+        startDate: formatLocalDate(yesterday),
+        endDate: formatLocalDate(now)
+      },
+      global: {
+        stubs: {
+          Icon: true
+        }
       }
-    ])
+    })
+
+    await wrapper.find('.date-picker-trigger').trigger('click')
+
+    // Type the same dates the last24Hours preset produces. The label may still
+    // say "Last 24 Hours", but two hand-picked dates mean two whole days — the
+    // rolling instants must not be applied.
+    const [startInput, endInput] = wrapper.findAll('.date-picker-input')
+    await startInput.setValue(formatLocalDate(yesterday))
+    await startInput.trigger('change')
+    await endInput.setValue(formatLocalDate(now))
+    await endInput.trigger('change')
+
+    await wrapper.find('.date-picker-apply').trigger('click')
+
+    const [payload] = wrapper.emitted('change')![0] as {
+      startTime?: string
+      endTime?: string
+    }[]
+    expect(payload.startTime).toBeUndefined()
+    expect(payload.endTime).toBeUndefined()
   })
 })
