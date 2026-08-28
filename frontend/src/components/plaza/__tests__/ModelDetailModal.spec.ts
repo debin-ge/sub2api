@@ -155,7 +155,7 @@ describe('ModelDetailModal', () => {
     trigger?.focus()
 
     wrapper = mount(ModelDetailModal, {
-      props: { open: true, model, rate: 6.8, serverUtcOffset: '+08:00' },
+      props: { open: true, model, serverUtcOffset: '+08:00' },
       attachTo: document.body
     })
     await wrapper.vm.$nextTick()
@@ -245,7 +245,7 @@ describe('ModelDetailModal', () => {
     }
 
     wrapper = mount(ModelDetailModal, {
-      props: { open: true, model: vipModel, rate: 6.8 },
+      props: { open: true, model: vipModel },
       attachTo: document.body
     })
     await wrapper.vm.$nextTick()
@@ -255,8 +255,8 @@ describe('ModelDetailModal', () => {
     expect(document.body.textContent).toContain('80% of reference')
     expect(document.body.textContent).toContain('OpenAI VIP')
     expect(document.body.textContent).toContain('VIP')
-    expect(document.body.textContent).toContain('¥20.4')
-    expect(document.body.textContent).toContain('¥16.32')
+    expect(document.body.textContent).toContain('¥3')
+    expect(document.body.textContent).toContain('¥2.4')
   })
 
   it('uses the independent image multiplier for tiered image per-request prices', async () => {
@@ -320,14 +320,14 @@ describe('ModelDetailModal', () => {
     }
 
     wrapper = mount(ModelDetailModal, {
-      props: { open: true, model: imageModel, rate: 6.8 },
+      props: { open: true, model: imageModel },
       attachTo: document.body
     })
     await wrapper.vm.$nextTick()
 
     const tierSection = document.body.textContent ?? ''
     expect(tierSection).toContain('$0.02')
-    expect(tierSection).toContain('¥0.136')
+    expect(tierSection).toContain('¥0.02')
     expect(tierSection).not.toContain('<¥0.01')
   })
 })

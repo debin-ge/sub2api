@@ -198,14 +198,14 @@ export default {
     "hero": {
       "eyebrow": "公开模型目录",
       "title": "模型广场",
-      "subtitle": "Token 价格默认按每 100 万 tokens 展示，按次计费会单独标注。人民币金额仅基于公开设置估算展示，不影响后端实际计费。",
-      "rateTag": "¥1 = ${rate}",
-      "boostValue": "{boost}倍"
+      "subtitle": "Token 价格默认按每 100 万 tokens 展示，按次计费会单独标注。最终价格统一按人民币余额口径展示，不进行汇率换算。",
+      "rateTag": "充值倍率 {rate}x",
+      "boostValue": "¥1 充值获得 {multiplier} 余额"
     },
     "metrics": {
       "models": "模型总数",
       "platforms": "供应商",
-      "boost": "充值加成"
+      "boost": "充值倍率"
     },
     "card": {
       "input": "输入",
@@ -233,7 +233,7 @@ export default {
       "filtered": "{visible}/{total} 个模型"
     },
     "infoBanner": {
-      "text": "同一模型会分别展示普通公开分组和 VIP 分组中的最低可用基础价；两类价格独立计算，不会相互覆盖。展示单价来自模型价格目录。DeepSeek 按北京时间区分高峰（09:00-12:00、14:00-18:00）与空闲（半价）。"
+      "text": "同一模型会分别展示普通公开分组和 VIP 分组中的最低可用基础价；两类价格独立计算，不会相互覆盖。原价优先来自模型价格目录，最终价格按分组倍率折算并统一以人民币余额口径展示，不进行汇率换算。"
     },
     "modal": {
       "close": "关闭",

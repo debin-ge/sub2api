@@ -198,14 +198,14 @@ export default {
     "hero": {
       "eyebrow": "Public model catalog",
       "title": "Model Plaza",
-      "subtitle": "Token prices are displayed per 1M tokens unless otherwise noted. CNY amounts are reference estimates based on public settings and do not change backend billing.",
-      "rateTag": "¥1 = ${rate}",
-      "boostValue": "{boost}x"
+      "subtitle": "Token prices are displayed per 1M tokens unless otherwise noted. Final prices use the platform balance convention in CNY and do not apply exchange rates.",
+      "rateTag": "Recharge multiplier {rate}x",
+      "boostValue": "¥1 recharge gives {multiplier} balance"
     },
     "metrics": {
       "models": "Models",
       "platforms": "Providers",
-      "boost": "Recharge boost"
+      "boost": "Recharge multiplier"
     },
     "card": {
       "input": "Input",
@@ -233,7 +233,7 @@ export default {
       "filtered": "{visible}/{total} models"
     },
     "infoBanner": {
-      "text": "Each model shows the lowest usable base price for standard public groups and VIP groups separately. Displayed unit prices come from the model-price catalog. DeepSeek uses Beijing time: peak 09:00-12:00 and 14:00-18:00; off-peak is half the peak price."
+      "text": "Each model shows the lowest usable base price for standard public groups and VIP groups separately. Original prices come from the model-price catalog first; final prices apply the group multiplier and are always shown in the platform's CNY balance convention without exchange-rate conversion."
     },
     "modal": {
       "close": "Close",

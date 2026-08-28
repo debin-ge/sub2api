@@ -5,14 +5,11 @@ import type { UserAvailableChannel } from '@/api/channels'
 import { extractApiErrorMessage } from '@/utils/apiError'
 import {
   normalizePlazaMultiplier,
-  normalizePlazaRate,
-  PLAZA_DEFAULT_CNY_USD_RATE,
   PLAZA_DEFAULT_MULTIPLIER
 } from '@/utils/pricing'
 
 export interface PlazaPricingConfig {
   multiplier: number
-  rate: number
   serverUtcOffset: string
   paymentEnabled: boolean
   balanceDisabled: boolean
@@ -21,7 +18,6 @@ export interface PlazaPricingConfig {
 
 const defaultPricingConfig = (): PlazaPricingConfig => ({
   multiplier: PLAZA_DEFAULT_MULTIPLIER,
-  rate: PLAZA_DEFAULT_CNY_USD_RATE,
   serverUtcOffset: '',
   paymentEnabled: false,
   balanceDisabled: false,
@@ -51,7 +47,6 @@ export async function fetchAll(): Promise<void> {
     channels.value = publicChannels
     pricingConfig.value = {
       multiplier: normalizePlazaMultiplier(settings.payment_balance_recharge_multiplier),
-      rate: normalizePlazaRate(settings.payment_cny_usd_rate),
       serverUtcOffset: settings.server_utc_offset ?? '',
       paymentEnabled: settings.payment_enabled === true,
       balanceDisabled: settings.payment_balance_disabled === true,

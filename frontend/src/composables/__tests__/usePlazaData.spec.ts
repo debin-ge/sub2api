@@ -24,7 +24,6 @@ describe('usePlazaData', () => {
     plazaData.loading.value = false
     plazaData.pricingConfig.value = {
       multiplier: 1,
-      rate: 7.2,
       serverUtcOffset: '',
       paymentEnabled: false,
       balanceDisabled: false,
@@ -60,7 +59,6 @@ describe('usePlazaData', () => {
     expect(plazaData.channels.value).toEqual(publicChannels)
     expect(plazaData.pricingConfig.value).toEqual({
       multiplier: 1.25,
-      rate: 6.8,
       serverUtcOffset: '+08:00',
       paymentEnabled: true,
       balanceDisabled: false,

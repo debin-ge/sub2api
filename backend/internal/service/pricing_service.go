@@ -113,6 +113,7 @@ var (
 // The catalog schema is compatible with model-price-repo JSON and includes
 // fields such as input_cost_per_token and litellm_provider.
 type ModelPriceEntry struct {
+	Currency                            string  `json:"currency,omitempty"`
 	InputCostPerToken                   float64 `json:"input_cost_per_token"`
 	InputCostPerTokenPriority           float64 `json:"input_cost_per_token_priority"`
 	OutputCostPerToken                  float64 `json:"output_cost_per_token"`
@@ -171,6 +172,7 @@ type PricingRemoteClient interface {
 // RawModelPriceEntry parses raw JSON while preserving whether optional price
 // fields were present.
 type RawModelPriceEntry struct {
+	Currency                            string   `json:"currency"`
 	InputCostPerToken                   *float64 `json:"input_cost_per_token"`
 	InputCostPerTokenPriority           *float64 `json:"input_cost_per_token_priority"`
 	OutputCostPerToken                  *float64 `json:"output_cost_per_token"`
@@ -347,6 +349,9 @@ func (s *PricingService) SeedOverridesForTest(rows []ModelPriceOverride) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	for i := range rows {
+		rows[i].Currency = modelPriceCurrencyOrUSD(rows[i].Currency)
+	}
 	s.overrideRows = rows
 	s.rebuildEffectiveLocked(s.catalogData)
 }
@@ -362,6 +367,7 @@ func (s *PricingService) ReloadOverrides(ctx context.Context) error {
 	for i := range rows {
 		rows[i].Platform = normalizeOverridePlatform(rows[i].Platform)
 		rows[i].ModelName = normalizePricingModelKey(rows[i].ModelName)
+		rows[i].Currency = modelPriceCurrencyOrUSD(rows[i].Currency)
 	}
 	s.mu.Lock()
 	s.overrideRows = rows
@@ -417,7 +423,7 @@ func (s *PricingService) rebuildEffectiveLocked(catalog map[string]*ModelPriceEn
 			continue
 		}
 		before := base[row.ModelName]
-		merged := buildModelPriceEntry(row.ModelName, mergeRawPriceEntry(rawOf(before), &row.Payload))
+		merged := buildOverrideModelPriceEntry(row.ModelName, before, row)
 		base[row.ModelName] = merged
 		if catalogHasUsablePrice(before) && !catalogHasUsablePrice(merged) {
 			invalidated[ModelPriceOverrideWildcardPlatform+"\x00"+row.ModelName] = struct{}{}
@@ -433,7 +439,7 @@ func (s *PricingService) rebuildEffectiveLocked(catalog map[string]*ModelPriceEn
 			overlay[row.Platform] = make(map[string]*ModelPriceEntry)
 		}
 		before := base[row.ModelName]
-		merged := buildModelPriceEntry(row.ModelName, mergeRawPriceEntry(rawOf(before), &row.Payload))
+		merged := buildOverrideModelPriceEntry(row.ModelName, before, row)
 		overlay[row.Platform][row.ModelName] = merged
 		if catalogHasUsablePrice(before) && !catalogHasUsablePrice(merged) {
 			invalidated[row.Platform+"\x00"+row.ModelName] = struct{}{}
@@ -731,6 +737,12 @@ func (s *PricingService) parsePricingData(body []byte) (map[string]*ModelPriceEn
 		// 只保留有有效价格的条目
 		if entry.InputCostPerToken == nil && entry.OutputCostPerToken == nil && entry.OutputCostPerImage == nil && entry.OutputCostPerImageToken == nil && entry.InputCostPerImageToken == nil {
 			continue
+		}
+		if normalized, err := NormalizeModelPriceCurrency(entry.Currency); err != nil {
+			logger.LegacyPrintf("service.pricing", "[Pricing] Model %s has unsupported currency %q; defaulting to USD", modelName, entry.Currency)
+			entry.Currency = ModelPriceCurrencyUSD
+		} else {
+			entry.Currency = normalized
 		}
 
 		pricing := buildModelPriceEntry(modelName, &entry)

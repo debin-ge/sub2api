@@ -25,7 +25,7 @@
           <span aria-hidden="true"></span>
         </span>
         <div class="mt-0.5 truncate font-mono text-[10px] tabular-nums text-gray-400/80 line-through decoration-gray-400/70 dark:text-gray-500 dark:decoration-gray-500/70">
-          {{ originalDisplay(column.peak) }} / {{ originalDisplay(column.offPeak) }}
+          {{ originalDisplay(column.peak, column.currency) }} / {{ originalDisplay(column.offPeak, column.currency) }}
         </div>
       </template>
 
@@ -44,7 +44,7 @@
             column.value != null && 'line-through decoration-gray-400/70 dark:decoration-gray-500/70'
           ]"
         >
-          {{ column.value == null ? t('plaza.card.notAvailable') : originalDisplay(column.value) }}
+          {{ column.value == null ? t('plaza.card.notAvailable') : originalDisplay(column.value, column.currency) }}
         </div>
       </template>
     </div>
@@ -58,20 +58,21 @@ import type { ModelPriceTimeSchedule } from '@/api/channels'
 import {
   PER_REQUEST_SCALE,
   formatCNYEffective,
-  formatScaled,
+  formatMoney,
   scheduledScaledPrice
 } from '@/utils/pricing'
 
 const props = defineProps<{
   label: string
   scale: number
-  rate: number
   standardAvailable: boolean
   standardValue: number | null
   standardBillingRateMultiplier?: number
+  standardCurrency?: string
   vipAvailable: boolean
   vipValue: number | null
   vipBillingRateMultiplier?: number
+  vipCurrency?: string
   timeSchedule?: ModelPriceTimeSchedule
 }>()
 
@@ -113,6 +114,7 @@ const columns = computed(() => {
       key: 'standard',
       value: props.standardValue,
       billingRateMultiplier: props.standardBillingRateMultiplier,
+      currency: props.standardCurrency,
       peak: standardPeak.value,
       offPeak: standardOffPeak.value,
       valueClass: 'text-gray-900 dark:text-white',
@@ -126,6 +128,7 @@ const columns = computed(() => {
       key: 'vip',
       value: props.vipValue,
       billingRateMultiplier: props.vipBillingRateMultiplier,
+      currency: props.vipCurrency,
       peak: vipPeak.value,
       offPeak: vipOffPeak.value,
       valueClass: 'text-orange-600 dark:text-orange-400',
@@ -137,9 +140,9 @@ const columns = computed(() => {
   return list
 })
 
-const originalDisplay = (value: number | null) => formatScaled(value, props.scale)
+const originalDisplay = (value: number | null, currency?: string) => formatMoney(value, currency, props.scale)
 const rechargedDisplay = (value: number | null, billingRateMultiplier?: number) =>
-  formatCNYEffective(value, props.rate, props.scale, billingRateMultiplier)
+  formatCNYEffective(value, props.scale, billingRateMultiplier)
 
 const unitLabel = computed(() =>
   props.scale === PER_REQUEST_SCALE

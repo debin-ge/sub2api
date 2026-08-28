@@ -29410,6 +29410,7 @@ type ModelPriceOverrideMutation struct {
 	updated_at    *time.Time
 	platform      *string
 	model_name    *string
+	currency      *modelpriceoverride.Currency
 	payload       *map[string]interface{}
 	enabled       *bool
 	note          *string
@@ -29663,6 +29664,42 @@ func (m *ModelPriceOverrideMutation) ResetModelName() {
 	m.model_name = nil
 }
 
+// SetCurrency sets the "currency" field.
+func (m *ModelPriceOverrideMutation) SetCurrency(value modelpriceoverride.Currency) {
+	m.currency = &value
+}
+
+// Currency returns the value of the "currency" field in the mutation.
+func (m *ModelPriceOverrideMutation) Currency() (r modelpriceoverride.Currency, exists bool) {
+	v := m.currency
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCurrency returns the old "currency" field's value of the ModelPriceOverride entity.
+// If the ModelPriceOverride object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ModelPriceOverrideMutation) OldCurrency(ctx context.Context) (v modelpriceoverride.Currency, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCurrency is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCurrency requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCurrency: %w", err)
+	}
+	return oldValue.Currency, nil
+}
+
+// ResetCurrency resets all changes to the "currency" field.
+func (m *ModelPriceOverrideMutation) ResetCurrency() {
+	m.currency = nil
+}
+
 // SetPayload sets the "payload" field.
 func (m *ModelPriceOverrideMutation) SetPayload(value map[string]interface{}) {
 	m.payload = &value
@@ -29901,7 +29938,7 @@ func (m *ModelPriceOverrideMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ModelPriceOverrideMutation) Fields() []string {
-	fields := make([]string, 0, 8)
+	fields := make([]string, 0, 9)
 	if m.created_at != nil {
 		fields = append(fields, modelpriceoverride.FieldCreatedAt)
 	}
@@ -29913,6 +29950,9 @@ func (m *ModelPriceOverrideMutation) Fields() []string {
 	}
 	if m.model_name != nil {
 		fields = append(fields, modelpriceoverride.FieldModelName)
+	}
+	if m.currency != nil {
+		fields = append(fields, modelpriceoverride.FieldCurrency)
 	}
 	if m.payload != nil {
 		fields = append(fields, modelpriceoverride.FieldPayload)
@@ -29942,6 +29982,8 @@ func (m *ModelPriceOverrideMutation) Field(name string) (ent.Value, bool) {
 		return m.Platform()
 	case modelpriceoverride.FieldModelName:
 		return m.ModelName()
+	case modelpriceoverride.FieldCurrency:
+		return m.Currency()
 	case modelpriceoverride.FieldPayload:
 		return m.Payload()
 	case modelpriceoverride.FieldEnabled:
@@ -29967,6 +30009,8 @@ func (m *ModelPriceOverrideMutation) OldField(ctx context.Context, name string) 
 		return m.OldPlatform(ctx)
 	case modelpriceoverride.FieldModelName:
 		return m.OldModelName(ctx)
+	case modelpriceoverride.FieldCurrency:
+		return m.OldCurrency(ctx)
 	case modelpriceoverride.FieldPayload:
 		return m.OldPayload(ctx)
 	case modelpriceoverride.FieldEnabled:
@@ -30011,6 +30055,13 @@ func (m *ModelPriceOverrideMutation) SetField(name string, value ent.Value) erro
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetModelName(v)
+		return nil
+	case modelpriceoverride.FieldCurrency:
+		v, ok := value.(modelpriceoverride.Currency)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCurrency(v)
 		return nil
 	case modelpriceoverride.FieldPayload:
 		v, ok := value.(map[string]interface{})
@@ -30136,6 +30187,9 @@ func (m *ModelPriceOverrideMutation) ResetField(name string) error {
 		return nil
 	case modelpriceoverride.FieldModelName:
 		m.ResetModelName()
+		return nil
+	case modelpriceoverride.FieldCurrency:
+		m.ResetCurrency()
 		return nil
 	case modelpriceoverride.FieldPayload:
 		m.ResetPayload()

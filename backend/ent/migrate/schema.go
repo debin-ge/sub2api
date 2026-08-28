@@ -1101,6 +1101,7 @@ var (
 		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "platform", Type: field.TypeString, Size: 50},
 		{Name: "model_name", Type: field.TypeString, Size: 200},
+		{Name: "currency", Type: field.TypeEnum, Enums: []string{"USD", "CNY"}, Default: "USD"},
 		{Name: "payload", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "enabled", Type: field.TypeBool, Default: true},
 		{Name: "note", Type: field.TypeString, Nullable: true, Size: 2147483647},

@@ -127,6 +127,8 @@ type userAvailableGroup struct {
 // userSupportedModelPricing 用户可见的定价字段白名单。
 type userSupportedModelPricing struct {
 	BillingMode      string                   `json:"billing_mode"`
+	Currency         string                   `json:"currency"`
+	Source           string                   `json:"source"`
 	InputPrice       *float64                 `json:"input_price"`
 	OutputPrice      *float64                 `json:"output_price"`
 	CacheWritePrice  *float64                 `json:"cache_write_price"`
@@ -347,8 +349,8 @@ func (h *AvailableChannelHandler) resolveGroupCatalogs(
 	return nil
 }
 
-// applyPlazaModelPricesToChannels 用管理端模型价格页的生效价覆盖广场展示价
-// （目录 + 手动覆盖 + 官方兜底），并附带 DeepSeek 官方峰谷规则。
+// applyPlazaModelPricesToChannels 按「管理覆盖 > 第三方目录 > 官方兜底 > 渠道价」
+// 选择一整套广场展示价，并附带币种、来源与 DeepSeek 官方峰谷规则。
 func applyPlazaModelPricesToChannels(
 	pricing *service.PricingService,
 	official billingFallbackProvider,
@@ -370,23 +372,15 @@ func applyPlazaModelPricesToChannels(
 				if modelPlatform == "" {
 					modelPlatform = platform
 				}
-				officialEntry := plazaOfficialEntry(official, name)
-				if pricing != nil {
-					entry, schedule := service.ResolvePlazaDisplayPrice(pricing, modelPlatform, name, officialEntry)
-					if entry != nil {
-						models[k].Pricing = overlayUserPricingFromModelPrice(models[k].Pricing, entry)
-					}
-					models[k].TimeSchedule = schedule
-				} else {
-					// 没有价格目录时展示价只能来自官方兜底表，表里存的是高峰价。
-					models[k].TimeSchedule = service.DeepSeekOfficialPriceTimeSchedule(modelPlatform, name, false)
-				}
-				if mp := officialModelPricing(official, name); mp != nil {
-					if models[k].Pricing == nil {
-						models[k].Pricing = buildUserPricingFromModelPricing(mp)
-					} else {
-						enrichUserPricingFromModelPricing(models[k].Pricing, mp)
-					}
+				resolution := service.ResolvePlazaDisplayPrice(pricing, modelPlatform, name, plazaOfficialEntry(official, name))
+				if resolution != nil {
+					models[k].Pricing = userPricingFromPlazaResolution(resolution)
+					models[k].TimeSchedule = resolution.TimeSchedule
+				} else if models[k].Pricing != nil {
+					// 模型价格、第三方目录和官方兜底都缺失时，保留渠道自配价。
+					models[k].Pricing.Currency = service.ModelPriceCurrencyUSD
+					models[k].Pricing.Source = service.ModelPriceSourceChannel
+					models[k].TimeSchedule = nil
 				}
 			}
 			channels[i].Platforms[j].SupportedModels = models
@@ -405,90 +399,39 @@ func plazaOfficialEntry(provider billingFallbackProvider, model string) *service
 	return service.ModelPriceEntryFromOfficial(model, officialModelPricing(provider, model))
 }
 
-func overlayUserPricingFromModelPrice(existing *userSupportedModelPricing, entry *service.ModelPriceEntry) *userSupportedModelPricing {
-	if entry == nil || !plazaModelPriceUsable(entry) {
-		return existing
-	}
-	if existing == nil {
-		existing = &userSupportedModelPricing{
-			BillingMode: string(service.BillingModeToken),
-			Intervals:   []userPricingIntervalDTO{},
-		}
-	}
-	if v := plazaTokenPrice(entry.InputCostPerToken, entry.InputPriceExplicit); v != nil {
-		existing.InputPrice = v
-	}
-	if v := plazaTokenPrice(entry.OutputCostPerToken, entry.OutputPriceExplicit); v != nil {
-		existing.OutputPrice = v
-	}
-	if v := plazaTokenPrice(entry.CacheCreationInputTokenCost, entry.CacheCreationPriceExplicit); v != nil {
-		existing.CacheWritePrice = v
-	}
-	if v := plazaTokenPrice(entry.CacheReadInputTokenCost, entry.CacheReadPriceExplicit); v != nil {
-		existing.CacheReadPrice = v
-	}
-	if v := plazaTokenPrice(entry.OutputCostPerImageToken, entry.ImageOutputPriceExplicit); v != nil {
-		existing.ImageOutputPrice = v
-	}
-	if v := plazaTokenPrice(entry.InputCostPerImageToken, entry.ImageInputPriceExplicit); v != nil {
-		existing.ImageInputPrice = v
-	}
-	return existing
-}
-
-func plazaModelPriceUsable(entry *service.ModelPriceEntry) bool {
-	if entry == nil {
-		return false
-	}
-	return entry.InputCostPerToken != 0 || entry.InputPriceExplicit ||
-		entry.OutputCostPerToken != 0 || entry.OutputPriceExplicit ||
-		entry.CacheCreationInputTokenCost != 0 || entry.CacheCreationPriceExplicit ||
-		entry.CacheReadInputTokenCost != 0 || entry.CacheReadPriceExplicit ||
-		entry.OutputCostPerImageToken != 0 || entry.ImageOutputPriceExplicit ||
-		entry.InputCostPerImageToken != 0 || entry.ImageInputPriceExplicit ||
-		entry.OutputCostPerImage != 0 || entry.OutputCostPerImageExplicit
-}
-
 func plazaTokenPrice(value float64, explicit bool) *float64 {
 	if value != 0 || explicit {
-		return nonZeroFloatPtr(value)
+		return &value
 	}
 	return nil
 }
 
-func buildUserPricingFromModelPricing(mp *service.ModelPricing) *userSupportedModelPricing {
-	if mp == nil {
+func userPricingFromPlazaResolution(resolution *service.PlazaDisplayPriceResolution) *userSupportedModelPricing {
+	if resolution == nil || resolution.Pricing == nil {
 		return nil
 	}
+	entry := resolution.Pricing
+	billingMode := service.BillingModeToken
+	if (entry.OutputCostPerImage != 0 || entry.OutputCostPerImageExplicit) &&
+		entry.InputCostPerToken == 0 && !entry.InputPriceExplicit &&
+		entry.OutputCostPerToken == 0 && !entry.OutputPriceExplicit {
+		billingMode = service.BillingModeImage
+	}
 	return &userSupportedModelPricing{
-		BillingMode:      string(service.BillingModeToken),
-		InputPrice:       nonZeroFloatPtr(mp.InputPricePerToken),
-		OutputPrice:      nonZeroFloatPtr(mp.OutputPricePerToken),
-		CacheWritePrice:  nonZeroFloatPtr(mp.CacheCreationPricePerToken),
-		CacheReadPrice:   nonZeroFloatPtr(mp.CacheReadPricePerToken),
-		ImageOutputPrice: nonZeroFloatPtr(mp.ImageOutputPricePerToken),
-		Intervals:        []userPricingIntervalDTO{},
-	}
-}
-
-func enrichUserPricingFromModelPricing(existing *userSupportedModelPricing, mp *service.ModelPricing) {
-	if existing == nil || mp == nil {
-		return
-	}
-	if existing.InputPrice == nil {
-		existing.InputPrice = nonZeroFloatPtr(mp.InputPricePerToken)
-	}
-	if existing.OutputPrice == nil {
-		existing.OutputPrice = nonZeroFloatPtr(mp.OutputPricePerToken)
-	}
-	if existing.CacheWritePrice == nil {
-		existing.CacheWritePrice = nonZeroFloatPtr(mp.CacheCreationPricePerToken)
-	}
-	if existing.CacheReadPrice == nil {
-		existing.CacheReadPrice = nonZeroFloatPtr(mp.CacheReadPricePerToken)
-	}
-	if existing.ImageOutputPrice == nil {
-		existing.ImageOutputPrice = nonZeroFloatPtr(mp.ImageOutputPricePerToken)
+		BillingMode:     string(billingMode),
+		Currency:        resolution.Currency,
+		Source:          resolution.Source,
+		InputPrice:      plazaTokenPrice(entry.InputCostPerToken, entry.InputPriceExplicit),
+		OutputPrice:     plazaTokenPrice(entry.OutputCostPerToken, entry.OutputPriceExplicit),
+		CacheWritePrice: plazaTokenPrice(entry.CacheCreationInputTokenCost, entry.CacheCreationPriceExplicit),
+		CacheReadPrice:  plazaTokenPrice(entry.CacheReadInputTokenCost, entry.CacheReadPriceExplicit),
+		ImageInputPrice: plazaTokenPrice(entry.InputCostPerImageToken, entry.ImageInputPriceExplicit),
+		ImageOutputPrice: plazaTokenPrice(
+			entry.OutputCostPerImageToken,
+			entry.ImageOutputPriceExplicit,
+		),
+		PerRequestPrice: plazaTokenPrice(entry.OutputCostPerImage, entry.OutputCostPerImageExplicit),
+		Intervals:       []userPricingIntervalDTO{},
 	}
 }
 
@@ -1020,6 +963,8 @@ func toUserPricing(p *service.ChannelModelPricing) *userSupportedModelPricing {
 	}
 	return &userSupportedModelPricing{
 		BillingMode:      billingMode,
+		Currency:         service.ModelPriceCurrencyUSD,
+		Source:           service.ModelPriceSourceChannel,
 		InputPrice:       p.InputPrice,
 		OutputPrice:      p.OutputPrice,
 		CacheWritePrice:  p.CacheWritePrice,

@@ -45,6 +45,7 @@ func (r *modelPriceOverrideRepository) Upsert(ctx context.Context, row *service.
 	id, err := clientFromContext(ctx, r.client).ModelPriceOverride.Create().
 		SetPlatform(row.Platform).
 		SetModelName(row.ModelName).
+		SetCurrency(modelpriceoverride.Currency(row.Currency)).
 		SetPayload(payload).
 		SetEnabled(row.Enabled).
 		SetNillableNote(row.Note).
@@ -98,6 +99,7 @@ func modelPriceOverrideFromEnt(row *ent.ModelPriceOverride) (*service.ModelPrice
 		ID:        row.ID,
 		Platform:  row.Platform,
 		ModelName: row.ModelName,
+		Currency:  string(row.Currency),
 		Payload:   payload,
 		Enabled:   row.Enabled,
 		Note:      row.Note,

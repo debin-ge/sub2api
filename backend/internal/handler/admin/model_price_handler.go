@@ -50,6 +50,7 @@ func ProvideModelPriceHandler(
 type upsertModelPriceRequest struct {
 	Platform string          `json:"platform"`
 	Model    string          `json:"model"`
+	Currency string          `json:"currency"`
 	Payload  json.RawMessage `json:"payload"`
 	Enabled  *bool           `json:"enabled"`
 	Note     *string         `json:"note"`
@@ -118,6 +119,7 @@ func (h *ModelPriceHandler) Upsert(c *gin.Context) {
 	result, err := h.pricingService.UpsertOverride(c.Request.Context(), service.ModelPriceUpsertInput{
 		Platform:  req.Platform,
 		Model:     req.Model,
+		Currency:  req.Currency,
 		Payload:   payload,
 		Enabled:   req.Enabled,
 		Note:      req.Note,

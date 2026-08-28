@@ -299,6 +299,26 @@ func ModelNameContainsFold(v string) predicate.ModelPriceOverride {
 	return predicate.ModelPriceOverride(sql.FieldContainsFold(FieldModelName, v))
 }
 
+// CurrencyEQ applies the EQ predicate on the "currency" field.
+func CurrencyEQ(v Currency) predicate.ModelPriceOverride {
+	return predicate.ModelPriceOverride(sql.FieldEQ(FieldCurrency, v))
+}
+
+// CurrencyNEQ applies the NEQ predicate on the "currency" field.
+func CurrencyNEQ(v Currency) predicate.ModelPriceOverride {
+	return predicate.ModelPriceOverride(sql.FieldNEQ(FieldCurrency, v))
+}
+
+// CurrencyIn applies the In predicate on the "currency" field.
+func CurrencyIn(vs ...Currency) predicate.ModelPriceOverride {
+	return predicate.ModelPriceOverride(sql.FieldIn(FieldCurrency, vs...))
+}
+
+// CurrencyNotIn applies the NotIn predicate on the "currency" field.
+func CurrencyNotIn(vs ...Currency) predicate.ModelPriceOverride {
+	return predicate.ModelPriceOverride(sql.FieldNotIn(FieldCurrency, vs...))
+}
+
 // PayloadIsNil applies the IsNil predicate on the "payload" field.
 func PayloadIsNil() predicate.ModelPriceOverride {
 	return predicate.ModelPriceOverride(sql.FieldIsNull(FieldPayload))

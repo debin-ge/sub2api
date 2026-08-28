@@ -18,7 +18,7 @@
             </span>
           </div>
           <p class="mt-3 max-w-2xl text-sm leading-relaxed text-gray-500 dark:text-gray-400">
-            {{ t('plaza.hero.subtitle', { boost: valueBoost }) }}
+            {{ t('plaza.hero.subtitle') }}
           </p>
         </div>
 
@@ -62,20 +62,18 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { computeValueBoost, normalizePlazaMultiplier } from '@/utils/pricing'
+import { normalizePlazaMultiplier } from '@/utils/pricing'
 
 const props = defineProps<{
   modelCount: number
   platformCount: number
-  rate: number
   multiplier: number
 }>()
 
 const { t } = useI18n()
 
-const valueBoost = computed(() => computeValueBoost(props.multiplier, props.rate))
-const hasBoost = computed(() => valueBoost.value > 1)
-const valueBoostLabel = computed(() => t('plaza.hero.boostValue', { boost: valueBoost.value }))
+const hasBoost = computed(() => normalizePlazaMultiplier(props.multiplier) !== 1)
+const valueBoostLabel = computed(() => t('plaza.hero.boostValue', { multiplier: rechargeRateLabel.value }))
 
 const rechargeRateLabel = computed(() => {
   const value = normalizePlazaMultiplier(props.multiplier)

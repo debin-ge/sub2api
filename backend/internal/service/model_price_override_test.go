@@ -151,7 +151,7 @@ func TestOverrideExplicitZeroIsPreserved(t *testing.T) {
 
 func TestImageOnlyOverrideIsAllowed(t *testing.T) {
 	svc := &PricingService{catalogData: map[string]*ModelPriceEntry{}}
-	_, err := svc.validateOverrideWrite("*", "gpt-image-1", &ModelPriceOverridePayload{
+	_, err := svc.validateOverrideWrite("*", "gpt-image-1", ModelPriceCurrencyUSD, &ModelPriceOverridePayload{
 		OutputCostPerImage: ptrPrice(0.04),
 	}, true)
 	require.NoError(t, err)
@@ -163,7 +163,7 @@ func TestIncompletePriorityOverrideRejected(t *testing.T) {
 			"claude-sonnet-4": pricedEntry(1e-6, 2e-6),
 		},
 	}
-	_, err := svc.validateOverrideWrite("*", "claude-sonnet-4", &ModelPriceOverridePayload{
+	_, err := svc.validateOverrideWrite("*", "claude-sonnet-4", ModelPriceCurrencyUSD, &ModelPriceOverridePayload{
 		InputCostPerTokenPriority: ptrPrice(3e-6),
 	}, true)
 	require.Error(t, err)
@@ -424,26 +424,32 @@ func TestResolvePlazaDisplayPriceUsesOverrideThenOfficial(t *testing.T) {
 		InputPricePerToken:  9e-6,
 		OutputPricePerToken: 27e-6,
 	})
-	entry, schedule := ResolvePlazaDisplayPrice(svc, PlatformDeepSeek, "deepseek-v4-flash", official)
-	require.NotNil(t, entry)
-	require.InDelta(t, 3e-6, entry.InputCostPerToken, 1e-12)
-	require.InDelta(t, 2e-6, entry.OutputCostPerToken, 1e-12)
+	resolution := ResolvePlazaDisplayPrice(svc, PlatformDeepSeek, "deepseek-v4-flash", official)
+	require.NotNil(t, resolution)
+	require.NotNil(t, resolution.Pricing)
+	require.Equal(t, ModelPriceCurrencyUSD, resolution.Currency)
+	require.Equal(t, ModelPriceSourceMerged, resolution.Source)
+	require.InDelta(t, 3e-6, resolution.Pricing.InputCostPerToken, 1e-12)
+	require.InDelta(t, 2e-6, resolution.Pricing.OutputCostPerToken, 1e-12)
+	schedule := resolution.TimeSchedule
 	// 目录价 / 手动覆盖价对官方分时 SKU 是空闲价，高峰 ×2。
 	require.NotNil(t, schedule)
 	require.Equal(t, 2.0, schedule.PeakMultiplier)
 	require.Equal(t, 1.0, schedule.OffPeakMultiplier)
 
 	// 目录没有该 SKU 时回落官方兜底表，那份存的是高峰价。
-	missing, officialSchedule := ResolvePlazaDisplayPrice(&PricingService{}, PlatformDeepSeek, "deepseek-v4-pro", official)
-	require.Equal(t, official, missing)
+	missing := ResolvePlazaDisplayPrice(&PricingService{}, PlatformDeepSeek, "deepseek-v4-pro", official)
+	require.NotNil(t, missing)
+	require.Equal(t, official, missing.Pricing)
+	require.Equal(t, ModelPriceSourceOfficial, missing.Source)
+	officialSchedule := missing.TimeSchedule
 	require.NotNil(t, officialSchedule)
 	require.Equal(t, 1.0, officialSchedule.PeakMultiplier)
 	require.Equal(t, 0.5, officialSchedule.OffPeakMultiplier)
 
 	// 目录和官方表都没有：广场展示的是渠道自配价，不挂官方峰谷。
-	none, noSchedule := ResolvePlazaDisplayPrice(&PricingService{}, PlatformDeepSeek, "deepseek-v4-pro", nil)
+	none := ResolvePlazaDisplayPrice(&PricingService{}, PlatformDeepSeek, "deepseek-v4-pro", nil)
 	require.Nil(t, none)
-	require.Nil(t, noSchedule)
 }
 
 func TestSyncKeepsOverrides(t *testing.T) {
@@ -498,13 +504,121 @@ func TestUpsertAndStatusCountOverrides(t *testing.T) {
 		Payload:  ModelPriceOverridePayload{InputCostPerToken: ptrPrice(1e-6), OutputCostPerToken: ptrPrice(2e-6)},
 	})
 	require.NoError(t, err)
+	require.Equal(t, ModelPriceCurrencyUSD, store.rows[overrideKey("*", "minimax-m2")].Currency)
 	status := svc.GetStatus()
 	require.Equal(t, 1, status["override_count"])
 	require.Equal(t, 0, status["catalog_model_count"])
 	require.Equal(t, 1, status["model_count"])
 }
 
+func TestUpsertPersistsAndReturnsCNYCurrency(t *testing.T) {
+	store := newMemoryOverrideStore()
+	svc := NewPricingService(&config.Config{}, nil)
+	svc.SetOverrideDependencies(store, nil)
+
+	result, err := svc.UpsertOverride(context.Background(), ModelPriceUpsertInput{
+		Platform: PlatformZhipu,
+		Model:    "glm-5.1",
+		Currency: "cny",
+		Payload: ModelPriceOverridePayload{
+			InputCostPerToken:  ptrPrice(1.4e-6),
+			OutputCostPerToken: ptrPrice(4.4e-6),
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.Override)
+	require.Equal(t, ModelPriceCurrencyCNY, result.Override.Currency)
+	require.Equal(t, ModelPriceCurrencyCNY, store.rows[overrideKey(PlatformZhipu, "glm-5.1")].Currency)
+
+	detail, err := svc.GetPriceDetail(PlatformZhipu, "glm-5.1")
+	require.NoError(t, err)
+	require.Equal(t, ModelPriceCurrencyCNY, detail.Currency)
+	require.Equal(t, ModelPriceCurrencyCNY, detail.OverrideCurrency)
+	require.InDelta(t, 1.4e-6, detail.Effective["input_cost_per_token"], 1e-12)
+	require.InDelta(t, 4.4e-6, detail.Effective["output_cost_per_token"], 1e-12)
+}
+
 func TestDecodeOverridePayloadRejectsUnknownFields(t *testing.T) {
 	_, err := DecodeModelPriceOverridePayload(json.RawMessage(`{"not_a_price":1}`))
 	require.Error(t, err)
+}
+
+func TestModelPriceCurrencyDefaultsAndCatalogParsing(t *testing.T) {
+	require.Equal(t, ModelPriceCurrencyUSD, modelPriceCurrencyOrUSD(""))
+	require.Equal(t, ModelPriceCurrencyCNY, modelPriceCurrencyOrUSD(" cny "))
+	if _, err := NormalizeModelPriceCurrency("EUR"); err == nil {
+		t.Fatal("expected unsupported currency to be rejected")
+	}
+
+	svc := &PricingService{}
+	data, err := svc.parsePricingData([]byte(`{
+		"usd-model": {"input_cost_per_token": 0.000001, "output_cost_per_token": 0.000002},
+		"cny-model": {"currency": "CNY", "input_cost_per_token": 0.0000014, "output_cost_per_token": 0.0000044}
+	}`))
+	require.NoError(t, err)
+	require.Equal(t, ModelPriceCurrencyUSD, data["usd-model"].Currency)
+	require.Equal(t, ModelPriceCurrencyCNY, data["cny-model"].Currency)
+}
+
+func TestCrossCurrencyOverrideReplacesCatalogInsteadOfMerging(t *testing.T) {
+	svc := &PricingService{}
+	svc.SeedCatalogForTest(map[string]*ModelPriceEntry{
+		"glm-5.1": pricedEntry(1e-6, 4e-6),
+	})
+	svc.SeedOverridesForTest([]ModelPriceOverride{{
+		Platform:  PlatformZhipu,
+		ModelName: "glm-5.1",
+		Currency:  ModelPriceCurrencyCNY,
+		Enabled:   true,
+		Payload:   ModelPriceOverridePayload{InputCostPerToken: ptrPrice(1.4e-6)},
+	}})
+
+	effective := svc.GetModelPricingForPlatform(PlatformZhipu, "glm-5.1")
+	require.NotNil(t, effective)
+	require.Equal(t, ModelPriceCurrencyCNY, effective.Currency)
+	require.InDelta(t, 1.4e-6, effective.InputCostPerToken, 1e-12)
+	require.Zero(t, effective.OutputCostPerToken)
+	require.True(t, effective.TokenPricingAbsent)
+}
+
+func TestSameCurrencyOverrideStillMergesCatalog(t *testing.T) {
+	svc := &PricingService{}
+	svc.SeedCatalogForTest(map[string]*ModelPriceEntry{
+		"claude-sonnet-4": pricedEntry(1e-6, 2e-6),
+	})
+	svc.SeedOverridesForTest([]ModelPriceOverride{{
+		Platform:  PlatformAnthropic,
+		ModelName: "claude-sonnet-4",
+		Currency:  ModelPriceCurrencyUSD,
+		Enabled:   true,
+		Payload:   ModelPriceOverridePayload{InputCostPerToken: ptrPrice(3e-6)},
+	}})
+
+	effective := svc.GetModelPricingForPlatform(PlatformAnthropic, "claude-sonnet-4")
+	require.NotNil(t, effective)
+	require.Equal(t, ModelPriceCurrencyUSD, effective.Currency)
+	require.InDelta(t, 3e-6, effective.InputCostPerToken, 1e-12)
+	require.InDelta(t, 2e-6, effective.OutputCostPerToken, 1e-12)
+}
+
+func TestBillingIgnoresModelPriceDisplayCurrency(t *testing.T) {
+	pricing := NewPricingService(&config.Config{}, nil)
+	usd := pricedEntry(1.4e-6, 4.4e-6)
+	usd.Currency = ModelPriceCurrencyUSD
+	cny := pricedEntry(1.4e-6, 4.4e-6)
+	cny.Currency = ModelPriceCurrencyCNY
+	pricing.SeedCatalogForTest(map[string]*ModelPriceEntry{
+		"same-numeric-usd": usd,
+		"same-numeric-cny": cny,
+	})
+	billing := NewBillingService(&config.Config{}, pricing)
+	tokens := UsageTokens{InputTokens: 2_000_000, OutputTokens: 500_000}
+
+	usdCost, err := billing.CalculateCost("same-numeric-usd", tokens, 0.6)
+	require.NoError(t, err)
+	cnyCost, err := billing.CalculateCost("same-numeric-cny", tokens, 0.6)
+	require.NoError(t, err)
+	require.InDelta(t, usdCost.TotalCost, cnyCost.TotalCost, 1e-12)
+	require.InDelta(t, usdCost.ActualCost, cnyCost.ActualCost, 1e-12)
 }

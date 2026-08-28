@@ -646,6 +646,8 @@ func TestListPublic_UsesBillingFallbackWhenCatalogMisses(t *testing.T) {
 
 	model := body.Data[0].Platforms[0].SupportedModels[0]
 	require.NotNil(t, model.Pricing, "billing fallback should have filled pricing")
+	require.Equal(t, service.ModelPriceCurrencyUSD, model.Pricing.Currency)
+	require.Equal(t, service.ModelPriceSourceOfficial, model.Pricing.Source)
 	require.NotNil(t, model.Pricing.InputPrice)
 	require.InDelta(t, 6e-6, *model.Pricing.InputPrice, 1e-12)
 	require.NotNil(t, model.Pricing.OutputPrice)
@@ -656,10 +658,17 @@ func TestListPublic_UsesBillingFallbackWhenCatalogMisses(t *testing.T) {
 	require.Nil(t, model.Pricing.CacheWritePrice)
 }
 
-func TestListPublic_BillingFallbackEnrichesPartialCatalog(t *testing.T) {
-	// 场景：catalog 只填了 input/output，billing fallback 有 cache_read；
-	// 补齐后 catalog 已有值不动，nil 字段用 fallback 填。
+func TestListPublic_CatalogPriceDoesNotMixOfficialFallbackDimensions(t *testing.T) {
+	// 场景：catalog 已提供完整 token 主价格，官方 fallback 另有 cache_read；
+	// 广场必须整套采用 catalog，不把下一优先级的维度混进来。
 	gin.SetMode(gin.TestMode)
+	pricing := newHandlerTestPricingService(map[string]*service.ModelPriceEntry{
+		"gpt-5.4": {
+			Mode:               "chat",
+			InputCostPerToken:  2.5e-6,
+			OutputCostPerToken: 15e-6,
+		},
+	})
 	channelSvc := service.NewChannelService(
 		&publicChannelRepoStub{
 			channels: []service.Channel{{
@@ -677,13 +686,7 @@ func TestListPublic_BillingFallbackEnrichesPartialCatalog(t *testing.T) {
 			}},
 		},
 		nil,
-		newHandlerTestPricingService(map[string]*service.ModelPriceEntry{
-			"gpt-5.4": {
-				Mode:               "chat",
-				InputCostPerToken:  2.5e-6,
-				OutputCostPerToken: 15e-6,
-			},
-		}),
+		pricing,
 	)
 	h := &AvailableChannelHandler{
 		channelService: channelSvc,
@@ -700,6 +703,7 @@ func TestListPublic_BillingFallbackEnrichesPartialCatalog(t *testing.T) {
 				},
 			},
 		},
+		modelPrices: pricing,
 	}
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -714,16 +718,72 @@ func TestListPublic_BillingFallbackEnrichesPartialCatalog(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
 	model := body.Data[0].Platforms[0].SupportedModels[0]
 	require.NotNil(t, model.Pricing)
+	require.Equal(t, service.ModelPriceCurrencyUSD, model.Pricing.Currency)
+	require.Equal(t, service.ModelPriceSourceCatalog, model.Pricing.Source)
 	require.InDelta(t, 2.5e-6, *model.Pricing.InputPrice, 1e-12, "catalog 值应被保留")
 	require.InDelta(t, 15e-6, *model.Pricing.OutputPrice, 1e-12, "catalog 值应被保留")
-	require.NotNil(t, model.Pricing.CacheReadPrice, "cache_read 应从 fallback 补")
-	require.InDelta(t, 0.25e-6, *model.Pricing.CacheReadPrice, 1e-12)
+	require.Nil(t, model.Pricing.CacheReadPrice, "catalog 已命中时不应混入 official 维度")
+}
+
+func TestListPublic_UsesUSDChannelPricingAsLastFallback(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	inputPrice := 1.25e-6
+	outputPrice := 5e-6
+	channelSvc := service.NewChannelService(
+		&publicChannelRepoStub{channels: []service.Channel{{
+			ID:       1,
+			Name:     "channel-fallback",
+			Status:   service.StatusActive,
+			GroupIDs: []int64{10},
+			ModelPricing: []service.ChannelModelPricing{{
+				Platform:    service.PlatformOpenAI,
+				Models:      []string{"channel-priced-model"},
+				InputPrice:  &inputPrice,
+				OutputPrice: &outputPrice,
+			}},
+		}}},
+		&publicGroupRepoStub{groups: []service.Group{{
+			ID:       10,
+			Name:     "public-openai",
+			Platform: service.PlatformOpenAI,
+			Status:   service.StatusActive,
+		}}},
+		nil,
+		nil,
+	)
+	h := &AvailableChannelHandler{
+		channelService: channelSvc,
+		settingService: stubAvailableChannelSettingService{},
+		modelCatalog: &stubModelCatalogProvider{byGroup: map[int64][]string{
+			10: {"channel-priced-model"},
+		}},
+		modelPrices: service.NewPricingService(nil, nil),
+	}
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/channels/public", nil)
+
+	h.ListPublic(c)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var body struct {
+		Data []userAvailableChannel `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	require.Len(t, body.Data, 1)
+	model := body.Data[0].Platforms[0].SupportedModels[0]
+	require.NotNil(t, model.Pricing)
+	require.Equal(t, service.ModelPriceCurrencyUSD, model.Pricing.Currency)
+	require.Equal(t, service.ModelPriceSourceChannel, model.Pricing.Source)
+	require.InDelta(t, inputPrice, *model.Pricing.InputPrice, 1e-12)
+	require.InDelta(t, outputPrice, *model.Pricing.OutputPrice, 1e-12)
 }
 
 func TestListPublic_UsesModelPriceOverrideAndDeepSeekTimeSchedule(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	pricing := newHandlerTestPricingService(map[string]*service.ModelPriceEntry{
 		"deepseek-v4-flash": {
+			Currency:            service.ModelPriceCurrencyCNY,
 			Mode:                "chat",
 			InputCostPerToken:   1e-6,
 			OutputCostPerToken:  2e-6,
@@ -734,6 +794,7 @@ func TestListPublic_UsesModelPriceOverrideAndDeepSeekTimeSchedule(t *testing.T) 
 	overrideInput := 3e-6
 	pricing.SeedCatalogForTest(map[string]*service.ModelPriceEntry{
 		"deepseek-v4-flash": {
+			Currency:            service.ModelPriceCurrencyCNY,
 			Mode:                "chat",
 			InputCostPerToken:   1e-6,
 			OutputCostPerToken:  2e-6,
@@ -744,6 +805,7 @@ func TestListPublic_UsesModelPriceOverrideAndDeepSeekTimeSchedule(t *testing.T) 
 	pricing.SeedOverridesForTest([]service.ModelPriceOverride{{
 		Platform:  service.PlatformDeepSeek,
 		ModelName: "deepseek-v4-flash",
+		Currency:  service.ModelPriceCurrencyCNY,
 		Enabled:   true,
 		Payload:   service.ModelPriceOverridePayload{InputCostPerToken: &overrideInput},
 	}})
@@ -797,10 +859,12 @@ func TestListPublic_UsesModelPriceOverrideAndDeepSeekTimeSchedule(t *testing.T) 
 	model := body.Data[0].Platforms[0].SupportedModels[0]
 	require.Equal(t, "deepseek-v4-flash", model.Name)
 	require.NotNil(t, model.Pricing)
+	require.Equal(t, service.ModelPriceCurrencyCNY, model.Pricing.Currency)
+	require.Equal(t, service.ModelPriceSourceMerged, model.Pricing.Source)
 	require.InDelta(t, 3e-6, *model.Pricing.InputPrice, 1e-12)
 	require.InDelta(t, 2e-6, *model.Pricing.OutputPrice, 1e-12)
-	require.NotNil(t, model.Pricing.CacheReadPrice)
-	require.InDelta(t, 0.1e-6, *model.Pricing.CacheReadPrice, 1e-12)
+	// CNY catalog/override must not inherit a USD official fallback dimension.
+	require.Nil(t, model.Pricing.CacheReadPrice)
 	require.NotNil(t, model.TimeSchedule)
 	require.Equal(t, "deepseek_official", model.TimeSchedule.Kind)
 	// 展示价来自目录 + 手动覆盖，即官方空闲价：高峰 ×2、空闲 ×1。

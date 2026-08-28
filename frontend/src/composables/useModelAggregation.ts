@@ -25,9 +25,17 @@ export interface PlazaPricingRateMultipliers {
   perRequest: number
 }
 
+export type PlazaPricingDimension = keyof PlazaMinPricing
+export type PlazaPricingCurrency = 'USD' | 'CNY'
+export type PlazaPricingSource = 'override' | 'merged' | 'catalog' | 'official' | 'channel'
+
+type PlazaPricingDimensionMap<T> = Record<PlazaPricingDimension, T>
+
 export interface PlazaPricingSummary {
   minPricing: PlazaMinPricing
   minPricingRateMultipliers: PlazaPricingRateMultipliers
+  minPricingCurrencies?: PlazaPricingDimensionMap<PlazaPricingCurrency>
+  minPricingSources?: PlazaPricingDimensionMap<PlazaPricingSource>
   displayRateMultiplier: number
 }
 
@@ -71,6 +79,24 @@ const defaultPricingRateMultipliers = (): PlazaPricingRateMultipliers => ({
   cacheRead: 1,
   imageOutput: 1,
   perRequest: 1
+})
+
+const defaultPricingCurrencies = (): PlazaPricingDimensionMap<PlazaPricingCurrency> => ({
+  input: 'USD',
+  output: 'USD',
+  cacheWrite: 'USD',
+  cacheRead: 'USD',
+  imageOutput: 'USD',
+  perRequest: 'USD'
+})
+
+const defaultPricingSources = (): PlazaPricingDimensionMap<PlazaPricingSource> => ({
+  input: 'channel',
+  output: 'channel',
+  cacheWrite: 'channel',
+  cacheRead: 'channel',
+  imageOutput: 'channel',
+  perRequest: 'channel'
 })
 
 function minNullable(a: number | null, b: number | null): number | null {
@@ -135,20 +161,24 @@ function chooseEffectivePrice(
   currentRate: number,
   candidatePrice: number | null,
   candidateRate: number
-): { price: number | null; rate: number } {
-  if (candidatePrice == null) return { price: currentPrice, rate: currentRate }
+): { price: number | null; rate: number; selected: boolean } {
+  if (candidatePrice == null) return { price: currentPrice, rate: currentRate, selected: false }
   if (currentPrice == null || candidatePrice * candidateRate < currentPrice * currentRate) {
-    return { price: candidatePrice, rate: candidateRate }
+    return { price: candidatePrice, rate: candidateRate, selected: true }
   }
-  return { price: currentPrice, rate: currentRate }
+  return { price: currentPrice, rate: currentRate, selected: false }
 }
 
 function mergeEffectivePricing(
   currentPricing: PlazaMinPricing,
   currentRates: PlazaPricingRateMultipliers,
+  currentCurrencies: PlazaPricingDimensionMap<PlazaPricingCurrency>,
+  currentSources: PlazaPricingDimensionMap<PlazaPricingSource>,
   candidatePricing: PlazaMinPricing,
-  candidateRates: PlazaPricingRateMultipliers
-): { pricing: PlazaMinPricing; rates: PlazaPricingRateMultipliers } {
+  candidateRates: PlazaPricingRateMultipliers,
+  candidateCurrencies: PlazaPricingDimensionMap<PlazaPricingCurrency>,
+  candidateSources: PlazaPricingDimensionMap<PlazaPricingSource>
+): { pricing: PlazaMinPricing; rates: PlazaPricingRateMultipliers; currencies: PlazaPricingDimensionMap<PlazaPricingCurrency>; sources: PlazaPricingDimensionMap<PlazaPricingSource> } {
   const input = chooseEffectivePrice(currentPricing.input, currentRates.input, candidatePricing.input, candidateRates.input)
   const output = chooseEffectivePrice(currentPricing.output, currentRates.output, candidatePricing.output, candidateRates.output)
   const cacheWrite = chooseEffectivePrice(currentPricing.cacheWrite, currentRates.cacheWrite, candidatePricing.cacheWrite, candidateRates.cacheWrite)
@@ -172,6 +202,22 @@ function mergeEffectivePricing(
       cacheRead: cacheRead.rate,
       imageOutput: imageOutput.rate,
       perRequest: perRequest.rate
+    },
+    currencies: {
+      input: input.selected ? candidateCurrencies.input : currentCurrencies.input,
+      output: output.selected ? candidateCurrencies.output : currentCurrencies.output,
+      cacheWrite: cacheWrite.selected ? candidateCurrencies.cacheWrite : currentCurrencies.cacheWrite,
+      cacheRead: cacheRead.selected ? candidateCurrencies.cacheRead : currentCurrencies.cacheRead,
+      imageOutput: imageOutput.selected ? candidateCurrencies.imageOutput : currentCurrencies.imageOutput,
+      perRequest: perRequest.selected ? candidateCurrencies.perRequest : currentCurrencies.perRequest
+    },
+    sources: {
+      input: input.selected ? candidateSources.input : currentSources.input,
+      output: output.selected ? candidateSources.output : currentSources.output,
+      cacheWrite: cacheWrite.selected ? candidateSources.cacheWrite : currentSources.cacheWrite,
+      cacheRead: cacheRead.selected ? candidateSources.cacheRead : currentSources.cacheRead,
+      imageOutput: imageOutput.selected ? candidateSources.imageOutput : currentSources.imageOutput,
+      perRequest: perRequest.selected ? candidateSources.perRequest : currentSources.perRequest
     }
   }
 }
@@ -197,17 +243,25 @@ function representativePricingRate(
 function mergePricingSummary(
   current: PlazaPricingSummary | null,
   candidatePricing: PlazaMinPricing,
-  candidateRates: PlazaPricingRateMultipliers
+  candidateRates: PlazaPricingRateMultipliers,
+  candidateCurrencies: PlazaPricingDimensionMap<PlazaPricingCurrency>,
+  candidateSources: PlazaPricingDimensionMap<PlazaPricingSource>
 ): PlazaPricingSummary {
   const merged = mergeEffectivePricing(
     current?.minPricing ?? emptyPricing(),
     current?.minPricingRateMultipliers ?? defaultPricingRateMultipliers(),
+    current?.minPricingCurrencies ?? defaultPricingCurrencies(),
+    current?.minPricingSources ?? defaultPricingSources(),
     candidatePricing,
-    candidateRates
+    candidateRates,
+    candidateCurrencies,
+    candidateSources
   )
   return {
     minPricing: merged.pricing,
     minPricingRateMultipliers: merged.rates,
+    minPricingCurrencies: merged.currencies,
+    minPricingSources: merged.sources,
     displayRateMultiplier: representativePricingRate(merged.pricing, merged.rates)
   }
 }
@@ -290,10 +344,22 @@ export function aggregateByPlatformModel(
             pricing: model.pricing
           })
           const pricingKey = group.vip_only === true ? 'vipPricing' : 'standardPricing'
+          const currency = model.pricing?.currency === 'CNY' ? 'CNY' : 'USD'
+          const source = model.pricing?.source === 'override' || model.pricing?.source === 'merged' || model.pricing?.source === 'catalog' || model.pricing?.source === 'official' || model.pricing?.source === 'channel'
+            ? model.pricing.source
+            : 'channel'
+          const candidateCurrencies = defaultPricingCurrencies()
+          const candidateSources = defaultPricingSources()
+          for (const key of Object.keys(candidateCurrencies) as PlazaPricingDimension[]) {
+            candidateCurrencies[key] = currency
+            candidateSources[key] = source
+          }
           existing[pricingKey] = mergePricingSummary(
             existing[pricingKey],
             candidatePricing,
-            pricingRateMultipliers(group, model.pricing)
+            pricingRateMultipliers(group, model.pricing),
+            candidateCurrencies,
+            candidateSources
           )
         }
         existing.recentCalls = Math.max(existing.recentCalls, recentCalls)

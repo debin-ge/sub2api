@@ -33,12 +33,12 @@ const messages: Record<string, string> = {
   'plaza.header.register': 'Register',
   'plaza.hero.eyebrow': 'Public model catalog',
   'plaza.hero.title': 'Model Plaza',
-  'plaza.hero.subtitle': 'Token prices are displayed per 1M tokens unless otherwise noted. CNY amounts are reference estimates based on public settings and do not change backend billing.',
-  'plaza.hero.rateTag': '¥1 = ${rate}',
-  'plaza.hero.boostValue': '{boost}x',
+  'plaza.hero.subtitle': 'Token prices are displayed per 1M tokens unless otherwise noted. Final prices use the platform balance convention in CNY and do not apply exchange rates.',
+  'plaza.hero.rateTag': 'Recharge multiplier {rate}x',
+  'plaza.hero.boostValue': '¥1 recharge gives {multiplier} balance',
   'plaza.metrics.models': 'Models',
   'plaza.metrics.platforms': 'Providers',
-  'plaza.metrics.boost': 'Recharge boost',
+  'plaza.metrics.boost': 'Recharge multiplier',
   'plaza.filters.title': 'Filters',
   'plaza.filters.subtitle': 'Filter models',
   'plaza.filters.search': 'Search models',
@@ -263,13 +263,13 @@ describe('PlazaView', () => {
 
     expect(fetchAll).toHaveBeenCalledTimes(1)
     expect(wrapper.text()).toContain('Model Plaza')
-    expect(wrapper.text()).toContain('¥1 = $1.5')
+    expect(wrapper.text()).toContain('Recharge multiplier 1.5x')
     expect(wrapper.text()).toContain('Token prices are displayed per 1M tokens unless otherwise noted.')
-    expect(wrapper.text()).toContain('CNY amounts are reference estimates based on public settings and do not change backend billing.')
+    expect(wrapper.text()).toContain('Final prices use the platform balance convention in CNY and do not apply exchange rates.')
     expect(wrapper.text()).not.toContain('Browse public models without signing in')
     expect(wrapper.find('footer').exists()).toBe(false)
     expect(wrapper.text()).toContain('gpt-4o-mini')
-    expect(wrapper.text()).toContain('10.2x')
+    expect(wrapper.text()).toContain('¥1 recharge gives 1.5 balance')
     expect(wrapper.text()).not.toContain('750%')
     expect(wrapper.text()).toContain('1 models')
   })

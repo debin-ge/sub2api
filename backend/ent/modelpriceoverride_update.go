@@ -62,6 +62,20 @@ func (_u *ModelPriceOverrideUpdate) SetNillableModelName(v *string) *ModelPriceO
 	return _u
 }
 
+// SetCurrency sets the "currency" field.
+func (_u *ModelPriceOverrideUpdate) SetCurrency(v modelpriceoverride.Currency) *ModelPriceOverrideUpdate {
+	_u.mutation.SetCurrency(v)
+	return _u
+}
+
+// SetNillableCurrency sets the "currency" field if the given value is not nil.
+func (_u *ModelPriceOverrideUpdate) SetNillableCurrency(v *modelpriceoverride.Currency) *ModelPriceOverrideUpdate {
+	if v != nil {
+		_u.SetCurrency(*v)
+	}
+	return _u
+}
+
 // SetPayload sets the "payload" field.
 func (_u *ModelPriceOverrideUpdate) SetPayload(v map[string]interface{}) *ModelPriceOverrideUpdate {
 	_u.mutation.SetPayload(v)
@@ -188,6 +202,11 @@ func (_u *ModelPriceOverrideUpdate) check() error {
 			return &ValidationError{Name: "model_name", err: fmt.Errorf(`ent: validator failed for field "ModelPriceOverride.model_name": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.Currency(); ok {
+		if err := modelpriceoverride.CurrencyValidator(v); err != nil {
+			return &ValidationError{Name: "currency", err: fmt.Errorf(`ent: validator failed for field "ModelPriceOverride.currency": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -211,6 +230,9 @@ func (_u *ModelPriceOverrideUpdate) sqlSave(ctx context.Context) (_node int, err
 	}
 	if value, ok := _u.mutation.ModelName(); ok {
 		_spec.SetField(modelpriceoverride.FieldModelName, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.Currency(); ok {
+		_spec.SetField(modelpriceoverride.FieldCurrency, field.TypeEnum, value)
 	}
 	if value, ok := _u.mutation.Payload(); ok {
 		_spec.SetField(modelpriceoverride.FieldPayload, field.TypeJSON, value)
@@ -286,6 +308,20 @@ func (_u *ModelPriceOverrideUpdateOne) SetModelName(v string) *ModelPriceOverrid
 func (_u *ModelPriceOverrideUpdateOne) SetNillableModelName(v *string) *ModelPriceOverrideUpdateOne {
 	if v != nil {
 		_u.SetModelName(*v)
+	}
+	return _u
+}
+
+// SetCurrency sets the "currency" field.
+func (_u *ModelPriceOverrideUpdateOne) SetCurrency(v modelpriceoverride.Currency) *ModelPriceOverrideUpdateOne {
+	_u.mutation.SetCurrency(v)
+	return _u
+}
+
+// SetNillableCurrency sets the "currency" field if the given value is not nil.
+func (_u *ModelPriceOverrideUpdateOne) SetNillableCurrency(v *modelpriceoverride.Currency) *ModelPriceOverrideUpdateOne {
+	if v != nil {
+		_u.SetCurrency(*v)
 	}
 	return _u
 }
@@ -429,6 +465,11 @@ func (_u *ModelPriceOverrideUpdateOne) check() error {
 			return &ValidationError{Name: "model_name", err: fmt.Errorf(`ent: validator failed for field "ModelPriceOverride.model_name": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.Currency(); ok {
+		if err := modelpriceoverride.CurrencyValidator(v); err != nil {
+			return &ValidationError{Name: "currency", err: fmt.Errorf(`ent: validator failed for field "ModelPriceOverride.currency": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -469,6 +510,9 @@ func (_u *ModelPriceOverrideUpdateOne) sqlSave(ctx context.Context) (_node *Mode
 	}
 	if value, ok := _u.mutation.ModelName(); ok {
 		_spec.SetField(modelpriceoverride.FieldModelName, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.Currency(); ok {
+		_spec.SetField(modelpriceoverride.FieldCurrency, field.TypeEnum, value)
 	}
 	if value, ok := _u.mutation.Payload(); ok {
 		_spec.SetField(modelpriceoverride.FieldPayload, field.TypeJSON, value)
