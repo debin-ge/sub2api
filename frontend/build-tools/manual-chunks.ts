@@ -21,7 +21,7 @@ export function manualChunkName(rawId: string): string | undefined {
     return 'vendor-vue'
   }
 
-  if (id.includes('/@vueuse/') || id.includes('/xlsx/')) return 'vendor-ui'
+  if (id.includes('/@vueuse/')) return 'vendor-ui'
   if (id.includes('/chart.js/') || id.includes('/vue-chartjs/')) return 'vendor-chart'
   if (id.includes('/vue-i18n/') || id.includes('/@intlify/')) return 'vendor-i18n'
   return 'vendor-misc'

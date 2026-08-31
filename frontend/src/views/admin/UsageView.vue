@@ -83,7 +83,7 @@
           </button>
         </div>
 
-        <UsageFilters v-model="filters" ref="usageFiltersRef" flat :mode="activeTab" class="border-b border-gray-100 dark:border-dark-700/50" :start-date="startDate" :end-date="endDate" :exporting="exporting" :model-options="modelNameOptions" @change="applyFilters" @refresh="refreshData" @reset="resetFilters" @cleanup="openCleanupDialog" @export="exportToExcel">
+        <UsageFilters v-model="filters" ref="usageFiltersRef" flat :mode="activeTab" class="border-b border-gray-100 dark:border-dark-700/50" :start-date="startDate" :end-date="endDate" :exporting="exporting" :model-options="modelNameOptions" @change="applyFilters" @refresh="refreshData" @reset="resetFilters" @cleanup="openCleanupDialog" @export="exportToCSV">
           <template #after-reset>
             <div v-if="activeTab !== 'ranking'" class="relative" ref="columnDropdownRef">
               <button
@@ -574,12 +574,29 @@ const getRequestTypeLabel = (log: AdminUsageLog): string => {
   return t('usage.unknown')
 }
 
-const exportToExcel = async () => {
-  if (exporting.value) return; exporting.value = true; exportProgress.show = true
+const escapeCSVValue = (value: unknown): string => {
+  if (value == null) return ''
+  const text = String(value)
+  const escaped = text.replace(/"/g, '""')
+  // Prevent spreadsheet applications from evaluating exported log data as formulas.
+  if (/^[=+\-@\t\r]/.test(text)) return `"'${escaped}"`
+  if (/[,"\n\r]/.test(text)) return `"${escaped}"`
+  return text
+}
+
+const toCSVRow = (values: unknown[]): string => values.map(escapeCSVValue).join(',')
+
+const exportToCSV = async () => {
+  if (exporting.value) return
+  exporting.value = true
+  exportProgress.show = true
+  exportProgress.current = 0
+  exportProgress.total = 0
+  exportProgress.progress = 0
   const c = new AbortController(); exportAbortController = c
   try {
     let p = 1; let total = pagination.total; let exportedCount = 0
-    const XLSX = await import('xlsx')
+    const pageSize = 1000
     const headers = [
       t('usage.time'), t('admin.usage.user'), t('usage.apiKeyFilter'),
       t('admin.usage.account'), t('usage.requestedModel'), t('usage.sentUpstreamModel'), t('usage.upstreamResponseModel'), t('usage.upstreamModelMismatch'), t('usage.reasoningEffort'), t('admin.usage.group'),
@@ -593,10 +610,10 @@ const exportToExcel = async () => {
       t('usage.firstToken'), t('usage.duration'),
       t('admin.usage.requestId'), t('usage.userAgent'), t('admin.usage.ipAddress')
     ]
-    const ws = XLSX.utils.aoa_to_sheet([headers])
+    const csvParts: string[] = ['\uFEFF', `${toCSVRow(headers)}\r\n`]
     while (true) {
       const res = await adminUsageAPI.list(
-        buildUsageListParams(p, 100, true),
+        buildUsageListParams(p, pageSize, p === 1),
         { signal: c.signal }
       )
       if (c.signal.aborted) break; if (p === 1) { total = res.total; exportProgress.total = total }
@@ -613,20 +630,26 @@ const exportToExcel = async () => {
         log.request_id || '', log.user_agent || '', log.ip_address || ''
       ])
       if (rows.length) {
-        XLSX.utils.sheet_add_aoa(ws, rows, { origin: -1 })
+        csvParts.push(`${rows.map(toCSVRow).join('\r\n')}\r\n`)
       }
       exportedCount += rows.length
       exportProgress.current = exportedCount
       exportProgress.progress = total > 0 ? Math.min(100, Math.round(exportedCount / total * 100)) : 0
-      if (exportedCount >= total || res.items.length < 100) break; p++
+      if (exportedCount >= total || res.items.length < pageSize) break; p++
     }
     if(!c.signal.aborted) {
-      const wb = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(wb, ws, 'Usage')
-      saveAs(new Blob([XLSX.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `usage_${filters.value.start_date}_to_${filters.value.end_date}.xlsx`)
+      saveAs(
+        new Blob(csvParts, { type: 'text/csv;charset=utf-8' }),
+        `usage_${filters.value.start_date}_to_${filters.value.end_date}.csv`
+      )
       appStore.showSuccess(t('usage.exportSuccess'))
     }
-  } catch (error) { console.error('Failed to export:', error); appStore.showError('Export Failed') }
+  } catch (error) {
+    if (!c.signal.aborted) {
+      console.error('Failed to export:', error)
+      appStore.showError(t('usage.exportFailed'))
+    }
+  }
   finally { if(exportAbortController === c) { exportAbortController = null; exporting.value = false; exportProgress.show = false } }
 }
 

@@ -4,7 +4,7 @@ import { defineComponent, ref } from 'vue'
 
 import UsageView from '../UsageView.vue'
 
-const { list, exportList, getStats, getSnapshotV2, getById, getModelStats, listErrorLogs, routeQuery, aoaToSheet, sheetAddAoa, saveAs, xlsxWrite } = vi.hoisted(() => {
+const { list, exportList, getStats, getSnapshotV2, getById, getModelStats, listErrorLogs, routeQuery, saveAs } = vi.hoisted(() => {
   vi.stubGlobal('localStorage', {
     getItem: vi.fn(() => null),
     setItem: vi.fn(),
@@ -20,10 +20,7 @@ const { list, exportList, getStats, getSnapshotV2, getById, getModelStats, listE
     getModelStats: vi.fn(),
     listErrorLogs: vi.fn(),
     routeQuery: {} as Record<string, string>,
-		aoaToSheet: vi.fn(() => ({})),
-		sheetAddAoa: vi.fn(),
 		saveAs: vi.fn(),
-		xlsxWrite: vi.fn(() => new Uint8Array([1, 2, 3])),
   }
 })
 
@@ -48,6 +45,13 @@ const formatLocalDate = (date: Date): string => {
   return `${year}-${month}-${day}`
 }
 
+const readBlobText = (blob: Blob): Promise<string> => new Promise((resolve, reject) => {
+	const reader = new FileReader()
+	reader.onload = () => resolve(String(reader.result))
+	reader.onerror = () => reject(reader.error)
+	reader.readAsText(blob)
+})
+
 vi.mock('@/api/admin', () => ({
   adminAPI: {
     usage: {
@@ -71,16 +75,6 @@ vi.mock('@/api/admin/usage', () => ({
 }))
 
 vi.mock('file-saver', () => ({ saveAs }))
-
-vi.mock('xlsx', () => ({
-	utils: {
-		aoa_to_sheet: aoaToSheet,
-		sheet_add_aoa: sheetAddAoa,
-		book_new: vi.fn(() => ({})),
-		book_append_sheet: vi.fn(),
-	},
-	write: xlsxWrite,
-}))
 
 vi.mock('@/api/admin/ops', () => ({
   listErrorLogs,
@@ -657,10 +651,7 @@ describe('admin UsageView model audit export', () => {
 		})
 		getSnapshotV2.mockReset().mockResolvedValue({ trend: [], models: [], groups: [] })
 		getModelStats.mockReset().mockResolvedValue({ models: [] })
-		aoaToSheet.mockClear()
-		sheetAddAoa.mockClear()
 		saveAs.mockClear()
-		xlsxWrite.mockClear()
 	})
 
 	afterEach(() => {
@@ -672,18 +663,71 @@ describe('admin UsageView model audit export', () => {
 		vi.advanceTimersByTime(120)
 		await flushPromises()
 
-		await (wrapper.vm as any).exportToExcel()
+		await (wrapper.vm as any).exportToCSV()
 		await flushPromises()
 
-		const headers = aoaToSheet.mock.calls[0][0][0]
+		const blob = saveAs.mock.calls[0][0] as Blob
+		vi.useRealTimers()
+		const csv = await readBlobText(blob)
+		const [headerLine, rowLine] = csv.replace(/^\uFEFF/, '').trim().split('\r\n')
+		const headers = headerLine.split(',')
 		expect(headers.slice(4, 8)).toEqual([
 			'Requested model',
 			'Sent upstream model',
 			'Upstream response model',
 			'Upstream model mismatch',
 		])
-		const row = sheetAddAoa.mock.calls[0][1][0]
+		const row = rowLine.split(',')
 		expect(row.slice(4, 8)).toEqual(['gpt-5.6-sol', 'gpt-5.5', 'gpt-5.4', 'Yes'])
-		expect(saveAs).toHaveBeenCalledTimes(1)
+		expect(saveAs).toHaveBeenCalledWith(blob, expect.stringMatching(/\.csv$/))
+	})
+
+	it('builds large exports in page-sized CSV chunks', async () => {
+		const makeLog = (id: number) => ({
+			id,
+			created_at: '2026-08-04T00:00:00Z',
+			model: id === 1 ? '=1+1' : 'gpt-5.6-sol',
+			request_type: 'sync',
+			input_tokens: 1,
+			output_tokens: 1,
+			cache_read_tokens: 0,
+			cache_creation_tokens: 0,
+			input_cost: 0,
+			output_cost: 0,
+			cache_read_cost: 0,
+			cache_creation_cost: 0,
+			total_cost: 0,
+			actual_cost: 0,
+			duration_ms: 10,
+		})
+		exportList
+			.mockResolvedValueOnce({
+				items: Array.from({ length: 1000 }, (_, index) => makeLog(index + 1)),
+				total: 1001,
+				pages: 2,
+			})
+			.mockResolvedValueOnce({ items: [makeLog(1001)], total: 1001, pages: 2 })
+
+		const wrapper = mountRouteFilteredUsageView()
+		vi.advanceTimersByTime(120)
+		await flushPromises()
+
+		await (wrapper.vm as any).exportToCSV()
+		await flushPromises()
+
+		expect(exportList).toHaveBeenNthCalledWith(
+			1,
+			expect.objectContaining({ page: 1, page_size: 1000, exact_total: true }),
+			expect.anything(),
+		)
+		expect(exportList).toHaveBeenNthCalledWith(
+			2,
+			expect.objectContaining({ page: 2, page_size: 1000, exact_total: false }),
+			expect.anything(),
+		)
+		vi.useRealTimers()
+		const csv = await readBlobText(saveAs.mock.calls[0][0] as Blob)
+		expect(csv.trim().split('\r\n')).toHaveLength(1002)
+		expect(csv).toContain('"\'=1+1"')
 	})
 })
