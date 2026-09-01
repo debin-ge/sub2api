@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -378,8 +377,4 @@ func (s *OpsService) GetAPIKeyEmailAutomationHealth(ctx context.Context) OpsAPIK
 		health.Rotation = s.apiKeyRotationService.Health()
 	}
 	return health
-}
-
-func encodeNotificationEmailPayload(payload NotificationEmailOutboxPayload) ([]byte, error) {
-	return json.Marshal(payload)
 }
