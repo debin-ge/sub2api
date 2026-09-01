@@ -52,6 +52,14 @@ type APIKey struct {
 	QuotaUsed float64    // Used quota amount
 	ExpiresAt *time.Time // Expiration time (nil = never expires)
 
+	NotificationEmail           *string
+	NotificationEmailVerifiedAt *time.Time
+	ChangeNotifyEnabled         bool
+	RotateOnExpiry              bool
+	ValidityDurationSeconds     *int64
+	LastRotatedAt               *time.Time
+	RotationVersion             int64
+
 	// Rate limit fields
 	RateLimit5h   float64    // Rate limit in USD per 5h (0 = unlimited)
 	RateLimit1d   float64    // Rate limit in USD per 1d (0 = unlimited)

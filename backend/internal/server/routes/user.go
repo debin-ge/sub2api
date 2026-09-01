@@ -76,6 +76,8 @@ func RegisterUserRoutes(
 		keys := authenticated.Group("/keys")
 		{
 			keys.GET("", h.APIKey.List)
+			keys.POST("/notification-email/send-code", h.APIKey.SendNotificationEmailCode)
+			keys.POST("/notification-email/verify", h.APIKey.VerifyNotificationEmail)
 			keys.GET("/:id", h.APIKey.GetByID)
 			keys.POST("", h.APIKey.Create)
 			keys.PUT("/:id", h.APIKey.Update)

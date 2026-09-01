@@ -115,6 +115,41 @@ func ExpiresAt(v time.Time) predicate.APIKey {
 	return predicate.APIKey(sql.FieldEQ(FieldExpiresAt, v))
 }
 
+// NotificationEmail applies equality check predicate on the "notification_email" field. It's identical to NotificationEmailEQ.
+func NotificationEmail(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldNotificationEmail, v))
+}
+
+// NotificationEmailVerifiedAt applies equality check predicate on the "notification_email_verified_at" field. It's identical to NotificationEmailVerifiedAtEQ.
+func NotificationEmailVerifiedAt(v time.Time) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldNotificationEmailVerifiedAt, v))
+}
+
+// ChangeNotifyEnabled applies equality check predicate on the "change_notify_enabled" field. It's identical to ChangeNotifyEnabledEQ.
+func ChangeNotifyEnabled(v bool) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldChangeNotifyEnabled, v))
+}
+
+// RotateOnExpiry applies equality check predicate on the "rotate_on_expiry" field. It's identical to RotateOnExpiryEQ.
+func RotateOnExpiry(v bool) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldRotateOnExpiry, v))
+}
+
+// ValidityDurationSeconds applies equality check predicate on the "validity_duration_seconds" field. It's identical to ValidityDurationSecondsEQ.
+func ValidityDurationSeconds(v int64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldValidityDurationSeconds, v))
+}
+
+// LastRotatedAt applies equality check predicate on the "last_rotated_at" field. It's identical to LastRotatedAtEQ.
+func LastRotatedAt(v time.Time) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldLastRotatedAt, v))
+}
+
+// RotationVersion applies equality check predicate on the "rotation_version" field. It's identical to RotationVersionEQ.
+func RotationVersion(v int64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldRotationVersion, v))
+}
+
 // RateLimit5h applies equality check predicate on the "rate_limit_5h" field. It's identical to RateLimit5hEQ.
 func RateLimit5h(v float64) predicate.APIKey {
 	return predicate.APIKey(sql.FieldEQ(FieldRateLimit5h, v))
@@ -733,6 +768,291 @@ func ExpiresAtIsNil() predicate.APIKey {
 // ExpiresAtNotNil applies the NotNil predicate on the "expires_at" field.
 func ExpiresAtNotNil() predicate.APIKey {
 	return predicate.APIKey(sql.FieldNotNull(FieldExpiresAt))
+}
+
+// NotificationEmailEQ applies the EQ predicate on the "notification_email" field.
+func NotificationEmailEQ(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldNotificationEmail, v))
+}
+
+// NotificationEmailNEQ applies the NEQ predicate on the "notification_email" field.
+func NotificationEmailNEQ(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNEQ(FieldNotificationEmail, v))
+}
+
+// NotificationEmailIn applies the In predicate on the "notification_email" field.
+func NotificationEmailIn(vs ...string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldIn(FieldNotificationEmail, vs...))
+}
+
+// NotificationEmailNotIn applies the NotIn predicate on the "notification_email" field.
+func NotificationEmailNotIn(vs ...string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotIn(FieldNotificationEmail, vs...))
+}
+
+// NotificationEmailGT applies the GT predicate on the "notification_email" field.
+func NotificationEmailGT(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGT(FieldNotificationEmail, v))
+}
+
+// NotificationEmailGTE applies the GTE predicate on the "notification_email" field.
+func NotificationEmailGTE(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGTE(FieldNotificationEmail, v))
+}
+
+// NotificationEmailLT applies the LT predicate on the "notification_email" field.
+func NotificationEmailLT(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLT(FieldNotificationEmail, v))
+}
+
+// NotificationEmailLTE applies the LTE predicate on the "notification_email" field.
+func NotificationEmailLTE(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLTE(FieldNotificationEmail, v))
+}
+
+// NotificationEmailContains applies the Contains predicate on the "notification_email" field.
+func NotificationEmailContains(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldContains(FieldNotificationEmail, v))
+}
+
+// NotificationEmailHasPrefix applies the HasPrefix predicate on the "notification_email" field.
+func NotificationEmailHasPrefix(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldHasPrefix(FieldNotificationEmail, v))
+}
+
+// NotificationEmailHasSuffix applies the HasSuffix predicate on the "notification_email" field.
+func NotificationEmailHasSuffix(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldHasSuffix(FieldNotificationEmail, v))
+}
+
+// NotificationEmailIsNil applies the IsNil predicate on the "notification_email" field.
+func NotificationEmailIsNil() predicate.APIKey {
+	return predicate.APIKey(sql.FieldIsNull(FieldNotificationEmail))
+}
+
+// NotificationEmailNotNil applies the NotNil predicate on the "notification_email" field.
+func NotificationEmailNotNil() predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotNull(FieldNotificationEmail))
+}
+
+// NotificationEmailEqualFold applies the EqualFold predicate on the "notification_email" field.
+func NotificationEmailEqualFold(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEqualFold(FieldNotificationEmail, v))
+}
+
+// NotificationEmailContainsFold applies the ContainsFold predicate on the "notification_email" field.
+func NotificationEmailContainsFold(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldContainsFold(FieldNotificationEmail, v))
+}
+
+// NotificationEmailVerifiedAtEQ applies the EQ predicate on the "notification_email_verified_at" field.
+func NotificationEmailVerifiedAtEQ(v time.Time) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldNotificationEmailVerifiedAt, v))
+}
+
+// NotificationEmailVerifiedAtNEQ applies the NEQ predicate on the "notification_email_verified_at" field.
+func NotificationEmailVerifiedAtNEQ(v time.Time) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNEQ(FieldNotificationEmailVerifiedAt, v))
+}
+
+// NotificationEmailVerifiedAtIn applies the In predicate on the "notification_email_verified_at" field.
+func NotificationEmailVerifiedAtIn(vs ...time.Time) predicate.APIKey {
+	return predicate.APIKey(sql.FieldIn(FieldNotificationEmailVerifiedAt, vs...))
+}
+
+// NotificationEmailVerifiedAtNotIn applies the NotIn predicate on the "notification_email_verified_at" field.
+func NotificationEmailVerifiedAtNotIn(vs ...time.Time) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotIn(FieldNotificationEmailVerifiedAt, vs...))
+}
+
+// NotificationEmailVerifiedAtGT applies the GT predicate on the "notification_email_verified_at" field.
+func NotificationEmailVerifiedAtGT(v time.Time) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGT(FieldNotificationEmailVerifiedAt, v))
+}
+
+// NotificationEmailVerifiedAtGTE applies the GTE predicate on the "notification_email_verified_at" field.
+func NotificationEmailVerifiedAtGTE(v time.Time) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGTE(FieldNotificationEmailVerifiedAt, v))
+}
+
+// NotificationEmailVerifiedAtLT applies the LT predicate on the "notification_email_verified_at" field.
+func NotificationEmailVerifiedAtLT(v time.Time) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLT(FieldNotificationEmailVerifiedAt, v))
+}
+
+// NotificationEmailVerifiedAtLTE applies the LTE predicate on the "notification_email_verified_at" field.
+func NotificationEmailVerifiedAtLTE(v time.Time) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLTE(FieldNotificationEmailVerifiedAt, v))
+}
+
+// NotificationEmailVerifiedAtIsNil applies the IsNil predicate on the "notification_email_verified_at" field.
+func NotificationEmailVerifiedAtIsNil() predicate.APIKey {
+	return predicate.APIKey(sql.FieldIsNull(FieldNotificationEmailVerifiedAt))
+}
+
+// NotificationEmailVerifiedAtNotNil applies the NotNil predicate on the "notification_email_verified_at" field.
+func NotificationEmailVerifiedAtNotNil() predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotNull(FieldNotificationEmailVerifiedAt))
+}
+
+// ChangeNotifyEnabledEQ applies the EQ predicate on the "change_notify_enabled" field.
+func ChangeNotifyEnabledEQ(v bool) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldChangeNotifyEnabled, v))
+}
+
+// ChangeNotifyEnabledNEQ applies the NEQ predicate on the "change_notify_enabled" field.
+func ChangeNotifyEnabledNEQ(v bool) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNEQ(FieldChangeNotifyEnabled, v))
+}
+
+// RotateOnExpiryEQ applies the EQ predicate on the "rotate_on_expiry" field.
+func RotateOnExpiryEQ(v bool) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldRotateOnExpiry, v))
+}
+
+// RotateOnExpiryNEQ applies the NEQ predicate on the "rotate_on_expiry" field.
+func RotateOnExpiryNEQ(v bool) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNEQ(FieldRotateOnExpiry, v))
+}
+
+// ValidityDurationSecondsEQ applies the EQ predicate on the "validity_duration_seconds" field.
+func ValidityDurationSecondsEQ(v int64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldValidityDurationSeconds, v))
+}
+
+// ValidityDurationSecondsNEQ applies the NEQ predicate on the "validity_duration_seconds" field.
+func ValidityDurationSecondsNEQ(v int64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNEQ(FieldValidityDurationSeconds, v))
+}
+
+// ValidityDurationSecondsIn applies the In predicate on the "validity_duration_seconds" field.
+func ValidityDurationSecondsIn(vs ...int64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldIn(FieldValidityDurationSeconds, vs...))
+}
+
+// ValidityDurationSecondsNotIn applies the NotIn predicate on the "validity_duration_seconds" field.
+func ValidityDurationSecondsNotIn(vs ...int64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotIn(FieldValidityDurationSeconds, vs...))
+}
+
+// ValidityDurationSecondsGT applies the GT predicate on the "validity_duration_seconds" field.
+func ValidityDurationSecondsGT(v int64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGT(FieldValidityDurationSeconds, v))
+}
+
+// ValidityDurationSecondsGTE applies the GTE predicate on the "validity_duration_seconds" field.
+func ValidityDurationSecondsGTE(v int64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGTE(FieldValidityDurationSeconds, v))
+}
+
+// ValidityDurationSecondsLT applies the LT predicate on the "validity_duration_seconds" field.
+func ValidityDurationSecondsLT(v int64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLT(FieldValidityDurationSeconds, v))
+}
+
+// ValidityDurationSecondsLTE applies the LTE predicate on the "validity_duration_seconds" field.
+func ValidityDurationSecondsLTE(v int64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLTE(FieldValidityDurationSeconds, v))
+}
+
+// ValidityDurationSecondsIsNil applies the IsNil predicate on the "validity_duration_seconds" field.
+func ValidityDurationSecondsIsNil() predicate.APIKey {
+	return predicate.APIKey(sql.FieldIsNull(FieldValidityDurationSeconds))
+}
+
+// ValidityDurationSecondsNotNil applies the NotNil predicate on the "validity_duration_seconds" field.
+func ValidityDurationSecondsNotNil() predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotNull(FieldValidityDurationSeconds))
+}
+
+// LastRotatedAtEQ applies the EQ predicate on the "last_rotated_at" field.
+func LastRotatedAtEQ(v time.Time) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldLastRotatedAt, v))
+}
+
+// LastRotatedAtNEQ applies the NEQ predicate on the "last_rotated_at" field.
+func LastRotatedAtNEQ(v time.Time) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNEQ(FieldLastRotatedAt, v))
+}
+
+// LastRotatedAtIn applies the In predicate on the "last_rotated_at" field.
+func LastRotatedAtIn(vs ...time.Time) predicate.APIKey {
+	return predicate.APIKey(sql.FieldIn(FieldLastRotatedAt, vs...))
+}
+
+// LastRotatedAtNotIn applies the NotIn predicate on the "last_rotated_at" field.
+func LastRotatedAtNotIn(vs ...time.Time) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotIn(FieldLastRotatedAt, vs...))
+}
+
+// LastRotatedAtGT applies the GT predicate on the "last_rotated_at" field.
+func LastRotatedAtGT(v time.Time) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGT(FieldLastRotatedAt, v))
+}
+
+// LastRotatedAtGTE applies the GTE predicate on the "last_rotated_at" field.
+func LastRotatedAtGTE(v time.Time) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGTE(FieldLastRotatedAt, v))
+}
+
+// LastRotatedAtLT applies the LT predicate on the "last_rotated_at" field.
+func LastRotatedAtLT(v time.Time) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLT(FieldLastRotatedAt, v))
+}
+
+// LastRotatedAtLTE applies the LTE predicate on the "last_rotated_at" field.
+func LastRotatedAtLTE(v time.Time) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLTE(FieldLastRotatedAt, v))
+}
+
+// LastRotatedAtIsNil applies the IsNil predicate on the "last_rotated_at" field.
+func LastRotatedAtIsNil() predicate.APIKey {
+	return predicate.APIKey(sql.FieldIsNull(FieldLastRotatedAt))
+}
+
+// LastRotatedAtNotNil applies the NotNil predicate on the "last_rotated_at" field.
+func LastRotatedAtNotNil() predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotNull(FieldLastRotatedAt))
+}
+
+// RotationVersionEQ applies the EQ predicate on the "rotation_version" field.
+func RotationVersionEQ(v int64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldRotationVersion, v))
+}
+
+// RotationVersionNEQ applies the NEQ predicate on the "rotation_version" field.
+func RotationVersionNEQ(v int64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNEQ(FieldRotationVersion, v))
+}
+
+// RotationVersionIn applies the In predicate on the "rotation_version" field.
+func RotationVersionIn(vs ...int64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldIn(FieldRotationVersion, vs...))
+}
+
+// RotationVersionNotIn applies the NotIn predicate on the "rotation_version" field.
+func RotationVersionNotIn(vs ...int64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotIn(FieldRotationVersion, vs...))
+}
+
+// RotationVersionGT applies the GT predicate on the "rotation_version" field.
+func RotationVersionGT(v int64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGT(FieldRotationVersion, v))
+}
+
+// RotationVersionGTE applies the GTE predicate on the "rotation_version" field.
+func RotationVersionGTE(v int64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGTE(FieldRotationVersion, v))
+}
+
+// RotationVersionLT applies the LT predicate on the "rotation_version" field.
+func RotationVersionLT(v int64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLT(FieldRotationVersion, v))
+}
+
+// RotationVersionLTE applies the LTE predicate on the "rotation_version" field.
+func RotationVersionLTE(v int64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLTE(FieldRotationVersion, v))
 }
 
 // RateLimit5hEQ applies the EQ predicate on the "rate_limit_5h" field.

@@ -53,6 +53,13 @@ func (r *apiKeyRepository) Create(ctx context.Context, key *service.APIKey) erro
 		SetQuota(key.Quota).
 		SetQuotaUsed(key.QuotaUsed).
 		SetNillableExpiresAt(key.ExpiresAt).
+		SetNillableNotificationEmail(key.NotificationEmail).
+		SetNillableNotificationEmailVerifiedAt(key.NotificationEmailVerifiedAt).
+		SetChangeNotifyEnabled(key.ChangeNotifyEnabled).
+		SetRotateOnExpiry(key.RotateOnExpiry).
+		SetNillableValidityDurationSeconds(key.ValidityDurationSeconds).
+		SetNillableLastRotatedAt(key.LastRotatedAt).
+		SetRotationVersion(key.RotationVersion).
 		SetRateLimit5h(key.RateLimit5h).
 		SetRateLimit1d(key.RateLimit1d).
 		SetRateLimit7d(key.RateLimit7d)
@@ -310,6 +317,27 @@ func (r *apiKeyRepository) Update(ctx context.Context, key *service.APIKey, fiel
 			builder.SetExpiresAt(*key.ExpiresAt)
 		} else {
 			builder.ClearExpiresAt()
+		}
+	}
+	if fields.NotificationEmail {
+		if key.NotificationEmail != nil {
+			builder.SetNotificationEmail(*key.NotificationEmail)
+			builder.SetNillableNotificationEmailVerifiedAt(key.NotificationEmailVerifiedAt)
+		} else {
+			builder.ClearNotificationEmail()
+			builder.ClearNotificationEmailVerifiedAt()
+		}
+	}
+	if fields.NotificationSettings {
+		builder.
+			SetChangeNotifyEnabled(key.ChangeNotifyEnabled).
+			SetRotateOnExpiry(key.RotateOnExpiry)
+	}
+	if fields.ValidityDuration {
+		if key.ValidityDurationSeconds != nil {
+			builder.SetValidityDurationSeconds(*key.ValidityDurationSeconds)
+		} else {
+			builder.ClearValidityDurationSeconds()
 		}
 	}
 
@@ -723,6 +751,29 @@ func (r *apiKeyRepository) UpdateGroupIDByUserAndGroup(ctx context.Context, user
 	return int64(n), err
 }
 
+func (r *apiKeyRepository) ListNotificationKeysByUserAndGroup(ctx context.Context, userID, groupID int64) ([]service.APIKey, error) {
+	client := clientFromContext(ctx, r.client)
+	keys, err := client.APIKey.Query().
+		Where(
+			apikey.UserIDEQ(userID),
+			apikey.GroupIDEQ(groupID),
+			apikey.ChangeNotifyEnabledEQ(true),
+			apikey.NotificationEmailNotNil(),
+			apikey.NotificationEmailVerifiedAtNotNil(),
+			apikey.DeletedAtIsNil(),
+		).
+		Order(dbent.Asc(apikey.FieldID)).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]service.APIKey, 0, len(keys))
+	for i := range keys {
+		result = append(result, *apiKeyEntityToService(keys[i]))
+	}
+	return result, nil
+}
+
 // CountByGroupID 获取分组的 API Key 数量
 func (r *apiKeyRepository) CountByGroupID(ctx context.Context, groupID int64) (int64, error) {
 	count, err := r.activeQuery().Where(apikey.GroupIDEQ(groupID)).Count(ctx)
@@ -870,29 +921,36 @@ func apiKeyEntityToService(m *dbent.APIKey) *service.APIKey {
 		return nil
 	}
 	out := &service.APIKey{
-		ID:            m.ID,
-		UserID:        m.UserID,
-		Key:           m.Key,
-		Name:          m.Name,
-		Status:        m.Status,
-		IPWhitelist:   m.IPWhitelist,
-		IPBlacklist:   m.IPBlacklist,
-		LastUsedAt:    m.LastUsedAt,
-		CreatedAt:     m.CreatedAt,
-		UpdatedAt:     m.UpdatedAt,
-		GroupID:       m.GroupID,
-		Quota:         m.Quota,
-		QuotaUsed:     m.QuotaUsed,
-		ExpiresAt:     m.ExpiresAt,
-		RateLimit5h:   m.RateLimit5h,
-		RateLimit1d:   m.RateLimit1d,
-		RateLimit7d:   m.RateLimit7d,
-		Usage5h:       m.Usage5h,
-		Usage1d:       m.Usage1d,
-		Usage7d:       m.Usage7d,
-		Window5hStart: m.Window5hStart,
-		Window1dStart: m.Window1dStart,
-		Window7dStart: m.Window7dStart,
+		ID:                          m.ID,
+		UserID:                      m.UserID,
+		Key:                         m.Key,
+		Name:                        m.Name,
+		Status:                      m.Status,
+		IPWhitelist:                 m.IPWhitelist,
+		IPBlacklist:                 m.IPBlacklist,
+		LastUsedAt:                  m.LastUsedAt,
+		CreatedAt:                   m.CreatedAt,
+		UpdatedAt:                   m.UpdatedAt,
+		GroupID:                     m.GroupID,
+		Quota:                       m.Quota,
+		QuotaUsed:                   m.QuotaUsed,
+		ExpiresAt:                   m.ExpiresAt,
+		NotificationEmail:           m.NotificationEmail,
+		NotificationEmailVerifiedAt: m.NotificationEmailVerifiedAt,
+		ChangeNotifyEnabled:         m.ChangeNotifyEnabled,
+		RotateOnExpiry:              m.RotateOnExpiry,
+		ValidityDurationSeconds:     m.ValidityDurationSeconds,
+		LastRotatedAt:               m.LastRotatedAt,
+		RotationVersion:             m.RotationVersion,
+		RateLimit5h:                 m.RateLimit5h,
+		RateLimit1d:                 m.RateLimit1d,
+		RateLimit7d:                 m.RateLimit7d,
+		Usage5h:                     m.Usage5h,
+		Usage1d:                     m.Usage1d,
+		Usage7d:                     m.Usage7d,
+		Window5hStart:               m.Window5hStart,
+		Window1dStart:               m.Window1dStart,
+		Window7dStart:               m.Window7dStart,
 	}
 	if m.Edges.User != nil {
 		out.User = userEntityToService(m.Edges.User)

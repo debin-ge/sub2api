@@ -57,46 +57,24 @@ export async function getById(id: number): Promise<ApiKey> {
  * @param rateLimitData - Optional rate limit fields
  * @returns Created API key
  */
-export async function create(
-  name: string,
-  groupId?: number | null,
-  customKey?: string,
-  ipWhitelist?: string[],
-  ipBlacklist?: string[],
-  quota?: number,
-  expiresInDays?: number,
-  rateLimitData?: { rate_limit_5h?: number; rate_limit_1d?: number; rate_limit_7d?: number }
-): Promise<ApiKey> {
-  const payload: CreateApiKeyRequest = { name }
-  if (groupId !== undefined) {
-    payload.group_id = groupId
-  }
-  if (customKey) {
-    payload.custom_key = customKey
-  }
-  if (ipWhitelist && ipWhitelist.length > 0) {
-    payload.ip_whitelist = ipWhitelist
-  }
-  if (ipBlacklist && ipBlacklist.length > 0) {
-    payload.ip_blacklist = ipBlacklist
-  }
-  if (quota !== undefined && quota > 0) {
-    payload.quota = quota
-  }
-  if (expiresInDays !== undefined && expiresInDays > 0) {
-    payload.expires_in_days = expiresInDays
-  }
-  if (rateLimitData?.rate_limit_5h && rateLimitData.rate_limit_5h > 0) {
-    payload.rate_limit_5h = rateLimitData.rate_limit_5h
-  }
-  if (rateLimitData?.rate_limit_1d && rateLimitData.rate_limit_1d > 0) {
-    payload.rate_limit_1d = rateLimitData.rate_limit_1d
-  }
-  if (rateLimitData?.rate_limit_7d && rateLimitData.rate_limit_7d > 0) {
-    payload.rate_limit_7d = rateLimitData.rate_limit_7d
-  }
-
+export async function create(payload: CreateApiKeyRequest): Promise<ApiKey> {
   const { data } = await apiClient.post<ApiKey>('/keys', payload)
+  return data
+}
+
+export interface ApiKeyEmailVerificationResult {
+  verification_token: string
+  email: string
+  expires_at: string
+}
+
+export async function sendNotificationEmailCode(email: string): Promise<{ message: string }> {
+  const { data } = await apiClient.post<{ message: string }>('/keys/notification-email/send-code', { email })
+  return data
+}
+
+export async function verifyNotificationEmail(email: string, code: string): Promise<ApiKeyEmailVerificationResult> {
+  const { data } = await apiClient.post<ApiKeyEmailVerificationResult>('/keys/notification-email/verify', { email, code })
   return data
 }
 
@@ -137,7 +115,9 @@ export const keysAPI = {
   create,
   update,
   delete: deleteKey,
-  toggleStatus
+  toggleStatus,
+  sendNotificationEmailCode,
+  verifyNotificationEmail
 }
 
 export default keysAPI

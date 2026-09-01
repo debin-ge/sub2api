@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
@@ -62,11 +63,14 @@ const (
 // 若编辑 Key 时无条件整行回写，并发累计的配额与限流计数就会被旧快照覆盖。
 // 因此调用方必须显式声明要改的列。
 type APIKeyUpdateFields struct {
-	Name      bool
-	Status    bool
-	Quota     bool
-	GroupID   bool
-	ExpiresAt bool
+	Name                 bool
+	Status               bool
+	Quota                bool
+	GroupID              bool
+	ExpiresAt            bool
+	NotificationEmail    bool
+	NotificationSettings bool
+	ValidityDuration     bool
 	// QuotaUsed 仅供"重置配额用量"路径声明；常规计费走 IncrementQuotaUsed。
 	QuotaUsed bool
 	// RateLimits 覆盖 rate_limit_5h / _1d / _7d 三个阈值。
@@ -224,6 +228,11 @@ type CreateAPIKeyRequest struct {
 	RateLimit5h float64 `json:"rate_limit_5h"`
 	RateLimit1d float64 `json:"rate_limit_1d"`
 	RateLimit7d float64 `json:"rate_limit_7d"`
+
+	NotificationEmail             *string `json:"notification_email"`
+	NotificationEmailVerification string  `json:"notification_email_verification_token"`
+	ChangeNotifyEnabled           bool    `json:"change_notify_enabled"`
+	RotateOnExpiry                bool    `json:"rotate_on_expiry"`
 }
 
 // UpdateAPIKeyRequest 更新API Key请求
@@ -245,6 +254,11 @@ type UpdateAPIKeyRequest struct {
 	RateLimit1d         *float64 `json:"rate_limit_1d"`
 	RateLimit7d         *float64 `json:"rate_limit_7d"`
 	ResetRateLimitUsage *bool    `json:"reset_rate_limit_usage"` // Reset all usage counters to 0
+
+	NotificationEmail             *string `json:"notification_email"`
+	NotificationEmailVerification string  `json:"notification_email_verification_token"`
+	ChangeNotifyEnabled           *bool   `json:"change_notify_enabled"`
+	RotateOnExpiry                *bool   `json:"rotate_on_expiry"`
 }
 
 func validateAPIKeyLimit(v float64) error {
@@ -311,6 +325,9 @@ type APIKeyService struct {
 	authInvalidationFailures  atomic.Uint64
 	lastUsedTouchL1           sync.Map // keyID -> nextAllowedAt(time.Time)
 	lastUsedTouchSF           singleflight.Group
+	emailVerification         *APIKeyEmailVerificationService
+	entClient                 *dbent.Client
+	notificationOutbox        NotificationEmailOutboxRepository
 }
 
 type APIKeyAuthLookupMetrics struct {
@@ -370,6 +387,15 @@ func (s *APIKeyService) SetRateLimitCacheInvalidator(inv RateLimitCacheInvalidat
 
 func (s *APIKeyService) SetConcurrencyService(concurrencyService *ConcurrencyService) {
 	s.concurrencyService = concurrencyService
+}
+
+func (s *APIKeyService) SetEmailVerificationService(emailVerification *APIKeyEmailVerificationService) {
+	s.emailVerification = emailVerification
+}
+
+func (s *APIKeyService) SetNotificationDependencies(entClient *dbent.Client, outbox NotificationEmailOutboxRepository) {
+	s.entClient = entClient
+	s.notificationOutbox = outbox
 }
 
 func (s *APIKeyService) compileAPIKeyIPRules(apiKey *APIKey) {
@@ -544,26 +570,41 @@ func (s *APIKeyService) Create(ctx context.Context, userID int64, req CreateAPIK
 		}
 	}
 
+	now := time.Now()
+	notificationEmail, verifiedAt, err := s.resolveCreatedNotificationEmail(ctx, userID, req)
+	if err != nil {
+		return nil, err
+	}
+
 	// 创建API Key记录
 	apiKey := &APIKey{
-		UserID:      userID,
-		Key:         key,
-		Name:        html.EscapeString(req.Name),
-		GroupID:     req.GroupID,
-		Status:      StatusActive,
-		IPWhitelist: req.IPWhitelist,
-		IPBlacklist: req.IPBlacklist,
-		Quota:       req.Quota,
-		QuotaUsed:   0,
-		RateLimit5h: req.RateLimit5h,
-		RateLimit1d: req.RateLimit1d,
-		RateLimit7d: req.RateLimit7d,
+		UserID:                      userID,
+		Key:                         key,
+		Name:                        html.EscapeString(req.Name),
+		GroupID:                     req.GroupID,
+		Status:                      StatusActive,
+		IPWhitelist:                 req.IPWhitelist,
+		IPBlacklist:                 req.IPBlacklist,
+		Quota:                       req.Quota,
+		QuotaUsed:                   0,
+		RateLimit5h:                 req.RateLimit5h,
+		RateLimit1d:                 req.RateLimit1d,
+		RateLimit7d:                 req.RateLimit7d,
+		NotificationEmail:           notificationEmail,
+		NotificationEmailVerifiedAt: verifiedAt,
+		ChangeNotifyEnabled:         req.ChangeNotifyEnabled,
+		RotateOnExpiry:              req.RotateOnExpiry,
 	}
 
 	// Set expiration time if specified
 	if req.ExpiresInDays != nil && *req.ExpiresInDays > 0 {
-		expiresAt := time.Now().AddDate(0, 0, *req.ExpiresInDays)
+		expiresAt := now.AddDate(0, 0, *req.ExpiresInDays)
 		apiKey.ExpiresAt = &expiresAt
+		duration := int64(expiresAt.Sub(now).Seconds())
+		apiKey.ValidityDurationSeconds = &duration
+	}
+	if err := validateAPIKeyNotificationState(apiKey, now); err != nil {
+		return nil, err
 	}
 
 	if err := s.apiKeyRepo.Create(ctx, apiKey); err != nil {
@@ -783,6 +824,7 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 	if apiKey.UserID != userID {
 		return nil, ErrInsufficientPerms
 	}
+	beforeUpdate := cloneAPIKeyForChangeDetection(apiKey)
 
 	// 验证 IP 白名单格式
 	if req.IPWhitelist != nil && len(*req.IPWhitelist) > 0 {
@@ -804,6 +846,7 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 	// 下面若干分支会顺带把 Status 改回 active（配额扩容、清除过期等），
 	// 所以用原始值比对来决定是否写 status，而不是只看 req.Status。
 	originalStatus := apiKey.Status
+	now := time.Now()
 
 	// 更新字段
 	if req.Name != nil {
@@ -863,7 +906,11 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 	}
 	if req.ClearExpiration {
 		apiKey.ExpiresAt = nil
+		apiKey.ValidityDurationSeconds = nil
+		apiKey.RotateOnExpiry = false
 		fields.ExpiresAt = true
+		fields.ValidityDuration = true
+		fields.NotificationSettings = true
 		// If clearing expiry and status was expired, reactivate
 		if apiKey.Status == StatusAPIKeyExpired {
 			apiKey.Status = StatusActive
@@ -871,10 +918,60 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 	} else if req.ExpiresAt != nil {
 		apiKey.ExpiresAt = req.ExpiresAt
 		fields.ExpiresAt = true
+		duration := int64(req.ExpiresAt.Sub(now).Seconds())
+		if duration > 0 {
+			apiKey.ValidityDurationSeconds = &duration
+		} else {
+			apiKey.ValidityDurationSeconds = nil
+		}
+		fields.ValidityDuration = true
 		// If extending expiry and status was expired, reactivate
 		if apiKey.Status == StatusAPIKeyExpired && time.Now().Before(*req.ExpiresAt) {
 			apiKey.Status = StatusActive
 		}
+	}
+
+	if req.NotificationEmail != nil {
+		normalized, err := NormalizeAPIKeyNotificationEmail(*req.NotificationEmail)
+		if err != nil {
+			return nil, err
+		}
+		if normalized == "" {
+			apiKey.NotificationEmail = nil
+			apiKey.NotificationEmailVerifiedAt = nil
+			apiKey.ChangeNotifyEnabled = false
+			apiKey.RotateOnExpiry = false
+			fields.NotificationSettings = true
+		} else if apiKey.NotificationEmail == nil || !strings.EqualFold(*apiKey.NotificationEmail, normalized) {
+			if s.emailVerification == nil {
+				return nil, ErrAPIKeyNotificationUnverified
+			}
+			verifiedAt, err := s.emailVerification.ValidateProof(ctx, userID, normalized, req.NotificationEmailVerification)
+			if err != nil {
+				return nil, err
+			}
+			apiKey.NotificationEmail = &normalized
+			apiKey.NotificationEmailVerifiedAt = &verifiedAt
+		}
+		fields.NotificationEmail = true
+	}
+	if req.ChangeNotifyEnabled != nil {
+		apiKey.ChangeNotifyEnabled = *req.ChangeNotifyEnabled
+		fields.NotificationSettings = true
+	}
+	if req.RotateOnExpiry != nil {
+		apiKey.RotateOnExpiry = *req.RotateOnExpiry
+		fields.NotificationSettings = true
+		if apiKey.RotateOnExpiry && apiKey.ValidityDurationSeconds == nil && apiKey.ExpiresAt != nil {
+			duration := int64(apiKey.ExpiresAt.Sub(now).Seconds())
+			if duration > 0 {
+				apiKey.ValidityDurationSeconds = &duration
+				fields.ValidityDuration = true
+			}
+		}
+	}
+	if err := validateAPIKeyNotificationState(apiKey, now); err != nil {
+		return nil, err
 	}
 
 	// 更新 IP 限制（nil 不修改，空数组清空设置）
@@ -916,7 +1013,28 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 		fields.Status = true
 	}
 
-	if err := s.apiKeyRepo.Update(ctx, apiKey, fields); err != nil {
+	changeSummary := APIKeyConfigurationChangeSummary(beforeUpdate, apiKey)
+	shouldNotify := apiKey.ChangeNotifyEnabled && apiKey.NotificationEmail != nil && apiKey.NotificationEmailVerifiedAt != nil && changeSummary != ""
+	if shouldNotify {
+		if s.entClient == nil || s.notificationOutbox == nil {
+			return nil, fmt.Errorf("update api key notification transaction is not configured")
+		}
+		tx, err := s.entClient.Tx(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("begin api key update: %w", err)
+		}
+		defer func() { _ = tx.Rollback() }()
+		txCtx := dbent.NewTxContext(ctx, tx)
+		if err := s.apiKeyRepo.Update(txCtx, apiKey, fields); err != nil {
+			return nil, fmt.Errorf("update api key: %w", err)
+		}
+		if err := s.notificationOutbox.Enqueue(txCtx, NewAPIKeyConfigurationChangedOutboxInput(apiKey, changeSummary, "user")); err != nil {
+			return nil, fmt.Errorf("enqueue api key change notification: %w", err)
+		}
+		if err := tx.Commit(); err != nil {
+			return nil, fmt.Errorf("commit api key update: %w", err)
+		}
+	} else if err := s.apiKeyRepo.Update(ctx, apiKey, fields); err != nil {
 		return nil, fmt.Errorf("update api key: %w", err)
 	}
 
@@ -929,6 +1047,50 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 	}
 
 	return apiKey, nil
+}
+
+func (s *APIKeyService) resolveCreatedNotificationEmail(ctx context.Context, userID int64, req CreateAPIKeyRequest) (*string, *time.Time, error) {
+	if req.NotificationEmail == nil {
+		if req.ChangeNotifyEnabled || req.RotateOnExpiry {
+			return nil, nil, ErrAPIKeyNotificationUnverified
+		}
+		return nil, nil, nil
+	}
+	email, err := NormalizeAPIKeyNotificationEmail(*req.NotificationEmail)
+	if err != nil {
+		return nil, nil, err
+	}
+	if email == "" {
+		if req.ChangeNotifyEnabled || req.RotateOnExpiry {
+			return nil, nil, ErrAPIKeyNotificationUnverified
+		}
+		return nil, nil, nil
+	}
+	if s.emailVerification == nil {
+		return nil, nil, ErrAPIKeyNotificationUnverified
+	}
+	verifiedAt, err := s.emailVerification.ValidateProof(ctx, userID, email, req.NotificationEmailVerification)
+	if err != nil {
+		return nil, nil, err
+	}
+	return &email, &verifiedAt, nil
+}
+
+func validateAPIKeyNotificationState(apiKey *APIKey, now time.Time) error {
+	if apiKey == nil {
+		return nil
+	}
+	if apiKey.ChangeNotifyEnabled || apiKey.RotateOnExpiry {
+		if apiKey.NotificationEmail == nil || strings.TrimSpace(*apiKey.NotificationEmail) == "" || apiKey.NotificationEmailVerifiedAt == nil {
+			return ErrAPIKeyNotificationUnverified
+		}
+	}
+	if apiKey.RotateOnExpiry {
+		if apiKey.ExpiresAt == nil || !apiKey.ExpiresAt.After(now) || apiKey.ValidityDurationSeconds == nil || *apiKey.ValidityDurationSeconds <= 0 {
+			return ErrAPIKeyRotationExpiryRequired
+		}
+	}
+	return nil
 }
 
 // Delete 删除API Key
@@ -946,6 +1108,9 @@ func (s *APIKeyService) Delete(ctx context.Context, id int64, userID int64) erro
 	// 事务内:写审计 + 软删除(tombstone)。
 	if err := s.apiKeyRepo.DeleteWithAudit(ctx, id); err != nil {
 		return fmt.Errorf("delete api key: %w", err)
+	}
+	if s.notificationOutbox != nil {
+		_ = s.notificationOutbox.CancelPendingRotationsByAPIKey(ctx, id, "api_key_deleted")
 	}
 
 	// 删除成功后再清理缓存,避免"缓存已清但删除失败"的竞态。

@@ -287,6 +287,8 @@ func cleanupWithRadarTestDependencies(rdb *redis.Client, radarRunner *service.Ra
 		nil, // opsIngressReject
 		nil, // apiKeyService
 		nil, // authCacheInvalidationWorker
+		nil, // notificationEmailWorker
+		nil, // apiKeyRotation
 		nil, // usageBillingOutboxWorker
 		nil, // schedulerSnapshot
 		tokenRefreshSvc,
@@ -424,6 +426,8 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 		nil, // opsIngressRejectAggregator
 		nil, // apiKeyService
 		nil, // authCacheInvalidationWorker
+		nil, // notificationEmailWorker
+		nil, // apiKeyRotation
 		nil, // usageBillingOutboxWorker
 		schedulerSnapshotSvc,
 		tokenRefreshSvc,

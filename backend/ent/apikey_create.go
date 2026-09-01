@@ -181,6 +181,104 @@ func (_c *APIKeyCreate) SetNillableExpiresAt(v *time.Time) *APIKeyCreate {
 	return _c
 }
 
+// SetNotificationEmail sets the "notification_email" field.
+func (_c *APIKeyCreate) SetNotificationEmail(v string) *APIKeyCreate {
+	_c.mutation.SetNotificationEmail(v)
+	return _c
+}
+
+// SetNillableNotificationEmail sets the "notification_email" field if the given value is not nil.
+func (_c *APIKeyCreate) SetNillableNotificationEmail(v *string) *APIKeyCreate {
+	if v != nil {
+		_c.SetNotificationEmail(*v)
+	}
+	return _c
+}
+
+// SetNotificationEmailVerifiedAt sets the "notification_email_verified_at" field.
+func (_c *APIKeyCreate) SetNotificationEmailVerifiedAt(v time.Time) *APIKeyCreate {
+	_c.mutation.SetNotificationEmailVerifiedAt(v)
+	return _c
+}
+
+// SetNillableNotificationEmailVerifiedAt sets the "notification_email_verified_at" field if the given value is not nil.
+func (_c *APIKeyCreate) SetNillableNotificationEmailVerifiedAt(v *time.Time) *APIKeyCreate {
+	if v != nil {
+		_c.SetNotificationEmailVerifiedAt(*v)
+	}
+	return _c
+}
+
+// SetChangeNotifyEnabled sets the "change_notify_enabled" field.
+func (_c *APIKeyCreate) SetChangeNotifyEnabled(v bool) *APIKeyCreate {
+	_c.mutation.SetChangeNotifyEnabled(v)
+	return _c
+}
+
+// SetNillableChangeNotifyEnabled sets the "change_notify_enabled" field if the given value is not nil.
+func (_c *APIKeyCreate) SetNillableChangeNotifyEnabled(v *bool) *APIKeyCreate {
+	if v != nil {
+		_c.SetChangeNotifyEnabled(*v)
+	}
+	return _c
+}
+
+// SetRotateOnExpiry sets the "rotate_on_expiry" field.
+func (_c *APIKeyCreate) SetRotateOnExpiry(v bool) *APIKeyCreate {
+	_c.mutation.SetRotateOnExpiry(v)
+	return _c
+}
+
+// SetNillableRotateOnExpiry sets the "rotate_on_expiry" field if the given value is not nil.
+func (_c *APIKeyCreate) SetNillableRotateOnExpiry(v *bool) *APIKeyCreate {
+	if v != nil {
+		_c.SetRotateOnExpiry(*v)
+	}
+	return _c
+}
+
+// SetValidityDurationSeconds sets the "validity_duration_seconds" field.
+func (_c *APIKeyCreate) SetValidityDurationSeconds(v int64) *APIKeyCreate {
+	_c.mutation.SetValidityDurationSeconds(v)
+	return _c
+}
+
+// SetNillableValidityDurationSeconds sets the "validity_duration_seconds" field if the given value is not nil.
+func (_c *APIKeyCreate) SetNillableValidityDurationSeconds(v *int64) *APIKeyCreate {
+	if v != nil {
+		_c.SetValidityDurationSeconds(*v)
+	}
+	return _c
+}
+
+// SetLastRotatedAt sets the "last_rotated_at" field.
+func (_c *APIKeyCreate) SetLastRotatedAt(v time.Time) *APIKeyCreate {
+	_c.mutation.SetLastRotatedAt(v)
+	return _c
+}
+
+// SetNillableLastRotatedAt sets the "last_rotated_at" field if the given value is not nil.
+func (_c *APIKeyCreate) SetNillableLastRotatedAt(v *time.Time) *APIKeyCreate {
+	if v != nil {
+		_c.SetLastRotatedAt(*v)
+	}
+	return _c
+}
+
+// SetRotationVersion sets the "rotation_version" field.
+func (_c *APIKeyCreate) SetRotationVersion(v int64) *APIKeyCreate {
+	_c.mutation.SetRotationVersion(v)
+	return _c
+}
+
+// SetNillableRotationVersion sets the "rotation_version" field if the given value is not nil.
+func (_c *APIKeyCreate) SetNillableRotationVersion(v *int64) *APIKeyCreate {
+	if v != nil {
+		_c.SetRotationVersion(*v)
+	}
+	return _c
+}
+
 // SetRateLimit5h sets the "rate_limit_5h" field.
 func (_c *APIKeyCreate) SetRateLimit5h(v float64) *APIKeyCreate {
 	_c.mutation.SetRateLimit5h(v)
@@ -395,6 +493,18 @@ func (_c *APIKeyCreate) defaults() error {
 		v := apikey.DefaultQuotaUsed
 		_c.mutation.SetQuotaUsed(v)
 	}
+	if _, ok := _c.mutation.ChangeNotifyEnabled(); !ok {
+		v := apikey.DefaultChangeNotifyEnabled
+		_c.mutation.SetChangeNotifyEnabled(v)
+	}
+	if _, ok := _c.mutation.RotateOnExpiry(); !ok {
+		v := apikey.DefaultRotateOnExpiry
+		_c.mutation.SetRotateOnExpiry(v)
+	}
+	if _, ok := _c.mutation.RotationVersion(); !ok {
+		v := apikey.DefaultRotationVersion
+		_c.mutation.SetRotationVersion(v)
+	}
 	if _, ok := _c.mutation.RateLimit5h(); !ok {
 		v := apikey.DefaultRateLimit5h
 		_c.mutation.SetRateLimit5h(v)
@@ -462,6 +572,30 @@ func (_c *APIKeyCreate) check() error {
 	}
 	if _, ok := _c.mutation.QuotaUsed(); !ok {
 		return &ValidationError{Name: "quota_used", err: errors.New(`ent: missing required field "APIKey.quota_used"`)}
+	}
+	if v, ok := _c.mutation.NotificationEmail(); ok {
+		if err := apikey.NotificationEmailValidator(v); err != nil {
+			return &ValidationError{Name: "notification_email", err: fmt.Errorf(`ent: validator failed for field "APIKey.notification_email": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.ChangeNotifyEnabled(); !ok {
+		return &ValidationError{Name: "change_notify_enabled", err: errors.New(`ent: missing required field "APIKey.change_notify_enabled"`)}
+	}
+	if _, ok := _c.mutation.RotateOnExpiry(); !ok {
+		return &ValidationError{Name: "rotate_on_expiry", err: errors.New(`ent: missing required field "APIKey.rotate_on_expiry"`)}
+	}
+	if v, ok := _c.mutation.ValidityDurationSeconds(); ok {
+		if err := apikey.ValidityDurationSecondsValidator(v); err != nil {
+			return &ValidationError{Name: "validity_duration_seconds", err: fmt.Errorf(`ent: validator failed for field "APIKey.validity_duration_seconds": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.RotationVersion(); !ok {
+		return &ValidationError{Name: "rotation_version", err: errors.New(`ent: missing required field "APIKey.rotation_version"`)}
+	}
+	if v, ok := _c.mutation.RotationVersion(); ok {
+		if err := apikey.RotationVersionValidator(v); err != nil {
+			return &ValidationError{Name: "rotation_version", err: fmt.Errorf(`ent: validator failed for field "APIKey.rotation_version": %w`, err)}
+		}
 	}
 	if _, ok := _c.mutation.RateLimit5h(); !ok {
 		return &ValidationError{Name: "rate_limit_5h", err: errors.New(`ent: missing required field "APIKey.rate_limit_5h"`)}
@@ -558,6 +692,34 @@ func (_c *APIKeyCreate) createSpec() (*APIKey, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.ExpiresAt(); ok {
 		_spec.SetField(apikey.FieldExpiresAt, field.TypeTime, value)
 		_node.ExpiresAt = &value
+	}
+	if value, ok := _c.mutation.NotificationEmail(); ok {
+		_spec.SetField(apikey.FieldNotificationEmail, field.TypeString, value)
+		_node.NotificationEmail = &value
+	}
+	if value, ok := _c.mutation.NotificationEmailVerifiedAt(); ok {
+		_spec.SetField(apikey.FieldNotificationEmailVerifiedAt, field.TypeTime, value)
+		_node.NotificationEmailVerifiedAt = &value
+	}
+	if value, ok := _c.mutation.ChangeNotifyEnabled(); ok {
+		_spec.SetField(apikey.FieldChangeNotifyEnabled, field.TypeBool, value)
+		_node.ChangeNotifyEnabled = value
+	}
+	if value, ok := _c.mutation.RotateOnExpiry(); ok {
+		_spec.SetField(apikey.FieldRotateOnExpiry, field.TypeBool, value)
+		_node.RotateOnExpiry = value
+	}
+	if value, ok := _c.mutation.ValidityDurationSeconds(); ok {
+		_spec.SetField(apikey.FieldValidityDurationSeconds, field.TypeInt64, value)
+		_node.ValidityDurationSeconds = &value
+	}
+	if value, ok := _c.mutation.LastRotatedAt(); ok {
+		_spec.SetField(apikey.FieldLastRotatedAt, field.TypeTime, value)
+		_node.LastRotatedAt = &value
+	}
+	if value, ok := _c.mutation.RotationVersion(); ok {
+		_spec.SetField(apikey.FieldRotationVersion, field.TypeInt64, value)
+		_node.RotationVersion = value
 	}
 	if value, ok := _c.mutation.RateLimit5h(); ok {
 		_spec.SetField(apikey.FieldRateLimit5h, field.TypeFloat64, value)
@@ -898,6 +1060,126 @@ func (u *APIKeyUpsert) UpdateExpiresAt() *APIKeyUpsert {
 // ClearExpiresAt clears the value of the "expires_at" field.
 func (u *APIKeyUpsert) ClearExpiresAt() *APIKeyUpsert {
 	u.SetNull(apikey.FieldExpiresAt)
+	return u
+}
+
+// SetNotificationEmail sets the "notification_email" field.
+func (u *APIKeyUpsert) SetNotificationEmail(v string) *APIKeyUpsert {
+	u.Set(apikey.FieldNotificationEmail, v)
+	return u
+}
+
+// UpdateNotificationEmail sets the "notification_email" field to the value that was provided on create.
+func (u *APIKeyUpsert) UpdateNotificationEmail() *APIKeyUpsert {
+	u.SetExcluded(apikey.FieldNotificationEmail)
+	return u
+}
+
+// ClearNotificationEmail clears the value of the "notification_email" field.
+func (u *APIKeyUpsert) ClearNotificationEmail() *APIKeyUpsert {
+	u.SetNull(apikey.FieldNotificationEmail)
+	return u
+}
+
+// SetNotificationEmailVerifiedAt sets the "notification_email_verified_at" field.
+func (u *APIKeyUpsert) SetNotificationEmailVerifiedAt(v time.Time) *APIKeyUpsert {
+	u.Set(apikey.FieldNotificationEmailVerifiedAt, v)
+	return u
+}
+
+// UpdateNotificationEmailVerifiedAt sets the "notification_email_verified_at" field to the value that was provided on create.
+func (u *APIKeyUpsert) UpdateNotificationEmailVerifiedAt() *APIKeyUpsert {
+	u.SetExcluded(apikey.FieldNotificationEmailVerifiedAt)
+	return u
+}
+
+// ClearNotificationEmailVerifiedAt clears the value of the "notification_email_verified_at" field.
+func (u *APIKeyUpsert) ClearNotificationEmailVerifiedAt() *APIKeyUpsert {
+	u.SetNull(apikey.FieldNotificationEmailVerifiedAt)
+	return u
+}
+
+// SetChangeNotifyEnabled sets the "change_notify_enabled" field.
+func (u *APIKeyUpsert) SetChangeNotifyEnabled(v bool) *APIKeyUpsert {
+	u.Set(apikey.FieldChangeNotifyEnabled, v)
+	return u
+}
+
+// UpdateChangeNotifyEnabled sets the "change_notify_enabled" field to the value that was provided on create.
+func (u *APIKeyUpsert) UpdateChangeNotifyEnabled() *APIKeyUpsert {
+	u.SetExcluded(apikey.FieldChangeNotifyEnabled)
+	return u
+}
+
+// SetRotateOnExpiry sets the "rotate_on_expiry" field.
+func (u *APIKeyUpsert) SetRotateOnExpiry(v bool) *APIKeyUpsert {
+	u.Set(apikey.FieldRotateOnExpiry, v)
+	return u
+}
+
+// UpdateRotateOnExpiry sets the "rotate_on_expiry" field to the value that was provided on create.
+func (u *APIKeyUpsert) UpdateRotateOnExpiry() *APIKeyUpsert {
+	u.SetExcluded(apikey.FieldRotateOnExpiry)
+	return u
+}
+
+// SetValidityDurationSeconds sets the "validity_duration_seconds" field.
+func (u *APIKeyUpsert) SetValidityDurationSeconds(v int64) *APIKeyUpsert {
+	u.Set(apikey.FieldValidityDurationSeconds, v)
+	return u
+}
+
+// UpdateValidityDurationSeconds sets the "validity_duration_seconds" field to the value that was provided on create.
+func (u *APIKeyUpsert) UpdateValidityDurationSeconds() *APIKeyUpsert {
+	u.SetExcluded(apikey.FieldValidityDurationSeconds)
+	return u
+}
+
+// AddValidityDurationSeconds adds v to the "validity_duration_seconds" field.
+func (u *APIKeyUpsert) AddValidityDurationSeconds(v int64) *APIKeyUpsert {
+	u.Add(apikey.FieldValidityDurationSeconds, v)
+	return u
+}
+
+// ClearValidityDurationSeconds clears the value of the "validity_duration_seconds" field.
+func (u *APIKeyUpsert) ClearValidityDurationSeconds() *APIKeyUpsert {
+	u.SetNull(apikey.FieldValidityDurationSeconds)
+	return u
+}
+
+// SetLastRotatedAt sets the "last_rotated_at" field.
+func (u *APIKeyUpsert) SetLastRotatedAt(v time.Time) *APIKeyUpsert {
+	u.Set(apikey.FieldLastRotatedAt, v)
+	return u
+}
+
+// UpdateLastRotatedAt sets the "last_rotated_at" field to the value that was provided on create.
+func (u *APIKeyUpsert) UpdateLastRotatedAt() *APIKeyUpsert {
+	u.SetExcluded(apikey.FieldLastRotatedAt)
+	return u
+}
+
+// ClearLastRotatedAt clears the value of the "last_rotated_at" field.
+func (u *APIKeyUpsert) ClearLastRotatedAt() *APIKeyUpsert {
+	u.SetNull(apikey.FieldLastRotatedAt)
+	return u
+}
+
+// SetRotationVersion sets the "rotation_version" field.
+func (u *APIKeyUpsert) SetRotationVersion(v int64) *APIKeyUpsert {
+	u.Set(apikey.FieldRotationVersion, v)
+	return u
+}
+
+// UpdateRotationVersion sets the "rotation_version" field to the value that was provided on create.
+func (u *APIKeyUpsert) UpdateRotationVersion() *APIKeyUpsert {
+	u.SetExcluded(apikey.FieldRotationVersion)
+	return u
+}
+
+// AddRotationVersion adds v to the "rotation_version" field.
+func (u *APIKeyUpsert) AddRotationVersion(v int64) *APIKeyUpsert {
+	u.Add(apikey.FieldRotationVersion, v)
 	return u
 }
 
@@ -1343,6 +1625,146 @@ func (u *APIKeyUpsertOne) UpdateExpiresAt() *APIKeyUpsertOne {
 func (u *APIKeyUpsertOne) ClearExpiresAt() *APIKeyUpsertOne {
 	return u.Update(func(s *APIKeyUpsert) {
 		s.ClearExpiresAt()
+	})
+}
+
+// SetNotificationEmail sets the "notification_email" field.
+func (u *APIKeyUpsertOne) SetNotificationEmail(v string) *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetNotificationEmail(v)
+	})
+}
+
+// UpdateNotificationEmail sets the "notification_email" field to the value that was provided on create.
+func (u *APIKeyUpsertOne) UpdateNotificationEmail() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateNotificationEmail()
+	})
+}
+
+// ClearNotificationEmail clears the value of the "notification_email" field.
+func (u *APIKeyUpsertOne) ClearNotificationEmail() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.ClearNotificationEmail()
+	})
+}
+
+// SetNotificationEmailVerifiedAt sets the "notification_email_verified_at" field.
+func (u *APIKeyUpsertOne) SetNotificationEmailVerifiedAt(v time.Time) *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetNotificationEmailVerifiedAt(v)
+	})
+}
+
+// UpdateNotificationEmailVerifiedAt sets the "notification_email_verified_at" field to the value that was provided on create.
+func (u *APIKeyUpsertOne) UpdateNotificationEmailVerifiedAt() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateNotificationEmailVerifiedAt()
+	})
+}
+
+// ClearNotificationEmailVerifiedAt clears the value of the "notification_email_verified_at" field.
+func (u *APIKeyUpsertOne) ClearNotificationEmailVerifiedAt() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.ClearNotificationEmailVerifiedAt()
+	})
+}
+
+// SetChangeNotifyEnabled sets the "change_notify_enabled" field.
+func (u *APIKeyUpsertOne) SetChangeNotifyEnabled(v bool) *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetChangeNotifyEnabled(v)
+	})
+}
+
+// UpdateChangeNotifyEnabled sets the "change_notify_enabled" field to the value that was provided on create.
+func (u *APIKeyUpsertOne) UpdateChangeNotifyEnabled() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateChangeNotifyEnabled()
+	})
+}
+
+// SetRotateOnExpiry sets the "rotate_on_expiry" field.
+func (u *APIKeyUpsertOne) SetRotateOnExpiry(v bool) *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetRotateOnExpiry(v)
+	})
+}
+
+// UpdateRotateOnExpiry sets the "rotate_on_expiry" field to the value that was provided on create.
+func (u *APIKeyUpsertOne) UpdateRotateOnExpiry() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateRotateOnExpiry()
+	})
+}
+
+// SetValidityDurationSeconds sets the "validity_duration_seconds" field.
+func (u *APIKeyUpsertOne) SetValidityDurationSeconds(v int64) *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetValidityDurationSeconds(v)
+	})
+}
+
+// AddValidityDurationSeconds adds v to the "validity_duration_seconds" field.
+func (u *APIKeyUpsertOne) AddValidityDurationSeconds(v int64) *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.AddValidityDurationSeconds(v)
+	})
+}
+
+// UpdateValidityDurationSeconds sets the "validity_duration_seconds" field to the value that was provided on create.
+func (u *APIKeyUpsertOne) UpdateValidityDurationSeconds() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateValidityDurationSeconds()
+	})
+}
+
+// ClearValidityDurationSeconds clears the value of the "validity_duration_seconds" field.
+func (u *APIKeyUpsertOne) ClearValidityDurationSeconds() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.ClearValidityDurationSeconds()
+	})
+}
+
+// SetLastRotatedAt sets the "last_rotated_at" field.
+func (u *APIKeyUpsertOne) SetLastRotatedAt(v time.Time) *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetLastRotatedAt(v)
+	})
+}
+
+// UpdateLastRotatedAt sets the "last_rotated_at" field to the value that was provided on create.
+func (u *APIKeyUpsertOne) UpdateLastRotatedAt() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateLastRotatedAt()
+	})
+}
+
+// ClearLastRotatedAt clears the value of the "last_rotated_at" field.
+func (u *APIKeyUpsertOne) ClearLastRotatedAt() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.ClearLastRotatedAt()
+	})
+}
+
+// SetRotationVersion sets the "rotation_version" field.
+func (u *APIKeyUpsertOne) SetRotationVersion(v int64) *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetRotationVersion(v)
+	})
+}
+
+// AddRotationVersion adds v to the "rotation_version" field.
+func (u *APIKeyUpsertOne) AddRotationVersion(v int64) *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.AddRotationVersion(v)
+	})
+}
+
+// UpdateRotationVersion sets the "rotation_version" field to the value that was provided on create.
+func (u *APIKeyUpsertOne) UpdateRotationVersion() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateRotationVersion()
 	})
 }
 
@@ -1981,6 +2403,146 @@ func (u *APIKeyUpsertBulk) UpdateExpiresAt() *APIKeyUpsertBulk {
 func (u *APIKeyUpsertBulk) ClearExpiresAt() *APIKeyUpsertBulk {
 	return u.Update(func(s *APIKeyUpsert) {
 		s.ClearExpiresAt()
+	})
+}
+
+// SetNotificationEmail sets the "notification_email" field.
+func (u *APIKeyUpsertBulk) SetNotificationEmail(v string) *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetNotificationEmail(v)
+	})
+}
+
+// UpdateNotificationEmail sets the "notification_email" field to the value that was provided on create.
+func (u *APIKeyUpsertBulk) UpdateNotificationEmail() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateNotificationEmail()
+	})
+}
+
+// ClearNotificationEmail clears the value of the "notification_email" field.
+func (u *APIKeyUpsertBulk) ClearNotificationEmail() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.ClearNotificationEmail()
+	})
+}
+
+// SetNotificationEmailVerifiedAt sets the "notification_email_verified_at" field.
+func (u *APIKeyUpsertBulk) SetNotificationEmailVerifiedAt(v time.Time) *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetNotificationEmailVerifiedAt(v)
+	})
+}
+
+// UpdateNotificationEmailVerifiedAt sets the "notification_email_verified_at" field to the value that was provided on create.
+func (u *APIKeyUpsertBulk) UpdateNotificationEmailVerifiedAt() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateNotificationEmailVerifiedAt()
+	})
+}
+
+// ClearNotificationEmailVerifiedAt clears the value of the "notification_email_verified_at" field.
+func (u *APIKeyUpsertBulk) ClearNotificationEmailVerifiedAt() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.ClearNotificationEmailVerifiedAt()
+	})
+}
+
+// SetChangeNotifyEnabled sets the "change_notify_enabled" field.
+func (u *APIKeyUpsertBulk) SetChangeNotifyEnabled(v bool) *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetChangeNotifyEnabled(v)
+	})
+}
+
+// UpdateChangeNotifyEnabled sets the "change_notify_enabled" field to the value that was provided on create.
+func (u *APIKeyUpsertBulk) UpdateChangeNotifyEnabled() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateChangeNotifyEnabled()
+	})
+}
+
+// SetRotateOnExpiry sets the "rotate_on_expiry" field.
+func (u *APIKeyUpsertBulk) SetRotateOnExpiry(v bool) *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetRotateOnExpiry(v)
+	})
+}
+
+// UpdateRotateOnExpiry sets the "rotate_on_expiry" field to the value that was provided on create.
+func (u *APIKeyUpsertBulk) UpdateRotateOnExpiry() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateRotateOnExpiry()
+	})
+}
+
+// SetValidityDurationSeconds sets the "validity_duration_seconds" field.
+func (u *APIKeyUpsertBulk) SetValidityDurationSeconds(v int64) *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetValidityDurationSeconds(v)
+	})
+}
+
+// AddValidityDurationSeconds adds v to the "validity_duration_seconds" field.
+func (u *APIKeyUpsertBulk) AddValidityDurationSeconds(v int64) *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.AddValidityDurationSeconds(v)
+	})
+}
+
+// UpdateValidityDurationSeconds sets the "validity_duration_seconds" field to the value that was provided on create.
+func (u *APIKeyUpsertBulk) UpdateValidityDurationSeconds() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateValidityDurationSeconds()
+	})
+}
+
+// ClearValidityDurationSeconds clears the value of the "validity_duration_seconds" field.
+func (u *APIKeyUpsertBulk) ClearValidityDurationSeconds() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.ClearValidityDurationSeconds()
+	})
+}
+
+// SetLastRotatedAt sets the "last_rotated_at" field.
+func (u *APIKeyUpsertBulk) SetLastRotatedAt(v time.Time) *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetLastRotatedAt(v)
+	})
+}
+
+// UpdateLastRotatedAt sets the "last_rotated_at" field to the value that was provided on create.
+func (u *APIKeyUpsertBulk) UpdateLastRotatedAt() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateLastRotatedAt()
+	})
+}
+
+// ClearLastRotatedAt clears the value of the "last_rotated_at" field.
+func (u *APIKeyUpsertBulk) ClearLastRotatedAt() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.ClearLastRotatedAt()
+	})
+}
+
+// SetRotationVersion sets the "rotation_version" field.
+func (u *APIKeyUpsertBulk) SetRotationVersion(v int64) *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetRotationVersion(v)
+	})
+}
+
+// AddRotationVersion adds v to the "rotation_version" field.
+func (u *APIKeyUpsertBulk) AddRotationVersion(v int64) *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.AddRotationVersion(v)
+	})
+}
+
+// UpdateRotationVersion sets the "rotation_version" field to the value that was provided on create.
+func (u *APIKeyUpsertBulk) UpdateRotationVersion() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateRotationVersion()
 	})
 }
 

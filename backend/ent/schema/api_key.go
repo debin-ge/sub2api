@@ -74,6 +74,34 @@ func (APIKey) Fields() []ent.Field {
 			Optional().
 			Nillable().
 			Comment("Expiration time for this API key (null = never expires)"),
+		field.String("notification_email").
+			MaxLen(320).
+			Optional().
+			Nillable().
+			Comment("Verified recipient for API key change and rotation notifications"),
+		field.Time("notification_email_verified_at").
+			Optional().
+			Nillable().
+			Comment("Verification time for the currently bound notification email"),
+		field.Bool("change_notify_enabled").
+			Default(false).
+			Comment("Whether API key configuration changes should send email"),
+		field.Bool("rotate_on_expiry").
+			Default(false).
+			Comment("Whether the credential should rotate after expiry"),
+		field.Int64("validity_duration_seconds").
+			Positive().
+			Optional().
+			Nillable().
+			Comment("Validity duration reused after automatic rotation"),
+		field.Time("last_rotated_at").
+			Optional().
+			Nillable().
+			Comment("Most recent automatic rotation time"),
+		field.Int64("rotation_version").
+			Default(0).
+			NonNegative().
+			Comment("Monotonic automatic rotation version"),
 
 		// ========== Rate limit fields ==========
 		// Rate limit configuration (0 = unlimited)

@@ -252,6 +252,142 @@ func (_u *APIKeyUpdate) ClearExpiresAt() *APIKeyUpdate {
 	return _u
 }
 
+// SetNotificationEmail sets the "notification_email" field.
+func (_u *APIKeyUpdate) SetNotificationEmail(v string) *APIKeyUpdate {
+	_u.mutation.SetNotificationEmail(v)
+	return _u
+}
+
+// SetNillableNotificationEmail sets the "notification_email" field if the given value is not nil.
+func (_u *APIKeyUpdate) SetNillableNotificationEmail(v *string) *APIKeyUpdate {
+	if v != nil {
+		_u.SetNotificationEmail(*v)
+	}
+	return _u
+}
+
+// ClearNotificationEmail clears the value of the "notification_email" field.
+func (_u *APIKeyUpdate) ClearNotificationEmail() *APIKeyUpdate {
+	_u.mutation.ClearNotificationEmail()
+	return _u
+}
+
+// SetNotificationEmailVerifiedAt sets the "notification_email_verified_at" field.
+func (_u *APIKeyUpdate) SetNotificationEmailVerifiedAt(v time.Time) *APIKeyUpdate {
+	_u.mutation.SetNotificationEmailVerifiedAt(v)
+	return _u
+}
+
+// SetNillableNotificationEmailVerifiedAt sets the "notification_email_verified_at" field if the given value is not nil.
+func (_u *APIKeyUpdate) SetNillableNotificationEmailVerifiedAt(v *time.Time) *APIKeyUpdate {
+	if v != nil {
+		_u.SetNotificationEmailVerifiedAt(*v)
+	}
+	return _u
+}
+
+// ClearNotificationEmailVerifiedAt clears the value of the "notification_email_verified_at" field.
+func (_u *APIKeyUpdate) ClearNotificationEmailVerifiedAt() *APIKeyUpdate {
+	_u.mutation.ClearNotificationEmailVerifiedAt()
+	return _u
+}
+
+// SetChangeNotifyEnabled sets the "change_notify_enabled" field.
+func (_u *APIKeyUpdate) SetChangeNotifyEnabled(v bool) *APIKeyUpdate {
+	_u.mutation.SetChangeNotifyEnabled(v)
+	return _u
+}
+
+// SetNillableChangeNotifyEnabled sets the "change_notify_enabled" field if the given value is not nil.
+func (_u *APIKeyUpdate) SetNillableChangeNotifyEnabled(v *bool) *APIKeyUpdate {
+	if v != nil {
+		_u.SetChangeNotifyEnabled(*v)
+	}
+	return _u
+}
+
+// SetRotateOnExpiry sets the "rotate_on_expiry" field.
+func (_u *APIKeyUpdate) SetRotateOnExpiry(v bool) *APIKeyUpdate {
+	_u.mutation.SetRotateOnExpiry(v)
+	return _u
+}
+
+// SetNillableRotateOnExpiry sets the "rotate_on_expiry" field if the given value is not nil.
+func (_u *APIKeyUpdate) SetNillableRotateOnExpiry(v *bool) *APIKeyUpdate {
+	if v != nil {
+		_u.SetRotateOnExpiry(*v)
+	}
+	return _u
+}
+
+// SetValidityDurationSeconds sets the "validity_duration_seconds" field.
+func (_u *APIKeyUpdate) SetValidityDurationSeconds(v int64) *APIKeyUpdate {
+	_u.mutation.ResetValidityDurationSeconds()
+	_u.mutation.SetValidityDurationSeconds(v)
+	return _u
+}
+
+// SetNillableValidityDurationSeconds sets the "validity_duration_seconds" field if the given value is not nil.
+func (_u *APIKeyUpdate) SetNillableValidityDurationSeconds(v *int64) *APIKeyUpdate {
+	if v != nil {
+		_u.SetValidityDurationSeconds(*v)
+	}
+	return _u
+}
+
+// AddValidityDurationSeconds adds value to the "validity_duration_seconds" field.
+func (_u *APIKeyUpdate) AddValidityDurationSeconds(v int64) *APIKeyUpdate {
+	_u.mutation.AddValidityDurationSeconds(v)
+	return _u
+}
+
+// ClearValidityDurationSeconds clears the value of the "validity_duration_seconds" field.
+func (_u *APIKeyUpdate) ClearValidityDurationSeconds() *APIKeyUpdate {
+	_u.mutation.ClearValidityDurationSeconds()
+	return _u
+}
+
+// SetLastRotatedAt sets the "last_rotated_at" field.
+func (_u *APIKeyUpdate) SetLastRotatedAt(v time.Time) *APIKeyUpdate {
+	_u.mutation.SetLastRotatedAt(v)
+	return _u
+}
+
+// SetNillableLastRotatedAt sets the "last_rotated_at" field if the given value is not nil.
+func (_u *APIKeyUpdate) SetNillableLastRotatedAt(v *time.Time) *APIKeyUpdate {
+	if v != nil {
+		_u.SetLastRotatedAt(*v)
+	}
+	return _u
+}
+
+// ClearLastRotatedAt clears the value of the "last_rotated_at" field.
+func (_u *APIKeyUpdate) ClearLastRotatedAt() *APIKeyUpdate {
+	_u.mutation.ClearLastRotatedAt()
+	return _u
+}
+
+// SetRotationVersion sets the "rotation_version" field.
+func (_u *APIKeyUpdate) SetRotationVersion(v int64) *APIKeyUpdate {
+	_u.mutation.ResetRotationVersion()
+	_u.mutation.SetRotationVersion(v)
+	return _u
+}
+
+// SetNillableRotationVersion sets the "rotation_version" field if the given value is not nil.
+func (_u *APIKeyUpdate) SetNillableRotationVersion(v *int64) *APIKeyUpdate {
+	if v != nil {
+		_u.SetRotationVersion(*v)
+	}
+	return _u
+}
+
+// AddRotationVersion adds value to the "rotation_version" field.
+func (_u *APIKeyUpdate) AddRotationVersion(v int64) *APIKeyUpdate {
+	_u.mutation.AddRotationVersion(v)
+	return _u
+}
+
 // SetRateLimit5h sets the "rate_limit_5h" field.
 func (_u *APIKeyUpdate) SetRateLimit5h(v float64) *APIKeyUpdate {
 	_u.mutation.ResetRateLimit5h()
@@ -560,6 +696,21 @@ func (_u *APIKeyUpdate) check() error {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "APIKey.status": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.NotificationEmail(); ok {
+		if err := apikey.NotificationEmailValidator(v); err != nil {
+			return &ValidationError{Name: "notification_email", err: fmt.Errorf(`ent: validator failed for field "APIKey.notification_email": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.ValidityDurationSeconds(); ok {
+		if err := apikey.ValidityDurationSecondsValidator(v); err != nil {
+			return &ValidationError{Name: "validity_duration_seconds", err: fmt.Errorf(`ent: validator failed for field "APIKey.validity_duration_seconds": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.RotationVersion(); ok {
+		if err := apikey.RotationVersionValidator(v); err != nil {
+			return &ValidationError{Name: "rotation_version", err: fmt.Errorf(`ent: validator failed for field "APIKey.rotation_version": %w`, err)}
+		}
+	}
 	if _u.mutation.UserCleared() && len(_u.mutation.UserIDs()) > 0 {
 		return errors.New(`ent: clearing a required unique edge "APIKey.user"`)
 	}
@@ -641,6 +792,45 @@ func (_u *APIKeyUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.ExpiresAtCleared() {
 		_spec.ClearField(apikey.FieldExpiresAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.NotificationEmail(); ok {
+		_spec.SetField(apikey.FieldNotificationEmail, field.TypeString, value)
+	}
+	if _u.mutation.NotificationEmailCleared() {
+		_spec.ClearField(apikey.FieldNotificationEmail, field.TypeString)
+	}
+	if value, ok := _u.mutation.NotificationEmailVerifiedAt(); ok {
+		_spec.SetField(apikey.FieldNotificationEmailVerifiedAt, field.TypeTime, value)
+	}
+	if _u.mutation.NotificationEmailVerifiedAtCleared() {
+		_spec.ClearField(apikey.FieldNotificationEmailVerifiedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.ChangeNotifyEnabled(); ok {
+		_spec.SetField(apikey.FieldChangeNotifyEnabled, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.RotateOnExpiry(); ok {
+		_spec.SetField(apikey.FieldRotateOnExpiry, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.ValidityDurationSeconds(); ok {
+		_spec.SetField(apikey.FieldValidityDurationSeconds, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedValidityDurationSeconds(); ok {
+		_spec.AddField(apikey.FieldValidityDurationSeconds, field.TypeInt64, value)
+	}
+	if _u.mutation.ValidityDurationSecondsCleared() {
+		_spec.ClearField(apikey.FieldValidityDurationSeconds, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.LastRotatedAt(); ok {
+		_spec.SetField(apikey.FieldLastRotatedAt, field.TypeTime, value)
+	}
+	if _u.mutation.LastRotatedAtCleared() {
+		_spec.ClearField(apikey.FieldLastRotatedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.RotationVersion(); ok {
+		_spec.SetField(apikey.FieldRotationVersion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedRotationVersion(); ok {
+		_spec.AddField(apikey.FieldRotationVersion, field.TypeInt64, value)
 	}
 	if value, ok := _u.mutation.RateLimit5h(); ok {
 		_spec.SetField(apikey.FieldRateLimit5h, field.TypeFloat64, value)
@@ -1039,6 +1229,142 @@ func (_u *APIKeyUpdateOne) ClearExpiresAt() *APIKeyUpdateOne {
 	return _u
 }
 
+// SetNotificationEmail sets the "notification_email" field.
+func (_u *APIKeyUpdateOne) SetNotificationEmail(v string) *APIKeyUpdateOne {
+	_u.mutation.SetNotificationEmail(v)
+	return _u
+}
+
+// SetNillableNotificationEmail sets the "notification_email" field if the given value is not nil.
+func (_u *APIKeyUpdateOne) SetNillableNotificationEmail(v *string) *APIKeyUpdateOne {
+	if v != nil {
+		_u.SetNotificationEmail(*v)
+	}
+	return _u
+}
+
+// ClearNotificationEmail clears the value of the "notification_email" field.
+func (_u *APIKeyUpdateOne) ClearNotificationEmail() *APIKeyUpdateOne {
+	_u.mutation.ClearNotificationEmail()
+	return _u
+}
+
+// SetNotificationEmailVerifiedAt sets the "notification_email_verified_at" field.
+func (_u *APIKeyUpdateOne) SetNotificationEmailVerifiedAt(v time.Time) *APIKeyUpdateOne {
+	_u.mutation.SetNotificationEmailVerifiedAt(v)
+	return _u
+}
+
+// SetNillableNotificationEmailVerifiedAt sets the "notification_email_verified_at" field if the given value is not nil.
+func (_u *APIKeyUpdateOne) SetNillableNotificationEmailVerifiedAt(v *time.Time) *APIKeyUpdateOne {
+	if v != nil {
+		_u.SetNotificationEmailVerifiedAt(*v)
+	}
+	return _u
+}
+
+// ClearNotificationEmailVerifiedAt clears the value of the "notification_email_verified_at" field.
+func (_u *APIKeyUpdateOne) ClearNotificationEmailVerifiedAt() *APIKeyUpdateOne {
+	_u.mutation.ClearNotificationEmailVerifiedAt()
+	return _u
+}
+
+// SetChangeNotifyEnabled sets the "change_notify_enabled" field.
+func (_u *APIKeyUpdateOne) SetChangeNotifyEnabled(v bool) *APIKeyUpdateOne {
+	_u.mutation.SetChangeNotifyEnabled(v)
+	return _u
+}
+
+// SetNillableChangeNotifyEnabled sets the "change_notify_enabled" field if the given value is not nil.
+func (_u *APIKeyUpdateOne) SetNillableChangeNotifyEnabled(v *bool) *APIKeyUpdateOne {
+	if v != nil {
+		_u.SetChangeNotifyEnabled(*v)
+	}
+	return _u
+}
+
+// SetRotateOnExpiry sets the "rotate_on_expiry" field.
+func (_u *APIKeyUpdateOne) SetRotateOnExpiry(v bool) *APIKeyUpdateOne {
+	_u.mutation.SetRotateOnExpiry(v)
+	return _u
+}
+
+// SetNillableRotateOnExpiry sets the "rotate_on_expiry" field if the given value is not nil.
+func (_u *APIKeyUpdateOne) SetNillableRotateOnExpiry(v *bool) *APIKeyUpdateOne {
+	if v != nil {
+		_u.SetRotateOnExpiry(*v)
+	}
+	return _u
+}
+
+// SetValidityDurationSeconds sets the "validity_duration_seconds" field.
+func (_u *APIKeyUpdateOne) SetValidityDurationSeconds(v int64) *APIKeyUpdateOne {
+	_u.mutation.ResetValidityDurationSeconds()
+	_u.mutation.SetValidityDurationSeconds(v)
+	return _u
+}
+
+// SetNillableValidityDurationSeconds sets the "validity_duration_seconds" field if the given value is not nil.
+func (_u *APIKeyUpdateOne) SetNillableValidityDurationSeconds(v *int64) *APIKeyUpdateOne {
+	if v != nil {
+		_u.SetValidityDurationSeconds(*v)
+	}
+	return _u
+}
+
+// AddValidityDurationSeconds adds value to the "validity_duration_seconds" field.
+func (_u *APIKeyUpdateOne) AddValidityDurationSeconds(v int64) *APIKeyUpdateOne {
+	_u.mutation.AddValidityDurationSeconds(v)
+	return _u
+}
+
+// ClearValidityDurationSeconds clears the value of the "validity_duration_seconds" field.
+func (_u *APIKeyUpdateOne) ClearValidityDurationSeconds() *APIKeyUpdateOne {
+	_u.mutation.ClearValidityDurationSeconds()
+	return _u
+}
+
+// SetLastRotatedAt sets the "last_rotated_at" field.
+func (_u *APIKeyUpdateOne) SetLastRotatedAt(v time.Time) *APIKeyUpdateOne {
+	_u.mutation.SetLastRotatedAt(v)
+	return _u
+}
+
+// SetNillableLastRotatedAt sets the "last_rotated_at" field if the given value is not nil.
+func (_u *APIKeyUpdateOne) SetNillableLastRotatedAt(v *time.Time) *APIKeyUpdateOne {
+	if v != nil {
+		_u.SetLastRotatedAt(*v)
+	}
+	return _u
+}
+
+// ClearLastRotatedAt clears the value of the "last_rotated_at" field.
+func (_u *APIKeyUpdateOne) ClearLastRotatedAt() *APIKeyUpdateOne {
+	_u.mutation.ClearLastRotatedAt()
+	return _u
+}
+
+// SetRotationVersion sets the "rotation_version" field.
+func (_u *APIKeyUpdateOne) SetRotationVersion(v int64) *APIKeyUpdateOne {
+	_u.mutation.ResetRotationVersion()
+	_u.mutation.SetRotationVersion(v)
+	return _u
+}
+
+// SetNillableRotationVersion sets the "rotation_version" field if the given value is not nil.
+func (_u *APIKeyUpdateOne) SetNillableRotationVersion(v *int64) *APIKeyUpdateOne {
+	if v != nil {
+		_u.SetRotationVersion(*v)
+	}
+	return _u
+}
+
+// AddRotationVersion adds value to the "rotation_version" field.
+func (_u *APIKeyUpdateOne) AddRotationVersion(v int64) *APIKeyUpdateOne {
+	_u.mutation.AddRotationVersion(v)
+	return _u
+}
+
 // SetRateLimit5h sets the "rate_limit_5h" field.
 func (_u *APIKeyUpdateOne) SetRateLimit5h(v float64) *APIKeyUpdateOne {
 	_u.mutation.ResetRateLimit5h()
@@ -1360,6 +1686,21 @@ func (_u *APIKeyUpdateOne) check() error {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "APIKey.status": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.NotificationEmail(); ok {
+		if err := apikey.NotificationEmailValidator(v); err != nil {
+			return &ValidationError{Name: "notification_email", err: fmt.Errorf(`ent: validator failed for field "APIKey.notification_email": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.ValidityDurationSeconds(); ok {
+		if err := apikey.ValidityDurationSecondsValidator(v); err != nil {
+			return &ValidationError{Name: "validity_duration_seconds", err: fmt.Errorf(`ent: validator failed for field "APIKey.validity_duration_seconds": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.RotationVersion(); ok {
+		if err := apikey.RotationVersionValidator(v); err != nil {
+			return &ValidationError{Name: "rotation_version", err: fmt.Errorf(`ent: validator failed for field "APIKey.rotation_version": %w`, err)}
+		}
+	}
 	if _u.mutation.UserCleared() && len(_u.mutation.UserIDs()) > 0 {
 		return errors.New(`ent: clearing a required unique edge "APIKey.user"`)
 	}
@@ -1458,6 +1799,45 @@ func (_u *APIKeyUpdateOne) sqlSave(ctx context.Context) (_node *APIKey, err erro
 	}
 	if _u.mutation.ExpiresAtCleared() {
 		_spec.ClearField(apikey.FieldExpiresAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.NotificationEmail(); ok {
+		_spec.SetField(apikey.FieldNotificationEmail, field.TypeString, value)
+	}
+	if _u.mutation.NotificationEmailCleared() {
+		_spec.ClearField(apikey.FieldNotificationEmail, field.TypeString)
+	}
+	if value, ok := _u.mutation.NotificationEmailVerifiedAt(); ok {
+		_spec.SetField(apikey.FieldNotificationEmailVerifiedAt, field.TypeTime, value)
+	}
+	if _u.mutation.NotificationEmailVerifiedAtCleared() {
+		_spec.ClearField(apikey.FieldNotificationEmailVerifiedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.ChangeNotifyEnabled(); ok {
+		_spec.SetField(apikey.FieldChangeNotifyEnabled, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.RotateOnExpiry(); ok {
+		_spec.SetField(apikey.FieldRotateOnExpiry, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.ValidityDurationSeconds(); ok {
+		_spec.SetField(apikey.FieldValidityDurationSeconds, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedValidityDurationSeconds(); ok {
+		_spec.AddField(apikey.FieldValidityDurationSeconds, field.TypeInt64, value)
+	}
+	if _u.mutation.ValidityDurationSecondsCleared() {
+		_spec.ClearField(apikey.FieldValidityDurationSeconds, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.LastRotatedAt(); ok {
+		_spec.SetField(apikey.FieldLastRotatedAt, field.TypeTime, value)
+	}
+	if _u.mutation.LastRotatedAtCleared() {
+		_spec.ClearField(apikey.FieldLastRotatedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.RotationVersion(); ok {
+		_spec.SetField(apikey.FieldRotationVersion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedRotationVersion(); ok {
+		_spec.AddField(apikey.FieldRotationVersion, field.TypeInt64, value)
 	}
 	if value, ok := _u.mutation.RateLimit5h(); ok {
 		_spec.SetField(apikey.FieldRateLimit5h, field.TypeFloat64, value)

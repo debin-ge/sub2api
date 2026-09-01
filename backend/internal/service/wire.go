@@ -539,6 +539,18 @@ func ProvideSubscriptionExpiryService(userSubRepo UserSubscriptionRepository, se
 	return svc
 }
 
+func ProvideAPIKeyRotationService(repo APIKeyRotationRepository, apiKeyService *APIKeyService, emailService *EmailService, lockCache LeaderLockCache, db *sql.DB) *APIKeyRotationService {
+	svc := NewAPIKeyRotationService(repo, apiKeyService, emailService, lockCache, db)
+	svc.Start()
+	return svc
+}
+
+func ProvideNotificationEmailOutboxWorker(repo NotificationEmailOutboxRepository, apiKeyRepo APIKeyRepository, emailService *NotificationEmailService) *NotificationEmailOutboxWorker {
+	worker := NewNotificationEmailOutboxWorker(repo, apiKeyRepo, emailService)
+	worker.Start()
+	return worker
+}
+
 // ProvideTimingWheelService creates and starts TimingWheelService
 func ProvideTimingWheelService() (*TimingWheelService, error) {
 	svc, err := NewTimingWheelService()
@@ -842,6 +854,8 @@ func ProvideOpsService(
 	settingService *SettingService,
 	authCacheInvalidationWorker *AuthCacheInvalidationWorker,
 	apiKeyService *APIKeyService,
+	notificationEmailWorker *NotificationEmailOutboxWorker,
+	apiKeyRotationService *APIKeyRotationService,
 ) *OpsService {
 	svc := NewOpsService(
 		opsRepo,
@@ -864,6 +878,8 @@ func ProvideOpsService(
 	}
 	svc.authCacheInvalidationWorker = authCacheInvalidationWorker
 	svc.apiKeyService = apiKeyService
+	svc.notificationEmailWorker = notificationEmailWorker
+	svc.apiKeyRotationService = apiKeyRotationService
 	svc.StartRuntimeSettingsRefresh(context.Background())
 	return svc
 }
@@ -923,6 +939,7 @@ func ProvideBillingCacheService(
 
 // ProvideAPIKeyService wires APIKeyService and connects rate-limit cache invalidation.
 func ProvideAPIKeyService(
+	entClient *dbent.Client,
 	apiKeyRepo APIKeyRepository,
 	userRepo UserRepository,
 	groupRepo GroupRepository,
@@ -932,10 +949,14 @@ func ProvideAPIKeyService(
 	cfg *config.Config,
 	billingCacheService *BillingCacheService,
 	concurrencyService *ConcurrencyService,
+	emailVerification *APIKeyEmailVerificationService,
+	notificationOutbox NotificationEmailOutboxRepository,
 ) *APIKeyService {
 	svc := NewAPIKeyService(apiKeyRepo, userRepo, groupRepo, userSubRepo, userGroupRateRepo, cache, cfg)
 	svc.SetRateLimitCacheInvalidator(billingCacheService)
 	svc.SetConcurrencyService(concurrencyService)
+	svc.SetEmailVerificationService(emailVerification)
+	svc.SetNotificationDependencies(entClient, notificationOutbox)
 	return svc
 }
 
@@ -1058,6 +1079,7 @@ var ProviderSet = wire.NewSet(
 	ProvideOpsScheduledReportService,
 	NewEmailService,
 	NewNotificationEmailService,
+	NewAPIKeyEmailVerificationService,
 	ProvideEmailQueueService,
 	NewTurnstileService,
 	ProvideDisposableEmailService,
@@ -1079,6 +1101,8 @@ var ProviderSet = wire.NewSet(
 	ProvideOpenAICodexVersionSyncService,
 	ProvideProxyExpiryService,
 	ProvideSubscriptionExpiryService,
+	ProvideAPIKeyRotationService,
+	ProvideNotificationEmailOutboxWorker,
 	ProvideTimingWheelService,
 	ProvideDashboardAggregationService,
 	ProvideUsageCleanupService,

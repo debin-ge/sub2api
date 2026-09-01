@@ -339,6 +339,17 @@
             <span v-else class="text-sm text-gray-400 dark:text-dark-500">{{ t('keys.noExpiration') }}</span>
           </template>
 
+          <template #cell-notification_email="{ value }">
+            <span v-if="value" class="text-sm text-gray-500 dark:text-dark-400">{{ value }}</span>
+            <span v-else class="text-sm text-gray-400 dark:text-dark-500">-</span>
+          </template>
+
+          <template #cell-rotate_on_expiry="{ value }">
+            <span :class="['badge', value ? 'badge-success' : 'badge-gray']">
+              {{ value ? t('common.enabled') : t('common.disabled') }}
+            </span>
+          </template>
+
           <template #cell-status="{ value }">
             <span :class="[
               'badge',
@@ -847,7 +858,7 @@
             <label class="input-label mb-0">{{ t('keys.expiration') }}</label>
             <button
               type="button"
-              @click="formData.enable_expiration = !formData.enable_expiration"
+              @click="toggleExpiration"
               :class="[
                 'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none',
                 formData.enable_expiration ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
@@ -912,6 +923,88 @@
               </span>
             </div>
           </div>
+        </div>
+
+        <!-- Notification Email Section -->
+        <div class="space-y-4 border-t border-gray-200 pt-5 dark:border-dark-600">
+          <div>
+            <label class="input-label">{{ t('keys.notificationEmail') }}</label>
+            <div class="flex flex-col gap-2 sm:flex-row">
+              <input
+                v-model="formData.notification_email"
+                type="email"
+                class="input min-w-0 flex-1"
+                :placeholder="t('keys.notificationEmailPlaceholder')"
+                @input="onNotificationEmailInput"
+              />
+              <button
+                type="button"
+                class="btn btn-secondary shrink-0"
+                :disabled="sendingEmailCode || !normalizedNotificationEmail"
+                @click="sendNotificationEmailCode"
+              >
+                <Icon name="mail" size="sm" class="mr-2" />
+                {{ sendingEmailCode ? t('keys.sendingCode') : t('keys.sendVerificationCode') }}
+              </button>
+            </div>
+            <p v-if="formData.notification_email_verified" class="mt-2 flex items-center gap-1 text-sm text-green-600 dark:text-green-400">
+              <Icon name="check" size="sm" />
+              {{ t('keys.notificationEmailVerified') }}
+            </p>
+          </div>
+
+          <div v-if="normalizedNotificationEmail && !formData.notification_email_verified" class="flex flex-col gap-2 sm:flex-row">
+            <input
+              v-model="formData.notification_email_code"
+              type="text"
+              inputmode="numeric"
+              maxlength="6"
+              class="input min-w-0 flex-1 font-mono"
+              :placeholder="t('keys.verificationCodePlaceholder')"
+            />
+            <button
+              type="button"
+              class="btn btn-secondary shrink-0"
+              :disabled="verifyingEmail || formData.notification_email_code.trim().length !== 6"
+              @click="verifyNotificationEmail"
+            >
+              <Icon name="check" size="sm" class="mr-2" />
+              {{ verifyingEmail ? t('keys.verifyingEmail') : t('keys.verifyEmail') }}
+            </button>
+          </div>
+
+          <div class="flex items-center justify-between gap-4">
+            <label class="input-label mb-0">{{ t('keys.changeNotification') }}</label>
+            <button
+              type="button"
+              :aria-pressed="formData.change_notify_enabled"
+              :class="[
+                'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none',
+                formData.change_notify_enabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+              ]"
+              @click="toggleChangeNotification"
+            >
+              <span :class="['pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition', formData.change_notify_enabled ? 'translate-x-4' : 'translate-x-0']" />
+            </button>
+          </div>
+
+          <div class="flex items-center justify-between gap-4">
+            <label class="input-label mb-0">{{ t('keys.rotateOnExpiry') }}</label>
+            <button
+              type="button"
+              :aria-pressed="formData.rotate_on_expiry"
+              :class="[
+                'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none',
+                formData.rotate_on_expiry ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+              ]"
+              @click="toggleRotation"
+            >
+              <span :class="['pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition', formData.rotate_on_expiry ? 'translate-x-4' : 'translate-x-0']" />
+            </button>
+          </div>
+          <p v-if="formData.use_custom_key && formData.rotate_on_expiry" class="text-sm text-amber-600 dark:text-amber-400">
+            {{ t('keys.customKeyRotationWarning') }}
+          </p>
         </div>
       </form>
       <template #footer>
@@ -1159,7 +1252,7 @@ import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 	import EndpointPopover from '@/components/keys/EndpointPopover.vue'
 	import GroupBadge from '@/components/common/GroupBadge.vue'
 	import GroupOptionItem from '@/components/common/GroupOptionItem.vue'
-	import type { ApiKey, GroupCatalogEntry, PublicSettings, SubscriptionType, GroupPlatform, UpdateApiKeyRequest } from '@/types'
+	import type { ApiKey, CreateApiKeyRequest, GroupCatalogEntry, PublicSettings, SubscriptionType, GroupPlatform, UpdateApiKeyRequest } from '@/types'
 import type { Column } from '@/components/common/types'
 import type { BatchApiKeyUsageStats } from '@/api/usage'
 import { formatDateTime } from '@/utils/format'
@@ -1210,6 +1303,8 @@ const allColumns = computed<Column[]>(() => [
   { key: 'usage', label: t('keys.usage'), sortable: false },
   { key: 'rate_limit', label: t('keys.rateLimitColumn'), sortable: false },
   { key: 'expires_at', label: t('keys.expiresAt'), sortable: true },
+  { key: 'notification_email', label: t('keys.notificationEmail'), sortable: false },
+  { key: 'rotate_on_expiry', label: t('keys.rotateOnExpiryColumn'), sortable: false },
   { key: 'status', label: t('common.status'), sortable: true },
   { key: 'last_used_at', label: t('keys.lastUsedAt'), sortable: true },
   { key: 'last_used_ip', label: t('keys.lastUsedIP'), sortable: false },
@@ -1218,13 +1313,14 @@ const allColumns = computed<Column[]>(() => [
 ])
 
 const ALWAYS_VISIBLE_COLUMNS = new Set(['name', 'actions'])
-const DEFAULT_HIDDEN_COLUMNS = ['id', 'rate_limit', 'last_used_at', 'last_used_ip']
+const DEFAULT_HIDDEN_COLUMNS = ['id', 'rate_limit', 'notification_email', 'rotate_on_expiry', 'last_used_at', 'last_used_ip']
 const HIDDEN_COLUMNS_KEY = 'api-key-hidden-columns'
 const COLUMN_SETTINGS_VERSION_KEY = 'api-key-column-settings-version'
-const COLUMN_SETTINGS_VERSION = 3
+const COLUMN_SETTINGS_VERSION = 4
 const VERSION_NEW_HIDDEN_COLUMNS: Record<number, string[]> = {
   2: ['last_used_ip'],
-  3: ['id']
+  3: ['id'],
+  4: ['notification_email', 'rotate_on_expiry']
 }
 
 const toggleableColumns = computed(() =>
@@ -1299,6 +1395,8 @@ const apiKeys = ref<ApiKey[]>([])
 const groups = ref<GroupCatalogEntry[]>([])
 const loading = ref(false)
 const submitting = ref(false)
+const sendingEmailCode = ref(false)
+const verifyingEmail = ref(false)
 const now = ref(new Date())
 let resetTimer: ReturnType<typeof setInterval> | null = null
 const usageStats = ref<Record<string, BatchApiKeyUsageStats>>({})
@@ -1372,8 +1470,95 @@ const formData = ref({
   rate_limit_7d: null as number | null,
   enable_expiration: false,
   expiration_preset: '30' as '7' | '30' | '90' | 'custom',
-  expiration_date: ''
+  expiration_date: '',
+  notification_email: '',
+  notification_email_verified: false,
+  notification_email_verification_token: '',
+  notification_email_code: '',
+  change_notify_enabled: false,
+  rotate_on_expiry: false
 })
+
+const normalizedNotificationEmail = computed(() => formData.value.notification_email.trim().toLowerCase())
+const hasFutureExpiration = computed(() => {
+  if (!formData.value.enable_expiration || !formData.value.expiration_date) return false
+  return new Date(formData.value.expiration_date).getTime() > Date.now()
+})
+const canEnableEmailFeatures = computed(() =>
+  normalizedNotificationEmail.value.length > 0 && formData.value.notification_email_verified
+)
+const canEnableRotation = computed(() => canEnableEmailFeatures.value && hasFutureExpiration.value)
+
+const onNotificationEmailInput = () => {
+  const original = selectedKey.value?.notification_email?.trim().toLowerCase() || ''
+  formData.value.notification_email_verified = normalizedNotificationEmail.value !== ''
+    && normalizedNotificationEmail.value === original
+    && !!selectedKey.value?.notification_email_verified
+  formData.value.notification_email_verification_token = ''
+  formData.value.notification_email_code = ''
+  if (!normalizedNotificationEmail.value) {
+    formData.value.change_notify_enabled = false
+    formData.value.rotate_on_expiry = false
+  }
+}
+
+const sendNotificationEmailCode = async () => {
+  if (!normalizedNotificationEmail.value) {
+    appStore.showError(t('keys.notificationEmailRequired'))
+    return
+  }
+  sendingEmailCode.value = true
+  try {
+    await keysAPI.sendNotificationEmailCode(normalizedNotificationEmail.value)
+    appStore.showSuccess(t('keys.verificationCodeSent'))
+  } catch (error: unknown) {
+    appStore.showError(extractI18nErrorMessage(error, t, 'keys.emailErrors', t('keys.failedToSendVerificationCode')))
+  } finally {
+    sendingEmailCode.value = false
+  }
+}
+
+const verifyNotificationEmail = async () => {
+  if (!/^\d{6}$/.test(formData.value.notification_email_code.trim())) {
+    appStore.showError(t('keys.verificationCodeInvalid'))
+    return
+  }
+  verifyingEmail.value = true
+  try {
+    const result = await keysAPI.verifyNotificationEmail(normalizedNotificationEmail.value, formData.value.notification_email_code.trim())
+    formData.value.notification_email = result.email
+    formData.value.notification_email_verification_token = result.verification_token
+    formData.value.notification_email_verified = true
+    appStore.showSuccess(t('keys.notificationEmailVerified'))
+  } catch (error: unknown) {
+    appStore.showError(extractI18nErrorMessage(error, t, 'keys.emailErrors', t('keys.failedToVerifyEmail')))
+  } finally {
+    verifyingEmail.value = false
+  }
+}
+
+const toggleChangeNotification = () => {
+  if (!formData.value.change_notify_enabled && !canEnableEmailFeatures.value) {
+    appStore.showError(t('keys.verifyEmailFirst'))
+    return
+  }
+  formData.value.change_notify_enabled = !formData.value.change_notify_enabled
+}
+
+const toggleRotation = () => {
+  if (!formData.value.rotate_on_expiry && !canEnableRotation.value) {
+    appStore.showError(canEnableEmailFeatures.value ? t('keys.rotationRequiresExpiration') : t('keys.verifyEmailFirst'))
+    return
+  }
+  formData.value.rotate_on_expiry = !formData.value.rotate_on_expiry
+}
+
+const toggleExpiration = () => {
+  formData.value.enable_expiration = !formData.value.enable_expiration
+  if (!formData.value.enable_expiration) {
+    formData.value.rotate_on_expiry = false
+  }
+}
 
 // 自定义Key验证
 const customKeyError = computed(() => {
@@ -1609,7 +1794,13 @@ const editKey = (key: ApiKey) => {
     rate_limit_7d: key.rate_limit_7d || null,
     enable_expiration: hasExpiration,
     expiration_preset: 'custom',
-    expiration_date: key.expires_at ? formatDateTimeLocal(key.expires_at) : ''
+    expiration_date: key.expires_at ? formatDateTimeLocal(key.expires_at) : '',
+    notification_email: key.notification_email || '',
+    notification_email_verified: key.notification_email_verified,
+    notification_email_verification_token: '',
+    notification_email_code: '',
+    change_notify_enabled: key.change_notify_enabled,
+    rotate_on_expiry: key.rotate_on_expiry
   }
   showEditModal.value = true
 }
@@ -1716,6 +1907,15 @@ const handleSubmit = async () => {
     return
   }
 
+  if (normalizedNotificationEmail.value && !formData.value.notification_email_verified) {
+    appStore.showError(t('keys.verifyEmailFirst'))
+    return
+  }
+  if (formData.value.rotate_on_expiry && !canEnableRotation.value) {
+    appStore.showError(t('keys.rotationRequiresExpiration'))
+    return
+  }
+
   const selectedGroupOption = groupOptions.value.find(
     (option) => option.value === formData.value.group_id,
   )
@@ -1792,20 +1992,35 @@ const handleSubmit = async () => {
       if (shouldSubmitEditStatus(selectedKey.value, formData.value.status)) {
         updates.status = formData.value.status
       }
+      const originalEmail = selectedKey.value.notification_email?.trim().toLowerCase() || ''
+      if (normalizedNotificationEmail.value !== originalEmail) {
+        updates.notification_email = formData.value.notification_email.trim()
+        if (formData.value.notification_email_verification_token) {
+          updates.notification_email_verification_token = formData.value.notification_email_verification_token
+        }
+      }
+      updates.change_notify_enabled = formData.value.change_notify_enabled
+      updates.rotate_on_expiry = formData.value.rotate_on_expiry
       await keysAPI.update(selectedKey.value.id, updates)
       appStore.showSuccess(t('keys.keyUpdatedSuccess'))
     } else {
-      const customKey = formData.value.use_custom_key ? formData.value.custom_key : undefined
-      await keysAPI.create(
-        formData.value.name,
-        formData.value.group_id,
-        customKey,
-        ipWhitelist,
-        ipBlacklist,
+      const payload: CreateApiKeyRequest = {
+        name: formData.value.name,
+        group_id: formData.value.group_id,
+        ip_whitelist: ipWhitelist,
+        ip_blacklist: ipBlacklist,
         quota,
-        expiresInDays,
-        rateLimitData
-      )
+        expires_in_days: expiresInDays,
+        ...rateLimitData,
+        change_notify_enabled: formData.value.change_notify_enabled,
+        rotate_on_expiry: formData.value.rotate_on_expiry
+      }
+      if (formData.value.use_custom_key) payload.custom_key = formData.value.custom_key
+      if (normalizedNotificationEmail.value) {
+        payload.notification_email = formData.value.notification_email.trim()
+        payload.notification_email_verification_token = formData.value.notification_email_verification_token
+      }
+      await keysAPI.create(payload)
       appStore.showSuccess(t('keys.keyCreatedSuccess'))
       // Only advance tour if active, on submit step, and creation succeeded
       if (onboardingStore.isCurrentStep('[data-tour="key-form-submit"]')) {
@@ -1868,7 +2083,13 @@ const closeModals = () => {
     rate_limit_7d: null,
     enable_expiration: false,
     expiration_preset: '30',
-    expiration_date: ''
+    expiration_date: '',
+    notification_email: '',
+    notification_email_verified: false,
+    notification_email_verification_token: '',
+    notification_email_code: '',
+    change_notify_enabled: false,
+    rotate_on_expiry: false
   }
 }
 

@@ -20,13 +20,15 @@ import (
 
 // APIKeyHandler handles API key-related requests
 type APIKeyHandler struct {
-	apiKeyService *service.APIKeyService
+	apiKeyService     *service.APIKeyService
+	emailVerification *service.APIKeyEmailVerificationService
 }
 
 // NewAPIKeyHandler creates a new APIKeyHandler
-func NewAPIKeyHandler(apiKeyService *service.APIKeyService) *APIKeyHandler {
+func NewAPIKeyHandler(apiKeyService *service.APIKeyService, emailVerification *service.APIKeyEmailVerificationService) *APIKeyHandler {
 	return &APIKeyHandler{
-		apiKeyService: apiKeyService,
+		apiKeyService:     apiKeyService,
+		emailVerification: emailVerification,
 	}
 }
 
@@ -44,6 +46,11 @@ type CreateAPIKeyRequest struct {
 	RateLimit5h *float64 `json:"rate_limit_5h"`
 	RateLimit1d *float64 `json:"rate_limit_1d"`
 	RateLimit7d *float64 `json:"rate_limit_7d"`
+
+	NotificationEmail             *string `json:"notification_email" binding:"omitempty,email"`
+	NotificationEmailVerification string  `json:"notification_email_verification_token"`
+	ChangeNotifyEnabled           bool    `json:"change_notify_enabled"`
+	RotateOnExpiry                bool    `json:"rotate_on_expiry"`
 }
 
 // UpdateAPIKeyRequest represents the update API key request payload
@@ -62,6 +69,20 @@ type UpdateAPIKeyRequest struct {
 	RateLimit1d         *float64 `json:"rate_limit_1d"`
 	RateLimit7d         *float64 `json:"rate_limit_7d"`
 	ResetRateLimitUsage *bool    `json:"reset_rate_limit_usage"` // 重置限速用量
+
+	NotificationEmail             *string `json:"notification_email"`
+	NotificationEmailVerification string  `json:"notification_email_verification_token"`
+	ChangeNotifyEnabled           *bool   `json:"change_notify_enabled"`
+	RotateOnExpiry                *bool   `json:"rotate_on_expiry"`
+}
+
+type apiKeyEmailCodeRequest struct {
+	Email string `json:"email" binding:"required,email"`
+}
+
+type apiKeyEmailVerifyRequest struct {
+	Email string `json:"email" binding:"required,email"`
+	Code  string `json:"code" binding:"required,len=6"`
 }
 
 func validAPIKeyLimit(v float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0) && v >= 0 }
@@ -197,12 +218,16 @@ func (h *APIKeyHandler) Create(c *gin.Context) {
 	}
 
 	svcReq := service.CreateAPIKeyRequest{
-		Name:          req.Name,
-		GroupID:       req.GroupID,
-		CustomKey:     req.CustomKey,
-		IPWhitelist:   req.IPWhitelist,
-		IPBlacklist:   req.IPBlacklist,
-		ExpiresInDays: req.ExpiresInDays,
+		Name:                          req.Name,
+		GroupID:                       req.GroupID,
+		CustomKey:                     req.CustomKey,
+		IPWhitelist:                   req.IPWhitelist,
+		IPBlacklist:                   req.IPBlacklist,
+		ExpiresInDays:                 req.ExpiresInDays,
+		NotificationEmail:             req.NotificationEmail,
+		NotificationEmailVerification: req.NotificationEmailVerification,
+		ChangeNotifyEnabled:           req.ChangeNotifyEnabled,
+		RotateOnExpiry:                req.RotateOnExpiry,
 	}
 	if req.Quota != nil {
 		svcReq.Quota = *req.Quota
@@ -252,14 +277,18 @@ func (h *APIKeyHandler) Update(c *gin.Context) {
 	}
 
 	svcReq := service.UpdateAPIKeyRequest{
-		IPWhitelist:         req.IPWhitelist,
-		IPBlacklist:         req.IPBlacklist,
-		Quota:               req.Quota,
-		ResetQuota:          req.ResetQuota,
-		RateLimit5h:         req.RateLimit5h,
-		RateLimit1d:         req.RateLimit1d,
-		RateLimit7d:         req.RateLimit7d,
-		ResetRateLimitUsage: req.ResetRateLimitUsage,
+		IPWhitelist:                   req.IPWhitelist,
+		IPBlacklist:                   req.IPBlacklist,
+		Quota:                         req.Quota,
+		ResetQuota:                    req.ResetQuota,
+		RateLimit5h:                   req.RateLimit5h,
+		RateLimit1d:                   req.RateLimit1d,
+		RateLimit7d:                   req.RateLimit7d,
+		ResetRateLimitUsage:           req.ResetRateLimitUsage,
+		NotificationEmail:             req.NotificationEmail,
+		NotificationEmailVerification: req.NotificationEmailVerification,
+		ChangeNotifyEnabled:           req.ChangeNotifyEnabled,
+		RotateOnExpiry:                req.RotateOnExpiry,
 	}
 	if req.Name != "" {
 		svcReq.Name = &req.Name
@@ -291,6 +320,51 @@ func (h *APIKeyHandler) Update(c *gin.Context) {
 	}
 
 	response.Success(c, dto.APIKeyFromService(key))
+}
+
+func (h *APIKeyHandler) SendNotificationEmailCode(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	if h.emailVerification == nil {
+		response.InternalError(c, "Email verification service not configured")
+		return
+	}
+	var req apiKeyEmailCodeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	if err := h.emailVerification.SendCode(c.Request.Context(), subject.UserID, req.Email, c.GetHeader("Accept-Language")); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "Verification code sent successfully"})
+}
+
+func (h *APIKeyHandler) VerifyNotificationEmail(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	if h.emailVerification == nil {
+		response.InternalError(c, "Email verification service not configured")
+		return
+	}
+	var req apiKeyEmailVerifyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	result, err := h.emailVerification.VerifyCode(c.Request.Context(), subject.UserID, req.Email, req.Code)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, result)
 }
 
 // Delete handles deleting an API key

@@ -43,6 +43,20 @@ const (
 	FieldQuotaUsed = "quota_used"
 	// FieldExpiresAt holds the string denoting the expires_at field in the database.
 	FieldExpiresAt = "expires_at"
+	// FieldNotificationEmail holds the string denoting the notification_email field in the database.
+	FieldNotificationEmail = "notification_email"
+	// FieldNotificationEmailVerifiedAt holds the string denoting the notification_email_verified_at field in the database.
+	FieldNotificationEmailVerifiedAt = "notification_email_verified_at"
+	// FieldChangeNotifyEnabled holds the string denoting the change_notify_enabled field in the database.
+	FieldChangeNotifyEnabled = "change_notify_enabled"
+	// FieldRotateOnExpiry holds the string denoting the rotate_on_expiry field in the database.
+	FieldRotateOnExpiry = "rotate_on_expiry"
+	// FieldValidityDurationSeconds holds the string denoting the validity_duration_seconds field in the database.
+	FieldValidityDurationSeconds = "validity_duration_seconds"
+	// FieldLastRotatedAt holds the string denoting the last_rotated_at field in the database.
+	FieldLastRotatedAt = "last_rotated_at"
+	// FieldRotationVersion holds the string denoting the rotation_version field in the database.
+	FieldRotationVersion = "rotation_version"
 	// FieldRateLimit5h holds the string denoting the rate_limit_5h field in the database.
 	FieldRateLimit5h = "rate_limit_5h"
 	// FieldRateLimit1d holds the string denoting the rate_limit_1d field in the database.
@@ -109,6 +123,13 @@ var Columns = []string{
 	FieldQuota,
 	FieldQuotaUsed,
 	FieldExpiresAt,
+	FieldNotificationEmail,
+	FieldNotificationEmailVerifiedAt,
+	FieldChangeNotifyEnabled,
+	FieldRotateOnExpiry,
+	FieldValidityDurationSeconds,
+	FieldLastRotatedAt,
+	FieldRotationVersion,
 	FieldRateLimit5h,
 	FieldRateLimit1d,
 	FieldRateLimit7d,
@@ -156,6 +177,18 @@ var (
 	DefaultQuota float64
 	// DefaultQuotaUsed holds the default value on creation for the "quota_used" field.
 	DefaultQuotaUsed float64
+	// NotificationEmailValidator is a validator for the "notification_email" field. It is called by the builders before save.
+	NotificationEmailValidator func(string) error
+	// DefaultChangeNotifyEnabled holds the default value on creation for the "change_notify_enabled" field.
+	DefaultChangeNotifyEnabled bool
+	// DefaultRotateOnExpiry holds the default value on creation for the "rotate_on_expiry" field.
+	DefaultRotateOnExpiry bool
+	// ValidityDurationSecondsValidator is a validator for the "validity_duration_seconds" field. It is called by the builders before save.
+	ValidityDurationSecondsValidator func(int64) error
+	// DefaultRotationVersion holds the default value on creation for the "rotation_version" field.
+	DefaultRotationVersion int64
+	// RotationVersionValidator is a validator for the "rotation_version" field. It is called by the builders before save.
+	RotationVersionValidator func(int64) error
 	// DefaultRateLimit5h holds the default value on creation for the "rate_limit_5h" field.
 	DefaultRateLimit5h float64
 	// DefaultRateLimit1d holds the default value on creation for the "rate_limit_1d" field.
@@ -236,6 +269,41 @@ func ByQuotaUsed(opts ...sql.OrderTermOption) OrderOption {
 // ByExpiresAt orders the results by the expires_at field.
 func ByExpiresAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldExpiresAt, opts...).ToFunc()
+}
+
+// ByNotificationEmail orders the results by the notification_email field.
+func ByNotificationEmail(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldNotificationEmail, opts...).ToFunc()
+}
+
+// ByNotificationEmailVerifiedAt orders the results by the notification_email_verified_at field.
+func ByNotificationEmailVerifiedAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldNotificationEmailVerifiedAt, opts...).ToFunc()
+}
+
+// ByChangeNotifyEnabled orders the results by the change_notify_enabled field.
+func ByChangeNotifyEnabled(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldChangeNotifyEnabled, opts...).ToFunc()
+}
+
+// ByRotateOnExpiry orders the results by the rotate_on_expiry field.
+func ByRotateOnExpiry(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRotateOnExpiry, opts...).ToFunc()
+}
+
+// ByValidityDurationSeconds orders the results by the validity_duration_seconds field.
+func ByValidityDurationSeconds(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldValidityDurationSeconds, opts...).ToFunc()
+}
+
+// ByLastRotatedAt orders the results by the last_rotated_at field.
+func ByLastRotatedAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldLastRotatedAt, opts...).ToFunc()
+}
+
+// ByRotationVersion orders the results by the rotation_version field.
+func ByRotationVersion(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRotationVersion, opts...).ToFunc()
 }
 
 // ByRateLimit5h orders the results by the rate_limit_5h field.

@@ -18,6 +18,8 @@ const {
   nextStep,
   createKey,
   updateKey,
+  sendNotificationEmailCode,
+  verifyNotificationEmail,
 } = vi.hoisted(() => ({
   listKeys: vi.fn(),
   getPublicSettings: vi.fn(),
@@ -31,6 +33,8 @@ const {
   nextStep: vi.fn(),
   createKey: vi.fn(),
   updateKey: vi.fn(),
+  sendNotificationEmailCode: vi.fn(),
+  verifyNotificationEmail: vi.fn(),
 }))
 
 const messages: Record<string, string> = {
@@ -51,6 +55,13 @@ const messages: Record<string, string> = {
   'keys.lastUsedAt': 'Last Used',
   'keys.lastUsedIP': 'Last Used IP',
   'keys.rateLimitColumn': 'Rate Limit',
+  'keys.notificationEmail': 'Notification Email',
+  'keys.rotateOnExpiryColumn': 'Expiry Rotation',
+  'keys.sendVerificationCode': 'Send Code',
+  'keys.verifyEmail': 'Verify Email',
+  'keys.notificationEmailVerified': 'Email verified',
+  'keys.changeNotification': 'Change Notifications',
+  'keys.rotateOnExpiry': 'Rotate After Expiry',
   'keys.searchPlaceholder': 'Search name or key...',
   'keys.status.active': 'Active',
   'keys.status.expired': 'Expired',
@@ -68,6 +79,8 @@ vi.mock('@/api', () => ({
     update: updateKey,
     delete: vi.fn(),
     toggleStatus: vi.fn(),
+    sendNotificationEmailCode,
+    verifyNotificationEmail,
   },
   authAPI: {
     getPublicSettings,
@@ -125,6 +138,11 @@ const createApiKey = (): ApiKey => ({
   quota: 0,
   quota_used: 0,
   expires_at: null,
+  notification_email: null,
+  notification_email_verified: false,
+  change_notify_enabled: false,
+  rotate_on_expiry: false,
+  last_rotated_at: null,
   created_at: '2026-06-27T00:00:00Z',
   updated_at: '2026-06-27T00:00:00Z',
   current_concurrency: 3,
@@ -290,6 +308,8 @@ describe('user KeysView column settings', () => {
     nextStep.mockReset()
     createKey.mockReset()
     updateKey.mockReset()
+    sendNotificationEmailCode.mockReset()
+    verifyNotificationEmail.mockReset()
 
     listKeys.mockResolvedValue({
       items: [createApiKey()],
@@ -334,9 +354,9 @@ describe('user KeysView column settings', () => {
 
     expect(visibleColumnKeys(wrapper)).toContain('rate_limit')
     expect(localStorage.getItem('api-key-hidden-columns')).toBe(
-      JSON.stringify(['id', 'last_used_at', 'last_used_ip'])
+      JSON.stringify(['id', 'notification_email', 'rotate_on_expiry', 'last_used_at', 'last_used_ip'])
     )
-    expect(localStorage.getItem('api-key-column-settings-version')).toBe('3')
+    expect(localStorage.getItem('api-key-column-settings-version')).toBe('4')
   })
 
   it('shows the API key ID column when toggled', async () => {
@@ -387,9 +407,9 @@ describe('user KeysView column settings', () => {
       'actions',
     ])
     expect(localStorage.getItem('api-key-hidden-columns')).toBe(
-      JSON.stringify(['group', 'created_at', 'last_used_ip', 'id'])
+      JSON.stringify(['group', 'created_at', 'last_used_ip', 'id', 'notification_email', 'rotate_on_expiry'])
     )
-    expect(localStorage.getItem('api-key-column-settings-version')).toBe('3')
+    expect(localStorage.getItem('api-key-column-settings-version')).toBe('4')
   })
 
   it('does not include always-visible columns in the toggleable menu', async () => {
@@ -590,6 +610,65 @@ describe('user KeysView column settings', () => {
     expect(updateKey).toHaveBeenCalledTimes(1)
     expect(updateKey.mock.calls[0]![1]).toMatchObject({ name: 'renamed-key' })
     expect(updateKey.mock.calls[0]![1]).not.toHaveProperty('group_id')
+  })
+
+  it('verifies a changed email and submits notification and rotation settings', async () => {
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+    listKeys.mockResolvedValueOnce({
+      items: [{ ...createApiKey(), group_id: 42, expires_at: expiresAt }],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1,
+    })
+    getAvailableGroups.mockResolvedValueOnce([{
+      id: 42,
+      name: 'OpenAI',
+      description: null,
+      platform: 'openai',
+      rate_multiplier: 1,
+      peak_rate_enabled: false,
+      peak_start: '',
+      peak_end: '',
+      peak_rate_multiplier: 1,
+      subscription_type: 'standard',
+      vip_only: false,
+      can_bind: true,
+      deny_reason: null,
+      suggested_action: null,
+    }])
+    sendNotificationEmailCode.mockResolvedValueOnce({ message: 'ok' })
+    verifyNotificationEmail.mockResolvedValueOnce({
+      verification_token: 'verified-token',
+      email: 'owner@example.com',
+      expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+    })
+    updateKey.mockResolvedValueOnce({})
+    const wrapper = await mountView()
+
+    await getButtonByText(wrapper, 'common.edit').trigger('click')
+    await nextTick()
+    await wrapper.get('input[type="email"]').setValue('OWNER@example.com')
+    await getButtonByText(wrapper, 'Send Code').trigger('click')
+    await flushPromises()
+    expect(sendNotificationEmailCode).toHaveBeenCalledWith('owner@example.com')
+
+    await wrapper.get('input[maxlength="6"]').setValue('123456')
+    await getButtonByText(wrapper, 'Verify Email').trigger('click')
+    await flushPromises()
+    const toggles = wrapper.findAll('button[aria-pressed]')
+    expect(toggles).toHaveLength(2)
+    await toggles[0]!.trigger('click')
+    await toggles[1]!.trigger('click')
+    await wrapper.get('#key-form').trigger('submit')
+    await flushPromises()
+
+    expect(updateKey).toHaveBeenCalledWith(1, expect.objectContaining({
+      notification_email: 'owner@example.com',
+      notification_email_verification_token: 'verified-token',
+      change_notify_enabled: true,
+      rotate_on_expiry: true,
+    }))
   })
 
   it('keeps the original quick binding when the backend rejects a raced catalog decision', async () => {

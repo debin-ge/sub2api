@@ -33,6 +33,9 @@ const (
 	NotificationEmailEventCyberPolicyNotice           = "content_moderation.cyber_policy_notice"
 	NotificationEmailEventOpsAlert                    = "ops.alert"
 	NotificationEmailEventOpsScheduledReport          = "ops.scheduled_report"
+	NotificationEmailEventAPIKeyConfigurationChanged  = "api_key.configuration_changed"
+	NotificationEmailEventAPIKeyRotated               = "api_key.rotated"
+	NotificationEmailEventAPIKeyBulkChanged           = "api_key.bulk_changed"
 
 	notificationEmailTemplateKeyPrefix    = "notification_email_template:"
 	notificationEmailPreferenceKeyPrefix  = "notification_email_preference:"
@@ -559,9 +562,11 @@ func (s *NotificationEmailService) runtimeVariables(ctx context.Context, event, 
 	}
 	variables["site_name"] = s.siteName(ctx)
 	variables["recipient_email"] = input.RecipientEmail
-	if strings.TrimSpace(input.RecipientName) != "" {
-		variables["recipient_name"] = input.RecipientName
+	recipientName := strings.TrimSpace(input.RecipientName)
+	if recipientName == "" {
+		recipientName = emailRecipientName(input.RecipientEmail)
 	}
+	variables["recipient_name"] = recipientName
 	if notificationEmailEventDefinitions[event].Optional {
 		if unsubscribeURL, err := s.buildUnsubscribeURL(ctx, input.RecipientEmail, event); err == nil {
 			variables["unsubscribe_url"] = unsubscribeURL
@@ -700,6 +705,9 @@ func validateNotificationEmailTemplate(event, subject, htmlBody string) error {
 	}
 	if len([]byte(htmlBody)) > notificationEmailMaxHTMLLength {
 		return fmt.Errorf("email html cannot exceed %d bytes", notificationEmailMaxHTMLLength)
+	}
+	if event == NotificationEmailEventAPIKeyRotated && !strings.Contains(htmlBody, "{{new_api_key}}") {
+		return errors.New("API key rotation email template must include {{new_api_key}} in the HTML body")
 	}
 	allowed := notificationEmailAllowedPlaceholderSet(event)
 	for _, placeholder := range notificationEmailPlaceholdersIn(subject + "\n" + htmlBody) {
@@ -941,6 +949,17 @@ func notificationEmailSampleVariables(locale string) map[string]string {
 			"report_start_time":   "2026-07-18T01:00:26Z",
 			"report_end_time":     "2026-07-19T01:00:26Z",
 			"report_html":         "<h2>日报</h2><p>请求量：2,374</p>",
+			"api_key_id":          "1024",
+			"api_key_name":        "生产环境",
+			"api_key_masked":      "sk-a...9f2c",
+			"new_api_key":         "sk-preview-api-key-not-a-real-credential",
+			"rotated_at":          "2026-09-01 12:00:00 UTC",
+			"next_expiry_time":    "2026-10-01 12:00:00 UTC",
+			"changed_at":          "2026-09-01 12:00:00 UTC",
+			"changed_by":          "administrator",
+			"change_summary":      "名称：测试 -> 生产",
+			"change_reason":       "分组迁移",
+			"api_keys_summary":    "#1024 生产环境 (sk-a...9f2c)",
 		}
 		addNotificationEmailOpsSummarySampleVariables(variables)
 		return variables
@@ -989,6 +1008,17 @@ func notificationEmailSampleVariables(locale string) map[string]string {
 		"report_start_time":   "2026-07-18T01:00:26Z",
 		"report_end_time":     "2026-07-19T01:00:26Z",
 		"report_html":         "<h2>Daily summary</h2><p>Requests: 2,374</p>",
+		"api_key_id":          "1024",
+		"api_key_name":        "Production",
+		"api_key_masked":      "sk-a...9f2c",
+		"new_api_key":         "sk-preview-api-key-not-a-real-credential",
+		"rotated_at":          "2026-09-01 12:00:00 UTC",
+		"next_expiry_time":    "2026-10-01 12:00:00 UTC",
+		"changed_at":          "2026-09-01 12:00:00 UTC",
+		"changed_by":          "administrator",
+		"change_summary":      "Name: Test -> Production",
+		"change_reason":       "Group migration",
+		"api_keys_summary":    "#1024 Production (sk-a...9f2c)",
 	}
 	addNotificationEmailOpsSummarySampleVariables(variables)
 	return variables
@@ -1032,6 +1062,9 @@ var notificationEmailEventOrder = []string{
 	NotificationEmailEventContentModerationViolation,
 	NotificationEmailEventContentModerationDisabled,
 	NotificationEmailEventCyberPolicyNotice,
+	NotificationEmailEventAPIKeyConfigurationChanged,
+	NotificationEmailEventAPIKeyRotated,
+	NotificationEmailEventAPIKeyBulkChanged,
 	NotificationEmailEventOpsAlert,
 	NotificationEmailEventOpsScheduledReport,
 }
@@ -1128,6 +1161,33 @@ var notificationEmailEventDefinitions = map[string]NotificationEmailEventInfo{
 		Optional:    false,
 		Placeholders: append(append([]string{}, notificationEmailCommonPlaceholders...),
 			"triggered_at", "model", "group_name", "upstream_message"),
+	},
+	NotificationEmailEventAPIKeyConfigurationChanged: {
+		Event:       NotificationEmailEventAPIKeyConfigurationChanged,
+		Label:       "API key configuration changed",
+		Description: "Sent to a verified per-key recipient after user-visible API key configuration changes.",
+		Category:    "api_key",
+		Optional:    false,
+		Placeholders: append(append([]string{}, notificationEmailCommonPlaceholders...),
+			"api_key_id", "api_key_name", "api_key_masked", "changed_at", "changed_by", "change_summary"),
+	},
+	NotificationEmailEventAPIKeyRotated: {
+		Event:       NotificationEmailEventAPIKeyRotated,
+		Label:       "API key rotated",
+		Description: "Sent after an expired API key credential is automatically replaced.",
+		Category:    "api_key",
+		Optional:    false,
+		Placeholders: append(append([]string{}, notificationEmailCommonPlaceholders...),
+			"api_key_id", "api_key_name", "new_api_key", "rotated_at", "next_expiry_time"),
+	},
+	NotificationEmailEventAPIKeyBulkChanged: {
+		Event:       NotificationEmailEventAPIKeyBulkChanged,
+		Label:       "API keys changed in bulk",
+		Description: "Aggregated notification for API keys changed by one administrator batch operation.",
+		Category:    "api_key",
+		Optional:    false,
+		Placeholders: append(append([]string{}, notificationEmailCommonPlaceholders...),
+			"changed_at", "changed_by", "change_reason", "api_keys_summary"),
 	},
 	NotificationEmailEventOpsAlert: {
 		Event:       NotificationEmailEventOpsAlert,
@@ -1402,6 +1462,62 @@ var notificationEmailOfficialTemplates = map[string]map[string]notificationEmail
   <tr><td style="width:128px;vertical-align:top;">上游说明</td><td style="overflow-wrap:anywhere;word-break:break-all;white-space:pre-wrap;">{{upstream_message}}</td></tr>
 </table>
 <p>如认为系误判，可调整请求措辞后重试，或申请获得授权的安全访问权限。</p>`),
+		},
+	},
+	NotificationEmailEventAPIKeyConfigurationChanged: {
+		notificationEmailDefaultLocale: {
+			Subject: "[{{site_name}}] API key configuration changed",
+			HTML: notificationEmailCard("#2563eb", "API key configuration changed", `
+<p>Hello {{recipient_name}},</p>
+<p>The configuration for API key <strong>{{api_key_name}}</strong> (ID {{api_key_id}}, {{api_key_masked}}) was updated.</p>
+<p><strong>Changed at:</strong> {{changed_at}}<br><strong>Changed by:</strong> {{changed_by}}</p>
+<pre style="white-space:pre-wrap;overflow-wrap:anywhere;background:#f8fafc;border:1px solid #e2e8f0;padding:12px;">{{change_summary}}</pre>`),
+		},
+		notificationEmailLocaleChinese: {
+			Subject: "[{{site_name}}] API 密钥配置已变更",
+			HTML: notificationEmailCard("#2563eb", "API 密钥配置已变更", `
+<p>{{recipient_name}}，您好：</p>
+<p>API 密钥 <strong>{{api_key_name}}</strong>（ID {{api_key_id}}，{{api_key_masked}}）的配置已更新。</p>
+<p><strong>变更时间：</strong>{{changed_at}}<br><strong>操作来源：</strong>{{changed_by}}</p>
+<pre style="white-space:pre-wrap;overflow-wrap:anywhere;background:#f8fafc;border:1px solid #e2e8f0;padding:12px;">{{change_summary}}</pre>`),
+		},
+	},
+	NotificationEmailEventAPIKeyRotated: {
+		notificationEmailDefaultLocale: {
+			Subject: "[{{site_name}}] API key rotated",
+			HTML: notificationEmailCard("#dc2626", "API key rotated", `
+<p>Hello {{recipient_name}},</p>
+<p>API key <strong>{{api_key_name}}</strong> (ID {{api_key_id}}) expired and was automatically rotated. The previous credential is no longer valid.</p>
+<p><strong>New API key:</strong></p>
+<pre style="white-space:pre-wrap;overflow-wrap:anywhere;background:#f8fafc;border:1px solid #e2e8f0;padding:12px;">{{new_api_key}}</pre>
+<p><strong>Rotated at:</strong> {{rotated_at}}<br><strong>Next expiry:</strong> {{next_expiry_time}}</p>`),
+		},
+		notificationEmailLocaleChinese: {
+			Subject: "[{{site_name}}] API 密钥已自动轮换",
+			HTML: notificationEmailCard("#dc2626", "API 密钥已自动轮换", `
+<p>{{recipient_name}}，您好：</p>
+<p>API 密钥 <strong>{{api_key_name}}</strong>（ID {{api_key_id}}）到期后已自动轮换，旧密钥已失效。</p>
+<p><strong>新 API 密钥：</strong></p>
+<pre style="white-space:pre-wrap;overflow-wrap:anywhere;background:#f8fafc;border:1px solid #e2e8f0;padding:12px;">{{new_api_key}}</pre>
+<p><strong>轮换时间：</strong>{{rotated_at}}<br><strong>下次到期：</strong>{{next_expiry_time}}</p>`),
+		},
+	},
+	NotificationEmailEventAPIKeyBulkChanged: {
+		notificationEmailDefaultLocale: {
+			Subject: "[{{site_name}}] API keys changed by administrator",
+			HTML: notificationEmailCard("#7c3aed", "API keys changed in bulk", `
+<p>Hello {{recipient_name}},</p>
+<p>One administrator operation updated multiple API keys.</p>
+<p><strong>Changed at:</strong> {{changed_at}}<br><strong>Changed by:</strong> {{changed_by}}<br><strong>Reason:</strong> {{change_reason}}</p>
+<pre style="white-space:pre-wrap;overflow-wrap:anywhere;background:#f8fafc;border:1px solid #e2e8f0;padding:12px;">{{api_keys_summary}}</pre>`),
+		},
+		notificationEmailLocaleChinese: {
+			Subject: "[{{site_name}}] 管理员批量变更了 API 密钥",
+			HTML: notificationEmailCard("#7c3aed", "API 密钥批量变更", `
+<p>{{recipient_name}}，您好：</p>
+<p>管理员的一次批量操作更新了多把 API 密钥。</p>
+<p><strong>变更时间：</strong>{{changed_at}}<br><strong>操作来源：</strong>{{changed_by}}<br><strong>变更原因：</strong>{{change_reason}}</p>
+<pre style="white-space:pre-wrap;overflow-wrap:anywhere;background:#f8fafc;border:1px solid #e2e8f0;padding:12px;">{{api_keys_summary}}</pre>`),
 		},
 	},
 	NotificationEmailEventOpsAlert: {

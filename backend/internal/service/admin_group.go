@@ -19,7 +19,12 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 
 	"entgo.io/ent/dialect"
+	"github.com/google/uuid"
 )
+
+type apiKeyGroupNotificationLister interface {
+	ListNotificationKeysByUserAndGroup(ctx context.Context, userID, groupID int64) ([]APIKey, error)
+}
 
 // Group management implementations
 func (s *adminServiceImpl) ListGroups(ctx context.Context, page, pageSize int, platform, status, search string, isExclusive *bool, sortBy, sortOrder string) ([]Group, int64, error) {
@@ -1312,11 +1317,11 @@ func (s *adminServiceImpl) AdminUpdateAPIKeyGroupID(ctx context.Context, keyID i
 		// nil 表示不修改，直接返回
 		return &AdminUpdateAPIKeyGroupIDResult{APIKey: apiKey}, nil
 	}
+	beforeUpdate := cloneAPIKeyForChangeDetection(apiKey)
 
 	if *groupID < 0 {
 		return nil, infraerrors.BadRequest("INVALID_GROUP_ID", "group_id must be non-negative")
 	}
-
 	result := &AdminUpdateAPIKeyGroupIDResult{}
 
 	if *groupID == 0 {
@@ -1373,6 +1378,9 @@ func (s *adminServiceImpl) AdminUpdateAPIKeyGroupID(ctx context.Context, keyID i
 		if err := s.apiKeyRepo.Update(opCtx, apiKey, APIKeyUpdateFields{GroupID: true}); err != nil {
 			return nil, fmt.Errorf("update api key: %w", err)
 		}
+		if err := s.enqueueAdminAPIKeyChange(opCtx, beforeUpdate, apiKey); err != nil {
+			return nil, err
+		}
 		if tx != nil {
 			if err := tx.Commit(); err != nil {
 				return nil, fmt.Errorf("commit transaction: %w", err)
@@ -1387,7 +1395,28 @@ func (s *adminServiceImpl) AdminUpdateAPIKeyGroupID(ctx context.Context, keyID i
 	}
 
 	// Unbinding is permission-reducing and does not need a target-user profile.
-	if err := s.apiKeyRepo.Update(ctx, apiKey, APIKeyUpdateFields{GroupID: true}); err != nil {
+	changeSummary := APIKeyConfigurationChangeSummary(beforeUpdate, apiKey)
+	shouldNotify := apiKey.ChangeNotifyEnabled && apiKey.NotificationEmail != nil && apiKey.NotificationEmailVerifiedAt != nil && changeSummary != ""
+	if shouldNotify {
+		if s.entClient == nil || s.notificationOutbox == nil {
+			return nil, fmt.Errorf("admin API key notification transaction is not configured")
+		}
+		tx, err := s.entClient.Tx(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("begin admin API key update: %w", err)
+		}
+		defer func() { _ = tx.Rollback() }()
+		txCtx := dbent.NewTxContext(ctx, tx)
+		if err := s.apiKeyRepo.Update(txCtx, apiKey, APIKeyUpdateFields{GroupID: true}); err != nil {
+			return nil, fmt.Errorf("update api key: %w", err)
+		}
+		if err := s.notificationOutbox.Enqueue(txCtx, NewAPIKeyConfigurationChangedOutboxInput(apiKey, changeSummary, "administrator")); err != nil {
+			return nil, fmt.Errorf("enqueue admin API key change notification: %w", err)
+		}
+		if err := tx.Commit(); err != nil {
+			return nil, fmt.Errorf("commit admin API key update: %w", err)
+		}
+	} else if err := s.apiKeyRepo.Update(ctx, apiKey, APIKeyUpdateFields{GroupID: true}); err != nil {
 		return nil, fmt.Errorf("update api key: %w", err)
 	}
 
@@ -1398,6 +1427,20 @@ func (s *adminServiceImpl) AdminUpdateAPIKeyGroupID(ctx context.Context, keyID i
 
 	result.APIKey = apiKey
 	return result, nil
+}
+
+func (s *adminServiceImpl) enqueueAdminAPIKeyChange(ctx context.Context, before, after *APIKey) error {
+	summary := APIKeyConfigurationChangeSummary(before, after)
+	if summary == "" || !after.ChangeNotifyEnabled || after.NotificationEmail == nil || after.NotificationEmailVerifiedAt == nil {
+		return nil
+	}
+	if s.notificationOutbox == nil {
+		return fmt.Errorf("admin API key notification outbox is not configured")
+	}
+	if err := s.notificationOutbox.Enqueue(ctx, NewAPIKeyConfigurationChangedOutboxInput(after, summary, "administrator")); err != nil {
+		return fmt.Errorf("enqueue admin API key change notification: %w", err)
+	}
+	return nil
 }
 
 // AdminResetAPIKeyRateLimitUsage resets all API key rate-limit usage windows.
@@ -1465,6 +1508,13 @@ func (s *adminServiceImpl) ReplaceUserGroup(ctx context.Context, userID, oldGrou
 	if err := s.authorizeAdminGroupBinding(opCtx, userID, newGroup, true); err != nil {
 		return nil, err
 	}
+	var notificationKeys []APIKey
+	if lister, ok := s.apiKeyRepo.(apiKeyGroupNotificationLister); ok {
+		notificationKeys, err = lister.ListNotificationKeysByUserAndGroup(opCtx, userID, oldGroupID)
+		if err != nil {
+			return nil, fmt.Errorf("list API keys for bulk notification: %w", err)
+		}
+	}
 
 	// 1. 授予新分组权限
 	if err := s.userRepo.AddGroupToAllowedGroups(opCtx, userID, newGroupID); err != nil {
@@ -1475,6 +1525,9 @@ func (s *adminServiceImpl) ReplaceUserGroup(ctx context.Context, userID, oldGrou
 	migrated, err := s.apiKeyRepo.UpdateGroupIDByUserAndGroup(opCtx, userID, oldGroupID, newGroupID)
 	if err != nil {
 		return nil, fmt.Errorf("migrate api keys: %w", err)
+	}
+	if err := s.enqueueBulkAPIKeyGroupChange(opCtx, notificationKeys, oldGroupID, newGroupID, newGroup.Name); err != nil {
+		return nil, err
 	}
 
 	// 3. 移除旧分组权限
@@ -1497,4 +1550,40 @@ func (s *adminServiceImpl) ReplaceUserGroup(ctx context.Context, userID, oldGrou
 	}
 
 	return &ReplaceUserGroupResult{MigratedKeys: migrated}, nil
+}
+
+func (s *adminServiceImpl) enqueueBulkAPIKeyGroupChange(ctx context.Context, keys []APIKey, oldGroupID, newGroupID int64, newGroupName string) error {
+	if len(keys) == 0 {
+		return nil
+	}
+	if s.notificationOutbox == nil {
+		return fmt.Errorf("bulk API key notification outbox is not configured")
+	}
+	grouped := make(map[string][]APIKey)
+	for i := range keys {
+		email := derefAPIKeyEmail(keys[i].NotificationEmail)
+		if email != "" {
+			grouped[email] = append(grouped[email], keys[i])
+		}
+	}
+	operationID := uuid.NewString()
+	changedAt := time.Now().UTC()
+	for email, emailKeys := range grouped {
+		lines := make([]string, 0, len(emailKeys))
+		for i := range emailKeys {
+			lines = append(lines, fmt.Sprintf("#%d %s (%s): group %d -> %d (%s)", emailKeys[i].ID, emailKeys[i].Name, MaskAPIKeyForNotification(emailKeys[i].Key), oldGroupID, newGroupID, newGroupName))
+		}
+		input := NotificationEmailOutboxInput{
+			EventType: NotificationEmailEventAPIKeyBulkChanged, UserID: emailKeys[0].UserID, RecipientEmail: email,
+			DedupKey: fmt.Sprintf("api_key.bulk_changed:%s:%d:%s", operationID, emailKeys[0].UserID, notificationEmailHash(email)),
+			Payload: NotificationEmailOutboxPayload{Variables: map[string]string{
+				"changed_at": changedAt.Format("2006-01-02 15:04:05 MST"), "changed_by": "administrator",
+				"change_reason": fmt.Sprintf("group replacement %d -> %d", oldGroupID, newGroupID), "api_keys_summary": strings.Join(lines, "\n"),
+			}},
+		}
+		if err := s.notificationOutbox.Enqueue(ctx, input); err != nil {
+			return fmt.Errorf("enqueue bulk API key notification: %w", err)
+		}
+	}
+	return nil
 }

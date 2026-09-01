@@ -200,6 +200,8 @@ func provideCleanup(
 	opsIngressReject *service.OpsIngressRejectAggregator,
 	apiKeyService *service.APIKeyService,
 	authCacheInvalidationWorker *service.AuthCacheInvalidationWorker,
+	notificationEmailWorker *service.NotificationEmailOutboxWorker,
+	apiKeyRotation *service.APIKeyRotationService,
 	usageBillingOutboxWorker *service.UsageBillingOutboxWorker,
 	schedulerSnapshot *service.SchedulerSnapshotService,
 	tokenRefresh *service.TokenRefreshService,
@@ -256,6 +258,8 @@ func provideCleanup(
 			opsIngressReject,
 			apiKeyService,
 			authCacheInvalidationWorker,
+			notificationEmailWorker,
+			apiKeyRotation,
 			usageBillingOutboxWorker,
 			schedulerSnapshot,
 			tokenRefresh,
@@ -315,6 +319,8 @@ func provideFinalCleanup(
 	opsIngressReject *service.OpsIngressRejectAggregator,
 	apiKeyService *service.APIKeyService,
 	authCacheInvalidationWorker *service.AuthCacheInvalidationWorker,
+	notificationEmailWorker *service.NotificationEmailOutboxWorker,
+	apiKeyRotation *service.APIKeyRotationService,
 	usageBillingOutboxWorker *service.UsageBillingOutboxWorker,
 	schedulerSnapshot *service.SchedulerSnapshotService,
 	tokenRefresh *service.TokenRefreshService,
@@ -369,6 +375,15 @@ func provideFinalCleanup(
 
 		// 应用层清理步骤可并行执行，基础设施资源（Redis/Ent）最后按顺序关闭。
 		parallelSteps := []cleanupStep{
+			{"APIKeyEmailAutomation", func() error {
+				if apiKeyRotation != nil {
+					apiKeyRotation.Stop()
+				}
+				if notificationEmailWorker != nil {
+					notificationEmailWorker.Stop()
+				}
+				return nil
+			}},
 			{"PluginManager", func() error {
 				if pluginManager != nil {
 					pluginManager.Stop()

@@ -48,6 +48,20 @@ type APIKey struct {
 	QuotaUsed float64 `json:"quota_used,omitempty"`
 	// Expiration time for this API key (null = never expires)
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	// Verified recipient for API key change and rotation notifications
+	NotificationEmail *string `json:"notification_email,omitempty"`
+	// Verification time for the currently bound notification email
+	NotificationEmailVerifiedAt *time.Time `json:"notification_email_verified_at,omitempty"`
+	// Whether API key configuration changes should send email
+	ChangeNotifyEnabled bool `json:"change_notify_enabled,omitempty"`
+	// Whether the credential should rotate after expiry
+	RotateOnExpiry bool `json:"rotate_on_expiry,omitempty"`
+	// Validity duration reused after automatic rotation
+	ValidityDurationSeconds *int64 `json:"validity_duration_seconds,omitempty"`
+	// Most recent automatic rotation time
+	LastRotatedAt *time.Time `json:"last_rotated_at,omitempty"`
+	// Monotonic automatic rotation version
+	RotationVersion int64 `json:"rotation_version,omitempty"`
 	// Rate limit in USD per 5 hours (0 = unlimited)
 	RateLimit5h float64 `json:"rate_limit_5h,omitempty"`
 	// Rate limit in USD per day (0 = unlimited)
@@ -123,13 +137,15 @@ func (*APIKey) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case apikey.FieldIPWhitelist, apikey.FieldIPBlacklist:
 			values[i] = new([]byte)
+		case apikey.FieldChangeNotifyEnabled, apikey.FieldRotateOnExpiry:
+			values[i] = new(sql.NullBool)
 		case apikey.FieldQuota, apikey.FieldQuotaUsed, apikey.FieldRateLimit5h, apikey.FieldRateLimit1d, apikey.FieldRateLimit7d, apikey.FieldUsage5h, apikey.FieldUsage1d, apikey.FieldUsage7d:
 			values[i] = new(sql.NullFloat64)
-		case apikey.FieldID, apikey.FieldUserID, apikey.FieldGroupID:
+		case apikey.FieldID, apikey.FieldUserID, apikey.FieldGroupID, apikey.FieldValidityDurationSeconds, apikey.FieldRotationVersion:
 			values[i] = new(sql.NullInt64)
-		case apikey.FieldKey, apikey.FieldName, apikey.FieldStatus:
+		case apikey.FieldKey, apikey.FieldName, apikey.FieldStatus, apikey.FieldNotificationEmail:
 			values[i] = new(sql.NullString)
-		case apikey.FieldCreatedAt, apikey.FieldUpdatedAt, apikey.FieldDeletedAt, apikey.FieldLastUsedAt, apikey.FieldExpiresAt, apikey.FieldWindow5hStart, apikey.FieldWindow1dStart, apikey.FieldWindow7dStart:
+		case apikey.FieldCreatedAt, apikey.FieldUpdatedAt, apikey.FieldDeletedAt, apikey.FieldLastUsedAt, apikey.FieldExpiresAt, apikey.FieldNotificationEmailVerifiedAt, apikey.FieldLastRotatedAt, apikey.FieldWindow5hStart, apikey.FieldWindow1dStart, apikey.FieldWindow7dStart:
 			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -243,6 +259,52 @@ func (_m *APIKey) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.ExpiresAt = new(time.Time)
 				*_m.ExpiresAt = value.Time
+			}
+		case apikey.FieldNotificationEmail:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field notification_email", values[i])
+			} else if value.Valid {
+				_m.NotificationEmail = new(string)
+				*_m.NotificationEmail = value.String
+			}
+		case apikey.FieldNotificationEmailVerifiedAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field notification_email_verified_at", values[i])
+			} else if value.Valid {
+				_m.NotificationEmailVerifiedAt = new(time.Time)
+				*_m.NotificationEmailVerifiedAt = value.Time
+			}
+		case apikey.FieldChangeNotifyEnabled:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field change_notify_enabled", values[i])
+			} else if value.Valid {
+				_m.ChangeNotifyEnabled = value.Bool
+			}
+		case apikey.FieldRotateOnExpiry:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field rotate_on_expiry", values[i])
+			} else if value.Valid {
+				_m.RotateOnExpiry = value.Bool
+			}
+		case apikey.FieldValidityDurationSeconds:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field validity_duration_seconds", values[i])
+			} else if value.Valid {
+				_m.ValidityDurationSeconds = new(int64)
+				*_m.ValidityDurationSeconds = value.Int64
+			}
+		case apikey.FieldLastRotatedAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field last_rotated_at", values[i])
+			} else if value.Valid {
+				_m.LastRotatedAt = new(time.Time)
+				*_m.LastRotatedAt = value.Time
+			}
+		case apikey.FieldRotationVersion:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field rotation_version", values[i])
+			} else if value.Valid {
+				_m.RotationVersion = value.Int64
 			}
 		case apikey.FieldRateLimit5h:
 			if value, ok := values[i].(*sql.NullFloat64); !ok {
@@ -401,6 +463,35 @@ func (_m *APIKey) String() string {
 		builder.WriteString("expires_at=")
 		builder.WriteString(v.Format(time.ANSIC))
 	}
+	builder.WriteString(", ")
+	if v := _m.NotificationEmail; v != nil {
+		builder.WriteString("notification_email=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := _m.NotificationEmailVerifiedAt; v != nil {
+		builder.WriteString("notification_email_verified_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	builder.WriteString("change_notify_enabled=")
+	builder.WriteString(fmt.Sprintf("%v", _m.ChangeNotifyEnabled))
+	builder.WriteString(", ")
+	builder.WriteString("rotate_on_expiry=")
+	builder.WriteString(fmt.Sprintf("%v", _m.RotateOnExpiry))
+	builder.WriteString(", ")
+	if v := _m.ValidityDurationSeconds; v != nil {
+		builder.WriteString("validity_duration_seconds=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.LastRotatedAt; v != nil {
+		builder.WriteString("last_rotated_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	builder.WriteString("rotation_version=")
+	builder.WriteString(fmt.Sprintf("%v", _m.RotationVersion))
 	builder.WriteString(", ")
 	builder.WriteString("rate_limit_5h=")
 	builder.WriteString(fmt.Sprintf("%v", _m.RateLimit5h))

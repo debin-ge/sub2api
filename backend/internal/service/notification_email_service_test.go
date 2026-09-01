@@ -259,6 +259,32 @@ func TestOpsScheduledReportRuntimeVariablesDoNotLeakPreviewSamples(t *testing.T)
 	require.NotContains(t, rendered.HTML, "<h2>Daily summary</h2>")
 }
 
+func TestAPIKeyRuntimeVariablesNeverUsePreviewRecipientName(t *testing.T) {
+	ctx := context.Background()
+	svc := NewNotificationEmailService(newNotificationEmailMemorySettingRepo(), nil)
+	events := []string{
+		NotificationEmailEventAPIKeyConfigurationChanged,
+		NotificationEmailEventAPIKeyRotated,
+		NotificationEmailEventAPIKeyBulkChanged,
+	}
+
+	for _, event := range events {
+		t.Run(event, func(t *testing.T) {
+			variables := svc.runtimeVariables(ctx, event, "zh", NotificationEmailSendInput{
+				RecipientEmail: "real.owner@example.com",
+			})
+			require.Equal(t, "real.owner", variables["recipient_name"])
+			require.NotEqual(t, "张三", variables["recipient_name"])
+		})
+	}
+
+	variables := svc.runtimeVariables(ctx, NotificationEmailEventAPIKeyRotated, "en", NotificationEmailSendInput{
+		RecipientEmail: "real.owner@example.com",
+		RecipientName:  "Actual User",
+	})
+	require.Equal(t, "Actual User", variables["recipient_name"])
+}
+
 func TestNotificationEmailRawHTMLVariablesAreTrustedOnlyForHTMLPlaceholders(t *testing.T) {
 	require.True(t, notificationEmailRawHTMLAllowed(NotificationEmailEventOpsScheduledReport, "report_html"))
 	require.False(t, notificationEmailRawHTMLAllowed(NotificationEmailEventOpsScheduledReport, "recipient_name"))

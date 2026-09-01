@@ -741,6 +741,7 @@ type adminServiceImpl struct {
 	privacyClientFactory  PrivacyClientFactory
 	runtimeBlocker        AccountRuntimeBlocker
 	apiKeyService         *APIKeyService
+	notificationOutbox    NotificationEmailOutboxRepository
 	vipEntitlementService *VIPEntitlementService
 	vipReconcileService   *VIPReconcileService
 	affiliateService      adminRechargeAffiliateAccruer
@@ -786,6 +787,7 @@ func NewAdminService(
 	privacyClientFactory PrivacyClientFactory,
 	runtimeBlocker AccountRuntimeBlocker,
 	apiKeyService *APIKeyService,
+	notificationOutbox NotificationEmailOutboxRepository,
 	vipEntitlementService *VIPEntitlementService,
 	vipReconcileService *VIPReconcileService,
 	affiliateService *AffiliateService,
@@ -818,6 +820,7 @@ func NewAdminService(
 		privacyClientFactory:  privacyClientFactory,
 		runtimeBlocker:        runtimeBlocker,
 		apiKeyService:         apiKeyService,
+		notificationOutbox:    notificationOutbox,
 		vipEntitlementService: vipEntitlementService,
 		vipReconcileService:   vipReconcileService,
 		affiliateService:      affiliateService,

@@ -390,6 +390,21 @@ const eventDisplayMeta: Record<string, EventDisplayMeta> = {
     timing: "内容审计违规次数达到封禁阈值并自动禁用用户账号时发送。",
     categoryLabel: "风控",
   },
+  "api_key.configuration_changed": {
+    label: "API 密钥配置变动",
+    timing: "已开启变动通知的 API 密钥在用户或管理员修改可见配置后发送。",
+    categoryLabel: "API 密钥",
+  },
+  "api_key.rotated": {
+    label: "API 密钥自动轮换",
+    timing: "API 密钥到期并成功生成新凭证后发送，正文包含完整新密钥。",
+    categoryLabel: "API 密钥",
+  },
+  "api_key.bulk_changed": {
+    label: "API 密钥批量变动",
+    timing: "管理员批量迁移用户分组后，按用户和绑定邮箱聚合发送。",
+    categoryLabel: "API 密钥",
+  },
   "ops.alert": {
     label: "运维告警",
     timing: "运维监控规则触发告警并满足邮件通知配置时发送给运维收件人。",
@@ -452,6 +467,21 @@ const eventDisplayMetaEn: Record<string, EventDisplayMeta> = {
     label: "Risk Control Account Disabled",
     timing: "Sent when content moderation reaches the ban threshold and automatically disables the user account.",
     categoryLabel: "Risk Control",
+  },
+  "api_key.configuration_changed": {
+    label: "API Key Configuration Changed",
+    timing: "Sent after a user or administrator changes visible configuration for a key with notifications enabled.",
+    categoryLabel: "API Key",
+  },
+  "api_key.rotated": {
+    label: "API Key Rotated",
+    timing: "Sent after an expired key is replaced successfully; the message contains the complete new credential.",
+    categoryLabel: "API Key",
+  },
+  "api_key.bulk_changed": {
+    label: "API Keys Changed in Bulk",
+    timing: "Sent after an administrator migrates groups in bulk, aggregated by user and bound recipient.",
+    categoryLabel: "API Key",
   },
   "ops.alert": {
     label: "Ops Alert",

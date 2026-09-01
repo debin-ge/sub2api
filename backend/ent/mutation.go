@@ -114,51 +114,60 @@ const (
 // APIKeyMutation represents an operation that mutates the APIKey nodes in the graph.
 type APIKeyMutation struct {
 	config
-	op                 Op
-	typ                string
-	id                 *int64
-	created_at         *time.Time
-	updated_at         *time.Time
-	deleted_at         *time.Time
-	key                *string
-	name               *string
-	status             *string
-	last_used_at       *time.Time
-	ip_whitelist       *[]string
-	appendip_whitelist []string
-	ip_blacklist       *[]string
-	appendip_blacklist []string
-	quota              *float64
-	addquota           *float64
-	quota_used         *float64
-	addquota_used      *float64
-	expires_at         *time.Time
-	rate_limit_5h      *float64
-	addrate_limit_5h   *float64
-	rate_limit_1d      *float64
-	addrate_limit_1d   *float64
-	rate_limit_7d      *float64
-	addrate_limit_7d   *float64
-	usage_5h           *float64
-	addusage_5h        *float64
-	usage_1d           *float64
-	addusage_1d        *float64
-	usage_7d           *float64
-	addusage_7d        *float64
-	window_5h_start    *time.Time
-	window_1d_start    *time.Time
-	window_7d_start    *time.Time
-	clearedFields      map[string]struct{}
-	user               *int64
-	cleareduser        bool
-	group              *int64
-	clearedgroup       bool
-	usage_logs         map[int64]struct{}
-	removedusage_logs  map[int64]struct{}
-	clearedusage_logs  bool
-	done               bool
-	oldValue           func(context.Context) (*APIKey, error)
-	predicates         []predicate.APIKey
+	op                             Op
+	typ                            string
+	id                             *int64
+	created_at                     *time.Time
+	updated_at                     *time.Time
+	deleted_at                     *time.Time
+	key                            *string
+	name                           *string
+	status                         *string
+	last_used_at                   *time.Time
+	ip_whitelist                   *[]string
+	appendip_whitelist             []string
+	ip_blacklist                   *[]string
+	appendip_blacklist             []string
+	quota                          *float64
+	addquota                       *float64
+	quota_used                     *float64
+	addquota_used                  *float64
+	expires_at                     *time.Time
+	notification_email             *string
+	notification_email_verified_at *time.Time
+	change_notify_enabled          *bool
+	rotate_on_expiry               *bool
+	validity_duration_seconds      *int64
+	addvalidity_duration_seconds   *int64
+	last_rotated_at                *time.Time
+	rotation_version               *int64
+	addrotation_version            *int64
+	rate_limit_5h                  *float64
+	addrate_limit_5h               *float64
+	rate_limit_1d                  *float64
+	addrate_limit_1d               *float64
+	rate_limit_7d                  *float64
+	addrate_limit_7d               *float64
+	usage_5h                       *float64
+	addusage_5h                    *float64
+	usage_1d                       *float64
+	addusage_1d                    *float64
+	usage_7d                       *float64
+	addusage_7d                    *float64
+	window_5h_start                *time.Time
+	window_1d_start                *time.Time
+	window_7d_start                *time.Time
+	clearedFields                  map[string]struct{}
+	user                           *int64
+	cleareduser                    bool
+	group                          *int64
+	clearedgroup                   bool
+	usage_logs                     map[int64]struct{}
+	removedusage_logs              map[int64]struct{}
+	clearedusage_logs              bool
+	done                           bool
+	oldValue                       func(context.Context) (*APIKey, error)
+	predicates                     []predicate.APIKey
 }
 
 var _ ent.Mutation = (*APIKeyMutation)(nil)
@@ -913,6 +922,351 @@ func (m *APIKeyMutation) ResetExpiresAt() {
 	delete(m.clearedFields, apikey.FieldExpiresAt)
 }
 
+// SetNotificationEmail sets the "notification_email" field.
+func (m *APIKeyMutation) SetNotificationEmail(s string) {
+	m.notification_email = &s
+}
+
+// NotificationEmail returns the value of the "notification_email" field in the mutation.
+func (m *APIKeyMutation) NotificationEmail() (r string, exists bool) {
+	v := m.notification_email
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldNotificationEmail returns the old "notification_email" field's value of the APIKey entity.
+// If the APIKey object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APIKeyMutation) OldNotificationEmail(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldNotificationEmail is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldNotificationEmail requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldNotificationEmail: %w", err)
+	}
+	return oldValue.NotificationEmail, nil
+}
+
+// ClearNotificationEmail clears the value of the "notification_email" field.
+func (m *APIKeyMutation) ClearNotificationEmail() {
+	m.notification_email = nil
+	m.clearedFields[apikey.FieldNotificationEmail] = struct{}{}
+}
+
+// NotificationEmailCleared returns if the "notification_email" field was cleared in this mutation.
+func (m *APIKeyMutation) NotificationEmailCleared() bool {
+	_, ok := m.clearedFields[apikey.FieldNotificationEmail]
+	return ok
+}
+
+// ResetNotificationEmail resets all changes to the "notification_email" field.
+func (m *APIKeyMutation) ResetNotificationEmail() {
+	m.notification_email = nil
+	delete(m.clearedFields, apikey.FieldNotificationEmail)
+}
+
+// SetNotificationEmailVerifiedAt sets the "notification_email_verified_at" field.
+func (m *APIKeyMutation) SetNotificationEmailVerifiedAt(t time.Time) {
+	m.notification_email_verified_at = &t
+}
+
+// NotificationEmailVerifiedAt returns the value of the "notification_email_verified_at" field in the mutation.
+func (m *APIKeyMutation) NotificationEmailVerifiedAt() (r time.Time, exists bool) {
+	v := m.notification_email_verified_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldNotificationEmailVerifiedAt returns the old "notification_email_verified_at" field's value of the APIKey entity.
+// If the APIKey object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APIKeyMutation) OldNotificationEmailVerifiedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldNotificationEmailVerifiedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldNotificationEmailVerifiedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldNotificationEmailVerifiedAt: %w", err)
+	}
+	return oldValue.NotificationEmailVerifiedAt, nil
+}
+
+// ClearNotificationEmailVerifiedAt clears the value of the "notification_email_verified_at" field.
+func (m *APIKeyMutation) ClearNotificationEmailVerifiedAt() {
+	m.notification_email_verified_at = nil
+	m.clearedFields[apikey.FieldNotificationEmailVerifiedAt] = struct{}{}
+}
+
+// NotificationEmailVerifiedAtCleared returns if the "notification_email_verified_at" field was cleared in this mutation.
+func (m *APIKeyMutation) NotificationEmailVerifiedAtCleared() bool {
+	_, ok := m.clearedFields[apikey.FieldNotificationEmailVerifiedAt]
+	return ok
+}
+
+// ResetNotificationEmailVerifiedAt resets all changes to the "notification_email_verified_at" field.
+func (m *APIKeyMutation) ResetNotificationEmailVerifiedAt() {
+	m.notification_email_verified_at = nil
+	delete(m.clearedFields, apikey.FieldNotificationEmailVerifiedAt)
+}
+
+// SetChangeNotifyEnabled sets the "change_notify_enabled" field.
+func (m *APIKeyMutation) SetChangeNotifyEnabled(b bool) {
+	m.change_notify_enabled = &b
+}
+
+// ChangeNotifyEnabled returns the value of the "change_notify_enabled" field in the mutation.
+func (m *APIKeyMutation) ChangeNotifyEnabled() (r bool, exists bool) {
+	v := m.change_notify_enabled
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldChangeNotifyEnabled returns the old "change_notify_enabled" field's value of the APIKey entity.
+// If the APIKey object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APIKeyMutation) OldChangeNotifyEnabled(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldChangeNotifyEnabled is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldChangeNotifyEnabled requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldChangeNotifyEnabled: %w", err)
+	}
+	return oldValue.ChangeNotifyEnabled, nil
+}
+
+// ResetChangeNotifyEnabled resets all changes to the "change_notify_enabled" field.
+func (m *APIKeyMutation) ResetChangeNotifyEnabled() {
+	m.change_notify_enabled = nil
+}
+
+// SetRotateOnExpiry sets the "rotate_on_expiry" field.
+func (m *APIKeyMutation) SetRotateOnExpiry(b bool) {
+	m.rotate_on_expiry = &b
+}
+
+// RotateOnExpiry returns the value of the "rotate_on_expiry" field in the mutation.
+func (m *APIKeyMutation) RotateOnExpiry() (r bool, exists bool) {
+	v := m.rotate_on_expiry
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRotateOnExpiry returns the old "rotate_on_expiry" field's value of the APIKey entity.
+// If the APIKey object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APIKeyMutation) OldRotateOnExpiry(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRotateOnExpiry is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRotateOnExpiry requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRotateOnExpiry: %w", err)
+	}
+	return oldValue.RotateOnExpiry, nil
+}
+
+// ResetRotateOnExpiry resets all changes to the "rotate_on_expiry" field.
+func (m *APIKeyMutation) ResetRotateOnExpiry() {
+	m.rotate_on_expiry = nil
+}
+
+// SetValidityDurationSeconds sets the "validity_duration_seconds" field.
+func (m *APIKeyMutation) SetValidityDurationSeconds(i int64) {
+	m.validity_duration_seconds = &i
+	m.addvalidity_duration_seconds = nil
+}
+
+// ValidityDurationSeconds returns the value of the "validity_duration_seconds" field in the mutation.
+func (m *APIKeyMutation) ValidityDurationSeconds() (r int64, exists bool) {
+	v := m.validity_duration_seconds
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldValidityDurationSeconds returns the old "validity_duration_seconds" field's value of the APIKey entity.
+// If the APIKey object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APIKeyMutation) OldValidityDurationSeconds(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldValidityDurationSeconds is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldValidityDurationSeconds requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldValidityDurationSeconds: %w", err)
+	}
+	return oldValue.ValidityDurationSeconds, nil
+}
+
+// AddValidityDurationSeconds adds i to the "validity_duration_seconds" field.
+func (m *APIKeyMutation) AddValidityDurationSeconds(i int64) {
+	if m.addvalidity_duration_seconds != nil {
+		*m.addvalidity_duration_seconds += i
+	} else {
+		m.addvalidity_duration_seconds = &i
+	}
+}
+
+// AddedValidityDurationSeconds returns the value that was added to the "validity_duration_seconds" field in this mutation.
+func (m *APIKeyMutation) AddedValidityDurationSeconds() (r int64, exists bool) {
+	v := m.addvalidity_duration_seconds
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearValidityDurationSeconds clears the value of the "validity_duration_seconds" field.
+func (m *APIKeyMutation) ClearValidityDurationSeconds() {
+	m.validity_duration_seconds = nil
+	m.addvalidity_duration_seconds = nil
+	m.clearedFields[apikey.FieldValidityDurationSeconds] = struct{}{}
+}
+
+// ValidityDurationSecondsCleared returns if the "validity_duration_seconds" field was cleared in this mutation.
+func (m *APIKeyMutation) ValidityDurationSecondsCleared() bool {
+	_, ok := m.clearedFields[apikey.FieldValidityDurationSeconds]
+	return ok
+}
+
+// ResetValidityDurationSeconds resets all changes to the "validity_duration_seconds" field.
+func (m *APIKeyMutation) ResetValidityDurationSeconds() {
+	m.validity_duration_seconds = nil
+	m.addvalidity_duration_seconds = nil
+	delete(m.clearedFields, apikey.FieldValidityDurationSeconds)
+}
+
+// SetLastRotatedAt sets the "last_rotated_at" field.
+func (m *APIKeyMutation) SetLastRotatedAt(t time.Time) {
+	m.last_rotated_at = &t
+}
+
+// LastRotatedAt returns the value of the "last_rotated_at" field in the mutation.
+func (m *APIKeyMutation) LastRotatedAt() (r time.Time, exists bool) {
+	v := m.last_rotated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLastRotatedAt returns the old "last_rotated_at" field's value of the APIKey entity.
+// If the APIKey object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APIKeyMutation) OldLastRotatedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLastRotatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLastRotatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLastRotatedAt: %w", err)
+	}
+	return oldValue.LastRotatedAt, nil
+}
+
+// ClearLastRotatedAt clears the value of the "last_rotated_at" field.
+func (m *APIKeyMutation) ClearLastRotatedAt() {
+	m.last_rotated_at = nil
+	m.clearedFields[apikey.FieldLastRotatedAt] = struct{}{}
+}
+
+// LastRotatedAtCleared returns if the "last_rotated_at" field was cleared in this mutation.
+func (m *APIKeyMutation) LastRotatedAtCleared() bool {
+	_, ok := m.clearedFields[apikey.FieldLastRotatedAt]
+	return ok
+}
+
+// ResetLastRotatedAt resets all changes to the "last_rotated_at" field.
+func (m *APIKeyMutation) ResetLastRotatedAt() {
+	m.last_rotated_at = nil
+	delete(m.clearedFields, apikey.FieldLastRotatedAt)
+}
+
+// SetRotationVersion sets the "rotation_version" field.
+func (m *APIKeyMutation) SetRotationVersion(i int64) {
+	m.rotation_version = &i
+	m.addrotation_version = nil
+}
+
+// RotationVersion returns the value of the "rotation_version" field in the mutation.
+func (m *APIKeyMutation) RotationVersion() (r int64, exists bool) {
+	v := m.rotation_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRotationVersion returns the old "rotation_version" field's value of the APIKey entity.
+// If the APIKey object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APIKeyMutation) OldRotationVersion(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRotationVersion is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRotationVersion requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRotationVersion: %w", err)
+	}
+	return oldValue.RotationVersion, nil
+}
+
+// AddRotationVersion adds i to the "rotation_version" field.
+func (m *APIKeyMutation) AddRotationVersion(i int64) {
+	if m.addrotation_version != nil {
+		*m.addrotation_version += i
+	} else {
+		m.addrotation_version = &i
+	}
+}
+
+// AddedRotationVersion returns the value that was added to the "rotation_version" field in this mutation.
+func (m *APIKeyMutation) AddedRotationVersion() (r int64, exists bool) {
+	v := m.addrotation_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetRotationVersion resets all changes to the "rotation_version" field.
+func (m *APIKeyMutation) ResetRotationVersion() {
+	m.rotation_version = nil
+	m.addrotation_version = nil
+}
+
 // SetRateLimit5h sets the "rate_limit_5h" field.
 func (m *APIKeyMutation) SetRateLimit5h(f float64) {
 	m.rate_limit_5h = &f
@@ -1538,7 +1892,7 @@ func (m *APIKeyMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *APIKeyMutation) Fields() []string {
-	fields := make([]string, 0, 23)
+	fields := make([]string, 0, 30)
 	if m.created_at != nil {
 		fields = append(fields, apikey.FieldCreatedAt)
 	}
@@ -1580,6 +1934,27 @@ func (m *APIKeyMutation) Fields() []string {
 	}
 	if m.expires_at != nil {
 		fields = append(fields, apikey.FieldExpiresAt)
+	}
+	if m.notification_email != nil {
+		fields = append(fields, apikey.FieldNotificationEmail)
+	}
+	if m.notification_email_verified_at != nil {
+		fields = append(fields, apikey.FieldNotificationEmailVerifiedAt)
+	}
+	if m.change_notify_enabled != nil {
+		fields = append(fields, apikey.FieldChangeNotifyEnabled)
+	}
+	if m.rotate_on_expiry != nil {
+		fields = append(fields, apikey.FieldRotateOnExpiry)
+	}
+	if m.validity_duration_seconds != nil {
+		fields = append(fields, apikey.FieldValidityDurationSeconds)
+	}
+	if m.last_rotated_at != nil {
+		fields = append(fields, apikey.FieldLastRotatedAt)
+	}
+	if m.rotation_version != nil {
+		fields = append(fields, apikey.FieldRotationVersion)
 	}
 	if m.rate_limit_5h != nil {
 		fields = append(fields, apikey.FieldRateLimit5h)
@@ -1644,6 +2019,20 @@ func (m *APIKeyMutation) Field(name string) (ent.Value, bool) {
 		return m.QuotaUsed()
 	case apikey.FieldExpiresAt:
 		return m.ExpiresAt()
+	case apikey.FieldNotificationEmail:
+		return m.NotificationEmail()
+	case apikey.FieldNotificationEmailVerifiedAt:
+		return m.NotificationEmailVerifiedAt()
+	case apikey.FieldChangeNotifyEnabled:
+		return m.ChangeNotifyEnabled()
+	case apikey.FieldRotateOnExpiry:
+		return m.RotateOnExpiry()
+	case apikey.FieldValidityDurationSeconds:
+		return m.ValidityDurationSeconds()
+	case apikey.FieldLastRotatedAt:
+		return m.LastRotatedAt()
+	case apikey.FieldRotationVersion:
+		return m.RotationVersion()
 	case apikey.FieldRateLimit5h:
 		return m.RateLimit5h()
 	case apikey.FieldRateLimit1d:
@@ -1699,6 +2088,20 @@ func (m *APIKeyMutation) OldField(ctx context.Context, name string) (ent.Value, 
 		return m.OldQuotaUsed(ctx)
 	case apikey.FieldExpiresAt:
 		return m.OldExpiresAt(ctx)
+	case apikey.FieldNotificationEmail:
+		return m.OldNotificationEmail(ctx)
+	case apikey.FieldNotificationEmailVerifiedAt:
+		return m.OldNotificationEmailVerifiedAt(ctx)
+	case apikey.FieldChangeNotifyEnabled:
+		return m.OldChangeNotifyEnabled(ctx)
+	case apikey.FieldRotateOnExpiry:
+		return m.OldRotateOnExpiry(ctx)
+	case apikey.FieldValidityDurationSeconds:
+		return m.OldValidityDurationSeconds(ctx)
+	case apikey.FieldLastRotatedAt:
+		return m.OldLastRotatedAt(ctx)
+	case apikey.FieldRotationVersion:
+		return m.OldRotationVersion(ctx)
 	case apikey.FieldRateLimit5h:
 		return m.OldRateLimit5h(ctx)
 	case apikey.FieldRateLimit1d:
@@ -1824,6 +2227,55 @@ func (m *APIKeyMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetExpiresAt(v)
 		return nil
+	case apikey.FieldNotificationEmail:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetNotificationEmail(v)
+		return nil
+	case apikey.FieldNotificationEmailVerifiedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetNotificationEmailVerifiedAt(v)
+		return nil
+	case apikey.FieldChangeNotifyEnabled:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetChangeNotifyEnabled(v)
+		return nil
+	case apikey.FieldRotateOnExpiry:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRotateOnExpiry(v)
+		return nil
+	case apikey.FieldValidityDurationSeconds:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetValidityDurationSeconds(v)
+		return nil
+	case apikey.FieldLastRotatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLastRotatedAt(v)
+		return nil
+	case apikey.FieldRotationVersion:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRotationVersion(v)
+		return nil
 	case apikey.FieldRateLimit5h:
 		v, ok := value.(float64)
 		if !ok {
@@ -1901,6 +2353,12 @@ func (m *APIKeyMutation) AddedFields() []string {
 	if m.addquota_used != nil {
 		fields = append(fields, apikey.FieldQuotaUsed)
 	}
+	if m.addvalidity_duration_seconds != nil {
+		fields = append(fields, apikey.FieldValidityDurationSeconds)
+	}
+	if m.addrotation_version != nil {
+		fields = append(fields, apikey.FieldRotationVersion)
+	}
 	if m.addrate_limit_5h != nil {
 		fields = append(fields, apikey.FieldRateLimit5h)
 	}
@@ -1931,6 +2389,10 @@ func (m *APIKeyMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedQuota()
 	case apikey.FieldQuotaUsed:
 		return m.AddedQuotaUsed()
+	case apikey.FieldValidityDurationSeconds:
+		return m.AddedValidityDurationSeconds()
+	case apikey.FieldRotationVersion:
+		return m.AddedRotationVersion()
 	case apikey.FieldRateLimit5h:
 		return m.AddedRateLimit5h()
 	case apikey.FieldRateLimit1d:
@@ -1965,6 +2427,20 @@ func (m *APIKeyMutation) AddField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddQuotaUsed(v)
+		return nil
+	case apikey.FieldValidityDurationSeconds:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddValidityDurationSeconds(v)
+		return nil
+	case apikey.FieldRotationVersion:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddRotationVersion(v)
 		return nil
 	case apikey.FieldRateLimit5h:
 		v, ok := value.(float64)
@@ -2034,6 +2510,18 @@ func (m *APIKeyMutation) ClearedFields() []string {
 	if m.FieldCleared(apikey.FieldExpiresAt) {
 		fields = append(fields, apikey.FieldExpiresAt)
 	}
+	if m.FieldCleared(apikey.FieldNotificationEmail) {
+		fields = append(fields, apikey.FieldNotificationEmail)
+	}
+	if m.FieldCleared(apikey.FieldNotificationEmailVerifiedAt) {
+		fields = append(fields, apikey.FieldNotificationEmailVerifiedAt)
+	}
+	if m.FieldCleared(apikey.FieldValidityDurationSeconds) {
+		fields = append(fields, apikey.FieldValidityDurationSeconds)
+	}
+	if m.FieldCleared(apikey.FieldLastRotatedAt) {
+		fields = append(fields, apikey.FieldLastRotatedAt)
+	}
 	if m.FieldCleared(apikey.FieldWindow5hStart) {
 		fields = append(fields, apikey.FieldWindow5hStart)
 	}
@@ -2074,6 +2562,18 @@ func (m *APIKeyMutation) ClearField(name string) error {
 		return nil
 	case apikey.FieldExpiresAt:
 		m.ClearExpiresAt()
+		return nil
+	case apikey.FieldNotificationEmail:
+		m.ClearNotificationEmail()
+		return nil
+	case apikey.FieldNotificationEmailVerifiedAt:
+		m.ClearNotificationEmailVerifiedAt()
+		return nil
+	case apikey.FieldValidityDurationSeconds:
+		m.ClearValidityDurationSeconds()
+		return nil
+	case apikey.FieldLastRotatedAt:
+		m.ClearLastRotatedAt()
 		return nil
 	case apikey.FieldWindow5hStart:
 		m.ClearWindow5hStart()
@@ -2133,6 +2633,27 @@ func (m *APIKeyMutation) ResetField(name string) error {
 		return nil
 	case apikey.FieldExpiresAt:
 		m.ResetExpiresAt()
+		return nil
+	case apikey.FieldNotificationEmail:
+		m.ResetNotificationEmail()
+		return nil
+	case apikey.FieldNotificationEmailVerifiedAt:
+		m.ResetNotificationEmailVerifiedAt()
+		return nil
+	case apikey.FieldChangeNotifyEnabled:
+		m.ResetChangeNotifyEnabled()
+		return nil
+	case apikey.FieldRotateOnExpiry:
+		m.ResetRotateOnExpiry()
+		return nil
+	case apikey.FieldValidityDurationSeconds:
+		m.ResetValidityDurationSeconds()
+		return nil
+	case apikey.FieldLastRotatedAt:
+		m.ResetLastRotatedAt()
+		return nil
+	case apikey.FieldRotationVersion:
+		m.ResetRotationVersion()
 		return nil
 	case apikey.FieldRateLimit5h:
 		m.ResetRateLimit5h()

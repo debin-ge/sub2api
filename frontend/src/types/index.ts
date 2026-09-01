@@ -878,6 +878,11 @@ export interface ApiKey {
   quota: number // Quota limit in USD (0 = unlimited)
   quota_used: number // Used quota amount in USD
   expires_at: string | null // Expiration time (null = never expires)
+  notification_email: string | null
+  notification_email_verified: boolean
+  change_notify_enabled: boolean
+  rotate_on_expiry: boolean
+  last_rotated_at: string | null
   created_at: string
   updated_at: string
   current_concurrency: number
@@ -907,6 +912,10 @@ export interface CreateApiKeyRequest {
   rate_limit_5h?: number
   rate_limit_1d?: number
   rate_limit_7d?: number
+  notification_email?: string
+  notification_email_verification_token?: string
+  change_notify_enabled?: boolean
+  rotate_on_expiry?: boolean
 }
 
 export interface UpdateApiKeyRequest {
@@ -922,6 +931,10 @@ export interface UpdateApiKeyRequest {
   rate_limit_1d?: number
   rate_limit_7d?: number
   reset_rate_limit_usage?: boolean
+  notification_email?: string
+  notification_email_verification_token?: string
+  change_notify_enabled?: boolean
+  rotate_on_expiry?: boolean
 }
 
 export interface CreateGroupRequest {
