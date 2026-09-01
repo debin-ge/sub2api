@@ -250,6 +250,11 @@ func TestAPIContracts(t *testing.T) {
 					"window_1d_start": null,
 					"window_7d_start": null,
 					"expires_at": null,
+					"notification_email": null,
+					"notification_email_verified": false,
+					"change_notify_enabled": false,
+					"rotate_on_expiry": false,
+					"last_rotated_at": null,
 					"created_at": "2025-01-02T03:04:05Z",
 					"updated_at": "2025-01-02T03:04:05Z"
 				}
@@ -301,6 +306,11 @@ func TestAPIContracts(t *testing.T) {
 							"window_1d_start": null,
 							"window_7d_start": null,
 							"expires_at": null,
+							"notification_email": null,
+							"notification_email_verified": false,
+							"change_notify_enabled": false,
+							"rotate_on_expiry": false,
+							"last_rotated_at": null,
 							"created_at": "2025-01-02T03:04:05Z",
 							"updated_at": "2025-01-02T03:04:05Z"
 						}
