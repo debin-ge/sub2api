@@ -232,7 +232,7 @@ func TestCalculateCostUnified_DeepseekPricingAtZeroFallsBackToNow(t *testing.T) 
 }
 
 // ---------------------------------------------------------------------------
-// 官方价强制覆盖（远端旧价兜底）与未知 deepseek-* flash 兜底
+// 官方价强制覆盖（远端旧价兜底）与未知 deepseek-* 严格拒绝
 // ---------------------------------------------------------------------------
 
 func TestGetModelPricing_DeepseekForcesOfficialRatesOverJSON(t *testing.T) {
@@ -241,8 +241,6 @@ func TestGetModelPricing_DeepseekForcesOfficialRatesOverJSON(t *testing.T) {
 		"deepseek-v4-flash":            {InputCostPerToken: 1e-6, OutputCostPerToken: 2e-6, CacheReadInputTokenCost: 1e-8},
 		"deepseek-v4-pro":              {InputCostPerToken: 1e-6, OutputCostPerToken: 2e-6, CacheReadInputTokenCost: 1e-8},
 		"deepseek-v4-flash-vision-exp": {InputCostPerToken: 1e-6, OutputCostPerToken: 2e-6, CacheReadInputTokenCost: 1e-8},
-		"deepseek-chat":                {InputCostPerToken: 1e-6, OutputCostPerToken: 2e-6, CacheReadInputTokenCost: 1e-8},
-		"deepseek-reasoner":            {InputCostPerToken: 1e-6, OutputCostPerToken: 2e-6, CacheReadInputTokenCost: 1e-8},
 	}}
 	bs := NewBillingService(&config.Config{}, pricingSvc)
 
@@ -253,9 +251,6 @@ func TestGetModelPricing_DeepseekForcesOfficialRatesOverJSON(t *testing.T) {
 		{"deepseek-v4-flash", 2.2e-7, 6.6e-7, 7e-9},
 		{"deepseek-v4-flash-vision-exp", 2.2e-7, 6.6e-7, 7e-9},
 		{"deepseek-v4-pro", 6.6e-7, 1.98e-6, 2.2e-8},
-		// 已停服的 chat/reasoner：即使 JSON 有旧条目也按 flash 价兜底。
-		{"deepseek-chat", 2.2e-7, 6.6e-7, 7e-9},
-		{"deepseek-reasoner", 2.2e-7, 6.6e-7, 7e-9},
 	}
 	for _, tt := range tests {
 		t.Run(tt.model, func(t *testing.T) {
@@ -287,21 +282,13 @@ func TestGetModelPricing_DeepseekForcesOfficialRatesOverJSON(t *testing.T) {
 	}
 }
 
-func TestGetModelPricing_UnknownDeepseekMapsToFlash(t *testing.T) {
-	// JSON 含 $0 占位条目（如旧 deepseek-v3-2-251201）：未知 deepseek-* 不再
-	// fail-closed，统一按 flash 价兜底（2.2e-7/6.6e-7/7e-9），不得按 $0 计费。
-	pricingSvc := &PricingService{pricingData: map[string]*LiteLLMModelPricing{
-		"deepseek-v3-2-251201": {InputCostPerToken: 0, OutputCostPerToken: 0},
-	}}
-	bs := NewBillingService(&config.Config{}, pricingSvc)
+func TestGetModelPricing_UnknownDeepseekStrictlyRejects(t *testing.T) {
+	bs := NewBillingService(&config.Config{}, nil)
 
 	for _, m := range []string{"deepseek-v3-2-251201", "deepseek-chat", "deepseek-reasoner", "deepseek-foo"} {
 		t.Run(m, func(t *testing.T) {
-			pricing, err := bs.GetModelPricing(m)
-			require.NoError(t, err)
-			require.InDelta(t, 2.2e-7, pricing.InputPricePerToken, 1e-15)
-			require.InDelta(t, 6.6e-7, pricing.OutputPricePerToken, 1e-15)
-			require.InDelta(t, 7e-9, pricing.CacheReadPricePerToken, 1e-15)
+			_, err := bs.GetModelPricingStrict(m)
+			require.ErrorIs(t, err, ErrModelPricingUnavailable)
 		})
 	}
 }

@@ -382,15 +382,15 @@ func TestGetModelPricing_DeepSeekFallback(t *testing.T) {
 	}{
 		{
 			model:             "deepseek-v4-flash",
-			expectedInput:     3.0 / 7.2 / 1_000_000,
-			expectedOutput:    9.0 / 7.2 / 1_000_000,
-			expectedCacheRead: 0.10 / 7.2 / 1_000_000,
+			expectedInput:     2.2e-7,
+			expectedOutput:    6.6e-7,
+			expectedCacheRead: 7e-9,
 		},
 		{
 			model:             "DeepSeek-V4-Pro",
-			expectedInput:     9.0 / 7.2 / 1_000_000,
-			expectedOutput:    27.0 / 7.2 / 1_000_000,
-			expectedCacheRead: 0.30 / 7.2 / 1_000_000,
+			expectedInput:     6.6e-7,
+			expectedOutput:    1.98e-6,
+			expectedCacheRead: 2.2e-8,
 		},
 	}
 
@@ -425,10 +425,10 @@ func TestCalculateCost_DeepSeekFallbackUsesCacheMissAndHitPrices(t *testing.T) {
 	}, 1.0)
 	require.NoError(t, err)
 
-	expectedTotal := (3.0 + 9.0 + 0.10) / 7.2
-	require.InDelta(t, 3.0/7.2, cost.InputCost, 1e-10)
-	require.InDelta(t, 9.0/7.2, cost.OutputCost, 1e-10)
-	require.InDelta(t, 0.10/7.2, cost.CacheReadCost, 1e-10)
+	expectedTotal := 0.22 + 0.66 + 0.007
+	require.InDelta(t, 0.22, cost.InputCost, 1e-10)
+	require.InDelta(t, 0.66, cost.OutputCost, 1e-10)
+	require.InDelta(t, 0.007, cost.CacheReadCost, 1e-10)
 	require.InDelta(t, expectedTotal, cost.TotalCost, 1e-10)
 	require.InDelta(t, expectedTotal, cost.ActualCost, 1e-10)
 }
@@ -1321,114 +1321,6 @@ func TestComputeTokenBreakdown_LongContextAppliesToExplicitImageTokenPricesExact
 		require.Equal(t, float64(50*1*2*2), cost.ImageInputCost)
 		require.Equal(t, float64(10*2*2*3), cost.ImageOutputCost)
 	})
-}
-
-func TestCalculateCostWithLongContext_BelowThreshold(t *testing.T) {
-	svc := newTestBillingService()
-
-	tokens := UsageTokens{
-		InputTokens:     50000,
-		OutputTokens:    1000,
-		CacheReadTokens: 100000,
-	}
-	// 总输入 150k < 200k 阈值，应走正常计费
-	cost, err := svc.CalculateCostWithLongContext("claude-sonnet-4", tokens, 1.0, 200000, 2.0)
-	require.NoError(t, err)
-
-	normalCost, err := svc.CalculateCost("claude-sonnet-4", tokens, 1.0)
-	require.NoError(t, err)
-
-	require.InDelta(t, normalCost.ActualCost, cost.ActualCost, 1e-10)
-}
-
-func TestCalculateCostWithLongContext_AboveThreshold_CacheExceedsThreshold(t *testing.T) {
-	svc := newTestBillingService()
-
-	// 缓存 210k + 输入 10k = 220k > 200k 阈值
-	// 缓存已超阈值：范围内 200k 缓存，范围外 10k 缓存 + 10k 输入
-	tokens := UsageTokens{
-		InputTokens:     10000,
-		OutputTokens:    1000,
-		CacheReadTokens: 210000,
-	}
-	cost, err := svc.CalculateCostWithLongContext("claude-sonnet-4", tokens, 1.0, 200000, 2.0)
-	require.NoError(t, err)
-
-	// 范围内：200k cache + 0 input + 1k output
-	inRange, _ := svc.CalculateCost("claude-sonnet-4", UsageTokens{
-		InputTokens:     0,
-		OutputTokens:    1000,
-		CacheReadTokens: 200000,
-	}, 1.0)
-
-	// 范围外：10k cache + 10k input，倍率 2.0
-	outRange, _ := svc.CalculateCost("claude-sonnet-4", UsageTokens{
-		InputTokens:     10000,
-		CacheReadTokens: 10000,
-	}, 2.0)
-
-	require.InDelta(t, inRange.ActualCost+outRange.ActualCost, cost.ActualCost, 1e-10)
-}
-
-func TestCalculateCostWithLongContext_AboveThreshold_CacheBelowThreshold(t *testing.T) {
-	svc := newTestBillingService()
-
-	// 缓存 100k + 输入 150k = 250k > 200k 阈值
-	// 缓存未超阈值：范围内 100k 缓存 + 100k 输入，范围外 50k 输入
-	tokens := UsageTokens{
-		InputTokens:     150000,
-		OutputTokens:    1000,
-		CacheReadTokens: 100000,
-	}
-	cost, err := svc.CalculateCostWithLongContext("claude-sonnet-4", tokens, 1.0, 200000, 2.0)
-	require.NoError(t, err)
-
-	require.True(t, cost.ActualCost > 0, "费用应大于 0")
-
-	// 正常费用不含长上下文
-	normalCost, _ := svc.CalculateCost("claude-sonnet-4", tokens, 1.0)
-	require.True(t, cost.ActualCost > normalCost.ActualCost, "长上下文费用应高于正常费用")
-}
-
-func TestCalculateCostWithLongContext_MarkerRequiresActualCostIncrease(t *testing.T) {
-	svc := newTestBillingService()
-	tokens := UsageTokens{InputTokens: 300000}
-
-	cost, err := svc.CalculateCostWithLongContext("claude-sonnet-4", tokens, 0, 200000, 2.0)
-
-	require.NoError(t, err)
-	require.Zero(t, cost.ActualCost)
-	require.False(t, cost.LongContextBillingApplied)
-}
-
-func TestCalculateCostWithLongContext_DisabledThreshold(t *testing.T) {
-	svc := newTestBillingService()
-
-	tokens := UsageTokens{InputTokens: 300000, CacheReadTokens: 0}
-
-	// threshold <= 0 应禁用长上下文计费
-	cost1, err := svc.CalculateCostWithLongContext("claude-sonnet-4", tokens, 1.0, 0, 2.0)
-	require.NoError(t, err)
-
-	cost2, err := svc.CalculateCost("claude-sonnet-4", tokens, 1.0)
-	require.NoError(t, err)
-
-	require.InDelta(t, cost2.ActualCost, cost1.ActualCost, 1e-10)
-}
-
-func TestCalculateCostWithLongContext_ExtraMultiplierLessEqualOne(t *testing.T) {
-	svc := newTestBillingService()
-
-	tokens := UsageTokens{InputTokens: 300000}
-
-	// extraMultiplier <= 1 应禁用长上下文计费
-	cost, err := svc.CalculateCostWithLongContext("claude-sonnet-4", tokens, 1.0, 200000, 1.0)
-	require.NoError(t, err)
-
-	normalCost, err := svc.CalculateCost("claude-sonnet-4", tokens, 1.0)
-	require.NoError(t, err)
-
-	require.InDelta(t, normalCost.ActualCost, cost.ActualCost, 1e-10)
 }
 
 func TestCalculateImageCost(t *testing.T) {

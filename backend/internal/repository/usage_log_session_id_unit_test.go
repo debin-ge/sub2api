@@ -33,9 +33,10 @@ func newSessionIDUsageLog(sessionID *string) *service.UsageLog {
 // offsets shift by one each time — that's the point: the compiler can't catch a
 // forgotten call site, these constants make the test do it.
 const (
-	usageLogArgOffsetSessionID  = 4 // ..., session_id, native_compaction_v2, created_at, billing_state
-	usageLogArgOffsetCreatedAt  = 2
-	usageLogArgOffsetBillingSta = 1
+	usageLogArgOffsetSessionID        = 4 // ..., session_id, native_compaction_v2, created_at, billing_state
+	usageLogArgOffsetNativeCompaction = 3
+	usageLogArgOffsetCreatedAt        = 2
+	usageLogArgOffsetBillingSta       = 1
 )
 
 func usageLogInsertArgFromEnd(args []any, offsetFromEnd int) any {
@@ -61,7 +62,7 @@ func TestPrepareUsageLogInsert_SessionIDArgWiring(t *testing.T) {
 
 	require.Equal(t, "text", usageLogInsertArgTypes[len(usageLogInsertArgTypes)-usageLogArgOffsetSessionID],
 		"session_id arg type must be text")
-	require.Equal(t, "boolean", usageLogInsertArgTypes[len(usageLogInsertArgTypes)-2],
+	require.Equal(t, "boolean", usageLogInsertArgTypes[len(usageLogInsertArgTypes)-usageLogArgOffsetNativeCompaction],
 		"native_compaction_v2 arg type must be boolean")
 }
 

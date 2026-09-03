@@ -49,6 +49,21 @@ func isDeepSeekOfficialTimePricedModel(model string) bool {
 	return strings.Contains(lower, "deepseek-v4-flash") || strings.Contains(lower, "deepseek-v4-pro")
 }
 
+// deepSeekFallbackAllowedForPlatforms limits the code-owned official card to
+// DeepSeek routing scopes. A model name alone is not enough evidence to apply
+// DeepSeek pricing to an account on another provider platform.
+func deepSeekFallbackAllowedForPlatforms(platforms []string) bool {
+	for _, platform := range normalizePricingPlatforms(platforms) {
+		switch platform {
+		case PlatformDeepSeek, PlatformComposite, ModelPriceOverrideWildcardPlatform:
+			continue
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 // deepSeekOfficialPeakWindowLabels 由 deepSeekOfficialPeakWindows 生成展示用文案，
 // 避免窗口定义与展示文案两处各写一份、改一处漏一处。
 func deepSeekOfficialPeakWindowLabels() []string {

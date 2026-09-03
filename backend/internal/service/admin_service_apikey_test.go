@@ -617,7 +617,11 @@ func TestAdminService_AdminUpdateAPIKeyGroupID_SubscriptionGroup_AllowsActiveSub
 	existing := &APIKey{ID: 1, UserID: 42, Key: "sk-test", GroupID: nil}
 	apiKeyRepo := &apiKeyRepoStubForGroupUpdate{key: existing}
 	groupRepo := &groupRepoStubForGroupUpdate{group: &Group{ID: 10, Name: "Sub", Status: StatusActive, IsExclusive: true, SubscriptionType: SubscriptionTypeSubscription}}
-	userRepo := &userRepoStubForGroupUpdate{}
+	userRepo := &userRepoStubForGroupUpdate{user: &User{
+		ID:            42,
+		Status:        StatusActive,
+		AllowedGroups: []int64{10},
+	}}
 	userSubRepo := &userSubRepoStubForGroupUpdate{
 		getActiveSub: &UserSubscription{ID: 99, UserID: 42, GroupID: 10},
 	}

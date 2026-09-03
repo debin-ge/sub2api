@@ -1577,6 +1577,9 @@ func (s *BillingService) getModelPricingForPlatforms(platforms []string, model s
 	}
 
 	// 2. 使用硬编码回退价格
+	if isDeepSeekModel(model) && !deepSeekFallbackAllowedForPlatforms(platforms) {
+		return nil, fmt.Errorf("%w for model: %s", ErrModelPricingUnavailable, model)
+	}
 	var fallback *ModelPricing
 	if allowInference {
 		fallback = s.getFallbackPricing(model)
