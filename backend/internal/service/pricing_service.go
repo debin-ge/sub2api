@@ -697,7 +697,7 @@ func (s *PricingService) downloadPricingData() error {
 
 	// 更新内存数据
 	s.mu.Lock()
-	warnDroppedLongContextLadders(s.pricingData, data)
+	warnDroppedLongContextLadders(s.catalogData, data)
 	s.catalogData = data
 	s.rebuildEffectiveLocked(s.catalogData)
 	s.lastUpdated = time.Now()
@@ -1061,7 +1061,7 @@ func (s *PricingService) loadPricingData(filePath string) error {
 	hashStr := hex.EncodeToString(hash[:])
 
 	s.mu.Lock()
-	warnDroppedLongContextLadders(s.pricingData, pricingData)
+	warnDroppedLongContextLadders(s.catalogData, pricingData)
 	s.catalogData = pricingData
 	s.rebuildEffectiveLocked(s.catalogData)
 	s.localHash = hashStr

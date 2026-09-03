@@ -1145,7 +1145,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 // Returns models from the authenticated API key's unified catalog.
 func (h *GatewayHandler) Models(c *gin.Context) {
 	apiKey, _ := middleware2.GetAPIKeyFromContext(c)
-	if h == nil || h.modelCatalog == nil {
+	if h == nil || (h.gatewayService == nil && h.modelCatalog == nil) {
 		response.ErrorFrom(c, errors.New("model catalog is unavailable"))
 		return
 	}
@@ -1186,13 +1186,18 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 	// Get available models from account configurations for the selected group platform.
 	var availableModels []string
 	var err error
-	customModelsEnabled := apiKey != nil && apiKey.Group != nil && apiKey.Group.CustomModelsListEnabled()
-	if h.modelCatalog != nil && (forcePlatform || customModelsEnabled) {
-		availableModels, err = h.modelCatalog.ListForPlatform(c.Request.Context(), groupID, platform, true)
-	} else if h.modelCatalog != nil {
-		availableModels, err = h.modelCatalog.ListForAPIKey(c.Request.Context(), apiKey)
-	} else if h.gatewayService != nil {
+	if h.gatewayService != nil {
+		// GatewayService keeps the legacy cache/default fallback when live catalog
+		// discovery fails. Keep it as the production source of truth while the
+		// standalone catalog path remains available for lightweight callers/tests.
 		availableModels = h.gatewayService.GetAvailableModels(c.Request.Context(), groupID, platform)
+	} else {
+		customModelsEnabled := apiKey != nil && apiKey.Group != nil && apiKey.Group.CustomModelsListEnabled()
+		if forcePlatform || customModelsEnabled {
+			availableModels, err = h.modelCatalog.ListForPlatform(c.Request.Context(), groupID, platform, true)
+		} else {
+			availableModels, err = h.modelCatalog.ListForAPIKey(c.Request.Context(), apiKey)
+		}
 	}
 	if err != nil {
 		response.ErrorFrom(c, err)

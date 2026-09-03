@@ -226,6 +226,41 @@ func TestGatewayModels_UsesUnifiedCatalog(t *testing.T) {
 	}
 }
 
+func TestGatewayModels_PrefersGatewayServiceWhenBothSourcesConfigured(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	const groupID int64 = 43
+	repo := &gatewayModelsAccountRepoStub{byGroup: map[int64][]service.Account{
+		groupID: {
+			{
+				Platform: service.PlatformOpenAI,
+				Credentials: map[string]any{
+					"model_mapping": map[string]any{"gateway-model": "gateway-model"},
+				},
+			},
+		},
+	}}
+	h := newGatewayModelsHandlerForTest(repo)
+	// A distinct catalog result makes it observable which production dependency
+	// the handler selected when both are present.
+	h.modelCatalog = gatewayHandlerModelCatalogStub{models: []string{"catalog-only-model"}}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	groupIDValue := groupID
+	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
+		GroupID: &groupIDValue,
+		Group:   &service.Group{ID: groupID, Platform: service.PlatformOpenAI},
+	})
+
+	h.Models(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var got gatewayModelsResponseForTest
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Equal(t, []string{"gateway-model"}, modelIDsForTest(got.Data))
+}
+
 func TestGatewayModels_ForcePlatformUsesCallerGroupScopeAndWaitsForLiveCatalog(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	stub := &gatewayHandlerRecordingModelCatalogStub{

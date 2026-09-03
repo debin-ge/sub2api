@@ -148,6 +148,38 @@ func TestPricingOverride_IneffectiveEntryWarns(t *testing.T) {
 	require.True(t, logSink.ContainsMessageAtLevel("override had no effect for 1 model(s): typo-model", "warn"))
 }
 
+func TestPricingReloadWarnUsesRawCatalogBeforeEffectiveOverrides(t *testing.T) {
+	logSink, restore := captureStructuredLog(t)
+	defer restore()
+
+	dir := t.TempDir()
+	catalogPath := filepath.Join(dir, "catalog.json")
+	// The raw catalog has no long-context ladder. The effective in-memory price
+	// does, representing a wildcard operator override that must not be treated as
+	// a newly dropped upstream ladder on the next reload.
+	require.NoError(t, os.WriteFile(catalogPath, []byte(`{
+		"gpt-5.5": {"litellm_provider": "openai", "mode": "chat",
+			"input_cost_per_token": 5e-06, "output_cost_per_token": 3e-05}
+	}`), 0644))
+
+	svc := &PricingService{cfg: &config.Config{}}
+	svc.catalogData = map[string]*ModelPriceEntry{
+		"gpt-5.5": {InputCostPerToken: 5e-06, OutputCostPerToken: 3e-05},
+	}
+	svc.pricingData = map[string]*ModelPriceEntry{
+		"gpt-5.5": {
+			InputCostPerToken:               5e-06,
+			OutputCostPerToken:              3e-05,
+			LongContextInputTokenThreshold:  272000,
+			LongContextInputCostMultiplier:  2,
+			LongContextOutputCostMultiplier: 1.5,
+		},
+	}
+
+	require.NoError(t, svc.loadPricingData(catalogPath))
+	require.False(t, logSink.ContainsMessageAtLevel("Long-context ladder dropped", "warn"))
+}
+
 func TestPricingOverride_NonObjectEntryKeepsCatalogEntry(t *testing.T) {
 	svc := newPricingServiceWithOverride(t, `{"gpt-5.5": "oops"}`)
 	data, err := svc.parsePricingData([]byte(gpt55OverrideCatalogJSON))
