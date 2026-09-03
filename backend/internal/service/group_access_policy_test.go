@@ -70,6 +70,22 @@ func TestGroupAccessPolicyDecisionMatrix(t *testing.T) {
 		require.True(t, decision.Allowed)
 		require.NoError(t, decision.Error())
 	})
+
+	t.Run("restricted VIP still needs explicit public-group grant", func(t *testing.T) {
+		decision := policy.Evaluate(&GroupAccessProfile{
+			UserID: 7, IsVIP: true, RestrictPublicGroups: true,
+		}, vipGroup, GroupAccessBinding)
+		require.False(t, decision.Allowed)
+		require.Equal(t, GroupAccessDenyGroupNotAllowed, decision.Reason)
+	})
+
+	t.Run("public-group grant does not bypass VIP", func(t *testing.T) {
+		decision := policy.Evaluate(&GroupAccessProfile{
+			UserID: 7, RestrictPublicGroups: true, AllowedGroups: []int64{vipGroup.ID},
+		}, vipGroup, GroupAccessBinding)
+		require.False(t, decision.Allowed)
+		require.Equal(t, GroupAccessDenyVIPOnly, decision.Reason)
+	})
 }
 
 func TestGroupAccessPolicySubscriptionSemantics(t *testing.T) {
@@ -91,6 +107,14 @@ func TestGroupAccessPolicySubscriptionSemantics(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, infraerrors.Code(binding.Error()))
 
 	profile.ActiveSubscriptionGroupIDs = []int64{9}
+	binding = policy.Evaluate(profile, group, GroupAccessBinding)
+	require.True(t, binding.Allowed)
+
+	profile.RestrictPublicGroups = true
+	binding = policy.Evaluate(profile, group, GroupAccessBinding)
+	require.False(t, binding.Allowed)
+	require.Equal(t, GroupAccessDenyGroupNotAllowed, binding.Reason)
+	profile.AllowedGroups = []int64{9}
 	binding = policy.Evaluate(profile, group, GroupAccessBinding)
 	require.True(t, binding.Allowed)
 

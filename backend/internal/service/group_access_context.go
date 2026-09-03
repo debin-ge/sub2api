@@ -13,10 +13,11 @@ func NewGroupAccessProfileFromUser(user *User) *GroupAccessProfile {
 		return nil
 	}
 	return &GroupAccessProfile{
-		UserID:         user.ID,
-		IsVIP:          user.IsVIP,
-		VIPAccessState: user.AccessState(),
-		AllowedGroups:  append([]int64(nil), user.AllowedGroups...),
+		UserID:               user.ID,
+		IsVIP:                user.IsVIP,
+		VIPAccessState:       user.AccessState(),
+		RestrictPublicGroups: user.RestrictPublicGroups,
+		AllowedGroups:        append([]int64(nil), user.AllowedGroups...),
 	}
 }
 

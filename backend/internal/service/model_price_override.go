@@ -458,7 +458,9 @@ func buildOverrideModelPriceEntry(model string, base *ModelPriceEntry, row *Mode
 	currency := modelPriceCurrencyOrUSD(row.Currency)
 	raw := mergeRawPriceEntry(overrideBaseRaw(base, currency), &row.Payload)
 	raw.Currency = currency
-	return buildModelPriceEntry(model, raw)
+	entry := buildModelPriceEntry(model, raw)
+	entry.OperatorOverride = true
+	return entry
 }
 
 func buildModelPriceEntry(model string, raw *RawModelPriceEntry) *ModelPriceEntry {

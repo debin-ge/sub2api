@@ -7,8 +7,9 @@ import (
 )
 
 const (
-	// deepSeekOfficialTimezone 是 DeepSeek 中国区官方峰谷价使用的时区。
-	deepSeekOfficialTimezone = "Asia/Shanghai"
+	// DeepSeek publishes peak windows in UTC; Beijing time is used only to
+	// identify weekends, which are off-peak all day.
+	deepSeekOfficialTimezone = "UTC"
 	// deepSeekOffPeakMultiplier 是官方空闲价相对高峰价的倍率：空闲 = 高峰 × 1/2。
 	deepSeekOffPeakMultiplier = 0.5
 	// deepSeekPeakMultiplier 是官方高峰价相对空闲价的倍率：高峰 = 空闲 × 2。
@@ -16,11 +17,11 @@ const (
 	deepSeekOfficialTimeKind = "deepseek_official"
 )
 
-// deepSeekOfficialPeakWindows 是北京时间左闭右开高峰窗口。
-// 官方：09:00-12:00、14:00-18:00，其余为空闲。
+// deepSeekOfficialPeakWindows 是 UTC 左闭右开高峰窗口。
+// 官方 2026-08-23 口径：01:00-04:00、06:00-10:00，仅工作日。
 var deepSeekOfficialPeakWindows = [][2]int{
-	{9 * 60, 12 * 60},
-	{14 * 60, 18 * 60},
+	{1 * 60, 4 * 60},
+	{6 * 60, 10 * 60},
 }
 
 var deepSeekOfficialLocation = func() *time.Location {
@@ -71,6 +72,10 @@ func officialTimePricingApplies(pricing *ModelPricing) bool {
 
 func deepSeekIsPeakAt(at time.Time) bool {
 	if at.IsZero() {
+		return false
+	}
+	beijing := at.In(time.FixedZone("Asia/Shanghai", 8*3600))
+	if beijing.Weekday() == time.Saturday || beijing.Weekday() == time.Sunday {
 		return false
 	}
 	local := at.In(deepSeekOfficialLocation)

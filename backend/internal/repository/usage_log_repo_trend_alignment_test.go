@@ -61,7 +61,7 @@ func TestShouldUsePreaggregatedTrend_RequiresBucketAlignedWindow(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := shouldUsePreaggregatedTrend(tc.start, tc.end, tc.granularity, 0, 0, 0, 0, "", nil, nil, nil, "", nil)
+			got := shouldUsePreaggregatedTrend(tc.start, tc.end, tc.granularity, 0, 0, 0, 0, "", nil, nil, nil, "", nil, nil)
 			if got != tc.want {
 				t.Errorf("shouldUsePreaggregatedTrend = %v, want %v", got, tc.want)
 			}

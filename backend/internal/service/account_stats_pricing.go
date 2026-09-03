@@ -71,28 +71,13 @@ func tryModelFilePricing(billingService *BillingService, model string, tokens Us
 	if len(pricingPlatform) > 0 {
 		platform = pricingPlatform[0]
 	}
-	pricing, err := billingService.GetModelPricingForPlatform(platform, model)
-	if err != nil || pricing == nil {
+	breakdown, err := billingService.CalculateCostWithServiceTierForPlatform(
+		platform, model, tokens, 1, normalizeBillingServiceTier(serviceTier),
+	)
+	if err != nil || breakdown == nil || breakdown.TotalCost <= 0 {
 		return nil
 	}
-	normalizedTier := normalizeBillingServiceTier(serviceTier)
-	if normalizedTier == "priority" || normalizedTier == "fast" || normalizedTier == "flex" ||
-		billingService.shouldApplySessionLongContextPricing(tokens, pricing) {
-		breakdown, err := billingService.CalculateCostWithServiceTierForPlatform(platform, model, tokens, 1, normalizedTier)
-		if err != nil || breakdown == nil || breakdown.TotalCost <= 0 {
-			return nil
-		}
-		return &breakdown.TotalCost
-	}
-	cost := float64(tokens.InputTokens)*pricing.InputPricePerToken +
-		float64(tokens.OutputTokens)*pricing.OutputPricePerToken +
-		float64(tokens.CacheCreationTokens)*pricing.CacheCreationPricePerToken +
-		float64(tokens.CacheReadTokens)*pricing.CacheReadPricePerToken +
-		float64(tokens.ImageOutputTokens)*pricing.ImageOutputPricePerToken
-	if cost <= 0 {
-		return nil
-	}
-	return &cost
+	return &breakdown.TotalCost
 }
 
 // tryCustomRules 遍历自定义规则，按数组顺序先命中为准。
@@ -208,11 +193,12 @@ func calculateTokenStatsCost(pricing *ChannelModelPricing, tokens UsageTokens) *
 		totalTokens := tokens.InputTokens + tokens.OutputTokens + tokens.CacheCreationTokens + tokens.CacheReadTokens
 		if iv := FindMatchingInterval(pricing.Intervals, totalTokens); iv != nil {
 			p = &ChannelModelPricing{
-				InputPrice:      iv.InputPrice,
-				OutputPrice:     iv.OutputPrice,
-				CacheWritePrice: iv.CacheWritePrice,
-				CacheReadPrice:  iv.CacheReadPrice,
-				PerRequestPrice: iv.PerRequestPrice,
+				InputPrice:        iv.InputPrice,
+				OutputPrice:       iv.OutputPrice,
+				CacheWritePrice:   iv.CacheWritePrice,
+				CacheWrite1hPrice: iv.CacheWrite1hPrice,
+				CacheReadPrice:    iv.CacheReadPrice,
+				PerRequestPrice:   iv.PerRequestPrice,
 			}
 		}
 	}
@@ -222,9 +208,17 @@ func calculateTokenStatsCost(pricing *ChannelModelPricing, tokens UsageTokens) *
 		}
 		return *ptr
 	}
+	cacheCreationCost := float64(tokens.CacheCreationTokens) * deref(p.CacheWritePrice)
+	if p.CacheWrite1hPrice != nil {
+		cache5m, cache1h := normalizeCacheCreationBreakdown(tokens)
+		if cache5m > 0 || cache1h > 0 {
+			cacheCreationCost = float64(cache5m)*deref(p.CacheWritePrice) +
+				float64(cache1h)*deref(p.CacheWrite1hPrice)
+		}
+	}
 	cost := float64(tokens.InputTokens)*deref(p.InputPrice) +
 		float64(tokens.OutputTokens)*deref(p.OutputPrice) +
-		float64(tokens.CacheCreationTokens)*deref(p.CacheWritePrice) +
+		cacheCreationCost +
 		float64(tokens.CacheReadTokens)*deref(p.CacheReadPrice) +
 		float64(tokens.ImageOutputTokens)*deref(p.ImageOutputPrice)
 	if cost <= 0 {

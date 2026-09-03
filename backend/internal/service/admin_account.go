@@ -1718,7 +1718,13 @@ func (s *adminServiceImpl) ResetAccountQuota(ctx context.Context, id int64) erro
 		return infraerrors.New(http.StatusBadRequest, "SPARK_SHADOW_NO_QUOTA_RESET",
 			"cannot reset quota for a spark shadow account; manage it on the parent account")
 	}
-	return s.accountRepo.ResetQuotaUsed(ctx, id)
+	repo, ok := s.accountRepo.(interface {
+		ResetQuotaUsedAndClearRateLimitCooldown(context.Context, int64) error
+	})
+	if !ok {
+		return errors.New("account repository does not support atomic quota reset")
+	}
+	return repo.ResetQuotaUsedAndClearRateLimitCooldown(ctx, id)
 }
 
 // EnsureOpenAIPrivacy 检查 OpenAI OAuth 账号是否已设置 privacy_mode，

@@ -94,7 +94,21 @@ func convertResponsesInputToChatMessages(input json.RawMessage) ([]ChatMessage, 
 
 		messages := make([]ChatMessage, 0, len(items))
 		mediaByCallID := make(toolOutputMediaByCallID)
+		var pendingReasoning string
+		var lastTurnReasoning string
 		for i, item := range items {
+			if item.Type == "reasoning" {
+				// Responses reasoning items have no Chat Completions equivalent,
+				// but their plaintext summary is required on a following assistant
+				// tool-call message by DeepSeek thinking mode. Encrypted-only
+				// reasoning cannot be represented on this strict bridge and remains
+				// intentionally unavailable without a gateway-side cache hook.
+				pendingReasoning = responsesInputReasoningText(item)
+				if pendingReasoning != "" {
+					lastTurnReasoning = pendingReasoning
+				}
+				continue
+			}
 			if isResponsesToolOutputItemType(item.Type) {
 				outputRaw := item.outputRaw
 				if len(outputRaw) == 0 {
@@ -121,6 +135,25 @@ func convertResponsesInputToChatMessages(input json.RawMessage) ([]ChatMessage, 
 			if err != nil {
 				return nil, fmt.Errorf("convert responses input item %d: %w", i, err)
 			}
+			if isResponsesToolCallItemType(item.Type) && message.ReasoningContent == "" {
+				if pendingReasoning != "" {
+					message.ReasoningContent = pendingReasoning
+				} else {
+					message.ReasoningContent = lastTurnReasoning
+				}
+				pendingReasoning = ""
+			}
+			if item.Type == "message" || item.Type == "" {
+				if message.Role == "assistant" {
+					if message.ReasoningContent == "" {
+						message.ReasoningContent = pendingReasoning
+					}
+					pendingReasoning = ""
+				} else {
+					pendingReasoning = ""
+					lastTurnReasoning = ""
+				}
+			}
 			if isResponsesToolCallItemType(item.Type) && i > 0 && isResponsesToolCallItemType(items[i-1].Type) {
 				messages[len(messages)-1].ToolCalls = append(messages[len(messages)-1].ToolCalls, message.ToolCalls...)
 				continue
@@ -132,6 +165,16 @@ func convertResponsesInputToChatMessages(input json.RawMessage) ([]ChatMessage, 
 	default:
 		return nil, fmt.Errorf("responses input must be a JSON string or array")
 	}
+}
+
+func responsesInputReasoningText(item ResponsesInputItem) string {
+	parts := make([]string, 0, len(item.Summary))
+	for _, summary := range item.Summary {
+		if text := strings.TrimSpace(summary.Text); text != "" {
+			parts = append(parts, text)
+		}
+	}
+	return strings.Join(parts, "\n")
 }
 
 func convertResponsesInputItemToChatMessage(item ResponsesInputItem) (ChatMessage, error) {

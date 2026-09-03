@@ -40,6 +40,7 @@ type GroupAccessProfile struct {
 	UserID                     int64
 	IsVIP                      bool
 	VIPAccessState             VIPAccessState
+	RestrictPublicGroups       bool
 	AllowedGroups              []int64
 	ActiveSubscriptionGroupIDs []int64
 }
@@ -109,6 +110,14 @@ func (p *GroupAccessPolicy) Evaluate(
 		return denyGroupAccess(false, GroupAccessDenyGroupInactive, GroupAccessActionNone)
 	}
 
+	// Exclusive groups always require an explicit grant. When public-group
+	// restriction is enabled, the same allowlist gate also applies to public
+	// standard and subscription groups. This gate runs before VIP/subscription
+	// checks so access requires every applicable entitlement.
+	if (group.IsExclusive || profile.RestrictPublicGroups) && !containsInt64(profile.AllowedGroups, group.ID) {
+		return denyGroupAccess(false, GroupAccessDenyGroupNotAllowed, GroupAccessActionNone)
+	}
+
 	// Original subscription groups retain their existing endpoint-aware
 	// runtime semantics. Catalog and binding still require an active
 	// subscription to the concrete group.
@@ -120,13 +129,6 @@ func (p *GroupAccessPolicy) Evaluate(
 			return allowGroupAccess()
 		}
 		return denyGroupAccess(false, GroupAccessDenySubscriptionRequired, GroupAccessActionNone)
-	}
-
-	// Exclusive permission intentionally has priority over VIP so callers do
-	// not reveal a hidden group or suggest payment for a group the user still
-	// could not access.
-	if group.IsExclusive && !containsInt64(profile.AllowedGroups, group.ID) {
-		return denyGroupAccess(false, GroupAccessDenyGroupNotAllowed, GroupAccessActionNone)
 	}
 
 	if group.VIPOnly && !profile.IsVIP {

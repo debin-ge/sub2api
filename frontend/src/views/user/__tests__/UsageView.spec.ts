@@ -53,6 +53,9 @@ const messages: Record<string, string> = {
   'usage.ws': 'WS',
   'usage.stream': 'Stream',
   'usage.sync': 'Sync',
+  'usage.compactionFilter': 'Request Kind',
+  'usage.allCompactionTypes': 'All Requests',
+  'usage.compactionOnly': 'Compaction Only',
   'usage.exporting': 'Exporting',
   'usage.exportCsv': 'Export CSV',
   'usage.failedToLoad': 'Failed to load',
@@ -125,6 +128,7 @@ const usageLog = {
   billing_mode: 'token',
   request_type: 'sync',
   stream: false,
+  native_compaction_v2: false,
 }
 
 function mountUsageView() {
@@ -207,7 +211,7 @@ describe('user UsageView', () => {
     expect(getAvailable).toHaveBeenCalled()
   })
 
-  it('queries the default range as an exact 24-hour window, not two calendar days', async () => {
+	it('queries the default range as an exact 24-hour window, not two calendar days', async () => {
     mountUsageView()
     await flushPromises()
 
@@ -218,14 +222,59 @@ describe('user UsageView', () => {
       const params = call.mock.calls[0][0] as { start_time?: string; end_time?: string }
       expect(params.start_time).toBeDefined()
       expect(params.end_time).toBeDefined()
-      const spanMs = new Date(params.end_time!).getTime() - new Date(params.start_time!).getTime()
-      expect(spanMs).toBe(24 * 60 * 60 * 1000)
-    }
-  })
+		const spanMs = new Date(params.end_time!).getTime() - new Date(params.start_time!).getTime()
+		expect(spanMs).toBe(24 * 60 * 60 * 1000)
+	}
+	})
+
+	it('propagates and resets the native compaction filter across page requests', async () => {
+    const wrapper = mountUsageView()
+    await flushPromises()
+
+    expect((wrapper.vm as any).compactionOptions).toEqual([
+      { value: null, label: 'All Requests' },
+      { value: true, label: 'Compaction Only' },
+    ])
+
+    query.mockClear()
+    getStats.mockClear()
+    getDashboardModels.mockClear()
+    getDashboardSnapshotV2.mockClear()
+
+    ;(wrapper.vm as any).filters.native_compaction_v2 = true
+    ;(wrapper.vm as any).applyFilters()
+    await flushPromises()
+
+    expect(query).toHaveBeenCalledWith(
+      expect.objectContaining({ native_compaction_v2: true }),
+      expect.anything()
+    )
+    expect(getStats).toHaveBeenCalledWith(expect.objectContaining({ native_compaction_v2: true }))
+    expect(getDashboardModels).toHaveBeenCalledWith(expect.objectContaining({ native_compaction_v2: true }))
+    expect(getDashboardSnapshotV2).toHaveBeenCalledWith(expect.objectContaining({ native_compaction_v2: true }))
+
+    query.mockClear()
+    getStats.mockClear()
+    getDashboardModels.mockClear()
+    getDashboardSnapshotV2.mockClear()
+
+    ;(wrapper.vm as any).resetFilters()
+    await flushPromises()
+
+    expect((wrapper.vm as any).filters.native_compaction_v2).toBeNull()
+    expect(query).toHaveBeenCalledWith(
+      expect.objectContaining({ native_compaction_v2: null }),
+      expect.anything()
+    )
+    expect(getStats).toHaveBeenCalledWith(expect.objectContaining({ native_compaction_v2: null }))
+	expect(getDashboardModels).toHaveBeenCalledWith(expect.objectContaining({ native_compaction_v2: null }))
+	expect(getDashboardSnapshotV2).toHaveBeenCalledWith(expect.objectContaining({ native_compaction_v2: null }))
+	})
 
   it('exports csv with current filters and without admin-only fields', async () => {
     const wrapper = mountUsageView()
     await flushPromises()
+    ;(wrapper.vm as any).filters.native_compaction_v2 = true
 
     let exportedBlob: Blob | null = null
     let csvContent = ''
@@ -250,6 +299,7 @@ describe('user UsageView', () => {
       page_size: 100,
       sort_by: 'created_at',
       sort_order: 'desc',
+      native_compaction_v2: true,
     }))
     expect(clickSpy).toHaveBeenCalled()
     expect(showSuccess).toHaveBeenCalled()

@@ -87,6 +87,7 @@
           <template #after-reset>
             <div v-if="activeTab !== 'ranking'" class="relative" ref="columnDropdownRef">
               <button
+                data-testid="usage-column-settings"
                 @click="showColumnDropdown = !showColumnDropdown"
                 class="btn btn-secondary px-2 md:px-3"
                 :title="t('admin.users.columnSettings')"
@@ -103,6 +104,7 @@
                 <button
                   v-for="col in currentToggleableColumns"
                   :key="col.key"
+                  :data-testid="`usage-column-toggle-${col.key}`"
                   @click="toggleCurrentColumn(col.key)"
                   class="flex w-full items-center justify-between px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-dark-700"
                 >
@@ -245,6 +247,7 @@ const breakdownFilters = computed(() => {
   if (filters.value.account_id) f.account_id = filters.value.account_id
   if (filters.value.group_id) f.group_id = filters.value.group_id
   if (filters.value.request_type != null) f.request_type = filters.value.request_type
+  if (filters.value.native_compaction_v2 != null) f.native_compaction_v2 = filters.value.native_compaction_v2
   if (filters.value.billing_type != null) f.billing_type = filters.value.billing_type
   return f
 })
@@ -284,7 +287,7 @@ const startDate = ref(defaultRange.start); const endDate = ref(defaultRange.end)
 // Exact bounds of the default "last 24 hours" window; without them the two
 // dates above would be read as a 48-hour range. filters is the single source
 // of truth for the window, so every request builder reads them from there.
-const filters = ref<AdminUsageQueryParams>({ user_id: undefined, model: undefined, group_id: undefined, request_type: undefined, billing_type: null, start_date: startDate.value, end_date: endDate.value, start_time: defaultRange.startTime, end_time: defaultRange.endTime })
+const filters = ref<AdminUsageQueryParams>({ user_id: undefined, model: undefined, group_id: undefined, request_type: undefined, native_compaction_v2: null, billing_type: null, start_date: startDate.value, end_date: endDate.value, start_time: defaultRange.startTime, end_time: defaultRange.endTime })
 const pagination = reactive({ page: 1, page_size: getPersistedPageSize(), total: 0 })
 const sortState = reactive({
   sort_by: 'created_at',
@@ -454,6 +457,7 @@ const loadModelStats = async (source: ModelDistributionSource, force = false) =>
       group_id: filters.value.group_id,
       request_type: requestType,
       stream: legacyStream === null ? undefined : legacyStream,
+      native_compaction_v2: filters.value.native_compaction_v2,
       billing_type: filters.value.billing_type,
 	  upstream_model_mismatch: filters.value.upstream_model_mismatch,
     }
@@ -506,6 +510,7 @@ const loadChartData = async () => {
       group_id: filters.value.group_id,
       request_type: requestType,
       stream: legacyStream === null ? undefined : legacyStream,
+      native_compaction_v2: filters.value.native_compaction_v2,
       billing_type: filters.value.billing_type,
 	  upstream_model_mismatch: filters.value.upstream_model_mismatch,
       include_stats: false,
@@ -546,7 +551,7 @@ const resetFilters = () => {
   const range = getLast24HoursRange()
   startDate.value = range.start
   endDate.value = range.end
-  filters.value = { start_date: startDate.value, end_date: endDate.value, start_time: range.startTime, end_time: range.endTime, request_type: undefined, billing_type: null, billing_mode: undefined }
+  filters.value = { start_date: startDate.value, end_date: endDate.value, start_time: range.startTime, end_time: range.endTime, request_type: undefined, native_compaction_v2: null, billing_type: null, billing_mode: undefined }
   granularity.value = getGranularityForRange(startDate.value, endDate.value)
   applyFilters()
 }
@@ -599,7 +604,7 @@ const exportToCSV = async () => {
     const pageSize = 1000
     const headers = [
       t('usage.time'), t('admin.usage.user'), t('usage.apiKeyFilter'),
-      t('admin.usage.account'), t('usage.requestedModel'), t('usage.sentUpstreamModel'), t('usage.upstreamResponseModel'), t('usage.upstreamModelMismatch'), t('usage.reasoningEffort'), t('admin.usage.group'),
+      t('admin.usage.account'), t('usage.requestedModel'), t('usage.sentUpstreamModel'), t('usage.upstreamResponseModel'), t('usage.upstreamModelMismatch'), t('usage.requestedReasoningEffort'), t('usage.reasoningEffort'), t('admin.usage.group'),
       t('usage.inboundEndpoint'), t('usage.upstreamEndpoint'),
       t('usage.type'),
       t('admin.usage.inputTokens'), t('admin.usage.outputTokens'),
@@ -619,7 +624,7 @@ const exportToCSV = async () => {
       if (c.signal.aborted) break; if (p === 1) { total = res.total; exportProgress.total = total }
       const rows = (res.items || []).map((log: AdminUsageLog) => [
         log.created_at, log.user?.email || '', log.api_key?.name || '', log.account?.name || '', log.model,
-        log.upstream_model || log.model, log.upstream_response_model || '', log.upstream_model_mismatch == null ? '' : t(log.upstream_model_mismatch ? 'common.yes' : 'common.no'), formatReasoningEffort(log.reasoning_effort), log.group?.name || '',
+        log.upstream_model || log.model, log.upstream_response_model || '', log.upstream_model_mismatch == null ? '' : t(log.upstream_model_mismatch ? 'common.yes' : 'common.no'), formatReasoningEffort(log.reasoning_effort), formatReasoningEffort(log.upstream_reasoning_effort || log.reasoning_effort), log.group?.name || '',
         log.inbound_endpoint || '', log.upstream_endpoint || '', getRequestTypeLabel(log),
         log.input_tokens, log.output_tokens, log.cache_read_tokens, log.cache_creation_tokens,
         log.input_cost?.toFixed(6) || '0.000000', log.output_cost?.toFixed(6) || '0.000000',

@@ -57,6 +57,9 @@ const messages: Record<string, string> = {
   'usage.imageSizeUnknown': 'unknown',
   'usage.imageUnitPrice': 'Per-image price',
   'usage.imageTotalPrice': 'Image total price',
+  'usage.stream': 'Stream',
+  'usage.sync': 'Sync',
+  'usage.nativeCompactionV2': 'Compaction',
   'admin.usage.billingModeToken': 'Token',
   'admin.usage.billingModePerRequest': 'Per request',
   'admin.usage.billingModeImage': 'Image',
@@ -93,6 +96,7 @@ const DataTableStub = {
     <div>
       <div v-for="row in data" :key="row.request_id">
         <slot name="cell-model" :row="row" :value="row.model" />
+        <slot name="cell-reasoning_effort" :row="row" :value="row.reasoning_effort" />
         <slot name="cell-billing_mode" :row="row" />
         <slot name="cell-tokens" :row="row" />
         <slot name="cell-cost" :row="row" />
@@ -178,30 +182,41 @@ describe('admin UsageTable tooltip', () => {
     expect(wrapper.get('[data-testid="long-context-billing-marker"]').text()).toBe('x2')
   })
 
-  it('labels verified internal relay rows while keeping normal rows unmarked', () => {
+	it('keeps the request type badge and adds a separate badge only for native compaction rows', () => {
+    const DataTableStreamStub = {
+      props: ['data'],
+      template: `
+        <div>
+          <div v-for="row in data" :key="row.request_id">
+            <slot name="cell-stream" :row="row" />
+          </div>
+		</div>
+		`,
+	}
     const wrapper = mount(UsageTable, {
       props: {
-        data: [
-          {
-            ...baseImageRow,
-            request_id: 'internal-relay:parent:client:inner',
-            created_at: '2026-08-11T12:00:00Z',
-            internal_relay: true,
-            relay_parent_request_id: 'client:outer-request',
+		data: [
+			{
+				...baseImageRow,
+				request_id: 'req-compaction-stream',
+            request_type: 'stream',
+            stream: true,
+            native_compaction_v2: true,
           },
           {
             ...baseImageRow,
-            request_id: 'client:normal',
-            created_at: '2026-08-11T12:01:00Z',
-            internal_relay: false,
+            request_id: 'req-historical-sync',
+            request_type: 'sync',
+				stream: false,
+				native_compaction_v2: false,
           },
         ],
         loading: false,
         columns: [],
       },
-      global: {
-        stubs: {
-          DataTable: DataTableStub,
+		global: {
+			stubs: {
+				DataTable: DataTableStreamStub,
           EmptyState: true,
           Icon: true,
           Teleport: true,
@@ -209,11 +224,32 @@ describe('admin UsageTable tooltip', () => {
       },
     })
 
-    const badges = wrapper.findAll('[data-testid="internal-relay-badge"]')
-    expect(badges).toHaveLength(1)
-    expect(badges[0].text()).toBe('Internal relay')
-    expect(badges[0].attributes('title')).toContain('client:outer-request')
-  })
+	const requestBadges = wrapper.findAll('[data-testid="request-type-badge"]')
+    expect(requestBadges).toHaveLength(2)
+    expect(requestBadges[0].text()).toBe('Stream')
+    expect(requestBadges[1].text()).toBe('Sync')
+	expect(wrapper.findAll('[data-testid="native-compaction-badge"]')).toHaveLength(1)
+	expect(wrapper.get('[data-testid="native-compaction-badge"]').text()).toBe('Compaction')
+	})
+
+	it('labels verified internal relay rows while keeping normal rows unmarked', () => {
+		const wrapper = mount(UsageTable, {
+			props: {
+				data: [
+					{ ...baseImageRow, request_id: 'internal-relay:parent:client:inner', created_at: '2026-09-03T00:00:00Z', internal_relay: true, relay_parent_request_id: 'client:outer-request' },
+					{ ...baseImageRow, request_id: 'client:normal', created_at: '2026-09-03T00:00:00Z', internal_relay: false },
+				],
+				loading: false,
+				columns: [],
+			},
+			global: { stubs: { DataTable: DataTableStub, EmptyState: true, Icon: true, Teleport: true } },
+		})
+
+		const badges = wrapper.findAll('[data-testid="internal-relay-badge"]')
+		expect(badges).toHaveLength(1)
+		expect(badges[0].text()).toBe('Internal relay')
+		expect(badges[0].attributes('title')).toContain('client:outer-request')
+	})
 
   it('shows service tier and billing breakdown in cost tooltip', async () => {
     const row = {
@@ -301,6 +337,86 @@ describe('admin UsageTable tooltip', () => {
     const text = wrapper.text()
     expect(text).toContain('claude-sonnet-4')
     expect(text).toContain('claude-sonnet-4-20250514')
+  })
+
+  it('shows requested and forwarded reasoning effort separately when they differ', () => {
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [{
+          request_id: 'req-admin-effort-1',
+          model: 'gpt-5.4',
+          reasoning_effort: 'max',
+          upstream_reasoning_effort: 'xhigh',
+        }],
+        loading: false,
+        columns: [],
+      },
+      global: {
+        stubs: {
+          DataTable: DataTableStub,
+          EmptyState: true,
+          Icon: true,
+          Teleport: true,
+        },
+      },
+    })
+
+    const text = wrapper.text()
+    expect(text).toContain('Max')
+    expect(text).toContain('XHigh')
+    expect(text).toContain('↳')
+  })
+
+  it('shows a single reasoning effort when requested matches forwarded', () => {
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [{
+          request_id: 'req-admin-effort-2',
+          model: 'gpt-5.6-sol',
+          reasoning_effort: 'max',
+        }],
+        loading: false,
+        columns: [],
+      },
+      global: {
+        stubs: {
+          DataTable: DataTableStub,
+          EmptyState: true,
+          Icon: true,
+          Teleport: true,
+        },
+      },
+    })
+
+    const text = wrapper.text()
+    expect(text).toContain('Max')
+    expect(text).not.toContain('↳')
+  })
+
+  it('hides mapped reasoning effort for user rows that only have the requested value', () => {
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [{
+          request_id: 'req-user-effort-1',
+          model: 'gpt-5.4',
+          reasoning_effort: 'max',
+        }],
+        loading: false,
+        columns: [],
+      },
+      global: {
+        stubs: {
+          DataTable: DataTableStub,
+          EmptyState: true,
+          Icon: true,
+          Teleport: true,
+        },
+      },
+    })
+
+    expect(wrapper.text()).toContain('Max')
+    expect(wrapper.text()).not.toContain('XHigh')
+    expect(wrapper.text()).not.toContain('↳')
   })
 
 	it.each([
@@ -608,6 +724,7 @@ const DataTableStubWithUser = {
       <div v-for="row in data" :key="row.request_id">
         <slot name="cell-user" :row="row" />
         <slot name="cell-model" :row="row" :value="row.model" />
+        <slot name="cell-reasoning_effort" :row="row" :value="row.reasoning_effort" />
         <slot name="cell-billing_mode" :row="row" />
         <slot name="cell-tokens" :row="row" />
         <slot name="cell-cost" :row="row" />

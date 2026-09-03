@@ -400,7 +400,7 @@ func TestGetPriceDetailAttachesDeepSeekOfficialTimeSchedule(t *testing.T) {
 	detail, err := svc.GetPriceDetailWithOfficial(PlatformDeepSeek, "deepseek-v4-pro", official)
 	require.NoError(t, err)
 	require.NotNil(t, detail.TimeSchedule)
-	require.Equal(t, "Asia/Shanghai", detail.TimeSchedule.Timezone)
+	require.Equal(t, "UTC", detail.TimeSchedule.Timezone)
 	// 目录缺该 SKU，生效价来自代码内官方兜底表（高峰价）。
 	require.Equal(t, 1.0, detail.TimeSchedule.PeakMultiplier)
 	require.Equal(t, 0.5, detail.TimeSchedule.OffPeakMultiplier)

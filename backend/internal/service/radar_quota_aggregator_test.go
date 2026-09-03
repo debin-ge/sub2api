@@ -1259,7 +1259,7 @@ func TestRadarQuotaAggregatorRunOnceFailurePrivacyAndDeterminism(t *testing.T) {
 		catalog := DefaultModelCatalogIDs(PlatformAnthropic)
 		require.GreaterOrEqual(t, len(catalog), 2)
 		knownPublic := catalog[0]
-		knownSingleAccount := catalog[1]
+		knownSingleAccount := catalog[len(catalog)-1]
 		privateEmail := "alice@example.com"
 		privateUnicode := "私有-模型"
 		privateLong := strings.Repeat("private-alias-", 20)

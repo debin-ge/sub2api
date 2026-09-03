@@ -61,6 +61,11 @@ func TestInitFallbackPricing_NoDuplicateKeys(t *testing.T) {
 	}
 }
 
+func newTestBillingServiceWithOpenAILadderCatalog(t *testing.T) *BillingService {
+	t.Helper()
+	return NewBillingService(&config.Config{}, newStubPricingServiceFromJSON(t, openAILadderCatalogJSON))
+}
+
 func TestCalculateCost_BasicComputation(t *testing.T) {
 	svc := newTestBillingService()
 
@@ -227,9 +232,21 @@ func TestGetModelPricing_OpenAIGPT54Fallback(t *testing.T) {
 	require.InDelta(t, 2.5e-6, pricing.InputPricePerToken, 1e-12)
 	require.InDelta(t, 15e-6, pricing.OutputPricePerToken, 1e-12)
 	require.InDelta(t, 0.25e-6, pricing.CacheReadPricePerToken, 1e-12)
+	// 静态兜底价不携带长上下文阶梯：阶梯一律由目录数据（above_272k 折算）驱动。
+	require.Zero(t, pricing.LongContextInputThreshold)
+	require.Zero(t, pricing.LongContextInputMultiplier)
+	require.Zero(t, pricing.LongContextOutputMultiplier)
+}
+
+func TestGetModelPricing_CatalogAboveTierFieldsDriveLongContext(t *testing.T) {
+	svc := newTestBillingServiceWithOpenAILadderCatalog(t)
+
+	pricing, err := svc.GetModelPricing("gpt-5.4")
+	require.NoError(t, err)
 	require.Equal(t, 272000, pricing.LongContextInputThreshold)
 	require.InDelta(t, 2.0, pricing.LongContextInputMultiplier, 1e-12)
 	require.InDelta(t, 1.5, pricing.LongContextOutputMultiplier, 1e-12)
+	require.False(t, pricing.LongContextThresholdInclusive, "openai 阈值语义为严格大于")
 }
 
 func TestGetModelPricing_OpenAICompactAliasesFallback(t *testing.T) {
@@ -242,8 +259,8 @@ func TestGetModelPricing_OpenAICompactAliasesFallback(t *testing.T) {
 		cacheRead   float64
 		longContext int
 	}{
-		{model: "gpt5.5", inputPrice: 5e-6, outputPrice: 30e-6, cacheRead: 0.5e-6, longContext: 272000},
-		{model: "openai/gpt5.4", inputPrice: 2.5e-6, outputPrice: 15e-6, cacheRead: 0.25e-6, longContext: 272000},
+		{model: "gpt5.5", inputPrice: 5e-6, outputPrice: 30e-6, cacheRead: 0.5e-6, longContext: 0},
+		{model: "openai/gpt5.4", inputPrice: 2.5e-6, outputPrice: 15e-6, cacheRead: 0.25e-6, longContext: 0},
 		{model: "gpt5.4-mini", inputPrice: 7.5e-7, outputPrice: 4.5e-6, cacheRead: 7.5e-8, longContext: 0},
 		{model: "gpt5.3codexspark", inputPrice: 1.5e-6, outputPrice: 12e-6, cacheRead: 0.15e-6, longContext: 0},
 	}
@@ -436,7 +453,7 @@ func TestCalculateCost_GLMFallback(t *testing.T) {
 }
 
 func TestCalculateCost_OpenAIGPT54LongContextAppliesWholeSessionMultipliers(t *testing.T) {
-	svc := newTestBillingService()
+	svc := newTestBillingServiceWithOpenAILadderCatalog(t)
 
 	tokens := UsageTokens{
 		InputTokens:  300000,
@@ -456,7 +473,7 @@ func TestCalculateCost_OpenAIGPT54LongContextAppliesWholeSessionMultipliers(t *t
 }
 
 func TestCalculateCost_OpenAIGPT54LongContextMarkerRequiresActualCostIncrease(t *testing.T) {
-	svc := newTestBillingService()
+	svc := newTestBillingServiceWithOpenAILadderCatalog(t)
 
 	cost, err := svc.calculateCostInternalForPlatform(
 		"",
@@ -474,7 +491,7 @@ func TestCalculateCost_OpenAIGPT54LongContextMarkerRequiresActualCostIncrease(t 
 }
 
 func TestCalculateCost_OpenAIGPT55ProUsesGPT55PricingPolicy(t *testing.T) {
-	svc := newTestBillingService()
+	svc := newTestBillingServiceWithOpenAILadderCatalog(t)
 
 	tokens := UsageTokens{
 		InputTokens:  300000,
@@ -522,7 +539,7 @@ func TestFallbackPricing_OpenAIGPT55ProUsesOfficialPrices(t *testing.T) {
 // 修复前：CacheReadCost = tokens * 0.25e-6 （漏乘倍率，少计费用）。
 // 修复后：CacheReadCost = tokens * 0.25e-6 * LongContextInputMultiplier(=2.0)。
 func TestCalculateCost_OpenAIGPT54LongContextAppliesMultiplierToCacheRead(t *testing.T) {
-	svc := newTestBillingService()
+	svc := newTestBillingServiceWithOpenAILadderCatalog(t)
 
 	// InputTokens + CacheReadTokens = 1000 + 300000 = 301000 > 272000 阈值
 	tokens := UsageTokens{
@@ -550,7 +567,7 @@ func TestCalculateCost_OpenAIGPT54LongContextAppliesMultiplierToCacheRead(t *tes
 
 // 阴性测试：未触发长上下文时，cache_read_price 不应被错误地乘以倍率。
 func TestCalculateCost_OpenAIGPT54NoLongContextKeepsCacheReadAtBasePrice(t *testing.T) {
-	svc := newTestBillingService()
+	svc := newTestBillingServiceWithOpenAILadderCatalog(t)
 
 	// InputTokens + CacheReadTokens = 1000 + 100000 = 101000 < 272000 阈值，不触发长上下文
 	tokens := UsageTokens{
@@ -572,7 +589,7 @@ func TestCalculateCost_OpenAIGPT54NoLongContextKeepsCacheReadAtBasePrice(t *test
 // 不经过 computeTokenBreakdown 内的 inputPrice / cacheReadPrice 倍率修改，因此
 // 修复前 cache_creation 部分会按基础价计算，少计费用约 50%（默认倍率 2.0）。
 func TestCalculateCost_OpenAIGPT54LongContextAppliesMultiplierToCacheCreation(t *testing.T) {
-	svc := newTestBillingService()
+	svc := newTestBillingServiceWithOpenAILadderCatalog(t)
 
 	// InputTokens + CacheReadTokens = 1000 + 300000 = 301000 > 272000 阈值
 	tokens := UsageTokens{
@@ -593,7 +610,7 @@ func TestCalculateCost_OpenAIGPT54LongContextAppliesMultiplierToCacheCreation(t 
 
 // 阴性测试：未触发长上下文时，cache_creation_price 不应被错误地乘以倍率。
 func TestCalculateCost_OpenAIGPT54NoLongContextKeepsCacheCreationAtBasePrice(t *testing.T) {
-	svc := newTestBillingService()
+	svc := newTestBillingServiceWithOpenAILadderCatalog(t)
 
 	// InputTokens + CacheReadTokens = 1000 + 100000 = 101000 < 272000 阈值，不触发长上下文
 	tokens := UsageTokens{
@@ -681,16 +698,23 @@ func TestGetFallbackPricing_FamilyMatching(t *testing.T) {
 		{
 			name:              "deepseek v4 pro",
 			model:             "deepseek-v4-pro",
-			expectedInput:     9.0 / 7.2 / 1_000_000,
-			expectedOutput:    floatPtr(27.0 / 7.2 / 1_000_000),
-			expectedCacheRead: floatPtr(0.30 / 7.2 / 1_000_000),
+			expectedInput:     6.6e-7,
+			expectedOutput:    floatPtr(1.98e-6),
+			expectedCacheRead: floatPtr(2.2e-8),
 		},
 		{
 			name:              "deepseek v4 flash",
 			model:             "deepseek-v4-flash",
-			expectedInput:     3.0 / 7.2 / 1_000_000,
-			expectedOutput:    floatPtr(9.0 / 7.2 / 1_000_000),
-			expectedCacheRead: floatPtr(0.10 / 7.2 / 1_000_000),
+			expectedInput:     2.2e-7,
+			expectedOutput:    floatPtr(6.6e-7),
+			expectedCacheRead: floatPtr(7e-9),
+		},
+		{
+			name:              "deepseek v4 flash vision exp",
+			model:             "deepseek-v4-flash-vision-exp",
+			expectedInput:     2.2e-7,
+			expectedOutput:    floatPtr(6.6e-7),
+			expectedCacheRead: floatPtr(7e-9),
 		},
 		{
 			name:             "deepseek chat requires resolved upstream model",
@@ -700,6 +724,11 @@ func TestGetFallbackPricing_FamilyMatching(t *testing.T) {
 		{
 			name:             "deepseek reasoner requires resolved upstream model",
 			model:            "deepseek-reasoner",
+			expectNilPricing: true,
+		},
+		{
+			name:             "unknown deepseek remains unpriced",
+			model:            "deepseek-foo",
 			expectNilPricing: true,
 		},
 
@@ -1122,7 +1151,6 @@ func TestComputeTokenBreakdown_GptImage2ImageEditIssue4386(t *testing.T) {
 	require.InDelta(t, wantImageOutput, cost.ImageOutputCost, 1e-15)
 	require.InDelta(t, 0.016081, cost.TotalCost, 1e-9, "总额应为 $0.016081（修复前为 $0.015025）")
 }
-
 func TestComputeTokenBreakdown_ExplicitZeroImageInputPriceDoesNotFallback(t *testing.T) {
 	svc := newTestBillingService()
 	pricing := &ModelPricing{
@@ -1689,19 +1717,6 @@ func TestForceUpdatePricing_NilService(t *testing.T) {
 	err := svc.ForceUpdatePricing()
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "not initialized")
-}
-
-func TestCalculateCostWithLongContext_PropagatesError(t *testing.T) {
-	// 使用空的 fallback prices 让 GetModelPricing 失败
-	svc := &BillingService{
-		cfg:            &config.Config{},
-		fallbackPrices: make(map[string]*ModelPricing),
-	}
-
-	tokens := UsageTokens{InputTokens: 300000, CacheReadTokens: 0}
-	_, err := svc.CalculateCostWithLongContext("unknown-model", tokens, 1.0, 200000, 2.0)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "pricing not found")
 }
 
 func TestGetModelPricing_Grok45OfficialFallback(t *testing.T) {
@@ -2451,6 +2466,32 @@ func TestGetModelPricingWithChannel_CacheWritePriceAffects5mAnd1h(t *testing.T) 
 	require.InDelta(t, 7e-6, pricing.CacheCreationPricePerToken, 1e-12)
 	require.InDelta(t, 7e-6, pricing.CacheCreation5mPrice, 1e-12)
 	require.InDelta(t, 7e-6, pricing.CacheCreation1hPrice, 1e-12)
+}
+
+func TestGetModelPricingWithChannel_CacheWriteTTLPricesCanDiffer(t *testing.T) {
+	svc := newTestBillingService()
+
+	pricing, err := svc.GetModelPricingWithChannel("claude-fable-5-1", &ChannelModelPricing{
+		CacheWritePrice:   testPtrFloat64(13e-6),
+		CacheWrite1hPrice: testPtrFloat64(21e-6),
+	})
+	require.NoError(t, err)
+	require.True(t, pricing.SupportsCacheBreakdown)
+	require.InDelta(t, 13e-6, pricing.CacheCreationPricePerToken, 1e-12)
+	require.InDelta(t, 13e-6, pricing.CacheCreation5mPrice, 1e-12)
+	require.InDelta(t, 21e-6, pricing.CacheCreation1hPrice, 1e-12)
+}
+
+func TestGetModelPricing_Fable51FallbackPricing(t *testing.T) {
+	svc := newTestBillingService()
+
+	pricing, err := svc.GetModelPricing("claude-fable-5-1")
+	require.NoError(t, err)
+	require.InDelta(t, 10e-6, pricing.InputPricePerToken, 1e-12)
+	require.InDelta(t, 50e-6, pricing.OutputPricePerToken, 1e-12)
+	require.InDelta(t, 12.5e-6, pricing.CacheCreation5mPrice, 1e-12)
+	require.InDelta(t, 20e-6, pricing.CacheCreation1hPrice, 1e-12)
+	require.InDelta(t, 0.25e-6, pricing.CacheReadPricePerToken, 1e-12)
 }
 
 func TestGetModelPricingWithChannel_CacheReadPriceAffectsPriority(t *testing.T) {

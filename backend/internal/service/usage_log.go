@@ -151,10 +151,14 @@ type UsageLog struct {
 	// ServiceTier records the billable request tier, e.g. OpenAI "priority" / "flex"
 	// or Anthropic "fast".
 	ServiceTier *string
-	// ReasoningEffort is the request's reasoning effort level.
+	// ReasoningEffort is the effective effort recorded for this request after
+	// group policy rewriting and model-family remapping (e.g. max -> xhigh).
 	// OpenAI: "low" / "medium" / "high" / "xhigh"; Claude: "low" / "medium" / "high" / "max".
 	// Nil means not provided / not applicable.
 	ReasoningEffort *string
+	// RequestedReasoningEffort is the client-requested effort before mapping.
+	// Nil means historical rows, or that no explicit/suffix-derived effort was observed.
+	RequestedReasoningEffort *string
 	// InboundEndpoint is the client-facing API endpoint path, e.g. /v1/chat/completions.
 	InboundEndpoint *string
 	// UpstreamEndpoint is the normalized upstream endpoint path, e.g. /v1/responses.
@@ -192,14 +196,15 @@ type UsageLog struct {
 	BillingType int8
 	// BillingState 结算状态，取值见 BillingStateSettled / BillingStatePricingUnavailable /
 	// BillingStatePricingRecovered。零值即"已结算"，历史行天然兼容。
-	BillingState int8
-	RequestType  RequestType
-	Stream       bool
-	OpenAIWSMode bool
-	DurationMs   *int
-	FirstTokenMs *int
-	UserAgent    *string
-	IPAddress    *string
+	BillingState       int8
+	RequestType        RequestType
+	Stream             bool
+	OpenAIWSMode       bool
+	NativeCompactionV2 bool
+	DurationMs         *int
+	FirstTokenMs       *int
+	UserAgent          *string
+	IPAddress          *string
 	// SessionID is the explicit client-provided request correlation identifier
 	// (e.g. the session_id / X-Session-Id headers). Nil when the client sent no
 	// valid session header. It is never derived from prompt_cache_key or content.

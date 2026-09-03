@@ -19,15 +19,15 @@ func TestDeepSeekIsPeakAtWindows(t *testing.T) {
 		at   time.Time
 		want bool
 	}{
-		{name: "before morning peak", at: beijingTime(8, 59), want: false},
-		{name: "morning peak start", at: beijingTime(9, 0), want: true},
-		{name: "morning peak middle", at: beijingTime(10, 30), want: true},
-		{name: "morning peak end exclusive", at: beijingTime(12, 0), want: false},
-		{name: "lunch off-peak", at: beijingTime(13, 0), want: false},
-		{name: "afternoon peak start", at: beijingTime(14, 0), want: true},
-		{name: "afternoon peak middle", at: beijingTime(16, 0), want: true},
-		{name: "afternoon peak end exclusive", at: beijingTime(18, 0), want: false},
-		{name: "evening off-peak", at: beijingTime(22, 0), want: false},
+		{name: "before first peak", at: beijingTime(0, 59), want: false},
+		{name: "first peak start", at: beijingTime(1, 0), want: true},
+		{name: "first peak middle", at: beijingTime(2, 30), want: true},
+		{name: "first peak end exclusive", at: beijingTime(4, 0), want: false},
+		{name: "between peaks", at: beijingTime(5, 0), want: false},
+		{name: "second peak start", at: beijingTime(6, 0), want: true},
+		{name: "second peak middle", at: beijingTime(8, 0), want: true},
+		{name: "second peak end exclusive", at: beijingTime(10, 0), want: false},
+		{name: "late off-peak", at: beijingTime(22, 0), want: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -39,7 +39,7 @@ func TestDeepSeekIsPeakAtWindows(t *testing.T) {
 // 基准价是高峰价（代码内官方兜底表）：高峰 ×1、空闲 ×0.5。
 func TestDeepSeekOfficialTimeMultiplierPeakBase(t *testing.T) {
 	require.Equal(t, 1.0, deepSeekOfficialTimeMultiplier("", "claude-sonnet-4", beijingTime(10, 0), false))
-	require.Equal(t, 1.0, deepSeekOfficialTimeMultiplier(PlatformDeepSeek, "deepseek-v4-flash", beijingTime(10, 0), false))
+	require.Equal(t, 1.0, deepSeekOfficialTimeMultiplier(PlatformDeepSeek, "deepseek-v4-flash", beijingTime(2, 0), false))
 	require.Equal(t, 0.5, deepSeekOfficialTimeMultiplier("", "deepseek-v4-pro", beijingTime(13, 0), false))
 	// deepseek 平台的能力表是 AllowUnknownModels：只认平台会把第三方中转的
 	// 非官方 SKU 也打五折。必须命中官方分时 SKU 名单。
@@ -51,28 +51,28 @@ func TestDeepSeekOfficialTimeMultiplierPeakBase(t *testing.T) {
 
 // 基准价是空闲价（价格目录 / 管理端生效价）：高峰 ×2、空闲 ×1。
 func TestDeepSeekOfficialTimeMultiplierOffPeakBase(t *testing.T) {
-	require.Equal(t, 2.0, deepSeekOfficialTimeMultiplier(PlatformDeepSeek, "deepseek-v4-flash", beijingTime(10, 0), true))
+	require.Equal(t, 2.0, deepSeekOfficialTimeMultiplier(PlatformDeepSeek, "deepseek-v4-flash", beijingTime(2, 0), true))
 	require.Equal(t, 1.0, deepSeekOfficialTimeMultiplier(PlatformDeepSeek, "deepseek-v4-flash", beijingTime(13, 0), true))
-	require.Equal(t, 2.0, deepSeekOfficialTimeMultiplier("", "deepseek-v4-pro", beijingTime(16, 0), true))
+	require.Equal(t, 2.0, deepSeekOfficialTimeMultiplier("", "deepseek-v4-pro", beijingTime(7, 0), true))
 	// 基准档位不改变 SKU / 平台判定。
 	require.Equal(t, 1.0, deepSeekOfficialTimeMultiplier(PlatformDeepSeek, "custom-sku", beijingTime(10, 0), true))
 	require.Equal(t, 1.0, deepSeekOfficialTimeMultiplier(PlatformOpenAI, "deepseek-v4-pro", beijingTime(10, 0), true))
 }
 
 func TestDeepSeekOfficialPeakWindowLabels(t *testing.T) {
-	require.Equal(t, []string{"09:00-12:00", "14:00-18:00"}, deepSeekOfficialPeakWindowLabels())
+	require.Equal(t, []string{"01:00-04:00", "06:00-10:00"}, deepSeekOfficialPeakWindowLabels())
 }
 
-// 没有价格目录时结算落在代码内官方兜底表上：表里存高峰价，空闲打对折。
-func TestOfficialTimePricingAppliesToFallbackTableAsPeakBase(t *testing.T) {
+// 没有价格目录时结算落在代码内官方兜底表上：表里存低谷价，高峰翻倍。
+func TestOfficialTimePricingAppliesToFallbackTableAsOffPeakBase(t *testing.T) {
 	billing := NewBillingService(&config.Config{}, nil)
 
 	fallback, err := billing.GetModelPricingForPlatform(PlatformDeepSeek, "deepseek-v4-flash")
 	require.NoError(t, err)
 	require.True(t, officialTimePricingApplies(fallback))
-	require.False(t, fallback.OfficialTimeBaseIsOffPeak, "兜底表存的是高峰价")
-	require.Equal(t, 0.5, billing.officialTimeMultiplierForPlatform(PlatformDeepSeek, "deepseek-v4-flash", beijingTime(13, 0)))
-	require.Equal(t, 1.0, billing.officialTimeMultiplierForPlatform(PlatformDeepSeek, "deepseek-v4-flash", beijingTime(10, 0)))
+	require.True(t, fallback.OfficialTimeBaseIsOffPeak, "兜底表存的是低谷价")
+	require.Equal(t, 1.0, billing.officialTimeMultiplierForPlatform(PlatformDeepSeek, "deepseek-v4-flash", beijingTime(13, 0)))
+	require.Equal(t, 2.0, billing.officialTimeMultiplierForPlatform(PlatformDeepSeek, "deepseek-v4-flash", beijingTime(2, 0)))
 
 	// 渠道显式定价后不再是官方兜底价。
 	price := 0.001
@@ -108,8 +108,8 @@ func TestDeepSeekOfficialPriceTimeSchedule(t *testing.T) {
 	offPeakBase := deepSeekOfficialPriceTimeSchedule(PlatformDeepSeek, "deepseek-v4-flash", true)
 	require.NotNil(t, offPeakBase)
 	require.Equal(t, "deepseek_official", offPeakBase.Kind)
-	require.Equal(t, "Asia/Shanghai", offPeakBase.Timezone)
-	require.Equal(t, []string{"09:00-12:00", "14:00-18:00"}, offPeakBase.PeakWindows)
+	require.Equal(t, "UTC", offPeakBase.Timezone)
+	require.Equal(t, []string{"01:00-04:00", "06:00-10:00"}, offPeakBase.PeakWindows)
 	require.Equal(t, 2.0, offPeakBase.PeakMultiplier)
 	require.Equal(t, 1.0, offPeakBase.OffPeakMultiplier)
 
@@ -130,10 +130,11 @@ func TestCalculateCostUnified_DeepSeekOffPeakIsHalfOfPeak(t *testing.T) {
 	resolved := &ResolvedPricing{
 		Mode: BillingModeToken,
 		BasePricing: &ModelPricing{
-			InputPricePerToken:     deepSeekCNYPerMillionTokens(3),
-			OutputPricePerToken:    deepSeekCNYPerMillionTokens(9),
-			CacheReadPricePerToken: deepSeekCNYPerMillionTokens(0.10),
-			OfficialTimePricing:    true,
+			InputPricePerToken:        deepseekFlashOffPeakInputPrice,
+			OutputPricePerToken:       deepseekFlashOffPeakOutputPrice,
+			CacheReadPricePerToken:    deepseekFlashOffPeakCacheRead,
+			OfficialTimePricing:       true,
+			OfficialTimeBaseIsOffPeak: true,
 		},
 		Source:                    PricingSourceFallback,
 		longContextPricingEnabled: true,
@@ -145,10 +146,10 @@ func TestCalculateCostUnified_DeepSeekOffPeakIsHalfOfPeak(t *testing.T) {
 		Tokens:    tokens,
 		Resolver:  &ModelPricingResolver{},
 		Resolved:  resolved,
-		PricingAt: beijingTime(10, 0),
+		PricingAt: beijingTime(2, 0),
 	})
 	require.NoError(t, err)
-	require.InDelta(t, (3.0+9.0+0.10)/7.2, peak.TotalCost, 1e-10)
+	require.InDelta(t, 2*(deepseekFlashOffPeakInputPrice+deepseekFlashOffPeakOutputPrice+deepseekFlashOffPeakCacheRead)*1_000_000, peak.TotalCost, 1e-10)
 
 	offPeak, err := billing.CalculateCostUnified(CostInput{
 		Ctx:       context.Background(),
@@ -190,7 +191,7 @@ func TestCalculateCostUnified_DeepSeekCatalogBaseIsOffPeak(t *testing.T) {
 		PricingAt: beijingTime(13, 0),
 	})
 	require.NoError(t, err)
-	require.InDelta(t, 0.42, offPeak.TotalCost, 1e-10)
+	require.InDelta(t, (deepseekFlashOffPeakInputPrice+deepseekFlashOffPeakOutputPrice)*1_000_000, offPeak.TotalCost, 1e-10)
 
 	peak, err := billing.CalculateCostUnified(CostInput{
 		Ctx:       context.Background(),
@@ -199,7 +200,7 @@ func TestCalculateCostUnified_DeepSeekCatalogBaseIsOffPeak(t *testing.T) {
 		Tokens:    tokens,
 		Resolver:  &ModelPricingResolver{},
 		Resolved:  resolved,
-		PricingAt: beijingTime(10, 0),
+		PricingAt: beijingTime(2, 0),
 	})
 	require.NoError(t, err)
 	require.InDelta(t, offPeak.TotalCost*2, peak.TotalCost, 1e-10)
@@ -223,7 +224,7 @@ func TestCalculateCostUnified_DeepSeekTimeDoesNotApplyToExplicitPricing(t *testi
 		t.Run(tc.name, func(t *testing.T) {
 			resolved := &ResolvedPricing{
 				Mode:                      BillingModeToken,
-				BasePricing:               &ModelPricing{InputPricePerToken: 0.001},
+				BasePricing:               &ModelPricing{InputPricePerToken: 0.001, OperatorOverride: tc.source == PricingSourceModelPrice},
 				Source:                    tc.source,
 				longContextPricingEnabled: true,
 			}
@@ -267,12 +268,14 @@ func TestCalculateCostUnified_ChannelTimePricingOverridesDeepSeekOfficial(t *tes
 	}
 
 	cost, err := billing.CalculateCostUnified(CostInput{
-		Ctx:       context.Background(),
-		Model:     "deepseek-v4-flash",
-		Tokens:    UsageTokens{InputTokens: 1000},
-		Resolver:  &ModelPricingResolver{},
-		Resolved:  resolved,
-		PricingAt: beijingTime(10, 0),
+		Ctx:      context.Background(),
+		Model:    "deepseek-v4-flash",
+		Tokens:   UsageTokens{InputTokens: 1000},
+		Resolver: &ModelPricingResolver{},
+		Resolved: resolved,
+		// 10:00 Asia/Shanghai is 02:00 UTC; the channel period is evaluated
+		// in its declared Asia/Shanghai timezone.
+		PricingAt: time.Date(2026, 8, 19, 10, 0, 0, 0, time.FixedZone("Asia/Shanghai", 8*60*60)),
 	})
 	require.NoError(t, err)
 	require.InDelta(t, 2.0, cost.TotalCost, 1e-12)
