@@ -15,7 +15,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// deepseekPeakMultiplierAt：官方峰谷口径（2026-08-23 起生效）
+// deepSeekOfficialTimeMultiplier：官方峰谷口径（2026-08-23 起生效）
 // 高峰时段 01:00–04:00 与 06:00–10:00 UTC（半开区间，仅工作日）；
 // 北京时间周六/周日全天低谷；高峰价 = 2× 低谷价。
 // 2026-08-24 为周一（工作日），2026-08-22 周六、2026-08-23 周日。
@@ -51,7 +51,9 @@ func TestDeepseekPeakMultiplierAt(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, deepseekPeakMultiplierAt(tt.now))
+			require.Equal(t, tt.want, deepSeekOfficialTimeMultiplier(
+				PlatformDeepSeek, "deepseek-v4-flash", tt.now, true,
+			))
 		})
 	}
 }

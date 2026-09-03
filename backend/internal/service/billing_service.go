@@ -359,7 +359,7 @@ func validateUsedModelPricingDimensions(model string, pricing *ModelPricing, tok
 // ---- DeepSeek 官方低谷价（$/token，2026-08-23 起生效）----
 // Source: https://api-docs.deepseek.com/quick_start/pricing
 // 高峰价 = 2× 低谷价；高峰时段 01:00–04:00 与 06:00–10:00 UTC（仅工作日），
-// 北京时间周六/周日全天低谷。时段判定见 deepseekPeakMultiplierAt。
+// 北京时间周六/周日全天低谷。时段判定见 deepSeekOfficialTimeMultiplier。
 const (
 	deepseekFlashOffPeakInputPrice  = 2.2e-7  // $0.22 per MTok (cache miss)
 	deepseekFlashOffPeakOutputPrice = 6.6e-7  // $0.66 per MTok
@@ -378,23 +378,6 @@ func isDeepSeekModel(model string) bool {
 
 func miniMaxUSDPerMillionTokens(usd float64) float64 {
 	return usd / 1_000_000
-}
-
-// deepseekPeakMultiplierAt 返回指定时刻的 DeepSeek 官方峰谷定价因子。
-// 官方口径（2026-08-23 起生效）：高峰价 = 2× 低谷价；高峰时段为
-// 01:00–04:00 与 06:00–10:00 UTC（半开区间），仅工作日；
-// 周末（北京时间周六/周日）全天低谷。北京时间用固定 +8 偏移（无夏令时）。
-func deepseekPeakMultiplierAt(now time.Time) float64 {
-	beijing := now.In(time.FixedZone("Asia/Shanghai", 8*3600))
-	switch beijing.Weekday() {
-	case time.Saturday, time.Sunday:
-		return 1.0
-	}
-	switch h := now.UTC().Hour(); {
-	case h >= 1 && h < 4, h >= 6 && h < 10:
-		return 2.0
-	}
-	return 1.0
 }
 
 // BillingService 计费服务
@@ -642,7 +625,7 @@ func (s *BillingService) initFallbackPricing() {
 	// deepseek-v4-pro / deepseek-v4-flash-vision-exp；deepseek-chat /
 	// deepseek-reasoner 已停止服务；未知 deepseek-* 不做通配兜底。
 	// 以下均为官方低谷价；高峰价 = 2× 低谷价（高峰时段 01:00–04:00
-	// 与 06:00–10:00 UTC，仅工作日；北京时间周六/周日全天低谷），见 deepseekPeakMultiplierAt。
+	// 与 06:00–10:00 UTC，仅工作日；北京时间周六/周日全天低谷），见 deepSeekOfficialTimeMultiplier。
 	s.fallbackPrices["deepseek-v4-pro"] = &ModelPricing{
 		InputPricePerToken:        deepseekProOffPeakInputPrice,
 		OutputPricePerToken:       deepseekProOffPeakOutputPrice,
