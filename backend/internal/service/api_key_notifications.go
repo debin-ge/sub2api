@@ -49,6 +49,13 @@ func NewAPIKeyConfigurationChangedOutboxInput(apiKey *APIKey, summary, changedBy
 	}
 }
 
+func apiKeyChangeNotificationEnabled(apiKey *APIKey) bool {
+	return apiKey != nil &&
+		apiKey.ChangeNotifyEnabled &&
+		apiKey.NotificationEmail != nil &&
+		strings.TrimSpace(*apiKey.NotificationEmail) != ""
+}
+
 func MaskAPIKeyForNotification(key string) string {
 	if len(key) <= 8 {
 		return "********"

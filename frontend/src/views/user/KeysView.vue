@@ -951,6 +951,9 @@
               <Icon name="check" size="sm" />
               {{ t('keys.notificationEmailVerified') }}
             </p>
+            <p v-else-if="normalizedNotificationEmail" class="mt-2 text-sm text-gray-500 dark:text-dark-400">
+              {{ t('keys.notificationEmailVerificationOptional') }}
+            </p>
           </div>
 
           <div v-if="normalizedNotificationEmail && !formData.notification_email_verified" class="flex flex-col gap-2 sm:flex-row">
@@ -1484,10 +1487,8 @@ const hasFutureExpiration = computed(() => {
   if (!formData.value.enable_expiration || !formData.value.expiration_date) return false
   return new Date(formData.value.expiration_date).getTime() > Date.now()
 })
-const canEnableEmailFeatures = computed(() =>
-  normalizedNotificationEmail.value.length > 0 && formData.value.notification_email_verified
-)
-const canEnableRotation = computed(() => canEnableEmailFeatures.value && hasFutureExpiration.value)
+const hasNotificationEmail = computed(() => normalizedNotificationEmail.value.length > 0)
+const canEnableRotation = computed(() => hasNotificationEmail.value && hasFutureExpiration.value)
 
 const onNotificationEmailInput = () => {
   const original = selectedKey.value?.notification_email?.trim().toLowerCase() || ''
@@ -1538,8 +1539,8 @@ const verifyNotificationEmail = async () => {
 }
 
 const toggleChangeNotification = () => {
-  if (!formData.value.change_notify_enabled && !canEnableEmailFeatures.value) {
-    appStore.showError(t('keys.verifyEmailFirst'))
+  if (!formData.value.change_notify_enabled && !hasNotificationEmail.value) {
+    appStore.showError(t('keys.notificationEmailRequired'))
     return
   }
   formData.value.change_notify_enabled = !formData.value.change_notify_enabled
@@ -1547,7 +1548,7 @@ const toggleChangeNotification = () => {
 
 const toggleRotation = () => {
   if (!formData.value.rotate_on_expiry && !canEnableRotation.value) {
-    appStore.showError(canEnableEmailFeatures.value ? t('keys.rotationRequiresExpiration') : t('keys.verifyEmailFirst'))
+    appStore.showError(hasNotificationEmail.value ? t('keys.rotationRequiresExpiration') : t('keys.notificationEmailRequired'))
     return
   }
   formData.value.rotate_on_expiry = !formData.value.rotate_on_expiry
@@ -1907,10 +1908,6 @@ const handleSubmit = async () => {
     return
   }
 
-  if (normalizedNotificationEmail.value && !formData.value.notification_email_verified) {
-    appStore.showError(t('keys.verifyEmailFirst'))
-    return
-  }
   if (formData.value.rotate_on_expiry && !canEnableRotation.value) {
     appStore.showError(t('keys.rotationRequiresExpiration'))
     return
@@ -1993,7 +1990,7 @@ const handleSubmit = async () => {
         updates.status = formData.value.status
       }
       const originalEmail = selectedKey.value.notification_email?.trim().toLowerCase() || ''
-      if (normalizedNotificationEmail.value !== originalEmail) {
+      if (normalizedNotificationEmail.value !== originalEmail || formData.value.notification_email_verification_token) {
         updates.notification_email = formData.value.notification_email.trim()
         if (formData.value.notification_email_verification_token) {
           updates.notification_email_verification_token = formData.value.notification_email_verification_token
@@ -2018,7 +2015,9 @@ const handleSubmit = async () => {
       if (formData.value.use_custom_key) payload.custom_key = formData.value.custom_key
       if (normalizedNotificationEmail.value) {
         payload.notification_email = formData.value.notification_email.trim()
-        payload.notification_email_verification_token = formData.value.notification_email_verification_token
+        if (formData.value.notification_email_verification_token) {
+          payload.notification_email_verification_token = formData.value.notification_email_verification_token
+        }
       }
       await keysAPI.create(payload)
       appStore.showSuccess(t('keys.keyCreatedSuccess'))

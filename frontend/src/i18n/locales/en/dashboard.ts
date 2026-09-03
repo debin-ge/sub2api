@@ -292,6 +292,7 @@ export default {
     verifyEmail: 'Verify Email',
     verifyingEmail: 'Verifying',
     notificationEmailVerified: 'Email verified',
+    notificationEmailVerificationOptional: 'Email verification is optional. You can save and receive notifications without it.',
     failedToSendVerificationCode: 'Failed to send verification code',
     failedToVerifyEmail: 'Failed to verify email',
     verifyEmailFirst: 'Verify the notification email first',

@@ -1436,7 +1436,7 @@ func (s *adminServiceImpl) AdminUpdateAPIKeyGroupID(ctx context.Context, keyID i
 
 	// Unbinding is permission-reducing and does not need a target-user profile.
 	changeSummary := APIKeyConfigurationChangeSummary(beforeUpdate, apiKey)
-	shouldNotify := apiKey.ChangeNotifyEnabled && apiKey.NotificationEmail != nil && apiKey.NotificationEmailVerifiedAt != nil && changeSummary != ""
+	shouldNotify := apiKeyChangeNotificationEnabled(apiKey) && changeSummary != ""
 	if shouldNotify {
 		if s.entClient == nil || s.notificationOutbox == nil {
 			return nil, fmt.Errorf("admin API key notification transaction is not configured")
@@ -1471,7 +1471,7 @@ func (s *adminServiceImpl) AdminUpdateAPIKeyGroupID(ctx context.Context, keyID i
 
 func (s *adminServiceImpl) enqueueAdminAPIKeyChange(ctx context.Context, before, after *APIKey) error {
 	summary := APIKeyConfigurationChangeSummary(before, after)
-	if summary == "" || !after.ChangeNotifyEnabled || after.NotificationEmail == nil || after.NotificationEmailVerifiedAt == nil {
+	if summary == "" || !apiKeyChangeNotificationEnabled(after) {
 		return nil
 	}
 	if s.notificationOutbox == nil {

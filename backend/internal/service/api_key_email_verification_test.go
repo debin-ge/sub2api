@@ -91,13 +91,63 @@ func TestNormalizeAPIKeyNotificationEmailRejectsDisplayAddress(t *testing.T) {
 func TestValidateAPIKeyNotificationState(t *testing.T) {
 	now := time.Now()
 	email := "owner@example.com"
-	verifiedAt := now.Add(-time.Minute)
 	expiresAt := now.Add(time.Hour)
 	duration := int64(time.Hour / time.Second)
 
-	require.ErrorIs(t, validateAPIKeyNotificationState(&APIKey{ChangeNotifyEnabled: true}, now), ErrAPIKeyNotificationUnverified)
-	require.ErrorIs(t, validateAPIKeyNotificationState(&APIKey{NotificationEmail: &email, NotificationEmailVerifiedAt: &verifiedAt, RotateOnExpiry: true}, now), ErrAPIKeyRotationExpiryRequired)
-	require.NoError(t, validateAPIKeyNotificationState(&APIKey{NotificationEmail: &email, NotificationEmailVerifiedAt: &verifiedAt, RotateOnExpiry: true, ExpiresAt: &expiresAt, ValidityDurationSeconds: &duration}, now))
+	require.ErrorIs(t, validateAPIKeyNotificationState(&APIKey{ChangeNotifyEnabled: true}, now), ErrAPIKeyNotificationEmailInvalid)
+	invalidEmail := "not-an-email"
+	require.ErrorIs(t, validateAPIKeyNotificationState(&APIKey{NotificationEmail: &invalidEmail, ChangeNotifyEnabled: true}, now), ErrAPIKeyNotificationEmailInvalid)
+	require.NoError(t, validateAPIKeyNotificationState(&APIKey{NotificationEmail: &email, ChangeNotifyEnabled: true}, now))
+	require.ErrorIs(t, validateAPIKeyNotificationState(&APIKey{NotificationEmail: &email, RotateOnExpiry: true}, now), ErrAPIKeyRotationExpiryRequired)
+	require.NoError(t, validateAPIKeyNotificationState(&APIKey{NotificationEmail: &email, RotateOnExpiry: true, ExpiresAt: &expiresAt, ValidityDurationSeconds: &duration}, now))
+}
+
+func TestResolveCreatedNotificationEmailSupportsOptionalVerification(t *testing.T) {
+	ctx := context.Background()
+	email := " OWNER@Example.com "
+	svc := &APIKeyService{}
+
+	normalized, verifiedAt, err := svc.resolveCreatedNotificationEmail(ctx, 7, CreateAPIKeyRequest{
+		NotificationEmail:   &email,
+		ChangeNotifyEnabled: true,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "owner@example.com", *normalized)
+	require.Nil(t, verifiedAt)
+
+	_, _, err = svc.resolveCreatedNotificationEmail(ctx, 7, CreateAPIKeyRequest{ChangeNotifyEnabled: true})
+	require.ErrorIs(t, err, ErrAPIKeyNotificationEmailInvalid)
+}
+
+func TestResolveCreatedNotificationEmailValidatesSuppliedProof(t *testing.T) {
+	ctx := context.Background()
+	email := "owner@example.com"
+	verifiedAt := time.Now().UTC()
+	cache := newAPIKeyEmailVerificationMemoryCache()
+	require.NoError(t, cache.SetProof(ctx, "valid-proof", APIKeyEmailVerificationProof{
+		UserID: 7, Email: email, Purpose: apiKeyEmailVerificationPurpose, VerifiedAt: verifiedAt,
+	}, time.Minute))
+	svc := &APIKeyService{emailVerification: NewAPIKeyEmailVerificationService(cache, nil)}
+
+	_, gotVerifiedAt, err := svc.resolveCreatedNotificationEmail(ctx, 7, CreateAPIKeyRequest{
+		NotificationEmail:             &email,
+		NotificationEmailVerification: "valid-proof",
+	})
+	require.NoError(t, err)
+	require.Equal(t, verifiedAt, *gotVerifiedAt)
+
+	_, _, err = svc.resolveCreatedNotificationEmail(ctx, 7, CreateAPIKeyRequest{
+		NotificationEmail:             &email,
+		NotificationEmailVerification: "invalid-proof",
+	})
+	require.ErrorIs(t, err, ErrAPIKeyNotificationUnverified)
+}
+
+func TestAPIKeyChangeNotificationAllowsUnverifiedEmail(t *testing.T) {
+	email := "owner@example.com"
+	require.True(t, apiKeyChangeNotificationEnabled(&APIKey{
+		NotificationEmail: &email, ChangeNotifyEnabled: true,
+	}))
 }
 
 func TestAPIKeyEmailVerificationRateLimitUsesIncrementResult(t *testing.T) {

@@ -297,6 +297,7 @@ export default {
     verifyEmail: '验证邮箱',
     verifyingEmail: '验证中',
     notificationEmailVerified: '邮箱已验证',
+    notificationEmailVerificationOptional: '邮箱验证为可选操作，不验证也可保存并接收通知。',
     failedToSendVerificationCode: '验证码发送失败',
     failedToVerifyEmail: '邮箱验证失败',
     verifyEmailFirst: '请先验证通知邮箱',
