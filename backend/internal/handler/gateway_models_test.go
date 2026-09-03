@@ -101,6 +101,26 @@ func (s *gatewayHandlerRecordingModelCatalogStub) ListForAPIKey(context.Context,
 	return append([]string(nil), s.models...), s.err
 }
 
+type gatewayHandlerUnboundModelCatalogStub struct {
+	models        []string
+	apiKeyCalls   int
+	platformCalls int
+	groupID       *int64
+	platform      string
+}
+
+func (s *gatewayHandlerUnboundModelCatalogStub) ListForAPIKey(context.Context, *service.APIKey) ([]string, error) {
+	s.apiKeyCalls++
+	return append([]string(nil), s.models...), nil
+}
+
+func (s *gatewayHandlerUnboundModelCatalogStub) ListForPlatform(_ context.Context, groupID *int64, platform string, _ bool) ([]string, error) {
+	s.platformCalls++
+	s.groupID = groupID
+	s.platform = platform
+	return append([]string(nil), s.models...), nil
+}
+
 func (s *gatewayHandlerRecordingModelCatalogStub) ListForPlatform(_ context.Context, groupID *int64, platform string, waitForLive bool) ([]string, error) {
 	s.platformCalls++
 	require.NotNil(s.t, groupID)
@@ -226,7 +246,7 @@ func TestGatewayModels_UsesUnifiedCatalog(t *testing.T) {
 	}
 }
 
-func TestGatewayModels_PrefersGatewayServiceWhenBothSourcesConfigured(t *testing.T) {
+func TestGatewayModels_PrefersUnifiedCatalogWhenBothSourcesConfigured(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	const groupID int64 = 43
 	repo := &gatewayModelsAccountRepoStub{byGroup: map[int64][]service.Account{
@@ -258,7 +278,65 @@ func TestGatewayModels_PrefersGatewayServiceWhenBothSourcesConfigured(t *testing
 	require.Equal(t, http.StatusOK, rec.Code)
 	var got gatewayModelsResponseForTest
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Equal(t, []string{"catalog-only-model"}, modelIDsForTest(got.Data))
+}
+
+func TestGatewayModels_FallsBackToGatewayServiceWhenCatalogErrors(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	const groupID int64 = 44
+	repo := &gatewayModelsAccountRepoStub{byGroup: map[int64][]service.Account{
+		groupID: {
+			{
+				Platform: service.PlatformOpenAI,
+				Credentials: map[string]any{
+					"model_mapping": map[string]any{"gateway-model": "gateway-model"},
+				},
+			},
+		},
+	}}
+	h := newGatewayModelsHandlerForTest(repo)
+	h.modelCatalog = &gatewayHandlerRecordingModelCatalogStub{
+		t:   t,
+		err: errors.New("catalog unavailable"),
+	}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	groupIDValue := groupID
+	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
+		GroupID: &groupIDValue,
+		Group:   &service.Group{ID: groupID, Platform: service.PlatformOpenAI},
+	})
+
+	h.Models(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var got gatewayModelsResponseForTest
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
 	require.Equal(t, []string{"gateway-model"}, modelIDsForTest(got.Data))
+}
+
+func TestGatewayModels_UnboundAPIKeyUsesPlatformCatalogScope(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	stub := &gatewayHandlerUnboundModelCatalogStub{models: []string{"platform-model"}}
+	h := &GatewayHandler{modelCatalog: stub}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{})
+
+	h.Models(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Zero(t, stub.apiKeyCalls)
+	require.Equal(t, 1, stub.platformCalls)
+	require.Nil(t, stub.groupID)
+	require.Empty(t, stub.platform)
+	var got gatewayModelsResponseForTest
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Equal(t, []string{"platform-model"}, modelIDsForTest(got.Data))
 }
 
 func TestGatewayModels_ForcePlatformUsesCallerGroupScopeAndWaitsForLiveCatalog(t *testing.T) {

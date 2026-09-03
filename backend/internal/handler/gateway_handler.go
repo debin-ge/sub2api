@@ -1186,18 +1186,25 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 	// Get available models from account configurations for the selected group platform.
 	var availableModels []string
 	var err error
-	if h.gatewayService != nil {
-		// GatewayService keeps the legacy cache/default fallback when live catalog
-		// discovery fails. Keep it as the production source of truth while the
-		// standalone catalog path remains available for lightweight callers/tests.
-		availableModels = h.gatewayService.GetAvailableModels(c.Request.Context(), groupID, platform)
-	} else {
+	if h.modelCatalog != nil {
 		customModelsEnabled := apiKey != nil && apiKey.Group != nil && apiKey.Group.CustomModelsListEnabled()
-		if forcePlatform || customModelsEnabled {
+		// A loaded group is required for the group-scoped catalog. Unbound or
+		// legacy keys use the platform scope, which preserves the old platform
+		// model-list semantics instead of defaulting to Anthropic.
+		if forcePlatform || customModelsEnabled || apiKey == nil || apiKey.Group == nil {
 			availableModels, err = h.modelCatalog.ListForPlatform(c.Request.Context(), groupID, platform, true)
 		} else {
 			availableModels, err = h.modelCatalog.ListForAPIKey(c.Request.Context(), apiKey)
 		}
+		if err != nil && h.gatewayService != nil {
+			// GatewayService retains the legacy cache/default fallback when live
+			// catalog discovery fails, so a transient catalog error must not make
+			// /v1/models unavailable.
+			availableModels = h.gatewayService.GetAvailableModels(c.Request.Context(), groupID, platform)
+			err = nil
+		}
+	} else if h.gatewayService != nil {
+		availableModels = h.gatewayService.GetAvailableModels(c.Request.Context(), groupID, platform)
 	}
 	if err != nil {
 		response.ErrorFrom(c, err)
