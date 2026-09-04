@@ -474,7 +474,8 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 			if !ctEnableMPT {
 				accountUUID := account.GetExtraString("account_uuid")
 				if accountUUID != "" && fp.ClientID != "" {
-					if newBody, err := s.identityService.RewriteUserIDWithMasking(ctx, body, account, accountUUID, fp.ClientID, fp.UserAgent); err == nil && len(newBody) > 0 {
+					identityUserAgent := effectiveClaudeOAuthIdentityUserAgent(fp, tokenType == "oauth" && mimicClaudeCode)
+					if newBody, err := s.identityService.RewriteUserIDWithMasking(ctx, body, account, accountUUID, fp.ClientID, identityUserAgent); err == nil && len(newBody) > 0 {
 						body = newBody
 					}
 				}
@@ -483,8 +484,8 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 	}
 
 	// 同步 billing header cc_version 与实际发送的 User-Agent 版本
-	if ctFingerprint != nil && ctEnableFP {
-		body = syncBillingHeaderVersion(body, ctFingerprint.UserAgent)
+	if identityUserAgent := effectiveClaudeOAuthIdentityUserAgent(ctFingerprint, tokenType == "oauth" && mimicClaudeCode); identityUserAgent != "" && (ctEnableFP || mimicClaudeCode) {
+		body = syncBillingHeaderVersion(body, identityUserAgent)
 	}
 
 	// === 计算最终 anthropic-beta header（先于 body sanitize 与 CCH 签名）===

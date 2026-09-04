@@ -66,6 +66,7 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 			logger.LegacyPrintf("service.gateway", "Warning: failed to get fingerprint for account %d: %v", account.ID, err)
 			// 失败时降级为透传原始headers
 		} else {
+			identityUserAgent := effectiveClaudeOAuthIdentityUserAgent(fp, tokenType == "oauth" && mimicClaudeCode)
 			if enableFP {
 				fingerprint = fp
 			}
@@ -76,7 +77,7 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 			if !enableMPT {
 				accountUUID := account.GetExtraString("account_uuid")
 				if accountUUID != "" && fp.ClientID != "" {
-					if newBody, err := s.identityService.RewriteUserIDWithMasking(ctx, body, account, accountUUID, fp.ClientID, fp.UserAgent); err == nil && len(newBody) > 0 {
+					if newBody, err := s.identityService.RewriteUserIDWithMasking(ctx, body, account, accountUUID, fp.ClientID, identityUserAgent); err == nil && len(newBody) > 0 {
 						body = newBody
 					}
 				}
@@ -85,8 +86,8 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 	}
 
 	// 同步 billing header cc_version 与实际发送的 User-Agent 版本
-	if fingerprint != nil {
-		body = syncBillingHeaderVersion(body, fingerprint.UserAgent)
+	if identityUserAgent := effectiveClaudeOAuthIdentityUserAgent(fingerprint, tokenType == "oauth" && mimicClaudeCode); identityUserAgent != "" {
+		body = syncBillingHeaderVersion(body, identityUserAgent)
 	}
 
 	// === 计算最终 anthropic-beta header（先于 body sanitize 与 CCH 签名）===
@@ -844,6 +845,19 @@ func buildBetaTokenSet(tokens []string) map[string]struct{} {
 }
 
 var defaultDroppedBetasSet = buildBetaTokenSet(claude.DroppedBetas)
+
+// effectiveClaudeOAuthIdentityUserAgent returns the User-Agent represented by
+// the final outgoing OAuth request. Mimicry overwrites cached fingerprint
+// headers, so body metadata and billing attribution must use the same identity.
+func effectiveClaudeOAuthIdentityUserAgent(fingerprint *Fingerprint, mimicClaudeCode bool) string {
+	if mimicClaudeCode {
+		return claude.DefaultHeaders["User-Agent"]
+	}
+	if fingerprint == nil {
+		return ""
+	}
+	return fingerprint.UserAgent
+}
 
 // applyClaudeCodeMimicHeaders forces "Claude Code-like" request headers.
 // This mirrors opencode-anthropic-auth behavior: do not trust downstream

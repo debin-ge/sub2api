@@ -1,9 +1,17 @@
 package service
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 )
 
 func TestSyncBillingHeaderVersion(t *testing.T) {
@@ -64,4 +72,68 @@ func TestSyncBillingHeaderVersion(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestBuildUpstreamRequestFloorsStaleFingerprintForFable51(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	c.Request.Header.Set("User-Agent", "opencode/1.2.3 (external, cli)")
+
+	cache := &stubIdentityCache{fingerprint: &Fingerprint{
+		UserAgent:               "claude-cli/2.1.220 (external, cli)",
+		ClientID:                "cid-1",
+		StainlessPackageVersion: "0.91.1",
+		UpdatedAt:               time.Now().Unix(),
+	}}
+	svc := &GatewayService{identityService: NewIdentityService(cache)}
+	account := &Account{
+		ID:          147,
+		Platform:    PlatformAnthropic,
+		Type:        AccountTypeOAuth,
+		Credentials: map[string]any{"access_token": "oauth-token"},
+	}
+	body := []byte(`{"model":"claude-fable-5-1","system":[{"type":"text","text":"x-anthropic-billing-header: cc_version=2.1.220.abc; cc_entrypoint=cli;"}],"messages":[]}`)
+
+	req, wireBody, err := svc.buildUpstreamRequest(
+		context.Background(), c, account, body,
+		"oauth-token", "oauth", "claude-fable-5-1", true, true,
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, claude.DefaultHeaders["User-Agent"], getHeaderRaw(req.Header, "User-Agent"))
+	require.Contains(t, string(wireBody), "cc_version="+claude.CLICurrentVersion+".abc")
+	require.NotContains(t, string(wireBody), "cc_version=2.1.220")
+	require.Equal(t, 1, cache.setCalls)
+	require.Equal(t, claude.DefaultHeaders["User-Agent"], cache.lastSet.UserAgent)
+	require.Equal(t, "0.91.1", cache.lastSet.StainlessPackageVersion)
+}
+
+func TestBuildUpstreamRequestMimicUsesCurrentVersionWithThirdPartyFingerprint(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	c.Request.Header.Set("User-Agent", "opencode/1.2.3 (external, cli)")
+
+	cache := &stubIdentityCache{fingerprint: &Fingerprint{
+		UserAgent: "opencode/1.2.3 (external, cli)",
+		ClientID:  "cid-1",
+		UpdatedAt: time.Now().Unix(),
+	}}
+	svc := &GatewayService{identityService: NewIdentityService(cache)}
+	account := &Account{ID: 148, Platform: PlatformAnthropic, Type: AccountTypeOAuth}
+	body := []byte(`{"model":"claude-fable-5-1","system":[{"type":"text","text":"x-anthropic-billing-header: cc_version=1.2.3.abc; cc_entrypoint=cli;"}],"messages":[]}`)
+
+	req, wireBody, err := svc.buildUpstreamRequest(
+		context.Background(), c, account, body,
+		"oauth-token", "oauth", "claude-fable-5-1", true, true,
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, claude.DefaultHeaders["User-Agent"], getHeaderRaw(req.Header, "User-Agent"))
+	require.Contains(t, string(wireBody), "cc_version="+claude.CLICurrentVersion+".abc")
+	require.NotContains(t, string(wireBody), "cc_version=1.2.3")
+	require.Zero(t, cache.setCalls, "third-party fingerprint should remain unchanged in storage")
 }
