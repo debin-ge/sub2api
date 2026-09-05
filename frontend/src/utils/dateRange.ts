@@ -26,6 +26,17 @@ export const formatLocalDate = (date: Date): string =>
 const DAY_MS = 24 * 60 * 60 * 1000
 
 /**
+ * The current calendar day in the browser timezone, as whole-day dates. The
+ * backend widens `start_date`/`end_date` to the half-open local day using the
+ * `timezone` query param every request carries, which is the same window the
+ * admin dashboard's "today" cards are cut on, so the two pages agree.
+ */
+export const getTodayRange = (now: Date = new Date()): DateRangeSelection => {
+  const today = formatLocalDate(now)
+  return { start: today, end: today }
+}
+
+/**
  * The window ending now and starting exactly 24 hours ago. The dates are kept
  * for display and for granularity selection; the instants are what the query
  * actually runs on.

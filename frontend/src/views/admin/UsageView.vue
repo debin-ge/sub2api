@@ -205,7 +205,7 @@ import type { OpsErrorLog } from '@/api/admin/ops'
 import ModelDistributionChart from '@/components/charts/ModelDistributionChart.vue'; import GroupDistributionChart from '@/components/charts/GroupDistributionChart.vue'; import TokenUsageTrend from '@/components/charts/TokenUsageTrend.vue'
 import EndpointDistributionChart from '@/components/charts/EndpointDistributionChart.vue'
 import Icon from '@/components/icons/Icon.vue'
-import { getLast24HoursRange } from '@/utils/dateRange'
+import { getTodayRange } from '@/utils/dateRange'
 import type { AdminUsageLog, TrendDataPoint, ModelStat, GroupStat, EndpointStat, AdminUser } from '@/types'; import type { AdminUsageStatsResponse, AdminUsageQueryParams } from '@/api/admin/usage'
 
 const { t } = useI18n()
@@ -282,11 +282,13 @@ const getGranularityForRange = (start: string, end: string): 'day' | 'hour' => {
   const daysDiff = Math.ceil((endTime - startTime) / (1000 * 60 * 60 * 24))
   return daysDiff <= 1 ? 'hour' : 'day'
 }
-const defaultRange = getLast24HoursRange()
+// Default to "today" so the page opens on the same window as the dashboard's
+// today cards. Only rolling presets carry start_time/end_time instants; a
+// calendar day leaves them undefined and lets the backend widen the dates in
+// the caller's timezone. filters is the single source of truth for the window,
+// so every request builder reads them from there.
+const defaultRange = getTodayRange()
 const startDate = ref(defaultRange.start); const endDate = ref(defaultRange.end)
-// Exact bounds of the default "last 24 hours" window; without them the two
-// dates above would be read as a 48-hour range. filters is the single source
-// of truth for the window, so every request builder reads them from there.
 const filters = ref<AdminUsageQueryParams>({ user_id: undefined, model: undefined, group_id: undefined, request_type: undefined, native_compaction_v2: null, billing_type: null, start_date: startDate.value, end_date: endDate.value, start_time: defaultRange.startTime, end_time: defaultRange.endTime })
 const pagination = reactive({ page: 1, page_size: getPersistedPageSize(), total: 0 })
 const sortState = reactive({
@@ -548,7 +550,7 @@ const refreshData = () => {
   if (rankingMounted.value) rankingRef.value?.reload()
 }
 const resetFilters = () => {
-  const range = getLast24HoursRange()
+  const range = getTodayRange()
   startDate.value = range.start
   endDate.value = range.end
   filters.value = { start_date: startDate.value, end_date: endDate.value, start_time: range.startTime, end_time: range.endTime, request_type: undefined, native_compaction_v2: null, billing_type: null, billing_mode: undefined }

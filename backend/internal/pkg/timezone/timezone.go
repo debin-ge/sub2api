@@ -164,3 +164,16 @@ func StartOfDayInUserLocation(t time.Time, userTZ string) time.Time {
 	t = t.In(loc)
 	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, loc)
 }
+
+// TodayRangeInUserLocation returns the half-open [start, end) bounds of "today"
+// in the user's timezone, falling back to the server-configured timezone when
+// userTZ is empty or unknown. The upper bound is the next calendar day rather
+// than start+24h so DST transitions neither clip nor extend the window.
+//
+// Every "today" figure shown to a caller (dashboard cards, usage-record
+// filters, cache scoping) must derive from this one function so that the
+// pages agree with each other regardless of where the viewer is.
+func TodayRangeInUserLocation(userTZ string) (time.Time, time.Time) {
+	start := StartOfDayInUserLocation(NowInUserLocation(userTZ), userTZ)
+	return start, start.AddDate(0, 0, 1)
+}

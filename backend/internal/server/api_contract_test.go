@@ -2652,7 +2652,7 @@ func (r *stubUsageLogRepo) GetAccountTodayStats(ctx context.Context, accountID i
 	return nil, errors.New("not implemented")
 }
 
-func (r *stubUsageLogRepo) GetDashboardStats(ctx context.Context) (*usagestats.DashboardStats, error) {
+func (r *stubUsageLogRepo) GetDashboardStats(ctx context.Context, userTZ string) (*usagestats.DashboardStats, error) {
 	return nil, errors.New("not implemented")
 }
 

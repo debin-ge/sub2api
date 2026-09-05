@@ -80,15 +80,25 @@ func (r *usageLogRepository) GetUserStats(ctx context.Context, userID int64, sta
 // DashboardStats 仪表盘统计
 type DashboardStats = usagestats.DashboardStats
 
-func (r *usageLogRepository) GetDashboardStats(ctx context.Context) (*DashboardStats, error) {
+// GetDashboardStats returns the admin dashboard figures. Cumulative totals come
+// from the daily rollup; the "today" block is anchored on the caller's timezone
+// so the dashboard card agrees with the usage-records page filtered to the same
+// local day. userTZ falls back to the server timezone when empty or unknown.
+func (r *usageLogRepository) GetDashboardStats(ctx context.Context, userTZ string) (*DashboardStats, error) {
 	stats := &DashboardStats{}
 	now := timezone.Now()
-	todayStart := timezone.Today()
+	todayStart, todayEnd := timezone.TodayRangeInUserLocation(userTZ)
 
-	if err := r.fillDashboardEntityStats(ctx, stats, todayStart, now); err != nil {
+	if err := r.fillDashboardEntityStats(ctx, stats, todayStart, todayEnd, now); err != nil {
 		return nil, err
 	}
-	if err := r.fillDashboardUsageStatsAggregated(ctx, stats, todayStart, now); err != nil {
+	if err := r.fillDashboardTotalStatsAggregated(ctx, stats); err != nil {
+		return nil, err
+	}
+	if err := r.fillDashboardTodayStatsAggregated(ctx, stats, todayStart, todayEnd); err != nil {
+		return nil, err
+	}
+	if err := r.fillDashboardHourlyActiveUsersAggregated(ctx, stats, now); err != nil {
 		return nil, err
 	}
 
@@ -102,7 +112,10 @@ func (r *usageLogRepository) GetDashboardStats(ctx context.Context) (*DashboardS
 	return stats, nil
 }
 
-func (r *usageLogRepository) GetDashboardStatsWithRange(ctx context.Context, start, end time.Time) (*DashboardStats, error) {
+// GetDashboardStatsWithRange is the raw usage_logs fallback used when the
+// pre-aggregation job is disabled. Totals cover [start, end); the "today" block
+// is anchored on the caller's timezone exactly like GetDashboardStats.
+func (r *usageLogRepository) GetDashboardStatsWithRange(ctx context.Context, start, end time.Time, userTZ string) (*DashboardStats, error) {
 	startUTC := start.UTC()
 	endUTC := end.UTC()
 	if !endUTC.After(startUTC) {
@@ -111,12 +124,18 @@ func (r *usageLogRepository) GetDashboardStatsWithRange(ctx context.Context, sta
 
 	stats := &DashboardStats{}
 	now := timezone.Now()
-	todayStart := timezone.Today()
+	todayStart, todayEnd := timezone.TodayRangeInUserLocation(userTZ)
 
-	if err := r.fillDashboardEntityStats(ctx, stats, todayStart, now); err != nil {
+	if err := r.fillDashboardEntityStats(ctx, stats, todayStart, todayEnd, now); err != nil {
 		return nil, err
 	}
-	if err := r.fillDashboardUsageStatsFromUsageLogs(ctx, stats, startUTC, endUTC, todayStart, now); err != nil {
+	if err := r.fillDashboardRangeStatsFromUsageLogs(ctx, stats, startUTC, endUTC); err != nil {
+		return nil, err
+	}
+	if err := r.fillDashboardTodayStatsFromUsageLogs(ctx, stats, todayStart, todayEnd); err != nil {
+		return nil, err
+	}
+	if err := r.fillDashboardHourlyActiveUsersFromUsageLogs(ctx, stats, now); err != nil {
 		return nil, err
 	}
 
@@ -130,11 +149,11 @@ func (r *usageLogRepository) GetDashboardStatsWithRange(ctx context.Context, sta
 	return stats, nil
 }
 
-func (r *usageLogRepository) fillDashboardEntityStats(ctx context.Context, stats *DashboardStats, todayUTC, now time.Time) error {
+func (r *usageLogRepository) fillDashboardEntityStats(ctx context.Context, stats *DashboardStats, todayStart, todayEnd, now time.Time) error {
 	userStatsQuery := `
 		SELECT
 			COUNT(*) as total_users,
-			COUNT(CASE WHEN created_at >= $1 THEN 1 END) as today_new_users
+			COUNT(CASE WHEN created_at >= $1 AND created_at < $2 THEN 1 END) as today_new_users
 		FROM users
 		WHERE deleted_at IS NULL
 	`
@@ -142,7 +161,7 @@ func (r *usageLogRepository) fillDashboardEntityStats(ctx context.Context, stats
 		ctx,
 		r.sql,
 		userStatsQuery,
-		[]any{todayUTC},
+		[]any{todayStart, todayEnd},
 		&stats.TotalUsers,
 		&stats.TodayNewUsers,
 	); err != nil {
@@ -194,7 +213,9 @@ func (r *usageLogRepository) fillDashboardEntityStats(ctx context.Context, stats
 	return nil
 }
 
-func (r *usageLogRepository) fillDashboardUsageStatsAggregated(ctx context.Context, stats *DashboardStats, todayUTC, now time.Time) error {
+// fillDashboardTotalStatsAggregated sums the whole daily rollup for the
+// cumulative block. Timezone-independent: every bucket is counted.
+func (r *usageLogRepository) fillDashboardTotalStatsAggregated(ctx context.Context, stats *DashboardStats) error {
 	totalStatsQuery := `
 		SELECT
 			COALESCE(SUM(total_requests), 0) as total_requests,
@@ -231,25 +252,38 @@ func (r *usageLogRepository) fillDashboardUsageStatsAggregated(ctx context.Conte
 		stats.AverageDurationMs = float64(totalDurationMs) / float64(stats.TotalRequests)
 	}
 
+	return nil
+}
+
+// fillDashboardTodayStatsAggregated sums the hourly rollup over the caller's
+// local day [todayStart, todayEnd). The rollup buckets on server-timezone
+// hours, so the local midnight must sit on a bucket boundary; a zone whose
+// offset differs from the server's by a fraction of an hour (Asia/Kolkata
+// against Asia/Shanghai, say) falls back to the raw usage_logs so the figure
+// stays exact instead of silently dropping a partial bucket.
+func (r *usageLogRepository) fillDashboardTodayStatsAggregated(ctx context.Context, stats *DashboardStats, todayStart, todayEnd time.Time) error {
+	if !isBucketAligned(todayStart, "hour") || !isBucketAligned(todayEnd, "hour") {
+		return r.fillDashboardTodayStatsFromUsageLogs(ctx, stats, todayStart, todayEnd)
+	}
+
 	todayStatsQuery := `
 		SELECT
-			total_requests as today_requests,
-			input_tokens as today_input_tokens,
-			output_tokens as today_output_tokens,
-			cache_creation_tokens as today_cache_creation_tokens,
-			cache_read_tokens as today_cache_read_tokens,
-			total_cost as today_cost,
-			actual_cost as today_actual_cost,
-			account_cost as today_account_cost,
-			active_users as active_users
-		FROM usage_dashboard_daily
-		WHERE bucket_date = $1::date
+			COALESCE(SUM(total_requests), 0) as today_requests,
+			COALESCE(SUM(input_tokens), 0) as today_input_tokens,
+			COALESCE(SUM(output_tokens), 0) as today_output_tokens,
+			COALESCE(SUM(cache_creation_tokens), 0) as today_cache_creation_tokens,
+			COALESCE(SUM(cache_read_tokens), 0) as today_cache_read_tokens,
+			COALESCE(SUM(total_cost), 0) as today_cost,
+			COALESCE(SUM(actual_cost), 0) as today_actual_cost,
+			COALESCE(SUM(account_cost), 0) as today_account_cost
+		FROM usage_dashboard_hourly
+		WHERE bucket_start >= $1 AND bucket_start < $2
 	`
 	if err := scanSingleRow(
 		ctx,
 		r.sql,
 		todayStatsQuery,
-		[]any{todayUTC},
+		[]any{todayStart, todayEnd},
 		&stats.TodayRequests,
 		&stats.TodayInputTokens,
 		&stats.TodayOutputTokens,
@@ -258,14 +292,25 @@ func (r *usageLogRepository) fillDashboardUsageStatsAggregated(ctx context.Conte
 		&stats.TodayCost,
 		&stats.TodayActualCost,
 		&stats.TodayAccountCost,
-		&stats.ActiveUsers,
 	); err != nil {
-		if err != sql.ErrNoRows {
-			return err
-		}
+		return err
 	}
 	stats.TodayTokens = stats.TodayInputTokens + stats.TodayOutputTokens + stats.TodayCacheCreationTokens + stats.TodayCacheReadTokens
 
+	// Distinct users across the day's hour buckets. The daily rollup's
+	// active_users is a server-day figure and cannot be re-cut per timezone.
+	activeUsersQuery := `
+		SELECT COUNT(DISTINCT user_id)
+		FROM usage_dashboard_hourly_users
+		WHERE bucket_start >= $1 AND bucket_start < $2
+	`
+	return scanSingleRow(ctx, r.sql, activeUsersQuery, []any{todayStart, todayEnd}, &stats.ActiveUsers)
+}
+
+// fillDashboardHourlyActiveUsersAggregated reads the current hour's distinct
+// user count from the hourly rollup. Hour buckets are the same instants in any
+// whole-hour-offset timezone, so no caller-timezone handling is needed.
+func (r *usageLogRepository) fillDashboardHourlyActiveUsersAggregated(ctx context.Context, stats *DashboardStats, now time.Time) error {
 	hourlyActiveQuery := `
 		SELECT active_users
 		FROM usage_dashboard_hourly
@@ -277,55 +322,33 @@ func (r *usageLogRepository) fillDashboardUsageStatsAggregated(ctx context.Conte
 			return err
 		}
 	}
-
 	return nil
 }
 
-func (r *usageLogRepository) fillDashboardUsageStatsFromUsageLogs(ctx context.Context, stats *DashboardStats, startUTC, endUTC, todayUTC, now time.Time) error {
-	todayEnd := todayUTC.Add(24 * time.Hour)
-	combinedStatsQuery := `
-		WITH scoped AS (
-			SELECT
-				created_at,
-				input_tokens,
-				output_tokens,
-				cache_creation_tokens,
-				cache_read_tokens,
-				total_cost,
-				actual_cost,
-				COALESCE(account_stats_cost, total_cost) * COALESCE(account_rate_multiplier, 1) AS account_cost,
-				COALESCE(duration_ms, 0) AS duration_ms
-			FROM usage_logs
-			WHERE created_at >= LEAST($1::timestamptz, $3::timestamptz)
-				AND created_at < GREATEST($2::timestamptz, $4::timestamptz)
-				AND ` + usageLogBusinessStatsFilter("") + `
-		)
+// fillDashboardRangeStatsFromUsageLogs fills the cumulative block from raw
+// usage_logs over [startUTC, endUTC). Used when pre-aggregation is disabled.
+func (r *usageLogRepository) fillDashboardRangeStatsFromUsageLogs(ctx context.Context, stats *DashboardStats, startUTC, endUTC time.Time) error {
+	rangeStatsQuery := `
 		SELECT
-			COUNT(*) FILTER (WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz) AS total_requests,
-			COALESCE(SUM(input_tokens) FILTER (WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz), 0) AS total_input_tokens,
-			COALESCE(SUM(output_tokens) FILTER (WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz), 0) AS total_output_tokens,
-			COALESCE(SUM(cache_creation_tokens) FILTER (WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz), 0) AS total_cache_creation_tokens,
-			COALESCE(SUM(cache_read_tokens) FILTER (WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz), 0) AS total_cache_read_tokens,
-			COALESCE(SUM(total_cost) FILTER (WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz), 0) AS total_cost,
-			COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz), 0) AS total_actual_cost,
-			COALESCE(SUM(account_cost) FILTER (WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz), 0) AS total_account_cost,
-			COALESCE(SUM(duration_ms) FILTER (WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz), 0) AS total_duration_ms,
-			COUNT(*) FILTER (WHERE created_at >= $3::timestamptz AND created_at < $4::timestamptz) AS today_requests,
-			COALESCE(SUM(input_tokens) FILTER (WHERE created_at >= $3::timestamptz AND created_at < $4::timestamptz), 0) AS today_input_tokens,
-			COALESCE(SUM(output_tokens) FILTER (WHERE created_at >= $3::timestamptz AND created_at < $4::timestamptz), 0) AS today_output_tokens,
-			COALESCE(SUM(cache_creation_tokens) FILTER (WHERE created_at >= $3::timestamptz AND created_at < $4::timestamptz), 0) AS today_cache_creation_tokens,
-			COALESCE(SUM(cache_read_tokens) FILTER (WHERE created_at >= $3::timestamptz AND created_at < $4::timestamptz), 0) AS today_cache_read_tokens,
-			COALESCE(SUM(total_cost) FILTER (WHERE created_at >= $3::timestamptz AND created_at < $4::timestamptz), 0) AS today_cost,
-			COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $3::timestamptz AND created_at < $4::timestamptz), 0) AS today_actual_cost,
-			COALESCE(SUM(account_cost) FILTER (WHERE created_at >= $3::timestamptz AND created_at < $4::timestamptz), 0) AS today_account_cost
-		FROM scoped
+			COUNT(*) AS total_requests,
+			COALESCE(SUM(input_tokens), 0) AS total_input_tokens,
+			COALESCE(SUM(output_tokens), 0) AS total_output_tokens,
+			COALESCE(SUM(cache_creation_tokens), 0) AS total_cache_creation_tokens,
+			COALESCE(SUM(cache_read_tokens), 0) AS total_cache_read_tokens,
+			COALESCE(SUM(total_cost), 0) AS total_cost,
+			COALESCE(SUM(actual_cost), 0) AS total_actual_cost,
+			COALESCE(SUM(COALESCE(account_stats_cost, total_cost) * COALESCE(account_rate_multiplier, 1)), 0) AS total_account_cost,
+			COALESCE(SUM(COALESCE(duration_ms, 0)), 0) AS total_duration_ms
+		FROM usage_logs
+		WHERE created_at >= $1 AND created_at < $2
+		  AND ` + usageLogBusinessStatsFilter("") + `
 	`
 	var totalDurationMs int64
 	if err := scanSingleRow(
 		ctx,
 		r.sql,
-		combinedStatsQuery,
-		[]any{startUTC, endUTC, todayUTC, todayEnd},
+		rangeStatsQuery,
+		[]any{startUTC, endUTC},
 		&stats.TotalRequests,
 		&stats.TotalInputTokens,
 		&stats.TotalOutputTokens,
@@ -335,6 +358,41 @@ func (r *usageLogRepository) fillDashboardUsageStatsFromUsageLogs(ctx context.Co
 		&stats.TotalActualCost,
 		&stats.TotalAccountCost,
 		&totalDurationMs,
+	); err != nil {
+		return err
+	}
+	stats.TotalTokens = stats.TotalInputTokens + stats.TotalOutputTokens + stats.TotalCacheCreationTokens + stats.TotalCacheReadTokens
+	if stats.TotalRequests > 0 {
+		stats.AverageDurationMs = float64(totalDurationMs) / float64(stats.TotalRequests)
+	}
+	return nil
+}
+
+// fillDashboardTodayStatsFromUsageLogs fills the "today" block and today's
+// active-user count from raw usage_logs over the caller's local day. This is
+// the same half-open window and business filter the usage-records page applies,
+// so the two views agree by construction.
+func (r *usageLogRepository) fillDashboardTodayStatsFromUsageLogs(ctx context.Context, stats *DashboardStats, todayStart, todayEnd time.Time) error {
+	todayStatsQuery := `
+		SELECT
+			COUNT(*) AS today_requests,
+			COALESCE(SUM(input_tokens), 0) AS today_input_tokens,
+			COALESCE(SUM(output_tokens), 0) AS today_output_tokens,
+			COALESCE(SUM(cache_creation_tokens), 0) AS today_cache_creation_tokens,
+			COALESCE(SUM(cache_read_tokens), 0) AS today_cache_read_tokens,
+			COALESCE(SUM(total_cost), 0) AS today_cost,
+			COALESCE(SUM(actual_cost), 0) AS today_actual_cost,
+			COALESCE(SUM(COALESCE(account_stats_cost, total_cost) * COALESCE(account_rate_multiplier, 1)), 0) AS today_account_cost,
+			COUNT(DISTINCT user_id) AS active_users
+		FROM usage_logs
+		WHERE created_at >= $1 AND created_at < $2
+		  AND ` + usageLogBusinessStatsFilter("") + `
+	`
+	if err := scanSingleRow(
+		ctx,
+		r.sql,
+		todayStatsQuery,
+		[]any{todayStart, todayEnd},
 		&stats.TodayRequests,
 		&stats.TodayInputTokens,
 		&stats.TodayOutputTokens,
@@ -343,36 +401,26 @@ func (r *usageLogRepository) fillDashboardUsageStatsFromUsageLogs(ctx context.Co
 		&stats.TodayCost,
 		&stats.TodayActualCost,
 		&stats.TodayAccountCost,
+		&stats.ActiveUsers,
 	); err != nil {
 		return err
 	}
-	stats.TotalTokens = stats.TotalInputTokens + stats.TotalOutputTokens + stats.TotalCacheCreationTokens + stats.TotalCacheReadTokens
-	if stats.TotalRequests > 0 {
-		stats.AverageDurationMs = float64(totalDurationMs) / float64(stats.TotalRequests)
-	}
-
 	stats.TodayTokens = stats.TodayInputTokens + stats.TodayOutputTokens + stats.TodayCacheCreationTokens + stats.TodayCacheReadTokens
+	return nil
+}
 
+// fillDashboardHourlyActiveUsersFromUsageLogs counts distinct users in the
+// current clock hour from raw usage_logs.
+func (r *usageLogRepository) fillDashboardHourlyActiveUsersFromUsageLogs(ctx context.Context, stats *DashboardStats, now time.Time) error {
 	hourStart := now.UTC().Truncate(time.Hour)
 	hourEnd := hourStart.Add(time.Hour)
-	activeUsersQuery := `
-		WITH scoped AS (
-			SELECT user_id, created_at
-			FROM usage_logs
-			WHERE created_at >= LEAST($1::timestamptz, $3::timestamptz)
-				AND created_at < GREATEST($2::timestamptz, $4::timestamptz)
-				AND ` + usageLogBusinessStatsFilter("") + `
-		)
-		SELECT
-			COUNT(DISTINCT CASE WHEN created_at >= $1::timestamptz AND created_at < $2::timestamptz THEN user_id END) AS active_users,
-			COUNT(DISTINCT CASE WHEN created_at >= $3::timestamptz AND created_at < $4::timestamptz THEN user_id END) AS hourly_active_users
-		FROM scoped
+	hourlyActiveQuery := `
+		SELECT COUNT(DISTINCT user_id)
+		FROM usage_logs
+		WHERE created_at >= $1 AND created_at < $2
+		  AND ` + usageLogBusinessStatsFilter("") + `
 	`
-	if err := scanSingleRow(ctx, r.sql, activeUsersQuery, []any{todayUTC, todayEnd, hourStart, hourEnd}, &stats.ActiveUsers, &stats.HourlyActiveUsers); err != nil {
-		return err
-	}
-
-	return nil
+	return scanSingleRow(ctx, r.sql, hourlyActiveQuery, []any{hourStart, hourEnd}, &stats.HourlyActiveUsers)
 }
 
 // UserDashboardStats 用户仪表盘统计
@@ -381,21 +429,13 @@ type UserDashboardStats = usagestats.UserDashboardStats
 // PlatformDashboardStats 单平台用量明细
 type PlatformDashboardStats = usagestats.PlatformDashboardStats
 
-// userTodayRange returns the half-open [start, end) bounds of "today" in the
-// caller's timezone, falling back to the server-configured timezone when userTZ
-// is empty or unknown. The upper bound keeps the dashboard's "today" aligned
-// with the usage list/stats endpoints, which use the same half-open window;
-// without it, rows whose created_at sits in the future (writer/DB clock skew,
-// backfilled billing rows) would count towards "today" forever.
-func userTodayRange(userTZ string) (time.Time, time.Time) {
-	start := timezone.StartOfDayInUserLocation(timezone.NowInUserLocation(userTZ), userTZ)
-	return start, start.AddDate(0, 0, 1)
-}
-
 // GetUserDashboardStats 获取用户专属的仪表盘统计
+//
+// "今日"窗口是调用方时区的半开区间 [start, end)，与用量列表/统计接口共用同一口径；
+// 没有上界的话，created_at 落在未来的行（写入端/DB 时钟偏差、补记账单）会永远算进"今日"。
 func (r *usageLogRepository) GetUserDashboardStats(ctx context.Context, userID int64, userTZ string) (*UserDashboardStats, error) {
 	stats := &UserDashboardStats{}
-	todayStart, todayEnd := userTodayRange(userTZ)
+	todayStart, todayEnd := timezone.TodayRangeInUserLocation(userTZ)
 
 	// API Key 统计
 	if err := scanSingleRow(
@@ -568,7 +608,7 @@ func (r *usageLogRepository) getPerformanceStatsByAPIKey(ctx context.Context, ap
 // GetAPIKeyDashboardStats 获取指定 API Key 的仪表盘统计（按 api_key_id 过滤）
 func (r *usageLogRepository) GetAPIKeyDashboardStats(ctx context.Context, apiKeyID int64, userTZ string) (*UserDashboardStats, error) {
 	stats := &UserDashboardStats{}
-	todayStart, todayEnd := userTodayRange(userTZ)
+	todayStart, todayEnd := timezone.TodayRangeInUserLocation(userTZ)
 
 	// API Key 维度不需要统计 key 数量，设为 1
 	stats.TotalAPIKeys = 1

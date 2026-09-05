@@ -79,8 +79,10 @@ func parseOptionalBoolDashboardFilter(c *gin.Context, name string) (*bool, error
 
 // GetStats handles getting dashboard statistics
 // GET /api/v1/admin/dashboard/stats
+// Query params: timezone (IANA name; anchors the "today" block on the caller's
+// local day, falling back to the server timezone)
 func (h *DashboardHandler) GetStats(c *gin.Context) {
-	stats, err := h.dashboardService.GetDashboardStats(c.Request.Context())
+	stats, err := h.dashboardService.GetDashboardStats(c.Request.Context(), c.Query("timezone"))
 	if err != nil {
 		response.Error(c, 500, "Failed to get dashboard statistics")
 		return

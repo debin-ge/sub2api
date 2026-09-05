@@ -64,21 +64,30 @@ type dashboardSnapshotV2CacheKey struct {
 	BillingType           *int8  `json:"billing_type"`
 	UpstreamModelMismatch *bool  `json:"upstream_model_mismatch"`
 	IncludeStats          bool   `json:"include_stats"`
-	IncludeTrend          bool   `json:"include_trend"`
-	IncludeModels         bool   `json:"include_models"`
-	IncludeGroups         bool   `json:"include_groups"`
-	IncludeUsersTrend     bool   `json:"include_users_trend"`
-	UsersTrendLimit       int    `json:"users_trend_limit"`
+	// StatsScope is the caller's "today" window (see
+	// service.DashboardStatsCacheScope); the stats block differs per window, so
+	// callers in different timezones must not share a snapshot entry.
+	StatsScope        string `json:"stats_scope,omitempty"`
+	IncludeTrend      bool   `json:"include_trend"`
+	IncludeModels     bool   `json:"include_models"`
+	IncludeGroups     bool   `json:"include_groups"`
+	IncludeUsersTrend bool   `json:"include_users_trend"`
+	UsersTrendLimit   int    `json:"users_trend_limit"`
 }
 
 func (h *DashboardHandler) GetSnapshotV2(c *gin.Context) {
 	startTime, endTime := parseTimeRange(c)
+	userTZ := c.Query("timezone")
 	granularity := strings.TrimSpace(c.DefaultQuery("granularity", "day"))
 	if granularity != "hour" {
 		granularity = "day"
 	}
 
 	includeStats := parseBoolQueryWithDefault(c.Query("include_stats"), true)
+	statsScope := ""
+	if includeStats {
+		statsScope = service.DashboardStatsCacheScope(userTZ)
+	}
 	includeTrend := parseBoolQueryWithDefault(c.Query("include_trend"), true)
 	includeModels := parseBoolQueryWithDefault(c.Query("include_model_stats"), true)
 	includeGroups := parseBoolQueryWithDefault(c.Query("include_group_stats"), false)
@@ -111,6 +120,7 @@ func (h *DashboardHandler) GetSnapshotV2(c *gin.Context) {
 		BillingType:           filters.BillingType,
 		UpstreamModelMismatch: filters.UpstreamModelMismatch,
 		IncludeStats:          includeStats,
+		StatsScope:            statsScope,
 		IncludeTrend:          includeTrend,
 		IncludeModels:         includeModels,
 		IncludeGroups:         includeGroups,
@@ -125,6 +135,7 @@ func (h *DashboardHandler) GetSnapshotV2(c *gin.Context) {
 			startTime,
 			endTime,
 			granularity,
+			userTZ,
 			filters,
 			includeStats,
 			includeTrend,
@@ -154,6 +165,7 @@ func (h *DashboardHandler) buildSnapshotV2Response(
 	ctx context.Context,
 	startTime, endTime time.Time,
 	granularity string,
+	userTZ string,
 	filters *dashboardSnapshotV2Filters,
 	includeStats, includeTrend, includeModels, includeGroups, includeUsersTrend bool,
 	usersTrendLimit int,
@@ -166,7 +178,7 @@ func (h *DashboardHandler) buildSnapshotV2Response(
 	}
 
 	if includeStats {
-		stats, err := h.dashboardService.GetDashboardStats(ctx)
+		stats, err := h.dashboardService.GetDashboardStats(ctx, userTZ)
 		if err != nil {
 			return nil, errors.New("failed to get dashboard statistics")
 		}
