@@ -225,7 +225,8 @@ func (s *SchedulerSnapshotService) ListSchedulableAccounts(ctx context.Context, 
 		if err != nil {
 			logger.LegacyPrintf("service.scheduler_snapshot", "[Scheduler] cache read failed: bucket=%s err=%v", bucket.String(), err)
 		} else if hit {
-			return derefAccounts(cached), useMixed, nil
+			// 桶内是配置池，瞬时态（限流/过载/临时停调/过期）在此按当前时间过滤。
+			return filterSchedulableSnapshotAccounts(derefAccounts(cached)), useMixed, nil
 		}
 		token, err := s.cache.CaptureBucketWriteToken(ctx, bucket)
 		if ctxErr := ctx.Err(); ctxErr != nil {
@@ -259,6 +260,7 @@ func (s *SchedulerSnapshotService) ListSchedulableAccounts(ctx context.Context, 
 	}
 
 	if s.cache != nil && canPublish {
+		// 发布完整配置池；返回给调度器的列表则按当前时间过滤瞬时态。
 		if err := s.cache.SetSnapshot(fallbackCtx, bucket, writeToken, accounts); err != nil {
 			if errors.Is(err, ErrSchedulerBucketRetired) || errors.Is(err, ErrSchedulerBucketWriteFenced) {
 				slog.Debug("[Scheduler] cache publish fenced", "bucket", bucket.String())
@@ -268,7 +270,7 @@ func (s *SchedulerSnapshotService) ListSchedulableAccounts(ctx context.Context, 
 		}
 	}
 
-	return accounts, useMixed, nil
+	return filterSchedulableSnapshotAccounts(accounts), useMixed, nil
 }
 
 func (s *SchedulerSnapshotService) GetAccount(ctx context.Context, accountID int64) (*Account, error) {
@@ -290,6 +292,10 @@ func (s *SchedulerSnapshotService) GetAccount(ctx context.Context, accountID int
 		}
 	}
 
+	if s.accountRepo == nil {
+		// 无仓储可回源（仅缓存的调度快照）：按"账号不存在"处理，而不是空指针崩溃。
+		return nil, nil
+	}
 	if err := s.guardFallback(ctx); err != nil {
 		return nil, err
 	}
@@ -1466,6 +1472,36 @@ func (s *SchedulerSnapshotService) shouldLogOutboxLagWarning(active bool) bool {
 	return shouldLog
 }
 
+// schedulerPoolAccountLister 是账号仓储的可选能力：返回"配置上可调度"的账号池
+// （active + schedulable + 平台匹配），但不按限流/过载/临时停调/过期等瞬时态过滤。
+//
+// 快照桶存放这个池而不是"此刻可调度"的子集，瞬时态由 ListSchedulableAccounts 在读取时
+// 用 Account.IsSchedulable() 判断。这样做的原因：SetRateLimited 会同步刷新账号 meta 并
+// 触发桶重建把账号剔除，但冷却**到期**不会产生任何事件，桶也没有 TTL，账号要等下一次
+// 全量重建（默认 300s）才回到候选列表；一个 5 秒的 429 冷却由此被放大成最长 5 分钟不可见。
+// 仓储未实现该接口时回退到旧的"此刻可调度"查询，行为与之前完全一致。
+type schedulerPoolAccountLister interface {
+	ListSchedulablePoolByGroupIDAndPlatforms(ctx context.Context, groupID int64, platforms []string) ([]Account, error)
+	ListSchedulablePoolByPlatforms(ctx context.Context, platforms []string) ([]Account, error)
+	ListSchedulablePoolUngroupedByPlatforms(ctx context.Context, platforms []string) ([]Account, error)
+}
+
+// filterSchedulableSnapshotAccounts 在读取快照时按当前时间过滤瞬时不可调度的账号，
+// 保证所有调度器拿到的列表语义仍是"此刻可调度"。返回新切片，不修改入参。
+func filterSchedulableSnapshotAccounts(accounts []Account) []Account {
+	if len(accounts) == 0 {
+		return accounts
+	}
+	filtered := make([]Account, 0, len(accounts))
+	for i := range accounts {
+		if !accounts[i].IsSchedulable() {
+			continue
+		}
+		filtered = append(filtered, accounts[i])
+	}
+	return filtered
+}
+
 func (s *SchedulerSnapshotService) loadAccountsFromDB(ctx context.Context, bucket SchedulerBucket, useMixed bool) ([]Account, error) {
 	if s.accountRepo == nil {
 		return nil, ErrSchedulerCacheNotReady
@@ -1479,7 +1515,15 @@ func (s *SchedulerSnapshotService) loadAccountsFromDB(ctx context.Context, bucke
 		platforms := []string{bucket.Platform, PlatformAntigravity}
 		var accounts []Account
 		var err error
-		if groupID > 0 {
+		if pool, ok := s.accountRepo.(schedulerPoolAccountLister); ok {
+			if groupID > 0 {
+				accounts, err = pool.ListSchedulablePoolByGroupIDAndPlatforms(ctx, groupID, platforms)
+			} else if s.isRunModeSimple() {
+				accounts, err = pool.ListSchedulablePoolByPlatforms(ctx, platforms)
+			} else {
+				accounts, err = pool.ListSchedulablePoolUngroupedByPlatforms(ctx, platforms)
+			}
+		} else if groupID > 0 {
 			accounts, err = s.accountRepo.ListSchedulableByGroupIDAndPlatforms(ctx, groupID, platforms)
 		} else if s.isRunModeSimple() {
 			accounts, err = s.accountRepo.ListSchedulableByPlatforms(ctx, platforms)
@@ -1497,6 +1541,17 @@ func (s *SchedulerSnapshotService) loadAccountsFromDB(ctx context.Context, bucke
 			filtered = append(filtered, acc)
 		}
 		return filtered, nil
+	}
+
+	if pool, ok := s.accountRepo.(schedulerPoolAccountLister); ok {
+		platforms := []string{bucket.Platform}
+		if groupID > 0 {
+			return pool.ListSchedulablePoolByGroupIDAndPlatforms(ctx, groupID, platforms)
+		}
+		if s.isRunModeSimple() {
+			return pool.ListSchedulablePoolByPlatforms(ctx, platforms)
+		}
+		return pool.ListSchedulablePoolUngroupedByPlatforms(ctx, platforms)
 	}
 
 	if groupID > 0 {

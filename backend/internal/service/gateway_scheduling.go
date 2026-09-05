@@ -35,12 +35,19 @@ func (s *GatewayService) SelectAccountForModel(ctx context.Context, groupID *int
 // opt in at the endpoint instead of relying on an empty or unknown model to
 // bypass the pricing guard.
 func (s *GatewayService) SelectAccountForModelForNonBillingEndpoint(ctx context.Context, groupID *int64, sessionHash string, requestedModel string) (*Account, error) {
+	return s.SelectAccountForModelForNonBillingEndpointWithExclusions(ctx, groupID, sessionHash, requestedModel, nil)
+}
+
+// SelectAccountForModelForNonBillingEndpointWithExclusions 是
+// SelectAccountForModelForNonBillingEndpoint 的排除版本，供 count_tokens 在上游 429 后
+// 换号重试一次：计数接口是独立限流桶，换一个账号通常就能成功。
+func (s *GatewayService) SelectAccountForModelForNonBillingEndpointWithExclusions(ctx context.Context, groupID *int64, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}) (*Account, error) {
 	return s.SelectAccountForModelWithExclusions(
 		withNonBillingEndpointPricingExemption(ctx),
 		groupID,
 		sessionHash,
 		requestedModel,
-		nil,
+		excludedIDs,
 	)
 }
 
@@ -489,8 +496,9 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 							result.ReleaseFunc() // 释放槽位，继续尝试下一个账号
 							continue
 						}
+						// 模型路由是显式配置：绑定跟随路由结果，不套用"只升不降"。
 						if sessionHash != "" && s.cache != nil {
-							_ = s.bindGatewayStickySessionDuringSelection(ctx, groupID, sessionHash, item.account.ID)
+							_ = s.bindGatewayStickySessionForRouting(ctx, groupID, sessionHash, item.account.ID)
 						}
 						if s.debugModelRoutingEnabled() {
 							logger.LegacyPrintf("service.gateway", "[ModelRoutingDebug] routed select: group_id=%v model=%s session=%s account=%d", derefGroupID(groupID), requestedModel, shortSessionHash(sessionHash), item.account.ID)
@@ -565,7 +573,21 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 					"rpm_ok", rpmOK,
 				)
 
-				if !clearSticky && platformOK && profitOK && modelSupported && modelSchedulable && quotaOK && windowCostOK && rpmOK && schedulable {
+				stickyEligible := !clearSticky && platformOK && profitOK && modelSupported && modelSchedulable && quotaOK && windowCostOK && rpmOK && schedulable
+				// C 类迁回：绑定账号可用，但存在优先级更高且有空余容量的可调度账号时，放弃本次
+				// 粘性命中，交给 Layer 2 按优先级选号并把绑定升级过去（只升不降规则保证不会反向迁移）。
+				// 典型场景：高优先级账号短暂限流期间新建的会话被绑到了低优先级兜底账号。
+				if stickyEligible && cfg.StickyPreferHigherPriority &&
+					s.hasHigherPriorityCandidate(ctx, accounts, account, platform, useMixed, requestedModel, isExcluded) {
+					stickyEligible = false
+					slog.Info("sticky.layer1_5_yield_to_higher_priority",
+						"account_id", accountID,
+						"account_priority", account.Priority,
+						"session", shortSessionHash(sessionHash),
+					)
+				}
+
+				if stickyEligible {
 					result, err := s.tryAcquireAccountSlot(ctx, accountID, account.Concurrency)
 					if err == nil && result.Acquired {
 						// 会话数量限制检查
@@ -722,6 +744,15 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 			}
 		}
 
+		// E：最高优先级层全部满载但仍可调度时，按配置在该层排队，而不是立即下沉到低优先级层。
+		if cfg.PriorityTierWait {
+			if selection, ok, err := s.priorityTierWaitPlan(ctx, groupID, sessionHash, requestedModel, candidates, available, loadMap, cfg); err != nil {
+				return nil, err
+			} else if ok {
+				return selection, nil
+			}
+		}
+
 		// 分层过滤选择：优先级 →（可选）最早重置 → 负载率 → LRU
 		for len(available) > 0 {
 			// 1. 取优先级最小的集合
@@ -744,10 +775,17 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 				if !s.checkAndRegisterSession(ctx, selected.account, sessionHash) {
 					result.ReleaseFunc() // 释放槽位，继续尝试下一个账号
 				} else {
+					// 只升不降：选中的是低优先级兜底账号时不覆盖指向高优先级账号的既有绑定。
+					bindDecision := stickyBindSkipped
 					if sessionHash != "" && s.cache != nil {
-						_ = s.bindGatewayStickySessionDuringSelection(ctx, groupID, sessionHash, selected.account.ID)
+						bindDecision, _ = s.bindGatewayStickySessionDuringSelection(ctx, groupID, sessionHash, selected.account, stickyAccountID, accountByID[stickyAccountID])
 					}
-					return s.newSelectionResult(ctx, groupID, requestedModel, selected.account, true, result.ReleaseFunc, nil)
+					selection, err := s.newSelectionResult(ctx, groupID, requestedModel, selected.account, true, result.ReleaseFunc, nil)
+					if err != nil {
+						return nil, err
+					}
+					selection.StickyMigrated = bindDecision.migrated()
+					return selection, nil
 				}
 			}
 
@@ -816,13 +854,15 @@ func (s *GatewayService) tryAcquireByLegacyOrder(ctx context.Context, candidates
 				result.ReleaseFunc() // 释放槽位，继续尝试下一个账号
 				continue
 			}
+			bindDecision := stickyBindSkipped
 			if sessionHash != "" && s.cache != nil {
-				_ = s.bindGatewayStickySessionDuringSelection(ctx, groupID, sessionHash, acc.ID)
+				bindDecision, _ = s.bindGatewayStickySessionDuringSelection(ctx, groupID, sessionHash, acc, 0, nil)
 			}
 			selection, err := s.newSelectionResult(ctx, groupID, requestedModel, acc, true, result.ReleaseFunc, nil)
 			if err != nil {
 				return nil, false, err
 			}
+			selection.StickyMigrated = bindDecision.migrated()
 			return selection, true, nil
 		}
 	}
@@ -835,13 +875,160 @@ func (s *GatewayService) schedulingConfig() config.GatewaySchedulingConfig {
 		return s.cfg.Gateway.Scheduling
 	}
 	return config.GatewaySchedulingConfig{
-		StickySessionMaxWaiting:  3,
-		StickySessionWaitTimeout: 45 * time.Second,
-		FallbackWaitTimeout:      30 * time.Second,
-		FallbackMaxWaiting:       100,
-		LoadBatchEnabled:         true,
-		SlotCleanupInterval:      30 * time.Second,
+		StickySessionMaxWaiting:    3,
+		StickySessionWaitTimeout:   45 * time.Second,
+		FallbackWaitTimeout:        30 * time.Second,
+		FallbackMaxWaiting:         100,
+		LoadBatchEnabled:           true,
+		SlotCleanupInterval:        30 * time.Second,
+		StickyPreferHigherPriority: true,
 	}
+}
+
+// hasHigherPriorityCandidate 报告候选列表中是否存在比 sticky 优先级更高（数值更小）、
+// 通过全部非粘性门检查且负载率低于 100 的可调度账号。用于 Layer 1.5 的 C 类迁回判断。
+// 负载查询失败时 fail-open 返回 true，把最终裁决交给 Layer 2。
+func (s *GatewayService) hasHigherPriorityCandidate(
+	ctx context.Context,
+	accounts []Account,
+	sticky *Account,
+	platform string,
+	useMixed bool,
+	requestedModel string,
+	isExcluded func(int64) bool,
+) bool {
+	if sticky == nil {
+		return false
+	}
+	var higher []*Account
+	for i := range accounts {
+		acc := &accounts[i]
+		if acc.ID == sticky.ID || acc.Priority >= sticky.Priority {
+			continue
+		}
+		if isExcluded != nil && isExcluded(acc.ID) {
+			continue
+		}
+		if !s.isAccountSchedulableForSelection(acc) {
+			continue
+		}
+		if !s.isGatewayAccountProfitEligible(ctx, acc) {
+			continue
+		}
+		if !s.isAccountAllowedForPlatform(acc, platform, useMixed) {
+			continue
+		}
+		if requestedModel != "" && !s.isModelSupportedByAccountWithContext(ctx, acc, requestedModel) {
+			continue
+		}
+		if !s.isAccountSchedulableForModelSelection(ctx, acc, requestedModel) {
+			continue
+		}
+		if !s.isAccountSchedulableForQuota(acc) {
+			continue
+		}
+		if !s.isAccountSchedulableForWindowCost(ctx, acc, false) {
+			continue
+		}
+		if !s.isAccountSchedulableForRPM(ctx, acc, false) {
+			continue
+		}
+		higher = append(higher, acc)
+	}
+	if len(higher) == 0 {
+		return false
+	}
+	if s.concurrencyService == nil {
+		return true
+	}
+	loads := make([]AccountWithConcurrency, 0, len(higher))
+	for _, acc := range higher {
+		loads = append(loads, AccountWithConcurrency{ID: acc.ID, MaxConcurrency: acc.EffectiveLoadFactor()})
+	}
+	loadMap, err := s.concurrencyService.GetAccountsLoadBatch(ctx, loads)
+	if err != nil {
+		return true
+	}
+	for _, acc := range higher {
+		info := loadMap[acc.ID]
+		if info == nil || info.LoadRate < 100 {
+			return true
+		}
+	}
+	return false
+}
+
+// priorityTierWaitPlan 实现 E：当候选集中最高优先级层的账号全部满载（负载率 >= 100）
+// 但仍可调度时，对该层负载最低的账号返回等待计划，而不是立即下沉到更低优先级层。
+// 该层等待队列已满、或会话数限制不允许时返回 ok=false，交由后续逻辑正常下沉。
+func (s *GatewayService) priorityTierWaitPlan(
+	ctx context.Context,
+	groupID *int64,
+	sessionHash string,
+	requestedModel string,
+	candidates []*Account,
+	available []accountWithLoad,
+	loadMap map[int64]*AccountLoadInfo,
+	cfg config.GatewaySchedulingConfig,
+) (*AccountSelectionResult, bool, error) {
+	if len(candidates) == 0 {
+		return nil, false, nil
+	}
+	minPriority := candidates[0].Priority
+	for _, acc := range candidates[1:] {
+		if acc.Priority < minPriority {
+			minPriority = acc.Priority
+		}
+	}
+	for _, item := range available {
+		if item.account.Priority == minPriority {
+			// 最高优先级层仍有可用容量，交给常规分层选择。
+			return nil, false, nil
+		}
+	}
+
+	var target *Account
+	targetLoad := 0
+	for _, acc := range candidates {
+		if acc.Priority != minPriority {
+			continue
+		}
+		load := 0
+		if info := loadMap[acc.ID]; info != nil {
+			load = info.LoadRate
+		}
+		if target == nil || load < targetLoad {
+			target = acc
+			targetLoad = load
+		}
+	}
+	if target == nil {
+		return nil, false, nil
+	}
+	if s.concurrencyService != nil {
+		if waiting, err := s.concurrencyService.GetAccountWaitingCount(ctx, target.ID); err == nil && waiting >= cfg.FallbackMaxWaiting {
+			return nil, false, nil
+		}
+	}
+	if !s.checkAndRegisterSession(ctx, target, sessionHash) {
+		return nil, false, nil
+	}
+	slog.Info("scheduling.priority_tier_wait",
+		"account_id", target.ID,
+		"priority", target.Priority,
+		"load_rate", targetLoad,
+		"session", shortSessionHash(sessionHash),
+	)
+	selection, err := s.newSelectionResult(ctx, groupID, requestedModel, target, false, nil, &AccountWaitPlan{
+		AccountID:      target.ID,
+		MaxConcurrency: target.Concurrency,
+		Timeout:        cfg.FallbackWaitTimeout,
+		MaxWaiting:     cfg.FallbackMaxWaiting,
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	return selection, true, nil
 }
 
 func (s *GatewayService) withGroupContext(ctx context.Context, group *Group) context.Context {
@@ -2008,7 +2195,8 @@ func (s *GatewayService) selectAccountForModelWithPlatform(ctx context.Context, 
 
 		if selected != nil {
 			if sessionHash != "" && s.cache != nil {
-				if err := s.bindGatewayStickySessionDuringSelection(ctx, groupID, sessionHash, selected.ID); err != nil {
+				// 模型路由是显式配置：绑定跟随路由结果，不套用"只升不降"。
+				if err := s.bindGatewayStickySessionForRouting(ctx, groupID, sessionHash, selected.ID); err != nil {
 					logger.LegacyPrintf("service.gateway", "set session account failed: session=%s account_id=%d err=%v", sessionHash, selected.ID, err)
 				}
 			}
@@ -2131,9 +2319,9 @@ func (s *GatewayService) selectAccountForModelWithPlatform(ctx context.Context, 
 		return nil, ErrNoAvailableAccounts
 	}
 
-	// 4. 建立粘性绑定
+	// 4. 建立粘性绑定（只升不降）
 	if sessionHash != "" && s.cache != nil {
-		if err := s.bindGatewayStickySessionDuringSelection(ctx, groupID, sessionHash, selected.ID); err != nil {
+		if _, err := s.bindGatewayStickySessionDuringSelection(ctx, groupID, sessionHash, selected, 0, nil); err != nil {
 			logger.LegacyPrintf("service.gateway", "set session account failed: session=%s account_id=%d err=%v", sessionHash, selected.ID, err)
 		}
 	}
@@ -2274,7 +2462,8 @@ func (s *GatewayService) selectAccountWithMixedScheduling(ctx context.Context, g
 
 		if selected != nil {
 			if sessionHash != "" && s.cache != nil {
-				if err := s.bindGatewayStickySessionDuringSelection(ctx, groupID, sessionHash, selected.ID); err != nil {
+				// 模型路由是显式配置：绑定跟随路由结果，不套用"只升不降"。
+				if err := s.bindGatewayStickySessionForRouting(ctx, groupID, sessionHash, selected.ID); err != nil {
 					logger.LegacyPrintf("service.gateway", "set session account failed: session=%s account_id=%d err=%v", sessionHash, selected.ID, err)
 				}
 			}
@@ -2398,9 +2587,9 @@ func (s *GatewayService) selectAccountWithMixedScheduling(ctx context.Context, g
 		return nil, ErrNoAvailableAccounts
 	}
 
-	// 4. 建立粘性绑定
+	// 4. 建立粘性绑定（只升不降）
 	if sessionHash != "" && s.cache != nil {
-		if err := s.bindGatewayStickySessionDuringSelection(ctx, groupID, sessionHash, selected.ID); err != nil {
+		if _, err := s.bindGatewayStickySessionDuringSelection(ctx, groupID, sessionHash, selected, 0, nil); err != nil {
 			logger.LegacyPrintf("service.gateway", "set session account failed: session=%s account_id=%d err=%v", sessionHash, selected.ID, err)
 		}
 	}

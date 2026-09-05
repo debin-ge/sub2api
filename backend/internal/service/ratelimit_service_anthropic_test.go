@@ -88,15 +88,21 @@ func TestCalculateAnthropic429ResetTime_UtilizationExactlyOne(t *testing.T) {
 	assertAnthropicResult(t, result, 1770998400)
 }
 
-func TestCalculateAnthropic429ResetTime_NeitherExceeded_UsesShorter(t *testing.T) {
+// Neither window exceeded and no explicit rejected status: the reset headers merely
+// echo the account's window state for a burst/concurrency 429. Parking the account
+// until the window boundary would turn a seconds-long throttle into hours, so the
+// per-window calculation must yield nil and let Retry-After / fallback decide.
+func TestCalculateAnthropic429ResetTime_NeitherExceeded_ReturnsNil(t *testing.T) {
 	headers := http.Header{}
+	headers.Set("anthropic-ratelimit-unified-status", "allowed")
 	headers.Set("anthropic-ratelimit-unified-5h-utilization", "0.95")
 	headers.Set("anthropic-ratelimit-unified-5h-reset", "1770998400") // sooner
 	headers.Set("anthropic-ratelimit-unified-7d-utilization", "0.80")
 	headers.Set("anthropic-ratelimit-unified-7d-reset", "1771549200") // later
 
-	result := calculateAnthropic429ResetTime(headers)
-	assertAnthropicResult(t, result, 1770998400)
+	if result := calculateAnthropic429ResetTime(headers); result != nil {
+		t.Fatalf("expected nil result when neither window is exceeded and status is not rejected, got %+v", result)
+	}
 }
 
 func TestCalculateAnthropic429ResetTime_Only5hResetHeader(t *testing.T) {

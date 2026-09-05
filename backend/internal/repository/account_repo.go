@@ -2120,6 +2120,63 @@ func (r *accountRepository) ListSchedulableByGroupIDAndPlatforms(ctx context.Con
 	})
 }
 
+// ListSchedulablePoolByGroupIDAndPlatforms 返回分组内"配置上可调度"的账号池：
+// status=active、schedulable=true、平台匹配，但**有意忽略**限流/过载/临时停调/过期
+// 这些瞬时运行态。调度快照存放的是这个池，瞬时态在读取时由 Account.IsSchedulable()
+// 按当前时间判断；这样限流到期后账号无需任何 outbox 事件或全量重建即可重新可见。
+func (r *accountRepository) ListSchedulablePoolByGroupIDAndPlatforms(ctx context.Context, groupID int64, platforms []string) ([]service.Account, error) {
+	if len(platforms) == 0 {
+		return nil, nil
+	}
+	return r.queryAccountsByGroup(ctx, groupID, accountGroupQueryOptions{
+		status:               service.StatusActive,
+		schedulable:          true,
+		ignoreTransientState: true,
+		platforms:            platforms,
+	})
+}
+
+// ListSchedulablePoolByPlatforms 是 ListSchedulableByPlatforms 的"配置池"变体，
+// 不过滤瞬时运行态，语义见 ListSchedulablePoolByGroupIDAndPlatforms。
+func (r *accountRepository) ListSchedulablePoolByPlatforms(ctx context.Context, platforms []string) ([]service.Account, error) {
+	if len(platforms) == 0 {
+		return nil, nil
+	}
+	accounts, err := r.client.Account.Query().
+		Where(
+			dbaccount.PlatformIn(platforms...),
+			dbaccount.StatusEQ(service.StatusActive),
+			dbaccount.SchedulableEQ(true),
+		).
+		Order(dbent.Asc(dbaccount.FieldPriority)).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return r.accountsToService(ctx, accounts)
+}
+
+// ListSchedulablePoolUngroupedByPlatforms 是 ListSchedulableUngroupedByPlatforms 的
+// "配置池"变体，不过滤瞬时运行态，语义见 ListSchedulablePoolByGroupIDAndPlatforms。
+func (r *accountRepository) ListSchedulablePoolUngroupedByPlatforms(ctx context.Context, platforms []string) ([]service.Account, error) {
+	if len(platforms) == 0 {
+		return nil, nil
+	}
+	accounts, err := r.client.Account.Query().
+		Where(
+			dbaccount.PlatformIn(platforms...),
+			dbaccount.StatusEQ(service.StatusActive),
+			dbaccount.SchedulableEQ(true),
+			dbaccount.Not(dbaccount.HasAccountGroups()),
+		).
+		Order(dbent.Asc(dbaccount.FieldPriority)).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return r.accountsToService(ctx, accounts)
+}
+
 // ListModelAvailabilityCandidates returns the persistently configured account
 // pool used to decide whether a model is supported. Unlike scheduling queries,
 // it intentionally ignores transient runtime state (rate limits, overload,

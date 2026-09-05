@@ -15,8 +15,31 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// CountTokensUpstreamRateLimitedError 表示 count_tokens 上游返回 429，且**尚未**向客户端写响应。
+// Anthropic 的计数接口是独立限流桶（RPM 上限远低于 messages），换一个账号通常即可成功；
+// handler 据此排除该账号重试一次，重试仍失败时调用 WriteCountTokensRateLimited 回写 429。
+type CountTokensUpstreamRateLimitedError struct {
+	AccountID       int64
+	UpstreamMessage string
+}
+
+func (e *CountTokensUpstreamRateLimitedError) Error() string {
+	if e == nil {
+		return "count_tokens upstream 429"
+	}
+	return fmt.Sprintf("count_tokens upstream 429 (account=%d, retryable on another account)", e.AccountID)
+}
+
+// WriteCountTokensRateLimited 向客户端回写 count_tokens 的 429 响应（换号重试已无可用账号时使用）。
+func (s *GatewayService) WriteCountTokensRateLimited(c *gin.Context) {
+	s.countTokensError(c, http.StatusTooManyRequests, "upstream_error", "Rate limit exceeded")
+}
+
 // ForwardCountTokens 转发 count_tokens 请求到上游 API
 // 特点：不记录使用量、仅支持非流式响应
+//
+// 上游 429 且 ctx 未标记 CountTokensFinalAttempt 时，返回 *CountTokensUpstreamRateLimitedError
+// 而不写响应，由 handler 换号重试一次。
 func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context, account *Account, parsed *ParsedRequest) error {
 	if parsed == nil {
 		s.countTokensError(c, http.StatusBadRequest, "invalid_request_error", "Request body is empty")
@@ -197,8 +220,11 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 
 	// 处理错误响应
 	if resp.StatusCode >= 400 {
-		// 标记账号状态（429/529等）
-		s.rateLimitService.HandleUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody)
+		// 标记账号状态（529 等）。ctx 带 count_tokens 端点标记：计数接口的 429 是独立限流桶，
+		// 限流服务据此不写账号级限流状态。
+		if s.rateLimitService != nil {
+			s.rateLimitService.HandleUpstreamError(WithCountTokensEndpoint(ctx), account, resp.StatusCode, resp.Header, respBody)
+		}
 
 		upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
 		upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
@@ -222,6 +248,11 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 				account.Type,
 				truncateForLog(respBody, s.cfg.Gateway.LogUpstreamErrorBodyMaxBytes),
 			)
+		}
+
+		// 429 且允许换号：不写响应，交给 handler 排除本账号重试一次。
+		if resp.StatusCode == http.StatusTooManyRequests && !CountTokensFinalAttemptFromContext(ctx) {
+			return &CountTokensUpstreamRateLimitedError{AccountID: account.ID, UpstreamMessage: upstreamMsg}
 		}
 
 		// 返回简化的错误响应
@@ -297,7 +328,8 @@ func (s *GatewayService) forwardCountTokensAnthropicAPIKeyPassthrough(ctx contex
 
 	if resp.StatusCode >= 400 {
 		if s.rateLimitService != nil {
-			s.rateLimitService.HandleUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody)
+			// count_tokens 端点标记：计数接口的 429 是独立限流桶，不写账号级限流状态。
+			s.rateLimitService.HandleUpstreamError(WithCountTokensEndpoint(ctx), account, resp.StatusCode, resp.Header, respBody)
 		}
 
 		upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
@@ -335,6 +367,11 @@ func (s *GatewayService) forwardCountTokensAnthropicAPIKeyPassthrough(ctx contex
 			Message:            upstreamMsg,
 			Detail:             upstreamDetail,
 		})
+
+		// 429 且允许换号：不写响应，交给 handler 排除本账号重试一次。
+		if resp.StatusCode == http.StatusTooManyRequests && !CountTokensFinalAttemptFromContext(ctx) {
+			return &CountTokensUpstreamRateLimitedError{AccountID: account.ID, UpstreamMessage: upstreamMsg}
+		}
 
 		errMsg := "Upstream request failed"
 		switch resp.StatusCode {
