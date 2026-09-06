@@ -260,6 +260,26 @@ func (a *Account) IsSchedulable() bool {
 	return true
 }
 
+// IsPermanentlyUnschedulable 报告账号是否处于**非瞬时**的不可调度状态：
+// 状态非 active、手动关闭 schedulable、或已过期且开启了过期自动暂停。
+//
+// 与 IsSchedulable() 的区别在于刻意排除限流 / 过载 / 临时停调 / 配额等会自行恢复的状态。
+// 粘性会话只在这里返回 true 时才解绑：瞬时不可用期间请求临时落到其他账号，但绑定保留，
+// 账号恢复后同一会话自动回来，而不是被一个 5 秒的 429 改绑到低优先级账号一小时。
+// nil receiver 视为不可用，返回 true。
+func (a *Account) IsPermanentlyUnschedulable() bool {
+	if a == nil {
+		return true
+	}
+	if !a.IsActive() || !a.Schedulable {
+		return true
+	}
+	if a.AutoPauseOnExpired && a.ExpiresAt != nil && !time.Now().Before(*a.ExpiresAt) {
+		return true
+	}
+	return false
+}
+
 // IsCredentialUsableForShadow 报告本账号(作为某 spark 影子的母账号)的凭据/传输是否可被影子透传使用。
 //
 // 检查「凭据/账号/传输可用性」:

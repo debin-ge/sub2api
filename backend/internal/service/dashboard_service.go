@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sync/atomic"
+	"strconv"
+	"sync"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 )
 
@@ -23,19 +25,31 @@ const (
 var ErrDashboardStatsCacheMiss = errors.New("仪表盘缓存未命中")
 
 // DashboardStatsCache 定义仪表盘统计缓存接口。
+//
+// scope 区分不同"今日"窗口的缓存条目（见 DashboardStatsCacheScope）：仪表盘的今日统计按
+// 调用方时区切日，不同时区的管理员看到的是不同的一组数字，不能共用一份缓存。
 type DashboardStatsCache interface {
-	GetDashboardStats(ctx context.Context) (string, error)
-	SetDashboardStats(ctx context.Context, data string, ttl time.Duration) error
-	DeleteDashboardStats(ctx context.Context) error
+	GetDashboardStats(ctx context.Context, scope string) (string, error)
+	SetDashboardStats(ctx context.Context, scope string, data string, ttl time.Duration) error
+	DeleteDashboardStats(ctx context.Context, scope string) error
 }
 
 type dashboardStatsRangeFetcher interface {
-	GetDashboardStatsWithRange(ctx context.Context, start, end time.Time) (*usagestats.DashboardStats, error)
+	GetDashboardStatsWithRange(ctx context.Context, start, end time.Time, userTZ string) (*usagestats.DashboardStats, error)
 }
 
 type dashboardStatsCacheEntry struct {
 	Stats     *usagestats.DashboardStats `json:"stats"`
 	UpdatedAt int64                      `json:"updated_at"`
+}
+
+// DashboardStatsCacheScope keys the dashboard cache by the caller's "today"
+// window rather than by timezone name: zones that currently share an offset
+// resolve to the same window and reuse one entry, and the key rolls over by
+// itself at local midnight (the previous day's entry simply ages out).
+func DashboardStatsCacheScope(userTZ string) string {
+	todayStart, _ := timezone.TodayRangeInUserLocation(userTZ)
+	return strconv.FormatInt(todayStart.Unix(), 10)
 }
 
 // DashboardService 提供管理员仪表盘统计服务。
@@ -46,11 +60,13 @@ type DashboardService struct {
 	cacheFreshTTL  time.Duration
 	cacheTTL       time.Duration
 	refreshTimeout time.Duration
-	refreshing     int32
-	aggEnabled     bool
-	aggInterval    time.Duration
-	aggLookback    time.Duration
-	aggUsageDays   int
+	// refreshing tracks in-flight async refreshes per cache scope so that one
+	// timezone's refresh never blocks another's.
+	refreshing   sync.Map
+	aggEnabled   bool
+	aggInterval  time.Duration
+	aggLookback  time.Duration
+	aggUsageDays int
 }
 
 func NewDashboardService(usageRepo UsageLogRepository, aggRepo DashboardAggregationRepository, cache DashboardStatsCache, cfg *config.Config) *DashboardService {
@@ -102,13 +118,18 @@ func NewDashboardService(usageRepo UsageLogRepository, aggRepo DashboardAggregat
 	}
 }
 
-func (s *DashboardService) GetDashboardStats(ctx context.Context) (*usagestats.DashboardStats, error) {
+// GetDashboardStats returns the admin dashboard figures with the "today" block
+// anchored on userTZ (empty falls back to the server timezone). Cached per
+// today-window; a stale hit is served immediately and refreshed in the
+// background.
+func (s *DashboardService) GetDashboardStats(ctx context.Context, userTZ string) (*usagestats.DashboardStats, error) {
+	scope := DashboardStatsCacheScope(userTZ)
 	if s.cache != nil {
-		cached, fresh, err := s.getCachedDashboardStats(ctx)
+		cached, fresh, err := s.getCachedDashboardStats(ctx, scope)
 		if err == nil && cached != nil {
 			s.refreshAggregationStaleness(cached)
 			if !fresh {
-				s.refreshDashboardStatsAsync()
+				s.refreshDashboardStatsAsync(scope, userTZ)
 			}
 			return cached, nil
 		}
@@ -117,7 +138,7 @@ func (s *DashboardService) GetDashboardStats(ctx context.Context) (*usagestats.D
 		}
 	}
 
-	stats, err := s.refreshDashboardStats(ctx)
+	stats, err := s.refreshDashboardStats(ctx, scope, userTZ)
 	if err != nil {
 		return nil, fmt.Errorf("get dashboard stats: %w", err)
 	}
@@ -221,19 +242,19 @@ func (s *DashboardService) GetGroupUsageSummary(ctx context.Context, todayStart 
 	return results, nil
 }
 
-func (s *DashboardService) getCachedDashboardStats(ctx context.Context) (*usagestats.DashboardStats, bool, error) {
-	data, err := s.cache.GetDashboardStats(ctx)
+func (s *DashboardService) getCachedDashboardStats(ctx context.Context, scope string) (*usagestats.DashboardStats, bool, error) {
+	data, err := s.cache.GetDashboardStats(ctx, scope)
 	if err != nil {
 		return nil, false, err
 	}
 
 	var entry dashboardStatsCacheEntry
 	if err := json.Unmarshal([]byte(data), &entry); err != nil {
-		s.evictDashboardStatsCache(err)
+		s.evictDashboardStatsCache(scope, err)
 		return nil, false, ErrDashboardStatsCacheMiss
 	}
 	if entry.Stats == nil {
-		s.evictDashboardStatsCache(errors.New("仪表盘缓存缺少统计数据"))
+		s.evictDashboardStatsCache(scope, errors.New("仪表盘缓存缺少统计数据"))
 		return nil, false, ErrDashboardStatsCacheMiss
 	}
 
@@ -241,33 +262,33 @@ func (s *DashboardService) getCachedDashboardStats(ctx context.Context) (*usages
 	return entry.Stats, age <= s.cacheFreshTTL, nil
 }
 
-func (s *DashboardService) refreshDashboardStats(ctx context.Context) (*usagestats.DashboardStats, error) {
-	stats, err := s.fetchDashboardStats(ctx)
+func (s *DashboardService) refreshDashboardStats(ctx context.Context, scope, userTZ string) (*usagestats.DashboardStats, error) {
+	stats, err := s.fetchDashboardStats(ctx, userTZ)
 	if err != nil {
 		return nil, err
 	}
 	s.applyAggregationStatus(ctx, stats)
 	cacheCtx, cancel := s.cacheOperationContext()
 	defer cancel()
-	s.saveDashboardStatsCache(cacheCtx, stats)
+	s.saveDashboardStatsCache(cacheCtx, scope, stats)
 	return stats, nil
 }
 
-func (s *DashboardService) refreshDashboardStatsAsync() {
+func (s *DashboardService) refreshDashboardStatsAsync(scope, userTZ string) {
 	if s.cache == nil {
 		return
 	}
-	if !atomic.CompareAndSwapInt32(&s.refreshing, 0, 1) {
+	if _, inFlight := s.refreshing.LoadOrStore(scope, struct{}{}); inFlight {
 		return
 	}
 
 	go func() {
-		defer atomic.StoreInt32(&s.refreshing, 0)
+		defer s.refreshing.Delete(scope)
 
 		ctx, cancel := context.WithTimeout(context.Background(), s.refreshTimeout)
 		defer cancel()
 
-		stats, err := s.fetchDashboardStats(ctx)
+		stats, err := s.fetchDashboardStats(ctx, userTZ)
 		if err != nil {
 			logger.LegacyPrintf("service.dashboard", "[Dashboard] 仪表盘缓存异步刷新失败: %v", err)
 			return
@@ -275,22 +296,22 @@ func (s *DashboardService) refreshDashboardStatsAsync() {
 		s.applyAggregationStatus(ctx, stats)
 		cacheCtx, cancel := s.cacheOperationContext()
 		defer cancel()
-		s.saveDashboardStatsCache(cacheCtx, stats)
+		s.saveDashboardStatsCache(cacheCtx, scope, stats)
 	}()
 }
 
-func (s *DashboardService) fetchDashboardStats(ctx context.Context) (*usagestats.DashboardStats, error) {
+func (s *DashboardService) fetchDashboardStats(ctx context.Context, userTZ string) (*usagestats.DashboardStats, error) {
 	if !s.aggEnabled {
 		if fetcher, ok := s.usageRepo.(dashboardStatsRangeFetcher); ok {
 			now := time.Now().UTC()
 			start := truncateToDayUTC(now.AddDate(0, 0, -s.aggUsageDays))
-			return fetcher.GetDashboardStatsWithRange(ctx, start, now)
+			return fetcher.GetDashboardStatsWithRange(ctx, start, now, userTZ)
 		}
 	}
-	return s.usageRepo.GetDashboardStats(ctx)
+	return s.usageRepo.GetDashboardStats(ctx, userTZ)
 }
 
-func (s *DashboardService) saveDashboardStatsCache(ctx context.Context, stats *usagestats.DashboardStats) {
+func (s *DashboardService) saveDashboardStatsCache(ctx context.Context, scope string, stats *usagestats.DashboardStats) {
 	if s.cache == nil || stats == nil {
 		return
 	}
@@ -305,19 +326,19 @@ func (s *DashboardService) saveDashboardStatsCache(ctx context.Context, stats *u
 		return
 	}
 
-	if err := s.cache.SetDashboardStats(ctx, string(data), s.cacheTTL); err != nil {
+	if err := s.cache.SetDashboardStats(ctx, scope, string(data), s.cacheTTL); err != nil {
 		logger.LegacyPrintf("service.dashboard", "[Dashboard] 仪表盘缓存写入失败: %v", err)
 	}
 }
 
-func (s *DashboardService) evictDashboardStatsCache(reason error) {
+func (s *DashboardService) evictDashboardStatsCache(scope string, reason error) {
 	if s.cache == nil {
 		return
 	}
 	cacheCtx, cancel := s.cacheOperationContext()
 	defer cancel()
 
-	if err := s.cache.DeleteDashboardStats(cacheCtx); err != nil {
+	if err := s.cache.DeleteDashboardStats(cacheCtx, scope); err != nil {
 		logger.LegacyPrintf("service.dashboard", "[Dashboard] 仪表盘缓存清理失败: %v", err)
 	}
 	if reason != nil {

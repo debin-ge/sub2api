@@ -121,7 +121,9 @@ const localEndDate = ref(props.endDate)
 // manual date edit clears them so the query falls back to whole calendar days.
 const localStartTime = ref<string | undefined>(undefined)
 const localEndTime = ref<string | undefined>(undefined)
-const activePreset = ref<string | null>('last24Hours')
+// Resolved from the initial dates by detectPreset() below, so the label never
+// flashes a preset the parent did not actually select.
+const activePreset = ref<string | null>(null)
 
 // Use local timezone to avoid UTC timezone issues
 const today = computed(() => formatLocalDate(new Date()))
@@ -325,11 +327,13 @@ watch(
   }
 )
 
+// Label the initial dates before the first render rather than in onMounted, so
+// the trigger shows the right preset from the very first paint.
+detectPreset(true)
+
 onMounted(() => {
   document.addEventListener('click', handleClickOutside)
   document.addEventListener('keydown', handleEscape)
-  // Initialize active preset detection
-  detectPreset(true)
 })
 
 onUnmounted(() => {

@@ -548,24 +548,23 @@ func prefetchedStickyAccountIDFromContext(ctx context.Context, groupID *int64) i
 	return 0
 }
 
-// shouldClearStickySession 检查账号是否处于不可调度状态，需要清理粘性会话绑定。
-// 委托 IsSchedulable() 判断账号级可调度性（状态、配额、过载、限流等），
-// 额外检查模型级限流。
+// shouldClearStickySession 检查账号是否处于**永久性**不可调度状态，需要清理粘性会话绑定。
 //
-// shouldClearStickySession checks if an account is in an unschedulable state
-// and the sticky session binding should be cleared.
-// Delegates to IsSchedulable() for account-level checks, plus model-level rate limiting.
+// 只有状态非 active、手动关闭 schedulable、过期自动暂停这类不会自行恢复的状态才解绑。
+// 限流 / 过载 / 临时停调 / 配额 / 模型级限流都是瞬时态：本次请求会因门检查失败而跳过粘性
+// 账号、临时落到其他账号，但绑定保留，账号恢复后同一会话自动回来。之前"有限流即解绑"
+// 的做法会让一次几秒钟的 429 把整个会话改绑到低优先级账号长达一小时。
+//
+// shouldClearStickySession reports whether the sticky binding must be dropped.
+// Only permanent states clear the binding; transient states (rate limit,
+// overload, temp-unschedulable, quota, model-level limits) keep it so the
+// session returns to the bound account once it recovers.
 func shouldClearStickySession(account *Account, requestedModel string) bool {
+	_ = requestedModel // 模型级限流是瞬时态，不再作为解绑依据；保留参数以兼容调用方。
 	if account == nil {
 		return false
 	}
-	if !account.IsSchedulable() {
-		return true
-	}
-	if remaining := account.GetRateLimitRemainingTimeWithContext(context.Background(), requestedModel); remaining > 0 {
-		return true
-	}
-	return false
+	return account.IsPermanentlyUnschedulable()
 }
 
 type AccountWaitPlan struct {
@@ -580,6 +579,11 @@ type AccountSelectionResult struct {
 	Acquired    bool
 	ReleaseFunc func()
 	WaitPlan    *AccountWaitPlan // nil means no wait allowed
+	// StickyMigrated 表示调度器把一个已存在、指向其他账号的粘性绑定迁移到了本次选中的账号
+	// （升级到更高优先级账号，或原绑定账号已永久不可用）。这是一次由网关发起的账号切换，
+	// 新账号上的 prompt cache 必然未命中；handler 据此启用缓存计费，与 failover 换号口径一致，
+	// 避免终端用户为调度行为多付费。
+	StickyMigrated bool
 	// profitGate 携带本次选号真实生效的利润门（无门为 nil）。门安装在调度栈的
 	// 局部 ctx 上，handler 必须经 ContextWithSelectionProfitGate 重放后才能在
 	// 调度栈之外做抢槽后终检与准入后粘性绑定。
@@ -1429,11 +1433,139 @@ func (s *GatewayService) BindStickySession(ctx context.Context, groupID *int64, 
 	return s.cache.SetSessionAccountID(ctx, derefGroupID(groupID), sessionHash, accountID, stickySessionTTL)
 }
 
+// stickyBindDecision 描述一次"保持优先级"的粘性绑定写入结果。
+type stickyBindDecision int
+
+const (
+	// stickyBindSkipped 已有绑定指向其他账号且不满足升级条件，不改写。
+	stickyBindSkipped stickyBindDecision = iota
+	// stickyBindCreated 之前没有绑定，新建。
+	stickyBindCreated
+	// stickyBindRefreshed 绑定账号与选中账号相同，刷新 TTL。
+	stickyBindRefreshed
+	// stickyBindUpgraded 选中账号优先级更高（数值更小），绑定升级到选中账号。
+	stickyBindUpgraded
+	// stickyBindReplaced 原绑定账号已不存在或永久不可调度，绑定改到选中账号。
+	stickyBindReplaced
+)
+
+// migrated 报告本次写入是否把一个指向其他账号的既有绑定迁到了选中账号。
+func (d stickyBindDecision) migrated() bool {
+	return d == stickyBindUpgraded || d == stickyBindReplaced
+}
+
+// lookupStickyAccount 从调度快照（Redis 账号 meta）读取粘性绑定账号的当前状态，用于比较优先级
+// 与判断是否永久不可用。有意只走快照、不回源数据库：粘性路径是请求热路径，缺失账号不应触发
+// GetByID；也有意不经过 getSchedulableAccount，调度阈值等瞬时门不应把绑定账号当成"已消失"。
+// 未配置快照服务时返回 nil（调用方按"账号未知"处理，退回旧的直接覆盖行为）；生产环境始终配置快照。
+func (s *GatewayService) lookupStickyAccount(ctx context.Context, accountID int64) (*Account, error) {
+	if accountID <= 0 || s.schedulerSnapshot == nil {
+		return nil, nil
+	}
+	return s.schedulerSnapshot.GetAccount(ctx, accountID)
+}
+
+// bindStickySessionPreservingPriority 以"只升不降"的规则写粘性绑定：
+//
+//   - 没有绑定：新建；
+//   - 绑定账号就是选中账号：刷新 TTL；
+//   - 选中账号优先级数值更小（更高优先级）：覆盖，视为升级迁回；
+//   - 原绑定账号已不存在或永久不可调度：覆盖；
+//   - 其余情况（选中的是低优先级的兜底账号）：不写，保留原绑定。
+//
+// 这样高优先级账号短暂限流时请求临时落到兜底账号但会话不改绑，账号恢复后自动回来；
+// 而 C 类迁回（更高优先级账号重新可用）则允许把绑定升级过去。
+//
+// knownBoundID / knownBound 是调用方已掌握的绑定信息，可省去缓存与账号查询；传 0 / nil 则自行查询。
+// selected 可为 nil，此时按需查询选中账号以比较优先级。
+func (s *GatewayService) bindStickySessionPreservingPriority(
+	ctx context.Context,
+	groupID *int64,
+	sessionHash string,
+	selectedID int64,
+	selected *Account,
+	knownBoundID int64,
+	knownBound *Account,
+) (stickyBindDecision, error) {
+	if sessionHash == "" || selectedID <= 0 || s.cache == nil {
+		return stickyBindSkipped, nil
+	}
+
+	boundID := knownBoundID
+	if boundID <= 0 {
+		existing, err := s.cache.GetSessionAccountID(ctx, derefGroupID(groupID), sessionHash)
+		switch {
+		case err == nil:
+			boundID = existing
+		case errors.Is(err, ErrStickySessionNotFound):
+			boundID = 0
+		default:
+			// 读取失败时无法判断既有绑定，沿用旧的直接写入行为，避免让会话失去粘性。
+			slog.Warn("sticky_binding_read_failed_fallback_eager_bind", "group_id", derefGroupID(groupID), "account_id", selectedID, "error", err)
+			return stickyBindCreated, s.BindStickySession(ctx, groupID, sessionHash, selectedID)
+		}
+	}
+
+	if boundID <= 0 {
+		return stickyBindCreated, s.BindStickySession(ctx, groupID, sessionHash, selectedID)
+	}
+	if boundID == selectedID {
+		return stickyBindRefreshed, s.BindStickySession(ctx, groupID, sessionHash, selectedID)
+	}
+
+	bound := knownBound
+	if bound == nil || bound.ID != boundID {
+		looked, err := s.lookupStickyAccount(ctx, boundID)
+		if err != nil {
+			// 无法确认原绑定账号状态时沿用旧的直接覆盖行为，避免让请求失败。
+			slog.Warn("sticky_bound_account_lookup_failed", "group_id", derefGroupID(groupID), "bound_account_id", boundID, "error", err)
+			return stickyBindReplaced, s.BindStickySession(ctx, groupID, sessionHash, selectedID)
+		}
+		bound = looked
+	}
+	if bound == nil || bound.IsPermanentlyUnschedulable() {
+		// 原绑定账号已不在快照里（移出分组 / 删除）、永久不可调度，或未配置快照无法判断：直接改绑。
+		return stickyBindReplaced, s.BindStickySession(ctx, groupID, sessionHash, selectedID)
+	}
+
+	if selected == nil || selected.ID != selectedID {
+		looked, err := s.lookupStickyAccount(ctx, selectedID)
+		if err != nil || looked == nil {
+			// 选中账号优先级未知：保守起见不降级已有绑定。
+			return stickyBindSkipped, err
+		}
+		selected = looked
+	}
+	if selected.Priority < bound.Priority {
+		return stickyBindUpgraded, s.BindStickySession(ctx, groupID, sessionHash, selectedID)
+	}
+	return stickyBindSkipped, nil
+}
+
 // bindGatewayStickySessionDuringSelection preserves the normal eager sticky
 // behavior unless a profit gate is installed. Profit-controlled requests bind
 // only after the terminal post-slot check, otherwise a rejected candidate could
 // overwrite a healthy pre-existing sticky binding.
-func (s *GatewayService) bindGatewayStickySessionDuringSelection(ctx context.Context, groupID *int64, sessionHash string, accountID int64) error {
+//
+// 写入遵循 bindStickySessionPreservingPriority 的"只升不降"规则：选中低优先级兜底账号时
+// 不会覆盖指向高优先级账号的既有绑定。
+func (s *GatewayService) bindGatewayStickySessionDuringSelection(
+	ctx context.Context,
+	groupID *int64,
+	sessionHash string,
+	selected *Account,
+	knownBoundID int64,
+	knownBound *Account,
+) (stickyBindDecision, error) {
+	if gatewayProfitControlGateActive(ctx) || selected == nil {
+		return stickyBindSkipped, nil
+	}
+	return s.bindStickySessionPreservingPriority(ctx, groupID, sessionHash, selected.ID, selected, knownBoundID, knownBound)
+}
+
+// bindGatewayStickySessionForRouting 是模型路由命中时的绑定：路由是管理员的显式配置，
+// 切换模型导致的换号必须让绑定跟随路由结果，因此不套用"只升不降"规则（仍尊重利润门）。
+func (s *GatewayService) bindGatewayStickySessionForRouting(ctx context.Context, groupID *int64, sessionHash string, accountID int64) error {
 	if gatewayProfitControlGateActive(ctx) {
 		return nil
 	}
@@ -1441,17 +1573,19 @@ func (s *GatewayService) bindGatewayStickySessionDuringSelection(ctx context.Con
 }
 
 // BindStickySessionAfterProfitAdmission records a terminally admitted
-// account. Without a profit gate it preserves the pre-existing eager binding
-// behavior at the handler bind points. With a gate it never replaces a
-// different binding that already exists: a temporarily ineligible sticky
-// account remains bound and automatically becomes eligible again if its
+// account. Without a profit gate it follows the priority-preserving rule
+// (bindStickySessionPreservingPriority): a binding to a higher-priority
+// account is never downgraded to a fallback account. With a gate it never
+// replaces a different binding that already exists: a temporarily ineligible
+// sticky account remains bound and automatically becomes eligible again if its
 // account rate recovers.
 func (s *GatewayService) BindStickySessionAfterProfitAdmission(ctx context.Context, groupID *int64, sessionHash string, accountID int64) error {
 	if sessionHash == "" || accountID <= 0 || s.cache == nil {
 		return nil
 	}
 	if !gatewayProfitControlGateActive(ctx) {
-		return s.BindStickySession(ctx, groupID, sessionHash, accountID)
+		_, err := s.bindStickySessionPreservingPriority(ctx, groupID, sessionHash, accountID, nil, 0, nil)
+		return err
 	}
 	existingAccountID, err := s.cache.GetSessionAccountID(ctx, derefGroupID(groupID), sessionHash)
 	if err != nil && !errors.Is(err, ErrStickySessionNotFound) {

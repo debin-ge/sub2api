@@ -202,8 +202,9 @@ func TestHandleUpstreamError_AnthropicAccountWindowStillWinsOver7dOi(t *testing.
 	require.Equal(t, anthropicFableRateLimitKey, repo.lastModelRateLimitScope)
 }
 
-func TestHandleUpstreamError_Anthropic429Without7dOiKeepsLegacyBehavior(t *testing.T) {
-	// 无 7d_oi 头、5h/7d 均未超限的 429：保持旧行为（按较早 reset 标记账号限流）。
+func TestHandleUpstreamError_Anthropic429Without7dOiBurstUsesShortCooldown(t *testing.T) {
+	// 无 7d_oi 头、5h/7d 均未超限且状态为 allowed 的 429：这是突发/并发限制，窗口重置点与本次
+	// 限制无关。只做秒级兜底冷却，不按 5h 重置点封数小时，也不把会话窗口写成 rejected。
 	now := time.Now()
 	reset5h := now.Add(2 * time.Hour).Truncate(time.Second)
 	reset7d := now.Add(80 * time.Hour).Truncate(time.Second)
@@ -220,10 +221,40 @@ func TestHandleUpstreamError_Anthropic429Without7dOiKeepsLegacyBehavior(t *testi
 	svc := NewRateLimitService(repo, nil, nil, nil, nil)
 	account := &Account{ID: 42, Type: AccountTypeOAuth, Platform: PlatformAnthropic}
 
+	before := time.Now()
 	svc.HandleUpstreamError(context.Background(), account, http.StatusTooManyRequests, headers, nil, "claude-fable-5")
+	after := time.Now()
 
 	require.Zero(t, repo.modelRateLimitCalls, "no 7d_oi signal → no model rate limit")
 	require.Equal(t, 1, repo.rateLimitCalls)
-	require.Equal(t, reset5h, repo.lastRateLimitReset, "legacy path picks the sooner reset")
+	require.True(t, repo.lastRateLimitReset.Before(reset5h.Add(-time.Hour)), "burst 429 must not park the account until the 5h window boundary")
+	fallback := time.Duration(defaultRateLimit429CooldownSeconds) * time.Second
+	require.False(t, repo.lastRateLimitReset.Before(before.Add(fallback)))
+	require.False(t, repo.lastRateLimitReset.After(after.Add(fallback)))
+	require.Zero(t, repo.sessionWindowCalls, "burst 429 must not rewrite the session window as rejected")
+}
+
+func TestHandleUpstreamError_Anthropic429Without7dOiRejectedStatusUsesSoonerReset(t *testing.T) {
+	// 5h/7d 利用率头都未到 1.0，但 unified status 明确为 rejected：仍按较早的窗口重置点封禁。
+	now := time.Now()
+	reset5h := now.Add(2 * time.Hour).Truncate(time.Second)
+	reset7d := now.Add(80 * time.Hour).Truncate(time.Second)
+
+	headers := http.Header{}
+	headers.Set("anthropic-ratelimit-unified-status", "rejected")
+	headers.Set("anthropic-ratelimit-unified-5h-reset", strconv.FormatInt(reset5h.Unix(), 10))
+	headers.Set("anthropic-ratelimit-unified-5h-utilization", "0.98")
+	headers.Set("anthropic-ratelimit-unified-7d-reset", strconv.FormatInt(reset7d.Unix(), 10))
+	headers.Set("anthropic-ratelimit-unified-7d-utilization", "0.56")
+
+	repo := &anthropicWindowLimitRepo{}
+	svc := NewRateLimitService(repo, nil, nil, nil, nil)
+	account := &Account{ID: 42, Type: AccountTypeOAuth, Platform: PlatformAnthropic}
+
+	svc.HandleUpstreamError(context.Background(), account, http.StatusTooManyRequests, headers, nil, "claude-fable-5")
+
+	require.Zero(t, repo.modelRateLimitCalls)
+	require.Equal(t, 1, repo.rateLimitCalls)
+	require.Equal(t, reset5h, repo.lastRateLimitReset, "rejected status keeps the sooner window reset")
 	require.Equal(t, 1, repo.sessionWindowCalls)
 }

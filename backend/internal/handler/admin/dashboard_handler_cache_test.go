@@ -18,6 +18,12 @@ type dashboardUsageRepoCacheProbe struct {
 	service.UsageLogRepository
 	trendCalls      atomic.Int32
 	usersTrendCalls atomic.Int32
+	statsCalls      atomic.Int32
+}
+
+func (r *dashboardUsageRepoCacheProbe) GetDashboardStats(ctx context.Context, userTZ string) (*usagestats.DashboardStats, error) {
+	r.statsCalls.Add(1)
+	return &usagestats.DashboardStats{TotalUsers: 1}, nil
 }
 
 func (r *dashboardUsageRepoCacheProbe) GetUsageTrendWithFilters(
@@ -115,4 +121,39 @@ func TestDashboardHandler_GetUserUsageTrend_UsesCache(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec2.Code)
 	require.Equal(t, "hit", rec2.Header().Get("X-Snapshot-Cache"))
 	require.Equal(t, int32(1), repo.usersTrendCalls.Load())
+}
+
+// The stats block is cut on the caller's local day, so two admins whose
+// timezones put "today" at different instants must not share a snapshot entry,
+// while zones with the same offset (same window) still do.
+func TestDashboardHandler_GetSnapshotV2_StatsCacheScopedByTimezone(t *testing.T) {
+	t.Cleanup(resetDashboardReadCachesForTest)
+	resetDashboardReadCachesForTest()
+
+	gin.SetMode(gin.TestMode)
+	repo := &dashboardUsageRepoCacheProbe{}
+	dashboardSvc := service.NewDashboardService(repo, nil, nil, nil)
+	handler := NewDashboardHandler(dashboardSvc, nil)
+	router := gin.New()
+	router.GET("/admin/dashboard/snapshot-v2", handler.GetSnapshotV2)
+
+	get := func(tz string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet,
+			"/admin/dashboard/snapshot-v2?start_date=2026-03-01&end_date=2026-03-07&granularity=day&include_trend=false&include_model_stats=false&timezone="+tz, nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusOK, rec.Code)
+		return rec
+	}
+
+	require.Equal(t, "miss", get("Asia/Shanghai").Header().Get("X-Snapshot-Cache"))
+	require.Equal(t, int32(1), repo.statsCalls.Load())
+
+	// Same offset, same today-window: served from the same entry.
+	require.Equal(t, "hit", get("Asia/Singapore").Header().Get("X-Snapshot-Cache"))
+	require.Equal(t, int32(1), repo.statsCalls.Load())
+
+	// Different today-window: recomputed for that caller.
+	require.Equal(t, "miss", get("UTC").Header().Get("X-Snapshot-Cache"))
+	require.Equal(t, int32(2), repo.statsCalls.Load())
 }

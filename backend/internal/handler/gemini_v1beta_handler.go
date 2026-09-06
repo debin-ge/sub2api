@@ -409,6 +409,10 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 		}
 		account := selection.Account
 		setOpsSelectedAccount(c, account.ID, account.Platform)
+		// 调度器把既有粘性绑定迁移到了本账号：按 failover 换号口径启用缓存计费。
+		if selection.StickyMigrated {
+			fs.ForceCacheBilling = true
+		}
 
 		// 检测账号切换：如果粘性会话绑定的账号与当前选择的账号不同，清除 thoughtSignature
 		// 注意：Gemini 原生 API 的 thoughtSignature 与具体上游账号强相关；跨账号透传会导致 400。

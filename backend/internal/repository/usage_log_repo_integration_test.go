@@ -697,7 +697,7 @@ func (s *UsageLogRepoSuite) TestDashboardStats_TodayTotalsAndPerformance() {
 	aggStart := todayStart.Add(-2 * time.Hour)
 	aggEnd := now.Add(2 * time.Minute)
 	s.Require().NoError(aggRepo.AggregateRange(s.ctx, aggStart, aggEnd), "AggregateRange baseline")
-	baseStats, err := s.repo.GetDashboardStats(s.ctx)
+	baseStats, err := s.repo.GetDashboardStats(s.ctx, "")
 	s.Require().NoError(err, "GetDashboardStats base")
 
 	userToday := mustCreateUser(s.T(), s.client, &service.User{
@@ -772,7 +772,7 @@ func (s *UsageLogRepoSuite) TestDashboardStats_TodayTotalsAndPerformance() {
 
 	s.Require().NoError(aggRepo.AggregateRange(s.ctx, aggStart, aggEnd), "AggregateRange")
 
-	stats, err := s.repo.GetDashboardStats(s.ctx)
+	stats, err := s.repo.GetDashboardStats(s.ctx, "")
 	s.Require().NoError(err, "GetDashboardStats")
 
 	s.Require().Equal(baseStats.TotalUsers+2, stats.TotalUsers, "TotalUsers mismatch")
@@ -865,7 +865,7 @@ func (s *UsageLogRepoSuite) TestDashboardStatsWithRange_Fallback() {
 	_, err = s.repo.Create(s.ctx, logToday)
 	s.Require().NoError(err)
 
-	stats, err := s.repo.GetDashboardStatsWithRange(s.ctx, rangeStart, rangeEnd)
+	stats, err := s.repo.GetDashboardStatsWithRange(s.ctx, rangeStart, rangeEnd, "")
 	s.Require().NoError(err)
 	s.Require().Equal(int64(2), stats.TotalRequests)
 	s.Require().Equal(int64(15), stats.TotalInputTokens)

@@ -46,8 +46,9 @@ type UsageLogRepository interface {
 	GetAccountWindowStats(ctx context.Context, accountID int64, startTime time.Time) (*usagestats.AccountStats, error)
 	GetAccountTodayStats(ctx context.Context, accountID int64) (*usagestats.AccountStats, error)
 
-	// Admin dashboard stats
-	GetDashboardStats(ctx context.Context) (*usagestats.DashboardStats, error)
+	// Admin dashboard stats. userTZ anchors the "today" block on the caller's
+	// local day (empty falls back to the server timezone).
+	GetDashboardStats(ctx context.Context, userTZ string) (*usagestats.DashboardStats, error)
 	GetUsageTrendWithFilters(ctx context.Context, startTime, endTime time.Time, granularity string, userID, apiKeyID, accountID, groupID int64, model string, requestType *int16, stream *bool, billingType *int8) ([]usagestats.TrendDataPoint, error)
 	GetModelStatsWithFilters(ctx context.Context, startTime, endTime time.Time, userID, apiKeyID, accountID, groupID int64, requestType *int16, stream *bool, billingType *int8) ([]usagestats.ModelStat, error)
 	GetEndpointStatsWithFilters(ctx context.Context, startTime, endTime time.Time, userID, apiKeyID, accountID, groupID int64, model string, requestType *int16, stream *bool, billingType *int8) ([]usagestats.EndpointStat, error)

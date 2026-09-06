@@ -167,6 +167,42 @@ func OpenAIImagesEndpointFromContext(ctx context.Context) bool {
 	return ok && enabled
 }
 
+// WithCountTokensEndpoint 标记请求来自 /v1/messages/count_tokens。
+// Anthropic 的计数接口与 messages 接口是独立限流桶，该端点的 429 不应触发账号级限流标记。
+func WithCountTokensEndpoint(ctx context.Context) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, ctxkey.CountTokensEndpoint, true)
+}
+
+// CountTokensEndpointFromContext 报告请求是否来自 /v1/messages/count_tokens。
+func CountTokensEndpointFromContext(ctx context.Context) bool {
+	if ctx == nil {
+		return false
+	}
+	enabled, ok := ctx.Value(ctxkey.CountTokensEndpoint).(bool)
+	return ok && enabled
+}
+
+// WithCountTokensFinalAttempt 标记 count_tokens 已是最后一次尝试：上游再返回 429 时
+// 直接回写客户端，不再返回可换号重试的错误。
+func WithCountTokensFinalAttempt(ctx context.Context) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, ctxkey.CountTokensFinalAttempt, true)
+}
+
+// CountTokensFinalAttemptFromContext 报告 count_tokens 是否已是最后一次尝试。
+func CountTokensFinalAttemptFromContext(ctx context.Context) bool {
+	if ctx == nil {
+		return false
+	}
+	final, ok := ctx.Value(ctxkey.CountTokensFinalAttempt).(bool)
+	return ok && final
+}
+
 func resolveFinalAntigravityModelKey(ctx context.Context, account *Account, requestedModel string) string {
 	modelKey := mapAntigravityModel(account, requestedModel)
 	if modelKey == "" {

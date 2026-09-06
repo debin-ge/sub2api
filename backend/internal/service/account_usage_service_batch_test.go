@@ -53,7 +53,7 @@ func (r *usageBatchLogRepoStub) GetAccountWindowStats(context.Context, int64, ti
 func (r *usageBatchLogRepoStub) GetAccountTodayStats(context.Context, int64) (*usagestats.AccountStats, error) {
 	return &usagestats.AccountStats{}, nil
 }
-func (r *usageBatchLogRepoStub) GetDashboardStats(context.Context) (*usagestats.DashboardStats, error) {
+func (r *usageBatchLogRepoStub) GetDashboardStats(context.Context, string) (*usagestats.DashboardStats, error) {
 	return nil, nil
 }
 func (r *usageBatchLogRepoStub) GetUsageTrendWithFilters(context.Context, time.Time, time.Time, string, int64, int64, int64, int64, string, *int16, *bool, *int8) ([]usagestats.TrendDataPoint, error) {

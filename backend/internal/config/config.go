@@ -1670,6 +1670,18 @@ type GatewaySchedulingConfig struct {
 	// 默认 false，保持原有「优先级 → 负载率 → LRU」行为不变。
 	PreferSoonestReset bool `mapstructure:"prefer_soonest_reset"`
 
+	// StickyPreferHigherPriority 开启后，粘性会话命中前会检查是否存在优先级更高（数值更小）、
+	// 通过全部调度门检查且负载率低于 100 的账号；存在则放弃本次粘性命中，交给负载感知选择
+	// 按优先级选号并把绑定升级到该账号。用于让高优先级账号短暂限流期间被绑到低优先级
+	// 兜底账号的会话在高优先级账号恢复后自动迁回。绑定写入遵循"只升不降"，不会反向迁移。
+	// 默认 true。
+	StickyPreferHigherPriority bool `mapstructure:"sticky_prefer_higher_priority"`
+
+	// PriorityTierWait 开启后，最高优先级层的账号全部满载（负载率 >= 100）但仍可调度时，
+	// 调度器对该层负载最低的账号返回等待计划（超时 fallback_wait_timeout、队列上限
+	// fallback_max_waiting），而不是立即下沉到更低优先级层。默认 false，保持原有下沉行为。
+	PriorityTierWait bool `mapstructure:"priority_tier_wait"`
+
 	// 负载计算
 	LoadBatchEnabled    bool `mapstructure:"load_batch_enabled"`
 	LoadBatchCacheTTLMS int  `mapstructure:"load_batch_cache_ttl_ms"`
@@ -2890,6 +2902,8 @@ func setDefaults() {
 	viper.SetDefault("gateway.scheduling.fallback_max_waiting", 100)
 	viper.SetDefault("gateway.scheduling.fallback_selection_mode", "last_used")
 	viper.SetDefault("gateway.scheduling.prefer_soonest_reset", false)
+	viper.SetDefault("gateway.scheduling.sticky_prefer_higher_priority", true)
+	viper.SetDefault("gateway.scheduling.priority_tier_wait", false)
 	viper.SetDefault("gateway.scheduling.load_batch_enabled", true)
 	viper.SetDefault("gateway.scheduling.load_batch_cache_ttl_ms", 200)
 	viper.SetDefault("gateway.scheduling.snapshot_mget_chunk_size", 128)

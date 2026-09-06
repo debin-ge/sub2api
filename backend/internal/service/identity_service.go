@@ -28,6 +28,10 @@ var (
 	// <product>/<major>.<minor>.<patch> 之后必须紧跟空白或字符串结束。
 	// 版本号带 -local / -dev / +build 等后缀的本地构建一律不接受。
 	fingerprintUserAgentPattern = regexp.MustCompile(`^[A-Za-z0-9._-]+/\d+\.\d+\.\d+(\s|$)`)
+
+	// claudeCLIUAVersionPrefixRegex 匹配 claude-cli UA 开头的版本号段。
+	// 抬升版本下限时只替换该段，保留括号内的客户端形态等其余信息。
+	claudeCLIUAVersionPrefixRegex = regexp.MustCompile(`(?i)^(claude-cli)/\d+\.\d+\.\d+`)
 )
 
 const (
@@ -73,6 +77,23 @@ func isAcceptableFingerprintUserAgent(ua string) bool {
 		return true
 	}
 	return major <= currentMajor+maxClaudeCLIMajorVersionSkew
+}
+
+// floorClaudeCLIUserAgentVersion 将 claude-cli UA 的版本号抬升到
+// claude.CLICurrentVersion。只替换版本号段，不修改其它产品或 UA 后缀。
+func floorClaudeCLIUserAgentVersion(ua string) (string, bool) {
+	if extractProduct(ua) != claudeCLIUserAgentProduct {
+		return ua, false
+	}
+	floorUA := claudeCLIUserAgentProduct + "/" + claude.CLICurrentVersion
+	if !isNewerVersion(floorUA, ua) {
+		return ua, false
+	}
+	floored := claudeCLIUAVersionPrefixRegex.ReplaceAllString(ua, "${1}/"+claude.CLICurrentVersion)
+	if floored == ua {
+		return ua, false
+	}
+	return floored, true
 }
 
 // 默认指纹值（当客户端未提供时使用）
@@ -165,6 +186,15 @@ func (s *IdentityService) GetOrCreateFingerprint(ctx context.Context, accountID 
 			logger.LegacyPrintf("service.identity", "Updated fingerprint for account %d: %s (merge update)", accountID, clientUA)
 		}
 
+		// CLICurrentVersion 是所有持久 claude-cli 指纹的版本下限。该步骤放在
+		// 畸形缓存自愈和客户端常规升级之后，确保最终结果取三者中的最高版本。
+		if flooredUA, changed := floorClaudeCLIUserAgentVersion(cached.UserAgent); changed {
+			cached.UserAgent = flooredUA
+			needWrite = true
+			logger.LegacyPrintf("service.identity",
+				"Floored cached fingerprint claude-cli version for account %d: %s", accountID, flooredUA)
+		}
+
 		if !needWrite && time.Since(time.Unix(cached.UpdatedAt, 0)) > 24*time.Hour {
 			// 距上次写入超过24小时，续期TTL
 			needWrite = true
@@ -208,7 +238,7 @@ func (s *IdentityService) createFingerprintFromHeaders(headers http.Header) *Fin
 	// 获取User-Agent：只接受形态合法且版本合理的值，否则回退默认指纹。
 	// 首次创建同样是持久化写入，必须与升级路径共用同一套校验。
 	if ua := strings.TrimSpace(headers.Get("User-Agent")); isAcceptableFingerprintUserAgent(ua) {
-		fp.UserAgent = ua
+		fp.UserAgent, _ = floorClaudeCLIUserAgentVersion(ua)
 	} else {
 		fp.UserAgent = defaultFingerprint.UserAgent
 	}

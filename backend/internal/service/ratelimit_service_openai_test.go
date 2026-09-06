@@ -227,7 +227,7 @@ func TestHandle429_OpenAIPersistsCodexSnapshotImmediately(t *testing.T) {
 	headers.Set("x-codex-secondary-reset-after-seconds", "18000")
 	headers.Set("x-codex-secondary-window-minutes", "300")
 
-	svc.handle429(context.Background(), account, headers, nil)
+	svc.handle429(context.Background(), account, headers, nil, "")
 
 	if repo.rateLimitedID != account.ID {
 		t.Fatalf("rateLimitedID = %d, want %d", repo.rateLimitedID, account.ID)
@@ -254,7 +254,7 @@ func TestHandle429_OpenAISyncsObservedPlanType(t *testing.T) {
 	}
 	body := []byte(`{"error":{"type":"usage_limit_reached","message":"limit reached","plan_type":"free","resets_at":1777283883}}`)
 
-	svc.handle429(context.Background(), account, http.Header{}, body)
+	svc.handle429(context.Background(), account, http.Header{}, body, "")
 
 	require.Equal(t, []int64{account.ID}, repo.bulkUpdatedIDs)
 	require.Equal(t, "free", repo.bulkUpdatedPayload.Credentials["plan_type"])
@@ -285,7 +285,7 @@ func TestHandle429_SkipsSparkShadow(t *testing.T) {
 		QuotaDimension:  QuotaDimensionSpark,
 	}
 
-	shadowSvc.handle429(context.Background(), shadow, headers, nil)
+	shadowSvc.handle429(context.Background(), shadow, headers, nil, "")
 
 	require.Zero(t, shadowRepo.rateLimitedID, "spark shadow must not be SetRateLimited from /responses global 429")
 	require.Empty(t, shadowRepo.updatedExtra, "spark shadow must not get a codex snapshot from /responses 429")
@@ -295,7 +295,7 @@ func TestHandle429_SkipsSparkShadow(t *testing.T) {
 	normalSvc := NewRateLimitService(normalRepo, nil, nil, nil, nil)
 	normal := &Account{ID: 902, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
 
-	normalSvc.handle429(context.Background(), normal, headers, nil)
+	normalSvc.handle429(context.Background(), normal, headers, nil, "")
 
 	require.Equal(t, normal.ID, normalRepo.rateLimitedID, "normal OpenAI OAuth account should still be rate limited")
 }

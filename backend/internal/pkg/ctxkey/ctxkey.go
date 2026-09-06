@@ -64,6 +64,15 @@ const (
 	// 用于区分"用错端点"与"端点用对了但账号没能力"。
 	OpenAIImagesEndpoint Key = "ctx_openai_images_endpoint"
 
+	// CountTokensEndpoint 标识请求来自 /v1/messages/count_tokens。
+	// Anthropic 的 token 计数接口与 messages 接口是独立限流桶，且 RPM 上限低得多；
+	// 该端点的 429 只代表计数桶被限，不能据此把账号级调度状态一并摘掉。
+	CountTokensEndpoint Key = "ctx_count_tokens_endpoint"
+
+	// CountTokensFinalAttempt 标识 count_tokens 已是最后一次尝试（换号重试后），
+	// 上游再返回 429 时直接回写客户端，不再抛出可换号错误。
+	CountTokensFinalAttempt Key = "ctx_count_tokens_final_attempt"
+
 	// Group 认证后的分组信息，由 API Key 认证中间件设置
 	Group Key = "ctx_group"
 

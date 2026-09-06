@@ -424,11 +424,14 @@ describe('admin UsageView distribution metric toggles', () => {
     await flushPromises()
 
     expect(getSnapshotV2).toHaveBeenCalledTimes(1)
-    const now = new Date()
-    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+    // The page opens on "today" (whole calendar day in the browser timezone),
+    // matching the dashboard's today cards; no rolling instants are sent.
+    const today = formatLocalDate(new Date())
     expect(getSnapshotV2).toHaveBeenCalledWith(expect.objectContaining({
-      start_date: formatLocalDate(yesterday),
-      end_date: formatLocalDate(now),
+      start_date: today,
+      end_date: today,
+      start_time: undefined,
+      end_time: undefined,
       granularity: 'hour'
     }))
 

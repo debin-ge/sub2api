@@ -722,6 +722,11 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			}
 			account := selection.Account
 			setOpsSelectedAccount(c, account.ID, account.Platform)
+			// 调度器把既有粘性绑定迁移到了本账号（升级到更高优先级 / 原账号永久不可用）：
+			// 这是网关发起的账号切换，新账号上 prompt cache 必然未命中，按 failover 换号口径启用缓存计费。
+			if selection.StickyMigrated {
+				fs.ForceCacheBilling = true
+			}
 
 			// [DEBUG-STICKY] 打印账号选择结果
 			reqLog.Info("sticky.account_selected",
@@ -731,6 +736,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				zap.Bool("has_wait_plan", selection.WaitPlan != nil),
 				zap.Int64("sticky_bound_account_id", sessionBoundAccountID),
 				zap.Bool("sticky_honored", sessionBoundAccountID > 0 && sessionBoundAccountID == account.ID),
+				zap.Bool("sticky_migrated", selection.StickyMigrated),
 			)
 
 			// 检查请求拦截（预热请求、SUGGESTION MODE等）
@@ -2328,9 +2334,48 @@ func (h *GatewayHandler) CountTokens(c *gin.Context) {
 	}
 	setOpsSelectedAccount(c, account.ID, account.Platform)
 
-	// 转发请求（不记录使用量）
-	if err := h.gatewayService.ForwardCountTokens(c.Request.Context(), c, account, parsedReq); err != nil {
+	// 转发请求（不记录使用量）。每次尝试使用独立的 body 视图，避免换号重试复用已按上游账号改写的请求体。
+	attemptReq, err := parsedReq.CloneForBody(body)
+	if err != nil {
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
+		return
+	}
+	err = h.gatewayService.ForwardCountTokens(c.Request.Context(), c, account, attemptReq)
+	if err == nil {
+		return
+	}
+
+	// 上游 429：count_tokens 是独立限流桶，排除本账号换号重试一次。
+	var rateLimited *service.CountTokensUpstreamRateLimitedError
+	if !errors.As(err, &rateLimited) {
 		reqLog.Error("gateway.count_tokens_forward_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+		// 错误响应已在 ForwardCountTokens 中处理
+		return
+	}
+	reqLog.Warn("gateway.count_tokens_upstream_rate_limited_retrying",
+		zap.Int64("account_id", account.ID),
+		zap.String("upstream_message", rateLimited.UpstreamMessage),
+	)
+	excluded := map[int64]struct{}{account.ID: {}}
+	retryAccount, selErr := h.gatewayService.SelectAccountForModelForNonBillingEndpointWithExclusions(c.Request.Context(), apiKey.GroupID, sessionHash, parsedReq.Model, excluded)
+	if selErr != nil {
+		reqLog.Warn("gateway.count_tokens_no_fallback_account", zap.Int64("account_id", account.ID), zap.Error(selErr))
+		h.gatewayService.WriteCountTokensRateLimited(c)
+		return
+	}
+	setOpsSelectedAccount(c, retryAccount.ID, retryAccount.Platform)
+	retryReq, err := parsedReq.CloneForBody(body)
+	if err != nil {
+		h.gatewayService.WriteCountTokensRateLimited(c)
+		return
+	}
+	finalCtx := service.WithCountTokensFinalAttempt(c.Request.Context())
+	if err := h.gatewayService.ForwardCountTokens(finalCtx, c, retryAccount, retryReq); err != nil {
+		reqLog.Error("gateway.count_tokens_forward_failed",
+			zap.Int64("account_id", retryAccount.ID),
+			zap.Int64("first_account_id", account.ID),
+			zap.Error(err),
+		)
 		// 错误响应已在 ForwardCountTokens 中处理
 		return
 	}

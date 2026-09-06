@@ -25,10 +25,25 @@ type usageRepoStub struct {
 	rangeStart time.Time
 	rangeEnd   time.Time
 	onCall     chan struct{}
+	tzMu       sync.Mutex
+	seenTZ     []string
 }
 
-func (s *usageRepoStub) GetDashboardStats(ctx context.Context) (*usagestats.DashboardStats, error) {
+func (s *usageRepoStub) recordTZ(userTZ string) {
+	s.tzMu.Lock()
+	s.seenTZ = append(s.seenTZ, userTZ)
+	s.tzMu.Unlock()
+}
+
+func (s *usageRepoStub) timezonesSeen() []string {
+	s.tzMu.Lock()
+	defer s.tzMu.Unlock()
+	return append([]string(nil), s.seenTZ...)
+}
+
+func (s *usageRepoStub) GetDashboardStats(ctx context.Context, userTZ string) (*usagestats.DashboardStats, error) {
 	atomic.AddInt32(&s.calls, 1)
+	s.recordTZ(userTZ)
 	if s.onCall != nil {
 		select {
 		case s.onCall <- struct{}{}:
@@ -41,8 +56,9 @@ func (s *usageRepoStub) GetDashboardStats(ctx context.Context) (*usagestats.Dash
 	return s.stats, nil
 }
 
-func (s *usageRepoStub) GetDashboardStatsWithRange(ctx context.Context, start, end time.Time) (*usagestats.DashboardStats, error) {
+func (s *usageRepoStub) GetDashboardStatsWithRange(ctx context.Context, start, end time.Time, userTZ string) (*usagestats.DashboardStats, error) {
 	atomic.AddInt32(&s.rangeCalls, 1)
+	s.recordTZ(userTZ)
 	s.rangeStart = start
 	s.rangeEnd = end
 	if s.rangeErr != nil {
@@ -55,41 +71,49 @@ func (s *usageRepoStub) GetDashboardStatsWithRange(ctx context.Context, start, e
 }
 
 type dashboardCacheStub struct {
-	get       func(ctx context.Context) (string, error)
-	set       func(ctx context.Context, data string, ttl time.Duration) error
-	del       func(ctx context.Context) error
+	get       func(ctx context.Context, scope string) (string, error)
+	set       func(ctx context.Context, scope string, data string, ttl time.Duration) error
+	del       func(ctx context.Context, scope string) error
 	getCalls  int32
 	setCalls  int32
 	delCalls  int32
 	lastSetMu sync.Mutex
 	lastSet   string
+	setScopes []string
 }
 
-func (c *dashboardCacheStub) GetDashboardStats(ctx context.Context) (string, error) {
+func (c *dashboardCacheStub) GetDashboardStats(ctx context.Context, scope string) (string, error) {
 	atomic.AddInt32(&c.getCalls, 1)
 	if c.get != nil {
-		return c.get(ctx)
+		return c.get(ctx, scope)
 	}
 	return "", ErrDashboardStatsCacheMiss
 }
 
-func (c *dashboardCacheStub) SetDashboardStats(ctx context.Context, data string, ttl time.Duration) error {
+func (c *dashboardCacheStub) SetDashboardStats(ctx context.Context, scope string, data string, ttl time.Duration) error {
 	atomic.AddInt32(&c.setCalls, 1)
 	c.lastSetMu.Lock()
 	c.lastSet = data
+	c.setScopes = append(c.setScopes, scope)
 	c.lastSetMu.Unlock()
 	if c.set != nil {
-		return c.set(ctx, data, ttl)
+		return c.set(ctx, scope, data, ttl)
 	}
 	return nil
 }
 
-func (c *dashboardCacheStub) DeleteDashboardStats(ctx context.Context) error {
+func (c *dashboardCacheStub) DeleteDashboardStats(ctx context.Context, scope string) error {
 	atomic.AddInt32(&c.delCalls, 1)
 	if c.del != nil {
-		return c.del(ctx)
+		return c.del(ctx, scope)
 	}
 	return nil
+}
+
+func (c *dashboardCacheStub) scopesSet() []string {
+	c.lastSetMu.Lock()
+	defer c.lastSetMu.Unlock()
+	return append([]string(nil), c.setScopes...)
 }
 
 type dashboardAggregationRepoStub struct {
@@ -158,7 +182,7 @@ func TestDashboardService_CacheHitFresh(t *testing.T) {
 	require.NoError(t, err)
 
 	cache := &dashboardCacheStub{
-		get: func(ctx context.Context) (string, error) {
+		get: func(ctx context.Context, scope string) (string, error) {
 			return string(payload), nil
 		},
 	}
@@ -174,7 +198,7 @@ func TestDashboardService_CacheHitFresh(t *testing.T) {
 	}
 	svc := NewDashboardService(repo, aggRepo, cache, cfg)
 
-	got, err := svc.GetDashboardStats(context.Background())
+	got, err := svc.GetDashboardStats(context.Background(), "")
 	require.NoError(t, err)
 	require.Equal(t, stats, got)
 	require.Equal(t, int32(0), atomic.LoadInt32(&repo.calls))
@@ -189,7 +213,7 @@ func TestDashboardService_CacheMiss_StoresCache(t *testing.T) {
 		StatsStale:     true,
 	}
 	cache := &dashboardCacheStub{
-		get: func(ctx context.Context) (string, error) {
+		get: func(ctx context.Context, scope string) (string, error) {
 			return "", ErrDashboardStatsCacheMiss
 		},
 	}
@@ -203,7 +227,7 @@ func TestDashboardService_CacheMiss_StoresCache(t *testing.T) {
 	}
 	svc := NewDashboardService(repo, aggRepo, cache, cfg)
 
-	got, err := svc.GetDashboardStats(context.Background())
+	got, err := svc.GetDashboardStats(context.Background(), "")
 	require.NoError(t, err)
 	require.Equal(t, stats, got)
 	require.Equal(t, int32(1), atomic.LoadInt32(&repo.calls))
@@ -214,6 +238,39 @@ func TestDashboardService_CacheMiss_StoresCache(t *testing.T) {
 	require.WithinDuration(t, time.Now(), time.Unix(entry.UpdatedAt, 0), time.Second)
 }
 
+// Callers in different timezones see different "today" figures, so the cache
+// must be scoped per today-window: distinct windows get distinct entries and
+// the repo is asked with each caller's timezone, while zones that share an
+// offset (and therefore a window) reuse a single entry.
+func TestDashboardService_CacheScopedByCallerTodayWindow(t *testing.T) {
+	stats := &usagestats.DashboardStats{TotalUsers: 5}
+	cache := &dashboardCacheStub{}
+	repo := &usageRepoStub{stats: stats}
+	aggRepo := &dashboardAggregationRepoStub{watermark: time.Unix(0, 0).UTC()}
+	cfg := &config.Config{
+		Dashboard:    config.DashboardCacheConfig{Enabled: true},
+		DashboardAgg: config.DashboardAggregationConfig{Enabled: true},
+	}
+	svc := NewDashboardService(repo, aggRepo, cache, cfg)
+
+	_, err := svc.GetDashboardStats(context.Background(), "UTC")
+	require.NoError(t, err)
+	_, err = svc.GetDashboardStats(context.Background(), "Asia/Shanghai")
+	require.NoError(t, err)
+
+	require.Equal(t, []string{"UTC", "Asia/Shanghai"}, repo.timezonesSeen())
+	scopes := cache.scopesSet()
+	require.Len(t, scopes, 2)
+	require.NotEqual(t, scopes[0], scopes[1], "UTC and Asia/Shanghai never share a local day boundary")
+	require.Equal(t, DashboardStatsCacheScope("UTC"), scopes[0])
+	require.Equal(t, DashboardStatsCacheScope("Asia/Shanghai"), scopes[1])
+
+	// Same offset ⇒ same window ⇒ same cache entry.
+	require.Equal(t, DashboardStatsCacheScope("Asia/Shanghai"), DashboardStatsCacheScope("Asia/Singapore"))
+	// Empty and unknown zones fall back to the server timezone's window.
+	require.Equal(t, DashboardStatsCacheScope(""), DashboardStatsCacheScope("Not/AZone"))
+}
+
 func TestDashboardService_CacheDisabled_SkipsCache(t *testing.T) {
 	stats := &usagestats.DashboardStats{
 		TotalUsers:     3,
@@ -221,7 +278,7 @@ func TestDashboardService_CacheDisabled_SkipsCache(t *testing.T) {
 		StatsStale:     true,
 	}
 	cache := &dashboardCacheStub{
-		get: func(ctx context.Context) (string, error) {
+		get: func(ctx context.Context, scope string) (string, error) {
 			return "", nil
 		},
 	}
@@ -235,7 +292,7 @@ func TestDashboardService_CacheDisabled_SkipsCache(t *testing.T) {
 	}
 	svc := NewDashboardService(repo, aggRepo, cache, cfg)
 
-	got, err := svc.GetDashboardStats(context.Background())
+	got, err := svc.GetDashboardStats(context.Background(), "")
 	require.NoError(t, err)
 	require.Equal(t, stats, got)
 	require.Equal(t, int32(1), atomic.LoadInt32(&repo.calls))
@@ -257,7 +314,7 @@ func TestDashboardService_CacheHitStale_TriggersAsyncRefresh(t *testing.T) {
 	require.NoError(t, err)
 
 	cache := &dashboardCacheStub{
-		get: func(ctx context.Context) (string, error) {
+		get: func(ctx context.Context, scope string) (string, error) {
 			return string(payload), nil
 		},
 	}
@@ -275,7 +332,7 @@ func TestDashboardService_CacheHitStale_TriggersAsyncRefresh(t *testing.T) {
 	}
 	svc := NewDashboardService(repo, aggRepo, cache, cfg)
 
-	got, err := svc.GetDashboardStats(context.Background())
+	got, err := svc.GetDashboardStats(context.Background(), "America/New_York")
 	require.NoError(t, err)
 	require.Equal(t, staleStats, got)
 
@@ -287,11 +344,15 @@ func TestDashboardService_CacheHitStale_TriggersAsyncRefresh(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return atomic.LoadInt32(&cache.setCalls) >= 1
 	}, 1*time.Second, 10*time.Millisecond)
+	// The background refresh must recompute for the same caller timezone and
+	// write back under the same scope it was served from.
+	require.Equal(t, []string{"America/New_York"}, repo.timezonesSeen())
+	require.Equal(t, []string{DashboardStatsCacheScope("America/New_York")}, cache.scopesSet())
 }
 
 func TestDashboardService_CacheParseError_EvictsAndRefetches(t *testing.T) {
 	cache := &dashboardCacheStub{
-		get: func(ctx context.Context) (string, error) {
+		get: func(ctx context.Context, scope string) (string, error) {
 			return "not-json", nil
 		},
 	}
@@ -306,7 +367,7 @@ func TestDashboardService_CacheParseError_EvictsAndRefetches(t *testing.T) {
 	}
 	svc := NewDashboardService(repo, aggRepo, cache, cfg)
 
-	got, err := svc.GetDashboardStats(context.Background())
+	got, err := svc.GetDashboardStats(context.Background(), "")
 	require.NoError(t, err)
 	require.Equal(t, stats, got)
 	require.Equal(t, int32(1), atomic.LoadInt32(&cache.delCalls))
@@ -315,7 +376,7 @@ func TestDashboardService_CacheParseError_EvictsAndRefetches(t *testing.T) {
 
 func TestDashboardService_CacheParseError_RepoFailure(t *testing.T) {
 	cache := &dashboardCacheStub{
-		get: func(ctx context.Context) (string, error) {
+		get: func(ctx context.Context, scope string) (string, error) {
 			return "not-json", nil
 		},
 	}
@@ -329,7 +390,7 @@ func TestDashboardService_CacheParseError_RepoFailure(t *testing.T) {
 	}
 	svc := NewDashboardService(repo, aggRepo, cache, cfg)
 
-	_, err := svc.GetDashboardStats(context.Background())
+	_, err := svc.GetDashboardStats(context.Background(), "")
 	require.Error(t, err)
 	require.Equal(t, int32(1), atomic.LoadInt32(&cache.delCalls))
 }
@@ -341,7 +402,7 @@ func TestDashboardService_StatsUpdatedAtEpochWhenMissing(t *testing.T) {
 	cfg := &config.Config{Dashboard: config.DashboardCacheConfig{Enabled: false}}
 	svc := NewDashboardService(repo, aggRepo, nil, cfg)
 
-	got, err := svc.GetDashboardStats(context.Background())
+	got, err := svc.GetDashboardStats(context.Background(), "")
 	require.NoError(t, err)
 	require.Equal(t, "1970-01-01T00:00:00Z", got.StatsUpdatedAt)
 	require.True(t, got.StatsStale)
@@ -362,7 +423,7 @@ func TestDashboardService_StatsStaleFalseWhenFresh(t *testing.T) {
 	}
 	svc := NewDashboardService(repo, aggRepo, nil, cfg)
 
-	got, err := svc.GetDashboardStats(context.Background())
+	got, err := svc.GetDashboardStats(context.Background(), "")
 	require.NoError(t, err)
 	require.Equal(t, aggNow.Format(time.RFC3339), got.StatsUpdatedAt)
 	require.False(t, got.StatsStale)
@@ -385,11 +446,13 @@ func TestDashboardService_AggDisabled_UsesUsageLogsFallback(t *testing.T) {
 	}
 	svc := NewDashboardService(repo, nil, nil, cfg)
 
-	got, err := svc.GetDashboardStats(context.Background())
+	got, err := svc.GetDashboardStats(context.Background(), "Asia/Tokyo")
 	require.NoError(t, err)
 	require.Equal(t, int64(42), got.TotalUsers)
 	require.Equal(t, int32(0), atomic.LoadInt32(&repo.calls))
 	require.Equal(t, int32(1), atomic.LoadInt32(&repo.rangeCalls))
 	require.False(t, repo.rangeEnd.IsZero())
 	require.Equal(t, truncateToDayUTC(repo.rangeEnd.AddDate(0, 0, -7)), repo.rangeStart)
+	// The raw fallback must still anchor "today" on the caller's timezone.
+	require.Equal(t, []string{"Asia/Tokyo"}, repo.timezonesSeen())
 }

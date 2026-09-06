@@ -10,7 +10,10 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-const dashboardStatsCacheKey = "dashboard:stats:v1"
+// dashboardStatsCacheKeyPrefix is followed by the caller-specific scope (see
+// service.DashboardStatsCacheScope). v2: entries became per-"today"-window when
+// the dashboard started honouring the viewer's timezone.
+const dashboardStatsCacheKeyPrefix = "dashboard:stats:v2:"
 
 type dashboardCache struct {
 	rdb       *redis.Client
@@ -31,8 +34,8 @@ func NewDashboardCache(rdb *redis.Client, cfg *config.Config) service.DashboardS
 	}
 }
 
-func (c *dashboardCache) GetDashboardStats(ctx context.Context) (string, error) {
-	val, err := c.rdb.Get(ctx, c.buildKey()).Result()
+func (c *dashboardCache) GetDashboardStats(ctx context.Context, scope string) (string, error) {
+	val, err := c.rdb.Get(ctx, c.buildKey(scope)).Result()
 	if err != nil {
 		if err == redis.Nil {
 			return "", service.ErrDashboardStatsCacheMiss
@@ -42,17 +45,18 @@ func (c *dashboardCache) GetDashboardStats(ctx context.Context) (string, error) 
 	return val, nil
 }
 
-func (c *dashboardCache) SetDashboardStats(ctx context.Context, data string, ttl time.Duration) error {
-	return c.rdb.Set(ctx, c.buildKey(), data, ttl).Err()
+func (c *dashboardCache) SetDashboardStats(ctx context.Context, scope string, data string, ttl time.Duration) error {
+	return c.rdb.Set(ctx, c.buildKey(scope), data, ttl).Err()
 }
 
-func (c *dashboardCache) buildKey() string {
+func (c *dashboardCache) buildKey(scope string) string {
+	key := dashboardStatsCacheKeyPrefix + scope
 	if c.keyPrefix == "" {
-		return dashboardStatsCacheKey
+		return key
 	}
-	return c.keyPrefix + dashboardStatsCacheKey
+	return c.keyPrefix + key
 }
 
-func (c *dashboardCache) DeleteDashboardStats(ctx context.Context) error {
-	return c.rdb.Del(ctx, c.buildKey()).Err()
+func (c *dashboardCache) DeleteDashboardStats(ctx context.Context, scope string) error {
+	return c.rdb.Del(ctx, c.buildKey(scope)).Err()
 }

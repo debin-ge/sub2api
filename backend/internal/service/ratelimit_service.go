@@ -541,7 +541,7 @@ func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Acc
 		)
 		shouldDisable = s.handle403(ctx, account, upstreamMsg, responseBody)
 	case 429:
-		s.handle429(ctx, account, headers, responseBody)
+		s.handle429(ctx, account, headers, responseBody, firstRequestedModel(requestedModel))
 		shouldDisable = false
 	case 529:
 		// Handled after pool/custom-code policy gates above.
@@ -1126,7 +1126,9 @@ func (s *RateLimitService) handleCustomErrorCode(ctx context.Context, account *A
 
 // handle429 处理429限流错误
 // 解析响应头获取重置时间，标记账号为限流状态
-func (s *RateLimitService) handle429(ctx context.Context, account *Account, headers http.Header, responseBody []byte) {
+// handle429 处理上游 429。requestedModel 为本次请求的模型（可能为空），用于把
+// "Extra usage required" 这类权限门限制到模型级而不是账号级。
+func (s *RateLimitService) handle429(ctx context.Context, account *Account, headers http.Header, responseBody []byte, requestedModel string) {
 	// OpenAI OAuth stays on the same account for the gateway's bounded retry
 	// window. Persisting a rate-limit reset on the first 429 would make the next
 	// retry ineligible and silently turn same-account recovery into a switch.
@@ -1171,7 +1173,15 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 		}
 	}
 
-	// 2. Anthropic 平台：尝试解析 per-window 头（5h / 7d），选择实际触发的窗口
+	// 2. Anthropic 平台：先按端点与响应体分类（count_tokens / HTML / Extra usage / 突发限制），
+	// 这些 429 都不代表账号的 5h/7d 窗口耗尽，不能按窗口重置点做小时级封禁。
+	if account.Platform == PlatformAnthropic {
+		if s.classifyAndHandleAnthropic429(ctx, account, headers, responseBody, requestedModel) {
+			return
+		}
+	}
+
+	// 3. Anthropic 平台：尝试解析 per-window 头（5h / 7d），选择实际触发的窗口
 	if result := calculateAnthropic429ResetTime(headers); result != nil {
 		s.notifyAccountSchedulingBlocked(account, result.resetAt, "429")
 		if err := s.accountRepo.SetRateLimited(ctx, account.ID, result.resetAt); err != nil {
@@ -1193,10 +1203,10 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 		return
 	}
 
-	// 3. 尝试从响应头解析重置时间（Anthropic 聚合头，向后兼容）
+	// 4. 尝试从响应头解析重置时间（Anthropic 聚合头，向后兼容）
 	resetTimestamp := headers.Get("anthropic-ratelimit-unified-reset")
 
-	// 4. 如果响应头没有，尝试从响应体解析（OpenAI usage_limit_reached, Gemini）
+	// 5. 如果响应头没有，尝试从响应体解析（OpenAI usage_limit_reached, Gemini）
 	if resetTimestamp == "" {
 		switch account.Platform {
 		case PlatformOpenAI:
@@ -1225,21 +1235,21 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 			}
 		}
 
-		// Anthropic 平台：没有限流重置时间的 429 可能是非真实限流（如 Extra usage required），
-		// 不适合按 5h/7d 窗口长时间封禁；但完全不标记会导致账号永不冷却，
-		// 调度器让每个请求反复撞同一批持续 429 的账号（failover 预算被白白烧掉，
-		// 客户端稳定收到 429）。因此同样走可配置的秒级兜底回避，管理端可调大或关闭。
+		// Anthropic 平台：没有限流重置时间的 429 不是窗口耗尽，不适合按 5h/7d 窗口长时间封禁；
+		// 但完全不标记会导致账号永不冷却，调度器让每个请求反复撞同一批持续 429 的账号
+		// （failover 预算被白白烧掉，客户端稳定收到 429）。优先按上游 Retry-After 冷却
+		// （截断到 maxAnthropic429RetryAfter），没有该头再走可配置的秒级兜底，管理端可调大或关闭。
 		if account.Platform == PlatformAnthropic {
 			slog.Warn("rate_limit_429_no_reset_time",
 				"account_id", account.ID,
 				"platform", account.Platform,
-				"reason", "no rate limit reset time in headers, likely not a real rate limit")
-			s.apply429FallbackRateLimit(ctx, account, "anthropic_no_reset_time")
+				"reason", "no rate limit reset time in headers, likely not a window exhaustion")
+			s.applyAnthropicRetryAfterOrFallback(ctx, account, headers, responseBody, "anthropic_no_reset_time")
 			return
 		}
 
 		// 其他平台：没有重置时间，使用可配置的秒级默认回避，避免误伤长时间不可调度。
-		s.apply429FallbackRateLimit(ctx, account, "no_reset_time")
+		s.apply429FallbackRateLimit(ctx, account, "no_reset_time", headers, responseBody)
 		return
 	}
 
@@ -1247,7 +1257,7 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 	ts, err := strconv.ParseInt(resetTimestamp, 10, 64)
 	if err != nil {
 		slog.Warn("rate_limit_reset_parse_failed", "reset_timestamp", resetTimestamp, "error", err)
-		s.apply429FallbackRateLimit(ctx, account, "reset_parse_failed")
+		s.apply429FallbackRateLimit(ctx, account, "reset_parse_failed", headers, responseBody)
 		return
 	}
 
@@ -1270,7 +1280,10 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 	slog.Info("account_rate_limited", "account_id", account.ID, "reset_at", resetAt)
 }
 
-func (s *RateLimitService) apply429FallbackRateLimit(ctx context.Context, account *Account, reason string) {
+// apply429FallbackRateLimit 对无法从上游得到重置时间的 429 施加可配置的秒级兜底冷却。
+// headers / body 仅用于日志归因：每一次兜底都记录上游消息、是否带 Retry-After、
+// 是否 HTML、request id，便于在生产上直接看出这类 429 属于哪一种来源。
+func (s *RateLimitService) apply429FallbackRateLimit(ctx context.Context, account *Account, reason string, headers http.Header, body []byte) {
 	cooldown, enabled := s.get429FallbackCooldown(ctx, account)
 	if !enabled {
 		slog.Info("rate_limit_429_fallback_ignored", "account_id", account.ID, "platform", account.Platform, "reason", reason)
@@ -1278,11 +1291,211 @@ func (s *RateLimitService) apply429FallbackRateLimit(ctx context.Context, accoun
 	}
 
 	resetAt := time.Now().Add(cooldown)
-	slog.Warn("rate_limit_429_fallback_used", "account_id", account.ID, "platform", account.Platform, "reason", reason, "using_default", cooldown.String())
+	slog.Warn("rate_limit_429_fallback_used",
+		"account_id", account.ID,
+		"platform", account.Platform,
+		"account_type", account.Type,
+		"reason", reason,
+		"using_default", cooldown.String(),
+		"upstream_message", truncateForLog([]byte(sanitizeUpstreamErrorMessage(extractUpstreamErrorMessage(body))), 256),
+		"has_retry_after", headers != nil && strings.TrimSpace(headers.Get("Retry-After")) != "",
+		"is_html", isHTMLResponse(body),
+		"request_id", headerValue(headers, "x-request-id"),
+		"cf_ray", headerValue(headers, "cf-ray"),
+	)
 	s.notifyAccountSchedulingBlocked(account, resetAt, "429_fallback")
 	if err := s.accountRepo.SetRateLimited(ctx, account.ID, resetAt); err != nil {
 		slog.Warn("rate_limit_set_failed", "account_id", account.ID, "error", err)
 	}
+}
+
+func headerValue(headers http.Header, key string) string {
+	if headers == nil {
+		return ""
+	}
+	return strings.TrimSpace(headers.Get(key))
+}
+
+const (
+	// maxAnthropic429RetryAfter 是按上游 Retry-After 冷却 Anthropic 账号的上限。
+	// 突发/并发类 429 的 Retry-After 通常是秒级；超过该上限的值多半不是本账号的真实冷却，
+	// 截断后交给窗口头或兜底逻辑决定，避免一个异常头把账号封上几分钟甚至更久。
+	maxAnthropic429RetryAfter = 120 * time.Second
+	// anthropicExtraUsageModelCooldown 是 "Extra usage is required" 权限门的模型级冷却时长。
+	// 该错误在账号开通 Extra Usage 前会持续出现，冷却只是避免每个请求都先撞一次；
+	// 账号对其他模型保持可调度。
+	anthropicExtraUsageModelCooldown = 30 * time.Minute
+)
+
+// classifyAndHandleAnthropic429 在按响应头计算窗口冷却之前，先对 Anthropic 429 做分类。
+// 返回 true 表示已处理（或有意不处理），调用方不再继续窗口/兜底逻辑：
+//
+//  1. 来自 count_tokens 端点：计数接口是独立限流桶且 RPM 上限低得多，不动账号级状态；
+//  2. 响应体为 HTML：边缘节点限速，不代表账号状态，只记日志（failover 由 Forward 层照常执行）；
+//  3. "Extra usage is required"：权限门而非限流，仅对请求模型做模型级限流；
+//  4. 带 unified 头但窗口未耗尽且 status 非 rejected：突发限制，按 Retry-After 或秒级兜底冷却，
+//     而不是按窗口重置点封数小时。
+func (s *RateLimitService) classifyAndHandleAnthropic429(ctx context.Context, account *Account, headers http.Header, body []byte, requestedModel string) bool {
+	upstreamMsg := truncateForLog([]byte(sanitizeUpstreamErrorMessage(extractUpstreamErrorMessage(body))), 256)
+	requestID := headerValue(headers, "x-request-id")
+
+	if CountTokensEndpointFromContext(ctx) {
+		slog.Warn("anthropic_429_count_tokens_skips_account_penalty",
+			"account_id", account.ID,
+			"upstream_message", upstreamMsg,
+			"request_id", requestID,
+			"has_retry_after", headerValue(headers, "Retry-After") != "",
+		)
+		return true
+	}
+
+	if isHTMLResponse(body) {
+		slog.Warn("anthropic_429_html_body_skips_account_penalty",
+			"account_id", account.ID,
+			"request_id", requestID,
+			"cf_ray", headerValue(headers, "cf-ray"),
+			"cf_mitigated", headerValue(headers, "cf-mitigated"),
+		)
+		return true
+	}
+
+	if isAnthropicExtraUsageRequired(body) {
+		s.applyAnthropicExtraUsageModelLimit(ctx, account, headers, body, requestedModel)
+		return true
+	}
+
+	if isAnthropicBurst429(headers) {
+		slog.Warn("anthropic_429_burst_not_window_exhausted",
+			"account_id", account.ID,
+			"upstream_message", upstreamMsg,
+			"request_id", requestID,
+			"unified_status", headerValue(headers, "anthropic-ratelimit-unified-status"),
+			"utilization_5h", headerValue(headers, "anthropic-ratelimit-unified-5h-utilization"),
+			"utilization_7d", headerValue(headers, "anthropic-ratelimit-unified-7d-utilization"),
+		)
+		s.applyAnthropicRetryAfterOrFallback(ctx, account, headers, body, "anthropic_burst_not_window_exhausted")
+		return true
+	}
+
+	return false
+}
+
+// isAnthropicExtraUsageRequired 识别 "Extra usage is required for long context requests" 这类
+// 权限门 429：error.type 同为 rate_limit_error，只能按消息体区分。
+func isAnthropicExtraUsageRequired(body []byte) bool {
+	msg := strings.ToLower(extractUpstreamErrorMessage(body))
+	if msg == "" {
+		msg = strings.ToLower(string(body))
+	}
+	return strings.Contains(msg, "extra usage")
+}
+
+// applyAnthropicExtraUsageModelLimit 只对请求模型做模型级限流：账号对其他模型仍可调度，
+// 调度器会把该模型的后续请求交给其他账号（例如支持 1M 上下文的 API Key 账号）。
+// 请求模型未知时退回账号级秒级兜底，与旧行为一致。
+func (s *RateLimitService) applyAnthropicExtraUsageModelLimit(ctx context.Context, account *Account, headers http.Header, body []byte, requestedModel string) {
+	modelKey := strings.TrimSpace(account.GetMappedModel(strings.TrimSpace(requestedModel)))
+	if modelKey == "" {
+		s.apply429FallbackRateLimit(ctx, account, "anthropic_extra_usage_required_no_model", headers, body)
+		return
+	}
+	resetAt := time.Now().Add(anthropicExtraUsageModelCooldown)
+	if err := s.accountRepo.SetModelRateLimit(ctx, account.ID, modelKey, resetAt, "anthropic_extra_usage_required"); err != nil {
+		slog.Warn("rate_limit_set_model_failed", "account_id", account.ID, "model", modelKey, "error", err)
+		return
+	}
+	slog.Warn("anthropic_429_extra_usage_model_rate_limited",
+		"account_id", account.ID,
+		"model", modelKey,
+		"reset_at", resetAt,
+		"request_id", headerValue(headers, "x-request-id"),
+	)
+}
+
+// hasAnthropicUnifiedRateLimitHeaders 报告响应是否携带任意 anthropic-ratelimit-unified-* 头。
+func hasAnthropicUnifiedRateLimitHeaders(headers http.Header) bool {
+	if headers == nil {
+		return false
+	}
+	for _, key := range []string{
+		"anthropic-ratelimit-unified-status",
+		"anthropic-ratelimit-unified-reset",
+		"anthropic-ratelimit-unified-5h-status",
+		"anthropic-ratelimit-unified-5h-reset",
+		"anthropic-ratelimit-unified-5h-utilization",
+		"anthropic-ratelimit-unified-7d-status",
+		"anthropic-ratelimit-unified-7d-reset",
+		"anthropic-ratelimit-unified-7d-utilization",
+	} {
+		if strings.TrimSpace(headers.Get(key)) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// isAnthropicUnifiedStatusRejected 报告 unified 聚合状态或任一窗口状态是否明确为 rejected。
+func isAnthropicUnifiedStatusRejected(headers http.Header) bool {
+	if headers == nil {
+		return false
+	}
+	for _, key := range []string{
+		"anthropic-ratelimit-unified-status",
+		"anthropic-ratelimit-unified-5h-status",
+		"anthropic-ratelimit-unified-7d-status",
+	} {
+		switch strings.ToLower(strings.TrimSpace(headers.Get(key))) {
+		case "rejected", "rate_limited":
+			return true
+		}
+	}
+	return false
+}
+
+// isAnthropicBurst429 识别"带 unified 头、但 5h/7d 窗口都未耗尽且状态非 rejected"的 429。
+// 这类响应对应 Anthropic 的突发/并发限制（"Server is temporarily limiting requests (not your
+// usage limit)"），窗口重置点与本次限制无关，不能拿来做小时级冷却。
+func isAnthropicBurst429(headers http.Header) bool {
+	if !hasAnthropicUnifiedRateLimitHeaders(headers) {
+		return false
+	}
+	if isAnthropicWindowExceeded(headers, "5h") || isAnthropicWindowExceeded(headers, "7d") {
+		return false
+	}
+	return !isAnthropicUnifiedStatusRejected(headers)
+}
+
+// applyAnthropicRetryAfterOrFallback 优先按上游 Retry-After 冷却（截断到 [1s, maxAnthropic429RetryAfter]），
+// 没有该头或值无效时走可配置的秒级兜底。
+func (s *RateLimitService) applyAnthropicRetryAfterOrFallback(ctx context.Context, account *Account, headers http.Header, body []byte, reason string) {
+	now := time.Now()
+	if resetAt := parseRetryAfterResetTime(headers, now); resetAt != nil {
+		cooldown := resetAt.Sub(now)
+		if cooldown > 0 {
+			if cooldown > maxAnthropic429RetryAfter {
+				cooldown = maxAnthropic429RetryAfter
+			}
+			if cooldown < time.Second {
+				cooldown = time.Second
+			}
+			until := now.Add(cooldown)
+			slog.Warn("rate_limit_429_retry_after_used",
+				"account_id", account.ID,
+				"platform", account.Platform,
+				"reason", reason,
+				"retry_after", headerValue(headers, "Retry-After"),
+				"cooldown", cooldown.String(),
+				"upstream_message", truncateForLog([]byte(sanitizeUpstreamErrorMessage(extractUpstreamErrorMessage(body))), 256),
+				"request_id", headerValue(headers, "x-request-id"),
+			)
+			s.notifyAccountSchedulingBlocked(account, until, "429_retry_after")
+			if err := s.accountRepo.SetRateLimited(ctx, account.ID, until); err != nil {
+				slog.Warn("rate_limit_set_failed", "account_id", account.ID, "error", err)
+			}
+			return
+		}
+	}
+	s.apply429FallbackRateLimit(ctx, account, reason, headers, body)
 }
 
 func (s *RateLimitService) get429FallbackCooldown(ctx context.Context, account *Account) (time.Duration, bool) {
@@ -1609,7 +1822,14 @@ func calculateAnthropic429ResetTime(headers http.Header) *anthropic429Result {
 	case is7dExceeded:
 		chosen = reset7d
 	default:
-		// Neither flag clearly exceeded — pick the sooner reset as best guess
+		// Neither window is flagged as exceeded. Only when the unified status is
+		// explicitly rejected do we still trust the window reset (pick the sooner
+		// one as best guess). Otherwise this is a burst/concurrency 429 that merely
+		// echoes the account's window headers; parking the account until the 5h
+		// window boundary would turn a seconds-long throttle into hours.
+		if !isAnthropicUnifiedStatusRejected(headers) {
+			return nil
+		}
 		chosen = pickSooner(reset5h, reset7d)
 	}
 
