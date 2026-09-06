@@ -730,6 +730,8 @@ func (r *videoTaskRepository) TransitionVideoTask(ctx context.Context, publicID 
 	localCancellation := oldGeneration == service.VideoGenerationHeld && oldBilling == service.VideoBillingHeld &&
 		task.ProviderTaskID == nil && task.SubmittedAt == nil && task.SubmitAttempts == 0 &&
 		transition.GenerationState == service.VideoGenerationCancelled && transition.BillingState == service.VideoBillingReleasePending
+	localCancellationDelete := localCancellation && task.DeleteState == service.VideoDeleteNone &&
+		transition.DeleteState == service.VideoDeleteDeleted
 	guard, err := videoTaskGuardTx(ctx, tx, task)
 	if err != nil {
 		return nil, err
@@ -752,7 +754,7 @@ func (r *videoTaskRepository) TransitionVideoTask(ctx context.Context, publicID 
 	}
 	if transition.DeleteState != "" {
 		if !service.CanTransitionVideoDelete(task.DeleteState, transition.DeleteState) &&
-			!(localCancellation && task.DeleteState == service.VideoDeleteNone && transition.DeleteState == service.VideoDeleteDeleted) {
+			!localCancellationDelete {
 			return nil, service.ErrVideoInvalidTransition
 		}
 		task.DeleteState = transition.DeleteState
@@ -1172,7 +1174,7 @@ func (r *videoTaskRepository) AppendVideoTaskEvent(ctx context.Context, event se
 		if err != nil {
 			return false, err
 		}
-		defer tx.Rollback()
+		defer func() { _ = tx.Rollback() }()
 		if err := checkVideoTaskLeaseTx(ctx, tx, lease); err != nil {
 			return false, err
 		}

@@ -445,10 +445,6 @@ func (p *OpenAIVideoProvider) OpenContent(ctx context.Context, account *Account,
 
 const openAIVideoContentMaxRedirects = 3
 
-func (p *OpenAIVideoProvider) executeContentRedirects(ctx context.Context, request *http.Request, account *Account, responseHeaderTimeout time.Duration) (*http.Response, error) {
-	return p.executeContentRedirectsFrom(ctx, request, account, responseHeaderTimeout, nil)
-}
-
 func (p *OpenAIVideoProvider) executeContentRedirectsFrom(ctx context.Context, request *http.Request, account *Account, responseHeaderTimeout time.Duration, initialAddresses []netip.Addr) (*http.Response, error) {
 	resolver := p.resolver
 	if resolver == nil {
@@ -482,6 +478,7 @@ func (p *OpenAIVideoProvider) executeContentRedirectsFrom(ctx context.Context, r
 		if err != nil {
 			return nil, err
 		}
+		//nolint:gosec // G704: target is HTTPS-validated and its public DNS results are pinned for this request.
 		next, err := http.NewRequestWithContext(current.Context(), current.Method, target.String(), nil)
 		if err != nil {
 			return nil, err
@@ -661,6 +658,7 @@ func executePinnedVideoContentRedirect(ctx context.Context, request *http.Reques
 		Transport:     transport,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
+	//nolint:gosec // G704: request is HTTPS-only and the custom dialer pins the validated public IP addresses.
 	response, err := client.Do(request.WithContext(ctx))
 	if err != nil {
 		transport.CloseIdleConnections()

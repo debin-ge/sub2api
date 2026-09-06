@@ -155,11 +155,11 @@ func validateOpenAICompatibleSeedance20Request(request VideoCreateRequest) error
 		}
 		seedance = true
 		if model != lower || !validOpenAICompatibleSeedance20Model(lower) {
-			return errors.New("Seedance 2.0 model is not supported")
+			return errors.New("seedance 2.0 model is not supported")
 		}
 	}
 	if seedance && normalizeVideoOperation(request.Operation) == VideoOperationGenerate && (request.Seconds < 4 || request.Seconds > 15) {
-		return errors.New("Seedance 2.0 seconds must be between 4 and 15")
+		return errors.New("seedance 2.0 seconds must be between 4 and 15")
 	}
 	return nil
 }
