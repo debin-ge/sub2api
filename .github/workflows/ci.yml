@@ -1,11 +1,16 @@
 name: CI
 
-# 质量门：PR 与 main 推送时运行；tag 发布构建见 docker-ghcr.yml
+# 质量门：PR、main 与 test 分支推送时运行；test 分支和 test-* tag
+# 额外运行视频集成测试并构建测试镜像；正式数字 tag 发布见 docker-ghcr.yml。
 on:
   pull_request:
   push:
     branches:
       - main
+      - test
+    tags:
+      - 'test-*'
+  workflow_dispatch:
 
 # 同一分支的新推送自动取消上一轮未完成的运行
 concurrency:
@@ -89,6 +94,32 @@ jobs:
           -run 'Test(VIP|AuthCacheInvalidationTriggers|GroupRepoSuite|MigrationsRunner)'
           -count=1
 
+  video-integration:
+    name: Test environment video integration (PostgreSQL 16 + Redis)
+    if: ${{ github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/test' || startsWith(github.ref, 'refs/tags/test-') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: Run video, balance hold, and usage billing integration tests
+        env:
+          SUB2API_TEST_POSTGRES_IMAGE: postgres:16-alpine
+        run: >-
+          go test -tags=integration ./internal/repository
+          -run 'Video|BalanceHold|UsageBilling'
+          -count=1
+
   # 迁移门禁：保证 backend/migrations/ 变更满足蓝绿发布的 expand-contract 纪律
   # （规则见 backend/migrations/README.md）。破坏性迁移需给 PR 打 breaking-migration
   # 标签后重跑本 job（标签实时查询，Re-run 即可生效）。
@@ -151,3 +182,86 @@ jobs:
       # 完整构建（vue-tsc -b + vite build + 入口隐私断言），与 Docker 构建同路径
       - name: Build
         run: pnpm --dir frontend run build
+
+  build-test-image:
+    name: Build and push test image
+    if: ${{ github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/test' || startsWith(github.ref, 'refs/tags/test-') }}
+    needs:
+      - backend
+      - vip-integration
+      - video-integration
+      - frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    concurrency:
+      group: test-image-${{ github.repository }}
+      cancel-in-progress: false
+    environment:
+      name: test
+    permissions:
+      contents: read
+      packages: write
+    env:
+      REGISTRY: ghcr.io
+      IMAGE_NAME: ${{ github.repository }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract test image metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=tag
+            type=raw,value=test
+            type=sha,prefix=test-sha-,format=short
+          flavor: |
+            latest=false
+
+      - name: Resolve build date
+        id: build-info
+        run: echo "date=$(git show -s --format=%cI HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push test image
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+            COMMIT=${{ github.sha }}
+            DATE=${{ steps.build-info.outputs.date }}
+          cache-from: type=gha,scope=test-image
+          cache-to: type=gha,mode=max,scope=test-image
+          platforms: linux/amd64,linux/arm64
+
+      - name: Generate test image summary
+        run: |
+          echo "## GitHub Container Registry test image" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Image:** \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Commit:** \`${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Digest:** \`${{ steps.build.outputs.digest }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Tags:**" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "${{ steps.meta.outputs.tags }}" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
