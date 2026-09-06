@@ -360,7 +360,7 @@ func (r *videoAdminRepository) ListVideoSubmissionReviews(ctx context.Context, p
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	reviews := make([]*service.VideoSubmissionReview, 0)
 	for rows.Next() {
 		review, err := scanVideoSubmissionReview(rows)

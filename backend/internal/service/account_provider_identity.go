@@ -146,10 +146,7 @@ func validateAccountProviderIdentityProposal(request AccountProviderIdentityProp
 }
 
 func validateAccountProviderIdentityDecision(request AccountProviderIdentityDecision) error {
-	return ValidateVideoBillingReviewDecision(VideoBillingReviewDecision{
-		ActorID: request.ActorID, OperationKey: request.OperationKey, ExpectedVersion: request.ExpectedVersion,
-		Approve: request.Approve, Reason: request.Reason,
-	})
+	return ValidateVideoBillingReviewDecision(VideoBillingReviewDecision(request))
 }
 
 func validateAccountProviderIdentityRevocation(request AccountProviderIdentityRevocation) error {
@@ -207,7 +204,7 @@ func accountProviderIdentityIssuer(account *Account) (string, error) {
 		hostname = "[" + canonicalHost + "]"
 	}
 	port := parsed.Port()
-	if port != "" && !((parsed.Scheme == "https" && port == "443") || (parsed.Scheme == "http" && port == "80")) {
+	if port != "" && (parsed.Scheme != "https" || port != "443") && (parsed.Scheme != "http" || port != "80") {
 		hostname = net.JoinHostPort(canonicalHost, port)
 	}
 	cleanPath := path.Clean("/" + strings.TrimSpace(parsed.Path))

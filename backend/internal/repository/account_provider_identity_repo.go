@@ -130,7 +130,7 @@ func requireAccountProviderIdentityActors(ctx context.Context, tx *sql.Tx, actor
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	activeAdmins := make(map[int64]bool, 2)
 	ownerActive := false
 	for rows.Next() {
@@ -182,7 +182,7 @@ func (r *accountRepository) GetAccountProviderIdentity(ctx context.Context, acco
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		review, scanErr := scanAccountProviderIdentityReview(rows)
 		if scanErr != nil {

@@ -453,9 +453,11 @@ func (w *VideoTaskWorker) settle(ctx context.Context, task *VideoTask) (returnEr
 		}
 	}
 	if task.BillingState == VideoBillingCapturePending {
-		if err := videoCheckObservedSpecification(task, task.ResponseMetadata); err != nil &&
-			!(errors.Is(err, ErrVideoSourceSpecConflict) && review != nil && review.HonorFrozenQuote) {
-			return w.markSettlementReview(ctx, task, "provider output conflicts with the frozen execution specification")
+		if err := videoCheckObservedSpecification(task, task.ResponseMetadata); err != nil {
+			canHonorFrozenQuote := errors.Is(err, ErrVideoSourceSpecConflict) && review != nil && review.HonorFrozenQuote
+			if !canHonorFrozenQuote {
+				return w.markSettlementReview(ctx, task, "provider output conflicts with the frozen execution specification")
+			}
 		}
 	}
 	action := BalanceSettlementRelease

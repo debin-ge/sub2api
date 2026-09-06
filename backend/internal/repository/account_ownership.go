@@ -10,7 +10,7 @@ func (r *accountRepository) CanScheduleAccountForUser(ctx context.Context, accou
 	if err != nil {
 		return false, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	if !rows.Next() {
 		if err := rows.Err(); err != nil {
 			return false, err
